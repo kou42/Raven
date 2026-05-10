@@ -1,0 +1,107 @@
+#include "WindowsWindow.h"
+
+#include <iostream>
+
+static bool s_GLFWInitialized = false;
+
+// ŽÀ‘Ì
+GLFWwindow* g_MainWindow = nullptr;
+
+std::unique_ptr<Window> Window::Create(const WindowProps& props)
+{
+    return std::make_unique<WindowsWindow>(props);
+}
+
+WindowsWindow::WindowsWindow(const WindowProps& props)
+{
+    Init(props);
+}
+
+WindowsWindow::~WindowsWindow()
+{
+    Shutdown();
+}
+
+void WindowsWindow::Init(const WindowProps& props)
+{
+    m_Data.Title = props.Title;
+    m_Data.Width = props.Width;
+    m_Data.Height = props.Height;
+
+    if (!s_GLFWInitialized)
+    {
+        int success = glfwInit();
+
+        if (!success)
+        {
+            std::cerr << "Failed to initialize GLFW\n";
+            return;
+        }
+
+        s_GLFWInitialized = true;
+    }
+
+    m_Window = glfwCreateWindow(
+        static_cast<int>(props.Width),
+        static_cast<int>(props.Height),
+        props.Title.c_str(),
+        nullptr,
+        nullptr
+    );
+
+    g_MainWindow = m_Window;
+
+    if (!m_Window)
+    {
+        std::cerr << "Failed to create GLFW window\n";
+        return;
+    }
+
+    glfwMakeContextCurrent(m_Window);
+    glfwSetWindowUserPointer(m_Window, &m_Data);
+
+    SetVSync(true);
+
+    glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+            WindowCloseEvent event;
+            data.EventCallback(event);
+        }
+   );
+
+    glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+            data.Width = static_cast<unsigned int>(width);
+            data.Height = static_cast<unsigned int>(height);
+
+            WindowResizeEvent event(data.Width, data.Height);
+            data.EventCallback(event);
+        }
+    );
+}
+
+void WindowsWindow::Shutdown()
+{
+    glfwDestroyWindow(m_Window);
+}
+
+void WindowsWindow::OnUpdate()
+{
+    glfwPollEvents();
+    glfwSwapBuffers(m_Window);
+}
+
+void WindowsWindow::SetVSync(bool enabled)
+{
+    glfwSwapInterval(enabled ? 1 : 0);
+    m_Data.VSync = enabled;
+}
+
+bool WindowsWindow::IsVSync() const
+{
+    return m_Data.VSync;
+}
