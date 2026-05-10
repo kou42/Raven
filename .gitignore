@@ -1,0 +1,42 @@
+# Build
+build/
+bin/
+out/
+
+# Visual Studio
+.vs/
+.vscode/
+
+# Configurations
+Debug/
+Release/
+x64/
+x86/
+
+# Objects
+*.obj
+*.o
+*.pch
+*.pdb
+*.ilk
+
+# Executables
+*.exe
+*.out
+
+# Libraries
+*.lib
+*.dll
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Logs
+*.log
+
+# Temp
+*.tmp
+*.temp
