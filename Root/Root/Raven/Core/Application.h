@@ -3,56 +3,28 @@
 #include "Input.h"
 #include "KeyCodes.h"
 
+#include "../Renderer/RenderCommand.h"
+
 #include <memory>
 #include <iostream>
 
+namespace Raven
+{
+
 class Application
 {
+
 public:
-    Application()
-    {
-        m_Window = Window::Create();
 
-        m_Window->SetEventCallback([this](Event& event)
-            {
-                OnEvent(event);
-            });
-    }
+    Application();
 
-    void Run()
-    {
-        while (m_Running)
-        {
-            if (Input::IsKeyPressed(Key::Escape))
-            {
-                m_Running = false;
-            }
+    void Run();
 
-            if (Input::IsKeyPressed(Key::W))
-            {
-                std::cout << "W Pressed\n";
-            }
-
-            auto [x, y] = Input::GetMousePosition();
-
-            std::cout << x << ", " << y << std::endl;
-
-            m_Window->OnUpdate();
-        }
-    }
-
-    void OnEvent(Event& event)
-    {
-        std::cout << event.ToString() << std::endl;
-
-        if (event.GetEventType() == EventType::WindowClose)
-        {
-            m_Running = false;
-            event.Handled = true;
-        }
-    }
+    void OnEvent(Event& event);
 
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
 };
+
+}

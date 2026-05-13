@@ -3,7 +3,12 @@
 #include <GLFW/glfw3.h>
 
 // WindowsWindow.cppのg_MainWindowが実体
-extern GLFWwindow* g_MainWindow;
+#if 0
+struct GLFWwindow;
+//OpenGLContextで前方宣言してるため、ビルドエラーになってしまっている
+#endif
+
+extern GLFWwindow* g_MainWindow = nullptr;
 
 bool Input::IsKeyPressed(int keycode)
 {

@@ -132,22 +132,36 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Raven\Core\Application.cpp" />
+    <ClCompile Include="Raven\Core\Base.cpp" />
     <ClCompile Include="Raven\Core\Event.cpp" />
     <ClCompile Include="Raven\Core\Input.cpp" />
     <ClCompile Include="Raven\Core\Window.cpp" />
+    <ClCompile Include="Raven\Platform\OpenGL\OpenGLContext.cpp" />
+    <ClCompile Include="Raven\Platform\OpenGL\OpenGLRendererAPI.cpp" />
     <ClCompile Include="Raven\Platform\Windows\WindowsInput.cpp" />
     <ClCompile Include="Raven\Platform\Windows\WindowsWindow.cpp" />
+    <ClCompile Include="Raven\Renderer\GraphicsContext.cpp" />
+    <ClCompile Include="Raven\Renderer\RenderCommand.cpp" />
+    <ClCompile Include="Raven\Renderer\Renderer.cpp" />
+    <ClCompile Include="Raven\Renderer\RendererAPI.cpp" />
     <ClCompile Include="src\glad.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Raven\Core\Application.h" />
+    <ClInclude Include="Raven\Core\Base.h" />
     <ClInclude Include="Raven\Core\Event.h" />
     <ClInclude Include="Raven\Core\Input.h" />
     <ClInclude Include="Raven\Core\KeyCodes.h" />
     <ClInclude Include="Raven\Core\MouseCodes.h" />
     <ClInclude Include="Raven\Core\Window.h" />
+    <ClInclude Include="Raven\Platform\OpenGL\OpenGLContext.h" />
+    <ClInclude Include="Raven\Platform\OpenGL\OpenGLRendererAPI.h" />
     <ClInclude Include="Raven\Platform\Windows\WindowsInput.h" />
     <ClInclude Include="Raven\Platform\Windows\WindowsWindow.h" />
+    <ClInclude Include="Raven\Renderer\GraphicsContext.h" />
+    <ClInclude Include="Raven\Renderer\RenderCommand.h" />
+    <ClInclude Include="Raven\Renderer\Renderer.h" />
+    <ClInclude Include="Raven\Renderer\RendererAPI.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

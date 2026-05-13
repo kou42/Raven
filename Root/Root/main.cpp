@@ -2,7 +2,7 @@
 
 int main()
 {
-    Application app;
+    Raven::Application app;
     app.Run();
 
     return 0;

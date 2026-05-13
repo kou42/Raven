@@ -1,16 +1,28 @@
 #include "WindowsWindow.h"
+#include "../../Core/Base.h"
+#include "../OpenGL/OpenGLContext.h"
 
 #include <iostream>
+
+namespace Raven
+{
 
 static bool s_GLFWInitialized = false;
 
 // 実体
 GLFWwindow* g_MainWindow = nullptr;
 
+#if 1
 std::unique_ptr<Window> Window::Create(const WindowProps& props)
 {
     return std::make_unique<WindowsWindow>(props);
 }
+#else
+Scope<Window> Window::Create(const WindowProps& props)
+{
+    return CreateScope<Window>(props);
+}
+#endif
 
 WindowsWindow::WindowsWindow(const WindowProps& props)
 {
@@ -57,7 +69,14 @@ void WindowsWindow::Init(const WindowProps& props)
         return;
     }
 
+    // OpenGLContext::Init() の中でglfwMakeContextCurrent()を呼ぶためコメントアウト
+#if 0
     glfwMakeContextCurrent(m_Window);
+#endif
+
+    m_Context = CreateScope<OpenGLContext>(m_Window);
+    m_Context->Init();
+
     glfwSetWindowUserPointer(m_Window, &m_Data);
 
     SetVSync(true);
@@ -69,7 +88,7 @@ void WindowsWindow::Init(const WindowProps& props)
             WindowCloseEvent event;
             data.EventCallback(event);
         }
-   );
+    );
 
     glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
         {
@@ -92,7 +111,11 @@ void WindowsWindow::Shutdown()
 void WindowsWindow::OnUpdate()
 {
     glfwPollEvents();
+
+    m_Context->SwapBuffers();
+#if 0
     glfwSwapBuffers(m_Window);
+#endif
 }
 
 void WindowsWindow::SetVSync(bool enabled)
@@ -104,4 +127,6 @@ void WindowsWindow::SetVSync(bool enabled)
 bool WindowsWindow::IsVSync() const
 {
     return m_Data.VSync;
+}
+
 }

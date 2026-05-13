@@ -1,7 +1,13 @@
 #pragma once
 #include "../../Core/Window.h"
+#include "../../Core/Base.h"
+#include "../../Renderer/GraphicsContext.h"
 
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+namespace Raven
+{
 
 class WindowsWindow : public Window
 {
@@ -27,7 +33,12 @@ private:
     void Shutdown();
 
 private:
+
+#if 1
     GLFWwindow* m_Window = nullptr;
+#else
+    Ref<GLFWwindow> m_Window;
+#endif
 
     struct WindowData
     {
@@ -40,4 +51,8 @@ private:
     };
 
     WindowData m_Data;
+
+    Scope<GraphicsContext> m_Context;
 };
+
+}

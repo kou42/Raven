@@ -1,0 +1,90 @@
+フォルダー パスの一覧:  ボリューム Data
+ボリューム シリアル番号は B4F8-E2D0 です
+D:.
+|   .gitignore
+|   structure.txt
+|   
+\---Root
+    |   Root.sln
+    |   
+    +---Root
+    |   |   main.cpp
+    |   |   Root.vcxproj
+    |   |   Root.vcxproj.filters
+    |   |   Root.vcxproj.user
+    |   |   
+    |   +---include
+    |   |   +---glad
+    |   |   |       glad.h
+    |   |   |       
+    |   |   +---GLFW
+    |   |   |       glfw3.h
+    |   |   |       
+    |   |   \---KHR
+    |   |           khrplatform.h
+    |   |           
+    |   +---lib
+    |   |       glfw3.lib
+    |   |       
+    |   +---Raven
+    |   |   |   sample.cpp
+    |   |   |   sample.h
+    |   |   |   
+    |   |   +---Core
+    |   |   |       Application.cpp
+    |   |   |       Application.h
+    |   |   |       Event.cpp
+    |   |   |       Event.h
+    |   |   |       Input.cpp
+    |   |   |       Input.h
+    |   |   |       KeyCodes.h
+    |   |   |       MouseCodes.h
+    |   |   |       Window.cpp
+    |   |   |       Window.h
+    |   |   |       
+    |   |   \---Platform
+    |   |       \---Windows
+    |   |               WindowsInput.cpp
+    |   |               WindowsInput.h
+    |   |               WindowsWindow.cpp
+    |   |               WindowsWindow.h
+    |   |               
+    |   +---src
+    |   |       glad.c
+    |   |       
+    |   \---x64
+    |       \---Debug
+    |           |   Application.obj
+    |           |   Event.obj
+    |           |   glad.obj
+    |           |   Input.obj
+    |           |   main.obj
+    |           |   Root.exe.recipe
+    |           |   Root.ilk
+    |           |   Root.log
+    |           |   Root.vcxproj.FileListAbsolute.txt
+    |           |   vc143.idb
+    |           |   vc143.pdb
+    |           |   vcpkg.applocal.log
+    |           |   Window.obj
+    |           |   WindowsInput.obj
+    |           |   WindowsWindow.obj
+    |           |   
+    |           \---Root.tlog
+    |                   CL.command.1.tlog
+    |                   Cl.items.tlog
+    |                   CL.read.1.tlog
+    |                   CL.write.1.tlog
+    |                   link.command.1.tlog
+    |                   link.read.1.tlog
+    |                   link.secondary.1.tlog
+    |                   link.write.1.tlog
+    |                   Root.lastbuildstate
+    |                   Root.write.1u.tlog
+    |                   
+    \---x64
+        \---Debug
+                glfw3.dll
+                Root.exe
+                Root.pdb
+                

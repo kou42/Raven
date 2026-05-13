@@ -5,6 +5,9 @@
 
 #include "Event.h"
 
+namespace Raven
+{
+
 struct WindowProps
 {
     std::string Title;
@@ -23,6 +26,7 @@ struct WindowProps
 
 class Window
 {
+
 public:
     using EventCallbackFn = std::function<void(Event&)>;
 
@@ -37,5 +41,11 @@ public:
     virtual void SetVSync(bool enabled) = 0;
     virtual bool IsVSync() const = 0;
 
+#if 1
     static std::unique_ptr<Window> Create(const WindowProps& props = WindowProps());
+#else
+    static Scope<Window> Create(const WindowProps& props = WindowProps());
+#endif
 };
+
+}
