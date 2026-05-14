@@ -2,6 +2,7 @@
 #include "../../Core/Window.h"
 #include "../../Core/Base.h"
 #include "../../Renderer/GraphicsContext.h"
+#include "../../Core/Input.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -53,6 +54,7 @@ private:
     WindowData m_Data;
 
     Scope<GraphicsContext> m_Context;
+    Scope<Input>           m_Input;
 };
 
 }

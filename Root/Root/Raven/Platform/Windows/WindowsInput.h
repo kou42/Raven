@@ -2,6 +2,23 @@
 
 #include "../Raven/Core/Input.h"
 
-class WindowsInput : public Input
+struct GLFWwindow;
+
+namespace Raven
 {
+
+class WindowsInput final : public Input
+{
+public:
+    explicit WindowsInput(GLFWwindow* window);
+
+protected:
+    virtual bool IsKeyPressedImpl(int keycode) override;
+    virtual bool IsMousePressedImpl(int button) override;
+    virtual std::pair<float, float> GetMousePositionImpl() override;
+
+private:
+    GLFWwindow* m_Window = nullptr;
 };
+
+}

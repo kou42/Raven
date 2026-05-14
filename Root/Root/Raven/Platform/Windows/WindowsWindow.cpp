@@ -1,6 +1,7 @@
 #include "WindowsWindow.h"
 #include "../../Core/Base.h"
 #include "../OpenGL/OpenGLContext.h"
+#include "../../Platform/Windows/WindowsInput.h"
 
 #include <iostream>
 
@@ -9,8 +10,11 @@ namespace Raven
 
 static bool s_GLFWInitialized = false;
 
+#if 0
 // ŽÀ‘Ì
 GLFWwindow* g_MainWindow = nullptr;
+#endif
+
 
 #if 1
 std::unique_ptr<Window> Window::Create(const WindowProps& props)
@@ -61,7 +65,9 @@ void WindowsWindow::Init(const WindowProps& props)
         nullptr
     );
 
+#if 0
     g_MainWindow = m_Window;
+#endif
 
     if (!m_Window)
     {
@@ -76,6 +82,8 @@ void WindowsWindow::Init(const WindowProps& props)
 
     m_Context = CreateScope<OpenGLContext>(m_Window);
     m_Context->Init();
+
+    m_Input = CreateScope<WindowsInput>(m_Window);
 
     glfwSetWindowUserPointer(m_Window, &m_Data);
 
