@@ -16,6 +16,8 @@ public:
 
     static void Clear();
 
+    static void DrawIndexed(const Ref<VertexArray>& vertexArray);
+
 private:
     static Scope<RendererAPI> s_RendererAPI;
 };

@@ -5,8 +5,8 @@ namespace Raven
 {
 
 WindowsInput::WindowsInput(GLFWwindow* window)
-    : m_Window(window)
 {
+    m_Window = window;
     s_Instance = this;
 }
 
