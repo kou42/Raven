@@ -1,6 +1,5 @@
 #include "OpenGLShader.h"
 
-#include <glad/glad.h>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -8,10 +7,26 @@
 namespace Raven
 {
 
+static GLuint ShaderTypeFromString(const std::string& type)
+{
+    if (type == "vertex")   return GL_VERTEX_SHADER;
+    if (type == "fragment" || type == "pixel") return GL_FRAGMENT_SHADER;
+
+    std::cerr << "Unknown shader type: " << type << std::endl;
+    return 0;
+}
+
 OpenGLShader::OpenGLShader(const std::string& filepath)
 {
+#if 0
     auto [vertexSrc, fragmentSrc] = ParseShaderFile(filepath);
     m_RendererID = CreateProgram(vertexSrc, fragmentSrc);
+#else
+    std::string source = ReadFile(filepath);
+    auto shaderSources = PreProcess(source);
+
+    Compile(shaderSources);
+#endif
 }
 
 OpenGLShader::~OpenGLShader()
@@ -27,6 +42,54 @@ void OpenGLShader::Bind() const
 void OpenGLShader::Unbind() const
 {
     glUseProgram(0);
+}
+
+std::unordered_map<GLuint, std::string> OpenGLShader::PreProcess(const std::string& source)
+{
+    std::unordered_map<GLuint, std::string> shaderSources;
+
+    const char* typeToken = "#type";
+    size_t typeTokenLength = strlen(typeToken);
+
+    size_t pos = source.find(typeToken, 0);
+
+    while (pos != std::string::npos)
+    {
+        size_t eol = source.find_first_of("\r\n", pos);
+        if (eol == std::string::npos)
+        {
+            std::cerr << "Syntax error: #type line has no endline\n";
+            break;
+        }
+
+        size_t begin = pos + typeTokenLength + 1;
+        std::string type = source.substr(begin, eol - begin);
+
+        GLuint shaderType = ShaderTypeFromString(type);
+        if (shaderType == 0) {
+            break;
+        }
+        size_t nextLinePos = source.find_first_not_of("\r\n", eol);
+        if (nextLinePos == std::string::npos)
+        {
+            std::cerr << "Syntax error: shader source missing after #type " << type << "\n";
+            break;
+        }
+
+        size_t nextTypePos = source.find(typeToken, nextLinePos);
+
+        shaderSources[shaderType] =
+            source.substr(
+                nextLinePos,
+                nextTypePos == std::string::npos
+                ? std::string::npos
+                : nextTypePos - nextLinePos
+            );
+
+        pos = nextTypePos;
+    }
+
+    return shaderSources;
 }
 
 std::string OpenGLShader::ReadFile(const std::string& filepath)
@@ -70,6 +133,76 @@ std::pair<std::string, std::string> OpenGLShader::ParseShaderFile(const std::str
         source.substr(fragmentStart);
 
     return { vertexSource, fragmentSource };
+}
+
+void OpenGLShader::Compile(const std::unordered_map<GLuint, std::string>& shaderSources)
+{
+    GLuint program = glCreateProgram();
+
+    std::vector<GLuint> shaderIDs;
+    shaderIDs.reserve(shaderSources.size());
+
+    for (auto& [type, source] : shaderSources)
+    {
+        GLuint shader = glCreateShader(type);
+
+        const GLchar* sourceCStr = source.c_str();
+        glShaderSource(shader, 1, &sourceCStr, nullptr);
+
+        glCompileShader(shader);
+
+        GLint isCompiled = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &isCompiled);
+
+        if (isCompiled == GL_FALSE)
+        {
+            GLint maxLength = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
+
+            std::vector<GLchar> infoLog(maxLength);
+            glGetShaderInfoLog(shader, maxLength, &maxLength, infoLog.data());
+
+            glDeleteShader(shader);
+
+            std::cerr << "Shader compilation failed:\n"
+                << infoLog.data() << std::endl;
+            return;
+        }
+
+        glAttachShader(program, shader);
+        shaderIDs.push_back(shader);
+    }
+
+    glLinkProgram(program);
+
+    GLint isLinked = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
+
+    if (isLinked == GL_FALSE)
+    {
+        GLint maxLength = 0;
+        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
+
+        std::vector<GLchar> infoLog(maxLength);
+        glGetProgramInfoLog(program, maxLength, &maxLength, infoLog.data());
+
+        glDeleteProgram(program);
+
+        for (GLuint id : shaderIDs)
+            glDeleteShader(id);
+
+        std::cerr << "Shader link failed:\n"
+            << infoLog.data() << std::endl;
+        return;
+    }
+
+    for (GLuint id : shaderIDs)
+    {
+        glDetachShader(program, id);
+        glDeleteShader(id);
+    }
+
+    m_RendererID = program;
 }
 
 unsigned int OpenGLShader::CompileShader(unsigned int type, const std::string& source)

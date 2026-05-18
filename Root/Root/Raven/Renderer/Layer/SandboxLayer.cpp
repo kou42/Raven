@@ -52,7 +52,9 @@ void SandboxLayer::OnAttach()
     m_VertexArray->AddVertexBuffer(vertexBuffer);
     m_VertexArray->SetIndexBuffer(indexBuffer);
 
-    m_Shader = Shader::Create("assets/shaders/FlatColor.glsl");
+    std::string path = "Raven/Assets/Shaders/FlatColor.glsl";
+
+    m_Shader = Shader::Create(path);
 }
 
 void SandboxLayer::OnUpdate()

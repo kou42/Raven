@@ -2,20 +2,24 @@
 #version 330 core
 
 layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Color;
+
+out vec3 v_Color;
 
 void main()
 {
+    v_Color = a_Color;
     gl_Position = vec4(a_Position, 1.0);
 }
 
 #type fragment
 #version 330 core
 
-out vec4 color;
+in vec3 v_Color;
 
-uniform vec4 u_Color;
+out vec4 FragColor;
 
 void main()
 {
-    color = u_Color;
+    FragColor = vec4(v_Color, 1.0);
 }
