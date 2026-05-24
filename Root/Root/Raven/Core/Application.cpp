@@ -161,7 +161,7 @@ void main()
 
         auto [x, y] = Input::GetMousePosition();
 
-        std::cout << x << ", " << y << std::endl;
+        //std::cout << x << ", " << y << std::endl;
 
         RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
         RenderCommand::Clear();

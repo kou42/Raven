@@ -7,6 +7,64 @@
 namespace Raven
 {
 
+// コメントアウト事前処理
+std::string RemoveComments(const std::string& src)
+{
+    std::string result;
+    result.reserve(src.size());
+
+    bool inSingleLineComment = false;
+    bool inMultiLineComment = false;
+
+    for (size_t i = 0; i < src.size(); ++i)
+    {
+        if (!inSingleLineComment && !inMultiLineComment)
+        {
+            // //
+            if (i + 1 < src.size() &&
+                src[i] == '/' &&
+                src[i + 1] == '/')
+            {
+                inSingleLineComment = true;
+                ++i;
+                continue;
+            }
+
+            // /*
+            if (i + 1 < src.size() &&
+                src[i] == '/' &&
+                src[i + 1] == '*')
+            {
+                inMultiLineComment = true;
+                ++i;
+                continue;
+            }
+
+            result += src[i];
+        }
+        else if (inSingleLineComment)
+        {
+            if (src[i] == '\n')
+            {
+                inSingleLineComment = false;
+                result += '\n';
+            }
+        }
+        else if (inMultiLineComment)
+        {
+            if (i + 1 < src.size() &&
+                src[i] == '*' &&
+                src[i + 1] == '/')
+            {
+                inMultiLineComment = false;
+                ++i;
+            }
+        }
+    }
+
+    return result;
+}
+
 static GLuint ShaderTypeFromString(const std::string& type)
 {
     if (type == "vertex")   return GL_VERTEX_SHADER;
@@ -29,6 +87,20 @@ OpenGLShader::OpenGLShader(const std::string& filepath)
 #endif
 }
 
+OpenGLShader::OpenGLShader(const std::string& vertexFilePath, const std::string& fragFilePath)
+{
+#if 0
+    auto [vertexSrc, fragmentSrc] = ParseShaderFile(filepath);
+    m_RendererID = CreateProgram(vertexSrc, fragmentSrc);
+#else
+    std::string vertexSource = ReadFile(vertexFilePath);
+    std::string flagSource = ReadFile(fragFilePath);
+    auto shaderSources = PreProcess(vertexSource, flagSource);
+
+    Compile(shaderSources);
+#endif
+}
+
 OpenGLShader::~OpenGLShader()
 {
     glDeleteProgram(m_RendererID);
@@ -44,18 +116,47 @@ void OpenGLShader::Unbind() const
     glUseProgram(0);
 }
 
+std::unordered_map<GLuint, std::string> OpenGLShader::PreProcess(const std::string& vertexFilePath, const std::string& fragFilePath)
+{
+    enum ShaderType {
+        SHADER_TYPE_VERTEX,
+        SHADER_TYPE_FRAGMENT,
+        SHADER_TYPE_MAX,
+    };
+
+    const std::string* pSources[SHADER_TYPE_MAX] = { &vertexFilePath, &fragFilePath };
+    GLint shaderType[SHADER_TYPE_MAX] = { GL_VERTEX_SHADER ,GL_FRAGMENT_SHADER };
+
+    std::unordered_map<GLuint, std::string> shaderSources;
+
+    for (uint8_t i = 0; i < SHADER_TYPE_MAX; i++) {
+
+        if (!pSources[i]) {
+            continue;
+        }
+
+        std::string cleanSource = RemoveComments(*pSources[i]);
+
+        shaderSources[shaderType[i]] = cleanSource;
+    }
+
+    return shaderSources;
+}
+
 std::unordered_map<GLuint, std::string> OpenGLShader::PreProcess(const std::string& source)
 {
     std::unordered_map<GLuint, std::string> shaderSources;
 
+    std::string cleanSource = RemoveComments(source);
+
     const char* typeToken = "#type";
     size_t typeTokenLength = strlen(typeToken);
 
-    size_t pos = source.find(typeToken, 0);
+    size_t pos = cleanSource.find(typeToken, 0);
 
     while (pos != std::string::npos)
     {
-        size_t eol = source.find_first_of("\r\n", pos);
+        size_t eol = cleanSource.find_first_of("\r\n", pos);
         if (eol == std::string::npos)
         {
             std::cerr << "Syntax error: #type line has no endline\n";
@@ -63,23 +164,23 @@ std::unordered_map<GLuint, std::string> OpenGLShader::PreProcess(const std::stri
         }
 
         size_t begin = pos + typeTokenLength + 1;
-        std::string type = source.substr(begin, eol - begin);
+        std::string type = cleanSource.substr(begin, eol - begin);
 
         GLuint shaderType = ShaderTypeFromString(type);
         if (shaderType == 0) {
             break;
         }
-        size_t nextLinePos = source.find_first_not_of("\r\n", eol);
+        size_t nextLinePos = cleanSource.find_first_not_of("\r\n", eol);
         if (nextLinePos == std::string::npos)
         {
             std::cerr << "Syntax error: shader source missing after #type " << type << "\n";
             break;
         }
 
-        size_t nextTypePos = source.find(typeToken, nextLinePos);
+        size_t nextTypePos = cleanSource.find(typeToken, nextLinePos);
 
         shaderSources[shaderType] =
-            source.substr(
+            cleanSource.substr(
                 nextLinePos,
                 nextTypePos == std::string::npos
                 ? std::string::npos
@@ -104,6 +205,11 @@ std::string OpenGLShader::ReadFile(const std::string& filepath)
 
     std::stringstream ss;
     ss << file.rdbuf();
+
+    std::string result = ss.str();
+
+    std::cout << "size = " << result.size() << std::endl;
+
     return ss.str();
 }
 

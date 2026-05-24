@@ -26,6 +26,7 @@ public:
 
 public:
     OpenGLShader(const std::string& filepath);
+    OpenGLShader(const std::string& vertexFilePath, const std::string& fragFilePath);
     ~OpenGLShader();
 
     void Bind() const;
@@ -41,6 +42,7 @@ private:
     // ‚±‚±‚ç•Ó‚àŠî’ê‚ÅéŒ¾‚µ‚½‚Ù‚¤‚ª‚¢‚¢‚Ì‚©
     std::string ReadFile(const std::string& filepath);
     std::unordered_map<GLuint, std::string> PreProcess(const std::string& source);
+    std::unordered_map<GLuint, std::string> PreProcess(const std::string& vertexFilePath, const std::string& fragFilePath);
     std::pair<std::string, std::string> ParseShaderFile(const std::string& filepath);
     void Compile(const std::unordered_map<GLuint, std::string>& shaderSources);
     unsigned int CompileShader(unsigned int type, const std::string& source);

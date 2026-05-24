@@ -20,6 +20,7 @@ public:
     virtual void SetFloat4(const std::string& name, float x, float y, float z, float w) = 0;
 
     static Ref<Shader> Create(const std::string& filepath);
+    static Ref<Shader> Create(const std::string& vertFilePath, const std::string& fragFilePath);
 
 };
 

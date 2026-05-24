@@ -90,6 +90,9 @@
     <ClCompile Include="Raven\Renderer\Buffer\OpenGLVertexBuffer.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="Raven\Renderer\Texture\Texture.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Raven\Core\Application.h">
@@ -165,6 +168,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Renderer\Buffer\OpenGLVertexBuffer.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\Renderer\Texture\Texture.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>

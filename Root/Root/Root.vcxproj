@@ -154,6 +154,7 @@
     <ClCompile Include="Raven\Renderer\RendererAPI.cpp" />
     <ClCompile Include="Raven\Renderer\Shader\OpenGLShader.cpp" />
     <ClCompile Include="Raven\Renderer\Shader\Shader.cpp" />
+    <ClCompile Include="Raven\Renderer\Texture\Texture.cpp" />
     <ClCompile Include="src\glad.c" />
   </ItemGroup>
   <ItemGroup>
@@ -182,6 +183,7 @@
     <ClInclude Include="Raven\Renderer\RendererAPI.h" />
     <ClInclude Include="Raven\Renderer\Shader\OpenGLShader.h" />
     <ClInclude Include="Raven\Renderer\Shader\Shader.h" />
+    <ClInclude Include="Raven\Renderer\Texture\Texture.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
