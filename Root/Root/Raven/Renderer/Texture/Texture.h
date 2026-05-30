@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
+
 #include "../../Core/Base.h"
 
 namespace Raven
@@ -27,6 +29,20 @@ private:
     int m_Height;
     int m_Channels;
 
+};
+
+class TextureLibrary
+{
+public:
+    void Add(const std::string& name, const Ref<Texture>& texture);
+
+    Ref<Texture> Load(const std::string& name, const std::string& path);
+
+    Ref<Texture> Get(const std::string& name);
+    bool Exists(const std::string& name) const;
+
+private:
+    std::unordered_map<std::string, Ref<Texture>> m_Textures;
 };
 
 }

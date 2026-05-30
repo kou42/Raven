@@ -173,5 +173,8 @@
     <ClInclude Include="Raven\Renderer\Texture\Texture.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="Raven\Renderer\Buffer\BufferLayout.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

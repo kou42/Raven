@@ -169,6 +169,7 @@
     <ClInclude Include="Raven\Platform\OpenGL\OpenGLRendererAPI.h" />
     <ClInclude Include="Raven\Platform\Windows\WindowsInput.h" />
     <ClInclude Include="Raven\Platform\Windows\WindowsWindow.h" />
+    <ClInclude Include="Raven\Renderer\Buffer\BufferLayout.h" />
     <ClInclude Include="Raven\Renderer\Buffer\IndexBuffer.h" />
     <ClInclude Include="Raven\Renderer\Buffer\OpenGLIndexBuffer.h" />
     <ClInclude Include="Raven\Renderer\Buffer\OpenGLVertexArray.h" />

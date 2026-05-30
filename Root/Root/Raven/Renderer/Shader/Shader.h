@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <unordered_map>
 
 #include "../../Core/Base.h"
 
@@ -22,6 +23,21 @@ public:
     static Ref<Shader> Create(const std::string& filepath);
     static Ref<Shader> Create(const std::string& vertFilePath, const std::string& fragFilePath);
 
+};
+
+class ShaderLibrary
+{
+public:
+    void Add(const std::string& name, const Ref<Shader>& shader);
+
+    Ref<Shader> Load(const std::string& name, const std::string& filepath);
+    Ref<Shader> Load(const std::string& name, const std::string& vertexFilePath, const std::string& fragmentFilePath);
+
+    Ref<Shader> Get(const std::string& name);
+    bool Exists(const std::string& name) const;
+
+private:
+    std::unordered_map<std::string, Ref<Shader>> m_Shaders;
 };
 
 }

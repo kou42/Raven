@@ -43,11 +43,11 @@ void SandboxLayer::OnAttach()
 
     float vertices_texture[] =
     {
-        // position           // color
-        -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f, // 0 ¶‰º
-         0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f, // 1 ‰E‰º
-         0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f, // 2 ‰Eã
-        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f  // 3 ¶ã
+        // pos              // color        // uv
+        0.5f,  0.5f, 0.0f, 1, 0, 0,      1.0f, 1.0f,
+        0.5f, -0.5f, 0.0f, 0, 1, 0,      1.0f, 0.0f,
+        -0.5f, -0.5f, 0.0f, 0, 0, 1,      0.0f, 0.0f,
+        -0.5f,  0.5f, 0.0f, 1, 1, 0,      0.0f, 1.0f
     };
 
     uint32_t indices_texture[] =
@@ -60,17 +60,30 @@ void SandboxLayer::OnAttach()
 
     m_VertexArray = VertexArray::Create();
 
+#if 0
     auto vertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
+    vertexBuffer->SetLayout({
+        { ShaderDataType::Float3, "a_Position" },
+        { ShaderDataType::Float3, "a_Color" }
+    });
 
     auto indexBuffer = IndexBuffer::Create(indices, count);
 
     m_VertexArray->AddVertexBuffer(vertexBuffer);
     m_VertexArray->SetIndexBuffer(indexBuffer);
+#endif
 
-    m_Texture = Texture::Create("Raven/Assets/Images/test/mountain1.png");
+    //m_Texture = Texture::Create("Raven/Assets/Images/test/mountain1.png");
+    m_Texture = m_TextureLibrary.Load("Mountain", "Raven/Assets/Images/test/mountain1.png");
 
     uint32_t count_texture = sizeof(indices_texture) / sizeof(uint32_t);
-    auto vertexBuffer_texure = VertexBuffer::Create(vertices_texture, sizeof(indices_texture));
+    auto vertexBuffer_texure = VertexBuffer::Create(vertices_texture, sizeof(vertices_texture));
+    vertexBuffer_texure->SetLayout({
+        { ShaderDataType::Float3, "a_Position" },
+        { ShaderDataType::Float3, "a_Color" },
+        { ShaderDataType::Float2, "a_Texcord" }
+    });
+
     auto indexBuffer_texture = IndexBuffer::Create(indices_texture, count_texture);
     m_VertexArray->AddVertexBuffer(vertexBuffer_texure);
     m_VertexArray->SetIndexBuffer(indexBuffer_texture);
@@ -81,13 +94,15 @@ void SandboxLayer::OnAttach()
 #else
     std::string vertPath = "Raven/Assets/Shaders/Vertex/test.vert";     //"D:/Engine/Root/Root/Raven/Assets/Shaders/Vertex/test.vert";
     std::string fragPath = "Raven/Assets/Shaders/Fragment/test.frag";  //"D:/Engine/Root/Root/Raven/Assets/Shaders/Fragment/test.frag";
-    m_Shader = Shader::Create(vertPath, fragPath);
+    m_Shader = m_ShaderLibrary.Load("Test", vertPath, fragPath);
+    //m_Shader = Shader::Create(vertPath, fragPath);
 #endif
 }
 
 void SandboxLayer::OnUpdate()
 {
     m_Shader->Bind();
+    m_Texture->Bind();
 
     RenderCommand::Clear();
 

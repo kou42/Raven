@@ -95,4 +95,45 @@ unsigned int Texture::GetID() const
     return m_ID;
 }
 
+void TextureLibrary::Add(const std::string& name, const Ref<Texture>& texture)
+{
+    if (!texture)
+    {
+        std::cerr << "TextureLibrary::Add failed. Texture is null: " << name << std::endl;
+        return;
+    }
+
+    if (Exists(name))
+    {
+        std::cerr << "Texture already exists: " << name << std::endl;
+        return;
+    }
+
+    m_Textures[name] = texture;
+}
+
+Ref<Texture> TextureLibrary::Load(const std::string& name, const std::string& path)
+{
+    Ref<Texture> texture = Texture::Create(path);
+    Add(name, texture);
+    return texture;
+}
+
+Ref<Texture> TextureLibrary::Get(const std::string& name)
+{
+    auto it = m_Textures.find(name);
+    if (it == m_Textures.end())
+    {
+        std::cerr << "Texture not found: " << name << std::endl;
+        return nullptr;
+    }
+
+    return it->second;
+}
+
+bool TextureLibrary::Exists(const std::string& name) const
+{
+    return m_Textures.find(name) != m_Textures.end();
+}
+
 }

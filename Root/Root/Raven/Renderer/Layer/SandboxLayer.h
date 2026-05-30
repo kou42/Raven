@@ -27,8 +27,11 @@ public:
     virtual void OnUpdate() override;
 
 private:
+    ShaderLibrary m_ShaderLibrary;
     Ref<Shader> m_Shader;
     Ref<VertexArray> m_VertexArray;
+
+    TextureLibrary m_TextureLibrary;
     Ref<Texture>     m_Texture;
 };
 
