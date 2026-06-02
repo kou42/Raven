@@ -60,19 +60,6 @@ void SandboxLayer::OnAttach()
 
     m_VertexArray = VertexArray::Create();
 
-#if 0
-    auto vertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
-    vertexBuffer->SetLayout({
-        { ShaderDataType::Float3, "a_Position" },
-        { ShaderDataType::Float3, "a_Color" }
-    });
-
-    auto indexBuffer = IndexBuffer::Create(indices, count);
-
-    m_VertexArray->AddVertexBuffer(vertexBuffer);
-    m_VertexArray->SetIndexBuffer(indexBuffer);
-#endif
-
     //m_Texture = Texture::Create("Raven/Assets/Images/test/mountain1.png");
     m_Texture = m_TextureLibrary.Load("Mountain", "Raven/Assets/Images/test/mountain1.png");
 

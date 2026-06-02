@@ -29,13 +29,13 @@ public:
     OpenGLShader(const std::string& vertexFilePath, const std::string& fragFilePath);
     ~OpenGLShader();
 
-    void Bind() const;
-    void Unbind() const;
+    virtual void Bind() const override;
+    virtual void Unbind() const override;
 
-    void SetInt(const std::string& name, int value);
-    void SetFloat(const std::string& name, float value);
-    void SetFloat3(const std::string& name, float x, float y, float z);
-    void SetFloat4(const std::string& name, float x, float y, float z, float w);
+    virtual void SetInt(const std::string& name, int value) override;
+    virtual void SetFloat(const std::string& name, float value) override;
+    virtual void SetFloat3(const std::string& name, float x, float y, float z) override;
+    virtual void SetFloat4(const std::string& name, float x, float y, float z, float w) override;
 
 private:
 

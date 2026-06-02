@@ -136,6 +136,10 @@
     <ClCompile Include="Raven\Core\Event.cpp" />
     <ClCompile Include="Raven\Core\Input.cpp" />
     <ClCompile Include="Raven\Core\Window.cpp" />
+    <ClCompile Include="Raven\Math\Math.cpp" />
+    <ClCompile Include="Raven\Math\MathMatrix.cpp" />
+    <ClCompile Include="Raven\Math\MathQuatanion.cpp" />
+    <ClCompile Include="Raven\Math\MathVector.cpp" />
     <ClCompile Include="Raven\Platform\OpenGL\OpenGLContext.cpp" />
     <ClCompile Include="Raven\Platform\OpenGL\OpenGLRendererAPI.cpp" />
     <ClCompile Include="Raven\Platform\Windows\WindowsInput.cpp" />
@@ -149,6 +153,7 @@
     <ClCompile Include="Raven\Renderer\GraphicsContext.cpp" />
     <ClCompile Include="Raven\Renderer\Layer\Layer.cpp" />
     <ClCompile Include="Raven\Renderer\Layer\SandboxLayer.cpp" />
+    <ClCompile Include="Raven\Renderer\Material\Material.cpp" />
     <ClCompile Include="Raven\Renderer\RenderCommand.cpp" />
     <ClCompile Include="Raven\Renderer\Renderer.cpp" />
     <ClCompile Include="Raven\Renderer\RendererAPI.cpp" />
@@ -165,6 +170,10 @@
     <ClInclude Include="Raven\Core\KeyCodes.h" />
     <ClInclude Include="Raven\Core\MouseCodes.h" />
     <ClInclude Include="Raven\Core\Window.h" />
+    <ClInclude Include="Raven\Math\Math.h" />
+    <ClInclude Include="Raven\Math\MathMatrix.h" />
+    <ClInclude Include="Raven\Math\MathQuatanion.h" />
+    <ClInclude Include="Raven\Math\MathVector.h" />
     <ClInclude Include="Raven\Platform\OpenGL\OpenGLContext.h" />
     <ClInclude Include="Raven\Platform\OpenGL\OpenGLRendererAPI.h" />
     <ClInclude Include="Raven\Platform\Windows\WindowsInput.h" />
@@ -179,6 +188,7 @@
     <ClInclude Include="Raven\Renderer\GraphicsContext.h" />
     <ClInclude Include="Raven\Renderer\Layer\Layer.h" />
     <ClInclude Include="Raven\Renderer\Layer\SandboxLayer.h" />
+    <ClInclude Include="Raven\Renderer\Material\Material.h" />
     <ClInclude Include="Raven\Renderer\RenderCommand.h" />
     <ClInclude Include="Raven\Renderer\Renderer.h" />
     <ClInclude Include="Raven\Renderer\RendererAPI.h" />

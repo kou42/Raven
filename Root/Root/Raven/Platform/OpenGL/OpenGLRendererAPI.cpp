@@ -1,6 +1,10 @@
 #include "OpenGLRendererAPI.h"
+#include "../../Renderer/Shader/Shader.h"
+#include "../../Renderer/Texture/Texture.h"
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
 
 namespace Raven
 {
@@ -106,6 +110,52 @@ void OpenGLRendererAPI::DrawIndexed(const Ref<VertexArray>& vertexArray)
         GL_UNSIGNED_INT,
         nullptr
     );
+}
+
+void OpenGLRendererAPI::BindShader(const std::shared_ptr<Shader>& shader)
+{
+    if (!shader) return;
+    if (m_CurrentShader == shader) return;
+
+    m_CurrentShader = shader;
+    m_CurrentShader->Bind();
+}
+
+void OpenGLRendererAPI::BindTexture(const std::string& name, const std::shared_ptr<Texture>& texture, uint32_t slot)
+{
+    if (!texture || !m_CurrentShader) return;
+
+    texture->Bind(slot);
+    m_CurrentShader->SetInt(name, static_cast<int>(slot));
+}
+
+void OpenGLRendererAPI::UploadUniform(const std::string& name, const UniformValue& value)
+{
+    if (!m_CurrentShader) return;
+
+    std::visit([&](const auto& v)
+    {
+        using T = std::decay_t<decltype(v)>;
+
+        if constexpr (std::is_same_v<T, int>)
+            m_CurrentShader->SetInt(name, v);
+
+        else if constexpr (std::is_same_v<T, float>)
+            m_CurrentShader->SetFloat(name, v);
+
+        else if constexpr (std::is_same_v<T, math::Vec2>)
+            m_CurrentShader->SetVec2(name, v);
+
+        else if constexpr (std::is_same_v<T, math::Vec3>)
+            m_CurrentShader->SetVec3(name, v);
+
+        else if constexpr (std::is_same_v<T, math::Vec4>)
+            m_CurrentShader->SetVec4(name, v);
+
+        else if constexpr (std::is_same_v<T, math::Mat4>)
+            m_CurrentShader->SetMat4(name, v);
+
+    }, value);
 }
 
 }
