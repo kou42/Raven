@@ -154,12 +154,16 @@
     <ClCompile Include="Raven\Renderer\Layer\Layer.cpp" />
     <ClCompile Include="Raven\Renderer\Layer\SandboxLayer.cpp" />
     <ClCompile Include="Raven\Renderer\Material\Material.cpp" />
+    <ClCompile Include="Raven\Renderer\Mesh\Mesh.cpp" />
     <ClCompile Include="Raven\Renderer\RenderCommand.cpp" />
     <ClCompile Include="Raven\Renderer\Renderer.cpp" />
     <ClCompile Include="Raven\Renderer\RendererAPI.cpp" />
     <ClCompile Include="Raven\Renderer\Shader\OpenGLShader.cpp" />
     <ClCompile Include="Raven\Renderer\Shader\Shader.cpp" />
     <ClCompile Include="Raven\Renderer\Texture\Texture.cpp" />
+    <ClCompile Include="Raven\Scene\Components.cpp" />
+    <ClCompile Include="Raven\Scene\Entity.cpp" />
+    <ClCompile Include="Raven\Scene\Scene.cpp" />
     <ClCompile Include="src\glad.c" />
   </ItemGroup>
   <ItemGroup>
@@ -189,12 +193,16 @@
     <ClInclude Include="Raven\Renderer\Layer\Layer.h" />
     <ClInclude Include="Raven\Renderer\Layer\SandboxLayer.h" />
     <ClInclude Include="Raven\Renderer\Material\Material.h" />
+    <ClInclude Include="Raven\Renderer\Mesh\Mesh.h" />
     <ClInclude Include="Raven\Renderer\RenderCommand.h" />
     <ClInclude Include="Raven\Renderer\Renderer.h" />
     <ClInclude Include="Raven\Renderer\RendererAPI.h" />
     <ClInclude Include="Raven\Renderer\Shader\OpenGLShader.h" />
     <ClInclude Include="Raven\Renderer\Shader\Shader.h" />
     <ClInclude Include="Raven\Renderer\Texture\Texture.h" />
+    <ClInclude Include="Raven\Scene\Components.h" />
+    <ClInclude Include="Raven\Scene\Entity.h" />
+    <ClInclude Include="Raven\Scene\Scene.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

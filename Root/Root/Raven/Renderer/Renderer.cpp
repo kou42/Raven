@@ -32,4 +32,9 @@ void Renderer::Submit( const Ref<Shader>& shader, const Ref<VertexArray>& vertex
     RenderCommand::DrawIndexed(vertexArray);
 }
 
+void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
+{
+    RenderCommand::DrawIndexed(vertexArray);
+}
+
 }

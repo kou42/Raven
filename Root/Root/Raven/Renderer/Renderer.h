@@ -14,9 +14,9 @@ public:
     static void BeginScene();
     static void EndScene();
 
-    static void Submit(
-        const Ref<Shader>& shader,
-        const Ref<VertexArray>& vertexArray);
+    static void Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray);
+    static void DrawIndexed(const Ref<VertexArray>& vertexArray);
+
 };
 
 }
