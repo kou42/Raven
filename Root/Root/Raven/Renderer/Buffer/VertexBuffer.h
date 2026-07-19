@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../Core/Base.h"
-#include "BufferLayout.h"
+#include "Raven/Core/Base.h"
+#include "Raven/Renderer/Buffer/BufferLayout.h"
 
 namespace Raven
 {

@@ -1,5 +1,5 @@
-#include "Mesh.h"
-#include "../Renderer.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/Renderer.h"
 
 namespace Raven
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VertexArray.h"
+#include "Raven/Renderer/Buffer/VertexArray.h"
 //#include "../../Core/Base.h"
 
 namespace Raven

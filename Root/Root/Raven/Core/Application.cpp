@@ -1,5 +1,6 @@
 #include "Application.h"
-
+#include "../Renderer/Renderer.h"
+//#include "../Core/Event.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -14,6 +15,8 @@ Application::Application()
         {
             OnEvent(event);
         });
+
+    Renderer::Init();
 }
 
 void Application::PushLayer(Layer* layer)
@@ -33,8 +36,20 @@ void Application::PushLayer(Scope<Layer> layer)
     m_Layers.push_back(std::move(layer));
 }
 
+void Application::SetScene(Scope<Scene> scene)
+{
+    if (m_scene) {
+        m_scene->OnDestroy();
+    }
+
+    m_scene = std::move(scene);
+    m_scene->OnCreate(); // Ç±Ç±Ç≈èâä˙âª
+}
+
 void Application::Run()
 {
+
+    float dt = 1.0f / 60.f;
 
     while (m_Running)
     {
@@ -43,21 +58,17 @@ void Application::Run()
             m_Running = false;
         }
 
+#if 0
         if (Input::IsKeyPressed(Key::W))
         {
             std::cout << "W Pressed\n";
         }
 
         auto [x, y] = Input::GetMousePosition();
+#endif
 
-        //std::cout << x << ", " << y << std::endl;
-
-        RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
-        RenderCommand::Clear();
-
-        for (Scope<Layer>& layer : m_Layers) {
-            layer->OnUpdate();
-        }
+        m_scene->OnUpdate(dt);
+        m_scene->OnRender();
 
         m_Window->OnUpdate();
     }

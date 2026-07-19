@@ -1,7 +1,7 @@
 #pragma once
 
-#include "RendererAPI.h"
-#include "../Core/Base.h"
+#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Core/Base.h"
 
 namespace Raven
 {

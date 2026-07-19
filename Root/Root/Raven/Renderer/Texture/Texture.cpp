@@ -1,13 +1,13 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#include "Texture.h"
+#include "Raven/Renderer/Texture/Texture.h"
 #include <glad/glad.h>
 #include <string>
 #include <iostream>
 
-#include "../../Core/Base.h"
-#include "../RendererAPI.h"
+#include "Raven/Core/Base.h"
+#include "Raven/Renderer/RendererAPI.h"
 
 namespace Raven
 {

@@ -4,10 +4,10 @@
 #include <memory>
 #include <unordered_map>
 
-#include "../../Core/Base.h"
-#include "../../Math/Math.h"
-#include "../../Math/MathVector.h"
-#include "../../Math/MathMatrix.h"
+#include "Raven/Core/Base.h"
+#include "Raven/Math/Math.h"
+#include "Raven/Math/MathVector.h"
+#include "Raven/Math/MathMatrix.h"
 
 namespace Raven
 {

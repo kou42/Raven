@@ -1,15 +1,25 @@
-#include "RenderCommand.h"
-#include "../Platform/OpenGL/OpenGLRendererAPI.h"
+#include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 
 namespace Raven
 {
 
+// ï¿½ï¿½`
+#if 1
+Scope<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
+#else
 Scope<RendererAPI> RenderCommand::s_RendererAPI = CreateScope<OpenGLRendererAPI>();
+#endif
 
+// Renderer::Init()ï¿½ï¿½ï¿½Ä‚Ñoï¿½ï¿½ï¿½ï¿½
 void RenderCommand::Init()
 {
-    // «—ˆ“I‚É‚Í‰º‹LƒR[ƒh‚É·‚µ‘Ö‚¦—\’è
-#if 0
+    if (s_RendererAPI) {
+        return;
+    }
+
+    // ï¿½ï¿½ï¿½ï¿½ï¿½Iï¿½É‚Í‰ï¿½ï¿½Lï¿½Rï¿½[ï¿½hï¿½Éï¿½ï¿½ï¿½ï¿½Ö‚ï¿½ï¿½\ï¿½ï¿½
+#if 1
     switch (RendererAPI::GetAPI())
     {
     case RendererAPI::API::OpenGL:
@@ -19,7 +29,7 @@ void RenderCommand::Init()
     }
     case RendererAPI::API::DirectX11:
     {
-        s_RendererAPI = CreateScope<DX11RendererAPI>();
+        //s_RendererAPI = CreateScope<DX11RendererAPI>();
         break;
     }
     }
@@ -29,16 +39,25 @@ void RenderCommand::Init()
 
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
+    if (!s_RendererAPI) {
+        return;
+    }
     s_RendererAPI->SetClearColor(r, g, b, a);
 }
 
 void RenderCommand::Clear()
 {
+    if (!s_RendererAPI) {
+        return;
+    }
     s_RendererAPI->Clear();
 }
 
 void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray)
 {
+    if (!s_RendererAPI) {
+        return;
+    }
     s_RendererAPI->DrawIndexed(vertexArray);
 }
 

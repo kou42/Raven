@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include "VertexBuffer.h"
-#include "IndexBuffer.h"
+#include "Raven/Renderer/Buffer/VertexBuffer.h"
+#include "Raven/Renderer/Buffer/IndexBuffer.h"
 
 namespace Raven
 {

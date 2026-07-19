@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VertexBuffer.h"
+#include "Raven/Renderer/Buffer/VertexBuffer.h"
 
 namespace Raven
 {

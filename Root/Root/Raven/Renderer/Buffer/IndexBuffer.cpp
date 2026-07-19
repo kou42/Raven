@@ -1,7 +1,7 @@
-#include "IndexBuffer.h"
+#include "Raven/Renderer/Buffer/IndexBuffer.h"
 
-#include "../RendererAPI.h"
-#include "OpenGLIndexBuffer.h"
+#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/Buffer/OpenGLIndexBuffer.h"
 
 
 namespace Raven

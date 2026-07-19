@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Core/Event.h"
+
 namespace Raven
 {
 
@@ -10,8 +12,11 @@ public:
 
     virtual void OnAttach() {}
     virtual void OnDetach() {}
-    virtual void OnUpdate() {}
-    virtual void OnEvent() {}
+    virtual void OnUpdate(float dt) {}
+    //virtual void OnUpdate() {}
+    virtual void OnRender() {}
+    //virtual void OnEvent() {}
+    virtual void OnEvent(Event& e) {}
 };
 
 }

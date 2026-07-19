@@ -1,6 +1,6 @@
-#include "OpenGLRendererAPI.h"
-#include "../../Renderer/Shader/Shader.h"
-#include "../../Renderer/Texture/Texture.h"
+#include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
+#include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/Texture/Texture.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>

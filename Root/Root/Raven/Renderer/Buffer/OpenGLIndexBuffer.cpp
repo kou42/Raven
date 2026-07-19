@@ -1,4 +1,4 @@
-#include "OpenGLIndexBuffer.h"
+#include "Raven/Renderer/Buffer/OpenGLIndexBuffer.h"
 
 #include <glad/glad.h>
 

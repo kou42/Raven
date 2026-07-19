@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../Core/Base.h"
-#include "../Buffer/VertexArray.h"
+#include "Raven/Core/Base.h"
+#include "Raven/Renderer/Buffer/VertexArray.h"
 
 namespace Raven
 {

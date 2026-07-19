@@ -1,9 +1,9 @@
 // Material.cpp
-#include "Material.h"
+#include "Raven/Renderer/Material/Material.h"
 //#include "Raven/Renderer/Shader/Shader.h"
-#include "../Shader/Shader.h"
+#include "Raven/Renderer/Shader/Shader.h"
 //#include "Texture2D.h"
-#include "../Texture/Texture.h"
+#include "Raven/Renderer/Texture/Texture.h"
 
 namespace Raven
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IndexBuffer.h"
+#include "Raven/Renderer/Buffer/IndexBuffer.h"
 
 namespace Raven
 {

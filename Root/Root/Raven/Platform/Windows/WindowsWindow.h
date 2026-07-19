@@ -1,8 +1,8 @@
 #pragma once
-#include "../../Core/Window.h"
-#include "../../Core/Base.h"
-#include "../../Renderer/GraphicsContext.h"
-#include "../../Core/Input.h"
+#include "Raven/Core/Window.h"
+#include "Raven/Core/Base.h"
+#include "Raven/Renderer/GraphicsContext.h"
+#include "Raven/Core/Input.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>

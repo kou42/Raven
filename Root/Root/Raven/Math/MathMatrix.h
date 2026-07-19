@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Math.h"
-#include "MathVector.h"
+#include "Raven/Math/Math.h"
+#include "Raven/Math/MathVector.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>

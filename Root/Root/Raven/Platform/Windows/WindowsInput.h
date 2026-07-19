@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Raven/Core/Input.h"
+#include "Raven/Core/Input.h"
 
 struct GLFWwindow;
 

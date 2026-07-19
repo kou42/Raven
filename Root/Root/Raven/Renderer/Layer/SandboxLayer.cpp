@@ -1,6 +1,6 @@
-#include "SandboxLayer.h"
-#include "../Renderer.h"
-#include "../RenderCommand.h"
+#include "Raven/Renderer/Layer/SandboxLayer.h"
+#include "Raven/Renderer/Renderer.h"
+#include "Raven/Renderer/RenderCommand.h"
 
 namespace Raven
 {
@@ -29,10 +29,10 @@ void SandboxLayer::OnAttach()
     float vertices[] =
     {
         // position           // color
-        -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f, // 0 ¶‰º
-         0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f, // 1 ‰E‰º
-         0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f, // 2 ‰Eã
-        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f  // 3 ¶ã
+        -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f,
+         0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,
+         0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f,
+        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f
     };
 
     uint32_t indices[] =
@@ -86,7 +86,7 @@ void SandboxLayer::OnAttach()
 #endif
 }
 
-void SandboxLayer::OnUpdate()
+void SandboxLayer::OnUpdate(float dt)
 {
     m_Shader->Bind();
     m_Texture->Bind();

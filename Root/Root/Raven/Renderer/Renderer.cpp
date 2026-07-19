@@ -4,12 +4,15 @@
 
 namespace Raven
 {
+
+// 呼び出し元はApplication::Application()
 void Renderer::Init()
 {
     // 将来的にはここで深度テスト、ブレンド、カリングなどを初期化する
     // 例:
     // RenderCommand::EnableDepthTest();
     // RenderCommand::EnableBlend();
+    RenderCommand::Init();
 }
 
 void Renderer::BeginScene()
@@ -35,6 +38,21 @@ void Renderer::Submit( const Ref<Shader>& shader, const Ref<VertexArray>& vertex
 void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
 {
     RenderCommand::DrawIndexed(vertexArray);
+}
+
+void Renderer::Draw(
+    const std::shared_ptr<Mesh>& mesh,
+    const std::shared_ptr<Material>& material,
+    const math::Mat4& transform
+)
+{
+    if (!mesh || !material)
+        return;
+
+    // material->Set("u_Model", transform);
+    // material->Bind(GetAPI());
+
+    mesh->Draw();
 }
 
 }
