@@ -67,13 +67,48 @@ void SceneGame::OnCreate()
         "Raven/Assets/Images/test/mountain1.png"
     );
 
+#if 0
     // Entity生成
-    //m_Player = CreateEntity("Player");
-    //m_Camera = CreateEntity("MainCamera");
+    m_Player = CreateEntity("Player");
+    m_Camera = CreateEntity("MainCamera");
 
     // Layer生成
-    //PushLayer(CreateScope<GameLayer>());
-    //PushLayer(CreateScope<UILayer>());
+    PushLayer(CreateScope<GameLayer>());
+    PushLayer(CreateScope<UILayer>());
+#endif
+
+    // マテリアル設定例
+#if 0
+    auto material = std::make_shared<Material>(shader);
+
+    material->SetTexture("uTexture", texture, 0);
+    material->Set("uColor", math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    material->Set("uRoughness", 0.5f);
+#endif
+
+    // パイプライン設定例
+#if 0
+    auto shader = Shader::Create("assets/shaders/basic.vert", "assets/shaders/basic.frag");
+
+    PipelineSpecification pipelineSpecification;
+    pipelineSpecification.DebugName = "Basic Mesh Pipeline";
+    pipelineSpecification.Shader = shader;
+    pipelineSpecification.Topology = PrimitiveTopology::Triangles;
+    pipelineSpecification.Cull = CullMode::Back;
+    pipelineSpecification.FrontFaceMode = FrontFace::CounterClockwise;
+    pipelineSpecification.DepthTest = true;
+    pipelineSpecification.DepthWrite = true;
+    pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
+    pipelineSpecification.Blend = false;
+
+    auto pipeline = Pipeline::Create(pipelineSpecification);
+
+    auto material = CreateRef<Material>(pipeline);
+
+    material->SetTexture("u_Texture", texture, 0 );
+
+    material->SetUniform("u_Color", math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+#endif
 }
 
 void SceneGame::OnDestroy()
@@ -127,6 +162,25 @@ void SceneGame::OnRender()
     {
         layer->OnRender();
     }
+
+#if 0
+    RenderCommand::SetClearColor(
+        math::Vec4{ 0.1f, 0.1f, 0.1f, 1.0f }
+    );
+
+    RenderCommand::Clear();
+
+    for (const auto& [id, meshRenderer] : scene.GetMeshRenderers())
+    {
+        if (meshRenderer.IsValid() == false) {
+            continue;
+        }
+
+        const auto& transform =scene.GetComponent<TransformComponent>(id);
+
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
+    }
+#endif
 }
 
 void SceneGame::OnEvent(Event& e)

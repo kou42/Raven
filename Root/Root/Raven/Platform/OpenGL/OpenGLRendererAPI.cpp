@@ -1,6 +1,7 @@
 #include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Texture/Texture.h"
+#include "Raven/Renderer/Pipeline/Pipeline.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -11,84 +12,14 @@ namespace Raven
 
 void OpenGLRendererAPI::Init()
 {
+    glEnable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-#if 0
-
-    float vertices[] =
-    {
-        -0.5f, -0.5f, 0.0f,
-         0.5f, -0.5f, 0.0f,
-         0.0f,  0.5f, 0.0f
-    };
-
-    unsigned int vao;
-    unsigned int vbo;
-
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(vertices),
-        vertices,
-        GL_STATIC_DRAW
-    );
-
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        3 * sizeof(float),
-        nullptr
-    );
-
-    const char* vertexShaderSource = R"(
-#version 330 core
-
-layout(location = 0) in vec3 a_Position;
-
-void main()
-{
-    gl_Position = vec4(a_Position, 1.0);
 }
-)";
 
-    const char* fragmentShaderSource = R"(
-#version 330 core
-
-out vec4 FragColor;
-
-void main()
+void OpenGLRendererAPI::SetViewport(uint32_t x, uint32_t y,uint32_t width, uint32_t height)
 {
-    FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-}
-)";
-
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
-    glCompileShader(vertexShader);
-
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr);
-    glCompileShader(fragmentShader);
-
-    unsigned int shaderProgram = glCreateProgram();
-
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-#endif
+    glViewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width), static_cast<GLsizei>(height));
 }
 
 void OpenGLRendererAPI::SetClearColor(float r, float g, float b, float a)
@@ -101,61 +32,200 @@ void OpenGLRendererAPI::Clear()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void OpenGLRendererAPI::DrawIndexed(const Ref<VertexArray>& vertexArray)
+void OpenGLRendererAPI::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
 {
+#if 1
+    if (!vertexArray || !vertexArray->GetIndexBuffer())
+    {
+        return;
+    }
+
+    GLenum primitive = GL_TRIANGLES;
+
+    if (m_CurrentPipeline)
+    {
+		const PrimitiveTopology topology = m_CurrentPipeline->GetSpecification().Topology;
+        switch (topology)
+        {
+        case PrimitiveTopology::Triangles:
+            primitive = GL_TRIANGLES;
+            break;
+
+        case PrimitiveTopology::Lines:
+            primitive = GL_LINES;
+            break;
+
+        case PrimitiveTopology::Points:
+            primitive = GL_POINTS;
+            break;
+
+        default:
+            return;
+        }
+    }
+
     vertexArray->Bind();
-    glDrawElements(
-        GL_TRIANGLES,
-        vertexArray->GetIndexBuffer()->GetCount(),
-        GL_UNSIGNED_INT,
-        nullptr
-    );
+
+	uint32_t count = vertexArray->GetIndexBuffer()->GetCount();
+    glDrawElements(primitive, static_cast<GLsizei>(count), GL_UNSIGNED_INT, nullptr);
+
+#else
+    if (!vertexArray) {
+        return;
+    }
+
+    if (m_CurrentVertexArray != vertexArray) {
+        vertexArray->Bind();
+        m_CurrentVertexArray = vertexArray;
+    }
+
+    const auto& indexBuffer = vertexArray->GetIndexBuffer();
+
+    if (!indexBuffer)
+        return;
+
+    const uint32_t count = (indexCount != 0) ? indexCount : indexBuffer->GetCount();
+
+    if (count == 0) {
+        return;
+    }
+
+    //vertexArray->Bind();
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count), GL_UNSIGNED_INT, nullptr );
+
+#endif
+ 
 }
 
-void OpenGLRendererAPI::BindShader(const std::shared_ptr<Shader>& shader)
+void OpenGLRendererAPI::BindShader(const Ref<Shader>& shader)
 {
-    if (!shader) return;
-    if (m_CurrentShader == shader) return;
+    if (!shader) {
+        return;
+    }
+    if (m_CurrentShader == shader) {
+        return;
+    }
 
     m_CurrentShader = shader;
     m_CurrentShader->Bind();
 }
 
-void OpenGLRendererAPI::BindTexture(const std::string& name, const std::shared_ptr<Texture>& texture, uint32_t slot)
+void OpenGLRendererAPI::BindPipeline(const Ref<Pipeline>& pipeline)
 {
-    if (!texture || !m_CurrentShader) return;
+    if (!pipeline) {
+        return;
+    }
+
+    if (m_CurrentPipeline == pipeline) {
+        return;
+    }
+
+    pipeline->Bind();
+    m_CurrentPipeline = pipeline;
+
+}
+
+void OpenGLRendererAPI::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
+{
+#if 1
+    if (!texture || !m_CurrentPipeline) {
+        return;
+    }
+
+    texture->Bind(slot);
+
+    const Ref<Shader> shader = m_CurrentPipeline->GetShader();
+
+    if (shader) {
+        shader->SetInt(name, static_cast<int>(slot));
+    }
+#else
+    if (!texture || !m_CurrentShader) {
+        return;
+    }
 
     texture->Bind(slot);
     m_CurrentShader->SetInt(name, static_cast<int>(slot));
+#endif
 }
 
 void OpenGLRendererAPI::UploadUniform(const std::string& name, const UniformValue& value)
 {
-    if (!m_CurrentShader) return;
+
+#if 1
+
+    if (!m_CurrentPipeline) {
+        return;
+    }
+
+    const Ref<Shader> shader = m_CurrentPipeline->GetShader();
+
+    if (!shader) {
+        return;
+    }
+
+    std::visit([&](const auto& uniform)
+    {
+        using T = std::decay_t<decltype(uniform)>;
+
+        if constexpr (std::is_same_v<T, int>)
+        {
+            shader->SetInt(name, uniform);
+        }
+        else if constexpr (std::is_same_v<T, float>)
+        {
+            shader->SetFloat(name, uniform);
+        }
+        else if constexpr (
+            std::is_same_v<T, math::Vec2>)
+        {
+            shader->SetVec2(name, uniform);
+        }
+        else if constexpr (
+            std::is_same_v<T, math::Vec3>)
+        {
+            shader->SetVec3(name, uniform);
+        }
+        else if constexpr (
+            std::is_same_v<T, math::Vec4>)
+        {
+            shader->SetVec4(name, uniform);
+        }
+        else if constexpr (
+            std::is_same_v<T, math::Mat4>)
+        {
+            shader->SetMat4(name, uniform);
+        }
+    }, value);
+#else
+
+    if (!m_CurrentShader) {
+        return;
+    }
 
     std::visit([&](const auto& v)
     {
         using T = std::decay_t<decltype(v)>;
-
-        if constexpr (std::is_same_v<T, int>)
+        if constexpr (std::is_same_v<T, int>) {
             m_CurrentShader->SetInt(name, v);
-
-        else if constexpr (std::is_same_v<T, float>)
+        }
+        else if constexpr (std::is_same_v<T, float>) {
             m_CurrentShader->SetFloat(name, v);
-
-        else if constexpr (std::is_same_v<T, math::Vec2>)
+        }
+        else if constexpr (std::is_same_v<T, math::Vec2>) {
             m_CurrentShader->SetVec2(name, v);
-
-        else if constexpr (std::is_same_v<T, math::Vec3>)
+        }
+        else if constexpr (std::is_same_v<T, math::Vec3>) {
             m_CurrentShader->SetVec3(name, v);
-
-        else if constexpr (std::is_same_v<T, math::Vec4>)
+        }
+        else if constexpr (std::is_same_v<T, math::Vec4>) {
             m_CurrentShader->SetVec4(name, v);
-
-        else if constexpr (std::is_same_v<T, math::Mat4>)
+        }
+        else if constexpr (std::is_same_v<T, math::Mat4>) {
             m_CurrentShader->SetMat4(name, v);
-
+        }
     }, value);
+#endif
 }
 
 }

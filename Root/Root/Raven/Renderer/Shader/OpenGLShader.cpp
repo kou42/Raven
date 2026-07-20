@@ -7,7 +7,6 @@
 namespace Raven
 {
 
-// �R�����g�A�E�g���O����
 std::string RemoveComments(const std::string& src)
 {
     std::string result;

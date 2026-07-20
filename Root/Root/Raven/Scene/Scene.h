@@ -24,7 +24,7 @@ public:
     //+---------------------------------------------------------------------
     // 仮想関数
     //+---------------------------------------------------------------------
-    virtual void OnCreate();
+    virtual void OnCreate();             // GLリソース、Entity生成、Texture/Shader読み込み
     virtual void OnDestroy();
     virtual void OnUpdate(float dt);
     virtual void OnRender();

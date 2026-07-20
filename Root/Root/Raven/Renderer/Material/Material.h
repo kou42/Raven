@@ -13,6 +13,7 @@
 
 namespace Raven {
 
+class Pipeline;
 class Shader;
 class Texture;
 
@@ -20,53 +21,39 @@ class Material {
 
 public:
 
-#if 0
-    using UniformValue = std::variant<
-        int,
-        float,
-        math::Vec2,
-        math::Vec3,
-        math::Vec4,
-        math::Mat4
-    >;
-#endif
-
-    explicit Material(std::shared_ptr<Shader> shader)
-        : m_shader(std::move(shader)) {}
-
-    void SetShader(std::shared_ptr<Shader> shader) {
+    explicit Material(Ref<Pipeline> pipeline) {
+        m_pipeline = std::move(pipeline);
+    }
+    explicit Material(Ref<Shader> shader) {
         m_shader = std::move(shader);
     }
 
-    void SetTexture(const std::string& name,
-        //std::shared_ptr<Texture2D> texture,
-        std::shared_ptr<Texture> texture,
-        int slot) {
-        m_textures[name] = TextureBinding{ std::move(texture), slot };
-        m_uniforms[name] = slot;
-    }
+    void SetPipeline(Ref<Pipeline> pipeline);
+    const Ref<Pipeline>& GetPipeline() const;
+
+    void SetTexture(const std::string& name, Ref<Texture> texture, int slot);
+
+    void SetShader(Ref<Shader> shader);
+    Ref<Shader> GetShader() const;
+
+    void Bind() const;
+    void Bind(RendererAPI& api) const;
 
     template<class T>
     void SetUniform(const std::string& name, const T& value) {
         m_uniforms[name] = value;
     }
 
-    void Bind() const;
-    void Bind(RendererAPI& api) const;
-
-    std::shared_ptr<Shader> GetShader() const {
-        return m_shader;
-    }
-
 private:
     struct TextureBinding {
         //std::shared_ptr<Texture2D> texture;
-        std::shared_ptr<Texture> texture;
+        Ref<Texture> texture;
         int slot = 0;
     };
 
 private:
-    std::shared_ptr<Shader> m_shader;
+    Ref<Pipeline> m_pipeline;
+    Ref<Shader> m_shader;
     std::unordered_map<std::string, TextureBinding> m_textures;
     std::unordered_map<std::string, UniformValue> m_uniforms;
 };

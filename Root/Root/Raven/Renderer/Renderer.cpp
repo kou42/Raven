@@ -1,6 +1,12 @@
 #include "Renderer.h"
 
 #include "RenderCommand.h"
+#include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/Buffer/VertexArray.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/Material/Material.h"
+
+#include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 
 namespace Raven
 {
@@ -12,6 +18,7 @@ void Renderer::Init()
     // —á:
     // RenderCommand::EnableDepthTest();
     // RenderCommand::EnableBlend();
+    RenderCommand::SetAPI(std::make_unique<OpenGLRendererAPI>());
     RenderCommand::Init();
 }
 
@@ -27,6 +34,17 @@ void Renderer::EndScene()
     // ¡‚Í‰½‚à‚µ‚È‚¢
 }
 
+void Renderer::Shutdown()
+{
+    // •K—v‚É‚È‚Á‚½’iŠK‚Å
+    // RenderCommand::Shutdown() ‚ğ’Ç‰Á‚µ‚Ä‚à‚æ‚¢
+}
+
+RendererAPI& Renderer::GetAPI()
+{
+    return RenderCommand::GetAPI();
+}
+
 void Renderer::Submit( const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray)
 {
     shader->Bind();
@@ -40,17 +58,22 @@ void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
     RenderCommand::DrawIndexed(vertexArray);
 }
 
-void Renderer::Draw(
-    const std::shared_ptr<Mesh>& mesh,
-    const std::shared_ptr<Material>& material,
-    const math::Mat4& transform
-)
+void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
 {
-    if (!mesh || !material)
+    if (!mesh || !material) {
         return;
+    }
 
-    // material->Set("u_Model", transform);
-    // material->Bind(GetAPI());
+#if 1
+    material->SetUniform("u_Model", transform);
+
+    material->Bind(RenderCommand::GetAPI());
+
+    mesh->Draw();
+#else
+    material->Set("u_Model", transform);
+    material->Bind(GetAPI());
+#endif
 
     mesh->Draw();
 }

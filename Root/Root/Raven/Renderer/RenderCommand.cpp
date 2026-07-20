@@ -4,21 +4,24 @@
 namespace Raven
 {
 
-// ï¿½ï¿½`
-#if 1
 Scope<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
-#else
-Scope<RendererAPI> RenderCommand::s_RendererAPI = CreateScope<OpenGLRendererAPI>();
-#endif
 
-// Renderer::Init()ï¿½ï¿½ï¿½Ä‚Ñoï¿½ï¿½ï¿½ï¿½
+// ƒ_ƒ~[‚ÌRendererAPI‚ğì¬‚µ‚Ä‚¨‚­‚±‚Æ‚ÅARenderCommand‚ÌŒÄ‚Ño‚µ‚ªRendererAPI‚Ì‰Šú‰»‘O‚És‚í‚ê‚Ä‚àƒNƒ‰ƒbƒVƒ…‚µ‚È‚¢‚æ‚¤‚É‚·‚é
+Scope<RendererAPI> s_dummyRendererAPI = CreateScope<OpenGLRendererAPI>();
+
+void RenderCommand::SetAPI(
+    std::unique_ptr<RendererAPI> api
+)
+{
+    s_RendererAPI = std::move(api);
+}
+
 void RenderCommand::Init()
 {
     if (s_RendererAPI) {
         return;
     }
 
-    // ï¿½ï¿½ï¿½ï¿½ï¿½Iï¿½É‚Í‰ï¿½ï¿½Lï¿½Rï¿½[ï¿½hï¿½Éï¿½ï¿½ï¿½ï¿½Ö‚ï¿½ï¿½\ï¿½ï¿½
 #if 1
     switch (RendererAPI::GetAPI())
     {
@@ -37,9 +40,19 @@ void RenderCommand::Init()
     s_RendererAPI->Init();
 }
 
+void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    if (!s_RendererAPI) {
+        assert(s_RendererAPI);
+        return;
+    }
+    s_RendererAPI->SetViewport(x, y, width, height);
+}
+
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
     if (!s_RendererAPI) {
+        assert(s_RendererAPI);
         return;
     }
     s_RendererAPI->SetClearColor(r, g, b, a);
@@ -53,12 +66,23 @@ void RenderCommand::Clear()
     s_RendererAPI->Clear();
 }
 
-void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray)
+void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
 {
     if (!s_RendererAPI) {
+        assert(s_RendererAPI);
         return;
     }
-    s_RendererAPI->DrawIndexed(vertexArray);
+    s_RendererAPI->DrawIndexed(vertexArray, indexCount);
+}
+
+RendererAPI& RenderCommand::GetAPI()
+{
+    if (!s_RendererAPI) {
+        assert(s_RendererAPI);
+        return *s_dummyRendererAPI;
+    }
+
+    return *s_RendererAPI;
 }
 
 }

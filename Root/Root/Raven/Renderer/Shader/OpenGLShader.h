@@ -39,7 +39,6 @@ public:
 
 private:
 
-    // ������ӂ����Ő錾�����ق��������̂�
     std::string ReadFile(const std::string& filepath);
     std::unordered_map<GLuint, std::string> PreProcess(const std::string& source);
     std::unordered_map<GLuint, std::string> PreProcess(const std::string& vertexFilePath, const std::string& fragFilePath);
