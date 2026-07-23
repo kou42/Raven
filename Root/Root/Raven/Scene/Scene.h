@@ -34,10 +34,14 @@ public:
     // メンバ関数
     //+---------------------------------------------------------------------
     void PushLayer(Scope<Layer> layer);
+    void RenderEntities();
 
     Entity CreateEntity(const std::string& name = "Entity");
     void DestroyEntity(Entity entity);
 
+    //+---------------------------------------------------------------------
+    // テンプレート
+    //+---------------------------------------------------------------------
     template <class T, class... Args>
     T& AddComponent(EntityID id, Args&&... args);
 

@@ -80,8 +80,8 @@ GLenum ToOpenGLCullFace(CullMode cullMode)
 
 OpenGLPipeline::OpenGLPipeline(const PipelineSpecification& specification)
 {
-    assert(m_Specification.Shader &&"Pipeline requires a shader");
     m_Specification = specification;
+    assert(m_Specification.Shader && "Pipeline requires a shader");
 }
 
 void OpenGLPipeline::Bind() const

@@ -1,6 +1,7 @@
 #include "SceneGame.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 
@@ -30,8 +31,8 @@ void SceneGame::OnCreate()
         // pos              // color        // uv
         0.5f,  0.5f, 0.0f, 1, 0, 0,      1.0f, 1.0f,
         0.5f, -0.5f, 0.0f, 0, 1, 0,      1.0f, 0.0f,
-        -0.5f, -0.5f, 0.0f, 0, 0, 1,      0.0f, 0.0f,
-        -0.5f,  0.5f, 0.0f, 1, 1, 0,      0.0f, 1.0f
+        -0.5f, -0.5f, 0.0f, 0, 0, 1,     0.0f, 0.0f,
+        -0.5f,  0.5f, 0.0f, 1, 1, 0,     0.0f, 1.0f
     };
 
     uint32_t indices_texture[] =
@@ -39,8 +40,6 @@ void SceneGame::OnCreate()
         0, 1, 2,
         2, 3, 0
     };
-
-    uint32_t count = sizeof(indices) / sizeof(uint32_t);
 
     m_VertexArray = VertexArray::Create();
 
@@ -67,17 +66,48 @@ void SceneGame::OnCreate()
         "Raven/Assets/Images/test/mountain1.png"
     );
 
-#if 0
-    // Entityê∂ê¨
-    m_Player = CreateEntity("Player");
-    m_Camera = CreateEntity("MainCamera");
+    PipelineSpecification pipelineSpecification;
+    pipelineSpecification.DebugName = "SceneGame Quad Pipeline";
+    pipelineSpecification.Shader = m_Shader;
+    pipelineSpecification.Topology = PrimitiveTopology::Triangles;
+    pipelineSpecification.Cull = CullMode::None;
+    pipelineSpecification.FrontFaceMode = FrontFace::CounterClockwise;
+    pipelineSpecification.DepthTest = true;
+    pipelineSpecification.DepthWrite = true;
+    pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
+    pipelineSpecification.Blend = true;
 
-    // Layerê∂ê¨
-    PushLayer(CreateScope<GameLayer>());
+    Ref<Pipeline> pipeline = Pipeline::Create(pipelineSpecification);
+
+    m_Material = CreateRef<Material>(pipeline);
+    m_Mesh = CreateRef<Mesh>(m_VertexArray, static_cast<int32_t>(count_texture));
+
+    m_SpawnedEntities.clear();
+
+    const float xOffsets[] = { -0.6f, 0.0f, 0.6f };
+    for (size_t i = 0; i < std::size(xOffsets); ++i)
+    {
+        Entity entity = CreateEntity("Quad_" + std::to_string(i));
+
+        TransformComponent& transform = entity.GetComponent<TransformComponent>();
+        transform.Position = { xOffsets[i], 0.0f, 0.0f };
+        transform.Scale = { 0.45f, 0.45f, 1.0f };
+
+        entity.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_Mesh, m_Material });
+        m_SpawnedEntities.push_back(entity);
+    }
+
+#if 0
+    // EntityË®≠ÂÆö
+    m_Player = Scnene::CreateEntity("Player");
+    m_Camera = Scnene::CreateEntity("MainCamera");
+
+    // LayerË®≠ÂÆö
+    Scnene::PushLayer(CreateScope<GameLayer>());
     PushLayer(CreateScope<UILayer>());
 #endif
 
-    // É}ÉeÉäÉAÉãê›íËó·
+    // „Éû„ÉÜ„É™„Ç¢„É´Ë®≠ÂÆö
 #if 0
     auto material = std::make_shared<Material>(shader);
 
@@ -85,37 +115,21 @@ void SceneGame::OnCreate()
     material->Set("uColor", math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
     material->Set("uRoughness", 0.5f);
 #endif
-
-    // ÉpÉCÉvÉâÉCÉìê›íËó·
-#if 0
-    auto shader = Shader::Create("assets/shaders/basic.vert", "assets/shaders/basic.frag");
-
-    PipelineSpecification pipelineSpecification;
-    pipelineSpecification.DebugName = "Basic Mesh Pipeline";
-    pipelineSpecification.Shader = shader;
-    pipelineSpecification.Topology = PrimitiveTopology::Triangles;
-    pipelineSpecification.Cull = CullMode::Back;
-    pipelineSpecification.FrontFaceMode = FrontFace::CounterClockwise;
-    pipelineSpecification.DepthTest = true;
-    pipelineSpecification.DepthWrite = true;
-    pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
-    pipelineSpecification.Blend = false;
-
-    auto pipeline = Pipeline::Create(pipelineSpecification);
-
-    auto material = CreateRef<Material>(pipeline);
-
-    material->SetTexture("u_Texture", texture, 0 );
-
-    material->SetUniform("u_Color", math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
-#endif
 }
 
 void SceneGame::OnDestroy()
 {
-    // ñæé¶ìIÇ…îjä¸ÇµÇΩÇ¢Ç‡ÇÃÇ™Ç†ÇÍÇŒÇ±Ç±Ç≈çsÇ§
+    // „Åì„Åì„Åß„ÅØ„ÄÅ„Ç∑„Éº„É≥„ÅÆ„É™„ÇΩ„Éº„Çπ„ÇíËß£Êîæ„Åô„ÇãÂá¶ÁêÜ„ÇíË°å„ÅÑ„Åæ„Åô„ÄÇ‰æã„Åà„Å∞„ÄÅ„Ç∑„Çß„Éº„ÉÄ„Éº„ÇÑ„ÉÜ„ÇØ„Çπ„ÉÅ„É£„ÄÅÈ†ÇÁÇπÈÖçÂàó„Å™„Å©„ÅÆ„É™„ÇΩ„Éº„Çπ„ÇíËß£Êîæ„Åô„ÇãÂøÖË¶Å„Åå„ÅÇ„Çä„Åæ„Åô„ÄÇ„Åæ„Åü„ÄÅ„É¨„Ç§„É§„Éº„ÇÇ„ÇØ„É™„Ç¢„Åó„Å¶„Åä„Åè„Å®ËâØ„ÅÑ„Åß„Åó„Çá„ÅÜ„ÄÇ
     m_layers.clear();
 
+    for (Entity entity : m_SpawnedEntities)
+    {
+        DestroyEntity(entity);
+    }
+    m_SpawnedEntities.clear();
+
+    m_Mesh.reset();
+    m_Material.reset();
     m_VertexArray.reset();
     m_Texture.reset();
     m_Shader.reset();
@@ -124,22 +138,22 @@ void SceneGame::OnDestroy()
 void SceneGame::OnUpdate(float dt)
 {
 #if 0
-    // ì¸óÕ
+    // „Éó„É¨„Ç§„É§„Éº„ÅÆÁßªÂãïÂá¶ÁêÜ
     if (Input::IsKeyPressed(Key::W))
     {
         m_PlayerPosition.y += m_PlayerSpeed * dt;
     }
 
-    // ï®óùçXêV
+    // „Ç´„É°„É©„ÅÆÁßªÂãïÂá¶ÁêÜ
     m_PhysicsWorld.Step(dt);
 
-    // EntityçXêV
+    // Entity„ÅÆÊõ¥Êñ∞Âá¶ÁêÜ
     for (auto& entity : m_Entities)
     {
         entity.OnUpdate(dt);
     }
 
-    // LayerçXêV
+    // „É¨„Ç§„É§„Éº„ÅÆÊõ¥Êñ∞Âá¶ÁêÜ
     for (auto& layer : m_layers)
     {
         layer->OnUpdate(dt);
@@ -153,16 +167,13 @@ void SceneGame::OnRender()
     RenderCommand::Clear();
 
     Renderer::BeginScene();
-
-    Renderer::Submit(m_Shader, m_VertexArray);
-
+    Scene::RenderEntities();
     Renderer::EndScene();
 
     for (auto& layer : m_layers)
     {
         layer->OnRender();
     }
-
 #if 0
     RenderCommand::SetClearColor(
         math::Vec4{ 0.1f, 0.1f, 0.1f, 1.0f }
@@ -196,8 +207,8 @@ void SceneGame::OnEvent(Event& e)
 
     if (e.GetEventType() == EventType::WindowResize)
     {
-        // ÉJÉÅÉâÇÃÉAÉXÉyÉNÉgî‰çXêV
-        // RendererÇÃViewportçXêV
+        auto& resizeEvent = static_cast<WindowResizeEvent&>(e);
+        RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
     }
 }
 

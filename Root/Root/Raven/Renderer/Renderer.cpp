@@ -73,9 +73,9 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
 #else
     material->Set("u_Model", transform);
     material->Bind(GetAPI());
-#endif
-
     mesh->Draw();
+#endif
+    
 }
 
 }

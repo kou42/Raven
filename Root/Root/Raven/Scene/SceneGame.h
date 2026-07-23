@@ -2,6 +2,10 @@
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/Material/Material.h"
+
+#include <vector>
 
 namespace Raven
 {
@@ -19,9 +23,13 @@ private:
 	ShaderLibrary m_ShaderLibrary;
 	Ref<Shader> m_Shader;
 	Ref<VertexArray> m_VertexArray;
+	Ref<Mesh> m_Mesh;
+	Ref<Material> m_Material;
 
 	TextureLibrary m_TextureLibrary;
 	Ref<Texture>     m_Texture;
+
+	std::vector<Entity> m_SpawnedEntities;
 
 };
 

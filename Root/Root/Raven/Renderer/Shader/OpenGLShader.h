@@ -36,6 +36,10 @@ public:
     virtual void SetFloat(const std::string& name, float value) override;
     virtual void SetFloat3(const std::string& name, float x, float y, float z) override;
     virtual void SetFloat4(const std::string& name, float x, float y, float z, float w) override;
+    virtual void SetVec2(const std::string& name, const math::Vec2& vec2) override;
+    virtual void SetVec3(const std::string& name, const math::Vec3& vec3) override;
+    virtual void SetVec4(const std::string& name, const math::Vec4& vec4) override;
+    virtual void SetMat4(const std::string& name, const math::Mat4& mat4) override;
 
 private:
 

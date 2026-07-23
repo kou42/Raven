@@ -57,7 +57,7 @@ struct PipelineSpecification
 
     bool Blend = false;
 
-    // «—ˆ‚ÌƒfƒoƒbƒO‚âƒLƒƒƒbƒVƒ…—p
+    // å°†æ¥ã®ãƒ‡ãƒãƒƒã‚°ã‚„ã‚­ãƒ£ãƒƒã‚·ãƒ¥ç”¨
     const char* DebugName = "Unnamed Pipeline";
 };
 

@@ -1,5 +1,6 @@
 #include "Raven/Scene/Scene.h"
 #include "Raven/Core/Event.h"
+#include "Raven/Renderer/Renderer.h"
 
 namespace Raven
 {
@@ -42,6 +43,18 @@ void Scene::OnRender()
 {
     for (auto& layer : m_layers) {
         layer->OnRender();
+    }
+}
+
+void Scene::RenderEntities()
+{
+    for (const auto& [id, meshRenderer] : m_MeshRenderers)
+    {
+        if (!meshRenderer.IsValid())
+            continue;
+
+        const auto& transform = GetComponent<TransformComponent>(id);
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
     }
 }
 

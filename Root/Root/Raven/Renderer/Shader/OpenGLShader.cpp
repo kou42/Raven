@@ -402,4 +402,28 @@ void OpenGLShader::SetFloat4(const std::string& name, float x, float y, float z,
     glUniform4f(location, x, y, z, w);
 }
 
+void OpenGLShader::SetVec2(const std::string& name, const math::Vec2& vec2)
+{
+    GLint location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniform2f(location, vec2.x, vec2.y);
+}
+
+void OpenGLShader::SetVec3(const std::string& name, const math::Vec3& vec3)
+{
+    GLint location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniform3f(location, vec3.x, vec3.y, vec3.z);
+}
+
+void OpenGLShader::SetVec4(const std::string& name, const math::Vec4& vec4)
+{
+    GLint location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniform4f(location, vec4.x, vec4.y, vec4.z, vec4.w);
+}
+
+void OpenGLShader::SetMat4(const std::string& name, const math::Mat4& mat4)
+{
+    GLint location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniformMatrix4fv(location, 1, GL_TRUE, &mat4.m[0][0]);
+}
+
 }

@@ -6,7 +6,7 @@ namespace Raven
 
 Scope<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
 
-// �_�~�[��RendererAPI���쐬���Ă������ƂŁARenderCommand�̌Ăяo����RendererAPI�̏������O�ɍs���Ă��N���b�V�����Ȃ��悤�ɂ���
+// ダミーのRendererAPIを作成しておくことで、RenderCommandの呼び出しがRendererAPIの初期化前に行われてもクラッシュしないようにする
 Scope<RendererAPI> s_dummyRendererAPI = CreateScope<OpenGLRendererAPI>();
 
 void RenderCommand::SetAPI(
