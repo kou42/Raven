@@ -4,20 +4,24 @@
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
+#include "Raven/Math/MathMatrix.h"
+
+#include <cmath>
+#include <vector>
 
 namespace Raven
 {
 
 void SceneGame::OnCreate()
 {
-
+    // 広大な床パネル（XZ平面、Y=0）
     float vertices[] =
     {
-        // position           // color
-        -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f,
-         0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,
-         0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f,
-        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f
+        // position              // color              // uv
+        -0.5f,  0.0f, -0.5f,    0.4f, 0.7f, 0.4f,    0.0f, 0.0f,
+         0.5f,  0.0f, -0.5f,    0.3f, 0.6f, 0.3f,    1.0f, 0.0f,
+         0.5f,  0.0f,  0.5f,    0.4f, 0.7f, 0.4f,    1.0f, 1.0f,
+        -0.5f,  0.0f,  0.5f,    0.3f, 0.6f, 0.3f,    0.0f, 1.0f,
     };
 
     uint32_t indices[] =
@@ -26,34 +30,19 @@ void SceneGame::OnCreate()
         2, 3, 0
     };
 
-    float vertices_texture[] =
-    {
-        // pos              // color        // uv
-        0.5f,  0.5f, 0.0f, 1, 0, 0,      1.0f, 1.0f,
-        0.5f, -0.5f, 0.0f, 0, 1, 0,      1.0f, 0.0f,
-        -0.5f, -0.5f, 0.0f, 0, 0, 1,     0.0f, 0.0f,
-        -0.5f,  0.5f, 0.0f, 1, 1, 0,     0.0f, 1.0f
-    };
-
-    uint32_t indices_texture[] =
-    {
-        0, 1, 2,
-        2, 3, 0
-    };
-
     m_VertexArray = VertexArray::Create();
 
-    uint32_t count_texture = sizeof(indices_texture) / sizeof(uint32_t);
-    auto vertexBuffer_texure = VertexBuffer::Create(vertices_texture, sizeof(vertices_texture));
-    vertexBuffer_texure->SetLayout({
+    uint32_t indexCount = sizeof(indices) / sizeof(uint32_t);
+    auto vertexBuffer = VertexBuffer::Create(vertices, sizeof(vertices));
+    vertexBuffer->SetLayout({
         { ShaderDataType::Float3, "a_Position" },
         { ShaderDataType::Float3, "a_Color" },
         { ShaderDataType::Float2, "a_Texcord" }
     });
 
-    auto indexBuffer_texture = IndexBuffer::Create(indices_texture, count_texture);
-    m_VertexArray->AddVertexBuffer(vertexBuffer_texure);
-    m_VertexArray->SetIndexBuffer(indexBuffer_texture);
+    auto indexBuffer = IndexBuffer::Create(indices, indexCount);
+    m_VertexArray->AddVertexBuffer(vertexBuffer);
+    m_VertexArray->SetIndexBuffer(indexBuffer);
 
     m_Shader = m_ShaderLibrary.Load(
         "Test",
@@ -67,7 +56,7 @@ void SceneGame::OnCreate()
     );
 
     PipelineSpecification pipelineSpecification;
-    pipelineSpecification.DebugName = "SceneGame Quad Pipeline";
+    pipelineSpecification.DebugName = "SceneGame Floor Pipeline";
     pipelineSpecification.Shader = m_Shader;
     pipelineSpecification.Topology = PrimitiveTopology::Triangles;
     pipelineSpecification.Cull = CullMode::None;
@@ -80,41 +69,126 @@ void SceneGame::OnCreate()
     Ref<Pipeline> pipeline = Pipeline::Create(pipelineSpecification);
 
     m_Material = CreateRef<Material>(pipeline);
-    m_Mesh = CreateRef<Mesh>(m_VertexArray, static_cast<int32_t>(count_texture));
+    m_Mesh = CreateRef<Mesh>(m_VertexArray, static_cast<int32_t>(indexCount));
+
+    // カメラ行列を設定
+    // eye = (0, 20, 30) : カメラの位置。地面より上（Y = 20）で、少し後ろ（Z = 30）に置いています。
+    // target = (0, 0, 0): カメラが見る先。原点を見下ろす構図です。
+    // up = (0, 1, 0)    : カメラの「上方向」。ワールドのY軸を上として使う指定です。
+    math::Vec3 eye    = { 0.0f, 20.0f, 30.0f };
+    math::Vec3 target = { 0.0f,  0.0f,  0.0f };
+    math::Vec3 up     = { 0.0f,  1.0f,  0.0f };
+
+    //ワールド座標の頂点を「カメラから見た座標系」に変換する行列です。
+    //要するに「世界を動かして、カメラが原点・前方固定に見える状態」にします。
+    m_View       = math::Mat4::LookAt(eye, target, up);
+
+    //fov = 0.7854 rad
+    //: 視野角。約45度。値を大きくすると広角で迫力、ただし歪みが増えます。
+    //aspect = 1280 / 720 ≒ 1.777...
+    //: 横縦比（16 : 9）。ここが画面比とズレると、見た目が横に伸びたり縦に潰れたりします。
+    //near = 0.1
+    //: 手前のクリップ面。これより近いものは描画しません。
+    //far = 1000.0
+    //: 奥のクリップ面。これより遠いものは描画しません。
+    //透視投影の本質は「遠いほど小さく見える」変換です。
+	float fov = 0.7854f; // 45度 (π/4 rad)
+	float aspect = 1280.0f / 720.0f; // 横縦比（16:9）
+	float near = 0.1f; // 手前のクリップ面
+	float far = 1000.0f; // 奥のクリップ面
+    m_Projection = math::Mat4::Perspective(fov, aspect, near, far);
+
+    // モデル座標 → ワールド座標（Model）
+    // ワールド座標 → カメラ座標（View）
+    // カメラ座標 → クリップ座標（Projection）
+    // つまり最終的に
+    //+--------------------------------------------------------------------
+	// clip = Projection * View * Model * vertex_position
+    //+--------------------------------------------------------------------
+
+    m_Material->SetUniform("u_View",       m_View);
+    m_Material->SetUniform("u_Projection", m_Projection);
 
     m_SpawnedEntities.clear();
 
-    const float xOffsets[] = { -0.6f, 0.0f, 0.6f };
-    for (size_t i = 0; i < std::size(xOffsets); ++i)
+    // 原点に広大なパネルを配置（100x100ユニット）
+    Entity floor = CreateEntity("Floor");
+    TransformComponent& transform = floor.GetComponent<TransformComponent>();
+    transform.Position = { 0.0f, 0.0f, 0.0f };
+    transform.Scale    = { 100.0f, 1.0f, 100.0f };
+    floor.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_Mesh, m_Material });
+    m_SpawnedEntities.push_back(floor);
+
+    // ---- 球体メッシュの生成（UV球体, radius=0.5） ----
     {
-        Entity entity = CreateEntity("Quad_" + std::to_string(i));
+        const int   stacks = 24;
+        const int   slices = 48;
+        const float radius = 0.5f;
+        const float PI     = 3.14159265358979f;
 
-        TransformComponent& transform = entity.GetComponent<TransformComponent>();
-        transform.Position = { xOffsets[i], 0.0f, 0.0f };
-        transform.Scale = { 0.45f, 0.45f, 1.0f };
+        std::vector<float>    sv;
+        std::vector<uint32_t> si;
 
-        entity.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_Mesh, m_Material });
-        m_SpawnedEntities.push_back(entity);
+        for (int i = 0; i <= stacks; ++i)
+        {
+            float phi = PI / 2.0f - i * PI / stacks;
+            float y   = radius * sinf(phi);
+            float r   = radius * cosf(phi);
+            float vt  = static_cast<float>(i) / stacks;
+
+            for (int j = 0; j <= slices; ++j)
+            {
+                float theta = j * 2.0f * PI / slices;
+                float x     = r * cosf(theta);
+                float z     = r * sinf(theta);
+                float u     = static_cast<float>(j) / slices;
+
+                // position
+                sv.push_back(x);
+                sv.push_back(y);
+                sv.push_back(z);
+                // color (青みがかった白)
+                sv.push_back(0.7f + 0.3f * vt);
+                sv.push_back(0.8f);
+                sv.push_back(0.9f);
+                // uv
+                sv.push_back(u);
+                sv.push_back(vt);
+            }
+        }
+
+        for (int i = 0; i < stacks; ++i)
+        {
+            for (int j = 0; j < slices; ++j)
+            {
+                uint32_t a = static_cast<uint32_t>(i * (slices + 1) + j);
+                uint32_t b = a + static_cast<uint32_t>(slices + 1);
+                si.push_back(a);     si.push_back(b);     si.push_back(a + 1);
+                si.push_back(b);     si.push_back(b + 1); si.push_back(a + 1);
+            }
+        }
+
+        m_SphereVertexArray = VertexArray::Create();
+        auto svb = VertexBuffer::Create(sv.data(), static_cast<uint32_t>(sv.size() * sizeof(float)));
+        svb->SetLayout({
+            { ShaderDataType::Float3, "a_Position" },
+            { ShaderDataType::Float3, "a_Color"    },
+            { ShaderDataType::Float2, "a_Texcord"  }
+        });
+        auto sib = IndexBuffer::Create(si.data(), static_cast<uint32_t>(si.size()));
+        m_SphereVertexArray->AddVertexBuffer(svb);
+        m_SphereVertexArray->SetIndexBuffer(sib);
+        m_SphereMesh = CreateRef<Mesh>(m_SphereVertexArray, static_cast<int32_t>(si.size()));
     }
 
-#if 0
-    // Entity設定
-    m_Player = Scnene::CreateEntity("Player");
-    m_Camera = Scnene::CreateEntity("MainCamera");
+    // 原点に球体を配置（床の上に乗るよう y=0.5 に配置）
+    Entity sphere = CreateEntity("Sphere");
+    TransformComponent& st = sphere.GetComponent<TransformComponent>();
+    st.Position = { 0.0f, 0.5f, 0.0f };  // radius 分上にずらして床面と交差させない
+    st.Scale    = { 1.0f, 1.0f, 1.0f };
+    sphere.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_SphereMesh, m_Material });
+    m_SpawnedEntities.push_back(sphere);
 
-    // Layer設定
-    Scnene::PushLayer(CreateScope<GameLayer>());
-    PushLayer(CreateScope<UILayer>());
-#endif
-
-    // マテリアル設定
-#if 0
-    auto material = std::make_shared<Material>(shader);
-
-    material->SetTexture("uTexture", texture, 0);
-    material->Set("uColor", math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-    material->Set("uRoughness", 0.5f);
-#endif
 }
 
 void SceneGame::OnDestroy()
@@ -133,6 +207,8 @@ void SceneGame::OnDestroy()
     m_VertexArray.reset();
     m_Texture.reset();
     m_Shader.reset();
+    m_SphereMesh.reset();
+    m_SphereVertexArray.reset();
 }
 
 void SceneGame::OnUpdate(float dt)
@@ -165,6 +241,10 @@ void SceneGame::OnRender()
 {
     RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
     RenderCommand::Clear();
+
+    // カメラ行列をマテリアルに毎フレーム反映
+    m_Material->SetUniform("u_View",       m_View);
+    m_Material->SetUniform("u_Projection", m_Projection);
 
     Renderer::BeginScene();
     Scene::RenderEntities();

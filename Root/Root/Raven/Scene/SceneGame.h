@@ -4,6 +4,7 @@
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
+#include "Raven/Math/MathMatrix.h"
 
 #include <vector>
 
@@ -26,8 +27,14 @@ private:
 	Ref<Mesh> m_Mesh;
 	Ref<Material> m_Material;
 
+	Ref<VertexArray> m_SphereVertexArray;
+	Ref<Mesh>        m_SphereMesh;
+
 	TextureLibrary m_TextureLibrary;
 	Ref<Texture>     m_Texture;
+
+	math::Mat4 m_View;
+	math::Mat4 m_Projection;
 
 	std::vector<Entity> m_SpawnedEntities;
 
