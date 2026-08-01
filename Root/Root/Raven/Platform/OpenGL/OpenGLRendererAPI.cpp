@@ -116,10 +116,6 @@ void OpenGLRendererAPI::BindPipeline(const Ref<Pipeline>& pipeline)
         return;
     }
 
-    if (m_CurrentPipeline == pipeline) {
-        return;
-    }
-
     pipeline->Bind();
     m_CurrentPipeline = pipeline;
 

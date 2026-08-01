@@ -1,4 +1,4 @@
-#include "Application.h"
+ï»¿#include "Application.h"
 #include "../Renderer/Renderer.h"
 //#include "../Core/Event.h"
 #include <glad/glad.h>
@@ -32,7 +32,7 @@ void Application::PushLayer(Layer* layer)
 void Application::PushLayer(Scope<Layer> layer)
 {
     layer->OnAttach();
-    // unique_ptr‚È‚Ì‚ÅAŠ—LŒ ‚ğˆÚ“®‚³‚¹‚é•K—v‚ª‚ ‚é
+    // unique_ptrãªã®ã§ã€æ‰€æœ‰æ¨©ã‚’ç§»å‹•ã•ã›ã‚‹å¿…è¦ãŒã‚ã‚‹
     m_Layers.push_back(std::move(layer));
 }
 
@@ -43,7 +43,7 @@ void Application::SetScene(Scope<Scene> scene)
     }
 
     m_scene = std::move(scene);
-    m_scene->OnCreate(); // ‚±‚±‚Å‰Šú‰»
+    m_scene->OnCreate(); // ã“ã“ã§åˆæœŸåŒ–
 }
 
 void Application::Run()
@@ -98,10 +98,10 @@ float vertices[] =
 float vertices[] =
 {
     // position           // color
-    -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f, // 0 ¶‰º
-     0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f, // 1 ‰E‰º
-     0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f, // 2 ‰Eã
-    -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f  // 3 ¶ã
+    -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f, // 0 å·¦ä¸‹
+     0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f, // 1 å³ä¸‹
+     0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f, // 2 å³ä¸Š
+    -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f  // 3 å·¦ä¸Š
 };
 
 uint32_t indices[] =

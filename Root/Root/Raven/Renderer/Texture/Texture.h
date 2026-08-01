@@ -1,9 +1,24 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <unordered_map>
 
 #include "Raven/Core/Base.h"
+
+// Spriteは「画像」ではない
+// →Texture + Transform + Render情報などの組み合わせ
+
+// 要検討
+// Sprite　
+//↓
+//RenderComponent
+//↓
+//Renderer2D
+//↓
+//BatchRenderer
+//↓
+//GPU
+//という設計になることが多いらしいです。
 
 namespace Raven
 {

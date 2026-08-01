@@ -1,4 +1,4 @@
-#include "Renderer.h"
+ï»¿#include "Renderer.h"
 
 #include "RenderCommand.h"
 #include "Raven/Renderer/Shader/Shader.h"
@@ -11,11 +11,11 @@
 namespace Raven
 {
 
-// ŒÄ‚Ño‚µŒ³‚ÍApplication::Application()
+// å‘¼ã³å‡ºã—å…ƒã¯Application::Application()
 void Renderer::Init()
 {
-    // «—ˆ“I‚É‚Í‚±‚±‚Å[“xƒeƒXƒgAƒuƒŒƒ“ƒhAƒJƒŠƒ“ƒO‚È‚Ç‚ğ‰Šú‰»‚·‚é
-    // —á:
+    // å°†æ¥çš„ã«ã¯ã“ã“ã§æ·±åº¦ãƒ†ã‚¹ãƒˆã€ãƒ–ãƒ¬ãƒ³ãƒ‰ã€ã‚«ãƒªãƒ³ã‚°ãªã©ã‚’åˆæœŸåŒ–ã™ã‚‹
+    // ä¾‹:
     // RenderCommand::EnableDepthTest();
     // RenderCommand::EnableBlend();
     RenderCommand::SetAPI(std::make_unique<OpenGLRendererAPI>());
@@ -24,20 +24,20 @@ void Renderer::Init()
 
 void Renderer::BeginScene()
 {
-    // «—ˆ“I‚É‚Í Camera î•ñ‚ğ‚±‚±‚Åó‚¯æ‚é
-    // —á:
+    // å°†æ¥çš„ã«ã¯ Camera æƒ…å ±ã‚’ã“ã“ã§å—ã‘å–ã‚‹
+    // ä¾‹:
     // Renderer::BeginScene(camera);
 }
 
 void Renderer::EndScene()
 {
-    // ¡‚Í‰½‚à‚µ‚È‚¢
+    // ä»Šã¯ä½•ã‚‚ã—ãªã„
 }
 
 void Renderer::Shutdown()
 {
-    // •K—v‚É‚È‚Á‚½’iŠK‚Å
-    // RenderCommand::Shutdown() ‚ğ’Ç‰Á‚µ‚Ä‚à‚æ‚¢
+    // å¿…è¦ã«ãªã£ãŸæ®µéšã§
+    // RenderCommand::Shutdown() ã‚’è¿½åŠ ã—ã¦ã‚‚ã‚ˆã„
 }
 
 RendererAPI& Renderer::GetAPI()

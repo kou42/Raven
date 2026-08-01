@@ -5,6 +5,15 @@
 #include <type_traits>
 #include <utility>
 
+// Entity = ID
+// Component = データ
+// System = 処理
+
+// using EntityID = uint32_t
+// でエンティティを定義し、
+// TransformComponent, MeshRendererComponent, TagComponent などのコンポーネントを定義する。
+// RigitBodyComponent, ColliderComponent, LightComponent CameraCompomentなどのコンポーネントも追加可能。
+
 namespace Raven
 {
 

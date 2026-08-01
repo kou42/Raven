@@ -52,6 +52,9 @@ void OpenGLVertexArray::Unbind() const
 
 void OpenGLVertexArray::AddVertexBuffer(const Ref<VertexBuffer>& vertexBuffer)
 {
+    // 規約:
+    // - VBO(GL_ARRAY_BUFFER) は「属性定義(glVertexAttribPointer)時」に現在の VAO へ取り込まれる。
+    // - 必ず対象 VAO を Bind() してから、頂点属性の有効化とレイアウト設定を行う。
     Bind();
     vertexBuffer->Bind();
 
@@ -80,6 +83,11 @@ void OpenGLVertexArray::AddVertexBuffer(const Ref<VertexBuffer>& vertexBuffer)
 void OpenGLVertexArray::SetIndexBuffer(
     const Ref<IndexBuffer>& indexBuffer)
 {
+    // 規約:
+    // - EBO(GL_ELEMENT_ARRAY_BUFFER) の bind は VAO 状態そのもの。
+    // - EBO の関連付けはこの関数に一本化し、他所(バッファ生成時など)で
+    //   GL_ELEMENT_ARRAY_BUFFER を bind しない。
+    //   (他の VAO の EBO を意図せず上書きしないため)
     Bind();
     indexBuffer->Bind();
 

@@ -5,12 +5,114 @@
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Math/MathUtility.h"
 
+#include <algorithm>
 #include <cmath>
+#include <random>
 #include <vector>
 
 namespace Raven
 {
+
+namespace
+{
+float RandomRange(float minValue, float maxValue)
+{
+    static std::mt19937 generator(std::random_device{}());
+    std::uniform_real_distribution<float> distribution(minValue, maxValue);
+    return distribution(generator);
+}
+}
+
+int SceneGame::ComputeOptimizedSpawnCount() const
+{
+    const float side = 2.0f * m_SpawnRangeXZ;
+    const float spawnArea = side * side;
+    int count = static_cast<int>(spawnArea * m_TargetSphereDensity);
+
+    if (count < m_MinSphereCount) {
+        count = m_MinSphereCount;
+    }
+    if (count > m_MaxSphereCount) {
+        count = m_MaxSphereCount;
+    }
+    return count;
+}
+
+void SceneGame::SpawnSphereBatch(int count)
+{
+    if (!m_SphereMesh || !m_Material || count <= 0) {
+        return;
+    }
+
+    m_SphereBodies.reserve(m_SphereBodies.size() + static_cast<size_t>(count));
+    m_SpawnedEntities.reserve(m_SpawnedEntities.size() + static_cast<size_t>(count));
+    m_SphereBodyIndexByEntity.reserve(m_SphereBodyIndexByEntity.size() + static_cast<size_t>(count));
+
+    for (int i = 0; i < count; ++i)
+    {
+        Entity sphere = CreateEntity("Sphere");
+
+        const float scale = RandomRange(m_SphereScaleMin, m_SphereScaleMax);
+        const math::Vec3 tint = {
+            RandomRange(0.45f, 1.0f),
+            RandomRange(0.45f, 1.0f),
+            RandomRange(0.45f, 1.0f)
+        };
+
+        auto& transform = sphere.GetComponent<TransformComponent>();
+        transform.Position = {
+            RandomRange(-m_SpawnRangeXZ, m_SpawnRangeXZ),
+            RandomRange(m_SpawnHeightMin, m_SpawnHeightMax),
+            RandomRange(-m_SpawnRangeXZ, m_SpawnRangeXZ)
+        };
+        transform.Scale = { scale, scale, scale };
+
+        sphere.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_SphereMesh, m_Material });
+
+        SphereBody body;
+        body.EntityHandle = sphere;
+        body.Velocity = {
+            RandomRange(m_InitialVelocityXMin, m_InitialVelocityXMax),
+            0.0f,
+            RandomRange(m_InitialVelocityZMin, m_InitialVelocityZMax)
+        };
+        body.Tint = tint;
+        body.Radius = m_SphereRadius * scale;
+
+        const size_t bodyIndex = m_SphereBodies.size();
+        m_SphereBodyIndexByEntity[sphere.GetID()] = bodyIndex;
+
+        m_SphereBodies.push_back(body);
+        m_SpawnedEntities.push_back(sphere);
+    }
+}
+
+void SceneGame::ClearSphereBatch()
+{
+    for (const SphereBody& body : m_SphereBodies)
+    {
+        if (body.EntityHandle) {
+            DestroyEntity(body.EntityHandle);
+        }
+    }
+
+    m_SpawnedEntities.erase(
+        std::remove_if(m_SpawnedEntities.begin(), m_SpawnedEntities.end(),
+            [this](const Entity& entity)
+            {
+                return std::any_of(m_SphereBodies.begin(), m_SphereBodies.end(),
+                    [&entity](const SphereBody& body)
+                    {
+                        return body.EntityHandle == entity;
+                    });
+            }),
+        m_SpawnedEntities.end());
+
+    m_SphereBodies.clear();
+    m_SphereBodyIndexByEntity.clear();
+}
 
 void SceneGame::OnCreate()
 {
@@ -70,12 +172,59 @@ void SceneGame::OnCreate()
 
     m_Material = CreateRef<Material>(pipeline);
     m_Mesh = CreateRef<Mesh>(m_VertexArray, static_cast<int32_t>(indexCount));
+    m_Material->SetUniform("u_Alpha", 1.0f);
+
+    float shadowVertices[] =
+    {
+        // position           // color        // uv
+        -0.5f, 0.0f, -0.5f,   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,
+         0.5f, 0.0f, -0.5f,   0.0f, 0.0f, 0.0f,   1.0f, 0.0f,
+         0.5f, 0.0f,  0.5f,   0.0f, 0.0f, 0.0f,   1.0f, 1.0f,
+        -0.5f, 0.0f,  0.5f,   0.0f, 0.0f, 0.0f,   0.0f, 1.0f,
+    };
+
+    uint32_t shadowIndices[] =
+    {
+        0, 1, 2,
+        2, 3, 0
+    };
+
+    m_ShadowVertexArray = VertexArray::Create();
+    auto shadowVertexBuffer = VertexBuffer::Create(shadowVertices, sizeof(shadowVertices));
+    shadowVertexBuffer->SetLayout({
+        { ShaderDataType::Float3, "a_Position" },
+        { ShaderDataType::Float3, "a_Color" },
+        { ShaderDataType::Float2, "a_Texcord" }
+    });
+    auto shadowIndexBuffer = IndexBuffer::Create(shadowIndices, 6);
+    m_ShadowVertexArray->AddVertexBuffer(shadowVertexBuffer);
+    m_ShadowVertexArray->SetIndexBuffer(shadowIndexBuffer);
+    m_ShadowMesh = CreateRef<Mesh>(m_ShadowVertexArray, 6);
+
+    PipelineSpecification shadowPipelineSpecification;
+    shadowPipelineSpecification.DebugName = "SceneGame Shadow Pipeline";
+    shadowPipelineSpecification.Shader = m_Shader;
+    shadowPipelineSpecification.Topology = PrimitiveTopology::Triangles;
+    shadowPipelineSpecification.Cull = CullMode::None;
+    shadowPipelineSpecification.FrontFaceMode = FrontFace::CounterClockwise;
+    shadowPipelineSpecification.DepthTest = true;
+    shadowPipelineSpecification.DepthWrite = false;
+    shadowPipelineSpecification.DepthCompare = DepthCompareOperator::LessEqual;
+    shadowPipelineSpecification.Blend = true;
+
+    Ref<Pipeline> shadowPipeline = Pipeline::Create(shadowPipelineSpecification);
+    m_ShadowMaterial = CreateRef<Material>(shadowPipeline);
+    m_ShadowMaterial->SetUniform("u_View", m_View);
+    m_ShadowMaterial->SetUniform("u_Projection", m_Projection);
+    m_ShadowMaterial->SetUniform("u_Tint", math::Vec3{ 0.0f, 0.0f, 0.0f });
+    m_ShadowMaterial->SetUniform("u_Alpha", 0.35f);
 
     // カメラ行列を設定
-    // eye = (0, 20, 30) : カメラの位置。地面より上（Y = 20）で、少し後ろ（Z = 30）に置いています。
+    // eye = (0, 40, 80) : カメラの位置。地面より十分上（Y = 40）かつ後方（Z = 80）に置いて、
+    //                     大きな床メッシュがカメラ近傍でクリップされるのを避けます。
     // target = (0, 0, 0): カメラが見る先。原点を見下ろす構図です。
     // up = (0, 1, 0)    : カメラの「上方向」。ワールドのY軸を上として使う指定です。
-    math::Vec3 eye    = { 0.0f, 20.0f, 30.0f };
+    math::Vec3 eye    = { 0.0f, 40.0f, 80.0f };
     math::Vec3 target = { 0.0f,  0.0f,  0.0f };
     math::Vec3 up     = { 0.0f,  1.0f,  0.0f };
 
@@ -110,6 +259,9 @@ void SceneGame::OnCreate()
     m_Material->SetUniform("u_Projection", m_Projection);
 
     m_SpawnedEntities.clear();
+    m_SphereBodies.clear();
+    m_SphereBodyIndexByEntity.clear();
+    m_WasSpacePressed = false;
 
     // 原点に広大なパネルを配置（100x100ユニット）
     Entity floor = CreateEntity("Floor");
@@ -117,6 +269,7 @@ void SceneGame::OnCreate()
     transform.Position = { 0.0f, 0.0f, 0.0f };
     transform.Scale    = { 100.0f, 1.0f, 100.0f };
     floor.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_Mesh, m_Material });
+    m_FloorEntity = floor;
     m_SpawnedEntities.push_back(floor);
 
     // ---- 球体メッシュの生成（UV球体, radius=0.5） ----
@@ -181,13 +334,7 @@ void SceneGame::OnCreate()
         m_SphereMesh = CreateRef<Mesh>(m_SphereVertexArray, static_cast<int32_t>(si.size()));
     }
 
-    // 原点に球体を配置（床の上に乗るよう y=0.5 に配置）
-    Entity sphere = CreateEntity("Sphere");
-    TransformComponent& st = sphere.GetComponent<TransformComponent>();
-    st.Position = { 0.0f, 0.5f, 0.0f };  // radius 分上にずらして床面と交差させない
-    st.Scale    = { 1.0f, 1.0f, 1.0f };
-    sphere.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_SphereMesh, m_Material });
-    m_SpawnedEntities.push_back(sphere);
+    SpawnSphereBatch(ComputeOptimizedSpawnCount());
 
 }
 
@@ -204,37 +351,85 @@ void SceneGame::OnDestroy()
 
     m_Mesh.reset();
     m_Material.reset();
+    m_ShadowMesh.reset();
+    m_ShadowMaterial.reset();
     m_VertexArray.reset();
+    m_ShadowVertexArray.reset();
     m_Texture.reset();
     m_Shader.reset();
     m_SphereMesh.reset();
     m_SphereVertexArray.reset();
+    m_SphereBodies.clear();
+    m_SphereBodyIndexByEntity.clear();
 }
 
 void SceneGame::OnUpdate(float dt)
 {
-#if 0
-    // プレイヤーの移動処理
-    if (Input::IsKeyPressed(Key::W))
-    {
-        m_PlayerPosition.y += m_PlayerSpeed * dt;
+    float safeDt = dt;
+    if (safeDt < 0.0f) {
+        safeDt = 0.0f;
+    }
+    else if (safeDt > 0.05f) {
+        safeDt = 0.05f;
     }
 
-    // カメラの移動処理
-    m_PhysicsWorld.Step(dt);
-
-    // Entityの更新処理
-    for (auto& entity : m_Entities)
+    const bool spacePressed = Input::IsKeyPressed(Key::Space);
+    if (spacePressed && !m_WasSpacePressed)
     {
-        entity.OnUpdate(dt);
+        ClearSphereBatch();
+        SpawnSphereBatch(ComputeOptimizedSpawnCount());
+    }
+    m_WasSpacePressed = spacePressed;
+
+    for (SphereBody& body : m_SphereBodies)
+    {
+        if (!body.EntityHandle || !body.EntityHandle.HasComponent<TransformComponent>()) {
+            continue;
+        }
+
+        auto& transform = body.EntityHandle.GetComponent<TransformComponent>();
+
+        // 半陰的オイラー積分: 先に速度を更新してから位置を更新
+        body.Velocity.y += m_Gravity * safeDt;
+        transform.Position += body.Velocity * safeDt;
+
+        const float floorTop = m_FloorY + body.Radius;
+        if (transform.Position.y < floorTop)
+        {
+            transform.Position.y = floorTop;
+
+            if (body.Velocity.y < 0.0f)
+            {
+                body.Velocity.y = -body.Velocity.y * m_BounceDamping;
+                body.Velocity.x *= m_BounceTangentialDamping;
+                body.Velocity.z *= m_BounceTangentialDamping;
+
+                if (std::abs(body.Velocity.y) < m_StopVelocityEpsilon)
+                {
+                    body.Velocity.y = 0.0f;
+                }
+            }
+
+            if (body.Velocity.y == 0.0f)
+            {
+                const float frictionFactor = std::max(0.0f, 1.0f - m_GroundFriction * safeDt);
+                body.Velocity.x *= frictionFactor;
+                body.Velocity.z *= frictionFactor;
+
+                if (std::abs(body.Velocity.x) < m_StopVelocityEpsilon) {
+                    body.Velocity.x = 0.0f;
+                }
+                if (std::abs(body.Velocity.z) < m_StopVelocityEpsilon) {
+                    body.Velocity.z = 0.0f;
+                }
+            }
+        }
     }
 
-    // レイヤーの更新処理
     for (auto& layer : m_layers)
     {
-        layer->OnUpdate(dt);
+        layer->OnUpdate(safeDt);
     }
-#endif
 }
 
 void SceneGame::OnRender()
@@ -242,12 +437,67 @@ void SceneGame::OnRender()
     RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
     RenderCommand::Clear();
 
-    // カメラ行列をマテリアルに毎フレーム反映
-    m_Material->SetUniform("u_View",       m_View);
-    m_Material->SetUniform("u_Projection", m_Projection);
-
     Renderer::BeginScene();
-    Scene::RenderEntities();
+
+    if (m_FloorEntity && m_FloorEntity.HasComponent<MeshRendererComponent>())
+    {
+        const auto& floorRenderer = m_FloorEntity.GetComponent<MeshRendererComponent>();
+        if (floorRenderer.IsValid())
+        {
+            floorRenderer.Material->SetUniform("u_View", m_View);
+            floorRenderer.Material->SetUniform("u_Projection", m_Projection);
+            floorRenderer.Material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
+            floorRenderer.Material->SetUniform("u_Alpha", 1.0f);
+
+            const auto& transform = m_FloorEntity.GetComponent<TransformComponent>();
+            Renderer::Draw(floorRenderer.Mesh, floorRenderer.Material, transform.GetTransform());
+        }
+    }
+
+    for (const Entity& entity : m_SpawnedEntities)
+    {
+        if (!entity || !entity.HasComponent<MeshRendererComponent>() || entity == m_FloorEntity) {
+            continue;
+        }
+
+        const auto& meshRenderer = entity.GetComponent<MeshRendererComponent>();
+        if (!meshRenderer.IsValid()) {
+            continue;
+        }
+
+        const auto& transform = entity.GetComponent<TransformComponent>();
+        const auto& position = transform.Position;
+
+        math::Mat4 shadowTransform = math::Mat4::Identity();
+        shadowTransform = math::Translate(shadowTransform, { position.x, m_FloorY + 0.001f, position.z });
+
+        float bodyScale = transform.Scale.x;
+        if (bodyScale <= 0.0f) {
+            bodyScale = 1.0f;
+        }
+        const float shadowScale = bodyScale * 1.15f;
+        shadowTransform = math::Scale(shadowTransform, { shadowScale, 1.0f, shadowScale });
+
+        meshRenderer.Material->SetUniform("u_View", m_View);
+        meshRenderer.Material->SetUniform("u_Projection", m_Projection);
+
+        math::Vec3 tint = { 1.0f, 1.0f, 1.0f };
+        auto it = m_SphereBodyIndexByEntity.find(entity.GetID());
+        if (it != m_SphereBodyIndexByEntity.end())
+        {
+            const size_t index = it->second;
+            if (index < m_SphereBodies.size()) {
+                tint = m_SphereBodies[index].Tint;
+            }
+        }
+        meshRenderer.Material->SetUniform("u_Tint", tint);
+
+        m_ShadowMaterial->SetUniform("u_View", m_View);
+        m_ShadowMaterial->SetUniform("u_Projection", m_Projection);
+        Renderer::Draw(m_ShadowMesh, m_ShadowMaterial, shadowTransform);
+
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
+    }
     Renderer::EndScene();
 
     for (auto& layer : m_layers)
@@ -289,6 +539,16 @@ void SceneGame::OnEvent(Event& e)
     {
         auto& resizeEvent = static_cast<WindowResizeEvent&>(e);
         RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
+
+        const float width  = static_cast<float>(resizeEvent.GetWidth());
+        const float height = static_cast<float>(resizeEvent.GetHeight());
+        if (height > 0.0f)
+        {
+            const float fov  = 0.7854f;
+            const float nearPlane = 0.1f;
+            const float farPlane  = 1000.0f;
+            m_Projection = math::Mat4::Perspective(fov, width / height, nearPlane, farPlane);
+        }
     }
 }
 

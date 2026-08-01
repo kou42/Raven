@@ -1,4 +1,4 @@
-#include "OpenGLContext.h"
+ï»¿#include "OpenGLContext.h"
 
 #include <iostream>
 
@@ -33,7 +33,7 @@ void OpenGLContext::Init()
 
     if (!status)
     {
-        // ‰Šú‰»¸”s
+        // åˆæœŸåŒ–å¤±æ•—
         std::cout << "Failed to initialize GLAD\n";
         return;
     }

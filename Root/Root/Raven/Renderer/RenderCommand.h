@@ -1,4 +1,7 @@
-#pragma once
+﻿#pragma once
+
+//RenderCommand は「描画APIへの命令窓口」です。
+//Application 側から glClear() などを直接呼ばないための薄いラッパーです。
 
 #include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Core/Base.h"

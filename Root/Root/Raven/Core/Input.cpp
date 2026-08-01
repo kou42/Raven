@@ -35,9 +35,9 @@ float Input::GetMouseY()
 }
 
 #if 0
-// WindowsWindow.cpp‚Ìg_MainWindow‚ªÀ‘Ì
+// WindowsWindow.cpp ã® g_MainWindow ãŒå®Ÿä½“
 struct GLFWwindow;
-//OpenGLContext‚Å‘O•ûéŒ¾‚µ‚Ä‚é‚½‚ßAƒrƒ‹ƒhƒGƒ‰[‚É‚È‚Á‚Ä‚µ‚Ü‚Á‚Ä‚¢‚é
+// OpenGLContext å´ã§ã™ã§ã«å‰æ–¹å®£è¨€ã•ã‚Œã¦ãŠã‚Šã€ã“ã“ã«ç½®ãã¨ãƒ“ãƒ«ãƒ‰ã‚¨ãƒ©ãƒ¼ã®åŸå› ã«ãªã‚‹
 
 extern GLFWwindow* g_MainWindow = nullptr;
 
