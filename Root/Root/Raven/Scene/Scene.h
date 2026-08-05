@@ -181,6 +181,7 @@ private:
 public:
 
     bool IsEntityAlive(EntityIndex index, EntityGeneration generation) const;
+    bool IsEntityAlive(EntityHandle handle) const;
     bool IsEntityAlive(Entity entity) const;
 
     EntityGeneration GetEntityGeneration(EntityIndex index) const;
@@ -573,7 +574,7 @@ T& Entity::AddComponent(Args&&... args)
         throw std::runtime_error("Cannot add a component to an invalid entity.");
     }
 
-    return m_Scene->AddComponent<T>(m_Index, std::forward<Args>(args)...);
+    return m_Scene->AddComponent<T>(m_Handle.m_Index, std::forward<Args>(args)...);
     //return m_Scene->AddComponent<T>(m_ID, std::forward<Args>(args)...);
 }
 
@@ -585,7 +586,7 @@ T& Entity::GetComponent()
         throw std::runtime_error("Cannot get a component from an invalid entity.");
     }
 
-    return m_Scene->GetComponent<T>(m_Index);
+    return m_Scene->GetComponent<T>(m_Handle.m_Index);
     //return m_Scene->GetComponent<T>(m_ID);
 }
 
@@ -597,7 +598,7 @@ const T& Entity::GetComponent() const
         throw std::runtime_error("Cannot get a component from an invalid entity.");
     }
 
-    return m_Scene->GetComponent<T>(m_Index);
+    return m_Scene->GetComponent<T>(m_Handle.m_Index);
     //return m_Scene->GetComponent<T>(m_ID);
 }
 
@@ -608,7 +609,7 @@ bool Entity::HasComponent() const
         return false;
     }
 
-    return m_Scene->HasComponent<T>(m_Index);
+    return m_Scene->HasComponent<T>(m_Handle.m_Index);
     //return m_Scene->HasComponent<T>(m_ID);
 }
 
@@ -619,7 +620,7 @@ bool Entity::RemoveComponent()
         return;
     }
 
-    m_Scene->RemoveComponent<T>(m_Index);
+    m_Scene->RemoveComponent<T>(m_Handle.m_Index);
     //m_Scene->RemoveComponent<T>(m_ID);
 }
 
@@ -956,9 +957,11 @@ auto ComponentView<Components...>::Iterator::operator*() const
 {
     const EntityIndex entityIndex = m_BaseStorage->GetEntityIndex(m_Index);
 
+    const EntityHandle handle{entityIndex, m_Scene->GetEntityGeneration(entityIndex)};
+
     return std::tuple<Entity, Components&...>
         (
-            Entity(entityIndex, m_Scene->GetEntityGeneration(entityIndex), m_Scene),
+            Entity(handle, m_Scene),
             m_Scene->template GetComponent<Components>(entityIndex)...
         );
 }

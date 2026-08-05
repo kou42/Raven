@@ -27,6 +27,11 @@ bool Scene::IsEntityAlive(EntityIndex index, EntityGeneration generation) const
 
 }
 
+bool Scene::IsEntityAlive(EntityHandle handle) const
+{
+	return IsEntityAlive(handle.m_Index, handle.m_Generation);
+}
+
 bool Scene::IsEntityAlive(Entity entity) const
 {
     return IsEntityAlive(entity.GetIndex(),entity.GetGeneration());
@@ -53,7 +58,9 @@ Entity Scene::CreateEntity(const std::string& name)
 
     slot.Alive = true;
 
-    Entity entity(index, slot.Generation, this);
+    const EntityHandle handle{index, slot.Generation};
+
+    Entity entity(handle, this);
 
     AddComponent<TagComponent>(index, TagComponent{ name });
 
@@ -301,6 +308,54 @@ EntityGeneration Scene::GetEntityGeneration(EntityIndex index) const
 }
 
 #if 0
+
+void TestEntityHandle()
+{
+    const EntityHandle first{10, 3};
+
+    const uint64_t packed = first.Value();
+
+    const EntityHandle restored = EntityHandle::FromValue(packed);
+
+    assert(first == restored);
+    assert(first.Index == 10);
+    assert(first.Generation == 3);
+
+    const EntityHandle second{10, 4};
+
+    assert(first != second);
+
+    std::unordered_set<EntityHandle> handles;
+
+    handles.insert(first);
+    handles.insert(second);
+
+    assert(handles.size() == 2);
+    assert(handles.contains(first));
+    assert(handles.contains(second));
+}
+
+void TestEntityrecycle()
+{
+    Entity oldEntity = scene.CreateEntity("Old");
+
+    const EntityHandle oldHandle = oldEntity.GetHandle();
+
+    scene.DestroyEntity(oldEntity);
+
+    assert(!oldEntity);
+
+    Entity newEntity = scene.CreateEntity("New");
+
+    const EntityHandle newHandle = newEntity.GetHandle();
+
+    assert(oldHandle.Index == newHandle.Index);
+
+    assert(oldHandle.Generation != newHandle.Generation);
+
+    assert(oldHandle != newHandle);
+    assert(oldEntity != newEntity);
+}
 
 void TestEntityGeneration()
 {

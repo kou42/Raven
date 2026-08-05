@@ -26,7 +26,7 @@ public:
     virtual std::size_t Size() const = 0;
 
     virtual void CollectEntityIDs(std::vector<EntityIndex>& destination) const = 0;
-    //virtual EntityID GetEntityID(std::size_t index) const = 0;
+    virtual EntityID GetEntityID(std::size_t index) const = 0;
     virtual EntityIndex GetEntityIndex(std::size_t index) const = 0;
 
 };
@@ -293,6 +293,11 @@ public:
         return m_Entities.at(index);
     }
 
+    EntityIndex GetEntityIndex(std::size_t index) const override
+    {
+        return m_Entities.at(index);
+    }
+
     bool Empty() const override
     {
         return m_Components.empty();
@@ -306,6 +311,8 @@ public:
     void CollectEntityIDs(std::vector<EntityIndex>& destination) const override
     {
         destination.reserve(destination.size() + m_Components.size());
+
+        destination.insert(destination.end(), m_Entities.begin(), m_Entities.end());
 
         //for (const auto& [entityID, component] : m_Components)
         //{
