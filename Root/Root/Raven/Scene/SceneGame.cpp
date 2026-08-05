@@ -1,4 +1,4 @@
-#include "SceneGame.h"
+﻿#include "SceneGame.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
@@ -82,7 +82,7 @@ void SceneGame::SpawnSphereBatch(int count)
         body.Radius = m_SphereRadius * scale;
 
         const size_t bodyIndex = m_SphereBodies.size();
-        m_SphereBodyIndexByEntity[sphere.GetID()] = bodyIndex;
+        m_SphereBodyIndexByEntity[sphere.GetIndex()] = bodyIndex;
 
         m_SphereBodies.push_back(body);
         m_SpawnedEntities.push_back(sphere);
@@ -482,7 +482,7 @@ void SceneGame::OnRender()
         meshRenderer.Material->SetUniform("u_Projection", m_Projection);
 
         math::Vec3 tint = { 1.0f, 1.0f, 1.0f };
-        auto it = m_SphereBodyIndexByEntity.find(entity.GetID());
+        auto it = m_SphereBodyIndexByEntity.find(entity.GetIndex());
         if (it != m_SphereBodyIndexByEntity.end())
         {
             const size_t index = it->second;

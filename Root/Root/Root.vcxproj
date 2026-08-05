@@ -144,6 +144,11 @@
     <ClCompile Include="Raven\Math\MathMatrix.cpp" />
     <ClCompile Include="Raven\Math\MathQuatanion.cpp" />
     <ClCompile Include="Raven\Math\MathVector.cpp" />
+    <ClCompile Include="Raven\Physics\Collision\BoxCollision.cpp" />
+    <ClCompile Include="Raven\Physics\Collision\CollisionDetection.cpp" />
+    <ClCompile Include="Raven\Physics\Collision\SphereCollision.cpp" />
+    <ClCompile Include="Raven\Physics\PhysicsWorld.cpp" />
+    <ClCompile Include="Raven\Physics\Solver\ContactSolver.cpp" />
     <ClCompile Include="Raven\Platform\OpenGL\OpenGLContext.cpp" />
     <ClCompile Include="Raven\Platform\OpenGL\OpenGLRendererAPI.cpp" />
     <ClCompile Include="Raven\Platform\Windows\WindowsInput.cpp" />
@@ -185,6 +190,11 @@
     <ClInclude Include="Raven\Math\MathMatrix.h" />
     <ClInclude Include="Raven\Math\MathQuatanion.h" />
     <ClInclude Include="Raven\Math\MathVector.h" />
+    <ClInclude Include="Raven\Physics\Collision\CollisionDetection.h" />
+    <ClInclude Include="Raven\Physics\Contact.h" />
+    <ClInclude Include="Raven\Physics\PhysicsType.h" />
+    <ClInclude Include="Raven\Physics\PhysicsWorld.h" />
+    <ClInclude Include="Raven\Physics\Solver\ContactSolver.h" />
     <ClInclude Include="Raven\Platform\OpenGL\OpenGLContext.h" />
     <ClInclude Include="Raven\Platform\OpenGL\OpenGLRendererAPI.h" />
     <ClInclude Include="Raven\Platform\Windows\WindowsInput.h" />
@@ -210,6 +220,8 @@
     <ClInclude Include="Raven\Renderer\Shader\Shader.h" />
     <ClInclude Include="Raven\Renderer\Texture\Texture.h" />
     <ClInclude Include="Raven\Scene\Components.h" />
+    <ClInclude Include="Raven\Scene\ComponentStorage.h" />
+    <ClInclude Include="Raven\Scene\ComponentView.h" />
     <ClInclude Include="Raven\Scene\Entity.h" />
     <ClInclude Include="Raven\Scene\Scene.h" />
     <ClInclude Include="Raven\Scene\SceneGame.h" />
