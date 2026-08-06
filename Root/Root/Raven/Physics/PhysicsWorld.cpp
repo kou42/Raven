@@ -130,8 +130,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     // ========================================================================
     // Narrow Phase: Sphere-Sphere / Sphere-Plane
     // ========================================================================
-    // Contactは1 Physics Step限りの情報なので、毎回最初に破棄して再生成します。
-    m_Contacts.clear();
+    // Manifoldは1 Physics Step限りの情報なので、毎回最初に破棄して再生成します。
+    m_Manifolds.clear();
 
     // ========================================================================
     // 1. Sphere vs Sphere
@@ -144,7 +144,7 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     //     A-B
     //     B-A
     //
-    // の2つのContactが生成され、Solverが同じ衝突を二重に解決してしまいます。
+    // の2つのManifoldが生成され、Solverが同じ衝突を二重に解決してしまいます。
     // そこでEntity Indexの大小を使い、小さい側をA、大きい側をBとして、
     // 各組み合わせを一度だけ処理します。
     for (auto [sphereEntityA, sphereTransformA, sphereColliderA]
@@ -170,18 +170,18 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
                 continue;
             }
 
-            Contact contact{};
+            ContactManifold manifold{};
 
-            if (GenerateSphereSphereContact(
+            if (GenerateSphereSphereManifold(
                 sphereEntityA,
                 sphereTransformA,
                 sphereColliderA,
                 sphereEntityB,
                 sphereTransformB,
                 sphereColliderB,
-                contact))
+                manifold))
             {
-                m_Contacts.push_back(contact);
+                m_Manifolds.push_back(manifold);
             }
         }
     }
@@ -216,18 +216,18 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
                 continue;
             }
 
-            Contact contact{};
+            ContactManifold manifold{};
 
-            if (GenerateSpherePlaneContact(
+            if (GenerateSpherePlaneManifold(
                 sphereEntity,
                 sphereTransform,
                 sphereCollider,
                 planeEntity,
                 planeTransform,
                 planeCollider,
-                contact))
+                manifold))
             {
-                m_Contacts.push_back(contact);
+                m_Manifolds.push_back(manifold);
             }
         }
     }
@@ -236,14 +236,14 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
 void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
 {
     // ========================================================================
-    // Contact解決
+    // ContactManifold解決
     // ========================================================================
-    // 現段階は各Contactを1回ずつ処理する最小構成です。
-    // Sphereが複数面へ同時接触する場合や箱を積み上げる段階では、同じContact集合を
-    // 複数回反復するSequential Impulse Solverへ発展させます。
-    for (const Contact& contact : m_Contacts)
+    // 現段階では各Manifoldを1回ずつ処理します。Manifold内部では全ContactPointを
+    // 解決します。積み上げを安定させる段階では、全Manifold集合を複数回反復する
+    // Sequential Impulse Solverへ発展させます。
+    for (ContactManifold& manifold : m_Manifolds)
     {
-        SolveContact(scene, contact, dt);
+        SolveContactManifold(scene, manifold, dt);
     }
 }
 
@@ -387,8 +387,8 @@ void PhysicsWorld::Step(Scene& scene, float dt)
     //   1. 外力から速度更新
     //   2. Damping
     //   3. 更新済み速度から位置更新
-    //   4. 移動後のColliderでContact生成
-    //   5. Contactの位置・速度解決
+    //   4. 移動後のColliderでContactManifold生成
+    //   5. ContactManifoldの位置・速度解決
     //   6. Sleep判定
     //   7. 一時Force/Torqueをクリア
     //

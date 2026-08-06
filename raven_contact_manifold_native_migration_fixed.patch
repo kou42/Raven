@@ -1,0 +1,425 @@
+diff --git a/Root/Root/Raven/Physics/PhysicsWorld.h b/Root/Root/Raven/Physics/PhysicsWorld.h
+index 1b08c36..0000000 100644
+--- a/Root/Root/Raven/Physics/PhysicsWorld.h
++++ b/Root/Root/Raven/Physics/PhysicsWorld.h
+@@ -17,8 +17,8 @@ namespace ph // 物理演算のための名前空間
+ // 現在の責務
+ //   1. 重力・外力から速度を更新する
+ //   2. 速度からTransformの位置を更新する
+-//   3. SphereとPlaneのContactを生成する
+-//   4. ContactSolverへ接触解決を委譲する
++//   3. Sphere-Sphere / Sphere-PlaneのContactManifoldを生成する
++//   4. ContactManifold Solverへ接触解決を委譲する
+ //   5. Damping、Sleep、Forceクリアを管理する
+ class PhysicsWorld
+ {
+@@ -43,12 +43,12 @@ public:
+     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
+     void WakeUp(Scene& scene, Entity entity);
+ 
+-    // 直前のPhysics Stepで生成されたContactを読み取ります。
++    // 直前のPhysics Stepで生成されたContactManifoldを読み取ります。
+     // デバッグ描画、接触イベント生成、テストなどで利用できます。
+     // 次のStepが始まると内容は再生成されるため、参照を長期間保持しないでください。
+-    const std::vector<Contact>& GetContacts() const
++    const std::vector<ContactManifold>& GetContactManifolds() const
+     {
+-        return m_Contacts;
++        return m_Manifolds;
+     }
+ 
+ private:
+@@ -68,9 +68,9 @@ private:
+ private:
+     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
+ 
+-    // Narrow Phaseで生成された、そのStep限りの接触情報です。
+-    // 現段階ではSphere-Plane Contactだけが格納されます。
+-    std::vector<Contact> m_Contacts;
++    // Narrow Phaseで生成された、そのStep限りの接触Manifoldです。
++    // 現段階ではSphere-Sphere / Sphere-Planeが各1点Manifoldを生成します。
++    std::vector<ContactManifold> m_Manifolds;
+ };
+ 
+ } // namespace ph
+diff --git a/Root/Root/Raven/Physics/PhysicsWorld.cpp b/Root/Root/Raven/Physics/PhysicsWorld.cpp
+index 0918e34..0000000 100644
+--- a/Root/Root/Raven/Physics/PhysicsWorld.cpp
++++ b/Root/Root/Raven/Physics/PhysicsWorld.cpp
+@@ -111,8 +111,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
+     // ========================================================================
+     // Narrow Phase: Sphere-Sphere / Sphere-Plane
+     // ========================================================================
+-    // Contactは1 Physics Step限りの情報なので、毎回最初に破棄して再生成します。
+-    m_Contacts.clear();
++    // Manifoldは1 Physics Step限りの情報なので、毎回最初に破棄して再生成します。
++    m_Manifolds.clear();
+ 
+     // ========================================================================
+     // 1. Sphere vs Sphere
+@@ -126,8 +126,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
+     //
+     //     A-B
+     //     B-A
+     //
+-    // の2つのContactが生成され、Solverが同じ衝突を二重に解決してしまいます。
++    // の2つのManifoldが生成され、Solverが同じ衝突を二重に解決してしまいます。
+     // そこでEntity Indexの大小を使い、小さい側をA、大きい側をBとして、
+     // 各組み合わせを一度だけ処理します。
+     for (auto [sphereEntityA, sphereTransformA, sphereColliderA]
+@@ -154,9 +154,9 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
+                 continue;
+             }
+ 
+-            Contact contact{};
++            ContactManifold manifold{};
+ 
+-            if (GenerateSphereSphereContact(
++            if (GenerateSphereSphereManifold(
+                 sphereEntityA,
+                 sphereTransformA,
+                 sphereColliderA,
+@@ -164,8 +164,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
+                 sphereTransformB,
+                 sphereColliderB,
+-                contact))
++                manifold))
+             {
+-                m_Contacts.push_back(contact);
++                m_Manifolds.push_back(manifold);
+             }
+         }
+     }
+@@ -204,9 +204,9 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
+                 continue;
+             }
+ 
+-            Contact contact{};
++            ContactManifold manifold{};
+ 
+-            if (GenerateSpherePlaneContact(
++            if (GenerateSpherePlaneManifold(
+                 sphereEntity,
+                 sphereTransform,
+                 sphereCollider,
+@@ -214,8 +214,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
+                 planeTransform,
+                 planeCollider,
+-                contact))
++                manifold))
+             {
+-                m_Contacts.push_back(contact);
++                m_Manifolds.push_back(manifold);
+             }
+         }
+     }
+@@ -226,12 +226,12 @@ void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
+ {
+     // ========================================================================
+-    // Contact解決
++    // ContactManifold解決
+     // ========================================================================
+-    // 現段階は各Contactを1回ずつ処理する最小構成です。
+-    // Sphereが複数面へ同時接触する場合や箱を積み上げる段階では、同じContact集合を
+-    // 複数回反復するSequential Impulse Solverへ発展させます。
+-    for (const Contact& contact : m_Contacts)
++    // 現段階では各Manifoldを1回ずつ処理します。Manifold内部では全ContactPointを
++    // 解決します。積み上げを安定させる段階では、全Manifold集合を複数回反復する
++    // Sequential Impulse Solverへ発展させます。
++    for (ContactManifold& manifold : m_Manifolds)
+     {
+-        SolveContact(scene, contact, dt);
++        SolveContactManifold(scene, manifold, dt);
+     }
+ }
+@@ -373,7 +374,7 @@ void PhysicsWorld::Step(Scene& scene, float dt)
+     //   1. 外力から速度更新
+     //   2. Damping
+     //   3. 更新済み速度から位置更新
+-    //   4. 移動後のColliderでContact生成
+-    //   5. Contactの位置・速度解決
++    //   4. 移動後のColliderでContactManifold生成
++    //   5. ContactManifoldの位置・速度解決
+     //   6. Sleep判定
+     //   7. 一時Force/Torqueをクリア
+diff --git a/Root/Root/Raven/Physics/Solver/ContactSolver.h b/Root/Root/Raven/Physics/Solver/ContactSolver.h
+index ea9edce..0000000 100644
+--- a/Root/Root/Raven/Physics/Solver/ContactSolver.h
++++ b/Root/Root/Raven/Physics/Solver/ContactSolver.h
+@@ -10,63 +10,20 @@ namespace ph
+ {
+ 
+ // ============================================================================
+-// ContactSolver
++// ContactManifold Solver
+ // ============================================================================
+-// Contactに記録された貫通量・法線・Material情報を使って、位置と速度を補正します。
++// Manifoldに記録された法線・Material情報と、各ContactPointの位置・貫通量を使って
++// 位置と速度を補正します。
+ //
+-// この関数は段階移行中の単一接触Solverです。
+-// ContactManifold版Solverからも、各ContactPointを解決するために内部利用します。
+-void SolveContact(Scene& scene, const Contact& contact, float dt);
+-
+-// ============================================================================
+-// SolveContactManifold
+-// ============================================================================
+-// 同じColliderペアに属する複数のContactPointをまとめて解決します。
+-//
+-// 現在の段階では、Manifold内の各点を旧来のContactへ変換し、既存の
+-// SolveContact()へ順番に渡します。これによりSphere系の既存挙動を保ったまま、
+-// Box-Boxで必要になる複数接触点を受け取れるSolver APIへ移行できます。
+-//
+-// 将来のSequential Impulse化では、この関数を次の3段階へ発展させます。
++// 現在はManifold内部の各点を順番に解決する最小構成です。
++// 将来のSequential Impulse化では次の3段階へ発展させます。
+ //   1. Manifold全体のConstraintを事前計算する
+ //   2. 全接触点へWarm Startを適用する
+ //   3. 全Manifoldを複数回反復してImpulseを収束させる
+-inline void SolveContactManifold(
++void SolveContactManifold(
+     Scene& scene,
+-    const ContactManifold& manifold,
+-    float dt)
+-{
+-    // 接触点を持たないManifoldは不正または非接触なので、何も解決しません。
+-    if (manifold.PointCount == 0)
+-    {
+-        return;
+-    }
+-
+-    // PointCountはAddPoint()によって最大数以下に保たれますが、外部から値を直接
+-    // 変更された場合にも配列外参照しないよう、念のため上限を制限します。
+-    const std::size_t pointCount =
+-        manifold.PointCount < ContactManifold::MaxContactPointCount
+-        ? manifold.PointCount
+-        : ContactManifold::MaxContactPointCount;
+-
+-    for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+-    {
+-        const ContactPoint& point = manifold.Points[pointIndex];
+-
+-        Contact contact{};
+-        contact.A = manifold.A;
+-        contact.B = manifold.B;
+-        contact.Point = point.Position;
+-        contact.Normal = manifold.Normal;
+-        contact.Penetration = point.Penetration;
+-        contact.Restitution = manifold.Restitution;
+-        contact.StaticFriction = manifold.StaticFriction;
+-        contact.DynamicFriction = manifold.DynamicFriction;
+-        contact.IsTrigger = manifold.IsTrigger;
+-
+-        SolveContact(scene, contact, dt);
+-    }
+-}
++    ContactManifold& manifold,
++    float dt);
+ 
+ } // namespace ph
+ 
+diff --git a/Root/Root/Raven/Physics/Solver/ContactSolver.cpp b/Root/Root/Raven/Physics/Solver/ContactSolver.cpp
+index 2b6bd36..0000000 100644
+--- a/Root/Root/Raven/Physics/Solver/ContactSolver.cpp
++++ b/Root/Root/Raven/Physics/Solver/ContactSolver.cpp
+@@ -56,24 +56,27 @@ void WakeIfSleeping(RigidBodyComponent* rigidBody)
+ 
+ } // namespace
+ 
+-void SolveContact(Scene& scene, const Contact& contact, float dt)
++void SolveContactManifold(
++    Scene& scene,
++    ContactManifold& manifold,
++    float dt)
+ {
+     // Triggerは接触イベントを発生させるための領域です。
+     // 衝突情報は生成しますが、位置や速度を変更して物体を押し返してはいけません。
+-    if (contact.IsTrigger)
++    if (manifold.IsTrigger || manifold.PointCount == 0)
+     {
+         return;
+     }
+ 
+-    if (!scene.IsEntityAlive(contact.A) || !scene.IsEntityAlive(contact.B))
++    if (!scene.IsEntityAlive(manifold.A) || !scene.IsEntityAlive(manifold.B))
+     {
+         return;
+     }
+ 
+     TransformComponent* transformA =
+-        scene.TryGetComponent<TransformComponent>(contact.A.GetIndex());
++        scene.TryGetComponent<TransformComponent>(manifold.A.GetIndex());
+     TransformComponent* transformB =
+-        scene.TryGetComponent<TransformComponent>(contact.B.GetIndex());
++        scene.TryGetComponent<TransformComponent>(manifold.B.GetIndex());
+ 
+     if (transformA == nullptr || transformB == nullptr)
+     {
+@@ -70,9 +75,9 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     }
+ 
+     RigidBodyComponent* rigidBodyA =
+-        scene.TryGetComponent<RigidBodyComponent>(contact.A.GetIndex());
++        scene.TryGetComponent<RigidBodyComponent>(manifold.A.GetIndex());
+     RigidBodyComponent* rigidBodyB =
+-        scene.TryGetComponent<RigidBodyComponent>(contact.B.GetIndex());
++        scene.TryGetComponent<RigidBodyComponent>(manifold.B.GetIndex());
+ 
+     const float inverseMassA = GetInverseMass(rigidBodyA);
+     const float inverseMassB = GetInverseMass(rigidBodyB);
+@@ -87,23 +92,31 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     // CollisionDetection側で法線を正規化していますが、Solver単体の安全性を
+     // 保つため、ここでも長さを確認します。
+-    const float normalLengthSquared = contact.Normal.LengthSq();
++    const float normalLengthSquared = manifold.Normal.LengthSq();
+     constexpr float NormalEpsilonSquared = 1.0e-12f;
+ 
+     if (normalLengthSquared <= NormalEpsilonSquared)
+     {
+         return;
+     }
+ 
+     const math::Vec3 normal =
+-        contact.Normal / std::sqrt(normalLengthSquared);
++        manifold.Normal / std::sqrt(normalLengthSquared);
+ 
+-    // ========================================================================
+-    // 1. 位置補正
+-    // ========================================================================
++    const std::size_t pointCount =
++        std::min(manifold.PointCount, ContactManifold::MaxContactPointCount);
++
++    // 各接触点を順番に解決します。
++    for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex)
++    {
++        ContactPoint& point = manifold.Points[pointIndex];
++
++        // ====================================================================
++        // 1. 位置補正
++        // ====================================================================
+     // Impulseは速度を変更しますが、既に発生している貫通そのものは解消しません。
+     // そこで、逆質量の割合に応じてAとBを法線の反対方向へ分離します。
+     //
+-    // Contact::NormalはAからBへ向くため、
++    // ContactManifold::NormalはAからBへ向くため、
+     //   Aは -Normal 方向
+     //   Bは +Normal 方向
+     // へ移動させます。
+@@ -108,7 +113,7 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     constexpr float PenetrationSlop = 0.001f;
+     constexpr float CorrectionPercent = 0.8f;
+ 
+-    const float penetration = std::max(contact.Penetration, 0.0f);
++    const float penetration = std::max(point.Penetration, 0.0f);
+     const float correctionMagnitude =
+         std::max(penetration - PenetrationSlop, 0.0f)
+         * CorrectionPercent
+@@ -120,8 +125,8 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     transformB->Position += positionCorrection * inverseMassB;
+ 
+-    // ========================================================================
+-    // 2. 法線方向の反発Impulse
+-    // ========================================================================
++        // ====================================================================
++        // 2. 法線方向の反発Impulse
++        // ====================================================================
+     // 相対速度はBから見たAではなく、Contact法線の規約に合わせて
+     //
+     //     relativeVelocity = velocityB - velocityA
+@@ -140,12 +145,12 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     // 正の値なら既に離れる方向へ動いています。
+     // この状態で反発Impulseを加えると、離れている物体をさらに加速してしまいます。
+     if (velocityAlongNormal > 0.0f)
+     {
+-        return;
++        continue;
+     }
+ 
+     const float restitution =
+-        std::clamp(contact.Restitution, 0.0f, 1.0f);
++        std::clamp(manifold.Restitution, 0.0f, 1.0f);
+ 
+     const float normalImpulseMagnitude =
+         -(1.0f + restitution)
+@@ -154,6 +161,10 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     const math::Vec3 normalImpulse =
+         normal * normalImpulseMagnitude;
+ 
++        // 将来のWarm Startで再利用できるよう、その接触点で解いたImpulseを保持します。
++        // 現段階は単発Solverなので加算ではなく、そのStepの結果を代入します。
++        point.AccumulatedNormalImpulse = normalImpulseMagnitude;
++
+     if (rigidBodyA != nullptr && inverseMassA > 0.0f)
+     {
+         WakeIfSleeping(rigidBodyA);
+@@ -166,9 +178,9 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+         rigidBodyB->LinearVelocity += normalImpulse * inverseMassB;
+     }
+ 
+-    // ========================================================================
+-    // 3. 接線方向の摩擦Impulse
+-    // ========================================================================
++        // ====================================================================
++        // 3. 接線方向の摩擦Impulse
++        // ====================================================================
+     // 法線Impulse適用後の速度で再計算します。
+     velocityA = GetLinearVelocity(rigidBodyA);
+     velocityB = GetLinearVelocity(rigidBodyB);
+@@ -183,7 +195,8 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+ 
+     if (tangentLengthSquared <= TangentEpsilonSquared)
+     {
+-        return;
++        point.AccumulatedTangentImpulse = 0.0f;
++        continue;
+     }
+ 
+     tangent /= std::sqrt(tangentLengthSquared);
+@@ -192,11 +205,12 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+         / inverseMassSum;
+ 
+     const float staticFriction =
+-        std::max(contact.StaticFriction, 0.0f);
++        std::max(manifold.StaticFriction, 0.0f);
+     const float dynamicFriction =
+-        std::max(contact.DynamicFriction, 0.0f);
++        std::max(manifold.DynamicFriction, 0.0f);
+ 
+     math::Vec3 frictionImpulse{};
++    float appliedTangentImpulseMagnitude = 0.0f;
+ 
+     // Coulomb摩擦モデル
+     // 静止摩擦の限界以内なら、接線速度を打ち消すImpulseをそのまま適用します。
+@@ -203,14 +216,17 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+         <= normalImpulseMagnitude * staticFriction)
+     {
+         frictionImpulse = tangent * tangentImpulseMagnitude;
++        appliedTangentImpulseMagnitude = tangentImpulseMagnitude;
+     }
+     else
+     {
+-        frictionImpulse =
+-            tangent
+-            * (-normalImpulseMagnitude * dynamicFriction);
++        appliedTangentImpulseMagnitude =
++            -normalImpulseMagnitude * dynamicFriction;
++        frictionImpulse = tangent * appliedTangentImpulseMagnitude;
+     }
+ 
++        point.AccumulatedTangentImpulse = appliedTangentImpulseMagnitude;
++
+     if (rigidBodyA != nullptr && inverseMassA > 0.0f)
+     {
+         rigidBodyA->LinearVelocity -= frictionImpulse * inverseMassA;
+@@ -220,10 +237,11 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
+     {
+         rigidBodyB->LinearVelocity += frictionImpulse * inverseMassB;
+     }
++    }
+ 
+     // dtは将来Baumgarte Stabilizationや反復Solverで使用します。
+     // 現在の最小Solverでは位置補正を直接行うため未使用です。
+     static_cast<void>(dt);
+ }
+ 
+ } // namespace ph

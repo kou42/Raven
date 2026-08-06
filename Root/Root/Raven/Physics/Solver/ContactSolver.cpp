@@ -59,24 +59,27 @@ void WakeIfSleeping(RigidBodyComponent* rigidBody)
 
 } // namespace
 
-void SolveContact(Scene& scene, const Contact& contact, float dt)
+void SolveContactManifold(
+    Scene& scene,
+    ContactManifold& manifold,
+    float dt)
 {
     // Triggerは接触イベントを発生させるための領域です。
     // 衝突情報は生成しますが、位置や速度を変更して物体を押し返してはいけません。
-    if (contact.IsTrigger)
+    if (manifold.IsTrigger || manifold.PointCount == 0)
     {
         return;
     }
 
-    if (!scene.IsEntityAlive(contact.A) || !scene.IsEntityAlive(contact.B))
+    if (!scene.IsEntityAlive(manifold.A) || !scene.IsEntityAlive(manifold.B))
     {
         return;
     }
 
     TransformComponent* transformA =
-        scene.TryGetComponent<TransformComponent>(contact.A.GetIndex());
+        scene.TryGetComponent<TransformComponent>(manifold.A.GetIndex());
     TransformComponent* transformB =
-        scene.TryGetComponent<TransformComponent>(contact.B.GetIndex());
+        scene.TryGetComponent<TransformComponent>(manifold.B.GetIndex());
 
     if (transformA == nullptr || transformB == nullptr)
     {
@@ -84,9 +87,9 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
     }
 
     RigidBodyComponent* rigidBodyA =
-        scene.TryGetComponent<RigidBodyComponent>(contact.A.GetIndex());
+        scene.TryGetComponent<RigidBodyComponent>(manifold.A.GetIndex());
     RigidBodyComponent* rigidBodyB =
-        scene.TryGetComponent<RigidBodyComponent>(contact.B.GetIndex());
+        scene.TryGetComponent<RigidBodyComponent>(manifold.B.GetIndex());
 
     const float inverseMassA = GetInverseMass(rigidBodyA);
     const float inverseMassB = GetInverseMass(rigidBodyB);
@@ -100,7 +103,7 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
 
     // CollisionDetection側で法線を正規化していますが、Solver単体の安全性を
     // 保つため、ここでも長さを確認します。
-    const float normalLengthSquared = contact.Normal.LengthSq();
+    const float normalLengthSquared = manifold.Normal.LengthSq();
     constexpr float NormalEpsilonSquared = 1.0e-12f;
 
     if (normalLengthSquared <= NormalEpsilonSquared)
@@ -109,15 +112,23 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
     }
 
     const math::Vec3 normal =
-        contact.Normal / std::sqrt(normalLengthSquared);
+        manifold.Normal / std::sqrt(normalLengthSquared);
 
-    // ========================================================================
-    // 1. 位置補正
-    // ========================================================================
+    const std::size_t pointCount =
+        std::min(manifold.PointCount, ContactManifold::MaxContactPointCount);
+
+    // 各接触点を順番に解決します。
+    for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+    {
+        ContactPoint& point = manifold.Points[pointIndex];
+
+        // ====================================================================
+        // 1. 位置補正
+        // ====================================================================
     // Impulseは速度を変更しますが、既に発生している貫通そのものは解消しません。
     // そこで、逆質量の割合に応じてAとBを法線の反対方向へ分離します。
     //
-    // Contact::NormalはAからBへ向くため、
+    // ContactManifold::NormalはAからBへ向くため、
     //   Aは -Normal 方向
     //   Bは +Normal 方向
     // へ移動させます。
@@ -127,7 +138,7 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
     constexpr float PenetrationSlop = 0.001f;
     constexpr float CorrectionPercent = 0.8f;
 
-    const float penetration = std::max(contact.Penetration, 0.0f);
+    const float penetration = std::max(point.Penetration, 0.0f);
     const float correctionMagnitude =
         std::max(penetration - PenetrationSlop, 0.0f)
         * CorrectionPercent
@@ -138,9 +149,9 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
     transformA->Position -= positionCorrection * inverseMassA;
     transformB->Position += positionCorrection * inverseMassB;
 
-    // ========================================================================
-    // 2. 法線方向の反発Impulse
-    // ========================================================================
+        // ====================================================================
+        // 2. 法線方向の反発Impulse
+        // ====================================================================
     // 相対速度はBから見たAではなく、Contact法線の規約に合わせて
     //
     //     relativeVelocity = velocityB - velocityA
@@ -158,11 +169,11 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
     // この状態で反発Impulseを加えると、離れている物体をさらに加速してしまいます。
     if (velocityAlongNormal > 0.0f)
     {
-        return;
+        continue;
     }
 
     const float restitution =
-        std::clamp(contact.Restitution, 0.0f, 1.0f);
+        std::clamp(manifold.Restitution, 0.0f, 1.0f);
 
     const float normalImpulseMagnitude =
         -(1.0f + restitution)
@@ -171,6 +182,10 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
 
     const math::Vec3 normalImpulse =
         normal * normalImpulseMagnitude;
+
+        // 将来のWarm Startで再利用できるよう、その接触点で解いたImpulseを保持します。
+        // 現段階は単発Solverなので加算ではなく、そのStepの結果を代入します。
+        point.AccumulatedNormalImpulse = normalImpulseMagnitude;
 
     if (rigidBodyA != nullptr && inverseMassA > 0.0f)
     {
@@ -184,9 +199,9 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
         rigidBodyB->LinearVelocity += normalImpulse * inverseMassB;
     }
 
-    // ========================================================================
-    // 3. 接線方向の摩擦Impulse
-    // ========================================================================
+        // ====================================================================
+        // 3. 接線方向の摩擦Impulse
+        // ====================================================================
     // 法線Impulse適用後の速度で再計算します。
     velocityA = GetLinearVelocity(rigidBodyA);
     velocityB = GetLinearVelocity(rigidBodyB);
@@ -202,7 +217,8 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
 
     if (tangentLengthSquared <= TangentEpsilonSquared)
     {
-        return;
+        point.AccumulatedTangentImpulse = 0.0f;
+        continue;
     }
 
     tangent /= std::sqrt(tangentLengthSquared);
@@ -212,11 +228,12 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
         / inverseMassSum;
 
     const float staticFriction =
-        std::max(contact.StaticFriction, 0.0f);
+        std::max(manifold.StaticFriction, 0.0f);
     const float dynamicFriction =
-        std::max(contact.DynamicFriction, 0.0f);
+        std::max(manifold.DynamicFriction, 0.0f);
 
     math::Vec3 frictionImpulse{};
+    float appliedTangentImpulseMagnitude = 0.0f;
 
     // Coulomb摩擦モデル
     // 静止摩擦の限界以内なら、接線速度を打ち消すImpulseをそのまま適用します。
@@ -225,13 +242,16 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
         <= normalImpulseMagnitude * staticFriction)
     {
         frictionImpulse = tangent * tangentImpulseMagnitude;
+        appliedTangentImpulseMagnitude = tangentImpulseMagnitude;
     }
     else
     {
-        frictionImpulse =
-            tangent
-            * (-normalImpulseMagnitude * dynamicFriction);
+        appliedTangentImpulseMagnitude =
+            -normalImpulseMagnitude * dynamicFriction;
+        frictionImpulse = tangent * appliedTangentImpulseMagnitude;
     }
+
+        point.AccumulatedTangentImpulse = appliedTangentImpulseMagnitude;
 
     if (rigidBodyA != nullptr && inverseMassA > 0.0f)
     {
@@ -241,6 +261,7 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
     if (rigidBodyB != nullptr && inverseMassB > 0.0f)
     {
         rigidBodyB->LinearVelocity += frictionImpulse * inverseMassB;
+    }
     }
 
     // dtは将来Baumgarte Stabilizationや反復Solverで使用します。

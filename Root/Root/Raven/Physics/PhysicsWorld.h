@@ -23,8 +23,8 @@ namespace ph // 物理演算のための名前空間
 // 現在の責務
 //   1. 重力・外力から速度を更新する
 //   2. 速度からTransformの位置を更新する
-//   3. SphereとPlaneのContactを生成する
-//   4. ContactSolverへ接触解決を委譲する
+//   3. Sphere-Sphere / Sphere-PlaneのContactManifoldを生成する
+//   4. ContactManifold Solverへ接触解決を委譲する
 //   5. Damping、Sleep、Forceクリアを管理する
 class PhysicsWorld
 {
@@ -46,12 +46,12 @@ public:
     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
     void WakeUp(Scene& scene, Entity entity);
 
-    // 直前のPhysics Stepで生成されたContactを読み取ります。
+    // 直前のPhysics Stepで生成されたContactManifoldを読み取ります。
     // デバッグ描画、接触イベント生成、テストなどで利用できます。
     // 次のStepが始まると内容は再生成されるため、参照を長期間保持しないでください。
-    const std::vector<Contact>& GetContacts() const
+    const std::vector<ContactManifold>& GetContactManifolds() const
     {
-        return m_Contacts;
+        return m_Manifolds;
     }
 
 private:
@@ -68,9 +68,9 @@ private:
 private:
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
 
-    // Narrow Phaseで生成された、そのStep限りの接触情報です。
-    // 現段階ではSphere-Plane Contactだけが格納されます。
-    std::vector<Contact> m_Contacts;
+    // Narrow Phaseで生成された、そのStep限りの接触Manifoldです。
+    // 現段階ではSphere-Sphere / Sphere-Planeが各1点Manifoldを生成します。
+    std::vector<ContactManifold> m_Manifolds;
 };
 
 } // namespace ph
