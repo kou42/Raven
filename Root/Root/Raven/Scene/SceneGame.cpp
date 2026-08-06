@@ -363,7 +363,7 @@ void SceneGame::OnDestroy()
     m_SphereBodyIndexByEntity.clear();
 }
 
-void SceneGame::OnUpdate(float dt)
+void SceneGame::OnUpdateGame(float dt)
 {
     float safeDt = dt;
     if (safeDt < 0.0f) {

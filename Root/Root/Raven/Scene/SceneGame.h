@@ -1,4 +1,4 @@
-#include "Raven/Scene/Scene.h"
+﻿#include "Raven/Scene/Scene.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -31,7 +31,7 @@ class SceneGame : public Scene
 public:
 	virtual void OnCreate() override;
 	virtual void OnDestroy() override;
-	virtual void OnUpdate(float dt) override;
+	virtual void OnUpdateGame(float dt) override;
 	virtual void OnRender() override;
 	virtual void OnEvent(Event& e) override;
 
