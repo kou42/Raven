@@ -16,11 +16,12 @@ namespace ph // 物理演算のための名前空間
 // ============================================================================
 // Scene内に存在するRigidBodyComponentをまとめて更新する物理ワールドです。
 //
-// 第1段階では、次の責務だけを担当します。
+// 第1段階では、次の責務を担当します。
 //   1. 重力と蓄積された外力から加速度を計算する
 //   2. 加速度から線形速度を更新する
 //   3. 線形速度からTransformの位置を更新する
 //   4. 速度減衰、力のクリア、簡易Sleep判定を行う
+//   5. ゲーム側が剛体を安全に操作するためのAPIを提供する
 //
 // 衝突検出・衝突応答は後続段階で追加します。
 // ただし処理順を後から大きく変更しなくてよいように、Step内には既に
@@ -46,6 +47,30 @@ public:
     // 力積は時間積分を待たず、速度を deltaVelocity = impulse * inverseMass
     // だけ即座に変化させます。
     void AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse);
+
+    // Torqueは回転運動におけるForceに相当します。
+    // 第1段階では値の蓄積とWakeだけを行い、第4段階で慣性テンソルを通して
+    // AngularVelocityへ反映する処理を追加します。
+    void AddTorque(Scene& scene, Entity entity, const math::Vec3& torque);
+
+    // 線形速度を直接設定します。
+    // Dynamic Bodyを操作した場合はSleep状態を解除します。
+    // Kinematic Bodyでは、ここで設定した速度を使って位置が更新されます。
+    void SetLinearVelocity(Scene& scene, Entity entity, const math::Vec3& velocity);
+
+    // RigidBodyを持たないEntityや無効なEntityではゼロベクトルを返します。
+    math::Vec3 GetLinearVelocity(const Scene& scene, Entity entity) const;
+
+    // Entityを指定位置へ瞬間移動します。
+    // velocityを変更しないため、移動後も現在の速度を維持します。
+    // 衝突Broad Phase導入後は、この関数内でAABBの再登録も行います。
+    void Teleport(Scene& scene, Entity entity, const math::Vec3& position);
+
+    // Kinematic Bodyを目標位置へ移動するための補助APIです。
+    // 現段階ではTransformを直接更新します。
+    // 将来は前回位置との差からKinematic速度を計算し、Dynamic Bodyへ
+    // 正しい相対速度を伝えられるように拡張します。
+    void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
 
     // Sleep中のBodyを明示的に起こします。
     // Transformをテレポートした場合や、ゲーム側で速度を直接変更した場合に使用します。
