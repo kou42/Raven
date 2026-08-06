@@ -18,6 +18,8 @@
 #include "Raven/Scene/ComponentStorage.h"
 #include "Raven/Scene/ComponentView.h"
 
+#include "Raven/Physics/PhysicsWorld.h"
+
 // コンポーネント汎用化
 #define USE_STORAGE_VERSION_2 1
 #define USE_STORAGE_VERSION_1 1
@@ -137,6 +139,10 @@ public:
 protected:
     std::vector<Scope<Layer>> m_layers;
 
+protected:
+
+    virtual void OnUpdateGame(float dt) {}
+
 private:
 
     struct EntitySlot
@@ -155,6 +161,11 @@ private:
     //Destroy QueueにIndexだけを保存すると、同じIndexが再利用された後に誤って新しいEntityを破棄する危険があります。
     //そのため、キューにはEntityハンドル全体を保存します。
     std::vector<Entity> m_DestroyQueue;
+
+    ph::PhysicsWorld m_PhysicsWorld;
+
+    float m_PhysicsAccumulator = 0.0f;
+    float m_FixedDeltaTime = 1.0f / 60.0f;
 
 private:
 
@@ -178,6 +189,11 @@ private:
     template<class T>
     const ComponentStorage<T>* FindStorage() const;
 
+private:
+
+	void OnUpdatePhysics(float dt);
+    void OnUpdateLayer(float dt);
+    
 public:
 
     bool IsEntityAlive(EntityIndex index, EntityGeneration generation) const;

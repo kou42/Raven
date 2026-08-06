@@ -164,9 +164,30 @@ void Scene::OnDestroy()
 
 void Scene::OnUpdate(float dt)
 {
-    for (auto& layer : m_layers) {
-        layer->OnUpdate(dt);
+    OnUpdateGame(dt);
+    OnUpdatePhysics(dt);
+    OnUpdateLayer(dt);
+    FlushDestroyedEntities();
+
+}
+
+void Scene::OnUpdatePhysics(float dt)
+{
+    m_PhysicsAccumulator += dt;
+
+    while (m_PhysicsAccumulator >= m_FixedDeltaTime)
+    {
+        m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
+        m_PhysicsAccumulator -= m_FixedDeltaTime;
     }
+}
+
+void Scene::OnUpdateLayer(float dt)
+{
+	for (auto& layer : m_layers)
+	{
+		layer->OnUpdate(dt);
+	}
 }
 
 void Scene::OnRender()

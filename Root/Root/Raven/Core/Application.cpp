@@ -48,30 +48,45 @@ void Application::SetScene(Scope<Scene> scene)
 
 void Application::Run()
 {
+    // 推奨更新順
+    //    入力
+    //    ↓
+    //    ゲームロジック／物理への力・指示
+    //    ↓
+    //    PhysicsWorld::Step
+    //    ↓
+    //    衝突イベント処理
+    //    ↓
+    //    破棄キューをFlush
+    //    ↓
+    //    描画
 
     float dt = 1.0f / 60.f;
 
+    double previousTime = glfwGetTime();
+
     while (m_Running)
     {
+
         if (Input::IsKeyPressed(Key::Escape))
         {
             m_Running = false;
         }
 
-#if 0
-        if (Input::IsKeyPressed(Key::W))
-        {
-            std::cout << "W Pressed\n";
-        }
+        const double currentTime = glfwGetTime();
+        float frameDeltaTime = static_cast<float>(currentTime - previousTime);
 
-        auto [x, y] = Input::GetMousePosition();
-#endif
+        previousTime = currentTime;
 
-        m_scene->OnUpdate(dt);
+        // デバッグ停止やウィンドウ移動後の巨大dtを制限
+        frameDeltaTime = std::min(frameDeltaTime, 0.25f);
+
+        m_scene->OnUpdate(frameDeltaTime);
         m_scene->OnRender();
 
         m_Window->OnUpdate();
     }
+
 }
 
 void Application::OnEvent(Event& event)
