@@ -7,8 +7,6 @@
 #include "Raven/Math/Math.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Math/MathMatrix.h"
-#include "Raven/Math/Math.h"
-
 
 namespace Raven
 {
@@ -48,68 +46,99 @@ enum class BodyType
     Kinematic
 };
 
-//質量
-//速度
-//角速度
-//力
-//トルク
-//物体タイプ
-//物理設定
+// ============================================================================
+// RigidBodyComponent
+// ============================================================================
+// 剛体の「状態データ」だけを保持するComponentです。
+// 実際の計算はPhysicsWorldが担当します。
 //
-//だけを持ち、計算はPhysicsWorldが担当します。
-
-//Dynamic Body
-//Physicsが正
-//Physicsの計算結果 → Transformへ書き込む
+// BodyTypeの役割
+// ---------------------------------------------------------------------------
+// Dynamic
+//   重力・外力・衝突によって動く通常の物理Bodyです。
+//   PhysicsWorldの計算結果をTransformへ書き込みます。
 //
-//ゲーム側が毎フレームDynamic BodyのTransformを直接変更するのは避けます。
+// Static
+//   床や壁など、物理演算中に動かないBodyです。
+//   質量は無限大として扱い、InverseMassは0になります。
 //
-//位置を変更したい場合は、
-//
-//PhysicsWorld::Teleport(entity, position);
-//PhysicsWorld::AddForce(entity, force);
-//PhysicsWorld::AddImpulse(entity, impulse);
-//
-//などを使います。
-//
-//Static Body
-//Transformが正
-//
-//基本的に実行中は動かしません。Transformを変更した場合は、Broad Phaseの再登録が必要になります。
-//
-//Kinematic Body
-//ゲームロジックがTransformまたは目標速度を指定
-//Physicsは衝突への影響を計算
-//
-//動く床、ドア、エレベーターなどに使います。
-
+// Kinematic
+//   ゲームロジック側が位置または速度を指定するBodyです。
+//   現段階ではLinearVelocityによる移動だけを許可し、重力・外力は適用しません。
+//   将来は動く床、ドア、エレベーターなどに使用します。
 struct RigidBodyComponent
 {
     BodyType Type = BodyType::Dynamic;
 
+    // Massはkg相当の値です。
+    // 計算では除算を毎回行わないよう、1 / Massも保持します。
     float Mass = 1.0f;
     float InverseMass = 1.0f;
 
+    // 単位の目安は、LinearVelocityがm/s、AngularVelocityがrad/sです。
     math::Vec3 LinearVelocity{ 0.0f, 0.0f, 0.0f };
     math::Vec3 AngularVelocity{ 0.0f, 0.0f, 0.0f };
 
+    // ForceとTorqueは1回の物理Step中だけ蓄積される値です。
+    // PhysicsWorld::ClearForces()によりStep終了時に0へ戻されます。
     math::Vec3 Force{ 0.0f, 0.0f, 0.0f };
     math::Vec3 Torque{ 0.0f, 0.0f, 0.0f };
 
+    // 速度が永久に残り続けることを防ぐための減衰係数です。
+    // 0なら減衰なし、値を大きくするほど速く減速します。
+    // 固定フレームレートに強い形でPhysicsWorld側から適用します。
     float LinearDamping = 0.01f;
     float AngularDamping = 0.01f;
 
     bool UseGravity = true;
+
+    // Sleepは、ほぼ停止しているBodyの更新を一時停止する仕組みです。
+    // AllowSleep=falseにすると、速度が小さくてもSleepへ入りません。
+    bool AllowSleep = true;
     bool IsSleeping = false;
+
+    // SleepThreshold未満の速度がSleepTimeThreshold秒続いた場合にSleepへ入ります。
+    // 現段階では線形速度のみを判定対象とし、回転導入時に角速度も追加します。
+    float SleepThreshold = 0.01f;
+    float SleepTimeThreshold = 0.5f;
+    float SleepTimer = 0.0f;
 
     void SetMass(float mass)
     {
-        Mass = mass;
-
+        // Static Body、または0以下の質量は動かせないBodyとして扱います。
+        // InverseMassを0にすると、力や力積を掛けても速度が変化しません。
         if (Type == BodyType::Static || mass <= 0.0f)
+        {
+            Mass = 0.0f;
             InverseMass = 0.0f;
+            return;
+        }
+
+        Mass = mass;
+        InverseMass = 1.0f / mass;
+    }
+
+    void SetBodyType(BodyType type)
+    {
+        Type = type;
+
+        if (Type == BodyType::Static)
+        {
+            InverseMass = 0.0f;
+            LinearVelocity = math::Vec3{};
+            AngularVelocity = math::Vec3{};
+            Force = math::Vec3{};
+            Torque = math::Vec3{};
+            IsSleeping = true;
+            SleepTimer = 0.0f;
+        }
         else
-            InverseMass = 1.0f / mass;
+        {
+            // Dynamicへ戻した際にMassが有効なら逆質量を再計算します。
+            InverseMass = Mass > 0.0f ? 1.0f / Mass : 0.0f;
+            IsSleeping = false;
+            SleepTimer = 0.0f;
+        }
     }
 };
 
@@ -120,24 +149,12 @@ enum class ColliderType
     Plane
 };
 
-// RigidBodyとColliderは分離した方がよいです。
-// 分離する理由は、次のようなEntityを表現できるためです。
-//
-// Transformのみ
-//     描画しない空Entityなど
-//
-// Transform + MeshRenderer
-//     見えるが物理には参加しないEntity
-//
-// Transform + Collider
-//     衝突判定だけを持つ静的な壁
-//
-// Transform + RigidBody + Collider
-//     落下・衝突する動的物体
-//
-// Transform + Collider(IsTrigger)
-//     接触イベントだけ発生する領域
-
+// ============================================================================
+// ColliderComponent
+// ============================================================================
+// RigidBodyとは分離して保持します。
+// これにより、見えるだけのEntity、衝突だけを持つ壁、Trigger領域などを
+// 同じScene/ECS上で表現できます。
 struct ColliderComponent
 {
     ColliderType Type = ColliderType::Box;
@@ -154,4 +171,4 @@ struct ColliderComponent
     bool IsTrigger = false;
 };
 
-}
+} // namespace Raven
