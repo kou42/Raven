@@ -128,13 +128,70 @@ void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
 void PhysicsWorld::DetectCollisions(Scene& scene)
 {
     // ========================================================================
-    // Narrow Phase: Sphere vs Plane
+    // Narrow Phase: Sphere-Sphere / Sphere-Plane
     // ========================================================================
     // Contactは1 Physics Step限りの情報なので、毎回最初に破棄して再生成します。
     m_Contacts.clear();
 
-    // 現段階ではBroad Phaseがないため、Collider同士を全探索します。
+    // ========================================================================
+    // 1. Sphere vs Sphere
+    // ========================================================================
+    // 現段階ではBroad Phaseがないため、すべてのSphere Colliderの組み合わせを
+    // 総当たりで検査します。計算量はO(SphereCount^2)です。
+    //
+    // 二重ループをそのまま回すと、同じ組み合わせについて
+    //
+    //     A-B
+    //     B-A
+    //
+    // の2つのContactが生成され、Solverが同じ衝突を二重に解決してしまいます。
+    // そこでEntity Indexの大小を使い、小さい側をA、大きい側をBとして、
+    // 各組み合わせを一度だけ処理します。
+    for (auto [sphereEntityA, sphereTransformA, sphereColliderA]
+        : scene.View<TransformComponent, ColliderComponent>())
+    {
+        if (sphereColliderA.Type != ColliderType::Sphere)
+        {
+            continue;
+        }
+
+        for (auto [sphereEntityB, sphereTransformB, sphereColliderB]
+            : scene.View<TransformComponent, ColliderComponent>())
+        {
+            if (sphereColliderB.Type != ColliderType::Sphere)
+            {
+                continue;
+            }
+
+            // 自己接触を除外すると同時に、Entity Indexが小さい側から大きい側への
+            // 組み合わせだけを残し、A-B / B-Aの二重生成を防ぎます。
+            if (sphereEntityA.GetIndex() >= sphereEntityB.GetIndex())
+            {
+                continue;
+            }
+
+            Contact contact{};
+
+            if (GenerateSphereSphereContact(
+                sphereEntityA,
+                sphereTransformA,
+                sphereColliderA,
+                sphereEntityB,
+                sphereTransformB,
+                sphereColliderB,
+                contact))
+            {
+                m_Contacts.push_back(contact);
+            }
+        }
+    }
+
+    // ========================================================================
+    // 2. Sphere vs Plane
+    // ========================================================================
     // Sphere側とPlane側を分けて列挙することで、Sphere-Planeだけを対象にします。
+    // Plane-Sphereという逆順のループは存在しないため、この組み合わせでは
+    // Sphere-Sphereのような二重生成は発生しません。
     // 計算量はO(SphereCount * PlaneCount)です。
     for (auto [sphereEntity, sphereTransform, sphereCollider]
         : scene.View<TransformComponent, ColliderComponent>())
