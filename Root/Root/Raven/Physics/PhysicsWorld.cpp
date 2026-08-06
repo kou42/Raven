@@ -4,6 +4,8 @@
 #include "Raven/Scene/Scene.h"
 
 #include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Physics/Collision/CollisionDetection.h"
+#include "Raven/Physics/Solver/ContactSolver.h"
 
 namespace Raven
 {
@@ -14,15 +16,8 @@ namespace ph // 物理演算のための名前空間
 namespace
 {
 
-// ============================================================================
-// WakeRigidBody
-// ============================================================================
-// Sleep中のBodyへ外力や力積が加わった場合、そのままSleep状態を維持すると
-// 次回のPhysicsWorld::Stepで更新対象から除外され、入力した力が反映されません。
-//
-// そのため、Bodyへ運動を発生させる操作を行う直前には必ずWakeさせます。
-// この処理を小さな共通関数へまとめることで、AddForce、AddImpulse、WakeUpの
-// 状態変更を同じ規則に揃えています。
+// Sleep中のDynamic Bodyへ外力やImpulseを与える場合、次のStepから再び積分対象へ
+// 戻す必要があります。SleepTimerも同時に0へ戻し、直後の再Sleepを防ぎます。
 void WakeRigidBody(RigidBodyComponent& rigidBody)
 {
     rigidBody.IsSleeping = false;
@@ -44,62 +39,35 @@ const math::Vec3& PhysicsWorld::GetGravity() const
 void PhysicsWorld::ApplyForces(Scene& scene, float dt)
 {
     // ========================================================================
-    // 力から速度を更新する処理
+    // Force -> Acceleration -> Velocity
     // ========================================================================
-    // ニュートンの運動方程式
-    //
-    //     F = m * a
-    //
-    // を加速度について解くと、
+    // ニュートンの第二法則 F = m*a より、加速度は
     //
     //     a = F / m = F * InverseMass
     //
-    // になります。
-    // さらに、一定時間dtの間に速度がどれだけ変化するかは
-    //
-    //     deltaVelocity = acceleration * dt
-    //
-    // です。
-    //
-    // 現在の積分方法はSemi-Implicit Euler法です。
-    // 先に速度を更新し、その更新済み速度を使って位置を更新します。
-    // 単純なExplicit Euler法よりも、重力や衝突を扱うゲーム物理で
-    // エネルギーが発散しにくく、実装も簡潔という利点があります。
-    for (auto [entity, transform, rigidBody] : scene.View<TransformComponent, RigidBodyComponent>())
+    // です。加速度をdt秒積分して速度へ反映します。
+    for (auto [entity, transform, rigidBody]
+        : scene.View<TransformComponent, RigidBodyComponent>())
     {
-        // Static Bodyは無限質量として扱うため、外力では動きません。
-        // Kinematic Bodyもゲームロジックが移動を決めるため、外力を適用しません。
-        if (rigidBody.Type != BodyType::Dynamic)
+        static_cast<void>(entity);
+        static_cast<void>(transform);
+
+        if (rigidBody.Type != BodyType::Dynamic
+            || rigidBody.IsSleeping
+            || rigidBody.InverseMass <= 0.0f)
         {
             continue;
         }
 
-        // Sleep中のBodyは、明示的にWakeされるまで積分しません。
-        // AddForceやAddImpulseはBodyをWakeしてから値を反映します。
-        if (rigidBody.IsSleeping)
-        {
-            continue;
-        }
-
-        // InverseMassが0なら、設定上はDynamicでも物理的には動かせません。
-        // 0除算を避けるだけでなく、不正な質量設定から状態を保護します。
-        if (rigidBody.InverseMass <= 0.0f)
-        {
-            continue;
-        }
-
-        // 重力は質量によらず同じ加速度として作用します。
-        // Forceへ m*g を一度加えた後にInverseMassを掛けても結果はgですが、
-        // ここでは重力加速度を直接accelerationへ加えることで、巨大な質量値による
-        // 不要な数値拡大を避けています。
         math::Vec3 acceleration{};
 
+        // 重力は質量に関係なく同じ加速度として作用するため、Forceへm*gを追加せず
+        // 直接accelerationへ加算します。
         if (rigidBody.UseGravity)
         {
             acceleration += m_Gravity;
         }
 
-        // ゲーム側から蓄積された外力を加速度へ変換します。
         acceleration += rigidBody.Force * rigidBody.InverseMass;
 
         // Semi-Implicit Euler法の速度更新部分です。
@@ -110,74 +78,44 @@ void PhysicsWorld::ApplyForces(Scene& scene, float dt)
 void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
 {
     // ========================================================================
-    // 線形速度へDampingを適用する処理
+    // 線形速度のDamping
     // ========================================================================
-    // 現実の空気抵抗を厳密に再現するものではなく、ゲーム中で微小な速度が
-    // 永久に残り続けることを防ぐための数値的な減衰です。
-    //
-    // velocity *= 0.99f のようにフレームごとの固定倍率を使うと、
-    // 30Hz、60Hz、120Hzで1秒後の速度が変わります。
-    // ここではdtを含む
-    //
-    //     dampingFactor = 1 / (1 + damping * dt)
-    //
-    // を利用し、固定更新間隔を変更した場合にも挙動が大きく変化しにくい形にします。
+    // フレームごとの固定倍率ではなくdtを含む係数を使うことで、固定更新周波数を
+    // 変更しても1秒間の減衰量が大きく変わりにくい形にします。
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
     {
+        static_cast<void>(entity);
+
         if (rigidBody.Type != BodyType::Dynamic || rigidBody.IsSleeping)
         {
             continue;
         }
 
-        // 負のDampingは速度を増幅してしまうため、0以上へ制限します。
         const float linearDamping = std::max(rigidBody.LinearDamping, 0.0f);
         const float dampingFactor = 1.0f / (1.0f + linearDamping * dt);
 
         rigidBody.LinearVelocity *= dampingFactor;
-
-        // AngularVelocityのDampingは回転運動を実装する第4段階で追加します。
-        // データだけは既にRigidBodyComponentへ用意してありますが、現段階では
-        // Transform::Rotationへ反映しません。
     }
-}
-
-void PhysicsWorld::DetectCollisions(Scene& scene)
-{
-    // 第1段階では衝突検出をまだ行いません。
-    // 第2段階でSphereとPlaneからContactを生成する処理を追加します。
-}
-
-void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
-{
-    // 第1段階では衝突応答をまだ行いません。
-    // 第2段階で位置補正、反発Impulse、摩擦Impulseを追加します。
 }
 
 void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
 {
     // ========================================================================
-    // 速度から位置を更新する処理
+    // Velocity -> Position
     // ========================================================================
-    // 速度の定義
-    //
-    //     velocity = displacement / time
-    //
-    // から、dt秒間の移動量は
-    //
-    //     displacement = velocity * dt
-    //
-    // となります。
-    for (auto [entity, transform, rigidBody] : scene.View<TransformComponent, RigidBodyComponent>())
+    // この位置更新を衝突判定より前に行うことが重要です。
+    // 離散衝突判定では「このStepで移動した後の位置」を検査し、発生した貫通を
+    // ContactSolverで押し戻します。
+    for (auto [entity, transform, rigidBody]
+        : scene.View<TransformComponent, RigidBodyComponent>())
     {
-        // Static Bodyは移動しません。
+        static_cast<void>(entity);
+
         if (rigidBody.Type == BodyType::Static)
         {
             continue;
         }
 
-        // Dynamic BodyがSleep中なら位置更新を省略します。
-        // Kinematic Bodyはゲーム側が設定したLinearVelocityで移動できるよう、
-        // IsSleepingの値に関係なく更新対象にします。
         if (rigidBody.Type == BodyType::Dynamic && rigidBody.IsSleeping)
         {
             continue;
@@ -187,20 +125,81 @@ void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
     }
 }
 
+void PhysicsWorld::DetectCollisions(Scene& scene)
+{
+    // ========================================================================
+    // Narrow Phase: Sphere vs Plane
+    // ========================================================================
+    // Contactは1 Physics Step限りの情報なので、毎回最初に破棄して再生成します。
+    m_Contacts.clear();
+
+    // 現段階ではBroad Phaseがないため、Collider同士を全探索します。
+    // Sphere側とPlane側を分けて列挙することで、Sphere-Planeだけを対象にします。
+    // 計算量はO(SphereCount * PlaneCount)です。
+    for (auto [sphereEntity, sphereTransform, sphereCollider]
+        : scene.View<TransformComponent, ColliderComponent>())
+    {
+        if (sphereCollider.Type != ColliderType::Sphere)
+        {
+            continue;
+        }
+
+        for (auto [planeEntity, planeTransform, planeCollider]
+            : scene.View<TransformComponent, ColliderComponent>())
+        {
+            if (planeCollider.Type != ColliderType::Plane)
+            {
+                continue;
+            }
+
+            // 同じEntityへSphereとPlaneを同時に設定するケースは通常ありませんが、
+            // 自己接触を生成しないよう明示的に除外します。
+            if (sphereEntity == planeEntity)
+            {
+                continue;
+            }
+
+            Contact contact{};
+
+            if (GenerateSpherePlaneContact(
+                sphereEntity,
+                sphereTransform,
+                sphereCollider,
+                planeEntity,
+                planeTransform,
+                planeCollider,
+                contact))
+            {
+                m_Contacts.push_back(contact);
+            }
+        }
+    }
+}
+
+void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
+{
+    // ========================================================================
+    // Contact解決
+    // ========================================================================
+    // 現段階は各Contactを1回ずつ処理する最小構成です。
+    // Sphereが複数面へ同時接触する場合や箱を積み上げる段階では、同じContact集合を
+    // 複数回反復するSequential Impulse Solverへ発展させます。
+    for (const Contact& contact : m_Contacts)
+    {
+        SolveContact(scene, contact, dt);
+    }
+}
+
 void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
 {
     // ========================================================================
     // 簡易Sleep判定
     // ========================================================================
-    // ほぼ停止したBodyを毎Step更新し続けると、Body数が多いSceneでは無駄な処理が
-    // 増えます。一定時間ほぼ停止していたBodyをSleep状態へ移し、外力・力積などが
-    // 加わるまで積分対象から外します。
-    //
-    // 現段階では線形速度だけを判定します。
-    // 回転運動導入後はAngularVelocityと接触状態も考慮し、床の上で安定しているBody
-    // だけがSleepへ入る、より厳密な判定へ拡張します。
+    // 現段階では線形速度のみで判定します。
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
     {
+        static_cast<void>(entity);
+
         if (rigidBody.Type != BodyType::Dynamic)
         {
             continue;
@@ -208,15 +207,12 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
 
         if (!rigidBody.AllowSleep)
         {
-            // Sleepを無効にしたBodyは常に起きた状態を維持します。
             WakeRigidBody(rigidBody);
             continue;
         }
 
         if (rigidBody.IsSleeping)
         {
-            // Sleep中は速度を完全に0へ固定します。
-            // 浮動小数点のごく小さな残りが、Wake後に不意な移動を起こすのを防ぎます。
             rigidBody.LinearVelocity = math::Vec3{};
             continue;
         }
@@ -224,13 +220,13 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
         const float threshold = std::max(rigidBody.SleepThreshold, 0.0f);
         const float thresholdSquared = threshold * threshold;
 
-        // Length()は平方根を計算しますが、大小比較だけならLengthSq()で十分です。
-        // Body数が増えた際の余分な平方根計算を避けられます。
         if (rigidBody.LinearVelocity.LengthSq() <= thresholdSquared)
         {
             rigidBody.SleepTimer += dt;
 
-            const float requiredSleepTime = std::max(rigidBody.SleepTimeThreshold, 0.0f);
+            const float requiredSleepTime =
+                std::max(rigidBody.SleepTimeThreshold, 0.0f);
+
             if (rigidBody.SleepTimer >= requiredSleepTime)
             {
                 rigidBody.IsSleeping = true;
@@ -240,7 +236,6 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
         }
         else
         {
-            // 再び動き始めた場合は連続静止時間をリセットします。
             rigidBody.SleepTimer = 0.0f;
         }
     }
@@ -248,16 +243,10 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
 
 void PhysicsWorld::ClearForces(Scene& scene)
 {
-    // ========================================================================
-    // Step内で蓄積したForce/Torqueのクリア
-    // ========================================================================
-    // Forceは「次の1回の物理Stepで作用する入力」です。
-    // クリアしないと、ゲーム側がAddForceを1度だけ呼んだ場合でも、その力が
-    // 永久に加わり続けて速度が増加し続けます。
-    //
-    // 重力はm_Gravityから毎Step計算するため、Forceへ保持する必要はありません。
+    // ForceとTorqueは1 Stepだけ有効な蓄積値です。
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
     {
+        static_cast<void>(entity);
         rigidBody.Force = math::Vec3{};
         rigidBody.Torque = math::Vec3{};
     }
@@ -265,62 +254,48 @@ void PhysicsWorld::ClearForces(Scene& scene)
 
 void PhysicsWorld::AddForce(Scene& scene, Entity entity, const math::Vec3& force)
 {
-    // Entityが既に破棄されている場合や、別Generationの古いHandleである場合は
-    // 何も行いません。これにより解放済みEntityへのアクセスを防ぎます。
     if (!scene.IsEntityAlive(entity))
     {
         return;
     }
 
-    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    if (rigidBody == nullptr)
-    {
-        return;
-    }
+    RigidBodyComponent* rigidBody =
+        scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
 
-    // StaticとKinematicは外力による運動の対象ではありません。
-    if (rigidBody->Type != BodyType::Dynamic || rigidBody->InverseMass <= 0.0f)
+    if (rigidBody == nullptr
+        || rigidBody->Type != BodyType::Dynamic
+        || rigidBody->InverseMass <= 0.0f)
     {
         return;
     }
 
     WakeRigidBody(*rigidBody);
-
-    // 複数のSystemから加えられた力を合計できるよう、代入ではなく加算します。
-    // 例: 重力以外に、風 + エンジン推力 + ばね力を同時に作用させられます。
     rigidBody->Force += force;
 }
 
-void PhysicsWorld::AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse)
+void PhysicsWorld::AddImpulse(
+    Scene& scene,
+    Entity entity,
+    const math::Vec3& impulse)
 {
     if (!scene.IsEntityAlive(entity))
     {
         return;
     }
 
-    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    if (rigidBody == nullptr)
-    {
-        return;
-    }
+    RigidBodyComponent* rigidBody =
+        scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
 
-    if (rigidBody->Type != BodyType::Dynamic || rigidBody->InverseMass <= 0.0f)
+    if (rigidBody == nullptr
+        || rigidBody->Type != BodyType::Dynamic
+        || rigidBody->InverseMass <= 0.0f)
     {
         return;
     }
 
     WakeRigidBody(*rigidBody);
 
-    // ========================================================================
-    // ForceとImpulseの違い
-    // ========================================================================
-    // Forceは時間を通して作用し、ApplyForces内で dt を掛けて速度へ変換します。
-    // 一方Impulseは、非常に短い時間に作用した力の積分値であり、速度を即座に
-    //
-    //     deltaVelocity = impulse * InverseMass
-    //
-    // だけ変化させます。
-    // ジャンプ、爆発、弾丸、衝突応答など瞬間的な運動変化に適しています。
+    // Impulseは時間積分を待たず、速度を直接変化させます。
     rigidBody->LinearVelocity += impulse * rigidBody->InverseMass;
 }
 
@@ -331,7 +306,9 @@ void PhysicsWorld::WakeUp(Scene& scene, Entity entity)
         return;
     }
 
-    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+    RigidBodyComponent* rigidBody =
+        scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+
     if (rigidBody == nullptr || rigidBody->Type != BodyType::Dynamic)
     {
         return;
@@ -342,35 +319,30 @@ void PhysicsWorld::WakeUp(Scene& scene, Entity entity)
 
 void PhysicsWorld::Step(Scene& scene, float dt)
 {
-    // 0以下のdtでは積分できません。
-    // 呼び出し側の不正値によってDamping係数やSleepTimerが壊れることを防ぎます。
     if (dt <= 0.0f)
     {
         return;
     }
 
     // ========================================================================
-    // 1回の固定物理Step
+    // 1回の固定Physics Step
     // ========================================================================
-    // 現在と将来の推奨順序は次の通りです。
-    //
-    //   1. 重力・外力から速度を更新
-    //   2. 速度へDampingを適用
-    //   3. Broad Phase / Narrow PhaseでContactを生成
-    //   4. Contact ConstraintをImpulseで解決
-    //   5. 更新済み速度から位置を更新
+    //   1. 外力から速度更新
+    //   2. Damping
+    //   3. 更新済み速度から位置更新
+    //   4. 移動後のColliderでContact生成
+    //   5. Contactの位置・速度解決
     //   6. Sleep判定
-    //   7. 一時的なForce/Torqueをクリア
+    //   7. 一時Force/Torqueをクリア
     //
-    // 第1段階では3と4は空ですが、呼び出し位置を先に固定しておくことで、
-    // 第2段階以降にPhysicsWorld全体の順序を作り直さずに拡張できます。
+    // 衝突判定を位置更新後に行うことで、このStep中に発生した貫通を検出できます。
     ApplyForces(scene, dt);
     IntegrateVelocities(scene, dt);
+    IntegratePositions(scene, dt);
 
     DetectCollisions(scene);
     SolveCollisions(scene, dt);
 
-    IntegratePositions(scene, dt);
     UpdateSleeping(scene, dt);
     ClearForces(scene);
 }
