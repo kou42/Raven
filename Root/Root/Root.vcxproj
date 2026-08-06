@@ -148,6 +148,7 @@
     <ClCompile Include="Raven\Physics\Collision\CollisionDetection.cpp" />
     <ClCompile Include="Raven\Physics\Collision\SphereCollision.cpp" />
     <ClCompile Include="Raven\Physics\PhysicsWorld.cpp" />
+    <ClCompile Include="Raven\Physics\PhysicsWorldControl.cpp" />
     <ClCompile Include="Raven\Physics\Solver\ContactSolver.cpp" />
     <ClCompile Include="Raven\Platform\OpenGL\OpenGLContext.cpp" />
     <ClCompile Include="Raven\Platform\OpenGL\OpenGLRendererAPI.cpp" />
@@ -208,7 +209,6 @@
     <ClInclude Include="Raven\Renderer\Buffer\VertexBuffer.h" />
     <ClInclude Include="Raven\Renderer\GraphicsContext.h" />
     <ClInclude Include="Raven\Renderer\Layer\Layer.h" />
-    <ClInclude Include="Raven\Renderer\Layer\SandboxLayer.h" />
     <ClInclude Include="Raven\Renderer\Material\Material.h" />
     <ClInclude Include="Raven\Renderer\Mesh\Mesh.h" />
     <ClInclude Include="Raven\Renderer\Pipeline\OpenGLPipeline.h" />
