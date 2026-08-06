@@ -37,15 +37,24 @@ math::Vec3 GetLinearVelocity(const RigidBodyComponent* rigidBody)
     return rigidBody->LinearVelocity;
 }
 
-void WakeIfDynamic(RigidBodyComponent* rigidBody)
+void WakeIfSleeping(RigidBodyComponent* rigidBody)
 {
     if (rigidBody == nullptr || rigidBody->Type != BodyType::Dynamic)
     {
         return;
     }
 
-    rigidBody->IsSleeping = false;
-    rigidBody->SleepTimer = 0.0f;
+    // 既に起きているBodyのSleepTimerはリセットしません。
+    // 床との接触Impulseは静止中も毎Step発生するため、毎回Timerを0へ戻すと
+    // Bodyが永久にSleepへ入れなくなります。
+    //
+    // 本当にSleep中のBodyへ新しい衝突が加わった場合だけWakeし、静止時間を
+    // 最初から計測し直します。
+    if (rigidBody->IsSleeping)
+    {
+        rigidBody->IsSleeping = false;
+        rigidBody->SleepTimer = 0.0f;
+    }
 }
 
 } // namespace
@@ -165,14 +174,14 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
 
     if (rigidBodyA != nullptr && inverseMassA > 0.0f)
     {
+        WakeIfSleeping(rigidBodyA);
         rigidBodyA->LinearVelocity -= normalImpulse * inverseMassA;
-        WakeIfDynamic(rigidBodyA);
     }
 
     if (rigidBodyB != nullptr && inverseMassB > 0.0f)
     {
+        WakeIfSleeping(rigidBodyB);
         rigidBodyB->LinearVelocity += normalImpulse * inverseMassB;
-        WakeIfDynamic(rigidBodyB);
     }
 
     // ========================================================================
@@ -198,7 +207,7 @@ void SolveContact(Scene& scene, const Contact& contact, float dt)
 
     tangent /= std::sqrt(tangentLengthSquared);
 
-    float tangentImpulseMagnitude =
+    const float tangentImpulseMagnitude =
         -math::Vec3::Dot(relativeVelocity, tangent)
         / inverseMassSum;
 
