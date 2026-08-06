@@ -6,6 +6,132 @@
 namespace Raven::ph
 {
 
+bool GenerateSphereSphereContact(
+    Entity sphereEntityA,
+    const TransformComponent& sphereTransformA,
+    const ColliderComponent& sphereColliderA,
+    Entity sphereEntityB,
+    const TransformComponent& sphereTransformB,
+    const ColliderComponent& sphereColliderB,
+    Contact& outContact
+)
+{
+    // ========================================================================
+    // 1. Collider種別と半径の確認
+    // ========================================================================
+    // この関数はSphere同士だけを扱います。呼び出し側の選別に依存しすぎず、
+    // 間違ったColliderが渡された場合も安全に失敗するよう防御的に確認します。
+    if (sphereColliderA.Type != ColliderType::Sphere
+        || sphereColliderB.Type != ColliderType::Sphere)
+    {
+        return false;
+    }
+
+    const float radiusA = sphereColliderA.Radius;
+    const float radiusB = sphereColliderB.Radius;
+
+    // 半径0以下のColliderは通常の球として扱えません。
+    // 負の半径を許すと半径和や貫通量の意味が壊れるため、接触対象から除外します。
+    if (radiusA <= 0.0f || radiusB <= 0.0f)
+    {
+        return false;
+    }
+
+    // ========================================================================
+    // 2. ワールド空間上の中心を求める
+    // ========================================================================
+    // 現段階ではCollider::Offsetをワールド軸に沿ったオフセットとして扱います。
+    // Transformへ回転を導入した後は、Offsetを回転してからPositionへ加算します。
+    const math::Vec3 centerA =
+        sphereTransformA.Position + sphereColliderA.Offset;
+    const math::Vec3 centerB =
+        sphereTransformB.Position + sphereColliderB.Offset;
+
+    // Contact::NormalはAからBへ向く規約なので、中心差もAからBの順で求めます。
+    const math::Vec3 centerDelta = centerB - centerA;
+    const float distanceSquared = centerDelta.LengthSq();
+    const float radiusSum = radiusA + radiusB;
+    const float radiusSumSquared = radiusSum * radiusSum;
+
+    // 平方根は比較より高コストなので、まず距離の二乗と半径和の二乗を比較します。
+    // distance > radiusA + radiusB なら球の表面間に隙間があり、非接触です。
+    if (distanceSquared > radiusSumSquared)
+    {
+        return false;
+    }
+
+    // ========================================================================
+    // 3. 接触法線と中心間距離を求める
+    // ========================================================================
+    // 通常は中心差を正規化すればAからBへ向く接触法線になります。
+    // ただし中心が完全に一致した場合、中心差はゼロベクトルになり正規化できません。
+    constexpr float CenterEpsilonSquared = 1.0e-12f;
+
+    math::Vec3 normal{ 1.0f, 0.0f, 0.0f };
+    float centerDistance = 0.0f;
+
+    if (distanceSquared > CenterEpsilonSquared)
+    {
+        centerDistance = std::sqrt(distanceSquared);
+        normal = centerDelta / centerDistance;
+    }
+
+    // ========================================================================
+    // 4. 貫通量を求める
+    // ========================================================================
+    // 球がちょうど接している場合、中心間距離は半径和と一致して貫通量は0です。
+    // 中心同士が近づくほど貫通量は増えます。
+    //
+    //     penetration = (radiusA + radiusB) - distance
+    //
+    // 中心一致時はdistance=0なので、半径和全体が分離に必要な距離になります。
+    const float penetration = radiusSum - centerDistance;
+
+    // ========================================================================
+    // 5. 接触点を求める
+    // ========================================================================
+    // Aの表面上でB側を向く点と、Bの表面上でA側を向く点を求めます。
+    // 貫通中は2点が互いを通り越すため、その中点をContact Pointとします。
+    // この方法はA/Bのどちらか一方へ偏らず、将来回転Impulseを導入したときにも
+    // 対称な接触位置を利用できます。
+    const math::Vec3 surfacePointA = centerA + normal * radiusA;
+    const math::Vec3 surfacePointB = centerB - normal * radiusB;
+    const math::Vec3 contactPoint =
+        (surfacePointA + surfacePointB) * 0.5f;
+
+    // ========================================================================
+    // 6. Contact情報を組み立てる
+    // ========================================================================
+    outContact.A = sphereEntityA;
+    outContact.B = sphereEntityB;
+    outContact.Point = contactPoint;
+    outContact.Normal = normal;
+    outContact.Penetration = penetration;
+
+    // Materialの合成規約はSphere-Planeと統一します。
+    // Restitutionは小さい側、摩擦係数は幾何平均を使用します。
+    outContact.Restitution = std::min(
+        std::max(sphereColliderA.Restitution, 0.0f),
+        std::max(sphereColliderB.Restitution, 0.0f)
+    );
+
+    outContact.StaticFriction = std::sqrt(
+        std::max(sphereColliderA.StaticFriction, 0.0f)
+        * std::max(sphereColliderB.StaticFriction, 0.0f)
+    );
+
+    outContact.DynamicFriction = std::sqrt(
+        std::max(sphereColliderA.DynamicFriction, 0.0f)
+        * std::max(sphereColliderB.DynamicFriction, 0.0f)
+    );
+
+    // 片方でもTriggerなら接触情報だけを生成し、Solverでは押し返しません。
+    outContact.IsTrigger =
+        sphereColliderA.IsTrigger || sphereColliderB.IsTrigger;
+
+    return true;
+}
+
 bool GenerateSpherePlaneContact(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,
