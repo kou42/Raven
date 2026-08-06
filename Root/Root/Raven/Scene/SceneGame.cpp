@@ -71,15 +71,46 @@ void SceneGame::SpawnSphereBatch(int count)
 
         sphere.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_SphereMesh, m_Material });
 
-        SphereBody body;
-        body.EntityHandle = sphere;
-        body.Velocity = {
+        // ====================================================================
+        // Dynamic RigidBody
+        // ====================================================================
+        // これまでSceneGameが独自に保持していたVelocityと重力処理を廃止し、
+        // PhysicsWorldがRigidBodyComponentを唯一の運動状態として更新します。
+        RigidBodyComponent rigidBody{};
+        rigidBody.SetBodyType(BodyType::Dynamic);
+        rigidBody.SetMass(1.0f);
+        rigidBody.LinearVelocity = {
             RandomRange(m_InitialVelocityXMin, m_InitialVelocityXMax),
             0.0f,
             RandomRange(m_InitialVelocityZMin, m_InitialVelocityZMax)
         };
+        rigidBody.LinearDamping = 0.02f;
+        rigidBody.UseGravity = true;
+        rigidBody.AllowSleep = true;
+        rigidBody.SleepThreshold = 0.05f;
+        rigidBody.SleepTimeThreshold = 0.5f;
+        sphere.AddComponent<RigidBodyComponent>(rigidBody);
+
+        // ====================================================================
+        // Sphere Collider
+        // ====================================================================
+        // 描画メッシュの基準半径は0.5で、Transform.Scaleにより見た目が拡大されます。
+        // Collider半径も同じ倍率で拡大し、描画形状と衝突形状を一致させます。
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Sphere;
+        collider.Radius = m_SphereRadius * scale;
+        collider.Restitution = 0.35f;
+        collider.StaticFriction = 0.65f;
+        collider.DynamicFriction = 0.45f;
+        sphere.AddComponent<ColliderComponent>(collider);
+
+        // SphereBodyは現在、描画用TintとEntity対応表だけに使用します。
+        // 物理速度の正しい所有者はRigidBodyComponentです。
+        SphereBody body;
+        body.EntityHandle = sphere;
+        body.Velocity = rigidBody.LinearVelocity;
         body.Tint = tint;
-        body.Radius = m_SphereRadius * scale;
+        body.Radius = collider.Radius;
 
         const size_t bodyIndex = m_SphereBodies.size();
         m_SphereBodyIndexByEntity[sphere.GetIndex()] = bodyIndex;
@@ -220,42 +251,19 @@ void SceneGame::OnCreate()
     m_ShadowMaterial->SetUniform("u_Alpha", 0.35f);
 
     // カメラ行列を設定
-    // eye = (0, 40, 80) : カメラの位置。地面より十分上（Y = 40）かつ後方（Z = 80）に置いて、
-    //                     大きな床メッシュがカメラ近傍でクリップされるのを避けます。
-    // target = (0, 0, 0): カメラが見る先。原点を見下ろす構図です。
-    // up = (0, 1, 0)    : カメラの「上方向」。ワールドのY軸を上として使う指定です。
     math::Vec3 eye    = { 0.0f, 40.0f, 80.0f };
     math::Vec3 target = { 0.0f,  0.0f,  0.0f };
     math::Vec3 up     = { 0.0f,  1.0f,  0.0f };
 
-    //ワールド座標の頂点を「カメラから見た座標系」に変換する行列です。
-    //要するに「世界を動かして、カメラが原点・前方固定に見える状態」にします。
-    m_View       = math::Mat4::LookAt(eye, target, up);
+    m_View = math::Mat4::LookAt(eye, target, up);
 
-    //fov = 0.7854 rad
-    //: 視野角。約45度。値を大きくすると広角で迫力、ただし歪みが増えます。
-    //aspect = 1280 / 720 ≒ 1.777...
-    //: 横縦比（16 : 9）。ここが画面比とズレると、見た目が横に伸びたり縦に潰れたりします。
-    //near = 0.1
-    //: 手前のクリップ面。これより近いものは描画しません。
-    //far = 1000.0
-    //: 奥のクリップ面。これより遠いものは描画しません。
-    //透視投影の本質は「遠いほど小さく見える」変換です。
-	float fov = 0.7854f; // 45度 (π/4 rad)
-	float aspect = 1280.0f / 720.0f; // 横縦比（16:9）
-	float near = 0.1f; // 手前のクリップ面
-	float far = 1000.0f; // 奥のクリップ面
+    float fov = 0.7854f;
+    float aspect = 1280.0f / 720.0f;
+    float near = 0.1f;
+    float far = 1000.0f;
     m_Projection = math::Mat4::Perspective(fov, aspect, near, far);
 
-    // モデル座標 → ワールド座標（Model）
-    // ワールド座標 → カメラ座標（View）
-    // カメラ座標 → クリップ座標（Projection）
-    // つまり最終的に
-    //+--------------------------------------------------------------------
-	// clip = Projection * View * Model * vertex_position
-    //+--------------------------------------------------------------------
-
-    m_Material->SetUniform("u_View",       m_View);
+    m_Material->SetUniform("u_View", m_View);
     m_Material->SetUniform("u_Projection", m_Projection);
 
     m_SpawnedEntities.clear();
@@ -263,48 +271,59 @@ void SceneGame::OnCreate()
     m_SphereBodyIndexByEntity.clear();
     m_WasSpacePressed = false;
 
-    // 原点に広大なパネルを配置（100x100ユニット）
+    // ========================================================================
+    // 無限Plane Colliderを持つ床
+    // ========================================================================
     Entity floor = CreateEntity("Floor");
     TransformComponent& transform = floor.GetComponent<TransformComponent>();
-    transform.Position = { 0.0f, 0.0f, 0.0f };
-    transform.Scale    = { 100.0f, 1.0f, 100.0f };
+    transform.Position = { 0.0f, m_FloorY, 0.0f };
+    transform.Scale = { 100.0f, 1.0f, 100.0f };
     floor.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_Mesh, m_Material });
+
+    // 床は動かないためRigidBodyComponentは不要です。
+    // ContactSolverはRigidBodyを持たないColliderをInverseMass=0のStaticとして扱います。
+    ColliderComponent floorCollider{};
+    floorCollider.Type = ColliderType::Plane;
+    floorCollider.PlaneNormal = { 0.0f, 1.0f, 0.0f };
+    floorCollider.PlaneOffset = 0.0f;
+    floorCollider.Restitution = 0.25f;
+    floorCollider.StaticFriction = 0.8f;
+    floorCollider.DynamicFriction = 0.6f;
+    floor.AddComponent<ColliderComponent>(floorCollider);
+
     m_FloorEntity = floor;
     m_SpawnedEntities.push_back(floor);
 
     // ---- 球体メッシュの生成（UV球体, radius=0.5） ----
     {
-        const int   stacks = 24;
-        const int   slices = 48;
+        const int stacks = 24;
+        const int slices = 48;
         const float radius = 0.5f;
-        const float PI     = 3.14159265358979f;
+        const float PI = 3.14159265358979f;
 
-        std::vector<float>    sv;
+        std::vector<float> sv;
         std::vector<uint32_t> si;
 
         for (int i = 0; i <= stacks; ++i)
         {
             float phi = PI / 2.0f - i * PI / stacks;
-            float y   = radius * sinf(phi);
-            float r   = radius * cosf(phi);
-            float vt  = static_cast<float>(i) / stacks;
+            float y = radius * sinf(phi);
+            float r = radius * cosf(phi);
+            float vt = static_cast<float>(i) / stacks;
 
             for (int j = 0; j <= slices; ++j)
             {
                 float theta = j * 2.0f * PI / slices;
-                float x     = r * cosf(theta);
-                float z     = r * sinf(theta);
-                float u     = static_cast<float>(j) / slices;
+                float x = r * cosf(theta);
+                float z = r * sinf(theta);
+                float u = static_cast<float>(j) / slices;
 
-                // position
                 sv.push_back(x);
                 sv.push_back(y);
                 sv.push_back(z);
-                // color (青みがかった白)
                 sv.push_back(0.7f + 0.3f * vt);
                 sv.push_back(0.8f);
                 sv.push_back(0.9f);
-                // uv
                 sv.push_back(u);
                 sv.push_back(vt);
             }
@@ -316,8 +335,8 @@ void SceneGame::OnCreate()
             {
                 uint32_t a = static_cast<uint32_t>(i * (slices + 1) + j);
                 uint32_t b = a + static_cast<uint32_t>(slices + 1);
-                si.push_back(a);     si.push_back(b);     si.push_back(a + 1);
-                si.push_back(b);     si.push_back(b + 1); si.push_back(a + 1);
+                si.push_back(a); si.push_back(b); si.push_back(a + 1);
+                si.push_back(b); si.push_back(b + 1); si.push_back(a + 1);
             }
         }
 
@@ -325,8 +344,8 @@ void SceneGame::OnCreate()
         auto svb = VertexBuffer::Create(sv.data(), static_cast<uint32_t>(sv.size() * sizeof(float)));
         svb->SetLayout({
             { ShaderDataType::Float3, "a_Position" },
-            { ShaderDataType::Float3, "a_Color"    },
-            { ShaderDataType::Float2, "a_Texcord"  }
+            { ShaderDataType::Float3, "a_Color" },
+            { ShaderDataType::Float2, "a_Texcord" }
         });
         auto sib = IndexBuffer::Create(si.data(), static_cast<uint32_t>(si.size()));
         m_SphereVertexArray->AddVertexBuffer(svb);
@@ -335,12 +354,10 @@ void SceneGame::OnCreate()
     }
 
     SpawnSphereBatch(ComputeOptimizedSpawnCount());
-
 }
 
 void SceneGame::OnDestroy()
 {
-    // ここでは、シーンのリソースを解放する処理を行います。例えば、シェーダーやテクスチャ、頂点配列などのリソースを解放する必要があります。また、レイヤーもクリアしておくと良いでしょう。
     m_layers.clear();
 
     for (Entity entity : m_SpawnedEntities)
@@ -381,50 +398,13 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
-    for (SphereBody& body : m_SphereBodies)
-    {
-        if (!body.EntityHandle || !body.EntityHandle.HasComponent<TransformComponent>()) {
-            continue;
-        }
-
-        auto& transform = body.EntityHandle.GetComponent<TransformComponent>();
-
-        // 半陰的オイラー積分: 先に速度を更新してから位置を更新
-        body.Velocity.y += m_Gravity * safeDt;
-        transform.Position += body.Velocity * safeDt;
-
-        const float floorTop = m_FloorY + body.Radius;
-        if (transform.Position.y < floorTop)
-        {
-            transform.Position.y = floorTop;
-
-            if (body.Velocity.y < 0.0f)
-            {
-                body.Velocity.y = -body.Velocity.y * m_BounceDamping;
-                body.Velocity.x *= m_BounceTangentialDamping;
-                body.Velocity.z *= m_BounceTangentialDamping;
-
-                if (std::abs(body.Velocity.y) < m_StopVelocityEpsilon)
-                {
-                    body.Velocity.y = 0.0f;
-                }
-            }
-
-            if (body.Velocity.y == 0.0f)
-            {
-                const float frictionFactor = std::max(0.0f, 1.0f - m_GroundFriction * safeDt);
-                body.Velocity.x *= frictionFactor;
-                body.Velocity.z *= frictionFactor;
-
-                if (std::abs(body.Velocity.x) < m_StopVelocityEpsilon) {
-                    body.Velocity.x = 0.0f;
-                }
-                if (std::abs(body.Velocity.z) < m_StopVelocityEpsilon) {
-                    body.Velocity.z = 0.0f;
-                }
-            }
-        }
-    }
+    // ========================================================================
+    // 物理更新はScene::OnUpdatePhysicsへ一本化
+    // ========================================================================
+    // Scene::OnUpdate()はこのOnUpdateGame()の後に固定タイムステップで
+    // PhysicsWorld::Step()を呼びます。
+    // ここで独自に重力・位置・床反射を計算すると、同じ運動が二重に適用されるため、
+    // ゲーム側は入力やスポーンなど「物理への指示」だけを担当します。
 
     for (auto& layer : m_layers)
     {
@@ -504,24 +484,6 @@ void SceneGame::OnRender()
     {
         layer->OnRender();
     }
-#if 0
-    RenderCommand::SetClearColor(
-        math::Vec4{ 0.1f, 0.1f, 0.1f, 1.0f }
-    );
-
-    RenderCommand::Clear();
-
-    for (const auto& [id, meshRenderer] : scene.GetMeshRenderers())
-    {
-        if (meshRenderer.IsValid() == false) {
-            continue;
-        }
-
-        const auto& transform =scene.GetComponent<TransformComponent>(id);
-
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
-    }
-#endif
 }
 
 void SceneGame::OnEvent(Event& e)
@@ -540,13 +502,13 @@ void SceneGame::OnEvent(Event& e)
         auto& resizeEvent = static_cast<WindowResizeEvent&>(e);
         RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
 
-        const float width  = static_cast<float>(resizeEvent.GetWidth());
+        const float width = static_cast<float>(resizeEvent.GetWidth());
         const float height = static_cast<float>(resizeEvent.GetHeight());
         if (height > 0.0f)
         {
-            const float fov  = 0.7854f;
+            const float fov = 0.7854f;
             const float nearPlane = 0.1f;
-            const float farPlane  = 1000.0f;
+            const float farPlane = 1000.0f;
             m_Projection = math::Mat4::Perspective(fov, width / height, nearPlane, farPlane);
         }
     }

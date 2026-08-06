@@ -70,43 +70,28 @@ struct RigidBodyComponent
 {
     BodyType Type = BodyType::Dynamic;
 
-    // Massはkg相当の値です。
-    // 計算では除算を毎回行わないよう、1 / Massも保持します。
     float Mass = 1.0f;
     float InverseMass = 1.0f;
 
-    // 単位の目安は、LinearVelocityがm/s、AngularVelocityがrad/sです。
     math::Vec3 LinearVelocity{ 0.0f, 0.0f, 0.0f };
     math::Vec3 AngularVelocity{ 0.0f, 0.0f, 0.0f };
 
-    // ForceとTorqueは1回の物理Step中だけ蓄積される値です。
-    // PhysicsWorld::ClearForces()によりStep終了時に0へ戻されます。
     math::Vec3 Force{ 0.0f, 0.0f, 0.0f };
     math::Vec3 Torque{ 0.0f, 0.0f, 0.0f };
 
-    // 速度が永久に残り続けることを防ぐための減衰係数です。
-    // 0なら減衰なし、値を大きくするほど速く減速します。
-    // 固定フレームレートに強い形でPhysicsWorld側から適用します。
     float LinearDamping = 0.01f;
     float AngularDamping = 0.01f;
 
     bool UseGravity = true;
-
-    // Sleepは、ほぼ停止しているBodyの更新を一時停止する仕組みです。
-    // AllowSleep=falseにすると、速度が小さくてもSleepへ入りません。
     bool AllowSleep = true;
     bool IsSleeping = false;
 
-    // SleepThreshold未満の速度がSleepTimeThreshold秒続いた場合にSleepへ入ります。
-    // 現段階では線形速度のみを判定対象とし、回転導入時に角速度も追加します。
     float SleepThreshold = 0.01f;
     float SleepTimeThreshold = 0.5f;
     float SleepTimer = 0.0f;
 
     void SetMass(float mass)
     {
-        // Static Body、または0以下の質量は動かせないBodyとして扱います。
-        // InverseMassを0にすると、力や力積を掛けても速度が変化しません。
         if (Type == BodyType::Static || mass <= 0.0f)
         {
             Mass = 0.0f;
@@ -134,7 +119,6 @@ struct RigidBodyComponent
         }
         else
         {
-            // Dynamicへ戻した際にMassが有効なら逆質量を再計算します。
             InverseMass = Mass > 0.0f ? 1.0f / Mass : 0.0f;
             IsSleeping = false;
             SleepTimer = 0.0f;
@@ -159,10 +143,28 @@ struct ColliderComponent
 {
     ColliderType Type = ColliderType::Box;
 
+    // Sphere / Boxの中心をTransform::Positionからずらすローカルオフセットです。
+    // PlaneではTransform::PositionとPlaneOffsetを組み合わせて平面位置を表します。
     math::Vec3 Offset{ 0.0f, 0.0f, 0.0f };
 
+    // Box用パラメータです。第3段階では回転しないAABBとして使用します。
     math::Vec3 HalfExtents{ 0.5f, 0.5f, 0.5f };
+
+    // Sphere用パラメータです。
     float Radius = 0.5f;
+
+    // Plane用パラメータです。
+    // PlaneNormalは平面の表側を示す法線です。
+    // 設定値が正規化されていなくても、衝突判定側で安全に正規化します。
+    math::Vec3 PlaneNormal{ 0.0f, 1.0f, 0.0f };
+
+    // 平面上の基準点を法線方向へ移動させる追加オフセットです。
+    // 最終的な平面上の点は
+    //
+    //     Transform.Position + Offset + normalized(PlaneNormal) * PlaneOffset
+    //
+    // となります。
+    float PlaneOffset = 0.0f;
 
     float Restitution = 0.2f;
     float StaticFriction = 0.6f;
