@@ -24,18 +24,6 @@ bool GenerateSpherePlaneManifold(
     const ColliderComponent& planeCollider,
     ContactManifold& outManifold);
 
-// ============================================================================
-// GenerateSphereBoxManifold
-// ============================================================================
-// 現在のBox Colliderは回転しないWorld AABBとして扱うため、Sphere中心からBoxへの
-// 最近接点を求めることで1点Manifoldを生成できます。
-//
-// 引数順序は必ず A=Sphere / B=Box です。
-// ContactManifold::Normalもこの規約に従い「SphereからBoxへ向く法線」を返します。
-//
-// Sphere中心がBox内部にある場合、通常のclosest-pointでは差ベクトルが0になります。
-// そのため最も近いBox面を選択し、SolverがSphereをその面の外へ押し出す向きになる
-// ように法線と貫通量を明示的に構築します。
 bool GenerateSphereBoxManifold(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,
@@ -43,6 +31,26 @@ bool GenerateSphereBoxManifold(
     Entity boxEntity,
     const TransformComponent& boxTransform,
     const ColliderComponent& boxCollider,
+    ContactManifold& outManifold);
+
+// ============================================================================
+// GenerateBoxBoxManifold
+// ============================================================================
+// 現在のRaven Box Colliderは回転しないAABBです。
+// したがってOBB用15軸SATではなく、world X/Y/Zの3軸で分離を確認し、
+// 最小貫通軸をContact Normalとして採用します。
+//
+// 接触面がface-faceの場合は、2つのBoxの重なり矩形のcornerを最大4点登録します。
+// これによりContactManifoldの複数点構造を実際のSolverへ流せる最初の形状になります。
+// 将来Box Rotationを有効化した時、このAPIを維持したまま内部を15軸OBB SAT +
+// clippingへ置き換えられます。
+bool GenerateBoxBoxManifold(
+    Entity boxEntityA,
+    const TransformComponent& boxTransformA,
+    const ColliderComponent& boxColliderA,
+    Entity boxEntityB,
+    const TransformComponent& boxTransformB,
+    const ColliderComponent& boxColliderB,
     ContactManifold& outManifold);
 
 } // namespace Raven::ph
