@@ -13,25 +13,25 @@ namespace Raven::ph
 // ContactPoint
 // ============================================================================
 // 1つの接触位置に属する局所的な情報です。
-// Sphere同士では1点だけ使用しますが、Box-Boxでは最大4点程度を保持します。
+// Sphere系では1点、Box-Boxでは最大4点を保持します。
 struct ContactPoint
 {
     math::Vec3 Position{ 0.0f, 0.0f, 0.0f };
     float Penetration = 0.0f;
 
-    // 将来のSequential Impulse / Warm Startで使用する累積Impulseです。
-    // 現在のSolverではまだ利用しませんが、Manifoldをフレーム間で永続化する際に
-    // 前フレームの解を初期値として再利用できるよう、構造上の置き場所を確保します。
+    // Sequential Impulseで解いた累積Impulseです。
+    // Contact Persistenceによって次フレームの対応Contactへ引き継ぎ、
+    // Solver反復前にWarm Startとして再適用します。
     float AccumulatedNormalImpulse = 0.0f;
     float AccumulatedTangentImpulse = 0.0f;
+
+    // 摩擦Impulseはスカラー値だけでは方向を復元できないため、前回Solverで使った
+    // 接線基底も保存します。Warm Startでは
+    //   Normal * NormalImpulse + CachedTangent * TangentImpulse
+    // をまとめて再適用します。
+    math::Vec3 CachedTangent{ 0.0f, 0.0f, 0.0f };
 };
 
-// ============================================================================
-// ContactManifold
-// ============================================================================
-// 同じColliderペアに属する複数のContactPointをまとめる構造です。
-// 法線・Material・Trigger属性はペア全体で共通とし、接触位置と貫通量だけを
-// ContactPointごとに保持します。
 struct ContactManifold
 {
     static constexpr std::size_t MaxContactPointCount = 4;
@@ -68,12 +68,7 @@ struct ContactManifold
     }
 };
 
-// ============================================================================
-// Contact
-// ============================================================================
 // 旧来の単一接触表現です。
-// 段階移行中の互換性維持のため残していますが、新しい衝突検出・Solverは
-// ContactManifoldを使用します。
 struct Contact
 {
     Entity A;
@@ -87,8 +82,6 @@ struct Contact
     bool IsTrigger = false;
 };
 
-// 単一Contactを1点Manifoldへ変換します。
-// Sphere-Sphere / Sphere-Planeの移行中に使用できます。
 inline ContactManifold MakeContactManifold(const Contact& contact)
 {
     ContactManifold manifold{};

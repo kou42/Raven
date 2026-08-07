@@ -14,305 +14,104 @@ namespace ph
 {
 namespace
 {
-void WakeRigidBody(RigidBodyComponent& rigidBody)
-{
-    rigidBody.IsSleeping = false;
-    rigidBody.SleepTimer = 0.0f;
+void WakeRigidBody(RigidBodyComponent& rigidBody){rigidBody.IsSleeping=false;rigidBody.SleepTimer=0.0f;}
+bool IsSamePair(const ContactManifold&a,const ContactManifold&b){return(a.A==b.A&&a.B==b.B)||(a.A==b.B&&a.B==b.A);}
+bool RayCastSphere(const math::Vec3&o,const math::Vec3&d,float maxF,const math::Vec3&c,float r,float&outF,math::Vec3&outN){const math::Vec3 m=o-c;const float a=math::Vec3::Dot(d,d);if(a<=1e-12f)return false;const float cc=math::Vec3::Dot(m,m)-r*r;if(cc<=0){outF=0;const float ls=m.LengthSq();outN=ls>1e-12f?m/std::sqrt(ls):-d.Normalized();return true;}const float b=math::Vec3::Dot(m,d),disc=b*b-a*cc;if(disc<0)return false;const float f=(-b-std::sqrt(disc))/a;if(f<0||f>maxF)return false;outF=f;outN=(o+d*f-c).Normalized();return true;}
+bool RayCastPlane(const math::Vec3&o,const math::Vec3&d,float maxF,const TransformComponent&t,const ColliderComponent&c,float&outF,math::Vec3&outN){math::Vec3 n=c.PlaneNormal.Normalized();if(n.LengthSq()<=1e-12f)return false;const float den=math::Vec3::Dot(n,d),dist=math::Vec3::Dot(n,o-(t.Position+c.Offset));if(std::abs(den)<=1e-8f){if(std::abs(dist)>1e-6f)return false;outF=0;outN=n;return true;}const float f=-dist/den;if(f<0||f>maxF)return false;outF=f;outN=den<0?n:-n;return true;}
+bool RayCastCollider(const math::Vec3&o,const math::Vec3&d,float maxF,const TransformComponent&t,const ColliderComponent&c,float&outF,math::Vec3&outN){if(c.Type==ColliderType::Sphere)return RayCastSphere(o,d,maxF,t.Position+c.Offset,std::max(c.Radius,0.0f),outF,outN);if(c.Type==ColliderType::Box){AABB b{};return ComputeColliderAABB(t,c,b)&&b.RayCast(o,d,maxF,outF,&outN);}if(c.Type==ColliderType::Plane)return RayCastPlane(o,d,maxF,t,c,outF,outN);return false;}
 }
+void PhysicsWorld::SetGravity(const math::Vec3&g){m_Gravity=g;}const math::Vec3&PhysicsWorld::GetGravity()const{return m_Gravity;}
+void PhysicsWorld::ApplyForces(Scene&s,float dt){for(auto[e,t,rb]:s.View<TransformComponent,RigidBodyComponent>()){static_cast<void>(e);static_cast<void>(t);if(rb.Type!=BodyType::Dynamic||rb.IsSleeping||rb.InverseMass<=0)continue;math::Vec3 a{};if(rb.UseGravity)a+=m_Gravity;a+=rb.Force*rb.InverseMass;rb.LinearVelocity+=a*dt;}}
+void PhysicsWorld::IntegrateVelocities(Scene&s,float dt){for(auto[e,rb]:s.View<RigidBodyComponent>()){static_cast<void>(e);if(rb.Type!=BodyType::Dynamic||rb.IsSleeping)continue;rb.LinearVelocity*=1.0f/(1.0f+std::max(rb.LinearDamping,0.0f)*dt);}}
+void PhysicsWorld::IntegratePositions(Scene&s,float dt){for(auto[e,t,rb]:s.View<TransformComponent,RigidBodyComponent>()){static_cast<void>(e);if(rb.Type==BodyType::Static||(rb.Type==BodyType::Dynamic&&rb.IsSleeping))continue;t.Position+=rb.LinearVelocity*dt;}}
 
-bool RayCastSphere(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
-    const math::Vec3& center, float radius, float& outFraction, math::Vec3& outNormal)
+void PhysicsWorld::DetectCollisions(Scene&s)
 {
-    const math::Vec3 m = origin - center;
-    const float a = math::Vec3::Dot(direction, direction);
-    if (a <= 1.0e-12f) return false;
-    const float c = math::Vec3::Dot(m, m) - radius * radius;
-    if (c <= 0.0f)
-    {
-        outFraction = 0.0f;
-        const float lengthSq = m.LengthSq();
-        outNormal = lengthSq > 1.0e-12f ? m / std::sqrt(lengthSq) : -direction.Normalized();
-        return true;
-    }
-    const float b = math::Vec3::Dot(m, direction);
-    const float discriminant = b * b - a * c;
-    if (discriminant < 0.0f) return false;
-    const float fraction = (-b - std::sqrt(discriminant)) / a;
-    if (fraction < 0.0f || fraction > maxFraction) return false;
-    outFraction = fraction;
-    outNormal = (origin + direction * fraction - center).Normalized();
-    return true;
-}
+    m_PreviousManifolds=std::move(m_Manifolds);m_Manifolds.clear();
+    std::vector<BroadPhasePair>pairs;m_BroadPhase.ComputePairs(s,pairs);
+    for(const auto&p:pairs){if(!s.IsEntityAlive(p.A)||!s.IsEntityAlive(p.B))continue;auto*ta=s.TryGetComponent<TransformComponent>(p.A.GetIndex());auto*tb=s.TryGetComponent<TransformComponent>(p.B.GetIndex());auto*ca=s.TryGetComponent<ColliderComponent>(p.A.GetIndex());auto*cb=s.TryGetComponent<ColliderComponent>(p.B.GetIndex());if(!ta||!tb||!ca||!cb)continue;ContactManifold m{};bool g=false;if(ca->Type==ColliderType::Sphere&&cb->Type==ColliderType::Sphere)g=GenerateSphereSphereManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);else if(ca->Type==ColliderType::Sphere&&cb->Type==ColliderType::Box)g=GenerateSphereBoxManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);else if(ca->Type==ColliderType::Box&&cb->Type==ColliderType::Sphere)g=GenerateSphereBoxManifold(p.B,*tb,*cb,p.A,*ta,*ca,m);else if(ca->Type==ColliderType::Box&&cb->Type==ColliderType::Box)g=GenerateBoxBoxManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);if(g)m_Manifolds.push_back(m);}
+    for(auto[se,st,sc]:s.View<TransformComponent,ColliderComponent>()){if(sc.Type!=ColliderType::Sphere)continue;for(auto[pe,pt,pc]:s.View<TransformComponent,ColliderComponent>()){if(pc.Type!=ColliderType::Plane||se==pe)continue;ContactManifold m{};if(GenerateSpherePlaneManifold(se,st,sc,pe,pt,pc,m))m_Manifolds.push_back(m);}}
+    RestorePersistentContacts();
 
-bool RayCastPlane(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
-    const TransformComponent& transform, const ColliderComponent& collider,
-    float& outFraction, math::Vec3& outNormal)
-{
-    math::Vec3 normal = collider.PlaneNormal.Normalized();
-    if (normal.LengthSq() <= 1.0e-12f) return false;
-    const math::Vec3 pointOnPlane = transform.Position + collider.Offset;
-    const float denominator = math::Vec3::Dot(normal, direction);
-    const float signedDistance = math::Vec3::Dot(normal, origin - pointOnPlane);
-    if (std::abs(denominator) <= 1.0e-8f)
+    // Narrow Phase直後の幾何学統計を集計します。Impulse値はSolver後に確定するため、
+    // UpdateSolverDebugStatisticsAfterSolve()で別途集計します。
+    m_SolverDebugStatistics.ManifoldCount=static_cast<uint32_t>(m_Manifolds.size());
+    for(const ContactManifold&m:m_Manifolds)
     {
-        if (std::abs(signedDistance) > 1.0e-6f) return false;
-        outFraction = 0.0f;
-        outNormal = normal;
-        return true;
-    }
-    const float fraction = -signedDistance / denominator;
-    if (fraction < 0.0f || fraction > maxFraction) return false;
-    outFraction = fraction;
-    outNormal = denominator < 0.0f ? normal : -normal;
-    return true;
-}
-
-bool RayCastCollider(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
-    const TransformComponent& transform, const ColliderComponent& collider,
-    float& outFraction, math::Vec3& outNormal)
-{
-    switch (collider.Type)
-    {
-    case ColliderType::Sphere:
-        return RayCastSphere(origin, direction, maxFraction,
-            transform.Position + collider.Offset, std::max(collider.Radius, 0.0f), outFraction, outNormal);
-    case ColliderType::Box:
-    {
-        AABB bounds{};
-        if (!ComputeColliderAABB(transform, collider, bounds)) return false;
-        return bounds.RayCast(origin, direction, maxFraction, outFraction, &outNormal);
-    }
-    case ColliderType::Plane:
-        return RayCastPlane(origin, direction, maxFraction, transform, collider, outFraction, outNormal);
-    default:
-        return false;
-    }
-}
-}
-
-void PhysicsWorld::SetGravity(const math::Vec3& gravity) { m_Gravity = gravity; }
-const math::Vec3& PhysicsWorld::GetGravity() const { return m_Gravity; }
-
-void PhysicsWorld::ApplyForces(Scene& scene, float dt)
-{
-    for (auto [entity, transform, rigidBody] : scene.View<TransformComponent, RigidBodyComponent>())
-    {
-        static_cast<void>(entity); static_cast<void>(transform);
-        if (rigidBody.Type != BodyType::Dynamic || rigidBody.IsSleeping || rigidBody.InverseMass <= 0.0f) continue;
-        math::Vec3 acceleration{};
-        if (rigidBody.UseGravity) acceleration += m_Gravity;
-        acceleration += rigidBody.Force * rigidBody.InverseMass;
-        rigidBody.LinearVelocity += acceleration * dt;
+        m_SolverDebugStatistics.ContactPointCount+=static_cast<uint32_t>(m.PointCount);
+        for(std::size_t i=0;i<m.PointCount;++i)
+            m_SolverDebugStatistics.MaxPenetration=std::max(m_SolverDebugStatistics.MaxPenetration,std::max(m.Points[i].Penetration,0.0f));
     }
 }
 
-void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
+void PhysicsWorld::RestorePersistentContacts()
 {
-    for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
+    constexpr float md2=.05f*.05f,nt=.9f;
+    for(auto&cur:m_Manifolds)
     {
-        static_cast<void>(entity);
-        if (rigidBody.Type != BodyType::Dynamic || rigidBody.IsSleeping) continue;
-        rigidBody.LinearVelocity *= 1.0f / (1.0f + std::max(rigidBody.LinearDamping, 0.0f) * dt);
-    }
-}
+        if(cur.IsTrigger||cur.PointCount==0)continue;const ContactManifold*prev=nullptr;
+        for(const auto&cand:m_PreviousManifolds){if(!cand.IsTrigger&&cand.PointCount&&IsSamePair(cur,cand)){const bool same=cur.A==cand.A&&cur.B==cand.B;const math::Vec3 pn=same?cand.Normal:-cand.Normal;if(math::Vec3::Dot(cur.Normal.Normalized(),pn.Normalized())>=nt){prev=&cand;break;}}}
+        if(!prev)continue;
 
-void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
-{
-    for (auto [entity, transform, rigidBody] : scene.View<TransformComponent, RigidBodyComponent>())
-    {
-        static_cast<void>(entity);
-        if (rigidBody.Type == BodyType::Static || (rigidBody.Type == BodyType::Dynamic && rigidBody.IsSleeping)) continue;
-        transform.Position += rigidBody.LinearVelocity * dt;
-    }
-}
-
-void PhysicsWorld::DetectCollisions(Scene& scene)
-{
-    m_Manifolds.clear();
-    std::vector<BroadPhasePair> candidatePairs;
-    m_BroadPhase.ComputePairs(scene, candidatePairs);
-
-    for (const BroadPhasePair& pair : candidatePairs)
-    {
-        if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B)) continue;
-        TransformComponent* transformA = scene.TryGetComponent<TransformComponent>(pair.A.GetIndex());
-        TransformComponent* transformB = scene.TryGetComponent<TransformComponent>(pair.B.GetIndex());
-        ColliderComponent* colliderA = scene.TryGetComponent<ColliderComponent>(pair.A.GetIndex());
-        ColliderComponent* colliderB = scene.TryGetComponent<ColliderComponent>(pair.B.GetIndex());
-        if (!transformA || !transformB || !colliderA || !colliderB) continue;
-
-        ContactManifold manifold{};
-        bool generated = false;
-
-        if (colliderA->Type == ColliderType::Sphere && colliderB->Type == ColliderType::Sphere)
+        // 同一ペアかつ法線も継続しているので、Manifold単位のPersistenceとして数えます。
+        ++m_SolverDebugStatistics.PersistentManifoldCount;
+        const bool same=cur.A==prev->A&&cur.B==prev->B;bool used[ContactManifold::MaxContactPointCount]{};
+        for(std::size_t i=0;i<cur.PointCount;++i)
         {
-            generated = GenerateSphereSphereManifold(
-                pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold);
+            std::size_t best=ContactManifold::MaxContactPointCount;float bd=md2;
+            for(std::size_t j=0;j<prev->PointCount;++j){if(used[j])continue;const float d=(cur.Points[i].Position-prev->Points[j].Position).LengthSq();if(d<=bd){bd=d;best=j;}}
+            if(best==ContactManifold::MaxContactPointCount)continue;
+            used[best]=true;const auto&o=prev->Points[best];auto&n=cur.Points[i];n.AccumulatedNormalImpulse=o.AccumulatedNormalImpulse;n.AccumulatedTangentImpulse=same?o.AccumulatedTangentImpulse:-o.AccumulatedTangentImpulse;n.CachedTangent=same?o.CachedTangent:-o.CachedTangent;
+            ++m_SolverDebugStatistics.PersistentContactPointCount;
         }
-        else if (colliderA->Type == ColliderType::Sphere && colliderB->Type == ColliderType::Box)
-        {
-            generated = GenerateSphereBoxManifold(
-                pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold);
-        }
-        else if (colliderA->Type == ColliderType::Box && colliderB->Type == ColliderType::Sphere)
-        {
-            // Sphere-Box関数はA=Sphere/B=Box規約で実装しています。
-            // Entityの並び順に依存せず同じ法線規約を保つため、ここでは引数だけ反転します。
-            generated = GenerateSphereBoxManifold(
-                pair.B, *transformB, *colliderB, pair.A, *transformA, *colliderA, manifold);
-        }
-
-        if (generated) m_Manifolds.push_back(manifold);
+        if(cur.Points[0].AccumulatedNormalImpulse==0&&prev->PointCount){cur.Points[0].AccumulatedNormalImpulse=prev->Points[0].AccumulatedNormalImpulse;cur.Points[0].AccumulatedTangentImpulse=same?prev->Points[0].AccumulatedTangentImpulse:-prev->Points[0].AccumulatedTangentImpulse;cur.Points[0].CachedTangent=same?prev->Points[0].CachedTangent:-prev->Points[0].CachedTangent;}
     }
+}
 
-    // Planeは無限形状なのでDynamic Tree外でSphere-Planeを判定します。
-    for (auto [sphereEntity, sphereTransform, sphereCollider] : scene.View<TransformComponent, ColliderComponent>())
+bool PhysicsWorld::RayCast(Scene&s,const math::Vec3&o,const math::Vec3&d,float maxF,PhysicsRayCastHit&out){if(maxF<0||d.LengthSq()<=1e-12f)return false;bool hit=false;float closest=maxF;PhysicsRayCastHit h{};m_BroadPhase.RayCast(s,o,d,maxF,[&](Entity e,uint32_t p,float ff,const math::Vec3&fn,float cur)->float{static_cast<void>(p);static_cast<void>(ff);static_cast<void>(fn);auto*t=s.TryGetComponent<TransformComponent>(e.GetIndex());auto*c=s.TryGetComponent<ColliderComponent>(e.GetIndex());if(!t||!c||c->Type==ColliderType::Plane)return cur;float f=0;math::Vec3 n{};if(!RayCastCollider(o,d,cur,*t,*c,f,n))return cur;if(!hit||f<closest){hit=true;closest=f;h.HitEntity=e;h.Fraction=f;h.Point=o+d*f;h.Normal=n;}return closest;});for(auto[e,t,c]:s.View<TransformComponent,ColliderComponent>()){if(c.Type!=ColliderType::Plane)continue;float f=0;math::Vec3 n{};if(RayCastPlane(o,d,closest,t,c,f,n)&&(!hit||f<closest)){hit=true;closest=f;h.HitEntity=e;h.Fraction=f;h.Point=o+d*f;h.Normal=n;}}if(hit)out=h;return hit;}
+void PhysicsWorld::QueryAABB(Scene&s,const AABB&q,std::vector<Entity>&out){out.clear();if(!q.IsValid())return;m_BroadPhase.QueryAABB(s,q,[&](Entity e,uint32_t p)->bool{static_cast<void>(p);auto*t=s.TryGetComponent<TransformComponent>(e.GetIndex());auto*c=s.TryGetComponent<ColliderComponent>(e.GetIndex());if(!t||!c)return true;AABB b{};if(ComputeColliderAABB(*t,*c,b)&&b.Overlaps(q))out.push_back(e);return true;});}
+
+void PhysicsWorld::SolveCollisions(Scene&s,float dt)
+{
+    // Warm Start対象数はSolver適用前のcached impulseから判定します。
+    // EnableWarmStart=false時はcacheが存在していても実際には適用しないため0件です。
+    if(m_SolverSettings.EnableWarmStart)
     {
-        if (sphereCollider.Type != ColliderType::Sphere) continue;
-        for (auto [planeEntity, planeTransform, planeCollider] : scene.View<TransformComponent, ColliderComponent>())
+        for(const ContactManifold&m:m_Manifolds)
+            if(!m.IsTrigger&&m.PointCount>0&&(m.Points[0].AccumulatedNormalImpulse>0.0f||std::abs(m.Points[0].AccumulatedTangentImpulse)>1.0e-8f))
+                ++m_SolverDebugStatistics.WarmStartedConstraintCount;
+    }
+    m_SolverDebugStatistics.VelocityIterations=std::max(m_SolverSettings.VelocityIterations,1u);
+    SolveContactManifolds(s,m_Manifolds,dt,m_SolverSettings);
+    UpdateSolverDebugStatisticsAfterSolve();
+}
+
+void PhysicsWorld::UpdateSolverDebugStatisticsAfterSolve()
+{
+    // Solverが最終的に収束させた累積Impulseを記録します。
+    // Frictionは符号を持つため絶対値で最大値を比較します。
+    for(const ContactManifold&m:m_Manifolds)
+    {
+        for(std::size_t i=0;i<m.PointCount;++i)
         {
-            if (planeCollider.Type != ColliderType::Plane || sphereEntity == planeEntity) continue;
-            ContactManifold manifold{};
-            if (GenerateSpherePlaneManifold(sphereEntity, sphereTransform, sphereCollider,
-                planeEntity, planeTransform, planeCollider, manifold))
-                m_Manifolds.push_back(manifold);
+            const ContactPoint&p=m.Points[i];
+            m_SolverDebugStatistics.MaxNormalImpulse=std::max(m_SolverDebugStatistics.MaxNormalImpulse,std::max(p.AccumulatedNormalImpulse,0.0f));
+            m_SolverDebugStatistics.MaxFrictionImpulse=std::max(m_SolverDebugStatistics.MaxFrictionImpulse,std::abs(p.AccumulatedTangentImpulse));
         }
     }
 }
 
-bool PhysicsWorld::RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
-    float maxFraction, PhysicsRayCastHit& outHit)
+void PhysicsWorld::UpdateSleeping(Scene&s,float dt){for(auto[e,rb]:s.View<RigidBodyComponent>()){static_cast<void>(e);if(rb.Type!=BodyType::Dynamic)continue;if(!rb.AllowSleep){WakeRigidBody(rb);continue;}if(rb.IsSleeping){rb.LinearVelocity=math::Vec3{};continue;}const float th=std::max(rb.SleepThreshold,0.0f);if(rb.LinearVelocity.LengthSq()<=th*th){rb.SleepTimer+=dt;const float req=std::max(rb.SleepTimeThreshold,0.0f);if(rb.SleepTimer>=req){rb.IsSleeping=true;rb.LinearVelocity=math::Vec3{};rb.SleepTimer=req;}}else rb.SleepTimer=0;}}
+void PhysicsWorld::ClearForces(Scene&s){for(auto[e,rb]:s.View<RigidBodyComponent>()){static_cast<void>(e);rb.Force=math::Vec3{};rb.Torque=math::Vec3{};}}
+void PhysicsWorld::AddForce(Scene&s,Entity e,const math::Vec3&f){if(!s.IsEntityAlive(e))return;auto*rb=s.TryGetComponent<RigidBodyComponent>(e.GetIndex());if(!rb||rb->Type!=BodyType::Dynamic||rb->InverseMass<=0)return;WakeRigidBody(*rb);rb->Force+=f;}
+void PhysicsWorld::AddImpulse(Scene&s,Entity e,const math::Vec3&i){if(!s.IsEntityAlive(e))return;auto*rb=s.TryGetComponent<RigidBodyComponent>(e.GetIndex());if(!rb||rb->Type!=BodyType::Dynamic||rb->InverseMass<=0)return;WakeRigidBody(*rb);rb->LinearVelocity+=i*rb->InverseMass;}
+void PhysicsWorld::WakeUp(Scene&s,Entity e){if(!s.IsEntityAlive(e))return;auto*rb=s.TryGetComponent<RigidBodyComponent>(e.GetIndex());if(rb&&rb->Type==BodyType::Dynamic)WakeRigidBody(*rb);}
+void PhysicsWorld::Step(Scene&s,float dt)
 {
-    if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f) return false;
-    bool hasHit = false;
-    float closestFraction = maxFraction;
-    PhysicsRayCastHit closest{};
-
-    m_BroadPhase.RayCast(scene, origin, direction, maxFraction,
-        [&](Entity entity, uint32_t proxyId, float fatFraction, const math::Vec3& fatNormal, float currentMax) -> float
-        {
-            static_cast<void>(proxyId); static_cast<void>(fatFraction); static_cast<void>(fatNormal);
-            const TransformComponent* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
-            const ColliderComponent* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
-            if (!transform || !collider || collider->Type == ColliderType::Plane) return currentMax;
-            float fraction = 0.0f; math::Vec3 normal{};
-            if (!RayCastCollider(origin, direction, currentMax, *transform, *collider, fraction, normal)) return currentMax;
-            if (!hasHit || fraction < closestFraction)
-            {
-                hasHit = true; closestFraction = fraction;
-                closest.HitEntity = entity; closest.Fraction = fraction;
-                closest.Point = origin + direction * fraction; closest.Normal = normal;
-            }
-            return closestFraction;
-        });
-
-    for (auto [entity, transform, collider] : scene.View<TransformComponent, ColliderComponent>())
-    {
-        if (collider.Type != ColliderType::Plane) continue;
-        float fraction = 0.0f; math::Vec3 normal{};
-        if (!RayCastPlane(origin, direction, closestFraction, transform, collider, fraction, normal)) continue;
-        if (!hasHit || fraction < closestFraction)
-        {
-            hasHit = true; closestFraction = fraction;
-            closest.HitEntity = entity; closest.Fraction = fraction;
-            closest.Point = origin + direction * fraction; closest.Normal = normal;
-        }
-    }
-    if (hasHit) outHit = closest;
-    return hasHit;
+    if(dt<=0)return;
+    // Statisticsは必ずStep単位です。前フレーム値が混ざらないよう最初に全項目を初期化します。
+    m_SolverDebugStatistics.Reset();
+    ApplyForces(s,dt);IntegrateVelocities(s,dt);IntegratePositions(s,dt);DetectCollisions(s);SolveCollisions(s,dt);UpdateSleeping(s,dt);ClearForces(s);
 }
-
-void PhysicsWorld::QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities)
-{
-    outEntities.clear();
-    if (!queryBounds.IsValid()) return;
-    m_BroadPhase.QueryAABB(scene, queryBounds,
-        [&](Entity entity, uint32_t proxyId) -> bool
-        {
-            static_cast<void>(proxyId);
-            const TransformComponent* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
-            const ColliderComponent* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
-            if (!transform || !collider) return true;
-            AABB tightBounds{};
-            if (ComputeColliderAABB(*transform, *collider, tightBounds) && tightBounds.Overlaps(queryBounds))
-                outEntities.push_back(entity);
-            return true;
-        });
-}
-
-void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
-{
-    for (ContactManifold& manifold : m_Manifolds) SolveContactManifold(scene, manifold, dt);
-}
-
-void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
-{
-    for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
-    {
-        static_cast<void>(entity);
-        if (rigidBody.Type != BodyType::Dynamic) continue;
-        if (!rigidBody.AllowSleep) { WakeRigidBody(rigidBody); continue; }
-        if (rigidBody.IsSleeping) { rigidBody.LinearVelocity = math::Vec3{}; continue; }
-        const float threshold = std::max(rigidBody.SleepThreshold, 0.0f);
-        if (rigidBody.LinearVelocity.LengthSq() <= threshold * threshold)
-        {
-            rigidBody.SleepTimer += dt;
-            const float requiredSleepTime = std::max(rigidBody.SleepTimeThreshold, 0.0f);
-            if (rigidBody.SleepTimer >= requiredSleepTime)
-            {
-                rigidBody.IsSleeping = true;
-                rigidBody.LinearVelocity = math::Vec3{};
-                rigidBody.SleepTimer = requiredSleepTime;
-            }
-        }
-        else rigidBody.SleepTimer = 0.0f;
-    }
-}
-
-void PhysicsWorld::ClearForces(Scene& scene)
-{
-    for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
-    {
-        static_cast<void>(entity);
-        rigidBody.Force = math::Vec3{};
-        rigidBody.Torque = math::Vec3{};
-    }
-}
-
-void PhysicsWorld::AddForce(Scene& scene, Entity entity, const math::Vec3& force)
-{
-    if (!scene.IsEntityAlive(entity)) return;
-    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    if (!rigidBody || rigidBody->Type != BodyType::Dynamic || rigidBody->InverseMass <= 0.0f) return;
-    WakeRigidBody(*rigidBody); rigidBody->Force += force;
-}
-
-void PhysicsWorld::AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse)
-{
-    if (!scene.IsEntityAlive(entity)) return;
-    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    if (!rigidBody || rigidBody->Type != BodyType::Dynamic || rigidBody->InverseMass <= 0.0f) return;
-    WakeRigidBody(*rigidBody); rigidBody->LinearVelocity += impulse * rigidBody->InverseMass;
-}
-
-void PhysicsWorld::WakeUp(Scene& scene, Entity entity)
-{
-    if (!scene.IsEntityAlive(entity)) return;
-    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    if (rigidBody && rigidBody->Type == BodyType::Dynamic) WakeRigidBody(*rigidBody);
-}
-
-void PhysicsWorld::Step(Scene& scene, float dt)
-{
-    if (dt <= 0.0f) return;
-    ApplyForces(scene, dt);
-    IntegrateVelocities(scene, dt);
-    IntegratePositions(scene, dt);
-    DetectCollisions(scene);
-    SolveCollisions(scene, dt);
-    UpdateSleeping(scene, dt);
-    ClearForces(scene);
-}
-
 } // namespace ph
 } // namespace Raven

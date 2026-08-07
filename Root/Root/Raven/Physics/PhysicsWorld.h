@@ -1,23 +1,21 @@
 ﻿#pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Contact.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
+#include "Raven/Physics/Solver/ContactSolver.h"
 
 namespace Raven
 {
-
 class Entity;
 class Scene;
 
 namespace ph
 {
 
-// RayCastで最も近いColliderに当たった結果です。
-// Fractionは Point = Origin + Direction * Fraction の係数なので、
-// Directionを正規化した場合はそのまま距離として扱えます。
 struct PhysicsRayCastHit
 {
     Entity HitEntity{};
@@ -26,72 +24,88 @@ struct PhysicsRayCastHit
     float Fraction = 0.0f;
 };
 
+// ============================================================================
+// PhysicsSolverDebugStatistics
+// ============================================================================
+// 1回のPhysicsWorld::Step()で得られるSolver診断値です。
+// Debug UI / Stress Test / 回帰テストから同じデータを参照できるよう、
+// PhysicsWorld内で毎Stepリセットして集計します。
+struct PhysicsSolverDebugStatistics
+{
+    uint32_t ManifoldCount = 0;
+    uint32_t ContactPointCount = 0;
+
+    // 前Step ManifoldからImpulseを引き継げた接触数です。
+    uint32_t PersistentManifoldCount = 0;
+    uint32_t PersistentContactPointCount = 0;
+
+    // Solver開始時点で非ゼロのcached impulseを持っていた代表Constraint数です。
+    uint32_t WarmStartedConstraintCount = 0;
+
+    // 実際に使用したVelocity Solver反復回数です。
+    uint32_t VelocityIterations = 0;
+
+    float MaxPenetration = 0.0f;
+    float MaxNormalImpulse = 0.0f;
+    float MaxFrictionImpulse = 0.0f;
+
+    void Reset()
+    {
+        *this = PhysicsSolverDebugStatistics{};
+    }
+};
+
 class PhysicsWorld
 {
 public:
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
-
     void Step(Scene& scene, float fixedDeltaTime);
+
+    void SetSolverSettings(const ContactSolverSettings& settings) { m_SolverSettings = settings; }
+    ContactSolverSettings& GetSolverSettings() { return m_SolverSettings; }
+    const ContactSolverSettings& GetSolverSettings() const { return m_SolverSettings; }
+
+    const PhysicsSolverDebugStatistics& GetSolverDebugStatistics() const
+    {
+        return m_SolverDebugStatistics;
+    }
 
     void AddForce(Scene& scene, Entity entity, const math::Vec3& force);
     void AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse);
     void AddTorque(Scene& scene, Entity entity, const math::Vec3& torque);
-
     void SetLinearVelocity(Scene& scene, Entity entity, const math::Vec3& velocity);
     math::Vec3 GetLinearVelocity(const Scene& scene, Entity entity) const;
-
     void Teleport(Scene& scene, Entity entity, const math::Vec3& position);
     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
     void WakeUp(Scene& scene, Entity entity);
 
-    // ------------------------------------------------------------------------
-    // Physics Query API
-    // ------------------------------------------------------------------------
-    // Dynamic AABB Treeで候補を高速に絞り込み、その後tight AABB/実Colliderで
-    // false positiveを除去します。
-    //
-    // RayCastは最も近い1件を返します。directionは正規化不要です。
-    // maxFractionは origin + direction * maxFraction までを探索範囲とします。
-    bool RayCast(
-        Scene& scene,
-        const math::Vec3& origin,
-        const math::Vec3& direction,
-        float maxFraction,
-        PhysicsRayCastHit& outHit);
+    bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
+        float maxFraction, PhysicsRayCastHit& outHit);
+    void QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities);
 
-    // queryBoundsと実際のtight AABBが重なる有限Colliderを列挙します。
-    // Planeは無限形状のためAABB Query対象外です。
-    void QueryAABB(
-        Scene& scene,
-        const AABB& queryBounds,
-        std::vector<Entity>& outEntities);
-
-    const std::vector<ContactManifold>& GetContactManifolds() const
-    {
-        return m_Manifolds;
-    }
-
-    const BroadPhase& GetBroadPhase() const
-    {
-        return m_BroadPhase;
-    }
+    const std::vector<ContactManifold>& GetContactManifolds() const { return m_Manifolds; }
+    const BroadPhase& GetBroadPhase() const { return m_BroadPhase; }
 
 private:
     void ApplyForces(Scene& scene, float dt);
     void IntegrateVelocities(Scene& scene, float dt);
     void IntegratePositions(Scene& scene, float dt);
-
     void DetectCollisions(Scene& scene);
+    void RestorePersistentContacts();
     void SolveCollisions(Scene& scene, float dt);
-
+    void UpdateSolverDebugStatisticsAfterSolve();
     void UpdateSleeping(Scene& scene, float dt);
     void ClearForces(Scene& scene);
 
 private:
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
     BroadPhase m_BroadPhase;
+    ContactSolverSettings m_SolverSettings{};
+    PhysicsSolverDebugStatistics m_SolverDebugStatistics{};
+
     std::vector<ContactManifold> m_Manifolds;
+    std::vector<ContactManifold> m_PreviousManifolds;
 };
 
 } // namespace ph

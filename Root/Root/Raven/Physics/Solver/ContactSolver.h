@@ -1,31 +1,39 @@
 ﻿#pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include "Raven/Physics/Contact.h"
 
 namespace Raven
 {
-
 class Scene;
 
 namespace ph
 {
 
-// ============================================================================
-// ContactManifold Solver
-// ============================================================================
-// Manifoldに記録された法線・Material情報と、各ContactPointの位置・貫通量を使って
-// 位置と速度を補正します。
-//
-// 現在はManifold内部の各点を順番に解決する最小構成です。
-// 将来のSequential Impulse化では次の3段階へ発展させます。
-//   1. Manifold全体のConstraintを事前計算する
-//   2. 全接触点へWarm Startを適用する
-//   3. 全Manifoldを複数回反復してImpulseを収束させる
+struct ContactSolverSettings
+{
+    uint32_t VelocityIterations = 8;
+    float PenetrationSlop = 0.001f;
+    float PositionCorrectionPercent = 0.8f;
+    float RestitutionVelocityThreshold = 0.5f;
+
+    // Contact Persistenceで前Stepから引き継いだ累積Impulseを、反復Solver開始前に
+    // 初期解としてBodyへ適用します。積み重ね・静止接触の収束を高速化します。
+    bool EnableWarmStart = true;
+};
+
+void SolveContactManifolds(
+    Scene& scene,
+    std::vector<ContactManifold>& manifolds,
+    float dt,
+    const ContactSolverSettings& settings = ContactSolverSettings{});
+
 void SolveContactManifold(
     Scene& scene,
     ContactManifold& manifold,
     float dt);
 
 } // namespace ph
-
 } // namespace Raven
