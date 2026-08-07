@@ -1,34 +1,65 @@
 ﻿#pragma once
 
+#include <cmath>
+
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
 
 namespace Raven::ph
 {
 
-// ============================================================================
-// AABB (Axis-Aligned Bounding Box)
-// ============================================================================
-// Broad Phaseで「衝突する可能性があるか」を安価に調べるための境界箱です。
-// Min / Maxは常にワールド座標で保持します。
-//
-// AABBは回転を持たないため、判定は各軸の区間が重なっているかを見るだけです。
-// Narrow Phaseの正確な形状判定より非常に軽いため、先にAABBで候補を絞ります。
+// Broad Phase専用の軽量なAxis-Aligned Bounding Boxです。
+// Min / Maxはワールド座標で保持します。
 struct AABB
 {
     math::Vec3 Min{};
     math::Vec3 Max{};
 
-    // 3軸すべてで区間が重なっていればAABB同士は重なっています。
-    // 境界がちょうど接する場合もNarrow Phaseへ渡したいため <= / >= を使います。
-    bool Overlaps(const AABB& other) const;
+    bool Overlaps(const AABB& other) const
+    {
+        // X/Y/Zのどれか1軸でも区間が分離していれば非交差です。
+        // 境界が一致する場合は接触候補として残します。
+        return !(Max.x < other.Min.x || Min.x > other.Max.x
+            || Max.y < other.Min.y || Min.y > other.Max.y
+            || Max.z < other.Min.z || Min.z > other.Max.z);
+    }
 };
 
-// Sphere / Box ColliderからBroad Phase用AABBを生成します。
-// 無限Planeは有限のAABBを定義できないためfalseを返し、別経路で処理します。
-bool ComputeColliderAABB(
+// Sphere / Boxを包むBroad Phase用AABBを生成します。
+// Planeは無限形状なので有限AABBを作らずfalseを返します。
+inline bool ComputeColliderAABB(
     const TransformComponent& transform,
     const ColliderComponent& collider,
-    AABB& outAABB);
+    AABB& outAABB)
+{
+    const math::Vec3 center = transform.Position + collider.Offset;
+    math::Vec3 extents{};
+
+    if (collider.Type == ColliderType::Sphere)
+    {
+        if (collider.Radius <= 0.0f)
+        {
+            return false;
+        }
+        extents = math::Vec3{ collider.Radius, collider.Radius, collider.Radius };
+    }
+    else if (collider.Type == ColliderType::Box)
+    {
+        // Boxは現在の設計どおり「回転しないAABB」として扱います。
+        extents = math::Vec3{
+            std::abs(collider.HalfExtents.x),
+            std::abs(collider.HalfExtents.y),
+            std::abs(collider.HalfExtents.z)
+        };
+    }
+    else
+    {
+        return false;
+    }
+
+    outAABB.Min = center - extents;
+    outAABB.Max = center + extents;
+    return true;
+}
 
 } // namespace Raven::ph
