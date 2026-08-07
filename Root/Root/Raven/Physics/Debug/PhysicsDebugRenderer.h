@@ -56,9 +56,12 @@ private:
     void RenderWorldDebug();
     void RenderOverlay();
 
+    // VertexBuffer / IndexBufferの既存APIが非const pointerを受け取るため、
+    // 呼び出し元のローカルvectorも非const参照で受け取ります。
+    // ここで実際にvectorの内容を書き換えることはありません。
     void SubmitLines(
-        const std::vector<DebugVertex>& vertices,
-        const std::vector<uint32_t>& indices,
+        std::vector<DebugVertex>& vertices,
+        std::vector<uint32_t>& indices,
         const math::Mat4& view,
         const math::Mat4& projection);
 
