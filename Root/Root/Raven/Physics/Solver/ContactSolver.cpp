@@ -8,267 +8,302 @@
 
 namespace Raven
 {
-
 namespace ph
 {
-
 namespace
 {
 
-// RigidBodyを持たないColliderはStatic Bodyとして扱います。
-// 例えば床PlaneはTransform + Colliderだけでも利用でき、この場合の逆質量は0です。
 float GetInverseMass(const RigidBodyComponent* rigidBody)
 {
     if (rigidBody == nullptr || rigidBody->Type != BodyType::Dynamic)
     {
         return 0.0f;
     }
-
     return std::max(rigidBody->InverseMass, 0.0f);
 }
 
 math::Vec3 GetLinearVelocity(const RigidBodyComponent* rigidBody)
 {
-    if (rigidBody == nullptr)
-    {
-        return math::Vec3{};
-    }
-
-    return rigidBody->LinearVelocity;
+    return rigidBody != nullptr ? rigidBody->LinearVelocity : math::Vec3{};
 }
 
 void WakeIfSleeping(RigidBodyComponent* rigidBody)
 {
-    if (rigidBody == nullptr || rigidBody->Type != BodyType::Dynamic)
-    {
-        return;
-    }
-
-    // 既に起きているBodyのSleepTimerはリセットしません。
-    // 床との接触Impulseは静止中も毎Step発生するため、毎回Timerを0へ戻すと
-    // Bodyが永久にSleepへ入れなくなります。
-    //
-    // 本当にSleep中のBodyへ新しい衝突が加わった場合だけWakeし、静止時間を
-    // 最初から計測し直します。
-    if (rigidBody->IsSleeping)
+    if (rigidBody != nullptr
+        && rigidBody->Type == BodyType::Dynamic
+        && rigidBody->IsSleeping)
     {
         rigidBody->IsSleeping = false;
         rigidBody->SleepTimer = 0.0f;
     }
 }
 
+struct SolverBodies
+{
+    TransformComponent* TransformA = nullptr;
+    TransformComponent* TransformB = nullptr;
+    RigidBodyComponent* BodyA = nullptr;
+    RigidBodyComponent* BodyB = nullptr;
+    float InverseMassA = 0.0f;
+    float InverseMassB = 0.0f;
+    float InverseMassSum = 0.0f;
+};
+
+bool GetSolverBodies(Scene& scene, const ContactManifold& manifold, SolverBodies& out)
+{
+    if (!scene.IsEntityAlive(manifold.A) || !scene.IsEntityAlive(manifold.B))
+    {
+        return false;
+    }
+
+    out.TransformA = scene.TryGetComponent<TransformComponent>(manifold.A.GetIndex());
+    out.TransformB = scene.TryGetComponent<TransformComponent>(manifold.B.GetIndex());
+    if (out.TransformA == nullptr || out.TransformB == nullptr)
+    {
+        return false;
+    }
+
+    out.BodyA = scene.TryGetComponent<RigidBodyComponent>(manifold.A.GetIndex());
+    out.BodyB = scene.TryGetComponent<RigidBodyComponent>(manifold.B.GetIndex());
+    out.InverseMassA = GetInverseMass(out.BodyA);
+    out.InverseMassB = GetInverseMass(out.BodyB);
+    out.InverseMassSum = out.InverseMassA + out.InverseMassB;
+    return out.InverseMassSum > 0.0f;
+}
+
+bool GetNormal(const ContactManifold& manifold, math::Vec3& outNormal)
+{
+    const float lengthSquared = manifold.Normal.LengthSq();
+    if (lengthSquared <= 1.0e-12f)
+    {
+        return false;
+    }
+    outNormal = manifold.Normal / std::sqrt(lengthSquared);
+    return true;
+}
+
+float GetMaximumPenetration(const ContactManifold& manifold)
+{
+    float penetration = 0.0f;
+    const std::size_t pointCount =
+        std::min(manifold.PointCount, ContactManifold::MaxContactPointCount);
+
+    // Rotationを解かない現段階では、同一Manifoldの全点は同じ並進自由度を
+    // 拘束します。平均や合計ではなく最大貫通量を使い、面全体を1回だけ補正します。
+    for (std::size_t i = 0; i < pointCount; ++i)
+    {
+        penetration = std::max(penetration, std::max(manifold.Points[i].Penetration, 0.0f));
+    }
+    return penetration;
+}
+
+void ApplyPositionCorrection(
+    Scene& scene,
+    ContactManifold& manifold,
+    const ContactSolverSettings& settings)
+{
+    if (manifold.IsTrigger || manifold.PointCount == 0)
+    {
+        return;
+    }
+
+    SolverBodies bodies{};
+    math::Vec3 normal{};
+    if (!GetSolverBodies(scene, manifold, bodies) || !GetNormal(manifold, normal))
+    {
+        return;
+    }
+
+    const float penetration = GetMaximumPenetration(manifold);
+    const float correctionMagnitude =
+        std::max(penetration - std::max(settings.PenetrationSlop, 0.0f), 0.0f)
+        * std::clamp(settings.PositionCorrectionPercent, 0.0f, 1.0f)
+        / bodies.InverseMassSum;
+
+    const math::Vec3 correction = normal * correctionMagnitude;
+    bodies.TransformA->Position -= correction * bodies.InverseMassA;
+    bodies.TransformB->Position += correction * bodies.InverseMassB;
+}
+
+void ApplyImpulse(
+    RigidBodyComponent* bodyA,
+    RigidBodyComponent* bodyB,
+    float inverseMassA,
+    float inverseMassB,
+    const math::Vec3& impulse)
+{
+    if (bodyA != nullptr && inverseMassA > 0.0f)
+    {
+        WakeIfSleeping(bodyA);
+        bodyA->LinearVelocity -= impulse * inverseMassA;
+    }
+    if (bodyB != nullptr && inverseMassB > 0.0f)
+    {
+        WakeIfSleeping(bodyB);
+        bodyB->LinearVelocity += impulse * inverseMassB;
+    }
+}
+
+void SolveVelocityConstraint(
+    Scene& scene,
+    ContactManifold& manifold,
+    const ContactSolverSettings& settings)
+{
+    if (manifold.IsTrigger || manifold.PointCount == 0)
+    {
+        return;
+    }
+
+    SolverBodies bodies{};
+    math::Vec3 normal{};
+    if (!GetSolverBodies(scene, manifold, bodies) || !GetNormal(manifold, normal))
+    {
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // 現段階ではManifold代表ImpulseをPoint[0]へ保存します。
+    // ------------------------------------------------------------------------
+    // Box-Boxの4点は接触面を表しますが、Angular Impulseが無い間は全点が同じ
+    // linear velocity constraintです。4点を独立に解くと同じ制約を4回重複して
+    // 適用するため、Point[0]を代表Constraintとして使用します。
+    ContactPoint& constraint = manifold.Points[0];
+
+    math::Vec3 relativeVelocity =
+        GetLinearVelocity(bodies.BodyB) - GetLinearVelocity(bodies.BodyA);
+    const float velocityAlongNormal = math::Vec3::Dot(relativeVelocity, normal);
+
+    // 静止に近い接触でrestitutionを掛けると、床上のBodyが細かく跳ね続けます。
+    // 一定以上の衝突速度にだけ反発係数を適用します。
+    float restitution = 0.0f;
+    if (velocityAlongNormal < -std::max(settings.RestitutionVelocityThreshold, 0.0f))
+    {
+        restitution = std::clamp(manifold.Restitution, 0.0f, 1.0f);
+    }
+
+    const float deltaNormalImpulse =
+        -(1.0f + restitution) * velocityAlongNormal / bodies.InverseMassSum;
+
+    // Sequential Impulseでは「今回必要なImpulse」をそのまま適用するのではなく、
+    // 累積Impulseを更新して制約条件 lambda >= 0 を満たします。
+    // これにより後続Manifoldの影響で物体が離れ始めた場合、以前加えたImpulseを
+    // 次のiterationで部分的に戻すことができます。
+    const float oldNormalImpulse = constraint.AccumulatedNormalImpulse;
+    constraint.AccumulatedNormalImpulse =
+        std::max(oldNormalImpulse + deltaNormalImpulse, 0.0f);
+    const float appliedNormalImpulse =
+        constraint.AccumulatedNormalImpulse - oldNormalImpulse;
+
+    ApplyImpulse(
+        bodies.BodyA,
+        bodies.BodyB,
+        bodies.InverseMassA,
+        bodies.InverseMassB,
+        normal * appliedNormalImpulse);
+
+    // ------------------------------------------------------------------------
+    // 摩擦Constraint
+    // ------------------------------------------------------------------------
+    relativeVelocity =
+        GetLinearVelocity(bodies.BodyB) - GetLinearVelocity(bodies.BodyA);
+
+    math::Vec3 tangent =
+        relativeVelocity - normal * math::Vec3::Dot(relativeVelocity, normal);
+    const float tangentLengthSquared = tangent.LengthSq();
+    if (tangentLengthSquared <= 1.0e-12f)
+    {
+        return;
+    }
+    tangent /= std::sqrt(tangentLengthSquared);
+
+    const float deltaTangentImpulse =
+        -math::Vec3::Dot(relativeVelocity, tangent) / bodies.InverseMassSum;
+
+    // Coulomb摩擦円錐を1次元接線Constraintとして近似します。
+    // 累積摩擦Impulseは現在の累積Normal Impulseを基準にClampします。
+    const float staticFriction = std::max(manifold.StaticFriction, 0.0f);
+    const float dynamicFriction = std::max(manifold.DynamicFriction, 0.0f);
+    const float oldTangentImpulse = constraint.AccumulatedTangentImpulse;
+    const float candidateTangentImpulse = oldTangentImpulse + deltaTangentImpulse;
+    const float staticLimit = constraint.AccumulatedNormalImpulse * staticFriction;
+
+    float newTangentImpulse = 0.0f;
+    if (std::abs(candidateTangentImpulse) <= staticLimit)
+    {
+        newTangentImpulse = candidateTangentImpulse;
+    }
+    else
+    {
+        const float dynamicLimit = constraint.AccumulatedNormalImpulse * dynamicFriction;
+        newTangentImpulse = std::clamp(candidateTangentImpulse, -dynamicLimit, dynamicLimit);
+    }
+
+    constraint.AccumulatedTangentImpulse = newTangentImpulse;
+    const float appliedTangentImpulse = newTangentImpulse - oldTangentImpulse;
+
+    ApplyImpulse(
+        bodies.BodyA,
+        bodies.BodyB,
+        bodies.InverseMassA,
+        bodies.InverseMassB,
+        tangent * appliedTangentImpulse);
+}
+
+void ResetAccumulatedImpulses(ContactManifold& manifold)
+{
+    const std::size_t pointCount =
+        std::min(manifold.PointCount, ContactManifold::MaxContactPointCount);
+    for (std::size_t i = 0; i < pointCount; ++i)
+    {
+        manifold.Points[i].AccumulatedNormalImpulse = 0.0f;
+        manifold.Points[i].AccumulatedTangentImpulse = 0.0f;
+    }
+}
+
 } // namespace
+
+void SolveContactManifolds(
+    Scene& scene,
+    std::vector<ContactManifold>& manifolds,
+    float dt,
+    const ContactSolverSettings& settings)
+{
+    if (dt <= 0.0f)
+    {
+        return;
+    }
+
+    // Contact Persistence/Warm Startは次段階なので、現時点では毎Stepゼロから解きます。
+    // ただし「同一Step内のiteration間」ではAccumulated Impulseを維持します。
+    for (ContactManifold& manifold : manifolds)
+    {
+        ResetAccumulatedImpulses(manifold);
+        ApplyPositionCorrection(scene, manifold, settings);
+    }
+
+    const uint32_t iterationCount = std::max(settings.VelocityIterations, 1u);
+    for (uint32_t iteration = 0; iteration < iterationCount; ++iteration)
+    {
+        // 全Manifoldを1回ずつ解いてから次iterationへ進むGauss-Seidel方式です。
+        // 積み重なったBodyでは下側接触のImpulseが上側へ反復的に伝播します。
+        for (ContactManifold& manifold : manifolds)
+        {
+            SolveVelocityConstraint(scene, manifold, settings);
+        }
+    }
+}
 
 void SolveContactManifold(
     Scene& scene,
     ContactManifold& manifold,
     float dt)
 {
-    // Triggerは接触イベントを発生させるための領域です。
-    // 衝突情報は生成しますが、位置や速度を変更して物体を押し返してはいけません。
-    if (manifold.IsTrigger || manifold.PointCount == 0)
-    {
-        return;
-    }
-
-    if (!scene.IsEntityAlive(manifold.A) || !scene.IsEntityAlive(manifold.B))
-    {
-        return;
-    }
-
-    TransformComponent* transformA =
-        scene.TryGetComponent<TransformComponent>(manifold.A.GetIndex());
-    TransformComponent* transformB =
-        scene.TryGetComponent<TransformComponent>(manifold.B.GetIndex());
-
-    if (transformA == nullptr || transformB == nullptr)
-    {
-        return;
-    }
-
-    RigidBodyComponent* rigidBodyA =
-        scene.TryGetComponent<RigidBodyComponent>(manifold.A.GetIndex());
-    RigidBodyComponent* rigidBodyB =
-        scene.TryGetComponent<RigidBodyComponent>(manifold.B.GetIndex());
-
-    const float inverseMassA = GetInverseMass(rigidBodyA);
-    const float inverseMassB = GetInverseMass(rigidBodyB);
-    const float inverseMassSum = inverseMassA + inverseMassB;
-
-    // 両方がStaticの場合は、位置も速度も変更できません。
-    if (inverseMassSum <= 0.0f)
-    {
-        return;
-    }
-
-    // CollisionDetection側で法線を正規化していますが、Solver単体の安全性を
-    // 保つため、ここでも長さを確認します。
-    const float normalLengthSquared = manifold.Normal.LengthSq();
-    constexpr float NormalEpsilonSquared = 1.0e-12f;
-
-    if (normalLengthSquared <= NormalEpsilonSquared)
-    {
-        return;
-    }
-
-    const math::Vec3 normal =
-        manifold.Normal / std::sqrt(normalLengthSquared);
-
-    const std::size_t pointCount =
-        std::min(manifold.PointCount, ContactManifold::MaxContactPointCount);
-
-    // 各接触点を順番に解決します。
-    for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex)
-    {
-        ContactPoint& point = manifold.Points[pointIndex];
-
-        // ====================================================================
-        // 1. 位置補正
-        // ====================================================================
-    // Impulseは速度を変更しますが、既に発生している貫通そのものは解消しません。
-    // そこで、逆質量の割合に応じてAとBを法線の反対方向へ分離します。
-    //
-    // ContactManifold::NormalはAからBへ向くため、
-    //   Aは -Normal 方向
-    //   Bは +Normal 方向
-    // へ移動させます。
-    //
-    // Slopは微小な貫通を許容する値です。浮動小数点誤差によって毎Step細かく
-    // 押し戻し続ける振動を軽減します。
-    constexpr float PenetrationSlop = 0.001f;
-    constexpr float CorrectionPercent = 0.8f;
-
-    const float penetration = std::max(point.Penetration, 0.0f);
-    const float correctionMagnitude =
-        std::max(penetration - PenetrationSlop, 0.0f)
-        * CorrectionPercent
-        / inverseMassSum;
-
-    const math::Vec3 positionCorrection = normal * correctionMagnitude;
-
-    transformA->Position -= positionCorrection * inverseMassA;
-    transformB->Position += positionCorrection * inverseMassB;
-
-        // ====================================================================
-        // 2. 法線方向の反発Impulse
-        // ====================================================================
-    // 相対速度はBから見たAではなく、Contact法線の規約に合わせて
-    //
-    //     relativeVelocity = velocityB - velocityA
-    //
-    // とします。
-    // AがBへ近づいている場合、dot(relativeVelocity, normal)は負になります。
-    math::Vec3 velocityA = GetLinearVelocity(rigidBodyA);
-    math::Vec3 velocityB = GetLinearVelocity(rigidBodyB);
-    math::Vec3 relativeVelocity = velocityB - velocityA;
-
-    const float velocityAlongNormal =
-        math::Vec3::Dot(relativeVelocity, normal);
-
-    // 正の値なら既に離れる方向へ動いています。
-    // この状態で反発Impulseを加えると、離れている物体をさらに加速してしまいます。
-    if (velocityAlongNormal > 0.0f)
-    {
-        continue;
-    }
-
-    const float restitution =
-        std::clamp(manifold.Restitution, 0.0f, 1.0f);
-
-    const float normalImpulseMagnitude =
-        -(1.0f + restitution)
-        * velocityAlongNormal
-        / inverseMassSum;
-
-    const math::Vec3 normalImpulse =
-        normal * normalImpulseMagnitude;
-
-        // 将来のWarm Startで再利用できるよう、その接触点で解いたImpulseを保持します。
-        // 現段階は単発Solverなので加算ではなく、そのStepの結果を代入します。
-        point.AccumulatedNormalImpulse = normalImpulseMagnitude;
-
-    if (rigidBodyA != nullptr && inverseMassA > 0.0f)
-    {
-        WakeIfSleeping(rigidBodyA);
-        rigidBodyA->LinearVelocity -= normalImpulse * inverseMassA;
-    }
-
-    if (rigidBodyB != nullptr && inverseMassB > 0.0f)
-    {
-        WakeIfSleeping(rigidBodyB);
-        rigidBodyB->LinearVelocity += normalImpulse * inverseMassB;
-    }
-
-        // ====================================================================
-        // 3. 接線方向の摩擦Impulse
-        // ====================================================================
-    // 法線Impulse適用後の速度で再計算します。
-    velocityA = GetLinearVelocity(rigidBodyA);
-    velocityB = GetLinearVelocity(rigidBodyB);
-    relativeVelocity = velocityB - velocityA;
-
-    // 相対速度から法線成分を除くと、接触面に沿った滑り速度になります。
-    math::Vec3 tangent =
-        relativeVelocity
-        - normal * math::Vec3::Dot(relativeVelocity, normal);
-
-    const float tangentLengthSquared = tangent.LengthSq();
-    constexpr float TangentEpsilonSquared = 1.0e-12f;
-
-    if (tangentLengthSquared <= TangentEpsilonSquared)
-    {
-        point.AccumulatedTangentImpulse = 0.0f;
-        continue;
-    }
-
-    tangent /= std::sqrt(tangentLengthSquared);
-
-    const float tangentImpulseMagnitude =
-        -math::Vec3::Dot(relativeVelocity, tangent)
-        / inverseMassSum;
-
-    const float staticFriction =
-        std::max(manifold.StaticFriction, 0.0f);
-    const float dynamicFriction =
-        std::max(manifold.DynamicFriction, 0.0f);
-
-    math::Vec3 frictionImpulse{};
-    float appliedTangentImpulseMagnitude = 0.0f;
-
-    // Coulomb摩擦モデル
-    // 静止摩擦の限界以内なら、接線速度を打ち消すImpulseをそのまま適用します。
-    // 限界を超えて滑っている場合は、動摩擦係数で大きさを制限します。
-    if (std::abs(tangentImpulseMagnitude)
-        <= normalImpulseMagnitude * staticFriction)
-    {
-        frictionImpulse = tangent * tangentImpulseMagnitude;
-        appliedTangentImpulseMagnitude = tangentImpulseMagnitude;
-    }
-    else
-    {
-        appliedTangentImpulseMagnitude =
-            -normalImpulseMagnitude * dynamicFriction;
-        frictionImpulse = tangent * appliedTangentImpulseMagnitude;
-    }
-
-        point.AccumulatedTangentImpulse = appliedTangentImpulseMagnitude;
-
-    if (rigidBodyA != nullptr && inverseMassA > 0.0f)
-    {
-        rigidBodyA->LinearVelocity -= frictionImpulse * inverseMassA;
-    }
-
-    if (rigidBodyB != nullptr && inverseMassB > 0.0f)
-    {
-        rigidBodyB->LinearVelocity += frictionImpulse * inverseMassB;
-    }
-    }
-
-    // dtは将来Baumgarte Stabilizationや反復Solverで使用します。
-    // 現在の最小Solverでは位置補正を直接行うため未使用です。
-    static_cast<void>(dt);
+    // 既存呼び出し互換用。単一Manifoldでも同じ反復Solverを使用します。
+    std::vector<ContactManifold> singleManifold;
+    singleManifold.push_back(manifold);
+    SolveContactManifolds(scene, singleManifold, dt);
+    manifold = singleManifold.front();
 }
 
 } // namespace ph
-
 } // namespace Raven
