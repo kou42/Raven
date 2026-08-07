@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <string>
 #include <vector>
 
 #include "Raven/Core/Base.h"
@@ -16,8 +17,14 @@ namespace ph
 {
 class PhysicsWorld;
 
+// ============================================================================
+// PhysicsDebugRenderer
+// ============================================================================
 // Physicsの3D可視化と画面左上のSolver Statistics Overlayを担当します。
-// UIライブラリには依存せず、既存Lines PipelineだけでDebug文字も描画します。
+//
+// World DebugはSceneのView/Projectionを使用し、OverlayはIdentity行列 + NDC座標で
+// 描画します。両者を分離することで、カメラ移動やProjection変更の影響をOverlayへ
+// 持ち込まないようにしています。
 class PhysicsDebugRenderer
 {
 public:
@@ -46,6 +53,14 @@ private:
     void EnsureInitialized();
     void UpdateToggleKeys();
     void Render();
+    void RenderWorldDebug();
+    void RenderOverlay();
+
+    void SubmitLines(
+        const std::vector<DebugVertex>& vertices,
+        const std::vector<uint32_t>& indices,
+        const math::Mat4& view,
+        const math::Mat4& projection);
 
     static void AddLine(
         std::vector<DebugVertex>& vertices,
@@ -65,6 +80,18 @@ private:
         std::vector<uint32_t>& indices,
         const math::Vec3& position,
         float radius,
+        const math::Vec3& color);
+
+    // Debug用5x7 bitmap fontをNDC上のLine列へ変換します。
+    static void AddOverlayText(
+        std::vector<DebugVertex>& vertices,
+        std::vector<uint32_t>& indices,
+        const std::string& text,
+        float pixelX,
+        float pixelY,
+        float pixelScale,
+        int viewportWidth,
+        int viewportHeight,
         const math::Vec3& color);
 
 private:
