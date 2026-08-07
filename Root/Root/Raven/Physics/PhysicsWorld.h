@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
@@ -23,6 +24,37 @@ struct PhysicsRayCastHit
     float Fraction = 0.0f;
 };
 
+// ============================================================================
+// PhysicsSolverDebugStatistics
+// ============================================================================
+// 1回のPhysicsWorld::Step()で得られるSolver診断値です。
+// Debug UI / Stress Test / 回帰テストから同じデータを参照できるよう、
+// PhysicsWorld内で毎Stepリセットして集計します。
+struct PhysicsSolverDebugStatistics
+{
+    uint32_t ManifoldCount = 0;
+    uint32_t ContactPointCount = 0;
+
+    // 前Step ManifoldからImpulseを引き継げた接触数です。
+    uint32_t PersistentManifoldCount = 0;
+    uint32_t PersistentContactPointCount = 0;
+
+    // Solver開始時点で非ゼロのcached impulseを持っていた代表Constraint数です。
+    uint32_t WarmStartedConstraintCount = 0;
+
+    // 実際に使用したVelocity Solver反復回数です。
+    uint32_t VelocityIterations = 0;
+
+    float MaxPenetration = 0.0f;
+    float MaxNormalImpulse = 0.0f;
+    float MaxFrictionImpulse = 0.0f;
+
+    void Reset()
+    {
+        *this = PhysicsSolverDebugStatistics{};
+    }
+};
+
 class PhysicsWorld
 {
 public:
@@ -30,10 +62,14 @@ public:
     const math::Vec3& GetGravity() const;
     void Step(Scene& scene, float fixedDeltaTime);
 
-    // Solverの反復回数やWarm Start有無をStress Test / ゲーム側から調整できます。
     void SetSolverSettings(const ContactSolverSettings& settings) { m_SolverSettings = settings; }
     ContactSolverSettings& GetSolverSettings() { return m_SolverSettings; }
     const ContactSolverSettings& GetSolverSettings() const { return m_SolverSettings; }
+
+    const PhysicsSolverDebugStatistics& GetSolverDebugStatistics() const
+    {
+        return m_SolverDebugStatistics;
+    }
 
     void AddForce(Scene& scene, Entity entity, const math::Vec3& force);
     void AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse);
@@ -58,6 +94,7 @@ private:
     void DetectCollisions(Scene& scene);
     void RestorePersistentContacts();
     void SolveCollisions(Scene& scene, float dt);
+    void UpdateSolverDebugStatisticsAfterSolve();
     void UpdateSleeping(Scene& scene, float dt);
     void ClearForces(Scene& scene);
 
@@ -65,6 +102,7 @@ private:
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
     BroadPhase m_BroadPhase;
     ContactSolverSettings m_SolverSettings{};
+    PhysicsSolverDebugStatistics m_SolverDebugStatistics{};
 
     std::vector<ContactManifold> m_Manifolds;
     std::vector<ContactManifold> m_PreviousManifolds;
