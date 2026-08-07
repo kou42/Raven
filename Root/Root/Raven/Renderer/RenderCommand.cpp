@@ -18,25 +18,41 @@ void RenderCommand::SetAPI(
 
 void RenderCommand::Init()
 {
-    if (s_RendererAPI) {
+    if (!s_RendererAPI)
+    {
+        switch (RendererAPI::GetAPI())
+        {
+        case RendererAPI::API::OpenGL:
+        {
+            s_RendererAPI = CreateScope<OpenGLRendererAPI>();
+            break;
+        }
+        case RendererAPI::API::DirectX11:
+        {
+            //s_RendererAPI = CreateScope<DX11RendererAPI>();
+            break;
+        }
+        case RendererAPI::API::DirectX12:
+        {
+            //s_RendererAPI = CreateScope<DX12RendererAPI>();
+            break;
+        }
+        case RendererAPI::API::Vulkan:
+        {
+            //s_RendererAPI = CreateScope<VulkanRendererAPI>();
+            break;
+        }
+        case RendererAPI::API::None:
+        default:
+            assert(false && "Renderer API is None");
+            break;
+        }
+    }
+
+    if (!s_RendererAPI) {
         return;
     }
 
-#if 1
-    switch (RendererAPI::GetAPI())
-    {
-    case RendererAPI::API::OpenGL:
-    {
-        s_RendererAPI = CreateScope<OpenGLRendererAPI>();
-        break;
-    }
-    case RendererAPI::API::DirectX11:
-    {
-        //s_RendererAPI = CreateScope<DX11RendererAPI>();
-        break;
-    }
-    }
-#endif
     s_RendererAPI->Init();
 }
 

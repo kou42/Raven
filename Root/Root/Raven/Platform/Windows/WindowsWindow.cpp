@@ -55,6 +55,12 @@ void WindowsWindow::Init(const WindowProps& props)
         s_GLFWInitialized = true;
     }
 
+    // 実行環境差で既定値がぶれないよう、コンテキスト属性を明示します。
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_DEPTH_BITS, 24);
+
     m_Window = glfwCreateWindow(
         static_cast<int>(props.Width),
         static_cast<int>(props.Height),

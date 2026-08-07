@@ -38,6 +38,14 @@ void OpenGLContext::Init()
         return;
     }
 
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(m_WindowHandle, &framebufferWidth, &framebufferHeight);
+    if (framebufferWidth > 0 && framebufferHeight > 0)
+    {
+        glViewport(0, 0, framebufferWidth, framebufferHeight);
+    }
+
     std::cout << "OpenGL Info\n";
     std::cout << "  Vendor : " << glGetString(GL_VENDOR) << '\n';
     std::cout << "  Renderer : " << glGetString(GL_RENDERER) << '\n';

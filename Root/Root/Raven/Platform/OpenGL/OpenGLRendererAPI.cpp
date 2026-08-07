@@ -13,6 +13,8 @@ namespace Raven
 void OpenGLRendererAPI::Init()
 {
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
@@ -29,6 +31,9 @@ void OpenGLRendererAPI::SetClearColor(float r, float g, float b, float a)
 
 void OpenGLRendererAPI::Clear()
 {
+    // 直前のパスで深度書き込みが無効化される場合があります (glDepthMask(GL_FALSE))。
+    // 毎フレームの深度クリアを確実に有効化するため、ここで明示的に戻します。
+    glDepthMask(GL_TRUE);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 

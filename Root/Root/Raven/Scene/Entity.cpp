@@ -5,9 +5,8 @@ namespace Raven
 {
 
 Entity::Entity(EntityIndex index, EntityGeneration generation, Scene* scene)
+    : Entity(EntityHandle{ index, generation }, scene)
 {
-	EntityHandle handle{ index, generation };
-    Entity(handle, scene);
 }
 
 Entity::Entity(EntityHandle handle, Scene* scene)
