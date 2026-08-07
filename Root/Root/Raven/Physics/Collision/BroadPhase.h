@@ -36,8 +36,6 @@ public:
         Synchronize(scene);
         outPairs.clear();
 
-        // 同一Pairを複数Leafから発見しても1回だけ出力するためのキーです。
-        // EntityHandle全体を使うので、Entity Index再利用時のGenerationも区別します。
         struct PairKey
         {
             uint64_t A = 0;
@@ -97,6 +95,65 @@ public:
         }
     }
 
+    // ------------------------------------------------------------------------
+    // QueryAABB
+    // ------------------------------------------------------------------------
+    // Dynamic TreeからqueryBoundsと重なる「候補Leaf」を列挙します。
+    // Fat AABBを検索しているため、この段階ではfalse positiveを許容します。
+    // PhysicsWorld側でtight AABB / 実Colliderを使って最終判定してください。
+    template <class Callback>
+    void QueryAABB(Scene& scene, const AABB& queryBounds, Callback&& callback)
+    {
+        Synchronize(scene);
+        m_Tree.Query(queryBounds,
+            [&](Entity entity, uint32_t proxyId) -> bool
+            {
+                if (!scene.IsEntityAlive(entity))
+                {
+                    return true;
+                }
+                return callback(entity, proxyId);
+            });
+    }
+
+    // ------------------------------------------------------------------------
+    // RayCast
+    // ------------------------------------------------------------------------
+    // Dynamic TreeのFat AABBに対してRay traversalを行い、候補Leafだけを通知します。
+    // callbackが返すfractionを縮めることで、より遠いBranchを早期枝刈りできます。
+    template <class Callback>
+    void RayCast(
+        Scene& scene,
+        const math::Vec3& origin,
+        const math::Vec3& direction,
+        float maxFraction,
+        Callback&& callback)
+    {
+        Synchronize(scene);
+        m_Tree.RayCast(
+            origin,
+            direction,
+            maxFraction,
+            [&](Entity entity,
+                uint32_t proxyId,
+                float fraction,
+                const math::Vec3& normal,
+                float currentMaxFraction) -> float
+            {
+                if (!scene.IsEntityAlive(entity))
+                {
+                    return currentMaxFraction;
+                }
+
+                return callback(
+                    entity,
+                    proxyId,
+                    fraction,
+                    normal,
+                    currentMaxFraction);
+            });
+    }
+
     DynamicAABBTree& GetTree() { return m_Tree; }
     const DynamicAABBTree& GetTree() const { return m_Tree; }
 
@@ -134,7 +191,6 @@ private:
             m_PreviousCenters[entityValue] = center;
         }
 
-        // Sceneから削除されたEntity/ColliderのProxyをTreeから除去します。
         for (auto it = m_Proxies.begin(); it != m_Proxies.end(); )
         {
             if (seen.find(it->first) != seen.end())
@@ -151,11 +207,7 @@ private:
 
 private:
     DynamicAABBTree m_Tree;
-
-    // EntityHandle::Value() -> Tree Proxy ID
     std::unordered_map<uint64_t, uint32_t> m_Proxies;
-
-    // Fat AABBを移動方向へ予測拡張するため、前回中心を保持します。
     std::unordered_map<uint64_t, math::Vec3> m_PreviousCenters;
 };
 
