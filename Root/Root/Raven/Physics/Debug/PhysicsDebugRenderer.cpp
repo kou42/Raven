@@ -90,6 +90,14 @@ void PhysicsDebugRenderer::EnsureInitialized()
 
 void PhysicsDebugRenderer::UpdateToggleKeys()
 {
+    // HはOverlayパネルだけを隠します。
+    // World-space debugのB/F/T/P/C/N設定は保持されるため、3D可視化だけを残して
+    // 画面を広く使いたい場合にも利用できます。
+    const bool overlayPressed = Input::IsKeyPressed(Key::H);
+    if (overlayPressed && !m_WasOverlayKeyPressed)
+        m_Settings.ShowSolverStatistics = !m_Settings.ShowSolverStatistics;
+    m_WasOverlayKeyPressed = overlayPressed;
+
     const bool aabbPressed = Input::IsKeyPressed(Key::B);
     if (aabbPressed && !m_WasAABBKeyPressed) m_Settings.ShowAABB = !m_Settings.ShowAABB;
     m_WasAABBKeyPressed = aabbPressed;
@@ -242,6 +250,7 @@ void PhysicsDebugRenderer::RenderOverlay()
     };
 
     addText("PHYSICS DEBUG", titleColor);
+    addText("[H] HIDE OVERLAY", disabledColor);
     y += 6.0f;
     addText("SOLVER", titleColor);
     addText("MANIFOLDS: " + std::to_string(stats.ManifoldCount), textColor);
