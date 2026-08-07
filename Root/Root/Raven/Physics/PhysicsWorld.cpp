@@ -5,6 +5,7 @@
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Physics/Collision/BroadPhase.inl"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
 
