@@ -103,6 +103,10 @@ public:
     const std::vector<ContactManifold>& GetContactManifolds() const { return m_Manifolds; }
     const BroadPhase& GetBroadPhase() const { return m_BroadPhase; }
 
+    // 直近のDetectCollisions()で実際にBroad Phaseから生成された候補Pairです。
+    // Narrow Phaseで弾かれたPairも含むため、Broad Phaseのfalse positive確認にも使えます。
+    const std::vector<BroadPhasePair>& GetBroadPhasePairs() const { return m_BroadPhasePairs; }
+
 private:
     // Step の中で順番に呼ばれる内部処理です。
     void ApplyForces(Scene& scene, float dt);
@@ -121,6 +125,10 @@ private:
     BroadPhase m_BroadPhase;
     ContactSolverSettings m_SolverSettings{};
     PhysicsSolverDebugStatistics m_SolverDebugStatistics{};
+
+    // 現フレームでBroad Phaseが生成した候補PairのSnapshotです。
+    // DebugRenderer側では再計算せず、この結果をそのまま可視化します。
+    std::vector<BroadPhasePair> m_BroadPhasePairs;
 
     // 現フレームと前フレームの接触情報を保持します。
     std::vector<ContactManifold> m_Manifolds;
