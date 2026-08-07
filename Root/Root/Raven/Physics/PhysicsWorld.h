@@ -4,6 +4,7 @@
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Contact.h"
+#include "Raven/Physics/Collision/BroadPhase.h"
 
 namespace Raven
 {
@@ -11,28 +12,15 @@ namespace Raven
 class Entity;
 class Scene;
 
-namespace ph // 物理演算のための名前空間
+namespace ph
 {
 
-// ============================================================================
-// PhysicsWorld
-// ============================================================================
-// Scene内に存在するRigidBodyComponentとColliderComponentをまとめて更新する
-// 物理ワールドです。
-//
-// 現在の責務
-//   1. 重力・外力から速度を更新する
-//   2. 速度からTransformの位置を更新する
-//   3. Sphere-Sphere / Sphere-PlaneのContactManifoldを生成する
-//   4. ContactManifold Solverへ接触解決を委譲する
-//   5. Damping、Sleep、Forceクリアを管理する
 class PhysicsWorld
 {
 public:
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
 
-    // 固定タイムステップ1回分の物理更新を行います。
     void Step(Scene& scene, float fixedDeltaTime);
 
     void AddForce(Scene& scene, Entity entity, const math::Vec3& force);
@@ -46,12 +34,16 @@ public:
     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
     void WakeUp(Scene& scene, Entity entity);
 
-    // 直前のPhysics Stepで生成されたContactManifoldを読み取ります。
-    // デバッグ描画、接触イベント生成、テストなどで利用できます。
-    // 次のStepが始まると内容は再生成されるため、参照を長期間保持しないでください。
     const std::vector<ContactManifold>& GetContactManifolds() const
     {
         return m_Manifolds;
+    }
+
+    // Debug Drawや将来のPhysics QueryからTree状態を参照するため公開します。
+    // Treeそのものの所有・更新責務はPhysicsWorld/BroadPhase側に残します。
+    const BroadPhase& GetBroadPhase() const
+    {
+        return m_BroadPhase;
     }
 
 private:
@@ -68,11 +60,12 @@ private:
 private:
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
 
-    // Narrow Phaseで生成された、そのStep限りの接触Manifoldです。
-    // 現段階ではSphere-Sphere / Sphere-Planeが各1点Manifoldを生成します。
+    // Dynamic AABB Treeはフレームをまたいで保持することが重要です。
+    // 毎Step作り直すとFat AABBによる「再挿入回避」の利点が失われます。
+    BroadPhase m_BroadPhase;
+
     std::vector<ContactManifold> m_Manifolds;
 };
 
 } // namespace ph
-
 } // namespace Raven
