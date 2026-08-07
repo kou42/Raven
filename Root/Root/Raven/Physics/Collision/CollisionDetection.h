@@ -6,19 +6,6 @@
 namespace Raven::ph
 {
 
-// ============================================================================
-// GenerateSphereSphereManifold
-// ============================================================================
-// 2つのSphere Colliderから、1接触点を持つContactManifoldを直接生成します。
-//
-// 戻り値
-//   true  : Sphere同士が接触または貫通しており、outManifoldが有効
-//   false : 接触していない、またはCollider設定が不正
-//
-// 法線規約
-//   ContactManifold::Normalは「AからBへ向く法線」です。
-//   中心が完全に一致して法線を一意に決められない場合は、安定した既定方向
-//   (+X)を使用します。Manifold永続化後は前フレームの法線を再利用できます。
 bool GenerateSphereSphereManifold(
     Entity sphereEntityA,
     const TransformComponent& sphereTransformA,
@@ -26,22 +13,8 @@ bool GenerateSphereSphereManifold(
     Entity sphereEntityB,
     const TransformComponent& sphereTransformB,
     const ColliderComponent& sphereColliderB,
-    ContactManifold& outManifold
-);
+    ContactManifold& outManifold);
 
-// ============================================================================
-// GenerateSpherePlaneManifold
-// ============================================================================
-// Sphere Colliderと無限Plane Colliderから、1接触点を持つContactManifoldを
-// 直接生成します。
-//
-// 戻り値
-//   true  : SphereがPlaneへ接触または貫通しており、outManifoldが有効
-//   false : 接触していない、またはCollider設定が不正
-//
-// 法線規約
-//   この関数ではAをSphere、BをPlaneとして格納します。
-//   したがってNormalはSphereからPlaneへ向く方向、つまり-planeNormalです。
 bool GenerateSpherePlaneManifold(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,
@@ -49,7 +22,27 @@ bool GenerateSpherePlaneManifold(
     Entity planeEntity,
     const TransformComponent& planeTransform,
     const ColliderComponent& planeCollider,
-    ContactManifold& outManifold
-);
+    ContactManifold& outManifold);
+
+// ============================================================================
+// GenerateSphereBoxManifold
+// ============================================================================
+// 現在のBox Colliderは回転しないWorld AABBとして扱うため、Sphere中心からBoxへの
+// 最近接点を求めることで1点Manifoldを生成できます。
+//
+// 引数順序は必ず A=Sphere / B=Box です。
+// ContactManifold::Normalもこの規約に従い「SphereからBoxへ向く法線」を返します。
+//
+// Sphere中心がBox内部にある場合、通常のclosest-pointでは差ベクトルが0になります。
+// そのため最も近いBox面を選択し、SolverがSphereをその面の外へ押し出す向きになる
+// ように法線と貫通量を明示的に構築します。
+bool GenerateSphereBoxManifold(
+    Entity sphereEntity,
+    const TransformComponent& sphereTransform,
+    const ColliderComponent& sphereCollider,
+    Entity boxEntity,
+    const TransformComponent& boxTransform,
+    const ColliderComponent& boxCollider,
+    ContactManifold& outManifold);
 
 } // namespace Raven::ph

@@ -16,16 +16,23 @@ class Scene;
 namespace ph
 {
 
-// Broad Phaseの内部状態を既存のLines Pipelineで可視化します。
-// B: AABB表示、P: Broad Phase候補ペア表示。
-// SceneGameの描画コードへ物理デバッグ処理を混ぜないため、インスタンスは
-// Renderer::EndScene()からRenderRegistered()経由で描画されます。
+// ============================================================================
+// PhysicsDebugRenderer
+// ============================================================================
+// 物理Broad Phaseの内部状態を既存Lines Pipelineで可視化します。
+//
+// Toggle:
+//   B : Colliderのtight AABB
+//   F : Dynamic Tree LeafのFat AABB
+//   T : Dynamic Tree Branch AABB
+//   P : Broad Phase候補Pair
+//
+// Fat AABBとBranchを分離して表示できるため、MoveProxyの再挿入タイミングと
+// SAH/Balance後のTree階層をそれぞれ確認できます。
 class PhysicsDebugRenderer
 {
 public:
-
     PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection);
-
     ~PhysicsDebugRenderer();
 
     PhysicsDebugRenderer(const PhysicsDebugRenderer&) = delete;
@@ -44,9 +51,7 @@ private:
     static std::vector<PhysicsDebugRenderer*>& Registry();
 
     void EnsureInitialized();
-
     void UpdateToggleKeys();
-
     void Render();
 
     static void AddLine(
@@ -54,30 +59,35 @@ private:
         std::vector<uint32_t>& indices,
         const math::Vec3& a,
         const math::Vec3& b,
-        const math::Vec3& color
-    );
+        const math::Vec3& color);
 
     static void AddAABB(
         std::vector<DebugVertex>& vertices,
         std::vector<uint32_t>& indices,
-        const AABB& b,
-        const math::Vec3& color
-    );
-    
+        const AABB& bounds,
+        const math::Vec3& color);
 
 private:
     Scene* m_Scene = nullptr;
     const math::Mat4* m_View = nullptr;
     const math::Mat4* m_Projection = nullptr;
+
+    // Debug Renderer側にもBroadPhaseを永続保持します。
+    // 毎Renderで作り直すとFat AABBが常に初期化され、MoveProxyの挙動を
+    // 観察できなくなるためです。
     BroadPhase m_BroadPhase;
     Ref<Material> m_Material;
-    bool m_DrawAABBs = false;
-    bool m_DrawPairs = false;
-    bool m_WasAABBKeyPressed = false;
-    bool m_WasPairKeyPressed = false;
 
-}; // class PhysicsDebugRenderer
+    bool m_DrawAABBs = false;
+    bool m_DrawFatAABBs = false;
+    bool m_DrawTree = false;
+    bool m_DrawPairs = false;
+
+    bool m_WasAABBKeyPressed = false;
+    bool m_WasFatAABBKeyPressed = false;
+    bool m_WasTreeKeyPressed = false;
+    bool m_WasPairKeyPressed = false;
+};
 
 } // namespace ph
-
 } // namespace Raven
