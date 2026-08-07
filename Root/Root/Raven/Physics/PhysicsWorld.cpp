@@ -24,16 +24,94 @@ void PhysicsWorld::SetGravity(const math::Vec3&g){m_Gravity=g;}const math::Vec3&
 void PhysicsWorld::ApplyForces(Scene&s,float dt){for(auto[e,t,rb]:s.View<TransformComponent,RigidBodyComponent>()){static_cast<void>(e);static_cast<void>(t);if(rb.Type!=BodyType::Dynamic||rb.IsSleeping||rb.InverseMass<=0)continue;math::Vec3 a{};if(rb.UseGravity)a+=m_Gravity;a+=rb.Force*rb.InverseMass;rb.LinearVelocity+=a*dt;}}
 void PhysicsWorld::IntegrateVelocities(Scene&s,float dt){for(auto[e,rb]:s.View<RigidBodyComponent>()){static_cast<void>(e);if(rb.Type!=BodyType::Dynamic||rb.IsSleeping)continue;rb.LinearVelocity*=1.0f/(1.0f+std::max(rb.LinearDamping,0.0f)*dt);}}
 void PhysicsWorld::IntegratePositions(Scene&s,float dt){for(auto[e,t,rb]:s.View<TransformComponent,RigidBodyComponent>()){static_cast<void>(e);if(rb.Type==BodyType::Static||(rb.Type==BodyType::Dynamic&&rb.IsSleeping))continue;t.Position+=rb.LinearVelocity*dt;}}
-void PhysicsWorld::DetectCollisions(Scene&s){m_PreviousManifolds=std::move(m_Manifolds);m_Manifolds.clear();std::vector<BroadPhasePair>pairs;m_BroadPhase.ComputePairs(s,pairs);for(const auto&p:pairs){if(!s.IsEntityAlive(p.A)||!s.IsEntityAlive(p.B))continue;auto*ta=s.TryGetComponent<TransformComponent>(p.A.GetIndex());auto*tb=s.TryGetComponent<TransformComponent>(p.B.GetIndex());auto*ca=s.TryGetComponent<ColliderComponent>(p.A.GetIndex());auto*cb=s.TryGetComponent<ColliderComponent>(p.B.GetIndex());if(!ta||!tb||!ca||!cb)continue;ContactManifold m{};bool g=false;if(ca->Type==ColliderType::Sphere&&cb->Type==ColliderType::Sphere)g=GenerateSphereSphereManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);else if(ca->Type==ColliderType::Sphere&&cb->Type==ColliderType::Box)g=GenerateSphereBoxManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);else if(ca->Type==ColliderType::Box&&cb->Type==ColliderType::Sphere)g=GenerateSphereBoxManifold(p.B,*tb,*cb,p.A,*ta,*ca,m);else if(ca->Type==ColliderType::Box&&cb->Type==ColliderType::Box)g=GenerateBoxBoxManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);if(g)m_Manifolds.push_back(m);}for(auto[se,st,sc]:s.View<TransformComponent,ColliderComponent>()){if(sc.Type!=ColliderType::Sphere)continue;for(auto[pe,pt,pc]:s.View<TransformComponent,ColliderComponent>()){if(pc.Type!=ColliderType::Plane||se==pe)continue;ContactManifold m{};if(GenerateSpherePlaneManifold(se,st,sc,pe,pt,pc,m))m_Manifolds.push_back(m);}}RestorePersistentContacts();}
-void PhysicsWorld::RestorePersistentContacts(){constexpr float md2=.05f*.05f,nt=.9f;for(auto&cur:m_Manifolds){if(cur.IsTrigger||cur.PointCount==0)continue;const ContactManifold*prev=nullptr;for(const auto&cand:m_PreviousManifolds){if(!cand.IsTrigger&&cand.PointCount&&IsSamePair(cur,cand)){const bool same=cur.A==cand.A&&cur.B==cand.B;const math::Vec3 pn=same?cand.Normal:-cand.Normal;if(math::Vec3::Dot(cur.Normal.Normalized(),pn.Normalized())>=nt){prev=&cand;break;}}}if(!prev)continue;const bool same=cur.A==prev->A&&cur.B==prev->B;bool used[ContactManifold::MaxContactPointCount]{};for(std::size_t i=0;i<cur.PointCount;++i){std::size_t best=ContactManifold::MaxContactPointCount;float bd=md2;for(std::size_t j=0;j<prev->PointCount;++j){if(used[j])continue;const float d=(cur.Points[i].Position-prev->Points[j].Position).LengthSq();if(d<=bd){bd=d;best=j;}}if(best==ContactManifold::MaxContactPointCount)continue;used[best]=true;const auto&o=prev->Points[best];auto&n=cur.Points[i];n.AccumulatedNormalImpulse=o.AccumulatedNormalImpulse;n.AccumulatedTangentImpulse=same?o.AccumulatedTangentImpulse:-o.AccumulatedTangentImpulse;n.CachedTangent=same?o.CachedTangent:-o.CachedTangent;}if(cur.Points[0].AccumulatedNormalImpulse==0&&prev->PointCount){cur.Points[0].AccumulatedNormalImpulse=prev->Points[0].AccumulatedNormalImpulse;cur.Points[0].AccumulatedTangentImpulse=same?prev->Points[0].AccumulatedTangentImpulse:-prev->Points[0].AccumulatedTangentImpulse;cur.Points[0].CachedTangent=same?prev->Points[0].CachedTangent:-prev->Points[0].CachedTangent;}}}
+
+void PhysicsWorld::DetectCollisions(Scene&s)
+{
+    m_PreviousManifolds=std::move(m_Manifolds);m_Manifolds.clear();
+    std::vector<BroadPhasePair>pairs;m_BroadPhase.ComputePairs(s,pairs);
+    for(const auto&p:pairs){if(!s.IsEntityAlive(p.A)||!s.IsEntityAlive(p.B))continue;auto*ta=s.TryGetComponent<TransformComponent>(p.A.GetIndex());auto*tb=s.TryGetComponent<TransformComponent>(p.B.GetIndex());auto*ca=s.TryGetComponent<ColliderComponent>(p.A.GetIndex());auto*cb=s.TryGetComponent<ColliderComponent>(p.B.GetIndex());if(!ta||!tb||!ca||!cb)continue;ContactManifold m{};bool g=false;if(ca->Type==ColliderType::Sphere&&cb->Type==ColliderType::Sphere)g=GenerateSphereSphereManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);else if(ca->Type==ColliderType::Sphere&&cb->Type==ColliderType::Box)g=GenerateSphereBoxManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);else if(ca->Type==ColliderType::Box&&cb->Type==ColliderType::Sphere)g=GenerateSphereBoxManifold(p.B,*tb,*cb,p.A,*ta,*ca,m);else if(ca->Type==ColliderType::Box&&cb->Type==ColliderType::Box)g=GenerateBoxBoxManifold(p.A,*ta,*ca,p.B,*tb,*cb,m);if(g)m_Manifolds.push_back(m);}
+    for(auto[se,st,sc]:s.View<TransformComponent,ColliderComponent>()){if(sc.Type!=ColliderType::Sphere)continue;for(auto[pe,pt,pc]:s.View<TransformComponent,ColliderComponent>()){if(pc.Type!=ColliderType::Plane||se==pe)continue;ContactManifold m{};if(GenerateSpherePlaneManifold(se,st,sc,pe,pt,pc,m))m_Manifolds.push_back(m);}}
+    RestorePersistentContacts();
+
+    // Narrow Phase直後の幾何学統計を集計します。Impulse値はSolver後に確定するため、
+    // UpdateSolverDebugStatisticsAfterSolve()で別途集計します。
+    m_SolverDebugStatistics.ManifoldCount=static_cast<uint32_t>(m_Manifolds.size());
+    for(const ContactManifold&m:m_Manifolds)
+    {
+        m_SolverDebugStatistics.ContactPointCount+=static_cast<uint32_t>(m.PointCount);
+        for(std::size_t i=0;i<m.PointCount;++i)
+            m_SolverDebugStatistics.MaxPenetration=std::max(m_SolverDebugStatistics.MaxPenetration,std::max(m.Points[i].Penetration,0.0f));
+    }
+}
+
+void PhysicsWorld::RestorePersistentContacts()
+{
+    constexpr float md2=.05f*.05f,nt=.9f;
+    for(auto&cur:m_Manifolds)
+    {
+        if(cur.IsTrigger||cur.PointCount==0)continue;const ContactManifold*prev=nullptr;
+        for(const auto&cand:m_PreviousManifolds){if(!cand.IsTrigger&&cand.PointCount&&IsSamePair(cur,cand)){const bool same=cur.A==cand.A&&cur.B==cand.B;const math::Vec3 pn=same?cand.Normal:-cand.Normal;if(math::Vec3::Dot(cur.Normal.Normalized(),pn.Normalized())>=nt){prev=&cand;break;}}}
+        if(!prev)continue;
+
+        // 同一ペアかつ法線も継続しているので、Manifold単位のPersistenceとして数えます。
+        ++m_SolverDebugStatistics.PersistentManifoldCount;
+        const bool same=cur.A==prev->A&&cur.B==prev->B;bool used[ContactManifold::MaxContactPointCount]{};
+        for(std::size_t i=0;i<cur.PointCount;++i)
+        {
+            std::size_t best=ContactManifold::MaxContactPointCount;float bd=md2;
+            for(std::size_t j=0;j<prev->PointCount;++j){if(used[j])continue;const float d=(cur.Points[i].Position-prev->Points[j].Position).LengthSq();if(d<=bd){bd=d;best=j;}}
+            if(best==ContactManifold::MaxContactPointCount)continue;
+            used[best]=true;const auto&o=prev->Points[best];auto&n=cur.Points[i];n.AccumulatedNormalImpulse=o.AccumulatedNormalImpulse;n.AccumulatedTangentImpulse=same?o.AccumulatedTangentImpulse:-o.AccumulatedTangentImpulse;n.CachedTangent=same?o.CachedTangent:-o.CachedTangent;
+            ++m_SolverDebugStatistics.PersistentContactPointCount;
+        }
+        if(cur.Points[0].AccumulatedNormalImpulse==0&&prev->PointCount){cur.Points[0].AccumulatedNormalImpulse=prev->Points[0].AccumulatedNormalImpulse;cur.Points[0].AccumulatedTangentImpulse=same?prev->Points[0].AccumulatedTangentImpulse:-prev->Points[0].AccumulatedTangentImpulse;cur.Points[0].CachedTangent=same?prev->Points[0].CachedTangent:-prev->Points[0].CachedTangent;}
+    }
+}
+
 bool PhysicsWorld::RayCast(Scene&s,const math::Vec3&o,const math::Vec3&d,float maxF,PhysicsRayCastHit&out){if(maxF<0||d.LengthSq()<=1e-12f)return false;bool hit=false;float closest=maxF;PhysicsRayCastHit h{};m_BroadPhase.RayCast(s,o,d,maxF,[&](Entity e,uint32_t p,float ff,const math::Vec3&fn,float cur)->float{static_cast<void>(p);static_cast<void>(ff);static_cast<void>(fn);auto*t=s.TryGetComponent<TransformComponent>(e.GetIndex());auto*c=s.TryGetComponent<ColliderComponent>(e.GetIndex());if(!t||!c||c->Type==ColliderType::Plane)return cur;float f=0;math::Vec3 n{};if(!RayCastCollider(o,d,cur,*t,*c,f,n))return cur;if(!hit||f<closest){hit=true;closest=f;h.HitEntity=e;h.Fraction=f;h.Point=o+d*f;h.Normal=n;}return closest;});for(auto[e,t,c]:s.View<TransformComponent,ColliderComponent>()){if(c.Type!=ColliderType::Plane)continue;float f=0;math::Vec3 n{};if(RayCastPlane(o,d,closest,t,c,f,n)&&(!hit||f<closest)){hit=true;closest=f;h.HitEntity=e;h.Fraction=f;h.Point=o+d*f;h.Normal=n;}}if(hit)out=h;return hit;}
 void PhysicsWorld::QueryAABB(Scene&s,const AABB&q,std::vector<Entity>&out){out.clear();if(!q.IsValid())return;m_BroadPhase.QueryAABB(s,q,[&](Entity e,uint32_t p)->bool{static_cast<void>(p);auto*t=s.TryGetComponent<TransformComponent>(e.GetIndex());auto*c=s.TryGetComponent<ColliderComponent>(e.GetIndex());if(!t||!c)return true;AABB b{};if(ComputeColliderAABB(*t,*c,b)&&b.Overlaps(q))out.push_back(e);return true;});}
-void PhysicsWorld::SolveCollisions(Scene&s,float dt){SolveContactManifolds(s,m_Manifolds,dt,m_SolverSettings);}
+
+void PhysicsWorld::SolveCollisions(Scene&s,float dt)
+{
+    // Warm Start対象数はSolver適用前のcached impulseから判定します。
+    // EnableWarmStart=false時はcacheが存在していても実際には適用しないため0件です。
+    if(m_SolverSettings.EnableWarmStart)
+    {
+        for(const ContactManifold&m:m_Manifolds)
+            if(!m.IsTrigger&&m.PointCount>0&&(m.Points[0].AccumulatedNormalImpulse>0.0f||std::abs(m.Points[0].AccumulatedTangentImpulse)>1.0e-8f))
+                ++m_SolverDebugStatistics.WarmStartedConstraintCount;
+    }
+    m_SolverDebugStatistics.VelocityIterations=std::max(m_SolverSettings.VelocityIterations,1u);
+    SolveContactManifolds(s,m_Manifolds,dt,m_SolverSettings);
+    UpdateSolverDebugStatisticsAfterSolve();
+}
+
+void PhysicsWorld::UpdateSolverDebugStatisticsAfterSolve()
+{
+    // Solverが最終的に収束させた累積Impulseを記録します。
+    // Frictionは符号を持つため絶対値で最大値を比較します。
+    for(const ContactManifold&m:m_Manifolds)
+    {
+        for(std::size_t i=0;i<m.PointCount;++i)
+        {
+            const ContactPoint&p=m.Points[i];
+            m_SolverDebugStatistics.MaxNormalImpulse=std::max(m_SolverDebugStatistics.MaxNormalImpulse,std::max(p.AccumulatedNormalImpulse,0.0f));
+            m_SolverDebugStatistics.MaxFrictionImpulse=std::max(m_SolverDebugStatistics.MaxFrictionImpulse,std::abs(p.AccumulatedTangentImpulse));
+        }
+    }
+}
+
 void PhysicsWorld::UpdateSleeping(Scene&s,float dt){for(auto[e,rb]:s.View<RigidBodyComponent>()){static_cast<void>(e);if(rb.Type!=BodyType::Dynamic)continue;if(!rb.AllowSleep){WakeRigidBody(rb);continue;}if(rb.IsSleeping){rb.LinearVelocity=math::Vec3{};continue;}const float th=std::max(rb.SleepThreshold,0.0f);if(rb.LinearVelocity.LengthSq()<=th*th){rb.SleepTimer+=dt;const float req=std::max(rb.SleepTimeThreshold,0.0f);if(rb.SleepTimer>=req){rb.IsSleeping=true;rb.LinearVelocity=math::Vec3{};rb.SleepTimer=req;}}else rb.SleepTimer=0;}}
 void PhysicsWorld::ClearForces(Scene&s){for(auto[e,rb]:s.View<RigidBodyComponent>()){static_cast<void>(e);rb.Force=math::Vec3{};rb.Torque=math::Vec3{};}}
 void PhysicsWorld::AddForce(Scene&s,Entity e,const math::Vec3&f){if(!s.IsEntityAlive(e))return;auto*rb=s.TryGetComponent<RigidBodyComponent>(e.GetIndex());if(!rb||rb->Type!=BodyType::Dynamic||rb->InverseMass<=0)return;WakeRigidBody(*rb);rb->Force+=f;}
 void PhysicsWorld::AddImpulse(Scene&s,Entity e,const math::Vec3&i){if(!s.IsEntityAlive(e))return;auto*rb=s.TryGetComponent<RigidBodyComponent>(e.GetIndex());if(!rb||rb->Type!=BodyType::Dynamic||rb->InverseMass<=0)return;WakeRigidBody(*rb);rb->LinearVelocity+=i*rb->InverseMass;}
 void PhysicsWorld::WakeUp(Scene&s,Entity e){if(!s.IsEntityAlive(e))return;auto*rb=s.TryGetComponent<RigidBodyComponent>(e.GetIndex());if(rb&&rb->Type==BodyType::Dynamic)WakeRigidBody(*rb);}
-void PhysicsWorld::Step(Scene&s,float dt){if(dt<=0)return;ApplyForces(s,dt);IntegrateVelocities(s,dt);IntegratePositions(s,dt);DetectCollisions(s);SolveCollisions(s,dt);UpdateSleeping(s,dt);ClearForces(s);}
+void PhysicsWorld::Step(Scene&s,float dt)
+{
+    if(dt<=0)return;
+    // Statisticsは必ずStep単位です。前フレーム値が混ざらないよう最初に全項目を初期化します。
+    m_SolverDebugStatistics.Reset();
+    ApplyForces(s,dt);IntegrateVelocities(s,dt);IntegratePositions(s,dt);DetectCollisions(s);SolveCollisions(s,dt);UpdateSleeping(s,dt);ClearForces(s);
+}
 } // namespace ph
 } // namespace Raven
