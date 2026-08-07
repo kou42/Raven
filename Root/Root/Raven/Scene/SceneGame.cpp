@@ -99,9 +99,9 @@ void SceneGame::SpawnSphereBatch(int count)
         ColliderComponent collider{};
         collider.Type = ColliderType::Sphere;
         collider.Radius = m_SphereRadius * scale;
-        collider.Restitution = 0.35f;
-        collider.StaticFriction = 0.65f;
-        collider.DynamicFriction = 0.45f;
+        collider.Restitution = 0.8f;
+        collider.StaticFriction = 0.1f;
+        collider.DynamicFriction = 0.1f;
         sphere.AddComponent<ColliderComponent>(collider);
 
         // SphereBodyは現在、描画用TintとEntity対応表だけに使用します。
@@ -286,9 +286,9 @@ void SceneGame::OnCreate()
     floorCollider.Type = ColliderType::Plane;
     floorCollider.PlaneNormal = { 0.0f, 1.0f, 0.0f };
     floorCollider.PlaneOffset = 0.0f;
-    floorCollider.Restitution = 0.25f;
-    floorCollider.StaticFriction = 0.8f;
-    floorCollider.DynamicFriction = 0.6f;
+    floorCollider.Restitution = 0.8f;
+    floorCollider.StaticFriction = 0.1f;
+    floorCollider.DynamicFriction = 0.1f;
     floor.AddComponent<ColliderComponent>(floorCollider);
 
     m_FloorEntity = floor;

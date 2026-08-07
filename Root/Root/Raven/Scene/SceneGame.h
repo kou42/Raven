@@ -74,8 +74,8 @@ private:
 	ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
 
 	bool m_WasSpacePressed = false;
-	int m_MinSphereCount = 16;
-	int m_MaxSphereCount = 72;
+	int m_MinSphereCount = 50;
+	int m_MaxSphereCount = 100;
 	float m_TargetSphereDensity = 0.015f;
 
 	float m_Gravity = -9.8f;
