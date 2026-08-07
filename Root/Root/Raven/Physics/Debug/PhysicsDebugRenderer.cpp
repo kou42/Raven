@@ -1,12 +1,11 @@
-﻿#pragma once
-
-#include <algorithm>
+﻿#include <algorithm>
 #include <cstdint>
 #include <vector>
 
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 
+#include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -21,12 +20,14 @@
 namespace Raven::ph
 {
 
-PhysicsDebugRenderer::PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection)
+PhysicsDebugRenderer::PhysicsDebugRenderer(
+    Scene& scene,
+    const math::Mat4& view,
+    const math::Mat4& projection)
 {
     m_Scene = &scene;
     m_View = &view;
     m_Projection = &projection;
-
     Registry().push_back(this);
 }
 
@@ -53,19 +54,16 @@ std::vector<PhysicsDebugRenderer*>& PhysicsDebugRenderer::Registry()
     return registry;
 }
 
-void PhysicsDebugRenderer:: EnsureInitialized()
+void PhysicsDebugRenderer::EnsureInitialized()
 {
     if (m_Material)
     {
         return;
     }
 
-    // SceneGameと同じ基本Shaderを利用します。頂点Colorをそのまま使えるため、
-    // デバッグ描画専用Shaderを増やさずLines Pipelineだけを分離できます。
     Ref<Shader> shader = Shader::Create(
         "Raven/Assets/Shaders/Vertex/test.vert",
-        "Raven/Assets/Shaders/Fragment/test.frag"
-    );
+        "Raven/Assets/Shaders/Fragment/test.frag");
 
     if (!shader)
     {
@@ -77,51 +75,56 @@ void PhysicsDebugRenderer:: EnsureInitialized()
     specification.Shader = shader;
     specification.Topology = PrimitiveTopology::Lines;
     specification.Cull = CullMode::None;
-    // 物体の背後に隠れないよう、デバッグ線は常に前面へ描画します。
     specification.DepthTest = false;
     specification.DepthWrite = false;
     specification.DepthCompare = DepthCompareOperator::LessEqual;
     specification.Blend = true;
 
     m_Material = CreateRef<Material>(Pipeline::Create(specification));
-
 }
 
 void PhysicsDebugRenderer::UpdateToggleKeys()
 {
     const bool aabbPressed = Input::IsKeyPressed(Key::B);
-
-    if (aabbPressed && m_WasAABBKeyPressed == false)
+    if (aabbPressed && !m_WasAABBKeyPressed)
     {
         m_DrawAABBs = !m_DrawAABBs;
     }
-
     m_WasAABBKeyPressed = aabbPressed;
 
+    const bool fatPressed = Input::IsKeyPressed(Key::F);
+    if (fatPressed && !m_WasFatAABBKeyPressed)
+    {
+        m_DrawFatAABBs = !m_DrawFatAABBs;
+    }
+    m_WasFatAABBKeyPressed = fatPressed;
+
+    const bool treePressed = Input::IsKeyPressed(Key::T);
+    if (treePressed && !m_WasTreeKeyPressed)
+    {
+        m_DrawTree = !m_DrawTree;
+    }
+    m_WasTreeKeyPressed = treePressed;
+
     const bool pairPressed = Input::IsKeyPressed(Key::P);
-    if (pairPressed && m_WasPairKeyPressed == false)
+    if (pairPressed && !m_WasPairKeyPressed)
     {
         m_DrawPairs = !m_DrawPairs;
     }
-
     m_WasPairKeyPressed = pairPressed;
-
 }
 
 void PhysicsDebugRenderer::Render()
 {
     UpdateToggleKeys();
 
-    if (m_Scene == nullptr
-        || m_View == nullptr
-        || m_Projection == nullptr
-    ) {
+    if (m_Scene == nullptr || m_View == nullptr || m_Projection == nullptr)
+    {
         return;
     }
 
-    if (m_DrawAABBs == false
-        && m_DrawPairs == false
-    ) {
+    if (!m_DrawAABBs && !m_DrawFatAABBs && !m_DrawTree && !m_DrawPairs)
+    {
         return;
     }
 
@@ -134,10 +137,19 @@ void PhysicsDebugRenderer::Render()
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
 
+    // Dynamic Tree表示またはPair表示時に一度だけSceneとTreeを同期します。
+    // ComputePairs()はTree同期も行うため、Debug専用APIを増やさず既存経路を利用します。
+    std::vector<BroadPhasePair> pairs;
+    if (m_DrawFatAABBs || m_DrawTree || m_DrawPairs)
+    {
+        m_BroadPhase.ComputePairs(*m_Scene, pairs);
+    }
+
     if (m_DrawAABBs)
     {
         const math::Vec3 color{ 0.15f, 0.95f, 1.0f };
-        for (auto [entity, transform, collider] : m_Scene->View<TransformComponent, ColliderComponent>())
+        for (auto [entity, transform, collider]
+            : m_Scene->View<TransformComponent, ColliderComponent>())
         {
             static_cast<void>(entity);
             AABB bounds{};
@@ -148,18 +160,72 @@ void PhysicsDebugRenderer::Render()
         }
     }
 
+    if (m_DrawFatAABBs || m_DrawTree)
+    {
+        const DynamicAABBTree& tree = m_BroadPhase.GetTree();
+        const auto& nodes = tree.GetNodes();
+
+        // Validationに失敗した場合はTree全体を赤系で描画します。
+        // これによりBalance/Parent更新の破損を画面上ですぐ認識できます。
+        const DynamicAABBTreeValidationResult validation =
+            ValidateDynamicAABBTree(tree);
+        const bool treeValid = validation.IsValid();
+
+        const math::Vec3 leafColor = treeValid
+            ? math::Vec3{ 0.25f, 1.0f, 0.25f }
+            : math::Vec3{ 1.0f, 0.15f, 0.15f };
+
+        for (uint32_t nodeId = 0;
+            nodeId < static_cast<uint32_t>(nodes.size());
+            ++nodeId)
+        {
+            const DynamicAABBTreeNode& node = nodes[nodeId];
+            if (node.Height < 0)
+            {
+                continue; // Free List上のNodeは描画しません。
+            }
+
+            if (node.IsLeaf())
+            {
+                if (m_DrawFatAABBs)
+                {
+                    AddAABB(vertices, indices, node.Bounds, leafColor);
+                }
+                continue;
+            }
+
+            if (m_DrawTree)
+            {
+                // Heightが高いほどRoot側です。単一色にせず高さを明度へ反映すると、
+                // 回転後の階層構造を視覚的に追いやすくなります。
+                const float heightFactor =
+                    std::min(static_cast<float>(node.Height) / 8.0f, 1.0f);
+                const math::Vec3 branchColor = treeValid
+                    ? math::Vec3{
+                        0.45f + 0.45f * heightFactor,
+                        0.25f,
+                        1.0f - 0.35f * heightFactor }
+                    : math::Vec3{ 1.0f, 0.15f, 0.15f };
+
+                AddAABB(vertices, indices, node.Bounds, branchColor);
+            }
+        }
+    }
+
     if (m_DrawPairs)
     {
-        std::vector<BroadPhasePair> pairs;
-        m_BroadPhase.ComputePairs(*m_Scene, pairs);
         const math::Vec3 color{ 1.0f, 0.65f, 0.10f };
 
         for (const BroadPhasePair& pair : pairs)
         {
-            const TransformComponent* ta = m_Scene->TryGetComponent<TransformComponent>(pair.A.GetIndex());
-            const TransformComponent* tb = m_Scene->TryGetComponent<TransformComponent>(pair.B.GetIndex());
-            const ColliderComponent* ca = m_Scene->TryGetComponent<ColliderComponent>(pair.A.GetIndex());
-            const ColliderComponent* cb = m_Scene->TryGetComponent<ColliderComponent>(pair.B.GetIndex());
+            const TransformComponent* ta =
+                m_Scene->TryGetComponent<TransformComponent>(pair.A.GetIndex());
+            const TransformComponent* tb =
+                m_Scene->TryGetComponent<TransformComponent>(pair.B.GetIndex());
+            const ColliderComponent* ca =
+                m_Scene->TryGetComponent<ColliderComponent>(pair.A.GetIndex());
+            const ColliderComponent* cb =
+                m_Scene->TryGetComponent<ColliderComponent>(pair.B.GetIndex());
 
             if (!ta || !tb || !ca || !cb)
             {
@@ -168,18 +234,18 @@ void PhysicsDebugRenderer::Render()
 
             AABB a{};
             AABB b{};
-
-            if (ComputeColliderAABB(*ta, *ca, a) == false
-                || ComputeColliderAABB(*tb, *cb, b) == false
-            ) {
+            if (!ComputeColliderAABB(*ta, *ca, a)
+                || !ComputeColliderAABB(*tb, *cb, b))
+            {
                 continue;
             }
 
-            AddLine(vertices, indices,
-                (a.Min + a.Max) * 0.5f,
-                (b.Min + b.Max) * 0.5f,
-                color
-            );
+            AddLine(
+                vertices,
+                indices,
+                a.GetCenter(),
+                b.GetCenter(),
+                color);
         }
     }
 
@@ -189,7 +255,9 @@ void PhysicsDebugRenderer::Render()
     }
 
     Ref<VertexArray> vao = VertexArray::Create();
-    Ref<VertexBuffer> vbo = VertexBuffer::Create(reinterpret_cast<float*>(vertices.data()), static_cast<uint32_t>(vertices.size() * sizeof(DebugVertex)));
+    Ref<VertexBuffer> vbo = VertexBuffer::Create(
+        reinterpret_cast<float*>(vertices.data()),
+        static_cast<uint32_t>(vertices.size() * sizeof(DebugVertex)));
 
     vbo->SetLayout({
         { ShaderDataType::Float3, "a_Position" },
@@ -198,7 +266,9 @@ void PhysicsDebugRenderer::Render()
     });
 
     vao->AddVertexBuffer(vbo);
-    vao->SetIndexBuffer(IndexBuffer::Create(indices.data(), static_cast<uint32_t>(indices.size())));
+    vao->SetIndexBuffer(IndexBuffer::Create(
+        indices.data(),
+        static_cast<uint32_t>(indices.size())));
 
     Ref<Mesh> mesh = CreateRef<Mesh>(vao, static_cast<int32_t>(indices.size()));
     m_Material->SetUniform("u_View", *m_View);
@@ -213,8 +283,7 @@ void PhysicsDebugRenderer::AddLine(
     std::vector<uint32_t>& indices,
     const math::Vec3& a,
     const math::Vec3& b,
-    const math::Vec3& color
-)
+    const math::Vec3& color)
 {
     const uint32_t base = static_cast<uint32_t>(vertices.size());
     vertices.push_back({ a, color, {} });
@@ -226,20 +295,23 @@ void PhysicsDebugRenderer::AddLine(
 void PhysicsDebugRenderer::AddAABB(
     std::vector<DebugVertex>& vertices,
     std::vector<uint32_t>& indices,
-    const AABB& b,
-    const math::Vec3& color
-)
+    const AABB& bounds,
+    const math::Vec3& color)
 {
-
     const math::Vec3 c[8] = {
-        {b.Min.x,b.Min.y,b.Min.z}, {b.Max.x,b.Min.y,b.Min.z},
-        {b.Max.x,b.Min.y,b.Max.z}, {b.Min.x,b.Min.y,b.Max.z},
-        {b.Min.x,b.Max.y,b.Min.z}, {b.Max.x,b.Max.y,b.Min.z},
-        {b.Max.x,b.Max.y,b.Max.z}, {b.Min.x,b.Max.y,b.Max.z}
+        {bounds.Min.x, bounds.Min.y, bounds.Min.z},
+        {bounds.Max.x, bounds.Min.y, bounds.Min.z},
+        {bounds.Max.x, bounds.Min.y, bounds.Max.z},
+        {bounds.Min.x, bounds.Min.y, bounds.Max.z},
+        {bounds.Min.x, bounds.Max.y, bounds.Min.z},
+        {bounds.Max.x, bounds.Max.y, bounds.Min.z},
+        {bounds.Max.x, bounds.Max.y, bounds.Max.z},
+        {bounds.Min.x, bounds.Max.y, bounds.Max.z}
     };
 
     const uint32_t e[12][2] = {
-        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4},
+        {0,1},{1,2},{2,3},{3,0},
+        {4,5},{5,6},{6,7},{7,4},
         {0,4},{1,5},{2,6},{3,7}
     };
 
@@ -247,7 +319,6 @@ void PhysicsDebugRenderer::AddAABB(
     {
         AddLine(vertices, indices, c[edge[0]], c[edge[1]], color);
     }
-
 }
 
 } // namespace Raven::ph
