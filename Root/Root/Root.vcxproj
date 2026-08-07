@@ -147,6 +147,7 @@
     <ClCompile Include="Raven\Physics\Collision\BoxCollision.cpp" />
     <ClCompile Include="Raven\Physics\Collision\CollisionDetection.cpp" />
     <ClCompile Include="Raven\Physics\Collision\SphereCollision.cpp" />
+    <ClCompile Include="Raven\Physics\Debug\PhysicsDebugRenderer.cpp" />
     <ClCompile Include="Raven\Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Raven\Physics\PhysicsWorldControl.cpp" />
     <ClCompile Include="Raven\Physics\Solver\ContactSolver.cpp" />

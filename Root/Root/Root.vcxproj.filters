@@ -144,6 +144,12 @@
     <ClCompile Include="Raven\Renderer\Pipeline\Pipeline.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="Raven\Physics\PhysicsWorldControl.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\Physics\Debug\PhysicsDebugRenderer.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Raven\Core\Application.h">
@@ -207,9 +213,6 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Renderer\Layer\Layer.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Raven\Renderer\Layer\SandboxLayer.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Renderer\Buffer\OpenGLIndexBuffer.h">
