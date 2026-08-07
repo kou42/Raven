@@ -6,6 +6,7 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Collision/AABB.h"
+#include "Raven/Physics/Collision/BroadPhase.h"
 #include "Raven/Physics/Debug/PhysicsDebugSettings.h"
 
 namespace Raven
@@ -16,18 +17,6 @@ namespace ph
 {
 class PhysicsWorld;
 
-// ============================================================================
-// PhysicsDebugRenderer
-// ============================================================================
-// PhysicsWorldが実際に生成した診断データだけを既存Lines Pipelineで可視化します。
-//
-// Keyboard Toggle:
-//   B : Colliderのtight AABB
-//   F : Dynamic Tree LeafのFat AABB
-//   T : Dynamic Tree Branch AABB
-//   P : Broad Phase候補Pair
-//   C : Contact Point
-//   N : Contact Normal
 class PhysicsDebugRenderer
 {
 public:
@@ -38,8 +27,6 @@ public:
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
 
     static void RenderRegistered();
-
-    // Sceneが実際にStepしているPhysicsWorldを読み取り専用で関連付けます。
     static void BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld);
 
     PhysicsDebugSettings& GetSettings() { return m_Settings; }
@@ -84,6 +71,10 @@ private:
     const PhysicsWorld* m_PhysicsWorld = nullptr;
     const math::Mat4* m_View = nullptr;
     const math::Mat4* m_Projection = nullptr;
+
+    // TODO: PhysicsDebugRenderer.cppのPair描画をGetBroadPhasePairs()へ切り替えた時点で削除します。
+    // Snapshot自体はすでにBroadPhase側へ実装済みです。
+    BroadPhase m_PairDebugBroadPhase;
 
     Ref<Material> m_Material;
     PhysicsDebugSettings m_Settings{};
