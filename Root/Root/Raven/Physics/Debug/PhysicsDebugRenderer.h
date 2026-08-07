@@ -7,6 +7,7 @@
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
+#include "Raven/Physics/Debug/PhysicsDebugSettings.h"
 
 namespace Raven
 {
@@ -19,16 +20,16 @@ namespace ph
 // ============================================================================
 // PhysicsDebugRenderer
 // ============================================================================
-// 物理Broad Phaseの内部状態を既存Lines Pipelineで可視化します。
+// Physicsの内部状態を既存Lines Pipelineで可視化します。
 //
-// Toggle:
+// 現在のKeyboard Toggle:
 //   B : Colliderのtight AABB
 //   F : Dynamic Tree LeafのFat AABB
 //   T : Dynamic Tree Branch AABB
 //   P : Broad Phase候補Pair
 //
-// Fat AABBとBranchを分離して表示できるため、MoveProxyの再挿入タイミングと
-// SAH/Balance後のTree階層をそれぞれ確認できます。
+// 表示状態をPhysicsDebugSettingsへ集約しているため、将来Dear ImGuiを導入した際は
+// Checkboxから同じSettingsを書き換えるだけでKeyboard/UI双方を共存できます。
 class PhysicsDebugRenderer
 {
 public:
@@ -39,6 +40,9 @@ public:
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
 
     static void RenderRegistered();
+
+    PhysicsDebugSettings& GetSettings() { return m_Settings; }
+    const PhysicsDebugSettings& GetSettings() const { return m_Settings; }
 
 private:
     struct DebugVertex
@@ -72,16 +76,15 @@ private:
     const math::Mat4* m_View = nullptr;
     const math::Mat4* m_Projection = nullptr;
 
-    // Debug Renderer側にもBroadPhaseを永続保持します。
-    // 毎Renderで作り直すとFat AABBが常に初期化され、MoveProxyの挙動を
-    // 観察できなくなるためです。
+    // TODO(Physics Debug Overlay):
+    // 現行実装ではDebugRenderer自身がBroadPhaseを同期しています。
+    // Contact Point/NormalとSolver Statisticsを追加する段階で、Sceneから
+    // PhysicsWorldの読み取り専用参照を取得できるAPIを追加し、実際のSimulation Treeを
+    // 直接参照する構造へ移行します。
     BroadPhase m_BroadPhase;
-    Ref<Material> m_Material;
 
-    bool m_DrawAABBs = false;
-    bool m_DrawFatAABBs = false;
-    bool m_DrawTree = false;
-    bool m_DrawPairs = false;
+    Ref<Material> m_Material;
+    PhysicsDebugSettings m_Settings{};
 
     bool m_WasAABBKeyPressed = false;
     bool m_WasFatAABBKeyPressed = false;
