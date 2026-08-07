@@ -6,34 +6,28 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Collision/AABB.h"
-#include "Raven/Physics/Collision/BroadPhase.h"
 #include "Raven/Physics/Debug/PhysicsDebugSettings.h"
 
 namespace Raven
 {
-
 class Scene;
 
 namespace ph
 {
-
 class PhysicsWorld;
 
 // ============================================================================
 // PhysicsDebugRenderer
 // ============================================================================
-// Physicsの内部状態を既存Lines Pipelineで可視化します。
+// PhysicsWorldが実際に生成した診断データだけを既存Lines Pipelineで可視化します。
 //
-// 現在のKeyboard Toggle:
+// Keyboard Toggle:
 //   B : Colliderのtight AABB
 //   F : Dynamic Tree LeafのFat AABB
 //   T : Dynamic Tree Branch AABB
 //   P : Broad Phase候補Pair
 //   C : Contact Point
 //   N : Contact Normal
-//
-// 表示状態をPhysicsDebugSettingsへ集約しているため、将来Dear ImGuiを導入した際は
-// Checkboxから同じSettingsを書き換えるだけでKeyboard/UI双方を共存できます。
 class PhysicsDebugRenderer
 {
 public:
@@ -45,8 +39,7 @@ public:
 
     static void RenderRegistered();
 
-    // Sceneが実際のシミュレーションで使用しているPhysicsWorldをDebugRendererへ関連付けます。
-    // PhysicsDebugRenderer側で別のWorldを再構築せず、同じTree / Contact情報を読むための接続口です。
+    // Sceneが実際にStepしているPhysicsWorldを読み取り専用で関連付けます。
     static void BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld);
 
     PhysicsDebugSettings& GetSettings() { return m_Settings; }
@@ -91,11 +84,6 @@ private:
     const PhysicsWorld* m_PhysicsWorld = nullptr;
     const math::Mat4* m_View = nullptr;
     const math::Mat4* m_Projection = nullptr;
-
-    // Broad Phase Pair表示だけは既存機能を維持するためDebug専用BroadPhaseを残します。
-    // Fat AABB / Dynamic Tree / Contactは必ずm_PhysicsWorld側の実データを参照します。
-    // Pairも将来PhysicsWorld側へSnapshotを持たせれば完全に同一Stepへ統一できます。
-    BroadPhase m_PairDebugBroadPhase;
 
     Ref<Material> m_Material;
     PhysicsDebugSettings m_Settings{};
