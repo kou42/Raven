@@ -66,6 +66,12 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
                 return true;
             });
     }
+
+    // 重要:
+    // Debug RendererはBroad Phaseを再実行せず、このSnapshotを表示します。
+    // これにより画面に出るPairと、同じPhysics StepでNarrow Phaseへ渡されたPairが
+    // 完全に一致します。
+    m_LastPairs = outPairs;
 }
 
 void BroadPhase::Synchronize(Scene& scene)
