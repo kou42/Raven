@@ -1,12 +1,12 @@
 ﻿#pragma once
 
+#include <string>
 #include <vector>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Collision/AABB.h"
-#include "Raven/Physics/Collision/BroadPhase.h"
 #include "Raven/Physics/Debug/PhysicsDebugSettings.h"
 
 namespace Raven
@@ -17,6 +17,8 @@ namespace ph
 {
 class PhysicsWorld;
 
+// Physicsの3D可視化と画面左上のSolver Statistics Overlayを担当します。
+// UIライブラリには依存せず、既存Lines PipelineだけでDebug文字も描画します。
 class PhysicsDebugRenderer
 {
 public:
@@ -45,6 +47,8 @@ private:
     void EnsureInitialized();
     void UpdateToggleKeys();
     void Render();
+    void RenderWorldDebug();
+    void RenderOverlay();
 
     static void AddLine(
         std::vector<DebugVertex>& vertices,
@@ -66,15 +70,24 @@ private:
         float radius,
         const math::Vec3& color);
 
+    // 5x7 bitmap glyphをLine列へ変換します。
+    // Debug表示のためだけにFont Texture / FreeTypeを導入する必要をなくします。
+    static void AddOverlayText(
+        std::vector<DebugVertex>& vertices,
+        std::vector<uint32_t>& indices,
+        const std::string& text,
+        float pixelX,
+        float pixelY,
+        float pixelScale,
+        int viewportWidth,
+        int viewportHeight,
+        const math::Vec3& color);
+
 private:
     Scene* m_Scene = nullptr;
     const PhysicsWorld* m_PhysicsWorld = nullptr;
     const math::Mat4* m_View = nullptr;
     const math::Mat4* m_Projection = nullptr;
-
-    // TODO: PhysicsDebugRenderer.cppのPair描画をGetBroadPhasePairs()へ切り替えた時点で削除します。
-    // Snapshot自体はすでにBroadPhase側へ実装済みです。
-    BroadPhase m_PairDebugBroadPhase;
 
     Ref<Material> m_Material;
     PhysicsDebugSettings m_Settings{};
