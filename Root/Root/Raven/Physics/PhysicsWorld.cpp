@@ -4,7 +4,6 @@
 
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
-
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
@@ -21,27 +20,13 @@ void WakeRigidBody(RigidBodyComponent& rigidBody)
     rigidBody.SleepTimer = 0.0f;
 }
 
-// Sphereに対する正確なRay Castです。
-// Tree/Fat AABBは候補抽出にしか使わず、最終HitはCollider形状で判定します。
-bool RayCastSphere(
-    const math::Vec3& origin,
-    const math::Vec3& direction,
-    float maxFraction,
-    const math::Vec3& center,
-    float radius,
-    float& outFraction,
-    math::Vec3& outNormal)
+bool RayCastSphere(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
+    const math::Vec3& center, float radius, float& outFraction, math::Vec3& outNormal)
 {
     const math::Vec3 m = origin - center;
     const float a = math::Vec3::Dot(direction, direction);
-    if (a <= 1.0e-12f)
-    {
-        return false;
-    }
-
+    if (a <= 1.0e-12f) return false;
     const float c = math::Vec3::Dot(m, m) - radius * radius;
-
-    // Ray始点がSphere内部ならfraction=0として返します。
     if (c <= 0.0f)
     {
         outFraction = 0.0f;
@@ -49,113 +34,56 @@ bool RayCastSphere(
         outNormal = lengthSq > 1.0e-12f ? m / std::sqrt(lengthSq) : -direction.Normalized();
         return true;
     }
-
     const float b = math::Vec3::Dot(m, direction);
     const float discriminant = b * b - a * c;
-    if (discriminant < 0.0f)
-    {
-        return false;
-    }
-
+    if (discriminant < 0.0f) return false;
     const float fraction = (-b - std::sqrt(discriminant)) / a;
-    if (fraction < 0.0f || fraction > maxFraction)
-    {
-        return false;
-    }
-
+    if (fraction < 0.0f || fraction > maxFraction) return false;
     outFraction = fraction;
-    const math::Vec3 point = origin + direction * fraction;
-    outNormal = (point - center).Normalized();
+    outNormal = (origin + direction * fraction - center).Normalized();
     return true;
 }
 
-// PlaneはDynamic Treeへ入らないため、PhysicsWorld::RayCastから直接判定します。
-bool RayCastPlane(
-    const math::Vec3& origin,
-    const math::Vec3& direction,
-    float maxFraction,
-    const TransformComponent& transform,
-    const ColliderComponent& collider,
-    float& outFraction,
-    math::Vec3& outNormal)
+bool RayCastPlane(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
+    const TransformComponent& transform, const ColliderComponent& collider,
+    float& outFraction, math::Vec3& outNormal)
 {
     math::Vec3 normal = collider.PlaneNormal.Normalized();
-    if (normal.LengthSq() <= 1.0e-12f)
-    {
-        return false;
-    }
-
+    if (normal.LengthSq() <= 1.0e-12f) return false;
     const math::Vec3 pointOnPlane = transform.Position + collider.Offset;
     const float denominator = math::Vec3::Dot(normal, direction);
     const float signedDistance = math::Vec3::Dot(normal, origin - pointOnPlane);
-
     if (std::abs(denominator) <= 1.0e-8f)
     {
-        // Plane上から平行に開始する場合だけfraction=0とします。
-        if (std::abs(signedDistance) > 1.0e-6f)
-        {
-            return false;
-        }
+        if (std::abs(signedDistance) > 1.0e-6f) return false;
         outFraction = 0.0f;
         outNormal = normal;
         return true;
     }
-
     const float fraction = -signedDistance / denominator;
-    if (fraction < 0.0f || fraction > maxFraction)
-    {
-        return false;
-    }
-
+    if (fraction < 0.0f || fraction > maxFraction) return false;
     outFraction = fraction;
-    // 常にRayの進行方向へ向かない法線を返すと、ゲーム側で扱いやすくなります。
     outNormal = denominator < 0.0f ? normal : -normal;
     return true;
 }
 
-bool RayCastCollider(
-    const math::Vec3& origin,
-    const math::Vec3& direction,
-    float maxFraction,
-    const TransformComponent& transform,
-    const ColliderComponent& collider,
-    float& outFraction,
-    math::Vec3& outNormal)
+bool RayCastCollider(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
+    const TransformComponent& transform, const ColliderComponent& collider,
+    float& outFraction, math::Vec3& outNormal)
 {
     switch (collider.Type)
     {
     case ColliderType::Sphere:
-        return RayCastSphere(
-            origin,
-            direction,
-            maxFraction,
-            transform.Position + collider.Offset,
-            std::max(collider.Radius, 0.0f),
-            outFraction,
-            outNormal);
-
+        return RayCastSphere(origin, direction, maxFraction,
+            transform.Position + collider.Offset, std::max(collider.Radius, 0.0f), outFraction, outNormal);
     case ColliderType::Box:
     {
-        // 現在のBox Broad Phaseはworld AABBとして表現されているため、
-        // Query APIも同じCollider定義に合わせてtight AABBへ正確にRayCastします。
         AABB bounds{};
-        if (!ComputeColliderAABB(transform, collider, bounds))
-        {
-            return false;
-        }
+        if (!ComputeColliderAABB(transform, collider, bounds)) return false;
         return bounds.RayCast(origin, direction, maxFraction, outFraction, &outNormal);
     }
-
     case ColliderType::Plane:
-        return RayCastPlane(
-            origin,
-            direction,
-            maxFraction,
-            transform,
-            collider,
-            outFraction,
-            outNormal);
-
+        return RayCastPlane(origin, direction, maxFraction, transform, collider, outFraction, outNormal);
     default:
         return false;
     }
@@ -171,7 +99,6 @@ void PhysicsWorld::ApplyForces(Scene& scene, float dt)
     {
         static_cast<void>(entity); static_cast<void>(transform);
         if (rigidBody.Type != BodyType::Dynamic || rigidBody.IsSleeping || rigidBody.InverseMass <= 0.0f) continue;
-
         math::Vec3 acceleration{};
         if (rigidBody.UseGravity) acceleration += m_Gravity;
         acceleration += rigidBody.Force * rigidBody.InverseMass;
@@ -185,8 +112,7 @@ void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
     {
         static_cast<void>(entity);
         if (rigidBody.Type != BodyType::Dynamic || rigidBody.IsSleeping) continue;
-        const float linearDamping = std::max(rigidBody.LinearDamping, 0.0f);
-        rigidBody.LinearVelocity *= 1.0f / (1.0f + linearDamping * dt);
+        rigidBody.LinearVelocity *= 1.0f / (1.0f + std::max(rigidBody.LinearDamping, 0.0f) * dt);
     }
 }
 
@@ -209,175 +135,107 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     for (const BroadPhasePair& pair : candidatePairs)
     {
         if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B)) continue;
-
         TransformComponent* transformA = scene.TryGetComponent<TransformComponent>(pair.A.GetIndex());
         TransformComponent* transformB = scene.TryGetComponent<TransformComponent>(pair.B.GetIndex());
         ColliderComponent* colliderA = scene.TryGetComponent<ColliderComponent>(pair.A.GetIndex());
         ColliderComponent* colliderB = scene.TryGetComponent<ColliderComponent>(pair.B.GetIndex());
         if (!transformA || !transformB || !colliderA || !colliderB) continue;
 
+        ContactManifold manifold{};
+        bool generated = false;
+
         if (colliderA->Type == ColliderType::Sphere && colliderB->Type == ColliderType::Sphere)
         {
-            ContactManifold manifold{};
-            if (GenerateSphereSphereManifold(pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold))
-            {
-                m_Manifolds.push_back(manifold);
-            }
+            generated = GenerateSphereSphereManifold(
+                pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold);
         }
+        else if (colliderA->Type == ColliderType::Sphere && colliderB->Type == ColliderType::Box)
+        {
+            generated = GenerateSphereBoxManifold(
+                pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold);
+        }
+        else if (colliderA->Type == ColliderType::Box && colliderB->Type == ColliderType::Sphere)
+        {
+            // Sphere-Box関数はA=Sphere/B=Box規約で実装しています。
+            // Entityの並び順に依存せず同じ法線規約を保つため、ここでは引数だけ反転します。
+            generated = GenerateSphereBoxManifold(
+                pair.B, *transformB, *colliderB, pair.A, *transformA, *colliderA, manifold);
+        }
+
+        if (generated) m_Manifolds.push_back(manifold);
     }
 
+    // Planeは無限形状なのでDynamic Tree外でSphere-Planeを判定します。
     for (auto [sphereEntity, sphereTransform, sphereCollider] : scene.View<TransformComponent, ColliderComponent>())
     {
         if (sphereCollider.Type != ColliderType::Sphere) continue;
-
         for (auto [planeEntity, planeTransform, planeCollider] : scene.View<TransformComponent, ColliderComponent>())
         {
             if (planeCollider.Type != ColliderType::Plane || sphereEntity == planeEntity) continue;
-
             ContactManifold manifold{};
-            if (GenerateSpherePlaneManifold(sphereEntity, sphereTransform, sphereCollider, planeEntity, planeTransform, planeCollider, manifold))
-            {
+            if (GenerateSpherePlaneManifold(sphereEntity, sphereTransform, sphereCollider,
+                planeEntity, planeTransform, planeCollider, manifold))
                 m_Manifolds.push_back(manifold);
-            }
         }
     }
 }
 
-// ============================================================================
-// PhysicsWorld::RayCast
-// ============================================================================
-// 1. Dynamic TreeのFat AABBで候補を絞る
-// 2. 候補Colliderの実形状で再判定する
-// 3. HitするたびcurrentMaxを縮め、遠いTree Branchを枝刈りする
-// 4. Tree外の無限Planeも最後に比較する
-bool PhysicsWorld::RayCast(
-    Scene& scene,
-    const math::Vec3& origin,
-    const math::Vec3& direction,
-    float maxFraction,
-    PhysicsRayCastHit& outHit)
+bool PhysicsWorld::RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
+    float maxFraction, PhysicsRayCastHit& outHit)
 {
-    if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f)
-    {
-        return false;
-    }
-
+    if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f) return false;
     bool hasHit = false;
     float closestFraction = maxFraction;
     PhysicsRayCastHit closest{};
 
-    m_BroadPhase.RayCast(
-        scene,
-        origin,
-        direction,
-        maxFraction,
-        [&](Entity entity,
-            uint32_t proxyId,
-            float fatFraction,
-            const math::Vec3& fatNormal,
-            float currentMax) -> float
+    m_BroadPhase.RayCast(scene, origin, direction, maxFraction,
+        [&](Entity entity, uint32_t proxyId, float fatFraction, const math::Vec3& fatNormal, float currentMax) -> float
         {
-            static_cast<void>(proxyId);
-            static_cast<void>(fatFraction);
-            static_cast<void>(fatNormal);
-
+            static_cast<void>(proxyId); static_cast<void>(fatFraction); static_cast<void>(fatNormal);
             const TransformComponent* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
             const ColliderComponent* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
-            if (!transform || !collider || collider->Type == ColliderType::Plane)
-            {
-                return currentMax;
-            }
-
-            float fraction = 0.0f;
-            math::Vec3 normal{};
-            if (!RayCastCollider(origin, direction, currentMax, *transform, *collider, fraction, normal))
-            {
-                return currentMax;
-            }
-
+            if (!transform || !collider || collider->Type == ColliderType::Plane) return currentMax;
+            float fraction = 0.0f; math::Vec3 normal{};
+            if (!RayCastCollider(origin, direction, currentMax, *transform, *collider, fraction, normal)) return currentMax;
             if (!hasHit || fraction < closestFraction)
             {
-                hasHit = true;
-                closestFraction = fraction;
-                closest.HitEntity = entity;
-                closest.Fraction = fraction;
-                closest.Point = origin + direction * fraction;
-                closest.Normal = normal;
+                hasHit = true; closestFraction = fraction;
+                closest.HitEntity = entity; closest.Fraction = fraction;
+                closest.Point = origin + direction * fraction; closest.Normal = normal;
             }
-
             return closestFraction;
         });
 
-    // Planeは無限なのでDynamic AABB Treeへ登録していません。
     for (auto [entity, transform, collider] : scene.View<TransformComponent, ColliderComponent>())
     {
-        if (collider.Type != ColliderType::Plane)
-        {
-            continue;
-        }
-
-        float fraction = 0.0f;
-        math::Vec3 normal{};
-        if (!RayCastPlane(origin, direction, closestFraction, transform, collider, fraction, normal))
-        {
-            continue;
-        }
-
+        if (collider.Type != ColliderType::Plane) continue;
+        float fraction = 0.0f; math::Vec3 normal{};
+        if (!RayCastPlane(origin, direction, closestFraction, transform, collider, fraction, normal)) continue;
         if (!hasHit || fraction < closestFraction)
         {
-            hasHit = true;
-            closestFraction = fraction;
-            closest.HitEntity = entity;
-            closest.Fraction = fraction;
-            closest.Point = origin + direction * fraction;
-            closest.Normal = normal;
+            hasHit = true; closestFraction = fraction;
+            closest.HitEntity = entity; closest.Fraction = fraction;
+            closest.Point = origin + direction * fraction; closest.Normal = normal;
         }
     }
-
-    if (hasHit)
-    {
-        outHit = closest;
-    }
+    if (hasHit) outHit = closest;
     return hasHit;
 }
 
-// ============================================================================
-// PhysicsWorld::QueryAABB
-// ============================================================================
-// TreeのLeafはFat AABBなので、Query結果をそのまま返すと余分なEntityが混ざります。
-// 必ず現在Transformからtight AABBを再生成してOverlapを確認してから公開します。
-void PhysicsWorld::QueryAABB(
-    Scene& scene,
-    const AABB& queryBounds,
-    std::vector<Entity>& outEntities)
+void PhysicsWorld::QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities)
 {
     outEntities.clear();
-    if (!queryBounds.IsValid())
-    {
-        return;
-    }
-
-    m_BroadPhase.QueryAABB(
-        scene,
-        queryBounds,
+    if (!queryBounds.IsValid()) return;
+    m_BroadPhase.QueryAABB(scene, queryBounds,
         [&](Entity entity, uint32_t proxyId) -> bool
         {
             static_cast<void>(proxyId);
-
             const TransformComponent* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
             const ColliderComponent* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
-            if (!transform || !collider)
-            {
-                return true;
-            }
-
+            if (!transform || !collider) return true;
             AABB tightBounds{};
-            if (ComputeColliderAABB(*transform, *collider, tightBounds)
-                && tightBounds.Overlaps(queryBounds))
-            {
+            if (ComputeColliderAABB(*transform, *collider, tightBounds) && tightBounds.Overlaps(queryBounds))
                 outEntities.push_back(entity);
-            }
-
             return true;
         });
 }
@@ -395,7 +253,6 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
         if (rigidBody.Type != BodyType::Dynamic) continue;
         if (!rigidBody.AllowSleep) { WakeRigidBody(rigidBody); continue; }
         if (rigidBody.IsSleeping) { rigidBody.LinearVelocity = math::Vec3{}; continue; }
-
         const float threshold = std::max(rigidBody.SleepThreshold, 0.0f);
         if (rigidBody.LinearVelocity.LengthSq() <= threshold * threshold)
         {
@@ -427,8 +284,7 @@ void PhysicsWorld::AddForce(Scene& scene, Entity entity, const math::Vec3& force
     if (!scene.IsEntityAlive(entity)) return;
     RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
     if (!rigidBody || rigidBody->Type != BodyType::Dynamic || rigidBody->InverseMass <= 0.0f) return;
-    WakeRigidBody(*rigidBody);
-    rigidBody->Force += force;
+    WakeRigidBody(*rigidBody); rigidBody->Force += force;
 }
 
 void PhysicsWorld::AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse)
@@ -436,8 +292,7 @@ void PhysicsWorld::AddImpulse(Scene& scene, Entity entity, const math::Vec3& imp
     if (!scene.IsEntityAlive(entity)) return;
     RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
     if (!rigidBody || rigidBody->Type != BodyType::Dynamic || rigidBody->InverseMass <= 0.0f) return;
-    WakeRigidBody(*rigidBody);
-    rigidBody->LinearVelocity += impulse * rigidBody->InverseMass;
+    WakeRigidBody(*rigidBody); rigidBody->LinearVelocity += impulse * rigidBody->InverseMass;
 }
 
 void PhysicsWorld::WakeUp(Scene& scene, Entity entity)
