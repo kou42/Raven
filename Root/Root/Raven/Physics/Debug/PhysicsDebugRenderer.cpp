@@ -1,11 +1,17 @@
 ﻿#include <algorithm>
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
+#include <string>
 #include <vector>
+
+#include <glad/glad.h>
 
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 
 #include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
+#include "Raven/Physics/Debug/PhysicsDebugOverlayFont.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
@@ -20,6 +26,22 @@
 
 namespace Raven::ph
 {
+namespace
+{
+
+std::string OnOff(bool enabled)
+{
+    return enabled ? "ON" : "OFF";
+}
+
+std::string FormatFloat(float value)
+{
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(3) << value;
+    return stream.str();
+}
+
+} // namespace
 
 PhysicsDebugRenderer::PhysicsDebugRenderer(
     Scene& scene,
@@ -51,9 +73,6 @@ void PhysicsDebugRenderer::RenderRegistered()
 
 void PhysicsDebugRenderer::BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld)
 {
-    // RegistryにはSceneごとのDebugRendererが登録されています。
-    // Scene::OnUpdatePhysics()から呼ぶことで、そのSceneが実際にStepしているWorldだけを
-    // 対応するDebugRendererへ関連付けます。
     for (PhysicsDebugRenderer* renderer : Registry())
     {
         if (renderer != nullptr && renderer->m_Scene == &scene)
@@ -152,12 +171,15 @@ void PhysicsDebugRenderer::Render()
         return;
     }
 
-    if (!m_Settings.ShowAABB
-        && !m_Settings.ShowFatAABB
-        && !m_Settings.ShowDynamicAABBTree
-        && !m_Settings.ShowBroadPhasePairs
-        && !m_Settings.ShowContactPoints
-        && !m_Settings.ShowContactNormals)
+    const bool hasWorldDebug =
+        m_Settings.ShowAABB
+        || m_Settings.ShowFatAABB
+        || m_Settings.ShowDynamicAABBTree
+        || m_Settings.ShowBroadPhasePairs
+        || m_Settings.ShowContactPoints
+        || m_Settings.ShowContactNormals;
+
+    if (!hasWorldDebug && !m_Settings.ShowSolverStatistics)
     {
         return;
     }
@@ -168,11 +190,22 @@ void PhysicsDebugRenderer::Render()
         return;
     }
 
+    if (hasWorldDebug)
+    {
+        RenderWorldDebug();
+    }
+
+    if (m_Settings.ShowSolverStatistics)
+    {
+        RenderOverlay();
+    }
+}
+
+void PhysicsDebugRenderer::RenderWorldDebug()
+{
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
 
-    // Tight AABBは現在のTransform + Colliderから直接計算します。
-    // Dynamic Treeに入る前の「実形状を包むBounds」としてFat AABBとの差を確認できます。
     if (m_Settings.ShowAABB)
     {
         const math::Vec3 color{ 0.15f, 0.95f, 1.0f };
@@ -188,8 +221,6 @@ void PhysicsDebugRenderer::Render()
         }
     }
 
-    // Fat AABB / Tree / Contactは、DebugRendererが再構築したデータではなく
-    // PhysicsWorld::Step()が実際に使用したデータを読み取ります。
     if (m_PhysicsWorld != nullptr)
     {
         if (m_Settings.ShowFatAABB || m_Settings.ShowDynamicAABBTree)
@@ -204,11 +235,8 @@ void PhysicsDebugRenderer::Render()
                 ? math::Vec3{ 0.25f, 1.0f, 0.25f }
                 : math::Vec3{ 1.0f, 0.15f, 0.15f };
 
-            for (uint32_t nodeId = 0;
-                nodeId < static_cast<uint32_t>(nodes.size());
-                ++nodeId)
+            for (const DynamicAABBTreeNode& node : nodes)
             {
-                const DynamicAABBTreeNode& node = nodes[nodeId];
                 if (node.Height < 0)
                 {
                     continue;
@@ -244,9 +272,6 @@ void PhysicsDebugRenderer::Render()
             const math::Vec3 pointColor{ 1.0f, 0.2f, 0.2f };
             const math::Vec3 normalColor{ 1.0f, 1.0f, 0.2f };
 
-            // ContactManifoldはNarrow Phaseの結果そのものです。
-            // Solverが使用した接触点と法線を直接描画するため、Broad Phaseの候補表示とは
-            // 異なり「実際に衝突として成立した場所」を確認できます。
             for (const ContactManifold& manifold : m_PhysicsWorld->GetContactManifolds())
             {
                 for (std::size_t pointIndex = 0;
@@ -277,52 +302,135 @@ void PhysicsDebugRenderer::Render()
                 }
             }
         }
-    }
 
-    // Pair表示は既存機能との互換性のため現時点ではDebug用BroadPhaseで維持します。
-    // 次段階でPhysicsWorldが直近PairをSnapshotとして公開すれば、これも同一Stepへ統一できます。
-    if (m_Settings.ShowBroadPhasePairs)
-    {
-        std::vector<BroadPhasePair> pairs;
-        m_PairDebugBroadPhase.ComputePairs(*m_Scene, pairs);
-
-        const math::Vec3 color{ 1.0f, 0.65f, 0.10f };
-        for (const BroadPhasePair& pair : pairs)
+        if (m_Settings.ShowBroadPhasePairs)
         {
-            const TransformComponent* ta =
-                m_Scene->TryGetComponent<TransformComponent>(pair.A.GetIndex());
-            const TransformComponent* tb =
-                m_Scene->TryGetComponent<TransformComponent>(pair.B.GetIndex());
-            const ColliderComponent* ca =
-                m_Scene->TryGetComponent<ColliderComponent>(pair.A.GetIndex());
-            const ColliderComponent* cb =
-                m_Scene->TryGetComponent<ColliderComponent>(pair.B.GetIndex());
+            const math::Vec3 color{ 1.0f, 0.65f, 0.10f };
 
-            if (!ta || !tb || !ca || !cb)
+            // Debug側でComputePairs()を再実行せず、PhysicsWorldのCollision Detectionが
+            // 実際に生成した候補Pair Snapshotをそのまま表示します。
+            for (const BroadPhasePair& pair : m_PhysicsWorld->GetBroadPhasePairs())
             {
-                continue;
-            }
+                const TransformComponent* ta =
+                    m_Scene->TryGetComponent<TransformComponent>(pair.A.GetIndex());
+                const TransformComponent* tb =
+                    m_Scene->TryGetComponent<TransformComponent>(pair.B.GetIndex());
+                const ColliderComponent* ca =
+                    m_Scene->TryGetComponent<ColliderComponent>(pair.A.GetIndex());
+                const ColliderComponent* cb =
+                    m_Scene->TryGetComponent<ColliderComponent>(pair.B.GetIndex());
 
-            AABB a{};
-            AABB b{};
-            if (!ComputeColliderAABB(*ta, *ca, a)
-                || !ComputeColliderAABB(*tb, *cb, b))
-            {
-                continue;
-            }
+                if (!ta || !tb || !ca || !cb)
+                {
+                    continue;
+                }
 
-            AddLine(vertices, indices, a.GetCenter(), b.GetCenter(), color);
+                AABB a{};
+                AABB b{};
+                if (ComputeColliderAABB(*ta, *ca, a)
+                    && ComputeColliderAABB(*tb, *cb, b))
+                {
+                    AddLine(vertices, indices, a.GetCenter(), b.GetCenter(), color);
+                }
+            }
         }
     }
 
-    if (indices.empty())
+    SubmitLines(vertices, indices, *m_View, *m_Projection);
+}
+
+void PhysicsDebugRenderer::RenderOverlay()
+{
+    if (m_PhysicsWorld == nullptr)
+    {
+        return;
+    }
+
+    GLint viewport[4] = {};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    const int viewportWidth = viewport[2];
+    const int viewportHeight = viewport[3];
+
+    if (viewportWidth <= 0 || viewportHeight <= 0)
+    {
+        return;
+    }
+
+    std::vector<DebugVertex> vertices;
+    std::vector<uint32_t> indices;
+
+    const PhysicsSolverDebugStatistics& stats =
+        m_PhysicsWorld->GetSolverDebugStatistics();
+
+    const math::Vec3 titleColor{ 0.25f, 1.0f, 0.85f };
+    const math::Vec3 textColor{ 0.92f, 0.92f, 0.92f };
+    const math::Vec3 enabledColor{ 0.35f, 1.0f, 0.35f };
+    const math::Vec3 disabledColor{ 0.65f, 0.65f, 0.65f };
+
+    constexpr float left = 16.0f;
+    constexpr float top = 16.0f;
+    constexpr float scale = 2.0f;
+    constexpr float lineHeight = 18.0f;
+
+    float y = top;
+    auto addText = [&](const std::string& text, const math::Vec3& color)
+    {
+        AddOverlayText(
+            vertices, indices, text,
+            left, y, scale,
+            viewportWidth, viewportHeight,
+            color);
+        y += lineHeight;
+    };
+
+    addText("PHYSICS DEBUG", titleColor);
+    y += 6.0f;
+    addText("SOLVER", titleColor);
+    addText("MANIFOLDS: " + std::to_string(stats.ManifoldCount), textColor);
+    addText("CONTACT POINTS: " + std::to_string(stats.ContactPointCount), textColor);
+    addText("PERSISTENT MANIFOLDS: " + std::to_string(stats.PersistentManifoldCount), textColor);
+    addText("PERSISTENT CONTACTS: " + std::to_string(stats.PersistentContactPointCount), textColor);
+    addText("WARM STARTED: " + std::to_string(stats.WarmStartedConstraintCount), textColor);
+    addText("ITERATIONS: " + std::to_string(stats.VelocityIterations), textColor);
+    addText("MAX PENETRATION: " + FormatFloat(stats.MaxPenetration), textColor);
+    addText("NORMAL IMPULSE: " + FormatFloat(stats.MaxNormalImpulse), textColor);
+    addText("FRICTION IMPULSE: " + FormatFloat(stats.MaxFrictionImpulse), textColor);
+
+    y += 6.0f;
+    addText("VISUALIZATION", titleColor);
+
+    auto addToggle = [&](const char* key, const char* label, bool enabled)
+    {
+        const std::string text =
+            std::string("[") + key + "] " + label + ": " + OnOff(enabled);
+        addText(text, enabled ? enabledColor : disabledColor);
+    };
+
+    addToggle("B", "AABB", m_Settings.ShowAABB);
+    addToggle("F", "FAT AABB", m_Settings.ShowFatAABB);
+    addToggle("T", "DYNAMIC TREE", m_Settings.ShowDynamicAABBTree);
+    addToggle("P", "BROAD PAIRS", m_Settings.ShowBroadPhasePairs);
+    addToggle("C", "CONTACT POINT", m_Settings.ShowContactPoints);
+    addToggle("N", "CONTACT NORMAL", m_Settings.ShowContactNormals);
+
+    // Overlay頂点はすでにNDC座標なので、View/ProjectionともIdentityを使用します。
+    SubmitLines(vertices, indices, math::Mat4::Identity(), math::Mat4::Identity());
+}
+
+void PhysicsDebugRenderer::SubmitLines(
+    const std::vector<DebugVertex>& vertices,
+    const std::vector<uint32_t>& indices,
+    const math::Mat4& view,
+    const math::Mat4& projection)
+{
+    if (vertices.empty() || indices.empty())
     {
         return;
     }
 
     Ref<VertexArray> vao = VertexArray::Create();
     Ref<VertexBuffer> vbo = VertexBuffer::Create(
-        reinterpret_cast<float*>(vertices.data()),
+        reinterpret_cast<float*>(const_cast<DebugVertex*>(vertices.data())),
         static_cast<uint32_t>(vertices.size() * sizeof(DebugVertex)));
 
     vbo->SetLayout({
@@ -333,12 +441,12 @@ void PhysicsDebugRenderer::Render()
 
     vao->AddVertexBuffer(vbo);
     vao->SetIndexBuffer(IndexBuffer::Create(
-        indices.data(),
+        const_cast<uint32_t*>(indices.data()),
         static_cast<uint32_t>(indices.size())));
 
     Ref<Mesh> mesh = CreateRef<Mesh>(vao, static_cast<int32_t>(indices.size()));
-    m_Material->SetUniform("u_View", *m_View);
-    m_Material->SetUniform("u_Projection", *m_Projection);
+    m_Material->SetUniform("u_View", view);
+    m_Material->SetUniform("u_Projection", projection);
     m_Material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
     m_Material->SetUniform("u_Alpha", 1.0f);
     Renderer::Draw(mesh, m_Material, math::Mat4::Identity());
@@ -394,8 +502,6 @@ void PhysicsDebugRenderer::AddPointMarker(
     float radius,
     const math::Vec3& color)
 {
-    // Contact Pointは小さなMeshを毎点生成せず、X/Y/Z軸方向の十字で表現します。
-    // Contact数が増えてもすべて同じLines Pipelineへまとめられるため軽量です。
     const float r = std::max(radius, 0.0f);
     const math::Vec3 x{ r, 0.0f, 0.0f };
     const math::Vec3 y{ 0.0f, r, 0.0f };
@@ -404,6 +510,73 @@ void PhysicsDebugRenderer::AddPointMarker(
     AddLine(vertices, indices, position - x, position + x, color);
     AddLine(vertices, indices, position - y, position + y, color);
     AddLine(vertices, indices, position - z, position + z, color);
+}
+
+void PhysicsDebugRenderer::AddOverlayText(
+    std::vector<DebugVertex>& vertices,
+    std::vector<uint32_t>& indices,
+    const std::string& text,
+    float pixelX,
+    float pixelY,
+    float pixelScale,
+    int viewportWidth,
+    int viewportHeight,
+    const math::Vec3& color)
+{
+    if (viewportWidth <= 0 || viewportHeight <= 0 || pixelScale <= 0.0f)
+    {
+        return;
+    }
+
+    auto toNdc = [&](float x, float y)
+    {
+        return math::Vec3{
+            (x / static_cast<float>(viewportWidth)) * 2.0f - 1.0f,
+            1.0f - (y / static_cast<float>(viewportHeight)) * 2.0f,
+            0.0f };
+    };
+
+    float cursorX = pixelX;
+
+    for (char c : text)
+    {
+        const detail::Glyph glyph = detail::GetPhysicsDebugGlyph(c);
+
+        // 1bitを小さな横線として描画します。
+        // 連続bitを1本へまとめることで、1pixelごとにLineを作るより頂点数を抑えます。
+        for (int row = 0; row < 7; ++row)
+        {
+            int column = 0;
+            while (column < 5)
+            {
+                const uint8_t mask = static_cast<uint8_t>(1u << (4 - column));
+                if ((glyph[row] & mask) == 0)
+                {
+                    ++column;
+                    continue;
+                }
+
+                const int runStart = column;
+                while (column < 5)
+                {
+                    const uint8_t runMask = static_cast<uint8_t>(1u << (4 - column));
+                    if ((glyph[row] & runMask) == 0)
+                    {
+                        break;
+                    }
+                    ++column;
+                }
+
+                const float x0 = cursorX + static_cast<float>(runStart) * pixelScale;
+                const float x1 = cursorX + static_cast<float>(column) * pixelScale;
+                const float y = pixelY + static_cast<float>(row) * pixelScale;
+
+                AddLine(vertices, indices, toNdc(x0, y), toNdc(x1, y), color);
+            }
+        }
+
+        cursorX += 6.0f * pixelScale;
+    }
 }
 
 } // namespace Raven::ph
