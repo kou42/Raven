@@ -15,6 +15,17 @@ class Scene;
 namespace ph
 {
 
+// RayCastで最も近いColliderに当たった結果です。
+// Fractionは Point = Origin + Direction * Fraction の係数なので、
+// Directionを正規化した場合はそのまま距離として扱えます。
+struct PhysicsRayCastHit
+{
+    Entity HitEntity{};
+    math::Vec3 Point{};
+    math::Vec3 Normal{};
+    float Fraction = 0.0f;
+};
+
 class PhysicsWorld
 {
 public:
@@ -34,13 +45,33 @@ public:
     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
     void WakeUp(Scene& scene, Entity entity);
 
+    // ------------------------------------------------------------------------
+    // Physics Query API
+    // ------------------------------------------------------------------------
+    // Dynamic AABB Treeで候補を高速に絞り込み、その後tight AABB/実Colliderで
+    // false positiveを除去します。
+    //
+    // RayCastは最も近い1件を返します。directionは正規化不要です。
+    // maxFractionは origin + direction * maxFraction までを探索範囲とします。
+    bool RayCast(
+        Scene& scene,
+        const math::Vec3& origin,
+        const math::Vec3& direction,
+        float maxFraction,
+        PhysicsRayCastHit& outHit);
+
+    // queryBoundsと実際のtight AABBが重なる有限Colliderを列挙します。
+    // Planeは無限形状のためAABB Query対象外です。
+    void QueryAABB(
+        Scene& scene,
+        const AABB& queryBounds,
+        std::vector<Entity>& outEntities);
+
     const std::vector<ContactManifold>& GetContactManifolds() const
     {
         return m_Manifolds;
     }
 
-    // Debug Drawや将来のPhysics QueryからTree状態を参照するため公開します。
-    // Treeそのものの所有・更新責務はPhysicsWorld/BroadPhase側に残します。
     const BroadPhase& GetBroadPhase() const
     {
         return m_BroadPhase;
@@ -59,11 +90,7 @@ private:
 
 private:
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
-
-    // Dynamic AABB Treeはフレームをまたいで保持することが重要です。
-    // 毎Step作り直すとFat AABBによる「再挿入回避」の利点が失われます。
     BroadPhase m_BroadPhase;
-
     std::vector<ContactManifold> m_Manifolds;
 };
 
