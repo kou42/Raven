@@ -1,4 +1,6 @@
 ﻿#include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -17,6 +19,146 @@ void WakeRigidBody(RigidBodyComponent& rigidBody)
 {
     rigidBody.IsSleeping = false;
     rigidBody.SleepTimer = 0.0f;
+}
+
+// Sphereに対する正確なRay Castです。
+// Tree/Fat AABBは候補抽出にしか使わず、最終HitはCollider形状で判定します。
+bool RayCastSphere(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const math::Vec3& center,
+    float radius,
+    float& outFraction,
+    math::Vec3& outNormal)
+{
+    const math::Vec3 m = origin - center;
+    const float a = math::Vec3::Dot(direction, direction);
+    if (a <= 1.0e-12f)
+    {
+        return false;
+    }
+
+    const float c = math::Vec3::Dot(m, m) - radius * radius;
+
+    // Ray始点がSphere内部ならfraction=0として返します。
+    if (c <= 0.0f)
+    {
+        outFraction = 0.0f;
+        const float lengthSq = m.LengthSq();
+        outNormal = lengthSq > 1.0e-12f ? m / std::sqrt(lengthSq) : -direction.Normalized();
+        return true;
+    }
+
+    const float b = math::Vec3::Dot(m, direction);
+    const float discriminant = b * b - a * c;
+    if (discriminant < 0.0f)
+    {
+        return false;
+    }
+
+    const float fraction = (-b - std::sqrt(discriminant)) / a;
+    if (fraction < 0.0f || fraction > maxFraction)
+    {
+        return false;
+    }
+
+    outFraction = fraction;
+    const math::Vec3 point = origin + direction * fraction;
+    outNormal = (point - center).Normalized();
+    return true;
+}
+
+// PlaneはDynamic Treeへ入らないため、PhysicsWorld::RayCastから直接判定します。
+bool RayCastPlane(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const TransformComponent& transform,
+    const ColliderComponent& collider,
+    float& outFraction,
+    math::Vec3& outNormal)
+{
+    math::Vec3 normal = collider.PlaneNormal.Normalized();
+    if (normal.LengthSq() <= 1.0e-12f)
+    {
+        return false;
+    }
+
+    const math::Vec3 pointOnPlane = transform.Position + collider.Offset;
+    const float denominator = math::Vec3::Dot(normal, direction);
+    const float signedDistance = math::Vec3::Dot(normal, origin - pointOnPlane);
+
+    if (std::abs(denominator) <= 1.0e-8f)
+    {
+        // Plane上から平行に開始する場合だけfraction=0とします。
+        if (std::abs(signedDistance) > 1.0e-6f)
+        {
+            return false;
+        }
+        outFraction = 0.0f;
+        outNormal = normal;
+        return true;
+    }
+
+    const float fraction = -signedDistance / denominator;
+    if (fraction < 0.0f || fraction > maxFraction)
+    {
+        return false;
+    }
+
+    outFraction = fraction;
+    // 常にRayの進行方向へ向かない法線を返すと、ゲーム側で扱いやすくなります。
+    outNormal = denominator < 0.0f ? normal : -normal;
+    return true;
+}
+
+bool RayCastCollider(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const TransformComponent& transform,
+    const ColliderComponent& collider,
+    float& outFraction,
+    math::Vec3& outNormal)
+{
+    switch (collider.Type)
+    {
+    case ColliderType::Sphere:
+        return RayCastSphere(
+            origin,
+            direction,
+            maxFraction,
+            transform.Position + collider.Offset,
+            std::max(collider.Radius, 0.0f),
+            outFraction,
+            outNormal);
+
+    case ColliderType::Box:
+    {
+        // 現在のBox Broad Phaseはworld AABBとして表現されているため、
+        // Query APIも同じCollider定義に合わせてtight AABBへ正確にRayCastします。
+        AABB bounds{};
+        if (!ComputeColliderAABB(transform, collider, bounds))
+        {
+            return false;
+        }
+        return bounds.RayCast(origin, direction, maxFraction, outFraction, &outNormal);
+    }
+
+    case ColliderType::Plane:
+        return RayCastPlane(
+            origin,
+            direction,
+            maxFraction,
+            transform,
+            collider,
+            outFraction,
+            outNormal);
+
+    default:
+        return false;
+    }
 }
 }
 
@@ -61,17 +203,9 @@ void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
 void PhysicsWorld::DetectCollisions(Scene& scene)
 {
     m_Manifolds.clear();
-
-    // ========================================================================
-    // Dynamic AABB Tree Broad Phase
-    // ========================================================================
-    // m_BroadPhaseはPhysicsWorldのメンバとしてフレームをまたいで保持します。
-    // ここが重要で、ローカル変数として毎Step作り直すとFat AABB内に収まる移動を
-    // 再挿入せずに済ませるDynamic Treeの利点が完全に失われます。
     std::vector<BroadPhasePair> candidatePairs;
     m_BroadPhase.ComputePairs(scene, candidatePairs);
 
-    // finite collider narrow phase
     for (const BroadPhasePair& pair : candidatePairs)
     {
         if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B)) continue;
@@ -92,7 +226,6 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         }
     }
 
-    // Planeは無限形状なのでDynamic AABB Treeへは登録しません。
     for (auto [sphereEntity, sphereTransform, sphereCollider] : scene.View<TransformComponent, ColliderComponent>())
     {
         if (sphereCollider.Type != ColliderType::Sphere) continue;
@@ -108,6 +241,145 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
             }
         }
     }
+}
+
+// ============================================================================
+// PhysicsWorld::RayCast
+// ============================================================================
+// 1. Dynamic TreeのFat AABBで候補を絞る
+// 2. 候補Colliderの実形状で再判定する
+// 3. HitするたびcurrentMaxを縮め、遠いTree Branchを枝刈りする
+// 4. Tree外の無限Planeも最後に比較する
+bool PhysicsWorld::RayCast(
+    Scene& scene,
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    PhysicsRayCastHit& outHit)
+{
+    if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f)
+    {
+        return false;
+    }
+
+    bool hasHit = false;
+    float closestFraction = maxFraction;
+    PhysicsRayCastHit closest{};
+
+    m_BroadPhase.RayCast(
+        scene,
+        origin,
+        direction,
+        maxFraction,
+        [&](Entity entity,
+            uint32_t proxyId,
+            float fatFraction,
+            const math::Vec3& fatNormal,
+            float currentMax) -> float
+        {
+            static_cast<void>(proxyId);
+            static_cast<void>(fatFraction);
+            static_cast<void>(fatNormal);
+
+            const TransformComponent* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+            const ColliderComponent* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
+            if (!transform || !collider || collider->Type == ColliderType::Plane)
+            {
+                return currentMax;
+            }
+
+            float fraction = 0.0f;
+            math::Vec3 normal{};
+            if (!RayCastCollider(origin, direction, currentMax, *transform, *collider, fraction, normal))
+            {
+                return currentMax;
+            }
+
+            if (!hasHit || fraction < closestFraction)
+            {
+                hasHit = true;
+                closestFraction = fraction;
+                closest.HitEntity = entity;
+                closest.Fraction = fraction;
+                closest.Point = origin + direction * fraction;
+                closest.Normal = normal;
+            }
+
+            return closestFraction;
+        });
+
+    // Planeは無限なのでDynamic AABB Treeへ登録していません。
+    for (auto [entity, transform, collider] : scene.View<TransformComponent, ColliderComponent>())
+    {
+        if (collider.Type != ColliderType::Plane)
+        {
+            continue;
+        }
+
+        float fraction = 0.0f;
+        math::Vec3 normal{};
+        if (!RayCastPlane(origin, direction, closestFraction, transform, collider, fraction, normal))
+        {
+            continue;
+        }
+
+        if (!hasHit || fraction < closestFraction)
+        {
+            hasHit = true;
+            closestFraction = fraction;
+            closest.HitEntity = entity;
+            closest.Fraction = fraction;
+            closest.Point = origin + direction * fraction;
+            closest.Normal = normal;
+        }
+    }
+
+    if (hasHit)
+    {
+        outHit = closest;
+    }
+    return hasHit;
+}
+
+// ============================================================================
+// PhysicsWorld::QueryAABB
+// ============================================================================
+// TreeのLeafはFat AABBなので、Query結果をそのまま返すと余分なEntityが混ざります。
+// 必ず現在Transformからtight AABBを再生成してOverlapを確認してから公開します。
+void PhysicsWorld::QueryAABB(
+    Scene& scene,
+    const AABB& queryBounds,
+    std::vector<Entity>& outEntities)
+{
+    outEntities.clear();
+    if (!queryBounds.IsValid())
+    {
+        return;
+    }
+
+    m_BroadPhase.QueryAABB(
+        scene,
+        queryBounds,
+        [&](Entity entity, uint32_t proxyId) -> bool
+        {
+            static_cast<void>(proxyId);
+
+            const TransformComponent* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+            const ColliderComponent* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
+            if (!transform || !collider)
+            {
+                return true;
+            }
+
+            AABB tightBounds{};
+            if (ComputeColliderAABB(*transform, *collider, tightBounds)
+                && tightBounds.Overlaps(queryBounds))
+            {
+                outEntities.push_back(entity);
+            }
+
+            return true;
+        });
 }
 
 void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
