@@ -5,6 +5,7 @@
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include <unordered_map>
 #include <vector>
@@ -70,6 +71,20 @@ private:
 	std::vector<SphereBody> m_SphereBodies;
 	std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
 	Entity m_FloorEntity;
+
+	// ========================================================================
+	// Broad Phase Debug Visualization
+	// ========================================================================
+	// B : Collider AABBのワイヤーフレーム表示
+	// P : Broad Phase候補ペアをAABB中心間の線として表示
+	//
+	// PhysicsDebugRenderer自身は物理状態を変更せず、現在のSceneを読み取って
+	// 可視化だけを行います。
+	ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
+	bool m_DrawBroadPhaseAABBs = false;
+	bool m_DrawBroadPhasePairs = false;
+	bool m_WasDebugAABBKeyPressed = false;
+	bool m_WasDebugPairKeyPressed = false;
 
 	bool m_WasSpacePressed = false;
 	int m_MinSphereCount = 16;
