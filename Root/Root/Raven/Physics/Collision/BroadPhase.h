@@ -37,6 +37,11 @@ class BroadPhase
 public:
     void ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPairs);
 
+    // 直近のComputePairs()がSimulationへ返した候補Pairを保持します。
+    // Debug描画のためにComputePairs()を再実行するとTreeの同期タイミングが変わるため、
+    // OverlayはこのSnapshotを読み取ります。
+    const std::vector<BroadPhasePair>& GetLastPairs() const { return m_LastPairs; }
+
     // ------------------------------------------------------------------------
     // QueryAABB
     // ------------------------------------------------------------------------
@@ -69,6 +74,9 @@ private:
     DynamicAABBTree m_Tree;
     std::unordered_map<uint64_t, uint32_t> m_Proxies;
     std::unordered_map<uint64_t, math::Vec3> m_PreviousCenters;
+
+    // Simulationで最後に生成されたPairの診断用Snapshotです。
+    std::vector<BroadPhasePair> m_LastPairs;
 };
 
 } // namespace Raven::ph

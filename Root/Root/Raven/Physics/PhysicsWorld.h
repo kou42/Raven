@@ -103,6 +103,13 @@ public:
     const std::vector<ContactManifold>& GetContactManifolds() const { return m_Manifolds; }
     const BroadPhase& GetBroadPhase() const { return m_BroadPhase; }
 
+    // 直近のBroad Phase計算で実際に生成された候補Pairです。
+    // Debug側でComputePairs()を再実行せず、Simulationと同じ結果を観測するために使います。
+    const std::vector<BroadPhasePair>& GetBroadPhasePairs() const
+    {
+        return m_BroadPhase.GetLastPairs();
+    }
+
 private:
     // Step の中で順番に呼ばれる内部処理です。
     void ApplyForces(Scene& scene, float dt);

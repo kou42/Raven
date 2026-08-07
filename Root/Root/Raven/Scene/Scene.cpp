@@ -1,6 +1,7 @@
 ﻿#include "Raven/Scene/Scene.h"
 #include "Raven/Core/Event.h"
 #include "Raven/Renderer/Renderer.h"
+#include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 namespace Raven
 {
@@ -180,6 +181,10 @@ void Scene::OnUpdatePhysics(float dt)
         m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
         m_PhysicsAccumulator -= m_FixedDeltaTime;
     }
+
+    // PhysicsDebugRendererには別Worldを再構築させず、このSceneが実際にStepした
+    // PhysicsWorldを読み取り専用で関連付けます。
+    ph::PhysicsDebugRenderer::BindPhysicsWorld(*this, m_PhysicsWorld);
 }
 
 void Scene::OnUpdateLayer(float dt)
