@@ -5,23 +5,10 @@
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include <unordered_map>
 #include <vector>
-
-// 現在
-// Application
-//    |----SceneManager
-//        |----ActiveScene
-//            |----LayerStack
-
-//Application
-//----SceneManager
-//    |----Scene
-//         |----LayerStack
-//         |----GameLayer
-//         |----UILayer
-//         |----DebugLayer
 
 namespace Raven
 {
@@ -29,6 +16,14 @@ namespace Raven
 class SceneGame : public Scene
 {
 public:
+    // DebugRendererにはSceneとカメラ行列への参照を渡します。
+    // 行列そのものをコピーしないため、WindowResize後のProjection更新も
+    // 次の描画からそのままデバッグ表示へ反映されます。
+    SceneGame()
+        : m_PhysicsDebugRenderer(*this, m_View, m_Projection)
+    {
+    }
+
 	virtual void OnCreate() override;
 	virtual void OnDestroy() override;
 	virtual void OnUpdateGame(float dt) override;
@@ -71,6 +66,13 @@ private:
 	std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
 	Entity m_FloorEntity;
 
+	// ========================================================================
+	// Broad Phase Debug Visualization
+	// ========================================================================
+	// B : Collider AABBのワイヤーフレーム表示 ON/OFF
+	// P : Broad Phase候補ペア線表示 ON/OFF
+	ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
+
 	bool m_WasSpacePressed = false;
 	int m_MinSphereCount = 16;
 	int m_MaxSphereCount = 72;
@@ -93,7 +95,6 @@ private:
 	float m_InitialVelocityZMax = 6.0f;
 	float m_SphereScaleMin = 0.7f;
 	float m_SphereScaleMax = 1.5f;
-
 };
 
 }
