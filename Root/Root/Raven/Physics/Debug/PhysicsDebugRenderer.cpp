@@ -71,7 +71,7 @@ void PhysicsDebugRenderer::EnsureInitialized()
     }
 
     PipelineSpecification specification{};
-    specification.DebugName = "Physics Broad Phase Debug Pipeline";
+    specification.DebugName = "Physics Debug Pipeline";
     specification.Shader = shader;
     specification.Topology = PrimitiveTopology::Lines;
     specification.Cull = CullMode::None;
@@ -85,31 +85,34 @@ void PhysicsDebugRenderer::EnsureInitialized()
 
 void PhysicsDebugRenderer::UpdateToggleKeys()
 {
+    // Keyboardと将来のDebug UIは、同じPhysicsDebugSettingsを書き換えます。
+    // 表示状態の所有場所を1つにすることで、UI導入時にRenderer内部boolとの同期が
+    // 必要にならないようにしています。
     const bool aabbPressed = Input::IsKeyPressed(Key::B);
     if (aabbPressed && !m_WasAABBKeyPressed)
     {
-        m_DrawAABBs = !m_DrawAABBs;
+        m_Settings.ShowAABB = !m_Settings.ShowAABB;
     }
     m_WasAABBKeyPressed = aabbPressed;
 
     const bool fatPressed = Input::IsKeyPressed(Key::F);
     if (fatPressed && !m_WasFatAABBKeyPressed)
     {
-        m_DrawFatAABBs = !m_DrawFatAABBs;
+        m_Settings.ShowFatAABB = !m_Settings.ShowFatAABB;
     }
     m_WasFatAABBKeyPressed = fatPressed;
 
     const bool treePressed = Input::IsKeyPressed(Key::T);
     if (treePressed && !m_WasTreeKeyPressed)
     {
-        m_DrawTree = !m_DrawTree;
+        m_Settings.ShowDynamicAABBTree = !m_Settings.ShowDynamicAABBTree;
     }
     m_WasTreeKeyPressed = treePressed;
 
     const bool pairPressed = Input::IsKeyPressed(Key::P);
     if (pairPressed && !m_WasPairKeyPressed)
     {
-        m_DrawPairs = !m_DrawPairs;
+        m_Settings.ShowBroadPhasePairs = !m_Settings.ShowBroadPhasePairs;
     }
     m_WasPairKeyPressed = pairPressed;
 }
@@ -123,7 +126,10 @@ void PhysicsDebugRenderer::Render()
         return;
     }
 
-    if (!m_DrawAABBs && !m_DrawFatAABBs && !m_DrawTree && !m_DrawPairs)
+    if (!m_Settings.ShowAABB
+        && !m_Settings.ShowFatAABB
+        && !m_Settings.ShowDynamicAABBTree
+        && !m_Settings.ShowBroadPhasePairs)
     {
         return;
     }
@@ -137,15 +143,17 @@ void PhysicsDebugRenderer::Render()
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
 
-    // Dynamic Tree表示またはPair表示時に一度だけSceneとTreeを同期します。
-    // ComputePairs()はTree同期も行うため、Debug専用APIを増やさず既存経路を利用します。
     std::vector<BroadPhasePair> pairs;
-    if (m_DrawFatAABBs || m_DrawTree || m_DrawPairs)
+    if (m_Settings.ShowFatAABB
+        || m_Settings.ShowDynamicAABBTree
+        || m_Settings.ShowBroadPhasePairs)
     {
+        // 現段階では既存実装を維持してDebug用BroadPhaseを同期します。
+        // 次段階ではPhysicsWorld::GetBroadPhase()の実Tree参照へ切り替えます。
         m_BroadPhase.ComputePairs(*m_Scene, pairs);
     }
 
-    if (m_DrawAABBs)
+    if (m_Settings.ShowAABB)
     {
         const math::Vec3 color{ 0.15f, 0.95f, 1.0f };
         for (auto [entity, transform, collider]
@@ -160,15 +168,12 @@ void PhysicsDebugRenderer::Render()
         }
     }
 
-    if (m_DrawFatAABBs || m_DrawTree)
+    if (m_Settings.ShowFatAABB || m_Settings.ShowDynamicAABBTree)
     {
         const DynamicAABBTree& tree = m_BroadPhase.GetTree();
         const auto& nodes = tree.GetNodes();
 
-        // Validationに失敗した場合はTree全体を赤系で描画します。
-        // これによりBalance/Parent更新の破損を画面上ですぐ認識できます。
-        const DynamicAABBTreeValidationResult validation =
-            ValidateDynamicAABBTree(tree);
+        const DynamicAABBTreeValidationResult validation = ValidateDynamicAABBTree(tree);
         const bool treeValid = validation.IsValid();
 
         const math::Vec3 leafColor = treeValid
@@ -182,22 +187,20 @@ void PhysicsDebugRenderer::Render()
             const DynamicAABBTreeNode& node = nodes[nodeId];
             if (node.Height < 0)
             {
-                continue; // Free List上のNodeは描画しません。
+                continue;
             }
 
             if (node.IsLeaf())
             {
-                if (m_DrawFatAABBs)
+                if (m_Settings.ShowFatAABB)
                 {
                     AddAABB(vertices, indices, node.Bounds, leafColor);
                 }
                 continue;
             }
 
-            if (m_DrawTree)
+            if (m_Settings.ShowDynamicAABBTree)
             {
-                // Heightが高いほどRoot側です。単一色にせず高さを明度へ反映すると、
-                // 回転後の階層構造を視覚的に追いやすくなります。
                 const float heightFactor =
                     std::min(static_cast<float>(node.Height) / 8.0f, 1.0f);
                 const math::Vec3 branchColor = treeValid
@@ -212,7 +215,7 @@ void PhysicsDebugRenderer::Render()
         }
     }
 
-    if (m_DrawPairs)
+    if (m_Settings.ShowBroadPhasePairs)
     {
         const math::Vec3 color{ 1.0f, 0.65f, 0.10f };
 
@@ -240,12 +243,7 @@ void PhysicsDebugRenderer::Render()
                 continue;
             }
 
-            AddLine(
-                vertices,
-                indices,
-                a.GetCenter(),
-                b.GetCenter(),
-                color);
+            AddLine(vertices, indices, a.GetCenter(), b.GetCenter(), color);
         }
     }
 
