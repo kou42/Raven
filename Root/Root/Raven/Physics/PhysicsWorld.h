@@ -5,6 +5,7 @@
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Contact.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
+#include "Raven/Physics/Solver/ContactSolver.h"
 
 namespace Raven
 {
@@ -28,6 +29,11 @@ public:
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
     void Step(Scene& scene, float fixedDeltaTime);
+
+    // Solverの反復回数やWarm Start有無をStress Test / ゲーム側から調整できます。
+    void SetSolverSettings(const ContactSolverSettings& settings) { m_SolverSettings = settings; }
+    ContactSolverSettings& GetSolverSettings() { return m_SolverSettings; }
+    const ContactSolverSettings& GetSolverSettings() const { return m_SolverSettings; }
 
     void AddForce(Scene& scene, Entity entity, const math::Vec3& force);
     void AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse);
@@ -58,13 +64,9 @@ private:
 private:
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
     BroadPhase m_BroadPhase;
+    ContactSolverSettings m_SolverSettings{};
 
-    // 今StepのManifold。Solve後には次Stepで再利用する累積Impulseを保持しています。
     std::vector<ContactManifold> m_Manifolds;
-
-    // DetectCollisions()は毎Step Manifoldを作り直すため、その直前に前Stepの結果を
-    // こちらへ退避します。新Manifold生成後、同一ペア・近傍ContactPointへImpulseを
-    // 移植することでContact Persistenceを実現します。
     std::vector<ContactManifold> m_PreviousManifolds;
 };
 
