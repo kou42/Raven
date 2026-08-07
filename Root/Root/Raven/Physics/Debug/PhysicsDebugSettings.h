@@ -34,6 +34,7 @@ struct PhysicsDebugSettings
     // Broad Phase候補Pairの中心間を線で表示します。
     bool ShowBroadPhasePairs = false;
 
+    // Contact表示のワールド空間サイズです。
     float ContactNormalLength = 0.5f;
     float ContactPointRadius = 0.03f;
 };
