@@ -52,13 +52,23 @@ PhysicsDebugRenderer::~PhysicsDebugRenderer()
 void PhysicsDebugRenderer::RenderRegistered()
 {
     for (PhysicsDebugRenderer* renderer : Registry())
-        if (renderer) renderer->Render();
+    {
+        if (renderer)
+        {
+            renderer->Render();
+        }
+    }
 }
 
 void PhysicsDebugRenderer::BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld)
 {
     for (PhysicsDebugRenderer* renderer : Registry())
-        if (renderer && renderer->m_Scene == &scene) renderer->m_PhysicsWorld = &physicsWorld;
+    {
+        if (renderer && renderer->m_Scene == &scene)
+        {
+            renderer->m_PhysicsWorld = &physicsWorld;
+        }
+    }
 }
 
 std::vector<PhysicsDebugRenderer*>& PhysicsDebugRenderer::Registry()
@@ -69,12 +79,18 @@ std::vector<PhysicsDebugRenderer*>& PhysicsDebugRenderer::Registry()
 
 void PhysicsDebugRenderer::EnsureInitialized()
 {
-    if (m_Material) return;
+    if (m_Material)
+    {
+        return;
+    }
 
     Ref<Shader> shader = Shader::Create(
         "Raven/Assets/Shaders/Vertex/test.vert",
         "Raven/Assets/Shaders/Fragment/test.frag");
-    if (!shader) return;
+    if (!shader)
+    {
+        return;
+    }
 
     PipelineSpecification specification{};
     specification.DebugName = "Physics Debug Pipeline";
@@ -95,63 +111,105 @@ void PhysicsDebugRenderer::UpdateToggleKeys()
     // 画面を広く使いたい場合にも利用できます。
     const bool overlayPressed = Input::IsKeyPressed(Key::H);
     if (overlayPressed && !m_WasOverlayKeyPressed)
+    {
         m_Settings.ShowSolverStatistics = !m_Settings.ShowSolverStatistics;
+    }
     m_WasOverlayKeyPressed = overlayPressed;
 
     const bool aabbPressed = Input::IsKeyPressed(Key::B);
-    if (aabbPressed && !m_WasAABBKeyPressed) m_Settings.ShowAABB = !m_Settings.ShowAABB;
+    if (aabbPressed && !m_WasAABBKeyPressed)
+    {
+        m_Settings.ShowAABB = !m_Settings.ShowAABB;
+    }
     m_WasAABBKeyPressed = aabbPressed;
 
     const bool fatPressed = Input::IsKeyPressed(Key::F);
-    if (fatPressed && !m_WasFatAABBKeyPressed) m_Settings.ShowFatAABB = !m_Settings.ShowFatAABB;
+    if (fatPressed && !m_WasFatAABBKeyPressed)
+    {
+        m_Settings.ShowFatAABB = !m_Settings.ShowFatAABB;
+    }
     m_WasFatAABBKeyPressed = fatPressed;
 
     const bool treePressed = Input::IsKeyPressed(Key::T);
-    if (treePressed && !m_WasTreeKeyPressed) m_Settings.ShowDynamicAABBTree = !m_Settings.ShowDynamicAABBTree;
+    if (treePressed && !m_WasTreeKeyPressed)
+    {
+        m_Settings.ShowDynamicAABBTree = !m_Settings.ShowDynamicAABBTree;
+    }
     m_WasTreeKeyPressed = treePressed;
 
     const bool pairPressed = Input::IsKeyPressed(Key::P);
-    if (pairPressed && !m_WasPairKeyPressed) m_Settings.ShowBroadPhasePairs = !m_Settings.ShowBroadPhasePairs;
+    if (pairPressed && !m_WasPairKeyPressed)
+    {
+        m_Settings.ShowBroadPhasePairs = !m_Settings.ShowBroadPhasePairs;
+    }
     m_WasPairKeyPressed = pairPressed;
 
     const bool contactPointPressed = Input::IsKeyPressed(Key::C);
-    if (contactPointPressed && !m_WasContactPointKeyPressed) m_Settings.ShowContactPoints = !m_Settings.ShowContactPoints;
+    if (contactPointPressed && !m_WasContactPointKeyPressed)
+    {
+        m_Settings.ShowContactPoints = !m_Settings.ShowContactPoints;
+    }
     m_WasContactPointKeyPressed = contactPointPressed;
 
     const bool contactNormalPressed = Input::IsKeyPressed(Key::N);
-    if (contactNormalPressed && !m_WasContactNormalKeyPressed) m_Settings.ShowContactNormals = !m_Settings.ShowContactNormals;
+    if (contactNormalPressed && !m_WasContactNormalKeyPressed)
+    {
+        m_Settings.ShowContactNormals = !m_Settings.ShowContactNormals;
+    }
     m_WasContactNormalKeyPressed = contactNormalPressed;
 }
 
 void PhysicsDebugRenderer::Render()
 {
+    // 入力トグルを先に更新して、このフレームの描画設定を確定します。
     UpdateToggleKeys();
-    if (!m_Scene || !m_View || !m_Projection) return;
+    if (!m_Scene || !m_View || !m_Projection)
+    {
+        return;
+    }
 
     const bool hasWorldDebug = m_Settings.ShowAABB || m_Settings.ShowFatAABB
         || m_Settings.ShowDynamicAABBTree || m_Settings.ShowBroadPhasePairs
         || m_Settings.ShowContactPoints || m_Settings.ShowContactNormals;
-    if (!hasWorldDebug && !m_Settings.ShowSolverStatistics) return;
+    // 3Dデバッグ表示もOverlayも無効なら描画処理自体を省略します。
+    if (!hasWorldDebug && !m_Settings.ShowSolverStatistics)
+    {
+        return;
+    }
 
     EnsureInitialized();
-    if (!m_Material) return;
-    if (hasWorldDebug) RenderWorldDebug();
-    if (m_Settings.ShowSolverStatistics) RenderOverlay();
+    if (!m_Material)
+    {
+        return;
+    }
+    if (hasWorldDebug)
+    {
+        RenderWorldDebug();
+    }
+    if (m_Settings.ShowSolverStatistics)
+    {
+        RenderOverlay();
+    }
 }
 
 void PhysicsDebugRenderer::RenderWorldDebug()
 {
+    // ワールド空間のデバッグ線分を1バッチに集約して描画します。
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
 
     if (m_Settings.ShowAABB)
     {
+        // シーン上の各Colliderから現在のAABBを再計算して可視化します。
         const math::Vec3 color{ 0.15f, 0.95f, 1.0f };
         for (auto [entity, transform, collider] : m_Scene->View<TransformComponent, ColliderComponent>())
         {
             static_cast<void>(entity);
             AABB bounds{};
-            if (ComputeColliderAABB(transform, collider, bounds)) AddAABB(vertices, indices, bounds, color);
+            if (ComputeColliderAABB(transform, collider, bounds))
+            {
+                AddAABB(vertices, indices, bounds, color);
+            }
         }
     }
 
@@ -159,6 +217,7 @@ void PhysicsDebugRenderer::RenderWorldDebug()
     {
         if (m_Settings.ShowFatAABB || m_Settings.ShowDynamicAABBTree)
         {
+            // BroadPhaseツリーのノード矩形を走査し、Leafと内部ノードを別色で描きます。
             const DynamicAABBTree& tree = m_PhysicsWorld->GetBroadPhase().GetTree();
             const auto& nodes = tree.GetNodes();
             const bool treeValid = ValidateDynamicAABBTree(tree).IsValid();
@@ -166,10 +225,16 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
             for (const DynamicAABBTreeNode& node : nodes)
             {
-                if (node.Height < 0) continue;
+                if (node.Height < 0)
+                {
+                    continue;
+                }
                 if (node.IsLeaf())
                 {
-                    if (m_Settings.ShowFatAABB) AddAABB(vertices, indices, node.Bounds, leafColor);
+                    if (m_Settings.ShowFatAABB)
+                    {
+                        AddAABB(vertices, indices, node.Bounds, leafColor);
+                    }
                     continue;
                 }
                 if (m_Settings.ShowDynamicAABBTree)
@@ -184,6 +249,7 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
         if (m_Settings.ShowContactPoints || m_Settings.ShowContactNormals)
         {
+            // NarrowPhaseの結果であるManifoldから接点と法線を描きます。
             const math::Vec3 pointColor{ 1.0f, 0.2f, 0.2f };
             const math::Vec3 normalColor{ 1.0f, 1.0f, 0.2f };
             for (const ContactManifold& manifold : m_PhysicsWorld->GetContactManifolds())
@@ -192,10 +258,14 @@ void PhysicsDebugRenderer::RenderWorldDebug()
                 {
                     const ContactPoint& point = manifold.Points[i];
                     if (m_Settings.ShowContactPoints)
+                    {
                         AddPointMarker(vertices, indices, point.Position, m_Settings.ContactPointRadius, pointColor);
+                    }
                     if (m_Settings.ShowContactNormals)
+                    {
                         AddLine(vertices, indices, point.Position,
                             point.Position + manifold.Normal * m_Settings.ContactNormalLength, normalColor);
+                    }
                 }
             }
         }
@@ -210,11 +280,16 @@ void PhysicsDebugRenderer::RenderWorldDebug()
                 const TransformComponent* tb = m_Scene->TryGetComponent<TransformComponent>(pair.B.GetIndex());
                 const ColliderComponent* ca = m_Scene->TryGetComponent<ColliderComponent>(pair.A.GetIndex());
                 const ColliderComponent* cb = m_Scene->TryGetComponent<ColliderComponent>(pair.B.GetIndex());
-                if (!ta || !tb || !ca || !cb) continue;
+                if (!ta || !tb || !ca || !cb)
+                {
+                    continue;
+                }
 
                 AABB a{}, b{};
                 if (ComputeColliderAABB(*ta, *ca, a) && ComputeColliderAABB(*tb, *cb, b))
+                {
                     AddLine(vertices, indices, a.GetCenter(), b.GetCenter(), color);
+                }
             }
         }
     }
@@ -224,13 +299,20 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
 void PhysicsDebugRenderer::RenderOverlay()
 {
-    if (!m_PhysicsWorld) return;
+    if (!m_PhysicsWorld)
+    {
+        return;
+    }
 
     GLint viewport[4] = {};
     glGetIntegerv(GL_VIEWPORT, viewport);
     const int viewportWidth = viewport[2];
     const int viewportHeight = viewport[3];
-    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+    // ビューポートが無効なタイミングではOverlay変換が成立しないため中断します。
+    if (viewportWidth <= 0 || viewportHeight <= 0)
+    {
+        return;
+    }
 
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
@@ -245,6 +327,7 @@ void PhysicsDebugRenderer::RenderOverlay()
     float y = top;
     auto addText = [&](const std::string& text, const math::Vec3& color)
     {
+        // 1行追加するたびにYを進め、縦方向にテキストを積み上げます。
         AddOverlayText(vertices, indices, text, left, y, scale, viewportWidth, viewportHeight, color);
         y += lineHeight;
     };
@@ -287,8 +370,12 @@ void PhysicsDebugRenderer::SubmitLines(
     const math::Mat4& view,
     const math::Mat4& projection)
 {
-    if (vertices.empty() || indices.empty()) return;
+    if (vertices.empty() || indices.empty())
+    {
+        return;
+    }
 
+    // 毎フレーム生成したデバッグ線分を一時VAO/VBO/EBOへ詰めて描画します。
     Ref<VertexArray> vao = VertexArray::Create();
     Ref<VertexBuffer> vbo = VertexBuffer::Create(
         reinterpret_cast<float*>(vertices.data()),
@@ -329,7 +416,10 @@ void PhysicsDebugRenderer::AddAABB(std::vector<DebugVertex>& vertices, std::vect
         {bounds.Max.x,bounds.Max.y,bounds.Max.z},{bounds.Min.x,bounds.Max.y,bounds.Max.z}
     };
     const uint32_t e[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-    for (const auto& edge : e) AddLine(vertices, indices, c[edge[0]], c[edge[1]], color);
+    for (const auto& edge : e)
+    {
+        AddLine(vertices, indices, c[edge[0]], c[edge[1]], color);
+    }
 }
 
 void PhysicsDebugRenderer::AddPointMarker(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
@@ -346,9 +436,13 @@ void PhysicsDebugRenderer::AddOverlayText(std::vector<DebugVertex>& vertices, st
     const std::string& text, float pixelX, float pixelY, float pixelScale,
     int viewportWidth, int viewportHeight, const math::Vec3& color)
 {
-    if (viewportWidth <= 0 || viewportHeight <= 0 || pixelScale <= 0.0f) return;
+    if (viewportWidth <= 0 || viewportHeight <= 0 || pixelScale <= 0.0f)
+    {
+        return;
+    }
     auto toNdc = [&](float x, float y)
     {
+        // ピクセル座標をNDCへ変換し、Overlayをカメラ非依存で重ね描きします。
         return math::Vec3{ (x / static_cast<float>(viewportWidth)) * 2.0f - 1.0f,
             1.0f - (y / static_cast<float>(viewportHeight)) * 2.0f, 0.0f };
     };
@@ -364,12 +458,19 @@ void PhysicsDebugRenderer::AddOverlayText(std::vector<DebugVertex>& vertices, st
             while (column < 5)
             {
                 const uint8_t mask = static_cast<uint8_t>(1u << (4 - column));
-                if ((glyph[row] & mask) == 0) { ++column; continue; }
+                if ((glyph[row] & mask) == 0)
+                {
+                    ++column;
+                    continue;
+                }
                 const int runStart = column;
                 while (column < 5)
                 {
                     const uint8_t runMask = static_cast<uint8_t>(1u << (4 - column));
-                    if ((glyph[row] & runMask) == 0) break;
+                    if ((glyph[row] & runMask) == 0)
+                    {
+                        break;
+                    }
                     ++column;
                 }
                 const float x0 = cursorX + static_cast<float>(runStart) * pixelScale;
