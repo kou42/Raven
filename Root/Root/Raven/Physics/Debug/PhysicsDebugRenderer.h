@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <string>
 #include <vector>
 
 #include "Raven/Core/Base.h"
@@ -47,8 +46,6 @@ private:
     void EnsureInitialized();
     void UpdateToggleKeys();
     void Render();
-    void RenderWorldDebug();
-    void RenderOverlay();
 
     static void AddLine(
         std::vector<DebugVertex>& vertices,
@@ -68,19 +65,6 @@ private:
         std::vector<uint32_t>& indices,
         const math::Vec3& position,
         float radius,
-        const math::Vec3& color);
-
-    // 5x7 bitmap glyphをLine列へ変換します。
-    // Debug表示のためだけにFont Texture / FreeTypeを導入する必要をなくします。
-    static void AddOverlayText(
-        std::vector<DebugVertex>& vertices,
-        std::vector<uint32_t>& indices,
-        const std::string& text,
-        float pixelX,
-        float pixelY,
-        float pixelScale,
-        int viewportWidth,
-        int viewportHeight,
         const math::Vec3& color);
 
 private:
