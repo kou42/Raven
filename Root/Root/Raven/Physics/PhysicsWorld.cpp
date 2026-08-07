@@ -146,20 +146,26 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
 
         if (colliderA->Type == ColliderType::Sphere && colliderB->Type == ColliderType::Sphere)
         {
-            generated = GenerateSphereSphereManifold(
-                pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold);
+            generated = GenerateSphereSphereManifold(pair.A, *transformA, *colliderA,
+                pair.B, *transformB, *colliderB, manifold);
         }
         else if (colliderA->Type == ColliderType::Sphere && colliderB->Type == ColliderType::Box)
         {
-            generated = GenerateSphereBoxManifold(
-                pair.A, *transformA, *colliderA, pair.B, *transformB, *colliderB, manifold);
+            generated = GenerateSphereBoxManifold(pair.A, *transformA, *colliderA,
+                pair.B, *transformB, *colliderB, manifold);
         }
         else if (colliderA->Type == ColliderType::Box && colliderB->Type == ColliderType::Sphere)
         {
-            // Sphere-Box関数はA=Sphere/B=Box規約で実装しています。
-            // Entityの並び順に依存せず同じ法線規約を保つため、ここでは引数だけ反転します。
-            generated = GenerateSphereBoxManifold(
-                pair.B, *transformB, *colliderB, pair.A, *transformA, *colliderA, manifold);
+            // Sphere-Box関数はA=Sphere/B=Box規約です。
+            // Broad Phase pairの順番に関係なく同じ規約を保つため引数を反転します。
+            generated = GenerateSphereBoxManifold(pair.B, *transformB, *colliderB,
+                pair.A, *transformA, *colliderA, manifold);
+        }
+        else if (colliderA->Type == ColliderType::Box && colliderB->Type == ColliderType::Box)
+        {
+            // 現在のBoxはworld-axis alignedなので、3軸AABB SAT + face manifoldで解決します。
+            generated = GenerateBoxBoxManifold(pair.A, *transformA, *colliderA,
+                pair.B, *transformB, *colliderB, manifold);
         }
 
         if (generated) m_Manifolds.push_back(manifold);
