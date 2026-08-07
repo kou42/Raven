@@ -7,6 +7,7 @@
 
 #include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
+#include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
@@ -48,6 +49,20 @@ void PhysicsDebugRenderer::RenderRegistered()
     }
 }
 
+void PhysicsDebugRenderer::BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld)
+{
+    // RegistryにはSceneごとのDebugRendererが登録されています。
+    // Scene::OnUpdatePhysics()から呼ぶことで、そのSceneが実際にStepしているWorldだけを
+    // 対応するDebugRendererへ関連付けます。
+    for (PhysicsDebugRenderer* renderer : Registry())
+    {
+        if (renderer != nullptr && renderer->m_Scene == &scene)
+        {
+            renderer->m_PhysicsWorld = &physicsWorld;
+        }
+    }
+}
+
 std::vector<PhysicsDebugRenderer*>& PhysicsDebugRenderer::Registry()
 {
     static std::vector<PhysicsDebugRenderer*> registry;
@@ -85,9 +100,6 @@ void PhysicsDebugRenderer::EnsureInitialized()
 
 void PhysicsDebugRenderer::UpdateToggleKeys()
 {
-    // Keyboardと将来のDebug UIは、同じPhysicsDebugSettingsを書き換えます。
-    // 表示状態の所有場所を1つにすることで、UI導入時にRenderer内部boolとの同期が
-    // 必要にならないようにしています。
     const bool aabbPressed = Input::IsKeyPressed(Key::B);
     if (aabbPressed && !m_WasAABBKeyPressed)
     {
@@ -115,6 +127,20 @@ void PhysicsDebugRenderer::UpdateToggleKeys()
         m_Settings.ShowBroadPhasePairs = !m_Settings.ShowBroadPhasePairs;
     }
     m_WasPairKeyPressed = pairPressed;
+
+    const bool contactPointPressed = Input::IsKeyPressed(Key::C);
+    if (contactPointPressed && !m_WasContactPointKeyPressed)
+    {
+        m_Settings.ShowContactPoints = !m_Settings.ShowContactPoints;
+    }
+    m_WasContactPointKeyPressed = contactPointPressed;
+
+    const bool contactNormalPressed = Input::IsKeyPressed(Key::N);
+    if (contactNormalPressed && !m_WasContactNormalKeyPressed)
+    {
+        m_Settings.ShowContactNormals = !m_Settings.ShowContactNormals;
+    }
+    m_WasContactNormalKeyPressed = contactNormalPressed;
 }
 
 void PhysicsDebugRenderer::Render()
@@ -129,7 +155,9 @@ void PhysicsDebugRenderer::Render()
     if (!m_Settings.ShowAABB
         && !m_Settings.ShowFatAABB
         && !m_Settings.ShowDynamicAABBTree
-        && !m_Settings.ShowBroadPhasePairs)
+        && !m_Settings.ShowBroadPhasePairs
+        && !m_Settings.ShowContactPoints
+        && !m_Settings.ShowContactNormals)
     {
         return;
     }
@@ -143,16 +171,8 @@ void PhysicsDebugRenderer::Render()
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
 
-    std::vector<BroadPhasePair> pairs;
-    if (m_Settings.ShowFatAABB
-        || m_Settings.ShowDynamicAABBTree
-        || m_Settings.ShowBroadPhasePairs)
-    {
-        // 現段階では既存実装を維持してDebug用BroadPhaseを同期します。
-        // 次段階ではPhysicsWorld::GetBroadPhase()の実Tree参照へ切り替えます。
-        m_BroadPhase.ComputePairs(*m_Scene, pairs);
-    }
-
+    // Tight AABBは現在のTransform + Colliderから直接計算します。
+    // Dynamic Treeに入る前の「実形状を包むBounds」としてFat AABBとの差を確認できます。
     if (m_Settings.ShowAABB)
     {
         const math::Vec3 color{ 0.15f, 0.95f, 1.0f };
@@ -168,57 +188,105 @@ void PhysicsDebugRenderer::Render()
         }
     }
 
-    if (m_Settings.ShowFatAABB || m_Settings.ShowDynamicAABBTree)
+    // Fat AABB / Tree / Contactは、DebugRendererが再構築したデータではなく
+    // PhysicsWorld::Step()が実際に使用したデータを読み取ります。
+    if (m_PhysicsWorld != nullptr)
     {
-        const DynamicAABBTree& tree = m_BroadPhase.GetTree();
-        const auto& nodes = tree.GetNodes();
-
-        const DynamicAABBTreeValidationResult validation = ValidateDynamicAABBTree(tree);
-        const bool treeValid = validation.IsValid();
-
-        const math::Vec3 leafColor = treeValid
-            ? math::Vec3{ 0.25f, 1.0f, 0.25f }
-            : math::Vec3{ 1.0f, 0.15f, 0.15f };
-
-        for (uint32_t nodeId = 0;
-            nodeId < static_cast<uint32_t>(nodes.size());
-            ++nodeId)
+        if (m_Settings.ShowFatAABB || m_Settings.ShowDynamicAABBTree)
         {
-            const DynamicAABBTreeNode& node = nodes[nodeId];
-            if (node.Height < 0)
-            {
-                continue;
-            }
+            const DynamicAABBTree& tree = m_PhysicsWorld->GetBroadPhase().GetTree();
+            const auto& nodes = tree.GetNodes();
 
-            if (node.IsLeaf())
+            const DynamicAABBTreeValidationResult validation = ValidateDynamicAABBTree(tree);
+            const bool treeValid = validation.IsValid();
+
+            const math::Vec3 leafColor = treeValid
+                ? math::Vec3{ 0.25f, 1.0f, 0.25f }
+                : math::Vec3{ 1.0f, 0.15f, 0.15f };
+
+            for (uint32_t nodeId = 0;
+                nodeId < static_cast<uint32_t>(nodes.size());
+                ++nodeId)
             {
-                if (m_Settings.ShowFatAABB)
+                const DynamicAABBTreeNode& node = nodes[nodeId];
+                if (node.Height < 0)
                 {
-                    AddAABB(vertices, indices, node.Bounds, leafColor);
+                    continue;
                 }
-                continue;
+
+                if (node.IsLeaf())
+                {
+                    if (m_Settings.ShowFatAABB)
+                    {
+                        AddAABB(vertices, indices, node.Bounds, leafColor);
+                    }
+                    continue;
+                }
+
+                if (m_Settings.ShowDynamicAABBTree)
+                {
+                    const float heightFactor =
+                        std::min(static_cast<float>(node.Height) / 8.0f, 1.0f);
+                    const math::Vec3 branchColor = treeValid
+                        ? math::Vec3{
+                            0.45f + 0.45f * heightFactor,
+                            0.25f,
+                            1.0f - 0.35f * heightFactor }
+                        : math::Vec3{ 1.0f, 0.15f, 0.15f };
+
+                    AddAABB(vertices, indices, node.Bounds, branchColor);
+                }
             }
+        }
 
-            if (m_Settings.ShowDynamicAABBTree)
+        if (m_Settings.ShowContactPoints || m_Settings.ShowContactNormals)
+        {
+            const math::Vec3 pointColor{ 1.0f, 0.2f, 0.2f };
+            const math::Vec3 normalColor{ 1.0f, 1.0f, 0.2f };
+
+            // ContactManifoldはNarrow Phaseの結果そのものです。
+            // Solverが使用した接触点と法線を直接描画するため、Broad Phaseの候補表示とは
+            // 異なり「実際に衝突として成立した場所」を確認できます。
+            for (const ContactManifold& manifold : m_PhysicsWorld->GetContactManifolds())
             {
-                const float heightFactor =
-                    std::min(static_cast<float>(node.Height) / 8.0f, 1.0f);
-                const math::Vec3 branchColor = treeValid
-                    ? math::Vec3{
-                        0.45f + 0.45f * heightFactor,
-                        0.25f,
-                        1.0f - 0.35f * heightFactor }
-                    : math::Vec3{ 1.0f, 0.15f, 0.15f };
+                for (std::size_t pointIndex = 0;
+                    pointIndex < manifold.PointCount;
+                    ++pointIndex)
+                {
+                    const ContactPoint& point = manifold.Points[pointIndex];
 
-                AddAABB(vertices, indices, node.Bounds, branchColor);
+                    if (m_Settings.ShowContactPoints)
+                    {
+                        AddPointMarker(
+                            vertices,
+                            indices,
+                            point.Position,
+                            m_Settings.ContactPointRadius,
+                            pointColor);
+                    }
+
+                    if (m_Settings.ShowContactNormals)
+                    {
+                        AddLine(
+                            vertices,
+                            indices,
+                            point.Position,
+                            point.Position + manifold.Normal * m_Settings.ContactNormalLength,
+                            normalColor);
+                    }
+                }
             }
         }
     }
 
+    // Pair表示は既存機能との互換性のため現時点ではDebug用BroadPhaseで維持します。
+    // 次段階でPhysicsWorldが直近PairをSnapshotとして公開すれば、これも同一Stepへ統一できます。
     if (m_Settings.ShowBroadPhasePairs)
     {
-        const math::Vec3 color{ 1.0f, 0.65f, 0.10f };
+        std::vector<BroadPhasePair> pairs;
+        m_PairDebugBroadPhase.ComputePairs(*m_Scene, pairs);
 
+        const math::Vec3 color{ 1.0f, 0.65f, 0.10f };
         for (const BroadPhasePair& pair : pairs)
         {
             const TransformComponent* ta =
@@ -317,6 +385,25 @@ void PhysicsDebugRenderer::AddAABB(
     {
         AddLine(vertices, indices, c[edge[0]], c[edge[1]], color);
     }
+}
+
+void PhysicsDebugRenderer::AddPointMarker(
+    std::vector<DebugVertex>& vertices,
+    std::vector<uint32_t>& indices,
+    const math::Vec3& position,
+    float radius,
+    const math::Vec3& color)
+{
+    // Contact Pointは小さなMeshを毎点生成せず、X/Y/Z軸方向の十字で表現します。
+    // Contact数が増えてもすべて同じLines Pipelineへまとめられるため軽量です。
+    const float r = std::max(radius, 0.0f);
+    const math::Vec3 x{ r, 0.0f, 0.0f };
+    const math::Vec3 y{ 0.0f, r, 0.0f };
+    const math::Vec3 z{ 0.0f, 0.0f, r };
+
+    AddLine(vertices, indices, position - x, position + x, color);
+    AddLine(vertices, indices, position - y, position + y, color);
+    AddLine(vertices, indices, position - z, position + z, color);
 }
 
 } // namespace Raven::ph
