@@ -55,11 +55,14 @@ void DrawContacts(
     }
 }
 
-void DrawTightAABBs(const Scene& scene)
+void DrawTightAABBs(Scene& scene)
 {
     // Dynamic Treeに格納されているのはFat AABBです。
     // Tight AABBは現在のTransform + Colliderから毎描画時に再計算することで、
     // 「実形状を包むAABB」と「Treeが保持している余裕付きAABB」の差を確認できます。
+    //
+    // Scene::View()は現時点ではnon-const APIですが、このループではComponentを
+    // 一切変更せず読み取りだけを行います。
     for (auto [entity, transform, collider] :
         scene.View<TransformComponent, ColliderComponent>())
     {
@@ -114,7 +117,7 @@ void DrawTree(
 } // namespace
 
 void PhysicsDebugRenderer::Draw(
-    const Scene& scene,
+    Scene& scene,
     const PhysicsWorld& physicsWorld,
     const PhysicsDebugSettings& settings)
 {
