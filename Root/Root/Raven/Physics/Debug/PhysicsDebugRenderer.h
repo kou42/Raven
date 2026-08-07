@@ -25,6 +25,15 @@ class PhysicsWorld;
 // World DebugはSceneのView/Projectionを使用し、OverlayはIdentity行列 + NDC座標で
 // 描画します。両者を分離することで、カメラ移動やProjection変更の影響をOverlayへ
 // 持ち込まないようにしています。
+//
+// Keyboard Toggle:
+//   H : Solver Statistics Overlayの表示/非表示
+//   B : Tight AABB
+//   F : Fat AABB
+//   T : Dynamic AABB Tree
+//   P : Broad Phase Pair
+//   C : Contact Point
+//   N : Contact Normal
 class PhysicsDebugRenderer
 {
 public:
@@ -106,6 +115,9 @@ private:
     Ref<Material> m_Material;
     PhysicsDebugSettings m_Settings{};
 
+    // キーを押しっぱなしにしたとき毎フレーム反転しないよう、
+    // 各Toggleは前フレームの押下状態を保持してrising edgeだけを処理します。
+    bool m_WasOverlayKeyPressed = false;
     bool m_WasAABBKeyPressed = false;
     bool m_WasFatAABBKeyPressed = false;
     bool m_WasTreeKeyPressed = false;
