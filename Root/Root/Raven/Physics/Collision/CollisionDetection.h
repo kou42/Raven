@@ -28,6 +28,19 @@ bool GenerateSpherePlaneManifold(
     const ColliderComponent& planeCollider,
     ContactManifold& outManifold);
 
+// Box-Plane:
+// OBBの8頂点を平面へ投影し、平面を越えた頂点を最大4点のContact Manifoldへまとめます。
+// Boxが回転していてもComputeBoxOBB()のワールド頂点を使うため、面・辺・頂点接触を
+// 同じ処理で扱えます。法線は既存Manifold規約に合わせて A(Box) -> B(Plane) 方向です。
+bool GenerateBoxPlaneManifold(
+    Entity boxEntity,
+    const TransformComponent& boxTransform,
+    const ColliderComponent& boxCollider,
+    Entity planeEntity,
+    const TransformComponent& planeTransform,
+    const ColliderComponent& planeCollider,
+    ContactManifold& outManifold);
+
 // Sphere-Box:
 // OBBローカルで最近接点を求め、外部/内部の両ケースで法線と貫通量を計算します。
 bool GenerateSphereBoxManifold(
