@@ -2,7 +2,7 @@
 #include <cmath>
 
 #include "Raven/Physics/Collision/CollisionDetection.h"
-#include "Raven/Physics/Collision/AABB.h"
+#include "Raven/Physics/Collision/OBB.h"
 
 namespace Raven::ph
 {
@@ -113,72 +113,65 @@ bool GenerateSphereBoxManifold(
     ContactManifold& outManifold)
 {
     if (sphereCollider.Type != ColliderType::Sphere || boxCollider.Type != ColliderType::Box) return false;
-
     const float radius = sphereCollider.Radius;
     if (radius <= 0.0f) return false;
 
-    AABB boxBounds{};
-    if (!ComputeColliderAABB(boxTransform, boxCollider, boxBounds)) return false;
+    OBB box{};
+    if (!ComputeBoxOBB(boxTransform, boxCollider, box)) return false;
 
-    const math::Vec3 center = sphereTransform.Position + sphereCollider.Offset;
-    const math::Vec3 closest{
-        std::clamp(center.x, boxBounds.Min.x, boxBounds.Max.x),
-        std::clamp(center.y, boxBounds.Min.y, boxBounds.Max.y),
-        std::clamp(center.z, boxBounds.Min.z, boxBounds.Max.z)
+    const math::Vec3 sphereCenter = sphereTransform.Position + sphereCollider.Offset;
+
+    // ========================================================================
+    // Sphere - OBB closest point
+    // ========================================================================
+    // Sphere中心をBoxローカル空間へ落とせば、回転していても問題は単純な
+    // local AABBへのclampになります。得られたlocal closest pointを再びworldへ戻します。
+    const math::Vec3 localCenter = box.ToLocalPoint(sphereCenter);
+    const math::Vec3 localClosest{
+        std::clamp(localCenter.x, -box.HalfExtents.x, box.HalfExtents.x),
+        std::clamp(localCenter.y, -box.HalfExtents.y, box.HalfExtents.y),
+        std::clamp(localCenter.z, -box.HalfExtents.z, box.HalfExtents.z)
     };
+    math::Vec3 contactPosition = box.ToWorldPoint(localClosest);
 
-    const math::Vec3 sphereToBox = closest - center;
+    const math::Vec3 sphereToBox = contactPosition - sphereCenter;
     const float distanceSquared = sphereToBox.LengthSq();
     if (distanceSquared > radius * radius) return false;
 
     math::Vec3 normal{};
-    math::Vec3 contactPosition = closest;
     float penetration = 0.0f;
 
     if (distanceSquared > 1.0e-12f)
     {
-        // Sphere中心がBox外側にある通常ケース。
-        // A=Sphere -> B=Box なので、中心から最近接点へ向かう方向がManifold法線です。
         const float distance = std::sqrt(distanceSquared);
-        normal = sphereToBox / distance;
+        normal = sphereToBox / distance; // A=Sphere -> B=Box
         penetration = radius - distance;
     }
     else
     {
-        // ====================================================================
-        // Sphere中心がBox内部
-        // ====================================================================
-        // closest == center になるため、最近接点だけでは法線を決められません。
-        // 6面までの距離から最も近い面を選びます。
-        //
-        // SolverはAを -Normal へ押すため、Sphereを外へ出したい方向(exitDirection)の
-        // 反対をManifold法線にします。
-        float faceDistance = center.x - boxBounds.Min.x;
-        math::Vec3 exitDirection{ -1.0f, 0.0f, 0.0f };
-        contactPosition = { boxBounds.Min.x, center.y, center.z };
+        // Sphere中心がOBB内部の場合は6面までのローカル距離を比較します。
+        // 最短の面を脱出面とし、そのworld方向の反対をA->B法線にします。
+        int faceAxis = 0;
+        float faceSign = localCenter.x >= 0.0f ? 1.0f : -1.0f;
+        float faceDistance = box.HalfExtents.x - std::abs(localCenter.x);
 
-        auto chooseFace = [&](float candidateDistance,
-                              const math::Vec3& candidateExit,
-                              const math::Vec3& candidatePoint)
+        for (int axis = 1; axis < 3; ++axis)
         {
+            const float candidateDistance = box.HalfExtents[axis] - std::abs(localCenter[axis]);
             if (candidateDistance < faceDistance)
             {
+                faceAxis = axis;
+                faceSign = localCenter[axis] >= 0.0f ? 1.0f : -1.0f;
                 faceDistance = candidateDistance;
-                exitDirection = candidateExit;
-                contactPosition = candidatePoint;
             }
-        };
+        }
 
-        chooseFace(boxBounds.Max.x - center.x, { 1.0f, 0.0f, 0.0f }, { boxBounds.Max.x, center.y, center.z });
-        chooseFace(center.y - boxBounds.Min.y, { 0.0f, -1.0f, 0.0f }, { center.x, boxBounds.Min.y, center.z });
-        chooseFace(boxBounds.Max.y - center.y, { 0.0f, 1.0f, 0.0f }, { center.x, boxBounds.Max.y, center.z });
-        chooseFace(center.z - boxBounds.Min.z, { 0.0f, 0.0f, -1.0f }, { center.x, center.y, boxBounds.Min.z });
-        chooseFace(boxBounds.Max.z - center.z, { 0.0f, 0.0f, 1.0f }, { center.x, center.y, boxBounds.Max.z });
+        math::Vec3 localContact = localCenter;
+        localContact[faceAxis] = box.HalfExtents[faceAxis] * faceSign;
+        contactPosition = box.ToWorldPoint(localContact);
 
+        const math::Vec3 exitDirection = box.Axis[faceAxis] * faceSign;
         normal = -exitDirection;
-
-        // Sphere全体をBox外へ出すには、中心から面までの距離にradiusを加えた量を
-        // 分離する必要があります。
         penetration = radius + faceDistance;
     }
 
