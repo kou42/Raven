@@ -19,6 +19,7 @@ int32_t ValidateDynamicAABBTreeNode(
     std::vector<uint8_t>& visitState,
     DynamicAABBTreeValidationResult& result)
 {
+    // 再帰DFSで1ノードずつ構造検証を行い、同時に高さを再計算します。
     const auto& nodes = tree.GetNodes();
 
     if (nodeId == InvalidTreeNode || nodeId >= nodes.size())
@@ -124,6 +125,12 @@ int32_t ValidateDynamicAABBTreeNode(
 DynamicAABBTreeValidationResult ValidateDynamicAABBTree(
     const DynamicAABBTree& tree)
 {
+    // 全体検証入口:
+    // - Root妥当性
+    // - 到達可能ノードの局所整合性
+    // - 到達不能Allocatedノード有無
+    // - Freeノード混入有無
+    // を一度に評価し、Debug表示に渡せる集計値を返します。
     DynamicAABBTreeValidationResult result{};
     const auto& nodes = tree.GetNodes();
 

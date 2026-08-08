@@ -8,6 +8,10 @@ namespace Raven::ph
 {
 namespace
 {
+// 物理マテリアル合成則:
+// - Restitutionは過大反発を避けるため小さい方を採用
+// - 摩擦係数は幾何平均で滑り量の極端な偏りを抑制
+// - Triggerはどちらか片方でも有効なら非拘束接触として扱う
 void SetCombinedMaterial(
     const ColliderComponent& colliderA,
     const ColliderComponent& colliderB,
@@ -26,6 +30,9 @@ void SetCombinedMaterial(
 }
 }
 
+// Sphere-Sphere判定:
+// 中心距離と半径和の比較で接触を判定し、法線はA->B方向で定義します。
+// 重なり中心が同一点に近い退化ケースでは、固定法線で安定化します。
 bool GenerateSphereSphereManifold(
     Entity sphereEntityA,
     const TransformComponent& sphereTransformA,
@@ -69,6 +76,9 @@ bool GenerateSphereSphereManifold(
     return true;
 }
 
+// Sphere-Plane判定:
+// 球中心と平面の符号付き距離を使って貫通量を算出します。
+// 法線はマニホールド規約に合わせて A(Sphere) -> B(Plane) 向きへ揃えます。
 bool GenerateSpherePlaneManifold(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,
@@ -103,6 +113,11 @@ bool GenerateSpherePlaneManifold(
     return true;
 }
 
+// Sphere-Box判定:
+// 1) OBBローカル空間で最近接点を求める
+// 2) 球中心との距離で接触判定
+// 3) 球中心がOBB内部なら最短脱出面を使って法線を決定
+// という3段構成で、回転Boxにも安定に対応します。
 bool GenerateSphereBoxManifold(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,

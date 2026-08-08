@@ -22,23 +22,31 @@ class PhysicsWorld;
 class PhysicsDebugRenderer
 {
 public:
+    // Scene/View/Projectionへの参照を保持し、RenderRegistered()から毎フレーム描画されます。
     PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection);
     ~PhysicsDebugRenderer();
     PhysicsDebugRenderer(const PhysicsDebugRenderer&) = delete;
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
 
+    // 登録済みインスタンスをまとめて描画します。
     static void RenderRegistered();
+    // 同じSceneにぶら下がるRendererへPhysicsWorld参照を配布します。
     static void BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld);
     PhysicsDebugSettings& GetSettings() { return m_Settings; }
     const PhysicsDebugSettings& GetSettings() const { return m_Settings; }
 
 private:
+    // 線描画専用頂点。TexcoordはOverlayフォント描画の将来拡張用に保持します。
     struct DebugVertex { math::Vec3 Position{}; math::Vec3 Color{1,1,1}; math::Vec2 Texcoord{}; };
     static std::vector<PhysicsDebugRenderer*>& Registry();
+    // 初回描画時にPipeline/Materialを遅延生成します。
     void EnsureInitialized();
+    // キー入力の立ち上がりのみで表示フラグを反転します。
     void UpdateToggleKeys();
     void Render();
+    // 3Dワイヤ表示群（AABB/OBB/Tree/Contact）を収集して描画します。
     void RenderWorldDebug();
+    // 2D OverlayにSolver統計と表示設定を描画します。
     void RenderOverlay();
     void SubmitLines(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
         const math::Mat4& view, const math::Mat4& projection);
@@ -55,6 +63,7 @@ private:
         int viewportWidth, int viewportHeight, const math::Vec3& color);
 
 private:
+    // View/Projectionは所有せず参照のみ。呼び出し側で寿命を管理します。
     Scene* m_Scene=nullptr; const PhysicsWorld* m_PhysicsWorld=nullptr;
     const math::Mat4* m_View=nullptr; const math::Mat4* m_Projection=nullptr;
     Ref<Material> m_Material; PhysicsDebugSettings m_Settings{};

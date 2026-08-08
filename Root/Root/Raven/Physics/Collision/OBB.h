@@ -21,11 +21,13 @@ struct OBB
 
     math::Vec3 ToWorldPoint(const math::Vec3& localPoint) const
     {
+        // OBBローカル座標を、3軸基底と中心位置でワールドへ展開します。
         return Center + Axis[0] * localPoint.x + Axis[1] * localPoint.y + Axis[2] * localPoint.z;
     }
 
     math::Vec3 ToLocalPoint(const math::Vec3& worldPoint) const
     {
+        // 直交基底を前提に、各軸への内積でローカル座標へ射影します。
         const math::Vec3 delta = worldPoint - Center;
         return { math::Vec3::Dot(delta, Axis[0]), math::Vec3::Dot(delta, Axis[1]),
             math::Vec3::Dot(delta, Axis[2]) };
@@ -39,6 +41,7 @@ struct OBB
 
     math::Vec3 Support(const math::Vec3& direction) const
     {
+        // 方向ごとに各軸の正負端を選び、最遠点を返します。
         math::Vec3 point = Center;
         for (int axis = 0; axis < 3; ++axis)
         {
@@ -69,6 +72,7 @@ struct OBB
             const float extent = HalfExtents[axis];
             if (std::abs(d) <= parallelEpsilon)
             {
+                // 平行軸ではslab内に原点が無ければヒットしません。
                 if (o < -extent || o > extent) return false;
                 continue;
             }
@@ -105,6 +109,7 @@ struct OBB
 inline bool ComputeBoxOBB(const TransformComponent& transform, const ColliderComponent& collider,
     OBB& outOBB)
 {
+    // TransformのEuler回転を使ってBoxローカル軸をワールドへ回し、OBBを構築します。
     if (collider.Type != ColliderType::Box) return false;
 
     const math::Vec3 halfExtents{ std::abs(collider.HalfExtents.x), std::abs(collider.HalfExtents.y),
@@ -120,6 +125,7 @@ inline bool ComputeBoxOBB(const TransformComponent& transform, const ColliderCom
     outOBB.Axis[1] = math::Vec3{ rotation[0][1], rotation[1][1], rotation[2][1] }.Normalized();
     outOBB.Axis[2] = math::Vec3{ rotation[0][2], rotation[1][2], rotation[2][2] }.Normalized();
     outOBB.HalfExtents = halfExtents;
+    // OffsetはOBB軸方向で適用し、回転後も期待どおりの局所位置を維持します。
     outOBB.Center = transform.Position + outOBB.Axis[0] * collider.Offset.x
         + outOBB.Axis[1] * collider.Offset.y + outOBB.Axis[2] * collider.Offset.z;
     return true;

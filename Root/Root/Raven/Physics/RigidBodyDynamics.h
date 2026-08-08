@@ -11,6 +11,12 @@
 namespace Raven::ph
 {
 
+// ============================================================================
+// Orientation / Inertia Utility
+// ============================================================================
+// Physicsでは回転の正本をQuaternionで保持し、TransformのEulerは表示互換用に同期します。
+// これにより積分時の数値安定性を保ちつつ、既存Inspectorとの互換性も維持します。
+
 // Transform::GetTransform()の回転順 Rx * Ry * Rz と同じ姿勢をQuaternionで作ります。
 // 既存Quat::FromEulerXYZ()は別の積順なので、Physicsでは明示的にこちらを使います。
 inline math::Quat PhysicsOrientationFromEuler(const math::Vec3& euler)
@@ -48,6 +54,8 @@ inline void EnsurePhysicsOrientation(
     const TransformComponent& transform,
     RigidBodyComponent& body)
 {
+    // 初回アクセス時だけTransform姿勢からQuaternionを初期化します。
+    // 以後はQuaternionを正本として維持し、Eulerはそこから再計算します。
     if (!body.OrientationInitialized)
     {
         body.Orientation = PhysicsOrientationFromEuler(transform.Rotation);
@@ -69,6 +77,7 @@ inline void IntegratePhysicsOrientation(
 
     // AngularVelocityはworld-spaceです。
     // qDot = 1/2 * omegaQuat * q をsemi-implicit Eulerで積分し、毎Step正規化します。
+    // 正規化を省くと長時間実行で基底が歪み、慣性計算や接触法線が不安定化します。
     const math::Quat omega{
         body.AngularVelocity.x,
         body.AngularVelocity.y,
@@ -82,6 +91,8 @@ inline void IntegratePhysicsOrientation(
 // ============================================================================
 // Rigid body inertia helpers
 // ============================================================================
+// Box/Sphereの簡易慣性モデルを使い、動的剛体の逆慣性テンソルを返します。
+// 本プロジェクトではTrigger/Static/Kinematicは拘束解法対象外としてゼロ行列を返します。
 inline math::Mat3 ComputeLocalInverseInertia(
     const RigidBodyComponent* body,
     const ColliderComponent* collider)
@@ -95,6 +106,7 @@ inline math::Mat3 ComputeLocalInverseInertia(
 
     if (collider->Type == ColliderType::Box)
     {
+        // 直方体慣性: Ixx = m/3*(hy^2+hz^2) など（半長hx/hy/hz定義）。
         const float hx = std::abs(collider->HalfExtents.x);
         const float hy = std::abs(collider->HalfExtents.y);
         const float hz = std::abs(collider->HalfExtents.z);
@@ -107,6 +119,7 @@ inline math::Mat3 ComputeLocalInverseInertia(
     }
     else if (collider->Type == ColliderType::Sphere)
     {
+        // 球慣性: I = 2/5 * m * r^2
         const float radius = std::max(collider->Radius, 0.0f);
         const float inertia = 0.4f * body->Mass * radius * radius;
         const float value = inertia > 1.0e-12f ? 1.0f / inertia : 0.0f;
@@ -134,6 +147,7 @@ inline math::Mat3 ComputeWorldInverseInertia(
         ? body->Orientation.Normalized()
         : PhysicsOrientationFromEuler(transform->Rotation);
     const math::Mat3 rotation = orientation.ToMat3();
+    // ワールド逆慣性: Iw^-1 = R * Ilocal^-1 * R^T
     return rotation * localInverse * rotation.Transposed();
 }
 
@@ -142,6 +156,7 @@ inline math::Vec3 GetVelocityAtPoint(
     const TransformComponent* transform,
     const math::Vec3& worldPoint)
 {
+    // 剛体上の任意点速度 v = v_linear + omega x r
     if (body == nullptr || transform == nullptr)
         return math::Vec3{};
     const math::Vec3 r = worldPoint - transform->Position;

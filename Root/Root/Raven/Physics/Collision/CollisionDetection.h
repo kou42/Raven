@@ -6,6 +6,8 @@
 namespace Raven::ph
 {
 
+// Sphere-Sphere:
+// 中心距離と半径和から接触判定し、1接触点マニホールドを生成します。
 bool GenerateSphereSphereManifold(
     Entity sphereEntityA,
     const TransformComponent& sphereTransformA,
@@ -15,6 +17,8 @@ bool GenerateSphereSphereManifold(
     const ColliderComponent& sphereColliderB,
     ContactManifold& outManifold);
 
+// Sphere-Plane:
+// 平面への符号付き距離から貫通量を求め、法線方向をA->B規約へ合わせます。
 bool GenerateSpherePlaneManifold(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,
@@ -24,6 +28,8 @@ bool GenerateSpherePlaneManifold(
     const ColliderComponent& planeCollider,
     ContactManifold& outManifold);
 
+// Sphere-Box:
+// OBBローカルで最近接点を求め、外部/内部の両ケースで法線と貫通量を計算します。
 bool GenerateSphereBoxManifold(
     Entity sphereEntity,
     const TransformComponent& sphereTransform,

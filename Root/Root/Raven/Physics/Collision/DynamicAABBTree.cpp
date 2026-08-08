@@ -8,6 +8,7 @@ uint32_t DynamicAABBTree::CreateProxy(
     Entity entity,
     const math::Vec3& displacement)
 {
+    // Tight AABBを少し膨らませたFat AABBで登録し、微小移動時の再挿入回数を減らします。
     const uint32_t proxyId = AllocateNode();
     DynamicAABBTreeNode& node = m_Nodes[proxyId];
     node.Bounds = AABB::CreateFat(
@@ -46,6 +47,7 @@ bool DynamicAABBTree::MoveProxy(
     DynamicAABBTreeNode& node = m_Nodes[proxyId];
     if (node.Bounds.Contains(tightBounds))
     {
+        // まだFat AABB内に収まる場合は、木構造を更新せずに終了します。
         return false;
     }
 
@@ -101,6 +103,7 @@ bool DynamicAABBTree::IsAllocated(uint32_t nodeId) const
 
 uint32_t DynamicAABBTree::AllocateNode()
 {
+    // FreeListを優先再利用し、ノード配列の再確保を抑えます。
     uint32_t nodeId = InvalidTreeNode;
 
     if (!m_FreeList.empty())
@@ -172,6 +175,7 @@ void DynamicAABBTree::InsertLeaf(uint32_t leaf)
     const uint32_t oldParent = m_Nodes[sibling].Parent;
     const uint32_t newParent = AllocateNode();
 
+    // 新しい親ノードを作って sibling と leaf を兄弟化します。
     DynamicAABBTreeNode& parent = m_Nodes[newParent];
     parent.Parent = oldParent;
     parent.Bounds = AABB::Combine(leafBounds, m_Nodes[sibling].Bounds);
@@ -231,6 +235,7 @@ void DynamicAABBTree::RemoveLeaf(uint32_t leaf)
         ? m_Nodes[parent].Child2
         : m_Nodes[parent].Child1;
 
+    // 親を取り除いて兄弟を繰り上げ、祖先方向を再計算します。
     if (grandParent != InvalidTreeNode)
     {
         DynamicAABBTreeNode& grand = m_Nodes[grandParent];
@@ -259,6 +264,7 @@ void DynamicAABBTree::RemoveLeaf(uint32_t leaf)
 
 void DynamicAABBTree::FixUpwards(uint32_t nodeId)
 {
+    // 回転で局所バランスを整えつつ、Bounds/Heightを親方向へ再構築します。
     while (nodeId != InvalidTreeNode)
     {
         nodeId = Balance(nodeId);
@@ -291,7 +297,7 @@ uint32_t DynamicAABBTree::Balance(uint32_t aId)
 
     const int balance = c.Height - b.Height;
 
-    // Cを上へ回転。
+    // C側が重い場合の左回転相当です。
     if (balance > 1)
     {
         const uint32_t fId = c.Child1;
@@ -340,7 +346,7 @@ uint32_t DynamicAABBTree::Balance(uint32_t aId)
         return cId;
     }
 
-    // Bを上へ回転。
+    // B側が重い場合の右回転相当です。
     if (balance < -1)
     {
         const uint32_t dId = b.Child1;

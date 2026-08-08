@@ -4,6 +4,9 @@
 namespace Raven::ph
 {
 
+// Broad Phase主処理:
+// Sceneとの同期後にFat AABB同士の候補ペアを収集し、
+// Narrow Phaseへ渡す重複なしのペア列を生成します。
 void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPairs)
 {
     Synchronize(scene);
@@ -32,6 +35,7 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
         }
     };
 
+    // Pairを順序正規化して保持し、(A,B) / (B,A) の重複通知を防ぎます。
     std::unordered_set<PairKey, PairHasher> emitted;
 
     for (const auto& [entityValue, proxyId] : m_Proxies)
@@ -42,6 +46,7 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
             continue;
         }
 
+        // 自身のFat AABBで木を問合せ、重なり候補だけを抽出します。
         const AABB queryBounds = m_Tree.GetFatAABB(proxyId);
         m_Tree.Query(queryBounds,
             [&](Entity other, uint32_t otherProxy) -> bool
@@ -76,6 +81,7 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
 
 void BroadPhase::Synchronize(Scene& scene)
 {
+    // Sceneの実体とTreeプロキシを同期し、生成・移動・削除を反映します。
     std::unordered_set<uint64_t> seen;
 
     for (auto [entity, transform, collider]
@@ -93,6 +99,7 @@ void BroadPhase::Synchronize(Scene& scene)
         const auto found = m_Proxies.find(entityValue);
         if (found == m_Proxies.end())
         {
+            // 新規Entityはプロキシ作成。次フレームの移動量計算用に中心も保存します。
             const uint32_t proxy = m_Tree.CreateProxy(tightBounds, entity);
             m_Proxies.emplace(entityValue, proxy);
             m_PreviousCenters[entityValue] = tightBounds.GetCenter();
@@ -103,10 +110,12 @@ void BroadPhase::Synchronize(Scene& scene)
         const math::Vec3 previousCenter = m_PreviousCenters[entityValue];
         const math::Vec3 displacement = center - previousCenter;
 
+        // 既存Entityはtight AABBと移動量で更新。Fat AABB内ならTree再挿入は省略されます。
         m_Tree.MoveProxy(found->second, tightBounds, displacement);
         m_PreviousCenters[entityValue] = center;
     }
 
+    // Sceneから消えたEntityのプロキシを破棄し、孤立ノードを残さないようにします。
     for (auto it = m_Proxies.begin(); it != m_Proxies.end(); )
     {
         if (seen.find(it->first) != seen.end())

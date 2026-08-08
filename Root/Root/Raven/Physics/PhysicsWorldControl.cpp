@@ -11,6 +11,8 @@ namespace ph
 {
 namespace
 {
+// Entity生存とComponent存在を同時に満たす場合のみポインタを返します。
+// 制御APIから破棄済みEntityへアクセスしてしまう事故を防ぐための共通入口です。
 RigidBodyComponent* TryGetAliveRigidBody(Scene& scene, Entity entity)
 {
     if (!scene.IsEntityAlive(entity)) return nullptr;
@@ -23,12 +25,14 @@ const RigidBodyComponent* TryGetAliveRigidBody(const Scene& scene, Entity entity
     return scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
 }
 
+// TeleportやImpulse系APIでTransformを安全に取得するための補助です。
 TransformComponent* TryGetAliveTransform(Scene& scene, Entity entity)
 {
     if (!scene.IsEntityAlive(entity)) return nullptr;
     return scene.TryGetComponent<TransformComponent>(entity.GetIndex());
 }
 
+// 外部入力で速度/力が入った剛体は即起床させ、次stepで確実に解かせます。
 void WakeRigidBody(RigidBodyComponent& rigidBody)
 {
     rigidBody.IsSleeping = false;
@@ -43,8 +47,10 @@ void PhysicsWorld::AddTorque(Scene& scene, Entity entity, const math::Vec3& torq
         return;
 
     WakeRigidBody(*rigidBody);
-    // TorqueはForceと同様に1 Step分を蓄積し、ApplyForces()で
-    // I_world^-1 * Torque としてAngularVelocityへ積分されます。
+    // Torqueは1 step分を蓄積し、ApplyForces内で
+    // deltaOmega = I_world^-1 * Torque * dt として積分されます。
+    // ゲーム側は「毎フレーム加えるトルク」を与えるだけでよく、
+    // 時間積分の整合性はPhysicsWorld側で担保します。
     rigidBody->Torque += torque;
 }
 
@@ -83,6 +89,7 @@ void PhysicsWorld::AddImpulseAtPoint(Scene& scene, Entity entity, const math::Ve
 
 void PhysicsWorld::SetLinearVelocity(Scene& scene, Entity entity, const math::Vec3& velocity)
 {
+    // 速度を直接上書きする制御API。動的剛体は即起床して次stepへ反映します。
     RigidBodyComponent* rigidBody = TryGetAliveRigidBody(scene, entity);
     if (rigidBody == nullptr || rigidBody->Type == BodyType::Static) return;
     rigidBody->LinearVelocity = velocity;
@@ -91,12 +98,15 @@ void PhysicsWorld::SetLinearVelocity(Scene& scene, Entity entity, const math::Ve
 
 math::Vec3 PhysicsWorld::GetLinearVelocity(const Scene& scene, Entity entity) const
 {
+    // 無効Entityはゼロ速度を返し、呼び出し側の分岐負担を減らします。
     const RigidBodyComponent* rigidBody = TryGetAliveRigidBody(scene, entity);
     return rigidBody ? rigidBody->LinearVelocity : math::Vec3{};
 }
 
 void PhysicsWorld::Teleport(Scene& scene, Entity entity, const math::Vec3& position)
 {
+    // 位置を瞬間移動で更新。補間ではなく即時反映なので、
+    // リスポーンやワープ用途で使う想定です。
     TransformComponent* transform = TryGetAliveTransform(scene, entity);
     if (transform == nullptr) return;
     transform->Position = position;
@@ -107,6 +117,7 @@ void PhysicsWorld::Teleport(Scene& scene, Entity entity, const math::Vec3& posit
 
 void PhysicsWorld::MovePosition(Scene& scene, Entity entity, const math::Vec3& position)
 {
+    // Kinematic専用: 速度解法に任せずゲーム側が直接位置をドライブします。
     TransformComponent* transform = TryGetAliveTransform(scene, entity);
     RigidBodyComponent* rigidBody = TryGetAliveRigidBody(scene, entity);
     if (transform == nullptr || rigidBody == nullptr || rigidBody->Type != BodyType::Kinematic) return;
