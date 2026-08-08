@@ -9,21 +9,6 @@
 namespace Raven::ph
 {
 
-// ============================================================================
-// OBB
-// ============================================================================
-// Narrow Phaseで使用するOriented Bounding Boxです。
-//
-// Center
-//   ワールド空間中心。
-// Axis[0..2]
-//   BoxのローカルX/Y/Z軸をワールドへ回転した正規直交基底。
-// HalfExtents
-//   各Axis方向の半サイズ。
-//
-// RavenではCollider寸法とTransform::Scaleを従来から分離しているため、
-// OBB導入でもHalfExtentsへScaleは掛けません。これにより既存Sceneの衝突サイズを
-// 変更せず、Box Rotationだけを段階的に有効化できます。
 struct OBB
 {
     math::Vec3 Center{};
@@ -36,20 +21,20 @@ struct OBB
 
     math::Vec3 ToWorldPoint(const math::Vec3& localPoint) const
     {
-        return Center
-            + Axis[0] * localPoint.x
-            + Axis[1] * localPoint.y
-            + Axis[2] * localPoint.z;
+        return Center + Axis[0] * localPoint.x + Axis[1] * localPoint.y + Axis[2] * localPoint.z;
     }
 
     math::Vec3 ToLocalPoint(const math::Vec3& worldPoint) const
     {
         const math::Vec3 delta = worldPoint - Center;
-        return {
-            math::Vec3::Dot(delta, Axis[0]),
-            math::Vec3::Dot(delta, Axis[1]),
-            math::Vec3::Dot(delta, Axis[2])
-        };
+        return { math::Vec3::Dot(delta, Axis[0]), math::Vec3::Dot(delta, Axis[1]),
+            math::Vec3::Dot(delta, Axis[2]) };
+    }
+
+    math::Vec3 ToLocalVector(const math::Vec3& worldVector) const
+    {
+        return { math::Vec3::Dot(worldVector, Axis[0]), math::Vec3::Dot(worldVector, Axis[1]),
+            math::Vec3::Dot(worldVector, Axis[2]) };
     }
 
     math::Vec3 Support(const math::Vec3& direction) const
@@ -62,55 +47,81 @@ struct OBB
         }
         return point;
     }
+
+    // RayをOBBローカル空間へ変換すると、OBBは原点中心のAABBになります。
+    // そのため3軸Slab法をそのまま使えます。返すfractionはworld Rayの
+    // origin + direction * fraction と同じパラメータです。
+    bool RayCast(const math::Vec3& origin, const math::Vec3& direction, float maxFraction,
+        float& outFraction, math::Vec3* outNormal = nullptr) const
+    {
+        constexpr float parallelEpsilon = 1.0e-8f;
+        const math::Vec3 localOrigin = ToLocalPoint(origin);
+        const math::Vec3 localDirection = ToLocalVector(direction);
+        float tMin = 0.0f;
+        float tMax = std::max(maxFraction, 0.0f);
+        int hitAxis = -1;
+        float hitSign = 0.0f;
+
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const float o = localOrigin[axis];
+            const float d = localDirection[axis];
+            const float extent = HalfExtents[axis];
+            if (std::abs(d) <= parallelEpsilon)
+            {
+                if (o < -extent || o > extent) return false;
+                continue;
+            }
+
+            const float invD = 1.0f / d;
+            float t1 = (-extent - o) * invD;
+            float t2 = ( extent - o) * invD;
+            float normalSign = -1.0f;
+            if (t1 > t2)
+            {
+                std::swap(t1, t2);
+                normalSign = 1.0f;
+            }
+            if (t1 > tMin)
+            {
+                tMin = t1;
+                hitAxis = axis;
+                hitSign = normalSign;
+            }
+            tMax = std::min(tMax, t2);
+            if (tMin > tMax) return false;
+        }
+
+        outFraction = tMin;
+        if (outNormal)
+        {
+            if (hitAxis >= 0) *outNormal = Axis[hitAxis] * hitSign;
+            else *outNormal = -direction.Normalized(); // Ray originがOBB内部の場合
+        }
+        return true;
+    }
 };
 
-// ============================================================================
-// ComputeBoxOBB
-// ============================================================================
-// TransformComponent + Box ColliderからワールドOBBを構築します。
-// Transform::GetTransform()と同じ X -> Y -> Z のEuler回転順を使用します。
-//
-// Collider::Offsetはローカル空間値なので、Boxの回転基底でワールドへ変換してから
-// Transform::Positionへ加えます。これにより回転BoxのCollider中心も見た目と同じ
-// 向きで移動します。
-inline bool ComputeBoxOBB(
-    const TransformComponent& transform,
-    const ColliderComponent& collider,
+inline bool ComputeBoxOBB(const TransformComponent& transform, const ColliderComponent& collider,
     OBB& outOBB)
 {
-    if (collider.Type != ColliderType::Box)
-    {
-        return false;
-    }
+    if (collider.Type != ColliderType::Box) return false;
 
-    const math::Vec3 halfExtents{
-        std::abs(collider.HalfExtents.x),
-        std::abs(collider.HalfExtents.y),
-        std::abs(collider.HalfExtents.z)
-    };
-
-    // 退化したBoxはSATの投影半径や接触面生成を不安定にするため除外します。
-    if (halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f)
-    {
-        return false;
-    }
+    const math::Vec3 halfExtents{ std::abs(collider.HalfExtents.x), std::abs(collider.HalfExtents.y),
+        std::abs(collider.HalfExtents.z) };
+    if (halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f) return false;
 
     math::Mat4 rotation = math::Mat4::Identity();
     rotation = math::Rotate(rotation, transform.Rotation.x, math::Vec3{ 1.0f, 0.0f, 0.0f });
     rotation = math::Rotate(rotation, transform.Rotation.y, math::Vec3{ 0.0f, 1.0f, 0.0f });
     rotation = math::Rotate(rotation, transform.Rotation.z, math::Vec3{ 0.0f, 0.0f, 1.0f });
 
-    // column-vector方式なので、回転行列の各columnがローカル基底のワールド方向です。
     outOBB.Axis[0] = math::Vec3{ rotation[0][0], rotation[1][0], rotation[2][0] }.Normalized();
     outOBB.Axis[1] = math::Vec3{ rotation[0][1], rotation[1][1], rotation[2][1] }.Normalized();
     outOBB.Axis[2] = math::Vec3{ rotation[0][2], rotation[1][2], rotation[2][2] }.Normalized();
     outOBB.HalfExtents = halfExtents;
-
-    outOBB.Center = transform.Position
-        + outOBB.Axis[0] * collider.Offset.x
-        + outOBB.Axis[1] * collider.Offset.y
-        + outOBB.Axis[2] * collider.Offset.z;
-
+    outOBB.Center = transform.Position + outOBB.Axis[0] * collider.Offset.x
+        + outOBB.Axis[1] * collider.Offset.y + outOBB.Axis[2] * collider.Offset.z;
     return true;
 }
 
