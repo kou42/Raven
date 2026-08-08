@@ -15,8 +15,13 @@ namespace ph
 struct ContactSolverSettings
 {
     uint32_t VelocityIterations = 8;
+
+    // Position Solverも反復させます。Velocity Solverとは分離し、速度へ人工的な
+    // エネルギーを注入せずにpenetrationだけを解消します。
+    uint32_t PositionIterations = 3;
     float PenetrationSlop = 0.001f;
     float PositionCorrectionPercent = 0.8f;
+
     float RestitutionVelocityThreshold = 0.5f;
 
     // Contact Persistenceで前Stepから引き継いだ累積Impulseを、反復Solver開始前に
