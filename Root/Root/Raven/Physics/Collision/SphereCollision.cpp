@@ -28,7 +28,7 @@ void SetCombinedMaterial(
         * std::max(colliderB.DynamicFriction, 0.0f));
     manifold.IsTrigger = colliderA.IsTrigger || colliderB.IsTrigger;
 }
-}
+} // namespace
 
 // Sphere-Sphere判定:
 // 中心距離と半径和の比較で接触を判定し、法線はA->B方向で定義します。
@@ -42,21 +42,33 @@ bool GenerateSphereSphereManifold(
     const ColliderComponent& sphereColliderB,
     ContactManifold& outManifold)
 {
-    if (sphereColliderA.Type != ColliderType::Sphere || sphereColliderB.Type != ColliderType::Sphere) return false;
+    if (sphereColliderA.Type != ColliderType::Sphere || sphereColliderB.Type != ColliderType::Sphere)
+    {
+        return false;
+    }
+
     const float radiusA = sphereColliderA.Radius;
     const float radiusB = sphereColliderB.Radius;
-    if (radiusA <= 0.0f || radiusB <= 0.0f) return false;
+    if (radiusA <= 0.0f || radiusB <= 0.0f)
+    {
+        return false;
+    }
 
     const math::Vec3 centerA = sphereTransformA.Position + sphereColliderA.Offset;
     const math::Vec3 centerB = sphereTransformB.Position + sphereColliderB.Offset;
     const math::Vec3 centerDelta = centerB - centerA;
     const float distanceSquared = centerDelta.LengthSq();
     const float radiusSum = radiusA + radiusB;
-    if (distanceSquared > radiusSum * radiusSum) return false;
+
+    if (distanceSquared > radiusSum * radiusSum)
+    {
+        return false;
+    }
 
     constexpr float CenterEpsilonSquared = 1.0e-12f;
     math::Vec3 normal{ 1.0f, 0.0f, 0.0f };
     float centerDistance = 0.0f;
+
     if (distanceSquared > CenterEpsilonSquared)
     {
         centerDistance = std::sqrt(distanceSquared);
@@ -88,17 +100,34 @@ bool GenerateSpherePlaneManifold(
     const ColliderComponent& planeCollider,
     ContactManifold& outManifold)
 {
-    if (sphereCollider.Type != ColliderType::Sphere || planeCollider.Type != ColliderType::Plane) return false;
+    if (sphereCollider.Type != ColliderType::Sphere || planeCollider.Type != ColliderType::Plane)
+    {
+        return false;
+    }
+
     const float sphereRadius = sphereCollider.Radius;
-    if (sphereRadius <= 0.0f) return false;
+    if (sphereRadius <= 0.0f)
+    {
+        return false;
+    }
 
     const float normalLengthSquared = planeCollider.PlaneNormal.LengthSq();
-    if (normalLengthSquared <= 1.0e-12f) return false;
+    if (normalLengthSquared <= 1.0e-12f)
+    {
+        return false;
+    }
+
     const math::Vec3 planeNormal = planeCollider.PlaneNormal / std::sqrt(normalLengthSquared);
     const math::Vec3 sphereCenter = sphereTransform.Position + sphereCollider.Offset;
-    const math::Vec3 pointOnPlane = planeTransform.Position + planeCollider.Offset + planeNormal * planeCollider.PlaneOffset;
+    const math::Vec3 pointOnPlane = planeTransform.Position
+        + planeCollider.Offset
+        + planeNormal * planeCollider.PlaneOffset;
     const float signedDistance = math::Vec3::Dot(sphereCenter - pointOnPlane, planeNormal);
-    if (signedDistance > sphereRadius) return false;
+
+    if (signedDistance > sphereRadius)
+    {
+        return false;
+    }
 
     ContactPoint point{};
     point.Position = sphereCenter - planeNormal * signedDistance;
@@ -127,12 +156,22 @@ bool GenerateSphereBoxManifold(
     const ColliderComponent& boxCollider,
     ContactManifold& outManifold)
 {
-    if (sphereCollider.Type != ColliderType::Sphere || boxCollider.Type != ColliderType::Box) return false;
+    if (sphereCollider.Type != ColliderType::Sphere || boxCollider.Type != ColliderType::Box)
+    {
+        return false;
+    }
+
     const float radius = sphereCollider.Radius;
-    if (radius <= 0.0f) return false;
+    if (radius <= 0.0f)
+    {
+        return false;
+    }
 
     OBB box{};
-    if (!ComputeBoxOBB(boxTransform, boxCollider, box)) return false;
+    if (ComputeBoxOBB(boxTransform, boxCollider, box) == false)
+    {
+        return false;
+    }
 
     const math::Vec3 sphereCenter = sphereTransform.Position + sphereCollider.Offset;
 
@@ -151,7 +190,10 @@ bool GenerateSphereBoxManifold(
 
     const math::Vec3 sphereToBox = contactPosition - sphereCenter;
     const float distanceSquared = sphereToBox.LengthSq();
-    if (distanceSquared > radius * radius) return false;
+    if (distanceSquared > radius * radius)
+    {
+        return false;
+    }
 
     math::Vec3 normal{};
     float penetration = 0.0f;

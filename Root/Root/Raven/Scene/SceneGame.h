@@ -1,4 +1,4 @@
-﻿#include "Raven/Scene/Scene.h"
+#include "Raven/Scene/Scene.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -16,85 +16,87 @@ namespace Raven
 class SceneGame : public Scene
 {
 public:
-    // DebugRendererにはSceneとカメラ行列への参照を渡します。
-    // 行列そのものをコピーしないため、WindowResize後のProjection更新も
-    // 次の描画からそのままデバッグ表示へ反映されます。
     SceneGame()
         : m_PhysicsDebugRenderer(*this, m_View, m_Projection)
     {
     }
 
-	virtual void OnCreate() override;
-	virtual void OnDestroy() override;
-	virtual void OnUpdateGame(float dt) override;
-	virtual void OnRender() override;
-	virtual void OnEvent(Event& e) override;
+    virtual void OnCreate() override;
+    virtual void OnDestroy() override;
+    virtual void OnUpdateGame(float dt) override;
+    virtual void OnRender() override;
+    virtual void OnEvent(Event& e) override;
 
 private:
-	struct SphereBody
-	{
-		Entity EntityHandle;
-		math::Vec3 Velocity{ 0.0f, 0.0f, 0.0f };
-		math::Vec3 Tint{ 1.0f, 1.0f, 1.0f };
-		float Radius = 0.5f;
-	};
+    struct SphereBody
+    {
+        Entity EntityHandle;
+        math::Vec3 Velocity{ 0.0f, 0.0f, 0.0f };
+        math::Vec3 Tint{ 1.0f, 1.0f, 1.0f };
+        float Radius = 0.5f;
+    };
 
-	void SpawnSphereBatch(int count);
-	void ClearSphereBatch();
-	int ComputeOptimizedSpawnCount() const;
+    void SpawnSphereBatch(int count);
+    void ClearSphereBatch();
+    int ComputeOptimizedSpawnCount() const;
 
-	ShaderLibrary m_ShaderLibrary;
-	Ref<Shader> m_Shader;
-	Ref<VertexArray> m_VertexArray;
-	Ref<Mesh> m_Mesh;
-	Ref<Material> m_Material;
-	Ref<VertexArray> m_ShadowVertexArray;
-	Ref<Mesh> m_ShadowMesh;
-	Ref<Material> m_ShadowMaterial;
+    // Box物理の目視確認用Entityを生成します。
+    // SceneGameは「何を置くか」だけを担当し、Cube頂点生成はPrimitiveMeshFactoryへ分離します。
+    void SpawnBoxTestBody();
 
-	Ref<VertexArray> m_SphereVertexArray;
-	Ref<Mesh>        m_SphereMesh;
+    ShaderLibrary m_ShaderLibrary;
+    Ref<Shader> m_Shader;
+    Ref<VertexArray> m_VertexArray;
+    Ref<Mesh> m_Mesh;
+    Ref<Material> m_Material;
+    Ref<VertexArray> m_ShadowVertexArray;
+    Ref<Mesh> m_ShadowMesh;
+    Ref<Material> m_ShadowMaterial;
 
-	TextureLibrary m_TextureLibrary;
-	Ref<Texture>     m_Texture;
+    Ref<Mesh> m_SphereMesh;
+    Ref<Mesh> m_BoxMesh;
 
-	math::Mat4 m_View;
-	math::Mat4 m_Projection;
+    TextureLibrary m_TextureLibrary;
+    Ref<Texture> m_Texture;
 
-	std::vector<Entity> m_SpawnedEntities;
-	std::vector<SphereBody> m_SphereBodies;
-	std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
-	Entity m_FloorEntity;
+    math::Mat4 m_View;
+    math::Mat4 m_Projection;
 
-	// ========================================================================
-	// Broad Phase Debug Visualization
-	// ========================================================================
-	// B : Collider AABBのワイヤーフレーム表示 ON/OFF
-	// P : Broad Phase候補ペア線表示 ON/OFF
-	ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
+    std::vector<Entity> m_SpawnedEntities;
+    std::vector<SphereBody> m_SphereBodies;
+    std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
+    Entity m_FloorEntity;
+    Entity m_BoxEntity;
 
-	bool m_WasSpacePressed = false;
-	int m_MinSphereCount = 50;
-	int m_MaxSphereCount = 100;
-	float m_TargetSphereDensity = 0.015f;
+    // ========================================================================
+    // Broad Phase Debug Visualization
+    // ========================================================================
+    // B : Collider AABBのワイヤーフレーム表示 ON/OFF
+    // P : Broad Phase候補ペア線表示 ON/OFF
+    ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
 
-	float m_Gravity = -9.8f;
-	float m_SphereRadius = 0.5f;
-	float m_FloorY = 0.0f;
-	float m_BounceDamping = 0.65f;
-	float m_GroundFriction = 3.0f;
-	float m_BounceTangentialDamping = 0.92f;
-	float m_StopVelocityEpsilon = 0.08f;
+    bool m_WasSpacePressed = false;
+    int m_MinSphereCount = 50;
+    int m_MaxSphereCount = 100;
+    float m_TargetSphereDensity = 0.015f;
 
-	float m_SpawnRangeXZ = 24.0f;
-	float m_SpawnHeightMin = 6.0f;
-	float m_SpawnHeightMax = 14.0f;
-	float m_InitialVelocityXMin = -6.0f;
-	float m_InitialVelocityXMax = 6.0f;
-	float m_InitialVelocityZMin = -6.0f;
-	float m_InitialVelocityZMax = 6.0f;
-	float m_SphereScaleMin = 0.7f;
-	float m_SphereScaleMax = 1.5f;
+    float m_Gravity = -9.8f;
+    float m_SphereRadius = 0.5f;
+    float m_FloorY = 0.0f;
+    float m_BounceDamping = 0.65f;
+    float m_GroundFriction = 3.0f;
+    float m_BounceTangentialDamping = 0.92f;
+    float m_StopVelocityEpsilon = 0.08f;
+
+    float m_SpawnRangeXZ = 24.0f;
+    float m_SpawnHeightMin = 6.0f;
+    float m_SpawnHeightMax = 14.0f;
+    float m_InitialVelocityXMin = -6.0f;
+    float m_InitialVelocityXMax = 6.0f;
+    float m_InitialVelocityZMin = -6.0f;
+    float m_InitialVelocityZMax = 6.0f;
+    float m_SphereScaleMin = 0.7f;
+    float m_SphereScaleMax = 1.5f;
 };
 
-}
+} // namespace Raven
