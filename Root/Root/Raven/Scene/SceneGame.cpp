@@ -1,4 +1,4 @@
-#include "SceneGame.h"
+﻿#include "SceneGame.h"
 
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
@@ -145,7 +145,7 @@ void SceneGame::SpawnBoxTestBody()
     // Transform.Scale={2,2,2}なら描画上の全幅は2、半幅は1になります。
     // ColliderComponent::HalfExtentsはTransform.Scaleと自動連動しないため、
     // ここで0.5 * Scaleを明示し、見た目とOBBを完全に一致させます。
-    const math::Vec3 boxScale{ 2.0f, 2.0f, 2.0f };
+    const math::Vec3 boxScale{ 10.0f, 10.0f, 10.0f };
 
     Entity box = CreateEntity("PhysicsTestBox");
     auto& transform = box.GetComponent<TransformComponent>();

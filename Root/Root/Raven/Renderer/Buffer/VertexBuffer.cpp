@@ -6,7 +6,7 @@
 namespace Raven
 {
 
-Ref<VertexBuffer> VertexBuffer::Create(float* vertices, uint32_t size)
+Ref<VertexBuffer> VertexBuffer::Create(const float* vertices, uint32_t size)
 {
     switch (RendererAPI::GetAPI())
     {

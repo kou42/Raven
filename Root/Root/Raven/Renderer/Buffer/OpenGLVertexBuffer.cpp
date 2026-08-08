@@ -6,7 +6,7 @@ namespace Raven
 {
 
 OpenGLVertexBuffer::OpenGLVertexBuffer(
-    float* vertices,
+    const float* vertices,
     uint32_t size)
 {
     glGenBuffers(1, &m_RendererID);
