@@ -36,14 +36,12 @@ bool GenerateSphereBoxManifold(
 // ============================================================================
 // GenerateBoxBoxManifold
 // ============================================================================
-// 現在のRaven Box Colliderは回転しないAABBです。
-// したがってOBB用15軸SATではなく、world X/Y/Zの3軸で分離を確認し、
-// 最小貫通軸をContact Normalとして採用します。
+// Box ColliderはTransform::Rotationを反映したOBBとして判定します。
+// Narrow PhaseではOBB-OBBの15軸SATを使い、最小貫通軸のFeature種別に応じて
+// Face-FaceはReference/Incident Face clipping、Edge-Edgeは辺同士の最近接点から
+// Contact Manifoldを生成します。
 //
-// 接触面がface-faceの場合は、2つのBoxの重なり矩形のcornerを最大4点登録します。
-// これによりContactManifoldの複数点構造を実際のSolverへ流せる最初の形状になります。
-// 将来Box Rotationを有効化した時、このAPIを維持したまま内部を15軸OBB SAT +
-// clippingへ置き換えられます。
+// API自体はAABB時代から維持しているため、PhysicsWorld側のdispatchは変更不要です。
 bool GenerateBoxBoxManifold(
     Entity boxEntityA,
     const TransformComponent& boxTransformA,
