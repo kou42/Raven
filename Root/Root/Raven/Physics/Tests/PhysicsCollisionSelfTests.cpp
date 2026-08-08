@@ -27,39 +27,38 @@ void RunOBBFoundationSelfTests(){ColliderComponent c{};c.Type=ColliderType::Box;
 void RunOBBRayCastSelfTests(){TransformComponent t{};t.Rotation={0,0,.785398163f};ColliderComponent c{};c.Type=ColliderType::Box;c.HalfExtents={1,.25f,.5f};OBB o{};assert(ComputeBoxOBB(t,c,o));float f;math::Vec3 n;assert(o.RayCast({-2,-2,0},{1,1,0},10,f,&n));AABB b{};assert(ComputeColliderAABB(t,c,b));const math::Vec3 p{b.Max.x-.02f,-2,0};assert(b.RayCast(p,{0,1,0},10,f,&n));assert(!o.RayCast(p,{0,1,0},10,f,&n));}
 void RunSphereBoxSelfTests(){ColliderComponent s{};s.Type=ColliderType::Sphere;s.Radius=1;ColliderComponent b{};b.Type=ColliderType::Box;b.HalfExtents={1,1,1};TransformComponent bt{},st{};ContactManifold m{};st.Position={1.5f,0,0};assert(GenerateSphereBoxManifold(Entity{},st,s,Entity{},bt,b,m));st.Position={4,0,0};assert(!GenerateSphereBoxManifold(Entity{},st,s,Entity{},bt,b,m));}
 void RunBoxBoxSelfTests(){ColliderComponent a{};a.Type=ColliderType::Box;a.HalfExtents={1,1,1};ColliderComponent b=a;TransformComponent at{},bt{};ContactManifold m{};bt.Position={1.5f,0,0};assert(GenerateBoxBoxManifold(Entity{},at,a,Entity{},bt,b,m));bt.Position={3,0,0};assert(!GenerateBoxBoxManifold(Entity{},at,a,Entity{},bt,b,m));}
+
+void RunContactFeatureIDSelfTests()
+{
+    ColliderComponent a{};a.Type=ColliderType::Box;a.HalfExtents={1,1,1};ColliderComponent b=a;
+    TransformComponent at{},bt{};bt.Position={1.5f,0,0};ContactManifold m{};
+    assert(GenerateBoxBoxManifold(Entity{},at,a,Entity{},bt,b,m));assert(m.PointCount>0);
+    for(std::size_t i=0;i<m.PointCount;++i)
+    {
+        // Face clippingで得た点はReference Face + Incident Vertexとして識別されます。
+        // World座標そのものではなく「どの形状feature同士か」を永続キーにできます。
+        assert(m.Points[i].Feature.IsValid());
+        assert((m.Points[i].Feature.TypeA==ContactFeatureType::Face&&m.Points[i].Feature.TypeB==ContactFeatureType::Vertex)||(m.Points[i].Feature.TypeA==ContactFeatureType::Vertex&&m.Points[i].Feature.TypeB==ContactFeatureType::Face));
+    }
+
+    // 小さく回転してもFeature ID生成が失われないことを確認します。
+    bt.Rotation={0,0,.08f};ContactManifold rotated{};
+    assert(GenerateBoxBoxManifold(Entity{},at,a,Entity{},bt,b,rotated));assert(rotated.PointCount>0);
+    for(std::size_t i=0;i<rotated.PointCount;++i)assert(rotated.Points[i].Feature.IsValid());
+}
+
 void RunAngularDynamicsSelfTests(){Scene scene;PhysicsWorld world;world.SetGravity({0,0,0});Entity e=CreateBox(scene,{0,0,0},BodyType::Dynamic);auto&b=e.GetComponent<RigidBodyComponent>();world.AddTorque(scene,e,{0,0,1});world.Step(scene,1.0f/60);assert(b.AngularVelocity.z>0);}
 void RunPointImpulseSelfTests(){Scene scene;PhysicsWorld world;Entity e=CreateBox(scene,{0,0,0},BodyType::Dynamic);auto&b=e.GetComponent<RigidBodyComponent>();world.AddImpulseAtPoint(scene,e,{1,0,0},{0,.5f,0});world.AddImpulseAtPoint(scene,e,{-1,0,0},{0,-.5f,0});assert(b.LinearVelocity.LengthSq()<=1e-12f);assert(std::abs(b.AngularVelocity.z)>1e-5f);}
 
 void RunAngularPositionSolverSelfTests()
 {
     ContactSolverSettings s{};s.EnableWarmStart=false;s.VelocityIterations=1;s.PositionIterations=4;s.PositionCorrectionPercent=.8f;s.PenetrationSlop=0;
-    {
-        Scene scene;Entity a=CreateBox(scene,{0,0,0},BodyType::Dynamic),b=CreateBox(scene,{0,0,0},BodyType::Static);auto&body=a.GetComponent<RigidBodyComponent>();auto&t=a.GetComponent<TransformComponent>();ContactManifold m{};m.A=a;m.B=b;m.Normal={1,0,0};m.PointCount=1;m.Points[0].Position={0,.5f,0};m.Points[0].Penetration=.2f;std::vector<ContactManifold> ms{m};SolveContactManifolds(scene,ms,1.0f/60,s);assert(t.Position.x<0);assert(body.OrientationInitialized);assert(std::abs(t.Rotation.z)>1e-5f);assert(body.LinearVelocity.LengthSq()<=1e-12f);assert(body.AngularVelocity.LengthSq()<=1e-12f);assert(ms[0].Points[0].Penetration<.2f);
-    }
-    {
-        Scene scene;Entity a=CreateBox(scene,{0,0,0},BodyType::Dynamic),b=CreateBox(scene,{0,0,0},BodyType::Static);auto&body=a.GetComponent<RigidBodyComponent>();auto&t=a.GetComponent<TransformComponent>();ContactManifold m{};m.A=a;m.B=b;m.Normal={1,0,0};m.PointCount=1;m.Points[0].Position={0,0,0};m.Points[0].Penetration=.2f;std::vector<ContactManifold> ms{m};SolveContactManifolds(scene,ms,1.0f/60,s);assert(t.Position.x<0);assert(std::abs(t.Rotation.z)<=1e-6f);assert(body.AngularVelocity.LengthSq()<=1e-12f);
-    }
+    {Scene scene;Entity a=CreateBox(scene,{0,0,0},BodyType::Dynamic),b=CreateBox(scene,{0,0,0},BodyType::Static);auto&body=a.GetComponent<RigidBodyComponent>();auto&t=a.GetComponent<TransformComponent>();ContactManifold m{};m.A=a;m.B=b;m.Normal={1,0,0};m.PointCount=1;m.Points[0].Position={0,.5f,0};m.Points[0].Penetration=.2f;std::vector<ContactManifold> ms{m};SolveContactManifolds(scene,ms,1.0f/60,s);assert(t.Position.x<0);assert(body.OrientationInitialized);assert(std::abs(t.Rotation.z)>1e-5f);assert(body.LinearVelocity.LengthSq()<=1e-12f);assert(body.AngularVelocity.LengthSq()<=1e-12f);assert(ms[0].Points[0].Penetration<.2f);}
+    {Scene scene;Entity a=CreateBox(scene,{0,0,0},BodyType::Dynamic),b=CreateBox(scene,{0,0,0},BodyType::Static);auto&body=a.GetComponent<RigidBodyComponent>();auto&t=a.GetComponent<TransformComponent>();ContactManifold m{};m.A=a;m.B=b;m.Normal={1,0,0};m.PointCount=1;m.Points[0].Position={0,0,0};m.Points[0].Penetration=.2f;std::vector<ContactManifold> ms{m};SolveContactManifolds(scene,ms,1.0f/60,s);assert(t.Position.x<0);assert(std::abs(t.Rotation.z)<=1e-6f);assert(body.AngularVelocity.LengthSq()<=1e-12f);}
 }
-
-void RunContactAnchorPositionSelfTests()
-{
-    // 1 iterationと複数iterationを比較します。Anchor方式が現在Poseを再評価していれば、
-    // 2回目以降も同じ古いpenetrationを機械的に引くのではなく、残差だけを解きます。
-    auto solve=[](uint32_t iterations)
-    {
-        Scene scene;Entity a=CreateBox(scene,{0,0,0},BodyType::Dynamic),b=CreateBox(scene,{0,0,0},BodyType::Static);
-        ContactManifold m{};m.A=a;m.B=b;m.Normal={1,0,0};m.PointCount=1;m.Points[0].Position={0,.5f,0};m.Points[0].Penetration=.25f;
-        ContactSolverSettings s{};s.EnableWarmStart=false;s.VelocityIterations=1;s.PositionIterations=iterations;s.PositionCorrectionPercent=.5f;s.PenetrationSlop=0;
-        std::vector<ContactManifold> ms{m};SolveContactManifolds(scene,ms,1.0f/60,s);
-        assert(ms[0].Points[0].PositionAnchorsInitialized);assert(IsFinite(a.GetComponent<TransformComponent>().Position));assert(IsFinite(a.GetComponent<RigidBodyComponent>().AngularVelocity));
-        return ms[0].Points[0].Penetration;
-    };
-    const float afterOne=solve(1),afterFour=solve(4);
-    assert(afterOne<.25f);assert(afterFour<afterOne);assert(afterFour>=0.0f);
-}
-
+void RunContactAnchorPositionSelfTests(){auto solve=[](uint32_t iterations){Scene scene;Entity a=CreateBox(scene,{0,0,0},BodyType::Dynamic),b=CreateBox(scene,{0,0,0},BodyType::Static);ContactManifold m{};m.A=a;m.B=b;m.Normal={1,0,0};m.PointCount=1;m.Points[0].Position={0,.5f,0};m.Points[0].Penetration=.25f;ContactSolverSettings s{};s.EnableWarmStart=false;s.VelocityIterations=1;s.PositionIterations=iterations;s.PositionCorrectionPercent=.5f;s.PenetrationSlop=0;std::vector<ContactManifold> ms{m};SolveContactManifolds(scene,ms,1.0f/60,s);assert(ms[0].Points[0].PositionAnchorsInitialized);assert(IsFinite(a.GetComponent<TransformComponent>().Position));assert(IsFinite(a.GetComponent<RigidBodyComponent>().AngularVelocity));return ms[0].Points[0].Penetration;};const float afterOne=solve(1),afterFour=solve(4);assert(afterOne<.25f);assert(afterFour<afterOne);assert(afterFour>=0.0f);}
 void RunContactPersistenceWarmStartSelfTests(){const StackResult cold=RunBoxStackScenario(false,1),warm=RunBoxStackScenario(true,1);assert(cold.AllFinite&&warm.AllFinite);assert(warm.PersistentImpulseFrames>0);assert(warm.TopHeight>6.5f&&warm.TopHeight<8.5f);assert(warm.MaximumPenetration<=cold.MaximumPenetration+.05f);}
 void RunBoxStackStressTest(){const StackResult r=RunBoxStackScenario(true,8);assert(r.AllFinite);assert(r.PersistentImpulseFrames>100);assert(r.TopHeight>6.5f&&r.TopHeight<8.5f);assert(r.MaximumPenetration<.25f);}
-void RunPhysicsCollisionSelfTests(){RunDynamicAABBTreeSelfTests();RunOBBFoundationSelfTests();RunOBBRayCastSelfTests();RunSphereBoxSelfTests();RunBoxBoxSelfTests();RunAngularDynamicsSelfTests();RunPointImpulseSelfTests();RunAngularPositionSolverSelfTests();RunContactAnchorPositionSelfTests();RunContactPersistenceWarmStartSelfTests();RunBoxStackStressTest();}
+void RunPhysicsCollisionSelfTests(){RunDynamicAABBTreeSelfTests();RunOBBFoundationSelfTests();RunOBBRayCastSelfTests();RunSphereBoxSelfTests();RunBoxBoxSelfTests();RunContactFeatureIDSelfTests();RunAngularDynamicsSelfTests();RunPointImpulseSelfTests();RunAngularPositionSolverSelfTests();RunContactAnchorPositionSelfTests();RunContactPersistenceWarmStartSelfTests();RunBoxStackStressTest();}
 
 } // namespace Raven::ph::tests
