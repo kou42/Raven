@@ -221,6 +221,70 @@ void RunSphereBoxSelfTests()
     assert(GenerateSphereBoxManifold(Entity{}, sphereTransform, sphere, Entity{}, boxTransform, box, manifold) == false);
 }
 
+void RunBoxPlaneSelfTests()
+{
+    // Box-Planeの基本契約をまとめて検証します。
+    // 水平なBoxが面で接触した場合は底面4頂点が接触点となり、
+    // それぞれがVertex(Box)-Face(Plane)として識別されることを保証します。
+    ColliderComponent box{};
+    box.Type = ColliderType::Box;
+    box.HalfExtents = { 1.0f, 1.0f, 1.0f };
+
+    ColliderComponent plane{};
+    plane.Type = ColliderType::Plane;
+    plane.PlaneNormal = { 0.0f, 1.0f, 0.0f };
+
+    TransformComponent boxTransform{};
+    TransformComponent planeTransform{};
+    ContactManifold manifold{};
+
+    // Box底面(y=-1)をPlane(y=0)へ0.1だけ貫通させます。
+    // 水平面接触なので4頂点すべてが同じ深さで接触するはずです。
+    boxTransform.Position = { 0.0f, 0.9f, 0.0f };
+    assert(GenerateBoxPlaneManifold(
+        Entity{}, boxTransform, box, Entity{}, planeTransform, plane, manifold));
+    assert(manifold.PointCount == 4);
+    assert(NearlyEqual(manifold.Normal.x, 0.0f));
+    assert(NearlyEqual(manifold.Normal.y, -1.0f));
+    assert(NearlyEqual(manifold.Normal.z, 0.0f));
+
+    for (std::size_t i = 0; i < manifold.PointCount; ++i)
+    {
+        const ContactPoint& point = manifold.Points[i];
+        assert(NearlyEqual(point.Position.y, 0.0f, 1.0e-4f));
+        assert(NearlyEqual(point.Penetration, 0.1f, 1.0e-4f));
+        assert(point.Feature.IsValid());
+        assert(point.Feature.TypeA == ContactFeatureType::Vertex);
+        assert(point.Feature.TypeB == ContactFeatureType::Face);
+    }
+
+    // Planeから十分離したBoxではManifoldを生成してはいけません。
+    boxTransform.Position = { 0.0f, 2.5f, 0.0f };
+    ContactManifold separated{};
+    assert(GenerateBoxPlaneManifold(
+        Entity{}, boxTransform, box, Entity{}, planeTransform, plane, separated) == false);
+
+    // 回転BoxでもOBBのワールド頂点を使って判定できることを確認します。
+    // Z軸回転により底面の一部だけがPlaneへ入り、支持点が生成されます。
+    boxTransform.Position = { 0.0f, 1.2f, 0.0f };
+    boxTransform.Rotation = { 0.0f, 0.0f, 0.35f };
+    ContactManifold rotated{};
+    assert(GenerateBoxPlaneManifold(
+        Entity{}, boxTransform, box, Entity{}, planeTransform, plane, rotated));
+    assert(rotated.PointCount > 0);
+    assert(rotated.PointCount <= 4);
+
+    for (std::size_t i = 0; i < rotated.PointCount; ++i)
+    {
+        const ContactPoint& point = rotated.Points[i];
+        assert(point.Penetration >= 0.0f);
+        assert(NearlyEqual(point.Position.y, 0.0f, 1.0e-4f));
+        assert(point.Feature.IsValid());
+        assert(point.Feature.TypeA == ContactFeatureType::Vertex);
+        assert(point.Feature.TypeB == ContactFeatureType::Face);
+    }
+}
+
 void RunBoxBoxSelfTests()
 {
     // 箱-箱の基本重なり判定が、距離に応じて正しく切り替わることを検証します。
@@ -446,6 +510,7 @@ void RunPhysicsCollisionSelfTests()
     RunOBBFoundationSelfTests();
     RunOBBRayCastSelfTests();
     RunSphereBoxSelfTests();
+    RunBoxPlaneSelfTests();
     RunBoxBoxSelfTests();
     RunContactFeatureIDSelfTests();
     RunAngularDynamicsSelfTests();
