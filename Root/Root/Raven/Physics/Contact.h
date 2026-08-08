@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Entity.h"
@@ -9,96 +10,35 @@
 namespace Raven::ph
 {
 
-// ============================================================================
-// ContactPoint
-// ============================================================================
-// 1つの接触位置に属する局所的な情報です。
-// Sphere系では1点、Box-Boxでは最大4点を保持します。
+enum class ContactFeatureType : uint8_t { Unknown=0, Face=1, Edge=2, Vertex=3 };
+
+struct ContactFeatureID
+{
+    ContactFeatureType TypeA=ContactFeatureType::Unknown;
+    ContactFeatureType TypeB=ContactFeatureType::Unknown;
+    uint8_t IndexA=0xFF;
+    uint8_t IndexB=0xFF;
+    bool IsValid()const{return TypeA!=ContactFeatureType::Unknown&&TypeB!=ContactFeatureType::Unknown;}
+    bool operator==(const ContactFeatureID&o)const{return TypeA==o.TypeA&&TypeB==o.TypeB&&IndexA==o.IndexA&&IndexB==o.IndexB;}
+};
+
 struct ContactPoint
 {
-    math::Vec3 Position{ 0.0f, 0.0f, 0.0f };
-    float Penetration = 0.0f;
+    math::Vec3 Position{0,0,0};float Penetration=0;
+    float AccumulatedNormalImpulse=0;float AccumulatedTangentImpulse=0;math::Vec3 CachedTangent{0,0,0};
 
-    // Sequential Impulseで解いた累積Impulseです。
-    // Contact Persistenceによって次フレームの対応Contactへ引き継ぎ、
-    // Solver反復前にWarm Startとして再適用します。
-    float AccumulatedNormalImpulse = 0.0f;
-    float AccumulatedTangentImpulse = 0.0f;
+    // Narrow Phaseが決めた幾何feature。Persistenceではworld座標より先に比較します。
+    // IndexはBoxではface=axis*2+sign、edge=axis*4+side bits、vertex=3-bit cornerです。
+    ContactFeatureID Feature{};
 
-    // 摩擦Impulseはスカラー値だけでは方向を復元できないため、前回Solverで使った
-    // 接線基底も保存します。Warm Startでは
-    //   Normal * NormalImpulse + CachedTangent * TangentImpulse
-    // をまとめて再適用します。
-    math::Vec3 CachedTangent{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 LocalAnchorA{0,0,0};math::Vec3 LocalAnchorB{0,0,0};float InitialSeparation=0;bool PositionAnchorsInitialized=false;
 };
 
 struct ContactManifold
 {
-    static constexpr std::size_t MaxContactPointCount = 4;
-
-    Entity A;
-    Entity B;
-
-    // AからBへ向く法線です。
-    math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
-
-    float Restitution = 0.0f;
-    float StaticFriction = 0.0f;
-    float DynamicFriction = 0.0f;
-    bool IsTrigger = false;
-
-    std::array<ContactPoint, MaxContactPointCount> Points{};
-    std::size_t PointCount = 0;
-
-    void ClearPoints()
-    {
-        PointCount = 0;
-    }
-
-    bool AddPoint(const ContactPoint& point)
-    {
-        if (PointCount >= MaxContactPointCount)
-        {
-            return false;
-        }
-
-        Points[PointCount] = point;
-        ++PointCount;
-        return true;
-    }
+    static constexpr std::size_t MaxContactPointCount=4;Entity A;Entity B;math::Vec3 Normal{0,1,0};float Restitution=0;float StaticFriction=0;float DynamicFriction=0;bool IsTrigger=false;std::array<ContactPoint,MaxContactPointCount> Points{};std::size_t PointCount=0;
+    void ClearPoints(){PointCount=0;}bool AddPoint(const ContactPoint&p){if(PointCount>=MaxContactPointCount)return false;Points[PointCount++]=p;return true;}
 };
-
-// 旧来の単一接触表現です。
-struct Contact
-{
-    Entity A;
-    Entity B;
-    math::Vec3 Point{ 0.0f, 0.0f, 0.0f };
-    math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
-    float Penetration = 0.0f;
-    float Restitution = 0.0f;
-    float StaticFriction = 0.0f;
-    float DynamicFriction = 0.0f;
-    bool IsTrigger = false;
-};
-
-inline ContactManifold MakeContactManifold(const Contact& contact)
-{
-    ContactManifold manifold{};
-    manifold.A = contact.A;
-    manifold.B = contact.B;
-    manifold.Normal = contact.Normal;
-    manifold.Restitution = contact.Restitution;
-    manifold.StaticFriction = contact.StaticFriction;
-    manifold.DynamicFriction = contact.DynamicFriction;
-    manifold.IsTrigger = contact.IsTrigger;
-
-    ContactPoint point{};
-    point.Position = contact.Point;
-    point.Penetration = contact.Penetration;
-    manifold.AddPoint(point);
-
-    return manifold;
-}
-
+struct Contact{Entity A;Entity B;math::Vec3 Point{0,0,0};math::Vec3 Normal{0,1,0};float Penetration=0;float Restitution=0;float StaticFriction=0;float DynamicFriction=0;bool IsTrigger=false;};
+inline ContactManifold MakeContactManifold(const Contact&c){ContactManifold m{};m.A=c.A;m.B=c.B;m.Normal=c.Normal;m.Restitution=c.Restitution;m.StaticFriction=c.StaticFriction;m.DynamicFriction=c.DynamicFriction;m.IsTrigger=c.IsTrigger;ContactPoint p{};p.Position=c.Point;p.Penetration=c.Penetration;m.AddPoint(p);return m;}
 } // namespace Raven::ph
