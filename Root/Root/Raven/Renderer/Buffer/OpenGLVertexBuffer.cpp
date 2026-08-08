@@ -36,6 +36,20 @@ void OpenGLVertexBuffer::Unbind() const
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
+void OpenGLVertexBuffer::SetData(const void* data, uint32_t size)
+{
+    // 頂点データの内容を更新するため、現在の VBO に対して再度バッファを設定する。
+    Bind();
+
+    if (data == nullptr)
+    {
+        glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_STATIC_DRAW);
+        return;
+    }
+
+    glBufferData(GL_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
+}
+
 void OpenGLVertexBuffer::SetLayout(const BufferLayout& layout)
 {
     m_Layout = layout;
