@@ -1,3 +1,5 @@
+#pragma once
+
 #include "Raven/Math/Math.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"

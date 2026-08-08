@@ -83,7 +83,7 @@ private:
     void IntegrateVelocities(Scene& scene, float dt);
     void IntegratePositions(Scene& scene, float dt);
     void DetectCollisions(Scene& scene);
-    void RestorePersistentContacts();
+    void RestorePersistentContacts(Scene& scene);
     void SolveCollisions(Scene& scene, float dt);
     void UpdateSolverDebugStatisticsAfterSolve();
     void UpdateSleeping(Scene& scene, float dt);
