@@ -32,8 +32,8 @@ bool IsSamePair(const ContactManifold& a, const ContactManifold& b)
         || (a.A == b.B && a.B == b.A);
 }
 
-// 剛体側でQuaternion姿勢が初期化済みならそれを優先し、
-// 未初期化ならTransformのEuler角から接触計算用の姿勢を作ります。
+// 剛体に明示的なQuaternion姿勢がある場合はその向きを使用し、
+// 未初期化ならTransformのEuler角から接触計算用の姿勢を求めます。
 math::Quat GetContactOrientation(
     const TransformComponent& transform,
     const RigidBodyComponent* body)
@@ -43,8 +43,8 @@ math::Quat GetContactOrientation(
         : PhysicsOrientationFromEuler(transform.Rotation);
 }
 
-// ワールド接触点を剛体ローカルへ変換します。
-// Persistent Contactで回転後も同じ接触位置を追跡するために使用します。
+// ワールド空間の接触点を剛体ローカル空間へ変換します。
+// Persistent Contactで回転後も同じ接触を対応付けるために使用します。
 math::Vec3 ContactLocalAnchor(
     const TransformComponent& transform,
     const RigidBodyComponent* body,
@@ -55,7 +55,8 @@ math::Vec3 ContactLocalAnchor(
         .Rotate(worldPoint - transform.Position);
 }
 
-// Feature IDが有効なら、接触ペアのEntity順序も考慮して同じ幾何特徴か判定します。
+// Feature IDが同じ幾何特徴を表すか確認します。
+// Entity順序が前フレームと逆転している場合はA/Bを入れ替えて比較します。
 bool FeatureMatches(
     const ContactFeatureID& current,
     const ContactFeatureID& previous,
@@ -78,7 +79,7 @@ bool FeatureMatches(
 }
 
 // Sphereに対するRayCastです。
-// 二次方程式を解き、指定されたmaxFraction以内の最初の交点を返します。
+// 二次方程式を解き、maxFraction以内で最も手前の交点を返します。
 bool RayCastSphere(
     const math::Vec3& origin,
     const math::Vec3& direction,
@@ -125,7 +126,7 @@ bool RayCastSphere(
 }
 
 // Planeに対するRayCastです。
-// Planeは無限形状なのでBroad Phase Treeには依存せず直接判定できます。
+// Planeは無限形状なのでBroad Phase Treeには載せず直接判定します。
 bool RayCastPlane(
     const math::Vec3& origin,
     const math::Vec3& direction,
@@ -135,37 +136,38 @@ bool RayCastPlane(
     float& outFraction,
     math::Vec3& outNormal)
 {
-    outNormal = collider.PlaneNormal.Normalized();
-    if (outNormal.LengthSq() <= 1.0e-12f)
+    math::Vec3 normal = collider.PlaneNormal.Normalized();
+    if (normal.LengthSq() <= 1.0e-12f)
     {
         return false;
     }
 
-    const float denominator = math::Vec3::Dot(outNormal, direction);
+    const float denominator = math::Vec3::Dot(normal, direction);
     const float distance = math::Vec3::Dot(
-        outNormal,
+        normal,
         origin - (transform.Position + collider.Offset));
 
     if (std::abs(denominator) <= 1.0e-8f)
     {
-        // RayがPlaneと平行で、かつPlane上にない場合は交差しません。
+        // RayとPlaneが平行で、始点がPlane上でもない場合は交差しません。
         if (std::abs(distance) > 1.0e-6f)
         {
             return false;
         }
 
         outFraction = 0.0f;
+        outNormal = normal;
         return true;
     }
 
-    outFraction = -distance / denominator;
-    if (outFraction < 0.0f || outFraction > maxFraction)
+    const float fraction = -distance / denominator;
+    if (fraction < 0.0f || fraction > maxFraction)
     {
         return false;
     }
 
-    // RayがPlaneの裏側から入る場合も、Ray側へ向く法線を返します。
-    outNormal = denominator < 0.0f ? outNormal : -outNormal;
+    outFraction = fraction;
+    outNormal = denominator < 0.0f ? normal : -normal;
     return true;
 }
 
@@ -224,7 +226,7 @@ const math::Vec3& PhysicsWorld::GetGravity() const
     return m_Gravity;
 }
 
-// Dynamic剛体へ重力・Force・Torqueを反映します。
+// Solver実行前にDynamic剛体へ蓄積済みForce/Torqueを反映します。
 void PhysicsWorld::ApplyForces(Scene& scene, float dt)
 {
     for (auto [entity, transform, rigidBody, collider]
@@ -248,14 +250,14 @@ void PhysicsWorld::ApplyForces(Scene& scene, float dt)
         acceleration += rigidBody.Force * rigidBody.InverseMass;
         rigidBody.LinearVelocity += acceleration * dt;
 
-        // Torqueはワールド逆慣性テンソルを通して角加速度へ変換します。
+        // Torqueはworld-space逆慣性テンソルを通して角加速度へ変換します。
         EnsurePhysicsOrientation(transform, rigidBody);
         rigidBody.AngularVelocity +=
             (ComputeWorldInverseInertia(&transform, &rigidBody, &collider) * rigidBody.Torque) * dt;
     }
 }
 
-// 線形・角速度へDampingを適用します。
+// 線形速度・角速度へDampingを適用します。
 void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
 {
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
@@ -293,18 +295,18 @@ void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
     }
 }
 
-// Broad Phase候補から有限形状同士の接触を生成し、
-// Treeへ登録しない無限Planeについては別経路でSphere/Boxとの接触を生成します。
+// Broad Phase候補から有限形状同士のContact Manifoldを生成します。
+// Planeは無限形状でTreeに載せないため、後半でSphere/Boxとの組み合わせを別途処理します。
 void PhysicsWorld::DetectCollisions(Scene& scene)
 {
-    // 前フレームのManifoldはPersistent Contact/Warm Start用に退避します。
+    // 前フレーム接触を退避し、Warm Start用の参照元として保持します。
     m_PreviousManifolds = std::move(m_Manifolds);
     m_Manifolds.clear();
 
     std::vector<BroadPhasePair> pairs;
     m_BroadPhase.ComputePairs(scene, pairs);
 
-    // Dynamic AABB Treeから得た有限形状同士の候補をNarrow Phaseへ振り分けます。
+    // Broad Phaseが抽出した有限形状の候補だけをNarrow Phaseへ渡します。
     for (const auto& pair : pairs)
     {
         if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B))
@@ -325,6 +327,7 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         ContactManifold manifold{};
         bool generated = false;
 
+        // 形状組み合わせごとに専用Narrow Phaseへ振り分けます。
         if (colliderA->Type == ColliderType::Sphere
             && colliderB->Type == ColliderType::Sphere)
         {
@@ -344,7 +347,6 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         else if (colliderA->Type == ColliderType::Box
             && colliderB->Type == ColliderType::Sphere)
         {
-            // Sphere-Box APIはSphereをAとして受けるため、引数順だけ入れ替えます。
             generated = GenerateSphereBoxManifold(
                 pair.B, *transformB, *colliderB,
                 pair.A, *transformA, *colliderA,
@@ -365,9 +367,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         }
     }
 
-    // Planeは無限形状なのでDynamic AABB Treeへ登録しません。
-    // そのため有限形状側を走査し、Sphere-Plane / Box-Planeを明示的に判定します。
-    // 今回追加したBox-Planeも既存Sphere-Planeと同じ経路へ統合しています。
+    // Planeは無限形状なので通常のBroad Phase Treeには登録しません。
+    // 既存のSphere-Plane経路を拡張し、今回追加したBox-Planeも同じ場所で処理します。
     for (auto [shapeEntity, shapeTransform, shapeCollider]
         : scene.View<TransformComponent, ColliderComponent>())
     {
@@ -412,7 +413,6 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
 
     RestorePersistentContacts(scene);
 
-    // 今フレームの接触情報をSolverデバッグ統計へ反映します。
     m_SolverDebugStatistics.ManifoldCount = static_cast<uint32_t>(m_Manifolds.size());
     for (const auto& manifold : m_Manifolds)
     {
@@ -427,7 +427,8 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     }
 }
 
-// 前フレームの接触Impulseを現在の接触へ引き継ぎ、Warm Startを成立させます。
+// 前フレームの接触点を再利用して、同じ幾何形状の接触を滑らかに継続します。
+// Feature ID -> Local Anchor -> World Positionの順に対応付けを試みます。
 void PhysicsWorld::RestorePersistentContacts(Scene& scene)
 {
     constexpr float WorldDistanceSq = 0.05f * 0.05f;
@@ -444,7 +445,6 @@ void PhysicsWorld::RestorePersistentContacts(Scene& scene)
         const ContactManifold* previous = nullptr;
         bool sameOrder = true;
 
-        // 同じEntityペアの前フレームManifoldを探します。
         for (const auto& candidate : m_PreviousManifolds)
         {
             if (candidate.IsTrigger
@@ -454,9 +454,18 @@ void PhysicsWorld::RestorePersistentContacts(Scene& scene)
                 continue;
             }
 
-            previous = &candidate;
-            sameOrder = current.A == candidate.A && current.B == candidate.B;
-            break;
+            const bool same = current.A == candidate.A && current.B == candidate.B;
+            const math::Vec3 previousNormal = same ? candidate.Normal : -candidate.Normal;
+
+            // 法線が大きく変化した接触は同じContactとして再利用しません。
+            if (math::Vec3::Dot(
+                    current.Normal.Normalized(),
+                    previousNormal.Normalized()) >= NormalThreshold)
+            {
+                previous = &candidate;
+                sameOrder = same;
+                break;
+            }
         }
 
         if (!previous)
@@ -464,76 +473,398 @@ void PhysicsWorld::RestorePersistentContacts(Scene& scene)
             continue;
         }
 
-        const auto* transformA = scene.TryGetComponent<TransformComponent>(current.A.GetIndex());
-        const auto* transformB = scene.TryGetComponent<TransformComponent>(current.B.GetIndex());
-        if (!transformA || !transformB)
-        {
-            continue;
-        }
+        ++m_SolverDebugStatistics.PersistentManifoldCount;
 
-        const auto* bodyA = scene.TryGetComponent<RigidBodyComponent>(current.A.GetIndex());
-        const auto* bodyB = scene.TryGetComponent<RigidBodyComponent>(current.B.GetIndex());
+        auto* transformA = scene.TryGetComponent<TransformComponent>(current.A.GetIndex());
+        auto* transformB = scene.TryGetComponent<TransformComponent>(current.B.GetIndex());
+        auto* bodyA = scene.TryGetComponent<RigidBodyComponent>(current.A.GetIndex());
+        auto* bodyB = scene.TryGetComponent<RigidBodyComponent>(current.B.GetIndex());
 
-        // 法線が大きく変化した接触は、同一接触としてImpulseを再利用しません。
-        const math::Vec3 previousNormal = sameOrder ? previous->Normal : -previous->Normal;
-        if (math::Vec3::Dot(current.Normal, previousNormal) < NormalThreshold)
-        {
-            continue;
-        }
+        bool used[ContactManifold::MaxContactPointCount]{};
 
         for (std::size_t i = 0; i < current.PointCount; ++i)
         {
-            auto& currentPoint = current.Points[i];
+            std::size_t best = ContactManifold::MaxContactPointCount;
+            float bestScore = std::numeric_limits<float>::max();
 
-            const math::Vec3 localAnchorA =
-                ContactLocalAnchor(*transformA, bodyA, currentPoint.Position);
-            const math::Vec3 localAnchorB =
-                ContactLocalAnchor(*transformB, bodyB, currentPoint.Position);
-
-            const ContactPoint* best = nullptr;
-            float bestDistanceSquared = std::numeric_limits<float>::max();
+            const math::Vec3 currentLocalA = transformA
+                ? ContactLocalAnchor(*transformA, bodyA, current.Points[i].Position)
+                : math::Vec3{};
+            const math::Vec3 currentLocalB = transformB
+                ? ContactLocalAnchor(*transformB, bodyB, current.Points[i].Position)
+                : math::Vec3{};
 
             for (std::size_t j = 0; j < previous->PointCount; ++j)
             {
-                const auto& previousPoint = previous->Points[j];
-
-                // Feature IDが一致する場合は最も信頼できる同一接触として優先します。
-                if (FeatureMatches(currentPoint.Feature, previousPoint.Feature, sameOrder))
+                if (used[j])
                 {
-                    best = &previousPoint;
-                    break;
+                    continue;
                 }
 
-                // Feature IDが使えない接触ではワールド接触点の近さをfallbackにします。
-                const float distanceSquared =
-                    (currentPoint.Position - previousPoint.Position).LengthSq();
-                if (distanceSquared < bestDistanceSquared
-                    && distanceSquared <= WorldDistanceSq)
+                const ContactPoint& old = previous->Points[j];
+                float score = std::numeric_limits<float>::max();
+
+                // 1. Feature ID一致を最優先します。
+                if (FeatureMatches(current.Points[i].Feature, old.Feature, sameOrder))
                 {
-                    best = &previousPoint;
-                    bestDistanceSquared = distanceSquared;
+                    score = 0.0f;
+                }
+
+                // 2. Feature IDで決まらなければLocal Anchorの近さを使います。
+                if (score == std::numeric_limits<float>::max()
+                    && old.PositionAnchorsInitialized
+                    && transformA
+                    && transformB)
+                {
+                    const math::Vec3 oldA = sameOrder ? old.LocalAnchorA : old.LocalAnchorB;
+                    const math::Vec3 oldB = sameOrder ? old.LocalAnchorB : old.LocalAnchorA;
+                    const float distanceA = (currentLocalA - oldA).LengthSq();
+                    const float distanceB = (currentLocalB - oldB).LengthSq();
+
+                    if (distanceA <= LocalAnchorDistanceSq
+                        && distanceB <= LocalAnchorDistanceSq)
+                    {
+                        score = 1.0f + distanceA + distanceB;
+                    }
+                }
+
+                // 3. 最後のfallbackとしてWorld接触点距離を使います。
+                if (score == std::numeric_limits<float>::max())
+                {
+                    const float distance =
+                        (current.Points[i].Position - old.Position).LengthSq();
+                    if (distance <= WorldDistanceSq)
+                    {
+                        score = 2.0f + distance;
+                    }
+                }
+
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = j;
                 }
             }
 
-            if (best)
+            if (best == ContactManifold::MaxContactPointCount)
             {
-                currentPoint.AccumulatedNormalImpulse = best->AccumulatedNormalImpulse;
-                currentPoint.AccumulatedTangentImpulse = best->AccumulatedTangentImpulse;
-                currentPoint.CachedTangent = best->CachedTangent;
+                continue;
             }
 
-            // SolverのPosition Constraintが現在姿勢から分離量を再評価できるよう、
-            // ローカルアンカーと初期分離量を毎フレーム保存します。
-            currentPoint.LocalAnchorA = localAnchorA;
-            currentPoint.LocalAnchorB = localAnchorB;
-            currentPoint.InitialSeparation = -currentPoint.Penetration;
-            currentPoint.PositionAnchorsInitialized = true;
+            used[best] = true;
+
+            // 同じ接触と判断できた場合、前フレームImpulseを引き継いでWarm Startします。
+            const ContactPoint& source = previous->Points[best];
+            ContactPoint& destination = current.Points[i];
+            destination.AccumulatedNormalImpulse = source.AccumulatedNormalImpulse;
+            destination.AccumulatedTangentImpulse = sameOrder
+                ? source.AccumulatedTangentImpulse
+                : -source.AccumulatedTangentImpulse;
+            destination.CachedTangent = sameOrder
+                ? source.CachedTangent
+                : -source.CachedTangent;
+
+            ++m_SolverDebugStatistics.PersistentContactPointCount;
         }
     }
 }
 
-// 1フレーム分の物理シミュレーションを進めます。
-// この順序は現在の挙動を維持するため変更していません。
+// シーン内をRayCastし、最も近い実形状へのHitを返します。
+bool PhysicsWorld::RayCast(
+    Scene& scene,
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    PhysicsRayCastHit& outHit)
+{
+    if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f)
+    {
+        return false;
+    }
+
+    bool hit = false;
+    float closest = maxFraction;
+    PhysicsRayCastHit result{};
+
+    // Broad Phase側RayCastはFat AABB候補のみ返すため、
+    // callback内でCollider実形状に対する最終RayCastを行います。
+    m_BroadPhase.RayCast(
+        scene,
+        origin,
+        direction,
+        maxFraction,
+        [&](Entity entity, uint32_t, float, const math::Vec3&, float current) -> float
+        {
+            auto* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+            auto* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
+            if (!transform || !collider || collider->Type == ColliderType::Plane)
+            {
+                return current;
+            }
+
+            float fraction = 0.0f;
+            math::Vec3 normal{};
+            if (!RayCastCollider(
+                origin,
+                direction,
+                current,
+                *transform,
+                *collider,
+                fraction,
+                normal))
+            {
+                return current;
+            }
+
+            if (!hit || fraction < closest)
+            {
+                hit = true;
+                closest = fraction;
+                result.HitEntity = entity;
+                result.Fraction = fraction;
+                result.Point = origin + direction * fraction;
+                result.Normal = normal;
+            }
+
+            return closest;
+        });
+
+    // Planeは無限形状なのでTreeに載せず、全Planeを別途評価します。
+    for (auto [entity, transform, collider]
+        : scene.View<TransformComponent, ColliderComponent>())
+    {
+        if (collider.Type != ColliderType::Plane)
+        {
+            continue;
+        }
+
+        float fraction = 0.0f;
+        math::Vec3 normal{};
+        if (RayCastPlane(
+                origin,
+                direction,
+                closest,
+                transform,
+                collider,
+                fraction,
+                normal)
+            && (!hit || fraction < closest))
+        {
+            hit = true;
+            closest = fraction;
+            result.HitEntity = entity;
+            result.Fraction = fraction;
+            result.Point = origin + direction * fraction;
+            result.Normal = normal;
+        }
+    }
+
+    if (hit)
+    {
+        outHit = result;
+    }
+
+    return hit;
+}
+
+// 指定AABBと重なるColliderをBroad Phase候補から収集します。
+void PhysicsWorld::QueryAABB(
+    Scene& scene,
+    const AABB& queryBounds,
+    std::vector<Entity>& outEntities)
+{
+    outEntities.clear();
+    if (!queryBounds.IsValid())
+    {
+        return;
+    }
+
+    m_BroadPhase.QueryAABB(
+        scene,
+        queryBounds,
+        [&](Entity entity, uint32_t) -> bool
+        {
+            auto* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+            auto* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
+            if (!transform || !collider)
+            {
+                return true;
+            }
+
+            AABB bounds{};
+            if (ComputeColliderAABB(*transform, *collider, bounds)
+                && bounds.Overlaps(queryBounds))
+            {
+                outEntities.push_back(entity);
+            }
+
+            return true;
+        });
+}
+
+// 有効なContact Manifoldを解き、Solver統計を更新します。
+void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
+{
+    if (m_SolverSettings.EnableWarmStart)
+    {
+        for (const auto& manifold : m_Manifolds)
+        {
+            for (std::size_t i = 0; i < manifold.PointCount; ++i)
+            {
+                if (!manifold.IsTrigger
+                    && (manifold.Points[i].AccumulatedNormalImpulse > 0.0f
+                        || std::abs(manifold.Points[i].AccumulatedTangentImpulse) > 1.0e-8f))
+                {
+                    ++m_SolverDebugStatistics.WarmStartedConstraintCount;
+                }
+            }
+        }
+    }
+
+    // Solver内部と同じく最低1回は反復する前提で統計値を記録します。
+    m_SolverDebugStatistics.VelocityIterations =
+        std::max(m_SolverSettings.VelocityIterations, 1u);
+
+    SolveContactManifolds(scene, m_Manifolds, dt, m_SolverSettings);
+    UpdateSolverDebugStatisticsAfterSolve();
+}
+
+// Solver後の最大Impulseをデバッグ統計へ反映します。
+void PhysicsWorld::UpdateSolverDebugStatisticsAfterSolve()
+{
+    for (const auto& manifold : m_Manifolds)
+    {
+        for (std::size_t i = 0; i < manifold.PointCount; ++i)
+        {
+            const ContactPoint& point = manifold.Points[i];
+
+            m_SolverDebugStatistics.MaxNormalImpulse = std::max(
+                m_SolverDebugStatistics.MaxNormalImpulse,
+                std::max(point.AccumulatedNormalImpulse, 0.0f));
+            m_SolverDebugStatistics.MaxFrictionImpulse = std::max(
+                m_SolverDebugStatistics.MaxFrictionImpulse,
+                std::abs(point.AccumulatedTangentImpulse));
+        }
+    }
+}
+
+// 設定された閾値まで静止したDynamic BodyをSleepingへ移行します。
+void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
+{
+    for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
+    {
+        static_cast<void>(entity);
+
+        if (rigidBody.Type != BodyType::Dynamic)
+        {
+            continue;
+        }
+
+        if (!rigidBody.AllowSleep)
+        {
+            WakeRigidBody(rigidBody);
+            continue;
+        }
+
+        if (rigidBody.IsSleeping)
+        {
+            rigidBody.LinearVelocity = {};
+            rigidBody.AngularVelocity = {};
+            continue;
+        }
+
+        const float linearThreshold = std::max(rigidBody.SleepThreshold, 0.0f);
+        const float angularThreshold = std::max(rigidBody.AngularSleepThreshold, 0.0f);
+
+        if (rigidBody.LinearVelocity.LengthSq() <= linearThreshold * linearThreshold
+            && rigidBody.AngularVelocity.LengthSq() <= angularThreshold * angularThreshold)
+        {
+            rigidBody.SleepTimer += dt;
+
+            const float threshold = std::max(rigidBody.SleepTimeThreshold, 0.0f);
+            if (rigidBody.SleepTimer >= threshold)
+            {
+                rigidBody.IsSleeping = true;
+                rigidBody.LinearVelocity = {};
+                rigidBody.AngularVelocity = {};
+                rigidBody.SleepTimer = threshold;
+            }
+        }
+        else
+        {
+            rigidBody.SleepTimer = 0.0f;
+        }
+    }
+}
+
+// Force/Torqueは1step分だけ蓄積するためStep末尾でクリアします。
+void PhysicsWorld::ClearForces(Scene& scene)
+{
+    for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
+    {
+        static_cast<void>(entity);
+        rigidBody.Force = {};
+        rigidBody.Torque = {};
+    }
+}
+
+// Dynamic剛体へForceを追加し、Sleeping中なら起床させます。
+void PhysicsWorld::AddForce(Scene& scene, Entity entity, const math::Vec3& force)
+{
+    if (!scene.IsEntityAlive(entity))
+    {
+        return;
+    }
+
+    auto* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+    if (!rigidBody
+        || rigidBody->Type != BodyType::Dynamic
+        || rigidBody->InverseMass <= 0.0f)
+    {
+        return;
+    }
+
+    WakeRigidBody(*rigidBody);
+    rigidBody->Force += force;
+}
+
+// ImpulseをDynamic剛体のLinearVelocityへ即時反映します。
+void PhysicsWorld::AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse)
+{
+    if (!scene.IsEntityAlive(entity))
+    {
+        return;
+    }
+
+    auto* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+    if (!rigidBody
+        || rigidBody->Type != BodyType::Dynamic
+        || rigidBody->InverseMass <= 0.0f)
+    {
+        return;
+    }
+
+    WakeRigidBody(*rigidBody);
+    rigidBody->LinearVelocity += impulse * rigidBody->InverseMass;
+}
+
+// Dynamic剛体を明示的に起床させます。
+void PhysicsWorld::WakeUp(Scene& scene, Entity entity)
+{
+    if (!scene.IsEntityAlive(entity))
+    {
+        return;
+    }
+
+    auto* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+    if (rigidBody && rigidBody->Type == BodyType::Dynamic)
+    {
+        WakeRigidBody(*rigidBody);
+    }
+}
+
+// 1固定step分のPhysics処理を進めます。
+// 元の処理順序を維持し、今回の修正では変更していません。
 void PhysicsWorld::Step(Scene& scene, float dt)
 {
     if (dt <= 0.0f)
@@ -541,217 +872,22 @@ void PhysicsWorld::Step(Scene& scene, float dt)
         return;
     }
 
-    m_SolverDebugStatistics = {};
+    m_SolverDebugStatistics.Reset();
 
+    // 1) Force/Torque反映
+    // 2) Damping適用
+    // 3) Collision Detection
+    // 4) Contact Solver
+    // 5) Position/Orientation積分
+    // 6) Sleeping更新
+    // 7) Force/Torqueクリア
     ApplyForces(scene, dt);
     IntegrateVelocities(scene, dt);
-    IntegratePositions(scene, dt);
-
-    // Transform更新後のAABBをBroad Phaseへ反映してから接触候補を取得します。
-    m_BroadPhase.Update(scene, dt);
     DetectCollisions(scene);
-
-    SolveContactManifolds(
-        scene,
-        m_Manifolds,
-        dt,
-        m_SolverSettings,
-        &m_SolverDebugStatistics);
-
+    SolveCollisions(scene, dt);
+    IntegratePositions(scene, dt);
     UpdateSleeping(scene, dt);
-    ClearAccumulators(scene);
-}
-
-// Force/Torqueは1stepだけ有効なので、Step末尾で必ずクリアします。
-void PhysicsWorld::ClearAccumulators(Scene& scene)
-{
-    for (auto [entity, body] : scene.View<RigidBodyComponent>())
-    {
-        static_cast<void>(entity);
-        body.Force = {};
-        body.Torque = {};
-    }
-}
-
-// 一定時間十分に低速なDynamic BodyをSleepingへ移行します。
-void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
-{
-    for (auto [entity, body] : scene.View<RigidBodyComponent>())
-    {
-        static_cast<void>(entity);
-
-        if (body.Type != BodyType::Dynamic || !body.AllowSleep)
-        {
-            body.SleepTimer = 0.0f;
-            continue;
-        }
-
-        if (body.LinearVelocity.LengthSq() < m_SleepLinearThreshold * m_SleepLinearThreshold
-            && body.AngularVelocity.LengthSq() < m_SleepAngularThreshold * m_SleepAngularThreshold)
-        {
-            body.SleepTimer += dt;
-
-            if (body.SleepTimer >= m_TimeToSleep)
-            {
-                body.IsSleeping = true;
-                body.LinearVelocity = {};
-                body.AngularVelocity = {};
-            }
-        }
-        else
-        {
-            body.SleepTimer = 0.0f;
-            body.IsSleeping = false;
-        }
-    }
-}
-
-void PhysicsWorld::AddForce(Scene& scene, Entity entity, const math::Vec3& force)
-{
-    if (auto* body = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex()))
-    {
-        body->Force += force;
-        WakeRigidBody(*body);
-    }
-}
-
-void PhysicsWorld::AddTorque(Scene& scene, Entity entity, const math::Vec3& torque)
-{
-    if (auto* body = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex()))
-    {
-        body->Torque += torque;
-        WakeRigidBody(*body);
-    }
-}
-
-void PhysicsWorld::AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse)
-{
-    auto* body = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    if (!body || body->Type != BodyType::Dynamic || body->InverseMass <= 0.0f)
-    {
-        return;
-    }
-
-    body->LinearVelocity += impulse * body->InverseMass;
-    WakeRigidBody(*body);
-}
-
-// 重心以外へのImpulseは並進速度だけでなく角速度も変化させます。
-void PhysicsWorld::AddImpulseAtPoint(
-    Scene& scene,
-    Entity entity,
-    const math::Vec3& impulse,
-    const math::Vec3& point)
-{
-    auto* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
-    auto* body = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-    auto* collider = scene.TryGetComponent<ColliderComponent>(entity.GetIndex());
-
-    if (!transform || !body || body->Type != BodyType::Dynamic || body->InverseMass <= 0.0f)
-    {
-        return;
-    }
-
-    EnsurePhysicsOrientation(*transform, *body);
-    body->LinearVelocity += impulse * body->InverseMass;
-    body->AngularVelocity += ComputeWorldInverseInertia(transform, body, collider)
-        * math::Vec3::Cross(point - transform->Position, impulse);
-    WakeRigidBody(*body);
-}
-
-// 重心以外へのForceはTorqueも同時に生成します。
-void PhysicsWorld::AddForceAtPoint(
-    Scene& scene,
-    Entity entity,
-    const math::Vec3& force,
-    const math::Vec3& point)
-{
-    auto* transform = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
-    auto* body = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
-
-    if (!transform || !body || body->Type != BodyType::Dynamic)
-    {
-        return;
-    }
-
-    body->Force += force;
-    body->Torque += math::Vec3::Cross(point - transform->Position, force);
-    WakeRigidBody(*body);
-}
-
-// シーン内のColliderを走査し、最も近いRay hitを返します。
-bool PhysicsWorld::RayCast(
-    Scene& scene,
-    const math::Vec3& origin,
-    const math::Vec3& direction,
-    float maxFraction,
-    PhysicsRayCastHit& outHit) const
-{
-    outHit = {};
-
-    if (direction.LengthSq() <= 1.0e-12f || maxFraction < 0.0f)
-    {
-        return false;
-    }
-
-    float closest = maxFraction;
-
-    for (auto [entity, transform, collider]
-        : scene.View<TransformComponent, ColliderComponent>())
-    {
-        float fraction = 0.0f;
-        math::Vec3 normal{};
-
-        if (!RayCastCollider(
-            origin,
-            direction,
-            closest,
-            transform,
-            collider,
-            fraction,
-            normal))
-        {
-            continue;
-        }
-
-        closest = fraction;
-        outHit.EntityHit = entity;
-        outHit.Fraction = fraction;
-        outHit.Point = origin + direction * fraction;
-        outHit.Normal = normal;
-    }
-
-    return static_cast<bool>(outHit.EntityHit);
-}
-
-const std::vector<ContactManifold>& PhysicsWorld::GetContactManifolds() const
-{
-    return m_Manifolds;
-}
-
-const SolverDebugStatistics& PhysicsWorld::GetSolverDebugStatistics() const
-{
-    return m_SolverDebugStatistics;
-}
-
-void PhysicsWorld::SetSolverSettings(const ContactSolverSettings& settings)
-{
-    m_SolverSettings = settings;
-}
-
-const ContactSolverSettings& PhysicsWorld::GetSolverSettings() const
-{
-    return m_SolverSettings;
-}
-
-void PhysicsWorld::SetSleepSettings(
-    float linearThreshold,
-    float angularThreshold,
-    float timeToSleep)
-{
-    m_SleepLinearThreshold = std::max(linearThreshold, 0.0f);
-    m_SleepAngularThreshold = std::max(angularThreshold, 0.0f);
-    m_TimeToSleep = std::max(timeToSleep, 0.0f);
+    ClearForces(scene);
 }
 
 } // namespace ph
