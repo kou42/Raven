@@ -22,6 +22,13 @@ bool IsSamePair(const ContactManifold&a,const ContactManifold&b){return(a.A==b.A
 math::Quat GetContactOrientation(const TransformComponent&transform,const RigidBodyComponent*body){return(body&&body->OrientationInitialized)?body->Orientation.Normalized():PhysicsOrientationFromEuler(transform.Rotation);}
 math::Vec3 ContactLocalAnchor(const TransformComponent&transform,const RigidBodyComponent*body,const math::Vec3&worldPoint){return GetContactOrientation(transform,body).Conjugate().Rotate(worldPoint-transform.Position);}
 
+bool FeatureMatches(const ContactFeatureID&current,const ContactFeatureID&previous,bool sameOrder)
+{
+    if(!current.IsValid()||!previous.IsValid())return false;
+    if(sameOrder)return current==previous;
+    return current.TypeA==previous.TypeB&&current.IndexA==previous.IndexB&&current.TypeB==previous.TypeA&&current.IndexB==previous.IndexA;
+}
+
 bool RayCastSphere(const math::Vec3& origin,const math::Vec3& direction,float maxFraction,const math::Vec3& center,float radius,float& outFraction,math::Vec3& outNormal){const math::Vec3 m=origin-center;const float a=math::Vec3::Dot(direction,direction);if(a<=1e-12f)return false;const float c=math::Vec3::Dot(m,m)-radius*radius;if(c<=0){outFraction=0;const float ls=m.LengthSq();outNormal=ls>1e-12f?m/std::sqrt(ls):-direction.Normalized();return true;}const float b=math::Vec3::Dot(m,direction),disc=b*b-a*c;if(disc<0)return false;const float f=(-b-std::sqrt(disc))/a;if(f<0||f>maxFraction)return false;outFraction=f;outNormal=(origin+direction*f-center).Normalized();return true;}
 bool RayCastPlane(const math::Vec3& origin,const math::Vec3& direction,float maxFraction,const TransformComponent& transform,const ColliderComponent& collider,float& outFraction,math::Vec3& outNormal){math::Vec3 n=collider.PlaneNormal.Normalized();if(n.LengthSq()<=1e-12f)return false;const float d=math::Vec3::Dot(n,direction),distance=math::Vec3::Dot(n,origin-(transform.Position+collider.Offset));if(std::abs(d)<=1e-8f){if(std::abs(distance)>1e-6f)return false;outFraction=0;outNormal=n;return true;}const float f=-distance/d;if(f<0||f>maxFraction)return false;outFraction=f;outNormal=d<0?n:-n;return true;}
 bool RayCastCollider(const math::Vec3&o,const math::Vec3&d,float max,const TransformComponent&t,const ColliderComponent&c,float&f,math::Vec3&n){if(c.Type==ColliderType::Sphere)return RayCastSphere(o,d,max,t.Position+c.Offset,std::max(c.Radius,0.0f),f,n);if(c.Type==ColliderType::Box){OBB obb{};return ComputeBoxOBB(t,c,obb)&&obb.RayCast(o,d,max,f,&n);}if(c.Type==ColliderType::Plane)return RayCastPlane(o,d,max,t,c,f,n);return false;}
@@ -52,18 +59,29 @@ void PhysicsWorld::RestorePersistentContacts()
             for(std::size_t j=0;j<prev->PointCount;++j)
             {
                 if(used[j])continue;const ContactPoint&old=prev->Points[j];float score=std::numeric_limits<float>::max();
-                // 前StepのPosition Solverでlocal anchorが確定している場合はこちらを優先します。
-                // Bodyが回転してworld contact pointが移動しても、物体表面上の同じ位置なら
-                // local-spaceでは近いため、Warm Start impulseを安定して引き継げます。
-                if(old.PositionAnchorsInitialized&&ta&&tb)
+
+                // 1) Contact Feature IDを最優先します。
+                // Face/Edge/Vertexの組が一致していれば、回転でworld pointが大きく動いても
+                // 同じ幾何feature上の接触として確実にWarm Startできます。
+                if(FeatureMatches(cur.Points[i].Feature,old.Feature,sameOrder))
+                {
+                    score=0.0f;
+                }
+
+                // 2) Featureが無効・不一致ならLocal Anchorへfallback。
+                if(score==std::numeric_limits<float>::max()&&old.PositionAnchorsInitialized&&ta&&tb)
                 {
                     const math::Vec3 oldA=sameOrder?old.LocalAnchorA:old.LocalAnchorB;const math::Vec3 oldB=sameOrder?old.LocalAnchorB:old.LocalAnchorA;
                     const float da=(currentLocalA-oldA).LengthSq(),db=(currentLocalB-oldB).LengthSq();
-                    if(da<=LocalAnchorDistanceSq&&db<=LocalAnchorDistanceSq)score=da+db;
+                    if(da<=LocalAnchorDistanceSq&&db<=LocalAnchorDistanceSq)score=1.0f+da+db;
                 }
-                // Anchorがまだ無い初回やClipping featureが切り替わった場合は従来の
-                // world-space matchingへfallbackします。
-                if(score==std::numeric_limits<float>::max()){const float d=(cur.Points[i].Position-old.Position).LengthSq();if(d<=WorldDistanceSq)score=LocalAnchorDistanceSq*2.0f+d;}
+
+                // 3) Sphere等Feature IDを持たないContact向けにworld distanceを最後に残します。
+                if(score==std::numeric_limits<float>::max())
+                {
+                    const float d=(cur.Points[i].Position-old.Position).LengthSq();
+                    if(d<=WorldDistanceSq)score=2.0f+d;
+                }
                 if(score<bestScore){bestScore=score;best=j;}
             }
             if(best==ContactManifold::MaxContactPointCount)continue;used[best]=true;const auto&src=prev->Points[best];auto&dst=cur.Points[i];dst.AccumulatedNormalImpulse=src.AccumulatedNormalImpulse;dst.AccumulatedTangentImpulse=sameOrder?src.AccumulatedTangentImpulse:-src.AccumulatedTangentImpulse;dst.CachedTangent=sameOrder?src.CachedTangent:-src.CachedTangent;++m_SolverDebugStatistics.PersistentContactPointCount;
