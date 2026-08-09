@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
+#include "Raven/Core/MouseCodes.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
@@ -9,6 +10,8 @@
 #include "Raven/Renderer/Renderer.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <random>
 
 namespace Raven
@@ -103,6 +106,11 @@ void SceneGame::SpawnSphereBatch(int count)
 
 void SceneGame::ClearSphereBatch()
 {
+    // ドラッグ中のEntityがこのBatchに含まれている可能性があるため、
+    // Entity破棄より先に選択状態を解除して古いHandleを保持しないようにします。
+    m_DraggedEntity = {};
+    m_WasLeftMousePressed = Input::IsMouseButtonPressed(Mouse::Left);
+
     for (const SphereBody& body : m_SphereBodies)
     {
         if (body.EntityHandle)
@@ -138,13 +146,9 @@ void SceneGame::SpawnBoxTestBody()
         return;
     }
 
-    // ========================================================================
-    // Box visual / collider size convention
-    // ========================================================================
     // PrimitiveMeshFactory::CreateCube() は各軸[-0.5,+0.5]のUnit Cubeです。
-    // Transform.Scale={2,2,2}なら描画上の全幅は2、半幅は1になります。
     // ColliderComponent::HalfExtentsはTransform.Scaleと自動連動しないため、
-    // ここで0.5 * Scaleを明示し、見た目とOBBを完全に一致させます。
+    // ここで0.5 * Scaleを明示して見た目とColliderを一致させます。
     const math::Vec3 boxScale{ 10.0f, 10.0f, 10.0f };
 
     Entity box = CreateEntity("PhysicsTestBox");
@@ -177,11 +181,207 @@ void SceneGame::SpawnBoxTestBody()
     m_SpawnedEntities.push_back(box);
 }
 
+bool SceneGame::ProjectWorldToScreen(const math::Vec3& worldPosition, math::Vec2& outScreenPoint) const
+{
+    if (m_ViewportWidth <= 0.0f || m_ViewportHeight <= 0.0f)
+    {
+        return false;
+    }
+
+    // RavenのMat4は row-major / column-vector multiplication です。
+    // world -> view -> clip の順で変換し、Perspective Divide後のNDC[-1,+1]を
+    // マウス入力と同じ左上原点のピクセル座標へ変換します。
+    const math::Vec4 world{ worldPosition.x, worldPosition.y, worldPosition.z, 1.0f };
+    const math::Vec4 viewPosition = m_View * world;
+    const math::Vec4 clipPosition = m_Projection * viewPosition;
+
+    // w<=0 はカメラ後方なのでPicking対象から除外します。
+    if (clipPosition.w <= math::Epsilon)
+    {
+        return false;
+    }
+
+    const float inverseW = 1.0f / clipPosition.w;
+    const float ndcX = clipPosition.x * inverseW;
+    const float ndcY = clipPosition.y * inverseW;
+
+    // 画面外のEntityまで拾わないよう、少し余裕を持たせた範囲で除外します。
+    if (ndcX < -1.2f || ndcX > 1.2f || ndcY < -1.2f || ndcY > 1.2f)
+    {
+        return false;
+    }
+
+    outScreenPoint.x = (ndcX * 0.5f + 0.5f) * m_ViewportWidth;
+    outScreenPoint.y = (1.0f - (ndcY * 0.5f + 0.5f)) * m_ViewportHeight;
+    return true;
+}
+
+float SceneGame::ComputeProjectedPickRadius(const Entity& entity, const math::Vec3& cameraRight) const
+{
+    if (!entity || !entity.HasComponent<TransformComponent>() || !entity.HasComponent<ColliderComponent>())
+    {
+        return m_MinPickRadiusPixels;
+    }
+
+    const auto& transform = entity.GetComponent<TransformComponent>();
+    const auto& collider = entity.GetComponent<ColliderComponent>();
+
+    float worldRadius = 0.5f;
+    if (collider.Type == ColliderType::Sphere)
+    {
+        worldRadius = collider.Radius;
+    }
+    else if (collider.Type == ColliderType::Box)
+    {
+        // 回転Boxでも選択しやすいよう、HalfExtentsを包含する球半径を使います。
+        worldRadius = collider.HalfExtents.Length();
+    }
+    else
+    {
+        return 0.0f;
+    }
+
+    math::Vec2 centerScreen{};
+    math::Vec2 edgeScreen{};
+    if (!ProjectWorldToScreen(transform.Position, centerScreen)
+        || !ProjectWorldToScreen(transform.Position + cameraRight * worldRadius, edgeScreen))
+    {
+        return m_MinPickRadiusPixels;
+    }
+
+    const float projectedRadius = (edgeScreen - centerScreen).Length();
+    return std::max(projectedRadius, m_MinPickRadiusPixels);
+}
+
+Entity SceneGame::FindDraggableEntityAtScreenPoint(const math::Vec2& screenPoint) const
+{
+    Entity bestEntity{};
+    float bestNormalizedDistance = std::numeric_limits<float>::max();
+
+    // View行列の第0行はCamera Right、第1行はCamera Upです。
+    // LookAt()の定義と対応しているため、追加のCameraクラスを必要としません。
+    const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
+
+    for (const Entity& entity : m_SpawnedEntities)
+    {
+        if (!entity
+            || !entity.HasComponent<TransformComponent>()
+            || !entity.HasComponent<RigidBodyComponent>()
+            || !entity.HasComponent<ColliderComponent>())
+        {
+            continue;
+        }
+
+        const auto& rigidBody = entity.GetComponent<RigidBodyComponent>();
+        const auto& collider = entity.GetComponent<ColliderComponent>();
+
+        // Static/Kinematic Bodyと無限Planeはマウスで投げる対象にしません。
+        if (rigidBody.Type != BodyType::Dynamic || collider.Type == ColliderType::Plane)
+        {
+            continue;
+        }
+
+        math::Vec2 projectedCenter{};
+        if (!ProjectWorldToScreen(entity.GetComponent<TransformComponent>().Position, projectedCenter))
+        {
+            continue;
+        }
+
+        const float pickRadius = ComputeProjectedPickRadius(entity, cameraRight);
+        if (pickRadius <= 0.0f)
+        {
+            continue;
+        }
+
+        const float distance = (screenPoint - projectedCenter).Length();
+        if (distance > pickRadius)
+        {
+            continue;
+        }
+
+        // 大きいColliderだけが常に勝たないよう、半径で正規化した距離を比較します。
+        const float normalizedDistance = distance / pickRadius;
+        if (normalizedDistance < bestNormalizedDistance)
+        {
+            bestNormalizedDistance = normalizedDistance;
+            bestEntity = entity;
+        }
+    }
+
+    return bestEntity;
+}
+
+void SceneGame::UpdateMouseDragImpulse()
+{
+    const bool leftPressed = Input::IsMouseButtonPressed(Mouse::Left);
+    const auto [mouseX, mouseY] = Input::GetMousePosition();
+    const math::Vec2 currentMouse{ mouseX, mouseY };
+
+    const bool pressedThisFrame = leftPressed && !m_WasLeftMousePressed;
+    const bool releasedThisFrame = !leftPressed && m_WasLeftMousePressed;
+
+    if (pressedThisFrame)
+    {
+        m_DragStartScreen = currentMouse;
+        m_DraggedEntity = FindDraggableEntityAtScreenPoint(currentMouse);
+    }
+
+    if (releasedThisFrame && m_DraggedEntity)
+    {
+        const math::Vec2 drag = currentMouse - m_DragStartScreen;
+        const float dragLength = drag.Length();
+
+        if (dragLength >= m_MinDragPixels
+            && m_DraggedEntity.HasComponent<RigidBodyComponent>())
+        {
+            auto& rigidBody = m_DraggedEntity.GetComponent<RigidBodyComponent>();
+
+            if (rigidBody.Type == BodyType::Dynamic && rigidBody.InverseMass > 0.0f)
+            {
+                // ====================================================================
+                // Screen-space drag -> World-space impulse
+                // ====================================================================
+                // マウスのXはCamera Right、画面Yは下向き正なのでCamera Upには -drag.y を使います。
+                // これによりカメラが斜めを向いていても「画面上で右へドラッグしたら右へ飛ぶ」
+                // という直感的な操作になります。
+                const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
+                const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
+
+                math::Vec3 worldDirection = cameraRight * drag.x - cameraUp * drag.y;
+                if (worldDirection.LengthSq() > math::Epsilon * math::Epsilon)
+                {
+                    worldDirection.Normalize();
+
+                    const float clampedPixels = std::min(dragLength, m_MaxDragPixels);
+                    const float impulseMagnitude = clampedPixels * m_DragImpulsePerPixel;
+                    const math::Vec3 impulse = worldDirection * impulseMagnitude;
+
+                    // Impulse Jによる速度変化は Δv = J / m = J * inverseMass です。
+                    // PhysicsWorld::Step()の直前（Scene::OnUpdateGame）で更新するため、
+                    // このフレームの固定ステップから即座に通常の衝突・重力計算へ参加します。
+                    rigidBody.LinearVelocity += impulse * rigidBody.InverseMass;
+
+                    // Sleeping BodyへImpulseを与えた場合は必ず起床させます。
+                    rigidBody.IsSleeping = false;
+                    rigidBody.SleepTimer = 0.0f;
+                }
+            }
+        }
+
+        m_DraggedEntity = {};
+    }
+
+    // Entityが何らかの理由で破棄された場合にも古いHandleを保持し続けません。
+    if (m_DraggedEntity && !IsEntityAlive(m_DraggedEntity))
+    {
+        m_DraggedEntity = {};
+    }
+
+    m_WasLeftMousePressed = leftPressed;
+}
+
 void SceneGame::OnCreate()
 {
-    // ========================================================================
-    // Shared shader / material
-    // ========================================================================
     m_Shader = m_ShaderLibrary.Load(
         "Test",
         "Raven/Assets/Shaders/Vertex/test.vert",
@@ -205,20 +405,14 @@ void SceneGame::OnCreate()
     m_Material = CreateRef<Material>(Pipeline::Create(pipelineSpecification));
     m_Material->SetUniform("u_Alpha", 1.0f);
 
-    // ========================================================================
-    // Camera
-    // ========================================================================
     const math::Vec3 eye{ 0.0f, 40.0f, 80.0f };
     const math::Vec3 target{ 0.0f, 0.0f, 0.0f };
     const math::Vec3 up{ 0.0f, 1.0f, 0.0f };
     m_View = math::Mat4::LookAt(eye, target, up);
-    m_Projection = math::Mat4::Perspective(0.7854f, 1280.0f / 720.0f, 0.1f, 1000.0f);
+    m_Projection = math::Mat4::Perspective(0.7854f, m_ViewportWidth / m_ViewportHeight, 0.1f, 1000.0f);
     m_Material->SetUniform("u_View", m_View);
     m_Material->SetUniform("u_Projection", m_Projection);
 
-    // ========================================================================
-    // Floor mesh
-    // ========================================================================
     const float floorVertices[] = {
         -0.5f,0.0f,-0.5f,  0.4f,0.7f,0.4f,  0.0f,0.0f,
          0.5f,0.0f,-0.5f,  0.3f,0.6f,0.3f,  1.0f,0.0f,
@@ -239,7 +433,6 @@ void SceneGame::OnCreate()
     m_VertexArray->SetIndexBuffer(floorIB);
     m_Mesh = CreateRef<Mesh>(m_VertexArray, 6);
 
-    // Shadowも同じXZ Quadを使用します。
     m_ShadowVertexArray = VertexArray::Create();
     auto shadowVB = VertexBuffer::Create(floorVertices, sizeof(floorVertices));
     shadowVB->SetLayout({
@@ -260,10 +453,6 @@ void SceneGame::OnCreate()
     m_ShadowMaterial->SetUniform("u_Tint", math::Vec3{ 0.0f, 0.0f, 0.0f });
     m_ShadowMaterial->SetUniform("u_Alpha", 0.35f);
 
-    // ========================================================================
-    // Primitive meshes
-    // ========================================================================
-    // Sphere/Cubeの頂点生成責務をSceneGameからRendererへ移しました。
     m_SphereMesh = PrimitiveMeshFactory::CreateSphere();
     m_BoxMesh = PrimitiveMeshFactory::CreateCube();
 
@@ -271,10 +460,9 @@ void SceneGame::OnCreate()
     m_SphereBodies.clear();
     m_SphereBodyIndexByEntity.clear();
     m_WasSpacePressed = false;
+    m_WasLeftMousePressed = false;
+    m_DraggedEntity = {};
 
-    // ========================================================================
-    // Infinite Plane floor
-    // ========================================================================
     Entity floor = CreateEntity("Floor");
     auto& floorTransform = floor.GetComponent<TransformComponent>();
     floorTransform.Position = { 0.0f, m_FloorY, 0.0f };
@@ -299,6 +487,7 @@ void SceneGame::OnCreate()
 
 void SceneGame::OnDestroy()
 {
+    m_DraggedEntity = {};
     m_layers.clear();
 
     for (Entity entity : m_SpawnedEntities)
@@ -338,8 +527,11 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
-    // 物理更新はScene::OnUpdatePhysics -> PhysicsWorld::Step()へ一本化しています。
-    // SceneGameは入力・Entity生成などゲーム側の指示だけを担当します。
+    // 入力によるImpulseはPhysicsWorld::Step()より前に反映します。
+    // Scene::OnUpdate()の順序が OnUpdateGame -> OnUpdatePhysics なので、
+    // ここで速度を変更すれば同じフレームの固定ステップから物理計算へ参加します。
+    UpdateMouseDragImpulse();
+
     for (auto& layer : m_layers)
     {
         layer->OnUpdate(safeDt);
@@ -382,7 +574,6 @@ void SceneGame::OnRender()
         meshRenderer.Material->SetUniform("u_Tint", tint);
         meshRenderer.Material->SetUniform("u_Alpha", 1.0f);
 
-        // 床以外には簡易XZ影を描画します。
         if (entity != m_FloorEntity && m_ShadowMesh && m_ShadowMaterial)
         {
             math::Mat4 shadowTransform = math::Mat4::Identity();
@@ -426,11 +617,16 @@ void SceneGame::OnEvent(Event& e)
         auto& resizeEvent = static_cast<WindowResizeEvent&>(e);
         RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
 
-        const float width = static_cast<float>(resizeEvent.GetWidth());
-        const float height = static_cast<float>(resizeEvent.GetHeight());
-        if (height > 0.0f)
+        m_ViewportWidth = static_cast<float>(resizeEvent.GetWidth());
+        m_ViewportHeight = static_cast<float>(resizeEvent.GetHeight());
+
+        if (m_ViewportWidth > 0.0f && m_ViewportHeight > 0.0f)
         {
-            m_Projection = math::Mat4::Perspective(0.7854f, width / height, 0.1f, 1000.0f);
+            m_Projection = math::Mat4::Perspective(
+                0.7854f,
+                m_ViewportWidth / m_ViewportHeight,
+                0.1f,
+                1000.0f);
         }
     }
 }
