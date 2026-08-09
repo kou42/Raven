@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <random>
 
 namespace Raven
@@ -107,8 +106,9 @@ void SceneGame::SpawnSphereBatch(int count)
 void SceneGame::ClearSphereBatch()
 {
     // ドラッグ中のEntityがこのBatchに含まれている可能性があるため、
-    // Entity破棄より先に選択状態を解除して古いHandleを保持しないようにします。
+    // Entity破棄より先に選択状態を解除して古いHandle/作用点を保持しないようにします。
     m_DraggedEntity = {};
+    m_DragHitPoint = {};
     m_WasLeftMousePressed = Input::IsMouseButtonPressed(Mouse::Left);
 
     for (const SphereBody& body : m_SphereBodies)
@@ -181,134 +181,60 @@ void SceneGame::SpawnBoxTestBody()
     m_SpawnedEntities.push_back(box);
 }
 
-bool SceneGame::ProjectWorldToScreen(const math::Vec3& worldPosition, math::Vec2& outScreenPoint) const
+bool SceneGame::BuildMouseRay(
+    const math::Vec2& screenPoint,
+    math::Vec3& outOrigin,
+    math::Vec3& outDirection) const
 {
     if (m_ViewportWidth <= 0.0f || m_ViewportHeight <= 0.0f)
     {
         return false;
     }
 
-    // RavenのMat4は row-major / column-vector multiplication です。
-    // world -> view -> clip の順で変換し、Perspective Divide後のNDC[-1,+1]を
-    // マウス入力と同じ左上原点のピクセル座標へ変換します。
-    const math::Vec4 world{ worldPosition.x, worldPosition.y, worldPosition.z, 1.0f };
-    const math::Vec4 viewPosition = m_View * world;
-    const math::Vec4 clipPosition = m_Projection * viewPosition;
+    // ========================================================================
+    // Screen pixel -> Normalized Device Coordinates
+    // ========================================================================
+    // Inputのマウス座標は左上原点でYが下向き正です。
+    // OpenGLのNDCは画面中央原点でYが上向き正なので、Yだけ符号を反転します。
+    const float ndcX = (2.0f * screenPoint.x / m_ViewportWidth) - 1.0f;
+    const float ndcY = 1.0f - (2.0f * screenPoint.y / m_ViewportHeight);
 
-    // w<=0 はカメラ後方なのでPicking対象から除外します。
-    if (clipPosition.w <= math::Epsilon)
-    {
-        return false;
-    }
+    const float aspect = m_ViewportWidth / m_ViewportHeight;
+    const float halfTanFovY = std::tan(m_CameraFovY * 0.5f);
 
-    const float inverseW = 1.0f / clipPosition.w;
-    const float ndcX = clipPosition.x * inverseW;
-    const float ndcY = clipPosition.y * inverseW;
-
-    // 画面外のEntityまで拾わないよう、少し余裕を持たせた範囲で除外します。
-    if (ndcX < -1.2f || ndcX > 1.2f || ndcY < -1.2f || ndcY > 1.2f)
-    {
-        return false;
-    }
-
-    outScreenPoint.x = (ndcX * 0.5f + 0.5f) * m_ViewportWidth;
-    outScreenPoint.y = (1.0f - (ndcY * 0.5f + 0.5f)) * m_ViewportHeight;
-    return true;
-}
-
-float SceneGame::ComputeProjectedPickRadius(const Entity& entity, const math::Vec3& cameraRight) const
-{
-    if (!entity || !entity.HasComponent<TransformComponent>() || !entity.HasComponent<ColliderComponent>())
-    {
-        return m_MinPickRadiusPixels;
-    }
-
-    const auto& transform = entity.GetComponent<TransformComponent>();
-    const auto& collider = entity.GetComponent<ColliderComponent>();
-
-    float worldRadius = 0.5f;
-    if (collider.Type == ColliderType::Sphere)
-    {
-        worldRadius = collider.Radius;
-    }
-    else if (collider.Type == ColliderType::Box)
-    {
-        // 回転Boxでも選択しやすいよう、HalfExtentsを包含する球半径を使います。
-        worldRadius = collider.HalfExtents.Length();
-    }
-    else
-    {
-        return 0.0f;
-    }
-
-    math::Vec2 centerScreen{};
-    math::Vec2 edgeScreen{};
-    if (!ProjectWorldToScreen(transform.Position, centerScreen)
-        || !ProjectWorldToScreen(transform.Position + cameraRight * worldRadius, edgeScreen))
-    {
-        return m_MinPickRadiusPixels;
-    }
-
-    const float projectedRadius = (edgeScreen - centerScreen).Length();
-    return std::max(projectedRadius, m_MinPickRadiusPixels);
-}
-
-Entity SceneGame::FindDraggableEntityAtScreenPoint(const math::Vec2& screenPoint) const
-{
-    Entity bestEntity{};
-    float bestNormalizedDistance = std::numeric_limits<float>::max();
-
-    // View行列の第0行はCamera Right、第1行はCamera Upです。
-    // LookAt()の定義と対応しているため、追加のCameraクラスを必要としません。
+    // ========================================================================
+    // View matrix -> Camera world basis
+    // ========================================================================
+    // Raven::Mat4::LookAt()は各行に Right / Up / -Forward を格納します。
+    // したがって逆行列を毎フレーム作らなくても、行列から直接Camera基底を復元できます。
     const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
+    const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
+    const math::Vec3 cameraForward{ -m_View[2][0], -m_View[2][1], -m_View[2][2] };
 
-    for (const Entity& entity : m_SpawnedEntities)
+    // LookAtの平行移動成分は
+    //   row0.w = -dot(Right, Eye)
+    //   row1.w = -dot(Up, Eye)
+    //   row2.w =  dot(Forward, Eye)
+    // なので、直交基底の線形結合からEyeを復元できます。
+    outOrigin =
+        cameraRight * (-m_View[0][3])
+        + cameraUp * (-m_View[1][3])
+        + cameraForward * m_View[2][3];
+
+    // Perspective投影面上の点をCamera基底でWorld方向へ戻します。
+    // center(ndc=0,0)ではそのままcameraForwardになります。
+    outDirection =
+        cameraRight * (ndcX * aspect * halfTanFovY)
+        + cameraUp * (ndcY * halfTanFovY)
+        + cameraForward;
+
+    if (outDirection.LengthSq() <= math::Epsilon * math::Epsilon)
     {
-        if (!entity
-            || !entity.HasComponent<TransformComponent>()
-            || !entity.HasComponent<RigidBodyComponent>()
-            || !entity.HasComponent<ColliderComponent>())
-        {
-            continue;
-        }
-
-        const auto& rigidBody = entity.GetComponent<RigidBodyComponent>();
-        const auto& collider = entity.GetComponent<ColliderComponent>();
-
-        // Static/Kinematic Bodyと無限Planeはマウスで投げる対象にしません。
-        if (rigidBody.Type != BodyType::Dynamic || collider.Type == ColliderType::Plane)
-        {
-            continue;
-        }
-
-        math::Vec2 projectedCenter{};
-        if (!ProjectWorldToScreen(entity.GetComponent<TransformComponent>().Position, projectedCenter))
-        {
-            continue;
-        }
-
-        const float pickRadius = ComputeProjectedPickRadius(entity, cameraRight);
-        if (pickRadius <= 0.0f)
-        {
-            continue;
-        }
-
-        const float distance = (screenPoint - projectedCenter).Length();
-        if (distance > pickRadius)
-        {
-            continue;
-        }
-
-        // 大きいColliderだけが常に勝たないよう、半径で正規化した距離を比較します。
-        const float normalizedDistance = distance / pickRadius;
-        if (normalizedDistance < bestNormalizedDistance)
-        {
-            bestNormalizedDistance = normalizedDistance;
-            bestEntity = entity;
-        }
+        return false;
     }
 
-    return bestEntity;
+    outDirection.Normalize();
+    return true;
 }
 
 void SceneGame::UpdateMouseDragImpulse()
@@ -320,10 +246,58 @@ void SceneGame::UpdateMouseDragImpulse()
     const bool pressedThisFrame = leftPressed && !m_WasLeftMousePressed;
     const bool releasedThisFrame = !leftPressed && m_WasLeftMousePressed;
 
+    ph::PhysicsWorld* physicsWorld = m_PhysicsDebugRenderer.GetBoundPhysicsWorld();
+
     if (pressedThisFrame)
     {
         m_DragStartScreen = currentMouse;
-        m_DraggedEntity = FindDraggableEntityAtScreenPoint(currentMouse);
+        m_DraggedEntity = {};
+        m_DragHitPoint = {};
+
+        math::Vec3 rayOrigin{};
+        math::Vec3 rayDirection{};
+
+        if (physicsWorld != nullptr
+            && BuildMouseRay(currentMouse, rayOrigin, rayDirection))
+        {
+            ph::PhysicsRayCastHit hit{};
+
+            // ====================================================================
+            // Physics Ray Picking
+            // ====================================================================
+            // 旧実装の「画面上の中心距離」では、手前/奥に重なったColliderや回転Boxを
+            // 正確に選べませんでした。ここではBroad Phase + 実Collider判定を通る
+            // PhysicsWorld::RayCast()を使い、本当にマウスRayが当たった最短Colliderを選びます。
+            if (physicsWorld->RayCast(
+                    *this,
+                    rayOrigin,
+                    rayDirection,
+                    m_MouseRayMaxDistance,
+                    hit))
+            {
+                if (hit.HitEntity
+                    && hit.HitEntity.HasComponent<RigidBodyComponent>()
+                    && hit.HitEntity.HasComponent<ColliderComponent>())
+                {
+                    const auto& rigidBody = hit.HitEntity.GetComponent<RigidBodyComponent>();
+                    const auto& collider = hit.HitEntity.GetComponent<ColliderComponent>();
+
+                    // 床などStatic/Kinematic BodyはRayを遮ることはありますが、
+                    // マウスで投げる対象としては選択しません。
+                    if (rigidBody.Type == BodyType::Dynamic
+                        && rigidBody.InverseMass > 0.0f
+                        && collider.Type != ColliderType::Plane)
+                    {
+                        m_DraggedEntity = hit.HitEntity;
+
+                        // このPointが非常に重要です。
+                        // Entity中心ではなく「実際にクリックしたCollider表面位置」を保持することで、
+                        // release時にAddImpulseAtPoint()が r x J を計算し、自然な回転を発生させます。
+                        m_DragHitPoint = hit.Point;
+                    }
+                }
+            }
+        }
     }
 
     if (releasedThisFrame && m_DraggedEntity)
@@ -331,50 +305,47 @@ void SceneGame::UpdateMouseDragImpulse()
         const math::Vec2 drag = currentMouse - m_DragStartScreen;
         const float dragLength = drag.Length();
 
-        if (dragLength >= m_MinDragPixels
-            && m_DraggedEntity.HasComponent<RigidBodyComponent>())
+        if (physicsWorld != nullptr && dragLength >= m_MinDragPixels)
         {
-            auto& rigidBody = m_DraggedEntity.GetComponent<RigidBodyComponent>();
+            // ====================================================================
+            // Screen-space drag -> World-space impulse
+            // ====================================================================
+            // X方向をCamera Right、画面の下向きYを-Camera Upへ対応させます。
+            // これによりCameraが斜めでも「見た目のドラッグ方向」に物体が飛びます。
+            const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
+            const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
 
-            if (rigidBody.Type == BodyType::Dynamic && rigidBody.InverseMass > 0.0f)
+            math::Vec3 worldDirection = cameraRight * drag.x - cameraUp * drag.y;
+            if (worldDirection.LengthSq() > math::Epsilon * math::Epsilon)
             {
-                // ====================================================================
-                // Screen-space drag -> World-space impulse
-                // ====================================================================
-                // マウスのXはCamera Right、画面Yは下向き正なのでCamera Upには -drag.y を使います。
-                // これによりカメラが斜めを向いていても「画面上で右へドラッグしたら右へ飛ぶ」
-                // という直感的な操作になります。
-                const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
-                const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
+                worldDirection.Normalize();
 
-                math::Vec3 worldDirection = cameraRight * drag.x - cameraUp * drag.y;
-                if (worldDirection.LengthSq() > math::Epsilon * math::Epsilon)
-                {
-                    worldDirection.Normalize();
+                const float clampedPixels = std::min(dragLength, m_MaxDragPixels);
+                const float impulseMagnitude = clampedPixels * m_DragImpulsePerPixel;
+                const math::Vec3 impulse = worldDirection * impulseMagnitude;
 
-                    const float clampedPixels = std::min(dragLength, m_MaxDragPixels);
-                    const float impulseMagnitude = clampedPixels * m_DragImpulsePerPixel;
-                    const math::Vec3 impulse = worldDirection * impulseMagnitude;
-
-                    // Impulse Jによる速度変化は Δv = J / m = J * inverseMass です。
-                    // PhysicsWorld::Step()の直前（Scene::OnUpdateGame）で更新するため、
-                    // このフレームの固定ステップから即座に通常の衝突・重力計算へ参加します。
-                    rigidBody.LinearVelocity += impulse * rigidBody.InverseMass;
-
-                    // Sleeping BodyへImpulseを与えた場合は必ず起床させます。
-                    rigidBody.IsSleeping = false;
-                    rigidBody.SleepTimer = 0.0f;
-                }
+                // AddImpulseAtPoint()内部では
+                //   Linear:  DeltaV     = J * inverseMass
+                //   Angular: DeltaOmega = I^-1 * (r x J)
+                // が適用されます。
+                // したがってSphereの端やBoxの角を掴んで投げると、作用点に応じて回転します。
+                physicsWorld->AddImpulseAtPoint(
+                    *this,
+                    m_DraggedEntity,
+                    impulse,
+                    m_DragHitPoint);
             }
         }
 
         m_DraggedEntity = {};
+        m_DragHitPoint = {};
     }
 
-    // Entityが何らかの理由で破棄された場合にも古いHandleを保持し続けません。
+    // Entity破棄後に古いGenerationのHandleを保持し続けないようにします。
     if (m_DraggedEntity && !IsEntityAlive(m_DraggedEntity))
     {
         m_DraggedEntity = {};
+        m_DragHitPoint = {};
     }
 
     m_WasLeftMousePressed = leftPressed;
@@ -409,7 +380,11 @@ void SceneGame::OnCreate()
     const math::Vec3 target{ 0.0f, 0.0f, 0.0f };
     const math::Vec3 up{ 0.0f, 1.0f, 0.0f };
     m_View = math::Mat4::LookAt(eye, target, up);
-    m_Projection = math::Mat4::Perspective(0.7854f, m_ViewportWidth / m_ViewportHeight, 0.1f, 1000.0f);
+    m_Projection = math::Mat4::Perspective(
+        m_CameraFovY,
+        m_ViewportWidth / m_ViewportHeight,
+        0.1f,
+        1000.0f);
     m_Material->SetUniform("u_View", m_View);
     m_Material->SetUniform("u_Projection", m_Projection);
 
@@ -462,6 +437,7 @@ void SceneGame::OnCreate()
     m_WasSpacePressed = false;
     m_WasLeftMousePressed = false;
     m_DraggedEntity = {};
+    m_DragHitPoint = {};
 
     Entity floor = CreateEntity("Floor");
     auto& floorTransform = floor.GetComponent<TransformComponent>();
@@ -488,6 +464,7 @@ void SceneGame::OnCreate()
 void SceneGame::OnDestroy()
 {
     m_DraggedEntity = {};
+    m_DragHitPoint = {};
     m_layers.clear();
 
     for (Entity entity : m_SpawnedEntities)
@@ -527,9 +504,9 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
-    // 入力によるImpulseはPhysicsWorld::Step()より前に反映します。
-    // Scene::OnUpdate()の順序が OnUpdateGame -> OnUpdatePhysics なので、
-    // ここで速度を変更すれば同じフレームの固定ステップから物理計算へ参加します。
+    // Scene::OnUpdate()は OnUpdateGame -> OnUpdatePhysics の順です。
+    // AddImpulseAtPoint()は速度へ即時反映するため、releaseした同じフレームの
+    // PhysicsWorld::Step()から衝突・重力・回転計算へ参加します。
     UpdateMouseDragImpulse();
 
     for (auto& layer : m_layers)
@@ -623,7 +600,7 @@ void SceneGame::OnEvent(Event& e)
         if (m_ViewportWidth > 0.0f && m_ViewportHeight > 0.0f)
         {
             m_Projection = math::Mat4::Perspective(
-                0.7854f,
+                m_CameraFovY,
                 m_ViewportWidth / m_ViewportHeight,
                 0.1f,
                 1000.0f);
