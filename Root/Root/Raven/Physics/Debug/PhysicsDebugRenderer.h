@@ -32,6 +32,23 @@ public:
     static void RenderRegistered();
     // 同じSceneにぶら下がるRendererへPhysicsWorld参照を配布します。
     static void BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld);
+
+    // ========================================================================
+    // Bound PhysicsWorld access
+    // ========================================================================
+    // 現在のSceneはPhysicsWorldをprivate所有しているため、SceneGameからRayCast等の
+    // Physics query APIへ直接到達できません。PhysicsDebugRendererはScene::OnUpdatePhysics
+    // から実際にStepされたWorldを既にBindされているため、マウス操作などScene側の
+    // デバッグ/インタラクション用途に限ってそのWorldを返します。
+    //
+    // m_PhysicsWorldは描画用途ではconst参照ですが、返却先ではPhysicsWorldの正式な
+    // AddImpulseAtPoint/WakeUp等の制御APIだけを使用します。将来的にはScene自身に
+    // GetPhysicsWorld()/RayCast wrapperを設け、この橋渡しを削除するのが望ましいです。
+    PhysicsWorld* GetBoundPhysicsWorld() const
+    {
+        return const_cast<PhysicsWorld*>(m_PhysicsWorld);
+    }
+
     PhysicsDebugSettings& GetSettings() { return m_Settings; }
     const PhysicsDebugSettings& GetSettings() const { return m_Settings; }
 
