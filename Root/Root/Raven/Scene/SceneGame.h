@@ -44,6 +44,16 @@ private:
     // SceneGameは「何を置くか」だけを担当し、Cube頂点生成はPrimitiveMeshFactoryへ分離します。
     void SpawnBoxTestBody();
 
+    // ========================================================================
+    // Mouse Drag Impulse
+    // ========================================================================
+    // 画面上のマウス座標に最も近いDynamic RigidBodyを選択し、
+    // ドラッグ終了時に画面のドラッグ方向をCamera Right/Upへ変換してImpulseを与えます。
+    void UpdateMouseDragImpulse();
+    Entity FindDraggableEntityAtScreenPoint(const math::Vec2& screenPoint) const;
+    bool ProjectWorldToScreen(const math::Vec3& worldPosition, math::Vec2& outScreenPoint) const;
+    float ComputeProjectedPickRadius(const Entity& entity, const math::Vec3& cameraRight) const;
+
     ShaderLibrary m_ShaderLibrary;
     Ref<Shader> m_Shader;
     Ref<VertexArray> m_VertexArray;
@@ -76,6 +86,24 @@ private:
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
 
     bool m_WasSpacePressed = false;
+
+    // 左ボタンの前フレーム状態を保持して、Pressed/Releasedのエッジを検出します。
+    bool m_WasLeftMousePressed = false;
+    Entity m_DraggedEntity{};
+    math::Vec2 m_DragStartScreen{};
+
+    // Projectionで使用している現在のViewportサイズです。
+    // WindowResize時に更新することで、画面座標との対応を維持します。
+    float m_ViewportWidth = 1280.0f;
+    float m_ViewportHeight = 720.0f;
+
+    // ドラッグ距離1pxあたりのImpulse量。
+    // 長すぎるドラッグによる極端な速度を避けるため最大ピクセル数も制限します。
+    float m_DragImpulsePerPixel = 0.035f;
+    float m_MaxDragPixels = 350.0f;
+    float m_MinDragPixels = 3.0f;
+    float m_MinPickRadiusPixels = 12.0f;
+
     int m_MinSphereCount = 50;
     int m_MaxSphereCount = 100;
     float m_TargetSphereDensity = 0.015f;
