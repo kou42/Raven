@@ -44,6 +44,15 @@ private:
     // SceneGameは「何を置くか」だけを担当し、Cube頂点生成はPrimitiveMeshFactoryへ分離します。
     void SpawnBoxTestBody();
 
+    // ========================================================================
+    // Mouse Drag Impulse / Physics Ray Picking
+    // ========================================================================
+    // マウス座標からCamera Rayを構築し、PhysicsWorld::RayCast()で実Colliderを選択します。
+    // リリース時にはRayCastで得た実際のヒット点へAddImpulseAtPoint()を適用するため、
+    // 重心から外れた場所を掴んだ場合は r x J による回転も自然に発生します。
+    void UpdateMouseDragImpulse();
+    bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
+
     ShaderLibrary m_ShaderLibrary;
     Ref<Shader> m_Shader;
     Ref<VertexArray> m_VertexArray;
@@ -76,6 +85,30 @@ private:
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
 
     bool m_WasSpacePressed = false;
+
+    // 左ボタンの前フレーム状態を保持してPressed/Releasedのエッジを検出します。
+    bool m_WasLeftMousePressed = false;
+    Entity m_DraggedEntity{};
+    math::Vec2 m_DragStartScreen{};
+
+    // RayCastが返した「実際にクリックしたワールド座標」です。
+    // ドラッグ終了まで保持し、AddImpulseAtPoint()の作用点として使用します。
+    math::Vec3 m_DragHitPoint{};
+
+    // Projectionとマウス座標を対応させるViewportサイズ。
+    float m_ViewportWidth = 1280.0f;
+    float m_ViewportHeight = 720.0f;
+
+    // Perspective()と同じFOVをMouse Ray生成でも使います。
+    float m_CameraFovY = 0.7854f;
+    float m_MouseRayMaxDistance = 1000.0f;
+
+    // ドラッグ距離1pxあたりのImpulse量。
+    // 長すぎるドラッグによる極端な速度を避けるため最大ピクセル数も制限します。
+    float m_DragImpulsePerPixel = 0.035f;
+    float m_MaxDragPixels = 350.0f;
+    float m_MinDragPixels = 3.0f;
+
     int m_MinSphereCount = 50;
     int m_MaxSphereCount = 100;
     float m_TargetSphereDensity = 0.015f;
