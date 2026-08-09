@@ -45,14 +45,13 @@ private:
     void SpawnBoxTestBody();
 
     // ========================================================================
-    // Mouse Drag Impulse
+    // Mouse Drag Impulse / Physics Ray Picking
     // ========================================================================
-    // 画面上のマウス座標に最も近いDynamic RigidBodyを選択し、
-    // ドラッグ終了時に画面のドラッグ方向をCamera Right/Upへ変換してImpulseを与えます。
+    // マウス座標からCamera Rayを構築し、PhysicsWorld::RayCast()で実Colliderを選択します。
+    // リリース時にはRayCastで得た実際のヒット点へAddImpulseAtPoint()を適用するため、
+    // 重心から外れた場所を掴んだ場合は r x J による回転も自然に発生します。
     void UpdateMouseDragImpulse();
-    Entity FindDraggableEntityAtScreenPoint(const math::Vec2& screenPoint) const;
-    bool ProjectWorldToScreen(const math::Vec3& worldPosition, math::Vec2& outScreenPoint) const;
-    float ComputeProjectedPickRadius(const Entity& entity, const math::Vec3& cameraRight) const;
+    bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
 
     ShaderLibrary m_ShaderLibrary;
     Ref<Shader> m_Shader;
@@ -87,22 +86,28 @@ private:
 
     bool m_WasSpacePressed = false;
 
-    // 左ボタンの前フレーム状態を保持して、Pressed/Releasedのエッジを検出します。
+    // 左ボタンの前フレーム状態を保持してPressed/Releasedのエッジを検出します。
     bool m_WasLeftMousePressed = false;
     Entity m_DraggedEntity{};
     math::Vec2 m_DragStartScreen{};
 
-    // Projectionで使用している現在のViewportサイズです。
-    // WindowResize時に更新することで、画面座標との対応を維持します。
+    // RayCastが返した「実際にクリックしたワールド座標」です。
+    // ドラッグ終了まで保持し、AddImpulseAtPoint()の作用点として使用します。
+    math::Vec3 m_DragHitPoint{};
+
+    // Projectionとマウス座標を対応させるViewportサイズ。
     float m_ViewportWidth = 1280.0f;
     float m_ViewportHeight = 720.0f;
+
+    // Perspective()と同じFOVをMouse Ray生成でも使います。
+    float m_CameraFovY = 0.7854f;
+    float m_MouseRayMaxDistance = 1000.0f;
 
     // ドラッグ距離1pxあたりのImpulse量。
     // 長すぎるドラッグによる極端な速度を避けるため最大ピクセル数も制限します。
     float m_DragImpulsePerPixel = 0.035f;
     float m_MaxDragPixels = 350.0f;
     float m_MinDragPixels = 3.0f;
-    float m_MinPickRadiusPixels = 12.0f;
 
     int m_MinSphereCount = 50;
     int m_MaxSphereCount = 100;
