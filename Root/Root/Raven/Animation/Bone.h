@@ -37,6 +37,34 @@ struct BoneTransform
             * Rotation.ToMat4()
             * math::Mat4::Scaling(Scale);
     }
+
+    // ========================================================================
+    // Inverse TRS
+    // ========================================================================
+    // M = T * R * S なので M^-1 = S^-1 * R^-1 * T^-1 です。
+    // 一般4x4逆行列を毎Bone生成するのではなく、BoneがTRSであることを利用して
+    // Bind Pose構築時に安価かつ意味の明確な逆変換を作ります。
+    //
+    // Scaleが0に近い場合は逆変換を定義できないため、Skeleton::AddBone()側で拒否します。
+    math::Mat4 ToInverseMatrix() const
+    {
+        const math::Vec3 inverseScale{
+            1.0f / Scale.x,
+            1.0f / Scale.y,
+            1.0f / Scale.z
+        };
+
+        const math::Quat inverseRotation = Rotation.Normalized().Conjugate();
+        const math::Vec3 inverseTranslation{
+            -Translation.x,
+            -Translation.y,
+            -Translation.z
+        };
+
+        return math::Mat4::Scaling(inverseScale)
+            * inverseRotation.ToMat4()
+            * math::Mat4::Translation(inverseTranslation);
+    }
 };
 
 // ============================================================================
@@ -50,6 +78,10 @@ struct Bone
     std::string Name;
     BoneIndex Parent = InvalidBoneIndex;
     BoneTransform BindLocalTransform{};
+
+    // Mesh Bind Space -> Bone Bind Space へ戻す行列です。
+    // Skeleton::AddBone()時に階層を考慮して自動計算し、Runtime Skinningでは再計算しません。
+    math::Mat4 InverseBindMatrix = math::Mat4::Identity();
 };
 
 } // namespace Raven
