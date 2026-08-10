@@ -1,7 +1,7 @@
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 
-#include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 #include <cmath>
 #include <cstdint>
@@ -11,24 +11,18 @@ namespace Raven
 {
 namespace
 {
-Ref<Mesh> CreateIndexedMesh(const std::vector<float>& vertices, const std::vector<uint32_t>& indices)
+// PrimitiveMeshFactoryは「形状を作る」責務だけを担当します。
+// VertexArray / VertexBuffer / IndexBufferなどRenderer固有のGPUリソース生成はMeshへ移し、
+// Factoryと描画バックエンドの依存を切り離します。
+Ref<Mesh> CreateIndexedMesh(std::vector<MeshVertex> vertices, std::vector<uint32_t> indices)
 {
-    Ref<VertexArray> vertexArray = VertexArray::Create();
+    auto geometry = CreateRef<MeshGeometry>(
+        std::move(vertices),
+        std::move(indices),
+        GeometryUsage::Static,
+        TopologyUsage::Fixed);
 
-    auto vertexBuffer = VertexBuffer::Create(
-        vertices.data(),
-        static_cast<uint32_t>(vertices.size() * sizeof(float)));
-    vertexBuffer->SetLayout({
-        { ShaderDataType::Float3, "a_Position" },
-        { ShaderDataType::Float3, "a_Color" },
-        { ShaderDataType::Float2, "a_Texcord" }
-    });
-
-    auto indexBuffer = IndexBuffer::Create(indices.data(), static_cast<uint32_t>(indices.size()));
-    vertexArray->AddVertexBuffer(vertexBuffer);
-    vertexArray->SetIndexBuffer(indexBuffer);
-
-    return CreateRef<Mesh>(vertexArray, static_cast<int32_t>(indices.size()));
+    return CreateRef<Mesh>(std::move(geometry));
 }
 } // namespace
 
@@ -41,38 +35,38 @@ Ref<Mesh> PrimitiveMeshFactory::CreateCube()
     // 面ごとに4頂点を持たせることでUVを独立して割り当てています。
     // 現在のShader入力(position/color/uv)に合わせ、法線はまだ持たせません。
     constexpr float h = 0.5f;
-    const std::vector<float> vertices = {
-        // position       // color          // uv
+
+    const std::vector<MeshVertex> vertices = {
         // +Z
-        -h,-h, h,         0.85f,0.55f,0.30f, 0.0f,0.0f,
-         h,-h, h,         0.85f,0.55f,0.30f, 1.0f,0.0f,
-         h, h, h,         0.85f,0.55f,0.30f, 1.0f,1.0f,
-        -h, h, h,         0.85f,0.55f,0.30f, 0.0f,1.0f,
+        { {-h,-h, h}, {0.85f,0.55f,0.30f}, {0.0f,0.0f} },
+        { { h,-h, h}, {0.85f,0.55f,0.30f}, {1.0f,0.0f} },
+        { { h, h, h}, {0.85f,0.55f,0.30f}, {1.0f,1.0f} },
+        { {-h, h, h}, {0.85f,0.55f,0.30f}, {0.0f,1.0f} },
         // -Z
-         h,-h,-h,         0.75f,0.45f,0.25f, 0.0f,0.0f,
-        -h,-h,-h,         0.75f,0.45f,0.25f, 1.0f,0.0f,
-        -h, h,-h,         0.75f,0.45f,0.25f, 1.0f,1.0f,
-         h, h,-h,         0.75f,0.45f,0.25f, 0.0f,1.0f,
+        { { h,-h,-h}, {0.75f,0.45f,0.25f}, {0.0f,0.0f} },
+        { {-h,-h,-h}, {0.75f,0.45f,0.25f}, {1.0f,0.0f} },
+        { {-h, h,-h}, {0.75f,0.45f,0.25f}, {1.0f,1.0f} },
+        { { h, h,-h}, {0.75f,0.45f,0.25f}, {0.0f,1.0f} },
         // +X
-         h,-h, h,         0.90f,0.62f,0.34f, 0.0f,0.0f,
-         h,-h,-h,         0.90f,0.62f,0.34f, 1.0f,0.0f,
-         h, h,-h,         0.90f,0.62f,0.34f, 1.0f,1.0f,
-         h, h, h,         0.90f,0.62f,0.34f, 0.0f,1.0f,
+        { { h,-h, h}, {0.90f,0.62f,0.34f}, {0.0f,0.0f} },
+        { { h,-h,-h}, {0.90f,0.62f,0.34f}, {1.0f,0.0f} },
+        { { h, h,-h}, {0.90f,0.62f,0.34f}, {1.0f,1.0f} },
+        { { h, h, h}, {0.90f,0.62f,0.34f}, {0.0f,1.0f} },
         // -X
-        -h,-h,-h,         0.70f,0.40f,0.22f, 0.0f,0.0f,
-        -h,-h, h,         0.70f,0.40f,0.22f, 1.0f,0.0f,
-        -h, h, h,         0.70f,0.40f,0.22f, 1.0f,1.0f,
-        -h, h,-h,         0.70f,0.40f,0.22f, 0.0f,1.0f,
+        { {-h,-h,-h}, {0.70f,0.40f,0.22f}, {0.0f,0.0f} },
+        { {-h,-h, h}, {0.70f,0.40f,0.22f}, {1.0f,0.0f} },
+        { {-h, h, h}, {0.70f,0.40f,0.22f}, {1.0f,1.0f} },
+        { {-h, h,-h}, {0.70f,0.40f,0.22f}, {0.0f,1.0f} },
         // +Y
-        -h, h, h,         0.95f,0.70f,0.40f, 0.0f,0.0f,
-         h, h, h,         0.95f,0.70f,0.40f, 1.0f,0.0f,
-         h, h,-h,         0.95f,0.70f,0.40f, 1.0f,1.0f,
-        -h, h,-h,         0.95f,0.70f,0.40f, 0.0f,1.0f,
+        { {-h, h, h}, {0.95f,0.70f,0.40f}, {0.0f,0.0f} },
+        { { h, h, h}, {0.95f,0.70f,0.40f}, {1.0f,0.0f} },
+        { { h, h,-h}, {0.95f,0.70f,0.40f}, {1.0f,1.0f} },
+        { {-h, h,-h}, {0.95f,0.70f,0.40f}, {0.0f,1.0f} },
         // -Y
-        -h,-h,-h,         0.65f,0.35f,0.20f, 0.0f,0.0f,
-         h,-h,-h,         0.65f,0.35f,0.20f, 1.0f,0.0f,
-         h,-h, h,         0.65f,0.35f,0.20f, 1.0f,1.0f,
-        -h,-h, h,         0.65f,0.35f,0.20f, 0.0f,1.0f,
+        { {-h,-h,-h}, {0.65f,0.35f,0.20f}, {0.0f,0.0f} },
+        { { h,-h,-h}, {0.65f,0.35f,0.20f}, {1.0f,0.0f} },
+        { { h,-h, h}, {0.65f,0.35f,0.20f}, {1.0f,1.0f} },
+        { {-h,-h, h}, {0.65f,0.35f,0.20f}, {0.0f,1.0f} },
     };
 
     std::vector<uint32_t> indices;
@@ -88,7 +82,7 @@ Ref<Mesh> PrimitiveMeshFactory::CreateCube()
         indices.push_back(base + 0);
     }
 
-    return CreateIndexedMesh(vertices, indices);
+    return CreateIndexedMesh(vertices, std::move(indices));
 }
 
 Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
@@ -99,9 +93,9 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
     constexpr float radius = 0.5f;
     constexpr float pi = 3.14159265358979323846f;
 
-    std::vector<float> vertices;
+    std::vector<MeshVertex> vertices;
     std::vector<uint32_t> indices;
-    vertices.reserve(static_cast<size_t>(stacks + 1) * static_cast<size_t>(slices + 1) * 8);
+    vertices.reserve(static_cast<size_t>(stacks + 1) * static_cast<size_t>(slices + 1));
     indices.reserve(static_cast<size_t>(stacks) * static_cast<size_t>(slices) * 6);
 
     for (int i = 0; i <= stacks; ++i)
@@ -118,10 +112,10 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
             const float z = ringRadius * std::sin(theta);
             const float u = static_cast<float>(j) / static_cast<float>(slices);
 
-            vertices.insert(vertices.end(), {
-                x, y, z,
-                0.7f + 0.3f * v, 0.8f, 0.9f,
-                u, v
+            vertices.push_back({
+                { x, y, z },
+                { 0.7f + 0.3f * v, 0.8f, 0.9f },
+                { u, v }
             });
         }
     }
@@ -136,7 +130,7 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
         }
     }
 
-    return CreateIndexedMesh(vertices, indices);
+    return CreateIndexedMesh(std::move(vertices), std::move(indices));
 }
 
 } // namespace Raven
