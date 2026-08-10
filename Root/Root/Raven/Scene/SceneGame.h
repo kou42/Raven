@@ -3,7 +3,6 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
-#include "Raven/Renderer/Mesh/Deformation/MeshDeformer.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
@@ -65,16 +64,6 @@ private:
 
     Ref<Mesh> m_SphereMesh;
     Ref<Mesh> m_BoxMesh;
-
-    // ========================================================================
-    // Deformation validation mesh
-    // ========================================================================
-    // RendererのDynamic Geometry経路をSceneから実際に駆動するための検証用Meshです。
-    // MeshDeformerは抽象型で保持し、将来WaveをSkeletal/Morphへ差し替えてもScene側の
-    // 更新コードを同じ形に保てることを確認します。
-    Ref<Mesh> m_DeformationMesh;
-    Scope<MeshDeformer> m_Deformer;
-    Entity m_DeformationEntity;
 
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
