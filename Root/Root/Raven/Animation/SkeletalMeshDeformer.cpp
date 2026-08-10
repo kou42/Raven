@@ -5,24 +5,37 @@
 
 #include "Raven/Animation/SkinWeight.h"
 #include "Raven/Animation/Skinning.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven
 {
-
 namespace
 {
-
-// Positionは点なので同次座標w=1としてSkinning Matrixを作用させます。
-// 現在のBone TransformはAffine Transformなので通常result.wは1ですが、
-// Mat4の意味を曖昧にしないためVec4経由で明示的に変換します。
 math::Vec3 TransformPosition(const math::Mat4& matrix, const math::Vec3& position)
 {
     const math::Vec4 transformed = matrix * math::Vec4{ position.x, position.y, position.z, 1.0f };
     return { transformed.x, transformed.y, transformed.z };
 }
-
 } // namespace
+
+void SkeletalMeshDeformer::Update(Mesh& mesh, float deltaTime)
+{
+    static_cast<void>(deltaTime);
+
+    const Ref<MeshGeometry>& geometry = mesh.GetGeometry();
+    if (!geometry)
+        return;
+
+    // Animation再生はまだ行わず、外部から設定済みのSkeletonPoseをそのままSkinningします。
+    // これにより1/2 Boneの手動Pose TestをAnimationClipより先に検証できます。
+    if (!Deform(m_Skeleton, m_Pose, m_SkinnedMeshData, *geometry))
+        return;
+
+    // MeshGeometry::SetVertices()でRevisionが進んだため、既存のDeformation経路と同様に
+    // ここでGPU VBOへ同期します。Scene / ECS側はSkeletal固有処理を知りません。
+    mesh.SyncGeometry();
+}
 
 bool SkeletalMeshDeformer::Deform(
     const Skeleton& skeleton,
@@ -30,8 +43,6 @@ bool SkeletalMeshDeformer::Deform(
     const SkinnedMeshData& skinnedMeshData,
     MeshGeometry& geometry)
 {
-    // Skinning MatrixはCurrentGlobal * InverseBindです。
-    // Poseだけが毎Frame変化するため、Bind PositionやWeightは変更せずMatrixだけを再構築します。
     if (!BuildSkinningMatrices(skeleton, pose, m_SkinningMatrices))
         return false;
 
@@ -44,15 +55,10 @@ bool SkeletalMeshDeformer::DeformWithMatrices(
     const std::vector<math::Mat4>& skinningMatrices,
     MeshGeometry& geometry)
 {
-    // CPU Skinning入力の契約を変形前にまとめて検証します。
-    // 途中まで頂点を書き換えてから失敗するとGeometryが半端な状態になるため、
-    // すべてのValidationを済ませてから出力頂点列を作ります。
     if (!skinnedMeshData.Validate(skeleton))
         return false;
-
     if (skinningMatrices.size() != skeleton.GetBoneCount())
         return false;
-
     if (geometry.GetGeometryUsage() != GeometryUsage::Dynamic)
         return false;
 
@@ -60,27 +66,20 @@ bool SkeletalMeshDeformer::DeformWithMatrices(
     if (sourceVertices.size() != skinnedMeshData.GetVertexCount())
         return false;
 
-    // Color / TexCoordなどSkinning対象外の属性は現在Geometryに入っている値を保持し、
-    // PositionだけをBind Positionから毎回再計算します。
-    // 「前Frameの変形済みPosition」を入力にしないことが重要です。
-    // それを入力にすると変形誤差がFrameごとに累積し、Meshが徐々に崩れてしまいます。
+    // Positionだけを毎回Bind Positionから再計算します。
+    // 前Frameの変形結果を入力にすると変形が累積するため、sourceVerticesはColor/UV保持にだけ使います。
     std::vector<MeshVertex> deformedVertices = sourceVertices;
-
-    const std::vector<math::Vec3>& bindPositions = skinnedMeshData.GetBindPositions();
-    const std::vector<SkinWeight>& skinWeights = skinnedMeshData.GetSkinWeights();
+    const auto& bindPositions = skinnedMeshData.GetBindPositions();
+    const auto& skinWeights = skinnedMeshData.GetSkinWeights();
 
     for (std::size_t vertexIndex = 0; vertexIndex < bindPositions.size(); ++vertexIndex)
     {
         const math::Vec3& bindPosition = bindPositions[vertexIndex];
         const SkinWeight& skinWeight = skinWeights[vertexIndex];
-
-        math::Vec3 deformedPosition{ 0.0f, 0.0f, 0.0f };
+        math::Vec3 deformedPosition{};
 
         // Linear Blend Skinning:
-        //   p' = Sum(weight_i * (CurrentGlobal_i * InverseBind_i * p_bind))
-        //
-        // MaxBoneInfluencesは4なので、GPU Skinningへ移行した場合も一般的な
-        // ivec4 BoneIndices + vec4 Weights のVertex Attributeへ素直に対応できます。
+        // p' = Sum(w_i * (CurrentGlobal_i * InverseBind_i * p_bind))
         for (std::size_t influenceIndex = 0; influenceIndex < MaxBoneInfluences; ++influenceIndex)
         {
             const float weight = skinWeight.Weights[influenceIndex];
@@ -91,17 +90,13 @@ bool SkeletalMeshDeformer::DeformWithMatrices(
             if (!skeleton.IsValidBoneIndex(boneIndex))
                 return false;
 
-            const math::Vec3 transformedPosition =
-                TransformPosition(skinningMatrices[static_cast<std::size_t>(boneIndex)], bindPosition);
-
-            deformedPosition += transformedPosition * weight;
+            deformedPosition += TransformPosition(
+                skinningMatrices[static_cast<std::size_t>(boneIndex)], bindPosition) * weight;
         }
 
         deformedVertices[vertexIndex].Position = deformedPosition;
     }
 
-    // SetVertices()がRevisionを進め、次のMesh::SyncGeometry()で既存VBOへUploadされます。
-    // SkeletalMeshDeformer自身はRenderer/GPU APIを知らないまま、CPU Geometryだけを更新します。
     return geometry.SetVertices(std::move(deformedVertices));
 }
 
