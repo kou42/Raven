@@ -39,6 +39,12 @@ public:
     void SetSpeed(float speed) { m_Speed = speed; }
     float GetSpeed() const { return m_Speed; }
 
+    // Timeline操作用APIです。
+    // Editorのscrub、State遷移開始位置、同期AnimationなどでAnimator::Update()を
+    // 経由せず任意時刻へ移動したい場合に使用します。
+    //
+    // CrossFade中に呼ばれた場合は「Current Stateへの明示的なTimeline操作」と解釈し、
+    // Next StateとFade状態を破棄してCurrent State単体へ戻します。
     void SetCurrentTime(float time);
     void SetNormalizedTime(float normalizedTime);
 
@@ -47,7 +53,13 @@ public:
 
     bool IsPlaying() const { return m_Playing; }
     bool IsPaused() const { return m_Paused; }
+
+    // 非Loop Clipが再生方向側の端へ到達したかを示します。
+    // IsPlaying()だけではPause/Stopとの区別が付かないため、State Machine実装時に
+    // 「Animation終了を遷移条件にする」ための専用状態として保持します。
+    // CrossFade完了時は、遷移先Stateが終端へ到達していた場合にtrueになります。
     bool IsFinished() const { return m_Finished; }
+
     bool IsCrossFading() const { return m_CrossFading; }
 
     float GetCrossFadeWeight() const;
