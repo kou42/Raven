@@ -32,10 +32,23 @@ public:
     void SetSpeed(float speed) { m_Speed = speed; }
     float GetSpeed() const { return m_Speed; }
 
+    // Timeline操作用APIです。
+    // Editorのscrub、State遷移開始位置、同期AnimationなどでAnimator::Update()を
+    // 経由せず任意時刻へ移動したい場合に使用します。
+    void SetCurrentTime(float time);
+    void SetNormalizedTime(float normalizedTime);
+
+    float GetCurrentTime() const { return m_CurrentTime; }
+    float GetNormalizedTime() const;
+
     bool IsPlaying() const { return m_Playing; }
     bool IsPaused() const { return m_Paused; }
 
-    float GetCurrentTime() const { return m_CurrentTime; }
+    // 非Loop Clipが再生方向側の端へ到達したかを示します。
+    // IsPlaying()だけではPause/Stopとの区別が付かないため、State Machine実装時に
+    // 「Animation終了を遷移条件にする」ための専用状態として保持します。
+    bool IsFinished() const { return m_Finished; }
+
     const TransformPose& GetCurrentPose() const { return m_CurrentPose; }
     const std::shared_ptr<AnimationClip>& GetClip() const { return m_Clip; }
 
@@ -52,6 +65,7 @@ private:
     bool m_Playing = false;
     bool m_Paused = false;
     bool m_Loop = true;
+    bool m_Finished = false;
 
     TransformPose m_CurrentPose{};
 };
