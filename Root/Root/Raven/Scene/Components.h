@@ -14,6 +14,7 @@ namespace Raven
 
 class Mesh;
 class Material;
+class MeshDeformationInstance;
 
 struct TagComponent
 {
@@ -37,6 +38,28 @@ struct MeshRendererComponent
     bool IsValid() const
     {
         return Mesh && Material;
+    }
+};
+
+// ============================================================================
+// MeshDeformationComponent
+// ============================================================================
+// Entityが「変形可能なMesh」を持つことだけをScene/ECSへ公開するComponentです。
+// Scene側はWave / Skeletal / Morph / SoftBodyなどの具体型を知りません。
+// 具体的な変形アルゴリズムとMeshの組はMeshDeformationInstanceへ隠し、
+// MeshDeformationSystemがInstance::Update()を呼ぶ構成にします。
+//
+// shared_ptrを使う理由:
+// Instance内部ではDeformerをunique ownershipします。一方ComponentはStorage内で移動・再配置
+// され得るため、Component自体は軽量な共有Handleとして所有権の境界を分離します。
+struct MeshDeformationComponent
+{
+    std::shared_ptr<MeshDeformationInstance> Instance = nullptr;
+    bool Enabled = true;
+
+    bool IsValid() const
+    {
+        return Instance != nullptr;
     }
 };
 

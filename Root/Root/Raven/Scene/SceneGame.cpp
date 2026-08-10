@@ -4,6 +4,9 @@
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Core/MouseCodes.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
+#include "Raven/Renderer/Mesh/Deformation/MeshDeformationSystem.h"
+#include "Raven/Renderer/Mesh/Deformation/WaveMeshDeformer.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/RenderCommand.h"
@@ -457,6 +460,31 @@ void SceneGame::OnCreate()
     m_FloorEntity = floor;
     m_SpawnedEntities.push_back(floor);
 
+    // ========================================================================
+    // Deformation validation entity
+    // ========================================================================
+    // ここでは「Sceneが具体的な頂点更新を直接行わない」ことを確認するため、
+    // Dynamic Grid + WaveMeshDeformerをECS Component経由で接続します。
+    //
+    // 実際の毎フレーム更新はMeshDeformationSystemが担当し、SceneGameは
+    // どのMeshとDeformerを組み合わせるかという初期構成だけを担当します。
+    Ref<Mesh> waveMesh = PrimitiveMeshFactory::CreateDynamicGrid(32, 32);
+    Entity waveEntity = CreateEntity("WaveDeformationGrid");
+    auto& waveTransform = waveEntity.GetComponent<TransformComponent>();
+    waveTransform.Position = { 0.0f, 3.0f, -22.0f };
+    waveTransform.Scale = { 28.0f, 8.0f, 28.0f };
+
+    waveEntity.AddComponent<MeshRendererComponent>(MeshRendererComponent{ waveMesh, m_Material });
+
+    auto waveInstance = std::make_shared<MeshDeformationInstance>(
+        waveMesh,
+        CreateScope<WaveMeshDeformer>(0.18f, 10.0f, 2.4f));
+
+    waveEntity.AddComponent<MeshDeformationComponent>(
+        MeshDeformationComponent{ std::move(waveInstance), true });
+
+    m_SpawnedEntities.push_back(waveEntity);
+
     SpawnSphereBatch(ComputeOptimizedSpawnCount());
     SpawnBoxTestBody();
 }
@@ -508,6 +536,14 @@ void SceneGame::OnUpdateGame(float dt)
     // AddImpulseAtPoint()は速度へ即時反映するため、releaseした同じフレームの
     // PhysicsWorld::Step()から衝突・重力・回転計算へ参加します。
     UpdateMouseDragImpulse();
+
+    // ========================================================================
+    // ECS Deformation Update
+    // ========================================================================
+    // SceneGameはWaveMeshDeformerをここで直接呼びません。
+    // MeshDeformationComponentを持つ全EntityをSystemが走査するため、将来Skeletal/Morphを
+    // 追加しても、この更新箇所は変更せず同じ入口を共有できます。
+    MeshDeformationSystem::Update(*this, safeDt);
 
     for (auto& layer : m_layers)
     {
