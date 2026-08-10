@@ -151,4 +151,22 @@ bool AnimatorStateMachine::TransitionTo(
     return true;
 }
 
+void AnimatorStateMachine::Update(float deltaTime)
+{
+    const bool wasCrossFading = m_Animator.IsCrossFading();
+
+    m_Animator.Update(deltaTime);
+
+    // Pending Stateが存在する状態でAnimatorのCrossFadeが完了した瞬間に、
+    // State Machine側のCurrent名を遷移先へ確定します。
+    // AnimatorStateの昇格処理と同じFrameで同期することで、Animation実体と名前がずれません。
+    if (wasCrossFading &&
+        !m_Animator.IsCrossFading() &&
+        !m_PendingStateName.empty())
+    {
+        m_CurrentStateName = std::move(m_PendingStateName);
+        m_PendingStateName.clear();
+    }
+}
+
 } // namespace Raven
