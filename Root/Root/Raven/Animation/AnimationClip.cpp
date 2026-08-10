@@ -11,17 +11,7 @@ namespace
 // ============================================================================
 // SampleVec3Track
 // ============================================================================
-// Keyframe列から指定時刻の値を線形補間します。
-//
-// 前提:
-//   KeysはTime昇順に登録されていること。
-//
-// 境界の扱い:
-//   time <= first.Time : first.Value
-//   time >= last.Time  : last.Value
-//
-// このClampをSample側で行うことでAnimatorは「再生時刻をどう進めるか」だけに集中でき、
-// Clipは任意時刻に対して安全に評価できる純粋なデータオブジェクトになります。
+// Position / Scale Keyを線形補間します。
 math::Vec3 SampleVec3Track(
     const std::vector<AnimationKeyframe<math::Vec3>>& keys,
     float time,
@@ -42,9 +32,6 @@ math::Vec3 SampleVec3Track(
         return keys.back().Value;
     }
 
-    // upper_boundを使うと「timeより後にある最初のKey」を取得できます。
-    // その1つ前が補間開始Keyになるため、全Keyを毎回線形探索するよりも
-    // Key数が増えたときのSampleコストを抑えられます。
     const auto rightIt = std::upper_bound(
         keys.begin(),
         keys.end(),
@@ -55,11 +42,8 @@ math::Vec3 SampleVec3Track(
         });
 
     const auto leftIt = rightIt - 1;
-
     const float interval = rightIt->Time - leftIt->Time;
 
-    // 同一時刻のKeyが誤って隣接していても0除算しないようにします。
-    // 正式なAsset Importerを追加するときにはKey列のValidationも別途行います。
     if (interval <= 0.0f)
     {
         return rightIt->Value;
@@ -67,6 +51,53 @@ math::Vec3 SampleVec3Track(
 
     const float alpha = (time - leftIt->Time) / interval;
     return math::Vec3::Lerp(leftIt->Value, rightIt->Value, alpha);
+}
+
+// ============================================================================
+// SampleQuatTrack
+// ============================================================================
+// Rotation KeyはQuaternionの球面線形補間(Slerp)を使います。
+// Euler角を各軸別にLerpすると、±pi境界で遠回りしたり、複数軸回転で姿勢変化が
+// 不自然になりやすいため、Animation runtimeではQuaternionを正規表現にします。
+math::Quat SampleQuatTrack(
+    const std::vector<AnimationKeyframe<math::Quat>>& keys,
+    float time,
+    const math::Quat& defaultValue)
+{
+    if (keys.empty())
+    {
+        return defaultValue;
+    }
+
+    if (keys.size() == 1 || time <= keys.front().Time)
+    {
+        return keys.front().Value.Normalized();
+    }
+
+    if (time >= keys.back().Time)
+    {
+        return keys.back().Value.Normalized();
+    }
+
+    const auto rightIt = std::upper_bound(
+        keys.begin(),
+        keys.end(),
+        time,
+        [](float sampleTime, const AnimationKeyframe<math::Quat>& key)
+        {
+            return sampleTime < key.Time;
+        });
+
+    const auto leftIt = rightIt - 1;
+    const float interval = rightIt->Time - leftIt->Time;
+
+    if (interval <= 0.0f)
+    {
+        return rightIt->Value.Normalized();
+    }
+
+    const float alpha = (time - leftIt->Time) / interval;
+    return math::Quat::Slerp(leftIt->Value, rightIt->Value, alpha);
 }
 
 } // namespace
@@ -95,7 +126,7 @@ TransformPose AnimationClip::Sample(float time) const
         sampleTime,
         pose.Position);
 
-    pose.Rotation = SampleVec3Track(
+    pose.Rotation = SampleQuatTrack(
         m_TransformTrack.RotationKeys,
         sampleTime,
         pose.Rotation);
