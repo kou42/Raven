@@ -22,6 +22,10 @@ public:
 private:
     uint32_t m_RendererID;
     BufferLayout m_Layout;
+
+    // 現在GPU側に確保しているVBO容量(byte)。
+    // Dynamic Geometry更新時、容量内ならglBufferSubDataで内容だけを書き換えます。
+    uint32_t m_Capacity = 0;
 };
 
 }
