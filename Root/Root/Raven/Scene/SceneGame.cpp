@@ -1,4 +1,4 @@
-#include "SceneGame.h"
+﻿#include "SceneGame.h"
 
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
@@ -525,6 +525,9 @@ void SceneGame::OnDestroy()
 void SceneGame::OnUpdateGame(float dt)
 {
     const float safeDt = std::clamp(dt, 0.0f, 0.05f);
+
+    // StateMachine検証用ParameterをAnimationSystem実行前に更新する。
+    UpdateAnimationStateMachineTest(safeDt);
 
     const bool spacePressed = Input::IsKeyPressed(Key::Space);
     if (spacePressed && !m_WasSpacePressed)
