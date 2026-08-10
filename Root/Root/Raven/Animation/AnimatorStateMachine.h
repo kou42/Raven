@@ -54,6 +54,18 @@ struct LocomotionThresholds
 };
 
 // ============================================================================
+// CharacterAnimationParameters
+// ============================================================================
+// Character ControllerとAnimation State Machineの間で共有するParameter名をまとめます。
+// 文字列をGameplay側へ散在させず、将来Crouch / Falling等を追加する際にも同じ窓口を拡張できます。
+struct CharacterAnimationParameters
+{
+    std::string Speed = "Speed";
+    std::string Grounded = "Grounded";
+    std::string Jump = "Jump";
+};
+
+// ============================================================================
 // AnimatorStateMachine
 // ============================================================================
 // Animatorの上に置く薄いState管理層です。
@@ -158,6 +170,20 @@ public:
         const std::string& speedParameterName = "Speed",
         float crossFadeDuration = 0.2f,
         bool startImmediately = true);
+
+    // Character Controllerが毎Frame更新する基本Parameterをまとめて登録します。
+    // Speedは既存Locomotion構築時に作られている場合を許容し、Grounded / Jumpだけを追加できます。
+    bool AddCharacterParameters(
+        const CharacterAnimationParameters& parameterNames = {},
+        bool initialGrounded = true);
+
+    // Character Controller側の物理状態をAnimation Parameterへ同期します。
+    // Jumpは連続値ではなく一回限りのイベントなので、jumpRequested=trueのFrameだけTriggerを立てます。
+    bool UpdateCharacterParameters(
+        float speed,
+        bool grounded,
+        bool jumpRequested,
+        const CharacterAnimationParameters& parameterNames = {});
 
     // 移動速度からIdle / Walk / Runを選択してTransitionTo()へ変換します。
     // Gameplay側は毎Frameこの関数へ速度を渡すだけでよく、State名や閾値判定を散在させません。
