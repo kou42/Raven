@@ -2,10 +2,13 @@
 #pragma once
 
 #include "Raven/Animation/Animator.h"
+#include "Raven/Animation/AnimatorParameter.h"
+#include "Raven/Animation/AnimatorTransition.h"
 
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Raven
 {
@@ -33,7 +36,7 @@ struct AnimatorStateDefinition
 // LocomotionStateNames / LocomotionThresholds
 // ============================================================================
 // Idle / Walk / Runの名前と速度境界をGameplayコードから分離するための小さな設定です。
-// まだ汎用Parameter/Conditionシステムにはせず、まず最も基本的なLocomotionを実動させます。
+// 汎用Parameter/Transitionを追加した後も、最小Locomotionをすぐ使える便利APIとして維持します。
 struct LocomotionStateNames
 {
     std::string Idle = "Idle";
@@ -58,7 +61,7 @@ struct LocomotionThresholds
 // 責務は次の3つを中心に限定します。
 //  1. "Idle" / "Walk" / "Run" のような名前とAnimationClipを対応付ける
 //  2. Current / Pending / QueuedのState名を管理する
-//  3. State変更要求をAnimator::Play / CrossFadeへ変換する
+//  3. Parameter / ConditionからState変更要求を作り、Animator::Play / CrossFadeへ変換する
 //
 // Animation時間、Loop、Pose Sample、CrossFade WeightなどのRuntime処理はAnimator側へ残します。
 // これによりState MachineがAnimation再生処理を二重管理しない構造になります。
@@ -99,6 +102,40 @@ public:
     // AnimatorがCrossFade中で割り込みを拒否した場合、State名も変更しません。
     bool TransitionTo(const std::string& name, float durationOverride = -1.0f);
 
+    // ------------------------------------------------------------------------
+    // Animator Parameter
+    // ------------------------------------------------------------------------
+    // Parameter名もState名と同様に一意です。
+    // 型違いのSet/Getを誤って行った場合はfalseを返し、暗黙変換は行いません。
+    bool AddFloatParameter(std::string name, float defaultValue = 0.0f);
+    bool AddBoolParameter(std::string name, bool defaultValue = false);
+    bool AddTriggerParameter(std::string name);
+    bool RemoveParameter(const std::string& name);
+    bool HasParameter(const std::string& name) const;
+
+    bool SetFloat(const std::string& name, float value);
+    bool SetBool(const std::string& name, bool value);
+
+    // TriggerはGameplay/Event側からSetTrigger()され、成立したTransitionが実際に開始した時だけ
+    // 自動的にfalseへ戻します。Fade中でTransition開始に失敗した場合は消費しません。
+    bool SetTrigger(const std::string& name);
+    bool ResetTrigger(const std::string& name);
+
+    bool GetFloat(const std::string& name, float& outValue) const;
+    bool GetBool(const std::string& name, bool& outValue) const;
+
+    // ------------------------------------------------------------------------
+    // Animator Transition
+    // ------------------------------------------------------------------------
+    // From/To Stateが登録済みで、Conditionが参照するParameterも存在する場合だけ登録します。
+    // ConditionsはAND評価です。登録順がTransitionの優先順位になります。
+    bool AddTransition(AnimatorTransition transition);
+
+    const std::vector<AnimatorTransition>& GetTransitions() const
+    {
+        return m_Transitions;
+    }
+
     // 移動速度からIdle / Walk / Runを選択してTransitionTo()へ変換します。
     // Gameplay側は毎Frameこの関数へ速度を渡すだけでよく、State名や閾値判定を散在させません。
     //
@@ -109,7 +146,7 @@ public:
         const LocomotionThresholds& thresholds = {},
         const LocomotionStateNames& stateNames = {});
 
-    // Animatorを更新した後、CrossFade完了をState名へ同期します。
+    // Parameter Transitionを評価してからAnimatorを更新し、CrossFade完了をState名へ同期します。
     // State Machine自身はAnimation時間を別途持たず、時間管理はAnimatorだけに任せます。
     // Fade中にQueued Stateがあれば、完了直後に次のTransitionとして適用します。
     void Update(float deltaTime);
@@ -128,12 +165,32 @@ public:
     const Animator& GetAnimator() const { return m_Animator; }
 
 private:
+    const AnimatorParameter* FindParameter(const std::string& name) const;
+    AnimatorParameter* FindParameter(const std::string& name);
+
+    // 1 Conditionを現在Parameter値に対して評価します。
+    // 型不一致や未登録Parameterは成立しないConditionとして扱います。
+    bool EvaluateCondition(const AnimatorCondition& condition) const;
+
+    // 現在Stateから出るTransitionを登録順に調べ、最初に全Conditionが成立したものを実行します。
+    // Transition開始に成功した場合のみTriggerを消費します。
+    bool EvaluateTransitions();
+
+    void ConsumeTransitionTriggers(const AnimatorTransition& transition);
+
+private:
     // Animatorは実際のAnimation再生・時間・Pose評価を担当します。
     // State Machineは所有せず参照するため、AnimatorのLifetimeが本クラスより長い必要があります。
     Animator& m_Animator;
 
     // State名から定義へ引くRuntimeテーブルです。
     std::unordered_map<std::string, AnimatorStateDefinition> m_States;
+
+    // Parameter値はEntity/Animator Instanceごとに異なるRuntime StateなのでState Machineが保持します。
+    std::unordered_map<std::string, AnimatorParameter> m_Parameters;
+
+    // Transitionは登録順を優先順位として扱うためvectorで保持します。
+    std::vector<AnimatorTransition> m_Transitions;
 
     // CrossFade中もCurrentは遷移元を維持し、Pendingに遷移先を保持します。
     // Fade完了時にPending -> Currentへ昇格します。
