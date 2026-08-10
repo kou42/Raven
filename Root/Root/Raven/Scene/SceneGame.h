@@ -44,6 +44,11 @@ private:
     // SceneGameは「何を置くか」だけを担当し、Cube頂点生成はPrimitiveMeshFactoryへ分離します。
     void SpawnBoxTestBody();
 
+    // AnimationClip -> Animator -> AnimatorComponent -> AnimationSystem の
+    // 一連の再生経路を目視確認するためのCubeを生成します。
+    // Physics Componentを付けないことで、Transformの所有者をAnimationSystemだけに限定します。
+    void SpawnAnimationTestCube();
+
     // ========================================================================
     // Mouse Drag Impulse / Physics Ray Picking
     // ========================================================================
@@ -76,6 +81,7 @@ private:
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
     Entity m_FloorEntity;
     Entity m_BoxEntity;
+    Entity m_AnimationTestEntity;
 
     // ========================================================================
     // Broad Phase Debug Visualization
