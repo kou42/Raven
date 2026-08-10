@@ -13,13 +13,30 @@
 namespace Raven
 {
 
+// ============================================================================
+// AnimatorStateDefinition
+// ============================================================================
+// State Machine側で保持する「名前付きAnimation Stateの定義」です。
+// AnimatorStateがTimeなどの実行時状態を持つのに対し、こちらはClipと遷移設定だけを持ちます。
+//
+// まずはIdle / Walk / Runを安全に切り替えるための薄い層に限定し、Parameter / Condition /
+// BlendTreeなどはここへ詰め込まず、必要になった段階で別構造として拡張します。
 struct AnimatorStateDefinition
 {
     std::shared_ptr<AnimationClip> Clip;
+
+    // このStateへ遷移する際の標準CrossFade時間[秒]です。
     float CrossFadeDuration = 0.2f;
+
+    // Stateへ入り直した際にClip先頭から再生するかを指定します。
     bool RestartOnEnter = true;
 };
 
+// ============================================================================
+// LocomotionStateNames / LocomotionThresholds
+// ============================================================================
+// Idle / Walk / Runの名前と速度境界をGameplayコードから分離するための小さな設定です。
+// 汎用Parameter/Transitionを追加した後も、最小Locomotionをすぐ使える便利APIとして維持します。
 struct LocomotionStateNames
 {
     std::string Idle = "Idle";
@@ -29,44 +46,109 @@ struct LocomotionStateNames
 
 struct LocomotionThresholds
 {
+    // speed <= IdleMaxSpeed をIdleとします。
     float IdleMaxSpeed = 0.1f;
+
+    // speed < RunMinSpeed をWalk、それ以上をRunとします。
     float RunMinSpeed = 4.0f;
 };
 
+// ============================================================================
+// AnimatorStateMachine
+// ============================================================================
+// Animatorの上に置く薄いState管理層です。
+//
+// 責務は次の3つを中心に限定します。
+//  1. "Idle" / "Walk" / "Run" のような名前とAnimationClipを対応付ける
+//  2. Current / Pending / QueuedのState名を管理する
+//  3. Parameter / ConditionからState変更要求を作り、Animator::Play / CrossFadeへ変換する
+//
+// Animation時間、Loop、Pose Sample、CrossFade WeightなどのRuntime処理はAnimator側へ残します。
+// これによりState MachineがAnimation再生処理を二重管理しない構造になります。
+//
+// Queued StateはAnimatorがCrossFade割り込みに未対応な現在の段階で、Fade中に発生した
+// 「最新の遷移要求」を失わないための薄い補助機構です。将来Snapshot Poseを使ったInterrupt
+// TransitionをAnimatorへ実装した場合、このQueueポリシーは置き換え可能です。
 class AnimatorStateMachine
 {
 public:
-    explicit AnimatorStateMachine(Animator& animator) : m_Animator(animator) {}
-    bool AddState(std::string name, std::shared_ptr<AnimationClip> clip, float crossFadeDuration = 0.2f, bool restartOnEnter = true);
+    explicit AnimatorStateMachine(Animator& animator)
+        : m_Animator(animator)
+    {
+    }
+
+    // 名前付きStateを登録します。
+    // 同名Stateが既に存在する場合はfalseを返し、意図しない上書きを防ぎます。
+    bool AddState(
+        std::string name,
+        std::shared_ptr<AnimationClip> clip,
+        float crossFadeDuration = 0.2f,
+        bool restartOnEnter = true);
+
+    // 登録済みStateを削除します。
+    // Current / Pending / Queuedに該当する名前だった場合は対応する管理名も解除します。
     bool RemoveState(const std::string& name);
     bool HasState(const std::string& name) const;
+
+    // State定義への参照を取得します。未登録の場合はnullptrです。
     const AnimatorStateDefinition* FindState(const std::string& name) const;
+
+    // 初期Stateを設定します。
+    // startImmediately=trueならAnimator::Play()まで行い、そのStateを現在Stateにします。
     bool SetInitialState(const std::string& name, bool startImmediately = true);
+
+    // 登録済みStateへ遷移します。
+    // durationOverride < 0 の場合はState定義のCrossFadeDurationを使用します。
+    // AnimatorがCrossFade中で割り込みを拒否した場合、State名も変更しません。
     bool TransitionTo(const std::string& name, float durationOverride = -1.0f);
+
+    // ------------------------------------------------------------------------
+    // Animator Parameter
+    // ------------------------------------------------------------------------
+    // Parameter名もState名と同様に一意です。
+    // 型違いのSet/Getを誤って行った場合はfalseを返し、暗黙変換は行いません。
     bool AddFloatParameter(std::string name, float defaultValue = 0.0f);
     bool AddBoolParameter(std::string name, bool defaultValue = false);
     bool AddTriggerParameter(std::string name);
     bool RemoveParameter(const std::string& name);
     bool HasParameter(const std::string& name) const;
+
     bool SetFloat(const std::string& name, float value);
     bool SetBool(const std::string& name, bool value);
+
+    // TriggerはGameplay/Event側からSetTrigger()され、成立したTransitionが実際に開始した時だけ
+    // 自動的にfalseへ戻します。Fade中でTransition開始に失敗した場合は消費しません。
     bool SetTrigger(const std::string& name);
     bool ResetTrigger(const std::string& name);
+
     bool GetFloat(const std::string& name, float& outValue) const;
     bool GetBool(const std::string& name, bool& outValue) const;
-    bool AddTransition(AnimatorTransition transition);
-    const std::vector<AnimatorTransition>& GetTransitions() const { return m_Transitions; }
 
-    // Speed ParameterからIdle / Walk / Runを駆動する4本のTransitionを一括生成します。
-    // Idle->Walk / Walk->Idle / Walk->Run / Run->Walk の境界条件を一箇所へ集約します。
+    // ------------------------------------------------------------------------
+    // Animator Transition
+    // ------------------------------------------------------------------------
+    // From/To Stateが登録済みで、Conditionが参照するParameterも存在する場合だけ登録します。
+    // ConditionsはAND評価です。登録順がTransitionの優先順位になります。
+    bool AddTransition(AnimatorTransition transition);
+
+    const std::vector<AnimatorTransition>& GetTransitions() const
+    {
+        return m_Transitions;
+    }
+
+    // Speed Parameterを使うIdle / Walk / Run用の4本のTransitionを一括登録します。
+    // 生成する遷移は Idle->Walk, Walk->Idle, Walk->Run, Run->Walk です。
+    // Gameplay側に閾値判定を散らさず、SetFloat(speedParameterName, speed)だけで
+    // Locomotionの状態遷移を駆動できるようにするための便利APIです。
     bool AddLocomotionTransitions(
         const std::string& speedParameterName = "Speed",
         const LocomotionThresholds& thresholds = {},
         const LocomotionStateNames& stateNames = {},
         float crossFadeDuration = 0.2f);
 
-    // Character用の最小Locomotion Controllerを一括構築します。
-    // State 3個 + Speed Float Parameter + Transition 4本 + 初期Idleを生成します。
+    // Idle / Walk / Run State、Speed Parameter、4本のTransition、初期Idleをまとめて構築します。
+    // 個々の低レベルAPIは残したまま、一般的なCharacter Controllerの初期構築を簡潔にします。
+    // 途中で失敗した場合に半端なControllerを残さないよう、事前検証後に構築します。
     bool BuildLocomotionController(
         std::shared_ptr<AnimationClip> idleClip,
         std::shared_ptr<AnimationClip> walkClip,
@@ -77,29 +159,68 @@ public:
         float crossFadeDuration = 0.2f,
         bool startImmediately = true);
 
-    bool UpdateLocomotion(float speed, const LocomotionThresholds& thresholds = {}, const LocomotionStateNames& stateNames = {});
+    // 移動速度からIdle / Walk / Runを選択してTransitionTo()へ変換します。
+    // Gameplay側は毎Frameこの関数へ速度を渡すだけでよく、State名や閾値判定を散在させません。
+    //
+    // Animatorは現在Fade中の別Transition割り込みをまだ許可していないため、
+    // Fade中に目標Stateが変わった場合はm_QueuedStateNameへ保存し、Fade完了直後に適用します。
+    bool UpdateLocomotion(
+        float speed,
+        const LocomotionThresholds& thresholds = {},
+        const LocomotionStateNames& stateNames = {});
+
+    // Parameter Transitionを評価してからAnimatorを更新し、CrossFade完了をState名へ同期します。
+    // State Machine自身はAnimation時間を別途持たず、時間管理はAnimatorだけに任せます。
+    // Fade中にQueued Stateがあれば、完了直後に次のTransitionとして適用します。
     void Update(float deltaTime);
+
     bool HasCurrentState() const { return !m_CurrentStateName.empty(); }
     const std::string& GetCurrentStateName() const { return m_CurrentStateName; }
+
+    // CrossFade中は遷移先State名を返します。遷移中でなければ空文字です。
     const std::string& GetPendingStateName() const { return m_PendingStateName; }
+
+    // Fade中に次の目標Stateが変化した場合の予約先です。
+    // 例: Idle -> WalkのFade中に速度がRun領域へ入った場合、Runをここへ保持します。
     const std::string& GetQueuedStateName() const { return m_QueuedStateName; }
+
     Animator& GetAnimator() { return m_Animator; }
     const Animator& GetAnimator() const { return m_Animator; }
 
 private:
     const AnimatorParameter* FindParameter(const std::string& name) const;
     AnimatorParameter* FindParameter(const std::string& name);
+
+    // 1 Conditionを現在Parameter値に対して評価します。
+    // 型不一致や未登録Parameterは成立しないConditionとして扱います。
     bool EvaluateCondition(const AnimatorCondition& condition) const;
+
+    // 現在Stateから出るTransitionを登録順に調べ、最初に全Conditionが成立したものを実行します。
+    // Transition開始に成功した場合のみTriggerを消費します。
     bool EvaluateTransitions();
+
     void ConsumeTransitionTriggers(const AnimatorTransition& transition);
 
 private:
+    // Animatorは実際のAnimation再生・時間・Pose評価を担当します。
+    // State Machineは所有せず参照するため、AnimatorのLifetimeが本クラスより長い必要があります。
     Animator& m_Animator;
+
+    // State名から定義へ引くRuntimeテーブルです。
     std::unordered_map<std::string, AnimatorStateDefinition> m_States;
+
+    // Parameter値はEntity/Animator Instanceごとに異なるRuntime StateなのでState Machineが保持します。
     std::unordered_map<std::string, AnimatorParameter> m_Parameters;
+
+    // Transitionは登録順を優先順位として扱うためvectorで保持します。
     std::vector<AnimatorTransition> m_Transitions;
+
+    // CrossFade中もCurrentは遷移元を維持し、Pendingに遷移先を保持します。
+    // Fade完了時にPending -> Currentへ昇格します。
     std::string m_CurrentStateName;
     std::string m_PendingStateName;
+
+    // Fade中にさらに目標が変わった場合の「最新1件」の予約です。
     std::string m_QueuedStateName;
 };
 
