@@ -102,4 +102,70 @@ bool AnimatorStateMachine::BuildLocomotionController(
     return true;
 }
 
+bool AnimatorStateMachine::AddCharacterParameters(
+    const CharacterAnimationParameters& parameterNames,
+    bool initialGrounded)
+{
+    // Parameter名の重複は型の異なる値が同じ名前を奪い合うため禁止します。
+    // SpeedだけはBuildLocomotionController()が先に作る一般的な構築順を許可します。
+    if (parameterNames.Speed.empty() || parameterNames.Grounded.empty() || parameterNames.Jump.empty() ||
+        parameterNames.Speed == parameterNames.Grounded ||
+        parameterNames.Speed == parameterNames.Jump ||
+        parameterNames.Grounded == parameterNames.Jump)
+    {
+        return false;
+    }
+
+    float speed = 0.0f;
+    if (HasParameter(parameterNames.Speed) && !GetFloat(parameterNames.Speed, speed))
+    {
+        return false;
+    }
+
+    if (HasParameter(parameterNames.Grounded) || HasParameter(parameterNames.Jump))
+    {
+        return false;
+    }
+
+    // Groundedは継続状態なのでBool、Jumpは押下イベントなのでTriggerとして保持します。
+    // この区別によりJump入力を毎Framefalseへ戻す処理をGameplay側へ要求しません。
+    if (!HasParameter(parameterNames.Speed) && !AddFloatParameter(parameterNames.Speed, 0.0f))
+    {
+        return false;
+    }
+
+    if (!AddBoolParameter(parameterNames.Grounded, initialGrounded) ||
+        !AddTriggerParameter(parameterNames.Jump))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool AnimatorStateMachine::UpdateCharacterParameters(
+    float speed,
+    bool grounded,
+    bool jumpRequested,
+    const CharacterAnimationParameters& parameterNames)
+{
+    // 物理・入力側はAnimation State名を知らず、観測したCharacter状態だけを渡します。
+    // State遷移の条件はAnimatorTransition側へ集約することでGameplayとの依存を薄く保ちます。
+    if (!SetFloat(parameterNames.Speed, speed) ||
+        !SetBool(parameterNames.Grounded, grounded))
+    {
+        return false;
+    }
+
+    // Triggerは成立したTransitionが開始した時点でState Machine自身が消費します。
+    // jumpRequested=falseではResetしません。Fade中などでまだ消費できていないJump要求を
+    // 次Frameまで保持することがTrigger Parameterの重要な役割だからです。
+    if (jumpRequested && !SetTrigger(parameterNames.Jump))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace Raven
