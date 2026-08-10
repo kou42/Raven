@@ -11,10 +11,13 @@ namespace Raven
 // AnimationClip::Sample()が返す「指定時刻のTransform」です。
 // TransformComponentそのものを返さないことでAnimation層をScene/ECSから独立させます。
 // これにより将来的にPose同士のBlendやCross FadeをRenderer/Sceneに依存せず実装できます。
+//
+// RotationはQuaternionを正規表現として保持します。
+// SceneのTransformComponentがEuler角を使っている間だけ、AnimationSystem境界でEulerへ戻します。
 struct TransformPose
 {
     math::Vec3 Position{ 0.0f, 0.0f, 0.0f };
-    math::Vec3 Rotation{ 0.0f, 0.0f, 0.0f };
+    math::Quat Rotation = math::Quat::Identity();
     math::Vec3 Scale{ 1.0f, 1.0f, 1.0f };
 };
 
