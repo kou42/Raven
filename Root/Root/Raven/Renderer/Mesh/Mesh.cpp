@@ -10,6 +10,31 @@
 
 namespace Raven
 {
+namespace
+{
+std::vector<float> BuildVertexUploadData(const std::vector<MeshVertex>& vertices)
+{
+    // ========================================================================
+    // MeshVertex -> GPU upload data
+    // ========================================================================
+    // 現在のVertexBuffer APIはfloat配列を受け取るため、MeshVertexを直接reinterpret_castせず
+    // 明示的にfloat列へ展開します。Math型にpadding/alignmentが追加されてもGPU strideを
+    // 安定させられ、初期UploadとDynamic更新で同じレイアウト規約を共有できます。
+    std::vector<float> vertexData;
+    vertexData.reserve(vertices.size() * 8);
+
+    for (const MeshVertex& vertex : vertices)
+    {
+        vertexData.insert(vertexData.end(), {
+            vertex.Position.x, vertex.Position.y, vertex.Position.z,
+            vertex.Color.x, vertex.Color.y, vertex.Color.z,
+            vertex.TexCoord.x, vertex.TexCoord.y
+        });
+    }
+
+    return vertexData;
+}
+} // namespace
 
 Mesh::Mesh(Ref<MeshGeometry> geometry)
     : m_Geometry(std::move(geometry))
@@ -26,47 +51,31 @@ Mesh::Mesh(Ref<VertexArray> vertexArray, int32_t indexCount)
 void Mesh::BuildRenderResources()
 {
     m_VertexArray = nullptr;
+    m_VertexBuffer = nullptr;
     m_IndexCount = 0;
+    m_UploadedGeometryRevision = 0;
 
     if (!m_Geometry || m_Geometry->GetVertices().empty())
     {
         return;
     }
 
-    const auto& vertices = m_Geometry->GetVertices();
     const auto& indices = m_Geometry->GetIndices();
-
-    // ========================================================================
-    // MeshVertex -> GPU upload data
-    // ========================================================================
-    // 現在のVertexBuffer::Createはfloat配列を受け取るAPIなので、MeshVertexを直接
-    // reinterpret_castせず明示的にfloat列へ展開します。
-    // こうしておけばMath型のpadding/alignmentが将来変わってもGPU strideが壊れません。
-    std::vector<float> vertexData;
-    vertexData.reserve(vertices.size() * 8);
-
-    for (const MeshVertex& vertex : vertices)
-    {
-        vertexData.insert(vertexData.end(), {
-            vertex.Position.x, vertex.Position.y, vertex.Position.z,
-            vertex.Color.x, vertex.Color.y, vertex.Color.z,
-            vertex.TexCoord.x, vertex.TexCoord.y
-        });
-    }
+    const std::vector<float> vertexData = BuildVertexUploadData(m_Geometry->GetVertices());
 
     m_VertexArray = VertexArray::Create();
 
-    auto vertexBuffer = VertexBuffer::Create(
+    m_VertexBuffer = VertexBuffer::Create(
         vertexData.data(),
         static_cast<uint32_t>(vertexData.size() * sizeof(float)));
 
-    vertexBuffer->SetLayout({
+    m_VertexBuffer->SetLayout({
         { ShaderDataType::Float3, "a_Position" },
         { ShaderDataType::Float3, "a_Color" },
         { ShaderDataType::Float2, "a_Texcord" }
     });
 
-    m_VertexArray->AddVertexBuffer(vertexBuffer);
+    m_VertexArray->AddVertexBuffer(m_VertexBuffer);
 
     if (!indices.empty())
     {
@@ -77,6 +86,53 @@ void Mesh::BuildRenderResources()
         m_VertexArray->SetIndexBuffer(indexBuffer);
         m_IndexCount = static_cast<uint32_t>(indices.size());
     }
+
+    m_UploadedGeometryRevision = m_Geometry->GetRevision();
+}
+
+bool Mesh::UploadVertexData()
+{
+    if (!m_Geometry || !m_VertexBuffer || m_Geometry->GetVertices().empty())
+    {
+        return false;
+    }
+
+    const std::vector<float> vertexData = BuildVertexUploadData(m_Geometry->GetVertices());
+
+    m_VertexBuffer->SetData(
+        vertexData.data(),
+        static_cast<uint32_t>(vertexData.size() * sizeof(float)));
+
+    m_UploadedGeometryRevision = m_Geometry->GetRevision();
+    return true;
+}
+
+bool Mesh::SyncGeometry()
+{
+    if (!m_Geometry
+        || m_Geometry->GetGeometryUsage() != GeometryUsage::Dynamic
+        || !m_VertexBuffer)
+    {
+        return false;
+    }
+
+    // CPU Geometryに変更が無い場合はVBO Uploadを行いません。
+    // Deformer側は毎フレームSyncGeometry()を呼べるため、呼び出し側でdirty管理を重複して
+    // 実装する必要がありません。
+    if (m_UploadedGeometryRevision == m_Geometry->GetRevision())
+    {
+        return false;
+    }
+
+    // この段階ではFixed TopologyのDynamic Geometryだけを対象にしています。
+    // Dynamic TopologyはIndexBuffer更新とVAO再構築の責務が増えるため、頂点変形とは分離して
+    // 後続実装で追加します。
+    if (m_Geometry->GetTopologyUsage() != TopologyUsage::Fixed)
+    {
+        return false;
+    }
+
+    return UploadVertexData();
 }
 
 void Mesh::Draw() const
