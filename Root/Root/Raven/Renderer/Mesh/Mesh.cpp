@@ -1,6 +1,7 @@
 #include "Raven/Renderer/Mesh/Mesh.h"
 
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -14,6 +15,12 @@ Mesh::Mesh(Ref<MeshGeometry> geometry)
     : m_Geometry(std::move(geometry))
 {
     BuildRenderResources();
+}
+
+Mesh::Mesh(Ref<VertexArray> vertexArray, int32_t indexCount)
+    : m_VertexArray(std::move(vertexArray)),
+      m_IndexCount(indexCount > 0 ? static_cast<uint32_t>(indexCount) : 0u)
+{
 }
 
 void Mesh::BuildRenderResources()
