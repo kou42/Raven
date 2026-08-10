@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <utility>
 
 namespace Raven
 {
@@ -11,7 +12,7 @@ namespace
 // ============================================================================
 // SampleVec3Track
 // ============================================================================
-// Position / Scale Keyを線形補間します。
+// Position / Translation / Scale Keyを線形補間します。
 math::Vec3 SampleVec3Track(
     const std::vector<AnimationKeyframe<math::Vec3>>& keys,
     float time,
@@ -100,6 +101,33 @@ math::Quat SampleQuatTrack(
     return math::Quat::Slerp(leftIt->Value, rightIt->Value, alpha);
 }
 
+// 1 Bone分のTrackを、Bind Local Transformを基準値として評価します。
+// Channel単位でKeyが欠けていてもBind値を維持することが重要です。
+BoneTransform SampleBoneTransform(
+    const TransformAnimationTrack& track,
+    float time,
+    const BoneTransform& bindTransform)
+{
+    BoneTransform result = bindTransform;
+
+    result.Translation = SampleVec3Track(
+        track.PositionKeys,
+        time,
+        bindTransform.Translation);
+
+    result.Rotation = SampleQuatTrack(
+        track.RotationKeys,
+        time,
+        bindTransform.Rotation);
+
+    result.Scale = SampleVec3Track(
+        track.ScaleKeys,
+        time,
+        bindTransform.Scale);
+
+    return result;
+}
+
 } // namespace
 
 AnimationClip::AnimationClip(float duration)
@@ -137,6 +165,91 @@ TransformPose AnimationClip::Sample(float time) const
         pose.Scale);
 
     return pose;
+}
+
+bool AnimationClip::AddBoneTrack(BoneAnimationTrack track)
+{
+    if (track.Bone == InvalidBoneIndex)
+    {
+        return false;
+    }
+
+    // 1 Boneにつき1 Trackという契約にします。
+    // Import時の重複をここで拒否しておけばRuntime Sample時の優先順位が不要になります。
+    if (FindBoneTrack(track.Bone) != nullptr)
+    {
+        return false;
+    }
+
+    m_BoneTracks.push_back(std::move(track));
+    return true;
+}
+
+const BoneAnimationTrack* AnimationClip::FindBoneTrack(BoneIndex boneIndex) const
+{
+    const auto it = std::find_if(
+        m_BoneTracks.begin(),
+        m_BoneTracks.end(),
+        [boneIndex](const BoneAnimationTrack& track)
+        {
+            return track.Bone == boneIndex;
+        });
+
+    return (it != m_BoneTracks.end()) ? &(*it) : nullptr;
+}
+
+BoneAnimationTrack* AnimationClip::FindBoneTrack(BoneIndex boneIndex)
+{
+    const auto it = std::find_if(
+        m_BoneTracks.begin(),
+        m_BoneTracks.end(),
+        [boneIndex](const BoneAnimationTrack& track)
+        {
+            return track.Bone == boneIndex;
+        });
+
+    return (it != m_BoneTracks.end()) ? &(*it) : nullptr;
+}
+
+bool AnimationClip::Sample(
+    const Skeleton& skeleton,
+    float time,
+    SkeletonPose& outPose) const
+{
+    // SkeletonPoseは最初にBind Poseへ戻します。
+    // これによりTrackを持たないBoneはBind Local Transformをそのまま維持できます。
+    outPose.ResetToBindPose(skeleton);
+
+    // Clip単体のSampleなのでAnimatorのLoop規則はここへ持ち込みません。
+    // AnimatorStateが時間を[0, Duration]へ正規化し、Clipは渡された時刻を評価するだけです。
+    const float sampleTime = std::max(time, 0.0f);
+
+    for (const BoneAnimationTrack& track : m_BoneTracks)
+    {
+        // ClipとSkeletonの対応が壊れている場合は、別Skeleton向けClipを誤適用している可能性が
+        // 高いため、黙って無視せずSample失敗として返します。
+        if (!skeleton.IsValidBoneIndex(track.Bone))
+        {
+            return false;
+        }
+
+        const BoneTransform& bindTransform =
+            skeleton.GetBone(track.Bone).BindLocalTransform;
+
+        const BoneTransform sampled = SampleBoneTransform(
+            track.Transform,
+            sampleTime,
+            bindTransform);
+
+        if (!outPose.SetLocalTransform(track.Bone, sampled))
+        {
+            return false;
+        }
+    }
+
+    // ResetToBindPose()時にもGlobalは構築されますが、その後Track対象BoneのLocal値を
+    // 上書きしているため、最後に一度だけ階層Global Transformを再計算します。
+    return outPose.UpdateGlobalTransforms(skeleton);
 }
 
 } // namespace Raven
