@@ -24,45 +24,44 @@ Ref<Mesh> CreateIndexedMesh(std::vector<MeshVertex> vertices, std::vector<uint32
 
     return CreateRef<Mesh>(std::move(geometry));
 }
+
+Ref<Mesh> CreateDynamicIndexedMesh(std::vector<MeshVertex> vertices, std::vector<uint32_t> indices)
+{
+    auto geometry = CreateRef<MeshGeometry>(
+        std::move(vertices),
+        std::move(indices),
+        GeometryUsage::Dynamic,
+        TopologyUsage::Fixed);
+
+    return CreateRef<Mesh>(std::move(geometry));
+}
 } // namespace
 
 Ref<Mesh> PrimitiveMeshFactory::CreateCube()
 {
-    // ========================================================================
-    // Unit Cube
-    // ========================================================================
-    // 原点中心で各軸[-0.5, +0.5]のCubeです。
-    // 面ごとに4頂点を持たせることでUVを独立して割り当てています。
-    // 現在のShader入力(position/color/uv)に合わせ、法線はまだ持たせません。
     constexpr float h = 0.5f;
 
     const std::vector<MeshVertex> vertices = {
-        // +Z
         { {-h,-h, h}, {0.85f,0.55f,0.30f}, {0.0f,0.0f} },
         { { h,-h, h}, {0.85f,0.55f,0.30f}, {1.0f,0.0f} },
         { { h, h, h}, {0.85f,0.55f,0.30f}, {1.0f,1.0f} },
         { {-h, h, h}, {0.85f,0.55f,0.30f}, {0.0f,1.0f} },
-        // -Z
         { { h,-h,-h}, {0.75f,0.45f,0.25f}, {0.0f,0.0f} },
         { {-h,-h,-h}, {0.75f,0.45f,0.25f}, {1.0f,0.0f} },
         { {-h, h,-h}, {0.75f,0.45f,0.25f}, {1.0f,1.0f} },
         { { h, h,-h}, {0.75f,0.45f,0.25f}, {0.0f,1.0f} },
-        // +X
         { { h,-h, h}, {0.90f,0.62f,0.34f}, {0.0f,0.0f} },
         { { h,-h,-h}, {0.90f,0.62f,0.34f}, {1.0f,0.0f} },
         { { h, h,-h}, {0.90f,0.62f,0.34f}, {1.0f,1.0f} },
         { { h, h, h}, {0.90f,0.62f,0.34f}, {0.0f,1.0f} },
-        // -X
         { {-h,-h,-h}, {0.70f,0.40f,0.22f}, {0.0f,0.0f} },
         { {-h,-h, h}, {0.70f,0.40f,0.22f}, {1.0f,0.0f} },
         { {-h, h, h}, {0.70f,0.40f,0.22f}, {1.0f,1.0f} },
         { {-h, h,-h}, {0.70f,0.40f,0.22f}, {0.0f,1.0f} },
-        // +Y
         { {-h, h, h}, {0.95f,0.70f,0.40f}, {0.0f,0.0f} },
         { { h, h, h}, {0.95f,0.70f,0.40f}, {1.0f,0.0f} },
         { { h, h,-h}, {0.95f,0.70f,0.40f}, {1.0f,1.0f} },
         { {-h, h,-h}, {0.95f,0.70f,0.40f}, {0.0f,1.0f} },
-        // -Y
         { {-h,-h,-h}, {0.65f,0.35f,0.20f}, {0.0f,0.0f} },
         { { h,-h,-h}, {0.65f,0.35f,0.20f}, {1.0f,0.0f} },
         { { h,-h, h}, {0.65f,0.35f,0.20f}, {1.0f,1.0f} },
@@ -131,6 +130,57 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
     }
 
     return CreateIndexedMesh(std::move(vertices), std::move(indices));
+}
+
+Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(int rows, int columns)
+{
+    rows = rows < 1 ? 1 : rows;
+    columns = columns < 1 ? 1 : columns;
+
+    std::vector<MeshVertex> vertices;
+    std::vector<uint32_t> indices;
+
+    vertices.reserve(static_cast<size_t>(rows + 1) * static_cast<size_t>(columns + 1));
+    indices.reserve(static_cast<size_t>(rows) * static_cast<size_t>(columns) * 6);
+
+    // ========================================================================
+    // Dynamic Grid Geometry
+    // ========================================================================
+    // XZ平面上の[-0.5,+0.5]を規則格子へ分割します。
+    // Topologyは生成後固定し、WaveMeshDeformerなどはPositionだけを変更します。
+    for (int row = 0; row <= rows; ++row)
+    {
+        const float v = static_cast<float>(row) / static_cast<float>(rows);
+        const float z = v - 0.5f;
+
+        for (int column = 0; column <= columns; ++column)
+        {
+            const float u = static_cast<float>(column) / static_cast<float>(columns);
+            const float x = u - 0.5f;
+
+            vertices.push_back({
+                { x, 0.0f, z },
+                { 0.25f + 0.65f * u, 0.55f + 0.35f * v, 0.95f },
+                { u, v }
+            });
+        }
+    }
+
+    for (int row = 0; row < rows; ++row)
+    {
+        for (int column = 0; column < columns; ++column)
+        {
+            const uint32_t a = static_cast<uint32_t>(row * (columns + 1) + column);
+            const uint32_t b = a + static_cast<uint32_t>(columns + 1);
+
+            indices.insert(indices.end(), {
+                a, b, a + 1,
+                b, b + 1, a + 1
+            });
+        }
+    }
+
+    return CreateDynamicIndexedMesh(std::move(vertices), std::move(indices));
 }
 
 } // namespace Raven
