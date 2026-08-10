@@ -155,6 +155,16 @@ void Scene::DestroyEntity(Entity entity)
 #endif
 }
 
+const ph::PhysicsWorld& Scene::GetPhysicsWorld() const
+{
+    return m_PhysicsWorld;
+}
+
+ph::PhysicsWorld& Scene::GetPhysicsWorld()
+{
+    return m_PhysicsWorld;
+}
+
 void Scene::OnCreate()
 {
 }

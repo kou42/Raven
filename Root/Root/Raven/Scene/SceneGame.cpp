@@ -246,7 +246,7 @@ void SceneGame::UpdateMouseDragImpulse()
     const bool pressedThisFrame = leftPressed && !m_WasLeftMousePressed;
     const bool releasedThisFrame = !leftPressed && m_WasLeftMousePressed;
 
-    ph::PhysicsWorld* physicsWorld = m_PhysicsDebugRenderer.GetBoundPhysicsWorld();
+    ph::PhysicsWorld* physicsWorld = &GetPhysicsWorld();
 
     if (pressedThisFrame)
     {

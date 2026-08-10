@@ -63,6 +63,18 @@ public:
     void QueueDestroyEntity(Entity entity);
     void FlushDestroyedEntities();
 
+    // ========================================================================
+    // Physics World Access
+    // ========================================================================
+    // Sceneが所有しているPhysicsWorldへアクセスします。
+    //
+    // ゲーム側からRayCast / AddImpulse / QueryAABBなどの
+    // PhysicsWorld公開APIを利用するための正式な入口です。
+    //
+    // PhysicsWorldそのものの所有権はSceneが保持します。
+    const ph::PhysicsWorld& GetPhysicsWorld() const;
+    ph::PhysicsWorld& GetPhysicsWorld();
+
     //+---------------------------------------------------------------------
     // テンプレート
     //+---------------------------------------------------------------------

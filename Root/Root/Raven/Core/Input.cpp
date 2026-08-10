@@ -14,7 +14,7 @@ bool Input::IsKeyPressed(int keycode)
 
 bool Input::IsMouseButtonPressed(int button)
 {
-    return s_Instance && s_Instance->IsMouseButtonPressed(button);
+    return s_Instance && s_Instance->IsMousePressedImpl(button);
 }
 
 std::pair<float, float> Input::GetMousePosition()
