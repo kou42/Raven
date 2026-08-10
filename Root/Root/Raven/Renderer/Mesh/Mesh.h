@@ -20,6 +20,12 @@ class Mesh
 public:
     explicit Mesh(Ref<MeshGeometry> geometry);
 
+    // PhysicsDebugRendererのように、そのフレームだけ使うGPUデータを直接組み立てる
+    // 低レベル描画経路との互換用です。通常のScene MeshはMeshGeometry経由を使用します。
+    // Debug描画も後でDynamic MeshGeometryへ統合できますが、今回の責務分離とは切り離して
+    // 既存のデバッグ機能を壊さず段階的に移行します。
+    Mesh(Ref<VertexArray> vertexArray, int32_t indexCount);
+
     void Draw() const;
 
     const Ref<MeshGeometry>& GetGeometry() const
