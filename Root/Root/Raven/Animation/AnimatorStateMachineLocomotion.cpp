@@ -55,33 +55,13 @@ bool AnimatorStateMachine::UpdateCharacterParameters(float speed, bool grounded,
     return true;
 }
 
-bool AnimatorStateMachine::AddJumpStateAndTransitions(
-    std::shared_ptr<AnimationClip> jumpClip,
-    const LocomotionThresholds& thresholds,
-    const LocomotionStateNames& locomotionStateNames,
-    const JumpStateNames& jumpStateNames,
-    const CharacterAnimationParameters& parameterNames,
-    float crossFadeDuration)
+bool AnimatorStateMachine::AddJumpStateAndTransitions(std::shared_ptr<AnimationClip> jumpClip, const LocomotionThresholds& thresholds, const LocomotionStateNames& locomotionStateNames, const JumpStateNames& jumpStateNames, const CharacterAnimationParameters& parameterNames, float crossFadeDuration)
 {
-    if (!jumpClip || jumpStateNames.Jump.empty() || HasState(jumpStateNames.Jump) ||
-        jumpStateNames.Jump == locomotionStateNames.Idle || jumpStateNames.Jump == locomotionStateNames.Walk || jumpStateNames.Jump == locomotionStateNames.Run ||
-        !HasState(locomotionStateNames.Idle) || !HasState(locomotionStateNames.Walk) || !HasState(locomotionStateNames.Run) ||
-        !std::isfinite(thresholds.IdleMaxSpeed) || !std::isfinite(thresholds.RunMinSpeed) || thresholds.IdleMaxSpeed >= thresholds.RunMinSpeed ||
-        !std::isfinite(crossFadeDuration) || crossFadeDuration < 0.0f)
-    {
-        return false;
-    }
+    if (!jumpClip || jumpStateNames.Jump.empty() || HasState(jumpStateNames.Jump) || jumpStateNames.Jump == locomotionStateNames.Idle || jumpStateNames.Jump == locomotionStateNames.Walk || jumpStateNames.Jump == locomotionStateNames.Run || !HasState(locomotionStateNames.Idle) || !HasState(locomotionStateNames.Walk) || !HasState(locomotionStateNames.Run) || !std::isfinite(thresholds.IdleMaxSpeed) || !std::isfinite(thresholds.RunMinSpeed) || thresholds.IdleMaxSpeed >= thresholds.RunMinSpeed || !std::isfinite(crossFadeDuration) || crossFadeDuration < 0.0f) return false;
 
-    // Parameterの存在だけでなく型も確認します。GetBool()はBool/Triggerの双方を読めるため、
-    // JumpについてはSetTrigger()を一度使ってTrigger型であることを検証し、直後にResetします。
     float speed = 0.0f;
     bool grounded = false;
-    if (!GetFloat(parameterNames.Speed, speed) || !GetBool(parameterNames.Grounded, grounded) ||
-        !SetTrigger(parameterNames.Jump) || !ResetTrigger(parameterNames.Jump))
-    {
-        return false;
-    }
-
+    if (!GetFloat(parameterNames.Speed, speed) || !GetBool(parameterNames.Grounded, grounded) || !SetTrigger(parameterNames.Jump) || !ResetTrigger(parameterNames.Jump)) return false;
     if (!AddState(jumpStateNames.Jump, std::move(jumpClip), crossFadeDuration)) return false;
 
     auto makeJumpTransition = [&](const std::string& from)
@@ -96,11 +76,7 @@ bool AnimatorStateMachine::AddJumpStateAndTransitions(
         return transition;
     };
 
-    // Any State未実装の現段階ではLocomotion 3 StateからJumpへ明示的に接続します。
-    const AnimatorTransition jumpTransitions[] = {
-        makeJumpTransition(locomotionStateNames.Idle),
-        makeJumpTransition(locomotionStateNames.Walk),
-        makeJumpTransition(locomotionStateNames.Run) };
+    const AnimatorTransition jumpTransitions[] = { makeJumpTransition(locomotionStateNames.Idle), makeJumpTransition(locomotionStateNames.Walk), makeJumpTransition(locomotionStateNames.Run) };
     for (const AnimatorTransition& transition : jumpTransitions) if (!AddTransition(transition)) return false;
 
     auto makeLandingTransition = [&](const std::string& to, AnimatorConditionOperator speedOperator, float speedThreshold)
@@ -109,13 +85,11 @@ bool AnimatorStateMachine::AddJumpStateAndTransitions(
         transition.FromState = jumpStateNames.Jump;
         transition.ToState = to;
         transition.CrossFadeDuration = crossFadeDuration;
-        // Groundedになった瞬間のSpeedを使い、着地後に不要なIdle経由を挟まず直接適切なStateへ戻します。
         transition.Conditions.push_back(AnimatorCondition{ parameterNames.Grounded, AnimatorConditionOperator::Equal, true });
         transition.Conditions.push_back(AnimatorCondition{ parameterNames.Speed, speedOperator, speedThreshold });
         return transition;
     };
 
-    // Idle / Walk / Runの速度領域を重複なく3分割します。
     AnimatorTransition landIdle = makeLandingTransition(locomotionStateNames.Idle, AnimatorConditionOperator::LessEqual, thresholds.IdleMaxSpeed);
     AnimatorTransition landRun = makeLandingTransition(locomotionStateNames.Run, AnimatorConditionOperator::GreaterEqual, thresholds.RunMinSpeed);
     AnimatorTransition landWalk{};
@@ -126,9 +100,52 @@ bool AnimatorStateMachine::AddJumpStateAndTransitions(
     landWalk.Conditions.push_back(AnimatorCondition{ parameterNames.Speed, AnimatorConditionOperator::Greater, thresholds.IdleMaxSpeed });
     landWalk.Conditions.push_back(AnimatorCondition{ parameterNames.Speed, AnimatorConditionOperator::Less, thresholds.RunMinSpeed });
 
-    // 登録順はIdle -> Walk -> Runですが速度条件が排他的なので、同時成立による優先順位依存はありません。
     if (!AddTransition(std::move(landIdle)) || !AddTransition(std::move(landWalk)) || !AddTransition(std::move(landRun))) return false;
     return true;
+}
+
+bool AnimatorStateMachine::BuildCharacterController(
+    std::shared_ptr<AnimationClip> idleClip,
+    std::shared_ptr<AnimationClip> walkClip,
+    std::shared_ptr<AnimationClip> runClip,
+    std::shared_ptr<AnimationClip> jumpClip,
+    const LocomotionThresholds& thresholds,
+    const LocomotionStateNames& locomotionStateNames,
+    const JumpStateNames& jumpStateNames,
+    const CharacterAnimationParameters& parameterNames,
+    float locomotionCrossFadeDuration,
+    float jumpCrossFadeDuration,
+    bool initialGrounded,
+    bool startImmediately)
+{
+    // 一括Builderでは名前衝突を先に検証します。
+    // 特にSpeed名はBuildLocomotionControllerへ渡す値とCharacter Parameter側で一致している必要があります。
+    if (parameterNames.Speed.empty() || parameterNames.Grounded.empty() || parameterNames.Jump.empty() ||
+        parameterNames.Speed == parameterNames.Grounded || parameterNames.Speed == parameterNames.Jump || parameterNames.Grounded == parameterNames.Jump ||
+        jumpStateNames.Jump.empty() || jumpStateNames.Jump == locomotionStateNames.Idle ||
+        jumpStateNames.Jump == locomotionStateNames.Walk || jumpStateNames.Jump == locomotionStateNames.Run ||
+        HasParameter(parameterNames.Grounded) || HasParameter(parameterNames.Jump) || HasState(jumpStateNames.Jump))
+    {
+        return false;
+    }
+
+    // Locomotionを先に構築し、そのSpeed Parameterを再利用してGrounded / Jumpを追加します。
+    // startImmediatelyは最後まで構築できた後に適用したいため、Locomotion構築時はいったんfalseにします。
+    if (!BuildLocomotionController(
+            std::move(idleClip), std::move(walkClip), std::move(runClip),
+            thresholds, locomotionStateNames, parameterNames.Speed,
+            locomotionCrossFadeDuration, false) ||
+        !AddCharacterParameters(parameterNames, initialGrounded) ||
+        !AddJumpStateAndTransitions(
+            std::move(jumpClip), thresholds, locomotionStateNames,
+            jumpStateNames, parameterNames, jumpCrossFadeDuration))
+    {
+        return false;
+    }
+
+    // Controller定義が完成してから初期Stateを開始します。
+    // これにより構築途中の状態でAnimation再生だけが始まることを避けます。
+    return SetInitialState(locomotionStateNames.Idle, startImmediately);
 }
 
 } // namespace Raven
