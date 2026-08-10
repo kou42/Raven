@@ -46,7 +46,13 @@ void AnimationSystem::Update(Scene& scene, float deltaTime)
         const TransformPose& pose = animator.GetCurrentPose();
 
         transform.Position = pose.Position;
-        transform.Rotation = pose.Rotation;
+
+        // Animation内部ではQuaternion + Slerpを正規表現にします。
+        // Scene/Renderer側のTransformComponentは現時点でEuler角を保持しているため、
+        // ECS境界でのみEuler XYZへ変換します。将来Transform自体をQuaternion化すれば
+        // この変換は不要になり、AnimationからRendererまでQuaternionを維持できます。
+        transform.Rotation = pose.Rotation.ToEulerXYZ();
+
         transform.Scale = pose.Scale;
     }
 }
