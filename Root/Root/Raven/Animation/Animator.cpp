@@ -23,11 +23,14 @@ void Animator::Play(std::shared_ptr<AnimationClip> clip, bool restart)
 
     if (restart || clipChanged)
     {
-        m_CurrentTime = 0.0f;
+        // 逆再生の場合は末尾から開始した方が自然です。
+        // これにより SetSpeed(-1) -> Play(clip) だけで逆方向再生できます。
+        m_CurrentTime = (m_Speed < 0.0f) ? m_Clip->GetDuration() : 0.0f;
     }
 
     m_Playing = true;
     m_Paused = false;
+    m_Finished = false;
     EvaluateCurrentPose();
 }
 
@@ -53,13 +56,50 @@ void Animator::Resume()
 
 void Animator::Stop()
 {
-    // StopではClip参照を残します。
-    // これによりStop後も先頭Poseを保持でき、再度Play(m_Clip)する場合にも
-    // Assetを外側で取り直す必要がありません。
+    // Stopは「再生終了」とは区別します。
+    // Finishedをfalseへ戻すことで、State Machineが手動StopをClip完走と誤認しません。
     m_CurrentTime = 0.0f;
     m_Playing = false;
     m_Paused = false;
+    m_Finished = false;
     EvaluateCurrentPose();
+}
+
+void Animator::SetCurrentTime(float time)
+{
+    if (!m_Clip)
+    {
+        m_CurrentTime = 0.0f;
+        m_CurrentPose = TransformPose{};
+        return;
+    }
+
+    m_CurrentTime = std::clamp(time, 0.0f, m_Clip->GetDuration());
+    m_Finished = false;
+    EvaluateCurrentPose();
+}
+
+void Animator::SetNormalizedTime(float normalizedTime)
+{
+    if (!m_Clip || m_Clip->GetDuration() <= 0.0f)
+    {
+        SetCurrentTime(0.0f);
+        return;
+    }
+
+    // normalizedTimeはEditor/Gameplay APIとして扱いやすい[0,1]へClampします。
+    const float normalized = std::clamp(normalizedTime, 0.0f, 1.0f);
+    SetCurrentTime(normalized * m_Clip->GetDuration());
+}
+
+float Animator::GetNormalizedTime() const
+{
+    if (!m_Clip || m_Clip->GetDuration() <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    return std::clamp(m_CurrentTime / m_Clip->GetDuration(), 0.0f, 1.0f);
 }
 
 void Animator::Update(float dt)
@@ -72,12 +112,13 @@ void Animator::Update(float dt)
     const float duration = m_Clip->GetDuration();
 
     // Duration=0のClipは時間を進められません。
-    // Sample(0)だけ評価して停止扱いにすることでfmodの0除算も防ぎます。
+    // Sample(0)だけ評価して完了扱いにすることでfmodの0除算も防ぎます。
     if (duration <= 0.0f)
     {
         m_CurrentTime = 0.0f;
         m_CurrentPose = m_Clip->Sample(0.0f);
         m_Playing = false;
+        m_Finished = true;
         return;
     }
 
@@ -92,25 +133,25 @@ void Animator::Update(float dt)
         {
             m_CurrentTime += duration;
         }
+
+        // Loop Animationは端へ到達しても完了状態にはなりません。
+        m_Finished = false;
     }
     else
     {
-        // 非Loop再生ではClip端へ到達した時点で停止します。
-        // Speedを負にすれば逆方向へも進められるため両端を判定します。
+        // 非Loop再生ではClip端へ到達した時点で停止し、Finishedを立てます。
+        // 後続のAnimator State MachineではこのFlagをExit Time相当の条件として利用できます。
         if (m_CurrentTime >= duration)
         {
             m_CurrentTime = duration;
             m_Playing = false;
+            m_Finished = true;
         }
-        else if (m_CurrentTime <= 0.0f)
+        else if (m_CurrentTime <= 0.0f && m_Speed < 0.0f)
         {
             m_CurrentTime = 0.0f;
-
-            // 正方向再生をPlay直後にdt=0で停止させないため、逆再生時だけ停止します。
-            if (m_Speed < 0.0f)
-            {
-                m_Playing = false;
-            }
+            m_Playing = false;
+            m_Finished = true;
         }
     }
 
