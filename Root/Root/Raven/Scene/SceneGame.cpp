@@ -4,6 +4,9 @@
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Core/MouseCodes.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
+#include "Raven/Renderer/Mesh/Deformation/MeshDeformationSystem.h"
+#include "Raven/Renderer/Mesh/Deformation/WaveMeshDeformer.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/RenderCommand.h"
@@ -105,8 +108,6 @@ void SceneGame::SpawnSphereBatch(int count)
 
 void SceneGame::ClearSphereBatch()
 {
-    // ドラッグ中のEntityがこのBatchに含まれている可能性があるため、
-    // Entity破棄より先に選択状態を解除して古いHandle/作用点を保持しないようにします。
     m_DraggedEntity = {};
     m_DragHitPoint = {};
     m_WasLeftMousePressed = Input::IsMouseButtonPressed(Mouse::Left);
@@ -146,9 +147,6 @@ void SceneGame::SpawnBoxTestBody()
         return;
     }
 
-    // PrimitiveMeshFactory::CreateCube() は各軸[-0.5,+0.5]のUnit Cubeです。
-    // ColliderComponent::HalfExtentsはTransform.Scaleと自動連動しないため、
-    // ここで0.5 * Scaleを明示して見た目とColliderを一致させます。
     const math::Vec3 boxScale{ 10.0f, 10.0f, 10.0f };
 
     Entity box = CreateEntity("PhysicsTestBox");
@@ -191,38 +189,21 @@ bool SceneGame::BuildMouseRay(
         return false;
     }
 
-    // ========================================================================
-    // Screen pixel -> Normalized Device Coordinates
-    // ========================================================================
-    // Inputのマウス座標は左上原点でYが下向き正です。
-    // OpenGLのNDCは画面中央原点でYが上向き正なので、Yだけ符号を反転します。
     const float ndcX = (2.0f * screenPoint.x / m_ViewportWidth) - 1.0f;
     const float ndcY = 1.0f - (2.0f * screenPoint.y / m_ViewportHeight);
 
     const float aspect = m_ViewportWidth / m_ViewportHeight;
     const float halfTanFovY = std::tan(m_CameraFovY * 0.5f);
 
-    // ========================================================================
-    // View matrix -> Camera world basis
-    // ========================================================================
-    // Raven::Mat4::LookAt()は各行に Right / Up / -Forward を格納します。
-    // したがって逆行列を毎フレーム作らなくても、行列から直接Camera基底を復元できます。
     const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
     const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
     const math::Vec3 cameraForward{ -m_View[2][0], -m_View[2][1], -m_View[2][2] };
 
-    // LookAtの平行移動成分は
-    //   row0.w = -dot(Right, Eye)
-    //   row1.w = -dot(Up, Eye)
-    //   row2.w =  dot(Forward, Eye)
-    // なので、直交基底の線形結合からEyeを復元できます。
     outOrigin =
         cameraRight * (-m_View[0][3])
         + cameraUp * (-m_View[1][3])
         + cameraForward * m_View[2][3];
 
-    // Perspective投影面上の点をCamera基底でWorld方向へ戻します。
-    // center(ndc=0,0)ではそのままcameraForwardになります。
     outDirection =
         cameraRight * (ndcX * aspect * halfTanFovY)
         + cameraUp * (ndcY * halfTanFovY)
@@ -262,12 +243,6 @@ void SceneGame::UpdateMouseDragImpulse()
         {
             ph::PhysicsRayCastHit hit{};
 
-            // ====================================================================
-            // Physics Ray Picking
-            // ====================================================================
-            // 旧実装の「画面上の中心距離」では、手前/奥に重なったColliderや回転Boxを
-            // 正確に選べませんでした。ここではBroad Phase + 実Collider判定を通る
-            // PhysicsWorld::RayCast()を使い、本当にマウスRayが当たった最短Colliderを選びます。
             if (physicsWorld->RayCast(
                     *this,
                     rayOrigin,
@@ -282,17 +257,11 @@ void SceneGame::UpdateMouseDragImpulse()
                     const auto& rigidBody = hit.HitEntity.GetComponent<RigidBodyComponent>();
                     const auto& collider = hit.HitEntity.GetComponent<ColliderComponent>();
 
-                    // 床などStatic/Kinematic BodyはRayを遮ることはありますが、
-                    // マウスで投げる対象としては選択しません。
                     if (rigidBody.Type == BodyType::Dynamic
                         && rigidBody.InverseMass > 0.0f
                         && collider.Type != ColliderType::Plane)
                     {
                         m_DraggedEntity = hit.HitEntity;
-
-                        // このPointが非常に重要です。
-                        // Entity中心ではなく「実際にクリックしたCollider表面位置」を保持することで、
-                        // release時にAddImpulseAtPoint()が r x J を計算し、自然な回転を発生させます。
                         m_DragHitPoint = hit.Point;
                     }
                 }
@@ -307,11 +276,6 @@ void SceneGame::UpdateMouseDragImpulse()
 
         if (physicsWorld != nullptr && dragLength >= m_MinDragPixels)
         {
-            // ====================================================================
-            // Screen-space drag -> World-space impulse
-            // ====================================================================
-            // X方向をCamera Right、画面の下向きYを-Camera Upへ対応させます。
-            // これによりCameraが斜めでも「見た目のドラッグ方向」に物体が飛びます。
             const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
             const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
 
@@ -324,11 +288,6 @@ void SceneGame::UpdateMouseDragImpulse()
                 const float impulseMagnitude = clampedPixels * m_DragImpulsePerPixel;
                 const math::Vec3 impulse = worldDirection * impulseMagnitude;
 
-                // AddImpulseAtPoint()内部では
-                //   Linear:  DeltaV     = J * inverseMass
-                //   Angular: DeltaOmega = I^-1 * (r x J)
-                // が適用されます。
-                // したがってSphereの端やBoxの角を掴んで投げると、作用点に応じて回転します。
                 physicsWorld->AddImpulseAtPoint(
                     *this,
                     m_DraggedEntity,
@@ -341,7 +300,6 @@ void SceneGame::UpdateMouseDragImpulse()
         m_DragHitPoint = {};
     }
 
-    // Entity破棄後に古いGenerationのHandleを保持し続けないようにします。
     if (m_DraggedEntity && !IsEntityAlive(m_DraggedEntity))
     {
         m_DraggedEntity = {};
@@ -457,6 +415,31 @@ void SceneGame::OnCreate()
     m_FloorEntity = floor;
     m_SpawnedEntities.push_back(floor);
 
+    // ========================================================================
+    // Deformation validation entity
+    // ========================================================================
+    // ここでは「Sceneが具体的な頂点更新を直接行わない」ことを確認するため、
+    // Dynamic Grid + WaveMeshDeformerをECS Component経由で接続します。
+    //
+    // 実際の毎フレーム更新はMeshDeformationSystemが担当し、SceneGameは
+    // どのMeshとDeformerを組み合わせるかという初期構成だけを担当します。
+    Ref<Mesh> waveMesh = PrimitiveMeshFactory::CreateDynamicGrid(32, 32);
+    Entity waveEntity = CreateEntity("WaveDeformationGrid");
+    auto& waveTransform = waveEntity.GetComponent<TransformComponent>();
+    waveTransform.Position = { 0.0f, 3.0f, -22.0f };
+    waveTransform.Scale = { 28.0f, 8.0f, 28.0f };
+
+    waveEntity.AddComponent<MeshRendererComponent>(MeshRendererComponent{ waveMesh, m_Material });
+
+    auto waveInstance = std::make_shared<MeshDeformationInstance>(
+        waveMesh,
+        CreateScope<WaveMeshDeformer>(0.18f, 10.0f, 2.4f));
+
+    waveEntity.AddComponent<MeshDeformationComponent>(
+        MeshDeformationComponent{ std::move(waveInstance), true });
+
+    m_SpawnedEntities.push_back(waveEntity);
+
     SpawnSphereBatch(ComputeOptimizedSpawnCount());
     SpawnBoxTestBody();
 }
@@ -504,10 +487,15 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
-    // Scene::OnUpdate()は OnUpdateGame -> OnUpdatePhysics の順です。
-    // AddImpulseAtPoint()は速度へ即時反映するため、releaseした同じフレームの
-    // PhysicsWorld::Step()から衝突・重力・回転計算へ参加します。
     UpdateMouseDragImpulse();
+
+    // ========================================================================
+    // ECS Deformation Update
+    // ========================================================================
+    // SceneGameはWaveMeshDeformerをここで直接呼びません。
+    // MeshDeformationComponentを持つ全EntityをSystemが走査するため、将来Skeletal/Morphを
+    // 追加しても、この更新箇所は変更せず同じ入口を共有できます。
+    MeshDeformationSystem::Update(*this, safeDt);
 
     for (auto& layer : m_layers)
     {
