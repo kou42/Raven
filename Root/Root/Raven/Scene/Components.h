@@ -14,6 +14,7 @@ namespace Raven
 
 class Mesh;
 class Material;
+class MeshDeformationInstance;
 
 struct TagComponent
 {
@@ -40,6 +41,30 @@ struct MeshRendererComponent
     }
 };
 
+// ============================================================================
+// MeshDeformationComponent
+// ============================================================================
+// Entityが「変形可能なMesh」を持つことだけをScene/ECSへ公開するComponentです。
+//
+// 重要なのは、Scene側がWave / Skeletal / Morph / SoftBodyなどの具体的なDeformer型を
+// 知らないことです。具体的な変形アルゴリズムとMeshの組はMeshDeformationInstanceへ隠し、
+// Sceneは毎フレームInstanceを更新するだけにします。
+//
+// shared_ptrを使う理由:
+// ComponentStorageはComponentを移動・再配置する可能性がありますが、Instance内部には
+// unique ownershipのDeformerが含まれます。Component自体を軽量な共有Handleにすることで、
+// ECS Storageの都合とDeformerの所有権を分離できます。
+struct MeshDeformationComponent
+{
+    std::shared_ptr<MeshDeformationInstance> Instance = nullptr;
+    bool Enabled = true;
+
+    bool IsValid() const
+    {
+        return Instance != nullptr;
+    }
+};
+
 enum class BodyType
 {
     Static,
@@ -47,25 +72,6 @@ enum class BodyType
     Kinematic
 };
 
-// ============================================================================
-// RigidBodyComponent
-// ============================================================================
-// 剛体の「状態データ」だけを保持するComponentです。
-// 実際の計算はPhysicsWorldが担当します。
-//
-// BodyTypeの役割
-// ---------------------------------------------------------------------------
-// Dynamic
-//   重力・外力・衝突によって動く通常の物理Bodyです。
-//   PhysicsWorldの計算結果をTransformへ書き込みます。
-//
-// Static
-//   床や壁など、物理演算中に動かないBodyです。
-//   質量・慣性は無限大として扱います。
-//
-// Kinematic
-//   ゲームロジック側が位置または速度を指定するBodyです。
-//   外力・衝突Impulseでは動かしません。
 struct RigidBodyComponent
 {
     BodyType Type = BodyType::Dynamic;
@@ -79,15 +85,6 @@ struct RigidBodyComponent
     math::Vec3 Force{ 0.0f, 0.0f, 0.0f };
     math::Vec3 Torque{ 0.0f, 0.0f, 0.0f };
 
-    // ========================================================================
-    // Physics Orientation
-    // ========================================================================
-    // 物理内部ではEuler角を積分せずQuaternionを正規姿勢として扱います。
-    // Euler角へ直接 AngularVelocity * dt を足す方法では、複数軸回転時に回転順依存と
-    // gimbal lockの影響が積み重なるためです。
-    //
-    // Transform::RotationはRenderer / Scene互換用のミラーとして残し、Physics Step中に
-    // Orientationから同期します。初回StepだけTransform::Rotationから初期化します。
     math::Quat Orientation = math::Quat::Identity();
     bool OrientationInitialized = false;
 
@@ -146,33 +143,17 @@ enum class ColliderType
     Plane
 };
 
-// ============================================================================
-// ColliderComponent
-// ============================================================================
-// RigidBodyとは分離して保持します。
-// これにより、見えるだけのEntity、衝突だけを持つ壁、Trigger領域などを
-// 同じScene/ECS上で表現できます。
 struct ColliderComponent
 {
     ColliderType Type = ColliderType::Box;
-
-    // Sphere / Boxの中心をTransform::Positionからずらすローカルオフセットです。
-    // BoxではTransformの回転に追従します。
     math::Vec3 Offset{ 0.0f, 0.0f, 0.0f };
-
-    // Box用パラメータです。現在はTransform::Rotationを反映したOBBの半サイズです。
-    // 既存Scene互換性のためTransform::Scaleとは分離しています。
     math::Vec3 HalfExtents{ 0.5f, 0.5f, 0.5f };
-
     float Radius = 0.5f;
-
     math::Vec3 PlaneNormal{ 0.0f, 1.0f, 0.0f };
     float PlaneOffset = 0.0f;
-
     float Restitution = 0.2f;
     float StaticFriction = 0.6f;
     float DynamicFriction = 0.4f;
-
     bool IsTrigger = false;
 };
 
