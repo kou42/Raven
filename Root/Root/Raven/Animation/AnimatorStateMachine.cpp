@@ -61,6 +61,17 @@ bool AnimatorStateMachine::RemoveState(const std::string& name)
         m_QueuedStateName.clear();
     }
 
+    // このStateを参照するTransitionも無効になるため同時に除去します。
+    m_Transitions.erase(
+        std::remove_if(
+            m_Transitions.begin(),
+            m_Transitions.end(),
+            [&name](const AnimatorTransition& transition)
+            {
+                return transition.FromState == name || transition.ToState == name;
+            }),
+        m_Transitions.end());
+
     m_States.erase(it);
     return true;
 }
@@ -165,6 +176,343 @@ bool AnimatorStateMachine::TransitionTo(
     return true;
 }
 
+bool AnimatorStateMachine::AddFloatParameter(std::string name, float defaultValue)
+{
+    if (name.empty() || !std::isfinite(defaultValue) || HasParameter(name))
+    {
+        return false;
+    }
+
+    AnimatorParameter parameter{};
+    parameter.Name = name;
+    parameter.Type = AnimatorParameterType::Float;
+    parameter.Value = defaultValue;
+
+    m_Parameters.emplace(std::move(name), std::move(parameter));
+    return true;
+}
+
+bool AnimatorStateMachine::AddBoolParameter(std::string name, bool defaultValue)
+{
+    if (name.empty() || HasParameter(name))
+    {
+        return false;
+    }
+
+    AnimatorParameter parameter{};
+    parameter.Name = name;
+    parameter.Type = AnimatorParameterType::Bool;
+    parameter.Value = defaultValue;
+
+    m_Parameters.emplace(std::move(name), std::move(parameter));
+    return true;
+}
+
+bool AnimatorStateMachine::AddTriggerParameter(std::string name)
+{
+    if (name.empty() || HasParameter(name))
+    {
+        return false;
+    }
+
+    AnimatorParameter parameter{};
+    parameter.Name = name;
+    parameter.Type = AnimatorParameterType::Trigger;
+    parameter.Value = false;
+
+    m_Parameters.emplace(std::move(name), std::move(parameter));
+    return true;
+}
+
+bool AnimatorStateMachine::RemoveParameter(const std::string& name)
+{
+    const auto it = m_Parameters.find(name);
+    if (it == m_Parameters.end())
+    {
+        return false;
+    }
+
+    // Conditionが参照するParameterを削除するとTransition定義が壊れるため、
+    // そのParameterを使うTransitionも同時に除去します。
+    m_Transitions.erase(
+        std::remove_if(
+            m_Transitions.begin(),
+            m_Transitions.end(),
+            [&name](const AnimatorTransition& transition)
+            {
+                return std::any_of(
+                    transition.Conditions.begin(),
+                    transition.Conditions.end(),
+                    [&name](const AnimatorCondition& condition)
+                    {
+                        return condition.ParameterName == name;
+                    });
+            }),
+        m_Transitions.end());
+
+    m_Parameters.erase(it);
+    return true;
+}
+
+bool AnimatorStateMachine::HasParameter(const std::string& name) const
+{
+    return m_Parameters.find(name) != m_Parameters.end();
+}
+
+const AnimatorParameter* AnimatorStateMachine::FindParameter(const std::string& name) const
+{
+    const auto it = m_Parameters.find(name);
+    return (it != m_Parameters.end()) ? &it->second : nullptr;
+}
+
+AnimatorParameter* AnimatorStateMachine::FindParameter(const std::string& name)
+{
+    const auto it = m_Parameters.find(name);
+    return (it != m_Parameters.end()) ? &it->second : nullptr;
+}
+
+bool AnimatorStateMachine::SetFloat(const std::string& name, float value)
+{
+    AnimatorParameter* parameter = FindParameter(name);
+    if (!parameter ||
+        parameter->Type != AnimatorParameterType::Float ||
+        !std::isfinite(value))
+    {
+        return false;
+    }
+
+    parameter->Value = value;
+    return true;
+}
+
+bool AnimatorStateMachine::SetBool(const std::string& name, bool value)
+{
+    AnimatorParameter* parameter = FindParameter(name);
+    if (!parameter || parameter->Type != AnimatorParameterType::Bool)
+    {
+        return false;
+    }
+
+    parameter->Value = value;
+    return true;
+}
+
+bool AnimatorStateMachine::SetTrigger(const std::string& name)
+{
+    AnimatorParameter* parameter = FindParameter(name);
+    if (!parameter || parameter->Type != AnimatorParameterType::Trigger)
+    {
+        return false;
+    }
+
+    parameter->Value = true;
+    return true;
+}
+
+bool AnimatorStateMachine::ResetTrigger(const std::string& name)
+{
+    AnimatorParameter* parameter = FindParameter(name);
+    if (!parameter || parameter->Type != AnimatorParameterType::Trigger)
+    {
+        return false;
+    }
+
+    parameter->Value = false;
+    return true;
+}
+
+bool AnimatorStateMachine::GetFloat(const std::string& name, float& outValue) const
+{
+    const AnimatorParameter* parameter = FindParameter(name);
+    if (!parameter || parameter->Type != AnimatorParameterType::Float)
+    {
+        return false;
+    }
+
+    const float* value = std::get_if<float>(&parameter->Value);
+    if (!value)
+    {
+        return false;
+    }
+
+    outValue = *value;
+    return true;
+}
+
+bool AnimatorStateMachine::GetBool(const std::string& name, bool& outValue) const
+{
+    const AnimatorParameter* parameter = FindParameter(name);
+    if (!parameter ||
+        (parameter->Type != AnimatorParameterType::Bool &&
+         parameter->Type != AnimatorParameterType::Trigger))
+    {
+        return false;
+    }
+
+    const bool* value = std::get_if<bool>(&parameter->Value);
+    if (!value)
+    {
+        return false;
+    }
+
+    outValue = *value;
+    return true;
+}
+
+bool AnimatorStateMachine::AddTransition(AnimatorTransition transition)
+{
+    if (!HasState(transition.FromState) ||
+        !HasState(transition.ToState) ||
+        transition.FromState == transition.ToState)
+    {
+        return false;
+    }
+
+    transition.CrossFadeDuration = std::max(transition.CrossFadeDuration, 0.0f);
+
+    for (const AnimatorCondition& condition : transition.Conditions)
+    {
+        const AnimatorParameter* parameter = FindParameter(condition.ParameterName);
+        if (!parameter)
+        {
+            return false;
+        }
+
+        // ConditionのExpectedValue型がParameter型と一致していることを登録時に検証します。
+        // Runtime評価中にvariant型違いを毎回エラー扱いするより、定義ミスを早期検出します。
+        if (parameter->Type == AnimatorParameterType::Float)
+        {
+            if (!std::holds_alternative<float>(condition.ExpectedValue))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if (!std::holds_alternative<bool>(condition.ExpectedValue))
+            {
+                return false;
+            }
+
+            // Bool/Triggerへ数値比較演算を使う定義は意味が曖昧なので拒否します。
+            if (condition.Operator != AnimatorConditionOperator::Equal &&
+                condition.Operator != AnimatorConditionOperator::NotEqual)
+            {
+                return false;
+            }
+        }
+    }
+
+    m_Transitions.push_back(std::move(transition));
+    return true;
+}
+
+bool AnimatorStateMachine::EvaluateCondition(const AnimatorCondition& condition) const
+{
+    const AnimatorParameter* parameter = FindParameter(condition.ParameterName);
+    if (!parameter)
+    {
+        return false;
+    }
+
+    if (parameter->Type == AnimatorParameterType::Float)
+    {
+        const float* actual = std::get_if<float>(&parameter->Value);
+        const float* expected = std::get_if<float>(&condition.ExpectedValue);
+        if (!actual || !expected)
+        {
+            return false;
+        }
+
+        switch (condition.Operator)
+        {
+        case AnimatorConditionOperator::Equal:        return *actual == *expected;
+        case AnimatorConditionOperator::NotEqual:     return *actual != *expected;
+        case AnimatorConditionOperator::Greater:      return *actual > *expected;
+        case AnimatorConditionOperator::GreaterEqual: return *actual >= *expected;
+        case AnimatorConditionOperator::Less:         return *actual < *expected;
+        case AnimatorConditionOperator::LessEqual:    return *actual <= *expected;
+        }
+
+        return false;
+    }
+
+    const bool* actual = std::get_if<bool>(&parameter->Value);
+    const bool* expected = std::get_if<bool>(&condition.ExpectedValue);
+    if (!actual || !expected)
+    {
+        return false;
+    }
+
+    switch (condition.Operator)
+    {
+    case AnimatorConditionOperator::Equal:    return *actual == *expected;
+    case AnimatorConditionOperator::NotEqual: return *actual != *expected;
+    default:                                  return false;
+    }
+}
+
+bool AnimatorStateMachine::EvaluateTransitions()
+{
+    // Current Stateが無い、またはFade中の場合は自動Transitionを開始しません。
+    // Fade割り込み対応はAnimator側のSnapshot Pose実装後にポリシーを拡張します。
+    if (!HasCurrentState() || m_Animator.IsCrossFading())
+    {
+        return false;
+    }
+
+    for (const AnimatorTransition& transition : m_Transitions)
+    {
+        if (transition.FromState != m_CurrentStateName)
+        {
+            continue;
+        }
+
+        // Conditionを持たないTransitionは常時成立になります。
+        // 将来Exit Timeを追加する場合にも使えるため許可しています。
+        const bool allConditionsMet = std::all_of(
+            transition.Conditions.begin(),
+            transition.Conditions.end(),
+            [this](const AnimatorCondition& condition)
+            {
+                return EvaluateCondition(condition);
+            });
+
+        if (!allConditionsMet)
+        {
+            continue;
+        }
+
+        // 登録順を優先順位として、最初に成立したTransitionだけを実行します。
+        // Transition開始に失敗した場合はTriggerを消費せず、次Frameに再評価できます。
+        if (!TransitionTo(transition.ToState, transition.CrossFadeDuration))
+        {
+            return false;
+        }
+
+        ConsumeTransitionTriggers(transition);
+        return true;
+    }
+
+    return false;
+}
+
+void AnimatorStateMachine::ConsumeTransitionTriggers(const AnimatorTransition& transition)
+{
+    for (const AnimatorCondition& condition : transition.Conditions)
+    {
+        AnimatorParameter* parameter = FindParameter(condition.ParameterName);
+        if (!parameter || parameter->Type != AnimatorParameterType::Trigger)
+        {
+            continue;
+        }
+
+        // Triggerは「成立したTransitionが実際に開始した」時点でのみ消費します。
+        // CrossFade割り込み拒否などで遷移できなかった場合はSetTrigger状態を維持します。
+        parameter->Value = false;
+    }
+}
+
 bool AnimatorStateMachine::UpdateLocomotion(
     float speed,
     const LocomotionThresholds& thresholds,
@@ -233,6 +581,14 @@ bool AnimatorStateMachine::UpdateLocomotion(
 
 void AnimatorStateMachine::Update(float deltaTime)
 {
+    // Update開始時にParameter Transitionを評価します。
+    // Gameplay側でSetFloat/SetBool/SetTriggerした値が同FrameのAnimation遷移へ反映されます。
+    // Locomotion Queueがある場合は明示的な最新要求を優先し、自動Transition評価は次Frameへ回します。
+    if (!m_Animator.IsCrossFading() && m_QueuedStateName.empty())
+    {
+        EvaluateTransitions();
+    }
+
     // Update前後のCrossFade状態を比較することで、Animator内部のFade完了を検出します。
     // State Machine側にFade時間を重複保持しないことが重要です。
     const bool wasCrossFading = m_Animator.IsCrossFading();
