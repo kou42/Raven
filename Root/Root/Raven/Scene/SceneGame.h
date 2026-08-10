@@ -3,6 +3,7 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/Mesh/Deformation/MeshDeformer.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
@@ -12,8 +13,6 @@
 
 namespace Raven
 {
-
-class MeshDeformer;
 
 class SceneGame : public Scene
 {
