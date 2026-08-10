@@ -170,6 +170,11 @@ void Animator::SetCurrentTime(float time)
     {
         m_CurrentState.Time = 0.0f;
         m_CurrentPose = TransformPose{};
+
+        if (m_Skeleton)
+        {
+            m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+        }
         return;
     }
 
@@ -226,6 +231,26 @@ float Animator::GetCrossFadeWeight() const
     }
 
     return std::clamp(m_FadeElapsed / m_FadeDuration, 0.0f, 1.0f);
+}
+
+void Animator::SetSkeleton(const Skeleton* skeleton)
+{
+    m_Skeleton = skeleton;
+
+    if (!m_Skeleton)
+    {
+        // SkeletonPoseは内部vectorだけを持つため明示的なClear APIは不要です。
+        // Skeleton未接続時はGetCurrentSkeletonPose()をSkinningへ渡さないことを契約とします。
+        m_CurrentSkeletonPose = SkeletonPose{};
+        m_NextSkeletonPose = SkeletonPose{};
+        return;
+    }
+
+    // Skeletonを接続した瞬間から有効なPoseを返せるよう、まずBind Poseを構築します。
+    // Current Clipが既に再生中なら、その直後に現在時刻で再評価します。
+    m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+    m_NextSkeletonPose.ResetToBindPose(*m_Skeleton);
+    EvaluateCurrentPose();
 }
 
 void Animator::Update(float dt)
@@ -322,25 +347,93 @@ void Animator::EvaluateCurrentPose()
     if (!m_CurrentState.IsValid())
     {
         m_CurrentPose = TransformPose{};
+
+        if (m_Skeleton)
+        {
+            m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+        }
         return;
     }
 
+    // ------------------------------------------------------------------------
+    // 単一Transform Animation
+    // ------------------------------------------------------------------------
+    // 既存Scene/ECS Animation経路は従来どおり維持します。
     const TransformPose currentPose =
         m_CurrentState.Clip->Sample(m_CurrentState.Time);
 
     if (!m_CrossFading || !m_NextState.IsValid())
     {
         m_CurrentPose = currentPose;
+    }
+    else
+    {
+        const TransformPose nextPose =
+            m_NextState.Clip->Sample(m_NextState.Time);
+
+        m_CurrentPose = BlendTransformPose(
+            currentPose,
+            nextPose,
+            GetCrossFadeWeight());
+    }
+
+    // ------------------------------------------------------------------------
+    // Skeletal Animation
+    // ------------------------------------------------------------------------
+    // Skeleton未接続のAnimatorはここで終了します。
+    // これにより従来のTransform Animation利用側へ追加コストを掛けません。
+    if (!m_Skeleton)
+    {
         return;
     }
 
-    const TransformPose nextPose =
-        m_NextState.Clip->Sample(m_NextState.Time);
+    if (!m_CrossFading || !m_NextState.IsValid())
+    {
+        // 単一State時はClipから最終出力Poseへ直接Sampleします。
+        // AnimationClip::Sample()はTrackの無いBoneをBind Poseのまま維持します。
+        if (!m_CurrentState.Clip->Sample(
+                *m_Skeleton,
+                m_CurrentState.Time,
+                m_CurrentSkeletonPose))
+        {
+            // SkeletonとClipのBone対応が不正な場合、壊れたPoseをSkinningへ渡さないため
+            // Bind Poseへ戻します。将来はError/Assert経路へ接続できます。
+            m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+        }
+        return;
+    }
 
-    m_CurrentPose = BlendTransformPose(
-        currentPose,
-        nextPose,
-        GetCrossFadeWeight());
+    // CrossFade中はCurrent/Nextを別々のSkeletonPoseへSampleした後、Local TRSをBlendします。
+    // Global行列同士を直接Lerpしないことが重要です。行列補間では回転やScaleが歪むため、
+    // BlendPoses()内でTranslation/Scale=Lerp、Rotation=SlerpしてからGlobalを再構築します。
+    SkeletonPose currentSamplePose;
+    if (!m_CurrentState.Clip->Sample(
+            *m_Skeleton,
+            m_CurrentState.Time,
+            currentSamplePose))
+    {
+        m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+        return;
+    }
+
+    if (!m_NextState.Clip->Sample(
+            *m_Skeleton,
+            m_NextState.Time,
+            m_NextSkeletonPose))
+    {
+        m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+        return;
+    }
+
+    if (!BlendPoses(
+            *m_Skeleton,
+            currentSamplePose,
+            m_NextSkeletonPose,
+            GetCrossFadeWeight(),
+            m_CurrentSkeletonPose))
+    {
+        m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
+    }
 }
 
 void Animator::CompleteCrossFade()
