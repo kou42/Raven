@@ -1,4 +1,4 @@
-﻿#include "SceneGame.h"
+#include "SceneGame.h"
 
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
@@ -487,6 +487,7 @@ void SceneGame::OnCreate()
 
     SpawnSphereBatch(ComputeOptimizedSpawnCount());
     SpawnBoxTestBody();
+    SpawnAnimationTestCube();
 }
 
 void SceneGame::OnDestroy()
@@ -504,6 +505,7 @@ void SceneGame::OnDestroy()
     }
     m_SpawnedEntities.clear();
 
+    m_AnimationTestEntity = {};
     m_BoxEntity = {};
     m_FloorEntity = {};
     m_Mesh.reset();
