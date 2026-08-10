@@ -53,6 +53,22 @@ struct LocomotionThresholds
     float RunMinSpeed = 4.0f;
 };
 
+// Character ControllerとAnimation State Machine間で共有するParameter名です。
+// 文字列をGameplayコードへ散在させず、将来Parameterを追加する際の変更箇所を集約します。
+struct CharacterAnimationParameters
+{
+    std::string Speed = "Speed";
+    std::string Grounded = "Grounded";
+    std::string Jump = "Jump";
+};
+
+// Jump系State名はLocomotionと分離します。
+// 将来JumpStart / Fall / Landへ分割してもLocomotion設定をそのまま維持できます。
+struct JumpStateNames
+{
+    std::string Jump = "Jump";
+};
+
 // ============================================================================
 // AnimatorStateMachine
 // ============================================================================
@@ -135,6 +151,61 @@ public:
     {
         return m_Transitions;
     }
+
+    // Speed Parameterを使うIdle / Walk / Run用の4本のTransitionを一括登録します。
+    bool AddLocomotionTransitions(
+        const std::string& speedParameterName = "Speed",
+        const LocomotionThresholds& thresholds = {},
+        const LocomotionStateNames& stateNames = {},
+        float crossFadeDuration = 0.2f);
+
+    // Idle / Walk / Run State、Speed Parameter、4本のTransition、初期Idleをまとめて構築します。
+    bool BuildLocomotionController(
+        std::shared_ptr<AnimationClip> idleClip,
+        std::shared_ptr<AnimationClip> walkClip,
+        std::shared_ptr<AnimationClip> runClip,
+        const LocomotionThresholds& thresholds = {},
+        const LocomotionStateNames& stateNames = {},
+        const std::string& speedParameterName = "Speed",
+        float crossFadeDuration = 0.2f,
+        bool startImmediately = true);
+
+    // Grounded Bool / Jump Triggerを追加します。Speedが既にLocomotion側で登録済みでも使用できます。
+    bool AddCharacterParameters(
+        const CharacterAnimationParameters& parameterNames = {},
+        bool initialGrounded = true);
+
+    // 物理・入力側からSpeed / Grounded / Jump要求をまとめて同期します。
+    bool UpdateCharacterParameters(
+        float speed,
+        bool grounded,
+        bool jumpRequested,
+        const CharacterAnimationParameters& parameterNames = {});
+
+    // Jump Stateを追加し、Idle / Walk / Run -> Jump と、着地時のJump -> Locomotionを構築します。
+    // Jump開始は Jump Trigger && Grounded、復帰先は着地時SpeedでIdle / Walk / Runから選択します。
+    bool AddJumpStateAndTransitions(
+        std::shared_ptr<AnimationClip> jumpClip,
+        const LocomotionThresholds& thresholds = {},
+        const LocomotionStateNames& locomotionStateNames = {},
+        const JumpStateNames& jumpStateNames = {},
+        const CharacterAnimationParameters& parameterNames = {},
+        float crossFadeDuration = 0.15f);
+
+    // Idle / Walk / Run / Jumpと必要Parameter・Transitionを一括構築するCharacter向け便利APIです。
+    bool BuildCharacterController(
+        std::shared_ptr<AnimationClip> idleClip,
+        std::shared_ptr<AnimationClip> walkClip,
+        std::shared_ptr<AnimationClip> runClip,
+        std::shared_ptr<AnimationClip> jumpClip,
+        const LocomotionThresholds& thresholds = {},
+        const LocomotionStateNames& locomotionStateNames = {},
+        const JumpStateNames& jumpStateNames = {},
+        const CharacterAnimationParameters& parameterNames = {},
+        float locomotionCrossFadeDuration = 0.2f,
+        float jumpCrossFadeDuration = 0.15f,
+        bool initialGrounded = true,
+        bool startImmediately = true);
 
     // 移動速度からIdle / Walk / Runを選択してTransitionTo()へ変換します。
     // Gameplay側は毎Frameこの関数へ速度を渡すだけでよく、State名や閾値判定を散在させません。

@@ -1,6 +1,7 @@
 #include "Raven/Animation/AnimationSystem.h"
 
 #include "Raven/Animation/Animator.h"
+#include "Raven/Animation/AnimatorStateMachine.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
@@ -41,7 +42,19 @@ void AnimationSystem::Update(Scene& scene, float deltaTime)
         }
 
         Animator& animator = *animatorComponent.Instance;
-        animator.Update(deltaTime);
+
+        // StateMachineが設定されているEntityでは、Parameter/Transition評価とAnimator更新を
+        // StateMachine側へ一本化します。ここでさらにAnimator::Update()を呼ぶと時間が
+        // 1Frameに2回進むため、必ずどちらか片方だけを更新します。
+        // StateMachineを持たない既存Entityは従来通りAnimator単体で再生できます。
+        if (animatorComponent.StateMachine)
+        {
+            animatorComponent.StateMachine->Update(deltaTime);
+        }
+        else
+        {
+            animator.Update(deltaTime);
+        }
 
         const TransformPose& pose = animator.GetCurrentPose();
 

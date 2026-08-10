@@ -16,6 +16,7 @@ class Mesh;
 class Material;
 class MeshDeformationInstance;
 class Animator;
+class AnimatorStateMachine;
 
 struct TagComponent
 {
@@ -76,6 +77,13 @@ struct MeshDeformationComponent
 struct AnimatorComponent
 {
     std::shared_ptr<Animator> Instance = nullptr;
+
+    // StateMachineは任意です。単一ClipをAnimator::Play()する既存Entityではnullptrのまま使えます。
+    // Characterなど複数Stateを持つEntityだけ設定し、AnimationSystemがStateMachine::Update()を
+    // Animator::Update()の代わりに呼びます。StateMachineはAnimator参照を保持するため、
+    // Component側で両方を所有してAnimatorのLifetimeを保証します。
+    std::shared_ptr<AnimatorStateMachine> StateMachine = nullptr;
+
     bool Enabled = true;
 
     bool IsValid() const

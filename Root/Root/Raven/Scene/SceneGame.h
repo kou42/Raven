@@ -49,6 +49,11 @@ private:
     // Physics Componentを付けないことで、Transformの所有者をAnimationSystemだけに限定します。
     void SpawnAnimationTestCube();
 
+    // StateMachine検証CubeへSpeed / Grounded / Jumpを自動入力します。
+    // Physicsや実入力に依存しない決定的なシーケンスにすることで、Transition実装だけを
+    // Scene上で切り分けて目視確認できるようにします。
+    void UpdateAnimationStateMachineTest(float deltaTime);
+
     // ========================================================================
     // Mouse Drag Impulse / Physics Ray Picking
     // ========================================================================
@@ -82,6 +87,10 @@ private:
     Entity m_FloorEntity;
     Entity m_BoxEntity;
     Entity m_AnimationTestEntity;
+
+    // StateMachine検証用の周期タイマーです。Animation再生時間とは分離し、
+    // Parameter入力シーケンスの時間だけを管理します。
+    float m_AnimationStateMachineTime = 0.0f;
 
     // ========================================================================
     // Broad Phase Debug Visualization
