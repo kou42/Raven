@@ -1,6 +1,8 @@
 // Raven/Animation/AnimatorState.h
 #pragma once
 
+#include <memory>
+
 namespace Raven
 {
 
@@ -9,22 +11,18 @@ class AnimationClip;
 // ============================================================================
 // AnimatorState
 // ============================================================================
-// Animatorが「現在どのAnimationClipを、どの時刻で再生しているか」を保持する
-// 最小のRuntime Stateです。
+// Animatorが「どのClipを、どの時刻で再生しているか」を表すRuntime Stateです。
 //
-// AnimationClipそのものはAsset/定義データとして共有し、再生時刻などの可変状態を
-// Clip側へ持たせません。これにより同じClipを複数Entityが異なる時刻で再生できます。
-//
-// CrossFadeでは Current / Next の2つのAnimatorStateを同時に進め、それぞれから
-// SkeletonPoseをSampleした後にPose同士をBlendする構造へ拡張します。
+// CrossFadeではCurrentStateとNextStateを同時に進める必要があります。
+// ClipとTimeを別々のAnimatorメンバとして持つより、1つのStateへまとめておくことで
+// 「現在側」「遷移先側」を同じロジックで更新・評価できます。
 struct AnimatorState
 {
-    // 再生対象Clipへの非所有ポインタです。
-    // ClipのLifetimeはAnimatorより長いAsset管理側が保証する想定です。
-    const AnimationClip* Clip = nullptr;
+    // AnimationClipはAssetとして複数Animatorから共有されるためshared_ptrで保持します。
+    // CrossFade中もCurrent / Next双方のClip Lifetimeを安全に維持できます。
+    std::shared_ptr<AnimationClip> Clip = nullptr;
 
     // Clip内の現在再生時刻[秒]です。
-    // Tickではなく秒をRuntimeの共通単位にすることで、Update(deltaTime)との境界を単純化します。
     float Time = 0.0f;
 
     // Clip終端へ到達した際に先頭へ戻すかどうかです。
@@ -37,7 +35,7 @@ struct AnimatorState
 
     void Reset()
     {
-        Clip = nullptr;
+        Clip.reset();
         Time = 0.0f;
         Loop = true;
     }
