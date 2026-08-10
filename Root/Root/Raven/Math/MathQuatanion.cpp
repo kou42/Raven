@@ -1,5 +1,8 @@
 ﻿#include "Raven/Math/MathQuatanion.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace Raven
 {
 namespace math
@@ -20,6 +23,35 @@ Quat Quat::FromEulerXYZ(float pitchX, float yawY, float rollZ)
 	Quat qy = FromAxisAngle({ 0, 1, 0 }, yawY);
 	Quat qz = FromAxisAngle({ 0, 0, 1 }, rollZ);
 	return qz * qy * qx;
+}
+
+Vec3 Quat::ToEulerXYZ() const
+{
+	// ========================================================================
+	// Quaternion -> Euler XYZ
+	// ========================================================================
+	// FromEulerXYZ()では q = qz * qy * qx としているため、対応する
+	// R = Rz * Ry * Rx の行列成分からX/Y/Z角を復元します。
+	//
+	// Quaternionはqと-qが同じ姿勢を表すため、まずNormalizeして数値誤差を抑えます。
+	const Quat q = Normalized();
+
+	const float sinX = 2.0f * (q.w * q.x + q.y * q.z);
+	const float cosX = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+	const float pitchX = std::atan2(sinX, cosX);
+
+	// asin入力は浮動小数誤差で[-1, 1]を僅かに外れることがあるためClampします。
+	const float sinY = std::clamp(
+		2.0f * (q.w * q.y - q.z * q.x),
+		-1.0f,
+		1.0f);
+	const float yawY = std::asin(sinY);
+
+	const float sinZ = 2.0f * (q.w * q.z + q.x * q.y);
+	const float cosZ = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+	const float rollZ = std::atan2(sinZ, cosZ);
+
+	return { pitchX, yawY, rollZ };
 }
 
 float Quat::LengthSq() const

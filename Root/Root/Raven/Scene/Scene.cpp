@@ -2,6 +2,7 @@
 #include "Raven/Core/Event.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
+#include "Raven/Animation/AnimationSystem.h"
 
 namespace Raven
 {
@@ -176,6 +177,12 @@ void Scene::OnDestroy()
 void Scene::OnUpdate(float dt)
 {
     OnUpdateGame(dt);
+
+    // Game LogicがPlay/Pause/Clip切り替えなどを行った後にAnimationを評価します。
+    // AnimationSystemがTransformへPoseを反映してからPhysicsへ進むことで、
+    // Kinematic Bodyなどは更新済みTransformをPhysics側から参照できます。
+    AnimationSystem::Update(*this, dt);
+
     OnUpdatePhysics(dt);
     OnUpdateLayer(dt);
     FlushDestroyedEntities();

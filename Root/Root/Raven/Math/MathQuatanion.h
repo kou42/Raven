@@ -30,6 +30,11 @@ struct Quat
 
     static Quat FromEulerXYZ(float pitchX, float yawY, float rollZ);
 
+    // FromEulerXYZ()と同じ回転順序(qz * qy * qx)に対応するEuler角へ戻します。
+    // SceneのTransformComponentが現在Euler角を保持しているため、Animation側でQuaternionを
+    // 正規表現として使いつつ、Scene境界で互換形式へ変換するために利用します。
+    Vec3 ToEulerXYZ() const;
+
     constexpr Quat operator*(const Quat& q) const
     {
         return {

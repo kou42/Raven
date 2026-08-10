@@ -15,6 +15,7 @@ namespace Raven
 class Mesh;
 class Material;
 class MeshDeformationInstance;
+class Animator;
 
 struct TagComponent
 {
@@ -55,6 +56,26 @@ struct MeshRendererComponent
 struct MeshDeformationComponent
 {
     std::shared_ptr<MeshDeformationInstance> Instance = nullptr;
+    bool Enabled = true;
+
+    bool IsValid() const
+    {
+        return Instance != nullptr;
+    }
+};
+
+// ============================================================================
+// AnimatorComponent
+// ============================================================================
+// EntityがAnimation再生状態を持つことだけをScene/ECSへ公開するComponentです。
+// 実際のCurrentTime / Loop / Speed / Pose評価はAnimatorが担当し、
+// AnimationSystemがAnimator::Update()の結果をTransformComponentへ反映します。
+//
+// MeshDeformationComponentと同じくComponent自体は軽量なHandleに留めます。
+// 同じAnimationClipを複数Animatorが共有しても、再生時刻はAnimatorごとに独立します。
+struct AnimatorComponent
+{
+    std::shared_ptr<Animator> Instance = nullptr;
     bool Enabled = true;
 
     bool IsValid() const
