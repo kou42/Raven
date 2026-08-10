@@ -71,11 +71,9 @@ public:
     // AnimatorがCrossFade中で割り込みを拒否した場合、State名も変更しません。
     bool TransitionTo(const std::string& name, float durationOverride = -1.0f);
 
-    // State Machine自身は時間を持たず、Animatorの更新をそのまま委譲します。
-    void Update(float deltaTime)
-    {
-        m_Animator.Update(deltaTime);
-    }
+    // Animatorを更新した後、CrossFade完了をState名へ同期します。
+    // State Machine自身はAnimation時間を別途持たず、時間管理はAnimatorだけに任せます。
+    void Update(float deltaTime);
 
     bool HasCurrentState() const { return !m_CurrentStateName.empty(); }
     const std::string& GetCurrentStateName() const { return m_CurrentStateName; }
