@@ -111,6 +111,7 @@ private:
     math::Vec3 m_DragHitPoint{};
 
     // Projectionとマウス座標を対応させるViewportサイズ。
+    // ※Windowサイズに合わせたほうがいいかも。TODO：合わせる対応をする
     float m_ViewportWidth = 1920.0f;
     float m_ViewportHeight = 1080.0f;
 
