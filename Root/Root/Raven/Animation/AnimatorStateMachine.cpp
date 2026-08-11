@@ -370,6 +370,16 @@ bool AnimatorStateMachine::AddTransition(AnimatorTransition transition)
 
     transition.CrossFadeDuration = std::max(transition.CrossFadeDuration, 0.0f);
 
+    // Exit TimeはNormalized Timeとして扱うため、0.0～1.0の範囲だけを許可します。
+    // HasExitTime=falseではExitTime値を評価しないため、従来Transitionとの互換性を保ちます。
+    if (transition.HasExitTime &&
+        (!std::isfinite(transition.ExitTime) ||
+         transition.ExitTime < 0.0f ||
+         transition.ExitTime > 1.0f))
+    {
+        return false;
+    }
+
     for (const AnimatorCondition& condition : transition.Conditions)
     {
         const AnimatorParameter* parameter = FindParameter(condition.ParameterName);
@@ -468,8 +478,17 @@ bool AnimatorStateMachine::EvaluateTransitions()
             continue;
         }
 
+        // Exit Timeを持つTransitionは、Parameter Conditionを見る前にAnimation再生位置を確認します。
+        // Normalized Timeを使うことでClipの実秒数に依存せず、同じ0.8を「80%再生」として扱えます。
+        // Exit Time未到達ならConditionが成立していても遷移を開始しません。
+        if (transition.HasExitTime &&
+            m_Animator.GetNormalizedTime() < transition.ExitTime)
+        {
+            continue;
+        }
+
         // Conditionを持たないTransitionは常時成立になります。
-        // 将来Exit Timeを追加する場合にも使えるため許可しています。
+        // HasExitTime=trueなら「時間だけで遷移する」Transitionとして利用できます。
         const bool allConditionsMet = std::all_of(
             transition.Conditions.begin(),
             transition.Conditions.end(),
