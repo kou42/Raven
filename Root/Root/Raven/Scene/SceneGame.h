@@ -21,14 +21,14 @@ namespace Raven
 // Runtime Sceneとして通常のSceneライフサイクルを実装すると同時に、Scene View用に
 // SceneViewportRendererも実装します。
 //
-// 通常のOnRender()ではSceneGame自身が保持するRuntime Camera行列を使用します。
-// RenderWithCamera()ではCamera基底からView/Projectionを取得して一時的に差し替え、
-// 描画後に元へ戻すことでEditor Camera操作がRuntime Camera状態を変更しないようにします。
+// Camera行列はSceneGameへミラーせず、描画時にCameraをRenderer::BeginScene()へ渡します。
+// Game ViewはPrimary SceneCamera、Scene Viewは渡されたEditor Cameraを同じRenderScene()へ
+// 流すことで、Material / PhysicsDebugを含む全描画がRenderer Camera Contextを共有します。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
 public:
     SceneGame()
-        : m_PhysicsDebugRenderer(*this, m_View, m_Projection)
+        : m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
     }
@@ -39,30 +39,11 @@ public:
     virtual void OnRender() override;
     virtual void OnEvent(Event& e) override;
 
-    // ========================================================================
-    // Scene View camera override
-    // ========================================================================
-    // PhysicsDebugRendererはm_View/m_Projectionへの参照を保持しているため、
-    // 描画関数の引数だけを各Materialへ渡す方式ではDebug表示だけRuntime Cameraのままになります。
-    // そこでSceneGameが現在利用している行列を一時的に差し替えてOnRender()を再利用します。
-    //
-    // SceneViewportRendererはCamera基底だけを受け取るため、ここではEditorCameraという具体型を
-    // 一切参照しません。将来SceneCameraを渡す場合も同じ描画経路をそのまま利用できます。
-    //
-    // 描画終了後には必ず元のRuntime Camera行列へ戻すため、外部CameraによるScene View描画が
-    // Game Viewや次frameのRuntime入力へ副作用を残しません。
+    // Scene ViewはEditor Cameraをそのまま描画入口へ渡します。
+    // Runtime Cameraの状態を書き換えないため、Game ViewとScene ViewのCameraが完全に分離されます。
     void RenderWithCamera(const Camera& camera) override
     {
-        const math::Mat4 runtimeView = m_View;
-        const math::Mat4 runtimeProjection = m_Projection;
-
-        m_View = camera.GetViewMatrix();
-        m_Projection = camera.GetProjectionMatrix();
-
-        OnRender();
-
-        m_View = runtimeView;
-        m_Projection = runtimeProjection;
+        RenderScene(camera);
     }
 
 private:
@@ -95,17 +76,19 @@ private:
     // ========================================================================
     // Runtime Camera
     // ========================================================================
-    // Primary Camera EntityのTransform/CameraComponentからm_View/m_Projectionを同期します。
-    // 描画、Mouse Ray、Physics Debugが同じCamera状態を見るための単一入口です。
-    // Camera Entityが存在しない場合はfalseを返し、直前の行列を維持します。
-    bool UpdateRuntimeCameraMatrices();
+    // Primary Camera EntityのTransform/CameraComponentを同期し、実際に利用するSceneCameraを返します。
+    // SceneGameはView/Projectionを保持せず、Cameraオブジェクト自体を正規データとして扱います。
+    SceneCamera* UpdateRuntimeCamera();
+
+    // 指定CameraでScene本体を描画する共通入口です。
+    // Game View / Scene Viewの差は引数Cameraだけに限定し、Renderer Camera Contextを確定します。
+    void RenderScene(const Camera& camera);
 
     // ========================================================================
     // Mouse Drag Impulse / Physics Ray Picking
     // ========================================================================
-    // マウス座標からCamera Rayを構築し、PhysicsWorld::RayCast()で実Colliderを選択します。
-    // リリース時にはRayCastで得た実際のヒット点へAddImpulseAtPoint()を適用するため、
-    // 重心から外れた場所を掴んだ場合は r x J による回転も自然に発生します。
+    // Mouse PickingはPrimary SceneCameraのViewを直接参照します。
+    // SceneGameにCamera行列を複製しないことで、描画Cameraとの状態二重化を防ぎます。
     void UpdateMouseDragImpulse();
     bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
 
@@ -124,15 +107,6 @@ private:
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
 
-    // ========================================================================
-    // Runtime Camera matrices
-    // ========================================================================
-    // 正規データはCamera EntityのTransformComponent + CameraComponentです。
-    // ここは既存Renderer/PhysicsDebugRendererとの互換用ミラーとして保持し、
-    // UpdateRuntimeCameraMatrices()でPrimary SceneCameraから同期します。
-    math::Mat4 m_View;
-    math::Mat4 m_Projection;
-
     std::vector<Entity> m_SpawnedEntities;
     std::vector<SphereBody> m_SphereBodies;
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
@@ -150,8 +124,8 @@ private:
     // ========================================================================
     // Physics Debug: H/B/O/F/T/P/C/N
     // Animation Debug: Y
-    // PhysicsDebugRendererはm_View/m_Projectionを参照するため、RenderWithCamera()の一時差し替えにも
-    // 自動的に追従し、Scene ViewではEditor Cameraから見たDebug Shapeを描画できます。
+    // PhysicsDebugRendererはRenderer Camera Contextを参照するため、Game ViewではSceneCamera、
+    // Scene ViewではEditor Cameraへ自動的に追従します。
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
     AnimationDebugOverlayRenderer m_AnimationDebugRenderer;
 
