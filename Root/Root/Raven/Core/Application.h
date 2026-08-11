@@ -30,6 +30,13 @@ public:
 
     void SetScene(Scope<Scene> scene);
 
+    // EditorはApplicationの所有物を借用して表示・操作します。
+    // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
+    Scene* GetScene() { return m_scene.get(); }
+    const Scene* GetScene() const { return m_scene.get(); }
+    Window& GetWindow() { return *m_Window; }
+    const Window& GetWindow() const { return *m_Window; }
+
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
