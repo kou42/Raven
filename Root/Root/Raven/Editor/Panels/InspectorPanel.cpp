@@ -2,6 +2,7 @@
 
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneCameraSystem.h"
 
 #include <algorithm>
 #include <cstring>
@@ -105,9 +106,27 @@ void DrawCameraComponent(Entity entity)
     CameraComponent& cameraComponent = entity.GetComponent<CameraComponent>();
     SceneCamera& camera = cameraComponent.Camera;
 
-    // Primaryは次工程でSceneがGame View用Cameraを探索する際に使用します。
-    // この段階ではComponentの設定値として編集できるようにしておきます。
-    ImGui::Checkbox("Primary", &cameraComponent.Primary);
+    // ========================================================================
+    // Primary Camera
+    // ========================================================================
+    // PrimaryはScene内で排他的な状態として扱います。
+    // boolをCheckboxで直接編集すると複数Cameraが同時にPrimaryになったり、意図せず全解除できるため、
+    // Inspectorからは「Make Primary」という操作としてSceneCameraSystemへ依頼します。
+    if (cameraComponent.Primary)
+    {
+        ImGui::Text("Primary Camera");
+    }
+    else
+    {
+        if (ImGui::Button("Make Primary"))
+        {
+            Scene* scene = entity.GetScene();
+            if (scene != nullptr)
+            {
+                SceneCameraSystem::SetPrimaryCamera(*scene, entity);
+            }
+        }
+    }
 
     // SceneCameraのProjection値は必ずSetPerspective()経由で変更します。
     // Inspector側からメンバ値を直接書き換えるとProjection再計算や入力値検証を迂回してしまうためです。
