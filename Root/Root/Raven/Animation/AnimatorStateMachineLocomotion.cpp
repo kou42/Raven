@@ -140,8 +140,7 @@ bool AnimatorStateMachine::AddJumpStatesAndTransitions(
     beginLand.ToState = jumpStateNames.Land;
     beginLand.CrossFadeDuration = crossFadeDuration;
     // Fall -> Landは接地というGameplay上の事実だけで判定します。
-    // Landを独立Stateにしておくことで、次にExit Timeを導入した際に着地Animationを
-    // 一定位置まで再生してからLocomotionへ戻す構造へ自然に拡張できます。
+    // 接地したFrameでLandへ入り、その後のLand -> LocomotionはExit Timeで待機させます。
     beginLand.Conditions.push_back(AnimatorCondition{ parameterNames.Grounded, AnimatorConditionOperator::Equal, true });
     if (!AddTransition(std::move(beginLand))) return false;
 
@@ -151,6 +150,12 @@ bool AnimatorStateMachine::AddJumpStatesAndTransitions(
         transition.FromState = jumpStateNames.Land;
         transition.ToState = to;
         transition.CrossFadeDuration = crossFadeDuration;
+
+        // Landへ入った直後にSpeed条件だけでLocomotionへ抜けると、着地Clipがほぼ見えません。
+        // 80%まで再生してから復帰可能にすることで、Gameplay条件とAnimation時間条件のANDを確認します。
+        transition.HasExitTime = true;
+        transition.ExitTime = 0.8f;
+
         transition.Conditions.push_back(AnimatorCondition{ parameterNames.Speed, speedOperator, speedThreshold });
         return transition;
     };
@@ -161,6 +166,8 @@ bool AnimatorStateMachine::AddJumpStatesAndTransitions(
     landWalk.FromState = jumpStateNames.Land;
     landWalk.ToState = locomotionStateNames.Walk;
     landWalk.CrossFadeDuration = crossFadeDuration;
+    landWalk.HasExitTime = true;
+    landWalk.ExitTime = 0.8f;
     landWalk.Conditions.push_back(AnimatorCondition{ parameterNames.Speed, AnimatorConditionOperator::Greater, thresholds.IdleMaxSpeed });
     landWalk.Conditions.push_back(AnimatorCondition{ parameterNames.Speed, AnimatorConditionOperator::Less, thresholds.RunMinSpeed });
 
