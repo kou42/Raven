@@ -65,10 +65,15 @@ inline Mat4 QuaternionToMatrix(const Quat& q)
 
 inline Mat4 Rotate(const Mat4& m, float radians, const Vec3& axis)
 {
-    Quat q;
-    q.FromAxisAngle(axis, radians);
+    // FromAxisAngle() は新しいQuaternionを戻り値として生成するstatic関数です。
+    // q.FromAxisAngle(...) と呼ぶだけではq自身は変更されないため、戻り値を必ず受け取ります。
+    //
+    // この値を受け取らないとデフォルト構築されたIdentity Quaternionのままとなり、
+    // TransformComponent::RotationやAnimationのRotationKeyを設定しても
+    // 描画用Transform行列へ回転が反映されません。
+    const Quat q = Quat::FromAxisAngle(axis, radians);
 
-    Mat4 rot = QuaternionToMatrix(q);
+    const Mat4 rot = QuaternionToMatrix(q);
 
     return m * rot;
 }
