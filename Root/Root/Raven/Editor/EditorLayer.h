@@ -115,13 +115,14 @@ private:
     // Game Viewではこの経路を使用します。
     void RenderSceneToFramebuffer(Framebuffer& framebuffer);
 
-    // 指定されたView/Projectionを利用してActive SceneをFramebufferへ描画します。
-    // Scene ViewではEditorCameraの行列を渡し、Runtime Cameraとは独立した視点で描画します。
+    // 指定Cameraを利用してActive SceneをFramebufferへ描画します。
+    // Scene ViewではEditorCameraをCamera基底参照としてそのまま渡し、Runtime Cameraとは
+    // 独立した視点で描画します。View/Projectionを個別引数として渡さないことで、
+    // EditorLayer側も具体的なCamera内部表現へ依存しない構造にします。
     // SceneがSceneViewportRendererを実装していない場合は通常OnRender()へfallbackします。
     void RenderSceneToFramebuffer(
         Framebuffer& framebuffer,
-        const math::Mat4& view,
-        const math::Mat4& projection);
+        const Camera& camera);
 
 private:
     // ========================================================================
@@ -162,6 +163,7 @@ private:
     // ========================================================================
     // Scene View専用Cameraです。Runtime SceneのCamera状態とは分離しているため、Editorで視点を
     // 移動・回転してもGame Viewやゲームロジック側のCameraには影響しません。
+    // Scene描画時にはCamera基底参照としてSceneViewportRendererへ渡します。
     EditorCamera m_EditorCamera;
 
     // RenderSceneView()で得たImGuiのhover/focus状態です。

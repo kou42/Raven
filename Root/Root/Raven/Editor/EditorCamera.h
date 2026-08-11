@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Raven/Math/MathMatrix.h"
+#include "Raven/Renderer/Camera/Camera.h"
 #include "Raven/Math/MathVector.h"
 
 namespace Raven
@@ -13,6 +13,10 @@ namespace Raven
 // Runtime Sceneが所有するゲーム用Cameraとは完全に独立した状態を持ち、Editor操作によって
 // ゲーム本来のCamera位置やProjectionが変更されないようにします。
 //
+// Camera基底はRendererが必要とするView / Projectionだけを公開します。
+// Editor固有の入力・移動・Yaw/Pitch等はこのクラスへ残すことで、将来追加するSceneCameraへ
+// Editor依存の責務が混入しない構造にしています。
+//
 // 操作方針:
 //   Right Mouse Drag : Yaw / Pitchによる視点回転
 //   W / S            : Forward / Backward
@@ -21,10 +25,11 @@ namespace Raven
 //
 // 入力を受け付けるかどうかはEditorLayerがScene Viewのhover状態から決定し、Update()へ渡します。
 // EditorCamera自身がImGui Windowを知らない構造にすることで、Cameraの数学処理とEditor UIを分離します。
-class EditorCamera
+class EditorCamera : public Camera
 {
 public:
     EditorCamera();
+    ~EditorCamera() override = default;
 
     // Scene Viewが入力対象になっているframeだけCamera操作を更新します。
     // inputEnabled=falseの場合でもProjection/View行列は有効なまま保持されます。
@@ -34,8 +39,10 @@ public:
     // 0以下のサイズは無効値として無視し、直前のProjectionを維持します。
     void SetViewportSize(float width, float height);
 
-    const math::Mat4& GetViewMatrix() const { return m_ViewMatrix; }
-    const math::Mat4& GetProjectionMatrix() const { return m_ProjectionMatrix; }
+    // Camera共通インターフェースです。
+    // SceneViewportRendererはEditorCameraという具体型を知らず、この2つだけを利用します。
+    const math::Mat4& GetViewMatrix() const override { return m_ViewMatrix; }
+    const math::Mat4& GetProjectionMatrix() const override { return m_ProjectionMatrix; }
 
     const math::Vec3& GetPosition() const { return m_Position; }
     const math::Vec3& GetForwardDirection() const { return m_ForwardDirection; }

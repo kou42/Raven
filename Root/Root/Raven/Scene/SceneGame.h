@@ -21,8 +21,8 @@ namespace Raven
 // Runtime Sceneとして通常のSceneライフサイクルを実装すると同時に、Scene View用に
 // SceneViewportRendererも実装します。
 //
-// 通常のOnRender()ではSceneGame自身が保持するRuntime Cameraを使用します。
-// RenderWithCamera()ではView/Projectionだけを一時的に差し替えて同じSceneを描画し、
+// 通常のOnRender()ではSceneGame自身が保持するRuntime Camera行列を使用します。
+// RenderWithCamera()ではCamera基底からView/Projectionを取得して一時的に差し替え、
 // 描画後に元へ戻すことでEditor Camera操作がRuntime Camera状態を変更しないようにします。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
@@ -46,17 +46,18 @@ public:
     // 描画関数の引数だけを各Materialへ渡す方式ではDebug表示だけRuntime Cameraのままになります。
     // そこでSceneGameが現在利用している行列を一時的に差し替えてOnRender()を再利用します。
     //
-    // 描画終了後には必ず元のRuntime Camera行列へ戻すため、Editor CameraによるScene View描画が
+    // SceneViewportRendererはCamera基底だけを受け取るため、ここではEditorCameraという具体型を
+    // 一切参照しません。将来SceneCameraを渡す場合も同じ描画経路をそのまま利用できます。
+    //
+    // 描画終了後には必ず元のRuntime Camera行列へ戻すため、外部CameraによるScene View描画が
     // Game Viewや次frameのRuntime入力へ副作用を残しません。
-    void RenderWithCamera(
-        const math::Mat4& view,
-        const math::Mat4& projection) override
+    void RenderWithCamera(const Camera& camera) override
     {
         const math::Mat4 runtimeView = m_View;
         const math::Mat4 runtimeProjection = m_Projection;
 
-        m_View = view;
-        m_Projection = projection;
+        m_View = camera.GetViewMatrix();
+        m_Projection = camera.GetProjectionMatrix();
 
         OnRender();
 

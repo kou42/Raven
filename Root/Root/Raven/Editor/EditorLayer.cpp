@@ -113,10 +113,10 @@ void EditorLayer::OnRender()
 
         m_SceneFramebuffer->Resize(width, height);
 
-        RenderSceneToFramebuffer(
-            *m_SceneFramebuffer,
-            m_EditorCamera.GetViewMatrix(),
-            m_EditorCamera.GetProjectionMatrix());
+        // EditorCameraはCamera基底を実装しているため、View/Projectionを個別に取り出さず
+        // Cameraオブジェクトそのものを描画経路へ渡します。
+        // これにより将来SceneCameraを追加しても同じ描画入口を再利用できます。
+        RenderSceneToFramebuffer(*m_SceneFramebuffer, m_EditorCamera);
     }
 
     if (m_ShowGameView && m_GameFramebuffer != nullptr)
@@ -160,8 +160,7 @@ void EditorLayer::RenderSceneToFramebuffer(Framebuffer& framebuffer)
 
 void EditorLayer::RenderSceneToFramebuffer(
     Framebuffer& framebuffer,
-    const math::Mat4& view,
-    const math::Mat4& projection)
+    const Camera& camera)
 {
     if (m_Application == nullptr)
     {
@@ -179,15 +178,17 @@ void EditorLayer::RenderSceneToFramebuffer(
     // ========================================================================
     // External camera rendering
     // ========================================================================
-    // Scene ViewではRuntime Cameraを上書きせず、SceneViewportRendererへEditorCameraの
-    // View/Projectionを渡して一時的な別視点として描画します。
+    // Scene ViewではRuntime Cameraを上書きせず、SceneViewportRendererへCamera基底参照を
+    // そのまま渡して一時的な別視点として描画します。
+    // EditorLayer / SceneViewportRendererの境界でView/Projectionを分解しないため、
+    // EditorCameraだけでなく今後追加するSceneCameraも同じ経路を利用できます。
     //
     // SceneViewportRendererを実装していないSceneでもEditorを完全に描画不能にしないため、
     // 通常のOnRender()へfallbackします。この場合Scene ViewはRuntime Camera表示になります。
     SceneViewportRenderer* viewportRenderer = dynamic_cast<SceneViewportRenderer*>(activeScene);
     if (viewportRenderer != nullptr)
     {
-        viewportRenderer->RenderWithCamera(view, projection);
+        viewportRenderer->RenderWithCamera(camera);
     }
     else
     {
