@@ -154,6 +154,46 @@ public:
     // ConditionsはAND評価です。登録順がTransitionの優先順位になります。
     bool AddTransition(AnimatorTransition transition);
 
+    // Any Stateは「現在Stateに関係なく同じ条件で同じStateへ遷移したい」場合の便利APIです。
+    // 現段階では専用Runtime Transition型を増やさず、登録時点で存在する全StateからTo Stateへの
+    // 通常Transitionへ展開します。これにより既存のEvaluateTransitions()の単純な評価順を維持できます。
+    //
+    // 注意: 登録後にStateを追加しても自動では対象にならないため、Controller Builderでは
+    // 全Stateを登録し終えた後にAny State Transitionを追加します。将来Editorから動的にState定義を
+    // 編集する段階では、専用Any State表現へ昇格させる余地を残しています。
+    bool AddAnyStateTransition(
+        const std::string& toState,
+        std::vector<AnimatorCondition> conditions,
+        float crossFadeDuration = 0.2f)
+    {
+        if (toState.empty() || !HasState(toState))
+        {
+            return false;
+        }
+
+        for (const auto& statePair : m_States)
+        {
+            const std::string& fromState = statePair.first;
+            if (fromState == toState)
+            {
+                continue;
+            }
+
+            AnimatorTransition transition{};
+            transition.FromState = fromState;
+            transition.ToState = toState;
+            transition.CrossFadeDuration = crossFadeDuration;
+            transition.Conditions = conditions;
+
+            if (!AddTransition(std::move(transition)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     const std::vector<AnimatorTransition>& GetTransitions() const
     {
         return m_Transitions;
@@ -192,8 +232,9 @@ public:
         const CharacterAnimationParameters& parameterNames = {});
 
     // JumpStart / Fall / Land Stateを追加してCharacterの空中遷移を構築します。
-    // Jump開始は Jump Trigger && Grounded、JumpStart -> FallはVerticalVelocity <= 0、
-    // Fall -> LandはGrounded、Landからの復帰先はSpeedでIdle / Walk / Runから選択します。
+    // Jump開始は Any State -> JumpStart の Jump Trigger && Grounded、
+    // JumpStart -> FallはVerticalVelocity <= 0、Fall -> LandはGrounded、
+    // Landからの復帰先はSpeedでIdle / Walk / Runから選択します。
     bool AddJumpStatesAndTransitions(
         std::shared_ptr<AnimationClip> jumpStartClip,
         std::shared_ptr<AnimationClip> fallClip,
@@ -283,7 +324,7 @@ private:
     std::string m_CurrentStateName;
     std::string m_PendingStateName;
 
-    // Fade中にさらに目標が変わった場合の「最新1件」の予約です。
+    // Fade中にさらに目標が変化した場合の「最新1件」の予約です。
     std::string m_QueuedStateName;
 };
 
