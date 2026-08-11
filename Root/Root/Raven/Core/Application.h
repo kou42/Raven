@@ -36,8 +36,9 @@ private:
     std::vector<Scope<Layer>> m_Layers;
     Scope<Scene> m_scene;
 
-    // Window/OpenGL Contextより先に破棄する必要があるためApplicationが所有します。
-    // ImGuiLayerのdestructorでbackendをShutdownしてからWindow破棄へ進みます。
+    // ImGuiLayerはLayerを継承しますが、Dear ImGuiのBegin/Endは全LayerのOnImGuiRender()を
+    // 囲む特殊なframe境界なので、Applicationが専用参照を保持して順序を保証します。
+    // またOpenGL backendをWindow/Contextより先にShutdownする責務もここで明示します。
     Scope<ImGuiLayer> m_ImGuiLayer;
 };
 
