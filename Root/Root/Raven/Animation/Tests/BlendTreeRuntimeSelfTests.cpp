@@ -21,6 +21,8 @@ std::shared_ptr<AnimationClip> MakeClip(float duration)
     return std::make_shared<AnimationClip>(duration);
 }
 
+// 1D Blend Treeは通常、隣接する2 MotionのWeight合計が1.0になります。
+// Clamp領域では同一Childを左右として返すため、その場合もDebug情報上の合計が1.0になることを保証します。
 void ValidateWeightSum(const BlendTree1DDebugInfo& info)
 {
     assert(info.LeftWeight >= 0.0f);
@@ -39,6 +41,7 @@ void RunDirectWeightDebugTest()
 
     BlendTree1DDebugInfo info{};
 
+    // Speed=0は最小ThresholdそのものなのでIdleのみ100%になります。
     assert(tree.GetDebugInfo(0.0f, info));
     assert(info.LeftChildIndex == 0);
     assert(info.RightChildIndex == 0);
@@ -46,6 +49,7 @@ void RunDirectWeightDebugTest()
     assert(NearlyEqual(info.RightWeight, 0.0f));
     ValidateWeightSum(info);
 
+    // Speed=1はThreshold 0と2の中点なのでIdle/Walkが50%ずつになります。
     assert(tree.GetDebugInfo(1.0f, info));
     assert(info.LeftChildIndex == 0);
     assert(info.RightChildIndex == 1);
@@ -53,6 +57,7 @@ void RunDirectWeightDebugTest()
     assert(NearlyEqual(info.RightWeight, 0.5f));
     ValidateWeightSum(info);
 
+    // Speed=4はThreshold 2と6の中点なのでWalk/Runが50%ずつになります。
     assert(tree.GetDebugInfo(4.0f, info));
     assert(info.LeftChildIndex == 1);
     assert(info.RightChildIndex == 2);
@@ -60,6 +65,7 @@ void RunDirectWeightDebugTest()
     assert(NearlyEqual(info.RightWeight, 0.5f));
     ValidateWeightSum(info);
 
+    // Speed=6は最大ThresholdそのものなのでRunのみ100%になります。
     assert(tree.GetDebugInfo(6.0f, info));
     assert(info.LeftChildIndex == 2);
     assert(info.RightChildIndex == 2);
@@ -79,6 +85,8 @@ void ValidateRuntimeSpeed(
     AnimatorStateMachineRuntimeDebugInfo runtime{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, runtime));
 
+    // Speed変更ではLocomotion Stateを維持し、State遷移ではなくBlend Weightだけが変わることを保証します。
+    // ここでRuntime Snapshotまで確認することで、実際のAnimatorとEditor表示用情報が同じ値を参照していることも検証します。
     assert(runtime.Current.HasState);
     assert(runtime.Current.StateName == "Locomotion");
     assert(runtime.Current.IsBlendTree);
@@ -107,12 +115,16 @@ void RunSmoothSpeedRuntimeTest()
     constexpr float deltaTime = 1.0f / 60.0f;
     constexpr int segmentFrames = 60;
 
+    // 60fps相当で1秒かけてSpeed 0 -> 2へ連続変化させます。
+    // 代表点だけではなく各Frameを検証し、補間途中でもWeightやState情報が破綻しないことを確認します。
     for (int frame = 0; frame <= segmentFrames; ++frame)
     {
         const float t = static_cast<float>(frame) / static_cast<float>(segmentFrames);
         ValidateRuntimeSpeed(stateMachine, 2.0f * t, deltaTime);
     }
 
+    // 続けて1秒かけてSpeed 2 -> 6へ変化させます。
+    // ChildのClip Durationが異なるため、Blend中でもAnimatorのNormalizedTimeが有限かつ0..1を維持することも確認します。
     for (int frame = 1; frame <= segmentFrames; ++frame)
     {
         const float t = static_cast<float>(frame) / static_cast<float>(segmentFrames);
@@ -124,6 +136,7 @@ void RunSmoothSpeedRuntimeTest()
         assert(normalizedTime <= 1.0f);
     }
 
+    // 最終的にSpeed=6へ到達したとき、Run Childが100%選択されることをRuntime Snapshotでも固定します。
     AnimatorStateMachineRuntimeDebugInfo finalRuntime{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, finalRuntime));
     assert(NearlyEqual(finalRuntime.Current.BlendParameterValue, 6.0f));
@@ -151,12 +164,15 @@ void RunStateGraphRuntimeSnapshotTest()
     assert(stateMachine.AddTransition(transition));
     assert(stateMachine.SetInitialState("Locomotion", true));
 
+    // CrossFade開始前はGraph定義自体は取得できますが、Active Transitionは存在しません。
     AnimatorStateMachineRuntimeDebugInfo before{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, before));
     assert(before.Nodes.size() == 2);
     assert(before.Transitions.size() == 1);
     assert(before.Transitions[0].IsActive == false);
 
+    // TransitionTo直後はAnimatorのCurrent/Nextが同時に存在します。
+    // Graph SnapshotでもLocomotion -> JumpStartの1本だけがActiveになり、Editorが実際のCrossFadeを強調表示できることを確認します。
     assert(stateMachine.TransitionTo("JumpStart", 0.2f));
 
     AnimatorStateMachineRuntimeDebugInfo duringFade{};
@@ -196,6 +212,8 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(stateMachine.AddState("Locomotion", MakeClip(1.0f), 0.2f));
     assert(stateMachine.AddState("JumpStart", MakeClip(1.0f), 0.2f));
 
+    // Bool/Trigger/FloatとExit Timeを同時に持つTransitionを用意し、
+    // 「どの条件が未成立なのか」と「Parameterは成立したが時間条件だけ未成立」を個別に診断できることを確認します。
     AnimatorTransition transition{};
     transition.FromState = "Locomotion";
     transition.ToState = "JumpStart";
@@ -210,7 +228,8 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(stateMachine.AddTransition(transition));
     assert(stateMachine.SetInitialState("Locomotion", true));
 
-    // 初期状態ではJump=false / Grounded=false、速度だけ成立です。
+    // 初期状態ではJump=false / Grounded=false、VerticalVelocity > 0だけ成立しています。
+    // Conditions[]には各Parameterの実値・期待値・個別判定が入り、AreConditionsMetはAND結果になります。
     AnimatorStateMachineRuntimeDebugInfo initial{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, initial));
     assert(initial.Transitions.size() == 1);
@@ -228,7 +247,8 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(initialTransition.IsExitTimeMet == false);
     assert(initialTransition.IsEligible == false);
 
-    // Parameter条件を成立させてもExit Time未到達なら候補にはなりません。
+    // Parameter条件をすべて成立させてもExit Time未到達ならTransition候補にはなりません。
+    // Editorではこの状態を「条件はOKだがExit Time待ち」と区別して表示できます。
     assert(stateMachine.SetTrigger("Jump"));
     assert(stateMachine.SetBool("Grounded", true));
 
@@ -238,7 +258,9 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(conditionsMet.Transitions[0].IsExitTimeMet == false);
     assert(conditionsMet.Transitions[0].IsEligible == false);
 
-    // 0.5秒以上進めるとExit Timeも成立し、Update()前Snapshotでは発火可能状態になります。
+    // StateMachine::Update()を呼ぶと成立したTransitionが即座に開始されるため、
+    // ここではAnimatorだけを0.55秒進めて「発火直前」のSnapshotを意図的に作ります。
+    // この時点でParameter条件とExit Timeが両方成立し、IsEligible=trueになることを確認します。
     animator.Update(0.55f);
 
     AnimatorStateMachineRuntimeDebugInfo eligible{};
@@ -252,6 +274,8 @@ void RunTransitionConditionRuntimeSnapshotTest()
 
 void RunBlendTreeRuntimeSelfTests()
 {
+    // Debug API単体 -> 実際の連続Blend -> State Graph -> Transition診断の順で、
+    // Editor表示に必要なRuntime情報を下層から段階的に検証します。
     RunDirectWeightDebugTest();
     RunSmoothSpeedRuntimeTest();
     RunStateGraphRuntimeSnapshotTest();
