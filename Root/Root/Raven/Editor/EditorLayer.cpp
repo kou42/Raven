@@ -118,7 +118,9 @@ void EditorLayer::ValidateSelectedEntity()
         return;
     }
 
-    if (m_SelectedEntity == false)
+    // Entity::operator bool()はexplicitなので、ここでは明示的にboolへ変換して比較します。
+    // Invalid Entityを「選択なし」として扱う意図をコード上でも明確にします。
+    if (static_cast<bool>(m_SelectedEntity) == false)
     {
         return;
     }
