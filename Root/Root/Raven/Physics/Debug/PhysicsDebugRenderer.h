@@ -17,35 +17,22 @@ namespace ph
 {
 class PhysicsWorld;
 
-// Physicsの3D可視化と画面左上のSolver Statistics Overlayを担当します。
-// Keyboard: H=Overlay, B=AABB, O=OBB, F=Fat AABB, T=Tree, P=Pair, C=Contact, N=Normal
 class PhysicsDebugRenderer
 {
 public:
-    // Sceneだけを所有元として保持します。
-    // View/Projectionは描画時にRenderer Camera Contextから取得するため、SceneGame側に
-    // Debug Renderer専用のCamera行列参照を維持する必要はありません。
     explicit PhysicsDebugRenderer(Scene& scene);
+
+    // SceneGameのm_View/m_Projection撤去を段階的に行うための互換Constructorです。
+    // Renderer Camera Contextが有効な描画ではContextを優先し、未移行経路だけこの参照をfallback利用します。
+    PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection);
+
     ~PhysicsDebugRenderer();
     PhysicsDebugRenderer(const PhysicsDebugRenderer&) = delete;
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
 
-    // 登録済みインスタンスをまとめて描画します。
     static void RenderRegistered();
-    // 同じSceneにぶら下がるRendererへPhysicsWorld参照を配布します。
     static void BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld);
 
-    // ========================================================================
-    // Bound PhysicsWorld access
-    // ========================================================================
-    // 現在のSceneはPhysicsWorldをprivate所有しているため、SceneGameからRayCast等の
-    // Physics query APIへ直接到達できません。PhysicsDebugRendererはScene::OnUpdatePhysics
-    // から実際にStepされたWorldを既にBindされているため、マウス操作などScene側の
-    // デバッグ/インタラクション用途に限ってそのWorldを返します。
-    //
-    // m_PhysicsWorldは描画用途ではconst参照ですが、返却先ではPhysicsWorldの正式な
-    // AddImpulseAtPoint/WakeUp等の制御APIだけを使用します。将来的にはScene自身に
-    // GetPhysicsWorld()/RayCast wrapperを設け、この橋渡しを削除するのが望ましいです。
     PhysicsWorld* GetBoundPhysicsWorld() const
     {
         return const_cast<PhysicsWorld*>(m_PhysicsWorld);
@@ -55,17 +42,12 @@ public:
     const PhysicsDebugSettings& GetSettings() const { return m_Settings; }
 
 private:
-    // 線描画専用頂点。TexcoordはOverlayフォント描画の将来拡張用に保持します。
     struct DebugVertex { math::Vec3 Position{}; math::Vec3 Color{1,1,1}; math::Vec2 Texcoord{}; };
     static std::vector<PhysicsDebugRenderer*>& Registry();
-    // 初回描画時にPipeline/Materialを遅延生成します。
     void EnsureInitialized();
-    // キー入力の立ち上がりのみで表示フラグを反転します。
     void UpdateToggleKeys();
     void Render();
-    // 3Dワイヤ表示群（AABB/OBB/Tree/Contact）を収集して描画します。
     void RenderWorldDebug();
-    // 2D OverlayにSolver統計と表示設定を描画します。
     void RenderOverlay();
     void SubmitLines(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
         const math::Mat4& view, const math::Mat4& projection);
@@ -84,6 +66,12 @@ private:
 private:
     Scene* m_Scene = nullptr;
     const PhysicsWorld* m_PhysicsWorld = nullptr;
+
+    // Renderer Camera Context導入前の経路だけで利用するfallbackです。
+    // SceneGameのCameraミラー撤去が完了した段階で削除します。
+    const math::Mat4* m_FallbackView = nullptr;
+    const math::Mat4* m_FallbackProjection = nullptr;
+
     Ref<Material> m_Material;
     PhysicsDebugSettings m_Settings{};
     bool m_WasOverlayKeyPressed=false, m_WasAABBKeyPressed=false, m_WasOBBKeyPressed=false;
