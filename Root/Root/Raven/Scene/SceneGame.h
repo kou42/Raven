@@ -6,6 +6,7 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
+#include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 
 #include <unordered_map>
 #include <vector>
@@ -18,6 +19,7 @@ class SceneGame : public Scene
 public:
     SceneGame()
         : m_PhysicsDebugRenderer(*this, m_View, m_Projection)
+        , m_AnimationDebugRenderer(*this)
     {
     }
 
@@ -93,11 +95,12 @@ private:
     float m_AnimationStateMachineTime = 0.0f;
 
     // ========================================================================
-    // Broad Phase Debug Visualization
+    // Debug Visualization
     // ========================================================================
-    // B : Collider AABBのワイヤーフレーム表示 ON/OFF
-    // P : Broad Phase候補ペア線表示 ON/OFF
+    // Physics Debug: H/B/O/F/T/P/C/N
+    // Animation Debug: Y
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
+    AnimationDebugOverlayRenderer m_AnimationDebugRenderer;
 
     bool m_WasSpacePressed = false;
 

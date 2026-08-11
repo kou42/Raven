@@ -13,7 +13,7 @@ namespace Raven
 
 bool BlendTree1D::AddChild(float threshold, std::shared_ptr<AnimationClip> clip)
 {
-    if (!std::isfinite(threshold) || !clip)
+    if (std::isfinite(threshold) == false || clip == nullptr)
     {
         return false;
     }
@@ -54,7 +54,7 @@ bool BlendTree1D::ResolveBlend(
     outRight = nullptr;
     outWeight = 0.0f;
 
-    if (!std::isfinite(parameterValue) || m_Children.empty())
+    if (std::isfinite(parameterValue) == false || m_Children.empty())
     {
         return false;
     }
@@ -105,6 +105,42 @@ bool BlendTree1D::ResolveBlend(
     return true;
 }
 
+bool BlendTree1D::GetDebugInfo(float parameterValue, BlendTree1DDebugInfo& outInfo) const
+{
+    outInfo = {};
+
+    const BlendTree1DChild* left = nullptr;
+    const BlendTree1DChild* right = nullptr;
+    float rightWeight = 0.0f;
+    if (ResolveBlend(parameterValue, left, right, rightWeight) == false ||
+        left == nullptr || right == nullptr)
+    {
+        return false;
+    }
+
+    // ResolveBlend()と同じ結果からDebug情報を作ることが重要です。
+    // Editor側でThreshold補間を再計算しないため、Runtime Poseと表示Weightが必ず一致します。
+    outInfo.ParameterValue = parameterValue;
+    outInfo.LeftChildIndex = static_cast<std::size_t>(left - m_Children.data());
+    outInfo.RightChildIndex = static_cast<std::size_t>(right - m_Children.data());
+    outInfo.LeftThreshold = left->Threshold;
+    outInfo.RightThreshold = right->Threshold;
+
+    if (left == right)
+    {
+        outInfo.LeftWeight = 1.0f;
+        outInfo.RightWeight = 0.0f;
+        outInfo.IsClamped = parameterValue <= m_Children.front().Threshold ||
+            parameterValue >= m_Children.back().Threshold;
+        return true;
+    }
+
+    outInfo.LeftWeight = 1.0f - rightWeight;
+    outInfo.RightWeight = rightWeight;
+    outInfo.IsClamped = false;
+    return true;
+}
+
 bool BlendTree1D::GetBlendedDuration(float parameterValue, float& outDuration) const
 {
     outDuration = 0.0f;
@@ -112,8 +148,8 @@ bool BlendTree1D::GetBlendedDuration(float parameterValue, float& outDuration) c
     const BlendTree1DChild* left = nullptr;
     const BlendTree1DChild* right = nullptr;
     float weight = 0.0f;
-    if (!ResolveBlend(parameterValue, left, right, weight) ||
-        !left || !right || !left->Clip || !right->Clip)
+    if (ResolveBlend(parameterValue, left, right, weight) == false ||
+        left == nullptr || right == nullptr || left->Clip == nullptr || right->Clip == nullptr)
     {
         return false;
     }
@@ -135,7 +171,7 @@ bool BlendTree1D::SampleTransform(
     float normalizedTime,
     TransformPose& outPose) const
 {
-    if (!std::isfinite(normalizedTime))
+    if (std::isfinite(normalizedTime) == false)
     {
         return false;
     }
@@ -143,8 +179,8 @@ bool BlendTree1D::SampleTransform(
     const BlendTree1DChild* left = nullptr;
     const BlendTree1DChild* right = nullptr;
     float weight = 0.0f;
-    if (!ResolveBlend(parameterValue, left, right, weight) ||
-        !left || !right || !left->Clip || !right->Clip)
+    if (ResolveBlend(parameterValue, left, right, weight) == false ||
+        left == nullptr || right == nullptr || left->Clip == nullptr || right->Clip == nullptr)
     {
         return false;
     }
@@ -174,7 +210,7 @@ bool BlendTree1D::SampleSkeleton(
     float normalizedTime,
     SkeletonPose& outPose) const
 {
-    if (!std::isfinite(normalizedTime))
+    if (std::isfinite(normalizedTime) == false)
     {
         return false;
     }
@@ -182,8 +218,8 @@ bool BlendTree1D::SampleSkeleton(
     const BlendTree1DChild* left = nullptr;
     const BlendTree1DChild* right = nullptr;
     float weight = 0.0f;
-    if (!ResolveBlend(parameterValue, left, right, weight) ||
-        !left || !right || !left->Clip || !right->Clip)
+    if (ResolveBlend(parameterValue, left, right, weight) == false ||
+        left == nullptr || right == nullptr || left->Clip == nullptr || right->Clip == nullptr)
     {
         return false;
     }
@@ -191,10 +227,10 @@ bool BlendTree1D::SampleSkeleton(
     const float normalized = std::clamp(normalizedTime, 0.0f, 1.0f);
 
     SkeletonPose leftPose;
-    if (!left->Clip->Sample(
+    if (left->Clip->Sample(
             skeleton,
             normalized * left->Clip->GetDuration(),
-            leftPose))
+            leftPose) == false)
     {
         return false;
     }
@@ -206,10 +242,10 @@ bool BlendTree1D::SampleSkeleton(
     }
 
     SkeletonPose rightPose;
-    if (!right->Clip->Sample(
+    if (right->Clip->Sample(
             skeleton,
             normalized * right->Clip->GetDuration(),
-            rightPose))
+            rightPose) == false)
     {
         return false;
     }

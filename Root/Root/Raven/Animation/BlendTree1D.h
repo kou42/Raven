@@ -23,6 +23,28 @@ struct BlendTree1DChild
 };
 
 // ============================================================================
+// BlendTree1DDebugInfo
+// ============================================================================
+// Runtime / Editorが「今どの2 Motionが、何%ずつ使われているか」を参照するための軽量Snapshotです。
+// Editor側でThreshold補間を再実装するとRuntimeと表示が食い違うため、実際のResolveBlend()結果から生成します。
+struct BlendTree1DDebugInfo
+{
+    float ParameterValue = 0.0f;
+
+    std::size_t LeftChildIndex = 0;
+    std::size_t RightChildIndex = 0;
+
+    float LeftThreshold = 0.0f;
+    float RightThreshold = 0.0f;
+
+    float LeftWeight = 0.0f;
+    float RightWeight = 0.0f;
+
+    // 最小/最大Threshold外で端のMotionへClampされているかを示します。
+    bool IsClamped = false;
+};
+
+// ============================================================================
 // BlendTree1D
 // ============================================================================
 // 1つのFloat値から隣接する2つのAnimationClipを選び、Poseを線形補間する最小Blend Treeです。
@@ -48,6 +70,10 @@ public:
     // Animatorはこの値を「1周期の実時間」として使い、Normalized Timeをdtから進めます。
     // Parameterが変化してもNormalized Time自体を保持するため、Walk -> Runで歩行位相が跳びません。
     bool GetBlendedDuration(float parameterValue, float& outDuration) const;
+
+    // Runtime / Editor用に、実際のBlend解決結果を取得します。
+    // LeftWeight + RightWeight は常に1.0です。Clamp時はLeft/Rightが同じChildになりRightWeight=0です。
+    bool GetDebugInfo(float parameterValue, BlendTree1DDebugInfo& outInfo) const;
 
     // 単一Transform Animation用のPose Sampleです。
     // parameterValueが最小/最大Thresholdの外側なら端のChildへClampします。
