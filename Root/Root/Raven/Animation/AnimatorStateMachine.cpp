@@ -20,7 +20,7 @@ bool AnimatorStateMachine::AddState(
     }
 
     // State名はState Machine内で一意にします。
-    // 同名Stateを上書き可能にすると、再生中Clipと定義テーブルの対応が暗黙に変化するため、
+    // 同名Stateを上書き可能にすると、再生中Motionと定義テーブルの対応が暗黙に変化するため、
     // 登録ミスを早い段階で検出できるよう明示的に失敗させます。
     if (m_States.find(name) != m_States.end())
     {
@@ -36,6 +36,37 @@ bool AnimatorStateMachine::AddState(
     return true;
 }
 
+bool AnimatorStateMachine::AddBlendTreeState(
+    std::string name,
+    std::shared_ptr<BlendTree1D> blendTree,
+    std::string blendParameterName,
+    float crossFadeDuration,
+    bool restartOnEnter)
+{
+    if (name.empty() || !blendTree || blendTree->GetChildCount() == 0 ||
+        blendParameterName.empty() || HasState(name))
+    {
+        return false;
+    }
+
+    // Blend Treeが参照するParameterはFloatに限定します。
+    // Bool/Triggerを暗黙に0/1へ変換するとEditor定義ミスを見逃しやすいため登録時に拒否します。
+    float unusedValue = 0.0f;
+    if (!GetFloat(blendParameterName, unusedValue))
+    {
+        return false;
+    }
+
+    AnimatorStateDefinition state{};
+    state.BlendTree = std::move(blendTree);
+    state.BlendParameterName = std::move(blendParameterName);
+    state.CrossFadeDuration = std::max(crossFadeDuration, 0.0f);
+    state.RestartOnEnter = restartOnEnter;
+
+    m_States.emplace(std::move(name), std::move(state));
+    return true;
+}
+
 bool AnimatorStateMachine::RemoveState(const std::string& name)
 {
     const auto it = m_States.find(name);
@@ -44,7 +75,7 @@ bool AnimatorStateMachine::RemoveState(const std::string& name)
         return false;
     }
 
-    // 再生中Stateを削除してもAnimatorはshared_ptrでClipを保持しているため即座に壊れません。
+    // 再生中Stateを削除してもAnimatorはshared_ptrでMotionを保持しているため即座に壊れません。
     // ただしState Machine上ではその名前へ戻れなくなるので、管理名は明示的に解除します。
     if (m_CurrentStateName == name)
     {
@@ -87,12 +118,26 @@ const AnimatorStateDefinition* AnimatorStateMachine::FindState(const std::string
     return (it != m_States.end()) ? &it->second : nullptr;
 }
 
+bool AnimatorStateMachine::GetBlendParameterValue(
+    const AnimatorStateDefinition& state,
+    float& outValue) const
+{
+    if (!state.IsBlendTreeState() || state.BlendParameterName.empty())
+    {
+        return false;
+    }
+
+    // Blend TreeのRuntime値はStateDefinitionへコピーせず、常にParameter Tableから取得します。
+    // Entityごとに異なるSpeedなどの値を共有定義へ混ぜないことが重要です。
+    return GetFloat(state.BlendParameterName, outValue);
+}
+
 bool AnimatorStateMachine::SetInitialState(
     const std::string& name,
     bool startImmediately)
 {
     const AnimatorStateDefinition* state = FindState(name);
-    if (!state || !state->Clip)
+    if (!state || !state->IsValid())
     {
         return false;
     }
@@ -104,7 +149,21 @@ bool AnimatorStateMachine::SetInitialState(
     if (startImmediately)
     {
         // 初期StateはBlend元が存在しないためCrossFadeせず直接Playします。
-        m_Animator.Play(state->Clip, true);
+        // Blend Tree Stateの場合も同様で、現在Parameter値を取得してAnimatorへ渡します。
+        if (state->IsBlendTreeState())
+        {
+            float blendParameter = 0.0f;
+            if (!GetBlendParameterValue(*state, blendParameter))
+            {
+                return false;
+            }
+
+            m_Animator.PlayBlendTree(state->BlendTree, blendParameter, true);
+        }
+        else
+        {
+            m_Animator.Play(state->Clip, true);
+        }
     }
 
     return true;
@@ -115,21 +174,20 @@ bool AnimatorStateMachine::TransitionTo(
     float durationOverride)
 {
     const AnimatorStateDefinition* target = FindState(name);
-    if (!target || !target->Clip)
+    if (!target || !target->IsValid())
     {
         return false;
     }
 
     // 既に同じStateで、遷移予約も無い場合は何もしません。
-    // 毎Frame speed判定からTransitionTo("Walk")を呼ぶようなGameplayコードでも、
-    // Animationを毎Frame先頭へ戻さないための重要なGuardです。
+    // 毎Frame同じStateを要求するGameplayコードでもMotionを先頭へ戻さないための重要なGuardです。
     if (m_CurrentStateName == name && m_PendingStateName.empty())
     {
         return true;
     }
 
     // 同じ遷移先をCrossFade中に繰り返し要求された場合も成功扱いで無視します。
-    // Gameplay側は「現在Fade中か」を意識せず、必要なStateを毎Frame要求できます。
+    // Gameplay側は「現在Fade中か」を意識せず必要Stateを要求でき、重複Fadeも発生しません。
     if (m_PendingStateName == name)
     {
         return true;
@@ -140,27 +198,59 @@ bool AnimatorStateMachine::TransitionTo(
             ? durationOverride
             : target->CrossFadeDuration;
 
-    // 初期State未設定、またはAnimator側にCurrent Clipが無い場合は直接Playします。
-    // Blend元が存在しない状態でCrossFadeを作る意味がないためです。
+    // Blend Treeへの遷移では開始FrameのParameter値が必要です。
+    // Parameter取得に失敗した状態でAnimatorだけ切り替えるとState名とMotion実体がずれるため、
+    // CrossFade開始前に必ず検証します。
+    float targetBlendParameter = 0.0f;
+    if (target->IsBlendTreeState() &&
+        !GetBlendParameterValue(*target, targetBlendParameter))
+    {
+        return false;
+    }
+
+    // 初期State未設定、またはAnimator側にCurrent Motionが無い場合は直接Playします。
+    // Blend元Poseが存在しない状態でCrossFadeを作る意味がないためです。
     if (!HasCurrentState() || !m_Animator.GetCurrentState().IsValid())
     {
-        m_Animator.Play(target->Clip, target->RestartOnEnter);
+        if (target->IsBlendTreeState())
+        {
+            m_Animator.PlayBlendTree(
+                target->BlendTree,
+                targetBlendParameter,
+                target->RestartOnEnter);
+        }
+        else
+        {
+            m_Animator.Play(target->Clip, target->RestartOnEnter);
+        }
+
         m_CurrentStateName = name;
         m_PendingStateName.clear();
         return true;
     }
 
-    // Animator::CrossFade()がfalseを返した場合は、Fade中割り込み拒否などにより
-    // 実際のAnimation状態が変わっていません。そのためState Machine側の名前も変更しません。
-    if (!m_Animator.CrossFade(
+    // Clip / BlendTreeの種類に応じてAnimatorの対応CrossFadeへ変換します。
+    // State Machineは「どのStateへ行くか」を決めるだけで、Pose BlendそのものはAnimatorへ任せます。
+    const bool transitionStarted = target->IsBlendTreeState()
+        ? m_Animator.CrossFadeBlendTree(
+            target->BlendTree,
+            targetBlendParameter,
+            std::max(duration, 0.0f),
+            target->RestartOnEnter)
+        : m_Animator.CrossFade(
             target->Clip,
             std::max(duration, 0.0f),
-            target->RestartOnEnter))
+            target->RestartOnEnter);
+
+    // AnimatorがFade中割り込みを拒否した場合など、実際のMotion状態が変わっていないため
+    // State Machine側の名前も変更しません。名前だけ先行するとEditor/Debug表示や次Transition評価が
+    // 実際に再生中のMotionと食い違うため、この同期は必ず維持します。
+    if (!transitionStarted)
     {
         return false;
     }
 
-    // duration <= 0ではAnimator::CrossFade()内部がPlayへフォールバックし、即時遷移します。
+    // duration <= 0ではAnimator側がPlayへフォールバックし、即時遷移します。
     // その場合Pendingを経由せず、この場でCurrent State名を確定します。
     if (!m_Animator.IsCrossFading())
     {
@@ -171,7 +261,7 @@ bool AnimatorStateMachine::TransitionTo(
 
     // CrossFade完了まではCurrentStateNameを旧Stateのまま維持します。
     // 「現在の遷移元」と「遷移先」をCurrent/Pendingとして区別できるため、
-    // Editor/Debug表示や将来のTransition Conditionでも状態を解釈しやすくなります。
+    // Editor/Debug表示やTransition Conditionでも状態を解釈しやすくなります。
     m_PendingStateName = name;
     return true;
 }
@@ -230,6 +320,17 @@ bool AnimatorStateMachine::RemoveParameter(const std::string& name)
     if (it == m_Parameters.end())
     {
         return false;
+    }
+
+    // Blend Tree Stateが直接参照するParameterを削除するとMotion評価自体が不可能になるため、
+    // Transition Conditionとは異なり自動削除せず、先にState定義を直すことを要求します。
+    for (const auto& statePair : m_States)
+    {
+        if (statePair.second.IsBlendTreeState() &&
+            statePair.second.BlendParameterName == name)
+        {
+            return false;
+        }
     }
 
     // Conditionが参照するParameterを削除するとTransition定義が壊れるため、
@@ -370,6 +471,16 @@ bool AnimatorStateMachine::AddTransition(AnimatorTransition transition)
 
     transition.CrossFadeDuration = std::max(transition.CrossFadeDuration, 0.0f);
 
+    // Exit TimeはNormalized Timeとして扱うため、0.0～1.0の範囲だけを許可します。
+    // HasExitTime=falseではExitTime値を評価しないため、従来Transitionとの互換性を保ちます。
+    if (transition.HasExitTime &&
+        (!std::isfinite(transition.ExitTime) ||
+         transition.ExitTime < 0.0f ||
+         transition.ExitTime > 1.0f))
+    {
+        return false;
+    }
+
     for (const AnimatorCondition& condition : transition.Conditions)
     {
         const AnimatorParameter* parameter = FindParameter(condition.ParameterName);
@@ -405,6 +516,39 @@ bool AnimatorStateMachine::AddTransition(AnimatorTransition transition)
 
     m_Transitions.push_back(std::move(transition));
     return true;
+}
+
+void AnimatorStateMachine::SyncAnimatorBlendTreeParameters()
+{
+    // Current StateがBlend Treeなら、同FrameにGameplay側がSetFloatした値をPose評価前に反映します。
+    // State Machine側のParameterが正規のRuntime値で、Animator側はそのFrameのSample入力だけを持ちます。
+    if (!m_CurrentStateName.empty())
+    {
+        const AnimatorStateDefinition* current = FindState(m_CurrentStateName);
+        if (current && current->IsBlendTreeState())
+        {
+            float value = 0.0f;
+            if (GetBlendParameterValue(*current, value))
+            {
+                m_Animator.SetCurrentBlendParameter(value);
+            }
+        }
+    }
+
+    // CrossFade先がBlend Treeの場合はNext Stateにも同じFrameのParameter値を反映します。
+    // これによりLand -> LocomotionのFade途中でも最新Speedで遷移先Poseを評価できます。
+    if (!m_PendingStateName.empty())
+    {
+        const AnimatorStateDefinition* pending = FindState(m_PendingStateName);
+        if (pending && pending->IsBlendTreeState())
+        {
+            float value = 0.0f;
+            if (GetBlendParameterValue(*pending, value))
+            {
+                m_Animator.SetNextBlendParameter(value);
+            }
+        }
+    }
 }
 
 bool AnimatorStateMachine::EvaluateCondition(const AnimatorCondition& condition) const
@@ -455,11 +599,14 @@ bool AnimatorStateMachine::EvaluateCondition(const AnimatorCondition& condition)
 bool AnimatorStateMachine::EvaluateTransitions()
 {
     // Current Stateが無い、またはFade中の場合は自動Transitionを開始しません。
-    // Fade割り込み対応はAnimator側のSnapshot Pose実装後にポリシーを拡張します。
+    // Priorityは「同じFrameに複数Transitionが成立した場合」の選択順だけを決めます。
+    // Fade中InterruptはAnimatorがSnapshot Poseを持つ段階で別途実装し、ここでは従来どおり拒否します。
     if (!HasCurrentState() || m_Animator.IsCrossFading())
     {
         return false;
     }
+
+    const AnimatorTransition* selectedTransition = nullptr;
 
     for (const AnimatorTransition& transition : m_Transitions)
     {
@@ -468,8 +615,17 @@ bool AnimatorStateMachine::EvaluateTransitions()
             continue;
         }
 
+        // Exit Timeを持つTransitionは、Parameter Conditionを見る前にAnimation再生位置を確認します。
+        // Normalized Timeを使うことでClip/BlendTreeの実秒数に依存せず、0.8を「80%再生」と扱えます。
+        // Exit Time未到達ならConditionが成立していても遷移を開始しません。
+        if (transition.HasExitTime &&
+            m_Animator.GetNormalizedTime() < transition.ExitTime)
+        {
+            continue;
+        }
+
         // Conditionを持たないTransitionは常時成立になります。
-        // 将来Exit Timeを追加する場合にも使えるため許可しています。
+        // HasExitTime=trueなら「時間だけで遷移する」Transitionとして利用できます。
         const bool allConditionsMet = std::all_of(
             transition.Conditions.begin(),
             transition.Conditions.end(),
@@ -483,18 +639,28 @@ bool AnimatorStateMachine::EvaluateTransitions()
             continue;
         }
 
-        // 登録順を優先順位として、最初に成立したTransitionだけを実行します。
-        // Transition開始に失敗した場合はTriggerを消費せず、次Frameに再評価できます。
-        if (!TransitionTo(transition.ToState, transition.CrossFadeDuration))
+        // より高いPriorityのTransitionが見つかった場合だけ候補を置き換えます。
+        // 同Priorityでは置き換えないため、vectorへ登録された順番がTie Breakとして残ります。
+        if (!selectedTransition || transition.Priority > selectedTransition->Priority)
         {
-            return false;
+            selectedTransition = &transition;
         }
-
-        ConsumeTransitionTriggers(transition);
-        return true;
     }
 
-    return false;
+    if (!selectedTransition)
+    {
+        return false;
+    }
+
+    // 最終的に選ばれた1本だけを実行します。
+    // Transition開始に失敗した場合はTriggerを消費せず、次Frameに同条件を再評価できます。
+    if (!TransitionTo(selectedTransition->ToState, selectedTransition->CrossFadeDuration))
+    {
+        return false;
+    }
+
+    ConsumeTransitionTriggers(*selectedTransition);
+    return true;
 }
 
 void AnimatorStateMachine::ConsumeTransitionTriggers(const AnimatorTransition& transition)
@@ -581,13 +747,20 @@ bool AnimatorStateMachine::UpdateLocomotion(
 
 void AnimatorStateMachine::Update(float deltaTime)
 {
-    // Update開始時にParameter Transitionを評価します。
-    // Gameplay側でSetFloat/SetBool/SetTriggerした値が同FrameのAnimation遷移へ反映されます。
+    // Blend Tree ParameterはTransition評価より前に同期します。
+    // これにより同FrameのSpeed変更がLocomotion PoseとTransition Conditionの両方へ一致して反映されます。
+    SyncAnimatorBlendTreeParameters();
+
+    // Gameplay側でSetFloat/SetBool/SetTriggerした値を同FrameのTransition評価へ反映します。
     // Locomotion Queueがある場合は明示的な最新要求を優先し、自動Transition評価は次Frameへ回します。
     if (!m_Animator.IsCrossFading() && m_QueuedStateName.empty())
     {
         EvaluateTransitions();
     }
+
+    // EvaluateTransitions()でBlendTree Stateへ遷移した可能性があるため、Next側もここでもう一度同期します。
+    // Land -> LocomotionのようにこのFrameでPendingが生まれた場合にも最新Speedを使えるようにします。
+    SyncAnimatorBlendTreeParameters();
 
     // Update前後のCrossFade状態を比較することで、Animator内部のFade完了を検出します。
     // State Machine側にFade時間を重複保持しないことが重要です。
@@ -597,7 +770,7 @@ void AnimatorStateMachine::Update(float deltaTime)
 
     // Pending Stateが存在する状態でAnimatorのCrossFadeが完了した瞬間に、
     // State Machine側のCurrent名を遷移先へ確定します。
-    // AnimatorStateの昇格処理と同じFrameで同期することで、Animation実体と名前がずれません。
+    // AnimatorStateの昇格処理と同じFrameで同期することで、Motion実体と名前がずれません。
     if (wasCrossFading &&
         !m_Animator.IsCrossFading() &&
         !m_PendingStateName.empty())

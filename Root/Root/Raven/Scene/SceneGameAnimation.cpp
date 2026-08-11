@@ -20,7 +20,7 @@ void SceneGame::SpawnAnimationTestCube()
     // ========================================================================
     // Animation State Machine validation entity
     // ========================================================================
-    // このEntityは AnimationClip -> AnimatorStateMachine -> Animator ->
+    // このEntityは AnimationClip -> BlendTree1D / AnimatorStateMachine -> Animator ->
     // AnimatorComponent -> AnimationSystem -> TransformComponent という一連の経路を
     // 目視確認するための最小Characterサンプルです。
     //
@@ -35,22 +35,20 @@ void SceneGame::SpawnAnimationTestCube()
 
     // 完全な立方体はY軸回転してもシルエットの変化が小さく、RotationKeyが正しく
     // 描画へ反映されているか目視しづらいため、X/Zを細くした直方体として表示します。
-    // AnimationClip側も同じ縦横比を維持し、Stateごとの大きさだけを変化させます。
+    // AnimationClip側も同じ縦横比を維持し、Motionごとの大きさだけを変化させます。
     transform.Scale = { 2.5f, 4.0f, 1.5f };
 
     animatedCube.AddComponent<MeshRendererComponent>(
         MeshRendererComponent{ m_BoxMesh, m_Material });
 
     // ========================================================================
-    // State validation Clips
+    // Motion validation Clips
     // ========================================================================
-    // 本物のCharacter Assetを必要とせずState遷移だけを目視確認できるよう、各Stateを
-    // Cubeの高さ・回転・Scaleの違いとして表現します。各Clipは同じ基準位置を使うため、
-    // CrossFade時にも意図しない大きな位置移動が発生しません。
+    // 本物のCharacter Assetを必要とせずState遷移とBlend Tree補間を目視確認できるよう、
+    // 各MotionをCubeの高さ・回転・Scaleの違いとして表現します。
     //
-    // scaleはY方向の高さを基準値として受け取り、X/Zには異なる比率を掛けています。
-    // これによりWalk/RunのY軸回転時に長辺・短辺の向きが明確に変わり、
-    // RotationKey -> AnimationSystem -> Transformの動作を一目で確認できます。
+    // LocomotionではIdle / Walk / Runが別Stateではなく1D Blend TreeのChildになります。
+    // Speed=0.0 -> 2.0 -> 6.0の間で回転とScaleが連続的に補間されることを確認できます。
     auto makeClip = [](float height, float yaw, float scale)
     {
         auto clip = std::make_shared<AnimationClip>(1.0f);
@@ -77,37 +75,30 @@ void SceneGame::SpawnAnimationTestCube()
     auto walkClip = makeClip(6.0f, math::Pi * 0.5f, 4.5f);
     auto runClip  = makeClip(6.0f, math::Pi, 5.0f);
 
-    // Jumpだけ高さを上げ、Grounded / Jump Triggerによる遷移が目で分かるようにします。
-    auto jumpClip = std::make_shared<AnimationClip>(1.0f);
-    auto& jumpTrack = jumpClip->GetTransformTrack();
-    jumpTrack.PositionKeys =
-    {
-        { 0.0f, { -18.0f,  6.0f, -4.0f } },
-        { 0.5f, { -18.0f, 13.0f, -4.0f } },
-        { 1.0f, { -18.0f,  6.0f, -4.0f } }
-    };
-    jumpTrack.RotationKeys =
-    {
-        { 0.0f, math::Quat::Identity() },
-        { 1.0f, math::Quat::Identity() }
-    };
-    jumpTrack.ScaleKeys =
-    {
-        { 0.0f, { 4.5f * 0.625f, 4.5f, 4.5f * 0.375f } },
-        { 1.0f, { 4.5f * 0.625f, 4.5f, 4.5f * 0.375f } }
-    };
+    // JumpはJumpStart / Fall / Landへ分割し、State境界を目視しやすい形状差で表現します。
+    // 実Character Asset導入前でも「離陸 -> 落下 -> 着地」が別Stateとして切り替わることを確認できます。
+    auto jumpStartClip = makeClip(10.0f, 0.0f, 3.5f);
+    auto fallClip = makeClip(13.0f, 0.0f, 4.0f);
+    auto landClip = makeClip(5.5f, 0.0f, 5.0f);
 
     // ========================================================================
-    // Runtime State Machine
+    // Runtime State Machine + 1D Blend Tree
     // ========================================================================
-    // BuildCharacterController()でState / Parameter / Transitionをまとめて構築します。
-    // Scene側はTransition条件の詳細を知らず、毎Frame Character状態だけを渡します。
+    // BuildCharacterBlendTreeController()でLocomotionを1 Stateへまとめます。
+    // State MachineはLocomotion <-> Jump系だけを管理し、Idle / Walk / Runの連続補間は
+    // BlendTree1DがSpeed Parameterから直接Poseを生成します。
     auto animator = std::make_shared<Animator>();
     animator->SetLoop(true);
     animator->SetSpeed(1.0f);
 
     auto stateMachine = std::make_shared<AnimatorStateMachine>(*animator);
-    if (!stateMachine->BuildCharacterController(idleClip, walkClip, runClip, jumpClip))
+    if (!stateMachine->BuildCharacterBlendTreeController(
+            idleClip,
+            walkClip,
+            runClip,
+            jumpStartClip,
+            fallClip,
+            landClip))
     {
         return;
     }
@@ -137,11 +128,11 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     }
 
     // ========================================================================
-    // Deterministic State Machine validation sequence
+    // Deterministic Blend Tree + Jump validation sequence
     // ========================================================================
-    // 8秒周期で Idle -> Walk -> Run -> Jump -> Run -> Walk -> Idle を自動再生します。
-    // 入力やPhysicsに依存しないため、Animation層の変更だけを切り分けて確認できます。
-    // Jump TriggerはJump区間へ入る瞬間の1Frameだけ立てます。
+    // 8秒周期でLocomotion内のIdle -> Walk -> Run相当へSpeedを変化させた後、
+    // JumpStart -> Fall -> Land -> Locomotionへ戻る流れを自動再生します。
+    // Idle / Walk / Run間ではState遷移を発生させず、同じLocomotion State内でPoseが連続補間されます。
     const float previousTime = m_AnimationStateMachineTime;
     m_AnimationStateMachineTime += deltaTime;
     if (m_AnimationStateMachineTime >= 8.0f)
@@ -152,27 +143,42 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     const float time = m_AnimationStateMachineTime;
     float speed = 0.0f;
     bool grounded = true;
+    float verticalVelocity = 0.0f;
 
+    // Blend Tree Thresholdは既定でIdle=0.0 / Walk=2.0 / Run=6.0です。
+    // 区間内の値も連続補間されるため、今後は時間に応じてSpeedを滑らかに変化させるテストへ
+    // 発展させればThreshold間のBlend Weightもより分かりやすく確認できます。
     if (time >= 2.0f && time < 4.0f)
     {
-        speed = 2.0f; // Walk領域
+        speed = 2.0f; // Walk Motionが100%になる位置
     }
     else if (time >= 4.0f && time < 7.0f)
     {
-        speed = 6.0f; // Run領域
+        speed = 6.0f; // Run Motionが100%になる位置
     }
 
     // 5秒地点でJump要求を1回だけ発生させ、その後約1秒間を空中として扱います。
+    // VerticalVelocityは簡易的な放物運動として、5.5秒で0を跨ぐように作ります。
+    // これによりJumpStart -> FallがAnimation時間ではなく上下方向速度で発火することを確認できます。
     const bool crossedJumpPoint = previousTime < 5.0f && time >= 5.0f;
     if (time >= 5.0f && time < 6.0f)
     {
-        grounded = crossedJumpPoint;
+        grounded = false;
+        verticalVelocity = (5.5f - time) * 12.0f;
+    }
+
+    // Jump要求を出すFrameだけは接地中として扱い、Jump Trigger && Groundedを成立させます。
+    // 実GameplayではJump要求を受理した直後にPhysicsが上向き速度を与え、次Frame以降Grounded=falseになります。
+    if (crossedJumpPoint)
+    {
+        grounded = true;
     }
 
     animatorComponent.StateMachine->UpdateCharacterParameters(
         speed,
         grounded,
-        crossedJumpPoint);
+        crossedJumpPoint,
+        verticalVelocity);
 }
 
 } // namespace Raven
