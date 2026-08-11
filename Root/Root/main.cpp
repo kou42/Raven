@@ -9,9 +9,10 @@ int main()
     Raven::Application app;
 
     // Runtime SceneはApplicationへ設定し、Editor機能は通常Layerとして独立して登録します。
-    // これによりApplicationはEditor固有UIを知らず、Editor側だけを段階的に拡張できます。
+    // EditorLayerへApplication参照を渡すことで、所有権を移さずActive Scene / Window等の
+    // Runtime状態を各Editor Panelへ安全に橋渡しできます。
     app.SetScene(Raven::CreateScope<Raven::SceneGame>());
-    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>());
+    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
 
     app.Run();
     return 0;
