@@ -93,6 +93,14 @@ private:
     void UpdateAnimationStateMachineTest(float deltaTime);
 
     // ========================================================================
+    // Runtime Camera
+    // ========================================================================
+    // Primary Camera EntityのTransform/CameraComponentからm_View/m_Projectionを同期します。
+    // 描画、Mouse Ray、Physics Debugが同じCamera状態を見るための単一入口です。
+    // Camera Entityが存在しない場合はfalseを返し、直前の行列を維持します。
+    bool UpdateRuntimeCameraMatrices();
+
+    // ========================================================================
     // Mouse Drag Impulse / Physics Ray Picking
     // ========================================================================
     // マウス座標からCamera Rayを構築し、PhysicsWorld::RayCast()で実Colliderを選択します。
@@ -119,14 +127,16 @@ private:
     // ========================================================================
     // Runtime Camera matrices
     // ========================================================================
-    // 通常のGame View / Runtime描画で利用するCamera行列です。
-    // Scene View描画時だけRenderWithCamera()が一時差し替えしますが、描画完了後に復元されます。
+    // 正規データはCamera EntityのTransformComponent + CameraComponentです。
+    // ここは既存Renderer/PhysicsDebugRendererとの互換用ミラーとして保持し、
+    // UpdateRuntimeCameraMatrices()でPrimary SceneCameraから同期します。
     math::Mat4 m_View;
     math::Mat4 m_Projection;
 
     std::vector<Entity> m_SpawnedEntities;
     std::vector<SphereBody> m_SphereBodies;
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
+    Entity m_RuntimeCameraEntity;
     Entity m_FloorEntity;
     Entity m_BoxEntity;
     Entity m_AnimationTestEntity;
@@ -161,7 +171,7 @@ private:
     float m_ViewportWidth = 1920.0f;
     float m_ViewportHeight = 1080.0f;
 
-    // Perspective()と同じFOVをMouse Ray生成でも使います。
+    // Mouse Ray生成ではPrimary SceneCameraのFOVを毎回同期して利用します。
     float m_CameraFovY = 0.7854f;
     float m_MouseRayMaxDistance = 1000.0f;
 
