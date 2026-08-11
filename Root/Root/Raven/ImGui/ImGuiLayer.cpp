@@ -14,15 +14,16 @@ namespace Raven
 ImGuiLayer::ImGuiLayer(Window& window)
     : m_Window(&window)
 {
-    Initialize();
 }
 
 ImGuiLayer::~ImGuiLayer()
 {
-    Shutdown();
+    // Application側でOnDetach()を呼ぶのが通常経路ですが、
+    // 途中初期化失敗や将来の所有方法変更でもbackendを残さないようdestructorでも安全に後始末します。
+    OnDetach();
 }
 
-void ImGuiLayer::Initialize()
+void ImGuiLayer::OnAttach()
 {
     if (m_Initialized)
     {
@@ -70,7 +71,7 @@ void ImGuiLayer::Initialize()
     m_Initialized = true;
 }
 
-void ImGuiLayer::Shutdown()
+void ImGuiLayer::OnDetach()
 {
     if (m_Initialized == false)
     {
@@ -84,7 +85,7 @@ void ImGuiLayer::Shutdown()
     m_Initialized = false;
 }
 
-void ImGuiLayer::BeginFrame()
+void ImGuiLayer::Begin()
 {
     if (m_Initialized == false)
     {
@@ -96,7 +97,7 @@ void ImGuiLayer::BeginFrame()
     ImGui::NewFrame();
 }
 
-void ImGuiLayer::EndFrame()
+void ImGuiLayer::End()
 {
     if (m_Initialized == false)
     {
@@ -107,9 +108,16 @@ void ImGuiLayer::EndFrame()
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+void ImGuiLayer::OnImGuiRender(float dt)
+{
+    // 現段階では導入確認用StatisticsのみをImGuiLayer自身が描画します。
+    // EditorLayer導入後はこの表示をStatisticsPanelへ移し、ImGuiLayerはbackend管理へ専念させます。
+    RenderDebugStatistics(dt);
+}
+
 void ImGuiLayer::RenderDebugStatistics(float deltaTime)
 {
-    if (m_Initialized == false)
+    if (m_Initialized == false || m_Window == nullptr)
     {
         return;
     }
