@@ -2,6 +2,7 @@
 
 #include "Raven/Animation/AnimationClip.h"
 #include "Raven/Animation/AnimatorState.h"
+#include "Raven/Animation/BlendTree1D.h"
 #include "Raven/Animation/PoseBlending.h"
 
 #include <memory>
@@ -12,12 +13,12 @@ namespace Raven
 // ============================================================================
 // Animator
 // ============================================================================
-// AnimationClipが「再生されるデータ」であるのに対し、Animatorは
-// 「そのClipを現在どのように再生しているか」というruntime stateを所有します。
+// AnimationClip / BlendTree1Dが「再生されるMotionデータ」であるのに対し、Animatorは
+// 「そのMotionを現在どのように再生しているか」というruntime stateを所有します。
 //
 // CrossFade中はCurrentState / NextStateを同時に進め、それぞれのPoseを評価した後、
-// Fade Weightで補間します。State Machineを追加する際も、この2-State遷移を
-// そのままIdle -> Walk -> RunなどのTransition実行部として再利用できます。
+// Fade Weightで補間します。ClipとBlendTreeを同じAnimatorStateとして扱うため、
+// Locomotion Blend Tree -> JumpStart Clipのような異種Motion間も同じCrossFade経路を使えます。
 //
 // 単一Transform AnimationとSkeletal Animationは同じ再生時刻/Stateを共有します。
 // SkeletonをSetSkeleton()で接続した場合は、TransformPoseに加えてSkeletonPoseも
@@ -27,10 +28,29 @@ class Animator
 public:
     void Play(std::shared_ptr<AnimationClip> clip, bool restart = true);
 
-    // 現在Clipからtarget Clipへduration秒かけて滑らかに遷移します。
+    // BlendTree1DをCurrent Motionとして再生します。
+    // BlendParameterはState Machineが持つSpeedなどのFloat Parameter値を同期して使用します。
+    void PlayBlendTree(
+        std::shared_ptr<BlendTree1D> blendTree,
+        float blendParameter,
+        bool restart = true);
+
+    // 現在Motionからtarget Clipへduration秒かけて滑らかに遷移します。
     // まずは1段CrossFadeに限定し、Fade中の再CrossFadeはfalseを返します。
-    // 複雑なInterrupt TransitionはState Machine実装時に別ポリシーとして追加します。
     bool CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bool restart = true);
+
+    // 現在MotionからBlendTree1DへCrossFadeします。
+    // Clip -> BlendTree / BlendTree -> BlendTreeの両方を同じPose Blend経路で扱います。
+    bool CrossFadeBlendTree(
+        std::shared_ptr<BlendTree1D> blendTree,
+        float blendParameter,
+        float duration,
+        bool restart = true);
+
+    // Current / NextがBlendTreeの場合にParameter値だけを更新します。
+    // 再生位相は維持されるため、Speed変化によってClip選択が変わっても歩行周期は連続します。
+    bool SetCurrentBlendParameter(float value);
+    bool SetNextBlendParameter(float value);
 
     void Pause();
     void Resume();
@@ -54,15 +74,12 @@ public:
     void SetNormalizedTime(float normalizedTime);
 
     float GetCurrentTime() const { return m_CurrentState.Time; }
-    float GetNormalizedTime() const;
+    float GetNormalizedTime() const { return m_CurrentState.NormalizedTime; }
 
     bool IsPlaying() const { return m_Playing; }
     bool IsPaused() const { return m_Paused; }
 
-    // 非Loop Clipが再生方向側の端へ到達したかを示します。
-    // IsPlaying()だけではPause/Stopとの区別が付かないため、State Machine実装時に
-    // 「Animation終了を遷移条件にする」ための専用状態として保持します。
-    // CrossFade完了時は、遷移先Stateが終端へ到達していた場合にtrueになります。
+    // 非Loop Motionが再生方向側の端へ到達したかを示します。
     bool IsFinished() const { return m_Finished; }
 
     bool IsCrossFading() const { return m_CrossFading; }
@@ -86,13 +103,20 @@ public:
     bool HasSkeleton() const { return m_Skeleton != nullptr; }
 
     // SetSkeleton()済みの場合に、現在のAnimation結果として評価された全Bone Poseを返します。
-    // CrossFade中はCurrent/Next ClipのSkeletonPoseをBlendPoses()で補間した結果です。
+    // CrossFade中はCurrent/Next MotionのSkeletonPoseをBlendPoses()で補間した結果です。
     const SkeletonPose& GetCurrentSkeletonPose() const { return m_CurrentSkeletonPose; }
 
 private:
-    // StateのTimeだけを進めます。
-    // 非Loopで終端へ達した場合はtrueを返します。
+    // Stateの再生時間/位相だけを進めます。
+    // BlendTreeでは現在Parameterでの補間Durationを1周期長としてNormalizedTimeを進めます。
     bool AdvanceState(AnimatorState& state, float dt);
+
+    // Motion種類に応じてDurationを取得します。
+    // BlendTreeでは現在Parameter値における補間Durationを返します。
+    float GetStateDuration(const AnimatorState& state) const;
+
+    bool SampleTransformPose(const AnimatorState& state, TransformPose& outPose) const;
+    bool SampleSkeletonPose(const AnimatorState& state, SkeletonPose& outPose) const;
 
     // CurrentState単体、またはCrossFade中のCurrent/Next両方を評価します。
     // Skeleton接続済みの場合はSkeletonPoseも同じState/Weightで同時に評価します。
@@ -121,8 +145,7 @@ private:
     // SkeletonはAsset/Deformer側の共有定義を参照するだけで所有しません。
     const Skeleton* m_Skeleton = nullptr;
 
-    // CrossFadeでは2つのClipを同時Sampleするため、一時PoseをAnimator内部へ保持します。
-    // m_CurrentSkeletonPoseが最終的にRenderer/Skinningへ渡す出力Poseです。
+    // CrossFadeでは2つのMotionを同時Sampleするため、一時PoseをAnimator内部へ保持します。
     SkeletonPose m_CurrentSkeletonPose{};
     SkeletonPose m_NextSkeletonPose{};
 };
