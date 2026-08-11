@@ -25,6 +25,14 @@ public:
     // 見つからない場合は無効Entityを返します。
     static Entity FindPrimaryCameraEntity(Scene& scene);
 
+    // 指定EntityをScene唯一のPrimary Cameraへ設定します。
+    // targetがCameraComponentを持たない、または別Scene/無効Entityの場合はfalseを返し、
+    // Scene内のPrimary状態を変更しません。
+    //
+    // 成功時は対象CameraだけをPrimary=trueにし、それ以外のCameraはすべてfalseへ変更します。
+    // Inspectorや将来のScene Hierarchy操作はPrimaryフラグを直接書き換えず、この入口を使います。
+    static bool SetPrimaryCamera(Scene& scene, Entity target);
+
     // Runtime Cameraとして利用可能なEntityを解決します。
     //
     // 優先順位:
