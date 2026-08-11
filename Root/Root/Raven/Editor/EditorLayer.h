@@ -1,26 +1,21 @@
 #pragma once
 
+#include "Raven/Editor/Panels/StatisticsPanel.h"
 #include "Raven/Renderer/Layer/Layer.h"
 
 namespace Raven
 {
+class Application;
 
 // ============================================================================
 // EditorLayer
 // ============================================================================
 // Raven Editor全体の入口となるLayerです。
-//
-// ApplicationはWindow / Scene / Layer更新 / ImGui frame境界といった
-// 「アプリケーションを動かすための基盤処理」だけを担当し、Editor固有のUIは
-// このLayer以下へ分離します。
-//
-// 今後はEditorLayer自身へ全UI処理を詰め込むのではなく、
-// StatisticsPanel / AnimationDebugPanel / SceneHierarchyPanel / InspectorPanel等を
-// 個別クラスとして追加し、EditorLayerはそれらを束ねる役割に留めます。
+// EditorLayer自身へ各Panelの描画詳細を詰め込まず、Panelを束ねてRuntime状態との橋渡しをします。
 class EditorLayer : public Layer
 {
 public:
-    EditorLayer() = default;
+    explicit EditorLayer(Application& application);
     ~EditorLayer() override = default;
 
     void OnAttach() override;
@@ -31,10 +26,11 @@ public:
     void OnEvent(Event& event) override;
 
 private:
-    // 現在はbootstrap用の最小Statistics表示です。
-    // 次の実装段階でStatisticsPanelクラスへ切り出し、Renderer / Physics統計も
-    // 同じPanelへ集約します。
-    void RenderBootstrapStatistics(float deltaTime);
+    // ApplicationはEditorLayerより長生きするため非所有ポインタとして保持します。
+    // Scene切り替え後もApplication::GetScene()を毎frame参照することで、古いSceneポインタを
+    // Panel側へ保持し続けることを避けます。
+    Application* m_Application = nullptr;
+    StatisticsPanel m_StatisticsPanel;
 };
 
 } // namespace Raven
