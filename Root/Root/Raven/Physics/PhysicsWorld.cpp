@@ -229,6 +229,41 @@ bool RayCastCollider(
 
     return false;
 }
+
+// ============================================================================
+// RayCast Filter判定
+// ============================================================================
+// RigidBodyを持たないColliderは「動かないScene形状」とみなしStaticとして扱います。
+// これによりFloorのような Transform + Collider のみのEntityも一貫してFilterできます。
+bool PassesRayCastFilter(
+    Scene& scene,
+    Entity entity,
+    const ColliderComponent& collider,
+    const PhysicsRayCastFilter& filter)
+{
+    if (collider.Type == ColliderType::Plane && !filter.IncludePlanes)
+    {
+        return false;
+    }
+
+    const auto* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+    if (!rigidBody)
+    {
+        return filter.IncludeStatic;
+    }
+
+    switch (rigidBody->Type)
+    {
+    case BodyType::Static:
+        return filter.IncludeStatic;
+    case BodyType::Kinematic:
+        return filter.IncludeKinematic;
+    case BodyType::Dynamic:
+        return filter.IncludeDynamic;
+    default:
+        return false;
+    }
+}
 } // namespace
 
 void PhysicsWorld::SetGravity(const math::Vec3& gravity)
@@ -611,14 +646,36 @@ void PhysicsWorld::RestorePersistentContacts(Scene& scene)
     }
 }
 
-// シーン内をレイで走査し、最も近い衝突点を見つけて結果構造体へ格納します。
-//---------------------------------------------------------------------------------------
-// シーン内をRayCastし、最も近い実形状へのHitを返します。
+// フィルタを省略したRayCastは、現在の主用途であるMouse Picking向けに
+// Dynamic Bodyのみ・Plane除外のデフォルト設定を使用します。
 bool PhysicsWorld::RayCast(
     Scene& scene,
     const math::Vec3& origin,
     const math::Vec3& direction,
     float maxFraction,
+    PhysicsRayCastHit& outHit)
+{
+    return RayCast(
+        scene,
+        origin,
+        direction,
+        maxFraction,
+        PhysicsRayCastFilter{},
+        outHit);
+}
+
+// シーン内をRayCastし、Filterを通過した候補の中から最も近い実形状へのHitを返します。
+//
+// 重要:
+// Filterは最短Hit決定後ではなく「候補ごとの実形状RayCast前」に適用します。
+// したがって手前のFloor/Static Shapeを除外しても、その奥にあるDynamic Bodyの探索を
+// 継続できます。
+bool PhysicsWorld::RayCast(
+    Scene& scene,
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const PhysicsRayCastFilter& filter,
     PhysicsRayCastHit& outHit)
 {
     if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f)
@@ -631,9 +688,6 @@ bool PhysicsWorld::RayCast(
     PhysicsRayCastHit result{};
 
     // Broad Phase側RayCastはFat AABB候補のみ返すため、ここで実形状に対する最終判定を行います。
-    // ------------------------------------------------------------------
-    // Broad Phase側RayCastはFat AABB候補のみ返すため、
-    // callback内でCollider実形状に対する最終RayCastを行います。
     m_BroadPhase.RayCast(
         scene,
         origin,
@@ -648,9 +702,17 @@ bool PhysicsWorld::RayCast(
                 return current;
             }
 
+            // ---------------------------------------------------------------
+            // Query Filterは実形状RayCastより先に適用します。
+            // 除外Entityが手前に存在してもclosestを縮めないため、奥の候補を探索できます。
+            // ---------------------------------------------------------------
+            if (!PassesRayCastFilter(scene, entity, *collider, filter))
+            {
+                return current;
+            }
+
             float fraction = 0.0f;
             math::Vec3 normal{};
-            // 現在の候補距離までにヒットするかを確認し、最も近い衝突だけを残します。
             if (!RayCastCollider(
                 origin,
                 direction,
@@ -663,7 +725,6 @@ bool PhysicsWorld::RayCast(
                 return current;
             }
 
-            // 見つかった衝突のうち、レイの始点に最も近いものだけを採用します。
             if (!hit || fraction < closest)
             {
                 hit = true;
@@ -678,32 +739,37 @@ bool PhysicsWorld::RayCast(
         });
 
     // Planeは無限形状なのでTreeに載せず、全Planeを別途評価します。
-    for (auto [entity, transform, collider]
-        : scene.View<TransformComponent, ColliderComponent>())
+    // IncludePlanes=falseなら、このループでは1つも交差判定しません。
+    if (filter.IncludePlanes)
     {
-        if (collider.Type != ColliderType::Plane)
+        for (auto [entity, transform, collider]
+            : scene.View<TransformComponent, ColliderComponent>())
         {
-            continue;
-        }
+            if (collider.Type != ColliderType::Plane
+                || !PassesRayCastFilter(scene, entity, collider, filter))
+            {
+                continue;
+            }
 
-        float fraction = 0.0f;
-        math::Vec3 normal{};
-        if (RayCastPlane(
-                origin,
-                direction,
-                closest,
-                transform,
-                collider,
-                fraction,
-                normal)
-            && (!hit || fraction < closest))
-        {
-            hit = true;
-            closest = fraction;
-            result.HitEntity = entity;
-            result.Fraction = fraction;
-            result.Point = origin + direction * fraction;
-            result.Normal = normal;
+            float fraction = 0.0f;
+            math::Vec3 normal{};
+            if (RayCastPlane(
+                    origin,
+                    direction,
+                    closest,
+                    transform,
+                    collider,
+                    fraction,
+                    normal)
+                && (!hit || fraction < closest))
+            {
+                hit = true;
+                closest = fraction;
+                result.HitEntity = entity;
+                result.Fraction = fraction;
+                result.Point = origin + direction * fraction;
+                result.Normal = normal;
+            }
         }
     }
 
