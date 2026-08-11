@@ -26,6 +26,36 @@ struct PhysicsRayCastHit
     float Fraction = 0.0f;
 };
 
+// ============================================================================
+// RayCast Query Filter
+// ============================================================================
+// RayCastの「どのBody/Shapeを候補にするか」を呼び出し側から指定します。
+//
+// 重要:
+// フィルタは「最短Hitを求めた後」に適用するのではなく、各候補を実形状判定する前に
+// 適用します。これにより、例えば床Planeを除外したMouse Pickingで、床の奥にある
+// Dynamic Sphere/Boxまで正しく探索できます。
+//
+// 現在のデフォルトはMouse Pickingで最もよく使う設定に合わせ、
+// Dynamic Bodyのみ・Plane除外です。全Colliderを対象にしたい用途では All() を使えます。
+struct PhysicsRayCastFilter
+{
+    bool IncludeStatic = false;
+    bool IncludeKinematic = false;
+    bool IncludeDynamic = true;
+    bool IncludePlanes = false;
+
+    static PhysicsRayCastFilter All()
+    {
+        PhysicsRayCastFilter filter{};
+        filter.IncludeStatic = true;
+        filter.IncludeKinematic = true;
+        filter.IncludeDynamic = true;
+        filter.IncludePlanes = true;
+        return filter;
+    }
+};
+
 struct PhysicsSolverDebugStatistics
 {
     // Manifold/Point数はNarrow Phaseの接触量を示します。
@@ -78,9 +108,16 @@ public:
     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
     void WakeUp(Scene& scene, Entity entity);
 
-    // RayCastは最短ヒットのみ返します。PlaneはBroadPhase外なので別経路で判定します。
+    // デフォルトRayCastはDynamic Bodyのみ・Plane除外です。
+    // Mouse Pickingでは床などに探索を遮られず、奥のDynamic Colliderを選択できます。
     bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
         float maxFraction, PhysicsRayCastHit& outHit);
+
+    // 用途ごとにBody種別 / Plane有無を明示したい場合はこちらを使用します。
+    // フィルタは候補選択前に適用されるため、除外Shapeが手前にあっても探索を継続します。
+    bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
+        float maxFraction, const PhysicsRayCastFilter& filter, PhysicsRayCastHit& outHit);
+
     // QueryAABBはBroadPhase候補を使いつつ、実AABB重なりで最終フィルタします。
     void QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities);
 
