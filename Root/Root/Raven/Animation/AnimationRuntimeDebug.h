@@ -61,6 +61,7 @@ struct AnimatorTransitionRuntimeDebugInfo
     bool HasExitTime = false;
     float ExitTime = 0.0f;
     int Priority = 0;
+    float CrossFadeDuration = 0.0f;
 
     // Transition発火理由をEditorから確認するためのRuntime診断値です。
     // Parameter比較とExit Timeを別々に保持することで「何が足りないか」を特定できます。
@@ -73,6 +74,11 @@ struct AnimatorTransitionRuntimeDebugInfo
     // EvaluateTransitions()と同じ前提で、このTransitionが現在Frameに候補になれるかを示します。
     // CrossFade中は新しい自動Transitionを開始しないためfalseになります。
     bool IsEligible = false;
+
+    // 同Frameに複数TransitionがEligibleになった場合、実際のEvaluateTransitions()と同じ
+    // Priority降順・同Priorityは登録順という規則で最終選択される1本だけtrueになります。
+    // Editorはこの値を見ることで「条件は成立しているのに、なぜ別Transitionが選ばれたか」を説明できます。
+    bool IsSelectedCandidate = false;
 };
 
 // ============================================================================
