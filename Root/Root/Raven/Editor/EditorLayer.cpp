@@ -84,12 +84,23 @@ void EditorLayer::OnImGuiRender(float dt)
     // Scene Hierarchy
     // ========================================================================
     // HierarchyはActive SceneのEntity一覧を表示し、EditorLayerが所有する選択Entityだけを更新します。
-    // 選択状態をPanelの外へ置くことで、次のInspectorや将来のGizmoが同じEntityを利用できます。
+    // 選択状態をPanelの外へ置くことで、Inspectorや将来のGizmoが同じEntityを利用できます。
     if (m_ShowSceneHierarchyPanel)
     {
         m_SceneHierarchyPanel.OnImGuiRender(
             m_Application->GetScene(),
             m_SelectedEntity);
+    }
+
+    // ========================================================================
+    // Inspector
+    // ========================================================================
+    // Hierarchyが更新したm_SelectedEntityをそのまま渡します。
+    // Inspector側に別の選択状態を作らないため、HierarchyでEntityを選択した同じframeから
+    // Component内容が表示され、将来のScene View / Gizmoとも選択対象が一致します。
+    if (m_ShowInspectorPanel)
+    {
+        m_InspectorPanel.OnImGuiRender(m_SelectedEntity);
     }
 
     EndDockSpace();
@@ -246,6 +257,7 @@ void EditorLayer::RenderMenuBar()
         ImGui::MenuItem("Statistics", nullptr, &m_ShowStatisticsPanel);
         ImGui::MenuItem("Animation Debug", nullptr, &m_ShowAnimationDebugPanel);
         ImGui::MenuItem("Scene Hierarchy", nullptr, &m_ShowSceneHierarchyPanel);
+        ImGui::MenuItem("Inspector", nullptr, &m_ShowInspectorPanel);
         ImGui::EndMenu();
     }
 
