@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Editor/EditorCamera.h"
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
 #include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
@@ -62,6 +63,7 @@ public:
     void OnDetach() override;
 
     // Editor Cameraや将来のGizmo状態など、Runtime Sceneとは独立した更新を行います。
+    // 現在はScene Viewがhoverされている間だけEditorCameraへ入力を渡します。
     void OnUpdate(float dt) override;
 
     // ImGuiそのものではなく、Editorが必要とする3D描画の入口です。
@@ -109,13 +111,17 @@ private:
     void RenderSceneView();
     void RenderGameView();
 
-    // 指定Framebufferを描画先としてActive Sceneを描画する共通処理です。
-    // 引数はRenderer共通のFramebuffer抽象クラスなので、EditorLayerは
-    // OpenGLFramebuffer等の具体的なPlatform実装を知る必要がありません。
-    //
-    // 現段階ではScene/Game ViewともRuntime Cameraを利用していますが、次段階で
-    // Scene ViewはEditor Camera、Game ViewはRuntime Cameraへ分離する予定です。
+    // Runtime Cameraをそのまま利用してActive Sceneを指定Framebufferへ描画します。
+    // Game Viewではこの経路を使用します。
     void RenderSceneToFramebuffer(Framebuffer& framebuffer);
+
+    // 指定されたView/Projectionを利用してActive SceneをFramebufferへ描画します。
+    // Scene ViewではEditorCameraの行列を渡し、Runtime Cameraとは独立した視点で描画します。
+    // SceneがSceneViewportRendererを実装していない場合は通常OnRender()へfallbackします。
+    void RenderSceneToFramebuffer(
+        Framebuffer& framebuffer,
+        const math::Mat4& view,
+        const math::Mat4& projection);
 
 private:
     // ========================================================================
@@ -152,11 +158,24 @@ private:
     InspectorPanel m_InspectorPanel;
 
     // ========================================================================
+    // Editor Camera
+    // ========================================================================
+    // Scene View専用Cameraです。Runtime SceneのCamera状態とは分離しているため、Editorで視点を
+    // 移動・回転してもGame Viewやゲームロジック側のCameraには影響しません。
+    EditorCamera m_EditorCamera;
+
+    // RenderSceneView()で得たImGuiのhover/focus状態です。
+    // OnUpdate()はImGui frame構築より先に呼ばれるため、前frameの状態をCamera入力判定に使います。
+    // 1frame遅延はありますが、Window境界で入力を誤ってRuntime側へ渡すより安全な構成です。
+    bool m_SceneViewportHovered = false;
+    bool m_SceneViewportFocused = false;
+
+    // ========================================================================
     // Editor Viewport resources
     // ========================================================================
     // Scene ViewとGame Viewを最初から別Framebufferにします。
-    // 現段階では両方ともRuntime SceneのCameraで描画しますが、Framebufferを分離しておくことで
-    // Scene ViewだけにEditor Camera / Grid / Selection Outline / Gizmo等を追加できます。
+    // Scene ViewはEditor Camera、Game ViewはRuntime Cameraで描画し、さらに今後Scene Viewだけに
+    // Grid / Selection Outline / Gizmo等を追加できる構造にしています。
     //
     // std::unique_ptr<Framebuffer>として抽象クラスを所有し、生成はFramebuffer::Create()へ
     // 委譲します。そのためEditorLayerは現在のRendererAPIがOpenGLかDirectXかを知りません。
