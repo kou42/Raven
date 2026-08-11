@@ -22,8 +22,15 @@ class PhysicsWorld;
 class PhysicsDebugRenderer
 {
 public:
-    // Scene/View/Projectionへの参照を保持し、RenderRegistered()から毎フレーム描画されます。
+    // Renderer Camera Contextへ移行した通常経路です。
+    // Sceneへの参照だけを保持し、View/Projectionは描画時にRendererから取得します。
+    explicit PhysicsDebugRenderer(Scene& scene);
+
+    // SceneGameのm_View/m_Projection撤去を段階的に行うための互換Constructorです。
+    // Renderer Camera Contextが有効な描画ではContextを優先し、未移行経路だけこの参照をfallback利用します。
+    // 移行完了後はこのConstructorとfallback行列メンバを削除する予定です。
     PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection);
+
     ~PhysicsDebugRenderer();
     PhysicsDebugRenderer(const PhysicsDebugRenderer&) = delete;
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
@@ -55,18 +62,28 @@ public:
 private:
     // 線描画専用頂点。TexcoordはOverlayフォント描画の将来拡張用に保持します。
     struct DebugVertex { math::Vec3 Position{}; math::Vec3 Color{1,1,1}; math::Vec2 Texcoord{}; };
+
+    // Renderer::EndScene()から描画できるよう、生成済みPhysicsDebugRendererを登録します。
+    // 所有権はRegistryへ移さず、各Rendererのconstructor/destructorで登録・解除します。
     static std::vector<PhysicsDebugRenderer*>& Registry();
+
     // 初回描画時にPipeline/Materialを遅延生成します。
     void EnsureInitialized();
     // キー入力の立ち上がりのみで表示フラグを反転します。
     void UpdateToggleKeys();
+    // 有効なDebug表示だけを判定し、3D World Debugと2D Overlayへ振り分けます。
     void Render();
     // 3Dワイヤ表示群（AABB/OBB/Tree/Contact）を収集して描画します。
     void RenderWorldDebug();
     // 2D OverlayにSolver統計と表示設定を描画します。
     void RenderOverlay();
+
+    // CPU側で収集したDebug Lineを一時Vertex/Index Bufferへ変換して描画します。
+    // 3D DebugではCamera ContextのView/Projection、OverlayではIdentityを渡します。
     void SubmitLines(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
         const math::Mat4& view, const math::Mat4& projection);
+
+    // 以下はDebug表示用の線分データをCPU側で構築するHelper群です。
     static void AddLine(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
         const math::Vec3& a, const math::Vec3& b, const math::Vec3& color);
     static void AddAABB(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
@@ -75,15 +92,31 @@ private:
         const OBB& bounds, const math::Vec3& color);
     static void AddPointMarker(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
         const math::Vec3& position, float radius, const math::Vec3& color);
+
+    // 5x7 Debug FontをLine Primitiveへ展開し、NDC座標でOverlay文字列を構築します。
     static void AddOverlayText(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
         const std::string& text, float pixelX, float pixelY, float pixelScale,
         int viewportWidth, int viewportHeight, const math::Vec3& color);
 
 private:
-    // View/Projectionは所有せず参照のみ。呼び出し側で寿命を管理します。
-    Scene* m_Scene=nullptr; const PhysicsWorld* m_PhysicsWorld=nullptr;
-    const math::Mat4* m_View=nullptr; const math::Mat4* m_Projection=nullptr;
-    Ref<Material> m_Material; PhysicsDebugSettings m_Settings{};
+    // Scene / PhysicsWorldは所有せず参照のみです。
+    // Sceneはconstructorで設定し、PhysicsWorldはScene::OnUpdatePhysics経由のBindPhysicsWorld()で
+    // 実際にStepされているWorldへ接続されます。呼び出し側が両者の寿命を管理します。
+    Scene* m_Scene = nullptr;
+    const PhysicsWorld* m_PhysicsWorld = nullptr;
+
+    // Renderer Camera Context導入前の経路だけで利用するfallbackです。
+    // こちらも所有せず参照のみで、SceneGame側が行列の寿命を管理します。
+    // SceneGameのCameraミラー撤去が完了した段階で互換Constructorと一緒に削除します。
+    const math::Mat4* m_FallbackView = nullptr;
+    const math::Mat4* m_FallbackProjection = nullptr;
+
+    // Debug Line描画用Materialと表示設定です。
+    // MaterialはEnsureInitialized()で必要になった時点に遅延生成します。
+    Ref<Material> m_Material;
+    PhysicsDebugSettings m_Settings{};
+
+    // 各キーの前frame状態を保持し、押しっぱなしで毎frameトグルされることを防ぎます。
     bool m_WasOverlayKeyPressed=false, m_WasAABBKeyPressed=false, m_WasOBBKeyPressed=false;
     bool m_WasFatAABBKeyPressed=false, m_WasTreeKeyPressed=false, m_WasPairKeyPressed=false;
     bool m_WasContactPointKeyPressed=false, m_WasContactNormalKeyPressed=false;

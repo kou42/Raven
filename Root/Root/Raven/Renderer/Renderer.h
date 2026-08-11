@@ -1,17 +1,14 @@
 #pragma once
 
 #include "Raven/Core/Base.h"
+#include "Raven/Math/MathMatrix.h"
 
 #include <cstdint>
 
 namespace Raven
 {
 
-namespace math
-{
-	struct Mat4;
-}
-
+class Camera;
 class Material;
 class Mesh;
 class RendererAPI;
@@ -38,6 +35,19 @@ struct RendererStatistics
     }
 };
 
+// ============================================================================
+// RendererCameraContext
+// ============================================================================
+// 現在のScene描画で利用しているCamera行列をRenderer側へ保持する小さなContextです。
+// Cameraオブジェクトへの参照を保持せず行列をコピーするため、EditorCamera/SceneCameraの
+// 具体型や寿命にRendererが依存しません。
+struct RendererCameraContext
+{
+    math::Mat4 View = math::Mat4::Identity();
+    math::Mat4 Projection = math::Mat4::Identity();
+    bool Valid = false;
+};
+
 class Renderer
 {
 public:
@@ -45,8 +55,17 @@ public:
     static void Shutdown();
 
     static void BeginFrame();
+
+    // Cameraを伴う通常の3D Scene描画入口です。
+    // BeginSceneからEndSceneまで、このCameraが通常描画とDebug Passの共通Contextになります。
+    static void BeginScene(const Camera& camera);
+
+    // Cameraを必要としない旧Sandbox等の簡易描画用入口です。
+    // Camera Contextは無効化されるため、Camera依存のDebug描画は実行されません。
     static void BeginScene();
     static void EndScene();
+
+    static const RendererCameraContext& GetCameraContext();
 
     static void Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray);
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
@@ -59,6 +78,7 @@ public:
 
 private:
     static RendererStatistics s_Statistics;
+    static RendererCameraContext s_CameraContext;
 };
 
 }

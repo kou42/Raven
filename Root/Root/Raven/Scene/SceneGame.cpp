@@ -11,6 +11,7 @@
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
+#include "Raven/Scene/SceneCameraSystem.h"
 
 #include <algorithm>
 #include <cmath>
@@ -40,7 +41,7 @@ int SceneGame::ComputeOptimizedSpawnCount() const
 
 void SceneGame::SpawnSphereBatch(int count)
 {
-    if (!m_SphereMesh || !m_Material || count <= 0)
+    if (m_SphereMesh == nullptr || m_Material == nullptr || count <= 0)
     {
         return;
     }
@@ -116,7 +117,7 @@ void SceneGame::ClearSphereBatch()
 
     for (const SphereBody& body : m_SphereBodies)
     {
-        if (body.EntityHandle)
+        if (static_cast<bool>(body.EntityHandle))
         {
             DestroyEntity(body.EntityHandle);
         }
@@ -144,7 +145,7 @@ void SceneGame::ClearSphereBatch()
 
 void SceneGame::SpawnBoxTestBody()
 {
-    if (!m_BoxMesh || !m_Material)
+    if (m_BoxMesh == nullptr || m_Material == nullptr)
     {
         return;
     }
@@ -182,6 +183,30 @@ void SceneGame::SpawnBoxTestBody()
 
     m_BoxEntity = box;
     m_SpawnedEntities.push_back(box);
+}
+
+bool SceneGame::UpdateRuntimeCameraMatrices()
+{
+    // Primary Cameraの探索、Transform -> View変換、Viewport -> Projection更新は
+    // SceneCameraSystemへ集約します。SceneGameはRenderer互換用の行列へコピーするだけです。
+    SceneCamera* runtimeCamera = SceneCameraSystem::UpdatePrimaryCamera(
+        *this,
+        m_ViewportWidth,
+        m_ViewportHeight);
+
+    if (runtimeCamera == nullptr)
+    {
+        return false;
+    }
+
+    m_View = runtimeCamera->GetViewMatrix();
+    m_Projection = runtimeCamera->GetProjectionMatrix();
+
+    // Mouse Rayも描画と同じProjection条件を使う必要があります。
+    // InspectorでFOVを変更した場合にも次の入力フレームからRay方向へ反映されます。
+    m_CameraFovY = runtimeCamera->GetPerspectiveVerticalFov();
+
+    return true;
 }
 
 bool SceneGame::BuildMouseRay(
@@ -246,8 +271,8 @@ void SceneGame::UpdateMouseDragImpulse()
     const auto [mouseX, mouseY] = Input::GetMousePosition();
     const math::Vec2 currentMouse{ mouseX, mouseY };
 
-    const bool pressedThisFrame = leftPressed && !m_WasLeftMousePressed;
-    const bool releasedThisFrame = !leftPressed && m_WasLeftMousePressed;
+    const bool pressedThisFrame = leftPressed && m_WasLeftMousePressed == false;
+    const bool releasedThisFrame = leftPressed == false && m_WasLeftMousePressed;
 
     ph::PhysicsWorld* physicsWorld = &GetPhysicsWorld();
 
@@ -278,7 +303,7 @@ void SceneGame::UpdateMouseDragImpulse()
                     m_MouseRayMaxDistance,
                     hit))
             {
-                if (hit.HitEntity
+                if (static_cast<bool>(hit.HitEntity)
                     && hit.HitEntity.HasComponent<RigidBodyComponent>()
                     && hit.HitEntity.HasComponent<ColliderComponent>())
                 {
@@ -303,7 +328,7 @@ void SceneGame::UpdateMouseDragImpulse()
         }
     }
 
-    if (releasedThisFrame && m_DraggedEntity)
+    if (releasedThisFrame && static_cast<bool>(m_DraggedEntity))
     {
         const math::Vec2 drag = currentMouse - m_DragStartScreen;
         const float dragLength = drag.Length();
@@ -345,7 +370,7 @@ void SceneGame::UpdateMouseDragImpulse()
     }
 
     // Entity破棄後に古いGenerationのHandleを保持し続けないようにします。
-    if (m_DraggedEntity && !IsEntityAlive(m_DraggedEntity))
+    if (static_cast<bool>(m_DraggedEntity) && IsEntityAlive(m_DraggedEntity) == false)
     {
         m_DraggedEntity = {};
         m_DragHitPoint = {};
@@ -379,15 +404,29 @@ void SceneGame::OnCreate()
     m_Material = CreateRef<Material>(Pipeline::Create(pipelineSpecification));
     m_Material->SetUniform("u_Alpha", 1.0f);
 
-    const math::Vec3 eye{ 0.0f, 40.0f, 80.0f };
-    const math::Vec3 target{ 0.0f, 0.0f, 0.0f };
-    const math::Vec3 up{ 0.0f, 1.0f, 0.0f };
-    m_View = math::Mat4::LookAt(eye, target, up);
-    m_Projection = math::Mat4::Perspective(
-        m_CameraFovY,
-        m_ViewportWidth / m_ViewportHeight,
-        0.1f,
-        1000.0f);
+    // ========================================================================
+    // Runtime Camera Entity
+    // ========================================================================
+    // 旧実装ではSceneGameがeye/targetからm_Viewを直接構築していました。
+    // 今後はTransformComponentをCamera姿勢の正規データ、CameraComponent::Cameraを
+    // Projection設定の正規データとし、SceneCameraSystem経由で描画行列へ同期します。
+    //
+    // 初期姿勢は旧Cameraと同じ (0,40,80) -> Origin を向くように設定します。
+    // RavenのCamera Local Forwardは-Zで、X回転-atan(40/80)により下向きへ傾けます。
+    Entity runtimeCameraEntity = CreateEntity("RuntimeCamera");
+    TransformComponent& runtimeCameraTransform = runtimeCameraEntity.GetComponent<TransformComponent>();
+    runtimeCameraTransform.Position = { 0.0f, 40.0f, 80.0f };
+    runtimeCameraTransform.Rotation = { -0.463647609f, 0.0f, 0.0f };
+
+    CameraComponent runtimeCameraComponent{};
+    runtimeCameraComponent.Primary = true;
+    runtimeCameraComponent.Camera.SetPerspective(m_CameraFovY, 0.1f, 1000.0f);
+    runtimeCameraEntity.AddComponent<CameraComponent>(runtimeCameraComponent);
+
+    m_RuntimeCameraEntity = runtimeCameraEntity;
+    m_SpawnedEntities.push_back(runtimeCameraEntity);
+
+    UpdateRuntimeCameraMatrices();
     m_Material->SetUniform("u_View", m_View);
     m_Material->SetUniform("u_Projection", m_Projection);
 
@@ -434,7 +473,8 @@ void SceneGame::OnCreate()
     m_SphereMesh = PrimitiveMeshFactory::CreateSphere();
     m_BoxMesh = PrimitiveMeshFactory::CreateCube();
 
-    m_SpawnedEntities.clear();
+    // RuntimeCameraは既にm_SpawnedEntitiesへ登録済みなので、ここでclearすると破棄管理から外れます。
+    // Scene再初期化時の状態を明示的に初期化しつつCamera Entityは保持します。
     m_SphereBodies.clear();
     m_SphereBodyIndexByEntity.clear();
     m_WasSpacePressed = false;
@@ -498,13 +538,14 @@ void SceneGame::OnDestroy()
 
     for (Entity entity : m_SpawnedEntities)
     {
-        if (entity)
+        if (static_cast<bool>(entity))
         {
             DestroyEntity(entity);
         }
     }
     m_SpawnedEntities.clear();
 
+    m_RuntimeCameraEntity = {};
     m_AnimationTestEntity = {};
     m_BoxEntity = {};
     m_FloorEntity = {};
@@ -526,11 +567,15 @@ void SceneGame::OnUpdateGame(float dt)
 {
     const float safeDt = std::clamp(dt, 0.0f, 0.05f);
 
+    // InspectorやGame LogicがCamera EntityのTransform/FOVを変更した場合、
+    // Mouse Pickingより先に同期して描画と入力が同じCamera状態を見るようにします。
+    UpdateRuntimeCameraMatrices();
+
     // StateMachine検証用ParameterをAnimationSystem実行前に更新する。
     UpdateAnimationStateMachineTest(safeDt);
 
     const bool spacePressed = Input::IsKeyPressed(Key::Space);
-    if (spacePressed && !m_WasSpacePressed)
+    if (spacePressed && m_WasSpacePressed == false)
     {
         ClearSphereBatch();
         SpawnSphereBatch(ComputeOptimizedSpawnCount());
@@ -558,19 +603,23 @@ void SceneGame::OnUpdateGame(float dt)
 
 void SceneGame::OnRender()
 {
+    // Game ViewではPrimary SceneCameraを正規Cameraとして利用します。
+    // Scene ViewからRenderWithCamera()経由で呼ばれた場合は一時的にEditor Camera行列へ
+    // 差し替え済みなので、ここでRuntime Cameraへ戻さないことが重要です。
+    // そのためRuntime同期は通常Update側で行い、OnRenderは現在選択済みの行列だけを描画します。
     RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
     RenderCommand::Clear();
     Renderer::BeginScene();
 
     for (const Entity& entity : m_SpawnedEntities)
     {
-        if (!entity || !entity.HasComponent<MeshRendererComponent>())
+        if (static_cast<bool>(entity) == false || entity.HasComponent<MeshRendererComponent>() == false)
         {
             continue;
         }
 
         const auto& meshRenderer = entity.GetComponent<MeshRendererComponent>();
-        if (!meshRenderer.IsValid())
+        if (meshRenderer.IsValid() == false)
         {
             continue;
         }
@@ -592,7 +641,7 @@ void SceneGame::OnRender()
         meshRenderer.Material->SetUniform("u_Tint", tint);
         meshRenderer.Material->SetUniform("u_Alpha", 1.0f);
 
-        if (entity != m_FloorEntity && m_ShadowMesh && m_ShadowMaterial)
+        if (entity != m_FloorEntity && m_ShadowMesh != nullptr && m_ShadowMaterial != nullptr)
         {
             math::Mat4 shadowTransform = math::Mat4::Identity();
             shadowTransform = math::Translate(
@@ -638,13 +687,11 @@ void SceneGame::OnEvent(Event& e)
         m_ViewportWidth = static_cast<float>(resizeEvent.GetWidth());
         m_ViewportHeight = static_cast<float>(resizeEvent.GetHeight());
 
+        // Aspect Ratioの再計算もSceneCameraへ委譲します。
+        // Projection式をSceneGame側へ重複実装しないことで、InspectorのCamera設定と常に一致します。
         if (m_ViewportWidth > 0.0f && m_ViewportHeight > 0.0f)
         {
-            m_Projection = math::Mat4::Perspective(
-                m_CameraFovY,
-                m_ViewportWidth / m_ViewportHeight,
-                0.1f,
-                1000.0f);
+            UpdateRuntimeCameraMatrices();
         }
     }
 }

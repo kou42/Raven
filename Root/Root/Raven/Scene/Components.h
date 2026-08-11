@@ -8,6 +8,7 @@
 #include "Raven/Math/MathVector.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathQuatanion.h"
+#include "Raven/Scene/SceneCamera.h"
 
 namespace Raven
 {
@@ -30,6 +31,23 @@ struct TransformComponent
     math::Vec3 Scale{ 1.0f, 1.0f, 1.0f };
 
     math::Mat4 GetTransform() const;
+};
+
+// ============================================================================
+// CameraComponent
+// ============================================================================
+// Scene内のEntityをRuntime Cameraとして扱うためのComponentです。
+//
+// CameraのProjection設定はSceneCameraが保持し、位置・回転は同じEntityの
+// TransformComponentを正規データとして利用します。CameraComponent側にPosition/Rotationを
+// 重複保持しないことで、Entity TransformとCamera Transformの同期漏れを防ぎます。
+//
+// Primaryは「Game ViewでどのCameraを利用するか」をSceneが選択するための候補フラグです。
+// 現段階ではフラグだけを保持し、実際のPrimary Camera探索・選択は次工程でScene側へ実装します。
+struct CameraComponent
+{
+    SceneCamera Camera;
+    bool Primary = true;
 };
 
 struct MeshRendererComponent

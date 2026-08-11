@@ -27,7 +27,6 @@ namespace Raven::ph
 {
 namespace
 {
-// Debug Overlay用の文字列整形ヘルパー。
 std::string OnOff(bool enabled)
 {
     return enabled ? "ON" : "OFF";
@@ -42,13 +41,8 @@ std::string FormatFloat(float value)
 
 } // namespace
 
-PhysicsDebugRenderer::PhysicsDebugRenderer(
-    Scene& scene,
-    const math::Mat4& view,
-    const math::Mat4& projection)
+PhysicsDebugRenderer::PhysicsDebugRenderer(Scene& scene)
     : m_Scene(&scene)
-    , m_View(&view)
-    , m_Projection(&projection)
 {
     Registry().push_back(this);
 }
@@ -63,7 +57,6 @@ PhysicsDebugRenderer::~PhysicsDebugRenderer()
 
 void PhysicsDebugRenderer::RenderRegistered()
 {
-    // 同一Sceneに紐づくデバッグレンダラを一括描画します。
     for (auto* renderer : Registry())
     {
         if (renderer != nullptr)
@@ -75,7 +68,6 @@ void PhysicsDebugRenderer::RenderRegistered()
 
 void PhysicsDebugRenderer::BindPhysicsWorld(Scene& scene, const PhysicsWorld& world)
 {
-    // 同一Sceneに属するレンダラだけへPhysicsWorld参照を配布します。
     for (auto* renderer : Registry())
     {
         if (renderer != nullptr && renderer->m_Scene == &scene)
@@ -107,7 +99,6 @@ void PhysicsDebugRenderer::EnsureInitialized()
     }
 
     PipelineSpecification specification{};
-    // デバッグ線は視認優先で、カリング無効・深度書き込み無効に設定します。
     specification.DebugName = "Physics Debug Pipeline";
     specification.Shader = shader;
     specification.Topology = PrimitiveTopology::Lines;
@@ -122,7 +113,6 @@ void PhysicsDebugRenderer::EnsureInitialized()
 
 void PhysicsDebugRenderer::UpdateToggleKeys()
 {
-    // 押下エッジでだけトグルし、押しっぱなしで連続反転しないようにします。
     auto toggle = [](int key, bool& value, bool& wasPressed)
     {
         const bool pressed = Input::IsKeyPressed(key);
@@ -145,10 +135,9 @@ void PhysicsDebugRenderer::UpdateToggleKeys()
 
 void PhysicsDebugRenderer::Render()
 {
-    // World可視化とOverlayは独立しており、どちらか有効なら描画を実行します。
     UpdateToggleKeys();
 
-    if (m_Scene == nullptr || m_View == nullptr || m_Projection == nullptr)
+    if (m_Scene == nullptr)
     {
         return;
     }
@@ -174,7 +163,12 @@ void PhysicsDebugRenderer::Render()
 
     if (showWorld)
     {
-        RenderWorldDebug();
+        // 3D Debug Shapeは必ず現在のScene Camera Contextを必要とします。
+        // BeginScene(Camera)されていないSandbox等では描画せず、前回Cameraの使い回しを防ぎます。
+        if (Renderer::GetCameraContext().Valid)
+        {
+            RenderWorldDebug();
+        }
     }
 
     if (m_Settings.ShowSolverStatistics)
@@ -190,12 +184,10 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
     if (m_Settings.ShowAABB)
     {
-        // Broad Phaseの入力となるAABBを可視化します。
         const math::Vec3 color{ 0.15f, 0.95f, 1.0f };
         for (auto [entity, transform, collider] : m_Scene->View<TransformComponent, ColliderComponent>())
         {
             static_cast<void>(entity);
-
             AABB bounds{};
             if (ComputeColliderAABB(transform, collider, bounds))
             {
@@ -206,12 +198,10 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
     if (m_Settings.ShowOBB)
     {
-        // Narrow Phaseで使う回転Box境界を可視化します。
         const math::Vec3 color{ 1.0f, 0.25f, 0.85f };
         for (auto [entity, transform, collider] : m_Scene->View<TransformComponent, ColliderComponent>())
         {
             static_cast<void>(entity);
-
             if (collider.Type != ColliderType::Box)
             {
                 continue;
@@ -229,7 +219,6 @@ void PhysicsDebugRenderer::RenderWorldDebug()
     {
         if (m_Settings.ShowFatAABB || m_Settings.ShowDynamicAABBTree)
         {
-            // Treeの健全性に応じて色を変え、異常ノードを即座に識別しやすくします。
             const DynamicAABBTree& tree = m_PhysicsWorld->GetBroadPhase().GetTree();
             const auto& nodes = tree.GetNodes();
             const bool valid = ValidateDynamicAABBTree(tree).IsValid();
@@ -264,29 +253,18 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
         if (m_Settings.ShowContactPoints || m_Settings.ShowContactNormals)
         {
-            // マニホールドの接点と法線を描画し、接触安定性をその場で確認できるようにします。
             for (const auto& manifold : m_PhysicsWorld->GetContactManifolds())
             {
                 for (std::size_t i = 0; i < manifold.PointCount; ++i)
                 {
                     const auto& point = manifold.Points[i];
-
                     if (m_Settings.ShowContactPoints)
                     {
-                        AddPointMarker(
-                            vertices,
-                            indices,
-                            point.Position,
-                            m_Settings.ContactPointRadius,
-                            { 1.0f, 0.2f, 0.2f });
+                        AddPointMarker(vertices, indices, point.Position, m_Settings.ContactPointRadius, { 1.0f, 0.2f, 0.2f });
                     }
-
                     if (m_Settings.ShowContactNormals)
                     {
-                        AddLine(
-                            vertices,
-                            indices,
-                            point.Position,
+                        AddLine(vertices, indices, point.Position,
                             point.Position + manifold.Normal * m_Settings.ContactNormalLength,
                             { 1.0f, 1.0f, 0.2f });
                     }
@@ -296,7 +274,6 @@ void PhysicsDebugRenderer::RenderWorldDebug()
 
         if (m_Settings.ShowBroadPhasePairs)
         {
-            // Broad Phaseで選ばれたペア中心を線で結び、過剰候補を視覚確認します。
             for (const auto& pair : m_PhysicsWorld->GetBroadPhasePairs())
             {
                 auto* transformA = m_Scene->TryGetComponent<TransformComponent>(pair.A.GetIndex());
@@ -304,10 +281,7 @@ void PhysicsDebugRenderer::RenderWorldDebug()
                 auto* colliderA = m_Scene->TryGetComponent<ColliderComponent>(pair.A.GetIndex());
                 auto* colliderB = m_Scene->TryGetComponent<ColliderComponent>(pair.B.GetIndex());
 
-                if (transformA == nullptr
-                    || transformB == nullptr
-                    || colliderA == nullptr
-                    || colliderB == nullptr)
+                if (transformA == nullptr || transformB == nullptr || colliderA == nullptr || colliderB == nullptr)
                 {
                     continue;
                 }
@@ -323,7 +297,10 @@ void PhysicsDebugRenderer::RenderWorldDebug()
         }
     }
 
-    SubmitLines(vertices, indices, *m_View, *m_Projection);
+    // Renderer::BeginScene(Camera)で設定されたCamera Contextを利用します。
+    // Scene View / Game Viewのどちらでも同じDebug Renderer実装を共有できます。
+    const RendererCameraContext& cameraContext = Renderer::GetCameraContext();
+    SubmitLines(vertices, indices, cameraContext.View, cameraContext.Projection);
 }
 
 void PhysicsDebugRenderer::RenderOverlay()
@@ -342,9 +319,7 @@ void PhysicsDebugRenderer::RenderOverlay()
 
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
-
     const auto& stats = m_PhysicsWorld->GetSolverDebugStatistics();
-    // OverlayはSolver統計とトグル状態を同時表示し、調査サイクルを短縮します。
 
     const math::Vec3 titleColor{ 0.25f, 1.0f, 0.85f };
     const math::Vec3 textColor{ 0.92f, 0.92f, 0.92f };
@@ -354,14 +329,12 @@ void PhysicsDebugRenderer::RenderOverlay()
     float y = 16.0f;
     auto addLine = [&](const std::string& text, const math::Vec3& color)
     {
-        // NDC変換はAddOverlayText内で行うため、ここではピクセル基準で行送りします。
         AddOverlayText(vertices, indices, text, 16.0f, y, 2.0f, viewport[2], viewport[3], color);
         y += 18.0f;
     };
 
     addLine("PHYSICS DEBUG", titleColor);
     addLine("[H] HIDE OVERLAY", offColor);
-
     y += 6.0f;
     addLine("SOLVER", titleColor);
     addLine("MANIFOLDS: " + std::to_string(stats.ManifoldCount), textColor);
@@ -373,15 +346,12 @@ void PhysicsDebugRenderer::RenderOverlay()
     addLine("MAX PENETRATION: " + FormatFloat(stats.MaxPenetration), textColor);
     addLine("NORMAL IMPULSE: " + FormatFloat(stats.MaxNormalImpulse), textColor);
     addLine("FRICTION IMPULSE: " + FormatFloat(stats.MaxFrictionImpulse), textColor);
-
     y += 6.0f;
     addLine("VISUALIZATION", titleColor);
 
     auto addToggleLine = [&](const char* key, const char* label, bool enabled)
     {
-        addLine(
-            std::string("[") + key + "] " + label + ": " + OnOff(enabled),
-            enabled ? onColor : offColor);
+        addLine(std::string("[") + key + "] " + label + ": " + OnOff(enabled), enabled ? onColor : offColor);
     };
 
     addToggleLine("B", "AABB", m_Settings.ShowAABB);
@@ -401,7 +371,6 @@ void PhysicsDebugRenderer::SubmitLines(
     const math::Mat4& view,
     const math::Mat4& projection)
 {
-    // 毎フレームのデバッグ描画は一時VAO/VBOで組み立て、即時送信します。
     if (vertices.empty() || indices.empty())
     {
         return;
@@ -417,175 +386,125 @@ void PhysicsDebugRenderer::SubmitLines(
         { ShaderDataType::Float3, "a_Color" },
         { ShaderDataType::Float2, "a_Texcord" }
     });
-
+    Ref<IndexBuffer> indexBuffer = IndexBuffer::Create(indices.data(), uint32_t(indices.size()));
     vertexArray->AddVertexBuffer(vertexBuffer);
-    vertexArray->SetIndexBuffer(IndexBuffer::Create(indices.data(), uint32_t(indices.size())));
-
-    Ref<Mesh> mesh = CreateRef<Mesh>(vertexArray, int32_t(indices.size()));
+    vertexArray->SetIndexBuffer(indexBuffer);
 
     m_Material->SetUniform("u_View", view);
     m_Material->SetUniform("u_Projection", projection);
     m_Material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
     m_Material->SetUniform("u_Alpha", 1.0f);
-
-    Renderer::Draw(mesh, m_Material, math::Mat4::Identity());
+    m_Material->Bind(Renderer::GetAPI());
+    vertexArray->Bind();
+    Renderer::GetAPI().DrawIndexed(vertexArray, uint32_t(indices.size()));
 }
 
-void PhysicsDebugRenderer::AddLine(
-    std::vector<DebugVertex>& vertices,
-    std::vector<uint32_t>& indices,
-    const math::Vec3& start,
-    const math::Vec3& end,
-    const math::Vec3& color)
+void PhysicsDebugRenderer::AddLine(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
+    const math::Vec3& a, const math::Vec3& b, const math::Vec3& color)
 {
-    // LineList前提で2頂点+2indexを追加します。
     const uint32_t base = uint32_t(vertices.size());
-    vertices.push_back({ start, color, {} });
-    vertices.push_back({ end, color, {} });
-    indices.push_back(base);
+    vertices.push_back({ a, color, {} });
+    vertices.push_back({ b, color, {} });
+    indices.push_back(base + 0);
     indices.push_back(base + 1);
 }
 
-void PhysicsDebugRenderer::AddAABB(
-    std::vector<DebugVertex>& vertices,
-    std::vector<uint32_t>& indices,
-    const AABB& bounds,
-    const math::Vec3& color)
+void PhysicsDebugRenderer::AddAABB(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
+    const AABB& bounds, const math::Vec3& color)
 {
-    // AABBの12本エッジを明示し、軸整列境界をワイヤ表示します。
-    const math::Vec3 corners[8] = {
-        { bounds.Min.x, bounds.Min.y, bounds.Min.z },
-        { bounds.Max.x, bounds.Min.y, bounds.Min.z },
-        { bounds.Max.x, bounds.Min.y, bounds.Max.z },
-        { bounds.Min.x, bounds.Min.y, bounds.Max.z },
-        { bounds.Min.x, bounds.Max.y, bounds.Min.z },
-        { bounds.Max.x, bounds.Max.y, bounds.Min.z },
-        { bounds.Max.x, bounds.Max.y, bounds.Max.z },
-        { bounds.Min.x, bounds.Max.y, bounds.Max.z }
+    const math::Vec3& min = bounds.Min;
+    const math::Vec3& max = bounds.Max;
+    const math::Vec3 p[8] = {
+        {min.x,min.y,min.z},{max.x,min.y,min.z},{max.x,max.y,min.z},{min.x,max.y,min.z},
+        {min.x,min.y,max.z},{max.x,min.y,max.z},{max.x,max.y,max.z},{min.x,max.y,max.z}
     };
+    const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+    for (const auto& edge : edges)
+    {
+        AddLine(vertices, indices, p[edge[0]], p[edge[1]], color);
+    }
+}
 
-    const uint32_t edges[12][2] = {
-        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
-        { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
-        { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }
-    };
-
+void PhysicsDebugRenderer::AddOBB(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
+    const OBB& bounds, const math::Vec3& color)
+{
+    math::Vec3 corners[8]{};
+    bounds.GetCorners(corners);
+    const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
     for (const auto& edge : edges)
     {
         AddLine(vertices, indices, corners[edge[0]], corners[edge[1]], color);
     }
 }
 
-void PhysicsDebugRenderer::AddOBB(
-    std::vector<DebugVertex>& vertices,
-    std::vector<uint32_t>& indices,
-    const OBB& box,
-    const math::Vec3& color)
+void PhysicsDebugRenderer::AddPointMarker(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
+    const math::Vec3& position, float radius, const math::Vec3& color)
 {
-    // 8頂点を符号組み合わせで生成し、OBBのワイヤフレームを構築します。
-    math::Vec3 corners[8];
-    int index = 0;
-
-    for (int y = -1; y <= 1; y += 2)
-    {
-        for (int z = -1; z <= 1; z += 2)
-        {
-            for (int x = -1; x <= 1; x += 2)
-            {
-                corners[index++] = box.Center
-                    + box.Axis[0] * (box.HalfExtents.x * float(x))
-                    + box.Axis[1] * (box.HalfExtents.y * float(y))
-                    + box.Axis[2] * (box.HalfExtents.z * float(z));
-            }
-        }
-    }
-
-    const uint32_t edges[12][2] = {
-        { 0, 1 }, { 0, 2 }, { 0, 4 }, { 1, 3 },
-        { 1, 5 }, { 2, 3 }, { 2, 6 }, { 3, 7 },
-        { 4, 5 }, { 4, 6 }, { 5, 7 }, { 6, 7 }
-    };
-
-    for (const auto& edge : edges)
-    {
-        AddLine(vertices, indices, corners[edge[0]], corners[edge[1]], color);
-    }
+    AddLine(vertices, indices, position - math::Vec3{radius,0,0}, position + math::Vec3{radius,0,0}, color);
+    AddLine(vertices, indices, position - math::Vec3{0,radius,0}, position + math::Vec3{0,radius,0}, color);
+    AddLine(vertices, indices, position - math::Vec3{0,0,radius}, position + math::Vec3{0,0,radius}, color);
 }
 
-void PhysicsDebugRenderer::AddPointMarker(
-    std::vector<DebugVertex>& vertices,
-    std::vector<uint32_t>& indices,
-    const math::Vec3& point,
-    float radius,
-    const math::Vec3& color)
+void PhysicsDebugRenderer::AddOverlayText(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
+    const std::string& text, float pixelX, float pixelY, float pixelScale,
+    int viewportWidth, int viewportHeight, const math::Vec3& color)
 {
-    // 接触点は小さな3軸クロスマーカーで視認性を確保します。
-    const float r = std::max(radius, 0.0f);
-
-    AddLine(vertices, indices, point - math::Vec3{ r, 0.0f, 0.0f }, point + math::Vec3{ r, 0.0f, 0.0f }, color);
-    AddLine(vertices, indices, point - math::Vec3{ 0.0f, r, 0.0f }, point + math::Vec3{ 0.0f, r, 0.0f }, color);
-    AddLine(vertices, indices, point - math::Vec3{ 0.0f, 0.0f, r }, point + math::Vec3{ 0.0f, 0.0f, r }, color);
-}
-
-void PhysicsDebugRenderer::AddOverlayText(
-    std::vector<DebugVertex>& vertices,
-    std::vector<uint32_t>& indices,
-    const std::string& text,
-    float px,
-    float py,
-    float scale,
-    int width,
-    int height,
-    const math::Vec3& color)
-{
-    // 5x7グリフを横線セグメントへ展開し、フォントテクスチャ無しで描画します。
-    if (width <= 0 || height <= 0 || scale <= 0.0f)
+    if (viewportWidth <= 0 || viewportHeight <= 0 || pixelScale <= 0.0f)
     {
         return;
     }
 
-    auto toNdc = [&](float x, float y)
-    {
-        return math::Vec3{
-            (x / float(width)) * 2.0f - 1.0f,
-            1.0f - (y / float(height)) * 2.0f,
-            0.0f
-        };
-    };
+    const float glyphWidth = 5.0f * pixelScale;
+    const float glyphHeight = 7.0f * pixelScale;
+    const float advance = 6.0f * pixelScale;
+    const float lineThickness = std::max(1.0f, pixelScale);
 
-    float cursor = px;
-    for (char ch : text)
+    float cursorX = pixelX;
+    for (char c : text)
     {
-        const auto glyph = detail::GetPhysicsDebugGlyph(ch);
+        if (c == ' ')
+        {
+            cursorX += advance;
+            continue;
+        }
+
+        const uint8_t* rows = PhysicsDebugOverlayFont::FindGlyph(c);
+        if (rows == nullptr)
+        {
+            cursorX += advance;
+            continue;
+        }
 
         for (int row = 0; row < 7; ++row)
         {
-            int col = 0;
-            while (col < 5)
+            int column = 0;
+            while (column < 5)
             {
-                const uint8_t mask = uint8_t(1u << (4 - col));
-                if ((glyph[row] & mask) == 0)
+                const bool lit = (rows[row] & (1u << (4 - column))) != 0;
+                if (lit == false)
                 {
-                    ++col;
+                    ++column;
                     continue;
                 }
 
-                const int start = col;
-                while (col < 5 && (glyph[row] & uint8_t(1u << (4 - col))))
+                const int startColumn = column;
+                while (column + 1 < 5 && (rows[row] & (1u << (4 - (column + 1)))) != 0)
                 {
-                    ++col;
+                    ++column;
                 }
 
-                AddLine(
-                    vertices,
-                    indices,
-                    toNdc(cursor + float(start) * scale, py + float(row) * scale),
-                    toNdc(cursor + float(col) * scale, py + float(row) * scale),
-                    color);
+                const float startX = cursorX + float(startColumn) * pixelScale;
+                const float endX = cursorX + float(column + 1) * pixelScale;
+                const float centerY = pixelY + float(row) * pixelScale + lineThickness * 0.5f;
+
+                const float x0 = (startX / float(viewportWidth)) * 2.0f - 1.0f;
+                const float x1 = (endX / float(viewportWidth)) * 2.0f - 1.0f;
+                const float y = 1.0f - (centerY / float(viewportHeight)) * 2.0f;
+                AddLine(vertices, indices, {x0,y,0.0f}, {x1,y,0.0f}, color);
+                ++column;
             }
         }
-
-        cursor += 6.0f * scale;
+        cursorX += advance;
     }
 }
 
