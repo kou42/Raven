@@ -20,6 +20,7 @@ public:
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }
+    void* GetNativeWindow() const override { return m_Window; }
 
     void SetEventCallback(const EventCallbackFn& callback) override
     {
@@ -34,12 +35,7 @@ private:
     void Shutdown();
 
 private:
-
-#if 1
     GLFWwindow* m_Window = nullptr;
-#else
-    Ref<GLFWwindow> m_Window;
-#endif
 
     struct WindowData
     {
@@ -54,7 +50,7 @@ private:
     WindowData m_Data;
 
     Scope<GraphicsContext> m_Context;
-    Scope<Input>           m_Input;
+    Scope<Input> m_Input;
 };
 
-}
+} // namespace Raven

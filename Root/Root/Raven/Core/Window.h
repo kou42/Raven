@@ -16,7 +16,7 @@ struct WindowProps
 
     WindowProps(
         const std::string& title = "My Engine",
-        unsigned int width =  1920,
+        unsigned int width = 1920,
         unsigned int height = 1080
     )
         : Title(title), Width(width), Height(height)
@@ -26,7 +26,6 @@ struct WindowProps
 
 class Window
 {
-
 public:
     using EventCallbackFn = std::function<void(Event&)>;
 
@@ -37,15 +36,15 @@ public:
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
 
+    // Platform固有Window Handleを外部backendへ渡すための最小限の窓口です。
+    // Core層からGLFW型を公開せず、ImGui等のPlatform integration側で必要な型へ変換します。
+    virtual void* GetNativeWindow() const = 0;
+
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
     virtual void SetVSync(bool enabled) = 0;
     virtual bool IsVSync() const = 0;
 
-#if 1
     static std::unique_ptr<Window> Create(const WindowProps& props = WindowProps());
-#else
-    static Scope<Window> Create(const WindowProps& props = WindowProps());
-#endif
 };
 
-}
+} // namespace Raven

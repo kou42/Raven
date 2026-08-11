@@ -14,15 +14,15 @@
 namespace Raven
 {
 
+class ImGuiLayer;
+
 class Application
 {
-
 public:
-
     Application();
+    ~Application();
 
     void Run();
-
     void OnEvent(Event& event);
 
     void PushLayer(Layer* layer);
@@ -33,10 +33,13 @@ public:
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
-    //std::vector<Layer*> m_Layers;
     std::vector<Scope<Layer>> m_Layers;
-    
     Scope<Scene> m_scene;
+
+    // ImGuiLayerはLayerを継承しますが、Dear ImGuiのBegin/Endは全LayerのOnImGuiRender()を
+    // 囲む特殊なframe境界なので、Applicationが専用参照を保持して順序を保証します。
+    // またOpenGL backendをWindow/Contextより先にShutdownする責務もここで明示します。
+    Scope<ImGuiLayer> m_ImGuiLayer;
 };
 
-}
+} // namespace Raven

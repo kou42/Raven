@@ -1,8 +1,11 @@
-﻿#include "Application.h"
+#include "Application.h"
 #include "../Renderer/Renderer.h"
-//#include "../Core/Event.h"
+#include "Raven/ImGui/ImGuiLayer.h"
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+#include <algorithm>
 
 namespace Raven
 {
@@ -17,57 +20,73 @@ Application::Application()
         });
 
     Renderer::Init();
+
+    // ImGuiLayerもRavenのLayerライフサイクルへ統合します。
+    // ただしDear ImGuiのBegin/Endは全LayerのOnImGuiRender()を囲む必要があるため、
+    // Applicationが専用Layerへの参照を保持してframe境界だけを制御します。
+    m_ImGuiLayer = CreateScope<ImGuiLayer>(*m_Window);
+    m_ImGuiLayer->OnAttach();
+}
+
+Application::~Application()
+{
+    // 通常Layerを先にDetachします。
+    // 将来EditorLayer::OnDetach()がImGui関連リソースへ触れる場合でも、ImGui Contextがまだ有効な順序を保証します。
+    for (auto& layer : m_Layers)
+    {
+        if (layer != nullptr)
+        {
+            layer->OnDetach();
+        }
+    }
+
+    // ImGui OpenGL backendは有効なContextを必要とするためWindowより先に明示的にDetachします。
+    if (m_ImGuiLayer != nullptr)
+    {
+        m_ImGuiLayer->OnDetach();
+        m_ImGuiLayer.reset();
+    }
 }
 
 void Application::PushLayer(Layer* layer)
 {
 #if 0
     m_Layers.push_back(layer);
-
     layer->OnAttach();
 #endif
-
 }
 
 void Application::PushLayer(Scope<Layer> layer)
 {
+    if (layer == nullptr)
+    {
+        return;
+    }
+
     layer->OnAttach();
-    // unique_ptrなので、所有権を移動させる必要がある
     m_Layers.push_back(std::move(layer));
 }
 
 void Application::SetScene(Scope<Scene> scene)
 {
-    if (m_scene) {
+    if (m_scene != nullptr)
+    {
         m_scene->OnDestroy();
     }
 
     m_scene = std::move(scene);
-    m_scene->OnCreate(); // ここで初期化
+    if (m_scene != nullptr)
+    {
+        m_scene->OnCreate();
+    }
 }
 
 void Application::Run()
 {
-    // 推奨更新順
-    //    入力
-    //    ↓
-    //    ゲームロジック／物理への力・指示
-    //    ↓
-    //    PhysicsWorld::Step
-    //    ↓
-    //    衝突イベント処理
-    //    ↓
-    //    破棄キューをFlush
-    //    ↓
-    //    描画
-
-    float dt = 1.0f / 60.f;
-
     double previousTime = glfwGetTime();
 
     while (m_Running)
     {
-
         if (Input::IsKeyPressed(Key::Escape))
         {
             m_Running = false;
@@ -75,18 +94,49 @@ void Application::Run()
 
         const double currentTime = glfwGetTime();
         float frameDeltaTime = static_cast<float>(currentTime - previousTime);
-
         previousTime = currentTime;
 
-        // デバッグ停止やウィンドウ移動後の巨大dtを制限
+        // デバッグ停止やウィンドウ移動後の巨大dtを制限します。
         frameDeltaTime = std::min(frameDeltaTime, 0.25f);
 
-        m_scene->OnUpdate(frameDeltaTime);
-        m_scene->OnRender();
+        if (m_scene != nullptr)
+        {
+            m_scene->OnUpdate(frameDeltaTime);
+            m_scene->OnRender();
+        }
+
+        // 通常LayerのRuntime更新・描画はDear ImGui frameとは独立して実行します。
+        for (auto& layer : m_Layers)
+        {
+            if (layer != nullptr)
+            {
+                layer->OnUpdate(frameDeltaTime);
+                layer->OnRender();
+            }
+        }
+
+        if (m_ImGuiLayer != nullptr)
+        {
+            // Dear ImGuiは1 frameにつきBegin/Endを一度だけ実行し、その間で各LayerにUI構築を依頼します。
+            // これにより将来EditorLayerをPushLayer()するだけでOnImGuiRender()を参加させられます。
+            m_ImGuiLayer->Begin();
+
+            for (auto& layer : m_Layers)
+            {
+                if (layer != nullptr)
+                {
+                    layer->OnImGuiRender(frameDeltaTime);
+                }
+            }
+
+            // 現段階のbootstrap Statistics表示です。
+            // 次段階でEditorLayer/StatisticsPanelへ移行した後は、この呼び出し自体を不要にできます。
+            m_ImGuiLayer->OnImGuiRender(frameDeltaTime);
+            m_ImGuiLayer->End();
+        }
 
         m_Window->OnUpdate();
     }
-
 }
 
 void Application::OnEvent(Event& event)
@@ -98,115 +148,21 @@ void Application::OnEvent(Event& event)
         m_Running = false;
         event.Handled = true;
     }
+
+    // Eventがまだ処理されていない場合だけLayerへ逆順伝播します。
+    // 後から積まれたEditor/Overlay系Layerほど先に入力を受け取れるため、Editor UIとの統合にも向いた順序です。
+    for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it)
+    {
+        if (event.Handled)
+        {
+            break;
+        }
+
+        if (*it != nullptr)
+        {
+            (*it)->OnEvent(event);
+        }
+    }
 }
 
-
-#if 0
-float vertices[] =
-{
-    // position          // color
-    -0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f,
-     0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,
-     0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f
-};
-
-float vertices[] =
-{
-    // position           // color
-    -0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f, // 0 左下
-     0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f, // 1 右下
-     0.5f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f, // 2 右上
-    -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f  // 3 左上
-};
-
-uint32_t indices[] =
-{
-    0, 1, 2,
-    2, 3, 0
-};
-
-uint32_t vao;
-uint32_t vbo;
-uint32_t ebo;
-
-glGenVertexArrays(1, &vao);
-glBindVertexArray(vao);
-
-// Vertex Buffer
-glGenBuffers(1, &vbo);
-glBindBuffer(GL_ARRAY_BUFFER, vbo);
-glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-// Index Buffer
-glGenBuffers(1, &ebo);
-glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-// position
-glEnableVertexAttribArray(0);
-
-glVertexAttribPointer(
-    0,
-    3,
-    GL_FLOAT,
-    GL_FALSE,
-    6 * sizeof(float),
-    nullptr
-);
-
-// color
-glEnableVertexAttribArray(1);
-glVertexAttribPointer(
-    1,
-    3,
-    GL_FLOAT,
-    GL_FALSE,
-    6 * sizeof(float),
-    (const void*)(3 * sizeof(float))
-);
-
-const char* vertexShaderSource = R"(
-#version 330 core
-layout(location = 0) in vec3 a_Position;
-layout(location = 1) in vec3 a_Color;
-
-out vec3 v_Color;
-
-void main()
-{
-    v_Color = a_Color;
-    gl_Position = vec4(a_Position, 1.0);
-})";
-
-const char* fragmentShaderSource = R"(
-#version 330 core
-
-in vec3 v_Color;
-
-out vec4 FragColor;
-
-void main()
-{
-    FragColor = vec4(v_Color, 1.0);
-}
-)";
-
-unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
-glCompileShader(vertexShader);
-
-unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr);
-glCompileShader(fragmentShader);
-
-unsigned int shaderProgram = glCreateProgram();
-
-glAttachShader(shaderProgram, vertexShader);
-glAttachShader(shaderProgram, fragmentShader);
-glLinkProgram(shaderProgram);
-
-glDeleteShader(vertexShader);
-glDeleteShader(fragmentShader);
-#endif
-
-}
+} // namespace Raven
