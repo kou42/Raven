@@ -67,12 +67,44 @@ Entity SceneCameraSystem::FindPrimaryCameraEntity(Scene& scene)
     return Entity{};
 }
 
+Entity SceneCameraSystem::ResolveRuntimeCameraEntity(Scene& scene)
+{
+    // ========================================================================
+    // 1. Explicit Primary Camera
+    // ========================================================================
+    // 通常経路ではPrimary=trueのCameraを最優先します。
+    // Primaryが複数ある場合は既存ECSの反復順に従い最初の1件を採用します。
+    Entity primaryCamera = FindPrimaryCameraEntity(scene);
+    if (static_cast<bool>(primaryCamera))
+    {
+        return primaryCamera;
+    }
+
+    // ========================================================================
+    // 2. Safe fallback
+    // ========================================================================
+    // EditorでPrimaryを切り替える途中や、Sceneロード直後にPrimary指定が欠けていても、
+    // Camera Entity自体が存在するならGame Viewを維持します。
+    //
+    // ここでCameraComponent::Primaryを書き換えないことが重要です。
+    // fallbackは「今回どのCameraを描画に使うか」だけを解決する責務とし、
+    // Sceneデータそのものを暗黙変更しません。
+    for (auto [entity, transform, cameraComponent] : scene.View<TransformComponent, CameraComponent>())
+    {
+        static_cast<void>(transform);
+        static_cast<void>(cameraComponent);
+        return entity;
+    }
+
+    return Entity{};
+}
+
 SceneCamera* SceneCameraSystem::UpdatePrimaryCamera(
     Scene& scene,
     float viewportWidth,
     float viewportHeight)
 {
-    Entity cameraEntity = FindPrimaryCameraEntity(scene);
+    Entity cameraEntity = ResolveRuntimeCameraEntity(scene);
     if (static_cast<bool>(cameraEntity) == false)
     {
         return nullptr;
