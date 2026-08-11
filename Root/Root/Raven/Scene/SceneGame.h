@@ -1,4 +1,4 @@
-#include "Raven/Scene/Scene.h"
+﻿#include "Raven/Scene/Scene.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -111,8 +111,8 @@ private:
     math::Vec3 m_DragHitPoint{};
 
     // Projectionとマウス座標を対応させるViewportサイズ。
-    float m_ViewportWidth = 1280.0f;
-    float m_ViewportHeight = 720.0f;
+    float m_ViewportWidth = 1920.0f;
+    float m_ViewportHeight = 1080.0f;
 
     // Perspective()と同じFOVをMouse Ray生成でも使います。
     float m_CameraFovY = 0.7854f;
