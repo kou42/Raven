@@ -21,15 +21,30 @@ Application::Application()
 
     Renderer::Init();
 
-    // OpenGL Context生成後にDear ImGui backendを初期化します。
-    // Renderer/SceneへImGui依存を持ち込まず、Applicationはframe境界だけを管理します。
+    // ImGuiLayerもRavenのLayerライフサイクルへ統合します。
+    // ただしDear ImGuiのBegin/Endは全LayerのOnImGuiRender()を囲む必要があるため、
+    // Applicationが専用Layerへの参照を保持してframe境界だけを制御します。
     m_ImGuiLayer = CreateScope<ImGuiLayer>(*m_Window);
+    m_ImGuiLayer->OnAttach();
 }
 
 Application::~Application()
 {
-    // ImGui OpenGL backendは有効なContextを必要とするためWindowより先に破棄します。
-    m_ImGuiLayer.reset();
+    // ImGui OpenGL backendは有効なContextを必要とするためWindowより先に明示的にDetachします。
+    if (m_ImGuiLayer != nullptr)
+    {
+        m_ImGuiLayer->OnDetach();
+        m_ImGuiLayer.reset();
+    }
+
+    // 通常LayerについてもAttach/Detachを対にして終了処理を行います。
+    for (auto& layer : m_Layers)
+    {
+        if (layer != nullptr)
+        {
+            layer->OnDetach();
+        }
+    }
 }
 
 void Application::PushLayer(Layer* layer)
@@ -42,6 +57,11 @@ void Application::PushLayer(Layer* layer)
 
 void Application::PushLayer(Scope<Layer> layer)
 {
+    if (layer == nullptr)
+    {
+        return;
+    }
+
     layer->OnAttach();
     m_Layers.push_back(std::move(layer));
 }
@@ -84,13 +104,34 @@ void Application::Run()
             m_scene->OnRender();
         }
 
-        // Scene描画後、SwapBuffers前にEditor/Debug UIを重ねます。
-        // 今回は導入確認としてStatistics Windowのみを描画し、将来EditorLayerへ責務を移します。
+        // 通常LayerのRuntime更新・描画はDear ImGui frameとは独立して実行します。
+        for (auto& layer : m_Layers)
+        {
+            if (layer != nullptr)
+            {
+                layer->OnUpdate(frameDeltaTime);
+                layer->OnRender();
+            }
+        }
+
         if (m_ImGuiLayer != nullptr)
         {
-            m_ImGuiLayer->BeginFrame();
-            m_ImGuiLayer->RenderDebugStatistics(frameDeltaTime);
-            m_ImGuiLayer->EndFrame();
+            // Dear ImGuiは1 frameにつきBegin/Endを一度だけ実行し、その間で各LayerにUI構築を依頼します。
+            // これにより将来EditorLayerをPushLayer()するだけでOnImGuiRender()を参加させられます。
+            m_ImGuiLayer->Begin();
+
+            for (auto& layer : m_Layers)
+            {
+                if (layer != nullptr)
+                {
+                    layer->OnImGuiRender(frameDeltaTime);
+                }
+            }
+
+            // 現段階のbootstrap Statistics表示です。
+            // 次段階でEditorLayer/StatisticsPanelへ移行した後は、この呼び出し自体を不要にできます。
+            m_ImGuiLayer->OnImGuiRender(frameDeltaTime);
+            m_ImGuiLayer->End();
         }
 
         m_Window->OnUpdate();
@@ -105,6 +146,21 @@ void Application::OnEvent(Event& event)
     {
         m_Running = false;
         event.Handled = true;
+    }
+
+    // Eventがまだ処理されていない場合だけLayerへ逆順伝播します。
+    // 後から積まれたEditor/Overlay系Layerほど先に入力を受け取れるため、Editor UIとの統合にも向いた順序です。
+    for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it)
+    {
+        if (event.Handled)
+        {
+            break;
+        }
+
+        if (*it != nullptr)
+        {
+            (*it)->OnEvent(event);
+        }
     }
 }
 
