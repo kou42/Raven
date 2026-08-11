@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneViewportRenderer.h"
 
 #include <imgui.h>
 
@@ -34,7 +35,7 @@ void EditorLayer::OnAttach()
     // 実際の表示サイズはRenderSceneView()/RenderGameView()でContentRegionから取得し、
     // 次frameのOnRender()でFramebuffer::Resize()へ反映します。
     //
-    // SceneとGameを最初から別Framebufferにしている理由は、次段階でScene Viewだけへ
+    // SceneとGameを最初から別Framebufferにしている理由は、Scene Viewだけへ
     // Editor Camera / Grid / Selection Outline / Gizmo等を追加しても、Game Viewの
     // Runtime表示へEditor専用描画が混入しない構造を保つためです。
     m_SceneFramebuffer = Framebuffer::Create(
@@ -43,6 +44,10 @@ void EditorLayer::OnAttach()
     m_GameFramebuffer = Framebuffer::Create(
         static_cast<std::uint32_t>(m_GameViewportWidth),
         static_cast<std::uint32_t>(m_GameViewportHeight));
+
+    // EditorCameraのProjectionも初期Viewportサイズへ合わせます。
+    // 以降はScene ViewのContentRegionサイズが変わるたびRenderSceneView()から更新します。
+    m_EditorCamera.SetViewportSize(m_SceneViewportWidth, m_SceneViewportHeight);
 }
 
 void EditorLayer::OnDetach()
@@ -59,17 +64,25 @@ void EditorLayer::OnDetach()
 
 void EditorLayer::OnUpdate(float dt)
 {
-    (void)dt;
-
     // ========================================================================
     // Editor-only update
     // ========================================================================
     // Runtime Sceneの更新はApplication -> Scene::OnUpdate()で行われます。
-    // Editor CameraやGizmo等はゲームロジックとは独立したEditor状態なので、
-    // 次段階ではこの入口から更新します。
+    // Editor Camera / Gizmo等はゲームロジックとは独立したEditor状態なので、
+    // Runtime更新へ混ぜずEditorLayerから更新します。
     //
+    // ImGuiのhover/focus判定は前frameのRenderSceneView()で保存した値です。
+    // OnUpdate()はImGui frame構築より先に呼ばれるため1frame遅れになりますが、
+    // Scene View外でWASD/Mouse操作した時にEditor Cameraが動くことを防げます。
+    const bool editorCameraInputEnabled =
+        m_ShowSceneView
+        && m_SceneViewportHovered
+        && m_SceneViewportFocused;
+
+    m_EditorCamera.Update(dt, editorCameraInputEnabled);
+
     // Framebuffer ResizeはGPU Resourceの再生成を伴うため、UI構築中ではなく
-    // 描画処理側のOnRender()でまとめて行う方針です。
+    // 描画処理側のOnRender()でまとめて行います。
 }
 
 void EditorLayer::OnRender()
@@ -85,15 +98,12 @@ void EditorLayer::OnRender()
     // Applicationは現在、互換性維持のためRuntime SceneをMain framebufferへ一度描画します。
     // その後EditorLayerからScene View / Game View専用Framebufferへ再描画しています。
     //
-    // 現段階では両Viewとも既存SceneのRuntime Cameraを使用します。
-    // 次段階でScene描画APIへCameraを外部指定できる経路を追加し、
-    //   Scene View -> Editor Camera
-    //   Game View  -> Runtime Camera
-    // に分離します。
+    // ここからScene ViewとGame ViewのCameraを明確に分離します。
+    //   Scene View -> EditorCamera
+    //   Game View  -> Runtime Scene自身のCamera
     //
-    // 重要:
-    // Scene/Gameを最初から別Framebufferへ描くことで、後からScene Viewだけに
-    // Editor Camera / Grid / Gizmoを追加してもGame Viewへ混入しません。
+    // 同じScene状態を別Cameraから描くだけなので、Entity/Physics/AnimationのUpdateを
+    // Scene View用に二重実行しないことが重要です。
     if (m_ShowSceneView && m_SceneFramebuffer != nullptr)
     {
         // ImGui Windowが極端に小さくなった場合でも0x0 Textureを作らないよう、
@@ -102,7 +112,11 @@ void EditorLayer::OnRender()
         const std::uint32_t height = static_cast<std::uint32_t>(std::max(m_SceneViewportHeight, 1.0f));
 
         m_SceneFramebuffer->Resize(width, height);
-        RenderSceneToFramebuffer(*m_SceneFramebuffer);
+
+        RenderSceneToFramebuffer(
+            *m_SceneFramebuffer,
+            m_EditorCamera.GetViewMatrix(),
+            m_EditorCamera.GetProjectionMatrix());
     }
 
     if (m_ShowGameView && m_GameFramebuffer != nullptr)
@@ -111,6 +125,8 @@ void EditorLayer::OnRender()
         const std::uint32_t height = static_cast<std::uint32_t>(std::max(m_GameViewportHeight, 1.0f));
 
         m_GameFramebuffer->Resize(width, height);
+
+        // Game ViewはRuntime Cameraを変更せず、Scene本来のOnRender()をそのまま使います。
         RenderSceneToFramebuffer(*m_GameFramebuffer);
     }
 }
@@ -129,7 +145,7 @@ void EditorLayer::RenderSceneToFramebuffer(Framebuffer& framebuffer)
     }
 
     // ========================================================================
-    // Render target switching
+    // Runtime camera render target switching
     // ========================================================================
     // EditorLayerから見えるのはFramebuffer共通インターフェースだけです。
     // Bind()内部でOpenGLならFBO、将来DirectXなら対応するRender Targetを設定します。
@@ -139,6 +155,45 @@ void EditorLayer::RenderSceneToFramebuffer(Framebuffer& framebuffer)
     // 描画終了後はUnbind()で通常の描画先へ戻し、後続のImGui描画へ影響を残しません。
     framebuffer.Bind();
     activeScene->OnRender();
+    framebuffer.Unbind();
+}
+
+void EditorLayer::RenderSceneToFramebuffer(
+    Framebuffer& framebuffer,
+    const math::Mat4& view,
+    const math::Mat4& projection)
+{
+    if (m_Application == nullptr)
+    {
+        return;
+    }
+
+    Scene* activeScene = m_Application->GetScene();
+    if (activeScene == nullptr)
+    {
+        return;
+    }
+
+    framebuffer.Bind();
+
+    // ========================================================================
+    // External camera rendering
+    // ========================================================================
+    // Scene ViewではRuntime Cameraを上書きせず、SceneViewportRendererへEditorCameraの
+    // View/Projectionを渡して一時的な別視点として描画します。
+    //
+    // SceneViewportRendererを実装していないSceneでもEditorを完全に描画不能にしないため、
+    // 通常のOnRender()へfallbackします。この場合Scene ViewはRuntime Camera表示になります。
+    SceneViewportRenderer* viewportRenderer = dynamic_cast<SceneViewportRenderer*>(activeScene);
+    if (viewportRenderer != nullptr)
+    {
+        viewportRenderer->RenderWithCamera(view, projection);
+    }
+    else
+    {
+        activeScene->OnRender();
+    }
+
     framebuffer.Unbind();
 }
 
@@ -171,6 +226,12 @@ void EditorLayer::OnImGuiRender(float dt)
     if (m_ShowSceneView)
     {
         RenderSceneView();
+    }
+    else
+    {
+        // Windowを非表示にしたframe以降、以前のhover/focus状態をCamera入力へ残しません。
+        m_SceneViewportHovered = false;
+        m_SceneViewportFocused = false;
     }
 
     if (m_ShowGameView)
@@ -238,6 +299,15 @@ void EditorLayer::RenderSceneView()
     const bool visible = ImGui::Begin("Scene View", &m_ShowSceneView);
     ImGui::PopStyleVar();
 
+    // ========================================================================
+    // Scene View input state
+    // ========================================================================
+    // EditorCameraの入力はScene View上だけで有効にします。
+    // Hoverだけでは別WindowがKeyboard focusを持つ場合があるため、Focusも併用して
+    // Inspector編集中などにWASDがCameraへ入ることを避けます。
+    m_SceneViewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+    m_SceneViewportFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
     if (visible)
     {
         const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -249,6 +319,12 @@ void EditorLayer::RenderSceneView()
             // UI構築処理の責務を分離しています。
             m_SceneViewportWidth = available.x;
             m_SceneViewportHeight = available.y;
+
+            // Projection行列はGPU Resourceではないため、ContentRegionを取得した時点で更新できます。
+            // 次frameのOnRender()では最新Aspect RatioのEditor CameraからScene Viewを描画します。
+            m_EditorCamera.SetViewportSize(
+                m_SceneViewportWidth,
+                m_SceneViewportHeight);
 
             if (m_SceneFramebuffer != nullptr)
             {
@@ -280,7 +356,8 @@ void EditorLayer::RenderGameView()
     // Game View Window
     // ========================================================================
     // Scene Viewと同じTexture表示経路を持ちますがFramebufferは共有しません。
-    // 将来Scene ViewへEditor専用描画を追加した際にも、Game Viewは純粋なRuntime表示を保ちます。
+    // Scene ViewへEditor Camera / Gizmo等を追加しても、Game ViewはRuntime Cameraの
+    // 純粋なゲーム表示を保ちます。
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     const bool visible = ImGui::Begin("Game View", &m_ShowGameView);
     ImGui::PopStyleVar();
@@ -320,9 +397,10 @@ void EditorLayer::OnEvent(Event& event)
     // ========================================================================
     // Editor input routing
     // ========================================================================
-    // Editor Camera / Gizmo入力は次段階でここへ追加します。
-    // Scene Viewのhover/focus状態を確認し、Editor操作中の入力がRuntime Sceneへ流れないよう
-    // 必要に応じてevent.Handledを設定する構造にします。
+    // 現在のEditorCameraはInput pollingで操作しています。
+    // 将来Scroll Zoom / Gizmo / ShortcutなどEventベースの入力を追加する際には、
+    // m_SceneViewportHovered / m_SceneViewportFocusedを確認し、Editor側で消費したEventへ
+    // event.Handled = trueを設定してRuntime Layerへの伝播を止めます。
 }
 
 void EditorLayer::ValidateSelectedEntity()
