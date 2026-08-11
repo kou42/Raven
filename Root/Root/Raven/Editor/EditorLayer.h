@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Editor/Panels/AnimationDebugPanel.h"
 #include "Raven/Editor/Panels/StatisticsPanel.h"
 #include "Raven/Renderer/Layer/Layer.h"
 
@@ -73,8 +74,8 @@ private:
     void EndDockSpace();
 
     // Editor全体のMenuBar描画です。
-    // 現段階ではViewメニューからStatistics Panelの表示/非表示を切り替えます。
-    // 今後Hierarchy / Inspector / Animation Debug等も同じWindowメニューへ追加できます。
+    // Viewメニューから各Editor Panelの表示/非表示を切り替えます。
+    // Panel数が増えてもWindow管理はここへ集約し、Panel自身には他Panelの存在を知らせません。
     void RenderMenuBar();
 
 private:
@@ -86,15 +87,19 @@ private:
     // 所有関係は Application -> EditorLayer の一方向に保ち、循環所有を作りません。
     Application* m_Application = nullptr;
 
-    // Debug / Statistics表示を独立Panelへ分離しています。
-    // 今後のPanelも同じ方針でメンバとして追加し、EditorLayerは呼び出し順序と
-    // Runtime状態の受け渡しだけを担当します。
+    // ========================================================================
+    // Editor Panels
+    // ========================================================================
+    // PanelはEditorLayerが所有しますが、Active Scene等のRuntimeオブジェクトは所有しません。
+    // 必要なRuntime参照をOnImGuiRender()時に渡すことでScene差し替えにも追従します。
     StatisticsPanel m_StatisticsPanel;
+    AnimationDebugPanel m_AnimationDebugPanel;
 
     // Panelの表示状態はEditorLayerが管理します。
     // Panel内部にEditor全体のWindow管理状態を持たせないことで、MenuBarや将来の
     // Workspace保存機能から一元的に表示状態を制御できるようにします。
     bool m_ShowStatisticsPanel = true;
+    bool m_ShowAnimationDebugPanel = true;
 
     // BeginDockSpace()がHost WindowをBeginできたかに関係なく、ImGui::Begin()を呼んだ場合は
     // 必ず対応するImGui::End()が必要です。呼び出し構造を明確にするため状態を保持します。
