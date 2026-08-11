@@ -2,6 +2,7 @@
 
 #include "RenderCommand.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
+#include "Raven/Renderer/Camera/Camera.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -14,6 +15,7 @@ namespace Raven
 {
 
 RendererStatistics Renderer::s_Statistics{};
+RendererCameraContext Renderer::s_CameraContext{};
 
 // 呼び出し元はApplication::Application()
 void Renderer::Init()
@@ -30,9 +32,24 @@ void Renderer::BeginFrame()
     s_Statistics.Reset();
 }
 
+void Renderer::BeginScene(const Camera& camera)
+{
+    // ========================================================================
+    // Camera Context
+    // ========================================================================
+    // SceneCamera / EditorCameraのどちらで描画しているかはRendererでは区別しません。
+    // Camera共通インターフェースから最終View/Projectionだけをコピーし、通常描画と
+    // EndScene()内のDebug Passが必ず同じCameraを見るようにします。
+    s_CameraContext.View = camera.GetViewMatrix();
+    s_CameraContext.Projection = camera.GetProjectionMatrix();
+    s_CameraContext.Valid = true;
+}
+
 void Renderer::BeginScene()
 {
-    // 将来的には Camera 情報をここで受け取る
+    // Cameraを持たないSandbox等の旧描画経路ではContextを明示的に無効化します。
+    // 前回SceneのCameraが残ったままDebug Passへ誤利用されることを防ぎます。
+    s_CameraContext.Valid = false;
 }
 
 void Renderer::EndScene()
@@ -41,9 +58,15 @@ void Renderer::EndScene()
     // Debug Overlay Pass
     // ========================================================================
     // 通常のScene描画が完了した後に、Physics / Animationのデバッグ表示を重ねます。
-    // どちらもDepthWrite=falseの専用Pipelineを使うため、Scene本体の深度を汚染しません。
+    // Camera依存のPhysics DebugはRenderer Camera Contextを参照するため、Game Viewでは
+    // SceneCamera、Scene ViewではEditorCameraへ自動的に追従します。
     ph::PhysicsDebugRenderer::RenderRegistered();
     AnimationDebugOverlayRenderer::RenderRegistered();
+}
+
+const RendererCameraContext& Renderer::GetCameraContext()
+{
+    return s_CameraContext;
 }
 
 void Renderer::Shutdown()
