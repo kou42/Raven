@@ -8,6 +8,8 @@ namespace Raven
 {
 namespace
 {
+// Transition ConditionをEditor側で再評価させないためのRuntime診断関数です。
+// StateMachine本体と同じParameter取得API・比較規則を使い、実際の遷移判定とDebug表示の意味がずれないようにします。
 bool EvaluateConditionForDebug(
     const AnimatorStateMachine& stateMachine,
     const AnimatorCondition& condition,
@@ -49,6 +51,8 @@ bool EvaluateConditionForDebug(
         return false;
     }
 
+    // TriggerもStateMachine上ではBool値として読み出せるため、Bool Conditionと同じ経路で現在値を記録します。
+    // Trigger消費前後の値もSnapshotに反映されるので、遷移が発火しない原因の追跡に利用できます。
     bool actual = false;
     if (stateMachine.GetBool(condition.ParameterName, actual) == false)
     {
@@ -67,6 +71,8 @@ bool EvaluateConditionForDebug(
     return true;
 }
 
+// Animatorが現在保持しているStateから、Editor表示に必要な再生情報をSnapshotへ変換します。
+// Blend Treeの場合も定義を再計算するのではなく、Animatorが実際に使用しているParameterとBlendTree Debug結果を採用します。
 bool BuildStateRuntimeInfo(
     const AnimatorStateMachine& stateMachine,
     const std::string& stateName,
@@ -112,10 +118,14 @@ bool BuildStateRuntimeInfo(
     const auto& children = animatorState.BlendTree->GetChildren();
     outInfo.BlendChildren.reserve(children.size());
 
+    // GetDebugInfo()は実際に補間対象となる左右2 Childを返します。
+    // Editorでは全Thresholdを描画したいため、全Childへ展開し、選択されていないChildのWeightを0としてSnapshot化します。
     for (std::size_t i = 0; i < children.size(); ++i)
     {
         float weight = 0.0f;
 
+        // Clamp領域ではLeft/Rightが同じChildを指します。
+        // この場合にLeftWeightだけをそのまま使うのではなく、そのChildの表示Weightを明示的に1.0とします。
         if (outInfo.BlendTree.LeftChildIndex == outInfo.BlendTree.RightChildIndex)
         {
             if (i == outInfo.BlendTree.LeftChildIndex)
@@ -138,6 +148,8 @@ bool BuildStateRuntimeInfo(
     return true;
 }
 
+// Transition一覧だけでは孤立Stateを列挙できないため、Graph構築中に参照されたStateを重複なく追加します。
+// Current/Pending/Queuedは後段でも追加し、少なくとも実行中StateがGraphから欠落しないようにしています。
 void AddNodeIfMissing(
     const AnimatorStateMachine& stateMachine,
     const std::string& stateName,
@@ -173,6 +185,8 @@ void AddNodeIfMissing(
     outInfo.Nodes.push_back(std::move(node));
 }
 
+// State Machine GraphとTransition診断情報を1つのSnapshotへまとめます。
+// Editor側はこの結果だけを描画し、Transition ConditionやExit Timeを独自に再評価しないことを前提とします。
 void BuildGraphRuntimeInfo(
     const AnimatorStateMachine& stateMachine,
     AnimatorStateMachineRuntimeDebugInfo& outInfo)
@@ -191,6 +205,9 @@ void BuildGraphRuntimeInfo(
         debugTransition.HasExitTime = transition.HasExitTime;
         debugTransition.ExitTime = transition.ExitTime;
         debugTransition.Priority = transition.Priority;
+
+        // IsActiveは「条件が成立している」ではなく、現在AnimatorがこのFrom -> ToをCrossFadeしていることを表します。
+        // IsEligibleとは意味を分けることで、発火直前と発火後の状態をEditorから区別できます。
         debugTransition.IsActive =
             outInfo.IsCrossFading &&
             outInfo.Current.HasState &&
@@ -202,6 +219,8 @@ void BuildGraphRuntimeInfo(
             outInfo.Current.HasState &&
             transition.FromState == outInfo.Current.StateName;
 
+        // Exit Timeは遷移元StateのNormalizedTimeに対して評価されるため、
+        // Current以外のTransitionには誤解を招く再生時間を設定せず0.0のままにします。
         debugTransition.SourceNormalizedTime = debugTransition.IsSourceCurrent
             ? outInfo.Current.NormalizedTime
             : 0.0f;
@@ -210,6 +229,8 @@ void BuildGraphRuntimeInfo(
             (debugTransition.IsSourceCurrent &&
              debugTransition.SourceNormalizedTime >= transition.ExitTime);
 
+        // ConditionsはAND条件です。各Conditionの個別結果を残したうえで、Transition全体の成立状態も保持します。
+        // Parameter取得に失敗した場合も成立扱いにはせず、Debug表示から異常を見つけられるようfalseへ倒します。
         debugTransition.Conditions.reserve(transition.Conditions.size());
         debugTransition.AreConditionsMet = true;
 
@@ -226,6 +247,7 @@ void BuildGraphRuntimeInfo(
 
         // EvaluateTransitions()はCurrent Stateから出るTransitionだけを評価し、
         // CrossFade中は新規Transitionを開始しません。DebugのEligibleも同じ前提に揃えます。
+        // したがってIsEligibleは「このFrameで遷移候補になれるか」を表し、IsActiveとは別概念です。
         debugTransition.IsEligible =
             debugTransition.IsSourceCurrent &&
             outInfo.IsCrossFading == false &&
@@ -235,10 +257,13 @@ void BuildGraphRuntimeInfo(
         outInfo.Transitions.push_back(std::move(debugTransition));
     }
 
+    // Transitionを持たない実行中StateもGraph上には必要なので、Runtime参照中のStateを最後に補完します。
     AddNodeIfMissing(stateMachine, outInfo.Current.StateName, outInfo);
     AddNodeIfMissing(stateMachine, outInfo.Pending.StateName, outInfo);
     AddNodeIfMissing(stateMachine, outInfo.QueuedStateName, outInfo);
 
+    // unorderedな内部格納順にEditorレイアウトが引きずられないよう、State名で順序を安定化します。
+    // 同じState MachineならFrame間でNode位置が不用意に入れ替わらないことが目的です。
     std::sort(
         outInfo.Nodes.begin(),
         outInfo.Nodes.end(),
@@ -248,6 +273,7 @@ void BuildGraphRuntimeInfo(
             return lhs.StateName < rhs.StateName;
         });
 
+    // Graph Node自身にもRuntime役割を付与し、描画側がState名を再比較しなくても色分けできるようにします。
     for (auto& node : outInfo.Nodes)
     {
         node.IsCurrent = outInfo.Current.HasState && node.StateName == outInfo.Current.StateName;
@@ -265,6 +291,8 @@ bool BuildAnimatorStateMachineRuntimeDebugInfo(
 
     const Animator& animator = stateMachine.GetAnimator();
 
+    // Current/PendingはAnimatorが実際に再生しているStateから構築します。
+    // StateMachine定義だけから再構築するとCrossFade途中のTime/BlendParameterと食い違うためです。
     if (stateMachine.HasCurrentState())
     {
         BuildStateRuntimeInfo(
@@ -283,6 +311,8 @@ bool BuildAnimatorStateMachineRuntimeDebugInfo(
             outInfo.Pending);
     }
 
+    // Queued/CrossFade情報を先に確定してからGraphを構築します。
+    // BuildGraphRuntimeInfo()はこれらを使ってActive TransitionやIsEligibleを判定します。
     outInfo.QueuedStateName = stateMachine.GetQueuedStateName();
     outInfo.IsCrossFading = animator.IsCrossFading();
     outInfo.CrossFadeWeight = animator.GetCrossFadeWeight();
