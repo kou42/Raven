@@ -45,16 +45,65 @@ void Animator::Play(std::shared_ptr<AnimationClip> clip, bool restart)
     m_FadeElapsed = 0.0f;
     m_FadeDuration = 0.0f;
 
-    const bool clipChanged = (m_CurrentState.Clip != clip);
+    const bool motionChanged =
+        m_CurrentState.MotionType != AnimatorMotionType::Clip ||
+        m_CurrentState.Clip != clip;
+
+    m_CurrentState.MotionType = AnimatorMotionType::Clip;
     m_CurrentState.Clip = std::move(clip);
+    m_CurrentState.BlendTree.reset();
+    m_CurrentState.BlendParameter = 0.0f;
     m_CurrentState.Loop = m_Loop;
 
-    if (restart || clipChanged)
+    if (restart || motionChanged)
     {
         // 逆再生の場合は末尾から開始します。
-        m_CurrentState.Time =
-            (m_Speed < 0.0f) ? m_CurrentState.Clip->GetDuration() : 0.0f;
+        m_CurrentState.NormalizedTime = (m_Speed < 0.0f) ? 1.0f : 0.0f;
     }
+
+    m_CurrentState.Time =
+        m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
+
+    m_Playing = true;
+    m_Paused = false;
+    m_Finished = false;
+    EvaluateCurrentPose();
+}
+
+void Animator::PlayBlendTree(
+    std::shared_ptr<BlendTree1D> blendTree,
+    float blendParameter,
+    bool restart)
+{
+    if (!blendTree || !std::isfinite(blendParameter) || blendTree->GetChildCount() == 0)
+    {
+        Stop();
+        m_CurrentState.Reset();
+        return;
+    }
+
+    m_CrossFading = false;
+    m_NextState.Reset();
+    m_FadeElapsed = 0.0f;
+    m_FadeDuration = 0.0f;
+
+    const bool motionChanged =
+        m_CurrentState.MotionType != AnimatorMotionType::BlendTree1D ||
+        m_CurrentState.BlendTree != blendTree;
+
+    m_CurrentState.MotionType = AnimatorMotionType::BlendTree1D;
+    m_CurrentState.Clip.reset();
+    m_CurrentState.BlendTree = std::move(blendTree);
+    m_CurrentState.BlendParameter = blendParameter;
+    m_CurrentState.Loop = m_Loop;
+
+    if (restart || motionChanged)
+    {
+        m_CurrentState.NormalizedTime = (m_Speed < 0.0f) ? 1.0f : 0.0f;
+    }
+
+    m_CurrentState.Time =
+        m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
 
     m_Playing = true;
     m_Paused = false;
@@ -69,7 +118,7 @@ bool Animator::CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bo
         return false;
     }
 
-    // まだCurrent Clipが無い場合、Blend元Poseが存在しないため通常Playへフォールバックします。
+    // まだCurrent Motionが無い場合、Blend元Poseが存在しないため通常Playへフォールバックします。
     if (!m_CurrentState.IsValid())
     {
         Play(std::move(clip), true);
@@ -78,7 +127,7 @@ bool Animator::CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bo
 
     // Fade中の割り込みは、現在のBlend済みPoseをSnapshot Stateとして保持しない限り
     // Current/Nextどちらを新しいBlend元にするかでPoseが跳ぶ可能性があります。
-    // 最初の実装では明示的に拒否し、Idle/Walk/Runの1段Transitionを確実にします。
+    // 最初の実装では明示的に拒否します。
     if (m_CrossFading)
     {
         return false;
@@ -92,17 +141,22 @@ bool Animator::CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bo
     }
 
     // 同じClipへrestart=falseで遷移する場合は見た目が変化しないため何もしません。
-    if (m_CurrentState.Clip == clip && !restart)
+    if (m_CurrentState.MotionType == AnimatorMotionType::Clip &&
+        m_CurrentState.Clip == clip &&
+        !restart)
     {
         return true;
     }
 
+    m_NextState.Reset();
+    m_NextState.MotionType = AnimatorMotionType::Clip;
     m_NextState.Clip = std::move(clip);
     m_NextState.Loop = m_Loop;
+    m_NextState.NormalizedTime =
+        restart ? ((m_Speed < 0.0f) ? 1.0f : 0.0f)
+                : m_CurrentState.NormalizedTime;
     m_NextState.Time =
-        (restart || m_NextState.Clip != m_CurrentState.Clip)
-            ? ((m_Speed < 0.0f) ? m_NextState.Clip->GetDuration() : 0.0f)
-            : m_CurrentState.Time;
+        m_NextState.NormalizedTime * GetStateDuration(m_NextState);
 
     m_CrossFading = true;
     m_FadeElapsed = 0.0f;
@@ -113,6 +167,98 @@ bool Animator::CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bo
     m_Playing = true;
     m_Finished = false;
 
+    EvaluateCurrentPose();
+    return true;
+}
+
+bool Animator::CrossFadeBlendTree(
+    std::shared_ptr<BlendTree1D> blendTree,
+    float blendParameter,
+    float duration,
+    bool restart)
+{
+    if (!blendTree || !std::isfinite(blendParameter) || blendTree->GetChildCount() == 0)
+    {
+        return false;
+    }
+
+    if (!m_CurrentState.IsValid())
+    {
+        PlayBlendTree(std::move(blendTree), blendParameter, true);
+        return true;
+    }
+
+    if (m_CrossFading)
+    {
+        return false;
+    }
+
+    if (duration <= 0.0f)
+    {
+        PlayBlendTree(std::move(blendTree), blendParameter, restart);
+        return true;
+    }
+
+    if (m_CurrentState.MotionType == AnimatorMotionType::BlendTree1D &&
+        m_CurrentState.BlendTree == blendTree &&
+        !restart)
+    {
+        m_CurrentState.BlendParameter = blendParameter;
+        m_CurrentState.Time =
+            m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
+        EvaluateCurrentPose();
+        return true;
+    }
+
+    m_NextState.Reset();
+    m_NextState.MotionType = AnimatorMotionType::BlendTree1D;
+    m_NextState.BlendTree = std::move(blendTree);
+    m_NextState.BlendParameter = blendParameter;
+    m_NextState.Loop = m_Loop;
+    m_NextState.NormalizedTime =
+        restart ? ((m_Speed < 0.0f) ? 1.0f : 0.0f)
+                : m_CurrentState.NormalizedTime;
+    m_NextState.Time =
+        m_NextState.NormalizedTime * GetStateDuration(m_NextState);
+
+    m_CrossFading = true;
+    m_FadeElapsed = 0.0f;
+    m_FadeDuration = duration;
+    m_Playing = true;
+    m_Finished = false;
+
+    EvaluateCurrentPose();
+    return true;
+}
+
+bool Animator::SetCurrentBlendParameter(float value)
+{
+    if (!std::isfinite(value) ||
+        m_CurrentState.MotionType != AnimatorMotionType::BlendTree1D ||
+        !m_CurrentState.BlendTree)
+    {
+        return false;
+    }
+
+    m_CurrentState.BlendParameter = value;
+    m_CurrentState.Time =
+        m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
+    EvaluateCurrentPose();
+    return true;
+}
+
+bool Animator::SetNextBlendParameter(float value)
+{
+    if (!std::isfinite(value) ||
+        m_NextState.MotionType != AnimatorMotionType::BlendTree1D ||
+        !m_NextState.BlendTree)
+    {
+        return false;
+    }
+
+    m_NextState.BlendParameter = value;
+    m_NextState.Time =
+        m_NextState.NormalizedTime * GetStateDuration(m_NextState);
     EvaluateCurrentPose();
     return true;
 }
@@ -139,9 +285,10 @@ void Animator::Resume()
 
 void Animator::Stop()
 {
-    // StopはClip参照を維持したまま先頭へ戻します。
+    // StopはMotion参照を維持したまま先頭へ戻します。
     // CrossFadeだけは破棄し、停止後のPoseが曖昧にならないようCurrent側へ一本化します。
     m_CurrentState.Time = 0.0f;
+    m_CurrentState.NormalizedTime = 0.0f;
     m_NextState.Reset();
     m_CrossFading = false;
     m_FadeElapsed = 0.0f;
@@ -169,6 +316,7 @@ void Animator::SetCurrentTime(float time)
     if (!m_CurrentState.IsValid())
     {
         m_CurrentState.Time = 0.0f;
+        m_CurrentState.NormalizedTime = 0.0f;
         m_CurrentPose = TransformPose{};
 
         if (m_Skeleton)
@@ -184,10 +332,18 @@ void Animator::SetCurrentTime(float time)
     m_FadeElapsed = 0.0f;
     m_FadeDuration = 0.0f;
 
-    m_CurrentState.Time = std::clamp(
-        time,
-        0.0f,
-        m_CurrentState.Clip->GetDuration());
+    const float duration = GetStateDuration(m_CurrentState);
+    if (duration <= 0.0f)
+    {
+        m_CurrentState.Time = 0.0f;
+        m_CurrentState.NormalizedTime = 0.0f;
+    }
+    else
+    {
+        m_CurrentState.Time = std::clamp(time, 0.0f, duration);
+        m_CurrentState.NormalizedTime =
+            std::clamp(m_CurrentState.Time / duration, 0.0f, 1.0f);
+    }
 
     m_Finished = false;
     EvaluateCurrentPose();
@@ -195,27 +351,24 @@ void Animator::SetCurrentTime(float time)
 
 void Animator::SetNormalizedTime(float normalizedTime)
 {
-    if (!m_CurrentState.IsValid() || m_CurrentState.Clip->GetDuration() <= 0.0f)
+    if (!m_CurrentState.IsValid())
     {
         SetCurrentTime(0.0f);
         return;
     }
 
-    const float normalized = std::clamp(normalizedTime, 0.0f, 1.0f);
-    SetCurrentTime(normalized * m_CurrentState.Clip->GetDuration());
-}
+    m_NextState.Reset();
+    m_CrossFading = false;
+    m_FadeElapsed = 0.0f;
+    m_FadeDuration = 0.0f;
 
-float Animator::GetNormalizedTime() const
-{
-    if (!m_CurrentState.IsValid() || m_CurrentState.Clip->GetDuration() <= 0.0f)
-    {
-        return 0.0f;
-    }
+    m_CurrentState.NormalizedTime =
+        std::clamp(normalizedTime, 0.0f, 1.0f);
+    m_CurrentState.Time =
+        m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
 
-    return std::clamp(
-        m_CurrentState.Time / m_CurrentState.Clip->GetDuration(),
-        0.0f,
-        1.0f);
+    m_Finished = false;
+    EvaluateCurrentPose();
 }
 
 float Animator::GetCrossFadeWeight() const
@@ -247,7 +400,7 @@ void Animator::SetSkeleton(const Skeleton* skeleton)
     }
 
     // Skeletonを接続した瞬間から有効なPoseを返せるよう、まずBind Poseを構築します。
-    // Current Clipが既に再生中なら、その直後に現在時刻で再評価します。
+    // Current Motionが既に再生中なら、その直後に現在時刻/位相で再評価します。
     m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
     m_NextSkeletonPose.ResetToBindPose(*m_Skeleton);
     EvaluateCurrentPose();
@@ -298,6 +451,30 @@ void Animator::Update(float dt)
     }
 }
 
+float Animator::GetStateDuration(const AnimatorState& state) const
+{
+    if (!state.IsValid())
+    {
+        return 0.0f;
+    }
+
+    if (state.MotionType == AnimatorMotionType::Clip)
+    {
+        return state.Clip ? std::max(state.Clip->GetDuration(), 0.0f) : 0.0f;
+    }
+
+    if (state.MotionType == AnimatorMotionType::BlendTree1D && state.BlendTree)
+    {
+        float duration = 0.0f;
+        if (state.BlendTree->GetBlendedDuration(state.BlendParameter, duration))
+        {
+            return std::max(duration, 0.0f);
+        }
+    }
+
+    return 0.0f;
+}
+
 bool Animator::AdvanceState(AnimatorState& state, float dt)
 {
     if (!state.IsValid())
@@ -305,40 +482,95 @@ bool Animator::AdvanceState(AnimatorState& state, float dt)
         return false;
     }
 
-    const float duration = state.Clip->GetDuration();
+    const float duration = GetStateDuration(state);
 
     if (duration <= 0.0f)
     {
         state.Time = 0.0f;
+        state.NormalizedTime = 0.0f;
         return !state.Loop;
     }
 
-    state.Time += dt * m_Speed;
+    // ClipとBlendTreeの両方をNormalized Timeで進めます。
+    // BlendTreeはParameter変化で補間Durationが変わっても位相を保持できることが重要です。
+    state.NormalizedTime += (dt * m_Speed) / duration;
 
     if (state.Loop)
     {
-        state.Time = std::fmod(state.Time, duration);
-        if (state.Time < 0.0f)
+        state.NormalizedTime = std::fmod(state.NormalizedTime, 1.0f);
+        if (state.NormalizedTime < 0.0f)
         {
-            state.Time += duration;
+            state.NormalizedTime += 1.0f;
         }
 
+        state.Time = state.NormalizedTime * duration;
         return false;
     }
 
-    if (state.Time >= duration)
+    if (state.NormalizedTime >= 1.0f)
     {
+        state.NormalizedTime = 1.0f;
         state.Time = duration;
         return true;
     }
 
-    if (state.Time <= 0.0f && m_Speed < 0.0f)
+    if (state.NormalizedTime <= 0.0f && m_Speed < 0.0f)
     {
+        state.NormalizedTime = 0.0f;
         state.Time = 0.0f;
         return true;
     }
 
-    state.Time = std::clamp(state.Time, 0.0f, duration);
+    state.NormalizedTime = std::clamp(state.NormalizedTime, 0.0f, 1.0f);
+    state.Time = state.NormalizedTime * duration;
+    return false;
+}
+
+bool Animator::SampleTransformPose(const AnimatorState& state, TransformPose& outPose) const
+{
+    if (!state.IsValid())
+    {
+        return false;
+    }
+
+    if (state.MotionType == AnimatorMotionType::Clip && state.Clip)
+    {
+        outPose = state.Clip->Sample(state.Time);
+        return true;
+    }
+
+    if (state.MotionType == AnimatorMotionType::BlendTree1D && state.BlendTree)
+    {
+        return state.BlendTree->SampleTransform(
+            state.BlendParameter,
+            state.NormalizedTime,
+            outPose);
+    }
+
+    return false;
+}
+
+bool Animator::SampleSkeletonPose(const AnimatorState& state, SkeletonPose& outPose) const
+{
+    if (!m_Skeleton || !state.IsValid())
+    {
+        return false;
+    }
+
+    if (state.MotionType == AnimatorMotionType::Clip && state.Clip)
+    {
+        return state.Clip->Sample(*m_Skeleton, state.Time, outPose);
+    }
+
+    if (state.MotionType == AnimatorMotionType::BlendTree1D && state.BlendTree)
+    {
+        return state.BlendTree->SampleSkeleton(
+            *m_Skeleton,
+            state.BlendParameter,
+            state.NormalizedTime,
+            outPose);
+    }
+
     return false;
 }
 
@@ -358,9 +590,12 @@ void Animator::EvaluateCurrentPose()
     // ------------------------------------------------------------------------
     // 単一Transform Animation
     // ------------------------------------------------------------------------
-    // 既存Scene/ECS Animation経路は従来どおり維持します。
-    const TransformPose currentPose =
-        m_CurrentState.Clip->Sample(m_CurrentState.Time);
+    TransformPose currentPose{};
+    if (!SampleTransformPose(m_CurrentState, currentPose))
+    {
+        m_CurrentPose = TransformPose{};
+        return;
+    }
 
     if (!m_CrossFading || !m_NextState.IsValid())
     {
@@ -368,20 +603,25 @@ void Animator::EvaluateCurrentPose()
     }
     else
     {
-        const TransformPose nextPose =
-            m_NextState.Clip->Sample(m_NextState.Time);
-
-        m_CurrentPose = BlendTransformPose(
-            currentPose,
-            nextPose,
-            GetCrossFadeWeight());
+        TransformPose nextPose{};
+        if (!SampleTransformPose(m_NextState, nextPose))
+        {
+            m_CurrentPose = currentPose;
+        }
+        else
+        {
+            // Clip / BlendTreeの種類に関係なく最終Pose同士を補間します。
+            // これによりLocomotion Blend Tree -> JumpStart Clipでも遷移開始時のPoseが跳びません。
+            m_CurrentPose = BlendTransformPose(
+                currentPose,
+                nextPose,
+                GetCrossFadeWeight());
+        }
     }
 
     // ------------------------------------------------------------------------
     // Skeletal Animation
     // ------------------------------------------------------------------------
-    // Skeleton未接続のAnimatorはここで終了します。
-    // これにより従来のTransform Animation利用側へ追加コストを掛けません。
     if (!m_Skeleton)
     {
         return;
@@ -389,42 +629,27 @@ void Animator::EvaluateCurrentPose()
 
     if (!m_CrossFading || !m_NextState.IsValid())
     {
-        // 単一State時はClipから最終出力Poseへ直接Sampleします。
-        // AnimationClip::Sample()はTrackの無いBoneをBind Poseのまま維持します。
-        if (!m_CurrentState.Clip->Sample(
-                *m_Skeleton,
-                m_CurrentState.Time,
-                m_CurrentSkeletonPose))
+        if (!SampleSkeletonPose(m_CurrentState, m_CurrentSkeletonPose))
         {
-            // SkeletonとClipのBone対応が不正な場合、壊れたPoseをSkinningへ渡さないため
-            // Bind Poseへ戻します。将来はError/Assert経路へ接続できます。
             m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
         }
         return;
     }
 
-    // CrossFade中はCurrent/Nextを別々のSkeletonPoseへSampleした後、Local TRSをBlendします。
-    // Global行列同士を直接Lerpしないことが重要です。行列補間では回転やScaleが歪むため、
-    // BlendPoses()内でTranslation/Scale=Lerp、Rotation=SlerpしてからGlobalを再構築します。
     SkeletonPose currentSamplePose;
-    if (!m_CurrentState.Clip->Sample(
-            *m_Skeleton,
-            m_CurrentState.Time,
-            currentSamplePose))
+    if (!SampleSkeletonPose(m_CurrentState, currentSamplePose))
     {
         m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
         return;
     }
 
-    if (!m_NextState.Clip->Sample(
-            *m_Skeleton,
-            m_NextState.Time,
-            m_NextSkeletonPose))
+    if (!SampleSkeletonPose(m_NextState, m_NextSkeletonPose))
     {
         m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
         return;
     }
 
+    // Global行列同士を直接Lerpせず、Local TRSをBlendしてからGlobalを再構築します。
     if (!BlendPoses(
             *m_Skeleton,
             currentSamplePose,
@@ -443,7 +668,7 @@ void Animator::CompleteCrossFade()
         return;
     }
 
-    // Next StateをそのままCurrentへ昇格するため、遷移完了時に再生時刻は途切れません。
+    // Next StateをそのままCurrentへ昇格するため、遷移完了時に再生位相は途切れません。
     m_CurrentState = std::move(m_NextState);
     m_NextState.Reset();
 
