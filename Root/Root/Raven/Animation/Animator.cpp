@@ -45,6 +45,8 @@ void Animator::Play(std::shared_ptr<AnimationClip> clip, bool restart)
     m_FadeElapsed = 0.0f;
     m_FadeDuration = 0.0f;
 
+    // 同じClipかどうかだけではなく、BlendTreeからClipへ切り替わるケースもMotion変更として扱います。
+    // restart=falseでもMotion種類が変わる場合は旧Motionの位相をそのまま流用せず、再生開始位置を初期化します。
     const bool motionChanged =
         m_CurrentState.MotionType != AnimatorMotionType::Clip ||
         m_CurrentState.Clip != clip;
@@ -82,6 +84,8 @@ void Animator::PlayBlendTree(
         return;
     }
 
+    // Clip版Playと同じく、直接再生は進行中CrossFadeを破棄してCurrent Motionへ一本化します。
+    // Blend TreeのParameter値はAssetではなくAnimatorStateのRuntime値として保持します。
     m_CrossFading = false;
     m_NextState.Reset();
     m_FadeElapsed = 0.0f;
@@ -102,6 +106,8 @@ void Animator::PlayBlendTree(
         m_CurrentState.NormalizedTime = (m_Speed < 0.0f) ? 1.0f : 0.0f;
     }
 
+    // Blend TreeではParameter位置に応じて補間Durationが変わるため、TimeはNormalizedTimeから再計算します。
+    // 位相を正規値として保持することでSpeed変更時にも歩行周期を連続させます。
     m_CurrentState.Time =
         m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
 
@@ -127,7 +133,7 @@ bool Animator::CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bo
 
     // Fade中の割り込みは、現在のBlend済みPoseをSnapshot Stateとして保持しない限り
     // Current/Nextどちらを新しいBlend元にするかでPoseが跳ぶ可能性があります。
-    // 最初の実装では明示的に拒否します。
+    // 現段階では明示的に拒否し、Snapshot Pose導入後にInterruptポリシーとして拡張します。
     if (m_CrossFading)
     {
         return false;
@@ -152,6 +158,9 @@ bool Animator::CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bo
     m_NextState.MotionType = AnimatorMotionType::Clip;
     m_NextState.Clip = std::move(clip);
     m_NextState.Loop = m_Loop;
+
+    // restart=falseではCurrent MotionのNormalizedTimeを引き継ぎます。
+    // Clip長が異なっても同じ位相から遷移先を始められるため、同期Motionで利用できます。
     m_NextState.NormalizedTime =
         restart ? ((m_Speed < 0.0f) ? 1.0f : 0.0f)
                 : m_CurrentState.NormalizedTime;
@@ -182,12 +191,15 @@ bool Animator::CrossFadeBlendTree(
         return false;
     }
 
+    // Current Motionが無ければBlend元Poseが存在しないため、Clip版と同じく直接Playへ落とします。
     if (!m_CurrentState.IsValid())
     {
         PlayBlendTree(std::move(blendTree), blendParameter, true);
         return true;
     }
 
+    // BlendTree遷移もClip遷移と同じInterrupt制約を持ちます。
+    // Current/Nextの途中Blend PoseをSnapshotとして保持できるまでは再CrossFadeを拒否します。
     if (m_CrossFading)
     {
         return false;
@@ -199,6 +211,8 @@ bool Animator::CrossFadeBlendTree(
         return true;
     }
 
+    // 同じBlendTreeへrestart=falseで要求された場合はState遷移を作らず、Parameter値だけ更新します。
+    // これによりSpeedが毎Frame変わってもLocomotion周期をリスタートしません。
     if (m_CurrentState.MotionType == AnimatorMotionType::BlendTree1D &&
         m_CurrentState.BlendTree == blendTree &&
         !restart)
@@ -240,6 +254,8 @@ bool Animator::SetCurrentBlendParameter(float value)
         return false;
     }
 
+    // Parameter変更で補間Durationが変わってもNormalizedTimeは変更しません。
+    // Timeだけを新Durationから再構成し、歩行周期の位相を保ったままPoseを再評価します。
     m_CurrentState.BlendParameter = value;
     m_CurrentState.Time =
         m_CurrentState.NormalizedTime * GetStateDuration(m_CurrentState);
@@ -256,6 +272,8 @@ bool Animator::SetNextBlendParameter(float value)
         return false;
     }
 
+    // CrossFade先もCurrentと同じく位相を維持したままParameterだけ更新します。
+    // Land -> Locomotion Fade中にSpeedが変化した場合でも遷移先Poseを最新入力へ追従させられます。
     m_NextState.BlendParameter = value;
     m_NextState.Time =
         m_NextState.NormalizedTime * GetStateDuration(m_NextState);
@@ -327,6 +345,7 @@ void Animator::SetCurrentTime(float time)
     }
 
     // Timeline ScrubはCurrent Stateに対する明示操作なのでCrossFadeを解除します。
+    // Next StateとFade時間を残すと、Editorで指定したCurrent時刻とBlend結果が一致しなくなるためです。
     m_NextState.Reset();
     m_CrossFading = false;
     m_FadeElapsed = 0.0f;
@@ -357,6 +376,8 @@ void Animator::SetNormalizedTime(float normalizedTime)
         return;
     }
 
+    // SetCurrentTime()と同じく、Timelineの明示操作はCurrent Motion単体へ戻します。
+    // BlendTreeでもNormalizedTimeが正規の位相なので、その値から現在Durationに対応する実時間を再構成します。
     m_NextState.Reset();
     m_CrossFading = false;
     m_FadeElapsed = 0.0f;
@@ -590,6 +611,7 @@ void Animator::EvaluateCurrentPose()
     // ------------------------------------------------------------------------
     // 単一Transform Animation
     // ------------------------------------------------------------------------
+    // 既存Scene/ECS Animation経路は従来どおり維持し、Motion種類だけSample関数内で吸収します。
     TransformPose currentPose{};
     if (!SampleTransformPose(m_CurrentState, currentPose))
     {
@@ -622,6 +644,8 @@ void Animator::EvaluateCurrentPose()
     // ------------------------------------------------------------------------
     // Skeletal Animation
     // ------------------------------------------------------------------------
+    // Skeleton未接続のAnimatorはここで終了します。
+    // これにより従来のTransform Animation利用側へ追加のSkeleton Sampleコストを掛けません。
     if (!m_Skeleton)
     {
         return;
@@ -629,13 +653,17 @@ void Animator::EvaluateCurrentPose()
 
     if (!m_CrossFading || !m_NextState.IsValid())
     {
+        // 単一State時はCurrent Motionから最終出力Poseへ直接Sampleします。
+        // Clipの場合は未指定BoneをBind Poseのまま維持し、BlendTreeの場合はChild Poseを補間します。
         if (!SampleSkeletonPose(m_CurrentState, m_CurrentSkeletonPose))
         {
+            // Motion/Skeleton対応が不正な場合、壊れたPoseをSkinningへ渡さないためBind Poseへ戻します。
             m_CurrentSkeletonPose.ResetToBindPose(*m_Skeleton);
         }
         return;
     }
 
+    // CrossFade中はCurrent/Next Motionを別々のSkeletonPoseへSampleした後、Local TRSをBlendします。
     SkeletonPose currentSamplePose;
     if (!SampleSkeletonPose(m_CurrentState, currentSamplePose))
     {
@@ -649,7 +677,8 @@ void Animator::EvaluateCurrentPose()
         return;
     }
 
-    // Global行列同士を直接Lerpせず、Local TRSをBlendしてからGlobalを再構築します。
+    // Global行列同士を直接Lerpしないことが重要です。行列補間では回転やScaleが歪むため、
+    // BlendPoses()内でTranslation/Scale=Lerp、Rotation=SlerpしてからGlobalを再構築します。
     if (!BlendPoses(
             *m_Skeleton,
             currentSamplePose,
@@ -669,6 +698,7 @@ void Animator::CompleteCrossFade()
     }
 
     // Next StateをそのままCurrentへ昇格するため、遷移完了時に再生位相は途切れません。
+    // Motion種類やBlendParameterもAnimatorStateごと引き継ぐため、Clip/BlendTreeで分岐する必要はありません。
     m_CurrentState = std::move(m_NextState);
     m_NextState.Reset();
 
