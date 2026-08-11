@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Raven/Core/Base.h"
+#include "Raven/Renderer/Layer/Layer.h"
 
 namespace Raven
 {
@@ -9,27 +9,30 @@ class Window;
 // ============================================================================
 // ImGuiLayer
 // ============================================================================
-// Dear ImGui本体とRavenの境界を担当する薄い統合レイヤーです。
-// SceneやRendererへImGui依存を漏らさず、Editor/Debug UIだけがこの層を利用する構成にします。
-class ImGuiLayer
+// Dear ImGui本体とRavenの境界を担当する特殊なLayerです。
+// Layerを継承することでRaven既存のAttach/Detach/UI描画ライフサイクルへ統合しつつ、
+// Begin/Endは全LayerのOnImGuiRender()を囲むframe境界としてApplicationから明示的に呼びます。
+//
+// 将来EditorLayerを追加した後も、このクラスはDear ImGui backend管理だけを担当し、
+// Hierarchy / Inspector / Statistics等のEditor機能はEditorLayer/Panel側へ分離します。
+class ImGuiLayer : public Layer
 {
 public:
     explicit ImGuiLayer(Window& window);
-    ~ImGuiLayer();
+    ~ImGuiLayer() override;
 
     ImGuiLayer(const ImGuiLayer&) = delete;
     ImGuiLayer& operator=(const ImGuiLayer&) = delete;
 
-    void BeginFrame();
-    void EndFrame();
+    void OnAttach() override;
+    void OnDetach() override;
+    void OnImGuiRender(float dt) override;
 
-    // 最初の導入確認用Debug UIです。
-    // 将来EditorLayer/StatisticsPanelを導入した際は、表示責務をPanel側へ移します。
-    void RenderDebugStatistics(float deltaTime);
+    void Begin();
+    void End();
 
 private:
-    void Initialize();
-    void Shutdown();
+    void RenderDebugStatistics(float deltaTime);
 
 private:
     Window* m_Window = nullptr;
