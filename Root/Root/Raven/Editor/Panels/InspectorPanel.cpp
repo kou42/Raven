@@ -90,6 +90,55 @@ void DrawTransformComponent(Entity entity)
     DrawVec3Control("Scale", transform.Scale);
 }
 
+void DrawCameraComponent(Entity entity)
+{
+    if (entity.HasComponent<CameraComponent>() == false)
+    {
+        return;
+    }
+
+    if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen) == false)
+    {
+        return;
+    }
+
+    CameraComponent& cameraComponent = entity.GetComponent<CameraComponent>();
+    SceneCamera& camera = cameraComponent.Camera;
+
+    // Primaryは次工程でSceneがGame View用Cameraを探索する際に使用します。
+    // この段階ではComponentの設定値として編集できるようにしておきます。
+    ImGui::Checkbox("Primary", &cameraComponent.Primary);
+
+    // SceneCameraのProjection値は必ずSetPerspective()経由で変更します。
+    // Inspector側からメンバ値を直接書き換えるとProjection再計算や入力値検証を迂回してしまうためです。
+    float verticalFov = camera.GetPerspectiveVerticalFov();
+    float nearClip = camera.GetPerspectiveNearClip();
+    float farClip = camera.GetPerspectiveFarClip();
+
+    bool projectionChanged = false;
+    if (ImGui::DragFloat("Vertical FOV (rad)", &verticalFov, 0.005f, 0.01f, 3.13f))
+    {
+        projectionChanged = true;
+    }
+
+    if (ImGui::DragFloat("Near Clip", &nearClip, 0.01f, 0.001f, farClip))
+    {
+        projectionChanged = true;
+    }
+
+    if (ImGui::DragFloat("Far Clip", &farClip, 0.1f, nearClip, 100000.0f))
+    {
+        projectionChanged = true;
+    }
+
+    if (projectionChanged)
+    {
+        camera.SetPerspective(verticalFov, nearClip, farClip);
+    }
+
+    ImGui::TextDisabled("Aspect Ratio: %.3f", camera.GetAspectRatio());
+}
+
 void DrawRigidBodyComponent(Entity entity)
 {
     if (entity.HasComponent<RigidBodyComponent>() == false)
@@ -214,6 +263,7 @@ void InspectorPanel::OnImGuiRender(Entity selectedEntity)
     DrawTagComponent(selectedEntity);
     ImGui::Separator();
     DrawTransformComponent(selectedEntity);
+    DrawCameraComponent(selectedEntity);
     DrawRigidBodyComponent(selectedEntity);
     DrawColliderComponent(selectedEntity);
 
