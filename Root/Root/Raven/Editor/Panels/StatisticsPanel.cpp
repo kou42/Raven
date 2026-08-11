@@ -18,7 +18,7 @@ template<class Component>
 uint32_t CountComponents(Scene& scene)
 {
     uint32_t count = 0;
-    for (auto entry : scene.View<Component>())
+    for (auto&& entry : scene.View<Component>())
     {
         (void)entry;
         ++count;
@@ -35,8 +35,6 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
 
     ImGui::Begin("Raven Debug / Statistics");
 
-    // Runtime統計はEditorそのものではなく、現在実行しているApplication frameの状態です。
-    // FPSだけを見るのではなくFrame Timeも並べることで、負荷増加をms単位で追跡できます。
     if (ImGui::CollapsingHeader("Runtime", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("FPS: %.1f", fps);
@@ -44,8 +42,8 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         ImGui::Text("Window: %u x %u", window.GetWidth(), window.GetHeight());
     }
 
-    // RendererStatisticsはRenderCommand直前で記録しているため、Scene本体だけでなく
-    // Physics/Animation Debug Overlay等を含む「実際に発行した描画命令」を確認できます。
+    // RenderCommand直前で記録するため、Scene本体だけでなくDebug Overlay等を含む
+    // 「実際に発行した描画命令」を確認できます。
     if (ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("Draw Calls: %u", rendererStatistics.DrawCalls);
@@ -61,9 +59,9 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         }
         else
         {
-            // View()は非const APIなので、統計PanelからSceneを変更しない契約を保ったまま
-            // Component数だけ数えるため、ここで参照を一時的にnon-constへ戻します。
-            // 将来Sceneにconst View()が追加されたら、このconst_castは削除できます。
+            // 現在のScene::View()は非const APIのみなので、読み取り専用のComponent数集計に限って
+            // 一時的にnon-const参照へ戻します。PanelからComponent内容は変更しません。
+            // const View()を追加した段階で、このconst_castは削除できます。
             Scene& mutableScene = const_cast<Scene&>(*scene);
             const uint32_t rigidBodyCount = CountComponents<RigidBodyComponent>(mutableScene);
             const uint32_t colliderCount = CountComponents<ColliderComponent>(mutableScene);
