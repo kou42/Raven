@@ -24,6 +24,8 @@ Application::Application()
     // ImGuiLayerもRavenのLayerライフサイクルへ統合します。
     // ただしDear ImGuiのBegin/Endは全LayerのOnImGuiRender()を囲む必要があるため、
     // Applicationが専用Layerへの参照を保持してframe境界だけを制御します。
+    //
+    // Editor固有UIはEditorLayer側へ分離し、ApplicationはEditorのPanel内容を知りません。
     m_ImGuiLayer = CreateScope<ImGuiLayer>(*m_Window);
     m_ImGuiLayer->OnAttach();
 }
@@ -31,7 +33,7 @@ Application::Application()
 Application::~Application()
 {
     // 通常Layerを先にDetachします。
-    // 将来EditorLayer::OnDetach()がImGui関連リソースへ触れる場合でも、ImGui Contextがまだ有効な順序を保証します。
+    // EditorLayer::OnDetach()がImGui関連リソースへ触れる場合でも、ImGui Contextがまだ有効な順序を保証します。
     for (auto& layer : m_Layers)
     {
         if (layer != nullptr)
@@ -118,7 +120,7 @@ void Application::Run()
         if (m_ImGuiLayer != nullptr)
         {
             // Dear ImGuiは1 frameにつきBegin/Endを一度だけ実行し、その間で各LayerにUI構築を依頼します。
-            // これにより将来EditorLayerをPushLayer()するだけでOnImGuiRender()を参加させられます。
+            // EditorLayerも通常Layerとして登録されるため、Application側にEditor固有分岐を追加する必要はありません。
             m_ImGuiLayer->Begin();
 
             for (auto& layer : m_Layers)
@@ -129,9 +131,6 @@ void Application::Run()
                 }
             }
 
-            // 現段階のbootstrap Statistics表示です。
-            // 次段階でEditorLayer/StatisticsPanelへ移行した後は、この呼び出し自体を不要にできます。
-            m_ImGuiLayer->OnImGuiRender(frameDeltaTime);
             m_ImGuiLayer->End();
         }
 
