@@ -108,32 +108,4 @@ void ImGuiLayer::End()
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void ImGuiLayer::OnImGuiRender(float dt)
-{
-    // 現段階では導入確認用StatisticsのみをImGuiLayer自身が描画します。
-    // EditorLayer導入後はこの表示をStatisticsPanelへ移し、ImGuiLayerはbackend管理へ専念させます。
-    RenderDebugStatistics(dt);
-}
-
-void ImGuiLayer::RenderDebugStatistics(float deltaTime)
-{
-    if (m_Initialized == false || m_Window == nullptr)
-    {
-        return;
-    }
-
-    const float frameTimeMs = deltaTime * 1000.0f;
-    const float fps = deltaTime > 0.0f ? 1.0f / deltaTime : 0.0f;
-
-    ImGui::Begin("Raven Debug / Statistics");
-    ImGui::TextUnformatted("Runtime");
-    ImGui::Separator();
-    ImGui::Text("FPS: %.1f", fps);
-    ImGui::Text("Frame Time: %.3f ms", frameTimeMs);
-    ImGui::Text("Window: %u x %u", m_Window->GetWidth(), m_Window->GetHeight());
-    ImGui::Separator();
-    ImGui::TextDisabled("Statistics Panel bootstrap - more engine counters will be added later.");
-    ImGui::End();
-}
-
 } // namespace Raven
