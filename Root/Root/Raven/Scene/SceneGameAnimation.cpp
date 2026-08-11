@@ -77,25 +77,11 @@ void SceneGame::SpawnAnimationTestCube()
     auto walkClip = makeClip(6.0f, math::Pi * 0.5f, 4.5f);
     auto runClip  = makeClip(6.0f, math::Pi, 5.0f);
 
-    // Jumpだけ高さを上げ、Grounded / Jump Triggerによる遷移が目で分かるようにします。
-    auto jumpClip = std::make_shared<AnimationClip>(1.0f);
-    auto& jumpTrack = jumpClip->GetTransformTrack();
-    jumpTrack.PositionKeys =
-    {
-        { 0.0f, { -18.0f,  6.0f, -4.0f } },
-        { 0.5f, { -18.0f, 13.0f, -4.0f } },
-        { 1.0f, { -18.0f,  6.0f, -4.0f } }
-    };
-    jumpTrack.RotationKeys =
-    {
-        { 0.0f, math::Quat::Identity() },
-        { 1.0f, math::Quat::Identity() }
-    };
-    jumpTrack.ScaleKeys =
-    {
-        { 0.0f, { 4.5f * 0.625f, 4.5f, 4.5f * 0.375f } },
-        { 1.0f, { 4.5f * 0.625f, 4.5f, 4.5f * 0.375f } }
-    };
+    // JumpはJumpStart / Fall / Landへ分割し、State境界を目視しやすい形状差で表現します。
+    // 実Character Asset導入前でも「離陸 -> 落下 -> 着地」が別Stateとして切り替わることを確認できます。
+    auto jumpStartClip = makeClip(10.0f, 0.0f, 3.5f);
+    auto fallClip = makeClip(13.0f, 0.0f, 4.0f);
+    auto landClip = makeClip(5.5f, 0.0f, 5.0f);
 
     // ========================================================================
     // Runtime State Machine
@@ -107,7 +93,13 @@ void SceneGame::SpawnAnimationTestCube()
     animator->SetSpeed(1.0f);
 
     auto stateMachine = std::make_shared<AnimatorStateMachine>(*animator);
-    if (!stateMachine->BuildCharacterController(idleClip, walkClip, runClip, jumpClip))
+    if (!stateMachine->BuildCharacterController(
+            idleClip,
+            walkClip,
+            runClip,
+            jumpStartClip,
+            fallClip,
+            landClip))
     {
         return;
     }
@@ -139,7 +131,7 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     // ========================================================================
     // Deterministic State Machine validation sequence
     // ========================================================================
-    // 8秒周期で Idle -> Walk -> Run -> Jump -> Run -> Walk -> Idle を自動再生します。
+    // 8秒周期で Idle -> Walk -> Run -> JumpStart -> Fall -> Land -> Run -> Walk -> Idle を自動再生します。
     // 入力やPhysicsに依存しないため、Animation層の変更だけを切り分けて確認できます。
     // Jump TriggerはJump区間へ入る瞬間の1Frameだけ立てます。
     const float previousTime = m_AnimationStateMachineTime;
@@ -152,6 +144,7 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     const float time = m_AnimationStateMachineTime;
     float speed = 0.0f;
     bool grounded = true;
+    float verticalVelocity = 0.0f;
 
     if (time >= 2.0f && time < 4.0f)
     {
@@ -163,16 +156,27 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     }
 
     // 5秒地点でJump要求を1回だけ発生させ、その後約1秒間を空中として扱います。
+    // VerticalVelocityは簡易的な放物運動として、5.5秒で0を跨ぐように作ります。
+    // これによりJumpStart -> FallがAnimation時間ではなく上下方向速度で発火することを確認できます。
     const bool crossedJumpPoint = previousTime < 5.0f && time >= 5.0f;
     if (time >= 5.0f && time < 6.0f)
     {
-        grounded = crossedJumpPoint;
+        grounded = false;
+        verticalVelocity = (5.5f - time) * 12.0f;
+    }
+
+    // Jump要求を出すFrameだけは接地中として扱い、Jump Trigger && Groundedを成立させます。
+    // 実GameplayではJump要求を受理した直後にPhysicsが上向き速度を与え、次Frame以降Grounded=falseになります。
+    if (crossedJumpPoint)
+    {
+        grounded = true;
     }
 
     animatorComponent.StateMachine->UpdateCharacterParameters(
         speed,
         grounded,
-        crossedJumpPoint);
+        crossedJumpPoint,
+        verticalVelocity);
 }
 
 } // namespace Raven
