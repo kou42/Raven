@@ -10,11 +10,13 @@ class Window;
 // ImGuiLayer
 // ============================================================================
 // Dear ImGui本体とRavenの境界を担当する特殊なLayerです。
-// Layerを継承することでRaven既存のAttach/Detach/UI描画ライフサイクルへ統合しつつ、
+// Layerを継承することでRaven既存のAttach/Detachライフサイクルへ統合しつつ、
 // Begin/Endは全LayerのOnImGuiRender()を囲むframe境界としてApplicationから明示的に呼びます。
 //
-// 将来EditorLayerを追加した後も、このクラスはDear ImGui backend管理だけを担当し、
-// Hierarchy / Inspector / Statistics等のEditor機能はEditorLayer/Panel側へ分離します。
+// 重要:
+// このクラスはDear ImGui Context / GLFW backend / OpenGL backendの管理だけを担当します。
+// Hierarchy / Inspector / Statistics等のEditor機能はEditorLayer/Panel側へ置き、
+// backend層へEditor固有UIを混在させない構成にします。
 class ImGuiLayer : public Layer
 {
 public:
@@ -26,13 +28,9 @@ public:
 
     void OnAttach() override;
     void OnDetach() override;
-    void OnImGuiRender(float dt) override;
 
     void Begin();
     void End();
-
-private:
-    void RenderDebugStatistics(float deltaTime);
 
 private:
     Window* m_Window = nullptr;
