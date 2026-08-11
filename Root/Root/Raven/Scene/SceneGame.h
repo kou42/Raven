@@ -1,4 +1,5 @@
 ﻿#include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneViewportRenderer.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -14,7 +15,16 @@
 namespace Raven
 {
 
-class SceneGame : public Scene
+// ============================================================================
+// SceneGame
+// ============================================================================
+// Runtime Sceneとして通常のSceneライフサイクルを実装すると同時に、Scene View用に
+// SceneViewportRendererも実装します。
+//
+// 通常のOnRender()ではSceneGame自身が保持するRuntime Cameraを使用します。
+// RenderWithCamera()ではView/Projectionだけを一時的に差し替えて同じSceneを描画し、
+// 描画後に元へ戻すことでEditor Camera操作がRuntime Camera状態を変更しないようにします。
+class SceneGame : public Scene, public SceneViewportRenderer
 {
 public:
     SceneGame()
@@ -28,6 +38,31 @@ public:
     virtual void OnUpdateGame(float dt) override;
     virtual void OnRender() override;
     virtual void OnEvent(Event& e) override;
+
+    // ========================================================================
+    // Scene View camera override
+    // ========================================================================
+    // PhysicsDebugRendererはm_View/m_Projectionへの参照を保持しているため、
+    // 描画関数の引数だけを各Materialへ渡す方式ではDebug表示だけRuntime Cameraのままになります。
+    // そこでSceneGameが現在利用している行列を一時的に差し替えてOnRender()を再利用します。
+    //
+    // 描画終了後には必ず元のRuntime Camera行列へ戻すため、Editor CameraによるScene View描画が
+    // Game Viewや次frameのRuntime入力へ副作用を残しません。
+    void RenderWithCamera(
+        const math::Mat4& view,
+        const math::Mat4& projection) override
+    {
+        const math::Mat4 runtimeView = m_View;
+        const math::Mat4 runtimeProjection = m_Projection;
+
+        m_View = view;
+        m_Projection = projection;
+
+        OnRender();
+
+        m_View = runtimeView;
+        m_Projection = runtimeProjection;
+    }
 
 private:
     struct SphereBody
@@ -80,6 +115,11 @@ private:
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
 
+    // ========================================================================
+    // Runtime Camera matrices
+    // ========================================================================
+    // 通常のGame View / Runtime描画で利用するCamera行列です。
+    // Scene View描画時だけRenderWithCamera()が一時差し替えしますが、描画完了後に復元されます。
     math::Mat4 m_View;
     math::Mat4 m_Projection;
 
@@ -99,6 +139,8 @@ private:
     // ========================================================================
     // Physics Debug: H/B/O/F/T/P/C/N
     // Animation Debug: Y
+    // PhysicsDebugRendererはm_View/m_Projectionを参照するため、RenderWithCamera()の一時差し替えにも
+    // 自動的に追従し、Scene ViewではEditor Cameraから見たDebug Shapeを描画できます。
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
     AnimationDebugOverlayRenderer m_AnimationDebugRenderer;
 
