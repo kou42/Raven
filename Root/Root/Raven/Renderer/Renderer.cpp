@@ -1,6 +1,7 @@
 ﻿#include "Renderer.h"
 
 #include "RenderCommand.h"
+#include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -27,12 +28,12 @@ void Renderer::BeginScene()
 void Renderer::EndScene()
 {
     // ========================================================================
-    // Physics Debug Pass
+    // Debug Overlay Pass
     // ========================================================================
-    // 通常のScene描画が完了した後に、Broad Phaseのデバッグ線を重ねます。
-    // PhysicsDebugRenderer側のPipelineはDepthWrite=falseなので、デバッグ線が
-    // 後続の深度バッファを汚染することはありません。
+    // 通常のScene描画が完了した後に、Physics / Animationのデバッグ表示を重ねます。
+    // どちらもDepthWrite=falseの専用Pipelineを使うため、Scene本体の深度を汚染しません。
     ph::PhysicsDebugRenderer::RenderRegistered();
+    AnimationDebugOverlayRenderer::RenderRegistered();
 }
 
 void Renderer::Shutdown()

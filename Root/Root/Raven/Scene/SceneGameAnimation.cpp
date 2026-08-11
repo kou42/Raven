@@ -5,6 +5,7 @@
 #include "Raven/Animation/AnimatorStateMachine.h"
 #include "Raven/Scene/Components.h"
 
+#include <algorithm>
 #include <memory>
 
 namespace Raven
@@ -130,9 +131,14 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     // ========================================================================
     // Deterministic Blend Tree + Jump validation sequence
     // ========================================================================
-    // 8秒周期でLocomotion内のIdle -> Walk -> Run相当へSpeedを変化させた後、
-    // JumpStart -> Fall -> Land -> Locomotionへ戻る流れを自動再生します。
-    // Idle / Walk / Run間ではState遷移を発生させず、同じLocomotion State内でPoseが連続補間されます。
+    // 8秒周期でSpeedを0 -> 2 -> 6へ連続変化させた後、JumpStart -> Fall -> Land ->
+    // Locomotionへ戻る流れを自動再生します。
+    //
+    // 重要なのは0/2/6へ瞬時切替しないことです。
+    // Threshold間を毎Frame通過させることで、Blend Weightが
+    //   Idle 1.0 -> Idle/Walk混合 -> Walk 1.0
+    //   Walk 1.0 -> Walk/Run混合 -> Run 1.0
+    // と連続変化することを画面右上のAnimation Debug Overlayで確認できます。
     const float previousTime = m_AnimationStateMachineTime;
     m_AnimationStateMachineTime += deltaTime;
     if (m_AnimationStateMachineTime >= 8.0f)
@@ -145,16 +151,25 @@ void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
     bool grounded = true;
     float verticalVelocity = 0.0f;
 
-    // Blend Tree Thresholdは既定でIdle=0.0 / Walk=2.0 / Run=6.0です。
-    // 区間内の値も連続補間されるため、今後は時間に応じてSpeedを滑らかに変化させるテストへ
-    // 発展させればThreshold間のBlend Weightもより分かりやすく確認できます。
-    if (time >= 2.0f && time < 4.0f)
+    // ========================================================================
+    // Smooth Speed: 0 -> 2 -> 6
+    // ========================================================================
+    // 0～2秒: Idle Threshold(0)からWalk Threshold(2)まで線形に増加。
+    // 2～4秒: Walk Threshold(2)からRun Threshold(6)まで線形に増加。
+    // 4～7秒: Run Threshold(6)を維持し、5秒地点からJump検証へ移ります。
+    if (time < 2.0f)
     {
-        speed = 2.0f; // Walk Motionが100%になる位置
+        const float t = std::clamp(time / 2.0f, 0.0f, 1.0f);
+        speed = 2.0f * t;
     }
-    else if (time >= 4.0f && time < 7.0f)
+    else if (time < 4.0f)
     {
-        speed = 6.0f; // Run Motionが100%になる位置
+        const float t = std::clamp((time - 2.0f) / 2.0f, 0.0f, 1.0f);
+        speed = 2.0f + (6.0f - 2.0f) * t;
+    }
+    else if (time < 7.0f)
+    {
+        speed = 6.0f;
     }
 
     // 5秒地点でJump要求を1回だけ発生させ、その後約1秒間を空中として扱います。
