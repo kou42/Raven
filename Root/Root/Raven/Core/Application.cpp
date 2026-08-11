@@ -30,20 +30,21 @@ Application::Application()
 
 Application::~Application()
 {
-    // ImGui OpenGL backendは有効なContextを必要とするためWindowより先に明示的にDetachします。
-    if (m_ImGuiLayer != nullptr)
-    {
-        m_ImGuiLayer->OnDetach();
-        m_ImGuiLayer.reset();
-    }
-
-    // 通常LayerについてもAttach/Detachを対にして終了処理を行います。
+    // 通常Layerを先にDetachします。
+    // 将来EditorLayer::OnDetach()がImGui関連リソースへ触れる場合でも、ImGui Contextがまだ有効な順序を保証します。
     for (auto& layer : m_Layers)
     {
         if (layer != nullptr)
         {
             layer->OnDetach();
         }
+    }
+
+    // ImGui OpenGL backendは有効なContextを必要とするためWindowより先に明示的にDetachします。
+    if (m_ImGuiLayer != nullptr)
+    {
+        m_ImGuiLayer->OnDetach();
+        m_ImGuiLayer.reset();
     }
 }
 
