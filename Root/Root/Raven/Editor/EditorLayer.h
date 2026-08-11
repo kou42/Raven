@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
+#include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 #include "Raven/Editor/Panels/StatisticsPanel.h"
 #include "Raven/Renderer/Layer/Layer.h"
+#include "Raven/Scene/Entity.h"
 
 namespace Raven
 {
@@ -26,6 +28,7 @@ class Application;
 //     - Editor全体の更新・入力の入口
 //     - Active SceneなどRuntime状態と各Panelの橋渡し
 //     - DockSpace / MenuBarなどEditor全体UIの管理
+//     - Entity選択状態の共有
 //     - 各PanelのOnImGuiRender()呼び出し
 //
 // 一方、FPS表示やHierarchy描画など個々のUI詳細はPanel側へ置きます。
@@ -78,6 +81,11 @@ private:
     // Panel数が増えてもWindow管理はここへ集約し、Panel自身には他Panelの存在を知らせません。
     void RenderMenuBar();
 
+    // 選択Entityが現在のActive Sceneに属し、かつGenerationまで含めて生存しているかを検証します。
+    // Runtime側でDestroyされた場合やApplication::SetScene()でSceneが差し替わった場合に、
+    // Inspector/Gizmoが古いEntityを参照し続けないためのEditor共通ガードです。
+    void ValidateSelectedEntity();
+
 private:
     // ApplicationはEditorLayerより長生きするため非所有ポインタとして保持します。
     // Scene切り替え後もApplication::GetScene()を毎frame参照することで、古いSceneポインタを
@@ -88,18 +96,31 @@ private:
     Application* m_Application = nullptr;
 
     // ========================================================================
+    // Editor Selection
+    // ========================================================================
+    // Hierarchy / Inspector / Scene View / Gizmoが共有する「現在選択中のEntity」です。
+    // EntityはIndex + Generation + Sceneを持つため、単なるEntityIndexだけを保存するよりも
+    // Index再利用やScene切替に対して安全に選択状態を検証できます。
+    //
+    // 選択状態をSceneHierarchyPanel内部へ閉じ込めないことが重要です。
+    // 次段階のInspectorはこの同じEntityを受け取り、さらにGizmoも同じ選択を利用します。
+    Entity m_SelectedEntity{};
+
+    // ========================================================================
     // Editor Panels
     // ========================================================================
     // PanelはEditorLayerが所有しますが、Active Scene等のRuntimeオブジェクトは所有しません。
     // 必要なRuntime参照をOnImGuiRender()時に渡すことでScene差し替えにも追従します。
     StatisticsPanel m_StatisticsPanel;
     AnimationDebugPanel m_AnimationDebugPanel;
+    SceneHierarchyPanel m_SceneHierarchyPanel;
 
     // Panelの表示状態はEditorLayerが管理します。
     // Panel内部にEditor全体のWindow管理状態を持たせないことで、MenuBarや将来の
     // Workspace保存機能から一元的に表示状態を制御できるようにします。
     bool m_ShowStatisticsPanel = true;
     bool m_ShowAnimationDebugPanel = true;
+    bool m_ShowSceneHierarchyPanel = true;
 
     // BeginDockSpace()がHost WindowをBeginできたかに関係なく、ImGui::Begin()を呼んだ場合は
     // 必ず対応するImGui::End()が必要です。呼び出し構造を明確にするため状態を保持します。
