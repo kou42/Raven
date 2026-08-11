@@ -265,12 +265,17 @@ void AnimationDebugOverlayRenderer::Render()
             continue;
         }
 
-        // CrossFade中は実際に進行中のTransitionを青、発火可能なTransitionは緑で表示します。
-        // これにより「今まさに遷移中」と「条件が揃って次に発火できる」をGraph上でも区別できます。
+        // Graph上ではTransitionの段階を色で追えるようにします。
+        // ACTIVE=CrossFade進行中(青)、SELECTED=このFrameに選択される候補(橙)、ELIGIBLE=成立済みだが未選択(緑)です。
+        // 複数Transitionが同時成立しても、SELECTEDだけを別色にすることでPriority競合を視覚的に確認できます。
         math::Vec3 lineColor = dimColor;
         if (transition.IsActive)
         {
             lineColor = pendingColor;
+        }
+        else if (transition.IsSelectedCandidate)
+        {
+            lineColor = queuedColor;
         }
         else if (transition.IsEligible)
         {
@@ -359,17 +364,38 @@ void AnimationDebugOverlayRenderer::Render()
             hasCurrentTransition = true;
         }
 
-        const math::Vec3 transitionColor = transition.IsEligible
-            ? activeColor
-            : (transition.IsActive ? pendingColor : textColor);
-        const std::string transitionStatus = transition.IsActive
-            ? " [ACTIVE]"
-            : (transition.IsEligible ? " [ELIGIBLE]" : "");
+        // 表示上もACTIVE / SELECTED / ELIGIBLEを別状態として扱います。
+        // SELECTEDは「条件成立」だけではなくPriority比較まで通過した1本なので、複数候補時の選択理由を確認する中心情報になります。
+        math::Vec3 transitionColor = textColor;
+        std::string transitionStatus;
+        if (transition.IsActive)
+        {
+            transitionColor = pendingColor;
+            transitionStatus = " [ACTIVE]";
+        }
+        else if (transition.IsSelectedCandidate)
+        {
+            transitionColor = queuedColor;
+            transitionStatus = " [SELECTED]";
+        }
+        else if (transition.IsEligible)
+        {
+            transitionColor = activeColor;
+            transitionStatus = " [ELIGIBLE]";
+        }
 
         AddOverlayText(vertices, indices,
             transition.FromState + " -> " + transition.ToState + transitionStatus,
             panelX, y, 1.6f, viewport[2], viewport[3], transitionColor);
         y += 17.0f;
+
+        // PriorityとCrossFade DurationはTransition選択・発火後の挙動を理解するための定義値です。
+        // 条件が同時成立した場合はPriorityを比較し、選択後はFade時間を確認できるよう同じ診断ブロックに表示します。
+        const std::string transitionDefinition = "PRIORITY: " + std::to_string(transition.Priority)
+            + "  FADE: " + FormatFloat(transition.CrossFadeDuration);
+        AddOverlayText(vertices, indices, transitionDefinition,
+            panelX + 12.0f, y, 1.25f, viewport[2], viewport[3], transitionColor);
+        y += 15.0f;
 
         for (const auto& condition : transition.Conditions)
         {
@@ -392,9 +418,11 @@ void AnimationDebugOverlayRenderer::Render()
         }
 
         // Conditionを持たないTransitionも診断可能にするため、AND結果を要約表示します。
+        // SELECTEDを独立表示することで、EligibleなのにPriority競合で選ばれなかったTransitionも判別できます。
         const std::string summary = std::string("CONDITIONS: ")
             + (transition.AreConditionsMet ? "OK" : "NG")
-            + "  ELIGIBLE: " + (transition.IsEligible ? "YES" : "NO");
+            + "  ELIGIBLE: " + (transition.IsEligible ? "YES" : "NO")
+            + "  SELECTED: " + (transition.IsSelectedCandidate ? "YES" : "NO");
         AddOverlayText(vertices, indices, summary,
             panelX + 12.0f, y, 1.25f, viewport[2], viewport[3], transitionColor);
         y += 20.0f;
