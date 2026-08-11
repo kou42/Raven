@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
+#include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 #include "Raven/Editor/Panels/StatisticsPanel.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -103,7 +104,7 @@ private:
     // Index再利用やScene切替に対して安全に選択状態を検証できます。
     //
     // 選択状態をSceneHierarchyPanel内部へ閉じ込めないことが重要です。
-    // 次段階のInspectorはこの同じEntityを受け取り、さらにGizmoも同じ選択を利用します。
+    // Inspectorはこの同じEntityを受け取り、さらにGizmoも同じ選択を利用します。
     Entity m_SelectedEntity{};
 
     // ========================================================================
@@ -114,6 +115,7 @@ private:
     StatisticsPanel m_StatisticsPanel;
     AnimationDebugPanel m_AnimationDebugPanel;
     SceneHierarchyPanel m_SceneHierarchyPanel;
+    InspectorPanel m_InspectorPanel;
 
     // Panelの表示状態はEditorLayerが管理します。
     // Panel内部にEditor全体のWindow管理状態を持たせないことで、MenuBarや将来の
@@ -121,6 +123,7 @@ private:
     bool m_ShowStatisticsPanel = true;
     bool m_ShowAnimationDebugPanel = true;
     bool m_ShowSceneHierarchyPanel = true;
+    bool m_ShowInspectorPanel = true;
 
     // BeginDockSpace()がHost WindowをBeginできたかに関係なく、ImGui::Begin()を呼んだ場合は
     // 必ず対応するImGui::End()が必要です。呼び出し構造を明確にするため状態を保持します。
