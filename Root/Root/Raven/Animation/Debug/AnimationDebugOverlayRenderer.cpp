@@ -40,6 +40,37 @@ std::string StateNameOrNone(const AnimatorStateRuntimeDebugInfo& state)
     return state.HasState ? state.StateName : "-";
 }
 
+const char* ConditionOperatorText(AnimatorConditionOperator conditionOperator)
+{
+    switch (conditionOperator)
+    {
+    case AnimatorConditionOperator::Equal:        return "==";
+    case AnimatorConditionOperator::NotEqual:     return "!=";
+    case AnimatorConditionOperator::Greater:      return ">";
+    case AnimatorConditionOperator::GreaterEqual: return ">=";
+    case AnimatorConditionOperator::Less:         return "<";
+    case AnimatorConditionOperator::LessEqual:    return "<=";
+    }
+    return "?";
+}
+
+std::string FormatCondition(const AnimatorConditionRuntimeDebugInfo& condition)
+{
+    std::string text = condition.ParameterName + " " + ConditionOperatorText(condition.Operator) + " ";
+    if (condition.IsFloat)
+    {
+        text += FormatFloat(condition.ExpectedFloat);
+        text += "  ACT=" + FormatFloat(condition.ActualFloat);
+    }
+    else
+    {
+        text += condition.ExpectedBool ? "true" : "false";
+        text += std::string("  ACT=") + (condition.ActualBool ? "true" : "false");
+    }
+    text += condition.IsMet ? "  [OK]" : "  [NG]";
+    return text;
+}
+
 const AnimationStateMachineGraphNodeLayout* FindNodeLayout(
     const std::vector<AnimationStateMachineGraphNodeLayout>& layouts,
     const std::vector<AnimatorStateMachineNodeRuntimeDebugInfo>& nodes,
@@ -234,7 +265,18 @@ void AnimationDebugOverlayRenderer::Render()
             continue;
         }
 
-        const math::Vec3 lineColor = transition.IsActive ? pendingColor : dimColor;
+        // CrossFade中は実際に進行中のTransitionを青、発火可能なTransitionは緑で表示します。
+        // これにより「今まさに遷移中」と「条件が揃って次に発火できる」をGraph上でも区別できます。
+        math::Vec3 lineColor = dimColor;
+        if (transition.IsActive)
+        {
+            lineColor = pendingColor;
+        }
+        else if (transition.IsEligible)
+        {
+            lineColor = activeColor;
+        }
+
         const float fromX = from->X + from->Width * 0.5f;
         const float fromY = from->Y + from->Height * 0.5f;
         const float toX = to->X + to->Width * 0.5f;
@@ -297,6 +339,71 @@ void AnimationDebugOverlayRenderer::Render()
 
     const std::size_t rowCount = (runtime.Nodes.size() + 1) / 2;
     y += static_cast<float>(rowCount) * (nodeHeight + verticalGap) + 8.0f;
+
+    // ========================================================================
+    // Transition Conditions
+    // ========================================================================
+    // Graph全体の全Transitionを常時展開すると情報量が増えすぎるため、Current Stateから出るTransitionだけを表示します。
+    // 条件ごとの実値・期待値・成立状態に加え、Exit Timeを独立表示することで「なぜ発火しないか」を追跡できます。
+    bool hasCurrentTransition = false;
+    for (const auto& transition : runtime.Transitions)
+    {
+        if (transition.IsSourceCurrent == false)
+        {
+            continue;
+        }
+
+        if (hasCurrentTransition == false)
+        {
+            addText("TRANSITION CONDITIONS", titleColor);
+            hasCurrentTransition = true;
+        }
+
+        const math::Vec3 transitionColor = transition.IsEligible
+            ? activeColor
+            : (transition.IsActive ? pendingColor : textColor);
+        const std::string transitionStatus = transition.IsActive
+            ? " [ACTIVE]"
+            : (transition.IsEligible ? " [ELIGIBLE]" : "");
+
+        AddOverlayText(vertices, indices,
+            transition.FromState + " -> " + transition.ToState + transitionStatus,
+            panelX, y, 1.6f, viewport[2], viewport[3], transitionColor);
+        y += 17.0f;
+
+        for (const auto& condition : transition.Conditions)
+        {
+            const math::Vec3 conditionColor = condition.IsMet ? activeColor : dimColor;
+            AddOverlayText(vertices, indices, FormatCondition(condition),
+                panelX + 12.0f, y, 1.35f, viewport[2], viewport[3], conditionColor);
+            y += 15.0f;
+        }
+
+        if (transition.HasExitTime)
+        {
+            const std::string exitText = "EXIT "
+                + FormatFloat(transition.SourceNormalizedTime)
+                + " / " + FormatFloat(transition.ExitTime)
+                + (transition.IsExitTimeMet ? "  [OK]" : "  [NG]");
+            const math::Vec3 exitColor = transition.IsExitTimeMet ? activeColor : dimColor;
+            AddOverlayText(vertices, indices, exitText,
+                panelX + 12.0f, y, 1.35f, viewport[2], viewport[3], exitColor);
+            y += 15.0f;
+        }
+
+        // Conditionを持たないTransitionも診断可能にするため、AND結果を要約表示します。
+        const std::string summary = std::string("CONDITIONS: ")
+            + (transition.AreConditionsMet ? "OK" : "NG")
+            + "  ELIGIBLE: " + (transition.IsEligible ? "YES" : "NO");
+        AddOverlayText(vertices, indices, summary,
+            panelX + 12.0f, y, 1.25f, viewport[2], viewport[3], transitionColor);
+        y += 20.0f;
+    }
+
+    if (hasCurrentTransition)
+    {
+        y += 4.0f;
+    }
 
     // CurrentがClipでPendingがBlend Treeの場合も遷移先の詳細を確認できるようにします。
     const AnimatorStateRuntimeDebugInfo* blendState = nullptr;
