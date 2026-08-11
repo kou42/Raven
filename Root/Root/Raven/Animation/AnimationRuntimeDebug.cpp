@@ -2,11 +2,71 @@
 #include "Raven/Animation/AnimationRuntimeDebug.h"
 
 #include <algorithm>
+#include <variant>
 
 namespace Raven
 {
 namespace
 {
+bool EvaluateConditionForDebug(
+    const AnimatorStateMachine& stateMachine,
+    const AnimatorCondition& condition,
+    AnimatorConditionRuntimeDebugInfo& outInfo)
+{
+    outInfo = {};
+    outInfo.ParameterName = condition.ParameterName;
+    outInfo.Operator = condition.Operator;
+
+    // AddTransition()時点でExpectedValue型とParameter型の整合性は検証済みです。
+    // Debug側では同じGetFloat/GetBool APIと同じ比較演算を使い、Runtime評価との食い違いを防ぎます。
+    if (const float* expected = std::get_if<float>(&condition.ExpectedValue))
+    {
+        outInfo.IsFloat = true;
+        outInfo.ExpectedFloat = *expected;
+
+        float actual = 0.0f;
+        if (stateMachine.GetFloat(condition.ParameterName, actual) == false)
+        {
+            return false;
+        }
+
+        outInfo.ActualFloat = actual;
+        switch (condition.Operator)
+        {
+        case AnimatorConditionOperator::Equal:        outInfo.IsMet = actual == *expected; break;
+        case AnimatorConditionOperator::NotEqual:     outInfo.IsMet = actual != *expected; break;
+        case AnimatorConditionOperator::Greater:      outInfo.IsMet = actual > *expected; break;
+        case AnimatorConditionOperator::GreaterEqual: outInfo.IsMet = actual >= *expected; break;
+        case AnimatorConditionOperator::Less:         outInfo.IsMet = actual < *expected; break;
+        case AnimatorConditionOperator::LessEqual:    outInfo.IsMet = actual <= *expected; break;
+        }
+        return true;
+    }
+
+    const bool* expected = std::get_if<bool>(&condition.ExpectedValue);
+    if (expected == nullptr)
+    {
+        return false;
+    }
+
+    bool actual = false;
+    if (stateMachine.GetBool(condition.ParameterName, actual) == false)
+    {
+        return false;
+    }
+
+    outInfo.ActualBool = actual;
+    outInfo.ExpectedBool = *expected;
+
+    switch (condition.Operator)
+    {
+    case AnimatorConditionOperator::Equal:    outInfo.IsMet = actual == *expected; break;
+    case AnimatorConditionOperator::NotEqual: outInfo.IsMet = actual != *expected; break;
+    default:                                  outInfo.IsMet = false; break;
+    }
+    return true;
+}
+
 bool BuildStateRuntimeInfo(
     const AnimatorStateMachine& stateMachine,
     const std::string& stateName,
@@ -120,8 +180,6 @@ void BuildGraphRuntimeInfo(
     const auto& transitions = stateMachine.GetTransitions();
     outInfo.Transitions.reserve(transitions.size());
 
-    // Transition定義を先に走査してGraphに登場する全Stateを収集します。
-    // StateMachine内部のunordered_map順序をEditorへ露出せず、最後にState名で安定ソートします。
     for (const AnimatorTransition& transition : transitions)
     {
         AddNodeIfMissing(stateMachine, transition.FromState, outInfo);
@@ -140,10 +198,43 @@ void BuildGraphRuntimeInfo(
             transition.FromState == outInfo.Current.StateName &&
             transition.ToState == outInfo.Pending.StateName;
 
+        debugTransition.IsSourceCurrent =
+            outInfo.Current.HasState &&
+            transition.FromState == outInfo.Current.StateName;
+
+        debugTransition.SourceNormalizedTime = debugTransition.IsSourceCurrent
+            ? outInfo.Current.NormalizedTime
+            : 0.0f;
+
+        debugTransition.IsExitTimeMet = transition.HasExitTime == false ||
+            (debugTransition.IsSourceCurrent &&
+             debugTransition.SourceNormalizedTime >= transition.ExitTime);
+
+        debugTransition.Conditions.reserve(transition.Conditions.size());
+        debugTransition.AreConditionsMet = true;
+
+        for (const AnimatorCondition& condition : transition.Conditions)
+        {
+            AnimatorConditionRuntimeDebugInfo conditionInfo{};
+            const bool valid = EvaluateConditionForDebug(stateMachine, condition, conditionInfo);
+            if (valid == false || conditionInfo.IsMet == false)
+            {
+                debugTransition.AreConditionsMet = false;
+            }
+            debugTransition.Conditions.push_back(std::move(conditionInfo));
+        }
+
+        // EvaluateTransitions()はCurrent Stateから出るTransitionだけを評価し、
+        // CrossFade中は新規Transitionを開始しません。DebugのEligibleも同じ前提に揃えます。
+        debugTransition.IsEligible =
+            debugTransition.IsSourceCurrent &&
+            outInfo.IsCrossFading == false &&
+            debugTransition.IsExitTimeMet &&
+            debugTransition.AreConditionsMet;
+
         outInfo.Transitions.push_back(std::move(debugTransition));
     }
 
-    // Transitionを持たない単独StateもCurrent/Pending/Queuedなら必ず表示対象へ含めます。
     AddNodeIfMissing(stateMachine, outInfo.Current.StateName, outInfo);
     AddNodeIfMissing(stateMachine, outInfo.Pending.StateName, outInfo);
     AddNodeIfMissing(stateMachine, outInfo.QueuedStateName, outInfo);
