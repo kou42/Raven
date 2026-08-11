@@ -67,6 +67,42 @@ Entity SceneCameraSystem::FindPrimaryCameraEntity(Scene& scene)
     return Entity{};
 }
 
+bool SceneCameraSystem::SetPrimaryCamera(Scene& scene, Entity target)
+{
+    // Primary切り替え途中で既存Primaryを先に解除すると、targetが無効だった場合に
+    // SceneからPrimaryが失われます。そのため対象の妥当性をすべて確認してから変更します。
+    if (static_cast<bool>(target) == false)
+    {
+        return false;
+    }
+
+    if (target.GetScene() != &scene)
+    {
+        return false;
+    }
+
+    if (scene.IsEntityAlive(target) == false)
+    {
+        return false;
+    }
+
+    if (target.HasComponent<TransformComponent>() == false
+        || target.HasComponent<CameraComponent>() == false)
+    {
+        return false;
+    }
+
+    // PrimaryはScene内で排他的に扱います。
+    // 将来Camera Entityが増えても、Editor/UI側で他Cameraを個別に探して解除する必要はありません。
+    for (auto [entity, transform, cameraComponent] : scene.View<TransformComponent, CameraComponent>())
+    {
+        static_cast<void>(transform);
+        cameraComponent.Primary = (entity == target);
+    }
+
+    return true;
+}
+
 Entity SceneCameraSystem::ResolveRuntimeCameraEntity(Scene& scene)
 {
     // ========================================================================
