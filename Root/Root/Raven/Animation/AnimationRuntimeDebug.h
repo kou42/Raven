@@ -31,6 +31,26 @@ struct AnimatorStateMachineNodeRuntimeDebugInfo
     bool IsQueued = false;
 };
 
+// Transition Condition 1件のRuntime評価結果です。
+// Editor側でParameterを再取得・再比較せず、Runtimeと同じ演算規則の結果をそのまま表示します。
+struct AnimatorConditionRuntimeDebugInfo
+{
+    std::string ParameterName;
+    AnimatorConditionOperator Operator = AnimatorConditionOperator::Equal;
+
+    // Float Conditionの場合に使用します。
+    bool IsFloat = false;
+    float ActualFloat = 0.0f;
+    float ExpectedFloat = 0.0f;
+
+    // Bool / Trigger Conditionの場合に使用します。
+    bool ActualBool = false;
+    bool ExpectedBool = false;
+
+    // このCondition単体が現在値で成立しているかを表します。
+    bool IsMet = false;
+};
+
 // State Machine Graphの1 Transitionを表すSnapshotです。
 // IsActiveは現在CrossFadeしているCurrent -> Pendingだけtrueになります。
 struct AnimatorTransitionRuntimeDebugInfo
@@ -41,6 +61,18 @@ struct AnimatorTransitionRuntimeDebugInfo
     bool HasExitTime = false;
     float ExitTime = 0.0f;
     int Priority = 0;
+
+    // Transition発火理由をEditorから確認するためのRuntime診断値です。
+    // Parameter比較とExit Timeを別々に保持することで「何が足りないか」を特定できます。
+    std::vector<AnimatorConditionRuntimeDebugInfo> Conditions;
+    bool AreConditionsMet = false;
+    float SourceNormalizedTime = 0.0f;
+    bool IsExitTimeMet = true;
+    bool IsSourceCurrent = false;
+
+    // EvaluateTransitions()と同じ前提で、このTransitionが現在Frameに候補になれるかを示します。
+    // CrossFade中は新しい自動Transitionを開始しないためfalseになります。
+    bool IsEligible = false;
 };
 
 // ============================================================================
