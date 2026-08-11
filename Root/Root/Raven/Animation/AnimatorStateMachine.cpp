@@ -465,11 +465,14 @@ bool AnimatorStateMachine::EvaluateCondition(const AnimatorCondition& condition)
 bool AnimatorStateMachine::EvaluateTransitions()
 {
     // Current Stateが無い、またはFade中の場合は自動Transitionを開始しません。
-    // Fade割り込み対応はAnimator側のSnapshot Pose実装後にポリシーを拡張します。
+    // Priorityは「同じFrameに複数Transitionが成立した場合」の選択順だけを決めます。
+    // Fade中InterruptはAnimatorがSnapshot Poseを持つ段階で別途実装し、ここでは従来どおり拒否します。
     if (!HasCurrentState() || m_Animator.IsCrossFading())
     {
         return false;
     }
+
+    const AnimatorTransition* selectedTransition = nullptr;
 
     for (const AnimatorTransition& transition : m_Transitions)
     {
@@ -502,18 +505,28 @@ bool AnimatorStateMachine::EvaluateTransitions()
             continue;
         }
 
-        // 登録順を優先順位として、最初に成立したTransitionだけを実行します。
-        // Transition開始に失敗した場合はTriggerを消費せず、次Frameに再評価できます。
-        if (!TransitionTo(transition.ToState, transition.CrossFadeDuration))
+        // より高いPriorityのTransitionが見つかった場合だけ候補を置き換えます。
+        // 同Priorityでは置き換えないため、vectorへ登録された順番がTie Breakとして残ります。
+        if (!selectedTransition || transition.Priority > selectedTransition->Priority)
         {
-            return false;
+            selectedTransition = &transition;
         }
-
-        ConsumeTransitionTriggers(transition);
-        return true;
     }
 
-    return false;
+    if (!selectedTransition)
+    {
+        return false;
+    }
+
+    // 最終的に選ばれた1本だけを実行します。
+    // Transition開始に失敗した場合はTriggerを消費せず、次Frameに同条件を再評価できます。
+    if (!TransitionTo(selectedTransition->ToState, selectedTransition->CrossFadeDuration))
+    {
+        return false;
+    }
+
+    ConsumeTransitionTriggers(*selectedTransition);
+    return true;
 }
 
 void AnimatorStateMachine::ConsumeTransitionTriggers(const AnimatorTransition& transition)
