@@ -117,27 +117,14 @@ bool AnimatorStateMachine::AddJumpStatesAndTransitions(
         !AddState(jumpStateNames.Fall, std::move(fallClip), crossFadeDuration) ||
         !AddState(jumpStateNames.Land, std::move(landClip), crossFadeDuration)) return false;
 
-    auto makeJumpTransition = [&](const std::string& from)
-    {
-        AnimatorTransition transition{};
-        transition.FromState = from;
-        transition.ToState = jumpStateNames.JumpStart;
-        transition.CrossFadeDuration = crossFadeDuration;
-        // Jump Triggerだけでは空中で再Jumpできてしまうため、GroundedもAND条件にします。
-        transition.Conditions.push_back(AnimatorCondition{ parameterNames.Jump, AnimatorConditionOperator::Equal, true });
-        transition.Conditions.push_back(AnimatorCondition{ parameterNames.Grounded, AnimatorConditionOperator::Equal, true });
-        return transition;
-    };
-
-    // Any Stateは次段階で導入するため、現段階ではLocomotionの各Stateから明示的に接続します。
-    // Any State対応後はこの3本を1本へ集約できるよう、JumpStart以降の遷移は独立して定義します。
-    const AnimatorTransition jumpTransitions[] =
-    {
-        makeJumpTransition(locomotionStateNames.Idle),
-        makeJumpTransition(locomotionStateNames.Walk),
-        makeJumpTransition(locomotionStateNames.Run)
-    };
-    for (const AnimatorTransition& transition : jumpTransitions) if (!AddTransition(transition)) return false;
+    // Jump開始はLocomotion Stateごとに同じTransitionを3本書く代わりにAny Stateへ集約します。
+    // Jump Triggerだけでは接地していない状態でも要求できてしまうため、GroundedもAND条件にします。
+    // 現実装のAny Stateは登録済み各Stateから通常Transitionへ展開されるため、
+    // EvaluateTransitions()本体やTrigger消費ルールを変更せずに既存挙動を保てます。
+    std::vector<AnimatorCondition> jumpConditions;
+    jumpConditions.push_back(AnimatorCondition{ parameterNames.Jump, AnimatorConditionOperator::Equal, true });
+    jumpConditions.push_back(AnimatorCondition{ parameterNames.Grounded, AnimatorConditionOperator::Equal, true });
+    if (!AddAnyStateTransition(jumpStateNames.JumpStart, std::move(jumpConditions), crossFadeDuration)) return false;
 
     AnimatorTransition beginFall{};
     beginFall.FromState = jumpStateNames.JumpStart;
