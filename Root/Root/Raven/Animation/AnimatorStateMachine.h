@@ -17,26 +17,40 @@ namespace Raven
 // AnimatorStateDefinition
 // ============================================================================
 // State Machine側で保持する「名前付きAnimation Stateの定義」です。
-// AnimatorStateがTimeなどの実行時状態を持つのに対し、こちらはClipと遷移設定だけを持ちます。
+// AnimatorStateがTimeなどの実行時状態を持つのに対し、こちらはMotionと遷移設定だけを持ちます。
 //
-// まずはIdle / Walk / Runを安全に切り替えるための薄い層に限定し、Parameter / Condition /
-// BlendTreeなどはここへ詰め込まず、必要になった段階で別構造として拡張します。
+// Motionは従来のAnimationClip、または1D Blend Treeのどちらか一方を持ちます。
+// Blend TreeのParameter実値はEntityごとに異なるRuntime値なので、この定義には名前だけを保持し、
+// Animatorへ再生開始/更新する際にState MachineのParameter値を同期します。
 struct AnimatorStateDefinition
 {
     std::shared_ptr<AnimationClip> Clip;
+    std::shared_ptr<BlendTree1D> BlendTree;
+    std::string BlendParameterName;
 
     // このStateへ遷移する際の標準CrossFade時間[秒]です。
     float CrossFadeDuration = 0.2f;
 
-    // Stateへ入り直した際にClip先頭から再生するかを指定します。
+    // Stateへ入り直した際にMotion先頭から再生するかを指定します。
     bool RestartOnEnter = true;
+
+    bool IsBlendTreeState() const
+    {
+        return BlendTree != nullptr;
+    }
+
+    bool IsValid() const
+    {
+        return Clip != nullptr || BlendTree != nullptr;
+    }
 };
 
 // ============================================================================
 // LocomotionStateNames / LocomotionThresholds
 // ============================================================================
 // Idle / Walk / Runの名前と速度境界をGameplayコードから分離するための小さな設定です。
-// 汎用Parameter/Transitionを追加した後も、最小Locomotionをすぐ使える便利APIとして維持します。
+// 従来の3-State Locomotionを維持しつつ、下記LocomotionBlendTreeSettingsで
+// 1-State + Blend Tree構成も選択できます。
 struct LocomotionStateNames
 {
     std::string Idle = "Idle";
@@ -51,6 +65,16 @@ struct LocomotionThresholds
 
     // speed < RunMinSpeed をWalk、それ以上をRunとします。
     float RunMinSpeed = 4.0f;
+};
+
+// 1D Blend Tree版LocomotionのState名とThresholdです。
+// Idle / Walk / Runを別Stateへ分けず、Speed 1つで3 Motionを連続補間します。
+struct LocomotionBlendTreeSettings
+{
+    std::string StateName = "Locomotion";
+    float IdleThreshold = 0.0f;
+    float WalkThreshold = 2.0f;
+    float RunThreshold = 6.0f;
 };
 
 // Character ControllerとAnimation State Machine間で共有するParameter名です。
@@ -82,12 +106,12 @@ struct JumpStateNames
 // Animatorの上に置く薄いState管理層です。
 //
 // 責務は次の3つを中心に限定します。
-//  1. "Idle" / "Walk" / "Run" のような名前とAnimationClipを対応付ける
+//  1. State名とAnimation Motion(Clip / BlendTree)を対応付ける
 //  2. Current / Pending / QueuedのState名を管理する
 //  3. Parameter / ConditionからState変更要求を作り、Animator::Play / CrossFadeへ変換する
 //
 // Animation時間、Loop、Pose Sample、CrossFade WeightなどのRuntime処理はAnimator側へ残します。
-// これによりState MachineがAnimation再生処理を二重管理しない構造になります。
+// Blend TreeのParameter値だけはState Machineが所有するParameterからAnimatorへ同期します。
 //
 // Queued StateはAnimatorがCrossFade割り込みに未対応な現在の段階で、Fade中に発生した
 // 「最新の遷移要求」を失わないための薄い補助機構です。将来Snapshot Poseを使ったInterrupt
@@ -100,11 +124,20 @@ public:
     {
     }
 
-    // 名前付きStateを登録します。
+    // 名前付きClip Stateを登録します。
     // 同名Stateが既に存在する場合はfalseを返し、意図しない上書きを防ぎます。
     bool AddState(
         std::string name,
         std::shared_ptr<AnimationClip> clip,
+        float crossFadeDuration = 0.2f,
+        bool restartOnEnter = true);
+
+    // 名前付き1D Blend Tree Stateを登録します。
+    // blendParameterNameは登録済みFloat Parameterである必要があります。
+    bool AddBlendTreeState(
+        std::string name,
+        std::shared_ptr<BlendTree1D> blendTree,
+        std::string blendParameterName,
         float crossFadeDuration = 0.2f,
         bool restartOnEnter = true);
 
@@ -117,12 +150,12 @@ public:
     const AnimatorStateDefinition* FindState(const std::string& name) const;
 
     // 初期Stateを設定します。
-    // startImmediately=trueならAnimator::Play()まで行い、そのStateを現在Stateにします。
+    // startImmediately=trueならAnimatorの対応Motion再生まで行い、そのStateを現在Stateにします。
     bool SetInitialState(const std::string& name, bool startImmediately = true);
 
     // 登録済みStateへ遷移します。
     // durationOverride < 0 の場合はState定義のCrossFadeDurationを使用します。
-    // AnimatorがCrossFade中で割り込みを拒否した場合、State名も変更しません。
+    // Clip / BlendTreeの種類に応じてAnimatorの対応CrossFade APIへ変換します。
     bool TransitionTo(const std::string& name, float durationOverride = -1.0f);
 
     // ------------------------------------------------------------------------
@@ -212,6 +245,7 @@ public:
         float crossFadeDuration = 0.2f);
 
     // Idle / Walk / Run State、Speed Parameter、4本のTransition、初期Idleをまとめて構築します。
+    // 従来3-State方式の比較・学習用として維持します。
     bool BuildLocomotionController(
         std::shared_ptr<AnimationClip> idleClip,
         std::shared_ptr<AnimationClip> walkClip,
@@ -236,10 +270,7 @@ public:
         float verticalVelocity,
         const CharacterAnimationParameters& parameterNames = {});
 
-    // JumpStart / Fall / Land Stateを追加してCharacterの空中遷移を構築します。
-    // Jump開始は Any State -> JumpStart の Jump Trigger && Grounded、
-    // JumpStart -> FallはVerticalVelocity <= 0、Fall -> LandはGrounded、
-    // Landからの復帰先はSpeedでIdle / Walk / Runから選択します。
+    // JumpStart / Fall / Land Stateを追加して従来3-State Locomotionとの空中遷移を構築します。
     bool AddJumpStatesAndTransitions(
         std::shared_ptr<AnimationClip> jumpStartClip,
         std::shared_ptr<AnimationClip> fallClip,
@@ -250,8 +281,7 @@ public:
         const CharacterAnimationParameters& parameterNames = {},
         float crossFadeDuration = 0.15f);
 
-    // Idle / Walk / Run / JumpStart / Fall / Landと必要Parameter・Transitionを
-    // 一括構築するCharacter向け便利APIです。
+    // 従来のIdle / Walk / Run / JumpStart / Fall / Land Controllerです。
     bool BuildCharacterController(
         std::shared_ptr<AnimationClip> idleClip,
         std::shared_ptr<AnimationClip> walkClip,
@@ -268,19 +298,32 @@ public:
         bool initialGrounded = true,
         bool startImmediately = true);
 
+    // Locomotionを1つのBlendTree StateへまとめたCharacter Controllerを構築します。
+    // Speed ParameterはIdle / Walk / RunのMotion補間に直接使用し、State遷移は
+    // Locomotion <-> JumpStart / Fall / LandだけになるためLocomotion境界CrossFadeが不要になります。
+    bool BuildCharacterBlendTreeController(
+        std::shared_ptr<AnimationClip> idleClip,
+        std::shared_ptr<AnimationClip> walkClip,
+        std::shared_ptr<AnimationClip> runClip,
+        std::shared_ptr<AnimationClip> jumpStartClip,
+        std::shared_ptr<AnimationClip> fallClip,
+        std::shared_ptr<AnimationClip> landClip,
+        const LocomotionBlendTreeSettings& blendSettings = {},
+        const JumpStateNames& jumpStateNames = {},
+        const CharacterAnimationParameters& parameterNames = {},
+        float transitionCrossFadeDuration = 0.15f,
+        bool initialGrounded = true,
+        bool startImmediately = true);
+
     // 移動速度からIdle / Walk / Runを選択してTransitionTo()へ変換します。
-    // Gameplay側は毎Frameこの関数へ速度を渡すだけでよく、State名や閾値判定を散在させません。
-    //
-    // Animatorは現在Fade中の別Transition割り込みをまだ許可していないため、
-    // Fade中に目標Stateが変わった場合はm_QueuedStateNameへ保存し、Fade完了直後に適用します。
+    // 従来3-State Locomotion向けAPIです。Blend Tree版ではSetFloat(Speed)だけで十分です。
     bool UpdateLocomotion(
         float speed,
         const LocomotionThresholds& thresholds = {},
         const LocomotionStateNames& stateNames = {});
 
     // Parameter Transitionを評価してからAnimatorを更新し、CrossFade完了をState名へ同期します。
-    // State Machine自身はAnimation時間を別途持たず、時間管理はAnimatorだけに任せます。
-    // Fade中にQueued Stateがあれば、完了直後に次のTransitionとして適用します。
+    // BlendTree StateがCurrent / Pendingの場合は、評価前に対応Float ParameterをAnimatorへ同期します。
     void Update(float deltaTime);
 
     bool HasCurrentState() const { return !m_CurrentStateName.empty(); }
@@ -290,7 +333,6 @@ public:
     const std::string& GetPendingStateName() const { return m_PendingStateName; }
 
     // Fade中に次の目標Stateが変化した場合の予約先です。
-    // 例: Idle -> WalkのFade中に速度がRun領域へ入った場合、Runをここへ保持します。
     const std::string& GetQueuedStateName() const { return m_QueuedStateName; }
 
     Animator& GetAnimator() { return m_Animator; }
@@ -300,12 +342,18 @@ private:
     const AnimatorParameter* FindParameter(const std::string& name) const;
     AnimatorParameter* FindParameter(const std::string& name);
 
+    bool GetBlendParameterValue(
+        const AnimatorStateDefinition& state,
+        float& outValue) const;
+
+    // Current / Pending BlendTree Stateへ最新Parameter値を同期します。
+    // Parameter所有権はState Machineに残し、AnimatorにはPose評価に必要な値だけ渡します。
+    void SyncAnimatorBlendTreeParameters();
+
     // 1 Conditionを現在Parameter値に対して評価します。
-    // 型不一致や未登録Parameterは成立しないConditionとして扱います。
     bool EvaluateCondition(const AnimatorCondition& condition) const;
 
     // 現在Stateから出るTransitionを評価し、Priority最大の成立Transitionを実行します。
-    // Priorityが同じ場合はvector上の登録順を維持し、Transition開始成功時だけTriggerを消費します。
     bool EvaluateTransitions();
 
     void ConsumeTransitionTriggers(const AnimatorTransition& transition);
@@ -325,7 +373,6 @@ private:
     std::vector<AnimatorTransition> m_Transitions;
 
     // CrossFade中もCurrentは遷移元を維持し、Pendingに遷移先を保持します。
-    // Fade完了時にPending -> Currentへ昇格します。
     std::string m_CurrentStateName;
     std::string m_PendingStateName;
 
