@@ -74,10 +74,7 @@ void RunDirectWeightDebugTest()
     ValidateWeightSum(info);
 }
 
-void ValidateRuntimeSpeed(
-    AnimatorStateMachine& stateMachine,
-    float speed,
-    float deltaTime)
+void ValidateRuntimeSpeed(AnimatorStateMachine& stateMachine, float speed, float deltaTime)
 {
     assert(stateMachine.SetFloat("Speed", speed));
     stateMachine.Update(deltaTime);
@@ -101,14 +98,12 @@ void RunSmoothSpeedRuntimeTest()
 {
     Animator animator;
     AnimatorStateMachine stateMachine(animator);
-
     assert(stateMachine.AddFloatParameter("Speed", 0.0f));
 
     auto tree = std::make_shared<BlendTree1D>();
     assert(tree->AddChild(0.0f, MakeClip(1.0f)));
     assert(tree->AddChild(2.0f, MakeClip(0.8f)));
     assert(tree->AddChild(6.0f, MakeClip(0.6f)));
-
     assert(stateMachine.AddBlendTreeState("Locomotion", tree, "Speed", 0.15f));
     assert(stateMachine.SetInitialState("Locomotion", true));
 
@@ -129,7 +124,6 @@ void RunSmoothSpeedRuntimeTest()
     {
         const float t = static_cast<float>(frame) / static_cast<float>(segmentFrames);
         ValidateRuntimeSpeed(stateMachine, 2.0f + 4.0f * t, deltaTime);
-
         const float normalizedTime = animator.GetNormalizedTime();
         assert(std::isfinite(normalizedTime));
         assert(normalizedTime >= 0.0f);
@@ -187,16 +181,9 @@ void RunStateGraphRuntimeSnapshotTest()
     bool foundPending = false;
     for (const auto& node : duringFade.Nodes)
     {
-        if (node.StateName == "Locomotion")
-        {
-            foundCurrent = node.IsCurrent && node.IsBlendTree;
-        }
-        else if (node.StateName == "JumpStart")
-        {
-            foundPending = node.IsPending;
-        }
+        if (node.StateName == "Locomotion") foundCurrent = node.IsCurrent && node.IsBlendTree;
+        else if (node.StateName == "JumpStart") foundPending = node.IsPending;
     }
-
     assert(foundCurrent);
     assert(foundPending);
 }
@@ -205,7 +192,6 @@ void RunTransitionConditionRuntimeSnapshotTest()
 {
     Animator animator;
     AnimatorStateMachine stateMachine(animator);
-
     assert(stateMachine.AddFloatParameter("VerticalVelocity", 3.0f));
     assert(stateMachine.AddBoolParameter("Grounded", false));
     assert(stateMachine.AddTriggerParameter("Jump"));
@@ -228,8 +214,6 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(stateMachine.AddTransition(transition));
     assert(stateMachine.SetInitialState("Locomotion", true));
 
-    // 初期状態ではJump=false / Grounded=false、VerticalVelocity > 0だけ成立しています。
-    // Conditions[]には各Parameterの実値・期待値・個別判定が入り、AreConditionsMetはAND結果になります。
     AnimatorStateMachineRuntimeDebugInfo initial{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, initial));
     assert(initial.Transitions.size() == 1);
@@ -247,11 +231,8 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(initialTransition.IsExitTimeMet == false);
     assert(initialTransition.IsEligible == false);
 
-    // Parameter条件をすべて成立させてもExit Time未到達ならTransition候補にはなりません。
-    // Editorではこの状態を「条件はOKだがExit Time待ち」と区別して表示できます。
     assert(stateMachine.SetTrigger("Jump"));
     assert(stateMachine.SetBool("Grounded", true));
-
     AnimatorStateMachineRuntimeDebugInfo conditionsMet{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, conditionsMet));
     assert(conditionsMet.Transitions[0].AreConditionsMet);
@@ -260,9 +241,7 @@ void RunTransitionConditionRuntimeSnapshotTest()
 
     // StateMachine::Update()を呼ぶと成立したTransitionが即座に開始されるため、
     // ここではAnimatorだけを0.55秒進めて「発火直前」のSnapshotを意図的に作ります。
-    // この時点でParameter条件とExit Timeが両方成立し、IsEligible=trueになることを確認します。
     animator.Update(0.55f);
-
     AnimatorStateMachineRuntimeDebugInfo eligible{};
     assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, eligible));
     assert(eligible.Transitions[0].SourceNormalizedTime >= 0.5f);
@@ -270,16 +249,95 @@ void RunTransitionConditionRuntimeSnapshotTest()
     assert(eligible.Transitions[0].AreConditionsMet);
     assert(eligible.Transitions[0].IsEligible);
 }
+
+void RunTransitionPrioritySelectionRuntimeSnapshotTest()
+{
+    Animator animator;
+    AnimatorStateMachine stateMachine(animator);
+    assert(stateMachine.AddBoolParameter("CanTransition", true));
+    assert(stateMachine.AddState("Source", MakeClip(1.0f), 0.1f));
+    assert(stateMachine.AddState("LowPriority", MakeClip(1.0f), 0.1f));
+    assert(stateMachine.AddState("HighPriority", MakeClip(1.0f), 0.1f));
+
+    // 両方のConditionを同時成立させ、Priorityだけが異なるケースです。
+    // 登録順ではLowPriorityが先ですが、Runtime規則ではPriorityの高いHighPriorityが最終候補になります。
+    AnimatorTransition low{};
+    low.FromState = "Source";
+    low.ToState = "LowPriority";
+    low.Priority = 10;
+    low.CrossFadeDuration = 0.15f;
+    low.Conditions = { { "CanTransition", AnimatorConditionOperator::Equal, true } };
+    assert(stateMachine.AddTransition(low));
+
+    AnimatorTransition high{};
+    high.FromState = "Source";
+    high.ToState = "HighPriority";
+    high.Priority = 100;
+    high.CrossFadeDuration = 0.35f;
+    high.Conditions = { { "CanTransition", AnimatorConditionOperator::Equal, true } };
+    assert(stateMachine.AddTransition(high));
+    assert(stateMachine.SetInitialState("Source", true));
+
+    AnimatorStateMachineRuntimeDebugInfo runtime{};
+    assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, runtime));
+    assert(runtime.Transitions.size() == 2);
+    assert(runtime.Transitions[0].IsEligible);
+    assert(runtime.Transitions[1].IsEligible);
+    assert(runtime.Transitions[0].IsSelectedCandidate == false);
+    assert(runtime.Transitions[1].IsSelectedCandidate);
+    assert(runtime.Transitions[0].Priority == 10);
+    assert(runtime.Transitions[1].Priority == 100);
+    assert(NearlyEqual(runtime.Transitions[0].CrossFadeDuration, 0.15f));
+    assert(NearlyEqual(runtime.Transitions[1].CrossFadeDuration, 0.35f));
+}
+
+void RunTransitionSamePriorityTieBreakRuntimeSnapshotTest()
+{
+    Animator animator;
+    AnimatorStateMachine stateMachine(animator);
+    assert(stateMachine.AddBoolParameter("CanTransition", true));
+    assert(stateMachine.AddState("Source", MakeClip(1.0f), 0.1f));
+    assert(stateMachine.AddState("FirstRegistered", MakeClip(1.0f), 0.1f));
+    assert(stateMachine.AddState("SecondRegistered", MakeClip(1.0f), 0.1f));
+
+    // 同Priorityの場合、EvaluateTransitions()はPriorityが「より大きい」場合だけ候補を置き換えます。
+    // そのため同値なら最初に登録されたTransitionが維持されることをDebug Snapshotでも固定します。
+    AnimatorTransition first{};
+    first.FromState = "Source";
+    first.ToState = "FirstRegistered";
+    first.Priority = 50;
+    first.Conditions = { { "CanTransition", AnimatorConditionOperator::Equal, true } };
+    assert(stateMachine.AddTransition(first));
+
+    AnimatorTransition second{};
+    second.FromState = "Source";
+    second.ToState = "SecondRegistered";
+    second.Priority = 50;
+    second.Conditions = { { "CanTransition", AnimatorConditionOperator::Equal, true } };
+    assert(stateMachine.AddTransition(second));
+    assert(stateMachine.SetInitialState("Source", true));
+
+    AnimatorStateMachineRuntimeDebugInfo runtime{};
+    assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, runtime));
+    assert(runtime.Transitions.size() == 2);
+    assert(runtime.Transitions[0].IsEligible);
+    assert(runtime.Transitions[1].IsEligible);
+    assert(runtime.Transitions[0].IsSelectedCandidate);
+    assert(runtime.Transitions[1].IsSelectedCandidate == false);
+    assert(runtime.Transitions[0].Priority == runtime.Transitions[1].Priority);
+}
 } // namespace
 
 void RunBlendTreeRuntimeSelfTests()
 {
-    // Debug API単体 -> 実際の連続Blend -> State Graph -> Transition診断の順で、
-    // Editor表示に必要なRuntime情報を下層から段階的に検証します。
+    // Debug API単体 -> 実際の連続Blend -> State Graph -> Condition診断 -> Priority選択の順で、
+    // Editor表示に必要なRuntime情報とTransition選択規則を下層から段階的に検証します。
     RunDirectWeightDebugTest();
     RunSmoothSpeedRuntimeTest();
     RunStateGraphRuntimeSnapshotTest();
     RunTransitionConditionRuntimeSnapshotTest();
+    RunTransitionPrioritySelectionRuntimeSnapshotTest();
+    RunTransitionSamePriorityTieBreakRuntimeSnapshotTest();
 }
 
 } // namespace Raven::tests
