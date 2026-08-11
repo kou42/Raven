@@ -105,6 +105,31 @@ bool BlendTree1D::ResolveBlend(
     return true;
 }
 
+bool BlendTree1D::GetBlendedDuration(float parameterValue, float& outDuration) const
+{
+    outDuration = 0.0f;
+
+    const BlendTree1DChild* left = nullptr;
+    const BlendTree1DChild* right = nullptr;
+    float weight = 0.0f;
+    if (!ResolveBlend(parameterValue, left, right, weight) ||
+        !left || !right || !left->Clip || !right->Clip)
+    {
+        return false;
+    }
+
+    const float leftDuration = std::max(left->Clip->GetDuration(), 0.0f);
+    if (left == right)
+    {
+        outDuration = leftDuration;
+        return true;
+    }
+
+    const float rightDuration = std::max(right->Clip->GetDuration(), 0.0f);
+    outDuration = leftDuration + (rightDuration - leftDuration) * weight;
+    return std::isfinite(outDuration);
+}
+
 bool BlendTree1D::SampleTransform(
     float parameterValue,
     float normalizedTime,
