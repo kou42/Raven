@@ -1,0 +1,1 @@
+Transition Condition Runtime Debug is covered by BlendTreeRuntimeSelfTests.cpp.
