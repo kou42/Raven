@@ -83,6 +83,13 @@ void EditorLayer::BeginDockSpace()
     // Main Viewport全体を覆う「見えない親Window」を作ります。
     // このWindow自体をEditor Panelとして見せるのではなく、MenuBarとDockSpaceを保持する
     // Root Containerとして利用します。
+    //
+    // 重要:
+    // 現段階ではScene/Game View用Framebufferをまだ導入しておらず、ゲーム画面はMain
+    // Framebufferへ直接描画されています。そのためHost Windowが通常のWindow背景を描くと、
+    // Scene描画後にImGuiの背景矩形が重なり、ゲーム画面全体を覆い隠してしまいます。
+    // Step 7でScene View / Game ViewをFramebuffer Textureとして表示するまでは、Host Windowの
+    // 背景を描画せず、既存ゲーム画面をDockSpaceの背後から見える状態に保ちます。
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     if (viewport == nullptr)
     {
@@ -106,6 +113,11 @@ void EditorLayer::BeginDockSpace()
     windowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
     windowFlags |= ImGuiWindowFlags_NoNavFocus;
 
+    // Main framebufferへ直接描かれているゲーム画面をHost Window背景で隠さないための設定です。
+    // NoBackgroundはWindowの背景だけを無効化し、MenuBarやDockされたPanelは通常どおり描画されます。
+    // Scene/Game ViewをFramebuffer化した後は、Editor背景を明示的に描く構成へ変更できます。
+    windowFlags |= ImGuiWindowFlags_NoBackground;
+
     // Main Viewportを余白なしでDock領域として使うため、Host WindowだけWindowPaddingを0にします。
     // Push/Popを必ず対にし、他PanelのStyleへ影響を残さないことが重要です。
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -124,7 +136,10 @@ void EditorLayer::BeginDockSpace()
     // ini保存が有効な場合、Dear ImGuiはこのIDを基準にDock Layoutを保存・復元します。
     const ImGuiID dockSpaceId = ImGui::GetID("RavenEditorDockSpace");
 
-    ImGuiDockNodeFlags dockSpaceFlags = ImGuiDockNodeFlags_None;
+    // PassthruCentralNodeを指定すると、Dockされていない中央領域についてDockSpace自身も
+    // 背景を描画しません。Host WindowのNoBackgroundと組み合わせることで、中央領域から
+    // 既存のMain framebuffer（現在のゲーム画面）がそのまま見えるようになります。
+    ImGuiDockNodeFlags dockSpaceFlags = ImGuiDockNodeFlags_PassthruCentralNode;
     ImGui::DockSpace(
         dockSpaceId,
         ImVec2(0.0f, 0.0f),
