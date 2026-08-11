@@ -2,8 +2,12 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneViewportRenderer.h"
 
 #include <imgui.h>
+
+#include <algorithm>
+#include <cstdint>
 
 namespace Raven
 {
@@ -15,28 +19,182 @@ EditorLayer::EditorLayer(Application& application)
 
 void EditorLayer::OnAttach()
 {
-    // 各PanelはEditorLayerが所有します。
-    // 現在のPanelは追加初期化不要ですが、Panel固有リソースが必要になった場合も
-    // ApplicationではなくEditorLayerのライフサイクルから管理します。
+    // ========================================================================
+    // Editor Viewport GPU resources
+    // ========================================================================
+    // Scene View / Game ViewはMain framebufferを直接見せるのではなく、
+    // それぞれ専用FramebufferへSceneを描画し、そのColor Attachment Textureを
+    // Dear ImGuiのWindow内へ表示します。
+    //
+    // 重要:
+    // EditorLayerはOpenGLFramebuffer等の具体的なPlatform実装を直接生成しません。
+    // Framebuffer::Create()を通すことで、現在のRendererAPIに対応した実装をRenderer層で選択し、
+    // Editor側からOpenGL / DirectX / Vulkan等の違いを隠蔽します。
+    //
+    // 初期サイズはDock Layout確定前なので仮値です。
+    // 実際の表示サイズはRenderSceneView()/RenderGameView()でContentRegionから取得し、
+    // 次frameのOnRender()でFramebuffer::Resize()へ反映します。
+    //
+    // SceneとGameを最初から別Framebufferにしている理由は、Scene Viewだけへ
+    // Editor Camera / Grid / Selection Outline / Gizmo等を追加しても、Game Viewの
+    // Runtime表示へEditor専用描画が混入しない構造を保つためです。
+    m_SceneFramebuffer = Framebuffer::Create(
+        static_cast<std::uint32_t>(m_SceneViewportWidth),
+        static_cast<std::uint32_t>(m_SceneViewportHeight));
+    m_GameFramebuffer = Framebuffer::Create(
+        static_cast<std::uint32_t>(m_GameViewportWidth),
+        static_cast<std::uint32_t>(m_GameViewportHeight));
+
+    // EditorCameraのProjectionも初期Viewportサイズへ合わせます。
+    // 以降はScene ViewのContentRegionサイズが変わるたびRenderSceneView()から更新します。
+    m_EditorCamera.SetViewportSize(m_SceneViewportWidth, m_SceneViewportHeight);
 }
 
 void EditorLayer::OnDetach()
 {
-    // 現段階ではEditorLayer自身が明示的に解放するリソースはありません。
-    // 将来Framebuffer / Editor Camera用GPU Resource / Panel固有Resource等を所有した場合は、
-    // ImGui ContextとWindowがまだ有効なこのタイミングで破棄します。
+    // ========================================================================
+    // Editor Viewport GPU resource shutdown
+    // ========================================================================
+    // Applicationの破棄順序により、この時点ではWindow / Graphics Contextがまだ生存しています。
+    // Framebufferの具体実装はGPU Resourceを所有するため、Graphics Contextが破棄される前の
+    // EditorLayer::OnDetach()で明示的に解放します。
+    m_SceneFramebuffer.reset();
+    m_GameFramebuffer.reset();
 }
 
 void EditorLayer::OnUpdate(float dt)
 {
-    (void)dt;
+    // ========================================================================
+    // Editor-only update
+    // ========================================================================
+    // Runtime Sceneの更新はApplication -> Scene::OnUpdate()で行われます。
+    // Editor Camera / Gizmo等はゲームロジックとは独立したEditor状態なので、
+    // Runtime更新へ混ぜずEditorLayerから更新します。
+    //
+    // ImGuiのhover/focus判定は前frameのRenderSceneView()で保存した値です。
+    // OnUpdate()はImGui frame構築より先に呼ばれるため1frame遅れになりますが、
+    // Scene View外でWASD/Mouse操作した時にEditor Cameraが動くことを防げます。
+    const bool editorCameraInputEnabled =
+        m_ShowSceneView
+        && m_SceneViewportHovered
+        && m_SceneViewportFocused;
 
-    // Scene View用Editor CameraやEditor独自の更新処理はRuntime Scene更新と分離してここへ追加します。
+    m_EditorCamera.Update(dt, editorCameraInputEnabled);
+
+    // Framebuffer ResizeはGPU Resourceの再生成を伴うため、UI構築中ではなく
+    // 描画処理側のOnRender()でまとめて行います。
 }
 
 void EditorLayer::OnRender()
 {
-    // GizmoやEditor用debug primitive等、通常Renderer経由で描画する処理の入口です。
+    if (m_Application == nullptr || m_Application->GetScene() == nullptr)
+    {
+        return;
+    }
+
+    // ========================================================================
+    // Off-screen Scene / Game rendering
+    // ========================================================================
+    // Applicationは現在、互換性維持のためRuntime SceneをMain framebufferへ一度描画します。
+    // その後EditorLayerからScene View / Game View専用Framebufferへ再描画しています。
+    //
+    // ここからScene ViewとGame ViewのCameraを明確に分離します。
+    //   Scene View -> EditorCamera
+    //   Game View  -> Runtime Scene自身のCamera
+    //
+    // 同じScene状態を別Cameraから描くだけなので、Entity/Physics/AnimationのUpdateを
+    // Scene View用に二重実行しないことが重要です。
+    if (m_ShowSceneView && m_SceneFramebuffer != nullptr)
+    {
+        // ImGui Windowが極端に小さくなった場合でも0x0 Textureを作らないよう、
+        // GPUへ渡すFramebufferサイズは最低1 pixelに丸めます。
+        const std::uint32_t width = static_cast<std::uint32_t>(std::max(m_SceneViewportWidth, 1.0f));
+        const std::uint32_t height = static_cast<std::uint32_t>(std::max(m_SceneViewportHeight, 1.0f));
+
+        m_SceneFramebuffer->Resize(width, height);
+
+        RenderSceneToFramebuffer(
+            *m_SceneFramebuffer,
+            m_EditorCamera.GetViewMatrix(),
+            m_EditorCamera.GetProjectionMatrix());
+    }
+
+    if (m_ShowGameView && m_GameFramebuffer != nullptr)
+    {
+        const std::uint32_t width = static_cast<std::uint32_t>(std::max(m_GameViewportWidth, 1.0f));
+        const std::uint32_t height = static_cast<std::uint32_t>(std::max(m_GameViewportHeight, 1.0f));
+
+        m_GameFramebuffer->Resize(width, height);
+
+        // Game ViewはRuntime Cameraを変更せず、Scene本来のOnRender()をそのまま使います。
+        RenderSceneToFramebuffer(*m_GameFramebuffer);
+    }
+}
+
+void EditorLayer::RenderSceneToFramebuffer(Framebuffer& framebuffer)
+{
+    if (m_Application == nullptr)
+    {
+        return;
+    }
+
+    Scene* activeScene = m_Application->GetScene();
+    if (activeScene == nullptr)
+    {
+        return;
+    }
+
+    // ========================================================================
+    // Runtime camera render target switching
+    // ========================================================================
+    // EditorLayerから見えるのはFramebuffer共通インターフェースだけです。
+    // Bind()内部でOpenGLならFBO、将来DirectXなら対応するRender Targetを設定します。
+    // 具体APIをEditorへ漏らさないことでRenderer backendの差し替え範囲を限定します。
+    //
+    // Scene::OnRender()内のClearを含む全描画命令は、Bindされたoff-screen描画先へ出力されます。
+    // 描画終了後はUnbind()で通常の描画先へ戻し、後続のImGui描画へ影響を残しません。
+    framebuffer.Bind();
+    activeScene->OnRender();
+    framebuffer.Unbind();
+}
+
+void EditorLayer::RenderSceneToFramebuffer(
+    Framebuffer& framebuffer,
+    const math::Mat4& view,
+    const math::Mat4& projection)
+{
+    if (m_Application == nullptr)
+    {
+        return;
+    }
+
+    Scene* activeScene = m_Application->GetScene();
+    if (activeScene == nullptr)
+    {
+        return;
+    }
+
+    framebuffer.Bind();
+
+    // ========================================================================
+    // External camera rendering
+    // ========================================================================
+    // Scene ViewではRuntime Cameraを上書きせず、SceneViewportRendererへEditorCameraの
+    // View/Projectionを渡して一時的な別視点として描画します。
+    //
+    // SceneViewportRendererを実装していないSceneでもEditorを完全に描画不能にしないため、
+    // 通常のOnRender()へfallbackします。この場合Scene ViewはRuntime Camera表示になります。
+    SceneViewportRenderer* viewportRenderer = dynamic_cast<SceneViewportRenderer*>(activeScene);
+    if (viewportRenderer != nullptr)
+    {
+        viewportRenderer->RenderWithCamera(view, projection);
+    }
+    else
+    {
+        activeScene->OnRender();
+    }
+
+    framebuffer.Unbind();
 }
 
 void EditorLayer::OnImGuiRender(float dt)
@@ -56,14 +214,36 @@ void EditorLayer::OnImGuiRender(float dt)
     // ========================================================================
     // Editor root window / DockSpace
     // ========================================================================
-    // 各Panelを描画する前にDockSpaceを作ります。
-    // Dear ImGuiのDockingでは、Dock可能Windowより先にDockSpace Nodeが存在している必要があるため、
-    // Editor frameの先頭でHost Windowを構築します。
+    // 各Panelより先にDockSpaceを作ります。
+    // Dear ImGui DockingではDock可能Windowの受け皿となるDockSpace Nodeが先に必要です。
     BeginDockSpace();
 
+    // ========================================================================
+    // Scene View / Game View
+    // ========================================================================
+    // OnRender()で作ったColor Attachment Textureを、独立したImGui Windowとして表示します。
+    // WindowのContentRegionサイズは次frameのFramebuffer Resizeにも利用します。
+    if (m_ShowSceneView)
+    {
+        RenderSceneView();
+    }
+    else
+    {
+        // Windowを非表示にしたframe以降、以前のhover/focus状態をCamera入力へ残しません。
+        m_SceneViewportHovered = false;
+        m_SceneViewportFocused = false;
+    }
+
+    if (m_ShowGameView)
+    {
+        RenderGameView();
+    }
+
+    // ========================================================================
+    // Statistics
+    // ========================================================================
     // EditorLayerはPanelとApplicationの橋渡しだけを行います。
-    // SceneをPanel内へ永続保持しないため、将来SetScene()でSceneを切り替えても
-    // 常にそのframe時点のActive Sceneを表示できます。
+    // SceneをPanel内へ永続保持しないため、SetScene()後もそのframeのActive Sceneへ追従します。
     if (m_ShowStatisticsPanel)
     {
         m_StatisticsPanel.OnImGuiRender(
@@ -72,9 +252,11 @@ void EditorLayer::OnImGuiRender(float dt)
             m_Application->GetScene());
     }
 
-    // Animation Debugも同じActive Sceneを参照します。
-    // AnimationDebugPanel自身はSceneやAnimatorのLifetimeを所有せず、このframeで必要な
-    // Runtime Snapshotだけを構築するため、Scene切り替え時にも古い参照を残しません。
+    // ========================================================================
+    // Animation Debug
+    // ========================================================================
+    // AnimationDebugPanelもSceneを所有せず、毎frame現在のActive Sceneを受け取ります。
+    // これによりScene差し替え時に古いSceneへの参照を保持しません。
     if (m_ShowAnimationDebugPanel)
     {
         m_AnimationDebugPanel.OnImGuiRender(m_Application->GetScene());
@@ -84,7 +266,7 @@ void EditorLayer::OnImGuiRender(float dt)
     // Scene Hierarchy
     // ========================================================================
     // HierarchyはActive SceneのEntity一覧を表示し、EditorLayerが所有する選択Entityだけを更新します。
-    // 選択状態をPanelの外へ置くことで、Inspectorや将来のGizmoが同じEntityを利用できます。
+    // 選択状態をPanelの外へ置くことで、Inspector / Scene View / Gizmoが同じEntityを利用できます。
     if (m_ShowSceneHierarchyPanel)
     {
         m_SceneHierarchyPanel.OnImGuiRender(
@@ -96,7 +278,7 @@ void EditorLayer::OnImGuiRender(float dt)
     // Inspector
     // ========================================================================
     // Hierarchyが更新したm_SelectedEntityをそのまま渡します。
-    // Inspector側に別の選択状態を作らないため、HierarchyでEntityを選択した同じframeから
+    // Inspector側に別の選択状態を作らないため、Hierarchyで選択した同じframeから
     // Component内容が表示され、将来のScene View / Gizmoとも選択対象が一致します。
     if (m_ShowInspectorPanel)
     {
@@ -106,12 +288,119 @@ void EditorLayer::OnImGuiRender(float dt)
     EndDockSpace();
 }
 
+void EditorLayer::RenderSceneView()
+{
+    // ========================================================================
+    // Scene View Window
+    // ========================================================================
+    // WindowPaddingを0にすることで、Framebuffer TextureをContentRegionいっぱいに表示します。
+    // PushStyleVar()/PopStyleVar()をこのWindowだけに限定し、他PanelのPaddingへ影響させません。
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    const bool visible = ImGui::Begin("Scene View", &m_ShowSceneView);
+    ImGui::PopStyleVar();
+
+    // ========================================================================
+    // Scene View input state
+    // ========================================================================
+    // EditorCameraの入力はScene View上だけで有効にします。
+    // Hoverだけでは別WindowがKeyboard focusを持つ場合があるため、Focusも併用して
+    // Inspector編集中などにWASDがCameraへ入ることを避けます。
+    m_SceneViewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+    m_SceneViewportFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
+    if (visible)
+    {
+        const ImVec2 available = ImGui::GetContentRegionAvail();
+
+        if (available.x > 0.0f && available.y > 0.0f)
+        {
+            // ImGui WindowのContentRegionを次frameのFramebufferサイズとして保存します。
+            // UI frame中にTextureを作り直さず、OnRender()でResizeすることでGPU Resource操作と
+            // UI構築処理の責務を分離しています。
+            m_SceneViewportWidth = available.x;
+            m_SceneViewportHeight = available.y;
+
+            // Projection行列はGPU Resourceではないため、ContentRegionを取得した時点で更新できます。
+            // 次frameのOnRender()では最新Aspect RatioのEditor CameraからScene Viewを描画します。
+            m_EditorCamera.SetViewportSize(
+                m_SceneViewportWidth,
+                m_SceneViewportHeight);
+
+            if (m_SceneFramebuffer != nullptr)
+            {
+                // 現在のRendererAPIはOpenGLなのでRendererIDはOpenGL Texture IDとして扱えます。
+                // この部分はFramebuffer抽象化の中でもまだbackend依存が残っている境界です。
+                // DirectX/Vulkan対応時にはTexture/ImGui backendの抽象化と合わせて置き換えます。
+                //
+                // OpenGL Textureは左下原点ですがDear ImGuiのImageは通常左上から表示するため、
+                // UV0=(0,1), UV1=(1,0)としてY方向を反転し、画面を正立させます。
+                const ImTextureID textureID = static_cast<ImTextureID>(
+                    m_SceneFramebuffer->GetColorAttachmentRendererID());
+
+                ImGui::Image(
+                    textureID,
+                    available,
+                    ImVec2(0.0f, 1.0f),
+                    ImVec2(1.0f, 0.0f));
+            }
+        }
+    }
+
+    // ImGui::Begin()の戻り値に関係なく、Beginを呼んだ場合は必ずEndが必要です。
+    ImGui::End();
+}
+
+void EditorLayer::RenderGameView()
+{
+    // ========================================================================
+    // Game View Window
+    // ========================================================================
+    // Scene Viewと同じTexture表示経路を持ちますがFramebufferは共有しません。
+    // Scene ViewへEditor Camera / Gizmo等を追加しても、Game ViewはRuntime Cameraの
+    // 純粋なゲーム表示を保ちます。
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    const bool visible = ImGui::Begin("Game View", &m_ShowGameView);
+    ImGui::PopStyleVar();
+
+    if (visible)
+    {
+        const ImVec2 available = ImGui::GetContentRegionAvail();
+
+        if (available.x > 0.0f && available.y > 0.0f)
+        {
+            m_GameViewportWidth = available.x;
+            m_GameViewportHeight = available.y;
+
+            if (m_GameFramebuffer != nullptr)
+            {
+                // Scene Viewと同じ理由で、現在のOpenGL backendではTexture IDをImGuiへ渡し、
+                // Y方向を反転して表示します。
+                const ImTextureID textureID = static_cast<ImTextureID>(
+                    m_GameFramebuffer->GetColorAttachmentRendererID());
+
+                ImGui::Image(
+                    textureID,
+                    available,
+                    ImVec2(0.0f, 1.0f),
+                    ImVec2(1.0f, 0.0f));
+            }
+        }
+    }
+
+    ImGui::End();
+}
+
 void EditorLayer::OnEvent(Event& event)
 {
     (void)event;
 
-    // Editor Camera操作やGizmo操作などの入力は今後ここで処理します。
-    // Editor側で入力を消費した場合はevent.Handled = trueとしてRuntime側への伝播を止めます。
+    // ========================================================================
+    // Editor input routing
+    // ========================================================================
+    // 現在のEditorCameraはInput pollingで操作しています。
+    // 将来Scroll Zoom / Gizmo / ShortcutなどEventベースの入力を追加する際には、
+    // m_SceneViewportHovered / m_SceneViewportFocusedを確認し、Editor側で消費したEventへ
+    // event.Handled = trueを設定してRuntime Layerへの伝播を止めます。
 }
 
 void EditorLayer::ValidateSelectedEntity()
@@ -129,23 +418,23 @@ void EditorLayer::ValidateSelectedEntity()
         return;
     }
 
-    // Entity::operator bool()はexplicitなので、ここでは明示的にboolへ変換して比較します。
-    // Invalid Entityを「選択なし」として扱う意図をコード上でも明確にします。
+    // Entity::operator bool()はexplicitなので明示的にboolへ変換します。
+    // Invalid Entityは「選択なし」として扱い、それ以上のScene/Generation検証は不要です。
     if (static_cast<bool>(m_SelectedEntity) == false)
     {
         return;
     }
 
-    // Entity自身が保持するSceneと現在のActive Sceneを明示比較します。
-    // 同じIndex/GenerationのEntityが別Sceneに存在しても、それはEditor上では別Entityです。
+    // Entity自身が保持するSceneと現在のActive Sceneを比較します。
+    // Index/Generationが偶然一致しても別SceneのEntityは別物なので、Scene切替時に選択を解除します。
     if (m_SelectedEntity.GetScene() != activeScene)
     {
         m_SelectedEntity = Entity{};
         return;
     }
 
-    // Generationまで含めた生存確認を行います。
-    // Destroy後に同じIndexが再利用されても旧選択Entityはここで無効化されます。
+    // Generationまで含めた生存確認です。
+    // Destroy後に同じIndexが再利用されても、古いGenerationを持つ選択Entityはここで無効化されます。
     if (activeScene->IsEntityAlive(m_SelectedEntity) == false)
     {
         m_SelectedEntity = Entity{};
@@ -157,16 +446,13 @@ void EditorLayer::BeginDockSpace()
     // ========================================================================
     // Fullscreen DockSpace Host Window
     // ========================================================================
-    // Main Viewport全体を覆う「見えない親Window」を作ります。
-    // このWindow自体をEditor Panelとして見せるのではなく、MenuBarとDockSpaceを保持する
-    // Root Containerとして利用します。
+    // Main Viewport全体を覆うHost Windowを作り、その内部へEditor Panel用DockSpaceを配置します。
+    // Host Window自身は通常のPanelではなく、MenuBarとDockSpaceを保持するRoot Containerです。
     //
-    // 重要:
-    // 現段階ではScene/Game View用Framebufferをまだ導入しておらず、ゲーム画面はMain
-    // Framebufferへ直接描画されています。そのためHost Windowが通常のWindow背景を描くと、
-    // Scene描画後にImGuiの背景矩形が重なり、ゲーム画面全体を覆い隠してしまいます。
-    // Step 7でScene View / Game ViewをFramebuffer Textureとして表示するまでは、Host Windowの
-    // 背景を描画せず、既存ゲーム画面をDockSpaceの背後から見える状態に保ちます。
+    // 以前はRuntime SceneがMain framebufferへ直接表示されていたため、Host Windowに
+    // NoBackground + PassthruCentralNodeを指定して背後のゲーム画面を透過表示していました。
+    // 現在はScene/Game映像を専用Framebuffer TextureとしてImGui Windowへ表示するため、
+    // その暫定透過処理は不要になっています。
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     if (viewport == nullptr)
     {
@@ -177,9 +463,8 @@ void EditorLayer::BeginDockSpace()
     ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::SetNextWindowViewport(viewport->ID);
 
-    // Host WindowはMain Viewportと完全に一体化させるため、通常Windowにある
-    // TitleBar / Resize / Move / Collapse等の操作を無効にします。
-    // Dockされた子Window側は通常のImGui Windowなので、ユーザーは自由に移動・分割できます。
+    // Host WindowはMain Viewportと一体化させるため、通常WindowのTitleBar / Resize / Move等を
+    // 無効にします。DockされたScene ViewやInspector等は独立Windowなので通常どおり操作できます。
     ImGuiWindowFlags windowFlags = 0;
     windowFlags |= ImGuiWindowFlags_MenuBar;
     windowFlags |= ImGuiWindowFlags_NoDocking;
@@ -190,13 +475,8 @@ void EditorLayer::BeginDockSpace()
     windowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
     windowFlags |= ImGuiWindowFlags_NoNavFocus;
 
-    // Main framebufferへ直接描かれているゲーム画面をHost Window背景で隠さないための設定です。
-    // NoBackgroundはWindowの背景だけを無効化し、MenuBarやDockされたPanelは通常どおり描画されます。
-    // Scene/Game ViewをFramebuffer化した後は、Editor背景を明示的に描く構成へ変更できます。
-    windowFlags |= ImGuiWindowFlags_NoBackground;
-
-    // Main Viewportを余白なしでDock領域として使うため、Host WindowだけWindowPaddingを0にします。
-    // Push/Popを必ず対にし、他PanelのStyleへ影響を残さないことが重要です。
+    // Main Viewportを余白なしでDock領域として利用します。
+    // Style変更はHost WindowのBegin()までに限定し、他Panelへ漏れないよう直後にPopします。
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -209,21 +489,20 @@ void EditorLayer::BeginDockSpace()
     // ========================================================================
     // DockSpace Node
     // ========================================================================
-    // GetID()で安定したDockSpace IDを生成します。
+    // GetID()から安定したDockSpace IDを生成します。
     // ini保存が有効な場合、Dear ImGuiはこのIDを基準にDock Layoutを保存・復元します。
     const ImGuiID dockSpaceId = ImGui::GetID("RavenEditorDockSpace");
 
-    // PassthruCentralNodeを指定すると、Dockされていない中央領域についてDockSpace自身も
-    // 背景を描画しません。Host WindowのNoBackgroundと組み合わせることで、中央領域から
-    // 既存のMain framebuffer（現在のゲーム画面）がそのまま見えるようになります。
-    ImGuiDockNodeFlags dockSpaceFlags = ImGuiDockNodeFlags_PassthruCentralNode;
+    // Scene/Game ViewがTexture Windowとして独立したためPassthruCentralNodeは使用しません。
+    // DockSpace自身が通常背景を描画することで、Viewport Windowを閉じてもMain Sceneが
+    // Host Windowの背後から意図せず透けて見えることを防ぎます。
     ImGui::DockSpace(
         dockSpaceId,
         ImVec2(0.0f, 0.0f),
-        dockSpaceFlags);
+        ImGuiDockNodeFlags_None);
 
-    // MenuBarもDockSpace Hostに持たせます。
-    // これにより各Panelが個別にMenuを持つのではなく、Editor全体の操作を一箇所へ集約できます。
+    // Editor全体のMenuBarはHost Windowへ集約します。
+    // 各Panel同士を依存させず、表示状態等のEditor全体操作をここから制御します。
     RenderMenuBar();
 }
 
@@ -234,8 +513,7 @@ void EditorLayer::EndDockSpace()
         return;
     }
 
-    // ImGui::Begin()の戻り値に関係なくBeginを呼んだらEndが必要です。
-    // DockSpace Hostは常時表示するため、毎frame必ずここで閉じます。
+    // ImGui::Begin()の戻り値に関係なくBeginを呼んだ場合は対応するEndが必要です。
     ImGui::End();
     m_DockSpaceBegun = false;
 }
@@ -250,10 +528,15 @@ void EditorLayer::RenderMenuBar()
     // ========================================================================
     // View menu
     // ========================================================================
-    // Editor Panelの表示状態はEditorLayer側で一元管理します。
-    // Panelを増やしても各Panel同士を依存させず、このMenuから表示状態だけを切り替えます。
+    // Editor Windowの表示状態はEditorLayerで一元管理します。
+    // Panel自身に他Panelの存在を知らせないことで、Panel間の不要な依存を作りません。
     if (ImGui::BeginMenu("View"))
     {
+        // Scene/Game Viewも通常Panelと同じように表示状態を切り替えられます。
+        ImGui::MenuItem("Scene View", nullptr, &m_ShowSceneView);
+        ImGui::MenuItem("Game View", nullptr, &m_ShowGameView);
+        ImGui::Separator();
+
         ImGui::MenuItem("Statistics", nullptr, &m_ShowStatisticsPanel);
         ImGui::MenuItem("Animation Debug", nullptr, &m_ShowAnimationDebugPanel);
         ImGui::MenuItem("Scene Hierarchy", nullptr, &m_ShowSceneHierarchyPanel);

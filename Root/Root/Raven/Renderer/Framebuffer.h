@@ -1,0 +1,54 @@
+#pragma once
+
+#include <cstdint>
+#include <memory>
+
+namespace Raven
+{
+
+// ============================================================================
+// Framebuffer
+// ============================================================================
+// Scene View / Game View、将来のPickingやPost Processなどで利用する描画先を表す
+// Renderer共通の抽象インターフェースです。
+//
+// 重要:
+// このクラスではglBindFramebuffer等のOpenGL APIを一切扱いません。
+// EditorやScene等の上位層はFramebufferだけへ依存し、実際のGPU Resource管理は
+// OpenGLFramebuffer / 将来のDirectXFramebuffer等のPlatform実装へ隠蔽します。
+//
+// 現段階ではColor AttachmentをImGuiへ渡すためRendererIDを公開しています。
+// これはOpenGLではTexture ID、他APIでは同じ表現にならない可能性があるため、
+// 将来的にTexture抽象化を整理する際はGetColorAttachment()のようなAPIへ移行する予定です。
+class Framebuffer
+{
+public:
+    virtual ~Framebuffer() = default;
+
+    Framebuffer(const Framebuffer&) = delete;
+    Framebuffer& operator=(const Framebuffer&) = delete;
+
+    // このFramebufferを現在の描画先として設定します。
+    // 実装側では必要に応じてViewportもAttachmentサイズへ合わせます。
+    virtual void Bind() const = 0;
+
+    // 描画先をdefault framebufferへ戻します。
+    virtual void Unbind() const = 0;
+
+    // Viewport Window等のサイズ変更へ追従します。
+    // 0サイズや同一サイズをどのように扱うかはPlatform実装側で安全に処理します。
+    virtual void Resize(std::uint32_t width, std::uint32_t height) = 0;
+
+    virtual std::uint32_t GetColorAttachmentRendererID() const = 0;
+    virtual std::uint32_t GetWidth() const = 0;
+    virtual std::uint32_t GetHeight() const = 0;
+
+    // 現在選択されているRendererAPIに対応したFramebuffer実装を生成します。
+    // 上位層がOpenGLFramebuffer等を直接newしないことでPlatform依存をRenderer層へ閉じ込めます。
+    static std::unique_ptr<Framebuffer> Create(std::uint32_t width, std::uint32_t height);
+
+protected:
+    Framebuffer() = default;
+};
+
+} // namespace Raven
