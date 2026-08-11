@@ -15,7 +15,7 @@ EditorLayer::EditorLayer(Application& application)
 void EditorLayer::OnAttach()
 {
     // 各PanelはEditorLayerが所有します。
-    // 現在のStatisticsPanelは追加初期化不要ですが、Panel固有リソースが必要になった場合も
+    // 現在のPanelは追加初期化不要ですが、Panel固有リソースが必要になった場合も
     // ApplicationではなくEditorLayerのライフサイクルから管理します。
 }
 
@@ -62,6 +62,14 @@ void EditorLayer::OnImGuiRender(float dt)
             dt,
             m_Application->GetWindow(),
             m_Application->GetScene());
+    }
+
+    // Animation Debugも同じActive Sceneを参照します。
+    // AnimationDebugPanel自身はSceneやAnimatorのLifetimeを所有せず、このframeで必要な
+    // Runtime Snapshotだけを構築するため、Scene切り替え時にも古い参照を残しません。
+    if (m_ShowAnimationDebugPanel)
+    {
+        m_AnimationDebugPanel.OnImGuiRender(m_Application->GetScene());
     }
 
     EndDockSpace();
@@ -174,11 +182,11 @@ void EditorLayer::RenderMenuBar()
     // View menu
     // ========================================================================
     // Editor Panelの表示状態はEditorLayer側で一元管理します。
-    // 今後Animation Debug / Scene Hierarchy / Inspector等を追加する場合も、このメニューへ
-    // 同じ形式で追加すれば、Panelクラス側へWindow管理責務を持ち込まずに済みます。
+    // Panelを増やしても各Panel同士を依存させず、このMenuから表示状態だけを切り替えます。
     if (ImGui::BeginMenu("View"))
     {
         ImGui::MenuItem("Statistics", nullptr, &m_ShowStatisticsPanel);
+        ImGui::MenuItem("Animation Debug", nullptr, &m_ShowAnimationDebugPanel);
         ImGui::EndMenu();
     }
 
