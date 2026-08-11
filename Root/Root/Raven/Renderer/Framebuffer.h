@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
 namespace Raven
 {
@@ -8,42 +9,46 @@ namespace Raven
 // ============================================================================
 // Framebuffer
 // ============================================================================
-// EditorのScene View / Game Viewなど、Main Windowとは別の描画先を作るための
-// OpenGL Framebufferを所有する小さなRAIIクラスです。
+// Scene View / Game View、将来のPickingやPost Processなどで利用する描画先を表す
+// Renderer共通の抽象インターフェースです。
 //
-// Color Attachmentは通常の2D Textureとして作成するため、描画完了後に
-// ImGui::Image()へTexture IDを渡してそのままEditor Window内へ表示できます。
-// Depth/Stencilは現段階ではTextureとして参照する必要がないためRenderbufferを使います。
+// 重要:
+// このクラスではglBindFramebuffer等のOpenGL APIを一切扱いません。
+// EditorやScene等の上位層はFramebufferだけへ依存し、実際のGPU Resource管理は
+// OpenGLFramebuffer / 将来のDirectXFramebuffer等のPlatform実装へ隠蔽します。
+//
+// 現段階ではColor AttachmentをImGuiへ渡すためRendererIDを公開しています。
+// これはOpenGLではTexture ID、他APIでは同じ表現にならない可能性があるため、
+// 将来的にTexture抽象化を整理する際はGetColorAttachment()のようなAPIへ移行する予定です。
 class Framebuffer
 {
 public:
-    Framebuffer(std::uint32_t width, std::uint32_t height);
-    ~Framebuffer();
+    virtual ~Framebuffer() = default;
 
     Framebuffer(const Framebuffer&) = delete;
     Framebuffer& operator=(const Framebuffer&) = delete;
 
-    void Bind() const;
-    void Unbind() const;
+    // このFramebufferを現在の描画先として設定します。
+    // 実装側では必要に応じてViewportもAttachmentサイズへ合わせます。
+    virtual void Bind() const = 0;
 
-    // Viewport Windowのリサイズへ追従します。
-    // 同じサイズの場合はGPU Resourceを作り直さないため何もしません。
-    void Resize(std::uint32_t width, std::uint32_t height);
+    // 描画先をdefault framebufferへ戻します。
+    virtual void Unbind() const = 0;
 
-    std::uint32_t GetColorAttachmentRendererID() const { return m_ColorAttachment; }
-    std::uint32_t GetWidth() const { return m_Width; }
-    std::uint32_t GetHeight() const { return m_Height; }
+    // Viewport Window等のサイズ変更へ追従します。
+    // 0サイズや同一サイズをどのように扱うかはPlatform実装側で安全に処理します。
+    virtual void Resize(std::uint32_t width, std::uint32_t height) = 0;
 
-private:
-    void Invalidate();
-    void Release();
+    virtual std::uint32_t GetColorAttachmentRendererID() const = 0;
+    virtual std::uint32_t GetWidth() const = 0;
+    virtual std::uint32_t GetHeight() const = 0;
 
-private:
-    std::uint32_t m_RendererID = 0;
-    std::uint32_t m_ColorAttachment = 0;
-    std::uint32_t m_DepthStencilAttachment = 0;
-    std::uint32_t m_Width = 1;
-    std::uint32_t m_Height = 1;
+    // 現在選択されているRendererAPIに対応したFramebuffer実装を生成します。
+    // 上位層がOpenGLFramebuffer等を直接newしないことでPlatform依存をRenderer層へ閉じ込めます。
+    static std::unique_ptr<Framebuffer> Create(std::uint32_t width, std::uint32_t height);
+
+protected:
+    Framebuffer() = default;
 };
 
 } // namespace Raven
