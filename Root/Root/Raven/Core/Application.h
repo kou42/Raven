@@ -14,15 +14,15 @@
 namespace Raven
 {
 
+class ImGuiLayer;
+
 class Application
 {
-
 public:
-
     Application();
+    ~Application();
 
     void Run();
-
     void OnEvent(Event& event);
 
     void PushLayer(Layer* layer);
@@ -33,10 +33,12 @@ public:
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
-    //std::vector<Layer*> m_Layers;
     std::vector<Scope<Layer>> m_Layers;
-    
     Scope<Scene> m_scene;
+
+    // Window/OpenGL Contextより先に破棄する必要があるためApplicationが所有します。
+    // ImGuiLayerのdestructorでbackendをShutdownしてからWindow破棄へ進みます。
+    Scope<ImGuiLayer> m_ImGuiLayer;
 };
 
-}
+} // namespace Raven
