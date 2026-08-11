@@ -32,7 +32,11 @@ void SceneGame::SpawnAnimationTestCube()
     auto& transform = animatedCube.GetComponent<TransformComponent>();
     transform.Position = { -18.0f, 6.0f, -4.0f };
     transform.Rotation = { 0.0f, 0.0f, 0.0f };
-    transform.Scale = { 4.0f, 4.0f, 4.0f };
+
+    // 完全な立方体はY軸回転してもシルエットの変化が小さく、RotationKeyが正しく
+    // 描画へ反映されているか目視しづらいため、X/Zを細くした直方体として表示します。
+    // AnimationClip側も同じ縦横比を維持し、Stateごとの大きさだけを変化させます。
+    transform.Scale = { 2.5f, 4.0f, 1.5f };
 
     animatedCube.AddComponent<MeshRendererComponent>(
         MeshRendererComponent{ m_BoxMesh, m_Material });
@@ -43,6 +47,10 @@ void SceneGame::SpawnAnimationTestCube()
     // 本物のCharacter Assetを必要とせずState遷移だけを目視確認できるよう、各Stateを
     // Cubeの高さ・回転・Scaleの違いとして表現します。各Clipは同じ基準位置を使うため、
     // CrossFade時にも意図しない大きな位置移動が発生しません。
+    //
+    // scaleはY方向の高さを基準値として受け取り、X/Zには異なる比率を掛けています。
+    // これによりWalk/RunのY軸回転時に長辺・短辺の向きが明確に変わり、
+    // RotationKey -> AnimationSystem -> Transformの動作を一目で確認できます。
     auto makeClip = [](float height, float yaw, float scale)
     {
         auto clip = std::make_shared<AnimationClip>(1.0f);
@@ -59,8 +67,8 @@ void SceneGame::SpawnAnimationTestCube()
         };
         track.ScaleKeys =
         {
-            { 0.0f, { scale, scale, scale } },
-            { 1.0f, { scale, scale, scale } }
+            { 0.0f, { scale * 0.625f, scale, scale * 0.375f } },
+            { 1.0f, { scale * 0.625f, scale, scale * 0.375f } }
         };
         return clip;
     };
@@ -85,8 +93,8 @@ void SceneGame::SpawnAnimationTestCube()
     };
     jumpTrack.ScaleKeys =
     {
-        { 0.0f, { 4.5f, 4.5f, 4.5f } },
-        { 1.0f, { 4.5f, 4.5f, 4.5f } }
+        { 0.0f, { 4.5f * 0.625f, 4.5f, 4.5f * 0.375f } },
+        { 1.0f, { 4.5f * 0.625f, 4.5f, 4.5f * 0.375f } }
     };
 
     // ========================================================================
