@@ -44,6 +44,11 @@ public:
     std::size_t GetChildCount() const { return m_Children.size(); }
     const std::vector<BlendTree1DChild>& GetChildren() const { return m_Children; }
 
+    // 現在Parameter値で選ばれる2 ClipのDurationをPoseと同じWeightで補間します。
+    // Animatorはこの値を「1周期の実時間」として使い、Normalized Timeをdtから進めます。
+    // Parameterが変化してもNormalized Time自体を保持するため、Walk -> Runで歩行位相が跳びません。
+    bool GetBlendedDuration(float parameterValue, float& outDuration) const;
+
     // 単一Transform Animation用のPose Sampleです。
     // parameterValueが最小/最大Thresholdの外側なら端のChildへClampします。
     bool SampleTransform(
