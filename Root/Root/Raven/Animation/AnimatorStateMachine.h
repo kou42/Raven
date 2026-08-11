@@ -112,6 +112,7 @@ struct JumpStateNames
 //
 // Animation時間、Loop、Pose Sample、CrossFade WeightなどのRuntime処理はAnimator側へ残します。
 // Blend TreeのParameter値だけはState Machineが所有するParameterからAnimatorへ同期します。
+// これによりState MachineがAnimation再生時間やPoseを二重管理せず、Animatorとの責務境界を保ちます。
 //
 // Queued StateはAnimatorがCrossFade割り込みに未対応な現在の段階で、Fade中に発生した
 // 「最新の遷移要求」を失わないための薄い補助機構です。将来Snapshot Poseを使ったInterrupt
@@ -134,6 +135,7 @@ public:
 
     // 名前付き1D Blend Tree Stateを登録します。
     // blendParameterNameは登録済みFloat Parameterである必要があります。
+    // Bool/Triggerを0/1へ暗黙変換せず、定義ミスは登録時にfalseとして検出します。
     bool AddBlendTreeState(
         std::string name,
         std::shared_ptr<BlendTree1D> blendTree,
@@ -151,11 +153,13 @@ public:
 
     // 初期Stateを設定します。
     // startImmediately=trueならAnimatorの対応Motion再生まで行い、そのStateを現在Stateにします。
+    // 初期StateにはBlend元が存在しないためCrossFadeは行いません。
     bool SetInitialState(const std::string& name, bool startImmediately = true);
 
     // 登録済みStateへ遷移します。
     // durationOverride < 0 の場合はState定義のCrossFadeDurationを使用します。
     // Clip / BlendTreeの種類に応じてAnimatorの対応CrossFade APIへ変換します。
+    // AnimatorがFade中割り込みを拒否した場合はState名も変更せず、Runtime実体とのずれを防ぎます。
     bool TransitionTo(const std::string& name, float durationOverride = -1.0f);
 
     // ------------------------------------------------------------------------
@@ -185,6 +189,7 @@ public:
     // ------------------------------------------------------------------------
     // From/To Stateが登録済みで、Conditionが参照するParameterも存在する場合だけ登録します。
     // ConditionsはAND評価です。同時成立時はPriorityが高いものを優先し、同値なら登録順を維持します。
+    // HasExitTime=trueの場合はParameter Conditionに加えてAnimatorのNormalizedTimeも評価します。
     bool AddTransition(AnimatorTransition transition);
 
     // Any Stateは「現在Stateに関係なく同じ条件で同じStateへ遷移したい」場合の便利APIです。
@@ -271,6 +276,9 @@ public:
         const CharacterAnimationParameters& parameterNames = {});
 
     // JumpStart / Fall / Land Stateを追加して従来3-State Locomotionとの空中遷移を構築します。
+    // Jump開始はAny State -> JumpStartのJump Trigger && Grounded、
+    // JumpStart -> FallはVerticalVelocity <= 0、Fall -> LandはGroundedで判定します。
+    // Landからの復帰先はSpeedでIdle / Walk / Runを選び、Exit Time到達後に遷移します。
     bool AddJumpStatesAndTransitions(
         std::shared_ptr<AnimationClip> jumpStartClip,
         std::shared_ptr<AnimationClip> fallClip,
@@ -282,6 +290,7 @@ public:
         float crossFadeDuration = 0.15f);
 
     // 従来のIdle / Walk / Run / JumpStart / Fall / Land Controllerです。
+    // State MachineのTransition方式とBlend Tree方式を比較できるよう、Blend Tree導入後も残します。
     bool BuildCharacterController(
         std::shared_ptr<AnimationClip> idleClip,
         std::shared_ptr<AnimationClip> walkClip,
@@ -301,6 +310,7 @@ public:
     // Locomotionを1つのBlendTree StateへまとめたCharacter Controllerを構築します。
     // Speed ParameterはIdle / Walk / RunのMotion補間に直接使用し、State遷移は
     // Locomotion <-> JumpStart / Fall / LandだけになるためLocomotion境界CrossFadeが不要になります。
+    // Land -> Locomotionも1本だけになり、復帰先PoseはそのFrameのSpeedからBlend Treeが決定します。
     bool BuildCharacterBlendTreeController(
         std::shared_ptr<AnimationClip> idleClip,
         std::shared_ptr<AnimationClip> walkClip,
@@ -316,14 +326,20 @@ public:
         bool startImmediately = true);
 
     // 移動速度からIdle / Walk / Runを選択してTransitionTo()へ変換します。
+    // Gameplay側は毎Frameこの関数へ速度を渡すだけでよく、State名や閾値判定を散在させません。
     // 従来3-State Locomotion向けAPIです。Blend Tree版ではSetFloat(Speed)だけで十分です。
+    //
+    // Animatorは現在Fade中の別Transition割り込みをまだ許可していないため、
+    // Fade中に目標Stateが変わった場合はm_QueuedStateNameへ保存し、Fade完了直後に適用します。
     bool UpdateLocomotion(
         float speed,
         const LocomotionThresholds& thresholds = {},
         const LocomotionStateNames& stateNames = {});
 
     // Parameter Transitionを評価してからAnimatorを更新し、CrossFade完了をState名へ同期します。
+    // State Machine自身はAnimation時間を別途持たず、時間管理はAnimatorだけに任せます。
     // BlendTree StateがCurrent / Pendingの場合は、評価前に対応Float ParameterをAnimatorへ同期します。
+    // Fade中にQueued Stateがあれば、完了直後に次のTransitionとして適用します。
     void Update(float deltaTime);
 
     bool HasCurrentState() const { return !m_CurrentStateName.empty(); }
@@ -333,6 +349,7 @@ public:
     const std::string& GetPendingStateName() const { return m_PendingStateName; }
 
     // Fade中に次の目標Stateが変化した場合の予約先です。
+    // 例: Idle -> WalkのFade中に速度がRun領域へ入った場合、Runをここへ保持します。
     const std::string& GetQueuedStateName() const { return m_QueuedStateName; }
 
     Animator& GetAnimator() { return m_Animator; }
@@ -342,6 +359,8 @@ private:
     const AnimatorParameter* FindParameter(const std::string& name) const;
     AnimatorParameter* FindParameter(const std::string& name);
 
+    // Blend Tree Stateが参照するFloat Parameterの現在値を取得します。
+    // Parameter名をState定義へ保持し、Runtime値自体はState Machine側だけが所有します。
     bool GetBlendParameterValue(
         const AnimatorStateDefinition& state,
         float& outValue) const;
@@ -351,9 +370,11 @@ private:
     void SyncAnimatorBlendTreeParameters();
 
     // 1 Conditionを現在Parameter値に対して評価します。
+    // 型不一致や未登録Parameterは成立しないConditionとして扱います。
     bool EvaluateCondition(const AnimatorCondition& condition) const;
 
     // 現在Stateから出るTransitionを評価し、Priority最大の成立Transitionを実行します。
+    // Priorityが同じ場合はvector上の登録順を維持し、Transition開始成功時だけTriggerを消費します。
     bool EvaluateTransitions();
 
     void ConsumeTransitionTriggers(const AnimatorTransition& transition);
@@ -369,10 +390,11 @@ private:
     // Parameter値はEntity/Animator Instanceごとに異なるRuntime StateなのでState Machineが保持します。
     std::unordered_map<std::string, AnimatorParameter> m_Parameters;
 
-    // Transitionは登録順も同Priority時のTie Breakとして意味を持つためvectorで保持します。
+    // TransitionはPriorityが同じ場合に登録順もTie Breakとして意味を持つためvectorで保持します。
     std::vector<AnimatorTransition> m_Transitions;
 
     // CrossFade中もCurrentは遷移元を維持し、Pendingに遷移先を保持します。
+    // Fade完了時にPending -> Currentへ昇格します。
     std::string m_CurrentStateName;
     std::string m_PendingStateName;
 
