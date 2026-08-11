@@ -13,11 +13,21 @@
 namespace Raven
 {
 
+RendererStatistics Renderer::s_Statistics{};
+
 // 呼び出し元はApplication::Application()
 void Renderer::Init()
 {
     RenderCommand::SetAPI(std::make_unique<OpenGLRendererAPI>());
     RenderCommand::Init();
+}
+
+void Renderer::BeginFrame()
+{
+    // Statisticsは「直近1 frame」の値として扱います。
+    // SceneごとではなくApplication frameの先頭でResetすることで、Scene描画と
+    // Debug Overlayを含む、そのframeに発行された全Draw Callを同じ集計へ含めます。
+    s_Statistics.Reset();
 }
 
 void Renderer::BeginScene()
@@ -45,6 +55,21 @@ RendererAPI& Renderer::GetAPI()
     return RenderCommand::GetAPI();
 }
 
+const RendererStatistics& Renderer::GetStatistics()
+{
+    return s_Statistics;
+}
+
+void Renderer::RecordIndexedDraw(uint32_t indexCount)
+{
+    ++s_Statistics.DrawCalls;
+    s_Statistics.IndexCount += indexCount;
+
+    // 現在のRavenのIndexed描画はTriangle Listを前提としているため3 index = 1 triangleです。
+    // Line/Point topologyを追加する場合はPrimitiveTopologyを統計APIへ渡す形へ拡張します。
+    s_Statistics.TriangleCount += indexCount / 3u;
+}
+
 void Renderer::Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray)
 {
     shader->Bind();
@@ -59,7 +84,7 @@ void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
 
 void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
 {
-    if (!mesh || !material)
+    if (mesh == nullptr || material == nullptr)
     {
         return;
     }
