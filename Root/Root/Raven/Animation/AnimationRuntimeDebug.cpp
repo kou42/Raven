@@ -71,8 +71,6 @@ bool EvaluateConditionForDebug(
     return true;
 }
 
-// Animatorが現在保持しているStateから、Editor表示に必要な再生情報をSnapshotへ変換します。
-// Blend Treeの場合も定義を再計算するのではなく、Animatorが実際に使用しているParameterとBlendTree Debug結果を採用します。
 bool BuildStateRuntimeInfo(
     const AnimatorStateMachine& stateMachine,
     const std::string& stateName,
@@ -98,8 +96,7 @@ bool BuildStateRuntimeInfo(
         return true;
     }
 
-    if (animatorState.MotionType != AnimatorMotionType::BlendTree1D ||
-        animatorState.BlendTree == nullptr)
+    if (animatorState.MotionType != AnimatorMotionType::BlendTree1D || animatorState.BlendTree == nullptr)
     {
         return true;
     }
@@ -108,9 +105,7 @@ bool BuildStateRuntimeInfo(
     outInfo.BlendParameterName = stateDefinition->BlendParameterName;
     outInfo.BlendParameterValue = animatorState.BlendParameter;
 
-    if (animatorState.BlendTree->GetDebugInfo(
-            animatorState.BlendParameter,
-            outInfo.BlendTree) == false)
+    if (animatorState.BlendTree->GetDebugInfo(animatorState.BlendParameter, outInfo.BlendTree) == false)
     {
         return true;
     }
@@ -123,9 +118,6 @@ bool BuildStateRuntimeInfo(
     for (std::size_t i = 0; i < children.size(); ++i)
     {
         float weight = 0.0f;
-
-        // Clamp領域ではLeft/Rightが同じChildを指します。
-        // この場合にLeftWeightだけをそのまま使うのではなく、そのChildの表示Weightを明示的に1.0とします。
         if (outInfo.BlendTree.LeftChildIndex == outInfo.BlendTree.RightChildIndex)
         {
             if (i == outInfo.BlendTree.LeftChildIndex)
@@ -148,8 +140,6 @@ bool BuildStateRuntimeInfo(
     return true;
 }
 
-// Transition一覧だけでは孤立Stateを列挙できないため、Graph構築中に参照されたStateを重複なく追加します。
-// Current/Pending/Queuedは後段でも追加し、少なくとも実行中StateがGraphから欠落しないようにしています。
 void AddNodeIfMissing(
     const AnimatorStateMachine& stateMachine,
     const std::string& stateName,
@@ -160,14 +150,11 @@ void AddNodeIfMissing(
         return;
     }
 
-    const auto found = std::find_if(
-        outInfo.Nodes.begin(),
-        outInfo.Nodes.end(),
+    const auto found = std::find_if(outInfo.Nodes.begin(), outInfo.Nodes.end(),
         [&stateName](const AnimatorStateMachineNodeRuntimeDebugInfo& node)
         {
             return node.StateName == stateName;
         });
-
     if (found != outInfo.Nodes.end())
     {
         return;
@@ -175,24 +162,24 @@ void AddNodeIfMissing(
 
     AnimatorStateMachineNodeRuntimeDebugInfo node{};
     node.StateName = stateName;
-
     const AnimatorStateDefinition* definition = stateMachine.FindState(stateName);
     if (definition != nullptr)
     {
         node.IsBlendTree = definition->IsBlendTreeState();
     }
-
     outInfo.Nodes.push_back(std::move(node));
 }
 
-// State Machine GraphとTransition診断情報を1つのSnapshotへまとめます。
-// Editor側はこの結果だけを描画し、Transition ConditionやExit Timeを独自に再評価しないことを前提とします。
 void BuildGraphRuntimeInfo(
     const AnimatorStateMachine& stateMachine,
     AnimatorStateMachineRuntimeDebugInfo& outInfo)
 {
     const auto& transitions = stateMachine.GetTransitions();
     outInfo.Transitions.reserve(transitions.size());
+
+    // EvaluateTransitions()は登録順に走査し、より高いPriorityが見つかった場合だけ候補を置き換えます。
+    // そのため同Priorityでは先に登録されたTransitionが勝ちます。Debug Snapshotでも同じ規則をそのまま再現します。
+    std::size_t selectedCandidateIndex = static_cast<std::size_t>(-1);
 
     for (const AnimatorTransition& transition : transitions)
     {
@@ -205,35 +192,20 @@ void BuildGraphRuntimeInfo(
         debugTransition.HasExitTime = transition.HasExitTime;
         debugTransition.ExitTime = transition.ExitTime;
         debugTransition.Priority = transition.Priority;
+        debugTransition.CrossFadeDuration = transition.CrossFadeDuration;
 
-        // IsActiveは「条件が成立している」ではなく、現在AnimatorがこのFrom -> ToをCrossFadeしていることを表します。
-        // IsEligibleとは意味を分けることで、発火直前と発火後の状態をEditorから区別できます。
         debugTransition.IsActive =
-            outInfo.IsCrossFading &&
-            outInfo.Current.HasState &&
-            outInfo.Pending.HasState &&
-            transition.FromState == outInfo.Current.StateName &&
-            transition.ToState == outInfo.Pending.StateName;
+            outInfo.IsCrossFading && outInfo.Current.HasState && outInfo.Pending.HasState &&
+            transition.FromState == outInfo.Current.StateName && transition.ToState == outInfo.Pending.StateName;
 
         debugTransition.IsSourceCurrent =
-            outInfo.Current.HasState &&
-            transition.FromState == outInfo.Current.StateName;
-
-        // Exit Timeは遷移元StateのNormalizedTimeに対して評価されるため、
-        // Current以外のTransitionには誤解を招く再生時間を設定せず0.0のままにします。
-        debugTransition.SourceNormalizedTime = debugTransition.IsSourceCurrent
-            ? outInfo.Current.NormalizedTime
-            : 0.0f;
-
+            outInfo.Current.HasState && transition.FromState == outInfo.Current.StateName;
+        debugTransition.SourceNormalizedTime = debugTransition.IsSourceCurrent ? outInfo.Current.NormalizedTime : 0.0f;
         debugTransition.IsExitTimeMet = transition.HasExitTime == false ||
-            (debugTransition.IsSourceCurrent &&
-             debugTransition.SourceNormalizedTime >= transition.ExitTime);
+            (debugTransition.IsSourceCurrent && debugTransition.SourceNormalizedTime >= transition.ExitTime);
 
-        // ConditionsはAND条件です。各Conditionの個別結果を残したうえで、Transition全体の成立状態も保持します。
-        // Parameter取得に失敗した場合も成立扱いにはせず、Debug表示から異常を見つけられるようfalseへ倒します。
         debugTransition.Conditions.reserve(transition.Conditions.size());
         debugTransition.AreConditionsMet = true;
-
         for (const AnimatorCondition& condition : transition.Conditions)
         {
             AnimatorConditionRuntimeDebugInfo conditionInfo{};
@@ -245,35 +217,39 @@ void BuildGraphRuntimeInfo(
             debugTransition.Conditions.push_back(std::move(conditionInfo));
         }
 
-        // EvaluateTransitions()はCurrent Stateから出るTransitionだけを評価し、
-        // CrossFade中は新規Transitionを開始しません。DebugのEligibleも同じ前提に揃えます。
-        // したがってIsEligibleは「このFrameで遷移候補になれるか」を表し、IsActiveとは別概念です。
         debugTransition.IsEligible =
-            debugTransition.IsSourceCurrent &&
-            outInfo.IsCrossFading == false &&
-            debugTransition.IsExitTimeMet &&
-            debugTransition.AreConditionsMet;
+            debugTransition.IsSourceCurrent && outInfo.IsCrossFading == false &&
+            debugTransition.IsExitTimeMet && debugTransition.AreConditionsMet;
 
         outInfo.Transitions.push_back(std::move(debugTransition));
+        const std::size_t currentIndex = outInfo.Transitions.size() - 1;
+
+        // Eligibleな候補の中から、Runtimeと同じPriority規則で「このFrameに選ばれる1本」を記録します。
+        // 同Priorityでは > ではなく >= を使わないことが重要で、先に登録された候補を維持します。
+        if (outInfo.Transitions[currentIndex].IsEligible &&
+            (selectedCandidateIndex == static_cast<std::size_t>(-1) ||
+             outInfo.Transitions[currentIndex].Priority > outInfo.Transitions[selectedCandidateIndex].Priority))
+        {
+            selectedCandidateIndex = currentIndex;
+        }
     }
 
-    // Transitionを持たない実行中StateもGraph上には必要なので、Runtime参照中のStateを最後に補完します。
+    if (selectedCandidateIndex != static_cast<std::size_t>(-1))
+    {
+        outInfo.Transitions[selectedCandidateIndex].IsSelectedCandidate = true;
+    }
+
     AddNodeIfMissing(stateMachine, outInfo.Current.StateName, outInfo);
     AddNodeIfMissing(stateMachine, outInfo.Pending.StateName, outInfo);
     AddNodeIfMissing(stateMachine, outInfo.QueuedStateName, outInfo);
 
-    // unorderedな内部格納順にEditorレイアウトが引きずられないよう、State名で順序を安定化します。
-    // 同じState MachineならFrame間でNode位置が不用意に入れ替わらないことが目的です。
-    std::sort(
-        outInfo.Nodes.begin(),
-        outInfo.Nodes.end(),
+    std::sort(outInfo.Nodes.begin(), outInfo.Nodes.end(),
         [](const AnimatorStateMachineNodeRuntimeDebugInfo& lhs,
            const AnimatorStateMachineNodeRuntimeDebugInfo& rhs)
         {
             return lhs.StateName < rhs.StateName;
         });
 
-    // Graph Node自身にもRuntime役割を付与し、描画側がState名を再比較しなくても色分けできるようにします。
     for (auto& node : outInfo.Nodes)
     {
         node.IsCurrent = outInfo.Current.HasState && node.StateName == outInfo.Current.StateName;
@@ -288,31 +264,17 @@ bool BuildAnimatorStateMachineRuntimeDebugInfo(
     AnimatorStateMachineRuntimeDebugInfo& outInfo)
 {
     outInfo = {};
-
     const Animator& animator = stateMachine.GetAnimator();
 
-    // Current/PendingはAnimatorが実際に再生しているStateから構築します。
-    // StateMachine定義だけから再構築するとCrossFade途中のTime/BlendParameterと食い違うためです。
     if (stateMachine.HasCurrentState())
     {
-        BuildStateRuntimeInfo(
-            stateMachine,
-            stateMachine.GetCurrentStateName(),
-            animator.GetCurrentState(),
-            outInfo.Current);
+        BuildStateRuntimeInfo(stateMachine, stateMachine.GetCurrentStateName(), animator.GetCurrentState(), outInfo.Current);
     }
-
     if (stateMachine.GetPendingStateName().empty() == false)
     {
-        BuildStateRuntimeInfo(
-            stateMachine,
-            stateMachine.GetPendingStateName(),
-            animator.GetNextState(),
-            outInfo.Pending);
+        BuildStateRuntimeInfo(stateMachine, stateMachine.GetPendingStateName(), animator.GetNextState(), outInfo.Pending);
     }
 
-    // Queued/CrossFade情報を先に確定してからGraphを構築します。
-    // BuildGraphRuntimeInfo()はこれらを使ってActive TransitionやIsEligibleを判定します。
     outInfo.QueuedStateName = stateMachine.GetQueuedStateName();
     outInfo.IsCrossFading = animator.IsCrossFading();
     outInfo.CrossFadeWeight = animator.GetCrossFadeWeight();
