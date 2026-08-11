@@ -313,6 +313,24 @@ void RunTransitionPrioritySelectionRuntimeSnapshotTest()
     assert(runtime.Transitions[1].Priority == 100);
     assert(NearlyEqual(runtime.Transitions[0].CrossFadeDuration, 0.15f));
     assert(NearlyEqual(runtime.Transitions[1].CrossFadeDuration, 0.35f));
+
+    // Debug Snapshotが予測したHighPriorityを、実際のEvaluateTransitions()も選択することを確認します。
+    // Update(0)でもTransition評価は実行され、Animation時間を進めずCrossFade開始直後の状態だけを観測できます。
+    stateMachine.Update(0.0f);
+
+    AnimatorStateMachineRuntimeDebugInfo afterSelection{};
+    assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, afterSelection));
+    assert(afterSelection.Current.StateName == "Source");
+    assert(afterSelection.Pending.StateName == "HighPriority");
+    assert(afterSelection.IsCrossFading);
+    assert(afterSelection.Transitions.size() == 2);
+    assert(afterSelection.Transitions[0].IsActive == false);
+    assert(afterSelection.Transitions[1].IsActive);
+
+    // CrossFade中は新しい自動Transitionを選ばないため、発火後のSnapshotではSelected Candidateを解除します。
+    // これによりEditorでは「発火直前のSELECTED」と「発火後のACTIVE」を明確に区別できます。
+    assert(afterSelection.Transitions[0].IsSelectedCandidate == false);
+    assert(afterSelection.Transitions[1].IsSelectedCandidate == false);
 }
 
 void RunTransitionSamePriorityTieBreakRuntimeSnapshotTest()
@@ -331,6 +349,7 @@ void RunTransitionSamePriorityTieBreakRuntimeSnapshotTest()
     first.FromState = "Source";
     first.ToState = "FirstRegistered";
     first.Priority = 50;
+    first.CrossFadeDuration = 0.25f;
     first.Conditions = { { "CanTransition", AnimatorConditionOperator::Equal, true } };
     assert(stateMachine.AddTransition(first));
 
@@ -338,6 +357,7 @@ void RunTransitionSamePriorityTieBreakRuntimeSnapshotTest()
     second.FromState = "Source";
     second.ToState = "SecondRegistered";
     second.Priority = 50;
+    second.CrossFadeDuration = 0.25f;
     second.Conditions = { { "CanTransition", AnimatorConditionOperator::Equal, true } };
     assert(stateMachine.AddTransition(second));
     assert(stateMachine.SetInitialState("Source", true));
@@ -352,12 +372,27 @@ void RunTransitionSamePriorityTieBreakRuntimeSnapshotTest()
     assert(runtime.Transitions[0].IsSelectedCandidate);
     assert(runtime.Transitions[1].IsSelectedCandidate == false);
     assert(runtime.Transitions[0].Priority == runtime.Transitions[1].Priority);
+
+    // Tie BreakのDebug予測だけでなく、実際のStateMachineも先に登録されたFirstRegisteredへ遷移することを確認します。
+    // これでDebug側とRuntime側のPriority比較規則が将来別々に変更された場合もSelf Testで検出できます。
+    stateMachine.Update(0.0f);
+
+    AnimatorStateMachineRuntimeDebugInfo afterSelection{};
+    assert(BuildAnimatorStateMachineRuntimeDebugInfo(stateMachine, afterSelection));
+    assert(afterSelection.Current.StateName == "Source");
+    assert(afterSelection.Pending.StateName == "FirstRegistered");
+    assert(afterSelection.IsCrossFading);
+    assert(afterSelection.Transitions.size() == 2);
+    assert(afterSelection.Transitions[0].IsActive);
+    assert(afterSelection.Transitions[1].IsActive == false);
+    assert(afterSelection.Transitions[0].IsSelectedCandidate == false);
+    assert(afterSelection.Transitions[1].IsSelectedCandidate == false);
 }
 } // namespace
 
 void RunBlendTreeRuntimeSelfTests()
 {
-    // Debug API単体 -> 実際の連続Blend -> State Graph -> Transition診断 -> Priority選択の順で、
+    // Debug API単体 -> 実際の連続Blend -> State Graph -> Transition診断 -> Priority選択 -> 実発火照合の順で、
     // Editor表示に必要なRuntime情報とTransition選択規則を下層から段階的に検証します。
     RunDirectWeightDebugTest();
     RunSmoothSpeedRuntimeTest();
