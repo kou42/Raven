@@ -151,12 +151,15 @@ public:
     // Animator Transition
     // ------------------------------------------------------------------------
     // From/To Stateが登録済みで、Conditionが参照するParameterも存在する場合だけ登録します。
-    // ConditionsはAND評価です。登録順がTransitionの優先順位になります。
+    // ConditionsはAND評価です。同時成立時はPriorityが高いものを優先し、同値なら登録順を維持します。
     bool AddTransition(AnimatorTransition transition);
 
     // Any Stateは「現在Stateに関係なく同じ条件で同じStateへ遷移したい」場合の便利APIです。
     // 現段階では専用Runtime Transition型を増やさず、登録時点で存在する全StateからTo Stateへの
-    // 通常Transitionへ展開します。これにより既存のEvaluateTransitions()の単純な評価順を維持できます。
+    // 通常Transitionへ展開します。これにより既存のTransition実行経路をそのまま再利用できます。
+    //
+    // priorityは通常Transitionより高い値を指定することで、同FrameにLocomotionとJumpなどが
+    // 同時成立してもAny State側を先に選択できます。既定値100は通常Transitionの既定値0より高くします。
     //
     // 注意: 登録後にStateを追加しても自動では対象にならないため、Controller Builderでは
     // 全Stateを登録し終えた後にAny State Transitionを追加します。将来Editorから動的にState定義を
@@ -164,7 +167,8 @@ public:
     bool AddAnyStateTransition(
         const std::string& toState,
         std::vector<AnimatorCondition> conditions,
-        float crossFadeDuration = 0.2f)
+        float crossFadeDuration = 0.2f,
+        int priority = 100)
     {
         if (toState.empty() || !HasState(toState))
         {
@@ -183,6 +187,7 @@ public:
             transition.FromState = fromState;
             transition.ToState = toState;
             transition.CrossFadeDuration = crossFadeDuration;
+            transition.Priority = priority;
             transition.Conditions = conditions;
 
             if (!AddTransition(std::move(transition)))
@@ -299,8 +304,8 @@ private:
     // 型不一致や未登録Parameterは成立しないConditionとして扱います。
     bool EvaluateCondition(const AnimatorCondition& condition) const;
 
-    // 現在Stateから出るTransitionを登録順に調べ、最初に全Conditionが成立したものを実行します。
-    // Transition開始に成功した場合のみTriggerを消費します。
+    // 現在Stateから出るTransitionを評価し、Priority最大の成立Transitionを実行します。
+    // Priorityが同じ場合はvector上の登録順を維持し、Transition開始成功時だけTriggerを消費します。
     bool EvaluateTransitions();
 
     void ConsumeTransitionTriggers(const AnimatorTransition& transition);
@@ -316,7 +321,7 @@ private:
     // Parameter値はEntity/Animator Instanceごとに異なるRuntime StateなのでState Machineが保持します。
     std::unordered_map<std::string, AnimatorParameter> m_Parameters;
 
-    // Transitionは登録順を優先順位として扱うためvectorで保持します。
+    // Transitionは登録順も同Priority時のTie Breakとして意味を持つためvectorで保持します。
     std::vector<AnimatorTransition> m_Transitions;
 
     // CrossFade中もCurrentは遷移元を維持し、Pendingに遷移先を保持します。
