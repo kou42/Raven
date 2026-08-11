@@ -63,6 +63,21 @@ public:
     void OnEvent(Event& event) override;
 
 private:
+    // ========================================================================
+    // Editor Root UI
+    // ========================================================================
+    // Main Viewport全体を覆うHost Windowを作り、その内部にDockSpaceを配置します。
+    // Host Window自身はEditor背景/メニューバー/Docking領域の管理だけを担当し、
+    // Statistics等の実際のEditor Windowは独立したPanelとしてDockSpaceへDockされます。
+    void BeginDockSpace();
+    void EndDockSpace();
+
+    // Editor全体のMenuBar描画です。
+    // 現段階ではViewメニューからStatistics Panelの表示/非表示を切り替えます。
+    // 今後Hierarchy / Inspector / Animation Debug等も同じWindowメニューへ追加できます。
+    void RenderMenuBar();
+
+private:
     // ApplicationはEditorLayerより長生きするため非所有ポインタとして保持します。
     // Scene切り替え後もApplication::GetScene()を毎frame参照することで、古いSceneポインタを
     // Panel側へ保持し続けることを避けます。
@@ -75,6 +90,15 @@ private:
     // 今後のPanelも同じ方針でメンバとして追加し、EditorLayerは呼び出し順序と
     // Runtime状態の受け渡しだけを担当します。
     StatisticsPanel m_StatisticsPanel;
+
+    // Panelの表示状態はEditorLayerが管理します。
+    // Panel内部にEditor全体のWindow管理状態を持たせないことで、MenuBarや将来の
+    // Workspace保存機能から一元的に表示状態を制御できるようにします。
+    bool m_ShowStatisticsPanel = true;
+
+    // BeginDockSpace()がHost WindowをBeginできたかに関係なく、ImGui::Begin()を呼んだ場合は
+    // 必ず対応するImGui::End()が必要です。呼び出し構造を明確にするため状態を保持します。
+    bool m_DockSpaceBegun = false;
 };
 
 } // namespace Raven
