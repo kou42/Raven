@@ -1,5 +1,8 @@
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
+#include "Raven/Renderer/Buffer/VertexArray.h"
+#include "Raven/Renderer/Buffer/IndexBuffer.h"
+#include "Raven/Renderer/Renderer.h"
 
 namespace Raven
 {
@@ -18,7 +21,7 @@ void RenderCommand::SetAPI(
 
 void RenderCommand::Init()
 {
-    if (!s_RendererAPI)
+    if (s_RendererAPI == nullptr)
     {
         switch (RendererAPI::GetAPI())
         {
@@ -49,7 +52,8 @@ void RenderCommand::Init()
         }
     }
 
-    if (!s_RendererAPI) {
+    if (s_RendererAPI == nullptr)
+    {
         return;
     }
 
@@ -58,7 +62,8 @@ void RenderCommand::Init()
 
 void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
-    if (!s_RendererAPI) {
+    if (s_RendererAPI == nullptr)
+    {
         assert(s_RendererAPI);
         return;
     }
@@ -67,7 +72,8 @@ void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t
 
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
-    if (!s_RendererAPI) {
+    if (s_RendererAPI == nullptr)
+    {
         assert(s_RendererAPI);
         return;
     }
@@ -76,7 +82,8 @@ void RenderCommand::SetClearColor(float r, float g, float b, float a)
 
 void RenderCommand::Clear()
 {
-    if (!s_RendererAPI) {
+    if (s_RendererAPI == nullptr)
+    {
         return;
     }
     s_RendererAPI->Clear();
@@ -84,16 +91,33 @@ void RenderCommand::Clear()
 
 void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
 {
-    if (!s_RendererAPI) {
+    if (s_RendererAPI == nullptr || vertexArray == nullptr)
+    {
         assert(s_RendererAPI);
         return;
     }
+
+    // indexCount == 0 はRendererAPI側と同じく「VAOのIndexBuffer全体を描画する」意味です。
+    // 実際に発行されるIndex数へ解決してから統計へ記録することで、呼び出し経路によらず
+    // StatisticsPanelの値を実Draw Callと一致させます。
+    uint32_t resolvedIndexCount = indexCount;
+    if (resolvedIndexCount == 0)
+    {
+        const Ref<IndexBuffer>& indexBuffer = vertexArray->GetIndexBuffer();
+        if (indexBuffer != nullptr)
+        {
+            resolvedIndexCount = indexBuffer->GetCount();
+        }
+    }
+
+    Renderer::RecordIndexedDraw(resolvedIndexCount);
     s_RendererAPI->DrawIndexed(vertexArray, indexCount);
 }
 
 RendererAPI& RenderCommand::GetAPI()
 {
-    if (!s_RendererAPI) {
+    if (s_RendererAPI == nullptr)
+    {
         assert(s_RendererAPI);
         return *s_dummyRendererAPI;
     }
