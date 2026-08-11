@@ -1,6 +1,7 @@
 #include "Raven/Editor/Panels/InspectorPanel.h"
 
 #include "Raven/Scene/Components.h"
+#include "Raven/Scene/Scene.h"
 
 #include <algorithm>
 #include <cstring>
