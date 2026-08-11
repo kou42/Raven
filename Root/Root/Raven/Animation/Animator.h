@@ -26,10 +26,14 @@ namespace Raven
 class Animator
 {
 public:
+    // ClipをCurrent Motionとして再生します。
+    // restart=falseかつ同じClipの場合は現在位相を維持し、別Motionから切り替わる場合は
+    // Motionの種類が変わるため先頭（逆再生時は末尾）から開始します。
     void Play(std::shared_ptr<AnimationClip> clip, bool restart = true);
 
     // BlendTree1DをCurrent Motionとして再生します。
     // BlendParameterはState Machineが持つSpeedなどのFloat Parameter値を同期して使用します。
+    // Blend Tree自身はRuntime時間を持たず、AnimatorStateのNormalizedTimeを共有再生位相として使います。
     void PlayBlendTree(
         std::shared_ptr<BlendTree1D> blendTree,
         float blendParameter,
@@ -37,10 +41,13 @@ public:
 
     // 現在Motionからtarget Clipへduration秒かけて滑らかに遷移します。
     // まずは1段CrossFadeに限定し、Fade中の再CrossFadeはfalseを返します。
+    // 現在のBlend済みPoseをSnapshotとして保持できない段階で割り込みを許可するとPoseが跳ぶため、
+    // 複雑なInterrupt TransitionはSnapshot Poseを導入した段階で別ポリシーとして追加します。
     bool CrossFade(std::shared_ptr<AnimationClip> clip, float duration, bool restart = true);
 
     // 現在MotionからBlendTree1DへCrossFadeします。
     // Clip -> BlendTree / BlendTree -> BlendTreeの両方を同じPose Blend経路で扱います。
+    // CrossFade中の再割り込みを拒否するルールはClip版CrossFadeと共通です。
     bool CrossFadeBlendTree(
         std::shared_ptr<BlendTree1D> blendTree,
         float blendParameter,
@@ -80,6 +87,9 @@ public:
     bool IsPaused() const { return m_Paused; }
 
     // 非Loop Motionが再生方向側の端へ到達したかを示します。
+    // IsPlaying()だけではPause/Stopとの区別が付かないため、State Machineから
+    // 「Motion終了を遷移条件にする」場合にも利用できる専用状態として保持します。
+    // CrossFade完了時は、遷移先Motionが終端へ到達していた場合にtrueになります。
     bool IsFinished() const { return m_Finished; }
 
     bool IsCrossFading() const { return m_CrossFading; }
@@ -87,6 +97,8 @@ public:
     float GetCrossFadeWeight() const;
 
     const TransformPose& GetCurrentPose() const { return m_CurrentPose; }
+
+    // Clip再生時だけ有効な互換APIです。Current MotionがBlendTreeの場合はnullptrを返します。
     const std::shared_ptr<AnimationClip>& GetClip() const { return m_CurrentState.Clip; }
     const AnimatorState& GetCurrentState() const { return m_CurrentState; }
     const AnimatorState& GetNextState() const { return m_NextState; }
@@ -108,13 +120,17 @@ public:
 
 private:
     // Stateの再生時間/位相だけを進めます。
-    // BlendTreeでは現在Parameterでの補間Durationを1周期長としてNormalizedTimeを進めます。
+    // ClipではClip Duration、BlendTreeでは現在Parameter位置の補間Durationを1周期長として扱います。
+    // 非Loop Motionで再生方向側の端へ到達した場合はtrueを返します。
     bool AdvanceState(AnimatorState& state, float dt);
 
     // Motion種類に応じてDurationを取得します。
-    // BlendTreeでは現在Parameter値における補間Durationを返します。
+    // BlendTreeでは現在Parameter値における隣接Child Durationの補間値を返します。
+    // Parameterが変わってDurationが変化してもNormalizedTimeは維持し、歩行周期の位相を保ちます。
     float GetStateDuration(const AnimatorState& state) const;
 
+    // AnimatorStateのMotion種類を隠蔽して最終PoseをSampleする共通入口です。
+    // EvaluateCurrentPose()はClip / BlendTreeを個別判定せず、この2関数の結果だけをCrossFadeします。
     bool SampleTransformPose(const AnimatorState& state, TransformPose& outPose) const;
     bool SampleSkeletonPose(const AnimatorState& state, SkeletonPose& outPose) const;
 
@@ -123,6 +139,7 @@ private:
     void EvaluateCurrentPose();
 
     // Fade完了時にNextStateをCurrentStateへ昇格します。
+    // AnimatorStateごと昇格するためClip/BlendTree種別・再生位相・BlendParameterも途切れません。
     void CompleteCrossFade();
 
 private:
@@ -146,6 +163,7 @@ private:
     const Skeleton* m_Skeleton = nullptr;
 
     // CrossFadeでは2つのMotionを同時Sampleするため、一時PoseをAnimator内部へ保持します。
+    // m_CurrentSkeletonPoseが最終的にRenderer/Skinningへ渡す出力Poseです。
     SkeletonPose m_CurrentSkeletonPose{};
     SkeletonPose m_NextSkeletonPose{};
 };
