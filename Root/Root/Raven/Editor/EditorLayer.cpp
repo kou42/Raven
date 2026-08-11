@@ -25,6 +25,11 @@ void EditorLayer::OnAttach()
     // それぞれ専用FramebufferへSceneを描画し、そのColor Attachment Textureを
     // Dear ImGuiのWindow内へ表示します。
     //
+    // 重要:
+    // EditorLayerはOpenGLFramebuffer等の具体的なPlatform実装を直接生成しません。
+    // Framebuffer::Create()を通すことで、現在のRendererAPIに対応した実装をRenderer層で選択し、
+    // Editor側からOpenGL / DirectX / Vulkan等の違いを隠蔽します。
+    //
     // 初期サイズはDock Layout確定前なので仮値です。
     // 実際の表示サイズはRenderSceneView()/RenderGameView()でContentRegionから取得し、
     // 次frameのOnRender()でFramebuffer::Resize()へ反映します。
@@ -32,10 +37,10 @@ void EditorLayer::OnAttach()
     // SceneとGameを最初から別Framebufferにしている理由は、次段階でScene Viewだけへ
     // Editor Camera / Grid / Selection Outline / Gizmo等を追加しても、Game Viewの
     // Runtime表示へEditor専用描画が混入しない構造を保つためです。
-    m_SceneFramebuffer = std::make_unique<Framebuffer>(
+    m_SceneFramebuffer = Framebuffer::Create(
         static_cast<std::uint32_t>(m_SceneViewportWidth),
         static_cast<std::uint32_t>(m_SceneViewportHeight));
-    m_GameFramebuffer = std::make_unique<Framebuffer>(
+    m_GameFramebuffer = Framebuffer::Create(
         static_cast<std::uint32_t>(m_GameViewportWidth),
         static_cast<std::uint32_t>(m_GameViewportHeight));
 }
@@ -45,9 +50,9 @@ void EditorLayer::OnDetach()
     // ========================================================================
     // Editor Viewport GPU resource shutdown
     // ========================================================================
-    // Applicationの破棄順序により、この時点ではWindow / OpenGL Contextがまだ生存しています。
-    // FramebufferのdestructorはOpenGLのFramebuffer / Texture / Renderbufferを削除するため、
-    // Contextが破棄される前のEditorLayer::OnDetach()で明示的に解放します。
+    // Applicationの破棄順序により、この時点ではWindow / Graphics Contextがまだ生存しています。
+    // Framebufferの具体実装はGPU Resourceを所有するため、Graphics Contextが破棄される前の
+    // EditorLayer::OnDetach()で明示的に解放します。
     m_SceneFramebuffer.reset();
     m_GameFramebuffer.reset();
 }
@@ -126,12 +131,12 @@ void EditorLayer::RenderSceneToFramebuffer(Framebuffer& framebuffer)
     // ========================================================================
     // Render target switching
     // ========================================================================
-    // Framebuffer::Bind()はOpenGL FBOを切り替えるだけでなく、glViewportもAttachmentの
-    // Width/Heightへ変更します。そのためScene::OnRender()内のClearを含む全描画命令は
-    // Main framebufferではなく、このEditor Viewport用Framebufferへ出力されます。
+    // EditorLayerから見えるのはFramebuffer共通インターフェースだけです。
+    // Bind()内部でOpenGLならFBO、将来DirectXなら対応するRender Targetを設定します。
+    // 具体APIをEditorへ漏らさないことでRenderer backendの差し替え範囲を限定します。
     //
-    // 描画終了後はFramebuffer::Unbind()でdefault framebufferへ戻します。
-    // この復帰を忘れると、後続のImGui描画までoff-screen framebufferへ出力されるため重要です。
+    // Scene::OnRender()内のClearを含む全描画命令は、Bindされたoff-screen描画先へ出力されます。
+    // 描画終了後はUnbind()で通常の描画先へ戻し、後続のImGui描画へ影響を残しません。
     framebuffer.Bind();
     activeScene->OnRender();
     framebuffer.Unbind();
@@ -247,9 +252,9 @@ void EditorLayer::RenderSceneView()
 
             if (m_SceneFramebuffer != nullptr)
             {
-                // Ravenが固定しているDear ImGuiは1.92系です。
-                // 1.91.4以降のdefault ImTextureIDはImU64なので、OpenGL GLuintを整数として
-                // ImTextureIDへ明示変換して渡します。
+                // 現在のRendererAPIはOpenGLなのでRendererIDはOpenGL Texture IDとして扱えます。
+                // この部分はFramebuffer抽象化の中でもまだbackend依存が残っている境界です。
+                // DirectX/Vulkan対応時にはTexture/ImGui backendの抽象化と合わせて置き換えます。
                 //
                 // OpenGL Textureは左下原点ですがDear ImGuiのImageは通常左上から表示するため、
                 // UV0=(0,1), UV1=(1,0)としてY方向を反転し、画面を正立させます。
@@ -291,7 +296,8 @@ void EditorLayer::RenderGameView()
 
             if (m_GameFramebuffer != nullptr)
             {
-                // Scene Viewと同じ理由でOpenGL TextureのY方向を反転して表示します。
+                // Scene Viewと同じ理由で、現在のOpenGL backendではTexture IDをImGuiへ渡し、
+                // Y方向を反転して表示します。
                 const ImTextureID textureID = static_cast<ImTextureID>(
                     m_GameFramebuffer->GetColorAttachmentRendererID());
 
