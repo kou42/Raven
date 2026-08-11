@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorLayer.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Scene/Scene.h"
 
 #include <imgui.h>
 
@@ -46,6 +47,13 @@ void EditorLayer::OnImGuiRender(float dt)
     }
 
     // ========================================================================
+    // Editor selection validation
+    // ========================================================================
+    // Hierarchyが非表示でもRuntime側ではEntityが破棄されたりSceneが差し替わる可能性があります。
+    // 選択状態はEditor全体で共有するため、Panel描画前に毎frame検証して無効参照を残しません。
+    ValidateSelectedEntity();
+
+    // ========================================================================
     // Editor root window / DockSpace
     // ========================================================================
     // 各Panelを描画する前にDockSpaceを作ります。
@@ -72,6 +80,18 @@ void EditorLayer::OnImGuiRender(float dt)
         m_AnimationDebugPanel.OnImGuiRender(m_Application->GetScene());
     }
 
+    // ========================================================================
+    // Scene Hierarchy
+    // ========================================================================
+    // HierarchyはActive SceneのEntity一覧を表示し、EditorLayerが所有する選択Entityだけを更新します。
+    // 選択状態をPanelの外へ置くことで、次のInspectorや将来のGizmoが同じEntityを利用できます。
+    if (m_ShowSceneHierarchyPanel)
+    {
+        m_SceneHierarchyPanel.OnImGuiRender(
+            m_Application->GetScene(),
+            m_SelectedEntity);
+    }
+
     EndDockSpace();
 }
 
@@ -81,6 +101,42 @@ void EditorLayer::OnEvent(Event& event)
 
     // Editor Camera操作やGizmo操作などの入力は今後ここで処理します。
     // Editor側で入力を消費した場合はevent.Handled = trueとしてRuntime側への伝播を止めます。
+}
+
+void EditorLayer::ValidateSelectedEntity()
+{
+    if (m_Application == nullptr)
+    {
+        m_SelectedEntity = Entity{};
+        return;
+    }
+
+    Scene* activeScene = m_Application->GetScene();
+    if (activeScene == nullptr)
+    {
+        m_SelectedEntity = Entity{};
+        return;
+    }
+
+    if (m_SelectedEntity == false)
+    {
+        return;
+    }
+
+    // Entity自身が保持するSceneと現在のActive Sceneを明示比較します。
+    // 同じIndex/GenerationのEntityが別Sceneに存在しても、それはEditor上では別Entityです。
+    if (m_SelectedEntity.GetScene() != activeScene)
+    {
+        m_SelectedEntity = Entity{};
+        return;
+    }
+
+    // Generationまで含めた生存確認を行います。
+    // Destroy後に同じIndexが再利用されても旧選択Entityはここで無効化されます。
+    if (activeScene->IsEntityAlive(m_SelectedEntity) == false)
+    {
+        m_SelectedEntity = Entity{};
+    }
 }
 
 void EditorLayer::BeginDockSpace()
@@ -187,6 +243,7 @@ void EditorLayer::RenderMenuBar()
     {
         ImGui::MenuItem("Statistics", nullptr, &m_ShowStatisticsPanel);
         ImGui::MenuItem("Animation Debug", nullptr, &m_ShowAnimationDebugPanel);
+        ImGui::MenuItem("Scene Hierarchy", nullptr, &m_ShowSceneHierarchyPanel);
         ImGui::EndMenu();
     }
 
