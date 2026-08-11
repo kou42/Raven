@@ -22,8 +22,10 @@ class PhysicsWorld;
 class PhysicsDebugRenderer
 {
 public:
-    // Scene/View/Projectionへの参照を保持し、RenderRegistered()から毎フレーム描画されます。
-    PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection);
+    // Sceneだけを所有元として保持します。
+    // View/Projectionは描画時にRenderer Camera Contextから取得するため、SceneGame側に
+    // Debug Renderer専用のCamera行列参照を維持する必要はありません。
+    explicit PhysicsDebugRenderer(Scene& scene);
     ~PhysicsDebugRenderer();
     PhysicsDebugRenderer(const PhysicsDebugRenderer&) = delete;
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
@@ -80,10 +82,10 @@ private:
         int viewportWidth, int viewportHeight, const math::Vec3& color);
 
 private:
-    // View/Projectionは所有せず参照のみ。呼び出し側で寿命を管理します。
-    Scene* m_Scene=nullptr; const PhysicsWorld* m_PhysicsWorld=nullptr;
-    const math::Mat4* m_View=nullptr; const math::Mat4* m_Projection=nullptr;
-    Ref<Material> m_Material; PhysicsDebugSettings m_Settings{};
+    Scene* m_Scene = nullptr;
+    const PhysicsWorld* m_PhysicsWorld = nullptr;
+    Ref<Material> m_Material;
+    PhysicsDebugSettings m_Settings{};
     bool m_WasOverlayKeyPressed=false, m_WasAABBKeyPressed=false, m_WasOBBKeyPressed=false;
     bool m_WasFatAABBKeyPressed=false, m_WasTreeKeyPressed=false, m_WasPairKeyPressed=false;
     bool m_WasContactPointKeyPressed=false, m_WasContactNormalKeyPressed=false;
