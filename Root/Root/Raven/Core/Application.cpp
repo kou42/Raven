@@ -32,8 +32,6 @@ Application::Application()
 
 Application::~Application()
 {
-    // 通常Layerを先にDetachします。
-    // EditorLayer::OnDetach()がImGui関連リソースへ触れる場合でも、ImGui Contextがまだ有効な順序を保証します。
     for (auto& layer : m_Layers)
     {
         if (layer != nullptr)
@@ -42,7 +40,6 @@ Application::~Application()
         }
     }
 
-    // ImGui OpenGL backendは有効なContextを必要とするためWindowより先に明示的にDetachします。
     if (m_ImGuiLayer != nullptr)
     {
         m_ImGuiLayer->OnDetach();
@@ -97,9 +94,11 @@ void Application::Run()
         const double currentTime = glfwGetTime();
         float frameDeltaTime = static_cast<float>(currentTime - previousTime);
         previousTime = currentTime;
-
-        // デバッグ停止やウィンドウ移動後の巨大dtを制限します。
         frameDeltaTime = std::min(frameDeltaTime, 0.25f);
+
+        // Renderer統計はApplication frame単位で集計します。
+        // Scene描画より前にResetすることで、Scene本体とその後のDebug Overlayを同じframeへ含めます。
+        Renderer::BeginFrame();
 
         if (m_scene != nullptr)
         {
@@ -107,7 +106,6 @@ void Application::Run()
             m_scene->OnRender();
         }
 
-        // 通常LayerのRuntime更新・描画はDear ImGui frameとは独立して実行します。
         for (auto& layer : m_Layers)
         {
             if (layer != nullptr)
@@ -119,8 +117,6 @@ void Application::Run()
 
         if (m_ImGuiLayer != nullptr)
         {
-            // Dear ImGuiは1 frameにつきBegin/Endを一度だけ実行し、その間で各LayerにUI構築を依頼します。
-            // EditorLayerも通常Layerとして登録されるため、Application側にEditor固有分岐を追加する必要はありません。
             m_ImGuiLayer->Begin();
 
             for (auto& layer : m_Layers)
@@ -148,8 +144,6 @@ void Application::OnEvent(Event& event)
         event.Handled = true;
     }
 
-    // Eventがまだ処理されていない場合だけLayerへ逆順伝播します。
-    // 後から積まれたEditor/Overlay系Layerほど先に入力を受け取れるため、Editor UIとの統合にも向いた順序です。
     for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it)
     {
         if (event.Handled)
