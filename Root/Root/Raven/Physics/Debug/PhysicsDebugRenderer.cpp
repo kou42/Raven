@@ -468,19 +468,15 @@ void PhysicsDebugRenderer::AddOverlayText(std::vector<DebugVertex>& vertices, st
             continue;
         }
 
-        const uint8_t* rows = PhysicsDebugOverlayFont::FindGlyph(c);
-        if (rows == nullptr)
-        {
-            cursorX += advance;
-            continue;
-        }
+        const auto glyph = detail::GetPhysicsDebugGlyph(c);
 
         for (int row = 0; row < 7; ++row)
         {
+            const uint8_t rowBits = glyph[row];
             int column = 0;
             while (column < 5)
             {
-                const bool lit = (rows[row] & (1u << (4 - column))) != 0;
+                const bool lit = (rowBits & (1u << (4 - column))) != 0;
                 if (lit == false)
                 {
                     ++column;
@@ -488,7 +484,7 @@ void PhysicsDebugRenderer::AddOverlayText(std::vector<DebugVertex>& vertices, st
                 }
 
                 const int startColumn = column;
-                while (column + 1 < 5 && (rows[row] & (1u << (4 - (column + 1)))) != 0)
+                while (column + 1 < 5 && (rowBits & (1u << (4 - (column + 1)))) != 0)
                 {
                     ++column;
                 }

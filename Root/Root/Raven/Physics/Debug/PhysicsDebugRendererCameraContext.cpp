@@ -2,18 +2,10 @@
 
 namespace Raven::ph
 {
-
-PhysicsDebugRenderer::PhysicsDebugRenderer(
-    Scene& scene,
-    const math::Mat4& view,
-    const math::Mat4& projection)
-    : m_Scene(&scene)
-    , m_FallbackView(&view)
-    , m_FallbackProjection(&projection)
-{
-    // SceneGameのCameraミラー撤去までの移行用Constructorです。
-    // 登録処理は通常Constructorと同じにし、既存Sceneの寿命管理を変更しません。
-    Registry().push_back(this);
-}
+// このファイルは過去のCamera Context互換コンストラクタを試みていた遺産です。
+// 現在のPhysicsDebugRendererはScene参照のみを持ち、Renderer::GetCameraContext()で
+// その時点のView/Projectionを取得する設計に統一されているため、ここには実装を置きません。
+// 既存のScene側コードからこのコンストラクタを呼ぶ場合のみ、対応するヘッダー/呼び出し側を
+// 修正してください。
 
 } // namespace Raven::ph

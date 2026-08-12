@@ -51,6 +51,22 @@ struct OBB
         return point;
     }
 
+    void GetCorners(math::Vec3 (&out)[8]) const
+    {
+        const math::Vec3 x = Axis[0] * HalfExtents.x;
+        const math::Vec3 y = Axis[1] * HalfExtents.y;
+        const math::Vec3 z = Axis[2] * HalfExtents.z;
+
+        out[0] = Center - x - y - z;
+        out[1] = Center + x - y - z;
+        out[2] = Center + x + y - z;
+        out[3] = Center - x + y - z;
+        out[4] = Center - x - y + z;
+        out[5] = Center + x - y + z;
+        out[6] = Center + x + y + z;
+        out[7] = Center - x + y + z;
+    }
+
     // RayをOBBローカル空間へ変換すると、OBBは原点中心のAABBになります。
     // そのため3軸Slab法をそのまま使えます。返すfractionはworld Rayの
     // origin + direction * fraction と同じパラメータです。
