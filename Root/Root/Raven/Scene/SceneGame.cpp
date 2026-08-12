@@ -302,8 +302,9 @@ void SceneGame::UpdateMouseDragImpulse()
             // ====================================================================
             // Physics Ray Picking
             // ====================================================================
-            // Broad Phase + 実Collider判定を通るPhysicsWorld::RayCast()を使い、
-            // 本当にマウスRayが当たった最短Colliderを選びます。
+            // 旧実装の「画面上の中心距離」では、手前/奥に重なったColliderや回転Boxを
+            // 正確に選べませんでした。ここではBroad Phase + 実Collider判定を通る
+            // PhysicsWorld::RayCast()を使い、本当にマウスRayが当たった最短Colliderを選びます。
             if (physicsWorld->RayCast(
                     *this,
                     rayOrigin,
@@ -318,11 +319,17 @@ void SceneGame::UpdateMouseDragImpulse()
                     const auto& rigidBody = hit.HitEntity.GetComponent<RigidBodyComponent>();
                     const auto& collider = hit.HitEntity.GetComponent<ColliderComponent>();
 
+                    // 床などStatic/Kinematic BodyはRayを遮ることはありますが、
+                    // マウスで投げる対象としては選択しません。
                     if (rigidBody.Type == BodyType::Dynamic
                         && rigidBody.InverseMass > 0.0f
                         && collider.Type != ColliderType::Plane)
                     {
                         m_DraggedEntity = hit.HitEntity;
+
+                        // このPointが非常に重要です。
+                        // Entity中心ではなく「実際にクリックしたCollider表面位置」を保持することで、
+                        // release時にAddImpulseAtPoint()が r x J を計算し、自然な回転を発生させます。
                         m_DragHitPoint = hit.Point;
                     }
                 }
@@ -346,6 +353,7 @@ void SceneGame::UpdateMouseDragImpulse()
                 // ====================================================================
                 // Pickingと同じRuntime CameraからViewを取得し、X方向をCamera Right、
                 // 画面の下向きYを-Camera Upへ対応させます。
+                // これによりCameraが斜めでも「見た目のドラッグ方向」に物体が飛びます。
                 const Camera& camera = m_RuntimeCameraEntity.GetComponent<CameraComponent>().Camera;
                 const math::Mat4& view = camera.GetViewMatrix();
                 const math::Vec3 cameraRight{ view[0][0], view[0][1], view[0][2] };
@@ -364,6 +372,7 @@ void SceneGame::UpdateMouseDragImpulse()
                     //   Linear:  DeltaV     = J * inverseMass
                     //   Angular: DeltaOmega = I^-1 * (r x J)
                     // が適用されます。
+                    // したがってSphereの端やBoxの角を掴んで投げると、作用点に応じて回転します。
                     physicsWorld->AddImpulseAtPoint(
                         *this,
                         m_DraggedEntity,
@@ -415,8 +424,13 @@ void SceneGame::OnCreate()
     // ========================================================================
     // Runtime Camera Entity
     // ========================================================================
-    // TransformComponentをCamera姿勢の正規データ、CameraComponent::CameraをProjection設定の
-    // 正規データとし、SceneCameraSystemが両者を同期します。SceneGameには行列を複製しません。
+    // 旧実装ではSceneGameがeye/targetからm_Viewを直接構築していました。
+    // 現在はTransformComponentをCamera姿勢の正規データ、CameraComponent::Cameraを
+    // Projection設定の正規データとし、SceneCameraSystemが両者を同期します。
+    // View/ProjectionはSceneGameへ複製せず、描画時にRenderer Camera Contextへ渡します。
+    //
+    // 初期姿勢は旧Cameraと同じ (0,40,80) -> Origin を向くように設定します。
+    // RavenのCamera Local Forwardは-Zで、X回転-atan(40/80)により下向きへ傾けます。
     Entity runtimeCameraEntity = CreateEntity("RuntimeCamera");
     TransformComponent& runtimeCameraTransform = runtimeCameraEntity.GetComponent<TransformComponent>();
     runtimeCameraTransform.Position = { 0.0f, 40.0f, 80.0f };
@@ -476,6 +490,7 @@ void SceneGame::OnCreate()
     m_BoxMesh = PrimitiveMeshFactory::CreateCube();
 
     // RuntimeCameraは既にm_SpawnedEntitiesへ登録済みなので、ここでclearすると破棄管理から外れます。
+    // Scene再初期化時の状態を明示的に初期化しつつCamera Entityは保持します。
     m_SphereBodies.clear();
     m_SphereBodyIndexByEntity.clear();
     m_WasSpacePressed = false;
@@ -504,6 +519,11 @@ void SceneGame::OnCreate()
     // ========================================================================
     // Deformation validation entity
     // ========================================================================
+    // ここでは「Sceneが具体的な頂点更新を直接行わない」ことを確認するため、
+    // Dynamic Grid + WaveMeshDeformerをECS Component経由で接続します。
+    //
+    // 実際の毎フレーム更新はMeshDeformationSystemが担当し、SceneGameは
+    // どのMeshとDeformerを組み合わせるかという初期構成だけを担当します。
     Ref<Mesh> waveMesh = PrimitiveMeshFactory::CreateDynamicGrid(32, 32);
     Entity waveEntity = CreateEntity("WaveDeformationGrid");
     auto& waveTransform = waveEntity.GetComponent<TransformComponent>();
@@ -564,9 +584,10 @@ void SceneGame::OnUpdateGame(float dt)
     const float safeDt = std::clamp(dt, 0.0f, 0.05f);
 
     // InspectorやGame LogicがCamera EntityのTransform/FOVを変更した場合、
-    // Mouse Pickingより先にCamera本体へ同期します。
+    // Mouse Pickingより先にCamera本体へ同期し、描画と入力が同じCamera状態を見るようにします。
     UpdateRuntimeCamera();
 
+    // StateMachine検証用ParameterをAnimationSystem実行前に更新する。
     UpdateAnimationStateMachineTest(safeDt);
 
     const bool spacePressed = Input::IsKeyPressed(Key::Space);
@@ -577,8 +598,17 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
+    // Scene::OnUpdate()は OnUpdateGame -> OnUpdatePhysics の順です。
+    // AddImpulseAtPoint()は速度へ即時反映するため、releaseした同じフレームの
+    // PhysicsWorld::Step()から衝突・重力・回転計算へ参加します。
     UpdateMouseDragImpulse();
 
+    // ========================================================================
+    // ECS Deformation Update
+    // ========================================================================
+    // SceneGameはWaveMeshDeformerをここで直接呼びません。
+    // MeshDeformationComponentを持つ全EntityをSystemが走査するため、将来Skeletal/Morphを
+    // 追加しても、この更新箇所は変更せず同じ入口を共有できます。
     MeshDeformationSystem::Update(*this, safeDt);
 
     for (auto& layer : m_layers)
@@ -683,6 +713,7 @@ void SceneGame::OnEvent(Event& e)
         m_ViewportHeight = static_cast<float>(resizeEvent.GetHeight());
 
         // Aspect Ratioの再計算もSceneCameraへ委譲します。
+        // Projection式をSceneGame側へ重複実装せず、CameraのProjection設定を正規データとして扱います。
         if (m_ViewportWidth > 0.0f && m_ViewportHeight > 0.0f)
         {
             UpdateRuntimeCamera();
