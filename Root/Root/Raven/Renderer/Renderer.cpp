@@ -112,6 +112,21 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
         return;
     }
 
+    // ========================================================================
+    // Per-draw Camera Uniform
+    // ========================================================================
+    // Scene側がu_View/u_Projectionを個別に設定すると、Game ViewとScene ViewでCameraの
+    // 切り替え責務が各Sceneへ漏れてしまいます。Camera付きBeginScene()で確定したContextを
+    // Renderer::Draw()からMaterialへ反映し、通常描画とDebug PassのCameraを統一します。
+    //
+    // CameraなしBeginScene()を利用する旧Sandbox経路ではValid=falseとなるため、既存の
+    // 手動Uniform設定を上書きしません。これにより段階的なRenderer移行も維持できます。
+    if (s_CameraContext.Valid)
+    {
+        material->SetUniform("u_View", s_CameraContext.View);
+        material->SetUniform("u_Projection", s_CameraContext.Projection);
+    }
+
     material->SetUniform("u_Model", transform);
     material->Bind(RenderCommand::GetAPI());
     mesh->Draw();

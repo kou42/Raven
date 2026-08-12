@@ -22,14 +22,10 @@ class PhysicsWorld;
 class PhysicsDebugRenderer
 {
 public:
-    // Renderer Camera Contextへ移行した通常経路です。
-    // Sceneへの参照だけを保持し、View/Projectionは描画時にRendererから取得します。
+    // Sceneへの参照だけを保持します。
+    // 3D Debug描画に必要なView/ProjectionはRenderer::BeginScene(camera)で確定した
+    // Renderer Camera Contextから描画時に取得するため、Scene固有のCamera行列を保持しません。
     explicit PhysicsDebugRenderer(Scene& scene);
-
-    // SceneGameのm_View/m_Projection撤去を段階的に行うための互換Constructorです。
-    // Renderer Camera Contextが有効な描画ではContextを優先し、未移行経路だけこの参照をfallback利用します。
-    // 移行完了後はこのConstructorとfallback行列メンバを削除する予定です。
-    PhysicsDebugRenderer(Scene& scene, const math::Mat4& view, const math::Mat4& projection);
 
     ~PhysicsDebugRenderer();
     PhysicsDebugRenderer(const PhysicsDebugRenderer&) = delete;
@@ -104,12 +100,6 @@ private:
     // 実際にStepされているWorldへ接続されます。呼び出し側が両者の寿命を管理します。
     Scene* m_Scene = nullptr;
     const PhysicsWorld* m_PhysicsWorld = nullptr;
-
-    // Renderer Camera Context導入前の経路だけで利用するfallbackです。
-    // こちらも所有せず参照のみで、SceneGame側が行列の寿命を管理します。
-    // SceneGameのCameraミラー撤去が完了した段階で互換Constructorと一緒に削除します。
-    const math::Mat4* m_FallbackView = nullptr;
-    const math::Mat4* m_FallbackProjection = nullptr;
 
     // Debug Line描画用Materialと表示設定です。
     // MaterialはEnsureInitialized()で必要になった時点に遅延生成します。

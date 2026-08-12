@@ -185,10 +185,10 @@ void SceneGame::SpawnBoxTestBody()
     m_SpawnedEntities.push_back(box);
 }
 
-bool SceneGame::UpdateRuntimeCameraMatrices()
+SceneCamera* SceneGame::UpdateRuntimeCamera()
 {
     // Primary Cameraの探索、Transform -> View変換、Viewport -> Projection更新は
-    // SceneCameraSystemへ集約します。SceneGameはRenderer互換用の行列へコピーするだけです。
+    // SceneCameraSystemへ集約します。SceneGameは行列をコピーせずCameraそのものを利用します。
     SceneCamera* runtimeCamera = SceneCameraSystem::UpdatePrimaryCamera(
         *this,
         m_ViewportWidth,
@@ -196,17 +196,13 @@ bool SceneGame::UpdateRuntimeCameraMatrices()
 
     if (runtimeCamera == nullptr)
     {
-        return false;
+        return nullptr;
     }
 
-    m_View = runtimeCamera->GetViewMatrix();
-    m_Projection = runtimeCamera->GetProjectionMatrix();
-
-    // Mouse Rayも描画と同じProjection条件を使う必要があります。
-    // InspectorでFOVを変更した場合にも次の入力フレームからRay方向へ反映されます。
+    // Mouse RayはPerspective FOVを使って方向を構築するため、Camera設定から同期します。
+    // View/Projection自体はSceneGameへ複製せず、Camera / Renderer Camera Contextを参照します。
     m_CameraFovY = runtimeCamera->GetPerspectiveVerticalFov();
-
-    return true;
+    return runtimeCamera;
 }
 
 bool SceneGame::BuildMouseRay(
@@ -218,6 +214,19 @@ bool SceneGame::BuildMouseRay(
     {
         return false;
     }
+
+    if (static_cast<bool>(m_RuntimeCameraEntity) == false
+        || IsEntityAlive(m_RuntimeCameraEntity) == false
+        || m_RuntimeCameraEntity.HasComponent<CameraComponent>() == false)
+    {
+        return false;
+    }
+
+    // Mouse PickingはRuntime Cameraの正規データを直接参照します。
+    // Renderer Camera Contextは描画中だけ有効で、入力更新はBeginScene()より前に行われるため、
+    // PickingではCameraオブジェクトを参照する方がライフサイクル上も明確です。
+    const Camera& camera = m_RuntimeCameraEntity.GetComponent<CameraComponent>().Camera;
+    const math::Mat4& view = camera.GetViewMatrix();
 
     // ========================================================================
     // Screen pixel -> Normalized Device Coordinates
@@ -234,10 +243,10 @@ bool SceneGame::BuildMouseRay(
     // View matrix -> Camera world basis
     // ========================================================================
     // Raven::Mat4::LookAt()は各行に Right / Up / -Forward を格納します。
-    // したがって逆行列を毎フレーム作らなくても、行列から直接Camera基底を復元できます。
-    const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
-    const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
-    const math::Vec3 cameraForward{ -m_View[2][0], -m_View[2][1], -m_View[2][2] };
+    // Cameraから直接Viewを取得することでSceneGame側の行列ミラーを不要にします。
+    const math::Vec3 cameraRight{ view[0][0], view[0][1], view[0][2] };
+    const math::Vec3 cameraUp{ view[1][0], view[1][1], view[1][2] };
+    const math::Vec3 cameraForward{ -view[2][0], -view[2][1], -view[2][2] };
 
     // LookAtの平行移動成分は
     //   row0.w = -dot(Right, Eye)
@@ -245,9 +254,9 @@ bool SceneGame::BuildMouseRay(
     //   row2.w =  dot(Forward, Eye)
     // なので、直交基底の線形結合からEyeを復元できます。
     outOrigin =
-        cameraRight * (-m_View[0][3])
-        + cameraUp * (-m_View[1][3])
-        + cameraForward * m_View[2][3];
+        cameraRight * (-view[0][3])
+        + cameraUp * (-view[1][3])
+        + cameraForward * view[2][3];
 
     // Perspective投影面上の点をCamera基底でWorld方向へ戻します。
     // center(ndc=0,0)ではそのままcameraForwardになります。
@@ -335,33 +344,41 @@ void SceneGame::UpdateMouseDragImpulse()
 
         if (physicsWorld != nullptr && dragLength >= m_MinDragPixels)
         {
-            // ====================================================================
-            // Screen-space drag -> World-space impulse
-            // ====================================================================
-            // X方向をCamera Right、画面の下向きYを-Camera Upへ対応させます。
-            // これによりCameraが斜めでも「見た目のドラッグ方向」に物体が飛びます。
-            const math::Vec3 cameraRight{ m_View[0][0], m_View[0][1], m_View[0][2] };
-            const math::Vec3 cameraUp{ m_View[1][0], m_View[1][1], m_View[1][2] };
-
-            math::Vec3 worldDirection = cameraRight * drag.x - cameraUp * drag.y;
-            if (worldDirection.LengthSq() > math::Epsilon * math::Epsilon)
+            if (static_cast<bool>(m_RuntimeCameraEntity)
+                && IsEntityAlive(m_RuntimeCameraEntity)
+                && m_RuntimeCameraEntity.HasComponent<CameraComponent>())
             {
-                worldDirection.Normalize();
+                // ====================================================================
+                // Screen-space drag -> World-space impulse
+                // ====================================================================
+                // Pickingと同じRuntime CameraからViewを取得し、X方向をCamera Right、
+                // 画面の下向きYを-Camera Upへ対応させます。
+                // これによりCameraが斜めでも「見た目のドラッグ方向」に物体が飛びます。
+                const Camera& camera = m_RuntimeCameraEntity.GetComponent<CameraComponent>().Camera;
+                const math::Mat4& view = camera.GetViewMatrix();
+                const math::Vec3 cameraRight{ view[0][0], view[0][1], view[0][2] };
+                const math::Vec3 cameraUp{ view[1][0], view[1][1], view[1][2] };
 
-                const float clampedPixels = std::min(dragLength, m_MaxDragPixels);
-                const float impulseMagnitude = clampedPixels * m_DragImpulsePerPixel;
-                const math::Vec3 impulse = worldDirection * impulseMagnitude;
+                math::Vec3 worldDirection = cameraRight * drag.x - cameraUp * drag.y;
+                if (worldDirection.LengthSq() > math::Epsilon * math::Epsilon)
+                {
+                    worldDirection.Normalize();
 
-                // AddImpulseAtPoint()内部では
-                //   Linear:  DeltaV     = J * inverseMass
-                //   Angular: DeltaOmega = I^-1 * (r x J)
-                // が適用されます。
-                // したがってSphereの端やBoxの角を掴んで投げると、作用点に応じて回転します。
-                physicsWorld->AddImpulseAtPoint(
-                    *this,
-                    m_DraggedEntity,
-                    impulse,
-                    m_DragHitPoint);
+                    const float clampedPixels = std::min(dragLength, m_MaxDragPixels);
+                    const float impulseMagnitude = clampedPixels * m_DragImpulsePerPixel;
+                    const math::Vec3 impulse = worldDirection * impulseMagnitude;
+
+                    // AddImpulseAtPoint()内部では
+                    //   Linear:  DeltaV     = J * inverseMass
+                    //   Angular: DeltaOmega = I^-1 * (r x J)
+                    // が適用されます。
+                    // したがってSphereの端やBoxの角を掴んで投げると、作用点に応じて回転します。
+                    physicsWorld->AddImpulseAtPoint(
+                        *this,
+                        m_DraggedEntity,
+                        impulse,
+                        m_DragHitPoint);
+                }
             }
         }
 
@@ -408,8 +425,9 @@ void SceneGame::OnCreate()
     // Runtime Camera Entity
     // ========================================================================
     // 旧実装ではSceneGameがeye/targetからm_Viewを直接構築していました。
-    // 今後はTransformComponentをCamera姿勢の正規データ、CameraComponent::Cameraを
-    // Projection設定の正規データとし、SceneCameraSystem経由で描画行列へ同期します。
+    // 現在はTransformComponentをCamera姿勢の正規データ、CameraComponent::Cameraを
+    // Projection設定の正規データとし、SceneCameraSystemが両者を同期します。
+    // View/ProjectionはSceneGameへ複製せず、描画時にRenderer Camera Contextへ渡します。
     //
     // 初期姿勢は旧Cameraと同じ (0,40,80) -> Origin を向くように設定します。
     // RavenのCamera Local Forwardは-Zで、X回転-atan(40/80)により下向きへ傾けます。
@@ -426,9 +444,7 @@ void SceneGame::OnCreate()
     m_RuntimeCameraEntity = runtimeCameraEntity;
     m_SpawnedEntities.push_back(runtimeCameraEntity);
 
-    UpdateRuntimeCameraMatrices();
-    m_Material->SetUniform("u_View", m_View);
-    m_Material->SetUniform("u_Projection", m_Projection);
+    UpdateRuntimeCamera();
 
     const float floorVertices[] = {
         -0.5f,0.0f,-0.5f,  0.4f,0.7f,0.4f,  0.0f,0.0f,
@@ -568,8 +584,8 @@ void SceneGame::OnUpdateGame(float dt)
     const float safeDt = std::clamp(dt, 0.0f, 0.05f);
 
     // InspectorやGame LogicがCamera EntityのTransform/FOVを変更した場合、
-    // Mouse Pickingより先に同期して描画と入力が同じCamera状態を見るようにします。
-    UpdateRuntimeCameraMatrices();
+    // Mouse Pickingより先にCamera本体へ同期し、描画と入力が同じCamera状態を見るようにします。
+    UpdateRuntimeCamera();
 
     // StateMachine検証用ParameterをAnimationSystem実行前に更新する。
     UpdateAnimationStateMachineTest(safeDt);
@@ -603,13 +619,25 @@ void SceneGame::OnUpdateGame(float dt)
 
 void SceneGame::OnRender()
 {
-    // Game ViewではPrimary SceneCameraを正規Cameraとして利用します。
-    // Scene ViewからRenderWithCamera()経由で呼ばれた場合は一時的にEditor Camera行列へ
-    // 差し替え済みなので、ここでRuntime Cameraへ戻さないことが重要です。
-    // そのためRuntime同期は通常Update側で行い、OnRenderは現在選択済みの行列だけを描画します。
+    // Game ViewはPrimary SceneCameraを解決して、Cameraそのものを共通描画入口へ渡します。
+    // View/ProjectionをSceneGameへ保存しないため、Camera状態の二重管理は発生しません。
+    SceneCamera* runtimeCamera = UpdateRuntimeCamera();
+    if (runtimeCamera == nullptr)
+    {
+        return;
+    }
+
+    RenderScene(*runtimeCamera);
+}
+
+void SceneGame::RenderScene(const Camera& camera)
+{
     RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
     RenderCommand::Clear();
-    Renderer::BeginScene();
+
+    // ここがScene描画におけるCameraの単一入口です。
+    // Renderer::Draw()とRenderer::EndScene()内のDebug Passは、このContextを共通利用します。
+    Renderer::BeginScene(camera);
 
     for (const Entity& entity : m_SpawnedEntities)
     {
@@ -625,8 +653,6 @@ void SceneGame::OnRender()
         }
 
         const auto& transform = entity.GetComponent<TransformComponent>();
-        meshRenderer.Material->SetUniform("u_View", m_View);
-        meshRenderer.Material->SetUniform("u_Projection", m_Projection);
 
         math::Vec3 tint{ 1.0f, 1.0f, 1.0f };
         const auto sphereIt = m_SphereBodyIndexByEntity.find(entity.GetIndex());
@@ -652,11 +678,10 @@ void SceneGame::OnRender()
             const float shadowScaleZ = std::max(transform.Scale.z, 0.1f) * 1.15f;
             shadowTransform = math::Scale(shadowTransform, { shadowScaleX, 1.0f, shadowScaleZ });
 
-            m_ShadowMaterial->SetUniform("u_View", m_View);
-            m_ShadowMaterial->SetUniform("u_Projection", m_Projection);
             Renderer::Draw(m_ShadowMesh, m_ShadowMaterial, shadowTransform);
         }
 
+        // u_View/u_ProjectionはRenderer::Draw()がCamera Contextから設定します。
         Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
     }
 
@@ -688,10 +713,10 @@ void SceneGame::OnEvent(Event& e)
         m_ViewportHeight = static_cast<float>(resizeEvent.GetHeight());
 
         // Aspect Ratioの再計算もSceneCameraへ委譲します。
-        // Projection式をSceneGame側へ重複実装しないことで、InspectorのCamera設定と常に一致します。
+        // Projection式をSceneGame側へ重複実装せず、CameraのProjection設定を正規データとして扱います。
         if (m_ViewportWidth > 0.0f && m_ViewportHeight > 0.0f)
         {
-            UpdateRuntimeCameraMatrices();
+            UpdateRuntimeCamera();
         }
     }
 }
