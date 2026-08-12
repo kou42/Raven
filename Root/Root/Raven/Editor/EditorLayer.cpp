@@ -1,10 +1,11 @@
-#include "Raven/Editor/EditorLayer.h"
+﻿#include "Raven/Editor/EditorLayer.h"
 
 #include "Raven/Core/Application.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -493,6 +494,63 @@ void EditorLayer::BeginDockSpace()
     // GetID()から安定したDockSpace IDを生成します。
     // ini保存が有効な場合、Dear ImGuiはこのIDを基準にDock Layoutを保存・復元します。
     const ImGuiID dockSpaceId = ImGui::GetID("RavenEditorDockSpace");
+
+	/* 初期の画面レイアウトは以下のように想定しています。
+    ┌─────────────────────────────────────────────────────┐
+    │ Menu                                                                                                     │
+    ├────────────┬─────────────────────────┬──────────────┤
+    │                        │                                                  │                            │
+    │  Scene                 │                  Scene View                      │         Inspector          │
+    │ Hierarchy              │                  Game View[tab]                  │                            │
+    │                        │                                                  │                            │
+    ├────────────┴─────────────────────────┴──────────────┤
+    │                          Raven Debug / Statistics | Animation Debug[tabs]                                │
+    └─────────────────────────────────────────────────────┘
+    */
+    if (ImGui::DockBuilderGetNode(dockSpaceId) == nullptr)
+    {
+        ImGui::DockBuilderRemoveNode(dockSpaceId);
+        ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockSpaceId, viewport->WorkSize);
+
+        ImGuiID centerDockId = dockSpaceId;
+
+        const ImGuiID leftDockId = ImGui::DockBuilderSplitNode(
+            centerDockId,
+            ImGuiDir_Left,
+            0.18f,
+            nullptr,
+            &centerDockId);
+
+        const ImGuiID rightDockId = ImGui::DockBuilderSplitNode(
+            centerDockId,
+            ImGuiDir_Right,
+            0.22f,
+            nullptr,
+            &centerDockId);
+
+        const ImGuiID bottomDockId = ImGui::DockBuilderSplitNode(
+            centerDockId,
+            ImGuiDir_Down,
+            0.25f,
+            nullptr,
+            &centerDockId);
+
+        // Viewportは中央を最大限利用します。
+        // 同じDock Nodeへ登録することでScene/Gameをタブ切り替えにします。
+        ImGui::DockBuilderDockWindow("Scene View", centerDockId);
+        ImGui::DockBuilderDockWindow("Game View", centerDockId);
+
+        // Entity操作系は左右へ分離します。
+        ImGui::DockBuilderDockWindow("Scene Hierarchy", leftDockId);
+        ImGui::DockBuilderDockWindow("Inspector", rightDockId);
+
+        // Debug系Windowは画面下部へまとめます。
+        ImGui::DockBuilderDockWindow("Raven Debug / Statistics", bottomDockId);
+        ImGui::DockBuilderDockWindow("Animation Debug", bottomDockId);
+
+        ImGui::DockBuilderFinish(dockSpaceId);
+    }
 
     // Scene/Game ViewがTexture Windowとして独立したためPassthruCentralNodeは使用しません。
     // DockSpace自身が通常背景を描画することで、Viewport Windowを閉じてもMain Sceneが

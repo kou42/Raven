@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Raven/Editor/EditorCamera.h"
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
