@@ -41,31 +41,34 @@ Ref<Mesh> PrimitiveMeshFactory::CreateCube()
 {
     constexpr float h = 0.5f;
 
+    // Cubeは面ごとに頂点を分離しているため、各面へ一定の法線を設定できます。
+    // 角の頂点を共有して法線を平均するとCubeまで滑らかに見えてしまうため、
+    // Human Mesh導入前のNormal検証用Primitiveとしてもこの構成を維持します。
     const std::vector<MeshVertex> vertices = {
-        { {-h,-h, h}, {0.85f,0.55f,0.30f}, {0.0f,0.0f} },
-        { { h,-h, h}, {0.85f,0.55f,0.30f}, {1.0f,0.0f} },
-        { { h, h, h}, {0.85f,0.55f,0.30f}, {1.0f,1.0f} },
-        { {-h, h, h}, {0.85f,0.55f,0.30f}, {0.0f,1.0f} },
-        { { h,-h,-h}, {0.75f,0.45f,0.25f}, {0.0f,0.0f} },
-        { {-h,-h,-h}, {0.75f,0.45f,0.25f}, {1.0f,0.0f} },
-        { {-h, h,-h}, {0.75f,0.45f,0.25f}, {1.0f,1.0f} },
-        { { h, h,-h}, {0.75f,0.45f,0.25f}, {0.0f,1.0f} },
-        { { h,-h, h}, {0.90f,0.62f,0.34f}, {0.0f,0.0f} },
-        { { h,-h,-h}, {0.90f,0.62f,0.34f}, {1.0f,0.0f} },
-        { { h, h,-h}, {0.90f,0.62f,0.34f}, {1.0f,1.0f} },
-        { { h, h, h}, {0.90f,0.62f,0.34f}, {0.0f,1.0f} },
-        { {-h,-h,-h}, {0.70f,0.40f,0.22f}, {0.0f,0.0f} },
-        { {-h,-h, h}, {0.70f,0.40f,0.22f}, {1.0f,0.0f} },
-        { {-h, h, h}, {0.70f,0.40f,0.22f}, {1.0f,1.0f} },
-        { {-h, h,-h}, {0.70f,0.40f,0.22f}, {0.0f,1.0f} },
-        { {-h, h, h}, {0.95f,0.70f,0.40f}, {0.0f,0.0f} },
-        { { h, h, h}, {0.95f,0.70f,0.40f}, {1.0f,0.0f} },
-        { { h, h,-h}, {0.95f,0.70f,0.40f}, {1.0f,1.0f} },
-        { {-h, h,-h}, {0.95f,0.70f,0.40f}, {0.0f,1.0f} },
-        { {-h,-h,-h}, {0.65f,0.35f,0.20f}, {0.0f,0.0f} },
-        { { h,-h,-h}, {0.65f,0.35f,0.20f}, {1.0f,0.0f} },
-        { { h,-h, h}, {0.65f,0.35f,0.20f}, {1.0f,1.0f} },
-        { {-h,-h, h}, {0.65f,0.35f,0.20f}, {0.0f,1.0f} },
+        { {-h,-h, h}, {0.85f,0.55f,0.30f}, {0.0f,0.0f}, { 0.0f, 0.0f, 1.0f} },
+        { { h,-h, h}, {0.85f,0.55f,0.30f}, {1.0f,0.0f}, { 0.0f, 0.0f, 1.0f} },
+        { { h, h, h}, {0.85f,0.55f,0.30f}, {1.0f,1.0f}, { 0.0f, 0.0f, 1.0f} },
+        { {-h, h, h}, {0.85f,0.55f,0.30f}, {0.0f,1.0f}, { 0.0f, 0.0f, 1.0f} },
+        { { h,-h,-h}, {0.75f,0.45f,0.25f}, {0.0f,0.0f}, { 0.0f, 0.0f,-1.0f} },
+        { {-h,-h,-h}, {0.75f,0.45f,0.25f}, {1.0f,0.0f}, { 0.0f, 0.0f,-1.0f} },
+        { {-h, h,-h}, {0.75f,0.45f,0.25f}, {1.0f,1.0f}, { 0.0f, 0.0f,-1.0f} },
+        { { h, h,-h}, {0.75f,0.45f,0.25f}, {0.0f,1.0f}, { 0.0f, 0.0f,-1.0f} },
+        { { h,-h, h}, {0.90f,0.62f,0.34f}, {0.0f,0.0f}, { 1.0f, 0.0f, 0.0f} },
+        { { h,-h,-h}, {0.90f,0.62f,0.34f}, {1.0f,0.0f}, { 1.0f, 0.0f, 0.0f} },
+        { { h, h,-h}, {0.90f,0.62f,0.34f}, {1.0f,1.0f}, { 1.0f, 0.0f, 0.0f} },
+        { { h, h, h}, {0.90f,0.62f,0.34f}, {0.0f,1.0f}, { 1.0f, 0.0f, 0.0f} },
+        { {-h,-h,-h}, {0.70f,0.40f,0.22f}, {0.0f,0.0f}, {-1.0f, 0.0f, 0.0f} },
+        { {-h,-h, h}, {0.70f,0.40f,0.22f}, {1.0f,0.0f}, {-1.0f, 0.0f, 0.0f} },
+        { {-h, h, h}, {0.70f,0.40f,0.22f}, {1.0f,1.0f}, {-1.0f, 0.0f, 0.0f} },
+        { {-h, h,-h}, {0.70f,0.40f,0.22f}, {0.0f,1.0f}, {-1.0f, 0.0f, 0.0f} },
+        { {-h, h, h}, {0.95f,0.70f,0.40f}, {0.0f,0.0f}, { 0.0f, 1.0f, 0.0f} },
+        { { h, h, h}, {0.95f,0.70f,0.40f}, {1.0f,0.0f}, { 0.0f, 1.0f, 0.0f} },
+        { { h, h,-h}, {0.95f,0.70f,0.40f}, {1.0f,1.0f}, { 0.0f, 1.0f, 0.0f} },
+        { {-h, h,-h}, {0.95f,0.70f,0.40f}, {0.0f,1.0f}, { 0.0f, 1.0f, 0.0f} },
+        { {-h,-h,-h}, {0.65f,0.35f,0.20f}, {0.0f,0.0f}, { 0.0f,-1.0f, 0.0f} },
+        { { h,-h,-h}, {0.65f,0.35f,0.20f}, {1.0f,0.0f}, { 0.0f,-1.0f, 0.0f} },
+        { { h,-h, h}, {0.65f,0.35f,0.20f}, {1.0f,1.0f}, { 0.0f,-1.0f, 0.0f} },
+        { {-h,-h, h}, {0.65f,0.35f,0.20f}, {0.0f,1.0f}, { 0.0f,-1.0f, 0.0f} },
     };
 
     std::vector<uint32_t> indices;
@@ -86,8 +89,14 @@ Ref<Mesh> PrimitiveMeshFactory::CreateCube()
 
 Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
 {
-    if (stacks < 2) stacks = 2;
-    if (slices < 3) slices = 3;
+    if (stacks < 2)
+    {
+        stacks = 2;
+    }
+    if (slices < 3)
+    {
+        slices = 3;
+    }
 
     constexpr float radius = 0.5f;
     constexpr float pi = 3.14159265358979323846f;
@@ -111,10 +120,20 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(int stacks, int slices)
             const float z = ringRadius * std::sin(theta);
             const float u = static_cast<float>(j) / static_cast<float>(slices);
 
+            // Sphereは原点中心かつ半径一定なのでPosition / radiusが単位法線になります。
+            // Human/glTFを読み込む前に、既存PrimitiveでNormal attributeの転送経路を
+            // 確認できるように正しい法線を保持します。
+            const math::Vec3 normal{
+                x / radius,
+                y / radius,
+                z / radius
+            };
+
             vertices.push_back({
                 { x, y, z },
                 { 0.7f + 0.3f * v, 0.8f, 0.9f },
-                { u, v }
+                { u, v },
+                normal
             });
         }
     }
@@ -161,7 +180,8 @@ Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(int rows, int columns)
             vertices.push_back({
                 { x, 0.0f, z },
                 { 0.25f + 0.65f * u, 0.55f + 0.35f * v, 0.95f },
-                { u, v }
+                { u, v },
+                { 0.0f, 1.0f, 0.0f }
             });
         }
     }
