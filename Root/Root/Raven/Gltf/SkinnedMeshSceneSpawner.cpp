@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Raven/Gltf/SkinnedMeshRuntime.h"
