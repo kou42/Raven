@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "Raven/Animation/Bone.h"
-#include "Raven/Animation/BoneTransform.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Gltf/GltfDocument.h"
 #include "Raven/Gltf/SkinnedMeshImporter.h"
