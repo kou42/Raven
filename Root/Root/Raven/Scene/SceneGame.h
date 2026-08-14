@@ -8,7 +8,10 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
+#include "Raven/Gltf/Debug/HumanSkinningDebugController.h"
+#include "Raven/Gltf/SkinnedMeshSceneSpawner.h"
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -74,6 +77,14 @@ private:
     void UpdateAnimationStateMachineTest(float deltaTime);
 
     // ========================================================================
+    // Human glTF Skinning validation
+    // ========================================================================
+    // Raven/Assets/Models/Human.glb が存在する場合だけHumanをSceneへ生成します。
+    // Asset未配置時は既存Sceneを壊さずskipし、Importer開発中でも他機能を継続確認できます。
+    void SpawnHumanSkinningTest();
+    void UpdateHumanSkinningTest(float deltaTime);
+
+    // ========================================================================
     // Runtime Camera
     // ========================================================================
     // Primary Camera EntityのTransform/CameraComponentを同期し、実際に利用するSceneCameraを返します。
@@ -120,10 +131,21 @@ private:
     float m_AnimationStateMachineTime = 0.0f;
 
     // ========================================================================
+    // Human Skinning Debug
+    // ========================================================================
+    // Human Primitive EntityはSkinnedMeshSceneSpawnerがまとめて管理するため、
+    // m_SpawnedEntitiesへ重複登録しません。OnDestroy()ではSpawner経由で一括破棄します。
+    Gltf::SkinnedMeshSceneInstance m_HumanSkinningSceneInstance;
+    Gltf::HumanSkinningDebugController m_HumanSkinningDebugController;
+    std::string m_HumanModelPath = "Raven/Assets/Models/Human.glb";
+    std::size_t m_HumanSkinIndex = 0u;
+
+    // ========================================================================
     // Debug Visualization
     // ========================================================================
     // Physics Debug: H/B/O/F/T/P/C/N
     // Animation Debug: Y
+    // Human Skinning: U/I LeftUpperArm, J/K LeftForeArm, M/L Head, R Reset
     // PhysicsDebugRendererはRenderer Camera Contextを参照するため、Game ViewではSceneCamera、
     // Scene ViewではEditor Cameraへ自動的に追従します。
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
