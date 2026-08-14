@@ -170,9 +170,6 @@ bool AccessorReader::ResolveAccessorBytes(
     }
 
     const Buffer& buffer = buffers[bufferView.BufferIndex];
-
-    // 現在のGltfDocumentはGLBのBIN Chunkを保持しています。
-    // URI付きBufferへ誤ってBIN Chunkを対応付けないよう明示的に拒否します。
     if (bufferView.BufferIndex != 0u || buffer.Uri.empty() == false)
     {
         return SetError(errorMessage, "外部URI Bufferは現段階では未対応です");
@@ -185,8 +182,6 @@ bool AccessorReader::ResolveAccessorBytes(
         return SetError(errorMessage, "AccessorのComponent情報が不正です");
     }
 
-    // Vec系Accessorだけを対象にする低レベルReaderなのでMatrix alignmentはここでは不要です。
-    // MatrixはinverseBindMatrices対応時に専用ReadMat4()を追加します。
     const std::size_t packedElementSize = componentSize * componentCount;
     const std::size_t stride = bufferView.ByteStride == 0u ? packedElementSize : bufferView.ByteStride;
 
@@ -250,7 +245,7 @@ bool AccessorReader::ReadFloatComponents(
     }
     if (accessor->Type != expectedType)
     {
-        return SetError(errorMessage, "Accessor typeが要求されたVector型と一致しません");
+        return SetError(errorMessage, "Accessor typeが要求された型と一致しません");
     }
 
     if (accessor->Count > ((std::numeric_limits<std::size_t>::max)() / componentCount))
@@ -336,6 +331,57 @@ bool AccessorReader::ReadVec4(
     for (std::size_t i = 0u; i < values.size(); i += 4u)
     {
         outValues.emplace_back(math::Vec4{ values[i], values[i + 1u], values[i + 2u], values[i + 3u] });
+    }
+
+    return true;
+}
+
+bool AccessorReader::ReadMat4(
+    std::size_t accessorIndex,
+    std::vector<math::Mat4>& outValues,
+    std::string* errorMessage) const
+{
+    const std::vector<Accessor>& accessors = m_Document.GetAccessors();
+    if (accessorIndex >= accessors.size())
+    {
+        return SetError(errorMessage, "MAT4 Accessor indexが範囲外です");
+    }
+
+    const Accessor& accessor = accessors[accessorIndex];
+    if (accessor.Type != AccessorType::Mat4
+        || accessor.Component != ComponentType::Float
+        || accessor.Normalized)
+    {
+        return SetError(errorMessage, "MAT4 Accessorは非normalized FLOAT MAT4である必要があります");
+    }
+
+    std::vector<float> values;
+    if (ReadFloatComponents(accessorIndex, AccessorType::Mat4, 16u, values, errorMessage) == false)
+    {
+        return false;
+    }
+
+    outValues.clear();
+    outValues.reserve(accessor.Count);
+
+    for (std::size_t matrixIndex = 0u; matrixIndex < accessor.Count; ++matrixIndex)
+    {
+        const std::size_t base = matrixIndex * 16u;
+        math::Mat4 matrix{};
+
+        // glTFのMAT4 component列はcolumn-major順です。
+        // Ravenはrow-major storageなので matrix[row][column] = source[column * 4 + row]
+        // として格納規約だけを変換します。数学的な変換そのものは同一です。
+        for (std::size_t column = 0u; column < 4u; ++column)
+        {
+            for (std::size_t row = 0u; row < 4u; ++row)
+            {
+                matrix[static_cast<int>(row)][static_cast<int>(column)] =
+                    values[base + column * 4u + row];
+            }
+        }
+
+        outValues.emplace_back(matrix);
     }
 
     return true;
