@@ -82,6 +82,15 @@ public:
         const BoneTransform& transform,
         std::string* errorMessage = nullptr);
 
+    // 手動Human変形確認用の簡易入口です。
+    // 現在のTranslation / Scaleを維持し、Rotationだけを差し替えます。
+    // UpperArm / ForeArm / Headなどを直接回してSkinning結果を確認するときに使用します。
+    bool SetBoneLocalRotation(
+        std::size_t skinIndex,
+        const std::string& boneName,
+        const math::Quat& rotation,
+        std::string* errorMessage = nullptr);
+
     // 現在Poseを全Primitiveへ反映します。
     // MeshDeformationInstance::Update()を通すため、CPU頂点変形からGPU同期まで既存経路を使用します。
     bool Update(float deltaTime, std::string* errorMessage = nullptr);
