@@ -394,6 +394,102 @@ bool SkinnedMeshRuntimeAsset::SetBoneLocalRotation(
     return SetBoneLocalTransform(skinIndex, boneName, localTransform, errorMessage);
 }
 
+bool SkinnedMeshRuntimeAsset::SetBoneLocalRotationOffsetFromBind(
+    std::size_t skinIndex,
+    const std::string& boneName,
+    const math::Quat& rotationOffset,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    const float lengthSquared = rotationOffset.LengthSq();
+    if (std::isfinite(lengthSquared) == false || lengthSquared <= math::Epsilon)
+    {
+        return SetError(errorMessage, "Bone Rotation Offsetが有効なQuaternionではありません");
+    }
+
+    bool found = false;
+    BoneTransform bindTransform{};
+
+    // Bind Pose基準の手動操作では「現在Pose」を元にしません。
+    // 連続フレームでdeltaを適用すると回転が累積してしまうため、毎回Skeleton定義の
+    // BindLocalTransformから完成Local Transformを再構築します。
+    for (const RuntimeSkinnedPrimitive& primitive : m_Primitives)
+    {
+        if (primitive.SkinIndex != skinIndex)
+        {
+            continue;
+        }
+
+        SkeletalMeshDeformer* deformer = GetSkeletalDeformer(primitive, errorMessage);
+        if (deformer == nullptr)
+        {
+            return false;
+        }
+
+        const BoneIndex boneIndex = deformer->GetSkeleton().FindBone(boneName);
+        if (boneIndex == InvalidBoneIndex)
+        {
+            return SetError(errorMessage, "指定Bone名がSkeletonにありません: " + boneName);
+        }
+
+        bindTransform = deformer->GetSkeleton().GetBone(boneIndex).BindLocalTransform;
+        found = true;
+        break;
+    }
+
+    if (found == false)
+    {
+        return SetError(errorMessage, "指定SkinIndexを参照するRuntime Primitiveがありません");
+    }
+
+    // Bone Local Space上で追加回転を与えるため、Bind Rotationの右側へDeltaを合成します。
+    // これによりImporterが復元したT-Pose方向を保持しながら、Bone自身のローカル軸で操作できます。
+    bindTransform.Rotation = (bindTransform.Rotation * rotationOffset.Normalized()).Normalized();
+    return SetBoneLocalTransform(skinIndex, boneName, bindTransform, errorMessage);
+}
+
+bool SkinnedMeshRuntimeAsset::GetBoneNames(
+    std::size_t skinIndex,
+    std::vector<std::string>& outBoneNames,
+    std::string* errorMessage) const
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    for (const RuntimeSkinnedPrimitive& primitive : m_Primitives)
+    {
+        if (primitive.SkinIndex != skinIndex)
+        {
+            continue;
+        }
+
+        SkeletalMeshDeformer* deformer = GetSkeletalDeformer(primitive, errorMessage);
+        if (deformer == nullptr)
+        {
+            return false;
+        }
+
+        const std::vector<Bone>& bones = deformer->GetSkeleton().GetBones();
+        outBoneNames.clear();
+        outBoneNames.reserve(bones.size());
+        for (const Bone& bone : bones)
+        {
+            outBoneNames.emplace_back(bone.Name);
+        }
+
+        return true;
+    }
+
+    outBoneNames.clear();
+    return SetError(errorMessage, "指定SkinIndexを参照するRuntime Primitiveがありません");
+}
+
 bool SkinnedMeshRuntimeAsset::Update(float deltaTime, std::string* errorMessage)
 {
     if (errorMessage != nullptr)
