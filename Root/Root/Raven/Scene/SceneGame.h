@@ -8,6 +8,7 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
+#include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 
 #include <unordered_map>
 #include <vector>
@@ -26,11 +27,18 @@ namespace Raven
 // 流すことで、Material / PhysicsDebugを含む全描画がRenderer Camera Contextを共有します。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
+    // Human検証Layerは既存SceneGame.cppを変更せず、共通Materialと描画対象Entity Listへ
+    // 最小限アクセスするためfriendとします。Human固有処理そのものはLayer側へ隔離します。
+    friend class Gltf::HumanSkinningDebugLayer;
+
 public:
     SceneGame()
         : m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
+        // Human.glbが未配置でもLayer側が安全にskipします。
+        // 実際のGLB読込はSceneGame::OnCreate()完了後、最初のUpdateまで遅延されます。
+        PushLayer(CreateScope<Gltf::HumanSkinningDebugLayer>(*this));
     }
 
     virtual void OnCreate() override;
