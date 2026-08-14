@@ -24,6 +24,14 @@ class Skeleton
 public:
     BoneIndex AddBone(Bone bone);
 
+    // glTFなど外部Asset側が正規のInverse Bind Matrixを保持している場合の登録経路です。
+    // AddBone()と同じ親->子順契約とScale検証を維持しつつ、InverseBindMatrixだけは
+    // Asset側の値を採用します。これによりImporterが一度読み取ったbind情報を
+    // Raven側で再計算して丸め差やMesh Bind Space差を生むことを避けます。
+    BoneIndex AddBoneWithInverseBindMatrix(
+        Bone bone,
+        const math::Mat4& inverseBindMatrix);
+
     const Bone& GetBone(BoneIndex index) const;
     Bone& GetBone(BoneIndex index);
 
