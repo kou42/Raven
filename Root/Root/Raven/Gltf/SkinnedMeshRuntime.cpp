@@ -134,6 +134,11 @@ bool SkinnedMeshRuntimeAsset::Build(
         errorMessage->clear();
     }
 
+    if (importedAsset.Primitives.empty())
+    {
+        return SetError(errorMessage, "Runtime化するSkinned Primitiveがありません");
+    }
+
     std::vector<RuntimeSkinnedPrimitive> runtimePrimitives;
     runtimePrimitives.reserve(importedAsset.Primitives.size());
 
@@ -330,6 +335,63 @@ bool SkinnedMeshRuntimeAsset::SetBoneLocalTransform(
     }
 
     return true;
+}
+
+bool SkinnedMeshRuntimeAsset::SetBoneLocalRotation(
+    std::size_t skinIndex,
+    const std::string& boneName,
+    const math::Quat& rotation,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    // Quaternionがゼロ長だと回転行列を正しく構築できないため、操作入口で拒否します。
+    const float lengthSquared = rotation.LengthSq();
+    if (std::isfinite(lengthSquared) == false || lengthSquared <= math::Epsilon)
+    {
+        return SetError(errorMessage, "Bone Rotationが有効なQuaternionではありません");
+    }
+
+    bool found = false;
+    BoneTransform localTransform{};
+
+    // 同一Skinを参照するPrimitiveのPoseはこのAssetが同期管理します。
+    // 最初のPrimitiveから現在Local Transformを取得し、Translation / Scaleを維持したまま
+    // Rotationだけを差し替え、その完成値をSetBoneLocalTransform()で全Primitiveへ配布します。
+    for (const RuntimeSkinnedPrimitive& primitive : m_Primitives)
+    {
+        if (primitive.SkinIndex != skinIndex)
+        {
+            continue;
+        }
+
+        SkeletalMeshDeformer* deformer = GetSkeletalDeformer(primitive, errorMessage);
+        if (deformer == nullptr)
+        {
+            return false;
+        }
+
+        const BoneIndex boneIndex = deformer->GetSkeleton().FindBone(boneName);
+        if (boneIndex == InvalidBoneIndex)
+        {
+            return SetError(errorMessage, "指定Bone名がSkeletonにありません: " + boneName);
+        }
+
+        localTransform = deformer->GetPose().GetLocalTransform(boneIndex);
+        found = true;
+        break;
+    }
+
+    if (found == false)
+    {
+        return SetError(errorMessage, "指定SkinIndexを参照するRuntime Primitiveがありません");
+    }
+
+    localTransform.Rotation = rotation.Normalized();
+    return SetBoneLocalTransform(skinIndex, boneName, localTransform, errorMessage);
 }
 
 bool SkinnedMeshRuntimeAsset::Update(float deltaTime, std::string* errorMessage)
