@@ -58,6 +58,8 @@ std::size_t GetComponentCount(AccessorType type)
 template<typename T>
 T ReadUnaligned(const std::uint8_t* data)
 {
+    // Accessorの開始位置やbyteStrideは、C++型Tの自然alignmentと一致する保証がありません。
+    // reinterpret_cast<T*>で直接参照すると未定義動作になり得るため、memcpy経由で読み取ります。
     T value{};
     std::memcpy(&value, data, sizeof(T));
     return value;
@@ -65,6 +67,8 @@ T ReadUnaligned(const std::uint8_t* data)
 
 float NormalizeSigned(std::int64_t value, std::int64_t positiveMax)
 {
+    // glTFのsigned normalized値は負側の最小値だけ正規化結果が-1未満になり得るため、
+    // 仕様どおり[-1, 1]へclampします。
     const float normalized = static_cast<float>(value) / static_cast<float>(positiveMax);
     if (normalized < -1.0f)
     {
@@ -79,6 +83,8 @@ float ReadFloatComponent(
     ComponentType type,
     bool normalized)
 {
+    // POSITION/NORMAL/UV/WEIGHTSなどは最終的にfloatとして扱います。
+    // normalized整数Accessorの場合だけ、glTF仕様の正規化範囲へ変換して返します。
     switch (type)
     {
     case ComponentType::Byte:
@@ -170,6 +176,10 @@ bool AccessorReader::ResolveAccessorBytes(
     }
 
     const Buffer& buffer = buffers[bufferView.BufferIndex];
+
+    // 現在のGltfDocumentはGLBのBIN Chunkを保持しています。
+    // URI付きBufferへ誤ってBIN Chunkを対応付けないよう明示的に拒否します。
+    // .gltf + 外部.bin対応時には、ここをBufferResolverへ分離する予定です。
     if (bufferView.BufferIndex != 0u || buffer.Uri.empty() == false)
     {
         return SetError(errorMessage, "外部URI Bufferは現段階では未対応です");
@@ -182,6 +192,9 @@ bool AccessorReader::ResolveAccessorBytes(
         return SetError(errorMessage, "AccessorのComponent情報が不正です");
     }
 
+    // byteStride == 0 は要素が密に並んでいることを意味します。
+    // MAT4もFLOATのみを扱う現段階ではpackedElementSize=64 byteなので同じ計算で扱えます。
+    // MAT2/MAT3の小さい整数componentを将来扱う場合はglTFの4-byte column alignmentが必要です。
     const std::size_t packedElementSize = componentSize * componentCount;
     const std::size_t stride = bufferView.ByteStride == 0u ? packedElementSize : bufferView.ByteStride;
 
@@ -190,6 +203,8 @@ bool AccessorReader::ResolveAccessorBytes(
         return SetError(errorMessage, "Accessor strideが要素サイズより小さいです");
     }
 
+    // BuildFromJson側でも範囲検証していますが、Reader単体でも外部入力を信用せず、
+    // subtraction-before-additionでsize_t overflowを避けながら絶対Offsetを確定します。
     if (bufferView.ByteOffset > binaryChunk.size())
     {
         return SetError(errorMessage, "BufferView byteOffsetがBIN Chunk範囲外です");
@@ -248,6 +263,8 @@ bool AccessorReader::ReadFloatComponents(
         return SetError(errorMessage, "Accessor typeが要求された型と一致しません");
     }
 
+    // Count * componentCountは外部Asset由来の値です。
+    // resize()前に乗算overflowを確認し、異常に小さい確保サイズへwrapすることを防ぎます。
     if (accessor->Count > ((std::numeric_limits<std::size_t>::max)() / componentCount))
     {
         return SetError(errorMessage, "Accessor出力要素数の計算がoverflowしました");
@@ -259,6 +276,8 @@ bool AccessorReader::ReadFloatComponents(
     const std::size_t componentSize = GetComponentByteSize(accessor->Component);
     for (std::size_t elementIndex = 0u; elementIndex < accessor->Count; ++elementIndex)
     {
+        // ResolveAccessorBytes()とGltfDocument側の範囲検証によって、
+        // stride * elementIndexで参照する要素がBufferView内に収まることを保証しています。
         const std::uint8_t* elementData = data + stride * elementIndex;
 
         for (std::size_t componentIndex = 0u; componentIndex < componentCount; ++componentIndex)
@@ -348,6 +367,9 @@ bool AccessorReader::ReadMat4(
     }
 
     const Accessor& accessor = accessors[accessorIndex];
+
+    // inverseBindMatricesを含むglTF MAT4はFLOAT MAT4として定義されます。
+    // normalized整数Matrixを暗黙変換するとBind空間を壊すため、ここで型を限定します。
     if (accessor.Type != AccessorType::Mat4
         || accessor.Component != ComponentType::Float
         || accessor.Normalized)
@@ -438,6 +460,7 @@ bool AccessorReader::ReadIndices(
     {
         const std::uint8_t* elementData = data + stride * i;
 
+        // Indexはnormalizedせず、Renderer側の共通表現uint32_tへ拡張します。
         if (accessor->Component == ComponentType::UnsignedByte)
         {
             outIndices[i] = static_cast<std::uint32_t>(ReadUnaligned<std::uint8_t>(elementData));
