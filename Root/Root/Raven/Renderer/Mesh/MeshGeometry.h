@@ -13,14 +13,22 @@ namespace Raven
 // MeshVertex
 // ============================================================================
 // Rendererへ渡す1頂点分の論理データです。
-// 現在のShader入力(position / color / texcoord)をそのまま型として表現します。
-// 将来Normal/TangentやSkinning用のBoneIndex/Weightを追加するときも、Primitive生成側で
-// float配列のstrideを手計算せず、この型を拡張するだけで済むようにします。
+//
+// Position / Color / TexCoord は既存Primitiveや既存描画コードとの互換性を維持するため
+// 並び順を変更しません。Normalは末尾へ追加することで、既存の3要素aggregate初期化を
+// そのまま利用できるようにしています。
+//
+// Human / glTF ImporterではNORMAL attributeをNormalへ格納します。
+// 将来Normal Mapへ進む段階では、この型へTangentを追加する想定です。
 struct MeshVertex
 {
     math::Vec3 Position{};
     math::Vec3 Color{ 1.0f, 1.0f, 1.0f };
     math::Vec2 TexCoord{};
+
+    // 外部AssetにNORMALが存在しないケースも区別できるよう、既定値はゼロベクトルです。
+    // glTF Importer実装時はNORMAL accessorから読み取った値を設定します。
+    math::Vec3 Normal{};
 };
 
 // 頂点データがGPU Upload後も更新されるかを表します。

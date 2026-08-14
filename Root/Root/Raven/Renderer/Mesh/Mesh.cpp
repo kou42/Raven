@@ -20,15 +20,19 @@ std::vector<float> BuildVertexUploadData(const std::vector<MeshVertex>& vertices
     // 現在のVertexBuffer APIはfloat配列を受け取るため、MeshVertexを直接reinterpret_castせず
     // 明示的にfloat列へ展開します。Math型にpadding/alignmentが追加されてもGPU strideを
     // 安定させられ、初期UploadとDynamic更新で同じレイアウト規約を共有できます。
+    //
+    // glTFのHuman Meshで利用するNormalもここで明示的に転送します。
+    // 1頂点 = Position(3) + Color(3) + TexCoord(2) + Normal(3) = 11 floatです。
     std::vector<float> vertexData;
-    vertexData.reserve(vertices.size() * 8);
+    vertexData.reserve(vertices.size() * 11);
 
     for (const MeshVertex& vertex : vertices)
     {
         vertexData.insert(vertexData.end(), {
             vertex.Position.x, vertex.Position.y, vertex.Position.z,
             vertex.Color.x, vertex.Color.y, vertex.Color.z,
-            vertex.TexCoord.x, vertex.TexCoord.y
+            vertex.TexCoord.x, vertex.TexCoord.y,
+            vertex.Normal.x, vertex.Normal.y, vertex.Normal.z
         });
     }
 
@@ -55,7 +59,7 @@ void Mesh::BuildRenderResources()
     m_IndexCount = 0;
     m_UploadedGeometryRevision = 0;
 
-    if (!m_Geometry || m_Geometry->GetVertices().empty())
+    if (m_Geometry == nullptr || m_Geometry->GetVertices().empty())
     {
         return;
     }
@@ -69,15 +73,18 @@ void Mesh::BuildRenderResources()
         vertexData.data(),
         static_cast<uint32_t>(vertexData.size() * sizeof(float)));
 
+    // Attributeの順序はBuildVertexUploadData()と必ず一致させます。
+    // a_Normalはlocationを自動採番するOpenGLVertexArray側で4番目のattributeになります。
     m_VertexBuffer->SetLayout({
         { ShaderDataType::Float3, "a_Position" },
         { ShaderDataType::Float3, "a_Color" },
-        { ShaderDataType::Float2, "a_Texcord" }
+        { ShaderDataType::Float2, "a_Texcord" },
+        { ShaderDataType::Float3, "a_Normal" }
     });
 
     m_VertexArray->AddVertexBuffer(m_VertexBuffer);
 
-    if (!indices.empty())
+    if (indices.empty() == false)
     {
         auto indexBuffer = IndexBuffer::Create(
             indices.data(),
@@ -92,7 +99,7 @@ void Mesh::BuildRenderResources()
 
 bool Mesh::UploadVertexData()
 {
-    if (!m_Geometry || !m_VertexBuffer || m_Geometry->GetVertices().empty())
+    if (m_Geometry == nullptr || m_VertexBuffer == nullptr || m_Geometry->GetVertices().empty())
     {
         return false;
     }
@@ -109,9 +116,9 @@ bool Mesh::UploadVertexData()
 
 bool Mesh::SyncGeometry()
 {
-    if (!m_Geometry
+    if (m_Geometry == nullptr
         || m_Geometry->GetGeometryUsage() != GeometryUsage::Dynamic
-        || !m_VertexBuffer)
+        || m_VertexBuffer == nullptr)
     {
         return false;
     }
@@ -137,7 +144,7 @@ bool Mesh::SyncGeometry()
 
 void Mesh::Draw() const
 {
-    if (!m_VertexArray)
+    if (m_VertexArray == nullptr)
     {
         return;
     }
