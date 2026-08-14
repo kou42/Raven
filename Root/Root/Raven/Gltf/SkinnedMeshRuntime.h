@@ -82,14 +82,37 @@ public:
         const BoneTransform& transform,
         std::string* errorMessage = nullptr);
 
-    // 手動Human変形確認用の簡易入口です。
-    // 現在のTranslation / Scaleを維持し、Rotationだけを差し替えます。
-    // UpperArm / ForeArm / Headなどを直接回してSkinning結果を確認するときに使用します。
+    // 現在のLocal Rotationを直接差し替える低レベル入口です。
+    // Animation評価済みPoseを書き戻す用途では有効ですが、手動Human確認ではBind Rotationを
+    // 消してしまう可能性があるため、通常はSetBoneLocalRotationOffsetFromBind()を使用します。
     bool SetBoneLocalRotation(
         std::size_t skinIndex,
         const std::string& boneName,
         const math::Quat& rotation,
         std::string* errorMessage = nullptr);
+
+    // ========================================================================
+    // Manual pose debug helper
+    // ========================================================================
+    // Humanの手動Bone確認では、glTF JointがBind Poseで既に持っているRotationを維持したまま
+    // 追加回転だけを与える必要があります。
+    //
+    // FinalLocalRotation = BindLocalRotation * rotationOffset
+    //
+    // とすることで、UpperArm / ForeArm / HeadなどをローカルBone軸基準で回しても、
+    // ImportされたBind Pose自体を破壊しません。
+    bool SetBoneLocalRotationOffsetFromBind(
+        std::size_t skinIndex,
+        const std::string& boneName,
+        const math::Quat& rotationOffset,
+        std::string* errorMessage = nullptr);
+
+    // 指定SkinのBone名をSkeleton登録順で返します。
+    // Human Assetごとに命名規則が異なるため、固定名を仮定せずデバッグUI/ログから確認するための入口です。
+    bool GetBoneNames(
+        std::size_t skinIndex,
+        std::vector<std::string>& outBoneNames,
+        std::string* errorMessage = nullptr) const;
 
     // 現在Poseを全Primitiveへ反映します。
     // MeshDeformationInstance::Update()を通すため、CPU頂点変形からGPU同期まで既存経路を使用します。
