@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Raven/Gltf/GltfDocument.h"
+#include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 
 namespace Raven
@@ -46,6 +47,14 @@ public:
     bool ReadVec4(
         std::size_t accessorIndex,
         std::vector<math::Vec4>& outValues,
+        std::string* errorMessage = nullptr) const;
+
+    // glTF MAT4はcolumn-major順でAccessor内へ格納されています。
+    // Raven::Mat4はrow-major storage / column-vector multiplication styleなので、
+    // 読み取り時に[row][column]へ明示的に並べ替えます。
+    bool ReadMat4(
+        std::size_t accessorIndex,
+        std::vector<math::Mat4>& outValues,
         std::string* errorMessage = nullptr) const;
 
     // glTF indicesはUNSIGNED_BYTE / UNSIGNED_SHORT / UNSIGNED_INTのいずれかです。
