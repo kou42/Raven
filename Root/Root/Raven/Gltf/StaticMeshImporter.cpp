@@ -1,6 +1,7 @@
 // Raven/Gltf/StaticMeshImporter.cpp
 #include "Raven/Gltf/StaticMeshImporter.h"
 
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -34,18 +35,19 @@ bool ReadSize(const JsonValue& value, std::size_t& outValue)
     }
 
     const double number = value.GetNumber();
-    if (number < 0.0)
+    if (std::isfinite(number) == false || number < 0.0 || std::floor(number) != number)
     {
         return false;
     }
 
-    const std::size_t converted = static_cast<std::size_t>(number);
-    if (static_cast<double>(converted) != number)
+    // double -> size_t変換前に範囲を検査します。
+    // 外部Assetから極端に大きい整数が来ても未定義/実装依存の整数変換へ進めません。
+    if (number > static_cast<double>((std::numeric_limits<std::size_t>::max)()))
     {
         return false;
     }
 
-    outValue = converted;
+    outValue = static_cast<std::size_t>(number);
     return true;
 }
 
