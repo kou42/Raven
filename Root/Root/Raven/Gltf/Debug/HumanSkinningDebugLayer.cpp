@@ -62,6 +62,7 @@ bool HumanSkinningDebugLayer::TryInitialize()
     if (primitives.empty())
     {
         std::cerr << "[HumanSkinning] Spawn後のPrimitiveが0件です。\n";
+        DestroyHuman();
         return false;
     }
 
@@ -71,6 +72,7 @@ bool HumanSkinningDebugLayer::TryInitialize()
         std::cerr
             << "[HumanSkinning] Debug Controllerの初期化に失敗しました: "
             << errorMessage << '\n';
+        DestroyHuman();
         return false;
     }
 
@@ -152,9 +154,13 @@ void HumanSkinningDebugLayer::OnRender()
 
 void HumanSkinningDebugLayer::DestroyHuman()
 {
-    // 現在はSceneGame::OnDestroy()がm_SpawnedEntitiesを一括破棄するため、
-    // Layer側からEntityを二重破棄しません。この関数はLayer単独Detach対応を追加するときの
-    // 拡張点として残します。
+    // 初期化途中で失敗した場合、まだSceneGame::m_SpawnedEntitiesへ登録していないEntityを
+    // Spawner経由で確実に破棄します。成功後の通常LifetimeはSceneGame::OnDestroy()へ統一します。
+    if (m_HumanInstance.IsValid())
+    {
+        SkinnedMeshSceneSpawner::Destroy(m_Scene, m_HumanInstance);
+    }
+
     m_Controller.Reset();
     m_HumanInstance = {};
     m_Initialized = false;
