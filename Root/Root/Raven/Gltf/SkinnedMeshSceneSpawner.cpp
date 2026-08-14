@@ -193,6 +193,38 @@ bool SkinnedMeshSceneInstance::SetBoneLocalRotation(
         errorMessage);
 }
 
+bool SkinnedMeshSceneInstance::SetBoneLocalRotationOffsetFromBind(
+    std::size_t skinIndex,
+    const std::string& boneName,
+    const math::Quat& rotationOffset,
+    std::string* errorMessage)
+{
+    if (m_RuntimeAsset == nullptr)
+    {
+        return SetError(errorMessage, "SkinnedMeshSceneInstanceのRuntimeAssetがnullptrです");
+    }
+
+    return m_RuntimeAsset->SetBoneLocalRotationOffsetFromBind(
+        skinIndex,
+        boneName,
+        rotationOffset,
+        errorMessage);
+}
+
+bool SkinnedMeshSceneInstance::GetBoneNames(
+    std::size_t skinIndex,
+    std::vector<std::string>& outBoneNames,
+    std::string* errorMessage) const
+{
+    if (m_RuntimeAsset == nullptr)
+    {
+        outBoneNames.clear();
+        return SetError(errorMessage, "SkinnedMeshSceneInstanceのRuntimeAssetがnullptrです");
+    }
+
+    return m_RuntimeAsset->GetBoneNames(skinIndex, outBoneNames, errorMessage);
+}
+
 bool SkinnedMeshSceneInstance::ResetSkinToBindPose(
     std::size_t skinIndex,
     std::string* errorMessage)
