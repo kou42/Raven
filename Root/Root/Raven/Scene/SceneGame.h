@@ -8,10 +8,8 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
-#include "Raven/Gltf/Debug/HumanSkinningDebugController.h"
-#include "Raven/Gltf/SkinnedMeshSceneSpawner.h"
+#include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -29,11 +27,18 @@ namespace Raven
 // 流すことで、Material / PhysicsDebugを含む全描画がRenderer Camera Contextを共有します。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
+    // Human検証Layerは既存SceneGame.cppを変更せず、共通Materialと描画対象Entity Listへ
+    // 最小限アクセスするためfriendとします。Human固有処理そのものはLayer側へ隔離します。
+    friend class Gltf::HumanSkinningDebugLayer;
+
 public:
     SceneGame()
         : m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
+        // Human.glbが未配置でもLayer側が安全にskipします。
+        // 実際のGLB読込はSceneGame::OnCreate()完了後、最初のUpdateまで遅延されます。
+        PushLayer(CreateScope<Gltf::HumanSkinningDebugLayer>(*this));
     }
 
     virtual void OnCreate() override;
@@ -75,14 +80,6 @@ private:
     // Physicsや実入力に依存しない決定的なシーケンスにすることで、Transition実装だけを
     // Scene上で切り分けて目視確認できるようにします。
     void UpdateAnimationStateMachineTest(float deltaTime);
-
-    // ========================================================================
-    // Human glTF Skinning validation
-    // ========================================================================
-    // Raven/Assets/Models/Human.glb が存在する場合だけHumanをSceneへ生成します。
-    // Asset未配置時は既存Sceneを壊さずskipし、Importer開発中でも他機能を継続確認できます。
-    void SpawnHumanSkinningTest();
-    void UpdateHumanSkinningTest(float deltaTime);
 
     // ========================================================================
     // Runtime Camera
@@ -131,21 +128,10 @@ private:
     float m_AnimationStateMachineTime = 0.0f;
 
     // ========================================================================
-    // Human Skinning Debug
-    // ========================================================================
-    // Human Primitive EntityはSkinnedMeshSceneSpawnerがまとめて管理するため、
-    // m_SpawnedEntitiesへ重複登録しません。OnDestroy()ではSpawner経由で一括破棄します。
-    Gltf::SkinnedMeshSceneInstance m_HumanSkinningSceneInstance;
-    Gltf::HumanSkinningDebugController m_HumanSkinningDebugController;
-    std::string m_HumanModelPath = "Raven/Assets/Models/Human.glb";
-    std::size_t m_HumanSkinIndex = 0u;
-
-    // ========================================================================
     // Debug Visualization
     // ========================================================================
     // Physics Debug: H/B/O/F/T/P/C/N
     // Animation Debug: Y
-    // Human Skinning: U/I LeftUpperArm, J/K LeftForeArm, M/L Head, R Reset
     // PhysicsDebugRendererはRenderer Camera Contextを参照するため、Game ViewではSceneCamera、
     // Scene ViewではEditor Cameraへ自動的に追従します。
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
