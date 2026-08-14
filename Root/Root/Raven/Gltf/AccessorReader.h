@@ -1,6 +1,7 @@
 // Raven/Gltf/AccessorReader.h
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -29,6 +30,8 @@ namespace Gltf
 class AccessorReader
 {
 public:
+    using UnsignedVec4 = std::array<std::uint32_t, 4>;
+
     explicit AccessorReader(const GltfDocument& document)
         : m_Document(document)
     {
@@ -47,6 +50,13 @@ public:
     bool ReadVec4(
         std::size_t accessorIndex,
         std::vector<math::Vec4>& outValues,
+        std::string* errorMessage = nullptr) const;
+
+    // JOINTS_0はfloatへ変換せず、skin.joints配列を参照する整数slotとして保持します。
+    // glTF 2.0のJOINTS_nで許可されるUNSIGNED_BYTE / UNSIGNED_SHORT VEC4のみ受理します。
+    bool ReadUnsignedVec4(
+        std::size_t accessorIndex,
+        std::vector<UnsignedVec4>& outValues,
         std::string* errorMessage = nullptr) const;
 
     // glTF MAT4はcolumn-major順でAccessor内へ格納されています。
