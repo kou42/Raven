@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "Raven/Gltf/SkinnedMeshRuntime.h"
-#include "Raven/Renderer/Material.h"
+#include "Raven/Renderer/Material/Material.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
@@ -119,10 +119,8 @@ bool DecomposeWorldTransform(
     // Components.cppのTransformComponent::GetTransform()と厳密に逆の規約を使用します。
     const float r00 = axisX.x;
     const float r10 = axisX.y;
-    const float r20 = axisX.z;
     const float r01 = axisY.x;
     const float r11 = axisY.y;
-    const float r21 = axisY.z;
     const float r02 = axisZ.x;
     const float r12 = axisZ.y;
     const float r22 = axisZ.z;
