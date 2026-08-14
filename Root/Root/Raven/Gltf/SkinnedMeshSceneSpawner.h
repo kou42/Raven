@@ -51,12 +51,26 @@ public:
         return m_RuntimeAsset != nullptr && m_Primitives.empty() == false;
     }
 
-    // Human全体の同一Skinを参照するBody / Clothes等へRotationを同期します。
+    // 現在Local Rotationを直接差し替える低レベル入口です。
     bool SetBoneLocalRotation(
         std::size_t skinIndex,
         const std::string& boneName,
         const math::Quat& rotation,
         std::string* errorMessage = nullptr);
+
+    // Human手動確認ではこちらを使用します。
+    // Import時のBind Rotationを維持し、Bone Local Spaceの追加回転だけを適用します。
+    bool SetBoneLocalRotationOffsetFromBind(
+        std::size_t skinIndex,
+        const std::string& boneName,
+        const math::Quat& rotationOffset,
+        std::string* errorMessage = nullptr);
+
+    // AssetごとにBone命名規則が異なるため、Scene/Debug UI側から実名を確認できるよう公開します。
+    bool GetBoneNames(
+        std::size_t skinIndex,
+        std::vector<std::string>& outBoneNames,
+        std::string* errorMessage = nullptr) const;
 
     bool ResetSkinToBindPose(
         std::size_t skinIndex,
