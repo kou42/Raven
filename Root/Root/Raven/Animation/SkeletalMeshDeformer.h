@@ -1,6 +1,7 @@
 // Raven/Animation/SkeletalMeshDeformer.h
 #pragma once
 
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -45,6 +46,10 @@ public:
     {
         return m_SkeletonParentToMeshTransform;
     }
+    const std::string& GetBindSpaceCorrectionError() const
+    {
+        return m_BindSpaceCorrectionError;
+    }
 
     // 現在PoseからSkinning Matrixを再構築し、全頂点を変形してGeometryへ反映します。
     bool Deform(
@@ -82,6 +87,11 @@ private:
     // なるため、従来挙動をそのまま維持します。
     math::Mat4 m_SkeletonParentToMeshTransform = math::Mat4::Identity();
     bool m_BindSpaceCorrectionValid = false;
+
+    // 補正行列を構築できなかった場合の詳細理由です。
+    // Human.glbのような実Assetで「どのBoneから空間差が崩れたか」を上位で診断できるよう、
+    // 単なるboolだけで失敗理由を失わないようにします。
+    std::string m_BindSpaceCorrectionError;
 
     std::vector<math::Mat4> m_SkinningMatrices;
 };
