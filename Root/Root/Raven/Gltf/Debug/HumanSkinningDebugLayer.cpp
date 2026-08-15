@@ -27,7 +27,7 @@ math::Vec3 TransformPosition(const math::Mat4& matrix, const math::Vec3& positio
 }
 
 bool NormalizeHumanForDebugView(
-    const std::vector<SpawnedSkinnedPrimitive>& primitives,
+    std::vector<SpawnedSkinnedPrimitive>& primitives,
     std::string* errorMessage)
 {
     constexpr float TargetHeight = 20.0f;
@@ -49,6 +49,7 @@ bool NormalizeHumanForDebugView(
     // Primitiveごとの頂点はMesh Local Spaceにあります。
     // Human.glbでは複数Primitiveが別Node Transformを持つ可能性があるため、Local座標を
     // そのまま比較せず、現在のEntity TransformでWorld Spaceへ変換してから統合します。
+    // この走査ではEntityを変更しないため、primitive自体はconst参照で扱います。
     for (const SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -121,7 +122,12 @@ bool NormalizeHumanForDebugView(
     // という同じWorld Space変換を適用します。
     // Uniform Scaleなので既存Rotationとは可換であり、PositionとScaleだけを更新すれば
     // glTF由来のPrimitive間相対配置とSkinning Mesh Local Spaceは維持されます。
-    for (const SpawnedSkinnedPrimitive& primitive : primitives)
+    //
+    // 重要:
+    // ここではTransformComponentを書き換えるため、primitiveを非const参照で受けます。
+    // Entity::GetComponent()にはconst/non-const overloadがあり、const Entityから取得すると
+    // const T&になるため、const primitiveからTransformComponent&は取得できません。
+    for (SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
             || primitive.EntityHandle.HasComponent<TransformComponent>() == false)
@@ -196,7 +202,11 @@ bool HumanSkinningDebugLayer::TryInitialize()
         return false;
     }
 
-    const std::vector<SpawnedSkinnedPrimitive>& primitives = m_HumanInstance.GetPrimitives();
+    // Debug表示正規化ではPrimitive EntityのTransformComponentを書き換えるため、
+    // const参照ではなくSceneInstanceが所有する配列への非const参照が必要です。
+    // GetPrimitives()は通常の参照公開APIとしてconstのみなので、Debug用途でもconst_castは使わず、
+    // SceneInstance側に非const overloadを用意して所有権境界を明示します。
+    std::vector<SpawnedSkinnedPrimitive>& primitives = m_HumanInstance.GetPrimitives();
     if (primitives.empty())
     {
         std::cerr << "[HumanSkinning] Spawn後のPrimitiveが0件です。\n";
