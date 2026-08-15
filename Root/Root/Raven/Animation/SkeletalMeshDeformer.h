@@ -30,9 +30,13 @@ class MeshGeometry;
 class SkeletalMeshDeformer final : public MeshDeformer
 {
 public:
-    SkeletalMeshDeformer(Skeleton skeleton, SkinnedMeshData skinnedMeshData)
+    SkeletalMeshDeformer(
+        Skeleton skeleton,
+        SkinnedMeshData skinnedMeshData,
+        const math::Mat4& skeletonParentToMeshTransform = math::Mat4::Identity())
         : m_Skeleton(std::move(skeleton)),
-          m_SkinnedMeshData(std::move(skinnedMeshData))
+          m_SkinnedMeshData(std::move(skinnedMeshData)),
+          m_SkeletonParentToMeshTransform(skeletonParentToMeshTransform)
     {
         // 最初は必ずBind Poseから開始します。
         // Animationが未接続でもUpdate()を呼べば元形状をそのまま再現できます。
@@ -48,6 +52,10 @@ public:
     const SkeletonPose& GetPose() const { return m_Pose; }
     const Skeleton& GetSkeleton() const { return m_Skeleton; }
     const SkinnedMeshData& GetSkinnedMeshData() const { return m_SkinnedMeshData; }
+    const math::Mat4& GetSkeletonParentToMeshTransform() const
+    {
+        return m_SkeletonParentToMeshTransform;
+    }
 
     // 現在PoseからSkinning Matrixを再構築し、全頂点を変形してGeometryへ反映します。
     bool Deform(
@@ -69,6 +77,13 @@ private:
     Skeleton m_Skeleton;
     SkeletonPose m_Pose;
     SkinnedMeshData m_SkinnedMeshData;
+
+    // SkeletonPose::GlobalはSkeleton Rootの親Nodeを含まない相対空間です。
+    // glTFのようにMesh NodeとSkeleton Rootが別Node階層にある場合でも、
+    // Skinning結果をMesh Local Spaceへ戻せるよう、この基準空間補正を左から適用します。
+    // 通常の手作りSkeletonではIdentityのままです。
+    math::Mat4 m_SkeletonParentToMeshTransform = math::Mat4::Identity();
+
     std::vector<math::Mat4> m_SkinningMatrices;
 };
 
