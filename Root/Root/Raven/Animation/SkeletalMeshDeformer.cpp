@@ -162,7 +162,14 @@ bool TryBuildBindSpaceCorrection(
     const math::Mat4 bindSpaceDifference =
         bindPose.GetGlobalTransform(0u) * firstBone.InverseBindMatrix;
 
-    constexpr float BindSpaceTolerance = 1.0e-4f;
+    // glTFのNode TRSはfloatで保持され、Quaternion正規化と親子行列積をBone階層分だけ
+    // 積み重ねます。一方inverseBindMatricesもexport済みfloat値なので、深い指Boneなどでは
+    // 同一の理論値でも1e-4を僅かに越える丸め差が発生します。
+    //
+    // ここは「全Boneが同一基準空間に属するか」の構造検証なので5e-4まで許容します。
+    // 実際の安全性はSkinnedMeshRuntime::VerifyBindPoseGeometry()が頂点位置を1e-4で
+    // 再検証するため、形状へ影響する不整合をこの緩和だけで通すことはありません。
+    constexpr float BindSpaceTolerance = 5.0e-4f;
 
     for (BoneIndex boneIndex = 1u;
          boneIndex < static_cast<BoneIndex>(skeleton.GetBoneCount());
