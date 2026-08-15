@@ -1,4 +1,3 @@
-// Raven/Gltf/Debug/HumanSkinningDebugController.h
 #pragma once
 
 #include <cstddef>
@@ -23,10 +22,12 @@ namespace Gltf
 //   U / I : Left UpperArm - / +
 //   J / K : Left ForeArm  - / +
 //   M / L : Head          - / +
-//   R     : Bind PoseへReset
+//   R     : Debug用の直立PoseへReset
 //
 // 重要:
-// - 回転は常にBind Pose基準のoffsetとして適用します。
+// - Bone回転は常にBind Pose基準のoffsetとして適用します。
+// - 初期化時とR Reset時は、T-Poseの両UpperArmだけを体側へ下ろした直立Poseを作ります。
+//   Skeleton/InverseBind自体は変更せず、Debug表示用Poseだけを上書きします。
 // - 前FrameのPoseへdeltaを累積しないため、長時間操作しても数値誤差が蓄積しません。
 // - Bone名はAsset依存なので、Mixamo/一般/Blender系候補から解決し、見つからないBoneを
 //   勝手に別Boneへ割り当てません。
