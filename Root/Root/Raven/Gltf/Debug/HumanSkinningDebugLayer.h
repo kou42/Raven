@@ -1,4 +1,4 @@
-// Raven/Gltf/Debug/HumanSkinningDebugLayer.h
+﻿// Raven/Gltf/Debug/HumanSkinningDebugLayer.h
 #pragma once
 
 #include <string>
@@ -48,7 +48,7 @@ private:
     SkinnedMeshSceneInstance m_HumanInstance;
     HumanSkinningDebugController m_Controller;
 
-    std::string m_ModelPath = "Raven/Assets/Models/Human.glb";
+    std::string m_ModelPath = "Raven/Assets/Models/Raven_human_test.glb";
 
     bool m_InitializationAttempted = false;
     bool m_Initialized = false;

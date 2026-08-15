@@ -1,4 +1,4 @@
-// Raven/Gltf/Tests/GltfAccessorSelfTests.cpp
+﻿// Raven/Gltf/Tests/GltfAccessorSelfTests.cpp
 #include "Raven/Gltf/Tests/GltfAccessorSelfTests.h"
 
 #include <cassert>
@@ -87,9 +87,9 @@ void RunInterleavedPositionAndNormalizedTexCoordTest()
 }
 )json";
 
-    JsonValue root;
+    Gltf::JsonValue root;
     std::string error;
-    assert(JsonParser::Parse(json, root, &error));
+    assert(Gltf::JsonParser::Parse(json, root, &error));
 
     Gltf::GltfDocument document;
     assert(Gltf::GltfDocument::BuildFromJson(root, std::move(binary), document, &error));

@@ -36,10 +36,15 @@ bool HumanSkinningDebugLayer::TryInitialize()
 
     m_InitializationAttempted = true;
 
-    if (std::filesystem::exists(m_ModelPath) == false)
+    // 相対パスの場合、カレントワーキングディレクトリから解決されます
+    std::filesystem::path resolvedPath = std::filesystem::absolute(m_ModelPath);
+    
+    if (std::filesystem::exists(resolvedPath) == false)
     {
         std::cout
-            << "[HumanSkinning] " << m_ModelPath
+            << "[HumanSkinning] " << m_ModelPath << "\n"
+            << "  解決パス: " << resolvedPath << "\n"
+            << "  カレントディレクトリ: " << std::filesystem::current_path() << "\n"
             << " が見つからないためHuman検証をskipします。\n";
         return false;
     }
