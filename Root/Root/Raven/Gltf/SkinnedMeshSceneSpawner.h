@@ -76,6 +76,14 @@ public:
         std::size_t skinIndex,
         std::string* errorMessage = nullptr);
 
+    // SceneInstanceが所有するPrimitive EntityをDebug配置などで編集する場合の入口です。
+    // const/non-const overloadを分けることで、読み取り専用処理ではconst性を維持しつつ、
+    // Entity Transformを明示的に変更する処理だけがmutableな配列を取得できます。
+    std::vector<SpawnedSkinnedPrimitive>& GetPrimitives()
+    {
+        return m_Primitives;
+    }
+
     const std::vector<SpawnedSkinnedPrimitive>& GetPrimitives() const
     {
         return m_Primitives;
