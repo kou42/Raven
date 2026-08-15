@@ -100,20 +100,17 @@ bool NormalizeHumanForDebugView(
     // ========================================================================
     // 2. Debug表示用のUp軸を決める
     // ========================================================================
-    // glTF自体はY-upですが、Human.glbの実データではBind Poseの長軸がZ方向になっています。
-    // Debug Layerの目的はImporterの元Transformを書き換えることではなく、Skinning結果を
-    // 既定Cameraから目視確認しやすくすることなので、AABBの最長軸を人物の高さとして扱います。
+    // glTF自体はY-upですが、Raven_human_test.glbの実データでは人物の高さ方向がZです。
+    // ここでXを含めた「AABBの最長軸」を高さとみなすと、T-Poseでは両腕を広げたX幅が
+    // 身長Z以上になることがあり、Z-upのHumanを誤ってY-upと判定してしまいます。
+    // その場合、人物の高さ方向ZがCameraの奥行き方向に残るため、画面上では胴体や脚が
+    // 極端に潰れ、腕だけが横方向へ大きく広がったように見えます。
     //
-    // Xが最長の場合は横幅と高さを自動判別できず、X-upをY-upへ回すと正面方向まで曖昧に
-    // なるため、現段階ではHuman.glbで確認できているY-up / Z-upだけを扱います。
-    bool sourceIsZUp = false;
-    float sourceHeight = sourceBoundsSize.y;
-    if (sourceBoundsSize.z > sourceBoundsSize.y
-        && sourceBoundsSize.z >= sourceBoundsSize.x)
-    {
-        sourceIsZUp = true;
-        sourceHeight = sourceBoundsSize.z;
-    }
+    // このDebug Layerが扱う候補はY-up / Z-upの2種類に限定しているため、X幅はUp軸判定へ
+    // 使用せず、Y方向とZ方向のどちらが大きいかだけで判定します。これによりT-Poseの
+    // arm spanに影響されず、Raven_human_test.glbを安定してZ-up -> Y-upへ回転できます。
+    const bool sourceIsZUp = sourceBoundsSize.z > sourceBoundsSize.y;
+    const float sourceHeight = sourceIsZUp ? sourceBoundsSize.z : sourceBoundsSize.y;
 
     if (sourceHeight <= MinimumHeight)
     {
