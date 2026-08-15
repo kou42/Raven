@@ -3,6 +3,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <iostream>
+#include <string>
 
 #include "Raven/Animation/SkinWeight.h"
 #include "Raven/Animation/Skinning.h"
@@ -20,24 +22,29 @@ math::Vec3 TransformPosition(const math::Mat4& matrix, const math::Vec3& positio
     return { transformed.x, transformed.y, transformed.z };
 }
 
-bool NearlyEqual(const math::Mat4& a, const math::Mat4& b, float tolerance = 1.0e-4f)
+float MaxAbsDifference(const math::Mat4& a, const math::Mat4& b)
 {
+    float maxDifference = 0.0f;
+
     for (int row = 0; row < 4; ++row)
     {
         for (int column = 0; column < 4; ++column)
         {
-            const float difference = a[row][column] - b[row][column];
-            if (difference < -tolerance || difference > tolerance)
+            const float difference = std::fabs(a[row][column] - b[row][column]);
+            if (difference > maxDifference)
             {
-                return false;
+                maxDifference = difference;
             }
         }
     }
 
-    return true;
+    return maxDifference;
 }
 
-bool TryInvertAffineTransform(const math::Mat4& matrix, math::Mat4& outInverse)
+bool TryInvertAffineTransform(
+    const math::Mat4& matrix,
+    math::Mat4& outInverse,
+    std::string* errorMessage)
 {
     constexpr float AffineTolerance = 1.0e-5f;
     constexpr float DeterminantTolerance = 1.0e-8f;
@@ -49,6 +56,10 @@ bool TryInvertAffineTransform(const math::Mat4& matrix, math::Mat4& outInverse)
         || std::fabs(matrix[3][2]) > AffineTolerance
         || std::fabs(matrix[3][3] - 1.0f) > AffineTolerance)
     {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Bind Space差分行列がAffine Transformではありません";
+        }
         return false;
     }
 
@@ -70,6 +81,12 @@ bool TryInvertAffineTransform(const math::Mat4& matrix, math::Mat4& outInverse)
     if (std::isfinite(determinant) == false
         || std::fabs(determinant) <= DeterminantTolerance)
     {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage =
+                "Bind Space差分行列を逆行列化できません。determinant="
+                + std::to_string(determinant);
+        }
         return false;
     }
 
@@ -103,11 +120,29 @@ bool TryInvertAffineTransform(const math::Mat4& matrix, math::Mat4& outInverse)
 bool TryBuildBindSpaceCorrection(
     const Skeleton& skeleton,
     const SkeletonPose& bindPose,
-    math::Mat4& outCorrection)
+    math::Mat4& outCorrection,
+    std::string* errorMessage)
 {
-    if (skeleton.GetBoneCount() == 0u
-        || bindPose.GetBoneCount() != skeleton.GetBoneCount())
+    if (errorMessage != nullptr)
     {
+        errorMessage->clear();
+    }
+
+    if (skeleton.GetBoneCount() == 0u)
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "SkeletonのBone数が0です";
+        }
+        return false;
+    }
+
+    if (bindPose.GetBoneCount() != skeleton.GetBoneCount())
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Bind PoseとSkeletonのBone数が一致しません";
+        }
         return false;
     }
 
@@ -127,6 +162,8 @@ bool TryBuildBindSpaceCorrection(
     const math::Mat4 bindSpaceDifference =
         bindPose.GetGlobalTransform(0u) * firstBone.InverseBindMatrix;
 
+    constexpr float BindSpaceTolerance = 1.0e-4f;
+
     for (BoneIndex boneIndex = 1u;
          boneIndex < static_cast<BoneIndex>(skeleton.GetBoneCount());
          ++boneIndex)
@@ -135,15 +172,23 @@ bool TryBuildBindSpaceCorrection(
         const math::Mat4 currentDifference =
             bindPose.GetGlobalTransform(boneIndex) * bone.InverseBindMatrix;
 
-        // 全Boneで同じ基準空間差にならないAssetは、単一補正行列では正しく表現できません。
-        // そのケースを一部Boneだけ正しく見える状態で受理せず、Runtimeへ流す前に拒否します。
-        if (NearlyEqual(currentDifference, bindSpaceDifference) == false)
+        const float maxDifference = MaxAbsDifference(currentDifference, bindSpaceDifference);
+        if (maxDifference > BindSpaceTolerance)
         {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage =
+                    "BoneごとのBind Space差分が一致しません。bone="
+                    + bone.Name
+                    + ", index=" + std::to_string(boneIndex)
+                    + ", maxDifference=" + std::to_string(maxDifference)
+                    + ", tolerance=" + std::to_string(BindSpaceTolerance);
+            }
             return false;
         }
     }
 
-    return TryInvertAffineTransform(bindSpaceDifference, outCorrection);
+    return TryInvertAffineTransform(bindSpaceDifference, outCorrection, errorMessage);
 }
 
 } // namespace
@@ -163,7 +208,15 @@ SkeletalMeshDeformer::SkeletalMeshDeformer(
     m_BindSpaceCorrectionValid = TryBuildBindSpaceCorrection(
         m_Skeleton,
         m_Pose,
-        m_SkeletonParentToMeshTransform);
+        m_SkeletonParentToMeshTransform,
+        &m_BindSpaceCorrectionError);
+
+    if (m_BindSpaceCorrectionValid == false)
+    {
+        std::cerr
+            << "[SkeletalMeshDeformer] Bind Space補正の初期化に失敗しました: "
+            << m_BindSpaceCorrectionError << '\n';
+    }
 }
 
 void SkeletalMeshDeformer::Update(Mesh& mesh, float deltaTime)
