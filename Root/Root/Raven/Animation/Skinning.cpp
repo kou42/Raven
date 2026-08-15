@@ -28,14 +28,18 @@ bool BuildSkinningMatrices(
         const Bone& bone = skeleton.GetBone(i);
 
         // ====================================================================
-        // Linear Blend Skinning matrix
+        // Linear Blend Skinning matrix - Skeleton基準空間
         // ====================================================================
-        // Bind Poseの頂点はMesh Bind Spaceに存在します。
-        // まずInverseBindで「そのBoneのBind Space」へ戻し、その後CurrentGlobalで
-        // 現在PoseのMesh Spaceへ運びます。
+        // InverseBindでBind PositionをBone Bind Spaceへ戻し、その後CurrentGlobalで
+        // 現在PoseのSkeleton基準空間へ運びます。
         //
-        // column-vector方式なので式は以下の順序になります。
-        //   M_skin = M_currentGlobal * M_inverseBind
+        // Raven内でSkeleton基準空間とMesh Local Spaceが一致する通常ケースでは、
+        // この行列をそのままSkinningへ使用できます。
+        // glTFのようにRoot Joint外側にScene Node Transformが存在し、両空間が異なる場合は、
+        // SkeletalMeshDeformerがBind Poseから復元した基準空間補正を左から追加します。
+        //
+        // column-vector方式なので、この関数が返す基本式は以下です。
+        //   M_skeletonSkin = M_currentGlobal * M_inverseBind
         outSkinningMatrices[static_cast<std::size_t>(i)] =
             pose.GetGlobalTransform(i) * bone.InverseBindMatrix;
     }
@@ -56,7 +60,9 @@ bool AreSkinningMatricesIdentity(
             for (int column = 0; column < 4; ++column)
             {
                 if (std::fabs(matrix[row][column] - identity[row][column]) > tolerance)
+                {
                     return false;
+                }
             }
         }
     }
