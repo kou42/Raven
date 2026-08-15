@@ -30,18 +30,7 @@ class MeshGeometry;
 class SkeletalMeshDeformer final : public MeshDeformer
 {
 public:
-    SkeletalMeshDeformer(
-        Skeleton skeleton,
-        SkinnedMeshData skinnedMeshData,
-        const math::Mat4& skeletonParentToMeshTransform = math::Mat4::Identity())
-        : m_Skeleton(std::move(skeleton)),
-          m_SkinnedMeshData(std::move(skinnedMeshData)),
-          m_SkeletonParentToMeshTransform(skeletonParentToMeshTransform)
-    {
-        // 最初は必ずBind Poseから開始します。
-        // Animationが未接続でもUpdate()を呼べば元形状をそのまま再現できます。
-        m_Pose.ResetToBindPose(m_Skeleton);
-    }
+    SkeletalMeshDeformer(Skeleton skeleton, SkinnedMeshData skinnedMeshData);
 
     // MeshDeformationSystemから呼ばれる通常経路です。
     // deltaTimeは現段階では使いません。時間管理はAnimatorの責務として後から分離します。
@@ -78,11 +67,21 @@ private:
     SkeletonPose m_Pose;
     SkinnedMeshData m_SkinnedMeshData;
 
-    // SkeletonPose::GlobalはSkeleton Rootの親Nodeを含まない相対空間です。
-    // glTFのようにMesh NodeとSkeleton Rootが別Node階層にある場合でも、
-    // Skinning結果をMesh Local Spaceへ戻せるよう、この基準空間補正を左から適用します。
-    // 通常の手作りSkeletonではIdentityのままです。
+    // ========================================================================
+    // Skeleton Parent Space -> Mesh Local Space
+    // ========================================================================
+    // RavenのSkeleton GlobalはRoot Boneからの相対空間です。一方glTFのinverseBindMatricesは
+    // Mesh Bind SpaceとScene上のJoint World Spaceの関係を含められます。
+    //
+    // Bind Poseでは全Boneについて
+    //
+    //   BindSkeletonGlobal * InverseBind
+    //
+    // が同一の基準空間差になります。その共通行列の逆行列を一度だけ求め、Skinning時に
+    // 左から掛けることでMesh Local Spaceへ戻します。手作りSkeletonでは共通行列がIdentityに
+    // なるため、従来挙動をそのまま維持します。
     math::Mat4 m_SkeletonParentToMeshTransform = math::Mat4::Identity();
+    bool m_BindSpaceCorrectionValid = false;
 
     std::vector<math::Mat4> m_SkinningMatrices;
 };
