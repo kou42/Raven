@@ -47,6 +47,7 @@ bool NormalizeHumanForDebugView(
     // Primitiveごとの頂点はMesh Local Spaceにあります。
     // Human.glbでは複数Primitiveが別Node Transformを持つ可能性があるため、Local座標を
     // そのまま比較せず、現在のEntity TransformでWorld Spaceへ変換してから統合します。
+    // この走査ではEntityを変更しないため、primitive自体はconst参照で扱います。
     for (const SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -193,6 +194,11 @@ bool NormalizeHumanForDebugView(
     // TransformComponentは行列そのものを保持しないため、Debug変換がY-up/Z-upの2ケースに
     // 限られることを利用してTRSへ直接反映します。Uniform Scaleなので既存Rotationとの
     // 合成でScale軸が歪むこともありません。
+    //
+    // 重要:
+    // ここではTransformComponentを書き換えるため、primitiveを非const参照で受けます。
+    // Entity::GetComponent()にはconst/non-const overloadがあり、const Entityから取得すると
+    // const T&になるため、const primitiveからTransformComponent&は取得できません。
     for (SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -281,6 +287,10 @@ bool HumanSkinningDebugLayer::TryInitialize()
         return false;
     }
 
+    // Debug表示正規化ではPrimitive EntityのTransformComponentを書き換えるため、
+    // const参照ではなくSceneInstanceが所有する配列への非const参照が必要です。
+    // GetPrimitives()にはconst/non-const overloadを用意し、Debug用途でもconst_castを使わず、
+    // SceneInstance側の所有権境界を保ったまま明示的にmutableな配列を取得します。
     std::vector<SpawnedSkinnedPrimitive>& primitives = m_HumanInstance.GetPrimitives();
     if (primitives.empty())
     {
@@ -390,6 +400,8 @@ void HumanSkinningDebugLayer::OnRender()
 
 void HumanSkinningDebugLayer::DestroyHuman()
 {
+    // 初期化途中で失敗した場合、まだSceneGame::m_SpawnedEntitiesへ登録していないEntityを
+    // Spawner経由で確実に破棄します。成功後の通常LifetimeはSceneGame::OnDestroy()へ統一します。
     if (m_HumanInstance.IsValid())
     {
         SkinnedMeshSceneSpawner::Destroy(m_Scene, m_HumanInstance);
