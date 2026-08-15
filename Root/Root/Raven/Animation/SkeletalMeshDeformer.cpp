@@ -1,6 +1,7 @@
 // Raven/Animation/SkeletalMeshDeformer.cpp
 #include "Raven/Animation/SkeletalMeshDeformer.h"
 
+#include <cmath>
 #include <cstddef>
 
 #include "Raven/Animation/SkinWeight.h"
@@ -12,12 +13,158 @@ namespace Raven
 {
 namespace
 {
+
 math::Vec3 TransformPosition(const math::Mat4& matrix, const math::Vec3& position)
 {
     const math::Vec4 transformed = matrix * math::Vec4{ position.x, position.y, position.z, 1.0f };
     return { transformed.x, transformed.y, transformed.z };
 }
+
+bool NearlyEqual(const math::Mat4& a, const math::Mat4& b, float tolerance = 1.0e-4f)
+{
+    for (int row = 0; row < 4; ++row)
+    {
+        for (int column = 0; column < 4; ++column)
+        {
+            const float difference = a[row][column] - b[row][column];
+            if (difference < -tolerance || difference > tolerance)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool TryInvertAffineTransform(const math::Mat4& matrix, math::Mat4& outInverse)
+{
+    constexpr float AffineTolerance = 1.0e-5f;
+    constexpr float DeterminantTolerance = 1.0e-8f;
+
+    // Skinningの基準空間補正はScene Node由来のAffine Transformだけを対象にします。
+    // Perspective成分が混ざった行列をSkinningへ通すことは座標空間の契約違反なので拒否します。
+    if (std::fabs(matrix[3][0]) > AffineTolerance
+        || std::fabs(matrix[3][1]) > AffineTolerance
+        || std::fabs(matrix[3][2]) > AffineTolerance
+        || std::fabs(matrix[3][3] - 1.0f) > AffineTolerance)
+    {
+        return false;
+    }
+
+    const float a00 = matrix[0][0];
+    const float a01 = matrix[0][1];
+    const float a02 = matrix[0][2];
+    const float a10 = matrix[1][0];
+    const float a11 = matrix[1][1];
+    const float a12 = matrix[1][2];
+    const float a20 = matrix[2][0];
+    const float a21 = matrix[2][1];
+    const float a22 = matrix[2][2];
+
+    const float determinant =
+        a00 * (a11 * a22 - a12 * a21)
+        - a01 * (a10 * a22 - a12 * a20)
+        + a02 * (a10 * a21 - a11 * a20);
+
+    if (std::isfinite(determinant) == false
+        || std::fabs(determinant) <= DeterminantTolerance)
+    {
+        return false;
+    }
+
+    const float inverseDeterminant = 1.0f / determinant;
+
+    const float i00 = (a11 * a22 - a12 * a21) * inverseDeterminant;
+    const float i01 = (a02 * a21 - a01 * a22) * inverseDeterminant;
+    const float i02 = (a01 * a12 - a02 * a11) * inverseDeterminant;
+    const float i10 = (a12 * a20 - a10 * a22) * inverseDeterminant;
+    const float i11 = (a00 * a22 - a02 * a20) * inverseDeterminant;
+    const float i12 = (a02 * a10 - a00 * a12) * inverseDeterminant;
+    const float i20 = (a10 * a21 - a11 * a20) * inverseDeterminant;
+    const float i21 = (a01 * a20 - a00 * a21) * inverseDeterminant;
+    const float i22 = (a00 * a11 - a01 * a10) * inverseDeterminant;
+
+    const float tx = matrix[0][3];
+    const float ty = matrix[1][3];
+    const float tz = matrix[2][3];
+
+    // Affine Transform M=[A t; 0 1] の逆行列は [A^-1 -A^-1*t; 0 1] です。
+    outInverse = math::Mat4{
+        i00, i01, i02, -(i00 * tx + i01 * ty + i02 * tz),
+        i10, i11, i12, -(i10 * tx + i11 * ty + i12 * tz),
+        i20, i21, i22, -(i20 * tx + i21 * ty + i22 * tz),
+        0.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    return true;
+}
+
+bool TryBuildBindSpaceCorrection(
+    const Skeleton& skeleton,
+    const SkeletonPose& bindPose,
+    math::Mat4& outCorrection)
+{
+    if (skeleton.GetBoneCount() == 0u
+        || bindPose.GetBoneCount() != skeleton.GetBoneCount())
+    {
+        return false;
+    }
+
+    // ========================================================================
+    // Bind Space correction derivation
+    // ========================================================================
+    // Raven SkeletonのBindGlobalはRoot Bone外側のScene Node Transformを含みません。
+    // glTFのinverseBindMatricesはMesh Bind Space -> Joint Space変換なので、Bind Poseでは
+    // 各Boneについて次の積が同一の「Skeleton Parent Space -> Mesh Bind Space差」になります。
+    //
+    //   B = BindSkeletonGlobal * InverseBind
+    //
+    // Human.glbのようにArmature NodeがRoot Joint外側にある場合、BはIdentityではありません。
+    // しかし全Boneで同じBになるため、その逆行列をSkinning Matrix左側へ掛ければ
+    // Mesh Local Spaceへ正しく戻せます。
+    const Bone& firstBone = skeleton.GetBone(0u);
+    const math::Mat4 bindSpaceDifference =
+        bindPose.GetGlobalTransform(0u) * firstBone.InverseBindMatrix;
+
+    for (BoneIndex boneIndex = 1u;
+         boneIndex < static_cast<BoneIndex>(skeleton.GetBoneCount());
+         ++boneIndex)
+    {
+        const Bone& bone = skeleton.GetBone(boneIndex);
+        const math::Mat4 currentDifference =
+            bindPose.GetGlobalTransform(boneIndex) * bone.InverseBindMatrix;
+
+        // 全Boneで同じ基準空間差にならないAssetは、単一補正行列では正しく表現できません。
+        // そのケースを一部Boneだけ正しく見える状態で受理せず、Runtimeへ流す前に拒否します。
+        if (NearlyEqual(currentDifference, bindSpaceDifference) == false)
+        {
+            return false;
+        }
+    }
+
+    return TryInvertAffineTransform(bindSpaceDifference, outCorrection);
+}
+
 } // namespace
+
+SkeletalMeshDeformer::SkeletalMeshDeformer(
+    Skeleton skeleton,
+    SkinnedMeshData skinnedMeshData)
+    : m_Skeleton(std::move(skeleton)),
+      m_SkinnedMeshData(std::move(skinnedMeshData))
+{
+    // 最初は必ずBind Poseから開始します。
+    // Animationが未接続でもUpdate()を呼べば元形状をそのまま再現できます。
+    m_Pose.ResetToBindPose(m_Skeleton);
+
+    // glTF由来SkeletonではRoot Joint外側のScene TransformをSkeletonPoseへ含めません。
+    // 既存のBind PoseとinverseBindMatricesからその空間差を復元し、以後のSkinningで再利用します。
+    m_BindSpaceCorrectionValid = TryBuildBindSpaceCorrection(
+        m_Skeleton,
+        m_Pose,
+        m_SkeletonParentToMeshTransform);
+}
 
 void SkeletalMeshDeformer::Update(Mesh& mesh, float deltaTime)
 {
@@ -47,6 +194,11 @@ bool SkeletalMeshDeformer::Deform(
     const SkinnedMeshData& skinnedMeshData,
     MeshGeometry& geometry)
 {
+    if (m_BindSpaceCorrectionValid == false)
+    {
+        return false;
+    }
+
     if (BuildSkinningMatrices(skeleton, pose, m_SkinningMatrices) == false)
     {
         return false;
@@ -61,16 +213,14 @@ bool SkeletalMeshDeformer::Deform(
     //
     // を生成します。
     //
-    // glTFではMesh NodeとSkeleton Rootが別Node階層に置かれることがあり、
-    // SkeletonPose::GlobalはRoot Joint外側のScene Node Transformを含みません。
-    // その場合はRuntime構築時に求めた基準空間補正を左から掛け、
-    // 最終的なSkinning MatrixをMesh Local Spaceへ戻します。
+    // Root Joint外側にTransformがあるglTFでは、Bind Poseから復元した基準空間補正を
+    // 左から掛けてMesh Local Spaceへ戻します。
     //
     //   MeshLocalSkin = SkeletonParentToMesh
     //                 * SkeletonGlobal
     //                 * InverseBind
     //
-    // 手作りSkeletonなど基準空間差がない場合、この補正はIdentityなので既存挙動と同一です。
+    // 手作りSkeletonでは補正がIdentityになるため既存挙動と同一です。
     for (math::Mat4& skinningMatrix : m_SkinningMatrices)
     {
         skinningMatrix = m_SkeletonParentToMeshTransform * skinningMatrix;
