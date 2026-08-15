@@ -51,24 +51,6 @@ bool ReadSize(const JsonValue& value, std::size_t& outValue)
     return true;
 }
 
-bool IsNearlyIdentity(const math::Mat4& matrix, float tolerance = 1.0e-5f)
-{
-    for (int row = 0; row < 4; ++row)
-    {
-        for (int column = 0; column < 4; ++column)
-        {
-            const float expected = row == column ? 1.0f : 0.0f;
-            const float difference = matrix[row][column] - expected;
-            if (difference < -tolerance || difference > tolerance)
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
 bool ParseJointIndices(
     const JsonValue& skinValue,
     std::size_t nodeCount,
@@ -209,16 +191,24 @@ bool ValidateJointHierarchy(
             continue;
         }
 
-        // Joint集合外の親を持つNodeはSkeleton Rootとして扱います。
-        // ただし現在のRaven SkinningはBone GlobalをMesh Bind Spaceとして扱うため、
-        // その外側Transformが非Identityだと空間がずれます。Mesh Nodeとの空間変換を接続する
-        // 次Phaseまでは、そのケースを黙って受理せず明示的に拒否します。
-        if (node.ParentIndex >= globalTransforms.size()
-            || IsNearlyIdentity(globalTransforms[node.ParentIndex]) == false)
+        // ====================================================================
+        // Root Joint外側のScene Node Transform
+        // ====================================================================
+        // glTFではArmature等の非Joint NodeをRoot Jointの外側に置くことができます。
+        // そのWorld Transformが非Identityであること自体はAsset不正ではありません。
+        //
+        // Raven::SkeletonPoseはRoot Boneからの相対Globalを保持するため、外側Transformは
+        // Skeletonへ直接取り込みません。代わりにSkeletalMeshDeformerがBind Poseと
+        // inverseBindMatricesからSkeleton Parent SpaceとMesh Bind Spaceの共通差分を復元し、
+        // Skinning MatrixをMesh Local Spaceへ補正します。
+        //
+        // ここではParent indexがGlobal Transform範囲内であることだけを確認し、
+        // 実際の空間整合性は全BoneのBind情報を使えるRuntime境界で厳密に検証します。
+        if (node.ParentIndex >= globalTransforms.size())
         {
             return SetError(
                 errorMessage,
-                context + " のRoot Joint外側に非Identity Node Transformがあります");
+                context + " のRoot Joint Parent Node indexがGlobal Transform範囲外です");
         }
 
         outRootJointNodes.emplace_back(nodeIndex);

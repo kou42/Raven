@@ -61,6 +61,63 @@ void RunBindPoseIdentityTest()
     assert(AreSkinningMatricesIdentity(matrices));
 }
 
+void RunExternalBindSpaceCorrectionTest()
+{
+    Skeleton skeleton;
+
+    Bone root{};
+    root.Name = "Root";
+    root.BindLocalTransform.Translation = { 2.0f, 0.0f, 0.0f };
+
+    // ========================================================================
+    // glTFのRoot Joint外側Transformを模した最小ケース
+    // ========================================================================
+    // Raven Skeleton内のRoot BindGlobalはT(+2)ですが、glTF inverseBindには
+    // Scene上のJoint WorldとMesh Worldの差が含まれるため、ここでは意図的にT(-7)を与えます。
+    //
+    //   BindSkeletonGlobal * InverseBind = T(+2) * T(-7) = T(-5)
+    //
+    // SkeletalMeshDeformerは全Boneに共通するこのBind空間差を検出し、逆行列T(+5)を
+    // 左から補正します。その結果Bind Pose SkinningはIdentityへ戻る必要があります。
+    const math::Mat4 externalInverseBind = math::Mat4::Translation({ -7.0f, 0.0f, 0.0f });
+    const BoneIndex rootIndex = skeleton.AddBoneWithInverseBindMatrix(root, externalInverseBind);
+    assert(rootIndex != InvalidBoneIndex);
+
+    const std::vector<math::Vec3> bindPositions{
+        { 3.0f, 0.0f, 0.0f }
+    };
+    const std::vector<SkinWeight> weights{
+        MakeWeight(rootIndex)
+    };
+    SkinnedMeshData skinData(bindPositions, weights);
+
+    std::vector<MeshVertex> vertices(1);
+    vertices[0].Position = bindPositions[0];
+    MeshGeometry geometry(std::move(vertices), {}, GeometryUsage::Dynamic, TopologyUsage::Fixed);
+
+    SkeletalMeshDeformer deformer(skeleton, skinData);
+
+    // Bind Poseでは補正込みSkinning MatrixがIdentityになり、頂点は元位置を維持します。
+    assert(deformer.Deform(
+        deformer.GetSkeleton(),
+        deformer.GetPose(),
+        deformer.GetSkinnedMeshData(),
+        geometry));
+    assert(NearlyEqual(geometry.GetVertices()[0].Position, bindPositions[0]));
+
+    // RootをBind位置+1だけ移動すると、外側基準空間差に影響されず頂点も+1だけ移動します。
+    BoneTransform moved = deformer.GetPose().GetLocalTransform(rootIndex);
+    moved.Translation = { 3.0f, 0.0f, 0.0f };
+    assert(deformer.GetPose().SetLocalTransform(rootIndex, moved));
+    assert(deformer.GetPose().UpdateGlobalTransforms(deformer.GetSkeleton()));
+    assert(deformer.Deform(
+        deformer.GetSkeleton(),
+        deformer.GetPose(),
+        deformer.GetSkinnedMeshData(),
+        geometry));
+    assert(NearlyEqual(geometry.GetVertices()[0].Position, math::Vec3{ 4.0f, 0.0f, 0.0f }));
+}
+
 void RunOneBoneManualPoseTest()
 {
     Skeleton skeleton;
@@ -142,7 +199,9 @@ void RunTwoBoneBlendTest()
 
     std::vector<MeshVertex> vertices(3);
     for (std::size_t i = 0; i < vertices.size(); ++i)
+    {
         vertices[i].Position = bindPositions[i];
+    }
     MeshGeometry geometry(std::move(vertices), {}, GeometryUsage::Dynamic, TopologyUsage::Fixed);
 
     SkeletonPose pose;
@@ -170,6 +229,7 @@ void RunTwoBoneBlendTest()
 void RunSkeletalDeformationSelfTests()
 {
     RunBindPoseIdentityTest();
+    RunExternalBindSpaceCorrectionTest();
     RunOneBoneManualPoseTest();
     RunTwoBoneBlendTest();
 }
