@@ -131,6 +131,7 @@ bool SkinnedRagdollRuntime::Attach(
     m_SkinIndex = skinIndex;
     m_TargetAsset = &targetAsset;
     m_Ragdoll = std::move(ragdoll);
+    m_ConstraintSolver = RagdollConstraintSolver{};
     return true;
 }
 
@@ -167,6 +168,23 @@ bool SkinnedRagdollRuntime::EnterRagdoll(std::string* errorMessage)
     return SetError(errorMessage, "Ragdoll開始Poseを取得できるPrimitiveがありません");
 }
 
+bool SkinnedRagdollRuntime::InitializeConstraints(std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (m_Ragdoll.IsBuilt() == false)
+    {
+        return SetError(errorMessage, "Constraint初期化にはBuild済みRagdollが必要です");
+    }
+
+    // EnterRagdoll()後のBody PoseをRest Poseとして保存します。
+    // AnimationからRagdollへ切り替えた瞬間に関節がConstraint中心へ跳ぶことを防ぎます。
+    return m_ConstraintSolver.Initialize(m_Ragdoll, errorMessage);
+}
+
 bool SkinnedRagdollRuntime::SetBodyState(
     BoneIndex boneIndex,
     const RagdollBodyState& state,
@@ -181,6 +199,23 @@ bool SkinnedRagdollRuntime::SetBodyState(
     std::string* errorMessage)
 {
     return m_Ragdoll.SetBodyState(boneName, state, errorMessage);
+}
+
+bool SkinnedRagdollRuntime::SolveConstraints(
+    const RagdollConstraintSolverSettings& settings,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (m_ConstraintSolver.IsInitialized() == false)
+    {
+        return SetError(errorMessage, "Ragdoll Constraint SolverがInitializeされていません");
+    }
+
+    return m_ConstraintSolver.Solve(m_Ragdoll, settings, errorMessage);
 }
 
 bool SkinnedRagdollRuntime::ApplyPose(
@@ -263,6 +298,37 @@ bool SkinnedRagdollRuntime::ApplyPose(
     }
 
     return true;
+}
+
+bool SkinnedRagdollRuntime::UpdateConstrainedMesh(
+    float deltaTime,
+    const RagdollConstraintSolverSettings& settings,
+    float weight,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (std::isfinite(deltaTime) == false || deltaTime < 0.0f)
+    {
+        return SetError(errorMessage, "deltaTimeは0以上の有限値である必要があります");
+    }
+
+    // PhysicsWorld統合後は、この直前に各RigidBody結果をSetBodyState()へ同期します。
+    // その後Constraintを反復して人体の関節接続と可動域を復元し、Skeletonへ戻します。
+    if (SolveConstraints(settings, errorMessage) == false)
+    {
+        return false;
+    }
+
+    if (ApplyPose(weight, errorMessage) == false)
+    {
+        return false;
+    }
+
+    return m_TargetAsset->Update(deltaTime, errorMessage);
 }
 
 bool SkinnedRagdollRuntime::UpdateMesh(
