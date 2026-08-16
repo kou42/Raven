@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Scene/Scene.h"
@@ -48,6 +49,19 @@ bool IsTrackedKinematicGround(
     return true;
 }
 
+bool ContainsEntity(const std::vector<Entity>& entities, Entity target)
+{
+    for (const Entity& entity : entities)
+    {
+        if (entity == target)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 } // namespace
 
 void CharacterController::ResetMovingPlatformTracking()
@@ -90,13 +104,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
     // ========================================================================
     // 前FrameにKinematic Platformへ接地していた場合、Character自身の入力移動より先に
     // PlatformのTransform差分を適用します。
-    //
-    // Platform側にLinearVelocityの設定を必須とせずTransform差分を見る理由:
-    // - PhysicsWorld::MovePosition()
-    // - Animation
-    // - Script / Gameplay Logic
-    // のどの経路でKinematic Bodyを動かしても、実際にScene上で動いた量を正規データとして
-    // Characterへ継承できるためです。
     bool wasOnMovingPlatform = false;
     math::Vec3 inheritedPlatformVelocity{};
 
@@ -188,11 +195,12 @@ bool CharacterController::UpdateWithMovingPlatforms(
     // Incoming Dynamic Body -> Character
     // ========================================================================
     // Character自身はKinematic Bodyなので、Physics SolverだけではDynamic Bodyから押し返されません。
-    // Dynamic Bodyの1Frame分の移動を相対運動へ変換し、Character Capsuleを逆向きにSweepします。
+    // Dynamic Bodyの1Frame分の水平移動を相対運動へ変換し、Character Capsuleを逆方向へSweepします。
     //
-    // 例: 左側の箱が+XへCharacterへ飛んでくる場合、Moving obstacleを固定した相対座標系では
-    // Characterが-Xへ移動すると考えられます。Hit後に残っているFrame時間だけBody速度をCharacterへ
-    // 継承し、通常のResolvePhysicsMovement()を通して押し出すことで、押された先の壁も貫通しません。
+    // 複数Bodyが同時にCharacterへ到達する場合は、各BodyについてHit後に残る変位を集め、平均して
+    // 1つのCharacter変位へ統合します。単純加算にしない理由は、同速度の箱が2個重なっただけで
+    // Character速度が2倍になる非物理的な増幅を避けるためです。反対側から同時に押された場合は
+    // ベクトルが相殺されるため、Characterはその場に留まり「挟まれている」状態になります。
     if (m_Config.EnableDynamicBodyInteraction == true
         && deltaTime > math::Epsilon)
     {
@@ -208,37 +216,36 @@ bool CharacterController::UpdateWithMovingPlatforms(
         dynamicCastSettings.IncludePlanes = false;
         dynamicCastSettings.IncludeTriggers = false;
 
-        math::Vec3 incomingDisplacement{};
-        math::Vec3 incomingVelocity{};
-        float bestDisplacementLengthSquared = 0.0f;
+        math::Vec3 accumulatedDisplacement{};
+        math::Vec3 accumulatedVelocity{};
+        uint32_t incomingBodyCount = 0u;
+        std::vector<Entity> processedHitEntities;
 
-        for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
+        for (auto [sourceEntity, sourceRigidBody] : scene.View<RigidBodyComponent>())
         {
-            static_cast<void>(entity);
-
-            if (rigidBody.Type != BodyType::Dynamic
-                || rigidBody.InverseMass <= 0.0f)
+            if (sourceRigidBody.Type != BodyType::Dynamic
+                || sourceRigidBody.InverseMass <= 0.0f)
             {
                 continue;
             }
 
-            const math::Vec3 bodyHorizontalVelocity{
-                rigidBody.LinearVelocity.x,
+            const math::Vec3 sourceHorizontalVelocity{
+                sourceRigidBody.LinearVelocity.x,
                 0.0f,
-                rigidBody.LinearVelocity.z
+                sourceRigidBody.LinearVelocity.z
             };
-            const math::Vec3 bodyDisplacement = bodyHorizontalVelocity * deltaTime;
-            if (bodyDisplacement.LengthSq() <= 1.0e-12f)
+            const math::Vec3 sourceDisplacement = sourceHorizontalVelocity * deltaTime;
+            if (sourceDisplacement.LengthSq() <= 1.0e-12f)
             {
                 continue;
             }
 
-            const math::Vec3 relativeCharacterDisplacement = -bodyDisplacement;
+            // Moving obstacleを固定した相対座標系では、CharacterがBody移動と逆方向へ動くと考えます。
             ph::PhysicsCapsuleCastHit dynamicHit{};
             if (scene.GetPhysicsWorld().CapsuleCast(
                     scene,
                     transform.Position,
-                    relativeCharacterDisplacement,
+                    -sourceDisplacement,
                     dynamicCastSettings,
                     dynamicHit) == false)
             {
@@ -254,43 +261,88 @@ bool CharacterController::UpdateWithMovingPlatforms(
                 continue;
             }
 
-            const math::Vec3 hitBodyHorizontalVelocity{
+            const math::Vec3 hitHorizontalVelocity{
                 hitRigidBody->LinearVelocity.x,
                 0.0f,
                 hitRigidBody->LinearVelocity.z
             };
+            const math::Vec3 hitDisplacement = hitHorizontalVelocity * deltaTime;
+            if (hitDisplacement.LengthSq() <= 1.0e-12f)
+            {
+                continue;
+            }
+
+            // ----------------------------------------------------------------
+            // Hit Entity verification
+            // ----------------------------------------------------------------
+            // CapsuleCastはDynamic全体から最初のHitを返すため、sourceEntityの速度で行ったSweepが
+            // 別Bodyへ当たる場合があります。そのまま採用すると「Aの速度でBの衝突時刻を計算する」
+            // ことになるため、HitしたBody自身の速度でもう一度Sweepし、同じEntityへ当たることを確認します。
+            if (dynamicHit.HitEntity != sourceEntity)
+            {
+                ph::PhysicsCapsuleCastHit verifiedHit{};
+                if (scene.GetPhysicsWorld().CapsuleCast(
+                        scene,
+                        transform.Position,
+                        -hitDisplacement,
+                        dynamicCastSettings,
+                        verifiedHit) == false)
+                {
+                    continue;
+                }
+                if (verifiedHit.HitEntity != dynamicHit.HitEntity)
+                {
+                    continue;
+                }
+
+                dynamicHit = verifiedHit;
+            }
+
+            // 同じHit Entityが複数sourceのSweepから見つかっても1回だけ集計します。
+            if (ContainsEntity(processedHitEntities, dynamicHit.HitEntity) == true)
+            {
+                continue;
+            }
+            processedHitEntities.push_back(dynamicHit.HitEntity);
 
             // Fraction=0なら既に接触しているため1Frame分、Fraction=1ならFrame末尾接触なので0です。
             const float remainingTimeFraction = std::clamp(
                 1.0f - dynamicHit.Fraction,
                 0.0f,
                 1.0f);
-            const math::Vec3 candidateDisplacement =
-                hitBodyHorizontalVelocity * deltaTime * remainingTimeFraction;
-            const float candidateLengthSquared = candidateDisplacement.LengthSq();
-            if (candidateLengthSquared <= bestDisplacementLengthSquared)
+            if (remainingTimeFraction <= math::Epsilon)
             {
                 continue;
             }
 
-            bestDisplacementLengthSquared = candidateLengthSquared;
-            incomingDisplacement = candidateDisplacement;
-            incomingVelocity = hitBodyHorizontalVelocity;
+            accumulatedDisplacement += hitHorizontalVelocity * deltaTime * remainingTimeFraction;
+            accumulatedVelocity += hitHorizontalVelocity * remainingTimeFraction;
+            ++incomingBodyCount;
         }
 
-        if (bestDisplacementLengthSquared > 1.0e-12f)
+        if (incomingBodyCount > 0u)
         {
-            // PositionだけでなくController速度へも反映し、次Frameに押し返しが即消失するのを防ぎます。
+            const float inverseBodyCount = 1.0f / static_cast<float>(incomingBodyCount);
+            const math::Vec3 incomingDisplacement = accumulatedDisplacement * inverseBodyCount;
+            const math::Vec3 incomingVelocity = accumulatedVelocity * inverseBodyCount;
+
+            // PositionだけでなくController速度へも反映します。押された後に入力が無ければ、通常の
+            // Decelerationに従って減衰するため、外力由来の短い慣性として扱えます。
             m_Velocity.x = incomingVelocity.x;
             m_Velocity.z = incomingVelocity.z;
 
-            if (ResolvePhysicsMovement(
-                    scene,
-                    incomingDisplacement,
-                    transform,
-                    errorMessage) == false)
+            if (incomingDisplacement.LengthSq() > 1.0e-12f)
             {
-                return false;
+                // 押された先にStatic Wall / Kinematic / Dynamic Bodyが存在しても、通常のCharacter
+                // MoveAndSlide経路で停止します。これが壁際でのPenetration Recovery兼安全弁になります。
+                if (ResolvePhysicsMovement(
+                        scene,
+                        incomingDisplacement,
+                        transform,
+                        errorMessage) == false)
+                {
+                    return false;
+                }
             }
         }
     }
