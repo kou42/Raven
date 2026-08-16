@@ -6,6 +6,7 @@
 #include <string>
 
 #include "Raven/Gltf/SkinnedRagdollRuntime.h"
+#include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/Ragdoll/RagdollRuntime.h"
 #include "Raven/Scene/Scene.h"
 
@@ -120,6 +121,7 @@ bool CharacterRagdollRecoveryRuntime::ValidateConfig(
         return SetError(errorMessage, "Ragdoll復帰Reference Bone名は空にできません");
     }
     if (std::isfinite(config.BlendDuration) == false
+        || std::isfinite(config.GroundProbeDistance) == false
         || std::isfinite(config.FaceUpDownThreshold) == false
         || std::isfinite(config.InheritedHorizontalVelocityScale) == false
         || std::isfinite(config.MaxInheritedHorizontalSpeed) == false)
@@ -132,6 +134,7 @@ bool CharacterRagdollRecoveryRuntime::ValidateConfig(
         return SetError(errorMessage, "Ragdoll復帰Axisに非有限値が含まれています");
     }
     if (config.BlendDuration < 0.0f
+        || config.GroundProbeDistance < 0.0f
         || config.FaceUpDownThreshold < 0.0f
         || config.FaceUpDownThreshold > 1.0f
         || config.InheritedHorizontalVelocityScale < 0.0f
@@ -218,12 +221,45 @@ bool CharacterRagdollRecoveryRuntime::Begin(
         characterTransform.Rotation.y);
 
     math::Vec3 recoveryPosition = referenceBody->Position;
+    bool recoveredOnGround = false;
+
     if (config.SnapControllerToGround == true)
     {
-        // Ragdoll BodyのPositionはPelvis等のBody中心です。
-        // Character Controller RootをそのYへ置くと空中に浮くため、XZだけをRagdollから引き継ぎ、
-        // Character Controller自身が持つGround基準面へYを戻します。
-        recoveryPosition.y = characterController.GetConfig().GroundHeight;
+        // ====================================================================
+        // Ragdoll Reference Body -> Physics Ground
+        // ====================================================================
+        // Pelvis/HipsのYをそのままController Rootへ使わず、そのXZ直下の実ColliderへRay Ground Queryします。
+        // これにより斜面・段差・GroundHeight以外の高さで倒れたCharacterも同じ床へ復帰できます。
+        const CharacterControllerConfig& controllerConfig = characterController.GetConfig();
+
+        ph::PhysicsGroundQuerySettings groundSettings{};
+        groundSettings.MaxDistance = config.GroundProbeDistance + controllerConfig.GroundProbeStartOffset;
+        groundSettings.MaxSlopeRadians = controllerConfig.MaxGroundSlopeRadians;
+        groundSettings.IncludeStatic = true;
+        groundSettings.IncludeKinematic = true;
+        groundSettings.IncludeDynamic = false;
+        groundSettings.IncludePlanes = true;
+
+        const math::Vec3 groundOrigin = referenceBody->Position
+            + math::Vec3{ 0.0f, controllerConfig.GroundProbeStartOffset, 0.0f };
+
+        ph::PhysicsGroundQueryHit groundHit{};
+        if (scene.GetPhysicsWorld().GroundQuery(
+                scene,
+                groundOrigin,
+                groundSettings,
+                groundHit) == true)
+        {
+            recoveryPosition.y = groundHit.Point.y;
+            recoveredOnGround = true;
+        }
+        else if (config.FallbackToControllerGroundHeight == true)
+        {
+            // 既存SampleにFloor Colliderが無い場合だけLegacy GroundHeightへfallbackします。
+            // 新規SceneでColliderが整備されていれば通常この経路には入りません。
+            recoveryPosition.y = controllerConfig.GroundHeight;
+            recoveredOnGround = true;
+        }
     }
 
     const math::Vec3 inheritedVelocity = ClampHorizontalVelocity(
@@ -235,7 +271,7 @@ bool CharacterRagdollRecoveryRuntime::Begin(
             recoveryPosition,
             recoveryYaw,
             inheritedVelocity,
-            config.SnapControllerToGround,
+            recoveredOnGround,
             characterTransform,
             errorMessage) == false)
     {
