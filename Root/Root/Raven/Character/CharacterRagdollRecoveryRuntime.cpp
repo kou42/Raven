@@ -120,7 +120,6 @@ bool CharacterRagdollRecoveryRuntime::ValidateConfig(
         return SetError(errorMessage, "Ragdoll復帰Reference Bone名は空にできません");
     }
     if (std::isfinite(config.BlendDuration) == false
-        || std::isfinite(config.GroundHeight) == false
         || std::isfinite(config.FaceUpDownThreshold) == false
         || std::isfinite(config.InheritedHorizontalVelocityScale) == false
         || std::isfinite(config.MaxInheritedHorizontalSpeed) == false)
@@ -162,7 +161,7 @@ bool CharacterRagdollRecoveryRuntime::Begin(
         errorMessage->clear();
     }
 
-    if (m_IsRecovering)
+    if (m_IsRecovering == true)
     {
         return SetError(errorMessage, "Ragdoll復帰Blendは既に進行中です");
     }
@@ -183,7 +182,7 @@ bool CharacterRagdollRecoveryRuntime::Begin(
     // Begin()はPhysics Step後に呼ぶ想定です。Physics Entityが存在する場合は、そのFrameの最終
     // Position / Orientation / Velocityを先にRagdollRuntimeへ同期してからBodyを破棄します。
     // これによりRecovery Blend中はPhysics Entityが無くても、最後の倒れPoseを固定元として使えます。
-    if (ragdollRuntime.GetPhysicsBridge().IsCreated())
+    if (ragdollRuntime.GetPhysicsBridge().IsCreated() == true)
     {
         if (ragdollRuntime.SyncPhysicsToRagdoll(scene, errorMessage) == false)
         {
@@ -219,12 +218,12 @@ bool CharacterRagdollRecoveryRuntime::Begin(
         characterTransform.Rotation.y);
 
     math::Vec3 recoveryPosition = referenceBody->Position;
-    if (config.SnapControllerToGround)
+    if (config.SnapControllerToGround == true)
     {
         // Ragdoll BodyのPositionはPelvis等のBody中心です。
         // Character Controller RootをそのYへ置くと空中に浮くため、XZだけをRagdollから引き継ぎ、
-        // Controllerが立つ基準面へYを戻します。
-        recoveryPosition.y = config.GroundHeight;
+        // Character Controller自身が持つGround基準面へYを戻します。
+        recoveryPosition.y = characterController.GetConfig().GroundHeight;
     }
 
     const math::Vec3 inheritedVelocity = ClampHorizontalVelocity(
