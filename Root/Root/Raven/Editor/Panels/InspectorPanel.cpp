@@ -51,6 +51,41 @@ const char* ColliderTypeName(ColliderType type)
     return "Unknown";
 }
 
+// ============================================================================
+// ColliderType <-> Inspector表示順
+// ============================================================================
+// ColliderTypeは既存保存データとの互換性のため Sphere=0 / Box=1 / Plane=2 を維持し、
+// Capsuleは末尾へ追加しています。一方Inspectorでは関連する有限形状を並べて
+// Sphere / Box / Capsule / Plane の順に表示したいため、enum値をそのままCombo indexとして
+// 使用しません。
+//
+// この明示変換を挟むことで、将来ColliderTypeへ新形状を追加しても「enumへ挿入した位置」と
+// 「Editor上の表示順」が暗黙に結び付くことを防げます。
+int ColliderTypeToInspectorIndex(ColliderType type)
+{
+    switch (type)
+    {
+    case ColliderType::Sphere:  return 0;
+    case ColliderType::Box:     return 1;
+    case ColliderType::Capsule: return 2;
+    case ColliderType::Plane:   return 3;
+    }
+
+    return 0;
+}
+
+ColliderType InspectorIndexToColliderType(int index)
+{
+    switch (index)
+    {
+    case 0: return ColliderType::Sphere;
+    case 1: return ColliderType::Box;
+    case 2: return ColliderType::Capsule;
+    case 3: return ColliderType::Plane;
+    default: return ColliderType::Box;
+    }
+}
+
 void DrawTagComponent(Entity entity)
 {
     if (entity.HasComponent<TagComponent>() == false)
@@ -220,11 +255,11 @@ void DrawColliderComponent(Entity entity)
 
     ColliderComponent& collider = entity.GetComponent<ColliderComponent>();
 
-    int colliderTypeIndex = static_cast<int>(collider.Type);
+    int colliderTypeIndex = ColliderTypeToInspectorIndex(collider.Type);
     const char* colliderTypes[] = { "Sphere", "Box", "Capsule", "Plane" };
     if (ImGui::Combo("Collider Type", &colliderTypeIndex, colliderTypes, 4))
     {
-        collider.Type = static_cast<ColliderType>(colliderTypeIndex);
+        collider.Type = InspectorIndexToColliderType(colliderTypeIndex);
     }
 
     ImGui::TextDisabled("Current: %s", ColliderTypeName(collider.Type));
