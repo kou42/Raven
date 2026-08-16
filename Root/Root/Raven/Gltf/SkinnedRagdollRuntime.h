@@ -51,11 +51,34 @@ public:
         const RagdollDefinition& definition,
         std::string* errorMessage = nullptr);
 
+    // ========================================================================
+    // Animation -> Ragdoll Velocity Sampling
+    // ========================================================================
+    // Animation駆動中、Animation評価後に毎Frame呼びます。
+    // 現在Poseと前Frame Poseから各Ragdoll Bodyのworld Linear / Angular Velocityを計測し、
+    // EnterRagdoll() -> CreatePhysicsBodies()時にRigidBodyへそのまま継承できる状態を作ります。
+    //
+    // 典型的な呼び出し順:
+    //   Animation Update
+    //     -> SampleAnimationMotion(deltaTime)
+    //     -> 必要なFrameで EnterRagdoll()
+    //     -> InitializeConstraints()
+    //     -> CreatePhysicsBodies()
+    //
+    // ClipのTime Seek / Teleportなど不連続なPose変更を行った場合は
+    // ResetAnimationMotionHistory()を先に呼び、見かけ上の巨大速度をRagdollへ渡さないようにします。
+    bool SampleAnimationMotion(
+        float deltaTime,
+        std::string* errorMessage = nullptr);
+
+    void ResetAnimationMotionHistory();
+
     // 現在のDeformer PoseをRagdoll Bodyの初期Global Poseとして取り込みます。
     // Animation Runtime更新後、Physics Simulationへ制御を渡す直前に呼びます。
     //
-    // Ragdoll開始時にBind Poseから物理を開始するとMeshが瞬間的に跳ぶため、
-    // 「現在画面に表示されているAnimation Pose」から開始することが重要です。
+    // SampleAnimationMotion()を継続して呼んでいる場合、RagdollRuntimeには既に最新Poseと
+    // Animation由来Velocityが入っているため、その値を維持してPhysicsへ制御を渡します。
+    // Samplingを使っていない従来経路では現在PoseをCaptureし、Velocity=0から開始します。
     bool EnterRagdoll(std::string* errorMessage = nullptr);
 
     // EnterRagdoll()で取り込んだ現在PoseをJointの基準姿勢としてConstraintを初期化します。
@@ -63,11 +86,9 @@ public:
     // Constraint初期化直後にT-Pose等へ引き戻されることを防ぎます。
     bool InitializeConstraints(std::string* errorMessage = nullptr);
 
-    // EnterRagdoll()後のBody PoseからScene上にDynamic RigidBody / Collider Entityを生成します。
+    // EnterRagdoll()後のBody PoseからScene上にDynamic RigidBody / Capsule Collider Entityを生成します。
     // SceneのPhysicsWorldはECS Componentを直接走査するため、生成後は通常のPhysics Step対象になります。
-    //
-    // 現在のColliderはCapsule未実装のためRagdollPhysicsBridge側でBox近似しています。
-    // Capsule対応後も、このRuntimeの公開APIは変更せずBridge側だけ差し替えられる設計です。
+    // RagdollBodyDefinitionのRadius / HalfLengthをCapsuleへ直接渡すため、Box近似は行いません。
     bool CreatePhysicsBodies(
         Scene& scene,
         const std::string& entityNamePrefix = "Ragdoll",
@@ -195,6 +216,10 @@ private:
 
     // Scene ECS上のRigidBody / Collider Entity生成とBody State同期を担当します。
     RagdollPhysicsBridge m_PhysicsBridge{};
+
+    // trueなら直前のAnimation評価後PoseがSampleAnimationMotion()でRagdollRuntimeへ同期済みです。
+    // EnterRagdoll()はこのStateを見て、計測済みVelocityを0で上書きしないようにします。
+    bool m_HasAnimationMotionSample = false;
 };
 
 } // namespace Gltf
