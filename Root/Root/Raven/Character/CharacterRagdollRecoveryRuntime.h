@@ -41,10 +41,8 @@ struct CharacterRagdollRecoveryConfig
     // 0なら次Updateで即座にAnimation Poseへ戻します。
     float BlendDuration = 0.35f;
 
-    // Character ControllerのGround基準高さです。
     // Reference BoneのYをそのまま使うとPelvis高さへController Rootが浮くため、既定では
-    // Ragdoll最終XZだけを継承し、YはGroundHeightへSnapします。
-    float GroundHeight = 0.0f;
+    // Ragdoll最終XZだけを継承し、YはCharacterControllerConfig::GroundHeightへSnapします。
     bool SnapControllerToGround = true;
 
     // Characterの「顔が向く方向」を表すReference Boneローカル軸です。
