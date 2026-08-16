@@ -70,14 +70,13 @@ void CharacterController::ResetCrushTracking()
 
 void CharacterController::ResetMovingPlatformTracking()
 {
+    // この関数はStatic Groundへ降りた通常Frameでも内部から呼ばれるため、Crush履歴は触りません。
+    // Scene切替 / Teleport / Ragdoll切替のように両方の履歴を破棄したい境界では、呼び出し側が
+    // ResetMovingPlatformTracking() と ResetCrushTracking() をそれぞれ明示的に呼びます。
     m_MovingPlatformEntity = Entity{};
     m_MovingPlatformPosition = math::Vec3{};
     m_MovingPlatformVelocity = math::Vec3{};
     m_HasMovingPlatform = false;
-
-    // Moving Platform追跡を破棄する境界はScene切替 / Teleport / Ragdoll切替でも使われます。
-    // 同じ境界ではDynamic Bodyとの連続Crush履歴も無効なので、合わせてResetします。
-    ResetCrushTracking();
 }
 
 bool CharacterController::UpdateWithMovingPlatforms(
