@@ -25,6 +25,35 @@ struct BroadPhasePair
 };
 
 // ============================================================================
+// CollisionIgnorePairKey
+// ============================================================================
+// EntityHandle::Value()を小さい順に並べた、順序非依存の衝突除外キーです。
+// GenerationもValue()へ含まれるため、Entity Indexが再利用されても古い除外設定が
+// 新しいEntityへ誤って引き継がれません。
+struct CollisionIgnorePairKey
+{
+    uint64_t A = 0;
+    uint64_t B = 0;
+
+    bool operator==(const CollisionIgnorePairKey& rhs) const
+    {
+        return A == rhs.A && B == rhs.B;
+    }
+};
+
+struct CollisionIgnorePairKeyHasher
+{
+    std::size_t operator()(const CollisionIgnorePairKey& key) const noexcept
+    {
+        std::size_t seed = std::hash<uint64_t>{}(key.A);
+        seed ^= std::hash<uint64_t>{}(key.B)
+            + static_cast<std::size_t>(0x9e3779b97f4a7c15ull)
+            + (seed << 6) + (seed >> 2);
+        return seed;
+    }
+};
+
+// ============================================================================
 // BroadPhase
 // ============================================================================
 // Dynamic AABB Treeを保持し、Scene内Colliderの追加・移動・削除をProxyへ同期します。
@@ -36,6 +65,17 @@ class BroadPhase
 {
 public:
     void ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPairs);
+
+    // ========================================================================
+    // Collision Ignore Pair
+    // ========================================================================
+    // Jointで接続されたRagdoll Bodyなど、「形状は重なっても衝突応答させたくない」
+    // Entityペアを登録します。A/Bの順序は問いません。
+    void AddIgnorePair(Entity a, Entity b);
+    void RemoveIgnorePair(Entity a, Entity b);
+    void RemoveIgnorePairsForEntity(Entity entity);
+    bool IsPairIgnored(Entity a, Entity b) const;
+    void ClearIgnorePairs();
 
     // 直近のComputePairs()がSimulationへ返した候補Pairを保持します。
     // Debug描画のためにComputePairs()を再実行するとTreeの同期タイミングが変わるため、
@@ -68,12 +108,17 @@ public:
     const DynamicAABBTree& GetTree() const { return m_Tree; }
 
 private:
+    static CollisionIgnorePairKey MakeIgnorePairKey(Entity a, Entity b);
     void Synchronize(Scene& scene);
 
 private:
     DynamicAABBTree m_Tree;
     std::unordered_map<uint64_t, uint32_t> m_Proxies;
     std::unordered_map<uint64_t, math::Vec3> m_PreviousCenters;
+
+    // Ignore PairはBroad Phase候補をNarrow Phaseへ渡す直前に適用します。
+    // Tree自体からProxyを消す方式ではないため、RayCast / QueryAABBには影響しません。
+    std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> m_IgnorePairs;
 
     // Simulationで最後に生成されたPairの診断用Snapshotです。
     std::vector<BroadPhasePair> m_LastPairs;
