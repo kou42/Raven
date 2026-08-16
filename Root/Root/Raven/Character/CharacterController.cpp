@@ -76,6 +76,9 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || std::isfinite(m_Config.CapsuleRadius) == false
         || std::isfinite(m_Config.CapsuleHalfLength) == false
         || std::isfinite(m_Config.CollisionSkinWidth) == false
+        || std::isfinite(m_Config.DynamicBodyPushMass) == false
+        || std::isfinite(m_Config.DynamicBodyPushScale) == false
+        || std::isfinite(m_Config.MaxDynamicBodyPushImpulse) == false
         || std::isfinite(m_Config.MaxStepHeight) == false
         || std::isfinite(m_Config.GroundProbeStartOffset) == false
         || std::isfinite(m_Config.GroundSnapDistance) == false
@@ -96,13 +99,16 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || m_Config.CollisionSkinWidth < 0.0f
         || m_Config.MaxSlideIterations == 0u
         || m_Config.MaxCapsuleCastSubsteps == 0u
+        || m_Config.DynamicBodyPushMass <= 0.0f
+        || m_Config.DynamicBodyPushScale < 0.0f
+        || m_Config.MaxDynamicBodyPushImpulse < 0.0f
         || m_Config.MaxStepHeight < 0.0f
         || m_Config.GroundProbeStartOffset < 0.0f
         || m_Config.GroundSnapDistance < 0.0f
         || m_Config.MaxGroundSlopeRadians < 0.0f
         || m_Config.MaxGroundSlopeRadians > HalfPi)
     {
-        return SetError(errorMessage, "CharacterController Configの速度/衝突/Step/Ground Query値が不正です");
+        return SetError(errorMessage, "CharacterController Configの速度/衝突/Push/Step/Ground Query値が不正です");
     }
 
     return true;
@@ -300,6 +306,100 @@ bool CharacterController::TryStepUp(
     return true;
 }
 
+bool CharacterController::TryPushDynamicBody(
+    Scene& scene,
+    const ph::PhysicsCapsuleCastHit& hit)
+{
+    if (m_Config.EnableDynamicBodyInteraction == false)
+    {
+        return false;
+    }
+
+    // ========================================================================
+    // Dynamic Body判定
+    // ========================================================================
+    // Capsule CastはCollider Entityを返すため、RigidBodyComponentが存在し、かつDynamicである場合だけ
+    // Character Push対象にします。Static/Kinematicは従来どおりStep/Slide処理へ流します。
+    if (scene.IsEntityAlive(hit.HitEntity) == false)
+    {
+        return false;
+    }
+
+    RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(hit.HitEntity.GetIndex());
+    if (rigidBody == nullptr
+        || rigidBody->Type != BodyType::Dynamic
+        || rigidBody->InverseMass <= 0.0f)
+    {
+        return false;
+    }
+
+    // ========================================================================
+    // Horizontal contact normal
+    // ========================================================================
+    // Characterの通常移動はXZ平面なので、斜面形状などでHit NormalにY成分が含まれても
+    // Dynamic Bodyへ上下Impulseを注入しません。水平成分だけを正規化して押す方向に使用します。
+    math::Vec3 horizontalNormal{ hit.Normal.x, 0.0f, hit.Normal.z };
+    const float horizontalNormalLengthSquared = horizontalNormal.LengthSq();
+    if (horizontalNormalLengthSquared <= 1.0e-10f)
+    {
+        return true;
+    }
+    horizontalNormal /= std::sqrt(horizontalNormalLengthSquared);
+
+    // ========================================================================
+    // Relative closing speed
+    // ========================================================================
+    // hit.Normalは「障害物表面からCharacter側」を向くため、CharacterがBodyへ近付いている場合、
+    // relativeVelocity・normal は負になります。Bodyが同方向へ十分速く離れている場合は
+    // 追加Impulseを与えず、すでに離れつつある運動を邪魔しません。
+    const math::Vec3 characterHorizontalVelocity{ m_Velocity.x, 0.0f, m_Velocity.z };
+    const math::Vec3 bodyVelocity = scene.GetPhysicsWorld().GetLinearVelocity(scene, hit.HitEntity);
+    const math::Vec3 bodyHorizontalVelocity{ bodyVelocity.x, 0.0f, bodyVelocity.z };
+    const math::Vec3 relativeVelocity = characterHorizontalVelocity - bodyHorizontalVelocity;
+    const float velocityIntoBody = math::Vec3::Dot(relativeVelocity, horizontalNormal);
+    if (velocityIntoBody >= 0.0f || m_Config.DynamicBodyPushScale <= 0.0f)
+    {
+        return true;
+    }
+
+    // ========================================================================
+    // Kinematic Character用のReduced Mass
+    // ========================================================================
+    // Character自身はSolver上のDynamic Bodyではないため、Push計算専用の仮想質量を導入します。
+    //   effectiveMass = 1 / (1 / characterPushMass + bodyInverseMass)
+    // とすることで、軽いBodyは大きく速度変化し、重いBodyは押しにくい挙動になります。
+    const float inverseCharacterPushMass = 1.0f / m_Config.DynamicBodyPushMass;
+    const float effectiveInverseMass = inverseCharacterPushMass + rigidBody->InverseMass;
+    if (effectiveInverseMass <= math::Epsilon)
+    {
+        return true;
+    }
+
+    const float closingSpeed = -velocityIntoBody;
+    float impulseMagnitude = (closingSpeed / effectiveInverseMass) * m_Config.DynamicBodyPushScale;
+
+    if (m_Config.MaxDynamicBodyPushImpulse > 0.0f)
+    {
+        impulseMagnitude = std::min(impulseMagnitude, m_Config.MaxDynamicBodyPushImpulse);
+    }
+
+    if (impulseMagnitude <= math::Epsilon)
+    {
+        return true;
+    }
+
+    // Contact PointへImpulseを与えるため、重心から外れた位置を押した箱には自然にTorqueも発生します。
+    // Character側はこの後通常のBlocking Hit / Slideとして解決し、Dynamic Body内部へ貫通しません。
+    const math::Vec3 impulse = -horizontalNormal * impulseMagnitude;
+    scene.GetPhysicsWorld().AddImpulseAtPoint(
+        scene,
+        hit.HitEntity,
+        impulse,
+        hit.Point);
+
+    return true;
+}
+
 bool CharacterController::ResolvePhysicsMovement(
     Scene& scene,
     const math::Vec3& horizontalDisplacement,
@@ -321,7 +421,7 @@ bool CharacterController::ResolvePhysicsMovement(
     castSettings.BinarySearchIterations = 10u;
     castSettings.IncludeStatic = true;
     castSettings.IncludeKinematic = true;
-    castSettings.IncludeDynamic = false;
+    castSettings.IncludeDynamic = m_Config.EnableDynamicBodyInteraction;
     castSettings.IncludePlanes = true;
     castSettings.IncludeTriggers = false;
 
@@ -331,12 +431,14 @@ bool CharacterController::ResolvePhysicsMovement(
     // Kinematic Capsule Move And Slide
     // ========================================================================
     // 1. 残り変位をCapsule Cast
-    // 2. 低い段差ならStep Upを試す
-    // 3. Step不可なら最初のHit位置まで移動
-    // 4. 壁へ向かう成分を法線方向から除去
-    // 5. 残った接線方向変位を再Cast
+    // 2. Dynamic Bodyなら接触点へPush Impulseを与える
+    // 3. Static/Kinematicの低い段差ならStep Upを試す
+    // 4. Step不可なら最初のHit位置まで移動
+    // 5. 壁へ向かう成分を法線方向から除去
+    // 6. 残った接線方向変位を再Cast
     //
-    // これを少数回繰り返すことで、正面衝突では停止し、斜め衝突では壁沿いへSlideします。
+    // Dynamic BodyもCharacter側ではBlocking Hitとして扱うため、Impulseを与えた同じFrameに
+    // CharacterだけがBody内部へ進んでしまうことを防ぎます。
     for (uint32_t iteration = 0u; iteration < m_Config.MaxSlideIterations; ++iteration)
     {
         if (remainingDisplacement.LengthSq() <= 1.0e-10f)
@@ -357,15 +459,21 @@ bool CharacterController::ResolvePhysicsMovement(
             break;
         }
 
-        // 壁として止める前に、CharacterがGroundedなら低い段差として越えられないか確認します。
-        if (TryStepUp(
-                scene,
-                remainingDisplacement,
-                transform,
-                errorMessage) == true)
+        // Dynamic BodyはStepとして跨がず、接触点へImpulseを与えたうえで通常のBlocking Hitとして扱います。
+        // Static/Kinematicだけ従来のStep Up候補にすることで、低いDynamic箱をCharacterが瞬間移動で
+        // 飛び越え、その後から箱だけが押される不整合を避けます。
+        const bool hitDynamicBody = TryPushDynamicBody(scene, hit);
+        if (hitDynamicBody == false)
         {
-            remainingDisplacement = math::Vec3{};
-            break;
+            if (TryStepUp(
+                    scene,
+                    remainingDisplacement,
+                    transform,
+                    errorMessage) == true)
+            {
+                remainingDisplacement = math::Vec3{};
+                break;
+            }
         }
 
         // Shape CastはSkinWidth込みCapsuleで最初の接触時刻を返すため、Hit Fractionまで進めても

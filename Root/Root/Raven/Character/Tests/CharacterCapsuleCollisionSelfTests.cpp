@@ -35,6 +35,26 @@ Entity CreateWall(Scene& scene)
     return wall;
 }
 
+Entity CreateDynamicBox(Scene& scene, float mass)
+{
+    Entity box = scene.CreateEntity("CharacterCapsuleTestDynamicBox");
+    TransformComponent& transform = box.GetComponent<TransformComponent>();
+    transform.Position = math::Vec3{ 1.25f, 1.0f, 0.0f };
+
+    ColliderComponent& collider = box.AddComponent<ColliderComponent>();
+    collider.Type = ColliderType::Box;
+    collider.HalfExtents = math::Vec3{ 0.25f, 1.0f, 0.75f };
+    collider.IsTrigger = false;
+
+    RigidBodyComponent& rigidBody = box.AddComponent<RigidBodyComponent>();
+    rigidBody.SetBodyType(BodyType::Dynamic);
+    rigidBody.SetMass(mass);
+    rigidBody.UseGravity = false;
+    rigidBody.AllowSleep = true;
+    rigidBody.IsSleeping = true;
+    return box;
+}
+
 Entity CreateLowStep(Scene& scene)
 {
     Entity step = scene.CreateEntity("CharacterCapsuleTestStep");
@@ -117,6 +137,51 @@ void RunCharacterCapsuleCollisionSelfTests()
         assert(transform.Position.x < 0.66f);
         assert(NearlyEqual(transform.Position.y, 0.0f));
         assert(std::fabs(controller.GetVelocity().x) < 1.0e-3f);
+    }
+
+    // ========================================================================
+    // Character Controller: Dynamic Body push
+    // ========================================================================
+    // Dynamic BoxもCharacterに対してはBlocking Hitになるため、CharacterはBox内部へ貫通しません。
+    // 同時に接触点へImpulseが入り、SleepingだったDynamic Bodyが起床して+X方向へ速度を得ます。
+    {
+        Scene scene;
+        CreateGround(scene);
+        Entity dynamicBox = CreateDynamicBox(scene, 10.0f);
+
+        CharacterControllerConfig config{};
+        config.WalkSpeed = 2.0f;
+        config.RunSpeed = 2.0f;
+        config.Acceleration = 100.0f;
+        config.Deceleration = 100.0f;
+        config.CapsuleRadius = 0.35f;
+        config.CapsuleHalfLength = 0.55f;
+        config.CollisionSkinWidth = 0.02f;
+        config.EnableDynamicBodyInteraction = true;
+        config.DynamicBodyPushMass = 60.0f;
+        config.DynamicBodyPushScale = 1.0f;
+        config.MaxDynamicBodyPushImpulse = 120.0f;
+        CharacterController controller(config);
+
+        TransformComponent transform{};
+        transform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
+
+        CharacterControllerInput input{};
+        input.Move.x = 1.0f;
+
+        assert(controller.Update(input, 1.0f, scene, transform));
+
+        // Character側は従来のWallと同じ接触位置で止まり、Dynamic Bodyをすり抜けません。
+        assert(transform.Position.x > 0.60f);
+        assert(transform.Position.x < 0.66f);
+        assert(NearlyEqual(transform.Position.y, 0.0f));
+
+        const math::Vec3 dynamicVelocity = scene.GetPhysicsWorld().GetLinearVelocity(scene, dynamicBox);
+        assert(dynamicVelocity.x > 0.0f);
+        assert(std::fabs(dynamicVelocity.z) < 1.0e-3f);
+
+        const RigidBodyComponent& rigidBody = dynamicBox.GetComponent<RigidBodyComponent>();
+        assert(rigidBody.IsSleeping == false);
     }
 
     // ========================================================================
