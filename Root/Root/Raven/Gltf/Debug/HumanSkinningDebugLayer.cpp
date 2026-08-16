@@ -10,9 +10,12 @@
 #include <string>
 #include <vector>
 
+#include "Raven/Animation/SkeletalMeshDeformer.h"
+#include "Raven/Animation/SkeletonPose.h"
 #include "Raven/Gltf/GltfCoordinateSystem.h"
-#include "Raven/Gltf/NodeHierarchy.h"
+#include "Raven/Gltf/SkinnedMeshRuntime.h"
 #include "Raven/Math/MathQuatanion.h"
+#include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Components.h"
@@ -82,13 +85,12 @@ bool DecomposeWorldTransform(
     // ========================================================================
     // Humanoid直立補正後のWorld MatrixをSceneのTRSへ戻す
     // ========================================================================
-    // Skeleton Bind Poseから求めた直立補正は、各Primitiveの既存World Transformの左側へ
-    // 同じ行列として適用します。TransformComponentは行列を直接保持せずTRSを保持するため、
-    // 補正後World MatrixをPosition / Rotation / Scaleへ分解して書き戻す必要があります。
+    // 直立補正は各Primitiveの既存World Transformの左側へ同じ行列として適用します。
+    // TransformComponentは行列そのものを保持せずTRSを保持するため、補正後Matrixを
+    // Position / Rotation / Scaleへ分解して書き戻します。
     //
-    // ここでShearやReflectionを「それらしいTRS」へ近似すると、Body / Clothes間の相対配置や
-    // Skinning結果が静かに壊れて原因追跡が難しくなります。そのため、このDebug経路で安全に
-    // 表現できないMatrixは明示的に拒否します。
+    // ShearやReflectionを「近いTRS」へ丸めるとBody / Clothes間の相対配置が静かに壊れるため、
+    // Ravenの現在のTransformComponentで正確に表現できないMatrixは明示的に拒否します。
     if (std::fabs(matrix[3][0]) > AffineTolerance
         || std::fabs(matrix[3][1]) > AffineTolerance
         || std::fabs(matrix[3][2]) > AffineTolerance
@@ -97,8 +99,6 @@ bool DecomposeWorldTransform(
         return SetError(errorMessage, "Humanoid直立補正後TransformがAffine TRSではありません");
     }
 
-    // T * R * S の3x3部分では各列が「回転後のBasis Axis * Scale」になります。
-    // そのため各列長からScaleを取り出し、正規化列から純粋なRotation Basisを復元します。
     const math::Vec3 column0{ matrix[0][0], matrix[1][0], matrix[2][0] };
     const math::Vec3 column1{ matrix[0][1], matrix[1][1], matrix[2][1] };
     const math::Vec3 column2{ matrix[0][2], matrix[1][2], matrix[2][2] };
@@ -120,8 +120,6 @@ bool DecomposeWorldTransform(
     const math::Vec3 axisY = Divide(column1, scaleY);
     const math::Vec3 axisZ = Divide(column2, scaleZ);
 
-    // T * R * Sで表現できる行列なら、Scaleを除いた3本のBasis Axisは互いに直交します。
-    // 非直交ならShearが含まれているため、TransformComponentへ情報を落とさず失敗させます。
     if (std::fabs(Dot(axisX, axisY)) > OrthogonalTolerance
         || std::fabs(Dot(axisX, axisZ)) > OrthogonalTolerance
         || std::fabs(Dot(axisY, axisZ)) > OrthogonalTolerance)
@@ -133,14 +131,12 @@ bool DecomposeWorldTransform(
     if (std::isfinite(determinant) == false
         || std::fabs(determinant - 1.0f) > 1.0e-3f)
     {
-        // Reflection / 負Scaleは、どの軸へ符号を戻すかの規約を決めないとEuler値が不安定です。
-        // Debug表示の都合で推測せず、対応範囲外として明示します。
+        // Reflection / 負Scaleは符号をどの軸へ戻すかの規約が必要です。
+        // Debug表示のために推測せず、現段階では対応範囲外とします。
         return SetError(errorMessage, "Humanoid直立補正後TransformのReflection/負Scaleは未対応です");
     }
 
     // TransformComponent::GetTransform()の Rx * Ry * Rz 規約へ戻します。
-    // Spawner側のWorld Transform分解と同じ数学規約を使い、直立補正後もScene側のTransform表現を
-    // 一貫させます。
     const float r00 = axisX.x;
     const float r10 = axisX.y;
     const float r01 = axisY.x;
@@ -162,8 +158,7 @@ bool DecomposeWorldTransform(
     }
     else
     {
-        // Gimbal LockではX/Zを一意に分離できません。
-        // Z=0を代表解とし、同じRotation Matrixを再現できるXを選びます。
+        // Gimbal LockではX/Zを一意に分離できないため、Z=0を代表解にします。
         const float signY = clampedSinY >= 0.0f ? 1.0f : -1.0f;
         rotationX = std::atan2(signY * r10, r11);
         rotationZ = 0.0f;
@@ -182,11 +177,10 @@ bool DecomposeWorldTransform(
     return true;
 }
 
-std::string NormalizeNodeName(const std::string& source)
+std::string NormalizeBoneName(const std::string& source)
 {
-    // Humanoid Bone名はExporterごとに "mixamorig:Hips" や "Armature_Hips" などの差があります。
-    // 大文字小文字と区切り記号の差だけでSemantic Bone解決に失敗しないよう、比較用文字列では
-    // 英数字だけを残して小文字化します。元のNode名そのものは変更しません。
+    // Exporterごとの "mixamorig:Hips" / "Armature_Hips" 等の差を吸収する比較用表現です。
+    // 元のBone名自体は変更せず、英数字だけを残して小文字化します。
     std::string normalized;
     normalized.reserve(source.size());
 
@@ -213,148 +207,224 @@ bool EndsWith(const std::string& value, const std::string& suffix)
     return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-std::size_t FindNodeBySemanticName(
-    const std::vector<Node>& nodes,
+BoneIndex FindBoneBySemanticName(
+    const Skeleton& skeleton,
     const std::vector<std::string>& candidates)
 {
-    // まず完全一致を優先します。
-    // 完全一致が無い場合のみsuffix一致へ進むことで、例えば "HeadTop" を "Head" として
-    // 早期に誤認することを避けつつ、"mixamorig:Head" のようなnamespace付きNodeを解決します。
+    const std::vector<Bone>& bones = skeleton.GetBones();
+
+    // 完全一致を先に調べ、HeadTop等をHeadとして誤認しないようにします。
     for (const std::string& candidate : candidates)
     {
-        const std::string normalizedCandidate = NormalizeNodeName(candidate);
-        for (std::size_t nodeIndex = 0u; nodeIndex < nodes.size(); ++nodeIndex)
+        const std::string normalizedCandidate = NormalizeBoneName(candidate);
+        for (BoneIndex boneIndex = 0u;
+             boneIndex < static_cast<BoneIndex>(bones.size());
+             ++boneIndex)
         {
-            if (NormalizeNodeName(nodes[nodeIndex].Name) == normalizedCandidate)
+            if (NormalizeBoneName(bones[boneIndex].Name) == normalizedCandidate)
             {
-                return nodeIndex;
+                return boneIndex;
             }
         }
     }
 
+    // namespace / Armature prefix等が付いた場合だけsuffix一致をfallbackとして使います。
     for (const std::string& candidate : candidates)
     {
-        const std::string normalizedCandidate = NormalizeNodeName(candidate);
-        for (std::size_t nodeIndex = 0u; nodeIndex < nodes.size(); ++nodeIndex)
+        const std::string normalizedCandidate = NormalizeBoneName(candidate);
+        for (BoneIndex boneIndex = 0u;
+             boneIndex < static_cast<BoneIndex>(bones.size());
+             ++boneIndex)
         {
-            if (EndsWith(NormalizeNodeName(nodes[nodeIndex].Name), normalizedCandidate))
+            if (EndsWith(NormalizeBoneName(bones[boneIndex].Name), normalizedCandidate))
             {
-                return nodeIndex;
+                return boneIndex;
             }
         }
     }
 
-    return InvalidGltfIndex;
+    return InvalidBoneIndex;
+}
+
+const SpawnedSkinnedPrimitive* FindSpawnedPrimitive(
+    const std::vector<SpawnedSkinnedPrimitive>& primitives,
+    const RuntimeSkinnedPrimitive& runtimePrimitive)
+{
+    for (const SpawnedSkinnedPrimitive& primitive : primitives)
+    {
+        if (primitive.NodeIndex == runtimePrimitive.NodeIndex
+            && primitive.MeshIndex == runtimePrimitive.MeshIndex
+            && primitive.PrimitiveIndex == runtimePrimitive.PrimitiveIndex
+            && primitive.SkinIndex == runtimePrimitive.SkinIndex)
+        {
+            return &primitive;
+        }
+    }
+
+    return nullptr;
 }
 
 bool BuildHumanoidUprightRotation(
-    const std::string& modelPath,
+    const SkinnedMeshSceneInstance& instance,
+    const std::vector<SpawnedSkinnedPrimitive>& primitives,
     math::Mat4& outRotation,
-    math::Vec3& outSourceUp,
+    math::Vec3& outSkeletonParentUp,
+    math::Vec3& outMeshLocalUp,
+    math::Vec3& outWorldUp,
     std::string& outLowerBoneName,
     std::string& outUpperBoneName,
     std::string* errorMessage)
 {
     // ========================================================================
-    // 1. glTF Node階層を正規経路で読み、Bind PoseのGlobal Transformを構築
+    // 1. Runtime Skinningが実際に使っているSkeleton / Bind Spaceを正規データにする
     // ========================================================================
-    // Mesh形状から方向を推測せず、glTF Node/Skeletonが持つ意味情報を直立方向の正規データにします。
-    // NodeHierarchyを使うことで、Root / Armature / Joint間に存在する親Transformも含めた位置を得ます。
-    NodeHierarchy hierarchy;
-    if (NodeHierarchy::LoadFromGlb(modelPath, hierarchy, errorMessage) == false)
-    {
-        return false;
-    }
-
-    std::vector<math::Mat4> globalTransforms;
-    if (hierarchy.BuildGlobalTransforms(globalTransforms, errorMessage) == false)
-    {
-        return false;
-    }
-
-    const std::vector<Node>& nodes = hierarchy.GetNodes();
-    if (nodes.size() != globalTransforms.size())
-    {
-        return SetError(errorMessage, "Humanoid方向判定用Node数とGlobal Transform数が一致しません");
-    }
-
-    // ========================================================================
-    // 2. Humanoidの「上方向」はSkeleton Bind Poseの意味から決める
-    // ========================================================================
-    // glTFの座標系自体は常に+Y upですが、Humanモデルがその+Yへ直立しているとは限りません。
-    // Raven_human_test.glbでは人物のBind Poseが横向きに格納されているため、Scene基底規約と
-    // Humanoid姿勢方向を分離して扱います。
+    // 以前はNodeHierarchy上のHips -> Head Global方向をそのままHuman Upとしていました。
+    // しかしglTF Skinningでは、Mesh Bind SpaceとJoint/Skeleton側の空間が一致するとは限りません。
+    // Raven自身もSkeletalMeshDeformerでその差を
     //
-    // Geometry AABBの長軸は使わず、Hips/Pelvis -> Headという意味的なJoint方向を採用します。
-    // これならT-Poseの腕幅やMesh形状、服の大きさに結果が左右されません。
-    const std::size_t lowerNodeIndex = FindNodeBySemanticName(
-        nodes,
-        { "Hips", "Pelvis" });
-    const std::size_t upperNodeIndex = FindNodeBySemanticName(
-        nodes,
-        { "Head" });
-
-    if (lowerNodeIndex == InvalidGltfIndex)
+    //   Skeleton Parent Space -> Mesh Local Space
+    //
+    // の補正行列として復元しています。横倒しの見た目を正しく判定するには、この補正を通した
+    // Hips -> Head方向を使う必要があります。これによりAABB推測へ戻らず、Skinningの数学契約から
+    // 人物がMesh内でどちらを向いているかを求められます。
+    const Ref<SkinnedMeshRuntimeAsset>& runtimeAsset = instance.GetRuntimeAsset();
+    if (runtimeAsset == nullptr)
     {
-        return SetError(errorMessage, "Humanoid直立判定に必要なHips/Pelvis Jointを解決できませんでした");
-    }
-    if (upperNodeIndex == InvalidGltfIndex)
-    {
-        return SetError(errorMessage, "Humanoid直立判定に必要なHead Jointを解決できませんでした");
+        return SetError(errorMessage, "Humanoid直立判定用RuntimeAssetがnullptrです");
     }
 
-    // Joint Global PositionはglTF Scene Spaceで得られるため、Scene配置と同じ
-    // glTF -> Raven World変換を通してから方向ベクトルを作ります。
-    // 現在この基底変換はIdentityですが、境界を明示しておくことで将来の座標系変更でも
-    // Humanoid判定だけが別規約になることを防ぎます。
-    const math::Mat4 gltfToRavenWorld = BuildGltfToRavenWorldTransform();
-    const math::Vec3 lowerPosition = TransformPosition(
-        gltfToRavenWorld * globalTransforms[lowerNodeIndex],
-        math::Vec3{ 0.0f, 0.0f, 0.0f });
-    const math::Vec3 upperPosition = TransformPosition(
-        gltfToRavenWorld * globalTransforms[upperNodeIndex],
-        math::Vec3{ 0.0f, 0.0f, 0.0f });
-
-    const math::Vec3 sourceUpVector = upperPosition - lowerPosition;
-    const float sourceUpLength = sourceUpVector.Length();
-    if (std::isfinite(sourceUpLength) == false || sourceUpLength <= 1.0e-5f)
+    const std::vector<RuntimeSkinnedPrimitive>& runtimePrimitives = runtimeAsset->GetPrimitives();
+    for (const RuntimeSkinnedPrimitive& runtimePrimitive : runtimePrimitives)
     {
-        return SetError(errorMessage, "Hips/Pelvis -> Head方向が0に近くHumanoid直立方向を決定できません");
+        if (runtimePrimitive.DeformationInstance == nullptr)
+        {
+            continue;
+        }
+
+        const SpawnedSkinnedPrimitive* spawnedPrimitive = FindSpawnedPrimitive(primitives, runtimePrimitive);
+        if (spawnedPrimitive == nullptr
+            || static_cast<bool>(spawnedPrimitive->EntityHandle) == false
+            || spawnedPrimitive->EntityHandle.HasComponent<TransformComponent>() == false)
+        {
+            continue;
+        }
+
+        MeshDeformer* baseDeformer = runtimePrimitive.DeformationInstance->GetDeformer();
+        if (baseDeformer == nullptr)
+        {
+            continue;
+        }
+
+        SkeletalMeshDeformer* skeletalDeformer = dynamic_cast<SkeletalMeshDeformer*>(baseDeformer);
+        if (skeletalDeformer == nullptr)
+        {
+            continue;
+        }
+
+        if (skeletalDeformer->GetBindSpaceCorrectionError().empty() == false)
+        {
+            return SetError(
+                errorMessage,
+                "Humanoid直立判定に必要なBind Space補正が無効です: "
+                    + skeletalDeformer->GetBindSpaceCorrectionError());
+        }
+
+        const Skeleton& skeleton = skeletalDeformer->GetSkeleton();
+        const BoneIndex lowerBoneIndex = FindBoneBySemanticName(skeleton, { "Hips", "Pelvis" });
+        const BoneIndex upperBoneIndex = FindBoneBySemanticName(skeleton, { "Head" });
+
+        if (lowerBoneIndex == InvalidBoneIndex)
+        {
+            return SetError(errorMessage, "Humanoid直立判定に必要なHips/Pelvis Boneを解決できませんでした");
+        }
+        if (upperBoneIndex == InvalidBoneIndex)
+        {
+            return SetError(errorMessage, "Humanoid直立判定に必要なHead Boneを解決できませんでした");
+        }
+
+        // ControllerがPoseを変更する前の初期化段階ですが、現在Poseへ依存させないため
+        // 専用のBind Poseを作り、Skeleton定義からGlobal Transformを再構築します。
+        SkeletonPose bindPose;
+        bindPose.ResetToBindPose(skeleton);
+
+        const math::Vec3 lowerSkeletonParent = TransformPosition(
+            bindPose.GetGlobalTransform(lowerBoneIndex),
+            math::Vec3{ 0.0f, 0.0f, 0.0f });
+        const math::Vec3 upperSkeletonParent = TransformPosition(
+            bindPose.GetGlobalTransform(upperBoneIndex),
+            math::Vec3{ 0.0f, 0.0f, 0.0f });
+
+        const math::Vec3 skeletonParentVector = upperSkeletonParent - lowerSkeletonParent;
+        const float skeletonParentLength = skeletonParentVector.Length();
+        if (std::isfinite(skeletonParentLength) == false || skeletonParentLength <= 1.0e-5f)
+        {
+            return SetError(errorMessage, "Skeleton Parent SpaceのHips/Pelvis -> Head方向が0に近すぎます");
+        }
+        outSkeletonParentUp = skeletonParentVector / skeletonParentLength;
+
+        // SkeletalMeshDeformerがSkinning時に使用するものと同じBind Space補正です。
+        // Joint位置にもこの変換を通すことで、Skeleton上では+YでもMesh Localでは+Zというような
+        // 「SkeletonとGeometryの基底差」を明示的に反映できます。
+        const math::Mat4& skeletonParentToMesh =
+            skeletalDeformer->GetSkeletonParentToMeshTransform();
+        const math::Vec3 lowerMeshLocal = TransformPosition(skeletonParentToMesh, lowerSkeletonParent);
+        const math::Vec3 upperMeshLocal = TransformPosition(skeletonParentToMesh, upperSkeletonParent);
+
+        const math::Vec3 meshLocalVector = upperMeshLocal - lowerMeshLocal;
+        const float meshLocalLength = meshLocalVector.Length();
+        if (std::isfinite(meshLocalLength) == false || meshLocalLength <= 1.0e-5f)
+        {
+            return SetError(errorMessage, "Mesh Local SpaceのHips/Pelvis -> Head方向が0に近すぎます");
+        }
+        outMeshLocalUp = meshLocalVector / meshLocalLength;
+
+        // 最後に、実際にRendererへ渡るEntity World Transformも通します。
+        // ここで得た方向が「現在画面に描かれるHumanの意味的な上方向」です。
+        const TransformComponent& transform =
+            spawnedPrimitive->EntityHandle.GetComponent<TransformComponent>();
+        const math::Mat4 worldTransform = transform.GetTransform();
+        const math::Vec3 lowerWorld = TransformPosition(worldTransform, lowerMeshLocal);
+        const math::Vec3 upperWorld = TransformPosition(worldTransform, upperMeshLocal);
+
+        const math::Vec3 worldVector = upperWorld - lowerWorld;
+        const float worldLength = worldVector.Length();
+        if (std::isfinite(worldLength) == false || worldLength <= 1.0e-5f)
+        {
+            return SetError(errorMessage, "Raven World SpaceのHips/Pelvis -> Head方向が0に近すぎます");
+        }
+        outWorldUp = worldVector / worldLength;
+
+        const math::Vec3 targetUp{ 0.0f, 1.0f, 0.0f };
+        const float rawDot = math::Vec3::Dot(outWorldUp, targetUp);
+        const float clampedDot = rawDot < -1.0f ? -1.0f : (rawDot > 1.0f ? 1.0f : rawDot);
+
+        // ====================================================================
+        // 2. 実際の描画上UpをRaven +Yへ向ける最短回転を作る
+        // ====================================================================
+        if (clampedDot >= 1.0f - 1.0e-5f)
+        {
+            outRotation = math::Mat4::Identity();
+        }
+        else if (clampedDot <= -1.0f + 1.0e-5f)
+        {
+            // 完全な反対向きではCross軸が0になるため+Xを180度回転軸として使用します。
+            outRotation = math::Quat::FromAxisAngle(
+                math::Vec3{ 1.0f, 0.0f, 0.0f },
+                3.14159265358979323846f).ToMat4();
+        }
+        else
+        {
+            const math::Vec3 rotationAxis = math::Vec3::Cross(outWorldUp, targetUp).Normalized();
+            const float rotationAngle = std::acos(clampedDot);
+            outRotation = math::Quat::FromAxisAngle(rotationAxis, rotationAngle).ToMat4();
+        }
+
+        outLowerBoneName = skeleton.GetBone(lowerBoneIndex).Name;
+        outUpperBoneName = skeleton.GetBone(upperBoneIndex).Name;
+        return true;
     }
 
-    const math::Vec3 sourceUp = sourceUpVector / sourceUpLength;
-    const math::Vec3 targetUp{ 0.0f, 1.0f, 0.0f };
-    const float rawDot = math::Vec3::Dot(sourceUp, targetUp);
-    const float clampedDot = rawDot < -1.0f ? -1.0f : (rawDot > 1.0f ? 1.0f : rawDot);
-
-    // ========================================================================
-    // 3. Hips -> HeadをRaven +Yへ向ける最短回転を作る
-    // ========================================================================
-    // sourceUpと+Yが同方向なら補正不要です。
-    if (clampedDot >= 1.0f - 1.0e-5f)
-    {
-        outRotation = math::Mat4::Identity();
-    }
-    else if (clampedDot <= -1.0f + 1.0e-5f)
-    {
-        // 完全な反対向きではCross(sourceUp, targetUp)が0になり回転軸を作れません。
-        // +Xを安定した180度回転軸として選び、人物の上下だけを確実に反転させます。
-        outRotation = math::Quat::FromAxisAngle(
-            math::Vec3{ 1.0f, 0.0f, 0.0f },
-            3.14159265358979323846f).ToMat4();
-    }
-    else
-    {
-        // 一般ケースではCrossが両方向に垂直な最短回転軸、acos(dot)が回転角になります。
-        const math::Vec3 rotationAxis = math::Vec3::Cross(sourceUp, targetUp).Normalized();
-        const float rotationAngle = std::acos(clampedDot);
-        outRotation = math::Quat::FromAxisAngle(rotationAxis, rotationAngle).ToMat4();
-    }
-
-    outSourceUp = sourceUp;
-    outLowerBoneName = nodes[lowerNodeIndex].Name;
-    outUpperBoneName = nodes[upperNodeIndex].Name;
-    return true;
+    return SetError(errorMessage, "Humanoid直立判定に利用できるSkeletalMeshDeformerがありません");
 }
 
 bool ApplyHumanoidUprightRotation(
@@ -365,18 +435,13 @@ bool ApplyHumanoidUprightRotation(
     // ========================================================================
     // Human全体へ共通のWorld Space直立回転を適用
     // ========================================================================
-    // 各PrimitiveのLocal Transformを個別に補正すると、Body / Clothesなどの相対配置を壊します。
-    // そのため、Spawn時に構築済みのWorld Transformの左側へ全Primitive共通の回転を掛けます。
+    // 各PrimitiveのLocal Transformを個別に推測補正せず、Spawn済みWorld Transformの左側へ
+    // 同じ回転を掛けます。
     //
     //   M_correctedWorld = R_upright * M_importedWorld
     //
-    // Skeleton / inverseBindMatrices / Mesh Local Spaceは変更せず、Scene表示上のHuman全体だけを
-    // 回転させるため、SkinningのMesh Local / Bind Space契約を維持できます。
-    //
-    // 重要:
-    // ここではTransformComponentを書き換えるため、primitiveを非const参照で受けます。
-    // Entity::GetComponent()にはconst/non-const overloadがあり、const Entityから取得した場合は
-    // const T&になるため、mutableなScene Entityを編集するこの処理では非constが必要です。
+    // Skeleton / inverseBindMatrices / Mesh Local Space自体は変更しないため、Skinningの数学は維持しつつ
+    // Human全体のScene配置方向だけを修正できます。
     for (SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -388,8 +453,8 @@ bool ApplyHumanoidUprightRotation(
         TransformComponent& transform = primitive.EntityHandle.GetComponent<TransformComponent>();
         const math::Mat4 correctedWorld = uprightRotation * transform.GetTransform();
 
-        // 単純にRotation.x等へ加算すると、既存Node Rotationとの合成順によって別の回転になります。
-        // 行列として正しく左乗算してからTRSへ再分解することで、任意の既存Node Transformを保ちます。
+        // Rotation.x等への角度加算は既存Node Rotationとの積順を壊すため、行列として左乗算した後に
+        // RavenのTRS規約へ戻します。
         TransformComponent correctedTransform{};
         if (DecomposeWorldTransform(correctedWorld, correctedTransform, errorMessage) == false)
         {
@@ -403,7 +468,7 @@ bool ApplyHumanoidUprightRotation(
 }
 
 bool NormalizeHumanForDebugView(
-    const std::string& modelPath,
+    const SkinnedMeshSceneInstance& instance,
     std::vector<SpawnedSkinnedPrimitive>& primitives,
     std::string* errorMessage)
 {
@@ -411,19 +476,24 @@ bool NormalizeHumanForDebugView(
     constexpr float MinimumHeight = 1.0e-5f;
 
     // ========================================================================
-    // 1. Skeleton Bind PoseからHuman全体の直立回転を決定して適用
+    // 1. Skinning Bind SpaceからHuman全体の直立回転を決定して適用
     // ========================================================================
-    // 旧実装のようにAABBのX/Y/ZサイズからUp軸を推測しません。
-    // AABBはT-Poseのarm span、服や装備、Animation Poseによって形状が変わるため、方向情報の
-    // 正規データにはできません。Hips/Pelvis -> HeadというSkeletonの意味情報だけを使います。
+    // AABBの長軸ではなく、Runtime Skinningが実際に使用している
+    // Skeleton Parent -> Mesh Local -> Entity Worldの変換経路を通したHips/Pelvis -> Headを使います。
+    // これにより、Skeleton Nodeだけを見ると+YでもGeometry側では+Zへ寝ているAssetを正しく扱えます。
     math::Mat4 uprightRotation = math::Mat4::Identity();
-    math::Vec3 sourceUp{};
+    math::Vec3 skeletonParentUp{};
+    math::Vec3 meshLocalUp{};
+    math::Vec3 worldUp{};
     std::string lowerBoneName;
     std::string upperBoneName;
     if (BuildHumanoidUprightRotation(
-            modelPath,
+            instance,
+            primitives,
             uprightRotation,
-            sourceUp,
+            skeletonParentUp,
+            meshLocalUp,
+            worldUp,
             lowerBoneName,
             upperBoneName,
             errorMessage) == false)
@@ -444,13 +514,8 @@ bool NormalizeHumanForDebugView(
     // ========================================================================
     // 2. 直立補正後のWorld AABBを計算
     // ========================================================================
-    // ここからのAABBは「方向判定」ではなく、Debug表示のサイズ・Center/Floor合わせだけに使います。
-    // Hips/Pelvis -> Head方向は既にRaven +Yへ揃っているため、高さは明示的にY幅を使えます。
-    //
-    // Primitiveごとの頂点はMesh Local Spaceにあります。複数Primitiveが別Node Transformを持つ
-    // 可能性があるためLocal座標を直接統合せず、各Entityの現在World Transformを適用してから
-    // 全Primitive分を同じWorld Space AABBへ統合します。
-    // この走査ではEntityを書き換えないため、primitiveはconst参照で扱います。
+    // ここでAABBを使う目的は方向判定ではなく、表示サイズ・Center・Floor合わせだけです。
+    // 各PrimitiveのMesh Local頂点へEntity World Transformを適用し、共通World AABBへ統合します。
     for (const SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -490,21 +555,16 @@ bool NormalizeHumanForDebugView(
 
     const math::Vec3 sourceBoundsCenter = (sourceBoundsMin + sourceBoundsMax) * 0.5f;
     const math::Vec3 sourceBoundsSize = sourceBoundsMax - sourceBoundsMin;
-
-    // Skeleton基準で直立済みなので、人物の表示高さはRaven WorldのY幅です。
-    // ここでX/Zとの大小比較は行わず、形状からUp軸を再推測しないことが重要です。
     const float sourceHeight = sourceBoundsSize.y;
     if (sourceHeight <= MinimumHeight)
     {
-        return SetError(errorMessage, "Skeleton直立補正後のHuman高さが0に近すぎます");
+        return SetError(errorMessage, "Skinning Bind Space基準の直立補正後Human高さが0に近すぎます");
     }
 
     // ========================================================================
     // 3. 高さをTargetHeightへUniform Scaleし、Center / Floorを正規化
     // ========================================================================
-    // Uniform Scaleだけを使うことでHumanの縦横比やPrimitive間の相対Scaleを変えません。
-    // X/ZはBounds Centerを原点へ、YはBounds MinをFloor(Y=0)へ合わせます。
-    // Centerを単純にY=TargetHeight/2へ置く方式より、足先と頭頂が非対称でも確実に接地できます。
+    // Uniform Scaleだけを使い、Humanの縦横比やPrimitive間の相対Scaleを維持します。
     const float uniformScale = TargetHeight / sourceHeight;
     const math::Vec3 debugTranslation{
         -sourceBoundsCenter.x * uniformScale,
@@ -515,13 +575,7 @@ bool NormalizeHumanForDebugView(
     // ========================================================================
     // 4. Human全体へ同じWorld Space Scale / Translationを適用
     // ========================================================================
-    // 各Primitiveへ共通のDebug表示変換を適用することで、Body / Clothes等の相対配置を維持します。
-    // 直立回転は既にApplyHumanoidUprightRotation()で完了しているため、ここではRotationに触れません。
-    //
-    //   M_debugWorld = T_debug * S_uniform * M_uprightWorld
-    //
-    // Skinning自体はMesh Local Spaceで完結しており、Skeleton / inverseBindMatrices / SkinWeightには
-    // 一切補正を入れません。ここはあくまでScene EntityのDebug表示位置・サイズだけを担当します。
+    // 直立回転は既に完了しているためRotationには触れず、Scene上の表示位置とサイズだけを揃えます。
     for (SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -531,21 +585,25 @@ bool NormalizeHumanForDebugView(
         }
 
         TransformComponent& transform = primitive.EntityHandle.GetComponent<TransformComponent>();
-
-        // 左からT_debug * S_uniformを掛けるのと同じWorld Position更新です。
-        // Scaleも全軸同倍率なので既存Rotationとの組み合わせで軸歪みを作りません。
         transform.Position = debugTranslation + transform.Position * uniformScale;
         transform.Scale = transform.Scale * uniformScale;
     }
 
+    // Skeleton空間・Mesh空間・World空間の方向を並べて出すことで、将来別Assetで問題が起きても
+    // 「どの境界で軸が変わったか」をAABB推測なしで追跡できます。
     std::cout
-        << "[HumanSkinning] Debug Bounds after Skeleton upright alignment:\n"
+        << "[HumanSkinning] Debug Bounds after Skinning-space upright alignment:\n"
         << "  Min    = (" << sourceBoundsMin.x << ", " << sourceBoundsMin.y << ", " << sourceBoundsMin.z << ")\n"
         << "  Max    = (" << sourceBoundsMax.x << ", " << sourceBoundsMax.y << ", " << sourceBoundsMax.z << ")\n"
         << "  Size   = (" << sourceBoundsSize.x << ", " << sourceBoundsSize.y << ", " << sourceBoundsSize.z << ")\n"
         << "  Coordinate System = " << GetGltfCoordinateSystemDescription() << '\n'
         << "  Humanoid Up Source = " << lowerBoneName << " -> " << upperBoneName << '\n'
-        << "  Humanoid Up Vector = (" << sourceUp.x << ", " << sourceUp.y << ", " << sourceUp.z << ")\n"
+        << "  Skeleton Parent Up = ("
+        << skeletonParentUp.x << ", " << skeletonParentUp.y << ", " << skeletonParentUp.z << ")\n"
+        << "  Mesh Local Up = ("
+        << meshLocalUp.x << ", " << meshLocalUp.y << ", " << meshLocalUp.z << ")\n"
+        << "  World Up Before Correction = ("
+        << worldUp.x << ", " << worldUp.y << ", " << worldUp.z << ")\n"
         << "  Humanoid Up Target = (0, 1, 0)\n"
         << "  AABB used for orientation = false\n"
         << "  Debug Scale = " << uniformScale << '\n';
@@ -559,12 +617,12 @@ HumanSkinningDebugLayer::~HumanSkinningDebugLayer() = default;
 
 bool HumanSkinningDebugLayer::TryInitialize()
 {
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         return true;
     }
 
-    if (m_InitializationAttempted)
+    if (m_InitializationAttempted == true)
     {
         return false;
     }
@@ -607,8 +665,7 @@ bool HumanSkinningDebugLayer::TryInitialize()
 
     // Debug表示正規化ではPrimitive EntityのTransformComponentを書き換えるため、
     // const参照ではなくSceneInstanceが所有する配列への非const参照が必要です。
-    // GetPrimitives()にはconst/non-const overloadを用意しているため、const_castを使わず
-    // SceneInstance側の所有権境界を保ったまま明示的にmutableなPrimitive配列を取得します。
+    // GetPrimitives()のnon-const overloadを使うことでconst_castを避け、所有権境界を維持します。
     std::vector<SpawnedSkinnedPrimitive>& primitives = m_HumanInstance.GetPrimitives();
     if (primitives.empty())
     {
@@ -620,20 +677,17 @@ bool HumanSkinningDebugLayer::TryInitialize()
     // ========================================================================
     // Human Debug固有の直立補正と表示正規化
     // ========================================================================
-    // glTF +Y upというScene座標系規約と、Humanが実際にどちらを向いてBindされているかは別問題です。
-    // ここではNodeHierarchyからJoint Bind Poseを読み、Hips/Pelvis -> HeadをHumanの+Upとして
-    // Raven +Yへ合わせます。Geometry AABBによるUp軸推測は行いません。
+    // glTFの+Y upはScene座標系の規約であり、Mesh Bind Space内のHumanが+Yへ直立している保証では
+    // ありません。今回はSkeletalMeshDeformerが復元済みのBind Space補正を利用して
     //
-    // 直立後は全PrimitiveのWorld AABBから表示高さ・Center・Floorだけを求めます。
-    // Human.glb固有の単位やScene Node位置に依存せず、既定Cameraから手動Skinning結果を確認できる
-    // サイズ・位置へ揃えることが、このDebug Layer側の正規化の責務です。
+    //   Skeleton Parent -> Mesh Local -> Entity World
     //
-    // Skeleton / inverseBindMatrices / Mesh Local頂点そのものは変更せず、Spawn済みEntity全体へ
-    // 共通World Transformを与えるためSkinningの空間契約は維持されます。
-    if (NormalizeHumanForDebugView(m_ModelPath, primitives, &errorMessage) == false)
+    // の順にHips/Pelvis -> Head方向を追跡し、最終的に画面へ出るHumanのUpだけをRaven +Yへ揃えます。
+    // AABBは直立方向の判定には使用せず、直立後の表示サイズ・Center・Floor合わせだけに使います。
+    if (NormalizeHumanForDebugView(m_HumanInstance, primitives, &errorMessage) == false)
     {
         std::cerr
-            << "[HumanSkinning] Human.glbのSkeleton基準Debug正規化に失敗しました: "
+            << "[HumanSkinning] Human.glbのSkinning Bind Space基準Debug正規化に失敗しました: "
             << errorMessage << '\n';
         DestroyHuman();
         return false;
@@ -694,7 +748,7 @@ void HumanSkinningDebugLayer::OnUpdate(float deltaTime)
 {
     // SceneGameでは現在、Layer UpdateがOnUpdateGame()とScene::OnUpdateLayer()の2経路から
     // 呼ばれます。Human debugだけ二重入力しないよう、1回目だけ処理しOnRender()で解除します。
-    if (m_UpdatedSinceRender)
+    if (m_UpdatedSinceRender == true)
     {
         return;
     }
@@ -729,7 +783,7 @@ void HumanSkinningDebugLayer::DestroyHuman()
 {
     // 初期化途中で失敗した場合、まだSceneGame::m_SpawnedEntitiesへ登録していないEntityを
     // Spawner経由で確実に破棄します。成功後の通常LifetimeはSceneGame::OnDestroy()へ統一します。
-    if (m_HumanInstance.IsValid())
+    if (m_HumanInstance.IsValid() == true)
     {
         SkinnedMeshSceneSpawner::Destroy(m_Scene, m_HumanInstance);
     }
