@@ -213,11 +213,12 @@ public:
         std::string* errorMessage = nullptr);
 
     // Scene切替 / Teleport / Ragdoll切替など、前FrameのPlatform差分を次Frameへ持ち越してはいけない
-    // 境界で呼びます。Crushの継続履歴も同じ境界では無効になるため合わせてResetします。
+    // 境界で呼びます。通常のStatic Groundへの移行でも内部から呼ばれるため、Crush履歴は変更しません。
     void ResetMovingPlatformTracking();
 
-    // Crushの連続時間・累積Exposureだけを明示的に破棄したい場合に使用します。
-    // Scene切替やTeleportでは通常ResetMovingPlatformTracking()から同時に呼ばれます。
+    // Crushの瞬間状態・連続時間・累積Exposureを明示的に破棄します。
+    // Scene切替 / Teleport / Ragdoll切替など、以前のDynamic Interaction履歴を持ち越してはいけない
+    // 境界ではResetMovingPlatformTracking()とは別にこの関数も呼びます。
     void ResetCrushTracking();
 
     // Raven標準Keyboard入力(WASD / Left Shift / Space)をDevice非依存入力へ変換します。
