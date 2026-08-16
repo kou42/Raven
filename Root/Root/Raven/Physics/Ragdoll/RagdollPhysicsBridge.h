@@ -31,17 +31,16 @@ struct RagdollPhysicsBodyBinding
 // RagdollRuntimeのBodyをScene上の実RigidBodyへ変換するBridgeです。
 //
 // 処理順:
-// 1. RagdollRuntime::CaptureAnimationPose()で現在Animation PoseをBodyへ取り込む
-// 2. CreateBodies()でScene Entity + RigidBody + Colliderを生成する
+// 1. RagdollRuntime::CaptureAnimationPose() / SampleAnimationPose()でAnimation状態をBodyへ取り込む
+// 2. CreateBodies()でScene Entity + Dynamic RigidBody + Capsule Colliderを生成する
 // 3. PhysicsWorld::Step()で重力・衝突を解く
 // 4. SyncPhysicsToRagdoll()で結果をRagdollRuntimeへ戻す
 // 5. RagdollConstraintSolverで関節を補正する
 // 6. 必要ならSyncRagdollToPhysics()でConstraint結果をPhysics Bodyへ戻す
 // 7. SkeletonPoseへ反映する
 //
-// 現状Raven ColliderにはCapsuleが無いため、RagdollBodyDefinitionのRadius/HalfLengthは
-// Box Colliderへ近似します。Capsule Collider実装後はCreateBodies()のCollider生成部分だけを
-// 差し替えれば、Ragdoll Runtime / Constraint Solver側は変更不要です。
+// ColliderはRagdollBodyDefinition::Radius / HalfLengthをCapsuleへ直接渡します。
+// Capsuleの長軸はBoneローカル+Yで、Transform / RigidBody Orientationの回転に追従します。
 class RagdollPhysicsBridge
 {
 public:
