@@ -3,6 +3,7 @@
 
 #include <utility>
 
+#include "Raven/Gltf/GltfCoordinateSystem.h"
 #include "Raven/Gltf/NodeHierarchy.h"
 #include "Raven/Gltf/StaticMeshImporter.h"
 
@@ -27,6 +28,7 @@ bool AppendNodeInstances(
     std::size_t nodeIndex,
     const NodeHierarchy& hierarchy,
     const std::vector<math::Mat4>& globalTransforms,
+    const math::Mat4& gltfToRavenWorld,
     const std::vector<ImportedStaticPrimitive>& primitives,
     std::vector<ImportedStaticMeshInstance>& outInstances,
     std::string* errorMessage)
@@ -51,7 +53,11 @@ bool AppendNodeInstances(
 
             ImportedStaticMeshInstance instance;
             instance.Geometry = primitive.Geometry;
-            instance.WorldTransform = globalTransforms[nodeIndex];
+
+            // globalTransforms[nodeIndex]にはglTF Node階層のLocal Transformがすべて合成済みです。
+            // glTFは仕様として+Y upなので、Geometry AABBからUp軸を推測する処理は行いません。
+            // Authoring Tool由来の基底変換が必要なAssetでは、その変換もNode階層へ含まれます。
+            instance.WorldTransform = gltfToRavenWorld * globalTransforms[nodeIndex];
             instance.NodeName = node.Name;
             instance.MeshName = primitive.MeshName;
             instance.NodeIndex = nodeIndex;
@@ -77,6 +83,7 @@ bool AppendNodeInstances(
                 childIndex,
                 hierarchy,
                 globalTransforms,
+                gltfToRavenWorld,
                 primitives,
                 outInstances,
                 errorMessage) == false)
@@ -153,6 +160,10 @@ bool StaticSceneImporter::LoadFromGlb(
         }
     }
 
+    // Static / Skinnedのどちらも同じScene座標系契約を通します。
+    // 現在はglTFとRavenがともに+Y upなのでIdentityですが、基底変換の責務をここへ明示します。
+    const math::Mat4 gltfToRavenWorld = BuildGltfToRavenWorldTransform();
+
     std::vector<ImportedStaticMeshInstance> instances;
     for (std::size_t rootNodeIndex : rootNodes)
     {
@@ -160,6 +171,7 @@ bool StaticSceneImporter::LoadFromGlb(
                 rootNodeIndex,
                 hierarchy,
                 globalTransforms,
+                gltfToRavenWorld,
                 primitives,
                 instances,
                 errorMessage) == false)
