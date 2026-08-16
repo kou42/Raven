@@ -18,6 +18,11 @@ namespace Gltf
 class SkinnedBlendTreeRuntime;
 }
 
+namespace ph
+{
+struct PhysicsCapsuleCastHit;
+}
+
 // ============================================================================
 // CharacterControllerInput
 // ============================================================================
@@ -71,6 +76,27 @@ struct CharacterControllerConfig
     uint32_t MaxCapsuleCastSubsteps = 64u;
 
     // ========================================================================
+    // Dynamic Body Interaction
+    // ========================================================================
+    // trueの場合、水平移動のCapsule CastでDynamic BodyもBlocking Hitとして扱い、
+    // Character側は貫通せず、接触したDynamic BodyへImpulseを与えます。
+    // Character自身はKinematicのままなので、Physics SolverにCharacter自由度を追加しません。
+    bool EnableDynamicBodyInteraction = true;
+
+    // Characterを「押す側の仮想質量」として扱う値です。
+    // Dynamic Bodyとの接近速度から reduced mass を計算するために使います。
+    // Bodyが重いほど同じImpulseでも速度変化が小さくなり、軽い箱ほど押しやすくなります。
+    float DynamicBodyPushMass = 60.0f;
+
+    // 物理式で求めたImpulseへ掛けるGameplay調整倍率です。
+    // 0ならDynamic BodyはCharacterを遮りますが、押すImpulseは発生しません。
+    float DynamicBodyPushScale = 1.0f;
+
+    // 1回の接触で与えるImpulse上限です。0以下なら上限を設けません。
+    // 高速移動や極端なMass設定による過大ImpulseをGameplay側で抑えるために使用します。
+    float MaxDynamicBodyPushImpulse = 120.0f;
+
+    // ========================================================================
     // Step Up / Down
     // ========================================================================
     // 正面Capsule Castが低い障害物へ当たった場合、これだけ足元を持ち上げた位置から同じ水平変位を
@@ -111,7 +137,7 @@ struct CharacterControllerConfig
 //         -> Acceleration / Deceleration
 //         -> Facing Rotation
 //         -> Physics Ground Query / Gravity / Jump
-//         -> Capsule Cast / Step Up / Wall Slide
+//         -> Capsule Cast / Dynamic Push / Step Up / Wall Slide
 //         -> Vertical Integration
 //         -> Ground Snap / Step Down
 //
@@ -146,6 +172,7 @@ public:
     // PhysicsWorld::GroundQuery()で床を取得し、PhysicsWorld::CapsuleCast()で壁貫通を防ぎます。
     // 衝突後の残り水平変位は接触面へ投影してSlideさせるため、斜め入力で壁へ入った場合も
     // 完全停止せず壁沿いの成分を維持します。低い障害物はMaxStepHeight以内ならStep Upします。
+    // Dynamic Bodyへ当たった場合はCharacterを止めつつ、接触点へPush Impulseを与えます。
     bool Update(
         const CharacterControllerInput& input,
         float deltaTime,
@@ -234,12 +261,20 @@ private:
         std::string* errorMessage);
 
     // 水平変位をCapsule Castし、最初の接触まで移動した後、残り変位を接触面へ投影してSlideします。
+    // Dynamic Bodyへ当たった場合は接触点へImpulseを与え、Character側は同じBlocking Hitとして扱います。
     // Velocityの壁へ向かう水平成分も同時に除去し、次Frameで同じ壁へ押し込み続けないようにします。
     bool ResolvePhysicsMovement(
         Scene& scene,
         const math::Vec3& horizontalDisplacement,
         TransformComponent& transform,
         std::string* errorMessage);
+
+    // Hit Entityが押せるDynamic Bodyなら接触点へ水平Impulseを与えます。
+    // 戻り値は「Hit EntityがDynamic Bodyだったか」で、Impulseが0でもtrueを返します。
+    // これによりDynamic Bodyを低いStatic Stepとして誤って乗り越えることを防ぎます。
+    bool TryPushDynamicBody(
+        Scene& scene,
+        const ph::PhysicsCapsuleCastHit& hit);
 
     // 低い障害物へ当たったときだけ、MaxStepHeight上から同じ変位を再Castして上面へ着地できるか調べます。
     bool TryStepUp(
