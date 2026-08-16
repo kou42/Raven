@@ -42,8 +42,16 @@ struct CharacterRagdollRecoveryConfig
     float BlendDuration = 0.35f;
 
     // Reference BoneのYをそのまま使うとPelvis高さへController Rootが浮くため、既定では
-    // Ragdoll最終XZだけを継承し、YはCharacterControllerConfig::GroundHeightへSnapします。
+    // PhysicsWorld::GroundQuery()でReference Body直下の実床面へControllerを復元します。
     bool SnapControllerToGround = true;
+
+    // Pelvis / HipsなどのReference Bodyから下方向へ床を探す最大距離です。
+    // Character通常更新のGroundSnapDistanceより長く取り、横倒ししたPelvisからでも床へ届くようにします。
+    float GroundProbeDistance = 3.0f;
+
+    // Physics Ground Queryで床が見つからなかった場合に、既存GroundHeightへfallbackするかです。
+    // SceneにまだFloor Colliderが無い既存Sampleとの互換を維持しつつ、新規Sceneでは実Colliderを優先します。
+    bool FallbackToControllerGroundHeight = true;
 
     // Characterの「顔が向く方向」を表すReference Boneローカル軸です。
     // world +YとのDotを使ってFaceUp / FaceDownを判定します。
@@ -73,9 +81,10 @@ struct CharacterRagdollRecoveryConfig
 // 責務:
 // 1. PhysicsWorldの最終Ragdoll PoseをRagdollRuntimeへ取り込む
 // 2. Reference BoneからCharacter ControllerのWorld XZ / Yawを復元する
-// 3. FaceUp / FaceDown / Sideを判定し、Get-Up Animation選択情報を公開する
-// 4. Physics Bodyを破棄してDynamic制御を終了する
-// 5. Frozen Ragdoll Poseから現在Animation Poseへ一定時間Blendする
+// 3. Physics Ground QueryでReference Body直下の実床面へController Rootを復元する
+// 4. FaceUp / FaceDown / Sideを判定し、Get-Up Animation選択情報を公開する
+// 5. Physics Bodyを破棄してDynamic制御を終了する
+// 6. Frozen Ragdoll Poseから現在Animation Poseへ一定時間Blendする
 //
 // Animation Clipの選択・再生自体はAnimator / BlendTree側の責務として残します。
 // Update()を呼ぶFrameでは、先にAnimation Runtimeを評価してDeformerへ「復帰先Pose」を
@@ -84,7 +93,7 @@ class CharacterRagdollRecoveryRuntime
 {
 public:
     // Physics駆動Ragdollの終了を開始します。
-    // 成功後はPhysics Bodyが破棄予約され、Character ControllerがReference Bone位置へ復元されます。
+    // 成功後はPhysics Bodyが破棄予約され、Character ControllerがReference Bone直下の床へ復元されます。
     bool Begin(
         Scene& scene,
         Gltf::SkinnedRagdollRuntime& ragdollRuntime,
