@@ -80,8 +80,8 @@ public:
     // Locomotion BlendTreeからGet-Up / Hit Reactionなどの単発Clipへ遷移します。
     // Animatorの既存CrossFade経路を利用し、Clipは非Loopで再生します。
     //
-    // one-shot再生中はSetMovementSpeed()ではなく、Character Controller側で速度値だけ保持し、
-    // 終了後ReturnToLocomotion()したFrameから通常のLocomotion Parameter更新へ戻す想定です。
+    // one-shot再生中は通常のSetMovementSpeed()を停止し、終了後ReturnToLocomotion()へ
+    // Character Controllerの現在速度を渡してLocomotion Parameterを再同期します。
     bool PlayOneShotAnimation(
         std::size_t skinIndex,
         const std::string& animationName,
@@ -89,10 +89,11 @@ public:
         std::string* errorMessage = nullptr);
 
     // one-shot Clipから設定済みIdle / Walk / Run BlendTreeへ戻します。
-    // 現在保持しているMovementSpeedを使用するため、復帰直前にSetMovementSpeed()を再開すれば
-    // Characterの実速度に対応したLocomotion Poseへ直接CrossFadeできます。
+    // movementSpeedを明示的に受け取ることで、Ragdoll突入前の古い走行速度ではなく
+    // Get-Up完了時点のCharacter Controller速度へ直接復帰できます。
     bool ReturnToLocomotion(
         std::size_t skinIndex,
+        float movementSpeed,
         float crossFadeDuration = 0.15f,
         std::string* errorMessage = nullptr);
 
