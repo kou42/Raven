@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "Raven/Gltf/GltfCoordinateSystem.h"
 #include "Raven/Gltf/JsonParser.h"
 #include "Raven/Gltf/NodeHierarchy.h"
 
@@ -83,6 +84,48 @@ void RunTrsAndMatrixHierarchyTest()
     assert(NearlyEqual(globals[2][2][3], 0.0f));
 }
 
+void RunExplicitCoordinateSystemTest()
+{
+    const std::string json = R"json(
+{
+  "asset": { "version": "2.0" },
+  "nodes": [
+    {
+      "name": "AuthoringBasisConversion",
+      "rotation": [-0.70710678118, 0.0, 0.0, 0.70710678118]
+    }
+  ],
+  "scenes": [
+    { "nodes": [0] }
+  ],
+  "scene": 0
+}
+)json";
+
+    Gltf::JsonValue root;
+    std::string error;
+    assert(Gltf::JsonParser::Parse(json, root, &error));
+
+    Gltf::NodeHierarchy hierarchy;
+    assert(Gltf::NodeHierarchy::BuildFromJson(root, hierarchy, &error));
+
+    std::vector<math::Mat4> globals;
+    assert(hierarchy.BuildGlobalTransforms(globals, &error));
+    assert(globals.size() == 1u);
+
+    // 例えばZ-up Authoring Space由来のAssetが、ExporterによってRoot Nodeへ
+    // X -90degの基底変換を持つ場合、Local +ZはNode TransformによってglTF World +Yへ移ります。
+    // Debug側がAABBを見てさらにZ->Y回転を足すと二重変換になるため、Node Transformを正規データにします。
+    const math::Vec4 localZDirection{ 0.0f, 0.0f, 1.0f, 0.0f };
+    const math::Vec4 gltfWorldDirection = globals[0] * localZDirection;
+    const math::Vec4 ravenWorldDirection =
+        Gltf::BuildGltfToRavenWorldTransform() * gltfWorldDirection;
+
+    assert(NearlyEqual(ravenWorldDirection.x, 0.0f));
+    assert(NearlyEqual(ravenWorldDirection.y, 1.0f));
+    assert(NearlyEqual(ravenWorldDirection.z, 0.0f));
+}
+
 void RunCycleRejectionTest()
 {
     const std::string json = R"json(
@@ -137,6 +180,7 @@ void RunMatrixAndTrsRejectionTest()
 void RunGltfNodeHierarchySelfTests()
 {
     RunTrsAndMatrixHierarchyTest();
+    RunExplicitCoordinateSystemTest();
     RunCycleRejectionTest();
     RunMatrixAndTrsRejectionTest();
 }
