@@ -7,6 +7,7 @@
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
+#include "Raven/Scene/Entity.h"
 
 namespace Raven
 {
@@ -152,6 +153,27 @@ public:
         TransformComponent& transform,
         std::string* errorMessage = nullptr);
 
+    // ========================================================================
+    // Moving Platform対応Update
+    // ========================================================================
+    // 前Frameに接地していたKinematic Ground EntityのTransform差分をCharacterへ先に適用してから、
+    // 通常のPhysics Character Updateを実行します。
+    //
+    // Platformの移動経路をPhysicsWorld::MovePosition()だけに限定せずTransform差分を直接追跡するため、
+    // Animation / Script / Gameplay LogicからKinematic Platformを動かした場合も同じ仕組みで追従できます。
+    // Jump時には直前FrameのPlatform水平速度をjumpPlatformHorizontalVelocityScale倍して継承します。
+    bool UpdateWithMovingPlatforms(
+        const CharacterControllerInput& input,
+        float deltaTime,
+        Scene& scene,
+        TransformComponent& transform,
+        float jumpPlatformHorizontalVelocityScale = 1.0f,
+        std::string* errorMessage = nullptr);
+
+    // Scene切替 / Teleport / Ragdoll切替など、前FrameのPlatform差分を次Frameへ持ち越してはいけない
+    // 境界で呼びます。
+    void ResetMovingPlatformTracking();
+
     // Raven標準Keyboard入力(WASD / Left Shift / Space)をDevice非依存入力へ変換します。
     // Input Mapping System導入後はこの関数だけを置き換え、運動計算は維持できます。
     static CharacterControllerInput ReadDefaultKeyboardInput();
@@ -190,6 +212,10 @@ public:
     // Legacy UpdateやAirborne中はWorld Upを返します。
     const math::Vec3& GetGroundNormal() const { return m_GroundNormal; }
 
+    bool IsOnMovingPlatform() const { return m_HasMovingPlatform; }
+    const math::Vec3& GetMovingPlatformVelocity() const { return m_MovingPlatformVelocity; }
+    Entity GetMovingPlatformEntity() const { return m_MovingPlatformEntity; }
+
 private:
     bool ValidateConfig(std::string* errorMessage) const;
 
@@ -227,6 +253,16 @@ private:
     math::Vec3 m_Velocity{ 0.0f, 0.0f, 0.0f };
     math::Vec3 m_GroundNormal{ 0.0f, 1.0f, 0.0f };
     bool m_Grounded = false;
+
+    // ========================================================================
+    // Moving Platform Tracking
+    // ========================================================================
+    // Entity HandleはGenerationを含むため、Platform破棄後に同じIndexが再利用されても古い追跡状態を
+    // 新Entityへ誤適用しません。Positionは前FrameのKinematic Ground Transform位置です。
+    Entity m_MovingPlatformEntity{};
+    math::Vec3 m_MovingPlatformPosition{};
+    math::Vec3 m_MovingPlatformVelocity{};
+    bool m_HasMovingPlatform = false;
 };
 
 } // namespace Raven
