@@ -213,6 +213,7 @@ enum class ColliderType
 {
     Sphere,
     Box,
+    Capsule,
     Plane
 };
 
@@ -226,15 +227,22 @@ struct ColliderComponent
 {
     ColliderType Type = ColliderType::Box;
 
-    // Sphere / Boxの中心をTransform::Positionからずらすローカルオフセットです。
-    // BoxではTransformの回転に追従します。
+    // Sphere / Box / Capsuleの中心をTransform::Positionからずらすローカルオフセットです。
+    // Box / CapsuleではTransformの回転に追従します。
     math::Vec3 Offset{ 0.0f, 0.0f, 0.0f };
 
     // Box用パラメータです。現在はTransform::Rotationを反映したOBBの半サイズです。
     // 既存Scene互換性のためTransform::Scaleとは分離しています。
     math::Vec3 HalfExtents{ 0.5f, 0.5f, 0.5f };
 
+    // Sphere / Capsuleの半径です。
     float Radius = 0.5f;
+
+    // Capsule中心線分の半長です。
+    // CapsuleはローカルY軸方向へ -HalfLength ～ +HalfLength の中心線分を持ち、
+    // その線分をRadiusで膨らませた形状として扱います。
+    // したがってCapsuleの全高は 2 * (HalfLength + Radius) です。
+    float HalfLength = 0.5f;
 
     math::Vec3 PlaneNormal{ 0.0f, 1.0f, 0.0f };
     float PlaneOffset = 0.0f;
