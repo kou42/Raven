@@ -97,6 +97,7 @@ void RunCharacterMovingPlatformSelfTests()
         characterTransform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
         CharacterControllerInput input{};
 
+        // 最初のFrameでKinematic Groundを捕捉します。
         assert(controller.UpdateWithMovingPlatforms(
             input,
             1.0f / 60.0f,
@@ -106,6 +107,7 @@ void RunCharacterMovingPlatformSelfTests()
         assert(controller.IsOnMovingPlatform());
         assert(controller.GetMovingPlatformEntity() == platform);
 
+        // Platformを+Xへ0.5m移動すると、次FrameでCharacterも同量搬送されます。
         platform.GetComponent<TransformComponent>().Position.x += 0.5f;
 
         assert(controller.UpdateWithMovingPlatforms(
@@ -137,6 +139,7 @@ void RunCharacterMovingPlatformSelfTests()
             scene,
             characterTransform));
 
+        // Platform上面を0.2m持ち上げます。Character足元も同じ高さへ追従します。
         platform.GetComponent<TransformComponent>().Position.y += 0.2f;
 
         assert(controller.UpdateWithMovingPlatforms(
@@ -187,6 +190,8 @@ void RunCharacterMovingPlatformSelfTests()
     // ========================================================================
     // Dynamic Body -> Character response
     // ========================================================================
+    // Characterが入力していなくても、1Frame以内に到達するDynamic Bodyの水平速度を相対Sweepで検出し、
+    // Hit後の残り時間分だけCharacterがBody進行方向へ押し出されることを確認します。
     {
         Scene scene;
         CreateGround(scene);
@@ -206,12 +211,10 @@ void RunCharacterMovingPlatformSelfTests()
         characterTransform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
         CharacterControllerInput input{};
 
-        assert(controller.UpdateWithMovingPlatforms(
-            input,
-            1.0f,
-            scene,
-            characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
 
+        // Boxは左から+Xへ近付くため、Characterも+Xへ押し出されます。
+        // Character自身はDynamic化せず、ControllerのKinematic移動経路で応答します。
         assert(characterTransform.Position.x > 0.25f);
         assert(characterTransform.Position.x < 0.45f);
         assert(NearlyEqual(characterTransform.Position.y, 0.0f));
@@ -224,27 +227,13 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         CreateGround(scene);
-        CreateIncomingDynamicBox(
-            scene,
-            math::Vec3{ -1.25f, 0.50f, -0.20f },
-            math::Vec3{ 1.0f, 0.0f, 0.0f },
-            "CharacterIncomingDynamicBoxA");
-        CreateIncomingDynamicBox(
-            scene,
-            math::Vec3{ -1.25f, 0.50f, 0.20f },
-            math::Vec3{ 1.0f, 0.0f, 0.0f },
-            "CharacterIncomingDynamicBoxB");
+        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, -0.20f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxA");
+        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.20f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxB");
 
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-
-        assert(controller.UpdateWithMovingPlatforms(
-            input,
-            1.0f,
-            scene,
-            characterTransform));
-
+        assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
         assert(characterTransform.Position.x > 0.20f);
         assert(characterTransform.Position.x < 0.50f);
     }
@@ -256,27 +245,13 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         CreateGround(scene);
-        CreateIncomingDynamicBox(
-            scene,
-            math::Vec3{ -1.25f, 0.50f, 0.0f },
-            math::Vec3{ 1.0f, 0.0f, 0.0f },
-            "CharacterIncomingDynamicBoxLeft");
-        CreateIncomingDynamicBox(
-            scene,
-            math::Vec3{ 1.25f, 0.50f, 0.0f },
-            math::Vec3{ -1.0f, 0.0f, 0.0f },
-            "CharacterIncomingDynamicBoxRight");
+        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxLeft");
+        CreateIncomingDynamicBox(scene, math::Vec3{ 1.25f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxRight");
 
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-
-        assert(controller.UpdateWithMovingPlatforms(
-            input,
-            1.0f,
-            scene,
-            characterTransform));
-
+        assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
         assert(std::fabs(characterTransform.Position.x) < 0.10f);
     }
 
@@ -288,21 +263,12 @@ void RunCharacterMovingPlatformSelfTests()
         Scene scene;
         CreateGround(scene);
         CreateBlockingWall(scene);
-        CreateIncomingDynamicBox(
-            scene,
-            math::Vec3{ -1.25f, 0.50f, 0.0f },
-            math::Vec3{ 1.0f, 0.0f, 0.0f },
-            "CharacterIncomingDynamicBoxWallCase");
+        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxWallCase");
 
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-
-        assert(controller.UpdateWithMovingPlatforms(
-            input,
-            1.0f,
-            scene,
-            characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
 
         // Wall左面x=0.5、Character Capsule Radius+Skinがおよそ0.37なので、足元中心は約0.13より先へ進みません。
         assert(characterTransform.Position.x >= 0.0f);
@@ -320,20 +286,12 @@ void RunCharacterMovingPlatformSelfTests()
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
 
-        assert(controller.UpdateWithMovingPlatforms(
-            input,
-            1.0f / 60.0f,
-            scene,
-            characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 1.0f / 60.0f, scene, characterTransform));
         assert(controller.IsOnMovingPlatform());
 
         scene.DestroyEntity(platform);
 
-        assert(controller.UpdateWithMovingPlatforms(
-            input,
-            1.0f / 60.0f,
-            scene,
-            characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 1.0f / 60.0f, scene, characterTransform));
         assert(controller.IsOnMovingPlatform() == false);
     }
 }
