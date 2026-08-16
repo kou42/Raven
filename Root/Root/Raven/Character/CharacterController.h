@@ -99,6 +99,23 @@ public:
         std::size_t skinIndex,
         std::string* errorMessage = nullptr) const;
 
+    // ========================================================================
+    // Ragdoll -> Character Controller State Restore
+    // ========================================================================
+    // Dynamic RagdollからKinematic Character Controllerへ制御を戻す瞬間に使用します。
+    // 通常のUpdate()を1回通して位置を合わせるのではなく、Ragdoll最終Poseから決定した
+    // World Position / Yaw / Velocityを原子的にController Stateへ反映します。
+    //
+    // Pitch / RollはRagdollの倒れ姿勢をKinematic Controllerへ持ち越さず0へ戻します。
+    // grounded=trueの場合は下向き速度を0へClampし、復帰直後に床へ潜ることを防ぎます。
+    bool RestoreAfterRagdoll(
+        const math::Vec3& worldPosition,
+        float yawRadians,
+        const math::Vec3& inheritedVelocity,
+        bool grounded,
+        TransformComponent& transform,
+        std::string* errorMessage = nullptr);
+
     const math::Vec3& GetVelocity() const { return m_Velocity; }
 
     float GetHorizontalSpeed() const;
