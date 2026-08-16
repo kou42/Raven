@@ -25,6 +25,13 @@ bool SetError(std::string* errorMessage, const std::string& message)
     return false;
 }
 
+bool IsFinite(const math::Vec3& value)
+{
+    return std::isfinite(value.x)
+        && std::isfinite(value.y)
+        && std::isfinite(value.z);
+}
+
 float MoveTowards(float current, float target, float maxDelta)
 {
     const float delta = target - current;
@@ -216,6 +223,55 @@ bool CharacterController::Update(
         transform.Position.y = m_Config.GroundHeight;
         m_Velocity.y = 0.0f;
         m_Grounded = true;
+    }
+
+    return true;
+}
+
+bool CharacterController::RestoreAfterRagdoll(
+    const math::Vec3& worldPosition,
+    float yawRadians,
+    const math::Vec3& inheritedVelocity,
+    bool grounded,
+    TransformComponent& transform,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (ValidateConfig(errorMessage) == false)
+    {
+        return false;
+    }
+    if (IsFinite(worldPosition) == false
+        || IsFinite(inheritedVelocity) == false
+        || std::isfinite(yawRadians) == false)
+    {
+        return SetError(errorMessage, "Ragdoll復帰Stateに非有限値が含まれています");
+    }
+
+    // ========================================================================
+    // Dynamic Ragdoll -> Kinematic Controller
+    // ========================================================================
+    // Ragdoll中のCharacter本体TransformはPhysics Boneと独立しているため、復帰時には
+    // Reference Boneから解決したWorld位置へController Rootを明示的に移動させます。
+    // 倒れていたPitch / Rollを残すと次のKinematic UpdateでもCharacter全体が傾いたままになるため、
+    // Controllerが責任を持つYawだけを維持して直立状態へ戻します。
+    transform.Position = worldPosition;
+    transform.Rotation.x = 0.0f;
+    transform.Rotation.y = NormalizeAngle(yawRadians);
+    transform.Rotation.z = 0.0f;
+
+    m_Velocity = inheritedVelocity;
+    m_Grounded = grounded;
+
+    // Grounded復帰時にRagdoll最後の下向き速度を残すと、次UpdateのGround判定前後で
+    // Characterが一瞬床へ潜る可能性があります。水平慣性は保持しつつ鉛直方向だけ安全に止めます。
+    if (m_Grounded && m_Velocity.y < 0.0f)
+    {
+        m_Velocity.y = 0.0f;
     }
 
     return true;
