@@ -9,6 +9,8 @@
 
 #include "Raven/Core/Input.h"
 #include "Raven/Gltf/SkinnedBlendTreeRuntime.h"
+#include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven
 {
@@ -71,18 +73,26 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || std::isfinite(m_Config.TurnSpeed) == false
         || std::isfinite(m_Config.Gravity) == false
         || std::isfinite(m_Config.JumpSpeed) == false
+        || std::isfinite(m_Config.GroundProbeStartOffset) == false
+        || std::isfinite(m_Config.GroundSnapDistance) == false
+        || std::isfinite(m_Config.MaxGroundSlopeRadians) == false
         || std::isfinite(m_Config.GroundHeight) == false)
     {
         return SetError(errorMessage, "CharacterController Configに非有限値が含まれています");
     }
 
+    constexpr float HalfPi = 1.57079632679489661923f;
     if (m_Config.WalkSpeed < 0.0f
         || m_Config.RunSpeed < m_Config.WalkSpeed
         || m_Config.Acceleration < 0.0f
         || m_Config.Deceleration < 0.0f
-        || m_Config.JumpSpeed < 0.0f)
+        || m_Config.JumpSpeed < 0.0f
+        || m_Config.GroundProbeStartOffset < 0.0f
+        || m_Config.GroundSnapDistance < 0.0f
+        || m_Config.MaxGroundSlopeRadians < 0.0f
+        || m_Config.MaxGroundSlopeRadians > HalfPi)
     {
-        return SetError(errorMessage, "CharacterController Configの速度/加速度値が不正です");
+        return SetError(errorMessage, "CharacterController Configの速度/加速度/Ground Query値が不正です");
     }
 
     return true;
@@ -117,6 +127,77 @@ CharacterControllerInput CharacterController::ReadDefaultKeyboardInput()
 bool CharacterController::Update(
     const CharacterControllerInput& input,
     float deltaTime,
+    TransformComponent& transform,
+    std::string* errorMessage)
+{
+    // PhysicsWorldを渡さない既存呼び出しはGroundHeight互換経路を使います。
+    return UpdateInternal(input, deltaTime, nullptr, transform, errorMessage);
+}
+
+bool CharacterController::Update(
+    const CharacterControllerInput& input,
+    float deltaTime,
+    Scene& scene,
+    TransformComponent& transform,
+    std::string* errorMessage)
+{
+    // 新しい標準経路ではSceneのPhysicsWorldへGround Queryを行います。
+    return UpdateInternal(input, deltaTime, &scene, transform, errorMessage);
+}
+
+bool CharacterController::TrySnapToPhysicsGround(
+    Scene& scene,
+    TransformComponent& transform,
+    bool allowSnap,
+    std::string* errorMessage)
+{
+    static_cast<void>(errorMessage);
+
+    if (allowSnap == false)
+    {
+        return false;
+    }
+
+    ph::PhysicsGroundQuerySettings settings{};
+    settings.MaxDistance = m_Config.GroundProbeStartOffset + m_Config.GroundSnapDistance;
+    settings.MaxSlopeRadians = m_Config.MaxGroundSlopeRadians;
+    settings.IncludeStatic = true;
+    settings.IncludeKinematic = true;
+    settings.IncludeDynamic = false;
+    settings.IncludePlanes = true;
+
+    // ========================================================================
+    // Root Foot Point -> Ground Probe Origin
+    // ========================================================================
+    // Transform::Positionは現在のKinematic Controllerでは足元Rootとして扱います。
+    // 少し上からQueryすることで、床へ数mm潜った状態や小段差の上面も安定して検出できます。
+    const math::Vec3 probeOrigin = transform.Position
+        + math::Vec3{ 0.0f, m_Config.GroundProbeStartOffset, 0.0f };
+
+    ph::PhysicsGroundQueryHit groundHit{};
+    if (scene.GetPhysicsWorld().GroundQuery(
+            scene,
+            probeOrigin,
+            settings,
+            groundHit) == false)
+    {
+        return false;
+    }
+
+    // HitがProbe開始位置から近すぎても、GroundQuery側で上向きWalkable Normalを検証済みです。
+    // Root Yを実際のContact Pointへ合わせることで、水平GroundHeight固定では不可能だった
+    // 上り坂 / 下り坂 / 高さの異なる床へ追従できます。
+    transform.Position.y = groundHit.Point.y;
+    m_Velocity.y = 0.0f;
+    m_Grounded = true;
+    m_GroundNormal = groundHit.Normal;
+    return true;
+}
+
+bool CharacterController::UpdateInternal(
+    const CharacterControllerInput& input,
+    float deltaTime,
+    Scene* scene,
     TransformComponent& transform,
     std::string* errorMessage)
 {
@@ -168,7 +249,7 @@ bool CharacterController::Update(
     // Facing rotation
     // ========================================================================
     // CharacterのForwardを+Zとして、移動方向へYawだけを向けます。
-    // Pitch/Rollは地形傾斜対応を入れるまでは既存値を維持します。
+    // Character本体はKinematicなので、床のNormalに合わせてPitch/Rollを傾けず直立を維持します。
     const float horizontalSpeedSquared = m_Velocity.x * m_Velocity.x + m_Velocity.z * m_Velocity.z;
     if (horizontalSpeedSquared > 1.0e-6f)
     {
@@ -190,23 +271,33 @@ bool CharacterController::Update(
     // ========================================================================
     // Grounded / Gravity / Jump
     // ========================================================================
-    // Stage 5ではまず水平PlaneをGroundとして扱います。
-    // 次工程でPhysicsWorldのCollision Queryへ置き換えられるよう、接地判定をこの区画へ隔離します。
-    if (transform.Position.y <= m_Config.GroundHeight + 1.0e-4f && m_Velocity.y <= 0.0f)
+    // 上昇中は下に床があってもSnapするとJumpを即座に打ち消してしまうため、Ground Probeは
+    // 鉛直速度が0以下のFrameだけ許可します。
+    m_Grounded = false;
+    m_GroundNormal = math::Vec3{ 0.0f, 1.0f, 0.0f };
+
+    if (scene != nullptr)
     {
+        TrySnapToPhysicsGround(
+            *scene,
+            transform,
+            m_Velocity.y <= 0.0f,
+            errorMessage);
+    }
+    else if (transform.Position.y <= m_Config.GroundHeight + 1.0e-4f
+        && m_Velocity.y <= 0.0f)
+    {
+        // Legacy fallback: PhysicsWorldを渡さない呼び出しだけ固定水平Groundを使います。
         transform.Position.y = m_Config.GroundHeight;
         m_Velocity.y = 0.0f;
         m_Grounded = true;
-    }
-    else
-    {
-        m_Grounded = false;
     }
 
     if (input.Jump && m_Grounded)
     {
         m_Velocity.y = m_Config.JumpSpeed;
         m_Grounded = false;
+        m_GroundNormal = math::Vec3{ 0.0f, 1.0f, 0.0f };
     }
     else if (m_Grounded == false)
     {
@@ -217,9 +308,22 @@ bool CharacterController::Update(
     transform.Position.y += m_Velocity.y * deltaTime;
     transform.Position.z += m_Velocity.z * deltaTime;
 
-    // 大きなdeltaTimeでGroundを突き抜けた場合もFrame末尾で必ずClampします。
-    if (transform.Position.y < m_Config.GroundHeight && m_Velocity.y <= 0.0f)
+    // ========================================================================
+    // End-of-frame Ground Snap
+    // ========================================================================
+    // 水平移動後の新しいXZで再Queryすることで、坂や小段差を降りたFrameにも床へ追従します。
+    // GroundProbeStartOffsetの範囲内なら小さな上り段差も上面を検出してRootを持ち上げられます。
+    if (scene != nullptr)
     {
+        if (m_Velocity.y <= 0.0f)
+        {
+            TrySnapToPhysicsGround(*scene, transform, true, errorMessage);
+        }
+    }
+    else if (transform.Position.y < m_Config.GroundHeight
+        && m_Velocity.y <= 0.0f)
+    {
+        // 大きなdeltaTimeでLegacy Groundを突き抜けた場合もFrame末尾で必ずClampします。
         transform.Position.y = m_Config.GroundHeight;
         m_Velocity.y = 0.0f;
         m_Grounded = true;
@@ -266,6 +370,7 @@ bool CharacterController::RestoreAfterRagdoll(
 
     m_Velocity = inheritedVelocity;
     m_Grounded = grounded;
+    m_GroundNormal = math::Vec3{ 0.0f, 1.0f, 0.0f };
 
     // Grounded復帰時にRagdoll最後の下向き速度を残すと、次UpdateのGround判定前後で
     // Characterが一瞬床へ潜る可能性があります。水平慣性は保持しつつ鉛直方向だけ安全に止めます。
