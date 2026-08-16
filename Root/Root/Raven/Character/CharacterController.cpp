@@ -523,10 +523,8 @@ bool CharacterController::UpdateInternal(
     }
 
     // ========================================================================
-    // Horizontal Capsule Move / Vertical Integration
+    // Horizontal Capsule Move
     // ========================================================================
-    // 壁衝突はまず水平変位へ適用します。鉛直方向は現段階ではGround Query / Gravityが担当し、
-    // 次工程で天井衝突を追加する際に同じCapsule Cast経路へ統合できるよう分離します。
     const math::Vec3 horizontalDisplacement{
         m_Velocity.x * deltaTime,
         0.0f,
@@ -549,7 +547,52 @@ bool CharacterController::UpdateInternal(
         transform.Position += horizontalDisplacement;
     }
 
-    transform.Position.y += m_Velocity.y * deltaTime;
+    // ========================================================================
+    // Vertical Capsule Move / Ceiling Collision
+    // ========================================================================
+    // 上昇時は足元RootからCharacter Capsule全体を+YへSweepし、天井へ当たる直前で停止します。
+    // PositionだけClampしてVelocityを残すと次Frameも天井へ押し込み続けるため、上向き速度も0へします。
+    // 下降時の床処理は既存Ground Query / Ground Snapが担当するため、ここでは上昇だけをCapsule Castします。
+    const float verticalDisplacement = m_Velocity.y * deltaTime;
+    if (scene != nullptr && verticalDisplacement > 0.0f)
+    {
+        ph::PhysicsCapsuleCastSettings castSettings{};
+        castSettings.Radius = m_Config.CapsuleRadius;
+        castSettings.HalfLength = m_Config.CapsuleHalfLength;
+        castSettings.SkinWidth = m_Config.CollisionSkinWidth;
+        castSettings.MaxSubsteps = m_Config.MaxCapsuleCastSubsteps;
+        castSettings.BinarySearchIterations = 10u;
+        castSettings.IncludeStatic = true;
+        castSettings.IncludeKinematic = true;
+        castSettings.IncludeDynamic = false;
+        castSettings.IncludePlanes = true;
+        castSettings.IncludeTriggers = false;
+
+        const math::Vec3 upwardDisplacement{ 0.0f, verticalDisplacement, 0.0f };
+        ph::PhysicsCapsuleCastHit ceilingHit{};
+        if (scene->GetPhysicsWorld().CapsuleCast(
+                *scene,
+                transform.Position,
+                upwardDisplacement,
+                castSettings,
+                ceilingHit) == true)
+        {
+            // SkinWidth込みCapsuleが最初に接触する位置より僅かに手前まで進みます。
+            // Ceiling法線は通常下向きですが、Shape種類に依存せず「上昇SweepでHitした」ことを
+            // Blocking条件として扱うため、法線符号だけには依存しません。
+            const float safeFraction = std::clamp(ceilingHit.Fraction - 1.0e-4f, 0.0f, 1.0f);
+            transform.Position += upwardDisplacement * safeFraction;
+            m_Velocity.y = 0.0f;
+        }
+        else
+        {
+            transform.Position += upwardDisplacement;
+        }
+    }
+    else
+    {
+        transform.Position.y += verticalDisplacement;
+    }
 
     // ========================================================================
     // End-of-frame Ground Snap / Step Down
