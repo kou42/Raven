@@ -66,7 +66,7 @@ float Determinant3x3(
     const math::Vec3& column2)
 {
     return column0.x * (column1.y * column2.z - column1.z * column2.y)
-        - column1.x * (column0.y * column2.z - column0.z * column2.x)
+        - column1.x * (column0.y * column2.z - column0.z * column2.y)
         + column2.x * (column0.y * column1.z - column0.z * column1.y);
 }
 
