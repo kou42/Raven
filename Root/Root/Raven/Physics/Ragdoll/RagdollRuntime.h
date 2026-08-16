@@ -66,9 +66,41 @@ public:
         return m_Skeleton != nullptr && m_Bodies.empty() == false;
     }
 
+    // 現在Animation PoseをRagdoll Body Poseへ取り込みます。
+    // 従来互換の「瞬間Capture」APIであり、Animation速度履歴を持たない用途を想定しているため、
+    // Linear / Angular Velocityは0へ初期化します。
     bool CaptureAnimationPose(
         const SkeletonPose& pose,
         std::string* errorMessage = nullptr);
+
+    // ========================================================================
+    // Animation Velocity Sampling
+    // ========================================================================
+    // Animation駆動中に毎Frame、Animation評価後のPoseを渡してBody単位の速度を計測します。
+    //
+    // LinearVelocity:
+    //   (currentBodyPosition - previousBodyPosition) / deltaTime
+    //
+    // AngularVelocity:
+    //   currentRotation * inverse(previousRotation) の最短回転QuaternionをAxis-Angleへ変換し、
+    //   world-space axis * angle / deltaTime として求めます。
+    //
+    // 1回目のSampleでは比較元が無いため速度は0です。2回目以降でAnimation由来速度が得られ、
+    // RagdollPhysicsBridge::CreateBodies()がその値をRigidBodyへそのまま引き継げます。
+    // deltaTime=0はPause等の正当なケースとして受け入れ、速度0の新しい基準Sampleとして扱います。
+    bool SampleAnimationPose(
+        const SkeletonPose& pose,
+        float deltaTime,
+        std::string* errorMessage = nullptr);
+
+    // Animation Clip切替、Teleport、Time Seekなど「前Frameとの差分を速度として扱ってはいけない」
+    // 不連続点で呼びます。次のSampleは初回扱いとなり、巨大な見かけ速度の発生を防ぎます。
+    void ResetAnimationVelocityHistory();
+
+    bool HasAnimationVelocityHistory() const
+    {
+        return m_HasPreviousAnimationPose;
+    }
 
     bool SetBodyState(
         BoneIndex boneIndex,
@@ -125,6 +157,12 @@ private:
     const Skeleton* m_Skeleton = nullptr;
     RagdollDefinition m_Definition{};
     std::vector<RagdollBodyState> m_Bodies;
+
+    // Animation速度はPhysics Stateとは別の履歴から求めます。
+    // Ragdollへ入った後にm_BodiesがPhysicsで更新されても、次回Animationへ戻った際の
+    // Sampling履歴と混同しないため、前Animation Sampleを独立して保持します。
+    std::vector<RagdollBodyState> m_PreviousAnimationBodies;
+    bool m_HasPreviousAnimationPose = false;
 };
 
 } // namespace Raven
