@@ -2,13 +2,17 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
+#include "Raven/Scene/Entity.h"
 
 namespace Raven
 {
+class Scene;
+
 namespace Gltf
 {
 class SkinnedBlendTreeRuntime;
@@ -48,23 +52,68 @@ struct CharacterControllerConfig
     float Gravity = -9.81f;
     float JumpSpeed = 4.5f;
 
-    // Stage 5の最小Ground判定です。
-    // Transform::Position.yがこの高さ以下へ到達したらGroundedとしてClampします。
-    // 後続ではPhysicsWorldのSweep / Contact Queryへ置き換える境界です。
+    // ========================================================================
+    // Character Capsule
+    // ========================================================================
+    // Physics対応Update()で使用するKinematic Capsuleです。
+    // Transform::Positionを足元とし、全高は 2 * (CapsuleHalfLength + CapsuleRadius) です。
+    // 既定値では Radius=0.35 / HalfLength=0.55 なので約1.8mのCharacterになります。
+    float CapsuleRadius = 0.35f;
+    float CapsuleHalfLength = 0.55f;
+
+    // Shape Cast時だけCapsuleを僅かに膨らませる安全距離です。
+    // 接触直後の浮動小数誤差で次Frameに壁内部から開始することを抑えます。
+    float CollisionSkinWidth = 0.02f;
+
+    // 1Frame中に複数面へ当たった場合のSlide反復上限です。
+    // 角へ入った場合でも無限反復せず、壁沿いへ残り変位を投影します。
+    uint32_t MaxSlideIterations = 3u;
+    uint32_t MaxCapsuleCastSubsteps = 64u;
+
+    // ========================================================================
+    // Step Up / Down
+    // ========================================================================
+    // 正面Capsule Castが低い障害物へ当たった場合、これだけ足元を持ち上げた位置から同じ水平変位を
+    // 再Castします。上側が空いていて、その先にWalkable Groundが見つかれば段差として乗り越えます。
+    float MaxStepHeight = 0.30f;
+
+    // GroundSnapDistanceは下り段差のStep Down上限も兼ねます。
+    // 水平移動後にこの距離以内の床へSnapするため、小さな階段を下るFrameでAirborneになりません。
+
+    // ========================================================================
+    // Ground Probe
+    // ========================================================================
+    // PhysicsWorldを渡すUpdate()では、Character Rootより少し上から下向きへGroundQueryします。
+    // Root位置そのものからRayを始めると、床へ僅かにめり込んだFrameでRay始点がShape内部になり
+    // 法線やfraction=0の扱いが不安定になりやすいため、ProbeStartOffsetだけ上から開始します。
+    float GroundProbeStartOffset = 0.15f;
+
+    // 現在Root位置よりこの距離以内にWalkable Groundがあれば床へSnapします。
+    // 小さな段差を降りる際に毎FrameAirborneへ切り替わることを防ぎます。
+    float GroundSnapDistance = 0.30f;
+
+    // Walkableとみなす最大斜面角度[rad]です。既定50度。
+    float MaxGroundSlopeRadians = 0.872664626f;
+
+    // Legacy / PhysicsWorldを渡さないUpdate()用の水平Ground高さです。
+    // 既存呼び出し互換を維持するため残しますが、新しいCharacter実装ではPhysics Ground Query版
+    // Update()を優先してください。
     float GroundHeight = 0.0f;
 };
 
 // ============================================================================
 // CharacterController
 // ============================================================================
-// Stage 5のKinematic Character Controllerです。
+// Kinematic Character Controllerです。
 //
 // Update順:
 //   Input -> Desired Horizontal Velocity
 //         -> Acceleration / Deceleration
 //         -> Facing Rotation
-//         -> Gravity / Grounded / Jump
-//         -> Transform Position
+//         -> Physics Ground Query / Gravity / Jump
+//         -> Capsule Cast / Step Up / Wall Slide
+//         -> Vertical Integration
+//         -> Ground Snap / Step Down
 //
 // Character自身をDynamic RigidBodyにすると入力移動とImpulse Solverが同じ自由度を奪い合うため、
 // 現段階ではゲームロジックが位置を決定するKinematic Controllerとして実装します。
@@ -80,13 +129,50 @@ public:
     void SetConfig(const CharacterControllerConfig& config) { m_Config = config; }
     const CharacterControllerConfig& GetConfig() const { return m_Config; }
 
-    // 毎Frameの移動更新です。
-    // TransformComponentを直接更新し、成功時trueを返します。
+    // ========================================================================
+    // Legacy Ground Update
+    // ========================================================================
+    // PhysicsWorldを持たない既存呼び出し互換用です。
+    // GroundHeightの水平Planeを床として扱います。新規コードでは下のScene版を優先します。
     bool Update(
         const CharacterControllerInput& input,
         float deltaTime,
         TransformComponent& transform,
         std::string* errorMessage = nullptr);
+
+    // ========================================================================
+    // Physics Character Update
+    // ========================================================================
+    // PhysicsWorld::GroundQuery()で床を取得し、PhysicsWorld::CapsuleCast()で壁貫通を防ぎます。
+    // 衝突後の残り水平変位は接触面へ投影してSlideさせるため、斜め入力で壁へ入った場合も
+    // 完全停止せず壁沿いの成分を維持します。低い障害物はMaxStepHeight以内ならStep Upします。
+    bool Update(
+        const CharacterControllerInput& input,
+        float deltaTime,
+        Scene& scene,
+        TransformComponent& transform,
+        std::string* errorMessage = nullptr);
+
+    // ========================================================================
+    // Moving Platform対応Update
+    // ========================================================================
+    // 前Frameに接地していたKinematic Ground EntityのTransform差分をCharacterへ先に適用してから、
+    // 通常のPhysics Character Updateを実行します。
+    //
+    // Platformの移動経路をPhysicsWorld::MovePosition()だけに限定せずTransform差分を直接追跡するため、
+    // Animation / Script / Gameplay LogicからKinematic Platformを動かした場合も同じ仕組みで追従できます。
+    // Jump時には直前FrameのPlatform水平速度をjumpPlatformHorizontalVelocityScale倍して継承します。
+    bool UpdateWithMovingPlatforms(
+        const CharacterControllerInput& input,
+        float deltaTime,
+        Scene& scene,
+        TransformComponent& transform,
+        float jumpPlatformHorizontalVelocityScale = 1.0f,
+        std::string* errorMessage = nullptr);
+
+    // Scene切替 / Teleport / Ragdoll切替など、前FrameのPlatform差分を次Frameへ持ち越してはいけない
+    // 境界で呼びます。
+    void ResetMovingPlatformTracking();
 
     // Raven標準Keyboard入力(WASD / Left Shift / Space)をDevice非依存入力へ変換します。
     // Input Mapping System導入後はこの関数だけを置き換え、運動計算は維持できます。
@@ -99,19 +185,84 @@ public:
         std::size_t skinIndex,
         std::string* errorMessage = nullptr) const;
 
+    // ========================================================================
+    // Ragdoll -> Character Controller State Restore
+    // ========================================================================
+    // Dynamic RagdollからKinematic Character Controllerへ制御を戻す瞬間に使用します。
+    // 通常のUpdate()を1回通して位置を合わせるのではなく、Ragdoll最終Poseから決定した
+    // World Position / Yaw / Velocityを原子的にController Stateへ反映します。
+    //
+    // Pitch / RollはRagdollの倒れ姿勢をKinematic Controllerへ持ち越さず0へ戻します。
+    // grounded=trueの場合は下向き速度を0へClampし、復帰直後に床へ潜ることを防ぎます。
+    bool RestoreAfterRagdoll(
+        const math::Vec3& worldPosition,
+        float yawRadians,
+        const math::Vec3& inheritedVelocity,
+        bool grounded,
+        TransformComponent& transform,
+        std::string* errorMessage = nullptr);
+
     const math::Vec3& GetVelocity() const { return m_Velocity; }
 
     float GetHorizontalSpeed() const;
 
     bool IsGrounded() const { return m_Grounded; }
 
+    // 最後にPhysics Ground Queryで採用した床Normalです。
+    // Legacy UpdateやAirborne中はWorld Upを返します。
+    const math::Vec3& GetGroundNormal() const { return m_GroundNormal; }
+
+    bool IsOnMovingPlatform() const { return m_HasMovingPlatform; }
+    const math::Vec3& GetMovingPlatformVelocity() const { return m_MovingPlatformVelocity; }
+    Entity GetMovingPlatformEntity() const { return m_MovingPlatformEntity; }
+
 private:
     bool ValidateConfig(std::string* errorMessage) const;
+
+    // 共通運動ロジックです。scene == nullptrならLegacy GroundHeight、SceneありならPhysics Queryを使います。
+    bool UpdateInternal(
+        const CharacterControllerInput& input,
+        float deltaTime,
+        Scene* scene,
+        TransformComponent& transform,
+        std::string* errorMessage);
+
+    bool TrySnapToPhysicsGround(
+        Scene& scene,
+        TransformComponent& transform,
+        bool allowSnap,
+        std::string* errorMessage);
+
+    // 水平変位をCapsule Castし、最初の接触まで移動した後、残り変位を接触面へ投影してSlideします。
+    // Velocityの壁へ向かう水平成分も同時に除去し、次Frameで同じ壁へ押し込み続けないようにします。
+    bool ResolvePhysicsMovement(
+        Scene& scene,
+        const math::Vec3& horizontalDisplacement,
+        TransformComponent& transform,
+        std::string* errorMessage);
+
+    // 低い障害物へ当たったときだけ、MaxStepHeight上から同じ変位を再Castして上面へ着地できるか調べます。
+    bool TryStepUp(
+        Scene& scene,
+        const math::Vec3& horizontalDisplacement,
+        TransformComponent& transform,
+        std::string* errorMessage);
 
 private:
     CharacterControllerConfig m_Config{};
     math::Vec3 m_Velocity{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 m_GroundNormal{ 0.0f, 1.0f, 0.0f };
     bool m_Grounded = false;
+
+    // ========================================================================
+    // Moving Platform Tracking
+    // ========================================================================
+    // Entity HandleはGenerationを含むため、Platform破棄後に同じIndexが再利用されても古い追跡状態を
+    // 新Entityへ誤適用しません。Positionは前FrameのKinematic Ground Transform位置です。
+    Entity m_MovingPlatformEntity{};
+    math::Vec3 m_MovingPlatformPosition{};
+    math::Vec3 m_MovingPlatformVelocity{};
+    bool m_HasMovingPlatform = false;
 };
 
 } // namespace Raven

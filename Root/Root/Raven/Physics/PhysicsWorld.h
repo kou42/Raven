@@ -56,6 +56,74 @@ struct PhysicsRayCastFilter
     }
 };
 
+// ============================================================================
+// Ground Query
+// ============================================================================
+// Character Controller / Ragdoll復帰などが「この位置の直下に歩行可能な床があるか」を
+// PhysicsWorldへ問い合わせるための結果です。
+//
+// Ground QueryはShape固有の接触解決をCharacter側へ持ち出さず、PhysicsWorldのRayCastを
+// 再利用して床面のPoint / Normal / Entityを返します。DistanceはQuery開始点からHitまでの
+// 下向き距離で、direction=(0,-1,0)を単位ベクトルとしているためRayCast Fractionと一致します。
+struct PhysicsGroundQueryHit
+{
+    Entity HitEntity{};
+    math::Vec3 Point{};
+    math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
+    float Distance = 0.0f;
+};
+
+struct PhysicsGroundQuerySettings
+{
+    // Query開始点から下方向へ調べる最大距離です。
+    float MaxDistance = 1.0f;
+
+    // Walkableとみなす最大斜面角度[rad]です。0なら水平面のみ、PI/2に近いほど急斜面を許可します。
+    float MaxSlopeRadians = 0.872664626f; // 50 degrees
+
+    // Characterの足場として通常利用するStatic / Kinematic / Planeを既定対象にします。
+    // Dynamic Body上を歩かせたい場合だけIncludeDynamicを明示的に有効化します。
+    bool IncludeStatic = true;
+    bool IncludeKinematic = true;
+    bool IncludeDynamic = false;
+    bool IncludePlanes = true;
+};
+
+// ============================================================================
+// Capsule Shape Cast
+// ============================================================================
+// Kinematic Characterなど、直立Capsuleを任意方向へ移動したとき最初に触れるColliderを返します。
+// PositionはCharacter Controllerと同じ「Capsule最下端の足元位置」を契約とします。
+// Capsule中心は Position + WorldUp * (HalfLength + Radius) から内部で構築します。
+struct PhysicsCapsuleCastHit
+{
+    Entity HitEntity{};
+    math::Vec3 Position{}; // Hit時点のCapsule足元位置
+    math::Vec3 Point{};    // 接触点
+    math::Vec3 Normal{};   // 障害物表面からCapsule側を向く法線
+    float Fraction = 0.0f; // start + displacement * Fraction
+};
+
+struct PhysicsCapsuleCastSettings
+{
+    float Radius = 0.35f;
+    float HalfLength = 0.55f;
+
+    // 実Capsuleより僅かに太くCastし、移動後にColliderへ数値誤差で食い込むことを防ぎます。
+    float SkinWidth = 0.02f;
+
+    // 高速移動時のトンネリングを避けるため、移動区間をRadius基準で分割してOverlapを探索します。
+    // 最初のOverlap区間を見つけた後は二分探索でTime Of Impactを絞り込みます。
+    uint32_t MaxSubsteps = 64u;
+    uint32_t BinarySearchIterations = 10u;
+
+    bool IncludeStatic = true;
+    bool IncludeKinematic = true;
+    bool IncludeDynamic = false;
+    bool IncludePlanes = true;
+    bool IncludeTriggers = false;
+};
+
 struct PhysicsSolverDebugStatistics
 {
     // Manifold/Point数はNarrow Phaseの接触量を示します。
@@ -90,6 +158,39 @@ public:
     const PhysicsSolverDebugStatistics& GetSolverDebugStatistics() const { return m_SolverDebugStatistics; }
 
     // ========================================================================
+    // Collision Ignore Pair API
+    // ========================================================================
+    // Jointで接続されたBodyなど、特定のEntity同士だけ衝突させないためのAPIです。
+    // Layer/Maskのようなカテゴリ単位ではなく、インスタンス単位の除外に使用します。
+    //
+    // BroadPhase内部ではEntityのGenerationを含むHandle値で管理するため、
+    // Entity Indexが再利用されても古い除外設定が新Entityへ漏れません。
+    void AddIgnoreCollisionPair(Entity a, Entity b)
+    {
+        m_BroadPhase.AddIgnorePair(a, b);
+    }
+
+    void RemoveIgnoreCollisionPair(Entity a, Entity b)
+    {
+        m_BroadPhase.RemoveIgnorePair(a, b);
+    }
+
+    void RemoveIgnoreCollisionPairsForEntity(Entity entity)
+    {
+        m_BroadPhase.RemoveIgnorePairsForEntity(entity);
+    }
+
+    bool IsCollisionPairIgnored(Entity a, Entity b) const
+    {
+        return m_BroadPhase.IsPairIgnored(a, b);
+    }
+
+    void ClearIgnoreCollisionPairs()
+    {
+        m_BroadPhase.ClearIgnorePairs();
+    }
+
+    // ========================================================================
     // 剛体制御用API
     // ========================================================================
     // Force / Torque は次の Step まで蓄積され、Impulse は呼び出した瞬間に速度へ反映されます。
@@ -117,6 +218,26 @@ public:
     // フィルタは候補選択前に適用されるため、除外Shapeが手前にあっても探索を継続します。
     bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
         float maxFraction, const PhysicsRayCastFilter& filter, PhysicsRayCastHit& outHit);
+
+    // Character / Ragdoll復帰共通の床検索です。
+    // Query OriginからWorld -YへRayCastし、MaxSlopeRadians以内の上向き面だけをWalkable Groundとして返します。
+    // 現段階はFoot PointからのGround Probeを目的としたRayベース実装で、今後Capsule Sweepへ
+    // 内部実装を置換しても呼び出し側APIを変えない境界として用意しています。
+    bool GroundQuery(
+        Scene& scene,
+        const math::Vec3& origin,
+        const PhysicsGroundQuerySettings& settings,
+        PhysicsGroundQueryHit& outHit);
+
+    // Characterの壁衝突・Slide用Shape Castです。
+    // startFootPositionからdisplacementだけ直立CapsuleをSweepし、進行方向を実際に塞ぐ最初の面を返します。
+    // 床へ接しているだけの面など、displacementと法線が離れる/平行な接触はBlocking Hitにしません。
+    bool CapsuleCast(
+        Scene& scene,
+        const math::Vec3& startFootPosition,
+        const math::Vec3& displacement,
+        const PhysicsCapsuleCastSettings& settings,
+        PhysicsCapsuleCastHit& outHit);
 
     // QueryAABBはBroadPhase候補を使いつつ、実AABB重なりで最終フィルタします。
     void QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities);

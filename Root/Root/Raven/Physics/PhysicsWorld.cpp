@@ -7,6 +7,7 @@
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/RigidBodyDynamics.h"
 #include "Raven/Physics/Collision/BroadPhase.inl"
+#include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Collision/OBB.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
@@ -215,6 +216,23 @@ bool RayCastCollider(
             && box.RayCast(origin, direction, maxFraction, outFraction, &outNormal);
     }
 
+    if (collider.Type == ColliderType::Capsule)
+    {
+        Capsule capsule{};
+        if (ComputeCapsule(transform, collider, capsule) == false)
+        {
+            return false;
+        }
+
+        return RayCastCapsule(
+            origin,
+            direction,
+            maxFraction,
+            capsule,
+            outFraction,
+            outNormal);
+    }
+
     if (collider.Type == ColliderType::Plane)
     {
         return RayCastPlane(
@@ -350,7 +368,7 @@ void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
 }
 
 // Broad Phase候補から有限形状同士のContact Manifoldを生成します。
-// Planeは無限形状でTreeに載せないため、後半でSphere/Boxとの組み合わせを別途処理します。
+// Planeは無限形状でTreeに載せないため、後半でSphere/Box/Capsuleとの組み合わせを別途処理します。
 // ----------------------------------------------------------------------------------
 // Broad Phase で見つかったコライダーの組み合わせから、新しい接触マニホールドを生成します。
 void PhysicsWorld::DetectCollisions(Scene& scene)
@@ -422,6 +440,46 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
                 pair.B, *transformB, *colliderB,
                 manifold);
         }
+        else if (colliderA->Type == ColliderType::Sphere
+            && colliderB->Type == ColliderType::Capsule)
+        {
+            generated = GenerateSphereCapsuleManifold(
+                pair.A, *transformA, *colliderA,
+                pair.B, *transformB, *colliderB,
+                manifold);
+        }
+        else if (colliderA->Type == ColliderType::Capsule
+            && colliderB->Type == ColliderType::Sphere)
+        {
+            generated = GenerateSphereCapsuleManifold(
+                pair.B, *transformB, *colliderB,
+                pair.A, *transformA, *colliderA,
+                manifold);
+        }
+        else if (colliderA->Type == ColliderType::Capsule
+            && colliderB->Type == ColliderType::Capsule)
+        {
+            generated = GenerateCapsuleCapsuleManifold(
+                pair.A, *transformA, *colliderA,
+                pair.B, *transformB, *colliderB,
+                manifold);
+        }
+        else if (colliderA->Type == ColliderType::Capsule
+            && colliderB->Type == ColliderType::Box)
+        {
+            generated = GenerateCapsuleBoxManifold(
+                pair.A, *transformA, *colliderA,
+                pair.B, *transformB, *colliderB,
+                manifold);
+        }
+        else if (colliderA->Type == ColliderType::Box
+            && colliderB->Type == ColliderType::Capsule)
+        {
+            generated = GenerateCapsuleBoxManifold(
+                pair.B, *transformB, *colliderB,
+                pair.A, *transformA, *colliderA,
+                manifold);
+        }
 
         if (generated)
         {
@@ -430,14 +488,15 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     }
 
     // Planeは無限形状なので通常のBroad Phase Treeには登録しません。
-    // 既存のSphere-Plane経路を拡張し、今回追加したBox-Planeも同じ場所で処理します。
+    // Sphere / Box / Capsuleとの組み合わせをここで別途処理します。
     // -----------------------------------------------------------------------------
-    // Plane は通常の Broad Phase では扱わないため、別途球体との組み合わせを確認します。
+    // Plane は通常の Broad Phase では扱わないため、別途有限形状との組み合わせを確認します。
     for (auto [shapeEntity, shapeTransform, shapeCollider]
         : scene.View<TransformComponent, ColliderComponent>())
     {
         if (shapeCollider.Type != ColliderType::Sphere
-            && shapeCollider.Type != ColliderType::Box)
+            && shapeCollider.Type != ColliderType::Box
+            && shapeCollider.Type != ColliderType::Capsule)
         {
             continue;
         }
@@ -460,9 +519,16 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
                     planeEntity, planeTransform, planeCollider,
                     manifold);
             }
-            else
+            else if (shapeCollider.Type == ColliderType::Box)
             {
                 generated = GenerateBoxPlaneManifold(
+                    shapeEntity, shapeTransform, shapeCollider,
+                    planeEntity, planeTransform, planeCollider,
+                    manifold);
+            }
+            else if (shapeCollider.Type == ColliderType::Capsule)
+            {
+                generated = GenerateCapsulePlaneManifold(
                     shapeEntity, shapeTransform, shapeCollider,
                     planeEntity, planeTransform, planeCollider,
                     manifold);

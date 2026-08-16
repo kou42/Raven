@@ -126,18 +126,18 @@ bool RagdollPhysicsBridge::CreateBodies(
         ColliderComponent& collider = entity.AddComponent<ColliderComponent>();
 
         // ====================================================================
-        // Capsule未実装時のBox近似
+        // Ragdoll Body -> Capsule Collider
         // ====================================================================
-        // RagdollBodyDefinitionはRadius / HalfLengthというCapsule向けの意味を持っていますが、
-        // 現在のColliderComponentはSphere / Box / Planeのみです。
-        // ここではBoneのローカル+Yを長軸とする縦長Boxへ近似し、PhysicsWorldの既存OBB衝突を
-        // そのまま利用します。Capsule Collider追加後はこの区画だけを差し替えます。
-        collider.Type = ColliderType::Box;
-        collider.HalfExtents = math::Vec3{
-            bodyDefinition->Radius,
-            bodyDefinition->HalfLength + bodyDefinition->Radius,
-            bodyDefinition->Radius
-        };
+        // RagdollBodyDefinitionのRadius / HalfLengthは最初からCapsule向けの意味で定義しているため、
+        // Collider側にも同じ値をそのまま渡します。CapsuleはBoneローカル+Yを長軸とし、
+        // Transformの回転に追従します。
+        //
+        // 以前のBox近似では四隅が床や隣接Bodyへ引っ掛かりやすく、肩・肘・膝などで
+        // 不自然なContactが生まれていました。Capsule化により四肢の断面が連続曲面となり、
+        // Ragdollの回転運動と接触がより自然になります。
+        collider.Type = ColliderType::Capsule;
+        collider.Radius = bodyDefinition->Radius;
+        collider.HalfLength = bodyDefinition->HalfLength;
         collider.Restitution = 0.0f;
         collider.StaticFriction = 0.7f;
         collider.DynamicFriction = 0.5f;
@@ -150,13 +150,58 @@ bool RagdollPhysicsBridge::CreateBodies(
     }
 
     m_Bindings = std::move(bindings);
+
+    // ========================================================================
+    // Joint Parent / Child Bodyの自己衝突除外
+    // ========================================================================
+    // Ragdollでは関節で直接つながるBody同士が常に近接するため、通常のCollider衝突を
+    // 同時に解くと「Jointは近づける / Contactは離す」という競合が発生します。
+    // その結果、肩・肘・膝などが震えたり、Constraint Projectionが不安定になります。
+    //
+    // そこでDefinitionのJointごとにParent/Child Physics Entityを解決し、PhysicsWorldの
+    // Ignore Pairへ登録します。隣接していないBody同士の自己衝突は残るため、腕が胴体を
+    // 貫通するようなケースは従来通りContact Solverで処理されます。
+    ph::PhysicsWorld& physicsWorld = scene.GetPhysicsWorld();
+    for (const RagdollJointDefinition& jointDefinition : definition.Joints)
+    {
+        const BoneIndex parentBone = skeleton->FindBone(jointDefinition.ParentBoneName);
+        const BoneIndex childBone = skeleton->FindBone(jointDefinition.ChildBoneName);
+        if (parentBone == InvalidBoneIndex || childBone == InvalidBoneIndex)
+        {
+            return SetError(
+                errorMessage,
+                "Ragdoll Jointの衝突除外対象Boneを解決できません: "
+                + jointDefinition.ParentBoneName + " -> " + jointDefinition.ChildBoneName);
+        }
+
+        const Entity parentEntity = FindEntity(parentBone);
+        const Entity childEntity = FindEntity(childBone);
+        if (static_cast<bool>(parentEntity) == false
+            || static_cast<bool>(childEntity) == false)
+        {
+            return SetError(
+                errorMessage,
+                "Ragdoll Jointに対応するPhysics Entityを解決できません: "
+                + jointDefinition.ParentBoneName + " -> " + jointDefinition.ChildBoneName);
+        }
+
+        physicsWorld.AddIgnoreCollisionPair(parentEntity, childEntity);
+    }
+
     return true;
 }
 
 void RagdollPhysicsBridge::DestroyBodies(Scene& scene)
 {
+    ph::PhysicsWorld& physicsWorld = scene.GetPhysicsWorld();
+
     for (const RagdollPhysicsBodyBinding& binding : m_Bindings)
     {
+        // Entity破棄前に、このBodyを含むIgnore Pairを明示的に解除します。
+        // BroadPhase側にも孤立Pairの自動掃除がありますが、Bridgeが生成した設定は
+        // Bridge自身で片付けることでLifetimeの責務を明確にします。
+        physicsWorld.RemoveIgnoreCollisionPairsForEntity(binding.BodyEntity);
+
         if (scene.IsEntityAlive(binding.BodyEntity))
         {
             scene.QueueDestroyEntity(binding.BodyEntity);

@@ -4,6 +4,78 @@
 namespace Raven::ph
 {
 
+CollisionIgnorePairKey BroadPhase::MakeIgnorePairKey(Entity a, Entity b)
+{
+    uint64_t valueA = a.GetValue();
+    uint64_t valueB = b.GetValue();
+
+    if (valueA > valueB)
+    {
+        std::swap(valueA, valueB);
+    }
+
+    return CollisionIgnorePairKey{ valueA, valueB };
+}
+
+void BroadPhase::AddIgnorePair(Entity a, Entity b)
+{
+    // 同一Entity同士や無効Handleは衝突候補として意味を持たないため登録しません。
+    // EntityHandle::Value()にはGenerationも含まれるため、Index再利用にも安全です。
+    if (static_cast<bool>(a) == false
+        || static_cast<bool>(b) == false
+        || a.GetValue() == b.GetValue())
+    {
+        return;
+    }
+
+    m_IgnorePairs.insert(MakeIgnorePairKey(a, b));
+}
+
+void BroadPhase::RemoveIgnorePair(Entity a, Entity b)
+{
+    if (static_cast<bool>(a) == false || static_cast<bool>(b) == false)
+    {
+        return;
+    }
+
+    m_IgnorePairs.erase(MakeIgnorePairKey(a, b));
+}
+
+void BroadPhase::RemoveIgnorePairsForEntity(Entity entity)
+{
+    if (static_cast<bool>(entity) == false)
+    {
+        return;
+    }
+
+    const uint64_t entityValue = entity.GetValue();
+    for (auto iterator = m_IgnorePairs.begin(); iterator != m_IgnorePairs.end(); )
+    {
+        if (iterator->A == entityValue || iterator->B == entityValue)
+        {
+            iterator = m_IgnorePairs.erase(iterator);
+            continue;
+        }
+
+        ++iterator;
+    }
+}
+
+bool BroadPhase::IsPairIgnored(Entity a, Entity b) const
+{
+    if (static_cast<bool>(a) == false || static_cast<bool>(b) == false)
+    {
+        return false;
+    }
+
+    return m_IgnorePairs.find(MakeIgnorePairKey(a, b)) != m_IgnorePairs.end();
+}
+
+void BroadPhase::ClearIgnorePairs()
+{
+    m_IgnorePairs.clear();
+}
+
 // Broad Phase主処理:
 // Sceneとの同期後にFat AABB同士の候補ペアを収集し、
 // Narrow Phaseへ渡す重複なしのペア列を生成します。
@@ -12,36 +84,13 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
     Synchronize(scene);
     outPairs.clear();
 
-    struct PairKey
-    {
-        uint64_t A = 0;
-        uint64_t B = 0;
-
-        bool operator==(const PairKey& rhs) const
-        {
-            return A == rhs.A && B == rhs.B;
-        }
-    };
-
-    struct PairHasher
-    {
-        std::size_t operator()(const PairKey& key) const noexcept
-        {
-            std::size_t seed = std::hash<uint64_t>{}(key.A);
-            seed ^= std::hash<uint64_t>{}(key.B)
-                + static_cast<std::size_t>(0x9e3779b97f4a7c15ull)
-                + (seed << 6) + (seed >> 2);
-            return seed;
-        }
-    };
-
     // Pairを順序正規化して保持し、(A,B) / (B,A) の重複通知を防ぎます。
-    std::unordered_set<PairKey, PairHasher> emitted;
+    std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> emitted;
 
     for (const auto& [entityValue, proxyId] : m_Proxies)
     {
         const Entity entity(EntityHandle::FromValue(entityValue), &scene);
-        if (!scene.IsEntityAlive(entity))
+        if (scene.IsEntityAlive(entity) == false)
         {
             continue;
         }
@@ -51,7 +100,7 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
         m_Tree.Query(queryBounds,
             [&](Entity other, uint32_t otherProxy) -> bool
             {
-                if (otherProxy == proxyId || !scene.IsEntityAlive(other))
+                if (otherProxy == proxyId || scene.IsEntityAlive(other) == false)
                 {
                     return true;
                 }
@@ -63,7 +112,19 @@ void BroadPhase::ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPair
                     std::swap(a, b);
                 }
 
-                const PairKey key{ a.GetValue(), b.GetValue() };
+                const CollisionIgnorePairKey key = MakeIgnorePairKey(a, b);
+
+                // ============================================================
+                // Collision Ignore Pair Filter
+                // ============================================================
+                // Joint接続されたRagdoll BodyなどはAABBが重なりやすいですが、
+                // Narrow Phaseへ渡す前にここで除外します。
+                // Tree Proxy自体は維持するため、RayCast / QueryAABBでは通常通り検索できます。
+                if (m_IgnorePairs.find(key) != m_IgnorePairs.end())
+                {
+                    return true;
+                }
+
                 if (emitted.insert(key).second)
                 {
                     outPairs.push_back(BroadPhasePair{ a, b });
@@ -88,7 +149,7 @@ void BroadPhase::Synchronize(Scene& scene)
         : scene.View<TransformComponent, ColliderComponent>())
     {
         AABB tightBounds{};
-        if (!ComputeColliderAABB(transform, collider, tightBounds))
+        if (ComputeColliderAABB(transform, collider, tightBounds) == false)
         {
             continue;
         }
@@ -116,17 +177,31 @@ void BroadPhase::Synchronize(Scene& scene)
     }
 
     // Sceneから消えたEntityのプロキシを破棄し、孤立ノードを残さないようにします。
-    for (auto it = m_Proxies.begin(); it != m_Proxies.end(); )
+    for (auto iterator = m_Proxies.begin(); iterator != m_Proxies.end(); )
     {
-        if (seen.find(it->first) != seen.end())
+        if (seen.find(iterator->first) != seen.end())
         {
-            ++it;
+            ++iterator;
             continue;
         }
 
-        m_Tree.DestroyProxy(it->second);
-        m_PreviousCenters.erase(it->first);
-        it = m_Proxies.erase(it);
+        m_Tree.DestroyProxy(iterator->second);
+        m_PreviousCenters.erase(iterator->first);
+        iterator = m_Proxies.erase(iterator);
+    }
+
+    // Entity破棄後にIgnore Pairだけが残り続けないよう、Generation込みHandleで生存確認します。
+    for (auto iterator = m_IgnorePairs.begin(); iterator != m_IgnorePairs.end(); )
+    {
+        const bool aliveA = scene.IsEntityAlive(EntityHandle::FromValue(iterator->A));
+        const bool aliveB = scene.IsEntityAlive(EntityHandle::FromValue(iterator->B));
+        if (aliveA == false || aliveB == false)
+        {
+            iterator = m_IgnorePairs.erase(iterator);
+            continue;
+        }
+
+        ++iterator;
     }
 }
 

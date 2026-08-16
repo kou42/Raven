@@ -42,12 +42,48 @@ const char* ColliderTypeName(ColliderType type)
 {
     switch (type)
     {
-    case ColliderType::Sphere: return "Sphere";
-    case ColliderType::Box:    return "Box";
-    case ColliderType::Plane:  return "Plane";
+    case ColliderType::Sphere:  return "Sphere";
+    case ColliderType::Box:     return "Box";
+    case ColliderType::Capsule: return "Capsule";
+    case ColliderType::Plane:   return "Plane";
     }
 
     return "Unknown";
+}
+
+// ============================================================================
+// ColliderType <-> Inspector表示順
+// ============================================================================
+// ColliderTypeは既存保存データとの互換性のため Sphere=0 / Box=1 / Plane=2 を維持し、
+// Capsuleは末尾へ追加しています。一方Inspectorでは関連する有限形状を並べて
+// Sphere / Box / Capsule / Plane の順に表示したいため、enum値をそのままCombo indexとして
+// 使用しません。
+//
+// この明示変換を挟むことで、将来ColliderTypeへ新形状を追加しても「enumへ挿入した位置」と
+// 「Editor上の表示順」が暗黙に結び付くことを防げます。
+int ColliderTypeToInspectorIndex(ColliderType type)
+{
+    switch (type)
+    {
+    case ColliderType::Sphere:  return 0;
+    case ColliderType::Box:     return 1;
+    case ColliderType::Capsule: return 2;
+    case ColliderType::Plane:   return 3;
+    }
+
+    return 0;
+}
+
+ColliderType InspectorIndexToColliderType(int index)
+{
+    switch (index)
+    {
+    case 0: return ColliderType::Sphere;
+    case 1: return ColliderType::Box;
+    case 2: return ColliderType::Capsule;
+    case 3: return ColliderType::Plane;
+    default: return ColliderType::Box;
+    }
 }
 
 void DrawTagComponent(Entity entity)
@@ -219,11 +255,11 @@ void DrawColliderComponent(Entity entity)
 
     ColliderComponent& collider = entity.GetComponent<ColliderComponent>();
 
-    int colliderTypeIndex = static_cast<int>(collider.Type);
-    const char* colliderTypes[] = { "Sphere", "Box", "Plane" };
-    if (ImGui::Combo("Collider Type", &colliderTypeIndex, colliderTypes, 3))
+    int colliderTypeIndex = ColliderTypeToInspectorIndex(collider.Type);
+    const char* colliderTypes[] = { "Sphere", "Box", "Capsule", "Plane" };
+    if (ImGui::Combo("Collider Type", &colliderTypeIndex, colliderTypes, 4))
     {
-        collider.Type = static_cast<ColliderType>(colliderTypeIndex);
+        collider.Type = InspectorIndexToColliderType(colliderTypeIndex);
     }
 
     ImGui::TextDisabled("Current: %s", ColliderTypeName(collider.Type));
@@ -238,6 +274,17 @@ void DrawColliderComponent(Entity entity)
     else if (collider.Type == ColliderType::Box)
     {
         DrawVec3Control("Half Extents", collider.HalfExtents, 0.05f);
+    }
+    else if (collider.Type == ColliderType::Capsule)
+    {
+        // Capsuleの全高は 2 * (HalfLength + Radius) です。
+        // HalfLengthを「円柱部を含む中心線分の半長」として編集することで、Ragdoll定義と
+        // Inspectorのパラメータ意味を一致させています。
+        ImGui::DragFloat("Radius", &collider.Radius, 0.01f, 0.001f, 100000.0f);
+        ImGui::DragFloat("Half Length", &collider.HalfLength, 0.01f, 0.0f, 100000.0f);
+        ImGui::TextDisabled(
+            "Full Height: %.3f",
+            2.0f * (std::max(collider.HalfLength, 0.0f) + std::max(collider.Radius, 0.0f)));
     }
     else if (collider.Type == ColliderType::Plane)
     {

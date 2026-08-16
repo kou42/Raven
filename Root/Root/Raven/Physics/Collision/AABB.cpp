@@ -1,4 +1,5 @@
 #include "Raven/Physics/Collision/AABB.h"
+#include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/OBB.h"
 
 namespace Raven::ph
@@ -28,7 +29,7 @@ bool ComputeColliderAABB(
     if (collider.Type == ColliderType::Box)
     {
         OBB obb{};
-        if (!ComputeBoxOBB(transform, collider, obb))
+        if (ComputeBoxOBB(transform, collider, obb) == false)
         {
             return false;
         }
@@ -58,6 +59,35 @@ bool ComputeColliderAABB(
 
         outAABB.Min = obb.Center - extents;
         outAABB.Max = obb.Center + extents;
+        return true;
+    }
+
+    if (collider.Type == ColliderType::Capsule)
+    {
+        Capsule capsule{};
+        if (ComputeCapsule(transform, collider, capsule) == false)
+        {
+            return false;
+        }
+
+        // Capsuleの有限部分は中心線分をRadiusだけMinkowski膨張した形です。
+        // よって線分両端の各成分min/maxへRadiusを足し引きするだけで、
+        // 回転後のCapsuleを完全に包むtight AABBを得られます。
+        const math::Vec3 radius{
+            capsule.Radius,
+            capsule.Radius,
+            capsule.Radius
+        };
+        outAABB.Min = math::Vec3{
+            std::min(capsule.SegmentA.x, capsule.SegmentB.x),
+            std::min(capsule.SegmentA.y, capsule.SegmentB.y),
+            std::min(capsule.SegmentA.z, capsule.SegmentB.z)
+        } - radius;
+        outAABB.Max = math::Vec3{
+            std::max(capsule.SegmentA.x, capsule.SegmentB.x),
+            std::max(capsule.SegmentA.y, capsule.SegmentB.y),
+            std::max(capsule.SegmentA.z, capsule.SegmentB.z)
+        } + radius;
         return true;
     }
 

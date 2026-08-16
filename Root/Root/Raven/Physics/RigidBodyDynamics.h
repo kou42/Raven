@@ -56,7 +56,7 @@ inline void EnsurePhysicsOrientation(
 {
     // 初回アクセス時だけTransform姿勢からQuaternionを初期化します。
     // 以後はQuaternionを正本として維持し、Eulerはそこから再計算します。
-    if (!body.OrientationInitialized)
+    if (body.OrientationInitialized == false)
     {
         body.Orientation = PhysicsOrientationFromEuler(transform.Rotation);
         body.OrientationInitialized = true;
@@ -91,7 +91,7 @@ inline void IntegratePhysicsOrientation(
 // ============================================================================
 // Rigid body inertia helpers
 // ============================================================================
-// Box/Sphereの簡易慣性モデルを使い、動的剛体の逆慣性テンソルを返します。
+// Box/Sphere/Capsuleの簡易慣性モデルを使い、動的剛体の逆慣性テンソルを返します。
 // 本プロジェクトではTrigger/Static/Kinematicは拘束解法対象外としてゼロ行列を返します。
 inline math::Mat3 ComputeLocalInverseInertia(
     const RigidBodyComponent* body,
@@ -127,6 +127,29 @@ inline math::Mat3 ComputeLocalInverseInertia(
         inverse[1][1] = value;
         inverse[2][2] = value;
     }
+    else if (collider->Type == ColliderType::Capsule)
+    {
+        // ====================================================================
+        // Capsule慣性の近似
+        // ====================================================================
+        // 現段階ではCapsuleを同じRadius / 全高を持つsolid cylinderとして近似します。
+        // RagdollではBox近似より軸方向の慣性比を自然に保て、計算も安定しています。
+        // 厳密な「円柱 + 2半球」の合成慣性は質量分配と平行軸の定理を使って将来
+        // 高精度化できますが、Collider形状そのものの接触精度とは独立した改善項目です。
+        const float radius = std::max(std::abs(collider->Radius), 0.0f);
+        const float halfHeight = std::max(
+            std::abs(collider->HalfLength) + radius,
+            radius);
+        const float fullHeight = halfHeight * 2.0f;
+        const float iyy = 0.5f * body->Mass * radius * radius;
+        const float ixx = (body->Mass / 12.0f)
+            * (3.0f * radius * radius + fullHeight * fullHeight);
+        const float izz = ixx;
+
+        inverse[0][0] = ixx > 1.0e-12f ? 1.0f / ixx : 0.0f;
+        inverse[1][1] = iyy > 1.0e-12f ? 1.0f / iyy : 0.0f;
+        inverse[2][2] = izz > 1.0e-12f ? 1.0f / izz : 0.0f;
+    }
     return inverse;
 }
 
@@ -137,9 +160,17 @@ inline math::Mat3 ComputeWorldInverseInertia(
 {
     const math::Mat3 localInverse = ComputeLocalInverseInertia(body, collider);
     if (transform == nullptr || collider == nullptr || body == nullptr || body->Type != BodyType::Dynamic)
+    {
         return localInverse;
-    if (collider->Type != ColliderType::Box)
+    }
+
+    // Sphereは等方慣性なので回転してもテンソルが変化しません。
+    // Box/Capsuleはローカル軸ごとの慣性が異なるため、現在姿勢でworld-spaceへ回します。
+    if (collider->Type != ColliderType::Box
+        && collider->Type != ColliderType::Capsule)
+    {
         return localInverse;
+    }
 
     // Physics姿勢が初期化済みならQuaternionを直接使います。
     // 未初期化時だけTransform Eulerから構築することで、最初の衝突判定にも対応します。
@@ -158,7 +189,9 @@ inline math::Vec3 GetVelocityAtPoint(
 {
     // 剛体上の任意点速度 v = v_linear + omega x r
     if (body == nullptr || transform == nullptr)
+    {
         return math::Vec3{};
+    }
     const math::Vec3 r = worldPoint - transform->Position;
     return body->LinearVelocity + math::Vec3::Cross(body->AngularVelocity, r);
 }
