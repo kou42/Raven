@@ -2,14 +2,13 @@
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
 
-#include "Raven/Math/MathUtility.h"
+#include "Raven/Gltf/GltfCoordinateSystem.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Components.h"
@@ -34,7 +33,6 @@ bool NormalizeHumanForDebugView(
 {
     constexpr float TargetHeight = 20.0f;
     constexpr float MinimumHeight = 1.0e-5f;
-    constexpr float Pi = 3.14159265358979323846f;
 
     const float maxFloat = std::numeric_limits<float>::max();
     math::Vec3 sourceBoundsMin{ maxFloat, maxFloat, maxFloat };
@@ -42,12 +40,14 @@ bool NormalizeHumanForDebugView(
     bool hasVertex = false;
 
     // ========================================================================
-    // 1. Spawn直後のWorld AABBを計算
+    // 1. glTF Node Transform適用後のRaven World AABBを計算
     // ========================================================================
-    // Primitiveごとの頂点はMesh Local Spaceにあります。
-    // Human.glbでは複数Primitiveが別Node Transformを持つ可能性があるため、Local座標を
-    // そのまま比較せず、現在のEntity TransformでWorld Spaceへ変換してから統合します。
-    // この走査ではEntityを変更しないため、primitive自体はconst参照で扱います。
+    // Primitive頂点はMesh Local Spaceですが、SkinnedMeshSceneSpawnerがEntityへ設定した
+    // TransformComponentにはglTF Node階層のGlobal Transformがすでに反映されています。
+    // さらにScene配置境界でBuildGltfToRavenWorldTransform()も適用済みです。
+    //
+    // したがって、ここで得られるWorld座標は「glTF Node/Skin座標系を正規経路で解釈した結果」であり、
+    // Debug LayerがGeometry形状から別のUp軸を推測して回転を追加する必要はありません。
     for (const SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -98,104 +98,46 @@ bool NormalizeHumanForDebugView(
     const math::Vec3 sourceBoundsSize = sourceBoundsMax - sourceBoundsMin;
 
     // ========================================================================
-    // 2. Debug表示用のUp軸を決める
+    // 2. 高さ方向はglTF仕様の+Yを明示的に使用
     // ========================================================================
-    // glTF自体はY-upですが、Raven_human_test.glbの実データでは人物の高さ方向がZです。
-    // ここでXを含めた「AABBの最長軸」を高さとみなすと、T-Poseでは両腕を広げたX幅が
-    // 身長Z以上になることがあり、Z-upのHumanを誤ってY-upと判定してしまいます。
-    // その場合、人物の高さ方向ZがCameraの奥行き方向に残るため、画面上では胴体や脚が
-    // 極端に潰れ、腕だけが横方向へ大きく広がったように見えます。
+    // glTF 2.0ではAsset全体のUp軸は+Yで固定です。
+    // Jointも通常Nodeと同じNode階層上にあり、Skeletonだけ別のUp軸を持つことはありません。
+    // Blender等のZ-up Authoring Spaceから必要な変換はExporterがNode Transformへ符号化します。
     //
-    // このDebug Layerが扱う候補はY-up / Z-upの2種類に限定しているため、X幅はUp軸判定へ
-    // 使用せず、Y方向とZ方向のどちらが大きいかだけで判定します。これによりT-Poseの
-    // arm spanに影響されず、Raven_human_test.glbを安定してZ-up -> Y-upへ回転できます。
-    const bool sourceIsZUp = sourceBoundsSize.z > sourceBoundsSize.y;
-    const float sourceHeight = sourceIsZUp ? sourceBoundsSize.z : sourceBoundsSize.y;
-
+    // そのためAABBのX/Y/Zサイズ比較からUp軸を推測する旧実装は廃止します。
+    // T-Poseの腕幅やAnimation Poseによって判定結果が変化することもなくなります。
+    const float sourceHeight = sourceBoundsSize.y;
     if (sourceHeight <= MinimumHeight)
     {
         if (errorMessage != nullptr)
         {
-            *errorMessage = "Human Debug表示用Boundsの高さが0に近すぎます";
+            *errorMessage =
+                "glTF +Y upとしてHumanの高さを取得できませんでした。"
+                "Node TransformまたはAsset Export設定を確認してください";
         }
         return false;
     }
 
     const float uniformScale = TargetHeight / sourceHeight;
 
-    // Z-upのHumanをRavenのY-up Sceneへ立てるDebug用回転です。
-    // -90度X回転では (x,y,z) -> (x,z,-y) となるため、元の+Zが新しい+Yになります。
-    math::Mat4 debugRotation = math::Mat4::Identity();
-    float debugRotationX = 0.0f;
-    if (sourceIsZUp)
-    {
-        debugRotationX = -Pi * 0.5f;
-        debugRotation = math::Rotate(
-            math::Mat4::Identity(),
-            debugRotationX,
-            math::Vec3{ 1.0f, 0.0f, 0.0f });
-    }
-
     // ========================================================================
-    // 3. 回転後Boundsを求め、足元をY=0へ合わせる
+    // 3. Raven Worldの+Yを維持したままCenter / Floorだけ正規化
     // ========================================================================
-    // 元AABBの8 cornerをDebug回転へ通せば、回転後のAABBを正確に求められます。
-    // CenterだけをY=TargetHeight/2へ置く方法より、足先/頭頂の非対称形状でもFloorへ確実に
-    // 接地させられるため、ここでは回転後Bounds Minを基準に最終Translationを決めます。
-    math::Vec3 rotatedBoundsMin{ maxFloat, maxFloat, maxFloat };
-    math::Vec3 rotatedBoundsMax{ -maxFloat, -maxFloat, -maxFloat };
-
-    for (int xIndex = 0; xIndex < 2; ++xIndex)
-    {
-        for (int yIndex = 0; yIndex < 2; ++yIndex)
-        {
-            for (int zIndex = 0; zIndex < 2; ++zIndex)
-            {
-                const math::Vec3 corner{
-                    xIndex == 0 ? sourceBoundsMin.x : sourceBoundsMax.x,
-                    yIndex == 0 ? sourceBoundsMin.y : sourceBoundsMax.y,
-                    zIndex == 0 ? sourceBoundsMin.z : sourceBoundsMax.z
-                };
-
-                const math::Vec3 rotatedCorner = TransformPosition(debugRotation, corner);
-                rotatedBoundsMin.x = std::min(rotatedBoundsMin.x, rotatedCorner.x);
-                rotatedBoundsMin.y = std::min(rotatedBoundsMin.y, rotatedCorner.y);
-                rotatedBoundsMin.z = std::min(rotatedBoundsMin.z, rotatedCorner.z);
-                rotatedBoundsMax.x = std::max(rotatedBoundsMax.x, rotatedCorner.x);
-                rotatedBoundsMax.y = std::max(rotatedBoundsMax.y, rotatedCorner.y);
-                rotatedBoundsMax.z = std::max(rotatedBoundsMax.z, rotatedCorner.z);
-            }
-        }
-    }
-
-    const math::Vec3 rotatedBoundsCenter = (rotatedBoundsMin + rotatedBoundsMax) * 0.5f;
-
-    // X/Z中心を原点へ、Y最小値をFloor(Y=0)へ合わせます。
+    // Up軸回転は一切行いません。
+    // X/Z中心を原点へ寄せ、Y最小値をFloor(Y=0)へ合わせるだけです。
+    // これによりDebug表示処理は座標系変換ではなく「見やすい位置・サイズへの配置」だけを担当します。
     const math::Vec3 debugTranslation{
-        -rotatedBoundsCenter.x * uniformScale,
-        -rotatedBoundsMin.y * uniformScale,
-        -rotatedBoundsCenter.z * uniformScale
+        -sourceBoundsCenter.x * uniformScale,
+        -sourceBoundsMin.y * uniformScale,
+        -sourceBoundsCenter.z * uniformScale
     };
 
     // ========================================================================
-    // 4. Human全体へ同じWorld Space Debug Transformを適用
+    // 4. Human全体へ同じUniform Scale / Translationを適用
     // ========================================================================
-    // 正規化は各PrimitiveのLocal Transformを個別補正するのではなく、既存World Transformの
-    // 左側へ同一行列を掛けます。
-    //
-    //   M_debugWorld = T_debug * S_uniform * R_debug * M_importedWorld
-    //
-    // これによりBody/Clothes等のPrimitive間相対配置を壊さず、Skeleton/InverseBindの
-    // Mesh Local Spaceにも触れません。
-    //
-    // TransformComponentは行列そのものを保持しないため、Debug変換がY-up/Z-upの2ケースに
-    // 限られることを利用してTRSへ直接反映します。Uniform Scaleなので既存Rotationとの
-    // 合成でScale軸が歪むこともありません。
-    //
-    // 重要:
-    // ここではTransformComponentを書き換えるため、primitiveを非const参照で受けます。
-    // Entity::GetComponent()にはconst/non-const overloadがあり、const Entityから取得すると
-    // const T&になるため、const primitiveからTransformComponent&は取得できません。
+    // 元のWorld Rotationには触れません。
+    // glTF Root NodeやArmature外側Nodeに含まれる基底変換を保持することが重要です。
+    // Body / Clothes等のPrimitive間相対配置も、全Entityへ同一World変換を適用することで維持します。
     for (SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -207,21 +149,9 @@ bool NormalizeHumanForDebugView(
         TransformComponent& transform =
             primitive.EntityHandle.GetComponent<TransformComponent>();
 
-        // World Positionは左からDebug回転・Scaleを掛けた後、Floor合わせTranslationを加えます。
-        const math::Vec3 rotatedPosition = TransformPosition(debugRotation, transform.Position);
-        transform.Position = debugTranslation + rotatedPosition * uniformScale;
-
-        // GetTransform()の回転順は Rx * Ry * Rz です。
-        // 今回追加するDebug回転はWorld X軸回転なので、既存World Rotationの左側へ掛けるには
-        // Rotation.xへ加算するだけでは一般に同値になりません。
-        // Human.glbのMesh Node World Rotationは現状Identityに近いことを前提にせず、
-        // SpawnerのDecomposeWorldTransform()と同じTRS分解を再利用できないため、Debug Layerでは
-        // Z-up時のみX回転を加えます。Human.glb確認用途としてこの制約をログにも明示します。
-        if (sourceIsZUp)
-        {
-            transform.Rotation.x += debugRotationX;
-        }
-
+        // 左から T_debug * S_uniform を掛けるのと同じWorld Position更新です。
+        // RotationはglTF Node階層から得た値をそのまま維持します。
+        transform.Position = debugTranslation + transform.Position * uniformScale;
         transform.Scale = transform.Scale * uniformScale;
     }
 
@@ -231,7 +161,8 @@ bool NormalizeHumanForDebugView(
         << "  Max    = (" << sourceBoundsMax.x << ", " << sourceBoundsMax.y << ", " << sourceBoundsMax.z << ")\n"
         << "  Center = (" << sourceBoundsCenter.x << ", " << sourceBoundsCenter.y << ", " << sourceBoundsCenter.z << ")\n"
         << "  Size   = (" << sourceBoundsSize.x << ", " << sourceBoundsSize.y << ", " << sourceBoundsSize.z << ")\n"
-        << "  Debug Up = " << (sourceIsZUp ? "Z -> Y" : "Y") << '\n'
+        << "  Coordinate System = " << GetGltfCoordinateSystemDescription() << '\n'
+        << "  Debug Up = +Y (explicit, no AABB inference)\n"
         << "  Debug Scale = " << uniformScale << '\n';
 
     return true;
@@ -301,10 +232,9 @@ bool HumanSkinningDebugLayer::TryInitialize()
         return false;
     }
 
-    // Human.glb固有の単位・Scene Node位置に依存せず手動Skinning確認できるよう、
-    // 全Primitiveの現在Bind Pose頂点からWorld AABBを求めてDebug表示用に正規化します。
-    // Skinning自体はMesh Local Spaceで完結しているため、ここではScene Entity Transformだけを
-    // 共通変換し、Skeleton / inverseBindMatricesには一切手を加えません。
+    // Human.glbの表示サイズ・位置だけをDebug用途に正規化します。
+    // Up軸はglTF仕様(+Y)とNode/Skin Transformを正規データとして扱い、Geometry AABBから推測しません。
+    // Skeleton / inverseBindMatrices / Node Rotationには一切追加補正を入れません。
     if (NormalizeHumanForDebugView(primitives, &errorMessage) == false)
     {
         std::cerr
