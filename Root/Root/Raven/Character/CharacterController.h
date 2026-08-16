@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "Raven/Math/MathVector.h"
@@ -51,6 +52,24 @@ struct CharacterControllerConfig
     float JumpSpeed = 4.5f;
 
     // ========================================================================
+    // Character Capsule
+    // ========================================================================
+    // Physics対応Update()で使用するKinematic Capsuleです。
+    // Transform::Positionを足元とし、全高は 2 * (CapsuleHalfLength + CapsuleRadius) です。
+    // 既定値では Radius=0.35 / HalfLength=0.55 なので約1.8mのCharacterになります。
+    float CapsuleRadius = 0.35f;
+    float CapsuleHalfLength = 0.55f;
+
+    // Shape Cast時だけCapsuleを僅かに膨らませる安全距離です。
+    // 接触直後の浮動小数誤差で次Frameに壁内部から開始することを抑えます。
+    float CollisionSkinWidth = 0.02f;
+
+    // 1Frame中に複数面へ当たった場合のSlide反復上限です。
+    // 角へ入った場合でも無限反復せず、壁沿いへ残り変位を投影します。
+    uint32_t MaxSlideIterations = 3u;
+    uint32_t MaxCapsuleCastSubsteps = 64u;
+
+    // ========================================================================
     // Ground Probe
     // ========================================================================
     // PhysicsWorldを渡すUpdate()では、Character Rootより少し上から下向きへGroundQueryします。
@@ -81,7 +100,8 @@ struct CharacterControllerConfig
 //         -> Acceleration / Deceleration
 //         -> Facing Rotation
 //         -> Physics Ground Query / Gravity / Jump
-//         -> Transform Position
+//         -> Capsule Cast / Wall Slide
+//         -> Vertical Integration
 //         -> Ground Snap
 //
 // Character自身をDynamic RigidBodyにすると入力移動とImpulse Solverが同じ自由度を奪い合うため、
@@ -110,10 +130,11 @@ public:
         std::string* errorMessage = nullptr);
 
     // ========================================================================
-    // Physics Ground Query Update
+    // Physics Character Update
     // ========================================================================
-    // PhysicsWorld::GroundQuery()を使ってStatic / Kinematic / Plane Collider上へ接地します。
-    // 段差・斜面・Ragdoll復帰位置と同じPhysics Ground基準を共有できる新しい標準経路です。
+    // PhysicsWorld::GroundQuery()で床を取得し、PhysicsWorld::CapsuleCast()で壁貫通を防ぎます。
+    // 衝突後の残り水平変位は接触面へ投影してSlideさせるため、斜め入力で壁へ入った場合も
+    // 完全停止せず壁沿いの成分を維持します。
     bool Update(
         const CharacterControllerInput& input,
         float deltaTime,
@@ -174,6 +195,14 @@ private:
         Scene& scene,
         TransformComponent& transform,
         bool allowSnap,
+        std::string* errorMessage);
+
+    // 水平変位をCapsule Castし、最初の接触まで移動した後、残り変位を接触面へ投影してSlideします。
+    // Velocityの壁へ向かう水平成分も同時に除去し、次Frameで同じ壁へ押し込み続けないようにします。
+    bool ResolvePhysicsMovement(
+        Scene& scene,
+        const math::Vec3& horizontalDisplacement,
+        TransformComponent& transform,
         std::string* errorMessage);
 
 private:
