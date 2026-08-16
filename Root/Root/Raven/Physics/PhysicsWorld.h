@@ -56,6 +56,39 @@ struct PhysicsRayCastFilter
     }
 };
 
+// ============================================================================
+// Ground Query
+// ============================================================================
+// Character Controller / Ragdoll復帰などが「この位置の直下に歩行可能な床があるか」を
+// PhysicsWorldへ問い合わせるための結果です。
+//
+// Ground QueryはShape固有の接触解決をCharacter側へ持ち出さず、PhysicsWorldのRayCastを
+// 再利用して床面のPoint / Normal / Entityを返します。DistanceはQuery開始点からHitまでの
+// 下向き距離で、direction=(0,-1,0)を単位ベクトルとしているためRayCast Fractionと一致します。
+struct PhysicsGroundQueryHit
+{
+    Entity HitEntity{};
+    math::Vec3 Point{};
+    math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
+    float Distance = 0.0f;
+};
+
+struct PhysicsGroundQuerySettings
+{
+    // Query開始点から下方向へ調べる最大距離です。
+    float MaxDistance = 1.0f;
+
+    // Walkableとみなす最大斜面角度[rad]です。0なら水平面のみ、PI/2に近いほど急斜面を許可します。
+    float MaxSlopeRadians = 0.872664626f; // 50 degrees
+
+    // Characterの足場として通常利用するStatic / Kinematic / Planeを既定対象にします。
+    // Dynamic Body上を歩かせたい場合だけIncludeDynamicを明示的に有効化します。
+    bool IncludeStatic = true;
+    bool IncludeKinematic = true;
+    bool IncludeDynamic = false;
+    bool IncludePlanes = true;
+};
+
 struct PhysicsSolverDebugStatistics
 {
     // Manifold/Point数はNarrow Phaseの接触量を示します。
@@ -150,6 +183,16 @@ public:
     // フィルタは候補選択前に適用されるため、除外Shapeが手前にあっても探索を継続します。
     bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
         float maxFraction, const PhysicsRayCastFilter& filter, PhysicsRayCastHit& outHit);
+
+    // Character / Ragdoll復帰共通の床検索です。
+    // Query OriginからWorld -YへRayCastし、MaxSlopeRadians以内の上向き面だけをWalkable Groundとして返します。
+    // 現段階はFoot PointからのGround Probeを目的としたRayベース実装で、今後Capsule Sweepへ
+    // 内部実装を置換しても呼び出し側APIを変えない境界として用意しています。
+    bool GroundQuery(
+        Scene& scene,
+        const math::Vec3& origin,
+        const PhysicsGroundQuerySettings& settings,
+        PhysicsGroundQueryHit& outHit);
 
     // QueryAABBはBroadPhase候補を使いつつ、実AABB重なりで最終フィルタします。
     void QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities);
