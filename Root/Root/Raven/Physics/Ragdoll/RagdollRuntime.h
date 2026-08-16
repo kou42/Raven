@@ -163,6 +163,11 @@ private:
     // Sampling履歴と混同しないため、前Animation Sampleを独立して保持します。
     std::vector<RagdollBodyState> m_PreviousAnimationBodies;
     bool m_HasPreviousAnimationPose = false;
+
+    // 同じRagdollRuntimeへBuild()を再実行した場合、BoneIndexが偶然同じでも旧SkeletonのSampleを
+    // 新Skeletonへ流用してはいけません。Sample時にSkeleton pointerが変わったことを検出して
+    // 履歴を自動破棄するため、履歴を生成したSkeletonも記録します。
+    const Skeleton* m_AnimationHistorySkeleton = nullptr;
 };
 
 } // namespace Raven
