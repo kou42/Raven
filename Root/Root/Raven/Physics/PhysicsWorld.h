@@ -89,6 +89,41 @@ struct PhysicsGroundQuerySettings
     bool IncludePlanes = true;
 };
 
+// ============================================================================
+// Capsule Shape Cast
+// ============================================================================
+// Kinematic Characterなど、直立Capsuleを任意方向へ移動したとき最初に触れるColliderを返します。
+// PositionはCharacter Controllerと同じ「Capsule最下端の足元位置」を契約とします。
+// Capsule中心は Position + WorldUp * (HalfLength + Radius) から内部で構築します。
+struct PhysicsCapsuleCastHit
+{
+    Entity HitEntity{};
+    math::Vec3 Position{}; // Hit時点のCapsule足元位置
+    math::Vec3 Point{};    // 接触点
+    math::Vec3 Normal{};   // 障害物表面からCapsule側を向く法線
+    float Fraction = 0.0f; // start + displacement * Fraction
+};
+
+struct PhysicsCapsuleCastSettings
+{
+    float Radius = 0.35f;
+    float HalfLength = 0.55f;
+
+    // 実Capsuleより僅かに太くCastし、移動後にColliderへ数値誤差で食い込むことを防ぎます。
+    float SkinWidth = 0.02f;
+
+    // 高速移動時のトンネリングを避けるため、移動区間をRadius基準で分割してOverlapを探索します。
+    // 最初のOverlap区間を見つけた後は二分探索でTime Of Impactを絞り込みます。
+    uint32_t MaxSubsteps = 64u;
+    uint32_t BinarySearchIterations = 10u;
+
+    bool IncludeStatic = true;
+    bool IncludeKinematic = true;
+    bool IncludeDynamic = false;
+    bool IncludePlanes = true;
+    bool IncludeTriggers = false;
+};
+
 struct PhysicsSolverDebugStatistics
 {
     // Manifold/Point数はNarrow Phaseの接触量を示します。
@@ -193,6 +228,16 @@ public:
         const math::Vec3& origin,
         const PhysicsGroundQuerySettings& settings,
         PhysicsGroundQueryHit& outHit);
+
+    // Characterの壁衝突・Slide用Shape Castです。
+    // startFootPositionからdisplacementだけ直立CapsuleをSweepし、進行方向を実際に塞ぐ最初の面を返します。
+    // 床へ接しているだけの面など、displacementと法線が離れる/平行な接触はBlocking Hitにしません。
+    bool CapsuleCast(
+        Scene& scene,
+        const math::Vec3& startFootPosition,
+        const math::Vec3& displacement,
+        const PhysicsCapsuleCastSettings& settings,
+        PhysicsCapsuleCastHit& outHit);
 
     // QueryAABBはBroadPhase候補を使いつつ、実AABB重なりで最終フィルタします。
     void QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities);
