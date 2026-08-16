@@ -90,6 +90,7 @@ bool SkinnedBlendTreeRuntime::PlayOneShotAnimation(
 
 bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     std::size_t skinIndex,
+    float movementSpeed,
     float crossFadeDuration,
     std::string* errorMessage)
 {
@@ -98,6 +99,10 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
         errorMessage->clear();
     }
 
+    if (std::isfinite(movementSpeed) == false || movementSpeed < 0.0f)
+    {
+        return SetError(errorMessage, "Locomotion復帰Movement Speedは0以上の有限値である必要があります");
+    }
     if (std::isfinite(crossFadeDuration) == false || crossFadeDuration < 0.0f)
     {
         return SetError(errorMessage, "Locomotion復帰CrossFade時間は0以上の有限値である必要があります");
@@ -114,14 +119,21 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     }
     if (state->OneShotActive == false)
     {
-        // 既にLocomotion中なら成功no-opとして扱います。
-        return true;
+        // 既にLocomotion中ならParameterだけ最新値へ合わせます。
+        return SetMovementSpeed(skinIndex, movementSpeed, errorMessage);
     }
 
     Animator& animator = state->AnimatorInstance;
     const bool previousLoop = animator.IsLooping();
 
-    // Locomotionは再びLoop Motionとして再生します。
+    // ========================================================================
+    // Non-loop Get-Up -> Locomotion BlendTree
+    // ========================================================================
+    // Ragdoll突入前のMovementSpeedを残したまま戻すと、Get-Up完了直後にRun Poseへ飛ぶ可能性があります。
+    // そのため復帰時点のCharacter Controller速度をここでStateへ保存し、その値を遷移先BlendTreeへ
+    // 直接渡します。
+    state->MovementSpeed = movementSpeed;
+
     // Get-Up Clipの終端NormalizedTime=1を歩行周期へ持ち込む意味はないためrestart=trueとし、
     // 現在MovementSpeedに対応したIdle / Walk / Run Poseから新しい周期を開始します。
     animator.SetLoop(true);
