@@ -34,8 +34,8 @@ struct RagdollBodyDefinition
 // RagdollJointDefinition
 // ============================================================================
 // Parent / Child Body間のJoint定義です。
-// 現段階ではConstraint Solverへまだ接続せず、角度制限を設定データとして保持します。
-// 将来Cone/Twist Solverを追加した際に、この定義からConstraintを生成します。
+// Swing/Twist Constraint Solverはこの定義を参照し、Ragdoll開始時の相対姿勢を基準姿勢として
+// 角度制限を適用します。TwistAxisLocalはChild Bodyローカル空間でのTwist軸です。
 struct RagdollJointDefinition
 {
     std::string ParentBoneName;
@@ -44,6 +44,10 @@ struct RagdollJointDefinition
     float SwingLimitRadians = 0.78539816339f;
     float TwistMinRadians = -0.52359877559f;
     float TwistMaxRadians = 0.52359877559f;
+
+    // Humanoid BoneはY方向を長軸としているAssetが多いため+Yを既定値にします。
+    // AssetごとにBone軸規約が異なる場合はRagdoll Definition側で明示的に差し替えます。
+    math::Vec3 TwistAxisLocal{ 0.0f, 1.0f, 0.0f };
 };
 
 struct RagdollDefinition
@@ -115,6 +119,16 @@ public:
 
     RagdollBodyState* FindBody(BoneIndex boneIndex);
     const RagdollBodyState* FindBody(BoneIndex boneIndex) const;
+
+    // Constraint SolverはDefinitionのBone名からRuntime Bodyへ解決するため、
+    // 名前検索をRagdollRuntimeの責務として提供します。Solver側でSkeleton検索を重複実装しません。
+    RagdollBodyState* FindBody(const std::string& boneName);
+    const RagdollBodyState* FindBody(const std::string& boneName) const;
+
+    const Skeleton* GetSkeleton() const
+    {
+        return m_Skeleton;
+    }
 
     const std::vector<RagdollBodyState>& GetBodies() const
     {
