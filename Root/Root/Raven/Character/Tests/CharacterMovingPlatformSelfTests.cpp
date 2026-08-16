@@ -251,8 +251,11 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         CreateGround(scene);
-        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxLeft");
-        CreateIncomingDynamicBox(scene, math::Vec3{ 1.25f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxRight");
+
+        // 短いdtを複数回使って継続時間を検証するため、箱はCharacter Capsuleへほぼ接触した位置に置きます。
+        // Box HalfExtent 0.25 + Capsule Radius約0.35 = 0.60 なので、±0.60mで左右から接触します。
+        CreateIncomingDynamicBox(scene, math::Vec3{ -0.60f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxLeft");
+        CreateIncomingDynamicBox(scene, math::Vec3{ 0.60f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBoxRight");
 
         CharacterController controller{};
         TransformComponent characterTransform{};
@@ -305,13 +308,13 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         CreateGround(scene);
-        Entity left = CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterCrushResetLeft");
-        Entity right = CreateIncomingDynamicBox(scene, math::Vec3{ 1.25f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterCrushResetRight");
+        Entity left = CreateIncomingDynamicBox(scene, math::Vec3{ -0.60f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterCrushResetLeft");
+        Entity right = CreateIncomingDynamicBox(scene, math::Vec3{ 0.60f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterCrushResetRight");
 
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-        assert(controller.UpdateWithMovingPlatforms(input, 0.5f, scene, characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 0.25f, scene, characterTransform));
         assert(controller.IsCrushed());
         assert(controller.GetCrushDuration() > 0.0f);
         assert(controller.GetCrushExposure() > 0.0f);
@@ -333,13 +336,13 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         CreateGround(scene);
-        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterCrushExplicitResetLeft");
-        CreateIncomingDynamicBox(scene, math::Vec3{ 1.25f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterCrushExplicitResetRight");
+        CreateIncomingDynamicBox(scene, math::Vec3{ -0.60f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterCrushExplicitResetLeft");
+        CreateIncomingDynamicBox(scene, math::Vec3{ 0.60f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterCrushExplicitResetRight");
 
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-        assert(controller.UpdateWithMovingPlatforms(input, 0.5f, scene, characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 0.25f, scene, characterTransform));
         assert(controller.IsCrushed());
 
         controller.ResetCrushTracking();
