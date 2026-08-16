@@ -76,6 +76,7 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || std::isfinite(m_Config.CapsuleRadius) == false
         || std::isfinite(m_Config.CapsuleHalfLength) == false
         || std::isfinite(m_Config.CollisionSkinWidth) == false
+        || std::isfinite(m_Config.MaxStepHeight) == false
         || std::isfinite(m_Config.GroundProbeStartOffset) == false
         || std::isfinite(m_Config.GroundSnapDistance) == false
         || std::isfinite(m_Config.MaxGroundSlopeRadians) == false
@@ -95,12 +96,13 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || m_Config.CollisionSkinWidth < 0.0f
         || m_Config.MaxSlideIterations == 0u
         || m_Config.MaxCapsuleCastSubsteps == 0u
+        || m_Config.MaxStepHeight < 0.0f
         || m_Config.GroundProbeStartOffset < 0.0f
         || m_Config.GroundSnapDistance < 0.0f
         || m_Config.MaxGroundSlopeRadians < 0.0f
         || m_Config.MaxGroundSlopeRadians > HalfPi)
     {
-        return SetError(errorMessage, "CharacterController Configの速度/衝突/Ground Query値が不正です");
+        return SetError(errorMessage, "CharacterController Configの速度/衝突/Step/Ground Query値が不正です");
     }
 
     return true;
@@ -202,6 +204,102 @@ bool CharacterController::TrySnapToPhysicsGround(
     return true;
 }
 
+bool CharacterController::TryStepUp(
+    Scene& scene,
+    const math::Vec3& horizontalDisplacement,
+    TransformComponent& transform,
+    std::string* errorMessage)
+{
+    static_cast<void>(errorMessage);
+
+    if (m_Grounded == false
+        || m_Config.MaxStepHeight <= math::Epsilon
+        || horizontalDisplacement.LengthSq() <= 1.0e-12f)
+    {
+        return false;
+    }
+
+    ph::PhysicsCapsuleCastSettings castSettings{};
+    castSettings.Radius = m_Config.CapsuleRadius;
+    castSettings.HalfLength = m_Config.CapsuleHalfLength;
+    castSettings.SkinWidth = m_Config.CollisionSkinWidth;
+    castSettings.MaxSubsteps = m_Config.MaxCapsuleCastSubsteps;
+    castSettings.BinarySearchIterations = 10u;
+    castSettings.IncludeStatic = true;
+    castSettings.IncludeKinematic = true;
+    castSettings.IncludeDynamic = false;
+    castSettings.IncludePlanes = true;
+    castSettings.IncludeTriggers = false;
+
+    // ========================================================================
+    // Step Up clearance test
+    // ========================================================================
+    // 現在位置からMaxStepHeightだけCapsule全体を持ち上げ、同じ水平変位を再Castします。
+    // ここでもHitする場合は障害物が高すぎる、または上方空間が塞がっているため通常のWall Slideへ戻します。
+    const math::Vec3 raisedStart = transform.Position
+        + math::Vec3{ 0.0f, m_Config.MaxStepHeight, 0.0f };
+
+    ph::PhysicsCapsuleCastHit raisedHit{};
+    if (scene.GetPhysicsWorld().CapsuleCast(
+            scene,
+            raisedStart,
+            horizontalDisplacement,
+            castSettings,
+            raisedHit) == true)
+    {
+        return false;
+    }
+
+    const math::Vec3 raisedDestination = raisedStart + horizontalDisplacement;
+
+    // ========================================================================
+    // Landing surface search
+    // ========================================================================
+    // 上側が空いていても、その先に床が無ければ段差として乗り越えてはいけません。
+    // raisedDestinationより少し上から下向きへGround Queryし、現在足元からMaxStepHeight以内の
+    // 上面、またはGroundSnapDistance以内の下り面へ安全に着地できることを確認します。
+    ph::PhysicsGroundQuerySettings groundSettings{};
+    groundSettings.MaxDistance = m_Config.GroundProbeStartOffset
+        + m_Config.MaxStepHeight
+        + m_Config.GroundSnapDistance;
+    groundSettings.MaxSlopeRadians = m_Config.MaxGroundSlopeRadians;
+    groundSettings.IncludeStatic = true;
+    groundSettings.IncludeKinematic = true;
+    groundSettings.IncludeDynamic = false;
+    groundSettings.IncludePlanes = true;
+
+    const math::Vec3 groundProbeOrigin = raisedDestination
+        + math::Vec3{ 0.0f, m_Config.GroundProbeStartOffset, 0.0f };
+
+    ph::PhysicsGroundQueryHit groundHit{};
+    if (scene.GetPhysicsWorld().GroundQuery(
+            scene,
+            groundProbeOrigin,
+            groundSettings,
+            groundHit) == false)
+    {
+        return false;
+    }
+
+    const float stepHeight = groundHit.Point.y - transform.Position.y;
+    if (stepHeight > m_Config.MaxStepHeight + 1.0e-4f
+        || stepHeight < -m_Config.GroundSnapDistance - 1.0e-4f)
+    {
+        return false;
+    }
+
+    // Stepが成立した場合は水平変位を全て消費し、着地点の実Ground高さへ足元を合わせます。
+    // 狭い低障害物を1Frameで跨いだ場合も、raised Castが上方Clearanceを保証しているため、
+    // 着地点が元の床高さならそのまま向こう側へ降りることができます。
+    transform.Position.x = raisedDestination.x;
+    transform.Position.y = groundHit.Point.y;
+    transform.Position.z = raisedDestination.z;
+    m_Velocity.y = 0.0f;
+    m_Grounded = true;
+    m_GroundNormal = groundHit.Normal;
+    return true;
+}
+
 bool CharacterController::ResolvePhysicsMovement(
     Scene& scene,
     const math::Vec3& horizontalDisplacement,
@@ -233,13 +331,12 @@ bool CharacterController::ResolvePhysicsMovement(
     // Kinematic Capsule Move And Slide
     // ========================================================================
     // 1. 残り変位をCapsule Cast
-    // 2. 最初のHit位置まで移動
-    // 3. 壁へ向かう成分を法線方向から除去
-    // 4. 残った接線方向変位を再Cast
+    // 2. 低い段差ならStep Upを試す
+    // 3. Step不可なら最初のHit位置まで移動
+    // 4. 壁へ向かう成分を法線方向から除去
+    // 5. 残った接線方向変位を再Cast
     //
     // これを少数回繰り返すことで、正面衝突では停止し、斜め衝突では壁沿いへSlideします。
-    // Dynamic RigidBodyのImpulse Solverとは独立したKinematic移動なので、Character入力の自由度を
-    // Contact Solverに奪わせず、Scene Colliderだけを移動制約として利用できます。
     for (uint32_t iteration = 0u; iteration < m_Config.MaxSlideIterations; ++iteration)
     {
         if (remainingDisplacement.LengthSq() <= 1.0e-10f)
@@ -256,6 +353,17 @@ bool CharacterController::ResolvePhysicsMovement(
                 hit) == false)
         {
             transform.Position += remainingDisplacement;
+            remainingDisplacement = math::Vec3{};
+            break;
+        }
+
+        // 壁として止める前に、CharacterがGroundedなら低い段差として越えられないか確認します。
+        if (TryStepUp(
+                scene,
+                remainingDisplacement,
+                transform,
+                errorMessage) == true)
+        {
             remainingDisplacement = math::Vec3{};
             break;
         }
@@ -418,7 +526,7 @@ bool CharacterController::UpdateInternal(
     // Horizontal Capsule Move / Vertical Integration
     // ========================================================================
     // 壁衝突はまず水平変位へ適用します。鉛直方向は現段階ではGround Query / Gravityが担当し、
-    // 次工程で天井衝突やStep Upを追加する際に同じCapsule Cast経路へ統合できるよう分離します。
+    // 次工程で天井衝突を追加する際に同じCapsule Cast経路へ統合できるよう分離します。
     const math::Vec3 horizontalDisplacement{
         m_Velocity.x * deltaTime,
         0.0f,
@@ -444,10 +552,10 @@ bool CharacterController::UpdateInternal(
     transform.Position.y += m_Velocity.y * deltaTime;
 
     // ========================================================================
-    // End-of-frame Ground Snap
+    // End-of-frame Ground Snap / Step Down
     // ========================================================================
     // 水平移動後の新しいXZで再Queryすることで、坂や小段差を降りたFrameにも床へ追従します。
-    // GroundProbeStartOffsetの範囲内なら小さな上り段差も上面を検出してRootを持ち上げられます。
+    // GroundSnapDistance以内なら小さな下り段差をStep Downとして吸収し、Airborne化を防ぎます。
     if (scene != nullptr)
     {
         if (m_Velocity.y <= 0.0f)
