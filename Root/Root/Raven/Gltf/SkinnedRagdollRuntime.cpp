@@ -150,10 +150,66 @@ bool SkinnedRagdollRuntime::Attach(
     m_Ragdoll = std::move(ragdoll);
 
     // Attachし直したRagdollへ古いConstraint Rest PoseやPhysics Entity対応を持ち越さないよう、
-    // Solver / Bridgeは新しい空状態へ戻します。
+    // Solver / Bridge / Animation Motion履歴は新しい空状態へ戻します。
     m_ConstraintSolver = RagdollConstraintSolver{};
     m_PhysicsBridge = RagdollPhysicsBridge{};
+    m_HasAnimationMotionSample = false;
     return true;
+}
+
+bool SkinnedRagdollRuntime::SampleAnimationMotion(
+    float deltaTime,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (m_TargetAsset == nullptr || m_Ragdoll.IsBuilt() == false)
+    {
+        return SetError(errorMessage, "Animation Motion SamplingにはAttach済みRagdollが必要です");
+    }
+
+    // ========================================================================
+    // Animation Runtime -> Ragdoll Motion Sample
+    // ========================================================================
+    // 同一SkinのPrimitiveは同じSkeletonPoseへ同期されるため、最初の1つを代表Sampleとして使います。
+    // このAPIはAnimation評価「後」に毎Frame呼ぶことが重要です。そうすることでRagdoll切替Frameの
+    // RagdollBodyStateには画面上の最新Poseと、直前Frameから導出したLinear/Angular Velocityが
+    // 同時に保持されます。
+    for (const RuntimeSkinnedPrimitive& primitive : m_TargetAsset->GetPrimitives())
+    {
+        if (primitive.SkinIndex != m_SkinIndex)
+        {
+            continue;
+        }
+
+        SkeletalMeshDeformer* deformer = GetSkeletalDeformer(primitive, errorMessage);
+        if (deformer == nullptr)
+        {
+            return false;
+        }
+
+        if (m_Ragdoll.SampleAnimationPose(
+                deformer->GetPose(),
+                deltaTime,
+                errorMessage) == false)
+        {
+            return false;
+        }
+
+        m_HasAnimationMotionSample = true;
+        return true;
+    }
+
+    return SetError(errorMessage, "Animation Motionを取得できるPrimitiveがありません");
+}
+
+void SkinnedRagdollRuntime::ResetAnimationMotionHistory()
+{
+    m_Ragdoll.ResetAnimationVelocityHistory();
+    m_HasAnimationMotionSample = false;
 }
 
 bool SkinnedRagdollRuntime::EnterRagdoll(std::string* errorMessage)
@@ -168,11 +224,17 @@ bool SkinnedRagdollRuntime::EnterRagdoll(std::string* errorMessage)
         return SetError(errorMessage, "SkinnedRagdollRuntimeがAttachされていません");
     }
 
-    // 同じSkinを使うPrimitiveはAnimation Runtime側で同じPoseへ同期されるため、
-    // 最初の1つをRagdoll開始Poseの基準として使用します。
-    //
-    // ここで現在Animation Poseを取り込むことで、Ragdoll開始時にBind Poseや原点から
-    // Physics Bodyが生成されてMeshが跳ぶことを防ぎます。
+    // SampleAnimationMotion()をAnimation評価後に継続して呼んでいる場合、m_Ragdollは既に
+    // 「最新Animation Pose + 直前Frameから計測したVelocity」を保持しています。
+    // ここで従来のCaptureAnimationPose()を呼ぶとVelocityが0へ戻ってしまうため、Sampling済みなら
+    // そのStateをそのままRagdoll開始状態として採用します。
+    if (m_HasAnimationMotionSample)
+    {
+        return true;
+    }
+
+    // Samplingを利用しない従来経路では、同じSkinを使うPrimitiveの現在Poseを取り込みます。
+    // このfallbackでは過去Poseが無いためVelocity=0ですが、従来APIの挙動と互換性があります。
     for (const RuntimeSkinnedPrimitive& primitive : m_TargetAsset->GetPrimitives())
     {
         if (primitive.SkinIndex != m_SkinIndex)
@@ -242,6 +304,11 @@ void SkinnedRagdollRuntime::DestroyPhysicsBodies(Scene& scene)
     // Physics Entityの所有先はSceneです。
     // Runtime側でEntityを直接破棄せずBridgeへ委譲し、生成時のBone <-> Entity対応も同時に破棄します。
     m_PhysicsBridge.DestroyBodies(scene);
+
+    // Physics駆動中にAnimation Poseは進んでいない可能性があるため、Ragdoll終了後に旧Animation Sampleを
+    // 残すと復帰後最初のPoseとの差が長時間分の巨大速度になります。次Animation区間は必ず新しい基準から
+    // Samplingを開始させます。
+    ResetAnimationMotionHistory();
 }
 
 bool SkinnedRagdollRuntime::SetBodyState(
