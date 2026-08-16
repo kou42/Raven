@@ -126,18 +126,18 @@ bool RagdollPhysicsBridge::CreateBodies(
         ColliderComponent& collider = entity.AddComponent<ColliderComponent>();
 
         // ====================================================================
-        // Capsule未実装時のBox近似
+        // Ragdoll Body -> Capsule Collider
         // ====================================================================
-        // RagdollBodyDefinitionはRadius / HalfLengthというCapsule向けの意味を持っていますが、
-        // 現在のColliderComponentはSphere / Box / Planeのみです。
-        // ここではBoneのローカル+Yを長軸とする縦長Boxへ近似し、PhysicsWorldの既存OBB衝突を
-        // そのまま利用します。Capsule Collider追加後はこの区画だけを差し替えます。
-        collider.Type = ColliderType::Box;
-        collider.HalfExtents = math::Vec3{
-            bodyDefinition->Radius,
-            bodyDefinition->HalfLength + bodyDefinition->Radius,
-            bodyDefinition->Radius
-        };
+        // RagdollBodyDefinitionのRadius / HalfLengthは最初からCapsule向けの意味で定義しているため、
+        // Collider側にも同じ値をそのまま渡します。CapsuleはBoneローカル+Yを長軸とし、
+        // Transformの回転に追従します。
+        //
+        // 以前のBox近似では四隅が床や隣接Bodyへ引っ掛かりやすく、肩・肘・膝などで
+        // 不自然なContactが生まれていました。Capsule化により四肢の断面が連続曲面となり、
+        // Ragdollの回転運動と接触がより自然になります。
+        collider.Type = ColliderType::Capsule;
+        collider.Radius = bodyDefinition->Radius;
+        collider.HalfLength = bodyDefinition->HalfLength;
         collider.Restitution = 0.0f;
         collider.StaticFriction = 0.7f;
         collider.DynamicFriction = 0.5f;
