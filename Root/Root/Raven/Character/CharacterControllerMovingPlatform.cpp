@@ -88,6 +88,11 @@ bool CharacterController::UpdateWithMovingPlatforms(
         return SetMovingPlatformError(errorMessage, "Moving PlatformのJump速度継承率は0以上の有限値である必要があります");
     }
 
+    // Crush状態は「現在Frameで実際に押し潰されているか」を表します。
+    // 前FrameでCrushされていてもBodyが離れれば即座に解除できるよう、毎FrameここでResetします。
+    m_IsCrushed = false;
+    m_CrushStrength = 0.0f;
+
     // ========================================================================
     // Previous Ground Platform Motion
     // ========================================================================
@@ -179,15 +184,17 @@ bool CharacterController::UpdateWithMovingPlatforms(
     }
 
     // ========================================================================
-    // Incoming Dynamic Body -> Character
+    // Incoming Dynamic Body -> Character / Crush Detection
     // ========================================================================
     // Character自身はKinematic Bodyなので、Physics SolverだけではDynamic Bodyから押し返されません。
     // Dynamic Bodyの1Frame分の水平移動を相対運動へ変換し、Character Capsuleを逆方向へSweepします。
     //
-    // 複数Bodyが同時にCharacterへ到達する場合は、各BodyについてHit後に残る変位を集め、平均して
-    // 1つのCharacter変位へ統合します。単純加算にしない理由は、同速度の箱が2個重なっただけで
-    // Character速度が2倍になる非物理的な増幅を避けるためです。反対側から同時に押された場合は
-    // ベクトルが相殺されるため、Characterはその場に留まり「挟まれている」状態になります。
+    // Crushは次の2種類を検出します。
+    // 1. Dynamic Body -> Character -> Wall のように、要求された押し返し変位の大半を移動できない状態。
+    // 2. Dynamic Body -> Character <- Dynamic Body のように、複数の十分な速度が反対方向から相殺する状態。
+    //
+    // 単にDynamic Bodyへ触れただけではCrushにしません。Gameplay側がDamage / Ragdoll / Deathへ接続できるよう、
+    // ControllerはIsCrushed()と代表速度GetCrushStrength()だけを公開します。
     if (m_Config.EnableDynamicBodyInteraction == true && deltaTime > math::Epsilon)
     {
         ph::PhysicsCapsuleCastSettings dynamicCastSettings{};
@@ -205,6 +212,7 @@ bool CharacterController::UpdateWithMovingPlatforms(
         math::Vec3 accumulatedDisplacement{};
         math::Vec3 accumulatedVelocity{};
         uint32_t incomingBodyCount = 0u;
+        float maxIncomingSpeed = 0.0f;
         std::vector<Entity> processedHitEntities;
 
         for (auto [sourceEntity, sourceRigidBody] : scene.View<RigidBodyComponent>())
@@ -275,8 +283,11 @@ bool CharacterController::UpdateWithMovingPlatforms(
                 continue;
             }
 
-            accumulatedDisplacement += hitHorizontalVelocity * deltaTime * remainingTimeFraction;
-            accumulatedVelocity += hitHorizontalVelocity * remainingTimeFraction;
+            const math::Vec3 effectiveVelocity = hitHorizontalVelocity * remainingTimeFraction;
+            const float effectiveSpeed = effectiveVelocity.Length();
+            maxIncomingSpeed = std::max(maxIncomingSpeed, effectiveSpeed);
+            accumulatedDisplacement += effectiveVelocity * deltaTime;
+            accumulatedVelocity += effectiveVelocity;
             ++incomingBodyCount;
         }
 
@@ -286,6 +297,22 @@ bool CharacterController::UpdateWithMovingPlatforms(
             const math::Vec3 incomingDisplacement = accumulatedDisplacement * inverseBodyCount;
             const math::Vec3 incomingVelocity = accumulatedVelocity * inverseBodyCount;
 
+            // ----------------------------------------------------------------
+            // Opposing Dynamic Bodies Crush
+            // ----------------------------------------------------------------
+            // 複数Bodyが十分な速度で到達しているのに合成速度だけが小さい場合、単なる停止ではなく
+            // 反対方向の押しが相殺しているとみなします。最大速度を基準に比率化するためFrame rateに
+            // 依存せず、同方向の箱が複数来た場合は合成速度も大きいのでCrushにはなりません。
+            if (incomingBodyCount >= 2u && maxIncomingSpeed >= m_Config.CrushMinIncomingSpeed)
+            {
+                const float cancellationRatio = incomingVelocity.Length() / maxIncomingSpeed;
+                if (cancellationRatio <= m_Config.CrushOpposingVelocityRatio)
+                {
+                    m_IsCrushed = true;
+                    m_CrushStrength = maxIncomingSpeed;
+                }
+            }
+
             // PositionだけでなくController速度へも反映します。押された後に入力が無ければ、通常の
             // Decelerationに従って減衰するため、外力由来の短い慣性として扱えます。
             m_Velocity.x = incomingVelocity.x;
@@ -293,11 +320,29 @@ bool CharacterController::UpdateWithMovingPlatforms(
 
             if (incomingDisplacement.LengthSq() > 1.0e-12f)
             {
-                // 押された先にStatic Wall / Kinematic / Dynamic Bodyが存在しても、通常のCharacter
-                // MoveAndSlide経路で停止します。これが壁際でのPenetration Recovery兼安全弁になります。
+                // ----------------------------------------------------------------
+                // Dynamic Body -> Character -> Blocking Geometry Crush
+                // ----------------------------------------------------------------
+                // ResolvePhysicsMovement()の前後位置を比較し、Dynamic Bodyが要求した移動量に対して
+                // Characterが実際にどれだけ逃げられたかを測ります。壁沿いSlideで十分に移動できた場合は
+                // Crushではなく通常の押し流しとして扱います。
+                const math::Vec3 positionBeforePush = transform.Position;
                 if (ResolvePhysicsMovement(scene, incomingDisplacement, transform, errorMessage) == false)
                 {
                     return false;
+                }
+
+                const math::Vec3 actualDisplacement = transform.Position - positionBeforePush;
+                const float requestedDistance = incomingDisplacement.Length();
+                const float actualDistance = actualDisplacement.Length();
+                if (requestedDistance > math::Epsilon && maxIncomingSpeed >= m_Config.CrushMinIncomingSpeed)
+                {
+                    const float movementRatio = actualDistance / requestedDistance;
+                    if (movementRatio <= m_Config.CrushBlockedMovementRatio)
+                    {
+                        m_IsCrushed = true;
+                        m_CrushStrength = std::max(m_CrushStrength, maxIncomingSpeed);
+                    }
                 }
             }
         }
