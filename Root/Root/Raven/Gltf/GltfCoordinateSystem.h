@@ -15,15 +15,20 @@ namespace Gltf
 // Up軸は +Y であり、Mesh / Node / Skin Jointはすべて同じ基準座標系に属します。
 //
 // 重要:
-// Blender等のAuthoring Tool側がZ-upであっても、glTFへExportされた時点で必要な変換は
-// Node階層へ符号化されます。そのためImporter / Debug表示側がMesh AABBを見て
-// 「このAssetはZ-upらしい」と推測して追加回転を掛けてはいけません。
+// ここでいう「+Y up」は座標系の基底規約です。Human Meshそのものが必ず+Y方向へ
+// 直立して格納されることまでは保証しません。ExporterによってはAuthoring Tool上の姿勢を
+// Geometry / Joint Bind Poseへ焼き込み、glTF Scene Space上では人物が横向きに格納されることがあります。
+//
+// したがって、次の2つは別責務として扱います。
+// - glTF Scene Space -> Raven World Space : このファイルで定義する座標系変換
+// - Humanoid Bind Pose -> Ravenの直立方向 : Human Debug側でSkeletonの意味情報から解決
+//
+// 後者をMesh AABBの長軸から推測すると、T-Poseの腕幅などに結果が左右されるため禁止します。
+// Humanの直立方向が必要な場合は、Hips -> HeadのようなSkeleton Bind Pose上の意味的な方向を使います。
 //
 // Ravenの現在のScene座標系も +Y up として扱っているため、glTF Scene Spaceから
 // Raven World Spaceへの基底変換はIdentityです。ただし「たまたまIdentityだから何もしない」
 // のではなく、この関数をScene配置境界で明示的に通すことで座標系契約を1か所へ集約します。
-// 将来Raven側の基底規約を変更する場合も、GeometryやSkeletonへ個別補正を散らさず、
-// この変換だけを更新できる構造にします。
 inline math::Mat4 BuildGltfToRavenWorldTransform()
 {
     return math::Mat4::Identity();
