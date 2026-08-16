@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "Raven/Gltf/GltfCoordinateSystem.h"
 #include "Raven/Gltf/SkinnedMeshRuntime.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Scene/Components.h"
@@ -275,6 +276,11 @@ bool SkinnedMeshSceneSpawner::SpawnFromGlb(
     spawnedInstance.m_RuntimeAsset = runtimeAsset;
     spawnedInstance.m_Primitives.reserve(runtimePrimitives.size());
 
+    // glTFの基準座標系からRaven World Spaceへの変換はScene配置境界で一度だけ適用します。
+    // 現在は両者とも+Y upのためIdentityですが、Node/Skinの座標契約をAABB推測へ依存させず、
+    // 将来Raven側のWorld基底を変更する場合もこの共通変換だけを差し替えられるようにします。
+    const math::Mat4 gltfToRavenWorld = BuildGltfToRavenWorldTransform();
+
     for (std::size_t primitiveIndex = 0u; primitiveIndex < runtimePrimitives.size(); ++primitiveIndex)
     {
         const RuntimeSkinnedPrimitive& primitive = runtimePrimitives[primitiveIndex];
@@ -284,9 +290,14 @@ bool SkinnedMeshSceneSpawner::SpawnFromGlb(
             return SetError(errorMessage, "Runtime PrimitiveのMesh/DeformationInstanceがnullptrです");
         }
 
+        // primitive.WorldTransformはglTF Node階層をすべて合成したScene Space行列です。
+        // Authoring ToolがZ-upであった場合のExport補正もNode Transformへ含まれるため、
+        // Geometry Boundsを見て追加回転を推測せず、この行列を正規経路として使用します。
+        const math::Mat4 ravenWorldTransform = gltfToRavenWorld * primitive.WorldTransform;
+
         TransformComponent importedTransform{};
         if (DecomposeWorldTransform(
-                primitive.WorldTransform,
+                ravenWorldTransform,
                 importedTransform,
                 errorMessage) == false)
         {
