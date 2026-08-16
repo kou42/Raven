@@ -35,8 +35,10 @@ struct ImportedSkinnedPrimitive
     std::size_t MaterialIndex = InvalidGltfIndex;
     std::size_t SkinIndex = InvalidGltfIndex;
 
-    // Scene配置用のNode Global Transformです。
-    // Skinning計算自体はMesh Local / Bind Spaceで行い、このTransformは描画Entity側で適用します。
+    // glTF Node階層をすべて合成したScene SpaceのGlobal Transformです。
+    // glTF 2.0の基準座標系は+Y upで固定され、Authoring Tool由来の基底変換もNode階層へ含まれます。
+    // Raven World Spaceへの基底変換はScene配置境界でBuildGltfToRavenWorldTransform()を通して適用します。
+    // Skinning計算自体はMesh Local / Bind Spaceで行い、このTransformをSkeleton内部へ混ぜません。
     math::Mat4 WorldTransform = math::Mat4::Identity();
 
     // SkeletalMeshDeformerが頂点を更新するため、StaticMeshImporterのGeometryをそのまま使わず
