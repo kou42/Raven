@@ -8,6 +8,7 @@
 #include "Raven/Animation/SkeletalMeshDeformer.h"
 #include "Raven/Gltf/SkinnedMeshRuntime.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven
 {
@@ -88,6 +89,13 @@ bool SkinnedRagdollRuntime::Attach(
         errorMessage->clear();
     }
 
+    // Physics EntityはScene側に実体を持つため、Scene参照なしでAttachをやり直すと孤児Entityを残します。
+    // 再Attachする場合は先にDestroyPhysicsBodies()を明示的に呼ぶ契約にします。
+    if (m_PhysicsBridge.IsCreated())
+    {
+        return SetError(errorMessage, "Physics Body生成中は再Attachできません。先にDestroyPhysicsBodies()を呼んでください");
+    }
+
     SkeletalMeshDeformer* referenceDeformer = nullptr;
 
     for (const RuntimeSkinnedPrimitive& primitive : targetAsset.GetPrimitives())
@@ -109,8 +117,6 @@ bool SkinnedRagdollRuntime::Attach(
             continue;
         }
 
-        // 同一Skinを共有するBody / Clothesは同じBone Index契約でPoseをコピーするため、
-        // Attach時点でSkeleton構造が一致していることを確認します。
         if (SkeletonsMatch(referenceDeformer->GetSkeleton(), deformer->GetSkeleton()) == false)
         {
             return SetError(errorMessage, "同一SkinIndexのRuntime Primitive間でSkeletonが一致しません");
@@ -132,6 +138,7 @@ bool SkinnedRagdollRuntime::Attach(
     m_TargetAsset = &targetAsset;
     m_Ragdoll = std::move(ragdoll);
     m_ConstraintSolver = RagdollConstraintSolver{};
+    m_PhysicsBridge = RagdollPhysicsBridge{};
     return true;
 }
 
@@ -147,8 +154,6 @@ bool SkinnedRagdollRuntime::EnterRagdoll(std::string* errorMessage)
         return SetError(errorMessage, "SkinnedRagdollRuntimeがAttachされていません");
     }
 
-    // 同じSkinを使うPrimitiveはAnimation Runtime側で同じPoseへ同期されるため、
-    // 最初の1つをRagdoll開始Poseの基準として使用します。
     for (const RuntimeSkinnedPrimitive& primitive : m_TargetAsset->GetPrimitives())
     {
         if (primitive.SkinIndex != m_SkinIndex)
@@ -180,9 +185,36 @@ bool SkinnedRagdollRuntime::InitializeConstraints(std::string* errorMessage)
         return SetError(errorMessage, "Constraint初期化にはBuild済みRagdollが必要です");
     }
 
-    // EnterRagdoll()後のBody PoseをRest Poseとして保存します。
-    // AnimationからRagdollへ切り替えた瞬間に関節がConstraint中心へ跳ぶことを防ぎます。
     return m_ConstraintSolver.Initialize(m_Ragdoll, errorMessage);
+}
+
+bool SkinnedRagdollRuntime::CreatePhysicsBodies(
+    Scene& scene,
+    const std::string& entityNamePrefix,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (m_Ragdoll.IsBuilt() == false)
+    {
+        return SetError(errorMessage, "Physics Body生成にはAttach済みRagdollが必要です");
+    }
+
+    // CreateBodies()が参照するBody PoseはEnterRagdoll()でAnimationから取得済みであることを想定します。
+    // 呼び出し順を明確に保ち、Body生成時に勝手にBind Poseへ戻す処理は入れません。
+    return m_PhysicsBridge.CreateBodies(
+        scene,
+        m_Ragdoll,
+        entityNamePrefix,
+        errorMessage);
+}
+
+void SkinnedRagdollRuntime::DestroyPhysicsBodies(Scene& scene)
+{
+    m_PhysicsBridge.DestroyBodies(scene);
 }
 
 bool SkinnedRagdollRuntime::SetBodyState(
@@ -218,6 +250,28 @@ bool SkinnedRagdollRuntime::SolveConstraints(
     return m_ConstraintSolver.Solve(m_Ragdoll, settings, errorMessage);
 }
 
+bool SkinnedRagdollRuntime::SyncPhysicsToRagdoll(
+    const Scene& scene,
+    std::string* errorMessage)
+{
+    return m_PhysicsBridge.SyncPhysicsToRagdoll(
+        scene,
+        m_Ragdoll,
+        errorMessage);
+}
+
+bool SkinnedRagdollRuntime::SyncRagdollToPhysics(
+    Scene& scene,
+    bool syncVelocities,
+    std::string* errorMessage)
+{
+    return m_PhysicsBridge.SyncRagdollToPhysics(
+        scene,
+        m_Ragdoll,
+        syncVelocities,
+        errorMessage);
+}
+
 bool SkinnedRagdollRuntime::ApplyPose(
     float weight,
     std::string* errorMessage)
@@ -240,11 +294,6 @@ bool SkinnedRagdollRuntime::ApplyPose(
     bool poseCreated = false;
     const Skeleton* referenceSkeleton = nullptr;
 
-    // ========================================================================
-    // Animation PoseをBlend元としてRagdoll Poseを構築
-    // ========================================================================
-    // weight < 1では「現在Animation Pose」とPhysics Poseを混ぜます。
-    // そのため最初のPrimitiveの現在PoseをコピーしてからRagdollRuntimeへ渡します。
     for (const RuntimeSkinnedPrimitive& primitive : m_TargetAsset->GetPrimitives())
     {
         if (primitive.SkinIndex != m_SkinIndex)
@@ -274,8 +323,6 @@ bool SkinnedRagdollRuntime::ApplyPose(
         return false;
     }
 
-    // 完成Poseを同じSkinを使う全Primitiveへ配布します。
-    // Body / Clothesを別々にRagdoll変換しないことでPose差を防ぎます。
     for (const RuntimeSkinnedPrimitive& primitive : m_TargetAsset->GetPrimitives())
     {
         if (primitive.SkinIndex != m_SkinIndex)
@@ -300,6 +347,54 @@ bool SkinnedRagdollRuntime::ApplyPose(
     return true;
 }
 
+bool SkinnedRagdollRuntime::UpdatePhysicsDrivenMesh(
+    Scene& scene,
+    float deltaTime,
+    const RagdollConstraintSolverSettings& settings,
+    float weight,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (std::isfinite(deltaTime) == false || deltaTime < 0.0f)
+    {
+        return SetError(errorMessage, "deltaTimeは0以上の有限値である必要があります");
+    }
+
+    // ========================================================================
+    // PhysicsWorld -> Ragdoll -> Constraint -> PhysicsWorld -> Skeleton
+    // ========================================================================
+    // Scene::OnUpdatePhysics()が固定Stepで重力・Collision・Contact Solverを実行した後に呼びます。
+    // Joint Constraintは現在RagdollBodyState上のProjection Solverなので、結果をPhysics Entityへ
+    // 戻して次の固定Step開始状態とSkeleton表示状態を一致させることが重要です。
+    if (SyncPhysicsToRagdoll(scene, errorMessage) == false)
+    {
+        return false;
+    }
+
+    if (SolveConstraints(settings, errorMessage) == false)
+    {
+        return false;
+    }
+
+    // ConstraintはPosition / Orientationを補正しますが、現在はAngular Impulse Solverではありません。
+    // Physicsの衝突で得た速度は維持したいのでsyncVelocities=falseで姿勢だけ戻します。
+    if (SyncRagdollToPhysics(scene, false, errorMessage) == false)
+    {
+        return false;
+    }
+
+    if (ApplyPose(weight, errorMessage) == false)
+    {
+        return false;
+    }
+
+    return m_TargetAsset->Update(deltaTime, errorMessage);
+}
+
 bool SkinnedRagdollRuntime::UpdateConstrainedMesh(
     float deltaTime,
     const RagdollConstraintSolverSettings& settings,
@@ -316,8 +411,6 @@ bool SkinnedRagdollRuntime::UpdateConstrainedMesh(
         return SetError(errorMessage, "deltaTimeは0以上の有限値である必要があります");
     }
 
-    // PhysicsWorld統合後は、この直前に各RigidBody結果をSetBodyState()へ同期します。
-    // その後Constraintを反復して人体の関節接続と可動域を復元し、Skeletonへ戻します。
     if (SolveConstraints(settings, errorMessage) == false)
     {
         return false;
