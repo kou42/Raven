@@ -6,6 +6,8 @@
 namespace Raven::ph
 {
 
+struct Capsule;
+
 // Sphere-Sphere:
 // 中心距離と半径和から接触判定し、1接触点マニホールドを生成します。
 bool GenerateSphereSphereManifold(
@@ -51,6 +53,60 @@ bool GenerateSphereBoxManifold(
     const TransformComponent& boxTransform,
     const ColliderComponent& boxCollider,
     ContactManifold& outManifold);
+
+// Sphere-Capsule:
+// Sphere中心からCapsule中心線分への最近接点を使い、Sphere-Sphereと同じ形へ還元します。
+bool GenerateSphereCapsuleManifold(
+    Entity sphereEntity,
+    const TransformComponent& sphereTransform,
+    const ColliderComponent& sphereCollider,
+    Entity capsuleEntity,
+    const TransformComponent& capsuleTransform,
+    const ColliderComponent& capsuleCollider,
+    ContactManifold& outManifold);
+
+// Capsule-Capsule:
+// 2本の中心線分の最近接点を求め、その距離と半径和から接触を生成します。
+bool GenerateCapsuleCapsuleManifold(
+    Entity capsuleEntityA,
+    const TransformComponent& capsuleTransformA,
+    const ColliderComponent& capsuleColliderA,
+    Entity capsuleEntityB,
+    const TransformComponent& capsuleTransformB,
+    const ColliderComponent& capsuleColliderB,
+    ContactManifold& outManifold);
+
+// Capsule-Plane:
+// Capsule中心線分のPlane側端点を使い、半径を考慮した接触を生成します。
+bool GenerateCapsulePlaneManifold(
+    Entity capsuleEntity,
+    const TransformComponent& capsuleTransform,
+    const ColliderComponent& capsuleCollider,
+    Entity planeEntity,
+    const TransformComponent& planeTransform,
+    const ColliderComponent& planeCollider,
+    ContactManifold& outManifold);
+
+// Capsule-Box:
+// Capsule中心線分とOBBの最近接点を求め、Capsule半径との距離で接触判定します。
+bool GenerateCapsuleBoxManifold(
+    Entity capsuleEntity,
+    const TransformComponent& capsuleTransform,
+    const ColliderComponent& capsuleCollider,
+    Entity boxEntity,
+    const TransformComponent& boxTransform,
+    const ColliderComponent& boxCollider,
+    ContactManifold& outManifold);
+
+// Ray-Capsule:
+// 有限円柱と両端半球を評価し、最短fractionと表面法線を返します。
+bool RayCastCapsule(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const Capsule& capsule,
+    float& outFraction,
+    math::Vec3& outNormal);
 
 // ============================================================================
 // GenerateBoxBoxManifold
