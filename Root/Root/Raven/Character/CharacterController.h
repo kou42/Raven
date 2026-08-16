@@ -9,6 +9,8 @@
 
 namespace Raven
 {
+class Scene;
+
 namespace Gltf
 {
 class SkinnedBlendTreeRuntime;
@@ -48,23 +50,39 @@ struct CharacterControllerConfig
     float Gravity = -9.81f;
     float JumpSpeed = 4.5f;
 
-    // Stage 5の最小Ground判定です。
-    // Transform::Position.yがこの高さ以下へ到達したらGroundedとしてClampします。
-    // 後続ではPhysicsWorldのSweep / Contact Queryへ置き換える境界です。
+    // ========================================================================
+    // Ground Probe
+    // ========================================================================
+    // PhysicsWorldを渡すUpdate()では、Character Rootより少し上から下向きへGroundQueryします。
+    // Root位置そのものからRayを始めると、床へ僅かにめり込んだFrameでRay始点がShape内部になり
+    // 法線やfraction=0の扱いが不安定になりやすいため、ProbeStartOffsetだけ上から開始します。
+    float GroundProbeStartOffset = 0.15f;
+
+    // 現在Root位置よりこの距離以内にWalkable Groundがあれば床へSnapします。
+    // 小さな段差を降りる際に毎FrameAirborneへ切り替わることを防ぎます。
+    float GroundSnapDistance = 0.30f;
+
+    // Walkableとみなす最大斜面角度[rad]です。既定50度。
+    float MaxGroundSlopeRadians = 0.872664626f;
+
+    // Legacy / PhysicsWorldを渡さないUpdate()用の水平Ground高さです。
+    // 既存呼び出し互換を維持するため残しますが、新しいCharacter実装ではPhysics Ground Query版
+    // Update()を優先してください。
     float GroundHeight = 0.0f;
 };
 
 // ============================================================================
 // CharacterController
 // ============================================================================
-// Stage 5のKinematic Character Controllerです。
+// Kinematic Character Controllerです。
 //
 // Update順:
 //   Input -> Desired Horizontal Velocity
 //         -> Acceleration / Deceleration
 //         -> Facing Rotation
-//         -> Gravity / Grounded / Jump
+//         -> Physics Ground Query / Gravity / Jump
 //         -> Transform Position
+//         -> Ground Snap
 //
 // Character自身をDynamic RigidBodyにすると入力移動とImpulse Solverが同じ自由度を奪い合うため、
 // 現段階ではゲームロジックが位置を決定するKinematic Controllerとして実装します。
@@ -80,11 +98,26 @@ public:
     void SetConfig(const CharacterControllerConfig& config) { m_Config = config; }
     const CharacterControllerConfig& GetConfig() const { return m_Config; }
 
-    // 毎Frameの移動更新です。
-    // TransformComponentを直接更新し、成功時trueを返します。
+    // ========================================================================
+    // Legacy Ground Update
+    // ========================================================================
+    // PhysicsWorldを持たない既存呼び出し互換用です。
+    // GroundHeightの水平Planeを床として扱います。新規コードでは下のScene版を優先します。
     bool Update(
         const CharacterControllerInput& input,
         float deltaTime,
+        TransformComponent& transform,
+        std::string* errorMessage = nullptr);
+
+    // ========================================================================
+    // Physics Ground Query Update
+    // ========================================================================
+    // PhysicsWorld::GroundQuery()を使ってStatic / Kinematic / Plane Collider上へ接地します。
+    // 段差・斜面・Ragdoll復帰位置と同じPhysics Ground基準を共有できる新しい標準経路です。
+    bool Update(
+        const CharacterControllerInput& input,
+        float deltaTime,
+        Scene& scene,
         TransformComponent& transform,
         std::string* errorMessage = nullptr);
 
@@ -122,12 +155,31 @@ public:
 
     bool IsGrounded() const { return m_Grounded; }
 
+    // 最後にPhysics Ground Queryで採用した床Normalです。
+    // Legacy UpdateやAirborne中はWorld Upを返します。
+    const math::Vec3& GetGroundNormal() const { return m_GroundNormal; }
+
 private:
     bool ValidateConfig(std::string* errorMessage) const;
+
+    // 共通運動ロジックです。scene == nullptrならLegacy GroundHeight、SceneありならPhysics Queryを使います。
+    bool UpdateInternal(
+        const CharacterControllerInput& input,
+        float deltaTime,
+        Scene* scene,
+        TransformComponent& transform,
+        std::string* errorMessage);
+
+    bool TrySnapToPhysicsGround(
+        Scene& scene,
+        TransformComponent& transform,
+        bool allowSnap,
+        std::string* errorMessage);
 
 private:
     CharacterControllerConfig m_Config{};
     math::Vec3 m_Velocity{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 m_GroundNormal{ 0.0f, 1.0f, 0.0f };
     bool m_Grounded = false;
 };
 
