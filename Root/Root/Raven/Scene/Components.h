@@ -211,10 +211,12 @@ struct RigidBodyComponent
 
 enum class ColliderType
 {
+    // 既存のSphere / Box / Planeの数値は保存データやEditor連携との互換性のため維持します。
+    // Capsuleは末尾へ追加し、既存enum値をずらさないようにします。
     Sphere,
     Box,
-    Capsule,
-    Plane
+    Plane,
+    Capsule
 };
 
 // ============================================================================
