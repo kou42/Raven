@@ -23,22 +23,37 @@ namespace ph
 struct PhysicsCapsuleCastHit;
 }
 
+// ============================================================================
+// CharacterControllerInput
+// ============================================================================
+// Character Controllerが必要とする入力をDevice非依存の値へ変換した構造体です。
+// Keyboard / GamepadをController内部で直接読むと、将来Input MappingやAI操作へ切り替える際に
+// 移動ロジックまで変更する必要が出るため、入力取得と運動計算を明確に分離します。
 struct CharacterControllerInput
 {
     // X: Right(+1) / Left(-1)
     // Y: Forward(+1) / Backward(-1)
     math::Vec2 Move{ 0.0f, 0.0f };
+
     bool Run = false;
     bool Jump = false;
 };
 
+// ============================================================================
+// CharacterControllerConfig
+// ============================================================================
 struct CharacterControllerConfig
 {
     float WalkSpeed = 1.8f;
     float RunSpeed = 5.5f;
+
+    // 目標速度へ近付く水平加速度です。
     float Acceleration = 14.0f;
     float Deceleration = 18.0f;
+
+    // rad/s。0以下なら向きを瞬時に移動方向へ合わせます。
     float TurnSpeed = 10.0f;
+
     float Gravity = -9.81f;
     float JumpSpeed = 4.5f;
 
@@ -47,54 +62,102 @@ struct CharacterControllerConfig
     // ========================================================================
     // Physics対応Update()で使用するKinematic Capsuleです。
     // Transform::Positionを足元とし、全高は 2 * (CapsuleHalfLength + CapsuleRadius) です。
+    // 既定値では Radius=0.35 / HalfLength=0.55 なので約1.8mのCharacterになります。
     float CapsuleRadius = 0.35f;
     float CapsuleHalfLength = 0.55f;
+
+    // Shape Cast時だけCapsuleを僅かに膨らませる安全距離です。
+    // 接触直後の浮動小数誤差で次Frameに壁内部から開始することを抑えます。
     float CollisionSkinWidth = 0.02f;
+
+    // 1Frame中に複数面へ当たった場合のSlide反復上限です。
+    // 角へ入った場合でも無限反復せず、壁沿いへ残り変位を投影します。
     uint32_t MaxSlideIterations = 3u;
     uint32_t MaxCapsuleCastSubsteps = 64u;
 
     // ========================================================================
     // Dynamic Body Interaction
     // ========================================================================
-    // Character自身はKinematicのまま、Dynamic BodyをBlocking Hitとして扱います。
+    // trueの場合、水平移動のCapsule CastでDynamic BodyもBlocking Hitとして扱い、
+    // Character側は貫通せず、接触したDynamic BodyへImpulseを与えます。
+    // Character自身はKinematicのままなので、Physics SolverにCharacter自由度を追加しません。
     bool EnableDynamicBodyInteraction = true;
+
+    // Characterを「押す側の仮想質量」として扱う値です。
+    // Dynamic Bodyとの接近速度から reduced mass を計算するために使います。
+    // Bodyが重いほど同じImpulseでも速度変化が小さくなり、軽い箱ほど押しやすくなります。
     float DynamicBodyPushMass = 60.0f;
+
+    // 物理式で求めたImpulseへ掛けるGameplay調整倍率です。
+    // 0ならDynamic BodyはCharacterを遮りますが、押すImpulseは発生しません。
     float DynamicBodyPushScale = 1.0f;
+
+    // 1回の接触で与えるImpulse上限です。0以下なら上限を設けません。
+    // 高速移動や極端なMass設定による過大ImpulseをGameplay側で抑えるために使用します。
     float MaxDynamicBodyPushImpulse = 120.0f;
 
     // ========================================================================
     // Crush Detection
     // ========================================================================
-    // Dynamic Bodyから押されている速度がこの値未満ならCrush判定対象にしません。
+    // Dynamic Bodyから押されている代表速度がこの値未満ならCrush判定対象にしません。
     // 微小なSolver振動や静止直前の速度を「押し潰し」と誤判定しないための閾値です。
     float CrushMinIncomingSpeed = 0.15f;
 
     // 要求された押し返し変位に対し、実際にCharacterが移動できた割合がこの値以下なら
-    // 壁などに逃げ道を塞がれた候補とします。0.25なら要求変位の25%以下しか逃げられない状態です。
+    // 壁などに逃げ道を塞がれた候補とします。既定0.25なら25%以下しか逃げられない状態です。
     float CrushBlockedMovementRatio = 0.25f;
 
-    // 反対方向から複数Bodyに押された場合、各押し返し速度の平均が最大速度に対して
-    // この割合以下まで相殺されたら「両側から挟まれている」と判定します。
+    // 反対方向から複数Bodyに押された場合、合成速度が最強の押し速度に対してこの割合以下まで
+    // 相殺されたら「両側から挟まれている」と判定します。
     float CrushOpposingVelocityRatio = 0.25f;
 
     // ========================================================================
     // Step Up / Down
     // ========================================================================
+    // 正面Capsule Castが低い障害物へ当たった場合、これだけ足元を持ち上げた位置から同じ水平変位を
+    // 再Castします。上側が空いていて、その先にWalkable Groundが見つかれば段差として乗り越えます。
     float MaxStepHeight = 0.30f;
+
+    // GroundSnapDistanceは下り段差のStep Down上限も兼ねます。
+    // 水平移動後にこの距離以内の床へSnapするため、小さな階段を下るFrameでAirborneになりません。
 
     // ========================================================================
     // Ground Probe
     // ========================================================================
+    // PhysicsWorldを渡すUpdate()では、Character Rootより少し上から下向きへGroundQueryします。
+    // Root位置そのものからRayを始めると、床へ僅かにめり込んだFrameでRay始点がShape内部になり
+    // 法線やfraction=0の扱いが不安定になりやすいため、ProbeStartOffsetだけ上から開始します。
     float GroundProbeStartOffset = 0.15f;
+
+    // 現在Root位置よりこの距離以内にWalkable Groundがあれば床へSnapします。
+    // 小さな段差を降りる際に毎FrameAirborneへ切り替わることを防ぎます。
     float GroundSnapDistance = 0.30f;
+
+    // Walkableとみなす最大斜面角度[rad]です。既定50度。
     float MaxGroundSlopeRadians = 0.872664626f;
+
+    // Legacy / PhysicsWorldを渡さないUpdate()用の水平Ground高さです。
+    // 既存呼び出し互換を維持するため残しますが、新しいCharacter実装ではPhysics Ground Query版
+    // Update()を優先してください。
     float GroundHeight = 0.0f;
 };
 
 // ============================================================================
 // CharacterController
 // ============================================================================
-// Character自身をDynamic RigidBodyにせず、ゲームロジックが位置を決定するKinematic Controllerです。
+// Kinematic Character Controllerです。
+//
+// Update順:
+//   Input -> Desired Horizontal Velocity
+//         -> Acceleration / Deceleration
+//         -> Facing Rotation
+//         -> Physics Ground Query / Gravity / Jump
+//         -> Capsule Cast / Dynamic Push / Step Up / Wall Slide
+//         -> Vertical Integration
+//         -> Ground Snap / Step Down
+//
+// Character自身をDynamic RigidBodyにすると入力移動とImpulse Solverが同じ自由度を奪い合うため、
+// 現段階ではゲームロジックが位置を決定するKinematic Controllerとして実装します。
 class CharacterController
 {
 public:
@@ -107,48 +170,64 @@ public:
     void SetConfig(const CharacterControllerConfig& config) { m_Config = config; }
     const CharacterControllerConfig& GetConfig() const { return m_Config; }
 
-    bool Update(
-        const CharacterControllerInput& input,
-        float deltaTime,
-        TransformComponent& transform,
-        std::string* errorMessage = nullptr);
+    // ========================================================================
+    // Legacy Ground Update
+    // ========================================================================
+    // PhysicsWorldを持たない既存呼び出し互換用です。
+    // GroundHeightの水平Planeを床として扱います。新規コードでは下のScene版を優先します。
+    bool Update(const CharacterControllerInput& input, float deltaTime, TransformComponent& transform, std::string* errorMessage = nullptr);
 
-    bool Update(
-        const CharacterControllerInput& input,
-        float deltaTime,
-        Scene& scene,
-        TransformComponent& transform,
-        std::string* errorMessage = nullptr);
+    // ========================================================================
+    // Physics Character Update
+    // ========================================================================
+    // PhysicsWorld::GroundQuery()で床を取得し、PhysicsWorld::CapsuleCast()で壁貫通を防ぎます。
+    // 衝突後の残り水平変位は接触面へ投影してSlideさせるため、斜め入力で壁へ入った場合も
+    // 完全停止せず壁沿いの成分を維持します。低い障害物はMaxStepHeight以内ならStep Upします。
+    // Dynamic Bodyへ当たった場合はCharacterを止めつつ、接触点へPush Impulseを与えます。
+    bool Update(const CharacterControllerInput& input, float deltaTime, Scene& scene, TransformComponent& transform, std::string* errorMessage = nullptr);
 
-    // 前Frameに接地していたKinematic Groundの差分を適用し、Dynamic Bodyからの押し返しも処理します。
-    bool UpdateWithMovingPlatforms(
-        const CharacterControllerInput& input,
-        float deltaTime,
-        Scene& scene,
-        TransformComponent& transform,
-        float jumpPlatformHorizontalVelocityScale = 1.0f,
-        std::string* errorMessage = nullptr);
+    // ========================================================================
+    // Moving Platform対応Update
+    // ========================================================================
+    // 前Frameに接地していたKinematic Ground EntityのTransform差分をCharacterへ先に適用してから、
+    // 通常のPhysics Character Updateを実行します。
+    //
+    // Platformの移動経路をPhysicsWorld::MovePosition()だけに限定せずTransform差分を直接追跡するため、
+    // Animation / Script / Gameplay LogicからKinematic Platformを動かした場合も同じ仕組みで追従できます。
+    // Jump時には直前FrameのPlatform水平速度をjumpPlatformHorizontalVelocityScale倍して継承します。
+    bool UpdateWithMovingPlatforms(const CharacterControllerInput& input, float deltaTime, Scene& scene, TransformComponent& transform, float jumpPlatformHorizontalVelocityScale = 1.0f, std::string* errorMessage = nullptr);
 
+    // Scene切替 / Teleport / Ragdoll切替など、前FrameのPlatform差分を次Frameへ持ち越してはいけない
+    // 境界で呼びます。
     void ResetMovingPlatformTracking();
+
+    // Raven標準Keyboard入力(WASD / Left Shift / Space)をDevice非依存入力へ変換します。
+    // Input Mapping System導入後はこの関数だけを置き換え、運動計算は維持できます。
     static CharacterControllerInput ReadDefaultKeyboardInput();
 
-    bool UpdateLocomotionAnimation(
-        Gltf::SkinnedBlendTreeRuntime& animationRuntime,
-        std::size_t skinIndex,
-        std::string* errorMessage = nullptr) const;
+    // Stage 4 BlendTreeとの接続用Helperです。
+    // Controller自身はAnimation Runtimeを所有せず、実際の水平速度だけをParameterとして渡します。
+    bool UpdateLocomotionAnimation(Gltf::SkinnedBlendTreeRuntime& animationRuntime, std::size_t skinIndex, std::string* errorMessage = nullptr) const;
 
-    bool RestoreAfterRagdoll(
-        const math::Vec3& worldPosition,
-        float yawRadians,
-        const math::Vec3& inheritedVelocity,
-        bool grounded,
-        TransformComponent& transform,
-        std::string* errorMessage = nullptr);
+    // ========================================================================
+    // Ragdoll -> Character Controller State Restore
+    // ========================================================================
+    // Dynamic RagdollからKinematic Character Controllerへ制御を戻す瞬間に使用します。
+    // 通常のUpdate()を1回通して位置を合わせるのではなく、Ragdoll最終Poseから決定した
+    // World Position / Yaw / Velocityを原子的にController Stateへ反映します。
+    //
+    // Pitch / RollはRagdollの倒れ姿勢をKinematic Controllerへ持ち越さず0へ戻します。
+    // grounded=trueの場合は下向き速度を0へClampし、復帰直後に床へ潜ることを防ぎます。
+    bool RestoreAfterRagdoll(const math::Vec3& worldPosition, float yawRadians, const math::Vec3& inheritedVelocity, bool grounded, TransformComponent& transform, std::string* errorMessage = nullptr);
 
     const math::Vec3& GetVelocity() const { return m_Velocity; }
     float GetHorizontalSpeed() const;
     bool IsGrounded() const { return m_Grounded; }
+
+    // 最後にPhysics Ground Queryで採用した床Normalです。
+    // Legacy UpdateやAirborne中はWorld Upを返します。
     const math::Vec3& GetGroundNormal() const { return m_GroundNormal; }
+
     bool IsOnMovingPlatform() const { return m_HasMovingPlatform; }
     const math::Vec3& GetMovingPlatformVelocity() const { return m_MovingPlatformVelocity; }
     Entity GetMovingPlatformEntity() const { return m_MovingPlatformEntity; }
@@ -156,46 +235,34 @@ public:
     // ========================================================================
     // Crush Detection Result
     // ========================================================================
-    // UpdateWithMovingPlatforms()の直近Frameで、Dynamic Bodyによる押し込みに対して
-    // Characterが十分に逃げられなかった、または反対方向から挟まれた場合にtrueになります。
-    // Damage / Death / Ragdoll遷移などのGameplay判断はController外でこの状態を参照してください。
+    // 直近のUpdateWithMovingPlatforms()で、Dynamic Bodyによる押し込みに対して十分に逃げられなかった、
+    // または反対方向から複数Bodyに挟まれた場合にtrueになります。
+    // Damage / Death / Ragdoll遷移などのGameplay判断はController外で行います。
     bool IsCrushed() const { return m_IsCrushed; }
 
     // Crushを引き起こしているDynamic Bodyの代表的な水平速度[m/s]です。
-    // Damage量などへ利用できますが、Controller自身はDamage処理を行いません。
     float GetCrushStrength() const { return m_CrushStrength; }
 
 private:
     bool ValidateConfig(std::string* errorMessage) const;
 
-    bool UpdateInternal(
-        const CharacterControllerInput& input,
-        float deltaTime,
-        Scene* scene,
-        TransformComponent& transform,
-        std::string* errorMessage);
+    // 共通運動ロジックです。scene == nullptrならLegacy GroundHeight、SceneありならPhysics Queryを使います。
+    bool UpdateInternal(const CharacterControllerInput& input, float deltaTime, Scene* scene, TransformComponent& transform, std::string* errorMessage);
 
-    bool TrySnapToPhysicsGround(
-        Scene& scene,
-        TransformComponent& transform,
-        bool allowSnap,
-        std::string* errorMessage);
+    bool TrySnapToPhysicsGround(Scene& scene, TransformComponent& transform, bool allowSnap, std::string* errorMessage);
 
-    bool ResolvePhysicsMovement(
-        Scene& scene,
-        const math::Vec3& horizontalDisplacement,
-        TransformComponent& transform,
-        std::string* errorMessage);
+    // 水平変位をCapsule Castし、最初の接触まで移動した後、残り変位を接触面へ投影してSlideします。
+    // Dynamic Bodyへ当たった場合は接触点へImpulseを与え、Character側は同じBlocking Hitとして扱います。
+    // Velocityの壁へ向かう水平成分も同時に除去し、次Frameで同じ壁へ押し込み続けないようにします。
+    bool ResolvePhysicsMovement(Scene& scene, const math::Vec3& horizontalDisplacement, TransformComponent& transform, std::string* errorMessage);
 
-    bool TryPushDynamicBody(
-        Scene& scene,
-        const ph::PhysicsCapsuleCastHit& hit);
+    // Hit Entityが押せるDynamic Bodyなら接触点へ水平Impulseを与えます。
+    // 戻り値は「Hit EntityがDynamic Bodyだったか」で、Impulseが0でもtrueを返します。
+    // これによりDynamic Bodyを低いStatic Stepとして誤って乗り越えることを防ぎます。
+    bool TryPushDynamicBody(Scene& scene, const ph::PhysicsCapsuleCastHit& hit);
 
-    bool TryStepUp(
-        Scene& scene,
-        const math::Vec3& horizontalDisplacement,
-        TransformComponent& transform,
-        std::string* errorMessage);
+    // 低い障害物へ当たったときだけ、MaxStepHeight上から同じ変位を再Castして上面へ着地できるか調べます。
+    bool TryStepUp(Scene& scene, const math::Vec3& horizontalDisplacement, TransformComponent& transform, std::string* errorMessage);
 
 private:
     CharacterControllerConfig m_Config{};
@@ -206,8 +273,8 @@ private:
     // ========================================================================
     // Crush Detection State
     // ========================================================================
-    // Frameを跨いでLatchしません。UpdateWithMovingPlatforms()開始時に必ずResetし、そのFrameの
-    // Dynamic Interaction結果だけを公開します。これによりBodyが離れた後もCrush状態が残りません。
+    // Frameを跨いでLatchしません。UpdateWithMovingPlatforms()開始時にResetし、そのFrameの
+    // Dynamic Interaction結果だけを公開するため、Bodyが離れた後もCrush状態が残りません。
     bool m_IsCrushed = false;
     float m_CrushStrength = 0.0f;
 
