@@ -150,13 +150,58 @@ bool RagdollPhysicsBridge::CreateBodies(
     }
 
     m_Bindings = std::move(bindings);
+
+    // ========================================================================
+    // Joint Parent / Child Bodyの自己衝突除外
+    // ========================================================================
+    // Ragdollでは関節で直接つながるBody同士が常に近接するため、通常のCollider衝突を
+    // 同時に解くと「Jointは近づける / Contactは離す」という競合が発生します。
+    // その結果、肩・肘・膝などが震えたり、Constraint Projectionが不安定になります。
+    //
+    // そこでDefinitionのJointごとにParent/Child Physics Entityを解決し、PhysicsWorldの
+    // Ignore Pairへ登録します。隣接していないBody同士の自己衝突は残るため、腕が胴体を
+    // 貫通するようなケースは従来通りContact Solverで処理されます。
+    ph::PhysicsWorld& physicsWorld = scene.GetPhysicsWorld();
+    for (const RagdollJointDefinition& jointDefinition : definition.Joints)
+    {
+        const BoneIndex parentBone = skeleton->FindBone(jointDefinition.ParentBoneName);
+        const BoneIndex childBone = skeleton->FindBone(jointDefinition.ChildBoneName);
+        if (parentBone == InvalidBoneIndex || childBone == InvalidBoneIndex)
+        {
+            return SetError(
+                errorMessage,
+                "Ragdoll Jointの衝突除外対象Boneを解決できません: "
+                + jointDefinition.ParentBoneName + " -> " + jointDefinition.ChildBoneName);
+        }
+
+        const Entity parentEntity = FindEntity(parentBone);
+        const Entity childEntity = FindEntity(childBone);
+        if (static_cast<bool>(parentEntity) == false
+            || static_cast<bool>(childEntity) == false)
+        {
+            return SetError(
+                errorMessage,
+                "Ragdoll Jointに対応するPhysics Entityを解決できません: "
+                + jointDefinition.ParentBoneName + " -> " + jointDefinition.ChildBoneName);
+        }
+
+        physicsWorld.AddIgnoreCollisionPair(parentEntity, childEntity);
+    }
+
     return true;
 }
 
 void RagdollPhysicsBridge::DestroyBodies(Scene& scene)
 {
+    ph::PhysicsWorld& physicsWorld = scene.GetPhysicsWorld();
+
     for (const RagdollPhysicsBodyBinding& binding : m_Bindings)
     {
+        // Entity破棄前に、このBodyを含むIgnore Pairを明示的に解除します。
+        // BroadPhase側にも孤立Pairの自動掃除がありますが、Bridgeが生成した設定は
+        // Bridge自身で片付けることでLifetimeの責務を明確にします。
+        physicsWorld.RemoveIgnoreCollisionPairsForEntity(binding.BodyEntity);
+
         if (scene.IsEntityAlive(binding.BodyEntity))
         {
             scene.QueueDestroyEntity(binding.BodyEntity);
