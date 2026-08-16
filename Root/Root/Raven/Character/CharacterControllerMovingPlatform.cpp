@@ -121,11 +121,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
             m_MovingPlatformVelocity = inheritedPlatformVelocity;
             m_MovingPlatformPosition = platformTransform->Position;
 
-            // ---------------------------------------------------------------
-            // Horizontal Carry
-            // ---------------------------------------------------------------
-            // PlatformがCharacterを壁へ押す場合も通常のCharacter入力と同じCapsule Cast / Slideを通します。
-            // これによりMoving Platformによる壁貫通を防ぎます。
             const math::Vec3 horizontalPlatformDisplacement{
                 platformDisplacement.x,
                 0.0f,
@@ -144,12 +139,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
                 }
             }
 
-            // ---------------------------------------------------------------
-            // Vertical Carry
-            // ---------------------------------------------------------------
-            // 上昇Platformでは天井への押し潰し/貫通を避けるためCapsule Castします。
-            // 下降Platformはこの後の通常UpdateでGround Query / Step Downへ再接地するため、
-            // Platform変位を直接反映してから床面へSnapさせます。
             if (platformDisplacement.y > 0.0f)
             {
                 ph::PhysicsCapsuleCastSettings castSettings{};
@@ -191,16 +180,123 @@ bool CharacterController::UpdateWithMovingPlatforms(
         }
         else
         {
-            // Generation込みEntity Handleが無効、またはBodyがKinematicではなくなった場合は
-            // 古いPlatform差分を新しいEntityへ適用しないよう即座に追跡を破棄します。
             ResetMovingPlatformTracking();
+        }
+    }
+
+    // ========================================================================
+    // Incoming Dynamic Body -> Character
+    // ========================================================================
+    // Character自身はKinematic Bodyなので、Physics SolverだけではDynamic Bodyから押し返されません。
+    // Dynamic Bodyの1Frame分の移動を相対運動へ変換し、Character Capsuleを逆向きにSweepします。
+    //
+    // 例: 左側の箱が+XへCharacterへ飛んでくる場合、Moving obstacleを固定した相対座標系では
+    // Characterが-Xへ移動すると考えられます。Hit後に残っているFrame時間だけBody速度をCharacterへ
+    // 継承し、通常のResolvePhysicsMovement()を通して押し出すことで、押された先の壁も貫通しません。
+    if (m_Config.EnableDynamicBodyInteraction == true
+        && deltaTime > math::Epsilon)
+    {
+        ph::PhysicsCapsuleCastSettings dynamicCastSettings{};
+        dynamicCastSettings.Radius = m_Config.CapsuleRadius;
+        dynamicCastSettings.HalfLength = m_Config.CapsuleHalfLength;
+        dynamicCastSettings.SkinWidth = m_Config.CollisionSkinWidth;
+        dynamicCastSettings.MaxSubsteps = m_Config.MaxCapsuleCastSubsteps;
+        dynamicCastSettings.BinarySearchIterations = 10u;
+        dynamicCastSettings.IncludeStatic = false;
+        dynamicCastSettings.IncludeKinematic = false;
+        dynamicCastSettings.IncludeDynamic = true;
+        dynamicCastSettings.IncludePlanes = false;
+        dynamicCastSettings.IncludeTriggers = false;
+
+        math::Vec3 incomingDisplacement{};
+        math::Vec3 incomingVelocity{};
+        float bestDisplacementLengthSquared = 0.0f;
+
+        for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
+        {
+            static_cast<void>(entity);
+
+            if (rigidBody.Type != BodyType::Dynamic
+                || rigidBody.InverseMass <= 0.0f)
+            {
+                continue;
+            }
+
+            const math::Vec3 bodyHorizontalVelocity{
+                rigidBody.LinearVelocity.x,
+                0.0f,
+                rigidBody.LinearVelocity.z
+            };
+            const math::Vec3 bodyDisplacement = bodyHorizontalVelocity * deltaTime;
+            if (bodyDisplacement.LengthSq() <= 1.0e-12f)
+            {
+                continue;
+            }
+
+            const math::Vec3 relativeCharacterDisplacement = -bodyDisplacement;
+            ph::PhysicsCapsuleCastHit dynamicHit{};
+            if (scene.GetPhysicsWorld().CapsuleCast(
+                    scene,
+                    transform.Position,
+                    relativeCharacterDisplacement,
+                    dynamicCastSettings,
+                    dynamicHit) == false)
+            {
+                continue;
+            }
+
+            const RigidBodyComponent* hitRigidBody =
+                scene.TryGetComponent<RigidBodyComponent>(dynamicHit.HitEntity.GetIndex());
+            if (hitRigidBody == nullptr
+                || hitRigidBody->Type != BodyType::Dynamic
+                || hitRigidBody->InverseMass <= 0.0f)
+            {
+                continue;
+            }
+
+            const math::Vec3 hitBodyHorizontalVelocity{
+                hitRigidBody->LinearVelocity.x,
+                0.0f,
+                hitRigidBody->LinearVelocity.z
+            };
+
+            // Fraction=0なら既に接触しているため1Frame分、Fraction=1ならFrame末尾接触なので0です。
+            const float remainingTimeFraction = std::clamp(
+                1.0f - dynamicHit.Fraction,
+                0.0f,
+                1.0f);
+            const math::Vec3 candidateDisplacement =
+                hitBodyHorizontalVelocity * deltaTime * remainingTimeFraction;
+            const float candidateLengthSquared = candidateDisplacement.LengthSq();
+            if (candidateLengthSquared <= bestDisplacementLengthSquared)
+            {
+                continue;
+            }
+
+            bestDisplacementLengthSquared = candidateLengthSquared;
+            incomingDisplacement = candidateDisplacement;
+            incomingVelocity = hitBodyHorizontalVelocity;
+        }
+
+        if (bestDisplacementLengthSquared > 1.0e-12f)
+        {
+            // PositionだけでなくController速度へも反映し、次Frameに押し返しが即消失するのを防ぎます。
+            m_Velocity.x = incomingVelocity.x;
+            m_Velocity.z = incomingVelocity.z;
+
+            if (ResolvePhysicsMovement(
+                    scene,
+                    incomingDisplacement,
+                    transform,
+                    errorMessage) == false)
+            {
+                return false;
+            }
         }
     }
 
     const bool wasGrounded = m_Grounded;
 
-    // まず既存Character Controller本体を実行します。
-    // Ground / Wall / Step / Ceilingの責務は既存実装へ集約し、Moving Platform側で重複させません。
     if (UpdateInternal(
             input,
             deltaTime,
@@ -214,9 +310,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
     // ========================================================================
     // Jump Velocity Inheritance
     // ========================================================================
-    // Platform上からJumpしたFrameだけ、Platformの水平速度をCharacter固有速度へ移します。
-    // Platform搬送そのものは既にPositionへ適用済みなので、ここで継承するのは「離床後も残る慣性」です。
-    // 鉛直成分はJumpSpeedを予測可能に保つため現段階では継承しません。
     if (input.Jump == true
         && wasGrounded == true
         && wasOnMovingPlatform == true
@@ -232,8 +325,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
         m_Velocity.x += inheritedHorizontalVelocity.x;
         m_Velocity.z += inheritedHorizontalVelocity.z;
 
-        // UpdateInternal()は既にこのFrameの入力移動を積分済みなので、Jump開始FrameにもPlatform慣性を
-        // 見た目とStateの両方へ反映するため追加変位もCapsule Cast経路で適用します。
         const math::Vec3 inheritedDisplacement = inheritedHorizontalVelocity * deltaTime;
         if (inheritedDisplacement.LengthSq() > 1.0e-12f)
         {
@@ -251,7 +342,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
     // ========================================================================
     // Capture Current Ground Platform
     // ========================================================================
-    // UpdateInternal()完了後の最終足元位置でもう一度Ground Entityを確認し、次Frame搬送の基準位置を保存します。
     if (m_Grounded == true)
     {
         ph::PhysicsGroundQuerySettings groundSettings{};
@@ -285,7 +375,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
                 m_MovingPlatformPosition = platformTransform->Position;
                 m_HasMovingPlatform = true;
 
-                // 新しく乗ったPlatformには前Frame差分が存在しないため速度0から開始します。
                 if (samePlatform == false)
                 {
                     m_MovingPlatformVelocity = math::Vec3{};
@@ -296,7 +385,6 @@ bool CharacterController::UpdateWithMovingPlatforms(
         }
     }
 
-    // Airborne / Static Ground / Planeへ移った場合はMoving Platform追跡を終了します。
     ResetMovingPlatformTracking();
     return true;
 }
