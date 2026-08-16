@@ -70,6 +70,16 @@ struct CharacterControllerConfig
     uint32_t MaxCapsuleCastSubsteps = 64u;
 
     // ========================================================================
+    // Step Up / Down
+    // ========================================================================
+    // 正面Capsule Castが低い障害物へ当たった場合、これだけ足元を持ち上げた位置から同じ水平変位を
+    // 再Castします。上側が空いていて、その先にWalkable Groundが見つかれば段差として乗り越えます。
+    float MaxStepHeight = 0.30f;
+
+    // GroundSnapDistanceは下り段差のStep Down上限も兼ねます。
+    // 水平移動後にこの距離以内の床へSnapするため、小さな階段を下るFrameでAirborneになりません。
+
+    // ========================================================================
     // Ground Probe
     // ========================================================================
     // PhysicsWorldを渡すUpdate()では、Character Rootより少し上から下向きへGroundQueryします。
@@ -100,9 +110,9 @@ struct CharacterControllerConfig
 //         -> Acceleration / Deceleration
 //         -> Facing Rotation
 //         -> Physics Ground Query / Gravity / Jump
-//         -> Capsule Cast / Wall Slide
+//         -> Capsule Cast / Step Up / Wall Slide
 //         -> Vertical Integration
-//         -> Ground Snap
+//         -> Ground Snap / Step Down
 //
 // Character自身をDynamic RigidBodyにすると入力移動とImpulse Solverが同じ自由度を奪い合うため、
 // 現段階ではゲームロジックが位置を決定するKinematic Controllerとして実装します。
@@ -134,7 +144,7 @@ public:
     // ========================================================================
     // PhysicsWorld::GroundQuery()で床を取得し、PhysicsWorld::CapsuleCast()で壁貫通を防ぎます。
     // 衝突後の残り水平変位は接触面へ投影してSlideさせるため、斜め入力で壁へ入った場合も
-    // 完全停止せず壁沿いの成分を維持します。
+    // 完全停止せず壁沿いの成分を維持します。低い障害物はMaxStepHeight以内ならStep Upします。
     bool Update(
         const CharacterControllerInput& input,
         float deltaTime,
@@ -200,6 +210,13 @@ private:
     // 水平変位をCapsule Castし、最初の接触まで移動した後、残り変位を接触面へ投影してSlideします。
     // Velocityの壁へ向かう水平成分も同時に除去し、次Frameで同じ壁へ押し込み続けないようにします。
     bool ResolvePhysicsMovement(
+        Scene& scene,
+        const math::Vec3& horizontalDisplacement,
+        TransformComponent& transform,
+        std::string* errorMessage);
+
+    // 低い障害物へ当たったときだけ、MaxStepHeight上から同じ変位を再Castして上面へ着地できるか調べます。
+    bool TryStepUp(
         Scene& scene,
         const math::Vec3& horizontalDisplacement,
         TransformComponent& transform,
