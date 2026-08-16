@@ -35,6 +35,19 @@ Entity CreateWall(Scene& scene)
     return wall;
 }
 
+Entity CreateLowStep(Scene& scene)
+{
+    Entity step = scene.CreateEntity("CharacterCapsuleTestStep");
+    TransformComponent& transform = step.GetComponent<TransformComponent>();
+    transform.Position = math::Vec3{ 0.75f, 0.10f, 0.0f };
+
+    ColliderComponent& collider = step.AddComponent<ColliderComponent>();
+    collider.Type = ColliderType::Box;
+    collider.HalfExtents = math::Vec3{ 0.25f, 0.10f, 2.0f };
+    collider.IsTrigger = false;
+    return step;
+}
+
 bool NearlyEqual(float a, float b, float epsilon = 1.0e-3f)
 {
     return std::fabs(a - b) <= epsilon;
@@ -138,6 +151,40 @@ void RunCharacterCapsuleCollisionSelfTests()
         assert(transform.Position.z > 1.0f);
         assert(std::fabs(controller.GetVelocity().x) < 1.0e-3f);
         assert(controller.GetVelocity().z > 1.0f);
+    }
+
+    // ========================================================================
+    // Character Controller: low Step Up
+    // ========================================================================
+    // 高さ0.2mのBox段差に対してMaxStepHeight=0.3mなら、正面Capsule Castで止まらず
+    // 上側Clearanceを確認して段差上面へ足元を持ち上げます。
+    {
+        Scene scene;
+        CreateGround(scene);
+        CreateLowStep(scene);
+
+        CharacterControllerConfig config{};
+        config.WalkSpeed = 0.8f;
+        config.RunSpeed = 0.8f;
+        config.Acceleration = 100.0f;
+        config.Deceleration = 100.0f;
+        config.CapsuleRadius = 0.35f;
+        config.CapsuleHalfLength = 0.55f;
+        config.CollisionSkinWidth = 0.02f;
+        config.MaxStepHeight = 0.30f;
+        CharacterController controller(config);
+
+        TransformComponent transform{};
+        transform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
+
+        CharacterControllerInput input{};
+        input.Move.x = 1.0f;
+
+        assert(controller.Update(input, 1.0f, scene, transform));
+        assert(transform.Position.x > 0.75f);
+        assert(transform.Position.x < 0.85f);
+        assert(NearlyEqual(transform.Position.y, 0.20f, 2.0e-3f));
+        assert(controller.IsGrounded());
     }
 }
 
