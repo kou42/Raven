@@ -2,6 +2,8 @@
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -9,6 +11,8 @@
 #include <vector>
 
 #include "Raven/Gltf/GltfCoordinateSystem.h"
+#include "Raven/Gltf/NodeHierarchy.h"
+#include "Raven/Math/MathQuatanion.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Components.h"
@@ -21,18 +25,360 @@ namespace Gltf
 namespace
 {
 
+bool SetError(std::string* errorMessage, const std::string& message)
+{
+    if (errorMessage != nullptr)
+    {
+        *errorMessage = message;
+    }
+
+    return false;
+}
+
 math::Vec3 TransformPosition(const math::Mat4& matrix, const math::Vec3& position)
 {
     const math::Vec4 transformed = matrix * math::Vec4{ position.x, position.y, position.z, 1.0f };
     return { transformed.x, transformed.y, transformed.z };
 }
 
+float Dot(const math::Vec3& a, const math::Vec3& b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float Length(const math::Vec3& value)
+{
+    return std::sqrt(Dot(value, value));
+}
+
+math::Vec3 Divide(const math::Vec3& value, float scalar)
+{
+    return math::Vec3{
+        value.x / scalar,
+        value.y / scalar,
+        value.z / scalar
+    };
+}
+
+float Determinant3x3(
+    const math::Vec3& column0,
+    const math::Vec3& column1,
+    const math::Vec3& column2)
+{
+    return column0.x * (column1.y * column2.z - column1.z * column2.y)
+        - column1.x * (column0.y * column2.z - column0.z * column2.y)
+        + column2.x * (column0.y * column1.z - column0.z * column1.y);
+}
+
+bool DecomposeWorldTransform(
+    const math::Mat4& matrix,
+    TransformComponent& outTransform,
+    std::string* errorMessage)
+{
+    constexpr float AffineTolerance = 1.0e-4f;
+    constexpr float ScaleTolerance = 1.0e-6f;
+    constexpr float OrthogonalTolerance = 2.0e-4f;
+
+    // Skeleton由来の補正回転は全Primitive World Transformの左側へ掛けます。
+    // TransformComponentはTRSしか保持できないため、補正後行列をScene表現へ戻す前に
+    // Affine / Orthogonal条件を明示的に検証します。黙ってShearを近似しないことが重要です。
+    if (std::fabs(matrix[3][0]) > AffineTolerance
+        || std::fabs(matrix[3][1]) > AffineTolerance
+        || std::fabs(matrix[3][2]) > AffineTolerance
+        || std::fabs(matrix[3][3] - 1.0f) > AffineTolerance)
+    {
+        return SetError(errorMessage, "Humanoid直立補正後TransformがAffine TRSではありません");
+    }
+
+    const math::Vec3 column0{ matrix[0][0], matrix[1][0], matrix[2][0] };
+    const math::Vec3 column1{ matrix[0][1], matrix[1][1], matrix[2][1] };
+    const math::Vec3 column2{ matrix[0][2], matrix[1][2], matrix[2][2] };
+
+    const float scaleX = Length(column0);
+    const float scaleY = Length(column1);
+    const float scaleZ = Length(column2);
+    if (std::isfinite(scaleX) == false
+        || std::isfinite(scaleY) == false
+        || std::isfinite(scaleZ) == false
+        || scaleX <= ScaleTolerance
+        || scaleY <= ScaleTolerance
+        || scaleZ <= ScaleTolerance)
+    {
+        return SetError(errorMessage, "Humanoid直立補正後TransformのScaleが特異です");
+    }
+
+    const math::Vec3 axisX = Divide(column0, scaleX);
+    const math::Vec3 axisY = Divide(column1, scaleY);
+    const math::Vec3 axisZ = Divide(column2, scaleZ);
+
+    if (std::fabs(Dot(axisX, axisY)) > OrthogonalTolerance
+        || std::fabs(Dot(axisX, axisZ)) > OrthogonalTolerance
+        || std::fabs(Dot(axisY, axisZ)) > OrthogonalTolerance)
+    {
+        return SetError(errorMessage, "Humanoid直立補正後TransformにShearが含まれています");
+    }
+
+    const float determinant = Determinant3x3(axisX, axisY, axisZ);
+    if (std::isfinite(determinant) == false
+        || std::fabs(determinant - 1.0f) > 1.0e-3f)
+    {
+        return SetError(errorMessage, "Humanoid直立補正後TransformのReflection/負Scaleは未対応です");
+    }
+
+    // TransformComponent::GetTransform()の Rx * Ry * Rz 規約へ戻します。
+    const float r00 = axisX.x;
+    const float r10 = axisX.y;
+    const float r01 = axisY.x;
+    const float r11 = axisY.y;
+    const float r02 = axisZ.x;
+    const float r12 = axisZ.y;
+    const float r22 = axisZ.z;
+
+    const float clampedSinY = r02 < -1.0f ? -1.0f : (r02 > 1.0f ? 1.0f : r02);
+    const float rotationY = std::asin(clampedSinY);
+    const float cosY = std::cos(rotationY);
+
+    float rotationX = 0.0f;
+    float rotationZ = 0.0f;
+    if (std::fabs(cosY) > 1.0e-5f)
+    {
+        rotationX = std::atan2(-r12, r22);
+        rotationZ = std::atan2(-r01, r00);
+    }
+    else
+    {
+        const float signY = clampedSinY >= 0.0f ? 1.0f : -1.0f;
+        rotationX = std::atan2(signY * r10, r11);
+        rotationZ = 0.0f;
+    }
+
+    if (std::isfinite(rotationX) == false
+        || std::isfinite(rotationY) == false
+        || std::isfinite(rotationZ) == false)
+    {
+        return SetError(errorMessage, "Humanoid直立補正後TransformのEuler変換に失敗しました");
+    }
+
+    outTransform.Position = math::Vec3{ matrix[0][3], matrix[1][3], matrix[2][3] };
+    outTransform.Rotation = math::Vec3{ rotationX, rotationY, rotationZ };
+    outTransform.Scale = math::Vec3{ scaleX, scaleY, scaleZ };
+    return true;
+}
+
+std::string NormalizeNodeName(const std::string& source)
+{
+    std::string normalized;
+    normalized.reserve(source.size());
+
+    for (const unsigned char character : source)
+    {
+        if (std::isalnum(character) == 0)
+        {
+            continue;
+        }
+
+        normalized.push_back(static_cast<char>(std::tolower(character)));
+    }
+
+    return normalized;
+}
+
+bool EndsWith(const std::string& value, const std::string& suffix)
+{
+    if (suffix.size() > value.size())
+    {
+        return false;
+    }
+
+    return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::size_t FindNodeBySemanticName(
+    const std::vector<Node>& nodes,
+    const std::vector<std::string>& candidates)
+{
+    // まず完全一致を優先します。Mixamo等のnamespace付きNodeは次のsuffix一致で解決します。
+    for (const std::string& candidate : candidates)
+    {
+        const std::string normalizedCandidate = NormalizeNodeName(candidate);
+        for (std::size_t nodeIndex = 0u; nodeIndex < nodes.size(); ++nodeIndex)
+        {
+            if (NormalizeNodeName(nodes[nodeIndex].Name) == normalizedCandidate)
+            {
+                return nodeIndex;
+            }
+        }
+    }
+
+    for (const std::string& candidate : candidates)
+    {
+        const std::string normalizedCandidate = NormalizeNodeName(candidate);
+        for (std::size_t nodeIndex = 0u; nodeIndex < nodes.size(); ++nodeIndex)
+        {
+            if (EndsWith(NormalizeNodeName(nodes[nodeIndex].Name), normalizedCandidate))
+            {
+                return nodeIndex;
+            }
+        }
+    }
+
+    return InvalidGltfIndex;
+}
+
+bool BuildHumanoidUprightRotation(
+    const std::string& modelPath,
+    math::Mat4& outRotation,
+    math::Vec3& outSourceUp,
+    std::string& outLowerBoneName,
+    std::string& outUpperBoneName,
+    std::string* errorMessage)
+{
+    NodeHierarchy hierarchy;
+    if (NodeHierarchy::LoadFromGlb(modelPath, hierarchy, errorMessage) == false)
+    {
+        return false;
+    }
+
+    std::vector<math::Mat4> globalTransforms;
+    if (hierarchy.BuildGlobalTransforms(globalTransforms, errorMessage) == false)
+    {
+        return false;
+    }
+
+    const std::vector<Node>& nodes = hierarchy.GetNodes();
+    if (nodes.size() != globalTransforms.size())
+    {
+        return SetError(errorMessage, "Humanoid方向判定用Node数とGlobal Transform数が一致しません");
+    }
+
+    // ========================================================================
+    // Humanoidの「上方向」はSkeleton Bind Poseの意味から決める
+    // ========================================================================
+    // glTFの座標系自体は常に+Y upですが、Humanモデルがその+Yへ直立しているとは限りません。
+    // Raven_human_test.glbでは人物のBind Poseが横向きに格納されているため、Scene基底規約と
+    // Humanoid姿勢方向を分離して扱います。
+    //
+    // Geometry AABBの長軸は使わず、Hips/Pelvis -> Headという意味的なJoint方向を採用します。
+    // これならT-Poseの腕幅やMesh形状、服の大きさに結果が左右されません。
+    const std::size_t lowerNodeIndex = FindNodeBySemanticName(
+        nodes,
+        { "Hips", "Pelvis" });
+    const std::size_t upperNodeIndex = FindNodeBySemanticName(
+        nodes,
+        { "Head" });
+
+    if (lowerNodeIndex == InvalidGltfIndex)
+    {
+        return SetError(errorMessage, "Humanoid直立判定に必要なHips/Pelvis Jointを解決できませんでした");
+    }
+    if (upperNodeIndex == InvalidGltfIndex)
+    {
+        return SetError(errorMessage, "Humanoid直立判定に必要なHead Jointを解決できませんでした");
+    }
+
+    const math::Mat4 gltfToRavenWorld = BuildGltfToRavenWorldTransform();
+    const math::Vec3 lowerPosition = TransformPosition(
+        gltfToRavenWorld * globalTransforms[lowerNodeIndex],
+        math::Vec3{ 0.0f, 0.0f, 0.0f });
+    const math::Vec3 upperPosition = TransformPosition(
+        gltfToRavenWorld * globalTransforms[upperNodeIndex],
+        math::Vec3{ 0.0f, 0.0f, 0.0f });
+
+    const math::Vec3 sourceUpVector = upperPosition - lowerPosition;
+    const float sourceUpLength = sourceUpVector.Length();
+    if (std::isfinite(sourceUpLength) == false || sourceUpLength <= 1.0e-5f)
+    {
+        return SetError(errorMessage, "Hips/Pelvis -> Head方向が0に近くHumanoid直立方向を決定できません");
+    }
+
+    const math::Vec3 sourceUp = sourceUpVector / sourceUpLength;
+    const math::Vec3 targetUp{ 0.0f, 1.0f, 0.0f };
+    const float rawDot = math::Vec3::Dot(sourceUp, targetUp);
+    const float clampedDot = rawDot < -1.0f ? -1.0f : (rawDot > 1.0f ? 1.0f : rawDot);
+
+    // sourceUpと+Yが同方向なら補正不要です。
+    if (clampedDot >= 1.0f - 1.0e-5f)
+    {
+        outRotation = math::Mat4::Identity();
+    }
+    else if (clampedDot <= -1.0f + 1.0e-5f)
+    {
+        // 完全な反対向きではCross軸が0になるため、+Xを安定した180度回転軸として使います。
+        outRotation = math::Quat::FromAxisAngle(
+            math::Vec3{ 1.0f, 0.0f, 0.0f },
+            3.14159265358979323846f).ToMat4();
+    }
+    else
+    {
+        const math::Vec3 rotationAxis = math::Vec3::Cross(sourceUp, targetUp).Normalized();
+        const float rotationAngle = std::acos(clampedDot);
+        outRotation = math::Quat::FromAxisAngle(rotationAxis, rotationAngle).ToMat4();
+    }
+
+    outSourceUp = sourceUp;
+    outLowerBoneName = nodes[lowerNodeIndex].Name;
+    outUpperBoneName = nodes[upperNodeIndex].Name;
+    return true;
+}
+
+bool ApplyHumanoidUprightRotation(
+    std::vector<SpawnedSkinnedPrimitive>& primitives,
+    const math::Mat4& uprightRotation,
+    std::string* errorMessage)
+{
+    // 全Primitiveへ同じWorld Space回転を左から掛けます。
+    // Skeleton/InverseBind/Mesh Local Spaceは変更せず、Scene表示上のHuman全体だけを回転させます。
+    // Body/Clothes等が複数Primitiveに分割されていても相対配置は維持されます。
+    for (SpawnedSkinnedPrimitive& primitive : primitives)
+    {
+        if (static_cast<bool>(primitive.EntityHandle) == false
+            || primitive.EntityHandle.HasComponent<TransformComponent>() == false)
+        {
+            continue;
+        }
+
+        TransformComponent& transform = primitive.EntityHandle.GetComponent<TransformComponent>();
+        const math::Mat4 correctedWorld = uprightRotation * transform.GetTransform();
+
+        TransformComponent correctedTransform{};
+        if (DecomposeWorldTransform(correctedWorld, correctedTransform, errorMessage) == false)
+        {
+            return false;
+        }
+
+        transform = correctedTransform;
+    }
+
+    return true;
+}
+
 bool NormalizeHumanForDebugView(
+    const std::string& modelPath,
     std::vector<SpawnedSkinnedPrimitive>& primitives,
     std::string* errorMessage)
 {
     constexpr float TargetHeight = 20.0f;
     constexpr float MinimumHeight = 1.0e-5f;
+
+    math::Mat4 uprightRotation = math::Mat4::Identity();
+    math::Vec3 sourceUp{};
+    std::string lowerBoneName;
+    std::string upperBoneName;
+    if (BuildHumanoidUprightRotation(
+            modelPath,
+            uprightRotation,
+            sourceUp,
+            lowerBoneName,
+            upperBoneName,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    if (ApplyHumanoidUprightRotation(primitives, uprightRotation, errorMessage) == false)
+    {
+        return false;
+    }
 
     const float maxFloat = std::numeric_limits<float>::max();
     math::Vec3 sourceBoundsMin{ maxFloat, maxFloat, maxFloat };
@@ -40,14 +386,10 @@ bool NormalizeHumanForDebugView(
     bool hasVertex = false;
 
     // ========================================================================
-    // 1. glTF Node Transform適用後のRaven World AABBを計算
+    // 直立補正後のAABBは「サイズ・Center/Floor合わせ」にだけ使用
     // ========================================================================
-    // Primitive頂点はMesh Local Spaceですが、SkinnedMeshSceneSpawnerがEntityへ設定した
-    // TransformComponentにはglTF Node階層のGlobal Transformがすでに反映されています。
-    // さらにScene配置境界でBuildGltfToRavenWorldTransform()も適用済みです。
-    //
-    // したがって、ここで得られるWorld座標は「glTF Node/Skin座標系を正規経路で解釈した結果」であり、
-    // Debug LayerがGeometry形状から別のUp軸を推測して回転を追加する必要はありません。
+    // Up軸決定にはAABBを一切使用しません。ここへ来た時点でSkeleton Bind Poseの
+    // Hips/Pelvis -> Head方向がRaven +Yへ揃っています。
     for (const SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -57,24 +399,19 @@ bool NormalizeHumanForDebugView(
             continue;
         }
 
-        const TransformComponent& transform =
-            primitive.EntityHandle.GetComponent<TransformComponent>();
-        const MeshRendererComponent& meshRenderer =
-            primitive.EntityHandle.GetComponent<MeshRendererComponent>();
+        const TransformComponent& transform = primitive.EntityHandle.GetComponent<TransformComponent>();
+        const MeshRendererComponent& meshRenderer = primitive.EntityHandle.GetComponent<MeshRendererComponent>();
 
-        if (meshRenderer.Mesh == nullptr
-            || meshRenderer.Mesh->GetGeometry() == nullptr)
+        if (meshRenderer.Mesh == nullptr || meshRenderer.Mesh->GetGeometry() == nullptr)
         {
             continue;
         }
 
         const math::Mat4 worldTransform = transform.GetTransform();
         const std::vector<MeshVertex>& vertices = meshRenderer.Mesh->GetGeometry()->GetVertices();
-
         for (const MeshVertex& vertex : vertices)
         {
             const math::Vec3 worldPosition = TransformPosition(worldTransform, vertex.Position);
-
             sourceBoundsMin.x = std::min(sourceBoundsMin.x, worldPosition.x);
             sourceBoundsMin.y = std::min(sourceBoundsMin.y, worldPosition.y);
             sourceBoundsMin.z = std::min(sourceBoundsMin.z, worldPosition.z);
@@ -87,57 +424,24 @@ bool NormalizeHumanForDebugView(
 
     if (hasVertex == false)
     {
-        if (errorMessage != nullptr)
-        {
-            *errorMessage = "Human Debug表示用Boundsを計算できませんでした";
-        }
-        return false;
+        return SetError(errorMessage, "Human Debug表示用Boundsを計算できませんでした");
     }
 
     const math::Vec3 sourceBoundsCenter = (sourceBoundsMin + sourceBoundsMax) * 0.5f;
     const math::Vec3 sourceBoundsSize = sourceBoundsMax - sourceBoundsMin;
-
-    // ========================================================================
-    // 2. 高さ方向はglTF仕様の+Yを明示的に使用
-    // ========================================================================
-    // glTF 2.0ではAsset全体のUp軸は+Yで固定です。
-    // Jointも通常Nodeと同じNode階層上にあり、Skeletonだけ別のUp軸を持つことはありません。
-    // Blender等のZ-up Authoring Spaceから必要な変換はExporterがNode Transformへ符号化します。
-    //
-    // そのためAABBのX/Y/Zサイズ比較からUp軸を推測する旧実装は廃止します。
-    // T-Poseの腕幅やAnimation Poseによって判定結果が変化することもなくなります。
     const float sourceHeight = sourceBoundsSize.y;
     if (sourceHeight <= MinimumHeight)
     {
-        if (errorMessage != nullptr)
-        {
-            *errorMessage =
-                "glTF +Y upとしてHumanの高さを取得できませんでした。"
-                "Node TransformまたはAsset Export設定を確認してください";
-        }
-        return false;
+        return SetError(errorMessage, "Skeleton直立補正後のHuman高さが0に近すぎます");
     }
 
     const float uniformScale = TargetHeight / sourceHeight;
-
-    // ========================================================================
-    // 3. Raven Worldの+Yを維持したままCenter / Floorだけ正規化
-    // ========================================================================
-    // Up軸回転は一切行いません。
-    // X/Z中心を原点へ寄せ、Y最小値をFloor(Y=0)へ合わせるだけです。
-    // これによりDebug表示処理は座標系変換ではなく「見やすい位置・サイズへの配置」だけを担当します。
     const math::Vec3 debugTranslation{
         -sourceBoundsCenter.x * uniformScale,
         -sourceBoundsMin.y * uniformScale,
         -sourceBoundsCenter.z * uniformScale
     };
 
-    // ========================================================================
-    // 4. Human全体へ同じUniform Scale / Translationを適用
-    // ========================================================================
-    // 元のWorld Rotationには触れません。
-    // glTF Root NodeやArmature外側Nodeに含まれる基底変換を保持することが重要です。
-    // Body / Clothes等のPrimitive間相対配置も、全Entityへ同一World変換を適用することで維持します。
     for (SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false
@@ -146,23 +450,21 @@ bool NormalizeHumanForDebugView(
             continue;
         }
 
-        TransformComponent& transform =
-            primitive.EntityHandle.GetComponent<TransformComponent>();
-
-        // 左から T_debug * S_uniform を掛けるのと同じWorld Position更新です。
-        // RotationはglTF Node階層から得た値をそのまま維持します。
+        TransformComponent& transform = primitive.EntityHandle.GetComponent<TransformComponent>();
         transform.Position = debugTranslation + transform.Position * uniformScale;
         transform.Scale = transform.Scale * uniformScale;
     }
 
     std::cout
-        << "[HumanSkinning] Debug Bounds:\n"
+        << "[HumanSkinning] Debug Bounds after Skeleton upright alignment:\n"
         << "  Min    = (" << sourceBoundsMin.x << ", " << sourceBoundsMin.y << ", " << sourceBoundsMin.z << ")\n"
         << "  Max    = (" << sourceBoundsMax.x << ", " << sourceBoundsMax.y << ", " << sourceBoundsMax.z << ")\n"
-        << "  Center = (" << sourceBoundsCenter.x << ", " << sourceBoundsCenter.y << ", " << sourceBoundsCenter.z << ")\n"
         << "  Size   = (" << sourceBoundsSize.x << ", " << sourceBoundsSize.y << ", " << sourceBoundsSize.z << ")\n"
         << "  Coordinate System = " << GetGltfCoordinateSystemDescription() << '\n'
-        << "  Debug Up = +Y (explicit, no AABB inference)\n"
+        << "  Humanoid Up Source = " << lowerBoneName << " -> " << upperBoneName << '\n'
+        << "  Humanoid Up Vector = (" << sourceUp.x << ", " << sourceUp.y << ", " << sourceUp.z << ")\n"
+        << "  Humanoid Up Target = (0, 1, 0)\n"
+        << "  AABB used for orientation = false\n"
         << "  Debug Scale = " << uniformScale << '\n';
 
     return true;
@@ -195,7 +497,7 @@ bool HumanSkinningDebugLayer::TryInitialize()
 
     // 相対パスの場合、カレントワーキングディレクトリから解決されます
     std::filesystem::path resolvedPath = std::filesystem::absolute(m_ModelPath);
-    
+
     if (std::filesystem::exists(resolvedPath) == false)
     {
         std::cout
@@ -222,8 +524,6 @@ bool HumanSkinningDebugLayer::TryInitialize()
 
     // Debug表示正規化ではPrimitive EntityのTransformComponentを書き換えるため、
     // const参照ではなくSceneInstanceが所有する配列への非const参照が必要です。
-    // GetPrimitives()にはconst/non-const overloadを用意し、Debug用途でもconst_castを使わず、
-    // SceneInstance側の所有権境界を保ったまま明示的にmutableな配列を取得します。
     std::vector<SpawnedSkinnedPrimitive>& primitives = m_HumanInstance.GetPrimitives();
     if (primitives.empty())
     {
@@ -232,13 +532,19 @@ bool HumanSkinningDebugLayer::TryInitialize()
         return false;
     }
 
-    // Human.glbの表示サイズ・位置だけをDebug用途に正規化します。
-    // Up軸はglTF仕様(+Y)とNode/Skin Transformを正規データとして扱い、Geometry AABBから推測しません。
-    // Skeleton / inverseBindMatrices / Node Rotationには一切追加補正を入れません。
-    if (NormalizeHumanForDebugView(primitives, &errorMessage) == false)
+    // ========================================================================
+    // Human Debug固有の直立補正
+    // ========================================================================
+    // glTF +Y upというScene座標系規約と、Humanが実際にどちらを向いてBindされているかは別問題です。
+    // ここではNodeHierarchyからJoint Bind Poseを読み、Hips/Pelvis -> HeadをHumanの+Upとして
+    // Raven +Yへ合わせます。Geometry AABBによるUp軸推測は行いません。
+    //
+    // Skeleton / inverseBindMatrices / Mesh Local頂点そのものは変更せず、Spawn済みEntity全体へ
+    // 共通World回転を与えるためSkinningの空間契約は維持されます。
+    if (NormalizeHumanForDebugView(m_ModelPath, primitives, &errorMessage) == false)
     {
         std::cerr
-            << "[HumanSkinning] Human.glbのDebug表示正規化に失敗しました: "
+            << "[HumanSkinning] Human.glbのSkeleton基準Debug正規化に失敗しました: "
             << errorMessage << '\n';
         DestroyHuman();
         return false;
@@ -256,7 +562,6 @@ bool HumanSkinningDebugLayer::TryInitialize()
 
     // SceneGame::RenderScene()は現段階ではECS全体ではなくm_SpawnedEntitiesを描画対象にしています。
     // Spawnerが生成したHuman Entityも同じ既存描画経路へ流すため、ここでHandleを登録します。
-    // LifetimeはSceneGame::OnDestroy()の既存Entity破棄ループへ統一します。
     for (const SpawnedSkinnedPrimitive& primitive : primitives)
     {
         if (static_cast<bool>(primitive.EntityHandle) == false)
