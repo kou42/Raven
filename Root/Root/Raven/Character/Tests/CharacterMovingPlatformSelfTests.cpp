@@ -67,7 +67,7 @@ Entity CreateBlockingWall(Scene& scene)
 {
     Entity wall = scene.CreateEntity("CharacterDynamicResponseWall");
     TransformComponent& transform = wall.GetComponent<TransformComponent>();
-    transform.Position = math::Vec3{ 0.62f, 1.0f, 0.0f };
+    transform.Position = math::Vec3{ 0.75f, 1.0f, 0.0f };
 
     ColliderComponent& collider = wall.AddComponent<ColliderComponent>();
     collider.Type = ColliderType::Box;
@@ -98,14 +98,24 @@ void RunCharacterMovingPlatformSelfTests()
         CharacterControllerInput input{};
 
         // 最初のFrameでKinematic Groundを捕捉します。
-        assert(controller.UpdateWithMovingPlatforms(input, 1.0f / 60.0f, scene, characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(
+            input,
+            1.0f / 60.0f,
+            scene,
+            characterTransform));
         assert(controller.IsGrounded());
         assert(controller.IsOnMovingPlatform());
         assert(controller.GetMovingPlatformEntity() == platform);
 
         // Platformを+Xへ0.5m移動すると、次FrameでCharacterも同量搬送されます。
         platform.GetComponent<TransformComponent>().Position.x += 0.5f;
-        assert(controller.UpdateWithMovingPlatforms(input, 0.5f, scene, characterTransform));
+
+        assert(controller.UpdateWithMovingPlatforms(
+            input,
+            0.5f,
+            scene,
+            characterTransform));
+
         assert(NearlyEqual(characterTransform.Position.x, 0.5f));
         assert(NearlyEqual(controller.GetMovingPlatformVelocity().x, 1.0f));
         assert(controller.IsGrounded());
@@ -117,16 +127,27 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         Entity platform = CreateMovingPlatform(scene);
+
         CharacterController controller{};
         TransformComponent characterTransform{};
         characterTransform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
         CharacterControllerInput input{};
 
-        assert(controller.UpdateWithMovingPlatforms(input, 1.0f / 60.0f, scene, characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(
+            input,
+            1.0f / 60.0f,
+            scene,
+            characterTransform));
 
         // Platform上面を0.2m持ち上げます。Character足元も同じ高さへ追従します。
         platform.GetComponent<TransformComponent>().Position.y += 0.2f;
-        assert(controller.UpdateWithMovingPlatforms(input, 0.2f, scene, characterTransform));
+
+        assert(controller.UpdateWithMovingPlatforms(
+            input,
+            0.2f,
+            scene,
+            characterTransform));
+
         assert(NearlyEqual(characterTransform.Position.y, 0.2f));
         assert(NearlyEqual(controller.GetMovingPlatformVelocity().y, 1.0f));
         assert(controller.IsGrounded());
@@ -138,15 +159,28 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         Entity platform = CreateMovingPlatform(scene);
+
         CharacterController controller{};
         TransformComponent characterTransform{};
         characterTransform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
         CharacterControllerInput input{};
 
-        assert(controller.UpdateWithMovingPlatforms(input, 1.0f / 60.0f, scene, characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(
+            input,
+            1.0f / 60.0f,
+            scene,
+            characterTransform));
+
         platform.GetComponent<TransformComponent>().Position.x += 0.5f;
         input.Jump = true;
-        assert(controller.UpdateWithMovingPlatforms(input, 0.5f, scene, characterTransform, 1.0f));
+
+        assert(controller.UpdateWithMovingPlatforms(
+            input,
+            0.5f,
+            scene,
+            characterTransform,
+            1.0f));
+
         assert(controller.IsGrounded() == false);
         assert(controller.IsOnMovingPlatform() == false);
         assert(controller.GetVelocity().x > 0.95f);
@@ -161,14 +195,20 @@ void RunCharacterMovingPlatformSelfTests()
     {
         Scene scene;
         CreateGround(scene);
-        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterIncomingDynamicBox");
+        CreateIncomingDynamicBox(
+            scene,
+            math::Vec3{ -1.25f, 0.50f, 0.0f },
+            math::Vec3{ 1.0f, 0.0f, 0.0f },
+            "CharacterIncomingDynamicBox");
 
         CharacterControllerConfig config{};
         config.Acceleration = 100.0f;
         config.Deceleration = 100.0f;
         config.EnableDynamicBodyInteraction = true;
         CharacterController controller(config);
+
         TransformComponent characterTransform{};
+        characterTransform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
         CharacterControllerInput input{};
 
         assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
@@ -179,6 +219,8 @@ void RunCharacterMovingPlatformSelfTests()
         assert(characterTransform.Position.x < 0.45f);
         assert(NearlyEqual(characterTransform.Position.y, 0.0f));
         assert(controller.IsCrushed() == false);
+        assert(NearlyEqual(controller.GetCrushDuration(), 0.0f));
+        assert(NearlyEqual(controller.GetCrushExposure(), 0.0f));
     }
 
     // ========================================================================
@@ -215,10 +257,20 @@ void RunCharacterMovingPlatformSelfTests()
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-        assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
+
+        assert(controller.UpdateWithMovingPlatforms(input, 0.25f, scene, characterTransform));
         assert(std::fabs(characterTransform.Position.x) < 0.10f);
         assert(controller.IsCrushed());
         assert(controller.GetCrushStrength() >= 0.15f);
+        assert(NearlyEqual(controller.GetCrushDuration(), 0.25f));
+        const float firstExposure = controller.GetCrushExposure();
+        assert(firstExposure > 0.0f);
+
+        // 同じ圧力が途切れず続くと、瞬間IsCrushedだけでなくDuration / ExposureもFrameを跨いで増加します。
+        assert(controller.UpdateWithMovingPlatforms(input, 0.25f, scene, characterTransform));
+        assert(controller.IsCrushed());
+        assert(NearlyEqual(controller.GetCrushDuration(), 0.50f));
+        assert(controller.GetCrushExposure() > firstExposure);
     }
 
     // ========================================================================
@@ -241,12 +293,15 @@ void RunCharacterMovingPlatformSelfTests()
         assert(characterTransform.Position.x < 0.03f);
         assert(controller.IsCrushed());
         assert(controller.GetCrushStrength() >= 0.15f);
+        assert(NearlyEqual(controller.GetCrushDuration(), 1.0f));
+        assert(controller.GetCrushExposure() >= controller.GetCrushStrength() - 1.0e-3f);
     }
 
     // ========================================================================
     // Crush state resets when pressure disappears
     // ========================================================================
-    // CrushはLatch状態ではなく現在Frameの接触状態です。押していたBodyが停止した次Frameには解除されます。
+    // CrushはLatch状態ではなく現在Frameの接触状態です。押していたBodyが停止した次Frameには解除され、
+    // 連続時間とExposureも同時に0へ戻ります。
     {
         Scene scene;
         CreateGround(scene);
@@ -256,14 +311,42 @@ void RunCharacterMovingPlatformSelfTests()
         CharacterController controller{};
         TransformComponent characterTransform{};
         CharacterControllerInput input{};
-        assert(controller.UpdateWithMovingPlatforms(input, 1.0f, scene, characterTransform));
+        assert(controller.UpdateWithMovingPlatforms(input, 0.5f, scene, characterTransform));
         assert(controller.IsCrushed());
+        assert(controller.GetCrushDuration() > 0.0f);
+        assert(controller.GetCrushExposure() > 0.0f);
 
         left.GetComponent<RigidBodyComponent>().LinearVelocity = math::Vec3{};
         right.GetComponent<RigidBodyComponent>().LinearVelocity = math::Vec3{};
         assert(controller.UpdateWithMovingPlatforms(input, 1.0f / 60.0f, scene, characterTransform));
         assert(controller.IsCrushed() == false);
         assert(NearlyEqual(controller.GetCrushStrength(), 0.0f));
+        assert(NearlyEqual(controller.GetCrushDuration(), 0.0f));
+        assert(NearlyEqual(controller.GetCrushExposure(), 0.0f));
+    }
+
+    // ========================================================================
+    // Explicit Crush tracking reset
+    // ========================================================================
+    // Teleport / Scene切替 / Ragdoll切替などでは、Dynamic Bodyがまだ近くにいても以前のExposureを
+    // 新しい状態へ持ち越してはいけません。ResetCrushTracking()で全Crush履歴を破棄できることを確認します。
+    {
+        Scene scene;
+        CreateGround(scene);
+        CreateIncomingDynamicBox(scene, math::Vec3{ -1.25f, 0.50f, 0.0f }, math::Vec3{ 1.0f, 0.0f, 0.0f }, "CharacterCrushExplicitResetLeft");
+        CreateIncomingDynamicBox(scene, math::Vec3{ 1.25f, 0.50f, 0.0f }, math::Vec3{ -1.0f, 0.0f, 0.0f }, "CharacterCrushExplicitResetRight");
+
+        CharacterController controller{};
+        TransformComponent characterTransform{};
+        CharacterControllerInput input{};
+        assert(controller.UpdateWithMovingPlatforms(input, 0.5f, scene, characterTransform));
+        assert(controller.IsCrushed());
+
+        controller.ResetCrushTracking();
+        assert(controller.IsCrushed() == false);
+        assert(NearlyEqual(controller.GetCrushStrength(), 0.0f));
+        assert(NearlyEqual(controller.GetCrushDuration(), 0.0f));
+        assert(NearlyEqual(controller.GetCrushExposure(), 0.0f));
     }
 
     // ========================================================================
