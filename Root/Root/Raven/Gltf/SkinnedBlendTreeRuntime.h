@@ -74,6 +74,35 @@ public:
         BlendTree1DDebugInfo& outInfo,
         std::string* errorMessage = nullptr) const;
 
+    // ========================================================================
+    // Temporary One-Shot Animation
+    // ========================================================================
+    // Locomotion BlendTreeからGet-Up / Hit Reactionなどの単発Clipへ遷移します。
+    // Animatorの既存CrossFade経路を利用し、Clipは非Loopで再生します。
+    //
+    // one-shot再生中はSetMovementSpeed()ではなく、Character Controller側で速度値だけ保持し、
+    // 終了後ReturnToLocomotion()したFrameから通常のLocomotion Parameter更新へ戻す想定です。
+    bool PlayOneShotAnimation(
+        std::size_t skinIndex,
+        const std::string& animationName,
+        float crossFadeDuration = 0.10f,
+        std::string* errorMessage = nullptr);
+
+    // one-shot Clipから設定済みIdle / Walk / Run BlendTreeへ戻します。
+    // 現在保持しているMovementSpeedを使用するため、復帰直前にSetMovementSpeed()を再開すれば
+    // Characterの実速度に対応したLocomotion Poseへ直接CrossFadeできます。
+    bool ReturnToLocomotion(
+        std::size_t skinIndex,
+        float crossFadeDuration = 0.15f,
+        std::string* errorMessage = nullptr);
+
+    // one-shotが非Loop終端へ到達したかを取得します。
+    // one-shot状態でない場合はoutFinished=falseを返します。
+    bool IsOneShotAnimationFinished(
+        std::size_t skinIndex,
+        bool& outFinished,
+        std::string* errorMessage = nullptr) const;
+
     bool Update(float deltaTime, std::string* errorMessage = nullptr);
 
 private:
@@ -92,6 +121,11 @@ private:
         std::shared_ptr<BlendTree1D> LocomotionTree;
         float MovementSpeed = 0.0f;
         bool Configured = false;
+
+        // Locomotion以外の非Loop Clipを一時再生しているかをRuntime側で追跡します。
+        // Animator::IsFinished()だけでは「Locomotion停止」と「one-shot完了」を区別できないため、
+        // 呼び出し側がGet-Up終了を安全に判定できるよう明示Stateを持ちます。
+        bool OneShotActive = false;
     };
 
     SkinState* FindSkinState(std::size_t skinIndex);
