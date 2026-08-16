@@ -73,6 +73,9 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || std::isfinite(m_Config.TurnSpeed) == false
         || std::isfinite(m_Config.Gravity) == false
         || std::isfinite(m_Config.JumpSpeed) == false
+        || std::isfinite(m_Config.CapsuleRadius) == false
+        || std::isfinite(m_Config.CapsuleHalfLength) == false
+        || std::isfinite(m_Config.CollisionSkinWidth) == false
         || std::isfinite(m_Config.GroundProbeStartOffset) == false
         || std::isfinite(m_Config.GroundSnapDistance) == false
         || std::isfinite(m_Config.MaxGroundSlopeRadians) == false
@@ -87,12 +90,17 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
         || m_Config.Acceleration < 0.0f
         || m_Config.Deceleration < 0.0f
         || m_Config.JumpSpeed < 0.0f
+        || m_Config.CapsuleRadius <= 0.0f
+        || m_Config.CapsuleHalfLength < 0.0f
+        || m_Config.CollisionSkinWidth < 0.0f
+        || m_Config.MaxSlideIterations == 0u
+        || m_Config.MaxCapsuleCastSubsteps == 0u
         || m_Config.GroundProbeStartOffset < 0.0f
         || m_Config.GroundSnapDistance < 0.0f
         || m_Config.MaxGroundSlopeRadians < 0.0f
         || m_Config.MaxGroundSlopeRadians > HalfPi)
     {
-        return SetError(errorMessage, "CharacterController Configの速度/加速度/Ground Query値が不正です");
+        return SetError(errorMessage, "CharacterController Configの速度/衝突/Ground Query値が不正です");
     }
 
     return true;
@@ -141,7 +149,7 @@ bool CharacterController::Update(
     TransformComponent& transform,
     std::string* errorMessage)
 {
-    // 新しい標準経路ではSceneのPhysicsWorldへGround Queryを行います。
+    // 新しい標準経路ではSceneのPhysicsWorldへGround Query / Capsule Castを行います。
     return UpdateInternal(input, deltaTime, &scene, transform, errorMessage);
 }
 
@@ -191,6 +199,108 @@ bool CharacterController::TrySnapToPhysicsGround(
     m_Velocity.y = 0.0f;
     m_Grounded = true;
     m_GroundNormal = groundHit.Normal;
+    return true;
+}
+
+bool CharacterController::ResolvePhysicsMovement(
+    Scene& scene,
+    const math::Vec3& horizontalDisplacement,
+    TransformComponent& transform,
+    std::string* errorMessage)
+{
+    static_cast<void>(errorMessage);
+
+    if (horizontalDisplacement.LengthSq() <= 1.0e-12f)
+    {
+        return true;
+    }
+
+    ph::PhysicsCapsuleCastSettings castSettings{};
+    castSettings.Radius = m_Config.CapsuleRadius;
+    castSettings.HalfLength = m_Config.CapsuleHalfLength;
+    castSettings.SkinWidth = m_Config.CollisionSkinWidth;
+    castSettings.MaxSubsteps = m_Config.MaxCapsuleCastSubsteps;
+    castSettings.BinarySearchIterations = 10u;
+    castSettings.IncludeStatic = true;
+    castSettings.IncludeKinematic = true;
+    castSettings.IncludeDynamic = false;
+    castSettings.IncludePlanes = true;
+    castSettings.IncludeTriggers = false;
+
+    math::Vec3 remainingDisplacement = horizontalDisplacement;
+
+    // ========================================================================
+    // Kinematic Capsule Move And Slide
+    // ========================================================================
+    // 1. 残り変位をCapsule Cast
+    // 2. 最初のHit位置まで移動
+    // 3. 壁へ向かう成分を法線方向から除去
+    // 4. 残った接線方向変位を再Cast
+    //
+    // これを少数回繰り返すことで、正面衝突では停止し、斜め衝突では壁沿いへSlideします。
+    // Dynamic RigidBodyのImpulse Solverとは独立したKinematic移動なので、Character入力の自由度を
+    // Contact Solverに奪わせず、Scene Colliderだけを移動制約として利用できます。
+    for (uint32_t iteration = 0u; iteration < m_Config.MaxSlideIterations; ++iteration)
+    {
+        if (remainingDisplacement.LengthSq() <= 1.0e-10f)
+        {
+            break;
+        }
+
+        ph::PhysicsCapsuleCastHit hit{};
+        if (scene.GetPhysicsWorld().CapsuleCast(
+                scene,
+                transform.Position,
+                remainingDisplacement,
+                castSettings,
+                hit) == false)
+        {
+            transform.Position += remainingDisplacement;
+            remainingDisplacement = math::Vec3{};
+            break;
+        }
+
+        // Shape CastはSkinWidth込みCapsuleで最初の接触時刻を返すため、Hit Fractionまで進めても
+        // 実Capsuleには僅かな隙間が残ります。数値誤差だけ避けるためFractionを微小量手前へ寄せます。
+        const float safeFraction = std::clamp(hit.Fraction - 1.0e-4f, 0.0f, 1.0f);
+        transform.Position += remainingDisplacement * safeFraction;
+
+        math::Vec3 remainingAfterHit = remainingDisplacement * (1.0f - safeFraction);
+        const float intoSurface = math::Vec3::Dot(remainingAfterHit, hit.Normal);
+        if (intoSurface < 0.0f)
+        {
+            // 壁へ入る法線成分だけ除去し、接線成分を次反復へ残します。
+            remainingAfterHit -= hit.Normal * intoSurface;
+        }
+        else
+        {
+            remainingAfterHit = math::Vec3{};
+        }
+
+        // ====================================================================
+        // Velocity projection
+        // ====================================================================
+        // PositionだけSlideさせてもVelocityが毎Frame壁へ向いたままだと、次Frameも同じ押し込みを
+        // 繰り返します。Characterの水平速度からも壁法線方向成分を除去します。
+        math::Vec3 horizontalNormal{ hit.Normal.x, 0.0f, hit.Normal.z };
+        const float horizontalNormalLengthSquared = horizontalNormal.LengthSq();
+        if (horizontalNormalLengthSquared > 1.0e-10f)
+        {
+            horizontalNormal /= std::sqrt(horizontalNormalLengthSquared);
+            const math::Vec3 horizontalVelocity{ m_Velocity.x, 0.0f, m_Velocity.z };
+            const float velocityIntoSurface = math::Vec3::Dot(horizontalVelocity, horizontalNormal);
+            if (velocityIntoSurface < 0.0f)
+            {
+                const math::Vec3 correctedVelocity = horizontalVelocity
+                    - horizontalNormal * velocityIntoSurface;
+                m_Velocity.x = correctedVelocity.x;
+                m_Velocity.z = correctedVelocity.z;
+            }
+        }
+
+        remainingDisplacement = remainingAfterHit;
+    }
+
     return true;
 }
 
@@ -304,9 +414,34 @@ bool CharacterController::UpdateInternal(
         m_Velocity.y += m_Config.Gravity * deltaTime;
     }
 
-    transform.Position.x += m_Velocity.x * deltaTime;
+    // ========================================================================
+    // Horizontal Capsule Move / Vertical Integration
+    // ========================================================================
+    // 壁衝突はまず水平変位へ適用します。鉛直方向は現段階ではGround Query / Gravityが担当し、
+    // 次工程で天井衝突やStep Upを追加する際に同じCapsule Cast経路へ統合できるよう分離します。
+    const math::Vec3 horizontalDisplacement{
+        m_Velocity.x * deltaTime,
+        0.0f,
+        m_Velocity.z * deltaTime
+    };
+
+    if (scene != nullptr)
+    {
+        if (ResolvePhysicsMovement(
+                *scene,
+                horizontalDisplacement,
+                transform,
+                errorMessage) == false)
+        {
+            return false;
+        }
+    }
+    else
+    {
+        transform.Position += horizontalDisplacement;
+    }
+
     transform.Position.y += m_Velocity.y * deltaTime;
-    transform.Position.z += m_Velocity.z * deltaTime;
 
     // ========================================================================
     // End-of-frame Ground Snap
