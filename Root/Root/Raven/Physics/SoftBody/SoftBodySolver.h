@@ -14,22 +14,12 @@ namespace ph
 
 struct SoftBodySolverSettings
 {
-    // Position constraintを繰り返し解く回数です。
-    // XPBDでは反復回数を増やすほど制約誤差が小さくなります。
     uint32_t SolverIterations = 8u;
 
-    // ParticleをCollider表面から僅かに離して保持する厚みです。
-    // Clothを数学的な無厚み面として扱うと数値誤差でSphere内部へ戻りやすいため、
-    // 最小限のCollision Thicknessを持たせます。
+    // ParticleをCollider表面から僅かに離して保持する共通厚みです。
     float CollisionThickness = 0.005f;
 };
 
-// ============================================================================
-// Static Sphere Collision Constraint
-// ============================================================================
-// SoftBody側で扱う最初のCollision Constraintです。
-// 現段階ではSphere自体は動かず、Particleだけを球面外へ押し出します。
-// RigidBodyとの双方向Impulse連成は、この基礎が安定してから別段階で追加します。
 struct SoftBodySphereCollider
 {
     math::Vec3 Center{};
@@ -37,11 +27,16 @@ struct SoftBodySphereCollider
 };
 
 // ============================================================================
-// Soft Body Solver
+// Static Plane Collision Constraint
 // ============================================================================
-// RigidBodyのContactSolverとは分離した、Particle + Constraint用のXPBD Solverです。
-// DistanceConstraintとCollision Constraintを同じPosition反復内で解くことで、
-// ClothがCollider形状へ沿って変形する基本経路を構築します。
+// Plane式は dot(Normal, x) - Offset = 0 とします。
+// Normal側を外側とみなし、signed distanceがCollisionThickness未満のParticleを外側へ押し戻します。
+struct SoftBodyPlaneCollider
+{
+    math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
+    float Offset = 0.0f;
+};
+
 class SoftBodySolver
 {
 public:
@@ -52,17 +47,16 @@ public:
     SoftBodySolverSettings& GetSettings() { return m_Settings; }
     const SoftBodySolverSettings& GetSettings() const { return m_Settings; }
 
-    // Particleを追加し、そのIndexを返します。
     uint32_t AddParticle(const math::Vec3& position, float inverseMass = 1.0f);
-
-    // 現在のParticle間距離をRestLengthとしてDistanceConstraintを追加します。
     uint32_t AddDistanceConstraint(uint32_t particleA, uint32_t particleB, float compliance = 0.0f);
 
-    // 静的Sphere Colliderを追加します。
-    // 戻り値はCollider Indexで、将来Scene側から位置更新するときにも利用できます。
     uint32_t AddSphereCollider(const math::Vec3& center, float radius);
     void SetSphereCollider(uint32_t colliderIndex, const math::Vec3& center, float radius);
     void ClearSphereColliders();
+
+    uint32_t AddPlaneCollider(const math::Vec3& normal, float offset);
+    void SetPlaneCollider(uint32_t colliderIndex, const math::Vec3& normal, float offset);
+    void ClearPlaneColliders();
 
     void Clear();
     void Step(float deltaTime);
@@ -71,12 +65,14 @@ public:
     const std::vector<SoftBodyParticle>& GetParticles() const { return m_Particles; }
     const std::vector<XPBDDistanceConstraint>& GetDistanceConstraints() const { return m_DistanceConstraints; }
     const std::vector<SoftBodySphereCollider>& GetSphereColliders() const { return m_SphereColliders; }
+    const std::vector<SoftBodyPlaneCollider>& GetPlaneColliders() const { return m_PlaneColliders; }
 
 private:
     void PredictPositions(float deltaTime);
     void ResetConstraintLambdas();
     void SolveDistanceConstraints(float deltaTime);
     void SolveSphereCollisions();
+    void SolvePlaneCollisions();
     void UpdateVelocities(float deltaTime);
 
 private:
@@ -85,6 +81,7 @@ private:
     std::vector<SoftBodyParticle> m_Particles;
     std::vector<XPBDDistanceConstraint> m_DistanceConstraints;
     std::vector<SoftBodySphereCollider> m_SphereColliders;
+    std::vector<SoftBodyPlaneCollider> m_PlaneColliders;
 };
 
 } // namespace ph
