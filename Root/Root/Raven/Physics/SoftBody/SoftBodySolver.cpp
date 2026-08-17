@@ -94,7 +94,11 @@ uint32_t SoftBodySolver::AddPlaneCollider(const math::Vec3& normal, float offset
         collider.Normal.Normalize();
     }
 
-    m_PlaneColliders.push_back(collider);
+    // Sphereと同様にParticleごとの片側Constraint Lambdaを持ちます。
+    // Step冒頭で毎回初期化しますが、追加直後も配列サイズを揃えておきます。
+    collider.ResetStepConstraintState(m_Particles.size());
+
+    m_PlaneColliders.push_back(std::move(collider));
     return static_cast<uint32_t>(m_PlaneColliders.size() - 1u);
 }
 
@@ -153,10 +157,10 @@ void SoftBodySolver::Step(float deltaTime)
     for (uint32_t iteration = 0u; iteration < iterationCount; ++iteration)
     {
         // 内部Constraintを先に解き、その結果Collider内部へ戻ったParticleを同じ反復内で
-        // Sphere / Planeの外側へ押し出します。
+        // Sphere / Planeの片側XPBD Constraintで押し戻します。
         SolveDistanceConstraints(deltaTime);
         SolveSphereCollisions(deltaTime);
-        SolvePlaneCollisions();
+        SolvePlaneCollisions(deltaTime);
     }
 
     UpdateVelocities(deltaTime);
@@ -201,6 +205,13 @@ void SoftBodySolver::ResetCollisionConstraintState()
         // Sphere CollisionもDistance Constraintと同様にLambdaを同一Step内だけ保持します。
         // Particle数へ合わせて毎Step初期化することで、Cloth再構築やParticle追加後もIndex対応を保証します。
         // Feedbackも同時にResetし、Step間でReaction Impulseが累積しないようにします。
+        collider.ResetStepConstraintState(m_Particles.size());
+    }
+
+    for (SoftBodyPlaneCollider& collider : m_PlaneColliders)
+    {
+        // PlaneもSphereと同じ片側XPBD Constraintへ統一します。
+        // 現段階ではWarm Startしないため、各Step開始時にParticle別Lambdaを0へ戻します。
         collider.ResetStepConstraintState(m_Particles.size());
     }
 }
@@ -392,7 +403,7 @@ void SoftBodySolver::SolveSphereCollisions(float deltaTime)
     }
 }
 
-void SoftBodySolver::SolvePlaneCollisions()
+void SoftBodySolver::SolvePlaneCollisions(float deltaTime)
 {
     if (m_PlaneColliders.empty())
     {
@@ -400,32 +411,68 @@ void SoftBodySolver::SolvePlaneCollisions()
     }
 
     const float collisionThickness = std::max(0.0f, m_Settings.CollisionThickness);
+    const float collisionCompliance = std::max(0.0f, m_Settings.PlaneCollisionCompliance);
+    const float alphaTilde = collisionCompliance / (deltaTime * deltaTime);
 
-    for (SoftBodyParticle& particle : m_Particles)
+    for (std::size_t particleIndex = 0u; particleIndex < m_Particles.size(); ++particleIndex)
     {
+        SoftBodyParticle& particle = m_Particles[particleIndex];
         if (particle.IsFixed())
         {
             continue;
         }
 
-        for (const SoftBodyPlaneCollider& collider : m_PlaneColliders)
+        for (SoftBodyPlaneCollider& collider : m_PlaneColliders)
         {
-            // Plane外側条件:
-            //   dot(n, x) - offset >= thickness
-            //
-            // signedDistanceは単位Normalを前提としているため、Add/Set時にNormalを正規化しています。
-            const float signedDistance =
-                math::Vec3::Dot(collider.Normal, particle.Position) - collider.Offset;
-
-            if (signedDistance >= collisionThickness)
+            if (particleIndex >= collider.ParticleLambdas.size())
             {
                 continue;
             }
 
-            // 条件を満たす最小距離だけNormal方向へ押し戻します。
-            // Planeは静的なので、現段階ではParticle側だけを補正します。
-            const float correctionDistance = collisionThickness - signedDistance;
-            particle.Position += collider.Normal * correctionDistance;
+            // ====================================================================
+            // Unilateral XPBD Plane Constraint
+            // ====================================================================
+            // Planeの許容側条件をConstraintとして書くと
+            //
+            //   C(x) = dot(n, x) - offset - thickness >= 0
+            //
+            // です。NormalはAdd/Set時に正規化済みなのでgradient C = n、|gradient|^2 = 1です。
+            // Sphereと同じくLambdaを0以上へclampし、床から離れたParticleを引き戻さないようにします。
+            const float constraintValue =
+                math::Vec3::Dot(collider.Normal, particle.Position)
+                - collider.Offset
+                - collisionThickness;
+
+            float& lambda = collider.ParticleLambdas[particleIndex];
+
+            if (constraintValue >= 0.0f && lambda <= 0.0f)
+            {
+                continue;
+            }
+
+            const float denominator = particle.InverseMass + alphaTilde;
+            if (denominator <= math::Epsilon)
+            {
+                continue;
+            }
+
+            const float unconstrainedDeltaLambda =
+                (-constraintValue - alphaTilde * lambda) / denominator;
+
+            const float oldLambda = lambda;
+            const float newLambda = std::max(0.0f, oldLambda + unconstrainedDeltaLambda);
+            const float appliedDeltaLambda = newLambda - oldLambda;
+            lambda = newLambda;
+
+            if (std::abs(appliedDeltaLambda) <= math::Epsilon)
+            {
+                continue;
+            }
+
+            // gradient C = Normalなので、Sphereと同じ形式でPosition補正できます。
+            // compliance=0なら硬い床、値を増やすとConstraintが柔らかくなり沈み込みを許します。
+            particle.Position +=
+                collider.Normal * (particle.InverseMass * appliedDeltaLambda);
         }
     }
 }
