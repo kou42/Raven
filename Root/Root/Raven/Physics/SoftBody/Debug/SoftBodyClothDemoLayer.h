@@ -10,7 +10,6 @@ namespace Raven
 class Application;
 class Material;
 class Mesh;
-class Shader;
 
 // ============================================================================
 // SoftBodyClothDemoLayer
@@ -35,6 +34,7 @@ private:
     Application& m_Application;
     Entity m_ClothEntity{};
     Ref<Mesh> m_ClothMesh;
+    Ref<Mesh> m_CollisionSphereMesh;
     Ref<Material> m_ClothMaterial;
 };
 
