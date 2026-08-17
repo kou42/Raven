@@ -6,6 +6,7 @@
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
+#include "Raven/Physics/SoftBody/XPBDDihedralConstraint.h"
 #include "Raven/Physics/SoftBody/XPBDDistanceConstraint.h"
 
 namespace Raven
@@ -121,13 +122,15 @@ struct SoftBodyPlaneCollider
 //
 // 1Stepの基本順序:
 //   1. 重力を積分してParticleの予測位置を作る
-//   2. Distance / Sphere / Plane CollisionのLambdaをStep用に初期化する
+//   2. Distance / Dihedral / Sphere / PlaneのLambdaをStep用に初期化する
 //   3. XPBD Distance Constraintを反復解決する
-//   4. 同じ反復内でSphere / Plane Collisionを片側XPBD Constraintとして解決する
-//   5. 最終PositionとStep開始時PositionからVelocityを再構築する
+//   4. Dihedral Angle Bending Constraintを反復解決する
+//   5. 同じ反復内でSphere / Plane Collisionを片側XPBD Constraintとして解決する
+//   6. 最終PositionとStep開始時PositionからVelocityを再構築する
 //
-// CollisionもConstraint反復の中へ含めることで、Distance ConstraintがParticleをCollider内部へ
-// 戻した場合でも同一Step内で再度解決され、ClothがCollider形状へ沿って収束しやすくなります。
+// BendingをDistance近似とは別Constraintとして持つことで、Cloth Topology上の「隣接Triangle間の角度」を
+// 直接制御できます。Collisionも同じPosition反復へ含めるため、各Constraintが互いに補正した結果を
+// 同一Step内で再評価して収束させられます。
 class SoftBodySolver
 {
 public:
@@ -145,6 +148,16 @@ public:
     // 現在のParticle間距離をRestLengthとしてXPBD Distance Constraintを追加します。
     // compliance == 0.0f に近いほど硬く、値を大きくすると柔らかい制約になります。
     uint32_t AddDistanceConstraint(uint32_t particleA, uint32_t particleB, float compliance = 0.0f);
+
+    // 共有Edgeを持つ2TriangleからDihedral Bending Constraintを追加します。
+    // oppositeA/oppositeBはそれぞれのTriangleで共有Edgeの反対側にある頂点です。
+    // RestAngleは追加時の形状から自動計算します。
+    uint32_t AddDihedralConstraint(
+        uint32_t oppositeA,
+        uint32_t oppositeB,
+        uint32_t edgeA,
+        uint32_t edgeB,
+        float compliance = 0.0f);
 
     // Sphere Colliderを追加します。
     // 戻り値はCollider Indexで、SetSphereCollider()による後続更新に利用できます。
@@ -169,6 +182,7 @@ public:
     std::vector<SoftBodyParticle>& GetParticles() { return m_Particles; }
     const std::vector<SoftBodyParticle>& GetParticles() const { return m_Particles; }
     const std::vector<XPBDDistanceConstraint>& GetDistanceConstraints() const { return m_DistanceConstraints; }
+    const std::vector<XPBDDihedralConstraint>& GetDihedralConstraints() const { return m_DihedralConstraints; }
     const std::vector<SoftBodySphereCollider>& GetSphereColliders() const { return m_SphereColliders; }
     const std::vector<SoftBodyPlaneCollider>& GetPlaneColliders() const { return m_PlaneColliders; }
 
@@ -176,14 +190,17 @@ private:
     // Step開始時の位置をPreviousPositionへ保存し、重力とVelocityから予測位置を作ります。
     void PredictPositions(float deltaTime);
 
-    // Distance ConstraintのLambdaをStep開始時に0へ戻します。
+    // Distance / Dihedral ConstraintのLambdaをStep開始時に0へ戻します。
     void ResetConstraintLambdas();
 
     // Sphere / Plane CollisionのParticle別Lambdaと、Sphereが外部へ返す1Step分Feedbackを初期化します。
     void ResetCollisionConstraintState();
 
-    // Structural / Shear / Bendingを含む全Distance ConstraintをXPBD式で解決します。
+    // Structural / Shear / 比較用Distance Bendingを含む全Distance ConstraintをXPBD式で解決します。
     void SolveDistanceConstraints(float deltaTime);
+
+    // 隣接Triangle間の二面角を直接拘束するXPBD Bending Constraintです。
+    void SolveDihedralConstraints(float deltaTime);
 
     // Sphere Collisionを C(x)=|x-center|-radius >= 0 の片側XPBD Constraintとして解決します。
     // DeltaLambdaからRigidBodyへ返す反作用Impulseも蓄積します。
@@ -200,6 +217,7 @@ private:
     SoftBodySolverSettings m_Settings{};
     std::vector<SoftBodyParticle> m_Particles;
     std::vector<XPBDDistanceConstraint> m_DistanceConstraints;
+    std::vector<XPBDDihedralConstraint> m_DihedralConstraints;
     std::vector<SoftBodySphereCollider> m_SphereColliders;
     std::vector<SoftBodyPlaneCollider> m_PlaneColliders;
 };
