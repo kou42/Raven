@@ -65,17 +65,61 @@ void SoftBodySolver::ClearSphereColliders()
     m_SphereColliders.clear();
 }
 
+uint32_t SoftBodySolver::AddPlaneCollider(const math::Vec3& normal, float offset)
+{
+    SoftBodyPlaneCollider collider{};
+    collider.Normal = normal;
+    collider.Offset = offset;
+
+    if (collider.Normal.LengthSq() <= math::Epsilon * math::Epsilon)
+    {
+        collider.Normal = { 0.0f, 1.0f, 0.0f };
+    }
+    else
+    {
+        collider.Normal.Normalize();
+    }
+
+    m_PlaneColliders.push_back(collider);
+    return static_cast<uint32_t>(m_PlaneColliders.size() - 1u);
+}
+
+void SoftBodySolver::SetPlaneCollider(uint32_t colliderIndex, const math::Vec3& normal, float offset)
+{
+    if (colliderIndex >= m_PlaneColliders.size())
+    {
+        return;
+    }
+
+    SoftBodyPlaneCollider& collider = m_PlaneColliders[colliderIndex];
+    collider.Normal = normal;
+    collider.Offset = offset;
+
+    if (collider.Normal.LengthSq() <= math::Epsilon * math::Epsilon)
+    {
+        collider.Normal = { 0.0f, 1.0f, 0.0f };
+    }
+    else
+    {
+        collider.Normal.Normalize();
+    }
+}
+
+void SoftBodySolver::ClearPlaneColliders()
+{
+    m_PlaneColliders.clear();
+}
+
 void SoftBodySolver::Clear()
 {
     m_Particles.clear();
     m_DistanceConstraints.clear();
     m_SphereColliders.clear();
+    m_PlaneColliders.clear();
 }
 
 void SoftBodySolver::Step(float deltaTime)
 {
-    // dt=0ではXPBDのalpha = compliance / dt^2を計算できません。
-    // 固定ステップ側の一時停止などでも安全に呼べるよう、更新せず終了します。
     if (deltaTime <= 0.0f)
     {
         return;
@@ -84,15 +128,14 @@ void SoftBodySolver::Step(float deltaTime)
     PredictPositions(deltaTime);
     ResetConstraintLambdas();
 
-    // Position Based Dynamicsでは、予測位置に対してConstraintを複数回解きます。
-    // DistanceだけでなくCollisionも同じ反復の中へ入れることが重要です。
-    // 距離制約がParticleをSphere内部へ戻しても、同じiterationで再度押し出されるため、
-    // 布全体が球面へ沿う形へ収束しやすくなります。
     const uint32_t iterationCount = std::max(1u, m_Settings.SolverIterations);
     for (uint32_t iteration = 0u; iteration < iterationCount; ++iteration)
     {
+        // 内部Constraintを先に解き、その結果Collider内部へ戻ったParticleを同じ反復内で
+        // Sphere / Planeの外側へ押し出します。
         SolveDistanceConstraints(deltaTime);
         SolveSphereCollisions();
+        SolvePlaneCollisions();
     }
 
     UpdateVelocities(deltaTime);
@@ -102,9 +145,6 @@ void SoftBodySolver::PredictPositions(float deltaTime)
 {
     for (SoftBodyParticle& particle : m_Particles)
     {
-        // PreviousPositionは「制約補正前の前フレーム位置」ではなく、今回Step開始時の
-        // Positionを保存します。最終Positionとの差をdtで割ることで、制約が生んだ速度も
-        // 次フレームへ引き継げます。
         particle.PreviousPosition = particle.Position;
 
         if (particle.IsFixed())
@@ -122,8 +162,6 @@ void SoftBodySolver::ResetConstraintLambdas()
 {
     for (XPBDDistanceConstraint& constraint : m_DistanceConstraints)
     {
-        // LambdaはSolver iteration間では保持しますが、別Stepへは持ち越しません。
-        // 将来Warm Startを導入する場合は、この境界を変更します。
         constraint.Lambda = 0.0f;
     }
 }
@@ -155,14 +193,9 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
 
         const math::Vec3 normal = delta / distance;
         const float constraintValue = distance - constraint.RestLength;
-
-        // XPBDの中心式です。
-        // alphaTilde = compliance / dt^2
-        // deltaLambda = (-C - alphaTilde * lambda) / (wA + wB + alphaTilde)
-        //
-        // Compliance=0なら通常の硬いPBD距離制約になり、値を増やすと柔らかくなります。
         const float alphaTilde = constraint.Compliance / deltaTimeSq;
         const float denominator = inverseMassSum + alphaTilde;
+
         if (denominator <= math::Epsilon)
         {
             continue;
@@ -172,8 +205,6 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
             (-constraintValue - alphaTilde * constraint.Lambda) / denominator;
         constraint.Lambda += deltaLambda;
 
-        // C = |xB-xA|-L なので gradientA=-n, gradientB=+n です。
-        // deltaX = w * gradient(C) * deltaLambda を各Particleへ適用します。
         if (particleA.IsFixed() == false)
         {
             particleA.Position -= normal * (particleA.InverseMass * deltaLambda);
@@ -219,19 +250,49 @@ void SoftBodySolver::SolveSphereCollisions()
                 continue;
             }
 
-            // Sphere中心とParticleが完全一致すると法線を決められません。
-            // その場合だけWorld Upをフォールバックにし、NaNを発生させないようにします。
             math::Vec3 normal{ 0.0f, 1.0f, 0.0f };
             if (distanceSq > math::Epsilon * math::Epsilon)
             {
                 normal = centerToParticle / std::sqrt(distanceSq);
             }
 
-            // Collision Constraint:
-            //   C(x) = |x - center| - radius >= 0
-            // 貫通時だけPositionを最短距離で球面外へ射影します。
-            // 静的Colliderなので質量分配は不要で、Particle側だけを補正します。
             particle.Position = collider.Center + normal * targetRadius;
+        }
+    }
+}
+
+void SoftBodySolver::SolvePlaneCollisions()
+{
+    if (m_PlaneColliders.empty())
+    {
+        return;
+    }
+
+    const float collisionThickness = std::max(0.0f, m_Settings.CollisionThickness);
+
+    for (SoftBodyParticle& particle : m_Particles)
+    {
+        if (particle.IsFixed())
+        {
+            continue;
+        }
+
+        for (const SoftBodyPlaneCollider& collider : m_PlaneColliders)
+        {
+            // Plane外側条件:
+            //   dot(n, x) - offset >= thickness
+            //
+            // 条件を満たさないParticleだけを法線方向へ最短距離で射影します。
+            const float signedDistance =
+                math::Vec3::Dot(collider.Normal, particle.Position) - collider.Offset;
+
+            if (signedDistance >= collisionThickness)
+            {
+                continue;
+            }
+
+            const float correctionDistance = collisionThickness - signedDistance;
+            particle.Position += collider.Normal * correctionDistance;
         }
     }
 }
@@ -248,8 +309,6 @@ void SoftBodySolver::UpdateVelocities(float deltaTime)
             continue;
         }
 
-        // XPBDではConstraintがPositionを直接補正します。
-        // その補正分も運動へ反映するため、最終位置からVelocityを再構築します。
         particle.Velocity = (particle.Position - particle.PreviousPosition) * inverseDeltaTime;
     }
 }
