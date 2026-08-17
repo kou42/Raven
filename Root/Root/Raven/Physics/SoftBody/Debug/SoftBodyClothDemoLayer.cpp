@@ -22,6 +22,11 @@ constexpr math::Vec3 kCollisionSphereCenter{ 0.0f, -0.12f, 0.0f };
 constexpr float kCollisionSphereRadius = 0.20f;
 constexpr math::Vec3 kClothWorldPosition{ 0.0f, 18.0f, -10.0f };
 constexpr float kClothWorldScale = 22.0f;
+
+// SceneGameの床はWorld Y=0です。
+// SolverはClothローカル空間で動くため、worldY = localY * scale + translationY を逆変換し、
+// localY = (0 - 18) / 22 として同じ床面をSoftBody Solverへ登録します。
+constexpr float kFloorLocalY = -18.0f / 22.0f;
 } // namespace
 
 void SoftBodyClothDemoLayer::OnAttach()
@@ -75,6 +80,10 @@ void SoftBodyClothDemoLayer::OnAttach()
 
     auto clothDeformer = CreateScope<SoftBodyClothDeformer>(kClothRows, kClothColumns);
     clothDeformer->SetCollisionSphere(kCollisionSphereCenter, kCollisionSphereRadius);
+
+    // +Yを外側とするPlaneをScene床と同じWorld Y=0へ配置します。
+    // ClothがSphereを滑り落ちた後も床より下へ抜けないことを目視確認できます。
+    clothDeformer->SetCollisionPlane({ 0.0f, 1.0f, 0.0f }, kFloorLocalY);
 
     auto deformationInstance = std::make_shared<MeshDeformationInstance>(
         m_ClothMesh,
@@ -132,7 +141,6 @@ void SoftBodyClothDemoLayer::OnRender()
         clothTransform,
         { kClothWorldScale, kClothWorldScale, kClothWorldScale });
 
-    // PrimitiveMeshFactory::CreateSphere()は半径0.5なので、直径2RをScaleへ設定します。
     const math::Vec3 sphereWorldCenter =
         kClothWorldPosition + kCollisionSphereCenter * kClothWorldScale;
     const float sphereWorldDiameter =
@@ -144,7 +152,6 @@ void SoftBodyClothDemoLayer::OnRender()
         sphereTransform,
         { sphereWorldDiameter, sphereWorldDiameter, sphereWorldDiameter });
 
-    // SceneGame本体のColor/Depthを保持したまま追加Passとして描画します。
     Renderer::BeginScene(*camera);
 
     m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.95f, 0.45f, 0.20f });
