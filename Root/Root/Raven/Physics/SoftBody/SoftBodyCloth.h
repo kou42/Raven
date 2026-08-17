@@ -11,6 +11,22 @@ namespace Raven
 namespace ph
 {
 
+// ============================================================================
+// Cloth Bending Model
+// ============================================================================
+// Distance:
+//   1頂点飛ばしのParticle間距離で曲げを近似する旧方式です。
+//   安価で実装も単純なので比較・フォールバック用途として残します。
+//
+// Dihedral:
+//   共有Edgeを持つ2Triangle間の二面角を直接拘束します。
+//   Topology上の「折れ角」そのものを扱うため、ClothのBendingモデルとしてはこちらを既定にします。
+enum class SoftBodyClothBendingModel
+{
+    Distance,
+    Dihedral
+};
+
 struct SoftBodyClothSettings
 {
     uint32_t Rows = 16u;
@@ -22,16 +38,16 @@ struct SoftBodyClothSettings
     float ShearCompliance = 0.0f;
 
     // ========================================================================
-    // Distance-based Bending Compliance
+    // Bending Compliance
     // ========================================================================
-    // 1頂点飛ばしのParticle同士を距離制約で結び、Clothが局所的に鋭く折れ曲がることを
-    // 抑えるための簡易Bendingです。
-    //
-    // これは三角形の二面角を直接拘束するDihedral Bendingではありません。
-    // 最初のCloth実装では既存XPBD Distance Solverを再利用でき、挙動とパラメータの関係を
-    // 確認しやすいため、この近似から導入します。将来より物理的な曲げ剛性が必要になった
-    // 段階でDihedral Constraintへ置き換えられるよう、設定値はStructural/Shearと分離します。
+    // BendingModelによって意味するConstraint形状は変わりますが、Complianceの意味は共通です。
+    // 0に近いほど硬く、値を大きくするほど折れ曲がりやすくなります。
+    // XPBDなので alphaTilde = BendingCompliance / dt^2 として時間刻み依存を抑えます。
     float BendingCompliance = 0.00002f;
+
+    // 既定は隣接Triangle間の二面角を直接拘束するDihedral Bendingです。
+    // 旧Distance Bendingと挙動を比較したい場合はDistanceへ切り替えられます。
+    SoftBodyClothBendingModel BendingModel = SoftBodyClothBendingModel::Dihedral;
 
     bool PinTopLeft = true;
     bool PinTopRight = true;
