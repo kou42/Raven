@@ -1,6 +1,7 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Material/Material.h"
