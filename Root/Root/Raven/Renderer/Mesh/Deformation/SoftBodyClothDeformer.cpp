@@ -41,8 +41,6 @@ void RecalculateClothNormals(
             continue;
         }
 
-        // 面法線を正規化せず加算することで、面積の大きいTriangleほど強く寄与する
-        // area-weighted vertex normalになります。
         vertices[indexA].Normal += faceNormal;
         vertices[indexB].Normal += faceNormal;
         vertices[indexC].Normal += faceNormal;
@@ -52,7 +50,6 @@ void RecalculateClothNormals(
     {
         if (vertex.Normal.LengthSq() <= math::Epsilon * math::Epsilon)
         {
-            // ClothはXY平面を基準に生成するため、退化時の安全なfallbackを+Zにします。
             vertex.Normal = { 0.0f, 0.0f, 1.0f };
             continue;
         }
@@ -97,6 +94,28 @@ void SoftBodyClothDeformer::DisableCollisionSphere()
     }
 }
 
+void SoftBodyClothDeformer::SetCollisionPlane(const math::Vec3& normal, float offset)
+{
+    m_CollisionPlaneEnabled = true;
+    m_CollisionPlaneNormal = normal;
+    m_CollisionPlaneOffset = offset;
+
+    if (m_Initialized)
+    {
+        ApplyCollisionPlaneToSolver();
+    }
+}
+
+void SoftBodyClothDeformer::DisableCollisionPlane()
+{
+    m_CollisionPlaneEnabled = false;
+
+    if (m_Initialized)
+    {
+        m_Solver.ClearPlaneColliders();
+    }
+}
+
 void SoftBodyClothDeformer::ApplyCollisionSphereToSolver()
 {
     m_Solver.ClearSphereColliders();
@@ -109,6 +128,20 @@ void SoftBodyClothDeformer::ApplyCollisionSphereToSolver()
     m_CollisionSphereIndex = m_Solver.AddSphereCollider(
         m_CollisionSphereCenter,
         m_CollisionSphereRadius);
+}
+
+void SoftBodyClothDeformer::ApplyCollisionPlaneToSolver()
+{
+    m_Solver.ClearPlaneColliders();
+
+    if (m_CollisionPlaneEnabled == false)
+    {
+        return;
+    }
+
+    m_CollisionPlaneIndex = m_Solver.AddPlaneCollider(
+        m_CollisionPlaneNormal,
+        m_CollisionPlaneOffset);
 }
 
 bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
@@ -144,7 +177,9 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
     m_Cloth = ph::SoftBodyClothBuilder::Build(m_Solver, clothSettings);
     m_Initialized = true;
 
+    // Clear()はColliderも消すため、Cloth再初期化後に現在のCollider設定を再登録します。
     ApplyCollisionSphereToSolver();
+    ApplyCollisionPlaneToSolver();
     return true;
 }
 
@@ -185,7 +220,6 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         deformedVertices[vertexIndex].Position = particles[particleIndex].Position;
     }
 
-    // Cloth変形後は生成時Normalが無効になるため、Fixed TopologyのIndexから毎フレーム再構築します。
     RecalculateClothNormals(deformedVertices, geometry->GetIndices());
 
     if (geometry->SetVertices(std::move(deformedVertices)) == false)
