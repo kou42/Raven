@@ -49,9 +49,12 @@ uint32_t SoftBodySolver::AddSphereCollider(const math::Vec3& center, float radiu
     SoftBodySphereCollider collider{};
     collider.Center = center;
     collider.Radius = std::max(0.0f, radius);
-    collider.ResetStepFeedback();
 
-    m_SphereColliders.push_back(collider);
+    // Collider追加時にも現在のParticle数へ合わせてLambda配列を初期化しておきます。
+    // Step冒頭で再度Resetするため、途中でParticle数が増えた場合も次Stepから整合します。
+    collider.ResetStepConstraintState(m_Particles.size());
+
+    m_SphereColliders.push_back(std::move(collider));
     return static_cast<uint32_t>(m_SphereColliders.size() - 1u);
 }
 
@@ -62,7 +65,7 @@ void SoftBodySolver::SetSphereCollider(uint32_t colliderIndex, const math::Vec3&
         return;
     }
 
-    // Position/Radiusだけを更新し、前StepのFeedbackは次のStep冒頭でまとめてResetします。
+    // Position/Radiusだけを更新し、直前StepのFeedbackは次のStep冒頭まで残します。
     // 外部側がStep直後にFeedbackを読む時間を確保するため、Set時には消さないことが重要です。
     SoftBodySphereCollider& collider = m_SphereColliders[colliderIndex];
     collider.Center = center;
@@ -142,7 +145,7 @@ void SoftBodySolver::Step(float deltaTime)
 
     PredictPositions(deltaTime);
     ResetConstraintLambdas();
-    ResetCollisionFeedback();
+    ResetCollisionConstraintState();
 
     // Position Based Dynamicsでは、予測位置に対してConstraintを複数回反復して収束させます。
     // DistanceだけでなくCollisionも同じ反復へ含めることが重要です。
@@ -191,13 +194,14 @@ void SoftBodySolver::ResetConstraintLambdas()
     }
 }
 
-void SoftBodySolver::ResetCollisionFeedback()
+void SoftBodySolver::ResetCollisionConstraintState()
 {
     for (SoftBodySphereCollider& collider : m_SphereColliders)
     {
-        // Feedbackは「直前に完了したStep」の結果として外部側から読み取られます。
-        // 新しいStepへ入る直前にResetすることで、Step間のImpulse蓄積を防ぎます。
-        collider.ResetStepFeedback();
+        // Sphere CollisionもDistance Constraintと同様にLambdaを同一Step内だけ保持します。
+        // Particle数へ合わせて毎Step初期化することで、Cloth再構築やParticle追加後もIndex対応を保証します。
+        // Feedbackも同時にResetし、Step間でReaction Impulseが累積しないようにします。
+        collider.ResetStepConstraintState(m_Particles.size());
     }
 }
 
@@ -274,9 +278,14 @@ void SoftBodySolver::SolveSphereCollisions(float deltaTime)
     }
 
     const float collisionThickness = std::max(0.0f, m_Settings.CollisionThickness);
+    const float collisionCompliance = std::max(0.0f, m_Settings.SphereCollisionCompliance);
+    const float alphaTilde = collisionCompliance / (deltaTime * deltaTime);
 
-    for (SoftBodyParticle& particle : m_Particles)
+    // Particle IndexはCollider側ParticleLambdasのIndexとしても使用するため、range-forではなく
+    // 明示的なIndexループにしています。
+    for (std::size_t particleIndex = 0u; particleIndex < m_Particles.size(); ++particleIndex)
     {
+        SoftBodyParticle& particle = m_Particles[particleIndex];
         if (particle.IsFixed())
         {
             continue;
@@ -284,6 +293,13 @@ void SoftBodySolver::SolveSphereCollisions(float deltaTime)
 
         for (SoftBodySphereCollider& collider : m_SphereColliders)
         {
+            if (particleIndex >= collider.ParticleLambdas.size())
+            {
+                // 通常はStep冒頭のResetCollisionConstraintState()で必ず一致します。
+                // 不整合時は範囲外アクセスを避け、このColliderだけスキップします。
+                continue;
+            }
+
             // Clothの厚み分だけSphereを膨らませた半径を接触面として扱います。
             const float targetRadius = collider.Radius + collisionThickness;
             if (targetRadius <= 0.0f)
@@ -293,53 +309,80 @@ void SoftBodySolver::SolveSphereCollisions(float deltaTime)
 
             const math::Vec3 centerToParticle = particle.Position - collider.Center;
             const float distanceSq = centerToParticle.LengthSq();
-            const float targetRadiusSq = targetRadius * targetRadius;
 
-            if (distanceSq >= targetRadiusSq)
-            {
-                // Sphere外側ならConstraintを満たしているため補正不要です。
-                continue;
-            }
-
-            // Sphere中心とParticleが完全一致すると法線を決められません。
+            // Sphere中心とParticleが完全一致するとgradient方向を決められません。
             // その場合だけWorld Upをfallbackにし、0除算とNaNを防ぎます。
+            float distance = 0.0f;
             math::Vec3 normal{ 0.0f, 1.0f, 0.0f };
             if (distanceSq > math::Epsilon * math::Epsilon)
             {
-                normal = centerToParticle / std::sqrt(distanceSq);
+                distance = std::sqrt(distanceSq);
+                normal = centerToParticle / distance;
             }
 
-            const math::Vec3 oldPosition = particle.Position;
-            const math::Vec3 correctedPosition = collider.Center + normal * targetRadius;
-            const math::Vec3 correction = correctedPosition - oldPosition;
-
-            // Collision Constraint:
+            // ====================================================================
+            // Unilateral XPBD Sphere Constraint
+            // ====================================================================
+            // Collision Constraintは等式ではなく片側不等式です。
+            //
             //   C(x) = |x - center| - targetRadius >= 0
-            // 貫通時だけParticleを最短距離でSphere表面へ射影します。
-            particle.Position = correctedPosition;
+            //
+            // Sphere外側ではC>=0なので拘束力は不要、内部ではC<0なので外向き補正が必要です。
+            // XPBD式そのものはDistance Constraintと同じですが、Collision Lambdaは押す方向だけを
+            // 許可するため newLambda >= 0 にclampします。
+            //
+            // 既にLambda>0のParticleが他ConstraintによってSphere外へ移動した場合も式を評価し、
+            // Lambdaを減らして接触拘束を解放できることが重要です。
+            const float constraintValue = distance - targetRadius;
+            float& lambda = collider.ParticleLambdas[particleIndex];
 
-            // ====================================================================
-            // Approximate Soft -> Rigid reaction impulse
-            // ====================================================================
-            // Position Based SolverはImpulseを直接解いていないため、位置補正から近似します。
-            // ParticleのConstraint補正による速度変化は概ね correction / dt です。
-            // mass = 1 / inverseMass なのでParticleに与えた運動量変化を
-            //
-            //   deltaP ~= mass * correction / dt
-            //
-            // とみなし、Sphere側にはその反作用 -deltaP を蓄積します。
-            //
-            // これは厳密なContact Jacobianによる双方向Solverではありません。
-            // 同じParticleが複数iterationで押し出される分も累積されるため、外部連成側でScaleを掛けて
-            // 安定性を調整し、本格連成ではRigid/Soft共通Constraintへ置換する想定です。
-            if (particle.InverseMass > math::Epsilon)
+            if (constraintValue >= 0.0f && lambda <= 0.0f)
             {
-                const float particleMass = 1.0f / particle.InverseMass;
-                const math::Vec3 particleImpulse =
-                    correction * (particleMass / deltaTime);
+                continue;
+            }
 
-                collider.AccumulatedReactionImpulse -= particleImpulse;
+            const float denominator = particle.InverseMass + alphaTilde;
+            if (denominator <= math::Epsilon)
+            {
+                continue;
+            }
 
+            const float unconstrainedDeltaLambda =
+                (-constraintValue - alphaTilde * lambda) / denominator;
+
+            const float oldLambda = lambda;
+            const float newLambda = std::max(0.0f, oldLambda + unconstrainedDeltaLambda);
+            const float appliedDeltaLambda = newLambda - oldLambda;
+            lambda = newLambda;
+
+            if (std::abs(appliedDeltaLambda) <= math::Epsilon)
+            {
+                continue;
+            }
+
+            // gradient C = normal なので、Particle側Position補正は
+            //   deltaX = inverseMass * normal * DeltaLambda
+            // です。硬いConstraint(compliance=0)なら初回反復でほぼSphere表面まで戻りますが、
+            // Lambdaとして解くことでCompliance導入と反作用計算を同じ式へ統一できます。
+            particle.Position +=
+                normal * (particle.InverseMass * appliedDeltaLambda);
+
+            // ====================================================================
+            // XPBD Lambda -> Soft/Rigid reaction impulse
+            // ====================================================================
+            // XPBD LambdaはPosition Constraintで蓄積される量で、Force相当は lambda / dt^2、
+            // 1Step分Impulse相当は lambda / dt とみなせます。
+            // ここではiterationごとのDeltaLambdaを積み上げることで、最終Lambdaに対応した
+            // 反作用ImpulseをSphere側へ返します。
+            //
+            // Particleへは +normal 方向のConstraint Impulseが作用するため、Sphereへの反作用は
+            // -normal方向です。以前の「correction * mass / dt」方式よりSolverが実際に適用した
+            // Constraint量へ直接結び付いており、iteration回数による二重評価を抑えられます。
+            collider.AccumulatedReactionImpulse -=
+                normal * (appliedDeltaLambda / deltaTime);
+
+            if (newLambda > 0.0f)
+            {
                 // Thicknessを除いた実Sphere表面をContact Pointとして使用します。
                 // 後でRigidBodyへAddImpulseAtPoint()すると、中心から外れた接触は回転にも寄与します。
                 collider.ContactPointSum += collider.Center + normal * collider.Radius;
@@ -380,7 +423,7 @@ void SoftBodySolver::SolvePlaneCollisions()
             }
 
             // 条件を満たす最小距離だけNormal方向へ押し戻します。
-            // Planeは静的なので、Sphereと同様にParticle側だけを補正します。
+            // Planeは静的なので、現段階ではParticle側だけを補正します。
             const float correctionDistance = collisionThickness - signedDistance;
             particle.Position += collider.Normal * correctionDistance;
         }
