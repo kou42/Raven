@@ -8,6 +8,115 @@ namespace Raven
 {
 namespace ph
 {
+namespace
+{
+// ============================================================================
+// Dihedral Angle Evaluation
+// ============================================================================
+// p2-p3を共有Edge、p0/p1をそれぞれ隣接Triangleの反対側頂点として二面角を計算します。
+//
+// GradientはPosition Based Dynamicsで一般的に使われるDihedral Constraintの微分形です。
+// raw normalを|n|^2で割った量からd0..d3を構築し、現在のfold方向に応じて符号を合わせます。
+// 退化Triangleや長さ0のEdgeではGradientを定義できないためfalseを返します。
+bool EvaluateDihedralConstraint(
+    const math::Vec3& p0,
+    const math::Vec3& p1,
+    const math::Vec3& p2,
+    const math::Vec3& p3,
+    float& outAngle,
+    math::Vec3& outGradient0,
+    math::Vec3& outGradient1,
+    math::Vec3& outGradient2,
+    math::Vec3& outGradient3)
+{
+    const math::Vec3 edge = p3 - p2;
+    const float edgeLength = edge.Length();
+    if (edgeLength <= math::Epsilon)
+    {
+        return false;
+    }
+
+    const math::Vec3 rawNormal0 = math::Vec3::Cross(p2 - p0, p3 - p0);
+    const math::Vec3 rawNormal1 = math::Vec3::Cross(p3 - p1, p2 - p1);
+    const float normalLengthSq0 = rawNormal0.LengthSq();
+    const float normalLengthSq1 = rawNormal1.LengthSq();
+
+    if (normalLengthSq0 <= math::Epsilon * math::Epsilon
+        || normalLengthSq1 <= math::Epsilon * math::Epsilon)
+    {
+        return false;
+    }
+
+    const float inverseEdgeLength = 1.0f / edgeLength;
+
+    // このscaled normalは単位法線ではありません。
+    // Dihedral Angleの位置微分に必要な1/area相当のスケールを含みます。
+    const math::Vec3 scaledNormal0 = rawNormal0 / normalLengthSq0;
+    const math::Vec3 scaledNormal1 = rawNormal1 / normalLengthSq1;
+
+    math::Vec3 gradient0 = scaledNormal0 * edgeLength;
+    math::Vec3 gradient1 = scaledNormal1 * edgeLength;
+    math::Vec3 gradient2 =
+        scaledNormal0 * (math::Vec3::Dot(p0 - p3, edge) * inverseEdgeLength)
+        + scaledNormal1 * (math::Vec3::Dot(p1 - p3, edge) * inverseEdgeLength);
+    math::Vec3 gradient3 =
+        scaledNormal0 * (math::Vec3::Dot(p2 - p0, edge) * inverseEdgeLength)
+        + scaledNormal1 * (math::Vec3::Dot(p2 - p1, edge) * inverseEdgeLength);
+
+    math::Vec3 normal0 = rawNormal0;
+    math::Vec3 normal1 = rawNormal1;
+    normal0.Normalize();
+    normal1.Normalize();
+
+    const float normalDot = std::clamp(
+        math::Vec3::Dot(normal0, normal1),
+        -1.0f,
+        1.0f);
+    outAngle = std::acos(normalDot);
+
+    // acos(n0 dot n1)は角度の大きさだけを返します。
+    // Gradient側へfold方向の符号を与えることで、どちら側へ折れていてもRestAngleへ戻る補正になります。
+    const float orientationSign =
+        math::Vec3::Dot(math::Vec3::Cross(normal0, normal1), edge) > 0.0f
+        ? -1.0f
+        : 1.0f;
+
+    gradient0 *= orientationSign;
+    gradient1 *= orientationSign;
+    gradient2 *= orientationSign;
+    gradient3 *= orientationSign;
+
+    outGradient0 = gradient0;
+    outGradient1 = gradient1;
+    outGradient2 = gradient2;
+    outGradient3 = gradient3;
+    return true;
+}
+
+bool ComputeDihedralAngle(
+    const math::Vec3& p0,
+    const math::Vec3& p1,
+    const math::Vec3& p2,
+    const math::Vec3& p3,
+    float& outAngle)
+{
+    math::Vec3 gradient0{};
+    math::Vec3 gradient1{};
+    math::Vec3 gradient2{};
+    math::Vec3 gradient3{};
+
+    return EvaluateDihedralConstraint(
+        p0,
+        p1,
+        p2,
+        p3,
+        outAngle,
+        gradient0,
+        gradient1,
+        gradient2,
+        gradient3);
+}
+} // namespace
 
 uint32_t SoftBodySolver::AddParticle(const math::Vec3& position, float inverseMass)
 {
@@ -42,6 +151,50 @@ uint32_t SoftBodySolver::AddDistanceConstraint(uint32_t particleA, uint32_t part
 
     m_DistanceConstraints.push_back(constraint);
     return static_cast<uint32_t>(m_DistanceConstraints.size() - 1u);
+}
+
+uint32_t SoftBodySolver::AddDihedralConstraint(
+    uint32_t oppositeA,
+    uint32_t oppositeB,
+    uint32_t edgeA,
+    uint32_t edgeB,
+    float compliance)
+{
+    assert(oppositeA < m_Particles.size());
+    assert(oppositeB < m_Particles.size());
+    assert(edgeA < m_Particles.size());
+    assert(edgeB < m_Particles.size());
+
+    assert(oppositeA != oppositeB);
+    assert(oppositeA != edgeA);
+    assert(oppositeA != edgeB);
+    assert(oppositeB != edgeA);
+    assert(oppositeB != edgeB);
+    assert(edgeA != edgeB);
+
+    XPBDDihedralConstraint constraint{};
+    constraint.OppositeA = oppositeA;
+    constraint.OppositeB = oppositeB;
+    constraint.EdgeA = edgeA;
+    constraint.EdgeB = edgeB;
+    constraint.Compliance = std::max(0.0f, compliance);
+    constraint.Lambda = 0.0f;
+
+    // 初期Topologyの角度をRestAngleにします。
+    // 退化Triangleの場合は0を保持し、Solver側でもGradient評価時に安全にスキップします。
+    float restAngle = 0.0f;
+    if (ComputeDihedralAngle(
+            m_Particles[oppositeA].Position,
+            m_Particles[oppositeB].Position,
+            m_Particles[edgeA].Position,
+            m_Particles[edgeB].Position,
+            restAngle))
+    {
+        constraint.RestAngle = restAngle;
+    }
+
+    m_DihedralConstraints.push_back(constraint);
+    return static_cast<uint32_t>(m_DihedralConstraints.size() - 1u);
 }
 
 uint32_t SoftBodySolver::AddSphereCollider(const math::Vec3& center, float radius)
@@ -134,6 +287,7 @@ void SoftBodySolver::Clear()
     // Colliderも同時に消えるため、Deformer側はCloth再構築後に保持している設定を再登録します。
     m_Particles.clear();
     m_DistanceConstraints.clear();
+    m_DihedralConstraints.clear();
     m_SphereColliders.clear();
     m_PlaneColliders.clear();
 }
@@ -152,13 +306,14 @@ void SoftBodySolver::Step(float deltaTime)
     ResetCollisionConstraintState();
 
     // Position Based Dynamicsでは、予測位置に対してConstraintを複数回反復して収束させます。
-    // DistanceだけでなくCollisionも同じ反復へ含めることが重要です。
+    // Internal ConstraintとCollisionを同じ反復へ含めることが重要です。
     const uint32_t iterationCount = std::max(1u, m_Settings.SolverIterations);
     for (uint32_t iteration = 0u; iteration < iterationCount; ++iteration)
     {
-        // 内部Constraintを先に解き、その結果Collider内部へ戻ったParticleを同じ反復内で
-        // Sphere / Planeの片側XPBD Constraintで押し戻します。
+        // Stretch/Shearを解いた後にBendingを解き、最後にCollisionで外部形状から押し戻します。
+        // 次iterationではこの結果を再度全Constraintが見るため、互いの補正が収束していきます。
         SolveDistanceConstraints(deltaTime);
+        SolveDihedralConstraints(deltaTime);
         SolveSphereCollisions(deltaTime);
         SolvePlaneCollisions(deltaTime);
     }
@@ -194,6 +349,12 @@ void SoftBodySolver::ResetConstraintLambdas()
     {
         // Lambdaは同一Step内のiteration間では蓄積しますが、現在はStepを跨ぐWarm Startを行いません。
         // そのため各Step開始時に0へ戻します。
+        constraint.Lambda = 0.0f;
+    }
+
+    for (XPBDDihedralConstraint& constraint : m_DihedralConstraints)
+    {
+        // Dihedral Bendingも同じXPBDルールで、Lambdaは同一Step内だけ蓄積します。
         constraint.Lambda = 0.0f;
     }
 }
@@ -277,6 +438,90 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
         if (particleB.IsFixed() == false)
         {
             particleB.Position += normal * (particleB.InverseMass * deltaLambda);
+        }
+    }
+}
+
+void SoftBodySolver::SolveDihedralConstraints(float deltaTime)
+{
+    const float deltaTimeSq = deltaTime * deltaTime;
+
+    for (XPBDDihedralConstraint& constraint : m_DihedralConstraints)
+    {
+        assert(constraint.OppositeA < m_Particles.size());
+        assert(constraint.OppositeB < m_Particles.size());
+        assert(constraint.EdgeA < m_Particles.size());
+        assert(constraint.EdgeB < m_Particles.size());
+
+        SoftBodyParticle& particle0 = m_Particles[constraint.OppositeA];
+        SoftBodyParticle& particle1 = m_Particles[constraint.OppositeB];
+        SoftBodyParticle& particle2 = m_Particles[constraint.EdgeA];
+        SoftBodyParticle& particle3 = m_Particles[constraint.EdgeB];
+
+        float angle = 0.0f;
+        math::Vec3 gradient0{};
+        math::Vec3 gradient1{};
+        math::Vec3 gradient2{};
+        math::Vec3 gradient3{};
+
+        if (EvaluateDihedralConstraint(
+                particle0.Position,
+                particle1.Position,
+                particle2.Position,
+                particle3.Position,
+                angle,
+                gradient0,
+                gradient1,
+                gradient2,
+                gradient3) == false)
+        {
+            continue;
+        }
+
+        // ====================================================================
+        // XPBD Dihedral Angle Constraint
+        // ====================================================================
+        // C(x) = currentAngle - RestAngle = 0
+        //
+        // Distance Constraintと同じXPBD式ですが、Gradientが4Particleへ分配されます。
+        // denominatorには各Particleの inverseMass * |gradient|^2 を足し合わせます。
+        const float constraintValue = angle - constraint.RestAngle;
+        const float alphaTilde = std::max(0.0f, constraint.Compliance) / deltaTimeSq;
+
+        const float denominator =
+            particle0.InverseMass * gradient0.LengthSq()
+            + particle1.InverseMass * gradient1.LengthSq()
+            + particle2.InverseMass * gradient2.LengthSq()
+            + particle3.InverseMass * gradient3.LengthSq()
+            + alphaTilde;
+
+        if (denominator <= math::Epsilon)
+        {
+            continue;
+        }
+
+        const float deltaLambda =
+            (-constraintValue - alphaTilde * constraint.Lambda) / denominator;
+        constraint.Lambda += deltaLambda;
+
+        if (particle0.IsFixed() == false)
+        {
+            particle0.Position += gradient0 * (particle0.InverseMass * deltaLambda);
+        }
+
+        if (particle1.IsFixed() == false)
+        {
+            particle1.Position += gradient1 * (particle1.InverseMass * deltaLambda);
+        }
+
+        if (particle2.IsFixed() == false)
+        {
+            particle2.Position += gradient2 * (particle2.InverseMass * deltaLambda);
+        }
+
+        if (particle3.IsFixed() == false)
+        {
+            particle3.Position += gradient3 * (particle3.InverseMass * deltaLambda);
         }
     }
 }
