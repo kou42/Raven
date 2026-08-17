@@ -15,6 +15,9 @@ uint32_t SoftBodySolver::AddParticle(const math::Vec3& position, float inverseMa
     particle.Position = position;
     particle.PreviousPosition = position;
     particle.Velocity = math::Vec3{};
+
+    // 負の逆質量には物理的な意味がないため0へclampします。
+    // InverseMass == 0.0f は固定Particleとして扱われます。
     particle.InverseMass = std::max(0.0f, inverseMass);
 
     m_Particles.push_back(particle);
@@ -30,6 +33,9 @@ uint32_t SoftBodySolver::AddDistanceConstraint(uint32_t particleA, uint32_t part
     XPBDDistanceConstraint constraint{};
     constraint.ParticleA = particleA;
     constraint.ParticleB = particleB;
+
+    // Constraint登録時の距離を自然長として保存します。
+    // Cloth Builderは初期形状を作った直後にConstraintを張るため、この値が未変形時の長さになります。
     constraint.RestLength = (m_Particles[particleB].Position - m_Particles[particleA].Position).Length();
     constraint.Compliance = std::max(0.0f, compliance);
     constraint.Lambda = 0.0f;
@@ -71,6 +77,8 @@ uint32_t SoftBodySolver::AddPlaneCollider(const math::Vec3& normal, float offset
     collider.Normal = normal;
     collider.Offset = offset;
 
+    // Planeのsigned distance計算はNormalが単位ベクトルであることを前提にします。
+    // ゼロベクトルの場合は正規化できないため、+Y Planeを安全なfallbackとして使用します。
     if (collider.Normal.LengthSq() <= math::Epsilon * math::Epsilon)
     {
         collider.Normal = { 0.0f, 1.0f, 0.0f };
@@ -112,6 +120,8 @@ void SoftBodySolver::ClearPlaneColliders()
 
 void SoftBodySolver::Clear()
 {
+    // SolverのTopologyを完全に作り直すためのClearです。
+    // Colliderも同時に消えるため、Deformer側はCloth再構築後に保持している設定を再登録します。
     m_Particles.clear();
     m_DistanceConstraints.clear();
     m_SphereColliders.clear();
@@ -120,6 +130,8 @@ void SoftBodySolver::Clear()
 
 void SoftBodySolver::Step(float deltaTime)
 {
+    // XPBDでは alphaTilde = compliance / dt^2 を使用するため、dt <= 0では計算できません。
+    // Pauseや初期化時に0秒更新が来ても安全に終了します。
     if (deltaTime <= 0.0f)
     {
         return;
@@ -128,6 +140,8 @@ void SoftBodySolver::Step(float deltaTime)
     PredictPositions(deltaTime);
     ResetConstraintLambdas();
 
+    // Position Based Dynamicsでは、予測位置に対してConstraintを複数回反復して収束させます。
+    // DistanceだけでなくCollisionも同じ反復へ含めることが重要です。
     const uint32_t iterationCount = std::max(1u, m_Settings.SolverIterations);
     for (uint32_t iteration = 0u; iteration < iterationCount; ++iteration)
     {
@@ -145,14 +159,19 @@ void SoftBodySolver::PredictPositions(float deltaTime)
 {
     for (SoftBodyParticle& particle : m_Particles)
     {
+        // PreviousPositionには「今回のStep開始時のPosition」を保存します。
+        // Constraint補正後の最終Positionとの差からVelocityを再構築することで、Constraintによって
+        // 生じた移動量も次フレームの運動へ反映できます。
         particle.PreviousPosition = particle.Position;
 
         if (particle.IsFixed())
         {
+            // 固定点は外力でも移動させず、Velocityも残さないよう0へ戻します。
             particle.Velocity = math::Vec3{};
             continue;
         }
 
+        // Semi-implicit Eulerに近い順序で、先にVelocityへ重力を加えてからPositionを予測します。
         particle.Velocity += m_Gravity * deltaTime;
         particle.Position += particle.Velocity * deltaTime;
     }
@@ -162,6 +181,8 @@ void SoftBodySolver::ResetConstraintLambdas()
 {
     for (XPBDDistanceConstraint& constraint : m_DistanceConstraints)
     {
+        // Lambdaは同一Step内のiteration間では蓄積しますが、現在はStepを跨ぐWarm Startを行いません。
+        // そのため各Step開始時に0へ戻します。
         constraint.Lambda = 0.0f;
     }
 }
@@ -181,6 +202,7 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
         const float inverseMassSum = particleA.InverseMass + particleB.InverseMass;
         if (inverseMassSum <= 0.0f)
         {
+            // 両端が固定点ならPositionを補正できないため、このConstraintは解く必要がありません。
             continue;
         }
 
@@ -188,11 +210,22 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
         const float distance = delta.Length();
         if (distance <= math::Epsilon)
         {
+            // 2点がほぼ同位置の場合はConstraint方向を決められないためNaN防止でスキップします。
             continue;
         }
 
         const math::Vec3 normal = delta / distance;
+
+        // C(x) = |xB - xA| - RestLength
+        // C=0が制約を満たす状態です。正なら伸び、負なら縮みを表します。
         const float constraintValue = distance - constraint.RestLength;
+
+        // XPBDの中心式:
+        //   alphaTilde = compliance / dt^2
+        //   deltaLambda = (-C - alphaTilde * lambda)
+        //                 / (wA + wB + alphaTilde)
+        //
+        // compliance=0なら硬いPBD距離制約となり、値を大きくすると柔らかくなります。
         const float alphaTilde = constraint.Compliance / deltaTimeSq;
         const float denominator = inverseMassSum + alphaTilde;
 
@@ -205,6 +238,8 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
             (-constraintValue - alphaTilde * constraint.Lambda) / denominator;
         constraint.Lambda += deltaLambda;
 
+        // C = |xB-xA|-L のgradientは A側=-n, B側=+n です。
+        // deltaX = inverseMass * gradient(C) * deltaLambda を各Particleへ適用します。
         if (particleA.IsFixed() == false)
         {
             particleA.Position -= normal * (particleA.InverseMass * deltaLambda);
@@ -235,6 +270,7 @@ void SoftBodySolver::SolveSphereCollisions()
 
         for (const SoftBodySphereCollider& collider : m_SphereColliders)
         {
+            // Clothの厚み分だけSphereを膨らませた半径を接触面として扱います。
             const float targetRadius = collider.Radius + collisionThickness;
             if (targetRadius <= 0.0f)
             {
@@ -247,15 +283,22 @@ void SoftBodySolver::SolveSphereCollisions()
 
             if (distanceSq >= targetRadiusSq)
             {
+                // Sphere外側ならConstraintを満たしているため補正不要です。
                 continue;
             }
 
+            // Sphere中心とParticleが完全一致すると法線を決められません。
+            // その場合だけWorld Upをfallbackにし、0除算とNaNを防ぎます。
             math::Vec3 normal{ 0.0f, 1.0f, 0.0f };
             if (distanceSq > math::Epsilon * math::Epsilon)
             {
                 normal = centerToParticle / std::sqrt(distanceSq);
             }
 
+            // Collision Constraint:
+            //   C(x) = |x - center| - targetRadius >= 0
+            // 貫通時だけParticleを最短距離でSphere表面へ射影します。
+            // Colliderは静的なので、現段階ではParticle側だけを補正します。
             particle.Position = collider.Center + normal * targetRadius;
         }
     }
@@ -282,7 +325,7 @@ void SoftBodySolver::SolvePlaneCollisions()
             // Plane外側条件:
             //   dot(n, x) - offset >= thickness
             //
-            // 条件を満たさないParticleだけを法線方向へ最短距離で射影します。
+            // signedDistanceは単位Normalを前提としているため、Add/Set時にNormalを正規化しています。
             const float signedDistance =
                 math::Vec3::Dot(collider.Normal, particle.Position) - collider.Offset;
 
@@ -291,6 +334,8 @@ void SoftBodySolver::SolvePlaneCollisions()
                 continue;
             }
 
+            // 条件を満たす最小距離だけNormal方向へ押し戻します。
+            // Planeは静的なので、Sphereと同様にParticle側だけを補正します。
             const float correctionDistance = collisionThickness - signedDistance;
             particle.Position += collider.Normal * correctionDistance;
         }
@@ -309,6 +354,9 @@ void SoftBodySolver::UpdateVelocities(float deltaTime)
             continue;
         }
 
+        // XPBDではConstraintがPositionを直接補正します。
+        // 最終位置とStep開始時位置の差からVelocityを再構築することで、Constraint補正による移動も
+        // 次Stepへ正しく引き継ぎます。
         particle.Velocity = (particle.Position - particle.PreviousPosition) * inverseDeltaTime;
     }
 }
