@@ -77,8 +77,9 @@ SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
 {
     ph::SoftBodySolverSettings solverSettings{};
 
-    // Clothは多数のDistance Constraintが互いに影響するため、RigidBody Contactより多めの反復を使います。
-    // まず12回を目視確認用の基準値とし、後から品質設定へ外出しできる構成にしています。
+    // Clothは多数のInternal / Collision Constraintが互いに影響するため、
+    // RigidBody Contactより多めの反復を使います。まず12回を目視確認用の基準値とし、
+    // 後から品質設定へ外出しできる構成にしています。
     solverSettings.SolverIterations = 12u;
     solverSettings.CollisionThickness = 0.005f;
     m_Solver.SetSettings(solverSettings);
@@ -197,8 +198,10 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
     // Shear: Quadが菱形へ潰れる変形を抑える対角Constraint。
     clothSettings.ShearCompliance = 0.000002f;
 
-    // Bending: 1頂点飛ばしの距離制約による曲げ抵抗です。
-    // 現段階ではDihedral Angle Constraintではなく、既存Distance Solverを再利用する近似です。
+    // Bendingは隣接Triangle間の二面角を直接拘束するDihedralモデルを使用します。
+    // 旧1頂点飛ばしDistance BendingもBuilder側に比較用として残しているため、
+    // BendingModelをDistanceへ変更すれば挙動差を確認できます。
+    clothSettings.BendingModel = ph::SoftBodyClothBendingModel::Dihedral;
     clothSettings.BendingCompliance = 0.00002f;
     clothSettings.PinTopLeft = true;
     clothSettings.PinTopRight = true;
