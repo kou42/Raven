@@ -47,9 +47,11 @@ constexpr float kRigidSphereWorldRadius = 2.4f;
 constexpr float kRigidSphereMass = 4.0f;
 constexpr math::Vec3 kRigidSphereInitialVelocity{ 0.0f, 0.0f, -8.0f };
 
-// XPBD Particleのmass scaleとRigidBodyのkgはまだ共通単位系として校正していません。
-// 位置補正由来の近似Impulseをそのまま返すと過大反作用になり得るため、最初の連成では
-// ScaleとClampを明示して安定性を優先します。本格連成では共通Constraint Solverへ置換する予定です。
+// XPBD Sphere Collisionは現在DeltaLambda / dtから反作用Impulseを計算します。
+// 以前のPosition Correction由来の推定より反復回数への依存は小さくなりましたが、SoftBody Particleの
+// mass scaleとRigidBodyのkgはまだ共通単位系として校正していません。そのためデモ段階では
+// Reaction ScaleとClampを残し、異なる質量系を接続した際の過大反作用を防ぎます。
+// 将来Rigid/Soft共通Constraint Solverへ統合した段階で、この経験的Scaleを除去する想定です。
 constexpr float kSoftRigidReactionScale = 0.12f;
 constexpr float kMaxReactionImpulse = 18.0f;
 
@@ -258,9 +260,9 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
 
         if (softSphere.ContactCount > 0u)
         {
-            // Solver FeedbackはClothローカル長さ単位で計算されています。
-            // World速度/Impulse相当へ近付けるためuniform scaleを掛け、その後デモ用Reaction Scaleで
-            // Particle質量系とRigidBody kg系の未校正差を抑えます。
+            // AccumulatedReactionImpulseはXPBD Sphere ConstraintのDeltaLambda / dtから求めた
+            // Clothローカル単位のImpulse相当です。uniform scaleを掛けてWorld長さ単位へ変換した後、
+            // Particle質量系とRigidBody kg系の未校正差だけをReaction Scaleで抑えます。
             math::Vec3 worldReactionImpulse =
                 softSphere.AccumulatedReactionImpulse
                 * (kClothWorldScale * kSoftRigidReactionScale);
