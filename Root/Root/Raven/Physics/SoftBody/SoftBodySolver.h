@@ -28,6 +28,10 @@ struct SoftBodySolverSettings
     // 0.0fなら硬い片側Constraintとして働き、値を大きくするとCollider表面が柔らかくなります。
     // Distance Constraintと同じく alphaTilde = Compliance / dt^2 としてXPBD式へ入ります。
     float SphereCollisionCompliance = 0.0f;
+
+    // Plane Collision ConstraintのComplianceです。
+    // Sphereと同じXPBD式へ統一し、0.0fなら硬い床、値を増やすと沈み込みを許す柔らかい床になります。
+    float PlaneCollisionCompliance = 0.0f;
 };
 
 // ============================================================================
@@ -88,12 +92,26 @@ struct SoftBodySphereCollider
 // Static Plane Collision Constraint
 // ============================================================================
 // Plane式は dot(Normal, x) - Offset = 0 とします。
-// Normal側を外側とみなし、signed distanceがCollisionThickness未満のParticleを外側へ押し戻します。
+// 実際のCollision Constraintは共通Thicknessを加味して
+//
+//   C(x) = dot(Normal, x) - Offset - CollisionThickness >= 0
+//
+// として扱います。Sphereと同じく片側XPBD ConstraintとしてLambdaを0以上へclampするため、
+// PlaneはParticleをNormal方向へ押せますが反対側へ引っ張りません。
 // NormalはAdd/Set時に正規化し、ゼロベクトルが渡された場合は+Yを安全なfallbackとして使用します。
 struct SoftBodyPlaneCollider
 {
     math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
     float Offset = 0.0f;
+
+    // Particleごとの片側Constraint Lambdaです。
+    // 現段階ではStepを跨ぐWarm Startは行わず、各Step開始時に0へ戻します。
+    std::vector<float> ParticleLambdas;
+
+    void ResetStepConstraintState(std::size_t particleCount)
+    {
+        ParticleLambdas.assign(particleCount, 0.0f);
+    }
 };
 
 // ============================================================================
@@ -103,9 +121,9 @@ struct SoftBodyPlaneCollider
 //
 // 1Stepの基本順序:
 //   1. 重力を積分してParticleの予測位置を作る
-//   2. Distance / Sphere CollisionのLambdaをStep用に初期化する
+//   2. Distance / Sphere / Plane CollisionのLambdaをStep用に初期化する
 //   3. XPBD Distance Constraintを反復解決する
-//   4. 同じ反復内でSphere / Plane Collisionを解決する
+//   4. 同じ反復内でSphere / Plane Collisionを片側XPBD Constraintとして解決する
 //   5. 最終PositionとStep開始時PositionからVelocityを再構築する
 //
 // CollisionもConstraint反復の中へ含めることで、Distance ConstraintがParticleをCollider内部へ
@@ -161,7 +179,7 @@ private:
     // Distance ConstraintのLambdaをStep開始時に0へ戻します。
     void ResetConstraintLambdas();
 
-    // Sphere CollisionのParticle別Lambdaと、外部へ返す1Step分Feedbackを初期化します。
+    // Sphere / Plane CollisionのParticle別Lambdaと、Sphereが外部へ返す1Step分Feedbackを初期化します。
     void ResetCollisionConstraintState();
 
     // Structural / Shear / Bendingを含む全Distance ConstraintをXPBD式で解決します。
@@ -171,8 +189,8 @@ private:
     // DeltaLambdaからRigidBodyへ返す反作用Impulseも蓄積します。
     void SolveSphereCollisions(float deltaTime);
 
-    // Planeの許容側より内側へ入ったParticleをNormal方向へ射影します。
-    void SolvePlaneCollisions();
+    // Plane Collisionを C(x)=dot(n,x)-offset-thickness >= 0 の片側XPBD Constraintとして解決します。
+    void SolvePlaneCollisions(float deltaTime);
 
     // Constraint補正後のPosition差分からVelocityを再構築します。
     void UpdateVelocities(float deltaTime);
