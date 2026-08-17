@@ -8,11 +8,6 @@
 namespace Raven
 {
 
-// ============================================================================
-// SoftBodyClothDeformer
-// ============================================================================
-// Dynamic Gridの頂点とXPBD Cloth Particleを1対1で対応させるMeshDeformerです。
-// Scene側はMeshDeformationSystem::Update()を呼ぶだけで、物理更新とGPU同期まで進みます。
 class SoftBodyClothDeformer : public MeshDeformer
 {
 public:
@@ -20,11 +15,13 @@ public:
 
     void Update(Mesh& mesh, float deltaTime) override;
 
-    // Clothローカル空間上の静的Sphere Colliderを設定します。
-    // Scene Transformを使ったWorld-space連成は次段階で追加し、まずはSolver単体の
-    // Collision Constraintを確実に検証できるようローカル空間で完結させます。
     void SetCollisionSphere(const math::Vec3& center, float radius);
     void DisableCollisionSphere();
+
+    // Clothローカル空間のPlane Colliderです。
+    // Plane式は dot(normal, x) - offset = 0 とし、normal側をClothが存在できる外側とします。
+    void SetCollisionPlane(const math::Vec3& normal, float offset);
+    void DisableCollisionPlane();
 
     ph::SoftBodySolver& GetSolver() { return m_Solver; }
     const ph::SoftBodySolver& GetSolver() const { return m_Solver; }
@@ -32,6 +29,7 @@ public:
 private:
     bool InitializeFromMesh(Mesh& mesh);
     void ApplyCollisionSphereToSolver();
+    void ApplyCollisionPlaneToSolver();
 
 private:
     uint32_t m_Rows = 0u;
@@ -42,6 +40,11 @@ private:
     math::Vec3 m_CollisionSphereCenter{};
     float m_CollisionSphereRadius = 0.0f;
     uint32_t m_CollisionSphereIndex = 0u;
+
+    bool m_CollisionPlaneEnabled = false;
+    math::Vec3 m_CollisionPlaneNormal{ 0.0f, 1.0f, 0.0f };
+    float m_CollisionPlaneOffset = 0.0f;
+    uint32_t m_CollisionPlaneIndex = 0u;
 
     ph::SoftBodySolver m_Solver;
     ph::SoftBodyCloth m_Cloth;
