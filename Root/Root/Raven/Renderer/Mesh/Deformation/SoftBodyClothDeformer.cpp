@@ -8,6 +8,59 @@
 
 namespace Raven
 {
+namespace
+{
+void RecalculateClothNormals(
+    std::vector<MeshVertex>& vertices,
+    const std::vector<uint32_t>& indices)
+{
+    for (MeshVertex& vertex : vertices)
+    {
+        vertex.Normal = math::Vec3{};
+    }
+
+    for (size_t index = 0u; index + 2u < indices.size(); index += 3u)
+    {
+        const uint32_t indexA = indices[index];
+        const uint32_t indexB = indices[index + 1u];
+        const uint32_t indexC = indices[index + 2u];
+
+        if (indexA >= vertices.size()
+            || indexB >= vertices.size()
+            || indexC >= vertices.size())
+        {
+            continue;
+        }
+
+        const math::Vec3 edgeAB = vertices[indexB].Position - vertices[indexA].Position;
+        const math::Vec3 edgeAC = vertices[indexC].Position - vertices[indexA].Position;
+        const math::Vec3 faceNormal = math::Vec3::Cross(edgeAB, edgeAC);
+
+        if (faceNormal.LengthSq() <= math::Epsilon * math::Epsilon)
+        {
+            continue;
+        }
+
+        // 面法線を正規化せず加算することで、面積の大きいTriangleほど強く寄与する
+        // area-weighted vertex normalになります。
+        vertices[indexA].Normal += faceNormal;
+        vertices[indexB].Normal += faceNormal;
+        vertices[indexC].Normal += faceNormal;
+    }
+
+    for (MeshVertex& vertex : vertices)
+    {
+        if (vertex.Normal.LengthSq() <= math::Epsilon * math::Epsilon)
+        {
+            // ClothはXY平面を基準に生成するため、退化時の安全なfallbackを+Zにします。
+            vertex.Normal = { 0.0f, 0.0f, 1.0f };
+            continue;
+        }
+
+        vertex.Normal.Normalize();
+    }
+}
+} // namespace
 
 SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
     : m_Rows(rows),
@@ -18,8 +71,6 @@ SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
     solverSettings.CollisionThickness = 0.005f;
     m_Solver.SetSettings(solverSettings);
 
-    // 最初の目視確認用に、Cloth中央より少し下へ静的Sphereを置きます。
-    // Scene側からSetCollisionSphere()を呼べば任意の位置・半径へ差し替えられます。
     SetCollisionSphere({ 0.0f, -0.12f, 0.0f }, 0.20f);
 }
 
@@ -77,9 +128,6 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
         return false;
     }
 
-    // DynamicGridはXZ平面ですが、ClothはXY平面に立てて初期化します。
-    // Gridのrow-major順序はCloth Builderと一致するため、頂点IndexとParticleIndexを
-    // そのまま対応付けられます。
     ph::SoftBodyClothSettings clothSettings{};
     clothSettings.Rows = m_Rows;
     clothSettings.Columns = m_Columns;
@@ -88,6 +136,7 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
     clothSettings.InverseMass = 1.0f;
     clothSettings.StructuralCompliance = 0.000001f;
     clothSettings.ShearCompliance = 0.000002f;
+    clothSettings.BendingCompliance = 0.00002f;
     clothSettings.PinTopLeft = true;
     clothSettings.PinTopRight = true;
 
@@ -95,7 +144,6 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
     m_Cloth = ph::SoftBodyClothBuilder::Build(m_Solver, clothSettings);
     m_Initialized = true;
 
-    // Solver::Clear()でColliderも消えるため、Cloth構築後に現在の設定を再登録します。
     ApplyCollisionSphereToSolver();
     return true;
 }
@@ -136,6 +184,9 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
 
         deformedVertices[vertexIndex].Position = particles[particleIndex].Position;
     }
+
+    // Cloth変形後は生成時Normalが無効になるため、Fixed TopologyのIndexから毎フレーム再構築します。
+    RecalculateClothNormals(deformedVertices, geometry->GetIndices());
 
     if (geometry->SetVertices(std::move(deformedVertices)) == false)
     {
