@@ -14,6 +14,15 @@
 
 namespace Raven
 {
+namespace
+{
+constexpr uint32_t kClothRows = 24u;
+constexpr uint32_t kClothColumns = 24u;
+constexpr math::Vec3 kCollisionSphereCenter{ 0.0f, -0.12f, 0.0f };
+constexpr float kCollisionSphereRadius = 0.20f;
+constexpr math::Vec3 kClothWorldPosition{ 0.0f, 18.0f, -10.0f };
+constexpr float kClothWorldScale = 22.0f;
+} // namespace
 
 void SoftBodyClothDemoLayer::OnAttach()
 {
@@ -23,17 +32,15 @@ void SoftBodyClothDemoLayer::OnAttach()
         return;
     }
 
-    // 24x24セル = 25x25 Particle。
-    // 最初の検証として十分滑らかで、Constraint数もまだ軽量な規模です。
-    constexpr uint32_t clothRows = 24u;
-    constexpr uint32_t clothColumns = 24u;
-
     m_ClothMesh = PrimitiveMeshFactory::CreateDynamicGrid(
-        static_cast<int>(clothRows),
-        static_cast<int>(clothColumns));
+        static_cast<int>(kClothRows),
+        static_cast<int>(kClothColumns));
+    m_CollisionSphereMesh = PrimitiveMeshFactory::CreateSphere();
 
-    if (m_ClothMesh == nullptr)
+    if (m_ClothMesh == nullptr || m_CollisionSphereMesh == nullptr)
     {
+        m_ClothMesh.reset();
+        m_CollisionSphereMesh.reset();
         return;
     }
 
@@ -46,6 +53,7 @@ void SoftBodyClothDemoLayer::OnAttach()
     if (shader == nullptr)
     {
         m_ClothMesh.reset();
+        m_CollisionSphereMesh.reset();
         return;
     }
 
@@ -61,16 +69,12 @@ void SoftBodyClothDemoLayer::OnAttach()
     pipelineSpecification.Blend = true;
 
     m_ClothMaterial = CreateRef<Material>(Pipeline::Create(pipelineSpecification));
-    m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.35f, 0.65f, 1.0f });
     m_ClothMaterial->SetUniform("u_Alpha", 1.0f);
 
-    // Scene側にはDeformation Componentだけを登録します。
-    // SceneGame::OnUpdateGame()内のMeshDeformationSystem::Update()がこのEntityも自動走査するため、
-    // SoftBody専用Update呼び出しをSceneGameへ追加する必要はありません。
     m_ClothEntity = scene->CreateEntity("XPBD Cloth Demo");
 
-    auto clothDeformer = CreateScope<SoftBodyClothDeformer>(clothRows, clothColumns);
-    clothDeformer->SetCollisionSphere({ 0.0f, -0.12f, 0.0f }, 0.20f);
+    auto clothDeformer = CreateScope<SoftBodyClothDeformer>(kClothRows, kClothColumns);
+    clothDeformer->SetCollisionSphere(kCollisionSphereCenter, kCollisionSphereRadius);
 
     auto deformationInstance = std::make_shared<MeshDeformationInstance>(
         m_ClothMesh,
@@ -92,12 +96,15 @@ void SoftBodyClothDemoLayer::OnDetach()
 
     m_ClothEntity = {};
     m_ClothMaterial.reset();
+    m_CollisionSphereMesh.reset();
     m_ClothMesh.reset();
 }
 
 void SoftBodyClothDemoLayer::OnRender()
 {
-    if (m_ClothMesh == nullptr || m_ClothMaterial == nullptr)
+    if (m_ClothMesh == nullptr
+        || m_CollisionSphereMesh == nullptr
+        || m_ClothMaterial == nullptr)
     {
         return;
     }
@@ -119,16 +126,33 @@ void SoftBodyClothDemoLayer::OnRender()
         return;
     }
 
-    // SoftBody SolverはClothローカル空間[-0.5,+0.5]で解いています。
-    // 描画時だけWorldへ拡大・移動することでSolver数値スケールを安定したまま保ちます。
-    math::Mat4 transform = math::Mat4::Identity();
-    transform = math::Translate(transform, { 0.0f, 18.0f, -10.0f });
-    transform = math::Scale(transform, { 22.0f, 22.0f, 22.0f });
+    math::Mat4 clothTransform = math::Mat4::Identity();
+    clothTransform = math::Translate(clothTransform, kClothWorldPosition);
+    clothTransform = math::Scale(
+        clothTransform,
+        { kClothWorldScale, kClothWorldScale, kClothWorldScale });
 
-    // SceneGame本体の描画後に追加Passとして描画します。
-    // Clearは行わないため、既存SceneのColor/Depthを保持したままClothだけを重ねます。
+    // PrimitiveMeshFactory::CreateSphere()は半径0.5なので、直径2RをScaleへ設定します。
+    const math::Vec3 sphereWorldCenter =
+        kClothWorldPosition + kCollisionSphereCenter * kClothWorldScale;
+    const float sphereWorldDiameter =
+        kCollisionSphereRadius * 2.0f * kClothWorldScale;
+
+    math::Mat4 sphereTransform = math::Mat4::Identity();
+    sphereTransform = math::Translate(sphereTransform, sphereWorldCenter);
+    sphereTransform = math::Scale(
+        sphereTransform,
+        { sphereWorldDiameter, sphereWorldDiameter, sphereWorldDiameter });
+
+    // SceneGame本体のColor/Depthを保持したまま追加Passとして描画します。
     Renderer::BeginScene(*camera);
-    Renderer::Draw(m_ClothMesh, m_ClothMaterial, transform);
+
+    m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.95f, 0.45f, 0.20f });
+    Renderer::Draw(m_CollisionSphereMesh, m_ClothMaterial, sphereTransform);
+
+    m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.35f, 0.65f, 1.0f });
+    Renderer::Draw(m_ClothMesh, m_ClothMaterial, clothTransform);
+
     Renderer::EndScene();
 }
 
