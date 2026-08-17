@@ -25,15 +25,41 @@ struct SoftBodySolverSettings
 };
 
 // ============================================================================
-// Static Sphere Collision Constraint
+// Static / Kinematic Sphere Collision Constraint
 // ============================================================================
-// SoftBody側で扱う静的Sphere Colliderです。
-// 現段階ではCollider自身は動かず、貫通したParticleだけをSphere表面の外側へ射影します。
-// RigidBodyとの双方向Impulse連成は、この一方向Constraintが安定した後に追加する想定です。
+// SoftBody側で扱うSphere Colliderです。
+// Solver自身はSphereを移動させず、外部側がSetSphereCollider()でCenter/Radiusを更新します。
+// そのため静的Sphereだけでなく、RigidBody Transformを毎フレーム同期したKinematicな境界としても使えます。
+//
+// AccumulatedReactionImpulse / ContactPointSum / ContactCount は1Stepだけ有効なTransient情報です。
+// ParticleをSphere表面へ射影した位置補正から「Particleへ与えた運動量変化」を近似し、その反作用を
+// 外部RigidBodyへ返すために蓄積します。厳密なContact Jacobian共有ではなく、Soft/Rigid連成の
+// 最初の橋渡しとして使用します。
 struct SoftBodySphereCollider
 {
     math::Vec3 Center{};
     float Radius = 0.5f;
+
+    math::Vec3 AccumulatedReactionImpulse{};
+    math::Vec3 ContactPointSum{};
+    uint32_t ContactCount = 0u;
+
+    void ResetStepFeedback()
+    {
+        AccumulatedReactionImpulse = math::Vec3{};
+        ContactPointSum = math::Vec3{};
+        ContactCount = 0u;
+    }
+
+    math::Vec3 GetAverageContactPoint() const
+    {
+        if (ContactCount == 0u)
+        {
+            return Center;
+        }
+
+        return ContactPointSum / static_cast<float>(ContactCount);
+    }
 };
 
 // ============================================================================
@@ -79,7 +105,7 @@ public:
     // compliance == 0.0f に近いほど硬く、値を大きくすると柔らかい制約になります。
     uint32_t AddDistanceConstraint(uint32_t particleA, uint32_t particleB, float compliance = 0.0f);
 
-    // 静的Sphere Colliderを追加します。
+    // Sphere Colliderを追加します。
     // 戻り値はCollider Indexで、SetSphereCollider()による後続更新に利用できます。
     uint32_t AddSphereCollider(const math::Vec3& center, float radius);
     void SetSphereCollider(uint32_t colliderIndex, const math::Vec3& center, float radius);
@@ -112,11 +138,14 @@ private:
     // Lambdaは同一Step内のSolver iteration間では蓄積しますが、現在はStepを跨いでWarm Startしません。
     void ResetConstraintLambdas();
 
+    // Sphere反作用など、1Stepだけ有効なCollision Feedbackをゼロへ戻します。
+    void ResetCollisionFeedback();
+
     // Structural / Shear / Bendingを含む全Distance ConstraintをXPBD式で解決します。
     void SolveDistanceConstraints(float deltaTime);
 
-    // 静的Sphere内部へ入ったParticleをSphere表面外へ射影します。
-    void SolveSphereCollisions();
+    // Sphere内部へ入ったParticleをSphere表面外へ射影し、反作用Impulseの近似値も蓄積します。
+    void SolveSphereCollisions(float deltaTime);
 
     // Planeの許容側より内側へ入ったParticleをNormal方向へ射影します。
     void SolvePlaneCollisions();
