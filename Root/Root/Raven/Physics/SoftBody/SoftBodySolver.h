@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -22,6 +23,11 @@ struct SoftBodySolverSettings
     // Clothは数学的には厚み0の面なので、完全にCollider表面へ配置すると浮動小数点誤差により
     // 次の反復で再び内部判定されやすくなります。小さな余白を持たせて接触を安定させます。
     float CollisionThickness = 0.005f;
+
+    // Sphere Collision ConstraintのComplianceです。
+    // 0.0fなら硬い片側Constraintとして働き、値を大きくするとCollider表面が柔らかくなります。
+    // Distance Constraintと同じく alphaTilde = Compliance / dt^2 としてXPBD式へ入ります。
+    float SphereCollisionCompliance = 0.0f;
 };
 
 // ============================================================================
@@ -31,18 +37,34 @@ struct SoftBodySolverSettings
 // Solver自身はSphereを移動させず、外部側がSetSphereCollider()でCenter/Radiusを更新します。
 // そのため静的Sphereだけでなく、RigidBody Transformを毎フレーム同期したKinematicな境界としても使えます。
 //
+// ParticleLambdasは「Particle × Sphere」の片側XPBD Constraintが同一Step内で蓄積するLambdaです。
+// Distance Constraintと同じくStep開始時に0へ戻し、Solver iteration間だけ保持します。
+// Collisionは C(x) >= 0 の不等式なのでLambdaは常に0以上へclampし、接触が離れる方向へ動いた場合は
+// Lambdaを減少させて拘束を解放できるようにします。
+//
 // AccumulatedReactionImpulse / ContactPointSum / ContactCount は1Stepだけ有効なTransient情報です。
-// ParticleをSphere表面へ射影した位置補正から「Particleへ与えた運動量変化」を近似し、その反作用を
-// 外部RigidBodyへ返すために蓄積します。厳密なContact Jacobian共有ではなく、Soft/Rigid連成の
-// 最初の橋渡しとして使用します。
+// XPBDで得たDeltaLambdaから
+//
+//   reaction impulse ~= -normal * DeltaLambda / dt
+//
+// としてSphere側の反作用を蓄積します。以前の「位置補正量からImpulseを逆算する方式」と異なり、
+// Constraint Solverが実際に適用したLambda増減を直接利用するため、反復回数による過大評価を抑えられます。
 struct SoftBodySphereCollider
 {
     math::Vec3 Center{};
     float Radius = 0.5f;
 
+    std::vector<float> ParticleLambdas;
+
     math::Vec3 AccumulatedReactionImpulse{};
     math::Vec3 ContactPointSum{};
     uint32_t ContactCount = 0u;
+
+    void ResetStepConstraintState(std::size_t particleCount)
+    {
+        ParticleLambdas.assign(particleCount, 0.0f);
+        ResetStepFeedback();
+    }
 
     void ResetStepFeedback()
     {
@@ -81,12 +103,13 @@ struct SoftBodyPlaneCollider
 //
 // 1Stepの基本順序:
 //   1. 重力を積分してParticleの予測位置を作る
-//   2. XPBD Distance Constraintを反復解決する
-//   3. 同じ反復内でSphere / Plane Collisionを解決する
-//   4. 最終PositionとStep開始時PositionからVelocityを再構築する
+//   2. Distance / Sphere CollisionのLambdaをStep用に初期化する
+//   3. XPBD Distance Constraintを反復解決する
+//   4. 同じ反復内でSphere / Plane Collisionを解決する
+//   5. 最終PositionとStep開始時PositionからVelocityを再構築する
 //
 // CollisionもConstraint反復の中へ含めることで、Distance ConstraintがParticleをCollider内部へ
-// 戻した場合でも同一Step内で再度押し出され、ClothがCollider形状へ沿って収束しやすくなります。
+// 戻した場合でも同一Step内で再度解決され、ClothがCollider形状へ沿って収束しやすくなります。
 class SoftBodySolver
 {
 public:
@@ -135,16 +158,17 @@ private:
     // Step開始時の位置をPreviousPositionへ保存し、重力とVelocityから予測位置を作ります。
     void PredictPositions(float deltaTime);
 
-    // Lambdaは同一Step内のSolver iteration間では蓄積しますが、現在はStepを跨いでWarm Startしません。
+    // Distance ConstraintのLambdaをStep開始時に0へ戻します。
     void ResetConstraintLambdas();
 
-    // Sphere反作用など、1Stepだけ有効なCollision Feedbackをゼロへ戻します。
-    void ResetCollisionFeedback();
+    // Sphere CollisionのParticle別Lambdaと、外部へ返す1Step分Feedbackを初期化します。
+    void ResetCollisionConstraintState();
 
     // Structural / Shear / Bendingを含む全Distance ConstraintをXPBD式で解決します。
     void SolveDistanceConstraints(float deltaTime);
 
-    // Sphere内部へ入ったParticleをSphere表面外へ射影し、反作用Impulseの近似値も蓄積します。
+    // Sphere Collisionを C(x)=|x-center|-radius >= 0 の片側XPBD Constraintとして解決します。
+    // DeltaLambdaからRigidBodyへ返す反作用Impulseも蓄積します。
     void SolveSphereCollisions(float deltaTime);
 
     // Planeの許容側より内側へ入ったParticleをNormal方向へ射影します。
