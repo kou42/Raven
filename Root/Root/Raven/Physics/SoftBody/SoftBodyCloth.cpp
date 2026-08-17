@@ -94,6 +94,42 @@ SoftBodyCloth SoftBodyClothBuilder::Build(SoftBodySolver& solver, const SoftBody
         }
     }
 
+    // ========================================================================
+    // Distance-based Bending Constraint
+    // ========================================================================
+    // 1頂点を挟んだParticle同士を接続します。
+    //
+    //   o---o---o
+    //   ^       ^
+    //   +-------+  bending distance
+    //
+    // Structural Constraintだけでは隣接辺の長さしか制御しないため、格子は辺長を保ったまま
+    // 隣接頂点を蝶番のように大きく折り畳めます。2セル分の距離を緩く拘束することで、
+    // その自由度へ抵抗を与え、布らしい滑らかな曲がりを作ります。
+    //
+    // BendingComplianceが大きいほど柔らかく、小さいほど板に近い曲げ抵抗になります。
+    for (uint32_t row = 0u; row < vertexRows; ++row)
+    {
+        for (uint32_t column = 0u; column < vertexColumns; ++column)
+        {
+            if (column + 2u < vertexColumns)
+            {
+                solver.AddDistanceConstraint(
+                    cloth.GetParticleIndex(row, column),
+                    cloth.GetParticleIndex(row, column + 2u),
+                    settings.BendingCompliance);
+            }
+
+            if (row + 2u < vertexRows)
+            {
+                solver.AddDistanceConstraint(
+                    cloth.GetParticleIndex(row, column),
+                    cloth.GetParticleIndex(row + 2u, column),
+                    settings.BendingCompliance);
+            }
+        }
+    }
+
     return cloth;
 }
 
