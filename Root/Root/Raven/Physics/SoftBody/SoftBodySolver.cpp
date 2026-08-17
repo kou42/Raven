@@ -49,6 +49,7 @@ uint32_t SoftBodySolver::AddSphereCollider(const math::Vec3& center, float radiu
     SoftBodySphereCollider collider{};
     collider.Center = center;
     collider.Radius = std::max(0.0f, radius);
+    collider.ResetStepFeedback();
 
     m_SphereColliders.push_back(collider);
     return static_cast<uint32_t>(m_SphereColliders.size() - 1u);
@@ -61,6 +62,8 @@ void SoftBodySolver::SetSphereCollider(uint32_t colliderIndex, const math::Vec3&
         return;
     }
 
+    // Position/Radiusだけを更新し、前StepのFeedbackは次のStep冒頭でまとめてResetします。
+    // 外部側がStep直後にFeedbackを読む時間を確保するため、Set時には消さないことが重要です。
     SoftBodySphereCollider& collider = m_SphereColliders[colliderIndex];
     collider.Center = center;
     collider.Radius = std::max(0.0f, radius);
@@ -139,6 +142,7 @@ void SoftBodySolver::Step(float deltaTime)
 
     PredictPositions(deltaTime);
     ResetConstraintLambdas();
+    ResetCollisionFeedback();
 
     // Position Based Dynamicsでは、予測位置に対してConstraintを複数回反復して収束させます。
     // DistanceだけでなくCollisionも同じ反復へ含めることが重要です。
@@ -148,7 +152,7 @@ void SoftBodySolver::Step(float deltaTime)
         // 内部Constraintを先に解き、その結果Collider内部へ戻ったParticleを同じ反復内で
         // Sphere / Planeの外側へ押し出します。
         SolveDistanceConstraints(deltaTime);
-        SolveSphereCollisions();
+        SolveSphereCollisions(deltaTime);
         SolvePlaneCollisions();
     }
 
@@ -184,6 +188,16 @@ void SoftBodySolver::ResetConstraintLambdas()
         // Lambdaは同一Step内のiteration間では蓄積しますが、現在はStepを跨ぐWarm Startを行いません。
         // そのため各Step開始時に0へ戻します。
         constraint.Lambda = 0.0f;
+    }
+}
+
+void SoftBodySolver::ResetCollisionFeedback()
+{
+    for (SoftBodySphereCollider& collider : m_SphereColliders)
+    {
+        // Feedbackは「直前に完了したStep」の結果として外部側から読み取られます。
+        // 新しいStepへ入る直前にResetすることで、Step間のImpulse蓄積を防ぎます。
+        collider.ResetStepFeedback();
     }
 }
 
@@ -252,7 +266,7 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
     }
 }
 
-void SoftBodySolver::SolveSphereCollisions()
+void SoftBodySolver::SolveSphereCollisions(float deltaTime)
 {
     if (m_SphereColliders.empty())
     {
@@ -268,7 +282,7 @@ void SoftBodySolver::SolveSphereCollisions()
             continue;
         }
 
-        for (const SoftBodySphereCollider& collider : m_SphereColliders)
+        for (SoftBodySphereCollider& collider : m_SphereColliders)
         {
             // Clothの厚み分だけSphereを膨らませた半径を接触面として扱います。
             const float targetRadius = collider.Radius + collisionThickness;
@@ -295,11 +309,42 @@ void SoftBodySolver::SolveSphereCollisions()
                 normal = centerToParticle / std::sqrt(distanceSq);
             }
 
+            const math::Vec3 oldPosition = particle.Position;
+            const math::Vec3 correctedPosition = collider.Center + normal * targetRadius;
+            const math::Vec3 correction = correctedPosition - oldPosition;
+
             // Collision Constraint:
             //   C(x) = |x - center| - targetRadius >= 0
             // 貫通時だけParticleを最短距離でSphere表面へ射影します。
-            // Colliderは静的なので、現段階ではParticle側だけを補正します。
-            particle.Position = collider.Center + normal * targetRadius;
+            particle.Position = correctedPosition;
+
+            // ====================================================================
+            // Approximate Soft -> Rigid reaction impulse
+            // ====================================================================
+            // Position Based SolverはImpulseを直接解いていないため、位置補正から近似します。
+            // ParticleのConstraint補正による速度変化は概ね correction / dt です。
+            // mass = 1 / inverseMass なのでParticleに与えた運動量変化を
+            //
+            //   deltaP ~= mass * correction / dt
+            //
+            // とみなし、Sphere側にはその反作用 -deltaP を蓄積します。
+            //
+            // これは厳密なContact Jacobianによる双方向Solverではありません。
+            // 同じParticleが複数iterationで押し出される分も累積されるため、外部連成側でScaleを掛けて
+            // 安定性を調整し、本格連成ではRigid/Soft共通Constraintへ置換する想定です。
+            if (particle.InverseMass > math::Epsilon)
+            {
+                const float particleMass = 1.0f / particle.InverseMass;
+                const math::Vec3 particleImpulse =
+                    correction * (particleMass / deltaTime);
+
+                collider.AccumulatedReactionImpulse -= particleImpulse;
+
+                // Thicknessを除いた実Sphere表面をContact Pointとして使用します。
+                // 後でRigidBodyへAddImpulseAtPoint()すると、中心から外れた接触は回転にも寄与します。
+                collider.ContactPointSum += collider.Center + normal * collider.Radius;
+                ++collider.ContactCount;
+            }
         }
     }
 }
