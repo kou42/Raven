@@ -37,10 +37,38 @@ uint32_t SoftBodySolver::AddDistanceConstraint(uint32_t particleA, uint32_t part
     return static_cast<uint32_t>(m_DistanceConstraints.size() - 1u);
 }
 
+uint32_t SoftBodySolver::AddSphereCollider(const math::Vec3& center, float radius)
+{
+    SoftBodySphereCollider collider{};
+    collider.Center = center;
+    collider.Radius = std::max(0.0f, radius);
+
+    m_SphereColliders.push_back(collider);
+    return static_cast<uint32_t>(m_SphereColliders.size() - 1u);
+}
+
+void SoftBodySolver::SetSphereCollider(uint32_t colliderIndex, const math::Vec3& center, float radius)
+{
+    if (colliderIndex >= m_SphereColliders.size())
+    {
+        return;
+    }
+
+    SoftBodySphereCollider& collider = m_SphereColliders[colliderIndex];
+    collider.Center = center;
+    collider.Radius = std::max(0.0f, radius);
+}
+
+void SoftBodySolver::ClearSphereColliders()
+{
+    m_SphereColliders.clear();
+}
+
 void SoftBodySolver::Clear()
 {
     m_Particles.clear();
     m_DistanceConstraints.clear();
+    m_SphereColliders.clear();
 }
 
 void SoftBodySolver::Step(float deltaTime)
@@ -56,11 +84,14 @@ void SoftBodySolver::Step(float deltaTime)
     ResetConstraintLambdas();
 
     // Position Based Dynamicsでは、予測位置に対してConstraintを複数回解きます。
-    // ここでは最低1回は実行し、設定値0による意図しない無制約状態を防ぎます。
+    // DistanceだけでなくCollisionも同じ反復の中へ入れることが重要です。
+    // 距離制約がParticleをSphere内部へ戻しても、同じiterationで再度押し出されるため、
+    // 布全体が球面へ沿う形へ収束しやすくなります。
     const uint32_t iterationCount = std::max(1u, m_Settings.SolverIterations);
     for (uint32_t iteration = 0u; iteration < iterationCount; ++iteration)
     {
         SolveDistanceConstraints(deltaTime);
+        SolveSphereCollisions();
     }
 
     UpdateVelocities(deltaTime);
@@ -150,6 +181,56 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
         if (particleB.IsFixed() == false)
         {
             particleB.Position += normal * (particleB.InverseMass * deltaLambda);
+        }
+    }
+}
+
+void SoftBodySolver::SolveSphereCollisions()
+{
+    if (m_SphereColliders.empty())
+    {
+        return;
+    }
+
+    const float collisionThickness = std::max(0.0f, m_Settings.CollisionThickness);
+
+    for (SoftBodyParticle& particle : m_Particles)
+    {
+        if (particle.IsFixed())
+        {
+            continue;
+        }
+
+        for (const SoftBodySphereCollider& collider : m_SphereColliders)
+        {
+            const float targetRadius = collider.Radius + collisionThickness;
+            if (targetRadius <= 0.0f)
+            {
+                continue;
+            }
+
+            const math::Vec3 centerToParticle = particle.Position - collider.Center;
+            const float distanceSq = centerToParticle.LengthSq();
+            const float targetRadiusSq = targetRadius * targetRadius;
+
+            if (distanceSq >= targetRadiusSq)
+            {
+                continue;
+            }
+
+            // Sphere中心とParticleが完全一致すると法線を決められません。
+            // その場合だけWorld Upをフォールバックにし、NaNを発生させないようにします。
+            math::Vec3 normal{ 0.0f, 1.0f, 0.0f };
+            if (distanceSq > math::Epsilon * math::Epsilon)
+            {
+                normal = centerToParticle / std::sqrt(distanceSq);
+            }
+
+            // Collision Constraint:
+            //   C(x) = |x - center| - radius >= 0
+            // 貫通時だけPositionを最短距離で球面外へ射影します。
+            // 静的Colliderなので質量分配は不要で、Particle側だけを補正します。
+            particle.Position = collider.Center + normal * targetRadius;
         }
     }
 }
