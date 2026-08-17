@@ -1,5 +1,6 @@
 #include "Raven/Renderer/Mesh/Deformation/SoftBodyClothDeformer.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -14,7 +15,49 @@ SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
 {
     ph::SoftBodySolverSettings solverSettings{};
     solverSettings.SolverIterations = 12u;
+    solverSettings.CollisionThickness = 0.005f;
     m_Solver.SetSettings(solverSettings);
+
+    // 最初の目視確認用に、Cloth中央より少し下へ静的Sphereを置きます。
+    // Scene側からSetCollisionSphere()を呼べば任意の位置・半径へ差し替えられます。
+    SetCollisionSphere({ 0.0f, -0.12f, 0.0f }, 0.20f);
+}
+
+void SoftBodyClothDeformer::SetCollisionSphere(const math::Vec3& center, float radius)
+{
+    m_CollisionSphereEnabled = radius > 0.0f;
+    m_CollisionSphereCenter = center;
+    m_CollisionSphereRadius = std::max(0.0f, radius);
+
+    if (m_Initialized)
+    {
+        ApplyCollisionSphereToSolver();
+    }
+}
+
+void SoftBodyClothDeformer::DisableCollisionSphere()
+{
+    m_CollisionSphereEnabled = false;
+    m_CollisionSphereRadius = 0.0f;
+
+    if (m_Initialized)
+    {
+        m_Solver.ClearSphereColliders();
+    }
+}
+
+void SoftBodyClothDeformer::ApplyCollisionSphereToSolver()
+{
+    m_Solver.ClearSphereColliders();
+
+    if (m_CollisionSphereEnabled == false || m_CollisionSphereRadius <= 0.0f)
+    {
+        return;
+    }
+
+    m_CollisionSphereIndex = m_Solver.AddSphereCollider(
+        m_CollisionSphereCenter,
+        m_CollisionSphereRadius);
 }
 
 bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
@@ -51,6 +94,9 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
     m_Solver.Clear();
     m_Cloth = ph::SoftBodyClothBuilder::Build(m_Solver, clothSettings);
     m_Initialized = true;
+
+    // Solver::Clear()でColliderも消えるため、Cloth構築後に現在の設定を再登録します。
+    ApplyCollisionSphereToSolver();
     return true;
 }
 
