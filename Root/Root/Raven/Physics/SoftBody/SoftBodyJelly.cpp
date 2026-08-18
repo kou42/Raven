@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <unordered_set>
 
@@ -112,6 +113,7 @@ SoftBodyJelly SoftBodyJellyBuilder::Build(
     jelly.CellsX = settings.CellsX;
     jelly.CellsY = settings.CellsY;
     jelly.CellsZ = settings.CellsZ;
+    jelly.VelocityDamping = std::clamp(settings.VelocityDamping, 0.0f, 1.0f);
 
     const uint32_t vertexCountX = settings.CellsX + 1u;
     const uint32_t vertexCountY = settings.CellsY + 1u;
@@ -229,6 +231,55 @@ SoftBodyJelly SoftBodyJellyBuilder::Build(
     }
 
     return jelly;
+}
+
+void StepSoftBodyJelly(SoftBodySolver& solver, SoftBodyJelly& jelly, float deltaTime)
+{
+    if (deltaTime <= 0.0f)
+    {
+        return;
+    }
+
+    solver.StepWithVolumeConstraints(deltaTime, jelly.VolumeConstraints);
+
+    // ========================================================================
+    // Time-step Corrected Velocity Damping
+    // ========================================================================
+    // Velocity *= (1 - damping) を毎Stepそのまま掛けると、30Hzと120Hzで1秒後の減衰量が
+    // 大きく変わります。そこでVelocityDampingを「60Hzの1frameで失う割合」と解釈し、
+    //
+    //   retention = pow(1 - damping, deltaTime * 60)
+    //
+    // として時間刻みを補正します。
+    // damping=0ならretention=1、damping=1ならretention=0です。
+    const float damping = std::clamp(jelly.VelocityDamping, 0.0f, 1.0f);
+    float retention = 1.0f;
+    if (damping >= 1.0f)
+    {
+        retention = 0.0f;
+    }
+    else if (damping > 0.0f)
+    {
+        retention = std::pow(1.0f - damping, deltaTime * 60.0f);
+    }
+
+    std::vector<SoftBodyParticle>& particles = solver.GetParticles();
+    for (uint32_t particleIndex : jelly.ParticleIndices)
+    {
+        if (particleIndex >= particles.size())
+        {
+            continue;
+        }
+
+        SoftBodyParticle& particle = particles[particleIndex];
+        if (particle.IsFixed())
+        {
+            particle.Velocity = math::Vec3{};
+            continue;
+        }
+
+        particle.Velocity *= retention;
+    }
 }
 
 } // namespace ph
