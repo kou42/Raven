@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "Raven/Physics/SoftBody/SoftBodySelfCollision.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 
@@ -232,8 +233,32 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         return;
     }
 
-    // 物理側を先に進め、その最終Particle Positionを描画用Meshへ反映します。
+    // まず既存のXPBD StepでInternal Constraintと外部Collider Collisionを解きます。
     m_Solver.Step(deltaTime);
+
+    // ========================================================================
+    // Cloth Particle-Particle Self Collision
+    // ========================================================================
+    // Spatial HashによるBroad Phaseを利用し、折り畳まれて近接した非隣接Particleを押し離します。
+    // Particle半径はClothの初期格子間隔に比例させ、解像度を変えても厚み感が極端に変わらないようにします。
+    // Diameterを初期隣接距離より十分小さくした上で、Topology上直接接続されたPairはSolver側でも除外します。
+    if (m_Rows > 0u && m_Columns > 0u)
+    {
+        const float horizontalSpacing = 1.0f / static_cast<float>(m_Columns);
+        const float verticalSpacing = 1.0f / static_cast<float>(m_Rows);
+        const float minimumSpacing = std::min(horizontalSpacing, verticalSpacing);
+
+        ph::SoftBodySelfCollisionSettings selfCollisionSettings{};
+        selfCollisionSettings.Enabled = true;
+        selfCollisionSettings.ParticleRadius = minimumSpacing * 0.15f;
+        selfCollisionSettings.SolverIterations = 4u;
+        selfCollisionSettings.Compliance = 0.0f;
+
+        ph::SolveSoftBodyParticleSelfCollisions(
+            m_Solver,
+            deltaTime,
+            selfCollisionSettings);
+    }
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
     const std::vector<MeshVertex>& sourceVertices = geometry->GetVertices();
