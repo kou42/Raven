@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <vector>
 
+#include "Raven/Physics/SoftBody/SoftBodyParticleTriangleSelfCollision.h"
+#include "Raven/Physics/SoftBody/SoftBodySelfCollision.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 
@@ -80,6 +82,8 @@ SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
     // Clothは多数のInternal / Collision Constraintが互いに影響するため、
     // RigidBody Contactより多めの反復を使います。まず12回を目視確認用の基準値とし、
     // 後から品質設定へ外出しできる構成にしています。
+    // 現在の統合XPBD Stepでは、この反復回数がInternal Constraint・自己衝突・外部Colliderの
+    // 全Constraint共通の収束回数になります。
     solverSettings.SolverIterations = 12u;
     solverSettings.CollisionThickness = 0.005f;
     m_Solver.SetSettings(solverSettings);
@@ -232,8 +236,48 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         return;
     }
 
-    // 物理側を先に進め、その最終Particle Positionを描画用Meshへ反映します。
-    m_Solver.Step(deltaTime);
+    // spacing計算では0除算を避ける必要があるため、Gridサイズを先に検証します。
+    if (m_Rows == 0u || m_Columns == 0u)
+    {
+        return;
+    }
+
+    const float horizontalSpacing = 1.0f / static_cast<float>(m_Columns);
+    const float verticalSpacing = 1.0f / static_cast<float>(m_Rows);
+    const float minimumSpacing = std::min(horizontalSpacing, verticalSpacing);
+
+    // Particle-Particle Self Collisionでは各Cloth頂点を小さなSphereとして扱います。
+    // 半径は最小格子間隔の15%を基準にし、直径が格子間隔より十分小さくなるようにして
+    // 正常な隣接頂点間隔を自己衝突で押し広げにくくします。
+    ph::SoftBodySelfCollisionSettings particleSettings{};
+    particleSettings.Enabled = true;
+    particleSettings.ParticleRadius = minimumSpacing * 0.15f;
+    particleSettings.Compliance = 0.0f;
+
+    // Particle-Triangle Self CollisionのThicknessはParticle Sphere Diameterと同程度を基準にします。
+    // Particle-ParticleとParticle-TriangleでClothの見かけ上の厚みが大きく乖離しない値です。
+    ph::SoftBodyParticleTriangleSelfCollisionSettings particleTriangleSettings{};
+    particleTriangleSettings.Enabled = true;
+    particleTriangleSettings.Thickness = minimumSpacing * 0.30f;
+    particleTriangleSettings.Compliance = 0.0f;
+
+    // ========================================================================
+    // Unified Cloth XPBD Step
+    // ========================================================================
+    // 旧実装:
+    //   Solver::Step -> Particle-Particle後処理 -> Particle-Triangle後処理
+    //
+    // 現実装:
+    //   [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle
+    //    -> Sphere -> Plane] x SolverIterations
+    //
+    // 全Constraintが同じ反復内で最新Positionを見られるため、外部Colliderへ押されたClothが
+    // 自己貫通した場合も次iterationで直ちに再評価されます。またVelocity再構築は最後の1回だけです。
+    m_Solver.StepWithSelfCollisions(
+        deltaTime,
+        m_Cloth,
+        particleSettings,
+        particleTriangleSettings);
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
     const std::vector<MeshVertex>& sourceVertices = geometry->GetVertices();

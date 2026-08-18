@@ -14,10 +14,16 @@ namespace Raven
 namespace ph
 {
 
+struct SoftBodyCloth;
+struct SoftBodySelfCollisionSettings;
+struct SoftBodyParticleTriangleSelfCollisionSettings;
+
 struct SoftBodySolverSettings
 {
     // Position Constraintを1Step内で繰り返し解く回数です。
     // XPBDでは反復回数を増やすほどConstraint誤差が小さくなります。
+    // StepWithSelfCollisions()ではInternal Constraint・自己衝突・外部Collisionの全てが
+    // この共通反復回数の中で解かれます。
     uint32_t SolverIterations = 8u;
 
     // ParticleをCollider表面から僅かに離して保持する共通厚みです。
@@ -120,7 +126,7 @@ struct SoftBodyPlaneCollider
 // ============================================================================
 // RigidBodyのContactSolverとは分離した、Particle + Constraint用のXPBD Solverです。
 //
-// 1Stepの基本順序:
+// 通常Stepの基本順序:
 //   1. 重力を積分してParticleの予測位置を作る
 //   2. Distance / Dihedral / Sphere / PlaneのLambdaをStep用に初期化する
 //   3. XPBD Distance Constraintを反復解決する
@@ -128,9 +134,15 @@ struct SoftBodyPlaneCollider
 //   5. 同じ反復内でSphere / Plane Collisionを片側XPBD Constraintとして解決する
 //   6. 最終PositionとStep開始時PositionからVelocityを再構築する
 //
-// BendingをDistance近似とは別Constraintとして持つことで、Cloth Topology上の「隣接Triangle間の角度」を
-// 直接制御できます。Collisionも同じPosition反復へ含めるため、各Constraintが互いに補正した結果を
-// 同一Step内で再評価して収束させられます。
+// Cloth用統合Stepでは上記のPosition反復へParticle-Particle / Particle-Triangle Self Collisionを追加し、
+//
+//   Predict
+//     -> [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle -> Sphere -> Plane] x Iterations
+//     -> Velocity
+//
+// の順で解きます。自己衝突をSolver反復の外側へ後処理するのではなく同じPosition反復へ含めることで、
+// Internal Constraint・自己衝突・外部Colliderが互いの補正結果を同一Step内で再評価できます。
+// BendingもDistance近似とは別Constraintとして持つため、Cloth Topology上の隣接Triangle間角度を直接制御できます。
 class SoftBodySolver
 {
 public:
@@ -175,9 +187,23 @@ public:
     // Clothを再構築した場合は、必要なColliderも再登録する必要があります。
     void Clear();
 
-    // XPBDの1Simulation Stepを進めます。
+    // XPBDの通常1Simulation Stepを進めます。
+    // 自己衝突Topologyを必要としないSoftBody用途はこちらを使用します。
     // deltaTime <= 0.0f の場合は計算を行いません。
     void Step(float deltaTime);
+
+    // ========================================================================
+    // Cloth Integrated XPBD Step
+    // ========================================================================
+    // Cloth自己衝突を既存SolverIterationsの「内側」へ組み込むStepです。
+    // 各self collision設定のSolverIterationsはここでは使用せず、外側のm_Settings.SolverIterationsへ
+    // 統一します。これによりDistance / Dihedral / Self Collision / External Collisionが
+    // 1つの反復系列として収束し、Step後の追加Position補正とVelocity再構築が不要になります。
+    void StepWithSelfCollisions(
+        float deltaTime,
+        const SoftBodyCloth& cloth,
+        const SoftBodySelfCollisionSettings& particleSettings,
+        const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings);
 
     std::vector<SoftBodyParticle>& GetParticles() { return m_Particles; }
     const std::vector<SoftBodyParticle>& GetParticles() const { return m_Particles; }
@@ -210,6 +236,7 @@ private:
     void SolvePlaneCollisions(float deltaTime);
 
     // Constraint補正後のPosition差分からVelocityを再構築します。
+    // 統合Stepでも全Constraintを解き終えた最後に1回だけ呼び出します。
     void UpdateVelocities(float deltaTime);
 
 private:
