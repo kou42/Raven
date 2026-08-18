@@ -55,6 +55,7 @@ void RunSoftBodyJellySelfTests()
     jellySettings.InverseMass = 1.0f;
     jellySettings.DistanceCompliance = 0.0001f;
     jellySettings.VolumeCompliance = 0.0f;
+    jellySettings.VelocityDamping = 0.0f;
 
     SoftBodyJelly jelly = SoftBodyJellyBuilder::Build(solver, jellySettings);
 
@@ -97,7 +98,7 @@ void RunSoftBodyJellySelfTests()
     const float compressedVolume = ComputeTotalSignedVolume(solver, jelly);
     assert(compressedVolume < 0.5f);
 
-    solver.StepWithVolumeConstraints(1.0f / 60.0f, jelly.VolumeConstraints);
+    StepSoftBodyJelly(solver, jelly, 1.0f / 60.0f);
 
     const float recoveredVolume = ComputeTotalSignedVolume(solver, jelly);
 
@@ -105,6 +106,35 @@ void RunSoftBodyJellySelfTests()
     // 圧縮状態から十分大きく回復していることを回帰条件にします。
     assert(recoveredVolume > compressedVolume + 0.25f);
     assert(recoveredVolume > 0.8f);
+
+    // ========================================================================
+    // Velocity Damping
+    // ========================================================================
+    // 全Particleへ同じVelocityを与える一様並進では内部Constraint Errorが発生しません。
+    // したがって60Hz・damping=0.5ならStep後速度が正確に半分になることを確認できます。
+    SoftBodySolver dampingSolver{};
+    dampingSolver.SetGravity({ 0.0f, 0.0f, 0.0f });
+    dampingSolver.SetSettings(solverSettings);
+
+    SoftBodyJellySettings dampingSettings = jellySettings;
+    dampingSettings.DistanceCompliance = 0.0f;
+    dampingSettings.VolumeCompliance = 0.0f;
+    dampingSettings.VelocityDamping = 0.5f;
+
+    SoftBodyJelly dampingJelly = SoftBodyJellyBuilder::Build(dampingSolver, dampingSettings);
+    for (SoftBodyParticle& particle : dampingSolver.GetParticles())
+    {
+        particle.Velocity = { 2.0f, 0.0f, 0.0f };
+    }
+
+    StepSoftBodyJelly(dampingSolver, dampingJelly, 1.0f / 60.0f);
+
+    for (const SoftBodyParticle& particle : dampingSolver.GetParticles())
+    {
+        assert(std::abs(particle.Velocity.x - 1.0f) < 0.0001f);
+        assert(std::abs(particle.Velocity.y) < 0.0001f);
+        assert(std::abs(particle.Velocity.z) < 0.0001f);
+    }
 }
 
 } // namespace Raven::ph::tests
