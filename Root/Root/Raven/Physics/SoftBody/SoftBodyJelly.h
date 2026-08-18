@@ -43,6 +43,11 @@ struct SoftBodyJellySettings
     // Distanceより小さめにして体積を硬くすると、外形は変形するが内部体積は失いにくい
     // ゼリーらしい挙動になります。
     float VolumeCompliance = 0.000001f;
+
+    // Step後にJelly Particleへ適用するVelocity dampingです。
+    // 0.0fなら減衰なし、1.0fならそのStepで速度を完全に失います。
+    // 60Hz基準で時間刻み補正を行うため、dtが変わっても減衰感が極端に変わりにくくします。
+    float VelocityDamping = 0.02f;
 };
 
 // 1つのTetrahedronを構成するParticle Indexです。
@@ -63,12 +68,14 @@ struct SoftBodyTetrahedron
 // Jelly側は格子Particle Index、Tetrahedron Topology、Volume Constraintを保持します。
 //
 // Volume ConstraintはStep中にLambdaを書き換えるためJelly側で所有し、
-// solver.StepWithVolumeConstraints(deltaTime, jelly.VolumeConstraints)へ渡して使用します。
+// StepSoftBodyJelly()からsolver.StepWithVolumeConstraints()へ渡します。
 struct SoftBodyJelly
 {
     uint32_t CellsX = 0u;
     uint32_t CellsY = 0u;
     uint32_t CellsZ = 0u;
+
+    float VelocityDamping = 0.02f;
 
     std::vector<uint32_t> ParticleIndices;
     std::vector<SoftBodyTetrahedron> Tetrahedra;
@@ -94,6 +101,12 @@ public:
     // 分割します。全Cellで同じ規則を使用するため、隣接Cell境界でも三角形分割が一致します。
     static SoftBodyJelly Build(SoftBodySolver& solver, const SoftBodyJellySettings& settings);
 };
+
+// Jelly用の1 Simulation Stepです。
+// 既存SoftBodySolverのVolume統合Stepを進めた後、Jelly Particleだけへ速度減衰を適用します。
+// Solver全体へ減衰を掛けないため、将来ClothとJellyが同じSolverへ登録された場合でも
+// Jelly Material設定がCloth Particleへ漏れません。
+void StepSoftBodyJelly(SoftBodySolver& solver, SoftBodyJelly& jelly, float deltaTime);
 
 } // namespace ph
 } // namespace Raven
