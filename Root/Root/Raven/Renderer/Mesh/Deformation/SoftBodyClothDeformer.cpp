@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "Raven/Physics/SoftBody/SoftBodyParticleTriangleSelfCollision.h"
 #include "Raven/Physics/SoftBody/SoftBodySelfCollision.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
@@ -237,11 +238,11 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     m_Solver.Step(deltaTime);
 
     // ========================================================================
-    // Cloth Particle-Particle Self Collision
+    // Cloth Self Collision
     // ========================================================================
-    // Spatial HashによるBroad Phaseを利用し、折り畳まれて近接した非隣接Particleを押し離します。
-    // Particle半径はClothの初期格子間隔に比例させ、解像度を変えても厚み感が極端に変わらないようにします。
-    // Diameterを初期隣接距離より十分小さくした上で、Topology上直接接続されたPairはSolver側でも除外します。
+    // Particle-Particleで局所的な頂点同士の重なりを解いた後、Particle-Triangleで
+    // 「頂点が別のCloth面を突き抜ける」ケースを解きます。
+    // 両方ともSolver::Step()後の追加Position passなので、各処理の最後にVelocityを再構築します。
     if (m_Rows > 0u && m_Columns > 0u)
     {
         const float horizontalSpacing = 1.0f / static_cast<float>(m_Columns);
@@ -258,6 +259,23 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
             m_Solver,
             deltaTime,
             selfCollisionSettings);
+
+        // --------------------------------------------------------------------
+        // Particle-Triangle Self Collision
+        // --------------------------------------------------------------------
+        // ThicknessはParticle Sphere Diameterと同程度を基準にします。
+        // これによりParticle-ParticleとParticle-TriangleでClothの見かけ上の厚みが大きく乖離しません。
+        ph::SoftBodyParticleTriangleSelfCollisionSettings particleTriangleSettings{};
+        particleTriangleSettings.Enabled = true;
+        particleTriangleSettings.Thickness = minimumSpacing * 0.30f;
+        particleTriangleSettings.SolverIterations = 4u;
+        particleTriangleSettings.Compliance = 0.0f;
+
+        ph::SolveSoftBodyParticleTriangleSelfCollisions(
+            m_Solver,
+            m_Cloth,
+            deltaTime,
+            particleTriangleSettings);
     }
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
