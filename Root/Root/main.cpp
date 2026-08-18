@@ -7,6 +7,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Editor/EditorLayer.h"
+#include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 
 int main()
 {
@@ -17,10 +18,11 @@ int main()
 
     Raven::Application app;
 
-    // Runtime SceneはApplicationへ設定し、Editor機能は通常Layerとして独立して登録します。
-    // EditorLayerへApplication参照を渡すことで、所有権を移さずActive Scene / Window等の
-    // Runtime状態を各Editor Panelへ安全に橋渡しできます。
+    // Runtime Sceneを先に生成した後、SoftBody検証LayerとEditorLayerを登録します。
+    // SoftBodyClothDemoLayer::OnAttach()はApplicationからActive Sceneを借用して
+    // MeshDeformationComponentを登録するため、SetScene()より後である必要があります。
     app.SetScene(Raven::CreateScope<Raven::SceneGame>());
+    app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
 
     app.Run();
