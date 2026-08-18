@@ -1,9 +1,10 @@
-#include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
+﻿#include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include "Raven/Core/Application.h"
+#include "Raven/Math/MathUtility.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
 #include "Raven/Renderer/Mesh/Deformation/SoftBodyClothDeformer.h"
