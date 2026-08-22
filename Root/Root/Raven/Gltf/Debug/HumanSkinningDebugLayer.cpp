@@ -743,14 +743,9 @@ bool HumanSkinningDebugLayer::TryInitialize()
 
 void HumanSkinningDebugLayer::OnUpdate(float deltaTime)
 {
-    // SceneGameでは現在、Layer UpdateがOnUpdateGame()とScene::OnUpdateLayer()の2経路から
-    // 呼ばれます。Human debugだけ二重入力しないよう、1回目だけ処理しOnRender()で解除します。
-    if (m_UpdatedSinceRender == true)
-    {
-        return;
-    }
-    m_UpdatedSinceRender = true;
-
+    // Scene::OnUpdateLayer()がScene内部Layer更新の唯一の入口です。
+    // 以前必要だった描画frame連動の二重Update guardは不要になり、ここでは
+    // Human固有の初期化とController更新だけを担当します。
     if (m_Initialized == false)
     {
         TryInitialize();
@@ -768,12 +763,6 @@ void HumanSkinningDebugLayer::OnUpdate(float deltaTime)
             << "[HumanSkinning] Bone手動操作に失敗しました: "
             << errorMessage << '\n';
     }
-}
-
-void HumanSkinningDebugLayer::OnRender()
-{
-    // 次のUpdate frameで1回だけ入力処理できるよう解除します。
-    m_UpdatedSinceRender = false;
 }
 
 void HumanSkinningDebugLayer::DestroyHuman()
