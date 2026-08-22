@@ -1,14 +1,16 @@
 ﻿#pragma once
 
 #include <array>
+#include <chrono>
 #include <cstdint>
+
+#include "Raven/Physics/SoftBody/SoftBodySolver.h"
 
 namespace Raven
 {
 namespace ph
 {
 
-class SoftBodySolver;
 struct SoftBodyCloth;
 struct SoftBodySelfCollisionSettings;
 
@@ -95,12 +97,67 @@ struct SoftBodyParticleTriangleSpatialHashBenchmarkResult
 // Narrow Phaseの影響を含む統合Solver実行時間が最小のSampleとして選択します。
 //
 // この関数は入力solverを変更しません。比較はデバッグ・調整用であり、通常StepのHot Pathには入りません。
-SoftBodyParticleTriangleSpatialHashBenchmarkResult BenchmarkSoftBodyParticleTriangleSpatialHashCellSizes(
+inline SoftBodyParticleTriangleSpatialHashBenchmarkResult BenchmarkSoftBodyParticleTriangleSpatialHashCellSizes(
     const SoftBodySolver& solver,
     const SoftBodyCloth& cloth,
     float deltaTime,
     const SoftBodySelfCollisionSettings& particleSettings,
-    const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings);
+    const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings)
+{
+    SoftBodyParticleTriangleSpatialHashBenchmarkResult result{};
+
+    if (deltaTime <= 0.0f || particleTriangleSettings.Enabled == false)
+    {
+        return result;
+    }
+
+    const std::array<float, SoftBodyParticleTriangleSpatialHashBenchmarkResult::SampleCount> cellSizes{
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeSmall,
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeMedium,
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeLarge
+    };
+
+    using Clock = std::chrono::steady_clock;
+
+    for (std::size_t sampleIndex = 0u; sampleIndex < cellSizes.size(); ++sampleIndex)
+    {
+        // 重要:
+        // 3候補を同じsolverから毎回コピーすることで、前候補のPosition補正やVelocity更新を
+        // 次候補へ持ち越しません。Cell Size以外の入力条件を完全に揃えて比較します。
+        SoftBodySolver solverCopy = solver;
+        SoftBodyParticleTriangleSelfCollisionSettings settingsCopy = particleTriangleSettings;
+        settingsCopy.SpatialHashCellSize = cellSizes[sampleIndex];
+
+        const Clock::time_point start = Clock::now();
+        solverCopy.StepWithSelfCollisions(
+            deltaTime,
+            cloth,
+            particleSettings,
+            settingsCopy);
+        const Clock::time_point end = Clock::now();
+
+        const SoftBodyParticleTriangleCollisionStatistics& statistics =
+            solverCopy.GetParticleTriangleCollisionStatistics();
+
+        SoftBodyParticleTriangleSpatialHashBenchmarkSample& sample = result.Samples[sampleIndex];
+        sample.CellSize = cellSizes[sampleIndex];
+        sample.SolverMilliseconds =
+            std::chrono::duration<double, std::milli>(end - start).count();
+        sample.CandidateCount = statistics.CandidateCount;
+        sample.NarrowPhaseCount = statistics.NarrowPhaseCount;
+
+        // 最初のSampleを基準にし、その後は統合Solver時間が短いものだけで更新します。
+        // 候補数だけで決めないのは、小CellによるHashBuild増加も含めて評価するためです。
+        if (sampleIndex == 0u
+            || sample.SolverMilliseconds < result.Samples[result.BestSampleIndex].SolverMilliseconds)
+        {
+            result.BestSampleIndex = sampleIndex;
+        }
+    }
+
+    result.Valid = true;
+    return result;
+}
 
 // ============================================================================
 // Solve Cloth Particle-Triangle Self Collisions
