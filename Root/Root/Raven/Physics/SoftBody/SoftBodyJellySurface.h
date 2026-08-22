@@ -55,6 +55,8 @@ public:
     // JellyのTetrahedron Topologyから外表面Faceを抽出します。
     // 同じ3 Particleを持つFaceが2回現れた場合は内部共有Faceとして除外し、
     // 1回しか現れないFaceだけをSurfaceとして残します。
+    // SoftBodyJellyBuilderが生成する正の符号付き体積orientationを前提に、
+    // 残ったTriangleのwindingは外向きへ揃えられます。
     static SoftBodyJellySurface Build(const SoftBodyJelly& jelly);
 };
 
