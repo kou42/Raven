@@ -89,10 +89,11 @@ SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
     solverSettings.CollisionThickness = 0.005f;
     m_Solver.SetSettings(solverSettings);
 
-    // 比較開始時は0.04 / 0.05 / 0.06の中央値を利用します。
+    // 0.04 / 0.05 / 0.06を同一Solver状態から比較した結果、0.06が最短だったため
+    // 通常実行時の初期値にもLargeを採用します。
     // Setterで変更した場合はCloth再構築を行わず、次のStepからSpatial Hash構築だけへ反映されます。
     m_ParticleTriangleSpatialHashCellSize =
-        ph::SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeMedium;
+        ph::SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeLarge;
 
     // 最初の目視確認用にCloth中央より少し下へ静的Sphereを置きます。
     // Scene側からSetCollisionSphere()を呼べば任意の位置・半径へ差し替えられます。
