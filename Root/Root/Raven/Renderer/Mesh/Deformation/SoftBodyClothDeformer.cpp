@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticleTriangleSelfCollision.h"
 #include "Raven/Physics/SoftBody/SoftBodySelfCollision.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -172,6 +173,8 @@ void SoftBodyClothDeformer::ApplyCollisionPlaneToSolver()
 
 bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
 {
+    RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Initialize");
+
     const Ref<MeshGeometry>& geometry = mesh.GetGeometry();
     if (geometry == nullptr || geometry->GetGeometryUsage() != GeometryUsage::Dynamic)
     {
@@ -222,6 +225,8 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
 
 void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
 {
+    RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Update");
+
     if (m_Initialized == false)
     {
         if (InitializeFromMesh(mesh) == false)
@@ -273,11 +278,16 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     //
     // 全Constraintが同じ反復内で最新Positionを見られるため、外部Colliderへ押されたClothが
     // 自己貫通した場合も次iterationで直ちに再評価されます。またVelocity再構築は最後の1回だけです。
-    m_Solver.StepWithSelfCollisions(
-        deltaTime,
-        m_Cloth,
-        particleSettings,
-        particleTriangleSettings);
+    {
+        // 現在もっとも高コストになりやすい領域です。
+        // 自己衝突Broad PhaseとConstraint反復もこの時間へ含まれるため、まずSolver全体の比率を確認します。
+        RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Solver");
+        m_Solver.StepWithSelfCollisions(
+            deltaTime,
+            m_Cloth,
+            particleSettings,
+            particleTriangleSettings);
+    }
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
     const std::vector<MeshVertex>& sourceVertices = geometry->GetVertices();
@@ -287,28 +297,43 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     }
 
     // Color / TexCoord等の属性は既存値を保持し、PositionとNormalだけを更新します。
-    std::vector<MeshVertex> deformedVertices = sourceVertices;
-    for (size_t vertexIndex = 0u; vertexIndex < deformedVertices.size(); ++vertexIndex)
+    std::vector<MeshVertex> deformedVertices;
     {
-        const uint32_t particleIndex = m_Cloth.ParticleIndices[vertexIndex];
-        if (particleIndex >= particles.size())
+        RAVEN_PROFILE_SCOPE("SoftBody.Cloth.MeshPositions");
+        deformedVertices = sourceVertices;
+        for (size_t vertexIndex = 0u; vertexIndex < deformedVertices.size(); ++vertexIndex)
         {
-            return;
-        }
+            const uint32_t particleIndex = m_Cloth.ParticleIndices[vertexIndex];
+            if (particleIndex >= particles.size())
+            {
+                return;
+            }
 
-        deformedVertices[vertexIndex].Position = particles[particleIndex].Position;
+            deformedVertices[vertexIndex].Position = particles[particleIndex].Position;
+        }
     }
 
     // Cloth変形後は生成時Normalが無効になるため、Fixed TopologyのIndexから毎フレーム再構築します。
-    RecalculateClothNormals(deformedVertices, geometry->GetIndices());
-
-    if (geometry->SetVertices(std::move(deformedVertices)) == false)
     {
-        return;
+        RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Normals");
+        RecalculateClothNormals(deformedVertices, geometry->GetIndices());
+    }
+
+    {
+        // CPU側頂点配列の差し替えとGeometry revision更新を分離計測します。
+        RAVEN_PROFILE_SCOPE("SoftBody.Cloth.SetVertices");
+        if (geometry->SetVertices(std::move(deformedVertices)) == false)
+        {
+            return;
+        }
     }
 
     // Geometry Revisionが変化した場合だけMesh側がVBOを更新します。
-    mesh.SyncGeometry();
+    // OpenGL Driver待ちやBuffer uploadが重い場合はSolverではなくこの値が大きくなります。
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Cloth.GPUSync");
+        mesh.SyncGeometry();
+    }
 }
 
 } // namespace Raven

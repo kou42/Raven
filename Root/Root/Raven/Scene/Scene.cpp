@@ -1,4 +1,5 @@
 ﻿#include "Raven/Scene/Scene.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Event.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
@@ -228,17 +229,37 @@ void Scene::OnDestroy()
 
 void Scene::OnUpdate(float dt)
 {
-    OnUpdateGame(dt);
+    RAVEN_PROFILE_SCOPE("Scene.Update");
+
+    // Scene全体だけでなく主要System単位でもScopeを分けます。
+    // 後でJob System化する際に「どのSystemを先に並列化すべきか」をFrame単位で判断できます。
+    {
+        RAVEN_PROFILE_SCOPE("Scene.GameLogic");
+        OnUpdateGame(dt);
+    }
 
     // Game LogicがPlay/Pause/Clip切り替えなどを行った後にAnimationを評価します。
     // AnimationSystemがTransformへPoseを反映してからPhysicsへ進むことで、
     // Kinematic Bodyなどは更新済みTransformをPhysics側から参照できます。
-    AnimationSystem::Update(*this, dt);
+    {
+        RAVEN_PROFILE_SCOPE("Scene.Animation");
+        AnimationSystem::Update(*this, dt);
+    }
 
-    OnUpdatePhysics(dt);
-    OnUpdateLayer(dt);
-    FlushDestroyedEntities();
+    {
+        RAVEN_PROFILE_SCOPE("Scene.Physics");
+        OnUpdatePhysics(dt);
+    }
 
+    {
+        RAVEN_PROFILE_SCOPE("Scene.Layers");
+        OnUpdateLayer(dt);
+    }
+
+    {
+        RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
+        FlushDestroyedEntities();
+    }
 }
 
 void Scene::OnUpdatePhysics(float dt)
@@ -247,7 +268,12 @@ void Scene::OnUpdatePhysics(float dt)
 
     while (m_PhysicsAccumulator >= m_FixedDeltaTime)
     {
-        m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
+        // Fixed timestepが1 Application frame中に複数回走った場合も1回ずつ記録します。
+        // Statistics側で同名Scopeを集計することで、Physics catch-upによる負荷増加も確認できます。
+        {
+            RAVEN_PROFILE_SCOPE("Physics.FixedStep");
+            m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
+        }
         m_PhysicsAccumulator -= m_FixedDeltaTime;
     }
 
@@ -266,6 +292,8 @@ void Scene::OnUpdateLayer(float dt)
 
 void Scene::OnRender()
 {
+    RAVEN_PROFILE_SCOPE("Scene.Render");
+
     for (auto& layer : m_layers) {
         layer->OnRender();
     }
@@ -516,7 +544,6 @@ void TestSparseComponentStorage()
      * 移動したEntity 9を正しく取得できる。
      */
     assert(storage.Has(9));
-
     assert(storage.Get(9).Position.x == 30.0f);
 
     assert(!storage.Remove(2));

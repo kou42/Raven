@@ -2,6 +2,7 @@
 
 #include "RenderCommand.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Renderer/Camera/Camera.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -26,6 +27,11 @@ void Renderer::Init()
 
 void Renderer::BeginFrame()
 {
+    // CPU ProfilerもApplication frame単位で集計します。
+    // Renderer::BeginFrame()は既にApplication::Run()から毎frame先頭で1回だけ呼ばれるため、
+    // Renderer統計とCPU統計のframe境界を同じ場所へ揃えられます。
+    CPUProfiler::Get().BeginFrame();
+
     // Statisticsは「直近1 frame」の値として扱います。
     // SceneごとではなくApplication frameの先頭でResetすることで、Scene描画と
     // Debug Overlayを含む、そのframeに発行された全Draw Callを同じ集計へ含めます。
@@ -54,6 +60,8 @@ void Renderer::BeginScene()
 
 void Renderer::EndScene()
 {
+    RAVEN_PROFILE_SCOPE("Renderer::DebugOverlay");
+
     // ========================================================================
     // Debug Overlay Pass
     // ========================================================================

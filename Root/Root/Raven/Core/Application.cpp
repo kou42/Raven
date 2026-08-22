@@ -173,6 +173,7 @@ void Application::Run()
         // Renderer statistics frame boundary
         // ====================================================================
         // Renderer統計はApplication frame単位で集計します。
+        // CPUProfilerもRenderer::BeginFrame()と同じ境界で、次frame開始時に直前frameを確定します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
         Renderer::BeginFrame();

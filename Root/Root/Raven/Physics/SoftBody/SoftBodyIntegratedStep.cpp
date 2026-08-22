@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/SoftBody/SoftBodyCloth.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticleTriangleSelfCollision.h"
@@ -383,14 +384,23 @@ void SoftBodySolver::StepWithSelfCollisions(
     const SoftBodySelfCollisionSettings& particleSettings,
     const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings)
 {
+    RAVEN_PROFILE_SCOPE("SoftBody.Solver.StepWithSelfCollisions");
+
     if (deltaTime <= 0.0f)
     {
         return;
     }
 
-    PredictPositions(deltaTime);
-    ResetConstraintLambdas();
-    ResetCollisionConstraintState();
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.PredictPositions");
+        PredictPositions(deltaTime);
+    }
+
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ResetConstraints");
+        ResetConstraintLambdas();
+        ResetCollisionConstraintState();
+    }
 
     // Self Collision Lambdaも通常のXPBD Constraintと同じく同一Step内のiteration間で保持します。
     // 以前の後処理passではSelf Collision側だけ独立反復していましたが、ここでは全Constraintを
@@ -419,14 +429,20 @@ void SoftBodySolver::StepWithSelfCollisions(
     SoftBodyTriangleSpatialHashGrid triangleSpatialHash(
         std::max(triangleThickness * 2.0f, 1.0e-4f));
 
-    if (particleCollisionEnabled)
     {
-        BuildExcludedParticlePairs(m_DistanceConstraints, excludedParticlePairs);
-    }
+        // 自己衝突用Topologyと除外ペアの構築コストをSolver反復とは分離します。
+        // ここが大きい場合は毎Step再構築せずTopology変更時だけCacheする最適化候補になります。
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.CollisionSetup");
 
-    if (particleTriangleCollisionEnabled)
-    {
-        BuildClothTriangles(cloth, triangles);
+        if (particleCollisionEnabled)
+        {
+            BuildExcludedParticlePairs(m_DistanceConstraints, excludedParticlePairs);
+        }
+
+        if (particleTriangleCollisionEnabled)
+        {
+            BuildClothTriangles(cloth, triangles);
+        }
     }
 
     const float particleAlphaTilde =
@@ -443,11 +459,21 @@ void SoftBodySolver::StepWithSelfCollisions(
         // Internal shape -> self collision -> external collision の順に解きます。
         // 次iterationではSphere/Planeによる押し戻しもInternal ConstraintとSelf Collisionが再評価するため、
         // 後処理方式より折り畳み・外部Collider接触が同時発生した場合に収束しやすくなります。
-        SolveDistanceConstraints(deltaTime);
-        SolveDihedralConstraints(deltaTime);
+        {
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.DistanceConstraints");
+            SolveDistanceConstraints(deltaTime);
+        }
+
+        {
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.DihedralConstraints");
+            SolveDihedralConstraints(deltaTime);
+        }
 
         if (particleCollisionEnabled)
         {
+            // Spatial Hash Build / Candidate生成 / Particle-Pair解決を含みます。
+            // Totalが大きければ次のJob System並列化候補です。
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision");
             SolveParticleSelfCollisionIteration(
                 m_Particles,
                 particleSpatialHash,
@@ -460,6 +486,8 @@ void SoftBodySolver::StepWithSelfCollisions(
 
         if (particleTriangleCollisionEnabled && triangles.empty() == false)
         {
+            // Triangle Spatial Hash BuildとParticle-Triangle Narrow Phaseをまとめて計測します。
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision");
             SolveParticleTriangleSelfCollisionIteration(
                 m_Particles,
                 triangles,
@@ -470,13 +498,19 @@ void SoftBodySolver::StepWithSelfCollisions(
                 particleTriangleAlphaTilde);
         }
 
-        SolveSphereCollisions(deltaTime);
-        SolvePlaneCollisions(deltaTime);
+        {
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ExternalCollisions");
+            SolveSphereCollisions(deltaTime);
+            SolvePlaneCollisions(deltaTime);
+        }
     }
 
     // Position Constraintがすべて完了してから一度だけVelocityを再構築します。
     // これにより旧後処理passで必要だった二重のVelocity更新を廃止できます。
-    UpdateVelocities(deltaTime);
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.UpdateVelocities");
+        UpdateVelocities(deltaTime);
+    }
 }
 
 } // namespace ph
