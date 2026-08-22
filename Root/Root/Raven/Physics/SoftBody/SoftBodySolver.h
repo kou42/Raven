@@ -43,6 +43,33 @@ struct SoftBodySolverSettings
 };
 
 // ============================================================================
+// Particle-Triangle Self Collision Statistics
+// ============================================================================
+// Particle-Triangle Broad Phase / Narrow Phaseの負荷を1 Step単位で比較するための計測値です。
+// StepWithSelfCollisions()開始時にReset()され、全Solver Iterationの値を合算します。
+//
+// CandidateCount:
+//   Spatial Hashが生成したParticle-Triangle候補ペア総数です。
+//   Topology除外などのcheap reject前の値なので、Cell Size変更によるBroad Phase候補数の差を
+//   直接比較できます。
+//
+// NarrowPhaseCount:
+//   Index検証と「Particle自身を含むTriangle」のTopology除外を通過し、
+//   ComputeClosestPointOnTriangle()を実際に実行する直前まで到達した回数です。
+//   CandidateCountとの差を見ることで、Broad Phase候補のうちNarrow Phaseへ流入した割合を確認できます。
+struct SoftBodyParticleTriangleCollisionStatistics
+{
+    uint64_t CandidateCount = 0u;
+    uint64_t NarrowPhaseCount = 0u;
+
+    void Reset()
+    {
+        CandidateCount = 0u;
+        NarrowPhaseCount = 0u;
+    }
+};
+
+// ============================================================================
 // Static / Kinematic Sphere Collision Constraint
 // ============================================================================
 // SoftBody側で扱うSphere Colliderです。
@@ -233,6 +260,13 @@ public:
     const std::vector<SoftBodySphereCollider>& GetSphereColliders() const { return m_SphereColliders; }
     const std::vector<SoftBodyPlaneCollider>& GetPlaneColliders() const { return m_PlaneColliders; }
 
+    // 直近のStepWithSelfCollisions()で集計したParticle-Triangle自己衝突の統計です。
+    // Cell Size比較時は同じシーン・同じSolverIterationsでこの2値を比較します。
+    const SoftBodyParticleTriangleCollisionStatistics& GetParticleTriangleCollisionStatistics() const
+    {
+        return m_ParticleTriangleCollisionStatistics;
+    }
+
 private:
     // Step開始時の位置をPreviousPositionへ保存し、重力とVelocityから予測位置を作ります。
     void PredictPositions(float deltaTime);
@@ -268,6 +302,7 @@ private:
     std::vector<XPBDDihedralConstraint> m_DihedralConstraints;
     std::vector<SoftBodySphereCollider> m_SphereColliders;
     std::vector<SoftBodyPlaneCollider> m_PlaneColliders;
+    SoftBodyParticleTriangleCollisionStatistics m_ParticleTriangleCollisionStatistics{};
 };
 
 } // namespace ph
