@@ -7,11 +7,10 @@
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/SoftBody/SoftBodyJellySurface.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformer.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven
 {
-
-class MeshGeometry;
 
 namespace ph
 {
@@ -56,11 +55,11 @@ public:
 
 private:
     bool BuildVerticesAndIndices(
-        std::vector<class MeshVertex>& outVertices,
+        std::vector<MeshVertex>& outVertices,
         std::vector<uint32_t>& outIndices) const;
 
     void RecalculateNormals(
-        std::vector<class MeshVertex>& vertices,
+        std::vector<MeshVertex>& vertices,
         const std::vector<uint32_t>& indices) const;
 
 private:
