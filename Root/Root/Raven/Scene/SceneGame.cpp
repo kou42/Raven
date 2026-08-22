@@ -540,9 +540,16 @@ void SceneGame::OnDestroy()
     // ========================================================================
     // Layer-owned Entity cleanup
     // ========================================================================
-    // Layerが生成したEntityはLayer自身が破棄責務を持ちます。
-    // SceneGame内部Layerを先に破棄することで、HumanSkinningDebugLayer等が保持するEntityを
-    // Scene本体のリソース解放より前に安全に片付けられます。
+    // Scene::PushLayer()は登録時にOnAttach()を呼ぶため、終了側も対称にOnDetach()を呼びます。
+    // 後から積まれたLayerほど先に破棄するLIFO順にすることで、Overlay等が先に積まれたLayerを
+    // 参照している場合でも依存先より先に終了できます。
+    for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it)
+    {
+        if (*it != nullptr)
+        {
+            (*it)->OnDetach();
+        }
+    }
     m_layers.clear();
 
     // Sphere群はm_SphereBodiesだけを所有情報として使用します。
@@ -610,9 +617,9 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
-    // Scene::OnUpdate()は OnUpdateGame -> OnUpdatePhysics の順です。
-    // AddImpulseAtPoint()は速度へ即時反映するため、releaseした同じフレームの
-    // PhysicsWorld::Step()から衝突・重力・回転計算へ参加します。
+    // Scene::OnUpdate()は OnUpdateGame -> Animation -> Physics -> OnUpdateLayer の順です。
+    // Scene内部Layerの更新は基底Scene::OnUpdateLayer()だけが担当するため、ここではLayerを直接更新しません。
+    // これによりHumanSkinningDebugLayer等が1 frame内で二重Updateされる問題を解消します。
     UpdateMouseDragImpulse();
 
     // ========================================================================
@@ -622,11 +629,6 @@ void SceneGame::OnUpdateGame(float dt)
     // MeshDeformationComponentを持つ全EntityをSystemが走査するため、将来Skeletal/Morphを
     // 追加しても、この更新箇所は変更せず同じ入口を共有できます。
     MeshDeformationSystem::Update(*this, safeDt);
-
-    for (auto& layer : m_layers)
-    {
-        layer->OnUpdate(safeDt);
-    }
 }
 
 void SceneGame::OnRender()
