@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -53,7 +54,9 @@ private:
 private:
     using Clock = std::chrono::steady_clock;
 
-    bool m_Enabled = true;
+    // UIのMain Threadから切り替えながら、将来Worker Thread側がIsEnabled()を読む構成でも
+    // データ競合しないようatomicで保持します。計測データ本体はm_ResultMutexで保護します。
+    std::atomic<bool> m_Enabled{ true };
     bool m_FrameActive = false;
     uint64_t m_FrameIndex = 0;
     Clock::time_point m_FrameStart{};
