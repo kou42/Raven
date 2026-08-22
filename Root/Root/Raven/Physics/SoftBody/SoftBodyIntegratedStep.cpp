@@ -87,7 +87,8 @@ bool TriangleContainsParticle(const SoftBodyTriangle& triangle, uint32_t particl
 // ============================================================================
 // Ericson型のPoint-Triangle最近傍点判定が、実際のCloth自己衝突で
 // Vertex / Edge / Faceのどこへ最も多く到達しているかを計測します。
-// 次段階でFace Fast PathやEdge/Vertex側の分岐削減を検討する際の判断材料です。
+// 前回計測ではEdgeAC / EdgeBCがほぼ全候補を占めたため、今回はその2領域を
+// 厳密なEdge内部に限って先行判定するFast Pathを追加しています。
 enum class ClosestPointRegion : uint8_t
 {
     VertexA = 0u,
@@ -108,6 +109,10 @@ struct ClosestPointResult
     float WeightB = 0.0f;
     float WeightC = 0.0f;
     ClosestPointRegion Region = ClosestPointRegion::Face;
+
+    // EdgeAC / EdgeBCの先行判定でreturnした場合だけtrueです。
+    // 境界ケースやその他Regionはfalseのまま従来Ericson判定へfallbackします。
+    bool UsedFastPath = false;
 };
 
 ClosestPointResult ComputeClosestPointOnTriangle(
@@ -120,49 +125,88 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     const math::Vec3 ac = c - a;
     const math::Vec3 ap = point - a;
 
+    // ========================================================================
+    // EdgeAC Fast Path
+    // ========================================================================
+    // 前回の実測ではEdgeACとEdgeBCで約98%を占めていました。
+    // EdgeAC判定はd1/d2/d5/d6だけで成立するため、まず4 Dotだけ計算して試します。
+    //
+    // ここではEricson本来の <= / >= ではなく厳密不等号を使います。
+    // Vertex A/CやRegion境界上の等号ケースをFast Pathで奪わず、従来の判定順へfallbackさせることで
+    // 境界のBarycentric WeightとRegion分類を変更しないためです。
     const float d1 = math::Vec3::Dot(ab, ap);
     const float d2 = math::Vec3::Dot(ac, ap);
-    if (d1 <= 0.0f && d2 <= 0.0f)
+
+    const math::Vec3 cp = point - c;
+    const float d5 = math::Vec3::Dot(ab, cp);
+    const float d6 = math::Vec3::Dot(ac, cp);
+
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb < 0.0f && d2 > 0.0f && d6 < 0.0f)
     {
-        return { a, 1.0f, 0.0f, 0.0f, ClosestPointRegion::VertexA };
+        const float w = d2 / (d2 - d6);
+        return { a + ac * w, 1.0f - w, 0.0f, w, ClosestPointRegion::EdgeAC, true };
     }
 
+    // ========================================================================
+    // EdgeBC Fast Path
+    // ========================================================================
+    // EdgeACでreturnしなかった場合だけB側の2 Dotを追加します。
+    // EdgeBCが支配的なら、従来のVertexA -> VertexB -> EdgeAB -> VertexC -> EdgeACという
+    // 複数branchを通過せずにここでreturnできます。
     const math::Vec3 bp = point - b;
     const float d3 = math::Vec3::Dot(ab, bp);
     const float d4 = math::Vec3::Dot(ac, bp);
+
+    const float va = d3 * d6 - d5 * d4;
+    const float edgeBCFromB = d4 - d3;
+    const float edgeBCFromC = d5 - d6;
+    if (va < 0.0f && edgeBCFromB > 0.0f && edgeBCFromC > 0.0f)
+    {
+        const float w = edgeBCFromB / (edgeBCFromB + edgeBCFromC);
+        const math::Vec3 bc = c - b;
+        return { b + bc * w, 0.0f, 1.0f - w, w, ClosestPointRegion::EdgeBC, true };
+    }
+
+    // ========================================================================
+    // Ericson Fallback
+    // ========================================================================
+    // Fast Pathは厳密なEdge内部だけを扱います。
+    // それ以外は元の判定順を維持し、頂点・境界・EdgeAB・Face・退化Triangleの挙動を変えません。
+    if (d1 <= 0.0f && d2 <= 0.0f)
+    {
+        return { a, 1.0f, 0.0f, 0.0f, ClosestPointRegion::VertexA, false };
+    }
+
     if (d3 >= 0.0f && d4 <= d3)
     {
-        return { b, 0.0f, 1.0f, 0.0f, ClosestPointRegion::VertexB };
+        return { b, 0.0f, 1.0f, 0.0f, ClosestPointRegion::VertexB, false };
     }
 
     const float vc = d1 * d4 - d3 * d2;
     if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
     {
         const float v = d1 / (d1 - d3);
-        return { a + ab * v, 1.0f - v, v, 0.0f, ClosestPointRegion::EdgeAB };
+        return { a + ab * v, 1.0f - v, v, 0.0f, ClosestPointRegion::EdgeAB, false };
     }
 
-    const math::Vec3 cp = point - c;
-    const float d5 = math::Vec3::Dot(ab, cp);
-    const float d6 = math::Vec3::Dot(ac, cp);
     if (d6 >= 0.0f && d5 <= d6)
     {
-        return { c, 0.0f, 0.0f, 1.0f, ClosestPointRegion::VertexC };
+        return { c, 0.0f, 0.0f, 1.0f, ClosestPointRegion::VertexC, false };
     }
 
-    const float vb = d5 * d2 - d1 * d6;
+    // Fast Pathは境界を除外しているため、等号を含むEdgeAC / EdgeBC条件はfallback側にも残します。
     if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
     {
         const float w = d2 / (d2 - d6);
-        return { a + ac * w, 1.0f - w, 0.0f, w, ClosestPointRegion::EdgeAC };
+        return { a + ac * w, 1.0f - w, 0.0f, w, ClosestPointRegion::EdgeAC, false };
     }
 
-    const float va = d3 * d6 - d5 * d4;
-    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+    if (va <= 0.0f && edgeBCFromB >= 0.0f && edgeBCFromC >= 0.0f)
     {
         const math::Vec3 bc = c - b;
-        const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        return { b + bc * w, 0.0f, 1.0f - w, w, ClosestPointRegion::EdgeBC };
+        const float w = edgeBCFromB / (edgeBCFromB + edgeBCFromC);
+        return { b + bc * w, 0.0f, 1.0f - w, w, ClosestPointRegion::EdgeBC, false };
     }
 
     const float denominator = va + vb + vc;
@@ -170,18 +214,21 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     {
         // 退化Triangleでは従来どおりAを安全なfallbackとして返します。
         // 通常VertexA判定と区別してCounterへ記録することで、退化頻度も把握できます。
-        return { a, 1.0f, 0.0f, 0.0f, ClosestPointRegion::Degenerate };
+        return { a, 1.0f, 0.0f, 0.0f, ClosestPointRegion::Degenerate, false };
     }
 
     const float inverseDenominator = 1.0f / denominator;
     const float v = vb * inverseDenominator;
     const float w = vc * inverseDenominator;
     const float u = 1.0f - v - w;
-    return { a * u + b * v + c * w, u, v, w, ClosestPointRegion::Face };
+    return { a * u + b * v + c * w, u, v, w, ClosestPointRegion::Face, false };
 }
 
 void SubmitClosestPointRegionCounters(
-    const std::array<uint64_t, static_cast<std::size_t>(ClosestPointRegion::Count)>& regionCounts)
+    const std::array<uint64_t, static_cast<std::size_t>(ClosestPointRegion::Count)>& regionCounts,
+    uint64_t fastPathHitCount,
+    uint64_t fastPathEdgeACCount,
+    uint64_t fastPathEdgeBCCount)
 {
     CPUProfiler& profiler = CPUProfiler::Get();
     if (profiler.IsEnabled() == false)
@@ -235,6 +282,21 @@ void SubmitClosestPointRegionCounters(
     profiler.AddCounter(
         "SoftBody.ClosestPoint.DegenerateRatio",
         static_cast<double>(degenerateCount) * inverseTotal);
+
+    // Fast Pathが実際に何割を吸収できたかを確認します。
+    // HitRatioが高くNarrowPhase時間も下がる場合だけ、この分岐順を正式採用します。
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.FastPathHitCount",
+        static_cast<double>(fastPathHitCount));
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.FastPathHitRatio",
+        static_cast<double>(fastPathHitCount) * inverseTotal);
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.FastPathEdgeAC",
+        static_cast<double>(fastPathEdgeACCount));
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.FastPathEdgeBC",
+        static_cast<double>(fastPathEdgeBCCount));
 }
 
 void SolveParticleSelfCollisionIteration(
@@ -370,6 +432,9 @@ void SolveParticleTriangleSelfCollisionIteration(
     }
 
     std::array<uint64_t, static_cast<std::size_t>(ClosestPointRegion::Count)> closestPointRegionCounts{};
+    uint64_t closestPointFastPathHitCount = 0u;
+    uint64_t closestPointFastPathEdgeACCount = 0u;
+    uint64_t closestPointFastPathEdgeBCCount = 0u;
 
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.NarrowPhase");
@@ -411,9 +476,21 @@ void SolveParticleTriangleSelfCollisionIteration(
                 particleC.Position);
 
             // Region計測は配列Indexへの整数加算だけに留めます。
-            // ComputeClosestPointOnTriangle()の各returnでRegionを付与しているため、
-            // どの分岐が実際のClothで支配的かを12 iteration分比較できます。
             ++closestPointRegionCounts[static_cast<std::size_t>(closest.Region)];
+
+            if (closest.UsedFastPath)
+            {
+                ++closestPointFastPathHitCount;
+
+                if (closest.Region == ClosestPointRegion::EdgeAC)
+                {
+                    ++closestPointFastPathEdgeACCount;
+                }
+                else if (closest.Region == ClosestPointRegion::EdgeBC)
+                {
+                    ++closestPointFastPathEdgeBCCount;
+                }
+            }
 
             const math::Vec3 delta = particle.Position - closest.Point;
             const float distanceSq = delta.LengthSq();
@@ -500,7 +577,11 @@ void SolveParticleTriangleSelfCollisionIteration(
         }
     }
 
-    SubmitClosestPointRegionCounters(closestPointRegionCounts);
+    SubmitClosestPointRegionCounters(
+        closestPointRegionCounts,
+        closestPointFastPathHitCount,
+        closestPointFastPathEdgeACCount,
+        closestPointFastPathEdgeBCCount);
 }
 
 } // namespace
