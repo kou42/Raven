@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <type_traits>
+#include <vector>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -19,15 +20,32 @@ static_assert(std::has_virtual_destructor_v<Scene>);
 class CountingLayer final : public Layer
 {
 public:
-    CountingLayer(int& attachCount, int& updateCount)
-        : m_AttachCount(attachCount)
+    CountingLayer(
+        int layerId,
+        int& attachCount,
+        int& updateCount,
+        int& detachCount,
+        std::vector<int>& attachOrder,
+        std::vector<int>& detachOrder)
+        : m_LayerId(layerId)
+        , m_AttachCount(attachCount)
         , m_UpdateCount(updateCount)
+        , m_DetachCount(detachCount)
+        , m_AttachOrder(attachOrder)
+        , m_DetachOrder(detachOrder)
     {
     }
 
     void OnAttach() override
     {
         ++m_AttachCount;
+        m_AttachOrder.push_back(m_LayerId);
+    }
+
+    void OnDetach() override
+    {
+        ++m_DetachCount;
+        m_DetachOrder.push_back(m_LayerId);
     }
 
     void OnUpdate(float deltaTime) override
@@ -37,8 +55,12 @@ public:
     }
 
 private:
+    int m_LayerId = 0;
     int& m_AttachCount;
     int& m_UpdateCount;
+    int& m_DetachCount;
+    std::vector<int>& m_AttachOrder;
+    std::vector<int>& m_DetachOrder;
 };
 
 } // namespace
@@ -48,7 +70,7 @@ void RunSceneLifecycleSelfTests()
     Scene scene{};
 
     // ========================================================================
-    // 1. Scene内部Layerは1 frameにつき1回だけUpdateされる
+    // 1. Scene内部LayerのAttach / Update契約
     // ========================================================================
     // Scene::PushLayer()がOnAttach()を担当し、毎フレームの更新入口は
     // Scene::OnUpdate() -> OnUpdateLayer()へ一本化します。
@@ -56,13 +78,34 @@ void RunSceneLifecycleSelfTests()
     // 基底Sceneの契約をこのSelfTestで明示します。
     int attachCount = 0;
     int updateCount = 0;
+    int detachCount = 0;
+    std::vector<int> attachOrder;
+    std::vector<int> detachOrder;
 
-    scene.PushLayer(CreateScope<CountingLayer>(attachCount, updateCount));
-    assert(attachCount == 1);
+    scene.PushLayer(CreateScope<CountingLayer>(
+        1,
+        attachCount,
+        updateCount,
+        detachCount,
+        attachOrder,
+        detachOrder));
+    scene.PushLayer(CreateScope<CountingLayer>(
+        2,
+        attachCount,
+        updateCount,
+        detachCount,
+        attachOrder,
+        detachOrder));
+
+    assert(attachCount == 2);
     assert(updateCount == 0);
+    assert(detachCount == 0);
+    assert(attachOrder.size() == 2u);
+    assert(attachOrder[0] == 1);
+    assert(attachOrder[1] == 2);
 
     scene.OnUpdate(0.0f);
-    assert(updateCount == 1);
+    assert(updateCount == 2);
 
     // ========================================================================
     // 2. Immediate / queued / leaked-style Entityを同時に用意する
@@ -81,12 +124,18 @@ void RunSceneLifecycleSelfTests()
     assert(scene.IsEntityAlive(remaining) == true);
 
     // ========================================================================
-    // 3. Scene teardownでQueue待ちと残存Entityの両方を回収する
+    // 3. Scene teardownはLayerを逆順DetachしてからEntityを最終回収する
     // ========================================================================
-    // OnDestroy()は終了時点のDestroyQueueを破棄し、EntitySlotを正規データとして現在Aliveな
-    // Generationだけを直接sweepします。したがってqueuedDestroyもremainingも同じ最終安全網で
-    // 無効化され、古いQueue Handleを終了後に再処理することはありません。
+    // Layerは登録順とは逆のLIFO順でDetachします。
+    // 後から積まれたOverlay等が先に積まれたLayerへ依存していても、依存先より先に終了しません。
+    // Layerが所有EntityをOnDetach()で破棄できるよう、Entity最終Sweepより前にDetachすることも
+    // Scene lifecycleの重要な契約です。
     scene.OnDestroy();
+
+    assert(detachCount == 2);
+    assert(detachOrder.size() == 2u);
+    assert(detachOrder[0] == 2);
+    assert(detachOrder[1] == 1);
 
     assert(scene.IsEntityAlive(alreadyDestroyed) == false);
     assert(scene.IsEntityAlive(queuedDestroy) == false);
@@ -96,10 +145,12 @@ void RunSceneLifecycleSelfTests()
     // 4. OnDestroy()の多重呼び出し
     // ========================================================================
     // ApplicationのScene差し替え・終了順序が将来変更されても、teardown自体は冪等であるべきです。
-    // 既にAlive=falseのSlotを再破棄せず、空のDestroyQueue / ComponentStorageでも安全に終了することを
-    // ここで確認します。
+    // Layer Containerは最初のOnDestroy()でclear済みなので、2回目にOnDetach()を再実行しません。
+    // 既にAlive=falseのSlotも再破棄せず、安全に終了することを確認します。
     scene.OnDestroy();
 
+    assert(detachCount == 2);
+    assert(detachOrder.size() == 2u);
     assert(scene.IsEntityAlive(alreadyDestroyed) == false);
     assert(scene.IsEntityAlive(queuedDestroy) == false);
     assert(scene.IsEntityAlive(remaining) == false);
