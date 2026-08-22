@@ -10,6 +10,7 @@
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +53,38 @@ public:
     void RenderWithCamera(const Camera& camera) override
     {
         RenderScene(camera);
+    }
+
+    // ========================================================================
+    // Runtime render entity registration
+    // ========================================================================
+    // 現在SceneGame::RenderScene()は歴史的経緯からm_SpawnedEntitiesを描画対象一覧として利用しています。
+    // SoftBodyのようなApplication Layerが生成したEntityもGame View / Scene Viewの双方へ表示するため、
+    // 移行期間中の正式な登録入口をここへ用意します。
+    //
+    // 重要:
+    // 最終的にはRenderScene()をView<TransformComponent, MeshRendererComponent>()の直接走査へ変更し、
+    // この明示登録自体を不要にする予定です。それまではLayerからm_SpawnedEntitiesへ直接触れず、
+    // 重複登録と解除をこのAPIで一元管理します。
+    void RegisterRuntimeRenderEntity(Entity entity)
+    {
+        if (static_cast<bool>(entity) == false || IsEntityAlive(entity) == false)
+        {
+            return;
+        }
+
+        const auto iterator = std::find(m_SpawnedEntities.begin(), m_SpawnedEntities.end(), entity);
+        if (iterator == m_SpawnedEntities.end())
+        {
+            m_SpawnedEntities.push_back(entity);
+        }
+    }
+
+    void UnregisterRuntimeRenderEntity(Entity entity)
+    {
+        m_SpawnedEntities.erase(
+            std::remove(m_SpawnedEntities.begin(), m_SpawnedEntities.end(), entity),
+            m_SpawnedEntities.end());
     }
 
 private:
