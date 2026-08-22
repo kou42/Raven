@@ -41,7 +41,10 @@ struct SoftBodyParticleTriangleSelfCollisionSettings
     // Triangleが跨ぐCell数が増えてHashBuildが重くなります。
     // 大きくするとHashBuildは軽くなりますが、
     // Candidate/Narrow Phaseの候補数が増加します。
-    float SpatialHashCellSize = SpatialHashCellSizeMedium;
+    //
+    // 0.04 / 0.05 / 0.06の同一Solver snapshot比較では0.06が最短だったため、
+    // 現在の通常デフォルトにはLargeを採用します。比較プリセット自体は継続して保持します。
+    float SpatialHashCellSize = SpatialHashCellSizeLarge;
 
     // Particle-Triangle自己衝突専用の追加反復回数です。
     uint32_t SolverIterations = 4u;
