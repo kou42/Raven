@@ -57,15 +57,34 @@ struct SoftBodySolverSettings
 //   Index検証と「Particle自身を含むTriangle」のTopology除外を通過し、
 //   ComputeClosestPointOnTriangle()を実際に実行する直前まで到達した回数です。
 //   CandidateCountとの差を見ることで、Broad Phase候補のうちNarrow Phaseへ流入した割合を確認できます。
+//
+// DistanceCount:
+//   Closest Pointを求め、Particle-Triangle距離とCollision法線の構築まで完了した回数です。
+//   NarrowPhaseCountとの差と、次のConstraintCountまでの減少量を比較することで、
+//   Distance計算後の早期Rejectがどの程度効くかを確認できます。
+//
+// ConstraintCount:
+//   thickness外かつLambdaが残っていない候補を除外し、XPBD Constraint計算へ進んだ回数です。
+//   DistanceCountとの差は「距離・法線まで求めたがConstraint不要だった候補数」を表します。
+//
+// PositionCorrectionCount:
+//   有効なdenominator / DeltaLambdaを得た後、少なくとも1 Particleへ実際に位置補正した回数です。
+//   ConstraintCountとの差から、Constraint段階へ進んでもPosition更新に至らない候補数を確認できます。
 struct SoftBodyParticleTriangleCollisionStatistics
 {
     uint64_t CandidateCount = 0u;
     uint64_t NarrowPhaseCount = 0u;
+    uint64_t DistanceCount = 0u;
+    uint64_t ConstraintCount = 0u;
+    uint64_t PositionCorrectionCount = 0u;
 
     void Reset()
     {
         CandidateCount = 0u;
         NarrowPhaseCount = 0u;
+        DistanceCount = 0u;
+        ConstraintCount = 0u;
+        PositionCorrectionCount = 0u;
     }
 };
 
@@ -277,25 +296,24 @@ private:
     // Sphere / Plane CollisionのParticle別Lambdaと、Sphereが外部へ返す1Step分Feedbackを初期化します。
     void ResetCollisionConstraintState();
 
-    // Structural / Shear / 比較用Distance Bendingを含む全Distance ConstraintをXPBD式で解決します。
+    // Structural / Shear / 比較用Distance Bendingを含む全Distance Constraintを1 iteration分解きます。
     void SolveDistanceConstraints(float deltaTime);
 
-    // 隣接Triangle間の二面角を直接拘束するXPBD Bending Constraintです。
+    // Clothの共有Edgeに対するDihedral Angle Constraintを1 iteration分解きます。
     void SolveDihedralConstraints(float deltaTime);
 
-    // Sphere Collisionを C(x)=|x-center|-radius >= 0 の片側XPBD Constraintとして解決します。
-    // DeltaLambdaからRigidBodyへ返す反作用Impulseも蓄積します。
+    // Sphereとの片側XPBD Collision Constraintを1 iteration分解きます。
+    // 同時にRigidBody側へ返すReaction Impulse / Contact Pointも蓄積します。
     void SolveSphereCollisions(float deltaTime);
 
-    // Plane Collisionを C(x)=dot(n,x)-offset-thickness >= 0 の片側XPBD Constraintとして解決します。
+    // Planeとの片側XPBD Collision Constraintを1 iteration分解きます。
     void SolvePlaneCollisions(float deltaTime);
 
-    // Constraint補正後のPosition差分からVelocityを再構築します。
-    // 統合Stepでも全Constraintを解き終えた最後に1回だけ呼び出します。
+    // 最終PositionとPreviousPositionからVelocity = (x_new - x_old) / dt を再構築します。
     void UpdateVelocities(float deltaTime);
 
 private:
-    math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
+    math::Vec3 m_Gravity{ 0.0f, -9.81f, 0.0f };
     SoftBodySolverSettings m_Settings{};
     std::vector<SoftBodyParticle> m_Particles;
     std::vector<XPBDDistanceConstraint> m_DistanceConstraints;
