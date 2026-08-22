@@ -6,6 +6,7 @@
 
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
+#include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/XPBDDihedralConstraint.h"
 #include "Raven/Physics/SoftBody/XPBDDistanceConstraint.h"
 #include "Raven/Physics/SoftBody/XPBDVolumeConstraint.h"
@@ -339,6 +340,11 @@ private:
     std::vector<SoftBodySphereCollider> m_SphereColliders;
     std::vector<SoftBodyPlaneCollider> m_PlaneColliders;
     SoftBodyParticleTriangleCollisionStatistics m_ParticleTriangleCollisionStatistics{};
+
+    // Particle-Triangle Flat HashはBucketごとにvector capacityを持つため、Stepローカルにすると
+    // 毎frame最初のSolver iterationで巨大なBucket配列を再確保してしまいます。
+    // Solver寿命まで保持し、frame間でもBucket / Triangle scratch capacityを再利用します。
+    SoftBodyTriangleSpatialHashGrid m_ParticleTriangleSpatialHash{ 0.05f };
 };
 
 } // namespace ph

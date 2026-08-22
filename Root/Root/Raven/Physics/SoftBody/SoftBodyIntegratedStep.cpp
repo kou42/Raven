@@ -567,7 +567,13 @@ void SoftBodySolver::StepWithSelfCollisions(
 
     const float triangleCellSize =
         std::max(particleTriangleSettings.SpatialHashCellSize, 1.0e-4f);
-    SoftBodyTriangleSpatialHashGrid triangleSpatialHash(triangleCellSize);
+
+    // GridをSolver memberとしてframe間で再利用します。
+    // SetCellSize()はBucket / ScratchをClearするため、同じ値では呼ばないことが重要です。
+    if (m_ParticleTriangleSpatialHash.GetCellSize() != triangleCellSize)
+    {
+        m_ParticleTriangleSpatialHash.SetCellSize(triangleCellSize);
+    }
 
     {
         // 自己衝突用Topologyと除外ペアの構築コストをSolver反復とは分離します。
@@ -630,7 +636,7 @@ void SoftBodySolver::StepWithSelfCollisions(
             SolveParticleTriangleSelfCollisionIteration(
                 m_Particles,
                 triangles,
-                triangleSpatialHash,
+                m_ParticleTriangleSpatialHash,
                 particleTriangleLambdas,
                 particleTriangleCandidatePairs,
                 m_ParticleTriangleCollisionStatistics,
