@@ -35,6 +35,15 @@ public:
     void SetCollisionPlane(const math::Vec3& normal, float offset);
     void DisableCollisionPlane();
 
+    // Particle-Triangle Broad PhaseのCell Size比較用設定です。
+    // 0以下はSpatial Hash側の最小値へ丸められますが、通常はSettingsに定義した
+    // 0.04 / 0.05 / 0.06の比較プリセットを使用します。
+    void SetParticleTriangleSpatialHashCellSize(float cellSize);
+    float GetParticleTriangleSpatialHashCellSize() const
+    {
+        return m_ParticleTriangleSpatialHashCellSize;
+    }
+
     // デバッグや将来の連成処理用の参照です。Solverの所有権はDeformerが保持します。
     ph::SoftBodySolver& GetSolver() { return m_Solver; }
     const ph::SoftBodySolver& GetSolver() const { return m_Solver; }
@@ -62,6 +71,10 @@ private:
     math::Vec3 m_CollisionPlaneNormal{ 0.0f, 1.0f, 0.0f };
     float m_CollisionPlaneOffset = 0.0f;
     uint32_t m_CollisionPlaneIndex = 0u;
+
+    // デフォルトは比較中央値0.05です。
+    // RuntimeからSetterで変更してもClothを再構築せず、次StepからBroad Phaseだけ差し替えられます。
+    float m_ParticleTriangleSpatialHashCellSize = 0.05f;
 
     ph::SoftBodySolver m_Solver;
     ph::SoftBodyCloth m_Cloth;
