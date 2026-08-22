@@ -135,11 +135,12 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     }
 
     // ========================================================================
-    // 2. Triangle AABB / Plane Cache
+    // 2. Triangle AABB / Plane / Edge Half-Space Cache
     // ========================================================================
-    // Triangle頂点Positionからexpansion込みAABBを計算すると同時に、Plane Early Reject用の
-    // 非正規化法線も1回だけ生成します。CandidateごとにCross/Normalizeを繰り返さず、
-    // 後段ではDotとscalar比較だけで無限平面距離の下限判定を行えるようにします。
+    // Triangle頂点Positionからexpansion込みAABBを計算すると同時に、Plane Early Rejectと
+    // Edge Half-Space Rejectで使う非正規化法線を1回だけ生成します。
+    // CandidateごとにCross/Normalizeを繰り返さず、後段ではDotとscalar比較だけで
+    // Closest Pointへ進む候補を削減できるようにします。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB");
 
@@ -151,6 +152,16 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             bounds.PlaneNormal = math::Vec3{};
             bounds.PlaneOffset = 0.0f;
             bounds.PlaneDistanceThresholdSq = 0.0f;
+            bounds.EdgeHalfSpaceValid = false;
+            bounds.EdgeABNormal = math::Vec3{};
+            bounds.EdgeBCNormal = math::Vec3{};
+            bounds.EdgeCANormal = math::Vec3{};
+            bounds.EdgeABOffset = 0.0f;
+            bounds.EdgeBCOffset = 0.0f;
+            bounds.EdgeCAOffset = 0.0f;
+            bounds.EdgeABDistanceThresholdSq = 0.0f;
+            bounds.EdgeBCDistanceThresholdSq = 0.0f;
+            bounds.EdgeCADistanceThresholdSq = 0.0f;
             bounds.ParticleA = 0u;
             bounds.ParticleB = 0u;
             bounds.ParticleC = 0u;
@@ -184,13 +195,10 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             ++validTriangleCount;
 
             // ====================================================================
-            // Triangle Plane Cache
+            // Triangle Plane / Edge Half-Space Cache
             // ====================================================================
             // 正規化法線を作るとsqrtが必要になります。ここでは非正規化法線 n を保持し、
-            // Candidate側で
-            //   signedScaled = dot(n, p) - dot(n, a)
-            //   signedScaled^2 > Thickness^2 * |n|^2
-            // を比較します。左辺/右辺とも同じ |n|^2 スケールを含むため正規化は不要です。
+            // Candidate側で平方値を比較します。
             const math::Vec3 edgeABVector = b - a;
             const math::Vec3 edgeACVector = c - a;
             const math::Vec3 planeNormal = math::Vec3::Cross(edgeABVector, edgeACVector);
@@ -201,6 +209,39 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 bounds.PlaneOffset = math::Vec3::Dot(planeNormal, a);
                 bounds.PlaneDistanceThresholdSq = safeExpansionSq * planeNormalLengthSq;
                 bounds.PlaneValid = true;
+
+                // ================================================================
+                // Edge Half-Space Cache
+                // ================================================================
+                // PlaneNormalの向きはAB x ACです。この向きに対して cross(PlaneNormal, Edge) を取ると、
+                // ABではC側、BCではA側、CAではB側を向くため、3本ともTriangle内部側の法線になります。
+                // 各法線は非正規化のまま保持し、Candidate側では負側へThicknessより離れた場合だけRejectします。
+                const math::Vec3 edgeBCVector = c - b;
+                const math::Vec3 edgeCAVector = a - c;
+
+                const math::Vec3 edgeABNormal = math::Vec3::Cross(planeNormal, edgeABVector);
+                const math::Vec3 edgeBCNormal = math::Vec3::Cross(planeNormal, edgeBCVector);
+                const math::Vec3 edgeCANormal = math::Vec3::Cross(planeNormal, edgeCAVector);
+
+                const float edgeABNormalLengthSq = edgeABNormal.LengthSq();
+                const float edgeBCNormalLengthSq = edgeBCNormal.LengthSq();
+                const float edgeCANormalLengthSq = edgeCANormal.LengthSq();
+
+                if (edgeABNormalLengthSq > math::Epsilon * math::Epsilon
+                    && edgeBCNormalLengthSq > math::Epsilon * math::Epsilon
+                    && edgeCANormalLengthSq > math::Epsilon * math::Epsilon)
+                {
+                    bounds.EdgeABNormal = edgeABNormal;
+                    bounds.EdgeBCNormal = edgeBCNormal;
+                    bounds.EdgeCANormal = edgeCANormal;
+                    bounds.EdgeABOffset = math::Vec3::Dot(edgeABNormal, a);
+                    bounds.EdgeBCOffset = math::Vec3::Dot(edgeBCNormal, b);
+                    bounds.EdgeCAOffset = math::Vec3::Dot(edgeCANormal, c);
+                    bounds.EdgeABDistanceThresholdSq = safeExpansionSq * edgeABNormalLengthSq;
+                    bounds.EdgeBCDistanceThresholdSq = safeExpansionSq * edgeBCNormalLengthSq;
+                    bounds.EdgeCADistanceThresholdSq = safeExpansionSq * edgeCANormalLengthSq;
+                    bounds.EdgeHalfSpaceValid = true;
+                }
             }
 
             // Triangleの3辺を全て測定し、CellSizeに対する実寸を確認します。
@@ -362,6 +403,8 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
     uint64_t topologyRejectCount = 0u;
     uint64_t planeTestCount = 0u;
     uint64_t planeRejectCount = 0u;
+    uint64_t edgeHalfSpaceTestCount = 0u;
+    uint64_t edgeHalfSpaceRejectCount = 0u;
 
     for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
     {
@@ -449,6 +492,60 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
                 }
             }
 
+            // ====================================================================
+            // Triangle Edge Half-Space Early Reject
+            // ====================================================================
+            // Plane Distanceだけでは、Triangleと同じ平面付近にあるものの辺・頂点方向へ遠い候補を
+            // 除外できません。今回の計測ではこの経路が大量にClosest Pointへ流入しているため、
+            // Triangle内部を表す3つのHalf-Spaceを追加のcheap rejectとして利用します。
+            //
+            // 各Edge NormalはBuild時にTriangle内部側へ向くようキャッシュ済みです。
+            // signedScaled < 0 はEdgeの外側を意味し、そのEdge直線までの平面内距離がThicknessより大きければ、
+            // Triangle全体までの距離も必ずThicknessより大きいため安全にRejectできます。
+            // ここでもNormalize / sqrtは行わず、平方値だけを比較します。
+            if (bounds.EdgeHalfSpaceValid)
+            {
+                ++edgeHalfSpaceTestCount;
+
+                bool edgeHalfSpaceRejected = false;
+
+                const float edgeABSignedScaled =
+                    math::Vec3::Dot(bounds.EdgeABNormal, particlePosition) - bounds.EdgeABOffset;
+                if (edgeABSignedScaled < 0.0f
+                    && edgeABSignedScaled * edgeABSignedScaled > bounds.EdgeABDistanceThresholdSq)
+                {
+                    edgeHalfSpaceRejected = true;
+                }
+
+                if (edgeHalfSpaceRejected == false)
+                {
+                    const float edgeBCSignedScaled =
+                        math::Vec3::Dot(bounds.EdgeBCNormal, particlePosition) - bounds.EdgeBCOffset;
+                    if (edgeBCSignedScaled < 0.0f
+                        && edgeBCSignedScaled * edgeBCSignedScaled > bounds.EdgeBCDistanceThresholdSq)
+                    {
+                        edgeHalfSpaceRejected = true;
+                    }
+                }
+
+                if (edgeHalfSpaceRejected == false)
+                {
+                    const float edgeCASignedScaled =
+                        math::Vec3::Dot(bounds.EdgeCANormal, particlePosition) - bounds.EdgeCAOffset;
+                    if (edgeCASignedScaled < 0.0f
+                        && edgeCASignedScaled * edgeCASignedScaled > bounds.EdgeCADistanceThresholdSq)
+                    {
+                        edgeHalfSpaceRejected = true;
+                    }
+                }
+
+                if (edgeHalfSpaceRejected)
+                {
+                    ++edgeHalfSpaceRejectCount;
+                    continue;
+                }
+            }
+
             SoftBodyParticleTrianglePair pair{};
             pair.ParticleIndex = particleIndex32;
             pair.TriangleIndex = triangleIndex;
@@ -458,7 +555,7 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
 
     // Candidate funnelを段階ごとに記録します。
     // NarrowPhaseCount（Solver側）と合わせると、
-    //   Cell Candidate -> Expanded AABB -> Topology -> Plane Distance -> Closest Point
+    //   Cell Candidate -> Expanded AABB -> Topology -> Plane Distance -> Edge Half-Space -> Closest Point
     // のどこで候補を削減できているか確認できます。
     CPUProfiler& profiler = CPUProfiler::Get();
     if (profiler.IsEnabled())
@@ -481,6 +578,13 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
             ? planeRejectCountValue / planeTestCountValue
             : 0.0;
 
+        const double edgeHalfSpaceTestCountValue = static_cast<double>(edgeHalfSpaceTestCount);
+        const double edgeHalfSpaceRejectCountValue = static_cast<double>(edgeHalfSpaceRejectCount);
+        const double edgeHalfSpaceRejectRatio = edgeHalfSpaceTestCount > 0u
+            ? edgeHalfSpaceRejectCountValue / edgeHalfSpaceTestCountValue
+            : 0.0;
+        const double closestPointCandidateCount = static_cast<double>(outPairs.size());
+
         profiler.AddCounter("SoftBody.TriangleHash.CellCandidateCount", candidateCount);
         profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectCount", aabbRejectCount);
         profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectRatio", aabbRejectRatio);
@@ -489,6 +593,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
         profiler.AddCounter("SoftBody.TriangleHash.PlaneTestCount", planeTestCountValue);
         profiler.AddCounter("SoftBody.TriangleHash.PlaneRejectCount", planeRejectCountValue);
         profiler.AddCounter("SoftBody.TriangleHash.PlaneRejectRatio", planeRejectRatio);
+        profiler.AddCounter("SoftBody.TriangleHash.EdgeHalfSpaceTestCount", edgeHalfSpaceTestCountValue);
+        profiler.AddCounter("SoftBody.TriangleHash.EdgeHalfSpaceRejectCount", edgeHalfSpaceRejectCountValue);
+        profiler.AddCounter("SoftBody.TriangleHash.EdgeHalfSpaceRejectRatio", edgeHalfSpaceRejectRatio);
+        profiler.AddCounter("SoftBody.TriangleHash.ClosestPointCandidateCount", closestPointCandidateCount);
     }
 }
 
