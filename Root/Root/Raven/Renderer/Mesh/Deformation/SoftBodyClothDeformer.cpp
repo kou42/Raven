@@ -304,17 +304,39 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     }
 
     // ========================================================================
-    // Particle-Triangle Spatial Hash Comparison Counters
+    // Particle-Triangle Spatial Hash / NarrowPhase Funnel Counters
     // ========================================================================
     // Scope時間と同じProfiler Frameへ比較条件と件数を記録します。
-    // CellSizeだけを0.04 / 0.05 / 0.06へ変更して実行すれば、
-    // HashBuild / CandidateGeneration / NarrowPhaseの時間と候補削減率を同じ画面で比較できます。
+    // Candidate -> NarrowPhase -> Distance -> Constraint -> PositionCorrection の順で並べることで、
+    // Narrow Phase後半のどこで候補が大きく減っているかをStatistics Panel上で直接確認できます。
+    //
+    // 特に DistanceCount >> ConstraintCount なら、距離と法線を最後まで構築した後で大量にRejectしているため、
+    // distanceSqとthickness^2によるsqrt前Early Rejectを次の最適化候補として判断できます。
     const ph::SoftBodyParticleTriangleCollisionStatistics& particleTriangleStatistics =
         m_Solver.GetParticleTriangleCollisionStatistics();
 
     CPUProfiler::Get().AddCounter(
         "SoftBody.ParticleTriangle.SpatialHashCellSize",
         static_cast<double>(m_ParticleTriangleSpatialHashCellSize));
+
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.Candidate",
+        static_cast<double>(particleTriangleStatistics.CandidateCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.NarrowPhase",
+        static_cast<double>(particleTriangleStatistics.NarrowPhaseCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.Distance",
+        static_cast<double>(particleTriangleStatistics.DistanceCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.Constraint",
+        static_cast<double>(particleTriangleStatistics.ConstraintCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.PositionCorrection",
+        static_cast<double>(particleTriangleStatistics.PositionCorrectionCount));
+
+    // 既存のCounter名はCell Size比較結果との互換性を維持するため残します。
+    // Funnel Counterと同じ値ですが、過去のProfiler Captureとの比較時に名前が変わらないことを優先します。
     CPUProfiler::Get().AddCounter(
         "SoftBody.ParticleTriangle.CandidateCount",
         static_cast<double>(particleTriangleStatistics.CandidateCount));
