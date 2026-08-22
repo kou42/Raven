@@ -39,6 +39,9 @@ struct CPUProfileAggregate
     uint32_t CallCount = 0u;
 };
 
+// Timerとは別に記録した軽量Counterを同名ごとに集計します。
+// CellRegistrationのようなHot loopではTimerを細かく置かず、処理中は整数加算だけを行い、
+// Build終了時にまとめてCounterを登録することでProfiler自身による計測誤差を抑えます。
 struct CPUCounterAggregate
 {
     std::string Name;
@@ -80,6 +83,8 @@ void BuildCPUProfileAggregates(
         ++aggregate.CallCount;
     }
 
+    // まず「そのframeでCPU時間を最も消費したScope」を見つけたいので、
+    // 合計時間の降順で表示します。Fixed Stepが複数回走った場合もTotalへ加算されます。
     std::sort(
         outAggregates.begin(),
         outAggregates.end(),
@@ -146,6 +151,9 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         ImGui::Text("Window: %u x %u", window.GetWidth(), window.GetHeight());
     }
 
+    // CPU Profilerは直前に完了したApplication frameを表示します。
+    // 計測中frameを直接参照しないため、Profiler側のvectorへ記録している最中でも
+    // Editor UIは完成済みの安定したsnapshotだけを読み取れます。
     if (ImGui::CollapsingHeader("CPU Profiler", ImGuiTreeNodeFlags_DefaultOpen))
     {
         CPUProfiler& profiler = CPUProfiler::Get();
@@ -165,6 +173,9 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
             ImGui::Text("Recorded Counters: %u", static_cast<uint32_t>(profileFrame.Counters.size()));
             ImGui::Separator();
 
+            // 同名Scopeをframe内で集計します。
+            // Physics.FixedStepのように1frame中に複数回呼ばれる処理は、Total / Max / Callsを見ることで
+            // 「1回が重い」のか「catch-upで呼び出し回数が増えた」のかを区別できます。
             std::vector<CPUProfileAggregate> aggregates;
             BuildCPUProfileAggregates(profileFrame, aggregates);
 
@@ -249,6 +260,7 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 ImGui::TreePop();
             }
 
+            // 集計値でボトルネックを見つけた後、実際の呼び出し順・入れ子を確認するためのRaw表示です。
             if (ImGui::TreeNode("Raw Scopes"))
             {
                 if (ImGui::BeginTable(
@@ -284,6 +296,8 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         }
     }
 
+    // RenderCommand直前で記録するため、Scene本体だけでなくDebug Overlay等を含む
+    // 「実際に発行した描画命令」を確認できます。
     if (ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("Draw Calls: %u", rendererStatistics.DrawCalls);
@@ -299,6 +313,9 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         }
         else
         {
+            // 現在のScene::View()は非const APIのみなので、読み取り専用のComponent数集計に限って
+            // 一時的にnon-const参照へ戻します。PanelからComponent内容は変更しません。
+            // const View()を追加した段階で、このconst_castは削除できます。
             Scene& mutableScene = const_cast<Scene&>(*scene);
             const uint32_t rigidBodyCount = CountComponents<RigidBodyComponent>(mutableScene);
             const uint32_t colliderCount = CountComponents<ColliderComponent>(mutableScene);
