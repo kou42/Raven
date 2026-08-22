@@ -537,20 +537,8 @@ void SceneGame::OnDestroy()
     m_DraggedEntity = {};
     m_DragHitPoint = {};
 
-    // ========================================================================
-    // Layer-owned Entity cleanup
-    // ========================================================================
-    // Scene::PushLayer()は登録時にOnAttach()を呼ぶため、終了側も対称にOnDetach()を呼びます。
-    // 後から積まれたLayerほど先に破棄するLIFO順にすることで、Overlay等が先に積まれたLayerを
-    // 参照している場合でも依存先より先に終了できます。
-    for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it)
-    {
-        if (*it != nullptr)
-        {
-            (*it)->OnDetach();
-        }
-    }
-    m_layers.clear();
+    // Scene内部LayerのOnDetach() / clearは基底Scene::OnDestroy()が共通管理します。
+    // SceneGameは自身が直接生成したEntityとRenderer Resourceの解放だけを担当します。
 
     // Sphere群はm_SphereBodiesだけを所有情報として使用します。
     for (const SphereBody& body : m_SphereBodies)
