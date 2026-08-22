@@ -62,7 +62,7 @@ public:
 
     // 各Particleが属する1セルだけを参照し、そこへ登録されたTriangleとの候補Pairを返します。
     // Cell一致後はBuild時にキャッシュした情報を使い、
-    // Expanded AABB -> Topology -> Triangle Plane Distance の順でcheap rejectします。
+    // Expanded AABB -> Topology -> Triangle Plane Distance -> Edge Half-Space の順でcheap rejectします。
     // Solver側にもTopology検証は安全網として残しますが、通常はここで自己Triangleを除外します。
     void GenerateParticleTriangleCandidates(
         const std::vector<SoftBodyParticle>& particles,
@@ -110,6 +110,28 @@ private:
         float PlaneOffset = 0.0f;
         float PlaneDistanceThresholdSq = 0.0f;
         bool PlaneValid = false;
+
+        // ====================================================================
+        // Edge Half-Space Cache
+        // ====================================================================
+        // Triangle Plane上で各Edgeから「Triangle内部側」を向く非正規化法線を保持します。
+        // 例えばAB Edgeでは cross(PlaneNormal, B - A) がC側を向きます。
+        // Candidate生成時に
+        //   signedScaled = dot(edgeNormal, p) - edgeOffset
+        // を評価し、signedScaled < 0 かつ
+        //   signedScaled^2 > Thickness^2 * |edgeNormal|^2
+        // なら、ParticleはTriangleの外側Half-SpaceへThicknessより遠く離れています。
+        // Triangle全体は内部Half-Space側に含まれるため、この候補はClosest Point計算前に安全にRejectできます。
+        math::Vec3 EdgeABNormal{};
+        math::Vec3 EdgeBCNormal{};
+        math::Vec3 EdgeCANormal{};
+        float EdgeABOffset = 0.0f;
+        float EdgeBCOffset = 0.0f;
+        float EdgeCAOffset = 0.0f;
+        float EdgeABDistanceThresholdSq = 0.0f;
+        float EdgeBCDistanceThresholdSq = 0.0f;
+        float EdgeCADistanceThresholdSq = 0.0f;
+        bool EdgeHalfSpaceValid = false;
 
         bool Valid = false;
     };
