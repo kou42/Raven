@@ -54,15 +54,32 @@ Application::~Application()
     // ========================================================================
     // Shutdown order
     // ========================================================================
-    // 通常Layerを先にDetachします。
-    // EditorLayer::OnDetach()が将来ImGui関連リソースやEditor用GPUリソースへ触れる場合でも、
-    // この時点ではImGui Context / Window / OpenGL Contextがまだ生存していることを保証します。
+    // Application LayerはActive Sceneを借用している可能性があります。
+    // Cloth/Jelly Demo LayerのようにOnDetach()でScene Entityを破棄するLayerがあるため、
+    // Sceneより先にLayerをDetachして生成者自身へ破棄責務を返します。
     for (auto& layer : m_Layers)
     {
         if (layer != nullptr)
         {
             layer->OnDetach();
         }
+    }
+    m_Layers.clear();
+
+    // ========================================================================
+    // Scene shutdown
+    // ========================================================================
+    // 1. virtual OnDestroy()でSceneGame固有Resource / 内部Layerを破棄します。
+    // 2. その後、基底Scene::OnDestroy()を明示呼び出しし、所有者が取りこぼした残存Entityを
+    //    ECS全体から最終Sweepします。
+    //
+    // 派生Scene側に「必ずScene::OnDestroy()を呼ぶ」という規約を要求しないことが重要です。
+    // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の終了順序を保証します。
+    if (m_scene != nullptr)
+    {
+        m_scene->OnDestroy();
+        m_scene->Scene::OnDestroy();
+        m_scene.reset();
     }
 
     // ImGui OpenGL backendは有効なOpenGL Contextを必要とします。
@@ -100,12 +117,16 @@ void Application::PushLayer(Scope<Layer> layer)
 
 void Application::SetScene(Scope<Scene> scene)
 {
-    // Scene差し替え時は旧Sceneの終了処理を先に実行します。
-    // EditorLayerはSceneポインタをキャッシュせずApplication::GetScene()を参照するため、
-    // Scene交換後に古いSceneを参照し続けない構造になっています。
+    // ========================================================================
+    // Scene replacement shutdown
+    // ========================================================================
+    // Scene差し替え時もApplication終了時と同じ順序を使います。
+    // 派生Scene固有Cleanupの後に基底Sceneの最終Sweepを実行してから所有権を入れ替えるため、
+    // 古いSceneのEntity / Component参照を新しいSceneへ持ち越しません。
     if (m_scene != nullptr)
     {
         m_scene->OnDestroy();
+        m_scene->Scene::OnDestroy();
     }
 
     m_scene = std::move(scene);
