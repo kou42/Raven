@@ -172,6 +172,44 @@ void Scene::OnCreate()
 
 void Scene::OnDestroy()
 {
+    // ========================================================================
+    // Scene final entity sweep
+    // ========================================================================
+    // 通常はEntityを生成したSceneGame / Layer / Spawner自身が明示的にDestroyEntity()を呼びます。
+    // ここはその所有責務を置き換えるものではなく、Scene終了時に取りこぼされたEntityを残さないための
+    // 最終安全網です。
+    //
+    // EntitySlotを正規データとして走査するため、特定Componentや描画対象Listには依存しません。
+    // MeshRendererを持たないCamera / Physics Entityや、将来追加されるGameplay Entityも同じ規則で
+    // 確実に破棄できます。
+    //
+    // Destroy Queueに同じEntityが残っていても、先にQueueを捨てて現在AliveなGenerationだけを
+    // 直接破棄するため、終了処理後に古いHandleを再処理することはありません。
+    m_DestroyQueue.clear();
+
+    for (EntityIndex index = 1u;
+         index < static_cast<EntityIndex>(m_EntitySlots.size());
+         ++index)
+    {
+        const EntitySlot& slot = m_EntitySlots[index];
+        if (slot.Alive == false)
+        {
+            continue;
+        }
+
+        const EntityHandle handle{ index, slot.Generation };
+        DestroyEntity(Entity(handle, this));
+    }
+
+    // DestroyEntity()ですべてのComponentはRemove済みですが、Storage自体が保持するAllocatorや
+    // shared_ptr等の内部容量もScene終了時に解放するためContainerも破棄します。
+    m_ComponentStorages.clear();
+
+    // Scene内Layerが残っているBase Sceneでも、Scene終了時にはLayer所有Resourceを解放します。
+    // SceneGameのように派生OnDestroy()で先にclear済みでも空Containerへのclearなので安全です。
+    m_layers.clear();
+
+    m_PhysicsAccumulator = 0.0f;
 }
 
 void Scene::OnUpdate(float dt)
