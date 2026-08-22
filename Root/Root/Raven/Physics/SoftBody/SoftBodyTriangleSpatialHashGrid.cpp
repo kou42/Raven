@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <functional>
-#include <limits>
+#include <utility>
 
 namespace Raven
 {
@@ -12,12 +11,20 @@ namespace ph
 namespace
 {
 constexpr float MinimumCellSize = 1.0e-4f;
+constexpr std::size_t MinimumBucketCount = 256u;
+constexpr std::size_t InitialBucketMultiplier = 16u;
+constexpr std::size_t MaximumLoadNumerator = 7u;
+constexpr std::size_t MaximumLoadDenominator = 10u;
 
-// Inactive Bucketが増え続けないための最低Compaction閾値です。
-// 通常のCloth solverでは同じ周辺Cellを反復して使うためCompactionはほぼ発生せず、
-// 大きく移動し続けた場合だけ古いCell nodeを回収します。
-constexpr std::size_t MinimumCompactionCellCount = 2048u;
-constexpr std::size_t InactiveCellRetentionMultiplier = 4u;
+std::size_t NextPowerOfTwo(std::size_t value)
+{
+    std::size_t result = 1u;
+    while (result < value)
+    {
+        result <<= 1u;
+    }
+    return result;
+}
 }
 
 SoftBodyTriangleSpatialHashGrid::SoftBodyTriangleSpatialHashGrid(float cellSize)
@@ -34,10 +41,10 @@ void SoftBodyTriangleSpatialHashGrid::SetCellSize(float cellSize)
 
 void SoftBodyTriangleSpatialHashGrid::Clear()
 {
-    // Clear()は明示的な完全リセットです。
-    // 通常のBuildTriangles()ではMapを破棄せずGenerationで論理クリアし、
-    // Bucket内vectorのcapacityを次iterationへ再利用します。
-    m_TriangleCells.clear();
+    // 明示的ClearではTable全体を破棄します。
+    // 通常のBuildTriangles()ではGenerationだけを更新し、Bucketと各vector capacityを再利用します。
+    m_Buckets.clear();
+    m_BucketMask = 0u;
     m_CurrentGeneration = 0u;
     m_ActiveCellCount = 0u;
 }
@@ -48,37 +55,23 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     float expansion)
 {
     // ========================================================================
-    // Generation-based logical clear
+    // Flat Hash frame generation
     // ========================================================================
-    // 旧実装では毎iterationで unordered_map::clear() していたため、
-    //   Cell node破棄
-    //   -> 各vector破棄
-    //   -> 次iterationでnode/vector再生成
-    // が繰り返されていました。
-    //
-    // ClothのXPBD iteration間ではTriangle位置の変化は比較的小さく、使用Cellもほぼ同じです。
-    // Map/Bucketを保持してGenerationだけ進めることで、前iterationのvector capacityを再利用します。
+    // unordered_map版と同様に毎iterationで物理Clearは行いません。
+    // Generationが一致するBucketだけを現在BuildのActive Cellとして扱います。
     ++m_CurrentGeneration;
     if (m_CurrentGeneration == 0u)
     {
-        // uint32_tがwrapした場合だけ完全初期化します。
-        // 実運用で到達する頻度ではありませんが、古いGenerationと一致する可能性を排除します。
-        m_TriangleCells.clear();
+        // Generation wrap時は古い値との一致を避けるため全BucketをInactiveへ戻します。
+        for (TriangleCellBucket& bucket : m_Buckets)
+        {
+            bucket.Generation = 0u;
+        }
         m_CurrentGeneration = 1u;
     }
 
     m_ActiveCellCount = 0u;
-
-    // 初回Build時にある程度bucketを確保してrehash回数を抑えます。
-    // Triangleは複数Cellへ登録されますが、Cellは隣接Triangle間で共有されるため、
-    // Triangle数の2倍を初期目安にして過剰reserveを避けます。
-    if (m_TriangleCells.empty())
-    {
-        const std::size_t reserveCount = std::max<std::size_t>(
-            triangles.size() * 2u,
-            64u);
-        m_TriangleCells.reserve(reserveCount);
-    }
+    EnsureInitialBucketCapacity(triangles.size());
 
     const float safeExpansion = std::max(0.0f, expansion);
 
@@ -109,8 +102,8 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
         const CellCoord minimumCell = ComputeCellCoord(minimum);
         const CellCoord maximumCell = ComputeCellCoord(maximum);
 
-        // Triangleは面積を持つため1セル登録では取りこぼします。
-        // AABBが跨ぐ全セルへ登録し、Particle側は自分の1セルだけ問い合わせればよい形にします。
+        // TriangleはAABBが跨ぐ全Cellへ登録します。
+        // Open Addressing化してもBroad Phaseの候補条件そのものは旧実装から変更しません。
         for (int32_t z = minimumCell.Z; z <= maximumCell.Z; ++z)
         {
             for (int32_t y = minimumCell.Y; y <= maximumCell.Y; ++y)
@@ -128,8 +121,6 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             }
         }
     }
-
-    CompactInactiveBucketsIfNeeded();
 }
 
 void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
@@ -141,21 +132,13 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
     for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
     {
         const CellCoord cell = ComputeCellCoord(particles[particleIndex].Position);
-        const auto cellIt = m_TriangleCells.find(cell);
-        if (cellIt == m_TriangleCells.end())
+        const TriangleCellBucket* bucket = FindActiveBucket(cell);
+        if (bucket == nullptr)
         {
             continue;
         }
 
-        // Generation方式では古いBucketをMapへ残してcapacityを再利用します。
-        // 現Buildで触られていないBucketは候補として扱ってはいけません。
-        const TriangleCellBucket& bucket = cellIt->second;
-        if (bucket.Generation != m_CurrentGeneration)
-        {
-            continue;
-        }
-
-        for (uint32_t triangleIndex : bucket.TriangleIndices)
+        for (uint32_t triangleIndex : bucket->TriangleIndices)
         {
             SoftBodyParticleTrianglePair pair{};
             pair.ParticleIndex = static_cast<uint32_t>(particleIndex);
@@ -163,18 +146,6 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
             outPairs.push_back(pair);
         }
     }
-}
-
-std::size_t SoftBodyTriangleSpatialHashGrid::CellCoordHasher::operator()(const CellCoord& coord) const
-{
-    const std::size_t hashX = std::hash<int32_t>{}(coord.X);
-    const std::size_t hashY = std::hash<int32_t>{}(coord.Y);
-    const std::size_t hashZ = std::hash<int32_t>{}(coord.Z);
-
-    std::size_t seed = hashX;
-    seed ^= hashY + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-    seed ^= hashZ + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-    return seed;
 }
 
 SoftBodyTriangleSpatialHashGrid::CellCoord SoftBodyTriangleSpatialHashGrid::ComputeCellCoord(
@@ -187,53 +158,159 @@ SoftBodyTriangleSpatialHashGrid::CellCoord SoftBodyTriangleSpatialHashGrid::Comp
     return coord;
 }
 
+std::size_t SoftBodyTriangleSpatialHashGrid::HashCell(const CellCoord& cell) const
+{
+    // 3軸へ異なる大きな素数を掛けてXORします。
+    // Cell座標は負値も取り得るためuint32_tへbit-patternとして変換してから混合します。
+    const uint64_t x = static_cast<uint32_t>(cell.X);
+    const uint64_t y = static_cast<uint32_t>(cell.Y);
+    const uint64_t z = static_cast<uint32_t>(cell.Z);
+
+    uint64_t hash = x * 73856093ull;
+    hash ^= y * 19349663ull;
+    hash ^= z * 83492791ull;
+
+    // 上位bitも下位bitへ混ぜ、2の累乗Maskを使った場合の偏りを抑えます。
+    hash ^= hash >> 33u;
+    hash *= 0xff51afd7ed558ccdull;
+    hash ^= hash >> 33u;
+
+    return static_cast<std::size_t>(hash);
+}
+
+void SoftBodyTriangleSpatialHashGrid::EnsureInitialBucketCapacity(std::size_t triangleCount)
+{
+    if (m_Buckets.empty() == false)
+    {
+        return;
+    }
+
+    // Cloth TriangleはAABB expansionによって複数Cellへ登録されます。
+    // Triangle数の16倍を初期目安にし、Load Factorを低く保ってLinear Probe回数を抑えます。
+    const std::size_t requestedBucketCount = std::max(
+        MinimumBucketCount,
+        triangleCount * InitialBucketMultiplier);
+
+    const std::size_t bucketCount = NextPowerOfTwo(requestedBucketCount);
+    m_Buckets.resize(bucketCount);
+    m_BucketMask = bucketCount - 1u;
+}
+
+void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
+{
+    const std::size_t oldBucketCount = m_Buckets.size();
+    const std::size_t newBucketCount = std::max(
+        MinimumBucketCount,
+        oldBucketCount == 0u ? MinimumBucketCount : oldBucketCount * 2u);
+
+    std::vector<TriangleCellBucket> oldBuckets = std::move(m_Buckets);
+    m_Buckets.clear();
+    m_Buckets.resize(newBucketCount);
+    m_BucketMask = newBucketCount - 1u;
+
+    const std::size_t previousActiveCellCount = m_ActiveCellCount;
+    m_ActiveCellCount = 0u;
+
+    // 現GenerationのBucketだけを新Tableへ移します。
+    // TriangleIndicesはmoveするため、緊急Grow時でも既存vector allocationを可能な限り保持します。
+    for (TriangleCellBucket& oldBucket : oldBuckets)
+    {
+        if (oldBucket.Generation != m_CurrentGeneration)
+        {
+            continue;
+        }
+
+        std::size_t bucketIndex = HashCell(oldBucket.Coord) & m_BucketMask;
+        while (true)
+        {
+            TriangleCellBucket& newBucket = m_Buckets[bucketIndex];
+            if (newBucket.Generation != m_CurrentGeneration)
+            {
+                newBucket.Coord = oldBucket.Coord;
+                newBucket.TriangleIndices = std::move(oldBucket.TriangleIndices);
+                newBucket.Generation = m_CurrentGeneration;
+                ++m_ActiveCellCount;
+                break;
+            }
+
+            bucketIndex = (bucketIndex + 1u) & m_BucketMask;
+        }
+    }
+
+    // Grow前後でActive Cell数が変わる場合は内部不整合です。
+    // Release buildでも処理継続できるよう値を復元するような分岐は行わず、
+    // 正常系では必ず一致する単純な構造にしています。
+    static_cast<void>(previousActiveCellCount);
+}
+
 SoftBodyTriangleSpatialHashGrid::TriangleCellBucket&
 SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
 {
-    auto [cellIt, inserted] = m_TriangleCells.try_emplace(cell);
-    static_cast<void>(inserted);
-
-    TriangleCellBucket& bucket = cellIt->second;
-    if (bucket.Generation != m_CurrentGeneration)
+    if (m_Buckets.empty())
     {
-        // std::vector::clear() はsizeだけを0にしcapacityを保持します。
-        // ここが今回の最適化の中心で、同じCellを使う次iterationでは再allocationを大幅に削減できます。
-        bucket.TriangleIndices.clear();
-        bucket.Generation = m_CurrentGeneration;
-        ++m_ActiveCellCount;
+        EnsureInitialBucketCapacity(0u);
     }
 
-    return bucket;
+    // Linear Probeが長くなる前にTableを拡張します。
+    // active + 1 が70%を越える場合だけGrowするため、通常iterationでは発生しません。
+    if ((m_ActiveCellCount + 1u) * MaximumLoadDenominator
+        > m_Buckets.size() * MaximumLoadNumerator)
+    {
+        GrowBuckets();
+    }
+
+    std::size_t bucketIndex = HashCell(cell) & m_BucketMask;
+
+    while (true)
+    {
+        TriangleCellBucket& bucket = m_Buckets[bucketIndex];
+
+        if (bucket.Generation != m_CurrentGeneration)
+        {
+            // Inactive Bucketは現在Buildでは空なので、その場で再利用できます。
+            // clear()はcapacityを保持するため、同じSlotが再利用された場合のallocationを削減できます。
+            bucket.Coord = cell;
+            bucket.TriangleIndices.clear();
+            bucket.Generation = m_CurrentGeneration;
+            ++m_ActiveCellCount;
+            return bucket;
+        }
+
+        if (bucket.Coord == cell)
+        {
+            return bucket;
+        }
+
+        bucketIndex = (bucketIndex + 1u) & m_BucketMask;
+    }
 }
 
-void SoftBodyTriangleSpatialHashGrid::CompactInactiveBucketsIfNeeded()
+const SoftBodyTriangleSpatialHashGrid::TriangleCellBucket*
+SoftBodyTriangleSpatialHashGrid::FindActiveBucket(const CellCoord& cell) const
 {
-    if (m_TriangleCells.size() <= MinimumCompactionCellCount)
+    if (m_Buckets.empty())
     {
-        return;
+        return nullptr;
     }
 
-    const std::size_t retainedCellLimit = std::max(
-        MinimumCompactionCellCount,
-        m_ActiveCellCount * InactiveCellRetentionMultiplier);
+    std::size_t bucketIndex = HashCell(cell) & m_BucketMask;
 
-    if (m_TriangleCells.size() <= retainedCellLimit)
+    while (true)
     {
-        return;
-    }
+        const TriangleCellBucket& bucket = m_Buckets[bucketIndex];
 
-    // 大きく移動し続けたSoftBodyでは、再利用されない過去Cellを永久保持するとMapが肥大化します。
-    // 通常iterationではこの条件へ入らないため、毎回全Mapを走査するコストは発生しません。
-    for (auto cellIt = m_TriangleCells.begin(); cellIt != m_TriangleCells.end();)
-    {
-        if (cellIt->second.Generation != m_CurrentGeneration)
+        // 現Generationで未使用のSlotに到達した時点で、このProbe列には対象Cellが存在しません。
+        if (bucket.Generation != m_CurrentGeneration)
         {
-            cellIt = m_TriangleCells.erase(cellIt);
+            return nullptr;
         }
-        else
+
+        if (bucket.Coord == cell)
         {
-            ++cellIt;
+            return &bucket;
         }
+
+        bucketIndex = (bucketIndex + 1u) & m_BucketMask;
     }
 }
 
