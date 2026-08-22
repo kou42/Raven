@@ -63,6 +63,88 @@ void RunParticleTriangleSpatialHashPresetCase(float spatialHashCellSize)
     const SoftBodyParticle& probeParticle = solver.GetParticles()[probe];
     assert(probeParticle.Position.z > 0.001f);
 }
+
+void RunParticleTriangleSpatialHashBenchmarkCase()
+{
+    SoftBodySolver solver{};
+    solver.SetGravity({ 0.0f, 0.0f, 0.0f });
+
+    SoftBodySolverSettings solverSettings{};
+    solverSettings.SolverIterations = 4u;
+    solverSettings.CollisionThickness = 0.0f;
+    solver.SetSettings(solverSettings);
+
+    SoftBodyClothSettings clothSettings{};
+    clothSettings.Rows = 1u;
+    clothSettings.Columns = 1u;
+    clothSettings.Width = 1.0f;
+    clothSettings.Height = 1.0f;
+    clothSettings.InverseMass = 1.0f;
+    clothSettings.StructuralCompliance = 0.0f;
+    clothSettings.ShearCompliance = 0.0f;
+    clothSettings.BendingModel = SoftBodyClothBendingModel::Dihedral;
+    clothSettings.PinTopLeft = false;
+    clothSettings.PinTopRight = false;
+
+    SoftBodyCloth cloth = SoftBodyClothBuilder::Build(solver, clothSettings);
+    const uint32_t probe = solver.AddParticle({ 0.0f, 0.0f, 0.001f }, 1.0f);
+    assert(probe < solver.GetParticles().size());
+
+    SoftBodySelfCollisionSettings particleSettings{};
+    particleSettings.Enabled = false;
+
+    SoftBodyParticleTriangleSelfCollisionSettings particleTriangleSettings{};
+    particleTriangleSettings.Enabled = true;
+    particleTriangleSettings.Thickness = 0.05f;
+    particleTriangleSettings.Compliance = 0.0f;
+
+    const float originalProbeZ = solver.GetParticles()[probe].Position.z;
+
+    const SoftBodyParticleTriangleSpatialHashBenchmarkResult benchmark =
+        BenchmarkSoftBodyParticleTriangleSpatialHashCellSizes(
+            solver,
+            cloth,
+            1.0f / 60.0f,
+            particleSettings,
+            particleTriangleSettings);
+
+    assert(benchmark.Valid);
+
+    constexpr std::array<float, 3u> expectedCellSizes
+    {
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeSmall,
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeMedium,
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeLarge
+    };
+
+    std::size_t expectedBestIndex = 0u;
+    for (std::size_t sampleIndex = 0u; sampleIndex < benchmark.Samples.size(); ++sampleIndex)
+    {
+        const SoftBodyParticleTriangleSpatialHashBenchmarkSample& sample =
+            benchmark.Samples[sampleIndex];
+
+        assert(sample.CellSize == expectedCellSizes[sampleIndex]);
+        assert(sample.SolverMilliseconds >= 0.0);
+        assert(sample.CandidateCount > 0u);
+        assert(sample.NarrowPhaseCount > 0u);
+        assert(sample.CandidateCount >= sample.NarrowPhaseCount);
+        assert(sample.GetNarrowPhaseRatio() > 0.0);
+        assert(sample.GetNarrowPhaseRatio() <= 1.0);
+
+        if (sample.SolverMilliseconds
+            < benchmark.Samples[expectedBestIndex].SolverMilliseconds)
+        {
+            expectedBestIndex = sampleIndex;
+        }
+    }
+
+    // BestSampleIndexは「候補数最小」ではなく、同一初期状態から実測した統合Solver時間の最小値です。
+    assert(benchmark.BestSampleIndex == expectedBestIndex);
+    assert(benchmark.GetBestSample().CellSize == expectedCellSizes[expectedBestIndex]);
+
+    // Benchmarkはsolverを値コピーして実行するため、比較そのものが本番Solver状態を進めないことを確認します。
+    assert(solver.GetParticles()[probe].Position.z == originalProbeZ);
+}
 } // namespace
 
 // ============================================================================
@@ -167,6 +249,9 @@ void RunSoftBodyIntegratedStepSelfTests()
     {
         RunParticleTriangleSpatialHashPresetCase(spatialHashCellSize);
     }
+
+    // 同一Solver snapshotから3候補を実測し、最小時間のCell Sizeを返す③の選定処理を確認します。
+    RunParticleTriangleSpatialHashBenchmarkCase();
 }
 
 } // namespace Raven::ph::tests
