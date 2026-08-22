@@ -19,7 +19,7 @@ CPUProfiler& CPUProfiler::Get()
 
 void CPUProfiler::BeginFrame()
 {
-    if (m_Enabled == false)
+    if (m_Enabled.load(std::memory_order_relaxed) == false)
     {
         return;
     }
@@ -50,7 +50,7 @@ void CPUProfiler::BeginFrame()
 
 void CPUProfiler::AddResult(CPUProfileResult result)
 {
-    if (m_Enabled == false)
+    if (m_Enabled.load(std::memory_order_relaxed) == false)
     {
         return;
     }
@@ -74,7 +74,7 @@ const CPUProfileFrame& CPUProfiler::GetLastFrame() const
 void CPUProfiler::SetEnabled(bool enabled)
 {
     std::lock_guard<std::mutex> lock(m_ResultMutex);
-    m_Enabled = enabled;
+    m_Enabled.store(enabled, std::memory_order_relaxed);
     m_FrameActive = false;
 
     m_WriteFrame.Results.clear();
@@ -85,7 +85,7 @@ void CPUProfiler::SetEnabled(bool enabled)
 
 bool CPUProfiler::IsEnabled() const
 {
-    return m_Enabled;
+    return m_Enabled.load(std::memory_order_relaxed);
 }
 
 CPUProfileScope::CPUProfileScope(const char* name)
