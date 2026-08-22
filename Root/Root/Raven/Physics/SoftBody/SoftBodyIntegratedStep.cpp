@@ -447,8 +447,16 @@ void SolveParticleTriangleSelfCollisionIteration(
                 + alphaTilde;
             if (denominator <= math::Epsilon)
             {
+                // Constraintへ到達したものの、DeltaLambda計算を安全に行えない候補です。
+                // このRejectを独立計測することで、ConstraintCountとPositionCorrectionCountの差を
+                // 「分母無効」と「DeltaLambdaが実質0」の2種類へ分解できます。
+                ++statistics.DenominatorRejectCount;
                 continue;
             }
+
+            // 有効なdenominatorを得て、ここからXPBDのLambda更新を実際に計算します。
+            // ConstraintCount - DenominatorRejectCount と一致することが期待されます。
+            ++statistics.DeltaLambdaCount;
 
             const float unconstrainedDeltaLambda =
                 (-constraintValue - alphaTilde * lambda) / denominator;
@@ -459,6 +467,9 @@ void SolveParticleTriangleSelfCollisionIteration(
 
             if (std::abs(appliedDeltaLambda) <= math::Epsilon)
             {
+                // XPBD式までは評価したものの、実際の位置補正へ寄与しない候補です。
+                // この割合が大きければ、将来的にLambda更新前のcheap rejectを検討する価値があります。
+                ++statistics.DeltaLambdaRejectCount;
                 continue;
             }
 
