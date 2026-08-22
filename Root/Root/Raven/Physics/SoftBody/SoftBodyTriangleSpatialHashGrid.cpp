@@ -4,6 +4,8 @@
 #include <cmath>
 #include <utility>
 
+#include "Raven/Core/CPUProfiler.h"
+
 namespace Raven
 {
 namespace ph
@@ -44,6 +46,8 @@ void SoftBodyTriangleSpatialHashGrid::Clear()
     // 明示的ClearではTable全体を破棄します。
     // 通常のBuildTriangles()ではGenerationだけを更新し、Bucketと各vector capacityを再利用します。
     m_Buckets.clear();
+    m_BuildBounds.clear();
+    m_BuildCellRanges.clear();
     m_BucketMask = 0u;
     m_CurrentGeneration = 0u;
     m_ActiveCellCount = 0u;
@@ -54,69 +58,131 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     const std::vector<SoftBodyTriangle>& triangles,
     float expansion)
 {
-    // ========================================================================
-    // Flat Hash frame generation
-    // ========================================================================
-    // unordered_map版と同様に毎iterationで物理Clearは行いません。
-    // Generationが一致するBucketだけを現在BuildのActive Cellとして扱います。
-    ++m_CurrentGeneration;
-    if (m_CurrentGeneration == 0u)
-    {
-        // Generation wrap時は古い値との一致を避けるため全BucketをInactiveへ戻します。
-        for (TriangleCellBucket& bucket : m_Buckets)
-        {
-            bucket.Generation = 0u;
-        }
-        m_CurrentGeneration = 1u;
-    }
-
-    m_ActiveCellCount = 0u;
-    EnsureInitialBucketCapacity(triangles.size());
-
     const float safeExpansion = std::max(0.0f, expansion);
 
-    for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+    // ========================================================================
+    // 1. Build preparation
+    // ========================================================================
+    // Generation更新・Flat Hash初期容量確認・Scratch resizeをまとめて計測します。
+    // Scratchはmember vectorなので、2回目以降のXPBD iterationではcapacityを再利用できます。
     {
-        const SoftBodyTriangle& triangle = triangles[triangleIndex];
-        if (triangle.ParticleA >= particles.size()
-            || triangle.ParticleB >= particles.size()
-            || triangle.ParticleC >= particles.size())
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.Prepare");
+
+        ++m_CurrentGeneration;
+        if (m_CurrentGeneration == 0u)
         {
-            continue;
+            // Generation wrap時は古い値との一致を避けるため全BucketをInactiveへ戻します。
+            for (TriangleCellBucket& bucket : m_Buckets)
+            {
+                bucket.Generation = 0u;
+            }
+            m_CurrentGeneration = 1u;
         }
 
-        const math::Vec3& a = particles[triangle.ParticleA].Position;
-        const math::Vec3& b = particles[triangle.ParticleB].Position;
-        const math::Vec3& c = particles[triangle.ParticleC].Position;
+        m_ActiveCellCount = 0u;
+        EnsureInitialBucketCapacity(triangles.size());
 
-        math::Vec3 minimum{};
-        minimum.x = std::min({ a.x, b.x, c.x }) - safeExpansion;
-        minimum.y = std::min({ a.y, b.y, c.y }) - safeExpansion;
-        minimum.z = std::min({ a.z, b.z, c.z }) - safeExpansion;
+        m_BuildBounds.resize(triangles.size());
+        m_BuildCellRanges.resize(triangles.size());
+    }
 
-        math::Vec3 maximum{};
-        maximum.x = std::max({ a.x, b.x, c.x }) + safeExpansion;
-        maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
-        maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
+    // ========================================================================
+    // 2. Triangle AABB
+    // ========================================================================
+    // Triangle頂点Positionからexpansion込みAABBだけを計算します。
+    // Cell座標変換やHash探索を混ぜないことで、純粋なGeometry側コストを確認できます。
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB");
 
-        const CellCoord minimumCell = ComputeCellCoord(minimum);
-        const CellCoord maximumCell = ComputeCellCoord(maximum);
-
-        // TriangleはAABBが跨ぐ全Cellへ登録します。
-        // Open Addressing化してもBroad Phaseの候補条件そのものは旧実装から変更しません。
-        for (int32_t z = minimumCell.Z; z <= maximumCell.Z; ++z)
+        for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
         {
-            for (int32_t y = minimumCell.Y; y <= maximumCell.Y; ++y)
-            {
-                for (int32_t x = minimumCell.X; x <= maximumCell.X; ++x)
-                {
-                    CellCoord cell{};
-                    cell.X = x;
-                    cell.Y = y;
-                    cell.Z = z;
+            TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+            bounds.Valid = false;
 
-                    TriangleCellBucket& bucket = GetOrActivateBucket(cell);
-                    bucket.TriangleIndices.push_back(static_cast<uint32_t>(triangleIndex));
+            const SoftBodyTriangle& triangle = triangles[triangleIndex];
+            if (triangle.ParticleA >= particles.size()
+                || triangle.ParticleB >= particles.size()
+                || triangle.ParticleC >= particles.size())
+            {
+                continue;
+            }
+
+            const math::Vec3& a = particles[triangle.ParticleA].Position;
+            const math::Vec3& b = particles[triangle.ParticleB].Position;
+            const math::Vec3& c = particles[triangle.ParticleC].Position;
+
+            bounds.Minimum.x = std::min({ a.x, b.x, c.x }) - safeExpansion;
+            bounds.Minimum.y = std::min({ a.y, b.y, c.y }) - safeExpansion;
+            bounds.Minimum.z = std::min({ a.z, b.z, c.z }) - safeExpansion;
+
+            bounds.Maximum.x = std::max({ a.x, b.x, c.x }) + safeExpansion;
+            bounds.Maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
+            bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
+            bounds.Valid = true;
+        }
+    }
+
+    // ========================================================================
+    // 3. Cell Range conversion
+    // ========================================================================
+    // AABBのmin/maxをUniform Gridの整数Cell座標へ変換します。
+    // std::floorを含む座標変換コストをCell登録ループから分離して確認できます。
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRange");
+
+        for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+        {
+            TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
+            cellRange.Valid = false;
+
+            const TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+            if (bounds.Valid == false)
+            {
+                continue;
+            }
+
+            cellRange.Minimum = ComputeCellCoord(bounds.Minimum);
+            cellRange.Maximum = ComputeCellCoord(bounds.Maximum);
+            cellRange.Valid = true;
+        }
+    }
+
+    // ========================================================================
+    // 4. Cell registration
+    // ========================================================================
+    // AABBが跨ぐ全Cellを列挙し、Flat HashからBucketを取得してTriangle Indexを追加します。
+    // ここが大きい場合は次段階で、
+    //   - Hash/Linear Probe
+    //   - TriangleIndices push_back
+    //   - AABBが跨ぐCell数そのもの
+    // のどれを削るべきかをさらに切り分けます。
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration");
+
+        for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+        {
+            const TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
+            if (cellRange.Valid == false)
+            {
+                continue;
+            }
+
+            // TriangleはAABBが跨ぐ全Cellへ登録します。
+            // Pass分離後もBroad Phaseの候補条件は旧実装から変更していません。
+            for (int32_t z = cellRange.Minimum.Z; z <= cellRange.Maximum.Z; ++z)
+            {
+                for (int32_t y = cellRange.Minimum.Y; y <= cellRange.Maximum.Y; ++y)
+                {
+                    for (int32_t x = cellRange.Minimum.X; x <= cellRange.Maximum.X; ++x)
+                    {
+                        CellCoord cell{};
+                        cell.X = x;
+                        cell.Y = y;
+                        cell.Z = z;
+
+                        TriangleCellBucket& bucket = GetOrActivateBucket(cell);
+                        bucket.TriangleIndices.push_back(static_cast<uint32_t>(triangleIndex));
+                    }
                 }
             }
         }

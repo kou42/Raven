@@ -82,6 +82,27 @@ private:
     };
 
     // ========================================================================
+    // Hash Build Scratch Data
+    // ========================================================================
+    // HashBuild内部をProfilerで正確に切り分けるため、TriangleごとのAABB計算と
+    // Cell Range計算を別Passへ分離します。
+    // Scratch vectorはGridのmemberとして保持し、12回のXPBD iterationごとに
+    // allocationし直さないようcapacityを再利用します。
+    struct TriangleBuildBounds
+    {
+        math::Vec3 Minimum{};
+        math::Vec3 Maximum{};
+        bool Valid = false;
+    };
+
+    struct TriangleBuildCellRange
+    {
+        CellCoord Minimum{};
+        CellCoord Maximum{};
+        bool Valid = false;
+    };
+
+    // ========================================================================
     // Flat Hash Bucket
     // ========================================================================
     // Generation != m_CurrentGeneration のBucketは「現在Buildでは空」として扱います。
@@ -116,6 +137,10 @@ private:
 
     std::vector<TriangleCellBucket> m_Buckets;
     std::size_t m_BucketMask = 0u;
+
+    // BuildTriangles()をAABB / CellRange / CellRegistrationへ分離するための再利用Scratchです。
+    std::vector<TriangleBuildBounds> m_BuildBounds;
+    std::vector<TriangleBuildCellRange> m_BuildCellRanges;
 
     uint32_t m_CurrentGeneration = 0u;
     std::size_t m_ActiveCellCount = 0u;
