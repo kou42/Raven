@@ -56,6 +56,76 @@ void RunSoftBodyParticleTriangleSelfCollisionSelfTests()
     }
 
     // ------------------------------------------------------------------------
+    // 1-2. Generation切替後に前Buildの古いCellを候補へ混ぜない
+    // ------------------------------------------------------------------------
+    {
+        std::vector<SoftBodyParticle> particles(4u);
+        particles[0].Position = { 0.0f, 0.0f, 0.0f };
+        particles[1].Position = { 1.0f, 0.0f, 0.0f };
+        particles[2].Position = { 0.0f, 1.0f, 0.0f };
+        particles[3].Position = { 0.25f, 0.25f, 0.05f };
+
+        std::vector<SoftBodyTriangle> triangles;
+        triangles.push_back({ 0u, 1u, 2u });
+
+        SoftBodyTriangleSpatialHashGrid grid(0.25f);
+        std::vector<SoftBodyParticleTrianglePair> pairs;
+
+        // 1回目はParticle 3とTriangle 0が同じBroad Phase領域に存在します。
+        grid.BuildTriangles(particles, triangles, 0.10f);
+        grid.GenerateParticleTriangleCandidates(particles, pairs);
+
+        bool foundBeforeMove = false;
+        for (const SoftBodyParticleTrianglePair& pair : pairs)
+        {
+            if (pair.ParticleIndex == 3u && pair.TriangleIndex == 0u)
+            {
+                foundBeforeMove = true;
+            }
+        }
+        assert(foundBeforeMove);
+
+        // Triangleだけを大きく移動します。
+        // Generation方式では旧Cell node/vectorを再利用のためMapへ保持しますが、
+        // 現Generationで触られていない旧Cellは候補として参照されてはいけません。
+        particles[0].Position.x += 10.0f;
+        particles[1].Position.x += 10.0f;
+        particles[2].Position.x += 10.0f;
+
+        grid.BuildTriangles(particles, triangles, 0.10f);
+        grid.GenerateParticleTriangleCandidates(particles, pairs);
+
+        bool foundAfterMove = false;
+        for (const SoftBodyParticleTrianglePair& pair : pairs)
+        {
+            if (pair.ParticleIndex == 3u && pair.TriangleIndex == 0u)
+            {
+                foundAfterMove = true;
+            }
+        }
+        assert(foundAfterMove == false);
+
+        // 元のCellへ戻したときは、保持していたBucket capacityを再利用しつつ
+        // 現Generationの正しい候補として再び検出できることを確認します。
+        particles[0].Position.x -= 10.0f;
+        particles[1].Position.x -= 10.0f;
+        particles[2].Position.x -= 10.0f;
+
+        grid.BuildTriangles(particles, triangles, 0.10f);
+        grid.GenerateParticleTriangleCandidates(particles, pairs);
+
+        bool foundAfterReturn = false;
+        for (const SoftBodyParticleTrianglePair& pair : pairs)
+        {
+            if (pair.ParticleIndex == 3u && pair.TriangleIndex == 0u)
+            {
+                foundAfterReturn = true;
+            }
+        }
+        assert(foundAfterReturn);
+    }
+
+    // ------------------------------------------------------------------------
     // 2. 非隣接Particleが別Triangle面からThickness外へ押し出される
     // ------------------------------------------------------------------------
     {
