@@ -64,7 +64,9 @@ public:
         const std::vector<SoftBodyParticle>& particles,
         std::vector<SoftBodyParticleTrianglePair>& outPairs) const;
 
-    std::size_t GetOccupiedCellCount() const { return m_TriangleCells.size(); }
+    // m_TriangleCells.size() は再利用待ちの非Active Bucketも含むため、
+    // 今回のBuildで実際に使われたセル数を別途保持して返します。
+    std::size_t GetOccupiedCellCount() const { return m_ActiveCellCount; }
 
 private:
     struct CellCoord
@@ -84,12 +86,39 @@ private:
         std::size_t operator()(const CellCoord& coord) const;
     };
 
+    // ========================================================================
+    // Triangle Cell Bucket
+    // ========================================================================
+    // 旧実装ではBuildTriangles()ごとにunordered_map::clear()していたため、
+    // 各セルのvector容量まで毎iteration破棄され、次iterationで再allocationが発生していました。
+    //
+    // Generationを使うことでBucket自体とvector capacityを保持したまま、
+    // 「今回のBuildで有効なデータ」だけを論理的に切り替えます。
+    // 同じClothは連続iterationでほぼ同じセルを使うため、この再利用効果が特に大きくなります。
+    struct TriangleCellBucket
+    {
+        std::vector<uint32_t> TriangleIndices;
+        uint32_t Generation = 0u;
+    };
+
     CellCoord ComputeCellCoord(const math::Vec3& position) const;
+
+    // 現在Buildでcellを初めて触る場合だけvectorをclearします。
+    // clear()はcapacityを保持するため、前iterationで確保した領域をそのまま再利用できます。
+    TriangleCellBucket& GetOrActivateBucket(const CellCoord& cell);
+
+    // Clothが大きく移動し続けるケースでは、Generation方式だけだと古いCell nodeがMapへ残り続けます。
+    // Active Cell数に対して過剰になった場合だけInactive Bucketを間引き、通常frameでは走査しません。
+    void CompactInactiveBucketsIfNeeded();
 
 private:
     float m_CellSize = 0.05f;
     float m_InverseCellSize = 20.0f;
-    std::unordered_map<CellCoord, std::vector<uint32_t>, CellCoordHasher> m_TriangleCells;
+
+    std::unordered_map<CellCoord, TriangleCellBucket, CellCoordHasher> m_TriangleCells;
+
+    uint32_t m_CurrentGeneration = 0u;
+    std::size_t m_ActiveCellCount = 0u;
 };
 
 } // namespace ph
