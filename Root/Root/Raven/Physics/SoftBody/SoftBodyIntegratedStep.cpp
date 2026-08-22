@@ -166,84 +166,97 @@ void SolveParticleSelfCollisionIteration(
     float targetDistance,
     float alphaTilde)
 {
-    spatialHash.Build(particles);
-    spatialHash.GenerateCandidatePairs(candidatePairs);
-
-    for (const SoftBodySpatialHashPair& pair : candidatePairs)
+    // Particle-Particle自己衝突はBroad PhaseとNarrow Phaseの両方が重くなり得ます。
+    // それぞれを個別Scopeへ分け、Spatial Hash自体が原因なのか候補解決側が原因なのかを判別します。
     {
-        if (pair.ParticleA >= particles.size() || pair.ParticleB >= particles.size())
-        {
-            continue;
-        }
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision.HashBuild");
+        spatialHash.Build(particles);
+    }
 
-        const uint64_t pairKey = MakeParticlePairKey(pair.ParticleA, pair.ParticleB);
-        if (excludedPairs.find(pairKey) != excludedPairs.end())
-        {
-            continue;
-        }
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision.CandidateGeneration");
+        spatialHash.GenerateCandidatePairs(candidatePairs);
+    }
 
-        SoftBodyParticle& particleA = particles[pair.ParticleA];
-        SoftBodyParticle& particleB = particles[pair.ParticleB];
-        const float inverseMassSum = particleA.InverseMass + particleB.InverseMass;
-        if (inverseMassSum <= 0.0f)
-        {
-            continue;
-        }
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision.NarrowPhase");
 
-        const math::Vec3 delta = particleB.Position - particleA.Position;
-        const float distanceSq = delta.LengthSq();
-
-        float distance = 0.0f;
-        math::Vec3 normal{ 1.0f, 0.0f, 0.0f };
-        if (distanceSq > math::Epsilon * math::Epsilon)
+        for (const SoftBodySpatialHashPair& pair : candidatePairs)
         {
-            distance = std::sqrt(distanceSq);
-            normal = delta / distance;
-        }
-        else
-        {
-            const math::Vec3 previousDelta =
-                particleB.PreviousPosition - particleA.PreviousPosition;
-            const float previousDistanceSq = previousDelta.LengthSq();
-            if (previousDistanceSq > math::Epsilon * math::Epsilon)
+            if (pair.ParticleA >= particles.size() || pair.ParticleB >= particles.size())
             {
-                normal = previousDelta / std::sqrt(previousDistanceSq);
+                continue;
             }
-        }
 
-        const float constraintValue = distance - targetDistance;
-        float& lambda = lambdas[pairKey];
-        if (constraintValue >= 0.0f && lambda <= 0.0f)
-        {
-            continue;
-        }
+            const uint64_t pairKey = MakeParticlePairKey(pair.ParticleA, pair.ParticleB);
+            if (excludedPairs.find(pairKey) != excludedPairs.end())
+            {
+                continue;
+            }
 
-        const float denominator = inverseMassSum + alphaTilde;
-        if (denominator <= math::Epsilon)
-        {
-            continue;
-        }
+            SoftBodyParticle& particleA = particles[pair.ParticleA];
+            SoftBodyParticle& particleB = particles[pair.ParticleB];
+            const float inverseMassSum = particleA.InverseMass + particleB.InverseMass;
+            if (inverseMassSum <= 0.0f)
+            {
+                continue;
+            }
 
-        const float unconstrainedDeltaLambda =
-            (-constraintValue - alphaTilde * lambda) / denominator;
-        const float oldLambda = lambda;
-        const float newLambda = std::max(0.0f, oldLambda + unconstrainedDeltaLambda);
-        const float appliedDeltaLambda = newLambda - oldLambda;
-        lambda = newLambda;
+            const math::Vec3 delta = particleB.Position - particleA.Position;
+            const float distanceSq = delta.LengthSq();
 
-        if (std::abs(appliedDeltaLambda) <= math::Epsilon)
-        {
-            continue;
-        }
+            float distance = 0.0f;
+            math::Vec3 normal{ 1.0f, 0.0f, 0.0f };
+            if (distanceSq > math::Epsilon * math::Epsilon)
+            {
+                distance = std::sqrt(distanceSq);
+                normal = delta / distance;
+            }
+            else
+            {
+                const math::Vec3 previousDelta =
+                    particleB.PreviousPosition - particleA.PreviousPosition;
+                const float previousDistanceSq = previousDelta.LengthSq();
+                if (previousDistanceSq > math::Epsilon * math::Epsilon)
+                {
+                    normal = previousDelta / std::sqrt(previousDistanceSq);
+                }
+            }
 
-        if (particleA.IsFixed() == false)
-        {
-            particleA.Position -= normal * (particleA.InverseMass * appliedDeltaLambda);
-        }
+            const float constraintValue = distance - targetDistance;
+            float& lambda = lambdas[pairKey];
+            if (constraintValue >= 0.0f && lambda <= 0.0f)
+            {
+                continue;
+            }
 
-        if (particleB.IsFixed() == false)
-        {
-            particleB.Position += normal * (particleB.InverseMass * appliedDeltaLambda);
+            const float denominator = inverseMassSum + alphaTilde;
+            if (denominator <= math::Epsilon)
+            {
+                continue;
+            }
+
+            const float unconstrainedDeltaLambda =
+                (-constraintValue - alphaTilde * lambda) / denominator;
+            const float oldLambda = lambda;
+            const float newLambda = std::max(0.0f, oldLambda + unconstrainedDeltaLambda);
+            const float appliedDeltaLambda = newLambda - oldLambda;
+            lambda = newLambda;
+
+            if (std::abs(appliedDeltaLambda) <= math::Epsilon)
+            {
+                continue;
+            }
+
+            if (particleA.IsFixed() == false)
+            {
+                particleA.Position -= normal * (particleA.InverseMass * appliedDeltaLambda);
+            }
+
+            if (particleB.IsFixed() == false)
+            {
+                particleB.Position += normal * (particleB.InverseMass * appliedDeltaLambda);
+            }
         }
     }
 }
@@ -257,121 +270,135 @@ void SolveParticleTriangleSelfCollisionIteration(
     float thickness,
     float alphaTilde)
 {
-    spatialHash.BuildTriangles(particles, triangles, thickness);
-    spatialHash.GenerateParticleTriangleCandidates(particles, candidatePairs);
-
-    for (const SoftBodyParticleTrianglePair& pair : candidatePairs)
+    // Particle-Triangleは現在もっとも大きなボトルネック候補です。
+    // TriangleのGrid登録、Particleからの候補収集、実Triangle距離計算の3段階へ明確に分離します。
+    // この結果を使って、次にGrid更新を最適化するか、Candidate/Narrow Phaseを並列化するか判断します。
     {
-        if (pair.ParticleIndex >= particles.size() || pair.TriangleIndex >= triangles.size())
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild");
+        spatialHash.BuildTriangles(particles, triangles, thickness);
+    }
+
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.CandidateGeneration");
+        spatialHash.GenerateParticleTriangleCandidates(particles, candidatePairs);
+    }
+
+    {
+        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.NarrowPhase");
+
+        for (const SoftBodyParticleTrianglePair& pair : candidatePairs)
         {
-            continue;
-        }
-
-        const SoftBodyTriangle& triangle = triangles[pair.TriangleIndex];
-        if (TriangleContainsParticle(triangle, pair.ParticleIndex))
-        {
-            continue;
-        }
-
-        if (triangle.ParticleA >= particles.size()
-            || triangle.ParticleB >= particles.size()
-            || triangle.ParticleC >= particles.size())
-        {
-            continue;
-        }
-
-        SoftBodyParticle& particle = particles[pair.ParticleIndex];
-        SoftBodyParticle& particleA = particles[triangle.ParticleA];
-        SoftBodyParticle& particleB = particles[triangle.ParticleB];
-        SoftBodyParticle& particleC = particles[triangle.ParticleC];
-
-        const ClosestPointResult closest = ComputeClosestPointOnTriangle(
-            particle.Position,
-            particleA.Position,
-            particleB.Position,
-            particleC.Position);
-
-        const math::Vec3 delta = particle.Position - closest.Point;
-        const float distanceSq = delta.LengthSq();
-
-        float distance = 0.0f;
-        math::Vec3 normal{ 0.0f, 0.0f, 1.0f };
-        if (distanceSq > math::Epsilon * math::Epsilon)
-        {
-            distance = std::sqrt(distanceSq);
-            normal = delta / distance;
-        }
-        else
-        {
-            const math::Vec3 triangleNormal = math::Vec3::Cross(
-                particleB.Position - particleA.Position,
-                particleC.Position - particleA.Position);
-            const float triangleNormalLengthSq = triangleNormal.LengthSq();
-            if (triangleNormalLengthSq > math::Epsilon * math::Epsilon)
+            if (pair.ParticleIndex >= particles.size() || pair.TriangleIndex >= triangles.size())
             {
-                normal = triangleNormal / std::sqrt(triangleNormalLengthSq);
-                const float previousSide = math::Vec3::Dot(
-                    particle.PreviousPosition - closest.Point,
-                    normal);
-                if (previousSide < 0.0f)
+                continue;
+            }
+
+            const SoftBodyTriangle& triangle = triangles[pair.TriangleIndex];
+            if (TriangleContainsParticle(triangle, pair.ParticleIndex))
+            {
+                continue;
+            }
+
+            if (triangle.ParticleA >= particles.size()
+                || triangle.ParticleB >= particles.size()
+                || triangle.ParticleC >= particles.size())
+            {
+                continue;
+            }
+
+            SoftBodyParticle& particle = particles[pair.ParticleIndex];
+            SoftBodyParticle& particleA = particles[triangle.ParticleA];
+            SoftBodyParticle& particleB = particles[triangle.ParticleB];
+            SoftBodyParticle& particleC = particles[triangle.ParticleC];
+
+            const ClosestPointResult closest = ComputeClosestPointOnTriangle(
+                particle.Position,
+                particleA.Position,
+                particleB.Position,
+                particleC.Position);
+
+            const math::Vec3 delta = particle.Position - closest.Point;
+            const float distanceSq = delta.LengthSq();
+
+            float distance = 0.0f;
+            math::Vec3 normal{ 0.0f, 0.0f, 1.0f };
+            if (distanceSq > math::Epsilon * math::Epsilon)
+            {
+                distance = std::sqrt(distanceSq);
+                normal = delta / distance;
+            }
+            else
+            {
+                const math::Vec3 triangleNormal = math::Vec3::Cross(
+                    particleB.Position - particleA.Position,
+                    particleC.Position - particleA.Position);
+                const float triangleNormalLengthSq = triangleNormal.LengthSq();
+                if (triangleNormalLengthSq > math::Epsilon * math::Epsilon)
                 {
-                    normal *= -1.0f;
+                    normal = triangleNormal / std::sqrt(triangleNormalLengthSq);
+                    const float previousSide = math::Vec3::Dot(
+                        particle.PreviousPosition - closest.Point,
+                        normal);
+                    if (previousSide < 0.0f)
+                    {
+                        normal *= -1.0f;
+                    }
                 }
             }
-        }
 
-        const float constraintValue = distance - thickness;
-        const uint64_t pairKey = MakeParticleTriangleKey(pair.ParticleIndex, pair.TriangleIndex);
-        float& lambda = lambdas[pairKey];
-        if (constraintValue >= 0.0f && lambda <= 0.0f)
-        {
-            continue;
-        }
+            const float constraintValue = distance - thickness;
+            const uint64_t pairKey = MakeParticleTriangleKey(pair.ParticleIndex, pair.TriangleIndex);
+            float& lambda = lambdas[pairKey];
+            if (constraintValue >= 0.0f && lambda <= 0.0f)
+            {
+                continue;
+            }
 
-        const float denominator =
-            particle.InverseMass
-            + particleA.InverseMass * closest.WeightA * closest.WeightA
-            + particleB.InverseMass * closest.WeightB * closest.WeightB
-            + particleC.InverseMass * closest.WeightC * closest.WeightC
-            + alphaTilde;
-        if (denominator <= math::Epsilon)
-        {
-            continue;
-        }
+            const float denominator =
+                particle.InverseMass
+                + particleA.InverseMass * closest.WeightA * closest.WeightA
+                + particleB.InverseMass * closest.WeightB * closest.WeightB
+                + particleC.InverseMass * closest.WeightC * closest.WeightC
+                + alphaTilde;
+            if (denominator <= math::Epsilon)
+            {
+                continue;
+            }
 
-        const float unconstrainedDeltaLambda =
-            (-constraintValue - alphaTilde * lambda) / denominator;
-        const float oldLambda = lambda;
-        const float newLambda = std::max(0.0f, oldLambda + unconstrainedDeltaLambda);
-        const float appliedDeltaLambda = newLambda - oldLambda;
-        lambda = newLambda;
+            const float unconstrainedDeltaLambda =
+                (-constraintValue - alphaTilde * lambda) / denominator;
+            const float oldLambda = lambda;
+            const float newLambda = std::max(0.0f, oldLambda + unconstrainedDeltaLambda);
+            const float appliedDeltaLambda = newLambda - oldLambda;
+            lambda = newLambda;
 
-        if (std::abs(appliedDeltaLambda) <= math::Epsilon)
-        {
-            continue;
-        }
+            if (std::abs(appliedDeltaLambda) <= math::Epsilon)
+            {
+                continue;
+            }
 
-        if (particle.IsFixed() == false)
-        {
-            particle.Position += normal * (particle.InverseMass * appliedDeltaLambda);
-        }
+            if (particle.IsFixed() == false)
+            {
+                particle.Position += normal * (particle.InverseMass * appliedDeltaLambda);
+            }
 
-        if (particleA.IsFixed() == false)
-        {
-            particleA.Position -= normal
-                * (particleA.InverseMass * closest.WeightA * appliedDeltaLambda);
-        }
+            if (particleA.IsFixed() == false)
+            {
+                particleA.Position -= normal
+                    * (particleA.InverseMass * closest.WeightA * appliedDeltaLambda);
+            }
 
-        if (particleB.IsFixed() == false)
-        {
-            particleB.Position -= normal
-                * (particleB.InverseMass * closest.WeightB * appliedDeltaLambda);
-        }
+            if (particleB.IsFixed() == false)
+            {
+                particleB.Position -= normal
+                    * (particleB.InverseMass * closest.WeightB * appliedDeltaLambda);
+            }
 
-        if (particleC.IsFixed() == false)
-        {
-            particleC.Position -= normal
-                * (particleC.InverseMass * closest.WeightC * appliedDeltaLambda);
+            if (particleC.IsFixed() == false)
+            {
+                particleC.Position -= normal
+                    * (particleC.InverseMass * closest.WeightC * appliedDeltaLambda);
+            }
         }
     }
 }
@@ -471,8 +498,7 @@ void SoftBodySolver::StepWithSelfCollisions(
 
         if (particleCollisionEnabled)
         {
-            // Spatial Hash Build / Candidate生成 / Particle-Pair解決を含みます。
-            // Totalが大きければ次のJob System並列化候補です。
+            // 子ScopeでHash構築・候補生成・Narrow Phaseまで分解して記録します。
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision");
             SolveParticleSelfCollisionIteration(
                 m_Particles,
@@ -486,7 +512,7 @@ void SoftBodySolver::StepWithSelfCollisions(
 
         if (particleTriangleCollisionEnabled && triangles.empty() == false)
         {
-            // Triangle Spatial Hash BuildとParticle-Triangle Narrow Phaseをまとめて計測します。
+            // 子ScopeでTriangle Hash構築・候補生成・Narrow Phaseまで分解して記録します。
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision");
             SolveParticleTriangleSelfCollisionIteration(
                 m_Particles,
