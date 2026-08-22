@@ -613,7 +613,12 @@ bool NormalizeHumanForDebugView(
 
 } // namespace
 
-HumanSkinningDebugLayer::~HumanSkinningDebugLayer() = default;
+HumanSkinningDebugLayer::~HumanSkinningDebugLayer()
+{
+    // Human EntityはこのLayerが生成責務を持つため、Layer終了時にSpawnerへ破棄を委譲します。
+    // SceneGame側の汎用Entity一覧へLifetimeを移譲しないことで、生成者と破棄責務を一致させます。
+    DestroyHuman();
+}
 
 bool HumanSkinningDebugLayer::TryInitialize()
 {
@@ -703,18 +708,10 @@ bool HumanSkinningDebugLayer::TryInitialize()
         return false;
     }
 
-    // SceneGame::RenderScene()は現段階ではECS全体ではなくm_SpawnedEntitiesを描画対象にしています。
-    // Spawnerが生成したHuman Entityも同じ既存描画経路へ流すため、ここでHandleを登録します。
-    // LifetimeはSceneGame::OnDestroy()の既存Entity破棄ループへ統一します。
-    for (const SpawnedSkinnedPrimitive& primitive : primitives)
-    {
-        if (static_cast<bool>(primitive.EntityHandle) == false)
-        {
-            continue;
-        }
-
-        m_Scene.m_SpawnedEntities.emplace_back(primitive.EntityHandle);
-    }
+    // Human Primitiveは通常のTransformComponent + MeshRendererComponentを持つため、
+    // SceneGame::RenderScene()のECS Viewへ自動的に参加します。
+    // LifetimeについてもSkinnedMeshSceneInstanceがPrimitive Handleを保持しているので、
+    // SceneGameへ別途Handleを複製せず、このLayerのDestroyHuman()からSpawnerへ返します。
 
     std::cout << "[HumanSkinning] Human.glbを読み込みました。Bone一覧:\n";
     for (const std::string& boneName : m_Controller.GetBoneNames())
@@ -781,8 +778,8 @@ void HumanSkinningDebugLayer::OnRender()
 
 void HumanSkinningDebugLayer::DestroyHuman()
 {
-    // 初期化途中で失敗した場合、まだSceneGame::m_SpawnedEntitiesへ登録していないEntityを
-    // Spawner経由で確実に破棄します。成功後の通常LifetimeはSceneGame::OnDestroy()へ統一します。
+    // Human Entityの生成/破棄責務はSkinnedMeshSceneSpawnerへ対称に集約します。
+    // SceneGame側はHuman PrimitiveのHandleを所有せず、描画もECS Viewが自動的に担当します。
     if (m_HumanInstance.IsValid() == true)
     {
         SkinnedMeshSceneSpawner::Destroy(m_Scene, m_HumanInstance);
