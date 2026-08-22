@@ -31,46 +31,8 @@ bool ContainsPair(
     return false;
 }
 
-} // namespace
-
-// ============================================================================
-// Soft Body Spatial Hash Self Tests
-// ============================================================================
-// assertベースでBroad Phase単体を確認する回帰テストです。
-// Narrow Phaseをまだ実装していない段階でも、セル境界・負座標・Pair重複除去という
-// Spatial Hashで壊れやすい部分を独立して検証できます。
-void RunSoftBodySpatialHashSelfTests()
+void AssertUniqueNormalizedPairs(const std::vector<SoftBodySpatialHashPair>& pairs)
 {
-    SoftBodySpatialHashGrid grid(1.0f);
-    std::vector<SoftBodyParticle> particles(5u);
-
-    // Particle 0/1は同一セル、2は隣接セル、3は十分遠いセルです。
-    // Particle 4は負座標側へ置き、floorによるセル化も確認します。
-    particles[0].Position = { 0.10f, 0.10f, 0.10f };
-    particles[1].Position = { 0.90f, 0.20f, 0.10f };
-    particles[2].Position = { 1.10f, 0.10f, 0.10f };
-    particles[3].Position = { 4.00f, 0.00f, 0.00f };
-    particles[4].Position = { -0.10f, 0.10f, 0.10f };
-
-    grid.Build(particles);
-
-    assert(grid.GetParticleCount() == 5u);
-    assert(grid.GetOccupiedCellCount() == 4u);
-
-    std::vector<SoftBodySpatialHashPair> pairs;
-    grid.GenerateCandidatePairs(pairs);
-
-    assert(ContainsPair(pairs, 0u, 1u));
-    assert(ContainsPair(pairs, 0u, 2u));
-    assert(ContainsPair(pairs, 1u, 2u));
-    assert(ContainsPair(pairs, 0u, 4u));
-    assert(ContainsPair(pairs, 1u, 4u));
-
-    // 3は中心セルから3セル以上離れているため候補になりません。
-    assert(ContainsPair(pairs, 0u, 3u) == false);
-    assert(ContainsPair(pairs, 2u, 3u) == false);
-
-    // Broad Phase Pairは必ずA < Bで、一度だけ出現することを確認します。
     for (std::size_t pairIndex = 0u; pairIndex < pairs.size(); ++pairIndex)
     {
         assert(pairs[pairIndex].ParticleA < pairs[pairIndex].ParticleB);
@@ -83,11 +45,109 @@ void RunSoftBodySpatialHashSelfTests()
             assert(samePair == false);
         }
     }
+}
 
-    // CellSize変更時は古いGridをClearします。
-    grid.SetCellSize(0.5f);
-    assert(grid.GetParticleCount() == 0u);
-    assert(grid.GetOccupiedCellCount() == 0u);
+} // namespace
+
+// ============================================================================
+// Soft Body Spatial Hash Self Tests
+// ============================================================================
+// assertベースでBroad Phase単体を確認する回帰テストです。
+// Narrow Phaseをまだ実装していない段階でも、セル境界・負座標・Pair重複除去という
+// Spatial Hashで壊れやすい部分を独立して検証できます。
+void RunSoftBodySpatialHashSelfTests()
+{
+    // ------------------------------------------------------------------------
+    // 1. Same Cell / Axis Neighbor / Negative Coordinate
+    // ------------------------------------------------------------------------
+    {
+        SoftBodySpatialHashGrid grid(1.0f);
+        std::vector<SoftBodyParticle> particles(5u);
+
+        // Particle 0/1は同一セル、2は隣接セル、3は十分遠いセルです。
+        // Particle 4は負座標側へ置き、floorによるセル化も確認します。
+        particles[0].Position = { 0.10f, 0.10f, 0.10f };
+        particles[1].Position = { 0.90f, 0.20f, 0.10f };
+        particles[2].Position = { 1.10f, 0.10f, 0.10f };
+        particles[3].Position = { 4.00f, 0.00f, 0.00f };
+        particles[4].Position = { -0.10f, 0.10f, 0.10f };
+
+        grid.Build(particles);
+
+        assert(grid.GetParticleCount() == 5u);
+        assert(grid.GetOccupiedCellCount() == 4u);
+
+        std::vector<SoftBodySpatialHashPair> pairs;
+        grid.GenerateCandidatePairs(pairs);
+
+        assert(ContainsPair(pairs, 0u, 1u));
+        assert(ContainsPair(pairs, 0u, 2u));
+        assert(ContainsPair(pairs, 1u, 2u));
+        assert(ContainsPair(pairs, 0u, 4u));
+        assert(ContainsPair(pairs, 1u, 4u));
+
+        // 3は中心セルから3セル以上離れているため候補になりません。
+        assert(ContainsPair(pairs, 0u, 3u) == false);
+        assert(ContainsPair(pairs, 2u, 3u) == false);
+
+        AssertUniqueNormalizedPairs(pairs);
+
+        // CellSize変更時は古いGridをClearします。
+        grid.SetCellSize(0.5f);
+        assert(grid.GetParticleCount() == 0u);
+        assert(grid.GetOccupiedCellCount() == 0u);
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. Diagonal 3D Neighbor
+    // ------------------------------------------------------------------------
+    // Candidate生成を13方向だけへ半減したため、軸方向だけでなく対角Neighborも
+    // 取りこぼさないことを明示的に確認します。
+    {
+        SoftBodySpatialHashGrid grid(1.0f);
+        std::vector<SoftBodyParticle> particles(4u);
+
+        particles[0].Position = { 0.10f, 0.10f, 0.10f };   // Cell (0, 0, 0)
+        particles[1].Position = { 1.10f, 1.10f, 1.10f };   // Cell (1, 1, 1)
+        particles[2].Position = { -0.10f, -0.10f, 1.10f }; // Cell (-1, -1, 1)
+        particles[3].Position = { 2.10f, 2.10f, 2.10f };   // Cell (2, 2, 2)
+
+        grid.Build(particles);
+
+        std::vector<SoftBodySpatialHashPair> pairs;
+        grid.GenerateCandidatePairs(pairs);
+
+        // 26近傍の角に位置するCell同士も候補になります。
+        assert(ContainsPair(pairs, 0u, 1u));
+        assert(ContainsPair(pairs, 0u, 2u));
+
+        // Cell差が各軸2のParticle 3はParticle 0の近傍ではありません。
+        assert(ContainsPair(pairs, 0u, 3u) == false);
+
+        AssertUniqueNormalizedPairs(pairs);
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. Build Reuse
+    // ------------------------------------------------------------------------
+    // XPBDでは同じGrid instanceをiterationごとにBuildし直すため、前BuildのCellが残らず
+    // 新しい配置だけから候補が生成されることを確認します。
+    {
+        SoftBodySpatialHashGrid grid(1.0f);
+        std::vector<SoftBodyParticle> particles(2u);
+        std::vector<SoftBodySpatialHashPair> pairs;
+
+        particles[0].Position = { 0.10f, 0.0f, 0.0f };
+        particles[1].Position = { 0.20f, 0.0f, 0.0f };
+        grid.Build(particles);
+        grid.GenerateCandidatePairs(pairs);
+        assert(ContainsPair(pairs, 0u, 1u));
+
+        particles[1].Position = { 10.0f, 0.0f, 0.0f };
+        grid.Build(particles);
+        grid.GenerateCandidatePairs(pairs);
+        assert(ContainsPair(pairs, 0u, 1u) == false);
+    }
 }
 
 } // namespace Raven::ph::tests
