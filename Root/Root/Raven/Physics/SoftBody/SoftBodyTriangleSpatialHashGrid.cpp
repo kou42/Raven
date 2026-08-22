@@ -34,6 +34,14 @@ std::size_t NextPowerOfTwo(std::size_t value)
     }
     return result;
 }
+
+float Distance(const math::Vec3& a, const math::Vec3& b)
+{
+    const float dx = a.x - b.x;
+    const float dy = a.y - b.y;
+    const float dz = a.z - b.z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
 }
 
 SoftBodyTriangleSpatialHashGrid::SoftBodyTriangleSpatialHashGrid(float cellSize)
@@ -78,6 +86,15 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
 {
     const float safeExpansion = std::max(0.0f, expansion);
     std::size_t validTriangleCount = 0u;
+
+    // CellSizeがTriangle実寸・Collision Thicknessに対して小さすぎる場合、
+    // 1 TriangleのAABBが大量のCellを跨ぎ、CellRegistration回数が急増します。
+    // その関係を定量化するため、Build単位でEdge長とCell Span Volumeを集計します。
+    double triangleEdgeLengthSum = 0.0;
+    double maximumTriangleEdgeLength = 0.0;
+    uint64_t triangleEdgeSampleCount = 0u;
+    double cellSpanVolumeSum = 0.0;
+    uint64_t maximumCellSpanVolume = 0u;
 
     // ========================================================================
     // 1. Build preparation
@@ -150,6 +167,17 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
             bounds.Valid = true;
             ++validTriangleCount;
+
+            // Triangleの3辺を全て測定し、CellSizeに対する実寸を確認します。
+            // AABB計算Pass内で行うため、追加のParticle走査は発生しません。
+            const double edgeAB = static_cast<double>(Distance(a, b));
+            const double edgeBC = static_cast<double>(Distance(b, c));
+            const double edgeCA = static_cast<double>(Distance(c, a));
+            triangleEdgeLengthSum += edgeAB + edgeBC + edgeCA;
+            maximumTriangleEdgeLength = std::max(
+                maximumTriangleEdgeLength,
+                std::max(edgeAB, std::max(edgeBC, edgeCA)));
+            triangleEdgeSampleCount += 3u;
         }
     }
 
@@ -191,6 +219,13 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             m_BuildMaxCellSpanX = std::max(m_BuildMaxCellSpanX, spanX);
             m_BuildMaxCellSpanY = std::max(m_BuildMaxCellSpanY, spanY);
             m_BuildMaxCellSpanZ = std::max(m_BuildMaxCellSpanZ, spanZ);
+
+            // 実際の登録回数はspanX * spanY * spanZに比例します。
+            // AverageCellsPerTriangleだけでは最大値に引っ張られた局所的な巨大AABBを判別しづらいため、
+            // 平均と最大のSpan Volumeを別Counterとして記録します。
+            const uint64_t spanVolume = spanX * spanY * spanZ;
+            cellSpanVolumeSum += static_cast<double>(spanVolume);
+            maximumCellSpanVolume = std::max(maximumCellSpanVolume, spanVolume);
         }
     }
 
@@ -245,6 +280,40 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     }
 
     SubmitCellRegistrationCounters(validTriangleCount);
+
+    // CellRegistration削減へ進む前に、CellSizeとTriangle実寸・Expansionの比率を確認します。
+    // ここもBuild終了後にまとめてProfilerへ送るため、Hot loopにはProfiler APIを追加しません。
+    CPUProfiler& profiler = CPUProfiler::Get();
+    if (profiler.IsEnabled())
+    {
+        const double averageTriangleEdgeLength = triangleEdgeSampleCount > 0u
+            ? triangleEdgeLengthSum / static_cast<double>(triangleEdgeSampleCount)
+            : 0.0;
+        const double averageCellSpanVolume = validTriangleCount > 0u
+            ? cellSpanVolumeSum / static_cast<double>(validTriangleCount)
+            : 0.0;
+        const double cellSize = static_cast<double>(m_CellSize);
+        const double expansionValue = static_cast<double>(safeExpansion);
+        const double expansionToCellSize = m_CellSize > 0.0f
+            ? expansionValue / cellSize
+            : 0.0;
+        const double averageEdgeToCellSize = m_CellSize > 0.0f
+            ? averageTriangleEdgeLength / cellSize
+            : 0.0;
+        const double maximumEdgeToCellSize = m_CellSize > 0.0f
+            ? maximumTriangleEdgeLength / cellSize
+            : 0.0;
+
+        profiler.AddCounter("SoftBody.TriangleHash.CellSize", cellSize);
+        profiler.AddCounter("SoftBody.TriangleHash.Expansion", expansionValue);
+        profiler.AddCounter("SoftBody.TriangleHash.ExpansionToCellSize", expansionToCellSize);
+        profiler.AddCounter("SoftBody.TriangleHash.AverageTriangleEdgeLength", averageTriangleEdgeLength);
+        profiler.AddCounter("SoftBody.TriangleHash.MaxTriangleEdgeLength", maximumTriangleEdgeLength);
+        profiler.AddCounter("SoftBody.TriangleHash.AverageEdgeToCellSize", averageEdgeToCellSize);
+        profiler.AddCounter("SoftBody.TriangleHash.MaxEdgeToCellSize", maximumEdgeToCellSize);
+        profiler.AddCounter("SoftBody.TriangleHash.AverageCellSpanVolume", averageCellSpanVolume);
+        profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanVolume", static_cast<double>(maximumCellSpanVolume));
+    }
 }
 
 void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
