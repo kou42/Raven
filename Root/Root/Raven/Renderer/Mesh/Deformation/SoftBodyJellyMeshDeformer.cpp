@@ -29,17 +29,14 @@ SoftBodyJellyMeshDeformer::SoftBodyJellyMeshDeformer(
 
 void SoftBodyJellyMeshDeformer::SetCollisionPlane(const math::Vec3& normal, float offset)
 {
-    m_CollisionPlaneEnabled = true;
-    m_CollisionPlaneNormal = normal;
-    m_CollisionPlaneOffset = offset;
-
+    // 現段階ではJelly Deformerが1枚の床Planeを管理する最小構成です。
+    // Normalの正規化やゼロベクトルfallbackはSoftBodySolver側へ集約します。
     m_Solver.ClearPlaneColliders();
-    m_Solver.AddPlaneCollider(m_CollisionPlaneNormal, m_CollisionPlaneOffset);
+    m_Solver.AddPlaneCollider(normal, offset);
 }
 
 void SoftBodyJellyMeshDeformer::DisableCollisionPlane()
 {
-    m_CollisionPlaneEnabled = false;
     m_Solver.ClearPlaneColliders();
 }
 
