@@ -135,125 +135,195 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     }
 
     // ========================================================================
-    // 2. Triangle AABB / Plane / Edge Half-Space Cache
+    // 2. Triangle AABB / Plane / Edge Half-Space / Metrics
     // ========================================================================
-    // Triangle頂点Positionからexpansion込みAABBを計算すると同時に、Plane Early Rejectと
-    // Edge Half-Space Rejectで使う非正規化法線を1回だけ生成します。
-    // CandidateごとにCross/Normalizeを繰り返さず、後段ではDotとscalar比較だけで
-    // Closest Pointへ進む候補を削減できるようにします。
+    // 以前はAABB生成・Plane Cache・Edge Half-Space Cache・Edge Length計測を1つのloopで行っていたため、
+    // HashBuild.AABBが重くても、どの処理が支配しているか判断できませんでした。
+    // 今回は同じTriangle scratchを4 passで走査し、各passを独立Scopeとして計測します。
+    //
+    // 親のHashBuild.AABB Scopeは過去Captureとの比較用に残します。
+    // 子Scopeの合計との差にはloop分割による走査コストやProfiler overheadが含まれるため、
+    // 最適化対象は子Scopeの相対値とHashBuild全体の実時間を併せて判断します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB");
 
-        for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+        // ====================================================================
+        // 2-1. Bounds
+        // ====================================================================
+        // Topology検証とExpansion込みAABBだけを構築します。
+        // 後段Cacheの状態もここで初期化し、無効Triangleに前iterationの値が残らないようにします。
         {
-            TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
-            bounds.Valid = false;
-            bounds.PlaneValid = false;
-            bounds.PlaneNormal = math::Vec3{};
-            bounds.PlaneOffset = 0.0f;
-            bounds.PlaneDistanceThresholdSq = 0.0f;
-            bounds.EdgeHalfSpaceValid = false;
-            bounds.EdgeABNormal = math::Vec3{};
-            bounds.EdgeBCNormal = math::Vec3{};
-            bounds.EdgeCANormal = math::Vec3{};
-            bounds.EdgeABOffset = 0.0f;
-            bounds.EdgeBCOffset = 0.0f;
-            bounds.EdgeCAOffset = 0.0f;
-            bounds.EdgeABDistanceThresholdSq = 0.0f;
-            bounds.EdgeBCDistanceThresholdSq = 0.0f;
-            bounds.EdgeCADistanceThresholdSq = 0.0f;
-            bounds.ParticleA = 0u;
-            bounds.ParticleB = 0u;
-            bounds.ParticleC = 0u;
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.Bounds");
 
-            const SoftBodyTriangle& triangle = triangles[triangleIndex];
-            if (triangle.ParticleA >= particles.size()
-                || triangle.ParticleB >= particles.size()
-                || triangle.ParticleC >= particles.size())
+            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
-                continue;
+                TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+                bounds.Valid = false;
+                bounds.PlaneValid = false;
+                bounds.PlaneNormal = math::Vec3{};
+                bounds.PlaneOffset = 0.0f;
+                bounds.PlaneDistanceThresholdSq = 0.0f;
+                bounds.EdgeHalfSpaceValid = false;
+                bounds.EdgeABNormal = math::Vec3{};
+                bounds.EdgeBCNormal = math::Vec3{};
+                bounds.EdgeCANormal = math::Vec3{};
+                bounds.EdgeABOffset = 0.0f;
+                bounds.EdgeBCOffset = 0.0f;
+                bounds.EdgeCAOffset = 0.0f;
+                bounds.EdgeABDistanceThresholdSq = 0.0f;
+                bounds.EdgeBCDistanceThresholdSq = 0.0f;
+                bounds.EdgeCADistanceThresholdSq = 0.0f;
+                bounds.ParticleA = 0u;
+                bounds.ParticleB = 0u;
+                bounds.ParticleC = 0u;
+
+                const SoftBodyTriangle& triangle = triangles[triangleIndex];
+                if (triangle.ParticleA >= particles.size()
+                    || triangle.ParticleB >= particles.size()
+                    || triangle.ParticleC >= particles.size())
+                {
+                    continue;
+                }
+
+                const math::Vec3& a = particles[triangle.ParticleA].Position;
+                const math::Vec3& b = particles[triangle.ParticleB].Position;
+                const math::Vec3& c = particles[triangle.ParticleC].Position;
+
+                bounds.Minimum.x = std::min({ a.x, b.x, c.x }) - safeExpansion;
+                bounds.Minimum.y = std::min({ a.y, b.y, c.y }) - safeExpansion;
+                bounds.Minimum.z = std::min({ a.z, b.z, c.z }) - safeExpansion;
+
+                bounds.Maximum.x = std::max({ a.x, b.x, c.x }) + safeExpansion;
+                bounds.Maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
+                bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
+
+                // Topology IndexはCandidate生成のcheap rejectでも再利用します。
+                bounds.ParticleA = triangle.ParticleA;
+                bounds.ParticleB = triangle.ParticleB;
+                bounds.ParticleC = triangle.ParticleC;
+                bounds.Valid = true;
+                ++validTriangleCount;
             }
+        }
 
-            const math::Vec3& a = particles[triangle.ParticleA].Position;
-            const math::Vec3& b = particles[triangle.ParticleB].Position;
-            const math::Vec3& c = particles[triangle.ParticleC].Position;
+        // ====================================================================
+        // 2-2. Plane Cache
+        // ====================================================================
+        // Plane Distance Early Rejectに必要な非正規化法線と閾値だけを構築します。
+        // Normalize / sqrtは行わず、Candidate側でも平方比較のまま使用します。
+        {
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.PlaneCache");
 
-            bounds.Minimum.x = std::min({ a.x, b.x, c.x }) - safeExpansion;
-            bounds.Minimum.y = std::min({ a.y, b.y, c.y }) - safeExpansion;
-            bounds.Minimum.z = std::min({ a.z, b.z, c.z }) - safeExpansion;
-
-            bounds.Maximum.x = std::max({ a.x, b.x, c.x }) + safeExpansion;
-            bounds.Maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
-            bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
-
-            // Topology Indexも同じBuild時点のTriangleから保持します。
-            // Candidate生成では自己TriangleをPlane Dotより先に3比較で落とします。
-            bounds.ParticleA = triangle.ParticleA;
-            bounds.ParticleB = triangle.ParticleB;
-            bounds.ParticleC = triangle.ParticleC;
-            bounds.Valid = true;
-            ++validTriangleCount;
-
-            // ====================================================================
-            // Triangle Plane / Edge Half-Space Cache
-            // ====================================================================
-            // 正規化法線を作るとsqrtが必要になります。ここでは非正規化法線 n を保持し、
-            // Candidate側で平方値を比較します。
-            const math::Vec3 edgeABVector = b - a;
-            const math::Vec3 edgeACVector = c - a;
-            const math::Vec3 planeNormal = math::Vec3::Cross(edgeABVector, edgeACVector);
-            const float planeNormalLengthSq = planeNormal.LengthSq();
-            if (planeNormalLengthSq > math::Epsilon * math::Epsilon)
+            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
+                TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+                if (bounds.Valid == false)
+                {
+                    continue;
+                }
+
+                const math::Vec3& a = particles[bounds.ParticleA].Position;
+                const math::Vec3& b = particles[bounds.ParticleB].Position;
+                const math::Vec3& c = particles[bounds.ParticleC].Position;
+
+                const math::Vec3 edgeABVector = b - a;
+                const math::Vec3 edgeACVector = c - a;
+                const math::Vec3 planeNormal = math::Vec3::Cross(edgeABVector, edgeACVector);
+                const float planeNormalLengthSq = planeNormal.LengthSq();
+                if (planeNormalLengthSq <= math::Epsilon * math::Epsilon)
+                {
+                    continue;
+                }
+
                 bounds.PlaneNormal = planeNormal;
                 bounds.PlaneOffset = math::Vec3::Dot(planeNormal, a);
                 bounds.PlaneDistanceThresholdSq = safeExpansionSq * planeNormalLengthSq;
                 bounds.PlaneValid = true;
+            }
+        }
 
-                // ================================================================
-                // Edge Half-Space Cache
-                // ================================================================
-                // PlaneNormalの向きはAB x ACです。この向きに対して cross(PlaneNormal, Edge) を取ると、
-                // ABではC側、BCではA側、CAではB側を向くため、3本ともTriangle内部側の法線になります。
-                // 各法線は非正規化のまま保持し、Candidate側では負側へThicknessより離れた場合だけRejectします。
+        // ====================================================================
+        // 2-3. Edge Half-Space Cache
+        // ====================================================================
+        // Plane Cacheで得た法線を再利用し、Triangle内部側を向く3辺のHalf-Spaceを構築します。
+        // 前回の最適化でClosestPoint候補を大幅削減できた処理なので、Build側の追加コストを独立計測します。
+        {
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.EdgeHalfSpaceCache");
+
+            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+            {
+                TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+                if (bounds.Valid == false || bounds.PlaneValid == false)
+                {
+                    continue;
+                }
+
+                const math::Vec3& a = particles[bounds.ParticleA].Position;
+                const math::Vec3& b = particles[bounds.ParticleB].Position;
+                const math::Vec3& c = particles[bounds.ParticleC].Position;
+
+                const math::Vec3 edgeABVector = b - a;
                 const math::Vec3 edgeBCVector = c - b;
                 const math::Vec3 edgeCAVector = a - c;
 
-                const math::Vec3 edgeABNormal = math::Vec3::Cross(planeNormal, edgeABVector);
-                const math::Vec3 edgeBCNormal = math::Vec3::Cross(planeNormal, edgeBCVector);
-                const math::Vec3 edgeCANormal = math::Vec3::Cross(planeNormal, edgeCAVector);
+                const math::Vec3 edgeABNormal = math::Vec3::Cross(bounds.PlaneNormal, edgeABVector);
+                const math::Vec3 edgeBCNormal = math::Vec3::Cross(bounds.PlaneNormal, edgeBCVector);
+                const math::Vec3 edgeCANormal = math::Vec3::Cross(bounds.PlaneNormal, edgeCAVector);
 
                 const float edgeABNormalLengthSq = edgeABNormal.LengthSq();
                 const float edgeBCNormalLengthSq = edgeBCNormal.LengthSq();
                 const float edgeCANormalLengthSq = edgeCANormal.LengthSq();
 
-                if (edgeABNormalLengthSq > math::Epsilon * math::Epsilon
-                    && edgeBCNormalLengthSq > math::Epsilon * math::Epsilon
-                    && edgeCANormalLengthSq > math::Epsilon * math::Epsilon)
+                if (edgeABNormalLengthSq <= math::Epsilon * math::Epsilon
+                    || edgeBCNormalLengthSq <= math::Epsilon * math::Epsilon
+                    || edgeCANormalLengthSq <= math::Epsilon * math::Epsilon)
                 {
-                    bounds.EdgeABNormal = edgeABNormal;
-                    bounds.EdgeBCNormal = edgeBCNormal;
-                    bounds.EdgeCANormal = edgeCANormal;
-                    bounds.EdgeABOffset = math::Vec3::Dot(edgeABNormal, a);
-                    bounds.EdgeBCOffset = math::Vec3::Dot(edgeBCNormal, b);
-                    bounds.EdgeCAOffset = math::Vec3::Dot(edgeCANormal, c);
-                    bounds.EdgeABDistanceThresholdSq = safeExpansionSq * edgeABNormalLengthSq;
-                    bounds.EdgeBCDistanceThresholdSq = safeExpansionSq * edgeBCNormalLengthSq;
-                    bounds.EdgeCADistanceThresholdSq = safeExpansionSq * edgeCANormalLengthSq;
-                    bounds.EdgeHalfSpaceValid = true;
+                    continue;
                 }
-            }
 
-            // Triangleの3辺を全て測定し、CellSizeに対する実寸を確認します。
-            // AABB計算Pass内で行うため、追加のParticle走査は発生しません。
-            const double edgeAB = static_cast<double>(Distance(a, b));
-            const double edgeBC = static_cast<double>(Distance(b, c));
-            const double edgeCA = static_cast<double>(Distance(c, a));
-            triangleEdgeLengthSum += edgeAB + edgeBC + edgeCA;
-            maximumTriangleEdgeLength = std::max(
-                maximumTriangleEdgeLength,
-                std::max(edgeAB, std::max(edgeBC, edgeCA)));
-            triangleEdgeSampleCount += 3u;
+                bounds.EdgeABNormal = edgeABNormal;
+                bounds.EdgeBCNormal = edgeBCNormal;
+                bounds.EdgeCANormal = edgeCANormal;
+                bounds.EdgeABOffset = math::Vec3::Dot(edgeABNormal, a);
+                bounds.EdgeBCOffset = math::Vec3::Dot(edgeBCNormal, b);
+                bounds.EdgeCAOffset = math::Vec3::Dot(edgeCANormal, c);
+                bounds.EdgeABDistanceThresholdSq = safeExpansionSq * edgeABNormalLengthSq;
+                bounds.EdgeBCDistanceThresholdSq = safeExpansionSq * edgeBCNormalLengthSq;
+                bounds.EdgeCADistanceThresholdSq = safeExpansionSq * edgeCANormalLengthSq;
+                bounds.EdgeHalfSpaceValid = true;
+            }
+        }
+
+        // ====================================================================
+        // 2-4. Metrics
+        // ====================================================================
+        // Cell Size比較用のEdge Length統計です。Collision判定そのものには使用しません。
+        // 各TriangleでDistance()を3回呼ぶためsqrtも3回発生します。
+        // このScopeが大きければ、計測用Metricsを常時計算から外すことが次の直接的な最適化候補です。
+        {
+            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.Metrics");
+
+            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+            {
+                const TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+                if (bounds.Valid == false)
+                {
+                    continue;
+                }
+
+                const math::Vec3& a = particles[bounds.ParticleA].Position;
+                const math::Vec3& b = particles[bounds.ParticleB].Position;
+                const math::Vec3& c = particles[bounds.ParticleC].Position;
+
+                const double edgeAB = static_cast<double>(Distance(a, b));
+                const double edgeBC = static_cast<double>(Distance(b, c));
+                const double edgeCA = static_cast<double>(Distance(c, a));
+                triangleEdgeLengthSum += edgeAB + edgeBC + edgeCA;
+                maximumTriangleEdgeLength = std::max(
+                    maximumTriangleEdgeLength,
+                    std::max(edgeAB, std::max(edgeBC, edgeCA)));
+                triangleEdgeSampleCount += 3u;
+            }
         }
     }
 
