@@ -61,8 +61,9 @@ public:
         float expansion);
 
     // 各Particleが属する1セルだけを参照し、そこへ登録されたTriangleとの候補Pairを返します。
-    // Cell一致後にBuild時のExpanded AABBとTriangle Plane情報も再利用してcheap rejectを行います。
-    // Particle自身を含むTriangleなどTopology依存の除外は呼び出し側の責務です。
+    // Cell一致後はBuild時にキャッシュした情報を使い、
+    // Expanded AABB -> Topology -> Triangle Plane Distance の順でcheap rejectします。
+    // Solver側にもTopology検証は安全網として残しますが、通常はここで自己Triangleを除外します。
     void GenerateParticleTriangleCandidates(
         const std::vector<SoftBodyParticle>& particles,
         std::vector<SoftBodyParticleTrianglePair>& outPairs) const;
@@ -93,6 +94,12 @@ private:
     {
         math::Vec3 Minimum{};
         math::Vec3 Maximum{};
+
+        // Candidate生成時にParticle自身を構成頂点として含むTriangleをPlane計算より先に
+        // 除外できるよう、Build時のTopology Indexをそのままキャッシュします。
+        uint32_t ParticleA = 0u;
+        uint32_t ParticleB = 0u;
+        uint32_t ParticleC = 0u;
 
         // Plane Normalは正規化しません。
         // Candidate生成時は
