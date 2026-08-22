@@ -57,13 +57,20 @@ Application::~Application()
     // Application LayerはActive Sceneを借用している可能性があります。
     // Cloth/Jelly Demo LayerのようにOnDetach()でScene Entityを破棄するLayerがあるため、
     // Sceneより先にLayerをDetachして生成者自身へ破棄責務を返します。
-    for (auto& layer : m_Layers)
+    //
+    // AttachはPushされた順に行われるため、終了時は逆順にDetachします。
+    // 後から積まれたEditor/Overlayが前のLayerへ依存する場合でも、スタックと同じLIFOで解放することで
+    // 依存先より先に依存元を終了できます。
+    for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it)
     {
-        if (layer != nullptr)
+        if (*it != nullptr)
         {
-            layer->OnDetach();
+            (*it)->OnDetach();
         }
     }
+
+    // OnDetach()後もScopeを保持し続けるとLayer DestructorがImGui shutdown後まで遅延します。
+    // Layerが保持するGPU/Editor Resourceを有効なContext中に解放するため、ここで所有権も破棄します。
     m_Layers.clear();
 
     // ========================================================================
