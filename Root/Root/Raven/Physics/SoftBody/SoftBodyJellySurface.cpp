@@ -78,15 +78,19 @@ SoftBodyJellySurface SoftBodyJellySurfaceBuilder::Build(const SoftBodyJelly& jel
     // ========================================================================
     // Tetrahedron Face Registration
     // ========================================================================
-    // SoftBodyJellyBuilderは全Tetを同一orientationで生成します。
-    // 正向き四面体 (p0,p1,p2,p3) の外向きFace windingは次の4枚です。
+    // SoftBodyJellyBuilderは全Tetを正の符号付き体積になるorientationで生成します。
+    // 正向き四面体 (p0,p1,p2,p3) の境界を外向きwindingで書くと次の4枚です。
     //
-    //   opposite p0 : (p1, p3, p2)
-    //   opposite p1 : (p0, p2, p3)
-    //   opposite p2 : (p0, p3, p1)
-    //   opposite p3 : (p0, p1, p2)
+    //   opposite p0 : (p1, p2, p3)
+    //   opposite p1 : (p0, p3, p2)
+    //   opposite p2 : (p0, p1, p3)
+    //   opposite p3 : (p0, p2, p1)
     //
-    // 同じFaceを隣接Tetが逆向きに1回ずつ持つため、Particle集合だけをKeyにして
+    // これは oriented simplex の境界
+    //
+    //   [123] - [023] + [013] - [012]
+    //
+    // に対応します。同じFaceを隣接Tetが逆向きに1回ずつ持つため、Particle集合だけをKeyにして
     // OccurrenceCount == 2 のFaceを内部面として除外できます。
     for (const SoftBodyTetrahedron& tetrahedron : jelly.Tetrahedra)
     {
@@ -95,10 +99,10 @@ SoftBodyJellySurface SoftBodyJellySurfaceBuilder::Build(const SoftBodyJelly& jel
         const uint32_t p2 = tetrahedron.Particle2;
         const uint32_t p3 = tetrahedron.Particle3;
 
-        RegisterFace(faces, p1, p3, p2);
-        RegisterFace(faces, p0, p2, p3);
-        RegisterFace(faces, p0, p3, p1);
-        RegisterFace(faces, p0, p1, p2);
+        RegisterFace(faces, p1, p2, p3);
+        RegisterFace(faces, p0, p3, p2);
+        RegisterFace(faces, p0, p1, p3);
+        RegisterFace(faces, p0, p2, p1);
     }
 
     surface.Triangles.reserve(faces.size());
