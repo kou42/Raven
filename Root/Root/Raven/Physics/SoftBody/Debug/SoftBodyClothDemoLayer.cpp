@@ -1,20 +1,16 @@
 ﻿#include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 
-#include <algorithm>
 #include <cmath>
 
 #include "Raven/Core/Application.h"
-#include "Raven/Math/MathUtility.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
 #include "Raven/Renderer/Mesh/Deformation/SoftBodyClothDeformer.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
-#include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
-#include "Raven/Scene/SceneCameraSystem.h"
 
 namespace Raven
 {
@@ -28,8 +24,9 @@ namespace
 constexpr uint32_t kClothRows = 24u;
 constexpr uint32_t kClothColumns = 24u;
 
-// Solverは[-0.5,+0.5]程度の小さなローカル座標で計算し、描画時だけWorldへ拡大・移動します。
+// Solverは[-0.5,+0.5]程度の小さなローカル座標で計算し、Entity TransformだけでWorldへ拡大・移動します。
 // 物理計算を巨大なWorld座標から分離し、Constraint計算の数値スケールを安定させる狙いです。
+// 描画をSceneへ統合した現在も、Solver座標系とWorld座標系を分離する設計自体は変わりません。
 constexpr math::Vec3 kClothWorldPosition{ 0.0f, 18.0f, -10.0f };
 constexpr float kClothWorldScale = 22.0f;
 
@@ -94,7 +91,7 @@ void SoftBodyClothDemoLayer::OnAttach()
     }
 
     // Clothは毎フレーム頂点が変化するためDynamic Gridを使用します。
-    // Sphere MeshはRigidBody SphereをこのLayerの追加Passで可視化するために使用します。
+    // Sphere MeshはSoft/Rigid連成対象のDynamic RigidBodyを通常Scene描画で可視化するために使用します。
     m_ClothMesh = PrimitiveMeshFactory::CreateDynamicGrid(
         static_cast<int>(kClothRows),
         static_cast<int>(kClothColumns));
@@ -120,7 +117,7 @@ void SoftBodyClothDemoLayer::OnAttach()
         return;
     }
 
-    // ClothとRigidBody Sphereは同じ簡易Pipelineで描画します。
+    // ClothとRigidBody Sphereは同じShader/Pipeline設定を利用します。
     // Clothは表裏の両方を確認したいためCullMode::Noneにしています。
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.DebugName = "SoftBody Cloth Demo Pipeline";
@@ -133,16 +130,34 @@ void SoftBodyClothDemoLayer::OnAttach()
     pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
     pipelineSpecification.Blend = true;
 
+    // MaterialをEntityごとに分ける理由は、u_TintがMaterialの可変状態だからです。
+    // ClothとSphereが同じMaterialを共有すると、描画順によって色が上書きされます。
     m_ClothMaterial = CreateRef<Material>(Pipeline::Create(pipelineSpecification));
+    m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.35f, 0.65f, 1.0f });
     m_ClothMaterial->SetUniform("u_Alpha", 1.0f);
+
+    pipelineSpecification.DebugName = "SoftBody Coupling Sphere Pipeline";
+    m_RigidSphereMaterial = CreateRef<Material>(Pipeline::Create(pipelineSpecification));
+    m_RigidSphereMaterial->SetUniform("u_Tint", math::Vec3{ 0.95f, 0.45f, 0.20f });
+    m_RigidSphereMaterial->SetUniform("u_Alpha", 1.0f);
 
     // ========================================================================
     // Cloth Entity
     // ========================================================================
-    // Scene側にはSoftBody専用Componentを増やさず、既存MeshDeformationComponentだけを登録します。
-    // SceneGame::OnUpdateGame()のMeshDeformationSystemが自動走査するため、SoftBody固有の
-    // Update呼び出しをSceneGameへ埋め込まずに済みます。
+    // Scene側にはSoftBody専用描画処理を増やさず、既存の
+    // MeshRendererComponent + MeshDeformationComponentとして登録します。
+    // MeshDeformationSystemがComponentを自動走査するため、SoftBody固有の頂点Update呼び出しを
+    // SceneGameへ埋め込まずに済みます。また描画も通常MeshRenderer経路へ統合できます。
     m_ClothEntity = scene->CreateEntity("XPBD Cloth Demo");
+
+    // Solver内部はローカル座標のまま維持し、Worldへの配置はTransformComponentだけで表現します。
+    // これによりMeshDeformerはScene上の配置位置を知る必要がありません。
+    TransformComponent& clothTransform = m_ClothEntity.GetComponent<TransformComponent>();
+    clothTransform.Position = kClothWorldPosition;
+    clothTransform.Scale = { kClothWorldScale, kClothWorldScale, kClothWorldScale };
+
+    m_ClothEntity.AddComponent<MeshRendererComponent>(
+        MeshRendererComponent{ m_ClothMesh, m_ClothMaterial });
 
     auto clothDeformer = CreateScope<SoftBodyClothDeformer>(kClothRows, kClothColumns);
 
@@ -166,16 +181,20 @@ void SoftBodyClothDemoLayer::OnAttach()
     // Dynamic RigidBody Sphere Entity
     // ========================================================================
     // このSphereは表示専用ではなく、通常のPhysicsWorldへ参加するDynamic Bodyです。
-    // MeshRendererComponentは追加せず、このLayerのOnRender()で描画しますが、RigidBody/Colliderは
-    // Scene ECSに存在するため床や既存RigidBodyとの衝突も通常のPhysicsWorldで処理されます。
+    // 現在はMeshRendererComponentも同じEntityへ登録しているため、PhysicsWorldが更新するTransformを
+    // Scene Rendererも直接参照します。表示用位置をLayer側へ複製せず、床や既存RigidBodyとの衝突と
+    // 描画を同じECS Entityから処理できることが今回のScene統合で重要な点です。
     m_RigidSphereEntity = scene->CreateEntity("SoftBody Coupling Rigid Sphere");
 
-    auto& sphereTransform = m_RigidSphereEntity.GetComponent<TransformComponent>();
+    TransformComponent& sphereTransform = m_RigidSphereEntity.GetComponent<TransformComponent>();
     sphereTransform.Position = ClothLocalToWorldPosition(kRigidSphereInitialLocalCenter);
 
     // PrimitiveMeshFactory::CreateSphere()は半径0.5なので、直径2RをScaleへ設定します。
     const float sphereDiameter = kRigidSphereWorldRadius * 2.0f;
     sphereTransform.Scale = { sphereDiameter, sphereDiameter, sphereDiameter };
+
+    m_RigidSphereEntity.AddComponent<MeshRendererComponent>(
+        MeshRendererComponent{ m_CollisionSphereMesh, m_RigidSphereMaterial });
 
     RigidBodyComponent rigidBody{};
     rigidBody.SetBodyType(BodyType::Dynamic);
@@ -196,6 +215,9 @@ void SoftBodyClothDemoLayer::OnAttach()
     collider.StaticFriction = 0.5f;
     collider.DynamicFriction = 0.35f;
     m_RigidSphereEntity.AddComponent<ColliderComponent>(collider);
+
+    // RenderSceneはTransformComponent + MeshRendererComponentを持つEntityをECSから直接走査します。
+    // そのためCloth/Sphereを別の描画対象リストへ登録する必要はありません。
 }
 
 void SoftBodyClothDemoLayer::OnDetach()
@@ -222,6 +244,7 @@ void SoftBodyClothDemoLayer::OnDetach()
     m_RigidSphereEntity = {};
     m_ClothDeformationInstance.reset();
     m_ClothMaterial.reset();
+    m_RigidSphereMaterial.reset();
     m_CollisionSphereMesh.reset();
     m_ClothMesh.reset();
 }
@@ -292,8 +315,10 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
     // SceneのPhysics Stepを終えた最新TransformをClothローカルColliderへ変換します。
     // この値は次フレームのMeshDeformationSystem::Update()で使用されるため、RigidBody Sphereが
     // 移動してもCloth側Collision Sphereが追従します。
-    const auto& sphereTransform = m_RigidSphereEntity.GetComponent<TransformComponent>();
-    const auto& sphereCollider = m_RigidSphereEntity.GetComponent<ColliderComponent>();
+    const TransformComponent& sphereTransform =
+        m_RigidSphereEntity.GetComponent<TransformComponent>();
+    const ColliderComponent& sphereCollider =
+        m_RigidSphereEntity.GetComponent<ColliderComponent>();
 
     const math::Vec3 localSphereCenter =
         WorldToClothLocalPosition(sphereTransform.Position + sphereCollider.Offset);
@@ -304,66 +329,16 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
 
 void SoftBodyClothDemoLayer::OnRender()
 {
-    if (m_ClothMesh == nullptr
-        || m_CollisionSphereMesh == nullptr
-        || m_ClothMaterial == nullptr)
-    {
-        return;
-    }
-
-    Scene* scene = m_Application.GetScene();
-    if (scene == nullptr)
-    {
-        return;
-    }
-
-    // 既存Sceneと同じRuntime Cameraを使用し、SoftBodyだけ別視点になることを避けます。
-    const Window& window = m_Application.GetWindow();
-    SceneCamera* camera = SceneCameraSystem::UpdatePrimaryCamera(
-        *scene,
-        static_cast<float>(window.GetWidth()),
-        static_cast<float>(window.GetHeight()));
-
-    if (camera == nullptr)
-    {
-        return;
-    }
-
-    // SoftBody SolverはClothローカル空間[-0.5,+0.5]付近で解いています。
-    // 描画時だけWorldへ拡大・移動することで、Solver内部の数値スケールを小さく保ちます。
-    math::Mat4 clothTransform = math::Mat4::Identity();
-    clothTransform = math::Translate(clothTransform, kClothWorldPosition);
-    clothTransform = math::Scale(
-        clothTransform,
-        { kClothWorldScale, kClothWorldScale, kClothWorldScale });
-
-    math::Mat4 sphereTransformMatrix = math::Mat4::Identity();
-    bool drawRigidSphere = false;
-
-    if (static_cast<bool>(m_RigidSphereEntity)
-        && scene->IsEntityAlive(m_RigidSphereEntity))
-    {
-        // Sphere描画はRigidBody EntityのTransformをそのまま使用します。
-        // これによりPhysicsWorldが更新した実位置と表示位置が必ず一致します。
-        const auto& sphereTransform = m_RigidSphereEntity.GetComponent<TransformComponent>();
-        sphereTransformMatrix = sphereTransform.GetTransform();
-        drawRigidSphere = true;
-    }
-
-    // SceneGame本体のColor/Depthを保持したまま追加Passとして描画します。
-    // Clearを行わないため、既存Sceneの上へRigidBody SphereとClothだけを重ねます。
-    Renderer::BeginScene(*camera);
-
-    if (drawRigidSphere)
-    {
-        m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.95f, 0.45f, 0.20f });
-        Renderer::Draw(m_CollisionSphereMesh, m_ClothMaterial, sphereTransformMatrix);
-    }
-
-    m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.35f, 0.65f, 1.0f });
-    Renderer::Draw(m_ClothMesh, m_ClothMaterial, clothTransform);
-
-    Renderer::EndScene();
+    // ========================================================================
+    // Rendering is intentionally owned by Scene
+    // ========================================================================
+    // 旧実装ではここでRuntime Cameraを再取得し、Renderer::BeginScene()/EndScene()による
+    // Cloth専用の追加描画Passを実行していました。
+    //
+    // 現在はClothとRigidBody Sphereの両方がMeshRendererComponentを持つ通常Entityです。
+    // そのため描画はSceneの共通MeshRenderer経路へ一本化し、このLayerでは追加描画を行いません。
+    // これによりGame View / Scene ViewでSoftBodyだけ描画経路が分岐する問題を避け、
+    // Camera Context・Depth・Material・Entity Transformも他のScene Objectと同じ規則で扱えます。
 }
 
 } // namespace Raven

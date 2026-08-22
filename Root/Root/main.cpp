@@ -8,6 +8,7 @@
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
+#include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
 int main()
 {
@@ -19,10 +20,11 @@ int main()
     Raven::Application app;
 
     // Runtime Sceneを先に生成した後、SoftBody検証LayerとEditorLayerを登録します。
-    // SoftBodyClothDemoLayer::OnAttach()はApplicationからActive Sceneを借用して
-    // MeshDeformationComponentを登録するため、SetScene()より後である必要があります。
+    // Cloth / Jelly LayerのOnAttach()はApplicationからActive Sceneを借用して
+    // MeshRendererComponent + MeshDeformationComponentを登録するため、SetScene()より後である必要があります。
     app.SetScene(Raven::CreateScope<Raven::SceneGame>());
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
+    app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
 
     app.Run();

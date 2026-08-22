@@ -29,6 +29,9 @@ class SceneGame : public Scene, public SceneViewportRenderer
 {
     // Human検証Layerは既存SceneGame.cppを変更せず、共通Materialと描画対象Entity Listへ
     // 最小限アクセスするためfriendとします。Human固有処理そのものはLayer側へ隔離します。
+    //
+    // 現在RenderScene()自体はECS Viewを直接走査しますが、Human Layerは生成したEntityの
+    // ライフタイム管理など既存SceneGame内部状態へアクセスするため、このfriend関係は維持します。
     friend class Gltf::HumanSkinningDebugLayer;
 
 public:
@@ -90,6 +93,11 @@ private:
 
     // 指定CameraでScene本体を描画する共通入口です。
     // Game View / Scene Viewの差は引数Cameraだけに限定し、Renderer Camera Contextを確定します。
+    //
+    // 描画対象はSceneGame固有のm_SpawnedEntitiesではなく、
+    // View<TransformComponent, MeshRendererComponent>()を正規データとして直接走査します。
+    // そのためCloth/JellyなどScene外部のLayerが生成した通常Entityも、MeshRendererComponentを
+    // 持つだけでGame View / Scene Viewの両方へ自動的に参加できます。
     void RenderScene(const Camera& camera);
 
     // ========================================================================
@@ -115,6 +123,9 @@ private:
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
 
+    // SceneGame自身が生成したEntityの破棄管理用Listです。
+    // 以前はRenderScene()の描画対象Listも兼ねていましたが、現在の描画対象はECS Viewが正規データです。
+    // このListへ入っていないApplication Layer生成Entityでも、MeshRendererComponentを持てば描画されます。
     std::vector<Entity> m_SpawnedEntities;
     std::vector<SphereBody> m_SphereBodies;
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
