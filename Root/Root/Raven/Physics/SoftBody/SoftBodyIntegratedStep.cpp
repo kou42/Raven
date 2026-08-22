@@ -330,6 +330,8 @@ void SolveParticleTriangleSelfCollisionIteration(
         statistics.CandidateCount += static_cast<uint64_t>(candidatePairs.size());
     }
 
+    const float thicknessSq = thickness * thickness;
+
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.NarrowPhase");
 
@@ -372,6 +374,28 @@ void SolveParticleTriangleSelfCollisionIteration(
             const math::Vec3 delta = particle.Position - closest.Point;
             const float distanceSq = delta.LengthSq();
 
+            // ====================================================================
+            // Distance Squared Fast Reject
+            // ====================================================================
+            // funnel計測ではNarrow Phase候補の大半がDistance計算後のthickness判定で除外されていました。
+            // 非接触候補に対してsqrtとCollision Normal構築まで行う必要はないため、
+            // distanceSqとthicknessSqだけで先に判定し、遠方候補を安価に除外します。
+            //
+            // ただしXPBDの片側Constraintでは、前iterationで正のLambdaを持った候補が接触範囲外へ
+            // 移動した場合もLambdaを減少・解放する必要があります。既存Lambda > 0の候補はFast Rejectせず、
+            // 従来どおりConstraint計算まで通します。
+            //
+            // また、Fast Rejectされる候補ではunordered_map::operator[]を呼ばないことで、
+            // 0 Lambdaの不要エントリ生成とHash Map拡張コストも避けます。
+            const uint64_t pairKey = MakeParticleTriangleKey(pair.ParticleIndex, pair.TriangleIndex);
+            const auto lambdaIterator = lambdas.find(pairKey);
+            const bool hasActiveLambda =
+                lambdaIterator != lambdas.end() && lambdaIterator->second > 0.0f;
+            if (distanceSq >= thicknessSq && hasActiveLambda == false)
+            {
+                continue;
+            }
+
             float distance = 0.0f;
             math::Vec3 normal{ 0.0f, 0.0f, 1.0f };
             if (distanceSq > math::Epsilon * math::Epsilon)
@@ -398,13 +422,15 @@ void SolveParticleTriangleSelfCollisionIteration(
                 }
             }
 
-            // Closest Pointから距離・法線の構築まで完了した候補を数えます。
-            // この後ConstraintCountまで大きく減る場合、距離判定後の早期Rejectが有効です。
+            // Fast Rejectを通過し、sqrtを含む距離・法線構築まで実行した候補だけを数えます。
+            // NarrowPhaseCountとの差がDistance Squared Fast Rejectで除外できた仕事量になります。
             ++statistics.DistanceCount;
 
             const float constraintValue = distance - thickness;
-            const uint64_t pairKey = MakeParticleTriangleKey(pair.ParticleIndex, pair.TriangleIndex);
-            float& lambda = lambdas[pairKey];
+            float& lambda =
+                lambdaIterator != lambdas.end()
+                    ? lambdaIterator->second
+                    : lambdas[pairKey];
             if (constraintValue >= 0.0f && lambda <= 0.0f)
             {
                 continue;
