@@ -1,6 +1,7 @@
 #include "Raven/Scene/Tests/SceneLifecycleSelfTests.h"
 
 #include <cassert>
+#include <type_traits>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -10,6 +11,10 @@ namespace Raven::tests
 {
 namespace
 {
+
+// ApplicationはScope<Scene>でSceneGame等の派生Sceneを所有します。
+// 基底型経由のdeleteで派生デストラクタが確実に呼ばれることをcompile-timeで固定します。
+static_assert(std::has_virtual_destructor_v<Scene>);
 
 class CountingLayer final : public Layer
 {
