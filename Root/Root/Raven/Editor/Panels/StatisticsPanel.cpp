@@ -134,6 +134,152 @@ void BuildCPUCounterAggregates(
             return a.Name < b.Name;
         });
 }
+
+const CPUProfileAggregate* FindCPUProfileAggregate(
+    const std::vector<CPUProfileAggregate>& aggregates,
+    const char* name)
+{
+    for (const CPUProfileAggregate& aggregate : aggregates)
+    {
+        if (aggregate.Name == name)
+        {
+            return &aggregate;
+        }
+    }
+
+    return nullptr;
+}
+
+const CPUCounterAggregate* FindCPUCounterAggregate(
+    const std::vector<CPUCounterAggregate>& aggregates,
+    const char* name)
+{
+    for (const CPUCounterAggregate& aggregate : aggregates)
+    {
+        if (aggregate.Name == name)
+        {
+            return &aggregate;
+        }
+    }
+
+    return nullptr;
+}
+
+void DrawSoftBodyCellSizeComparison(
+    const std::vector<CPUProfileAggregate>& profileAggregates,
+    const std::vector<CPUCounterAggregate>& counterAggregates)
+{
+    // ========================================================================
+    // SoftBody Cell Size Comparison
+    // ========================================================================
+    // Spatial Hash Cell Sizeを0.04 / 0.05 / 0.06で比較するときに必要な値だけを抜き出します。
+    // 通常のProfiler一覧は詳細調査用として残し、この表は「最適Cell Sizeを決める」ことだけに
+    // 目的を絞ります。これにより大量のScope / Counterから毎回対象項目を探す必要がありません。
+    const CPUProfileAggregate* particleTriangle = FindCPUProfileAggregate(
+        profileAggregates,
+        "SoftBody.Solver.ParticleTriangleSelfCollision");
+    const CPUProfileAggregate* hashBuild = FindCPUProfileAggregate(
+        profileAggregates,
+        "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild");
+    const CPUProfileAggregate* candidateGeneration = FindCPUProfileAggregate(
+        profileAggregates,
+        "SoftBody.Solver.ParticleTriangleSelfCollision.CandidateGeneration");
+    const CPUProfileAggregate* narrowPhase = FindCPUProfileAggregate(
+        profileAggregates,
+        "SoftBody.Solver.ParticleTriangleSelfCollision.NarrowPhase");
+
+    const CPUCounterAggregate* cellSize = FindCPUCounterAggregate(
+        counterAggregates,
+        "SoftBody.TriangleHash.CellSize");
+    const CPUCounterAggregate* registrationCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "SoftBody.TriangleHash.RegistrationCount");
+    const CPUCounterAggregate* cellCandidateCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "SoftBody.TriangleHash.CellCandidateCount");
+
+    if (particleTriangle == nullptr
+        && hashBuild == nullptr
+        && candidateGeneration == nullptr
+        && narrowPhase == nullptr
+        && cellSize == nullptr
+        && registrationCount == nullptr
+        && cellCandidateCount == nullptr)
+    {
+        ImGui::TextDisabled("No Particle-Triangle self collision profile data in the last frame.");
+        return;
+    }
+
+    ImGui::TextDisabled(
+        "Cell Size comparison focus: same scene / SolverIterations / simulation state recommended.");
+
+    if (ImGui::BeginTable(
+            "SoftBodyCellSizeComparison",
+            2,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    {
+        ImGui::TableSetupColumn("Metric");
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+        ImGui::TableHeadersRow();
+
+        const auto drawMilliseconds = [](const char* label, const CPUProfileAggregate* aggregate)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            if (aggregate != nullptr)
+            {
+                ImGui::Text("%.3f ms", aggregate->TotalMilliseconds);
+            }
+            else
+            {
+                ImGui::TextDisabled("N/A");
+            }
+        };
+
+        const auto drawCounter = [](const char* label, const CPUCounterAggregate* aggregate)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            if (aggregate != nullptr)
+            {
+                ImGui::Text("%.3f", aggregate->Total);
+            }
+            else
+            {
+                ImGui::TextDisabled("N/A");
+            }
+        };
+
+        // CellSizeはiterationごとに同じ値がCounter登録されるためTotalではなくAverageを表示します。
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Cell Size");
+        ImGui::TableSetColumnIndex(1);
+        if (cellSize != nullptr && cellSize->SampleCount > 0u)
+        {
+            const double averageCellSize =
+                cellSize->Total / static_cast<double>(cellSize->SampleCount);
+            ImGui::Text("%.3f", averageCellSize);
+        }
+        else
+        {
+            ImGui::TextDisabled("N/A");
+        }
+
+        drawMilliseconds("ParticleTriangle Total", particleTriangle);
+        drawMilliseconds("HashBuild", hashBuild);
+        drawMilliseconds("CandidateGeneration", candidateGeneration);
+        drawMilliseconds("NarrowPhase", narrowPhase);
+        drawCounter("RegistrationCount", registrationCount);
+        drawCounter("CellCandidateCount", cellCandidateCount);
+
+        ImGui::EndTable();
+    }
+}
 } // namespace
 
 void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const Scene* scene)
@@ -179,6 +325,25 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
             std::vector<CPUProfileAggregate> aggregates;
             BuildCPUProfileAggregates(profileFrame, aggregates);
 
+            // Counterも一度だけ集計し、Cell Size比較表と通常Counter一覧の両方で共有します。
+            // 同じframeを二重走査しないことで、Editor側Profiler表示の余計な処理を避けます。
+            std::vector<CPUCounterAggregate> counterAggregates;
+            BuildCPUCounterAggregates(profileFrame, counterAggregates);
+
+            // ====================================================================
+            // SoftBody Cell Size Comparison Focus
+            // ====================================================================
+            // 現在の最適化フェーズで特に注目する7項目だけをCPU Profiler先頭へまとめます。
+            // 詳細な全Scope / Counter表示はこの下へ残しているため、必要になった場合は従来どおり
+            // 個別Counterまで掘り下げられます。
+            if (ImGui::TreeNodeEx("SoftBody Cell Size Comparison", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                DrawSoftBodyCellSizeComparison(aggregates, counterAggregates);
+                ImGui::TreePop();
+            }
+
+            ImGui::Separator();
+
             if (ImGui::BeginTable(
                     "CPUProfileAggregates",
                     4,
@@ -216,9 +381,6 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
             // Counterとして別表示します。12 Solver iteration分はTotal / Average / Maxで確認できます。
             if (ImGui::TreeNodeEx("Counters", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                std::vector<CPUCounterAggregate> counterAggregates;
-                BuildCPUCounterAggregates(profileFrame, counterAggregates);
-
                 if (ImGui::BeginTable(
                         "CPUProfileCounters",
                         5,
