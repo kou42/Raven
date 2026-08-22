@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 
 namespace Raven
 {
@@ -11,6 +12,12 @@ namespace ph
 namespace
 {
 constexpr float MinimumCellSize = 1.0e-4f;
+
+// Inactive Bucketが増え続けないための最低Compaction閾値です。
+// 通常のCloth solverでは同じ周辺Cellを反復して使うためCompactionはほぼ発生せず、
+// 大きく移動し続けた場合だけ古いCell nodeを回収します。
+constexpr std::size_t MinimumCompactionCellCount = 2048u;
+constexpr std::size_t InactiveCellRetentionMultiplier = 4u;
 }
 
 SoftBodyTriangleSpatialHashGrid::SoftBodyTriangleSpatialHashGrid(float cellSize)
@@ -27,7 +34,12 @@ void SoftBodyTriangleSpatialHashGrid::SetCellSize(float cellSize)
 
 void SoftBodyTriangleSpatialHashGrid::Clear()
 {
+    // Clear()は明示的な完全リセットです。
+    // 通常のBuildTriangles()ではMapを破棄せずGenerationで論理クリアし、
+    // Bucket内vectorのcapacityを次iterationへ再利用します。
     m_TriangleCells.clear();
+    m_CurrentGeneration = 0u;
+    m_ActiveCellCount = 0u;
 }
 
 void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
@@ -35,7 +47,38 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     const std::vector<SoftBodyTriangle>& triangles,
     float expansion)
 {
-    m_TriangleCells.clear();
+    // ========================================================================
+    // Generation-based logical clear
+    // ========================================================================
+    // 旧実装では毎iterationで unordered_map::clear() していたため、
+    //   Cell node破棄
+    //   -> 各vector破棄
+    //   -> 次iterationでnode/vector再生成
+    // が繰り返されていました。
+    //
+    // ClothのXPBD iteration間ではTriangle位置の変化は比較的小さく、使用Cellもほぼ同じです。
+    // Map/Bucketを保持してGenerationだけ進めることで、前iterationのvector capacityを再利用します。
+    ++m_CurrentGeneration;
+    if (m_CurrentGeneration == 0u)
+    {
+        // uint32_tがwrapした場合だけ完全初期化します。
+        // 実運用で到達する頻度ではありませんが、古いGenerationと一致する可能性を排除します。
+        m_TriangleCells.clear();
+        m_CurrentGeneration = 1u;
+    }
+
+    m_ActiveCellCount = 0u;
+
+    // 初回Build時にある程度bucketを確保してrehash回数を抑えます。
+    // Triangleは複数Cellへ登録されますが、Cellは隣接Triangle間で共有されるため、
+    // Triangle数の2倍を初期目安にして過剰reserveを避けます。
+    if (m_TriangleCells.empty())
+    {
+        const std::size_t reserveCount = std::max<std::size_t>(
+            triangles.size() * 2u,
+            64u);
+        m_TriangleCells.reserve(reserveCount);
+    }
 
     const float safeExpansion = std::max(0.0f, expansion);
 
@@ -78,11 +121,15 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                     cell.X = x;
                     cell.Y = y;
                     cell.Z = z;
-                    m_TriangleCells[cell].push_back(static_cast<uint32_t>(triangleIndex));
+
+                    TriangleCellBucket& bucket = GetOrActivateBucket(cell);
+                    bucket.TriangleIndices.push_back(static_cast<uint32_t>(triangleIndex));
                 }
             }
         }
     }
+
+    CompactInactiveBucketsIfNeeded();
 }
 
 void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
@@ -100,7 +147,15 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
             continue;
         }
 
-        for (uint32_t triangleIndex : cellIt->second)
+        // Generation方式では古いBucketをMapへ残してcapacityを再利用します。
+        // 現Buildで触られていないBucketは候補として扱ってはいけません。
+        const TriangleCellBucket& bucket = cellIt->second;
+        if (bucket.Generation != m_CurrentGeneration)
+        {
+            continue;
+        }
+
+        for (uint32_t triangleIndex : bucket.TriangleIndices)
         {
             SoftBodyParticleTrianglePair pair{};
             pair.ParticleIndex = static_cast<uint32_t>(particleIndex);
@@ -130,6 +185,56 @@ SoftBodyTriangleSpatialHashGrid::CellCoord SoftBodyTriangleSpatialHashGrid::Comp
     coord.Y = static_cast<int32_t>(std::floor(position.y * m_InverseCellSize));
     coord.Z = static_cast<int32_t>(std::floor(position.z * m_InverseCellSize));
     return coord;
+}
+
+SoftBodyTriangleSpatialHashGrid::TriangleCellBucket&
+SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
+{
+    auto [cellIt, inserted] = m_TriangleCells.try_emplace(cell);
+    static_cast<void>(inserted);
+
+    TriangleCellBucket& bucket = cellIt->second;
+    if (bucket.Generation != m_CurrentGeneration)
+    {
+        // std::vector::clear() はsizeだけを0にしcapacityを保持します。
+        // ここが今回の最適化の中心で、同じCellを使う次iterationでは再allocationを大幅に削減できます。
+        bucket.TriangleIndices.clear();
+        bucket.Generation = m_CurrentGeneration;
+        ++m_ActiveCellCount;
+    }
+
+    return bucket;
+}
+
+void SoftBodyTriangleSpatialHashGrid::CompactInactiveBucketsIfNeeded()
+{
+    if (m_TriangleCells.size() <= MinimumCompactionCellCount)
+    {
+        return;
+    }
+
+    const std::size_t retainedCellLimit = std::max(
+        MinimumCompactionCellCount,
+        m_ActiveCellCount * InactiveCellRetentionMultiplier);
+
+    if (m_TriangleCells.size() <= retainedCellLimit)
+    {
+        return;
+    }
+
+    // 大きく移動し続けたSoftBodyでは、再利用されない過去Cellを永久保持するとMapが肥大化します。
+    // 通常iterationではこの条件へ入らないため、毎回全Mapを走査するコストは発生しません。
+    for (auto cellIt = m_TriangleCells.begin(); cellIt != m_TriangleCells.end();)
+    {
+        if (cellIt->second.Generation != m_CurrentGeneration)
+        {
+            cellIt = m_TriangleCells.erase(cellIt);
+        }
+        else
+        {
+            ++cellIt;
+        }
+    }
 }
 
 } // namespace ph
