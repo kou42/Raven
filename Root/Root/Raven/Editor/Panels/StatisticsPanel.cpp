@@ -39,6 +39,14 @@ struct CPUProfileAggregate
     uint32_t CallCount = 0u;
 };
 
+struct CPUCounterAggregate
+{
+    std::string Name;
+    double Total = 0.0;
+    double Max = 0.0;
+    uint32_t SampleCount = 0u;
+};
+
 void BuildCPUProfileAggregates(
     const CPUProfileFrame& frame,
     std::vector<CPUProfileAggregate>& outAggregates)
@@ -72,14 +80,53 @@ void BuildCPUProfileAggregates(
         ++aggregate.CallCount;
     }
 
-    // まず「そのframeでCPU時間を最も消費したScope」を見つけたいので、
-    // 合計時間の降順で表示します。Fixed Stepが複数回走った場合もTotalへ加算されます。
     std::sort(
         outAggregates.begin(),
         outAggregates.end(),
         [](const CPUProfileAggregate& a, const CPUProfileAggregate& b)
         {
             return a.TotalMilliseconds > b.TotalMilliseconds;
+        });
+}
+
+void BuildCPUCounterAggregates(
+    const CPUProfileFrame& frame,
+    std::vector<CPUCounterAggregate>& outAggregates)
+{
+    outAggregates.clear();
+
+    std::unordered_map<std::string, std::size_t> aggregateIndices;
+    aggregateIndices.reserve(frame.Counters.size());
+
+    for (const CPUProfileCounter& counter : frame.Counters)
+    {
+        const auto iterator = aggregateIndices.find(counter.Name);
+        if (iterator == aggregateIndices.end())
+        {
+            CPUCounterAggregate aggregate{};
+            aggregate.Name = counter.Name;
+            aggregate.Total = counter.Value;
+            aggregate.Max = counter.Value;
+            aggregate.SampleCount = 1u;
+
+            aggregateIndices.emplace(aggregate.Name, outAggregates.size());
+            outAggregates.push_back(std::move(aggregate));
+            continue;
+        }
+
+        CPUCounterAggregate& aggregate = outAggregates[iterator->second];
+        aggregate.Total += counter.Value;
+        aggregate.Max = std::max(aggregate.Max, counter.Value);
+        ++aggregate.SampleCount;
+    }
+
+    // Counterは時間順ではなく名前順に固定しておくと、frameごとの値比較がしやすくなります。
+    std::sort(
+        outAggregates.begin(),
+        outAggregates.end(),
+        [](const CPUCounterAggregate& a, const CPUCounterAggregate& b)
+        {
+            return a.Name < b.Name;
         });
 }
 } // namespace
@@ -99,9 +146,6 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         ImGui::Text("Window: %u x %u", window.GetWidth(), window.GetHeight());
     }
 
-    // CPU Profilerは直前に完了したApplication frameを表示します。
-    // 計測中frameを直接参照しないため、Profiler側のvectorへ記録している最中でも
-    // Editor UIは完成済みの安定したsnapshotだけを読み取れます。
     if (ImGui::CollapsingHeader("CPU Profiler", ImGuiTreeNodeFlags_DefaultOpen))
     {
         CPUProfiler& profiler = CPUProfiler::Get();
@@ -118,11 +162,9 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 static_cast<unsigned long long>(profileFrame.FrameIndex));
             ImGui::Text("CPU Frame: %.3f ms", profileFrame.FrameTimeMilliseconds);
             ImGui::Text("Recorded Scopes: %u", static_cast<uint32_t>(profileFrame.Results.size()));
+            ImGui::Text("Recorded Counters: %u", static_cast<uint32_t>(profileFrame.Counters.size()));
             ImGui::Separator();
 
-            // 同名Scopeをframe内で集計します。
-            // Physics.FixedStepのように1frame中に複数回呼ばれる処理は、Total / Max / Callsを見ることで
-            // 「1回が重い」のか「catch-upで呼び出し回数が増えた」のかを区別できます。
             std::vector<CPUProfileAggregate> aggregates;
             BuildCPUProfileAggregates(profileFrame, aggregates);
 
@@ -156,7 +198,57 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 ImGui::EndTable();
             }
 
-            // 集計値でボトルネックを見つけた後、実際の呼び出し順・入れ子を確認するためのRaw表示です。
+            // ====================================================================
+            // Profiler Counters
+            // ====================================================================
+            // TimerをHot loopへ追加すると計測対象そのものを遅くするため、登録件数・Probe数などは
+            // Counterとして別表示します。12 Solver iteration分はTotal / Average / Maxで確認できます。
+            if (ImGui::TreeNodeEx("Counters", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                std::vector<CPUCounterAggregate> counterAggregates;
+                BuildCPUCounterAggregates(profileFrame, counterAggregates);
+
+                if (ImGui::BeginTable(
+                        "CPUProfileCounters",
+                        5,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+                {
+                    ImGui::TableSetupColumn("Counter");
+                    ImGui::TableSetupColumn("Total", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Average", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Max", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Samples", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const CPUCounterAggregate& aggregate : counterAggregates)
+                    {
+                        const double average = aggregate.SampleCount > 0u
+                            ? aggregate.Total / static_cast<double>(aggregate.SampleCount)
+                            : 0.0;
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted(aggregate.Name.c_str());
+
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text("%.3f", aggregate.Total);
+
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%.3f", average);
+
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::Text("%.3f", aggregate.Max);
+
+                        ImGui::TableSetColumnIndex(4);
+                        ImGui::Text("%u", aggregate.SampleCount);
+                    }
+
+                    ImGui::EndTable();
+                }
+
+                ImGui::TreePop();
+            }
+
             if (ImGui::TreeNode("Raw Scopes"))
             {
                 if (ImGui::BeginTable(
@@ -192,8 +284,6 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         }
     }
 
-    // RenderCommand直前で記録するため、Scene本体だけでなくDebug Overlay等を含む
-    // 「実際に発行した描画命令」を確認できます。
     if (ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("Draw Calls: %u", rendererStatistics.DrawCalls);
@@ -209,9 +299,6 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         }
         else
         {
-            // 現在のScene::View()は非const APIのみなので、読み取り専用のComponent数集計に限って
-            // 一時的にnon-const参照へ戻します。PanelからComponent内容は変更しません。
-            // const View()を追加した段階で、このconst_castは削除できます。
             Scene& mutableScene = const_cast<Scene&>(*scene);
             const uint32_t rigidBodyCount = CountComponents<RigidBodyComponent>(mutableScene);
             const uint32_t colliderCount = CountComponents<ColliderComponent>(mutableScene);
