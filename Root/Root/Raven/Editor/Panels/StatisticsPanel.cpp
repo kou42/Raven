@@ -9,7 +9,11 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace Raven
 {
@@ -25,6 +29,58 @@ uint32_t CountComponents(Scene& scene)
         ++count;
     }
     return count;
+}
+
+struct CPUProfileAggregate
+{
+    std::string Name;
+    double TotalMilliseconds = 0.0;
+    double MaxMilliseconds = 0.0;
+    uint32_t CallCount = 0u;
+};
+
+void BuildCPUProfileAggregates(
+    const CPUProfileFrame& frame,
+    std::vector<CPUProfileAggregate>& outAggregates)
+{
+    outAggregates.clear();
+
+    std::unordered_map<std::string, std::size_t> aggregateIndices;
+    aggregateIndices.reserve(frame.Results.size());
+
+    for (const CPUProfileResult& result : frame.Results)
+    {
+        const auto iterator = aggregateIndices.find(result.Name);
+        if (iterator == aggregateIndices.end())
+        {
+            CPUProfileAggregate aggregate{};
+            aggregate.Name = result.Name;
+            aggregate.TotalMilliseconds = result.DurationMilliseconds;
+            aggregate.MaxMilliseconds = result.DurationMilliseconds;
+            aggregate.CallCount = 1u;
+
+            aggregateIndices.emplace(aggregate.Name, outAggregates.size());
+            outAggregates.push_back(std::move(aggregate));
+            continue;
+        }
+
+        CPUProfileAggregate& aggregate = outAggregates[iterator->second];
+        aggregate.TotalMilliseconds += result.DurationMilliseconds;
+        aggregate.MaxMilliseconds = std::max(
+            aggregate.MaxMilliseconds,
+            result.DurationMilliseconds);
+        ++aggregate.CallCount;
+    }
+
+    // まず「そのframeでCPU時間を最も消費したScope」を見つけたいので、
+    // 合計時間の降順で表示します。Fixed Stepが複数回走った場合もTotalへ加算されます。
+    std::sort(
+        outAggregates.begin(),
+        outAggregates.end(),
+        [](const CPUProfileAggregate& a, const CPUProfileAggregate& b)
+        {
+            return a.TotalMilliseconds > b.TotalMilliseconds;
+        });
 }
 } // namespace
 
@@ -61,33 +117,73 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
             ImGui::Text("Profile Frame: %llu",
                 static_cast<unsigned long long>(profileFrame.FrameIndex));
             ImGui::Text("CPU Frame: %.3f ms", profileFrame.FrameTimeMilliseconds);
+            ImGui::Text("Recorded Scopes: %u", static_cast<uint32_t>(profileFrame.Results.size()));
             ImGui::Separator();
 
+            // 同名Scopeをframe内で集計します。
+            // Physics.FixedStepのように1frame中に複数回呼ばれる処理は、Total / Max / Callsを見ることで
+            // 「1回が重い」のか「catch-upで呼び出し回数が増えた」のかを区別できます。
+            std::vector<CPUProfileAggregate> aggregates;
+            BuildCPUProfileAggregates(profileFrame, aggregates);
+
             if (ImGui::BeginTable(
-                    "CPUProfileResults",
-                    2,
+                    "CPUProfileAggregates",
+                    4,
                     ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
             {
                 ImGui::TableSetupColumn("Scope");
-                ImGui::TableSetupColumn("Time (ms)", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                ImGui::TableSetupColumn("Total ms", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+                ImGui::TableSetupColumn("Max ms", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+                ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableHeadersRow();
 
-                for (const CPUProfileResult& result : profileFrame.Results)
+                for (const CPUProfileAggregate& aggregate : aggregates)
                 {
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
-
-                    // Depthに応じて字下げすることで、Application -> Scene -> Physicsのような
-                    // 入れ子関係を簡易的なツリーとして読み取れるようにします。
-                    ImGui::Indent(static_cast<float>(result.Depth) * 12.0f);
-                    ImGui::TextUnformatted(result.Name.c_str());
-                    ImGui::Unindent(static_cast<float>(result.Depth) * 12.0f);
+                    ImGui::TextUnformatted(aggregate.Name.c_str());
 
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%.3f", result.DurationMilliseconds);
+                    ImGui::Text("%.3f", aggregate.TotalMilliseconds);
+
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.3f", aggregate.MaxMilliseconds);
+
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%u", aggregate.CallCount);
                 }
 
                 ImGui::EndTable();
+            }
+
+            // 集計値でボトルネックを見つけた後、実際の呼び出し順・入れ子を確認するためのRaw表示です。
+            if (ImGui::TreeNode("Raw Scopes"))
+            {
+                if (ImGui::BeginTable(
+                        "CPUProfileRawResults",
+                        2,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+                {
+                    ImGui::TableSetupColumn("Scope");
+                    ImGui::TableSetupColumn("Time (ms)", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const CPUProfileResult& result : profileFrame.Results)
+                    {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+
+                        ImGui::Indent(static_cast<float>(result.Depth) * 12.0f);
+                        ImGui::TextUnformatted(result.Name.c_str());
+                        ImGui::Unindent(static_cast<float>(result.Depth) * 12.0f);
+
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text("%.3f", result.DurationMilliseconds);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::TreePop();
             }
         }
         else
