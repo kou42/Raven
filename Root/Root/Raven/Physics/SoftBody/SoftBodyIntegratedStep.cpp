@@ -1,6 +1,7 @@
 ﻿#include "Raven/Physics/SoftBody/SoftBodySolver.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
@@ -81,12 +82,32 @@ bool TriangleContainsParticle(const SoftBodyTriangle& triangle, uint32_t particl
         || triangle.ParticleC == particleIndex;
 }
 
+// ============================================================================
+// Closest Point Region Statistics
+// ============================================================================
+// Ericson型のPoint-Triangle最近傍点判定が、実際のCloth自己衝突で
+// Vertex / Edge / Faceのどこへ最も多く到達しているかを計測します。
+// 次段階でFace Fast PathやEdge/Vertex側の分岐削減を検討する際の判断材料です。
+enum class ClosestPointRegion : uint8_t
+{
+    VertexA = 0u,
+    VertexB,
+    EdgeAB,
+    VertexC,
+    EdgeAC,
+    EdgeBC,
+    Face,
+    Degenerate,
+    Count
+};
+
 struct ClosestPointResult
 {
     math::Vec3 Point{};
     float WeightA = 0.0f;
     float WeightB = 0.0f;
     float WeightC = 0.0f;
+    ClosestPointRegion Region = ClosestPointRegion::Face;
 };
 
 ClosestPointResult ComputeClosestPointOnTriangle(
@@ -103,7 +124,7 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     const float d2 = math::Vec3::Dot(ac, ap);
     if (d1 <= 0.0f && d2 <= 0.0f)
     {
-        return { a, 1.0f, 0.0f, 0.0f };
+        return { a, 1.0f, 0.0f, 0.0f, ClosestPointRegion::VertexA };
     }
 
     const math::Vec3 bp = point - b;
@@ -111,14 +132,14 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     const float d4 = math::Vec3::Dot(ac, bp);
     if (d3 >= 0.0f && d4 <= d3)
     {
-        return { b, 0.0f, 1.0f, 0.0f };
+        return { b, 0.0f, 1.0f, 0.0f, ClosestPointRegion::VertexB };
     }
 
     const float vc = d1 * d4 - d3 * d2;
     if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
     {
         const float v = d1 / (d1 - d3);
-        return { a + ab * v, 1.0f - v, v, 0.0f };
+        return { a + ab * v, 1.0f - v, v, 0.0f, ClosestPointRegion::EdgeAB };
     }
 
     const math::Vec3 cp = point - c;
@@ -126,14 +147,14 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     const float d6 = math::Vec3::Dot(ac, cp);
     if (d6 >= 0.0f && d5 <= d6)
     {
-        return { c, 0.0f, 0.0f, 1.0f };
+        return { c, 0.0f, 0.0f, 1.0f, ClosestPointRegion::VertexC };
     }
 
     const float vb = d5 * d2 - d1 * d6;
     if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
     {
         const float w = d2 / (d2 - d6);
-        return { a + ac * w, 1.0f - w, 0.0f, w };
+        return { a + ac * w, 1.0f - w, 0.0f, w, ClosestPointRegion::EdgeAC };
     }
 
     const float va = d3 * d6 - d5 * d4;
@@ -141,20 +162,79 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     {
         const math::Vec3 bc = c - b;
         const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        return { b + bc * w, 0.0f, 1.0f - w, w };
+        return { b + bc * w, 0.0f, 1.0f - w, w, ClosestPointRegion::EdgeBC };
     }
 
     const float denominator = va + vb + vc;
     if (std::abs(denominator) <= math::Epsilon)
     {
-        return { a, 1.0f, 0.0f, 0.0f };
+        // 退化Triangleでは従来どおりAを安全なfallbackとして返します。
+        // 通常VertexA判定と区別してCounterへ記録することで、退化頻度も把握できます。
+        return { a, 1.0f, 0.0f, 0.0f, ClosestPointRegion::Degenerate };
     }
 
     const float inverseDenominator = 1.0f / denominator;
     const float v = vb * inverseDenominator;
     const float w = vc * inverseDenominator;
     const float u = 1.0f - v - w;
-    return { a * u + b * v + c * w, u, v, w };
+    return { a * u + b * v + c * w, u, v, w, ClosestPointRegion::Face };
+}
+
+void SubmitClosestPointRegionCounters(
+    const std::array<uint64_t, static_cast<std::size_t>(ClosestPointRegion::Count)>& regionCounts)
+{
+    CPUProfiler& profiler = CPUProfiler::Get();
+    if (profiler.IsEnabled() == false)
+    {
+        return;
+    }
+
+    const auto getCount = [&](ClosestPointRegion region)
+    {
+        return regionCounts[static_cast<std::size_t>(region)];
+    };
+
+    const uint64_t vertexACount = getCount(ClosestPointRegion::VertexA);
+    const uint64_t vertexBCount = getCount(ClosestPointRegion::VertexB);
+    const uint64_t vertexCCount = getCount(ClosestPointRegion::VertexC);
+    const uint64_t edgeABCount = getCount(ClosestPointRegion::EdgeAB);
+    const uint64_t edgeACCount = getCount(ClosestPointRegion::EdgeAC);
+    const uint64_t edgeBCCount = getCount(ClosestPointRegion::EdgeBC);
+    const uint64_t faceCount = getCount(ClosestPointRegion::Face);
+    const uint64_t degenerateCount = getCount(ClosestPointRegion::Degenerate);
+
+    const uint64_t vertexCount = vertexACount + vertexBCount + vertexCCount;
+    const uint64_t edgeCount = edgeABCount + edgeACCount + edgeBCCount;
+    const uint64_t totalCount = vertexCount + edgeCount + faceCount + degenerateCount;
+
+    const double inverseTotal = totalCount > 0u
+        ? 1.0 / static_cast<double>(totalCount)
+        : 0.0;
+
+    // 1候補ごとにProfilerへ送るとHot PathへMutex/文字列検索が入るため、
+    // 各iterationでは整数加算だけ行い、ここでまとめてCounter化します。
+    profiler.AddCounter("SoftBody.ClosestPoint.VertexA", static_cast<double>(vertexACount));
+    profiler.AddCounter("SoftBody.ClosestPoint.VertexB", static_cast<double>(vertexBCount));
+    profiler.AddCounter("SoftBody.ClosestPoint.VertexC", static_cast<double>(vertexCCount));
+    profiler.AddCounter("SoftBody.ClosestPoint.EdgeAB", static_cast<double>(edgeABCount));
+    profiler.AddCounter("SoftBody.ClosestPoint.EdgeAC", static_cast<double>(edgeACCount));
+    profiler.AddCounter("SoftBody.ClosestPoint.EdgeBC", static_cast<double>(edgeBCCount));
+    profiler.AddCounter("SoftBody.ClosestPoint.Face", static_cast<double>(faceCount));
+    profiler.AddCounter("SoftBody.ClosestPoint.Degenerate", static_cast<double>(degenerateCount));
+
+    // 詳細Regionに加え、次の最適化方針を判断しやすいようCategory比率も出します。
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.VertexRatio",
+        static_cast<double>(vertexCount) * inverseTotal);
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.EdgeRatio",
+        static_cast<double>(edgeCount) * inverseTotal);
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.FaceRatio",
+        static_cast<double>(faceCount) * inverseTotal);
+    profiler.AddCounter(
+        "SoftBody.ClosestPoint.DegenerateRatio",
+        static_cast<double>(degenerateCount) * inverseTotal);
 }
 
 void SolveParticleSelfCollisionIteration(
@@ -289,6 +369,8 @@ void SolveParticleTriangleSelfCollisionIteration(
         statistics.CandidateCount += static_cast<uint64_t>(candidatePairs.size());
     }
 
+    std::array<uint64_t, static_cast<std::size_t>(ClosestPointRegion::Count)> closestPointRegionCounts{};
+
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.NarrowPhase");
 
@@ -327,6 +409,11 @@ void SolveParticleTriangleSelfCollisionIteration(
                 particleA.Position,
                 particleB.Position,
                 particleC.Position);
+
+            // Region計測は配列Indexへの整数加算だけに留めます。
+            // ComputeClosestPointOnTriangle()の各returnでRegionを付与しているため、
+            // どの分岐が実際のClothで支配的かを12 iteration分比較できます。
+            ++closestPointRegionCounts[static_cast<std::size_t>(closest.Region)];
 
             const math::Vec3 delta = particle.Position - closest.Point;
             const float distanceSq = delta.LengthSq();
@@ -412,6 +499,8 @@ void SolveParticleTriangleSelfCollisionIteration(
             }
         }
     }
+
+    SubmitClosestPointRegionCounters(closestPointRegionCounts);
 }
 
 } // namespace
