@@ -267,6 +267,7 @@ void SolveParticleTriangleSelfCollisionIteration(
     SoftBodyTriangleSpatialHashGrid& spatialHash,
     std::unordered_map<uint64_t, float>& lambdas,
     std::vector<SoftBodyParticleTrianglePair>& candidatePairs,
+    SoftBodyParticleTriangleCollisionStatistics& statistics,
     float thickness,
     float alphaTilde)
 {
@@ -281,6 +282,11 @@ void SolveParticleTriangleSelfCollisionIteration(
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.CandidateGeneration");
         spatialHash.GenerateParticleTriangleCandidates(particles, candidatePairs);
+
+        // CandidateCountはSpatial Hashが返した直後に加算します。
+        // Topology除外前の値を保持することで、Cell Size変更そのものがBroad Phase候補数へ
+        // 与える影響を0.04 / 0.05 / 0.06で公平に比較できます。
+        statistics.CandidateCount += static_cast<uint64_t>(candidatePairs.size());
     }
 
     {
@@ -305,6 +311,11 @@ void SolveParticleTriangleSelfCollisionIteration(
             {
                 continue;
             }
+
+            // ここから先は最近傍点、距離、法線、XPBD Constraintを計算する実Narrow Phaseです。
+            // cheap rejectを通過した回数だけを数えることで、CandidateCountとの差から
+            // Broad Phase後にどれだけ不要候補を除外できているか確認できます。
+            ++statistics.NarrowPhaseCount;
 
             SoftBodyParticle& particle = particles[pair.ParticleIndex];
             SoftBodyParticle& particleA = particles[triangle.ParticleA];
@@ -412,6 +423,10 @@ void SoftBodySolver::StepWithSelfCollisions(
     const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings)
 {
     RAVEN_PROFILE_SCOPE("SoftBody.Solver.StepWithSelfCollisions");
+
+    // Statisticsは「直近1 Step」の値として扱います。
+    // deltaTime不正や自己衝突無効時も古い値を残さないよう、Early Returnより前に必ずResetします。
+    m_ParticleTriangleCollisionStatistics.Reset();
 
     if (deltaTime <= 0.0f)
     {
@@ -522,6 +537,7 @@ void SoftBodySolver::StepWithSelfCollisions(
                 triangleSpatialHash,
                 particleTriangleLambdas,
                 particleTriangleCandidatePairs,
+                m_ParticleTriangleCollisionStatistics,
                 triangleThickness,
                 particleTriangleAlphaTilde);
         }

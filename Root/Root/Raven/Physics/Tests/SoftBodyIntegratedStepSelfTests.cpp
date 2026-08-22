@@ -67,6 +67,32 @@ void RunSoftBodyIntegratedStepSelfTests()
 
     // 統合Stepの最後でVelocityを1回だけ再構築するため、自己衝突による移動がVelocityにも反映されます。
     assert(probeParticle.Velocity.z > 0.0f);
+
+    // ========================================================================
+    // Particle-Triangle Broad / Narrow Phase Counter
+    // ========================================================================
+    // CandidateCountはSpatial Hashが生成した候補を全Solver Iteration分合算した値です。
+    // NarrowPhaseCountはTopology除外などのcheap rejectを通過して実距離計算へ進んだ回数なので、
+    // 必ずCandidateCount以下になり、このテストシーンではprobeが面へ接近しているため0より大きくなります。
+    const SoftBodyParticleTriangleCollisionStatistics& statistics =
+        solver.GetParticleTriangleCollisionStatistics();
+    assert(statistics.CandidateCount > 0u);
+    assert(statistics.NarrowPhaseCount > 0u);
+    assert(statistics.CandidateCount >= statistics.NarrowPhaseCount);
+
+    // Statisticsは累積総計ではなく「直近1 Step」の計測値です。
+    // 次StepでParticle-Triangle自己衝突を無効にした場合、前Stepの値を残さず0へResetされることを確認します。
+    particleTriangleSettings.Enabled = false;
+    solver.StepWithSelfCollisions(
+        1.0f / 60.0f,
+        cloth,
+        particleSettings,
+        particleTriangleSettings);
+
+    const SoftBodyParticleTriangleCollisionStatistics& disabledStatistics =
+        solver.GetParticleTriangleCollisionStatistics();
+    assert(disabledStatistics.CandidateCount == 0u);
+    assert(disabledStatistics.NarrowPhaseCount == 0u);
 }
 
 } // namespace Raven::ph::tests
