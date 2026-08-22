@@ -100,38 +100,59 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     // ========================================================================
     // 1. Build preparation
     // ========================================================================
-    // Generation更新・Flat Hash初期容量確認・Scratch resizeをまとめて計測します。
+    // 親Scopeは過去Captureとの比較用に残し、Generation更新・Flat Hash初期容量確認・
+    // Scratch resize・Counter resetを子Scopeへ分けます。
     // Scratchはmember vectorなので、2回目以降のXPBD iterationではcapacityを再利用できます。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.Prepare");
 
-        ++m_CurrentGeneration;
-        if (m_CurrentGeneration == 0u)
         {
-            // Generation wrap時は古い値との一致を避けるため全BucketをInactiveへ戻します。
-            for (TriangleCellBucket& bucket : m_Buckets)
+            RAVEN_PROFILE_SCOPE(
+                "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.Prepare.Generation");
+
+            ++m_CurrentGeneration;
+            if (m_CurrentGeneration == 0u)
             {
-                bucket.Generation = 0u;
+                // Generation wrap時は古い値との一致を避けるため全BucketをInactiveへ戻します。
+                for (TriangleCellBucket& bucket : m_Buckets)
+                {
+                    bucket.Generation = 0u;
+                }
+                m_CurrentGeneration = 1u;
             }
-            m_CurrentGeneration = 1u;
+
+            m_ActiveCellCount = 0u;
         }
 
-        m_ActiveCellCount = 0u;
-        EnsureInitialBucketCapacity(triangles.size());
+        {
+            // 通常iterationでは即returnし、初回Build時だけBucket配列の確保時間を含みます。
+            RAVEN_PROFILE_SCOPE(
+                "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.Prepare.BucketCapacity");
+            EnsureInitialBucketCapacity(triangles.size());
+        }
 
-        m_BuildBounds.resize(triangles.size());
-        m_BuildCellRanges.resize(triangles.size());
+        {
+            RAVEN_PROFILE_SCOPE(
+                "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.Prepare.ScratchResize");
+            m_BuildBounds.resize(triangles.size());
+            m_BuildCellRanges.resize(triangles.size());
+        }
 
-        // CellRegistrationの統計はBuild単位でリセットします。
-        // Hot loop内では整数加算だけを行い、Profiler APIはBuild終了後にまとめて呼びます。
-        m_BuildRegistrationCount = 0u;
-        m_BuildProbeCount = 0u;
-        m_BuildMaxProbeCount = 0u;
-        m_BuildVectorGrowCount = 0u;
-        m_BuildTableGrowCount = 0u;
-        m_BuildMaxCellSpanX = 0u;
-        m_BuildMaxCellSpanY = 0u;
-        m_BuildMaxCellSpanZ = 0u;
+        {
+            RAVEN_PROFILE_SCOPE(
+                "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.Prepare.CounterReset");
+
+            // CellRegistrationの統計はBuild単位でリセットします。
+            // Hot loop内では整数加算だけを行い、Profiler APIはBuild終了後にまとめて呼びます。
+            m_BuildRegistrationCount = 0u;
+            m_BuildProbeCount = 0u;
+            m_BuildMaxProbeCount = 0u;
+            m_BuildVectorGrowCount = 0u;
+            m_BuildTableGrowCount = 0u;
+            m_BuildMaxCellSpanX = 0u;
+            m_BuildMaxCellSpanY = 0u;
+            m_BuildMaxCellSpanZ = 0u;
+        }
     }
 
     // ========================================================================
