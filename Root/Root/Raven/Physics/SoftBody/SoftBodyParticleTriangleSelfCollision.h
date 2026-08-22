@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 
@@ -20,6 +20,14 @@ struct SoftBodyParticleTriangleSelfCollisionSettings
     // Particle中心とTriangle表面の間に維持する最小距離です。
     // Clothを数学的な厚み0の面として扱いつつ、自己貫通を防ぐための半厚みに相当します。
     float Thickness = 0.01f;
+
+    // Particle-Triangle Broad Phase専用のSpatial Hash Cell Sizeです。
+    // Thicknessとは独立した値です。
+    // Cellを小さくすると1 Cellあたりの候補Triangleは減りますが、
+    // Triangleが跨ぐCell数が増えてHashBuildが重くなります。
+    // 大きくするとHashBuildは軽くなりますが、
+    // Candidate/Narrow Phaseの候補数が増加します。
+    float SpatialHashCellSize = 0.05f;
 
     // Particle-Triangle自己衝突専用の追加反復回数です。
     uint32_t SolverIterations = 4u;

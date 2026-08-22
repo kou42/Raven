@@ -1,4 +1,4 @@
-#include "Raven/Physics/SoftBody/SoftBodySolver.h"
+﻿#include "Raven/Physics/SoftBody/SoftBodySolver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -453,8 +453,10 @@ void SoftBodySolver::StepWithSelfCollisions(
 
     SoftBodySpatialHashGrid particleSpatialHash(
         std::max(particleTargetDistance, 1.0e-4f));
-    SoftBodyTriangleSpatialHashGrid triangleSpatialHash(
-        std::max(triangleThickness * 2.0f, 1.0e-4f));
+
+    const float triangleCellSize =
+        std::max(particleTriangleSettings.SpatialHashCellSize, 1.0e-4f);
+    SoftBodyTriangleSpatialHashGrid triangleSpatialHash(triangleCellSize);
 
     {
         // 自己衝突用Topologyと除外ペアの構築コストをSolver反復とは分離します。
