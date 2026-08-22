@@ -10,7 +10,6 @@
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 
-#include <algorithm>
 #include <unordered_map>
 #include <vector>
 
@@ -28,7 +27,7 @@ namespace Raven
 // 流すことで、Material / PhysicsDebugを含む全描画がRenderer Camera Contextを共有します。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
-    // Human検証Layerは既存SceneGame.cppを変更せず、共通Materialと描画対象Entity Listへ
+    // Human検証Layerは既存SceneGame.cppを変更せず、共通MaterialとEntity生成管理へ
     // 最小限アクセスするためfriendとします。Human固有処理そのものはLayer側へ隔離します。
     friend class Gltf::HumanSkinningDebugLayer;
 
@@ -53,38 +52,6 @@ public:
     void RenderWithCamera(const Camera& camera) override
     {
         RenderScene(camera);
-    }
-
-    // ========================================================================
-    // Runtime render entity registration
-    // ========================================================================
-    // 現在SceneGame::RenderScene()は歴史的経緯からm_SpawnedEntitiesを描画対象一覧として利用しています。
-    // SoftBodyのようなApplication Layerが生成したEntityもGame View / Scene Viewの双方へ表示するため、
-    // 移行期間中の正式な登録入口をここへ用意します。
-    //
-    // 重要:
-    // 最終的にはRenderScene()をView<TransformComponent, MeshRendererComponent>()の直接走査へ変更し、
-    // この明示登録自体を不要にする予定です。それまではLayerからm_SpawnedEntitiesへ直接触れず、
-    // 重複登録と解除をこのAPIで一元管理します。
-    void RegisterRuntimeRenderEntity(Entity entity)
-    {
-        if (static_cast<bool>(entity) == false || IsEntityAlive(entity) == false)
-        {
-            return;
-        }
-
-        const auto iterator = std::find(m_SpawnedEntities.begin(), m_SpawnedEntities.end(), entity);
-        if (iterator == m_SpawnedEntities.end())
-        {
-            m_SpawnedEntities.push_back(entity);
-        }
-    }
-
-    void UnregisterRuntimeRenderEntity(Entity entity)
-    {
-        m_SpawnedEntities.erase(
-            std::remove(m_SpawnedEntities.begin(), m_SpawnedEntities.end(), entity),
-            m_SpawnedEntities.end());
     }
 
 private:
@@ -123,6 +90,8 @@ private:
 
     // 指定CameraでScene本体を描画する共通入口です。
     // Game View / Scene Viewの差は引数Cameraだけに限定し、Renderer Camera Contextを確定します。
+    // 描画対象はm_SpawnedEntitiesではなくECSのTransform + MeshRendererを直接走査します。
+    // これによりSoftBodyやDebug Layerが生成した通常Entityも自動的に描画対象になります。
     void RenderScene(const Camera& camera);
 
     // ========================================================================
@@ -148,6 +117,8 @@ private:
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
 
+    // SceneGame自身が生成したEntityの破棄管理にだけ使用します。
+    // 描画対象の正規データはECSのMeshRendererComponentです。
     std::vector<Entity> m_SpawnedEntities;
     std::vector<SphereBody> m_SphereBodies;
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
@@ -156,42 +127,22 @@ private:
     Entity m_BoxEntity;
     Entity m_AnimationTestEntity;
 
-    // StateMachine検証用の周期タイマーです。Animation再生時間とは分離し、
-    // Parameter入力シーケンスの時間だけを管理します。
     float m_AnimationStateMachineTime = 0.0f;
 
-    // ========================================================================
-    // Debug Visualization
-    // ========================================================================
-    // Physics Debug: H/B/O/F/T/P/C/N
-    // Animation Debug: Y
-    // PhysicsDebugRendererはRenderer Camera Contextを参照するため、Game ViewではSceneCamera、
-    // Scene ViewではEditor Cameraへ自動的に追従します。
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
     AnimationDebugOverlayRenderer m_AnimationDebugRenderer;
 
     bool m_WasSpacePressed = false;
-
-    // 左ボタンの前フレーム状態を保持してPressed/Releasedのエッジを検出します。
     bool m_WasLeftMousePressed = false;
     Entity m_DraggedEntity{};
     math::Vec2 m_DragStartScreen{};
-
-    // RayCastが返した「実際にクリックしたワールド座標」です。
-    // ドラッグ終了まで保持し、AddImpulseAtPoint()の作用点として使用します。
     math::Vec3 m_DragHitPoint{};
 
-    // Projectionとマウス座標を対応させるViewportサイズ。
-    // ※Windowサイズに合わせたほうがいいかも。TODO：合わせる対応をする
     float m_ViewportWidth = 1920.0f;
     float m_ViewportHeight = 1080.0f;
-
-    // Mouse Ray生成ではPrimary SceneCameraのFOVを毎回同期して利用します。
     float m_CameraFovY = 0.7854f;
     float m_MouseRayMaxDistance = 1000.0f;
 
-    // ドラッグ距離1pxあたりのImpulse量。
-    // 長すぎるドラッグによる極端な速度を避けるため最大ピクセル数も制限します。
     float m_DragImpulsePerPixel = 0.035f;
     float m_MaxDragPixels = 350.0f;
     float m_MinDragPixels = 3.0f;
