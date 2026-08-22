@@ -44,7 +44,6 @@ public:
     }
 
     void OnUpdate(float deltaTime) override;
-    void OnRender() override;
 
 private:
     bool TryInitialize();
@@ -60,11 +59,6 @@ private:
 
     bool m_InitializationAttempted = false;
     bool m_Initialized = false;
-
-    // SceneGameは現在Layer::OnUpdate()を1 frame内で2経路から呼ぶため、
-    // OnRender()までに1回だけ処理する簡易guardです。
-    // Human Debug固有の暫定対策で、SceneのLayer更新経路整理後には削除できます。
-    bool m_UpdatedSinceRender = false;
 };
 
 } // namespace Gltf
