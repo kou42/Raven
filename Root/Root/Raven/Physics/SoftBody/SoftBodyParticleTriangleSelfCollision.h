@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <array>
 #include <cstdint>
 
 namespace Raven
@@ -9,6 +10,7 @@ namespace ph
 
 class SoftBodySolver;
 struct SoftBodyCloth;
+struct SoftBodySelfCollisionSettings;
 
 // ============================================================================
 // Cloth Particle-Triangle Self Collision Settings
@@ -45,6 +47,60 @@ struct SoftBodyParticleTriangleSelfCollisionSettings
     // XPBD Compliance。0.0fなら硬い自己衝突です。
     float Compliance = 0.0f;
 };
+
+// ============================================================================
+// Particle-Triangle Spatial Hash Benchmark Result
+// ============================================================================
+// 0.04 / 0.05 / 0.06を「同じSolver状態」から比較した1サンプルです。
+// Solverを値コピーしてから各Cell SizeでStepWithSelfCollisions()を1回ずつ実行するため、
+// 実シミュレーションを順番に進める方式と異なり、Cloth変形状態の差が比較結果へ混ざりません。
+struct SoftBodyParticleTriangleSpatialHashBenchmarkSample
+{
+    float CellSize = 0.0f;
+    double SolverMilliseconds = 0.0;
+    uint64_t CandidateCount = 0u;
+    uint64_t NarrowPhaseCount = 0u;
+
+    double GetNarrowPhaseRatio() const
+    {
+        if (CandidateCount == 0u)
+        {
+            return 0.0;
+        }
+
+        return static_cast<double>(NarrowPhaseCount)
+            / static_cast<double>(CandidateCount);
+    }
+};
+
+struct SoftBodyParticleTriangleSpatialHashBenchmarkResult
+{
+    static constexpr std::size_t SampleCount = 3u;
+
+    std::array<SoftBodyParticleTriangleSpatialHashBenchmarkSample, SampleCount> Samples{};
+    std::size_t BestSampleIndex = 0u;
+    bool Valid = false;
+
+    const SoftBodyParticleTriangleSpatialHashBenchmarkSample& GetBestSample() const
+    {
+        return Samples[BestSampleIndex];
+    }
+};
+
+// ============================================================================
+// Benchmark Particle-Triangle Spatial Hash Cell Sizes
+// ============================================================================
+// 現在のSolverを3つコピーし、0.04 / 0.05 / 0.06を完全に同じ初期状態から1Stepずつ実行します。
+// 最適値はParticle-Triangleだけの候補数ではなく、Cell Size変更によるHash Build / Candidate /
+// Narrow Phaseの影響を含む統合Solver実行時間が最小のSampleとして選択します。
+//
+// この関数は入力solverを変更しません。比較はデバッグ・調整用であり、通常StepのHot Pathには入りません。
+SoftBodyParticleTriangleSpatialHashBenchmarkResult BenchmarkSoftBodyParticleTriangleSpatialHashCellSizes(
+    const SoftBodySolver& solver,
+    const SoftBodyCloth& cloth,
+    float deltaTime,
+    const SoftBodySelfCollisionSettings& particleSettings,
+    const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings);
 
 // ============================================================================
 // Solve Cloth Particle-Triangle Self Collisions
