@@ -8,6 +8,7 @@
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
 #include "Raven/Physics/SoftBody/XPBDDihedralConstraint.h"
 #include "Raven/Physics/SoftBody/XPBDDistanceConstraint.h"
+#include "Raven/Physics/SoftBody/XPBDVolumeConstraint.h"
 
 namespace Raven
 {
@@ -191,6 +192,26 @@ public:
     // 自己衝突Topologyを必要としないSoftBody用途はこちらを使用します。
     // deltaTime <= 0.0f の場合は計算を行いません。
     void Step(float deltaTime);
+
+    // ========================================================================
+    // Volumetric Soft Body Integrated XPBD Step
+    // ========================================================================
+    // ゼリーなどの四面体SoftBody向けに、外部所有のVolume Constraint群を通常のInternal Constraintと
+    // 同じSolverIterationsへ統合して解きます。
+    //
+    //   Predict
+    //     -> [Distance -> Volume -> Dihedral -> Sphere -> Plane] x Iterations
+    //     -> Velocity
+    //
+    // Volume ConstraintをStep()後の後処理にしないことが重要です。DistanceやCollisionが行った補正を
+    // 次iterationのVolume Constraintが再評価できるため、接触しながら潰れるゼリーでも体積保存と
+    // 外部Collisionを同時に収束させられます。
+    //
+    // volumeConstraintsは次段階でSoftBodyJellyが所有する想定です。Solver側へ永続所有させないことで、
+    // ClothなどVolumeを必要としないSoftBodyの既存Topologyと責務を分離しています。
+    void StepWithVolumeConstraints(
+        float deltaTime,
+        std::vector<XPBDVolumeConstraint>& volumeConstraints);
 
     // ========================================================================
     // Cloth Integrated XPBD Step
