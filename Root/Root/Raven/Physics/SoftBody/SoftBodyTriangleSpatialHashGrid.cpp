@@ -52,6 +52,8 @@ void SoftBodyTriangleSpatialHashGrid::Clear()
     m_CurrentGeneration = 0u;
     m_ActiveCellCount = 0u;
 
+    // 計測用Counterも明示的Clear時に初期状態へ戻します。
+    // BuildTriangles()の各Build開始時にもリセットするため、前回Buildの統計値は持ち越しません。
     m_BuildRegistrationCount = 0u;
     m_BuildProbeCount = 0u;
     m_BuildMaxProbeCount = 0u;
@@ -189,6 +191,8 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     // 4. Cell registration
     // ========================================================================
     // AABBが跨ぐ全Cellを列挙し、Flat HashからBucketを取得してTriangle Indexを追加します。
+    // ここが大きい場合は、Hash/Linear Probe、TriangleIndices push_back、
+    // AABBが跨ぐCell数そのもののどれが支配的かをCounterで切り分けます。
     // Hot loopではTimer/Mutex/文字列生成を行わず、整数Counterだけを更新します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration");
@@ -311,6 +315,8 @@ void SoftBodyTriangleSpatialHashGrid::EnsureInitialBucketCapacity(std::size_t tr
 
 void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
 {
+    // Counterは「通常iterationでTable拡張が発生していないか」を確認するためのものです。
+    // Grow自体のアルゴリズムは従来と同じで、現GenerationのActive Bucketだけを移します。
     ++m_BuildTableGrowCount;
 
     const std::size_t oldBucketCount = m_Buckets.size();
@@ -352,6 +358,9 @@ void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
         }
     }
 
+    // Grow前後でActive Cell数が変わる場合は内部不整合です。
+    // Release buildでも処理継続できるよう値を復元するような分岐は行わず、
+    // 正常系では必ず一致する単純な構造にしています。
     static_cast<void>(previousActiveCellCount);
 }
 
@@ -381,11 +390,15 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
 
         if (bucket.Generation != m_CurrentGeneration)
         {
+            // Inactive Bucketは現在Buildでは空なので、その場で再利用できます。
+            // clear()はcapacityを保持するため、同じSlotが再利用された場合のallocationを削減できます。
             bucket.Coord = cell;
             bucket.TriangleIndices.clear();
             bucket.Generation = m_CurrentGeneration;
             ++m_ActiveCellCount;
 
+            // Probe統計はGetOrActivateBucket() 1回につき実際に参照したBucket数を加算します。
+            // Timerを入れず整数加算だけにすることでHot loopへの計測影響を小さくしています。
             m_BuildProbeCount += probeCount;
             m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
             return bucket;
@@ -444,12 +457,17 @@ void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationCounters(
     const double activeCellCount = static_cast<double>(m_ActiveCellCount);
     const double triangleCount = static_cast<double>(validTriangleCount);
 
+    // 登録回数をTriangle数・Active Cell数で正規化することで、
+    // 「TriangleがCellを跨ぎすぎている」のか「1 CellへTriangleが集中している」のかを分離して判断できます。
     const double averageCellsPerTriangle = validTriangleCount > 0u
         ? registrationCount / triangleCount
         : 0.0;
     const double averageTrianglesPerCell = m_ActiveCellCount > 0u
         ? registrationCount / activeCellCount
         : 0.0;
+
+    // Probe平均が1.0付近ならほぼ初回Bucketで命中しており、Flat Hash探索は良好です。
+    // 値が大きい場合はHash衝突やLoad Factorを次の最適化対象として検討できます。
     const double averageProbeCount = m_BuildRegistrationCount > 0u
         ? static_cast<double>(m_BuildProbeCount) / registrationCount
         : 0.0;
