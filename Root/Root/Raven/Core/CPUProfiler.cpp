@@ -46,6 +46,7 @@ void CPUProfiler::BeginFrame()
     m_WriteFrame.FrameIndex = m_FrameIndex;
     m_WriteFrame.FrameTimeMilliseconds = 0.0;
     m_WriteFrame.Results.clear();
+    m_WriteFrame.Counters.clear();
 }
 
 void CPUProfiler::AddResult(CPUProfileResult result)
@@ -66,6 +67,25 @@ void CPUProfiler::AddResult(CPUProfileResult result)
     m_WriteFrame.Results.push_back(std::move(result));
 }
 
+void CPUProfiler::AddCounter(const char* name, double value)
+{
+    if (m_Enabled.load(std::memory_order_relaxed) == false)
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(m_ResultMutex);
+    if (m_FrameActive == false)
+    {
+        return;
+    }
+
+    CPUProfileCounter counter{};
+    counter.Name = name != nullptr ? name : "Unnamed";
+    counter.Value = value;
+    m_WriteFrame.Counters.push_back(std::move(counter));
+}
+
 const CPUProfileFrame& CPUProfiler::GetLastFrame() const
 {
     return m_LastFrame;
@@ -79,6 +99,8 @@ void CPUProfiler::SetEnabled(bool enabled)
 
     m_WriteFrame.Results.clear();
     m_LastFrame.Results.clear();
+    m_WriteFrame.Counters.clear();
+    m_LastFrame.Counters.clear();
     m_WriteFrame.FrameTimeMilliseconds = 0.0;
     m_LastFrame.FrameTimeMilliseconds = 0.0;
 }
