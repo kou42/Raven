@@ -18,6 +18,13 @@ constexpr std::size_t InitialBucketMultiplier = 16u;
 constexpr std::size_t MaximumLoadNumerator = 7u;
 constexpr std::size_t MaximumLoadDenominator = 10u;
 
+// Counter計測では1 Active Cellあたり平均約7.5 Triangleが登録されていました。
+// vectorの0 -> 1 -> 2 -> 4 -> 8という段階的な再allocationを避けるため、
+// 初めて使用するBucketには平均値を少し上回る8要素分を事前確保します。
+// 既存capacityが8以上あるBucketではreserve()を呼ばないため、XPBD iteration間で
+// これまで確保した容量をそのまま再利用できます。
+constexpr std::size_t InitialTriangleIndicesCapacity = 8u;
+
 std::size_t NextPowerOfTwo(std::size_t value)
 {
     std::size_t result = 1u;
@@ -391,9 +398,19 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
         if (bucket.Generation != m_CurrentGeneration)
         {
             // Inactive Bucketは現在Buildでは空なので、その場で再利用できます。
-            // clear()はcapacityを保持するため、同じSlotが再利用された場合のallocationを削減できます。
+            // clear()はcapacityを保持するため、同じSlotが再利用された場合は既存allocationを維持します。
             bucket.Coord = cell;
             bucket.TriangleIndices.clear();
+
+            // 前回計測では1 Cellあたり平均約7.5 Triangleでした。
+            // capacityが不足しているBucketだけ8要素分を事前確保し、push_back()時の
+            // 0 -> 1 -> 2 -> 4 -> 8という複数回の再allocationを1回へまとめます。
+            // すでに8以上確保済みならreserve()を呼ばないため、iteration間の再利用を妨げません。
+            if (bucket.TriangleIndices.capacity() < InitialTriangleIndicesCapacity)
+            {
+                bucket.TriangleIndices.reserve(InitialTriangleIndicesCapacity);
+            }
+
             bucket.Generation = m_CurrentGeneration;
             ++m_ActiveCellCount;
 
