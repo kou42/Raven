@@ -126,10 +126,15 @@ private:
     void GrowBuckets();
 
     // 現Buildで指定Cellを取得します。存在しなければ最初のInactive Bucketを再利用します。
+    // Probe回数はBuild統計へ加算し、Hot loop内ではProfiler APIを直接呼びません。
     TriangleCellBucket& GetOrActivateBucket(const CellCoord& cell);
 
     // Candidate生成用の読み取り検索です。
     const TriangleCellBucket* FindActiveBucket(const CellCoord& cell) const;
+
+    // CellRegistrationのHot loopで集計した値をBuild終了時にProfilerへまとめて送ります。
+    // これにより数万回のCell登録へTimer/Mutexを持ち込まず、ボトルネック原因だけを可視化できます。
+    void SubmitCellRegistrationCounters(std::size_t validTriangleCount) const;
 
 private:
     float m_CellSize = 0.05f;
@@ -144,6 +149,20 @@ private:
 
     uint32_t m_CurrentGeneration = 0u;
     std::size_t m_ActiveCellCount = 0u;
+
+    // ========================================================================
+    // Cell Registration Counters
+    // ========================================================================
+    // すべてBuildTriangles() 1回分のローカル統計です。
+    // XPBD iterationごとに0へ戻し、終了時にCPUProfilerへ1回ずつ記録します。
+    uint64_t m_BuildRegistrationCount = 0u;
+    uint64_t m_BuildProbeCount = 0u;
+    uint64_t m_BuildMaxProbeCount = 0u;
+    uint64_t m_BuildVectorGrowCount = 0u;
+    uint64_t m_BuildTableGrowCount = 0u;
+    uint64_t m_BuildMaxCellSpanX = 0u;
+    uint64_t m_BuildMaxCellSpanY = 0u;
+    uint64_t m_BuildMaxCellSpanZ = 0u;
 };
 
 } // namespace ph
