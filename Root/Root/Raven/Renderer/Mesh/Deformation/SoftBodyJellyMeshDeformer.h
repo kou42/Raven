@@ -70,10 +70,6 @@ private:
 private:
     math::Vec3 m_Color{ 0.35f, 0.85f, 0.55f };
 
-    bool m_CollisionPlaneEnabled = false;
-    math::Vec3 m_CollisionPlaneNormal{ 0.0f, 1.0f, 0.0f };
-    float m_CollisionPlaneOffset = 0.0f;
-
     ph::SoftBodySolver m_Solver;
     ph::SoftBodyJelly m_Jelly;
     ph::SoftBodyJellySurface m_Surface;
