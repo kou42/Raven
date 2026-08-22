@@ -51,6 +51,15 @@ void SoftBodyTriangleSpatialHashGrid::Clear()
     m_BucketMask = 0u;
     m_CurrentGeneration = 0u;
     m_ActiveCellCount = 0u;
+
+    m_BuildRegistrationCount = 0u;
+    m_BuildProbeCount = 0u;
+    m_BuildMaxProbeCount = 0u;
+    m_BuildVectorGrowCount = 0u;
+    m_BuildTableGrowCount = 0u;
+    m_BuildMaxCellSpanX = 0u;
+    m_BuildMaxCellSpanY = 0u;
+    m_BuildMaxCellSpanZ = 0u;
 }
 
 void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
@@ -59,6 +68,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     float expansion)
 {
     const float safeExpansion = std::max(0.0f, expansion);
+    std::size_t validTriangleCount = 0u;
 
     // ========================================================================
     // 1. Build preparation
@@ -84,6 +94,17 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
 
         m_BuildBounds.resize(triangles.size());
         m_BuildCellRanges.resize(triangles.size());
+
+        // CellRegistrationの統計はBuild単位でリセットします。
+        // Hot loop内では整数加算だけを行い、Profiler APIはBuild終了後にまとめて呼びます。
+        m_BuildRegistrationCount = 0u;
+        m_BuildProbeCount = 0u;
+        m_BuildMaxProbeCount = 0u;
+        m_BuildVectorGrowCount = 0u;
+        m_BuildTableGrowCount = 0u;
+        m_BuildMaxCellSpanX = 0u;
+        m_BuildMaxCellSpanY = 0u;
+        m_BuildMaxCellSpanZ = 0u;
     }
 
     // ========================================================================
@@ -119,6 +140,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             bounds.Maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
             bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
             bounds.Valid = true;
+            ++validTriangleCount;
         }
     }
 
@@ -144,6 +166,22 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             cellRange.Minimum = ComputeCellCoord(bounds.Minimum);
             cellRange.Maximum = ComputeCellCoord(bounds.Maximum);
             cellRange.Valid = true;
+
+            // Cell SpanはTriangleが何セルへ広がっているかを見る指標です。
+            // ここでは最大値だけを整数演算で集計し、登録ループへ追加コストを持ち込みません。
+            const uint64_t spanX = static_cast<uint64_t>(
+                static_cast<int64_t>(cellRange.Maximum.X)
+                - static_cast<int64_t>(cellRange.Minimum.X) + 1ll);
+            const uint64_t spanY = static_cast<uint64_t>(
+                static_cast<int64_t>(cellRange.Maximum.Y)
+                - static_cast<int64_t>(cellRange.Minimum.Y) + 1ll);
+            const uint64_t spanZ = static_cast<uint64_t>(
+                static_cast<int64_t>(cellRange.Maximum.Z)
+                - static_cast<int64_t>(cellRange.Minimum.Z) + 1ll);
+
+            m_BuildMaxCellSpanX = std::max(m_BuildMaxCellSpanX, spanX);
+            m_BuildMaxCellSpanY = std::max(m_BuildMaxCellSpanY, spanY);
+            m_BuildMaxCellSpanZ = std::max(m_BuildMaxCellSpanZ, spanZ);
         }
     }
 
@@ -151,11 +189,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     // 4. Cell registration
     // ========================================================================
     // AABBが跨ぐ全Cellを列挙し、Flat HashからBucketを取得してTriangle Indexを追加します。
-    // ここが大きい場合は次段階で、
-    //   - Hash/Linear Probe
-    //   - TriangleIndices push_back
-    //   - AABBが跨ぐCell数そのもの
-    // のどれを削るべきかをさらに切り分けます。
+    // Hot loopではTimer/Mutex/文字列生成を行わず、整数Counterだけを更新します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration");
 
@@ -181,12 +215,25 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                         cell.Z = z;
 
                         TriangleCellBucket& bucket = GetOrActivateBucket(cell);
+
+                        // vector capacityが実際に増えた回数を数えます。
+                        // これが多ければ、Flat HashではなくCell内TriangleIndicesのallocationが
+                        // CellRegistration時間を支配している可能性があります。
+                        const std::size_t previousCapacity = bucket.TriangleIndices.capacity();
                         bucket.TriangleIndices.push_back(static_cast<uint32_t>(triangleIndex));
+                        if (bucket.TriangleIndices.capacity() != previousCapacity)
+                        {
+                            ++m_BuildVectorGrowCount;
+                        }
+
+                        ++m_BuildRegistrationCount;
                     }
                 }
             }
         }
     }
+
+    SubmitCellRegistrationCounters(validTriangleCount);
 }
 
 void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
@@ -264,6 +311,8 @@ void SoftBodyTriangleSpatialHashGrid::EnsureInitialBucketCapacity(std::size_t tr
 
 void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
 {
+    ++m_BuildTableGrowCount;
+
     const std::size_t oldBucketCount = m_Buckets.size();
     const std::size_t newBucketCount = std::max(
         MinimumBucketCount,
@@ -303,9 +352,6 @@ void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
         }
     }
 
-    // Grow前後でActive Cell数が変わる場合は内部不整合です。
-    // Release buildでも処理継続できるよう値を復元するような分岐は行わず、
-    // 正常系では必ず一致する単純な構造にしています。
     static_cast<void>(previousActiveCellCount);
 }
 
@@ -326,24 +372,29 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
     }
 
     std::size_t bucketIndex = HashCell(cell) & m_BucketMask;
+    uint64_t probeCount = 0u;
 
     while (true)
     {
+        ++probeCount;
         TriangleCellBucket& bucket = m_Buckets[bucketIndex];
 
         if (bucket.Generation != m_CurrentGeneration)
         {
-            // Inactive Bucketは現在Buildでは空なので、その場で再利用できます。
-            // clear()はcapacityを保持するため、同じSlotが再利用された場合のallocationを削減できます。
             bucket.Coord = cell;
             bucket.TriangleIndices.clear();
             bucket.Generation = m_CurrentGeneration;
             ++m_ActiveCellCount;
+
+            m_BuildProbeCount += probeCount;
+            m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
             return bucket;
         }
 
         if (bucket.Coord == cell)
         {
+            m_BuildProbeCount += probeCount;
+            m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
             return bucket;
         }
 
@@ -378,6 +429,48 @@ SoftBodyTriangleSpatialHashGrid::FindActiveBucket(const CellCoord& cell) const
 
         bucketIndex = (bucketIndex + 1u) & m_BucketMask;
     }
+}
+
+void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationCounters(
+    std::size_t validTriangleCount) const
+{
+    CPUProfiler& profiler = CPUProfiler::Get();
+    if (profiler.IsEnabled() == false)
+    {
+        return;
+    }
+
+    const double registrationCount = static_cast<double>(m_BuildRegistrationCount);
+    const double activeCellCount = static_cast<double>(m_ActiveCellCount);
+    const double triangleCount = static_cast<double>(validTriangleCount);
+
+    const double averageCellsPerTriangle = validTriangleCount > 0u
+        ? registrationCount / triangleCount
+        : 0.0;
+    const double averageTrianglesPerCell = m_ActiveCellCount > 0u
+        ? registrationCount / activeCellCount
+        : 0.0;
+    const double averageProbeCount = m_BuildRegistrationCount > 0u
+        ? static_cast<double>(m_BuildProbeCount) / registrationCount
+        : 0.0;
+    const double loadFactor = m_Buckets.empty() == false
+        ? activeCellCount / static_cast<double>(m_Buckets.size())
+        : 0.0;
+
+    // 1 Buildにつき各Counterを1回だけ登録します。
+    // StatisticsPanel側では12 iteration分をTotal / Average / Maxとして集計できます。
+    profiler.AddCounter("SoftBody.TriangleHash.RegistrationCount", registrationCount);
+    profiler.AddCounter("SoftBody.TriangleHash.ActiveCellCount", activeCellCount);
+    profiler.AddCounter("SoftBody.TriangleHash.AverageCellsPerTriangle", averageCellsPerTriangle);
+    profiler.AddCounter("SoftBody.TriangleHash.AverageTrianglesPerCell", averageTrianglesPerCell);
+    profiler.AddCounter("SoftBody.TriangleHash.AverageProbeCount", averageProbeCount);
+    profiler.AddCounter("SoftBody.TriangleHash.MaxProbeCount", static_cast<double>(m_BuildMaxProbeCount));
+    profiler.AddCounter("SoftBody.TriangleHash.VectorGrowCount", static_cast<double>(m_BuildVectorGrowCount));
+    profiler.AddCounter("SoftBody.TriangleHash.TableGrowCount", static_cast<double>(m_BuildTableGrowCount));
+    profiler.AddCounter("SoftBody.TriangleHash.LoadFactor", loadFactor);
+    profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanX", static_cast<double>(m_BuildMaxCellSpanX));
+    profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanY", static_cast<double>(m_BuildMaxCellSpanY));
+    profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanZ", static_cast<double>(m_BuildMaxCellSpanZ));
 }
 
 } // namespace ph
