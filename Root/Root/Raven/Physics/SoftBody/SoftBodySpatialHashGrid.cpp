@@ -1,6 +1,7 @@
 #include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 
@@ -11,6 +12,44 @@ namespace ph
 namespace
 {
 constexpr float MinimumCellSize = 1.0e-4f;
+
+struct NeighborOffset
+{
+    int32_t X = 0;
+    int32_t Y = 0;
+    int32_t Z = 0;
+};
+
+// ============================================================================
+// Unique Neighbor Offsets
+// ============================================================================
+// 3x3x3近傍には自身を除いて26 Cellあります。
+// その全てを各Cellから見ると A->B と B->A を二重処理するため、辞書順で「正方向」の
+// 13 Cellだけを保持します。
+//
+// z > 0
+// または z == 0 かつ y > 0
+// または z == 0 かつ y == 0 かつ x > 0
+//
+// という半空間だけを見ることで、隣接Cell Pairを厳密に1回だけ処理できます。
+constexpr std::array<NeighborOffset, 13u> UniqueNeighborOffsets =
+{
+    NeighborOffset{  1,  0,  0 },
+
+    NeighborOffset{ -1,  1,  0 },
+    NeighborOffset{  0,  1,  0 },
+    NeighborOffset{  1,  1,  0 },
+
+    NeighborOffset{ -1, -1,  1 },
+    NeighborOffset{  0, -1,  1 },
+    NeighborOffset{  1, -1,  1 },
+    NeighborOffset{ -1,  0,  1 },
+    NeighborOffset{  0,  0,  1 },
+    NeighborOffset{  1,  0,  1 },
+    NeighborOffset{ -1,  1,  1 },
+    NeighborOffset{  0,  1,  1 },
+    NeighborOffset{  1,  1,  1 }
+};
 }
 
 SoftBodySpatialHashGrid::SoftBodySpatialHashGrid(float cellSize)
@@ -33,21 +72,26 @@ void SoftBodySpatialHashGrid::SetCellSize(float cellSize)
 void SoftBodySpatialHashGrid::Clear()
 {
     m_Cells.clear();
-    m_ParticlePositions.clear();
+    m_ParticleCount = 0u;
 }
 
 void SoftBodySpatialHashGrid::Build(const std::vector<SoftBodyParticle>& particles)
 {
     m_Cells.clear();
-    m_ParticlePositions.clear();
-    m_ParticlePositions.reserve(particles.size());
+    m_ParticleCount = particles.size();
+
+    // ClothではOccupied Cell数はParticle数以下です。
+    // あらかじめParticle数程度をreserveしておくことでBuild時のrehashを抑えます。
+    // clear()後もunordered_mapのbucket_count自体は保持されるため、2回目以降のXPBD iterationでは
+    // ほぼ再確保なしで利用できます。
+    if (m_Cells.bucket_count() < particles.size())
+    {
+        m_Cells.reserve(particles.size());
+    }
 
     for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
     {
-        const math::Vec3& position = particles[particleIndex].Position;
-        m_ParticlePositions.push_back(position);
-
-        const CellCoord cell = ComputeCellCoord(position);
+        const CellCoord cell = ComputeCellCoord(particles[particleIndex].Position);
         m_Cells[cell].push_back(static_cast<uint32_t>(particleIndex));
     }
 }
@@ -55,44 +99,68 @@ void SoftBodySpatialHashGrid::Build(const std::vector<SoftBodyParticle>& particl
 void SoftBodySpatialHashGrid::GenerateCandidatePairs(
     std::vector<SoftBodySpatialHashPair>& outPairs) const
 {
+    // vector capacityは呼び出し側でiteration間に再利用されるため、clear()だけにします。
     outPairs.clear();
 
-    // Particleは必ず1つの基準Cellにだけ登録されます。
-    // 各Particleから周囲27Cellを見る一方で neighborIndex <= particleIndex を除外するため、
-    // (A,B) と (B,A) の二重登録も、同一Pairの重複登録も発生しません。
-    for (std::size_t particleIndex = 0u; particleIndex < m_ParticlePositions.size(); ++particleIndex)
+    // ========================================================================
+    // Cell-based Pair Generation
+    // ========================================================================
+    // 旧実装はParticle N個それぞれについて27回unordered_map::find()していました。
+    // 例えば1000 Particleなら約27000回/iterationのHash検索です。
+    //
+    // 新実装ではOccupied Cell C個について13 Neighborだけを見るため、最大でも約13*C回です。
+    // また同一Cell内PairはMap検索不要で直接生成します。
+    for (const auto& cellEntry : m_Cells)
     {
-        const CellCoord centerCell = ComputeCellCoord(m_ParticlePositions[particleIndex]);
+        const CellCoord& centerCell = cellEntry.first;
+        const std::vector<uint32_t>& centerParticles = cellEntry.second;
 
-        for (int32_t zOffset = -1; zOffset <= 1; ++zOffset)
+        // --------------------------------------------------------------------
+        // Same Cell Pairs
+        // --------------------------------------------------------------------
+        // 同じCell内ではi<jの組み合わせだけを生成し、重複を完全に防ぎます。
+        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.size(); ++firstIndex)
         {
-            for (int32_t yOffset = -1; yOffset <= 1; ++yOffset)
+            for (std::size_t secondIndex = firstIndex + 1u;
+                 secondIndex < centerParticles.size();
+                 ++secondIndex)
             {
-                for (int32_t xOffset = -1; xOffset <= 1; ++xOffset)
+                AppendNormalizedPair(
+                    centerParticles[firstIndex],
+                    centerParticles[secondIndex],
+                    outPairs);
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // Neighbor Cell Cross Pairs
+        // --------------------------------------------------------------------
+        // 26方向全てではなく13方向だけを見るため、Cell Pairそのものを1回だけ処理します。
+        for (const NeighborOffset& offset : UniqueNeighborOffsets)
+        {
+            CellCoord neighborCell{};
+            neighborCell.X = centerCell.X + offset.X;
+            neighborCell.Y = centerCell.Y + offset.Y;
+            neighborCell.Z = centerCell.Z + offset.Z;
+
+            const auto neighborIt = m_Cells.find(neighborCell);
+            if (neighborIt == m_Cells.end())
+            {
+                continue;
+            }
+
+            const std::vector<uint32_t>& neighborParticles = neighborIt->second;
+
+            // 隣接する2 CellのParticleは全Cross PairがBroad Phase候補です。
+            // Particle順はCell順とは無関係なのでAppendNormalizedPair()でA<Bへ揃えます。
+            for (uint32_t centerParticle : centerParticles)
+            {
+                for (uint32_t neighborParticle : neighborParticles)
                 {
-                    CellCoord neighborCell{};
-                    neighborCell.X = centerCell.X + xOffset;
-                    neighborCell.Y = centerCell.Y + yOffset;
-                    neighborCell.Z = centerCell.Z + zOffset;
-
-                    const auto cellIt = m_Cells.find(neighborCell);
-                    if (cellIt == m_Cells.end())
-                    {
-                        continue;
-                    }
-
-                    for (uint32_t neighborIndex : cellIt->second)
-                    {
-                        if (neighborIndex <= particleIndex)
-                        {
-                            continue;
-                        }
-
-                        SoftBodySpatialHashPair pair{};
-                        pair.ParticleA = static_cast<uint32_t>(particleIndex);
-                        pair.ParticleB = neighborIndex;
-                        outPairs.push_back(pair);
-                    }
+                    AppendNormalizedPair(
+                        centerParticle,
+                        neighborParticle,
+                        outPairs);
                 }
             }
         }
@@ -101,15 +169,10 @@ void SoftBodySpatialHashGrid::GenerateCandidatePairs(
 
 std::size_t SoftBodySpatialHashGrid::CellCoordHasher::operator()(const CellCoord& coord) const
 {
-    // hash値そのものに一意性は要求しません。
-    // unordered_mapは最終的にCellCoord::operator==で同一Cellか確認するため、負座標を含めても
-    // hash collisionによって別セルが同一セル扱いされることはありません。
     const std::size_t hashX = std::hash<int32_t>{}(coord.X);
     const std::size_t hashY = std::hash<int32_t>{}(coord.Y);
     const std::size_t hashZ = std::hash<int32_t>{}(coord.Z);
 
-    // boost::hash_combineと同種のmixです。
-    // 特定の素数積へ座標を直接畳み込む方式より、CellCoord equalityを残したまま扱える点を優先します。
     std::size_t seed = hashX;
     seed ^= hashY + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
     seed ^= hashZ + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
@@ -127,6 +190,22 @@ SoftBodySpatialHashGrid::CellCoord SoftBodySpatialHashGrid::ComputeCellCoord(
     coord.Y = static_cast<int32_t>(std::floor(position.y * m_InverseCellSize));
     coord.Z = static_cast<int32_t>(std::floor(position.z * m_InverseCellSize));
     return coord;
+}
+
+void SoftBodySpatialHashGrid::AppendNormalizedPair(
+    uint32_t particleA,
+    uint32_t particleB,
+    std::vector<SoftBodySpatialHashPair>& outPairs)
+{
+    if (particleA == particleB)
+    {
+        return;
+    }
+
+    SoftBodySpatialHashPair pair{};
+    pair.ParticleA = std::min(particleA, particleB);
+    pair.ParticleB = std::max(particleA, particleB);
+    outPairs.push_back(pair);
 }
 
 } // namespace ph

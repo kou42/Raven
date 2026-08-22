@@ -29,17 +29,12 @@ struct SoftBodySpatialHashPair
 // ============================================================================
 // SoftBody / Clothの自己衝突候補をO(N^2)全探索せず絞り込むためのBroad Phaseです。
 //
-// 現段階ではParticleを「Positionが属する1セル」へ登録し、そのParticleの周囲3x3x3セルを
-// 検索して候補Pairを生成します。Collision Diameter以下の距離にあるParticleを取りこぼさないため、
-// Cloth Self Collisionで使用する際は CellSize >= SelfCollisionDiameter としてください。
+// ParticleはPositionが属する1セルだけへ登録します。
+// 候補生成では旧実装の「Particleごとに周囲27セル検索」をやめ、Occupied Cellを基準に
+// 同一Cell + 重複しない13方向のNeighbor Cellだけを処理します。
 //
-// 重要:
-// - 負座標はstatic_cast<int>ではなくfloor()でセル化します。
-//   例えば x=-0.1, CellSize=1.0 はセル-1であり、0へ切り捨ててはいけません。
-// - Particleは1セルだけに入るため、候補生成時に ParticleB > ParticleA とするだけで
-//   Pair重複を防げます。
-// - 将来Particle-Triangleへ拡張する際は、Triangle AABBを複数セルへ登録する別経路を追加します。
-//   Point登録とTriangle登録の責務を混ぜないことで、まずParticle Broad Phaseを検証しやすくします。
+// これにより候補集合は同じまま、同じNeighbor Cellに対するunordered_map::find()の
+// 重複呼び出しを大幅に削減できます。
 class SoftBodySpatialHashGrid
 {
 public:
@@ -56,12 +51,24 @@ public:
     // Build()し直すことを想定しています。
     void Build(const std::vector<SoftBodyParticle>& particles);
 
-    // 周囲27セルからParticle候補Pairを生成します。
+    // ========================================================================
+    // Candidate Pair Generation
+    // ========================================================================
+    // 旧実装:
+    //   Particleごとに周囲3x3x3=27 Cellを検索
+    //
+    // 新実装:
+    //   Occupied Cellごとに
+    //     1. 同一Cell内のPair
+    //     2. 13方向だけのNeighbor CellとのCross Pair
+    //   を生成します。
+    //
+    // 全26Neighborの半分だけを見ることで、Cell A -> B と Cell B -> A の二重処理を防ぎます。
     // Narrow Phaseの距離判定はここでは行いません。
     void GenerateCandidatePairs(std::vector<SoftBodySpatialHashPair>& outPairs) const;
 
     std::size_t GetOccupiedCellCount() const { return m_Cells.size(); }
-    std::size_t GetParticleCount() const { return m_ParticlePositions.size(); }
+    std::size_t GetParticleCount() const { return m_ParticleCount; }
 
 private:
     struct CellCoord
@@ -83,17 +90,23 @@ private:
 
     CellCoord ComputeCellCoord(const math::Vec3& position) const;
 
+    // Pairの格納順は常にParticleA < ParticleBへ正規化します。
+    // Cell基準走査ではIndex順とCell順は一致しないため、ここで明示的に保証します。
+    static void AppendNormalizedPair(
+        uint32_t particleA,
+        uint32_t particleB,
+        std::vector<SoftBodySpatialHashPair>& outPairs);
+
 private:
     float m_CellSize = 0.05f;
     float m_InverseCellSize = 20.0f;
 
-    // Keyそのものをhash値へ潰さず、整数3成分のCellCoordを保持します。
-    // hash collisionが起きてもunordered_mapがoperator==で区別できるため安全です。
+    // Particleは必ず1 Cellだけへ登録されます。
     std::unordered_map<CellCoord, std::vector<uint32_t>, CellCoordHasher> m_Cells;
 
-    // Pair生成時に各Particleの基準セルを再計算できるようPositionを保持します。
-    // Broad PhaseはSolverのParticleを所有せず、Build時点のsnapshotだけを扱います。
-    std::vector<math::Vec3> m_ParticlePositions;
+    // Candidate生成時はPositionを再利用しなくなったため、Particle snapshotは保持しません。
+    // 数だけ保持することで余分なVec3 copy / memory trafficを削減します。
+    std::size_t m_ParticleCount = 0u;
 };
 
 } // namespace ph
