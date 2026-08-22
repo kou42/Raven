@@ -1,0 +1,130 @@
+#include "CPUProfiler.h"
+
+#include <utility>
+
+namespace Raven
+{
+namespace
+{
+// Scopeの入れ子深度はThreadごとに独立して管理します。
+// Job System導入後に複数Workerが同時にProfilerを使用しても、別ThreadのDepthと干渉しません。
+thread_local uint32_t s_CPUProfileDepth = 0;
+}
+
+CPUProfiler& CPUProfiler::Get()
+{
+    static CPUProfiler profiler;
+    return profiler;
+}
+
+void CPUProfiler::BeginFrame()
+{
+    if (m_Enabled == false)
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(m_ResultMutex);
+
+    ++m_FrameIndex;
+    m_FrameStart = Clock::now();
+    m_WriteFrame.FrameIndex = m_FrameIndex;
+    m_WriteFrame.FrameTimeMilliseconds = 0.0;
+    m_WriteFrame.Results.clear();
+}
+
+void CPUProfiler::EndFrame()
+{
+    if (m_Enabled == false)
+    {
+        return;
+    }
+
+    const Clock::time_point end = Clock::now();
+    const double frameMilliseconds =
+        std::chrono::duration<double, std::milli>(end - m_FrameStart).count();
+
+    std::lock_guard<std::mutex> lock(m_ResultMutex);
+
+    m_WriteFrame.FrameTimeMilliseconds = frameMilliseconds;
+
+    // vectorのallocationを毎frame捨てないようswapで公開します。
+    // 次のBeginFrame()では以前のLastFrame側bufferを再利用できるため、
+    // Profiler自身が不要なallocation spikeを作ることを抑えます。
+    std::swap(m_WriteFrame, m_LastFrame);
+}
+
+void CPUProfiler::AddResult(CPUProfileResult result)
+{
+    if (m_Enabled == false)
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(m_ResultMutex);
+    m_WriteFrame.Results.push_back(std::move(result));
+}
+
+const CPUProfileFrame& CPUProfiler::GetLastFrame() const
+{
+    return m_LastFrame;
+}
+
+void CPUProfiler::SetEnabled(bool enabled)
+{
+    std::lock_guard<std::mutex> lock(m_ResultMutex);
+    m_Enabled = enabled;
+
+    if (enabled == false)
+    {
+        m_WriteFrame.Results.clear();
+        m_LastFrame.Results.clear();
+        m_WriteFrame.FrameTimeMilliseconds = 0.0;
+        m_LastFrame.FrameTimeMilliseconds = 0.0;
+    }
+}
+
+bool CPUProfiler::IsEnabled() const
+{
+    return m_Enabled;
+}
+
+CPUProfileScope::CPUProfileScope(const char* name)
+    : m_Name(name)
+{
+    if (CPUProfiler::Get().IsEnabled() == false)
+    {
+        return;
+    }
+
+    m_Depth = s_CPUProfileDepth;
+    ++s_CPUProfileDepth;
+    m_Start = Clock::now();
+    m_Active = true;
+}
+
+CPUProfileScope::~CPUProfileScope()
+{
+    if (m_Active == false)
+    {
+        return;
+    }
+
+    const Clock::time_point end = Clock::now();
+
+    if (s_CPUProfileDepth > 0)
+    {
+        --s_CPUProfileDepth;
+    }
+
+    CPUProfileResult result{};
+    result.Name = m_Name != nullptr ? m_Name : "Unnamed";
+    result.DurationMilliseconds =
+        std::chrono::duration<double, std::milli>(end - m_Start).count();
+    result.ThreadId = std::this_thread::get_id();
+    result.Depth = m_Depth;
+
+    CPUProfiler::Get().AddResult(std::move(result));
+}
+
+} // namespace Raven
