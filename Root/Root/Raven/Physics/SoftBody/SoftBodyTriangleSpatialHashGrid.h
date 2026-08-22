@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
@@ -33,14 +32,17 @@ struct SoftBodyParticleTrianglePair
 };
 
 // ============================================================================
-// Particle-Triangle Spatial Hash / Uniform Grid
+// Particle-Triangle Flat Spatial Hash / Uniform Grid
 // ============================================================================
 // Particle-Triangle自己衝突専用Broad Phaseです。
 //
-// ParticleはPositionが属する1セルだけを問い合わせます。一方Triangleは3頂点から作ったAABBを
-// CollisionThicknessだけ膨張させ、そのAABBが跨ぐ全セルへ登録します。
-// この構成により「ParticleがTriangle表面からThickness以内」にある場合、そのParticleのセルには
-// 必ず対象Triangleが登録されるため、全Particle x 全Triangle探索を避けられます。
+// 旧実装は unordered_map<CellCoord, vector<uint32_t>> を使用していました。
+// Triangle AABBが跨ぐ全Cellに対して unordered_map のHash検索・Node参照が発生するため、
+// ProfilerではBuildTriangles()がParticle-Triangle自己衝突時間の大半を占めていました。
+//
+// 現実装では、2の累乗サイズの連続Bucket配列 + Open Addressingを使用します。
+// Bucket本体がstd::vector上に連続配置されるため、Node allocationとpointer chasingを避け、
+// XPBD iteration間ではBucket内TriangleIndicesのcapacityも再利用します。
 class SoftBodyTriangleSpatialHashGrid
 {
 public:
@@ -64,8 +66,6 @@ public:
         const std::vector<SoftBodyParticle>& particles,
         std::vector<SoftBodyParticleTrianglePair>& outPairs) const;
 
-    // m_TriangleCells.size() は再利用待ちの非Active Bucketも含むため、
-    // 今回のBuildで実際に使われたセル数を別途保持して返します。
     std::size_t GetOccupiedCellCount() const { return m_ActiveCellCount; }
 
 private:
@@ -81,41 +81,41 @@ private:
         }
     };
 
-    struct CellCoordHasher
-    {
-        std::size_t operator()(const CellCoord& coord) const;
-    };
-
     // ========================================================================
-    // Triangle Cell Bucket
+    // Flat Hash Bucket
     // ========================================================================
-    // 旧実装ではBuildTriangles()ごとにunordered_map::clear()していたため、
-    // 各セルのvector容量まで毎iteration破棄され、次iterationで再allocationが発生していました。
-    //
-    // Generationを使うことでBucket自体とvector capacityを保持したまま、
-    // 「今回のBuildで有効なデータ」だけを論理的に切り替えます。
-    // 同じClothは連続iterationでほぼ同じセルを使うため、この再利用効果が特に大きくなります。
+    // Generation != m_CurrentGeneration のBucketは「現在Buildでは空」として扱います。
+    // Bucketを物理的に消去しないため、TriangleIndicesのcapacityを次iterationへ再利用できます。
     struct TriangleCellBucket
     {
+        CellCoord Coord{};
         std::vector<uint32_t> TriangleIndices;
         uint32_t Generation = 0u;
     };
 
     CellCoord ComputeCellCoord(const math::Vec3& position) const;
+    std::size_t HashCell(const CellCoord& cell) const;
 
-    // 現在Buildでcellを初めて触る場合だけvectorをclearします。
-    // clear()はcapacityを保持するため、前iterationで確保した領域をそのまま再利用できます。
+    // Triangle数から初期Bucket容量を確保します。
+    // Open Addressingは高Load FactorでProbeが急増するため、余裕を持った容量を使用します。
+    void EnsureInitialBucketCapacity(std::size_t triangleCount);
+
+    // 現GenerationのActive Bucketを保ったままTableを拡張します。
+    // 通常のClothでは初期容量で足りる想定ですが、極端に広いTriangle AABBでも破綻しないための安全網です。
+    void GrowBuckets();
+
+    // 現Buildで指定Cellを取得します。存在しなければ最初のInactive Bucketを再利用します。
     TriangleCellBucket& GetOrActivateBucket(const CellCoord& cell);
 
-    // Clothが大きく移動し続けるケースでは、Generation方式だけだと古いCell nodeがMapへ残り続けます。
-    // Active Cell数に対して過剰になった場合だけInactive Bucketを間引き、通常frameでは走査しません。
-    void CompactInactiveBucketsIfNeeded();
+    // Candidate生成用の読み取り検索です。
+    const TriangleCellBucket* FindActiveBucket(const CellCoord& cell) const;
 
 private:
     float m_CellSize = 0.05f;
     float m_InverseCellSize = 20.0f;
 
-    std::unordered_map<CellCoord, TriangleCellBucket, CellCoordHasher> m_TriangleCells;
+    std::vector<TriangleCellBucket> m_Buckets;
+    std::size_t m_BucketMask = 0u;
 
     uint32_t m_CurrentGeneration = 0u;
     std::size_t m_ActiveCellCount = 0u;
