@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
+#include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
 namespace Raven::ph::tests
 {
@@ -23,6 +24,23 @@ bool ContainsPair(
     for (const SoftBodySpatialHashPair& pair : pairs)
     {
         if (pair.ParticleA == particleA && pair.ParticleB == particleB)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ContainsParticleTrianglePair(
+    const std::vector<SoftBodyParticleTrianglePair>& pairs,
+    uint32_t particleIndex,
+    uint32_t triangleIndex)
+{
+    for (const SoftBodyParticleTrianglePair& pair : pairs)
+    {
+        if (pair.ParticleIndex == particleIndex
+            && pair.TriangleIndex == triangleIndex)
         {
             return true;
         }
@@ -147,6 +165,41 @@ void RunSoftBodySpatialHashSelfTests()
         grid.Build(particles);
         grid.GenerateCandidatePairs(pairs);
         assert(ContainsPair(pairs, 0u, 1u) == false);
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. Particle-Triangle Expanded AABB Early Reject
+    // ------------------------------------------------------------------------
+    // Triangle AABBがCell (0,0,0)へ登録されていても、そのCell全体がTriangleの
+    // Thickness込みAABB内とは限りません。同じCellにいるだけの不要候補をClosest Point計算へ
+    // 流さないことと、実際に膨張AABB内にいるParticleは候補として保持することを確認します。
+    {
+        SoftBodyTriangleSpatialHashGrid grid(1.0f);
+        std::vector<SoftBodyParticle> particles(5u);
+
+        // Triangleは原点近傍の小さな形状です。expansion=0.1なので膨張AABBは概ね
+        // x/y=[0.0,0.3], z=[-0.1,0.1]になります。
+        particles[0].Position = { 0.10f, 0.10f, 0.0f };
+        particles[1].Position = { 0.20f, 0.10f, 0.0f };
+        particles[2].Position = { 0.10f, 0.20f, 0.0f };
+
+        // Particle 3は同じCell (0,0,0)ですが膨張AABB外です。
+        // 旧Cell単位候補では残りますが、Exact AABB Early Reject後は除外されます。
+        particles[3].Position = { 0.90f, 0.90f, 0.90f };
+
+        // Particle 4は膨張AABB内なので候補を維持する必要があります。
+        particles[4].Position = { 0.15f, 0.15f, 0.05f };
+
+        std::vector<SoftBodyTriangle> triangles;
+        triangles.push_back({ 0u, 1u, 2u });
+
+        grid.BuildTriangles(particles, triangles, 0.10f);
+
+        std::vector<SoftBodyParticleTrianglePair> pairs;
+        grid.GenerateParticleTriangleCandidates(particles, pairs);
+
+        assert(ContainsParticleTrianglePair(pairs, 3u, 0u) == false);
+        assert(ContainsParticleTrianglePair(pairs, 4u, 0u));
     }
 }
 

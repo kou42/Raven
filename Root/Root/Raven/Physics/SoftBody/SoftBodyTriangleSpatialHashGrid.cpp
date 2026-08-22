@@ -322,9 +322,13 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
 {
     outPairs.clear();
 
+    uint64_t cellCandidateCount = 0u;
+    uint64_t expandedAABBRejectCount = 0u;
+
     for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
     {
-        const CellCoord cell = ComputeCellCoord(particles[particleIndex].Position);
+        const math::Vec3& particlePosition = particles[particleIndex].Position;
+        const CellCoord cell = ComputeCellCoord(particlePosition);
         const TriangleCellBucket* bucket = FindActiveBucket(cell);
         if (bucket == nullptr)
         {
@@ -333,11 +337,61 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
 
         for (uint32_t triangleIndex : bucket->TriangleIndices)
         {
+            ++cellCandidateCount;
+
+            // ====================================================================
+            // Expanded Triangle AABB Early Reject
+            // ====================================================================
+            // TriangleはThicknessで膨張したAABBが跨ぐ「Cell」へ登録されています。
+            // そのためParticleとTriangleが同じCellにいても、Particle自体が厳密な膨張AABB外に
+            // 存在するケースがあります。この候補を最近傍点計算へ送る必要はありません。
+            //
+            // BuildTriangles()で計算済みのm_BuildBoundsを再利用するため、ここではmin/max再計算や
+            // sqrtを一切行わず6回の比較だけでRejectできます。
+            // Particle-Triangle距離がThickness未満なら必ずこの膨張AABB内に存在するため、
+            // 接触候補を失わずにNarrow Phaseへの流入だけを減らせます。
+            if (triangleIndex >= m_BuildBounds.size())
+            {
+                ++expandedAABBRejectCount;
+                continue;
+            }
+
+            const TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+            if (bounds.Valid == false
+                || particlePosition.x < bounds.Minimum.x
+                || particlePosition.x > bounds.Maximum.x
+                || particlePosition.y < bounds.Minimum.y
+                || particlePosition.y > bounds.Maximum.y
+                || particlePosition.z < bounds.Minimum.z
+                || particlePosition.z > bounds.Maximum.z)
+            {
+                ++expandedAABBRejectCount;
+                continue;
+            }
+
             SoftBodyParticleTrianglePair pair{};
             pair.ParticleIndex = static_cast<uint32_t>(particleIndex);
             pair.TriangleIndex = triangleIndex;
             outPairs.push_back(pair);
         }
+    }
+
+    // Cell単位候補とExact AABB通過後候補を分けて記録します。
+    // NarrowPhaseCountと合わせて見ることで、
+    //   Cell Candidate -> Expanded AABB -> Topology Reject -> Closest Point
+    // のどの段階で候補を削減できているか確認できます。
+    CPUProfiler& profiler = CPUProfiler::Get();
+    if (profiler.IsEnabled())
+    {
+        const double candidateCount = static_cast<double>(cellCandidateCount);
+        const double rejectCount = static_cast<double>(expandedAABBRejectCount);
+        const double rejectRatio = cellCandidateCount > 0u
+            ? rejectCount / candidateCount
+            : 0.0;
+
+        profiler.AddCounter("SoftBody.TriangleHash.CellCandidateCount", candidateCount);
+        profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectCount", rejectCount);
+        profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectRatio", rejectRatio);
     }
 }
 

@@ -72,9 +72,9 @@ private:
     float m_CollisionPlaneOffset = 0.0f;
     uint32_t m_CollisionPlaneIndex = 0u;
 
-    // デフォルトは比較中央値0.05です。
+    // 0.04 / 0.05 / 0.06比較で最短だった0.06を通常デフォルトにします。
     // RuntimeからSetterで変更してもClothを再構築せず、次StepからBroad Phaseだけ差し替えられます。
-    float m_ParticleTriangleSpatialHashCellSize = 0.05f;
+    float m_ParticleTriangleSpatialHashCellSize = 0.06f;
 
     ph::SoftBodySolver m_Solver;
     ph::SoftBodyCloth m_Cloth;
