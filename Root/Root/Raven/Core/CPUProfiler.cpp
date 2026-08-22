@@ -24,34 +24,28 @@ void CPUProfiler::BeginFrame()
         return;
     }
 
+    const Clock::time_point now = Clock::now();
     std::lock_guard<std::mutex> lock(m_ResultMutex);
 
+    // 2frame目以降は、新frame開始時点を直前frameの終了時点として扱います。
+    // ApplicationのRenderer::BeginFrame()と同じ境界を共有できるため、Profiler専用の
+    // EndFrame呼び出しをApplicationへ追加せず、frame全体のCPU時間を測定できます。
+    if (m_FrameActive)
+    {
+        m_WriteFrame.FrameTimeMilliseconds =
+            std::chrono::duration<double, std::milli>(now - m_FrameStart).count();
+
+        // 完成したframeを読み取り側へ公開します。
+        // swap後のm_WriteFrameは古い読み取りbufferを再利用するため、毎frameのallocationを抑えます。
+        std::swap(m_WriteFrame, m_LastFrame);
+    }
+
     ++m_FrameIndex;
-    m_FrameStart = Clock::now();
+    m_FrameStart = now;
+    m_FrameActive = true;
     m_WriteFrame.FrameIndex = m_FrameIndex;
     m_WriteFrame.FrameTimeMilliseconds = 0.0;
     m_WriteFrame.Results.clear();
-}
-
-void CPUProfiler::EndFrame()
-{
-    if (m_Enabled == false)
-    {
-        return;
-    }
-
-    const Clock::time_point end = Clock::now();
-    const double frameMilliseconds =
-        std::chrono::duration<double, std::milli>(end - m_FrameStart).count();
-
-    std::lock_guard<std::mutex> lock(m_ResultMutex);
-
-    m_WriteFrame.FrameTimeMilliseconds = frameMilliseconds;
-
-    // vectorのallocationを毎frame捨てないようswapで公開します。
-    // 次のBeginFrame()では以前のLastFrame側bufferを再利用できるため、
-    // Profiler自身が不要なallocation spikeを作ることを抑えます。
-    std::swap(m_WriteFrame, m_LastFrame);
 }
 
 void CPUProfiler::AddResult(CPUProfileResult result)
@@ -62,6 +56,13 @@ void CPUProfiler::AddResult(CPUProfileResult result)
     }
 
     std::lock_guard<std::mutex> lock(m_ResultMutex);
+
+    // BeginFrame前の計測結果はframeへ所属させられないため記録しません。
+    if (m_FrameActive == false)
+    {
+        return;
+    }
+
     m_WriteFrame.Results.push_back(std::move(result));
 }
 
@@ -74,14 +75,12 @@ void CPUProfiler::SetEnabled(bool enabled)
 {
     std::lock_guard<std::mutex> lock(m_ResultMutex);
     m_Enabled = enabled;
+    m_FrameActive = false;
 
-    if (enabled == false)
-    {
-        m_WriteFrame.Results.clear();
-        m_LastFrame.Results.clear();
-        m_WriteFrame.FrameTimeMilliseconds = 0.0;
-        m_LastFrame.FrameTimeMilliseconds = 0.0;
-    }
+    m_WriteFrame.Results.clear();
+    m_LastFrame.Results.clear();
+    m_WriteFrame.FrameTimeMilliseconds = 0.0;
+    m_LastFrame.FrameTimeMilliseconds = 0.0;
 }
 
 bool CPUProfiler::IsEnabled() const
