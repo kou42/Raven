@@ -76,12 +76,13 @@ Application::~Application()
     // ========================================================================
     // Scene shutdown
     // ========================================================================
-    // 1. virtual OnDestroy()でSceneGame固有Resource / 内部Layerを破棄します。
-    // 2. その後、基底Scene::OnDestroy()を明示呼び出しし、所有者が取りこぼした残存Entityを
-    //    ECS全体から最終Sweepします。
+    // 1. virtual OnDestroy()ではSceneGame等の派生Sceneが、自身で直接所有するEntity Handleや
+    //    Renderer Resource等の固有状態を整理します。
+    // 2. 続く基底Scene::OnDestroy()ではScene内部LayerをLIFO順にOnDetach()してから、
+    //    所有者が取りこぼした残存EntityをECS全体から最終Sweepします。
     //
     // 派生Scene側に「必ずScene::OnDestroy()を呼ぶ」という規約を要求しないことが重要です。
-    // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の終了順序を保証します。
+    // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の最終終了処理を保証します。
     if (m_scene != nullptr)
     {
         m_scene->OnDestroy();
@@ -127,9 +128,9 @@ void Application::SetScene(Scope<Scene> scene)
     // ========================================================================
     // Scene replacement shutdown
     // ========================================================================
-    // Scene差し替え時もApplication終了時と同じ順序を使います。
-    // 派生Scene固有Cleanupの後に基底Sceneの最終Sweepを実行してから所有権を入れ替えるため、
-    // 古いSceneのEntity / Component参照を新しいSceneへ持ち越しません。
+    // Scene差し替え時もApplication終了時と同じ二段階終了処理を使います。
+    // 派生Scene固有Cleanupの後に、基底Sceneが内部LayerのDetachと残存Entity最終Sweepを実行してから
+    // 所有権を入れ替えるため、古いSceneのEntity / Component参照を新しいSceneへ持ち越しません。
     if (m_scene != nullptr)
     {
         m_scene->OnDestroy();
