@@ -67,15 +67,30 @@ struct SoftBodySolverSettings
 //   thickness外かつLambdaが残っていない候補を除外し、XPBD Constraint計算へ進んだ回数です。
 //   DistanceCountとの差は「距離・法線まで求めたがConstraint不要だった候補数」を表します。
 //
+// DenominatorRejectCount:
+//   Constraintへ進んだものの、逆質量とComplianceから作るdenominatorがEpsilon以下となり、
+//   DeltaLambda計算へ進めなかった回数です。固定Particleだけで構成された接触などを切り分けます。
+//
+// DeltaLambdaCount:
+//   有効なdenominatorを得て、XPBDのDeltaLambda計算まで実行した回数です。
+//   ConstraintCount - DenominatorRejectCount と一致するため、後半funnelの整合性確認にも使えます。
+//
+// DeltaLambdaRejectCount:
+//   DeltaLambda計算後、実際に適用するappliedDeltaLambdaがEpsilon以下だった回数です。
+//   この値が大きければ、Constraint後半まで計算してもPosition更新へ寄与しない候補が多いと判断できます。
+//
 // PositionCorrectionCount:
 //   有効なdenominator / DeltaLambdaを得た後、少なくとも1 Particleへ実際に位置補正した回数です。
-//   ConstraintCountとの差から、Constraint段階へ進んでもPosition更新に至らない候補数を確認できます。
+//   DeltaLambdaCountとの差をDeltaLambdaRejectCountと比較することで、Position更新直前の脱落理由を確認できます。
 struct SoftBodyParticleTriangleCollisionStatistics
 {
     uint64_t CandidateCount = 0u;
     uint64_t NarrowPhaseCount = 0u;
     uint64_t DistanceCount = 0u;
     uint64_t ConstraintCount = 0u;
+    uint64_t DenominatorRejectCount = 0u;
+    uint64_t DeltaLambdaCount = 0u;
+    uint64_t DeltaLambdaRejectCount = 0u;
     uint64_t PositionCorrectionCount = 0u;
 
     void Reset()
@@ -84,6 +99,9 @@ struct SoftBodyParticleTriangleCollisionStatistics
         NarrowPhaseCount = 0u;
         DistanceCount = 0u;
         ConstraintCount = 0u;
+        DenominatorRejectCount = 0u;
+        DeltaLambdaCount = 0u;
+        DeltaLambdaRejectCount = 0u;
         PositionCorrectionCount = 0u;
     }
 };
@@ -280,7 +298,7 @@ public:
     const std::vector<SoftBodyPlaneCollider>& GetPlaneColliders() const { return m_PlaneColliders; }
 
     // 直近のStepWithSelfCollisions()で集計したParticle-Triangle自己衝突の統計です。
-    // Cell Size比較時は同じシーン・同じSolverIterationsでこの2値を比較します。
+    // Cell Size比較時は同じシーン・同じSolverIterationsでこの値を比較します。
     const SoftBodyParticleTriangleCollisionStatistics& GetParticleTriangleCollisionStatistics() const
     {
         return m_ParticleTriangleCollisionStatistics;

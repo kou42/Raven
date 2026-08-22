@@ -307,11 +307,12 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     // Particle-Triangle Spatial Hash / NarrowPhase Funnel Counters
     // ========================================================================
     // Scope時間と同じProfiler Frameへ比較条件と件数を記録します。
-    // Candidate -> NarrowPhase -> Distance -> Constraint -> PositionCorrection の順で並べることで、
-    // Narrow Phase後半のどこで候補が大きく減っているかをStatistics Panel上で直接確認できます。
+    // Candidate -> NarrowPhase -> Distance -> Constraint -> DeltaLambda -> PositionCorrection の順で並べ、
+    // Constraint後半はDenominatorReject / DeltaLambdaRejectも別Counterとして記録します。
+    // これによりConstraintへ到達した候補が、どの理由で実Position更新へ進まなかったかを直接確認できます。
     //
-    // 特に DistanceCount >> ConstraintCount なら、距離と法線を最後まで構築した後で大量にRejectしているため、
-    // distanceSqとthickness^2によるsqrt前Early Rejectを次の最適化候補として判断できます。
+    // DenominatorRejectが多い場合は固定Particle構成など「そもそも解けないConstraint」の前倒し除外、
+    // DeltaLambdaRejectが多い場合はLambda状態を利用したcheap rejectを次の最適化候補として判断できます。
     const ph::SoftBodyParticleTriangleCollisionStatistics& particleTriangleStatistics =
         m_Solver.GetParticleTriangleCollisionStatistics();
 
@@ -332,8 +333,30 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         "SoftBody.ParticleTriangle.Funnel.Constraint",
         static_cast<double>(particleTriangleStatistics.ConstraintCount));
     CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.DenominatorReject",
+        static_cast<double>(particleTriangleStatistics.DenominatorRejectCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.DeltaLambda",
+        static_cast<double>(particleTriangleStatistics.DeltaLambdaCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.DeltaLambdaReject",
+        static_cast<double>(particleTriangleStatistics.DeltaLambdaRejectCount));
+    CPUProfiler::Get().AddCounter(
         "SoftBody.ParticleTriangle.Funnel.PositionCorrection",
         static_cast<double>(particleTriangleStatistics.PositionCorrectionCount));
+
+    // Constraintへ到達した候補のうち、最終的に実Position補正へ到達した割合です。
+    // 絶対件数と併用することで、候補数が異なるシーン間でも後半funnelの効率を比較できます。
+    double positionCorrectionRatio = 0.0;
+    if (particleTriangleStatistics.ConstraintCount > 0u)
+    {
+        positionCorrectionRatio =
+            static_cast<double>(particleTriangleStatistics.PositionCorrectionCount)
+            / static_cast<double>(particleTriangleStatistics.ConstraintCount);
+    }
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.Funnel.PositionCorrectionRatio",
+        positionCorrectionRatio);
 
     // 既存のCounter名はCell Size比較結果との互換性を維持するため残します。
     // Funnel Counterと同じ値ですが、過去のProfiler Captureとの比較時に名前が変わらないことを優先します。
