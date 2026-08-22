@@ -1,4 +1,4 @@
-#include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
+﻿#include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
 #include <algorithm>
 #include <cmath>
@@ -158,24 +158,17 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
                 TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+
+                // Bounds passでは、このTriangleそのものが有効かどうかだけを初期化します。
+                //
+                // Plane / Edge Half-Space Cacheは、それぞれ後段の専用passで
+                // Valid flagをfalseへ戻してから再構築します。
+                // Cache値そのものはValid == falseの間は参照されないため、
+                // ここでVec3やfloatをすべて0初期化する必要はありません。
+                //
+                // Triangle数 × Solver Iteration回数だけ発生していた不要なメモリ書き込みを
+                // BoundsのHot Pathから除去することが今回の最適化目的です。
                 bounds.Valid = false;
-                bounds.PlaneValid = false;
-                bounds.PlaneNormal = math::Vec3{};
-                bounds.PlaneOffset = 0.0f;
-                bounds.PlaneDistanceThresholdSq = 0.0f;
-                bounds.EdgeHalfSpaceValid = false;
-                bounds.EdgeABNormal = math::Vec3{};
-                bounds.EdgeBCNormal = math::Vec3{};
-                bounds.EdgeCANormal = math::Vec3{};
-                bounds.EdgeABOffset = 0.0f;
-                bounds.EdgeBCOffset = 0.0f;
-                bounds.EdgeCAOffset = 0.0f;
-                bounds.EdgeABDistanceThresholdSq = 0.0f;
-                bounds.EdgeBCDistanceThresholdSq = 0.0f;
-                bounds.EdgeCADistanceThresholdSq = 0.0f;
-                bounds.ParticleA = 0u;
-                bounds.ParticleB = 0u;
-                bounds.ParticleC = 0u;
 
                 const SoftBodyTriangle& triangle = triangles[triangleIndex];
                 if (triangle.ParticleA >= particles.size()
@@ -217,6 +210,12 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
                 TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+
+                // 前iterationのPlane Cacheが残っていても使用されないよう、
+                // このpassの先頭で必ず無効化してから再構築します。
+                // PlaneNormalなどの値自体をゼロクリアする必要はありません。
+                bounds.PlaneValid = false;
+
                 if (bounds.Valid == false)
                 {
                     continue;
@@ -253,6 +252,12 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
                 TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+
+                // Plane Cacheと同様に、前iterationのEdge Cacheを最初に無効化します。
+                // Edge Normal / Offset / ThresholdはValid == falseなら参照されないため、
+                // Bounds passで毎回ゼロクリアする必要はありません。
+                bounds.EdgeHalfSpaceValid = false;
+
                 if (bounds.Valid == false || bounds.PlaneValid == false)
                 {
                     continue;
