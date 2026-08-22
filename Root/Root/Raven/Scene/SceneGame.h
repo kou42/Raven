@@ -27,11 +27,9 @@ namespace Raven
 // 流すことで、Material / PhysicsDebugを含む全描画がRenderer Camera Contextを共有します。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
-    // Human検証Layerは既存SceneGame.cppを変更せず、共通Materialと描画対象Entity Listへ
-    // 最小限アクセスするためfriendとします。Human固有処理そのものはLayer側へ隔離します。
-    //
-    // 現在RenderScene()自体はECS Viewを直接走査しますが、Human Layerは生成したEntityの
-    // ライフタイム管理など既存SceneGame内部状態へアクセスするため、このfriend関係は維持します。
+    // Human検証LayerはSceneGame共通Materialを利用するため、最小限のprivateアクセスだけを許可します。
+    // Human Entity自体のLifetimeはHumanSkinningDebugLayer / SkinnedMeshSceneSpawner側が管理し、
+    // SceneGameへ所有権を移譲しません。
     friend class Gltf::HumanSkinningDebugLayer;
 
 public:
@@ -94,7 +92,7 @@ private:
     // 指定CameraでScene本体を描画する共通入口です。
     // Game View / Scene Viewの差は引数Cameraだけに限定し、Renderer Camera Contextを確定します。
     //
-    // 描画対象はSceneGame固有のm_SpawnedEntitiesではなく、
+    // 描画対象はSceneGame固有の所有リストではなく、
     // View<TransformComponent, MeshRendererComponent>()を正規データとして直接走査します。
     // そのためCloth/JellyなどScene外部のLayerが生成した通常Entityも、MeshRendererComponentを
     // 持つだけでGame View / Scene Viewの両方へ自動的に参加できます。
@@ -123,14 +121,17 @@ private:
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
 
-    // SceneGame自身が生成したEntityの破棄管理用Listです。
-    // 以前はRenderScene()の描画対象Listも兼ねていましたが、現在の描画対象はECS Viewが正規データです。
-    // このListへ入っていないApplication Layer生成Entityでも、MeshRendererComponentを持てば描画されます。
-    std::vector<Entity> m_SpawnedEntities;
+    // ========================================================================
+    // SceneGame-owned Entity handles
+    // ========================================================================
+    // 「Sceneに存在する全Entity」を別配列で複製管理しません。
+    // SceneGameが生成責務を持つ単体Entityは個別Handle、複数SphereはSphereBody配列が所有情報を保持します。
+    // 外部Layerが生成したCloth/Jelly/Humanは各Layer自身が破棄責務を持ちます。
     std::vector<SphereBody> m_SphereBodies;
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
     Entity m_RuntimeCameraEntity;
     Entity m_FloorEntity;
+    Entity m_WaveEntity;
     Entity m_BoxEntity;
     Entity m_AnimationTestEntity;
 

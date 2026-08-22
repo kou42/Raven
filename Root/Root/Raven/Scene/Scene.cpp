@@ -172,6 +172,58 @@ void Scene::OnCreate()
 
 void Scene::OnDestroy()
 {
+    // ========================================================================
+    // Scene Layer shutdown
+    // ========================================================================
+    // Scene::PushLayer()は登録時にOnAttach()を呼ぶため、終了時には必ず対応するOnDetach()を呼びます。
+    // 後から積まれたLayerほど先に終了するLIFO順にすることで、Overlay等が先に積まれたLayerを
+    // 参照している場合でも依存先より先に破棄できます。
+    //
+    // LayerがScene Entityを生成している場合があるため、Entity最終Sweepより前にDetachすることが重要です。
+    // これにより通常の所有者責務でEntityを解放した後、本当に取りこぼされたEntityだけを下のSweepが回収します。
+    for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it)
+    {
+        if (*it != nullptr)
+        {
+            (*it)->OnDetach();
+        }
+    }
+    m_layers.clear();
+
+    // ========================================================================
+    // Scene final entity sweep
+    // ========================================================================
+    // 通常はEntityを生成したSceneGame / Layer / Spawner自身が明示的にDestroyEntity()を呼びます。
+    // ここはその所有責務を置き換えるものではなく、Scene終了時に取りこぼされたEntityを残さないための
+    // 最終安全網です。
+    //
+    // EntitySlotを正規データとして走査するため、特定Componentや描画対象Listには依存しません。
+    // MeshRendererを持たないCamera / Physics Entityや、将来追加されるGameplay Entityも同じ規則で
+    // 確実に破棄できます。
+    //
+    // Destroy Queueに同じEntityが残っていても、先にQueueを捨てて現在AliveなGenerationだけを
+    // 直接破棄するため、終了処理後に古いHandleを再処理することはありません。
+    m_DestroyQueue.clear();
+
+    for (EntityIndex index = 1u;
+         index < static_cast<EntityIndex>(m_EntitySlots.size());
+         ++index)
+    {
+        const EntitySlot& slot = m_EntitySlots[index];
+        if (slot.Alive == false)
+        {
+            continue;
+        }
+
+        const EntityHandle handle{ index, slot.Generation };
+        DestroyEntity(Entity(handle, this));
+    }
+
+    // DestroyEntity()ですべてのComponentはRemove済みですが、Storage自体が保持するAllocatorや
+    // shared_ptr等の内部容量もScene終了時に解放するためContainerも破棄します。
+    m_ComponentStorages.clear();
+
+    m_PhysicsAccumulator = 0.0f;
 }
 
 void Scene::OnUpdate(float dt)

@@ -36,7 +36,10 @@ public:
 public:
     //Scene() = default;
     Scene();
-    ~Scene() = default;
+
+    // ApplicationはScope<Scene>としてSceneGame等の派生Sceneを所有します。
+    // 基底Sceneポインタ経由で破棄した際にも派生デストラクタを確実に呼ぶためvirtualにします。
+    virtual ~Scene() = default;
 
     //+---------------------------------------------------------------------
     // 仮想関数

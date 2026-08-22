@@ -54,15 +54,40 @@ Application::~Application()
     // ========================================================================
     // Shutdown order
     // ========================================================================
-    // 通常Layerを先にDetachします。
-    // EditorLayer::OnDetach()が将来ImGui関連リソースやEditor用GPUリソースへ触れる場合でも、
-    // この時点ではImGui Context / Window / OpenGL Contextがまだ生存していることを保証します。
-    for (auto& layer : m_Layers)
+    // Application LayerはActive Sceneを借用している可能性があります。
+    // Cloth/Jelly Demo LayerのようにOnDetach()でScene Entityを破棄するLayerがあるため、
+    // Sceneより先にLayerをDetachして生成者自身へ破棄責務を返します。
+    //
+    // AttachはPushされた順に行われるため、終了時は逆順にDetachします。
+    // 後から積まれたEditor/Overlayが前のLayerへ依存する場合でも、スタックと同じLIFOで解放することで
+    // 依存先より先に依存元を終了できます。
+    for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it)
     {
-        if (layer != nullptr)
+        if (*it != nullptr)
         {
-            layer->OnDetach();
+            (*it)->OnDetach();
         }
+    }
+
+    // OnDetach()後もScopeを保持し続けるとLayer DestructorがImGui shutdown後まで遅延します。
+    // Layerが保持するGPU/Editor Resourceを有効なContext中に解放するため、ここで所有権も破棄します。
+    m_Layers.clear();
+
+    // ========================================================================
+    // Scene shutdown
+    // ========================================================================
+    // 1. virtual OnDestroy()ではSceneGame等の派生Sceneが、自身で直接所有するEntity Handleや
+    //    Renderer Resource等の固有状態を整理します。
+    // 2. 続く基底Scene::OnDestroy()ではScene内部LayerをLIFO順にOnDetach()してから、
+    //    所有者が取りこぼした残存EntityをECS全体から最終Sweepします。
+    //
+    // 派生Scene側に「必ずScene::OnDestroy()を呼ぶ」という規約を要求しないことが重要です。
+    // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の最終終了処理を保証します。
+    if (m_scene != nullptr)
+    {
+        m_scene->OnDestroy();
+        m_scene->Scene::OnDestroy();
+        m_scene.reset();
     }
 
     // ImGui OpenGL backendは有効なOpenGL Contextを必要とします。
@@ -100,12 +125,16 @@ void Application::PushLayer(Scope<Layer> layer)
 
 void Application::SetScene(Scope<Scene> scene)
 {
-    // Scene差し替え時は旧Sceneの終了処理を先に実行します。
-    // EditorLayerはSceneポインタをキャッシュせずApplication::GetScene()を参照するため、
-    // Scene交換後に古いSceneを参照し続けない構造になっています。
+    // ========================================================================
+    // Scene replacement shutdown
+    // ========================================================================
+    // Scene差し替え時もApplication終了時と同じ二段階終了処理を使います。
+    // 派生Scene固有Cleanupの後に、基底Sceneが内部LayerのDetachと残存Entity最終Sweepを実行してから
+    // 所有権を入れ替えるため、古いSceneのEntity / Component参照を新しいSceneへ持ち越しません。
     if (m_scene != nullptr)
     {
         m_scene->OnDestroy();
+        m_scene->Scene::OnDestroy();
     }
 
     m_scene = std::move(scene);

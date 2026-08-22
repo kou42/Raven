@@ -46,8 +46,10 @@ void SceneGame::SpawnSphereBatch(int count)
         return;
     }
 
+    // Sphere群のLifetime情報はSphereBody配列だけを正規データにします。
+    // 以前はm_SpawnedEntitiesにも同じEntity Handleを複製していましたが、描画がECS Viewへ
+    // 移行した現在は二重管理する理由がありません。
     m_SphereBodies.reserve(m_SphereBodies.size() + static_cast<size_t>(count));
-    m_SpawnedEntities.reserve(m_SpawnedEntities.size() + static_cast<size_t>(count));
     m_SphereBodyIndexByEntity.reserve(m_SphereBodyIndexByEntity.size() + static_cast<size_t>(count));
 
     for (int i = 0; i < count; ++i)
@@ -103,7 +105,6 @@ void SceneGame::SpawnSphereBatch(int count)
         const size_t bodyIndex = m_SphereBodies.size();
         m_SphereBodyIndexByEntity[sphere.GetIndex()] = bodyIndex;
         m_SphereBodies.push_back(body);
-        m_SpawnedEntities.push_back(sphere);
     }
 }
 
@@ -115,29 +116,16 @@ void SceneGame::ClearSphereBatch()
     m_DragHitPoint = {};
     m_WasLeftMousePressed = Input::IsMouseButtonPressed(Mouse::Left);
 
+    // Sphere群の生成・破棄責務はm_SphereBodiesへ閉じています。
+    // 描画対象の削除処理は不要で、DestroyEntity()によりECS Viewから自動的に外れます。
     for (const SphereBody& body : m_SphereBodies)
     {
-        if (static_cast<bool>(body.EntityHandle))
+        if (static_cast<bool>(body.EntityHandle)
+            && IsEntityAlive(body.EntityHandle))
         {
             DestroyEntity(body.EntityHandle);
         }
     }
-
-    m_SpawnedEntities.erase(
-        std::remove_if(
-            m_SpawnedEntities.begin(),
-            m_SpawnedEntities.end(),
-            [this](const Entity& entity)
-            {
-                return std::any_of(
-                    m_SphereBodies.begin(),
-                    m_SphereBodies.end(),
-                    [&entity](const SphereBody& body)
-                    {
-                        return body.EntityHandle == entity;
-                    });
-            }),
-        m_SpawnedEntities.end());
 
     m_SphereBodies.clear();
     m_SphereBodyIndexByEntity.clear();
@@ -181,8 +169,8 @@ void SceneGame::SpawnBoxTestBody()
     collider.DynamicFriction = 0.4f;
     box.AddComponent<ColliderComponent>(collider);
 
+    // 単体EntityはSceneGameが直接Handleを保持し、OnDestroy()で同じHandleを明示破棄します。
     m_BoxEntity = box;
-    m_SpawnedEntities.push_back(box);
 }
 
 SceneCamera* SceneGame::UpdateRuntimeCamera()
@@ -442,7 +430,6 @@ void SceneGame::OnCreate()
     runtimeCameraEntity.AddComponent<CameraComponent>(runtimeCameraComponent);
 
     m_RuntimeCameraEntity = runtimeCameraEntity;
-    m_SpawnedEntities.push_back(runtimeCameraEntity);
 
     UpdateRuntimeCamera();
 
@@ -489,8 +476,8 @@ void SceneGame::OnCreate()
     m_SphereMesh = PrimitiveMeshFactory::CreateSphere();
     m_BoxMesh = PrimitiveMeshFactory::CreateCube();
 
-    // RuntimeCameraは既にm_SpawnedEntitiesへ登録済みなので、ここでclearすると破棄管理から外れます。
-    // Scene再初期化時の状態を明示的に初期化しつつCamera Entityは保持します。
+    // Scene再初期化時にSphere Batchと入力状態を明示的に初期化します。
+    // 単体EntityのLifetimeは各Handleへ保持するため、汎用所有Listの初期化はありません。
     m_SphereBodies.clear();
     m_SphereBodyIndexByEntity.clear();
     m_WasSpacePressed = false;
@@ -514,7 +501,6 @@ void SceneGame::OnCreate()
     floor.AddComponent<ColliderComponent>(floorCollider);
 
     m_FloorEntity = floor;
-    m_SpawnedEntities.push_back(floor);
 
     // ========================================================================
     // Deformation validation entity
@@ -539,7 +525,7 @@ void SceneGame::OnCreate()
     waveEntity.AddComponent<MeshDeformationComponent>(
         MeshDeformationComponent{ std::move(waveInstance), true });
 
-    m_SpawnedEntities.push_back(waveEntity);
+    m_WaveEntity = waveEntity;
 
     SpawnSphereBatch(ComputeOptimizedSpawnCount());
     SpawnBoxTestBody();
@@ -550,21 +536,44 @@ void SceneGame::OnDestroy()
 {
     m_DraggedEntity = {};
     m_DragHitPoint = {};
-    m_layers.clear();
 
-    for (Entity entity : m_SpawnedEntities)
+    // Scene内部LayerのOnDetach() / clearは基底Scene::OnDestroy()が共通管理します。
+    // SceneGameは自身が直接生成したEntityとRenderer Resourceの解放だけを担当します。
+
+    // Sphere群はm_SphereBodiesだけを所有情報として使用します。
+    for (const SphereBody& body : m_SphereBodies)
     {
-        if (static_cast<bool>(entity))
+        if (static_cast<bool>(body.EntityHandle)
+            && IsEntityAlive(body.EntityHandle))
+        {
+            DestroyEntity(body.EntityHandle);
+        }
+    }
+    m_SphereBodies.clear();
+    m_SphereBodyIndexByEntity.clear();
+
+    // ========================================================================
+    // SceneGame-owned single Entity cleanup
+    // ========================================================================
+    // 単体EntityはそれぞれのHandleが所有対象を明示します。
+    // 汎用「生成Entity一覧」を持たないため、何のために保持しているHandleかが型/名前から追跡できます。
+    auto destroyOwnedEntity = [this](Entity& entity)
+    {
+        if (static_cast<bool>(entity)
+            && IsEntityAlive(entity))
         {
             DestroyEntity(entity);
         }
-    }
-    m_SpawnedEntities.clear();
 
-    m_RuntimeCameraEntity = {};
-    m_AnimationTestEntity = {};
-    m_BoxEntity = {};
-    m_FloorEntity = {};
+        entity = {};
+    };
+
+    destroyOwnedEntity(m_AnimationTestEntity);
+    destroyOwnedEntity(m_BoxEntity);
+    destroyOwnedEntity(m_WaveEntity);
+    destroyOwnedEntity(m_FloorEntity);
+    destroyOwnedEntity(m_RuntimeCameraEntity);
+
     m_Mesh.reset();
     m_Material.reset();
     m_ShadowMesh.reset();
@@ -575,8 +584,6 @@ void SceneGame::OnDestroy()
     m_Shader.reset();
     m_SphereMesh.reset();
     m_BoxMesh.reset();
-    m_SphereBodies.clear();
-    m_SphereBodyIndexByEntity.clear();
 }
 
 void SceneGame::OnUpdateGame(float dt)
@@ -598,9 +605,9 @@ void SceneGame::OnUpdateGame(float dt)
     }
     m_WasSpacePressed = spacePressed;
 
-    // Scene::OnUpdate()は OnUpdateGame -> OnUpdatePhysics の順です。
-    // AddImpulseAtPoint()は速度へ即時反映するため、releaseした同じフレームの
-    // PhysicsWorld::Step()から衝突・重力・回転計算へ参加します。
+    // Scene::OnUpdate()は OnUpdateGame -> Animation -> Physics -> OnUpdateLayer の順です。
+    // Scene内部Layerの更新は基底Scene::OnUpdateLayer()だけが担当するため、ここではLayerを直接更新しません。
+    // これによりHumanSkinningDebugLayer等が1 frame内で二重Updateされる問題を解消します。
     UpdateMouseDragImpulse();
 
     // ========================================================================
@@ -610,11 +617,6 @@ void SceneGame::OnUpdateGame(float dt)
     // MeshDeformationComponentを持つ全EntityをSystemが走査するため、将来Skeletal/Morphを
     // 追加しても、この更新箇所は変更せず同じ入口を共有できます。
     MeshDeformationSystem::Update(*this, safeDt);
-
-    for (auto& layer : m_layers)
-    {
-        layer->OnUpdate(safeDt);
-    }
 }
 
 void SceneGame::OnRender()
@@ -642,7 +644,7 @@ void SceneGame::RenderScene(const Camera& camera)
     // ========================================================================
     // ECS Mesh Rendering
     // ========================================================================
-    // 描画対象をSceneGame固有のm_SpawnedEntitiesから切り離し、
+    // 描画対象はEntity所有情報とは完全に独立し、
     // TransformComponent + MeshRendererComponentを持つ生存Entityを直接走査します。
     //
     // これによりSceneGame自身が生成したSphere/Box/Waveだけでなく、Application Layerから生成された
