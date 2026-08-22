@@ -599,14 +599,6 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
         EnsureInitialBucketCapacity(0u);
     }
 
-    // Linear Probeが長くなる前にTableを拡張します。
-    // active + 1 が70%を越える場合だけGrowするため、通常iterationでは発生しません。
-    if ((m_ActiveCellCount + 1u) * MaximumLoadDenominator
-        > m_Buckets.size() * MaximumLoadNumerator)
-    {
-        GrowBuckets();
-    }
-
     std::size_t bucketIndex = HashCell(cell) & m_BucketMask;
     uint64_t probeCount = 0u;
 
@@ -617,6 +609,21 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
 
         if (bucket.Generation != m_CurrentGeneration)
         {
+            // 実測ではCellRegistrationの約9割が既存Bucket再利用でした。
+            // 以前は全RegistrationでLoad Factor判定を行っていましたが、Table容量が必要になるのは
+            // 新しいActive Cellを追加するときだけです。支配的な既存Bucket命中経路から
+            // 乗算・比較・分岐を外すため、Inactive Bucketを発見した段階でだけ判定します。
+            if ((m_ActiveCellCount + 1u) * MaximumLoadDenominator
+                > m_Buckets.size() * MaximumLoadNumerator)
+            {
+                // GrowBuckets()はm_Bucketsを再構築するため、現在のbucket参照はこの呼び出し後に無効です。
+                // 新TableではHash位置も変わるため、必ず新しいMaskで先頭Bucketから探索し直します。
+                // probeCountは実際に行った探索回数として維持し、Profiler統計にもGrow前の仕事量を含めます。
+                GrowBuckets();
+                bucketIndex = HashCell(cell) & m_BucketMask;
+                continue;
+            }
+
             // Inactive Bucketは現在Buildでは空なので、その場で再利用できます。
             // clear()はcapacityを保持するため、同じSlotが再利用された場合は既存allocationを維持します。
             bucket.Coord = cell;
