@@ -639,35 +639,45 @@ void SceneGame::RenderScene(const Camera& camera)
     // Renderer::Draw()とRenderer::EndScene()内のDebug Passは、このContextを共通利用します。
     Renderer::BeginScene(camera);
 
-    for (const Entity& entity : m_SpawnedEntities)
+    // ========================================================================
+    // ECS Mesh Rendering
+    // ========================================================================
+    // 描画対象をSceneGame固有のm_SpawnedEntitiesから切り離し、
+    // TransformComponent + MeshRendererComponentを持つ生存Entityを直接走査します。
+    //
+    // これによりSceneGame自身が生成したSphere/Box/Waveだけでなく、Application Layerから生成された
+    // Cloth / Jelly / Soft-Rigid連成Sphereも、MeshRendererComponentを追加するだけでGame Viewと
+    // Scene Viewの両方へ自動的に参加します。描画登録用の別リストとの同期は不要です。
+    for (auto [entity, transform, meshRenderer] : View<TransformComponent, MeshRendererComponent>())
     {
-        if (static_cast<bool>(entity) == false || entity.HasComponent<MeshRendererComponent>() == false)
-        {
-            continue;
-        }
-
-        const auto& meshRenderer = entity.GetComponent<MeshRendererComponent>();
         if (meshRenderer.IsValid() == false)
         {
             continue;
         }
 
-        const auto& transform = entity.GetComponent<TransformComponent>();
-
-        math::Vec3 tint{ 1.0f, 1.0f, 1.0f };
-        const auto sphereIt = m_SphereBodyIndexByEntity.find(entity.GetIndex());
-        if (sphereIt != m_SphereBodyIndexByEntity.end() && sphereIt->second < m_SphereBodies.size())
+        // SceneGame共通Materialを使う既存検証Entityだけは、従来どおりEntityごとのTintを設定します。
+        // Cloth/Jellyは専用Materialを所有しているため、ここで白へ上書きせずLayer側の色設定を保持します。
+        if (meshRenderer.Material == m_Material)
         {
-            tint = m_SphereBodies[sphereIt->second].Tint;
-        }
-        else if (entity == m_BoxEntity)
-        {
-            tint = { 1.0f, 0.65f, 0.30f };
-        }
-        meshRenderer.Material->SetUniform("u_Tint", tint);
-        meshRenderer.Material->SetUniform("u_Alpha", 1.0f);
+            math::Vec3 tint{ 1.0f, 1.0f, 1.0f };
+            const auto sphereIt = m_SphereBodyIndexByEntity.find(entity.GetIndex());
+            if (sphereIt != m_SphereBodyIndexByEntity.end()
+                && sphereIt->second < m_SphereBodies.size())
+            {
+                tint = m_SphereBodies[sphereIt->second].Tint;
+            }
+            else if (entity == m_BoxEntity)
+            {
+                tint = { 1.0f, 0.65f, 0.30f };
+            }
 
-        if (entity != m_FloorEntity && m_ShadowMesh != nullptr && m_ShadowMaterial != nullptr)
+            meshRenderer.Material->SetUniform("u_Tint", tint);
+            meshRenderer.Material->SetUniform("u_Alpha", 1.0f);
+        }
+
+        if (entity != m_FloorEntity
+            && m_ShadowMesh != nullptr
+            && m_ShadowMaterial != nullptr)
         {
             math::Mat4 shadowTransform = math::Mat4::Identity();
             shadowTransform = math::Translate(
