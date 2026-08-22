@@ -13,7 +13,7 @@ namespace Raven
 
 void SceneGame::SpawnAnimationTestCube()
 {
-    if (!m_BoxMesh || !m_Material)
+    if (m_BoxMesh == nullptr || m_Material == nullptr)
     {
         return;
     }
@@ -93,14 +93,20 @@ void SceneGame::SpawnAnimationTestCube()
     animator->SetSpeed(1.0f);
 
     auto stateMachine = std::make_shared<AnimatorStateMachine>(*animator);
-    if (!stateMachine->BuildCharacterBlendTreeController(
+    if (stateMachine->BuildCharacterBlendTreeController(
             idleClip,
             walkClip,
             runClip,
             jumpStartClip,
             fallClip,
-            landClip))
+            landClip) == false)
     {
+        // Animator構築に失敗した場合、まだSceneGameの所有Handleへ移していないため、
+        // この場でEntityを破棄して半端な検証EntityをSceneへ残しません。
+        if (IsEntityAlive(animatedCube))
+        {
+            DestroyEntity(animatedCube);
+        }
         return;
     }
 
@@ -111,19 +117,22 @@ void SceneGame::SpawnAnimationTestCube()
     animatedCube.AddComponent<AnimatorComponent>(std::move(animatorComponent));
 
     m_AnimationStateMachineTime = 0.0f;
+
+    // 単体検証EntityのLifetimeはこのHandleだけを正規データにします。
+    // 描画はECS Viewが担当するため、別の描画/所有Listへ登録する必要はありません。
     m_AnimationTestEntity = animatedCube;
-    m_SpawnedEntities.push_back(animatedCube);
 }
 
 void SceneGame::UpdateAnimationStateMachineTest(float deltaTime)
 {
-    if (!m_AnimationTestEntity || !m_AnimationTestEntity.HasComponent<AnimatorComponent>())
+    if (static_cast<bool>(m_AnimationTestEntity) == false
+        || m_AnimationTestEntity.HasComponent<AnimatorComponent>() == false)
     {
         return;
     }
 
     auto& animatorComponent = m_AnimationTestEntity.GetComponent<AnimatorComponent>();
-    if (!animatorComponent.StateMachine)
+    if (animatorComponent.StateMachine == nullptr)
     {
         return;
     }
