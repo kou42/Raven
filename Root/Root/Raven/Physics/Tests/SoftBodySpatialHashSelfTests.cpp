@@ -187,8 +187,42 @@ void RunSoftBodySpatialHashSelfTests()
         // 旧Cell単位候補では残りますが、Exact AABB Early Reject後は除外されます。
         particles[3].Position = { 0.90f, 0.90f, 0.90f };
 
-        // Particle 4は膨張AABB内なので候補を維持する必要があります。
+        // Particle 4は膨張AABB内かつPlane距離もThickness以内なので候補を維持する必要があります。
         particles[4].Position = { 0.15f, 0.15f, 0.05f };
+
+        std::vector<SoftBodyTriangle> triangles;
+        triangles.push_back({ 0u, 1u, 2u });
+
+        grid.BuildTriangles(particles, triangles, 0.10f);
+
+        std::vector<SoftBodyParticleTrianglePair> pairs;
+        grid.GenerateParticleTriangleCandidates(particles, pairs);
+
+        assert(ContainsParticleTrianglePair(pairs, 3u, 0u) == false);
+        assert(ContainsParticleTrianglePair(pairs, 4u, 0u));
+    }
+
+    // ------------------------------------------------------------------------
+    // 5. Particle-Triangle Plane Distance Early Reject
+    // ------------------------------------------------------------------------
+    // Expanded AABBは軸平行Boxなので、斜めTriangleではAABB内部にもTriangle Planeから
+    // Thickness以上離れた領域が残ります。その領域をClosest Point計算前に除外できることを確認します。
+    {
+        SoftBodyTriangleSpatialHashGrid grid(1.0f);
+        std::vector<SoftBodyParticle> particles(5u);
+
+        // Planeは z = x + y となる斜めTriangleです。
+        // expansion=0.1のExpanded AABBは各軸[-0.1, 0.3]程度まで広がります。
+        particles[0].Position = { 0.0f, 0.0f, 0.0f };
+        particles[1].Position = { 0.2f, 0.0f, 0.2f };
+        particles[2].Position = { 0.0f, 0.2f, 0.2f };
+
+        // Particle 3はExpanded AABB内ですが、Plane z=x+y までの距離は約0.202です。
+        // Thickness=0.1より大きいためPlane Early Rejectで除外される必要があります。
+        particles[3].Position = { -0.05f, -0.05f, 0.25f };
+
+        // Particle 4もExpanded AABB内ですがPlane距離は約0.029なので候補を維持します。
+        particles[4].Position = { 0.10f, 0.10f, 0.25f };
 
         std::vector<SoftBodyTriangle> triangles;
         triangles.push_back({ 0u, 1u, 2u });

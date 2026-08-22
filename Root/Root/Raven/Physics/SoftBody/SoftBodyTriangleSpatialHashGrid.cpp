@@ -85,6 +85,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     float expansion)
 {
     const float safeExpansion = std::max(0.0f, expansion);
+    const float safeExpansionSq = safeExpansion * safeExpansion;
     std::size_t validTriangleCount = 0u;
 
     // CellSizeがTriangle実寸・Collision Thicknessに対して小さすぎる場合、
@@ -134,10 +135,11 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     }
 
     // ========================================================================
-    // 2. Triangle AABB
+    // 2. Triangle AABB / Plane Cache
     // ========================================================================
-    // Triangle頂点Positionからexpansion込みAABBだけを計算します。
-    // Cell座標変換やHash探索を混ぜないことで、純粋なGeometry側コストを確認できます。
+    // Triangle頂点Positionからexpansion込みAABBを計算すると同時に、Plane Early Reject用の
+    // 非正規化法線も1回だけ生成します。CandidateごとにCross/Normalizeを繰り返さず、
+    // 後段ではDotとscalar比較だけで無限平面距離の下限判定を行えるようにします。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB");
 
@@ -145,6 +147,13 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
         {
             TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
             bounds.Valid = false;
+            bounds.PlaneValid = false;
+            bounds.PlaneNormal = math::Vec3{};
+            bounds.PlaneOffset = 0.0f;
+            bounds.PlaneDistanceThresholdSq = 0.0f;
+            bounds.ParticleA = 0u;
+            bounds.ParticleB = 0u;
+            bounds.ParticleC = 0u;
 
             const SoftBodyTriangle& triangle = triangles[triangleIndex];
             if (triangle.ParticleA >= particles.size()
@@ -165,8 +174,34 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             bounds.Maximum.x = std::max({ a.x, b.x, c.x }) + safeExpansion;
             bounds.Maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
             bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
+
+            // Topology Indexも同じBuild時点のTriangleから保持します。
+            // Candidate生成では自己TriangleをPlane Dotより先に3比較で落とします。
+            bounds.ParticleA = triangle.ParticleA;
+            bounds.ParticleB = triangle.ParticleB;
+            bounds.ParticleC = triangle.ParticleC;
             bounds.Valid = true;
             ++validTriangleCount;
+
+            // ====================================================================
+            // Triangle Plane Cache
+            // ====================================================================
+            // 正規化法線を作るとsqrtが必要になります。ここでは非正規化法線 n を保持し、
+            // Candidate側で
+            //   signedScaled = dot(n, p) - dot(n, a)
+            //   signedScaled^2 > Thickness^2 * |n|^2
+            // を比較します。左辺/右辺とも同じ |n|^2 スケールを含むため正規化は不要です。
+            const math::Vec3 edgeABVector = b - a;
+            const math::Vec3 edgeACVector = c - a;
+            const math::Vec3 planeNormal = math::Vec3::Cross(edgeABVector, edgeACVector);
+            const float planeNormalLengthSq = planeNormal.LengthSq();
+            if (planeNormalLengthSq > math::Epsilon * math::Epsilon)
+            {
+                bounds.PlaneNormal = planeNormal;
+                bounds.PlaneOffset = math::Vec3::Dot(planeNormal, a);
+                bounds.PlaneDistanceThresholdSq = safeExpansionSq * planeNormalLengthSq;
+                bounds.PlaneValid = true;
+            }
 
             // Triangleの3辺を全て測定し、CellSizeに対する実寸を確認します。
             // AABB計算Pass内で行うため、追加のParticle走査は発生しません。
@@ -324,9 +359,13 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
 
     uint64_t cellCandidateCount = 0u;
     uint64_t expandedAABBRejectCount = 0u;
+    uint64_t topologyRejectCount = 0u;
+    uint64_t planeTestCount = 0u;
+    uint64_t planeRejectCount = 0u;
 
     for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
     {
+        const uint32_t particleIndex32 = static_cast<uint32_t>(particleIndex);
         const math::Vec3& particlePosition = particles[particleIndex].Position;
         const CellCoord cell = ComputeCellCoord(particlePosition);
         const TriangleCellBucket* bucket = FindActiveBucket(cell);
@@ -369,29 +408,87 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
                 continue;
             }
 
+            // ====================================================================
+            // Topology Early Reject
+            // ====================================================================
+            // Particle自身を頂点として含むTriangleは自己衝突ではありません。
+            // 前回計測ではAABB通過候補からNarrowPhaseまでの削減量が大きかったため、
+            // Plane Dotよりさらに安い整数3比較を先に行い、不要なPlane計算そのものを避けます。
+            if (bounds.ParticleA == particleIndex32
+                || bounds.ParticleB == particleIndex32
+                || bounds.ParticleC == particleIndex32)
+            {
+                ++topologyRejectCount;
+                continue;
+            }
+
+            // ====================================================================
+            // Triangle Plane Distance Early Reject
+            // ====================================================================
+            // Triangleまでの距離は「Triangleを含む無限平面までの距離」以上です。
+            // したがって平面までの距離が既にThicknessより大きい候補は、辺・頂点を最近傍点としても
+            // 絶対に接触できないためComputeClosestPointOnTriangle()へ送る必要がありません。
+            //
+            // PlaneNormalはBuild時に非正規化のままキャッシュしています。
+            //   |dot(n,p)-d| / |n| > Thickness
+            // を平方して比較することでsqrt / Normalizeを完全に避けます。
+            // 退化TriangleはPlaneValid=falseとしてここではRejectせず、従来の後段判定へ残します。
+            if (bounds.PlaneValid)
+            {
+                ++planeTestCount;
+
+                const float signedScaledDistance =
+                    math::Vec3::Dot(bounds.PlaneNormal, particlePosition) - bounds.PlaneOffset;
+                const float signedScaledDistanceSq =
+                    signedScaledDistance * signedScaledDistance;
+
+                if (signedScaledDistanceSq > bounds.PlaneDistanceThresholdSq)
+                {
+                    ++planeRejectCount;
+                    continue;
+                }
+            }
+
             SoftBodyParticleTrianglePair pair{};
-            pair.ParticleIndex = static_cast<uint32_t>(particleIndex);
+            pair.ParticleIndex = particleIndex32;
             pair.TriangleIndex = triangleIndex;
             outPairs.push_back(pair);
         }
     }
 
-    // Cell単位候補とExact AABB通過後候補を分けて記録します。
-    // NarrowPhaseCountと合わせて見ることで、
-    //   Cell Candidate -> Expanded AABB -> Topology Reject -> Closest Point
-    // のどの段階で候補を削減できているか確認できます。
+    // Candidate funnelを段階ごとに記録します。
+    // NarrowPhaseCount（Solver側）と合わせると、
+    //   Cell Candidate -> Expanded AABB -> Topology -> Plane Distance -> Closest Point
+    // のどこで候補を削減できているか確認できます。
     CPUProfiler& profiler = CPUProfiler::Get();
     if (profiler.IsEnabled())
     {
         const double candidateCount = static_cast<double>(cellCandidateCount);
-        const double rejectCount = static_cast<double>(expandedAABBRejectCount);
-        const double rejectRatio = cellCandidateCount > 0u
-            ? rejectCount / candidateCount
+        const double aabbRejectCount = static_cast<double>(expandedAABBRejectCount);
+        const double aabbRejectRatio = cellCandidateCount > 0u
+            ? aabbRejectCount / candidateCount
+            : 0.0;
+
+        const uint64_t aabbPassCount = cellCandidateCount - expandedAABBRejectCount;
+        const double topologyRejectCountValue = static_cast<double>(topologyRejectCount);
+        const double topologyRejectRatio = aabbPassCount > 0u
+            ? topologyRejectCountValue / static_cast<double>(aabbPassCount)
+            : 0.0;
+
+        const double planeTestCountValue = static_cast<double>(planeTestCount);
+        const double planeRejectCountValue = static_cast<double>(planeRejectCount);
+        const double planeRejectRatio = planeTestCount > 0u
+            ? planeRejectCountValue / planeTestCountValue
             : 0.0;
 
         profiler.AddCounter("SoftBody.TriangleHash.CellCandidateCount", candidateCount);
-        profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectCount", rejectCount);
-        profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectRatio", rejectRatio);
+        profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectCount", aabbRejectCount);
+        profiler.AddCounter("SoftBody.TriangleHash.ExpandedAABBRejectRatio", aabbRejectRatio);
+        profiler.AddCounter("SoftBody.TriangleHash.TopologyRejectCount", topologyRejectCountValue);
+        profiler.AddCounter("SoftBody.TriangleHash.TopologyRejectRatio", topologyRejectRatio);
+        profiler.AddCounter("SoftBody.TriangleHash.PlaneTestCount", planeTestCountValue);
+        profiler.AddCounter("SoftBody.TriangleHash.PlaneRejectCount", planeRejectCountValue);
+        profiler.AddCounter("SoftBody.TriangleHash.PlaneRejectRatio", planeRejectRatio);
     }
 }
 
