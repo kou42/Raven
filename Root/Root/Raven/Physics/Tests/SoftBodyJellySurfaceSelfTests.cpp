@@ -60,7 +60,9 @@ void RunSoftBodyJellySurfaceSelfTests()
     // ========================================================================
     // Renderer Dynamic Geometry
     // ========================================================================
-    SoftBodyJellyMeshDeformer deformer(solver, surface);
+    // Renderer側DeformerはClothと同じくSolver/Jellyを自身で所有し、CreateGeometry()で
+    // 初期Surface Meshを生成してからUpdate()でSimulation + Mesh同期を進めます。
+    SoftBodyJellyMeshDeformer deformer(settings);
     const Ref<MeshGeometry> geometry = deformer.CreateGeometry();
 
     assert(geometry != nullptr);
@@ -68,6 +70,7 @@ void RunSoftBodyJellySurfaceSelfTests()
     assert(geometry->GetTopologyUsage() == TopologyUsage::Fixed);
     assert(geometry->GetVertices().size() == 8u);
     assert(geometry->GetIndices().size() == 36u);
+    assert(deformer.GetSurface().Triangles.size() == 12u);
 
     // Cube cornerでは隣接面Normalの平均になるため軸単位Vectorではありませんが、
     // 正規化済みであることを確認すればNormal再計算経路の回帰テストになります。
@@ -76,6 +79,12 @@ void RunSoftBodyJellySurfaceSelfTests()
         const float normalLength = vertex.Normal.Length();
         assert(std::abs(normalLength - 1.0f) < 0.0001f);
     }
+
+    // Deformer側Solverへ床Planeを登録できることも確認します。
+    deformer.SetCollisionPlane({ 0.0f, 1.0f, 0.0f }, -1.0f);
+    assert(deformer.GetSolver().GetPlaneColliders().size() == 1u);
+    deformer.DisableCollisionPlane();
+    assert(deformer.GetSolver().GetPlaneColliders().empty());
 
     // ========================================================================
     // Multi-cell Surface Count
