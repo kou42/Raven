@@ -5,6 +5,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
+#include "Raven/Physics/SoftBody/SoftBodyJelly.h"
 #include "Raven/Physics/SoftBody/SoftBodyJellySurface.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformer.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
@@ -12,46 +13,50 @@
 namespace Raven
 {
 
-namespace ph
-{
-class SoftBodySolver;
-}
-
 // ============================================================================
 // Soft Body Jelly Mesh Deformer
 // ============================================================================
-// Physics側ですでに更新されたJelly Particle Positionを、Dynamic MeshGeometryへ同期するDeformerです。
+// SoftBodyClothDeformerと同じく、JellyのPhysics StateとMesh変形を1つにまとめるDeformerです。
 //
-// 重要:
-// このクラス自身はPhysics Stepを進めません。
-// Renderer更新からPhysicsを駆動するとSystem順序が逆転しやすいため、SimulationはPhysics側で先に
-// StepSoftBodyJelly()を呼び、その後MeshDeformationSystemから本Deformerを更新する責務分離にします。
+// Constructor:
+//   Jelly格子 / Tetrahedron / Volume Constraint / Surface Topologyを構築します。
 //
-// Updateでは:
-//   1. Surface Particle PositionをMesh Vertexへコピー
-//   2. Surface Triangleから面積加重Vertex Normalを再計算
-//   3. MeshGeometry::SetVertices()
-//   4. Mesh::SyncGeometry()
+// CreateGeometry():
+//   現在のSurface ParticleからDynamic MeshGeometryを生成します。
 //
-// の順でCPU -> GPU同期まで行います。
+// Update():
+//   1. StepSoftBodyJelly()でXPBD Simulationを進める
+//   2. Surface Particle PositionをMesh Vertexへコピー
+//   3. Surface Triangleから面積加重Vertex Normalを再計算
+//   4. MeshGeometry::SetVertices()
+//   5. Mesh::SyncGeometry()
+//
+// Scene側は既存MeshDeformationSystemからUpdate()を呼ぶだけで、Clothと同じ使用感で
+// Jelly Simulation + Renderingを進められます。
 class SoftBodyJellyMeshDeformer final : public MeshDeformer
 {
 public:
-    SoftBodyJellyMeshDeformer(
-        ph::SoftBodySolver& solver,
-        ph::SoftBodyJellySurface surface,
+    explicit SoftBodyJellyMeshDeformer(
+        const ph::SoftBodyJellySettings& settings = ph::SoftBodyJellySettings{},
         const math::Vec3& color = math::Vec3{ 0.35f, 0.85f, 0.55f });
 
     void Update(Mesh& mesh, float deltaTime) override;
 
-    const ph::SoftBodyJellySurface& GetSurface() const
-    {
-        return m_Surface;
-    }
-
-    // Deformerが参照するSurface Topologyに対応したDynamic Geometryを生成します。
-    // Positionは現在のParticle位置、IndexはSurface Triangleから構築し、Normalも初期計算します。
+    // Deformerが保持するSurface Topologyに対応したDynamic Geometryを生成します。
     Ref<MeshGeometry> CreateGeometry() const;
+
+    // Jellyローカル空間上のPlane Colliderを設定します。
+    // dot(normal, x) = offset をPlaneとし、normal側をParticleが存在できる側とします。
+    void SetCollisionPlane(const math::Vec3& normal, float offset);
+    void DisableCollisionPlane();
+
+    ph::SoftBodySolver& GetSolver() { return m_Solver; }
+    const ph::SoftBodySolver& GetSolver() const { return m_Solver; }
+
+    ph::SoftBodyJelly& GetJelly() { return m_Jelly; }
+    const ph::SoftBodyJelly& GetJelly() const { return m_Jelly; }
+
+    const ph::SoftBodyJellySurface& GetSurface() const { return m_Surface; }
 
 private:
     bool BuildVerticesAndIndices(
@@ -63,9 +68,15 @@ private:
         const std::vector<uint32_t>& indices) const;
 
 private:
-    ph::SoftBodySolver* m_Solver = nullptr;
-    ph::SoftBodyJellySurface m_Surface;
     math::Vec3 m_Color{ 0.35f, 0.85f, 0.55f };
+
+    bool m_CollisionPlaneEnabled = false;
+    math::Vec3 m_CollisionPlaneNormal{ 0.0f, 1.0f, 0.0f };
+    float m_CollisionPlaneOffset = 0.0f;
+
+    ph::SoftBodySolver m_Solver;
+    ph::SoftBodyJelly m_Jelly;
+    ph::SoftBodyJellySurface m_Surface;
 };
 
 } // namespace Raven
