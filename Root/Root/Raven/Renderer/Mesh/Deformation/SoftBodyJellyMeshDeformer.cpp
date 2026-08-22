@@ -5,30 +5,47 @@
 #include <unordered_map>
 #include <utility>
 
-#include "Raven/Physics/SoftBody/SoftBodySolver.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
-#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven
 {
 
 SoftBodyJellyMeshDeformer::SoftBodyJellyMeshDeformer(
-    ph::SoftBodySolver& solver,
-    ph::SoftBodyJellySurface surface,
+    const ph::SoftBodyJellySettings& settings,
     const math::Vec3& color)
-    : m_Solver(&solver),
-      m_Surface(std::move(surface)),
-      m_Color(color)
+    : m_Color(color)
 {
+    ph::SoftBodySolverSettings solverSettings{};
+
+    // JellyはDistance / Volume / Collisionが強く連成するため、Clothと同程度の反復回数を
+    // 初期値にします。Material調整で硬めのVolumeを使用しても収束しやすい値です。
+    solverSettings.SolverIterations = 12u;
+    solverSettings.CollisionThickness = 0.005f;
+    m_Solver.SetSettings(solverSettings);
+
+    m_Jelly = ph::SoftBodyJellyBuilder::Build(m_Solver, settings);
+    m_Surface = ph::SoftBodyJellySurfaceBuilder::Build(m_Jelly);
+}
+
+void SoftBodyJellyMeshDeformer::SetCollisionPlane(const math::Vec3& normal, float offset)
+{
+    m_CollisionPlaneEnabled = true;
+    m_CollisionPlaneNormal = normal;
+    m_CollisionPlaneOffset = offset;
+
+    m_Solver.ClearPlaneColliders();
+    m_Solver.AddPlaneCollider(m_CollisionPlaneNormal, m_CollisionPlaneOffset);
+}
+
+void SoftBodyJellyMeshDeformer::DisableCollisionPlane()
+{
+    m_CollisionPlaneEnabled = false;
+    m_Solver.ClearPlaneColliders();
 }
 
 void SoftBodyJellyMeshDeformer::Update(Mesh& mesh, float deltaTime)
 {
-    // Physics StepはこのDeformerの責務ではないためdeltaTimeは使用しません。
-    // 呼び出し順は Physics Update -> Mesh Deformation Update を想定します。
-    static_cast<void>(deltaTime);
-
-    if (m_Solver == nullptr)
+    if (deltaTime <= 0.0f)
     {
         return;
     }
@@ -43,6 +60,14 @@ void SoftBodyJellyMeshDeformer::Update(Mesh& mesh, float deltaTime)
     {
         return;
     }
+
+    // ========================================================================
+    // Physics Step
+    // ========================================================================
+    // Cloth Deformerと同様にMeshDeformationSystemのUpdate入口からSimulationまで進めます。
+    // StepSoftBodyJelly()内部では Distance -> Volume -> Collision を同一XPBD iterationで解き、
+    // 最後にJelly MaterialのVelocity Dampingを適用します。
+    ph::StepSoftBodyJelly(m_Solver, m_Jelly, deltaTime);
 
     std::vector<MeshVertex> vertices;
     std::vector<uint32_t> indices;
@@ -93,12 +118,7 @@ bool SoftBodyJellyMeshDeformer::BuildVerticesAndIndices(
     outVertices.clear();
     outIndices.clear();
 
-    if (m_Solver == nullptr)
-    {
-        return false;
-    }
-
-    const std::vector<ph::SoftBodyParticle>& particles = m_Solver->GetParticles();
+    const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
     if (m_Surface.SurfaceParticleIndices.empty() || m_Surface.Triangles.empty())
     {
         return false;
