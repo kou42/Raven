@@ -1,3 +1,4 @@
+#include <array>
 #include <cassert>
 
 #include "Raven/Physics/SoftBody/SoftBodyCloth.h"
@@ -7,6 +8,62 @@
 
 namespace Raven::ph::tests
 {
+namespace
+{
+void RunParticleTriangleSpatialHashPresetCase(float spatialHashCellSize)
+{
+    SoftBodySolver solver{};
+    solver.SetGravity({ 0.0f, 0.0f, 0.0f });
+
+    SoftBodySolverSettings solverSettings{};
+    solverSettings.SolverIterations = 4u;
+    solverSettings.CollisionThickness = 0.0f;
+    solver.SetSettings(solverSettings);
+
+    SoftBodyClothSettings clothSettings{};
+    clothSettings.Rows = 1u;
+    clothSettings.Columns = 1u;
+    clothSettings.Width = 1.0f;
+    clothSettings.Height = 1.0f;
+    clothSettings.InverseMass = 1.0f;
+    clothSettings.StructuralCompliance = 0.0f;
+    clothSettings.ShearCompliance = 0.0f;
+    clothSettings.BendingModel = SoftBodyClothBendingModel::Dihedral;
+    clothSettings.PinTopLeft = false;
+    clothSettings.PinTopRight = false;
+
+    SoftBodyCloth cloth = SoftBodyClothBuilder::Build(solver, clothSettings);
+    const uint32_t probe = solver.AddParticle({ 0.0f, 0.0f, 0.001f }, 1.0f);
+    assert(probe < solver.GetParticles().size());
+
+    SoftBodySelfCollisionSettings particleSettings{};
+    particleSettings.Enabled = false;
+
+    SoftBodyParticleTriangleSelfCollisionSettings particleTriangleSettings{};
+    particleTriangleSettings.Enabled = true;
+    particleTriangleSettings.Thickness = 0.05f;
+    particleTriangleSettings.SpatialHashCellSize = spatialHashCellSize;
+    particleTriangleSettings.Compliance = 0.0f;
+
+    solver.StepWithSelfCollisions(
+        1.0f / 60.0f,
+        cloth,
+        particleSettings,
+        particleTriangleSettings);
+
+    const SoftBodyParticleTriangleCollisionStatistics& statistics =
+        solver.GetParticleTriangleCollisionStatistics();
+
+    // Cell SizeはBroad Phaseの性能特性だけを変える設定です。
+    // 比較対象のどの値でも同じ接触候補を失わず、実Narrow Phaseへ到達できることを確認します。
+    assert(statistics.CandidateCount > 0u);
+    assert(statistics.NarrowPhaseCount > 0u);
+    assert(statistics.CandidateCount >= statistics.NarrowPhaseCount);
+
+    const SoftBodyParticle& probeParticle = solver.GetParticles()[probe];
+    assert(probeParticle.Position.z > 0.001f);
+}
+} // namespace
 
 // ============================================================================
 // Integrated Soft Body Step Self Tests
@@ -93,6 +150,23 @@ void RunSoftBodyIntegratedStepSelfTests()
         solver.GetParticleTriangleCollisionStatistics();
     assert(disabledStatistics.CandidateCount == 0u);
     assert(disabledStatistics.NarrowPhaseCount == 0u);
+
+    // ========================================================================
+    // Spatial Hash Cell Size 0.04 / 0.05 / 0.06 Comparison Presets
+    // ========================================================================
+    // 各ケースでSolverとClothを作り直し、初期状態を完全に揃えます。
+    // これにより前ケースのPosition補正を次ケースへ持ち越さず、Cell Sizeだけを比較できます。
+    constexpr std::array<float, 3u> comparisonCellSizes
+    {
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeSmall,
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeMedium,
+        SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeLarge
+    };
+
+    for (float spatialHashCellSize : comparisonCellSizes)
+    {
+        RunParticleTriangleSpatialHashPresetCase(spatialHashCellSize);
+    }
 }
 
 } // namespace Raven::ph::tests

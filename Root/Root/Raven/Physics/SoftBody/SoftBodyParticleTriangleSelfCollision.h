@@ -21,13 +21,23 @@ struct SoftBodyParticleTriangleSelfCollisionSettings
     // Clothを数学的な厚み0の面として扱いつつ、自己貫通を防ぐための半厚みに相当します。
     float Thickness = 0.01f;
 
+    // ========================================================================
+    // Spatial Hash Cell Size Comparison Presets
+    // ========================================================================
+    // Narrow Phase最適化へ進む前に、Broad PhaseのCell Sizeを
+    // 0.04 / 0.05 / 0.06で比較するための共通プリセットです。
+    // Deformer・SelfTest・Editor/Profiler側が同じ値を参照できるようSettingsへ集約します。
+    static constexpr float SpatialHashCellSizeSmall = 0.04f;
+    static constexpr float SpatialHashCellSizeMedium = 0.05f;
+    static constexpr float SpatialHashCellSizeLarge = 0.06f;
+
     // Particle-Triangle Broad Phase専用のSpatial Hash Cell Sizeです。
     // Thicknessとは独立した値です。
     // Cellを小さくすると1 Cellあたりの候補Triangleは減りますが、
     // Triangleが跨ぐCell数が増えてHashBuildが重くなります。
     // 大きくするとHashBuildは軽くなりますが、
     // Candidate/Narrow Phaseの候補数が増加します。
-    float SpatialHashCellSize = 0.05f;
+    float SpatialHashCellSize = SpatialHashCellSizeMedium;
 
     // Particle-Triangle自己衝突専用の追加反復回数です。
     uint32_t SolverIterations = 4u;

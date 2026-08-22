@@ -89,6 +89,11 @@ SoftBodyClothDeformer::SoftBodyClothDeformer(uint32_t rows, uint32_t columns)
     solverSettings.CollisionThickness = 0.005f;
     m_Solver.SetSettings(solverSettings);
 
+    // 比較開始時は0.04 / 0.05 / 0.06の中央値を利用します。
+    // Setterで変更した場合はCloth再構築を行わず、次のStepからSpatial Hash構築だけへ反映されます。
+    m_ParticleTriangleSpatialHashCellSize =
+        ph::SoftBodyParticleTriangleSelfCollisionSettings::SpatialHashCellSizeMedium;
+
     // 最初の目視確認用にCloth中央より少し下へ静的Sphereを置きます。
     // Scene側からSetCollisionSphere()を呼べば任意の位置・半径へ差し替えられます。
     SetCollisionSphere({ 0.0f, -0.12f, 0.0f }, 0.20f);
@@ -139,6 +144,13 @@ void SoftBodyClothDeformer::DisableCollisionPlane()
     {
         m_Solver.ClearPlaneColliders();
     }
+}
+
+void SoftBodyClothDeformer::SetParticleTriangleSpatialHashCellSize(float cellSize)
+{
+    // Solver側でも最小値へclampしますが、Deformerの保持値も正規化しておくことで
+    // Profilerへ表示するCellSizeと実際に使用するCellSizeを一致させます。
+    m_ParticleTriangleSpatialHashCellSize = std::max(cellSize, 1.0e-4f);
 }
 
 void SoftBodyClothDeformer::ApplyCollisionSphereToSolver()
@@ -264,6 +276,7 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     ph::SoftBodyParticleTriangleSelfCollisionSettings particleTriangleSettings{};
     particleTriangleSettings.Enabled = true;
     particleTriangleSettings.Thickness = minimumSpacing * 0.30f;
+    particleTriangleSettings.SpatialHashCellSize = m_ParticleTriangleSpatialHashCellSize;
     particleTriangleSettings.Compliance = 0.0f;
 
     // ========================================================================
@@ -288,6 +301,36 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
             particleSettings,
             particleTriangleSettings);
     }
+
+    // ========================================================================
+    // Particle-Triangle Spatial Hash Comparison Counters
+    // ========================================================================
+    // Scope時間と同じProfiler Frameへ比較条件と件数を記録します。
+    // CellSizeだけを0.04 / 0.05 / 0.06へ変更して実行すれば、
+    // HashBuild / CandidateGeneration / NarrowPhaseの時間と候補削減率を同じ画面で比較できます。
+    const ph::SoftBodyParticleTriangleCollisionStatistics& particleTriangleStatistics =
+        m_Solver.GetParticleTriangleCollisionStatistics();
+
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.SpatialHashCellSize",
+        static_cast<double>(m_ParticleTriangleSpatialHashCellSize));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.CandidateCount",
+        static_cast<double>(particleTriangleStatistics.CandidateCount));
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.NarrowPhaseCount",
+        static_cast<double>(particleTriangleStatistics.NarrowPhaseCount));
+
+    double narrowPhaseRatio = 0.0;
+    if (particleTriangleStatistics.CandidateCount > 0u)
+    {
+        narrowPhaseRatio =
+            static_cast<double>(particleTriangleStatistics.NarrowPhaseCount)
+            / static_cast<double>(particleTriangleStatistics.CandidateCount);
+    }
+    CPUProfiler::Get().AddCounter(
+        "SoftBody.ParticleTriangle.NarrowPhaseRatio",
+        narrowPhaseRatio);
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
     const std::vector<MeshVertex>& sourceVertices = geometry->GetVertices();
