@@ -10,7 +10,6 @@
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
-#include "Raven/Scene/SceneGame.h"
 
 namespace Raven
 {
@@ -136,14 +135,8 @@ void SoftBodyJellyDemoLayer::OnAttach()
     m_JellyEntity.AddComponent<MeshDeformationComponent>(
         MeshDeformationComponent{ m_JellyDeformationInstance, true });
 
-    // 現在のSceneGame描画は移行途中でm_SpawnedEntitiesを利用しているため、
-    // Game View / Scene Viewの双方へ出すために正式な登録APIを通します。
-    // RenderSceneがECS View直接走査へ移行した後、この登録は不要になります。
-    SceneGame* sceneGame = dynamic_cast<SceneGame*>(scene);
-    if (sceneGame != nullptr)
-    {
-        sceneGame->RegisterRuntimeRenderEntity(m_JellyEntity);
-    }
+    // RenderSceneはTransformComponent + MeshRendererComponentをECSから直接走査するため、
+    // Jellyを別の描画対象リストへ登録する必要はありません。
 }
 
 void SoftBodyJellyDemoLayer::OnDetach()
@@ -151,12 +144,6 @@ void SoftBodyJellyDemoLayer::OnDetach()
     Scene* scene = m_Application.GetScene();
     if (scene != nullptr)
     {
-        SceneGame* sceneGame = dynamic_cast<SceneGame*>(scene);
-        if (sceneGame != nullptr && static_cast<bool>(m_JellyEntity))
-        {
-            sceneGame->UnregisterRuntimeRenderEntity(m_JellyEntity);
-        }
-
         if (static_cast<bool>(m_JellyEntity)
             && scene->IsEntityAlive(m_JellyEntity))
         {
