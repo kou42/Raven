@@ -35,6 +35,14 @@ public:
 
     ~HumanSkinningDebugLayer() override;
 
+    // Layer::OnAttach()で獲得したものではありませんが、このLayerがRuntime中に生成したHuman Entityは
+    // Layerの終了境界で解放するのが責務として最も明確です。
+    // DestroyHuman()は多重呼び出し可能なので、Destructor側のfallbackと重なっても安全です。
+    void OnDetach() override
+    {
+        DestroyHuman();
+    }
+
     void OnUpdate(float deltaTime) override;
     void OnRender() override;
 
