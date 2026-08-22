@@ -11,6 +11,7 @@
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneGame.h"
 
 namespace Raven
 {
@@ -215,6 +216,16 @@ void SoftBodyClothDemoLayer::OnAttach()
     collider.StaticFriction = 0.5f;
     collider.DynamicFriction = 0.35f;
     m_RigidSphereEntity.AddComponent<ColliderComponent>(collider);
+
+    // 現在SceneGame::RenderScene()は移行途中でm_SpawnedEntitiesを描画対象一覧としているため、
+    // Application Layerが生成したCloth/SphereもGame View / Scene Viewへ表示できるよう正式APIから登録します。
+    // RenderSceneがECS View直接走査へ移行した後、この明示登録は不要になります。
+    SceneGame* sceneGame = dynamic_cast<SceneGame*>(scene);
+    if (sceneGame != nullptr)
+    {
+        sceneGame->RegisterRuntimeRenderEntity(m_ClothEntity);
+        sceneGame->RegisterRuntimeRenderEntity(m_RigidSphereEntity);
+    }
 }
 
 void SoftBodyClothDemoLayer::OnDetach()
@@ -224,6 +235,20 @@ void SoftBodyClothDemoLayer::OnDetach()
     // Layerだけが破棄されるケースでもScene内にデモEntityを残さないよう明示的に破棄します。
     if (scene != nullptr)
     {
+        SceneGame* sceneGame = dynamic_cast<SceneGame*>(scene);
+        if (sceneGame != nullptr)
+        {
+            if (static_cast<bool>(m_ClothEntity))
+            {
+                sceneGame->UnregisterRuntimeRenderEntity(m_ClothEntity);
+            }
+
+            if (static_cast<bool>(m_RigidSphereEntity))
+            {
+                sceneGame->UnregisterRuntimeRenderEntity(m_RigidSphereEntity);
+            }
+        }
+
         if (static_cast<bool>(m_ClothEntity)
             && scene->IsEntityAlive(m_ClothEntity))
         {
