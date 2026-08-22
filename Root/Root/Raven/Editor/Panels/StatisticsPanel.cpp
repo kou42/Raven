@@ -39,6 +39,17 @@ struct CPUProfileAggregate
     uint32_t CallCount = 0u;
 };
 
+// Timerとは別に記録した軽量Counterを同名ごとに集計します。
+// CellRegistrationのようなHot loopではTimerを細かく置かず、処理中は整数加算だけを行い、
+// Build終了時にまとめてCounterを登録することでProfiler自身による計測誤差を抑えます。
+struct CPUCounterAggregate
+{
+    std::string Name;
+    double Total = 0.0;
+    double Max = 0.0;
+    uint32_t SampleCount = 0u;
+};
+
 void BuildCPUProfileAggregates(
     const CPUProfileFrame& frame,
     std::vector<CPUProfileAggregate>& outAggregates)
@@ -82,6 +93,47 @@ void BuildCPUProfileAggregates(
             return a.TotalMilliseconds > b.TotalMilliseconds;
         });
 }
+
+void BuildCPUCounterAggregates(
+    const CPUProfileFrame& frame,
+    std::vector<CPUCounterAggregate>& outAggregates)
+{
+    outAggregates.clear();
+
+    std::unordered_map<std::string, std::size_t> aggregateIndices;
+    aggregateIndices.reserve(frame.Counters.size());
+
+    for (const CPUProfileCounter& counter : frame.Counters)
+    {
+        const auto iterator = aggregateIndices.find(counter.Name);
+        if (iterator == aggregateIndices.end())
+        {
+            CPUCounterAggregate aggregate{};
+            aggregate.Name = counter.Name;
+            aggregate.Total = counter.Value;
+            aggregate.Max = counter.Value;
+            aggregate.SampleCount = 1u;
+
+            aggregateIndices.emplace(aggregate.Name, outAggregates.size());
+            outAggregates.push_back(std::move(aggregate));
+            continue;
+        }
+
+        CPUCounterAggregate& aggregate = outAggregates[iterator->second];
+        aggregate.Total += counter.Value;
+        aggregate.Max = std::max(aggregate.Max, counter.Value);
+        ++aggregate.SampleCount;
+    }
+
+    // Counterは時間順ではなく名前順に固定しておくと、frameごとの値比較がしやすくなります。
+    std::sort(
+        outAggregates.begin(),
+        outAggregates.end(),
+        [](const CPUCounterAggregate& a, const CPUCounterAggregate& b)
+        {
+            return a.Name < b.Name;
+        });
+}
 } // namespace
 
 void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const Scene* scene)
@@ -118,6 +170,7 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 static_cast<unsigned long long>(profileFrame.FrameIndex));
             ImGui::Text("CPU Frame: %.3f ms", profileFrame.FrameTimeMilliseconds);
             ImGui::Text("Recorded Scopes: %u", static_cast<uint32_t>(profileFrame.Results.size()));
+            ImGui::Text("Recorded Counters: %u", static_cast<uint32_t>(profileFrame.Counters.size()));
             ImGui::Separator();
 
             // 同名Scopeをframe内で集計します。
@@ -154,6 +207,57 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 }
 
                 ImGui::EndTable();
+            }
+
+            // ====================================================================
+            // Profiler Counters
+            // ====================================================================
+            // TimerをHot loopへ追加すると計測対象そのものを遅くするため、登録件数・Probe数などは
+            // Counterとして別表示します。12 Solver iteration分はTotal / Average / Maxで確認できます。
+            if (ImGui::TreeNodeEx("Counters", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                std::vector<CPUCounterAggregate> counterAggregates;
+                BuildCPUCounterAggregates(profileFrame, counterAggregates);
+
+                if (ImGui::BeginTable(
+                        "CPUProfileCounters",
+                        5,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+                {
+                    ImGui::TableSetupColumn("Counter");
+                    ImGui::TableSetupColumn("Total", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Average", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Max", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Samples", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const CPUCounterAggregate& aggregate : counterAggregates)
+                    {
+                        const double average = aggregate.SampleCount > 0u
+                            ? aggregate.Total / static_cast<double>(aggregate.SampleCount)
+                            : 0.0;
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted(aggregate.Name.c_str());
+
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text("%.3f", aggregate.Total);
+
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%.3f", average);
+
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::Text("%.3f", aggregate.Max);
+
+                        ImGui::TableSetColumnIndex(4);
+                        ImGui::Text("%u", aggregate.SampleCount);
+                    }
+
+                    ImGui::EndTable();
+                }
+
+                ImGui::TreePop();
             }
 
             // 集計値でボトルネックを見つけた後、実際の呼び出し順・入れ子を確認するためのRaw表示です。

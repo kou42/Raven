@@ -22,6 +22,15 @@ struct CPUProfileResult
     uint32_t Depth = 0;
 };
 
+// 時間ではなく、Profiler対象処理の内部状態を記録する軽量な統計値です。
+// Hot loop内でAddCounter()を毎回呼ぶのではなく、呼び出し側でローカル集計した値を
+// 処理終了時にまとめて登録することで、mutexや文字列処理による測定汚染を抑えます。
+struct CPUProfileCounter
+{
+    std::string Name;
+    double Value = 0.0;
+};
+
 // 1 Application frame分のCPU計測結果を保持します。
 // Front/Back Buffer方式でProfiler内部の書き込み中データとUI参照データを分離します。
 struct CPUProfileFrame
@@ -29,6 +38,7 @@ struct CPUProfileFrame
     uint64_t FrameIndex = 0;
     double FrameTimeMilliseconds = 0.0;
     std::vector<CPUProfileResult> Results;
+    std::vector<CPUProfileCounter> Counters;
 };
 
 class CPUProfiler
@@ -42,6 +52,10 @@ public:
     void BeginFrame();
 
     void AddResult(CPUProfileResult result);
+
+    // 高頻度ループではこの関数を直接呼ばず、ローカル変数へ集計して処理末尾でまとめて登録してください。
+    // CounterもResultと同じframe bufferへ保存されるため、StatisticsPanelでは同名Counterを集計できます。
+    void AddCounter(const char* name, double value);
 
     const CPUProfileFrame& GetLastFrame() const;
 
@@ -65,7 +79,7 @@ private:
     CPUProfileFrame m_LastFrame{};
 
     // 現段階では主にMain Threadから計測しますが、次段階のJob Systemで
-    // Worker Threadから同時にAddResult()されても壊れないように同期を入れています。
+    // Worker Threadから同時にAddResult()/AddCounter()されても壊れないように同期を入れています。
     mutable std::mutex m_ResultMutex;
 };
 
