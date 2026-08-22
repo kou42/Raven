@@ -398,6 +398,10 @@ void SolveParticleTriangleSelfCollisionIteration(
                 }
             }
 
+            // Closest Pointから距離・法線の構築まで完了した候補を数えます。
+            // この後ConstraintCountまで大きく減る場合、距離判定後の早期Rejectが有効です。
+            ++statistics.DistanceCount;
+
             const float constraintValue = distance - thickness;
             const uint64_t pairKey = MakeParticleTriangleKey(pair.ParticleIndex, pair.TriangleIndex);
             float& lambda = lambdas[pairKey];
@@ -405,6 +409,9 @@ void SolveParticleTriangleSelfCollisionIteration(
             {
                 continue;
             }
+
+            // thickness判定を通過し、実際にXPBD Constraint計算へ進む候補だけを数えます。
+            ++statistics.ConstraintCount;
 
             const float denominator =
                 particle.InverseMass
@@ -429,27 +436,38 @@ void SolveParticleTriangleSelfCollisionIteration(
                 continue;
             }
 
+            bool positionCorrected = false;
             if (particle.IsFixed() == false)
             {
                 particle.Position += normal * (particle.InverseMass * appliedDeltaLambda);
+                positionCorrected = true;
             }
 
             if (particleA.IsFixed() == false)
             {
                 particleA.Position -= normal
                     * (particleA.InverseMass * closest.WeightA * appliedDeltaLambda);
+                positionCorrected = true;
             }
 
             if (particleB.IsFixed() == false)
             {
                 particleB.Position -= normal
                     * (particleB.InverseMass * closest.WeightB * appliedDeltaLambda);
+                positionCorrected = true;
             }
 
             if (particleC.IsFixed() == false)
             {
                 particleC.Position -= normal
                     * (particleC.InverseMass * closest.WeightC * appliedDeltaLambda);
+                positionCorrected = true;
+            }
+
+            // DeltaLambda計算だけでなく、少なくとも1 Particleへ実Position補正が入った回数です。
+            if (positionCorrected)
+            {
+                ++statistics.PositionCorrectionCount;
             }
         }
     }
