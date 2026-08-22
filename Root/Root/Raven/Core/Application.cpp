@@ -1,5 +1,6 @@
 #include "Application.h"
 #include "../Renderer/Renderer.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/ImGui/ImGuiLayer.h"
 
 #include <glad/glad.h>
@@ -170,9 +171,9 @@ void Application::Run()
         frameDeltaTime = std::min(frameDeltaTime, 0.25f);
 
         // ====================================================================
-        // Renderer statistics frame boundary
+        // Renderer statistics / CPU Profiler frame boundary
         // ====================================================================
-        // Renderer統計はApplication frame単位で集計します。
+        // Renderer::BeginFrame()の中でCPUProfiler::BeginFrame()も開始します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
         Renderer::BeginFrame();
@@ -226,6 +227,10 @@ void Application::Run()
 
         // GLFW Event polling / Buffer swap等、Window側の1 frame終了処理を最後に行います。
         m_Window->OnUpdate();
+
+        // BeginFrame()以降に記録された全Scopeを完成済みsnapshotとして公開します。
+        // Statistics Panelは次frameのImGui構築時にこのLastFrameを読むため、書き込み中の結果と競合しません。
+        CPUProfiler::Get().EndFrame();
     }
 }
 
