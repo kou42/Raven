@@ -35,13 +35,10 @@ class CPUProfiler
 public:
     static CPUProfiler& Get();
 
-    // Application frame開始時に呼び出します。
-    // 前frameの結果はEndFrame()で公開済みなので、ここでは新しい計測領域だけを初期化します。
+    // 新しいApplication frameを開始します。
+    // 2frame目以降は、この呼び出し時に直前frameを自動的に読み取り用bufferへ公開します。
+    // Renderer::BeginFrame()と同じ境界を利用できるため、Application側へEndFrame処理を増やさずに済みます。
     void BeginFrame();
-
-    // Application frame終了時に呼び出し、書き込み中の結果を読み取り用frameへ公開します。
-    // UIはGetLastFrame()から完成済みframeだけを見るため、計測途中のvectorを参照しません。
-    void EndFrame();
 
     void AddResult(CPUProfileResult result);
 
@@ -57,6 +54,7 @@ private:
     using Clock = std::chrono::steady_clock;
 
     bool m_Enabled = true;
+    bool m_FrameActive = false;
     uint64_t m_FrameIndex = 0;
     Clock::time_point m_FrameStart{};
 
