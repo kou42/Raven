@@ -155,6 +155,15 @@ private:
         uint32_t Generation = 0u;
     };
 
+    // CellRegistrationの各処理は1登録の中で交互に現れるため、Scopeを直接ネストできません。
+    // 一部Registrationだけを時刻計測し、Build終了時に全登録相当へ換算します。
+    struct CellRegistrationTimingSample
+    {
+        double HashMilliseconds = 0.0;
+        double ProbeMilliseconds = 0.0;
+        double BucketActivateMilliseconds = 0.0;
+    };
+
     CellCoord ComputeCellCoord(const math::Vec3& position) const;
     std::size_t HashCell(const CellCoord& cell) const;
 
@@ -168,7 +177,9 @@ private:
 
     // 現Buildで指定Cellを取得します。存在しなければ最初のInactive Bucketを再利用します。
     // Probe回数はBuild統計へ加算し、Hot loop内ではProfiler APIを直接呼びません。
-    TriangleCellBucket& GetOrActivateBucket(const CellCoord& cell);
+    TriangleCellBucket& GetOrActivateBucket(
+        const CellCoord& cell,
+        CellRegistrationTimingSample* timingSample = nullptr);
 
     // Candidate生成用の読み取り検索です。
     const TriangleCellBucket* FindActiveBucket(const CellCoord& cell) const;
@@ -176,6 +187,7 @@ private:
     // CellRegistrationのHot loopで集計した値をBuild終了時にProfilerへまとめて送ります。
     // これにより数万回のCell登録へTimer/Mutexを持ち込まず、ボトルネック原因だけを可視化できます。
     void SubmitCellRegistrationCounters(std::size_t validTriangleCount) const;
+    void SubmitCellRegistrationTimings(double totalMilliseconds) const;
 
 private:
     float m_CellSize = 0.05f;
@@ -204,6 +216,13 @@ private:
     uint64_t m_BuildMaxCellSpanX = 0u;
     uint64_t m_BuildMaxCellSpanY = 0u;
     uint64_t m_BuildMaxCellSpanZ = 0u;
+
+    // 64登録に1回だけ詳細時刻を読むことで、Hot loopへの計測汚染を抑えます。
+    uint64_t m_BuildTimingSampleCount = 0u;
+    double m_BuildSampledHashMilliseconds = 0.0;
+    double m_BuildSampledProbeMilliseconds = 0.0;
+    double m_BuildSampledBucketActivateMilliseconds = 0.0;
+    double m_BuildSampledTrianglePushBackMilliseconds = 0.0;
 };
 
 } // namespace ph

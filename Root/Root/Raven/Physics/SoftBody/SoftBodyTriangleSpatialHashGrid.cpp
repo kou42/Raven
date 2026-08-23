@@ -1,7 +1,9 @@
 ﻿#include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <utility>
 
 #include "Raven/Core/CPUProfiler.h"
@@ -24,6 +26,7 @@ constexpr std::size_t MaximumLoadDenominator = 10u;
 // 既存capacityが8以上あるBucketではreserve()を呼ばないため、XPBD iteration間で
 // これまで確保した容量をそのまま再利用できます。
 constexpr std::size_t InitialTriangleIndicesCapacity = 8u;
+constexpr uint64_t CellRegistrationTimingSampleInterval = 64u;
 
 std::size_t NextPowerOfTwo(std::size_t value)
 {
@@ -77,6 +80,11 @@ void SoftBodyTriangleSpatialHashGrid::Clear()
     m_BuildMaxCellSpanX = 0u;
     m_BuildMaxCellSpanY = 0u;
     m_BuildMaxCellSpanZ = 0u;
+    m_BuildTimingSampleCount = 0u;
+    m_BuildSampledHashMilliseconds = 0.0;
+    m_BuildSampledProbeMilliseconds = 0.0;
+    m_BuildSampledBucketActivateMilliseconds = 0.0;
+    m_BuildSampledTrianglePushBackMilliseconds = 0.0;
 }
 
 void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
@@ -152,6 +160,11 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             m_BuildMaxCellSpanX = 0u;
             m_BuildMaxCellSpanY = 0u;
             m_BuildMaxCellSpanZ = 0u;
+            m_BuildTimingSampleCount = 0u;
+            m_BuildSampledHashMilliseconds = 0.0;
+            m_BuildSampledProbeMilliseconds = 0.0;
+            m_BuildSampledBucketActivateMilliseconds = 0.0;
+            m_BuildSampledTrianglePushBackMilliseconds = 0.0;
         }
     }
 
@@ -410,6 +423,11 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     // Hot loopではTimer/Mutex/文字列生成を行わず、整数Counterだけを更新します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration");
+        using TimingClock = std::chrono::steady_clock;
+        const bool detailedTimingEnabled = CPUProfiler::Get().IsEnabled();
+        const TimingClock::time_point registrationStart = detailedTimingEnabled
+            ? TimingClock::now()
+            : TimingClock::time_point{};
 
         for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
         {
@@ -432,13 +450,33 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                         cell.Y = y;
                         cell.Z = z;
 
-                        TriangleCellBucket& bucket = GetOrActivateBucket(cell);
+                        const bool sampleTiming = detailedTimingEnabled
+                            && (m_BuildRegistrationCount % CellRegistrationTimingSampleInterval) == 0u;
+                        CellRegistrationTimingSample timingSample{};
+                        TriangleCellBucket& bucket = GetOrActivateBucket(
+                            cell,
+                            sampleTiming ? &timingSample : nullptr);
 
                         // vector capacityが実際に増えた回数を数えます。
                         // これが多ければ、Flat HashではなくCell内TriangleIndicesのallocationが
                         // CellRegistration時間を支配している可能性があります。
                         const std::size_t previousCapacity = bucket.TriangleIndices.capacity();
+                        const TimingClock::time_point pushBackStart = sampleTiming
+                            ? TimingClock::now()
+                            : TimingClock::time_point{};
                         bucket.TriangleIndices.push_back(static_cast<uint32_t>(triangleIndex));
+                        if (sampleTiming)
+                        {
+                            const TimingClock::time_point pushBackEnd = TimingClock::now();
+                            m_BuildSampledHashMilliseconds += timingSample.HashMilliseconds;
+                            m_BuildSampledProbeMilliseconds += timingSample.ProbeMilliseconds;
+                            m_BuildSampledBucketActivateMilliseconds +=
+                                timingSample.BucketActivateMilliseconds;
+                            m_BuildSampledTrianglePushBackMilliseconds +=
+                                std::chrono::duration<double, std::milli>(
+                                    pushBackEnd - pushBackStart).count();
+                            ++m_BuildTimingSampleCount;
+                        }
                         if (bucket.TriangleIndices.capacity() != previousCapacity)
                         {
                             ++m_BuildVectorGrowCount;
@@ -448,6 +486,14 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                     }
                 }
             }
+        }
+
+        if (detailedTimingEnabled)
+        {
+            const double registrationMilliseconds =
+                std::chrono::duration<double, std::milli>(
+                    TimingClock::now() - registrationStart).count();
+            SubmitCellRegistrationTimings(registrationMilliseconds);
         }
     }
 
@@ -796,15 +842,31 @@ void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
 }
 
 SoftBodyTriangleSpatialHashGrid::TriangleCellBucket&
-SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
+SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
+    const CellCoord& cell,
+    CellRegistrationTimingSample* timingSample)
 {
+    using TimingClock = std::chrono::steady_clock;
+
     if (m_Buckets.empty())
     {
         EnsureInitialBucketCapacity(0u);
     }
 
+    const TimingClock::time_point hashStart = timingSample != nullptr
+        ? TimingClock::now()
+        : TimingClock::time_point{};
     std::size_t bucketIndex = HashCell(cell) & m_BucketMask;
+    if (timingSample != nullptr)
+    {
+        timingSample->HashMilliseconds += std::chrono::duration<double, std::milli>(
+            TimingClock::now() - hashStart).count();
+    }
     uint64_t probeCount = 0u;
+
+    TimingClock::time_point probeStart = timingSample != nullptr
+        ? TimingClock::now()
+        : TimingClock::time_point{};
 
     while (true)
     {
@@ -813,6 +875,14 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
 
         if (bucket.Generation != m_CurrentGeneration)
         {
+            if (timingSample != nullptr)
+            {
+                timingSample->ProbeMilliseconds += std::chrono::duration<double, std::milli>(
+                    TimingClock::now() - probeStart).count();
+            }
+            const TimingClock::time_point activationStart = timingSample != nullptr
+                ? TimingClock::now()
+                : TimingClock::time_point{};
             // 実測ではCellRegistrationの約9割が既存Bucket再利用でした。
             // 以前は全RegistrationでLoad Factor判定を行っていましたが、Table容量が必要になるのは
             // 新しいActive Cellを追加するときだけです。支配的な既存Bucket命中経路から
@@ -824,7 +894,19 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
                 // 新TableではHash位置も変わるため、必ず新しいMaskで先頭Bucketから探索し直します。
                 // probeCountは実際に行った探索回数として維持し、Profiler統計にもGrow前の仕事量を含めます。
                 GrowBuckets();
+                const TimingClock::time_point growHashStart = timingSample != nullptr
+                    ? TimingClock::now()
+                    : TimingClock::time_point{};
                 bucketIndex = HashCell(cell) & m_BucketMask;
+                if (timingSample != nullptr)
+                {
+                    timingSample->HashMilliseconds += std::chrono::duration<double, std::milli>(
+                        TimingClock::now() - growHashStart).count();
+                    timingSample->BucketActivateMilliseconds +=
+                        std::chrono::duration<double, std::milli>(
+                            growHashStart - activationStart).count();
+                    probeStart = TimingClock::now();
+                }
                 continue;
             }
 
@@ -845,6 +927,13 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
             bucket.Generation = m_CurrentGeneration;
             ++m_ActiveCellCount;
 
+            if (timingSample != nullptr)
+            {
+                timingSample->BucketActivateMilliseconds +=
+                    std::chrono::duration<double, std::milli>(
+                        TimingClock::now() - activationStart).count();
+            }
+
             // Probe統計はGetOrActivateBucket() 1回につき実際に参照したBucket数を加算します。
             // Timerを入れず整数加算だけにすることでHot loopへの計測影響を小さくしています。
             m_BuildProbeCount += probeCount;
@@ -854,6 +943,11 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
 
         if (bucket.Coord == cell)
         {
+            if (timingSample != nullptr)
+            {
+                timingSample->ProbeMilliseconds += std::chrono::duration<double, std::milli>(
+                    TimingClock::now() - probeStart).count();
+            }
             m_BuildProbeCount += probeCount;
             m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
             return bucket;
@@ -861,6 +955,55 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(const CellCoord& cell)
 
         bucketIndex = (bucketIndex + 1u) & m_BucketMask;
     }
+}
+
+void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationTimings(
+    double totalMilliseconds) const
+{
+    CPUProfiler& profiler = CPUProfiler::Get();
+    if (profiler.IsEnabled() == false || m_BuildTimingSampleCount == 0u)
+    {
+        return;
+    }
+
+    // Sample平均を全Registration数へ換算します。RangeIterationは親時間から
+    // Hash / Probe / Activate / PushBackの推定exclusive時間を引いた残差です。
+    const double scale = static_cast<double>(m_BuildRegistrationCount)
+        / static_cast<double>(m_BuildTimingSampleCount);
+    const double hashMilliseconds = m_BuildSampledHashMilliseconds * scale;
+    const double probeMilliseconds = m_BuildSampledProbeMilliseconds * scale;
+    const double activateMilliseconds = m_BuildSampledBucketActivateMilliseconds * scale;
+    const double pushBackMilliseconds = m_BuildSampledTrianglePushBackMilliseconds * scale;
+    const double rangeIterationMilliseconds = std::max(
+        0.0,
+        totalMilliseconds - hashMilliseconds - probeMilliseconds
+            - activateMilliseconds - pushBackMilliseconds);
+
+    const auto addTimingResult = [&profiler](const char* name, double milliseconds)
+    {
+        CPUProfileResult result{};
+        result.Name = name;
+        result.DurationMilliseconds = milliseconds;
+        result.ThreadId = std::this_thread::get_id();
+        result.Depth = 0u;
+        profiler.AddResult(std::move(result));
+    };
+
+    addTimingResult(
+        "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration.RangeIteration",
+        rangeIterationMilliseconds);
+    addTimingResult(
+        "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration.Hash",
+        hashMilliseconds);
+    addTimingResult(
+        "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration.Probe",
+        probeMilliseconds);
+    addTimingResult(
+        "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration.BucketActivate",
+        activateMilliseconds);
+    addTimingResult(
+        "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration.TrianglePushBack",
+        pushBackMilliseconds);
 }
 
 const SoftBodyTriangleSpatialHashGrid::TriangleCellBucket*
