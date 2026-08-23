@@ -758,21 +758,19 @@ SoftBodyTriangleSpatialHashGrid::CellCoord SoftBodyTriangleSpatialHashGrid::Comp
 
 std::size_t SoftBodyTriangleSpatialHashGrid::HashCell(const CellCoord& cell) const
 {
-    // 3軸へ異なる大きな素数を掛けてXORします。
-    // Cell座標は負値も取り得るためuint32_tへbit-patternとして変換してから混合します。
-    const uint64_t x = static_cast<uint32_t>(cell.X);
-    const uint64_t y = static_cast<uint32_t>(cell.Y);
-    const uint64_t z = static_cast<uint32_t>(cell.Z);
+    // Uniform Gridで一般的な「3軸 × 異なる素数」の32-bit Spatial Hashです。
+    // 以前はこの後に64-bit avalancheを追加していましたが、全Cell Registrationで
+    // 64-bit乗算と複数shiftが発生し、ProfilerではHashだけで約3.4msを占めていました。
+    // Bucket数は2の累乗ですが、各primeが奇数なので各軸の下位bitもMaskへ伝播します。
+    // Linear Probeの実測Counterは継続して残し、衝突率が悪化しないことを確認します。
+    const uint32_t x = static_cast<uint32_t>(cell.X);
+    const uint32_t y = static_cast<uint32_t>(cell.Y);
+    const uint32_t z = static_cast<uint32_t>(cell.Z);
 
-    uint64_t hash = x * 73856093ull;
-    hash ^= y * 19349663ull;
-    hash ^= z * 83492791ull;
-
-    // 上位bitも下位bitへ混ぜ、2の累乗Maskを使った場合の偏りを抑えます。
-    hash ^= hash >> 33u;
-    hash *= 0xff51afd7ed558ccdull;
-    hash ^= hash >> 33u;
-
+    const uint32_t hash =
+        (x * 73856093u)
+        ^ (y * 19349663u)
+        ^ (z * 83492791u);
     return static_cast<std::size_t>(hash);
 }
 
