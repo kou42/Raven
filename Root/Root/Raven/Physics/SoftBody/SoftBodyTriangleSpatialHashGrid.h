@@ -242,7 +242,9 @@ private:
     // すべてBuildTriangles() 1回分のローカル統計です。
     // XPBD iterationごとに0へ戻し、終了時にCPUProfilerへ1回ずつ記録します。
     uint64_t m_BuildRegistrationCount = 0u;
-    uint64_t m_BuildProbeCount = 0u;
+    // 各Registrationに必ず必要な先頭1 ProbeはRegistrationCountから導出し、
+    // Hot pathではHash衝突で発生した追加分だけを書き込みます。
+    uint64_t m_BuildExtraProbeCount = 0u;
     uint64_t m_BuildMaxProbeCount = 0u;
     uint64_t m_BuildVectorGrowCount = 0u;
     uint64_t m_BuildTableGrowCount = 0u;

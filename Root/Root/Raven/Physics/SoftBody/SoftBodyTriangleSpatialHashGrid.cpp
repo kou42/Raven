@@ -73,7 +73,7 @@ void SoftBodyTriangleSpatialHashGrid::Clear()
     // 計測用Counterも明示的Clear時に初期状態へ戻します。
     // BuildTriangles()の各Build開始時にもリセットするため、前回Buildの統計値は持ち越しません。
     m_BuildRegistrationCount = 0u;
-    m_BuildProbeCount = 0u;
+    m_BuildExtraProbeCount = 0u;
     m_BuildMaxProbeCount = 0u;
     m_BuildVectorGrowCount = 0u;
     m_BuildTableGrowCount = 0u;
@@ -153,7 +153,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             // CellRegistrationの統計はBuild単位でリセットします。
             // Hot loop内では整数加算だけを行い、Profiler APIはBuild終了後にまとめて呼びます。
             m_BuildRegistrationCount = 0u;
-            m_BuildProbeCount = 0u;
+            m_BuildExtraProbeCount = 0u;
             m_BuildMaxProbeCount = 0u;
             m_BuildVectorGrowCount = 0u;
             m_BuildTableGrowCount = 0u;
@@ -933,10 +933,13 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
                         TimingClock::now() - activationStart).count();
             }
 
-            // Probe統計はGetOrActivateBucket() 1回につき実際に参照したBucket数を加算します。
-            // Timerを入れず整数加算だけにすることでHot loopへの計測影響を小さくしています。
-            m_BuildProbeCount += probeCount;
-            m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            // 先頭1 ProbeはRegistrationCountから導出できるため、衝突した場合だけ追加分を記録します。
+            // 支配的な初回命中経路ではCounterへの書き込みもmax計算も行いません。
+            if (probeCount > 1u)
+            {
+                m_BuildExtraProbeCount += probeCount - 1u;
+                m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            }
             return bucket;
         }
 
@@ -947,8 +950,11 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
                 timingSample->ProbeMilliseconds += std::chrono::duration<double, std::milli>(
                     TimingClock::now() - probeStart).count();
             }
-            m_BuildProbeCount += probeCount;
-            m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            if (probeCount > 1u)
+            {
+                m_BuildExtraProbeCount += probeCount - 1u;
+                m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            }
             return bucket;
         }
 
@@ -1058,8 +1064,12 @@ void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationCounters(
 
     // Probe平均が1.0付近ならほぼ初回Bucketで命中しており、Flat Hash探索は良好です。
     // 値が大きい場合はHash衝突やLoad Factorを次の最適化対象として検討できます。
+    const uint64_t probeCount = m_BuildRegistrationCount + m_BuildExtraProbeCount;
+    const uint64_t maximumProbeCount = m_BuildRegistrationCount > 0u
+        ? std::max<uint64_t>(1u, m_BuildMaxProbeCount)
+        : 0u;
     const double averageProbeCount = m_BuildRegistrationCount > 0u
-        ? static_cast<double>(m_BuildProbeCount) / registrationCount
+        ? static_cast<double>(probeCount) / registrationCount
         : 0.0;
     const double loadFactor = m_Buckets.empty() == false
         ? activeCellCount / static_cast<double>(m_Buckets.size())
@@ -1085,10 +1095,7 @@ void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationCounters(
         m_BuildRegistrationCount >= bucketActivationCount
             ? m_BuildRegistrationCount - bucketActivationCount
             : 0u;
-    const uint64_t extraProbeCount =
-        m_BuildProbeCount >= m_BuildRegistrationCount
-            ? m_BuildProbeCount - m_BuildRegistrationCount
-            : 0u;
+    const uint64_t extraProbeCount = m_BuildExtraProbeCount;
 
     const double bucketActivationCountValue = static_cast<double>(bucketActivationCount);
     const double existingBucketReuseCountValue = static_cast<double>(existingBucketReuseCount);
@@ -1115,7 +1122,7 @@ void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationCounters(
     profiler.AddCounter("SoftBody.TriangleHash.AverageCellsPerTriangle", averageCellsPerTriangle);
     profiler.AddCounter("SoftBody.TriangleHash.AverageTrianglesPerCell", averageTrianglesPerCell);
     profiler.AddCounter("SoftBody.TriangleHash.AverageProbeCount", averageProbeCount);
-    profiler.AddCounter("SoftBody.TriangleHash.MaxProbeCount", static_cast<double>(m_BuildMaxProbeCount));
+    profiler.AddCounter("SoftBody.TriangleHash.MaxProbeCount", static_cast<double>(maximumProbeCount));
     profiler.AddCounter("SoftBody.TriangleHash.VectorGrowCount", vectorGrowCountValue);
     profiler.AddCounter("SoftBody.TriangleHash.TableGrowCount", static_cast<double>(m_BuildTableGrowCount));
     profiler.AddCounter("SoftBody.TriangleHash.LoadFactor", loadFactor);
