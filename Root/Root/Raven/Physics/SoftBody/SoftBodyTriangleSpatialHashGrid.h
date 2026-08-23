@@ -183,12 +183,16 @@ private:
 
     struct TriangleCellBucket
     {
-        // Probeが最初に読むGenerationと、命中確認に使うCoordを隣接配置します。
-        // 可変長Bufferを先に置くとBucket境界によって両者が別Cache Lineになるため、
-        // Probe用metadataを先頭16 byteへまとめます。
-        uint32_t Generation = 0u;
+        // Hashが同じCellを区別するための正確な座標です。
         CellCoord Coord{};
+
+        // このCellへ登録されたTriangle Indexを保持します。
+        // 確保済みStorageと論理Countを分け、iteration間で確保容量を再利用します。
         TriangleIndexBuffer TriangleIndices;
+
+        // 現在のBuild Generationと一致するBucketだけをActiveとして扱います。
+        // Bucket配列を毎iterationクリアせず、Generation更新だけで再利用するための印です。
+        uint32_t Generation = 0u;
     };
 
     // CellRegistrationの各処理は1登録の中で交互に現れるため、Scopeを直接ネストできません。
