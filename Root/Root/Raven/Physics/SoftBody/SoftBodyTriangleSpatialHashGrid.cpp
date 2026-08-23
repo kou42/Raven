@@ -457,14 +457,14 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                             cell,
                             sampleTiming ? &timingSample : nullptr);
 
-                        // vector capacityが実際に増えた回数を数えます。
+                        // Bucket内の確保済み配列が実際に増えた回数を数えます。
                         // これが多ければ、Flat HashではなくCell内TriangleIndicesのallocationが
                         // CellRegistration時間を支配している可能性があります。
-                        const std::size_t previousCapacity = bucket.TriangleIndices.capacity();
                         const TimingClock::time_point pushBackStart = sampleTiming
                             ? TimingClock::now()
                             : TimingClock::time_point{};
-                        bucket.TriangleIndices.push_back(static_cast<uint32_t>(triangleIndex));
+                        const bool triangleIndicesGrew = bucket.TriangleIndices.Append(
+                            static_cast<uint32_t>(triangleIndex));
                         if (sampleTiming)
                         {
                             const TimingClock::time_point pushBackEnd = TimingClock::now();
@@ -477,7 +477,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                                     pushBackEnd - pushBackStart).count();
                             ++m_BuildTimingSampleCount;
                         }
-                        if (bucket.TriangleIndices.capacity() != previousCapacity)
+                        if (triangleIndicesGrew)
                         {
                             ++m_BuildVectorGrowCount;
                         }
@@ -559,8 +559,12 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
             continue;
         }
 
-        for (uint32_t triangleIndex : bucket->TriangleIndices)
+        for (std::size_t bucketTriangleIndex = 0u;
+             bucketTriangleIndex < bucket->TriangleIndices.Count;
+             ++bucketTriangleIndex)
         {
+            const uint32_t triangleIndex =
+                bucket->TriangleIndices.Storage.data()[bucketTriangleIndex];
             ++cellCandidateCount;
 
             // ====================================================================
@@ -913,16 +917,13 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
             // Inactive Bucketは現在Buildでは空なので、その場で再利用できます。
             // clear()はcapacityを保持するため、同じSlotが再利用された場合は既存allocationを維持します。
             bucket.Coord = cell;
-            bucket.TriangleIndices.clear();
+            bucket.TriangleIndices.Reset();
 
             // 前回計測では1 Cellあたり平均約7.5 Triangleでした。
             // capacityが不足しているBucketだけ8要素分を事前確保し、push_back()時の
             // 0 -> 1 -> 2 -> 4 -> 8という複数回の再allocationを1回へまとめます。
             // すでに8以上確保済みならreserve()を呼ばないため、iteration間の再利用を妨げません。
-            if (bucket.TriangleIndices.capacity() < InitialTriangleIndicesCapacity)
-            {
-                bucket.TriangleIndices.reserve(InitialTriangleIndicesCapacity);
-            }
+            bucket.TriangleIndices.EnsureMinimumSize(InitialTriangleIndicesCapacity);
 
             bucket.Generation = m_CurrentGeneration;
             ++m_ActiveCellCount;

@@ -148,10 +148,43 @@ private:
     // ========================================================================
     // Generation != m_CurrentGeneration のBucketは「現在Buildでは空」として扱います。
     // Bucketを物理的に消去しないため、TriangleIndicesのcapacityを次iterationへ再利用できます。
+    struct TriangleIndexBuffer
+    {
+        std::vector<uint32_t> Storage;
+        std::size_t Count = 0u;
+
+        void Reset() { Count = 0u; }
+
+        void EnsureMinimumSize(std::size_t minimumSize)
+        {
+            if (Storage.size() < minimumSize)
+            {
+                Storage.resize(minimumSize);
+            }
+        }
+
+        bool Append(uint32_t triangleIndex)
+        {
+            bool grew = false;
+            if (Count == Storage.size())
+            {
+                const std::size_t newSize = Storage.empty() ? 1u : Storage.size() * 2u;
+                Storage.resize(newSize);
+                grew = true;
+            }
+
+            // size()ではなくCountを論理要素数として扱うため、通常経路は確保済み領域への
+            // 直接書き込みだけになります。
+            Storage.data()[Count] = triangleIndex;
+            ++Count;
+            return grew;
+        }
+    };
+
     struct TriangleCellBucket
     {
         CellCoord Coord{};
-        std::vector<uint32_t> TriangleIndices;
+        TriangleIndexBuffer TriangleIndices;
         uint32_t Generation = 0u;
     };
 
