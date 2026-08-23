@@ -1001,6 +1001,42 @@ void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationTimings(
     addTimingResult(
         "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration.TrianglePushBack",
         pushBackMilliseconds);
+
+    // Cloth変形状態によって1 BuildのRegistration件数は変動します。
+    // 絶対時間だけでは実装差と仕事量差を区別できないため、1登録あたりのnsも記録します。
+    // StatisticsPanelでは12 iteration分のAverageを見ることで、異なるframe間でも単価を比較できます。
+    if (m_BuildRegistrationCount > 0u)
+    {
+        constexpr double MillisecondsToNanoseconds = 1.0e6;
+        const double inverseRegistrationCount =
+            1.0 / static_cast<double>(m_BuildRegistrationCount);
+        const auto addNanosecondsPerRegistration =
+            [&profiler, inverseRegistrationCount](const char* name, double milliseconds)
+        {
+            profiler.AddCounter(
+                name,
+                milliseconds * MillisecondsToNanoseconds * inverseRegistrationCount);
+        };
+
+        addNanosecondsPerRegistration(
+            "SoftBody.TriangleHash.CellRegistration.TotalNanosecondsPerRegistration",
+            totalMilliseconds);
+        addNanosecondsPerRegistration(
+            "SoftBody.TriangleHash.CellRegistration.RangeIterationNanosecondsPerRegistration",
+            rangeIterationMilliseconds);
+        addNanosecondsPerRegistration(
+            "SoftBody.TriangleHash.CellRegistration.HashNanosecondsPerRegistration",
+            hashMilliseconds);
+        addNanosecondsPerRegistration(
+            "SoftBody.TriangleHash.CellRegistration.ProbeNanosecondsPerRegistration",
+            probeMilliseconds);
+        addNanosecondsPerRegistration(
+            "SoftBody.TriangleHash.CellRegistration.BucketActivateNanosecondsPerRegistration",
+            activateMilliseconds);
+        addNanosecondsPerRegistration(
+            "SoftBody.TriangleHash.CellRegistration.TrianglePushBackNanosecondsPerRegistration",
+            pushBackMilliseconds);
+    }
 }
 
 const SoftBodyTriangleSpatialHashGrid::TriangleCellBucket*
