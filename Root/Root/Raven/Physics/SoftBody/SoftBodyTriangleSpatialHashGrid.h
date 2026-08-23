@@ -183,9 +183,12 @@ private:
 
     struct TriangleCellBucket
     {
+        // Probeが最初に読むGenerationと、命中確認に使うCoordを隣接配置します。
+        // 可変長Bufferを先に置くとBucket境界によって両者が別Cache Lineになるため、
+        // Probe用metadataを先頭16 byteへまとめます。
+        uint32_t Generation = 0u;
         CellCoord Coord{};
         TriangleIndexBuffer TriangleIndices;
-        uint32_t Generation = 0u;
     };
 
     // CellRegistrationの各処理は1登録の中で交互に現れるため、Scopeを直接ネストできません。
@@ -242,9 +245,7 @@ private:
     // すべてBuildTriangles() 1回分のローカル統計です。
     // XPBD iterationごとに0へ戻し、終了時にCPUProfilerへ1回ずつ記録します。
     uint64_t m_BuildRegistrationCount = 0u;
-    // 各Registrationに必ず必要な先頭1 ProbeはRegistrationCountから導出し、
-    // Hot pathではHash衝突で発生した追加分だけを書き込みます。
-    uint64_t m_BuildExtraProbeCount = 0u;
+    uint64_t m_BuildProbeCount = 0u;
     uint64_t m_BuildMaxProbeCount = 0u;
     uint64_t m_BuildVectorGrowCount = 0u;
     uint64_t m_BuildTableGrowCount = 0u;
