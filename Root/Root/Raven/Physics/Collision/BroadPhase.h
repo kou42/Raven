@@ -68,9 +68,13 @@ public:
     // Sceneとの同期後にFat AABB同士の候補ペアを収集し、Narrow Phaseへ渡す
     // 重複なしのPair列を生成します。
     //
-    // 出力Containerは clear() / push_back() / begin() / end() を満たせばよく、
+    // 出力Containerは clear() / reserve() / push_back() / begin() / end() を満たせばよく、
     // std::vectorのAllocator型には依存しません。これにより通常vectorを使う既存経路を
     // 保ったまま、Physicsのフレーム一時PairだけをFrameAllocatorへ移行できます。
+    //
+    // reserve()は前回StepのPair数を初期容量として使うために必要です。
+    // Linear/FrameAllocatorではvector拡張前の古いbufferを個別回収しないため、
+    // 事前reserveで再allocation回数とArena消費量の両方を抑えます。
     //
     // 重要:
     // この関数はSceneのメンバ関数を使用するため、定義はScene型が完全型になる
