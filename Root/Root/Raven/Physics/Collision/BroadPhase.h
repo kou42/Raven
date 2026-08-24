@@ -68,9 +68,10 @@ public:
     // Sceneとの同期後にFat AABB同士の候補ペアを収集し、Narrow Phaseへ渡す
     // 重複なしのPair列を生成します。
     //
-    // 出力Containerは clear() / reserve() / push_back() / begin() / end() を満たせばよく、
-    // std::vectorのAllocator型には依存しません。これにより通常vectorを使う既存経路を
-    // 保ったまま、Physicsのフレーム一時PairだけをFrameAllocatorへ移行できます。
+    // 出力Containerは clear() / reserve() / push_back() / begin() / end() /
+    // get_allocator() を満たすvector互換Containerを想定します。
+    // 通常のstd::vectorでは標準heapを使用し、STLAllocatorAdapterを持つFrameVectorでは
+    // Pair配列と重複除去Setの両方を同じPhysics FrameAllocatorへ集約します。
     //
     // reserve()は前回StepのPair数を初期容量として使うために必要です。
     // Linear/FrameAllocatorではvector拡張前の古いbufferを個別回収しないため、
