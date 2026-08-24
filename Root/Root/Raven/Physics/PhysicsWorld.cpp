@@ -2,6 +2,8 @@
 #include <cmath>
 #include <limits>
 
+#include "Raven/Core/CPUProfiler.h"
+#include "Raven/Core/Memory/FrameVector.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsWorld.h"
@@ -381,7 +383,10 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     m_PreviousManifolds = std::move(m_Manifolds);
     m_Manifolds.clear();
 
-    std::vector<BroadPhasePair> pairs;
+    // BroadPhase PairはこのPhysics Step内だけ必要な一時データです。
+    // STLAllocatorAdapter経由でPhysics専用FrameAllocatorから確保し、通常heapへの
+    // 毎step allocationを避けます。Debug表示用m_LastPairsだけはBroadPhase側で永続vectorへコピーします。
+    FrameVector<BroadPhasePair> pairs{ STLAllocatorAdapter<BroadPhasePair>(m_FrameAllocator) };
     m_BroadPhase.ComputePairs(scene, pairs);
 
     // Broad Phase で抽出された候補ペアだけを調べ、実際に接触が起きるかを判定します。
@@ -1097,6 +1102,30 @@ void PhysicsWorld::Step(Scene& scene, float dt)
     IntegratePositions(scene, dt);
     UpdateSleeping(scene, dt);
     ClearForces(scene);
+
+    // ========================================================================
+    // Physics Frame Allocator Statistics / Reset
+    // ========================================================================
+    // DetectCollisions()内のFrameVectorはここへ到達する前に破棄済みです。
+    // そのためResetFrame()で一時Arenaを先頭へ戻しても、以降参照されるPairはありません。
+    // Debug Overlay用のBroadPhase Snapshotは通常vectorへコピー済みなので影響を受けません。
+    m_FrameAllocatorStatistics.LastFrameUsedMemory = m_FrameAllocator.GetUsedMemory();
+    m_FrameAllocatorStatistics.PeakUsedMemory = m_FrameAllocator.GetPeakUsedMemory();
+    m_FrameAllocatorStatistics.LastFrameAllocationCount = m_FrameAllocator.GetAllocationCount();
+
+    // StatisticsPanelの既存CPU Counter集計をそのまま利用できるよう、byte数とallocation回数を登録します。
+    // Hot loop内ではなくstep末尾で1回だけ登録するため、Profiler自身による測定汚染を最小限に抑えます。
+    CPUProfiler::Get().AddCounter(
+        "Physics.FrameAllocator.UsedBytes",
+        static_cast<double>(m_FrameAllocatorStatistics.LastFrameUsedMemory));
+    CPUProfiler::Get().AddCounter(
+        "Physics.FrameAllocator.PeakBytes",
+        static_cast<double>(m_FrameAllocatorStatistics.PeakUsedMemory));
+    CPUProfiler::Get().AddCounter(
+        "Physics.FrameAllocator.AllocationCount",
+        static_cast<double>(m_FrameAllocatorStatistics.LastFrameAllocationCount));
+
+    m_FrameAllocator.ResetFrame();
 }
 
 } // namespace ph
