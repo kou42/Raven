@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <new>
 #include <type_traits>
 
 namespace Raven
