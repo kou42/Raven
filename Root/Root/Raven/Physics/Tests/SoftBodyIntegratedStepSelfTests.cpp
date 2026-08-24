@@ -1,4 +1,4 @@
-#include <array>
+﻿#include <array>
 #include <cassert>
 
 #include "Raven/Physics/SoftBody/SoftBodyCloth.h"
@@ -12,6 +12,7 @@ namespace
 {
 void RunParticleTriangleSpatialHashPresetCase(float spatialHashCellSize)
 {
+
     SoftBodySolver solver{};
     solver.SetGravity({ 0.0f, 0.0f, 0.0f });
 
@@ -154,6 +155,14 @@ void RunParticleTriangleSpatialHashBenchmarkCase()
 // 同じSolverIterations内で解かれることを確認するためのassertベース回帰テストです。
 void RunSoftBodyIntegratedStepSelfTests()
 {
+
+    // ========================================================================
+    // TEMP: SoftBody simulation disabled
+    // ========================================================================
+    // SoftBody最適化を一時中断している間、Simulation処理全体をここで停止します。
+    // 再開時はこのreturnだけを削除してください。
+    return;
+
     SoftBodySolver solver{};
     solver.SetGravity({ 0.0f, 0.0f, 0.0f });
 

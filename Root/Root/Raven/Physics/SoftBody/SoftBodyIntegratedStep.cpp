@@ -518,6 +518,34 @@ void SoftBodySolver::StepWithSelfCollisions(
     const SoftBodySelfCollisionSettings& particleSettings,
     const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings)
 {
+
+    // ========================================================================
+    // TEMP: SoftBody simulation disabled
+    // ========================================================================
+    // SoftBody最適化を一時中断し、他システムの計測・実装へ集中するため、
+    // Solver処理全体を入口で停止します。
+    //
+    // このreturnにより以下はすべて実行されません。
+    // - PredictPositions
+    // - Distance / Dihedral Constraints
+    // - Particle-Particle Self Collision
+    // - Particle-Triangle Self Collision
+    // - Sphere / Plane Collision
+    // - UpdateVelocities
+    //
+    // SoftBody作業を再開するときは、このreturnだけを削除すれば元に戻せます。
+
+    // SoftBodyを停止中でもDebug / Profiler表示へ古い自己衝突統計を残さないため、
+    // Statisticsだけは通常どおり初期化してからSolver本体を停止します。
+    m_ParticleTriangleCollisionStatistics.Reset();
+
+    // ========================================================================
+    // TEMP: SoftBody simulation disabled
+    // ========================================================================
+    // SoftBody最適化を一時中断している間、Simulation処理全体をここで停止します。
+    // 再開時はこのreturnだけを削除してください。
+    return;
+
     RAVEN_PROFILE_SCOPE("SoftBody.Solver.StepWithSelfCollisions");
 
     // Statisticsは「直近1 Step」の値として扱います。
