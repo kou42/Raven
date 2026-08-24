@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Math/MathVector.h"
+#include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyCloth.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticleTriangleSelfCollision.h"
 #include "Raven/Physics/SoftBody/SoftBodySelfCollision.h"
@@ -21,6 +23,31 @@ namespace ph
 {
 namespace
 {
+
+// ============================================================================
+// SoftBody Solver Temporary Container Types
+// ============================================================================
+// Phase ②では、まずunordered_set / unordered_mapのNode・Bucket確保をCounterへ接続します。
+// std::unordered_* は内部でvalue_type以外の型へAllocatorをrebindするため、
+// SolverTemporaryAllocatorのrebind経路も実際のSolver Hot Pathで検証できます。
+//
+// Candidate vector / Triangle vectorはSpatialHash APIが現在 std::vector<T> 固定引数なので、
+// 次段階でAPIをAllocator非依存化してから同じCounterへ接続します。
+using TemporaryExcludedPairAllocator = SolverTemporaryAllocator<uint64_t>;
+using TemporaryExcludedPairSet = std::unordered_set<
+    uint64_t,
+    std::hash<uint64_t>,
+    std::equal_to<uint64_t>,
+    TemporaryExcludedPairAllocator>;
+
+using TemporaryLambdaValue = std::pair<const uint64_t, float>;
+using TemporaryLambdaAllocator = SolverTemporaryAllocator<TemporaryLambdaValue>;
+using TemporaryLambdaMap = std::unordered_map<
+    uint64_t,
+    float,
+    std::hash<uint64_t>,
+    std::equal_to<uint64_t>,
+    TemporaryLambdaAllocator>;
 
 uint64_t MakeParticlePairKey(uint32_t particleA, uint32_t particleB)
 {
@@ -35,9 +62,10 @@ uint64_t MakeParticleTriangleKey(uint32_t particleIndex, uint32_t triangleIndex)
         | static_cast<uint64_t>(triangleIndex);
 }
 
+template<typename ExcludedPairSet>
 void BuildExcludedParticlePairs(
     const std::vector<XPBDDistanceConstraint>& constraints,
-    std::unordered_set<uint64_t>& outExcludedPairs)
+    ExcludedPairSet& outExcludedPairs)
 {
     outExcludedPairs.clear();
     outExcludedPairs.reserve(constraints.size());
@@ -198,11 +226,12 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     return { a * u + b * v + c * w, u, v, w };
 }
 
+template<typename ExcludedPairSet, typename LambdaMap>
 void SolveParticleSelfCollisionIteration(
     std::vector<SoftBodyParticle>& particles,
     SoftBodySpatialHashGrid& spatialHash,
-    const std::unordered_set<uint64_t>& excludedPairs,
-    std::unordered_map<uint64_t, float>& lambdas,
+    const ExcludedPairSet& excludedPairs,
+    LambdaMap& lambdas,
     std::vector<SoftBodySpatialHashPair>& candidatePairs,
     float targetDistance,
     float alphaTilde)
@@ -302,11 +331,12 @@ void SolveParticleSelfCollisionIteration(
     }
 }
 
+template<typename LambdaMap>
 void SolveParticleTriangleSelfCollisionIteration(
     std::vector<SoftBodyParticle>& particles,
     const std::vector<SoftBodyTriangle>& triangles,
     SoftBodyTriangleSpatialHashGrid& spatialHash,
-    std::unordered_map<uint64_t, float>& lambdas,
+    LambdaMap& lambdas,
     std::vector<SoftBodyParticleTrianglePair>& candidatePairs,
     SoftBodyParticleTriangleCollisionStatistics& statistics,
     float thickness,
@@ -535,9 +565,10 @@ void SoftBodySolver::StepWithSelfCollisions(
     //
     // SoftBody作業を再開するときは、このreturnだけを削除すれば元に戻せます。
 
-    // SoftBodyを停止中でもDebug / Profiler表示へ古い自己衝突統計を残さないため、
-    // Statisticsだけは通常どおり初期化してからSolver本体を停止します。
+    // SoftBodyを停止中でもDebug / Profiler表示へ古い自己衝突統計・Temporary Allocation統計を
+    // 残さないため、Statisticsは入口で必ず初期化します。
     m_ParticleTriangleCollisionStatistics.Reset();
+    m_TemporaryAllocationStatistics.Reset();
 
     // ========================================================================
     // TEMP: SoftBody simulation disabled
@@ -551,6 +582,7 @@ void SoftBodySolver::StepWithSelfCollisions(
     // Statisticsは「直近1 Step」の値として扱います。
     // deltaTime不正や自己衝突無効時も古い値を残さないよう、Early Returnより前に必ずResetします。
     m_ParticleTriangleCollisionStatistics.Reset();
+    m_TemporaryAllocationStatistics.Reset();
 
     if (deltaTime <= 0.0f)
     {
@@ -583,9 +615,30 @@ void SoftBodySolver::StepWithSelfCollisions(
         && cloth.Rows > 0u
         && cloth.Columns > 0u;
 
-    std::unordered_set<uint64_t> excludedParticlePairs;
-    std::unordered_map<uint64_t, float> particleLambdas;
-    std::unordered_map<uint64_t, float> particleTriangleLambdas;
+    // ========================================================================
+    // Phase ②-A: Step Local Hash Temporary Allocation Counter
+    // ========================================================================
+    // まずNode/Bucket allocationが発生する3つのunorderedコンテナを同一Statisticsへ集約します。
+    // Backing Allocatorはまだ指定しないため通常Heapを使用し、これがBefore計測になります。
+    // 次の②-BでCandidate/Triangle vectorも同じCounterへ追加し、最終的にStep Local全体を計測します。
+    TemporaryExcludedPairSet excludedParticlePairs{
+        0u,
+        std::hash<uint64_t>{},
+        std::equal_to<uint64_t>{},
+        TemporaryExcludedPairAllocator(&m_TemporaryAllocationStatistics) };
+
+    TemporaryLambdaMap particleLambdas{
+        0u,
+        std::hash<uint64_t>{},
+        std::equal_to<uint64_t>{},
+        TemporaryLambdaAllocator(&m_TemporaryAllocationStatistics) };
+
+    TemporaryLambdaMap particleTriangleLambdas{
+        0u,
+        std::hash<uint64_t>{},
+        std::equal_to<uint64_t>{},
+        TemporaryLambdaAllocator(&m_TemporaryAllocationStatistics) };
+
     std::vector<SoftBodySpatialHashPair> particleCandidatePairs;
     std::vector<SoftBodyParticleTrianglePair> particleTriangleCandidatePairs;
     std::vector<SoftBodyTriangle> triangles;
