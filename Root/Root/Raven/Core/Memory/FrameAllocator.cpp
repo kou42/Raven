@@ -43,6 +43,11 @@ std::size_t FrameAllocator::GetUsedMemory() const
     return m_LinearAllocator.GetUsedMemory();
 }
 
+std::size_t FrameAllocator::GetPeakUsedMemory() const
+{
+    return m_LinearAllocator.GetPeakUsedMemory();
+}
+
 std::size_t FrameAllocator::GetAllocationCount() const
 {
     return m_LinearAllocator.GetAllocationCount();
