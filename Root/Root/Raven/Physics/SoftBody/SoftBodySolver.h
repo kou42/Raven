@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
+#include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
 #include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/XPBDDihedralConstraint.h"
@@ -305,6 +306,14 @@ public:
         return m_ParticleTriangleCollisionStatistics;
     }
 
+    // 直近のStepWithSelfCollisions()でStepローカルSTLコンテナが要求したTemporary allocation統計です。
+    // Phase ②では通常Heapへの要求を計測し、Phase ③では同じCounterをFrameAllocator経由へ切り替えて
+    // Before / Afterを同一指標で比較します。
+    const SolverTemporaryAllocationStatistics& GetTemporaryAllocationStatistics() const
+    {
+        return m_TemporaryAllocationStatistics;
+    }
+
 private:
     // Step開始時の位置をPreviousPositionへ保存し、重力とVelocityから予測位置を作ります。
     void PredictPositions(float deltaTime);
@@ -340,6 +349,7 @@ private:
     std::vector<SoftBodySphereCollider> m_SphereColliders;
     std::vector<SoftBodyPlaneCollider> m_PlaneColliders;
     SoftBodyParticleTriangleCollisionStatistics m_ParticleTriangleCollisionStatistics{};
+    SolverTemporaryAllocationStatistics m_TemporaryAllocationStatistics{};
 
     // Particle-Triangle Flat HashはBucketごとにvector capacityを持つため、Stepローカルにすると
     // 毎frame最初のSolver iterationで巨大なBucket配列を再確保してしまいます。
