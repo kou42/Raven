@@ -32,7 +32,10 @@ Allocator* GetRavenAllocator(const AllocatorType& allocator)
 template <class PairContainer>
 void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
 {
-    Synchronize(scene);
+    // Pair出力とBroadPhase内部の一時Setで同じBacking Allocatorを共有します。
+    // FrameVector経路ではPhysics FrameAllocatorが返り、通常vectorではnullptrになります。
+    Allocator* temporaryAllocator = detail::GetRavenAllocator(outPairs.get_allocator());
+    Synchronize(scene, temporaryAllocator);
     outPairs.clear();
 
     // ========================================================================
@@ -106,7 +109,6 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
             }
         };
 
-    Allocator* temporaryAllocator = detail::GetRavenAllocator(outPairs.get_allocator());
     std::size_t emittedCount = 0;
     std::size_t emittedStorageCapacity = 0;
 
@@ -173,7 +175,9 @@ template <class Callback>
 void BroadPhase::QueryAABB(Scene& scene, const AABB& queryBounds, Callback&& callback)
 {
     // Query前にScene同期を必ず実行し、古いProxy状態での取りこぼしを防ぎます。
-    Synchronize(scene);
+    // このAPIはPhysicsWorldのFrameAllocatorを引数で受け取らないため、同期用Setは
+    // 現段階では標準Allocatorへフォールバックします。呼び出し頻度はProfiler Counterで観測します。
+    Synchronize(scene, nullptr);
     m_Tree.Query(queryBounds,
         [&](Entity entity, uint32_t proxyId) -> bool
         {
@@ -195,7 +199,8 @@ void BroadPhase::RayCast(
     Callback&& callback)
 {
     // RayCastでも同期を先に行い、AABB Treeの状態とScene実体を一致させます。
-    Synchronize(scene);
+    // QueryAABBと同様、現段階では同期用Setは標準Allocator経路です。
+    Synchronize(scene, nullptr);
     m_Tree.RayCast(
         origin,
         direction,
