@@ -19,12 +19,26 @@ namespace ph
 
 struct PhysicsRayCastHit
 {
+    // RayCastで最終的に採用された最短ヒット情報です。
+    // Fractionは origin + direction * Fraction で交点を再構築できます。
     Entity HitEntity{};
     math::Vec3 Point{};
     math::Vec3 Normal{};
     float Fraction = 0.0f;
 };
 
+// ============================================================================
+// RayCast Query Filter
+// ============================================================================
+// RayCastの「どのBody/Shapeを候補にするか」を呼び出し側から指定します。
+//
+// 重要:
+// フィルタは「最短Hitを求めた後」に適用するのではなく、各候補を実形状判定する前に
+// 適用します。これにより、例えば床Planeを除外したMouse Pickingで、床の奥にある
+// Dynamic Sphere/Boxまで正しく探索できます。
+//
+// 現在のデフォルトはMouse Pickingで最もよく使う設定に合わせ、
+// Dynamic Bodyのみ・Plane除外です。全Colliderを対象にしたい用途では All() を使えます。
 struct PhysicsRayCastFilter
 {
     bool IncludeStatic = false;
@@ -43,6 +57,15 @@ struct PhysicsRayCastFilter
     }
 };
 
+// ============================================================================
+// Ground Query
+// ============================================================================
+// Character Controller / Ragdoll復帰などが「この位置の直下に歩行可能な床があるか」を
+// PhysicsWorldへ問い合わせるための結果です。
+//
+// Ground QueryはShape固有の接触解決をCharacter側へ持ち出さず、PhysicsWorldのRayCastを
+// 再利用して床面のPoint / Normal / Entityを返します。DistanceはQuery開始点からHitまでの
+// 下向き距離で、direction=(0,-1,0)を単位ベクトルとしているためRayCast Fractionと一致します。
 struct PhysicsGroundQueryHit
 {
     Entity HitEntity{};
@@ -53,30 +76,48 @@ struct PhysicsGroundQueryHit
 
 struct PhysicsGroundQuerySettings
 {
+    // Query開始点から下方向へ調べる最大距離です。
     float MaxDistance = 1.0f;
-    float MaxSlopeRadians = 0.872664626f;
+
+    // Walkableとみなす最大斜面角度[rad]です。0なら水平面のみ、PI/2に近いほど急斜面を許可します。
+    float MaxSlopeRadians = 0.872664626f; // 50 degrees
+
+    // Characterの足場として通常利用するStatic / Kinematic / Planeを既定対象にします。
+    // Dynamic Body上を歩かせたい場合だけIncludeDynamicを明示的に有効化します。
     bool IncludeStatic = true;
     bool IncludeKinematic = true;
     bool IncludeDynamic = false;
     bool IncludePlanes = true;
 };
 
+// ============================================================================
+// Capsule Shape Cast
+// ============================================================================
+// Kinematic Characterなど、直立Capsuleを任意方向へ移動したとき最初に触れるColliderを返します。
+// PositionはCharacter Controllerと同じ「Capsule最下端の足元位置」を契約とします。
+// Capsule中心は Position + WorldUp * (HalfLength + Radius) から内部で構築します。
 struct PhysicsCapsuleCastHit
 {
     Entity HitEntity{};
-    math::Vec3 Position{};
-    math::Vec3 Point{};
-    math::Vec3 Normal{};
-    float Fraction = 0.0f;
+    math::Vec3 Position{}; // Hit時点のCapsule足元位置
+    math::Vec3 Point{};    // 接触点
+    math::Vec3 Normal{};   // 障害物表面からCapsule側を向く法線
+    float Fraction = 0.0f; // start + displacement * Fraction
 };
 
 struct PhysicsCapsuleCastSettings
 {
     float Radius = 0.35f;
     float HalfLength = 0.55f;
+
+    // 実Capsuleより僅かに太くCastし、移動後にColliderへ数値誤差で食い込むことを防ぎます。
     float SkinWidth = 0.02f;
+
+    // 高速移動時のトンネリングを避けるため、移動区間をRadius基準で分割してOverlapを探索します。
+    // 最初のOverlap区間を見つけた後は二分探索でTime Of Impactを絞り込みます。
     uint32_t MaxSubsteps = 64u;
     uint32_t BinarySearchIterations = 10u;
+
     bool IncludeStatic = true;
     bool IncludeKinematic = true;
     bool IncludeDynamic = false;
@@ -86,12 +127,17 @@ struct PhysicsCapsuleCastSettings
 
 struct PhysicsSolverDebugStatistics
 {
+    // Manifold/Point数はNarrow Phaseの接触量を示します。
     uint32_t ManifoldCount = 0;
     uint32_t ContactPointCount = 0;
+    // Persistent系は前フレーム接触の再利用率を示し、値が高いほど安定傾向です。
     uint32_t PersistentManifoldCount = 0;
     uint32_t PersistentContactPointCount = 0;
+    // Warm Started制約数は初期インパルス再利用の対象数です。
     uint32_t WarmStartedConstraintCount = 0;
+    // 実際に走った反復回数（下限1）を記録します。
     uint32_t VelocityIterations = 0;
+    // 収束状態の目安として最大貫通/最大法線インパルス/最大摩擦インパルスを保持します。
     float MaxPenetration = 0.0f;
     float MaxNormalImpulse = 0.0f;
     float MaxFrictionImpulse = 0.0f;
@@ -99,8 +145,12 @@ struct PhysicsSolverDebugStatistics
     void Reset() { *this = PhysicsSolverDebugStatistics{}; }
 };
 
-// Physics専用FrameAllocatorの観測値です。
-// 現段階ではBroadPhase候補列を最初の移行対象とし、容量は実測値を見て調整します。
+// ============================================================================
+// Physics Frame Allocator Statistics
+// ============================================================================
+// Physics Step内だけで使用する一時Arenaの使用量を観測するための統計です。
+// LastFrame系はReset前の値、PeakUsedMemoryは起動後のHigh Water Markとして扱い、
+// Arena容量を感覚ではなく実測値から調整するために使用します。
 struct PhysicsFrameAllocatorStatistics
 {
     std::size_t Capacity = 0;
@@ -112,15 +162,15 @@ struct PhysicsFrameAllocatorStatistics
 class PhysicsWorld
 {
 public:
-    // FrameAllocatorはPhysicsWorldより短命な一時データ専用です。
-    // constructorをheader側で定義しておくことで、既存PhysicsWorld.cppを変更せず
-    // allocator導入の土台だけを安全に追加できます。
+    // PhysicsWorldがPhysics専用FrameAllocatorのBacking Memoryを所有します。
+    // FrameAllocatorから得た一時データはResetFrame()を跨いで保持してはいけません。
     PhysicsWorld()
         : m_FrameAllocator(PhysicsFrameAllocatorCapacity)
     {
         m_FrameAllocatorStatistics.Capacity = m_FrameAllocator.GetCapacity();
     }
 
+    // 固定ステップシミュレーション本体。呼び出し側は一定dtで更新する想定です。
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
     void Step(Scene& scene, float fixedDeltaTime);
@@ -131,32 +181,69 @@ public:
     const PhysicsSolverDebugStatistics& GetSolverDebugStatistics() const { return m_SolverDebugStatistics; }
     const PhysicsFrameAllocatorStatistics& GetFrameAllocatorStatistics() const { return m_FrameAllocatorStatistics; }
 
+    // ========================================================================
+    // Collision Ignore Pair API
+    // ========================================================================
+    // Jointで接続されたBodyなど、特定のEntity同士だけ衝突させないためのAPIです。
+    // Layer/Maskのようなカテゴリ単位ではなく、インスタンス単位の除外に使用します。
+    // BroadPhase内部ではEntityのGenerationを含むHandle値で管理するため、
+    // Entity Indexが再利用されても古い除外設定が新Entityへ漏れません。
     void AddIgnoreCollisionPair(Entity a, Entity b) { m_BroadPhase.AddIgnorePair(a, b); }
     void RemoveIgnoreCollisionPair(Entity a, Entity b) { m_BroadPhase.RemoveIgnorePair(a, b); }
     void RemoveIgnoreCollisionPairsForEntity(Entity entity) { m_BroadPhase.RemoveIgnorePairsForEntity(entity); }
     bool IsCollisionPairIgnored(Entity a, Entity b) const { return m_BroadPhase.IsPairIgnored(a, b); }
     void ClearIgnoreCollisionPairs() { m_BroadPhase.ClearIgnorePairs(); }
 
+    // ========================================================================
+    // 剛体制御用API
+    // ========================================================================
+    // Force / Torque は次の Step まで蓄積され、Impulse は呼び出した瞬間に速度へ反映されます。
     void AddForce(Scene& scene, Entity entity, const math::Vec3& force);
     void AddImpulse(Scene& scene, Entity entity, const math::Vec3& impulse);
     void AddTorque(Scene& scene, Entity entity, const math::Vec3& torque);
+
+    // worldPoint はワールド座標です。重心から外れた位置に Impulse を与えると、
+    // r × J による角 Impulse も同時に発生します。
     void AddImpulseAtPoint(Scene& scene, Entity entity, const math::Vec3& impulse,
         const math::Vec3& worldPoint);
+
     void SetLinearVelocity(Scene& scene, Entity entity, const math::Vec3& velocity);
     math::Vec3 GetLinearVelocity(const Scene& scene, Entity entity) const;
     void Teleport(Scene& scene, Entity entity, const math::Vec3& position);
     void MovePosition(Scene& scene, Entity entity, const math::Vec3& position);
     void WakeUp(Scene& scene, Entity entity);
 
+    // デフォルトRayCastはDynamic Bodyのみ・Plane除外です。
+    // Mouse Pickingでは床などに探索を遮られず、奥のDynamic Colliderを選択できます。
     bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
         float maxFraction, PhysicsRayCastHit& outHit);
+
+    // 用途ごとにBody種別 / Plane有無を明示したい場合はこちらを使用します。
+    // フィルタは候補選択前に適用されるため、除外Shapeが手前にあっても探索を継続します。
     bool RayCast(Scene& scene, const math::Vec3& origin, const math::Vec3& direction,
         float maxFraction, const PhysicsRayCastFilter& filter, PhysicsRayCastHit& outHit);
-    bool GroundQuery(Scene& scene, const math::Vec3& origin,
-        const PhysicsGroundQuerySettings& settings, PhysicsGroundQueryHit& outHit);
-    bool CapsuleCast(Scene& scene, const math::Vec3& startFootPosition,
-        const math::Vec3& displacement, const PhysicsCapsuleCastSettings& settings,
+
+    // Character / Ragdoll復帰共通の床検索です。
+    // Query OriginからWorld -YへRayCastし、MaxSlopeRadians以内の上向き面だけをWalkable Groundとして返します。
+    // 現段階はFoot PointからのGround Probeを目的としたRayベース実装で、今後Capsule Sweepへ
+    // 内部実装を置換しても呼び出し側APIを変えない境界として用意しています。
+    bool GroundQuery(
+        Scene& scene,
+        const math::Vec3& origin,
+        const PhysicsGroundQuerySettings& settings,
+        PhysicsGroundQueryHit& outHit);
+
+    // Characterの壁衝突・Slide用Shape Castです。
+    // startFootPositionからdisplacementだけ直立CapsuleをSweepし、進行方向を実際に塞ぐ最初の面を返します。
+    // 床へ接しているだけの面など、displacementと法線が離れる/平行な接触はBlocking Hitにしません。
+    bool CapsuleCast(
+        Scene& scene,
+        const math::Vec3& startFootPosition,
+        const math::Vec3& displacement,
+        const PhysicsCapsuleCastSettings& settings,
         PhysicsCapsuleCastHit& outHit);
+
+    // QueryAABBはBroadPhase候補を使いつつ、実AABB重なりで最終フィルタします。
     void QueryAABB(Scene& scene, const AABB& queryBounds, std::vector<Entity>& outEntities);
 
     const std::vector<ContactManifold>& GetContactManifolds() const { return m_Manifolds; }
@@ -164,6 +251,7 @@ public:
     const std::vector<BroadPhasePair>& GetBroadPhasePairs() const { return m_BroadPhase.GetLastPairs(); }
 
 private:
+    // Step内部フェーズ。順序を変えると挙動が変わるため責務を分離しています。
     void ApplyForces(Scene& scene, float dt);
     void IntegrateVelocities(Scene& scene, float dt);
     void IntegratePositions(Scene& scene, float dt);
@@ -175,6 +263,8 @@ private:
     void ClearForces(Scene& scene);
 
 private:
+    // BroadPhase PairなどPhysics Step内だけ生存する一時データ用Arenaです。
+    // 初期値は256 KiBとし、GetFrameAllocatorStatistics()のPeakを見て後から調整します。
     static constexpr std::size_t PhysicsFrameAllocatorCapacity = 256u * 1024u;
 
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
