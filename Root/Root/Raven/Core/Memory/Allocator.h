@@ -12,6 +12,7 @@ namespace Raven
 // - Deallocate() の実際の意味はAllocatorごとに異なります。
 //   LinearAllocatorのように個別解放を行わないAllocatorではno-opになります。
 // - Reset() はAllocator全体を一括再利用可能な状態へ戻します。
+// - PeakUsedMemoryはReset()を跨いで保持し、実運用で必要な容量を観測するために使用します。
 //
 // この共通化により、将来PoolAllocator / FreeListAllocatorを追加しても
 // 利用側はAllocatorの種類を過度に意識せず扱えるようにします。
@@ -26,6 +27,7 @@ public:
 
     [[nodiscard]] virtual std::size_t GetCapacity() const = 0;
     [[nodiscard]] virtual std::size_t GetUsedMemory() const = 0;
+    [[nodiscard]] virtual std::size_t GetPeakUsedMemory() const = 0;
     [[nodiscard]] virtual std::size_t GetAllocationCount() const = 0;
 };
 
