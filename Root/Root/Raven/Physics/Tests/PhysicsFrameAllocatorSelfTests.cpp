@@ -1,9 +1,11 @@
 #include <cassert>
 #include <cstddef>
+#include <vector>
 
 #include "Raven/Core/Memory/FrameAllocator.h"
 #include "Raven/Core/Memory/FrameVector.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
+#include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 
 namespace Raven::ph::tests
 {
@@ -61,6 +63,73 @@ void RunPhysicsFrameAllocatorSelfTests()
 
     // Peakは容量チューニングのためReset後も保持します。
     assert(allocator.GetPeakUsedMemory() == peakBeforeReset);
+
+    // ========================================================================
+    // Solver Temporary Allocator: Phase ② Before計測
+    // ========================================================================
+    // Backing Allocatorを指定しない場合は通常Heapを使用します。
+    // この状態がFrameAllocator適用前のBefore計測条件です。
+    SolverTemporaryAllocationStatistics heapStatistics{};
+    using TemporaryIntAllocator = SolverTemporaryAllocator<int>;
+
+    {
+        std::vector<int, TemporaryIntAllocator> temporaryValues{
+            TemporaryIntAllocator(&heapStatistics)
+        };
+
+        temporaryValues.reserve(64u);
+        for (int value = 0; value < 64; ++value)
+        {
+            temporaryValues.push_back(value);
+        }
+
+        assert(temporaryValues.size() == 64u);
+        assert(heapStatistics.AllocationCount > 0u);
+        assert(heapStatistics.AllocationBytes >= 64u * sizeof(int));
+        assert(heapStatistics.ActiveBytes > 0u);
+        assert(heapStatistics.PeakActiveBytes >= heapStatistics.ActiveBytes);
+    }
+
+    // std::allocator経路ではvector破棄時に個別解放されるため、scope終了後のActiveBytesは0になります。
+    assert(heapStatistics.DeallocationCount > 0u);
+    assert(heapStatistics.ActiveBytes == 0u);
+    assert(heapStatistics.AllocationBytes == heapStatistics.DeallocationBytes);
+
+    // ========================================================================
+    // Solver Temporary Allocator: Phase ③ FrameAllocator経路
+    // ========================================================================
+    // STL側のAllocator型とCounterはBeforeと同一です。
+    // 違うのはBackingとしてRaven::Allocatorを渡している点だけなので、
+    // Before / Afterで計測方法そのものが変わらないことを確認できます。
+    SolverTemporaryAllocationStatistics frameStatistics{};
+    FrameAllocator solverFrameAllocator(Capacity);
+
+    {
+        std::vector<int, TemporaryIntAllocator> temporaryValues{
+            TemporaryIntAllocator(&frameStatistics, &solverFrameAllocator)
+        };
+
+        temporaryValues.reserve(64u);
+        for (int value = 0; value < 64; ++value)
+        {
+            temporaryValues.push_back(value);
+        }
+
+        assert(temporaryValues.size() == 64u);
+        assert(frameStatistics.AllocationCount > 0u);
+        assert(frameStatistics.AllocationBytes >= 64u * sizeof(int));
+        assert(solverFrameAllocator.GetAllocationCount() > 0u);
+        assert(solverFrameAllocator.GetUsedMemory() > 0u);
+    }
+
+    // FrameAllocator::Deallocate()はno-opですが、STL Adapterから見たLifetime終了はCounterへ記録します。
+    // したがってCounterのActiveBytesは0になり、FrameAllocator内部のUsedMemoryだけがResetまで残ります。
+    assert(frameStatistics.DeallocationCount > 0u);
+    assert(frameStatistics.ActiveBytes == 0u);
+    assert(solverFrameAllocator.GetUsedMemory() > 0u);
+
+    solverFrameAllocator.ResetFrame();
+    assert(solverFrameAllocator.GetUsedMemory() == 0u);
 }
 
 } // namespace Raven::ph::tests
