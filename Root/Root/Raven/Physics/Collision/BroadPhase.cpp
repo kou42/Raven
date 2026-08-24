@@ -19,6 +19,8 @@ CollisionIgnorePairKey BroadPhase::MakeIgnorePairKey(Entity a, Entity b)
 
 void BroadPhase::AddIgnorePair(Entity a, Entity b)
 {
+    // 同一Entity同士や無効Handleは衝突候補として意味を持たないため登録しません。
+    // EntityHandle::Value()にはGenerationも含まれるため、Index再利用にも安全です。
     if (static_cast<bool>(a) == false
         || static_cast<bool>(b) == false
         || a.GetValue() == b.GetValue())
@@ -94,6 +96,7 @@ void BroadPhase::Synchronize(Scene& scene)
         const auto found = m_Proxies.find(entityValue);
         if (found == m_Proxies.end())
         {
+            // 新規Entityはプロキシ作成。次フレームの移動量計算用に中心も保存します。
             const uint32_t proxy = m_Tree.CreateProxy(tightBounds, entity);
             m_Proxies.emplace(entityValue, proxy);
             m_PreviousCenters[entityValue] = tightBounds.GetCenter();
@@ -104,10 +107,12 @@ void BroadPhase::Synchronize(Scene& scene)
         const math::Vec3 previousCenter = m_PreviousCenters[entityValue];
         const math::Vec3 displacement = center - previousCenter;
 
+        // 既存Entityはtight AABBと移動量で更新。Fat AABB内ならTree再挿入は省略されます。
         m_Tree.MoveProxy(found->second, tightBounds, displacement);
         m_PreviousCenters[entityValue] = center;
     }
 
+    // Sceneから消えたEntityのプロキシを破棄し、孤立ノードを残さないようにします。
     for (auto iterator = m_Proxies.begin(); iterator != m_Proxies.end(); )
     {
         if (seen.find(iterator->first) != seen.end())
@@ -121,6 +126,7 @@ void BroadPhase::Synchronize(Scene& scene)
         iterator = m_Proxies.erase(iterator);
     }
 
+    // Entity破棄後にIgnore Pairだけが残り続けないよう、Generation込みHandleで生存確認します。
     for (auto iterator = m_IgnorePairs.begin(); iterator != m_IgnorePairs.end(); )
     {
         const bool aliveA = scene.IsEntityAlive(EntityHandle::FromValue(iterator->A));
