@@ -1,5 +1,6 @@
 #include "Raven/Core/Memory/LinearAllocator.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 
@@ -59,6 +60,10 @@ void* LinearAllocator::Allocate(std::size_t size, std::size_t alignment)
 
     std::byte* alignedMemory = m_Memory + m_Offset + adjustment;
     m_Offset += requiredSize;
+
+    // High Water MarkはReset()で消さず、実行中に到達した最大使用量を保持します。
+    // FrameAllocator容量のチューニングや異常な一時メモリ増加の検出に利用できます。
+    m_PeakUsedMemory = std::max(m_PeakUsedMemory, m_Offset);
     ++m_AllocationCount;
 
     return alignedMemory;
@@ -76,6 +81,7 @@ void LinearAllocator::Reset()
 {
     // メモリ内容そのものを0クリアする必要はありません。
     // offsetだけを先頭へ戻すことで、次回Allocate()から同じ領域を再利用します。
+    // m_PeakUsedMemoryは容量設計用の履歴なので維持します。
     m_Offset = 0;
     m_AllocationCount = 0;
 }
@@ -88,6 +94,11 @@ std::size_t LinearAllocator::GetCapacity() const
 std::size_t LinearAllocator::GetUsedMemory() const
 {
     return m_Offset;
+}
+
+std::size_t LinearAllocator::GetPeakUsedMemory() const
+{
+    return m_PeakUsedMemory;
 }
 
 std::size_t LinearAllocator::GetAllocationCount() const
