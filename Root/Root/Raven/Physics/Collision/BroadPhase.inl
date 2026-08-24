@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Core/Containers/FlatHashSet.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
 #include "Raven/Scene/Scene.h"
@@ -52,9 +53,9 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
     // ========================================================================
     // Pair Generation
     // ========================================================================
-    // 重複除去SetのAllocatorだけを切り替えられるよう、実際のTree走査処理はlambdaへまとめます。
-    // FrameVector経路ではemittedのbucket配列と各nodeもPhysics FrameAllocatorから確保されます。
-    // 通常std::vector経路では従来どおり標準unordered_setを使用します。
+    // 重複除去Setの実装だけを切り替えられるよう、Tree走査処理はlambdaへまとめます。
+    // FrameAllocator経路ではFlatHashSetを使い、Slot配列を1つの連続領域として確保します。
+    // 通常std::vector経路は互換性維持のためstd::unordered_setへフォールバックします。
     const auto generatePairs =
         [&](auto& emitted)
         {
@@ -105,26 +106,20 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
             }
         };
 
-    // FrameVectorのSTLAllocatorAdapterからPhysics FrameAllocatorを取得します。
-    // 前フレームPair数をreserveしておくことでbucket再構築を抑えます。
     Allocator* temporaryAllocator = detail::GetRavenAllocator(outPairs.get_allocator());
     std::size_t emittedCount = 0;
-    std::size_t emittedBucketCount = 0;
+    std::size_t emittedStorageCapacity = 0;
 
     if (temporaryAllocator != nullptr)
     {
-        using EmittedAllocator = STLAllocatorAdapter<CollisionIgnorePairKey>;
-        using EmittedSet = std::unordered_set<
-            CollisionIgnorePairKey,
-            CollisionIgnorePairKeyHasher,
-            std::equal_to<CollisionIgnorePairKey>,
-            EmittedAllocator>;
-
-        EmittedSet emitted(
-            0,
-            CollisionIgnorePairKeyHasher{},
-            std::equal_to<CollisionIgnorePairKey>{},
-            EmittedAllocator(*temporaryAllocator));
+        // ====================================================================
+        // FrameAllocator Path: FlatHashSet
+        // ====================================================================
+        // std::unordered_setではbucket配列とは別に要素ごとのNode allocationが発生していました。
+        // FlatHashSetはOpen AddressingでKeyをSlot配列へ直接格納するため、reserve()が十分なら
+        // 重複除去Set全体を1 allocationで構築できます。
+        FlatHashSet<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> emitted(
+            *temporaryAllocator);
 
         if (previousPairCount > 0)
         {
@@ -133,10 +128,11 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
 
         generatePairs(emitted);
         emittedCount = emitted.size();
-        emittedBucketCount = emitted.bucket_count();
+        emittedStorageCapacity = emitted.capacity();
     }
     else
     {
+        // Raven Allocatorを持たない呼び出し側は従来どおり標準Setを使用します。
         std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> emitted;
 
         if (previousPairCount > 0)
@@ -146,13 +142,13 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
 
         generatePairs(emitted);
         emittedCount = emitted.size();
-        emittedBucketCount = emitted.bucket_count();
+        emittedStorageCapacity = emitted.bucket_count();
     }
 
     // Pair数と重複除去Setの状態をAllocator Counterと同じProfiler frameへ登録します。
-    // unordered_setはbucket配列に加えて要素ごとのnode確保を行うため、FrameAllocatorへ移すと
-    // AllocationCount自体は増える場合があります。重要なのは通常heap allocationをPhysics Arenaへ
-    // 集約できたことと、将来FlatHashSetへ置換した際の比較Baselineを得られることです。
+    // EmittedStorageCapacityはFrameAllocator経路ではFlatHashSetのSlot数、fallback経路では
+    // std::unordered_setのbucket数です。主用途であるPhysics FrameAllocator経路では、
+    // AllocationCount / UsedBytesと合わせて連続Slot化の効果を確認できます。
     CPUProfiler::Get().AddCounter(
         "Physics.BroadPhase.PairCount",
         static_cast<double>(outPairs.size()));
@@ -163,8 +159,8 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
         "Physics.BroadPhase.EmittedCount",
         static_cast<double>(emittedCount));
     CPUProfiler::Get().AddCounter(
-        "Physics.BroadPhase.EmittedBucketCount",
-        static_cast<double>(emittedBucketCount));
+        "Physics.BroadPhase.EmittedStorageCapacity",
+        static_cast<double>(emittedStorageCapacity));
 
     // 重要:
     // Debug RendererはBroad Phaseを再実行せず、このSnapshotを表示します。
