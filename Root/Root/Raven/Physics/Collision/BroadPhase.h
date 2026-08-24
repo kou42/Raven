@@ -24,12 +24,6 @@ struct BroadPhasePair
     Entity B{};
 };
 
-// ============================================================================
-// CollisionIgnorePairKey
-// ============================================================================
-// EntityHandle::Value()を小さい順に並べた、順序非依存の衝突除外キーです。
-// GenerationもValue()へ含まれるため、Entity Indexが再利用されても古い除外設定が
-// 新しいEntityへ誤って引き継がれません。
 struct CollisionIgnorePairKey
 {
     uint64_t A = 0;
@@ -53,49 +47,76 @@ struct CollisionIgnorePairKeyHasher
     }
 };
 
-// ============================================================================
-// BroadPhase
-// ============================================================================
-// Dynamic AABB Treeを保持し、Scene内Colliderの追加・移動・削除をProxyへ同期します。
-//
-// 以前のSweep-and-PruneはComputePairs()ごとに全Colliderを収集・sortしていました。
-// Dynamic TreeではFat AABB内の微小移動ならTree構造を変更せず、必要なLeafだけを
-// 再挿入します。
 class BroadPhase
 {
 public:
-    void ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPairs);
+    // 出力Containerは clear() / push_back() / begin() / end() を満たせばよく、
+    // std::vectorのAllocator型には依存しません。
+    // これによりPhysicsの一時Pair列だけをFrameAllocatorへ段階的に移行できます。
+    template <class PairContainer>
+    void ComputePairs(Scene& scene, PairContainer& outPairs)
+    {
+        Synchronize(scene);
+        outPairs.clear();
 
-    // ========================================================================
-    // Collision Ignore Pair
-    // ========================================================================
-    // Jointで接続されたRagdoll Bodyなど、「形状は重なっても衝突応答させたくない」
-    // Entityペアを登録します。A/Bの順序は問いません。
+        // Pair重複除去用Setは現段階では永続heapを使用します。
+        // 次段階でProfiler結果を見ながら一時Allocator化する対象として分離しておきます。
+        std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> emitted;
+
+        for (const auto& [entityValue, proxyId] : m_Proxies)
+        {
+            const Entity entity(EntityHandle::FromValue(entityValue), &scene);
+            if (scene.IsEntityAlive(entity) == false)
+            {
+                continue;
+            }
+
+            const AABB queryBounds = m_Tree.GetFatAABB(proxyId);
+            m_Tree.Query(queryBounds,
+                [&](Entity other, uint32_t otherProxy) -> bool
+                {
+                    if (otherProxy == proxyId || scene.IsEntityAlive(other) == false)
+                    {
+                        return true;
+                    }
+
+                    Entity a = entity;
+                    Entity b = other;
+                    if (a.GetValue() > b.GetValue())
+                    {
+                        std::swap(a, b);
+                    }
+
+                    const CollisionIgnorePairKey key = MakeIgnorePairKey(a, b);
+                    if (m_IgnorePairs.find(key) != m_IgnorePairs.end())
+                    {
+                        return true;
+                    }
+
+                    if (emitted.insert(key).second)
+                    {
+                        outPairs.push_back(BroadPhasePair{ a, b });
+                    }
+                    return true;
+                });
+        }
+
+        // m_LastPairsはDebug OverlayがPhysics Step後にも参照する永続Snapshotです。
+        // FrameAllocatorの寿命を越えて保持してはいけないため、ここだけ通常vectorへコピーします。
+        m_LastPairs.assign(outPairs.begin(), outPairs.end());
+    }
+
     void AddIgnorePair(Entity a, Entity b);
     void RemoveIgnorePair(Entity a, Entity b);
     void RemoveIgnorePairsForEntity(Entity entity);
     bool IsPairIgnored(Entity a, Entity b) const;
     void ClearIgnorePairs();
 
-    // 直近のComputePairs()がSimulationへ返した候補Pairを保持します。
-    // Debug描画のためにComputePairs()を再実行するとTreeの同期タイミングが変わるため、
-    // OverlayはこのSnapshotを読み取ります。
     const std::vector<BroadPhasePair>& GetLastPairs() const { return m_LastPairs; }
 
-    // ------------------------------------------------------------------------
-    // QueryAABB
-    // ------------------------------------------------------------------------
-    // Dynamic TreeからqueryBoundsと重なる「候補Leaf」を列挙します。
-    // Fat AABBを検索しているため、この段階ではfalse positiveを許容します。
-    // PhysicsWorld側でtight AABB / 実Colliderを使って最終判定してください。
     template <class Callback>
     void QueryAABB(Scene& scene, const AABB& queryBounds, Callback&& callback);
 
-    // ------------------------------------------------------------------------
-    // RayCast
-    // ------------------------------------------------------------------------
-    // Dynamic TreeのFat AABBに対してRay traversalを行い、候補Leafだけを通知します。
-    // callbackが返すfractionを縮めることで、より遠いBranchを早期枝刈りできます。
     template <class Callback>
     void RayCast(
         Scene& scene,
@@ -115,12 +136,7 @@ private:
     DynamicAABBTree m_Tree;
     std::unordered_map<uint64_t, uint32_t> m_Proxies;
     std::unordered_map<uint64_t, math::Vec3> m_PreviousCenters;
-
-    // Ignore PairはBroad Phase候補をNarrow Phaseへ渡す直前に適用します。
-    // Tree自体からProxyを消す方式ではないため、RayCast / QueryAABBには影響しません。
     std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> m_IgnorePairs;
-
-    // Simulationで最後に生成されたPairの診断用Snapshotです。
     std::vector<BroadPhasePair> m_LastPairs;
 };
 
