@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Scene/Scene.h"
 
 namespace Raven::ph
@@ -10,6 +11,21 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
 {
     Synchronize(scene);
     outPairs.clear();
+
+    // ========================================================================
+    // Previous Pair Count Reserve
+    // ========================================================================
+    // BroadPhase Pair数は隣接Frameで急変しないことが多いため、直前StepのPair数を
+    // 次Stepの初期容量として利用します。
+    //
+    // FrameAllocatorではvectorがcapacity拡張するたびに新しい領域をArenaから確保し、
+    // 古い領域はResetFrame()まで残ります。そのためreserve()で最初から近い容量を確保すると、
+    // AllocationCountだけでなくUsedBytes / PeakBytesの増加も抑えられます。
+    const std::size_t previousPairCount = m_LastPairs.size();
+    if (previousPairCount > 0)
+    {
+        outPairs.reserve(previousPairCount);
+    }
 
     // Pairを順序正規化して保持し、(A,B) / (B,A) の重複通知を防ぎます。
     // emitted自体は現段階では通常heapを使用し、Pair列のFrameAllocator移行効果を
@@ -61,6 +77,16 @@ void BroadPhase::ComputePairs(Scene& scene, PairContainer& outPairs)
                 return true;
             });
     }
+
+    // Pair数をAllocator Counterと同じProfiler frameへ登録します。
+    // reserve戦略の効果を見るときはPairCountがほぼ同じFrame同士で
+    // AllocationCount / UsedBytes / PeakBytesを比較してください。
+    CPUProfiler::Get().AddCounter(
+        "Physics.BroadPhase.PairCount",
+        static_cast<double>(outPairs.size()));
+    CPUProfiler::Get().AddCounter(
+        "Physics.BroadPhase.ReservedPairCount",
+        static_cast<double>(previousPairCount));
 
     // 重要:
     // Debug RendererはBroad Phaseを再実行せず、このSnapshotを表示します。
