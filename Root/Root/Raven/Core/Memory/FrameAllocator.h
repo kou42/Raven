@@ -36,6 +36,7 @@ public:
 
     [[nodiscard]] std::size_t GetCapacity() const override;
     [[nodiscard]] std::size_t GetUsedMemory() const override;
+    [[nodiscard]] std::size_t GetPeakUsedMemory() const override;
     [[nodiscard]] std::size_t GetAllocationCount() const override;
 
 private:

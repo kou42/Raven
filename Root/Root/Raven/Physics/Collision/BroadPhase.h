@@ -64,7 +64,75 @@ struct CollisionIgnorePairKeyHasher
 class BroadPhase
 {
 public:
-    void ComputePairs(Scene& scene, std::vector<BroadPhasePair>& outPairs);
+    // Broad Phase主処理:
+    // Sceneとの同期後にFat AABB同士の候補ペアを収集し、Narrow Phaseへ渡す
+    // 重複なしのPair列を生成します。
+    //
+    // 出力Containerは clear() / push_back() / begin() / end() を満たせばよく、
+    // std::vectorのAllocator型には依存しません。これにより通常vectorを使う既存経路を
+    // 保ったまま、Physicsのフレーム一時PairだけをFrameAllocatorへ移行できます。
+    template <class PairContainer>
+    void ComputePairs(Scene& scene, PairContainer& outPairs)
+    {
+        Synchronize(scene);
+        outPairs.clear();
+
+        // Pairを順序正規化して保持し、(A,B) / (B,A) の重複通知を防ぎます。
+        // emitted自体は現段階では通常heapを使用し、Pair列の移行効果を先に分離計測します。
+        std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> emitted;
+
+        for (const auto& [entityValue, proxyId] : m_Proxies)
+        {
+            const Entity entity(EntityHandle::FromValue(entityValue), &scene);
+            if (scene.IsEntityAlive(entity) == false)
+            {
+                continue;
+            }
+
+            // 自身のFat AABBで木を問合せ、重なり候補だけを抽出します。
+            const AABB queryBounds = m_Tree.GetFatAABB(proxyId);
+            m_Tree.Query(queryBounds,
+                [&](Entity other, uint32_t otherProxy) -> bool
+                {
+                    if (otherProxy == proxyId || scene.IsEntityAlive(other) == false)
+                    {
+                        return true;
+                    }
+
+                    Entity a = entity;
+                    Entity b = other;
+                    if (a.GetValue() > b.GetValue())
+                    {
+                        std::swap(a, b);
+                    }
+
+                    const CollisionIgnorePairKey key = MakeIgnorePairKey(a, b);
+
+                    // ============================================================
+                    // Collision Ignore Pair Filter
+                    // ============================================================
+                    // Joint接続されたRagdoll BodyなどはAABBが重なりやすいですが、
+                    // Narrow Phaseへ渡す前にここで除外します。
+                    // Tree Proxy自体は維持するため、RayCast / QueryAABBでは通常通り検索できます。
+                    if (m_IgnorePairs.find(key) != m_IgnorePairs.end())
+                    {
+                        return true;
+                    }
+
+                    if (emitted.insert(key).second)
+                    {
+                        outPairs.push_back(BroadPhasePair{ a, b });
+                    }
+                    return true;
+                });
+        }
+
+        // 重要:
+        // Debug RendererはBroad Phaseを再実行せず、このSnapshotを表示します。
+        // FrameAllocator由来のoutPairsはResetFrame()後に無効になるため、診断用Snapshotだけは
+        // 通常vectorへコピーしてPhysics Step後も安全に参照できる寿命を確保します。
+        m_LastPairs.assign(outPairs.begin(), outPairs.end());
+    }
 
     // ========================================================================
     // Collision Ignore Pair
@@ -121,6 +189,7 @@ private:
     std::unordered_set<CollisionIgnorePairKey, CollisionIgnorePairKeyHasher> m_IgnorePairs;
 
     // Simulationで最後に生成されたPairの診断用Snapshotです。
+    // FrameAllocatorのReset後もDebug Overlayから参照するため、ここは永続vectorです。
     std::vector<BroadPhasePair> m_LastPairs;
 };
 

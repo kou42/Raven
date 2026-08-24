@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "Raven/Core/Memory/FrameAllocator.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Contact.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
@@ -144,9 +145,31 @@ struct PhysicsSolverDebugStatistics
     void Reset() { *this = PhysicsSolverDebugStatistics{}; }
 };
 
+// ============================================================================
+// Physics Frame Allocator Statistics
+// ============================================================================
+// Physics Step内だけで使用する一時Arenaの使用量を観測するための統計です。
+// LastFrame系はReset前の値、PeakUsedMemoryは起動後のHigh Water Markとして扱い、
+// Arena容量を感覚ではなく実測値から調整するために使用します。
+struct PhysicsFrameAllocatorStatistics
+{
+    std::size_t Capacity = 0;
+    std::size_t LastFrameUsedMemory = 0;
+    std::size_t PeakUsedMemory = 0;
+    std::size_t LastFrameAllocationCount = 0;
+};
+
 class PhysicsWorld
 {
 public:
+    // PhysicsWorldがPhysics専用FrameAllocatorのBacking Memoryを所有します。
+    // FrameAllocatorから得た一時データはResetFrame()を跨いで保持してはいけません。
+    PhysicsWorld()
+        : m_FrameAllocator(PhysicsFrameAllocatorCapacity)
+    {
+        m_FrameAllocatorStatistics.Capacity = m_FrameAllocator.GetCapacity();
+    }
+
     // 固定ステップシミュレーション本体。呼び出し側は一定dtで更新する想定です。
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
@@ -156,39 +179,20 @@ public:
     ContactSolverSettings& GetSolverSettings() { return m_SolverSettings; }
     const ContactSolverSettings& GetSolverSettings() const { return m_SolverSettings; }
     const PhysicsSolverDebugStatistics& GetSolverDebugStatistics() const { return m_SolverDebugStatistics; }
+    const PhysicsFrameAllocatorStatistics& GetFrameAllocatorStatistics() const { return m_FrameAllocatorStatistics; }
 
     // ========================================================================
     // Collision Ignore Pair API
     // ========================================================================
     // Jointで接続されたBodyなど、特定のEntity同士だけ衝突させないためのAPIです。
     // Layer/Maskのようなカテゴリ単位ではなく、インスタンス単位の除外に使用します。
-    //
     // BroadPhase内部ではEntityのGenerationを含むHandle値で管理するため、
     // Entity Indexが再利用されても古い除外設定が新Entityへ漏れません。
-    void AddIgnoreCollisionPair(Entity a, Entity b)
-    {
-        m_BroadPhase.AddIgnorePair(a, b);
-    }
-
-    void RemoveIgnoreCollisionPair(Entity a, Entity b)
-    {
-        m_BroadPhase.RemoveIgnorePair(a, b);
-    }
-
-    void RemoveIgnoreCollisionPairsForEntity(Entity entity)
-    {
-        m_BroadPhase.RemoveIgnorePairsForEntity(entity);
-    }
-
-    bool IsCollisionPairIgnored(Entity a, Entity b) const
-    {
-        return m_BroadPhase.IsPairIgnored(a, b);
-    }
-
-    void ClearIgnoreCollisionPairs()
-    {
-        m_BroadPhase.ClearIgnorePairs();
-    }
+    void AddIgnoreCollisionPair(Entity a, Entity b) { m_BroadPhase.AddIgnorePair(a, b); }
+    void RemoveIgnoreCollisionPair(Entity a, Entity b) { m_BroadPhase.RemoveIgnorePair(a, b); }
+    void RemoveIgnoreCollisionPairsForEntity(Entity entity) { m_BroadPhase.RemoveIgnorePairsForEntity(entity); }
+    bool IsCollisionPairIgnored(Entity a, Entity b) const { return m_BroadPhase.IsPairIgnored(a, b); }
+    void ClearIgnoreCollisionPairs() { m_BroadPhase.ClearIgnorePairs(); }
 
     // ========================================================================
     // 剛体制御用API
@@ -259,10 +263,16 @@ private:
     void ClearForces(Scene& scene);
 
 private:
+    // BroadPhase PairなどPhysics Step内だけ生存する一時データ用Arenaです。
+    // 初期値は256 KiBとし、GetFrameAllocatorStatistics()のPeakを見て後から調整します。
+    static constexpr std::size_t PhysicsFrameAllocatorCapacity = 256u * 1024u;
+
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
     BroadPhase m_BroadPhase;
     ContactSolverSettings m_SolverSettings{};
     PhysicsSolverDebugStatistics m_SolverDebugStatistics{};
+    FrameAllocator m_FrameAllocator;
+    PhysicsFrameAllocatorStatistics m_FrameAllocatorStatistics{};
     std::vector<ContactManifold> m_Manifolds;
     std::vector<ContactManifold> m_PreviousManifolds;
 };
