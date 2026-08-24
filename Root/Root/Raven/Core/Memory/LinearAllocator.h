@@ -33,6 +33,7 @@ public:
 
     [[nodiscard]] std::size_t GetCapacity() const override;
     [[nodiscard]] std::size_t GetUsedMemory() const override;
+    [[nodiscard]] std::size_t GetPeakUsedMemory() const override;
     [[nodiscard]] std::size_t GetAllocationCount() const override;
 
 private:
@@ -43,6 +44,10 @@ private:
     std::byte* m_Memory = nullptr;
     std::size_t m_Capacity = 0;
     std::size_t m_Offset = 0;
+
+    // Reset()後も保持するHigh Water Markです。
+    // FrameAllocator容量を実測値から調整できるようにします。
+    std::size_t m_PeakUsedMemory = 0;
     std::size_t m_AllocationCount = 0;
 };
 
