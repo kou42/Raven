@@ -100,8 +100,7 @@ struct PhysicsSolverDebugStatistics
 };
 
 // Physics専用FrameAllocatorの観測値です。
-// LastFrameUsedMemory / LastFrameAllocationCountはResetFrame()直前の値を保存し、
-// PeakUsedMemoryは起動後のHigh Water Markとして容量調整に利用します。
+// 現段階ではBroadPhase候補列を最初の移行対象とし、容量は実測値を見て調整します。
 struct PhysicsFrameAllocatorStatistics
 {
     std::size_t Capacity = 0;
@@ -113,7 +112,14 @@ struct PhysicsFrameAllocatorStatistics
 class PhysicsWorld
 {
 public:
-    PhysicsWorld();
+    // FrameAllocatorはPhysicsWorldより短命な一時データ専用です。
+    // constructorをheader側で定義しておくことで、既存PhysicsWorld.cppを変更せず
+    // allocator導入の土台だけを安全に追加できます。
+    PhysicsWorld()
+        : m_FrameAllocator(PhysicsFrameAllocatorCapacity)
+    {
+        m_FrameAllocatorStatistics.Capacity = m_FrameAllocator.GetCapacity();
+    }
 
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
@@ -167,11 +173,8 @@ private:
     void UpdateSolverDebugStatisticsAfterSolve();
     void UpdateSleeping(Scene& scene, float dt);
     void ClearForces(Scene& scene);
-    void CaptureAndResetFrameAllocator();
 
 private:
-    // BroadPhase Pairはフレーム内だけ生存すればよいため専用Arenaから確保します。
-    // 256 KiBから開始し、PeakUsedMemoryを見て実測ベースで容量を調整します。
     static constexpr std::size_t PhysicsFrameAllocatorCapacity = 256u * 1024u;
 
     math::Vec3 m_Gravity{ 0.0f, -9.80665f, 0.0f };
