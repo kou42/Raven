@@ -388,10 +388,10 @@ private:
     // ========================================================================
     // SoftBody Solver Temporary Frame Allocator
     // ========================================================================
-    // 4 MiBはPhase ③の安全側初期値です。④でGetTemporaryAllocationStatistics()の
-    // BackingPeakUsedMemoryを計測し、十分なHeadroomを残して縮小します。
+    // ④の実測ではLifetime Peakが約170 KiB、25% Headroom込み推奨値が約212 KiBでした。
+    // 4 KiB境界の推奨値よりさらに余裕を持たせ、固定Arena容量は256 KiBを採用します。
     // 容量不足時にHeapへfallbackするとAfter計測が不正確になるためfallbackは行いません。
-    static constexpr std::size_t SoftBodyTemporaryFrameAllocatorCapacity = 4u * 1024u * 1024u;
+    static constexpr std::size_t SoftBodyTemporaryFrameAllocatorCapacity = 256u * 1024u;
 
     math::Vec3 m_Gravity{ 0.0f, -9.81f, 0.0f };
     SoftBodySolverSettings m_Settings{};
