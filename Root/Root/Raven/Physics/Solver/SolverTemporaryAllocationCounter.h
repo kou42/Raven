@@ -31,6 +31,13 @@ namespace ph
 // 正確に追えません。そのため、STL Allocator境界で要求bytesを直接計測します。
 struct SolverTemporaryAllocationStatistics
 {
+    SolverTemporaryAllocationStatistics() noexcept = default;
+
+    explicit SolverTemporaryAllocationStatistics(Allocator* backingAllocator) noexcept
+        : m_BackingAllocator(backingAllocator)
+    {
+    }
+
     uint64_t AllocationCount = 0u;
     uint64_t AllocationBytes = 0u;
     uint64_t DeallocationCount = 0u;
