@@ -10,18 +10,22 @@ namespace Raven
     // Ravenが生成したSVGなどのデバッグ用ファイルを、OSの既定ブラウザで表示するための
     // 小さなユーティリティです。
     //
-    // 現段階では「ファイルを1回開く」責務だけを持たせます。
-    // SVG生成処理やPhysics固有の可視化処理をここへ混ぜないことで、将来的に
-    // HTML自動更新 / localhost / WebSocket方式へ拡張するときも責務を分離できます。
+    // Physics固有のSVG生成は別Writerへ分離し、このクラスは「ブラウザ表示環境」の責務だけを持ちます。
     class BrowserDebugViewer
     {
     public:
         // 指定されたローカルファイルをOSの既定ブラウザで開きます。
-        // 成功した場合はtrue、ファイルが存在しない場合やOS側の起動に失敗した場合はfalseです。
         static bool Open(const std::filesystem::path& filePath);
 
-        // BrowserDebugViewerの動作確認用SVGを生成します。
-        // 親ディレクトリが存在しない場合は自動的に作成します。
+        // BrowserDebugViewer単体の動作確認用SVGを生成します。
         static bool WriteStartupSvg(const std::filesystem::path& filePath);
+
+        // 指定SVGを一定間隔で再読み込みするHTML Viewerを生成します。
+        // SVG自体を書き換えるだけでブラウザ側へ最新状態が反映されるため、Raven側で毎回
+        // ブラウザを開き直す必要がありません。
+        static bool WriteAutoReloadHtml(
+            const std::filesystem::path& htmlPath,
+            const std::filesystem::path& svgPath,
+            uint32_t reloadIntervalMilliseconds = 250u);
     };
 }
