@@ -1,11 +1,9 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyPhysicsDebugSvgWriter.h"
 
 #include <algorithm>
-#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 
 namespace Raven
 {
@@ -26,27 +24,26 @@ struct ProjectionBounds
 ProjectionBounds ComputeBounds(const std::vector<SoftBodyParticle>& particles)
 {
     ProjectionBounds bounds{};
-
     if (particles.empty() == true)
     {
         return bounds;
     }
 
-    bounds.MinX = particles.front().Position.X;
-    bounds.MaxX = particles.front().Position.X;
-    bounds.MinY = particles.front().Position.Y;
-    bounds.MaxY = particles.front().Position.Y;
-    bounds.MinZ = particles.front().Position.Z;
-    bounds.MaxZ = particles.front().Position.Z;
+    bounds.MinX = particles.front().Position.x;
+    bounds.MaxX = particles.front().Position.x;
+    bounds.MinY = particles.front().Position.y;
+    bounds.MaxY = particles.front().Position.y;
+    bounds.MinZ = particles.front().Position.z;
+    bounds.MaxZ = particles.front().Position.z;
 
     for (const SoftBodyParticle& particle : particles)
     {
-        bounds.MinX = std::min(bounds.MinX, particle.Position.X);
-        bounds.MaxX = std::max(bounds.MaxX, particle.Position.X);
-        bounds.MinY = std::min(bounds.MinY, particle.Position.Y);
-        bounds.MaxY = std::max(bounds.MaxY, particle.Position.Y);
-        bounds.MinZ = std::min(bounds.MinZ, particle.Position.Z);
-        bounds.MaxZ = std::max(bounds.MaxZ, particle.Position.Z);
+        bounds.MinX = std::min(bounds.MinX, particle.Position.x);
+        bounds.MaxX = std::max(bounds.MaxX, particle.Position.x);
+        bounds.MinY = std::min(bounds.MinY, particle.Position.y);
+        bounds.MaxY = std::max(bounds.MaxY, particle.Position.y);
+        bounds.MinZ = std::min(bounds.MinZ, particle.Position.z);
+        bounds.MaxZ = std::max(bounds.MaxZ, particle.Position.z);
     }
 
     return bounds;
@@ -57,24 +54,15 @@ float SafeRange(float minimum, float maximum)
     return std::max(maximum - minimum, 1.0e-5f);
 }
 
-float ProjectX(
-    float x,
-    const ProjectionBounds& bounds,
-    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+float ProjectX(float x, const ProjectionBounds& bounds, const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
 {
-    const float drawableWidth =
-        std::max(static_cast<float>(settings.Width) - settings.Padding * 2.0f, 1.0f);
-    return settings.Padding
-        + ((x - bounds.MinX) / SafeRange(bounds.MinX, bounds.MaxX)) * drawableWidth;
+    const float drawableWidth = std::max(static_cast<float>(settings.Width) - settings.Padding * 2.0f, 1.0f);
+    return settings.Padding + ((x - bounds.MinX) / SafeRange(bounds.MinX, bounds.MaxX)) * drawableWidth;
 }
 
-float ProjectY(
-    float y,
-    const ProjectionBounds& bounds,
-    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+float ProjectY(float y, const ProjectionBounds& bounds, const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
 {
-    const float drawableHeight =
-        std::max(static_cast<float>(settings.Height) - settings.Padding * 2.0f - 150.0f, 1.0f);
+    const float drawableHeight = std::max(static_cast<float>(settings.Height) - settings.Padding * 2.0f - 150.0f, 1.0f);
 
     // SVGは下向きが+Yなので、Physicsの+Yが画面上方向になるよう反転します。
     return settings.Padding + 120.0f
@@ -137,16 +125,12 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
     if (settings.DrawTriangles == true)
     {
         stream << "  <g fill=\"#1e3a5f\" fill-opacity=\"0.32\" stroke=\"#475569\" stroke-width=\"0.7\">\n";
-
         for (std::size_t index = 0u; index + 2u < triangleIndices.size(); index += 3u)
         {
             const uint32_t indexA = triangleIndices[index];
             const uint32_t indexB = triangleIndices[index + 1u];
             const uint32_t indexC = triangleIndices[index + 2u];
-
-            if (indexA >= particles.size()
-                || indexB >= particles.size()
-                || indexC >= particles.size())
+            if (indexA >= particles.size() || indexB >= particles.size() || indexC >= particles.size())
             {
                 continue;
             }
@@ -154,34 +138,30 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
             const math::Vec3& a = particles[indexA].Position;
             const math::Vec3& b = particles[indexB].Position;
             const math::Vec3& c = particles[indexC].Position;
-
             stream << "    <polygon points=\""
-                   << ProjectX(a.X, bounds, settings) << ',' << ProjectY(a.Y, bounds, settings) << ' '
-                   << ProjectX(b.X, bounds, settings) << ',' << ProjectY(b.Y, bounds, settings) << ' '
-                   << ProjectX(c.X, bounds, settings) << ',' << ProjectY(c.Y, bounds, settings)
+                   << ProjectX(a.x, bounds, settings) << ',' << ProjectY(a.y, bounds, settings) << ' '
+                   << ProjectX(b.x, bounds, settings) << ',' << ProjectY(b.y, bounds, settings) << ' '
+                   << ProjectX(c.x, bounds, settings) << ',' << ProjectY(c.y, bounds, settings)
                    << "\"/>\n";
         }
-
         stream << "  </g>\n";
     }
 
     if (settings.DrawParticles == true)
     {
         stream << "  <g>\n";
-
         for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
         {
             const SoftBodyParticle& particle = particles[particleIndex];
-            const float depth = NormalizeDepth(particle.Position.Z, bounds);
+            const float depth = NormalizeDepth(particle.Position.z, bounds);
 
-            // Z変位を青->橙の補間値としてSVGへ直接埋め込みます。
-            // 2D投影で失われる奥行きを色として残すための簡易表現です。
+            // Z変位を青->橙の補間値としてSVGへ直接埋め込み、2D投影で失われる奥行きを色で残します。
             const int red = static_cast<int>(80.0f + depth * 170.0f);
             const int green = static_cast<int>(160.0f - depth * 60.0f);
             const int blue = static_cast<int>(240.0f - depth * 150.0f);
 
-            stream << "    <circle cx=\"" << ProjectX(particle.Position.X, bounds, settings)
-                   << "\" cy=\"" << ProjectY(particle.Position.Y, bounds, settings)
+            stream << "    <circle cx=\"" << ProjectX(particle.Position.x, bounds, settings)
+                   << "\" cy=\"" << ProjectY(particle.Position.y, bounds, settings)
                    << "\" r=\"" << (particle.IsFixed() == true ? 4.5f : 2.4f) << "\" fill=\"rgb(";
 
             if (particle.IsFixed() == true)
@@ -194,17 +174,15 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
             }
 
             stream << ")\"><title>Particle " << particleIndex
-                   << " | Pos(" << particle.Position.X << ", " << particle.Position.Y << ", "
-                   << particle.Position.Z << ")</title></circle>\n";
+                   << " | Pos(" << particle.Position.x << ", " << particle.Position.y << ", "
+                   << particle.Position.z << ")</title></circle>\n";
         }
-
         stream << "  </g>\n";
     }
 
     stream << "  <text x=\"48\" y=\"" << (settings.Height - 24u)
            << "\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">XY orthographic projection / particle Z is encoded as color</text>\n";
     stream << "</svg>\n";
-
     return stream.good();
 }
 
