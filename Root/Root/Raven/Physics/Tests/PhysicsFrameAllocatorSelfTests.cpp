@@ -6,6 +6,8 @@
 #include "Raven/Core/Memory/FrameVector.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
 #include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
+#include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
+#include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
 namespace Raven::ph::tests
 {
@@ -94,6 +96,76 @@ void RunPhysicsFrameAllocatorSelfTests()
     assert(heapStatistics.DeallocationCount > 0u);
     assert(heapStatistics.ActiveBytes == 0u);
     assert(heapStatistics.AllocationBytes == heapStatistics.DeallocationBytes);
+
+    // ========================================================================
+    // Solver Candidate Vector: SpatialHashからCounter付きvectorへ直接出力
+    // ========================================================================
+    // 中間std::vectorへ一度生成すると、そのHeap allocationがCounterから漏れます。
+    // ここでは実際のSoftBodySpatialHashGridからSolverTemporaryAllocator付きvectorへ直接pushし、
+    // Candidate生成経路そのものがCounterへ接続されていることを確認します。
+    SolverTemporaryAllocationStatistics particleCandidateStatistics{};
+    using ParticleCandidateAllocator = SolverTemporaryAllocator<SoftBodySpatialHashPair>;
+    using ParticleCandidateVector = std::vector<SoftBodySpatialHashPair, ParticleCandidateAllocator>;
+
+    {
+        std::vector<SoftBodyParticle> particles(2u);
+        particles[0].Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
+        particles[1].Position = math::Vec3{ 0.01f, 0.0f, 0.0f };
+
+        SoftBodySpatialHashGrid spatialHash(0.05f);
+        spatialHash.Build(particles);
+
+        ParticleCandidateVector candidatePairs{
+            ParticleCandidateAllocator(&particleCandidateStatistics) };
+        spatialHash.GenerateCandidatePairs(candidatePairs);
+
+        assert(candidatePairs.size() == 1u);
+        assert(candidatePairs[0].ParticleA == 0u);
+        assert(candidatePairs[0].ParticleB == 1u);
+        assert(particleCandidateStatistics.AllocationCount > 0u);
+        assert(particleCandidateStatistics.AllocationBytes >= sizeof(SoftBodySpatialHashPair));
+    }
+
+    assert(particleCandidateStatistics.ActiveBytes == 0u);
+    assert(
+        particleCandidateStatistics.AllocationBytes
+        == particleCandidateStatistics.DeallocationBytes);
+
+    // Particle-Triangle側も同じAllocator型Overloadがリンクされることを確認します。
+    // 4番目のParticleをTriangle面の近傍へ置き、Topology除外されない候補を1つ以上生成します。
+    SolverTemporaryAllocationStatistics triangleCandidateStatistics{};
+    using TriangleCandidateAllocator = SolverTemporaryAllocator<SoftBodyParticleTrianglePair>;
+    using TriangleCandidateVector =
+        std::vector<SoftBodyParticleTrianglePair, TriangleCandidateAllocator>;
+
+    {
+        std::vector<SoftBodyParticle> particles(4u);
+        particles[0].Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
+        particles[1].Position = math::Vec3{ 0.04f, 0.0f, 0.0f };
+        particles[2].Position = math::Vec3{ 0.0f, 0.04f, 0.0f };
+        particles[3].Position = math::Vec3{ 0.01f, 0.01f, 0.005f };
+
+        std::vector<SoftBodyTriangle> triangles(1u);
+        triangles[0] = SoftBodyTriangle{ 0u, 1u, 2u };
+
+        SoftBodyTriangleSpatialHashGrid triangleSpatialHash(0.05f);
+        triangleSpatialHash.BuildTriangles(particles, triangles, 0.01f);
+
+        TriangleCandidateVector candidatePairs{
+            TriangleCandidateAllocator(&triangleCandidateStatistics) };
+        triangleSpatialHash.GenerateParticleTriangleCandidates(particles, candidatePairs);
+
+        assert(candidatePairs.empty() == false);
+        assert(triangleCandidateStatistics.AllocationCount > 0u);
+        assert(
+            triangleCandidateStatistics.AllocationBytes
+            >= sizeof(SoftBodyParticleTrianglePair));
+    }
+
+    assert(triangleCandidateStatistics.ActiveBytes == 0u);
+    assert(
+        triangleCandidateStatistics.AllocationBytes
+        == triangleCandidateStatistics.DeallocationBytes);
 
     // ========================================================================
     // Solver Temporary Allocator: Phase ③ FrameAllocator経路
