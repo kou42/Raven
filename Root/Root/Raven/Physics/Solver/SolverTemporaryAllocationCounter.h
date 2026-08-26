@@ -25,6 +25,7 @@ namespace ph
 // - DeallocationCount / DeallocationBytes はallocator::deallocate()側を同様に数えます。
 // - ActiveBytes は現在生存中の一時確保量です。
 // - PeakActiveBytes は1 Reset区間内で同時に生存した最大量です。
+// - Backing Allocatorを設定した場合、Reset()時にArenaも同時にResetします。
 //
 // std::vector::capacity()から推定する方式では、unordered_mapのNode確保やBucket確保を
 // 正確に追えません。そのため、STL Allocator境界で要求bytesを直接計測します。
@@ -37,8 +38,69 @@ struct SolverTemporaryAllocationStatistics
     uint64_t ActiveBytes = 0u;
     uint64_t PeakActiveBytes = 0u;
 
+    // Phase ③ではSoftBodySolverが所有するFrameAllocatorをここへ登録します。
+    // SolverTemporaryAllocator<T>は明示的なBackingが渡されなかった場合、この値を継承します。
+    // これにより既存の各STLコンテナ生成コードを変えずにHeap / FrameAllocatorを切り替えられます。
+    void SetBackingAllocator(Allocator* allocator) noexcept
+    {
+        m_BackingAllocator = allocator;
+    }
+
+    [[nodiscard]] Allocator* GetBackingAllocator() const noexcept
+    {
+        return m_BackingAllocator;
+    }
+
+    [[nodiscard]] std::size_t GetBackingCapacity() const noexcept
+    {
+        if (m_BackingAllocator == nullptr)
+        {
+            return 0u;
+        }
+
+        return m_BackingAllocator->GetCapacity();
+    }
+
+    [[nodiscard]] std::size_t GetBackingUsedMemory() const noexcept
+    {
+        if (m_BackingAllocator == nullptr)
+        {
+            return 0u;
+        }
+
+        return m_BackingAllocator->GetUsedMemory();
+    }
+
+    [[nodiscard]] std::size_t GetBackingPeakUsedMemory() const noexcept
+    {
+        if (m_BackingAllocator == nullptr)
+        {
+            return 0u;
+        }
+
+        return m_BackingAllocator->GetPeakUsedMemory();
+    }
+
+    [[nodiscard]] std::size_t GetBackingAllocationCount() const noexcept
+    {
+        if (m_BackingAllocator == nullptr)
+        {
+            return 0u;
+        }
+
+        return m_BackingAllocator->GetAllocationCount();
+    }
+
     void Reset()
     {
+        // Frame/Linear系Allocatorでは前Stepの一時領域を次Step開始時に一括再利用します。
+        // Reset()はStep開始時に呼ばれるため、前StepのローカルContainerは既に破棄済みです。
+        // したがってContainer生存中にArenaを巻き戻す危険はありません。
+        if (m_BackingAllocator != nullptr)
+        {
+            m_BackingAllocator->Reset();
+        }
+
         AllocationCount = 0u;
         AllocationBytes = 0u;
         DeallocationCount = 0u;
@@ -68,6 +130,10 @@ struct SolverTemporaryAllocationStatistics
             ? ActiveBytes - byteCount
             : 0u;
     }
+
+private:
+    // 所有権は持ちません。SoftBodySolverなど呼び出し側がBacking Allocatorを所有します。
+    Allocator* m_BackingAllocator = nullptr;
 };
 
 // ============================================================================
@@ -84,11 +150,9 @@ struct SolverTemporaryAllocationStatistics
 //       -> Raven::Allocator              : Engine共通Allocator Interface
 //       -> FrameAllocator / LinearAllocator
 //
-// Before計測ではbackingAllocator == nullptrとして通常std::allocatorを使用します。
-// Phase ③では同じコンテナ型のままFrameAllocatorを渡し、計測方法を変えずに比較します。
-//
-// 既存STLAllocatorAdapterと役割は近いですが、こちらはSolver最適化期間中の
-// Before / After計測を同じAllocator型で維持するため、Counter機能だけを追加した計測用Adapterです。
+// Before計測ではBacking Allocatorを設定せず通常std::allocatorを使用します。
+// Phase ③ではStatistics側へFrameAllocatorを登録し、同じコンテナ型・同じCounterのまま
+// 実確保元だけをArenaへ差し替えます。
 template<typename T>
 class SolverTemporaryAllocator
 {
@@ -111,6 +175,12 @@ public:
         : m_Statistics(statistics)
         , m_BackingAllocator(backingAllocator)
     {
+        // 個々のContainer生成時にBackingを毎回渡さなくても、Statisticsへ登録された
+        // Solver共通Arenaを自動継承します。明示Backingがある場合はそちらを優先します。
+        if (m_BackingAllocator == nullptr && m_Statistics != nullptr)
+        {
+            m_BackingAllocator = m_Statistics->GetBackingAllocator();
+        }
     }
 
     template<typename U>
@@ -140,6 +210,9 @@ public:
             void* rawMemory = m_BackingAllocator->Allocate(bytes, alignof(T));
             if (rawMemory == nullptr)
             {
+                // FrameAllocator容量超過を通常Heapへ黙ってfallbackさせると、After計測で
+                // 「Heap allocation 0」を保証できなくなります。容量不足は明示的に失敗させ、
+                // Peak計測を基にArena容量を調整する方針とします。
                 throw std::bad_alloc{};
             }
 
