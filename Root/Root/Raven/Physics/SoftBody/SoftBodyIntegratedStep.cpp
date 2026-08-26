@@ -60,51 +60,6 @@ using TemporaryParticleTriangleCandidateVector = std::vector<
     SoftBodyParticleTrianglePair,
     TemporaryParticleTriangleCandidateAllocator>;
 
-// ============================================================================
-// Standard Triangle Vector Allocation Tracker
-// ============================================================================
-// trianglesはBuildTriangles()が現時点でstd::vector<SoftBodyTriangle>を受け取るため、Phase ②では
-// vector型自体を変更しません。ただしBuildClothTriangles()は空vectorに対して必要最大数を1回reserveし、
-// その後はその範囲内へpush_backするため、Step中のHeap allocationはreserveによる1回だけです。
-//
-// reserve後の実capacityを使って要求bytesを記録し、scope終了時に同じbytesをdeallocationとして記録します。
-// Phase ③ではBuildTriangles側を連続配列View対応へ変更し、この特殊計測を外してFrameAllocatorへ直接載せます。
-class ScopedTriangleVectorAllocationTracker
-{
-public:
-    explicit ScopedTriangleVectorAllocationTracker(
-        SolverTemporaryAllocationStatistics& statistics)
-        : m_Statistics(&statistics)
-    {
-    }
-
-    ScopedTriangleVectorAllocationTracker(const ScopedTriangleVectorAllocationTracker&) = delete;
-    ScopedTriangleVectorAllocationTracker& operator=(const ScopedTriangleVectorAllocationTracker&) = delete;
-
-    ~ScopedTriangleVectorAllocationTracker()
-    {
-        if (m_Statistics != nullptr && m_AllocatedBytes > 0u)
-        {
-            m_Statistics->RecordDeallocation(m_AllocatedBytes);
-        }
-    }
-
-    void RecordReservedCapacity(std::size_t capacity)
-    {
-        if (m_Statistics == nullptr || m_AllocatedBytes > 0u || capacity == 0u)
-        {
-            return;
-        }
-
-        m_AllocatedBytes = capacity * sizeof(SoftBodyTriangle);
-        m_Statistics->RecordAllocation(m_AllocatedBytes);
-    }
-
-private:
-    SolverTemporaryAllocationStatistics* m_Statistics = nullptr;
-    std::size_t m_AllocatedBytes = 0u;
-};
-
 uint64_t MakeParticlePairKey(uint32_t particleA, uint32_t particleB)
 {
     const uint32_t lower = std::min(particleA, particleB);
@@ -136,18 +91,13 @@ void BuildExcludedParticlePairs(
 
 void BuildClothTriangles(
     const SoftBodyCloth& cloth,
-    std::vector<SoftBodyTriangle>& outTriangles,
-    ScopedTriangleVectorAllocationTracker& allocationTracker)
+    std::vector<SoftBodyTriangle>& outTriangles)
 {
     outTriangles.clear();
     outTriangles.reserve(
         static_cast<std::size_t>(cloth.Rows)
         * static_cast<std::size_t>(cloth.Columns)
         * 2u);
-
-    // 空vectorから1回だけreserveした直後の実capacityを記録します。
-    // 以降のpush_back数はRows * Columns * 2以下なので、このStep中に追加growは発生しません。
-    allocationTracker.RecordReservedCapacity(outTriangles.capacity());
 
     for (uint32_t row = 0u; row < cloth.Rows; ++row)
     {
@@ -405,7 +355,7 @@ void SolveParticleTriangleSelfCollisionIteration(
     float thickness,
     float alphaTilde)
 {
-    // Particle-Triangleは現在もっとも大きなボトネック候補です。
+    // Particle-Triangleは現在もっとも大きなボトルネック候補です。
     // TriangleのGrid登録、Particleからの候補収集、実Triangle距離計算の3段階へ明確に分離します。
     // この結果を使って、次にGrid更新を最適化するか、Candidate/Narrow Phaseを並列化するか判断します。
     {
@@ -679,10 +629,12 @@ void SoftBodySolver::StepWithSelfCollisions(
         && cloth.Columns > 0u;
 
     // ========================================================================
-    // Phase ②: Step Local Temporary Allocation Counter
+    // Phase ③: Step Local Temporary Allocation -> FrameAllocator
     // ========================================================================
-    // Step寿命のHash/Map/Candidate vectorを同一Statisticsへ集約します。
-    // Backing Allocatorはまだ指定しないため通常Heapを使用し、ここで得る値がBeforeです。
+    // ここに残すのは本当にStep寿命のコンテナだけです。
+    // SolverTemporaryAllocationStatisticsへ設定されたBackingを各Allocatorが継承するため、
+    // FrameAllocator ModeではHash/Map/Candidate vectorが同じArenaへ集約されます。
+    // Heap Modeでは同じ型・同じCounterのままstd::allocatorへ戻り、④のBefore条件になります。
     TemporaryExcludedPairSet excludedParticlePairs{
         0u,
         std::hash<uint64_t>{},
@@ -707,11 +659,6 @@ void SoftBodySolver::StepWithSelfCollisions(
     TemporaryParticleTriangleCandidateVector particleTriangleCandidatePairs{
         TemporaryParticleTriangleCandidateAllocator(&m_TemporaryAllocationStatistics) };
 
-    // Triangle topology vectorだけはBuildTriangles APIとの互換性のためPhase ②では通常vectorを維持します。
-    // allocation自体は下のRAII Trackerで同じStatisticsへ正確に加算します。
-    std::vector<SoftBodyTriangle> triangles;
-    ScopedTriangleVectorAllocationTracker triangleAllocationTracker(m_TemporaryAllocationStatistics);
-
     SoftBodySpatialHashGrid particleSpatialHash(
         std::max(particleTargetDistance, 1.0e-4f));
 
@@ -727,7 +674,6 @@ void SoftBodySolver::StepWithSelfCollisions(
 
     {
         // 自己衝突用Topologyと除外ペアの構築コストをSolver反復とは分離します。
-        // ここが大きい場合は毎Step再構築せずTopology変更時だけCacheする最適化候補になります。
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.CollisionSetup");
 
         if (particleCollisionEnabled)
@@ -737,7 +683,17 @@ void SoftBodySolver::StepWithSelfCollisions(
 
         if (particleTriangleCollisionEnabled)
         {
-            BuildClothTriangles(cloth, triangles, triangleAllocationTracker);
+            // Cloth TriangleはPositionではなくParticle Indexだけを保持する固定Topologyです。
+            // 毎Step作り直すと、Triangle配列のHeap allocationだけでなく同じIndex生成も毎回繰り返します。
+            // Rows / Columnsが変わった場合だけCacheを再構築し、通常frameは既存内容をそのまま使います。
+            if (m_SelfCollisionTriangleRows != cloth.Rows
+                || m_SelfCollisionTriangleColumns != cloth.Columns
+                || m_SelfCollisionTriangles.empty())
+            {
+                BuildClothTriangles(cloth, m_SelfCollisionTriangles);
+                m_SelfCollisionTriangleRows = cloth.Rows;
+                m_SelfCollisionTriangleColumns = cloth.Columns;
+            }
         }
     }
 
@@ -779,13 +735,13 @@ void SoftBodySolver::StepWithSelfCollisions(
                 particleAlphaTilde);
         }
 
-        if (particleTriangleCollisionEnabled && triangles.empty() == false)
+        if (particleTriangleCollisionEnabled && m_SelfCollisionTriangles.empty() == false)
         {
             // 子ScopeでTriangle Hash構築・候補生成・Narrow Phaseまで分解して記録します。
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision");
             SolveParticleTriangleSelfCollisionIteration(
                 m_Particles,
-                triangles,
+                m_SelfCollisionTriangles,
                 m_ParticleTriangleSpatialHash,
                 particleTriangleLambdas,
                 particleTriangleCandidatePairs,
