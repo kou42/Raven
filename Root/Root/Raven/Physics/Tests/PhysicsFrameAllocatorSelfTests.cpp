@@ -93,6 +93,7 @@ void RunPhysicsFrameAllocatorSelfTests()
         assert(heapStatistics.PeakActiveBytes >= heapStatistics.ActiveBytes);
         assert(heapStatistics.GetBackingAllocator() == nullptr);
         assert(heapStatistics.GetBackingUsedMemory() == 0u);
+        assert(heapStatistics.GetRecommendedBackingCapacity() == 0u);
     }
 
     // std::allocator経路ではvector破棄時に個別解放されるため、scope終了後のActiveBytesは0になります。
@@ -206,10 +207,17 @@ void RunPhysicsFrameAllocatorSelfTests()
     assert(frameStatistics.ActiveBytes == 0u);
     assert(frameStatistics.GetBackingUsedMemory() > 0u);
 
+    // 推奨容量は実測Lifetime Peakへ25%のHeadroomを加え、4 KiB境界へ切り上げます。
+    // この小さいテストでは結果がちょうど1 pageになるため、計算規則そのものを明確に固定できます。
+    const std::size_t solverFramePeak = frameStatistics.GetBackingPeakUsedMemory();
+    const std::size_t recommendedCapacity = frameStatistics.GetRecommendedBackingCapacity();
+    assert(recommendedCapacity >= solverFramePeak);
+    assert(recommendedCapacity % (4u * 1024u) == 0u);
+    assert(recommendedCapacity == Capacity);
+
     // Statistics::Reset()がStep境界のArena Resetも担当します。
     // Containerがscopeを抜けた後に呼ぶことが重要です。生存中のContainerが指す領域をResetすると、
     // 次のAllocate()で同じ領域が上書きされるため、必ず寿命境界を守ります。
-    const std::size_t solverFramePeak = frameStatistics.GetBackingPeakUsedMemory();
     frameStatistics.Reset();
 
     assert(frameStatistics.AllocationCount == 0u);
@@ -219,6 +227,7 @@ void RunPhysicsFrameAllocatorSelfTests()
 
     // PeakはArena容量のチューニングに使用するため、Frame Reset後も保持します。
     assert(frameStatistics.GetBackingPeakUsedMemory() == solverFramePeak);
+    assert(frameStatistics.GetRecommendedBackingCapacity() == recommendedCapacity);
 
     // ========================================================================
     // SoftBody Solver Temporary Allocator Mode切替
@@ -251,6 +260,7 @@ void RunPhysicsFrameAllocatorSelfTests()
     // Arena容量を最終調整する際はLifetime Peakだけでなく、実際のCapacityに対して
     // どれだけ余裕が残っているかを見る必要があります。初期状態ではまだ未使用なのでPeakは0です。
     assert(solverStatistics.GetBackingPeakUsedMemory() == 0u);
+    assert(solverStatistics.GetRecommendedBackingCapacity() == 0u);
 }
 
 } // namespace Raven::ph::tests
