@@ -1,10 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
+#include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
 
 namespace Raven
@@ -67,6 +68,15 @@ public:
     void GenerateParticleTriangleCandidates(
         const std::vector<SoftBodyParticle>& particles,
         std::vector<SoftBodyParticleTrianglePair>& outPairs) const;
+
+    // Phase ② Temporary allocation計測用Overloadです。
+    // Broad Phase候補を通常Heapの中間vectorへ生成せず、Counter付きvectorへ直接格納します。
+    // これによりCandidate vectorのgrow allocationもHash/Mapと同じStep統計へ含められます。
+    void GenerateParticleTriangleCandidates(
+        const std::vector<SoftBodyParticle>& particles,
+        std::vector<
+            SoftBodyParticleTrianglePair,
+            SolverTemporaryAllocator<SoftBodyParticleTrianglePair>>& outPairs) const;
 
     std::size_t GetOccupiedCellCount() const { return m_ActiveCellCount; }
 
