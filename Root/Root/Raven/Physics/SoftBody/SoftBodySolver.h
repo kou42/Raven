@@ -236,6 +236,12 @@ struct SoftBodyPlaneCollider
 class SoftBodySolver
 {
 public:
+    SoftBodySolver();
+    SoftBodySolver(const SoftBodySolver& other);
+    SoftBodySolver& operator=(const SoftBodySolver& other);
+    SoftBodySolver(SoftBodySolver&&) = delete;
+    SoftBodySolver& operator=(SoftBodySolver&&) = delete;
+
     void SetGravity(const math::Vec3& gravity) { m_Gravity = gravity; }
     const math::Vec3& GetGravity() const { return m_Gravity; }
 

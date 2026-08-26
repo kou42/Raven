@@ -118,6 +118,74 @@ bool ComputeDihedralAngle(
 }
 } // namespace
 
+SoftBodySolver::SoftBodySolver() = default;
+
+// SoftBodySolver クラスのメンバ変数である m_TemporaryFrameAllocator (FrameAllocator) は、
+// メモリバッファの所有権を持つためコピーコンストラクタおよびコピー代入演算子が = delete（削除）指定されてコピー禁止となっています。
+//そのため、SoftBodySolver の暗黙のコピーコンストラクタも削除された扱いとなり、SoftBodySolver のオブジェクトをコピーしようとした際にコンパイルエラーが発生していました。
+
+// SoftBodySolver.cppにカスタムコピー処理を実装しました。
+// コピー時にはコピー不可な FrameAllocator を新規キャパシティで初期化し、各種設定・状態（m_Particles, m_DistanceConstraints, m_Settings 等）を複製した上で、
+// バックアロケータの参照関係を再設定するように調整を行うよう対応を正しく再設定するようにしています。
+SoftBodySolver::SoftBodySolver(const SoftBodySolver& other)
+    : m_Gravity(other.m_Gravity)
+    , m_Settings(other.m_Settings)
+    , m_Particles(other.m_Particles)
+    , m_DistanceConstraints(other.m_DistanceConstraints)
+    , m_DihedralConstraints(other.m_DihedralConstraints)
+    , m_SphereColliders(other.m_SphereColliders)
+    , m_PlaneColliders(other.m_PlaneColliders)
+    , m_ParticleTriangleCollisionStatistics(other.m_ParticleTriangleCollisionStatistics)
+    , m_TemporaryFrameAllocator(SoftBodyTemporaryFrameAllocatorCapacity)
+    , m_TemporaryAllocationStatistics(other.m_TemporaryAllocationStatistics)
+    , m_SelfCollisionTriangles(other.m_SelfCollisionTriangles)
+    , m_SelfCollisionTriangleRows(other.m_SelfCollisionTriangleRows)
+    , m_SelfCollisionTriangleColumns(other.m_SelfCollisionTriangleColumns)
+    , m_ParticleTriangleSpatialHash(other.m_ParticleTriangleSpatialHash)
+{
+    if (m_Settings.TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator)
+    {
+        m_TemporaryAllocationStatistics.SetBackingAllocator(&m_TemporaryFrameAllocator);
+    }
+    else
+    {
+        m_TemporaryAllocationStatistics.SetBackingAllocator(nullptr);
+    }
+}
+
+SoftBodySolver& SoftBodySolver::operator=(const SoftBodySolver& other)
+{
+    if (this != &other)
+    {
+        m_Gravity = other.m_Gravity;
+        m_Settings = other.m_Settings;
+        m_Particles = other.m_Particles;
+        m_DistanceConstraints = other.m_DistanceConstraints;
+        m_DihedralConstraints = other.m_DihedralConstraints;
+        m_SphereColliders = other.m_SphereColliders;
+        m_PlaneColliders = other.m_PlaneColliders;
+        m_ParticleTriangleCollisionStatistics = other.m_ParticleTriangleCollisionStatistics;
+
+        m_TemporaryFrameAllocator.Reset();
+        m_TemporaryAllocationStatistics = other.m_TemporaryAllocationStatistics;
+        if (m_Settings.TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator)
+        {
+            m_TemporaryAllocationStatistics.SetBackingAllocator(&m_TemporaryFrameAllocator);
+        }
+        else
+        {
+            m_TemporaryAllocationStatistics.SetBackingAllocator(nullptr);
+        }
+
+        m_SelfCollisionTriangles = other.m_SelfCollisionTriangles;
+        m_SelfCollisionTriangleRows = other.m_SelfCollisionTriangleRows;
+        m_SelfCollisionTriangleColumns = other.m_SelfCollisionTriangleColumns;
+        m_ParticleTriangleSpatialHash = other.m_ParticleTriangleSpatialHash;
+    }
+
+    return *this;
+}
+
 uint32_t SoftBodySolver::AddParticle(const math::Vec3& position, float inverseMass)
 {
     SoftBodyParticle particle{};
