@@ -102,15 +102,25 @@ struct SolverTemporaryAllocationStatistics
     // ========================================================================
     // Phase ④ Before / After Profiler Counters
     // ========================================================================
-    // Reset()直前には、前Stepで使用した全Step-local Containerが既に破棄されています。
-    // そのためこの時点でCounterをまとめてProfilerへ送れば、allocate/deallocateのHot Pathへ
-    // mutex・文字列処理を持ち込まずにBefore / Afterを比較できます。
+    // 理想の送信タイミングは「対象Solver Stepが終了し、Step-local Containerがすべて破棄された直後」です。
+    // この時点ならCPU Scopeと同じProfiler Frameへallocation/deallocationの完成値を送れます。
+    //
+    // ただしSoftBodySolverをDeformer以外から直接呼ぶ経路もあるため、Reset()では未送信の前Step値だけを
+    // 救済送信します。通常のDeformer経路ではStep直後に送信済みとなり、次Step開始時には二重送信しません。
     //
     // AllocationCountは「STLからAllocatorへ来た要求回数」であり、Heap allocation回数そのものではありません。
     // FrameAllocator適用後もvector growやunordered_map node生成ではallocate()要求が発生するため、
     // HeapAllocationCount / FrameAllocationCountを別Counterとして出し、実確保元を明確に分離します。
     void SubmitProfilerCounters() const
     {
+        // 同じStepのCounterを複数箇所から送ってもProfilerへ重複登録しないためのGuardです。
+        // DeformerのStep直後送信とReset()のFallback送信を両立させるために必要です。
+        if (m_ProfilerCountersSubmitted)
+        {
+            return;
+        }
+        m_ProfilerCountersSubmitted = true;
+
         CPUProfiler& profiler = CPUProfiler::Get();
         if (profiler.IsEnabled() == false)
         {
@@ -138,7 +148,7 @@ struct SolverTemporaryAllocationStatistics
         const double backingLifetimePeakBytes = static_cast<double>(GetBackingPeakUsedMemory());
         const double backingAllocationCount = static_cast<double>(GetBackingAllocationCount());
 
-        // Linear / FrameAllocatorはStep中に個別解放しないため、Reset直前のUsedMemoryが
+        // Linear / FrameAllocatorはStep中に個別解放しないため、Step終了直後のUsedMemoryが
         // そのStepでArenaから消費した最大量と一致します。LifetimePeakは過去Stepを含む最大値です。
         const double frameUtilization = backingCapacityBytes > 0.0
             ? backingStepUsedBytes / backingCapacityBytes
@@ -199,9 +209,13 @@ struct SolverTemporaryAllocationStatistics
 
     void Reset()
     {
-        // Phase ④の計測値はArenaをResetする前に送ります。
-        // FrameAllocator::Reset()後ではUsedMemoryが0へ戻るため、Stepごとの実Arena消費量を失ってしまいます。
-        SubmitProfilerCounters();
+        // 通常経路では対象Step直後にSubmit済みです。
+        // Solverを直接使用する経路でSubmitされなかった場合だけ、Arenaを巻き戻す前に前Step値を救済します。
+        // これにより同一Frame送信を優先しつつ、既存の直接呼び出し経路でCounterを失いません。
+        if (m_ProfilerCountersSubmitted == false)
+        {
+            SubmitProfilerCounters();
+        }
 
         // Frame/Linear系Allocatorでは前Stepの一時領域を次Step開始時に一括再利用します。
         // Reset()はStep開始時に呼ばれるため、前StepのローカルContainerは既に破棄済みです。
@@ -217,6 +231,7 @@ struct SolverTemporaryAllocationStatistics
         DeallocationBytes = 0u;
         ActiveBytes = 0u;
         PeakActiveBytes = 0u;
+        m_ProfilerCountersSubmitted = false;
     }
 
     void RecordAllocation(std::size_t bytes)
@@ -242,6 +257,10 @@ struct SolverTemporaryAllocationStatistics
     }
 
 private:
+    // Profiler送信は観測処理なのでconst Getter経由から呼べるようmutableにします。
+    // 物理状態やAllocation値そのものは変更せず、「このStepを送信済みか」だけを記録します。
+    mutable bool m_ProfilerCountersSubmitted = false;
+
     // 所有権は持ちません。SoftBodySolverなど呼び出し側がBacking Allocatorを所有します。
     Allocator* m_BackingAllocator = nullptr;
 };
