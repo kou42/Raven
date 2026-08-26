@@ -407,6 +407,14 @@ private:
     FrameAllocator m_TemporaryFrameAllocator{ SoftBodyTemporaryFrameAllocatorCapacity };
     SolverTemporaryAllocationStatistics m_TemporaryAllocationStatistics{ &m_TemporaryFrameAllocator };
 
+    // ClothのTriangle Index列はParticle Positionと異なりTopology変更時しか変化しません。
+    // Stepローカルvectorとして毎frame構築するとHeap allocationとTopology再生成が発生するため、
+    // Rows / Columnsが変わった時だけ再構築し、それ以外のframeでは同じcapacityと内容を再利用します。
+    // これは「Step中だけ必要なTemporary」ではないためFrameAllocatorへ置くより永続Cacheが適切です。
+    std::vector<SoftBodyTriangle> m_SelfCollisionTriangles;
+    uint32_t m_SelfCollisionTriangleRows = 0u;
+    uint32_t m_SelfCollisionTriangleColumns = 0u;
+
     // Particle-Triangle Flat HashはBucketごとにvector capacityを持つため、Stepローカルにすると
     // 毎frame最初のSolver iterationで巨大なBucket配列を再確保してしまいます。
     // Solver寿命まで保持し、frame間でもBucket / Triangle scratch capacityを再利用します。
