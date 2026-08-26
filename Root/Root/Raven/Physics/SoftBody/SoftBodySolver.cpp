@@ -290,6 +290,20 @@ void SoftBodySolver::Clear()
     m_DihedralConstraints.clear();
     m_SphereColliders.clear();
     m_PlaneColliders.clear();
+
+    // Cloth自己衝突TriangleはRows / Columnsだけで再利用可否を判定する永続Topology Cacheです。
+    // SolverをClearしてParticle/Constraintを作り直した後に古いIndex列を再利用すると、
+    // 同じRows / Columnsでも異なるParticle Topologyを参照する可能性があります。
+    // Clear()をSolver全体の再初期化境界として扱い、Cache本体と識別値を必ず同時に無効化します。
+    m_SelfCollisionTriangles.clear();
+    m_SelfCollisionTriangleRows = 0u;
+    m_SelfCollisionTriangleColumns = 0u;
+
+    // Debug / Profiler側へ再構築前の自己衝突件数やTemporary allocation値を残しません。
+    // Temporary Statistics::Reset()はFrameAllocator ModeではArenaも巻き戻すため、
+    // 次に構築されるSoftBodyが以前のStep-local memory使用量を引き継がないことも保証します。
+    m_ParticleTriangleCollisionStatistics.Reset();
+    m_TemporaryAllocationStatistics.Reset();
 }
 
 void SoftBodySolver::Step(float deltaTime)
