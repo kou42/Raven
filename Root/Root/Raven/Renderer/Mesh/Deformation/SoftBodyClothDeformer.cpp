@@ -304,6 +304,17 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     }
 
     // ========================================================================
+    // Temporary Allocation Counter Submission
+    // ========================================================================
+    // StepWithSelfCollisions()から戻った時点で、関数内のStep-local unordered_map / unordered_set /
+    // candidate vectorはすべて破棄済みです。そのためAllocation/Deallocationの完成値と
+    // FrameAllocatorのStep使用量を、Solver CPU Scopeと同じProfiler Frameへ安全に送信できます。
+    //
+    // 次Step冒頭のReset()にも未送信時のFallbackがありますが、通常のCloth経路ではここで送信済みとなるため
+    // 1Step遅延や二重送信は発生しません。
+    m_Solver.GetTemporaryAllocationStatistics().SubmitProfilerCounters();
+
+    // ========================================================================
     // Particle-Triangle Spatial Hash / NarrowPhase Funnel Counters
     // ========================================================================
     // Scope時間と同じProfiler Frameへ比較条件と件数を記録します。
