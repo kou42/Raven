@@ -252,9 +252,13 @@ void RunPhysicsFrameAllocatorSelfTests()
 
     const SolverTemporaryAllocationStatistics& solverStatistics =
         softBodySolver.GetTemporaryAllocationStatistics();
+    constexpr std::size_t SoftBodyTemporaryCapacity = 256u * 1024u;
+
     assert(softBodySolver.GetSettings().TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator);
     assert(solverStatistics.GetBackingAllocator() != nullptr);
-    assert(solverStatistics.GetBackingCapacity() > 0u);
+    // ④の実測Peak約170 KiBと推奨約212 KiBを基に、Solver所有Arenaは256 KiBへ調整済みです。
+    // 容量が意図せず安全側初期値4 MiBへ戻る退行もこのassertで検出します。
+    assert(solverStatistics.GetBackingCapacity() == SoftBodyTemporaryCapacity);
     assert(solverStatistics.GetBackingUsedMemory() == 0u);
 
     // Arena容量を最終調整する際はLifetime Peakだけでなく、実際のCapacityに対して
