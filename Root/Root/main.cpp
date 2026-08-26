@@ -28,28 +28,28 @@ int main()
     // ========================================================================
     // Debug Startup Self Tests
     // ========================================================================
-    // SoftBody統合StepのSelfTestはassertベースであり、通常のSimulation処理ではありません。
-    // Application / Sceneを生成する前に1回だけ実行することで、毎フレームの実行コストを避けつつ、
-    // Particle-Triangle CounterやSpatial Hash比較処理の回帰をDebug起動時に早期検出します。
-    //
-    // Release構成では _DEBUG が定義されないため、この呼び出し自体がコンパイル対象外になります。
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
 
     // ========================================================================
     // Browser Debug Viewer
     // ========================================================================
-    // Debug構成でRavenを起動したときだけ、動作確認用SVGを生成して既定ブラウザで開きます。
-    // Release版のゲーム起動時にブラウザが開かないよう、この処理は_DEBUG内に限定しています。
-    //
-    // 相対パスはVisual Studioのデバッグ実行時のWorking Directoryを基準に解決されます。
-    // 現在のプロジェクト構成ではRaven/Debug/Generated以下をデバッグ生成物置き場とします。
-    const std::filesystem::path browserDebugSvgPath =
-        std::filesystem::path("Raven") / "Debug" / "Generated" / "Startup.svg";
+    // ブラウザではSVGそのものではなくViewer.htmlを開きます。
+    // Viewer.htmlはStartup.svgを定期的に再読み込みするため、後続のPhysics Writerが同じSVGを
+    // 上書きすればブラウザを再起動せず最新のデバッグ表示へ更新できます。
+    const std::filesystem::path browserDebugDirectory =
+        std::filesystem::path("Raven") / "Debug" / "Generated";
+    const std::filesystem::path browserDebugSvgPath = browserDebugDirectory / "Startup.svg";
+    const std::filesystem::path browserDebugHtmlPath = browserDebugDirectory / "Viewer.html";
 
     const bool svgWritten = Raven::BrowserDebugViewer::WriteStartupSvg(browserDebugSvgPath);
-    if (svgWritten == true)
+    const bool htmlWritten = Raven::BrowserDebugViewer::WriteAutoReloadHtml(
+        browserDebugHtmlPath,
+        browserDebugSvgPath,
+        250u);
+
+    if (svgWritten == true && htmlWritten == true)
     {
-        Raven::BrowserDebugViewer::Open(std::filesystem::absolute(browserDebugSvgPath));
+        Raven::BrowserDebugViewer::Open(std::filesystem::absolute(browserDebugHtmlPath));
     }
 #endif
 
