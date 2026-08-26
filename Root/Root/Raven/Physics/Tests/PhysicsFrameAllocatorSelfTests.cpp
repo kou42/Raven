@@ -6,6 +6,7 @@
 #include "Raven/Core/Memory/FrameVector.h"
 #include "Raven/Physics/Collision/BroadPhase.h"
 #include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
+#include "Raven/Physics/SoftBody/SoftBodySolver.h"
 #include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
@@ -218,6 +219,38 @@ void RunPhysicsFrameAllocatorSelfTests()
 
     // PeakはArena容量のチューニングに使用するため、Frame Reset後も保持します。
     assert(frameStatistics.GetBackingPeakUsedMemory() == solverFramePeak);
+
+    // ========================================================================
+    // SoftBody Solver Temporary Allocator Mode切替
+    // ========================================================================
+    // Before / After計測では同じSolver InstanceのままModeだけを切り替えます。
+    // Settings値だけが変わりBackingが同期されない状態を防ぐため、SetSettings()経由で
+    // Heapならnullptr、FrameAllocatorならSolver所有Arenaへ確実に切り替わることを確認します。
+    SoftBodySolver softBodySolver;
+    SoftBodySolverSettings solverSettings = softBodySolver.GetSettings();
+
+    assert(solverSettings.TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator);
+    assert(softBodySolver.GetTemporaryAllocationStatistics().GetBackingAllocator() != nullptr);
+
+    solverSettings.TemporaryAllocatorMode = SoftBodyTemporaryAllocatorMode::Heap;
+    softBodySolver.SetSettings(solverSettings);
+
+    assert(softBodySolver.GetSettings().TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::Heap);
+    assert(softBodySolver.GetTemporaryAllocationStatistics().GetBackingAllocator() == nullptr);
+
+    solverSettings.TemporaryAllocatorMode = SoftBodyTemporaryAllocatorMode::FrameAllocator;
+    softBodySolver.SetSettings(solverSettings);
+
+    const SolverTemporaryAllocationStatistics& solverStatistics =
+        softBodySolver.GetTemporaryAllocationStatistics();
+    assert(softBodySolver.GetSettings().TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator);
+    assert(solverStatistics.GetBackingAllocator() != nullptr);
+    assert(solverStatistics.GetBackingCapacity() > 0u);
+    assert(solverStatistics.GetBackingUsedMemory() == 0u);
+
+    // Arena容量を最終調整する際はLifetime Peakだけでなく、実際のCapacityに対して
+    // どれだけ余裕が残っているかを見る必要があります。初期状態ではまだ未使用なのでPeakは0です。
+    assert(solverStatistics.GetBackingPeakUsedMemory() == 0u);
 }
 
 } // namespace Raven::ph::tests
