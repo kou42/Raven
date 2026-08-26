@@ -1,5 +1,6 @@
 #include "Raven/Debug/BrowserDebugViewer.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 
@@ -19,7 +20,6 @@ namespace Raven
         }
 
 #ifdef _WIN32
-        // 特定ブラウザへ依存せず、Windowsの既定アプリケーションへ表示を委譲します。
         HINSTANCE result = ShellExecuteW(nullptr, L"open", filePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         const INT_PTR resultCode = reinterpret_cast<INT_PTR>(result);
         if (resultCode <= 32)
@@ -88,24 +88,18 @@ namespace Raven
             return false;
         }
 
-        // HTMLとSVGは同じGeneratedディレクトリへ置く想定なので、ブラウザへは相対パスを渡します。
-        // Date.now()をQueryへ付与してブラウザキャッシュを回避し、RavenがSVGを上書きした内容を
-        // reloadIntervalMillisecondsごとに確実に再取得します。
+        // Queryへ時刻を付けてブラウザキャッシュを回避し、Ravenが上書きしたSVGを定期再取得します。
         const std::string svgFileName = svgPath.filename().generic_string();
         const uint32_t safeReloadInterval = std::max(reloadIntervalMilliseconds, 50u);
 
         stream << "<!doctype html>\n"
-               << "<html><head><meta charset=\"utf-8\">"
-               << "<title>Raven Physics Debug Viewer</title>"
+               << "<html><head><meta charset=\"utf-8\"><title>Raven Physics Debug Viewer</title>"
                << "<style>html,body{margin:0;width:100%;height:100%;background:#020617;overflow:hidden;}"
                << "#view{width:100%;height:100%;object-fit:contain;}</style></head>\n"
                << "<body><img id=\"view\" alt=\"Raven Physics Debug SVG\">\n"
-               << "<script>\n"
-               << "const view=document.getElementById('view');\n"
-               << "const source='" << svgFileName << "';\n"
-               << "function refresh(){view.src=source+'?t='+Date.now();}\n"
-               << "refresh();setInterval(refresh," << safeReloadInterval << ");\n"
-               << "</script></body></html>\n";
+               << "<script>const view=document.getElementById('view');const source='" << svgFileName << "';"
+               << "function refresh(){view.src=source+'?t='+Date.now();}refresh();setInterval(refresh,"
+               << safeReloadInterval << ");</script></body></html>\n";
 
         return stream.good();
     }
