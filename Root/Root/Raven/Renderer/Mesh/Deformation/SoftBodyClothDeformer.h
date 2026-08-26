@@ -44,6 +44,27 @@ public:
         return m_ParticleTriangleSpatialHashCellSize;
     }
 
+    // ========================================================================
+    // Solver Temporary Allocator Before / After Comparison
+    // ========================================================================
+    // ④の計測ではCloth構成やSolverIterationsを変えず、Temporary Allocator Modeだけを
+    // Heap / FrameAllocatorで切り替えて比較します。
+    //
+    // GetSettings()の非const参照へ直接Modeを書き込むと、SolverTemporaryAllocationStatistics側の
+    // Backing Allocator切替処理を通らず、設定値と実際の確保元が不一致になる可能性があります。
+    // 必ずSetSettings()を経由するこのAPIを使い、比較条件とBackingを同時に切り替えます。
+    void SetTemporaryAllocatorMode(ph::SoftBodyTemporaryAllocatorMode mode)
+    {
+        ph::SoftBodySolverSettings settings = m_Solver.GetSettings();
+        settings.TemporaryAllocatorMode = mode;
+        m_Solver.SetSettings(settings);
+    }
+
+    ph::SoftBodyTemporaryAllocatorMode GetTemporaryAllocatorMode() const
+    {
+        return m_Solver.GetSettings().TemporaryAllocatorMode;
+    }
+
     // デバッグや将来の連成処理用の参照です。Solverの所有権はDeformerが保持します。
     ph::SoftBodySolver& GetSolver() { return m_Solver; }
     const ph::SoftBodySolver& GetSolver() const { return m_Solver; }
