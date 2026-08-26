@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Memory/Allocator.h"
 
 #include <algorithm>
@@ -98,8 +99,110 @@ struct SolverTemporaryAllocationStatistics
         return m_BackingAllocator->GetAllocationCount();
     }
 
+    // ========================================================================
+    // Phase ④ Before / After Profiler Counters
+    // ========================================================================
+    // Reset()直前には、前Stepで使用した全Step-local Containerが既に破棄されています。
+    // そのためこの時点でCounterをまとめてProfilerへ送れば、allocate/deallocateのHot Pathへ
+    // mutex・文字列処理を持ち込まずにBefore / Afterを比較できます。
+    //
+    // AllocationCountは「STLからAllocatorへ来た要求回数」であり、Heap allocation回数そのものではありません。
+    // FrameAllocator適用後もvector growやunordered_map node生成ではallocate()要求が発生するため、
+    // HeapAllocationCount / FrameAllocationCountを別Counterとして出し、実確保元を明確に分離します。
+    void SubmitProfilerCounters() const
+    {
+        CPUProfiler& profiler = CPUProfiler::Get();
+        if (profiler.IsEnabled() == false)
+        {
+            return;
+        }
+
+        // 未使用Stepでは0値Counterを大量に追加しません。
+        // SoftBody停止中や自己衝突無効時のProfiler表示を不要に埋めないための条件です。
+        if (AllocationCount == 0u
+            && AllocationBytes == 0u
+            && GetBackingUsedMemory() == 0u)
+        {
+            return;
+        }
+
+        const bool frameAllocatorEnabled = m_BackingAllocator != nullptr;
+        const double allocationCount = static_cast<double>(AllocationCount);
+        const double allocationBytes = static_cast<double>(AllocationBytes);
+        const double deallocationCount = static_cast<double>(DeallocationCount);
+        const double deallocationBytes = static_cast<double>(DeallocationBytes);
+        const double peakActiveBytes = static_cast<double>(PeakActiveBytes);
+
+        const double backingCapacityBytes = static_cast<double>(GetBackingCapacity());
+        const double backingStepUsedBytes = static_cast<double>(GetBackingUsedMemory());
+        const double backingLifetimePeakBytes = static_cast<double>(GetBackingPeakUsedMemory());
+        const double backingAllocationCount = static_cast<double>(GetBackingAllocationCount());
+
+        // Linear / FrameAllocatorはStep中に個別解放しないため、Reset直前のUsedMemoryが
+        // そのStepでArenaから消費した最大量と一致します。LifetimePeakは過去Stepを含む最大値です。
+        const double frameUtilization = backingCapacityBytes > 0.0
+            ? backingStepUsedBytes / backingCapacityBytes
+            : 0.0;
+
+        const double heapAllocationCount = frameAllocatorEnabled
+            ? 0.0
+            : allocationCount;
+        const double heapAllocationBytes = frameAllocatorEnabled
+            ? 0.0
+            : allocationBytes;
+        const double frameAllocationCount = frameAllocatorEnabled
+            ? backingAllocationCount
+            : 0.0;
+
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.RequestAllocationCount",
+            allocationCount);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.RequestAllocationBytes",
+            allocationBytes);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.RequestDeallocationCount",
+            deallocationCount);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.RequestDeallocationBytes",
+            deallocationBytes);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.PeakActiveBytes",
+            peakActiveBytes);
+
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.HeapAllocationCount",
+            heapAllocationCount);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.HeapAllocationBytes",
+            heapAllocationBytes);
+
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameAllocatorEnabled",
+            frameAllocatorEnabled ? 1.0 : 0.0);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameAllocationCount",
+            frameAllocationCount);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameStepUsedBytes",
+            backingStepUsedBytes);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameLifetimePeakBytes",
+            backingLifetimePeakBytes);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameCapacityBytes",
+            backingCapacityBytes);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameUtilization",
+            frameUtilization);
+    }
+
     void Reset()
     {
+        // Phase ④の計測値はArenaをResetする前に送ります。
+        // FrameAllocator::Reset()後ではUsedMemoryが0へ戻るため、Stepごとの実Arena消費量を失ってしまいます。
+        SubmitProfilerCounters();
+
         // Frame/Linear系Allocatorでは前Stepの一時領域を次Step開始時に一括再利用します。
         // Reset()はStep開始時に呼ばれるため、前StepのローカルContainerは既に破棄済みです。
         // したがってContainer生存中にArenaを巻き戻す危険はありません。
