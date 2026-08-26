@@ -69,6 +69,10 @@ public:
     ph::SoftBodySolver& GetSolver() { return m_Solver; }
     const ph::SoftBodySolver& GetSolver() const { return m_Solver; }
 
+    // Browser Debug Writerなど、PhysicsのParticle Indexへ変換したTopologyが必要な
+    // デバッグ処理向けの読み取り専用参照です。Clothの所有権と変更責務はDeformerに残します。
+    const ph::SoftBodyCloth& GetCloth() const { return m_Cloth; }
+
 private:
     // Dynamic Gridの頂点数を検証し、同じrow-major順でCloth Particleを生成します。
     bool InitializeFromMesh(Mesh& mesh);
