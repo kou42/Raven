@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
+#include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
 
 namespace Raven
@@ -66,6 +67,19 @@ public:
     // 全26Neighborの半分だけを見ることで、Cell A -> B と Cell B -> A の二重処理を防ぎます。
     // Narrow Phaseの距離判定はここでは行いません。
     void GenerateCandidatePairs(std::vector<SoftBodySpatialHashPair>& outPairs) const;
+
+    // Phase ② Temporary allocation計測用Overloadです。
+    // Candidate生成アルゴリズム自体は通常vector版と同一に保ち、格納先だけを
+    // SolverTemporaryAllocator付きvectorへ変更します。
+    //
+    // 重要:
+    // 通常vectorへ生成してから計測vectorへcopyすると、その通常vector側のHeap allocationが
+    // Counterから漏れてBefore値を小さく見せてしまいます。そのためBroad Phaseから直接
+    // 計測Allocator付きvectorへpush_backする専用経路を用意します。
+    void GenerateCandidatePairs(
+        std::vector<
+            SoftBodySpatialHashPair,
+            SolverTemporaryAllocator<SoftBodySpatialHashPair>>& outPairs) const;
 
     std::size_t GetOccupiedCellCount() const { return m_Cells.size(); }
     std::size_t GetParticleCount() const { return m_ParticleCount; }
