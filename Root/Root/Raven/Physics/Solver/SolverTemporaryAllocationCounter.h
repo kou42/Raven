@@ -100,6 +100,47 @@ struct SolverTemporaryAllocationStatistics
     }
 
     // ========================================================================
+    // FrameAllocator Capacity Recommendation
+    // ========================================================================
+    // ④の最終調整では現在の4 MiBを感覚で縮めず、実測Lifetime Peakを基準に容量を決めます。
+    // 推奨値は「Lifetime Peak + 25% headroom」を4 KiB境界へ切り上げた値です。
+    //
+    // 25%は一時的な候補数増加やunordered_map rehashによる揺れを吸収するための初期安全率です。
+    // 実際のゲームシーンでさらに大きな変動が確認された場合は、この値を固定仕様とせず再調整します。
+    [[nodiscard]] std::size_t GetRecommendedBackingCapacity() const noexcept
+    {
+        constexpr std::size_t CapacityQuantum = 4u * 1024u;
+        const std::size_t lifetimePeak = GetBackingPeakUsedMemory();
+        if (lifetimePeak == 0u)
+        {
+            return 0u;
+        }
+
+        // ceil(peak * 1.25) を整数演算で求めます。
+        // overflow時に小さい推奨値へ巻き戻らないようmaxへsaturateします。
+        const std::size_t extraHeadroom = (lifetimePeak + 3u) / 4u;
+        if (lifetimePeak > std::numeric_limits<std::size_t>::max() - extraHeadroom)
+        {
+            return std::numeric_limits<std::size_t>::max();
+        }
+
+        const std::size_t targetCapacity = lifetimePeak + extraHeadroom;
+        const std::size_t remainder = targetCapacity % CapacityQuantum;
+        if (remainder == 0u)
+        {
+            return targetCapacity;
+        }
+
+        const std::size_t roundUp = CapacityQuantum - remainder;
+        if (targetCapacity > std::numeric_limits<std::size_t>::max() - roundUp)
+        {
+            return std::numeric_limits<std::size_t>::max();
+        }
+
+        return targetCapacity + roundUp;
+    }
+
+    // ========================================================================
     // Phase ④ Before / After Profiler Counters
     // ========================================================================
     // 理想の送信タイミングは「対象Solver Stepが終了し、Step-local Containerがすべて破棄された直後」です。
@@ -147,11 +188,18 @@ struct SolverTemporaryAllocationStatistics
         const double backingStepUsedBytes = static_cast<double>(GetBackingUsedMemory());
         const double backingLifetimePeakBytes = static_cast<double>(GetBackingPeakUsedMemory());
         const double backingAllocationCount = static_cast<double>(GetBackingAllocationCount());
+        const double recommendedCapacityBytes = static_cast<double>(GetRecommendedBackingCapacity());
 
         // Linear / FrameAllocatorはStep中に個別解放しないため、Step終了直後のUsedMemoryが
         // そのStepでArenaから消費した最大量と一致します。LifetimePeakは過去Stepを含む最大値です。
         const double frameUtilization = backingCapacityBytes > 0.0
             ? backingStepUsedBytes / backingCapacityBytes
+            : 0.0;
+        const double lifetimePeakUtilization = backingCapacityBytes > 0.0
+            ? backingLifetimePeakBytes / backingCapacityBytes
+            : 0.0;
+        const double frameHeadroomBytes = backingCapacityBytes > backingLifetimePeakBytes
+            ? backingCapacityBytes - backingLifetimePeakBytes
             : 0.0;
 
         const double heapAllocationCount = frameAllocatorEnabled
@@ -205,6 +253,15 @@ struct SolverTemporaryAllocationStatistics
         profiler.AddCounter(
             "Physics.Solver.TemporaryAllocation.FrameUtilization",
             frameUtilization);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameLifetimePeakUtilization",
+            lifetimePeakUtilization);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameHeadroomBytes",
+            frameHeadroomBytes);
+        profiler.AddCounter(
+            "Physics.Solver.TemporaryAllocation.FrameRecommendedCapacityBytes",
+            recommendedCapacityBytes);
     }
 
     void Reset()
