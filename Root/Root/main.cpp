@@ -2,11 +2,14 @@
 #include <Windows.h>
 #endif
 
+#include <filesystem>
+
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Editor/EditorLayer.h"
+#include "Raven/Debug/BrowserDebugViewer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -31,6 +34,23 @@ int main()
     //
     // Release構成では _DEBUG が定義されないため、この呼び出し自体がコンパイル対象外になります。
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
+
+    // ========================================================================
+    // Browser Debug Viewer
+    // ========================================================================
+    // Debug構成でRavenを起動したときだけ、動作確認用SVGを生成して既定ブラウザで開きます。
+    // Release版のゲーム起動時にブラウザが開かないよう、この処理は_DEBUG内に限定しています。
+    //
+    // 相対パスはVisual Studioのデバッグ実行時のWorking Directoryを基準に解決されます。
+    // 現在のプロジェクト構成ではRaven/Debug/Generated以下をデバッグ生成物置き場とします。
+    const std::filesystem::path browserDebugSvgPath =
+        std::filesystem::path("Raven") / "Debug" / "Generated" / "Startup.svg";
+
+    const bool svgWritten = Raven::BrowserDebugViewer::WriteStartupSvg(browserDebugSvgPath);
+    if (svgWritten == true)
+    {
+        Raven::BrowserDebugViewer::Open(std::filesystem::absolute(browserDebugSvgPath));
+    }
 #endif
 
     Raven::Application app;
