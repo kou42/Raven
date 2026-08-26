@@ -27,12 +27,12 @@ namespace
 // ============================================================================
 // SoftBody Solver Temporary Container Types
 // ============================================================================
-// Phase ②では、まずunordered_set / unordered_mapのNode・Bucket確保をCounterへ接続します。
-// std::unordered_* は内部でvalue_type以外の型へAllocatorをrebindするため、
-// SolverTemporaryAllocatorのrebind経路も実際のSolver Hot Pathで検証できます。
+// StepWithSelfCollisions()内でStep寿命しか持たないコンテナを同じCounterへ接続します。
+// Phase ②ではBacking Allocatorを指定しないため、実際の確保元は従来どおり通常Heapです。
+// Phase ③では同じ型のままFrameAllocatorを渡し、計測方法を変えずにBefore / After比較します。
 //
-// Candidate vector / Triangle vectorはSpatialHash APIが現在 std::vector<T> 固定引数なので、
-// 次段階でAPIをAllocator非依存化してから同じCounterへ接続します。
+// unordered_* はNode/Bucket用の内部型へAllocatorをrebindします。
+// Candidate vectorはSpatialHashからCounter付きvectorへ直接push_backし、中間copyを作りません。
 using TemporaryExcludedPairAllocator = SolverTemporaryAllocator<uint64_t>;
 using TemporaryExcludedPairSet = std::unordered_set<
     uint64_t,
@@ -48,6 +48,62 @@ using TemporaryLambdaMap = std::unordered_map<
     std::hash<uint64_t>,
     std::equal_to<uint64_t>,
     TemporaryLambdaAllocator>;
+
+using TemporaryParticleCandidateAllocator = SolverTemporaryAllocator<SoftBodySpatialHashPair>;
+using TemporaryParticleCandidateVector = std::vector<
+    SoftBodySpatialHashPair,
+    TemporaryParticleCandidateAllocator>;
+
+using TemporaryParticleTriangleCandidateAllocator =
+    SolverTemporaryAllocator<SoftBodyParticleTrianglePair>;
+using TemporaryParticleTriangleCandidateVector = std::vector<
+    SoftBodyParticleTrianglePair,
+    TemporaryParticleTriangleCandidateAllocator>;
+
+// ============================================================================
+// Standard Triangle Vector Allocation Tracker
+// ============================================================================
+// trianglesはBuildTriangles()が現時点でstd::vector<SoftBodyTriangle>を受け取るため、Phase ②では
+// vector型自体を変更しません。ただしBuildClothTriangles()は空vectorに対して必要最大数を1回reserveし、
+// その後はその範囲内へpush_backするため、Step中のHeap allocationはreserveによる1回だけです。
+//
+// reserve後の実capacityを使って要求bytesを記録し、scope終了時に同じbytesをdeallocationとして記録します。
+// Phase ③ではBuildTriangles側を連続配列View対応へ変更し、この特殊計測を外してFrameAllocatorへ直接載せます。
+class ScopedTriangleVectorAllocationTracker
+{
+public:
+    explicit ScopedTriangleVectorAllocationTracker(
+        SolverTemporaryAllocationStatistics& statistics)
+        : m_Statistics(&statistics)
+    {
+    }
+
+    ScopedTriangleVectorAllocationTracker(const ScopedTriangleVectorAllocationTracker&) = delete;
+    ScopedTriangleVectorAllocationTracker& operator=(const ScopedTriangleVectorAllocationTracker&) = delete;
+
+    ~ScopedTriangleVectorAllocationTracker()
+    {
+        if (m_Statistics != nullptr && m_AllocatedBytes > 0u)
+        {
+            m_Statistics->RecordDeallocation(m_AllocatedBytes);
+        }
+    }
+
+    void RecordReservedCapacity(std::size_t capacity)
+    {
+        if (m_Statistics == nullptr || m_AllocatedBytes > 0u || capacity == 0u)
+        {
+            return;
+        }
+
+        m_AllocatedBytes = capacity * sizeof(SoftBodyTriangle);
+        m_Statistics->RecordAllocation(m_AllocatedBytes);
+    }
+
+private:
+    SolverTemporaryAllocationStatistics* m_Statistics = nullptr;
+    std::size_t m_AllocatedBytes = 0u;
+};
 
 uint64_t MakeParticlePairKey(uint32_t particleA, uint32_t particleB)
 {
@@ -78,13 +134,20 @@ void BuildExcludedParticlePairs(
     }
 }
 
-void BuildClothTriangles(const SoftBodyCloth& cloth, std::vector<SoftBodyTriangle>& outTriangles)
+void BuildClothTriangles(
+    const SoftBodyCloth& cloth,
+    std::vector<SoftBodyTriangle>& outTriangles,
+    ScopedTriangleVectorAllocationTracker& allocationTracker)
 {
     outTriangles.clear();
     outTriangles.reserve(
         static_cast<std::size_t>(cloth.Rows)
         * static_cast<std::size_t>(cloth.Columns)
         * 2u);
+
+    // 空vectorから1回だけreserveした直後の実capacityを記録します。
+    // 以降のpush_back数はRows * Columns * 2以下なので、このStep中に追加growは発生しません。
+    allocationTracker.RecordReservedCapacity(outTriangles.capacity());
 
     for (uint32_t row = 0u; row < cloth.Rows; ++row)
     {
@@ -226,13 +289,13 @@ ClosestPointResult ComputeClosestPointOnTriangle(
     return { a * u + b * v + c * w, u, v, w };
 }
 
-template<typename ExcludedPairSet, typename LambdaMap>
+template<typename ExcludedPairSet, typename LambdaMap, typename CandidatePairVector>
 void SolveParticleSelfCollisionIteration(
     std::vector<SoftBodyParticle>& particles,
     SoftBodySpatialHashGrid& spatialHash,
     const ExcludedPairSet& excludedPairs,
     LambdaMap& lambdas,
-    std::vector<SoftBodySpatialHashPair>& candidatePairs,
+    CandidatePairVector& candidatePairs,
     float targetDistance,
     float alphaTilde)
 {
@@ -331,18 +394,18 @@ void SolveParticleSelfCollisionIteration(
     }
 }
 
-template<typename LambdaMap>
+template<typename LambdaMap, typename CandidatePairVector>
 void SolveParticleTriangleSelfCollisionIteration(
     std::vector<SoftBodyParticle>& particles,
     const std::vector<SoftBodyTriangle>& triangles,
     SoftBodyTriangleSpatialHashGrid& spatialHash,
     LambdaMap& lambdas,
-    std::vector<SoftBodyParticleTrianglePair>& candidatePairs,
+    CandidatePairVector& candidatePairs,
     SoftBodyParticleTriangleCollisionStatistics& statistics,
     float thickness,
     float alphaTilde)
 {
-    // Particle-Triangleは現在もっとも大きなボトルネック候補です。
+    // Particle-Triangleは現在もっとも大きなボトネック候補です。
     // TriangleのGrid登録、Particleからの候補収集、実Triangle距離計算の3段階へ明確に分離します。
     // この結果を使って、次にGrid更新を最適化するか、Candidate/Narrow Phaseを並列化するか判断します。
     {
@@ -616,11 +679,10 @@ void SoftBodySolver::StepWithSelfCollisions(
         && cloth.Columns > 0u;
 
     // ========================================================================
-    // Phase ②-A: Step Local Hash Temporary Allocation Counter
+    // Phase ②: Step Local Temporary Allocation Counter
     // ========================================================================
-    // まずNode/Bucket allocationが発生する3つのunorderedコンテナを同一Statisticsへ集約します。
-    // Backing Allocatorはまだ指定しないため通常Heapを使用し、これがBefore計測になります。
-    // 次の②-BでCandidate/Triangle vectorも同じCounterへ追加し、最終的にStep Local全体を計測します。
+    // Step寿命のHash/Map/Candidate vectorを同一Statisticsへ集約します。
+    // Backing Allocatorはまだ指定しないため通常Heapを使用し、ここで得る値がBeforeです。
     TemporaryExcludedPairSet excludedParticlePairs{
         0u,
         std::hash<uint64_t>{},
@@ -639,9 +701,16 @@ void SoftBodySolver::StepWithSelfCollisions(
         std::equal_to<uint64_t>{},
         TemporaryLambdaAllocator(&m_TemporaryAllocationStatistics) };
 
-    std::vector<SoftBodySpatialHashPair> particleCandidatePairs;
-    std::vector<SoftBodyParticleTrianglePair> particleTriangleCandidatePairs;
+    TemporaryParticleCandidateVector particleCandidatePairs{
+        TemporaryParticleCandidateAllocator(&m_TemporaryAllocationStatistics) };
+
+    TemporaryParticleTriangleCandidateVector particleTriangleCandidatePairs{
+        TemporaryParticleTriangleCandidateAllocator(&m_TemporaryAllocationStatistics) };
+
+    // Triangle topology vectorだけはBuildTriangles APIとの互換性のためPhase ②では通常vectorを維持します。
+    // allocation自体は下のRAII Trackerで同じStatisticsへ正確に加算します。
     std::vector<SoftBodyTriangle> triangles;
+    ScopedTriangleVectorAllocationTracker triangleAllocationTracker(m_TemporaryAllocationStatistics);
 
     SoftBodySpatialHashGrid particleSpatialHash(
         std::max(particleTargetDistance, 1.0e-4f));
@@ -668,7 +737,7 @@ void SoftBodySolver::StepWithSelfCollisions(
 
         if (particleTriangleCollisionEnabled)
         {
-            BuildClothTriangles(cloth, triangles);
+            BuildClothTriangles(cloth, triangles, triangleAllocationTracker);
         }
     }
 
