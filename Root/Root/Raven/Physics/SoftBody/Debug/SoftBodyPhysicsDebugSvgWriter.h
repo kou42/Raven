@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "Raven/Physics/SoftBody/Debug/SoftBodyParticleTriangleCandidateDebugSnapshot.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
 
@@ -45,6 +46,11 @@ public:
         // tooltipにはそのCellからBroad Phaseの最初の段階で取得されるTriangle数を表示します。
         bool DrawParticleQueryCells = true;
 
+        // Candidate Snapshotの各Particle-Triangle PairをReject理由ごとに色分けします。
+        // Triangle中心とParticleを結ぶ細線 + Particle外周で表示するため、同じParticleが複数Triangleを
+        // 評価している場合も「どのTriangleに対する判定か」を追跡できます。
+        bool DrawCandidateRejectReasons = true;
+
         // Triangle面を表示するとParticle位置だけでなくCloth形状を把握しやすくなります。
         bool DrawTriangles = true;
 
@@ -61,6 +67,7 @@ public:
         const SoftBodyParticleTriangleCollisionStatistics& statistics,
         float spatialHashCellSize,
         const std::vector<SoftBodyTriangleSpatialHashCellDebugInfo>& spatialHashCells,
+        const SoftBodyParticleTriangleCandidateDebugSnapshot& candidateSnapshot,
         const Settings& settings = Settings{});
 };
 
