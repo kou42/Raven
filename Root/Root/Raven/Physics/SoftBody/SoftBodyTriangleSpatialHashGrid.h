@@ -33,6 +33,20 @@ struct SoftBodyParticleTrianglePair
 };
 
 // ============================================================================
+// Spatial Hash Debug Snapshot
+// ============================================================================
+// Browser Debug Viewerなど、Broad Phaseの内部状態を「読み取り専用の値」として外へ渡すための型です。
+// TriangleCellBucketそのものを公開するとOpen Addressing / Generation管理まで外部APIになってしまうため、
+// Debug側が必要とするCell座標と登録Triangle数だけをコピーします。
+struct SoftBodyTriangleSpatialHashCellDebugInfo
+{
+    int32_t X = 0;
+    int32_t Y = 0;
+    int32_t Z = 0;
+    uint32_t TriangleCount = 0u;
+};
+
+// ============================================================================
 // Particle-Triangle Flat Spatial Hash / Uniform Grid
 // ============================================================================
 // Particle-Triangle自己衝突専用Broad Phaseです。
@@ -79,6 +93,12 @@ public:
             SolverTemporaryAllocator<SoftBodyParticleTrianglePair>>& outPairs) const;
 
     std::size_t GetOccupiedCellCount() const { return m_ActiveCellCount; }
+
+    // 現在Generationで実際に使用されているCellだけをDebug用Snapshotへコピーします。
+    // outCellsは呼び出し側所有なので、通常のBroad Phase処理に追加の永続allocationや依存を持ち込みません。
+    // Browser Debug Viewerは低頻度でこのAPIを呼び、Simulation hot pathから切り離して利用します。
+    void CollectActiveCellDebugInfo(
+        std::vector<SoftBodyTriangleSpatialHashCellDebugInfo>& outCells) const;
 
 private:
     struct CellCoord
