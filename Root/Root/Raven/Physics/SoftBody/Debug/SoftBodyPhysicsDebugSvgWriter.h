@@ -31,6 +31,12 @@ public:
         uint32_t Height = 760u;
         float Padding = 48.0f;
 
+        // Particle-Triangle Broad Phaseで使用しているCell Sizeを基準に、
+        // World原点へ固定されたXY Spatial Hash境界を描画します。
+        // ここでは3D GridをXYへ投影した境界だけを描き、Z LayerごとのOccupied Cell可視化は
+        // 次段階でGrid内部Snapshot APIを追加して重ねる想定です。
+        bool DrawSpatialHashGrid = true;
+
         // Triangle面を表示するとParticle位置だけでなくCloth形状を把握しやすくなります。
         bool DrawTriangles = true;
 
