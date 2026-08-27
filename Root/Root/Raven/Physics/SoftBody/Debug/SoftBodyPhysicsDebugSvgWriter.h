@@ -40,6 +40,11 @@ public:
         // tooltipで確認できるようにします。
         bool DrawOccupiedSpatialHashCells = true;
 
+        // 各Particleが現在問い合わせる3D CellをActive Cell Snapshotと照合し、
+        // 実際にBucketへHitしたQuery Cellをシアン枠で表示します。
+        // tooltipにはそのCellからBroad Phaseの最初の段階で取得されるTriangle数を表示します。
+        bool DrawParticleQueryCells = true;
+
         // Triangle面を表示するとParticle位置だけでなくCloth形状を把握しやすくなります。
         bool DrawTriangles = true;
 
