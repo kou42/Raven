@@ -138,12 +138,20 @@ void WriteBrowserDebugSnapshot(
     }
 
     const ph::SoftBodySolver& solver = clothDeformer.GetSolver();
+
+    // Spatial Hash本体やBucket配列をViewerへ公開せず、直近BuildのActive Cellだけを値型へコピーします。
+    // このSnapshot生成は100ms間隔のBrowser Debug更新時だけ行うため、毎Solver iterationのBroad Phase
+    // hot pathへDebug用vector allocationや走査を追加しません。
+    std::vector<ph::SoftBodyTriangleSpatialHashCellDebugInfo> spatialHashCells;
+    solver.CollectParticleTriangleSpatialHashDebugInfo(spatialHashCells);
+
     ph::SoftBodyPhysicsDebugSvgWriter::Write(
         kBrowserDebugSvgPath,
         solver.GetParticles(),
         particleTriangleIndices,
         solver.GetParticleTriangleCollisionStatistics(),
-        clothDeformer.GetParticleTriangleSpatialHashCellSize());
+        clothDeformer.GetParticleTriangleSpatialHashCellSize(),
+        spatialHashCells);
 }
 #endif
 } // namespace
