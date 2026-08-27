@@ -89,17 +89,39 @@ namespace Raven
         }
 
         // Queryへ時刻を付けてブラウザキャッシュを回避し、Ravenが上書きしたSVGを定期再取得します。
+        //
+        // 左側は従来のSpatial Hash / Particle / Triangle全体表示です。
+        // 右側はCandidateRejects.svgを固定名で読み込み、AABB / Topology / Plane / Edge / NarrowPhaseの
+        // Reject Funnelを専用表示します。Reject SVGがまだ生成されていない起動直後は右側だけ空になりますが、
+        // 最初のBrowser Debug Snapshotが出力されれば次のrefreshで自動表示されます。
         const std::string svgFileName = svgPath.filename().generic_string();
+        const std::string candidateSvgFileName = "CandidateRejects.svg";
         const uint32_t safeReloadInterval = std::max(reloadIntervalMilliseconds, 50u);
 
         stream << "<!doctype html>\n"
                << "<html><head><meta charset=\"utf-8\"><title>Raven Physics Debug Viewer</title>"
-               << "<style>html,body{margin:0;width:100%;height:100%;background:#020617;overflow:hidden;}"
-               << "#view{width:100%;height:100%;object-fit:contain;}</style></head>\n"
-               << "<body><img id=\"view\" alt=\"Raven Physics Debug SVG\">\n"
-               << "<script>const view=document.getElementById('view');const source='" << svgFileName << "';"
-               << "function refresh(){view.src=source+'?t='+Date.now();}refresh();setInterval(refresh,"
-               << safeReloadInterval << ");</script></body></html>\n";
+               << "<style>"
+               << "html,body{margin:0;width:100%;height:100%;background:#020617;color:#e2e8f0;font-family:sans-serif;}"
+               << "body{display:flex;flex-direction:column;overflow:hidden;}"
+               << "header{height:34px;display:flex;align-items:center;padding:0 12px;background:#0f172a;font-size:13px;}"
+               << "main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:2px;background:#334155;}"
+               << ".pane{min-width:0;min-height:0;background:#020617;display:flex;flex-direction:column;}"
+               << ".label{height:24px;padding:4px 10px;box-sizing:border-box;background:#111827;color:#94a3b8;font-size:12px;}"
+               << ".view{flex:1;min-height:0;width:100%;object-fit:contain;}"
+               << "</style></head>\n"
+               << "<body><header>Raven Physics Browser Debug Viewer</header><main>"
+               << "<section class=\"pane\"><div class=\"label\">Spatial Hash / Physics Snapshot</div>"
+               << "<img id=\"physicsView\" class=\"view\" alt=\"Raven Physics Debug SVG\"></section>"
+               << "<section class=\"pane\"><div class=\"label\">Particle-Triangle Reject Funnel</div>"
+               << "<img id=\"candidateView\" class=\"view\" alt=\"Raven Candidate Reject SVG\"></section>"
+               << "</main><script>"
+               << "const physicsView=document.getElementById('physicsView');"
+               << "const candidateView=document.getElementById('candidateView');"
+               << "const physicsSource='" << svgFileName << "';"
+               << "const candidateSource='" << candidateSvgFileName << "';"
+               << "function refresh(){const stamp='?t='+Date.now();physicsView.src=physicsSource+stamp;candidateView.src=candidateSource+stamp;}"
+               << "refresh();setInterval(refresh," << safeReloadInterval << ");"
+               << "</script></body></html>\n";
 
         return stream.good();
     }
