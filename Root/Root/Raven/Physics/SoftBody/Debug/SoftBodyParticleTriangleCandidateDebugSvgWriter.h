@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <vector>
 
 #include "Raven/Physics/SoftBody/Debug/SoftBodyParticleTriangleCandidateDebugSnapshot.h"
@@ -21,11 +23,25 @@ namespace ph
 class SoftBodyParticleTriangleCandidateDebugSvgWriter
 {
 public:
+    struct Settings
+    {
+        // InvalidIndexなら全Particleを表示します。
+        // ParticleIndexを指定した場合、そのParticleがQueryになっているPairだけを描画します。
+        static constexpr uint32_t InvalidIndex = std::numeric_limits<uint32_t>::max();
+        uint32_t ParticleIndex = InvalidIndex;
+
+        // InvalidIndexなら全Triangleを表示します。
+        // TriangleIndexを指定した場合、そのTriangleに対するPairだけを描画します。
+        // ParticleIndexと同時指定した場合はAND条件になり、1 Pairを精密に追跡できます。
+        uint32_t TriangleIndex = InvalidIndex;
+    };
+
     static bool Write(
         const std::filesystem::path& filePath,
         const std::vector<SoftBodyParticle>& particles,
         const std::vector<uint32_t>& triangleIndices,
-        const SoftBodyParticleTriangleCandidateDebugSnapshot& snapshot);
+        const SoftBodyParticleTriangleCandidateDebugSnapshot& snapshot,
+        const Settings& settings = Settings{});
 };
 
 } // namespace ph
