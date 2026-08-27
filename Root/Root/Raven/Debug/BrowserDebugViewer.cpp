@@ -94,6 +94,10 @@ namespace Raven
         // 右側はCandidateRejects.svgを固定名で読み込み、AABB / Topology / Plane / Edge / NarrowPhaseの
         // Reject Funnelを専用表示します。Reject SVGがまだ生成されていない起動直後は右側だけ空になりますが、
         // 最初のBrowser Debug Snapshotが出力されれば次のrefreshで自動表示されます。
+        //
+        // Reject ViewerのParticle/Triangle選択はURL Queryへ保存します。
+        // file:// で開くViewerからRaven Processへ直接値を送るHTTP Serverはまだ持たないため、現段階では
+        // Browser内で選択状態を保持し、次の段階でRuntime側Filter Bridgeへ接続できる形にしています。
         const std::string svgFileName = svgPath.filename().generic_string();
         const std::string candidateSvgFileName = "CandidateRejects.svg";
         const uint32_t safeReloadInterval = std::max(reloadIntervalMilliseconds, 50u);
@@ -103,24 +107,45 @@ namespace Raven
                << "<style>"
                << "html,body{margin:0;width:100%;height:100%;background:#020617;color:#e2e8f0;font-family:sans-serif;}"
                << "body{display:flex;flex-direction:column;overflow:hidden;}"
-               << "header{height:34px;display:flex;align-items:center;padding:0 12px;background:#0f172a;font-size:13px;}"
+               << "header{min-height:42px;display:flex;align-items:center;gap:12px;padding:4px 12px;background:#0f172a;font-size:13px;}"
+               << ".title{font-weight:600;margin-right:auto;}"
+               << ".controls{display:flex;align-items:center;gap:7px;color:#94a3b8;}"
+               << ".controls input{width:82px;background:#020617;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:4px 6px;}"
+               << ".controls button{background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:4px 9px;cursor:pointer;}"
+               << ".controls button:hover{background:#334155;}"
                << "main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:2px;background:#334155;}"
                << ".pane{min-width:0;min-height:0;background:#020617;display:flex;flex-direction:column;}"
                << ".label{height:24px;padding:4px 10px;box-sizing:border-box;background:#111827;color:#94a3b8;font-size:12px;}"
                << ".view{flex:1;min-height:0;width:100%;object-fit:contain;}"
                << "</style></head>\n"
-               << "<body><header>Raven Physics Browser Debug Viewer</header><main>"
+               << "<body><header><span class=\"title\">Raven Physics Browser Debug Viewer</span>"
+               << "<div class=\"controls\"><label>Particle <input id=\"particleFilter\" type=\"number\" min=\"0\" placeholder=\"ALL\"></label>"
+               << "<label>Triangle <input id=\"triangleFilter\" type=\"number\" min=\"0\" placeholder=\"ALL\"></label>"
+               << "<button id=\"applyFilter\">Apply</button><button id=\"clearFilter\">Clear</button></div></header><main>"
                << "<section class=\"pane\"><div class=\"label\">Spatial Hash / Physics Snapshot</div>"
                << "<img id=\"physicsView\" class=\"view\" alt=\"Raven Physics Debug SVG\"></section>"
-               << "<section class=\"pane\"><div class=\"label\">Particle-Triangle Reject Funnel</div>"
+               << "<section class=\"pane\"><div id=\"candidateLabel\" class=\"label\">Particle-Triangle Reject Funnel</div>"
                << "<img id=\"candidateView\" class=\"view\" alt=\"Raven Candidate Reject SVG\"></section>"
                << "</main><script>"
                << "const physicsView=document.getElementById('physicsView');"
                << "const candidateView=document.getElementById('candidateView');"
+               << "const candidateLabel=document.getElementById('candidateLabel');"
+               << "const particleFilter=document.getElementById('particleFilter');"
+               << "const triangleFilter=document.getElementById('triangleFilter');"
                << "const physicsSource='" << svgFileName << "';"
                << "const candidateSource='" << candidateSvgFileName << "';"
+               << "const params=new URLSearchParams(window.location.search);"
+               << "particleFilter.value=params.get('particle')??'';triangleFilter.value=params.get('triangle')??'';"
+               << "function normalize(v){if(v==='')return '';const n=Number(v);return Number.isInteger(n)&&n>=0?String(n):'';}"
+               << "function updateLabel(){const p=normalize(particleFilter.value)||'ALL';const t=normalize(triangleFilter.value)||'ALL';candidateLabel.textContent='Particle-Triangle Reject Funnel | Requested Filter: Particle='+p+' Triangle='+t;}"
+               << "function persist(){const p=normalize(particleFilter.value);const t=normalize(triangleFilter.value);const q=new URLSearchParams();if(p!=='')q.set('particle',p);if(t!=='')q.set('triangle',t);const suffix=q.toString();history.replaceState(null,'',window.location.pathname+(suffix?'?'+suffix:''));updateLabel();}"
+               << "function clear(){particleFilter.value='';triangleFilter.value='';persist();}"
+               << "document.getElementById('applyFilter').addEventListener('click',persist);"
+               << "document.getElementById('clearFilter').addEventListener('click',clear);"
+               << "particleFilter.addEventListener('keydown',e=>{if(e.key==='Enter')persist();});"
+               << "triangleFilter.addEventListener('keydown',e=>{if(e.key==='Enter')persist();});"
                << "function refresh(){const stamp='?t='+Date.now();physicsView.src=physicsSource+stamp;candidateView.src=candidateSource+stamp;}"
-               << "refresh();setInterval(refresh," << safeReloadInterval << ");"
+               << "updateLabel();refresh();setInterval(refresh," << safeReloadInterval << ");"
                << "</script></body></html>\n";
 
         return stream.good();
