@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <tuple>
 #include <utility>
 
 namespace Raven
@@ -30,6 +31,20 @@ struct ProjectedOccupiedCell
     uint32_t ZLayerCount = 0u;
     int32_t MinimumZ = 0;
     int32_t MaximumZ = 0;
+};
+
+struct ParticleQueryCellInfo
+{
+    uint32_t ParticleCount = 0u;
+    uint32_t TriangleCountPerParticle = 0u;
+};
+
+struct ParticleQueryDebugData
+{
+    std::map<std::tuple<int32_t, int32_t, int32_t>, uint32_t> ActiveCellTriangleCounts;
+    std::map<std::tuple<int32_t, int32_t, int32_t>, ParticleQueryCellInfo> HitCells;
+    uint64_t HitParticleCount = 0u;
+    uint64_t CellCandidateCount = 0u;
 };
 
 ProjectionBounds ComputeBounds(const std::vector<SoftBodyParticle>& particles)
@@ -65,15 +80,26 @@ float SafeRange(float minimum, float maximum)
     return std::max(maximum - minimum, 1.0e-5f);
 }
 
-float ProjectX(float x, const ProjectionBounds& bounds, const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+float ProjectX(
+    float x,
+    const ProjectionBounds& bounds,
+    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
 {
-    const float drawableWidth = std::max(static_cast<float>(settings.Width) - settings.Padding * 2.0f, 1.0f);
-    return settings.Padding + ((x - bounds.MinX) / SafeRange(bounds.MinX, bounds.MaxX)) * drawableWidth;
+    const float drawableWidth = std::max(
+        static_cast<float>(settings.Width) - settings.Padding * 2.0f,
+        1.0f);
+    return settings.Padding
+        + ((x - bounds.MinX) / SafeRange(bounds.MinX, bounds.MaxX)) * drawableWidth;
 }
 
-float ProjectY(float y, const ProjectionBounds& bounds, const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+float ProjectY(
+    float y,
+    const ProjectionBounds& bounds,
+    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
 {
-    const float drawableHeight = std::max(static_cast<float>(settings.Height) - settings.Padding * 2.0f - 150.0f, 1.0f);
+    const float drawableHeight = std::max(
+        static_cast<float>(settings.Height) - settings.Padding * 2.0f - 150.0f,
+        1.0f);
 
     // SVGは下向きが+Yなので、Physicsの+Yが画面上方向になるよう反転します。
     return settings.Padding + 120.0f
@@ -83,6 +109,64 @@ float ProjectY(float y, const ProjectionBounds& bounds, const SoftBodyPhysicsDeb
 float NormalizeDepth(float z, const ProjectionBounds& bounds)
 {
     return (z - bounds.MinZ) / SafeRange(bounds.MinZ, bounds.MaxZ);
+}
+
+std::tuple<int32_t, int32_t, int32_t> ComputeCellKey(
+    const math::Vec3& position,
+    float cellSize)
+{
+    return {
+        static_cast<int32_t>(std::floor(position.x / cellSize)),
+        static_cast<int32_t>(std::floor(position.y / cellSize)),
+        static_cast<int32_t>(std::floor(position.z / cellSize))
+    };
+}
+
+ParticleQueryDebugData BuildParticleQueryDebugData(
+    const std::vector<SoftBodyParticle>& particles,
+    const std::vector<SoftBodyTriangleSpatialHashCellDebugInfo>& spatialHashCells,
+    float spatialHashCellSize)
+{
+    ParticleQueryDebugData debugData{};
+    if (spatialHashCellSize <= 0.0f)
+    {
+        return debugData;
+    }
+
+    // ========================================================================
+    // Particle -> exact 3D query cell
+    // ========================================================================
+    // GenerateParticleTriangleCandidates()はParticleごとにComputeCellCoord()を1回行い、その3D Cellに
+    // 登録済みTriangleだけを最初の候補集合として取得します。Active Cell Snapshotには同じCell座標と
+    // TriangleCountが保存されているため、ここで完全に同じ「Bucket lookup直後の候補数」を再現できます。
+    //
+    // AABB / Topology / Plane / Edge Half-Spaceによるcheap rejectより前の値なので、Profilerの
+    // SoftBody.TriangleHash.CellCandidateCountと対応するBroad Phase入口の可視化になります。
+    for (const SoftBodyTriangleSpatialHashCellDebugInfo& cell : spatialHashCells)
+    {
+        debugData.ActiveCellTriangleCounts[
+            std::make_tuple(cell.X, cell.Y, cell.Z)] = cell.TriangleCount;
+    }
+
+    for (const SoftBodyParticle& particle : particles)
+    {
+        const auto cellKey = ComputeCellKey(particle.Position, spatialHashCellSize);
+        const auto activeCellIterator = debugData.ActiveCellTriangleCounts.find(cellKey);
+        if (activeCellIterator == debugData.ActiveCellTriangleCounts.end())
+        {
+            continue;
+        }
+
+        const uint32_t triangleCount = activeCellIterator->second;
+        ParticleQueryCellInfo& hitCell = debugData.HitCells[cellKey];
+        ++hitCell.ParticleCount;
+        hitCell.TriangleCountPerParticle = triangleCount;
+
+        ++debugData.HitParticleCount;
+        debugData.CellCandidateCount += static_cast<uint64_t>(triangleCount);
+    }
+
+    return debugData;
 }
 
 void WriteSpatialHashGrid(
@@ -106,10 +190,14 @@ void WriteSpatialHashGrid(
     //
     // 3D Spatial HashのZ Layerはこの2D表示では重なるため、境界線自体はXYだけを描画します。
     // Active CellについてはWriteOccupiedSpatialHashCells()でZ Layer情報を集約して重ねます。
-    const int32_t minimumCellX = static_cast<int32_t>(std::floor(bounds.MinX / spatialHashCellSize));
-    const int32_t maximumCellX = static_cast<int32_t>(std::floor(bounds.MaxX / spatialHashCellSize));
-    const int32_t minimumCellY = static_cast<int32_t>(std::floor(bounds.MinY / spatialHashCellSize));
-    const int32_t maximumCellY = static_cast<int32_t>(std::floor(bounds.MaxY / spatialHashCellSize));
+    const int32_t minimumCellX =
+        static_cast<int32_t>(std::floor(bounds.MinX / spatialHashCellSize));
+    const int32_t maximumCellX =
+        static_cast<int32_t>(std::floor(bounds.MaxX / spatialHashCellSize));
+    const int32_t minimumCellY =
+        static_cast<int32_t>(std::floor(bounds.MinY / spatialHashCellSize));
+    const int32_t maximumCellY =
+        static_cast<int32_t>(std::floor(bounds.MaxY / spatialHashCellSize));
 
     const float top = ProjectY(bounds.MaxY, bounds, settings);
     const float bottom = ProjectY(bounds.MinY, bounds, settings);
@@ -177,7 +265,7 @@ void WriteOccupiedSpatialHashCells(
         auto [iterator, inserted] = projectedCells.try_emplace(key);
         ProjectedOccupiedCell& projected = iterator->second;
 
-        if (inserted)
+        if (inserted == true)
         {
             projected.MinimumZ = cell.Z;
             projected.MaximumZ = cell.Z;
@@ -246,6 +334,112 @@ void WriteOccupiedSpatialHashCells(
 
     stream << "  </g>\n";
 }
+
+void WriteParticleQueryCells(
+    std::ofstream& stream,
+    const ProjectionBounds& bounds,
+    float spatialHashCellSize,
+    const ParticleQueryDebugData& debugData,
+    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+{
+    if (settings.DrawParticleQueryCells == false
+        || spatialHashCellSize <= 0.0f
+        || debugData.HitCells.empty() == true)
+    {
+        return;
+    }
+
+    // ========================================================================
+    // Particle Query Cell Overlay
+    // ========================================================================
+    // シアン枠は「Particleが問い合わせた3D Cellに実際にTriangle Bucketが存在した」ことを表します。
+    // 同じXYでもZが違えば別Cellですが、2D投影上は重なるためtooltipへ正確なZを残します。
+    // CellCandidateはParticleCount * TriangleCountで、cheap reject前に生成側が走査するPair数そのものです。
+    stream << "  <g fill=\"none\" stroke=\"#22d3ee\" stroke-width=\"1.6\" stroke-opacity=\"0.95\">\n";
+
+    for (const auto& entry : debugData.HitCells)
+    {
+        const int32_t cellX = std::get<0>(entry.first);
+        const int32_t cellY = std::get<1>(entry.first);
+        const int32_t cellZ = std::get<2>(entry.first);
+        const ParticleQueryCellInfo& queryInfo = entry.second;
+
+        const float worldMinX = static_cast<float>(cellX) * spatialHashCellSize;
+        const float worldMaxX = static_cast<float>(cellX + 1) * spatialHashCellSize;
+        const float worldMinY = static_cast<float>(cellY) * spatialHashCellSize;
+        const float worldMaxY = static_cast<float>(cellY + 1) * spatialHashCellSize;
+
+        if (worldMaxX < bounds.MinX
+            || worldMinX > bounds.MaxX
+            || worldMaxY < bounds.MinY
+            || worldMinY > bounds.MaxY)
+        {
+            continue;
+        }
+
+        const float clippedMinX = std::max(worldMinX, bounds.MinX);
+        const float clippedMaxX = std::min(worldMaxX, bounds.MaxX);
+        const float clippedMinY = std::max(worldMinY, bounds.MinY);
+        const float clippedMaxY = std::min(worldMaxY, bounds.MaxY);
+
+        const float x = ProjectX(clippedMinX, bounds, settings);
+        const float y = ProjectY(clippedMaxY, bounds, settings);
+        const float width = ProjectX(clippedMaxX, bounds, settings) - x;
+        const float height = ProjectY(clippedMinY, bounds, settings) - y;
+        const uint64_t candidateCount = static_cast<uint64_t>(queryInfo.ParticleCount)
+            * static_cast<uint64_t>(queryInfo.TriangleCountPerParticle);
+
+        stream << "    <rect x=\"" << x << "\" y=\"" << y
+               << "\" width=\"" << std::max(width, 0.0f)
+               << "\" height=\"" << std::max(height, 0.0f) << "\">"
+               << "<title>Particle Query Cell (" << cellX << ", " << cellY << ", " << cellZ << ")"
+               << " | Particles: " << queryInfo.ParticleCount
+               << " | Triangles/Particle: " << queryInfo.TriangleCountPerParticle
+               << " | Cell Candidates: " << candidateCount
+               << "</title></rect>\n";
+    }
+
+    stream << "  </g>\n";
+}
+
+void WriteParticleQueryMarkers(
+    std::ofstream& stream,
+    const std::vector<SoftBodyParticle>& particles,
+    const ProjectionBounds& bounds,
+    float spatialHashCellSize,
+    const ParticleQueryDebugData& debugData,
+    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+{
+    if (settings.DrawParticleQueryCells == false || spatialHashCellSize <= 0.0f)
+    {
+        return;
+    }
+
+    // Bucket HitしたParticleをシアンの外周で囲みます。
+    // 通常Particle色はZ変位を保持し、その外側だけBroad Phase Query状態を重ねます。
+    stream << "  <g fill=\"none\" stroke=\"#22d3ee\" stroke-width=\"1.4\">\n";
+
+    for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
+    {
+        const SoftBodyParticle& particle = particles[particleIndex];
+        const auto cellKey = ComputeCellKey(particle.Position, spatialHashCellSize);
+        const auto activeCellIterator = debugData.ActiveCellTriangleCounts.find(cellKey);
+        if (activeCellIterator == debugData.ActiveCellTriangleCounts.end())
+        {
+            continue;
+        }
+
+        stream << "    <circle cx=\"" << ProjectX(particle.Position.x, bounds, settings)
+               << "\" cy=\"" << ProjectY(particle.Position.y, bounds, settings)
+               << "\" r=\"6.0\"><title>Query Particle " << particleIndex
+               << " | Cell(" << std::get<0>(cellKey) << ", "
+               << std::get<1>(cellKey) << ", " << std::get<2>(cellKey) << ")"
+               << " | Raw cell triangles: " << activeCellIterator->second
+               << "</title></circle>\n";
+    }
+
+    stream << "  </g>\n";
+}
 } // namespace
 
 bool SoftBodyPhysicsDebugSvgWriter::Write(
@@ -282,6 +476,10 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
     }
 
     const ProjectionBounds bounds = ComputeBounds(particles);
+    const ParticleQueryDebugData particleQueryDebugData = BuildParticleQueryDebugData(
+        particles,
+        spatialHashCells,
+        spatialHashCellSize);
 
     stream << std::fixed << std::setprecision(3);
     stream << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -293,7 +491,11 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
     stream << "  <text x=\"48\" y=\"76\" fill=\"#94a3b8\" font-family=\"monospace\" font-size=\"14\">Particles: "
            << particles.size() << " | CellSize: " << spatialHashCellSize
            << " | ActiveCells3D: " << spatialHashCells.size()
-           << " | Candidate: " << statistics.CandidateCount
+           << " | QueryHits: " << particleQueryDebugData.HitParticleCount
+           << " | CellCandidates: " << particleQueryDebugData.CellCandidateCount
+           << "</text>\n";
+    stream << "  <text x=\"48\" y=\"98\" fill=\"#94a3b8\" font-family=\"monospace\" font-size=\"14\">Solver Candidate: "
+           << statistics.CandidateCount
            << " | NarrowPhase: " << statistics.NarrowPhaseCount
            << " | Correction: " << statistics.PositionCorrectionCount << "</text>\n";
 
@@ -301,6 +503,12 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
     // Heat Mapは背景情報として残しつつ、Particle/Triangleの形状を最前面で確認できます。
     WriteSpatialHashGrid(stream, bounds, spatialHashCellSize, settings);
     WriteOccupiedSpatialHashCells(stream, bounds, spatialHashCellSize, spatialHashCells, settings);
+    WriteParticleQueryCells(
+        stream,
+        bounds,
+        spatialHashCellSize,
+        particleQueryDebugData,
+        settings);
 
     if (settings.DrawTriangles == true)
     {
@@ -310,7 +518,9 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
             const uint32_t indexA = triangleIndices[index];
             const uint32_t indexB = triangleIndices[index + 1u];
             const uint32_t indexC = triangleIndices[index + 2u];
-            if (indexA >= particles.size() || indexB >= particles.size() || indexC >= particles.size())
+            if (indexA >= particles.size()
+                || indexB >= particles.size()
+                || indexC >= particles.size())
             {
                 continue;
             }
@@ -360,6 +570,17 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
         stream << "  </g>\n";
     }
 
+    // Query Hit Particleのシアン外周は通常Particleより後に描き、判別しやすくします。
+    WriteParticleQueryMarkers(
+        stream,
+        particles,
+        bounds,
+        spatialHashCellSize,
+        particleQueryDebugData,
+        settings);
+
+    stream << "  <text x=\"48\" y=\"" << (settings.Height - 78u)
+           << "\" fill=\"#22d3ee\" font-family=\"monospace\" font-size=\"12\">Cyan: particle query hit cell / raw CellCandidate source</text>\n";
     stream << "  <text x=\"48\" y=\"" << (settings.Height - 60u)
            << "\" fill=\"#f59e0b\" font-family=\"monospace\" font-size=\"12\">Orange: occupied Particle-Triangle hash cells / opacity = triangle registrations</text>\n";
     stream << "  <text x=\"48\" y=\"" << (settings.Height - 42u)
