@@ -118,13 +118,33 @@ bool TryGetTriangleParticleIndices(
     outC = triangleIndices[baseIndex + 2u];
     return true;
 }
+
+bool PassesFilter(
+    const SoftBodyParticleTriangleCandidateDebugInfo& record,
+    const SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings& settings)
+{
+    if (settings.ParticleIndex != SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings::InvalidIndex
+        && record.ParticleIndex != settings.ParticleIndex)
+    {
+        return false;
+    }
+
+    if (settings.TriangleIndex != SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings::InvalidIndex
+        && record.TriangleIndex != settings.TriangleIndex)
+    {
+        return false;
+    }
+
+    return true;
+}
 } // namespace
 
 bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     const std::filesystem::path& filePath,
     const std::vector<SoftBodyParticle>& particles,
     const std::vector<uint32_t>& triangleIndices,
-    const SoftBodyParticleTriangleCandidateDebugSnapshot& snapshot)
+    const SoftBodyParticleTriangleCandidateDebugSnapshot& snapshot,
+    const Settings& settings)
 {
     if (particles.empty() == true)
     {
@@ -153,6 +173,15 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     const ProjectionBounds bounds = ComputeBounds(particles);
     const SoftBodyParticleTriangleCandidateDebugStatistics& statistics = snapshot.Statistics;
 
+    uint32_t filteredRecordCount = 0u;
+    for (const SoftBodyParticleTriangleCandidateDebugInfo& record : snapshot.Records)
+    {
+        if (PassesFilter(record, settings))
+        {
+            ++filteredRecordCount;
+        }
+    }
+
     stream << std::fixed << std::setprecision(3);
     stream << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     stream << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1100\" height=\"760\" viewBox=\"0 0 1100 760\">\n";
@@ -167,11 +196,31 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
            << " | Narrow: " << statistics.NarrowPhaseCandidateCount
            << "</text>\n";
 
+    // Filter状態は常に画面へ出します。
+    // 「線が少ない理由」がSimulation結果なのかViewerの絞り込みなのかを区別できるようにするためです。
+    stream << "  <text x=\"46\" y=\"91\" fill=\"#7dd3fc\" font-family=\"monospace\" font-size=\"12\">Filter: Particle=";
+    if (settings.ParticleIndex == Settings::InvalidIndex)
+    {
+        stream << "ALL";
+    }
+    else
+    {
+        stream << settings.ParticleIndex;
+    }
+    stream << " Triangle=";
+    if (settings.TriangleIndex == Settings::InvalidIndex)
+    {
+        stream << "ALL";
+    }
+    else
+    {
+        stream << settings.TriangleIndex;
+    }
+    stream << " | Visible Pairs=" << filteredRecordCount << "</text>\n";
+
     // ========================================================================
     // Legend
     // ========================================================================
-    // Funnel順に左から並べます。通常Candidate生成コードと同じ順序にすることで、
-    // 色を見たときに「どこまで処理が進んだ候補か」を直感的に比較できます。
     const SoftBodyParticleTriangleCandidateDebugReason legendReasons[] = {
         SoftBodyParticleTriangleCandidateDebugReason::AABBReject,
         SoftBodyParticleTriangleCandidateDebugReason::TopologyReject,
@@ -183,15 +232,14 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     float legendX = 46.0f;
     for (SoftBodyParticleTriangleCandidateDebugReason reason : legendReasons)
     {
-        stream << "  <rect x=\"" << legendX << "\" y=\"96\" width=\"13\" height=\"13\" fill=\""
+        stream << "  <rect x=\"" << legendX << "\" y=\"112\" width=\"13\" height=\"13\" fill=\""
                << GetReasonColor(reason) << "\"/>\n";
         stream << "  <text x=\"" << (legendX + 19.0f)
-               << "\" y=\"108\" fill=\"#cbd5e1\" font-family=\"monospace\" font-size=\"12\">"
+               << "\" y=\"124\" fill=\"#cbd5e1\" font-family=\"monospace\" font-size=\"12\">"
                << GetReasonName(reason) << "</text>\n";
         legendX += 205.0f;
     }
 
-    // Cloth全体を薄く描き、Reject線の位置関係を把握するための背景にします。
     stream << "  <g fill=\"#1e293b\" fill-opacity=\"0.30\" stroke=\"#475569\" stroke-width=\"0.55\">\n";
     for (std::size_t index = 0u; index + 2u < triangleIndices.size(); index += 3u)
     {
@@ -214,13 +262,44 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     }
     stream << "  </g>\n";
 
+    // 選択Triangleは背景Mesh上でも強調します。
+    // Pair線だけでは折れたCloth上のどの面を選択しているか分かりにくいため、太い白枠を重ねます。
+    if (settings.TriangleIndex != Settings::InvalidIndex)
+    {
+        uint32_t triangleA = 0u;
+        uint32_t triangleB = 0u;
+        uint32_t triangleC = 0u;
+        if (TryGetTriangleParticleIndices(
+                triangleIndices,
+                settings.TriangleIndex,
+                triangleA,
+                triangleB,
+                triangleC)
+            && triangleA < particles.size()
+            && triangleB < particles.size()
+            && triangleC < particles.size())
+        {
+            const math::Vec3& a = particles[triangleA].Position;
+            const math::Vec3& b = particles[triangleB].Position;
+            const math::Vec3& c = particles[triangleC].Position;
+            stream << "  <polygon points=\""
+                   << ProjectX(a.x, bounds) << ',' << ProjectY(a.y, bounds) << ' '
+                   << ProjectX(b.x, bounds) << ',' << ProjectY(b.y, bounds) << ' '
+                   << ProjectX(c.x, bounds) << ',' << ProjectY(c.y, bounds)
+                   << "\" fill=\"none\" stroke=\"#f8fafc\" stroke-width=\"2.2\"/>\n";
+        }
+    }
+
     // ========================================================================
     // Candidate Pair Overlay
     // ========================================================================
-    // Query Particleから対象Triangle重心へ線を引きます。
-    // 同じParticleが複数Triangleを評価する状況でも、色と線の向きからPair単位で追跡できます。
     for (const SoftBodyParticleTriangleCandidateDebugInfo& record : snapshot.Records)
     {
+        if (PassesFilter(record, settings) == false)
+        {
+            continue;
+        }
+
         if (record.ParticleIndex >= particles.size())
         {
             continue;
@@ -258,7 +337,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
                << "\" x2=\"" << ProjectX(triangleCenter.x, bounds)
                << "\" y2=\"" << ProjectY(triangleCenter.y, bounds)
                << "\" stroke=\"" << color
-               << "\" stroke-width=\"1.15\" stroke-opacity=\"0.34\">"
+               << "\" stroke-width=\"1.35\" stroke-opacity=\"0.58\">"
                << "<title>Particle " << record.ParticleIndex
                << " -> Triangle " << record.TriangleIndex
                << " | " << GetReasonName(record.Reason)
@@ -266,15 +345,30 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
 
         stream << "  <circle cx=\"" << ProjectX(particlePosition.x, bounds)
                << "\" cy=\"" << ProjectY(particlePosition.y, bounds)
-               << "\" r=\"3.8\" fill=\"none\" stroke=\"" << color
-               << "\" stroke-width=\"1.2\" stroke-opacity=\"0.72\">"
+               << "\" r=\"4.2\" fill=\"none\" stroke=\"" << color
+               << "\" stroke-width=\"1.4\" stroke-opacity=\"0.88\">"
                << "<title>Particle " << record.ParticleIndex
                << " | Triangle " << record.TriangleIndex
                << " | " << GetReasonName(record.Reason)
                << "</title></circle>\n";
     }
 
-    stream << "  <text x=\"46\" y=\"738\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">Line: query particle -> candidate triangle center / hover for pair and reject reason</text>\n";
+    // Particle選択時はReject Pairが0件でも選択位置を確認できるよう白い十字を表示します。
+    if (settings.ParticleIndex != Settings::InvalidIndex
+        && settings.ParticleIndex < particles.size())
+    {
+        const math::Vec3& selectedPosition = particles[settings.ParticleIndex].Position;
+        const float x = ProjectX(selectedPosition.x, bounds);
+        const float y = ProjectY(selectedPosition.y, bounds);
+        stream << "  <line x1=\"" << (x - 7.0f) << "\" y1=\"" << y
+               << "\" x2=\"" << (x + 7.0f) << "\" y2=\"" << y
+               << "\" stroke=\"#f8fafc\" stroke-width=\"2\"/>\n";
+        stream << "  <line x1=\"" << x << "\" y1=\"" << (y - 7.0f)
+               << "\" x2=\"" << x << "\" y2=\"" << (y + 7.0f)
+               << "\" stroke=\"#f8fafc\" stroke-width=\"2\"/>\n";
+    }
+
+    stream << "  <text x=\"46\" y=\"738\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">Line: query particle -> candidate triangle center / filter is applied before pair drawing</text>\n";
     stream << "</svg>\n";
     return stream.good();
 }
