@@ -336,9 +336,9 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
         // ====================================================================
         // 2-4. Metrics
         // ====================================================================
-        // Cell Size比較用のEdge Length統計です。Collision判定そのものには使用しません。
-        // 各TriangleでDistance()を3回呼ぶためsqrtも3回発生します。
-        // このScopeが大きければ、計測用Metricsを常時計算から外すことが次の直接的な最適化候補です。
+        // CellSize比較に使うTriangle Edge長だけを計測します。
+        // Collision判定には不要なので、Profiler無効時はこのpass自体をskipします。
+        if (CPUProfiler::Get().IsEnabled())
         {
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.Metrics");
 
@@ -357,29 +357,31 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 const double edgeAB = static_cast<double>(Distance(a, b));
                 const double edgeBC = static_cast<double>(Distance(b, c));
                 const double edgeCA = static_cast<double>(Distance(c, a));
+
                 triangleEdgeLengthSum += edgeAB + edgeBC + edgeCA;
-                maximumTriangleEdgeLength = std::max(
+                maximumTriangleEdgeLength = std::max({
                     maximumTriangleEdgeLength,
-                    std::max(edgeAB, std::max(edgeBC, edgeCA)));
+                    edgeAB,
+                    edgeBC,
+                    edgeCA });
                 triangleEdgeSampleCount += 3u;
             }
         }
     }
 
     // ========================================================================
-    // 3. Cell Range conversion
+    // 3. Cell range
     // ========================================================================
-    // AABBのmin/maxをUniform Gridの整数Cell座標へ変換します。
-    // std::floorを含む座標変換コストをCell登録ループから分離して確認できます。
+    // AABBから整数Cell範囲を作る処理をAABB計算から分離します。
+    // ここが大きい場合はfloor / float->int変換やCell Spanそのものを次の最適化対象にできます。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRange");
 
         for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
         {
             TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
-            cellRange.Valid = false;
-
             const TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+            cellRange.Valid = bounds.Valid;
             if (bounds.Valid == false)
             {
                 continue;
@@ -387,10 +389,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
 
             cellRange.Minimum = ComputeCellCoord(bounds.Minimum);
             cellRange.Maximum = ComputeCellCoord(bounds.Maximum);
-            cellRange.Valid = true;
 
-            // Cell SpanはTriangleが何セルへ広がっているかを見る指標です。
-            // ここでは最大値だけを整数演算で集計し、登録ループへ追加コストを持ち込みません。
             const uint64_t spanX = static_cast<uint64_t>(
                 static_cast<int64_t>(cellRange.Maximum.X)
                 - static_cast<int64_t>(cellRange.Minimum.X) + 1ll);
@@ -743,6 +742,36 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
         profiler.AddCounter("SoftBody.TriangleHash.EdgeHalfSpaceRejectCount", edgeHalfSpaceRejectCountValue);
         profiler.AddCounter("SoftBody.TriangleHash.EdgeHalfSpaceRejectRatio", edgeHalfSpaceRejectRatio);
         profiler.AddCounter("SoftBody.TriangleHash.ClosestPointCandidateCount", closestPointCandidateCount);
+    }
+}
+
+void SoftBodyTriangleSpatialHashGrid::CollectActiveCellDebugInfo(
+    std::vector<SoftBodyTriangleSpatialHashCellDebugInfo>& outCells) const
+{
+    // ========================================================================
+    // Debug Snapshot only - not part of Broad Phase hot path
+    // ========================================================================
+    // Open Addressingの物理Bucket順は可視化側に意味がないため、現GenerationのActive Cellだけを
+    // 値型へコピーします。Generation比較をここへ閉じ込めることで、Debug ViewerがHash内部実装へ
+    // 依存せず、将来Bucket配置方式を変更してもSnapshot契約を維持できます。
+    outCells.clear();
+    outCells.reserve(m_ActiveCellCount);
+
+    for (const TriangleCellBucket& bucket : m_Buckets)
+    {
+        if (bucket.Generation != m_CurrentGeneration)
+        {
+            continue;
+        }
+
+        SoftBodyTriangleSpatialHashCellDebugInfo info{};
+        info.X = bucket.Coord.X;
+        info.Y = bucket.Coord.Y;
+        info.Z = bucket.Coord.Z;
+        info.TriangleCount = static_cast<uint32_t>(std::min<std::size_t>(
+            bucket.TriangleIndices.Count,
+            static_cast<std::size_t>(UINT32_MAX)));
+        outCells.push_back(info);
     }
 }
 
@@ -1099,92 +1128,21 @@ void SoftBodyTriangleSpatialHashGrid::SubmitCellRegistrationCounters(
         ? activeCellCount / static_cast<double>(m_Buckets.size())
         : 0.0;
 
-    // ========================================================================
-    // Cell Registration Breakdown
-    // ========================================================================
-    // CellRegistrationのHot loopへTimerを追加すると数万回の計測自体がボトルネックになります。
-    // そこで既に収集している整数Counterから、各登録がどの種類の仕事だったかを派生させます。
-    //
-    // ActiveCellCount:
-    //   Build中に初めて使われたCell数なので、新規Bucket Activation回数と一致します。
-    // ExistingBucketReuseCount:
-    //   RegistrationCount - ActiveCellCount。既にActiveなBucketへTriangle Indexを追加した回数です。
-    // ExtraProbeCount:
-    //   ProbeCount - RegistrationCount。各登録は最低1 Probe必要なので、1回を超えた分だけを
-    //   Hash Collision / Linear Probeの追加仕事量として数えます。
-    // VectorGrowCount:
-    //   TriangleIndices push_back時にcapacityが増えた回数です。
-    const uint64_t bucketActivationCount = static_cast<uint64_t>(m_ActiveCellCount);
-    const uint64_t existingBucketReuseCount =
-        m_BuildRegistrationCount >= bucketActivationCount
-            ? m_BuildRegistrationCount - bucketActivationCount
-            : 0u;
-    const uint64_t extraProbeCount =
-        m_BuildProbeCount >= m_BuildRegistrationCount
-            ? m_BuildProbeCount - m_BuildRegistrationCount
-            : 0u;
-
-    const double bucketActivationCountValue = static_cast<double>(bucketActivationCount);
-    const double existingBucketReuseCountValue = static_cast<double>(existingBucketReuseCount);
-    const double extraProbeCountValue = static_cast<double>(extraProbeCount);
-    const double vectorGrowCountValue = static_cast<double>(m_BuildVectorGrowCount);
-
-    const double bucketActivationRatio = m_BuildRegistrationCount > 0u
-        ? bucketActivationCountValue / registrationCount
-        : 0.0;
-    const double existingBucketReuseRatio = m_BuildRegistrationCount > 0u
-        ? existingBucketReuseCountValue / registrationCount
-        : 0.0;
-    const double extraProbePerRegistration = m_BuildRegistrationCount > 0u
-        ? extraProbeCountValue / registrationCount
-        : 0.0;
-    const double vectorGrowRatio = m_BuildRegistrationCount > 0u
-        ? vectorGrowCountValue / registrationCount
-        : 0.0;
-
-    // 1 Buildにつき各Counterを1回だけ登録します。
-    // StatisticsPanel側では12 iteration分をTotal / Average / Maxとして集計できます。
-    profiler.AddCounter("SoftBody.TriangleHash.RegistrationCount", registrationCount);
+    profiler.AddCounter("SoftBody.TriangleHash.ValidTriangleCount", triangleCount);
+    profiler.AddCounter("SoftBody.TriangleHash.CellRegistrationCount", registrationCount);
     profiler.AddCounter("SoftBody.TriangleHash.ActiveCellCount", activeCellCount);
     profiler.AddCounter("SoftBody.TriangleHash.AverageCellsPerTriangle", averageCellsPerTriangle);
     profiler.AddCounter("SoftBody.TriangleHash.AverageTrianglesPerCell", averageTrianglesPerCell);
+    profiler.AddCounter("SoftBody.TriangleHash.ProbeCount", static_cast<double>(m_BuildProbeCount));
     profiler.AddCounter("SoftBody.TriangleHash.AverageProbeCount", averageProbeCount);
     profiler.AddCounter("SoftBody.TriangleHash.MaxProbeCount", static_cast<double>(m_BuildMaxProbeCount));
-    profiler.AddCounter("SoftBody.TriangleHash.VectorGrowCount", vectorGrowCountValue);
+    profiler.AddCounter("SoftBody.TriangleHash.VectorGrowCount", static_cast<double>(m_BuildVectorGrowCount));
     profiler.AddCounter("SoftBody.TriangleHash.TableGrowCount", static_cast<double>(m_BuildTableGrowCount));
+    profiler.AddCounter("SoftBody.TriangleHash.BucketCount", static_cast<double>(m_Buckets.size()));
     profiler.AddCounter("SoftBody.TriangleHash.LoadFactor", loadFactor);
     profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanX", static_cast<double>(m_BuildMaxCellSpanX));
     profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanY", static_cast<double>(m_BuildMaxCellSpanY));
     profiler.AddCounter("SoftBody.TriangleHash.MaxCellSpanZ", static_cast<double>(m_BuildMaxCellSpanZ));
-
-    // CellRegistrationの内訳を同じprefixへまとめ、StatisticsPanel上で隣接表示しやすくします。
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.BucketActivationCount",
-        bucketActivationCountValue);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.BucketActivationRatio",
-        bucketActivationRatio);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.ExistingBucketReuseCount",
-        existingBucketReuseCountValue);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.ExistingBucketReuseRatio",
-        existingBucketReuseRatio);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.ExtraProbeCount",
-        extraProbeCountValue);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.ExtraProbePerRegistration",
-        extraProbePerRegistration);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.VectorGrowCount",
-        vectorGrowCountValue);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.VectorGrowRatio",
-        vectorGrowRatio);
-    profiler.AddCounter(
-        "SoftBody.TriangleHash.CellRegistration.TableGrowCount",
-        static_cast<double>(m_BuildTableGrowCount));
 }
 
 } // namespace ph
