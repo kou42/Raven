@@ -34,6 +34,11 @@ public:
         // TriangleIndexを指定した場合、そのTriangleに対するPairだけを描画します。
         // ParticleIndexと同時指定した場合はAND条件になり、1 Pairを精密に追跡できます。
         uint32_t TriangleIndex = InvalidIndex;
+
+        // trueの場合、BrowserDebugServerが保持する最新FilterをこのSettingsへ上書きして使用します。
+        // Browser Debug Viewerからの選択をRuntime SVGへ反映する通常経路ではtrueのまま使います。
+        // Headless TestなどServerと切り離して明示Filterだけを検証したい場合はfalseにできます。
+        bool UseBrowserFilterState = true;
     };
 
     static bool Write(
