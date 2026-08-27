@@ -1,6 +1,7 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyPhysicsDebugSvgWriter.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -73,6 +74,69 @@ float NormalizeDepth(float z, const ProjectionBounds& bounds)
 {
     return (z - bounds.MinZ) / SafeRange(bounds.MinZ, bounds.MaxZ);
 }
+
+void WriteSpatialHashGrid(
+    std::ofstream& stream,
+    const ProjectionBounds& bounds,
+    float spatialHashCellSize,
+    const SoftBodyPhysicsDebugSvgWriter::Settings& settings)
+{
+    if (settings.DrawSpatialHashGrid == false || spatialHashCellSize <= 0.0f)
+    {
+        return;
+    }
+
+    // ========================================================================
+    // Spatial Hash XY Projection
+    // ========================================================================
+    // SoftBodyTriangleSpatialHashGrid::ComputeCellCoord()は各軸を
+    // floor(position / cellSize) してCellを決定します。
+    // Browser側でも同じ原点固定境界を再構築することで、Particle / TriangleがどのXY Cellへ
+    // 入るかをSolver実装と同じ区切りで確認できます。
+    //
+    // 3D Spatial HashのZ Layerはこの2D表示では重なるため、この段階ではXY境界のみ描画します。
+    // 次段階ではGridからActive Bucket座標をDebug Snapshotとして取得し、Z LayerとTriangle登録数を
+    // 色・透明度へ変換してOccupied Cellまで可視化します。
+    const int32_t minimumCellX = static_cast<int32_t>(std::floor(bounds.MinX / spatialHashCellSize));
+    const int32_t maximumCellX = static_cast<int32_t>(std::floor(bounds.MaxX / spatialHashCellSize));
+    const int32_t minimumCellY = static_cast<int32_t>(std::floor(bounds.MinY / spatialHashCellSize));
+    const int32_t maximumCellY = static_cast<int32_t>(std::floor(bounds.MaxY / spatialHashCellSize));
+
+    const float top = ProjectY(bounds.MaxY, bounds, settings);
+    const float bottom = ProjectY(bounds.MinY, bounds, settings);
+    const float left = ProjectX(bounds.MinX, bounds, settings);
+    const float right = ProjectX(bounds.MaxX, bounds, settings);
+
+    stream << "  <g stroke=\"#334155\" stroke-width=\"0.7\" stroke-opacity=\"0.75\">\n";
+
+    for (int32_t cellX = minimumCellX; cellX <= maximumCellX + 1; ++cellX)
+    {
+        const float worldX = static_cast<float>(cellX) * spatialHashCellSize;
+        if (worldX < bounds.MinX || worldX > bounds.MaxX)
+        {
+            continue;
+        }
+
+        const float x = ProjectX(worldX, bounds, settings);
+        stream << "    <line x1=\"" << x << "\" y1=\"" << top
+               << "\" x2=\"" << x << "\" y2=\"" << bottom << "\"/>\n";
+    }
+
+    for (int32_t cellY = minimumCellY; cellY <= maximumCellY + 1; ++cellY)
+    {
+        const float worldY = static_cast<float>(cellY) * spatialHashCellSize;
+        if (worldY < bounds.MinY || worldY > bounds.MaxY)
+        {
+            continue;
+        }
+
+        const float y = ProjectY(worldY, bounds, settings);
+        stream << "    <line x1=\"" << left << "\" y1=\"" << y
+               << "\" x2=\"" << right << "\" y2=\"" << y << "\"/>\n";
+    }
+
+    stream << "  </g>\n";
+}
 } // namespace
 
 bool SoftBodyPhysicsDebugSvgWriter::Write(
@@ -121,6 +185,9 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
            << " | Candidate: " << statistics.CandidateCount
            << " | NarrowPhase: " << statistics.NarrowPhaseCount
            << " | Correction: " << statistics.PositionCorrectionCount << "</text>\n";
+
+    // GridをTriangleより先に描くことで、Cloth形状を隠さず背景情報として確認できます。
+    WriteSpatialHashGrid(stream, bounds, spatialHashCellSize, settings);
 
     if (settings.DrawTriangles == true)
     {
@@ -180,6 +247,8 @@ bool SoftBodyPhysicsDebugSvgWriter::Write(
         stream << "  </g>\n";
     }
 
+    stream << "  <text x=\"48\" y=\"" << (settings.Height - 42u)
+           << "\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">Grid: Particle-Triangle Spatial Hash XY boundaries / origin aligned</text>\n";
     stream << "  <text x=\"48\" y=\"" << (settings.Height - 24u)
            << "\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">XY orthographic projection / particle Z is encoded as color</text>\n";
     stream << "</svg>\n";
