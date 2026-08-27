@@ -33,9 +33,12 @@ public:
 
         // Particle-Triangle Broad Phaseで使用しているCell Sizeを基準に、
         // World原点へ固定されたXY Spatial Hash境界を描画します。
-        // ここでは3D GridをXYへ投影した境界だけを描き、Z LayerごとのOccupied Cell可視化は
-        // 次段階でGrid内部Snapshot APIを追加して重ねる想定です。
         bool DrawSpatialHashGrid = true;
+
+        // 実際のHash BuildでTriangleが登録されたActive CellをXYへ投影して重ねます。
+        // 同じXYに複数Z Layerが存在する場合は1矩形へ集約し、Z Layer数とTriangle登録総数を
+        // tooltipで確認できるようにします。
+        bool DrawOccupiedSpatialHashCells = true;
 
         // Triangle面を表示するとParticle位置だけでなくCloth形状を把握しやすくなります。
         bool DrawTriangles = true;
@@ -52,6 +55,7 @@ public:
         const std::vector<uint32_t>& triangleIndices,
         const SoftBodyParticleTriangleCollisionStatistics& statistics,
         float spatialHashCellSize,
+        const std::vector<SoftBodyTriangleSpatialHashCellDebugInfo>& spatialHashCells,
         const Settings& settings = Settings{});
 };
 
