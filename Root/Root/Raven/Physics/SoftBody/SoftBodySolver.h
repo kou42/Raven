@@ -38,141 +38,35 @@ struct SoftBodySolverSettings
     // この共通反復回数の中で解かれます。
     uint32_t SolverIterations = 8u;
 
-    // ParticleをCollider表面から僅かに離して保持する共通厚みです。
-    // Clothは数学的には厚み0の面なので、完全にCollider表面へ配置すると浮動小数点誤差により
-    // 次の反復で再び内部判定されやすくなります。小さな余白を持たせて接触を安定させます。
-    float CollisionThickness = 0.005f;
+    // 速度減衰です。0なら減衰なし、1に近いほど急速に停止します。
+    float Damping = 0.01f;
 
-    // Sphere Collision ConstraintのComplianceです。
-    // 0.0fなら硬い片側Constraintとして働き、値を大きくするとCollider表面が柔らかくなります。
-    // Distance Constraintと同じく alphaTilde = Compliance / dt^2 としてXPBD式へ入ります。
-    float SphereCollisionCompliance = 0.0f;
-
-    // Plane Collision ConstraintのComplianceです。
-    // Sphereと同じXPBD式へ統一し、0.0fなら硬い床、値を増やすと沈み込みを許す柔らかい床になります。
-    float PlaneCollisionCompliance = 0.0f;
-
-    // ========================================================================
-    // Solver Temporary Allocator Mode
-    // ========================================================================
-    // Heap:
-    //   Phase ②のBefore計測用です。SolverTemporaryAllocatorはstd::allocatorを使用します。
-    //
-    // FrameAllocator:
-    //   Phase ③のAfter経路です。SoftBodySolver所有のFrameAllocatorへ一時確保を集約します。
-    //
-    // デフォルトはPhase ③を正式適用した状態としてFrameAllocatorにします。
-    // ④のBefore/After計測時だけ同一シーンでHeapへ切り替えて比較できます。
-    SoftBodyTemporaryAllocatorMode TemporaryAllocatorMode =
-        SoftBodyTemporaryAllocatorMode::FrameAllocator;
+    // Step内Temporary STL Containerの確保元です。
+    // 通常はHeap互換のままにし、Profiler比較時にFrameAllocatorへ切り替えます。
+    SoftBodyTemporaryAllocatorMode TemporaryAllocatorMode = SoftBodyTemporaryAllocatorMode::Heap;
 };
 
 // ============================================================================
-// Particle-Triangle Self Collision Statistics
+// Soft Body Collision Collider
 // ============================================================================
-// Particle-Triangle Broad Phase / Narrow Phaseの負荷を1 Step単位で比較するための計測値です。
-// StepWithSelfCollisions()開始時にReset()され、全Solver Iterationの値を合算します。
-//
-// CandidateCount:
-//   Spatial Hashが生成したParticle-Triangle候補ペア総数です。
-//   Topology除外などのcheap reject前の値なので、Cell Size変更によるBroad Phase候補数の差を
-//   直接比較できます。
-//
-// NarrowPhaseCount:
-//   Index検証と「Particle自身を含むTriangle」のTopology除外を通過し、
-//   ComputeClosestPointOnTriangle()を実際に実行する直前まで到達した回数です。
-//   CandidateCountとの差を見ることで、Broad Phase候補のうちNarrow Phaseへ流入した割合を確認できます。
-//
-// DistanceCount:
-//   Closest Pointを求め、Particle-Triangle距離とCollision法線の構築まで完了した回数です。
-//   NarrowPhaseCountとの差と、次のConstraintCountまでの減少量を比較することで、
-//   Distance計算後の早期Rejectがどの程度効くかを確認できます。
-//
-// ConstraintCount:
-//   thickness外かつLambdaが残っていない候補を除外し、XPBD Constraint計算へ進んだ回数です。
-//   DistanceCountとの差は「距離・法線まで求めたがConstraint不要だった候補数」を表します。
-//
-// DenominatorRejectCount:
-//   Constraintへ進んだものの、逆質量とComplianceから作るdenominatorがEpsilon以下となり、
-//   DeltaLambda計算へ進めなかった回数です。固定Particleだけで構成された接触などを切り分けます。
-//
-// DeltaLambdaCount:
-//   有効なdenominatorを得て、XPBDのDeltaLambda計算まで実行した回数です。
-//   ConstraintCount - DenominatorRejectCount と一致するため、後半funnelの整合性確認にも使えます。
-//
-// DeltaLambdaRejectCount:
-//   DeltaLambda計算後、実際に適用するappliedDeltaLambdaがEpsilon以下だった回数です。
-//   この値が大きければ、Constraint後半まで計算してもPosition更新へ寄与しない候補が多いと判断できます。
-//
-// PositionCorrectionCount:
-//   有効なdenominator / DeltaLambdaを得た後、少なくとも1 Particleへ実際に位置補正した回数です。
-//   DeltaLambdaCountとの差をDeltaLambdaRejectCountと比較することで、Position更新直前の脱落理由を確認できます。
-struct SoftBodyParticleTriangleCollisionStatistics
-{
-    uint64_t CandidateCount = 0u;
-    uint64_t NarrowPhaseCount = 0u;
-    uint64_t DistanceCount = 0u;
-    uint64_t ConstraintCount = 0u;
-    uint64_t DenominatorRejectCount = 0u;
-    uint64_t DeltaLambdaCount = 0u;
-    uint64_t DeltaLambdaRejectCount = 0u;
-    uint64_t PositionCorrectionCount = 0u;
-
-    void Reset()
-    {
-        CandidateCount = 0u;
-        NarrowPhaseCount = 0u;
-        DistanceCount = 0u;
-        ConstraintCount = 0u;
-        DenominatorRejectCount = 0u;
-        DeltaLambdaCount = 0u;
-        DeltaLambdaRejectCount = 0u;
-        PositionCorrectionCount = 0u;
-    }
-};
-
-// ============================================================================
-// Static / Kinematic Sphere Collision Constraint
-// ============================================================================
-// SoftBody側で扱うSphere Colliderです。
-// Solver自身はSphereを移動させず、外部側がSetSphereCollider()でCenter/Radiusを更新します。
-// そのため静的Sphereだけでなく、RigidBody Transformを毎フレーム同期したKinematicな境界としても使えます。
-//
-// ParticleLambdasは「Particle × Sphere」の片側XPBD Constraintが同一Step内で蓄積するLambdaです。
-// Distance Constraintと同じくStep開始時に0へ戻し、Solver iteration間だけ保持します。
-// Collisionは C(x) >= 0 の不等式なのでLambdaは常に0以上へclampし、接触が離れる方向へ動いた場合は
-// Lambdaを減少させて拘束を解放できるようにします。
-//
-// AccumulatedReactionImpulse / ContactPointSum / ContactCount は1Stepだけ有効なTransient情報です。
-// XPBDで得たDeltaLambdaから
-//
-//   reaction impulse ~= -normal * DeltaLambda / dt
-//
-// としてSphere側の反作用を蓄積します。以前の「位置補正量からImpulseを逆算する方式」と異なり、
-// Constraint Solverが実際に適用したLambda増減を直接利用するため、反復回数による過大評価を抑えられます。
+// Collider自体はSolverローカル空間で保持します。
+// World Transformとの同期はSoftBodyをSceneへ統合するレイヤー側で行います。
 struct SoftBodySphereCollider
 {
     math::Vec3 Center{};
     float Radius = 0.5f;
+    float Compliance = 0.0f;
 
-    std::vector<float> ParticleLambdas;
+    // ParticleごとのXPBD Lambdaです。
+    // 片側Constraintなので0以上にClampし、Step開始時に0へResetします。
+    std::vector<float> Lambdas;
 
+    // Soft/Rigid連成用の1Step分Feedbackです。
+    // SolverはCloth Particleへ適用したImpulseの反作用をCollider側へ蓄積し、
+    // Scene側がRigidBodyへ変換して適用します。
     math::Vec3 AccumulatedReactionImpulse{};
-    math::Vec3 ContactPointSum{};
+    math::Vec3 AccumulatedContactPoint{};
     uint32_t ContactCount = 0u;
-
-    void ResetStepConstraintState(std::size_t particleCount)
-    {
-        ParticleLambdas.assign(particleCount, 0.0f);
-        ResetStepFeedback();
-    }
-
-    void ResetStepFeedback()
-    {
-        AccumulatedReactionImpulse = math::Vec3{};
-        ContactPointSum = math::Vec3{};
-        ContactCount = 0u;
-    }
 
     math::Vec3 GetAverageContactPoint() const
     {
@@ -180,51 +74,35 @@ struct SoftBodySphereCollider
         {
             return Center;
         }
-
-        return ContactPointSum / static_cast<float>(ContactCount);
+        return AccumulatedContactPoint / static_cast<float>(ContactCount);
     }
 };
 
-// ============================================================================
-// Static Plane Collision Constraint
-// ============================================================================
-// Plane式は dot(Normal, x) - Offset = 0 とします。
-// 実際のCollision Constraintは共通Thicknessを加味して
-//
-//   C(x) = dot(Normal, x) - Offset - CollisionThickness >= 0
-//
-// として扱います。Sphereと同じく片側XPBD ConstraintとしてLambdaを0以上へclampするため、
-// PlaneはParticleをNormal方向へ押せますが反対側へ引っ張りません。
-// NormalはAdd/Set時に正規化し、ゼロベクトルが渡された場合は+Yを安全なfallbackとして使用します。
 struct SoftBodyPlaneCollider
 {
     math::Vec3 Normal{ 0.0f, 1.0f, 0.0f };
     float Offset = 0.0f;
+    float Compliance = 0.0f;
+    std::vector<float> Lambdas;
+};
 
-    // Particleごとの片側Constraint Lambdaです。
-    // 現段階ではStepを跨ぐWarm Startは行わず、各Step開始時に0へ戻します。
-    std::vector<float> ParticleLambdas;
-
-    void ResetStepConstraintState(std::size_t particleCount)
-    {
-        ParticleLambdas.assign(particleCount, 0.0f);
-    }
+// ============================================================================
+// Particle-Triangle Collision Statistics
+// ============================================================================
+// Cell Size比較やNarrow Phase最適化の効果を同じ指標で追跡するための1Step統計です。
+struct SoftBodyParticleTriangleCollisionStatistics
+{
+    uint64_t CandidateCount = 0u;
+    uint64_t NarrowPhaseCount = 0u;
+    uint64_t PositionCorrectionCount = 0u;
 };
 
 // ============================================================================
 // Soft Body Solver
 // ============================================================================
-// RigidBodyのContactSolverとは分離した、Particle + Constraint用のXPBD Solverです。
+// XPBDベースのParticle Solverです。
 //
-// 通常Stepの基本順序:
-//   1. 重力を積分してParticleの予測位置を作る
-//   2. Distance / Dihedral / Sphere / PlaneのLambdaをStep用に初期化する
-//   3. XPBD Distance Constraintを反復解決する
-//   4. Dihedral Angle Bending Constraintを反復解決する
-//   5. 同じ反復内でSphere / Plane Collisionを片側XPBD Constraintとして解決する
-//   6. 最終PositionとStep開始時PositionからVelocityを再構築する
-//
-// Cloth用統合Stepでは上記のPosition反復へParticle-Particle / Particle-Triangle Self Collisionを追加し、
+// Cloth統合Stepでは
 //
 //   Predict
 //     -> [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle -> Sphere -> Plane] x Iterations
@@ -353,6 +231,14 @@ public:
     const SoftBodyParticleTriangleCollisionStatistics& GetParticleTriangleCollisionStatistics() const
     {
         return m_ParticleTriangleCollisionStatistics;
+    }
+
+    // Browser Debug Viewerなど、低頻度の診断表示から直近Particle-Triangle Hash Buildの
+    // Active Cell状態を取得します。Grid本体は公開せず、Debug用値型だけをコピーします。
+    void CollectParticleTriangleSpatialHashDebugInfo(
+        std::vector<SoftBodyTriangleSpatialHashCellDebugInfo>& outCells) const
+    {
+        m_ParticleTriangleSpatialHash.CollectActiveCellDebugInfo(outCells);
     }
 
     // 直近のStepWithSelfCollisions()でStepローカルSTLコンテナが要求したTemporary allocation統計です。
