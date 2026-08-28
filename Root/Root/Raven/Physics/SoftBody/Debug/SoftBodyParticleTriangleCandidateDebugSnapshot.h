@@ -42,12 +42,34 @@ enum class SoftBodyParticleTriangleCandidateDebugReason : uint8_t
 
 // 1つの「Particle × Triangle Cell Candidate」がどの段階で脱落したかを表します。
 // ParticleIndex / TriangleIndexを保持するため、SVG側ではParticleだけでなく対象Triangleも強調できます。
+//
+// Inspector用の距離は可能な限りWorld Space距離へ正規化して保存します。
+// Runtime側のcheap reject自体はsqrtを避けるため非正規化法線 + 平方比較ですが、Debug Snapshotは低頻度なので
+// 人間が読みやすい距離へ変換してもSimulation hot pathには影響しません。
 struct SoftBodyParticleTriangleCandidateDebugInfo
 {
     uint32_t ParticleIndex = 0u;
     uint32_t TriangleIndex = 0u;
     SoftBodyParticleTriangleCandidateDebugReason Reason =
         SoftBodyParticleTriangleCandidateDebugReason::AABBReject;
+
+    float Thickness = 0.0f;
+
+    // Expanded Triangle AABBから各軸方向へどれだけ外れているかです。
+    // AABB内なら0、AABB Rejectなら少なくとも1軸が正になります。
+    math::Vec3 AABBOutsideDistance{};
+
+    // Triangle Planeへの符号付きWorld Space距離です。
+    // Planeが縮退している場合はPlaneValid=falseになります。
+    float PlaneSignedDistance = 0.0f;
+    bool PlaneValid = false;
+
+    // AB / BC / CA Edge Half-Spaceの符号付きWorld Space距離です。
+    // 負値はTriangle外側を意味し、abs(distance) > ThicknessならそのEdgeでRejectされます。
+    float EdgeABSignedDistance = 0.0f;
+    float EdgeBCSignedDistance = 0.0f;
+    float EdgeCASignedDistance = 0.0f;
+    bool EdgeHalfSpaceValid = false;
 };
 
 // Snapshot全体の件数です。
