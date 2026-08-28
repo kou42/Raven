@@ -299,7 +299,11 @@ void BrowserDebugServer::HandleClient(uintptr_t clientSocketValue)
 
     const std::string_view firstLine = request.substr(0u, firstLineEnd);
     constexpr std::string_view GetPrefix = "GET ";
-    if (firstLine.starts_with(GetPrefix) == false)
+
+    // RavenはC++17でビルドしているためstring_view::starts_with()は使用しません。
+    // 先頭4文字を明示比較し、同じGET判定をC++17で行います。
+    if (firstLine.size() < GetPrefix.size()
+        || firstLine.substr(0u, GetPrefix.size()) != GetPrefix)
     {
         SendResponse(clientSocket, 405, "Method Not Allowed", "text/plain; charset=utf-8", "GET only");
         return;
