@@ -209,6 +209,48 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     stream << std::fixed << std::setprecision(3);
     stream << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     stream << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1100\" height=\"760\" viewBox=\"0 0 1100 760\">\n";
+
+    // ========================================================================
+    // Interactive Selection Bridge
+    // ========================================================================
+    // Reject SVGはViewer.htmlから<object>として同一Originで読み込まれます。
+    // Particle / TriangleをクリックするとSVG自身がlocalhostの/filterへ選択値を送り、
+    // parent.postMessage()で親Viewerの入力欄・URL Queryも同期します。
+    //
+    // 現在のもう一方のFilter値を保持したまま選択するため、ParticleをクリックしてもTriangle Filter、
+    // TriangleをクリックしてもParticle Filterは維持されます。
+    stream << "  <style>.raven-pick{cursor:pointer}.raven-pick:hover{filter:brightness(1.8)}</style>\n";
+    stream << "  <script><![CDATA[\n";
+    stream << "    let currentParticle=";
+    if (resolvedSettings.ParticleIndex == Settings::InvalidIndex)
+    {
+        stream << "null";
+    }
+    else
+    {
+        stream << resolvedSettings.ParticleIndex;
+    }
+    stream << "; let currentTriangle=";
+    if (resolvedSettings.TriangleIndex == Settings::InvalidIndex)
+    {
+        stream << "null";
+    }
+    else
+    {
+        stream << resolvedSettings.TriangleIndex;
+    }
+    stream << ";\n";
+    stream << "    async function applySelection(particle,triangle){"
+              "const q=new URLSearchParams();"
+              "if(particle!==null)q.set('particle',String(particle));"
+              "if(triangle!==null)q.set('triangle',String(triangle));"
+              "try{await fetch('/filter'+(q.toString()?'?'+q.toString():''),{cache:'no-store'});}catch(e){}"
+              "currentParticle=particle;currentTriangle=triangle;"
+              "if(window.parent&&window.parent!==window){window.parent.postMessage({type:'raven-debug-filter',particle:particle,triangle:triangle},window.location.origin);}}\n";
+    stream << "    function selectParticle(index){applySelection(index,currentTriangle);}\n";
+    stream << "    function selectTriangle(index){applySelection(currentParticle,index);}\n";
+    stream << "  ]]></script>\n";
+
     stream << "  <rect width=\"1100\" height=\"760\" fill=\"#0f172a\"/>\n";
     stream << "  <text x=\"46\" y=\"42\" fill=\"#f8fafc\" font-family=\"sans-serif\" font-size=\"25\" font-weight=\"bold\">Particle-Triangle Reject Funnel</text>\n";
     stream << "  <text x=\"46\" y=\"72\" fill=\"#94a3b8\" font-family=\"monospace\" font-size=\"13\">Cell Candidates: "
@@ -240,7 +282,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     {
         stream << resolvedSettings.TriangleIndex;
     }
-    stream << " | Visible Pairs=" << filteredRecordCount << "</text>\n";
+    stream << " | Visible Pairs=" << filteredRecordCount << " | Click particle / triangle to filter</text>\n";
 
     // ========================================================================
     // Legend
@@ -264,8 +306,14 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
         legendX += 205.0f;
     }
 
+    // ========================================================================
+    // Clickable Cloth Triangles
+    // ========================================================================
+    // 背景Triangle自体をclick targetにします。fill-opacityは薄いままですがpointer-eventsを明示し、
+    // 折り重なったClothでも現在最前面に描かれたTriangleを直接選択できます。
     stream << "  <g fill=\"#1e293b\" fill-opacity=\"0.30\" stroke=\"#475569\" stroke-width=\"0.55\">\n";
-    for (std::size_t index = 0u; index + 2u < triangleIndices.size(); index += 3u)
+    uint32_t triangleIndex = 0u;
+    for (std::size_t index = 0u; index + 2u < triangleIndices.size(); index += 3u, ++triangleIndex)
     {
         const uint32_t aIndex = triangleIndices[index];
         const uint32_t bIndex = triangleIndices[index + 1u];
@@ -278,16 +326,16 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
         const math::Vec3& a = particles[aIndex].Position;
         const math::Vec3& b = particles[bIndex].Position;
         const math::Vec3& c = particles[cIndex].Position;
-        stream << "    <polygon points=\""
+        stream << "    <polygon class=\"raven-pick\" onclick=\"selectTriangle(" << triangleIndex
+               << ")\" points=\""
                << ProjectX(a.x, bounds) << ',' << ProjectY(a.y, bounds) << ' '
                << ProjectX(b.x, bounds) << ',' << ProjectY(b.y, bounds) << ' '
                << ProjectX(c.x, bounds) << ',' << ProjectY(c.y, bounds)
-               << "\"/>\n";
+               << "\"><title>Triangle " << triangleIndex << " - click to filter</title></polygon>\n";
     }
     stream << "  </g>\n";
 
     // 選択Triangleは背景Mesh上でも強調します。
-    // Pair線だけでは折れたCloth上のどの面を選択しているか分かりにくいため、太い白枠を重ねます。
     if (resolvedSettings.TriangleIndex != Settings::InvalidIndex)
     {
         uint32_t triangleA = 0u;
@@ -310,7 +358,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
                    << ProjectX(a.x, bounds) << ',' << ProjectY(a.y, bounds) << ' '
                    << ProjectX(b.x, bounds) << ',' << ProjectY(b.y, bounds) << ' '
                    << ProjectX(c.x, bounds) << ',' << ProjectY(c.y, bounds)
-                   << "\" fill=\"none\" stroke=\"#f8fafc\" stroke-width=\"2.2\"/>\n";
+                   << "\" fill=\"none\" stroke=\"#f8fafc\" stroke-width=\"2.2\" pointer-events=\"none\"/>\n";
         }
     }
 
@@ -361,7 +409,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
                << "\" x2=\"" << ProjectX(triangleCenter.x, bounds)
                << "\" y2=\"" << ProjectY(triangleCenter.y, bounds)
                << "\" stroke=\"" << color
-               << "\" stroke-width=\"1.35\" stroke-opacity=\"0.58\">"
+               << "\" stroke-width=\"1.35\" stroke-opacity=\"0.58\" pointer-events=\"none\">"
                << "<title>Particle " << record.ParticleIndex
                << " -> Triangle " << record.TriangleIndex
                << " | " << GetReasonName(record.Reason)
@@ -370,11 +418,27 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
         stream << "  <circle cx=\"" << ProjectX(particlePosition.x, bounds)
                << "\" cy=\"" << ProjectY(particlePosition.y, bounds)
                << "\" r=\"4.2\" fill=\"none\" stroke=\"" << color
-               << "\" stroke-width=\"1.4\" stroke-opacity=\"0.88\">"
+               << "\" stroke-width=\"1.4\" stroke-opacity=\"0.88\" pointer-events=\"none\">"
                << "<title>Particle " << record.ParticleIndex
                << " | Triangle " << record.TriangleIndex
                << " | " << GetReasonName(record.Reason)
                << "</title></circle>\n";
+    }
+
+    // ========================================================================
+    // Clickable Particle Hit Targets
+    // ========================================================================
+    // Particleは描画半径が小さいため、視覚サイズより大きい透明Hit Circleを最前面へ置きます。
+    // fill-opacityを完全な0にするとブラウザ実装によってpointer hit対象外になる場合があるため、
+    // ほぼ透明な0.001を使用します。
+    for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
+    {
+        const math::Vec3& position = particles[particleIndex].Position;
+        stream << "  <circle class=\"raven-pick\" cx=\"" << ProjectX(position.x, bounds)
+               << "\" cy=\"" << ProjectY(position.y, bounds)
+               << "\" r=\"6.5\" fill=\"#ffffff\" fill-opacity=\"0.001\" stroke=\"#38bdf8\" stroke-opacity=\"0.18\" stroke-width=\"0.7\" onclick=\"selectParticle("
+               << particleIndex << ")\"><title>Particle " << particleIndex
+               << " - click to filter</title></circle>\n";
     }
 
     // Particle選択時はReject Pairが0件でも選択位置を確認できるよう白い十字を表示します。
@@ -386,13 +450,13 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
         const float y = ProjectY(selectedPosition.y, bounds);
         stream << "  <line x1=\"" << (x - 7.0f) << "\" y1=\"" << y
                << "\" x2=\"" << (x + 7.0f) << "\" y2=\"" << y
-               << "\" stroke=\"#f8fafc\" stroke-width=\"2\"/>\n";
+               << "\" stroke=\"#f8fafc\" stroke-width=\"2\" pointer-events=\"none\"/>\n";
         stream << "  <line x1=\"" << x << "\" y1=\"" << (y - 7.0f)
                << "\" x2=\"" << x << "\" y2=\"" << (y + 7.0f)
-               << "\" stroke=\"#f8fafc\" stroke-width=\"2\"/>\n";
+               << "\" stroke=\"#f8fafc\" stroke-width=\"2\" pointer-events=\"none\"/>\n";
     }
 
-    stream << "  <text x=\"46\" y=\"738\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">Line: query particle -> candidate triangle center / filter is applied before pair drawing</text>\n";
+    stream << "  <text x=\"46\" y=\"738\" fill=\"#64748b\" font-family=\"monospace\" font-size=\"12\">Click particle or triangle to filter / pair lines remain non-interactive</text>\n";
     stream << "</svg>\n";
     return stream.good();
 }
