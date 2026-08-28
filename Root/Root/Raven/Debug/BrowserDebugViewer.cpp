@@ -144,12 +144,11 @@ namespace Raven
         // Queryへ時刻を付けてブラウザキャッシュを回避し、Ravenが上書きしたSVGを定期再取得します。
         //
         // 左側は従来のSpatial Hash / Particle / Triangle全体表示です。
-        // 右側はCandidateRejects.svgを固定名で読み込み、AABB / Topology / Plane / Edge / NarrowPhaseの
-        // Reject Funnelを専用表示します。
+        // 右側はCandidateRejects.svgを<object>で同一Origin表示します。<img>ではSVG内部の
+        // JavaScript / click eventが無効化されるため、Particle / Triangle直接選択には<object>が必要です。
         //
-        // Apply / Clear時にはlocalhost Serverの/filter endpointへGETし、Browser側の選択を
-        // Raven Process内のBrowserDebugFilterStateへ反映します。次の100ms Debug Snapshotで
-        // CandidateRejects.svgが同じFilter条件で再生成され、Viewerの自動reloadで表示へ戻ってきます。
+        // Reject SVGからは /filter endpointへ選択値を送り、postMessageで親Viewerへ同じ値を通知します。
+        // 親側は入力欄とURL Queryだけを同期し、同じ/filterを二重送信しません。
         const std::string svgFileName = svgPath.filename().generic_string();
         const std::string candidateSvgFileName = "CandidateRejects.svg";
         const uint32_t safeReloadInterval = std::max(reloadIntervalMilliseconds, 50u);
@@ -169,7 +168,7 @@ namespace Raven
                << "main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:2px;background:#334155;}"
                << ".pane{min-width:0;min-height:0;background:#020617;display:flex;flex-direction:column;}"
                << ".label{height:24px;padding:4px 10px;box-sizing:border-box;background:#111827;color:#94a3b8;font-size:12px;}"
-               << ".view{flex:1;min-height:0;width:100%;object-fit:contain;}"
+               << ".view{flex:1;min-height:0;width:100%;object-fit:contain;border:0;}"
                << "</style></head>\n"
                << "<body><header><span class=\"title\">Raven Physics Browser Debug Viewer</span>"
                << "<div class=\"controls\"><label>Particle <input id=\"particleFilter\" type=\"number\" min=\"0\" placeholder=\"ALL\"></label>"
@@ -178,7 +177,7 @@ namespace Raven
                << "<section class=\"pane\"><div class=\"label\">Spatial Hash / Physics Snapshot</div>"
                << "<img id=\"physicsView\" class=\"view\" alt=\"Raven Physics Debug SVG\"></section>"
                << "<section class=\"pane\"><div id=\"candidateLabel\" class=\"label\">Particle-Triangle Reject Funnel</div>"
-               << "<img id=\"candidateView\" class=\"view\" alt=\"Raven Candidate Reject SVG\"></section>"
+               << "<object id=\"candidateView\" class=\"view\" type=\"image/svg+xml\" aria-label=\"Raven Candidate Reject SVG\"></object></section>"
                << "</main><script>"
                << "const physicsView=document.getElementById('physicsView');"
                << "const candidateView=document.getElementById('candidateView');"
@@ -193,13 +192,15 @@ namespace Raven
                << "function normalize(v){if(v==='')return '';const n=Number(v);return Number.isInteger(n)&&n>=0?String(n):'';}"
                << "function updateLabel(){const p=normalize(particleFilter.value)||'ALL';const t=normalize(triangleFilter.value)||'ALL';candidateLabel.textContent='Particle-Triangle Reject Funnel | Particle='+p+' Triangle='+t;}"
                << "function buildFilterQuery(){const p=normalize(particleFilter.value);const t=normalize(triangleFilter.value);const q=new URLSearchParams();if(p!=='')q.set('particle',p);if(t!=='')q.set('triangle',t);return q;}"
-               << "async function persist(){const q=buildFilterQuery();const suffix=q.toString();history.replaceState(null,'',window.location.pathname+(suffix?'?'+suffix:''));updateLabel();filterStatus.textContent='Applying...';try{const r=await fetch('/filter'+(suffix?'?'+suffix:''),{cache:'no-store'});filterStatus.textContent=r.ok?'Applied':'Error';}catch(e){filterStatus.textContent='Offline';}}"
+               << "function persistUrlOnly(){const q=buildFilterQuery();const suffix=q.toString();history.replaceState(null,'',window.location.pathname+(suffix?'?'+suffix:''));updateLabel();}"
+               << "async function persist(){const q=buildFilterQuery();const suffix=q.toString();persistUrlOnly();filterStatus.textContent='Applying...';try{const r=await fetch('/filter'+(suffix?'?'+suffix:''),{cache:'no-store'});filterStatus.textContent=r.ok?'Applied':'Error';}catch(e){filterStatus.textContent='Offline';}}"
                << "async function clear(){particleFilter.value='';triangleFilter.value='';await persist();}"
                << "document.getElementById('applyFilter').addEventListener('click',persist);"
                << "document.getElementById('clearFilter').addEventListener('click',clear);"
                << "particleFilter.addEventListener('keydown',e=>{if(e.key==='Enter')persist();});"
                << "triangleFilter.addEventListener('keydown',e=>{if(e.key==='Enter')persist();});"
-               << "function refresh(){const stamp='?t='+Date.now();physicsView.src=physicsSource+stamp;candidateView.src=candidateSource+stamp;}"
+               << "window.addEventListener('message',e=>{if(e.origin!==window.location.origin)return;if(!e.data||e.data.type!=='raven-debug-filter')return;particleFilter.value=e.data.particle===null?'':String(e.data.particle);triangleFilter.value=e.data.triangle===null?'':String(e.data.triangle);persistUrlOnly();filterStatus.textContent='Selected';});"
+               << "function refresh(){const stamp='?t='+Date.now();physicsView.src=physicsSource+stamp;candidateView.data=candidateSource+stamp;}"
                << "updateLabel();persist();refresh();setInterval(refresh," << safeReloadInterval << ");"
                << "</script></body></html>\n";
 
