@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <iostream>
 
+#include "Raven/Debug/BrowserDebugServer.h"
+
 namespace Raven
 {
 namespace ph
@@ -137,6 +139,26 @@ bool PassesFilter(
 
     return true;
 }
+
+SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings ResolveSettings(
+    const SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings& settings)
+{
+    SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings resolvedSettings = settings;
+
+    if (settings.UseBrowserFilterState == true)
+    {
+        const BrowserDebugFilterState filterState = BrowserDebugServer::Get().GetFilterState();
+
+        resolvedSettings.ParticleIndex = filterState.HasParticle
+            ? filterState.ParticleIndex
+            : SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings::InvalidIndex;
+        resolvedSettings.TriangleIndex = filterState.HasTriangle
+            ? filterState.TriangleIndex
+            : SoftBodyParticleTriangleCandidateDebugSvgWriter::Settings::InvalidIndex;
+    }
+
+    return resolvedSettings;
+}
 } // namespace
 
 bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
@@ -150,6 +172,8 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     {
         return false;
     }
+
+    const Settings resolvedSettings = ResolveSettings(settings);
 
     const std::filesystem::path parentPath = filePath.parent_path();
     if (parentPath.empty() == false)
@@ -176,7 +200,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     uint32_t filteredRecordCount = 0u;
     for (const SoftBodyParticleTriangleCandidateDebugInfo& record : snapshot.Records)
     {
-        if (PassesFilter(record, settings))
+        if (PassesFilter(record, resolvedSettings))
         {
             ++filteredRecordCount;
         }
@@ -199,22 +223,22 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     // Filter状態は常に画面へ出します。
     // 「線が少ない理由」がSimulation結果なのかViewerの絞り込みなのかを区別できるようにするためです。
     stream << "  <text x=\"46\" y=\"91\" fill=\"#7dd3fc\" font-family=\"monospace\" font-size=\"12\">Filter: Particle=";
-    if (settings.ParticleIndex == Settings::InvalidIndex)
+    if (resolvedSettings.ParticleIndex == Settings::InvalidIndex)
     {
         stream << "ALL";
     }
     else
     {
-        stream << settings.ParticleIndex;
+        stream << resolvedSettings.ParticleIndex;
     }
     stream << " Triangle=";
-    if (settings.TriangleIndex == Settings::InvalidIndex)
+    if (resolvedSettings.TriangleIndex == Settings::InvalidIndex)
     {
         stream << "ALL";
     }
     else
     {
-        stream << settings.TriangleIndex;
+        stream << resolvedSettings.TriangleIndex;
     }
     stream << " | Visible Pairs=" << filteredRecordCount << "</text>\n";
 
@@ -264,14 +288,14 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
 
     // 選択Triangleは背景Mesh上でも強調します。
     // Pair線だけでは折れたCloth上のどの面を選択しているか分かりにくいため、太い白枠を重ねます。
-    if (settings.TriangleIndex != Settings::InvalidIndex)
+    if (resolvedSettings.TriangleIndex != Settings::InvalidIndex)
     {
         uint32_t triangleA = 0u;
         uint32_t triangleB = 0u;
         uint32_t triangleC = 0u;
         if (TryGetTriangleParticleIndices(
                 triangleIndices,
-                settings.TriangleIndex,
+                resolvedSettings.TriangleIndex,
                 triangleA,
                 triangleB,
                 triangleC)
@@ -295,7 +319,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     // ========================================================================
     for (const SoftBodyParticleTriangleCandidateDebugInfo& record : snapshot.Records)
     {
-        if (PassesFilter(record, settings) == false)
+        if (PassesFilter(record, resolvedSettings) == false)
         {
             continue;
         }
@@ -354,10 +378,10 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     }
 
     // Particle選択時はReject Pairが0件でも選択位置を確認できるよう白い十字を表示します。
-    if (settings.ParticleIndex != Settings::InvalidIndex
-        && settings.ParticleIndex < particles.size())
+    if (resolvedSettings.ParticleIndex != Settings::InvalidIndex
+        && resolvedSettings.ParticleIndex < particles.size())
     {
-        const math::Vec3& selectedPosition = particles[settings.ParticleIndex].Position;
+        const math::Vec3& selectedPosition = particles[resolvedSettings.ParticleIndex].Position;
         const float x = ProjectX(selectedPosition.x, bounds);
         const float y = ProjectY(selectedPosition.y, bounds);
         stream << "  <line x1=\"" << (x - 7.0f) << "\" y1=\"" << y
