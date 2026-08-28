@@ -9,6 +9,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Editor/EditorLayer.h"
+#include "Raven/Debug/BrowserDebugServer.h"
 #include "Raven/Debug/BrowserDebugViewer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
@@ -33,9 +34,9 @@ int main()
     // ========================================================================
     // Browser Debug Viewer
     // ========================================================================
-    // ブラウザではSVGそのものではなくViewer.htmlを開きます。
-    // Viewer.htmlはStartup.svgを定期的に再読み込みするため、後続のPhysics Writerが同じSVGを
-    // 上書きすればブラウザを再起動せず最新のデバッグ表示へ更新できます。
+    // Viewer.html / Startup.svg / CandidateRejects.svgは従来どおりDebug生成物として書き出します。
+    // ただしブラウザはfile://で直接開かず、127.0.0.1限定のBrowserDebugServer経由で表示します。
+    // これによりBrowserのParticle / Triangle選択を/filter endpointからRaven Processへ返せます。
     const std::filesystem::path browserDebugDirectory =
         std::filesystem::path("Raven") / "Debug" / "Generated";
     const std::filesystem::path browserDebugSvgPath = browserDebugDirectory / "Startup.svg";
@@ -47,9 +48,14 @@ int main()
         browserDebugSvgPath,
         250u);
 
-    if (svgWritten == true && htmlWritten == true)
+    Raven::BrowserDebugServer& browserDebugServer = Raven::BrowserDebugServer::Get();
+    const bool serverStarted = browserDebugServer.Start(browserDebugDirectory, 18765u);
+
+    if (svgWritten == true
+        && htmlWritten == true
+        && serverStarted == true)
     {
-        Raven::BrowserDebugViewer::Open(std::filesystem::absolute(browserDebugHtmlPath));
+        Raven::BrowserDebugViewer::OpenUrl(browserDebugServer.GetViewerUrl());
     }
 #endif
 
