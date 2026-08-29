@@ -217,6 +217,14 @@ void OpenGLTexture::SetData(const void* data, std::size_t dataSize)
     }
 
     glBindTexture(GL_TEXTURE_2D, m_ID);
+
+    // OpenGL既定値(GL_UNPACK_ALIGNMENT = 4)のままだと、RGB8かつ1行のバイト数が
+    // 4の倍数ではない画像で行境界がずれる可能性があります。
+    // 1-byte alignmentへ一時変更し、R8/RGB8/RGBA8を同一経路で安全に転送します。
+    GLint previousUnpackAlignment = 0;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
     glTexSubImage2D(
         GL_TEXTURE_2D,
         0,
@@ -228,6 +236,8 @@ void OpenGLTexture::SetData(const void* data, std::size_t dataSize)
         GL_UNSIGNED_BYTE,
         data
     );
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
 
     if (m_Specification.GenerateMips)
     {
