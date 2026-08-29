@@ -3,8 +3,12 @@
 #include <cstdint>
 #include <memory>
 
+#include "Raven/Core/Base.h"
+
 namespace Raven
 {
+
+class Texture;
 
 // ============================================================================
 // Framebuffer
@@ -17,9 +21,9 @@ namespace Raven
 // EditorやScene等の上位層はFramebufferだけへ依存し、実際のGPU Resource管理は
 // OpenGLFramebuffer / 将来のDirectXFramebuffer等のPlatform実装へ隠蔽します。
 //
-// 現段階ではColor AttachmentをImGuiへ渡すためRendererIDを公開しています。
-// これはOpenGLではTexture ID、他APIでは同じ表現にならない可能性があるため、
-// 将来的にTexture抽象化を整理する際はGetColorAttachment()のようなAPIへ移行する予定です。
+// Color AttachmentはRenderer固有IDではなくTexture抽象クラスとして公開します。
+// これによりFramebufferを利用する側は「描画結果はTextureである」という共通概念だけを扱えます。
+// OpenGLのGLuint等、backend固有表現をFramebufferインターフェースへ持ち込みません。
 class Framebuffer
 {
 public:
@@ -39,7 +43,10 @@ public:
     // 0サイズや同一サイズをどのように扱うかはPlatform実装側で安全に処理します。
     virtual void Resize(std::uint32_t width, std::uint32_t height) = 0;
 
-    virtual std::uint32_t GetColorAttachmentRendererID() const = 0;
+    // 描画済みColor AttachmentをTextureとして取得します。
+    // 参照を返すことで不要なRefのコピーを避けつつ、所有権はFramebuffer側に保持します。
+    virtual const Ref<Texture>& GetColorAttachment() const = 0;
+
     virtual std::uint32_t GetWidth() const = 0;
     virtual std::uint32_t GetHeight() const = 0;
 
