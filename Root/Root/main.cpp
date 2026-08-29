@@ -5,6 +5,7 @@
 #include <filesystem>
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
+#include "Raven/Character/Debug/CharacterLocomotionDebugOverlayLayer.h"
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
@@ -84,7 +85,20 @@ int main()
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
     {
-        runtimeScene->PushLayer(Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene));
+        // Character本体はScene-ownedのまま維持し、ImGui表示だけをApplication-owned Overlayへ分離します。
+        // OverlayはCharacter Layerを非所有pointerで参照しますが、ApplicationはApplication LayerをSceneより先に
+        // 破棄するため、終了順序上もdangling pointerになりません。
+        auto characterLayer = Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene);
+        Raven::CharacterControllerDemoLayer* characterLayerPointer = characterLayer.get();
+
+        runtimeScene->PushLayer(std::move(characterLayer));
+
+        if (characterLayerPointer != nullptr)
+        {
+            app.PushLayer(
+                Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
+                    *characterLayerPointer));
+        }
     }
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
