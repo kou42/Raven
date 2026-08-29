@@ -121,7 +121,7 @@ void CharacterControllerDemoLayer::OnAttach()
     UpdateGamepadCamera(0.0f);
 
     std::cout
-        << "[CharacterController] Gamepad Controls: Left Stick Move, Right Stick Camera, A Jump, RT Run\n";
+        << "[CharacterController] Gamepad Controls: Left Stick Camera-relative Move, Right Stick Camera, A Jump, RT Run\n";
 }
 
 void CharacterControllerDemoLayer::OnDetach()
@@ -170,6 +170,11 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     // CharacterController本体はGamepad APIを一切知らず、CharacterControllerInputだけを受け取ります。
     m_ResolvedInput = CharacterController::ReadDefaultGamepadInput();
 
+    // Device入力としてのMoveは「Stick右=+X / Stick上=+Y」の2D値です。
+    // CharacterControllerへ渡す直前にRuntime CameraのYawを基準としたWorld XZへ変換します。
+    // Camera依存をCharacterController/Input層へ持ち込まず、Gameplay Layerだけで意味付けします。
+    ApplyCameraRelativeMovement(m_ResolvedInput);
+
     std::string errorMessage;
     if (m_CharacterController.UpdateWithMovingPlatforms(
             m_ResolvedInput,
@@ -207,6 +212,44 @@ void CharacterControllerDemoLayer::CaptureGamepadDebugState()
         // Debuggerで「切断後の前Frame値」が見える余地を残さないようにします。
         m_RawGamepadState = GamepadState{};
     }
+}
+
+void CharacterControllerDemoLayer::ApplyCameraRelativeMovement(CharacterControllerInput& input) const
+{
+    const float inputLengthSquared = input.Move.x * input.Move.x + input.Move.y * input.Move.y;
+    if (inputLengthSquared <= 1.0e-8f)
+    {
+        input.Move = math::Vec2{ 0.0f, 0.0f };
+        return;
+    }
+
+    // ========================================================================
+    // Camera basis projected onto ground plane
+    // ========================================================================
+    // Orbit CameraのYawだけからXZ Forwardを作ることで、Cameraを上下へPitchしても
+    // Stick前入力にY成分が混ざらず、Characterは常に地面平面上を移動します。
+    //
+    // Yaw=0のCameraはLocal Forward=-Zを向くため、画面奥方向はWorld -Zです。
+    const math::Vec3 cameraForward{
+        std::sin(m_CameraYaw),
+        0.0f,
+        -std::cos(m_CameraYaw)
+    };
+
+    // Camera RightはForwardとWorld Upの外積と等価なXZ直交Basisです。
+    // Yaw=0では+Xとなり、Stick右入力が画面右方向へ移動します。
+    const math::Vec3 cameraRight{
+        std::cos(m_CameraYaw),
+        0.0f,
+        std::sin(m_CameraYaw)
+    };
+
+    const math::Vec3 worldMove = cameraRight * input.Move.x + cameraForward * input.Move.y;
+
+    // CharacterControllerInput::Moveは歴史的にVec2(x, forward)を受け取り、内部で
+    // desiredDirection = Vec3{ Move.x, 0, Move.y } としてWorld XZへ展開します。
+    // そのためここではWorld X/Zを再びMove.x/Move.yへ格納します。
+    input.Move = math::Vec2{ worldMove.x, worldMove.z };
 }
 
 void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
