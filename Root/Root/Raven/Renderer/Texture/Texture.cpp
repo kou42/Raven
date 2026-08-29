@@ -27,6 +27,44 @@ Ref<Texture> Texture::Create(const std::string& path)
     return nullptr;
 }
 
+Ref<Texture> Texture::Create(const TextureSpecification& specification)
+{
+    switch (RendererAPI::GetAPI())
+    {
+    case RendererAPI::API::OpenGL:
+        return CreateRef<OpenGLTexture>(specification);
+
+    case RendererAPI::API::DirectX11:
+        return nullptr;
+
+    case RendererAPI::API::DirectX12:
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+Ref<Texture> Texture::Create(
+    const TextureSpecification& specification,
+    const void* data,
+    std::size_t dataSize
+)
+{
+    Ref<Texture> texture = Create(specification);
+
+    if (texture == nullptr)
+    {
+        return nullptr;
+    }
+
+    if (data != nullptr)
+    {
+        texture->SetData(data, dataSize);
+    }
+
+    return texture;
+}
+
 void TextureLibrary::Add(const std::string& name, const Ref<Texture>& texture)
 {
     if (texture == nullptr)
