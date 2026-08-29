@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 
+#include <GLFW/glfw3.h>
+
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -68,6 +70,9 @@ void CharacterControllerDemoLayer::OnAttach()
     m_CharacterRootTransform.Scale = { 1.0f, 1.0f, 1.0f };
 
     m_CharacterController = CharacterController{};
+    m_GamepadConnected = false;
+    m_RawGamepadState = GamepadState{};
+    m_ResolvedInput = CharacterControllerInput{};
 
     // ========================================================================
     // Visual Entity
@@ -98,6 +103,9 @@ void CharacterControllerDemoLayer::OnDetach()
     m_CharacterMaterial.reset();
     m_CharacterController = CharacterController{};
     m_CharacterRootTransform = TransformComponent{};
+    m_GamepadConnected = false;
+    m_RawGamepadState = GamepadState{};
+    m_ResolvedInput = CharacterControllerInput{};
 }
 
 void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
@@ -113,16 +121,24 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.05f);
 
     // ========================================================================
+    // Gamepad diagnostic snapshot
+    // ========================================================================
+    // Raw値を先に取得し、その後にCharacterControllerInputへ変換します。
+    // これにより例えば「Stick Raw値は動いているのにMoveが0」の場合はDead Zone、
+    // 「RT Raw値は上がるのにRun=false」の場合はThresholdを疑う、という切り分けができます。
+    CaptureGamepadDebugState();
+
+    // ========================================================================
     // Gamepad -> Device-independent Character input
     // ========================================================================
     // Input/WindowsInput層がGLFW固有のGamepad状態をGamepadStateへ変換し、
     // ReadDefaultGamepadInput()がDead Zone処理とGameplay Button Mappingを担当します。
     // CharacterController本体はGamepad APIを一切知らず、CharacterControllerInputだけを受け取ります。
-    const CharacterControllerInput input = CharacterController::ReadDefaultGamepadInput();
+    m_ResolvedInput = CharacterController::ReadDefaultGamepadInput();
 
     std::string errorMessage;
     if (m_CharacterController.UpdateWithMovingPlatforms(
-            input,
+            m_ResolvedInput,
             safeDeltaTime,
             m_Scene,
             m_CharacterRootTransform,
@@ -136,6 +152,23 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     }
 
     SyncVisualTransform();
+}
+
+void CharacterControllerDemoLayer::CaptureGamepadDebugState()
+{
+    // ReadDefaultGamepadInput()と同じDefault Deviceを観測します。
+    // GLFW定数を使うのはDebug Layerだけで、CharacterController本体へPlatform依存を増やしません。
+    constexpr int DefaultGamepadIndex = GLFW_JOYSTICK_1;
+
+    m_RawGamepadState = GamepadState{};
+    m_GamepadConnected = Input::GetGamepadState(DefaultGamepadIndex, m_RawGamepadState);
+
+    if (m_GamepadConnected == false)
+    {
+        // Input::GetGamepadState()も失敗時にNeutralへ戻しますが、Layer側でも明示的に初期化して
+        // Debuggerで「切断後の前Frame値」が見える余地を残さないようにします。
+        m_RawGamepadState = GamepadState{};
+    }
 }
 
 void CharacterControllerDemoLayer::SyncVisualTransform()
