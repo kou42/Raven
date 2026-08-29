@@ -2,7 +2,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -212,16 +211,21 @@ public:
             ImGui::SameLine();
 
             // 調整結果はそのままLocomotionBlendTreeConfigへ転記できるC++形式にします。
-            // ClipboardとConsoleの両方を用意し、Debuggerを止めずに値を保存できます。
-            const std::string tuningConfigText = BuildTuningConfigText(snapshot);
+            // Drag/Resetと同じFrameでCopyしても古い値を拾わないよう、Button判定時に最新Snapshotを取り直します。
             if (ImGui::Button("Copy Config") == true)
             {
+                const CharacterLocomotionDebugSnapshot latestSnapshot =
+                    m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+                const std::string tuningConfigText = BuildTuningConfigText(latestSnapshot);
                 ImGui::SetClipboardText(tuningConfigText.c_str());
             }
 
             ImGui::SameLine();
             if (ImGui::Button("Print Config") == true)
             {
+                const CharacterLocomotionDebugSnapshot latestSnapshot =
+                    m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+                const std::string tuningConfigText = BuildTuningConfigText(latestSnapshot);
                 std::cout
                     << "[CharacterController] Locomotion Foot Sliding tuning: "
                     << tuningConfigText << '\n';
