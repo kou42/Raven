@@ -209,6 +209,9 @@ public:
         return snapshot;
     }
 
+    // 現在のRendererには汎用Text/ImGui Overlayがまだ無いため、まず表示層へそのまま渡せる
+    // 複数行TextもDemoLayer側で生成します。将来Overlay Rendererを追加した際は、この戻り値を
+    // 画面左上へ描画するだけでRuntimeと同じBlend診断値を表示できます。
     std::string GetHumanoidLocomotionDebugText() const
     {
         const CharacterLocomotionDebugSnapshot snapshot = GetHumanoidLocomotionDebugSnapshot();
@@ -237,6 +240,8 @@ public:
     }
 
 private:
+    // DebugInfoのChildIndexを解決済みLocomotion名へ変換します。
+    // ここを1か所に集約することで、Debug UIがBlendTreeのChild配置規約を知る必要を無くします。
     std::string ResolveLocomotionDebugChildName(std::size_t childIndex) const
     {
         if (childIndex == 0u)
