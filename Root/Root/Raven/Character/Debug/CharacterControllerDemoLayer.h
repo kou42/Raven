@@ -44,6 +44,12 @@ struct CharacterLocomotionDebugSnapshot
     float LeftWeight = 0.0f;
     float RightWeight = 0.0f;
     bool IsClamped = false;
+
+    // Foot Sliding補正のRuntime診断値です。
+    // ReferenceMotionSpeedは現在Blend中のClipが1.0倍再生時に想定する速度、
+    // PlaybackSpeedは実速度との差を吸収するためAnimatorへ設定された再生倍率です。
+    float ReferenceMotionSpeed = 0.0f;
+    float PlaybackSpeed = 1.0f;
 };
 
 // ============================================================================
@@ -141,6 +147,24 @@ public:
         snapshot.LeftWeight = m_HumanoidLocomotionDebugInfo.LeftWeight;
         snapshot.RightWeight = m_HumanoidLocomotionDebugInfo.RightWeight;
         snapshot.IsClamped = m_HumanoidLocomotionDebugInfo.IsClamped;
+
+        // Playback補正値もBlendTreeと同じRuntime Stateから取得します。
+        // Overlay側でActual/Reference比を再計算するとClamp規則やIdle例外と表示がずれるため、
+        // Animatorへ実際に適用された値をRuntimeからそのままSnapshotへ転送します。
+        if (m_HumanoidLocomotionAnimationActive == true
+            && m_HumanoidAnimationSkinIndex != Gltf::InvalidGltfIndex)
+        {
+            Gltf::LocomotionPlaybackDebugInfo playbackInfo{};
+            if (m_HumanoidLocomotionRuntime.GetLocomotionPlaybackDebugInfo(
+                    m_HumanoidAnimationSkinIndex,
+                    playbackInfo,
+                    nullptr) == true)
+            {
+                snapshot.ReferenceMotionSpeed = playbackInfo.ReferenceMotionSpeed;
+                snapshot.PlaybackSpeed = playbackInfo.PlaybackSpeed;
+            }
+        }
+
         return snapshot;
     }
 
@@ -157,6 +181,8 @@ public:
             << (snapshot.AnimationActive == true ? "Active" : "Inactive") << '\n';
         stream << "Actual Speed         : " << snapshot.ActualHorizontalSpeed << '\n';
         stream << "Blend Parameter      : " << snapshot.ParameterValue << '\n';
+        stream << "Reference Speed      : " << snapshot.ReferenceMotionSpeed << '\n';
+        stream << "Playback Speed       : " << snapshot.PlaybackSpeed << "x\n";
         stream << "Blend                : "
             << FormatDebugAnimationName(snapshot.LeftAnimationName)
             << " -> "
