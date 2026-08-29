@@ -26,13 +26,25 @@ namespace Raven
 {
 
 // TextureのピクセルフォーマットをRenderer共通の値として表します。
-// OpenGLのGL_RGB8などを上位層へ公開せず、各RendererAPI実装側でネイティブ形式へ変換します。
+// OpenGLのGL_RGB8やGL_DEPTH24_STENCIL8などを上位層へ公開せず、
+// 各RendererAPI実装側でネイティブ形式へ変換します。
 enum class TextureFormat
 {
     None = 0,
     R8,
     RGB8,
-    RGBA8
+    RGBA8,
+    Depth24Stencil8
+};
+
+// Textureがどの用途で利用されるかをRenderer共通の値で明示します。
+// 同じRGBA8でも通常の画像TextureとFramebuffer Attachmentでは、
+// wrap/filter/mipmap方針などが異なるため、Formatとは別軸で用途を保持します。
+enum class TextureUsage
+{
+    Sampled = 0,
+    RenderTarget,
+    DepthStencil
 };
 
 // ファイル由来・動的生成・Framebuffer Attachmentなど、Textureの生成方法が増えても
@@ -42,6 +54,7 @@ struct TextureSpecification
     std::uint32_t Width = 1;
     std::uint32_t Height = 1;
     TextureFormat Format = TextureFormat::RGBA8;
+    TextureUsage Usage = TextureUsage::Sampled;
     bool GenerateMips = true;
 };
 
@@ -57,8 +70,8 @@ public:
     // 現在選択されているRendererAPIに対応した具象型の選択はFactory内部だけで行います。
     static Ref<Texture> Create(const std::string& path);
 
-    // サイズ・フォーマットを明示して空Textureを生成します。
-    // SetData()と組み合わせることで、ファイルを介さない動的Textureも作成できます。
+    // サイズ・フォーマット・用途を明示して空Textureを生成します。
+    // RenderTarget / DepthStencil用途もこの生成経路を利用します。
     static Ref<Texture> Create(const TextureSpecification& specification);
 
     // 初期ピクセルデータ付きでTextureを生成します。
@@ -73,7 +86,8 @@ public:
     virtual void Unbind() const = 0;
 
     // Texture全体のピクセルデータを更新します。
-    // 部分更新は将来SetSubData等を追加し、この基本APIとは分離する方針です。
+    // 現段階ではSampled用途のColor Texture更新を対象とします。
+    // DepthStencil用途はGPUの描画先として利用するため、通常のSetData経路では更新しません。
     virtual void SetData(const void* data, std::size_t dataSize) = 0;
 
     // 既存コードとの互換性を維持するためRenderer側のIDを公開しています。
