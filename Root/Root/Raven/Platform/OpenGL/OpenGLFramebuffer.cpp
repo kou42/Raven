@@ -21,8 +21,7 @@ OpenGLFramebuffer::OpenGLFramebuffer(std::uint32_t width, std::uint32_t height)
 OpenGLFramebuffer::~OpenGLFramebuffer()
 {
     // OpenGL ResourceはRAIIで所有します。
-    // EditorLayer::OnDetach()がOpenGL Context生存中にFramebufferを破棄するため、
-    // destructorからglDelete*を安全に呼び出せます。
+    // Attachment TextureはTexture派生クラス自身がGPU Resourceを解放します。
     Release();
 }
 
@@ -74,13 +73,13 @@ void OpenGLFramebuffer::Invalidate()
     // ========================================================================
     // Color Attachment
     // ========================================================================
-    // 以前はFramebuffer自身がglGenTextures / glTexImage2D / glDeleteTexturesを直接管理していました。
-    // 現在はTexture抽象クラスへ生成と寿命管理を委譲し、Framebufferは「TextureをAttachmentする」
-    // 責務だけを持ちます。これによりTexture生成仕様をRenderer全体で共通化できます。
+    // Framebuffer自身はOpenGL Textureを直接生成せず、Renderer共通のTextureSpecificationから
+    // RenderTarget用途のTextureを生成します。Sampling用Textureとの差はTexture実装側が判断します。
     TextureSpecification colorSpecification;
     colorSpecification.Width = m_Width;
     colorSpecification.Height = m_Height;
     colorSpecification.Format = TextureFormat::RGBA8;
+    colorSpecification.Usage = TextureUsage::RenderTarget;
     colorSpecification.GenerateMips = false;
 
     m_ColorAttachment = Texture::Create(colorSpecification);
@@ -92,9 +91,6 @@ void OpenGLFramebuffer::Invalidate()
         return;
     }
 
-    // OpenGLFramebufferはOpenGL backend内部なので、FramebufferへTextureをAttachmentするために
-    // 現在はTextureのRenderer IDを利用します。上位層にはこのIDを公開しません。
-    // TextureのNative Handle抽象化を追加する段階で、この境界もさらに整理できます。
     glFramebufferTexture2D(
         GL_FRAMEBUFFER,
         GL_COLOR_ATTACHMENT0,
@@ -105,47 +101,54 @@ void OpenGLFramebuffer::Invalidate()
     // ========================================================================
     // Depth / Stencil Attachment
     // ========================================================================
-    // 現段階ではDepth値をShaderやEditor Pickingから参照しないため、Textureではなく
-    // RenderbufferとしてGL_DEPTH24_STENCIL8を確保します。
-    glGenRenderbuffers(1, &m_DepthStencilAttachment);
-    glBindRenderbuffer(GL_RENDERBUFFER, m_DepthStencilAttachment);
+    // 以前はOpenGLFramebufferがRenderbufferを直接生成していましたが、Colorと同様に
+    // Texture抽象化へ所有権を移します。将来Depth sampling、Picking、Shadow等が必要になっても
+    // 同じTextureインターフェースを基礎として拡張できます。
+    TextureSpecification depthStencilSpecification;
+    depthStencilSpecification.Width = m_Width;
+    depthStencilSpecification.Height = m_Height;
+    depthStencilSpecification.Format = TextureFormat::Depth24Stencil8;
+    depthStencilSpecification.Usage = TextureUsage::DepthStencil;
+    depthStencilSpecification.GenerateMips = false;
 
-    glRenderbufferStorage(
-        GL_RENDERBUFFER,
-        GL_DEPTH24_STENCIL8,
-        static_cast<GLsizei>(m_Width),
-        static_cast<GLsizei>(m_Height));
+    m_DepthStencilAttachment = Texture::Create(depthStencilSpecification);
 
-    glFramebufferRenderbuffer(
+    if (m_DepthStencilAttachment == nullptr)
+    {
+        assert(false && "Failed to create framebuffer depth/stencil attachment texture.");
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return;
+    }
+
+    glFramebufferTexture2D(
         GL_FRAMEBUFFER,
         GL_DEPTH_STENCIL_ATTACHMENT,
-        GL_RENDERBUFFER,
-        m_DepthStencilAttachment);
+        GL_TEXTURE_2D,
+        m_DepthStencilAttachment->GetID(),
+        0);
 
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     assert(status == GL_FRAMEBUFFER_COMPLETE);
 
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    // Resource生成処理で変更したbindingを解除し、後続のRenderer処理へ不要なStateを残しません。
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void OpenGLFramebuffer::Release()
 {
-    // Depth/StencilとFBOはOpenGLFramebuffer自身が所有します。
-    if (m_DepthStencilAttachment != 0)
+    // Color / DepthStencil AttachmentともTexture派生クラスのRAIIへGPU Resource解放を委譲します。
+    if (m_DepthStencilAttachment != nullptr)
     {
-        glDeleteRenderbuffers(1, &m_DepthStencilAttachment);
-        m_DepthStencilAttachment = 0;
+        m_DepthStencilAttachment.reset();
     }
 
-    // Color AttachmentのGPU Texture ResourceはTexture派生クラス自身がRAIIで解放します。
-    // FramebufferからglDeleteTexturesを直接呼ばないことでTexture所有権を一箇所に集約します。
     if (m_ColorAttachment != nullptr)
     {
         m_ColorAttachment.reset();
     }
 
+    // Framebuffer Object自体だけはOpenGLFramebufferの責務なので、ここで明示的に解放します。
     if (m_RendererID != 0)
     {
         glDeleteFramebuffers(1, &m_RendererID);
