@@ -2,6 +2,7 @@
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -47,6 +48,107 @@ math::Vec2 ApplyCameraStickDeadZone(const math::Vec2& stick, float deadZone)
     const float remappedLength = (clampedLength - clampedDeadZone) / (1.0f - clampedDeadZone);
     const float scale = remappedLength / length;
     return math::Vec2{ stick.x * scale, stick.y * scale };
+}
+
+std::string ToLowerAscii(const std::string& value)
+{
+    std::string lowered = value;
+    std::transform(
+        lowered.begin(),
+        lowered.end(),
+        lowered.begin(),
+        [](unsigned char character)
+        {
+            return static_cast<char>(std::tolower(character));
+        });
+    return lowered;
+}
+
+std::string JoinAnimationNames(const std::vector<std::string>& names)
+{
+    std::string joined;
+    for (std::size_t index = 0u; index < names.size(); ++index)
+    {
+        if (index > 0u)
+        {
+            joined += ", ";
+        }
+        joined += "'" + names[index] + "'";
+    }
+    return joined;
+}
+
+bool ResolveLocomotionAnimationName(
+    const std::vector<std::string>& availableNames,
+    const std::string& expectedName,
+    std::string& outResolvedName,
+    std::string* errorMessage)
+{
+    outResolvedName.clear();
+
+    if (expectedName.empty())
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Locomotion Animation期待名が空です";
+        }
+        return false;
+    }
+
+    const std::string expectedLower = ToLowerAscii(expectedName);
+
+    // ========================================================================
+    // 1. Case-insensitive exact match
+    // ========================================================================
+    // Asset側が idle / IDLE のように大文字小文字だけ異なる場合は、それを同一名として扱います。
+    // 完全一致を部分一致より優先することで、例えば Walk と WalkFast が同居していても
+    // Walkを明示している限り曖昧性を発生させません。
+    for (const std::string& availableName : availableNames)
+    {
+        if (ToLowerAscii(availableName) == expectedLower)
+        {
+            outResolvedName = availableName;
+            return true;
+        }
+    }
+
+    // ========================================================================
+    // 2. Unique substring match
+    // ========================================================================
+    // Mixamo等では "Armature|Idle" や "Character_Walk" のようにPrefix/Suffixが付くことがあります。
+    // そのため完全一致が無い場合だけ部分一致へfallbackしますが、候補が複数ある場合は
+    // WalkForward / WalkBackward等から勝手に1つを選ばず、Asset設定の曖昧さとして失敗させます。
+    std::vector<std::string> candidates;
+    for (const std::string& availableName : availableNames)
+    {
+        const std::string availableLower = ToLowerAscii(availableName);
+        if (availableLower.find(expectedLower) != std::string::npos)
+        {
+            candidates.push_back(availableName);
+        }
+    }
+
+    if (candidates.size() == 1u)
+    {
+        outResolvedName = candidates.front();
+        return true;
+    }
+
+    if (errorMessage != nullptr)
+    {
+        if (candidates.empty())
+        {
+            *errorMessage = "Locomotion Animationを解決できません: expected='"
+                + expectedName + "' available=[" + JoinAnimationNames(availableNames) + "]";
+        }
+        else
+        {
+            *errorMessage = "Locomotion Animation名が曖昧です: expected='"
+                + expectedName + "' candidates=[" + JoinAnimationNames(candidates) + "]";
+        }
+    }
+
+    return false;
 }
 
 bool DecomposeComposedTransform(
@@ -429,6 +531,12 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     m_HumanoidLocomotionAnimationActive = false;
     m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     m_HumanoidLocomotionRuntime = Gltf::SkinnedBlendTreeRuntime{};
+    m_HumanoidAvailableAnimationNames.clear();
+    m_ResolvedHumanoidIdleAnimationName.clear();
+    m_ResolvedHumanoidWalkAnimationName.clear();
+    m_ResolvedHumanoidRunAnimationName.clear();
+    m_HumanoidActualHorizontalSpeed = 0.0f;
+    m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
     if (m_HumanoidVisualActive == false
         || m_HumanoidInstance.IsValid() == false)
@@ -481,11 +589,58 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
+    // ========================================================================
+    // Asset Animation名の取得と安全なLocomotion名解決
+    // ========================================================================
+    // Character側でGLB内部の正式名を推測せず、Attach時にImport済みのRuntime Clip一覧を取得します。
+    // 完全一致を優先し、部分一致は候補が1つだけの場合に限定することで、WalkForward / WalkBackward等を
+    // 誤って自動選択することを防ぎます。
+    if (m_HumanoidLocomotionRuntime.GetAnimationNames(
+            m_HumanoidAnimationSkinIndex,
+            m_HumanoidAvailableAnimationNames,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    if (ResolveLocomotionAnimationName(
+            m_HumanoidAvailableAnimationNames,
+            m_HumanoidIdleAnimationName,
+            m_ResolvedHumanoidIdleAnimationName,
+            errorMessage) == false)
+    {
+        return false;
+    }
+    if (ResolveLocomotionAnimationName(
+            m_HumanoidAvailableAnimationNames,
+            m_HumanoidWalkAnimationName,
+            m_ResolvedHumanoidWalkAnimationName,
+            errorMessage) == false)
+    {
+        return false;
+    }
+    if (ResolveLocomotionAnimationName(
+            m_HumanoidAvailableAnimationNames,
+            m_HumanoidRunAnimationName,
+            m_ResolvedHumanoidRunAnimationName,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    std::cout
+        << "[CharacterController] Humanoid Animation一覧: ["
+        << JoinAnimationNames(m_HumanoidAvailableAnimationNames) << "]\n"
+        << "[CharacterController] Locomotion Animation解決:"
+        << " Idle='" << m_ResolvedHumanoidIdleAnimationName
+        << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
+        << "' Run='" << m_ResolvedHumanoidRunAnimationName << "'\n";
+
     const CharacterControllerConfig& characterConfig = m_CharacterController.GetConfig();
     Gltf::LocomotionBlendTreeConfig animationConfig{};
-    animationConfig.IdleAnimationName = m_HumanoidIdleAnimationName;
-    animationConfig.WalkAnimationName = m_HumanoidWalkAnimationName;
-    animationConfig.RunAnimationName = m_HumanoidRunAnimationName;
+    animationConfig.IdleAnimationName = m_ResolvedHumanoidIdleAnimationName;
+    animationConfig.WalkAnimationName = m_ResolvedHumanoidWalkAnimationName;
+    animationConfig.RunAnimationName = m_ResolvedHumanoidRunAnimationName;
 
     // BlendTree Thresholdは「State切替境界」ではなく、そのMotionが100%になる実速度です。
     // CharacterControllerのWalkSpeed / RunSpeedと一致させることで、Gameplay側の速度単位を
@@ -512,12 +667,21 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
+    m_HumanoidActualHorizontalSpeed = m_CharacterController.GetHorizontalSpeed();
+    if (m_HumanoidLocomotionRuntime.GetDebugInfo(
+            m_HumanoidAnimationSkinIndex,
+            m_HumanoidLocomotionDebugInfo,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
     m_HumanoidLocomotionAnimationActive = true;
     std::cout
         << "[CharacterController] Humanoid Locomotion BlendTreeを実速度へ接続しました。"
-        << " Idle='" << m_HumanoidIdleAnimationName
-        << "' Walk='" << m_HumanoidWalkAnimationName
-        << "' Run='" << m_HumanoidRunAnimationName
+        << " Idle='" << m_ResolvedHumanoidIdleAnimationName
+        << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
+        << "' Run='" << m_ResolvedHumanoidRunAnimationName
         << "' WalkSpeed=" << characterConfig.WalkSpeed
         << " RunSpeed=" << characterConfig.RunSpeed << '\n';
     return true;
@@ -545,6 +709,18 @@ bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
         return false;
     }
 
+    // SpeedとBlend Weightは同じFrameの診断値として保持します。
+    // Debug UI側でThreshold補間を再計算せずRuntimeのGetDebugInfo()を使うことで、表示と実Animationの
+    // Weightが食い違う可能性を無くします。
+    m_HumanoidActualHorizontalSpeed = m_CharacterController.GetHorizontalSpeed();
+    if (m_HumanoidLocomotionRuntime.GetDebugInfo(
+            m_HumanoidAnimationSkinIndex,
+            m_HumanoidLocomotionDebugInfo,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
     // Parameter更新後にAnimator時間を進め、評価PoseをBody / Clothesへ配布してMesh変形まで更新します。
     // 順序を逆にするとAnimationが1Frame前の速度を使うため、必ずSpeed同期 -> Runtime Updateとします。
     return m_HumanoidLocomotionRuntime.Update(deltaTime, errorMessage);
@@ -557,6 +733,12 @@ void CharacterControllerDemoLayer::DestroyHumanoidVisual()
     m_HumanoidLocomotionAnimationActive = false;
     m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     m_HumanoidLocomotionRuntime = Gltf::SkinnedBlendTreeRuntime{};
+    m_HumanoidAvailableAnimationNames.clear();
+    m_ResolvedHumanoidIdleAnimationName.clear();
+    m_ResolvedHumanoidWalkAnimationName.clear();
+    m_ResolvedHumanoidRunAnimationName.clear();
+    m_HumanoidActualHorizontalSpeed = 0.0f;
+    m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
     if (m_HumanoidInstance.IsValid() == true)
     {
