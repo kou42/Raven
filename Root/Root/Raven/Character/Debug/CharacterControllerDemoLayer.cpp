@@ -9,6 +9,7 @@
 #include <GLFW/glfw3.h>
 
 #include "Raven/Gltf/HumanoidSceneNormalization.h"
+#include "Raven/Gltf/SkinnedMeshRuntime.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -297,6 +298,23 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
         return;
     }
 
+    // ========================================================================
+    // Character actual velocity -> Humanoid Locomotion BlendTree
+    // ========================================================================
+    // 入力値ではなく、CharacterControllerが加減速・壁Slide・Moving Platform等を解決した後の
+    // m_Velocityから水平速度を取得してBlendTreeへ渡します。
+    // 例えばRun入力中でも壁へ正面衝突して実速度が0になればAnimationもIdle側へ戻ります。
+    if (m_HumanoidLocomotionAnimationActive == true)
+    {
+        if (UpdateHumanoidLocomotionAnimation(safeDeltaTime, &errorMessage) == false)
+        {
+            std::cerr
+                << "[CharacterController] Humanoid Locomotion Animation更新に失敗したため無効化します: "
+                << errorMessage << '\n';
+            m_HumanoidLocomotionAnimationActive = false;
+        }
+    }
+
     SyncVisualTransform();
 
     // Character移動後のRootをTargetにすることで、Cameraは同じFrame内で最新位置へ追従します。
@@ -382,14 +400,164 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidVisual()
         return false;
     }
 
+    // ========================================================================
+    // Humanoid Animation initialization
+    // ========================================================================
+    // 表示初期化とAnimation初期化は意図的に分離します。
+    // GLB内Animation名が期待値と異なる場合でもHumanoid表示は維持し、Bind Poseのまま
+    // Character Controller / Physics検証を続行できるようにします。
+    if (TryInitializeHumanoidLocomotionAnimation(&errorMessage) == false)
+    {
+        std::cerr
+            << "[CharacterController] Humanoid Locomotion Animationを開始できませんでした。"
+            << " Bind Pose表示を継続します: " << errorMessage << '\n';
+    }
+
     std::cout
         << "[CharacterController] Raven_human_test.glbをCharacter表示へ接続しました。"
         << " Height=" << capsuleHeight << '\n';
     return true;
 }
 
+bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    m_HumanoidLocomotionAnimationActive = false;
+    m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
+    m_HumanoidLocomotionRuntime = Gltf::SkinnedBlendTreeRuntime{};
+
+    if (m_HumanoidVisualActive == false
+        || m_HumanoidInstance.IsValid() == false)
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Humanoid Visualが初期化されていません";
+        }
+        return false;
+    }
+
+    const std::vector<Gltf::SpawnedSkinnedPrimitive>& primitives = m_HumanoidInstance.GetPrimitives();
+    if (primitives.empty())
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Humanoid Primitiveが0件です";
+        }
+        return false;
+    }
+
+    const Ref<Gltf::SkinnedMeshRuntimeAsset>& runtimeAsset = m_HumanoidInstance.GetRuntimeAsset();
+    if (runtimeAsset == nullptr)
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Humanoid SkinnedMeshRuntimeAssetがnullptrです";
+        }
+        return false;
+    }
+
+    // 現在のCharacter Humanoidは同一Skinを共有するBody / Clothesを想定しています。
+    // AnimatorはSkinごとに1つだけPoseを評価し、SkinnedBlendTreeRuntimeが同じSkinを使う
+    // 全Primitiveへ同一Poseを配布するため、BodyとClothesのAnimation時刻がずれません。
+    m_HumanoidAnimationSkinIndex = primitives.front().SkinIndex;
+    if (m_HumanoidAnimationSkinIndex == Gltf::InvalidGltfIndex)
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Humanoid先頭PrimitiveのSkinIndexが無効です";
+        }
+        return false;
+    }
+
+    if (m_HumanoidLocomotionRuntime.AttachFromGlb(
+            m_HumanoidModelPath,
+            *runtimeAsset,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    const CharacterControllerConfig& characterConfig = m_CharacterController.GetConfig();
+    Gltf::LocomotionBlendTreeConfig animationConfig{};
+    animationConfig.IdleAnimationName = m_HumanoidIdleAnimationName;
+    animationConfig.WalkAnimationName = m_HumanoidWalkAnimationName;
+    animationConfig.RunAnimationName = m_HumanoidRunAnimationName;
+
+    // BlendTree Thresholdは「State切替境界」ではなく、そのMotionが100%になる実速度です。
+    // CharacterControllerのWalkSpeed / RunSpeedと一致させることで、Gameplay側の速度単位を
+    // Animation側でもそのまま使えます。Idleは停止速度0へ固定します。
+    animationConfig.IdleThreshold = 0.0f;
+    animationConfig.WalkThreshold = characterConfig.WalkSpeed;
+    animationConfig.RunThreshold = characterConfig.RunSpeed;
+
+    if (m_HumanoidLocomotionRuntime.Configure(
+            m_HumanoidAnimationSkinIndex,
+            animationConfig,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    // 初期FrameもCharacterControllerの現在実速度を渡しておきます。
+    // 通常は0ですが、将来Save/LoadやRagdoll復帰直後にこの初期化を使っても古いParameterを残しません。
+    if (m_CharacterController.UpdateLocomotionAnimation(
+            m_HumanoidLocomotionRuntime,
+            m_HumanoidAnimationSkinIndex,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    m_HumanoidLocomotionAnimationActive = true;
+    std::cout
+        << "[CharacterController] Humanoid Locomotion BlendTreeを実速度へ接続しました。"
+        << " Idle='" << m_HumanoidIdleAnimationName
+        << "' Walk='" << m_HumanoidWalkAnimationName
+        << "' Run='" << m_HumanoidRunAnimationName
+        << "' WalkSpeed=" << characterConfig.WalkSpeed
+        << " RunSpeed=" << characterConfig.RunSpeed << '\n';
+    return true;
+}
+
+bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
+    float deltaTime,
+    std::string* errorMessage)
+{
+    if (m_HumanoidLocomotionAnimationActive == false)
+    {
+        return true;
+    }
+
+    // ========================================================================
+    // Actual horizontal speed -> BlendTree Parameter
+    // ========================================================================
+    // CharacterController::UpdateLocomotionAnimation()内部でGetHorizontalSpeed()を使用するため、
+    // Run入力そのものではなく「このFrameで実際に残った水平速度」がAnimationの正規入力です。
+    if (m_CharacterController.UpdateLocomotionAnimation(
+            m_HumanoidLocomotionRuntime,
+            m_HumanoidAnimationSkinIndex,
+            errorMessage) == false)
+    {
+        return false;
+    }
+
+    // Parameter更新後にAnimator時間を進め、評価PoseをBody / Clothesへ配布してMesh変形まで更新します。
+    // 順序を逆にするとAnimationが1Frame前の速度を使うため、必ずSpeed同期 -> Runtime Updateとします。
+    return m_HumanoidLocomotionRuntime.Update(deltaTime, errorMessage);
+}
+
 void CharacterControllerDemoLayer::DestroyHumanoidVisual()
 {
+    // BlendTree RuntimeはSkinnedMeshRuntimeAssetを非所有ポインタで参照します。
+    // SceneInstanceを先に破棄すると参照先が消えるため、Runtime状態を先に破棄します。
+    m_HumanoidLocomotionAnimationActive = false;
+    m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
+    m_HumanoidLocomotionRuntime = Gltf::SkinnedBlendTreeRuntime{};
+
     if (m_HumanoidInstance.IsValid() == true)
     {
         Gltf::SkinnedMeshSceneSpawner::Destroy(m_Scene, m_HumanoidInstance);
