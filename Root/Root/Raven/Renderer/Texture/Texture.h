@@ -23,27 +23,27 @@
 namespace Raven
 {
 
+// Textureは描画APIに依存しないインターフェースです。
+// OpenGL固有のGLuintやglBindTextureなどは派生クラス側へ閉じ込めます。
+// これにより、Textureを利用する上位層はOpenGL / DirectXなどの違いを意識せずに扱えます。
 class Texture
 {
-
 public:
+    virtual ~Texture() = default;
 
+    // 現在選択されているRendererAPIに対応したTexture実装を生成します。
+    // 利用側はOpenGLTextureなどの具象型を直接生成しないことを基本方針とします。
     static Ref<Texture> Create(const std::string& path);
 
-    Texture(const std::string& path);
-    ~Texture();
+    virtual void Bind(unsigned int slot = 0) const = 0;
+    virtual void Unbind() const = 0;
 
-    void Bind(unsigned int slot = 0) const;
-    void Unbind() const;
+    // 既存コードとの互換性を維持するためRenderer側のIDを公開しています。
+    // 将来的にRendererIDの直接参照をなくせる場合は、この関数自体を削除することも検討できます。
+    virtual unsigned int GetID() const = 0;
 
-    unsigned int GetID() const;
-    
-private:
-    unsigned int m_ID;
-    int m_Width;
-    int m_Height;
-    int m_Channels;
-
+    virtual int GetWidth() const = 0;
+    virtual int GetHeight() const = 0;
 };
 
 class TextureLibrary
