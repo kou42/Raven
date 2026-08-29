@@ -2,6 +2,9 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
+#include <iostream>
+#include <sstream>
 #include <string>
 
 #include <imgui.h>
@@ -101,6 +104,35 @@ public:
             ImGui::Text("Reference    : %.2f", snapshot.ReferenceMotionSpeed);
             ImGui::Text("Playback     : %.2fx", snapshot.PlaybackSpeed);
 
+            // 現在のLocomotionBlendTreeConfig既定Clamp範囲と同じ値です。
+            // Playbackが端へ張り付いている場合、Authored Motion Speedが実際のClip速度から大きく外れている、
+            // またはGameplay速度との差がClamp範囲だけでは吸収できない可能性があるため、調整時に強調表示します。
+            constexpr float MinPlaybackSpeed = 0.50f;
+            constexpr float MaxPlaybackSpeed = 2.00f;
+            constexpr float ClampDisplayEpsilon = 1.0e-3f;
+
+            const bool playbackAtLowerClamp =
+                snapshot.AnimationActive == true
+                && snapshot.ReferenceMotionSpeed > 0.0f
+                && snapshot.PlaybackSpeed <= MinPlaybackSpeed + ClampDisplayEpsilon;
+            const bool playbackAtUpperClamp =
+                snapshot.AnimationActive == true
+                && snapshot.ReferenceMotionSpeed > 0.0f
+                && snapshot.PlaybackSpeed >= MaxPlaybackSpeed - ClampDisplayEpsilon;
+
+            if (playbackAtLowerClamp == true)
+            {
+                ImGui::TextUnformatted("Playback Clamp : LOWER (0.50x)");
+            }
+            else if (playbackAtUpperClamp == true)
+            {
+                ImGui::TextUnformatted("Playback Clamp : UPPER (2.00x)");
+            }
+            else
+            {
+                ImGui::TextUnformatted("Playback Clamp : Free");
+            }
+
             const std::string leftName = snapshot.LeftAnimationName.empty() == true
                 ? std::string("<none>")
                 : snapshot.LeftAnimationName;
@@ -160,18 +192,39 @@ public:
                 walkAuthoredSpeed = std::max(walkAuthoredSpeed, 0.10f);
                 runAuthoredSpeed = std::max(runAuthoredSpeed, walkAuthoredSpeed + MinimumSpeedGap);
 
-                std::string tuningError;
-                if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
-                        walkAuthoredSpeed,
-                        runAuthoredSpeed,
-                        &tuningError) == false)
-                {
-                    m_LastTuningError = tuningError;
-                }
-                else
-                {
-                    m_LastTuningError.clear();
-                }
+                ApplyAuthoredMotionSpeeds(walkAuthoredSpeed, runAuthoredSpeed);
+            }
+
+            // =================================================================
+            // Tuning utility actions
+            // =================================================================
+            // ResetはRavenの現在の標準Character速度へ戻します。
+            // 初期値へ戻す操作とGameplay速度の変更を混同しないよう、Authored値だけを更新します。
+            if (ImGui::Button("Reset Authored Speeds") == true)
+            {
+                constexpr float DefaultWalkAuthoredSpeed = 1.8f;
+                constexpr float DefaultRunAuthoredSpeed = 5.5f;
+                ApplyAuthoredMotionSpeeds(
+                    DefaultWalkAuthoredSpeed,
+                    DefaultRunAuthoredSpeed);
+            }
+
+            ImGui::SameLine();
+
+            // 調整結果はそのままLocomotionBlendTreeConfigへ転記できるC++形式にします。
+            // ClipboardとConsoleの両方を用意し、Debuggerを止めずに値を保存できます。
+            const std::string tuningConfigText = BuildTuningConfigText(snapshot);
+            if (ImGui::Button("Copy Config") == true)
+            {
+                ImGui::SetClipboardText(tuningConfigText.c_str());
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Print Config") == true)
+            {
+                std::cout
+                    << "[CharacterController] Locomotion Foot Sliding tuning: "
+                    << tuningConfigText << '\n';
             }
 
             if (m_LastTuningError.empty() == false)
@@ -180,6 +233,44 @@ public:
             }
         }
         ImGui::End();
+    }
+
+private:
+    void ApplyAuthoredMotionSpeeds(
+        float walkAuthoredSpeed,
+        float runAuthoredSpeed)
+    {
+        if (m_CharacterLayer == nullptr)
+        {
+            return;
+        }
+
+        std::string tuningError;
+        if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
+                walkAuthoredSpeed,
+                runAuthoredSpeed,
+                &tuningError) == false)
+        {
+            m_LastTuningError = tuningError;
+        }
+        else
+        {
+            m_LastTuningError.clear();
+        }
+    }
+
+    static std::string BuildTuningConfigText(
+        const CharacterLocomotionDebugSnapshot& snapshot)
+    {
+        std::ostringstream stream;
+        stream.setf(std::ios::fixed);
+        stream.precision(2);
+        stream
+            << "animationConfig.WalkAuthoredMotionSpeed = "
+            << snapshot.WalkAuthoredMotionSpeed << "f; "
+            << "animationConfig.RunAuthoredMotionSpeed = "
+            << snapshot.RunAuthoredMotionSpeed << "f;";
+        return stream.str();
     }
 
 private:
