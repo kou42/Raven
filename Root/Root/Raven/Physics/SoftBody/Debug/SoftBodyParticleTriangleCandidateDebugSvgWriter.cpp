@@ -287,6 +287,8 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     // ========================================================================
     // Legend
     // ========================================================================
+    // Funnel順に左から並べます。通常Candidate生成コードと同じ順序にすることで、
+    // 色を見たときに「どこまで処理が進んだ候補か」を直感的に比較できます。
     const SoftBodyParticleTriangleCandidateDebugReason legendReasons[] = {
         SoftBodyParticleTriangleCandidateDebugReason::AABBReject,
         SoftBodyParticleTriangleCandidateDebugReason::TopologyReject,
@@ -309,6 +311,7 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     // ========================================================================
     // Clickable Cloth Triangles
     // ========================================================================
+    // Cloth全体を薄く描き、Reject線の位置関係を把握するための背景にします。
     // 背景Triangle自体をclick targetにします。fill-opacityは薄いままですがpointer-eventsを明示し、
     // 折り重なったClothでも現在最前面に描かれたTriangleを直接選択できます。
     stream << "  <g fill=\"#1e293b\" fill-opacity=\"0.30\" stroke=\"#475569\" stroke-width=\"0.55\">\n";
@@ -365,6 +368,9 @@ bool SoftBodyParticleTriangleCandidateDebugSvgWriter::Write(
     // ========================================================================
     // Candidate Pair Overlay
     // ========================================================================
+    // Query Particleから対象Triangle重心へ線を引きます。
+    // 同じParticleが複数Triangleを評価する状況でも、色と線の向きからPair単位で追跡できます。
+    // Pair線そのものはpointer-eventsを無効化し、最前面のParticle Hit Circle / Triangleを選択操作に使います。
     for (const SoftBodyParticleTriangleCandidateDebugInfo& record : snapshot.Records)
     {
         if (PassesFilter(record, resolvedSettings) == false)
