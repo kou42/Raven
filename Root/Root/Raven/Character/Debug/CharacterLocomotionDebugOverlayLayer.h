@@ -1,6 +1,7 @@
 // Raven/Character/Debug/CharacterLocomotionDebugOverlayLayer.h
 #pragma once
 
+#include <algorithm>
 #include <string>
 
 #include <imgui.h>
@@ -28,7 +29,7 @@ class CharacterLocomotionDebugOverlayLayer final : public Layer
 {
 public:
     explicit CharacterLocomotionDebugOverlayLayer(
-        const CharacterControllerDemoLayer& characterLayer)
+        CharacterControllerDemoLayer& characterLayer)
         : m_CharacterLayer(&characterLayer)
     {
     }
@@ -55,8 +56,8 @@ public:
         // ====================================================================
         // Runtime Locomotion overlay
         // ====================================================================
-        // 通常Editor WindowとしてDockさせる用途ではなく、Play中に常時確認するHUDなので
-        // 左上へ固定し、入力を奪わない軽量Overlayとして表示します。
+        // Foot Sliding調整をその場で行えるよう、診断専用HUDから最小限のInteractive Tuning HUDへ拡張します。
+        // Window位置は従来どおり左上へ固定し、移動/Resize/Dockingは許可しません。
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr)
         {
@@ -78,8 +79,7 @@ public:
             | ImGuiWindowFlags_NoSavedSettings
             | ImGuiWindowFlags_NoFocusOnAppearing
             | ImGuiWindowFlags_NoNav
-            | ImGuiWindowFlags_NoMove
-            | ImGuiWindowFlags_NoInputs;
+            | ImGuiWindowFlags_NoMove;
 
         if (ImGui::Begin("Character Locomotion Debug", nullptr, windowFlags) == true)
         {
@@ -127,14 +127,66 @@ public:
             // Weightの数値だけでなく割合を直感的に確認できるよう、右側MotionのWeightをBar表示します。
             // LeftWeight + RightWeight = 1.0というBlendTree1Dの規約を利用し、RightWeightを進行率とします。
             ImGui::ProgressBar(snapshot.RightWeight, ImVec2(220.0f, 0.0f));
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("Foot Sliding Tuning");
+
+            // =================================================================
+            // Runtime Authored Motion Speed tuning
+            // =================================================================
+            // Snapshot値を編集用一時値へコピーし、変更があったFrameだけCharacter Layer経由でRuntimeへ反映します。
+            // Runtime側APIが現在Blend WeightでPlayback倍率を即時再計算するため、BlendTreeの再生位相はリスタートしません。
+            float walkAuthoredSpeed = snapshot.WalkAuthoredMotionSpeed;
+            float runAuthoredSpeed = snapshot.RunAuthoredMotionSpeed;
+
+            const bool walkChanged = ImGui::DragFloat(
+                "Walk Authored m/s",
+                &walkAuthoredSpeed,
+                0.01f,
+                0.10f,
+                10.0f,
+                "%.2f");
+            const bool runChanged = ImGui::DragFloat(
+                "Run Authored m/s",
+                &runAuthoredSpeed,
+                0.01f,
+                0.15f,
+                15.0f,
+                "%.2f");
+
+            if (walkChanged == true || runChanged == true)
+            {
+                constexpr float MinimumSpeedGap = 0.05f;
+                walkAuthoredSpeed = std::max(walkAuthoredSpeed, 0.10f);
+                runAuthoredSpeed = std::max(runAuthoredSpeed, walkAuthoredSpeed + MinimumSpeedGap);
+
+                std::string tuningError;
+                if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
+                        walkAuthoredSpeed,
+                        runAuthoredSpeed,
+                        &tuningError) == false)
+                {
+                    m_LastTuningError = tuningError;
+                }
+                else
+                {
+                    m_LastTuningError.clear();
+                }
+            }
+
+            if (m_LastTuningError.empty() == false)
+            {
+                ImGui::TextWrapped("Tuning Error: %s", m_LastTuningError.c_str());
+            }
         }
         ImGui::End();
     }
 
 private:
     // CharacterControllerDemoLayerのLifetimeはSceneが所有します。
-    // Overlayは診断値を読むだけなので非所有pointerとして保持します。
-    const CharacterControllerDemoLayer* m_CharacterLayer = nullptr;
+    // OverlayはRuntime調整APIを呼ぶため非constの非所有pointerとして保持します。
+    CharacterControllerDemoLayer* m_CharacterLayer = nullptr;
+    std::string m_LastTuningError;
 };
 
 } // namespace Raven
