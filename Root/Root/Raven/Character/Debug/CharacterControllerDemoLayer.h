@@ -29,13 +29,14 @@ class Scene;
 // Character自身のCapsule Castが自分の表示Entityへ衝突する自己衝突を避けます。
 //
 // 現段階の標準Gamepad操作:
-//   Left Stick : World XZ平面を移動
-//   A          : Jump
-//   RT         : Run
+//   Left Stick  : World XZ平面を移動
+//   Right Stick : Characterを中心にRuntime CameraをYaw / Pitch回転
+//   A           : Jump
+//   RT          : Run
 //
-// この段階ではRaw Gamepad値とCharacterControllerInput変換後の値を保持し、
+// Raw Gamepad値とCharacterControllerInput変換後の値を保持し、
 // Dead Zone / Trigger Threshold / Button MappingをDebuggerや後続Debug UIから比較できるようにします。
-// Camera-relative movement / Right Stick Cameraは次段階で入力方向変換として追加します。
+// 左StickのCamera-relative movementは、Camera操作が安定した次段階で入力方向変換として追加します。
 class CharacterControllerDemoLayer final : public Layer
 {
 public:
@@ -73,6 +74,11 @@ private:
     // Controller側の挙動不良がDevice入力なのかMappingなのかを切り分けられます。
     void CaptureGamepadDebugState();
 
+    // Primary Runtime CameraをCharacter中心のOrbit Cameraとして更新します。
+    // CameraComponentのView Matrixを直接変更せずTransformComponentだけを更新し、
+    // SceneCameraSystemをCamera姿勢同期の唯一の入口として維持します。
+    void UpdateGamepadCamera(float deltaTime);
+
 private:
     Scene& m_Scene;
 
@@ -86,6 +92,21 @@ private:
     bool m_GamepadConnected = false;
     GamepadState m_RawGamepadState{};
     CharacterControllerInput m_ResolvedInput{};
+
+    // ========================================================================
+    // Third-person Runtime Camera state
+    // ========================================================================
+    // Yaw/PitchはCamera Entity Transformへ書き戻す正規の角度状態です。
+    // Pitchを制限することで真上/真下付近でForwardとUpが平行になる特異姿勢を避けます。
+    float m_CameraYaw = 0.0f;
+    float m_CameraPitch = -0.30f;
+    float m_CameraDistance = 8.0f;
+    float m_CameraTargetHeight = 1.1f;
+    float m_CameraYawSpeed = 2.2f;
+    float m_CameraPitchSpeed = 1.8f;
+    float m_CameraStickDeadZone = 0.15f;
+    float m_CameraMinPitch = -1.20f;
+    float m_CameraMaxPitch = 0.65f;
 };
 
 } // namespace Raven
