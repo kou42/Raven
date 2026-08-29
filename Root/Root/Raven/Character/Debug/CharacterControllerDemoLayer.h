@@ -1,9 +1,13 @@
 // Raven/Character/Debug/CharacterControllerDemoLayer.h
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "Raven/Character/CharacterController.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Core/Input.h"
+#include "Raven/Gltf/SkinnedMeshSceneSpawner.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
 
@@ -17,8 +21,8 @@ class Scene;
 // ============================================================================
 // CharacterControllerDemoLayer
 // ============================================================================
-// Gamepad -> CharacterControllerInput -> CharacterController -> Scene Transform
-// の一連のRuntime経路を目視確認するための最小デモLayerです。
+// Keyboard / Gamepad -> CharacterControllerInput -> CharacterController -> Scene Transform
+// の一連のRuntime経路を目視確認するためのデモLayerです。
 //
 // このLayerはApplication LayerではなくScene-owned Layerとして登録します。
 // Scene::OnUpdate()の Physics -> Scene Layer -> Render の順序へ入るため、Characterの
@@ -28,11 +32,15 @@ class Scene;
 // Character用RigidBody/Colliderを生成しません。そのため表示用EntityにもColliderを付けず、
 // Character自身のCapsule Castが自分の表示Entityへ衝突する自己衝突を避けます。
 //
-// 現段階の標準Gamepad操作:
-//   Left Stick  : Runtime Camera基準でXZ平面を移動
-//   Right Stick : Characterを中心にRuntime CameraをYaw / Pitch回転
-//   A           : Jump
-//   RT          : Run
+// 現段階の標準操作:
+//   WASD / Left Stick : Runtime Camera基準でXZ平面を移動
+//   Right Stick       : Characterを中心にRuntime CameraをYaw / Pitch回転
+//   Space / A         : Jump
+//   Left Shift / RT   : Run
+//
+// Raven_human_test.glbを読み込める場合はHumanoidをCharacter表示として使用し、
+// CharacterController Capsule全高へ正規化します。Asset読込または正規化に失敗した場合だけ
+// 従来のCube表示へfallbackするため、入力・Physics検証自体は継続できます。
 //
 // Raw Gamepad値とCharacterControllerInput変換後の値を保持し、
 // Dead Zone / Trigger Threshold / Button MappingをDebuggerや後続Debug UIから比較できるようにします。
@@ -67,8 +75,15 @@ public:
 
 private:
     // CharacterControllerが更新するTransformは「足元Root」です。
-    // 表示用Cubeは原点中心なので、RootからCapsule全高の半分だけ上へずらして同期します。
+    // Humanを利用できないfallback時は、原点中心CubeをRootからCapsule全高の半分だけ上へずらします。
     void SyncVisualTransform();
+
+    // HumanをSceneへSpawnし、CharacterController Capsule全高へ正規化します。
+    // 正規化直後の各Primitive TransformはCharacter Root相対のVisual Local Transformとして保存し、
+    // 以後のFrameではRoot移動・回転だけを合成します。
+    bool TryInitializeHumanoidVisual();
+    void DestroyHumanoidVisual();
+    bool SyncHumanoidVisualTransform(std::string* errorMessage = nullptr);
 
     // Raw Device値をGameplay入力へ変換する前に保存します。
     // CharacterController::ReadDefaultGamepadInput()がDead Zone等を適用した結果と並べて確認することで、
@@ -90,9 +105,21 @@ private:
     CharacterController m_CharacterController{};
     TransformComponent m_CharacterRootTransform{};
 
+    // Human読込失敗時のfallback表示です。
     Entity m_CharacterEntity{};
     Ref<Mesh> m_CharacterMesh;
     Ref<Material> m_CharacterMaterial;
+
+    // ========================================================================
+    // Humanoid character visual
+    // ========================================================================
+    // SkinnedMeshSceneInstanceがPrimitive EntityとSkinning RuntimeのLifetimeを保持します。
+    // m_HumanoidLocalTransformsは「足元原点・Capsule身長へ正規化済み」のTransform Snapshotで、
+    // Character RootのWorld Transformを毎Frame左から合成して表示Humanを追従させます。
+    Gltf::SkinnedMeshSceneInstance m_HumanoidInstance{};
+    std::vector<TransformComponent> m_HumanoidLocalTransforms;
+    std::string m_HumanoidModelPath = "Raven/Assets/Models/Raven_human_test.glb";
+    bool m_HumanoidVisualActive = false;
 
     bool m_GamepadConnected = false;
     GamepadState m_RawGamepadState{};
