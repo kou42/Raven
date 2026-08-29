@@ -1,12 +1,14 @@
 // Raven/Character/Debug/CharacterControllerDemoLayer.h
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include "Raven/Character/CharacterController.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Core/Input.h"
+#include "Raven/Gltf/SkinnedBlendTreeRuntime.h"
 #include "Raven/Gltf/SkinnedMeshSceneSpawner.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
@@ -41,6 +43,11 @@ class Scene;
 // Raven_human_test.glbを読み込める場合はHumanoidをCharacter表示として使用し、
 // CharacterController Capsule全高へ正規化します。Asset読込または正規化に失敗した場合だけ
 // 従来のCube表示へfallbackするため、入力・Physics検証自体は継続できます。
+//
+// Humanoid表示が有効な場合は同じSkinnedMeshRuntimeAssetへSkinnedBlendTreeRuntimeを接続し、
+// CharacterControllerが衝突・加減速まで解決した「実水平速度」を毎Frame Speed Parameterへ渡します。
+// これにより入力のRunフラグではなく、壁Slideや加速途中を含む実際の移動結果で
+// Idle / Walk / Run Poseが連続補間されます。
 //
 // Raw Gamepad値とCharacterControllerInput変換後の値を保持し、
 // Dead Zone / Trigger Threshold / Button MappingをDebuggerや後続Debug UIから比較できるようにします。
@@ -85,6 +92,12 @@ private:
     void DestroyHumanoidVisual();
     bool SyncHumanoidVisualTransform(std::string* errorMessage = nullptr);
 
+    // Spawn済みHumanoidと同じRuntime AssetへIdle / Walk / Run BlendTreeを接続します。
+    // Animation初期化だけ失敗した場合はHumanoid表示自体を破棄せずBind Pose表示を継続します。
+    // これによりAnimation名の不一致とCharacter表示/Physicsの不具合を独立して切り分けられます。
+    bool TryInitializeHumanoidLocomotionAnimation(std::string* errorMessage = nullptr);
+    bool UpdateHumanoidLocomotionAnimation(float deltaTime, std::string* errorMessage = nullptr);
+
     // Raw Device値をGameplay入力へ変換する前に保存します。
     // CharacterController::ReadDefaultGamepadInput()がDead Zone等を適用した結果と並べて確認することで、
     // Controller側の挙動不良がDevice入力なのかMappingなのかを切り分けられます。
@@ -120,6 +133,22 @@ private:
     std::vector<TransformComponent> m_HumanoidLocalTransforms;
     std::string m_HumanoidModelPath = "Raven/Assets/Models/Raven_human_test.glb";
     bool m_HumanoidVisualActive = false;
+
+    // ========================================================================
+    // Humanoid Idle / Walk / Run animation
+    // ========================================================================
+    // BlendTree RuntimeはSceneInstanceが所有するSkinnedMeshRuntimeAssetを参照します。
+    // そのためDestroyHumanoidVisual()ではRuntimeを先に初期状態へ戻してからSceneInstanceを破棄します。
+    Gltf::SkinnedBlendTreeRuntime m_HumanoidLocomotionRuntime{};
+    std::size_t m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
+    bool m_HumanoidLocomotionAnimationActive = false;
+
+    // Raven_human_test.glb内で期待するLocomotion Animation名です。
+    // Asset側の命名が異なる場合は初期化ログへ明示的なエラーが出るため、まずここだけを合わせれば
+    // CharacterController -> 実速度 -> BlendTreeというRuntime接続自体は変更せず利用できます。
+    std::string m_HumanoidIdleAnimationName = "Idle";
+    std::string m_HumanoidWalkAnimationName = "Walk";
+    std::string m_HumanoidRunAnimationName = "Run";
 
     bool m_GamepadConnected = false;
     GamepadState m_RawGamepadState{};
