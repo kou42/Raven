@@ -9,15 +9,19 @@
 namespace Raven
 {
 
-class Application;
 class Material;
 class Mesh;
+class Scene;
 
 // ============================================================================
 // CharacterControllerDemoLayer
 // ============================================================================
 // Gamepad -> CharacterControllerInput -> CharacterController -> Scene Transform
 // の一連のRuntime経路を目視確認するための最小デモLayerです。
+//
+// このLayerはApplication LayerではなくScene-owned Layerとして登録します。
+// Scene::OnUpdate()の Physics -> Scene Layer -> Render の順序へ入るため、Characterの
+// Transform更新が同じFrameのScene描画へ反映され、Application Layerで発生する1Frameの表示遅延を避けます。
 //
 // CharacterController本体はKinematic Capsuleを内部のShape Castとして扱い、ECS上に
 // Character用RigidBody/Colliderを生成しません。そのため表示用EntityにもColliderを付けず、
@@ -32,8 +36,8 @@ class Mesh;
 class CharacterControllerDemoLayer final : public Layer
 {
 public:
-    explicit CharacterControllerDemoLayer(Application& application)
-        : m_Application(application)
+    explicit CharacterControllerDemoLayer(Scene& scene)
+        : m_Scene(scene)
     {
     }
 
@@ -47,7 +51,7 @@ private:
     void SyncVisualTransform();
 
 private:
-    Application& m_Application;
+    Scene& m_Scene;
 
     CharacterController m_CharacterController{};
     TransformComponent m_CharacterRootTransform{};
