@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "Raven/Animation/HumanoidAnimationProfile.h"
 #include "Raven/Character/CharacterController.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Core/Input.h"
@@ -209,9 +210,6 @@ public:
         return snapshot;
     }
 
-    // 現在のRendererには汎用Text/ImGui Overlayがまだ無いため、まず表示層へそのまま渡せる
-    // 複数行TextもDemoLayer側で生成します。将来Overlay Rendererを追加した際は、この戻り値を
-    // 画面左上へ描画するだけでRuntimeと同じBlend診断値を表示できます。
     std::string GetHumanoidLocomotionDebugText() const
     {
         const CharacterLocomotionDebugSnapshot snapshot = GetHumanoidLocomotionDebugSnapshot();
@@ -240,8 +238,6 @@ public:
     }
 
 private:
-    // DebugInfoのChildIndexを解決済みLocomotion名へ変換します。
-    // ここを1か所に集約することで、Debug UIがBlendTreeのChild配置規約を知る必要を無くします。
     std::string ResolveLocomotionDebugChildName(std::size_t childIndex) const
     {
         if (childIndex == 0u)
@@ -268,35 +264,14 @@ private:
         return animationName;
     }
 
-    // CharacterControllerが更新するTransformは「足元Root」です。
-    // Humanを利用できないfallback時は、原点中心CubeをRootからCapsule全高の半分だけ上へずらします。
     void SyncVisualTransform();
-
-    // HumanをSceneへSpawnし、CharacterController Capsule全高へ正規化します。
-    // 正規化直後の各Primitive TransformはCharacter Root相対のVisual Local Transformとして保存し、
-    // 以後のFrameではRoot移動・回転だけを合成します。
     bool TryInitializeHumanoidVisual();
     void DestroyHumanoidVisual();
     bool SyncHumanoidVisualTransform(std::string* errorMessage = nullptr);
-
-    // Spawn済みHumanoidと同じRuntime AssetへIdle / Walk / Run BlendTreeを接続します。
-    // Animation初期化だけ失敗した場合はHumanoid表示自体を破棄せずBind Pose表示を継続します。
-    // これによりAnimation名の不一致とCharacter表示/Physicsの不具合を独立して切り分けられます。
     bool TryInitializeHumanoidLocomotionAnimation(std::string* errorMessage = nullptr);
     bool UpdateHumanoidLocomotionAnimation(float deltaTime, std::string* errorMessage = nullptr);
-
-    // Raw Device値をGameplay入力へ変換する前に保存します。
-    // CharacterController::ReadDefaultGamepadInput()がDead Zone等を適用した結果と並べて確認することで、
-    // Controller側の挙動不良がDevice入力なのかMappingなのかを切り分けられます。
     void CaptureGamepadDebugState();
-
-    // Left StickのDevice非依存MoveをRuntime Camera基準のWorld XZ Moveへ変換します。
-    // Camera Pitchは移動方向へ含めず、地面に投影したForward/Rightだけを利用します。
     void ApplyCameraRelativeMovement(CharacterControllerInput& input) const;
-
-    // Primary Runtime CameraをCharacter中心のOrbit Cameraとして更新します。
-    // CameraComponentのView Matrixを直接変更せずTransformComponentだけを更新し、
-    // SceneCameraSystemをCamera姿勢同期の唯一の入口として維持します。
     void UpdateGamepadCamera(float deltaTime);
 
 private:
@@ -305,17 +280,17 @@ private:
     CharacterController m_CharacterController{};
     TransformComponent m_CharacterRootTransform{};
 
-    // Human読込失敗時のfallback表示です。
     Entity m_CharacterEntity{};
     Ref<Mesh> m_CharacterMesh;
     Ref<Material> m_CharacterMaterial;
 
     // ========================================================================
-    // Humanoid character visual
+    // Humanoid character visual / profile
     // ========================================================================
-    // SkinnedMeshSceneInstanceがPrimitive EntityとSkinning RuntimeのLifetimeを保持します。
-    // m_HumanoidLocalTransformsは「足元原点・Capsule身長へ正規化済み」のTransform Snapshotで、
-    // Character RootのWorld Transformを毎Frame左から合成して表示Humanを追従させます。
+    // Raven_human_test.glb固有のAnimation設定はProfileを唯一の初期値供給元とします。
+    // Demo Layer側に同じ数値やClip名を再記述しないことで、Asset差し替え時の変更箇所をProfileへ集約します。
+    HumanoidAnimationProfile m_HumanoidAnimationProfile = CreateRavenHumanTestAnimationProfile();
+
     Gltf::SkinnedMeshSceneInstance m_HumanoidInstance{};
     std::vector<TransformComponent> m_HumanoidLocalTransforms;
     std::string m_HumanoidModelPath = "Raven/Assets/Models/Raven_human_test.glb";
@@ -324,33 +299,28 @@ private:
     // ========================================================================
     // Humanoid Idle / Walk / Run animation
     // ========================================================================
-    // BlendTree RuntimeはSceneInstanceが所有するSkinnedMeshRuntimeAssetを参照します。
-    // そのためDestroyHumanoidVisual()ではRuntimeを先に初期状態へ戻してからSceneInstanceを破棄します。
     Gltf::SkinnedBlendTreeRuntime m_HumanoidLocomotionRuntime{};
     std::size_t m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     bool m_HumanoidLocomotionAnimationActive = false;
 
-    // Raven_human_test.glb内で期待するLocomotion Animation名です。
-    // 初期化時はGetAnimationNames()でAsset側の実名を取得し、まず完全一致、次に一意な部分一致で解決します。
-    // 部分一致候補が複数ある場合は誤ったMotionを勝手に選ばず、初期化エラーとして候補をログへ出します。
-    std::string m_HumanoidIdleAnimationName = "Idle";
-    std::string m_HumanoidWalkAnimationName = "Walk";
-    std::string m_HumanoidRunAnimationName = "Run";
+    // 既存の名前解決経路との互換用Snapshotです。
+    // 値そのものはProfileから取得し、このLayerへAsset固有文字列をハードコードしません。
+    std::string m_HumanoidIdleAnimationName = m_HumanoidAnimationProfile.Locomotion.IdleAnimationName;
+    std::string m_HumanoidWalkAnimationName = m_HumanoidAnimationProfile.Locomotion.WalkAnimationName;
+    std::string m_HumanoidRunAnimationName = m_HumanoidAnimationProfile.Locomotion.RunAnimationName;
 
-    // Runtimeから取得したAnimation一覧と、実際にLocomotionへ採用した名前を保持します。
-    // DebuggerからAsset命名と自動解決結果を比較できるよう、初期化後もSnapshotを残します。
     std::vector<std::string> m_HumanoidAvailableAnimationNames;
     std::string m_ResolvedHumanoidIdleAnimationName;
     std::string m_ResolvedHumanoidWalkAnimationName;
     std::string m_ResolvedHumanoidRunAnimationName;
 
-    // Foot Sliding補正のRuntime調整値です。
-    // BlendTree Thresholdとは独立しており、Gameplay速度を変えずAnimation再生倍率だけを調整します。
-    float m_HumanoidWalkAuthoredMotionSpeed = 1.8f;
-    float m_HumanoidRunAuthoredMotionSpeed = 5.5f;
+    // Runtime tuning値はProfileのAuthored Motion Speedを初期値とし、
+    // Debug UIから変更された後はProfile自体を書き換えず現在Runtime値として独立して保持します。
+    float m_HumanoidWalkAuthoredMotionSpeed =
+        m_HumanoidAnimationProfile.Locomotion.WalkAuthoredMotionSpeed;
+    float m_HumanoidRunAuthoredMotionSpeed =
+        m_HumanoidAnimationProfile.Locomotion.RunAuthoredMotionSpeed;
 
-    // 毎Frame更新するLocomotion診断値です。
-    // SpeedとBlend Weightを同じFrameのSnapshotとして保持し、後続Debug Overlayから参照できるようにします。
     float m_HumanoidActualHorizontalSpeed = 0.0f;
     BlendTree1DDebugInfo m_HumanoidLocomotionDebugInfo{};
 
@@ -358,11 +328,6 @@ private:
     GamepadState m_RawGamepadState{};
     CharacterControllerInput m_ResolvedInput{};
 
-    // ========================================================================
-    // Third-person Runtime Camera state
-    // ========================================================================
-    // Yaw/PitchはCamera Entity Transformへ書き戻す正規の角度状態です。
-    // Pitchを制限することで真上/真下付近でForwardとUpが平行になる特異姿勢を避けます。
     float m_CameraYaw = 0.0f;
     float m_CameraPitch = -0.30f;
     float m_CameraDistance = 8.0f;
