@@ -13,16 +13,15 @@ class Texture;
 // OpenGLFramebuffer
 // ============================================================================
 // Framebuffer抽象インターフェースのOpenGL実装です。
-// OpenGL固有のFBO / Renderbuffer IDはこのクラスだけが所有します。
+// OpenGL固有のFBO IDはこのクラスだけが所有します。
 //
 // Color Attachment:
-//   RGBA8のTexture抽象クラスとして保持します。
-//   実体はRendererAPIに応じたOpenGLTextureですが、Framebuffer利用側にはTextureとして公開します。
-//   Texture自身がGPU Texture ResourceをRAII管理するため、Framebuffer側でglDeleteTexturesを行いません。
+//   RGBA8 / RenderTarget用途のTexture抽象クラスとして保持します。
 //
 // Depth/Stencil Attachment:
-//   現段階ではEditor側からDepth Textureをsampling/readbackする用途がないため、
-//   GL_DEPTH24_STENCIL8 Renderbufferとして保持します。
+//   Depth24Stencil8 / DepthStencil用途のTexture抽象クラスとして保持します。
+//   これによりColor/DepthともGPU Texture Resourceの生成・破棄責務をTextureへ統一し、
+//   Framebufferは「どのTextureをどのAttachmentへ接続するか」だけを担当します。
 class OpenGLFramebuffer final : public Framebuffer
 {
 public:
@@ -52,7 +51,7 @@ private:
 private:
     std::uint32_t m_RendererID = 0;
     Ref<Texture> m_ColorAttachment;
-    std::uint32_t m_DepthStencilAttachment = 0;
+    Ref<Texture> m_DepthStencilAttachment;
 
     std::uint32_t m_Width = 1;
     std::uint32_t m_Height = 1;
