@@ -1,0 +1,14 @@
+{
+  "type": "RavenHumanoidAnimationProfile",
+  "version": 1,
+  "locomotion": {
+    "idleAnimation": "Idle",
+    "walkAnimation": "Walk",
+    "runAnimation": "Run",
+    "idleThreshold": 0,
+    "walkThreshold": 1.8,
+    "runThreshold": 5.5,
+    "walkAuthoredMotionSpeed": 1.8,
+    "runAuthoredMotionSpeed": 5.5
+  }
+}

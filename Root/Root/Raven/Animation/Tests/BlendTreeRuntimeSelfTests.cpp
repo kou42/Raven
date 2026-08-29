@@ -114,6 +114,7 @@ void RunHumanoidAnimationProfileSerializationTest()
     std::string text;
     std::string error;
     assert(SerializeHumanoidAnimationProfile(source, text, &error));
+    assert(text.empty() == false && text.front() == '{');
 
     HumanoidAnimationProfile restored{};
     assert(DeserializeHumanoidAnimationProfile(text, restored, &error));
@@ -130,7 +131,7 @@ void RunHumanoidAnimationProfileSerializationTest()
     // Parse失敗時に呼び出し側の既存Profileを上書きしないことを保証します。
     HumanoidAnimationProfile unchanged = CreateRavenHumanTestAnimationProfile();
     assert(DeserializeHumanoidAnimationProfile(
-        "RavenHumanoidAnimationProfile 999\n",
+        R"json({"type":"RavenHumanoidAnimationProfile","version":999,"locomotion":{}})json",
         unchanged,
         &error) == false);
     assert(unchanged.Locomotion.IdleAnimationName == "Idle");

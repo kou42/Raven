@@ -1,5 +1,5 @@
-// Raven/Gltf/JsonParser.cpp
-#include "Raven/Gltf/JsonParser.h"
+// Raven/Core/JsonParser.cpp
+#include "Raven/Core/JsonParser.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -9,7 +9,7 @@
 
 namespace Raven
 {
-namespace Gltf
+namespace Core
 {
 namespace
 {
@@ -567,5 +567,5 @@ bool JsonParser::Parse(
     return parser.ParseRoot(outValue);
 }
 
-} // namespace Gltf
+} // namespace Core
 } // namespace Raven
