@@ -1,4 +1,4 @@
-#include "Raven/Debug/BrowserDebugViewer.h"
+﻿#include "Raven/Debug/BrowserDebugViewer.h"
 
 #include <algorithm>
 #include <fstream>
@@ -151,7 +151,7 @@ namespace Raven
         // 親側は入力欄とURL Queryだけを同期し、同じ/filterを二重送信しません。
         const std::string svgFileName = svgPath.filename().generic_string();
         const std::string candidateSvgFileName = "CandidateRejects.svg";
-        const uint32_t safeReloadInterval = std::max(reloadIntervalMilliseconds, 50u);
+        const uint32_t safeReloadInterval = (reloadIntervalMilliseconds > 50) ? reloadIntervalMilliseconds : 50u;
 
         stream << "<!doctype html>\n"
                << "<html><head><meta charset=\"utf-8\"><title>Raven Physics Debug Viewer</title>"
