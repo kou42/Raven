@@ -42,6 +42,12 @@ enum class SoftBodyParticleTriangleCandidateDebugReason : uint8_t
 
 // 1つの「Particle × Triangle Cell Candidate」がどの段階で脱落したかを表します。
 // ParticleIndex / TriangleIndexを保持するため、SVG側ではParticleだけでなく対象Triangleも強調できます。
+//
+// 以前はInspector向けのAABB / Plane / Edge距離も各Recordへ保持していましたが、全Candidateへ同じ種類の
+// 診断値を保存するとSnapshotメモリが大きくなります。現在はRecordを「Pair識別 + Reject理由」に限定し、
+// 詳細距離はParticle/Triangleの両方が選択されたときだけSoftBodyParticleTrianglePairInspectorが再計算します。
+// Runtimeのcheap reject自体は非正規化法線 + 平方比較のままなので、このDebug設計変更はSimulation hot pathへ
+// 影響しません。
 struct SoftBodyParticleTriangleCandidateDebugInfo
 {
     uint32_t ParticleIndex = 0u;
@@ -69,6 +75,7 @@ struct SoftBodyParticleTriangleCandidateDebugSnapshot
 
     // Pair InspectorでRuntime判定値と同じ閾値を表示するため、Build時のThicknessをSnapshotへ保存します。
     // 各Recordへ同じfloatを重複保持せずSnapshot単位にすることで、診断用メモリ増加を抑えます。
+    // Inspectorは選択Pairを再計算するとき、この値をAABB expansion / Plane / Edge判定の共通閾値として使用します。
     float Thickness = 0.0f;
 
     void Clear()
