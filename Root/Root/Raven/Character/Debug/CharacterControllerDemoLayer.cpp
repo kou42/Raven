@@ -2,6 +2,7 @@
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -14,9 +15,39 @@
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneCameraSystem.h"
 
 namespace Raven
 {
+namespace
+{
+
+math::Vec2 ApplyCameraStickDeadZone(const math::Vec2& stick, float deadZone)
+{
+    // CameraもCharacter移動と同じ円形Dead Zoneを利用します。
+    // X/Yを個別に切る矩形Dead Zoneでは斜め入力時の開始角度が歪むため、Stick全体の長さで判定します。
+    const float clampedDeadZone = std::clamp(deadZone, 0.0f, 0.999f);
+    const float lengthSquared = stick.x * stick.x + stick.y * stick.y;
+    const float deadZoneSquared = clampedDeadZone * clampedDeadZone;
+
+    if (lengthSquared <= deadZoneSquared)
+    {
+        return math::Vec2{ 0.0f, 0.0f };
+    }
+
+    const float length = std::sqrt(lengthSquared);
+    if (length <= 1.0e-6f)
+    {
+        return math::Vec2{ 0.0f, 0.0f };
+    }
+
+    const float clampedLength = std::min(length, 1.0f);
+    const float remappedLength = (clampedLength - clampedDeadZone) / (1.0f - clampedDeadZone);
+    const float scale = remappedLength / length;
+    return math::Vec2{ stick.x * scale, stick.y * scale };
+}
+
+} // namespace
 
 void CharacterControllerDemoLayer::OnAttach()
 {
@@ -86,8 +117,11 @@ void CharacterControllerDemoLayer::OnAttach()
 
     SyncVisualTransform();
 
+    // 初回からCharacterを画面中央付近へ捉えるため、Gamepad入力が無くてもCameraを一度同期します。
+    UpdateGamepadCamera(0.0f);
+
     std::cout
-        << "[CharacterController] Gamepad Controls: Left Stick Move, A Jump, RT Run\n";
+        << "[CharacterController] Gamepad Controls: Left Stick Move, Right Stick Camera, A Jump, RT Run\n";
 }
 
 void CharacterControllerDemoLayer::OnDetach()
@@ -152,6 +186,10 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     }
 
     SyncVisualTransform();
+
+    // Character移動後のRootをTargetにすることで、Cameraは同じFrame内で最新位置へ追従します。
+    // Scene-owned LayerはRender前に更新されるため、このCamera Transformも同じFrameの描画へ反映されます。
+    UpdateGamepadCamera(safeDeltaTime);
 }
 
 void CharacterControllerDemoLayer::CaptureGamepadDebugState()
@@ -169,6 +207,50 @@ void CharacterControllerDemoLayer::CaptureGamepadDebugState()
         // Debuggerで「切断後の前Frame値」が見える余地を残さないようにします。
         m_RawGamepadState = GamepadState{};
     }
+}
+
+void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
+{
+    Entity cameraEntity = SceneCameraSystem::ResolveRuntimeCameraEntity(m_Scene);
+    if (static_cast<bool>(cameraEntity) == false
+        || m_Scene.IsEntityAlive(cameraEntity) == false
+        || cameraEntity.HasComponent<TransformComponent>() == false
+        || cameraEntity.HasComponent<CameraComponent>() == false)
+    {
+        return;
+    }
+
+    // WindowsInput側でRightStickYは「上へ倒すと+」になるよう正規化済みです。
+    // 右Stick上でCameraを上側へ回したいのでPitchへ正方向として加算します。
+    const math::Vec2 cameraStick = ApplyCameraStickDeadZone(
+        math::Vec2{ m_RawGamepadState.RightStickX, m_RawGamepadState.RightStickY },
+        m_CameraStickDeadZone);
+
+    m_CameraYaw += cameraStick.x * m_CameraYawSpeed * deltaTime;
+    m_CameraPitch += cameraStick.y * m_CameraPitchSpeed * deltaTime;
+    m_CameraPitch = std::clamp(m_CameraPitch, m_CameraMinPitch, m_CameraMaxPitch);
+
+    // Raven Runtime CameraのLocal Forwardは-Zです。
+    // SceneCameraSystemのX -> Y回転と同じ意味になるよう、Yaw/PitchからWorld Forwardを構築します。
+    // Pitchが負なら下向き、Yaw=0なら-Z向きです。
+    const float cosPitch = std::cos(m_CameraPitch);
+    math::Vec3 cameraForward{
+        std::sin(m_CameraYaw) * cosPitch,
+        std::sin(m_CameraPitch),
+        -std::cos(m_CameraYaw) * cosPitch
+    };
+    cameraForward.Normalize();
+
+    const math::Vec3 target = m_CharacterRootTransform.Position
+        + math::Vec3{ 0.0f, m_CameraTargetHeight, 0.0f };
+
+    TransformComponent& cameraTransform = cameraEntity.GetComponent<TransformComponent>();
+    cameraTransform.Position = target - cameraForward * m_CameraDistance;
+    cameraTransform.Rotation = math::Vec3{ m_CameraPitch, m_CameraYaw, 0.0f };
+
+    // View Matrixはここでは更新しません。
+    // SceneCameraSystem::UpdatePrimaryCamera()がRender直前にTransformからViewを再構築するため、
+    // Camera姿勢の正規データをTransformComponentへ一本化したまま維持できます。
 }
 
 void CharacterControllerDemoLayer::SyncVisualTransform()
