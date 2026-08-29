@@ -2,6 +2,8 @@
 #pragma once
 
 #include <cstddef>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,30 @@ namespace Raven
 class Material;
 class Mesh;
 class Scene;
+
+// ============================================================================
+// CharacterLocomotionDebugSnapshot
+// ============================================================================
+// CharacterControllerDemoLayerが保持しているLocomotion診断値を、RendererやEditorへ依存しない
+// 1つのSnapshotへまとめた構造体です。
+//
+// Debug UI側がCharacterController / BlendTree Runtimeの内部へ直接触ると、表示のためだけに
+// Gameplay/Animation層への依存が増えます。そのためDemoLayerを診断情報の境界とし、
+// Overlay側はこのSnapshotを読むだけで表示できる構成にします。
+struct CharacterLocomotionDebugSnapshot
+{
+    bool AnimationActive = false;
+    float ActualHorizontalSpeed = 0.0f;
+    float ParameterValue = 0.0f;
+
+    std::string LeftAnimationName;
+    std::string RightAnimationName;
+    float LeftThreshold = 0.0f;
+    float RightThreshold = 0.0f;
+    float LeftWeight = 0.0f;
+    float RightWeight = 0.0f;
+    bool IsClamped = false;
+};
 
 // ============================================================================
 // CharacterControllerDemoLayer
@@ -94,7 +120,85 @@ public:
         return m_HumanoidLocomotionDebugInfo;
     }
 
+    // ========================================================================
+    // Locomotion Debug UI boundary
+    // ========================================================================
+    // BlendTree1DDebugInfoのChildIndexを、Character側で解決済みのAnimation名へ変換します。
+    // LocomotionTreeはConfigure時にThreshold昇順の Idle / Walk / Run となるため、Index 0/1/2を
+    // それぞれ解決済み名へ対応させられます。未知Indexは空文字列にして誤表示を避けます。
+    CharacterLocomotionDebugSnapshot GetHumanoidLocomotionDebugSnapshot() const
+    {
+        CharacterLocomotionDebugSnapshot snapshot{};
+        snapshot.AnimationActive = m_HumanoidLocomotionAnimationActive;
+        snapshot.ActualHorizontalSpeed = m_HumanoidActualHorizontalSpeed;
+        snapshot.ParameterValue = m_HumanoidLocomotionDebugInfo.ParameterValue;
+        snapshot.LeftAnimationName = ResolveLocomotionDebugChildName(
+            m_HumanoidLocomotionDebugInfo.LeftChildIndex);
+        snapshot.RightAnimationName = ResolveLocomotionDebugChildName(
+            m_HumanoidLocomotionDebugInfo.RightChildIndex);
+        snapshot.LeftThreshold = m_HumanoidLocomotionDebugInfo.LeftThreshold;
+        snapshot.RightThreshold = m_HumanoidLocomotionDebugInfo.RightThreshold;
+        snapshot.LeftWeight = m_HumanoidLocomotionDebugInfo.LeftWeight;
+        snapshot.RightWeight = m_HumanoidLocomotionDebugInfo.RightWeight;
+        snapshot.IsClamped = m_HumanoidLocomotionDebugInfo.IsClamped;
+        return snapshot;
+    }
+
+    // 現在のRendererには汎用Text/ImGui Overlayがまだ無いため、まず表示層へそのまま渡せる
+    // 複数行TextもDemoLayer側で生成します。将来Overlay Rendererを追加した際は、この戻り値を
+    // 画面左上へ描画するだけでRuntimeと同じBlend診断値を表示できます。
+    std::string GetHumanoidLocomotionDebugText() const
+    {
+        const CharacterLocomotionDebugSnapshot snapshot = GetHumanoidLocomotionDebugSnapshot();
+
+        std::ostringstream stream;
+        stream << std::fixed << std::setprecision(2);
+        stream << "Locomotion Animation : "
+            << (snapshot.AnimationActive == true ? "Active" : "Inactive") << '\n';
+        stream << "Actual Speed         : " << snapshot.ActualHorizontalSpeed << '\n';
+        stream << "Blend Parameter      : " << snapshot.ParameterValue << '\n';
+        stream << "Blend                : "
+            << FormatDebugAnimationName(snapshot.LeftAnimationName)
+            << " -> "
+            << FormatDebugAnimationName(snapshot.RightAnimationName) << '\n';
+        stream << "Left Weight          : " << snapshot.LeftWeight << '\n';
+        stream << "Right Weight         : " << snapshot.RightWeight << '\n';
+        stream << "Threshold            : "
+            << snapshot.LeftThreshold << " -> " << snapshot.RightThreshold << '\n';
+        stream << "Clamped              : "
+            << (snapshot.IsClamped == true ? "true" : "false");
+        return stream.str();
+    }
+
 private:
+    // DebugInfoのChildIndexを解決済みLocomotion名へ変換します。
+    // ここを1か所に集約することで、Debug UIがBlendTreeのChild配置規約を知る必要を無くします。
+    std::string ResolveLocomotionDebugChildName(std::size_t childIndex) const
+    {
+        if (childIndex == 0u)
+        {
+            return m_ResolvedHumanoidIdleAnimationName;
+        }
+        if (childIndex == 1u)
+        {
+            return m_ResolvedHumanoidWalkAnimationName;
+        }
+        if (childIndex == 2u)
+        {
+            return m_ResolvedHumanoidRunAnimationName;
+        }
+        return {};
+    }
+
+    static std::string FormatDebugAnimationName(const std::string& animationName)
+    {
+        if (animationName.empty() == true)
+        {
+            return "<none>";
+        }
+        return animationName;
+    }
+
     // CharacterControllerが更新するTransformは「足元Root」です。
     // Humanを利用できないfallback時は、原点中心CubeをRootからCapsule全高の半分だけ上へずらします。
     void SyncVisualTransform();
