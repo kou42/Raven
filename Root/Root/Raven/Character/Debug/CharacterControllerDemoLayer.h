@@ -50,6 +50,11 @@ struct CharacterLocomotionDebugSnapshot
     // PlaybackSpeedは実速度との差を吸収するためAnimatorへ設定された再生倍率です。
     float ReferenceMotionSpeed = 0.0f;
     float PlaybackSpeed = 1.0f;
+
+    // Runtime調整中のAuthored Motion Speedです。
+    // Overlay側はこの値を編集し、SetHumanoidLocomotionAuthoredMotionSpeeds()経由でRuntimeへ反映します。
+    float WalkAuthoredMotionSpeed = 1.8f;
+    float RunAuthoredMotionSpeed = 5.5f;
 };
 
 // ============================================================================
@@ -127,6 +132,40 @@ public:
     }
 
     // ========================================================================
+    // Locomotion runtime tuning
+    // ========================================================================
+    // Walk / Run Clipを1.0倍再生したときの想定移動速度を実行中に変更します。
+    // BlendTree自体を再構築しないためAnimation位相は維持され、足滑りだけを連続的に調整できます。
+    bool SetHumanoidLocomotionAuthoredMotionSpeeds(
+        float walkAuthoredMotionSpeed,
+        float runAuthoredMotionSpeed,
+        std::string* errorMessage = nullptr)
+    {
+        if (m_HumanoidLocomotionAnimationActive == false
+            || m_HumanoidAnimationSkinIndex == Gltf::InvalidGltfIndex)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Humanoid Locomotion Animationが有効ではありません";
+            }
+            return false;
+        }
+
+        if (m_HumanoidLocomotionRuntime.SetLocomotionAuthoredMotionSpeeds(
+                m_HumanoidAnimationSkinIndex,
+                walkAuthoredMotionSpeed,
+                runAuthoredMotionSpeed,
+                errorMessage) == false)
+        {
+            return false;
+        }
+
+        m_HumanoidWalkAuthoredMotionSpeed = walkAuthoredMotionSpeed;
+        m_HumanoidRunAuthoredMotionSpeed = runAuthoredMotionSpeed;
+        return true;
+    }
+
+    // ========================================================================
     // Locomotion Debug UI boundary
     // ========================================================================
     // BlendTree1DDebugInfoのChildIndexを、Character側で解決済みのAnimation名へ変換します。
@@ -147,6 +186,8 @@ public:
         snapshot.LeftWeight = m_HumanoidLocomotionDebugInfo.LeftWeight;
         snapshot.RightWeight = m_HumanoidLocomotionDebugInfo.RightWeight;
         snapshot.IsClamped = m_HumanoidLocomotionDebugInfo.IsClamped;
+        snapshot.WalkAuthoredMotionSpeed = m_HumanoidWalkAuthoredMotionSpeed;
+        snapshot.RunAuthoredMotionSpeed = m_HumanoidRunAuthoredMotionSpeed;
 
         // Playback補正値もBlendTreeと同じRuntime Stateから取得します。
         // Overlay側でActual/Reference比を再計算するとClamp規則やIdle例外と表示がずれるため、
@@ -168,9 +209,6 @@ public:
         return snapshot;
     }
 
-    // 現在のRendererには汎用Text/ImGui Overlayがまだ無いため、まず表示層へそのまま渡せる
-    // 複数行TextもDemoLayer側で生成します。将来Overlay Rendererを追加した際は、この戻り値を
-    // 画面左上へ描画するだけでRuntimeと同じBlend診断値を表示できます。
     std::string GetHumanoidLocomotionDebugText() const
     {
         const CharacterLocomotionDebugSnapshot snapshot = GetHumanoidLocomotionDebugSnapshot();
@@ -183,6 +221,8 @@ public:
         stream << "Blend Parameter      : " << snapshot.ParameterValue << '\n';
         stream << "Reference Speed      : " << snapshot.ReferenceMotionSpeed << '\n';
         stream << "Playback Speed       : " << snapshot.PlaybackSpeed << "x\n";
+        stream << "Walk Authored Speed  : " << snapshot.WalkAuthoredMotionSpeed << '\n';
+        stream << "Run Authored Speed   : " << snapshot.RunAuthoredMotionSpeed << '\n';
         stream << "Blend                : "
             << FormatDebugAnimationName(snapshot.LeftAnimationName)
             << " -> "
@@ -197,8 +237,6 @@ public:
     }
 
 private:
-    // DebugInfoのChildIndexを解決済みLocomotion名へ変換します。
-    // ここを1か所に集約することで、Debug UIがBlendTreeのChild配置規約を知る必要を無くします。
     std::string ResolveLocomotionDebugChildName(std::size_t childIndex) const
     {
         if (childIndex == 0u)
@@ -300,6 +338,11 @@ private:
     std::string m_ResolvedHumanoidIdleAnimationName;
     std::string m_ResolvedHumanoidWalkAnimationName;
     std::string m_ResolvedHumanoidRunAnimationName;
+
+    // Foot Sliding補正のRuntime調整値です。
+    // BlendTree Thresholdとは独立しており、Gameplay速度を変えずAnimation再生倍率だけを調整します。
+    float m_HumanoidWalkAuthoredMotionSpeed = 1.8f;
+    float m_HumanoidRunAuthoredMotionSpeed = 5.5f;
 
     // 毎Frame更新するLocomotion診断値です。
     // SpeedとBlend Weightを同じFrameのSnapshotとして保持し、後続Debug Overlayから参照できるようにします。
