@@ -8,6 +8,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include "Raven/Gltf/HumanoidSceneNormalization.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -47,6 +48,103 @@ math::Vec2 ApplyCameraStickDeadZone(const math::Vec2& stick, float deadZone)
     return math::Vec2{ stick.x * scale, stick.y * scale };
 }
 
+bool DecomposeComposedTransform(
+    const math::Mat4& matrix,
+    TransformComponent& outTransform)
+{
+    constexpr float AffineTolerance = 1.0e-4f;
+    constexpr float ScaleTolerance = 1.0e-6f;
+    constexpr float OrthogonalTolerance = 2.0e-4f;
+
+    // ========================================================================
+    // Character Root * Visual Local Matrix -> Raven TRS
+    // ========================================================================
+    // Human PrimitiveはImport時のNode Rotationを既に持つため、Root YawをRotation.yへ単純加算すると
+    // Euler積順が変わり、AssetによってBody/Clothesの向きが崩れます。
+    // そのためMatrixとして正しい順序で合成した後、TransformComponentのRx * Ry * Rz規約へ戻します。
+    if (std::fabs(matrix[3][0]) > AffineTolerance
+        || std::fabs(matrix[3][1]) > AffineTolerance
+        || std::fabs(matrix[3][2]) > AffineTolerance
+        || std::fabs(matrix[3][3] - 1.0f) > AffineTolerance)
+    {
+        return false;
+    }
+
+    const math::Vec3 column0{ matrix[0][0], matrix[1][0], matrix[2][0] };
+    const math::Vec3 column1{ matrix[0][1], matrix[1][1], matrix[2][1] };
+    const math::Vec3 column2{ matrix[0][2], matrix[1][2], matrix[2][2] };
+
+    const float scaleX = column0.Length();
+    const float scaleY = column1.Length();
+    const float scaleZ = column2.Length();
+    if (std::isfinite(scaleX) == false
+        || std::isfinite(scaleY) == false
+        || std::isfinite(scaleZ) == false
+        || scaleX <= ScaleTolerance
+        || scaleY <= ScaleTolerance
+        || scaleZ <= ScaleTolerance)
+    {
+        return false;
+    }
+
+    const math::Vec3 axisX = column0 / scaleX;
+    const math::Vec3 axisY = column1 / scaleY;
+    const math::Vec3 axisZ = column2 / scaleZ;
+
+    if (std::fabs(math::Vec3::Dot(axisX, axisY)) > OrthogonalTolerance
+        || std::fabs(math::Vec3::Dot(axisX, axisZ)) > OrthogonalTolerance
+        || std::fabs(math::Vec3::Dot(axisY, axisZ)) > OrthogonalTolerance)
+    {
+        return false;
+    }
+
+    const float determinant = math::Vec3::Dot(axisX, math::Vec3::Cross(axisY, axisZ));
+    if (std::isfinite(determinant) == false
+        || std::fabs(determinant - 1.0f) > 1.0e-3f)
+    {
+        return false;
+    }
+
+    const float r00 = axisX.x;
+    const float r10 = axisX.y;
+    const float r01 = axisY.x;
+    const float r11 = axisY.y;
+    const float r02 = axisZ.x;
+    const float r12 = axisZ.y;
+    const float r22 = axisZ.z;
+
+    const float clampedSinY = std::clamp(r02, -1.0f, 1.0f);
+    const float rotationY = std::asin(clampedSinY);
+    const float cosY = std::cos(rotationY);
+
+    float rotationX = 0.0f;
+    float rotationZ = 0.0f;
+    if (std::fabs(cosY) > 1.0e-5f)
+    {
+        rotationX = std::atan2(-r12, r22);
+        rotationZ = std::atan2(-r01, r00);
+    }
+    else
+    {
+        // Gimbal LockではX/Zを一意に分離できないため、Z=0を代表解にします。
+        const float signY = clampedSinY >= 0.0f ? 1.0f : -1.0f;
+        rotationX = std::atan2(signY * r10, r11);
+        rotationZ = 0.0f;
+    }
+
+    if (std::isfinite(rotationX) == false
+        || std::isfinite(rotationY) == false
+        || std::isfinite(rotationZ) == false)
+    {
+        return false;
+    }
+
+    outTransform.Position = math::Vec3{ matrix[0][3], matrix[1][3], matrix[2][3] };
+    outTransform.Rotation = math::Vec3{ rotationX, rotationY, rotationZ };
+    outTransform.Scale = math::Vec3{ scaleX, scaleY, scaleZ };
+    return true;
+}
+
 } // namespace
 
 void CharacterControllerDemoLayer::OnAttach()
@@ -54,9 +152,8 @@ void CharacterControllerDemoLayer::OnAttach()
     // ========================================================================
     // Character visual resource
     // ========================================================================
+    // HumanのMaterial Importはまだ未実装なので、Cube fallbackとHumanoidの両方で共通Materialを使います。
     // CharacterControllerの衝突形状は内部Capsule Castであり、表示Meshとは独立しています。
-    // 現段階ではPrimitiveMeshFactoryにCapsule Meshが無いため、Capsuleの外接寸法に合わせた
-    // Cubeを表示し、「足元位置・向き・移動」を分かりやすく確認できるようにします。
     m_CharacterMesh = PrimitiveMeshFactory::CreateCube();
     if (m_CharacterMesh == nullptr)
     {
@@ -106,14 +203,26 @@ void CharacterControllerDemoLayer::OnAttach()
     m_ResolvedInput = CharacterControllerInput{};
 
     // ========================================================================
-    // Visual Entity
+    // Fallback visual Entity
     // ========================================================================
     // ColliderComponent / RigidBodyComponentは意図的に追加しません。
     // CharacterのCollisionはCharacterController::UpdateWithMovingPlatforms()内のCapsule Castが担当し、
     // 表示EntityまでPhysicsWorldへ登録すると同じCharacterが二重の衝突形状を持ってしまうためです。
-    m_CharacterEntity = m_Scene.CreateEntity("Gamepad Character Controller Demo");
+    m_CharacterEntity = m_Scene.CreateEntity("Character Controller Fallback Visual");
     m_CharacterEntity.AddComponent<MeshRendererComponent>(
         MeshRendererComponent{ m_CharacterMesh, m_CharacterMaterial });
+
+    // Humanを利用できる場合はCapsule全高へ正規化して本表示として採用します。
+    // 失敗した場合は上で作成したCubeを残し、Character Controller自体の検証を止めません。
+    if (TryInitializeHumanoidVisual() == true)
+    {
+        if (static_cast<bool>(m_CharacterEntity)
+            && m_Scene.IsEntityAlive(m_CharacterEntity))
+        {
+            m_Scene.DestroyEntity(m_CharacterEntity);
+        }
+        m_CharacterEntity = {};
+    }
 
     SyncVisualTransform();
 
@@ -127,6 +236,8 @@ void CharacterControllerDemoLayer::OnAttach()
 
 void CharacterControllerDemoLayer::OnDetach()
 {
+    DestroyHumanoidVisual();
+
     if (static_cast<bool>(m_CharacterEntity)
         && m_Scene.IsEntityAlive(m_CharacterEntity))
     {
@@ -145,14 +256,8 @@ void CharacterControllerDemoLayer::OnDetach()
 
 void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
 {
-    if (static_cast<bool>(m_CharacterEntity) == false
-        || m_Scene.IsEntityAlive(m_CharacterEntity) == false)
-    {
-        return;
-    }
-
-    // Scene側と同じく極端に大きなFrame DeltaをClampします。
-    // Debugger停止後などの単発巨大dtでCharacterが長距離Capsule Castすることを防ぎます。
+    // 表示Entityの有無はGameplay/Physics更新の成立条件にしません。
+    // Human/Cubeの表示初期化に失敗してもCharacterControllerの入力・衝突検証は継続できるようにします。
     const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.05f);
 
     // ========================================================================
@@ -197,6 +302,156 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     // Character移動後のRootをTargetにすることで、Cameraは同じFrame内で最新位置へ追従します。
     // Scene-owned LayerはRender前に更新されるため、このCamera Transformも同じFrameの描画へ反映されます。
     UpdateGamepadCamera(safeDeltaTime);
+}
+
+bool CharacterControllerDemoLayer::TryInitializeHumanoidVisual()
+{
+    if (m_CharacterMaterial == nullptr)
+    {
+        return false;
+    }
+
+    std::string errorMessage;
+    if (Gltf::SkinnedMeshSceneSpawner::SpawnFromGlb(
+            m_Scene,
+            m_HumanoidModelPath,
+            m_CharacterMaterial,
+            m_HumanoidInstance,
+            &errorMessage) == false)
+    {
+        std::cerr
+            << "[CharacterController] Humanoid表示の読込に失敗したためCubeへfallbackします: "
+            << errorMessage << '\n';
+        return false;
+    }
+
+    std::vector<Gltf::SpawnedSkinnedPrimitive>& primitives = m_HumanoidInstance.GetPrimitives();
+    if (primitives.empty())
+    {
+        std::cerr << "[CharacterController] Humanoid Primitiveが0件のためCubeへfallbackします。\n";
+        DestroyHumanoidVisual();
+        return false;
+    }
+
+    const CharacterControllerConfig& config = m_CharacterController.GetConfig();
+    const float capsuleHeight = 2.0f * (config.CapsuleHalfLength + config.CapsuleRadius);
+
+    // Human Debug Layerの20m固定正規化とは分離し、Character表示ではCollision Capsule全高を使います。
+    // これにより「見た目は20m、Colliderは1.8m」というDebug都合のScale差をGameplay側へ持ち込みません。
+    if (Gltf::NormalizeHumanoidSceneInstance(
+            m_HumanoidInstance,
+            primitives,
+            capsuleHeight,
+            &errorMessage) == false)
+    {
+        std::cerr
+            << "[CharacterController] HumanoidのCapsule身長正規化に失敗したためCubeへfallbackします: "
+            << errorMessage << '\n';
+        DestroyHumanoidVisual();
+        return false;
+    }
+
+    // 正規化後はHumanの足元がWorld原点、身長がCapsule全高になっています。
+    // この状態をCharacter Root相対のVisual Local Transformとして一度だけ保存します。
+    // 毎Frame現在TransformへRoot差分を累積すると誤差が蓄積するため、常にこのSnapshotから再構築します。
+    m_HumanoidLocalTransforms.clear();
+    m_HumanoidLocalTransforms.reserve(primitives.size());
+    for (const Gltf::SpawnedSkinnedPrimitive& primitive : primitives)
+    {
+        if (static_cast<bool>(primitive.EntityHandle) == false
+            || m_Scene.IsEntityAlive(primitive.EntityHandle) == false
+            || primitive.EntityHandle.HasComponent<TransformComponent>() == false)
+        {
+            std::cerr << "[CharacterController] Humanoid Primitive Transformが無効です。\n";
+            DestroyHumanoidVisual();
+            return false;
+        }
+
+        m_HumanoidLocalTransforms.push_back(
+            primitive.EntityHandle.GetComponent<TransformComponent>());
+    }
+
+    m_HumanoidVisualActive = true;
+
+    if (SyncHumanoidVisualTransform(&errorMessage) == false)
+    {
+        std::cerr
+            << "[CharacterController] Humanoid初期Root同期に失敗したためCubeへfallbackします: "
+            << errorMessage << '\n';
+        DestroyHumanoidVisual();
+        return false;
+    }
+
+    std::cout
+        << "[CharacterController] Raven_human_test.glbをCharacter表示へ接続しました。"
+        << " Height=" << capsuleHeight << '\n';
+    return true;
+}
+
+void CharacterControllerDemoLayer::DestroyHumanoidVisual()
+{
+    if (m_HumanoidInstance.IsValid() == true)
+    {
+        Gltf::SkinnedMeshSceneSpawner::Destroy(m_Scene, m_HumanoidInstance);
+    }
+
+    m_HumanoidInstance = {};
+    m_HumanoidLocalTransforms.clear();
+    m_HumanoidVisualActive = false;
+}
+
+bool CharacterControllerDemoLayer::SyncHumanoidVisualTransform(std::string* errorMessage)
+{
+    if (m_HumanoidVisualActive == false)
+    {
+        return true;
+    }
+
+    std::vector<Gltf::SpawnedSkinnedPrimitive>& primitives = m_HumanoidInstance.GetPrimitives();
+    if (primitives.size() != m_HumanoidLocalTransforms.size())
+    {
+        if (errorMessage != nullptr)
+        {
+            *errorMessage = "Humanoid Primitive数とVisual Local Transform数が一致しません";
+        }
+        return false;
+    }
+
+    const math::Mat4 rootTransform = m_CharacterRootTransform.GetTransform();
+
+    for (std::size_t primitiveIndex = 0u; primitiveIndex < primitives.size(); ++primitiveIndex)
+    {
+        Gltf::SpawnedSkinnedPrimitive& primitive = primitives[primitiveIndex];
+        if (static_cast<bool>(primitive.EntityHandle) == false
+            || m_Scene.IsEntityAlive(primitive.EntityHandle) == false
+            || primitive.EntityHandle.HasComponent<TransformComponent>() == false)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Humanoid Primitive Entity/TransformがRuntime中に無効になりました";
+            }
+            return false;
+        }
+
+        // RootはCharacterControllerが決定する足元位置・向き、LocalはAsset正規化後の見た目配置です。
+        // Matrix積として合成することでPrimitive固有Rotation/Scaleを保ったままCharacterへ追従させます。
+        const math::Mat4 composedTransform = rootTransform
+            * m_HumanoidLocalTransforms[primitiveIndex].GetTransform();
+
+        TransformComponent composedComponent{};
+        if (DecomposeComposedTransform(composedTransform, composedComponent) == false)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Character RootとHumanoid Visual Local TransformのTRS合成に失敗しました";
+            }
+            return false;
+        }
+
+        primitive.EntityHandle.GetComponent<TransformComponent>() = composedComponent;
+    }
+
+    return true;
 }
 
 void CharacterControllerDemoLayer::CaptureGamepadDebugState()
@@ -300,7 +555,20 @@ void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
 
 void CharacterControllerDemoLayer::SyncVisualTransform()
 {
+    if (m_HumanoidVisualActive == true)
+    {
+        std::string errorMessage;
+        if (SyncHumanoidVisualTransform(&errorMessage) == false)
+        {
+            std::cerr
+                << "[CharacterController] Humanoid Visual同期に失敗しました: "
+                << errorMessage << '\n';
+        }
+        return;
+    }
+
     if (static_cast<bool>(m_CharacterEntity) == false
+        || m_Scene.IsEntityAlive(m_CharacterEntity) == false
         || m_CharacterEntity.HasComponent<TransformComponent>() == false)
     {
         return;
