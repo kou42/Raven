@@ -21,7 +21,12 @@ class SkinnedMeshRuntimeAsset;
 // LocomotionBlendTreeConfig
 // ============================================================================
 // Idle / Walk / RunをSpeed Parameter上へ配置する設定です。
-// Thresholdは状態切り替え境界ではなく「そのClipが100%になる速度」を表します。
+// Thresholdは状態切り替え境界ではなく「そのClipが100%になるGameplay速度」を表します。
+//
+// AuthoredMotionSpeedはClipを1.0倍速で再生したときに見た目上想定している移動速度です。
+// Thresholdと分離することで、Gameplay速度を変えずに足滑りだけをPlayback Speedで補正できます。
+// 現時点の既定値は既存CharacterControllerのWalk/Run速度と一致させ、従来挙動を維持します。
+// Assetごとの実測値が分かったら、この2値だけを調整して補正量を決めます。
 struct LocomotionBlendTreeConfig
 {
     std::string IdleAnimationName;
@@ -31,6 +36,27 @@ struct LocomotionBlendTreeConfig
     float IdleThreshold = 0.0f;
     float WalkThreshold = 1.8f;
     float RunThreshold = 5.5f;
+
+    float WalkAuthoredMotionSpeed = 1.8f;
+    float RunAuthoredMotionSpeed = 5.5f;
+
+    // 誤ったAsset設定や極端な速度変化でAnimationが停止/高速化し過ぎないための安全範囲です。
+    // IdleそのものはReference Speedが0なので1.0倍速を維持します。
+    float MinLocomotionPlaybackSpeed = 0.50f;
+    float MaxLocomotionPlaybackSpeed = 2.00f;
+};
+
+// ============================================================================
+// LocomotionPlaybackDebugInfo
+// ============================================================================
+// Foot Sliding補正の診断値です。
+// ReferenceMotionSpeedは現在のBlend Weightで補間した「Clip側の想定移動速度」、
+// PlaybackSpeedは Actual Movement Speed / Reference Motion Speed を安全範囲へClampした値です。
+struct LocomotionPlaybackDebugInfo
+{
+    float MovementSpeed = 0.0f;
+    float ReferenceMotionSpeed = 0.0f;
+    float PlaybackSpeed = 1.0f;
 };
 
 // ============================================================================
@@ -43,6 +69,7 @@ struct LocomotionBlendTreeConfig
 // - AnimatorがNormalizedTimeを1つだけ進める
 // - Idle / Walk / Runは同じNormalizedTimeでSampleする
 // - Speed変更時は再生をRestartせずParameterだけ更新する
+// - Gameplay実速度とClip想定速度の差はAnimator Playback Speedで吸収する
 //
 // この構成によりWalk -> Runで足運びの位相を保ったまま連続Pose Blendできます。
 class SkinnedBlendTreeRuntime
@@ -67,11 +94,15 @@ public:
         std::string* errorMessage = nullptr);
 
     // Character Controllerから毎Frame渡す速度Parameterです。
+    // Parameter更新と同時に現在のBlend WeightからReference Motion Speedを求め、
+    // Animator Playback Speedも更新してFoot Slidingを補正します。
     bool SetMovementSpeed(
         std::size_t skinIndex,
         float movementSpeed,
         std::string* errorMessage = nullptr);
 
+    // 汎用の明示Playback Speed設定です。
+    // Locomotion中はSetMovementSpeed()が毎Frame補正値を書き戻すため、手動値は一時的なOverrideになります。
     bool SetPlaybackSpeed(
         std::size_t skinIndex,
         float playbackSpeed,
@@ -80,6 +111,11 @@ public:
     bool GetDebugInfo(
         std::size_t skinIndex,
         BlendTree1DDebugInfo& outInfo,
+        std::string* errorMessage = nullptr) const;
+
+    bool GetLocomotionPlaybackDebugInfo(
+        std::size_t skinIndex,
+        LocomotionPlaybackDebugInfo& outInfo,
         std::string* errorMessage = nullptr) const;
 
     // ========================================================================
@@ -129,6 +165,16 @@ private:
         std::vector<RuntimeClip> Clips;
         std::shared_ptr<BlendTree1D> LocomotionTree;
         float MovementSpeed = 0.0f;
+
+        // Locomotion Playback Speed補正用のAsset側速度メタデータです。
+        // Idleは移動距離0として扱い、Walk / Runだけ明示値を保持します。
+        float WalkAuthoredMotionSpeed = 1.8f;
+        float RunAuthoredMotionSpeed = 5.5f;
+        float MinLocomotionPlaybackSpeed = 0.50f;
+        float MaxLocomotionPlaybackSpeed = 2.00f;
+        float ReferenceMotionSpeed = 0.0f;
+        float LocomotionPlaybackSpeed = 1.0f;
+
         bool Configured = false;
 
         // Locomotion以外の非Loop Clipを一時再生しているかをRuntime側で追跡します。
@@ -143,6 +189,10 @@ private:
     const RuntimeClip* FindClip(
         const SkinState& state,
         const std::string& animationName) const;
+
+    bool UpdateLocomotionPlaybackSpeed(
+        SkinState& state,
+        std::string* errorMessage);
 
     bool ApplyPoseToSkin(
         const SkinState& state,
