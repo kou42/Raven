@@ -1,0 +1,9 @@
+RavenHumanoidAnimationProfile 1
+IdleAnimationName "Idle"
+WalkAnimationName "Walk"
+RunAnimationName "Run"
+IdleThreshold 0
+WalkThreshold 1.8
+RunThreshold 5.5
+WalkAuthoredMotionSpeed 1.8
+RunAuthoredMotionSpeed 5.5

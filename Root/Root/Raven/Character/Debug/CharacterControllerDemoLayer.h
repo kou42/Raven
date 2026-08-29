@@ -5,9 +5,11 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Raven/Animation/HumanoidAnimationProfile.h"
+#include "Raven/Animation/HumanoidAnimationProfileSerialization.h"
 #include "Raven/Character/CharacterController.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Core/Input.h"
@@ -214,6 +216,30 @@ public:
         return true;
     }
 
+    // Runtimeで調整したThreshold / Authored Motion SpeedをAsset Profileへ保存します。
+    // Gameplay設定はProfileへ含めず、Animation Asset固有値だけを永続化します。
+    bool SaveHumanoidLocomotionProfileTuning(std::string* errorMessage = nullptr)
+    {
+        HumanoidAnimationProfile profile = m_HumanoidAnimationProfile;
+        profile.Locomotion.IdleThreshold = m_HumanoidIdleThreshold;
+        profile.Locomotion.WalkThreshold = m_HumanoidWalkThreshold;
+        profile.Locomotion.RunThreshold = m_HumanoidRunThreshold;
+        profile.Locomotion.WalkAuthoredMotionSpeed = m_HumanoidWalkAuthoredMotionSpeed;
+        profile.Locomotion.RunAuthoredMotionSpeed = m_HumanoidRunAuthoredMotionSpeed;
+
+        if (SaveHumanoidAnimationProfile(
+                m_HumanoidAnimationProfilePath,
+                profile,
+                errorMessage) == false)
+        {
+            return false;
+        }
+
+        // Save成功後だけProfile初期値を更新します。失敗時はReset先とDisk内容を変えません。
+        m_HumanoidAnimationProfile = std::move(profile);
+        return true;
+    }
+
     // ========================================================================
     // Locomotion Debug UI boundary
     // ========================================================================
@@ -392,6 +418,8 @@ private:
     Gltf::SkinnedMeshSceneInstance m_HumanoidInstance{};
     std::vector<TransformComponent> m_HumanoidLocalTransforms;
     std::string m_HumanoidModelPath = "Raven/Assets/Models/Raven_human_test.glb";
+    std::string m_HumanoidAnimationProfilePath =
+        "Raven/Assets/Profiles/Raven_human_test.raph";
     bool m_HumanoidVisualActive = false;
 
     // ========================================================================

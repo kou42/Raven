@@ -293,6 +293,20 @@ public:
                     << tuningConfigText << '\n';
             }
 
+            ImGui::SameLine();
+            if (ImGui::Button("Save Profile") == true)
+            {
+                std::string saveError;
+                if (m_CharacterLayer->SaveHumanoidLocomotionProfileTuning(&saveError) == false)
+                {
+                    m_LastTuningError = saveError;
+                }
+                else
+                {
+                    m_LastTuningError.clear();
+                }
+            }
+
             if (m_LastTuningError.empty() == false)
             {
                 ImGui::TextWrapped("Tuning Error: %s", m_LastTuningError.c_str());

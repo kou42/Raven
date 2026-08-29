@@ -2,6 +2,7 @@
 #include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
 
 #include "Raven/Animation/AnimationRuntimeDebug.h"
+#include "Raven/Animation/HumanoidAnimationProfileSerialization.h"
 
 #include <cassert>
 #include <cmath>
@@ -99,6 +100,40 @@ void RunThresholdUpdateTest()
     assert(info.RightChildIndex == 2);
     assert(NearlyEqual(info.LeftWeight, 0.5f));
     assert(NearlyEqual(info.RightWeight, 0.5f));
+}
+
+void RunHumanoidAnimationProfileSerializationTest()
+{
+    HumanoidAnimationProfile source = CreateRavenHumanTestAnimationProfile();
+    source.Locomotion.IdleAnimationName = "Human Idle";
+    source.Locomotion.WalkThreshold = 2.25f;
+    source.Locomotion.RunThreshold = 6.75f;
+    source.Locomotion.WalkAuthoredMotionSpeed = 1.95f;
+    source.Locomotion.RunAuthoredMotionSpeed = 5.90f;
+
+    std::string text;
+    std::string error;
+    assert(SerializeHumanoidAnimationProfile(source, text, &error));
+
+    HumanoidAnimationProfile restored{};
+    assert(DeserializeHumanoidAnimationProfile(text, restored, &error));
+    assert(restored.Locomotion.IdleAnimationName == source.Locomotion.IdleAnimationName);
+    assert(NearlyEqual(restored.Locomotion.WalkThreshold, source.Locomotion.WalkThreshold));
+    assert(NearlyEqual(restored.Locomotion.RunThreshold, source.Locomotion.RunThreshold));
+    assert(NearlyEqual(
+        restored.Locomotion.WalkAuthoredMotionSpeed,
+        source.Locomotion.WalkAuthoredMotionSpeed));
+    assert(NearlyEqual(
+        restored.Locomotion.RunAuthoredMotionSpeed,
+        source.Locomotion.RunAuthoredMotionSpeed));
+
+    // Parse失敗時に呼び出し側の既存Profileを上書きしないことを保証します。
+    HumanoidAnimationProfile unchanged = CreateRavenHumanTestAnimationProfile();
+    assert(DeserializeHumanoidAnimationProfile(
+        "RavenHumanoidAnimationProfile 999\n",
+        unchanged,
+        &error) == false);
+    assert(unchanged.Locomotion.IdleAnimationName == "Idle");
 }
 
 void ValidateRuntimeSpeed(
@@ -423,6 +458,7 @@ void RunBlendTreeRuntimeSelfTests()
     // Editor表示に必要なRuntime情報とTransition選択規則を下層から段階的に検証します。
     RunDirectWeightDebugTest();
     RunThresholdUpdateTest();
+    RunHumanoidAnimationProfileSerializationTest();
     RunSmoothSpeedRuntimeTest();
     RunStateGraphRuntimeSnapshotTest();
     RunTransitionConditionRuntimeSnapshotTest();

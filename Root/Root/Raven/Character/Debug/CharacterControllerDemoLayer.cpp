@@ -538,6 +538,18 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     m_HumanoidActualHorizontalSpeed = 0.0f;
     m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
+    // GLBと対になるAsset ProfileをAnimation初期化前に読み込みます。
+    // Parse / Validation失敗時は壊れた設定でRuntimeを構築せず、呼び出し元の既存Bind Pose fallbackへ委ねます。
+    HumanoidAnimationProfile loadedProfile{};
+    if (LoadHumanoidAnimationProfile(
+            m_HumanoidAnimationProfilePath,
+            loadedProfile,
+            errorMessage) == false)
+    {
+        return false;
+    }
+    m_HumanoidAnimationProfile = std::move(loadedProfile);
+
     // Animation ProfileはAsset固有設定の正規の参照元です。
     // CharacterControllerConfigのWalkSpeed / RunSpeedはGameplay上の目標速度であり、ClipをBlendTree上の
     // どこへ配置するかを表すThresholdとは責務が異なるため、ここで相互変換や値のコピーを行いません。
