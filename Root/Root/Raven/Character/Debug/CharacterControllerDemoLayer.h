@@ -80,6 +80,20 @@ public:
         return m_ResolvedInput;
     }
 
+    // CharacterControllerが衝突解決まで終えた後の実水平速度です。
+    // InputのWalk/Run要求値ではないため、壁衝突や加減速を含めてAnimationが実際に受け取った値を確認できます。
+    float GetHumanoidActualHorizontalSpeed() const
+    {
+        return m_HumanoidActualHorizontalSpeed;
+    }
+
+    // SkinnedBlendTreeRuntime自身が解決した現在の左右ChildとWeightを返します。
+    // Debug UI側で補間計算を再実装せず、Runtimeと同じ結果をそのまま表示するためのSnapshotです。
+    const BlendTree1DDebugInfo& GetHumanoidLocomotionDebugInfo() const
+    {
+        return m_HumanoidLocomotionDebugInfo;
+    }
+
 private:
     // CharacterControllerが更新するTransformは「足元Root」です。
     // Humanを利用できないfallback時は、原点中心CubeをRootからCapsule全高の半分だけ上へずらします。
@@ -144,11 +158,23 @@ private:
     bool m_HumanoidLocomotionAnimationActive = false;
 
     // Raven_human_test.glb内で期待するLocomotion Animation名です。
-    // Asset側の命名が異なる場合は初期化ログへ明示的なエラーが出るため、まずここだけを合わせれば
-    // CharacterController -> 実速度 -> BlendTreeというRuntime接続自体は変更せず利用できます。
+    // 初期化時はGetAnimationNames()でAsset側の実名を取得し、まず完全一致、次に一意な部分一致で解決します。
+    // 部分一致候補が複数ある場合は誤ったMotionを勝手に選ばず、初期化エラーとして候補をログへ出します。
     std::string m_HumanoidIdleAnimationName = "Idle";
     std::string m_HumanoidWalkAnimationName = "Walk";
     std::string m_HumanoidRunAnimationName = "Run";
+
+    // Runtimeから取得したAnimation一覧と、実際にLocomotionへ採用した名前を保持します。
+    // DebuggerからAsset命名と自動解決結果を比較できるよう、初期化後もSnapshotを残します。
+    std::vector<std::string> m_HumanoidAvailableAnimationNames;
+    std::string m_ResolvedHumanoidIdleAnimationName;
+    std::string m_ResolvedHumanoidWalkAnimationName;
+    std::string m_ResolvedHumanoidRunAnimationName;
+
+    // 毎Frame更新するLocomotion診断値です。
+    // SpeedとBlend Weightを同じFrameのSnapshotとして保持し、後続Debug Overlayから参照できるようにします。
+    float m_HumanoidActualHorizontalSpeed = 0.0f;
+    BlendTree1DDebugInfo m_HumanoidLocomotionDebugInfo{};
 
     bool m_GamepadConnected = false;
     GamepadState m_RawGamepadState{};
