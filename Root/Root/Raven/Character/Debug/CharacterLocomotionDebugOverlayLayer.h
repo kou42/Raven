@@ -92,6 +92,15 @@ public:
             ImGui::Text("Actual Speed : %.2f", snapshot.ActualHorizontalSpeed);
             ImGui::Text("Parameter    : %.2f", snapshot.ParameterValue);
 
+            // =================================================================
+            // Foot Sliding correction diagnostic
+            // =================================================================
+            // Reference Speedは現在のBlend Weightで補間されたClip側の想定速度です。
+            // Playback SpeedはActual / Referenceへ安全Clampを適用した、Animatorに実際に設定された倍率です。
+            // UI側では再計算せずRuntime値をそのまま表示し、補正ロジックとの食い違いを防ぎます。
+            ImGui::Text("Reference    : %.2f", snapshot.ReferenceMotionSpeed);
+            ImGui::Text("Playback     : %.2fx", snapshot.PlaybackSpeed);
+
             const std::string leftName = snapshot.LeftAnimationName.empty() == true
                 ? std::string("<none>")
                 : snapshot.LeftAnimationName;
