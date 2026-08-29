@@ -29,14 +29,15 @@ class Scene;
 // Character自身のCapsule Castが自分の表示Entityへ衝突する自己衝突を避けます。
 //
 // 現段階の標準Gamepad操作:
-//   Left Stick  : World XZ平面を移動
+//   Left Stick  : Runtime Camera基準でXZ平面を移動
 //   Right Stick : Characterを中心にRuntime CameraをYaw / Pitch回転
 //   A           : Jump
 //   RT          : Run
 //
 // Raw Gamepad値とCharacterControllerInput変換後の値を保持し、
 // Dead Zone / Trigger Threshold / Button MappingをDebuggerや後続Debug UIから比較できるようにします。
-// 左StickのCamera-relative movementは、Camera操作が安定した次段階で入力方向変換として追加します。
+// Camera-relative movementは入力Device層ではなく、このGameplay/Camera統合LayerでWorld方向へ変換します。
+// これによりCharacterController本体はCameraを知らず、従来どおりWorld XZ入力だけを処理できます。
 class CharacterControllerDemoLayer final : public Layer
 {
 public:
@@ -73,6 +74,10 @@ private:
     // CharacterController::ReadDefaultGamepadInput()がDead Zone等を適用した結果と並べて確認することで、
     // Controller側の挙動不良がDevice入力なのかMappingなのかを切り分けられます。
     void CaptureGamepadDebugState();
+
+    // Left StickのDevice非依存MoveをRuntime Camera基準のWorld XZ Moveへ変換します。
+    // Camera Pitchは移動方向へ含めず、地面に投影したForward/Rightだけを利用します。
+    void ApplyCameraRelativeMovement(CharacterControllerInput& input) const;
 
     // Primary Runtime CameraをCharacter中心のOrbit Cameraとして更新します。
     // CameraComponentのView Matrixを直接変更せずTransformComponentだけを更新し、
