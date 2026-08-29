@@ -61,8 +61,10 @@ float Determinant3x3(
     const math::Vec3& column1,
     const math::Vec3& column2)
 {
+    // 3本の列ベクトルから通常の3x3 determinantを計算します。
+    // Reflection/負Scale検出に使うため、各成分の参照先を取り違えると正しい回転まで拒否してしまいます。
     return column0.x * (column1.y * column2.z - column1.z * column2.y)
-        - column1.x * (column0.y * column2.z - column0.z * column1.y)
+        - column1.x * (column0.y * column2.z - column0.z * column2.y)
         + column2.x * (column0.y * column1.z - column0.z * column1.y);
 }
 
