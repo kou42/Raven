@@ -76,10 +76,17 @@ int main()
     Raven::Application app;
 
     // Runtime Sceneを先に生成した後、Character / SoftBody検証LayerとEditorLayerを登録します。
-    // Character / Cloth / Jelly LayerのOnAttach()はApplicationからActive Sceneを借用して
-    // 通常のScene Entityを登録するため、SetScene()より後である必要があります。
+    // Character ControllerはPhysics Query後のTransformを同じFrameのScene Renderへ反映したいため、
+    // Application LayerではなくScene-owned Layerとして登録します。
+    // Cloth / Jelly Layerは従来どおりApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
     app.SetScene(Raven::CreateScope<Raven::SceneGame>());
-    app.PushLayer(Raven::CreateScope<Raven::CharacterControllerDemoLayer>(app));
+
+    Raven::Scene* runtimeScene = app.GetScene();
+    if (runtimeScene != nullptr)
+    {
+        runtimeScene->PushLayer(Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene));
+    }
+
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
