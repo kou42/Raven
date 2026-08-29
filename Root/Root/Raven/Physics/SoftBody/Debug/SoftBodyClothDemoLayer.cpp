@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Raven/Core/Application.h"
+#include "Raven/Debug/BrowserDebugConfig.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyParticleTriangleCandidateDebugSnapshot.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyParticleTriangleCandidateDebugSvgWriter.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyPhysicsDebugSvgWriter.h"
@@ -449,13 +450,20 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
     // Application Layer::OnUpdate()はScene更新後なので、この時点のSolverは当該FrameのCloth Stepを
     // 完了しています。したがってParticle位置とFunnel Counterを同一SnapshotとしてSVGへ保存できます。
     // static accumulatorはこのDebug Demo Layerが1個だけ生成される現在の構成に限定した簡易Throttleです。
-    static float browserDebugWriteAccumulator = kBrowserDebugWriteIntervalSeconds;
-    browserDebugWriteAccumulator += std::max(deltaTime, 0.0f);
-
-    if (browserDebugWriteAccumulator >= kBrowserDebugWriteIntervalSeconds)
+    //
+    // BrowserDebugConfig.hの共通フラグがfalseなら、このブロックへ入らないため、Reject Snapshot再評価、
+    // Active Cell収集、SVG Writer、ファイルI/Oのすべてを停止できます。ブラウザ起動側も同じフラグを
+    // 参照するため、Profiler計測時に片側だけ動き続ける状態を避けられます。
+    if (kEnableBrowserDebugViewer == true)
     {
-        browserDebugWriteAccumulator = 0.0f;
-        WriteBrowserDebugSnapshot(*clothDeformer, m_ClothMesh);
+        static float browserDebugWriteAccumulator = kBrowserDebugWriteIntervalSeconds;
+        browserDebugWriteAccumulator += std::max(deltaTime, 0.0f);
+
+        if (browserDebugWriteAccumulator >= kBrowserDebugWriteIntervalSeconds)
+        {
+            browserDebugWriteAccumulator = 0.0f;
+            WriteBrowserDebugSnapshot(*clothDeformer, m_ClothMesh);
+        }
     }
 #endif
 }
