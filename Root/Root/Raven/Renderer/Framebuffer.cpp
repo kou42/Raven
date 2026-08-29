@@ -2,11 +2,25 @@
 
 #include "Raven/Platform/OpenGL/OpenGLFramebuffer.h"
 #include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/Texture/Texture.h"
 
 #include <cassert>
 
 namespace Raven
 {
+
+std::uint32_t Framebuffer::GetColorAttachmentRendererID() const
+{
+    const Ref<Texture>& colorAttachment = GetColorAttachment();
+    if (colorAttachment == nullptr)
+    {
+        return 0;
+    }
+
+    // 互換APIはTexture抽象化への移行期間だけ利用します。
+    // Framebuffer自身はRenderer固有IDを所有せず、Textureが保持するIDを一時的に橋渡しします。
+    return colorAttachment->GetID();
+}
 
 std::unique_ptr<Framebuffer> Framebuffer::Create(std::uint32_t width, std::uint32_t height)
 {
