@@ -23,8 +23,10 @@ namespace ph
 struct PhysicsCapsuleCastHit;
 }
 
+// Character Controllerが必要とするDevice非依存入力です。
 struct CharacterControllerInput
 {
+    // X: Right(+1) / Left(-1), Y: Forward(+1) / Backward(-1)
     math::Vec2 Move{ 0.0f, 0.0f };
     bool Run = false;
     bool Jump = false;
@@ -82,14 +84,14 @@ public:
 
     // Raven標準Gamepad入力をDevice非依存入力へ変換します。
     // 左Stick: Move / A: Jump / RT: Run。
-    // stickDeadZoneは円形Dead Zoneとして扱い、Dead Zone外の入力を0..1へ再マッピングします。
+    // Dead Zone外は0..1へ再マッピングするため、Dead Zone境界で速度が急に跳ねません。
     static CharacterControllerInput ReadDefaultGamepadInput(
         int gamepadIndex = 0,
         float stickDeadZone = 0.15f,
         float runTriggerThreshold = 0.25f);
 
-    // KeyboardとGamepadを同時に利用する標準入力です。
-    // Gamepadが接続されていない場合もKeyboard入力はそのまま利用できます。
+    // KeyboardとGamepadを統合した標準Player入力です。
+    // 移動は両Deviceを加算後に長さ1へClampし、Jump/Runはどちらか一方が有効なら有効にします。
     static CharacterControllerInput ReadDefaultPlayerInput(
         int gamepadIndex = 0,
         float stickDeadZone = 0.15f,
@@ -115,10 +117,14 @@ private:
     bool ValidateConfig(std::string* errorMessage) const;
     bool UpdateInternal(const CharacterControllerInput& input, float deltaTime, Scene* scene, TransformComponent& transform, std::string* errorMessage);
     bool TrySnapToPhysicsGround(Scene& scene, TransformComponent& transform, bool allowSnap, std::string* errorMessage);
+
+    // Capsule Cast後のWall Slide / Dynamic Pushを含む既存の水平移動解決処理です。
+    bool ResolvePhysicsMovement(Scene& scene, const math::Vec3& horizontalDisplacement, TransformComponent& transform, std::string* errorMessage);
+
+    // Hit EntityがDynamic Bodyなら水平Impulseを与えます。
+    bool TryPushDynamicBody(Scene& scene, const ph::PhysicsCapsuleCastHit& hit);
+
     bool TryStepUp(Scene& scene, const math::Vec3& horizontalDisplacement, TransformComponent& transform, std::string* errorMessage);
-    bool MoveHorizontalWithCollisions(Scene& scene, const math::Vec3& horizontalDisplacement, TransformComponent& transform, std::string* errorMessage);
-    bool TryPushDynamicBody(Scene& scene, const ph::PhysicsCapsuleCastHit& hit, const math::Vec3& desiredHorizontalVelocity, float deltaTime, std::string* errorMessage);
-    void UpdateCrushState(bool isCrushed, float strength, float deltaTime);
 
 private:
     CharacterControllerConfig m_Config{};
@@ -126,15 +132,15 @@ private:
     math::Vec3 m_GroundNormal{ 0.0f, 1.0f, 0.0f };
     bool m_Grounded = false;
 
-    bool m_HasMovingPlatform = false;
-    Entity m_MovingPlatformEntity{};
-    math::Vec3 m_PreviousMovingPlatformPosition{ 0.0f, 0.0f, 0.0f };
-    math::Vec3 m_MovingPlatformVelocity{ 0.0f, 0.0f, 0.0f };
-
     bool m_IsCrushed = false;
     float m_CrushStrength = 0.0f;
     float m_CrushDuration = 0.0f;
     float m_CrushExposure = 0.0f;
+
+    Entity m_MovingPlatformEntity{};
+    math::Vec3 m_MovingPlatformPosition{};
+    math::Vec3 m_MovingPlatformVelocity{};
+    bool m_HasMovingPlatform = false;
 };
 
 } // namespace Raven
