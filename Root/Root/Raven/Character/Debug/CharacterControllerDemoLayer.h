@@ -419,7 +419,7 @@ private:
     std::vector<TransformComponent> m_HumanoidLocalTransforms;
     std::string m_HumanoidModelPath = "Raven/Assets/Models/Raven_human_test.glb";
     std::string m_HumanoidAnimationProfilePath =
-        "Raven/Assets/Profiles/Raven_human_test.raph";
+        "Raven/Assets/Profiles/Raven_human_test.json";
     bool m_HumanoidVisualActive = false;
 
     // ========================================================================

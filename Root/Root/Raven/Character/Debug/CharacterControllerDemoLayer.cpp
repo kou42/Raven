@@ -538,15 +538,19 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     m_HumanoidActualHorizontalSpeed = 0.0f;
     m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
-    // GLBと対になるAsset ProfileをAnimation初期化前に読み込みます。
-    // Parse / Validation失敗時は壊れた設定でRuntimeを構築せず、呼び出し元の既存Bind Pose fallbackへ委ねます。
-    HumanoidAnimationProfile loadedProfile{};
+    // GLBと対になるJSON Asset ProfileをAnimation初期化前に読み込みます。
+    // Assetが欠落・破損していてもCharacter / Animation検証全体を止めないため、Raven Human専用の
+    // C++既定値を明示fallbackとして使用します。汎用RuntimeにはAsset名やfallback値を持ち込みません。
+    HumanoidAnimationProfile loadedProfile = CreateRavenHumanTestAnimationProfile();
+    std::string profileLoadError;
     if (LoadHumanoidAnimationProfile(
             m_HumanoidAnimationProfilePath,
             loadedProfile,
-            errorMessage) == false)
+            &profileLoadError) == false)
     {
-        return false;
+        std::cerr
+            << "[CharacterController] Humanoid Animation Profileを読み込めないため"
+            << " Raven Human既定値へfallbackします: " << profileLoadError << '\n';
     }
     m_HumanoidAnimationProfile = std::move(loadedProfile);
 
