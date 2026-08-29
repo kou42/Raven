@@ -5,7 +5,6 @@
 #include <iostream>
 #include <string>
 
-#include "Raven/Core/Application.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -19,12 +18,6 @@ namespace Raven
 
 void CharacterControllerDemoLayer::OnAttach()
 {
-    Scene* scene = m_Application.GetScene();
-    if (scene == nullptr)
-    {
-        return;
-    }
-
     // ========================================================================
     // Character visual resource
     // ========================================================================
@@ -82,7 +75,7 @@ void CharacterControllerDemoLayer::OnAttach()
     // ColliderComponent / RigidBodyComponentは意図的に追加しません。
     // CharacterのCollisionはCharacterController::UpdateWithMovingPlatforms()内のCapsule Castが担当し、
     // 表示EntityまでPhysicsWorldへ登録すると同じCharacterが二重の衝突形状を持ってしまうためです。
-    m_CharacterEntity = scene->CreateEntity("Gamepad Character Controller Demo");
+    m_CharacterEntity = m_Scene.CreateEntity("Gamepad Character Controller Demo");
     m_CharacterEntity.AddComponent<MeshRendererComponent>(
         MeshRendererComponent{ m_CharacterMesh, m_CharacterMaterial });
 
@@ -94,12 +87,10 @@ void CharacterControllerDemoLayer::OnAttach()
 
 void CharacterControllerDemoLayer::OnDetach()
 {
-    Scene* scene = m_Application.GetScene();
-    if (scene != nullptr
-        && static_cast<bool>(m_CharacterEntity)
-        && scene->IsEntityAlive(m_CharacterEntity))
+    if (static_cast<bool>(m_CharacterEntity)
+        && m_Scene.IsEntityAlive(m_CharacterEntity))
     {
-        scene->DestroyEntity(m_CharacterEntity);
+        m_Scene.DestroyEntity(m_CharacterEntity);
     }
 
     m_CharacterEntity = {};
@@ -111,10 +102,8 @@ void CharacterControllerDemoLayer::OnDetach()
 
 void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
 {
-    Scene* scene = m_Application.GetScene();
-    if (scene == nullptr
-        || static_cast<bool>(m_CharacterEntity) == false
-        || scene->IsEntityAlive(m_CharacterEntity) == false)
+    if (static_cast<bool>(m_CharacterEntity) == false
+        || m_Scene.IsEntityAlive(m_CharacterEntity) == false)
     {
         return;
     }
@@ -135,7 +124,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     if (m_CharacterController.UpdateWithMovingPlatforms(
             input,
             safeDeltaTime,
-            *scene,
+            m_Scene,
             m_CharacterRootTransform,
             1.0f,
             &errorMessage) == false)
