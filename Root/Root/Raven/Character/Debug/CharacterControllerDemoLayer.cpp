@@ -121,7 +121,8 @@ void CharacterControllerDemoLayer::OnAttach()
     UpdateGamepadCamera(0.0f);
 
     std::cout
-        << "[CharacterController] Gamepad Controls: Left Stick Camera-relative Move, Right Stick Camera, A Jump, RT Run\n";
+        << "[CharacterController] Controls: WASD / Left Stick Camera-relative Move, "
+        << "Right Stick Camera, Space / A Jump, Left Shift / RT Run\n";
 }
 
 void CharacterControllerDemoLayer::OnDetach()
@@ -163,16 +164,17 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     CaptureGamepadDebugState();
 
     // ========================================================================
-    // Gamepad -> Device-independent Character input
+    // Keyboard + Gamepad -> Device-independent Character input
     // ========================================================================
-    // Input/WindowsInput層がGLFW固有のGamepad状態をGamepadStateへ変換し、
-    // ReadDefaultGamepadInput()がDead Zone処理とGameplay Button Mappingを担当します。
-    // CharacterController本体はGamepad APIを一切知らず、CharacterControllerInputだけを受け取ります。
-    m_ResolvedInput = CharacterController::ReadDefaultGamepadInput();
+    // ReadDefaultPlayerInput()はKeyboardとGamepadを同じCharacterControllerInputへ統合します。
+    // Gamepad未接続時はKeyboardだけ、接続時は両方を利用でき、同時入力時のMove長も1以内へClampされます。
+    // CharacterController本体は入力Deviceを知らず、最終的なGameplay入力だけを受け取ります。
+    m_ResolvedInput = CharacterController::ReadDefaultPlayerInput();
 
-    // Device入力としてのMoveは「Stick右=+X / Stick上=+Y」の2D値です。
+    // Device入力としてのMoveは「右=+X / 前=+Y」の2D値です。
     // CharacterControllerへ渡す直前にRuntime CameraのYawを基準としたWorld XZへ変換します。
-    // Camera依存をCharacterController/Input層へ持ち込まず、Gameplay Layerだけで意味付けします。
+    // KeyboardのWASDとGamepad Left Stickの両方へ同じCamera-relative規則を適用することで、
+    // Deviceを切り替えても移動方向の意味が変わらないようにします。
     ApplyCameraRelativeMovement(m_ResolvedInput);
 
     std::string errorMessage;
@@ -185,7 +187,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
             &errorMessage) == false)
     {
         std::cerr
-            << "[CharacterController] Gamepad Character更新に失敗しました: "
+            << "[CharacterController] Player Character更新に失敗しました: "
             << errorMessage << '\n';
         return;
     }
