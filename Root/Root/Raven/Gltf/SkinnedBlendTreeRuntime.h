@@ -26,8 +26,8 @@ class SkinnedMeshRuntimeAsset;
 //
 // AuthoredMotionSpeedはClipを1.0倍速で再生したときに見た目上想定している移動速度です。
 // Thresholdと分離することで、Gameplay速度を変えずに足滑りだけをPlayback Speedで補正できます。
-// 現時点の既定値は既存CharacterControllerのWalk/Run速度と一致させ、従来挙動を維持します。
-// Assetごとの実測値が分かったら、この2値だけを調整して補正量を決めます。
+// これらはAnimation Assetごとの設定なので、CharacterControllerのWalk / Run目標速度を既定値として
+// 流用しません。Configure()の呼び出し側がProfile等の正規の設定元から全値を明示します。
 struct LocomotionBlendTreeConfig
 {
     std::string IdleAnimationName;
@@ -35,11 +35,11 @@ struct LocomotionBlendTreeConfig
     std::string RunAnimationName;
 
     float IdleThreshold = 0.0f;
-    float WalkThreshold = 1.8f;
-    float RunThreshold = 5.5f;
+    float WalkThreshold = 0.0f;
+    float RunThreshold = 0.0f;
 
-    float WalkAuthoredMotionSpeed = 1.8f;
-    float RunAuthoredMotionSpeed = 5.5f;
+    float WalkAuthoredMotionSpeed = 0.0f;
+    float RunAuthoredMotionSpeed = 0.0f;
 
     // 誤ったAsset設定や極端な速度変化でAnimationが停止/高速化し過ぎないための安全範囲です。
     // IdleそのものはReference Speedが0なので1.0倍速を維持します。
@@ -217,8 +217,9 @@ private:
 
         // Locomotion Playback Speed補正用のAsset側速度メタデータです。
         // Idleは移動距離0として扱い、Walk / Runだけ明示値を保持します。
-        float WalkAuthoredMotionSpeed = 1.8f;
-        float RunAuthoredMotionSpeed = 5.5f;
+        // Configure()成功時にProfile由来の値で初期化し、未設定状態では中立値を維持します。
+        float WalkAuthoredMotionSpeed = 0.0f;
+        float RunAuthoredMotionSpeed = 0.0f;
         float MinLocomotionPlaybackSpeed = 0.50f;
         float MaxLocomotionPlaybackSpeed = 2.00f;
         float ReferenceMotionSpeed = 0.0f;

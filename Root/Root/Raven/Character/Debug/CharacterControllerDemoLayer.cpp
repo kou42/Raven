@@ -538,6 +538,14 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     m_HumanoidActualHorizontalSpeed = 0.0f;
     m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
+    // Animation ProfileはAsset固有設定の正規の参照元です。
+    // CharacterControllerConfigのWalkSpeed / RunSpeedはGameplay上の目標速度であり、ClipをBlendTree上の
+    // どこへ配置するかを表すThresholdとは責務が異なるため、ここで相互変換や値のコピーを行いません。
+    const HumanoidLocomotionProfile& locomotionProfile =
+        m_HumanoidAnimationProfile.Locomotion;
+    m_HumanoidWalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
+    m_HumanoidRunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
+
     if (m_HumanoidVisualActive == false
         || m_HumanoidInstance.IsValid() == false)
     {
@@ -605,7 +613,7 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
 
     if (ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
-            m_HumanoidIdleAnimationName,
+            locomotionProfile.IdleAnimationName,
             m_ResolvedHumanoidIdleAnimationName,
             errorMessage) == false)
     {
@@ -613,7 +621,7 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     }
     if (ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
-            m_HumanoidWalkAnimationName,
+            locomotionProfile.WalkAnimationName,
             m_ResolvedHumanoidWalkAnimationName,
             errorMessage) == false)
     {
@@ -621,7 +629,7 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     }
     if (ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
-            m_HumanoidRunAnimationName,
+            locomotionProfile.RunAnimationName,
             m_ResolvedHumanoidRunAnimationName,
             errorMessage) == false)
     {
@@ -636,18 +644,19 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
         << "' Run='" << m_ResolvedHumanoidRunAnimationName << "'\n";
 
-    const CharacterControllerConfig& characterConfig = m_CharacterController.GetConfig();
     Gltf::LocomotionBlendTreeConfig animationConfig{};
     animationConfig.IdleAnimationName = m_ResolvedHumanoidIdleAnimationName;
     animationConfig.WalkAnimationName = m_ResolvedHumanoidWalkAnimationName;
     animationConfig.RunAnimationName = m_ResolvedHumanoidRunAnimationName;
 
     // BlendTree Thresholdは「State切替境界」ではなく、そのMotionが100%になる実速度です。
-    // CharacterControllerのWalkSpeed / RunSpeedと一致させることで、Gameplay側の速度単位を
-    // Animation側でもそのまま使えます。Idleは停止速度0へ固定します。
-    animationConfig.IdleThreshold = 0.0f;
-    animationConfig.WalkThreshold = characterConfig.WalkSpeed;
-    animationConfig.RunThreshold = characterConfig.RunSpeed;
+    // GameplayのWalk / Run目標速度とは独立したAnimation Asset設定としてProfileから転送します。
+    // Authored Motion SpeedもProfileから明示し、汎用Runtimeの既定値へ暗黙に依存させません。
+    animationConfig.IdleThreshold = locomotionProfile.IdleThreshold;
+    animationConfig.WalkThreshold = locomotionProfile.WalkThreshold;
+    animationConfig.RunThreshold = locomotionProfile.RunThreshold;
+    animationConfig.WalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
+    animationConfig.RunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
 
     if (m_HumanoidLocomotionRuntime.Configure(
             m_HumanoidAnimationSkinIndex,
@@ -682,8 +691,11 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         << " Idle='" << m_ResolvedHumanoidIdleAnimationName
         << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
         << "' Run='" << m_ResolvedHumanoidRunAnimationName
-        << "' WalkSpeed=" << characterConfig.WalkSpeed
-        << " RunSpeed=" << characterConfig.RunSpeed << '\n';
+        << "' AnimationThresholds=" << locomotionProfile.IdleThreshold
+        << "/" << locomotionProfile.WalkThreshold
+        << "/" << locomotionProfile.RunThreshold
+        << " AuthoredMotionSpeeds=" << locomotionProfile.WalkAuthoredMotionSpeed
+        << "/" << locomotionProfile.RunAuthoredMotionSpeed << '\n';
     return true;
 }
 

@@ -18,6 +18,8 @@ namespace Raven
 // AuthoredMotionSpeedはClipを1.0倍再生したときに想定する水平移動速度です。
 // ThresholdはBlendTree上でそのClipが100%になるSpeed Parameter値です。
 // 現在は両者を同じ値にできますが、役割が異なるため別Fieldとして保持します。
+// CharacterControllerのWalkSpeed / RunSpeedはGameplay上の目標速度であり、このProfileの値とは独立です。
+// 現在の数値が一致していても設定元は共有せず、どちらかの変更が他方へ暗黙に伝播しない構造にします。
 struct HumanoidLocomotionProfile
 {
     std::string IdleAnimationName = "Idle";

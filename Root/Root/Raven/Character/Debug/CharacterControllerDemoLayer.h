@@ -54,8 +54,9 @@ struct CharacterLocomotionDebugSnapshot
 
     // Runtime調整中のAuthored Motion Speedです。
     // Overlay側はこの値を編集し、SetHumanoidLocomotionAuthoredMotionSpeeds()経由でRuntimeへ反映します。
-    float WalkAuthoredMotionSpeed = 1.8f;
-    float RunAuthoredMotionSpeed = 5.5f;
+    // Asset固有の初期値はProfileからSnapshot生成時に設定されるため、構造体の既定値は中立値にします。
+    float WalkAuthoredMotionSpeed = 0.0f;
+    float RunAuthoredMotionSpeed = 0.0f;
 };
 
 // ============================================================================
@@ -336,15 +337,8 @@ private:
     // HumanoidAnimationProfileを唯一の設定元として保持します。
     HumanoidAnimationProfile m_HumanoidAnimationProfile = CreateRavenHumanTestAnimationProfile();
 
-    // 既存の名前解決経路との互換用Snapshotです。
-    // 値そのものはProfileから取得し、初期化時はGetAnimationNames()でAsset側の実名へ解決します。
-    std::string m_HumanoidIdleAnimationName =
-        m_HumanoidAnimationProfile.Locomotion.IdleAnimationName;
-    std::string m_HumanoidWalkAnimationName =
-        m_HumanoidAnimationProfile.Locomotion.WalkAnimationName;
-    std::string m_HumanoidRunAnimationName =
-        m_HumanoidAnimationProfile.Locomotion.RunAnimationName;
-
+    // Profileの要求名をGetAnimationNames()でAsset側の実名へ解決した結果を保持します。
+    // 要求名の複製メンバーは持たず、再初期化時も常にProfileを正規の参照元として使用します。
     // Runtimeから取得したAnimation一覧と、実際にLocomotionへ採用した名前を保持します。
     // DebuggerからAsset命名と自動解決結果を比較できるよう、初期化後もSnapshotを残します。
     std::vector<std::string> m_HumanoidAvailableAnimationNames;
