@@ -61,6 +61,10 @@ public:
     // Threshold順に自動挿入します。同じThresholdを複数登録すると補間区間が0になり曖昧なので拒否します。
     bool AddChild(float threshold, std::shared_ptr<AnimationClip> clip);
 
+    // 既存ChildのClipと並び順を維持したままThresholdだけを更新します。
+    // 全値を先に検証してから反映するため、入力不正時にTreeの一部だけが変更されることはありません。
+    bool SetThresholds(const std::vector<float>& thresholds);
+
     void Clear();
 
     std::size_t GetChildCount() const { return m_Children.size(); }

@@ -39,6 +39,34 @@ bool BlendTree1D::AddChild(float threshold, std::shared_ptr<AnimationClip> clip)
     return true;
 }
 
+bool BlendTree1D::SetThresholds(const std::vector<float>& thresholds)
+{
+    if (thresholds.size() != m_Children.size())
+    {
+        return false;
+    }
+
+    // Child IndexはLocomotionのIdle / Walk / Run名解決にも使われるため、並べ替えは行いません。
+    // 有限かつ狭義昇順であることを先に検証し、ClipとIndexの対応を維持したまま値だけを更新します。
+    for (std::size_t index = 0; index < thresholds.size(); ++index)
+    {
+        if (std::isfinite(thresholds[index]) == false)
+        {
+            return false;
+        }
+        if (index > 0 && thresholds[index] <= thresholds[index - 1])
+        {
+            return false;
+        }
+    }
+
+    for (std::size_t index = 0; index < thresholds.size(); ++index)
+    {
+        m_Children[index].Threshold = thresholds[index];
+    }
+    return true;
+}
+
 void BlendTree1D::Clear()
 {
     m_Children.clear();

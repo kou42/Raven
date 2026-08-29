@@ -493,6 +493,76 @@ bool SkinnedBlendTreeRuntime::SetMovementSpeed(
     return UpdateLocomotionPlaybackSpeed(*state, errorMessage);
 }
 
+bool SkinnedBlendTreeRuntime::SetLocomotionThresholds(
+    std::size_t skinIndex,
+    float idleThreshold,
+    float walkThreshold,
+    float runThreshold,
+    std::string* errorMessage)
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    if (std::isfinite(idleThreshold) == false
+        || std::isfinite(walkThreshold) == false
+        || std::isfinite(runThreshold) == false
+        || idleThreshold < 0.0f
+        || walkThreshold <= idleThreshold
+        || runThreshold <= walkThreshold)
+    {
+        return SetError(
+            errorMessage,
+            "BlendTree Thresholdは 0 <= Idle < Walk < Run を満たす必要があります");
+    }
+
+    SkinState* state = FindSkinState(skinIndex);
+    if (state == nullptr)
+    {
+        return SetError(errorMessage, "指定SkinIndexのBlendTree Runtime Stateがありません");
+    }
+    if (state->Configured == false || state->LocomotionTree == nullptr)
+    {
+        return SetError(errorMessage, "指定SkinIndexのBlendTreeがConfigureされていません");
+    }
+
+    // BlendTreeオブジェクト自体を置き換えないため、AnimatorStateが保持するNormalizedTimeと
+    // Clip参照はそのまま維持されます。SetThresholds()は全値検証後に一括反映するので、失敗時に
+    // Runtime Treeが半端なThreshold配置になることもありません。
+    if (state->LocomotionTree->SetThresholds(
+            { idleThreshold, walkThreshold, runThreshold }) == false)
+    {
+        return SetError(errorMessage, "BlendTree ThresholdのRuntime更新に失敗しました");
+    }
+
+    // One-Shot中はAnimatorのCurrent MotionがBlendTreeではないためParameter更新を行いません。
+    // Locomotion復帰時はReturnToLocomotion()が保持済みMovementSpeedを新しいTreeへ渡します。
+    if (state->OneShotActive == true)
+    {
+        return true;
+    }
+
+    bool parameterUpdated =
+        state->AnimatorInstance.SetCurrentBlendParameter(state->MovementSpeed);
+    if (state->AnimatorInstance.IsCrossFading() == true)
+    {
+        // One-ShotからLocomotionへ戻るFade中はBlendTreeがNext Stateにあります。
+        // Current / NextのどちらがTreeでも同じMovementSpeedを再評価できるよう両方を試します。
+        parameterUpdated =
+            state->AnimatorInstance.SetNextBlendParameter(state->MovementSpeed)
+            || parameterUpdated;
+    }
+    if (parameterUpdated == false)
+    {
+        return SetError(errorMessage, "Threshold更新後のAnimator BlendTree Parameter再評価に失敗しました");
+    }
+
+    // Threshold変更でBlend Weightが変わるため、同じFrameにReference Motion SpeedとPlayback倍率も
+    // 再評価し、Debug表示と実際の足滑り補正を一致させます。
+    return UpdateLocomotionPlaybackSpeed(*state, errorMessage);
+}
+
 bool SkinnedBlendTreeRuntime::SetPlaybackSpeed(
     std::size_t skinIndex,
     float playbackSpeed,

@@ -545,6 +545,9 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         m_HumanoidAnimationProfile.Locomotion;
     m_HumanoidWalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
     m_HumanoidRunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
+    m_HumanoidIdleThreshold = locomotionProfile.IdleThreshold;
+    m_HumanoidWalkThreshold = locomotionProfile.WalkThreshold;
+    m_HumanoidRunThreshold = locomotionProfile.RunThreshold;
 
     if (m_HumanoidVisualActive == false
         || m_HumanoidInstance.IsValid() == false)

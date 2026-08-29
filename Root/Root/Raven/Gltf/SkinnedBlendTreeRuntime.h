@@ -102,6 +102,15 @@ public:
         float movementSpeed,
         std::string* errorMessage = nullptr);
 
+    // Runtime調整UIからLocomotion Thresholdだけを更新する入口です。
+    // 既存BlendTreeオブジェクトとAnimatorのNormalizedTimeを維持し、Clipの再生位相をリスタートしません。
+    bool SetLocomotionThresholds(
+        std::size_t skinIndex,
+        float idleThreshold,
+        float walkThreshold,
+        float runThreshold,
+        std::string* errorMessage = nullptr);
+
     // Runtime調整UIからAuthored Motion Speedだけを更新する入口です。
     // BlendTreeの再Configureや再生Restartは行わず、現在Parameterに対する補正倍率だけを即座に再計算します。
     bool SetLocomotionAuthoredMotionSpeeds(

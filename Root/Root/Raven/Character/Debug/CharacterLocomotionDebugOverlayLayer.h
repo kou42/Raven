@@ -152,12 +152,75 @@ public:
                 snapshot.LeftThreshold,
                 snapshot.RightThreshold);
             ImGui::Text(
+                "Gameplay Goal: Walk %.2f / Run %.2f m/s",
+                snapshot.GameplayWalkSpeed,
+                snapshot.GameplayRunSpeed);
+            ImGui::Text(
+                "Runtime Axis : Idle %.2f / Walk %.2f / Run %.2f",
+                snapshot.IdleThreshold,
+                snapshot.WalkThreshold,
+                snapshot.RunThreshold);
+            ImGui::Text(
+                "Profile Axis : Idle %.2f / Walk %.2f / Run %.2f",
+                snapshot.ProfileIdleThreshold,
+                snapshot.ProfileWalkThreshold,
+                snapshot.ProfileRunThreshold);
+            ImGui::Text(
                 "Clamped      : %s",
                 snapshot.IsClamped == true ? "true" : "false");
 
             // Weightの数値だけでなく割合を直感的に確認できるよう、右側MotionのWeightをBar表示します。
             // LeftWeight + RightWeight = 1.0というBlendTree1Dの規約を利用し、RightWeightを進行率とします。
             ImGui::ProgressBar(snapshot.RightWeight, ImVec2(220.0f, 0.0f));
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("Blend Threshold Tuning");
+
+            // Threshold変更は同じBlendTreeオブジェクトへ反映されるため、再生位相を維持したまま
+            // 現在速度に対するBlend WeightとPlayback補正を即時再評価できます。
+            float idleThreshold = snapshot.IdleThreshold;
+            float walkThreshold = snapshot.WalkThreshold;
+            float runThreshold = snapshot.RunThreshold;
+            const bool idleThresholdChanged = ImGui::DragFloat(
+                "Idle Threshold",
+                &idleThreshold,
+                0.01f,
+                0.0f,
+                5.0f,
+                "%.2f");
+            const bool walkThresholdChanged = ImGui::DragFloat(
+                "Walk Threshold",
+                &walkThreshold,
+                0.01f,
+                0.05f,
+                10.0f,
+                "%.2f");
+            const bool runThresholdChanged = ImGui::DragFloat(
+                "Run Threshold",
+                &runThreshold,
+                0.01f,
+                0.10f,
+                15.0f,
+                "%.2f");
+
+            if (idleThresholdChanged == true
+                || walkThresholdChanged == true
+                || runThresholdChanged == true)
+            {
+                constexpr float MinimumThresholdGap = 0.05f;
+                idleThreshold = std::max(idleThreshold, 0.0f);
+                walkThreshold = std::max(walkThreshold, idleThreshold + MinimumThresholdGap);
+                runThreshold = std::max(runThreshold, walkThreshold + MinimumThresholdGap);
+                ApplyThresholds(idleThreshold, walkThreshold, runThreshold);
+            }
+
+            if (ImGui::Button("Reset Thresholds") == true)
+            {
+                ApplyThresholds(
+                    snapshot.ProfileIdleThreshold,
+                    snapshot.ProfileWalkThreshold,
+                    snapshot.ProfileRunThreshold);
+            }
 
             ImGui::Separator();
             ImGui::TextUnformatted("Foot Sliding Tuning");
@@ -197,20 +260,19 @@ public:
             // =================================================================
             // Tuning utility actions
             // =================================================================
-            // ResetはRavenの現在の標準Character速度へ戻します。
-            // 初期値へ戻す操作とGameplay速度の変更を混同しないよう、Authored値だけを更新します。
+            // ResetはCharacterControllerのGameplay速度ではなく、現在AssetのProfile初期値へ戻します。
+            // ProfileをSnapshot経由で参照することで、Asset差し替え後もOverlayへMagic Numberを残しません。
             if (ImGui::Button("Reset Authored Speeds") == true)
             {
-                constexpr float DefaultWalkAuthoredSpeed = 1.8f;
-                constexpr float DefaultRunAuthoredSpeed = 5.5f;
                 ApplyAuthoredMotionSpeeds(
-                    DefaultWalkAuthoredSpeed,
-                    DefaultRunAuthoredSpeed);
+                    snapshot.ProfileWalkAuthoredMotionSpeed,
+                    snapshot.ProfileRunAuthoredMotionSpeed);
             }
 
             ImGui::SameLine();
 
-            // 調整結果はそのままLocomotionBlendTreeConfigへ転記できるC++形式にします。
+            // 調整結果はAsset固有設定の正規の保存先であるHumanoidAnimationProfileへ
+            // そのまま転記できるC++形式にします。
             // Drag/Resetと同じFrameでCopyしても古い値を拾わないよう、Button判定時に最新Snapshotを取り直します。
             if (ImGui::Button("Copy Config") == true)
             {
@@ -263,6 +325,31 @@ private:
         }
     }
 
+    void ApplyThresholds(
+        float idleThreshold,
+        float walkThreshold,
+        float runThreshold)
+    {
+        if (m_CharacterLayer == nullptr)
+        {
+            return;
+        }
+
+        std::string tuningError;
+        if (m_CharacterLayer->SetHumanoidLocomotionThresholds(
+                idleThreshold,
+                walkThreshold,
+                runThreshold,
+                &tuningError) == false)
+        {
+            m_LastTuningError = tuningError;
+        }
+        else
+        {
+            m_LastTuningError.clear();
+        }
+    }
+
     static std::string BuildTuningConfigText(
         const CharacterLocomotionDebugSnapshot& snapshot)
     {
@@ -270,9 +357,15 @@ private:
         stream.setf(std::ios::fixed);
         stream.precision(2);
         stream
-            << "animationConfig.WalkAuthoredMotionSpeed = "
+            << "profile.Locomotion.IdleThreshold = "
+            << snapshot.IdleThreshold << "f; "
+            << "profile.Locomotion.WalkThreshold = "
+            << snapshot.WalkThreshold << "f; "
+            << "profile.Locomotion.RunThreshold = "
+            << snapshot.RunThreshold << "f; "
+            << "profile.Locomotion.WalkAuthoredMotionSpeed = "
             << snapshot.WalkAuthoredMotionSpeed << "f; "
-            << "animationConfig.RunAuthoredMotionSpeed = "
+            << "profile.Locomotion.RunAuthoredMotionSpeed = "
             << snapshot.RunAuthoredMotionSpeed << "f;";
         return stream.str();
     }

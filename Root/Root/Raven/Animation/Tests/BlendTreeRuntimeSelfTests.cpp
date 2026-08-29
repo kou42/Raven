@@ -74,6 +74,33 @@ void RunDirectWeightDebugTest()
     ValidateWeightSum(info);
 }
 
+void RunThresholdUpdateTest()
+{
+    BlendTree1D tree;
+    assert(tree.AddChild(0.0f, MakeClip(1.0f)));
+    assert(tree.AddChild(2.0f, MakeClip(1.0f)));
+    assert(tree.AddChild(6.0f, MakeClip(1.0f)));
+
+    // 不正入力では既存Thresholdを一切変更しません。部分更新が起きないことも併せて確認します。
+    assert(tree.SetThresholds({ 0.0f, 4.0f }) == false);
+    assert(tree.SetThresholds({ 0.0f, 6.0f, 4.0f }) == false);
+    assert(NearlyEqual(tree.GetChildren()[1].Threshold, 2.0f));
+    assert(NearlyEqual(tree.GetChildren()[2].Threshold, 6.0f));
+
+    assert(tree.SetThresholds({ 0.0f, 3.0f, 9.0f }));
+    assert(NearlyEqual(tree.GetChildren()[0].Threshold, 0.0f));
+    assert(NearlyEqual(tree.GetChildren()[1].Threshold, 3.0f));
+    assert(NearlyEqual(tree.GetChildren()[2].Threshold, 9.0f));
+
+    // Clip順は維持したまま新しいThreshold軸でWeightが解決されます。
+    BlendTree1DDebugInfo info{};
+    assert(tree.GetDebugInfo(6.0f, info));
+    assert(info.LeftChildIndex == 1);
+    assert(info.RightChildIndex == 2);
+    assert(NearlyEqual(info.LeftWeight, 0.5f));
+    assert(NearlyEqual(info.RightWeight, 0.5f));
+}
+
 void ValidateRuntimeSpeed(
     AnimatorStateMachine& stateMachine,
     float speed,
@@ -395,6 +422,7 @@ void RunBlendTreeRuntimeSelfTests()
     // Debug API単体 -> 実際の連続Blend -> State Graph -> Transition診断 -> Priority選択 -> 実発火照合の順で、
     // Editor表示に必要なRuntime情報とTransition選択規則を下層から段階的に検証します。
     RunDirectWeightDebugTest();
+    RunThresholdUpdateTest();
     RunSmoothSpeedRuntimeTest();
     RunStateGraphRuntimeSnapshotTest();
     RunTransitionConditionRuntimeSnapshotTest();

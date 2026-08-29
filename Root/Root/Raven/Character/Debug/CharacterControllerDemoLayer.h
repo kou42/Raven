@@ -38,6 +38,17 @@ struct CharacterLocomotionDebugSnapshot
     float ActualHorizontalSpeed = 0.0f;
     float ParameterValue = 0.0f;
 
+    // Gameplayの目標速度とAnimation AssetのThresholdを別Fieldで公開します。
+    // Debug UIが両者を同じ値として扱わず、設定元ごとの差を並べて診断するためのSnapshotです。
+    float GameplayWalkSpeed = 0.0f;
+    float GameplayRunSpeed = 0.0f;
+    float IdleThreshold = 0.0f;
+    float WalkThreshold = 0.0f;
+    float RunThreshold = 0.0f;
+    float ProfileIdleThreshold = 0.0f;
+    float ProfileWalkThreshold = 0.0f;
+    float ProfileRunThreshold = 0.0f;
+
     std::string LeftAnimationName;
     std::string RightAnimationName;
     float LeftThreshold = 0.0f;
@@ -57,6 +68,8 @@ struct CharacterLocomotionDebugSnapshot
     // Asset固有の初期値はProfileからSnapshot生成時に設定されるため、構造体の既定値は中立値にします。
     float WalkAuthoredMotionSpeed = 0.0f;
     float RunAuthoredMotionSpeed = 0.0f;
+    float ProfileWalkAuthoredMotionSpeed = 0.0f;
+    float ProfileRunAuthoredMotionSpeed = 0.0f;
 };
 
 // ============================================================================
@@ -167,6 +180,40 @@ public:
         return true;
     }
 
+    // BlendTreeのIdle / Walk / Run配置だけを実行中に変更します。
+    // Runtime側は同じTreeを更新するため、AnimatorのNormalizedTimeと足運びの位相を維持します。
+    bool SetHumanoidLocomotionThresholds(
+        float idleThreshold,
+        float walkThreshold,
+        float runThreshold,
+        std::string* errorMessage = nullptr)
+    {
+        if (m_HumanoidLocomotionAnimationActive == false
+            || m_HumanoidAnimationSkinIndex == Gltf::InvalidGltfIndex)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Humanoid Locomotion Animationが有効ではありません";
+            }
+            return false;
+        }
+
+        if (m_HumanoidLocomotionRuntime.SetLocomotionThresholds(
+                m_HumanoidAnimationSkinIndex,
+                idleThreshold,
+                walkThreshold,
+                runThreshold,
+                errorMessage) == false)
+        {
+            return false;
+        }
+
+        m_HumanoidIdleThreshold = idleThreshold;
+        m_HumanoidWalkThreshold = walkThreshold;
+        m_HumanoidRunThreshold = runThreshold;
+        return true;
+    }
+
     // ========================================================================
     // Locomotion Debug UI boundary
     // ========================================================================
@@ -179,6 +226,20 @@ public:
         snapshot.AnimationActive = m_HumanoidLocomotionAnimationActive;
         snapshot.ActualHorizontalSpeed = m_HumanoidActualHorizontalSpeed;
         snapshot.ParameterValue = m_HumanoidLocomotionDebugInfo.ParameterValue;
+
+        // CharacterControllerConfigはGameplay目標速度、HumanoidAnimationProfileはAsset設定です。
+        // Snapshotで明示的に分けることで、OverlayのResetや表示が同値前提へ戻ることを防ぎます。
+        const CharacterControllerConfig& characterConfig = m_CharacterController.GetConfig();
+        const HumanoidLocomotionProfile& locomotionProfile =
+            m_HumanoidAnimationProfile.Locomotion;
+        snapshot.GameplayWalkSpeed = characterConfig.WalkSpeed;
+        snapshot.GameplayRunSpeed = characterConfig.RunSpeed;
+        snapshot.IdleThreshold = m_HumanoidIdleThreshold;
+        snapshot.WalkThreshold = m_HumanoidWalkThreshold;
+        snapshot.RunThreshold = m_HumanoidRunThreshold;
+        snapshot.ProfileIdleThreshold = locomotionProfile.IdleThreshold;
+        snapshot.ProfileWalkThreshold = locomotionProfile.WalkThreshold;
+        snapshot.ProfileRunThreshold = locomotionProfile.RunThreshold;
         snapshot.LeftAnimationName = ResolveLocomotionDebugChildName(
             m_HumanoidLocomotionDebugInfo.LeftChildIndex);
         snapshot.RightAnimationName = ResolveLocomotionDebugChildName(
@@ -190,6 +251,8 @@ public:
         snapshot.IsClamped = m_HumanoidLocomotionDebugInfo.IsClamped;
         snapshot.WalkAuthoredMotionSpeed = m_HumanoidWalkAuthoredMotionSpeed;
         snapshot.RunAuthoredMotionSpeed = m_HumanoidRunAuthoredMotionSpeed;
+        snapshot.ProfileWalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
+        snapshot.ProfileRunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
 
         // Playback補正値もBlendTreeと同じRuntime Stateから取得します。
         // Overlay側でActual/Reference比を再計算するとClamp規則やIdle例外と表示がずれるため、
@@ -224,6 +287,14 @@ public:
             << (snapshot.AnimationActive == true ? "Active" : "Inactive") << '\n';
         stream << "Actual Speed         : " << snapshot.ActualHorizontalSpeed << '\n';
         stream << "Blend Parameter      : " << snapshot.ParameterValue << '\n';
+        stream << "Gameplay Goal Speed  : Walk " << snapshot.GameplayWalkSpeed
+            << " / Run " << snapshot.GameplayRunSpeed << '\n';
+        stream << "Runtime Thresholds   : " << snapshot.IdleThreshold
+            << " / " << snapshot.WalkThreshold
+            << " / " << snapshot.RunThreshold << '\n';
+        stream << "Profile Thresholds   : " << snapshot.ProfileIdleThreshold
+            << " / " << snapshot.ProfileWalkThreshold
+            << " / " << snapshot.ProfileRunThreshold << '\n';
         stream << "Reference Speed      : " << snapshot.ReferenceMotionSpeed << '\n';
         stream << "Playback Speed       : " << snapshot.PlaybackSpeed << "x\n";
         stream << "Walk Authored Speed  : " << snapshot.WalkAuthoredMotionSpeed << '\n';
@@ -353,6 +424,15 @@ private:
         m_HumanoidAnimationProfile.Locomotion.WalkAuthoredMotionSpeed;
     float m_HumanoidRunAuthoredMotionSpeed =
         m_HumanoidAnimationProfile.Locomotion.RunAuthoredMotionSpeed;
+
+    // ProfileはAsset初期値として保持し、Runtime調整値は別Stateとして管理します。
+    // Overlay調整でProfile自体を書き換えないため、Resetは常に元のAsset設定へ戻せます。
+    float m_HumanoidIdleThreshold =
+        m_HumanoidAnimationProfile.Locomotion.IdleThreshold;
+    float m_HumanoidWalkThreshold =
+        m_HumanoidAnimationProfile.Locomotion.WalkThreshold;
+    float m_HumanoidRunThreshold =
+        m_HumanoidAnimationProfile.Locomotion.RunThreshold;
 
     // 毎Frame更新するLocomotion診断値です。
     // SpeedとBlend Weightを同じFrameのSnapshotとして保持し、後続Debug Overlayから参照できるようにします。
