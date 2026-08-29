@@ -1,5 +1,7 @@
 #include "Raven/Platform/OpenGL/OpenGLFramebuffer.h"
 
+#include "Raven/Renderer/Texture/Texture.h"
+
 #include <glad/glad.h>
 
 #include <cassert>
@@ -28,12 +30,7 @@ void OpenGLFramebuffer::Bind() const
 {
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
 
-    // ========================================================================
-    // Viewport synchronization
-    // ========================================================================
-    // FBOのAttachmentサイズとOpenGL Viewportは別々のStateです。
-    // TextureをResizeしただけでは描画領域は変わらないため、Bind時に必ずFramebufferの
-    // Width/HeightへViewportを合わせます。
+    // FBOのAttachmentサイズとOpenGL Viewportは別々のStateなので、Bind時に同期します。
     glViewport(
         0,
         0,
@@ -43,22 +40,16 @@ void OpenGLFramebuffer::Bind() const
 
 void OpenGLFramebuffer::Unbind() const
 {
-    // Renderer ID 0はOpenGLのdefault framebufferです。
-    // Scene/Game Viewへのoff-screen描画後、ImGui等の後続描画がEditor Windowへ戻るよう解除します。
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void OpenGLFramebuffer::Resize(std::uint32_t width, std::uint32_t height)
 {
-    // ImGui Windowを最小化した瞬間などはContentRegionが0になる場合があります。
-    // OpenGLへ0x0 Textureを作らせず、次に有効なサイズが来るまで現在のAttachmentを維持します。
     if (width == 0 || height == 0)
     {
         return;
     }
 
-    // 毎frameResize()は呼ばれますが、Windowサイズが変わっていなければGPU Resourceを
-    // 再生成する必要はありません。Texture/Renderbuffer再確保は比較的重い処理なので省略します。
     if (width == m_Width && height == m_Height)
     {
         return;
@@ -83,41 +74,37 @@ void OpenGLFramebuffer::Invalidate()
     // ========================================================================
     // Color Attachment
     // ========================================================================
-    // Sceneの描画結果をRGBA8 Textureとして保持します。
-    // RenderbufferではなくTextureにしている理由は、描画完了後にコピーせず
-    // Dear ImGuiのScene View / Game Viewから直接samplingして表示するためです。
-    glGenTextures(1, &m_ColorAttachment);
-    glBindTexture(GL_TEXTURE_2D, m_ColorAttachment);
+    // 以前はFramebuffer自身がglGenTextures / glTexImage2D / glDeleteTexturesを直接管理していました。
+    // 現在はTexture抽象クラスへ生成と寿命管理を委譲し、Framebufferは「TextureをAttachmentする」
+    // 責務だけを持ちます。これによりTexture生成仕様をRenderer全体で共通化できます。
+    TextureSpecification colorSpecification;
+    colorSpecification.Width = m_Width;
+    colorSpecification.Height = m_Height;
+    colorSpecification.Format = TextureFormat::RGBA8;
+    colorSpecification.GenerateMips = false;
 
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA8,
-        static_cast<GLsizei>(m_Width),
-        static_cast<GLsizei>(m_Height),
-        0,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        nullptr);
+    m_ColorAttachment = Texture::Create(colorSpecification);
 
-    // Editor ViewportはTextureをほぼ1:1で表示しますが、Window Resize中にはTextureサイズと
-    // 表示サイズが一時的に異なるためLinear filteringを使用します。
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (m_ColorAttachment == nullptr)
+    {
+        assert(false && "Failed to create framebuffer color attachment texture.");
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return;
+    }
 
+    // OpenGLFramebufferはOpenGL backend内部なので、FramebufferへTextureをAttachmentするために
+    // 現在はTextureのRenderer IDを利用します。上位層にはこのIDを公開しません。
+    // TextureのNative Handle抽象化を追加する段階で、この境界もさらに整理できます。
     glFramebufferTexture2D(
         GL_FRAMEBUFFER,
         GL_COLOR_ATTACHMENT0,
         GL_TEXTURE_2D,
-        m_ColorAttachment,
+        m_ColorAttachment->GetID(),
         0);
 
     // ========================================================================
     // Depth / Stencil Attachment
     // ========================================================================
-    // 3D Scene描画ではDepth Testが必要なのでColor Attachmentだけでは不十分です。
     // 現段階ではDepth値をShaderやEditor Pickingから参照しないため、Textureではなく
     // RenderbufferとしてGL_DEPTH24_STENCIL8を確保します。
     glGenRenderbuffers(1, &m_DepthStencilAttachment);
@@ -135,12 +122,9 @@ void OpenGLFramebuffer::Invalidate()
         GL_RENDERBUFFER,
         m_DepthStencilAttachment);
 
-    // Color + Depth/Stencil Attachmentの組み合わせが描画可能か必ず検証します。
-    // Attachment Formatやサイズに不整合がある場合、ここで早期に検出できます。
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     assert(status == GL_FRAMEBUFFER_COMPLETE);
 
-    // Resource生成処理の副作用を最小化するため、一時的にBindしたStateを解除します。
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -148,22 +132,18 @@ void OpenGLFramebuffer::Invalidate()
 
 void OpenGLFramebuffer::Release()
 {
-    // ========================================================================
-    // OpenGL resource release
-    // ========================================================================
-    // 各IDは生成前/解放後に0を保持します。
-    // これによりconstructor途中やResize、destructorなど複数の経路からRelease()を呼んでも
-    // 同じResourceを二重削除しません。
+    // Depth/StencilとFBOはOpenGLFramebuffer自身が所有します。
     if (m_DepthStencilAttachment != 0)
     {
         glDeleteRenderbuffers(1, &m_DepthStencilAttachment);
         m_DepthStencilAttachment = 0;
     }
 
-    if (m_ColorAttachment != 0)
+    // Color AttachmentのGPU Texture ResourceはTexture派生クラス自身がRAIIで解放します。
+    // FramebufferからglDeleteTexturesを直接呼ばないことでTexture所有権を一箇所に集約します。
+    if (m_ColorAttachment != nullptr)
     {
-        glDeleteTextures(1, &m_ColorAttachment);
-        m_ColorAttachment = 0;
+        m_ColorAttachment.reset();
     }
 
     if (m_RendererID != 0)
