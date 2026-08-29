@@ -142,13 +142,22 @@ namespace Raven
         }
 
         // Queryへ時刻を付けてブラウザキャッシュを回避し、Ravenが上書きしたSVGを定期再取得します。
+        // Startup.svg / CandidateRejects.svgはRaven側が同じファイル名へ上書きするため、
+        // Viewer.htmlを開き直さなくても次のrefreshで最新Snapshotへ切り替わります。
         //
         // 左側は従来のSpatial Hash / Particle / Triangle全体表示です。
         // 右側はCandidateRejects.svgを<object>で同一Origin表示します。<img>ではSVG内部の
         // JavaScript / click eventが無効化されるため、Particle / Triangle直接選択には<object>が必要です。
+        // Reject SVGがまだ生成されていない起動直後は右側だけ空になりますが、最初のBrowser Debug Snapshotが
+        // 出力されれば次のrefreshで自動表示されます。
         //
-        // Reject SVGからは /filter endpointへ選択値を送り、postMessageで親Viewerへ同じ値を通知します。
-        // 親側は入力欄とURL Queryだけを同期し、同じ/filterを二重送信しません。
+        // HeaderのApply / Clearはlocalhost Serverの/filter endpointへGETし、Browser側の入力値を
+        // Raven Process内のBrowserDebugFilterStateへ反映します。次のDebug SnapshotでCandidateRejects.svgが
+        // 同じFilter条件で再生成され、Viewerの自動reloadによって表示へ戻ってきます。
+        //
+        // Reject SVG内でParticle / Triangleを直接クリックした場合もSVG自身が/filterへ値を送ります。
+        // その後postMessageで親Viewerへ同じ値を通知し、親側は入力欄とURL Queryだけを同期します。
+        // 同じ/filterを親から二重送信しないことで、クリック選択時の余分なRequestを避けます。
         const std::string svgFileName = svgPath.filename().generic_string();
         const std::string candidateSvgFileName = "CandidateRejects.svg";
         const uint32_t safeReloadInterval = (reloadIntervalMilliseconds > 50) ? reloadIntervalMilliseconds : 50u;
