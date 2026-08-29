@@ -1,6 +1,7 @@
 // Raven/Gltf/SkinnedBlendTreeRuntime.h
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -100,6 +101,54 @@ public:
         std::size_t skinIndex,
         float movementSpeed,
         std::string* errorMessage = nullptr);
+
+    // Runtime調整UIからAuthored Motion Speedだけを更新する入口です。
+    // BlendTreeの再Configureや再生Restartは行わず、現在Parameterに対する補正倍率だけを即座に再計算します。
+    bool SetLocomotionAuthoredMotionSpeeds(
+        std::size_t skinIndex,
+        float walkAuthoredMotionSpeed,
+        float runAuthoredMotionSpeed,
+        std::string* errorMessage = nullptr)
+    {
+        if (errorMessage != nullptr)
+        {
+            errorMessage->clear();
+        }
+
+        if (std::isfinite(walkAuthoredMotionSpeed) == false
+            || std::isfinite(runAuthoredMotionSpeed) == false
+            || walkAuthoredMotionSpeed <= 0.0f
+            || runAuthoredMotionSpeed <= walkAuthoredMotionSpeed)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Authored Motion Speedは 0 < Walk < Run を満たす必要があります";
+            }
+            return false;
+        }
+
+        SkinState* state = FindSkinState(skinIndex);
+        if (state == nullptr)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "指定SkinIndexのBlendTree Runtime Stateがありません";
+            }
+            return false;
+        }
+        if (state->Configured == false || state->LocomotionTree == nullptr)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "指定SkinIndexのBlendTreeがConfigureされていません";
+            }
+            return false;
+        }
+
+        state->WalkAuthoredMotionSpeed = walkAuthoredMotionSpeed;
+        state->RunAuthoredMotionSpeed = runAuthoredMotionSpeed;
+        return UpdateLocomotionPlaybackSpeed(*state, errorMessage);
+    }
 
     // 汎用の明示Playback Speed設定です。
     // Locomotion中はSetMovementSpeed()が毎Frame補正値を書き戻すため、手動値は一時的なOverrideになります。
