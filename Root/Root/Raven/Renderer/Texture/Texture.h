@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
@@ -23,6 +25,26 @@
 namespace Raven
 {
 
+// TextureのピクセルフォーマットをRenderer共通の値として表します。
+// OpenGLのGL_RGB8などを上位層へ公開せず、各RendererAPI実装側でネイティブ形式へ変換します。
+enum class TextureFormat
+{
+    None = 0,
+    R8,
+    RGB8,
+    RGBA8
+};
+
+// ファイル由来・動的生成・Framebuffer Attachmentなど、Textureの生成方法が増えても
+// 共通の生成情報として扱えるようにSpecificationへまとめます。
+struct TextureSpecification
+{
+    std::uint32_t Width = 1;
+    std::uint32_t Height = 1;
+    TextureFormat Format = TextureFormat::RGBA8;
+    bool GenerateMips = true;
+};
+
 // Textureは描画APIに依存しないインターフェースです。
 // OpenGL固有のGLuintやglBindTextureなどは派生クラス側へ閉じ込めます。
 // これにより、Textureを利用する上位層はOpenGL / DirectXなどの違いを意識せずに扱えます。
@@ -31,19 +53,36 @@ class Texture
 public:
     virtual ~Texture() = default;
 
-    // 現在選択されているRendererAPIに対応したTexture実装を生成します。
-    // 利用側はOpenGLTextureなどの具象型を直接生成しないことを基本方針とします。
+    // 画像ファイルからTextureを生成します。
+    // 現在選択されているRendererAPIに対応した具象型の選択はFactory内部だけで行います。
     static Ref<Texture> Create(const std::string& path);
+
+    // サイズ・フォーマットを明示して空Textureを生成します。
+    // SetData()と組み合わせることで、ファイルを介さない動的Textureも作成できます。
+    static Ref<Texture> Create(const TextureSpecification& specification);
+
+    // 初期ピクセルデータ付きでTextureを生成します。
+    // dataSizeはバイト数です。実装側でSpecificationから必要サイズを検証します。
+    static Ref<Texture> Create(
+        const TextureSpecification& specification,
+        const void* data,
+        std::size_t dataSize
+    );
 
     virtual void Bind(unsigned int slot = 0) const = 0;
     virtual void Unbind() const = 0;
 
+    // Texture全体のピクセルデータを更新します。
+    // 部分更新は将来SetSubData等を追加し、この基本APIとは分離する方針です。
+    virtual void SetData(const void* data, std::size_t dataSize) = 0;
+
     // 既存コードとの互換性を維持するためRenderer側のIDを公開しています。
-    // 将来的にRendererIDの直接参照をなくせる場合は、この関数自体を削除することも検討できます。
+    // 現在のFramebuffer / ImGui連携整理後に、上位層からのRendererID直接参照を削除予定です。
     virtual unsigned int GetID() const = 0;
 
     virtual int GetWidth() const = 0;
     virtual int GetHeight() const = 0;
+    virtual const TextureSpecification& GetSpecification() const = 0;
 };
 
 class TextureLibrary
