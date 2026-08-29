@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "Raven/Animation/HumanoidAnimationProfile.h"
 #include "Raven/Character/CharacterController.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Core/Input.h"
@@ -330,12 +331,19 @@ private:
     std::size_t m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     bool m_HumanoidLocomotionAnimationActive = false;
 
-    // Raven_human_test.glb内で期待するLocomotion Animation名です。
-    // 初期化時はGetAnimationNames()でAsset側の実名を取得し、まず完全一致、次に一意な部分一致で解決します。
-    // 部分一致候補が複数ある場合は誤ったMotionを勝手に選ばず、初期化エラーとして候補をログへ出します。
-    std::string m_HumanoidIdleAnimationName = "Idle";
-    std::string m_HumanoidWalkAnimationName = "Walk";
-    std::string m_HumanoidRunAnimationName = "Run";
+    // Raven_human_test.glb固有のLocomotion初期設定です。
+    // Asset固有のClip名・Threshold・Authored Motion SpeedはDemo Layerへ直接記述せず、
+    // HumanoidAnimationProfileを唯一の設定元として保持します。
+    HumanoidAnimationProfile m_HumanoidAnimationProfile = CreateRavenHumanTestAnimationProfile();
+
+    // 既存の名前解決経路との互換用Snapshotです。
+    // 値そのものはProfileから取得し、初期化時はGetAnimationNames()でAsset側の実名へ解決します。
+    std::string m_HumanoidIdleAnimationName =
+        m_HumanoidAnimationProfile.Locomotion.IdleAnimationName;
+    std::string m_HumanoidWalkAnimationName =
+        m_HumanoidAnimationProfile.Locomotion.WalkAnimationName;
+    std::string m_HumanoidRunAnimationName =
+        m_HumanoidAnimationProfile.Locomotion.RunAnimationName;
 
     // Runtimeから取得したAnimation一覧と、実際にLocomotionへ採用した名前を保持します。
     // DebuggerからAsset命名と自動解決結果を比較できるよう、初期化後もSnapshotを残します。
@@ -345,9 +353,12 @@ private:
     std::string m_ResolvedHumanoidRunAnimationName;
 
     // Foot Sliding補正のRuntime調整値です。
-    // BlendTree Thresholdとは独立しており、Gameplay速度を変えずAnimation再生倍率だけを調整します。
-    float m_HumanoidWalkAuthoredMotionSpeed = 1.8f;
-    float m_HumanoidRunAuthoredMotionSpeed = 5.5f;
+    // Profile値は初期値としてのみ使用し、Debug UIから調整後は現在Runtime値として独立して保持します。
+    // これによりProfileというAsset初期設定と、実行中の調整値を混同しません。
+    float m_HumanoidWalkAuthoredMotionSpeed =
+        m_HumanoidAnimationProfile.Locomotion.WalkAuthoredMotionSpeed;
+    float m_HumanoidRunAuthoredMotionSpeed =
+        m_HumanoidAnimationProfile.Locomotion.RunAuthoredMotionSpeed;
 
     // 毎Frame更新するLocomotion診断値です。
     // SpeedとBlend Weightを同じFrameのSnapshotとして保持し、後続Debug Overlayから参照できるようにします。
