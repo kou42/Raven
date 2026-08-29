@@ -34,9 +34,14 @@ int main()
     // ========================================================================
     // Browser Debug Viewer
     // ========================================================================
-    // Viewer.html / Startup.svg / CandidateRejects.svgは従来どおりDebug生成物として書き出します。
-    // ただしブラウザはfile://で直接開かず、127.0.0.1限定のBrowserDebugServer経由で表示します。
-    // これによりBrowserのParticle / Triangle選択を/filter endpointからRaven Processへ返せます。
+    // ブラウザではSVGそのものではなくViewer.htmlを開きます。
+    // Viewer.htmlはStartup.svg / CandidateRejects.svgを定期的に再読み込みするため、後続のPhysics Writerが
+    // 同じSVGを上書きすればブラウザを再起動せず最新のデバッグ表示へ更新できます。
+    //
+    // Viewer.html / Startup.svg / CandidateRejects.svgはDebug生成物として従来どおりファイルへ書き出しますが、
+    // ブラウザからはfile://で直接開かず、127.0.0.1限定のBrowserDebugServer経由で表示します。
+    // これにより自動reloadだけでなく、BrowserのParticle / Triangle選択を/filter endpointから
+    // Raven Processへ返し、次のCandidateRejects.svg生成条件へ反映できます。
     const std::filesystem::path browserDebugDirectory =
         std::filesystem::path("Raven") / "Debug" / "Generated";
     const std::filesystem::path browserDebugSvgPath = browserDebugDirectory / "Startup.svg";
