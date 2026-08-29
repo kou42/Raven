@@ -311,6 +311,20 @@ bool SkinnedBlendTreeRuntime::Configure(
             "BlendTree Thresholdは 0 <= Idle < Walk < Run を満たす必要があります");
     }
 
+    if (std::isfinite(config.WalkAuthoredMotionSpeed) == false
+        || std::isfinite(config.RunAuthoredMotionSpeed) == false
+        || std::isfinite(config.MinLocomotionPlaybackSpeed) == false
+        || std::isfinite(config.MaxLocomotionPlaybackSpeed) == false
+        || config.WalkAuthoredMotionSpeed <= 0.0f
+        || config.RunAuthoredMotionSpeed <= config.WalkAuthoredMotionSpeed
+        || config.MinLocomotionPlaybackSpeed <= 0.0f
+        || config.MaxLocomotionPlaybackSpeed < config.MinLocomotionPlaybackSpeed)
+    {
+        return SetError(
+            errorMessage,
+            "Locomotion補正値は 0 < WalkAuthored < RunAuthored かつ 0 < MinPlayback <= MaxPlayback を満たす必要があります");
+    }
+
     const RuntimeClip* idleClip = FindClip(*state, config.IdleAnimationName);
     const RuntimeClip* walkClip = FindClip(*state, config.WalkAnimationName);
     const RuntimeClip* runClip = FindClip(*state, config.RunAnimationName);
@@ -352,6 +366,12 @@ bool SkinnedBlendTreeRuntime::Configure(
 
     state->LocomotionTree = std::move(blendTree);
     state->MovementSpeed = config.IdleThreshold;
+    state->WalkAuthoredMotionSpeed = config.WalkAuthoredMotionSpeed;
+    state->RunAuthoredMotionSpeed = config.RunAuthoredMotionSpeed;
+    state->MinLocomotionPlaybackSpeed = config.MinLocomotionPlaybackSpeed;
+    state->MaxLocomotionPlaybackSpeed = config.MaxLocomotionPlaybackSpeed;
+    state->ReferenceMotionSpeed = 0.0f;
+    state->LocomotionPlaybackSpeed = 1.0f;
     state->Configured = true;
 
     // 初回だけPlayBlendTree()し、以後はParameterだけ更新します。
@@ -360,7 +380,73 @@ bool SkinnedBlendTreeRuntime::Configure(
         state->LocomotionTree,
         state->MovementSpeed,
         true);
+    state->AnimatorInstance.SetSpeed(1.0f);
 
+    return true;
+}
+
+bool SkinnedBlendTreeRuntime::UpdateLocomotionPlaybackSpeed(
+    SkinState& state,
+    std::string* errorMessage)
+{
+    if (state.Configured == false || state.LocomotionTree == nullptr)
+    {
+        return SetError(errorMessage, "Locomotion Playback補正対象のBlendTreeがConfigureされていません");
+    }
+
+    BlendTree1DDebugInfo blendInfo{};
+    if (state.LocomotionTree->GetDebugInfo(state.MovementSpeed, blendInfo) == false)
+    {
+        return SetError(errorMessage, "Locomotion Playback補正用Blend Weightの取得に失敗しました");
+    }
+
+    // ========================================================================
+    // Blend Weight -> Reference Motion Speed
+    // ========================================================================
+    // BlendTree ChildはConfigure時に Idle / Walk / Run のThreshold昇順で登録されています。
+    // Pose Blendと同じWeightでClip側の想定移動速度も補間することで、Walk->Run境界でも
+    // Playback Speedが不連続に切り替わらず、足運びの位相を維持したまま補正できます。
+    const auto resolveAuthoredMotionSpeed = [&state](std::size_t childIndex)
+    {
+        if (childIndex == 0u)
+        {
+            return 0.0f;
+        }
+        if (childIndex == 1u)
+        {
+            return state.WalkAuthoredMotionSpeed;
+        }
+        if (childIndex == 2u)
+        {
+            return state.RunAuthoredMotionSpeed;
+        }
+
+        return 0.0f;
+    };
+
+    const float leftReferenceSpeed = resolveAuthoredMotionSpeed(blendInfo.LeftChildIndex);
+    const float rightReferenceSpeed = resolveAuthoredMotionSpeed(blendInfo.RightChildIndex);
+    state.ReferenceMotionSpeed =
+        leftReferenceSpeed * blendInfo.LeftWeight
+        + rightReferenceSpeed * blendInfo.RightWeight;
+
+    // 完全IdleではReference Speedが0になります。
+    // ここで0除算を避けるだけでなくIdle Clip本来の呼吸等を止めないよう1.0倍速を維持します。
+    constexpr float ReferenceSpeedEpsilon = 1.0e-5f;
+    if (state.ReferenceMotionSpeed <= ReferenceSpeedEpsilon)
+    {
+        state.LocomotionPlaybackSpeed = 1.0f;
+    }
+    else
+    {
+        const float requestedPlaybackSpeed = state.MovementSpeed / state.ReferenceMotionSpeed;
+        state.LocomotionPlaybackSpeed = std::clamp(
+            requestedPlaybackSpeed,
+            state.MinLocomotionPlaybackSpeed,
+            state.MaxLocomotionPlaybackSpeed);
+    }
+
+    state.AnimatorInstance.SetSpeed(state.LocomotionPlaybackSpeed);
     return true;
 }
 
@@ -402,7 +488,9 @@ bool SkinnedBlendTreeRuntime::SetMovementSpeed(
         return SetError(errorMessage, "Animator BlendTree Parameterの更新に失敗しました");
     }
 
-    return true;
+    // Parameterと同じFrameのBlend Weightを使ってPlayback Speedも更新します。
+    // これによりCharacterの実速度と足運び速度の差を補正しつつ、NormalizedTime自体は連続したままです。
+    return UpdateLocomotionPlaybackSpeed(*state, errorMessage);
 }
 
 bool SkinnedBlendTreeRuntime::SetPlaybackSpeed(
@@ -455,6 +543,32 @@ bool SkinnedBlendTreeRuntime::GetDebugInfo(
         return SetError(errorMessage, "BlendTree DebugInfoの取得に失敗しました");
     }
 
+    return true;
+}
+
+bool SkinnedBlendTreeRuntime::GetLocomotionPlaybackDebugInfo(
+    std::size_t skinIndex,
+    LocomotionPlaybackDebugInfo& outInfo,
+    std::string* errorMessage) const
+{
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+
+    const SkinState* state = FindSkinState(skinIndex);
+    if (state == nullptr)
+    {
+        return SetError(errorMessage, "指定SkinIndexのBlendTree Runtime Stateがありません");
+    }
+    if (state->Configured == false || state->LocomotionTree == nullptr)
+    {
+        return SetError(errorMessage, "指定SkinIndexのBlendTreeがConfigureされていません");
+    }
+
+    outInfo.MovementSpeed = state->MovementSpeed;
+    outInfo.ReferenceMotionSpeed = state->ReferenceMotionSpeed;
+    outInfo.PlaybackSpeed = state->LocomotionPlaybackSpeed;
     return true;
 }
 
