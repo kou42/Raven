@@ -108,17 +108,41 @@ void OpenGLUIRenderer::Render(
     }
 
     // ========================================================================
-    // UI render state
+    // UI render target / OpenGL state
     // ========================================================================
-    // Raven UIは2D Overlayとして描画するためDepth Testを無効化し、Alpha Blendを有効化します。
-    // 描画後には元のEnable状態を復元します。Dear ImGuiも自身のbackendでstateを設定しますが、
-    // UI Renderer単体でも呼び出し元へ不要なstateを残さないことを優先します。
+    // EditorはScene View / Game ViewをFramebufferへ描画してから、そのTextureをDear ImGuiで表示します。
+    // Dear ImGuiのOpenGL backendは描画後に「呼び出し前のFramebuffer」を復元するため、
+    // ImGui::End()直後にRaven UIを描くだけではScene/Game用offscreen framebufferへ描かれる場合があります。
+    // その結果、Main Window左上へ出す検証Rectが見えない状態になります。
+    //
+    // Main Window用UIContextは最終Window Overlayを担当するため、ここではdefault framebuffer(0)と
+    // Window全体のviewportを明示的に選択します。将来Game View / RenderTexture用UIContextを追加する際は、
+    // UIContext側へRenderTargetを持たせ、この固定0をContext指定のFramebufferへ置き換えます。
+    GLint previousDrawFramebuffer = 0;
+    GLint previousReadFramebuffer = 0;
+    GLint previousViewport[4] = { 0, 0, 0, 0 };
+    GLint previousScissorBox[4] = { 0, 0, 0, 0 };
+
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFramebuffer);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
+    glGetIntegerv(GL_VIEWPORT, previousViewport);
+    glGetIntegerv(GL_SCISSOR_BOX, previousScissorBox);
+
     const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
     const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
+    const GLboolean scissorTestEnabled = glIsEnabled(GL_SCISSOR_TEST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(
+        0,
+        0,
+        static_cast<GLsizei>(viewportSize.x),
+        static_cast<GLsizei>(viewportSize.y));
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -130,6 +154,24 @@ void OpenGLUIRenderer::Render(
 
     m_VertexArray->Unbind();
     m_Shader->Unbind();
+
+    // ========================================================================
+    // State restore
+    // ========================================================================
+    // Raven UIをRenderer pipelineの途中から呼んでも後続描画へ影響を残さないよう、
+    // Framebuffer / viewport / scissorを含めて変更したstateを元へ戻します。
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
+    glViewport(
+        previousViewport[0],
+        previousViewport[1],
+        previousViewport[2],
+        previousViewport[3]);
+    glScissor(
+        previousScissorBox[0],
+        previousScissorBox[1],
+        previousScissorBox[2],
+        previousScissorBox[3]);
 
     if (depthTestEnabled == GL_TRUE)
     {
@@ -156,6 +198,15 @@ void OpenGLUIRenderer::Render(
     else
     {
         glDisable(GL_CULL_FACE);
+    }
+
+    if (scissorTestEnabled == GL_TRUE)
+    {
+        glEnable(GL_SCISSOR_TEST);
+    }
+    else
+    {
+        glDisable(GL_SCISSOR_TEST);
     }
 }
 
