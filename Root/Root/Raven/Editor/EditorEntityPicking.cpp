@@ -133,6 +133,10 @@ void EditorLayer::RenderEntityPickingPass(
         m_EntityPickingMaterial->Bind(Renderer::GetAPI());
         meshRenderer.Mesh->Draw();
     }
+
+    // Picking結果を書き終えた後、同じScene View Framebufferへ選択EntityのOutlineを重ねます。
+    // Outline ShaderはColor Attachment 0だけへ出力するため、ここまで生成したR32I Entity IDは保持されます。
+    RenderSelectionOutlinePass(framebuffer, camera);
 }
 
 } // namespace Raven
