@@ -1,14 +1,69 @@
 #pragma once
 
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
+#include <vector>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/Texture/Texture.h"
 
 namespace Raven
 {
 
-class Texture;
+// ============================================================================
+// FramebufferAttachmentSpecification
+// ============================================================================
+// Framebufferが所有する1つのAttachmentの形式をRenderer共通のTextureFormatで表します。
+// OpenGLのGL_RGBA8 / GL_DEPTH24_STENCIL8等をここへ持ち込まず、Platform実装側で変換します。
+struct FramebufferAttachmentSpecification
+{
+    FramebufferAttachmentSpecification() = default;
+    FramebufferAttachmentSpecification(TextureFormat format)
+        : Format(format)
+    {
+    }
+
+    TextureFormat Format = TextureFormat::None;
+};
+
+// ============================================================================
+// FramebufferAttachmentList
+// ============================================================================
+// Color / Depth Attachmentを将来的に複数指定できるよう、Attachment一覧をまとめます。
+// initializer_list対応により、呼び出し側では
+//   { TextureFormat::RGBA8, TextureFormat::Depth24Stencil8 }
+// のように簡潔に記述できます。
+struct FramebufferAttachmentList
+{
+    FramebufferAttachmentList() = default;
+    FramebufferAttachmentList(std::initializer_list<FramebufferAttachmentSpecification> attachments)
+        : Attachments(attachments)
+    {
+    }
+
+    std::vector<FramebufferAttachmentSpecification> Attachments;
+};
+
+// ============================================================================
+// FramebufferSpecification
+// ============================================================================
+// FramebufferのサイズとAttachment構成を生成時に明示するための共通設定です。
+// Scene Viewだけでなく、Picking / Post Process / HDR / G-Buffer等でも同じFramebuffer基盤を
+// 再利用できるよう、具体的なColor/Depth構成をPlatform実装内へ固定しません。
+struct FramebufferSpecification
+{
+    std::uint32_t Width = 1;
+    std::uint32_t Height = 1;
+
+    // 現在の既定構成は従来互換のRGBA8 Color + Depth24Stencil8です。
+    // Attachmentを明示しない既存コードでも同じ描画結果を維持します。
+    FramebufferAttachmentList Attachments =
+    {
+        TextureFormat::RGBA8,
+        TextureFormat::Depth24Stencil8
+    };
+};
 
 // ============================================================================
 // Framebuffer
@@ -44,8 +99,13 @@ public:
     virtual void Resize(std::uint32_t width, std::uint32_t height) = 0;
 
     // 描画済みColor AttachmentをTextureとして取得します。
+    // 現段階では最初のColor Attachmentを返します。MRT対応時にはindex指定APIを追加します。
     // 参照を返すことで不要なRefのコピーを避けつつ、所有権はFramebuffer側に保持します。
     virtual const Ref<Texture>& GetColorAttachment() const = 0;
+
+    // Framebuffer生成時の設定を取得します。
+    // Resize後はWidth / Heightも現在の実サイズへ同期されます。
+    virtual const FramebufferSpecification& GetSpecification() const = 0;
 
     // ------------------------------------------------------------------------
     // Compatibility bridge
@@ -59,9 +119,13 @@ public:
     virtual std::uint32_t GetWidth() const = 0;
     virtual std::uint32_t GetHeight() const = 0;
 
-    // 現在選択されているRendererAPIに対応したFramebuffer実装を生成します。
-    // 上位層がOpenGLFramebuffer等を直接newしないことでPlatform依存をRenderer層へ閉じ込めます。
+    // 従来互換の生成APIです。
+    // 内部ではRGBA8 Color + Depth24Stencil8のFramebufferSpecificationへ変換します。
     static std::unique_ptr<Framebuffer> Create(std::uint32_t width, std::uint32_t height);
+
+    // 現在選択されているRendererAPIに対応したFramebuffer実装をSpecificationから生成します。
+    // 上位層がOpenGLFramebuffer等を直接newしないことでPlatform依存をRenderer層へ閉じ込めます。
+    static std::unique_ptr<Framebuffer> Create(const FramebufferSpecification& specification);
 
 protected:
     Framebuffer() = default;
