@@ -242,6 +242,11 @@ void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
         ImVec2(textPosition.x, textPosition.y + 36.0f),
         IM_COL32(190, 190, 190, 255),
         "W: Move  E: Rotate  R: Scale  Q: World/Local");
+
+    drawList->AddText(
+        ImVec2(textPosition.x, textPosition.y + 54.0f),
+        IM_COL32(190, 190, 190, 255),
+        "Hold Ctrl: Snap");
 }
 
 } // namespace
@@ -514,8 +519,17 @@ bool RenderTranslateGizmo(
             mouseDelta,
             s_GizmoState.ScreenAxisDirection);
 
-        const float worldDelta =
+        float worldDelta =
             projectedPixels / s_GizmoState.PixelsPerWorldUnit;
+
+        // Ctrlを押している間だけDrag開始位置からの移動量を量子化します。
+        // 絶対Positionを丸めないため、Snapを途中から有効にしてもEntityがGridへ突然飛びません。
+        if (ImGui::GetIO().KeyCtrl)
+        {
+            worldDelta = ApplyEditorGizmoSnap(
+                worldDelta,
+                GetEditorGizmoSnapSettings().TranslateStep);
+        }
 
         transform.Position =
             s_GizmoState.DragStartPosition
