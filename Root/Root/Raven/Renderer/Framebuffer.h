@@ -16,7 +16,7 @@ namespace Raven
 // FramebufferAttachmentSpecification
 // ============================================================================
 // Framebufferが所有する1つのAttachmentの形式をRenderer共通のTextureFormatで表します。
-// OpenGLのGL_RGBA8 / GL_DEPTH24_STENCIL8等をここへ持ち込まず、Platform実装側で変換します。
+// OpenGLのGL_RGBA8 / GL_R32I / GL_DEPTH24_STENCIL8等をここへ持ち込まず、Platform実装側で変換します。
 struct FramebufferAttachmentSpecification
 {
     FramebufferAttachmentSpecification() = default;
@@ -33,7 +33,7 @@ struct FramebufferAttachmentSpecification
 // ============================================================================
 // Color / Depth Attachmentを複数指定できるよう、Attachment一覧をまとめます。
 // initializer_list対応により、呼び出し側では
-//   { TextureFormat::RGBA8, TextureFormat::RGBA8, TextureFormat::Depth24Stencil8 }
+//   { TextureFormat::RGBA8, TextureFormat::R32I, TextureFormat::Depth24Stencil8 }
 // のように簡潔にMRT構成を記述できます。
 struct FramebufferAttachmentList
 {
@@ -107,6 +107,15 @@ public:
     // 現在保持しているColor Attachment数を取得します。
     // MRTを利用する上位Rendererはこの値で有効なindex範囲を確認できます。
     virtual std::size_t GetColorAttachmentCount() const = 0;
+
+    // 指定Color Attachmentの1 pixelを整数値として読み戻します。
+    // 現段階ではEntity Picking用途のR32I Attachmentを対象とします。
+    // x/yはFramebuffer内のpixel座標です。OpenGL等の座標系差異はPlatform実装側で扱います。
+    virtual int ReadPixel(std::size_t attachmentIndex, int x, int y) const = 0;
+
+    // 指定Color Attachment全体を整数値でクリアします。
+    // Entity ID Attachmentを毎frame -1で初期化する用途を主目的とします。
+    virtual void ClearAttachment(std::size_t attachmentIndex, int value) = 0;
 
     // 従来互換APIです。Color Attachment 0を返します。
     // Scene/Game View等の単一RenderTarget利用側は既存コードを変更せず利用できます。
