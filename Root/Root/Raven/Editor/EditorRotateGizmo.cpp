@@ -429,7 +429,16 @@ bool RenderRotateGizmo(
         // MouseのScreen Yは下向きが正なので、World回転として直感的な向きになるよう符号を反転します。
         const float cross = math::Vec2::Cross(s_GizmoState.DragStartDirection, currentDirection);
         const float dot = math::Vec2::Dot(s_GizmoState.DragStartDirection, currentDirection);
-        const float angleDelta = -std::atan2(cross, dot);
+        float angleDelta = -std::atan2(cross, dot);
+
+        // RotateもDrag開始姿勢からのdeltaだけをSnapします。
+        // 15度刻みをradianで保持することで、TransformComponentの既存radian体系を崩しません。
+        if (ImGui::GetIO().KeyCtrl)
+        {
+            angleDelta = ApplyEditorGizmoSnap(
+                angleDelta,
+                GetEditorGizmoSnapSettings().RotateStepRadians);
+        }
 
         ApplyRotationDelta(
             transform.Rotation,
