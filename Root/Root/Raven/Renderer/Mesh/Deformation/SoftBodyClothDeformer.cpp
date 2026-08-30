@@ -228,6 +228,7 @@ bool SoftBodyClothDeformer::InitializeFromMesh(Mesh& mesh)
 
     m_Solver.Clear();
     m_Cloth = ph::SoftBodyClothBuilder::Build(m_Solver, clothSettings);
+    m_DeformedVertices = vertices;
     m_Initialized = true;
 
     // Solver::Clear()はColliderも消すため、Cloth再初期化後に現在のCollider設定を再登録します。
@@ -390,18 +391,18 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         narrowPhaseRatio);
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
-    const std::vector<MeshVertex>& sourceVertices = geometry->GetVertices();
-    if (sourceVertices.size() != m_Cloth.ParticleIndices.size())
+    if (geometry->GetVertices().size() != m_Cloth.ParticleIndices.size()
+        || m_DeformedVertices.size() != m_Cloth.ParticleIndices.size())
     {
         return;
     }
 
     // Color / TexCoord等の属性は既存値を保持し、PositionとNormalだけを更新します。
-    std::vector<MeshVertex> deformedVertices;
+    // m_DeformedVerticesはGeometryの旧Bufferとswapしてframe間でcapacityを往復利用するため、
+    // 通常frameでは頂点vectorのHeap allocationや全属性copyが発生しません。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Cloth.MeshPositions");
-        deformedVertices = sourceVertices;
-        for (size_t vertexIndex = 0u; vertexIndex < deformedVertices.size(); ++vertexIndex)
+        for (size_t vertexIndex = 0u; vertexIndex < m_DeformedVertices.size(); ++vertexIndex)
         {
             const uint32_t particleIndex = m_Cloth.ParticleIndices[vertexIndex];
             if (particleIndex >= particles.size())
@@ -409,20 +410,20 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
                 return;
             }
 
-            deformedVertices[vertexIndex].Position = particles[particleIndex].Position;
+            m_DeformedVertices[vertexIndex].Position = particles[particleIndex].Position;
         }
     }
 
     // Cloth変形後は生成時Normalが無効になるため、Fixed TopologyのIndexから毎フレーム再構築します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Normals");
-        RecalculateClothNormals(deformedVertices, geometry->GetIndices());
+        RecalculateClothNormals(m_DeformedVertices, geometry->GetIndices());
     }
 
     {
         // CPU側頂点配列の差し替えとGeometry revision更新を分離計測します。
         RAVEN_PROFILE_SCOPE("SoftBody.Cloth.SetVertices");
-        if (geometry->SetVertices(std::move(deformedVertices)) == false)
+        if (geometry->SwapVertices(m_DeformedVertices) == false)
         {
             return;
         }

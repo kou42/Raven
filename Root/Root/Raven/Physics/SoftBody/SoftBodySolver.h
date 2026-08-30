@@ -65,6 +65,12 @@ struct SoftBodySolverSettings
     // ④のBefore/After計測時だけ同一シーンでHeapへ切り替えて比較できます。
     SoftBodyTemporaryAllocatorMode TemporaryAllocatorMode =
         SoftBodyTemporaryAllocatorMode::FrameAllocator;
+
+    // Particle-Triangle Spatial Hashの詳細診断を有効にします。
+    // trueではCell登録内訳やTriangle Edge長をProfilerへ記録しますが、SolverIterations回だけ
+    // 追加のsqrt・時刻取得・Counter登録が発生します。通常の性能計測とGameplayではfalseを使用し、
+    // Hash内部を調査するときだけ一時的に有効化してください。
+    bool DetailedParticleTriangleProfilingEnabled = false;
 };
 
 // ============================================================================

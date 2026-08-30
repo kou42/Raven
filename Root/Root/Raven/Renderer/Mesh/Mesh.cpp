@@ -12,7 +12,9 @@ namespace Raven
 {
 namespace
 {
-std::vector<float> BuildVertexUploadData(const std::vector<MeshVertex>& vertices)
+void BuildVertexUploadData(
+    const std::vector<MeshVertex>& vertices,
+    std::vector<float>& outVertexData)
 {
     // ========================================================================
     // MeshVertex -> GPU upload data
@@ -23,20 +25,24 @@ std::vector<float> BuildVertexUploadData(const std::vector<MeshVertex>& vertices
     //
     // glTFのHuman Meshで利用するNormalもここで明示的に転送します。
     // 1頂点 = Position(3) + Color(3) + TexCoord(2) + Normal(3) = 11 floatです。
-    std::vector<float> vertexData;
-    vertexData.reserve(vertices.size() * 11);
+    outVertexData.resize(vertices.size() * 11u);
 
-    for (const MeshVertex& vertex : vertices)
+    for (std::size_t vertexIndex = 0u; vertexIndex < vertices.size(); ++vertexIndex)
     {
-        vertexData.insert(vertexData.end(), {
-            vertex.Position.x, vertex.Position.y, vertex.Position.z,
-            vertex.Color.x, vertex.Color.y, vertex.Color.z,
-            vertex.TexCoord.x, vertex.TexCoord.y,
-            vertex.Normal.x, vertex.Normal.y, vertex.Normal.z
-        });
+        const MeshVertex& vertex = vertices[vertexIndex];
+        const std::size_t outputIndex = vertexIndex * 11u;
+        outVertexData[outputIndex] = vertex.Position.x;
+        outVertexData[outputIndex + 1u] = vertex.Position.y;
+        outVertexData[outputIndex + 2u] = vertex.Position.z;
+        outVertexData[outputIndex + 3u] = vertex.Color.x;
+        outVertexData[outputIndex + 4u] = vertex.Color.y;
+        outVertexData[outputIndex + 5u] = vertex.Color.z;
+        outVertexData[outputIndex + 6u] = vertex.TexCoord.x;
+        outVertexData[outputIndex + 7u] = vertex.TexCoord.y;
+        outVertexData[outputIndex + 8u] = vertex.Normal.x;
+        outVertexData[outputIndex + 9u] = vertex.Normal.y;
+        outVertexData[outputIndex + 10u] = vertex.Normal.z;
     }
-
-    return vertexData;
 }
 } // namespace
 
@@ -65,13 +71,13 @@ void Mesh::BuildRenderResources()
     }
 
     const auto& indices = m_Geometry->GetIndices();
-    const std::vector<float> vertexData = BuildVertexUploadData(m_Geometry->GetVertices());
+    BuildVertexUploadData(m_Geometry->GetVertices(), m_VertexUploadData);
 
     m_VertexArray = VertexArray::Create();
 
     m_VertexBuffer = VertexBuffer::Create(
-        vertexData.data(),
-        static_cast<uint32_t>(vertexData.size() * sizeof(float)));
+        m_VertexUploadData.data(),
+        static_cast<uint32_t>(m_VertexUploadData.size() * sizeof(float)));
 
     // Attributeの順序はBuildVertexUploadData()と必ず一致させます。
     // a_Normalはlocationを自動採番するOpenGLVertexArray側で4番目のattributeになります。
@@ -104,11 +110,11 @@ bool Mesh::UploadVertexData()
         return false;
     }
 
-    const std::vector<float> vertexData = BuildVertexUploadData(m_Geometry->GetVertices());
+    BuildVertexUploadData(m_Geometry->GetVertices(), m_VertexUploadData);
 
     m_VertexBuffer->SetData(
-        vertexData.data(),
-        static_cast<uint32_t>(vertexData.size() * sizeof(float)));
+        m_VertexUploadData.data(),
+        static_cast<uint32_t>(m_VertexUploadData.size() * sizeof(float)));
 
     m_UploadedGeometryRevision = m_Geometry->GetRevision();
     return true;

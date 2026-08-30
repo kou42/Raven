@@ -66,6 +66,12 @@ public:
     void SetCellSize(float cellSize);
     float GetCellSize() const { return m_CellSize; }
 
+    // Cell Size調整やHash内部のボトルネック調査でだけ必要になる詳細診断を切り替えます。
+    // 通常実行ではfalseにし、衝突判定へ不要なEdge長sqrt、詳細Timer、内部Counter送信を省略します。
+    // Broad Phaseの候補集合やCollision結果には影響しません。
+    void SetDetailedProfilingEnabled(bool enabled) { m_DetailedProfilingEnabled = enabled; }
+    bool IsDetailedProfilingEnabled() const { return m_DetailedProfilingEnabled; }
+
     void Clear();
 
     // Triangle AABBを複数セルへ登録します。
@@ -262,6 +268,7 @@ private:
 private:
     float m_CellSize = 0.05f;
     float m_InverseCellSize = 20.0f;
+    bool m_DetailedProfilingEnabled = false;
 
     std::vector<TriangleCellBucket> m_Buckets;
     std::size_t m_BucketMask = 0u;

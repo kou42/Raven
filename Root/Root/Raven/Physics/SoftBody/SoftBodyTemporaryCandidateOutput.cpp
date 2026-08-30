@@ -247,7 +247,7 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
     // 通常vector版と同じProfiler Counterを送ります。
     // Counter付きvectorへ切り替えたことでCandidate funnel自体が変化していないかも確認できます。
     CPUProfiler& profiler = CPUProfiler::Get();
-    if (profiler.IsEnabled())
+    if (m_DetailedProfilingEnabled && profiler.IsEnabled())
     {
         const double candidateCount = static_cast<double>(cellCandidateCount);
         const double aabbRejectCount = static_cast<double>(expandedAABBRejectCount);

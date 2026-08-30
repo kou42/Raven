@@ -229,7 +229,10 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 bounds.ParticleB = triangle.ParticleB;
                 bounds.ParticleC = triangle.ParticleC;
                 bounds.Valid = true;
-                ++validTriangleCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++validTriangleCount;
+                }
             }
         }
 
@@ -338,7 +341,9 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
         // ====================================================================
         // Cell Size比較用のEdge Length統計です。Collision判定そのものには使用しません。
         // 各TriangleでDistance()を3回呼ぶためsqrtも3回発生します。
-        // このScopeが大きければ、計測用Metricsを常時計算から外すことが次の直接的な最適化候補です。
+        // 衝突判定には不要なため、明示的に詳細診断を有効化した場合だけ計算します。
+        // 通常経路では Triangle数 x SolverIterations x 3回のsqrtを完全に省略できます。
+        if (m_DetailedProfilingEnabled)
         {
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.Metrics");
 
@@ -389,28 +394,31 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             cellRange.Maximum = ComputeCellCoord(bounds.Maximum);
             cellRange.Valid = true;
 
-            // Cell SpanはTriangleが何セルへ広がっているかを見る指標です。
-            // ここでは最大値だけを整数演算で集計し、登録ループへ追加コストを持ち込みません。
-            const uint64_t spanX = static_cast<uint64_t>(
-                static_cast<int64_t>(cellRange.Maximum.X)
-                - static_cast<int64_t>(cellRange.Minimum.X) + 1ll);
-            const uint64_t spanY = static_cast<uint64_t>(
-                static_cast<int64_t>(cellRange.Maximum.Y)
-                - static_cast<int64_t>(cellRange.Minimum.Y) + 1ll);
-            const uint64_t spanZ = static_cast<uint64_t>(
-                static_cast<int64_t>(cellRange.Maximum.Z)
-                - static_cast<int64_t>(cellRange.Minimum.Z) + 1ll);
+            if (m_DetailedProfilingEnabled)
+            {
+                // Cell SpanはTriangleが何セルへ広がっているかを見る診断指標です。
+                // 衝突判定には不要なので、通常経路では差分・64-bit変換も行いません。
+                const uint64_t spanX = static_cast<uint64_t>(
+                    static_cast<int64_t>(cellRange.Maximum.X)
+                    - static_cast<int64_t>(cellRange.Minimum.X) + 1ll);
+                const uint64_t spanY = static_cast<uint64_t>(
+                    static_cast<int64_t>(cellRange.Maximum.Y)
+                    - static_cast<int64_t>(cellRange.Minimum.Y) + 1ll);
+                const uint64_t spanZ = static_cast<uint64_t>(
+                    static_cast<int64_t>(cellRange.Maximum.Z)
+                    - static_cast<int64_t>(cellRange.Minimum.Z) + 1ll);
 
-            m_BuildMaxCellSpanX = std::max(m_BuildMaxCellSpanX, spanX);
-            m_BuildMaxCellSpanY = std::max(m_BuildMaxCellSpanY, spanY);
-            m_BuildMaxCellSpanZ = std::max(m_BuildMaxCellSpanZ, spanZ);
+                m_BuildMaxCellSpanX = std::max(m_BuildMaxCellSpanX, spanX);
+                m_BuildMaxCellSpanY = std::max(m_BuildMaxCellSpanY, spanY);
+                m_BuildMaxCellSpanZ = std::max(m_BuildMaxCellSpanZ, spanZ);
 
-            // 実際の登録回数はspanX * spanY * spanZに比例します。
-            // AverageCellsPerTriangleだけでは最大値に引っ張られた局所的な巨大AABBを判別しづらいため、
-            // 平均と最大のSpan Volumeを別Counterとして記録します。
-            const uint64_t spanVolume = spanX * spanY * spanZ;
-            cellSpanVolumeSum += static_cast<double>(spanVolume);
-            maximumCellSpanVolume = std::max(maximumCellSpanVolume, spanVolume);
+                // 実際の登録回数はspanX * spanY * spanZに比例します。
+                // AverageCellsPerTriangleだけでは最大値に引っ張られた局所的な巨大AABBを判別しづらいため、
+                // 平均と最大のSpan Volumeを別Counterとして記録します。
+                const uint64_t spanVolume = spanX * spanY * spanZ;
+                cellSpanVolumeSum += static_cast<double>(spanVolume);
+                maximumCellSpanVolume = std::max(maximumCellSpanVolume, spanVolume);
+            }
         }
     }
 
@@ -424,7 +432,8 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration");
         using TimingClock = std::chrono::steady_clock;
-        const bool detailedTimingEnabled = CPUProfiler::Get().IsEnabled();
+        const bool detailedTimingEnabled =
+            m_DetailedProfilingEnabled && CPUProfiler::Get().IsEnabled();
         const TimingClock::time_point registrationStart = detailedTimingEnabled
             ? TimingClock::now()
             : TimingClock::time_point{};
@@ -477,12 +486,15 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                                     pushBackEnd - pushBackStart).count();
                             ++m_BuildTimingSampleCount;
                         }
-                        if (triangleIndicesGrew)
+                        if (m_DetailedProfilingEnabled && triangleIndicesGrew)
                         {
                             ++m_BuildVectorGrowCount;
                         }
 
-                        ++m_BuildRegistrationCount;
+                        if (m_DetailedProfilingEnabled)
+                        {
+                            ++m_BuildRegistrationCount;
+                        }
                     }
                 }
             }
@@ -497,12 +509,15 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
         }
     }
 
-    SubmitCellRegistrationCounters(validTriangleCount);
+    if (m_DetailedProfilingEnabled)
+    {
+        SubmitCellRegistrationCounters(validTriangleCount);
+    }
 
     // CellRegistration削減へ進む前に、CellSizeとTriangle実寸・Expansionの比率を確認します。
     // ここもBuild終了後にまとめてProfilerへ送るため、Hot loopにはProfiler APIを追加しません。
     CPUProfiler& profiler = CPUProfiler::Get();
-    if (profiler.IsEnabled())
+    if (m_DetailedProfilingEnabled && profiler.IsEnabled())
     {
         const double averageTriangleEdgeLength = triangleEdgeSampleCount > 0u
             ? triangleEdgeLengthSum / static_cast<double>(triangleEdgeSampleCount)
@@ -704,7 +719,7 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
     //   Cell Candidate -> Expanded AABB -> Topology -> Plane Distance -> Edge Half-Space -> Closest Point
     // のどこで候補を削減できているか確認できます。
     CPUProfiler& profiler = CPUProfiler::Get();
-    if (profiler.IsEnabled())
+    if (m_DetailedProfilingEnabled && profiler.IsEnabled())
     {
         const double candidateCount = static_cast<double>(cellCandidateCount);
         const double aabbRejectCount = static_cast<double>(expandedAABBRejectCount);
@@ -796,7 +811,10 @@ void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
 {
     // Counterは「通常iterationでTable拡張が発生していないか」を確認するためのものです。
     // Grow自体のアルゴリズムは従来と同じで、現GenerationのActive Bucketだけを移します。
-    ++m_BuildTableGrowCount;
+    if (m_DetailedProfilingEnabled)
+    {
+        ++m_BuildTableGrowCount;
+    }
 
     const std::size_t oldBucketCount = m_Buckets.size();
     const std::size_t newBucketCount = std::max(
@@ -872,7 +890,10 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
 
     while (true)
     {
-        ++probeCount;
+        if (m_DetailedProfilingEnabled)
+        {
+            ++probeCount;
+        }
         TriangleCellBucket& bucket = m_Buckets[bucketIndex];
 
         if (bucket.Generation != m_CurrentGeneration)
@@ -933,8 +954,11 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
                         TimingClock::now() - activationStart).count();
             }
 
-            m_BuildProbeCount += probeCount;
-            m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            if (m_DetailedProfilingEnabled)
+            {
+                m_BuildProbeCount += probeCount;
+                m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            }
             return bucket;
         }
 
@@ -945,8 +969,11 @@ SoftBodyTriangleSpatialHashGrid::GetOrActivateBucket(
                 timingSample->ProbeMilliseconds += std::chrono::duration<double, std::milli>(
                     TimingClock::now() - probeStart).count();
             }
-            m_BuildProbeCount += probeCount;
-            m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            if (m_DetailedProfilingEnabled)
+            {
+                m_BuildProbeCount += probeCount;
+                m_BuildMaxProbeCount = std::max(m_BuildMaxProbeCount, probeCount);
+            }
             return bucket;
         }
 

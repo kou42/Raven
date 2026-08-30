@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "Raven/Physics/SoftBody/SoftBodyCloth.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformer.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven
 {
@@ -103,6 +105,10 @@ private:
 
     ph::SoftBodySolver m_Solver;
     ph::SoftBodyCloth m_Cloth;
+
+    // Geometry側の頂点Bufferと毎frame swapして再利用する作業領域です。
+    // Position / Normalだけを書き換え、Color / TexCoordは前frame値をそのまま維持します。
+    std::vector<MeshVertex> m_DeformedVertices;
 };
 
 } // namespace Raven

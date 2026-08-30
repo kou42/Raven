@@ -235,6 +235,42 @@ void RunSoftBodySpatialHashSelfTests()
         assert(ContainsParticleTrianglePair(pairs, 3u, 0u) == false);
         assert(ContainsParticleTrianglePair(pairs, 4u, 0u));
     }
+
+    // ------------------------------------------------------------------------
+    // 6. Detailed Profilingは候補集合へ影響しない
+    // ------------------------------------------------------------------------
+    // 通常経路では診断専用Metrics / Timer / Counterを停止しますが、AABB・Plane・Edge判定は
+    // 常に実行されます。診断ON/OFFで候補の内容と順序が完全一致することを固定します。
+    {
+        std::vector<SoftBodyParticle> particles(5u);
+        particles[0].Position = { 0.0f, 0.0f, 0.0f };
+        particles[1].Position = { 0.2f, 0.0f, 0.0f };
+        particles[2].Position = { 0.0f, 0.2f, 0.0f };
+        particles[3].Position = { 0.05f, 0.05f, 0.02f };
+        particles[4].Position = { 0.8f, 0.8f, 0.8f };
+
+        std::vector<SoftBodyTriangle> triangles;
+        triangles.push_back({ 0u, 1u, 2u });
+
+        SoftBodyTriangleSpatialHashGrid grid(0.25f);
+        std::vector<SoftBodyParticleTrianglePair> normalPairs;
+        std::vector<SoftBodyParticleTrianglePair> detailedPairs;
+
+        grid.SetDetailedProfilingEnabled(false);
+        grid.BuildTriangles(particles, triangles, 0.05f);
+        grid.GenerateParticleTriangleCandidates(particles, normalPairs);
+
+        grid.SetDetailedProfilingEnabled(true);
+        grid.BuildTriangles(particles, triangles, 0.05f);
+        grid.GenerateParticleTriangleCandidates(particles, detailedPairs);
+
+        assert(normalPairs.size() == detailedPairs.size());
+        for (std::size_t pairIndex = 0u; pairIndex < normalPairs.size(); ++pairIndex)
+        {
+            assert(normalPairs[pairIndex].ParticleIndex == detailedPairs[pairIndex].ParticleIndex);
+            assert(normalPairs[pairIndex].TriangleIndex == detailedPairs[pairIndex].TriangleIndex);
+        }
+    }
 }
 
 } // namespace Raven::ph::tests

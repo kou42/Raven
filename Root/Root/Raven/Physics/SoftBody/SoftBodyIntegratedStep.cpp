@@ -642,6 +642,8 @@ void SoftBodySolver::StepWithSelfCollisions(
     {
         m_ParticleTriangleSpatialHash.SetCellSize(triangleCellSize);
     }
+    m_ParticleTriangleSpatialHash.SetDetailedProfilingEnabled(
+        m_Settings.DetailedParticleTriangleProfilingEnabled);
 
     {
         // 自己衝突用Topologyと除外ペアの構築コストをSolver反復とは分離します。

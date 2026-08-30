@@ -1,11 +1,13 @@
 #pragma once
 
+#include <vector>
+
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven
 {
 
-class MeshGeometry;
 class VertexArray;
 class VertexBuffer;
 
@@ -67,6 +69,10 @@ private:
 
     uint32_t m_IndexCount = 0;
     uint64_t m_UploadedGeometryRevision = 0;
+
+    // Dynamic Geometryの毎frame uploadでcapacityを再利用する変換先です。
+    // MeshVertexの論理LayoutとGPUの11-float Layoutを分離したままHeap allocationを避けます。
+    std::vector<float> m_VertexUploadData;
 };
 
 } // namespace Raven

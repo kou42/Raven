@@ -108,6 +108,28 @@ public:
         return true;
     }
 
+    // Dynamic Fixed Topologyを毎フレーム変形する処理向けのゼロallocation更新です。
+    // 呼び出し側の作業BufferとGeometryのBufferを交換するため、成功後のverticesには更新前の
+    // Geometry頂点が入ります。次frameで同じBufferを再利用でき、SetVertices(move)で毎回失われる
+    // vector capacityを往復利用できます。
+    bool SwapVertices(std::vector<MeshVertex>& vertices)
+    {
+        if (m_GeometryUsage != GeometryUsage::Dynamic)
+        {
+            return false;
+        }
+
+        if (m_TopologyUsage == TopologyUsage::Fixed
+            && vertices.size() != m_Vertices.size())
+        {
+            return false;
+        }
+
+        m_Vertices.swap(vertices);
+        ++m_Revision;
+        return true;
+    }
+
 private:
     std::vector<MeshVertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
