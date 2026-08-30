@@ -91,9 +91,9 @@ public:
         }
 
         // Hit TestはArrange済みのPosition / Sizeを参照します。
-        // 入力がEndFrame()より先に届いても前frameのLayoutを誤って使わないよう、Dirty時は
-        // ここでLayoutを解決します。BuildDrawList()は同時にDrawCommandも生成するため一時Listへ捨て、
-        // 描画用m_DrawListのframe内容は変更しません。
+        // 入力がEndFrame()より先に届いても古いLayoutを使わないよう、Dirty時はここでLayoutを解決します。
+        // 現在のUIElementはLayout専用APIをまだ公開していないため、BuildDrawList()を一時Listに対して呼びます。
+        // Layout APIをMeasure / Arrangeとして公開した段階で、この一時DrawListは不要になります。
         if (m_RootElement->IsMeasureDirty() == true || m_RootElement->IsArrangeDirty() == true)
         {
             UIDrawList layoutResolveDrawList;
