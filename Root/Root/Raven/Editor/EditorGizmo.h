@@ -37,12 +37,33 @@ enum class EditorGizmoSpace
     Local
 };
 
+// ============================================================================
+// EditorGizmoSnapSettings
+// ============================================================================
+// Transform Snapの刻み幅をGizmo機能側で一元管理します。
+// Snapは絶対座標を丸めるのではなく、Drag開始値からの変化量(delta)へ適用します。
+// これによりSnapを途中でON/OFFしてもEntityがWorld Gridへ突然飛ばず、掴んだ位置を基準に
+// 一定刻みで操作できます。
+struct EditorGizmoSnapSettings
+{
+    float TranslateStep = 0.5f;
+    float RotateStepRadians = 0.2617993878f; // 15 degrees
+    float ScaleStep = 0.1f;
+};
+
 EditorGizmoOperation GetEditorGizmoOperation();
 void SetEditorGizmoOperation(EditorGizmoOperation operation);
 
 EditorGizmoSpace GetEditorGizmoSpace();
 void SetEditorGizmoSpace(EditorGizmoSpace space);
 void ToggleEditorGizmoSpace();
+
+const EditorGizmoSnapSettings& GetEditorGizmoSnapSettings();
+void SetEditorGizmoSnapSettings(const EditorGizmoSnapSettings& settings);
+
+// Ctrlを押している間だけSnapを有効にします。
+// Dear ImGuiの入力判定自体は各Gizmo側で行い、この関数は量子化処理だけを共通化します。
+float ApplyEditorGizmoSnap(float delta, float step);
 
 // World / Local設定を考慮したGizmo軸方向を取得します。
 // axisIndexは0=X / 1=Y / 2=Zです。
