@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorScaleGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
@@ -375,6 +376,19 @@ bool RenderScaleGizmo(
 
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left) == false)
         {
+            // ScaleもMouse Release時に1回だけ履歴へ記録します。
+            TransformComponent beforeTransform = transform;
+            beforeTransform.Scale = s_GizmoState.DragStartScale;
+
+            const Entity editedEntity(
+                EntityHandle::FromValue(s_GizmoState.EntityValue),
+                s_GizmoState.EntityScene);
+
+            RecordEditorTransformCommand(
+                editedEntity,
+                beforeTransform,
+                transform);
+
             ResetGizmoState();
             return true;
         }
