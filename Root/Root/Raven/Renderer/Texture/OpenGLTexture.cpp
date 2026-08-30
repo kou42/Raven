@@ -26,6 +26,9 @@ GLenum ToOpenGLInternalFormat(TextureFormat format)
     case TextureFormat::RGBA8:
         return GL_RGBA8;
 
+    case TextureFormat::R32I:
+        return GL_R32I;
+
     case TextureFormat::Depth24Stencil8:
         return GL_DEPTH24_STENCIL8;
 
@@ -48,6 +51,11 @@ GLenum ToOpenGLDataFormat(TextureFormat format)
     case TextureFormat::RGBA8:
         return GL_RGBA;
 
+    case TextureFormat::R32I:
+        // 整数TextureはGL_REDではなくGL_RED_INTEGERを使用します。
+        // これをGL_REDにすると整数RenderTargetとして正しく読み書きできません。
+        return GL_RED_INTEGER;
+
     case TextureFormat::Depth24Stencil8:
         return GL_DEPTH_STENCIL;
 
@@ -61,6 +69,9 @@ GLenum ToOpenGLDataType(TextureFormat format)
 {
     switch (format)
     {
+    case TextureFormat::R32I:
+        return GL_INT;
+
     case TextureFormat::Depth24Stencil8:
         return GL_UNSIGNED_INT_24_8;
 
@@ -207,8 +218,10 @@ void OpenGLTexture::Invalidate()
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    // Depth/Stencil Textureでは色補間の意味がないためNearestを使用します。
-    if (m_Specification.Usage == TextureUsage::DepthStencil)
+    // Depth/Stencil Textureと整数ID Textureでは線形補間の意味がありません。
+    // Entity IDが隣接pixelと混ざるとPicking結果が壊れるためR32IもNearest固定にします。
+    if (m_Specification.Usage == TextureUsage::DepthStencil ||
+        m_Specification.Format == TextureFormat::R32I)
     {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -351,6 +364,9 @@ std::uint32_t OpenGLTexture::GetBytesPerPixel(TextureFormat format)
         return 3;
 
     case TextureFormat::RGBA8:
+        return 4;
+
+    case TextureFormat::R32I:
         return 4;
 
     case TextureFormat::Depth24Stencil8:
