@@ -60,46 +60,16 @@ struct UIDrawCommand
 class UIDrawList
 {
 public:
-    void Clear()
-    {
-        m_Commands.clear();
-    }
+    void Clear();
 
     void AddRect(
         const math::Vec2& min,
         const math::Vec2& max,
-        const math::Vec4& color)
-    {
-        // 面積0以下の矩形は描画対象にしません。
-        // Layout計算中の非表示Elementや、Window最小化時の0 sizeがそのままRendererへ
-        // 流れ込むことを避けます。
-        if (max.x <= min.x || max.y <= min.y)
-        {
-            return;
-        }
+        const math::Vec4& color);
 
-        UIDrawCommand command;
-        command.Type = UIDrawCommandType::SolidRect;
-        command.Rect.Min = min;
-        command.Rect.Max = max;
-        command.Color = color;
-        m_Commands.push_back(command);
-    }
-
-    const std::vector<UIDrawCommand>& GetCommands() const
-    {
-        return m_Commands;
-    }
-
-    std::size_t GetCommandCount() const
-    {
-        return m_Commands.size();
-    }
-
-    bool IsEmpty() const
-    {
-        return m_Commands.empty();
-    }
+    const std::vector<UIDrawCommand>& GetCommands() const;
+    std::size_t GetCommandCount() const;
+    bool IsEmpty() const;
 
 private:
     std::vector<UIDrawCommand> m_Commands;
