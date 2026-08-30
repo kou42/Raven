@@ -20,6 +20,7 @@ class Texture;
 // Color Attachment:
 //   FramebufferSpecificationで指定されたColor FormatごとにRenderTarget用途のTextureを生成し、
 //   GL_COLOR_ATTACHMENT0 + indexへ接続します。複数Color AttachmentはMRTとして同時出力できます。
+//   R32I AttachmentはEntity Picking等の整数ID BufferとしてReadPixel()/ClearAttachment()から扱えます。
 //
 // Depth/Stencil Attachment:
 //   Depth24Stencil8が指定された場合はDepthStencil用途のTexture抽象クラスとして保持します。
@@ -44,6 +45,10 @@ public:
 
     const Ref<Texture>& GetColorAttachment(std::size_t index) const override;
     std::size_t GetColorAttachmentCount() const override { return m_ColorAttachments.size(); }
+
+    int ReadPixel(std::size_t attachmentIndex, int x, int y) const override;
+    void ClearAttachment(std::size_t attachmentIndex, int value) override;
+
     const FramebufferSpecification& GetSpecification() const override { return m_Specification; }
     std::uint32_t GetWidth() const override { return m_Specification.Width; }
     std::uint32_t GetHeight() const override { return m_Specification.Height; }
