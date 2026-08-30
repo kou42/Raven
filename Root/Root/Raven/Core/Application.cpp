@@ -344,7 +344,8 @@ void Application::OnEvent(Event& event)
     // Raven UI Mouse Event routing
     // ========================================================================
     // Platform Mouse EventをUIContextのHit Test / Bubble Routingへ変換します。
-    // Mouse Button Event自体は座標を保持しないため、Down / Up時点のCursor位置をInputから取得します。
+    // Button Eventも入力発生時の座標を自身に保持するため、ApplicationはInput pollingを行わず
+    // Event snapshotだけからUI routingできます。これにより入力時刻と座標の対応を維持します。
     // UIEvent側でHandledになった場合だけCore EventもHandledとして、背後LayerへのClick-throughを防ぎます。
     if (event.Handled == false && event.GetEventType() == EventType::MouseMoved)
     {
@@ -354,7 +355,6 @@ void Application::OnEvent(Event& event)
     else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonPressed)
     {
         MouseButtonPressedEvent& mouseEvent = static_cast<MouseButtonPressedEvent&>(event);
-        const auto mousePosition = Input::GetMousePosition();
 
         UIMouseButton uiButton = UIMouseButton::None;
         if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
@@ -373,13 +373,12 @@ void Application::OnEvent(Event& event)
         if (uiButton != UIMouseButton::None)
         {
             event.Handled = m_UIContext.RouteMouseDown(
-                math::Vec2(mousePosition.first, mousePosition.second), uiButton);
+                math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
         }
     }
     else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonReleased)
     {
         MouseButtonReleasedEvent& mouseEvent = static_cast<MouseButtonReleasedEvent&>(event);
-        const auto mousePosition = Input::GetMousePosition();
 
         UIMouseButton uiButton = UIMouseButton::None;
         if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
@@ -398,7 +397,7 @@ void Application::OnEvent(Event& event)
         if (uiButton != UIMouseButton::None)
         {
             event.Handled = m_UIContext.RouteMouseUp(
-                math::Vec2(mousePosition.first, mousePosition.second), uiButton);
+                math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
         }
     }
 
