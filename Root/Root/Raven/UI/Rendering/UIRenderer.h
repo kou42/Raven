@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
 
 namespace Raven
@@ -12,14 +13,9 @@ class UIDrawList;
 // ============================================================================
 // Raven UIのCPU側描画コマンドを、実際のGraphics APIへ変換するための境界です。
 //
-// 重要:
 // UIContext / Widget側はこの抽象インターフェースだけを参照し、OpenGL等の具体APIを
-// 知りません。これによりEditor UIとGame UIで同じUI Tree / DrawListを共有しつつ、
-// Renderer backendだけを将来OpenGL / DirectX / Vulkanへ差し替えられます。
-//
-// 最初の段階ではインターフェースだけを確立します。
-// 次段階でOpenGLUIRendererを追加し、動的Vertex/Index Buffer・Orthographic Projection・
-// Scissor Clipをここより下の層へ実装します。
+// 知りません。Editor UIとGame UIで同じUI Tree / DrawListを共有しつつ、
+// Renderer backendだけを差し替えられる構造にします。
 class UIRenderer
 {
 public:
@@ -28,6 +24,10 @@ public:
     virtual void Render(
         const UIDrawList& drawList,
         const math::Vec2& viewportSize) = 0;
+
+    // 現在有効なRendererAPIに対応するUIRenderer実装を生成します。
+    // Application側へOpenGL具体型を漏らさないため、生成責務をこのFactoryへ集約します。
+    static Scope<UIRenderer> Create();
 };
 
 } // namespace Raven
