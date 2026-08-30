@@ -102,7 +102,7 @@ public:
     template<class T>
     const T* TryGetComponent(EntityIndex index) const;
 
-     template<class... Components>
+    template<class... Components>
     ComponentView<Components...> View();
 
 protected:
