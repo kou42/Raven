@@ -10,12 +10,13 @@ class EditorCamera;
 // ============================================================================
 // RenderRotateGizmo
 // ============================================================================
-// Scene View上へWorld X / Y / Z軸を法線とする回転Ringを描画し、Mouse Dragを
+// Scene View上へX / Y / Z軸を法線とする回転Ringを描画し、Mouse Dragを
 // 選択EntityのTransformComponent::Rotationへ反映します。
 //
-// TransformComponent::Rotationは現在Euler角(radian)を保持しているため、World軸Ringを
-// X/Y/Zの各Euler成分へ対応させます。将来Local Gizmoへ拡張する際は、現在Rotationから
-// Local基底を作り、Ring自体をEntity姿勢へ追従させる構造へ拡張できます。
+// Worldでは固定World軸を法線とするRing、LocalではTransformComponent::Rotationから
+// Quaternionで回転したEntity自身のLocal軸へRingを追従させます。
+// 実際の回転適用もQuaternion合成を使い、Worldは delta * current、Localは current * delta と
+// 乗算順序を分けた後、Scene互換形式であるEuler XYZ(radian)へ戻します。
 //
 // 戻り値:
 //   true  : Gizmoが現在のMouse入力を消費している
