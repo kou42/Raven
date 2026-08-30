@@ -1,6 +1,7 @@
 #include "Raven/Editor/Panels/InspectorPanel.h"
 
 #include "Raven/Editor/Command/RenameEntityCommand.h"
+#include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -26,6 +27,16 @@ struct RenameEditState
 };
 
 RenameEditState s_RenameEditState{};
+
+struct TransformEditState
+{
+    EntityHandle Handle{};
+    Scene* TargetScene = nullptr;
+    TransformComponent Before{};
+    bool IsActive = false;
+};
+
+TransformEditState s_TransformEditState{};
 
 void DrawVec3Control(const char* label, math::Vec3& value, float speed = 0.1f)
 {
@@ -153,6 +164,48 @@ void DrawTagComponent(Entity entity)
     }
 }
 
+void DrawTransformVec3Control(
+    const char* label,
+    Entity entity,
+    TransformComponent& transform,
+    math::Vec3& value)
+{
+    // Drag開始frameの値をCommandのBeforeとして保存する必要があるため、Widgetが値を更新する前に
+    // Transform全体をSnapshotします。Positionだけを編集した場合でもTransform全体を保存することで、
+    // GizmoとInspectorが同じTransformCommandを共有でき、Undo時の適用経路も一つに保てます。
+    const TransformComponent transformBeforeThisFrame = transform;
+    DrawVec3Control(label, value);
+
+    if (ImGui::IsItemActivated())
+    {
+        s_TransformEditState.Handle = entity.GetHandle();
+        s_TransformEditState.TargetScene = entity.GetScene();
+        s_TransformEditState.Before = transformBeforeThisFrame;
+        s_TransformEditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_TransformEditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_TransformEditState.Handle == entity.GetHandle()
+            && s_TransformEditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            // Drag中の値はInspectorからComponentへ既に反映されています。
+            // Mouse Release時にはExecuteを重ねず、開始値と終了値を実行済みCommandとして登録します。
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<TransformCommand>(
+                    entity,
+                    s_TransformEditState.Before,
+                    transform));
+        }
+
+        s_TransformEditState = TransformEditState{};
+    }
+}
+
 void DrawTransformComponent(Entity entity)
 {
     if (entity.HasComponent<TransformComponent>() == false)
@@ -167,9 +220,9 @@ void DrawTransformComponent(Entity entity)
 
     TransformComponent& transform = entity.GetComponent<TransformComponent>();
 
-    DrawVec3Control("Position", transform.Position);
-    DrawVec3Control("Rotation", transform.Rotation);
-    DrawVec3Control("Scale", transform.Scale);
+    DrawTransformVec3Control("Position", entity, transform, transform.Position);
+    DrawTransformVec3Control("Rotation", entity, transform, transform.Rotation);
+    DrawTransformVec3Control("Scale", entity, transform, transform.Scale);
 }
 
 void DrawCameraComponent(Entity entity)

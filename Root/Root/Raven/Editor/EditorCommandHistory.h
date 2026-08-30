@@ -14,9 +14,9 @@ class Scene;
 // Editor操作のUndo / Redo履歴を管理する共通入口です。
 //
 // IEditorCommandをunique_ptrで保持するため、Transform以外のCommandも同じ履歴へ追加できます。
-// 現段階ではTransform Gizmoの1回のDragを1 Commandとして記録します。
+// Transform GizmoとInspectorの1回のDragを、それぞれ1 Commandとして記録します。
 // Drag中の毎frameを履歴へ積むと、Ctrl+Zを何十回も押さないと1操作を戻せなくなるため、
-// Gizmo側はMouse Buttonを離した時点で「開始Transform / 終了Transform」の1組だけを登録します。
+// Gizmo / Inspector側はMouse Buttonを離した時点で「開始Transform / 終了Transform」の1組だけを登録します。
 //
 // EntityはIndexだけでなくGenerationとSceneも保持して記録します。
 // Undo時に対象Entityが破棄され、同じIndexが別Entityへ再利用されていた場合でも、
