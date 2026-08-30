@@ -5,6 +5,7 @@
 #include <glad/glad.h>
 
 #include <cassert>
+#include <vector>
 
 namespace Raven
 {
@@ -107,6 +108,23 @@ void OpenGLFramebuffer::Resize(std::uint32_t width, std::uint32_t height)
     Invalidate();
 }
 
+const Ref<Texture>& OpenGLFramebuffer::GetColorAttachment(std::size_t index) const
+{
+    // index範囲外を黙ってColor 0へfallbackすると、G-Buffer等でAttachmentの取り違えを
+    // 発見しにくくなるためassertで呼び出し側の設定ミスを検出します。
+    assert(index < m_ColorAttachments.size());
+
+    if (index >= m_ColorAttachments.size())
+    {
+        // Release buildでassertが無効でも未定義アクセスを避けます。
+        // 空Refをstaticで保持し、参照戻り値APIの安全なfallbackとして利用します。
+        static const Ref<Texture> nullTexture = nullptr;
+        return nullTexture;
+    }
+
+    return m_ColorAttachments[index];
+}
+
 void OpenGLFramebuffer::Invalidate()
 {
     // Resize時は古いAttachmentとFBOを先に破棄し、新しいSpecificationで一式を再生成します。
@@ -118,15 +136,20 @@ void OpenGLFramebuffer::Invalidate()
     glGenFramebuffers(1, &m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
 
-    bool hasColorAttachment = false;
     bool hasDepthStencilAttachment = false;
+
+    // OpenGL実装が実際に対応可能なColor Attachment数をGPUから取得します。
+    // 固定値で制限するとGPU能力より狭くなる一方、無制限にGL_COLOR_ATTACHMENTnを生成すると
+    // 不完全Framebufferになるため、Specificationと実機上限の両方を検証します。
+    GLint maxColorAttachments = 0;
+    glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &maxColorAttachments);
 
     // ========================================================================
     // Attachment creation
     // ========================================================================
     // FramebufferSpecificationに列挙されたFormatを順番に解釈します。
-    // 現段階ではColor 1枚 + DepthStencil 1枚を扱い、将来MRTを導入する際にはColor Attachmentを
-    // vector化してGL_COLOR_ATTACHMENT0 + indexへ接続する方針です。
+    // Color Formatはm_ColorAttachmentsへ追加した順にGL_COLOR_ATTACHMENT0 + indexへ接続し、
+    // DepthStencil FormatはColor indexへ含めません。
     for (const FramebufferAttachmentSpecification& attachmentSpecification
         : m_Specification.Attachments.Attachments)
     {
@@ -179,14 +202,12 @@ void OpenGLFramebuffer::Invalidate()
         // ====================================================================
         // Color Attachment
         // ====================================================================
-        // Sceneの描画結果等をTextureとして保持します。
+        // Sceneの描画結果、Picking ID、G-Buffer等をそれぞれ独立したTextureとして保持します。
         // RenderbufferではなくTextureにしておくことで、描画完了後にコピーせずPost Processや
         // Editor Viewportなどからsampling可能なRenderTargetとして再利用できます。
-        if (hasColorAttachment)
+        if (static_cast<GLint>(m_ColorAttachments.size()) >= maxColorAttachments)
         {
-            // 現在のFramebuffer公開APIは単一Color Attachmentを前提としているため、
-            // MRT対応前に複数Colorを黙って無視せず設定ミスとして検出します。
-            assert(false && "Multiple color attachments are not supported yet.");
+            assert(false && "Framebuffer color attachment count exceeds GL_MAX_COLOR_ATTACHMENTS.");
             continue;
         }
 
@@ -197,42 +218,70 @@ void OpenGLFramebuffer::Invalidate()
         colorSpecification.Usage = TextureUsage::RenderTarget;
         colorSpecification.GenerateMips = false;
 
-        m_ColorAttachment = Texture::Create(colorSpecification);
+        Ref<Texture> colorAttachment = Texture::Create(colorSpecification);
 
-        if (m_ColorAttachment == nullptr)
+        if (colorAttachment == nullptr)
         {
             assert(false && "Failed to create framebuffer color attachment texture.");
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             return;
         }
 
+        const std::size_t colorAttachmentIndex = m_ColorAttachments.size();
+        const GLenum attachmentPoint =
+            GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(colorAttachmentIndex);
+
         // OpenGLFramebufferはOpenGL backend内部なので、FramebufferへTextureをAttachmentするために
         // 現在はTextureのRenderer IDを利用します。上位層にはこのIDを公開しません。
         // TextureのNative Handle抽象化を追加する段階で、この境界もさらに整理できます。
         glFramebufferTexture2D(
             GL_FRAMEBUFFER,
-            GL_COLOR_ATTACHMENT0,
+            attachmentPoint,
             GL_TEXTURE_2D,
-            m_ColorAttachment->GetID(),
+            colorAttachment->GetID(),
             0);
 
-        hasColorAttachment = true;
+        m_ColorAttachments.push_back(colorAttachment);
     }
 
     // Attachmentを1つも持たないFramebufferは描画先として成立しないため設定ミスとして扱います。
-    if (hasColorAttachment == false && hasDepthStencilAttachment == false)
+    if (m_ColorAttachments.empty() && hasDepthStencilAttachment == false)
     {
         assert(false && "FramebufferSpecification must contain at least one valid attachment.");
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         return;
     }
 
-    // Depth-only FramebufferはShadow Map等で利用できます。
-    // Color Attachmentが存在しない場合、OpenGLへColor出力先がないことを明示します。
-    if (hasColorAttachment == false)
+    if (m_ColorAttachments.empty())
     {
+        // Depth-only FramebufferはShadow Map等で利用できます。
+        // Color Attachmentが存在しない場合、OpenGLへColor出力先がないことを明示します。
         glDrawBuffer(GL_NONE);
         glReadBuffer(GL_NONE);
+    }
+    else if (m_ColorAttachments.size() == 1)
+    {
+        // 単一Color Attachmentでも出力先を明示し、MRT経路とStateの意味を統一します。
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    }
+    else
+    {
+        // ====================================================================
+        // Multiple Render Targets
+        // ====================================================================
+        // Fragment Shaderのlayout(location = N)出力をColor Attachment Nへ対応させます。
+        // GL_COLOR_ATTACHMENT0から連続して割り当てているため、draw buffer一覧も同じ順序で生成できます。
+        std::vector<GLenum> drawBuffers;
+        drawBuffers.reserve(m_ColorAttachments.size());
+
+        for (std::size_t index = 0; index < m_ColorAttachments.size(); ++index)
+        {
+            drawBuffers.push_back(GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(index));
+        }
+
+        glDrawBuffers(
+            static_cast<GLsizei>(drawBuffers.size()),
+            drawBuffers.data());
     }
 
     // Color + Depth/Stencil Attachmentの組み合わせが描画可能か必ず検証します。
@@ -259,10 +308,9 @@ void OpenGLFramebuffer::Release()
         m_DepthStencilAttachment.reset();
     }
 
-    if (m_ColorAttachment != nullptr)
-    {
-        m_ColorAttachment.reset();
-    }
+    // vectorをclearすると各Ref<Texture>の参照が解放され、他に所有者がいないAttachmentは
+    // OpenGLTextureのdestructorを通してGPU Textureも解放されます。
+    m_ColorAttachments.clear();
 
     // Framebuffer Object自体だけはOpenGLFramebufferの責務なので、ここで明示的に解放します。
     if (m_RendererID != 0)
