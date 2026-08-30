@@ -26,6 +26,10 @@ constexpr float TransformCompareEpsilon = 0.000001f;
 std::vector<TransformCommand> s_UndoStack;
 std::vector<TransformCommand> s_RedoStack;
 
+// 現在Editorが操作対象としているSceneです。
+// Command内のScene*は識別用に保持するだけにし、実際のdereferenceはこのActive Sceneだけへ限定します。
+Scene* s_ActiveScene = nullptr;
+
 bool NearlyEqual(float a, float b)
 {
     return std::fabs(a - b) <= TransformCompareEpsilon;
@@ -50,16 +54,19 @@ bool TryApplyTransform(
     const TransformCommand& command,
     const TransformComponent& transform)
 {
-    if (command.TargetScene == nullptr)
+    // TargetSceneは過去Commandの識別用です。
+    // Scene切替後の古いPointerをdereferenceしないよう、現在Active Sceneと一致する場合だけ処理します。
+    if (s_ActiveScene == nullptr
+        || command.TargetScene != s_ActiveScene)
     {
         return false;
     }
 
-    Entity entity(command.Handle, command.TargetScene);
+    Entity entity(command.Handle, s_ActiveScene);
 
     // HandleにはGenerationも含まれるため、同じIndexが再利用されても古いCommandは一致しません。
     // Undo/Redoは過去のEditor操作なので、対象Entityが既に消えている場合は安全に無視します。
-    if (command.TargetScene->IsEntityAlive(entity) == false)
+    if (s_ActiveScene->IsEntityAlive(entity) == false)
     {
         return false;
     }
@@ -90,6 +97,20 @@ void TrimUndoHistory()
 
 } // namespace
 
+void SetEditorCommandHistoryScene(Scene* scene)
+{
+    if (s_ActiveScene == scene)
+    {
+        return;
+    }
+
+    // SceneごとにEntity Handle空間とComponent Storageは独立しています。
+    // Scene切替を跨いでUndo/Redoを残すと、古いSceneの生Pointerを保持し続けることにもなるため、
+    // Scene境界で履歴を完全に破棄します。
+    ClearEditorCommandHistory();
+    s_ActiveScene = scene;
+}
+
 void RecordEditorTransformCommand(
     Entity entity,
     const TransformComponent& before,
@@ -101,7 +122,12 @@ void RecordEditorTransformCommand(
         return;
     }
 
-    if (entity.GetScene()->IsEntityAlive(entity) == false)
+    // 初回編集時は対象Sceneを自動登録します。
+    // 既に別Sceneが登録されている場合はScene境界とみなし、古い履歴を破棄してから切り替えます。
+    SetEditorCommandHistoryScene(entity.GetScene());
+
+    if (s_ActiveScene == nullptr
+        || s_ActiveScene->IsEntityAlive(entity) == false)
     {
         return;
     }
@@ -114,7 +140,7 @@ void RecordEditorTransformCommand(
 
     TransformCommand command;
     command.Handle = entity.GetHandle();
-    command.TargetScene = entity.GetScene();
+    command.TargetScene = s_ActiveScene;
     command.Before = before;
     command.After = after;
 
