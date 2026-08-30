@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorScaleGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
@@ -42,6 +43,22 @@ ScaleGizmoState s_GizmoState{};
 void ResetGizmoState()
 {
     s_GizmoState = ScaleGizmoState{};
+}
+
+int GetAxisIndex(ScaleAxis axis)
+{
+    switch (axis)
+    {
+    case ScaleAxis::X:
+        return 0;
+    case ScaleAxis::Y:
+        return 1;
+    case ScaleAxis::Z:
+        return 2;
+    case ScaleAxis::None:
+    default:
+        return -1;
+    }
 }
 
 ImU32 GetAxisColor(ScaleAxis axis, bool highlighted)
@@ -231,13 +248,19 @@ bool RenderScaleGizmo(
 
     AxisScreenData axes[3] =
     {
-        { ScaleAxis::X, { 1.0f, 0.0f, 0.0f } },
-        { ScaleAxis::Y, { 0.0f, 1.0f, 0.0f } },
-        { ScaleAxis::Z, { 0.0f, 0.0f, 1.0f } }
+        { ScaleAxis::X },
+        { ScaleAxis::Y },
+        { ScaleAxis::Z }
     };
 
     for (AxisScreenData& axis : axes)
     {
+        // Worldでは固定X/Y/Z、LocalではEntity Rotationへ追従した軸を描画します。
+        // Scale値そのものはTransformComponentのX/Y/Z成分なので、選択した色/軸と同じ成分だけを更新します。
+        axis.WorldDirection = GetEditorGizmoAxisDirection(
+            transform.Rotation,
+            GetAxisIndex(axis.Axis));
+
         axis.Visible = ProjectWorldToScreen(
             originWorld + axis.WorldDirection * gizmoWorldLength,
             camera,
