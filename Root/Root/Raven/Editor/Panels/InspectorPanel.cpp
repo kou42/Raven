@@ -1,6 +1,7 @@
 #include "Raven/Editor/Panels/InspectorPanel.h"
 
 #include "Raven/Editor/Command/RenameEntityCommand.h"
+#include "Raven/Editor/Command/InspectorEditCommand.h"
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Scene/Components.h"
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -37,6 +39,56 @@ struct TransformEditState
 };
 
 TransformEditState s_TransformEditState{};
+
+struct CameraProjectionSettings
+{
+    float VerticalFov = 0.0f;
+    float NearClip = 0.0f;
+    float FarClip = 0.0f;
+};
+
+struct CameraProjectionEditState
+{
+    EntityHandle Handle{};
+    Scene* TargetScene = nullptr;
+    CameraProjectionSettings Before{};
+    bool IsActive = false;
+};
+
+CameraProjectionEditState s_CameraProjectionEditState{};
+
+bool ValidateCameraProjectionTarget(Entity entity)
+{
+    return entity.HasComponent<CameraComponent>();
+}
+
+bool ApplyCameraProjectionSettings(
+    Entity entity,
+    const CameraProjectionSettings& settings)
+{
+    if (entity.HasComponent<CameraComponent>() == false)
+    {
+        return false;
+    }
+
+    // Projection Matrixの再計算とNear/Far/FOV検証を迂回しないよう、Undo / Redo時も
+    // Component内部値へ直接代入せず、SceneCameraの公開Setterを必ず通します。
+    entity.GetComponent<CameraComponent>().Camera.SetPerspective(
+        settings.VerticalFov,
+        settings.NearClip,
+        settings.FarClip);
+    return true;
+}
+
+bool CameraProjectionSettingsEqual(
+    const CameraProjectionSettings& a,
+    const CameraProjectionSettings& b)
+{
+    constexpr float CompareEpsilon = 0.000001f;
+    return std::fabs(a.VerticalFov - b.VerticalFov) <= CompareEpsilon
+        && std::fabs(a.NearClip - b.NearClip) <= CompareEpsilon
+        && std::fabs(a.FarClip - b.FarClip) <= CompareEpsilon;
+}
 
 void DrawVec3Control(const char* label, math::Vec3& value, float speed = 0.1f)
 {
@@ -225,6 +277,60 @@ void DrawTransformComponent(Entity entity)
     DrawTransformVec3Control("Scale", entity, transform, transform.Scale);
 }
 
+void DrawCameraProjectionFloat(
+    const char* label,
+    Entity entity,
+    CameraProjectionSettings& settings,
+    float& value,
+    float speed,
+    float minimum,
+    float maximum)
+{
+    const CameraProjectionSettings settingsBeforeThisFrame = settings;
+    if (ImGui::DragFloat(label, &value, speed, minimum, maximum))
+    {
+        ApplyCameraProjectionSettings(entity, settings);
+
+        // SetPerspective()は入力を安全範囲へ補正できます。Commandへ要求値ではなく実際に確定した値を
+        // 保存することで、Redo後も最初の編集結果と完全に同じProjection状態を再現します。
+        const SceneCamera& camera = entity.GetComponent<CameraComponent>().Camera;
+        settings.VerticalFov = camera.GetPerspectiveVerticalFov();
+        settings.NearClip = camera.GetPerspectiveNearClip();
+        settings.FarClip = camera.GetPerspectiveFarClip();
+    }
+
+    if (ImGui::IsItemActivated())
+    {
+        s_CameraProjectionEditState.Handle = entity.GetHandle();
+        s_CameraProjectionEditState.TargetScene = entity.GetScene();
+        s_CameraProjectionEditState.Before = settingsBeforeThisFrame;
+        s_CameraProjectionEditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_CameraProjectionEditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_CameraProjectionEditState.Handle == entity.GetHandle()
+            && s_CameraProjectionEditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            // Drag中にSetPerspective()で適用済みなので、ここでは実行済みCommandとして登録します。
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<InspectorEditCommand<CameraProjectionSettings>>(
+                    entity,
+                    s_CameraProjectionEditState.Before,
+                    settings,
+                    &ValidateCameraProjectionTarget,
+                    &ApplyCameraProjectionSettings,
+                    &CameraProjectionSettingsEqual));
+        }
+
+        s_CameraProjectionEditState = CameraProjectionEditState{};
+    }
+}
+
 void DrawCameraComponent(Entity entity)
 {
     if (entity.HasComponent<CameraComponent>() == false)
@@ -264,30 +370,38 @@ void DrawCameraComponent(Entity entity)
 
     // SceneCameraのProjection値は必ずSetPerspective()経由で変更します。
     // Inspector側からメンバ値を直接書き換えるとProjection再計算や入力値検証を迂回してしまうためです。
-    float verticalFov = camera.GetPerspectiveVerticalFov();
-    float nearClip = camera.GetPerspectiveNearClip();
-    float farClip = camera.GetPerspectiveFarClip();
+    CameraProjectionSettings projectionSettings{
+        camera.GetPerspectiveVerticalFov(),
+        camera.GetPerspectiveNearClip(),
+        camera.GetPerspectiveFarClip()
+    };
 
-    bool projectionChanged = false;
-    if (ImGui::DragFloat("Vertical FOV (rad)", &verticalFov, 0.005f, 0.01f, 3.13f))
-    {
-        projectionChanged = true;
-    }
+    DrawCameraProjectionFloat(
+        "Vertical FOV (rad)",
+        entity,
+        projectionSettings,
+        projectionSettings.VerticalFov,
+        0.005f,
+        0.01f,
+        3.13f);
 
-    if (ImGui::DragFloat("Near Clip", &nearClip, 0.01f, 0.001f, farClip))
-    {
-        projectionChanged = true;
-    }
+    DrawCameraProjectionFloat(
+        "Near Clip",
+        entity,
+        projectionSettings,
+        projectionSettings.NearClip,
+        0.01f,
+        0.001f,
+        projectionSettings.FarClip);
 
-    if (ImGui::DragFloat("Far Clip", &farClip, 0.1f, nearClip, 100000.0f))
-    {
-        projectionChanged = true;
-    }
-
-    if (projectionChanged)
-    {
-        camera.SetPerspective(verticalFov, nearClip, farClip);
-    }
+    DrawCameraProjectionFloat(
+        "Far Clip",
+        entity,
+        projectionSettings,
+        projectionSettings.FarClip,
+        0.1f,
+        projectionSettings.NearClip,
+        100000.0f);
 
     ImGui::TextDisabled("Aspect Ratio: %.3f", camera.GetAspectRatio());
 }

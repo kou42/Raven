@@ -566,6 +566,9 @@
     <ClInclude Include="Raven\Editor\Command\IEditorCommand.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="Raven\Editor\Command\InspectorEditCommand.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
     <ClInclude Include="Raven\Editor\Command\TransformCommand.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>

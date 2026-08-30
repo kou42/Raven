@@ -663,6 +663,7 @@ D:.
     |   |   |   |
     |   |   |   +---Command
     |   |   |   |       IEditorCommand.h
+    |   |   |   |       InspectorEditCommand.h
     |   |   |   |       RenameEntityCommand.cpp
     |   |   |   |       RenameEntityCommand.h
     |   |   |   |       TransformCommand.cpp
