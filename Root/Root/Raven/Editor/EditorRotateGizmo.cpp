@@ -1,7 +1,9 @@
 #include "Raven/Editor/EditorRotateGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Math/MathQuatanion.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -42,7 +44,23 @@ void ResetGizmoState()
     s_GizmoState = RotateGizmoState{};
 }
 
-math::Vec3 GetAxisDirection(RotateAxis axis)
+int GetAxisIndex(RotateAxis axis)
+{
+    switch (axis)
+    {
+    case RotateAxis::X:
+        return 0;
+    case RotateAxis::Y:
+        return 1;
+    case RotateAxis::Z:
+        return 2;
+    case RotateAxis::None:
+    default:
+        return -1;
+    }
+}
+
+math::Vec3 GetCanonicalAxisDirection(RotateAxis axis)
 {
     switch (axis)
     {
@@ -117,10 +135,14 @@ float DistancePointToSegment(
     return (point - (start + segment * t)).Length();
 }
 
-void BuildRingBasis(RotateAxis axis, math::Vec3& outU, math::Vec3& outV)
+void BuildRingBasis(
+    RotateAxis axis,
+    const math::Vec3& rotation,
+    math::Vec3& outU,
+    math::Vec3& outV)
 {
     // 各Ringは「操作軸を法線とする平面」上に生成します。
-    // World GizmoなのでEntity Rotation自体では基底を回転させません。
+    // Worldでは固定基底、LocalではEntity Rotationで平面基底そのものを回転させます。
     switch (axis)
     {
     case RotateAxis::X:
@@ -139,27 +161,58 @@ void BuildRingBasis(RotateAxis axis, math::Vec3& outU, math::Vec3& outV)
     default:
         outU = {};
         outV = {};
-        break;
+        return;
+    }
+
+    if (GetEditorGizmoSpace() == EditorGizmoSpace::Local)
+    {
+        const math::Quat orientation = math::Quat::FromEulerXYZ(
+            rotation.x,
+            rotation.y,
+            rotation.z);
+
+        outU = orientation.Rotate(outU).Normalized();
+        outV = orientation.Rotate(outV).Normalized();
     }
 }
 
-void AddRotationDelta(math::Vec3& rotation, RotateAxis axis, float delta)
+void ApplyRotationDelta(
+    math::Vec3& rotation,
+    const math::Vec3& dragStartRotation,
+    RotateAxis axis,
+    float delta)
 {
-    switch (axis)
+    const math::Quat startOrientation = math::Quat::FromEulerXYZ(
+        dragStartRotation.x,
+        dragStartRotation.y,
+        dragStartRotation.z);
+
+    const math::Vec3 canonicalAxis = GetCanonicalAxisDirection(axis);
+    if (canonicalAxis.LengthSq() <= math::Epsilon * math::Epsilon)
     {
-    case RotateAxis::X:
-        rotation.x += delta;
-        break;
-    case RotateAxis::Y:
-        rotation.y += delta;
-        break;
-    case RotateAxis::Z:
-        rotation.z += delta;
-        break;
-    case RotateAxis::None:
-    default:
-        break;
+        return;
     }
+
+    const math::Quat deltaRotation = math::Quat::FromAxisAngle(
+        canonicalAxis,
+        delta);
+
+    math::Quat resultOrientation{};
+
+    if (GetEditorGizmoSpace() == EditorGizmoSpace::Local)
+    {
+        // Local回転は現在姿勢の「後ろ」にdeltaを掛けます。
+        // これによりdelta軸はEntity自身のLocal X/Y/Zとして解釈されます。
+        resultOrientation = startOrientation * deltaRotation;
+    }
+    else
+    {
+        // World回転は現在姿勢の「前」にdeltaを掛けます。
+        // delta軸をWorld X/Y/Zとして適用するため、Local回転と乗算順序を分けます。
+        resultOrientation = deltaRotation * startOrientation;
+    }
+
+    rotation = resultOrientation.Normalized().ToEulerXYZ();
 }
 
 } // namespace
@@ -245,7 +298,7 @@ bool RenderRotateGizmo(
     {
         math::Vec3 basisU{};
         math::Vec3 basisV{};
-        BuildRingBasis(ring.Axis, basisU, basisV);
+        BuildRingBasis(ring.Axis, transform.Rotation, basisU, basisV);
 
         bool pointVisible[segmentCount + 1]{};
         for (int i = 0; i <= segmentCount; ++i)
@@ -378,8 +431,11 @@ bool RenderRotateGizmo(
         const float dot = math::Vec2::Dot(s_GizmoState.DragStartDirection, currentDirection);
         const float angleDelta = -std::atan2(cross, dot);
 
-        transform.Rotation = s_GizmoState.DragStartRotation;
-        AddRotationDelta(transform.Rotation, s_GizmoState.ActiveAxis, angleDelta);
+        ApplyRotationDelta(
+            transform.Rotation,
+            s_GizmoState.DragStartRotation,
+            s_GizmoState.ActiveAxis,
+            angleDelta);
     }
 
     return consumedMouse;
