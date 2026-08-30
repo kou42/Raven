@@ -4,6 +4,8 @@
 #include "Raven/Math/MathVector.h"
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIElement.h"
+#include "Raven/UI/Core/UIEvent.h"
+#include "Raven/UI/Core/UIHitTest.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 
 #include <utility>
@@ -73,6 +75,65 @@ public:
         }
 
         m_FrameActive = false;
+    }
+
+    // Mouse入力をHit Testし、最前面TargetからRoot方向へBubbleさせます。
+    // 現段階ではHover / Pressed状態を持たず、純粋なRoutingだけを担当します。
+    // これにより次段階の状態管理やUIButtonをEvent Systemへ密結合させません。
+    bool RouteMouseEvent(
+        UIMouseEventType type,
+        const math::Vec2& screenPosition,
+        UIMouseButton button = UIMouseButton::None)
+    {
+        if (m_RootElement == nullptr)
+        {
+            return false;
+        }
+
+        UIElement* target = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
+        if (target == nullptr)
+        {
+            return false;
+        }
+
+        UIMouseEvent event;
+        event.Type = type;
+        event.Button = button;
+        event.ScreenPosition = screenPosition;
+        event.Target = target;
+
+        // Target -> Parent -> ... -> Root のBubble方式です。
+        // WidgetがHandledを立てた時点で親への伝播を止めます。
+        UIElement* current = target;
+        while (current != nullptr)
+        {
+            event.CurrentTarget = current;
+            current->HandleMouseEvent(event);
+
+            if (event.Handled == true)
+            {
+                break;
+            }
+
+            current = current->GetParent();
+        }
+
+        return event.Handled;
+    }
+
+    bool RouteMouseMove(const math::Vec2& screenPosition)
+    {
+        return RouteMouseEvent(UIMouseEventType::Move, screenPosition, UIMouseButton::None);
+    }
+
+    bool RouteMouseDown(const math::Vec2& screenPosition, UIMouseButton button)
+    {
+        return RouteMouseEvent(UIMouseEventType::Down, screenPosition, button);
+    }
+
+    bool RouteMouseUp(const math::Vec2& screenPosition, UIMouseButton button)
+    {
+        return RouteMouseEvent(UIMouseEventType::Up, screenPosition, button);
     }
 
     void SetRenderer(Scope<UIRenderer> renderer)
