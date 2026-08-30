@@ -125,6 +125,100 @@ const Ref<Texture>& OpenGLFramebuffer::GetColorAttachment(std::size_t index) con
     return m_ColorAttachments[index];
 }
 
+int OpenGLFramebuffer::ReadPixel(std::size_t attachmentIndex, int x, int y) const
+{
+    if (attachmentIndex >= m_ColorAttachments.size())
+    {
+        assert(false && "Framebuffer::ReadPixel attachment index is out of range.");
+        return -1;
+    }
+
+    if (x < 0 || y < 0 ||
+        x >= static_cast<int>(m_Specification.Width) ||
+        y >= static_cast<int>(m_Specification.Height))
+    {
+        // Viewport外をクリックした場合は未選択値として扱います。
+        return -1;
+    }
+
+    const Ref<Texture>& attachment = m_ColorAttachments[attachmentIndex];
+    if (attachment == nullptr)
+    {
+        return -1;
+    }
+
+    // 現段階のReadPixelはEntity ID Buffer用R32Iに限定します。
+    // RGBA8等を同じint戻り値へ暗黙変換するとAPIの意味が曖昧になるため、形式を明示的に検証します。
+    if (attachment->GetSpecification().Format != TextureFormat::R32I)
+    {
+        assert(false && "Framebuffer::ReadPixel currently supports only R32I attachments.");
+        return -1;
+    }
+
+    // ReadPixelは描画中に呼ばれる可能性があるため、現在のRead Framebuffer / Read Buffer Stateを
+    // 保存してから一時的にこのFramebufferへ切り替え、読み戻し後に必ず元へ戻します。
+    GLint previousReadFramebuffer = 0;
+    GLint previousReadBuffer = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
+    glGetIntegerv(GL_READ_BUFFER, &previousReadBuffer);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_RendererID);
+    glReadBuffer(GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(attachmentIndex));
+
+    int pixelData = -1;
+    glReadPixels(
+        x,
+        y,
+        1,
+        1,
+        GL_RED_INTEGER,
+        GL_INT,
+        &pixelData);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
+    glReadBuffer(static_cast<GLenum>(previousReadBuffer));
+
+    return pixelData;
+}
+
+void OpenGLFramebuffer::ClearAttachment(std::size_t attachmentIndex, int value)
+{
+    if (attachmentIndex >= m_ColorAttachments.size())
+    {
+        assert(false && "Framebuffer::ClearAttachment attachment index is out of range.");
+        return;
+    }
+
+    const Ref<Texture>& attachment = m_ColorAttachments[attachmentIndex];
+    if (attachment == nullptr)
+    {
+        return;
+    }
+
+    // 整数ID Bufferを未選択値(-1等)へ初期化する用途としてR32Iだけを対象にします。
+    // Color Attachmentの通常クリアはRendererAPI::Clear / glClearColor側と責務を分けます。
+    if (attachment->GetSpecification().Format != TextureFormat::R32I)
+    {
+        assert(false && "Framebuffer::ClearAttachment currently supports only R32I attachments.");
+        return;
+    }
+
+    GLint previousDrawFramebuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFramebuffer);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_RendererID);
+
+    // glClearBufferivのdrawbuffer引数はGL_COLOR_ATTACHMENTnではなく、
+    // 現在のDraw Buffer配列におけるColor indexを指定します。
+    // RavenではColor Attachmentを0から連続割り当てしているためvector indexをそのまま利用できます。
+    glClearBufferiv(
+        GL_COLOR,
+        static_cast<GLint>(attachmentIndex),
+        &value);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
+}
+
 void OpenGLFramebuffer::Invalidate()
 {
     // Resize時は古いAttachmentとFBOを先に破棄し、新しいSpecificationで一式を再生成します。
