@@ -5,6 +5,8 @@
 #include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Math/MathQuatanion.h"
 
+#include <cmath>
+
 namespace Raven
 {
 namespace
@@ -17,6 +19,10 @@ EditorGizmoOperation s_Operation = EditorGizmoOperation::Translate;
 // World / LocalもGizmo機能側で一元管理します。
 // 初期値は従来挙動と同じWorldにして、既存Scene Viewの操作感を変更しません。
 EditorGizmoSpace s_Space = EditorGizmoSpace::World;
+
+// Translate / Rotate / Scaleで使用するSnap刻み幅もGizmo側へ集約します。
+// 将来Editor Settings UIを追加した場合も、この値だけを更新すれば各Gizmoへ反映できます。
+EditorGizmoSnapSettings s_SnapSettings{};
 
 } // namespace
 
@@ -50,6 +56,42 @@ void ToggleEditorGizmoSpace()
     {
         s_Space = EditorGizmoSpace::World;
     }
+}
+
+const EditorGizmoSnapSettings& GetEditorGizmoSnapSettings()
+{
+    return s_SnapSettings;
+}
+
+void SetEditorGizmoSnapSettings(const EditorGizmoSnapSettings& settings)
+{
+    // 0以下のstepでは量子化できないため、設定値は正の値だけ受理します。
+    // Editor Settings UI等から一部だけ不正値が渡されても、既存の有効な設定を維持します。
+    if (settings.TranslateStep > 0.0f)
+    {
+        s_SnapSettings.TranslateStep = settings.TranslateStep;
+    }
+    if (settings.RotateStepRadians > 0.0f)
+    {
+        s_SnapSettings.RotateStepRadians = settings.RotateStepRadians;
+    }
+    if (settings.ScaleStep > 0.0f)
+    {
+        s_SnapSettings.ScaleStep = settings.ScaleStep;
+    }
+}
+
+float ApplyEditorGizmoSnap(float delta, float step)
+{
+    if (step <= 0.0f)
+    {
+        return delta;
+    }
+
+    // Drag開始値ではなくdeltaを最寄りのstepへ丸めます。
+    // 例: Position=0.23からCtrl Dragしても0.0/0.5へ強制移動せず、
+    //     0.23 + 0.5, 0.23 + 1.0 ... のように開始位置を基準としてSnapします。
+    return std::round(delta / step) * step;
 }
 
 math::Vec3 GetEditorGizmoAxisDirection(
