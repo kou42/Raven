@@ -132,6 +132,14 @@ private:
         Framebuffer& framebuffer,
         const Camera& camera);
 
+    // Scene View専用のSelection Outline Passです。
+    // 選択EntityのMeshを少し拡大した「Inverted Hull」として再描画し、Front FaceをCullすることで
+    // 元Geometryの外側へはみ出したBack Faceだけを単色表示します。
+    // Stencilを使わないためPipeline State追加を最小限にしつつ、通常ゲーム描画とは完全に分離します。
+    void RenderSelectionOutlinePass(
+        Framebuffer& framebuffer,
+        const Camera& camera);
+
 private:
     // ========================================================================
     // Application reference
@@ -195,6 +203,10 @@ private:
     // Picking Pass専用Materialです。
     // ゲーム内Materialを変更せず、EditorだけがR32I AttachmentへEntityIndexを書き込むために使用します。
     Ref<Material> m_EntityPickingMaterial;
+
+    // Selection Outline専用Materialです。
+    // 選択Entityを通常Materialとは別Pipelineで拡大描画し、ゲーム用Material/Shaderの状態を変更しません。
+    Ref<Material> m_SelectionOutlineMaterial;
 
     // ImGui::GetContentRegionAvail()で取得した各Viewport Windowの表示領域です。
     // floatのままUI側の最新サイズを保持し、OnRender()でGPUへ渡す際にuint32_tへ変換します。
