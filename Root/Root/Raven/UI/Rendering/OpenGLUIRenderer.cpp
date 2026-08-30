@@ -9,7 +9,6 @@
 
 #include <glad/glad.h>
 
-#include <algorithm>
 #include <iostream>
 #include <vector>
 
@@ -180,10 +179,9 @@ void OpenGLUIRenderer::Render(
 
     // Default framebufferがDouble Bufferの場合、画面へ提示されるのは通常Back Bufferです。
     // 直前のoffscreen描画や外部stateでDrawBufferが別値になっていてもUIを正しいBufferへ書くため、
-    // Main Window用Contextでは描画先と診断用Read先を明示します。
+    // Main Window用Contextでは描画先を明示します。
     const GLenum defaultColorBuffer = doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT;
     glDrawBuffer(defaultColorBuffer);
-    glReadBuffer(defaultColorBuffer);
 
     glViewport(
         0,
@@ -202,10 +200,6 @@ void OpenGLUIRenderer::Render(
 
     m_Shader->Bind();
     m_Shader->SetVec2("u_ViewportSize", viewportSize);
-
-    GLint currentProgram = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
-
     m_VertexArray->Bind();
 
     // ========================================================================
@@ -221,79 +215,8 @@ void OpenGLUIRenderer::Render(
         GL_UNSIGNED_INT,
         nullptr);
 
-#ifdef _DEBUG
-    static bool firstDrawLogged = false;
-    if (firstDrawLogged == false)
-    {
-        // ====================================================================
-        // First draw diagnostics
-        // ====================================================================
-        // glDrawElements()がGL_NO_ERRORでも、実際のdefault framebufferへ期待色が書かれているとは限りません。
-        // そこで最初のSolidRect中央をglReadPixels()で1 pixelだけ読み戻し、Rasterize結果まで確認します。
-        // このReadbackはGPU同期を伴うため、診断中の最初の1回だけ実行します。
-        GLint currentDrawFramebuffer = 0;
-        GLint currentDrawBuffer = 0;
-        GLint currentVertexArray = 0;
-        GLint currentElementArrayBuffer = 0;
-        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &currentDrawFramebuffer);
-        glGetIntegerv(GL_DRAW_BUFFER, &currentDrawBuffer);
-        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &currentVertexArray);
-        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentElementArrayBuffer);
-
-        GLenum framebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-
-        GLubyte pixel[4] = { 0u, 0u, 0u, 0u };
-        GLint readX = 0;
-        GLint readY = 0;
-
-        const std::vector<UIDrawCommand>& commands = drawList.GetCommands();
-        if (commands.empty() == false)
-        {
-            const UIDrawCommand& firstCommand = commands.front();
-            const float centerX = (firstCommand.Rect.Min.x + firstCommand.Rect.Max.x) * 0.5f;
-            const float centerYFromTop = (firstCommand.Rect.Min.y + firstCommand.Rect.Max.y) * 0.5f;
-
-            readX = static_cast<GLint>(centerX);
-            readY = static_cast<GLint>(viewportSize.y - centerYFromTop);
-
-            const GLint maxReadX = std::max(0, static_cast<GLint>(viewportSize.x) - 1);
-            const GLint maxReadY = std::max(0, static_cast<GLint>(viewportSize.y) - 1);
-            readX = std::clamp(readX, 0, maxReadX);
-            readY = std::clamp(readY, 0, maxReadY);
-
-            glReadPixels(
-                readX,
-                readY,
-                1,
-                1,
-                GL_RGBA,
-                GL_UNSIGNED_BYTE,
-                pixel);
-        }
-
-        const GLenum error = glGetError();
-        std::cout
-            << "[Raven UI] First draw: commands=" << drawList.GetCommandCount()
-            << ", indices=" << indexCount
-            << ", viewport=" << viewportSize.x << "x" << viewportSize.y
-            << ", program=" << currentProgram
-            << ", framebuffer=" << currentDrawFramebuffer
-            << ", drawBuffer=0x" << std::hex << currentDrawBuffer
-            << ", vao=" << std::dec << currentVertexArray
-            << ", ebo=" << currentElementArrayBuffer
-            << ", framebufferStatus=0x" << std::hex << framebufferStatus
-            << ", readPixel=(" << std::dec << readX << "," << readY << ")"
-            << ", rgba=("
-            << static_cast<unsigned int>(pixel[0]) << ","
-            << static_cast<unsigned int>(pixel[1]) << ","
-            << static_cast<unsigned int>(pixel[2]) << ","
-            << static_cast<unsigned int>(pixel[3]) << ")"
-            << ", doubleBuffered=" << (doubleBuffered == GL_TRUE ? "true" : "false")
-            << ", glError=0x" << std::hex << static_cast<unsigned int>(error)
-            << std::dec << '\n';
-        firstDrawLogged = true;
-    }
-#endif
+    // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
+    // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
 
     m_VertexArray->Unbind();
     m_Shader->Unbind();
