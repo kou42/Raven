@@ -6,6 +6,8 @@
 namespace Raven
 {
 
+UIThickness::UIThickness() = default;
+
 UIThickness::UIThickness(float uniform)
     : Left(uniform), Top(uniform), Right(uniform), Bottom(uniform)
 {
