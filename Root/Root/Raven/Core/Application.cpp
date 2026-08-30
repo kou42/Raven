@@ -2,6 +2,7 @@
 #include "../Renderer/Renderer.h"
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
+#include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 
 #include <glad/glad.h>
@@ -42,11 +43,11 @@ Application::Application()
 
 #if defined(_DEBUG)
     // ========================================================================
-    // Raven UI retained-mode / layout validation panel
+    // Raven UI retained-mode / layout / interaction validation panel
     // ========================================================================
-    // GPU描画経路とRetained Treeの確認が完了したため、次はLayoutを通した配置を検証します。
-    // 外側PanelはAbsolute配置、内側ではVerticalとHorizontalを入れ子にし、Padding / Spacingが
-    // UIElement Tree -> Layout -> UIDrawList -> GPUの経路で反映されることを確認します。
+    // GPU描画経路とRetained Treeに加え、UIButtonのNormal / Hovered / Pressed Visual Stateを確認します。
+    // 現在のWindow EventにはMouse Move / Button Eventがまだ無いため、Application frameでInputをpollingし、
+    // Edgeを検出してUIContextのMouse Routingへ渡します。Event System側のMouse Event追加後はこの橋渡しを置換できます。
     //
     // このTreeはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
     // Editor Widget導入後はApplication直下の検証Treeを削除し、各UI LayerがRoot以下へ必要なElementを構築します。
@@ -58,10 +59,16 @@ Application::Application()
     validationPanel->SetPadding(12.0f);
     validationPanel->SetSpacing(10.0f);
 
-    auto headerPanel = CreateScope<UIPanel>();
-    headerPanel->SetSize(math::Vec2(336.0f, 42.0f));
-    headerPanel->SetBackgroundColor(math::Vec4(0.10f, 0.28f, 0.55f, 1.0f));
-    validationPanel->AddChild(std::move(headerPanel));
+    auto headerButton = CreateScope<UIButton>();
+    headerButton->SetSize(math::Vec2(336.0f, 42.0f));
+    headerButton->SetNormalColor(math::Vec4(0.10f, 0.28f, 0.55f, 1.0f));
+    headerButton->SetHoveredColor(math::Vec4(0.16f, 0.40f, 0.72f, 1.0f));
+    headerButton->SetPressedColor(math::Vec4(0.07f, 0.20f, 0.42f, 1.0f));
+    headerButton->SetOnClick([]()
+        {
+            std::cout << "Raven UI validation button clicked" << std::endl;
+        });
+    validationPanel->AddChild(std::move(headerButton));
 
     auto horizontalRow = CreateScope<UIPanel>();
     horizontalRow->SetSize(math::Vec2(336.0f, 62.0f));
@@ -216,6 +223,7 @@ void Application::SetScene(Scope<Scene> scene)
 void Application::Run()
 {
     double previousTime = glfwGetTime();
+    bool previousLeftMousePressed = false;
 
     while (m_Running)
     {
@@ -258,6 +266,29 @@ void Application::Run()
         m_UIContext.BeginFrame(math::Vec2(
             static_cast<float>(m_Window->GetWidth()),
             static_cast<float>(m_Window->GetHeight())));
+
+#if defined(_DEBUG)
+        // ====================================================================
+        // Raven UI temporary mouse bridge
+        // ====================================================================
+        // Core Event SystemにMouse Eventを追加する前段階として、既存Input APIから現在状態を読み取り、
+        // Mouse位置は毎frameMoveとして、左Buttonは前frameとの差分からDown / UpとしてUIContextへ渡します。
+        // これによりWindow実装へ先に変更を広げず、UIButtonのHit Test / Hover / Pressed / Clickを実機確認できます。
+        const auto mousePosition = Input::GetMousePosition();
+        const math::Vec2 uiMousePosition(mousePosition.first, mousePosition.second);
+        m_UIContext.RouteMouseMove(uiMousePosition);
+
+        const bool leftMousePressed = Input::IsMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
+        if (leftMousePressed == true && previousLeftMousePressed == false)
+        {
+            m_UIContext.RouteMouseDown(uiMousePosition, UIMouseButton::Left);
+        }
+        else if (leftMousePressed == false && previousLeftMousePressed == true)
+        {
+            m_UIContext.RouteMouseUp(uiMousePosition, UIMouseButton::Left);
+        }
+        previousLeftMousePressed = leftMousePressed;
+#endif
 
         // ====================================================================
         // Runtime Scene
