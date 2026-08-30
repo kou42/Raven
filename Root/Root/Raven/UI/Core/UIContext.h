@@ -90,6 +90,16 @@ public:
             return false;
         }
 
+        // Hit TestはArrange済みのPosition / Sizeを参照します。
+        // 入力がEndFrame()より先に届いても前frameのLayoutを誤って使わないよう、Dirty時は
+        // ここでLayoutを解決します。BuildDrawList()は同時にDrawCommandも生成するため一時Listへ捨て、
+        // 描画用m_DrawListのframe内容は変更しません。
+        if (m_RootElement->IsMeasureDirty() == true || m_RootElement->IsArrangeDirty() == true)
+        {
+            UIDrawList layoutResolveDrawList;
+            m_RootElement->BuildDrawList(layoutResolveDrawList);
+        }
+
         UIElement* target = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
         if (target == nullptr)
         {
