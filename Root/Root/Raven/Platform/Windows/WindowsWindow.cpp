@@ -131,14 +131,26 @@ void WindowsWindow::Init(const WindowProps& props)
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
             (void)mods;
 
+            // Button callbackには座標が直接渡されないため、Eventを生成するこの瞬間にGLFWから取得します。
+            // Application側で後からpollingしないことで、Eventは発生時点の完全な入力snapshotになります。
+            double mouseX = 0.0;
+            double mouseY = 0.0;
+            glfwGetCursorPos(window, &mouseX, &mouseY);
+
             if (action == GLFW_PRESS)
             {
-                MouseButtonPressedEvent event(button);
+                MouseButtonPressedEvent event(
+                    button,
+                    static_cast<float>(mouseX),
+                    static_cast<float>(mouseY));
                 data.EventCallback(event);
             }
             else if (action == GLFW_RELEASE)
             {
-                MouseButtonReleasedEvent event(button);
+                MouseButtonReleasedEvent event(
+                    button,
+                    static_cast<float>(mouseX),
+                    static_cast<float>(mouseY));
                 data.EventCallback(event);
             }
         }
