@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorTranslateGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Editor/EditorRotateGizmo.h"
 #include "Raven/Editor/EditorScaleGizmo.h"
@@ -194,6 +195,24 @@ void UpdateGizmoOperationShortcut()
     {
         ToggleEditorGizmoSpace();
     }
+
+    // Ctrl+Z / Ctrl+YはScene ViewにFocusがある場合のEditor履歴操作です。
+    // CtrlはDrag中のSnapにも使いますが、Z/YのKeyPressedと組み合わせるため通常のSnap操作とは競合しません。
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+    {
+        if (ImGui::GetIO().KeyShift)
+        {
+            RedoEditorCommand();
+        }
+        else
+        {
+            UndoEditorCommand();
+        }
+    }
+    else if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false))
+    {
+        RedoEditorCommand();
+    }
 }
 
 void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
@@ -246,7 +265,7 @@ void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
     drawList->AddText(
         ImVec2(textPosition.x, textPosition.y + 54.0f),
         IM_COL32(190, 190, 190, 255),
-        "Hold Ctrl: Snap");
+        "Hold Ctrl: Snap  Ctrl+Z/Y: Undo/Redo");
 }
 
 } // namespace
@@ -502,6 +521,21 @@ bool RenderTranslateGizmo(
 
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left) == false)
         {
+            // Drag終了時点で1回だけ履歴へ登録します。
+            // Translate以外のRotation / ScaleはDrag中に変更していないため、現在値を基準に
+            // Positionだけ開始値へ戻したTransformをBeforeとして構築できます。
+            TransformComponent beforeTransform = transform;
+            beforeTransform.Position = s_GizmoState.DragStartPosition;
+
+            const Entity editedEntity(
+                EntityHandle::FromValue(s_GizmoState.EntityValue),
+                s_GizmoState.EntityScene);
+
+            RecordEditorTransformCommand(
+                editedEntity,
+                beforeTransform,
+                transform);
+
             ResetGizmoState();
             return true;
         }
