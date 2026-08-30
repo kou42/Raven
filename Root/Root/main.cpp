@@ -86,20 +86,31 @@ int main()
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
     {
-        // Character本体はScene-ownedのまま維持し、ImGui表示だけをApplication-owned Overlayへ分離します。
-        // OverlayはCharacter Layerを非所有pointerで参照しますが、ApplicationはApplication LayerをSceneより先に
-        // 破棄するため、終了順序上もdangling pointerになりません。
+        // Character本体はScene-ownedのまま維持します。
+        // CharacterLocomotionDebugOverlayLayerは左上へ大きなDear ImGuiデバッグHUDを表示するため、
+        // Raven UI実装中はEditor表示の確認を妨げないようApplication Layerへの登録だけを一時停止します。
+        //
+        // 重要:
+        // CharacterControllerDemoLayerそのものは停止していません。
+        // RuntimeのCharacter Controller / Animation / Locomotion処理は従来どおり動作します。
+        // デバッグHUDを再度確認したい場合は、下の#if 0を有効化してOverlay登録を戻してください。
         auto characterLayer = Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene);
         Raven::CharacterControllerDemoLayer* characterLayerPointer = characterLayer.get();
 
         runtimeScene->PushLayer(std::move(characterLayer));
 
+#if 0
         if (characterLayerPointer != nullptr)
         {
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
                     *characterLayerPointer));
         }
+#else
+        // Overlayを無効化している間はpointerを使用しません。
+        // Character Layer自体の所有権はすでにruntimeSceneへ移譲済みです。
+        static_cast<void>(characterLayerPointer);
+#endif
     }
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
