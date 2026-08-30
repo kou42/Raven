@@ -3,6 +3,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/UI/Core/UIDrawList.h"
+#include "Raven/UI/Core/UIEvent.h"
 
 #include <algorithm>
 #include <limits>
@@ -84,6 +85,13 @@ public:
     const UIElement* GetParent() const { return m_Parent; }
     const std::vector<Scope<UIElement>>& GetChildren() const { return m_Children; }
 
+    // UIContextのBubble Routingから呼ばれる公開入口です。
+    // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
+    void HandleMouseEvent(UIMouseEvent& event)
+    {
+        OnMouseEvent(event);
+    }
+
     void BuildDrawList(UIDrawList& drawList)
     {
         // Dirty Flagにより、色だけ変わったframe等でLayout Tree全体を毎回再計算しません。
@@ -94,6 +102,11 @@ public:
     }
 
 protected:
+    virtual void OnMouseEvent(UIMouseEvent& event)
+    {
+        static_cast<void>(event);
+    }
+
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const
     {
         static_cast<void>(drawList); static_cast<void>(absolutePosition);
