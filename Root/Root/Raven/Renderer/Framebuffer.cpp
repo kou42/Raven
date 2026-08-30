@@ -25,6 +25,20 @@ std::uint32_t Framebuffer::GetColorAttachmentRendererID() const
 std::unique_ptr<Framebuffer> Framebuffer::Create(std::uint32_t width, std::uint32_t height)
 {
     // ========================================================================
+    // Legacy-compatible factory
+    // ========================================================================
+    // 既存のScene/Game Viewコードを変更せず利用できるよう、従来のwidth/height APIは残します。
+    // 実際の生成経路はSpecification版へ一本化し、Attachment構成の重複実装を避けます。
+    FramebufferSpecification specification;
+    specification.Width = width;
+    specification.Height = height;
+
+    return Create(specification);
+}
+
+std::unique_ptr<Framebuffer> Framebuffer::Create(const FramebufferSpecification& specification)
+{
+    // ========================================================================
     // Renderer API factory
     // ========================================================================
     // Editor等の上位層は具体的なOpenGLFramebufferを知りません。
@@ -34,7 +48,7 @@ std::unique_ptr<Framebuffer> Framebuffer::Create(std::uint32_t width, std::uint3
     switch (RendererAPI::GetAPI())
     {
     case RendererAPI::API::OpenGL:
-        return std::make_unique<OpenGLFramebuffer>(width, height);
+        return std::make_unique<OpenGLFramebuffer>(specification);
 
     case RendererAPI::API::DirectX11:
     case RendererAPI::API::DirectX12:
