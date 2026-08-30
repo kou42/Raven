@@ -10,13 +10,17 @@ class EditorCamera;
 // ============================================================================
 // RenderTranslateGizmo
 // ============================================================================
-// Scene View上へWorld X / Y / Z軸のTranslate Gizmoを描画し、Mouse Dragを
+// Scene View上へX / Y / Z軸のTranslate Gizmoを描画し、Mouse Dragを
 // 選択EntityのTransformComponent::Positionへ反映します。
 //
+// EditorGizmoSpace::Worldでは固定World軸、LocalではTransformComponent::Rotationから
+// Quaternionで回転したEntity自身のLocal軸を利用します。
+//
 // 現在は既存EditorLayerとの互換性を保つScene View Gizmo入口も兼ねています。
-// W=Translate / E=Rotateの操作モードを確認し、Rotate選択中はEditorRotateGizmoへ委譲します。
+// W=Translate / E=Rotate / R=Scaleの操作モードを確認し、Rotate / Scale選択中は
+// 対応するEditor Gizmoへ委譲します。QでWorld / Localを切り替えます。
 // 将来EditorLayer側をRenderEditorTransformGizmo()へ移行した後は、再びTranslate専用入口へ
-// 戻せるよう、実際の操作モード状態はEditorGizmo側へ分離しています。
+// 戻せるよう、実際の操作モード状態・座標系状態はEditorGizmo側へ分離しています。
 //
 // この関数はDear ImGuiを利用しますが、ImGui型を公開シグネチャへ出さないことで
 // EditorLayer.hやRenderer共通層へImGui依存を広げません。
