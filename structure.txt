@@ -662,6 +662,8 @@ D:.
     |   |   |   |   EditorTranslateGizmo.h
     |   |   |   |
     |   |   |   +---Command
+    |   |   |   |       CreateEntityCommand.cpp
+    |   |   |   |       CreateEntityCommand.h
     |   |   |   |       IEditorCommand.h
     |   |   |   |       InspectorEditCommand.h
     |   |   |   |       RenameEntityCommand.cpp

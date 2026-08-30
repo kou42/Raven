@@ -210,6 +210,9 @@
     <ClCompile Include="Raven\Editor\Command\TransformCommand.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="Raven\Editor\Command\CreateEntityCommand.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="Raven\Editor\Command\RenameEntityCommand.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -564,6 +567,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Editor\Command\IEditorCommand.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\Editor\Command\CreateEntityCommand.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Editor\Command\InspectorEditCommand.h">

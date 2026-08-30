@@ -1,9 +1,13 @@
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 
+#include "Raven/Editor/Command/CreateEntityCommand.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
 #include <imgui.h>
+
+#include <memory>
 
 namespace Raven
 {
@@ -32,6 +36,26 @@ void SceneHierarchyPanel::OnImGuiRender(Scene* scene, Entity& selectedEntity)
     {
         selectedEntity = Entity{};
     }
+
+    // ========================================================================
+    // Entity creation
+    // ========================================================================
+    // CreateEntityCommand自身がScene APIを呼ぶため、通常の「実行 + 履歴登録」経路を利用します。
+    // Panelが先にEntityを生成してからCommandへ渡す形にしないことで、実行責務をCommandへ集約します。
+    if (ImGui::Button("Create Entity"))
+    {
+        auto command = std::make_unique<CreateEntityCommand>(scene, "Entity");
+        CreateEntityCommand* executedCommand = command.get();
+
+        if (ExecuteAndRecordEditorCommand(std::move(command)) == true)
+        {
+            // ExecuteAndRecord後のCommand所有権はHistoryへ移っています。
+            // raw pointerはこの同期処理中に生成Handleを読むためだけに使い、Panelへ保持しません。
+            selectedEntity = executedCommand->GetCreatedEntity();
+        }
+    }
+
+    ImGui::Separator();
 
     // ========================================================================
     // Entity list
