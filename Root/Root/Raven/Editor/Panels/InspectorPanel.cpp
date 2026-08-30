@@ -180,6 +180,63 @@ bool RigidBodyMassEqual(const float& a, const float& b)
     return std::fabs(a - b) <= CompareEpsilon;
 }
 
+struct ColliderEditState
+{
+    EntityHandle Handle{};
+    Scene* TargetScene = nullptr;
+    ColliderComponent Before{};
+    bool IsActive = false;
+};
+
+ColliderEditState s_ColliderEditState{};
+
+bool ValidateColliderTarget(Entity entity)
+{
+    return entity.HasComponent<ColliderComponent>();
+}
+
+bool ApplyColliderSettings(Entity entity, const ColliderComponent& collider)
+{
+    if (entity.HasComponent<ColliderComponent>() == false)
+    {
+        return false;
+    }
+
+    // ColliderComponentは現段階で専用Setterや外部Resource所有を持たない値Componentです。
+    // そのため、編集開始時と終了時のSnapshot全体を復元することで、形状変更を跨いだUndoでも
+    // 非表示になっていた形状固有パラメータを失わず同じ状態へ戻せます。
+    entity.GetComponent<ColliderComponent>() = collider;
+    return true;
+}
+
+bool ColliderSettingsEqual(const ColliderComponent& a, const ColliderComponent& b)
+{
+    constexpr float CompareEpsilon = 0.000001f;
+    const auto floatEqual = [](float left, float right)
+    {
+        return std::fabs(left - right) <= CompareEpsilon;
+    };
+
+    const auto vec3Equal = [&floatEqual](const math::Vec3& left, const math::Vec3& right)
+    {
+        return floatEqual(left.x, right.x)
+            && floatEqual(left.y, right.y)
+            && floatEqual(left.z, right.z);
+    };
+
+    return a.Type == b.Type
+        && vec3Equal(a.Offset, b.Offset)
+        && vec3Equal(a.HalfExtents, b.HalfExtents)
+        && floatEqual(a.Radius, b.Radius)
+        && floatEqual(a.HalfLength, b.HalfLength)
+        && vec3Equal(a.PlaneNormal, b.PlaneNormal)
+        && floatEqual(a.PlaneOffset, b.PlaneOffset)
+        && floatEqual(a.Restitution, b.Restitution)
+        && floatEqual(a.StaticFriction, b.StaticFriction)
+        && floatEqual(a.DynamicFriction, b.DynamicFriction)
+        && a.IsTrigger == b.IsTrigger;
+}
+
 void DrawVec3Control(const char* label, math::Vec3& value, float speed = 0.1f)
 {
     // RavenのVec3内部表現へEditorが依存しすぎないよう、ImGuiへ渡す値は一度ローカル配列へ
@@ -607,6 +664,83 @@ void DrawRigidBodyComponent(Entity entity)
     ImGui::Text("Sleeping: %s", rigidBody.IsSleeping ? "Yes" : "No");
 }
 
+void RecordColliderDragAfterItem(
+    Entity entity,
+    const ColliderComponent& colliderBeforeThisFrame,
+    const ColliderComponent& colliderAfterThisFrame)
+{
+    if (ImGui::IsItemActivated())
+    {
+        s_ColliderEditState.Handle = entity.GetHandle();
+        s_ColliderEditState.TargetScene = entity.GetScene();
+        s_ColliderEditState.Before = colliderBeforeThisFrame;
+        s_ColliderEditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_ColliderEditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_ColliderEditState.Handle == entity.GetHandle()
+            && s_ColliderEditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<InspectorEditCommand<ColliderComponent>>(
+                    entity,
+                    s_ColliderEditState.Before,
+                    colliderAfterThisFrame,
+                    &ValidateColliderTarget,
+                    &ApplyColliderSettings,
+                    &ColliderSettingsEqual));
+        }
+
+        s_ColliderEditState = ColliderEditState{};
+    }
+}
+
+void DrawColliderVec3Control(
+    const char* label,
+    Entity entity,
+    ColliderComponent& collider,
+    math::Vec3& value,
+    float speed = 0.1f)
+{
+    const ColliderComponent before = collider;
+    DrawVec3Control(label, value, speed);
+    RecordColliderDragAfterItem(entity, before, collider);
+}
+
+void DrawColliderFloatControl(
+    const char* label,
+    Entity entity,
+    ColliderComponent& collider,
+    float& value,
+    float speed,
+    float minimum,
+    float maximum)
+{
+    const ColliderComponent before = collider;
+    ImGui::DragFloat(label, &value, speed, minimum, maximum);
+    RecordColliderDragAfterItem(entity, before, collider);
+}
+
+void ExecuteColliderChange(
+    Entity entity,
+    const ColliderComponent& before,
+    const ColliderComponent& after)
+{
+    ExecuteAndRecordEditorCommand(
+        std::make_unique<InspectorEditCommand<ColliderComponent>>(
+            entity,
+            before,
+            after,
+            &ValidateColliderTarget,
+            &ApplyColliderSettings,
+            &ColliderSettingsEqual));
+}
+
 void DrawColliderComponent(Entity entity)
 {
     if (entity.HasComponent<ColliderComponent>() == false)
@@ -625,44 +759,62 @@ void DrawColliderComponent(Entity entity)
     const char* colliderTypes[] = { "Sphere", "Box", "Capsule", "Plane" };
     if (ImGui::Combo("Collider Type", &colliderTypeIndex, colliderTypes, 4))
     {
-        collider.Type = InspectorIndexToColliderType(colliderTypeIndex);
+        const ColliderComponent before = collider;
+        ColliderComponent after = collider;
+        after.Type = InspectorIndexToColliderType(colliderTypeIndex);
+        ExecuteColliderChange(entity, before, after);
     }
 
     ImGui::TextDisabled("Current: %s", ColliderTypeName(collider.Type));
-    DrawVec3Control("Offset", collider.Offset);
+    DrawColliderVec3Control("Offset", entity, collider, collider.Offset);
 
     // Collider Typeごとに意味のあるパラメータだけを表示します。
     // 無関係な値を同時に見せないことで、どの値が実際のCollision Shapeへ使われるかを明確にします。
     if (collider.Type == ColliderType::Sphere)
     {
-        ImGui::DragFloat("Radius", &collider.Radius, 0.01f, 0.001f, 100000.0f);
+        DrawColliderFloatControl(
+            "Radius", entity, collider, collider.Radius, 0.01f, 0.001f, 100000.0f);
     }
     else if (collider.Type == ColliderType::Box)
     {
-        DrawVec3Control("Half Extents", collider.HalfExtents, 0.05f);
+        DrawColliderVec3Control("Half Extents", entity, collider, collider.HalfExtents, 0.05f);
     }
     else if (collider.Type == ColliderType::Capsule)
     {
         // Capsuleの全高は 2 * (HalfLength + Radius) です。
         // HalfLengthを「円柱部を含む中心線分の半長」として編集することで、Ragdoll定義と
         // Inspectorのパラメータ意味を一致させています。
-        ImGui::DragFloat("Radius", &collider.Radius, 0.01f, 0.001f, 100000.0f);
-        ImGui::DragFloat("Half Length", &collider.HalfLength, 0.01f, 0.0f, 100000.0f);
+        DrawColliderFloatControl(
+            "Radius", entity, collider, collider.Radius, 0.01f, 0.001f, 100000.0f);
+        DrawColliderFloatControl(
+            "Half Length", entity, collider, collider.HalfLength, 0.01f, 0.0f, 100000.0f);
         ImGui::TextDisabled(
             "Full Height: %.3f",
             2.0f * (std::max(collider.HalfLength, 0.0f) + std::max(collider.Radius, 0.0f)));
     }
     else if (collider.Type == ColliderType::Plane)
     {
-        DrawVec3Control("Plane Normal", collider.PlaneNormal);
-        ImGui::DragFloat("Plane Offset", &collider.PlaneOffset, 0.05f);
+        DrawColliderVec3Control("Plane Normal", entity, collider, collider.PlaneNormal);
+        DrawColliderFloatControl(
+            "Plane Offset", entity, collider, collider.PlaneOffset, 0.05f, 0.0f, 0.0f);
     }
 
     ImGui::SeparatorText("Material");
-    ImGui::DragFloat("Restitution", &collider.Restitution, 0.01f, 0.0f, 1.0f);
-    ImGui::DragFloat("Static Friction", &collider.StaticFriction, 0.01f, 0.0f, 10.0f);
-    ImGui::DragFloat("Dynamic Friction", &collider.DynamicFriction, 0.01f, 0.0f, 10.0f);
-    ImGui::Checkbox("Is Trigger", &collider.IsTrigger);
+    DrawColliderFloatControl(
+        "Restitution", entity, collider, collider.Restitution, 0.01f, 0.0f, 1.0f);
+    DrawColliderFloatControl(
+        "Static Friction", entity, collider, collider.StaticFriction, 0.01f, 0.0f, 10.0f);
+    DrawColliderFloatControl(
+        "Dynamic Friction", entity, collider, collider.DynamicFriction, 0.01f, 0.0f, 10.0f);
+
+    bool isTrigger = collider.IsTrigger;
+    if (ImGui::Checkbox("Is Trigger", &isTrigger))
+    {
+        const ColliderComponent before = collider;
+        ColliderComponent after = collider;
+        after.IsTrigger = isTrigger;
+        ExecuteColliderChange(entity, before, after);
+    }
 }
 } // namespace
 
