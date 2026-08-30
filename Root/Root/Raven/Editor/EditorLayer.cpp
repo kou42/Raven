@@ -1,6 +1,7 @@
 ﻿#include "Raven/Editor/EditorLayer.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
 
@@ -74,6 +75,7 @@ void EditorLayer::OnDetach()
     // Framebufferの具体実装はGPU Resourceを所有するため、Graphics Contextが破棄される前の
     // EditorLayer::OnDetach()で明示的に解放します。
     m_EntityPickingMaterial.reset();
+    m_SelectionOutlineMaterial.reset();
     m_SceneFramebuffer.reset();
     m_GameFramebuffer.reset();
 }
@@ -364,13 +366,31 @@ void EditorLayer::RenderSceneView()
                     ImVec2(0.0f, 1.0f),
                     ImVec2(1.0f, 0.0f));
 
+                const ImVec2 imageMin = ImGui::GetItemRectMin();
+                const ImVec2 imageMax = ImGui::GetItemRectMax();
+
+                // ====================================================================
+                // Translate Gizmo
+                // ====================================================================
+                // GizmoはFramebuffer Textureの上へDear ImGuiのDrawListで重ねます。
+                // Editor専用UIなのでゲーム内UI/Rendererには依存させません。
+                // 軸をクリックしたframeはScene Pickingを抑止し、Gizmo操作とEntity選択が競合しないようにします。
+                const bool gizmoConsumedMouse = RenderTranslateGizmo(
+                    m_SelectedEntity,
+                    m_EditorCamera,
+                    imageMin.x,
+                    imageMin.y,
+                    imageMax.x,
+                    imageMax.y);
+
                 // ====================================================================
                 // Scene View Entity Picking
                 // ====================================================================
                 // Image Itemそのものが左クリックされた時だけPickingします。
                 // Window全体のhover判定ではなくImage矩形を使うことで、将来Toolbar等を追加しても
                 // UI上のクリックをScene選択として誤認しません。
-                if (ImGui::IsItemHovered()
+                if (gizmoConsumedMouse == false
+                    && ImGui::IsItemHovered()
                     && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
                 {
                     Scene* activeScene =
@@ -379,8 +399,6 @@ void EditorLayer::RenderSceneView()
                     if (activeScene != nullptr
                         && m_SceneFramebuffer->GetColorAttachmentCount() > 1)
                     {
-                        const ImVec2 imageMin = ImGui::GetItemRectMin();
-                        const ImVec2 imageMax = ImGui::GetItemRectMax();
                         const ImVec2 mousePosition = ImGui::GetMousePos();
 
                         const float imageWidth = imageMax.x - imageMin.x;
