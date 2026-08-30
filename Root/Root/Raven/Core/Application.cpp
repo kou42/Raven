@@ -46,8 +46,8 @@ Application::Application()
     // Raven UI retained-mode / layout / interaction validation panel
     // ========================================================================
     // GPU描画経路とRetained Treeに加え、UIButtonのNormal / Hovered / Pressed Visual Stateを確認します。
-    // 現在のWindow EventにはMouse Move / Button Eventがまだ無いため、Application frameでInputをpollingし、
-    // Edgeを検出してUIContextのMouse Routingへ渡します。Event System側のMouse Event追加後はこの橋渡しを置換できます。
+    // Mouse入力はWindow -> Core Event -> Application -> UIContextの経路で届くため、
+    // pollingに依存せず実際の入力Eventと同じタイミングでHit Test / State遷移を検証できます。
     //
     // このTreeはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
     // Editor Widget導入後はApplication直下の検証Treeを削除し、各UI LayerがRoot以下へ必要なElementを構築します。
@@ -223,7 +223,6 @@ void Application::SetScene(Scope<Scene> scene)
 void Application::Run()
 {
     double previousTime = glfwGetTime();
-    bool previousLeftMousePressed = false;
 
     while (m_Running)
     {
@@ -266,29 +265,6 @@ void Application::Run()
         m_UIContext.BeginFrame(math::Vec2(
             static_cast<float>(m_Window->GetWidth()),
             static_cast<float>(m_Window->GetHeight())));
-
-#if defined(_DEBUG)
-        // ====================================================================
-        // Raven UI temporary mouse bridge
-        // ====================================================================
-        // Core Event SystemにMouse Eventを追加する前段階として、既存Input APIから現在状態を読み取り、
-        // Mouse位置は毎frameMoveとして、左Buttonは前frameとの差分からDown / UpとしてUIContextへ渡します。
-        // これによりWindow実装へ先に変更を広げず、UIButtonのHit Test / Hover / Pressed / Clickを実機確認できます。
-        const auto mousePosition = Input::GetMousePosition();
-        const math::Vec2 uiMousePosition(mousePosition.first, mousePosition.second);
-        m_UIContext.RouteMouseMove(uiMousePosition);
-
-        const bool leftMousePressed = Input::IsMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
-        if (leftMousePressed == true && previousLeftMousePressed == false)
-        {
-            m_UIContext.RouteMouseDown(uiMousePosition, UIMouseButton::Left);
-        }
-        else if (leftMousePressed == false && previousLeftMousePressed == true)
-        {
-            m_UIContext.RouteMouseUp(uiMousePosition, UIMouseButton::Left);
-        }
-        previousLeftMousePressed = leftMousePressed;
-#endif
 
         // ====================================================================
         // Runtime Scene
@@ -362,6 +338,68 @@ void Application::OnEvent(Event& event)
     {
         m_Running = false;
         event.Handled = true;
+    }
+
+    // ========================================================================
+    // Raven UI Mouse Event routing
+    // ========================================================================
+    // Platform Mouse EventをUIContextのHit Test / Bubble Routingへ変換します。
+    // Mouse Button Event自体は座標を保持しないため、Down / Up時点のCursor位置をInputから取得します。
+    // UIEvent側でHandledになった場合だけCore EventもHandledとして、背後LayerへのClick-throughを防ぎます。
+    if (event.Handled == false && event.GetEventType() == EventType::MouseMoved)
+    {
+        MouseMovedEvent& mouseEvent = static_cast<MouseMovedEvent&>(event);
+        event.Handled = m_UIContext.RouteMouseMove(math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()));
+    }
+    else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonPressed)
+    {
+        MouseButtonPressedEvent& mouseEvent = static_cast<MouseButtonPressedEvent&>(event);
+        const auto mousePosition = Input::GetMousePosition();
+
+        UIMouseButton uiButton = UIMouseButton::None;
+        if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
+        {
+            uiButton = UIMouseButton::Left;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_RIGHT)
+        {
+            uiButton = UIMouseButton::Right;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_MIDDLE)
+        {
+            uiButton = UIMouseButton::Middle;
+        }
+
+        if (uiButton != UIMouseButton::None)
+        {
+            event.Handled = m_UIContext.RouteMouseDown(
+                math::Vec2(mousePosition.first, mousePosition.second), uiButton);
+        }
+    }
+    else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonReleased)
+    {
+        MouseButtonReleasedEvent& mouseEvent = static_cast<MouseButtonReleasedEvent&>(event);
+        const auto mousePosition = Input::GetMousePosition();
+
+        UIMouseButton uiButton = UIMouseButton::None;
+        if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
+        {
+            uiButton = UIMouseButton::Left;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_RIGHT)
+        {
+            uiButton = UIMouseButton::Right;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_MIDDLE)
+        {
+            uiButton = UIMouseButton::Middle;
+        }
+
+        if (uiButton != UIMouseButton::None)
+        {
+            event.Handled = m_UIContext.RouteMouseUp(
+                math::Vec2(mousePosition.first, mousePosition.second), uiButton);
+        }
     }
 
     // ========================================================================
