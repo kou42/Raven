@@ -136,9 +136,17 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // UI render target / OpenGL state
     // ========================================================================
-    // Main Window用UIContextはdefault framebufferへ最終Overlayとして描画します。
-    // Scene View / Game View用FramebufferやDear ImGuiが残したOpenGL stateに依存しないよう、
-    // 描画に必要なstateをこのbackend内で明示してから、終了時に元へ戻します。
+    // EditorはScene View / Game ViewをFramebufferへ描画してから、そのTextureをDear ImGuiで表示します。
+    // Dear ImGuiのOpenGL backendは描画後に「呼び出し前のFramebuffer」を復元するため、
+    // ImGui::End()直後にRaven UIを描くだけではScene/Game用offscreen framebufferへ描かれる場合があります。
+    // その結果、Main Window左上へ出す検証Rectが見えない状態になります。
+    //
+    // Main Window用UIContextは最終Window Overlayを担当するため、ここではdefault framebuffer(0)と
+    // Window全体のviewportを明示的に選択します。将来Game View / RenderTexture用UIContextを追加する際は、
+    // UIContext側へRenderTargetを持たせ、この固定0をContext指定のFramebufferへ置き換えます。
+    //
+    // さらに、直前の3D PipelineがPolygonMode / ColorMask / DepthMaskなどを変更していても
+    // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
     GLint previousDrawFramebuffer = 0;
     GLint previousReadFramebuffer = 0;
     GLint previousViewport[4] = { 0, 0, 0, 0 };
@@ -220,6 +228,9 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // State restore
     // ========================================================================
+    // Raven UIをRenderer pipelineの途中から呼んでも後続描画へ影響を残さないよう、
+    // Framebuffer / viewport / scissorに加えて、今回UI側で上書きしたPolygonMode / ColorMask /
+    // DepthMaskも呼び出し前の値へ戻します。UI backendが外部Renderer stateを漏らさないための処理です。
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
     glViewport(
