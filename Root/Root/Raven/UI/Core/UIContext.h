@@ -77,9 +77,8 @@ public:
         m_FrameActive = false;
     }
 
-    // Mouse入力をHit Testし、最前面TargetからRoot方向へBubbleさせます。
-    // 現段階ではHover / Pressed状態を持たず、純粋なRoutingだけを担当します。
-    // これにより次段階の状態管理やUIButtonをEvent Systemへ密結合させません。
+    // Mouse入力をHit Testし、Hover / Pressedを更新してから最前面TargetからRoot方向へBubbleさせます。
+    // Interaction StateはUIContextが一元管理し、WidgetはUIElement上の状態を参照して見た目やClick判定へ利用します。
     bool RouteMouseEvent(
         UIMouseEventType type,
         const math::Vec2& screenPosition,
@@ -101,6 +100,19 @@ public:
         }
 
         UIElement* target = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
+        UpdateHoverTarget(target);
+
+        // Pressedは「どのElement上で押し始めたか」を保持するCaptureに近い状態です。
+        // MouseUp時のHit先が別Elementでも必ず解除することで、押下状態が残留するのを防ぎます。
+        if (type == UIMouseEventType::Down && button == UIMouseButton::Left)
+        {
+            UpdatePressedTarget(target);
+        }
+        else if (type == UIMouseEventType::Up && button == UIMouseButton::Left)
+        {
+            UpdatePressedTarget(nullptr);
+        }
+
         if (target == nullptr)
         {
             return false;
@@ -161,6 +173,11 @@ public:
         return *m_RootElement;
     }
 
+    UIElement* GetHoveredElement() { return m_HoveredElement; }
+    const UIElement* GetHoveredElement() const { return m_HoveredElement; }
+    UIElement* GetPressedElement() { return m_PressedElement; }
+    const UIElement* GetPressedElement() const { return m_PressedElement; }
+
     UIDrawList& GetDrawList()
     {
         return m_DrawList;
@@ -182,10 +199,51 @@ public:
     }
 
 private:
+    void UpdateHoverTarget(UIElement* target)
+    {
+        if (m_HoveredElement == target)
+        {
+            return;
+        }
+
+        if (m_HoveredElement != nullptr)
+        {
+            m_HoveredElement->SetHovered(false);
+        }
+
+        m_HoveredElement = target;
+        if (m_HoveredElement != nullptr)
+        {
+            m_HoveredElement->SetHovered(true);
+        }
+    }
+
+    void UpdatePressedTarget(UIElement* target)
+    {
+        if (m_PressedElement == target)
+        {
+            return;
+        }
+
+        if (m_PressedElement != nullptr)
+        {
+            m_PressedElement->SetPressed(false);
+        }
+
+        m_PressedElement = target;
+        if (m_PressedElement != nullptr)
+        {
+            m_PressedElement->SetPressed(true);
+        }
+    }
+
+private:
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
     Scope<UIElement> m_RootElement;
     Scope<UIRenderer> m_Renderer;
+    UIElement* m_HoveredElement = nullptr;
+    UIElement* m_PressedElement = nullptr;
     bool m_FrameActive = false;
 };
 
