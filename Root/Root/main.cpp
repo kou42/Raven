@@ -114,7 +114,6 @@ int main()
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
-    app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
 
     app.Run();
