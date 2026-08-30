@@ -24,10 +24,10 @@ namespace Raven
 // のように複数Contextへ拡張できます。
 //
 // UIContextはRetained UI Treeそのものではなく、「今frameの描画要求」を集約する境界です。
-// UIElement / Layout / Event Systemは後続段階でこのContextへUIDrawCommandを生成します。
+// UIElement / Layout / Event SystemはこのContextへUIDrawCommandを生成します。
 //
 // 現在は最初のRetained Mode基盤としてRoot UIElementも所有します。
-// Root以下のElement Treeはframeを跨いで保持し、EndFrame()直前にUIDrawListへ展開します。
+// Root以下のElement Treeはframeを跨いで保持し、EndFrame()直前にLayoutを解決してUIDrawListへ展開します。
 // これによりWidgetのLifetimeとGPUへ渡す一時DrawCommandのLifetimeを分離します。
 class UIContext
 {
@@ -55,10 +55,10 @@ public:
         }
 
         // ====================================================================
-        // Retained UI Tree -> UIDrawList
+        // Retained UI Tree -> Layout -> UIDrawList
         // ====================================================================
-        // UIElement Treeはframeを跨いで保持し、描画直前に今frame用DrawCommandへ展開します。
-        // 将来Layout Engineを追加する際は、このBuildDrawList()より前にMeasure / Arrangeを実行します。
+        // UIElement Treeはframeを跨いで保持し、描画直前にAbsolute / Vertical / Horizontal Layoutを解決して
+        // 今frame用DrawCommandへ展開します。将来Measure / Arrangeを分離してもUIContextのframe境界は維持します。
         if (m_RootElement != nullptr)
         {
             m_RootElement->BuildDrawList(m_DrawList);
