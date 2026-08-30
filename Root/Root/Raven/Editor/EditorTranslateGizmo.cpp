@@ -44,6 +44,10 @@ struct TranslateGizmoState
     // 1 world unitあたりのpixel長を固定して保持します。
     math::Vec2 ScreenAxisDirection{};
     float PixelsPerWorldUnit = 0.0f;
+
+    // Local GizmoではEntity Rotationから得た軸をDrag開始時点で固定します。
+    // 操作途中に外部からRotationが変更されてもDrag方向が突然変わらないようにします。
+    math::Vec3 WorldAxisDirection{};
 };
 
 TranslateGizmoState s_GizmoState{};
@@ -53,22 +57,19 @@ void ResetGizmoState()
     s_GizmoState = TranslateGizmoState{};
 }
 
-math::Vec3 GetAxisDirection(TranslateAxis axis)
+int GetAxisIndex(TranslateAxis axis)
 {
     switch (axis)
     {
     case TranslateAxis::X:
-        return { 1.0f, 0.0f, 0.0f };
-
+        return 0;
     case TranslateAxis::Y:
-        return { 0.0f, 1.0f, 0.0f };
-
+        return 1;
     case TranslateAxis::Z:
-        return { 0.0f, 0.0f, 1.0f };
-
+        return 2;
     case TranslateAxis::None:
     default:
-        return {};
+        return -1;
     }
 }
 
@@ -160,8 +161,9 @@ void UpdateGizmoOperationShortcut()
     // Scene View Gizmo shortcuts
     // ========================================================================
     // 一般的なEditor操作に合わせてW=Translate / E=Rotate / R=Scaleとします。
-    // EditorCameraはRight Mouse押下中にW/E/Rを移動・上下操作へ利用する可能性があるため、
-    // Camera Fly操作中はGizmo切り替えを行わず、Camera操作とShortcutが競合しないようにします。
+    // QではWorld / Localを切り替えます。
+    // EditorCameraはRight Mouse押下中にW/E/Q等を移動へ利用するため、Camera Fly操作中は
+    // Gizmo切り替えを行わず、Camera操作とShortcutが競合しないようにします。
     // Text入力中にもShortcutを発火させません。
     const bool canUseShortcut =
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
@@ -187,6 +189,11 @@ void UpdateGizmoOperationShortcut()
     {
         SetEditorGizmoOperation(EditorGizmoOperation::Scale);
     }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Q, false))
+    {
+        ToggleEditorGizmoSpace();
+    }
 }
 
 void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
@@ -209,7 +216,12 @@ void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
         operationName = "Scale";
     }
 
-    // Scene View左上に現在の操作とShortcutだけを小さく表示します。
+    const char* spaceName =
+        GetEditorGizmoSpace() == EditorGizmoSpace::Local
+        ? "Local"
+        : "World";
+
+    // Scene View左上に現在の操作・座標系・Shortcutだけを小さく表示します。
     // 独立したImGui Windowを増やさずFramebuffer Image上のOverlayとして描画します。
     const ImVec2 textPosition{ viewportMinX + 10.0f, viewportMinY + 10.0f };
     drawList->AddText(
@@ -223,8 +235,13 @@ void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
 
     drawList->AddText(
         ImVec2(textPosition.x, textPosition.y + 18.0f),
+        IM_COL32(210, 210, 210, 255),
+        spaceName);
+
+    drawList->AddText(
+        ImVec2(textPosition.x, textPosition.y + 36.0f),
         IM_COL32(190, 190, 190, 255),
-        "W: Move  E: Rotate  R: Scale");
+        "W: Move  E: Rotate  R: Scale  Q: World/Local");
 }
 
 } // namespace
@@ -342,13 +359,18 @@ bool RenderTranslateGizmo(
 
     AxisScreenData axes[3] =
     {
-        { TranslateAxis::X, { 1.0f, 0.0f, 0.0f } },
-        { TranslateAxis::Y, { 0.0f, 1.0f, 0.0f } },
-        { TranslateAxis::Z, { 0.0f, 0.0f, 1.0f } }
+        { TranslateAxis::X },
+        { TranslateAxis::Y },
+        { TranslateAxis::Z }
     };
 
     for (AxisScreenData& axis : axes)
     {
+        const int axisIndex = GetAxisIndex(axis.Axis);
+        axis.WorldDirection = GetEditorGizmoAxisDirection(
+            transform.Rotation,
+            axisIndex);
+
         const math::Vec3 axisEndWorld =
             originWorld + axis.WorldDirection * gizmoWorldLength;
 
@@ -462,6 +484,7 @@ bool RenderTranslateGizmo(
                 axis.ScreenVector / axis.ScreenLength;
             s_GizmoState.PixelsPerWorldUnit =
                 axis.ScreenLength / gizmoWorldLength;
+            s_GizmoState.WorldAxisDirection = axis.WorldDirection;
 
             consumedMouse = true;
             break;
@@ -494,12 +517,9 @@ bool RenderTranslateGizmo(
         const float worldDelta =
             projectedPixels / s_GizmoState.PixelsPerWorldUnit;
 
-        const math::Vec3 activeWorldAxis =
-            GetAxisDirection(s_GizmoState.ActiveAxis);
-
         transform.Position =
             s_GizmoState.DragStartPosition
-            + activeWorldAxis * worldDelta;
+            + s_GizmoState.WorldAxisDirection * worldDelta;
     }
 
     return consumedMouse;
