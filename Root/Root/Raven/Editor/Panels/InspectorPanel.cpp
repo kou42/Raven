@@ -90,6 +90,96 @@ bool CameraProjectionSettingsEqual(
         && std::fabs(a.FarClip - b.FarClip) <= CompareEpsilon;
 }
 
+struct RigidBodyTypeSettings
+{
+    BodyType Type = BodyType::Dynamic;
+    float Mass = 1.0f;
+    math::Vec3 LinearVelocity{};
+    math::Vec3 AngularVelocity{};
+    math::Vec3 Force{};
+    math::Vec3 Torque{};
+    bool IsSleeping = false;
+    float SleepTimer = 0.0f;
+};
+
+struct RigidBodyMassEditState
+{
+    EntityHandle Handle{};
+    Scene* TargetScene = nullptr;
+    float Before = 0.0f;
+    bool IsActive = false;
+};
+
+RigidBodyMassEditState s_RigidBodyMassEditState{};
+
+bool ValidateRigidBodyTarget(Entity entity)
+{
+    return entity.HasComponent<RigidBodyComponent>();
+}
+
+RigidBodyTypeSettings CaptureRigidBodyTypeSettings(const RigidBodyComponent& rigidBody)
+{
+    RigidBodyTypeSettings settings{};
+    settings.Type = rigidBody.Type;
+    settings.Mass = rigidBody.Mass;
+    settings.LinearVelocity = rigidBody.LinearVelocity;
+    settings.AngularVelocity = rigidBody.AngularVelocity;
+    settings.Force = rigidBody.Force;
+    settings.Torque = rigidBody.Torque;
+    settings.IsSleeping = rigidBody.IsSleeping;
+    settings.SleepTimer = rigidBody.SleepTimer;
+    return settings;
+}
+
+bool ApplyRigidBodyTypeSettings(Entity entity, const RigidBodyTypeSettings& settings)
+{
+    if (entity.HasComponent<RigidBodyComponent>() == false)
+    {
+        return false;
+    }
+
+    RigidBodyComponent& rigidBody = entity.GetComponent<RigidBodyComponent>();
+
+    // SetBodyType()はInverseMassやSleep状態を同期し、Static化時には運動量を初期化します。
+    // Undoで元のDynamic状態へ戻す場合は編集前SnapshotのVelocity / Forceも必要なので、
+    // Setterで型固有の不変条件を整えた後、そのCommandが保存した時点の運動状態を復元します。
+    rigidBody.Mass = settings.Mass;
+    rigidBody.SetBodyType(settings.Type);
+    rigidBody.LinearVelocity = settings.LinearVelocity;
+    rigidBody.AngularVelocity = settings.AngularVelocity;
+    rigidBody.Force = settings.Force;
+    rigidBody.Torque = settings.Torque;
+    rigidBody.IsSleeping = settings.IsSleeping;
+    rigidBody.SleepTimer = settings.SleepTimer;
+    return true;
+}
+
+bool RigidBodyTypeSettingsEqual(
+    const RigidBodyTypeSettings& a,
+    const RigidBodyTypeSettings& b)
+{
+    // BodyType変更Commandの成立条件は型が変化したことです。
+    // 他のSnapshot値は型変更の副作用をUndoするために保持しており、編集判定には使用しません。
+    return a.Type == b.Type;
+}
+
+bool ApplyRigidBodyMass(Entity entity, const float& mass)
+{
+    if (entity.HasComponent<RigidBodyComponent>() == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().SetMass(mass);
+    return true;
+}
+
+bool RigidBodyMassEqual(const float& a, const float& b)
+{
+    constexpr float CompareEpsilon = 0.000001f;
+    return std::fabs(a - b) <= CompareEpsilon;
+}
+
 void DrawVec3Control(const char* label, math::Vec3& value, float speed = 0.1f)
 {
     // RavenのVec3内部表現へEditorが依存しすぎないよう、ImGuiへ渡す値は一度ローカル配列へ
@@ -406,6 +496,49 @@ void DrawCameraComponent(Entity entity)
     ImGui::TextDisabled("Aspect Ratio: %.3f", camera.GetAspectRatio());
 }
 
+void DrawRigidBodyMassControl(Entity entity, RigidBodyComponent& rigidBody)
+{
+    const float massBeforeThisFrame = rigidBody.Mass;
+    float mass = rigidBody.Mass;
+
+    if (ImGui::DragFloat("Mass", &mass, 0.05f, 0.0f, 100000.0f))
+    {
+        // Drag中もPhysics状態へ即時反映します。InverseMassとの対応はSetMass()へ一元化します。
+        rigidBody.SetMass(mass);
+        mass = rigidBody.Mass;
+    }
+
+    if (ImGui::IsItemActivated())
+    {
+        s_RigidBodyMassEditState.Handle = entity.GetHandle();
+        s_RigidBodyMassEditState.TargetScene = entity.GetScene();
+        s_RigidBodyMassEditState.Before = massBeforeThisFrame;
+        s_RigidBodyMassEditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_RigidBodyMassEditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_RigidBodyMassEditState.Handle == entity.GetHandle()
+            && s_RigidBodyMassEditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<InspectorEditCommand<float>>(
+                    entity,
+                    s_RigidBodyMassEditState.Before,
+                    rigidBody.Mass,
+                    &ValidateRigidBodyTarget,
+                    &ApplyRigidBodyMass,
+                    &RigidBodyMassEqual));
+        }
+
+        s_RigidBodyMassEditState = RigidBodyMassEditState{};
+    }
+}
+
 void DrawRigidBodyComponent(Entity entity)
 {
     if (entity.HasComponent<RigidBodyComponent>() == false)
@@ -427,17 +560,38 @@ void DrawRigidBodyComponent(Entity entity)
     const char* bodyTypes[] = { "Static", "Dynamic", "Kinematic" };
     if (ImGui::Combo("Body Type", &bodyTypeIndex, bodyTypes, 3))
     {
-        rigidBody.SetBodyType(static_cast<BodyType>(bodyTypeIndex));
+        const RigidBodyTypeSettings before = CaptureRigidBodyTypeSettings(rigidBody);
+
+        // UI入力を一度Componentのcopyへ適用し、Setterが生む副作用を含むAfter Snapshotを作ります。
+        // 実Entityの変更はExecuteAndRecordEditorCommand()に任せるため、通常Command経路も検証できます。
+        RigidBodyComponent afterRigidBody = rigidBody;
+        afterRigidBody.SetBodyType(static_cast<BodyType>(bodyTypeIndex));
+        const RigidBodyTypeSettings after = CaptureRigidBodyTypeSettings(afterRigidBody);
+
+        ExecuteAndRecordEditorCommand(
+            std::make_unique<InspectorEditCommand<RigidBodyTypeSettings>>(
+                entity,
+                before,
+                after,
+                &ValidateRigidBodyTarget,
+                &ApplyRigidBodyTypeSettings,
+                &RigidBodyTypeSettingsEqual));
     }
 
     ImGui::TextDisabled("Current: %s", BodyTypeName(rigidBody.Type));
 
     // MassとInverseMassは常に対応している必要があるためSetMass()経由で更新します。
-    // Static BodyではSetMass()がMass=0 / InverseMass=0を維持します。
-    float mass = rigidBody.Mass;
-    if (ImGui::DragFloat("Mass", &mass, 0.05f, 0.0f, 100000.0f))
+    // Static BodyのMassはSetBodyType()がDynamicへ戻る時の基準値として保持されます。
+    // Static中にSetMass()を呼ぶと保持値まで0へ失われるため、編集を無効化してInverseMass=0を維持します。
+    if (rigidBody.Type == BodyType::Static)
     {
-        rigidBody.SetMass(mass);
+        ImGui::BeginDisabled();
+        DrawRigidBodyMassControl(entity, rigidBody);
+        ImGui::EndDisabled();
+    }
+    else
+    {
+        DrawRigidBodyMassControl(entity, rigidBody);
     }
 
     DrawVec3Control("Linear Velocity", rigidBody.LinearVelocity);
