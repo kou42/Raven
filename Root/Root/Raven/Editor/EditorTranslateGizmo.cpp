@@ -1,6 +1,8 @@
 #include "Raven/Editor/EditorTranslateGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorGizmo.h"
+#include "Raven/Editor/EditorRotateGizmo.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
@@ -151,6 +153,66 @@ float DistancePointToSegment(
     return (point - closest).Length();
 }
 
+void UpdateGizmoOperationShortcut()
+{
+    // ========================================================================
+    // Scene View Gizmo shortcuts
+    // ========================================================================
+    // 一般的なEditor操作に合わせてW=Translate / E=Rotateとします。
+    // EditorCameraはRight Mouse押下中にW/Eを移動へ利用するため、Camera Fly操作中は
+    // Gizmo切り替えを行わず、Camera操作とShortcutが競合しないようにします。
+    // Text入力中にもShortcutを発火させません。
+    const bool canUseShortcut =
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+        && ImGui::IsMouseDown(ImGuiMouseButton_Right) == false
+        && ImGui::GetIO().WantTextInput == false;
+
+    if (canUseShortcut == false)
+    {
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_W, false))
+    {
+        SetEditorGizmoOperation(EditorGizmoOperation::Translate);
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+    {
+        SetEditorGizmoOperation(EditorGizmoOperation::Rotate);
+    }
+}
+
+void DrawGizmoOperationHint(float viewportMinX, float viewportMinY)
+{
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    if (drawList == nullptr)
+    {
+        return;
+    }
+
+    const EditorGizmoOperation operation = GetEditorGizmoOperation();
+    const char* operationName =
+        operation == EditorGizmoOperation::Rotate ? "Rotate" : "Translate";
+
+    // Scene View左上に現在の操作とShortcutだけを小さく表示します。
+    // 独立したImGui Windowを増やさずFramebuffer Image上のOverlayとして描画します。
+    const ImVec2 textPosition{ viewportMinX + 10.0f, viewportMinY + 10.0f };
+    drawList->AddText(
+        ImVec2(textPosition.x + 1.0f, textPosition.y + 1.0f),
+        IM_COL32(0, 0, 0, 210),
+        operationName);
+    drawList->AddText(
+        textPosition,
+        IM_COL32(235, 235, 235, 255),
+        operationName);
+
+    drawList->AddText(
+        ImVec2(textPosition.x, textPosition.y + 18.0f),
+        IM_COL32(190, 190, 190, 255),
+        "W: Move  E: Rotate");
+}
+
 } // namespace
 
 bool RenderTranslateGizmo(
@@ -161,6 +223,30 @@ bool RenderTranslateGizmo(
     float viewportMaxX,
     float viewportMaxY)
 {
+    // ========================================================================
+    // Compatibility entry point / operation dispatch
+    // ========================================================================
+    // EditorLayerは既存のRenderTranslateGizmo()をScene ViewのGizmo入口として呼んでいます。
+    // EditorLayer.cppを大きく置換して既存コメントを失わないよう、この互換入口で操作モードを
+    // 更新し、Rotate選択時だけRotate Gizmoへ委譲します。
+    // 将来EditorLayer側を小さな差分でRenderEditorTransformGizmo()へ移行できます。
+    UpdateGizmoOperationShortcut();
+    DrawGizmoOperationHint(viewportMinX, viewportMinY);
+
+    if (GetEditorGizmoOperation() == EditorGizmoOperation::Rotate)
+    {
+        // Translate側にDrag状態が残っていた場合は操作モード変更時に明示的に破棄します。
+        ResetGizmoState();
+
+        return RenderRotateGizmo(
+            selectedEntity,
+            camera,
+            viewportMinX,
+            viewportMinY,
+            viewportMaxX,
+            viewportMaxY);
+    }
+
     const float viewportWidth = viewportMaxX - viewportMinX;
     const float viewportHeight = viewportMaxY - viewportMinY;
 
