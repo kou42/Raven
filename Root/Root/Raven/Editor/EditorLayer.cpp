@@ -416,8 +416,36 @@ void EditorLayer::RenderSceneView()
 
                                 if (entityID > 0)
                                 {
-                                    m_SelectedEntity = activeScene->TryGetEntity(
-                                        static_cast<EntityIndex>(entityID));
+                                    // Picking AttachmentへはEntityIndexだけを書き込みます。
+                                    // GenerationはScene側の正規データから現在値を取得してEntityを再構築し、
+                                    // Destroy/Index再利用後の古いHandleをEditor選択へ持ち込まないようにします。
+                                    const EntityIndex entityIndex =
+                                        static_cast<EntityIndex>(entityID);
+
+                                    try
+                                    {
+                                        const EntityGeneration generation =
+                                            activeScene->GetEntityGeneration(entityIndex);
+                                        Entity pickedEntity(
+                                            entityIndex,
+                                            generation,
+                                            activeScene);
+
+                                        if (activeScene->IsEntityAlive(pickedEntity))
+                                        {
+                                            m_SelectedEntity = pickedEntity;
+                                        }
+                                        else
+                                        {
+                                            m_SelectedEntity = Entity{};
+                                        }
+                                    }
+                                    catch (const std::out_of_range&)
+                                    {
+                                        // GPU Bufferへ古いIndexが残った場合でもEditorを落とさず選択解除します。
+                                        // 通常はPicking Pass直後に読むため発生しませんが、安全な境界として扱います。
+                                        m_SelectedEntity = Entity{};
+                                    }
                                 }
                                 else
                                 {
