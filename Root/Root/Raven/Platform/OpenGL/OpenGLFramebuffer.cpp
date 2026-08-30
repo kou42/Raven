@@ -208,13 +208,18 @@ void OpenGLFramebuffer::ClearAttachment(std::size_t attachmentIndex, int value)
 
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_RendererID);
 
+    // glClearBufferivのColor clear値は4成分の整数配列を受け取ります。
+    // R32Iでは先頭成分だけが保存されますが、1要素へのポインタを渡すとOpenGL側が残り3成分を
+    // 読む際に範囲外参照となるため、明示的に4要素を用意します。
+    const GLint clearValues[4] = { value, value, value, value };
+
     // glClearBufferivのdrawbuffer引数はGL_COLOR_ATTACHMENTnではなく、
     // 現在のDraw Buffer配列におけるColor indexを指定します。
     // RavenではColor Attachmentを0から連続割り当てしているためvector indexをそのまま利用できます。
     glClearBufferiv(
         GL_COLOR,
         static_cast<GLint>(attachmentIndex),
-        &value);
+        clearValues);
 
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
 }
