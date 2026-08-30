@@ -4,7 +4,6 @@
 #include "Raven/UI/Core/UIElement.h"
 
 #include <functional>
-#include <utility>
 
 namespace Raven
 {
@@ -19,63 +18,18 @@ class UIButton final : public UIElement
 public:
     using ClickHandler = std::function<void()>;
 
-    void SetNormalColor(const math::Vec4& color) { m_NormalColor = color; }
-    void SetHoveredColor(const math::Vec4& color) { m_HoveredColor = color; }
-    void SetPressedColor(const math::Vec4& color) { m_PressedColor = color; }
-    void SetOnClick(ClickHandler handler) { m_OnClick = std::move(handler); }
+    void SetNormalColor(const math::Vec4& color);
+    void SetHoveredColor(const math::Vec4& color);
+    void SetPressedColor(const math::Vec4& color);
+    void SetOnClick(ClickHandler handler);
 
-    const math::Vec4& GetNormalColor() const { return m_NormalColor; }
-    const math::Vec4& GetHoveredColor() const { return m_HoveredColor; }
-    const math::Vec4& GetPressedColor() const { return m_PressedColor; }
+    const math::Vec4& GetNormalColor() const;
+    const math::Vec4& GetHoveredColor() const;
+    const math::Vec4& GetPressedColor() const;
 
 protected:
-    void OnMouseEvent(UIMouseEvent& event) override
-    {
-        // Bubble中にParent Buttonまで反応しないよう、実際のHit Targetが自分自身の場合だけ扱います。
-        if (event.Target != this)
-        {
-            return;
-        }
-
-        if (event.Type == UIMouseEventType::Down && event.Button == UIMouseButton::Left)
-        {
-            event.Handled = true;
-            return;
-        }
-
-        if (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left)
-        {
-            // PressedTargetはMouseDown開始時のHit Elementです。
-            // Up時にも自分自身がHitしているため、この一致で標準的なButton Clickを成立させます。
-            if (event.PressedTarget == this && m_OnClick != nullptr)
-            {
-                m_OnClick();
-            }
-
-            event.Handled = true;
-        }
-    }
-
-    void OnBuildDrawList(
-        UIDrawList& drawList,
-        const math::Vec2& absolutePosition) const override
-    {
-        const math::Vec4* color = &m_NormalColor;
-        if (IsPressed() == true)
-        {
-            color = &m_PressedColor;
-        }
-        else if (IsHovered() == true)
-        {
-            color = &m_HoveredColor;
-        }
-
-        const math::Vec2& size = GetSize();
-        drawList.AddRect(
-            absolutePosition,
-            math::Vec2(absolutePosition.x + size.x, absolutePosition.y + size.y),
-            *color);
-    }
+    void OnMouseEvent(UIMouseEvent& event) override;
+    void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
     math::Vec4 m_NormalColor{ 0.24f, 0.24f, 0.28f, 1.0f };
