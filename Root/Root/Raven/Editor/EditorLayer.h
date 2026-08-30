@@ -14,6 +14,7 @@
 namespace Raven
 {
 class Application;
+class Material;
 
 // ============================================================================
 // EditorLayer
@@ -124,6 +125,13 @@ private:
         Framebuffer& framebuffer,
         const Camera& camera);
 
+    // Scene View専用のEntity Picking Passです。
+    // 通常Scene描画後のDepth Bufferを再利用し、Color Attachment 1(R32I)だけへEntityIndexを書き込みます。
+    // 既存Material/ShaderへPicking出力を追加しないため、ゲーム描画ShaderとEditor機能を分離できます。
+    void RenderEntityPickingPass(
+        Framebuffer& framebuffer,
+        const Camera& camera);
+
 private:
     // ========================================================================
     // Application reference
@@ -183,6 +191,10 @@ private:
     // 委譲します。そのためEditorLayerは現在のRendererAPIがOpenGLかDirectXかを知りません。
     std::unique_ptr<Framebuffer> m_SceneFramebuffer;
     std::unique_ptr<Framebuffer> m_GameFramebuffer;
+
+    // Picking Pass専用Materialです。
+    // ゲーム内Materialを変更せず、EditorだけがR32I AttachmentへEntityIndexを書き込むために使用します。
+    Ref<Material> m_EntityPickingMaterial;
 
     // ImGui::GetContentRegionAvail()で取得した各Viewport Windowの表示領域です。
     // floatのままUI側の最新サイズを保持し、OnRender()でGPUへ渡す際にuint32_tへ変換します。
