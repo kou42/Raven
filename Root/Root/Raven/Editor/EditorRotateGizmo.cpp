@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorRotateGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathQuatanion.h"
@@ -413,6 +414,19 @@ bool RenderRotateGizmo(
 
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left) == false)
         {
+            // RotateもMouse Release時に1 Commandだけ記録します。
+            TransformComponent beforeTransform = transform;
+            beforeTransform.Rotation = s_GizmoState.DragStartRotation;
+
+            const Entity editedEntity(
+                EntityHandle::FromValue(s_GizmoState.EntityValue),
+                s_GizmoState.EntityScene);
+
+            RecordEditorTransformCommand(
+                editedEntity,
+                beforeTransform,
+                transform);
+
             ResetGizmoState();
             return true;
         }
