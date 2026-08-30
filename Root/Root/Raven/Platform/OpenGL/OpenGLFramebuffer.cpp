@@ -9,12 +9,46 @@
 namespace Raven
 {
 
-OpenGLFramebuffer::OpenGLFramebuffer(std::uint32_t width, std::uint32_t height)
-    : m_Width(width > 0 ? width : 1),
-      m_Height(height > 0 ? height : 1)
+namespace
 {
-    // Constructorではサイズだけを保持するのではなく、直ちに利用可能なFBOを作ります。
+
+FramebufferSpecification CreateDefaultFramebufferSpecification(
+    std::uint32_t width,
+    std::uint32_t height)
+{
+    FramebufferSpecification specification;
+    specification.Width = width;
+    specification.Height = height;
+    return specification;
+}
+
+bool IsDepthStencilFormat(TextureFormat format)
+{
+    return format == TextureFormat::Depth24Stencil8;
+}
+
+} // namespace
+
+OpenGLFramebuffer::OpenGLFramebuffer(std::uint32_t width, std::uint32_t height)
+    : OpenGLFramebuffer(CreateDefaultFramebufferSpecification(width, height))
+{
+}
+
+OpenGLFramebuffer::OpenGLFramebuffer(const FramebufferSpecification& specification)
+    : m_Specification(specification)
+{
+    // ConstructorではSpecificationを保持するだけでなく、直ちに利用可能なFBOを作ります。
     // 0サイズが渡された場合はOpenGLへ不正な0x0 Textureを渡さないよう1x1へ補正します。
+    if (m_Specification.Width == 0)
+    {
+        m_Specification.Width = 1;
+    }
+
+    if (m_Specification.Height == 0)
+    {
+        m_Specification.Height = 1;
+    }
+
     Invalidate();
 }
 
@@ -40,8 +74,8 @@ void OpenGLFramebuffer::Bind() const
     glViewport(
         0,
         0,
-        static_cast<GLsizei>(m_Width),
-        static_cast<GLsizei>(m_Height));
+        static_cast<GLsizei>(m_Specification.Width),
+        static_cast<GLsizei>(m_Specification.Height));
 }
 
 void OpenGLFramebuffer::Unbind() const
@@ -62,19 +96,20 @@ void OpenGLFramebuffer::Resize(std::uint32_t width, std::uint32_t height)
 
     // 毎frame Resize()は呼ばれますが、Windowサイズが変わっていなければGPU Resourceを
     // 再生成する必要はありません。Texture再確保は比較的重い処理なので省略します。
-    if (width == m_Width && height == m_Height)
+    if (width == m_Specification.Width && height == m_Specification.Height)
     {
         return;
     }
 
-    m_Width = width;
-    m_Height = height;
+    // Attachment構成は維持し、サイズだけを更新して同じ用途のFramebufferを再生成します。
+    m_Specification.Width = width;
+    m_Specification.Height = height;
     Invalidate();
 }
 
 void OpenGLFramebuffer::Invalidate()
 {
-    // Resize時は古いAttachmentとFBOを先に破棄し、新しいサイズで一式を再生成します。
+    // Resize時は古いAttachmentとFBOを先に破棄し、新しいSpecificationで一式を再生成します。
     Release();
 
     // ========================================================================
@@ -83,71 +118,122 @@ void OpenGLFramebuffer::Invalidate()
     glGenFramebuffers(1, &m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
 
-    // ========================================================================
-    // Color Attachment
-    // ========================================================================
-    // Sceneの描画結果をRGBA8 Textureとして保持します。
-    // RenderbufferではなくTextureにしている理由は、描画完了後にコピーせず
-    // EditorのScene View / Game Viewなどから直接samplingして表示できるようにするためです。
-    //
-    // 以前はFramebuffer自身がglGenTextures / glTexImage2D / glDeleteTexturesを直接管理していました。
-    // 現在はRenderer共通のTextureSpecificationからRenderTarget用途のTextureを生成し、
-    // Textureの生成・寿命管理をTexture抽象クラスへ委譲しています。
-    TextureSpecification colorSpecification;
-    colorSpecification.Width = m_Width;
-    colorSpecification.Height = m_Height;
-    colorSpecification.Format = TextureFormat::RGBA8;
-    colorSpecification.Usage = TextureUsage::RenderTarget;
-    colorSpecification.GenerateMips = false;
+    bool hasColorAttachment = false;
+    bool hasDepthStencilAttachment = false;
 
-    m_ColorAttachment = Texture::Create(colorSpecification);
-
-    if (m_ColorAttachment == nullptr)
+    // ========================================================================
+    // Attachment creation
+    // ========================================================================
+    // FramebufferSpecificationに列挙されたFormatを順番に解釈します。
+    // 現段階ではColor 1枚 + DepthStencil 1枚を扱い、将来MRTを導入する際にはColor Attachmentを
+    // vector化してGL_COLOR_ATTACHMENT0 + indexへ接続する方針です。
+    for (const FramebufferAttachmentSpecification& attachmentSpecification
+        : m_Specification.Attachments.Attachments)
     {
-        assert(false && "Failed to create framebuffer color attachment texture.");
+        const TextureFormat format = attachmentSpecification.Format;
+
+        if (format == TextureFormat::None)
+        {
+            // Noneは未指定値なのでGPU Resourceを生成しません。
+            continue;
+        }
+
+        if (IsDepthStencilFormat(format))
+        {
+            // Depth/Stencil Attachmentは1枚だけ許可します。
+            // 同一Framebufferへ複数Depthを指定してもOpenGLの同じAttachment pointを共有できないため、
+            // 設定ミスとして早期に検出します。
+            if (hasDepthStencilAttachment)
+            {
+                assert(false && "Framebuffer supports only one depth/stencil attachment.");
+                continue;
+            }
+
+            TextureSpecification depthStencilSpecification;
+            depthStencilSpecification.Width = m_Specification.Width;
+            depthStencilSpecification.Height = m_Specification.Height;
+            depthStencilSpecification.Format = format;
+            depthStencilSpecification.Usage = TextureUsage::DepthStencil;
+            depthStencilSpecification.GenerateMips = false;
+
+            m_DepthStencilAttachment = Texture::Create(depthStencilSpecification);
+
+            if (m_DepthStencilAttachment == nullptr)
+            {
+                assert(false && "Failed to create framebuffer depth/stencil attachment texture.");
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                return;
+            }
+
+            glFramebufferTexture2D(
+                GL_FRAMEBUFFER,
+                GL_DEPTH_STENCIL_ATTACHMENT,
+                GL_TEXTURE_2D,
+                m_DepthStencilAttachment->GetID(),
+                0);
+
+            hasDepthStencilAttachment = true;
+            continue;
+        }
+
+        // ====================================================================
+        // Color Attachment
+        // ====================================================================
+        // Sceneの描画結果等をTextureとして保持します。
+        // RenderbufferではなくTextureにしておくことで、描画完了後にコピーせずPost Processや
+        // Editor Viewportなどからsampling可能なRenderTargetとして再利用できます。
+        if (hasColorAttachment)
+        {
+            // 現在のFramebuffer公開APIは単一Color Attachmentを前提としているため、
+            // MRT対応前に複数Colorを黙って無視せず設定ミスとして検出します。
+            assert(false && "Multiple color attachments are not supported yet.");
+            continue;
+        }
+
+        TextureSpecification colorSpecification;
+        colorSpecification.Width = m_Specification.Width;
+        colorSpecification.Height = m_Specification.Height;
+        colorSpecification.Format = format;
+        colorSpecification.Usage = TextureUsage::RenderTarget;
+        colorSpecification.GenerateMips = false;
+
+        m_ColorAttachment = Texture::Create(colorSpecification);
+
+        if (m_ColorAttachment == nullptr)
+        {
+            assert(false && "Failed to create framebuffer color attachment texture.");
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
+
+        // OpenGLFramebufferはOpenGL backend内部なので、FramebufferへTextureをAttachmentするために
+        // 現在はTextureのRenderer IDを利用します。上位層にはこのIDを公開しません。
+        // TextureのNative Handle抽象化を追加する段階で、この境界もさらに整理できます。
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER,
+            GL_COLOR_ATTACHMENT0,
+            GL_TEXTURE_2D,
+            m_ColorAttachment->GetID(),
+            0);
+
+        hasColorAttachment = true;
+    }
+
+    // Attachmentを1つも持たないFramebufferは描画先として成立しないため設定ミスとして扱います。
+    if (hasColorAttachment == false && hasDepthStencilAttachment == false)
+    {
+        assert(false && "FramebufferSpecification must contain at least one valid attachment.");
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         return;
     }
 
-    // OpenGLFramebufferはOpenGL backend内部なので、FramebufferへTextureをAttachmentするために
-    // 現在はTextureのRenderer IDを利用します。上位層にはこのIDを公開しません。
-    // TextureのNative Handle抽象化を追加する段階で、この境界もさらに整理できます。
-    glFramebufferTexture2D(
-        GL_FRAMEBUFFER,
-        GL_COLOR_ATTACHMENT0,
-        GL_TEXTURE_2D,
-        m_ColorAttachment->GetID(),
-        0);
-
-    // ========================================================================
-    // Depth / Stencil Attachment
-    // ========================================================================
-    // 3D Scene描画ではDepth Testが必要なのでColor Attachmentだけでは不十分です。
-    // 以前はOpenGLFramebufferがGL_DEPTH24_STENCIL8 Renderbufferを直接生成していましたが、
-    // 現在はColorと同様にDepth24Stencil8 TextureとしてTexture抽象化へ所有権を移しています。
-    // 将来Depth sampling、Picking、Shadow等が必要になっても同じTexture基盤を利用できます。
-    TextureSpecification depthStencilSpecification;
-    depthStencilSpecification.Width = m_Width;
-    depthStencilSpecification.Height = m_Height;
-    depthStencilSpecification.Format = TextureFormat::Depth24Stencil8;
-    depthStencilSpecification.Usage = TextureUsage::DepthStencil;
-    depthStencilSpecification.GenerateMips = false;
-
-    m_DepthStencilAttachment = Texture::Create(depthStencilSpecification);
-
-    if (m_DepthStencilAttachment == nullptr)
+    // Depth-only FramebufferはShadow Map等で利用できます。
+    // Color Attachmentが存在しない場合、OpenGLへColor出力先がないことを明示します。
+    if (hasColorAttachment == false)
     {
-        assert(false && "Failed to create framebuffer depth/stencil attachment texture.");
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        return;
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
     }
-
-    glFramebufferTexture2D(
-        GL_FRAMEBUFFER,
-        GL_DEPTH_STENCIL_ATTACHMENT,
-        GL_TEXTURE_2D,
-        m_DepthStencilAttachment->GetID(),
-        0);
 
     // Color + Depth/Stencil Attachmentの組み合わせが描画可能か必ず検証します。
     // Attachment Formatやサイズに不整合がある場合、ここで早期に検出できます。
