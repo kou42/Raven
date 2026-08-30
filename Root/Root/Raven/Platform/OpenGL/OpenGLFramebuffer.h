@@ -2,7 +2,9 @@
 
 #include "Raven/Renderer/Framebuffer.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace Raven
 {
@@ -16,8 +18,8 @@ class Texture;
 // OpenGL固有のFBO IDはこのクラスだけが所有します。
 //
 // Color Attachment:
-//   FramebufferSpecificationで指定されたColor FormatからRenderTarget用途のTextureを生成します。
-//   現段階では描画経路との互換性を優先し、Color Attachmentは1枚まで対応します。
+//   FramebufferSpecificationで指定されたColor FormatごとにRenderTarget用途のTextureを生成し、
+//   GL_COLOR_ATTACHMENT0 + indexへ接続します。複数Color AttachmentはMRTとして同時出力できます。
 //
 // Depth/Stencil Attachment:
 //   Depth24Stencil8が指定された場合はDepthStencil用途のTexture抽象クラスとして保持します。
@@ -40,7 +42,8 @@ public:
     void Unbind() const override;
     void Resize(std::uint32_t width, std::uint32_t height) override;
 
-    const Ref<Texture>& GetColorAttachment() const override { return m_ColorAttachment; }
+    const Ref<Texture>& GetColorAttachment(std::size_t index) const override;
+    std::size_t GetColorAttachmentCount() const override { return m_ColorAttachments.size(); }
     const FramebufferSpecification& GetSpecification() const override { return m_Specification; }
     std::uint32_t GetWidth() const override { return m_Specification.Width; }
     std::uint32_t GetHeight() const override { return m_Specification.Height; }
@@ -51,12 +54,16 @@ private:
     void Invalidate();
 
     // 所有しているOpenGL Resourceを安全に解放します。
-    // Texture AttachmentはRefのreset()によりTextureクラス自身のRAIIへ解放を委譲します。
+    // Texture AttachmentはRefのclear()/reset()によりTextureクラス自身のRAIIへ解放を委譲します。
     void Release();
 
 private:
     std::uint32_t m_RendererID = 0;
-    Ref<Texture> m_ColorAttachment;
+
+    // Color AttachmentはSpecification内のColor Formatの出現順で格納します。
+    // vector indexとGL_COLOR_ATTACHMENT0 + indexを対応させることで、Renderer共通側では
+    // OpenGLのAttachment定数を意識せずMRTを扱えます。
+    std::vector<Ref<Texture>> m_ColorAttachments;
     Ref<Texture> m_DepthStencilAttachment;
 
     // Width / Height / Attachment構成を一つの設定として保持します。
