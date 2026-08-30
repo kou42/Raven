@@ -39,9 +39,23 @@ void EditorLayer::OnAttach()
     // SceneとGameを最初から別Framebufferにしている理由は、Scene Viewだけへ
     // Editor Camera / Grid / Selection Outline / Gizmo等を追加しても、Game Viewの
     // Runtime表示へEditor専用描画が混入しない構造を保つためです。
-    m_SceneFramebuffer = Framebuffer::Create(
-        static_cast<std::uint32_t>(m_SceneViewportWidth),
-        static_cast<std::uint32_t>(m_SceneViewportHeight));
+    //
+    // Scene ViewだけはEntity Picking用R32I Attachmentを追加します。
+    // Game ViewはEditor選択情報を必要としないため、従来のRGBA8 + Depth構成を維持します。
+    FramebufferSpecification sceneFramebufferSpecification;
+    sceneFramebufferSpecification.Width =
+        static_cast<std::uint32_t>(m_SceneViewportWidth);
+    sceneFramebufferSpecification.Height =
+        static_cast<std::uint32_t>(m_SceneViewportHeight);
+    sceneFramebufferSpecification.Attachments =
+    {
+        TextureFormat::RGBA8,
+        TextureFormat::R32I,
+        TextureFormat::Depth24Stencil8
+    };
+
+    m_SceneFramebuffer = Framebuffer::Create(sceneFramebufferSpecification);
+
     m_GameFramebuffer = Framebuffer::Create(
         static_cast<std::uint32_t>(m_GameViewportWidth),
         static_cast<std::uint32_t>(m_GameViewportHeight));
@@ -59,6 +73,7 @@ void EditorLayer::OnDetach()
     // Applicationの破棄順序により、この時点ではWindow / Graphics Contextがまだ生存しています。
     // Framebufferの具体実装はGPU Resourceを所有するため、Graphics Contextが破棄される前の
     // EditorLayer::OnDetach()で明示的に解放します。
+    m_EntityPickingMaterial.reset();
     m_SceneFramebuffer.reset();
     m_GameFramebuffer.reset();
 }
@@ -195,6 +210,10 @@ void EditorLayer::RenderSceneToFramebuffer(
     {
         activeScene->OnRender();
     }
+
+    // 通常Scene描画で確定したDepth Bufferを利用してPicking IDだけを別Passで書き込みます。
+    // ゲーム用ShaderへEditor専用出力を追加しないため、描画責務を分離したままEntity選択を実現できます。
+    RenderEntityPickingPass(framebuffer, camera);
 
     framebuffer.Unbind();
 }
@@ -344,6 +363,71 @@ void EditorLayer::RenderSceneView()
                     available,
                     ImVec2(0.0f, 1.0f),
                     ImVec2(1.0f, 0.0f));
+
+                // ====================================================================
+                // Scene View Entity Picking
+                // ====================================================================
+                // Image Itemそのものが左クリックされた時だけPickingします。
+                // Window全体のhover判定ではなくImage矩形を使うことで、将来Toolbar等を追加しても
+                // UI上のクリックをScene選択として誤認しません。
+                if (ImGui::IsItemHovered()
+                    && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    Scene* activeScene =
+                        (m_Application != nullptr) ? m_Application->GetScene() : nullptr;
+
+                    if (activeScene != nullptr
+                        && m_SceneFramebuffer->GetColorAttachmentCount() > 1)
+                    {
+                        const ImVec2 imageMin = ImGui::GetItemRectMin();
+                        const ImVec2 imageMax = ImGui::GetItemRectMax();
+                        const ImVec2 mousePosition = ImGui::GetMousePos();
+
+                        const float imageWidth = imageMax.x - imageMin.x;
+                        const float imageHeight = imageMax.y - imageMin.y;
+
+                        if (imageWidth > 0.0f && imageHeight > 0.0f)
+                        {
+                            const float localX = mousePosition.x - imageMin.x;
+                            const float localY = mousePosition.y - imageMin.y;
+
+                            const int framebufferWidth =
+                                static_cast<int>(m_SceneFramebuffer->GetWidth());
+                            const int framebufferHeight =
+                                static_cast<int>(m_SceneFramebuffer->GetHeight());
+
+                            if (framebufferWidth > 0 && framebufferHeight > 0)
+                            {
+                                // ImGui Imageは左上原点、OpenGL Framebufferは左下原点です。
+                                // さらにWindow表示サイズとFramebuffer実サイズが1frameだけ異なる場合にも
+                                // 対応できるよう、単純なpixel加算ではなく正規化して実サイズへ変換します。
+                                int pixelX = static_cast<int>(
+                                    (localX / imageWidth)
+                                    * static_cast<float>(framebufferWidth));
+                                int pixelY = static_cast<int>(
+                                    (1.0f - (localY / imageHeight))
+                                    * static_cast<float>(framebufferHeight));
+
+                                pixelX = std::clamp(pixelX, 0, framebufferWidth - 1);
+                                pixelY = std::clamp(pixelY, 0, framebufferHeight - 1);
+
+                                const int entityID =
+                                    m_SceneFramebuffer->ReadPixel(1, pixelX, pixelY);
+
+                                if (entityID > 0)
+                                {
+                                    m_SelectedEntity = activeScene->TryGetEntity(
+                                        static_cast<EntityIndex>(entityID));
+                                }
+                                else
+                                {
+                                    // Geometryが存在しない背景をクリックした場合は選択解除します。
+                                    m_SelectedEntity = Entity{};
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
