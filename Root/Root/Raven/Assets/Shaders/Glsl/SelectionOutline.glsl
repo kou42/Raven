@@ -17,12 +17,12 @@ void main()
 
 layout(location = 0) out vec4 o_Color;
 
-uniform vec4 u_OutlineColor;
+uniform vec3 u_OutlineColor;
 
 void main()
 {
     // Selection OutlineはScene View表示用Color Attachment 0だけへ出力します。
     // Picking用R32I Attachment(location = 1)へは何も書き込まないため、
     // 直前のEntity Picking結果を壊しません。
-    o_Color = u_OutlineColor;
+    o_Color = vec4(u_OutlineColor, 1.0);
 }
