@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorGizmo.h"
 
 #include "Raven/Editor/EditorRotateGizmo.h"
+#include "Raven/Editor/EditorScaleGizmo.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
 
 namespace Raven
@@ -35,14 +36,9 @@ bool RenderEditorTransformGizmo(
     switch (s_Operation)
     {
     case EditorGizmoOperation::Translate:
-        // Rotate側へInvalid Entityを渡して内部Drag状態を確実に解除します。
-        RenderRotateGizmo(
-            Entity{},
-            camera,
-            viewportMinX,
-            viewportMinY,
-            viewportMaxX,
-            viewportMaxY);
+        // 非アクティブ側へInvalid Entityを渡して内部Drag状態を確実に解除します。
+        RenderRotateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
+        RenderScaleGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
 
         return RenderTranslateGizmo(
             selectedEntity,
@@ -53,16 +49,22 @@ bool RenderEditorTransformGizmo(
             viewportMaxY);
 
     case EditorGizmoOperation::Rotate:
-        // Translate側も同様に操作モード切替時の古いDrag状態を破棄します。
-        RenderTranslateGizmo(
-            Entity{},
+        RenderTranslateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
+        RenderScaleGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
+
+        return RenderRotateGizmo(
+            selectedEntity,
             camera,
             viewportMinX,
             viewportMinY,
             viewportMaxX,
             viewportMaxY);
 
-        return RenderRotateGizmo(
+    case EditorGizmoOperation::Scale:
+        RenderTranslateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
+        RenderRotateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
+
+        return RenderScaleGizmo(
             selectedEntity,
             camera,
             viewportMinX,
