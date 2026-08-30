@@ -79,11 +79,18 @@ public:
     const UIThickness& GetPadding() const { return m_Padding; }
     const UIThickness& GetMargin() const { return m_Margin; }
     bool IsVisible() const { return m_Visible; }
+    bool IsHovered() const { return m_Hovered; }
+    bool IsPressed() const { return m_Pressed; }
     bool IsMeasureDirty() const { return m_MeasureDirty; }
     bool IsArrangeDirty() const { return m_ArrangeDirty; }
     UIElement* GetParent() { return m_Parent; }
     const UIElement* GetParent() const { return m_Parent; }
     const std::vector<Scope<UIElement>>& GetChildren() const { return m_Children; }
+
+    // UIContextだけがHit Test結果からInteraction Stateを更新します。
+    // WidgetはIsHovered()/IsPressed()を参照するだけにし、入力の所有権をContextへ集約します。
+    void SetHovered(bool value) { m_Hovered = value; }
+    void SetPressed(bool value) { m_Pressed = value; }
 
     // UIContextのBubble Routingから呼ばれる公開入口です。
     // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
@@ -236,6 +243,8 @@ private:
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
     bool m_Visible = true;
+    bool m_Hovered = false;
+    bool m_Pressed = false;
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
 };

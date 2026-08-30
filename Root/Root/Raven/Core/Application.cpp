@@ -2,6 +2,7 @@
 #include "../Renderer/Renderer.h"
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
+#include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 
 #include <glad/glad.h>
@@ -42,11 +43,11 @@ Application::Application()
 
 #if defined(_DEBUG)
     // ========================================================================
-    // Raven UI retained-mode / layout validation panel
+    // Raven UI retained-mode / layout / interaction validation panel
     // ========================================================================
-    // GPU描画経路とRetained Treeの確認が完了したため、次はLayoutを通した配置を検証します。
-    // 外側PanelはAbsolute配置、内側ではVerticalとHorizontalを入れ子にし、Padding / Spacingが
-    // UIElement Tree -> Layout -> UIDrawList -> GPUの経路で反映されることを確認します。
+    // GPU描画経路とRetained Treeに加え、UIButtonのNormal / Hovered / Pressed Visual Stateを確認します。
+    // Mouse入力はWindow -> Core Event -> Application -> UIContextの経路で届くため、
+    // pollingに依存せず実際の入力Eventと同じタイミングでHit Test / State遷移を検証できます。
     //
     // このTreeはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
     // Editor Widget導入後はApplication直下の検証Treeを削除し、各UI LayerがRoot以下へ必要なElementを構築します。
@@ -58,10 +59,16 @@ Application::Application()
     validationPanel->SetPadding(12.0f);
     validationPanel->SetSpacing(10.0f);
 
-    auto headerPanel = CreateScope<UIPanel>();
-    headerPanel->SetSize(math::Vec2(336.0f, 42.0f));
-    headerPanel->SetBackgroundColor(math::Vec4(0.10f, 0.28f, 0.55f, 1.0f));
-    validationPanel->AddChild(std::move(headerPanel));
+    auto headerButton = CreateScope<UIButton>();
+    headerButton->SetSize(math::Vec2(336.0f, 42.0f));
+    headerButton->SetNormalColor(math::Vec4(0.10f, 0.28f, 0.55f, 1.0f));
+    headerButton->SetHoveredColor(math::Vec4(0.16f, 0.40f, 0.72f, 1.0f));
+    headerButton->SetPressedColor(math::Vec4(0.07f, 0.20f, 0.42f, 1.0f));
+    headerButton->SetOnClick([]()
+        {
+            std::cout << "Raven UI validation button clicked" << std::endl;
+        });
+    validationPanel->AddChild(std::move(headerButton));
 
     auto horizontalRow = CreateScope<UIPanel>();
     horizontalRow->SetSize(math::Vec2(336.0f, 62.0f));
@@ -331,6 +338,67 @@ void Application::OnEvent(Event& event)
     {
         m_Running = false;
         event.Handled = true;
+    }
+
+    // ========================================================================
+    // Raven UI Mouse Event routing
+    // ========================================================================
+    // Platform Mouse EventをUIContextのHit Test / Bubble Routingへ変換します。
+    // Button Eventも入力発生時の座標を自身に保持するため、ApplicationはInput pollingを行わず
+    // Event snapshotだけからUI routingできます。これにより入力時刻と座標の対応を維持します。
+    // UIEvent側でHandledになった場合だけCore EventもHandledとして、背後LayerへのClick-throughを防ぎます。
+    if (event.Handled == false && event.GetEventType() == EventType::MouseMoved)
+    {
+        MouseMovedEvent& mouseEvent = static_cast<MouseMovedEvent&>(event);
+        event.Handled = m_UIContext.RouteMouseMove(math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()));
+    }
+    else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonPressed)
+    {
+        MouseButtonPressedEvent& mouseEvent = static_cast<MouseButtonPressedEvent&>(event);
+
+        UIMouseButton uiButton = UIMouseButton::None;
+        if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
+        {
+            uiButton = UIMouseButton::Left;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_RIGHT)
+        {
+            uiButton = UIMouseButton::Right;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_MIDDLE)
+        {
+            uiButton = UIMouseButton::Middle;
+        }
+
+        if (uiButton != UIMouseButton::None)
+        {
+            event.Handled = m_UIContext.RouteMouseDown(
+                math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
+        }
+    }
+    else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonReleased)
+    {
+        MouseButtonReleasedEvent& mouseEvent = static_cast<MouseButtonReleasedEvent&>(event);
+
+        UIMouseButton uiButton = UIMouseButton::None;
+        if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
+        {
+            uiButton = UIMouseButton::Left;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_RIGHT)
+        {
+            uiButton = UIMouseButton::Right;
+        }
+        else if (mouseEvent.GetMouseButton() == GLFW_MOUSE_BUTTON_MIDDLE)
+        {
+            uiButton = UIMouseButton::Middle;
+        }
+
+        if (uiButton != UIMouseButton::None)
+        {
+            event.Handled = m_UIContext.RouteMouseUp(
+                math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
+        }
     }
 
     // ========================================================================
