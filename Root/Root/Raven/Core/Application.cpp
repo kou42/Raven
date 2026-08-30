@@ -42,19 +42,56 @@ Application::Application()
 
 #if defined(_DEBUG)
     // ========================================================================
-    // Raven UI retained-mode validation panel
+    // Raven UI retained-mode / layout validation panel
     // ========================================================================
-    // GPU描画経路の確認が完了したため、直接UIDrawList::AddRect()する検証から一段進め、
-    // Retained ModeのUIElement Tree -> UIPanel -> UIDrawListという本来の経路を確認します。
+    // GPU描画経路とRetained Treeの確認が完了したため、次はLayoutを通した配置を検証します。
+    // 外側PanelはAbsolute配置、内側ではVerticalとHorizontalを入れ子にし、Padding / Spacingが
+    // UIElement Tree -> Layout -> UIDrawList -> GPUの経路で反映されることを確認します。
     //
-    // このPanelはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
-    // 毎frame作り直すのはDrawCommandだけで、UIPanelそのものはframeを跨いで保持されます。
-    // Layout / Editor Widget導入後はApplication直下の検証Panelを削除し、各UI LayerがRoot以下へ
-    // 必要なElement Treeを構築する構成へ移行します。
+    // このTreeはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
+    // Editor Widget導入後はApplication直下の検証Treeを削除し、各UI LayerがRoot以下へ必要なElementを構築します。
     auto validationPanel = CreateScope<UIPanel>();
     validationPanel->SetPosition(math::Vec2(24.0f, 48.0f));
-    validationPanel->SetSize(math::Vec2(320.0f, 72.0f));
-    validationPanel->SetBackgroundColor(math::Vec4(0.08f, 0.20f, 0.42f, 0.92f));
+    validationPanel->SetSize(math::Vec2(360.0f, 190.0f));
+    validationPanel->SetBackgroundColor(math::Vec4(0.05f, 0.08f, 0.14f, 0.96f));
+    validationPanel->SetLayoutMode(UILayoutMode::Vertical);
+    validationPanel->SetPadding(12.0f);
+    validationPanel->SetSpacing(10.0f);
+
+    auto headerPanel = CreateScope<UIPanel>();
+    headerPanel->SetSize(math::Vec2(336.0f, 42.0f));
+    headerPanel->SetBackgroundColor(math::Vec4(0.10f, 0.28f, 0.55f, 1.0f));
+    validationPanel->AddChild(std::move(headerPanel));
+
+    auto horizontalRow = CreateScope<UIPanel>();
+    horizontalRow->SetSize(math::Vec2(336.0f, 62.0f));
+    horizontalRow->SetBackgroundColor(math::Vec4(0.08f, 0.11f, 0.18f, 1.0f));
+    horizontalRow->SetLayoutMode(UILayoutMode::Horizontal);
+    horizontalRow->SetPadding(UIThickness(8.0f, 9.0f));
+    horizontalRow->SetSpacing(8.0f);
+
+    auto leftPanel = CreateScope<UIPanel>();
+    leftPanel->SetSize(math::Vec2(96.0f, 44.0f));
+    leftPanel->SetBackgroundColor(math::Vec4(0.18f, 0.48f, 0.32f, 1.0f));
+    horizontalRow->AddChild(std::move(leftPanel));
+
+    auto centerPanel = CreateScope<UIPanel>();
+    centerPanel->SetSize(math::Vec2(96.0f, 44.0f));
+    centerPanel->SetBackgroundColor(math::Vec4(0.62f, 0.36f, 0.12f, 1.0f));
+    horizontalRow->AddChild(std::move(centerPanel));
+
+    auto rightPanel = CreateScope<UIPanel>();
+    rightPanel->SetSize(math::Vec2(96.0f, 44.0f));
+    rightPanel->SetBackgroundColor(math::Vec4(0.42f, 0.20f, 0.55f, 1.0f));
+    horizontalRow->AddChild(std::move(rightPanel));
+
+    validationPanel->AddChild(std::move(horizontalRow));
+
+    auto footerPanel = CreateScope<UIPanel>();
+    footerPanel->SetSize(math::Vec2(336.0f, 42.0f));
+    footerPanel->SetBackgroundColor(math::Vec4(0.14f, 0.18f, 0.26f, 1.0f));
+    validationPanel->AddChild(std::move(footerPanel));
+
     m_UIContext.GetRootElement().AddChild(std::move(validationPanel));
 #endif
 
