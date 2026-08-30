@@ -113,6 +113,36 @@ void WindowsWindow::Init(const WindowProps& props)
             data.EventCallback(event);
         }
     );
+
+    // GLFW callbackで受け取ったMouse入力をCore Eventへ変換します。
+    // UIContextをPlatform層から直接呼ばずApplication::OnEvent()へ集約することで、
+    // UI以外のLayerも同じMouse Eventを利用でき、入力経路をWindow -> Application -> Consumerに統一します。
+    glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, double x, double y)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+            MouseMovedEvent event(static_cast<float>(x), static_cast<float>(y));
+            data.EventCallback(event);
+        }
+    );
+
+    glfwSetMouseButtonCallback(m_Window, [](GLFWwindow* window, int button, int action, int mods)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            (void)mods;
+
+            if (action == GLFW_PRESS)
+            {
+                MouseButtonPressedEvent event(button);
+                data.EventCallback(event);
+            }
+            else if (action == GLFW_RELEASE)
+            {
+                MouseButtonReleasedEvent event(button);
+                data.EventCallback(event);
+            }
+        }
+    );
 }
 
 void WindowsWindow::Shutdown()
