@@ -131,17 +131,14 @@ private:
         math::Vec3 Minimum{};
         math::Vec3 Maximum{};
 
-        // Candidate生成時にParticle自身を構成頂点として含むTriangleをPlane計算より先に
+        // Candidate生成時にParticle自身を構成頂点として含むTriangleを幾何計算より先に
         // 除外できるよう、Build時のTopology Indexをそのままキャッシュします。
         uint32_t ParticleA = 0u;
         uint32_t ParticleB = 0u;
         uint32_t ParticleC = 0u;
 
-        // Plane Normalは正規化しません。
-        // Candidate生成時は
-        //   dot(n, p) - d
-        // の2乗と Thickness^2 * |n|^2 を比較するため、sqrt / Normalizeなしで
-        // 「無限平面までの距離 > Thickness」を判定できます。
+        // Plane Reject用の値もEdge Cacheと同じ外積法線から1 pass内で構築します。
+        // 非正規化法線のまま平方距離を比較し、sqrt / Normalizeは行いません。
         math::Vec3 PlaneNormal{};
         float PlaneOffset = 0.0f;
         float PlaneDistanceThresholdSq = 0.0f;
@@ -151,7 +148,7 @@ private:
         // Edge Half-Space Cache
         // ====================================================================
         // Triangle Plane上で各Edgeから「Triangle内部側」を向く非正規化法線を保持します。
-        // 例えばAB Edgeでは cross(PlaneNormal, B - A) がC側を向きます。
+        // 例えばAB Edgeでは cross(cross(B - A, C - A), B - A) がC側を向きます。
         // Candidate生成時に
         //   signedScaled = dot(edgeNormal, p) - edgeOffset
         // を評価し、signedScaled < 0 かつ
@@ -256,6 +253,11 @@ private:
     TriangleCellBucket& GetOrActivateBucket(
         const CellCoord& cell,
         CellRegistrationTimingSample* timingSample = nullptr);
+
+    // 通常Gameplay用の登録経路です。詳細Timer・Probe Counter・Grow Counter分岐を持ち込まず、
+    // Cell Range列挙、Flat Hash探索、Triangle Index追記だけを実行します。
+    void RegisterTriangleCellsFast(std::size_t triangleCount);
+    TriangleCellBucket& GetOrActivateBucketFast(const CellCoord& cell);
 
     // Candidate生成用の読み取り検索です。
     const TriangleCellBucket* FindActiveBucket(const CellCoord& cell) const;

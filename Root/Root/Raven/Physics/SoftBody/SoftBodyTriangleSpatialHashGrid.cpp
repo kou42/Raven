@@ -169,23 +169,19 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     }
 
     // ========================================================================
-    // 2. Triangle AABB / Plane / Edge Half-Space / Metrics
+    // 2. Triangle AABB / Edge Half-Space / Metrics
     // ========================================================================
-    // 以前はAABB生成・Plane Cache・Edge Half-Space Cache・Edge Length計測を1つのloopで行っていたため、
-    // HashBuild.AABBが重くても、どの処理が支配しているか判断できませんでした。
-    // 今回は同じTriangle scratchを4 passで走査し、各passを独立Scopeとして計測します。
-    //
-    // 親のHashBuild.AABB Scopeは過去Captureとの比較用に残します。
-    // 子Scopeの合計との差にはloop分割による走査コストやProfiler overheadが含まれるため、
-    // 最適化対象は子Scopeの相対値とHashBuild全体の実時間を併せて判断します。
+    // 詳細計測で分離していたBounds / Plane / Edge Cacheの3 passを通常経路でも毎iteration
+    // 走査していました。3つのCacheを1 passで構築し、同じParticle Positionをcacheへ載っている間に
+    // 再利用し、Triangle数 x SolverIterationsに比例する余分な走査とscratch readを削減します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB");
 
         // ====================================================================
-        // 2-1. Bounds
+        // 2-1. Bounds + Edge Half-Space Cache
         // ====================================================================
-        // Topology検証とExpansion込みAABBだけを構築します。
-        // 後段Cacheの状態もここで初期化し、無効Triangleに前iterationの値が残らないようにします。
+        // Topology検証、Expansion込みAABB、Closest Point前のEdge Reject用Cacheを同時に構築します。
+        // Edge CacheはValid flagを先に落とし、退化Triangleに前iterationの値が残らないようにします。
         {
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.Bounds");
 
@@ -193,16 +189,9 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             {
                 TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
 
-                // Bounds passでは、このTriangleそのものが有効かどうかだけを初期化します。
-                //
-                // Plane / Edge Half-Space Cacheは、それぞれ後段の専用passで
-                // Valid flagをfalseへ戻してから再構築します。
-                // Cache値そのものはValid == falseの間は参照されないため、
-                // ここでVec3やfloatをすべて0初期化する必要はありません。
-                //
-                // Triangle数 × Solver Iteration回数だけ発生していた不要なメモリ書き込みを
-                // BoundsのHot Pathから除去することが今回の最適化目的です。
                 bounds.Valid = false;
+                bounds.PlaneValid = false;
+                bounds.EdgeHalfSpaceValid = false;
 
                 const SoftBodyTriangle& triangle = triangles[triangleIndex];
                 if (triangle.ParticleA >= particles.size()
@@ -229,6 +218,48 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 bounds.ParticleB = triangle.ParticleB;
                 bounds.ParticleC = triangle.ParticleC;
                 bounds.Valid = true;
+
+                // Plane RejectとEdge Half-Spaceは同じ外積法線を使います。
+                // 従来の分離passで同じParticleを再取得せず、この場で両Cacheへ再利用します。
+                const math::Vec3 edgeABVector = b - a;
+                const math::Vec3 edgeACVector = c - a;
+                const math::Vec3 planeNormal = math::Vec3::Cross(edgeABVector, edgeACVector);
+                const float planeNormalLengthSq = planeNormal.LengthSq();
+                if (planeNormalLengthSq > math::Epsilon * math::Epsilon)
+                {
+                    bounds.PlaneNormal = planeNormal;
+                    bounds.PlaneOffset = math::Vec3::Dot(planeNormal, a);
+                    bounds.PlaneDistanceThresholdSq = safeExpansionSq * planeNormalLengthSq;
+                    bounds.PlaneValid = true;
+
+                    const math::Vec3 edgeBCVector = c - b;
+                    const math::Vec3 edgeCAVector = a - c;
+
+                    const math::Vec3 edgeABNormal = math::Vec3::Cross(planeNormal, edgeABVector);
+                    const math::Vec3 edgeBCNormal = math::Vec3::Cross(planeNormal, edgeBCVector);
+                    const math::Vec3 edgeCANormal = math::Vec3::Cross(planeNormal, edgeCAVector);
+
+                    const float edgeABNormalLengthSq = edgeABNormal.LengthSq();
+                    const float edgeBCNormalLengthSq = edgeBCNormal.LengthSq();
+                    const float edgeCANormalLengthSq = edgeCANormal.LengthSq();
+
+                    if (edgeABNormalLengthSq > math::Epsilon * math::Epsilon
+                        && edgeBCNormalLengthSq > math::Epsilon * math::Epsilon
+                        && edgeCANormalLengthSq > math::Epsilon * math::Epsilon)
+                    {
+                        bounds.EdgeABNormal = edgeABNormal;
+                        bounds.EdgeBCNormal = edgeBCNormal;
+                        bounds.EdgeCANormal = edgeCANormal;
+                        bounds.EdgeABOffset = math::Vec3::Dot(edgeABNormal, a);
+                        bounds.EdgeBCOffset = math::Vec3::Dot(edgeBCNormal, b);
+                        bounds.EdgeCAOffset = math::Vec3::Dot(edgeCANormal, c);
+                        bounds.EdgeABDistanceThresholdSq = safeExpansionSq * edgeABNormalLengthSq;
+                        bounds.EdgeBCDistanceThresholdSq = safeExpansionSq * edgeBCNormalLengthSq;
+                        bounds.EdgeCADistanceThresholdSq = safeExpansionSq * edgeCANormalLengthSq;
+                        bounds.EdgeHalfSpaceValid = true;
+                    }
+                }
+
                 if (m_DetailedProfilingEnabled)
                 {
                     ++validTriangleCount;
@@ -237,107 +268,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
         }
 
         // ====================================================================
-        // 2-2. Plane Cache
-        // ====================================================================
-        // Plane Distance Early Rejectに必要な非正規化法線と閾値だけを構築します。
-        // Normalize / sqrtは行わず、Candidate側でも平方比較のまま使用します。
-        {
-            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.PlaneCache");
-
-            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
-            {
-                TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
-
-                // 前iterationのPlane Cacheが残っていても使用されないよう、
-                // このpassの先頭で必ず無効化してから再構築します。
-                // PlaneNormalなどの値自体をゼロクリアする必要はありません。
-                bounds.PlaneValid = false;
-
-                if (bounds.Valid == false)
-                {
-                    continue;
-                }
-
-                const math::Vec3& a = particles[bounds.ParticleA].Position;
-                const math::Vec3& b = particles[bounds.ParticleB].Position;
-                const math::Vec3& c = particles[bounds.ParticleC].Position;
-
-                const math::Vec3 edgeABVector = b - a;
-                const math::Vec3 edgeACVector = c - a;
-                const math::Vec3 planeNormal = math::Vec3::Cross(edgeABVector, edgeACVector);
-                const float planeNormalLengthSq = planeNormal.LengthSq();
-                if (planeNormalLengthSq <= math::Epsilon * math::Epsilon)
-                {
-                    continue;
-                }
-
-                bounds.PlaneNormal = planeNormal;
-                bounds.PlaneOffset = math::Vec3::Dot(planeNormal, a);
-                bounds.PlaneDistanceThresholdSq = safeExpansionSq * planeNormalLengthSq;
-                bounds.PlaneValid = true;
-            }
-        }
-
-        // ====================================================================
-        // 2-3. Edge Half-Space Cache
-        // ====================================================================
-        // Plane Cacheで得た法線を再利用し、Triangle内部側を向く3辺のHalf-Spaceを構築します。
-        // 前回の最適化でClosestPoint候補を大幅削減できた処理なので、Build側の追加コストを独立計測します。
-        {
-            RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.AABB.EdgeHalfSpaceCache");
-
-            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
-            {
-                TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
-
-                // Plane Cacheと同様に、前iterationのEdge Cacheを最初に無効化します。
-                // Edge Normal / Offset / ThresholdはValid == falseなら参照されないため、
-                // Bounds passで毎回ゼロクリアする必要はありません。
-                bounds.EdgeHalfSpaceValid = false;
-
-                if (bounds.Valid == false || bounds.PlaneValid == false)
-                {
-                    continue;
-                }
-
-                const math::Vec3& a = particles[bounds.ParticleA].Position;
-                const math::Vec3& b = particles[bounds.ParticleB].Position;
-                const math::Vec3& c = particles[bounds.ParticleC].Position;
-
-                const math::Vec3 edgeABVector = b - a;
-                const math::Vec3 edgeBCVector = c - b;
-                const math::Vec3 edgeCAVector = a - c;
-
-                const math::Vec3 edgeABNormal = math::Vec3::Cross(bounds.PlaneNormal, edgeABVector);
-                const math::Vec3 edgeBCNormal = math::Vec3::Cross(bounds.PlaneNormal, edgeBCVector);
-                const math::Vec3 edgeCANormal = math::Vec3::Cross(bounds.PlaneNormal, edgeCAVector);
-
-                const float edgeABNormalLengthSq = edgeABNormal.LengthSq();
-                const float edgeBCNormalLengthSq = edgeBCNormal.LengthSq();
-                const float edgeCANormalLengthSq = edgeCANormal.LengthSq();
-
-                if (edgeABNormalLengthSq <= math::Epsilon * math::Epsilon
-                    || edgeBCNormalLengthSq <= math::Epsilon * math::Epsilon
-                    || edgeCANormalLengthSq <= math::Epsilon * math::Epsilon)
-                {
-                    continue;
-                }
-
-                bounds.EdgeABNormal = edgeABNormal;
-                bounds.EdgeBCNormal = edgeBCNormal;
-                bounds.EdgeCANormal = edgeCANormal;
-                bounds.EdgeABOffset = math::Vec3::Dot(edgeABNormal, a);
-                bounds.EdgeBCOffset = math::Vec3::Dot(edgeBCNormal, b);
-                bounds.EdgeCAOffset = math::Vec3::Dot(edgeCANormal, c);
-                bounds.EdgeABDistanceThresholdSq = safeExpansionSq * edgeABNormalLengthSq;
-                bounds.EdgeBCDistanceThresholdSq = safeExpansionSq * edgeBCNormalLengthSq;
-                bounds.EdgeCADistanceThresholdSq = safeExpansionSq * edgeCANormalLengthSq;
-                bounds.EdgeHalfSpaceValid = true;
-            }
-        }
-
-        // ====================================================================
-        // 2-4. Metrics
+        // 2-2. Metrics
         // ====================================================================
         // Cell Size比較用のEdge Length統計です。Collision判定そのものには使用しません。
         // 各TriangleでDistance()を3回呼ぶためsqrtも3回発生します。
@@ -431,81 +362,83 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     // Hot loopではTimer/Mutex/文字列生成を行わず、整数Counterだけを更新します。
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRegistration");
-        using TimingClock = std::chrono::steady_clock;
-        const bool detailedTimingEnabled =
-            m_DetailedProfilingEnabled && CPUProfiler::Get().IsEnabled();
-        const TimingClock::time_point registrationStart = detailedTimingEnabled
-            ? TimingClock::now()
-            : TimingClock::time_point{};
-
-        for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
+        if (m_DetailedProfilingEnabled == false)
         {
-            const TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
-            if (cellRange.Valid == false)
-            {
-                continue;
-            }
+            // 通常経路では診断用Timer/Counterの条件分岐をCell登録ごとに評価しません。
+            RegisterTriangleCellsFast(triangles.size());
+        }
+        else
+        {
+            using TimingClock = std::chrono::steady_clock;
+            const bool detailedTimingEnabled = CPUProfiler::Get().IsEnabled();
+            const TimingClock::time_point registrationStart = detailedTimingEnabled
+                ? TimingClock::now()
+                : TimingClock::time_point{};
 
-            // TriangleはAABBが跨ぐ全Cellへ登録します。
-            // Pass分離後もBroad Phaseの候補条件は旧実装から変更していません。
-            for (int32_t z = cellRange.Minimum.Z; z <= cellRange.Maximum.Z; ++z)
+            for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
-                for (int32_t y = cellRange.Minimum.Y; y <= cellRange.Maximum.Y; ++y)
+                const TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
+                if (cellRange.Valid == false)
                 {
-                    for (int32_t x = cellRange.Minimum.X; x <= cellRange.Maximum.X; ++x)
+                    continue;
+                }
+
+                // TriangleはAABBが跨ぐ全Cellへ登録します。
+                // Pass分離後もBroad Phaseの候補条件は旧実装から変更していません。
+                for (int32_t z = cellRange.Minimum.Z; z <= cellRange.Maximum.Z; ++z)
+                {
+                    for (int32_t y = cellRange.Minimum.Y; y <= cellRange.Maximum.Y; ++y)
                     {
-                        CellCoord cell{};
-                        cell.X = x;
-                        cell.Y = y;
-                        cell.Z = z;
-
-                        const bool sampleTiming = detailedTimingEnabled
-                            && (m_BuildRegistrationCount % CellRegistrationTimingSampleInterval) == 0u;
-                        CellRegistrationTimingSample timingSample{};
-                        TriangleCellBucket& bucket = GetOrActivateBucket(
-                            cell,
-                            sampleTiming ? &timingSample : nullptr);
-
-                        // Bucket内の確保済み配列が実際に増えた回数を数えます。
-                        // これが多ければ、Flat HashではなくCell内TriangleIndicesのallocationが
-                        // CellRegistration時間を支配している可能性があります。
-                        const TimingClock::time_point pushBackStart = sampleTiming
-                            ? TimingClock::now()
-                            : TimingClock::time_point{};
-                        const bool triangleIndicesGrew = bucket.TriangleIndices.Append(
-                            static_cast<uint32_t>(triangleIndex));
-                        if (sampleTiming)
+                        for (int32_t x = cellRange.Minimum.X; x <= cellRange.Maximum.X; ++x)
                         {
-                            const TimingClock::time_point pushBackEnd = TimingClock::now();
-                            m_BuildSampledHashMilliseconds += timingSample.HashMilliseconds;
-                            m_BuildSampledProbeMilliseconds += timingSample.ProbeMilliseconds;
-                            m_BuildSampledBucketActivateMilliseconds +=
-                                timingSample.BucketActivateMilliseconds;
-                            m_BuildSampledTrianglePushBackMilliseconds +=
-                                std::chrono::duration<double, std::milli>(
-                                    pushBackEnd - pushBackStart).count();
-                            ++m_BuildTimingSampleCount;
-                        }
-                        if (m_DetailedProfilingEnabled && triangleIndicesGrew)
-                        {
-                            ++m_BuildVectorGrowCount;
-                        }
+                            CellCoord cell{};
+                            cell.X = x;
+                            cell.Y = y;
+                            cell.Z = z;
 
-                        if (m_DetailedProfilingEnabled)
-                        {
+                            const bool sampleTiming = detailedTimingEnabled
+                                && (m_BuildRegistrationCount % CellRegistrationTimingSampleInterval) == 0u;
+                            CellRegistrationTimingSample timingSample{};
+                            TriangleCellBucket& bucket = GetOrActivateBucket(
+                                cell,
+                                sampleTiming ? &timingSample : nullptr);
+
+                            // Bucket内の確保済み配列が実際に増えた回数を数えます。
+                            const TimingClock::time_point pushBackStart = sampleTiming
+                                ? TimingClock::now()
+                                : TimingClock::time_point{};
+                            const bool triangleIndicesGrew = bucket.TriangleIndices.Append(
+                                static_cast<uint32_t>(triangleIndex));
+                            if (sampleTiming)
+                            {
+                                const TimingClock::time_point pushBackEnd = TimingClock::now();
+                                m_BuildSampledHashMilliseconds += timingSample.HashMilliseconds;
+                                m_BuildSampledProbeMilliseconds += timingSample.ProbeMilliseconds;
+                                m_BuildSampledBucketActivateMilliseconds +=
+                                    timingSample.BucketActivateMilliseconds;
+                                m_BuildSampledTrianglePushBackMilliseconds +=
+                                    std::chrono::duration<double, std::milli>(
+                                        pushBackEnd - pushBackStart).count();
+                                ++m_BuildTimingSampleCount;
+                            }
+                            if (triangleIndicesGrew)
+                            {
+                                ++m_BuildVectorGrowCount;
+                            }
+
                             ++m_BuildRegistrationCount;
                         }
                     }
                 }
             }
-        }
 
-        if (detailedTimingEnabled)
-        {
-            const double registrationMilliseconds =
-                std::chrono::duration<double, std::milli>(
-                    TimingClock::now() - registrationStart).count();
-            SubmitCellRegistrationTimings(registrationMilliseconds);
+            if (detailedTimingEnabled)
+            {
+                const double registrationMilliseconds =
+                    std::chrono::duration<double, std::milli>(
+                        TimingClock::now() - registrationStart).count();
+                SubmitCellRegistrationTimings(registrationMilliseconds);
+            }
         }
     }
 
@@ -580,7 +513,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
         {
             const uint32_t triangleIndex =
                 bucket->TriangleIndices.Storage.data()[bucketTriangleIndex];
-            ++cellCandidateCount;
+            if (m_DetailedProfilingEnabled)
+            {
+                ++cellCandidateCount;
+            }
 
             // ====================================================================
             // Expanded Triangle AABB Early Reject
@@ -595,7 +531,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
             // 接触候補を失わずにNarrow Phaseへの流入だけを減らせます。
             if (triangleIndex >= m_BuildBounds.size())
             {
-                ++expandedAABBRejectCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++expandedAABBRejectCount;
+                }
                 continue;
             }
 
@@ -608,7 +547,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
                 || particlePosition.z < bounds.Minimum.z
                 || particlePosition.z > bounds.Maximum.z)
             {
-                ++expandedAABBRejectCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++expandedAABBRejectCount;
+                }
                 continue;
             }
 
@@ -622,33 +564,29 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
                 || bounds.ParticleB == particleIndex32
                 || bounds.ParticleC == particleIndex32)
             {
-                ++topologyRejectCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++topologyRejectCount;
+                }
                 continue;
             }
 
-            // ====================================================================
-            // Triangle Plane Distance Early Reject
-            // ====================================================================
-            // Triangleまでの距離は「Triangleを含む無限平面までの距離」以上です。
-            // したがって平面までの距離が既にThicknessより大きい候補は、辺・頂点を最近傍点としても
-            // 絶対に接触できないためComputeClosestPointOnTriangle()へ送る必要がありません。
-            //
-            // PlaneNormalはBuild時に非正規化のままキャッシュしています。
-            //   |dot(n,p)-d| / |n| > Thickness
-            // を平方して比較することでsqrt / Normalizeを完全に避けます。
-            // 退化TriangleはPlaneValid=falseとしてここではRejectせず、従来の後段判定へ残します。
             if (bounds.PlaneValid)
             {
-                ++planeTestCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++planeTestCount;
+                }
 
                 const float signedScaledDistance =
                     math::Vec3::Dot(bounds.PlaneNormal, particlePosition) - bounds.PlaneOffset;
-                const float signedScaledDistanceSq =
-                    signedScaledDistance * signedScaledDistance;
-
-                if (signedScaledDistanceSq > bounds.PlaneDistanceThresholdSq)
+                if (signedScaledDistance * signedScaledDistance
+                    > bounds.PlaneDistanceThresholdSq)
                 {
-                    ++planeRejectCount;
+                    if (m_DetailedProfilingEnabled)
+                    {
+                        ++planeRejectCount;
+                    }
                     continue;
                 }
             }
@@ -666,7 +604,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
             // ここでもNormalize / sqrtは行わず、平方値だけを比較します。
             if (bounds.EdgeHalfSpaceValid)
             {
-                ++edgeHalfSpaceTestCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++edgeHalfSpaceTestCount;
+                }
 
                 bool edgeHalfSpaceRejected = false;
 
@@ -702,7 +643,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
 
                 if (edgeHalfSpaceRejected)
                 {
-                    ++edgeHalfSpaceRejectCount;
+                    if (m_DetailedProfilingEnabled)
+                    {
+                        ++edgeHalfSpaceRejectCount;
+                    }
                     continue;
                 }
             }
@@ -859,6 +803,71 @@ void SoftBodyTriangleSpatialHashGrid::GrowBuckets()
     // Release buildでも処理継続できるよう値を復元するような分岐は行わず、
     // 正常系では必ず一致する単純な構造にしています。
     static_cast<void>(previousActiveCellCount);
+}
+
+void SoftBodyTriangleSpatialHashGrid::RegisterTriangleCellsFast(std::size_t triangleCount)
+{
+    for (std::size_t triangleIndex = 0u; triangleIndex < triangleCount; ++triangleIndex)
+    {
+        const TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
+        if (cellRange.Valid == false)
+        {
+            continue;
+        }
+
+        for (int32_t z = cellRange.Minimum.Z; z <= cellRange.Maximum.Z; ++z)
+        {
+            for (int32_t y = cellRange.Minimum.Y; y <= cellRange.Maximum.Y; ++y)
+            {
+                for (int32_t x = cellRange.Minimum.X; x <= cellRange.Maximum.X; ++x)
+                {
+                    CellCoord cell{};
+                    cell.X = x;
+                    cell.Y = y;
+                    cell.Z = z;
+
+                    TriangleCellBucket& bucket = GetOrActivateBucketFast(cell);
+                    bucket.TriangleIndices.Append(static_cast<uint32_t>(triangleIndex));
+                }
+            }
+        }
+    }
+}
+
+SoftBodyTriangleSpatialHashGrid::TriangleCellBucket&
+SoftBodyTriangleSpatialHashGrid::GetOrActivateBucketFast(const CellCoord& cell)
+{
+    std::size_t bucketIndex = HashCell(cell) & m_BucketMask;
+    while (true)
+    {
+        TriangleCellBucket& bucket = m_Buckets[bucketIndex];
+        if (bucket.Generation != m_CurrentGeneration)
+        {
+            // 初期容量はTriangle数の16倍で、通常Clothでは実測Load Factor約0.156です。
+            // それでも極端な変形で上限を超えた場合は、診断経路と同じ安全網でTableを拡張します。
+            if ((m_ActiveCellCount + 1u) * MaximumLoadDenominator
+                > m_Buckets.size() * MaximumLoadNumerator)
+            {
+                GrowBuckets();
+                bucketIndex = HashCell(cell) & m_BucketMask;
+                continue;
+            }
+
+            bucket.Coord = cell;
+            bucket.TriangleIndices.Reset();
+            bucket.TriangleIndices.EnsureMinimumSize(InitialTriangleIndicesCapacity);
+            bucket.Generation = m_CurrentGeneration;
+            ++m_ActiveCellCount;
+            return bucket;
+        }
+
+        if (bucket.Coord == cell)
+        {
+            return bucket;
+        }
+
+        bucketIndex = (bucketIndex + 1u) & m_BucketMask;
+    }
 }
 
 SoftBodyTriangleSpatialHashGrid::TriangleCellBucket&

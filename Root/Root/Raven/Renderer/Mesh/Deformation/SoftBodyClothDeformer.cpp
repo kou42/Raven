@@ -325,70 +325,74 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     //
     // DenominatorRejectが多い場合は固定Particle構成など「そもそも解けないConstraint」の前倒し除外、
     // DeltaLambdaRejectが多い場合はLambda状態を利用したcheap rejectを次の最適化候補として判断できます。
-    const ph::SoftBodyParticleTriangleCollisionStatistics& particleTriangleStatistics =
-        m_Solver.GetParticleTriangleCollisionStatistics();
-
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.SpatialHashCellSize",
-        static_cast<double>(m_ParticleTriangleSpatialHashCellSize));
-
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.Candidate",
-        static_cast<double>(particleTriangleStatistics.CandidateCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.NarrowPhase",
-        static_cast<double>(particleTriangleStatistics.NarrowPhaseCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.Distance",
-        static_cast<double>(particleTriangleStatistics.DistanceCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.Constraint",
-        static_cast<double>(particleTriangleStatistics.ConstraintCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.DenominatorReject",
-        static_cast<double>(particleTriangleStatistics.DenominatorRejectCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.DeltaLambda",
-        static_cast<double>(particleTriangleStatistics.DeltaLambdaCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.DeltaLambdaReject",
-        static_cast<double>(particleTriangleStatistics.DeltaLambdaRejectCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.PositionCorrection",
-        static_cast<double>(particleTriangleStatistics.PositionCorrectionCount));
-
-    // Constraintへ到達した候補のうち、最終的に実Position補正へ到達した割合です。
-    // 絶対件数と併用することで、候補数が異なるシーン間でも後半funnelの効率を比較できます。
-    double positionCorrectionRatio = 0.0;
-    if (particleTriangleStatistics.ConstraintCount > 0u)
+    // Funnel Counterは調査時だけ必要です。通常frameで12回以上のAddCounter()を行うと、
+    // Profiler内部のmutex・文字列copy・vector追記がCloth.Update時間へ混入します。
+    // Solver側の詳細集計と同じopt-in設定へ揃え、通常Gameplayでは観測コストを発生させません。
+    if (m_Solver.GetSettings().DetailedParticleTriangleProfilingEnabled
+        && CPUProfiler::Get().IsEnabled())
     {
-        positionCorrectionRatio =
-            static_cast<double>(particleTriangleStatistics.PositionCorrectionCount)
-            / static_cast<double>(particleTriangleStatistics.ConstraintCount);
-    }
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.Funnel.PositionCorrectionRatio",
-        positionCorrectionRatio);
+        const ph::SoftBodyParticleTriangleCollisionStatistics& particleTriangleStatistics =
+            m_Solver.GetParticleTriangleCollisionStatistics();
 
-    // 既存のCounter名はCell Size比較結果との互換性を維持するため残します。
-    // Funnel Counterと同じ値ですが、過去のProfiler Captureとの比較時に名前が変わらないことを優先します。
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.CandidateCount",
-        static_cast<double>(particleTriangleStatistics.CandidateCount));
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.NarrowPhaseCount",
-        static_cast<double>(particleTriangleStatistics.NarrowPhaseCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.SpatialHashCellSize",
+            static_cast<double>(m_ParticleTriangleSpatialHashCellSize));
 
-    double narrowPhaseRatio = 0.0;
-    if (particleTriangleStatistics.CandidateCount > 0u)
-    {
-        narrowPhaseRatio =
-            static_cast<double>(particleTriangleStatistics.NarrowPhaseCount)
-            / static_cast<double>(particleTriangleStatistics.CandidateCount);
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.Candidate",
+            static_cast<double>(particleTriangleStatistics.CandidateCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.NarrowPhase",
+            static_cast<double>(particleTriangleStatistics.NarrowPhaseCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.Distance",
+            static_cast<double>(particleTriangleStatistics.DistanceCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.Constraint",
+            static_cast<double>(particleTriangleStatistics.ConstraintCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.DenominatorReject",
+            static_cast<double>(particleTriangleStatistics.DenominatorRejectCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.DeltaLambda",
+            static_cast<double>(particleTriangleStatistics.DeltaLambdaCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.DeltaLambdaReject",
+            static_cast<double>(particleTriangleStatistics.DeltaLambdaRejectCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.PositionCorrection",
+            static_cast<double>(particleTriangleStatistics.PositionCorrectionCount));
+
+        double positionCorrectionRatio = 0.0;
+        if (particleTriangleStatistics.ConstraintCount > 0u)
+        {
+            positionCorrectionRatio =
+                static_cast<double>(particleTriangleStatistics.PositionCorrectionCount)
+                / static_cast<double>(particleTriangleStatistics.ConstraintCount);
+        }
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.Funnel.PositionCorrectionRatio",
+            positionCorrectionRatio);
+
+        // 既存名は過去Capture比較用に詳細診断経路内で維持します。
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.CandidateCount",
+            static_cast<double>(particleTriangleStatistics.CandidateCount));
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.NarrowPhaseCount",
+            static_cast<double>(particleTriangleStatistics.NarrowPhaseCount));
+
+        double narrowPhaseRatio = 0.0;
+        if (particleTriangleStatistics.CandidateCount > 0u)
+        {
+            narrowPhaseRatio =
+                static_cast<double>(particleTriangleStatistics.NarrowPhaseCount)
+                / static_cast<double>(particleTriangleStatistics.CandidateCount);
+        }
+        CPUProfiler::Get().AddCounter(
+            "SoftBody.ParticleTriangle.NarrowPhaseRatio",
+            narrowPhaseRatio);
     }
-    CPUProfiler::Get().AddCounter(
-        "SoftBody.ParticleTriangle.NarrowPhaseRatio",
-        narrowPhaseRatio);
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
     if (geometry->GetVertices().size() != m_Cloth.ParticleIndices.size()

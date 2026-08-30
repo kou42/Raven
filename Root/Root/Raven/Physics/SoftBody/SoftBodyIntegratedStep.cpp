@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "Raven/Core/CPUProfiler.h"
@@ -33,13 +32,6 @@ namespace
 //
 // unordered_* はNode/Bucket用の内部型へAllocatorをrebindします。
 // Candidate vectorはSpatialHashからCounter付きvectorへ直接push_backし、中間copyを作りません。
-using TemporaryExcludedPairAllocator = SolverTemporaryAllocator<uint64_t>;
-using TemporaryExcludedPairSet = std::unordered_set<
-    uint64_t,
-    std::hash<uint64_t>,
-    std::equal_to<uint64_t>,
-    TemporaryExcludedPairAllocator>;
-
 using TemporaryLambdaValue = std::pair<const uint64_t, float>;
 using TemporaryLambdaAllocator = SolverTemporaryAllocator<TemporaryLambdaValue>;
 using TemporaryLambdaMap = std::unordered_map<
@@ -251,6 +243,8 @@ void SolveParticleSelfCollisionIteration(
 {
     // Particle-Particle自己衝突はBroad PhaseとNarrow Phaseの両方が重くなり得ます。
     // それぞれを個別Scopeへ分け、Spatial Hash自体が原因なのか候補解決側が原因なのかを判別します。
+    const float targetDistanceSq = targetDistance * targetDistance;
+
     {
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision.HashBuild");
         spatialHash.Build(particles);
@@ -288,6 +282,25 @@ void SolveParticleSelfCollisionIteration(
             const math::Vec3 delta = particleB.Position - particleA.Position;
             const float distanceSq = delta.LengthSq();
 
+            // 非接触候補の大半はLambdaを一度も持ちません。従来は全候補でsqrtを行い、
+            // unordered_map::operator[]によって0 Lambda Nodeまで生成していました。
+            // 距離平方で先にRejectし、過去iterationのActive Lambdaがある候補だけを解放処理へ残します。
+            // これにより通常の離れた候補ではsqrt・Hash Node確保・FrameAllocator消費をすべて省略できます。
+            auto lambdaIterator = lambdas.end();
+            if (distanceSq >= targetDistanceSq)
+            {
+                if (lambdas.empty())
+                {
+                    continue;
+                }
+
+                lambdaIterator = lambdas.find(pairKey);
+                if (lambdaIterator == lambdas.end() || lambdaIterator->second <= 0.0f)
+                {
+                    continue;
+                }
+            }
+
             float distance = 0.0f;
             math::Vec3 normal{ 1.0f, 0.0f, 0.0f };
             if (distanceSq > math::Epsilon * math::Epsilon)
@@ -307,7 +320,13 @@ void SolveParticleSelfCollisionIteration(
             }
 
             const float constraintValue = distance - targetDistance;
-            float& lambda = lambdas[pairKey];
+            if (lambdaIterator == lambdas.end())
+            {
+                // 接触候補だけを1回のHash探索で挿入します。
+                // find()後のoperator[]という二重探索も避けるためtry_emplace()を使用します。
+                lambdaIterator = lambdas.try_emplace(pairKey, 0.0f).first;
+            }
+            float& lambda = lambdaIterator->second;
             if (constraintValue >= 0.0f && lambda <= 0.0f)
             {
                 continue;
@@ -353,7 +372,8 @@ void SolveParticleTriangleSelfCollisionIteration(
     CandidatePairVector& candidatePairs,
     SoftBodyParticleTriangleCollisionStatistics& statistics,
     float thickness,
-    float alphaTilde)
+    float alphaTilde,
+    bool detailedStatisticsEnabled)
 {
     // Particle-Triangleは現在もっとも大きなボトルネック候補です。
     // TriangleのGrid登録、Particleからの候補収集、実Triangle距離計算の3段階へ明確に分離します。
@@ -431,12 +451,21 @@ void SolveParticleTriangleSelfCollisionIteration(
             // また、Fast Rejectされる候補ではunordered_map::operator[]を呼ばないことで、
             // 0 Lambdaの不要エントリ生成とHash Map拡張コストも避けます。
             const uint64_t pairKey = MakeParticleTriangleKey(pair.ParticleIndex, pair.TriangleIndex);
-            const auto lambdaIterator = lambdas.find(pairKey);
-            const bool hasActiveLambda =
-                lambdaIterator != lambdas.end() && lambdaIterator->second > 0.0f;
-            if (distanceSq >= thicknessSq && hasActiveLambda == false)
+            auto lambdaIterator = lambdas.end();
+            if (distanceSq >= thicknessSq)
             {
-                continue;
+                // Lambda Mapが空なら、このStepで解放すべき既存接触も存在しません。
+                // 非接触候補ごとのunordered_map::find()を省略する最頻Fast Pathです。
+                if (lambdas.empty())
+                {
+                    continue;
+                }
+
+                lambdaIterator = lambdas.find(pairKey);
+                if (lambdaIterator == lambdas.end() || lambdaIterator->second <= 0.0f)
+                {
+                    continue;
+                }
             }
 
             float distance = 0.0f;
@@ -467,20 +496,28 @@ void SolveParticleTriangleSelfCollisionIteration(
 
             // Fast Rejectを通過し、sqrtを含む距離・法線構築まで実行した候補だけを数えます。
             // NarrowPhaseCountとの差がDistance Squared Fast Rejectで除外できた仕事量になります。
-            ++statistics.DistanceCount;
+            if (detailedStatisticsEnabled)
+            {
+                ++statistics.DistanceCount;
+            }
 
             const float constraintValue = distance - thickness;
-            float& lambda =
-                lambdaIterator != lambdas.end()
-                    ? lambdaIterator->second
-                    : lambdas[pairKey];
+            if (lambdaIterator == lambdas.end())
+            {
+                // 接触候補ではfind()+operator[]の二重Hash探索を避け、1回でNodeを取得／生成します。
+                lambdaIterator = lambdas.try_emplace(pairKey, 0.0f).first;
+            }
+            float& lambda = lambdaIterator->second;
             if (constraintValue >= 0.0f && lambda <= 0.0f)
             {
                 continue;
             }
 
             // thickness判定を通過し、実際にXPBD Constraint計算へ進む候補だけを数えます。
-            ++statistics.ConstraintCount;
+            if (detailedStatisticsEnabled)
+            {
+                ++statistics.ConstraintCount;
+            }
 
             const float denominator =
                 particle.InverseMass
@@ -493,13 +530,19 @@ void SolveParticleTriangleSelfCollisionIteration(
                 // Constraintへ到達したものの、DeltaLambda計算を安全に行えない候補です。
                 // このRejectを独立計測することで、ConstraintCountとPositionCorrectionCountの差を
                 // 「分母無効」と「DeltaLambdaが実質0」の2種類へ分解できます。
-                ++statistics.DenominatorRejectCount;
+                if (detailedStatisticsEnabled)
+                {
+                    ++statistics.DenominatorRejectCount;
+                }
                 continue;
             }
 
             // 有効なdenominatorを得て、ここからXPBDのLambda更新を実際に計算します。
             // ConstraintCount - DenominatorRejectCount と一致することが期待されます。
-            ++statistics.DeltaLambdaCount;
+            if (detailedStatisticsEnabled)
+            {
+                ++statistics.DeltaLambdaCount;
+            }
 
             const float unconstrainedDeltaLambda =
                 (-constraintValue - alphaTilde * lambda) / denominator;
@@ -512,7 +555,10 @@ void SolveParticleTriangleSelfCollisionIteration(
             {
                 // XPBD式までは評価したものの、実際の位置補正へ寄与しない候補です。
                 // この割合が大きければ、将来的にLambda更新前のcheap rejectを検討する価値があります。
-                ++statistics.DeltaLambdaRejectCount;
+                if (detailedStatisticsEnabled)
+                {
+                    ++statistics.DeltaLambdaRejectCount;
+                }
                 continue;
             }
 
@@ -545,7 +591,7 @@ void SolveParticleTriangleSelfCollisionIteration(
             }
 
             // DeltaLambda計算だけでなく、少なくとも1 Particleへ実Position補正が入った回数です。
-            if (positionCorrected)
+            if (detailedStatisticsEnabled && positionCorrected)
             {
                 ++statistics.PositionCorrectionCount;
             }
@@ -566,7 +612,12 @@ void SoftBodySolver::StepWithSelfCollisions(
     // Statisticsは「直近1 Step」の値として扱います。
     // deltaTime不正や自己衝突無効時も古い値を残さないよう、Early Returnより前に必ずResetします。
     m_ParticleTriangleCollisionStatistics.Reset();
+
+    // 先に前StepをResetしてから今回の収集設定を反映します。
+    // 直接Solverを使用する経路に未送信Counterがあっても、前Stepの設定を保ったままFallback送信できます。
     m_TemporaryAllocationStatistics.Reset();
+    m_TemporaryAllocationStatistics.SetCollectionEnabled(
+        m_Settings.DetailedTemporaryAllocationProfilingEnabled);
 
     if (deltaTime <= 0.0f)
     {
@@ -606,12 +657,6 @@ void SoftBodySolver::StepWithSelfCollisions(
     // SolverTemporaryAllocationStatisticsへ設定されたBackingを各Allocatorが継承するため、
     // FrameAllocator ModeではHash/Map/Candidate vectorが同じArenaへ集約されます。
     // Heap Modeでは同じ型・同じCounterのままstd::allocatorへ戻り、④のBefore条件になります。
-    TemporaryExcludedPairSet excludedParticlePairs{
-        0u,
-        std::hash<uint64_t>{},
-        std::equal_to<uint64_t>{},
-        TemporaryExcludedPairAllocator(&m_TemporaryAllocationStatistics) };
-
     TemporaryLambdaMap particleLambdas{
         0u,
         std::hash<uint64_t>{},
@@ -630,8 +675,13 @@ void SoftBodySolver::StepWithSelfCollisions(
     TemporaryParticleTriangleCandidateVector particleTriangleCandidatePairs{
         TemporaryParticleTriangleCandidateAllocator(&m_TemporaryAllocationStatistics) };
 
-    SoftBodySpatialHashGrid particleSpatialHash(
-        std::max(particleTargetDistance, 1.0e-4f));
+    const float particleCellSize = std::max(particleTargetDistance, 1.0e-4f);
+    if (m_ParticleSpatialHash.GetCellSize() != particleCellSize)
+    {
+        // Particle半径設定が変わった場合だけTableを破棄します。
+        // 通常frameでは同じGridを使い、Generation更新だけで登録内容を切り替えます。
+        m_ParticleSpatialHash.SetCellSize(particleCellSize);
+    }
 
     const float triangleCellSize =
         std::max(particleTriangleSettings.SpatialHashCellSize, 1.0e-4f);
@@ -651,7 +701,15 @@ void SoftBodySolver::StepWithSelfCollisions(
 
         if (particleCollisionEnabled)
         {
-            BuildExcludedParticlePairs(m_DistanceConstraints, excludedParticlePairs);
+            // Distance Constraint追加後の最初のStepだけCacheを再構築します。
+            // 通常frameではTopologyが不変なので、全Distance Constraint走査とHash Node生成を省略できます。
+            if (m_SelfCollisionExcludedParticlePairsDirty == true)
+            {
+                BuildExcludedParticlePairs(
+                    m_DistanceConstraints,
+                    m_SelfCollisionExcludedParticlePairs);
+                m_SelfCollisionExcludedParticlePairsDirty = false;
+            }
         }
 
         if (particleTriangleCollisionEnabled)
@@ -700,8 +758,8 @@ void SoftBodySolver::StepWithSelfCollisions(
             RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleSelfCollision");
             SolveParticleSelfCollisionIteration(
                 m_Particles,
-                particleSpatialHash,
-                excludedParticlePairs,
+                m_ParticleSpatialHash,
+                m_SelfCollisionExcludedParticlePairs,
                 particleLambdas,
                 particleCandidatePairs,
                 particleTargetDistance,
@@ -720,7 +778,8 @@ void SoftBodySolver::StepWithSelfCollisions(
                 particleTriangleCandidatePairs,
                 m_ParticleTriangleCollisionStatistics,
                 triangleThickness,
-                particleTriangleAlphaTilde);
+                particleTriangleAlphaTilde,
+                m_Settings.DetailedParticleTriangleProfilingEnabled);
         }
 
         {

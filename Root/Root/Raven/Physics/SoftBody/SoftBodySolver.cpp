@@ -141,6 +141,9 @@ SoftBodySolver::SoftBodySolver(const SoftBodySolver& other)
     , m_SelfCollisionTriangles(other.m_SelfCollisionTriangles)
     , m_SelfCollisionTriangleRows(other.m_SelfCollisionTriangleRows)
     , m_SelfCollisionTriangleColumns(other.m_SelfCollisionTriangleColumns)
+    , m_SelfCollisionExcludedParticlePairs(other.m_SelfCollisionExcludedParticlePairs)
+    , m_SelfCollisionExcludedParticlePairsDirty(other.m_SelfCollisionExcludedParticlePairsDirty)
+    , m_ParticleSpatialHash(other.m_ParticleSpatialHash)
     , m_ParticleTriangleSpatialHash(other.m_ParticleTriangleSpatialHash)
 {
     if (m_Settings.TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator)
@@ -180,6 +183,10 @@ SoftBodySolver& SoftBodySolver::operator=(const SoftBodySolver& other)
         m_SelfCollisionTriangles = other.m_SelfCollisionTriangles;
         m_SelfCollisionTriangleRows = other.m_SelfCollisionTriangleRows;
         m_SelfCollisionTriangleColumns = other.m_SelfCollisionTriangleColumns;
+        m_SelfCollisionExcludedParticlePairs = other.m_SelfCollisionExcludedParticlePairs;
+        m_SelfCollisionExcludedParticlePairsDirty =
+            other.m_SelfCollisionExcludedParticlePairsDirty;
+        m_ParticleSpatialHash = other.m_ParticleSpatialHash;
         m_ParticleTriangleSpatialHash = other.m_ParticleTriangleSpatialHash;
     }
 
@@ -218,6 +225,8 @@ uint32_t SoftBodySolver::AddDistanceConstraint(uint32_t particleA, uint32_t part
     constraint.Lambda = 0.0f;
 
     m_DistanceConstraints.push_back(constraint);
+    // 次の自己衝突Stepで除外Pair Cacheを1回だけ再構築します。
+    m_SelfCollisionExcludedParticlePairsDirty = true;
     return static_cast<uint32_t>(m_DistanceConstraints.size() - 1u);
 }
 
@@ -366,6 +375,9 @@ void SoftBodySolver::Clear()
     m_SelfCollisionTriangles.clear();
     m_SelfCollisionTriangleRows = 0u;
     m_SelfCollisionTriangleColumns = 0u;
+    m_SelfCollisionExcludedParticlePairs.clear();
+    m_SelfCollisionExcludedParticlePairsDirty = true;
+    m_ParticleSpatialHash.Clear();
 
     // Debug / Profiler側へ再構築前の自己衝突件数やTemporary allocation値を残しません。
     // Temporary Statistics::Reset()はFrameAllocator ModeではArenaも巻き戻すため、

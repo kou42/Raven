@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
@@ -34,8 +33,8 @@ struct SoftBodySpatialHashPair
 // 候補生成では旧実装の「Particleごとに周囲27セル検索」をやめ、Occupied Cellを基準に
 // 同一Cell + 重複しない13方向のNeighbor Cellだけを処理します。
 //
-// これにより候補集合は同じまま、同じNeighbor Cellに対するunordered_map::find()の
-// 重複呼び出しを大幅に削減できます。
+// Cell TableはGeneration付きFlat Hashとして保持します。BuildごとにNodeを破棄せず、Bucketと
+// Particle Index BufferのcapacityをXPBD iterationおよびframe間で再利用します。
 class SoftBodySpatialHashGrid
 {
 public:
@@ -81,7 +80,7 @@ public:
             SoftBodySpatialHashPair,
             SolverTemporaryAllocator<SoftBodySpatialHashPair>>& outPairs) const;
 
-    std::size_t GetOccupiedCellCount() const { return m_Cells.size(); }
+    std::size_t GetOccupiedCellCount() const { return m_ActiveBucketIndices.size(); }
     std::size_t GetParticleCount() const { return m_ParticleCount; }
 
 private:
@@ -97,12 +96,42 @@ private:
         }
     };
 
-    struct CellCoordHasher
+    struct ParticleIndexBuffer
     {
-        std::size_t operator()(const CellCoord& coord) const;
+        std::vector<uint32_t> Storage;
+        std::size_t Count = 0u;
+
+        void Reset() { Count = 0u; }
+
+        void Append(uint32_t particleIndex)
+        {
+            if (Count == Storage.size())
+            {
+                const std::size_t newSize = Storage.empty() ? 1u : Storage.size() * 2u;
+                Storage.resize(newSize);
+            }
+
+            Storage.data()[Count] = particleIndex;
+            ++Count;
+        }
+    };
+
+    struct CellBucket
+    {
+        CellCoord Coord{};
+        ParticleIndexBuffer ParticleIndices;
+        uint32_t Generation = 0u;
     };
 
     CellCoord ComputeCellCoord(const math::Vec3& position) const;
+    std::size_t HashCell(const CellCoord& cell) const;
+
+    // Particle数の2倍以上となる2冪Tableを確保し、Load Factorを0.5以下へ保ちます。
+    // 容量変更はParticle数が既存上限を超えた場合だけ発生します。
+    void EnsureBucketCapacity(std::size_t particleCount);
+    void BeginBuildGeneration();
+    CellBucket& GetOrActivateBucket(const CellCoord& cell);
+    const CellBucket* FindActiveBucket(const CellCoord& cell) const;
 
     // Pairの格納順は常にParticleA < ParticleBへ正規化します。
     // Cell基準走査ではIndex順とCell順は一致しないため、ここで明示的に保証します。
@@ -115,8 +144,12 @@ private:
     float m_CellSize = 0.05f;
     float m_InverseCellSize = 20.0f;
 
-    // Particleは必ず1 Cellだけへ登録されます。
-    std::unordered_map<CellCoord, std::vector<uint32_t>, CellCoordHasher> m_Cells;
+    // Particleは必ず1 Cellだけへ登録されます。Generationが現在値と一致するBucketだけが有効です。
+    // Active Index一覧により、Candidate生成ではTable全体を走査せずOccupied Cellだけを辿ります。
+    std::vector<CellBucket> m_Buckets;
+    std::vector<std::size_t> m_ActiveBucketIndices;
+    std::size_t m_BucketMask = 0u;
+    uint32_t m_CurrentGeneration = 0u;
 
     // Candidate生成時はPositionを再利用しなくなったため、Particle snapshotは保持しません。
     // 数だけ保持することで余分なVec3 copy / memory trafficを削減します。

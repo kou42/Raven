@@ -59,6 +59,19 @@ struct SolverTemporaryAllocationStatistics
         return m_BackingAllocator;
     }
 
+    // Allocation内訳の調査時だけCounter更新を有効にします。
+    // Backing Allocatorの選択やResetには影響せず、falseではallocate/deallocateごとの整数更新と
+    // Profiler Counter送信だけを省略します。Gameplayの通常経路ではfalseを使用します。
+    void SetCollectionEnabled(bool enabled) noexcept
+    {
+        m_CollectionEnabled = enabled;
+    }
+
+    [[nodiscard]] bool IsCollectionEnabled() const noexcept
+    {
+        return m_CollectionEnabled;
+    }
+
     [[nodiscard]] std::size_t GetBackingCapacity() const noexcept
     {
         if (m_BackingAllocator == nullptr)
@@ -161,6 +174,11 @@ struct SolverTemporaryAllocationStatistics
             return;
         }
         m_ProfilerCountersSubmitted = true;
+
+        if (m_CollectionEnabled == false)
+        {
+            return;
+        }
 
         CPUProfiler& profiler = CPUProfiler::Get();
         if (profiler.IsEnabled() == false)
@@ -293,6 +311,11 @@ struct SolverTemporaryAllocationStatistics
 
     void RecordAllocation(std::size_t bytes)
     {
+        if (m_CollectionEnabled == false)
+        {
+            return;
+        }
+
         const uint64_t byteCount = static_cast<uint64_t>(bytes);
         ++AllocationCount;
         AllocationBytes += byteCount;
@@ -302,6 +325,11 @@ struct SolverTemporaryAllocationStatistics
 
     void RecordDeallocation(std::size_t bytes)
     {
+        if (m_CollectionEnabled == false)
+        {
+            return;
+        }
+
         const uint64_t byteCount = static_cast<uint64_t>(bytes);
         ++DeallocationCount;
         DeallocationBytes += byteCount;
@@ -317,6 +345,10 @@ private:
     // Profiler送信は観測処理なのでconst Getter経由から呼べるようmutableにします。
     // 物理状態やAllocation値そのものは変更せず、「このStepを送信済みか」だけを記録します。
     mutable bool m_ProfilerCountersSubmitted = false;
+
+    // 単体Allocatorテストとの互換性のためStatistics単体ではtrueを既定値にします。
+    // SoftBodySolverはStep開始時にSolverSettingsのopt-in値を明示設定します。
+    bool m_CollectionEnabled = true;
 
     // 所有権は持ちません。SoftBodySolverなど呼び出し側がBacking Allocatorを所有します。
     Allocator* m_BackingAllocator = nullptr;

@@ -168,7 +168,37 @@ void RunSoftBodySpatialHashSelfTests()
     }
 
     // ------------------------------------------------------------------------
-    // 4. Particle-Triangle Expanded AABB Early Reject
+    // 4. Flat Hash Linear Probe / Generation Reuse
+    // ------------------------------------------------------------------------
+    // Minimum 256 Bucket時にX Cell座標が256違うと下位Hashが同じになります。
+    // 衝突Bucketの後ろへ配置されたCellもFindActiveBucket()が正しくProbeできることと、
+    // 次Generationで旧Cellを候補として参照しないことを確認します。
+    {
+        SoftBodySpatialHashGrid grid(1.0f);
+        std::vector<SoftBodyParticle> particles(4u);
+        std::vector<SoftBodySpatialHashPair> pairs;
+
+        particles[0].Position = { 0.1f, 0.0f, 0.0f };   // Cell 0
+        particles[1].Position = { 256.1f, 0.0f, 0.0f }; // Cell 256: Cell 0とHash衝突
+        particles[2].Position = { 255.1f, 0.0f, 0.0f }; // Cell 255: Cell 256のNeighbor
+        particles[3].Position = { 512.1f, 0.0f, 0.0f }; // Cell 512: 同じHash chain
+
+        grid.Build(particles);
+        grid.GenerateCandidatePairs(pairs);
+
+        assert(grid.GetOccupiedCellCount() == 4u);
+        assert(ContainsPair(pairs, 1u, 2u));
+        assert(ContainsPair(pairs, 0u, 1u) == false);
+        AssertUniqueNormalizedPairs(pairs);
+
+        particles[1].Position = { 700.1f, 0.0f, 0.0f };
+        grid.Build(particles);
+        grid.GenerateCandidatePairs(pairs);
+        assert(ContainsPair(pairs, 1u, 2u) == false);
+    }
+
+    // ------------------------------------------------------------------------
+    // 5. Particle-Triangle Expanded AABB Early Reject
     // ------------------------------------------------------------------------
     // Triangle AABBがCell (0,0,0)へ登録されていても、そのCell全体がTriangleの
     // Thickness込みAABB内とは限りません。同じCellにいるだけの不要候補をClosest Point計算へ
@@ -203,7 +233,7 @@ void RunSoftBodySpatialHashSelfTests()
     }
 
     // ------------------------------------------------------------------------
-    // 5. Particle-Triangle Plane Distance Early Reject
+    // 6. Particle-Triangle Plane Distance Early Reject
     // ------------------------------------------------------------------------
     // Expanded AABBは軸平行Boxなので、斜めTriangleではAABB内部にもTriangle Planeから
     // Thickness以上離れた領域が残ります。その領域をClosest Point計算前に除外できることを確認します。
@@ -237,7 +267,7 @@ void RunSoftBodySpatialHashSelfTests()
     }
 
     // ------------------------------------------------------------------------
-    // 6. Detailed Profilingは候補集合へ影響しない
+    // 7. Detailed Profilingは候補集合へ影響しない
     // ------------------------------------------------------------------------
     // 通常経路では診断専用Metrics / Timer / Counterを停止しますが、AABB・Plane・Edge判定は
     // 常に実行されます。診断ON/OFFで候補の内容と順序が完全一致することを固定します。

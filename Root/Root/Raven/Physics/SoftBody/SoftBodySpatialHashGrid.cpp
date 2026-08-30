@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <functional>
 
 namespace Raven
 {
@@ -12,6 +11,18 @@ namespace ph
 namespace
 {
 constexpr float MinimumCellSize = 1.0e-4f;
+constexpr std::size_t MinimumBucketCount = 256u;
+constexpr std::size_t BucketCapacityMultiplier = 2u;
+
+std::size_t NextPowerOfTwo(std::size_t value)
+{
+    std::size_t result = 1u;
+    while (result < value)
+    {
+        result <<= 1u;
+    }
+    return result;
+}
 
 struct NeighborOffset
 {
@@ -71,28 +82,24 @@ void SoftBodySpatialHashGrid::SetCellSize(float cellSize)
 
 void SoftBodySpatialHashGrid::Clear()
 {
-    m_Cells.clear();
+    m_Buckets.clear();
+    m_ActiveBucketIndices.clear();
+    m_BucketMask = 0u;
+    m_CurrentGeneration = 0u;
     m_ParticleCount = 0u;
 }
 
 void SoftBodySpatialHashGrid::Build(const std::vector<SoftBodyParticle>& particles)
 {
-    m_Cells.clear();
+    EnsureBucketCapacity(particles.size());
+    BeginBuildGeneration();
     m_ParticleCount = particles.size();
-
-    // ClothではOccupied Cell数はParticle数以下です。
-    // あらかじめParticle数程度をreserveしておくことでBuild時のrehashを抑えます。
-    // clear()後もunordered_mapのbucket_count自体は保持されるため、2回目以降のXPBD iterationでは
-    // ほぼ再確保なしで利用できます。
-    if (m_Cells.bucket_count() < particles.size())
-    {
-        m_Cells.reserve(particles.size());
-    }
 
     for (std::size_t particleIndex = 0u; particleIndex < particles.size(); ++particleIndex)
     {
         const CellCoord cell = ComputeCellCoord(particles[particleIndex].Position);
-        m_Cells[cell].push_back(static_cast<uint32_t>(particleIndex));
+        CellBucket& bucket = GetOrActivateBucket(cell);
+        bucket.ParticleIndices.Append(static_cast<uint32_t>(particleIndex));
     }
 }
 
@@ -110,24 +117,25 @@ void SoftBodySpatialHashGrid::GenerateCandidatePairs(
     //
     // 新実装ではOccupied Cell C個について13 Neighborだけを見るため、最大でも約13*C回です。
     // また同一Cell内PairはMap検索不要で直接生成します。
-    for (const auto& cellEntry : m_Cells)
+    for (std::size_t activeBucketIndex : m_ActiveBucketIndices)
     {
-        const CellCoord& centerCell = cellEntry.first;
-        const std::vector<uint32_t>& centerParticles = cellEntry.second;
+        const CellBucket& centerBucket = m_Buckets[activeBucketIndex];
+        const CellCoord& centerCell = centerBucket.Coord;
+        const ParticleIndexBuffer& centerParticles = centerBucket.ParticleIndices;
 
         // --------------------------------------------------------------------
         // Same Cell Pairs
         // --------------------------------------------------------------------
         // 同じCell内ではi<jの組み合わせだけを生成し、重複を完全に防ぎます。
-        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.size(); ++firstIndex)
+        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.Count; ++firstIndex)
         {
             for (std::size_t secondIndex = firstIndex + 1u;
-                 secondIndex < centerParticles.size();
+                 secondIndex < centerParticles.Count;
                  ++secondIndex)
             {
                 AppendNormalizedPair(
-                    centerParticles[firstIndex],
-                    centerParticles[secondIndex],
+                    centerParticles.Storage.data()[firstIndex],
+                    centerParticles.Storage.data()[secondIndex],
                     outPairs);
             }
         }
@@ -143,20 +151,25 @@ void SoftBodySpatialHashGrid::GenerateCandidatePairs(
             neighborCell.Y = centerCell.Y + offset.Y;
             neighborCell.Z = centerCell.Z + offset.Z;
 
-            const auto neighborIt = m_Cells.find(neighborCell);
-            if (neighborIt == m_Cells.end())
+            const CellBucket* neighborBucket = FindActiveBucket(neighborCell);
+            if (neighborBucket == nullptr)
             {
                 continue;
             }
 
-            const std::vector<uint32_t>& neighborParticles = neighborIt->second;
+            const ParticleIndexBuffer& neighborParticles = neighborBucket->ParticleIndices;
 
             // 隣接する2 CellのParticleは全Cross PairがBroad Phase候補です。
             // Particle順はCell順とは無関係なのでAppendNormalizedPair()でA<Bへ揃えます。
-            for (uint32_t centerParticle : centerParticles)
+            for (std::size_t centerIndex = 0u; centerIndex < centerParticles.Count; ++centerIndex)
             {
-                for (uint32_t neighborParticle : neighborParticles)
+                const uint32_t centerParticle = centerParticles.Storage.data()[centerIndex];
+                for (std::size_t neighborIndex = 0u;
+                     neighborIndex < neighborParticles.Count;
+                     ++neighborIndex)
                 {
+                    const uint32_t neighborParticle =
+                        neighborParticles.Storage.data()[neighborIndex];
                     AppendNormalizedPair(
                         centerParticle,
                         neighborParticle,
@@ -167,16 +180,102 @@ void SoftBodySpatialHashGrid::GenerateCandidatePairs(
     }
 }
 
-std::size_t SoftBodySpatialHashGrid::CellCoordHasher::operator()(const CellCoord& coord) const
+std::size_t SoftBodySpatialHashGrid::HashCell(const CellCoord& cell) const
 {
-    const std::size_t hashX = std::hash<int32_t>{}(coord.X);
-    const std::size_t hashY = std::hash<int32_t>{}(coord.Y);
-    const std::size_t hashZ = std::hash<int32_t>{}(coord.Z);
+    const uint32_t hash =
+        static_cast<uint32_t>(cell.X) * 73856093u
+        ^ static_cast<uint32_t>(cell.Y) * 19349663u
+        ^ static_cast<uint32_t>(cell.Z) * 83492791u;
+    return static_cast<std::size_t>(hash) & m_BucketMask;
+}
 
-    std::size_t seed = hashX;
-    seed ^= hashY + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-    seed ^= hashZ + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
-    return seed;
+void SoftBodySpatialHashGrid::EnsureBucketCapacity(std::size_t particleCount)
+{
+    const std::size_t requiredBucketCount = NextPowerOfTwo(std::max(
+        MinimumBucketCount,
+        particleCount * BucketCapacityMultiplier));
+    if (m_Buckets.size() >= requiredBucketCount)
+    {
+        if (m_ActiveBucketIndices.capacity() < particleCount)
+        {
+            m_ActiveBucketIndices.reserve(particleCount);
+        }
+        return;
+    }
+
+    // 容量変更時だけ旧Tableを破棄します。通常のiteration/frameでは同じTableと各Bufferを再利用します。
+    m_Buckets.clear();
+    m_Buckets.resize(requiredBucketCount);
+    m_ActiveBucketIndices.clear();
+    m_ActiveBucketIndices.reserve(particleCount);
+    m_BucketMask = requiredBucketCount - 1u;
+    m_CurrentGeneration = 0u;
+}
+
+void SoftBodySpatialHashGrid::BeginBuildGeneration()
+{
+    ++m_CurrentGeneration;
+    if (m_CurrentGeneration == 0u)
+    {
+        for (CellBucket& bucket : m_Buckets)
+        {
+            bucket.Generation = 0u;
+        }
+        m_CurrentGeneration = 1u;
+    }
+
+    m_ActiveBucketIndices.clear();
+}
+
+SoftBodySpatialHashGrid::CellBucket& SoftBodySpatialHashGrid::GetOrActivateBucket(
+    const CellCoord& cell)
+{
+    std::size_t bucketIndex = HashCell(cell);
+    while (true)
+    {
+        CellBucket& bucket = m_Buckets[bucketIndex];
+        if (bucket.Generation != m_CurrentGeneration)
+        {
+            bucket.Coord = cell;
+            bucket.ParticleIndices.Reset();
+            bucket.Generation = m_CurrentGeneration;
+            m_ActiveBucketIndices.push_back(bucketIndex);
+            return bucket;
+        }
+
+        if (bucket.Coord == cell)
+        {
+            return bucket;
+        }
+
+        bucketIndex = (bucketIndex + 1u) & m_BucketMask;
+    }
+}
+
+const SoftBodySpatialHashGrid::CellBucket* SoftBodySpatialHashGrid::FindActiveBucket(
+    const CellCoord& cell) const
+{
+    if (m_Buckets.empty())
+    {
+        return nullptr;
+    }
+
+    std::size_t bucketIndex = HashCell(cell);
+    while (true)
+    {
+        const CellBucket& bucket = m_Buckets[bucketIndex];
+        if (bucket.Generation != m_CurrentGeneration)
+        {
+            return nullptr;
+        }
+
+        if (bucket.Coord == cell)
+        {
+            return &bucket;
+        }
+
+        bucketIndex = (bucketIndex + 1u) & m_BucketMask;
+    }
 }
 
 SoftBodySpatialHashGrid::CellCoord SoftBodySpatialHashGrid::ComputeCellCoord(

@@ -58,19 +58,20 @@ void SoftBodySpatialHashGrid::GenerateCandidatePairs(
 
     // 通常vector版と同じ「Occupied Cell + 13 Neighbor」走査です。
     // Candidate vectorのAllocatorだけが違い、Pair集合とPair順序は維持します。
-    for (const auto& cellEntry : m_Cells)
+    for (std::size_t activeBucketIndex : m_ActiveBucketIndices)
     {
-        const CellCoord& centerCell = cellEntry.first;
-        const std::vector<uint32_t>& centerParticles = cellEntry.second;
+        const CellBucket& centerBucket = m_Buckets[activeBucketIndex];
+        const CellCoord& centerCell = centerBucket.Coord;
+        const ParticleIndexBuffer& centerParticles = centerBucket.ParticleIndices;
 
-        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.size(); ++firstIndex)
+        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.Count; ++firstIndex)
         {
             for (std::size_t secondIndex = firstIndex + 1u;
-                 secondIndex < centerParticles.size();
+                 secondIndex < centerParticles.Count;
                  ++secondIndex)
             {
-                const uint32_t particleA = centerParticles[firstIndex];
-                const uint32_t particleB = centerParticles[secondIndex];
+                const uint32_t particleA = centerParticles.Storage.data()[firstIndex];
+                const uint32_t particleB = centerParticles.Storage.data()[secondIndex];
                 if (particleA == particleB)
                 {
                     continue;
@@ -90,17 +91,22 @@ void SoftBodySpatialHashGrid::GenerateCandidatePairs(
             neighborCell.Y = centerCell.Y + offset.Y;
             neighborCell.Z = centerCell.Z + offset.Z;
 
-            const auto neighborIt = m_Cells.find(neighborCell);
-            if (neighborIt == m_Cells.end())
+            const CellBucket* neighborBucket = FindActiveBucket(neighborCell);
+            if (neighborBucket == nullptr)
             {
                 continue;
             }
 
-            const std::vector<uint32_t>& neighborParticles = neighborIt->second;
-            for (uint32_t centerParticle : centerParticles)
+            const ParticleIndexBuffer& neighborParticles = neighborBucket->ParticleIndices;
+            for (std::size_t centerIndex = 0u; centerIndex < centerParticles.Count; ++centerIndex)
             {
-                for (uint32_t neighborParticle : neighborParticles)
+                const uint32_t centerParticle = centerParticles.Storage.data()[centerIndex];
+                for (std::size_t neighborIndex = 0u;
+                     neighborIndex < neighborParticles.Count;
+                     ++neighborIndex)
                 {
+                    const uint32_t neighborParticle =
+                        neighborParticles.Storage.data()[neighborIndex];
                     if (centerParticle == neighborParticle)
                     {
                         continue;
@@ -149,11 +155,17 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
         {
             const uint32_t triangleIndex =
                 bucket->TriangleIndices.Storage.data()[bucketTriangleIndex];
-            ++cellCandidateCount;
+            if (m_DetailedProfilingEnabled)
+            {
+                ++cellCandidateCount;
+            }
 
             if (triangleIndex >= m_BuildBounds.size())
             {
-                ++expandedAABBRejectCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++expandedAABBRejectCount;
+                }
                 continue;
             }
 
@@ -166,7 +178,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
                 || particlePosition.z < bounds.Minimum.z
                 || particlePosition.z > bounds.Maximum.z)
             {
-                ++expandedAABBRejectCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++expandedAABBRejectCount;
+                }
                 continue;
             }
 
@@ -174,29 +189,39 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
                 || bounds.ParticleB == particleIndex32
                 || bounds.ParticleC == particleIndex32)
             {
-                ++topologyRejectCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++topologyRejectCount;
+                }
                 continue;
             }
 
             if (bounds.PlaneValid)
             {
-                ++planeTestCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++planeTestCount;
+                }
 
                 const float signedScaledDistance =
                     math::Vec3::Dot(bounds.PlaneNormal, particlePosition) - bounds.PlaneOffset;
-                const float signedScaledDistanceSq =
-                    signedScaledDistance * signedScaledDistance;
-
-                if (signedScaledDistanceSq > bounds.PlaneDistanceThresholdSq)
+                if (signedScaledDistance * signedScaledDistance
+                    > bounds.PlaneDistanceThresholdSq)
                 {
-                    ++planeRejectCount;
+                    if (m_DetailedProfilingEnabled)
+                    {
+                        ++planeRejectCount;
+                    }
                     continue;
                 }
             }
 
             if (bounds.EdgeHalfSpaceValid)
             {
-                ++edgeHalfSpaceTestCount;
+                if (m_DetailedProfilingEnabled)
+                {
+                    ++edgeHalfSpaceTestCount;
+                }
 
                 bool edgeHalfSpaceRejected = false;
 
@@ -232,7 +257,10 @@ void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
 
                 if (edgeHalfSpaceRejected)
                 {
-                    ++edgeHalfSpaceRejectCount;
+                    if (m_DetailedProfilingEnabled)
+                    {
+                        ++edgeHalfSpaceRejectCount;
+                    }
                     continue;
                 }
             }

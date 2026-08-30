@@ -2,12 +2,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 #include "Raven/Core/Memory/FrameAllocator.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
+#include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/XPBDDihedralConstraint.h"
 #include "Raven/Physics/SoftBody/XPBDDistanceConstraint.h"
@@ -71,6 +73,11 @@ struct SoftBodySolverSettings
     // 追加のsqrt・時刻取得・Counter登録が発生します。通常の性能計測とGameplayではfalseを使用し、
     // Hash内部を調査するときだけ一時的に有効化してください。
     bool DetailedParticleTriangleProfilingEnabled = false;
+
+    // Step-local STL ContainerのAllocation/Deallocation内訳を収集します。
+    // trueでは各allocate/deallocateでCounter更新し、Step後にProfilerへ詳細値を送信します。
+    // Backing FrameAllocatorはfalseでもそのまま使用されるため、物理結果と一時領域再利用は変わりません。
+    bool DetailedTemporaryAllocationProfilingEnabled = false;
 };
 
 // ============================================================================
@@ -434,6 +441,16 @@ private:
     std::vector<SoftBodyTriangle> m_SelfCollisionTriangles;
     uint32_t m_SelfCollisionTriangleRows = 0u;
     uint32_t m_SelfCollisionTriangleColumns = 0u;
+
+    // Distance接続PairはCloth Topologyが変化するまで不変です。
+    // Particle-Particle自己衝突からStructural / Shear / Bending隣接を除外するSetを永続Cacheにし、
+    // 毎frameのunordered_set Node生成と全Constraint再走査を避けます。
+    std::unordered_set<uint64_t> m_SelfCollisionExcludedParticlePairs;
+    bool m_SelfCollisionExcludedParticlePairsDirty = true;
+
+    // Particle Flat HashもBucket内Bufferを保持するためSolver寿命で所有します。
+    // XPBD iterationおよびframeを跨いでTableとParticle Index capacityを再利用します。
+    SoftBodySpatialHashGrid m_ParticleSpatialHash{ 0.05f };
 
     // Particle-Triangle Flat HashはBucketごとにvector capacityを持つため、Stepローカルにすると
     // 毎frame最初のSolver iterationで巨大なBucket配列を再確保してしまいます。
