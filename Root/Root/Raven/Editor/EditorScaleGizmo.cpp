@@ -387,7 +387,16 @@ bool RenderScaleGizmo(
 
         const math::Vec2 mouseDelta = mousePosition - s_GizmoState.DragStartMouse;
         const float projectedPixels = math::Vec2::Dot(mouseDelta, s_GizmoState.ScreenAxisDirection);
-        const float scaleDelta = projectedPixels / s_GizmoState.PixelsPerScaleUnit;
+        float scaleDelta = projectedPixels / s_GizmoState.PixelsPerScaleUnit;
+
+        // Scaleも絶対Scale値ではなくDrag開始値からのdeltaをSnapします。
+        // 例えば開始Scale=1.03ならCtrl操作は1.13, 1.23...となり、1.0へ突然吸着しません。
+        if (ImGui::GetIO().KeyCtrl)
+        {
+            scaleDelta = ApplyEditorGizmoSnap(
+                scaleDelta,
+                GetEditorGizmoSnapSettings().ScaleStep);
+        }
 
         const float originalAxisScale = GetScaleAxisValue(
             s_GizmoState.DragStartScale,
