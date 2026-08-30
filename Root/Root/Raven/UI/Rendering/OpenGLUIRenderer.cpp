@@ -123,7 +123,7 @@ void OpenGLUIRenderer::Render(
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     m_Shader->Bind();
-    m_Shader->SetFloat2("u_ViewportSize", viewportSize.x, viewportSize.y);
+    m_Shader->SetVec2("u_ViewportSize", viewportSize);
 
     m_VertexArray->Bind();
     Renderer::DrawIndexed(m_VertexArray);
