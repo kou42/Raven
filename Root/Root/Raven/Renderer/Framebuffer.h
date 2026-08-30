@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
@@ -30,10 +31,10 @@ struct FramebufferAttachmentSpecification
 // ============================================================================
 // FramebufferAttachmentList
 // ============================================================================
-// Color / Depth Attachmentを将来的に複数指定できるよう、Attachment一覧をまとめます。
+// Color / Depth Attachmentを複数指定できるよう、Attachment一覧をまとめます。
 // initializer_list対応により、呼び出し側では
-//   { TextureFormat::RGBA8, TextureFormat::Depth24Stencil8 }
-// のように簡潔に記述できます。
+//   { TextureFormat::RGBA8, TextureFormat::RGBA8, TextureFormat::Depth24Stencil8 }
+// のように簡潔にMRT構成を記述できます。
 struct FramebufferAttachmentList
 {
     FramebufferAttachmentList() = default;
@@ -77,8 +78,8 @@ struct FramebufferSpecification
 // OpenGLFramebuffer / 将来のDirectXFramebuffer等のPlatform実装へ隠蔽します。
 //
 // Color AttachmentはRenderer固有IDではなくTexture抽象クラスとして公開します。
-// これによりFramebufferを利用する側は「描画結果はTextureである」という共通概念だけを扱えます。
-// OpenGLのGLuint等、backend固有表現をFramebufferインターフェースへ持ち込みません。
+// MRTでもColor Attachment番号だけを指定し、GL_COLOR_ATTACHMENT0等のOpenGL定数は
+// Platform実装の外へ公開しません。
 class Framebuffer
 {
 public:
@@ -98,10 +99,21 @@ public:
     // 0サイズや同一サイズをどのように扱うかはPlatform実装側で安全に処理します。
     virtual void Resize(std::uint32_t width, std::uint32_t height) = 0;
 
-    // 描画済みColor AttachmentをTextureとして取得します。
-    // 現段階では最初のColor Attachmentを返します。MRT対応時にはindex指定APIを追加します。
-    // 参照を返すことで不要なRefのコピーを避けつつ、所有権はFramebuffer側に保持します。
-    virtual const Ref<Texture>& GetColorAttachment() const = 0;
+    // 指定indexのColor AttachmentをTextureとして取得します。
+    // indexはFramebufferSpecificationに記述したColor Attachmentだけを0から数えた番号です。
+    // Depth/Stencil Attachmentはこのindexへ含みません。
+    virtual const Ref<Texture>& GetColorAttachment(std::size_t index) const = 0;
+
+    // 現在保持しているColor Attachment数を取得します。
+    // MRTを利用する上位Rendererはこの値で有効なindex範囲を確認できます。
+    virtual std::size_t GetColorAttachmentCount() const = 0;
+
+    // 従来互換APIです。Color Attachment 0を返します。
+    // Scene/Game View等の単一RenderTarget利用側は既存コードを変更せず利用できます。
+    const Ref<Texture>& GetColorAttachment() const
+    {
+        return GetColorAttachment(0);
+    }
 
     // Framebuffer生成時の設定を取得します。
     // Resize後はWidth / Heightも現在の実サイズへ同期されます。
@@ -112,9 +124,9 @@ public:
     // ------------------------------------------------------------------------
     // EditorのDear ImGui連携は現状ImTextureIDへOpenGL Texture IDを渡しているため、
     // 既存コードを一度に壊さないよう互換APIを一時的に残します。
-    // 実際のColor Attachment所有はすでにTextureへ移行済みで、この関数はTexture::GetID()へ
-    // 委譲するだけです。Editor側のTexture表示境界を整理した段階で削除します。
+    // 引数なし版はColor Attachment 0へ委譲します。
     std::uint32_t GetColorAttachmentRendererID() const;
+    std::uint32_t GetColorAttachmentRendererID(std::size_t index) const;
 
     virtual std::uint32_t GetWidth() const = 0;
     virtual std::uint32_t GetHeight() const = 0;
