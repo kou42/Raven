@@ -26,7 +26,7 @@ namespace Raven
 {
 
 // TextureのピクセルフォーマットをRenderer共通の値として表します。
-// OpenGLのGL_RGB8やGL_DEPTH24_STENCIL8などを上位層へ公開せず、
+// OpenGLのGL_RGB8 / GL_R32I / GL_DEPTH24_STENCIL8などを上位層へ公開せず、
 // 各RendererAPI実装側でネイティブ形式へ変換します。
 enum class TextureFormat
 {
@@ -34,6 +34,11 @@ enum class TextureFormat
     R8,
     RGB8,
     RGBA8,
+
+    // Entity Picking等で整数IDを1 pixelにつき1値保持する用途です。
+    // OpenGLではGL_R32Iへ変換しますが、Renderer共通層はOpenGL定数を意識しません。
+    R32I,
+
     Depth24Stencil8
 };
 
