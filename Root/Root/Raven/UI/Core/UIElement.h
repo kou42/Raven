@@ -21,7 +21,7 @@ struct UIThickness
     float Right = 0.0f;
     float Bottom = 0.0f;
 
-    UIThickness() = default;
+    UIThickness();
     explicit UIThickness(float uniform);
     UIThickness(float horizontal, float vertical);
 };
