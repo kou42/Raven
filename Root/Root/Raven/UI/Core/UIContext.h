@@ -3,6 +3,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/UI/Core/UIDrawList.h"
+#include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 
 #include <utility>
@@ -24,9 +25,18 @@ namespace Raven
 //
 // UIContextはRetained UI Treeそのものではなく、「今frameの描画要求」を集約する境界です。
 // UIElement / Layout / Event Systemは後続段階でこのContextへUIDrawCommandを生成します。
+//
+// 現在は最初のRetained Mode基盤としてRoot UIElementも所有します。
+// Root以下のElement Treeはframeを跨いで保持し、EndFrame()直前にUIDrawListへ展開します。
+// これによりWidgetのLifetimeとGPUへ渡す一時DrawCommandのLifetimeを分離します。
 class UIContext
 {
 public:
+    UIContext()
+        : m_RootElement(CreateScope<UIElement>())
+    {
+    }
+
     void BeginFrame(const math::Vec2& viewportSize)
     {
         // 前frameのDrawCommandを必ず破棄してから新しいframeを開始します。
@@ -44,6 +54,16 @@ public:
             return;
         }
 
+        // ====================================================================
+        // Retained UI Tree -> UIDrawList
+        // ====================================================================
+        // UIElement Treeはframeを跨いで保持し、描画直前に今frame用DrawCommandへ展開します。
+        // 将来Layout Engineを追加する際は、このBuildDrawList()より前にMeasure / Arrangeを実行します。
+        if (m_RootElement != nullptr)
+        {
+            m_RootElement->BuildDrawList(m_DrawList);
+        }
+
         // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
         // nullptrは正常な状態として扱います。OpenGLUIRenderer追加後はApplication初期化時に
         // SetRenderer()して、この同じframe境界から実描画へ接続します。
@@ -58,6 +78,16 @@ public:
     void SetRenderer(Scope<UIRenderer> renderer)
     {
         m_Renderer = std::move(renderer);
+    }
+
+    UIElement& GetRootElement()
+    {
+        return *m_RootElement;
+    }
+
+    const UIElement& GetRootElement() const
+    {
+        return *m_RootElement;
     }
 
     UIDrawList& GetDrawList()
@@ -83,6 +113,7 @@ public:
 private:
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
+    Scope<UIElement> m_RootElement;
     Scope<UIRenderer> m_Renderer;
     bool m_FrameActive = false;
 };
