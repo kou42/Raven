@@ -207,10 +207,23 @@ void Application::Run()
         // UIElement / UIPanelがまだ未実装のため、Renderer接続確認用に一時的な矩形を直接積みます。
         // 左上に半透明Panelが表示されれば、独自DrawList -> OpenGLUIRenderer -> GPUの経路が正常です。
         // UIElement導入後はこの検証コードを削除し、Editor側のRaven UI Treeへ置き換えます。
+        //
+        // 現在は描画経路の切り分け中なので、Dear ImGuiのMenu / DockSpaceと重ならず見落としにくいよう、
+        // 画面中央付近へ完全不透明の大きなマゼンタ矩形を出します。
+        // この色は通常のEditor配色と明確に異なるため、1 pixelでも描画されれば視認できます。
+        const float uiViewportWidth = static_cast<float>(m_Window->GetWidth());
+        const float uiViewportHeight = static_cast<float>(m_Window->GetHeight());
+        const math::Vec2 validationMin(
+            uiViewportWidth * 0.30f,
+            uiViewportHeight * 0.30f);
+        const math::Vec2 validationMax(
+            uiViewportWidth * 0.70f,
+            uiViewportHeight * 0.60f);
+
         m_UIContext.GetDrawList().AddRect(
-            math::Vec2(20.0f, 20.0f),
-            math::Vec2(280.0f, 72.0f),
-            math::Vec4(0.10f, 0.16f, 0.24f, 0.92f));
+            validationMin,
+            validationMax,
+            math::Vec4(1.0f, 0.0f, 1.0f, 1.0f));
 #endif
 
         // ====================================================================
