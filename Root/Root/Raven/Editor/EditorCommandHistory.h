@@ -19,6 +19,12 @@ struct TransformComponent;
 // EntityはIndexだけでなくGenerationとSceneも保持して記録します。
 // Undo時に対象Entityが破棄され、同じIndexが別Entityへ再利用されていた場合でも、
 // Scene::IsEntityAlive()によるGeneration検証で古いCommandを誤適用しません。
+//
+// Application::SetScene()でScene所有先が差し替わる場合、古いScene*をCommandから
+// dereferenceしないことが重要です。SetEditorCommandHistoryScene()で現在Sceneを同期し、
+// Sceneが変わった時点で過去SceneのUndo/Redo履歴を破棄します。
+void SetEditorCommandHistoryScene(Scene* scene);
+
 void RecordEditorTransformCommand(
     Entity entity,
     const TransformComponent& before,
