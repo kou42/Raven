@@ -86,14 +86,13 @@ int main()
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
     {
-        // Character本体はScene-ownedのまま維持します。
-        // CharacterLocomotionDebugOverlayLayerは左上へ大きなDear ImGuiデバッグHUDを表示するため、
-        // Raven UI実装中はEditor表示の確認を妨げないようApplication Layerへの登録だけを一時停止します。
+        // Character本体はScene-ownedのまま維持し、ImGui表示だけをApplication-owned Overlayへ分離します。
+        // OverlayはCharacter Layerを非所有pointerで参照しますが、ApplicationはApplication LayerをSceneより先に
+        // 破棄するため、終了順序上もdangling pointerになりません。
         //
-        // 重要:
-        // CharacterControllerDemoLayerそのものは停止していません。
-        // RuntimeのCharacter Controller / Animation / Locomotion処理は従来どおり動作します。
-        // デバッグHUDを再度確認したい場合は、下の#if 0を有効化してOverlay登録を戻してください。
+        // 現在はRaven UI実装中の描画確認を優先するため、Overlayの「登録処理だけ」を#if 0で一時停止しています。
+        // CharacterControllerDemoLayer本体とRuntimeのCharacter Controller / Animation / Locomotion処理は
+        // 従来どおり動作します。デバッグHUDを再度確認する場合は下の#if 0を有効化してください。
         auto characterLayer = Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene);
         Raven::CharacterControllerDemoLayer* characterLayerPointer = characterLayer.get();
 
