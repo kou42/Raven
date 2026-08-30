@@ -82,14 +82,6 @@ public:
     void OnEvent(Event& event) override;
 
 private:
-    // Scene Viewで現在使用するTransform操作です。
-    // EditorLayerはモード選択だけを保持し、具体的な描画・Drag計算は各Gizmo実装へ分離します。
-    enum class GizmoOperation
-    {
-        Translate = 0,
-        Rotate
-    };
-
     // ========================================================================
     // Editor Root UI
     // ========================================================================
@@ -195,10 +187,6 @@ private:
     // 1frame遅延はありますが、Window境界で入力を誤ってRuntime側へ渡すより安全な構成です。
     bool m_SceneViewportHovered = false;
     bool m_SceneViewportFocused = false;
-
-    // 現在表示するTransform Gizmoです。既存操作を維持するため初期値はTranslateです。
-    // Rotate追加後も両Gizmoを同時描画せず、選択中OperationだけがMouse入力を消費します。
-    GizmoOperation m_GizmoOperation = GizmoOperation::Translate;
 
     // ========================================================================
     // Editor Viewport resources
