@@ -1,6 +1,7 @@
 #include "Raven/Editor/EditorTranslateGizmo.h"
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Editor/EditorRotateGizmo.h"
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 
 namespace Raven
 {
@@ -531,10 +533,10 @@ bool RenderTranslateGizmo(
                 EntityHandle::FromValue(s_GizmoState.EntityValue),
                 s_GizmoState.EntityScene);
 
-            RecordEditorTransformCommand(
-                editedEntity,
-                beforeTransform,
-                transform);
+            // Drag中のTransformは表示へ即時反映済みです。Release時にExecuteを再度呼ばず、
+            // 開始値と終了値を持つ実行済みCommandとして1件だけ履歴へ登録します。
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<TransformCommand>(editedEntity, beforeTransform, transform));
 
             ResetGizmoState();
             return true;

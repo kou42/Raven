@@ -1,10 +1,10 @@
 #include "Raven/Editor/EditorCommandHistory.h"
 
-#include "Raven/Scene/Components.h"
+#include "Raven/Editor/Command/IEditorCommand.h"
 #include "Raven/Scene/Scene.h"
 
-#include <cmath>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace Raven
@@ -12,73 +12,16 @@ namespace Raven
 namespace
 {
 
-struct TransformCommand
-{
-    EntityHandle Handle{};
-    Scene* TargetScene = nullptr;
-    TransformComponent Before{};
-    TransformComponent After{};
-};
-
 constexpr std::size_t MaxHistoryCount = 128;
-constexpr float TransformCompareEpsilon = 0.000001f;
 
-std::vector<TransformCommand> s_UndoStack;
-std::vector<TransformCommand> s_RedoStack;
+// HistoryがCommandの寿命をunique_ptrで単独所有します。
+// Commandを追加してもHistoryは具象型を知らず、全Editor操作を同じ順序でUndo / Redoできます。
+std::vector<std::unique_ptr<IEditorCommand>> s_UndoStack;
+std::vector<std::unique_ptr<IEditorCommand>> s_RedoStack;
 
-// 現在Editorが操作対象としているSceneです。
-// Command内のScene*は識別用に保持するだけにし、実際のdereferenceはこのActive Sceneだけへ限定します。
+// 現在Editorが操作対象としているSceneです。HistoryはSceneを所有しません。
+// Commandの実行時にだけ参照として渡し、Scene切替時には全履歴を破棄します。
 Scene* s_ActiveScene = nullptr;
-
-bool NearlyEqual(float a, float b)
-{
-    return std::fabs(a - b) <= TransformCompareEpsilon;
-}
-
-bool TransformEquals(
-    const TransformComponent& a,
-    const TransformComponent& b)
-{
-    return NearlyEqual(a.Position.x, b.Position.x)
-        && NearlyEqual(a.Position.y, b.Position.y)
-        && NearlyEqual(a.Position.z, b.Position.z)
-        && NearlyEqual(a.Rotation.x, b.Rotation.x)
-        && NearlyEqual(a.Rotation.y, b.Rotation.y)
-        && NearlyEqual(a.Rotation.z, b.Rotation.z)
-        && NearlyEqual(a.Scale.x, b.Scale.x)
-        && NearlyEqual(a.Scale.y, b.Scale.y)
-        && NearlyEqual(a.Scale.z, b.Scale.z);
-}
-
-bool TryApplyTransform(
-    const TransformCommand& command,
-    const TransformComponent& transform)
-{
-    // TargetSceneは過去Commandの識別用です。
-    // Scene切替後の古いPointerをdereferenceしないよう、現在Active Sceneと一致する場合だけ処理します。
-    if (s_ActiveScene == nullptr
-        || command.TargetScene != s_ActiveScene)
-    {
-        return false;
-    }
-
-    Entity entity(command.Handle, s_ActiveScene);
-
-    // HandleにはGenerationも含まれるため、同じIndexが再利用されても古いCommandは一致しません。
-    // Undo/Redoは過去のEditor操作なので、対象Entityが既に消えている場合は安全に無視します。
-    if (s_ActiveScene->IsEntityAlive(entity) == false)
-    {
-        return false;
-    }
-
-    if (entity.HasComponent<TransformComponent>() == false)
-    {
-        return false;
-    }
-
-    entity.GetComponent<TransformComponent>() = transform;
-    return true;
-}
 
 void TrimUndoHistory()
 {
@@ -87,12 +30,19 @@ void TrimUndoHistory()
         return;
     }
 
-    const std::size_t removeCount =
-        s_UndoStack.size() - MaxHistoryCount;
-
+    const std::size_t removeCount = s_UndoStack.size() - MaxHistoryCount;
     s_UndoStack.erase(
         s_UndoStack.begin(),
         s_UndoStack.begin() + static_cast<std::ptrdiff_t>(removeCount));
+}
+
+void RecordCommand(std::unique_ptr<IEditorCommand> command)
+{
+    s_UndoStack.push_back(std::move(command));
+    TrimUndoHistory();
+
+    // Undo後に新しい編集を行うと、その時点から過去のRedo分岐は成立しません。
+    s_RedoStack.clear();
 }
 
 } // namespace
@@ -105,67 +55,64 @@ void SetEditorCommandHistoryScene(Scene* scene)
     }
 
     // SceneごとにEntity Handle空間とComponent Storageは独立しています。
-    // Scene切替を跨いでUndo/Redoを残すと、古いSceneの生Pointerを保持し続けることにもなるため、
-    // Scene境界で履歴を完全に破棄します。
+    // Scene切替を跨いで履歴を残さず、破棄済みSceneの非所有Pointerを使用する経路を閉じます。
     ClearEditorCommandHistory();
     s_ActiveScene = scene;
 }
 
-void RecordEditorTransformCommand(
-    Entity entity,
-    const TransformComponent& before,
-    const TransformComponent& after)
+bool ExecuteAndRecordEditorCommand(std::unique_ptr<IEditorCommand> command)
 {
-    if (static_cast<bool>(entity) == false
-        || entity.GetScene() == nullptr)
+    if (command == nullptr
+        || s_ActiveScene == nullptr
+        || command->CanExecute(*s_ActiveScene) == false)
     {
-        return;
+        return false;
     }
 
-    // 初回編集時は対象Sceneを自動登録します。
-    // 既に別Sceneが登録されている場合はScene境界とみなし、古い履歴を破棄してから切り替えます。
-    SetEditorCommandHistoryScene(entity.GetScene());
-
-    if (s_ActiveScene == nullptr
-        || s_ActiveScene->IsEntityAlive(entity) == false)
+    if (command->Execute(*s_ActiveScene) == false)
     {
-        return;
+        return false;
     }
 
-    // Mouseを押して離しただけ等、実際のTransform変更がない操作は履歴へ追加しません。
-    if (TransformEquals(before, after))
+    RecordCommand(std::move(command));
+    return true;
+}
+
+bool RecordAlreadyExecutedEditorCommand(std::unique_ptr<IEditorCommand> command)
+{
+    if (command == nullptr
+        || s_ActiveScene == nullptr
+        || command->CanExecute(*s_ActiveScene) == false)
     {
-        return;
+        return false;
     }
 
-    TransformCommand command;
-    command.Handle = entity.GetHandle();
-    command.TargetScene = s_ActiveScene;
-    command.Before = before;
-    command.After = after;
-
-    s_UndoStack.push_back(command);
-    TrimUndoHistory();
-
-    // Undo後に新しい編集を行った場合、そこから先のRedo分岐は成立しなくなります。
-    // 一般的なEditorと同じく、新規Command登録時にRedo履歴を破棄します。
-    s_RedoStack.clear();
+    // GizmoはDrag中、画面へ即時反映するためTransformを毎frame直接更新しています。
+    // Mouse Release時点でExecuteすると最終値を二重適用するため、ここでは検証と履歴登録だけを行います。
+    RecordCommand(std::move(command));
+    return true;
 }
 
 bool UndoEditorCommand()
 {
+    if (s_ActiveScene == nullptr)
+    {
+        return false;
+    }
+
     while (s_UndoStack.empty() == false)
     {
-        const TransformCommand command = s_UndoStack.back();
+        std::unique_ptr<IEditorCommand> command = std::move(s_UndoStack.back());
         s_UndoStack.pop_back();
 
-        if (TryApplyTransform(command, command.Before))
+        if (command != nullptr
+            && command->Undo(*s_ActiveScene) == true)
         {
-            s_RedoStack.push_back(command);
+            s_RedoStack.push_back(std::move(command));
             return true;
         }
 
-        // Entityが既に破棄されていたCommandは履歴から捨て、さらに古い有効Commandを探します。
+        // 対象EntityやComponentが消えたCommandは捨て、さらに古い有効Commandを探します。
     }
 
     return false;
@@ -173,14 +120,20 @@ bool UndoEditorCommand()
 
 bool RedoEditorCommand()
 {
+    if (s_ActiveScene == nullptr)
+    {
+        return false;
+    }
+
     while (s_RedoStack.empty() == false)
     {
-        const TransformCommand command = s_RedoStack.back();
+        std::unique_ptr<IEditorCommand> command = std::move(s_RedoStack.back());
         s_RedoStack.pop_back();
 
-        if (TryApplyTransform(command, command.After))
+        if (command != nullptr
+            && command->Redo(*s_ActiveScene) == true)
         {
-            s_UndoStack.push_back(command);
+            s_UndoStack.push_back(std::move(command));
             TrimUndoHistory();
             return true;
         }

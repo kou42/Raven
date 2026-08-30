@@ -1,6 +1,7 @@
 ﻿#include "Raven/Editor/EditorLayer.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
@@ -68,6 +69,9 @@ void EditorLayer::OnAttach()
 
 void EditorLayer::OnDetach()
 {
+    // Editor終了後にSceneへの非所有参照を履歴側へ残しません。
+    SetEditorCommandHistoryScene(nullptr);
+
     // ========================================================================
     // Editor Viewport GPU resource shutdown
     // ========================================================================
@@ -226,6 +230,10 @@ void EditorLayer::OnImGuiRender(float dt)
     {
         return;
     }
+
+    // ApplicationのScene所有権が差し替わったframeで履歴も同期します。
+    // Pointerが変化した場合、SetEditorCommandHistorySceneが旧Scene用Undo / Redoを破棄します。
+    SetEditorCommandHistoryScene(m_Application->GetScene());
 
     // ========================================================================
     // Editor selection validation

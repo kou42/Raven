@@ -1,17 +1,19 @@
 #pragma once
 
-#include "Raven/Scene/Entity.h"
+#include <memory>
 
 namespace Raven
 {
 
-struct TransformComponent;
+class IEditorCommand;
+class Scene;
 
 // ============================================================================
 // EditorCommandHistory
 // ============================================================================
 // Editor操作のUndo / Redo履歴を管理する共通入口です。
 //
+// IEditorCommandをunique_ptrで保持するため、Transform以外のCommandも同じ履歴へ追加できます。
 // 現段階ではTransform Gizmoの1回のDragを1 Commandとして記録します。
 // Drag中の毎frameを履歴へ積むと、Ctrl+Zを何十回も押さないと1操作を戻せなくなるため、
 // Gizmo側はMouse Buttonを離した時点で「開始Transform / 終了Transform」の1組だけを登録します。
@@ -25,10 +27,12 @@ struct TransformComponent;
 // Sceneが変わった時点で過去SceneのUndo/Redo履歴を破棄します。
 void SetEditorCommandHistoryScene(Scene* scene);
 
-void RecordEditorTransformCommand(
-    Entity entity,
-    const TransformComponent& before,
-    const TransformComponent& after);
+// 通常のEditor操作向けです。Commandを実行し、成功した場合だけUndo履歴へ登録します。
+bool ExecuteAndRecordEditorCommand(std::unique_ptr<IEditorCommand> command);
+
+// Gizmoのように呼び出し前に変更が適用済みの操作向けです。
+// Commandを二重実行せず、現在Sceneで有効なCommandだけをUndo履歴へ登録します。
+bool RecordAlreadyExecutedEditorCommand(std::unique_ptr<IEditorCommand> command);
 
 bool UndoEditorCommand();
 bool RedoEditorCommand();

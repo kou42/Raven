@@ -1,11 +1,15 @@
 #include "Raven/Editor/Panels/InspectorPanel.h"
 
+#include "Raven/Editor/Command/RenameEntityCommand.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneCameraSystem.h"
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <string>
 
 #include <imgui.h>
 
@@ -13,6 +17,16 @@ namespace Raven
 {
 namespace
 {
+struct RenameEditState
+{
+    EntityHandle Handle{};
+    Scene* TargetScene = nullptr;
+    std::string Before;
+    bool IsActive = false;
+};
+
+RenameEditState s_RenameEditState{};
+
 void DrawVec3Control(const char* label, math::Vec3& value, float speed = 0.1f)
 {
     // RavenのVec3内部表現へEditorが依存しすぎないよう、ImGuiへ渡す値は一度ローカル配列へ
@@ -102,9 +116,40 @@ void DrawTagComponent(Entity entity)
     std::memcpy(buffer, tag.Tag.data(), copyLength);
     buffer[copyLength] = '\0';
 
+    const std::string nameBeforeThisFrame = tag.Tag;
     if (ImGui::InputText("Name", buffer, sizeof(buffer)))
     {
+        // 編集中はHierarchy表示へ即時反映します。ただし各文字を履歴へ積まず、
+        // InputTextが非Activeになった時点で編集開始名と終了名を1 Commandへまとめます。
         tag.Tag = buffer;
+    }
+
+    if (ImGui::IsItemActivated())
+    {
+        s_RenameEditState.Handle = entity.GetHandle();
+        s_RenameEditState.TargetScene = entity.GetScene();
+        s_RenameEditState.Before = nameBeforeThisFrame;
+        s_RenameEditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_RenameEditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_RenameEditState.Handle == entity.GetHandle()
+            && s_RenameEditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            // TagはInputTextにより既に変更済みなので、Gizmoと同じ実行済み経路へ登録します。
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<RenameEntityCommand>(
+                    entity,
+                    s_RenameEditState.Before,
+                    tag.Tag));
+        }
+
+        s_RenameEditState = RenameEditState{};
     }
 }
 

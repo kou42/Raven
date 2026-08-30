@@ -646,8 +646,27 @@ D:.
     |   |   +---Editor
     |   |   |   |   EditorCamera.cpp
     |   |   |   |   EditorCamera.h
+    |   |   |   |   EditorCommandHistory.cpp
+    |   |   |   |   EditorCommandHistory.h
+    |   |   |   |   EditorEntityPicking.cpp
+    |   |   |   |   EditorGizmo.cpp
+    |   |   |   |   EditorGizmo.h
     |   |   |   |   EditorLayer.cpp
     |   |   |   |   EditorLayer.h
+    |   |   |   |   EditorRotateGizmo.cpp
+    |   |   |   |   EditorRotateGizmo.h
+    |   |   |   |   EditorScaleGizmo.cpp
+    |   |   |   |   EditorScaleGizmo.h
+    |   |   |   |   EditorSelectionOutline.cpp
+    |   |   |   |   EditorTranslateGizmo.cpp
+    |   |   |   |   EditorTranslateGizmo.h
+    |   |   |   |
+    |   |   |   +---Command
+    |   |   |   |       IEditorCommand.h
+    |   |   |   |       RenameEntityCommand.cpp
+    |   |   |   |       RenameEntityCommand.h
+    |   |   |   |       TransformCommand.cpp
+    |   |   |   |       TransformCommand.h
     |   |   |   |
     |   |   |   \---Panels
     |   |   |           AnimationDebugPanel.cpp
