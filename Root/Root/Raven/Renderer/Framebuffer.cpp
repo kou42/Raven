@@ -11,14 +11,20 @@ namespace Raven
 
 std::uint32_t Framebuffer::GetColorAttachmentRendererID() const
 {
-    const Ref<Texture>& colorAttachment = GetColorAttachment();
+    // 従来の単一Color Attachment利用側はColor 0を参照します。
+    return GetColorAttachmentRendererID(0);
+}
+
+std::uint32_t Framebuffer::GetColorAttachmentRendererID(std::size_t index) const
+{
+    const Ref<Texture>& colorAttachment = GetColorAttachment(index);
     if (colorAttachment == nullptr)
     {
         return 0;
     }
 
     // 互換APIはTexture抽象化への移行期間だけ利用します。
-    // Framebuffer自身はRenderer固有IDを所有せず、Textureが保持するIDを一時的に橋渡しします。
+    // Framebuffer自身はRenderer固有IDを所有せず、指定されたTextureが保持するIDを一時的に橋渡しします。
     return colorAttachment->GetID();
 }
 
