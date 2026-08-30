@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "../Renderer/Renderer.h"
 #include "Raven/ImGui/ImGuiLayer.h"
+#include "Raven/UI/Rendering/UIRenderer.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -26,6 +27,17 @@ Application::Application()
 
     // Rendererは有効なGraphics Contextを必要とするため、Window生成後に初期化します。
     Renderer::Init();
+
+    // ========================================================================
+    // Raven UI renderer lifecycle
+    // ========================================================================
+    // Applicationは具体的なOpenGLUIRendererを直接生成しません。
+    // UIRenderer::Create()が現在のRendererAPIに対応するbackendを選択するため、
+    // Core層へOpenGL固有型を持ち込まずにMain Window用UIContextへ描画実装を注入できます。
+    //
+    // Dear ImGuiとは別Context / 別DrawListとして並行稼働させるため、既存Editorを維持したまま
+    // 独自UIの描画・Layout・Inputを段階的に追加できます。
+    m_UIContext.SetRenderer(UIRenderer::Create());
 
     // ========================================================================
     // Dear ImGui lifecycle
@@ -179,6 +191,29 @@ void Application::Run()
         Renderer::BeginFrame();
 
         // ====================================================================
+        // Raven UI frame begin
+        // ====================================================================
+        // DrawListはRetained UI Treeとは別に毎frame再構築します。
+        // BeginFrameをScene / Layer処理より前に置くことで、Runtime LayerとEditor Layerのどちらからも
+        // GetUIContext().GetDrawList()へ描画要求を追加できる共通frame境界になります。
+        m_UIContext.BeginFrame(math::Vec2(
+            static_cast<float>(m_Window->GetWidth()),
+            static_cast<float>(m_Window->GetHeight())));
+
+#if defined(_DEBUG)
+        // ====================================================================
+        // Raven UI foundation validation overlay
+        // ====================================================================
+        // UIElement / UIPanelがまだ未実装のため、Renderer接続確認用に一時的な矩形を直接積みます。
+        // 左上に半透明Panelが表示されれば、独自DrawList -> OpenGLUIRenderer -> GPUの経路が正常です。
+        // UIElement導入後はこの検証コードを削除し、Editor側のRaven UI Treeへ置き換えます。
+        m_UIContext.GetDrawList().AddRect(
+            math::Vec2(20.0f, 20.0f),
+            math::Vec2(280.0f, 72.0f),
+            math::Vec4(0.10f, 0.16f, 0.24f, 0.92f));
+#endif
+
+        // ====================================================================
         // Runtime Scene
         // ====================================================================
         // Sceneはゲーム側のUpdate / Renderを担当します。
@@ -224,6 +259,14 @@ void Application::Run()
 
             m_ImGuiLayer->End();
         }
+
+        // ====================================================================
+        // Raven UI frame end / overlay rendering
+        // ====================================================================
+        // 移行期間はRaven UIをDear ImGuiの後へ描画し、既存Editor Windowに隠れず結果を確認できる
+        // Overlayとして扱います。将来Game UI用Contextを分離した段階では、Game View用RenderTargetへ
+        // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
+        m_UIContext.EndFrame();
 
         // GLFW Event polling / Buffer swap等、Window側の1 frame終了処理を最後に行います。
         m_Window->OnUpdate();
