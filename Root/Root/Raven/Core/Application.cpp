@@ -2,6 +2,7 @@
 #include "../Renderer/Renderer.h"
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -38,6 +39,24 @@ Application::Application()
     // Dear ImGuiとは別Context / 別DrawListとして並行稼働させるため、既存Editorを維持したまま
     // 独自UIの描画・Layout・Inputを段階的に追加できます。
     m_UIContext.SetRenderer(UIRenderer::Create());
+
+#if defined(_DEBUG)
+    // ========================================================================
+    // Raven UI retained-mode validation panel
+    // ========================================================================
+    // GPU描画経路の確認が完了したため、直接UIDrawList::AddRect()する検証から一段進め、
+    // Retained ModeのUIElement Tree -> UIPanel -> UIDrawListという本来の経路を確認します。
+    //
+    // このPanelはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
+    // 毎frame作り直すのはDrawCommandだけで、UIPanelそのものはframeを跨いで保持されます。
+    // Layout / Editor Widget導入後はApplication直下の検証Panelを削除し、各UI LayerがRoot以下へ
+    // 必要なElement Treeを構築する構成へ移行します。
+    auto validationPanel = CreateScope<UIPanel>();
+    validationPanel->SetPosition(math::Vec2(24.0f, 48.0f));
+    validationPanel->SetSize(math::Vec2(320.0f, 72.0f));
+    validationPanel->SetBackgroundColor(math::Vec4(0.08f, 0.20f, 0.42f, 0.92f));
+    m_UIContext.GetRootElement().AddChild(std::move(validationPanel));
+#endif
 
     // ========================================================================
     // Dear ImGui lifecycle
@@ -196,35 +215,12 @@ void Application::Run()
         // DrawListはRetained UI Treeとは別に毎frame再構築します。
         // BeginFrameをScene / Layer処理より前に置くことで、Runtime LayerとEditor Layerのどちらからも
         // GetUIContext().GetDrawList()へ描画要求を追加できる共通frame境界になります。
+        //
+        // 現在はUIContextがRoot UIElementを所有しているため、通常WidgetはDrawListへ直接書かず、
+        // Root以下のRetained Treeを更新します。EndFrame()時にTreeからDrawListへ自動展開されます。
         m_UIContext.BeginFrame(math::Vec2(
             static_cast<float>(m_Window->GetWidth()),
             static_cast<float>(m_Window->GetHeight())));
-
-#if defined(_DEBUG)
-        // ====================================================================
-        // Raven UI foundation validation overlay
-        // ====================================================================
-        // UIElement / UIPanelがまだ未実装のため、Renderer接続確認用に一時的な矩形を直接積みます。
-        // 左上に半透明Panelが表示されれば、独自DrawList -> OpenGLUIRenderer -> GPUの経路が正常です。
-        // UIElement導入後はこの検証コードを削除し、Editor側のRaven UI Treeへ置き換えます。
-        //
-        // 現在は描画経路の切り分け中なので、Dear ImGuiのMenu / DockSpaceと重ならず見落としにくいよう、
-        // 画面中央付近へ完全不透明の大きなマゼンタ矩形を出します。
-        // この色は通常のEditor配色と明確に異なるため、1 pixelでも描画されれば視認できます。
-        const float uiViewportWidth = static_cast<float>(m_Window->GetWidth());
-        const float uiViewportHeight = static_cast<float>(m_Window->GetHeight());
-        const math::Vec2 validationMin(
-            uiViewportWidth * 0.30f,
-            uiViewportHeight * 0.30f);
-        const math::Vec2 validationMax(
-            uiViewportWidth * 0.70f,
-            uiViewportHeight * 0.60f);
-
-        m_UIContext.GetDrawList().AddRect(
-            validationMin,
-            validationMax,
-            math::Vec4(1.0f, 0.0f, 1.0f, 1.0f));
-#endif
 
         // ====================================================================
         // Runtime Scene
