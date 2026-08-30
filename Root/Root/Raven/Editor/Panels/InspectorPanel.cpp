@@ -174,10 +174,101 @@ bool ApplyRigidBodyMass(Entity entity, const float& mass)
     return true;
 }
 
-bool RigidBodyMassEqual(const float& a, const float& b)
+bool RigidBodyFloatEqual(const float& a, const float& b)
 {
     constexpr float CompareEpsilon = 0.000001f;
     return std::fabs(a - b) <= CompareEpsilon;
+}
+
+template<class TValue>
+struct RigidBodyValueEditState
+{
+    EntityHandle Handle{};
+    Scene* TargetScene = nullptr;
+    TValue Before{};
+    bool IsActive = false;
+};
+
+RigidBodyValueEditState<math::Vec3> s_RigidBodyVec3EditState{};
+RigidBodyValueEditState<float> s_RigidBodyFloatEditState{};
+
+bool RigidBodyVec3Equal(const math::Vec3& a, const math::Vec3& b)
+{
+    constexpr float CompareEpsilon = 0.000001f;
+    return std::fabs(a.x - b.x) <= CompareEpsilon
+        && std::fabs(a.y - b.y) <= CompareEpsilon
+        && std::fabs(a.z - b.z) <= CompareEpsilon;
+}
+
+bool RigidBodyBoolEqual(const bool& a, const bool& b)
+{
+    return a == b;
+}
+
+bool ApplyRigidBodyLinearVelocity(Entity entity, const math::Vec3& value)
+{
+    if (ValidateRigidBodyTarget(entity) == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().LinearVelocity = value;
+    return true;
+}
+
+bool ApplyRigidBodyAngularVelocity(Entity entity, const math::Vec3& value)
+{
+    if (ValidateRigidBodyTarget(entity) == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().AngularVelocity = value;
+    return true;
+}
+
+bool ApplyRigidBodyLinearDamping(Entity entity, const float& value)
+{
+    if (ValidateRigidBodyTarget(entity) == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().LinearDamping = value;
+    return true;
+}
+
+bool ApplyRigidBodyAngularDamping(Entity entity, const float& value)
+{
+    if (ValidateRigidBodyTarget(entity) == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().AngularDamping = value;
+    return true;
+}
+
+bool ApplyRigidBodyUseGravity(Entity entity, const bool& value)
+{
+    if (ValidateRigidBodyTarget(entity) == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().UseGravity = value;
+    return true;
+}
+
+bool ApplyRigidBodyAllowSleep(Entity entity, const bool& value)
+{
+    if (ValidateRigidBodyTarget(entity) == false)
+    {
+        return false;
+    }
+
+    entity.GetComponent<RigidBodyComponent>().AllowSleep = value;
+    return true;
 }
 
 struct ColliderEditState
@@ -589,11 +680,110 @@ void DrawRigidBodyMassControl(Entity entity, RigidBodyComponent& rigidBody)
                     rigidBody.Mass,
                     &ValidateRigidBodyTarget,
                     &ApplyRigidBodyMass,
-                    &RigidBodyMassEqual));
+                    &RigidBodyFloatEqual));
         }
 
         s_RigidBodyMassEditState = RigidBodyMassEditState{};
     }
+}
+
+void DrawRigidBodyVec3Control(
+    const char* label,
+    Entity entity,
+    math::Vec3& value,
+    InspectorEditCommand<math::Vec3>::ApplyFunction applyFunction)
+{
+    const math::Vec3 beforeThisFrame = value;
+    DrawVec3Control(label, value);
+
+    if (ImGui::IsItemActivated())
+    {
+        s_RigidBodyVec3EditState.Handle = entity.GetHandle();
+        s_RigidBodyVec3EditState.TargetScene = entity.GetScene();
+        s_RigidBodyVec3EditState.Before = beforeThisFrame;
+        s_RigidBodyVec3EditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_RigidBodyVec3EditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_RigidBodyVec3EditState.Handle == entity.GetHandle()
+            && s_RigidBodyVec3EditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<InspectorEditCommand<math::Vec3>>(
+                    entity,
+                    s_RigidBodyVec3EditState.Before,
+                    value,
+                    &ValidateRigidBodyTarget,
+                    applyFunction,
+                    &RigidBodyVec3Equal));
+        }
+
+        s_RigidBodyVec3EditState = RigidBodyValueEditState<math::Vec3>{};
+    }
+}
+
+void DrawRigidBodyFloatControl(
+    const char* label,
+    Entity entity,
+    float& value,
+    float speed,
+    float minimum,
+    float maximum,
+    InspectorEditCommand<float>::ApplyFunction applyFunction)
+{
+    const float beforeThisFrame = value;
+    ImGui::DragFloat(label, &value, speed, minimum, maximum);
+
+    if (ImGui::IsItemActivated())
+    {
+        s_RigidBodyFloatEditState.Handle = entity.GetHandle();
+        s_RigidBodyFloatEditState.TargetScene = entity.GetScene();
+        s_RigidBodyFloatEditState.Before = beforeThisFrame;
+        s_RigidBodyFloatEditState.IsActive = true;
+    }
+
+    if (ImGui::IsItemDeactivatedAfterEdit()
+        && s_RigidBodyFloatEditState.IsActive == true)
+    {
+        const bool isSameEntity =
+            s_RigidBodyFloatEditState.Handle == entity.GetHandle()
+            && s_RigidBodyFloatEditState.TargetScene == entity.GetScene();
+
+        if (isSameEntity == true)
+        {
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<InspectorEditCommand<float>>(
+                    entity,
+                    s_RigidBodyFloatEditState.Before,
+                    value,
+                    &ValidateRigidBodyTarget,
+                    applyFunction,
+                    &RigidBodyFloatEqual));
+        }
+
+        s_RigidBodyFloatEditState = RigidBodyValueEditState<float>{};
+    }
+}
+
+void ExecuteRigidBodyBoolChange(
+    Entity entity,
+    bool before,
+    bool after,
+    InspectorEditCommand<bool>::ApplyFunction applyFunction)
+{
+    ExecuteAndRecordEditorCommand(
+        std::make_unique<InspectorEditCommand<bool>>(
+            entity,
+            before,
+            after,
+            &ValidateRigidBodyTarget,
+            applyFunction,
+            &RigidBodyBoolEqual));
 }
 
 void DrawRigidBodyComponent(Entity entity)
@@ -651,13 +841,49 @@ void DrawRigidBodyComponent(Entity entity)
         DrawRigidBodyMassControl(entity, rigidBody);
     }
 
-    DrawVec3Control("Linear Velocity", rigidBody.LinearVelocity);
-    DrawVec3Control("Angular Velocity", rigidBody.AngularVelocity);
+    // 各CommandはWidgetが担当する値だけを保存します。
+    // Damping編集のUndoが、Physics更新中のVelocityまで過去値へ戻すことを防ぐためです。
+    DrawRigidBodyVec3Control(
+        "Linear Velocity", entity, rigidBody.LinearVelocity, &ApplyRigidBodyLinearVelocity);
+    DrawRigidBodyVec3Control(
+        "Angular Velocity", entity, rigidBody.AngularVelocity, &ApplyRigidBodyAngularVelocity);
 
-    ImGui::DragFloat("Linear Damping", &rigidBody.LinearDamping, 0.001f, 0.0f, 1.0f);
-    ImGui::DragFloat("Angular Damping", &rigidBody.AngularDamping, 0.001f, 0.0f, 1.0f);
-    ImGui::Checkbox("Use Gravity", &rigidBody.UseGravity);
-    ImGui::Checkbox("Allow Sleep", &rigidBody.AllowSleep);
+    DrawRigidBodyFloatControl(
+        "Linear Damping",
+        entity,
+        rigidBody.LinearDamping,
+        0.001f,
+        0.0f,
+        1.0f,
+        &ApplyRigidBodyLinearDamping);
+    DrawRigidBodyFloatControl(
+        "Angular Damping",
+        entity,
+        rigidBody.AngularDamping,
+        0.001f,
+        0.0f,
+        1.0f,
+        &ApplyRigidBodyAngularDamping);
+
+    bool useGravity = rigidBody.UseGravity;
+    if (ImGui::Checkbox("Use Gravity", &useGravity))
+    {
+        ExecuteRigidBodyBoolChange(
+            entity,
+            rigidBody.UseGravity,
+            useGravity,
+            &ApplyRigidBodyUseGravity);
+    }
+
+    bool allowSleep = rigidBody.AllowSleep;
+    if (ImGui::Checkbox("Allow Sleep", &allowSleep))
+    {
+        ExecuteRigidBodyBoolChange(
+            entity,
+            rigidBody.AllowSleep,
+            allowSleep,
+            &ApplyRigidBodyAllowSleep);
+    }
 
     // IsSleepingはPhysicsWorldが管理するRuntime状態でもあるため、初期Inspectorではread-only表示にします。
     // Editorから直接変更する場合はWakeUp/Sleepの正式APIをPhysicsWorld側へ用意してから扱います。
