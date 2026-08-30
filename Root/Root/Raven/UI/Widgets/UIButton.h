@@ -14,7 +14,6 @@ namespace Raven
 // ============================================================================
 // UIElementのHover / Pressed状態をVisual Stateへ変換する最小Button Widgetです。
 // Clickは左ButtonでこのElement上から押下を開始し、同じElement上で離した場合だけ成立します。
-// Mouse Captureを明示API化する前段階として、UIContextが保持するPressed状態を利用します。
 class UIButton final : public UIElement
 {
 public:
@@ -40,29 +39,20 @@ protected:
 
         if (event.Type == UIMouseEventType::Down && event.Button == UIMouseButton::Left)
         {
-            // UIContextはRouting前にPressed状態を更新するため、ここでは状態の所有権を持ちません。
-            // DownをButtonが消費することで、背後のWidgetや親Containerの操作との競合を避けます。
             event.Handled = true;
             return;
         }
 
         if (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left)
         {
-            // UIContextはMouseUp Routing前にPressedを解除するため、Down開始位置をButton側でも記録します。
-            // Click成立条件は「このButtonでDown開始」かつ「このButton上でUp」です。
-            if (m_PressStartedHere == true && m_OnClick != nullptr)
+            // PressedTargetはMouseDown開始時のHit Elementです。
+            // Up時にも自分自身がHitしているため、この一致で標準的なButton Clickを成立させます。
+            if (event.PressedTarget == this && m_OnClick != nullptr)
             {
                 m_OnClick();
             }
 
-            m_PressStartedHere = false;
             event.Handled = true;
-            return;
-        }
-
-        if (event.Type == UIMouseEventType::Move)
-        {
-            return;
         }
     }
 
@@ -92,7 +82,6 @@ private:
     math::Vec4 m_HoveredColor{ 0.32f, 0.32f, 0.38f, 1.0f };
     math::Vec4 m_PressedColor{ 0.16f, 0.16f, 0.20f, 1.0f };
     ClickHandler m_OnClick;
-    bool m_PressStartedHere = false;
 };
 
 } // namespace Raven
