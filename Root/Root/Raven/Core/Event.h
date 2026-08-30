@@ -68,7 +68,9 @@ private:
 // Mouse Events
 // ============================================================================
 // Platform側のMouse入力をApplication / Layerへ流すためのCore Eventです。
-// GLFW固有定数やWindow Handleを上位層へ公開せず、座標とButton番号だけを保持します。
+// GLFW固有のWindow Handleを上位層へ公開せず、入力が発生した瞬間の情報をEvent自身に保持します。
+// 特にButton Eventへ座標を含めることで、Consumerが後から現在のCursor位置を再取得する必要をなくし、
+// Event生成時点と処理時点で座標がずれる可能性を排除します。
 class MouseMovedEvent : public Event
 {
 public:
@@ -97,20 +99,24 @@ class MouseButtonEvent : public Event
 {
 public:
     int GetMouseButton() const { return m_Button; }
+    float GetX() const { return m_MouseX; }
+    float GetY() const { return m_MouseY; }
 
 protected:
-    explicit MouseButtonEvent(int button)
-        : m_Button(button) {}
+    MouseButtonEvent(int button, float x, float y)
+        : m_Button(button), m_MouseX(x), m_MouseY(y) {}
 
 private:
     int m_Button;
+    float m_MouseX;
+    float m_MouseY;
 };
 
 class MouseButtonPressedEvent : public MouseButtonEvent
 {
 public:
-    explicit MouseButtonPressedEvent(int button)
-        : MouseButtonEvent(button) {}
+    MouseButtonPressedEvent(int button, float x, float y)
+        : MouseButtonEvent(button, x, y) {}
 
     EventType GetEventType() const override
     {
@@ -119,15 +125,16 @@ public:
 
     std::string ToString() const override
     {
-        return "MouseButtonPressedEvent: " + std::to_string(GetMouseButton());
+        return "MouseButtonPressedEvent: " + std::to_string(GetMouseButton()) +
+            " at " + std::to_string(GetX()) + ", " + std::to_string(GetY());
     }
 };
 
 class MouseButtonReleasedEvent : public MouseButtonEvent
 {
 public:
-    explicit MouseButtonReleasedEvent(int button)
-        : MouseButtonEvent(button) {}
+    MouseButtonReleasedEvent(int button, float x, float y)
+        : MouseButtonEvent(button, x, y) {}
 
     EventType GetEventType() const override
     {
@@ -136,6 +143,7 @@ public:
 
     std::string ToString() const override
     {
-        return "MouseButtonReleasedEvent: " + std::to_string(GetMouseButton());
+        return "MouseButtonReleasedEvent: " + std::to_string(GetMouseButton()) +
+            " at " + std::to_string(GetX()) + ", " + std::to_string(GetY());
     }
 };
