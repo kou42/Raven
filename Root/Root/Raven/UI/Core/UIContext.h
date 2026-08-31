@@ -86,8 +86,16 @@ public:
     bool IsFrameActive() const;
 
 private:
+    friend class UIElement;
+
     void UpdateHoverTarget(UIElement* target);
     void UpdatePressedTarget(UIElement* target);
+
+    // Retained TreeからSubtreeを破棄する直前にUIElementから呼ばれます。
+    // Capture / Hover / Pressedが破棄対象を指したままScopeが解放されるとdangling pointerになるため、
+    // Elementがまだ生存しParent chainも有効な段階でInteraction Stateを安全に終了します。
+    void OnSubtreeRemoving(UIElement* subtreeRoot);
+    static bool IsElementInSubtree(const UIElement* element, const UIElement* subtreeRoot);
 
 private:
     math::Vec2 m_ViewportSize{};
