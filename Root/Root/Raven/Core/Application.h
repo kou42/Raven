@@ -66,12 +66,11 @@ private:
     UIContext m_UIContext;
 
 #if defined(_DEBUG)
-    // Tree Mutation検証TreeはUIContext構築後にRootへ接続します。
-    // Application.cppの既存Widget検証とは独立させ、Detach / Attach / Removeの検証基盤を
-    // Debug buildだけへ追加します。Rootが所有権を持つため、このflag自身はLifetimeを持ちません。
+    // Tree Mutation検証はCapture / Hover / PressedのContext状態も自己判定するため、
+    // 構築時にMain Window用UIContextを借用します。Rootが検証TreeのLifetimeを所有します。
     bool m_UITreeMutationValidationAttached = [this]()
         {
-            return m_UIContext.GetRootElement().AddChild(UITreeMutationValidation::Create()) != nullptr;
+            return m_UIContext.GetRootElement().AddChild(UITreeMutationValidation::Create(m_UIContext)) != nullptr;
         }();
 #endif
 
