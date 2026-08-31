@@ -42,6 +42,13 @@ public:
     UIElement& operator=(UIElement&&) = delete;
 
     UIElement* AddChild(Scope<UIElement> child);
+
+    // ChildをTreeから切り離して所有権を呼び出し側へ返します。
+    // Capture / Hover / Pressed対象を含むSubtreeでは、破棄・再接続より前にUIContextへ削除境界を通知します。
+    Scope<UIElement> DetachChild(UIElement* child);
+
+    // Childを個別に削除します。DetachChild()で返されたScopeをその場で破棄する簡易APIです。
+    bool RemoveChild(UIElement* child);
     void ClearChildren();
 
     void SetPosition(const math::Vec2& value);
@@ -103,7 +110,7 @@ private:
     void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
 
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
-    // ClearChildren()時にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
+    // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
     void SetContextRecursive(UIContext* context);
 
 private:
