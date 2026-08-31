@@ -5,6 +5,7 @@
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 
+#include <functional>
 #include <iostream>
 
 namespace Raven
@@ -228,6 +229,195 @@ private:
         }
     };
 
+    class RoutingProbePanel final : public UIPanel
+    {
+    public:
+        ValidationResultState* Results = nullptr;
+        bool ValidateNoMouseUpOnDestroy = false;
+        bool MouseUpObserved = false;
+
+        ~RoutingProbePanel() override
+        {
+            if (ValidateNoMouseUpOnDestroy == true && Results != nullptr)
+            {
+                Results->Record("Parent removal stops bubble into detached subtree", MouseUpObserved == false);
+            }
+        }
+
+    protected:
+        void OnMouseEvent(UIMouseEvent& event) override
+        {
+            if (event.Type == UIMouseEventType::Up)
+            {
+                MouseUpObserved = true;
+            }
+        }
+    };
+
+    // UIButtonはMouseUpをHandledにするため、Parent変更によるBubble停止を検証するには使えません。
+    // このTriggerはMouseUp callbackを実行してもHandledを立てず、UIContext側のTree所属チェックだけで配送停止させます。
+    class RoutingMutationTrigger final : public UIPanel
+    {
+    public:
+        using MouseUpHandler = std::function<void()>;
+
+        void SetOnMouseUp(MouseUpHandler handler)
+        {
+            m_OnMouseUp = std::move(handler);
+        }
+
+    protected:
+        void OnMouseEvent(UIMouseEvent& event) override
+        {
+            if (event.Target != this)
+            {
+                return;
+            }
+
+            if (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left && m_OnMouseUp != nullptr)
+            {
+                m_OnMouseUp();
+            }
+        }
+
+    private:
+        MouseUpHandler m_OnMouseUp;
+    };
+
+    class RoutingMutationStateElement final : public UIElement
+    {
+    public:
+        UIContext* Context = nullptr;
+        UIPanel* SelfSlot = nullptr;
+        UIPanel* ParentSlot = nullptr;
+        ValidationResultState* Results = nullptr;
+        UIElement* SelfButton = nullptr;
+        RoutingProbePanel* ParentSubtree = nullptr;
+        UIElement* ParentTrigger = nullptr;
+
+        void BuildCases()
+        {
+            BuildSelfRemovalCase();
+            BuildParentRemovalCase();
+        }
+
+    private:
+        void BuildSelfRemovalCase()
+        {
+            if (SelfSlot == nullptr || SelfButton != nullptr)
+            {
+                return;
+            }
+
+            auto button = CreateScope<UIButton>();
+            button->SetSize(math::Vec2(178.0f, 76.0f));
+            button->SetNormalColor(math::Vec4(0.46f, 0.22f, 0.16f, 1.0f));
+            button->SetHoveredColor(math::Vec4(0.62f, 0.30f, 0.20f, 1.0f));
+            button->SetPressedColor(math::Vec4(0.32f, 0.14f, 0.10f, 1.0f));
+            UIElement* buttonElement = button.get();
+            button->SetOnClick([this, buttonElement]()
+                {
+                    OnSelfRemove(buttonElement);
+                });
+
+            UIElement* attached = SelfSlot->AddChild(std::move(button));
+            SelfButton = attached;
+            Record("Self removal case created", attached != nullptr);
+        }
+
+        void BuildParentRemovalCase()
+        {
+            if (ParentSlot == nullptr || ParentSubtree != nullptr)
+            {
+                return;
+            }
+
+            auto subtree = CreateScope<RoutingProbePanel>();
+            subtree->SetSize(math::Vec2(178.0f, 76.0f));
+            subtree->SetBackgroundColor(math::Vec4(0.16f, 0.24f, 0.38f, 1.0f));
+            subtree->SetLayoutMode(UILayoutMode::Vertical);
+            subtree->SetPadding(4.0f);
+            subtree->Results = Results;
+            RoutingProbePanel* subtreeElement = subtree.get();
+
+            auto trigger = CreateScope<RoutingMutationTrigger>();
+            trigger->SetSize(math::Vec2(170.0f, 68.0f));
+            trigger->SetBackgroundColor(math::Vec4(0.18f, 0.36f, 0.56f, 1.0f));
+            UIElement* triggerElement = trigger.get();
+            trigger->SetOnMouseUp([this, subtreeElement, triggerElement]()
+                {
+                    OnParentRemove(subtreeElement, triggerElement);
+                });
+            subtree->AddChild(std::move(trigger));
+
+            UIElement* attached = ParentSlot->AddChild(std::move(subtree));
+            ParentSubtree = static_cast<RoutingProbePanel*>(attached);
+            ParentTrigger = attached != nullptr ? triggerElement : nullptr;
+            Record("Parent removal case created", attached != nullptr);
+        }
+
+        void OnSelfRemove(UIElement* button)
+        {
+            if (Context == nullptr || button == nullptr)
+            {
+                return;
+            }
+
+            UIElement* parent = button->GetParent();
+            if (parent == nullptr)
+            {
+                Record("Self removal precondition: button has parent", false);
+                return;
+            }
+
+            const bool removed = parent->RemoveChild(button);
+            Record("Self removal succeeds inside click callback", removed == true);
+            Record("Self removal clears parent before callback returns", button->GetParent() == nullptr);
+            Record("Self removal clears pressed flag", button->IsPressed() == false);
+            Record("Self removal clears hovered flag", button->IsHovered() == false);
+            Record("Self removal clears context pressed target", Context->GetPressedElement() != button);
+            Record("Self removal clears context hover target", Context->GetHoveredElement() != button);
+            SelfButton = nullptr;
+        }
+
+        void OnParentRemove(RoutingProbePanel* subtree, UIElement* trigger)
+        {
+            if (Context == nullptr || subtree == nullptr || trigger == nullptr)
+            {
+                return;
+            }
+
+            UIElement* parent = subtree->GetParent();
+            if (parent == nullptr)
+            {
+                Record("Parent removal precondition: subtree has parent", false);
+                return;
+            }
+
+            // 子Triggerの未Handled MouseUp callback中に祖先SubtreeをRemoveします。
+            // Trigger自身はEventをconsumeしないため、Tree所属チェックが無ければこの後Probe ParentへBubbleしてFAILになります。
+            subtree->ValidateNoMouseUpOnDestroy = true;
+            const bool removed = parent->RemoveChild(subtree);
+            Record("Parent removal succeeds inside child callback", removed == true);
+            Record("Parent removal clears subtree parent", subtree->GetParent() == nullptr);
+            Record("Parent removal keeps detached internal parent chain", trigger->GetParent() == subtree);
+            Record("Parent removal clears child pressed flag", trigger->IsPressed() == false);
+            Record("Parent removal clears child hovered flag", trigger->IsHovered() == false);
+            Record("Parent removal clears context pressed target", Context->GetPressedElement() != trigger);
+            Record("Parent removal clears context hover target", Context->GetHoveredElement() != trigger);
+            ParentSubtree = nullptr;
+            ParentTrigger = nullptr;
+        }
+
+        void Record(const char* name, bool passed)
+        {
+            if (Results != nullptr)
+            {
+                Results->Record(name, passed);
+            }
+        }
+    };
+
     static Scope<UIButton> CreateControlButton(const math::Vec4& color, UIButton::ClickHandler handler)
     {
         auto button = CreateScope<UIButton>();
@@ -244,7 +434,7 @@ public:
     {
         auto root = CreateScope<UIPanel>();
         root->SetPosition(math::Vec2(404.0f, 48.0f));
-        root->SetSize(math::Vec2(420.0f, 396.0f));
+        root->SetSize(math::Vec2(420.0f, 588.0f));
         root->SetBackgroundColor(math::Vec4(0.05f, 0.08f, 0.14f, 0.96f));
         root->SetLayoutMode(UILayoutMode::Vertical);
         root->SetPadding(12.0f);
@@ -351,6 +541,45 @@ public:
         captureRow->AddChild(std::move(captureHost));
         captureRow->AddChild(std::move(resetButton));
         root->AddChild(std::move(captureRow));
+
+        // Event callbackの実行中に、Handler自身またはHandlerを含む祖先SubtreeをRemoveするStress Caseです。
+        auto routingRow = CreateScope<UIPanel>();
+        routingRow->SetSize(math::Vec2(396.0f, 92.0f));
+        routingRow->SetLayoutMode(UILayoutMode::Horizontal);
+        routingRow->SetSpacing(8.0f);
+        auto selfSlot = CreateScope<UIPanel>();
+        selfSlot->SetSize(math::Vec2(194.0f, 92.0f));
+        selfSlot->SetBackgroundColor(math::Vec4(0.24f, 0.14f, 0.12f, 1.0f));
+        selfSlot->SetLayoutMode(UILayoutMode::Vertical);
+        selfSlot->SetPadding(8.0f);
+        UIPanel* selfSlotElement = selfSlot.get();
+        auto parentSlot = CreateScope<UIPanel>();
+        parentSlot->SetSize(math::Vec2(194.0f, 92.0f));
+        parentSlot->SetBackgroundColor(math::Vec4(0.12f, 0.18f, 0.30f, 1.0f));
+        parentSlot->SetLayoutMode(UILayoutMode::Vertical);
+        parentSlot->SetPadding(8.0f);
+        UIPanel* parentSlotElement = parentSlot.get();
+        routingRow->AddChild(std::move(selfSlot));
+        routingRow->AddChild(std::move(parentSlot));
+        root->AddChild(std::move(routingRow));
+
+        auto routingState = CreateScope<RoutingMutationStateElement>();
+        routingState->SetVisible(false);
+        routingState->Context = &context;
+        routingState->SelfSlot = selfSlotElement;
+        routingState->ParentSlot = parentSlotElement;
+        routingState->Results = resultsElement;
+        RoutingMutationStateElement* routingStateElement = routingState.get();
+        root->AddChild(std::move(routingState));
+        routingStateElement->BuildCases();
+
+        auto rebuildButton = CreateControlButton(math::Vec4(0.28f, 0.30f, 0.44f, 1.0f),
+            [routingStateElement]()
+            {
+                routingStateElement->BuildCases();
+            });
+        rebuildButton->SetSize(math::Vec2(396.0f, 56.0f));
+        root->AddChild(std::move(rebuildButton));
         return root;
     }
 };

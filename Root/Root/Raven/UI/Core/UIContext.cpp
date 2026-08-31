@@ -103,12 +103,15 @@ bool UIContext::RouteMouseEvent(
     bool handled = false;
     if (routeTarget != nullptr)
     {
+        BeginMouseDispatch();
+
         // Target -> Parent -> ... -> Root のBubble方式です。
-        // WidgetがHandledを立てた時点で親への伝播を止めます。
-        // Capture中はCapture ElementをTargetとして同じBubble規則を適用します。
+        // callback内で現在Elementや祖先SubtreeがRemoveされた場合、そのScopeはdispatch完了まで保持します。
+        // またParent変更が起きたEventを新しいTreeへ跨いでBubbleさせないよう、callback前後の所属を確認します。
         UIElement* current = routeTarget;
         while (current != nullptr)
         {
+            UIElement* parentBeforeDispatch = current->GetParent();
             event.CurrentTarget = current;
             current->HandleMouseEvent(event);
 
@@ -117,19 +120,38 @@ bool UIContext::RouteMouseEvent(
                 break;
             }
 
-            current = current->GetParent();
+            if (current->m_Context != this)
+            {
+                break;
+            }
+
+            if (current->GetParent() != parentBeforeDispatch)
+            {
+                break;
+            }
+
+            current = parentBeforeDispatch;
         }
         handled = event.Handled;
+
+        // MouseUpのHandlerはPressedTargetを参照するため、Routing完了後に状態を解除します。
+        // 削除callbackで既に解除済みでもUpdatePressedTarget(nullptr)は安全に再実行できます。
+        if (type == UIMouseEventType::Up && button == UIMouseButton::Left)
+        {
+            UpdatePressedTarget(nullptr);
+        }
+
+        EndMouseDispatch();
+        return handled;
     }
 
-    // MouseUpのHandlerはPressedTargetを参照するため、Routing完了後に状態を解除します。
-    // Hit先がnullptrでも必ず解除し、UI外で離した場合のPressed残留を防ぎます。
+    // Hit先がnullptrでもMouseUpだけはPressedを必ず解除し、UI外で離した場合の状態残留を防ぎます。
     if (type == UIMouseEventType::Up && button == UIMouseButton::Left)
     {
         UpdatePressedTarget(nullptr);
     }
 
-    return handled;
+    return false;
 }
 
 bool UIContext::RouteMouseMove(const math::Vec2& screenPosition)
@@ -203,11 +225,14 @@ void UIContext::CancelMouseCapture()
     event.Target = captureTarget;
     event.PressedTarget = m_PressedElement;
 
+    BeginMouseDispatch();
+
     // 通常のMouse Eventと同じTarget -> ParentのBubble規則でCancelを通知します。
-    // Drag Widget自身が処理しない場合でも、親Containerが必要に応じて操作中断を観測できます。
+    // Cancel callback自身がTree Mutationを起こす場合も通常Routingと同じ寿命保護を適用します。
     UIElement* current = captureTarget;
     while (current != nullptr)
     {
+        UIElement* parentBeforeDispatch = current->GetParent();
         event.CurrentTarget = current;
         current->HandleMouseEvent(event);
 
@@ -216,11 +241,22 @@ void UIContext::CancelMouseCapture()
             break;
         }
 
-        current = current->GetParent();
+        if (current->m_Context != this)
+        {
+            break;
+        }
+
+        if (current->GetParent() != parentBeforeDispatch)
+        {
+            break;
+        }
+
+        current = parentBeforeDispatch;
     }
 
     // Mouse Upが届かない異常終了経路ではPressedも残留し得るため、Captureと同じ境界で必ず解除します。
     UpdatePressedTarget(nullptr);
+    EndMouseDispatch();
 }
 
 void UIContext::ReleaseMouseCapture()
@@ -300,12 +336,56 @@ void UIContext::UpdatePressedTarget(UIElement* target)
     }
 }
 
+void UIContext::BeginMouseDispatch()
+{
+    ++m_MouseDispatchDepth;
+}
+
+void UIContext::EndMouseDispatch()
+{
+    if (m_MouseDispatchDepth == 0u)
+    {
+        return;
+    }
+
+    --m_MouseDispatchDepth;
+    if (m_MouseDispatchDepth == 0u)
+    {
+        // 最外層Event callback / Subtree cleanupが完全に戻った後で初めて削除対象を破棄します。
+        // これによりHandler自身がRemoveされた後も、Handlerの残りの処理とContext側cleanupを安全に完了できます。
+        m_DeferredDestroyedSubtrees.clear();
+    }
+}
+
+bool UIContext::IsMouseDispatchActive() const
+{
+    return m_MouseDispatchDepth > 0u;
+}
+
+void UIContext::RetainRemovedSubtree(Scope<UIElement> subtree)
+{
+    if (subtree == nullptr)
+    {
+        return;
+    }
+
+    if (IsMouseDispatchActive() == true)
+    {
+        m_DeferredDestroyedSubtrees.push_back(std::move(subtree));
+    }
+    // dispatch外では引数Scopeをこの関数の終了時にそのまま破棄します。
+}
+
 void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
 {
     if (subtreeRoot == nullptr)
     {
         return;
     }
+
+    // Capture Cancel callbackが同じSubtreeや祖先をRemoveする再入ケースでも、
+    // このcleanupがsubtreeRootを使い終えるまで実体を破棄させないため寿命保護区間へ入ります。
+    BeginMouseDispatch();
 
     // Capture対象が破棄Subtree内なら、Elementが生存してParent chainも接続された状態でCancelを送ります。
     // 先にScopeを破棄するとUISlider/UISplitterのDraggingを終了できず、raw pointerもdanglingになります。
@@ -324,6 +404,8 @@ void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
     {
         UpdatePressedTarget(nullptr);
     }
+
+    EndMouseDispatch();
 }
 
 bool UIContext::IsElementInSubtree(const UIElement* element, const UIElement* subtreeRoot)
