@@ -94,6 +94,7 @@ bool UIContext::RouteMouseEvent(
     event.Type = type;
     event.Button = button;
     event.ScreenPosition = screenPosition;
+    event.Context = this;
     event.Target = routeTarget;
     event.PressedTarget = pressedTargetForEvent;
 
