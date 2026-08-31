@@ -6,6 +6,8 @@ enum class EventType
     None = 0,
     WindowClose,
     WindowResize,
+    WindowFocusGained,
+    WindowFocusLost,
     KeyPressed,
     KeyReleased,
     MouseMoved,
@@ -62,6 +64,36 @@ public:
 private:
     unsigned int m_Width;
     unsigned int m_Height;
+};
+
+// Window focusはMouse Captureなど「Window外へ継続できない操作」の終了境界として利用します。
+// Platform固有のGLFW focus callbackをCore Eventへ変換し、UIやLayerがWindow実装へ依存しないようにします。
+class WindowFocusGainedEvent : public Event
+{
+public:
+    EventType GetEventType() const override
+    {
+        return EventType::WindowFocusGained;
+    }
+
+    std::string ToString() const override
+    {
+        return "WindowFocusGainedEvent";
+    }
+};
+
+class WindowFocusLostEvent : public Event
+{
+public:
+    EventType GetEventType() const override
+    {
+        return EventType::WindowFocusLost;
+    }
+
+    std::string ToString() const override
+    {
+        return "WindowFocusLostEvent";
+    }
 };
 
 // ============================================================================
