@@ -45,11 +45,9 @@ Ref<Texture> Texture::Create(const std::string& path)
         return CreateRef<OpenGLTexture>(path);
 
     case RendererAPI::API::DirectX11:
-        // 将来DirectX11Textureを追加した際に、ここで生成先を切り替えます。
         return nullptr;
 
     case RendererAPI::API::DirectX12:
-        // 将来DirectX12Textureを追加した際に、ここで生成先を切り替えます。
         return nullptr;
     }
 
@@ -73,14 +71,9 @@ Ref<Texture> Texture::Create(const TextureSpecification& specification)
     return nullptr;
 }
 
-Ref<Texture> Texture::Create(
-    const TextureSpecification& specification,
-    const void* data,
-    std::size_t dataSize
-)
+Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data, std::size_t dataSize)
 {
     Ref<Texture> texture = Create(specification);
-
     if (texture == nullptr)
     {
         return nullptr;
@@ -95,7 +88,7 @@ Ref<Texture> Texture::Create(
 }
 
 TextureAsset::TextureAsset(std::string sourcePath, const Ref<Texture>& texture)
-    : m_SourcePath(std::move(sourcePath)), m_Texture(texture)
+    : m_SourcePath(sourcePath), m_Texture(texture)
 {
 }
 
