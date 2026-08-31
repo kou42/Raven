@@ -1,6 +1,3 @@
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
 #include "Raven/Renderer/Texture/OpenGLTexture.h"
 
 #include <glad/glad.h>
@@ -86,68 +83,7 @@ GLenum ToOpenGLDataType(TextureFormat format)
     }
 }
 
-TextureFormat TextureFormatFromChannels(int channels)
-{
-    switch (channels)
-    {
-    case 1:
-        return TextureFormat::R8;
-
-    case 3:
-        return TextureFormat::RGB8;
-
-    case 4:
-        return TextureFormat::RGBA8;
-
-    default:
-        return TextureFormat::None;
-    }
-}
-
 } // namespace
-
-OpenGLTexture::OpenGLTexture(const std::string& path)
-{
-    // OpenGLのテクスチャ座標系に合わせるため、読み込み時に上下反転します。
-    // ファイル読み込み方針はAPI実装側に閉じ込め、Texture抽象クラスには持ち込みません。
-    stbi_set_flip_vertically_on_load(true);
-
-    int width = 0;
-    int height = 0;
-    int channels = 0;
-    unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 0);
-
-    if (data == nullptr)
-    {
-        std::cerr << "Failed to load texture: " << path << std::endl;
-        return;
-    }
-
-    const TextureFormat format = TextureFormatFromChannels(channels);
-    if (format == TextureFormat::None)
-    {
-        std::cerr << "Unsupported texture channel count: " << channels
-                  << " path: " << path << std::endl;
-        stbi_image_free(data);
-        return;
-    }
-
-    m_Specification.Width = static_cast<std::uint32_t>(width);
-    m_Specification.Height = static_cast<std::uint32_t>(height);
-    m_Specification.Format = format;
-    m_Specification.Usage = TextureUsage::Sampled;
-    m_Specification.GenerateMips = true;
-
-    Invalidate();
-
-    const std::size_t dataSize =
-        static_cast<std::size_t>(m_Specification.Width) *
-        static_cast<std::size_t>(m_Specification.Height) *
-        static_cast<std::size_t>(GetBytesPerPixel(m_Specification.Format));
-
-    SetData(data, dataSize);
-    stbi_image_free(data);
-}
 
 OpenGLTexture::OpenGLTexture(const TextureSpecification& specification)
     : m_Specification(specification)
