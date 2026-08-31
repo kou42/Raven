@@ -173,9 +173,52 @@ void UIContext::ReleaseMouseCapture(UIElement* element)
     m_MouseCaptureElement = nullptr;
 }
 
+void UIContext::CancelMouseCapture()
+{
+    UIElement* captureTarget = m_MouseCaptureElement;
+    if (captureTarget == nullptr)
+    {
+        // Captureが無い場合でも、Mouse Upを失った経路でPressedだけが残っている可能性があります。
+        UpdatePressedTarget(nullptr);
+        return;
+    }
+
+    // Cancel Handler自身が新しいCaptureを要求した場合に古い所有権が邪魔をしないよう、
+    // Event配送より先にContext側のCapture所有権を解除します。
+    m_MouseCaptureElement = nullptr;
+
+    UIMouseEvent event;
+    event.Type = UIMouseEventType::Cancel;
+    event.Button = UIMouseButton::None;
+    event.Context = this;
+    event.Target = captureTarget;
+    event.PressedTarget = m_PressedElement;
+
+    // 通常のMouse Eventと同じTarget -> ParentのBubble規則でCancelを通知します。
+    // Drag Widget自身が処理しない場合でも、親Containerが必要に応じて操作中断を観測できます。
+    UIElement* current = captureTarget;
+    while (current != nullptr)
+    {
+        event.CurrentTarget = current;
+        current->HandleMouseEvent(event);
+
+        if (event.Handled == true)
+        {
+            break;
+        }
+
+        current = current->GetParent();
+    }
+
+    // Mouse Upが届かない異常終了経路ではPressedも残留し得るため、Captureと同じ境界で必ず解除します。
+    UpdatePressedTarget(nullptr);
+}
+
 void UIContext::ReleaseMouseCapture()
 {
-    m_MouseCaptureElement = nullptr;
+    // 所有者を指定しない解除は「正常なDrag完了」ではなく強制終了として扱います。
+    // WidgetへCancelを通知することで、Capture Pointerだけ消えてWidgetのDraggingだけ残る状態を防ぎます。
+    CancelMouseCapture();
 }
 
 bool UIContext::HasMouseCapture() const

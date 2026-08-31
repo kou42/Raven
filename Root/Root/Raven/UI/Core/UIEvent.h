@@ -20,7 +20,8 @@ enum class UIMouseEventType
 {
     Move = 0,
     Down,
-    Up
+    Up,
+    Cancel
 };
 
 // ============================================================================
@@ -35,6 +36,8 @@ enum class UIMouseEventType
 // Hover / Pressed / Clickはこの生入力イベントの上に構築し、Hit TestやRouting自体には
 // Widget固有の状態を持たせない設計とします。
 // PressedTargetは左Mouse Downを開始したElementをMouse Upまで保持し、Click成立判定に利用します。
+// Cancelは通常のMouse入力ではなく、Context側からCaptureを強制終了するときにCapture所有者へ通知します。
+// Window Focus LostやWidget Tree再構築など、Mouse Upが届かない経路でもDrag状態を確実に掃除するためのEventです。
 struct UIMouseEvent
 {
     UIMouseEventType Type = UIMouseEventType::Move;

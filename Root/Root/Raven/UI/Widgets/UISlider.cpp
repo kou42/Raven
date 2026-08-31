@@ -78,6 +78,15 @@ void UISlider::OnMouseEvent(UIMouseEvent& event)
         return;
     }
 
+    if (event.Type == UIMouseEventType::Cancel)
+    {
+        // Mouse Upが届かずContext側からCaptureを強制終了された場合も、
+        // Drag状態だけがWidgetへ残らないよう必ず局所状態を掃除します。
+        m_Dragging = false;
+        event.Handled = true;
+        return;
+    }
+
     if (event.Type == UIMouseEventType::Down && event.Button == UIMouseButton::Left)
     {
         if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
@@ -96,6 +105,11 @@ void UISlider::OnMouseEvent(UIMouseEvent& event)
         {
             UpdateValueFromScreenPosition(event.ScreenPosition);
             event.Handled = true;
+        }
+        else
+        {
+            // Cancel Eventを経由しない古い/外部コードからCaptureだけ解除された場合にも備えた防御です。
+            m_Dragging = false;
         }
         return;
     }

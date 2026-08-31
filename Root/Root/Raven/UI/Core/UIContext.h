@@ -57,6 +57,12 @@ public:
     // Widget間で暗黙にCaptureが移るとDrag中の操作対象が変わるため、Release後に改めてCaptureする設計とします。
     bool CaptureMouse(UIElement* element);
     void ReleaseMouseCapture(UIElement* element);
+
+    // Capture所有者へCancel Eventを配送してからCapture / Pressedを解除します。
+    // Mouse Upが届かない異常終了経路では、単にPointerをnullptrへするのではなく必ずこちらを利用します。
+    void CancelMouseCapture();
+
+    // 後方互換の強制Release入口です。所有者を指定しない解除はDragの強制終了とみなしCancelへ委譲します。
     void ReleaseMouseCapture();
     bool HasMouseCapture() const;
     bool HasMouseCapture(const UIElement* element) const;
