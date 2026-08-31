@@ -68,7 +68,21 @@ Scope<UIElement> UIElement::DetachChild(UIElement* child)
     // Capture中ならCancel EventをParent chainが有効な状態でBubbleさせてから切り離します。
     if (m_Context != nullptr)
     {
-        m_Context->OnSubtreeRemoving(iterator->get());
+        m_Context->OnSubtreeRemoving(child);
+
+        // Cancel callbackから同じParentのChildrenがMutationされる可能性があるため、
+        // callback前に取得したvector iteratorは再利用せず、対象Pointerから再検索します。
+        iterator = std::find_if(
+            m_Children.begin(),
+            m_Children.end(),
+            [child](const Scope<UIElement>& candidate)
+            {
+                return candidate.get() == child;
+            });
+        if (iterator == m_Children.end())
+        {
+            return nullptr;
+        }
     }
 
     Scope<UIElement> detached = std::move(*iterator);
@@ -82,36 +96,45 @@ Scope<UIElement> UIElement::DetachChild(UIElement* child)
 
 bool UIElement::RemoveChild(UIElement* child)
 {
+    // Detach後はSubtree側のm_Contextがnullptrになるため、所属Contextは先に借用しておきます。
+    UIContext* context = m_Context;
     Scope<UIElement> removed = DetachChild(child);
-    return removed != nullptr;
+    if (removed == nullptr)
+    {
+        return false;
+    }
+
+    // Mouse Event callback内で自分自身や祖先SubtreeをRemoveしても、実行中のvirtual Handlerを
+    // return前に破棄してはいけません。Treeからは即座に外し、所有Scopeの破棄だけdispatch終了まで遅延します。
+    if (context != nullptr && context->IsMouseDispatchActive() == true)
+    {
+        context->RetainRemovedSubtree(std::move(removed));
+    }
+
+    return true;
 }
 
 void UIElement::ClearChildren()
 {
-    // Scopeを破棄してからContext側のraw pointerを掃除することはできません。
-    // Capture中Widgetを含むSubtreeが消える場合は、Parent chainがまだ有効なこの時点で
-    // Cancel Eventを配送し、Hover / Pressedも含めたInteraction Stateを先に終了します。
-    if (m_Context != nullptr)
+    // callback内からClearChildren()された場合もRemoveChild()と同じ寿命規則を適用するため、
+    // vectorを直接clearせず1要素ずつDetachして必要ならUIContextへScopeを退避します。
+    while (m_Children.empty() == false)
     {
-        for (auto& child : m_Children)
+        UIElement* child = m_Children.back().get();
+        UIContext* context = m_Context;
+        Scope<UIElement> removed = DetachChild(child);
+        if (removed == nullptr)
         {
-            if (child != nullptr)
-            {
-                m_Context->OnSubtreeRemoving(child.get());
-            }
+            // Reentrant callbackが既に対象を削除した場合は、現在の末尾要素から処理を続けます。
+            continue;
+        }
+
+        if (context != nullptr && context->IsMouseDispatchActive() == true)
+        {
+            context->RetainRemovedSubtree(std::move(removed));
         }
     }
 
-    for (auto& child : m_Children)
-    {
-        if (child != nullptr)
-        {
-            child->m_Parent = nullptr;
-            child->SetContextRecursive(nullptr);
-        }
-    }
-
-    m_Children.clear();
     InvalidateMeasure();
 }
 

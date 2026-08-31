@@ -7,6 +7,8 @@
 #include "Raven/UI/Core/UIEvent.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 
+#include <vector>
+
 namespace Raven
 {
 
@@ -91,6 +93,13 @@ private:
     void UpdateHoverTarget(UIElement* target);
     void UpdatePressedTarget(UIElement* target);
 
+    // Mouse Event callback内からRemoveChild()/ClearChildren()されても、現在実行中のHandler自身を
+    // callback復帰前に破棄しないよう、最外層dispatchが完了するまでScopeの寿命だけ延長します。
+    void BeginMouseDispatch();
+    void EndMouseDispatch();
+    bool IsMouseDispatchActive() const;
+    void RetainRemovedSubtree(Scope<UIElement> subtree);
+
     // Retained TreeからSubtreeを破棄する直前にUIElementから呼ばれます。
     // Capture / Hover / Pressedが破棄対象を指したままScopeが解放されるとdangling pointerになるため、
     // Elementがまだ生存しParent chainも有効な段階でInteraction Stateを安全に終了します。
@@ -105,6 +114,8 @@ private:
     UIElement* m_HoveredElement = nullptr;
     UIElement* m_PressedElement = nullptr;
     UIElement* m_MouseCaptureElement = nullptr;
+    std::vector<Scope<UIElement>> m_DeferredDestroyedSubtrees;
+    uint32_t m_MouseDispatchDepth = 0u;
     bool m_FrameActive = false;
 };
 
