@@ -418,6 +418,199 @@ private:
         }
     };
 
+    // Captureを含むSubtree削除 -> 同期Cancel -> Cancel callback内Self Remove、という再入経路を作るTriggerです。
+    // Move Eventを開始点にすることで、通常Mouse Routing / OnSubtreeRemoving / Cancel Routingの3層を同時に検証します。
+    class CancelMutationTrigger final : public UIPanel
+    {
+    public:
+        using CaptureHandler = std::function<void(CancelMutationTrigger*, bool)>;
+        using EventHandler = std::function<void(CancelMutationTrigger*)>;
+
+        void SetOnCapture(CaptureHandler handler)
+        {
+            m_OnCapture = std::move(handler);
+        }
+
+        void SetOnCapturedMove(EventHandler handler)
+        {
+            m_OnCapturedMove = std::move(handler);
+        }
+
+        void SetOnCancel(EventHandler handler)
+        {
+            m_OnCancel = std::move(handler);
+        }
+
+    protected:
+        void OnMouseEvent(UIMouseEvent& event) override
+        {
+            if (event.Target != this)
+            {
+                return;
+            }
+
+            if (event.Type == UIMouseEventType::Down && event.Button == UIMouseButton::Left)
+            {
+                const bool captured = event.Context != nullptr && event.Context->CaptureMouse(this) == true;
+                if (m_OnCapture != nullptr)
+                {
+                    m_OnCapture(this, captured);
+                }
+                event.Handled = true;
+                return;
+            }
+
+            if (event.Type == UIMouseEventType::Move)
+            {
+                if (m_OnCapturedMove != nullptr)
+                {
+                    m_OnCapturedMove(this);
+                }
+                event.Handled = true;
+                return;
+            }
+
+            if (event.Type == UIMouseEventType::Cancel)
+            {
+                if (m_OnCancel != nullptr)
+                {
+                    m_OnCancel(this);
+                }
+                event.Handled = true;
+            }
+        }
+
+    private:
+        CaptureHandler m_OnCapture;
+        EventHandler m_OnCapturedMove;
+        EventHandler m_OnCancel;
+    };
+
+    class CancelMutationStateElement final : public UIElement
+    {
+    public:
+        UIContext* Context = nullptr;
+        UIPanel* Slot = nullptr;
+        ValidationResultState* Results = nullptr;
+        UIPanel* Subtree = nullptr;
+        CancelMutationTrigger* Trigger = nullptr;
+        bool Armed = true;
+
+        void BuildCase()
+        {
+            if (Slot == nullptr || Subtree != nullptr)
+            {
+                return;
+            }
+
+            auto subtree = CreateScope<UIPanel>();
+            subtree->SetSize(math::Vec2(396.0f, 72.0f));
+            subtree->SetBackgroundColor(math::Vec4(0.16f, 0.24f, 0.20f, 1.0f));
+            subtree->SetLayoutMode(UILayoutMode::Vertical);
+            subtree->SetPadding(8.0f);
+            UIPanel* subtreeElement = subtree.get();
+
+            auto trigger = CreateScope<CancelMutationTrigger>();
+            trigger->SetSize(math::Vec2(380.0f, 56.0f));
+            trigger->SetBackgroundColor(math::Vec4(0.22f, 0.48f, 0.30f, 1.0f));
+            CancelMutationTrigger* triggerElement = trigger.get();
+            trigger->SetOnCapture([this](CancelMutationTrigger* element, bool captured)
+                {
+                    OnCapture(element, captured);
+                });
+            trigger->SetOnCapturedMove([this, subtreeElement](CancelMutationTrigger* element)
+                {
+                    OnCapturedMove(subtreeElement, element);
+                });
+            trigger->SetOnCancel([this](CancelMutationTrigger* element)
+                {
+                    OnCancelSelfRemove(element);
+                });
+            subtree->AddChild(std::move(trigger));
+
+            UIElement* attached = Slot->AddChild(std::move(subtree));
+            Subtree = attached != nullptr ? static_cast<UIPanel*>(attached) : nullptr;
+            Trigger = attached != nullptr ? triggerElement : nullptr;
+            Armed = true;
+            Record("Cancel reentrant case created", attached != nullptr);
+        }
+
+    private:
+        void OnCapture(CancelMutationTrigger* trigger, bool captured)
+        {
+            Record("Cancel reentrant capture starts", captured == true);
+            Record("Cancel reentrant context owns capture", Context != nullptr && Context->HasMouseCapture(trigger) == true);
+        }
+
+        void OnCapturedMove(UIPanel* subtree, CancelMutationTrigger* trigger)
+        {
+            if (Armed == false || Context == nullptr || subtree == nullptr || trigger == nullptr)
+            {
+                return;
+            }
+            if (Context->HasMouseCapture(trigger) == false)
+            {
+                return;
+            }
+
+            UIElement* parent = subtree->GetParent();
+            if (parent == nullptr)
+            {
+                Record("Cancel reentrant precondition: subtree has parent", false);
+                return;
+            }
+
+            // 外側RemoveChild()のOnSubtreeRemoving()がCaptureを検出し、Cancel Eventを同期配送します。
+            // そのCancel callback内でTrigger自身をさらにRemoveChild()するため、nested dispatchと二重Mutationが発生します。
+            Armed = false;
+            const bool removed = parent->RemoveChild(subtree);
+            Record("Cancel reentrant outer subtree removal succeeds", removed == true);
+            Record("Cancel reentrant outer subtree parent cleared", subtree->GetParent() == nullptr);
+            Record("Cancel reentrant trigger self removal completed", trigger->GetParent() == nullptr);
+            Record("Cancel reentrant capture released", Context->HasMouseCapture() == false);
+            Record("Cancel reentrant pressed cleared", trigger->IsPressed() == false);
+            Record("Cancel reentrant hovered cleared", trigger->IsHovered() == false);
+            Record("Cancel reentrant context pressed target cleared", Context->GetPressedElement() != trigger);
+            Record("Cancel reentrant context hover target cleared", Context->GetHoveredElement() != trigger);
+            Subtree = nullptr;
+            Trigger = nullptr;
+        }
+
+        void OnCancelSelfRemove(CancelMutationTrigger* trigger)
+        {
+            if (Context == nullptr || trigger == nullptr)
+            {
+                return;
+            }
+
+            Record("Cancel reentrant callback entered", true);
+            Record("Cancel reentrant capture released before callback", Context->HasMouseCapture() == false);
+
+            UIElement* parent = trigger->GetParent();
+            if (parent == nullptr)
+            {
+                Record("Cancel reentrant self removal precondition: trigger has parent", false);
+                return;
+            }
+
+            const bool removed = parent->RemoveChild(trigger);
+            Record("Cancel reentrant self removal succeeds inside Cancel", removed == true);
+            Record("Cancel reentrant self removal clears parent", trigger->GetParent() == nullptr);
+            Record("Cancel reentrant self removal clears pressed", trigger->IsPressed() == false);
+            Record("Cancel reentrant self removal clears hovered", trigger->IsHovered() == false);
+            Record("Cancel reentrant self removal clears context pressed target", Context->GetPressedElement() != trigger);
+            Record("Cancel reentrant self removal clears context hover target", Context->GetHoveredElement() != trigger);
+        }
+
+        void Record(const char* name, bool passed)
+        {
+            if (Results != nullptr)
+            {
+                Results->Record(name, passed);
+            }
+        }
+    };
+
     static Scope<UIButton> CreateControlButton(const math::Vec4& color, UIButton::ClickHandler handler)
     {
         auto button = CreateScope<UIButton>();
@@ -434,7 +627,7 @@ public:
     {
         auto root = CreateScope<UIPanel>();
         root->SetPosition(math::Vec2(404.0f, 48.0f));
-        root->SetSize(math::Vec2(420.0f, 588.0f));
+        root->SetSize(math::Vec2(420.0f, 668.0f));
         root->SetBackgroundColor(math::Vec4(0.05f, 0.08f, 0.14f, 0.96f));
         root->SetLayoutMode(UILayoutMode::Vertical);
         root->SetPadding(12.0f);
@@ -573,10 +766,28 @@ public:
         root->AddChild(std::move(routingState));
         routingStateElement->BuildCases();
 
+        // Capture中SubtreeをMove callbackから削除し、同期Cancel callback内でTrigger自身も削除する再入Stress Caseです。
+        auto cancelSlot = CreateScope<UIPanel>();
+        cancelSlot->SetSize(math::Vec2(396.0f, 72.0f));
+        cancelSlot->SetBackgroundColor(math::Vec4(0.10f, 0.18f, 0.14f, 1.0f));
+        cancelSlot->SetLayoutMode(UILayoutMode::Vertical);
+        UIPanel* cancelSlotElement = cancelSlot.get();
+        root->AddChild(std::move(cancelSlot));
+
+        auto cancelState = CreateScope<CancelMutationStateElement>();
+        cancelState->SetVisible(false);
+        cancelState->Context = &context;
+        cancelState->Slot = cancelSlotElement;
+        cancelState->Results = resultsElement;
+        CancelMutationStateElement* cancelStateElement = cancelState.get();
+        root->AddChild(std::move(cancelState));
+        cancelStateElement->BuildCase();
+
         auto rebuildButton = CreateControlButton(math::Vec4(0.28f, 0.30f, 0.44f, 1.0f),
-            [routingStateElement]()
+            [routingStateElement, cancelStateElement]()
             {
                 routingStateElement->BuildCases();
+                cancelStateElement->BuildCase();
             });
         rebuildButton->SetSize(math::Vec2(396.0f, 56.0f));
         root->AddChild(std::move(rebuildButton));
