@@ -1,4 +1,5 @@
 #include "Raven/UI/Core/UIElement.h"
+#include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
 #include <utility>
@@ -28,20 +29,85 @@ UIElement* UIElement::AddChild(Scope<UIElement> child)
         return nullptr;
     }
 
+    // 1つのElementを複数Parentへ接続するとParent chainとContext所属が矛盾します。
+    // Tree外で構築したSubtreeだけをAddChild()できるようにし、移動はDetachChild()経由で明示します。
+    if (child->m_Parent != nullptr || child->m_Context != nullptr)
+    {
+        return nullptr;
+    }
+
     child->m_Parent = this;
+    child->SetContextRecursive(m_Context);
     UIElement* result = child.get();
     m_Children.push_back(std::move(child));
     InvalidateMeasure();
     return result;
 }
 
+Scope<UIElement> UIElement::DetachChild(UIElement* child)
+{
+    if (child == nullptr)
+    {
+        return nullptr;
+    }
+
+    auto iterator = std::find_if(
+        m_Children.begin(),
+        m_Children.end(),
+        [child](const Scope<UIElement>& candidate)
+        {
+            return candidate.get() == child;
+        });
+
+    if (iterator == m_Children.end())
+    {
+        return nullptr;
+    }
+
+    // Contextが保持するraw pointerはSubtreeをTreeから外す前に必ず掃除します。
+    // Capture中ならCancel EventをParent chainが有効な状態でBubbleさせてから切り離します。
+    if (m_Context != nullptr)
+    {
+        m_Context->OnSubtreeRemoving(iterator->get());
+    }
+
+    Scope<UIElement> detached = std::move(*iterator);
+    m_Children.erase(iterator);
+
+    detached->m_Parent = nullptr;
+    detached->SetContextRecursive(nullptr);
+    InvalidateMeasure();
+    return detached;
+}
+
+bool UIElement::RemoveChild(UIElement* child)
+{
+    Scope<UIElement> removed = DetachChild(child);
+    return removed != nullptr;
+}
+
 void UIElement::ClearChildren()
 {
+    // Scopeを破棄してからContext側のraw pointerを掃除することはできません。
+    // Capture中Widgetを含むSubtreeが消える場合は、Parent chainがまだ有効なこの時点で
+    // Cancel Eventを配送し、Hover / Pressedも含めたInteraction Stateを先に終了します。
+    if (m_Context != nullptr)
+    {
+        for (auto& child : m_Children)
+        {
+            if (child != nullptr)
+            {
+                m_Context->OnSubtreeRemoving(child.get());
+            }
+        }
+    }
+
     for (auto& child : m_Children)
     {
         if (child != nullptr)
         {
             child->m_Parent = nullptr;
+            child->SetContextRecursive(nullptr);
         }
     }
 
@@ -399,6 +465,21 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
         if (child != nullptr)
         {
             child->BuildDrawListRecursive(drawList, absolutePosition);
+        }
+    }
+}
+
+void UIElement::SetContextRecursive(UIContext* context)
+{
+    m_Context = context;
+
+    // Context所属はParent/Child関係と同じLifetime境界で管理します。
+    // 後から構築済みSubtreeをAddChild()した場合も、全Descendantが同じContextへ所属する必要があります。
+    for (auto& child : m_Children)
+    {
+        if (child != nullptr)
+        {
+            child->SetContextRecursive(context);
         }
     }
 }

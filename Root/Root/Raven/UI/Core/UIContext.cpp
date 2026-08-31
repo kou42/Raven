@@ -9,6 +9,8 @@ namespace Raven
 UIContext::UIContext()
     : m_RootElement(CreateScope<UIElement>())
 {
+    // Rootから追加される全ElementへContext所属を伝播し、Tree変更時にInteraction Stateを安全に掃除できるようにします。
+    m_RootElement->SetContextRecursive(this);
 }
 
 void UIContext::BeginFrame(const math::Vec2& viewportSize)
@@ -94,6 +96,7 @@ bool UIContext::RouteMouseEvent(
     event.Type = type;
     event.Button = button;
     event.ScreenPosition = screenPosition;
+    event.Context = this;
     event.Target = routeTarget;
     event.PressedTarget = pressedTargetForEvent;
 
@@ -151,6 +154,13 @@ bool UIContext::CaptureMouse(UIElement* element)
         return false;
     }
 
+    // 別ContextやTree未所属ElementをCaptureすると、そのElement破棄をこのContextが観測できません。
+    // Lifetime安全性を保証するため、Capture対象は必ずこのRetained Tree所属に限定します。
+    if (element->m_Context != this)
+    {
+        return false;
+    }
+
     if (m_MouseCaptureElement != nullptr && m_MouseCaptureElement != element)
     {
         return false;
@@ -172,9 +182,52 @@ void UIContext::ReleaseMouseCapture(UIElement* element)
     m_MouseCaptureElement = nullptr;
 }
 
+void UIContext::CancelMouseCapture()
+{
+    UIElement* captureTarget = m_MouseCaptureElement;
+    if (captureTarget == nullptr)
+    {
+        // Captureが無い場合でも、Mouse Upを失った経路でPressedだけが残っている可能性があります。
+        UpdatePressedTarget(nullptr);
+        return;
+    }
+
+    // Cancel Handler自身が新しいCaptureを要求した場合に古い所有権が邪魔をしないよう、
+    // Event配送より先にContext側のCapture所有権を解除します。
+    m_MouseCaptureElement = nullptr;
+
+    UIMouseEvent event;
+    event.Type = UIMouseEventType::Cancel;
+    event.Button = UIMouseButton::None;
+    event.Context = this;
+    event.Target = captureTarget;
+    event.PressedTarget = m_PressedElement;
+
+    // 通常のMouse Eventと同じTarget -> ParentのBubble規則でCancelを通知します。
+    // Drag Widget自身が処理しない場合でも、親Containerが必要に応じて操作中断を観測できます。
+    UIElement* current = captureTarget;
+    while (current != nullptr)
+    {
+        event.CurrentTarget = current;
+        current->HandleMouseEvent(event);
+
+        if (event.Handled == true)
+        {
+            break;
+        }
+
+        current = current->GetParent();
+    }
+
+    // Mouse Upが届かない異常終了経路ではPressedも残留し得るため、Captureと同じ境界で必ず解除します。
+    UpdatePressedTarget(nullptr);
+}
+
 void UIContext::ReleaseMouseCapture()
 {
-    m_MouseCaptureElement = nullptr;
+    // 所有者を指定しない解除は「正常なDrag完了」ではなく強制終了として扱います。
+    // WidgetへCancelを通知することで、Capture Pointerだけ消えてWidgetのDraggingだけ残る状態を防ぎます。
+    CancelMouseCapture();
 }
 
 bool UIContext::HasMouseCapture() const
@@ -245,6 +298,55 @@ void UIContext::UpdatePressedTarget(UIElement* target)
     {
         m_PressedElement->SetPressed(true);
     }
+}
+
+void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
+{
+    if (subtreeRoot == nullptr)
+    {
+        return;
+    }
+
+    // Capture対象が破棄Subtree内なら、Elementが生存してParent chainも接続された状態でCancelを送ります。
+    // 先にScopeを破棄するとUISlider/UISplitterのDraggingを終了できず、raw pointerもdanglingになります。
+    if (IsElementInSubtree(m_MouseCaptureElement, subtreeRoot) == true)
+    {
+        CancelMouseCapture();
+    }
+
+    // Captureが無いHover/Pressed要素もContextがraw pointerで保持するため、破棄前に状態を解除します。
+    if (IsElementInSubtree(m_HoveredElement, subtreeRoot) == true)
+    {
+        UpdateHoverTarget(nullptr);
+    }
+
+    if (IsElementInSubtree(m_PressedElement, subtreeRoot) == true)
+    {
+        UpdatePressedTarget(nullptr);
+    }
+}
+
+bool UIContext::IsElementInSubtree(const UIElement* element, const UIElement* subtreeRoot)
+{
+    if (element == nullptr || subtreeRoot == nullptr)
+    {
+        return false;
+    }
+
+    // Parent chainを辿ることでSubtree全体を走査せず所属判定できます。
+    // Treeから切り離す前に呼ぶことが前提なので、DescendantからsubtreeRootまでのchainは必ず維持されています。
+    const UIElement* current = element;
+    while (current != nullptr)
+    {
+        if (current == subtreeRoot)
+        {
+            return true;
+        }
+
+        current = current->GetParent();
+    }
+
+    return false;
 }
 
 } // namespace Raven

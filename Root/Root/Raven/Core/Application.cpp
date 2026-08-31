@@ -4,6 +4,8 @@
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UISlider.h"
+#include "Raven/UI/Widgets/UISplitter.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -45,9 +47,9 @@ Application::Application()
     // ========================================================================
     // Raven UI retained-mode / layout / interaction validation panel
     // ========================================================================
-    // GPU描画経路とRetained Treeに加え、UIButtonのNormal / Hovered / Pressed Visual Stateを確認します。
+    // GPU描画経路とRetained Treeに加え、Button / Slider / SplitterのInteractionを確認します。
     // Mouse入力はWindow -> Core Event -> Application -> UIContextの経路で届くため、
-    // pollingに依存せず実際の入力Eventと同じタイミングでHit Test / State遷移を検証できます。
+    // pollingに依存せず実際の入力Eventと同じタイミングでHit Test / Capture / State遷移を検証できます。
     //
     // このTreeはApplication起動時に一度だけ生成され、以降はUIContextのRoot ElementがLifetimeを所有します。
     // Editor Widget導入後はApplication直下の検証Treeを削除し、各UI LayerがRoot以下へ必要なElementを構築します。
@@ -70,6 +72,9 @@ Application::Application()
         });
     validationPanel->AddChild(std::move(headerButton));
 
+    // Splitter検証Rowです。
+    // Splitter自身はPanelを知らずDrag差分だけを返し、利用側が左右PanelのPreferredSizeへ反映します。
+    // この接続方式をそのままEditorのHierarchy / Inspector / Game View等へ再利用できます。
     auto horizontalRow = CreateScope<UIPanel>();
     horizontalRow->SetSize(math::Vec2(336.0f, 62.0f));
     horizontalRow->SetBackgroundColor(math::Vec4(0.08f, 0.11f, 0.18f, 1.0f));
@@ -78,26 +83,57 @@ Application::Application()
     horizontalRow->SetSpacing(8.0f);
 
     auto leftPanel = CreateScope<UIPanel>();
-    leftPanel->SetSize(math::Vec2(96.0f, 44.0f));
+    leftPanel->SetSize(math::Vec2(120.0f, 44.0f));
+    leftPanel->SetMinSize(math::Vec2(72.0f, 44.0f));
+    leftPanel->SetMaxSize(math::Vec2(224.0f, 44.0f));
     leftPanel->SetBackgroundColor(math::Vec4(0.18f, 0.48f, 0.32f, 1.0f));
+    UIPanel* leftPanelElement = leftPanel.get();
     horizontalRow->AddChild(std::move(leftPanel));
 
-    auto centerPanel = CreateScope<UIPanel>();
-    centerPanel->SetSize(math::Vec2(96.0f, 44.0f));
-    centerPanel->SetBackgroundColor(math::Vec4(0.62f, 0.36f, 0.12f, 1.0f));
-    horizontalRow->AddChild(std::move(centerPanel));
+    auto splitter = CreateScope<UISplitter>();
+    splitter->SetSize(math::Vec2(8.0f, 44.0f));
+    splitter->SetOrientation(UISplitterOrientation::Vertical);
 
     auto rightPanel = CreateScope<UIPanel>();
-    rightPanel->SetSize(math::Vec2(96.0f, 44.0f));
+    rightPanel->SetSize(math::Vec2(176.0f, 44.0f));
+    rightPanel->SetMinSize(math::Vec2(72.0f, 44.0f));
+    rightPanel->SetMaxSize(math::Vec2(224.0f, 44.0f));
     rightPanel->SetBackgroundColor(math::Vec4(0.42f, 0.20f, 0.55f, 1.0f));
-    horizontalRow->AddChild(std::move(rightPanel));
+    UIPanel* rightPanelElement = rightPanel.get();
 
+    splitter->SetOnDragDelta([leftPanelElement, rightPanelElement](float delta)
+        {
+            if (leftPanelElement == nullptr || rightPanelElement == nullptr)
+            {
+                return;
+            }
+
+            // Row content幅320pxからSplitter 8pxとSpacing 16pxを除いた296pxを左右Panelで共有します。
+            // 片側だけをResizeするとRow全体の幅が変化するため、反対側へ同量を返して合計幅を維持します。
+            constexpr float panelTotalWidth = 296.0f;
+            const float currentLeftWidth = leftPanelElement->GetPreferredSize().x;
+            const float newLeftWidth = std::clamp(currentLeftWidth + delta, 72.0f, 224.0f);
+            const float newRightWidth = panelTotalWidth - newLeftWidth;
+
+            leftPanelElement->SetPreferredSize(math::Vec2(newLeftWidth, 44.0f));
+            rightPanelElement->SetPreferredSize(math::Vec2(newRightWidth, 44.0f));
+        });
+
+    horizontalRow->AddChild(std::move(splitter));
+    horizontalRow->AddChild(std::move(rightPanel));
     validationPanel->AddChild(std::move(horizontalRow));
 
-    auto footerPanel = CreateScope<UIPanel>();
-    footerPanel->SetSize(math::Vec2(336.0f, 42.0f));
-    footerPanel->SetBackgroundColor(math::Vec4(0.14f, 0.18f, 0.26f, 1.0f));
-    validationPanel->AddChild(std::move(footerPanel));
+    // SliderはCapture中にElement外へPointerが出ても値更新を継続します。
+    // Focus Lost時にはApplicationがCancelMouseCapture()を呼ぶため、Mouse Upが戻らなくてもDraggingは残りません。
+    auto footerSlider = CreateScope<UISlider>();
+    footerSlider->SetSize(math::Vec2(336.0f, 42.0f));
+    footerSlider->SetRange(0.0f, 1.0f);
+    footerSlider->SetValue(0.35f);
+    footerSlider->SetOnValueChanged([](float value)
+        {
+            std::cout << "Raven UI validation slider: " << value << std::endl;
+        });
+    validationPanel->AddChild(std::move(footerSlider));
 
     m_UIContext.GetRootElement().AddChild(std::move(validationPanel));
 #endif
@@ -338,6 +374,14 @@ void Application::OnEvent(Event& event)
     {
         m_Running = false;
         event.Handled = true;
+    }
+
+    // WindowがFocusを失った場合、OS側でMouse Upが別Windowへ配送される可能性があります。
+    // Capture所有WidgetへCancelを通知してからPressedも解除し、Slider/SplitterのDragging残留を防ぎます。
+    // Focus Event自体はLayerも利用できるためHandledにはせず、後段へ通常通り伝播させます。
+    if (event.GetEventType() == EventType::WindowFocusLost)
+    {
+        m_UIContext.CancelMouseCapture();
     }
 
     // ========================================================================

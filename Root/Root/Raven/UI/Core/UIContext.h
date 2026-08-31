@@ -57,6 +57,12 @@ public:
     // Widget間で暗黙にCaptureが移るとDrag中の操作対象が変わるため、Release後に改めてCaptureする設計とします。
     bool CaptureMouse(UIElement* element);
     void ReleaseMouseCapture(UIElement* element);
+
+    // Capture所有者へCancel Eventを配送してからCapture / Pressedを解除します。
+    // Mouse Upが届かない異常終了経路では、単にPointerをnullptrへするのではなく必ずこちらを利用します。
+    void CancelMouseCapture();
+
+    // 後方互換の強制Release入口です。所有者を指定しない解除はDragの強制終了とみなしCancelへ委譲します。
     void ReleaseMouseCapture();
     bool HasMouseCapture() const;
     bool HasMouseCapture(const UIElement* element) const;
@@ -80,8 +86,16 @@ public:
     bool IsFrameActive() const;
 
 private:
+    friend class UIElement;
+
     void UpdateHoverTarget(UIElement* target);
     void UpdatePressedTarget(UIElement* target);
+
+    // Retained TreeからSubtreeを破棄する直前にUIElementから呼ばれます。
+    // Capture / Hover / Pressedが破棄対象を指したままScopeが解放されるとdangling pointerになるため、
+    // Elementがまだ生存しParent chainも有効な段階でInteraction Stateを安全に終了します。
+    void OnSubtreeRemoving(UIElement* subtreeRoot);
+    static bool IsElementInSubtree(const UIElement* element, const UIElement* subtreeRoot);
 
 private:
     math::Vec2 m_ViewportSize{};

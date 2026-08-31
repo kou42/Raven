@@ -11,6 +11,8 @@
 namespace Raven
 {
 
+class UIContext;
+
 enum class UILayoutMode { Absolute = 0, Vertical, Horizontal };
 enum class UIAlignment { Start = 0, Center, End, Stretch };
 
@@ -40,6 +42,13 @@ public:
     UIElement& operator=(UIElement&&) = delete;
 
     UIElement* AddChild(Scope<UIElement> child);
+
+    // ChildをTreeから切り離して所有権を呼び出し側へ返します。
+    // Capture / Hover / Pressed対象を含むSubtreeでは、破棄・再接続より前にUIContextへ削除境界を通知します。
+    Scope<UIElement> DetachChild(UIElement* child);
+
+    // Childを個別に削除します。DetachChild()で返されたScopeをその場で破棄する簡易APIです。
+    bool RemoveChild(UIElement* child);
     void ClearChildren();
 
     void SetPosition(const math::Vec2& value);
@@ -88,6 +97,8 @@ protected:
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
+    friend class UIContext;
+
     math::Vec2 ClampSize(const math::Vec2& size) const;
     math::Vec2 ResolveRootSize() const;
     math::Vec2 GetDesiredSizeWithMargin() const;
@@ -98,6 +109,10 @@ private:
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
     void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
 
+    // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
+    // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
+    void SetContextRecursive(UIContext* context);
+
 private:
     math::Vec2 m_Position{};
     math::Vec2 m_Size{};
@@ -106,6 +121,7 @@ private:
     math::Vec2 m_MinSize{};
     math::Vec2 m_MaxSize{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
     UIElement* m_Parent = nullptr;
+    UIContext* m_Context = nullptr;
     std::vector<Scope<UIElement>> m_Children;
     UIThickness m_Padding{};
     UIThickness m_Margin{};

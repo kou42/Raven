@@ -42,11 +42,11 @@ void WindowsWindow::Init(const WindowProps& props)
     m_Data.Width = props.Width;
     m_Data.Height = props.Height;
 
-    if (!s_GLFWInitialized)
+    if (s_GLFWInitialized == false)
     {
         int success = glfwInit();
 
-        if (!success)
+        if (success == false)
         {
             std::cerr << "Failed to initialize GLFW\n";
             return;
@@ -73,7 +73,7 @@ void WindowsWindow::Init(const WindowProps& props)
     g_MainWindow = m_Window;
 #endif
 
-    if (!m_Window)
+    if (m_Window == nullptr)
     {
         std::cerr << "Failed to create GLFW window\n";
         return;
@@ -111,6 +111,25 @@ void WindowsWindow::Init(const WindowProps& props)
 
             WindowResizeEvent event(data.Width, data.Height);
             data.EventCallback(event);
+        }
+    );
+
+    // Focusを失うとMouse UpがMain Windowへ戻らない場合があります。
+    // Platform層ではFocus状態だけをCore Eventへ変換し、Capture終了判断はApplication/UIContextへ委譲します。
+    glfwSetWindowFocusCallback(m_Window, [](GLFWwindow* window, int focused)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+            if (focused == GLFW_TRUE)
+            {
+                WindowFocusGainedEvent event;
+                data.EventCallback(event);
+            }
+            else
+            {
+                WindowFocusLostEvent event;
+                data.EventCallback(event);
+            }
         }
     );
 
@@ -159,7 +178,11 @@ void WindowsWindow::Init(const WindowProps& props)
 
 void WindowsWindow::Shutdown()
 {
-    glfwDestroyWindow(m_Window);
+    if (m_Window != nullptr)
+    {
+        glfwDestroyWindow(m_Window);
+        m_Window = nullptr;
+    }
 }
 
 void WindowsWindow::OnUpdate()
