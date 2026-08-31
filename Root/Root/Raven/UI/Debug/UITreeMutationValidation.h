@@ -6,6 +6,7 @@
 #include "Raven/UI/Widgets/UISlider.h"
 
 #include <iostream>
+#include <string>
 
 namespace Raven
 {
@@ -14,12 +15,45 @@ namespace Raven
 class UITreeMutationValidation
 {
 private:
+    class ValidationResultState final : public UIElement
+    {
+    public:
+        UIPanel* Indicator = nullptr;
+        int PassedCount = 0;
+        int FailedCount = 0;
+
+        void Record(const char* name, bool passed)
+        {
+            if (passed == true)
+            {
+                ++PassedCount;
+                std::cout << "[UI Validation][PASS] " << name << std::endl;
+            }
+            else
+            {
+                ++FailedCount;
+                std::cout << "[UI Validation][FAIL] " << name << std::endl;
+            }
+
+            if (Indicator != nullptr)
+            {
+                Indicator->SetBackgroundColor(FailedCount == 0
+                    ? math::Vec4(0.10f, 0.34f, 0.18f, 1.0f)
+                    : math::Vec4(0.52f, 0.10f, 0.12f, 1.0f));
+            }
+
+            std::cout << "[UI Validation] total: pass=" << PassedCount
+                << ", fail=" << FailedCount << std::endl;
+        }
+    };
+
     class MutationStateElement final : public UIElement
     {
     public:
         UIElement* Source = nullptr;
         UIElement* Destination = nullptr;
         UIElement* Target = nullptr;
+        ValidationResultState* Results = nullptr;
         Scope<UIElement> Detached;
 
         void Detach()
@@ -28,22 +62,29 @@ private:
             {
                 return;
             }
-            UIElement* parent = Target->GetParent();
-            if (parent != nullptr)
+
+            UIElement* previousParent = Target->GetParent();
+            if (previousParent == nullptr)
             {
-                Detached = parent->DetachChild(Target);
-                std::cout << "Tree Mutation: detached" << std::endl;
+                Record("Detach precondition: target has parent", false);
+                return;
             }
+
+            Detached = previousParent->DetachChild(Target);
+            Record("Detach returns ownership", Detached != nullptr);
+            Record("Detach clears parent", Target->GetParent() == nullptr);
+            Record("Detach clears hovered state", Target->IsHovered() == false);
+            Record("Detach clears pressed state", Target->IsPressed() == false);
         }
 
         void AttachToSource()
         {
-            Attach(Source, "source");
+            Attach(Source, "Attach source parent");
         }
 
         void AttachToDestination()
         {
-            Attach(Destination, "destination");
+            Attach(Destination, "Attach destination parent");
         }
 
         void Remove()
@@ -52,33 +93,59 @@ private:
             {
                 return;
             }
+
             if (Detached != nullptr)
             {
                 Detached.reset();
                 Target = nullptr;
-                std::cout << "Tree Mutation: removed detached target" << std::endl;
+                Record("Remove detached target releases ownership", Detached == nullptr);
                 return;
             }
+
+            UIElement* removedTarget = Target;
             UIElement* parent = Target->GetParent();
-            if (parent != nullptr && parent->RemoveChild(Target) == true)
+            if (parent == nullptr)
+            {
+                Record("Remove precondition: attached target has parent", false);
+                return;
+            }
+
+            const bool removed = parent->RemoveChild(Target);
+            if (removed == true)
             {
                 Target = nullptr;
-                std::cout << "Tree Mutation: removed attached target" << std::endl;
             }
+            Record("Remove attached target succeeds", removed == true);
+            Record("Remove clears borrowed target", Target == nullptr);
+
+            // removedTargetはRemoveChild()成功後に破棄済みなので、以降は絶対に参照しません。
+            (void)removedTarget;
         }
 
     private:
-        void Attach(UIElement* parent, const char* name)
+        void Attach(UIElement* parent, const char* resultName)
         {
             if (parent == nullptr || Target == nullptr || Detached == nullptr)
             {
                 return;
             }
+
             UIElement* attached = parent->AddChild(std::move(Detached));
-            if (attached != nullptr)
+            Record("Attach transfers ownership to tree", attached != nullptr && Detached == nullptr);
+            if (attached == nullptr)
             {
-                Target = attached;
-                std::cout << "Tree Mutation: attached to " << name << std::endl;
+                return;
+            }
+
+            Target = attached;
+            Record(resultName, Target->GetParent() == parent);
+        }
+
+        void Record(const char* name, bool passed)
+        {
+            if (Results != nullptr)
+            {
+                Results->Record(name, passed);
             }
         }
     };
@@ -86,15 +153,17 @@ private:
     class CaptureMutationStateElement final : public UIElement
     {
     public:
+        UIContext* Context = nullptr;
         UIElement* Host = nullptr;
         UIElement* Subtree = nullptr;
         UISlider* Slider = nullptr;
+        ValidationResultState* Results = nullptr;
         Scope<UIElement> Detached;
         bool Armed = true;
 
         void OnSliderValueChanged(float value)
         {
-            if (Armed == false || Slider == nullptr || Subtree == nullptr || Detached != nullptr)
+            if (Armed == false || Context == nullptr || Slider == nullptr || Subtree == nullptr || Detached != nullptr)
             {
                 return;
             }
@@ -102,15 +171,25 @@ private:
             {
                 return;
             }
+
             UIElement* parent = Subtree->GetParent();
             if (parent == nullptr)
             {
+                Record("Capture mutation precondition: subtree has parent", false);
                 return;
             }
-            // MouseMove callback中にCapture ownerを含むSubtreeを外し、Cancelの同期cleanupを検証します。
+
+            Record("Capture exists before subtree detach", Context->HasMouseCapture(Slider) == true);
             Armed = false;
             Detached = parent->DetachChild(Subtree);
-            std::cout << "Tree Mutation capture stress: detached while dragging" << std::endl;
+
+            // DetachChild()はParent chainが有効な間にUIContext::OnSubtreeRemoving()を呼ぶため、
+            // このcallbackから戻る前にCapture / Pressed / Draggingが全て解除されている必要があります。
+            Record("Capture subtree detach returns ownership", Detached != nullptr);
+            Record("Capture subtree detach clears parent", Subtree->GetParent() == nullptr);
+            Record("Capture subtree detach releases capture", Context->HasMouseCapture() == false);
+            Record("Capture subtree detach clears dragging", Slider->IsDragging() == false);
+            Record("Capture subtree detach clears pressed", Slider->IsPressed() == false);
         }
 
         void Restore()
@@ -119,16 +198,28 @@ private:
             {
                 return;
             }
+
             UIElement* attached = Host->AddChild(std::move(Detached));
+            Record("Capture subtree restore transfers ownership", attached != nullptr && Detached == nullptr);
             if (attached == nullptr)
             {
                 return;
             }
+
             Subtree = attached;
+            Record("Capture subtree restore parent", Subtree->GetParent() == Host);
             Slider->SetValue(0.10f);
             Armed = true;
-            std::cout << "Tree Mutation capture stress: restored, dragging="
-                << (Slider->IsDragging() == true ? "true" : "false") << std::endl;
+            Record("Capture subtree restore keeps dragging cleared", Slider->IsDragging() == false);
+        }
+
+    private:
+        void Record(const char* name, bool passed)
+        {
+            if (Results != nullptr)
+            {
+                Results->Record(name, passed);
+            }
         }
     };
 
@@ -144,15 +235,29 @@ private:
     }
 
 public:
-    static Scope<UIElement> Create()
+    static Scope<UIElement> Create(UIContext& context)
     {
         auto root = CreateScope<UIPanel>();
         root->SetPosition(math::Vec2(404.0f, 48.0f));
-        root->SetSize(math::Vec2(420.0f, 372.0f));
+        root->SetSize(math::Vec2(420.0f, 396.0f));
         root->SetBackgroundColor(math::Vec4(0.05f, 0.08f, 0.14f, 0.96f));
         root->SetLayoutMode(UILayoutMode::Vertical);
         root->SetPadding(12.0f);
         root->SetSpacing(8.0f);
+
+        // Text描画Widgetが未実装のため、Result indicatorは色で集約結果を示します。
+        // 緑=全PASS、赤=1件以上FAIL。個別結果と件数はConsoleへ出力します。
+        auto resultIndicator = CreateScope<UIPanel>();
+        resultIndicator->SetSize(math::Vec2(396.0f, 16.0f));
+        resultIndicator->SetBackgroundColor(math::Vec4(0.18f, 0.20f, 0.26f, 1.0f));
+        UIPanel* resultIndicatorElement = resultIndicator.get();
+        root->AddChild(std::move(resultIndicator));
+
+        auto results = CreateScope<ValidationResultState>();
+        results->SetVisible(false);
+        results->Indicator = resultIndicatorElement;
+        ValidationResultState* resultsElement = results.get();
+        root->AddChild(std::move(results));
 
         auto mutationRow = CreateScope<UIPanel>();
         mutationRow->SetSize(math::Vec2(396.0f, 104.0f));
@@ -169,10 +274,6 @@ public:
         target->SetNormalColor(math::Vec4(0.16f, 0.50f, 0.30f, 1.0f));
         target->SetHoveredColor(math::Vec4(0.22f, 0.66f, 0.40f, 1.0f));
         target->SetPressedColor(math::Vec4(0.10f, 0.34f, 0.20f, 1.0f));
-        target->SetOnClick([]()
-            {
-                std::cout << "Tree Mutation target clicked" << std::endl;
-            });
         UIElement* targetElement = target.get();
         sourcePanel->AddChild(std::move(target));
         auto destinationPanel = CreateScope<UIPanel>();
@@ -185,41 +286,24 @@ public:
         mutationRow->AddChild(std::move(destinationPanel));
         root->AddChild(std::move(mutationRow));
 
-        // State Elementは所有権保持だけに使い、Layout/Hit Testへ参加させません。
         auto state = CreateScope<MutationStateElement>();
         state->SetVisible(false);
         state->Source = sourceElement;
         state->Destination = destinationElement;
         state->Target = targetElement;
+        state->Results = resultsElement;
         MutationStateElement* stateElement = state.get();
         root->AddChild(std::move(state));
         auto controls = CreateScope<UIPanel>();
         controls->SetSize(math::Vec2(396.0f, 108.0f));
         controls->SetLayoutMode(UILayoutMode::Horizontal);
         controls->SetSpacing(6.0f);
-        controls->AddChild(CreateControlButton(math::Vec4(0.52f, 0.32f, 0.12f, 1.0f),
-            [stateElement]()
-            {
-                stateElement->Detach();
-            }));
-        controls->AddChild(CreateControlButton(math::Vec4(0.12f, 0.38f, 0.58f, 1.0f),
-            [stateElement]()
-            {
-                stateElement->AttachToSource();
-            }));
-        controls->AddChild(CreateControlButton(math::Vec4(0.36f, 0.20f, 0.56f, 1.0f),
-            [stateElement]()
-            {
-                stateElement->AttachToDestination();
-            }));
-        controls->AddChild(CreateControlButton(math::Vec4(0.58f, 0.16f, 0.18f, 1.0f),
-            [stateElement]()
-            {
-                stateElement->Remove();
-            }));
+        controls->AddChild(CreateControlButton(math::Vec4(0.52f, 0.32f, 0.12f, 1.0f), [stateElement]() { stateElement->Detach(); }));
+        controls->AddChild(CreateControlButton(math::Vec4(0.12f, 0.38f, 0.58f, 1.0f), [stateElement]() { stateElement->AttachToSource(); }));
+        controls->AddChild(CreateControlButton(math::Vec4(0.36f, 0.20f, 0.56f, 1.0f), [stateElement]() { stateElement->AttachToDestination(); }));
+        controls->AddChild(CreateControlButton(math::Vec4(0.58f, 0.16f, 0.18f, 1.0f), [stateElement]() { stateElement->Remove(); }));
         root->AddChild(std::move(controls));
 
-        // Sliderを右へDragして0.75へ到達すると、そのSliderを含むPanelをEvent callback内からDetachします。
         auto captureRow = CreateScope<UIPanel>();
         captureRow->SetSize(math::Vec2(396.0f, 120.0f));
         captureRow->SetLayoutMode(UILayoutMode::Horizontal);
@@ -245,20 +329,18 @@ public:
         captureHost->AddChild(std::move(captureSubtree));
         auto captureState = CreateScope<CaptureMutationStateElement>();
         captureState->SetVisible(false);
+        captureState->Context = &context;
         captureState->Host = captureHostElement;
         captureState->Subtree = captureSubtreeElement;
         captureState->Slider = captureSliderElement;
+        captureState->Results = resultsElement;
         CaptureMutationStateElement* captureStateElement = captureState.get();
         root->AddChild(std::move(captureState));
         captureSliderElement->SetOnValueChanged([captureStateElement](float value)
             {
                 captureStateElement->OnSliderValueChanged(value);
             });
-        auto resetButton = CreateControlButton(math::Vec4(0.16f, 0.42f, 0.46f, 1.0f),
-            [captureStateElement]()
-            {
-                captureStateElement->Restore();
-            });
+        auto resetButton = CreateControlButton(math::Vec4(0.16f, 0.42f, 0.46f, 1.0f), [captureStateElement]() { captureStateElement->Restore(); });
         resetButton->SetSize(math::Vec2(112.0f, 120.0f));
         captureRow->AddChild(std::move(captureHost));
         captureRow->AddChild(std::move(resetButton));
