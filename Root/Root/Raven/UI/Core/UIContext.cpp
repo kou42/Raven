@@ -9,6 +9,8 @@ namespace Raven
 UIContext::UIContext()
     : m_RootElement(CreateScope<UIElement>())
 {
+    // Rootから追加される全ElementへContext所属を伝播し、Tree変更時にInteraction Stateを安全に掃除できるようにします。
+    m_RootElement->SetContextRecursive(this);
 }
 
 void UIContext::BeginFrame(const math::Vec2& viewportSize)
@@ -152,6 +154,13 @@ bool UIContext::CaptureMouse(UIElement* element)
         return false;
     }
 
+    // 別ContextやTree未所属ElementをCaptureすると、そのElement破棄をこのContextが観測できません。
+    // Lifetime安全性を保証するため、Capture対象は必ずこのRetained Tree所属に限定します。
+    if (element->m_Context != this)
+    {
+        return false;
+    }
+
     if (m_MouseCaptureElement != nullptr && m_MouseCaptureElement != element)
     {
         return false;
@@ -289,6 +298,55 @@ void UIContext::UpdatePressedTarget(UIElement* target)
     {
         m_PressedElement->SetPressed(true);
     }
+}
+
+void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
+{
+    if (subtreeRoot == nullptr)
+    {
+        return;
+    }
+
+    // Capture対象が破棄Subtree内なら、Elementが生存してParent chainも接続された状態でCancelを送ります。
+    // 先にScopeを破棄するとUISlider/UISplitterのDraggingを終了できず、raw pointerもdanglingになります。
+    if (IsElementInSubtree(m_MouseCaptureElement, subtreeRoot) == true)
+    {
+        CancelMouseCapture();
+    }
+
+    // Captureが無いHover/Pressed要素もContextがraw pointerで保持するため、破棄前に状態を解除します。
+    if (IsElementInSubtree(m_HoveredElement, subtreeRoot) == true)
+    {
+        UpdateHoverTarget(nullptr);
+    }
+
+    if (IsElementInSubtree(m_PressedElement, subtreeRoot) == true)
+    {
+        UpdatePressedTarget(nullptr);
+    }
+}
+
+bool UIContext::IsElementInSubtree(const UIElement* element, const UIElement* subtreeRoot)
+{
+    if (element == nullptr || subtreeRoot == nullptr)
+    {
+        return false;
+    }
+
+    // Parent chainを辿ることでSubtree全体を走査せず所属判定できます。
+    // Treeから切り離す前に呼ぶことが前提なので、DescendantからsubtreeRootまでのchainは必ず維持されています。
+    const UIElement* current = element;
+    while (current != nullptr)
+    {
+        if (current == subtreeRoot)
+        {
+            return true;
+        }
+
+        current = current->GetParent();
+    }
+
+    return false;
 }
 
 } // namespace Raven
