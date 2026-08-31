@@ -1,4 +1,5 @@
 #include "Raven/UI/Core/UIElement.h"
+#include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
 #include <utility>
@@ -29,6 +30,7 @@ UIElement* UIElement::AddChild(Scope<UIElement> child)
     }
 
     child->m_Parent = this;
+    child->SetContextRecursive(m_Context);
     UIElement* result = child.get();
     m_Children.push_back(std::move(child));
     InvalidateMeasure();
@@ -37,11 +39,26 @@ UIElement* UIElement::AddChild(Scope<UIElement> child)
 
 void UIElement::ClearChildren()
 {
+    // Scopeを破棄してからContext側のraw pointerを掃除することはできません。
+    // Capture中Widgetを含むSubtreeが消える場合は、Parent chainがまだ有効なこの時点で
+    // Cancel Eventを配送し、Hover / Pressedも含めたInteraction Stateを先に終了します。
+    if (m_Context != nullptr)
+    {
+        for (auto& child : m_Children)
+        {
+            if (child != nullptr)
+            {
+                m_Context->OnSubtreeRemoving(child.get());
+            }
+        }
+    }
+
     for (auto& child : m_Children)
     {
         if (child != nullptr)
         {
             child->m_Parent = nullptr;
+            child->SetContextRecursive(nullptr);
         }
     }
 
@@ -399,6 +416,21 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
         if (child != nullptr)
         {
             child->BuildDrawListRecursive(drawList, absolutePosition);
+        }
+    }
+}
+
+void UIElement::SetContextRecursive(UIContext* context)
+{
+    m_Context = context;
+
+    // Context所属はParent/Child関係と同じLifetime境界で管理します。
+    // 後から構築済みSubtreeをAddChild()した場合も、全Descendantが同じContextへ所属する必要があります。
+    for (auto& child : m_Children)
+    {
+        if (child != nullptr)
+        {
+            child->SetContextRecursive(context);
         }
     }
 }
