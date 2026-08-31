@@ -9,6 +9,10 @@
 #include "Raven/Core/Event.h"
 #include "Raven/UI/Core/UIContext.h"
 
+#if defined(_DEBUG)
+#include "Raven/UI/Debug/UITreeMutationValidation.h"
+#endif
+
 #include <memory>
 #include <iostream>
 
@@ -60,6 +64,16 @@ private:
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+
+#if defined(_DEBUG)
+    // Tree Mutation検証TreeはUIContext構築後にRootへ接続します。
+    // Application.cppの既存Widget検証とは独立させ、Detach / Attach / Removeの検証基盤を
+    // Debug buildだけへ追加します。Rootが所有権を持つため、このflag自身はLifetimeを持ちません。
+    bool m_UITreeMutationValidationAttached = [this]()
+        {
+            return m_UIContext.GetRootElement().AddChild(UITreeMutationValidation::Create()) != nullptr;
+        }();
+#endif
 
     // ImGuiLayerはLayerを継承しますが、Dear ImGuiのBegin/Endは全LayerのOnImGuiRender()を
     // 囲む特殊なframe境界なので、Applicationが専用参照を保持して順序を保証します。
