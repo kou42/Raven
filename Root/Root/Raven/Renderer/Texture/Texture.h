@@ -25,16 +25,26 @@
 namespace Raven
 {
 
+// TextureのピクセルフォーマットをRenderer共通の値として表します。
+// OpenGLのGL_RGB8 / GL_R32I / GL_DEPTH24_STENCIL8などを上位層へ公開せず、
+// 各RendererAPI実装側でネイティブ形式へ変換します。
 enum class TextureFormat
 {
     None = 0,
     R8,
     RGB8,
     RGBA8,
+
+    // Entity Picking等で整数IDを1 pixelにつき1値保持する用途です。
+    // OpenGLではGL_R32Iへ変換しますが、Renderer共通層はOpenGL定数を意識しません。
     R32I,
+
     Depth24Stencil8
 };
 
+// Textureがどの用途で利用されるかをRenderer共通の値で明示します。
+// 同じRGBA8でも通常の画像TextureとFramebuffer Attachmentでは、
+// wrap/filter/mipmap方針などが異なるため、Formatとは別軸で用途を保持します。
 enum class TextureUsage
 {
     Sampled = 0,
@@ -42,6 +52,8 @@ enum class TextureUsage
     DepthStencil
 };
 
+// ファイル由来・動的生成・Framebuffer Attachmentなど、Textureの生成方法が増えても
+// 共通の生成情報として扱えるようにSpecificationへまとめます。
 struct TextureSpecification
 {
     std::uint32_t Width = 1;
@@ -51,6 +63,9 @@ struct TextureSpecification
     bool GenerateMips = true;
 };
 
+// Textureは描画APIに依存しないインターフェースです。
+// OpenGL固有のGLuintやglBindTextureなどは派生クラス側へ閉じ込めます。
+// これにより、Textureを利用する上位層はOpenGL / DirectXなどの違いを意識せずに扱えます。
 class Texture
 {
 public:
@@ -61,7 +76,12 @@ public:
     // 既存コード互換用として残し、新しいUI/RuntimeコードはTextureAssetImporterを経由します。
     static Ref<Texture> Create(const std::string& path);
 
+    // サイズ・フォーマット・用途を明示して空Textureを生成します。
+    // RenderTarget / DepthStencil用途もこの生成経路を利用します。
     static Ref<Texture> Create(const TextureSpecification& specification);
+
+    // 初期ピクセルデータ付きでTextureを生成します。
+    // dataSizeはバイト数です。実装側でSpecificationから必要サイズを検証します。
     static Ref<Texture> Create(
         const TextureSpecification& specification,
         const void* data,
