@@ -14,23 +14,42 @@ bool ResolveProperty(
 {
     const AnimationPropertyBinding& binding = GetAnimationPropertyBinding(track);
 
-    // 現段階のUI AnimationはVec2 Propertyだけを対象にします。
     // Property名だけ一致して型が異なるTrackを受理するとApply時に暗黙変換が必要になるため、Resolve時に拒否します。
-    if (std::holds_alternative<PropertyAnimationTrack<math::Vec2>>(track) == false)
+    if (binding.Property == "Position" || binding.Property == "Size")
     {
-        return false;
+        if (std::holds_alternative<PropertyAnimationTrack<math::Vec2>>(track) == false)
+        {
+            return false;
+        }
+
+        outProperty = binding.Property == "Position"
+            ? UIAnimationProperty::Position
+            : UIAnimationProperty::Size;
+        return true;
     }
 
-    if (binding.Property == "Position")
+    if (binding.Property == "Opacity")
     {
-        outProperty = UIAnimationProperty::Position;
+        if (std::holds_alternative<PropertyAnimationTrack<float>>(track) == false)
+        {
+            return false;
+        }
+
+        outProperty = UIAnimationProperty::Opacity;
         return true;
     }
-    if (binding.Property == "Size")
+
+    if (binding.Property == "Color")
     {
-        outProperty = UIAnimationProperty::Size;
+        if (std::holds_alternative<PropertyAnimationTrack<math::Vec4>>(track) == false)
+        {
+            return false;
+        }
+
+        outProperty = UIAnimationProperty::Color;
         return true;
     }
+
     return false;
 }
 
@@ -99,19 +118,50 @@ bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
         const AnimationPropertySample sample = SampleAnimationPropertyTrack(
             tracks[binding.TrackIndex],
             std::max(time, 0.0f));
-        const math::Vec2* value = std::get_if<math::Vec2>(&sample.Value);
-        if (value == nullptr)
-        {
-            return false;
-        }
 
-        if (binding.Property == UIAnimationProperty::Position)
+        switch (binding.Property)
         {
-            binding.Target->SetPosition(*value);
+        case UIAnimationProperty::Position:
+        case UIAnimationProperty::Size:
+        {
+            const math::Vec2* value = std::get_if<math::Vec2>(&sample.Value);
+            if (value == nullptr)
+            {
+                return false;
+            }
+
+            if (binding.Property == UIAnimationProperty::Position)
+            {
+                binding.Target->SetPosition(*value);
+            }
+            else
+            {
+                binding.Target->SetSize(*value);
+            }
+            break;
         }
-        else if (binding.Property == UIAnimationProperty::Size)
+        case UIAnimationProperty::Opacity:
         {
-            binding.Target->SetSize(*value);
+            const float* value = std::get_if<float>(&sample.Value);
+            if (value == nullptr)
+            {
+                return false;
+            }
+
+            binding.Target->SetOpacity(*value);
+            break;
+        }
+        case UIAnimationProperty::Color:
+        {
+            const math::Vec4* value = std::get_if<math::Vec4>(&sample.Value);
+            if (value == nullptr)
+            {
+                return false;
+            }
+
+            binding.Target->SetTintColor(*value);
+            break;
+        }
         }
     }
     return true;

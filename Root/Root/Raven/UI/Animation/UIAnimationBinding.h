@@ -14,7 +14,9 @@ namespace Raven
 enum class UIAnimationProperty
 {
     Position,
-    Size
+    Size,
+    Opacity,
+    Color
 };
 
 struct UIResolvedAnimationBinding

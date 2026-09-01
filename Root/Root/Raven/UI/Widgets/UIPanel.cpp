@@ -24,7 +24,7 @@ void UIPanel::OnBuildDrawList(
         math::Vec2(
             absolutePosition.x + size.x,
             absolutePosition.y + size.y),
-        m_BackgroundColor);
+        ApplyVisualColor(m_BackgroundColor));
 }
 
 } // namespace Raven

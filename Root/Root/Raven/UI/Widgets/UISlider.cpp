@@ -149,14 +149,14 @@ void UISlider::OnBuildDrawList(
     drawList.AddRect(
         math::Vec2(absolutePosition.x, trackTop),
         math::Vec2(trackRight, trackBottom),
-        m_TrackColor);
+        ApplyVisualColor(m_TrackColor));
 
     if (fillRight > absolutePosition.x)
     {
         drawList.AddRect(
             math::Vec2(absolutePosition.x, trackTop),
             math::Vec2(fillRight, trackBottom),
-            m_FillColor);
+            ApplyVisualColor(m_FillColor));
     }
 
     const float thumbWidth = std::min(m_ThumbWidth, size.x);
@@ -179,7 +179,7 @@ void UISlider::OnBuildDrawList(
     drawList.AddRect(
         math::Vec2(thumbLeft, absolutePosition.y),
         math::Vec2(thumbLeft + thumbWidth, absolutePosition.y + size.y),
-        *thumbColor);
+        ApplyVisualColor(*thumbColor));
 }
 
 void UISlider::UpdateValueFromScreenPosition(const math::Vec2& screenPosition)

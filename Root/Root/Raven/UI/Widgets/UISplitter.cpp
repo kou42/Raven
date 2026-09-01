@@ -121,7 +121,7 @@ void UISplitter::OnBuildDrawList(
     drawList.AddRect(
         absolutePosition,
         math::Vec2(absolutePosition.x + size.x, absolutePosition.y + size.y),
-        *color);
+        ApplyVisualColor(*color));
 }
 
 float UISplitter::GetAxisPosition(const math::Vec2& screenPosition) const

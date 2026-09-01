@@ -5,6 +5,7 @@
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIEvent.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -132,6 +133,30 @@ public:
     void SetMargin(float value);
     void SetSpacing(float value);
 
+    // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
+    // 親から子へ乗算継承するため、Container全体のFadeやColor AnimationをWidget種別に依存せず表現できます。
+    void SetOpacity(float value) { m_Opacity = std::clamp(value, 0.0f, 1.0f); }
+    float GetOpacity() const { return m_Opacity; }
+    void SetTintColor(const math::Vec4& value) { m_TintColor = value; }
+    const math::Vec4& GetTintColor() const { return m_TintColor; }
+
+    // Widget固有色へ、このElementからRootまでのTint/Opacityを乗算します。
+    // Rendererや各WidgetへAnimationの知識を持ち込まないための共通Visual境界です。
+    math::Vec4 ApplyVisualColor(const math::Vec4& color) const
+    {
+        math::Vec4 result = color;
+        const UIElement* current = this;
+        while (current != nullptr)
+        {
+            result.x *= current->m_TintColor.x;
+            result.y *= current->m_TintColor.y;
+            result.z *= current->m_TintColor.z;
+            result.w *= current->m_TintColor.w * current->m_Opacity;
+            current = current->m_Parent;
+        }
+        return result;
+    }
+
     const math::Vec2& GetPosition() const;
     const math::Vec2& GetSize() const;
     const math::Vec2& GetPreferredSize() const;
@@ -202,6 +227,8 @@ private:
     UIAlignment m_HorizontalAlignment = UIAlignment::Start;
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
+    float m_Opacity = 1.0f;
+    math::Vec4 m_TintColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     uint64_t m_TreeGeneration = 1u;
     bool m_Visible = true;
     bool m_Hovered = false;
