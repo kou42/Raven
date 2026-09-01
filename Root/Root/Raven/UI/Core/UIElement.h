@@ -5,6 +5,7 @@
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIEvent.h"
 
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <utility>
@@ -44,27 +45,13 @@ public:
     UIElement& operator=(UIElement&&) = delete;
 
     UIElement* AddChild(Scope<UIElement> child);
-
-    // ChildをTreeから切り離して所有権を呼び出し側へ返します。
-    // Capture / Hover / Pressed対象を含むSubtreeでは、破棄・再接続より前にUIContextへ削除境界を通知します。
     Scope<UIElement> DetachChild(UIElement* child);
-
-    // Childを個別に削除します。DetachChild()で返されたScopeをその場で破棄する簡易APIです。
     bool RemoveChild(UIElement* child);
     void ClearChildren();
 
     // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
     // '/' はPath区切りとして予約し、含む名前は拒否します。
-    bool SetName(std::string name)
-    {
-        if (name.find('/') != std::string::npos)
-        {
-            return false;
-        }
-        m_Name = std::move(name);
-        return true;
-    }
-
+    bool SetName(std::string name);
     const std::string& GetName() const { return m_Name; }
 
     // '/' 区切りの相対PathからDescendantを検索します。
@@ -98,7 +85,6 @@ public:
             {
                 if (child != nullptr && child->m_Name == segment)
                 {
-                    // 同名Siblingがある場合、Pathは一意なRuntime Handleへ解決できないため失敗させます。
                     if (matched != nullptr)
                     {
                         return nullptr;
@@ -120,6 +106,10 @@ public:
         }
         return current;
     }
+
+    // Bindingが解決された後にTree構造または論理名が変化したかを判定する世代番号です。
+    // Rootで一元管理し、Descendantから呼んでも現在所属するTreeの世代を返します。
+    uint64_t GetTreeGeneration() const;
 
     void SetPosition(const math::Vec2& value);
     void SetSize(const math::Vec2& value);
@@ -151,15 +141,9 @@ public:
     const UIElement* GetParent() const;
     const std::vector<Scope<UIElement>>& GetChildren() const;
 
-    // UIContextだけがHit Test結果からInteraction Stateを更新します。
-    // WidgetはIsHovered()/IsPressed()を参照するだけにし、入力の所有権をContextへ集約します。
     void SetHovered(bool value);
     void SetPressed(bool value);
-
-    // UIContextのBubble Routingから呼ばれる公開入口です。
-    // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
-
     void BuildDrawList(UIDrawList& drawList);
 
 protected:
@@ -178,10 +162,13 @@ private:
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
     void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
-
-    // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
-    // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
     void SetContextRecursive(UIContext* context);
+
+    // Path解決結果を無効化する変更だけをTree Generationへ反映します。
+    // PositionやSize変更ではBinding先そのものは変わらないため世代を進めません。
+    void NotifyBindingTreeChanged();
+    UIElement* GetTreeRoot();
+    const UIElement* GetTreeRoot() const;
 
 private:
     std::string m_Name;
@@ -200,6 +187,7 @@ private:
     UIAlignment m_HorizontalAlignment = UIAlignment::Start;
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
+    uint64_t m_TreeGeneration = 1u;
     bool m_Visible = true;
     bool m_Hovered = false;
     bool m_Pressed = false;
