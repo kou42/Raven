@@ -279,6 +279,8 @@ void UIElement::HandleMouseEvent(UIMouseEvent& event)
 
 void UIElement::BuildDrawList(UIDrawList& drawList)
 {
+    // Dirty Flagにより、色だけ変わったframe等でLayout Tree全体を毎回再計算しません。
+    // MeasureがDirtyならDesiredSizeが変化し得るためArrangeも必ず再実行します。
     if (m_MeasureDirty == true)
     {
         MeasureRecursive();
@@ -336,6 +338,7 @@ void UIElement::InvalidateMeasure()
     m_MeasureDirty = true;
     m_ArrangeDirty = true;
 
+    // Childの必要Size変更は祖先ContainerのDesiredSizeへ波及するため、Measure Dirtyだけは上方向へ伝播します。
     if (m_Parent != nullptr && m_Parent->m_MeasureDirty == false)
     {
         m_Parent->InvalidateMeasure();
@@ -491,6 +494,7 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
         parentAbsolutePosition.y + m_Position.y);
     OnBuildDrawList(drawList, absolutePosition);
 
+    // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndex / Clipは後続で追加します。
     for (const auto& child : m_Children)
     {
         if (child != nullptr)
@@ -504,6 +508,8 @@ void UIElement::SetContextRecursive(UIContext* context)
 {
     m_Context = context;
 
+    // Context所属はParent/Child関係と同じLifetime境界で管理します。
+    // 後から構築済みSubtreeをAddChild()した場合も、全Descendantが同じContextへ所属する必要があります。
     for (auto& child : m_Children)
     {
         if (child != nullptr)
