@@ -10,6 +10,7 @@
 #include <cctype>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 
 namespace Raven
 {
@@ -48,29 +49,96 @@ TextureFormat TextureFormatFromChannels(int channels)
     }
 }
 
-std::size_t GetTextureDataSize(const TextureSpecification& specification)
+std::size_t GetBytesPerPixel(TextureFormat format)
 {
-    std::size_t bytesPerPixel = 0;
-    switch (specification.Format)
+    switch (format)
     {
     case TextureFormat::R8:
-        bytesPerPixel = 1;
-        break;
+        return 1u;
     case TextureFormat::RGB8:
-        bytesPerPixel = 3;
-        break;
+        return 3u;
     case TextureFormat::RGBA8:
     case TextureFormat::R32I:
     case TextureFormat::Depth24Stencil8:
-        bytesPerPixel = 4;
-        break;
+        return 4u;
     case TextureFormat::None:
     default:
-        return 0;
+        return 0u;
+    }
+}
+
+std::size_t GetTextureDataSize(const TextureSpecification& specification)
+{
+    const std::size_t bytesPerPixel = GetBytesPerPixel(specification.Format);
+    if (bytesPerPixel == 0u)
+    {
+        return 0u;
     }
 
-    return static_cast<std::size_t>(specification.Width) *
-           static_cast<std::size_t>(specification.Height) * bytesPerPixel;
+    const std::size_t width = static_cast<std::size_t>(specification.Width);
+    const std::size_t height = static_cast<std::size_t>(specification.Height);
+
+    // 外部Asset由来の寸法を掛け合わせるため、size_t overflowを事前に拒否します。
+    if (height != 0u && width > (std::numeric_limits<std::size_t>::max)() / height)
+    {
+        return 0u;
+    }
+
+    const std::size_t pixelCount = width * height;
+    if (pixelCount > (std::numeric_limits<std::size_t>::max)() / bytesPerPixel)
+    {
+        return 0u;
+    }
+
+    return pixelCount * bytesPerPixel;
+}
+
+Ref<Texture> CreateRuntimeTextureFromDecodedPixels(
+    unsigned char* data,
+    int width,
+    int height,
+    int channels,
+    const std::string& sourceIdentifier)
+{
+    if (data == nullptr)
+    {
+        return nullptr;
+    }
+
+    // stb_imageの戻り値をそのままunsignedへ変換すると異常値を巨大Textureとして扱う可能性があるため、
+    // Runtime Specificationへ移す前に正の画像サイズであることを保証します。
+    if (width <= 0 || height <= 0)
+    {
+        std::cerr << "Texture source decode failed. Invalid image size: "
+                  << width << "x" << height << " source: " << sourceIdentifier << std::endl;
+        return nullptr;
+    }
+
+    const TextureFormat format = TextureFormatFromChannels(channels);
+    if (format == TextureFormat::None)
+    {
+        std::cerr << "Texture source decode failed. Unsupported channel count: "
+                  << channels << " source: " << sourceIdentifier << std::endl;
+        return nullptr;
+    }
+
+    TextureSpecification specification;
+    specification.Width = static_cast<std::uint32_t>(width);
+    specification.Height = static_cast<std::uint32_t>(height);
+    specification.Format = format;
+    specification.Usage = TextureUsage::Sampled;
+    specification.GenerateMips = true;
+
+    const std::size_t dataSize = GetTextureDataSize(specification);
+    if (dataSize == 0u)
+    {
+        std::cerr << "Texture runtime data size calculation failed. source: "
+                  << sourceIdentifier << std::endl;
+        return nullptr;
+    }
+
+    // RendererにはSource pathやPNG/JPEG等の形式を渡さず、decode済みpixelと共通Specificationだけを渡します。
+    return Texture::Create(specification, data, dataSize);
 }
 
 } // namespace
@@ -105,41 +173,63 @@ Ref<Texture> TextureAssetImporter::ImportTexture(const std::string& sourcePath)
         return nullptr;
     }
 
-    // stb_imageの戻り値をそのままunsignedへ変換すると異常値を巨大Textureとして扱う可能性があるため、
-    // Runtime Specificationへ移す前に正の画像サイズであることを保証します。
-    if (width <= 0 || height <= 0)
+    Ref<Texture> texture = CreateRuntimeTextureFromDecodedPixels(
+        data,
+        width,
+        height,
+        channels,
+        sourcePath);
+
+    stbi_image_free(data);
+    return texture;
+}
+
+Ref<Texture> TextureAssetImporter::ImportTextureMemory(
+    const void* encodedData,
+    std::size_t encodedSize,
+    const std::string& sourceIdentifier)
+{
+    if (encodedData == nullptr || encodedSize == 0u)
     {
-        std::cerr << "Texture source decode failed. Invalid image size: "
-                  << width << "x" << height << " path: " << sourcePath << std::endl;
-        stbi_image_free(data);
+        std::cerr << "TextureAssetImporter::ImportTextureMemory failed. Encoded image is empty. source: "
+                  << sourceIdentifier << std::endl;
         return nullptr;
     }
 
-    const TextureFormat format = TextureFormatFromChannels(channels);
-    if (format == TextureFormat::None)
+    // stb_imageのMemory APIはbyte長をintで受け取ります。
+    // size_tを無条件castすると2GB超Sourceで切り詰めが起きるため、境界で明示的に拒否します。
+    if (encodedSize > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
     {
-        std::cerr << "Texture source decode failed. Unsupported channel count: "
-                  << channels << " path: " << sourcePath << std::endl;
-        stbi_image_free(data);
+        std::cerr << "TextureAssetImporter::ImportTextureMemory failed. Encoded image is too large. source: "
+                  << sourceIdentifier << std::endl;
         return nullptr;
     }
 
-    TextureSpecification specification;
-    specification.Width = static_cast<std::uint32_t>(width);
-    specification.Height = static_cast<std::uint32_t>(height);
-    specification.Format = format;
-    specification.Usage = TextureUsage::Sampled;
-    specification.GenerateMips = true;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    const stbi_uc* bytes = static_cast<const stbi_uc*>(encodedData);
+    unsigned char* data = stbi_load_from_memory(
+        bytes,
+        static_cast<int>(encodedSize),
+        &width,
+        &height,
+        &channels,
+        0);
 
-    const std::size_t dataSize = GetTextureDataSize(specification);
-    if (dataSize == 0)
+    if (data == nullptr)
     {
-        stbi_image_free(data);
+        std::cerr << "Texture memory decode failed. source: " << sourceIdentifier << std::endl;
         return nullptr;
     }
 
-    // RendererにはSource pathやPNG/JPEG等の形式を渡さず、decode済みpixelと共通Specificationだけを渡します。
-    Ref<Texture> texture = Texture::Create(specification, data, dataSize);
+    Ref<Texture> texture = CreateRuntimeTextureFromDecodedPixels(
+        data,
+        width,
+        height,
+        channels,
+        sourceIdentifier);
+
     stbi_image_free(data);
     return texture;
 }
@@ -155,6 +245,25 @@ Ref<TextureAsset> TextureAssetImporter::Import(const std::string& sourcePath)
     }
 
     return CreateRef<TextureAsset>(sourcePath, texture);
+}
+
+Ref<TextureAsset> TextureAssetImporter::ImportMemory(
+    const void* encodedData,
+    std::size_t encodedSize,
+    const std::string& sourceIdentifier)
+{
+    Ref<Texture> texture = ImportTextureMemory(encodedData, encodedSize, sourceIdentifier);
+    if (texture == nullptr || texture->GetID() == 0)
+    {
+        std::cerr << "TextureAssetImporter::ImportMemory failed. Runtime texture creation failed. source: "
+                  << sourceIdentifier << std::endl;
+        return nullptr;
+    }
+
+    // TextureAssetの既存SourcePath fieldは現段階では「Sourceを識別する文字列」としても利用します。
+    // AssetHandle/Registry導入時にPathとEmbedded Asset IDを型として分離できるよう、
+    // glTF側では実在しないPathへ変換せず論理Identifierをそのまま保持します。
+    return CreateRef<TextureAsset>(sourceIdentifier, texture);
 }
 
 bool TextureAssetImporter::SupportsExtension(const std::string& extension)
