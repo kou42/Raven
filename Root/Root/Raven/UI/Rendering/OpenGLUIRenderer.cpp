@@ -23,25 +23,53 @@ OpenGLUIRenderer::OpenGLUIRenderer()
     m_Shader = Shader::Create("Raven/Assets/Shaders/Glsl/UI.glsl");
 }
 
-void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& viewportSize)
+void OpenGLUIRenderer::Render(
+    const UIDrawList& drawList,
+    const math::Vec2& viewportSize)
 {
-    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f || drawList.IsEmpty())
-    {
-        return;
-    }
-    if (m_VertexArray == nullptr || m_Shader == nullptr)
+    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
     {
         return;
     }
 
-    // Texture切替をCommand境界で行えるよう、各Commandを連続したQuadとして同じdynamic bufferへ格納します。
-    // 頂点形式は Position.xy + Color.rgba + UV.xy = 8 floats です。
+    if (drawList.IsEmpty())
+    {
+        return;
+    }
+
+    if (m_VertexArray == nullptr || m_Shader == nullptr)
+    {
+#ifdef _DEBUG
+        static bool missingResourceLogged = false;
+        if (missingResourceLogged == false)
+        {
+            std::cout
+                << "[Raven UI] Render resource missing. VAO="
+                << (m_VertexArray != nullptr ? "valid" : "null")
+                << ", Shader="
+                << (m_Shader != nullptr ? "valid" : "null")
+                << '\n';
+            missingResourceLogged = true;
+        }
+#endif
+        return;
+    }
+
+    // ========================================================================
+    // DrawList -> dynamic triangle batch
+    // ========================================================================
+    // SolidRect / Imageをそれぞれ4頂点 / 6 indexへ変換し、同じdynamic bufferへ格納します。
+    // ImageではCommand境界でTextureを切り替えるため現段階では1 Command = 1 Draw Callですが、
+    // Widgetが直接GPU Bufferを生成しないというDrawList境界は維持します。
+    // 頂点形式: Position.xy + Color.rgba + UV.xy = 8 floats
     std::vector<float> vertices;
     std::vector<uint32_t> indices;
+
     vertices.reserve(drawList.GetCommandCount() * 4u * 8u);
     indices.reserve(drawList.GetCommandCount() * 6u);
 
     uint32_t vertexBase = 0;
+
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
         const float left = command.Rect.Min.x;
@@ -77,15 +105,54 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
         indices.push_back(vertexBase + 2u);
         indices.push_back(vertexBase + 3u);
         indices.push_back(vertexBase + 0u);
+
         vertexBase += 4u;
     }
 
-    EnsureBuffers(vertices.data(), static_cast<uint32_t>(vertices.size() * sizeof(float)), indices.data(), static_cast<uint32_t>(indices.size()));
-    if (m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
+    if (indices.empty())
     {
         return;
     }
 
+    EnsureBuffers(
+        vertices.data(),
+        static_cast<uint32_t>(vertices.size() * sizeof(float)),
+        indices.data(),
+        static_cast<uint32_t>(indices.size()));
+
+    if (m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
+    {
+#ifdef _DEBUG
+        static bool missingBufferLogged = false;
+        if (missingBufferLogged == false)
+        {
+            std::cout
+                << "[Raven UI] Dynamic buffer creation failed. VBO="
+                << (m_VertexBuffer != nullptr ? "valid" : "null")
+                << ", EBO="
+                << (m_IndexBuffer != nullptr ? "valid" : "null")
+                << '\n';
+            missingBufferLogged = true;
+        }
+#endif
+        return;
+    }
+
+    // ========================================================================
+    // UI render target / OpenGL state
+    // ========================================================================
+    // EditorはScene View / Game ViewをFramebufferへ描画してから、そのTextureをDear ImGuiで表示します。
+    // Dear ImGuiのOpenGL backendは描画後に「呼び出し前のFramebuffer」を復元するため、
+    // ImGui::End()直後にRaven UIを描くだけではScene/Game用offscreen framebufferへ描かれる場合があります。
+    // その結果、Main Window左上へ出す検証Rectが見えない状態になります。
+    //
+    // Main Window用UIContextは最終Window Overlayを担当するため、ここではdefault framebuffer(0)と
+    // Window全体のviewportを明示的に選択します。将来Game View / RenderTexture用UIContextを追加する際は、
+    // UIContext側へRenderTargetを持たせ、この固定0をContext指定のFramebufferへ置き換えます。
+    //
+    // さらに、直前の3D PipelineがPolygonMode / ColorMask / DepthMaskなどを変更していても
+    // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
+    // Image描画ではTexture Unit 0も変更するため、Active TextureとBindingも同じ方針で保存・復元します。
     GLint previousDrawFramebuffer = 0;
     GLint previousReadFramebuffer = 0;
     GLint previousDrawBuffer = GL_BACK;
@@ -111,6 +178,7 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
     const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
     const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
     const GLboolean scissorTestEnabled = glIsEnabled(GL_SCISSOR_TEST);
+
     GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
     GLboolean previousDepthMask = GL_TRUE;
     GLboolean doubleBuffered = GL_FALSE;
@@ -119,8 +187,19 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
     glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT);
-    glViewport(0, 0, static_cast<GLsizei>(viewportSize.x), static_cast<GLsizei>(viewportSize.y));
+
+    // Default framebufferがDouble Bufferの場合、画面へ提示されるのは通常Back Bufferです。
+    // 直前のoffscreen描画や外部stateでDrawBufferが別値になっていてもUIを正しいBufferへ書くため、
+    // Main Window用Contextでは描画先を明示します。
+    const GLenum defaultColorBuffer = doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT;
+    glDrawBuffer(defaultColorBuffer);
+
+    glViewport(
+        0,
+        0,
+        static_cast<GLsizei>(viewportSize.x),
+        static_cast<GLsizei>(viewportSize.y));
+
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_CULL_FACE);
@@ -135,13 +214,22 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
     m_Shader->SetInt("u_Texture", 0);
     m_VertexArray->Bind();
 
-    // Image CommandではTextureAsset -> Runtime Textureへの解決をbackend内だけで行います。
-    // これによりUIDrawCommand/WidgetへOpenGL Texture IDを公開しません。
+    // ========================================================================
+    // UI専用Draw Call
+    // ========================================================================
+    // Renderer::DrawIndexed()は現在の3D PipelineのPrimitiveTopologyを参照します。
+    // UIは常にTriangle Listなので、直前SceneのLine/Point Pipeline状態を継承しないよう、
+    // OpenGL backend内でGL_TRIANGLESを明示して直接Drawします。
+    //
+    // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
+    // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
     std::size_t commandIndex = 0;
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
         bool useTexture = false;
-        if (command.Type == UIDrawCommandType::Image && command.Texture != nullptr && command.Texture->IsValid())
+        if (command.Type == UIDrawCommandType::Image &&
+            command.Texture != nullptr &&
+            command.Texture->IsValid())
         {
             const Ref<Texture>& texture = command.Texture->GetTexture();
             if (texture != nullptr)
@@ -152,14 +240,25 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
         }
 
         m_Shader->SetInt("u_UseTexture", useTexture ? 1 : 0);
-        const void* indexOffset = reinterpret_cast<const void*>(commandIndex * 6u * sizeof(uint32_t));
+        const void* indexOffset = reinterpret_cast<const void*>(
+            commandIndex * 6u * sizeof(uint32_t));
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, indexOffset);
         ++commandIndex;
     }
 
+    // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
+    // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
+
     m_VertexArray->Unbind();
     m_Shader->Unbind();
 
+    // ========================================================================
+    // State restore
+    // ========================================================================
+    // Raven UIをRenderer pipelineの途中から呼んでも後続描画へ影響を残さないよう、
+    // Framebuffer / viewport / scissorに加えて、今回UI側で上書きしたPolygonMode / ColorMask /
+    // DepthMask / Texture Bindingも呼び出し前の値へ戻します。UI backendが外部Renderer stateを
+    // 漏らさないための処理です。
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
     glActiveTexture(static_cast<GLenum>(previousActiveTexture));
@@ -167,11 +266,23 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
     glDrawBuffer(static_cast<GLenum>(previousDrawBuffer));
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
     glReadBuffer(static_cast<GLenum>(previousReadBuffer));
-    glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
-    glScissor(previousScissorBox[0], previousScissorBox[1], previousScissorBox[2], previousScissorBox[3]);
+    glViewport(
+        previousViewport[0],
+        previousViewport[1],
+        previousViewport[2],
+        previousViewport[3]);
+    glScissor(
+        previousScissorBox[0],
+        previousScissorBox[1],
+        previousScissorBox[2],
+        previousScissorBox[3]);
     glPolygonMode(GL_FRONT, previousPolygonMode[0]);
     glPolygonMode(GL_BACK, previousPolygonMode[1]);
-    glColorMask(previousColorMask[0], previousColorMask[1], previousColorMask[2], previousColorMask[3]);
+    glColorMask(
+        previousColorMask[0],
+        previousColorMask[1],
+        previousColorMask[2],
+        previousColorMask[3]);
     glDepthMask(previousDepthMask);
 
     if (depthTestEnabled == GL_TRUE)
@@ -211,7 +322,11 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
     }
 }
 
-void OpenGLUIRenderer::EnsureBuffers(const float* vertices, uint32_t vertexDataSize, const uint32_t* indices, uint32_t indexCount)
+void OpenGLUIRenderer::EnsureBuffers(
+    const float* vertices,
+    uint32_t vertexDataSize,
+    const uint32_t* indices,
+    uint32_t indexCount)
 {
     if (vertexDataSize == 0 || indexCount == 0)
     {
@@ -225,11 +340,13 @@ void OpenGLUIRenderer::EnsureBuffers(const float* vertices, uint32_t vertexDataS
         {
             return;
         }
+
         m_VertexBuffer->SetLayout({
             { ShaderDataType::Float2, "a_Position" },
             { ShaderDataType::Float4, "a_Color" },
             { ShaderDataType::Float2, "a_TexCoord" }
         });
+
         m_VertexArray->AddVertexBuffer(m_VertexBuffer);
     }
     else
@@ -244,6 +361,7 @@ void OpenGLUIRenderer::EnsureBuffers(const float* vertices, uint32_t vertexDataS
         {
             return;
         }
+
         m_VertexArray->SetIndexBuffer(m_IndexBuffer);
     }
     else
