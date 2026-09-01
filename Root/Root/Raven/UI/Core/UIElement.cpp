@@ -2,6 +2,7 @@
 #include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace Raven
@@ -40,6 +41,7 @@ UIElement* UIElement::AddChild(Scope<UIElement> child)
     child->SetContextRecursive(m_Context);
     UIElement* result = child.get();
     m_Children.push_back(std::move(child));
+    NotifyBindingTreeChanged();
     InvalidateMeasure();
     return result;
 }
@@ -71,6 +73,10 @@ Scope<UIElement> UIElement::DetachChild(UIElement* child)
         m_Context->OnSubtreeRemoving(iterator->get());
     }
 
+    // Parent chainが切れる前に現在のTree Generationを更新します。
+    // 切断後に通知するとdetached subtree側だけが更新され、既存Bindingが変化を検出できません。
+    NotifyBindingTreeChanged();
+
     Scope<UIElement> detached = std::move(*iterator);
     m_Children.erase(iterator);
 
@@ -88,6 +94,11 @@ bool UIElement::RemoveChild(UIElement* child)
 
 void UIElement::ClearChildren()
 {
+    if (m_Children.empty())
+    {
+        return;
+    }
+
     // Scopeを破棄してからContext側のraw pointerを掃除することはできません。
     // Capture中Widgetを含むSubtreeが消える場合は、Parent chainがまだ有効なこの時点で
     // Cancel Eventを配送し、Hover / Pressedも含めたInteraction Stateを先に終了します。
@@ -102,6 +113,8 @@ void UIElement::ClearChildren()
         }
     }
 
+    NotifyBindingTreeChanged();
+
     for (auto& child : m_Children)
     {
         if (child != nullptr)
@@ -113,6 +126,28 @@ void UIElement::ClearChildren()
 
     m_Children.clear();
     InvalidateMeasure();
+}
+
+bool UIElement::SetName(std::string name)
+{
+    if (name.find('/') != std::string::npos)
+    {
+        return false;
+    }
+
+    if (m_Name == name)
+    {
+        return true;
+    }
+
+    m_Name = std::move(name);
+    NotifyBindingTreeChanged();
+    return true;
+}
+
+uint64_t UIElement::GetTreeGeneration() const
+{
+    return GetTreeRoot()->m_TreeGeneration;
 }
 
 void UIElement::SetPosition(const math::Vec2& value)
@@ -482,6 +517,39 @@ void UIElement::SetContextRecursive(UIContext* context)
             child->SetContextRecursive(context);
         }
     }
+}
+
+void UIElement::NotifyBindingTreeChanged()
+{
+    UIElement* root = GetTreeRoot();
+    if (root->m_TreeGeneration == std::numeric_limits<uint64_t>::max())
+    {
+        // 0は未解決Binding側のsentinelとして使えるよう、overflow時も1へ戻します。
+        root->m_TreeGeneration = 1u;
+        return;
+    }
+
+    ++root->m_TreeGeneration;
+}
+
+UIElement* UIElement::GetTreeRoot()
+{
+    UIElement* current = this;
+    while (current->m_Parent != nullptr)
+    {
+        current = current->m_Parent;
+    }
+    return current;
+}
+
+const UIElement* UIElement::GetTreeRoot() const
+{
+    const UIElement* current = this;
+    while (current->m_Parent != nullptr)
+    {
+        current = current->m_Parent;
+    }
+    return current;
 }
 
 } // namespace Raven

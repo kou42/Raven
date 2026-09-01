@@ -5,6 +5,7 @@
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIEvent.h"
 
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <utility>
@@ -55,16 +56,7 @@ public:
 
     // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
     // '/' はPath区切りとして予約し、含む名前は拒否します。
-    bool SetName(std::string name)
-    {
-        if (name.find('/') != std::string::npos)
-        {
-            return false;
-        }
-        m_Name = std::move(name);
-        return true;
-    }
-
+    bool SetName(std::string name);
     const std::string& GetName() const { return m_Name; }
 
     // '/' 区切りの相対PathからDescendantを検索します。
@@ -120,6 +112,10 @@ public:
         }
         return current;
     }
+
+    // Bindingが解決された後にTree構造または論理名が変化したかを判定する世代番号です。
+    // Rootで一元管理し、Descendantから呼んでも現在所属するTreeの世代を返します。
+    uint64_t GetTreeGeneration() const;
 
     void SetPosition(const math::Vec2& value);
     void SetSize(const math::Vec2& value);
@@ -183,6 +179,12 @@ private:
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
     void SetContextRecursive(UIContext* context);
 
+    // Path解決結果を無効化する変更だけをTree Generationへ反映します。
+    // PositionやSize変更ではBinding先そのものは変わらないため世代を進めません。
+    void NotifyBindingTreeChanged();
+    UIElement* GetTreeRoot();
+    const UIElement* GetTreeRoot() const;
+
 private:
     std::string m_Name;
     math::Vec2 m_Position{};
@@ -200,6 +202,7 @@ private:
     UIAlignment m_HorizontalAlignment = UIAlignment::Start;
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
+    uint64_t m_TreeGeneration = 1u;
     bool m_Visible = true;
     bool m_Hovered = false;
     bool m_Pressed = false;

@@ -3,6 +3,7 @@
 #include "Raven/Animation/AnimationClip.h"
 #include "Raven/UI/Core/UIElement.h"
 
+#include <cstdint>
 #include <vector>
 
 namespace Raven
@@ -31,7 +32,8 @@ public:
     bool Resolve(UIElement& root, const AnimationClip& clip);
 
     // Resolve済みBindingへ指定時刻の値を適用します。
-    // UI Tree構造を変更した後はraw pointerのLifetimeを保証できないため、呼び出し側で再Resolveしてください。
+    // Resolve後にUI Tree構造または論理名が変化した場合はGeneration不一致としてfalseを返し、
+    // 古いraw pointerへアクセスしません。呼び出し側はResolve()をやり直してください。
     bool Apply(const AnimationClip& clip, float time) const;
 
     void Clear();
@@ -40,6 +42,8 @@ public:
 
 private:
     std::vector<UIResolvedAnimationBinding> m_Bindings;
+    UIElement* m_Root = nullptr;
+    uint64_t m_TreeGeneration = 0u;
     bool m_Resolved = false;
 };
 
