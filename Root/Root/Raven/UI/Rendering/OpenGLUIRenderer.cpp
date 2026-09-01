@@ -17,21 +17,6 @@
 namespace Raven
 {
 
-namespace
-{
-
-float ToOpenGLTextureV(float ravenV)
-{
-    // Raven UIの論理UVは左上原点で、V=0が画像上端、V=1が画像下端です。
-    // TextureAssetImporterはSource画像のrow順を変更しないため、stb_imageでdecodeした先頭rowは
-    // OpenGL Textureへuploadするとnative Texture座標のV=0側へ格納されます。
-    // Source AssetをOpenGL都合で変更せず同じRuntime Assetを他Backendでも共有するため、
-    // OpenGL固有の上下差はRenderer backend境界でのみ吸収します。
-    return 1.0f - ravenV;
-}
-
-} // namespace
-
 OpenGLUIRenderer::OpenGLUIRenderer()
 {
     m_VertexArray = VertexArray::Create();
@@ -72,8 +57,13 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
             vertices.push_back(command.Color.y);
             vertices.push_back(command.Color.z);
             vertices.push_back(command.Color.w);
+
+            // TextureAssetImporterはSource画像の先頭rowをそのままTextureのrow 0へuploadします。
+            // OpenGLのnormalized Texture座標V=0はそのrow 0をsamplingするため、Ravenの
+            // 左上原点UV(V=0が画像上端)をここで反転する必要はありません。
+            // Framebufferの画面座標原点と、upload済みTexture内のrow/UV対応は別概念として扱います。
             vertices.push_back(u);
-            vertices.push_back(ToOpenGLTextureV(v));
+            vertices.push_back(v);
         };
 
         pushVertex(left, top, command.UVMin.x, command.UVMin.y);
