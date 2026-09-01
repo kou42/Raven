@@ -2,6 +2,7 @@
 #include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace Raven
@@ -40,6 +41,7 @@ UIElement* UIElement::AddChild(Scope<UIElement> child)
     child->SetContextRecursive(m_Context);
     UIElement* result = child.get();
     m_Children.push_back(std::move(child));
+    NotifyBindingTreeChanged();
     InvalidateMeasure();
     return result;
 }
@@ -71,6 +73,10 @@ Scope<UIElement> UIElement::DetachChild(UIElement* child)
         m_Context->OnSubtreeRemoving(iterator->get());
     }
 
+    // Parent chainが切れる前に現在のTree Generationを更新します。
+    // 切断後に通知するとdetached subtree側だけが更新され、既存Bindingが変化を検出できません。
+    NotifyBindingTreeChanged();
+
     Scope<UIElement> detached = std::move(*iterator);
     m_Children.erase(iterator);
 
@@ -88,6 +94,11 @@ bool UIElement::RemoveChild(UIElement* child)
 
 void UIElement::ClearChildren()
 {
+    if (m_Children.empty())
+    {
+        return;
+    }
+
     // Scopeを破棄してからContext側のraw pointerを掃除することはできません。
     // Capture中Widgetを含むSubtreeが消える場合は、Parent chainがまだ有効なこの時点で
     // Cancel Eventを配送し、Hover / Pressedも含めたInteraction Stateを先に終了します。
@@ -102,6 +113,8 @@ void UIElement::ClearChildren()
         }
     }
 
+    NotifyBindingTreeChanged();
+
     for (auto& child : m_Children)
     {
         if (child != nullptr)
@@ -113,6 +126,28 @@ void UIElement::ClearChildren()
 
     m_Children.clear();
     InvalidateMeasure();
+}
+
+bool UIElement::SetName(std::string name)
+{
+    if (name.find('/') != std::string::npos)
+    {
+        return false;
+    }
+
+    if (m_Name == name)
+    {
+        return true;
+    }
+
+    m_Name = std::move(name);
+    NotifyBindingTreeChanged();
+    return true;
+}
+
+uint64_t UIElement::GetTreeGeneration() const
+{
+    return GetTreeRoot()->m_TreeGeneration;
 }
 
 void UIElement::SetPosition(const math::Vec2& value)
@@ -244,8 +279,6 @@ void UIElement::HandleMouseEvent(UIMouseEvent& event)
 
 void UIElement::BuildDrawList(UIDrawList& drawList)
 {
-    // Dirty Flagにより、色だけ変わったframe等でLayout Tree全体を毎回再計算しません。
-    // MeasureがDirtyならDesiredSizeが変化し得るためArrangeも必ず再実行します。
     if (m_MeasureDirty == true)
     {
         MeasureRecursive();
@@ -303,7 +336,6 @@ void UIElement::InvalidateMeasure()
     m_MeasureDirty = true;
     m_ArrangeDirty = true;
 
-    // Childの必要Size変更は祖先ContainerのDesiredSizeへ波及するため、Measure Dirtyだけは上方向へ伝播します。
     if (m_Parent != nullptr && m_Parent->m_MeasureDirty == false)
     {
         m_Parent->InvalidateMeasure();
@@ -459,7 +491,6 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
         parentAbsolutePosition.y + m_Position.y);
     OnBuildDrawList(drawList, absolutePosition);
 
-    // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndex / Clipは後続で追加します。
     for (const auto& child : m_Children)
     {
         if (child != nullptr)
@@ -473,8 +504,6 @@ void UIElement::SetContextRecursive(UIContext* context)
 {
     m_Context = context;
 
-    // Context所属はParent/Child関係と同じLifetime境界で管理します。
-    // 後から構築済みSubtreeをAddChild()した場合も、全Descendantが同じContextへ所属する必要があります。
     for (auto& child : m_Children)
     {
         if (child != nullptr)
@@ -482,6 +511,39 @@ void UIElement::SetContextRecursive(UIContext* context)
             child->SetContextRecursive(context);
         }
     }
+}
+
+void UIElement::NotifyBindingTreeChanged()
+{
+    UIElement* root = GetTreeRoot();
+    if (root->m_TreeGeneration == std::numeric_limits<uint64_t>::max())
+    {
+        // 0は未解決Binding側のsentinelとして使えるよう、overflow時も1へ戻します。
+        root->m_TreeGeneration = 1u;
+        return;
+    }
+
+    ++root->m_TreeGeneration;
+}
+
+UIElement* UIElement::GetTreeRoot()
+{
+    UIElement* current = this;
+    while (current->m_Parent != nullptr)
+    {
+        current = current->m_Parent;
+    }
+    return current;
+}
+
+const UIElement* UIElement::GetTreeRoot() const
+{
+    const UIElement* current = this;
+    while (current->m_Parent != nullptr)
+    {
+        current = current->m_Parent;
+    }
+    return current;
 }
 
 } // namespace Raven
