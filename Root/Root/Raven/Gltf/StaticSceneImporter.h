@@ -18,6 +18,12 @@ class MeshGeometry;
 namespace Gltf
 {
 
+// ============================================================================
+// ImportedStaticMeshInstance
+// ============================================================================
+// Mesh PrimitiveのGeometryと、それを配置するglTF NodeのWorld Transformを組にした結果です。
+// Geometry自体へTransformをBakeしないため、同一Meshを複数Nodeが参照するglTFでも
+// CPU頂点データを複製せずにInstanceとして扱えます。
 struct ImportedStaticMeshInstance
 {
     Ref<MeshGeometry> Geometry;
@@ -37,6 +43,16 @@ struct ImportedStaticMeshInstance
     Ref<ImportedMaterial> Material;
 };
 
+// ============================================================================
+// StaticSceneImporter
+// ============================================================================
+// StaticMeshImporterとNodeHierarchyを結び、Scene内で実際に表示すべきMesh Instanceを構築します。
+//
+// この段階ではScene/ECS Entityを直接生成しません。
+// ImporterはAsset変換だけを担当し、Entity生成は呼び出し側へ残すことで依存方向を
+// Gltf -> Rendererまでに留めます。
+// Materialについても同様にImportedMaterialまでを解決し、Renderer Material / Shader契約への
+// 変換は描画側へ残します。
 class StaticSceneImporter
 {
 public:
