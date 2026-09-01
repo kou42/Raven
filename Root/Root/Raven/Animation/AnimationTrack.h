@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <initializer_list>
+#include <string>
+#include <variant>
 #include <vector>
 
 namespace Raven
@@ -90,7 +92,7 @@ public:
 
     // 既存Importerはstd::vector<AnimationKeyframe<T>>&を出力先として受け取ります。
     // Generic Curve移行の第1段階では呼び出し側を一度に壊さないため、KeyContainerへの互換変換を残します。
-    // Property Binding導入時にImporter APIもAnimationCurve<T>&へ寄せ、この互換経路を整理します。
+    // Property Binding導入後にImporter APIもAnimationCurve<T>&へ寄せ、この互換経路を整理します。
     operator KeyContainer&()
     {
         return m_Keys;
@@ -189,6 +191,117 @@ private:
     KeyContainer m_Keys;
     AnimationInterpolation m_Interpolation = AnimationInterpolation::Linear;
 };
+
+// ============================================================================
+// AnimationPropertyBinding
+// ============================================================================
+// 外部Animation DataとRaven Runtime Propertyを結ぶ論理Bindingです。
+//
+// TargetPathは階層PathやParameter Owner IDなど、Importerが保持できる安定した識別子を想定します。
+// 空文字は「現在の再生対象自身」を意味するため有効です。
+// PropertyはPosition / Opacity / ParamAngleXなど、Target内のProperty識別子です。
+//
+// Runtimeで毎Frame文字列検索するとUI/2D CharacterのTrack数が増えた際に負荷になるため、
+// 後続のBinding Resolverで一度だけ実Target/Property Handleへ解決する前提にします。
+struct AnimationPropertyBinding
+{
+    std::string TargetPath;
+    std::string Property;
+
+    bool IsValid() const
+    {
+        return Property.empty() == false;
+    }
+
+    bool operator==(const AnimationPropertyBinding& other) const
+    {
+        return TargetPath == other.TargetPath && Property == other.Property;
+    }
+
+    bool operator!=(const AnimationPropertyBinding& other) const
+    {
+        return (*this == other) == false;
+    }
+};
+
+// ============================================================================
+// PropertyAnimationTrack<T>
+// ============================================================================
+// 1つのProperty Bindingと1本の型付きCurveを対応付けます。
+// Animation CoreはUIElementやLive2D Parameter等の具体型を知らず、Bindingと値だけを保持します。
+template <typename T>
+struct PropertyAnimationTrack
+{
+    using ValueType = T;
+
+    AnimationPropertyBinding Binding;
+    AnimationCurve<T> Curve;
+
+    bool Empty() const
+    {
+        return Curve.Empty();
+    }
+};
+
+// 現段階でRuntime Propertyとして共通化する基本値型です。
+// ColorはVec4、2D位置/SizeはVec2、3D/Morph Parameterはfloat/Vec3などへ対応できます。
+// 整数Frame Indexやbool Eventは補間意味が異なるため、Sprite/Event実装時に別Track種別として追加します。
+using AnimationPropertyValue = std::variant<
+    float,
+    math::Vec2,
+    math::Vec3,
+    math::Vec4,
+    math::Quat>;
+
+using AnimationPropertyTrack = std::variant<
+    PropertyAnimationTrack<float>,
+    PropertyAnimationTrack<math::Vec2>,
+    PropertyAnimationTrack<math::Vec3>,
+    PropertyAnimationTrack<math::Vec4>,
+    PropertyAnimationTrack<math::Quat>>;
+
+struct AnimationPropertySample
+{
+    AnimationPropertyBinding Binding;
+    AnimationPropertyValue Value;
+};
+
+inline const AnimationPropertyBinding& GetAnimationPropertyBinding(const AnimationPropertyTrack& track)
+{
+    return std::visit(
+        [](const auto& typedTrack) -> const AnimationPropertyBinding&
+        {
+            return typedTrack.Binding;
+        },
+        track);
+}
+
+inline bool IsAnimationPropertyTrackEmpty(const AnimationPropertyTrack& track)
+{
+    return std::visit(
+        [](const auto& typedTrack)
+        {
+            return typedTrack.Empty();
+        },
+        track);
+}
+
+inline AnimationPropertySample SampleAnimationPropertyTrack(
+    const AnimationPropertyTrack& track,
+    float time)
+{
+    return std::visit(
+        [time](const auto& typedTrack) -> AnimationPropertySample
+        {
+            using ValueType = typename std::decay_t<decltype(typedTrack)>::ValueType;
+
+            AnimationPropertySample sample;
+            sample.Binding = typedTrack.Binding;
+            sample.Value = typedTrack.Curve.Sample(time, ValueType{});
+            return sample;
+        },
+        track);
+}
 
 // ============================================================================
 // TransformAnimationTrack
