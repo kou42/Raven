@@ -46,6 +46,10 @@ struct UIRect
 // Editor UIとGame UIのどちらから利用してもPlatform Rendererへ依存しない境界を保ちます。
 // ImageではEngine側のTextureAssetを保持し、OpenGL固有値への解決はUIRenderer実装でのみ行います。
 // TextureAssetのRefをframe中保持することで、DrawListが参照しているRuntime Textureの寿命も保証します。
+//
+// Raven UIのnormalized UVは左上原点です。
+// UV=(0, 0)を画像左上、UV=(1, 1)を画像右下とし、Vは下方向へ増加します。
+// OpenGL等のnative Texture座標との差はUIRenderer backendが変換するため、Widget側ではAPI差を扱いません。
 struct UIDrawCommand
 {
     UIDrawCommandType Type = UIDrawCommandType::SolidRect;
@@ -74,6 +78,8 @@ public:
         const math::Vec2& max,
         const math::Vec4& color);
 
+    // uvMin / uvMaxもRaven UIの左上原点UV規約で指定します。
+    // 画像全体を表示する既定値は左上(0, 0)から右下(1, 1)です。
     void AddImage(
         const math::Vec2& min,
         const math::Vec2& max,
