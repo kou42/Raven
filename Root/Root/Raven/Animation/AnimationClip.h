@@ -66,6 +66,20 @@ public:
     TransformPose Sample(float time) const;
 
     // ------------------------------------------------------------------------
+    // Generic Property Animation
+    // ------------------------------------------------------------------------
+    // TargetPath + Propertyが同じTrackを複数登録すると、最終適用順が暗黙になってしまうため拒否します。
+    // 同一Propertyへ複数Animationを合成する責務は、将来のLayer/Blend側へ分離します。
+    bool AddPropertyTrack(AnimationPropertyTrack track);
+
+    std::size_t GetPropertyTrackCount() const { return m_PropertyTracks.size(); }
+    const std::vector<AnimationPropertyTrack>& GetPropertyTracks() const { return m_PropertyTracks; }
+
+    // 指定時刻の全Generic Property値を評価します。
+    // Binding解決や実Targetへの書き込みはここでは行わず、AnimationClipは純粋な値評価だけを担当します。
+    void SampleProperties(float time, std::vector<AnimationPropertySample>& outSamples) const;
+
+    // ------------------------------------------------------------------------
     // Skeletal Animation
     // ------------------------------------------------------------------------
     // BoneごとのLocal Transform Trackを追加します。
@@ -89,6 +103,10 @@ private:
 
     // Scene/ECS向け単一Transform Track。
     TransformAnimationTrack m_TransformTrack;
+
+    // UI / 2D Parameter / Material / Morphなど、Target Propertyへ接続する汎用Track群。
+    // Runtime Binding Resolverがこれらの論理Bindingを実Target Handleへ解決します。
+    std::vector<AnimationPropertyTrack> m_PropertyTracks;
 
     // Skeletal Animation向けBone Local Track群。
     std::vector<BoneAnimationTrack> m_BoneTracks;

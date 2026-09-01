@@ -69,6 +69,50 @@ TransformPose AnimationClip::Sample(float time) const
     return pose;
 }
 
+bool AnimationClip::AddPropertyTrack(AnimationPropertyTrack track)
+{
+    const AnimationPropertyBinding& binding = GetAnimationPropertyBinding(track);
+    if (binding.IsValid() == false || IsAnimationPropertyTrackEmpty(track))
+    {
+        return false;
+    }
+
+    // 同じTarget/Propertyへ複数Trackを登録すると適用順で結果が変わります。
+    // AnimationClip内部に暗黙の優先順位を持ち込まず、Layer/Blend実装へ責務を残します。
+    const auto duplicateIt = std::find_if(
+        m_PropertyTracks.begin(),
+        m_PropertyTracks.end(),
+        [&binding](const AnimationPropertyTrack& existing)
+        {
+            return GetAnimationPropertyBinding(existing) == binding;
+        });
+
+    if (duplicateIt != m_PropertyTracks.end())
+    {
+        return false;
+    }
+
+    m_PropertyTracks.emplace_back(std::move(track));
+    return true;
+}
+
+void AnimationClip::SampleProperties(
+    float time,
+    std::vector<AnimationPropertySample>& outSamples) const
+{
+    // Animator側のLoop/Speed規則をClipへ持ち込まず、既存Transform/Skeleton Sampleと同様に
+    // 負の時刻だけを0へClampします。Duration超過は各Curveの最終KeyへClampされます。
+    const float sampleTime = std::max(time, 0.0f);
+
+    outSamples.clear();
+    outSamples.reserve(m_PropertyTracks.size());
+
+    for (const AnimationPropertyTrack& track : m_PropertyTracks)
+    {
+        outSamples.emplace_back(SampleAnimationPropertyTrack(track, sampleTime));
+    }
+}
+
 bool AnimationClip::AddBoneTrack(BoneAnimationTrack track)
 {
     if (track.Bone == InvalidBoneIndex)
