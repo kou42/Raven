@@ -71,9 +71,9 @@ class Texture
 public:
     virtual ~Texture() = default;
 
-    // 画像ファイルからTextureを生成します。
-    // 現在選択されているRendererAPIに対応した具象型の選択はFactory内部だけで行います。
-    // 既存コード互換用として残し、新しいUI/RuntimeコードはTextureAssetImporterを経由します。
+    // 画像ファイルからTextureを生成する既存コード互換APIです。
+    // Source Formatの判定とdecodeはAssets層のTextureAssetImporterへ委譲します。
+    // 新しいUI/RuntimeコードはTextureAssetImporter / TextureAssetManagerを直接利用してください。
     static Ref<Texture> Create(const std::string& path);
 
     // サイズ・フォーマット・用途を明示して空Textureを生成します。
@@ -103,46 +103,6 @@ public:
     virtual int GetWidth() const = 0;
     virtual int GetHeight() const = 0;
     virtual const TextureSpecification& GetSpecification() const = 0;
-};
-
-// Source Assetの拡張子とRuntime Textureを分離する最初の境界です。
-// UIは.png/.jpg等を判定せず、このRuntime Assetだけを参照します。
-class TextureAsset
-{
-public:
-    TextureAsset(std::string sourcePath, const Ref<Texture>& texture);
-
-    const std::string& GetSourcePath() const;
-    const Ref<Texture>& GetTexture() const;
-    bool IsValid() const;
-
-private:
-    std::string m_SourcePath;
-    Ref<Texture> m_Texture;
-};
-
-// Texture向けSource Asset Importerです。
-// 現段階では既存のTexture::Create(path)を内部利用して互換性を保ちますが、
-// 呼び出し側からファイル形式とRenderer生成経路を隠すことで、後続のdecoder分離を安全に行える境界を先に作ります。
-class TextureAssetImporter
-{
-public:
-    static Ref<TextureAsset> Import(const std::string& sourcePath);
-    static bool SupportsExtension(const std::string& extension);
-};
-
-// Runtime側が同じSource Assetを重複Importしないための最小Cacheです。
-// 将来AssetHandle/AssetRegistryを追加する際も、UI側の参照先をTextureAssetのまま維持できます。
-class TextureAssetManager
-{
-public:
-    Ref<TextureAsset> Load(const std::string& sourcePath);
-    Ref<TextureAsset> Get(const std::string& sourcePath) const;
-    bool Exists(const std::string& sourcePath) const;
-    void Clear();
-
-private:
-    std::unordered_map<std::string, Ref<TextureAsset>> m_Assets;
 };
 
 class TextureLibrary
