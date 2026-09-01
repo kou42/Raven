@@ -91,10 +91,10 @@ Ref<Texture> TextureAssetImporter::ImportTexture(const std::string& sourcePath)
         return nullptr;
     }
 
-    // Source画像の座標系変換はRenderer API固有の責務ではありません。
-    // Importerで統一して上下反転し、どのRendererでも同じRuntime pixel layoutを受け取れるようにします。
-    stbi_set_flip_vertically_on_load(true);
-
+    // ImporterはOpenGL等のRenderer API都合でSource画像を上下反転しません。
+    // decode結果のrow順をそのままRuntime Textureへ渡し、UV原点・座標系の差は
+    // UI / Meshなど各RuntimeデータのUV規約とRenderer backendの境界で扱います。
+    // これにより同じSource Assetから生成される内容がRenderer APIによって変化することを防ぎます。
     int width = 0;
     int height = 0;
     int channels = 0;
