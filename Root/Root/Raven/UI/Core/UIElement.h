@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Raven
@@ -53,14 +54,72 @@ public:
     void ClearChildren();
 
     // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
-    // 同一Parent配下での一意性はPath解決時に検証し、空文字は未命名Elementとして扱います。
-    void SetName(std::string name);
-    const std::string& GetName() const;
+    // '/' はPath区切りとして予約し、含む名前は拒否します。
+    bool SetName(std::string name)
+    {
+        if (name.find('/') != std::string::npos)
+        {
+            return false;
+        }
+        m_Name = std::move(name);
+        return true;
+    }
+
+    const std::string& GetName() const { return m_Name; }
 
     // '/' 区切りの相対PathからDescendantを検索します。
-    // 空Pathは現在Element自身を返します。毎frame利用する用途ではなく、Animation Binding初期解決用です。
-    UIElement* FindByPath(const std::string& path);
-    const UIElement* FindByPath(const std::string& path) const;
+    // 空Pathは現在Element自身を返します。Animation Binding初期解決用で、毎frame検索には利用しません。
+    UIElement* FindByPath(const std::string& path)
+    {
+        return const_cast<UIElement*>(static_cast<const UIElement*>(this)->FindByPath(path));
+    }
+
+    const UIElement* FindByPath(const std::string& path) const
+    {
+        if (path.empty())
+        {
+            return this;
+        }
+
+        const UIElement* current = this;
+        std::size_t begin = 0u;
+        while (begin < path.size())
+        {
+            const std::size_t separator = path.find('/', begin);
+            const std::size_t count = (separator == std::string::npos) ? std::string::npos : separator - begin;
+            const std::string segment = path.substr(begin, count);
+            if (segment.empty())
+            {
+                return nullptr;
+            }
+
+            const UIElement* matched = nullptr;
+            for (const auto& child : current->m_Children)
+            {
+                if (child != nullptr && child->m_Name == segment)
+                {
+                    // 同名Siblingがある場合、Pathは一意なRuntime Handleへ解決できないため失敗させます。
+                    if (matched != nullptr)
+                    {
+                        return nullptr;
+                    }
+                    matched = child.get();
+                }
+            }
+            if (matched == nullptr)
+            {
+                return nullptr;
+            }
+
+            current = matched;
+            if (separator == std::string::npos)
+            {
+                break;
+            }
+            begin = separator + 1u;
+        }
+        return current;
+    }
 
     void SetPosition(const math::Vec2& value);
     void SetSize(const math::Vec2& value);
@@ -92,9 +151,15 @@ public:
     const UIElement* GetParent() const;
     const std::vector<Scope<UIElement>>& GetChildren() const;
 
+    // UIContextだけがHit Test結果からInteraction Stateを更新します。
+    // WidgetはIsHovered()/IsPressed()を参照するだけにし、入力の所有権をContextへ集約します。
     void SetHovered(bool value);
     void SetPressed(bool value);
+
+    // UIContextのBubble Routingから呼ばれる公開入口です。
+    // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
+
     void BuildDrawList(UIDrawList& drawList);
 
 protected:
@@ -113,6 +178,9 @@ private:
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
     void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
+
+    // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
+    // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
     void SetContextRecursive(UIContext* context);
 
 private:
