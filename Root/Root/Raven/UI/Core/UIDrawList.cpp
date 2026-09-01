@@ -15,6 +15,9 @@ void UIDrawList::AddRect(
     const math::Vec2& max,
     const math::Vec4& color)
 {
+    // 面積0以下の矩形は描画対象にしません。
+    // Layout計算中の非表示Elementや、Window最小化時の0 sizeがそのままRendererへ
+    // 流れ込むことを避けます。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
@@ -36,6 +39,8 @@ void UIDrawList::AddImage(
     const math::Vec2& uvMin,
     const math::Vec2& uvMax)
 {
+    // SolidRectと同様、面積0以下のImage CommandはRendererへ流しません。
+    // Layout中の0 sizeやWindow最小化時にも不要なDraw Callを生成しないためです。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
