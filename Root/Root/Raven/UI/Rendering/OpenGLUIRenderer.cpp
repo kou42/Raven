@@ -17,6 +17,21 @@
 namespace Raven
 {
 
+namespace
+{
+
+float ToOpenGLTextureV(float ravenV)
+{
+    // Raven UIの論理UVは左上原点で、V=0が画像上端、V=1が画像下端です。
+    // TextureAssetImporterはSource画像のrow順を変更しないため、stb_imageでdecodeした先頭rowは
+    // OpenGL Textureへuploadするとnative Texture座標のV=0側へ格納されます。
+    // Source AssetをOpenGL都合で変更せず同じRuntime Assetを他Backendでも共有するため、
+    // OpenGL固有の上下差はRenderer backend境界でのみ吸収します。
+    return 1.0f - ravenV;
+}
+
+} // namespace
+
 OpenGLUIRenderer::OpenGLUIRenderer()
 {
     m_VertexArray = VertexArray::Create();
@@ -58,7 +73,7 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
             vertices.push_back(command.Color.z);
             vertices.push_back(command.Color.w);
             vertices.push_back(u);
-            vertices.push_back(v);
+            vertices.push_back(ToOpenGLTextureV(v));
         };
 
         pushVertex(left, top, command.UVMin.x, command.UVMin.y);
@@ -169,10 +184,41 @@ void OpenGLUIRenderer::Render(const UIDrawList& drawList, const math::Vec2& view
     glColorMask(previousColorMask[0], previousColorMask[1], previousColorMask[2], previousColorMask[3]);
     glDepthMask(previousDepthMask);
 
-    if (depthTestEnabled == GL_TRUE) { glEnable(GL_DEPTH_TEST); } else { glDisable(GL_DEPTH_TEST); }
-    if (blendEnabled == GL_TRUE) { glEnable(GL_BLEND); } else { glDisable(GL_BLEND); }
-    if (cullFaceEnabled == GL_TRUE) { glEnable(GL_CULL_FACE); } else { glDisable(GL_CULL_FACE); }
-    if (scissorTestEnabled == GL_TRUE) { glEnable(GL_SCISSOR_TEST); } else { glDisable(GL_SCISSOR_TEST); }
+    if (depthTestEnabled == GL_TRUE)
+    {
+        glEnable(GL_DEPTH_TEST);
+    }
+    else
+    {
+        glDisable(GL_DEPTH_TEST);
+    }
+
+    if (blendEnabled == GL_TRUE)
+    {
+        glEnable(GL_BLEND);
+    }
+    else
+    {
+        glDisable(GL_BLEND);
+    }
+
+    if (cullFaceEnabled == GL_TRUE)
+    {
+        glEnable(GL_CULL_FACE);
+    }
+    else
+    {
+        glDisable(GL_CULL_FACE);
+    }
+
+    if (scissorTestEnabled == GL_TRUE)
+    {
+        glEnable(GL_SCISSOR_TEST);
+    }
+    else
+    {
+        glDisable(GL_SCISSOR_TEST);
+    }
 }
 
 void OpenGLUIRenderer::EnsureBuffers(const float* vertices, uint32_t vertexDataSize, const uint32_t* indices, uint32_t indexCount)
