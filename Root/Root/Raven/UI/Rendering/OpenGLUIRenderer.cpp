@@ -1,10 +1,12 @@
 #include "Raven/UI/Rendering/OpenGLUIRenderer.h"
 
+#include "Raven/Assets/TextureAsset.h"
 #include "Raven/Renderer/Buffer/BufferLayout.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
 #include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
 #include <glad/glad.h>
@@ -56,30 +58,26 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // DrawList -> dynamic triangle batch
     // ========================================================================
-    // SolidRect 1個を4頂点 / 6 indexへ変換し、同一Shaderでまとめて1 Draw Callへ送ります。
-    // WidgetごとにDraw Callを発行しないことが、Editor UIで大量のProperty Rowを扱う際に重要です。
-    // 頂点形式: Position.xy + Color.rgba = 6 floats
+    // SolidRect / Imageをそれぞれ4頂点 / 6 indexへ変換し、同じdynamic bufferへ格納します。
+    // ImageではCommand境界でTextureを切り替えるため現段階では1 Command = 1 Draw Callですが、
+    // Widgetが直接GPU Bufferを生成しないというDrawList境界は維持します。
+    // 頂点形式: Position.xy + Color.rgba + UV.xy = 8 floats
     std::vector<float> vertices;
     std::vector<uint32_t> indices;
 
-    vertices.reserve(drawList.GetCommandCount() * 4u * 6u);
+    vertices.reserve(drawList.GetCommandCount() * 4u * 8u);
     indices.reserve(drawList.GetCommandCount() * 6u);
 
     uint32_t vertexBase = 0;
 
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
-        if (command.Type != UIDrawCommandType::SolidRect)
-        {
-            continue;
-        }
-
         const float left = command.Rect.Min.x;
         const float top = command.Rect.Min.y;
         const float right = command.Rect.Max.x;
         const float bottom = command.Rect.Max.y;
 
-        const auto pushVertex = [&vertices, &command](float x, float y)
+        const auto pushVertex = [&vertices, &command](float x, float y, float u, float v)
         {
             vertices.push_back(x);
             vertices.push_back(y);
@@ -87,12 +85,19 @@ void OpenGLUIRenderer::Render(
             vertices.push_back(command.Color.y);
             vertices.push_back(command.Color.z);
             vertices.push_back(command.Color.w);
+
+            // TextureAssetImporterはSource画像の先頭rowをそのままTextureのrow 0へuploadします。
+            // OpenGLのnormalized Texture座標V=0はそのrow 0をsamplingするため、Ravenの
+            // 左上原点UV(V=0が画像上端)をここで反転する必要はありません。
+            // Framebufferの画面座標原点と、upload済みTexture内のrow/UV対応は別概念として扱います。
+            vertices.push_back(u);
+            vertices.push_back(v);
         };
 
-        pushVertex(left, top);
-        pushVertex(right, top);
-        pushVertex(right, bottom);
-        pushVertex(left, bottom);
+        pushVertex(left, top, command.UVMin.x, command.UVMin.y);
+        pushVertex(right, top, command.UVMax.x, command.UVMin.y);
+        pushVertex(right, bottom, command.UVMax.x, command.UVMax.y);
+        pushVertex(left, bottom, command.UVMin.x, command.UVMax.y);
 
         indices.push_back(vertexBase + 0u);
         indices.push_back(vertexBase + 1u);
@@ -147,6 +152,7 @@ void OpenGLUIRenderer::Render(
     //
     // さらに、直前の3D PipelineがPolygonMode / ColorMask / DepthMaskなどを変更していても
     // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
+    // Image描画ではTexture Unit 0も変更するため、Active TextureとBindingも同じ方針で保存・復元します。
     GLint previousDrawFramebuffer = 0;
     GLint previousReadFramebuffer = 0;
     GLint previousDrawBuffer = GL_BACK;
@@ -154,6 +160,8 @@ void OpenGLUIRenderer::Render(
     GLint previousViewport[4] = { 0, 0, 0, 0 };
     GLint previousScissorBox[4] = { 0, 0, 0, 0 };
     GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousTextureBinding = 0;
 
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFramebuffer);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
@@ -162,6 +170,9 @@ void OpenGLUIRenderer::Render(
     glGetIntegerv(GL_VIEWPORT, previousViewport);
     glGetIntegerv(GL_SCISSOR_BOX, previousScissorBox);
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
 
     const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
@@ -200,6 +211,7 @@ void OpenGLUIRenderer::Render(
 
     m_Shader->Bind();
     m_Shader->SetVec2("u_ViewportSize", viewportSize);
+    m_Shader->SetInt("u_Texture", 0);
     m_VertexArray->Bind();
 
     // ========================================================================
@@ -208,12 +220,31 @@ void OpenGLUIRenderer::Render(
     // Renderer::DrawIndexed()は現在の3D PipelineのPrimitiveTopologyを参照します。
     // UIは常にTriangle Listなので、直前SceneのLine/Point Pipeline状態を継承しないよう、
     // OpenGL backend内でGL_TRIANGLESを明示して直接Drawします。
-    const uint32_t indexCount = m_IndexBuffer->GetCount();
-    glDrawElements(
-        GL_TRIANGLES,
-        static_cast<GLsizei>(indexCount),
-        GL_UNSIGNED_INT,
-        nullptr);
+    //
+    // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
+    // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
+    std::size_t commandIndex = 0;
+    for (const UIDrawCommand& command : drawList.GetCommands())
+    {
+        bool useTexture = false;
+        if (command.Type == UIDrawCommandType::Image &&
+            command.Texture != nullptr &&
+            command.Texture->IsValid())
+        {
+            const Ref<Texture>& texture = command.Texture->GetTexture();
+            if (texture != nullptr)
+            {
+                texture->Bind(0);
+                useTexture = true;
+            }
+        }
+
+        m_Shader->SetInt("u_UseTexture", useTexture ? 1 : 0);
+        const void* indexOffset = reinterpret_cast<const void*>(
+            commandIndex * 6u * sizeof(uint32_t));
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, indexOffset);
+        ++commandIndex;
+    }
 
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
     // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
@@ -226,7 +257,11 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // Raven UIをRenderer pipelineの途中から呼んでも後続描画へ影響を残さないよう、
     // Framebuffer / viewport / scissorに加えて、今回UI側で上書きしたPolygonMode / ColorMask /
-    // DepthMaskも呼び出し前の値へ戻します。UI backendが外部Renderer stateを漏らさないための処理です。
+    // DepthMask / Texture Bindingも呼び出し前の値へ戻します。UI backendが外部Renderer stateを
+    // 漏らさないための処理です。
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
     glDrawBuffer(static_cast<GLenum>(previousDrawBuffer));
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
@@ -308,7 +343,8 @@ void OpenGLUIRenderer::EnsureBuffers(
 
         m_VertexBuffer->SetLayout({
             { ShaderDataType::Float2, "a_Position" },
-            { ShaderDataType::Float4, "a_Color" }
+            { ShaderDataType::Float4, "a_Color" },
+            { ShaderDataType::Float2, "a_TexCoord" }
         });
 
         m_VertexArray->AddVertexBuffer(m_VertexBuffer);

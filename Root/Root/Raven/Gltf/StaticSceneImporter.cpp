@@ -30,6 +30,7 @@ bool AppendNodeInstances(
     const std::vector<math::Mat4>& globalTransforms,
     const math::Mat4& gltfToRavenWorld,
     const std::vector<ImportedStaticPrimitive>& primitives,
+    const std::vector<Ref<ImportedMaterial>>& materials,
     std::vector<ImportedStaticMeshInstance>& outInstances,
     std::string* errorMessage)
 {
@@ -65,6 +66,20 @@ bool AppendNodeInstances(
             instance.PrimitiveIndex = primitive.PrimitiveIndex;
             instance.MaterialIndex = primitive.MaterialIndex;
 
+            // MaterialIndexはglTF上の参照を保持しつつ、Runtime側で再検索しなくてよいよう
+            // Scene Import時にImportedMaterialへの参照も解決しておきます。
+            if (primitive.MaterialIndex != InvalidGltfIndex)
+            {
+                if (primitive.MaterialIndex >= materials.size())
+                {
+                    return SetError(
+                        errorMessage,
+                        "Mesh PrimitiveのMaterial indexがImport済みMaterial範囲外です");
+                }
+
+                instance.Material = materials[primitive.MaterialIndex];
+            }
+
             outInstances.emplace_back(std::move(instance));
             foundMeshPrimitive = true;
         }
@@ -85,6 +100,7 @@ bool AppendNodeInstances(
                 globalTransforms,
                 gltfToRavenWorld,
                 primitives,
+                materials,
                 outInstances,
                 errorMessage) == false)
         {
@@ -111,6 +127,21 @@ bool StaticSceneImporter::LoadFromGlb(
     if (StaticMeshImporter::LoadFromGlb(filePath, primitives, errorMessage) == false)
     {
         return false;
+    }
+
+    // MaterialもScene Import境界で一度だけ読み込み、PrimitiveのMaterialIndexを実体へ解決します。
+    // Importer同士をRenderer Materialへ直結しないことで、Asset意味情報と描画Pass契約を分離します。
+    std::vector<ImportedMaterial> importedMaterials;
+    if (MaterialImporter::LoadFromGlb(filePath, importedMaterials, errorMessage) == false)
+    {
+        return false;
+    }
+
+    std::vector<Ref<ImportedMaterial>> materials;
+    materials.reserve(importedMaterials.size());
+    for (ImportedMaterial& importedMaterial : importedMaterials)
+    {
+        materials.emplace_back(CreateRef<ImportedMaterial>(std::move(importedMaterial)));
     }
 
     NodeHierarchy hierarchy;
@@ -173,6 +204,7 @@ bool StaticSceneImporter::LoadFromGlb(
                 globalTransforms,
                 gltfToRavenWorld,
                 primitives,
+                materials,
                 instances,
                 errorMessage) == false)
         {

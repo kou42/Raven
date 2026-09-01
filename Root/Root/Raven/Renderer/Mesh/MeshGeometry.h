@@ -18,6 +18,10 @@ namespace Raven
 // 並び順を変更しません。Normalは末尾へ追加することで、既存の3要素aggregate初期化を
 // そのまま利用できるようにしています。
 //
+// TexCoordはRavenの論理UVとして扱い、左上(0, 0)・右下(1, 1)、Vは下方向へ増加する規約です。
+// glTFのTEXCOORD_0はこの規約と一致するためImporterで値を反転せず、そのまま保持します。
+// OpenGL等のnative Texture座標系との差はTexture samplingを行うRenderer backend側で吸収します。
+//
 // Human / glTF ImporterではNORMAL attributeをNormalへ格納します。
 // 将来Normal Mapへ進む段階では、この型へTangentを追加する想定です。
 struct MeshVertex

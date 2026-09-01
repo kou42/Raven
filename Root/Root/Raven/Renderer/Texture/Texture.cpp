@@ -1,5 +1,6 @@
 #include "Raven/Renderer/Texture/Texture.h"
 
+#include "Raven/Assets/TextureAssetImporter.h"
 #include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Renderer/Texture/OpenGLTexture.h"
 
@@ -10,21 +11,9 @@ namespace Raven
 
 Ref<Texture> Texture::Create(const std::string& path)
 {
-    switch (RendererAPI::GetAPI())
-    {
-    case RendererAPI::API::OpenGL:
-        return CreateRef<OpenGLTexture>(path);
-
-    case RendererAPI::API::DirectX11:
-        // 将来DirectX11Textureを追加した際に、ここで生成先を切り替えます。
-        return nullptr;
-
-    case RendererAPI::API::DirectX12:
-        // 将来DirectX12Textureを追加した際に、ここで生成先を切り替えます。
-        return nullptr;
-    }
-
-    return nullptr;
+    // 既存APIの互換性を維持するため入口だけ残します。
+    // Source Format判定とdecodeはAssets層へ委譲し、Renderer層自身はファイル形式を扱いません。
+    return TextureAssetImporter::ImportTexture(path);
 }
 
 Ref<Texture> Texture::Create(const TextureSpecification& specification)
@@ -33,25 +22,17 @@ Ref<Texture> Texture::Create(const TextureSpecification& specification)
     {
     case RendererAPI::API::OpenGL:
         return CreateRef<OpenGLTexture>(specification);
-
     case RendererAPI::API::DirectX11:
         return nullptr;
-
     case RendererAPI::API::DirectX12:
         return nullptr;
     }
-
     return nullptr;
 }
 
-Ref<Texture> Texture::Create(
-    const TextureSpecification& specification,
-    const void* data,
-    std::size_t dataSize
-)
+Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data, std::size_t dataSize)
 {
     Ref<Texture> texture = Create(specification);
-
     if (texture == nullptr)
     {
         return nullptr;

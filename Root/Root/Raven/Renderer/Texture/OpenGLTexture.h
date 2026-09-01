@@ -7,10 +7,10 @@ namespace Raven
 
 // OpenGL固有のTexture実装です。
 // Textureインターフェースを継承し、OpenGL APIへの依存をこのクラス内に閉じ込めます。
+// Source AssetのdecodeはImporter側で完了させ、このクラスはGPU Resource生成だけを担当します。
 class OpenGLTexture final : public Texture
 {
 public:
-    explicit OpenGLTexture(const std::string& path);
     explicit OpenGLTexture(const TextureSpecification& specification);
     ~OpenGLTexture() override;
 
