@@ -68,13 +68,22 @@ bool UIAnimationBinding::Resolve(UIElement& root, const AnimationClip& clip)
     }
 
     m_Bindings = std::move(resolved);
+    m_Root = &root;
+    m_TreeGeneration = root.GetTreeGeneration();
     m_Resolved = true;
     return true;
 }
 
 bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
 {
-    if (m_Resolved == false)
+    if (m_Resolved == false || m_Root == nullptr)
+    {
+        return false;
+    }
+
+    // UI Tree変更後は解決済みraw pointerの生存・Path対応を保証できません。
+    // Targetへ触るより前にGenerationを確認し、再Resolveが必要な状態を安全に検出します。
+    if (m_Root->GetTreeGeneration() != m_TreeGeneration)
     {
         return false;
     }
@@ -87,7 +96,9 @@ bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
             return false;
         }
 
-        const AnimationPropertySample sample = SampleAnimationPropertyTrack(tracks[binding.TrackIndex], std::max(time, 0.0f));
+        const AnimationPropertySample sample = SampleAnimationPropertyTrack(
+            tracks[binding.TrackIndex],
+            std::max(time, 0.0f));
         const math::Vec2* value = std::get_if<math::Vec2>(&sample.Value);
         if (value == nullptr)
         {
@@ -109,6 +120,8 @@ bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
 void UIAnimationBinding::Clear()
 {
     m_Bindings.clear();
+    m_Root = nullptr;
+    m_TreeGeneration = 0u;
     m_Resolved = false;
 }
 
