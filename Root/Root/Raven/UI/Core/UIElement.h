@@ -6,6 +6,7 @@
 #include "Raven/UI/Core/UIEvent.h"
 
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace Raven
@@ -51,6 +52,16 @@ public:
     bool RemoveChild(UIElement* child);
     void ClearChildren();
 
+    // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
+    // 同一Parent配下での一意性はPath解決時に検証し、空文字は未命名Elementとして扱います。
+    void SetName(std::string name);
+    const std::string& GetName() const;
+
+    // '/' 区切りの相対PathからDescendantを検索します。
+    // 空Pathは現在Element自身を返します。毎frame利用する用途ではなく、Animation Binding初期解決用です。
+    UIElement* FindByPath(const std::string& path);
+    const UIElement* FindByPath(const std::string& path) const;
+
     void SetPosition(const math::Vec2& value);
     void SetSize(const math::Vec2& value);
     void SetPreferredSize(const math::Vec2& value);
@@ -81,15 +92,9 @@ public:
     const UIElement* GetParent() const;
     const std::vector<Scope<UIElement>>& GetChildren() const;
 
-    // UIContextだけがHit Test結果からInteraction Stateを更新します。
-    // WidgetはIsHovered()/IsPressed()を参照するだけにし、入力の所有権をContextへ集約します。
     void SetHovered(bool value);
     void SetPressed(bool value);
-
-    // UIContextのBubble Routingから呼ばれる公開入口です。
-    // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
-
     void BuildDrawList(UIDrawList& drawList);
 
 protected:
@@ -108,12 +113,10 @@ private:
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
     void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
-
-    // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
-    // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
     void SetContextRecursive(UIContext* context);
 
 private:
+    std::string m_Name;
     math::Vec2 m_Position{};
     math::Vec2 m_Size{};
     math::Vec2 m_PreferredSize{};
