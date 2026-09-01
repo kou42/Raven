@@ -66,6 +66,12 @@ struct TextureSpecification
 // Textureは描画APIに依存しないインターフェースです。
 // OpenGL固有のGLuintやglBindTextureなどは派生クラス側へ閉じ込めます。
 // これにより、Textureを利用する上位層はOpenGL / DirectXなどの違いを意識せずに扱えます。
+//
+// Source画像由来のSampled TextureはImporterで上下反転せず、decodeされたrow順を維持します。
+// 上位層の論理UVは左上(0, 0)・右下(1, 1)をRaven共通規約とし、
+// native APIのTexture座標系との差はRenderer backend境界で吸収します。
+// RenderTarget / DepthStencilの画面座標・readback規約とは分けて考え、Source Assetの向きを
+// Renderer APIの都合で変更しないことをこの境界の基本方針とします。
 class Texture
 {
 public:
