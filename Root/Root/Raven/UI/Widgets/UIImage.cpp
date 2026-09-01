@@ -41,7 +41,7 @@ void UIImage::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePo
         absolutePosition,
         math::Vec2{ absolutePosition.x + size.x, absolutePosition.y + size.y },
         m_Texture,
-        m_TintColor,
+        ApplyVisualColor(m_TintColor),
         m_UVMin,
         m_UVMax);
 }
