@@ -6,6 +6,8 @@
 #include "Raven/UI/Core/UIEvent.h"
 
 #include <limits>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace Raven
@@ -50,6 +52,74 @@ public:
     // Childを個別に削除します。DetachChild()で返されたScopeをその場で破棄する簡易APIです。
     bool RemoveChild(UIElement* child);
     void ClearChildren();
+
+    // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
+    // '/' はPath区切りとして予約し、含む名前は拒否します。
+    bool SetName(std::string name)
+    {
+        if (name.find('/') != std::string::npos)
+        {
+            return false;
+        }
+        m_Name = std::move(name);
+        return true;
+    }
+
+    const std::string& GetName() const { return m_Name; }
+
+    // '/' 区切りの相対PathからDescendantを検索します。
+    // 空Pathは現在Element自身を返します。Animation Binding初期解決用で、毎frame検索には利用しません。
+    UIElement* FindByPath(const std::string& path)
+    {
+        return const_cast<UIElement*>(static_cast<const UIElement*>(this)->FindByPath(path));
+    }
+
+    const UIElement* FindByPath(const std::string& path) const
+    {
+        if (path.empty())
+        {
+            return this;
+        }
+
+        const UIElement* current = this;
+        std::size_t begin = 0u;
+        while (begin < path.size())
+        {
+            const std::size_t separator = path.find('/', begin);
+            const std::size_t count = (separator == std::string::npos) ? std::string::npos : separator - begin;
+            const std::string segment = path.substr(begin, count);
+            if (segment.empty())
+            {
+                return nullptr;
+            }
+
+            const UIElement* matched = nullptr;
+            for (const auto& child : current->m_Children)
+            {
+                if (child != nullptr && child->m_Name == segment)
+                {
+                    // 同名Siblingがある場合、Pathは一意なRuntime Handleへ解決できないため失敗させます。
+                    if (matched != nullptr)
+                    {
+                        return nullptr;
+                    }
+                    matched = child.get();
+                }
+            }
+            if (matched == nullptr)
+            {
+                return nullptr;
+            }
+
+            current = matched;
+            if (separator == std::string::npos)
+            {
+                break;
+            }
+            begin = separator + 1u;
+        }
+        return current;
+    }
 
     void SetPosition(const math::Vec2& value);
     void SetSize(const math::Vec2& value);
@@ -114,6 +184,7 @@ private:
     void SetContextRecursive(UIContext* context);
 
 private:
+    std::string m_Name;
     math::Vec2 m_Position{};
     math::Vec2 m_Size{};
     math::Vec2 m_PreferredSize{};
