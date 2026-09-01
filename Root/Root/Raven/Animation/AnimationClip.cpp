@@ -9,98 +9,6 @@ namespace Raven
 namespace
 {
 
-// ============================================================================
-// SampleVec3Track
-// ============================================================================
-// Position / Translation / Scale Keyを線形補間します。
-math::Vec3 SampleVec3Track(
-    const std::vector<AnimationKeyframe<math::Vec3>>& keys,
-    float time,
-    const math::Vec3& defaultValue)
-{
-    if (keys.empty())
-    {
-        return defaultValue;
-    }
-
-    if (keys.size() == 1 || time <= keys.front().Time)
-    {
-        return keys.front().Value;
-    }
-
-    if (time >= keys.back().Time)
-    {
-        return keys.back().Value;
-    }
-
-    const auto rightIt = std::upper_bound(
-        keys.begin(),
-        keys.end(),
-        time,
-        [](float sampleTime, const AnimationKeyframe<math::Vec3>& key)
-        {
-            return sampleTime < key.Time;
-        });
-
-    const auto leftIt = rightIt - 1;
-    const float interval = rightIt->Time - leftIt->Time;
-
-    if (interval <= 0.0f)
-    {
-        return rightIt->Value;
-    }
-
-    const float alpha = (time - leftIt->Time) / interval;
-    return math::Vec3::Lerp(leftIt->Value, rightIt->Value, alpha);
-}
-
-// ============================================================================
-// SampleQuatTrack
-// ============================================================================
-// Rotation KeyはQuaternionの球面線形補間(Slerp)を使います。
-// Euler角を各軸別にLerpすると、±pi境界で遠回りしたり、複数軸回転で姿勢変化が
-// 不自然になりやすいため、Animation runtimeではQuaternionを正規表現にします。
-math::Quat SampleQuatTrack(
-    const std::vector<AnimationKeyframe<math::Quat>>& keys,
-    float time,
-    const math::Quat& defaultValue)
-{
-    if (keys.empty())
-    {
-        return defaultValue;
-    }
-
-    if (keys.size() == 1 || time <= keys.front().Time)
-    {
-        return keys.front().Value.Normalized();
-    }
-
-    if (time >= keys.back().Time)
-    {
-        return keys.back().Value.Normalized();
-    }
-
-    const auto rightIt = std::upper_bound(
-        keys.begin(),
-        keys.end(),
-        time,
-        [](float sampleTime, const AnimationKeyframe<math::Quat>& key)
-        {
-            return sampleTime < key.Time;
-        });
-
-    const auto leftIt = rightIt - 1;
-    const float interval = rightIt->Time - leftIt->Time;
-
-    if (interval <= 0.0f)
-    {
-        return rightIt->Value.Normalized();
-    }
-
-    const float alpha = (time - leftIt->Time) / interval;
-    return math::Quat::Slerp(leftIt->Value, rightIt->Value, alpha);
-}
-
 // 1 Bone分のTrackを、Bind Local Transformを基準値として評価します。
 // Channel単位でKeyが欠けていてもBind値を維持することが重要です。
 BoneTransform SampleBoneTransform(
@@ -110,18 +18,15 @@ BoneTransform SampleBoneTransform(
 {
     BoneTransform result = bindTransform;
 
-    result.Translation = SampleVec3Track(
-        track.PositionKeys,
+    result.Translation = track.PositionKeys.Sample(
         time,
         bindTransform.Translation);
 
-    result.Rotation = SampleQuatTrack(
-        track.RotationKeys,
+    result.Rotation = track.RotationKeys.Sample(
         time,
         bindTransform.Rotation);
 
-    result.Scale = SampleVec3Track(
-        track.ScaleKeys,
+    result.Scale = track.ScaleKeys.Sample(
         time,
         bindTransform.Scale);
 
@@ -146,21 +51,18 @@ TransformPose AnimationClip::Sample(float time) const
     TransformPose pose{};
 
     // Clip単体でSampleした場合にも負の時刻を安全に扱います。
-    // Duration超過については各Trackの最終KeyでClampされます。
+    // Duration超過については各Curveの最終KeyでClampされます。
     const float sampleTime = std::max(time, 0.0f);
 
-    pose.Position = SampleVec3Track(
-        m_TransformTrack.PositionKeys,
+    pose.Position = m_TransformTrack.PositionKeys.Sample(
         sampleTime,
         pose.Position);
 
-    pose.Rotation = SampleQuatTrack(
-        m_TransformTrack.RotationKeys,
+    pose.Rotation = m_TransformTrack.RotationKeys.Sample(
         sampleTime,
         pose.Rotation);
 
-    pose.Scale = SampleVec3Track(
-        m_TransformTrack.ScaleKeys,
+    pose.Scale = m_TransformTrack.ScaleKeys.Sample(
         sampleTime,
         pose.Scale);
 
@@ -228,7 +130,7 @@ bool AnimationClip::Sample(
     {
         // ClipとSkeletonの対応が壊れている場合は、別Skeleton向けClipを誤適用している可能性が
         // 高いため、黙って無視せずSample失敗として返します。
-        if (!skeleton.IsValidBoneIndex(track.Bone))
+        if (skeleton.IsValidBoneIndex(track.Bone) == false)
         {
             return false;
         }
@@ -241,7 +143,7 @@ bool AnimationClip::Sample(
             sampleTime,
             bindTransform);
 
-        if (!outPose.SetLocalTransform(track.Bone, sampled))
+        if (outPose.SetLocalTransform(track.Bone, sampled) == false)
         {
             return false;
         }
