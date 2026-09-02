@@ -39,14 +39,37 @@ struct UIRect
 // ============================================================================
 // UITransform2D
 // ============================================================================
-// Layoutで確定した矩形へ後段で適用するVisual Transformです。
-// Rotationはradian、Scaleは各軸倍率、PivotはElement local sizeに対するnormalized座標です。
-// LayoutのDesiredSize / Arrange結果を変化させないため、Animationで回転・拡縮しても兄弟配置は揺れません。
+// Layout後のUI座標へ適用する2D Affine Transformです。
+// 2x2線形部 + Translationで保持するため、親の非一様Scaleと子Rotationを合成した際に生じる
+// Shear成分も失わず表現できます。LayoutのDesiredSize / Arrange結果自体は変更しません。
 struct UITransform2D
 {
-    float Rotation = 0.0f;
-    math::Vec2 Scale{ 1.0f, 1.0f };
-    math::Vec2 Pivot{ 0.5f, 0.5f };
+    float M00 = 1.0f;
+    float M01 = 0.0f;
+    float M10 = 0.0f;
+    float M11 = 1.0f;
+    math::Vec2 Translation{};
+
+    static UITransform2D Identity();
+
+    // pivotを画面上の不変点として、Scale -> Rotationの順に適用するTransformを生成します。
+    static UITransform2D CreateScaleRotation(
+        const math::Vec2& pivot,
+        float rotation,
+        const math::Vec2& scale);
+
+    // parent(local(point)) の順で適用されるWorld Transformを返します。
+    static UITransform2D Combine(
+        const UITransform2D& parent,
+        const UITransform2D& local);
+
+    math::Vec2 TransformPoint(const math::Vec2& point) const;
+
+    // Screen/World座標をTransform適用前の座標へ戻します。
+    // 行列式0のTransformは逆変換できないためfalseを返します。
+    bool TryInverseTransformPoint(
+        const math::Vec2& point,
+        math::Vec2& outPoint) const;
 };
 
 // ============================================================================
@@ -102,7 +125,7 @@ public:
         const math::Vec2& uvMin = math::Vec2{ 0.0f, 0.0f },
         const math::Vec2& uvMax = math::Vec2{ 1.0f, 1.0f });
 
-    // 直前に追加されたCommandへElementのVisual Transformを合成します。
+    // 直前に追加されたCommandへElementのWorld Visual Transformを付与します。
     // WidgetのOnBuildDrawList()が複数Commandを追加する場合にも対応できるよう、範囲指定で適用します。
     void ApplyTransform(std::size_t firstCommand, const UITransform2D& transform);
 
