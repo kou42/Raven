@@ -133,6 +133,15 @@ public:
     void SetMargin(float value);
     void SetSpacing(float value);
 
+    // Rotation / Scale / PivotはLayoutへ影響しないVisual Transformです。
+    // Rotationはradian、PivotはElement local sizeに対するnormalized座標として扱います。
+    void SetRotation(float value) { m_Rotation = value; }
+    float GetRotation() const { return m_Rotation; }
+    void SetScale(const math::Vec2& value) { m_Scale = value; }
+    const math::Vec2& GetScale() const { return m_Scale; }
+    void SetTransformPivot(const math::Vec2& value) { m_TransformPivot = value; }
+    const math::Vec2& GetTransformPivot() const { return m_TransformPivot; }
+
     // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
     // 親から子へ乗算継承するため、Container全体のFadeやColor AnimationをWidget種別に依存せず表現できます。
     void SetOpacity(float value) { m_Opacity = std::clamp(value, 0.0f, 1.0f); }
@@ -227,6 +236,9 @@ private:
     UIAlignment m_HorizontalAlignment = UIAlignment::Start;
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
+    float m_Rotation = 0.0f;
+    math::Vec2 m_Scale{ 1.0f, 1.0f };
+    math::Vec2 m_TransformPivot{ 0.5f, 0.5f };
     float m_Opacity = 1.0f;
     math::Vec4 m_TintColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     uint64_t m_TreeGeneration = 1u;
