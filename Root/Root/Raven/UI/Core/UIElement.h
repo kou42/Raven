@@ -207,7 +207,10 @@ private:
     void MeasureRecursive();
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
-    void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
+    void BuildDrawListRecursive(
+        UIDrawList& drawList,
+        const math::Vec2& parentAbsolutePosition,
+        const UITransform2D& parentWorldTransform) const;
 
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
