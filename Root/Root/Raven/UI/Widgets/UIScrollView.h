@@ -37,7 +37,8 @@ public:
     void SetWheelScrollStep(float value);
     float GetWheelScrollStep() const;
 
-    // Scrollbarは既定でAuto表示です。Axisを無効化するとOverflowしていても表示・操作しません。
+    // Scrollbarは既定でOverflow時のみ自動表示します。
+    // Axisを無効化するとOverflowしていても表示・操作しません。
     void SetVerticalScrollBarEnabled(bool value);
     bool IsVerticalScrollBarEnabled() const;
     bool IsVerticalScrollBarVisible() const;
@@ -49,6 +50,8 @@ public:
     float GetScrollBarThickness() const;
     void SetMinimumThumbLength(float value);
     float GetMinimumThumbLength() const;
+
+    // Track空白部Click時にViewport Sizeの何倍進めるかを指定します。既定値は0.9です。
     void SetPageScrollFactor(float value);
     float GetPageScrollFactor() const;
 
