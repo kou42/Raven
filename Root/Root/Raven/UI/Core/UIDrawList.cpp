@@ -64,6 +64,22 @@ void UIDrawList::AddImage(
     m_Commands.push_back(command);
 }
 
+void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& transform)
+{
+    if (firstCommand >= m_Commands.size())
+    {
+        return;
+    }
+
+    // Element単位のVisual Transformは、そのElementが生成したCommandだけへ付与します。
+    // Child CommandはBuildDrawListRecursive()の後段で別Elementとして処理されるため、
+    // 親子Transformの合成責務をUIElement側に集約できます。
+    for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
+    {
+        m_Commands[index].Transform = transform;
+    }
+}
+
 const std::vector<UIDrawCommand>& UIDrawList::GetCommands() const
 {
     return m_Commands;
