@@ -291,7 +291,10 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
         ArrangeRecursive(m_Position, ResolveRootSize());
     }
 
-    BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f));
+    BuildDrawListRecursive(
+        drawList,
+        math::Vec2(0.0f, 0.0f),
+        UITransform2D::Identity());
 }
 
 void UIElement::OnMouseEvent(UIMouseEvent& event)
@@ -482,7 +485,10 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
     m_ArrangeDirty = false;
 }
 
-void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const
+void UIElement::BuildDrawListRecursive(
+    UIDrawList& drawList,
+    const math::Vec2& parentAbsolutePosition,
+    const UITransform2D& parentWorldTransform) const
 {
     if (m_Visible == false)
     {
@@ -493,24 +499,35 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
         parentAbsolutePosition.x + m_Position.x,
         parentAbsolutePosition.y + m_Position.y);
 
+    // Local TransformはLayout済みabsolute座標上のPivotを中心に生成します。
+    // Parent World Transformと合成することで、親のRotation / ScaleをDescendantへ継承します。
+    // Affine表現なので、非一様Scaleと子Rotationの組み合わせで生じるShearも保持できます。
+    const math::Vec2 pivot(
+        absolutePosition.x + m_Size.x * m_TransformPivot.x,
+        absolutePosition.y + m_Size.y * m_TransformPivot.y);
+    const UITransform2D localTransform = UITransform2D::CreateScaleRotation(
+        pivot,
+        m_Rotation,
+        m_Scale);
+    const UITransform2D worldTransform = UITransform2D::Combine(
+        parentWorldTransform,
+        localTransform);
+
     // Widgetは従来どおりLayout済みのaxis-aligned RectをDrawListへ積みます。
-    // その直後にElement単位のVisual TransformをCommandへ付与することで、Widget実装へ
-    // Rotation / Scaleの知識を分散させず、Renderer側で最終4頂点へ変換できます。
+    // Rendererへは合成済みWorld Transformを渡し、Widget実装へ階層Transformの知識を持ち込みません。
     const std::size_t firstCommand = drawList.GetCommandCount();
     OnBuildDrawList(drawList, absolutePosition);
-
-    UITransform2D transform;
-    transform.Rotation = m_Rotation;
-    transform.Scale = m_Scale;
-    transform.Pivot = m_TransformPivot;
-    drawList.ApplyTransform(firstCommand, transform);
+    drawList.ApplyTransform(firstCommand, worldTransform);
 
     // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndex / Clipは後続で追加します。
     for (const auto& child : m_Children)
     {
         if (child != nullptr)
         {
-            child->BuildDrawListRecursive(drawList, absolutePosition);
+            child->BuildDrawListRecursive(
+                drawList,
+                absolutePosition,
+                worldTransform);
         }
     }
 }
