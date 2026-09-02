@@ -89,6 +89,18 @@ UIScrollView::UIScrollView()
 
 UIElement* UIScrollView::SetContent(Scope<UIElement> content)
 {
+    // Content置換中にThumb Dragが継続すると、再生成されるScrollbar GeometryとCapture状態が不一致になります。
+    // Owner自身のCaptureを先に正常終了してから内部Treeを再構築します。
+    if (m_DragAxis != ScrollBarDragAxis::None)
+    {
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+        EndThumbDrag();
+    }
+
     // ScrollbarをContentより後へ登録しPainter's Order / Hit Testの両方で前面に置くため、
     // Content置換時は内部Elementも一度再構築します。
     ClearChildren();
@@ -96,8 +108,6 @@ UIElement* UIScrollView::SetContent(Scope<UIElement> content)
     m_VerticalScrollBar = nullptr;
     m_HorizontalScrollBar = nullptr;
     m_ScrollOffset = math::Vec2(0.0f, 0.0f);
-    m_DragAxis = ScrollBarDragAxis::None;
-    m_DragGrabOffset = 0.0f;
 
     if (content != nullptr)
     {
@@ -167,6 +177,16 @@ float UIScrollView::GetWheelScrollStep() const
 
 void UIScrollView::SetVerticalScrollBarEnabled(bool value)
 {
+    if (value == false && m_DragAxis == ScrollBarDragAxis::Vertical)
+    {
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+        EndThumbDrag();
+    }
+
     m_VerticalScrollBarEnabled = value;
     SyncScrollBars();
 }
@@ -183,6 +203,16 @@ bool UIScrollView::IsVerticalScrollBarVisible() const
 
 void UIScrollView::SetHorizontalScrollBarEnabled(bool value)
 {
+    if (value == false && m_DragAxis == ScrollBarDragAxis::Horizontal)
+    {
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+        EndThumbDrag();
+    }
+
     m_HorizontalScrollBarEnabled = value;
     SyncScrollBars();
 }
