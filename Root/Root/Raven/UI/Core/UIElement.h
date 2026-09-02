@@ -234,6 +234,8 @@ public:
     bool IsArrangeDirty() const;
     UIElement* GetParent();
     const UIElement* GetParent() const;
+    UIContext* GetContext() { return m_Context; }
+    const UIContext* GetContext() const { return m_Context; }
     const std::vector<Scope<UIElement>>& GetChildren() const;
 
     // UIContextだけがHit Test結果からInteraction Stateを更新します。
