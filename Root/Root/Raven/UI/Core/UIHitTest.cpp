@@ -1,72 +1,58 @@
 #include "Raven/UI/Core/UIHitTest.h"
 #include "Raven/UI/Core/UIElement.h"
 
-#include <cmath>
-
 namespace Raven
 {
 
 UIElement* UIHitTest::FindTopmost(UIElement& root, const math::Vec2& screenPosition)
 {
-    return FindTopmostRecursive(root, screenPosition, math::Vec2(0.0f, 0.0f));
+    return FindTopmostRecursive(
+        root,
+        screenPosition,
+        math::Vec2(0.0f, 0.0f),
+        UITransform2D::Identity());
 }
 
 const UIElement* UIHitTest::FindTopmost(const UIElement& root, const math::Vec2& screenPosition)
 {
-    return FindTopmostRecursive(root, screenPosition, math::Vec2(0.0f, 0.0f));
+    return FindTopmostRecursive(
+        root,
+        screenPosition,
+        math::Vec2(0.0f, 0.0f),
+        UITransform2D::Identity());
 }
 
 bool UIHitTest::ContainsPoint(
     const UIElement& element,
     const math::Vec2& absolutePosition,
+    const UITransform2D& worldTransform,
     const math::Vec2& screenPosition)
 {
-    const math::Vec2& size = element.GetSize();
-    const math::Vec2& pivotNormalized = element.GetTransformPivot();
-    const math::Vec2& scale = element.GetScale();
+    math::Vec2 layoutPoint;
 
-    // 描画側はPivot中心に Scale -> Rotation の順で変換しているため、Hit Testでは
-    // Screen座標へ逆Rotation -> 逆Scaleを適用し、Layout済みのaxis-aligned Rectへ戻して判定します。
-    // 描画と入力で同じTransform規約を使うことで、回転・拡縮後も見えている領域とHit領域を一致させます。
-    const math::Vec2 pivot(
-        absolutePosition.x + size.x * pivotNormalized.x,
-        absolutePosition.y + size.y * pivotNormalized.y);
-
-    const float deltaX = screenPosition.x - pivot.x;
-    const float deltaY = screenPosition.y - pivot.y;
-    const float cosine = std::cos(element.GetRotation());
-    const float sine = std::sin(element.GetRotation());
-
-    // forward rotation:
-    // x' = x*cos - y*sin
-    // y' = x*sin + y*cos
-    // inverseは転置行列なので角度を反転した式になります。
-    const float rotatedX = deltaX * cosine + deltaY * sine;
-    const float rotatedY = -deltaX * sine + deltaY * cosine;
-
-    // Scale 0の軸は描画上も面積0へ潰れているためHit対象にしません。
-    // 極端に小さい値をepsilonで近似すると描画との境界がずれるため、ここでは厳密な0だけを特別扱いします。
-    if (scale.x == 0.0f || scale.y == 0.0f)
+    // Rendererと同じ合成済みWorld Transformを逆変換し、Screen座標をTransform適用前の
+    // Layout座標へ戻してから矩形判定します。親の非一様Scale + 子RotationでShearが生じても、
+    // Affine行列全体を逆変換するため描画領域とHit領域を一致させられます。
+    if (worldTransform.TryInverseTransformPoint(screenPosition, layoutPoint) == false)
     {
         return false;
     }
 
-    const math::Vec2 localPoint(
-        pivot.x + rotatedX / scale.x,
-        pivot.y + rotatedY / scale.y);
+    const math::Vec2& size = element.GetSize();
 
     // 左上を含み右下を含まない半開区間に統一します。
     // 隣接するElementの境界上で2つが同時にHitする曖昧さを避けるためです。
-    return localPoint.x >= absolutePosition.x &&
-        localPoint.y >= absolutePosition.y &&
-        localPoint.x < absolutePosition.x + size.x &&
-        localPoint.y < absolutePosition.y + size.y;
+    return layoutPoint.x >= absolutePosition.x &&
+        layoutPoint.y >= absolutePosition.y &&
+        layoutPoint.x < absolutePosition.x + size.x &&
+        layoutPoint.y < absolutePosition.y + size.y;
 }
 
 UIElement* UIHitTest::FindTopmostRecursive(
     UIElement& element,
     const math::Vec2& screenPosition,
-    const math::Vec2& parentAbsolutePosition)
+    const math::Vec2& parentAbsolutePosition,
+    const UITransform2D& parentWorldTransform)
 {
     if (element.IsVisible() == false)
     {
@@ -77,6 +63,19 @@ UIElement* UIHitTest::FindTopmostRecursive(
     const math::Vec2 absolutePosition(
         parentAbsolutePosition.x + localPosition.x,
         parentAbsolutePosition.y + localPosition.y);
+
+    const math::Vec2& size = element.GetSize();
+    const math::Vec2& pivotNormalized = element.GetTransformPivot();
+    const math::Vec2 pivot(
+        absolutePosition.x + size.x * pivotNormalized.x,
+        absolutePosition.y + size.y * pivotNormalized.y);
+    const UITransform2D localTransform = UITransform2D::CreateScaleRotation(
+        pivot,
+        element.GetRotation(),
+        element.GetScale());
+    const UITransform2D worldTransform = UITransform2D::Combine(
+        parentWorldTransform,
+        localTransform);
 
     const auto& children = element.GetChildren();
 
@@ -92,7 +91,8 @@ UIElement* UIHitTest::FindTopmostRecursive(
         UIElement* hit = FindTopmostRecursive(
             *(*iterator),
             screenPosition,
-            absolutePosition);
+            absolutePosition,
+            worldTransform);
 
         if (hit != nullptr)
         {
@@ -100,7 +100,7 @@ UIElement* UIHitTest::FindTopmostRecursive(
         }
     }
 
-    if (ContainsPoint(element, absolutePosition, screenPosition) == true)
+    if (ContainsPoint(element, absolutePosition, worldTransform, screenPosition) == true)
     {
         return &element;
     }
@@ -111,7 +111,8 @@ UIElement* UIHitTest::FindTopmostRecursive(
 const UIElement* UIHitTest::FindTopmostRecursive(
     const UIElement& element,
     const math::Vec2& screenPosition,
-    const math::Vec2& parentAbsolutePosition)
+    const math::Vec2& parentAbsolutePosition,
+    const UITransform2D& parentWorldTransform)
 {
     if (element.IsVisible() == false)
     {
@@ -122,6 +123,19 @@ const UIElement* UIHitTest::FindTopmostRecursive(
     const math::Vec2 absolutePosition(
         parentAbsolutePosition.x + localPosition.x,
         parentAbsolutePosition.y + localPosition.y);
+
+    const math::Vec2& size = element.GetSize();
+    const math::Vec2& pivotNormalized = element.GetTransformPivot();
+    const math::Vec2 pivot(
+        absolutePosition.x + size.x * pivotNormalized.x,
+        absolutePosition.y + size.y * pivotNormalized.y);
+    const UITransform2D localTransform = UITransform2D::CreateScaleRotation(
+        pivot,
+        element.GetRotation(),
+        element.GetScale());
+    const UITransform2D worldTransform = UITransform2D::Combine(
+        parentWorldTransform,
+        localTransform);
 
     const auto& children = element.GetChildren();
 
@@ -135,7 +149,8 @@ const UIElement* UIHitTest::FindTopmostRecursive(
         const UIElement* hit = FindTopmostRecursive(
             *(*iterator),
             screenPosition,
-            absolutePosition);
+            absolutePosition,
+            worldTransform);
 
         if (hit != nullptr)
         {
@@ -143,7 +158,7 @@ const UIElement* UIHitTest::FindTopmostRecursive(
         }
     }
 
-    if (ContainsPoint(element, absolutePosition, screenPosition) == true)
+    if (ContainsPoint(element, absolutePosition, worldTransform, screenPosition) == true)
     {
         return &element;
     }
