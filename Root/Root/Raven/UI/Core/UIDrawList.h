@@ -37,6 +37,19 @@ struct UIRect
 };
 
 // ============================================================================
+// UITransform2D
+// ============================================================================
+// Layoutで確定した矩形へ後段で適用するVisual Transformです。
+// Rotationはradian、Scaleは各軸倍率、PivotはElement local sizeに対するnormalized座標です。
+// LayoutのDesiredSize / Arrange結果を変化させないため、Animationで回転・拡縮しても兄弟配置は揺れません。
+struct UITransform2D
+{
+    float Rotation = 0.0f;
+    math::Vec2 Scale{ 1.0f, 1.0f };
+    math::Vec2 Pivot{ 0.5f, 0.5f };
+};
+
+// ============================================================================
 // UIDrawCommand
 // ============================================================================
 // UI Tree / WidgetからRenderer backendへ渡す、GPU API非依存の描画要求です。
@@ -54,6 +67,7 @@ struct UIDrawCommand
 {
     UIDrawCommandType Type = UIDrawCommandType::SolidRect;
     UIRect Rect{};
+    UITransform2D Transform{};
     math::Vec4 Color{ 1.0f, 1.0f, 1.0f, 1.0f };
     math::Vec2 UVMin{ 0.0f, 0.0f };
     math::Vec2 UVMax{ 1.0f, 1.0f };
@@ -87,6 +101,10 @@ public:
         const math::Vec4& tintColor = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f },
         const math::Vec2& uvMin = math::Vec2{ 0.0f, 0.0f },
         const math::Vec2& uvMax = math::Vec2{ 1.0f, 1.0f });
+
+    // 直前に追加されたCommandへElementのVisual Transformを合成します。
+    // WidgetのOnBuildDrawList()が複数Commandを追加する場合にも対応できるよう、範囲指定で適用します。
+    void ApplyTransform(std::size_t firstCommand, const UITransform2D& transform);
 
     const std::vector<UIDrawCommand>& GetCommands() const;
     std::size_t GetCommandCount() const;
