@@ -295,7 +295,6 @@ void Application::Run()
         // DrawListはRetained UI Treeとは別に毎frame再構築します。
         // BeginFrameをScene / Layer処理より前に置くことで、Runtime LayerとEditor Layerのどちらからも
         // GetUIContext().GetDrawList()へ描画要求を追加できる共通frame境界になります。
-        //
         // 現在はUIContextがRoot UIElementを所有しているため、通常WidgetはDrawListへ直接書かず、
         // Root以下のRetained Treeを更新します。EndFrame()時にTreeからDrawListへ自動展開されます。
         m_UIContext.BeginFrame(math::Vec2(
@@ -388,13 +387,20 @@ void Application::OnEvent(Event& event)
     // Raven UI Mouse Event routing
     // ========================================================================
     // Platform Mouse EventをUIContextのHit Test / Bubble Routingへ変換します。
-    // Button Eventも入力発生時の座標を自身に保持するため、ApplicationはInput pollingを行わず
+    // Button / Scroll Eventも入力発生時の座標を自身に保持するため、ApplicationはInput pollingを行わず
     // Event snapshotだけからUI routingできます。これにより入力時刻と座標の対応を維持します。
-    // UIEvent側でHandledになった場合だけCore EventもHandledとして、背後LayerへのClick-throughを防ぎます。
+    // UIEvent側でHandledになった場合だけCore EventもHandledとして、背後Layerへの入力漏れを防ぎます。
     if (event.Handled == false && event.GetEventType() == EventType::MouseMoved)
     {
         MouseMovedEvent& mouseEvent = static_cast<MouseMovedEvent&>(event);
         event.Handled = m_UIContext.RouteMouseMove(math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()));
+    }
+    else if (event.Handled == false && event.GetEventType() == EventType::MouseScrolled)
+    {
+        MouseScrolledEvent& mouseEvent = static_cast<MouseScrolledEvent&>(event);
+        event.Handled = m_UIContext.RouteMouseScroll(
+            math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()),
+            math::Vec2(mouseEvent.GetOffsetX(), mouseEvent.GetOffsetY()));
     }
     else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonPressed)
     {
