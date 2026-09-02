@@ -91,8 +91,12 @@ void UIScrollView::OnMouseEvent(UIMouseEvent& event)
     }
 
     const math::Vec2 previous = m_ScrollOffset;
+
+    // GLFWでは正のX Offsetは右方向、正のY Offsetは上方向のScrollを表します。
+    // Content Offsetは「Viewport左上からContentをどれだけ進めたか」で保持するため、
+    // 横方向は正Offsetを加算し、縦方向は上ScrollでOffsetを戻すよう符号を分けます。
     const math::Vec2 requested(
-        m_ScrollOffset.x - event.ScrollDelta.x * m_WheelScrollStep,
+        m_ScrollOffset.x + event.ScrollDelta.x * m_WheelScrollStep,
         m_ScrollOffset.y - event.ScrollDelta.y * m_WheelScrollStep);
     SetScrollOffset(requested);
 
