@@ -6,6 +6,7 @@ namespace Raven
 {
 
 class UIElement;
+struct UIClipRect;
 struct UITransform2D;
 
 // ============================================================================
@@ -35,13 +36,15 @@ private:
         UIElement& element,
         const math::Vec2& screenPosition,
         const math::Vec2& parentAbsolutePosition,
-        const UITransform2D& parentWorldTransform);
+        const UITransform2D& parentWorldTransform,
+        const UIClipRect& inheritedClip);
 
     static const UIElement* FindTopmostRecursive(
         const UIElement& element,
         const math::Vec2& screenPosition,
         const math::Vec2& parentAbsolutePosition,
-        const UITransform2D& parentWorldTransform);
+        const UITransform2D& parentWorldTransform,
+        const UIClipRect& inheritedClip);
 };
 
 } // namespace Raven
