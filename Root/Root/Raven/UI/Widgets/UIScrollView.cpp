@@ -168,10 +168,6 @@ float UIScrollView::GetWheelScrollStep() const
 void UIScrollView::SetVerticalScrollBarEnabled(bool value)
 {
     m_VerticalScrollBarEnabled = value;
-    if (value == false && m_DragAxis == ScrollBarDragAxis::Vertical)
-    {
-        m_DragAxis = ScrollBarDragAxis::None;
-    }
     SyncScrollBars();
 }
 
@@ -188,10 +184,6 @@ bool UIScrollView::IsVerticalScrollBarVisible() const
 void UIScrollView::SetHorizontalScrollBarEnabled(bool value)
 {
     m_HorizontalScrollBarEnabled = value;
-    if (value == false && m_DragAxis == ScrollBarDragAxis::Horizontal)
-    {
-        m_DragAxis = ScrollBarDragAxis::None;
-    }
     SyncScrollBars();
 }
 
@@ -276,6 +268,15 @@ void UIScrollView::OnMouseEvent(UIMouseEvent& event)
         {
             return;
         }
+    }
+
+    // Track ClickではCaptureしないため、対応するMouse UpもScrollbarで消費して背後Layerへの入力漏れを防ぎます。
+    if (event.Type == UIMouseEventType::Up &&
+        event.Button == UIMouseButton::Left &&
+        (event.Target == m_VerticalScrollBar || event.Target == m_HorizontalScrollBar))
+    {
+        event.Handled = true;
+        return;
     }
 
     if (event.Type != UIMouseEventType::Scroll)
@@ -529,8 +530,14 @@ bool UIScrollView::HandleThumbDrag(UIMouseEvent& event)
         : m_HorizontalScrollBar;
     if (scrollBar == nullptr || scrollBar->IsVisible() == false)
     {
+        // Drag中にOverflow解消やScrollbar無効化が起きた場合も、次のPointer EventでCaptureを確実に解放します。
+        if (event.Context != nullptr)
+        {
+            event.Context->ReleaseMouseCapture(this);
+        }
         EndThumbDrag();
-        return false;
+        event.Handled = true;
+        return true;
     }
 
     math::Vec2 localPosition;
