@@ -492,7 +492,18 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
     const math::Vec2 absolutePosition(
         parentAbsolutePosition.x + m_Position.x,
         parentAbsolutePosition.y + m_Position.y);
+
+    // Widgetは従来どおりLayout済みのaxis-aligned RectをDrawListへ積みます。
+    // その直後にElement単位のVisual TransformをCommandへ付与することで、Widget実装へ
+    // Rotation / Scaleの知識を分散させず、Renderer側で最終4頂点へ変換できます。
+    const std::size_t firstCommand = drawList.GetCommandCount();
     OnBuildDrawList(drawList, absolutePosition);
+
+    UITransform2D transform;
+    transform.Rotation = m_Rotation;
+    transform.Scale = m_Scale;
+    transform.Pivot = m_TransformPivot;
+    drawList.ApplyTransform(firstCommand, transform);
 
     // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndex / Clipは後続で追加します。
     for (const auto& child : m_Children)
@@ -524,12 +535,12 @@ void UIElement::NotifyBindingTreeChanged()
     UIElement* root = GetTreeRoot();
     if (root->m_TreeGeneration == std::numeric_limits<uint64_t>::max())
     {
-        // 0は未解決Binding側のsentinelとして使えるよう、overflow時も1へ戻します。
         root->m_TreeGeneration = 1u;
-        return;
     }
-
-    ++root->m_TreeGeneration;
+    else
+    {
+        ++root->m_TreeGeneration;
+    }
 }
 
 UIElement* UIElement::GetTreeRoot()
