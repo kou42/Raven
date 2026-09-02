@@ -2,8 +2,85 @@
 
 #include "Raven/Assets/TextureAsset.h"
 
+#include <cmath>
+
 namespace Raven
 {
+
+UITransform2D UITransform2D::Identity()
+{
+    return UITransform2D{};
+}
+
+UITransform2D UITransform2D::CreateScaleRotation(
+    const math::Vec2& pivot,
+    float rotation,
+    const math::Vec2& scale)
+{
+    const float cosine = std::cos(rotation);
+    const float sine = std::sin(rotation);
+
+    UITransform2D result;
+    result.M00 = cosine * scale.x;
+    result.M01 = -sine * scale.y;
+    result.M10 = sine * scale.x;
+    result.M11 = cosine * scale.y;
+
+    // pivotを不変点にするため、T(pivot) * R * S * T(-pivot) のTranslationを展開します。
+    result.Translation.x = pivot.x - (result.M00 * pivot.x + result.M01 * pivot.y);
+    result.Translation.y = pivot.y - (result.M10 * pivot.x + result.M11 * pivot.y);
+    return result;
+}
+
+UITransform2D UITransform2D::Combine(
+    const UITransform2D& parent,
+    const UITransform2D& local)
+{
+    UITransform2D result;
+
+    // parent(local(point)) を直接展開します。
+    // Rotation / 非一様Scaleの組み合わせでShearが発生しても2x2線形部へそのまま保持できます。
+    result.M00 = parent.M00 * local.M00 + parent.M01 * local.M10;
+    result.M01 = parent.M00 * local.M01 + parent.M01 * local.M11;
+    result.M10 = parent.M10 * local.M00 + parent.M11 * local.M10;
+    result.M11 = parent.M10 * local.M01 + parent.M11 * local.M11;
+
+    result.Translation.x =
+        parent.M00 * local.Translation.x +
+        parent.M01 * local.Translation.y +
+        parent.Translation.x;
+    result.Translation.y =
+        parent.M10 * local.Translation.x +
+        parent.M11 * local.Translation.y +
+        parent.Translation.y;
+    return result;
+}
+
+math::Vec2 UITransform2D::TransformPoint(const math::Vec2& point) const
+{
+    return math::Vec2(
+        M00 * point.x + M01 * point.y + Translation.x,
+        M10 * point.x + M11 * point.y + Translation.y);
+}
+
+bool UITransform2D::TryInverseTransformPoint(
+    const math::Vec2& point,
+    math::Vec2& outPoint) const
+{
+    const float determinant = M00 * M11 - M01 * M10;
+    if (determinant == 0.0f)
+    {
+        return false;
+    }
+
+    const float translatedX = point.x - Translation.x;
+    const float translatedY = point.y - Translation.y;
+    const float inverseDeterminant = 1.0f / determinant;
+
+    outPoint.x = (M11 * translatedX - M01 * translatedY) * inverseDeterminant;
+    outPoint.y = (-M10 * translatedX + M00 * translatedY) * inverseDeterminant;
+    return true;
+}
 
 void UIDrawList::Clear()
 {
@@ -71,9 +148,8 @@ void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& t
         return;
     }
 
-    // Element単位のVisual Transformは、そのElementが生成したCommandだけへ付与します。
-    // Child CommandはBuildDrawListRecursive()の後段で別Elementとして処理されるため、
-    // 親子Transformの合成責務をUIElement側に集約できます。
+    // Element単位のWorld Transformは、そのElementが生成したCommandだけへ付与します。
+    // ChildはUIElement再帰側でParent World Transformと自身のLocal Transformを合成してから別途設定します。
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
         m_Commands[index].Transform = transform;
