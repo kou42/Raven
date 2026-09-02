@@ -142,6 +142,11 @@ public:
     void SetTransformPivot(const math::Vec2& value) { m_TransformPivot = value; }
     const math::Vec2& GetTransformPivot() const { return m_TransformPivot; }
 
+    // Child描画とHit Testを、このElementのTransform後screen-space AABB内へ制限します。
+    // OpenGL Scissorはaxis-alignedのため、回転・ShearしたElementでは厳密な四角形ClipではなくAABB Clipになります。
+    void SetClipChildren(bool value) { m_ClipChildren = value; }
+    bool GetClipChildren() const { return m_ClipChildren; }
+
     // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
     // 親から子へ乗算継承するため、Container全体のFadeやColor AnimationをWidget種別に依存せず表現できます。
     void SetOpacity(float value) { m_Opacity = std::clamp(value, 0.0f, 1.0f); }
@@ -210,7 +215,8 @@ private:
     void BuildDrawListRecursive(
         UIDrawList& drawList,
         const math::Vec2& parentAbsolutePosition,
-        const UITransform2D& parentWorldTransform) const;
+        const UITransform2D& parentWorldTransform,
+        const UIClipRect& inheritedClip) const;
 
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
@@ -250,6 +256,7 @@ private:
     bool m_Pressed = false;
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
+    bool m_ClipChildren = false;
 };
 
 } // namespace Raven
