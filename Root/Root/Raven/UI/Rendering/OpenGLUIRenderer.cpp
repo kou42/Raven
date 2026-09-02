@@ -11,7 +11,6 @@
 
 #include <glad/glad.h>
 
-#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -77,30 +76,12 @@ void OpenGLUIRenderer::Render(
         const float top = command.Rect.Min.y;
         const float right = command.Rect.Max.x;
         const float bottom = command.Rect.Max.y;
-        const float width = right - left;
-        const float height = bottom - top;
 
-        // Transform PivotはCommand Rect内のnormalized座標です。
-        // Layout済み矩形そのものは変更せず、最終頂点だけをPivot中心にScale -> Rotationの順で変換します。
-        // これによりRotation/Scale AnimationがMeasure/Arrangeへ逆流しません。
-        const math::Vec2 pivot(
-            left + width * command.Transform.Pivot.x,
-            top + height * command.Transform.Pivot.y);
-        const float cosine = std::cos(command.Transform.Rotation);
-        const float sine = std::sin(command.Transform.Rotation);
-
-        const auto transformPoint = [&command, &pivot, cosine, sine](float x, float y)
+        const auto pushVertex = [&vertices, &command](float x, float y, float u, float v)
         {
-            const float scaledX = (x - pivot.x) * command.Transform.Scale.x;
-            const float scaledY = (y - pivot.y) * command.Transform.Scale.y;
-            return math::Vec2(
-                pivot.x + scaledX * cosine - scaledY * sine,
-                pivot.y + scaledX * sine + scaledY * cosine);
-        };
-
-        const auto pushVertex = [&vertices, &command, &transformPoint](float x, float y, float u, float v)
-        {
-            const math::Vec2 transformed = transformPoint(x, y);
+            // UIElement側で親子Transformを合成済みなので、RendererはWorld Affine Transformを
+            // Layout済み頂点へそのまま適用します。Shearを含むTransformもここで失われません。
+            const math::Vec2 transformed = command.Transform.TransformPoint(math::Vec2(x, y));
             vertices.push_back(transformed.x);
             vertices.push_back(transformed.y);
             vertices.push_back(command.Color.x);
