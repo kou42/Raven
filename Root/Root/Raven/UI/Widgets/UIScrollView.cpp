@@ -389,8 +389,14 @@ void UIScrollView::SyncScrollBars()
         maxOffset.x > 0.0f &&
         viewportSize.x > 0.0f;
 
-    m_VerticalScrollBar->SetVisible(m_VerticalScrollBarVisible);
-    m_HorizontalScrollBar->SetVisible(m_HorizontalScrollBarVisible);
+    if (m_VerticalScrollBar->IsVisible() != m_VerticalScrollBarVisible)
+    {
+        m_VerticalScrollBar->SetVisible(m_VerticalScrollBarVisible);
+    }
+    if (m_HorizontalScrollBar->IsVisible() != m_HorizontalScrollBarVisible)
+    {
+        m_HorizontalScrollBar->SetVisible(m_HorizontalScrollBarVisible);
+    }
     m_VerticalScrollBar->SetColors(m_ScrollBarTrackColor, m_ScrollBarThumbColor);
     m_HorizontalScrollBar->SetColors(m_ScrollBarTrackColor, m_ScrollBarThumbColor);
 
