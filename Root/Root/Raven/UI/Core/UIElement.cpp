@@ -294,7 +294,8 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
     BuildDrawListRecursive(
         drawList,
         math::Vec2(0.0f, 0.0f),
-        UITransform2D::Identity());
+        UITransform2D::Identity(),
+        UIClipRect::Disabled());
 }
 
 void UIElement::OnMouseEvent(UIMouseEvent& event)
@@ -488,7 +489,8 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
 void UIElement::BuildDrawListRecursive(
     UIDrawList& drawList,
     const math::Vec2& parentAbsolutePosition,
-    const UITransform2D& parentWorldTransform) const
+    const UITransform2D& parentWorldTransform,
+    const UIClipRect& inheritedClip) const
 {
     if (m_Visible == false)
     {
@@ -513,13 +515,28 @@ void UIElement::BuildDrawListRecursive(
         parentWorldTransform,
         localTransform);
 
-    // Widgetは従来どおりLayout済みのaxis-aligned RectをDrawListへ積みます。
-    // Rendererへは合成済みWorld Transformを渡し、Widget実装へ階層Transformの知識を持ち込みません。
+    // Widget自身の描画はAncestor Clipだけを継承します。
+    // ClipChildrenは「このElementを含める」のではなくDescendantをViewport内へ閉じ込める責務に限定します。
     const std::size_t firstCommand = drawList.GetCommandCount();
     OnBuildDrawList(drawList, absolutePosition);
     drawList.ApplyTransform(firstCommand, worldTransform);
+    drawList.ApplyClip(firstCommand, inheritedClip);
 
-    // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndex / Clipは後続で追加します。
+    UIClipRect childClip = inheritedClip;
+    if (m_ClipChildren == true)
+    {
+        UIRect layoutRect;
+        layoutRect.Min = absolutePosition;
+        layoutRect.Max = math::Vec2(
+            absolutePosition.x + m_Size.x,
+            absolutePosition.y + m_Size.y);
+
+        // Scissorは回転四角形を表現できないため、Transform後4頂点のAABBをClip境界として継承します。
+        const UIRect transformedBounds = worldTransform.TransformRectBounds(layoutRect);
+        childClip = UIClipRect::Intersect(inheritedClip, transformedBounds);
+    }
+
+    // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndexは後続で追加します。
     for (const auto& child : m_Children)
     {
         if (child != nullptr)
@@ -527,7 +544,8 @@ void UIElement::BuildDrawListRecursive(
             child->BuildDrawListRecursive(
                 drawList,
                 absolutePosition,
-                worldTransform);
+                worldTransform,
+                childClip);
         }
     }
 }
