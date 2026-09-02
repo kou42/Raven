@@ -11,6 +11,7 @@
 
 #include <glad/glad.h>
 
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -76,11 +77,32 @@ void OpenGLUIRenderer::Render(
         const float top = command.Rect.Min.y;
         const float right = command.Rect.Max.x;
         const float bottom = command.Rect.Max.y;
+        const float width = right - left;
+        const float height = bottom - top;
 
-        const auto pushVertex = [&vertices, &command](float x, float y, float u, float v)
+        // Transform PivotはCommand Rect内のnormalized座標です。
+        // Layout済み矩形そのものは変更せず、最終頂点だけをPivot中心にScale -> Rotationの順で変換します。
+        // これによりRotation/Scale AnimationがMeasure/Arrangeへ逆流しません。
+        const math::Vec2 pivot(
+            left + width * command.Transform.Pivot.x,
+            top + height * command.Transform.Pivot.y);
+        const float cosine = std::cos(command.Transform.Rotation);
+        const float sine = std::sin(command.Transform.Rotation);
+
+        const auto transformPoint = [&command, &pivot, cosine, sine](float x, float y)
         {
-            vertices.push_back(x);
-            vertices.push_back(y);
+            const float scaledX = (x - pivot.x) * command.Transform.Scale.x;
+            const float scaledY = (y - pivot.y) * command.Transform.Scale.y;
+            return math::Vec2(
+                pivot.x + scaledX * cosine - scaledY * sine,
+                pivot.y + scaledX * sine + scaledY * cosine);
+        };
+
+        const auto pushVertex = [&vertices, &command, &transformPoint](float x, float y, float u, float v)
+        {
+            const math::Vec2 transformed = transformPoint(x, y);
+            vertices.push_back(transformed.x);
+            vertices.push_back(transformed.y);
             vertices.push_back(command.Color.x);
             vertices.push_back(command.Color.y);
             vertices.push_back(command.Color.z);
