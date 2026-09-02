@@ -25,8 +25,8 @@ public:
 
 private:
     static bool ContainsPoint(
+        const UIElement& element,
         const math::Vec2& absolutePosition,
-        const math::Vec2& size,
         const math::Vec2& screenPosition);
 
     static UIElement* FindTopmostRecursive(
