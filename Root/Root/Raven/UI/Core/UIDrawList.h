@@ -37,6 +37,24 @@ struct UIRect
 };
 
 // ============================================================================
+// UIClipRect
+// ============================================================================
+// Draw Commandへ継承するscreen-spaceのaxis-aligned Clipです。
+// OpenGL Scissorへ直接変換できる表現に限定し、回転・ShearしたElementのClipは
+// Transform後4頂点を包含するAABBとして扱います。
+struct UIClipRect
+{
+    UIRect Rect{};
+    bool Enabled = false;
+
+    static UIClipRect Disabled();
+    static UIClipRect FromRect(const UIRect& rect);
+    static UIClipRect Intersect(const UIClipRect& inheritedClip, const UIRect& rect);
+
+    bool Contains(const math::Vec2& point) const;
+};
+
+// ============================================================================
 // UITransform2D
 // ============================================================================
 // Layout後のUI座標へ適用する2D Affine Transformです。
@@ -65,6 +83,10 @@ struct UITransform2D
 
     math::Vec2 TransformPoint(const math::Vec2& point) const;
 
+    // Rectの4頂点をTransformし、それらを包含するscreen-space AABBを返します。
+    // Scissorはaxis-aligned矩形しか表現できないため、回転・Shear Clipの保守的境界として利用します。
+    UIRect TransformRectBounds(const UIRect& rect) const;
+
     // Screen/World座標をTransform適用前の座標へ戻します。
     // 行列式0のTransformは逆変換できないためfalseを返します。
     bool TryInverseTransformPoint(
@@ -91,6 +113,7 @@ struct UIDrawCommand
     UIDrawCommandType Type = UIDrawCommandType::SolidRect;
     UIRect Rect{};
     UITransform2D Transform{};
+    UIClipRect Clip{};
     math::Vec4 Color{ 1.0f, 1.0f, 1.0f, 1.0f };
     math::Vec2 UVMin{ 0.0f, 0.0f };
     math::Vec2 UVMax{ 1.0f, 1.0f };
@@ -128,6 +151,10 @@ public:
     // 直前に追加されたCommandへElementのWorld Visual Transformを付与します。
     // WidgetのOnBuildDrawList()が複数Commandを追加する場合にも対応できるよう、範囲指定で適用します。
     void ApplyTransform(std::size_t firstCommand, const UITransform2D& transform);
+
+    // 直前に追加されたCommandへAncestorから継承したClipを付与します。
+    // Element自身のClipChildrenはSelf描画ではなくDescendantへ適用するため、呼び出し側で適用範囲を分けます。
+    void ApplyClip(std::size_t firstCommand, const UIClipRect& clip);
 
     const std::vector<UIDrawCommand>& GetCommands() const;
     std::size_t GetCommandCount() const;
