@@ -10,7 +10,8 @@ UIElement* UIHitTest::FindTopmost(UIElement& root, const math::Vec2& screenPosit
         root,
         screenPosition,
         math::Vec2(0.0f, 0.0f),
-        UITransform2D::Identity());
+        UITransform2D::Identity(),
+        UIClipRect::Disabled());
 }
 
 const UIElement* UIHitTest::FindTopmost(const UIElement& root, const math::Vec2& screenPosition)
@@ -19,7 +20,8 @@ const UIElement* UIHitTest::FindTopmost(const UIElement& root, const math::Vec2&
         root,
         screenPosition,
         math::Vec2(0.0f, 0.0f),
-        UITransform2D::Identity());
+        UITransform2D::Identity(),
+        UIClipRect::Disabled());
 }
 
 bool UIHitTest::ContainsPoint(
@@ -52,9 +54,17 @@ UIElement* UIHitTest::FindTopmostRecursive(
     UIElement& element,
     const math::Vec2& screenPosition,
     const math::Vec2& parentAbsolutePosition,
-    const UITransform2D& parentWorldTransform)
+    const UITransform2D& parentWorldTransform,
+    const UIClipRect& inheritedClip)
 {
     if (element.IsVisible() == false)
+    {
+        return nullptr;
+    }
+
+    // AncestorのClip外にあるscreen座標は、そのSubtree内のどのElementにも描画されません。
+    // Hit Testも同じClip境界で早期終了し、見えていないChildが入力を奪わないようにします。
+    if (inheritedClip.Contains(screenPosition) == false)
     {
         return nullptr;
     }
@@ -77,6 +87,19 @@ UIElement* UIHitTest::FindTopmostRecursive(
         parentWorldTransform,
         localTransform);
 
+    UIClipRect childClip = inheritedClip;
+    if (element.GetClipChildren() == true)
+    {
+        UIRect layoutRect;
+        layoutRect.Min = absolutePosition;
+        layoutRect.Max = math::Vec2(
+            absolutePosition.x + size.x,
+            absolutePosition.y + size.y);
+        childClip = UIClipRect::Intersect(
+            inheritedClip,
+            worldTransform.TransformRectBounds(layoutRect));
+    }
+
     const auto& children = element.GetChildren();
 
     // BuildDrawListRecursive()とは逆順に探索します。
@@ -92,7 +115,8 @@ UIElement* UIHitTest::FindTopmostRecursive(
             *(*iterator),
             screenPosition,
             absolutePosition,
-            worldTransform);
+            worldTransform,
+            childClip);
 
         if (hit != nullptr)
         {
@@ -112,9 +136,15 @@ const UIElement* UIHitTest::FindTopmostRecursive(
     const UIElement& element,
     const math::Vec2& screenPosition,
     const math::Vec2& parentAbsolutePosition,
-    const UITransform2D& parentWorldTransform)
+    const UITransform2D& parentWorldTransform,
+    const UIClipRect& inheritedClip)
 {
     if (element.IsVisible() == false)
+    {
+        return nullptr;
+    }
+
+    if (inheritedClip.Contains(screenPosition) == false)
     {
         return nullptr;
     }
@@ -137,6 +167,19 @@ const UIElement* UIHitTest::FindTopmostRecursive(
         parentWorldTransform,
         localTransform);
 
+    UIClipRect childClip = inheritedClip;
+    if (element.GetClipChildren() == true)
+    {
+        UIRect layoutRect;
+        layoutRect.Min = absolutePosition;
+        layoutRect.Max = math::Vec2(
+            absolutePosition.x + size.x,
+            absolutePosition.y + size.y);
+        childClip = UIClipRect::Intersect(
+            inheritedClip,
+            worldTransform.TransformRectBounds(layoutRect));
+    }
+
     const auto& children = element.GetChildren();
 
     for (auto iterator = children.rbegin(); iterator != children.rend(); ++iterator)
@@ -150,7 +193,8 @@ const UIElement* UIHitTest::FindTopmostRecursive(
             *(*iterator),
             screenPosition,
             absolutePosition,
-            worldTransform);
+            worldTransform,
+            childClip);
 
         if (hit != nullptr)
         {
