@@ -2,10 +2,64 @@
 
 #include "Raven/Assets/TextureAsset.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace Raven
 {
+
+UIClipRect UIClipRect::Disabled()
+{
+    return UIClipRect{};
+}
+
+UIClipRect UIClipRect::FromRect(const UIRect& rect)
+{
+    UIClipRect result;
+    result.Rect = rect;
+    result.Enabled = true;
+    return result;
+}
+
+UIClipRect UIClipRect::Intersect(const UIClipRect& inheritedClip, const UIRect& rect)
+{
+    if (inheritedClip.Enabled == false)
+    {
+        return FromRect(rect);
+    }
+
+    UIClipRect result;
+    result.Enabled = true;
+    result.Rect.Min.x = std::max(inheritedClip.Rect.Min.x, rect.Min.x);
+    result.Rect.Min.y = std::max(inheritedClip.Rect.Min.y, rect.Min.y);
+    result.Rect.Max.x = std::min(inheritedClip.Rect.Max.x, rect.Max.x);
+    result.Rect.Max.y = std::min(inheritedClip.Rect.Max.y, rect.Max.y);
+
+    // Clipが交差しない場合もEnabled状態を維持し、面積0のScissorとして表現します。
+    // これによりDescendant側で「Clipなし」と「完全にClipされた状態」を区別できます。
+    if (result.Rect.Max.x < result.Rect.Min.x)
+    {
+        result.Rect.Max.x = result.Rect.Min.x;
+    }
+    if (result.Rect.Max.y < result.Rect.Min.y)
+    {
+        result.Rect.Max.y = result.Rect.Min.y;
+    }
+    return result;
+}
+
+bool UIClipRect::Contains(const math::Vec2& point) const
+{
+    if (Enabled == false)
+    {
+        return true;
+    }
+
+    return point.x >= Rect.Min.x &&
+        point.y >= Rect.Min.y &&
+        point.x < Rect.Max.x &&
+        point.y < Rect.Max.y;
+}
 
 UITransform2D UITransform2D::Identity()
 {
@@ -61,6 +115,21 @@ math::Vec2 UITransform2D::TransformPoint(const math::Vec2& point) const
     return math::Vec2(
         M00 * point.x + M01 * point.y + Translation.x,
         M10 * point.x + M11 * point.y + Translation.y);
+}
+
+UIRect UITransform2D::TransformRectBounds(const UIRect& rect) const
+{
+    const math::Vec2 p0 = TransformPoint(rect.Min);
+    const math::Vec2 p1 = TransformPoint(math::Vec2(rect.Max.x, rect.Min.y));
+    const math::Vec2 p2 = TransformPoint(rect.Max);
+    const math::Vec2 p3 = TransformPoint(math::Vec2(rect.Min.x, rect.Max.y));
+
+    UIRect result;
+    result.Min.x = std::min(std::min(p0.x, p1.x), std::min(p2.x, p3.x));
+    result.Min.y = std::min(std::min(p0.y, p1.y), std::min(p2.y, p3.y));
+    result.Max.x = std::max(std::max(p0.x, p1.x), std::max(p2.x, p3.x));
+    result.Max.y = std::max(std::max(p0.y, p1.y), std::max(p2.y, p3.y));
+    return result;
 }
 
 bool UITransform2D::TryInverseTransformPoint(
@@ -153,6 +222,19 @@ void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& t
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
         m_Commands[index].Transform = transform;
+    }
+}
+
+void UIDrawList::ApplyClip(std::size_t firstCommand, const UIClipRect& clip)
+{
+    if (firstCommand >= m_Commands.size())
+    {
+        return;
+    }
+
+    for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
+    {
+        m_Commands[index].Clip = clip;
     }
 }
 
