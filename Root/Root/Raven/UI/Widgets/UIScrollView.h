@@ -46,6 +46,7 @@ public:
     bool IsHorizontalScrollBarEnabled() const;
     bool IsHorizontalScrollBarVisible() const;
 
+    // Track / ThumbのLayoutとStyleです。
     void SetScrollBarThickness(float value);
     float GetScrollBarThickness() const;
     void SetMinimumThumbLength(float value);
