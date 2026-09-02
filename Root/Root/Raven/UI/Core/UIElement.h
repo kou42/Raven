@@ -142,6 +142,56 @@ public:
     void SetTransformPivot(const math::Vec2& value) { m_TransformPivot = value; }
     const math::Vec2& GetTransformPivot() const { return m_TransformPivot; }
 
+    // Screen座標をこのElementのTransform適用前Local座標へ戻します。
+    // Scrollbar Drag等、Widget自身がPointer位置をLocal空間で解釈する場合に利用します。
+    // 親の非一様Scale + RotationによるShearも、描画と同じAffine合成順で逆変換します。
+    bool TryScreenToLocalPosition(const math::Vec2& screenPosition, math::Vec2& outLocalPosition) const
+    {
+        std::vector<const UIElement*> chain;
+        const UIElement* current = this;
+        while (current != nullptr)
+        {
+            chain.push_back(current);
+            current = current->m_Parent;
+        }
+        std::reverse(chain.begin(), chain.end());
+
+        UITransform2D worldTransform = UITransform2D::Identity();
+        math::Vec2 absolutePosition(0.0f, 0.0f);
+        math::Vec2 thisAbsolutePosition(0.0f, 0.0f);
+
+        for (const UIElement* element : chain)
+        {
+            absolutePosition.x += element->m_Position.x;
+            absolutePosition.y += element->m_Position.y;
+
+            const math::Vec2 pivot(
+                absolutePosition.x + element->m_Size.x * element->m_TransformPivot.x,
+                absolutePosition.y + element->m_Size.y * element->m_TransformPivot.y);
+            const UITransform2D localTransform = UITransform2D::CreateScaleRotation(
+                pivot,
+                element->m_Rotation,
+                element->m_Scale);
+            worldTransform = UITransform2D::Combine(worldTransform, localTransform);
+
+            if (element == this)
+            {
+                thisAbsolutePosition = absolutePosition;
+            }
+        }
+
+        math::Vec2 layoutPosition;
+        if (worldTransform.TryInverseTransformPoint(screenPosition, layoutPosition) == false)
+        {
+            return false;
+        }
+
+        outLocalPosition = math::Vec2(
+            layoutPosition.x - thisAbsolutePosition.x,
+            layoutPosition.y - thisAbsolutePosition.y);
+        return true;
+    }
+
     // Child描画とHit Testを、このElementのTransform後screen-space AABB内へ制限します。
     // OpenGL Scissorはaxis-alignedのため、回転・ShearしたElementでは厳密な四角形ClipではなくAABB Clipになります。
     void SetClipChildren(bool value) { m_ClipChildren = value; }
