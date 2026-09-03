@@ -31,8 +31,6 @@ inline bool UIContext::SetFocus(UIElement* element)
         return false;
     }
 
-    // Focus対象をraw pointerとしてContextへ保持せず、Element自身の状態としてTree内に保持します。
-    // これによりSubtree削除時はElementと一緒にFocus状態も破棄され、dangling pointerを作りません。
     std::vector<UIElement*> focusableElements;
     CollectFocusableElements(m_RootElement.get(), focusableElements);
     for (UIElement* candidate : focusableElements)
@@ -91,6 +89,16 @@ inline bool UIContext::MoveFocus(bool reverse)
     }
 
     return SetFocus(focusableElements[nextIndex]);
+}
+
+inline bool UIContext::RouteKeyEvent(const UIKeyEvent& event)
+{
+    // Key repeatでTabが高速に飛び続けるとFocus選択が不安定になるため、初回PressだけをNavigationへ利用します。
+    if (event.Pressed == true && event.Repeat == false && event.Key == UIKey::Tab)
+    {
+        return MoveFocus(event.Shift);
+    }
+    return false;
 }
 
 } // namespace Raven
