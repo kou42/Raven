@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/UI/Widgets/UIScrollView.h"
+
 #include <algorithm>
 
 namespace Raven
@@ -36,6 +38,22 @@ inline bool UIContext::SetFocus(UIElement* element)
     for (UIElement* candidate : focusableElements)
     {
         candidate->SetFocused(candidate == element);
+    }
+
+    if (element != nullptr)
+    {
+        // Focus対象からRootへ向かって祖先ScrollViewを順に処理します。
+        // 内側を先にEnsureVisibleすることで、Nested ScrollViewでも各Viewportが必要最小限だけ追従します。
+        UIElement* current = element->GetParent();
+        while (current != nullptr)
+        {
+            UIScrollView* scrollView = dynamic_cast<UIScrollView*>(current);
+            if (scrollView != nullptr)
+            {
+                scrollView->EnsureVisible(element);
+            }
+            current = current->GetParent();
+        }
     }
     return true;
 }
@@ -93,7 +111,6 @@ inline bool UIContext::MoveFocus(bool reverse)
 
 inline bool UIContext::RouteKeyEvent(const UIKeyEvent& event)
 {
-    // Key repeatでTabが高速に飛び続けるとFocus選択が不安定になるため、初回PressだけをNavigationへ利用します。
     if (event.Pressed == true && event.Repeat == false && event.Key == UIKey::Tab)
     {
         return MoveFocus(event.Shift);
