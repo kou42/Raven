@@ -59,13 +59,12 @@ inline bool UIScrollView::EnsureVisible(const math::Vec2& contentMin, const math
     const math::Vec2 rectMax(std::max(contentMin.x, contentMax.x), std::max(contentMin.y, contentMax.y));
     math::Vec2 requested = m_ScrollOffset;
 
-    // 矩形がViewportより大きい軸では両端を同時に収められないため、先頭側を優先します。
-    // 通常サイズでは現在見えている軸を動かさず、必要な最小距離だけScrollします。
-    const float visibleWidth = std::max(0.0f, viewportSize.x - marginX * 2.0f);
+    // 矩形そのものがViewportより大きい軸では両端を同時に収められないため、先頭側を優先します。
+    // 通常サイズでは現在見えている軸を動かさず、指定Marginを含めて必要な最小距離だけScrollします。
     const float rectWidth = rectMax.x - rectMin.x;
     const float visibleMinX = m_ScrollOffset.x + marginX;
     const float visibleMaxX = m_ScrollOffset.x + viewportSize.x - marginX;
-    if (rectWidth > visibleWidth)
+    if (rectWidth > viewportSize.x)
     {
         requested.x = rectMin.x - marginX;
     }
@@ -78,11 +77,10 @@ inline bool UIScrollView::EnsureVisible(const math::Vec2& contentMin, const math
         requested.x = rectMax.x - viewportSize.x + marginX;
     }
 
-    const float visibleHeight = std::max(0.0f, viewportSize.y - marginY * 2.0f);
     const float rectHeight = rectMax.y - rectMin.y;
     const float visibleMinY = m_ScrollOffset.y + marginY;
     const float visibleMaxY = m_ScrollOffset.y + viewportSize.y - marginY;
-    if (rectHeight > visibleHeight)
+    if (rectHeight > viewportSize.y)
     {
         requested.y = rectMin.y - marginY;
     }
