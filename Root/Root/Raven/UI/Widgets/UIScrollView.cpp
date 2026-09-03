@@ -2,6 +2,7 @@
 #include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Raven
 {
@@ -27,6 +28,19 @@ public:
     {
         m_TrackColor = trackColor;
         m_ThumbColor = thumbColor;
+
+        // Theme側からThumb色を変更してもHover / Pressedだけ固定色へ飛ばないよう、
+        // 状態色は現在のThumb色を基準に明度だけを上げて生成します。
+        m_ThumbHoverColor = math::Vec4(
+            std::clamp(thumbColor.x + 0.10f, 0.0f, 1.0f),
+            std::clamp(thumbColor.y + 0.10f, 0.0f, 1.0f),
+            std::clamp(thumbColor.z + 0.10f, 0.0f, 1.0f),
+            thumbColor.w);
+        m_ThumbPressedColor = math::Vec4(
+            std::clamp(thumbColor.x + 0.20f, 0.0f, 1.0f),
+            std::clamp(thumbColor.y + 0.20f, 0.0f, 1.0f),
+            std::clamp(thumbColor.z + 0.20f, 0.0f, 1.0f),
+            thumbColor.w);
     }
 
     void SetThumbPressed(bool value)
@@ -81,11 +95,11 @@ protected:
         math::Vec4 thumbColor = m_ThumbColor;
         if (m_ThumbPressed == true)
         {
-            thumbColor = math::Vec4(0.64f, 0.67f, 0.74f, m_ThumbColor.w);
+            thumbColor = m_ThumbPressedColor;
         }
         else if (IsPointerOverThumb() == true)
         {
-            thumbColor = math::Vec4(0.52f, 0.55f, 0.62f, m_ThumbColor.w);
+            thumbColor = m_ThumbHoverColor;
         }
         drawList.AddRect(thumbMin, thumbMax, ApplyVisualColor(thumbColor));
     }
@@ -111,6 +125,8 @@ private:
     bool m_ThumbPressed = false;
     math::Vec4 m_TrackColor{ 0.06f, 0.07f, 0.09f, 0.75f };
     math::Vec4 m_ThumbColor{ 0.42f, 0.45f, 0.52f, 0.95f };
+    math::Vec4 m_ThumbHoverColor{ 0.52f, 0.55f, 0.62f, 0.95f };
+    math::Vec4 m_ThumbPressedColor{ 0.62f, 0.65f, 0.72f, 0.95f };
 };
 
 UIScrollView::UIScrollView()
@@ -231,8 +247,31 @@ void UIScrollView::OnMouseEvent(UIMouseEvent& event)
     }
     if (event.Type != UIMouseEventType::Scroll) { return; }
 
+    const math::Vec2 maxOffset = GetMaxScrollOffset();
+    const float horizontalMagnitude = std::abs(event.ScrollDelta.x);
+    const float verticalMagnitude = std::abs(event.ScrollDelta.y);
+    math::Vec2 requested = m_ScrollOffset;
+
+    // Trackpadの斜め入力で両軸が同時に動くのを避けるため、入力の大きい軸を1つだけ選択します。
+    // 一般的なMouse WheelはYだけを送るため、VerticalにOverflowが無い場合だけHorizontalへFallbackします。
+    if (verticalMagnitude >= horizontalMagnitude && verticalMagnitude > 0.0f)
+    {
+        if (maxOffset.y > 0.0f)
+        {
+            requested.y -= event.ScrollDelta.y * m_WheelScrollStep;
+        }
+        else if (maxOffset.x > 0.0f)
+        {
+            requested.x -= event.ScrollDelta.y * m_WheelScrollStep;
+        }
+    }
+    else if (horizontalMagnitude > 0.0f && maxOffset.x > 0.0f)
+    {
+        requested.x += event.ScrollDelta.x * m_WheelScrollStep;
+    }
+
     const math::Vec2 previous = m_ScrollOffset;
-    SetScrollOffset(math::Vec2(m_ScrollOffset.x + event.ScrollDelta.x * m_WheelScrollStep, m_ScrollOffset.y - event.ScrollDelta.y * m_WheelScrollStep));
+    SetScrollOffset(requested);
     if (m_ScrollOffset != previous) { event.Handled = true; }
 }
 
