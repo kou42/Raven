@@ -29,7 +29,33 @@ public:
         m_ThumbColor = thumbColor;
     }
 
+    void SetThumbPressed(bool value)
+    {
+        m_ThumbPressed = value;
+    }
+
 protected:
+    void OnMouseEvent(UIMouseEvent& event) override
+    {
+        // Hover状態自体はUIContextが管理しますが、Scrollbar Element全体とThumbの範囲は一致しません。
+        // そのためPointerのScrollbar Local座標だけを保持し、描画時にThumb上かどうかを判定します。
+        if (event.Type == UIMouseEventType::Cancel)
+        {
+            m_HasPointerPosition = false;
+            return;
+        }
+
+        math::Vec2 localPosition;
+        if (TryScreenToLocalPosition(event.ScreenPosition, localPosition) == false)
+        {
+            m_HasPointerPosition = false;
+            return;
+        }
+
+        m_PointerPosition = m_Vertical == true ? localPosition.y : localPosition.x;
+        m_HasPointerPosition = true;
+    }
+
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override
     {
         const math::Vec2& size = GetSize();
@@ -51,13 +77,38 @@ protected:
             thumbMin.x += m_ThumbStart;
             thumbMax.x = thumbMin.x + m_ThumbLength;
         }
-        drawList.AddRect(thumbMin, thumbMax, ApplyVisualColor(m_ThumbColor));
+
+        math::Vec4 thumbColor = m_ThumbColor;
+        if (m_ThumbPressed == true)
+        {
+            thumbColor = math::Vec4(0.64f, 0.67f, 0.74f, m_ThumbColor.w);
+        }
+        else if (IsPointerOverThumb() == true)
+        {
+            thumbColor = math::Vec4(0.52f, 0.55f, 0.62f, m_ThumbColor.w);
+        }
+        drawList.AddRect(thumbMin, thumbMax, ApplyVisualColor(thumbColor));
+    }
+
+private:
+    bool IsPointerOverThumb() const
+    {
+        if (IsHovered() == false || m_HasPointerPosition == false || m_ThumbLength <= 0.0f)
+        {
+            return false;
+        }
+
+        const float thumbEnd = m_ThumbStart + m_ThumbLength;
+        return m_PointerPosition >= m_ThumbStart && m_PointerPosition < thumbEnd;
     }
 
 private:
     bool m_Vertical = false;
     float m_ThumbStart = 0.0f;
     float m_ThumbLength = 0.0f;
+    float m_PointerPosition = 0.0f;
+    bool m_HasPointerPosition = false;
+    bool m_ThumbPressed = false;
     math::Vec4 m_TrackColor{ 0.06f, 0.07f, 0.09f, 0.75f };
     math::Vec4 m_ThumbColor{ 0.42f, 0.45f, 0.52f, 0.95f };
 };
@@ -267,6 +318,17 @@ void UIScrollView::ApplyContentPosition()
 
 void UIScrollView::EndThumbDrag()
 {
+    // Mouse Captureの所有者はUIScrollViewなので、Pressed Visualだけは内部Scrollbarへ明示的に同期します。
+    // 解除経路をここへ集約することでMouseUp / Cancel / Content差し替え / Axis無効化の全てで状態を残しません。
+    if (m_VerticalScrollBar != nullptr)
+    {
+        m_VerticalScrollBar->SetThumbPressed(false);
+    }
+    if (m_HorizontalScrollBar != nullptr)
+    {
+        m_HorizontalScrollBar->SetThumbPressed(false);
+    }
+
     m_DragAxis = ScrollBarDragAxis::None;
     m_DragGrabOffset = 0.0f;
 }
@@ -291,6 +353,7 @@ bool UIScrollView::HandleScrollBarMouseDown(UIMouseEvent& event)
         {
             m_DragAxis = vertical == true ? ScrollBarDragAxis::Vertical : ScrollBarDragAxis::Horizontal;
             m_DragGrabOffset = pointer - thumbStart;
+            scrollBar->SetThumbPressed(true);
         }
     }
     else
