@@ -254,13 +254,15 @@ public:
     void SetPressed(bool value);
 
     // UIContextのBubble Routingから呼ばれる公開入口です。
-    // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
+    // Widget側はOnMouseEvent()/OnKeyEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
+    void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
 
 protected:
     virtual void OnMouseEvent(UIMouseEvent& event);
+    virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
