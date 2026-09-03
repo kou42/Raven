@@ -29,11 +29,17 @@ enum class UIMouseEventType
 // UIKeyEvent
 // ============================================================================
 // Platform Key CodeはApplication境界でUIKeyへ変換し、UI CoreへGLFW等の定数を持ち込みません。
-// 現段階ではFocus Navigationで必要なSemantic Keyから追加し、Widget用Keyboard操作へ段階的に拡張します。
+// Focus NavigationとWidget操作で意味を持つKeyだけをSemantic Keyとして公開します。
 enum class UIKey
 {
     Unknown = 0,
-    Tab
+    Tab,
+    Enter,
+    Space,
+    Left,
+    Right,
+    Home,
+    End
 };
 
 struct UIKeyEvent
