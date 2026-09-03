@@ -115,7 +115,19 @@ inline bool UIContext::RouteKeyEvent(const UIKeyEvent& event)
     {
         return MoveFocus(event.Shift);
     }
-    return false;
+
+    UIElement* focusedElement = GetFocusedElement();
+    if (focusedElement == nullptr)
+    {
+        return false;
+    }
+
+    // Tab以外のKeyboard入力は現在Focusを持つWidgetへ直接配送します。
+    // MouseのようなHit Testは不要で、Focus所有者だけが操作を消費するため親への暗黙Bubbleも行いません。
+    UIKeyEvent routedEvent = event;
+    routedEvent.Context = this;
+    focusedElement->HandleKeyEvent(routedEvent);
+    return routedEvent.Handled;
 }
 
 } // namespace Raven
