@@ -55,6 +55,7 @@ void WindowsWindow::Init(const WindowProps& props)
         s_GLFWInitialized = true;
     }
 
+    // 実行環境差で既定値がぶれないよう、コンテキスト属性を明示します。
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -78,19 +79,24 @@ void WindowsWindow::Init(const WindowProps& props)
         return;
     }
 
+    // OpenGLContext::Init() の中でglfwMakeContextCurrent()を呼ぶためコメントアウト
 #if 0
     glfwMakeContextCurrent(m_Window);
 #endif
 
     m_Context = CreateScope<OpenGLContext>(m_Window);
     m_Context->Init();
+
     m_Input = CreateScope<WindowsInput>(m_Window);
+
     glfwSetWindowUserPointer(m_Window, &m_Data);
+
     SetVSync(true);
 
     glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
             WindowCloseEvent event;
             data.EventCallback(event);
         }
@@ -99,16 +105,21 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
             data.Width = static_cast<unsigned int>(width);
             data.Height = static_cast<unsigned int>(height);
+
             WindowResizeEvent event(data.Width, data.Height);
             data.EventCallback(event);
         }
     );
 
+    // Focusを失うとMouse UpがMain Windowへ戻らない場合があります。
+    // Platform層ではFocus状態だけをCore Eventへ変換し、Capture終了判断はApplication/UIContextへ委譲します。
     glfwSetWindowFocusCallback(m_Window, [](GLFWwindow* window, int focused)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
             if (focused == GLFW_TRUE)
             {
                 WindowFocusGainedEvent event;
@@ -122,7 +133,8 @@ void WindowsWindow::Init(const WindowProps& props)
         }
     );
 
-    // Key callbackのkey/mods/repeatをそのままCore Eventへsnapshotし、Application以降でpollingしません。
+    // Keyboard入力もMouseと同様にWindow -> Core Event -> Applicationへ集約します。
+    // ModifierとRepeat状態をcallback発生時点でsnapshotし、Focus Navigation側で後からpollingしません。
     glfwSetKeyCallback(m_Window, [](GLFWwindow* window, int key, int scancode, int action, int mods)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
@@ -141,9 +153,13 @@ void WindowsWindow::Init(const WindowProps& props)
         }
     );
 
+    // GLFW callbackで受け取ったMouse入力をCore Eventへ変換します。
+    // UIContextをPlatform層から直接呼ばずApplication::OnEvent()へ集約することで、
+    // UI以外のLayerも同じMouse Eventを利用でき、入力経路をWindow -> Application -> Consumerに統一します。
     glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, double x, double y)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
             MouseMovedEvent event(static_cast<float>(x), static_cast<float>(y));
             data.EventCallback(event);
         }
@@ -154,18 +170,26 @@ void WindowsWindow::Init(const WindowProps& props)
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
             static_cast<void>(mods);
 
+            // Button callbackには座標が直接渡されないため、Eventを生成するこの瞬間にGLFWから取得します。
+            // Application側で後からpollingしないことで、Eventは発生時点の完全な入力snapshotになります。
             double mouseX = 0.0;
             double mouseY = 0.0;
             glfwGetCursorPos(window, &mouseX, &mouseY);
 
             if (action == GLFW_PRESS)
             {
-                MouseButtonPressedEvent event(button, static_cast<float>(mouseX), static_cast<float>(mouseY));
+                MouseButtonPressedEvent event(
+                    button,
+                    static_cast<float>(mouseX),
+                    static_cast<float>(mouseY));
                 data.EventCallback(event);
             }
             else if (action == GLFW_RELEASE)
             {
-                MouseButtonReleasedEvent event(button, static_cast<float>(mouseX), static_cast<float>(mouseY));
+                MouseButtonReleasedEvent event(
+                    button,
+                    static_cast<float>(mouseX),
+                    static_cast<float>(mouseY));
                 data.EventCallback(event);
             }
         }
@@ -174,6 +198,9 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetScrollCallback(m_Window, [](GLFWwindow* window, double offsetX, double offsetY)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+            // Scroll callbackもButton Eventと同様に発生時点のPointer座標をsnapshotします。
+            // どのScrollViewへBubbleするかはUIContextのHit Testで決定するため、Platform層は座標とOffsetだけを渡します。
             double mouseX = 0.0;
             double mouseY = 0.0;
             glfwGetCursorPos(window, &mouseX, &mouseY);
@@ -200,6 +227,7 @@ void WindowsWindow::Shutdown()
 void WindowsWindow::OnUpdate()
 {
     glfwPollEvents();
+
     m_Context->SwapBuffers();
 #if 0
     glfwSwapBuffers(m_Window);
