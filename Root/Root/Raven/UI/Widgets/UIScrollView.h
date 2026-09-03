@@ -35,7 +35,7 @@ public:
 
     // Content配下のElement、またはContent Local座標の矩形がViewport内へ収まるよう必要最小限Scrollします。
     // marginはViewport端から確保したい余白です。対象が既に表示済みの場合はOffsetを変更しません。
-    bool EnsureVisible(UIElement* element, float margin = 0.0f);
+    bool EnsureVisible(const UIElement* element, float margin = 0.0f);
     bool EnsureVisible(const math::Vec2& contentMin, const math::Vec2& contentMax, float margin = 0.0f);
 
     // Content / Viewport Size変更後に現在Offsetを新しい範囲へClampします。
