@@ -26,6 +26,33 @@ enum class UIMouseEventType
 };
 
 // ============================================================================
+// UIKeyEvent
+// ============================================================================
+// Platform Key CodeはApplication境界でUIKeyへ変換し、UI CoreへGLFW等の定数を持ち込みません。
+// Focus NavigationとWidget操作で意味を持つKeyだけをSemantic Keyとして公開します。
+enum class UIKey
+{
+    Unknown = 0,
+    Tab,
+    Enter,
+    Space,
+    Left,
+    Right,
+    Home,
+    End
+};
+
+struct UIKeyEvent
+{
+    UIKey Key = UIKey::Unknown;
+    bool Pressed = false;
+    bool Shift = false;
+    bool Repeat = false;
+    UIContext* Context = nullptr;
+    bool Handled = false;
+};
+
+// ============================================================================
 // UIMouseEvent
 // ============================================================================
 // UIContextからUIElement TreeへRoutingする最小マウスイベントです。

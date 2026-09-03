@@ -98,6 +98,65 @@ public:
 };
 
 // ============================================================================
+// Keyboard Events
+// ============================================================================
+// Platform固有のKey CodeとModifierをEvent生成時点でsnapshotします。
+// ApplicationでUI向けSemantic Keyへ変換することで、UI CoreへGLFW定数を持ち込みません。
+class KeyEvent : public Event
+{
+public:
+    int GetKeyCode() const { return m_KeyCode; }
+    int GetModifiers() const { return m_Modifiers; }
+
+protected:
+    KeyEvent(int keyCode, int modifiers)
+        : m_KeyCode(keyCode), m_Modifiers(modifiers) {}
+
+private:
+    int m_KeyCode;
+    int m_Modifiers;
+};
+
+class KeyPressedEvent : public KeyEvent
+{
+public:
+    KeyPressedEvent(int keyCode, int modifiers, bool repeat)
+        : KeyEvent(keyCode, modifiers), m_Repeat(repeat) {}
+
+    bool IsRepeat() const { return m_Repeat; }
+
+    EventType GetEventType() const override
+    {
+        return EventType::KeyPressed;
+    }
+
+    std::string ToString() const override
+    {
+        return "KeyPressedEvent: " + std::to_string(GetKeyCode());
+    }
+
+private:
+    bool m_Repeat = false;
+};
+
+class KeyReleasedEvent : public KeyEvent
+{
+public:
+    KeyReleasedEvent(int keyCode, int modifiers)
+        : KeyEvent(keyCode, modifiers) {}
+
+    EventType GetEventType() const override
+    {
+        return EventType::KeyReleased;
+    }
+
+    std::string ToString() const override
+    {
+        return "KeyReleasedEvent: " + std::to_string(GetKeyCode());
+    }
+};
+
+// ============================================================================
 // Mouse Events
 // ============================================================================
 // Platform側のMouse入力をApplication / Layerへ流すためのCore Eventです。

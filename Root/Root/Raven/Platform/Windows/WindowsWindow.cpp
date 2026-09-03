@@ -133,6 +133,26 @@ void WindowsWindow::Init(const WindowProps& props)
         }
     );
 
+    // Keyboard入力もMouseと同様にWindow -> Core Event -> Applicationへ集約します。
+    // ModifierとRepeat状態をcallback発生時点でsnapshotし、Focus Navigation側で後からpollingしません。
+    glfwSetKeyCallback(m_Window, [](GLFWwindow* window, int key, int scancode, int action, int mods)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            static_cast<void>(scancode);
+
+            if (action == GLFW_PRESS || action == GLFW_REPEAT)
+            {
+                KeyPressedEvent event(key, mods, action == GLFW_REPEAT);
+                data.EventCallback(event);
+            }
+            else if (action == GLFW_RELEASE)
+            {
+                KeyReleasedEvent event(key, mods);
+                data.EventCallback(event);
+            }
+        }
+    );
+
     // GLFW callbackで受け取ったMouse入力をCore Eventへ変換します。
     // UIContextをPlatform層から直接呼ばずApplication::OnEvent()へ集約することで、
     // UI以外のLayerも同じMouse Eventを利用でき、入力経路をWindow -> Application -> Consumerに統一します。
@@ -148,7 +168,7 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetMouseButtonCallback(m_Window, [](GLFWwindow* window, int button, int action, int mods)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
-            (void)mods;
+            static_cast<void>(mods);
 
             // Button callbackには座標が直接渡されないため、Eventを生成するこの瞬間にGLFWから取得します。
             // Application側で後からpollingしないことで、Eventは発生時点の完全な入力snapshotになります。

@@ -15,6 +15,24 @@
 namespace Raven
 {
 
+namespace
+{
+UIKey ToUIKey(int keyCode)
+{
+    switch (keyCode)
+    {
+    case GLFW_KEY_TAB: return UIKey::Tab;
+    case GLFW_KEY_ENTER: return UIKey::Enter;
+    case GLFW_KEY_SPACE: return UIKey::Space;
+    case GLFW_KEY_LEFT: return UIKey::Left;
+    case GLFW_KEY_RIGHT: return UIKey::Right;
+    case GLFW_KEY_HOME: return UIKey::Home;
+    case GLFW_KEY_END: return UIKey::End;
+    default: return UIKey::Unknown;
+    }
+}
+} // namespace
+
 Application::Application()
 {
     // WindowはRenderer / ImGuiより先に生成します。
@@ -63,9 +81,11 @@ Application::Application()
 
     auto headerButton = CreateScope<UIButton>();
     headerButton->SetSize(math::Vec2(336.0f, 42.0f));
+    headerButton->SetFocusable(true);
     headerButton->SetNormalColor(math::Vec4(0.10f, 0.28f, 0.55f, 1.0f));
     headerButton->SetHoveredColor(math::Vec4(0.16f, 0.40f, 0.72f, 1.0f));
     headerButton->SetPressedColor(math::Vec4(0.07f, 0.20f, 0.42f, 1.0f));
+    headerButton->SetFocusedColor(math::Vec4(0.24f, 0.48f, 0.86f, 1.0f));
     headerButton->SetOnClick([]()
         {
             std::cout << "Raven UI validation button clicked" << std::endl;
@@ -127,8 +147,10 @@ Application::Application()
     // Focus Lost時にはApplicationがCancelMouseCapture()を呼ぶため、Mouse Upが戻らなくてもDraggingは残りません。
     auto footerSlider = CreateScope<UISlider>();
     footerSlider->SetSize(math::Vec2(336.0f, 42.0f));
+    footerSlider->SetFocusable(true);
     footerSlider->SetRange(0.0f, 1.0f);
     footerSlider->SetValue(0.35f);
+    footerSlider->SetKeyboardStep(0.05f);
     footerSlider->SetOnValueChanged([](float value)
         {
             std::cout << "Raven UI validation slider: " << value << std::endl;
@@ -384,6 +406,33 @@ void Application::OnEvent(Event& event)
     }
 
     // ========================================================================
+    // Raven UI Keyboard Event routing
+    // ========================================================================
+    // Platform Key CodeはApplication境界でSemantic UIKeyへ変換します。
+    // ModifierもCore Eventが保持する入力時点のsnapshotを使い、後からInput pollingしません。
+    if (event.Handled == false && event.GetEventType() == EventType::KeyPressed)
+    {
+        KeyPressedEvent& keyEvent = static_cast<KeyPressedEvent&>(event);
+        UIKeyEvent uiEvent;
+        uiEvent.Key = ToUIKey(keyEvent.GetKeyCode());
+        uiEvent.Pressed = true;
+        uiEvent.Repeat = keyEvent.IsRepeat();
+        uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
+        uiEvent.Context = &m_UIContext;
+        event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+    }
+    else if (event.Handled == false && event.GetEventType() == EventType::KeyReleased)
+    {
+        KeyReleasedEvent& keyEvent = static_cast<KeyReleasedEvent&>(event);
+        UIKeyEvent uiEvent;
+        uiEvent.Key = ToUIKey(keyEvent.GetKeyCode());
+        uiEvent.Pressed = false;
+        uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
+        uiEvent.Context = &m_UIContext;
+        event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+    }
+
+    // ========================================================================
     // Raven UI Mouse Event routing
     // ========================================================================
     // Platform Mouse EventをUIContextのHit Test / Bubble Routingへ変換します。
@@ -461,7 +510,7 @@ void Application::OnEvent(Event& event)
     // いずれかのLayerがevent.Handled = trueにした時点で伝播を終了します。
     for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it)
     {
-        if (event.Handled)
+        if (event.Handled == true)
         {
             break;
         }

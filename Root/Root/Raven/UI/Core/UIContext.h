@@ -29,7 +29,7 @@ namespace Raven
 // Root以下のElement Treeはframeを跨いで保持し、EndFrame()直前にLayoutを解決してUIDrawListへ展開します。
 // これによりWidgetのLifetimeとGPUへ渡す一時DrawCommandのLifetimeを分離します。
 //
-// Interaction StateとしてHover / Pressed / Mouse CaptureもContext単位で管理します。
+// Interaction StateとしてHover / Pressed / Mouse Captureに加え、Keyboard FocusもContext単位で管理します。
 // Windowや描画TargetごとにContextを分離した場合でも、入力状態が別Contextへ漏れない構造を維持します。
 class UIContext
 {
@@ -53,6 +53,18 @@ public:
     bool RouteMouseDown(const math::Vec2& screenPosition, UIMouseButton button);
     bool RouteMouseUp(const math::Vec2& screenPosition, UIMouseButton button);
     bool RouteMouseScroll(const math::Vec2& screenPosition, const math::Vec2& scrollDelta);
+
+    // ApplicationでPlatform Key CodeをSemantic UIKeyへ変換した後のKeyboard Event入口です。
+    // 現段階ではTab / Shift+TabをFocus Navigationとして扱い、RepeatではFocusを進めません。
+    bool RouteKeyEvent(const UIKeyEvent& event);
+
+    // Keyboard / Gamepad Navigation対象のFocusをContext内で一意に管理します。
+    // Focus状態はElement自身へ保持し、Contextは必要時にTreeを検索するためSubtree破棄でraw pointerを残しません。
+    bool SetFocus(UIElement* element);
+    void ClearFocus();
+    UIElement* GetFocusedElement();
+    const UIElement* GetFocusedElement() const;
+    bool MoveFocus(bool reverse = false);
 
     // 明示的なMouse Captureです。
     // 同一Elementからの再Captureは成功として扱い、別ElementがCapture中の場合は所有権を奪いません。
@@ -92,6 +104,7 @@ private:
 
     void UpdateHoverTarget(UIElement* target);
     void UpdatePressedTarget(UIElement* target);
+    void CollectFocusableElements(UIElement* root, std::vector<UIElement*>& outElements) const;
 
     // Retained TreeからSubtreeを破棄する直前にUIElementから呼ばれます。
     // Capture / Hover / Pressedが破棄対象を指したままScopeが解放されるとdangling pointerになるため、
@@ -111,3 +124,5 @@ private:
 };
 
 } // namespace Raven
+
+#include "Raven/UI/Core/UIFocusNavigation.inl"

@@ -20,6 +20,11 @@ void UIButton::SetPressedColor(const math::Vec4& color)
     m_PressedColor = color;
 }
 
+void UIButton::SetFocusedColor(const math::Vec4& color)
+{
+    m_FocusedColor = color;
+}
+
 void UIButton::SetOnClick(ClickHandler handler)
 {
     m_OnClick = std::move(handler);
@@ -38,6 +43,11 @@ const math::Vec4& UIButton::GetHoveredColor() const
 const math::Vec4& UIButton::GetPressedColor() const
 {
     return m_PressedColor;
+}
+
+const math::Vec4& UIButton::GetFocusedColor() const
+{
+    return m_FocusedColor;
 }
 
 void UIButton::OnMouseEvent(UIMouseEvent& event)
@@ -67,6 +77,24 @@ void UIButton::OnMouseEvent(UIMouseEvent& event)
     }
 }
 
+void UIButton::OnKeyEvent(UIKeyEvent& event)
+{
+    if (IsFocused() == false || event.Pressed == false)
+    {
+        return;
+    }
+
+    if (event.Key == UIKey::Enter || event.Key == UIKey::Space)
+    {
+        // OS Key RepeatでButton Actionが意図せず連打されないよう、1回の物理押下につき1回だけActivateします。
+        if (event.Repeat == false && m_OnClick != nullptr)
+        {
+            m_OnClick();
+        }
+        event.Handled = true;
+    }
+}
+
 void UIButton::OnBuildDrawList(
     UIDrawList& drawList,
     const math::Vec2& absolutePosition) const
@@ -79,6 +107,10 @@ void UIButton::OnBuildDrawList(
     else if (IsHovered() == true)
     {
         color = &m_HoveredColor;
+    }
+    else if (IsFocused() == true)
+    {
+        color = &m_FocusedColor;
     }
 
     const math::Vec2& size = GetSize();

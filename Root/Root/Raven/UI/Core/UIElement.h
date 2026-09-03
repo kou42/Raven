@@ -138,6 +138,12 @@ public:
     void SetAffectsParentMeasure(bool value);
     bool GetAffectsParentMeasure() const { return m_AffectsParentMeasure; }
 
+    // Keyboard / Gamepad Navigationの対象にするElementだけ明示的に有効化します。
+    // Focus状態そのものはUIContextがTree単位で一意になるよう更新します。
+    void SetFocusable(bool value) { m_Focusable = value; }
+    bool IsFocusable() const { return m_Focusable; }
+    bool IsFocused() const { return m_Focused; }
+
     // Rotation / ScaleはMeasure / Arrangeへ影響しないVisual Transformです。
     // TransformPivotはElement矩形に対するnormalized座標で、親子階層ではAffine Transformとして合成されます。
     void SetRotation(float value) { m_Rotation = value; }
@@ -248,18 +254,21 @@ public:
     void SetPressed(bool value);
 
     // UIContextのBubble Routingから呼ばれる公開入口です。
-    // Widget側はOnMouseEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
+    // Widget側はOnMouseEvent()/OnKeyEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
+    void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
 
 protected:
     virtual void OnMouseEvent(UIMouseEvent& event);
+    virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
     friend class UIContext;
 
+    void SetFocused(bool value) { m_Focused = value; }
     math::Vec2 ClampSize(const math::Vec2& size) const;
     math::Vec2 ResolveRootSize() const;
     math::Vec2 GetDesiredSizeWithMargin() const;
@@ -310,6 +319,8 @@ private:
     bool m_Visible = true;
     bool m_Hovered = false;
     bool m_Pressed = false;
+    bool m_Focusable = false;
+    bool m_Focused = false;
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
     bool m_ClipChildren = false;
