@@ -60,9 +60,9 @@ inline bool UIScrollView::EnsureVisible(const math::Vec2& contentMin, const math
     }
 
     const float safeMargin = std::max(0.0f, margin);
-    // MarginがViewport半分を超えると可視範囲が反転するため、各軸で安全な上限へClampします。
-    const float marginX = std::min(safeMargin, viewportSize.x * 0.5f);
-    const float marginY = std::min(safeMargin, viewportSize.y * 0.5f);
+    // MarginがViewport半分以上になると可視範囲が点または反転になるため、わずかに手前へClampします。
+    const float marginX = std::min(safeMargin, viewportSize.x * 0.499f);
+    const float marginY = std::min(safeMargin, viewportSize.y * 0.499f);
     const math::Vec2 rectMin(std::min(contentMin.x, contentMax.x), std::min(contentMin.y, contentMax.y));
     const math::Vec2 rectMax(std::max(contentMin.x, contentMax.x), std::max(contentMin.y, contentMax.y));
     math::Vec2 requested = m_ScrollOffset;
