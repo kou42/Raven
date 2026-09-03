@@ -5,42 +5,6 @@
 namespace Raven
 {
 
-inline bool UIContext::SetFocus(UIElement* element)
-{
-    if (element == nullptr)
-    {
-        ClearFocus();
-        return true;
-    }
-    if (element->m_Context != this || element->IsFocusable() == false || element->IsVisible() == false)
-    {
-        return false;
-    }
-    if (m_FocusedElement == element)
-    {
-        return true;
-    }
-    if (m_FocusedElement != nullptr)
-    {
-        m_FocusedElement->SetFocused(false);
-    }
-    m_FocusedElement = element;
-    m_FocusedElement->SetFocused(true);
-    return true;
-}
-
-inline void UIContext::ClearFocus()
-{
-    if (m_FocusedElement != nullptr)
-    {
-        m_FocusedElement->SetFocused(false);
-        m_FocusedElement = nullptr;
-    }
-}
-
-inline UIElement* UIContext::GetFocusedElement() { return m_FocusedElement; }
-inline const UIElement* UIContext::GetFocusedElement() const { return m_FocusedElement; }
-
 inline void UIContext::CollectFocusableElements(UIElement* root, std::vector<UIElement*>& outElements) const
 {
     if (root == nullptr || root->IsVisible() == false)
@@ -60,29 +24,66 @@ inline void UIContext::CollectFocusableElements(UIElement* root, std::vector<UIE
     }
 }
 
+inline bool UIContext::SetFocus(UIElement* element)
+{
+    if (element != nullptr && (element->m_Context != this || element->IsFocusable() == false || element->IsVisible() == false))
+    {
+        return false;
+    }
+
+    // Focus対象をraw pointerとしてContextへ保持せず、Element自身の状態としてTree内に保持します。
+    // これによりSubtree削除時はElementと一緒にFocus状態も破棄され、dangling pointerを作りません。
+    std::vector<UIElement*> focusableElements;
+    CollectFocusableElements(m_RootElement.get(), focusableElements);
+    for (UIElement* candidate : focusableElements)
+    {
+        candidate->SetFocused(candidate == element);
+    }
+    return true;
+}
+
+inline void UIContext::ClearFocus()
+{
+    SetFocus(nullptr);
+}
+
+inline UIElement* UIContext::GetFocusedElement()
+{
+    std::vector<UIElement*> focusableElements;
+    CollectFocusableElements(m_RootElement.get(), focusableElements);
+    for (UIElement* candidate : focusableElements)
+    {
+        if (candidate->IsFocused() == true)
+        {
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
+inline const UIElement* UIContext::GetFocusedElement() const
+{
+    return const_cast<UIContext*>(this)->GetFocusedElement();
+}
+
 inline bool UIContext::MoveFocus(bool reverse)
 {
     std::vector<UIElement*> focusableElements;
     CollectFocusableElements(m_RootElement.get(), focusableElements);
     if (focusableElements.empty())
     {
-        ClearFocus();
         return false;
     }
 
-    auto current = std::find(focusableElements.begin(), focusableElements.end(), m_FocusedElement);
+    UIElement* focusedElement = GetFocusedElement();
+    auto current = std::find(focusableElements.begin(), focusableElements.end(), focusedElement);
     std::size_t nextIndex = 0u;
     if (current != focusableElements.end())
     {
         const std::size_t currentIndex = static_cast<std::size_t>(std::distance(focusableElements.begin(), current));
-        if (reverse == true)
-        {
-            nextIndex = currentIndex == 0u ? focusableElements.size() - 1u : currentIndex - 1u;
-        }
-        else
-        {
-            nextIndex = (currentIndex + 1u) % focusableElements.size();
-        }
+        nextIndex = reverse == true
+            ? (currentIndex == 0u ? focusableElements.size() - 1u : currentIndex - 1u)
+            : (currentIndex + 1u) % focusableElements.size();
     }
     else if (reverse == true)
     {
