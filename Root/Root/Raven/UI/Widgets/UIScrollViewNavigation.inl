@@ -8,7 +8,7 @@ inline void UIScrollView::ScrollTo(const math::Vec2& offset)
     SetScrollOffset(offset);
 }
 
-inline bool UIScrollView::EnsureVisible(UIElement* element, float margin)
+inline bool UIScrollView::EnsureVisible(const UIElement* element, float margin)
 {
     if (element == nullptr || m_Content == nullptr)
     {
