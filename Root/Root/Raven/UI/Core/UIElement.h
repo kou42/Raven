@@ -133,6 +133,74 @@ public:
     void SetMargin(float value);
     void SetSpacing(float value);
 
+    // falseにすると自身のMeasureは通常通り実行しつつ、親のDesiredSize集約からだけ除外します。
+    // ScrollView ContentやOverlay Decorationのように、子の実サイズと親Viewportサイズを分離したい場合に利用します。
+    void SetAffectsParentMeasure(bool value);
+    bool GetAffectsParentMeasure() const { return m_AffectsParentMeasure; }
+
+    // Rotation / ScaleはMeasure / Arrangeへ影響しないVisual Transformです。
+    // TransformPivotはElement矩形に対するnormalized座標で、親子階層ではAffine Transformとして合成されます。
+    void SetRotation(float value) { m_Rotation = value; }
+    float GetRotation() const { return m_Rotation; }
+    void SetScale(const math::Vec2& value) { m_Scale = value; }
+    const math::Vec2& GetScale() const { return m_Scale; }
+    void SetTransformPivot(const math::Vec2& value) { m_TransformPivot = value; }
+    const math::Vec2& GetTransformPivot() const { return m_TransformPivot; }
+
+    // Screen座標を、このElementの階層World Transformを逆変換してLocal Layout座標へ戻します。
+    // Scrollbar Dragなど、Visual Transform後もLocal座標系で入力を扱いたい処理の共通入口です。
+    bool TryScreenToLocalPosition(const math::Vec2& screenPosition, math::Vec2& outLocalPosition) const
+    {
+        std::vector<const UIElement*> chain;
+        const UIElement* current = this;
+        while (current != nullptr)
+        {
+            chain.push_back(current);
+            current = current->m_Parent;
+        }
+        std::reverse(chain.begin(), chain.end());
+
+        UITransform2D worldTransform = UITransform2D::Identity();
+        math::Vec2 absolutePosition(0.0f, 0.0f);
+        math::Vec2 thisAbsolutePosition(0.0f, 0.0f);
+
+        for (const UIElement* element : chain)
+        {
+            absolutePosition.x += element->m_Position.x;
+            absolutePosition.y += element->m_Position.y;
+
+            const math::Vec2 pivot(
+                absolutePosition.x + element->m_Size.x * element->m_TransformPivot.x,
+                absolutePosition.y + element->m_Size.y * element->m_TransformPivot.y);
+            const UITransform2D localTransform = UITransform2D::CreateScaleRotation(
+                pivot,
+                element->m_Rotation,
+                element->m_Scale);
+            worldTransform = UITransform2D::Combine(worldTransform, localTransform);
+
+            if (element == this)
+            {
+                thisAbsolutePosition = absolutePosition;
+            }
+        }
+
+        math::Vec2 layoutPosition;
+        if (worldTransform.TryInverseTransformPoint(screenPosition, layoutPosition) == false)
+        {
+            return false;
+        }
+
+        outLocalPosition = math::Vec2(
+            layoutPosition.x - thisAbsolutePosition.x,
+            layoutPosition.y - thisAbsolutePosition.y);
+        return true;
+    }
+
+    // Childの描画とHit Testを自身のVisual Bounds内へ制限します。
+    // 回転/Shear時はRendererのScissor制約に合わせ、screen-space AABBとして扱います。
+    void SetClipChildren(bool value) { m_ClipChildren = value; }
+    bool GetClipChildren() const { return m_ClipChildren; }
+
     // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
     // 親から子へ乗算継承するため、Container全体のFadeやColor AnimationをWidget種別に依存せず表現できます。
     void SetOpacity(float value) { m_Opacity = std::clamp(value, 0.0f, 1.0f); }
@@ -170,6 +238,8 @@ public:
     bool IsArrangeDirty() const;
     UIElement* GetParent();
     const UIElement* GetParent() const;
+    UIContext* GetContext() { return m_Context; }
+    const UIContext* GetContext() const { return m_Context; }
     const std::vector<Scope<UIElement>>& GetChildren() const;
 
     // UIContextだけがHit Test結果からInteraction Stateを更新します。
@@ -198,7 +268,11 @@ private:
     void MeasureRecursive();
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
-    void BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const;
+    void BuildDrawListRecursive(
+        UIDrawList& drawList,
+        const math::Vec2& parentAbsolutePosition,
+        const UITransform2D& parentWorldTransform,
+        const UIClipRect& inheritedClip) const;
 
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
@@ -227,6 +301,9 @@ private:
     UIAlignment m_HorizontalAlignment = UIAlignment::Start;
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
+    float m_Rotation = 0.0f;
+    math::Vec2 m_Scale{ 1.0f, 1.0f };
+    math::Vec2 m_TransformPivot{ 0.5f, 0.5f };
     float m_Opacity = 1.0f;
     math::Vec4 m_TintColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     uint64_t m_TreeGeneration = 1u;
@@ -235,6 +312,8 @@ private:
     bool m_Pressed = false;
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
+    bool m_ClipChildren = false;
+    bool m_AffectsParentMeasure = true;
 };
 
 } // namespace Raven

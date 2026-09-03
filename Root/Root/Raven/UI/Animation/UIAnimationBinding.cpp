@@ -15,27 +15,38 @@ bool ResolveProperty(
     const AnimationPropertyBinding& binding = GetAnimationPropertyBinding(track);
 
     // Property名だけ一致して型が異なるTrackを受理するとApply時に暗黙変換が必要になるため、Resolve時に拒否します。
-    if (binding.Property == "Position" || binding.Property == "Size")
+    if (binding.Property == "Position" || binding.Property == "Size" || binding.Property == "Scale")
     {
         if (std::holds_alternative<PropertyAnimationTrack<math::Vec2>>(track) == false)
         {
             return false;
         }
 
-        outProperty = binding.Property == "Position"
-            ? UIAnimationProperty::Position
-            : UIAnimationProperty::Size;
+        if (binding.Property == "Position")
+        {
+            outProperty = UIAnimationProperty::Position;
+        }
+        else if (binding.Property == "Size")
+        {
+            outProperty = UIAnimationProperty::Size;
+        }
+        else
+        {
+            outProperty = UIAnimationProperty::Scale;
+        }
         return true;
     }
 
-    if (binding.Property == "Opacity")
+    if (binding.Property == "Rotation" || binding.Property == "Opacity")
     {
         if (std::holds_alternative<PropertyAnimationTrack<float>>(track) == false)
         {
             return false;
         }
 
-        outProperty = UIAnimationProperty::Opacity;
+        outProperty = binding.Property == "Rotation"
+            ? UIAnimationProperty::Rotation
+            : UIAnimationProperty::Opacity;
         return true;
     }
 
@@ -123,6 +134,7 @@ bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
         {
         case UIAnimationProperty::Position:
         case UIAnimationProperty::Size:
+        case UIAnimationProperty::Scale:
         {
             const math::Vec2* value = std::get_if<math::Vec2>(&sample.Value);
             if (value == nullptr)
@@ -134,12 +146,17 @@ bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
             {
                 binding.Target->SetPosition(*value);
             }
-            else
+            else if (binding.Property == UIAnimationProperty::Size)
             {
                 binding.Target->SetSize(*value);
             }
+            else
+            {
+                binding.Target->SetScale(*value);
+            }
             break;
         }
+        case UIAnimationProperty::Rotation:
         case UIAnimationProperty::Opacity:
         {
             const float* value = std::get_if<float>(&sample.Value);
@@ -148,7 +165,14 @@ bool UIAnimationBinding::Apply(const AnimationClip& clip, float time) const
                 return false;
             }
 
-            binding.Target->SetOpacity(*value);
+            if (binding.Property == UIAnimationProperty::Rotation)
+            {
+                binding.Target->SetRotation(*value);
+            }
+            else
+            {
+                binding.Target->SetOpacity(*value);
+            }
             break;
         }
         case UIAnimationProperty::Color:

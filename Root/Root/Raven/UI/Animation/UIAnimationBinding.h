@@ -15,6 +15,8 @@ enum class UIAnimationProperty
 {
     Position,
     Size,
+    Rotation,
+    Scale,
     Opacity,
     Color
 };

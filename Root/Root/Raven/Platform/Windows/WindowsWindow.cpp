@@ -174,6 +174,25 @@ void WindowsWindow::Init(const WindowProps& props)
             }
         }
     );
+
+    glfwSetScrollCallback(m_Window, [](GLFWwindow* window, double offsetX, double offsetY)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+            // Scroll callbackもButton Eventと同様に発生時点のPointer座標をsnapshotします。
+            // どのScrollViewへBubbleするかはUIContextのHit Testで決定するため、Platform層は座標とOffsetだけを渡します。
+            double mouseX = 0.0;
+            double mouseY = 0.0;
+            glfwGetCursorPos(window, &mouseX, &mouseY);
+
+            MouseScrolledEvent event(
+                static_cast<float>(offsetX),
+                static_cast<float>(offsetY),
+                static_cast<float>(mouseX),
+                static_cast<float>(mouseY));
+            data.EventCallback(event);
+        }
+    );
 }
 
 void WindowsWindow::Shutdown()

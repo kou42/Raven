@@ -42,15 +42,17 @@ public:
     // Mouse入力をHit Testし、Hover / Pressedを更新してから最前面TargetからRoot方向へBubbleさせます。
     // Interaction StateはUIContextが一元管理し、WidgetはUIElement上の状態を参照して見た目やClick判定へ利用します。
     // Capture中は物理的なHit先とは別にCapture ElementへEventを配送します。
-    // これによりSliderやWindow Dragのように、PointerがElement外へ出ても継続すべき操作を実装できます。
+    // ScrollはDrag Captureとは独立したPointer位置の操作なので、常に実際のHit TargetからBubbleさせます。
     bool RouteMouseEvent(
         UIMouseEventType type,
         const math::Vec2& screenPosition,
-        UIMouseButton button = UIMouseButton::None);
+        UIMouseButton button = UIMouseButton::None,
+        const math::Vec2& scrollDelta = math::Vec2{});
 
     bool RouteMouseMove(const math::Vec2& screenPosition);
     bool RouteMouseDown(const math::Vec2& screenPosition, UIMouseButton button);
     bool RouteMouseUp(const math::Vec2& screenPosition, UIMouseButton button);
+    bool RouteMouseScroll(const math::Vec2& screenPosition, const math::Vec2& scrollDelta);
 
     // 明示的なMouse Captureです。
     // 同一Elementからの再Captureは成功として扱い、別ElementがCapture中の場合は所有権を奪いません。

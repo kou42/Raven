@@ -12,7 +12,8 @@ enum class EventType
     KeyReleased,
     MouseMoved,
     MouseButtonPressed,
-    MouseButtonReleased
+    MouseButtonReleased,
+    MouseScrolled
 };
 
 class Event
@@ -101,7 +102,7 @@ public:
 // ============================================================================
 // Platform側のMouse入力をApplication / Layerへ流すためのCore Eventです。
 // GLFW固有のWindow Handleを上位層へ公開せず、入力が発生した瞬間の情報をEvent自身に保持します。
-// 特にButton Eventへ座標を含めることで、Consumerが後から現在のCursor位置を再取得する必要をなくし、
+// 特にButton / Scroll Eventへ座標を含めることで、Consumerが後から現在のCursor位置を再取得する必要をなくし、
 // Event生成時点と処理時点で座標がずれる可能性を排除します。
 class MouseMovedEvent : public Event
 {
@@ -178,4 +179,34 @@ public:
         return "MouseButtonReleasedEvent: " + std::to_string(GetMouseButton()) +
             " at " + std::to_string(GetX()) + ", " + std::to_string(GetY());
     }
+};
+
+class MouseScrolledEvent : public Event
+{
+public:
+    MouseScrolledEvent(float offsetX, float offsetY, float x, float y)
+        : m_OffsetX(offsetX), m_OffsetY(offsetY), m_MouseX(x), m_MouseY(y) {}
+
+    float GetOffsetX() const { return m_OffsetX; }
+    float GetOffsetY() const { return m_OffsetY; }
+    float GetX() const { return m_MouseX; }
+    float GetY() const { return m_MouseY; }
+
+    EventType GetEventType() const override
+    {
+        return EventType::MouseScrolled;
+    }
+
+    std::string ToString() const override
+    {
+        return "MouseScrolledEvent: " +
+            std::to_string(m_OffsetX) + ", " + std::to_string(m_OffsetY) +
+            " at " + std::to_string(m_MouseX) + ", " + std::to_string(m_MouseY);
+    }
+
+private:
+    float m_OffsetX;
+    float m_OffsetY;
+    float m_MouseX;
+    float m_MouseY;
 };

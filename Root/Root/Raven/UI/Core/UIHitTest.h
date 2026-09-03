@@ -6,6 +6,8 @@ namespace Raven
 {
 
 class UIElement;
+struct UIClipRect;
+struct UITransform2D;
 
 // ============================================================================
 // UIHitTest
@@ -25,19 +27,24 @@ public:
 
 private:
     static bool ContainsPoint(
+        const UIElement& element,
         const math::Vec2& absolutePosition,
-        const math::Vec2& size,
+        const UITransform2D& worldTransform,
         const math::Vec2& screenPosition);
 
     static UIElement* FindTopmostRecursive(
         UIElement& element,
         const math::Vec2& screenPosition,
-        const math::Vec2& parentAbsolutePosition);
+        const math::Vec2& parentAbsolutePosition,
+        const UITransform2D& parentWorldTransform,
+        const UIClipRect& inheritedClip);
 
     static const UIElement* FindTopmostRecursive(
         const UIElement& element,
         const math::Vec2& screenPosition,
-        const math::Vec2& parentAbsolutePosition);
+        const math::Vec2& parentAbsolutePosition,
+        const UITransform2D& parentWorldTransform,
+        const UIClipRect& inheritedClip);
 };
 
 } // namespace Raven

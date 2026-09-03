@@ -54,7 +54,8 @@ void UIContext::EndFrame()
 bool UIContext::RouteMouseEvent(
     UIMouseEventType type,
     const math::Vec2& screenPosition,
-    UIMouseButton button)
+    UIMouseButton button,
+    const math::Vec2& scrollDelta)
 {
     if (m_RootElement == nullptr)
     {
@@ -84,18 +85,27 @@ bool UIContext::RouteMouseEvent(
         pressedTargetForEvent = m_PressedElement;
     }
 
-    // Capture Elementが存在する間はEvent配送先を固定します。
-    // Hit TargetとCapture Targetを分離することで、Hover表示は実位置を維持しながらDrag操作だけ継続できます。
-    UIElement* routeTarget = m_MouseCaptureElement;
-    if (routeTarget == nullptr)
+    // Scrollは現在Pointer下にあるScroll Containerへ渡す入力なので、Drag Captureとは独立させます。
+    // これによりSliderをCapture中でも、Wheel自体は見えているScrollViewの階層からBubbleできます。
+    UIElement* routeTarget = nullptr;
+    if (type == UIMouseEventType::Scroll)
     {
         routeTarget = hitTarget;
+    }
+    else
+    {
+        routeTarget = m_MouseCaptureElement;
+        if (routeTarget == nullptr)
+        {
+            routeTarget = hitTarget;
+        }
     }
 
     UIMouseEvent event;
     event.Type = type;
     event.Button = button;
     event.ScreenPosition = screenPosition;
+    event.ScrollDelta = scrollDelta;
     event.Context = this;
     event.Target = routeTarget;
     event.PressedTarget = pressedTargetForEvent;
@@ -104,8 +114,7 @@ bool UIContext::RouteMouseEvent(
     if (routeTarget != nullptr)
     {
         // Target -> Parent -> ... -> Root のBubble方式です。
-        // WidgetがHandledを立てた時点で親への伝播を止めます。
-        // Capture中はCapture ElementをTargetとして同じBubble規則を適用します。
+        // Scrollも同じ規則を使うため、内側ScrollViewが境界で消費できない場合に外側ScrollViewへ自然に伝播できます。
         UIElement* current = routeTarget;
         while (current != nullptr)
         {
@@ -145,6 +154,17 @@ bool UIContext::RouteMouseDown(const math::Vec2& screenPosition, UIMouseButton b
 bool UIContext::RouteMouseUp(const math::Vec2& screenPosition, UIMouseButton button)
 {
     return RouteMouseEvent(UIMouseEventType::Up, screenPosition, button);
+}
+
+bool UIContext::RouteMouseScroll(
+    const math::Vec2& screenPosition,
+    const math::Vec2& scrollDelta)
+{
+    return RouteMouseEvent(
+        UIMouseEventType::Scroll,
+        screenPosition,
+        UIMouseButton::None,
+        scrollDelta);
 }
 
 bool UIContext::CaptureMouse(UIElement* element)

@@ -9,16 +9,8 @@ namespace Raven
 {
 
 UIThickness::UIThickness() = default;
-
-UIThickness::UIThickness(float uniform)
-    : Left(uniform), Top(uniform), Right(uniform), Bottom(uniform)
-{
-}
-
-UIThickness::UIThickness(float horizontal, float vertical)
-    : Left(horizontal), Top(vertical), Right(horizontal), Bottom(vertical)
-{
-}
+UIThickness::UIThickness(float uniform) : Left(uniform), Top(uniform), Right(uniform), Bottom(uniform) {}
+UIThickness::UIThickness(float horizontal, float vertical) : Left(horizontal), Top(vertical), Right(horizontal), Bottom(vertical) {}
 
 UIElement::UIElement() = default;
 UIElement::~UIElement() = default;
@@ -29,9 +21,6 @@ UIElement* UIElement::AddChild(Scope<UIElement> child)
     {
         return nullptr;
     }
-
-    // 1つのElementを複数Parentへ接続するとParent chainとContext所属が矛盾します。
-    // Tree外で構築したSubtreeだけをAddChild()できるようにし、移動はDetachChild()経由で明示します。
     if (child->m_Parent != nullptr || child->m_Context != nullptr)
     {
         return nullptr;
@@ -53,33 +42,23 @@ Scope<UIElement> UIElement::DetachChild(UIElement* child)
         return nullptr;
     }
 
-    auto iterator = std::find_if(
-        m_Children.begin(),
-        m_Children.end(),
-        [child](const Scope<UIElement>& candidate)
-        {
-            return candidate.get() == child;
-        });
-
+    auto iterator = std::find_if(m_Children.begin(), m_Children.end(), [child](const Scope<UIElement>& candidate)
+    {
+        return candidate.get() == child;
+    });
     if (iterator == m_Children.end())
     {
         return nullptr;
     }
 
-    // Contextが保持するraw pointerはSubtreeをTreeから外す前に必ず掃除します。
-    // Capture中ならCancel EventをParent chainが有効な状態でBubbleさせてから切り離します。
     if (m_Context != nullptr)
     {
         m_Context->OnSubtreeRemoving(iterator->get());
     }
-
-    // Parent chainが切れる前に現在のTree Generationを更新します。
-    // 切断後に通知するとdetached subtree側だけが更新され、既存Bindingが変化を検出できません。
     NotifyBindingTreeChanged();
 
     Scope<UIElement> detached = std::move(*iterator);
     m_Children.erase(iterator);
-
     detached->m_Parent = nullptr;
     detached->SetContextRecursive(nullptr);
     InvalidateMeasure();
@@ -99,9 +78,6 @@ void UIElement::ClearChildren()
         return;
     }
 
-    // Scopeを破棄してからContext側のraw pointerを掃除することはできません。
-    // Capture中Widgetを含むSubtreeが消える場合は、Parent chainがまだ有効なこの時点で
-    // Cancel Eventを配送し、Hover / Pressedも含めたInteraction Stateを先に終了します。
     if (m_Context != nullptr)
     {
         for (auto& child : m_Children)
@@ -114,7 +90,6 @@ void UIElement::ClearChildren()
     }
 
     NotifyBindingTreeChanged();
-
     for (auto& child : m_Children)
     {
         if (child != nullptr)
@@ -123,7 +98,6 @@ void UIElement::ClearChildren()
             child->SetContextRecursive(nullptr);
         }
     }
-
     m_Children.clear();
     InvalidateMeasure();
 }
@@ -134,52 +108,22 @@ bool UIElement::SetName(std::string name)
     {
         return false;
     }
-
     if (m_Name == name)
     {
         return true;
     }
-
     m_Name = std::move(name);
     NotifyBindingTreeChanged();
     return true;
 }
 
-uint64_t UIElement::GetTreeGeneration() const
-{
-    return GetTreeRoot()->m_TreeGeneration;
-}
+uint64_t UIElement::GetTreeGeneration() const { return GetTreeRoot()->m_TreeGeneration; }
 
-void UIElement::SetPosition(const math::Vec2& value)
-{
-    m_Position = value;
-    InvalidateArrange();
-}
-
-void UIElement::SetSize(const math::Vec2& value)
-{
-    m_PreferredSize = ClampSize(value);
-    m_Size = m_PreferredSize;
-    InvalidateMeasure();
-}
-
-void UIElement::SetPreferredSize(const math::Vec2& value)
-{
-    m_PreferredSize = ClampSize(value);
-    InvalidateMeasure();
-}
-
-void UIElement::SetMinSize(const math::Vec2& value)
-{
-    m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y));
-    InvalidateMeasure();
-}
-
-void UIElement::SetMaxSize(const math::Vec2& value)
-{
-    m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y));
-    InvalidateMeasure();
-}
+void UIElement::SetPosition(const math::Vec2& value) { m_Position = value; InvalidateArrange(); }
+void UIElement::SetSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
+void UIElement::SetPreferredSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
+void UIElement::SetMinSize(const math::Vec2& value) { m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
+void UIElement::SetMaxSize(const math::Vec2& value) { m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
 
 void UIElement::SetVisible(bool value)
 {
@@ -217,34 +161,25 @@ void UIElement::SetVerticalAlignment(UIAlignment value)
     }
 }
 
-void UIElement::SetPadding(const UIThickness& value)
-{
-    m_Padding = value;
-    InvalidateMeasure();
-}
+void UIElement::SetPadding(const UIThickness& value) { m_Padding = value; InvalidateMeasure(); }
+void UIElement::SetPadding(float value) { m_Padding = UIThickness(value); InvalidateMeasure(); }
+void UIElement::SetMargin(const UIThickness& value) { m_Margin = value; InvalidateMeasure(); }
+void UIElement::SetMargin(float value) { m_Margin = UIThickness(value); InvalidateMeasure(); }
+void UIElement::SetSpacing(float value) { m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
 
-void UIElement::SetPadding(float value)
+void UIElement::SetAffectsParentMeasure(bool value)
 {
-    m_Padding = UIThickness(value);
-    InvalidateMeasure();
-}
+    if (m_AffectsParentMeasure == value)
+    {
+        return;
+    }
 
-void UIElement::SetMargin(const UIThickness& value)
-{
-    m_Margin = value;
-    InvalidateMeasure();
-}
-
-void UIElement::SetMargin(float value)
-{
-    m_Margin = UIThickness(value);
-    InvalidateMeasure();
-}
-
-void UIElement::SetSpacing(float value)
-{
-    m_Spacing = std::max(0.0f, value);
-    InvalidateMeasure();
+    m_AffectsParentMeasure = value;
+    // 自身のDesiredSizeは変わりませんが、親が集約する対象が変わるため親側だけを再Measureします。
+    if (m_Parent != nullptr)
+    {
+        m_Parent->InvalidateMeasure();
+    }
 }
 
 const math::Vec2& UIElement::GetPosition() const { return m_Position; }
@@ -262,43 +197,24 @@ UIElement* UIElement::GetParent() { return m_Parent; }
 const UIElement* UIElement::GetParent() const { return m_Parent; }
 const std::vector<Scope<UIElement>>& UIElement::GetChildren() const { return m_Children; }
 
-void UIElement::SetHovered(bool value)
-{
-    m_Hovered = value;
-}
-
-void UIElement::SetPressed(bool value)
-{
-    m_Pressed = value;
-}
-
-void UIElement::HandleMouseEvent(UIMouseEvent& event)
-{
-    OnMouseEvent(event);
-}
+void UIElement::SetHovered(bool value) { m_Hovered = value; }
+void UIElement::SetPressed(bool value) { m_Pressed = value; }
+void UIElement::HandleMouseEvent(UIMouseEvent& event) { OnMouseEvent(event); }
 
 void UIElement::BuildDrawList(UIDrawList& drawList)
 {
-    // Dirty Flagにより、色だけ変わったframe等でLayout Tree全体を毎回再計算しません。
-    // MeasureがDirtyならDesiredSizeが変化し得るためArrangeも必ず再実行します。
     if (m_MeasureDirty == true)
     {
         MeasureRecursive();
     }
-
     if (m_ArrangeDirty == true)
     {
         ArrangeRecursive(m_Position, ResolveRootSize());
     }
-
-    BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f));
+    BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
 }
 
-void UIElement::OnMouseEvent(UIMouseEvent& event)
-{
-    static_cast<void>(event);
-}
-
+void UIElement::OnMouseEvent(UIMouseEvent& event) { static_cast<void>(event); }
 void UIElement::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const
 {
     static_cast<void>(drawList);
@@ -307,38 +223,26 @@ void UIElement::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolute
 
 math::Vec2 UIElement::ClampSize(const math::Vec2& size) const
 {
-    return math::Vec2(
-        std::clamp(size.x, m_MinSize.x, m_MaxSize.x),
-        std::clamp(size.y, m_MinSize.y, m_MaxSize.y));
+    return math::Vec2(std::clamp(size.x, m_MinSize.x, m_MaxSize.x), std::clamp(size.y, m_MinSize.y, m_MaxSize.y));
 }
 
 math::Vec2 UIElement::ResolveRootSize() const
 {
     math::Vec2 result = m_PreferredSize;
-    if (result.x <= 0.0f)
-    {
-        result.x = m_DesiredSize.x;
-    }
-    if (result.y <= 0.0f)
-    {
-        result.y = m_DesiredSize.y;
-    }
+    if (result.x <= 0.0f) { result.x = m_DesiredSize.x; }
+    if (result.y <= 0.0f) { result.y = m_DesiredSize.y; }
     return ClampSize(result);
 }
 
 math::Vec2 UIElement::GetDesiredSizeWithMargin() const
 {
-    return math::Vec2(
-        m_DesiredSize.x + m_Margin.Left + m_Margin.Right,
-        m_DesiredSize.y + m_Margin.Top + m_Margin.Bottom);
+    return math::Vec2(m_DesiredSize.x + m_Margin.Left + m_Margin.Right, m_DesiredSize.y + m_Margin.Top + m_Margin.Bottom);
 }
 
 void UIElement::InvalidateMeasure()
 {
     m_MeasureDirty = true;
     m_ArrangeDirty = true;
-
-    // Childの必要Size変更は祖先ContainerのDesiredSizeへ波及するため、Measure Dirtyだけは上方向へ伝播します。
     if (m_Parent != nullptr && m_Parent->m_MeasureDirty == false)
     {
         m_Parent->InvalidateMeasure();
@@ -364,6 +268,8 @@ void UIElement::MeasureRecursive()
         return;
     }
 
+    // Measure参加可否に関係なくChild自身はMeasureします。
+    // ScrollView Contentは実Content Sizeを保持したまま、親ViewportのDesiredSizeだけから除外する必要があります。
     for (auto& child : m_Children)
     {
         if (child != nullptr && child->m_MeasureDirty == true)
@@ -376,7 +282,7 @@ void UIElement::MeasureRecursive()
     uint32_t count = 0u;
     for (const auto& child : m_Children)
     {
-        if (child == nullptr || child->m_Visible == false)
+        if (child == nullptr || child->m_Visible == false || child->m_AffectsParentMeasure == false)
         {
             continue;
         }
@@ -411,23 +317,15 @@ void UIElement::MeasureRecursive()
 
     content.x += m_Padding.Left + m_Padding.Right;
     content.y += m_Padding.Top + m_Padding.Bottom;
-    m_DesiredSize = ClampSize(math::Vec2(
-        std::max(m_PreferredSize.x, content.x),
-        std::max(m_PreferredSize.y, content.y)));
+    m_DesiredSize = ClampSize(math::Vec2(std::max(m_PreferredSize.x, content.x), std::max(m_PreferredSize.y, content.y)));
     m_MeasureDirty = false;
     m_ArrangeDirty = true;
 }
 
 float UIElement::ResolveAlignedOffset(float available, float size, UIAlignment alignment)
 {
-    if (alignment == UIAlignment::Center)
-    {
-        return std::max(0.0f, (available - size) * 0.5f);
-    }
-    if (alignment == UIAlignment::End)
-    {
-        return std::max(0.0f, available - size);
-    }
+    if (alignment == UIAlignment::Center) { return std::max(0.0f, (available - size) * 0.5f); }
+    if (alignment == UIAlignment::End) { return std::max(0.0f, available - size); }
     return 0.0f;
 }
 
@@ -459,8 +357,7 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
             {
                 childSize.x = child->ClampSize(math::Vec2(availableWidth, childSize.y)).x;
             }
-            childPosition.x = m_Padding.Left + child->m_Margin.Left +
-                ResolveAlignedOffset(availableWidth, childSize.x, child->m_HorizontalAlignment);
+            childPosition.x = m_Padding.Left + child->m_Margin.Left + ResolveAlignedOffset(availableWidth, childSize.x, child->m_HorizontalAlignment);
             childPosition.y = cursorY + child->m_Margin.Top;
             cursorY += childSize.y + child->m_Margin.Top + child->m_Margin.Bottom + m_Spacing;
         }
@@ -471,35 +368,47 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
                 childSize.y = child->ClampSize(math::Vec2(childSize.x, availableHeight)).y;
             }
             childPosition.x = cursorX + child->m_Margin.Left;
-            childPosition.y = m_Padding.Top + child->m_Margin.Top +
-                ResolveAlignedOffset(availableHeight, childSize.y, child->m_VerticalAlignment);
+            childPosition.y = m_Padding.Top + child->m_Margin.Top + ResolveAlignedOffset(availableHeight, childSize.y, child->m_VerticalAlignment);
             cursorX += childSize.x + child->m_Margin.Left + child->m_Margin.Right + m_Spacing;
         }
 
         child->ArrangeRecursive(childPosition, childSize);
     }
-
     m_ArrangeDirty = false;
 }
 
-void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition) const
+void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition, const UITransform2D& parentWorldTransform, const UIClipRect& inheritedClip) const
 {
     if (m_Visible == false)
     {
         return;
     }
 
-    const math::Vec2 absolutePosition(
-        parentAbsolutePosition.x + m_Position.x,
-        parentAbsolutePosition.y + m_Position.y);
-    OnBuildDrawList(drawList, absolutePosition);
+    const math::Vec2 absolutePosition(parentAbsolutePosition.x + m_Position.x, parentAbsolutePosition.y + m_Position.y);
+    const math::Vec2 pivot(absolutePosition.x + m_Size.x * m_TransformPivot.x, absolutePosition.y + m_Size.y * m_TransformPivot.y);
+    const UITransform2D localTransform = UITransform2D::CreateScaleRotation(pivot, m_Rotation, m_Scale);
+    const UITransform2D worldTransform = UITransform2D::Combine(parentWorldTransform, localTransform);
 
-    // Parentを先に描画し、Childを後から描画する単純なPainter's Orderです。ZIndex / Clipは後続で追加します。
+    const std::size_t firstCommand = drawList.GetCommandCount();
+    OnBuildDrawList(drawList, absolutePosition);
+    drawList.ApplyTransform(firstCommand, worldTransform);
+    drawList.ApplyClip(firstCommand, inheritedClip);
+
+    UIClipRect childClip = inheritedClip;
+    if (m_ClipChildren == true)
+    {
+        UIRect layoutRect;
+        layoutRect.Min = absolutePosition;
+        layoutRect.Max = math::Vec2(absolutePosition.x + m_Size.x, absolutePosition.y + m_Size.y);
+        const UIRect transformedBounds = worldTransform.TransformRectBounds(layoutRect);
+        childClip = UIClipRect::Intersect(inheritedClip, transformedBounds);
+    }
+
     for (const auto& child : m_Children)
     {
         if (child != nullptr)
         {
-            child->BuildDrawListRecursive(drawList, absolutePosition);
+            child->BuildDrawListRecursive(drawList, absolutePosition, worldTransform, childClip);
         }
     }
 }
@@ -507,9 +416,6 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
 void UIElement::SetContextRecursive(UIContext* context)
 {
     m_Context = context;
-
-    // Context所属はParent/Child関係と同じLifetime境界で管理します。
-    // 後から構築済みSubtreeをAddChild()した場合も、全Descendantが同じContextへ所属する必要があります。
     for (auto& child : m_Children)
     {
         if (child != nullptr)
@@ -524,31 +430,25 @@ void UIElement::NotifyBindingTreeChanged()
     UIElement* root = GetTreeRoot();
     if (root->m_TreeGeneration == std::numeric_limits<uint64_t>::max())
     {
-        // 0は未解決Binding側のsentinelとして使えるよう、overflow時も1へ戻します。
         root->m_TreeGeneration = 1u;
-        return;
     }
-
-    ++root->m_TreeGeneration;
+    else
+    {
+        ++root->m_TreeGeneration;
+    }
 }
 
 UIElement* UIElement::GetTreeRoot()
 {
     UIElement* current = this;
-    while (current->m_Parent != nullptr)
-    {
-        current = current->m_Parent;
-    }
+    while (current->m_Parent != nullptr) { current = current->m_Parent; }
     return current;
 }
 
 const UIElement* UIElement::GetTreeRoot() const
 {
     const UIElement* current = this;
-    while (current->m_Parent != nullptr)
-    {
-        current = current->m_Parent;
-    }
+    while (current->m_Parent != nullptr) { current = current->m_Parent; }
     return current;
 }
 

@@ -11,6 +11,8 @@
 
 #include <glad/glad.h>
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -79,8 +81,11 @@ void OpenGLUIRenderer::Render(
 
         const auto pushVertex = [&vertices, &command](float x, float y, float u, float v)
         {
-            vertices.push_back(x);
-            vertices.push_back(y);
+            // UIElement側で親子Transformを合成済みなので、RendererはWorld Affine Transformを
+            // Layout済み頂点へそのまま適用します。Shearを含むTransformもここで失われません。
+            const math::Vec2 transformed = command.Transform.TransformPoint(math::Vec2(x, y));
+            vertices.push_back(transformed.x);
+            vertices.push_back(transformed.y);
             vertices.push_back(command.Color.x);
             vertices.push_back(command.Color.y);
             vertices.push_back(command.Color.z);
@@ -226,6 +231,36 @@ void OpenGLUIRenderer::Render(
     std::size_t commandIndex = 0;
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
+        if (command.Clip.Enabled == true)
+        {
+            // Raven UIは左上原点、OpenGL Scissorは左下原点なのでYを反転します。
+            // float境界は外側へ丸め、Transform済みAABBの端にあるpixelを誤って欠落させないようにします。
+            const float clippedLeft = std::clamp(command.Clip.Rect.Min.x, 0.0f, viewportSize.x);
+            const float clippedTop = std::clamp(command.Clip.Rect.Min.y, 0.0f, viewportSize.y);
+            const float clippedRight = std::clamp(command.Clip.Rect.Max.x, 0.0f, viewportSize.x);
+            const float clippedBottom = std::clamp(command.Clip.Rect.Max.y, 0.0f, viewportSize.y);
+
+            const int leftPixel = static_cast<int>(std::floor(clippedLeft));
+            const int topPixel = static_cast<int>(std::floor(clippedTop));
+            const int rightPixel = static_cast<int>(std::ceil(clippedRight));
+            const int bottomPixel = static_cast<int>(std::ceil(clippedBottom));
+            const int viewportHeight = static_cast<int>(viewportSize.y);
+            const int scissorWidth = std::max(0, rightPixel - leftPixel);
+            const int scissorHeight = std::max(0, bottomPixel - topPixel);
+            const int scissorY = viewportHeight - bottomPixel;
+
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(
+                leftPixel,
+                scissorY,
+                scissorWidth,
+                scissorHeight);
+        }
+        else
+        {
+            glDisable(GL_SCISSOR_TEST);
+        }
+
         bool useTexture = false;
         if (command.Type == UIDrawCommandType::Image &&
             command.Texture != nullptr &&
