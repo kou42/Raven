@@ -33,12 +33,20 @@ inline bool UIScrollView::EnsureVisible(const UIElement* element, float margin)
     }
 
     // Layout直後だけでなくMeasure後にも利用できるよう、Arrange済みSizeだけに依存しません。
-    const math::Vec2& arranged = element->GetSize();
-    const math::Vec2& desired = element->GetDesiredSize();
-    const math::Vec2& preferred = element->GetPreferredSize();
-    const math::Vec2 elementSize(
-        std::max(arranged.x, std::max(desired.x, preferred.x)),
-        std::max(arranged.y, std::max(desired.y, preferred.y)));
+    math::Vec2 elementSize;
+    if (element == m_Content)
+    {
+        elementSize = ResolveContentSize();
+    }
+    else
+    {
+        const math::Vec2& arranged = element->GetSize();
+        const math::Vec2& desired = element->GetDesiredSize();
+        const math::Vec2& preferred = element->GetPreferredSize();
+        elementSize = math::Vec2(
+            std::max(arranged.x, std::max(desired.x, preferred.x)),
+            std::max(arranged.y, std::max(desired.y, preferred.y)));
+    }
     const math::Vec2 elementMax(elementMin.x + elementSize.x, elementMin.y + elementSize.y);
     return EnsureVisible(elementMin, elementMax, margin);
 }
