@@ -2,6 +2,7 @@
 #include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace Raven
@@ -34,6 +35,12 @@ void UISlider::SetValue(float value)
     }
 }
 
+void UISlider::SetKeyboardStep(float value)
+{
+    // Stepは方向をKey側で決めるため常に正値として保持します。0はKeyboard微調整を実質無効化します。
+    m_KeyboardStep = std::abs(value);
+}
+
 void UISlider::SetOnValueChanged(ValueChangedHandler handler)
 {
     m_OnValueChanged = std::move(handler);
@@ -64,9 +71,15 @@ void UISlider::SetActiveThumbColor(const math::Vec4& color)
     m_ActiveThumbColor = color;
 }
 
+void UISlider::SetFocusedThumbColor(const math::Vec4& color)
+{
+    m_FocusedThumbColor = color;
+}
+
 float UISlider::GetMinimum() const { return m_Minimum; }
 float UISlider::GetMaximum() const { return m_Maximum; }
 float UISlider::GetValue() const { return m_Value; }
+float UISlider::GetKeyboardStep() const { return m_KeyboardStep; }
 bool UISlider::IsDragging() const { return m_Dragging; }
 
 void UISlider::OnMouseEvent(UIMouseEvent& event)
@@ -129,6 +142,36 @@ void UISlider::OnMouseEvent(UIMouseEvent& event)
     }
 }
 
+void UISlider::OnKeyEvent(UIKeyEvent& event)
+{
+    if (IsFocused() == false || event.Pressed == false)
+    {
+        return;
+    }
+
+    // SliderのLeft / Rightは押し続けによる連続調整が自然なのでKey Repeatも値更新へ利用します。
+    if (event.Key == UIKey::Left)
+    {
+        SetValue(m_Value - m_KeyboardStep);
+        event.Handled = true;
+    }
+    else if (event.Key == UIKey::Right)
+    {
+        SetValue(m_Value + m_KeyboardStep);
+        event.Handled = true;
+    }
+    else if (event.Key == UIKey::Home)
+    {
+        SetValue(m_Minimum);
+        event.Handled = true;
+    }
+    else if (event.Key == UIKey::End)
+    {
+        SetValue(m_Maximum);
+        event.Handled = true;
+    }
+}
+
 void UISlider::OnBuildDrawList(
     UIDrawList& drawList,
     const math::Vec2& absolutePosition) const
@@ -174,6 +217,10 @@ void UISlider::OnBuildDrawList(
     else if (IsHovered() == true)
     {
         thumbColor = &m_HoveredThumbColor;
+    }
+    else if (IsFocused() == true)
+    {
+        thumbColor = &m_FocusedThumbColor;
     }
 
     drawList.AddRect(
