@@ -19,6 +19,18 @@ bool DocumentImporterRegistry::Register(const std::string& extension, ImporterFa
     return m_Factories.emplace(normalized, std::move(factory)).second;
 }
 
+bool DocumentImporterRegistry::Unregister(const std::string& extension)
+{
+    const std::string normalized = NormalizeExtension(extension);
+    if (normalized.empty())
+    {
+        return false;
+    }
+
+    // 動的Plugin等がImporterを破棄する前にFactory参照を確実に外せるよう、明示的な登録解除を提供します。
+    return m_Factories.erase(normalized) > 0u;
+}
+
 bool DocumentImporterRegistry::Contains(const std::string& extension) const
 {
     const std::string normalized = NormalizeExtension(extension);
