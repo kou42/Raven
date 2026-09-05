@@ -1,6 +1,7 @@
 #include "Raven/UI/Svg/UISvg.h"
 
 #include "Raven/UI/Svg/SvgImporter.h"
+#include "Raven/UI/Widgets/UICircle.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 
 #include <cmath>
@@ -37,7 +38,7 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
         {
             if (outError != nullptr)
             {
-                *outError = "SVG element name is invalid or duplicated: " + rectangle.Name;
+                *outError = "SVG element name is invalid: " + rectangle.Name;
             }
             ClearChildren();
             return false;
@@ -51,6 +52,40 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
             if (outError != nullptr)
             {
                 *outError = "Failed to attach SVG rectangle to UI tree.";
+            }
+            ClearChildren();
+            return false;
+        }
+    }
+
+    for (const SvgCircleElement& circle : m_Document.Circles)
+    {
+        auto circleWidget = CreateScope<UICircle>();
+        if (circleWidget->SetName(circle.Name) == false)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG element name is invalid: " + circle.Name;
+            }
+            ClearChildren();
+            return false;
+        }
+
+        // SVG circleはcenter/radius、Raven UIは左上Position/SizeでLayoutするためここで変換します。
+        // Animation Importerも同じ変換規則でPosition/Size Trackを生成することで、初期PoseとRuntime Poseを一致させます。
+        circleWidget->SetPosition(math::Vec2(
+            circle.Center.x - circle.Radius,
+            circle.Center.y - circle.Radius));
+        circleWidget->SetSize(math::Vec2(
+            circle.Radius * 2.0f,
+            circle.Radius * 2.0f));
+        circleWidget->SetFillColor(circle.FillColor);
+
+        if (AddChild(std::move(circleWidget)) == nullptr)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "Failed to attach SVG circle to UI tree.";
             }
             ClearChildren();
             return false;

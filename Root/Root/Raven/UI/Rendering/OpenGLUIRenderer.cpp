@@ -19,6 +19,21 @@
 namespace Raven
 {
 
+namespace
+{
+constexpr uint32_t kCircleSegmentCount = 48u;
+constexpr float kTwoPi = 6.28318530717958647692f;
+
+uint32_t GetCommandIndexCount(UIDrawCommandType type)
+{
+    if (type == UIDrawCommandType::SolidCircle)
+    {
+        return kCircleSegmentCount * 3u;
+    }
+    return 6u;
+}
+} // namespace
+
 OpenGLUIRenderer::OpenGLUIRenderer()
 {
     m_VertexArray = VertexArray::Create();
@@ -60,17 +75,19 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // DrawList -> dynamic triangle batch
     // ========================================================================
-    // SolidRect / Imageをそれぞれ4頂点 / 6 indexへ変換し、同じdynamic bufferへ格納します。
+    // Rect / Imageは4頂点6index、Circleは中心+外周頂点のTriangle Fanへ変換し、
+    // 同じdynamic bufferへ格納します。
     // ImageではCommand境界でTextureを切り替えるため現段階では1 Command = 1 Draw Callですが、
     // Widgetが直接GPU Bufferを生成しないというDrawList境界は維持します。
+    // CommandごとのIndex数が可変になったため、描画時はCommand種別からoffset/countを進めます。
     // 頂点形式: Position.xy + Color.rgba + UV.xy = 8 floats
     std::vector<float> vertices;
     std::vector<uint32_t> indices;
 
-    vertices.reserve(drawList.GetCommandCount() * 4u * 8u);
-    indices.reserve(drawList.GetCommandCount() * 6u);
+    vertices.reserve(drawList.GetCommandCount() * 8u * 8u);
+    indices.reserve(drawList.GetCommandCount() * kCircleSegmentCount * 3u);
 
-    uint32_t vertexBase = 0;
+    uint32_t vertexBase = 0u;
 
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
@@ -83,6 +100,8 @@ void OpenGLUIRenderer::Render(
         {
             // UIElement側で親子Transformを合成済みなので、RendererはWorld Affine Transformを
             // Layout済み頂点へそのまま適用します。Shearを含むTransformもここで失われません。
+            // Circleも各tessellation頂点へ同じTransformを適用するため、非一様ScaleやShearでも
+            // 円形Command固有の別Transform経路を増やす必要がありません。
             const math::Vec2 transformed = command.Transform.TransformPoint(math::Vec2(x, y));
             vertices.push_back(transformed.x);
             vertices.push_back(transformed.y);
@@ -98,6 +117,43 @@ void OpenGLUIRenderer::Render(
             vertices.push_back(u);
             vertices.push_back(v);
         };
+
+        if (command.Type == UIDrawCommandType::SolidCircle)
+        {
+            const float centerX = (left + right) * 0.5f;
+            const float centerY = (top + bottom) * 0.5f;
+            const float radiusX = (right - left) * 0.5f;
+            const float radiusY = (bottom - top) * 0.5f;
+
+            // SVG/UI Vector Shapeの初期実装では48分割を固定品質とします。
+            // Segment数をCommandへ持たせるとWidget/APIへtessellation知識が漏れるため、
+            // 品質ポリシーはRenderer backendへ閉じ込めます。
+            pushVertex(centerX, centerY, 0.5f, 0.5f);
+            for (uint32_t segment = 0u; segment < kCircleSegmentCount; ++segment)
+            {
+                const float angle =
+                    kTwoPi * static_cast<float>(segment) / static_cast<float>(kCircleSegmentCount);
+                const float cosine = std::cos(angle);
+                const float sine = std::sin(angle);
+                pushVertex(
+                    centerX + cosine * radiusX,
+                    centerY + sine * radiusY,
+                    0.5f + cosine * 0.5f,
+                    0.5f + sine * 0.5f);
+            }
+
+            for (uint32_t segment = 0u; segment < kCircleSegmentCount; ++segment)
+            {
+                const uint32_t current = vertexBase + 1u + segment;
+                const uint32_t next = vertexBase + 1u + ((segment + 1u) % kCircleSegmentCount);
+                indices.push_back(vertexBase);
+                indices.push_back(current);
+                indices.push_back(next);
+            }
+
+            vertexBase += 1u + kCircleSegmentCount;
+            continue;
+        }
 
         pushVertex(left, top, command.UVMin.x, command.UVMin.y);
         pushVertex(right, top, command.UVMax.x, command.UVMin.y);
@@ -228,7 +284,8 @@ void OpenGLUIRenderer::Render(
     //
     // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
     // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
-    std::size_t commandIndex = 0;
+    // Circle追加後はCommand種別ごとにIndex数が異なるため、固定6indexではなく累積offsetを進めます。
+    uint32_t indexOffsetCount = 0u;
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
         if (command.Clip.Enabled == true)
@@ -275,10 +332,16 @@ void OpenGLUIRenderer::Render(
         }
 
         m_Shader->SetInt("u_UseTexture", useTexture ? 1 : 0);
+
+        const uint32_t indexCount = GetCommandIndexCount(command.Type);
         const void* indexOffset = reinterpret_cast<const void*>(
-            commandIndex * 6u * sizeof(uint32_t));
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, indexOffset);
-        ++commandIndex;
+            static_cast<std::size_t>(indexOffsetCount) * sizeof(uint32_t));
+        glDrawElements(
+            GL_TRIANGLES,
+            static_cast<GLsizei>(indexCount),
+            GL_UNSIGNED_INT,
+            indexOffset);
+        indexOffsetCount += indexCount;
     }
 
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。

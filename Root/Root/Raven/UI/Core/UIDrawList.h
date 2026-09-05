@@ -16,12 +16,13 @@ class TextureAsset;
 // ============================================================================
 // UIContextが生成する描画要求の種類です。
 //
-// SolidRectに加えてImageを扱いますが、UIElement側へGPU実装を漏らさない方針は維持します。
-// Text / Border等も今後このコマンド列へ追加していきます。
+// Widget側へGPU実装を漏らさず、Rect / Circle / Imageの幾何生成はRenderer backendへ集約します。
+// Text / Border / Path等も今後このコマンド列へ追加していきます。
 // ImageもGPU Texture IDではなくTextureAssetを参照し、UI層からRenderer API固有値を排除します。
 enum class UIDrawCommandType
 {
     SolidRect,
+    SolidCircle,
     Image
 };
 
@@ -102,6 +103,7 @@ struct UITransform2D
 // 重要:
 // この構造体へOpenGLのTexture IDやVertexArray等を直接持たせないことで、
 // Editor UIとGame UIのどちらから利用してもPlatform Rendererへ依存しない境界を保ちます。
+// Circleも中心/radiusではなくLayout済みBoundsを保持し、Transformの適用責務を既存Commandと統一します。
 // ImageではEngine側のTextureAssetを保持し、OpenGL固有値への解決はUIRenderer実装でのみ行います。
 // TextureAssetのRefをframe中保持することで、DrawListが参照しているRuntime Textureの寿命も保証します。
 //
@@ -134,6 +136,13 @@ public:
     void Clear();
 
     void AddRect(
+        const math::Vec2& min,
+        const math::Vec2& max,
+        const math::Vec4& color);
+
+    // min/maxで指定したBoundsへ円を内接させます。
+    // 非正方形BoundsはRenderer側で楕円としてtessellationされるため、Transform/Animationと自然に合成できます。
+    void AddCircle(
         const math::Vec2& min,
         const math::Vec2& max,
         const math::Vec4& color);

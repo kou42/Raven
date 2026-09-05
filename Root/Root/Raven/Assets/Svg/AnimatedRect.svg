@@ -3,4 +3,10 @@
     <animate attributeName="x" from="40" to="480" dur="2s" repeatCount="indefinite" />
     <animate attributeName="opacity" from="1" to="0.25" dur="2s" repeatCount="indefinite" />
   </rect>
+
+  <circle id="movingCircle" cx="80" cy="50" r="24" fill="#ff8844">
+    <animate attributeName="cx" from="80" to="540" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="r" from="24" to="42" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" from="0.35" to="1" dur="2s" repeatCount="indefinite" />
+  </circle>
 </svg>

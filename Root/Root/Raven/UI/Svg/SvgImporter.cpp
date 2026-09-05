@@ -8,6 +8,7 @@
 #include <regex>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -153,6 +154,60 @@ const SvgScalarAnimation* FindAnimation(
     return nullptr;
 }
 
+bool IsSupportedAttribute(
+    const std::vector<std::string>& supportedAttributes,
+    const std::string& attribute)
+{
+    return std::find(
+        supportedAttributes.begin(),
+        supportedAttributes.end(),
+        attribute) != supportedAttributes.end();
+}
+
+void ParseScalarAnimations(
+    const std::string& body,
+    const std::vector<std::string>& supportedAttributes,
+    std::vector<SvgScalarAnimation>& outAnimations,
+    SvgDocument& document,
+    float& maxDuration)
+{
+    const std::regex animateRegex(R"(<animate\b([^>]*)/?>)", std::regex::icase);
+    for (std::sregex_iterator animateIt(body.begin(), body.end(), animateRegex), end; animateIt != end; ++animateIt)
+    {
+        const AttributeMap animateAttributes = ParseAttributes((*animateIt)[1].str());
+        const auto nameIt = animateAttributes.find("attributeName");
+        const auto fromIt = animateAttributes.find("from");
+        const auto toIt = animateAttributes.find("to");
+        const auto durationIt = animateAttributes.find("dur");
+        if (nameIt == animateAttributes.end() || fromIt == animateAttributes.end() ||
+            toIt == animateAttributes.end() || durationIt == animateAttributes.end())
+        {
+            continue;
+        }
+
+        if (IsSupportedAttribute(supportedAttributes, nameIt->second) == false)
+        {
+            continue;
+        }
+
+        SvgScalarAnimation animation;
+        animation.Attribute = nameIt->second;
+        if (TryParseFloat(fromIt->second, animation.From) == false ||
+            TryParseFloat(toIt->second, animation.To) == false ||
+            TryParseSeconds(durationIt->second, animation.Duration) == false ||
+            animation.Duration <= 0.0f)
+        {
+            continue;
+        }
+
+        const auto repeatIt = animateAttributes.find("repeatCount");
+        animation.Loop = repeatIt != animateAttributes.end() && repeatIt->second == "indefinite";
+        document.LoopAnimation = document.LoopAnimation || animation.Loop;
+        maxDuration = std::max(maxDuration, animation.Duration);
+        outAnimations.push_back(animation);
+    }
+}
+
 void AppendVec2Track(
     AnimationClip& clip,
     const std::string& targetPath,
@@ -192,6 +247,64 @@ void AppendVec2Track(
     clip.AddPropertyTrack(std::move(track));
 }
 
+void AppendCircleTracks(
+    AnimationClip& clip,
+    const SvgCircleElement& circle,
+    const std::vector<SvgScalarAnimation>& animations)
+{
+    const SvgScalarAnimation* cxAnimation = FindAnimation(animations, "cx");
+    const SvgScalarAnimation* cyAnimation = FindAnimation(animations, "cy");
+    const SvgScalarAnimation* radiusAnimation = FindAnimation(animations, "r");
+
+    if (cxAnimation == nullptr && cyAnimation == nullptr && radiusAnimation == nullptr)
+    {
+        return;
+    }
+
+    std::vector<float> times{ 0.0f };
+    if (cxAnimation != nullptr)
+    {
+        times.push_back(cxAnimation->Duration);
+    }
+    if (cyAnimation != nullptr)
+    {
+        times.push_back(cyAnimation->Duration);
+    }
+    if (radiusAnimation != nullptr)
+    {
+        times.push_back(radiusAnimation->Duration);
+    }
+    std::sort(times.begin(), times.end());
+    times.erase(std::unique(times.begin(), times.end()), times.end());
+
+    // SVG circleのcx/cy/rをRaven UIのPosition/Sizeへ変換します。
+    // r変更は左上Positionも同時に変える必要があるため、同じ時刻列から2本のTrackを生成して整合を保ちます。
+    PropertyAnimationTrack<math::Vec2> positionTrack;
+    positionTrack.Binding.TargetPath = circle.Name;
+    positionTrack.Binding.Property = "Position";
+
+    PropertyAnimationTrack<math::Vec2> sizeTrack;
+    sizeTrack.Binding.TargetPath = circle.Name;
+    sizeTrack.Binding.Property = "Size";
+
+    for (float time : times)
+    {
+        const float centerX = EvaluateScalar(cxAnimation, circle.Center.x, time);
+        const float centerY = EvaluateScalar(cyAnimation, circle.Center.y, time);
+        const float radius = std::max(0.0f, EvaluateScalar(radiusAnimation, circle.Radius, time));
+
+        positionTrack.Curve.GetKeys().push_back(AnimationKeyframe<math::Vec2>{
+            time,
+            math::Vec2(centerX - radius, centerY - radius) });
+        sizeTrack.Curve.GetKeys().push_back(AnimationKeyframe<math::Vec2>{
+            time,
+            math::Vec2(radius * 2.0f, radius * 2.0f) });
+    }
+
+    clip.AddPropertyTrack(std::move(positionTrack));
+    clip.AddPropertyTrack(std::move(sizeTrack));
+}
+
 void AppendOpacityTrack(
     AnimationClip& clip,
     const std::string& targetPath,
@@ -208,6 +321,31 @@ void AppendOpacityTrack(
     track.Curve.GetKeys().push_back(AnimationKeyframe<float>{ 0.0f, animation->From });
     track.Curve.GetKeys().push_back(AnimationKeyframe<float>{ animation->Duration, animation->To });
     clip.AddPropertyTrack(std::move(track));
+}
+
+bool RegisterElementName(
+    const std::string& name,
+    std::unordered_set<std::string>& usedNames,
+    std::string* outError)
+{
+    if (name.empty() || name.find('/') != std::string::npos)
+    {
+        if (outError != nullptr)
+        {
+            *outError = "SVG element id is invalid for Raven UI binding: " + name;
+        }
+        return false;
+    }
+
+    if (usedNames.insert(name).second == false)
+    {
+        if (outError != nullptr)
+        {
+            *outError = "SVG element id must be unique: " + name;
+        }
+        return false;
+    }
+    return true;
 }
 
 bool ReadTextFile(const std::string& path, std::string& outText)
@@ -264,9 +402,11 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     }
 
     const std::regex rectRegex(R"(<rect\b([^>]*?)(?:/>|>([\s\S]*?)</rect>))", std::regex::icase);
-    const std::regex animateRegex(R"(<animate\b([^>]*)/?>)", std::regex::icase);
-    std::size_t generatedNameIndex = 0u;
+    const std::regex circleRegex(R"(<circle\b([^>]*?)(?:/>|>([\s\S]*?)</circle>))", std::regex::icase);
+    std::size_t generatedRectIndex = 0u;
+    std::size_t generatedCircleIndex = 0u;
     float maxDuration = 0.0f;
+    std::unordered_set<std::string> usedNames;
 
     for (std::sregex_iterator rectIt(source.begin(), source.end(), rectRegex), end; rectIt != end; ++rectIt)
     {
@@ -293,14 +433,22 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
             return false;
         }
 
-        const auto idIt = attributes.find("id");
-        if (idIt != attributes.end())
+        if (rectangle.Size.x < 0.0f || rectangle.Size.y < 0.0f)
         {
-            rectangle.Name = idIt->second;
+            if (outError != nullptr)
+            {
+                *outError = "SVG rect width/height must not be negative.";
+            }
+            return false;
         }
-        else
+
+        const auto idIt = attributes.find("id");
+        rectangle.Name = idIt != attributes.end()
+            ? idIt->second
+            : "rect" + std::to_string(generatedRectIndex++);
+        if (RegisterElementName(rectangle.Name, usedNames, outError) == false)
         {
-            rectangle.Name = "rect" + std::to_string(generatedNameIndex++);
+            return false;
         }
 
         const auto fillIt = attributes.find("fill");
@@ -310,43 +458,12 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         }
 
         std::vector<SvgScalarAnimation> animations;
-        const std::string body = (*rectIt)[2].str();
-        for (std::sregex_iterator animateIt(body.begin(), body.end(), animateRegex); animateIt != end; ++animateIt)
-        {
-            const AttributeMap animateAttributes = ParseAttributes((*animateIt)[1].str());
-            const auto nameIt = animateAttributes.find("attributeName");
-            const auto fromIt = animateAttributes.find("from");
-            const auto toIt = animateAttributes.find("to");
-            const auto durationIt = animateAttributes.find("dur");
-            if (nameIt == animateAttributes.end() || fromIt == animateAttributes.end() ||
-                toIt == animateAttributes.end() || durationIt == animateAttributes.end())
-            {
-                continue;
-            }
-
-            const std::string& attribute = nameIt->second;
-            if (attribute != "x" && attribute != "y" && attribute != "width" &&
-                attribute != "height" && attribute != "opacity")
-            {
-                continue;
-            }
-
-            SvgScalarAnimation animation;
-            animation.Attribute = attribute;
-            if (TryParseFloat(fromIt->second, animation.From) == false ||
-                TryParseFloat(toIt->second, animation.To) == false ||
-                TryParseSeconds(durationIt->second, animation.Duration) == false ||
-                animation.Duration <= 0.0f)
-            {
-                continue;
-            }
-
-            const auto repeatIt = animateAttributes.find("repeatCount");
-            animation.Loop = repeatIt != animateAttributes.end() && repeatIt->second == "indefinite";
-            document.LoopAnimation = document.LoopAnimation || animation.Loop;
-            maxDuration = std::max(maxDuration, animation.Duration);
-            animations.push_back(animation);
-        }
+        ParseScalarAnimations(
+            (*rectIt)[2].str(),
+            { "x", "y", "width", "height", "opacity" },
+            animations,
+            document,
+            maxDuration);
 
         document.Rectangles.push_back(rectangle);
         AppendVec2Track(
@@ -366,6 +483,66 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         AppendOpacityTrack(
             document.Animation,
             rectangle.Name,
+            FindAnimation(animations, "opacity"));
+    }
+
+    for (std::sregex_iterator circleIt(source.begin(), source.end(), circleRegex), end; circleIt != end; ++circleIt)
+    {
+        const AttributeMap attributes = ParseAttributes((*circleIt)[1].str());
+        SvgCircleElement circle;
+
+        const auto cxIt = attributes.find("cx");
+        const auto cyIt = attributes.find("cy");
+        const auto radiusIt = attributes.find("r");
+        if ((cxIt != attributes.end() && TryParseFloat(cxIt->second, circle.Center.x) == false) ||
+            (cyIt != attributes.end() && TryParseFloat(cyIt->second, circle.Center.y) == false) ||
+            radiusIt == attributes.end() ||
+            TryParseFloat(radiusIt->second, circle.Radius) == false)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG circle requires numeric cx/cy and a numeric r.";
+            }
+            return false;
+        }
+
+        if (circle.Radius < 0.0f)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG circle radius must not be negative.";
+            }
+            return false;
+        }
+
+        const auto idIt = attributes.find("id");
+        circle.Name = idIt != attributes.end()
+            ? idIt->second
+            : "circle" + std::to_string(generatedCircleIndex++);
+        if (RegisterElementName(circle.Name, usedNames, outError) == false)
+        {
+            return false;
+        }
+
+        const auto fillIt = attributes.find("fill");
+        if (fillIt != attributes.end())
+        {
+            circle.FillColor = ParseColor(fillIt->second);
+        }
+
+        std::vector<SvgScalarAnimation> animations;
+        ParseScalarAnimations(
+            (*circleIt)[2].str(),
+            { "cx", "cy", "r", "opacity" },
+            animations,
+            document,
+            maxDuration);
+
+        document.Circles.push_back(circle);
+        AppendCircleTracks(document.Animation, circle, animations);
+        AppendOpacityTrack(
+            document.Animation,
+            circle.Name,
             FindAnimation(animations, "opacity"));
     }
 
