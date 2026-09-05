@@ -305,6 +305,71 @@ void AppendCircleTracks(
     clip.AddPropertyTrack(std::move(sizeTrack));
 }
 
+void AppendEllipseTracks(
+    AnimationClip& clip,
+    const SvgEllipseElement& ellipse,
+    const std::vector<SvgScalarAnimation>& animations)
+{
+    const SvgScalarAnimation* cxAnimation = FindAnimation(animations, "cx");
+    const SvgScalarAnimation* cyAnimation = FindAnimation(animations, "cy");
+    const SvgScalarAnimation* rxAnimation = FindAnimation(animations, "rx");
+    const SvgScalarAnimation* ryAnimation = FindAnimation(animations, "ry");
+
+    if (cxAnimation == nullptr && cyAnimation == nullptr &&
+        rxAnimation == nullptr && ryAnimation == nullptr)
+    {
+        return;
+    }
+
+    std::vector<float> times{ 0.0f };
+    if (cxAnimation != nullptr)
+    {
+        times.push_back(cxAnimation->Duration);
+    }
+    if (cyAnimation != nullptr)
+    {
+        times.push_back(cyAnimation->Duration);
+    }
+    if (rxAnimation != nullptr)
+    {
+        times.push_back(rxAnimation->Duration);
+    }
+    if (ryAnimation != nullptr)
+    {
+        times.push_back(ryAnimation->Duration);
+    }
+    std::sort(times.begin(), times.end());
+    times.erase(std::unique(times.begin(), times.end()), times.end());
+
+    // EllipseもUICircleの非正方Sizeとして描画します。
+    // rx/ry変更時に中心が動かないよう、PositionとSizeを同じ時刻列から同時生成します。
+    PropertyAnimationTrack<math::Vec2> positionTrack;
+    positionTrack.Binding.TargetPath = ellipse.Name;
+    positionTrack.Binding.Property = "Position";
+
+    PropertyAnimationTrack<math::Vec2> sizeTrack;
+    sizeTrack.Binding.TargetPath = ellipse.Name;
+    sizeTrack.Binding.Property = "Size";
+
+    for (float time : times)
+    {
+        const float centerX = EvaluateScalar(cxAnimation, ellipse.Center.x, time);
+        const float centerY = EvaluateScalar(cyAnimation, ellipse.Center.y, time);
+        const float radiusX = std::max(0.0f, EvaluateScalar(rxAnimation, ellipse.Radius.x, time));
+        const float radiusY = std::max(0.0f, EvaluateScalar(ryAnimation, ellipse.Radius.y, time));
+
+        positionTrack.Curve.GetKeys().push_back(AnimationKeyframe<math::Vec2>{
+            time,
+            math::Vec2(centerX - radiusX, centerY - radiusY) });
+        sizeTrack.Curve.GetKeys().push_back(AnimationKeyframe<math::Vec2>{
+            time,
+            math::Vec2(radiusX * 2.0f, radiusY * 2.0f) });
+    }
+
+    clip.AddPropertyTrack(std::move(positionTrack));
+    clip.AddPropertyTrack(std::move(sizeTrack));
+}
+
 void AppendOpacityTrack(
     AnimationClip& clip,
     const std::string& targetPath,
@@ -403,8 +468,10 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
 
     const std::regex rectRegex(R"(<rect\b([^>]*?)(?:/>|>([\s\S]*?)</rect>))", std::regex::icase);
     const std::regex circleRegex(R"(<circle\b([^>]*?)(?:/>|>([\s\S]*?)</circle>))", std::regex::icase);
+    const std::regex ellipseRegex(R"(<ellipse\b([^>]*?)(?:/>|>([\s\S]*?)</ellipse>))", std::regex::icase);
     std::size_t generatedRectIndex = 0u;
     std::size_t generatedCircleIndex = 0u;
+    std::size_t generatedEllipseIndex = 0u;
     float maxDuration = 0.0f;
     std::unordered_set<std::string> usedNames;
 
@@ -465,7 +532,13 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
             document,
             maxDuration);
 
+        const std::size_t elementIndex = document.Rectangles.size();
         document.Rectangles.push_back(rectangle);
+        document.Shapes.push_back(SvgShapeReference{
+            SvgShapeType::Rect,
+            elementIndex,
+            static_cast<std::size_t>(rectIt->position()) });
+
         AppendVec2Track(
             document.Animation,
             rectangle.Name,
@@ -538,13 +611,98 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
             document,
             maxDuration);
 
+        const std::size_t elementIndex = document.Circles.size();
         document.Circles.push_back(circle);
+        document.Shapes.push_back(SvgShapeReference{
+            SvgShapeType::Circle,
+            elementIndex,
+            static_cast<std::size_t>(circleIt->position()) });
+
         AppendCircleTracks(document.Animation, circle, animations);
         AppendOpacityTrack(
             document.Animation,
             circle.Name,
             FindAnimation(animations, "opacity"));
     }
+
+    for (std::sregex_iterator ellipseIt(source.begin(), source.end(), ellipseRegex), end; ellipseIt != end; ++ellipseIt)
+    {
+        const AttributeMap attributes = ParseAttributes((*ellipseIt)[1].str());
+        SvgEllipseElement ellipse;
+
+        const auto cxIt = attributes.find("cx");
+        const auto cyIt = attributes.find("cy");
+        const auto rxIt = attributes.find("rx");
+        const auto ryIt = attributes.find("ry");
+        if ((cxIt != attributes.end() && TryParseFloat(cxIt->second, ellipse.Center.x) == false) ||
+            (cyIt != attributes.end() && TryParseFloat(cyIt->second, ellipse.Center.y) == false) ||
+            rxIt == attributes.end() || ryIt == attributes.end() ||
+            TryParseFloat(rxIt->second, ellipse.Radius.x) == false ||
+            TryParseFloat(ryIt->second, ellipse.Radius.y) == false)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG ellipse requires numeric cx/cy and numeric rx/ry.";
+            }
+            return false;
+        }
+
+        if (ellipse.Radius.x < 0.0f || ellipse.Radius.y < 0.0f)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG ellipse rx/ry must not be negative.";
+            }
+            return false;
+        }
+
+        const auto idIt = attributes.find("id");
+        ellipse.Name = idIt != attributes.end()
+            ? idIt->second
+            : "ellipse" + std::to_string(generatedEllipseIndex++);
+        if (RegisterElementName(ellipse.Name, usedNames, outError) == false)
+        {
+            return false;
+        }
+
+        const auto fillIt = attributes.find("fill");
+        if (fillIt != attributes.end())
+        {
+            ellipse.FillColor = ParseColor(fillIt->second);
+        }
+
+        std::vector<SvgScalarAnimation> animations;
+        ParseScalarAnimations(
+            (*ellipseIt)[2].str(),
+            { "cx", "cy", "rx", "ry", "opacity" },
+            animations,
+            document,
+            maxDuration);
+
+        const std::size_t elementIndex = document.Ellipses.size();
+        document.Ellipses.push_back(ellipse);
+        document.Shapes.push_back(SvgShapeReference{
+            SvgShapeType::Ellipse,
+            elementIndex,
+            static_cast<std::size_t>(ellipseIt->position()) });
+
+        AppendEllipseTracks(document.Animation, ellipse, animations);
+        AppendOpacityTrack(
+            document.Animation,
+            ellipse.Name,
+            FindAnimation(animations, "opacity"));
+    }
+
+    // 型別に解析したshapeをSVGソース中の開始offsetで並べ直します。
+    // Retained UI Treeのchild順がそのままDrawList順になるため、ここでXML順を復元しておけば
+    // 後に記述されたshapeが前面へ描画されるSVGの基本Painter's Algorithmを維持できます。
+    std::sort(
+        document.Shapes.begin(),
+        document.Shapes.end(),
+        [](const SvgShapeReference& left, const SvgShapeReference& right)
+        {
+            return left.SourceOffset < right.SourceOffset;
+        });
 
     document.Animation.SetDuration(maxDuration);
     outDocument = std::move(document);

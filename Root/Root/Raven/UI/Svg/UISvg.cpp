@@ -31,64 +31,140 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
 {
     SetSize(m_Document.ViewportSize);
 
-    for (const SvgRectElement& rectangle : m_Document.Rectangles)
+    // SVGは同一親内で後に記述されたshapeほど前面へ描画されます。
+    // Importerが保持した元XML順でUIElementをAddChildすることで、Retained Treeのchild順と
+    // DrawList生成順をSVGのPainter's Algorithmへそのまま対応させます。
+    for (const SvgShapeReference& shape : m_Document.Shapes)
     {
-        auto panel = CreateScope<UIPanel>();
-        if (panel->SetName(rectangle.Name) == false)
+        if (shape.Type == SvgShapeType::Rect)
         {
-            if (outError != nullptr)
+            if (shape.ElementIndex >= m_Document.Rectangles.size())
             {
-                *outError = "SVG element name is invalid: " + rectangle.Name;
+                if (outError != nullptr)
+                {
+                    *outError = "SVG rect shape reference is out of range.";
+                }
+                ClearChildren();
+                return false;
             }
-            ClearChildren();
-            return false;
+
+            const SvgRectElement& rectangle = m_Document.Rectangles[shape.ElementIndex];
+            auto panel = CreateScope<UIPanel>();
+            if (panel->SetName(rectangle.Name) == false)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG element name is invalid: " + rectangle.Name;
+                }
+                ClearChildren();
+                return false;
+            }
+
+            panel->SetPosition(rectangle.Position);
+            panel->SetSize(rectangle.Size);
+            panel->SetBackgroundColor(rectangle.FillColor);
+            if (AddChild(std::move(panel)) == nullptr)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "Failed to attach SVG rectangle to UI tree.";
+                }
+                ClearChildren();
+                return false;
+            }
+            continue;
         }
 
-        panel->SetPosition(rectangle.Position);
-        panel->SetSize(rectangle.Size);
-        panel->SetBackgroundColor(rectangle.FillColor);
-        if (AddChild(std::move(panel)) == nullptr)
+        if (shape.Type == SvgShapeType::Circle)
         {
-            if (outError != nullptr)
+            if (shape.ElementIndex >= m_Document.Circles.size())
             {
-                *outError = "Failed to attach SVG rectangle to UI tree.";
+                if (outError != nullptr)
+                {
+                    *outError = "SVG circle shape reference is out of range.";
+                }
+                ClearChildren();
+                return false;
             }
-            ClearChildren();
-            return false;
+
+            const SvgCircleElement& circle = m_Document.Circles[shape.ElementIndex];
+            auto circleWidget = CreateScope<UICircle>();
+            if (circleWidget->SetName(circle.Name) == false)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG element name is invalid: " + circle.Name;
+                }
+                ClearChildren();
+                return false;
+            }
+
+            // SVG circleはcenter/radius、Raven UIは左上Position/SizeでLayoutするためここで変換します。
+            // Animation Importerも同じ変換規則でPosition/Size Trackを生成することで、初期PoseとRuntime Poseを一致させます。
+            circleWidget->SetPosition(math::Vec2(
+                circle.Center.x - circle.Radius,
+                circle.Center.y - circle.Radius));
+            circleWidget->SetSize(math::Vec2(
+                circle.Radius * 2.0f,
+                circle.Radius * 2.0f));
+            circleWidget->SetFillColor(circle.FillColor);
+
+            if (AddChild(std::move(circleWidget)) == nullptr)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "Failed to attach SVG circle to UI tree.";
+                }
+                ClearChildren();
+                return false;
+            }
+            continue;
         }
-    }
 
-    for (const SvgCircleElement& circle : m_Document.Circles)
-    {
-        auto circleWidget = CreateScope<UICircle>();
-        if (circleWidget->SetName(circle.Name) == false)
+        if (shape.Type == SvgShapeType::Ellipse)
         {
-            if (outError != nullptr)
+            if (shape.ElementIndex >= m_Document.Ellipses.size())
             {
-                *outError = "SVG element name is invalid: " + circle.Name;
+                if (outError != nullptr)
+                {
+                    *outError = "SVG ellipse shape reference is out of range.";
+                }
+                ClearChildren();
+                return false;
             }
-            ClearChildren();
-            return false;
-        }
 
-        // SVG circleはcenter/radius、Raven UIは左上Position/SizeでLayoutするためここで変換します。
-        // Animation Importerも同じ変換規則でPosition/Size Trackを生成することで、初期PoseとRuntime Poseを一致させます。
-        circleWidget->SetPosition(math::Vec2(
-            circle.Center.x - circle.Radius,
-            circle.Center.y - circle.Radius));
-        circleWidget->SetSize(math::Vec2(
-            circle.Radius * 2.0f,
-            circle.Radius * 2.0f));
-        circleWidget->SetFillColor(circle.FillColor);
-
-        if (AddChild(std::move(circleWidget)) == nullptr)
-        {
-            if (outError != nullptr)
+            const SvgEllipseElement& ellipse = m_Document.Ellipses[shape.ElementIndex];
+            auto ellipseWidget = CreateScope<UICircle>();
+            if (ellipseWidget->SetName(ellipse.Name) == false)
             {
-                *outError = "Failed to attach SVG circle to UI tree.";
+                if (outError != nullptr)
+                {
+                    *outError = "SVG element name is invalid: " + ellipse.Name;
+                }
+                ClearChildren();
+                return false;
             }
-            ClearChildren();
-            return false;
+
+            // UICircleはElement矩形へ円を内接させるため、width != heightのSizeを与えると
+            // RendererのTriangle Fanへ非一様Scaleが掛かり、そのままellipseとして描画できます。
+            ellipseWidget->SetPosition(math::Vec2(
+                ellipse.Center.x - ellipse.Radius.x,
+                ellipse.Center.y - ellipse.Radius.y));
+            ellipseWidget->SetSize(math::Vec2(
+                ellipse.Radius.x * 2.0f,
+                ellipse.Radius.y * 2.0f));
+            ellipseWidget->SetFillColor(ellipse.FillColor);
+
+            if (AddChild(std::move(ellipseWidget)) == nullptr)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "Failed to attach SVG ellipse to UI tree.";
+                }
+                ClearChildren();
+                return false;
+            }
+            continue;
         }
     }
 

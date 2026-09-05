@@ -9,4 +9,12 @@
     <animate attributeName="r" from="24" to="42" dur="2s" repeatCount="indefinite" />
     <animate attributeName="opacity" from="0.35" to="1" dur="2s" repeatCount="indefinite" />
   </circle>
+
+  <!-- 後に記述したellipseが重なった際に前面へ描かれることも確認します。 -->
+  <ellipse id="movingEllipse" cx="320" cy="120" rx="72" ry="28" fill="#66dd88">
+    <animate attributeName="cy" from="120" to="185" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="rx" from="72" to="38" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="ry" from="28" to="52" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" from="0.45" to="0.9" dur="2s" repeatCount="indefinite" />
+  </ellipse>
 </svg>

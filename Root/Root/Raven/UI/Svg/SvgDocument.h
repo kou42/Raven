@@ -3,6 +3,7 @@
 #include "Raven/Animation/AnimationClip.h"
 #include "Raven/Math/MathVector.h"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -25,14 +26,41 @@ struct SvgCircleElement
     math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
+struct SvgEllipseElement
+{
+    std::string Name;
+    math::Vec2 Center{};
+    math::Vec2 Radius{};
+    math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
+enum class SvgShapeType
+{
+    Rect,
+    Circle,
+    Ellipse
+};
+
+// shape本体は型別vectorへ保持しつつ、SVGソース中の出現順だけを軽量な参照列として保持します。
+// SVGでは後に記述されたshapeほど前面へ描画されるため、この順序情報を失わないことが重要です。
+// 将来line / polygon / pathを追加する際も同じ参照列へ型とindexを追加するだけで描画順を維持できます。
+struct SvgShapeReference
+{
+    SvgShapeType Type = SvgShapeType::Rect;
+    std::size_t ElementIndex = 0u;
+    std::size_t SourceOffset = 0u;
+};
+
 // SVG Importerが生成するRaven側の中間表現です。
 // 描画WidgetとXML解析を分離し、shape種別が増えてもUI Runtime側がXML構文そのものを
-// 知る必要がないようにします。現段階ではrect / circleを最小Vector Shapeとして保持します。
+// 知る必要がないようにします。Shapesは元XML順を保持し、型別vectorは各shape固有dataを所有します。
 struct SvgDocument
 {
     math::Vec2 ViewportSize{};
     std::vector<SvgRectElement> Rectangles;
     std::vector<SvgCircleElement> Circles;
+    std::vector<SvgEllipseElement> Ellipses;
+    std::vector<SvgShapeReference> Shapes;
     AnimationClip Animation;
     bool LoopAnimation = false;
 };
