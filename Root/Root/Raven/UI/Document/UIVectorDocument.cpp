@@ -26,7 +26,8 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
 {
     SetSize(m_Document.ViewportSize);
 
-    for (const VectorElementReference& elementReference : m_Document.Elements)
+    // 型別vectorの順序ではなく、Importerが統合したShapes順で子を追加し、図形の前後関係を維持します。
+    for (const VectorElementReference& elementReference : m_Document.Shapes)
     {
         Scope<UIElement> element;
 

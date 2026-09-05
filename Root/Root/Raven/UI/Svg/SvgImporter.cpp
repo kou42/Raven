@@ -213,7 +213,7 @@ void ParseScalarAnimations(
     const std::string& body,
     const std::vector<std::string>& supportedAttributes,
     std::vector<SvgScalarAnimation>& outAnimations,
-    SvgDocument& document,
+    VectorDocument& document,
     float& maxDuration)
 {
     const std::regex animateRegex(R"(<animate\b([^>]*)/?>)", std::regex::icase);
@@ -294,7 +294,7 @@ void AppendVec2Track(
 
 void AppendCircleTracks(
     AnimationClip& clip,
-    const SvgCircleElement& circle,
+    const CircleElement& circle,
     const std::vector<SvgScalarAnimation>& animations)
 {
     const SvgScalarAnimation* cxAnimation = FindAnimation(animations, "cx");
@@ -350,7 +350,7 @@ void AppendCircleTracks(
 
 void AppendEllipseTracks(
     AnimationClip& clip,
-    const SvgEllipseElement& ellipse,
+    const EllipseElement& ellipse,
     const std::vector<SvgScalarAnimation>& animations)
 {
     const SvgScalarAnimation* cxAnimation = FindAnimation(animations, "cx");
@@ -434,7 +434,7 @@ LinePose CalculateLinePose(
 
 void AppendLineTracks(
     AnimationClip& clip,
-    const SvgLineElement& line,
+    const LineElement& line,
     const std::vector<SvgScalarAnimation>& animations)
 {
     const SvgScalarAnimation* x1Animation = FindAnimation(animations, "x1");
@@ -556,7 +556,7 @@ bool ReadTextFile(const std::string& path, std::string& outText)
 
 } // namespace
 
-bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, std::string* outError)
+bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocument, std::string* outError)
 {
     std::string source;
     if (ReadTextFile(path, source) == false)
@@ -568,7 +568,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         return false;
     }
 
-    SvgDocument document;
+    VectorDocument document;
     const std::regex svgRegex(R"(<svg\b([^>]*)>)", std::regex::icase);
     std::smatch svgMatch;
     if (std::regex_search(source, svgMatch, svgRegex) == false)
@@ -611,7 +611,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     for (std::sregex_iterator it(source.begin(), source.end(), rectRegex), end; it != end; ++it)
     {
         const AttributeMap attributes = ParseAttributes((*it)[1].str());
-        SvgRectElement rectangle;
+        RectElement rectangle;
         auto readNumber = [&attributes](const char* name, float& value)
         {
             const auto found = attributes.find(name);
@@ -653,8 +653,8 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
 
         const std::size_t elementIndex = document.Rectangles.size();
         document.Rectangles.push_back(rectangle);
-        document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Rect, elementIndex, static_cast<std::size_t>(it->position()) });
+        document.Shapes.push_back(VectorElementReference{
+            VectorElementType::Rect, elementIndex, static_cast<std::size_t>(it->position()) });
 
         AppendVec2Track(document.Animation, rectangle.Name, "Position", rectangle.Position,
             FindAnimation(animations, "x"), FindAnimation(animations, "y"));
@@ -666,7 +666,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     for (std::sregex_iterator it(source.begin(), source.end(), circleRegex), end; it != end; ++it)
     {
         const AttributeMap attributes = ParseAttributes((*it)[1].str());
-        SvgCircleElement circle;
+        CircleElement circle;
         const auto cxIt = attributes.find("cx");
         const auto cyIt = attributes.find("cy");
         const auto radiusIt = attributes.find("r");
@@ -703,8 +703,8 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
 
         const std::size_t elementIndex = document.Circles.size();
         document.Circles.push_back(circle);
-        document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Circle, elementIndex, static_cast<std::size_t>(it->position()) });
+        document.Shapes.push_back(VectorElementReference{
+            VectorElementType::Circle, elementIndex, static_cast<std::size_t>(it->position()) });
         AppendCircleTracks(document.Animation, circle, animations);
         AppendOpacityTrack(document.Animation, circle.Name, FindAnimation(animations, "opacity"));
     }
@@ -712,7 +712,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     for (std::sregex_iterator it(source.begin(), source.end(), ellipseRegex), end; it != end; ++it)
     {
         const AttributeMap attributes = ParseAttributes((*it)[1].str());
-        SvgEllipseElement ellipse;
+        EllipseElement ellipse;
         const auto cxIt = attributes.find("cx");
         const auto cyIt = attributes.find("cy");
         const auto rxIt = attributes.find("rx");
@@ -751,8 +751,8 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
 
         const std::size_t elementIndex = document.Ellipses.size();
         document.Ellipses.push_back(ellipse);
-        document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Ellipse, elementIndex, static_cast<std::size_t>(it->position()) });
+        document.Shapes.push_back(VectorElementReference{
+            VectorElementType::Ellipse, elementIndex, static_cast<std::size_t>(it->position()) });
         AppendEllipseTracks(document.Animation, ellipse, animations);
         AppendOpacityTrack(document.Animation, ellipse.Name, FindAnimation(animations, "opacity"));
     }
@@ -760,7 +760,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     for (std::sregex_iterator it(source.begin(), source.end(), lineRegex), end; it != end; ++it)
     {
         const AttributeMap attributes = ParseAttributes((*it)[1].str());
-        SvgLineElement line;
+        LineElement line;
         auto readNumber = [&attributes](const char* name, float& value)
         {
             const auto found = attributes.find(name);
@@ -814,8 +814,8 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
 
         const std::size_t elementIndex = document.Lines.size();
         document.Lines.push_back(line);
-        document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Line, elementIndex, static_cast<std::size_t>(it->position()) });
+        document.Shapes.push_back(VectorElementReference{
+            VectorElementType::Line, elementIndex, static_cast<std::size_t>(it->position()) });
         AppendLineTracks(document.Animation, line, animations);
         AppendOpacityTrack(document.Animation, line.Name, FindAnimation(animations, "opacity"));
     }
@@ -824,7 +824,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     {
         const AttributeMap attributes = ParseAttributes((*it)[1].str());
         const auto pointsIt = attributes.find("points");
-        SvgPolygonElement polygon;
+        PolygonElement polygon;
         if (pointsIt == attributes.end() || TryParsePoints(pointsIt->second, polygon.Points) == false)
         {
             if (outError != nullptr)
@@ -855,8 +855,8 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
 
         const std::size_t elementIndex = document.Polygons.size();
         document.Polygons.push_back(std::move(polygon));
-        document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Polygon, elementIndex, static_cast<std::size_t>(it->position()) });
+        document.Shapes.push_back(VectorElementReference{
+            VectorElementType::Polygon, elementIndex, static_cast<std::size_t>(it->position()) });
         AppendOpacityTrack(document.Animation,
             document.Polygons[elementIndex].Name,
             FindAnimation(animations, "opacity"));
@@ -868,7 +868,7 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     std::sort(
         document.Shapes.begin(),
         document.Shapes.end(),
-        [](const SvgShapeReference& left, const SvgShapeReference& right)
+        [](const VectorElementReference& left, const VectorElementReference& right)
         {
             return left.SourceOffset < right.SourceOffset;
         });

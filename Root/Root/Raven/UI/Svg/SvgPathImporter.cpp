@@ -565,30 +565,30 @@ math::Vec4 ParseColor(const std::string& text)
 }
 
 void CollectExistingNames(
-    const SvgDocument& document,
+    const VectorDocument& document,
     std::unordered_set<std::string>& names)
 {
-    for (const SvgRectElement& element : document.Rectangles)
+    for (const RectElement& element : document.Rectangles)
     {
         names.insert(element.Name);
     }
-    for (const SvgCircleElement& element : document.Circles)
+    for (const CircleElement& element : document.Circles)
     {
         names.insert(element.Name);
     }
-    for (const SvgEllipseElement& element : document.Ellipses)
+    for (const EllipseElement& element : document.Ellipses)
     {
         names.insert(element.Name);
     }
-    for (const SvgLineElement& element : document.Lines)
+    for (const LineElement& element : document.Lines)
     {
         names.insert(element.Name);
     }
-    for (const SvgPolygonElement& element : document.Polygons)
+    for (const PolygonElement& element : document.Polygons)
     {
         names.insert(element.Name);
     }
-    for (const SvgPathElement& element : document.Paths)
+    for (const PathElement& element : document.Paths)
     {
         names.insert(element.Name);
     }
@@ -597,7 +597,7 @@ void CollectExistingNames(
 bool AppendOpacityAnimation(
     const std::string& body,
     const std::string& targetPath,
-    SvgDocument& document)
+    VectorDocument& document)
 {
     const std::regex animateRegex(R"(<animate\b([^>]*)/?>)", std::regex::icase);
     for (std::sregex_iterator it(body.begin(), body.end(), animateRegex), end; it != end; ++it)
@@ -670,7 +670,7 @@ bool AppendOpacityAnimation(
 
 bool SvgPathImporter::AppendFilePaths(
     const std::string& path,
-    SvgDocument& document,
+    VectorDocument& document,
     std::string* outError)
 {
     std::string source;
@@ -703,7 +703,7 @@ bool SvgPathImporter::AppendFilePaths(
             return false;
         }
 
-        SvgPathElement pathElement;
+        PathElement pathElement;
         if (ParsePath(dataIt->second, pathElement.Points, outError) == false)
         {
             return false;
@@ -732,8 +732,8 @@ bool SvgPathImporter::AppendFilePaths(
 
         const std::size_t elementIndex = document.Paths.size();
         document.Paths.push_back(std::move(pathElement));
-        document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Path,
+        document.Shapes.push_back(VectorElementReference{
+            VectorElementType::Path,
             elementIndex,
             static_cast<std::size_t>(it->position()) });
         AppendOpacityAnimation(
@@ -746,7 +746,7 @@ bool SvgPathImporter::AppendFilePaths(
     std::sort(
         document.Shapes.begin(),
         document.Shapes.end(),
-        [](const SvgShapeReference& left, const SvgShapeReference& right)
+        [](const VectorElementReference& left, const VectorElementReference& right)
         {
             return left.SourceOffset < right.SourceOffset;
         });
