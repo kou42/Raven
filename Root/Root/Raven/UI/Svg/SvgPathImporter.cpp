@@ -1,4 +1,4 @@
-#include "Raven/UI/Svg/SvgPathImporter.h"
+﻿#include "Raven/UI/Svg/SvgPathImporter.h"
 
 #include "Raven/Animation/AnimationKeyframe.h"
 #include "Raven/Animation/AnimationTrack.h"
@@ -28,7 +28,9 @@ constexpr float kPointMergeEpsilonSquared = 0.000001f;
 AttributeMap ParseAttributes(const std::string& text)
 {
     AttributeMap attributes;
-    const std::regex attributeRegex(R"(([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=\s*"([^"]*)"))");
+    const std::regex attributeRegex(
+        R"REGEX(([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=\s*"([^"]*)")REGEX"
+    );
     for (std::sregex_iterator it(text.begin(), text.end(), attributeRegex), end; it != end; ++it)
     {
         attributes[(*it)[1].str()] = (*it)[2].str();
