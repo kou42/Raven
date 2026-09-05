@@ -23,7 +23,11 @@ using AttributeMap = std::unordered_map<std::string, std::string>;
 
 constexpr float kBezierFlatnessTolerance = 0.5f;
 constexpr uint32_t kBezierMaxSubdivisionDepth = 12u;
+constexpr float kArcFlatnessTolerance = kBezierFlatnessTolerance;
+constexpr uint32_t kArcMaxSubdivisionDepth = kBezierMaxSubdivisionDepth;
 constexpr float kPointMergeEpsilonSquared = 0.000001f;
+constexpr float kPi = 3.14159265358979323846f;
+constexpr float kTwoPi = kPi * 2.0f;
 
 AttributeMap ParseAttributes(const std::string& text)
 {
@@ -83,6 +87,31 @@ bool TryReadNumber(const std::string& data, std::size_t& cursor, float& outValue
 
     cursor += static_cast<std::size_t>(end - begin);
     return true;
+}
+
+bool TryReadFlag(const std::string& data, std::size_t& cursor, bool& outValue)
+{
+    SkipSeparators(data, cursor);
+    if (cursor >= data.size())
+    {
+        return false;
+    }
+
+    // SVGのarc flagは数値一般ではなく1文字の0/1です。
+    // 1文字だけ消費することで "... 0 01 ..." のように2つのflagが区切りなしで並ぶ合法表現も扱えます。
+    if (data[cursor] == '0')
+    {
+        outValue = false;
+        ++cursor;
+        return true;
+    }
+    if (data[cursor] == '1')
+    {
+        outValue = true;
+        ++cursor;
+        return true;
+    }
+    return false;
 }
 
 math::Vec2 Midpoint(const math::Vec2& left, const math::Vec2& right)
@@ -212,6 +241,188 @@ void TessellateCubicBezier(
     TessellateCubicBezier(middle, p123, p23, end, depth + 1u, outPoints);
 }
 
+math::Vec2 EvaluateEllipticalArcPoint(
+    const math::Vec2& center,
+    float radiusX,
+    float radiusY,
+    float cosRotation,
+    float sinRotation,
+    float angle)
+{
+    const float localX = radiusX * std::cos(angle);
+    const float localY = radiusY * std::sin(angle);
+    return math::Vec2(
+        center.x + cosRotation * localX - sinRotation * localY,
+        center.y + sinRotation * localX + cosRotation * localY);
+}
+
+void TessellateEllipticalArcRecursive(
+    const math::Vec2& center,
+    float radiusX,
+    float radiusY,
+    float cosRotation,
+    float sinRotation,
+    float startAngle,
+    float endAngle,
+    const math::Vec2& start,
+    const math::Vec2& end,
+    uint32_t depth,
+    std::vector<math::Vec2>& outPoints)
+{
+    const float middleAngle = (startAngle + endAngle) * 0.5f;
+    const math::Vec2 middle = EvaluateEllipticalArcPoint(
+        center,
+        radiusX,
+        radiusY,
+        cosRotation,
+        sinRotation,
+        middleAngle);
+    const float toleranceSquared = kArcFlatnessTolerance * kArcFlatnessTolerance;
+
+    // ArcもBezierと同様に弦からの誤差でadaptive subdivisionします。
+    // 固定角度刻みよりも大きな円弧・強い曲率だけを細分化でき、既存path tessellationの密度感と揃えられます。
+    if (depth >= kArcMaxSubdivisionDepth ||
+        DistanceToLineSquared(middle, start, end) <= toleranceSquared)
+    {
+        AppendPointIfDistinct(outPoints, end);
+        return;
+    }
+
+    TessellateEllipticalArcRecursive(
+        center,
+        radiusX,
+        radiusY,
+        cosRotation,
+        sinRotation,
+        startAngle,
+        middleAngle,
+        start,
+        middle,
+        depth + 1u,
+        outPoints);
+    TessellateEllipticalArcRecursive(
+        center,
+        radiusX,
+        radiusY,
+        cosRotation,
+        sinRotation,
+        middleAngle,
+        endAngle,
+        middle,
+        end,
+        depth + 1u,
+        outPoints);
+}
+
+void TessellateEllipticalArc(
+    const math::Vec2& start,
+    float radiusX,
+    float radiusY,
+    float xAxisRotationDegrees,
+    bool largeArc,
+    bool sweep,
+    const math::Vec2& end,
+    std::vector<math::Vec2>& outPoints)
+{
+    if (DistanceSquared(start, end) <= kPointMergeEpsilonSquared)
+    {
+        // SVG仕様では始点と終点が一致するarc segmentは描画されません。
+        return;
+    }
+
+    radiusX = std::abs(radiusX);
+    radiusY = std::abs(radiusY);
+    if (radiusX <= 0.0f || radiusY <= 0.0f)
+    {
+        // どちらかの半径が0ならarcは直線segmentとして扱います。
+        AppendPointIfDistinct(outPoints, end);
+        return;
+    }
+
+    const float rotation = std::fmod(xAxisRotationDegrees, 360.0f) * (kPi / 180.0f);
+    const float cosRotation = std::cos(rotation);
+    const float sinRotation = std::sin(rotation);
+    const float halfDx = (start.x - end.x) * 0.5f;
+    const float halfDy = (start.y - end.y) * 0.5f;
+
+    // SVG arcはendpoint parameterizationで与えられるため、仕様の手順に従って
+    // いったん楕円ローカル座標へ回転し、center parameterizationへ変換します。
+    const float transformedX = cosRotation * halfDx + sinRotation * halfDy;
+    const float transformedY = -sinRotation * halfDx + cosRotation * halfDy;
+    float radiusXSquared = radiusX * radiusX;
+    float radiusYSquared = radiusY * radiusY;
+    const float transformedXSquared = transformedX * transformedX;
+    const float transformedYSquared = transformedY * transformedY;
+
+    // 指定半径で両endpointを結べない場合、SVG仕様では両半径を同じ倍率で拡大します。
+    const float radiusScaleSquared =
+        transformedXSquared / radiusXSquared + transformedYSquared / radiusYSquared;
+    if (radiusScaleSquared > 1.0f)
+    {
+        const float scale = std::sqrt(radiusScaleSquared);
+        radiusX *= scale;
+        radiusY *= scale;
+        radiusXSquared = radiusX * radiusX;
+        radiusYSquared = radiusY * radiusY;
+    }
+
+    const float denominator =
+        radiusXSquared * transformedYSquared +
+        radiusYSquared * transformedXSquared;
+    float centerScale = 0.0f;
+    if (denominator > kPointMergeEpsilonSquared)
+    {
+        const float numerator = std::max(
+            0.0f,
+            radiusXSquared * radiusYSquared -
+            radiusXSquared * transformedYSquared -
+            radiusYSquared * transformedXSquared);
+        const float sign = largeArc == sweep ? -1.0f : 1.0f;
+        centerScale = sign * std::sqrt(numerator / denominator);
+    }
+
+    const float centerTransformedX =
+        centerScale * (radiusX * transformedY / radiusY);
+    const float centerTransformedY =
+        centerScale * (-radiusY * transformedX / radiusX);
+    const math::Vec2 center(
+        cosRotation * centerTransformedX - sinRotation * centerTransformedY +
+            (start.x + end.x) * 0.5f,
+        sinRotation * centerTransformedX + cosRotation * centerTransformedY +
+            (start.y + end.y) * 0.5f);
+
+    const float startVectorX = (transformedX - centerTransformedX) / radiusX;
+    const float startVectorY = (transformedY - centerTransformedY) / radiusY;
+    const float endVectorX = (-transformedX - centerTransformedX) / radiusX;
+    const float endVectorY = (-transformedY - centerTransformedY) / radiusY;
+    const float startAngle = std::atan2(startVectorY, startVectorX);
+    float deltaAngle = std::atan2(
+        startVectorX * endVectorY - startVectorY * endVectorX,
+        startVectorX * endVectorX + startVectorY * endVectorY);
+
+    if (sweep == false && deltaAngle > 0.0f)
+    {
+        deltaAngle -= kTwoPi;
+    }
+    else if (sweep == true && deltaAngle < 0.0f)
+    {
+        deltaAngle += kTwoPi;
+    }
+
+    TessellateEllipticalArcRecursive(
+        center,
+        radiusX,
+        radiusY,
+        cosRotation,
+        sinRotation,
+        startAngle,
+        startAngle + deltaAngle,
+        start,
+        end,
+        0u,
+        outPoints);
+}
+
 bool ParsePath(
     const std::string& data,
     std::vector<math::Vec2>& outPoints,
@@ -270,9 +481,10 @@ bool ParsePath(
                 command != 'Q' && command != 'q' &&
                 command != 'T' && command != 't' &&
                 command != 'C' && command != 'c' &&
-                command != 'S' && command != 's')
+                command != 'S' && command != 's' &&
+                command != 'A' && command != 'a')
             {
-                return fail("SVG path currently supports only M/L/H/V/Q/T/C/S/Z commands.");
+                return fail("SVG path currently supports only M/L/H/V/Q/T/C/S/A/Z commands.");
             }
         }
         else if (command == '\0')
@@ -504,6 +716,48 @@ bool ParsePath(
             TessellateCubicBezier(segmentStart, control1, control2, end, 0u, outPoints);
             current = end;
             previousCubicControl = control2;
+            previousCommand = command;
+            continue;
+        }
+
+        if (command == 'A' || command == 'a')
+        {
+            float radiusX = 0.0f;
+            float radiusY = 0.0f;
+            float xAxisRotation = 0.0f;
+            bool largeArc = false;
+            bool sweep = false;
+            float endX = 0.0f;
+            float endY = 0.0f;
+            if (TryReadNumber(data, cursor, radiusX) == false ||
+                TryReadNumber(data, cursor, radiusY) == false ||
+                TryReadNumber(data, cursor, xAxisRotation) == false ||
+                TryReadFlag(data, cursor, largeArc) == false ||
+                TryReadFlag(data, cursor, sweep) == false ||
+                TryReadNumber(data, cursor, endX) == false ||
+                TryReadNumber(data, cursor, endY) == false)
+            {
+                return fail("SVG path A command requires rx ry rotation large-arc-flag sweep-flag and end x/y.");
+            }
+
+            const math::Vec2 segmentStart = current;
+            math::Vec2 end(endX, endY);
+            if (command == 'a')
+            {
+                end.x += segmentStart.x;
+                end.y += segmentStart.y;
+            }
+
+            TessellateEllipticalArc(
+                segmentStart,
+                radiusX,
+                radiusY,
+                xAxisRotation,
+                largeArc,
+                sweep,
+                end,
+                outPoints);
+            current = end;
             previousCommand = command;
             continue;
         }

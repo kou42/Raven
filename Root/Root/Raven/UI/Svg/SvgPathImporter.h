@@ -8,8 +8,8 @@ namespace Raven
 {
 
 // SVG pathはcommand grammarが他shapeの属性解析より複雑になるため、専用Parserへ分離します。
-// M/L/H/V/Zに加えてQ/C BezierをAdaptive TessellationでPolylineへ正規化し、SvgDocumentへ追加します。
-// S/T/A、複数subpath、open pathのstroke描画は後続拡張です。
+// M/L/H/V/ZとQ/T/C/S Bezier、A Elliptical ArcをAdaptive TessellationでPolylineへ正規化し、SvgDocumentへ追加します。
+// 複数subpath、fill-rule、open pathのstroke描画は後続拡張です。
 class SvgPathImporter
 {
 public:
