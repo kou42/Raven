@@ -12,10 +12,9 @@ namespace Raven
 // ============================================================================
 // UIPolygon
 // ============================================================================
-// Raven UIの汎用塗りつぶしPolygon Widgetです。
-//
+// Raven UIの汎用Path/Polygon Widgetです。
 // 単一輪郭は従来どおりSetPoints()で扱い、SVG path等のfill-rule対象はSetContours()でcompound polygonとして保持します。
-// fill-ruleの解決やscanline tessellationはWidgetへ持ち込まずUIDrawListへ委譲します。
+// fill-ruleとstrokeのgeometry生成はWidgetへ持ち込まずUIDrawListへ委譲します。
 class UIPolygon final : public UIElement
 {
 public:
@@ -25,20 +24,34 @@ public:
     void SetContours(std::vector<std::vector<math::Vec2>> contours);
     const std::vector<std::vector<math::Vec2>>& GetContours() const;
 
+    // contoursと同じ順序で各輪郭がZ/zで閉じているかを保持します。
+    // 指定がない輪郭は従来Polygon互換のためclosedとして扱います。
+    void SetContourClosed(std::vector<bool> closed);
+    const std::vector<bool>& GetContourClosed() const;
+
     void SetFillRule(UIFillRule fillRule);
     UIFillRule GetFillRule() const;
 
     void SetFillColor(const math::Vec4& color);
     const math::Vec4& GetFillColor() const;
 
+    void SetStrokeColor(const math::Vec4& color);
+    const math::Vec4& GetStrokeColor() const;
+
+    void SetStrokeWidth(float width);
+    float GetStrokeWidth() const;
+
 protected:
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
     std::vector<std::vector<math::Vec2>> m_Contours;
+    std::vector<bool> m_ContourClosed;
     UIFillRule m_FillRule = UIFillRule::NonZero;
     bool m_UseCompoundFill = false;
     math::Vec4 m_FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+    math::Vec4 m_StrokeColor{ 0.0f, 0.0f, 0.0f, 0.0f };
+    float m_StrokeWidth = 1.0f;
 };
 
 } // namespace Raven
