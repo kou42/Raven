@@ -168,7 +168,7 @@ public:
         }
 
         const std::size_t segmentCount = closed == true ? points.size() : points.size() - 1u;
-        auto isValidSegment = [&points, segmentCount](std::size_t segmentIndex)
+        auto isValidSegment = [&points, segmentCount, kSegmentEpsilonSquared](std::size_t segmentIndex)
         {
             if (segmentIndex >= segmentCount)
             {
@@ -242,7 +242,7 @@ public:
             AddPolygon(quad, color);
         }
 
-        auto addRoundSector = [this, &color, halfWidth](
+        auto addRoundSector = [this, &color, halfWidth, kRoundSegmentCount](
             const math::Vec2& center,
             const math::Vec2& fromDirection,
             float sweepAngle)
@@ -400,8 +400,9 @@ public:
                             const math::Vec2 miterPoint(
                                 center.x + bisector.x * miterLength,
                                 center.y + bisector.y * miterLength);
+                            // segment矩形の間に残るcenter側の三角領域も含め、外側wedge全体を4頂点で埋めます。
                             AddPolygon(
-                                std::vector<math::Vec2>{ previousOuter, miterPoint, nextOuter },
+                                std::vector<math::Vec2>{ center, previousOuter, miterPoint, nextOuter },
                                 color);
                             continue;
                         }
