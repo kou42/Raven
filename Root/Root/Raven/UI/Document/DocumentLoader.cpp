@@ -1,6 +1,6 @@
 #include "Raven/UI/Document/DocumentLoader.h"
 
-#include "Raven/UI/Svg/SvgImporter.h"
+#include "Raven/UI/Document/DefaultDocumentImporters.h"
 
 #include <memory>
 #include <utility>
@@ -10,11 +10,13 @@ namespace Raven
 
 DocumentLoader::DocumentLoader()
 {
-    // 標準対応形式はここで登録します。新形式追加時もLoad本体へ形式固有分岐を追加しません。
-    m_Registry.Register(".svg", []()
-    {
-        return std::make_unique<SvgImporter>();
-    });
+    // 標準Importerの具体型はComposition Root側へ隔離し、LoaderはRegistry操作だけを担当します。
+    RegisterDefaultDocumentImporters(m_Registry);
+}
+
+DocumentLoader::DocumentLoader(DocumentImporterRegistry registry)
+    : m_Registry(std::move(registry))
+{
 }
 
 bool DocumentLoader::CanLoad(const std::string& path) const
