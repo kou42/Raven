@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Raven/Animation/AnimationClip.h"
 #include "Raven/Math/MathVector.h"
 
 #include <cstddef>
@@ -81,11 +80,10 @@ struct VectorElementReference
     std::size_t SourceOffset = 0u;
 };
 
-// Raven内部で共有するVector Documentです。
-// ファイル形式固有のParserはこの形式へ変換し、描画・Animation基盤は共通データだけを扱います。
+// ファイル形式非依存のVectorデータです。
+// ViewportやAnimationなどDocument全体の情報はUIDocumentが所有し、ここではVector表現だけを保持します。
 struct VectorDocument
 {
-    math::Vec2 ViewportSize{};
     std::vector<RectElement> Rectangles;
     std::vector<CircleElement> Circles;
     std::vector<EllipseElement> Ellipses;
@@ -93,8 +91,6 @@ struct VectorDocument
     std::vector<PolygonElement> Polygons;
     std::vector<PathElement> Paths;
     std::vector<VectorElementReference> Shapes;
-    AnimationClip Animation;
-    bool LoopAnimation = false;
 };
 
 } // namespace Raven
