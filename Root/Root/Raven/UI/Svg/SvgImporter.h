@@ -38,9 +38,6 @@ public:
         outDocument.ViewportSize = imported.ViewportSize;
         outDocument.Animation = std::move(imported.Animation);
         outDocument.LoopAnimation = imported.LoopAnimation;
-        imported.ViewportSize = {};
-        imported.Animation = AnimationClip{};
-        imported.LoopAnimation = false;
         outDocument.Vector = std::move(imported);
         return true;
     }
