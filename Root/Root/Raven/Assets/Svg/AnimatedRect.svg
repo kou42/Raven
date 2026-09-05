@@ -10,11 +10,22 @@
     <animate attributeName="opacity" from="0.35" to="1" dur="2s" repeatCount="indefinite" />
   </circle>
 
-  <!-- 後に記述したellipseが重なった際に前面へ描かれることも確認します。 -->
   <ellipse id="movingEllipse" cx="320" cy="120" rx="72" ry="28" fill="#66dd88">
     <animate attributeName="cy" from="120" to="185" dur="2s" repeatCount="indefinite" />
     <animate attributeName="rx" from="72" to="38" dur="2s" repeatCount="indefinite" />
     <animate attributeName="ry" from="28" to="52" dur="2s" repeatCount="indefinite" />
     <animate attributeName="opacity" from="0.45" to="0.9" dur="2s" repeatCount="indefinite" />
   </ellipse>
+
+  <!-- x2/y2をAnimationし、Position/Size/Rotation Trackへの変換を確認します。 -->
+  <line id="movingLine" x1="70" y1="210" x2="220" y2="190" stroke="#ffcc44" stroke-width="8">
+    <animate attributeName="x2" from="220" to="560" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="y2" from="190" to="35" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="stroke-width" from="8" to="16" dur="2s" repeatCount="indefinite" />
+  </line>
+
+  <!-- Convex Fanでは扱えない凹形状を使い、Ear Clipping経路を確認します。 -->
+  <polygon id="concaveArrow" points="430,155 515,155 515,130 590,180 515,230 515,205 430,205" fill="#cc66ff">
+    <animate attributeName="opacity" from="0.9" to="0.35" dur="2s" repeatCount="indefinite" />
+  </polygon>
 </svg>

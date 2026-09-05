@@ -16,13 +16,14 @@ class TextureAsset;
 // ============================================================================
 // UIContextが生成する描画要求の種類です。
 //
-// Widget側へGPU実装を漏らさず、Rect / Circle / Imageの幾何生成はRenderer backendへ集約します。
+// Widget側へGPU実装を漏らさず、Rect / Circle / Polygon / Imageの幾何生成はRenderer backendへ集約します。
 // Text / Border / Path等も今後このコマンド列へ追加していきます。
 // ImageもGPU Texture IDではなくTextureAssetを参照し、UI層からRenderer API固有値を排除します。
 enum class UIDrawCommandType
 {
     SolidRect,
     SolidCircle,
+    SolidPolygon,
     Image
 };
 
@@ -104,6 +105,7 @@ struct UITransform2D
 // この構造体へOpenGLのTexture IDやVertexArray等を直接持たせないことで、
 // Editor UIとGame UIのどちらから利用してもPlatform Rendererへ依存しない境界を保ちます。
 // Circleも中心/radiusではなくLayout済みBoundsを保持し、Transformの適用責務を既存Commandと統一します。
+// Polygonは任意頂点列だけを保持し、三角形化アルゴリズムはRenderer backendへ閉じ込めます。
 // ImageではEngine側のTextureAssetを保持し、OpenGL固有値への解決はUIRenderer実装でのみ行います。
 // TextureAssetのRefをframe中保持することで、DrawListが参照しているRuntime Textureの寿命も保証します。
 //
@@ -119,6 +121,7 @@ struct UIDrawCommand
     math::Vec4 Color{ 1.0f, 1.0f, 1.0f, 1.0f };
     math::Vec2 UVMin{ 0.0f, 0.0f };
     math::Vec2 UVMax{ 1.0f, 1.0f };
+    std::vector<math::Vec2> Points;
     Ref<TextureAsset> Texture;
 };
 
@@ -145,6 +148,12 @@ public:
     void AddCircle(
         const math::Vec2& min,
         const math::Vec2& max,
+        const math::Vec4& color);
+
+    // simple polygonの頂点列をそのまま保持します。
+    // Convex/Concaveの三角形化はRenderer backendが行い、Widget側へtessellation知識を漏らしません。
+    void AddPolygon(
+        const std::vector<math::Vec2>& points,
         const math::Vec4& color);
 
     // uvMin / uvMaxもRaven UIの左上原点UV規約で指定します。

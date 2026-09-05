@@ -34,16 +34,34 @@ struct SvgEllipseElement
     math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
+struct SvgLineElement
+{
+    std::string Name;
+    math::Vec2 Start{};
+    math::Vec2 End{};
+    math::Vec4 StrokeColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+    float StrokeWidth = 1.0f;
+};
+
+struct SvgPolygonElement
+{
+    std::string Name;
+    std::vector<math::Vec2> Points;
+    math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
 enum class SvgShapeType
 {
     Rect,
     Circle,
-    Ellipse
+    Ellipse,
+    Line,
+    Polygon
 };
 
 // shape本体は型別vectorへ保持しつつ、SVGソース中の出現順だけを軽量な参照列として保持します。
 // SVGでは後に記述されたshapeほど前面へ描画されるため、この順序情報を失わないことが重要です。
-// 将来line / polygon / pathを追加する際も同じ参照列へ型とindexを追加するだけで描画順を維持できます。
+// line / polygon / pathのようにshape種別が増えても同じ参照列へ型とindexを追加するだけで描画順を維持できます。
 struct SvgShapeReference
 {
     SvgShapeType Type = SvgShapeType::Rect;
@@ -60,6 +78,8 @@ struct SvgDocument
     std::vector<SvgRectElement> Rectangles;
     std::vector<SvgCircleElement> Circles;
     std::vector<SvgEllipseElement> Ellipses;
+    std::vector<SvgLineElement> Lines;
+    std::vector<SvgPolygonElement> Polygons;
     std::vector<SvgShapeReference> Shapes;
     AnimationClip Animation;
     bool LoopAnimation = false;

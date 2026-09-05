@@ -10,8 +10,9 @@ namespace Raven
 class SvgImporter
 {
 public:
-    // 現段階ではSVG 1.1全体ではなく、Raven UIへ安全に取り込める最小subsetとして
-    // <svg>、<rect>、<animate attributeName=\"x|y|width|height|opacity\"> を扱います。
+    // SVG 1.1全体ではなく、Raven UIへ安全に取り込めるVector Shape subsetを扱います。
+    // 現在はsvg / rect / circle / ellipse / line / polygonと、それぞれ対応可能なscalar animateを
+    // Raven AnimationClipへ変換します。path / transform / gradient / CSS等は後続拡張です。
     static bool ImportFile(const std::string& path, SvgDocument& outDocument, std::string* outError = nullptr);
 };
 

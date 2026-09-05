@@ -4,6 +4,7 @@
 #include "Raven/Animation/AnimationTrack.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -26,6 +27,13 @@ struct SvgScalarAnimation
     float To = 0.0f;
     float Duration = 0.0f;
     bool Loop = false;
+};
+
+struct LinePose
+{
+    math::Vec2 Position{};
+    math::Vec2 Size{};
+    float Rotation = 0.0f;
 };
 
 AttributeMap ParseAttributes(const std::string& text)
@@ -96,6 +104,10 @@ bool TryParseHexByte(const std::string& text, float& outValue)
 
 math::Vec4 ParseColor(const std::string& text)
 {
+    if (text == "none")
+    {
+        return math::Vec4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
     if (text == "red")
     {
         return math::Vec4(1.0f, 0.0f, 0.0f, 1.0f);
@@ -128,6 +140,37 @@ math::Vec4 ParseColor(const std::string& text)
         }
     }
     return math::Vec4(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+bool TryParsePoints(const std::string& text, std::vector<math::Vec2>& outPoints)
+{
+    outPoints.clear();
+
+    // SVG pointsはcommaとwhitespaceのどちらでも区切れるため、数値tokenを順番に抽出します。
+    // exponent表記も許容し、x/yが対にならない入力や3頂点未満はPolygonとして拒否します。
+    const std::regex numberRegex(R"([-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)");
+    std::vector<float> values;
+    for (std::sregex_iterator it(text.begin(), text.end(), numberRegex), end; it != end; ++it)
+    {
+        float value = 0.0f;
+        if (TryParseFloat((*it)[0].str(), value) == false)
+        {
+            return false;
+        }
+        values.push_back(value);
+    }
+
+    if (values.size() < 6u || (values.size() % 2u) != 0u)
+    {
+        return false;
+    }
+
+    outPoints.reserve(values.size() / 2u);
+    for (std::size_t index = 0u; index < values.size(); index += 2u)
+    {
+        outPoints.push_back(math::Vec2(values[index], values[index + 1u]));
+    }
+    return true;
 }
 
 float EvaluateScalar(const SvgScalarAnimation* animation, float baseValue, float time)
@@ -277,8 +320,6 @@ void AppendCircleTracks(
     std::sort(times.begin(), times.end());
     times.erase(std::unique(times.begin(), times.end()), times.end());
 
-    // SVG circleのcx/cy/rをRaven UIのPosition/Sizeへ変換します。
-    // r変更は左上Positionも同時に変える必要があるため、同じ時刻列から2本のTrackを生成して整合を保ちます。
     PropertyAnimationTrack<math::Vec2> positionTrack;
     positionTrack.Binding.TargetPath = circle.Name;
     positionTrack.Binding.Property = "Position";
@@ -341,8 +382,6 @@ void AppendEllipseTracks(
     std::sort(times.begin(), times.end());
     times.erase(std::unique(times.begin(), times.end()), times.end());
 
-    // EllipseもUICircleの非正方Sizeとして描画します。
-    // rx/ry変更時に中心が動かないよう、PositionとSizeを同じ時刻列から同時生成します。
     PropertyAnimationTrack<math::Vec2> positionTrack;
     positionTrack.Binding.TargetPath = ellipse.Name;
     positionTrack.Binding.Property = "Position";
@@ -368,6 +407,93 @@ void AppendEllipseTracks(
 
     clip.AddPropertyTrack(std::move(positionTrack));
     clip.AddPropertyTrack(std::move(sizeTrack));
+}
+
+LinePose CalculateLinePose(
+    const math::Vec2& start,
+    const math::Vec2& end,
+    float strokeWidth)
+{
+    const float deltaX = end.x - start.x;
+    const float deltaY = end.y - start.y;
+    const float length = std::sqrt(deltaX * deltaX + deltaY * deltaY);
+    const math::Vec2 center(
+        (start.x + end.x) * 0.5f,
+        (start.y + end.y) * 0.5f);
+
+    LinePose pose;
+    pose.Size = math::Vec2(length, std::max(0.0f, strokeWidth));
+    pose.Position = math::Vec2(
+        center.x - pose.Size.x * 0.5f,
+        center.y - pose.Size.y * 0.5f);
+    pose.Rotation = std::atan2(deltaY, deltaX);
+    return pose;
+}
+
+void AppendLineTracks(
+    AnimationClip& clip,
+    const SvgLineElement& line,
+    const std::vector<SvgScalarAnimation>& animations)
+{
+    const SvgScalarAnimation* x1Animation = FindAnimation(animations, "x1");
+    const SvgScalarAnimation* y1Animation = FindAnimation(animations, "y1");
+    const SvgScalarAnimation* x2Animation = FindAnimation(animations, "x2");
+    const SvgScalarAnimation* y2Animation = FindAnimation(animations, "y2");
+    const SvgScalarAnimation* widthAnimation = FindAnimation(animations, "stroke-width");
+
+    if (x1Animation == nullptr && y1Animation == nullptr &&
+        x2Animation == nullptr && y2Animation == nullptr &&
+        widthAnimation == nullptr)
+    {
+        return;
+    }
+
+    std::vector<float> times{ 0.0f };
+    const SvgScalarAnimation* allAnimations[] = {
+        x1Animation, y1Animation, x2Animation, y2Animation, widthAnimation
+    };
+    for (const SvgScalarAnimation* animation : allAnimations)
+    {
+        if (animation != nullptr)
+        {
+            times.push_back(animation->Duration);
+        }
+    }
+    std::sort(times.begin(), times.end());
+    times.erase(std::unique(times.begin(), times.end()), times.end());
+
+    PropertyAnimationTrack<math::Vec2> positionTrack;
+    positionTrack.Binding.TargetPath = line.Name;
+    positionTrack.Binding.Property = "Position";
+
+    PropertyAnimationTrack<math::Vec2> sizeTrack;
+    sizeTrack.Binding.TargetPath = line.Name;
+    sizeTrack.Binding.Property = "Size";
+
+    PropertyAnimationTrack<float> rotationTrack;
+    rotationTrack.Binding.TargetPath = line.Name;
+    rotationTrack.Binding.Property = "Rotation";
+
+    for (float time : times)
+    {
+        const math::Vec2 start(
+            EvaluateScalar(x1Animation, line.Start.x, time),
+            EvaluateScalar(y1Animation, line.Start.y, time));
+        const math::Vec2 end(
+            EvaluateScalar(x2Animation, line.End.x, time),
+            EvaluateScalar(y2Animation, line.End.y, time));
+        const float strokeWidth =
+            std::max(0.0f, EvaluateScalar(widthAnimation, line.StrokeWidth, time));
+        const LinePose pose = CalculateLinePose(start, end, strokeWidth);
+
+        positionTrack.Curve.GetKeys().push_back(AnimationKeyframe<math::Vec2>{ time, pose.Position });
+        sizeTrack.Curve.GetKeys().push_back(AnimationKeyframe<math::Vec2>{ time, pose.Size });
+        rotationTrack.Curve.GetKeys().push_back(AnimationKeyframe<float>{ time, pose.Rotation });
+    }
+
+    clip.AddPropertyTrack(std::move(positionTrack));
+    clip.AddPropertyTrack(std::move(sizeTrack));
+    clip.AddPropertyTrack(std::move(rotationTrack));
 }
 
 void AppendOpacityTrack(
@@ -469,42 +595,36 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
     const std::regex rectRegex(R"(<rect\b([^>]*?)(?:/>|>([\s\S]*?)</rect>))", std::regex::icase);
     const std::regex circleRegex(R"(<circle\b([^>]*?)(?:/>|>([\s\S]*?)</circle>))", std::regex::icase);
     const std::regex ellipseRegex(R"(<ellipse\b([^>]*?)(?:/>|>([\s\S]*?)</ellipse>))", std::regex::icase);
+    const std::regex lineRegex(R"(<line\b([^>]*?)(?:/>|>([\s\S]*?)</line>))", std::regex::icase);
+    const std::regex polygonRegex(R"(<polygon\b([^>]*?)(?:/>|>([\s\S]*?)</polygon>))", std::regex::icase);
+
     std::size_t generatedRectIndex = 0u;
     std::size_t generatedCircleIndex = 0u;
     std::size_t generatedEllipseIndex = 0u;
+    std::size_t generatedLineIndex = 0u;
+    std::size_t generatedPolygonIndex = 0u;
     float maxDuration = 0.0f;
     std::unordered_set<std::string> usedNames;
 
-    for (std::sregex_iterator rectIt(source.begin(), source.end(), rectRegex), end; rectIt != end; ++rectIt)
+    for (std::sregex_iterator it(source.begin(), source.end(), rectRegex), end; it != end; ++it)
     {
-        const AttributeMap attributes = ParseAttributes((*rectIt)[1].str());
+        const AttributeMap attributes = ParseAttributes((*it)[1].str());
         SvgRectElement rectangle;
         auto readNumber = [&attributes](const char* name, float& value)
         {
-            const auto it = attributes.find(name);
-            if (it == attributes.end())
-            {
-                return true;
-            }
-            return TryParseFloat(it->second, value);
+            const auto found = attributes.find(name);
+            return found == attributes.end() ? true : TryParseFloat(found->second, value);
         };
+
         if (readNumber("x", rectangle.Position.x) == false ||
             readNumber("y", rectangle.Position.y) == false ||
             readNumber("width", rectangle.Size.x) == false ||
-            readNumber("height", rectangle.Size.y) == false)
+            readNumber("height", rectangle.Size.y) == false ||
+            rectangle.Size.x < 0.0f || rectangle.Size.y < 0.0f)
         {
             if (outError != nullptr)
             {
                 *outError = "SVG rect contains an unsupported numeric value.";
-            }
-            return false;
-        }
-
-        if (rectangle.Size.x < 0.0f || rectangle.Size.y < 0.0f)
-        {
-            if (outError != nullptr)
-            {
-                *outError = "SVG rect width/height must not be negative.";
             }
             return false;
         }
@@ -525,65 +645,38 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         }
 
         std::vector<SvgScalarAnimation> animations;
-        ParseScalarAnimations(
-            (*rectIt)[2].str(),
+        ParseScalarAnimations((*it)[2].str(),
             { "x", "y", "width", "height", "opacity" },
-            animations,
-            document,
-            maxDuration);
+            animations, document, maxDuration);
 
         const std::size_t elementIndex = document.Rectangles.size();
         document.Rectangles.push_back(rectangle);
         document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Rect,
-            elementIndex,
-            static_cast<std::size_t>(rectIt->position()) });
+            SvgShapeType::Rect, elementIndex, static_cast<std::size_t>(it->position()) });
 
-        AppendVec2Track(
-            document.Animation,
-            rectangle.Name,
-            "Position",
-            rectangle.Position,
-            FindAnimation(animations, "x"),
-            FindAnimation(animations, "y"));
-        AppendVec2Track(
-            document.Animation,
-            rectangle.Name,
-            "Size",
-            rectangle.Size,
-            FindAnimation(animations, "width"),
-            FindAnimation(animations, "height"));
-        AppendOpacityTrack(
-            document.Animation,
-            rectangle.Name,
-            FindAnimation(animations, "opacity"));
+        AppendVec2Track(document.Animation, rectangle.Name, "Position", rectangle.Position,
+            FindAnimation(animations, "x"), FindAnimation(animations, "y"));
+        AppendVec2Track(document.Animation, rectangle.Name, "Size", rectangle.Size,
+            FindAnimation(animations, "width"), FindAnimation(animations, "height"));
+        AppendOpacityTrack(document.Animation, rectangle.Name, FindAnimation(animations, "opacity"));
     }
 
-    for (std::sregex_iterator circleIt(source.begin(), source.end(), circleRegex), end; circleIt != end; ++circleIt)
+    for (std::sregex_iterator it(source.begin(), source.end(), circleRegex), end; it != end; ++it)
     {
-        const AttributeMap attributes = ParseAttributes((*circleIt)[1].str());
+        const AttributeMap attributes = ParseAttributes((*it)[1].str());
         SvgCircleElement circle;
-
         const auto cxIt = attributes.find("cx");
         const auto cyIt = attributes.find("cy");
         const auto radiusIt = attributes.find("r");
         if ((cxIt != attributes.end() && TryParseFloat(cxIt->second, circle.Center.x) == false) ||
             (cyIt != attributes.end() && TryParseFloat(cyIt->second, circle.Center.y) == false) ||
             radiusIt == attributes.end() ||
-            TryParseFloat(radiusIt->second, circle.Radius) == false)
+            TryParseFloat(radiusIt->second, circle.Radius) == false ||
+            circle.Radius < 0.0f)
         {
             if (outError != nullptr)
             {
-                *outError = "SVG circle requires numeric cx/cy and a numeric r.";
-            }
-            return false;
-        }
-
-        if (circle.Radius < 0.0f)
-        {
-            if (outError != nullptr)
-            {
-                *outError = "SVG circle radius must not be negative.";
+                *outError = "SVG circle requires numeric cx/cy and a non-negative r.";
             }
             return false;
         }
@@ -596,7 +689,6 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         {
             return false;
         }
-
         const auto fillIt = attributes.find("fill");
         if (fillIt != attributes.end())
         {
@@ -604,32 +696,21 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         }
 
         std::vector<SvgScalarAnimation> animations;
-        ParseScalarAnimations(
-            (*circleIt)[2].str(),
-            { "cx", "cy", "r", "opacity" },
-            animations,
-            document,
-            maxDuration);
+        ParseScalarAnimations((*it)[2].str(),
+            { "cx", "cy", "r", "opacity" }, animations, document, maxDuration);
 
         const std::size_t elementIndex = document.Circles.size();
         document.Circles.push_back(circle);
         document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Circle,
-            elementIndex,
-            static_cast<std::size_t>(circleIt->position()) });
-
+            SvgShapeType::Circle, elementIndex, static_cast<std::size_t>(it->position()) });
         AppendCircleTracks(document.Animation, circle, animations);
-        AppendOpacityTrack(
-            document.Animation,
-            circle.Name,
-            FindAnimation(animations, "opacity"));
+        AppendOpacityTrack(document.Animation, circle.Name, FindAnimation(animations, "opacity"));
     }
 
-    for (std::sregex_iterator ellipseIt(source.begin(), source.end(), ellipseRegex), end; ellipseIt != end; ++ellipseIt)
+    for (std::sregex_iterator it(source.begin(), source.end(), ellipseRegex), end; it != end; ++it)
     {
-        const AttributeMap attributes = ParseAttributes((*ellipseIt)[1].str());
+        const AttributeMap attributes = ParseAttributes((*it)[1].str());
         SvgEllipseElement ellipse;
-
         const auto cxIt = attributes.find("cx");
         const auto cyIt = attributes.find("cy");
         const auto rxIt = attributes.find("rx");
@@ -638,20 +719,12 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
             (cyIt != attributes.end() && TryParseFloat(cyIt->second, ellipse.Center.y) == false) ||
             rxIt == attributes.end() || ryIt == attributes.end() ||
             TryParseFloat(rxIt->second, ellipse.Radius.x) == false ||
-            TryParseFloat(ryIt->second, ellipse.Radius.y) == false)
+            TryParseFloat(ryIt->second, ellipse.Radius.y) == false ||
+            ellipse.Radius.x < 0.0f || ellipse.Radius.y < 0.0f)
         {
             if (outError != nullptr)
             {
-                *outError = "SVG ellipse requires numeric cx/cy and numeric rx/ry.";
-            }
-            return false;
-        }
-
-        if (ellipse.Radius.x < 0.0f || ellipse.Radius.y < 0.0f)
-        {
-            if (outError != nullptr)
-            {
-                *outError = "SVG ellipse rx/ry must not be negative.";
+                *outError = "SVG ellipse requires numeric cx/cy and non-negative rx/ry.";
             }
             return false;
         }
@@ -664,7 +737,6 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         {
             return false;
         }
-
         const auto fillIt = attributes.find("fill");
         if (fillIt != attributes.end())
         {
@@ -672,24 +744,119 @@ bool SvgImporter::ImportFile(const std::string& path, SvgDocument& outDocument, 
         }
 
         std::vector<SvgScalarAnimation> animations;
-        ParseScalarAnimations(
-            (*ellipseIt)[2].str(),
-            { "cx", "cy", "rx", "ry", "opacity" },
-            animations,
-            document,
-            maxDuration);
+        ParseScalarAnimations((*it)[2].str(),
+            { "cx", "cy", "rx", "ry", "opacity" }, animations, document, maxDuration);
 
         const std::size_t elementIndex = document.Ellipses.size();
         document.Ellipses.push_back(ellipse);
         document.Shapes.push_back(SvgShapeReference{
-            SvgShapeType::Ellipse,
-            elementIndex,
-            static_cast<std::size_t>(ellipseIt->position()) });
-
+            SvgShapeType::Ellipse, elementIndex, static_cast<std::size_t>(it->position()) });
         AppendEllipseTracks(document.Animation, ellipse, animations);
-        AppendOpacityTrack(
-            document.Animation,
-            ellipse.Name,
+        AppendOpacityTrack(document.Animation, ellipse.Name, FindAnimation(animations, "opacity"));
+    }
+
+    for (std::sregex_iterator it(source.begin(), source.end(), lineRegex), end; it != end; ++it)
+    {
+        const AttributeMap attributes = ParseAttributes((*it)[1].str());
+        SvgLineElement line;
+        auto readNumber = [&attributes](const char* name, float& value)
+        {
+            const auto found = attributes.find(name);
+            return found == attributes.end() ? true : TryParseFloat(found->second, value);
+        };
+
+        if (readNumber("x1", line.Start.x) == false ||
+            readNumber("y1", line.Start.y) == false ||
+            readNumber("x2", line.End.x) == false ||
+            readNumber("y2", line.End.y) == false)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG line contains an unsupported endpoint value.";
+            }
+            return false;
+        }
+
+        const auto strokeWidthIt = attributes.find("stroke-width");
+        if (strokeWidthIt != attributes.end() &&
+            (TryParseFloat(strokeWidthIt->second, line.StrokeWidth) == false || line.StrokeWidth < 0.0f))
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG line stroke-width must be non-negative.";
+            }
+            return false;
+        }
+
+        // SVGのlineはstroke指定がなければ描画されません。透明色を既定値にして仕様へ寄せます。
+        line.StrokeColor = math::Vec4(0.0f, 0.0f, 0.0f, 0.0f);
+        const auto strokeIt = attributes.find("stroke");
+        if (strokeIt != attributes.end())
+        {
+            line.StrokeColor = ParseColor(strokeIt->second);
+        }
+
+        const auto idIt = attributes.find("id");
+        line.Name = idIt != attributes.end()
+            ? idIt->second
+            : "line" + std::to_string(generatedLineIndex++);
+        if (RegisterElementName(line.Name, usedNames, outError) == false)
+        {
+            return false;
+        }
+
+        std::vector<SvgScalarAnimation> animations;
+        ParseScalarAnimations((*it)[2].str(),
+            { "x1", "y1", "x2", "y2", "stroke-width", "opacity" },
+            animations, document, maxDuration);
+
+        const std::size_t elementIndex = document.Lines.size();
+        document.Lines.push_back(line);
+        document.Shapes.push_back(SvgShapeReference{
+            SvgShapeType::Line, elementIndex, static_cast<std::size_t>(it->position()) });
+        AppendLineTracks(document.Animation, line, animations);
+        AppendOpacityTrack(document.Animation, line.Name, FindAnimation(animations, "opacity"));
+    }
+
+    for (std::sregex_iterator it(source.begin(), source.end(), polygonRegex), end; it != end; ++it)
+    {
+        const AttributeMap attributes = ParseAttributes((*it)[1].str());
+        const auto pointsIt = attributes.find("points");
+        SvgPolygonElement polygon;
+        if (pointsIt == attributes.end() || TryParsePoints(pointsIt->second, polygon.Points) == false)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG polygon requires at least three valid x/y point pairs.";
+            }
+            return false;
+        }
+
+        const auto idIt = attributes.find("id");
+        polygon.Name = idIt != attributes.end()
+            ? idIt->second
+            : "polygon" + std::to_string(generatedPolygonIndex++);
+        if (RegisterElementName(polygon.Name, usedNames, outError) == false)
+        {
+            return false;
+        }
+        const auto fillIt = attributes.find("fill");
+        if (fillIt != attributes.end())
+        {
+            polygon.FillColor = ParseColor(fillIt->second);
+        }
+
+        std::vector<SvgScalarAnimation> animations;
+        // points補間は頂点対応・個数変化の仕様が別途必要なため、初期段階ではOpacityのみ既存Animationへ変換します。
+        ParseScalarAnimations((*it)[2].str(),
+            { "opacity" }, animations, document, maxDuration);
+
+        const std::size_t elementIndex = document.Polygons.size();
+        document.Polygons.push_back(std::move(polygon));
+        document.Shapes.push_back(SvgShapeReference{
+            SvgShapeType::Polygon, elementIndex, static_cast<std::size_t>(it->position()) });
+        AppendOpacityTrack(document.Animation,
+            document.Polygons[elementIndex].Name,
             FindAnimation(animations, "opacity"));
     }
 
