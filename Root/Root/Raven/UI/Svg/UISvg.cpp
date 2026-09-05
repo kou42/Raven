@@ -10,7 +10,7 @@ namespace Raven
 
 bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
 {
-    SvgDocument imported;
+    VectorDocument imported;
     if (SvgImporter::ImportFile(path, imported, outError) == false)
     {
         return false;
