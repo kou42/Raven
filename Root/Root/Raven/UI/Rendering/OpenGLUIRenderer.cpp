@@ -14,10 +14,154 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <numeric>
 #include <vector>
 
 namespace Raven
 {
+
+namespace
+{
+constexpr uint32_t kCircleSegmentCount = 48u;
+constexpr float kTwoPi = 6.28318530717958647692f;
+constexpr float kPolygonEpsilon = 0.00001f;
+
+float Cross2D(
+    const math::Vec2& a,
+    const math::Vec2& b,
+    const math::Vec2& c)
+{
+    return (b.x - a.x) * (c.y - a.y) -
+        (b.y - a.y) * (c.x - a.x);
+}
+
+float CalculateSignedArea(const std::vector<math::Vec2>& points)
+{
+    float doubledArea = 0.0f;
+    for (std::size_t index = 0u; index < points.size(); ++index)
+    {
+        const math::Vec2& current = points[index];
+        const math::Vec2& next = points[(index + 1u) % points.size()];
+        doubledArea += current.x * next.y - next.x * current.y;
+    }
+    return doubledArea * 0.5f;
+}
+
+bool IsPointInsideTriangle(
+    const math::Vec2& point,
+    const math::Vec2& a,
+    const math::Vec2& b,
+    const math::Vec2& c)
+{
+    const float cross0 = Cross2D(a, b, point);
+    const float cross1 = Cross2D(b, c, point);
+    const float cross2 = Cross2D(c, a, point);
+
+    const bool hasNegative =
+        cross0 < -kPolygonEpsilon ||
+        cross1 < -kPolygonEpsilon ||
+        cross2 < -kPolygonEpsilon;
+    const bool hasPositive =
+        cross0 > kPolygonEpsilon ||
+        cross1 > kPolygonEpsilon ||
+        cross2 > kPolygonEpsilon;
+    return (hasNegative && hasPositive) == false;
+}
+
+bool TriangulatePolygon(
+    const std::vector<math::Vec2>& points,
+    std::vector<uint32_t>& outIndices)
+{
+    outIndices.clear();
+    if (points.size() < 3u)
+    {
+        return false;
+    }
+
+    const float signedArea = CalculateSignedArea(points);
+    if (std::abs(signedArea) <= kPolygonEpsilon)
+    {
+        return false;
+    }
+
+    // Ear Clippingは凸Polygonだけでなく単純なConcave Polygonも扱えます。
+    // SVG pathへ進んだ際にも「閉じた輪郭 -> Triangle List」の基礎として再利用できるよう、
+    // Fan固定ではなくここで一般のsimple polygonを三角形化します。
+    const float windingSign = signedArea > 0.0f ? 1.0f : -1.0f;
+    std::vector<uint32_t> remaining(points.size());
+    std::iota(remaining.begin(), remaining.end(), 0u);
+
+    while (remaining.size() > 3u)
+    {
+        bool earFound = false;
+        for (std::size_t currentIndex = 0u; currentIndex < remaining.size(); ++currentIndex)
+        {
+            const std::size_t previousIndex =
+                (currentIndex + remaining.size() - 1u) % remaining.size();
+            const std::size_t nextIndex = (currentIndex + 1u) % remaining.size();
+
+            const uint32_t previousVertex = remaining[previousIndex];
+            const uint32_t currentVertex = remaining[currentIndex];
+            const uint32_t nextVertex = remaining[nextIndex];
+
+            const float cornerCross = Cross2D(
+                points[previousVertex],
+                points[currentVertex],
+                points[nextVertex]);
+            if (cornerCross * windingSign <= kPolygonEpsilon)
+            {
+                continue;
+            }
+
+            bool containsOtherVertex = false;
+            for (uint32_t candidateVertex : remaining)
+            {
+                if (candidateVertex == previousVertex ||
+                    candidateVertex == currentVertex ||
+                    candidateVertex == nextVertex)
+                {
+                    continue;
+                }
+
+                if (IsPointInsideTriangle(
+                    points[candidateVertex],
+                    points[previousVertex],
+                    points[currentVertex],
+                    points[nextVertex]))
+                {
+                    containsOtherVertex = true;
+                    break;
+                }
+            }
+
+            if (containsOtherVertex == true)
+            {
+                continue;
+            }
+
+            outIndices.push_back(previousVertex);
+            outIndices.push_back(currentVertex);
+            outIndices.push_back(nextVertex);
+            remaining.erase(remaining.begin() + static_cast<std::ptrdiff_t>(currentIndex));
+            earFound = true;
+            break;
+        }
+
+        // Self-intersectionや重複頂点など、simple polygonの前提を満たさない入力では
+        // 無限loopせず描画失敗として扱います。Importer側の検証強化は今後追加できます。
+        if (earFound == false)
+        {
+            outIndices.clear();
+            return false;
+        }
+    }
+
+    outIndices.push_back(remaining[0u]);
+    outIndices.push_back(remaining[1u]);
+    outIndices.push_back(remaining[2u]);
+    return true;
+}
+} // namespace
 
 OpenGLUIRenderer::OpenGLUIRenderer()
 {
@@ -60,20 +204,25 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // DrawList -> dynamic triangle batch
     // ========================================================================
-    // SolidRect / Imageをそれぞれ4頂点 / 6 indexへ変換し、同じdynamic bufferへ格納します。
+    // Rect / Imageは4頂点6index、CircleはTriangle Fan、PolygonはEar ClippingでTriangle Listへ変換し、
+    // 同じdynamic bufferへ格納します。
     // ImageではCommand境界でTextureを切り替えるため現段階では1 Command = 1 Draw Callですが、
     // Widgetが直接GPU Bufferを生成しないというDrawList境界は維持します。
+    // CommandごとのIndex数が可変なため、生成時にCountを記録して描画時のoffsetへ利用します。
     // 頂点形式: Position.xy + Color.rgba + UV.xy = 8 floats
     std::vector<float> vertices;
     std::vector<uint32_t> indices;
+    std::vector<uint32_t> commandIndexCounts;
 
-    vertices.reserve(drawList.GetCommandCount() * 4u * 8u);
-    indices.reserve(drawList.GetCommandCount() * 6u);
+    vertices.reserve(drawList.GetCommandCount() * 8u * 8u);
+    indices.reserve(drawList.GetCommandCount() * kCircleSegmentCount * 3u);
+    commandIndexCounts.reserve(drawList.GetCommandCount());
 
-    uint32_t vertexBase = 0;
+    uint32_t vertexBase = 0u;
 
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
+        const std::size_t firstIndex = indices.size();
         const float left = command.Rect.Min.x;
         const float top = command.Rect.Min.y;
         const float right = command.Rect.Max.x;
@@ -83,6 +232,7 @@ void OpenGLUIRenderer::Render(
         {
             // UIElement側で親子Transformを合成済みなので、RendererはWorld Affine Transformを
             // Layout済み頂点へそのまま適用します。Shearを含むTransformもここで失われません。
+            // Circle/Polygonも各tessellation頂点へ同じTransformを適用し、別Transform経路を増やしません。
             const math::Vec2 transformed = command.Transform.TransformPoint(math::Vec2(x, y));
             vertices.push_back(transformed.x);
             vertices.push_back(transformed.y);
@@ -99,6 +249,67 @@ void OpenGLUIRenderer::Render(
             vertices.push_back(v);
         };
 
+        if (command.Type == UIDrawCommandType::SolidCircle)
+        {
+            const float centerX = (left + right) * 0.5f;
+            const float centerY = (top + bottom) * 0.5f;
+            const float radiusX = (right - left) * 0.5f;
+            const float radiusY = (bottom - top) * 0.5f;
+
+            // SVG/UI Vector Shapeの初期実装では48分割を固定品質とします。
+            // Segment数をCommandへ持たせるとWidget/APIへtessellation知識が漏れるため、
+            // 品質ポリシーはRenderer backendへ閉じ込めます。
+            pushVertex(centerX, centerY, 0.5f, 0.5f);
+            for (uint32_t segment = 0u; segment < kCircleSegmentCount; ++segment)
+            {
+                const float angle =
+                    kTwoPi * static_cast<float>(segment) / static_cast<float>(kCircleSegmentCount);
+                const float cosine = std::cos(angle);
+                const float sine = std::sin(angle);
+                pushVertex(
+                    centerX + cosine * radiusX,
+                    centerY + sine * radiusY,
+                    0.5f + cosine * 0.5f,
+                    0.5f + sine * 0.5f);
+            }
+
+            for (uint32_t segment = 0u; segment < kCircleSegmentCount; ++segment)
+            {
+                const uint32_t current = vertexBase + 1u + segment;
+                const uint32_t next = vertexBase + 1u + ((segment + 1u) % kCircleSegmentCount);
+                indices.push_back(vertexBase);
+                indices.push_back(current);
+                indices.push_back(next);
+            }
+
+            vertexBase += 1u + kCircleSegmentCount;
+            commandIndexCounts.push_back(static_cast<uint32_t>(indices.size() - firstIndex));
+            continue;
+        }
+
+        if (command.Type == UIDrawCommandType::SolidPolygon)
+        {
+            std::vector<uint32_t> localIndices;
+            const bool triangulated = TriangulatePolygon(command.Points, localIndices);
+
+            for (const math::Vec2& point : command.Points)
+            {
+                pushVertex(point.x, point.y, 0.0f, 0.0f);
+            }
+
+            if (triangulated == true)
+            {
+                for (uint32_t localIndex : localIndices)
+                {
+                    indices.push_back(vertexBase + localIndex);
+                }
+            }
+
+            vertexBase += static_cast<uint32_t>(command.Points.size());
+            commandIndexCounts.push_back(static_cast<uint32_t>(indices.size() - firstIndex));
+            continue;
+        }
+
         pushVertex(left, top, command.UVMin.x, command.UVMin.y);
         pushVertex(right, top, command.UVMax.x, command.UVMin.y);
         pushVertex(right, bottom, command.UVMax.x, command.UVMax.y);
@@ -112,6 +323,7 @@ void OpenGLUIRenderer::Render(
         indices.push_back(vertexBase + 0u);
 
         vertexBase += 4u;
+        commandIndexCounts.push_back(static_cast<uint32_t>(indices.size() - firstIndex));
     }
 
     if (indices.empty())
@@ -228,7 +440,9 @@ void OpenGLUIRenderer::Render(
     //
     // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
     // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
-    std::size_t commandIndex = 0;
+    // Polygonを含めCommandごとにIndex数が異なるため、生成時に記録したCountで累積offsetを進めます。
+    uint32_t indexOffsetCount = 0u;
+    std::size_t commandIndex = 0u;
     for (const UIDrawCommand& command : drawList.GetCommands())
     {
         if (command.Clip.Enabled == true)
@@ -275,9 +489,19 @@ void OpenGLUIRenderer::Render(
         }
 
         m_Shader->SetInt("u_UseTexture", useTexture ? 1 : 0);
-        const void* indexOffset = reinterpret_cast<const void*>(
-            commandIndex * 6u * sizeof(uint32_t));
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, indexOffset);
+
+        const uint32_t indexCount = commandIndexCounts[commandIndex];
+        if (indexCount > 0u)
+        {
+            const void* indexOffset = reinterpret_cast<const void*>(
+                static_cast<std::size_t>(indexOffsetCount) * sizeof(uint32_t));
+            glDrawElements(
+                GL_TRIANGLES,
+                static_cast<GLsizei>(indexCount),
+                GL_UNSIGNED_INT,
+                indexOffset);
+            indexOffsetCount += indexCount;
+        }
         ++commandIndex;
     }
 

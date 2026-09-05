@@ -1,0 +1,46 @@
+<svg width="640" height="240" xmlns="http://www.w3.org/2000/svg">
+  <rect id="movingRect" x="40" y="80" width="120" height="80" fill="#4488ff">
+    <animate attributeName="x" from="40" to="480" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" from="1" to="0.25" dur="2s" repeatCount="indefinite" />
+  </rect>
+
+  <circle id="movingCircle" cx="80" cy="50" r="24" fill="#ff8844">
+    <animate attributeName="cx" from="80" to="540" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="r" from="24" to="42" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" from="0.35" to="1" dur="2s" repeatCount="indefinite" />
+  </circle>
+
+  <ellipse id="movingEllipse" cx="320" cy="120" rx="72" ry="28" fill="#66dd88">
+    <animate attributeName="cy" from="120" to="185" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="rx" from="72" to="38" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="ry" from="28" to="52" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" from="0.45" to="0.9" dur="2s" repeatCount="indefinite" />
+  </ellipse>
+
+  <!-- x2/y2をAnimationし、Position/Size/Rotation Trackへの変換を確認します。 -->
+  <line id="movingLine" x1="70" y1="210" x2="220" y2="190" stroke="#ffcc44" stroke-width="8">
+    <animate attributeName="x2" from="220" to="560" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="y2" from="190" to="35" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="stroke-width" from="8" to="16" dur="2s" repeatCount="indefinite" />
+  </line>
+
+  <!-- Convex Fanでは扱えない凹形状を使い、Ear Clipping経路を確認します。 -->
+  <polygon id="concaveArrow" points="430,155 515,155 515,130 590,180 515,230 515,205 430,205" fill="#cc66ff">
+    <animate attributeName="opacity" from="0.9" to="0.35" dur="2s" repeatCount="indefinite" />
+  </polygon>
+
+  <!-- absolute/relative M,L,H,VとZを混在させた直線Pathです。 -->
+  <path id="linearPath" d="M 245 28 h 82 v 20 l -28 0 L 299 72 H 273 V 48 h -28 z" fill="#44dddd">
+    <animate attributeName="opacity" from="0.3" to="0.95" dur="2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Quadratic Bezier: 強く曲がる箇所ほどAdaptive Tessellationの分割数が増えます。 -->
+  <path id="quadraticPath" d="M 350 25 Q 395 0 440 25 q 20 42 40 0 L 480 72 L 350 72 Z" fill="#ff6699">
+    <animate attributeName="opacity" from="0.95" to="0.4" dur="2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Cubic Bezier: absolute/relative C/cを混在させ、De Casteljau分割を確認します。 -->
+  <path id="cubicPath" d="M 505 28 C 525 0 575 0 595 28 c 18 24 -8 45 -45 44 c -37 1 -63 -20 -45 -44 Z" fill="#66aaff">
+    <animate attributeName="opacity" from="0.45" to="1" dur="2s" repeatCount="indefinite" />
+  </path>
+</svg>

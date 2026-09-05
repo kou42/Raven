@@ -20,6 +20,7 @@
 
 #ifdef _DEBUG
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
+#include "Raven/UI/Svg/Debug/UISvgDemoLayer.h"
 #endif
 
 int main()
@@ -114,6 +115,13 @@ int main()
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
+
+#ifdef _DEBUG
+    // 実ファイルの読み込みからUI Tree展開、AnimationClip再生、OpenGL UI描画までを
+    // 起動中に一続きで確認するSVG検証Layerです。Asset固有PathはDebug Layer内へ閉じ込めます。
+    app.PushLayer(Raven::CreateScope<Raven::UISvgDemoLayer>(app));
+#endif
+
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
 
     app.Run();

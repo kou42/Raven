@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace Raven
 {
@@ -175,6 +176,55 @@ void UIDrawList::AddRect(
     command.Rect.Max = max;
     command.Color = color;
     m_Commands.push_back(command);
+}
+
+void UIDrawList::AddCircle(
+    const math::Vec2& min,
+    const math::Vec2& max,
+    const math::Vec4& color)
+{
+    // CircleもLayout上はBoundsを持つため、面積0以下なら描画Commandを生成しません。
+    // Tessellation分割数やGPU APIはDrawListへ持ち込まず、Renderer backendの責務とします。
+    if (max.x <= min.x || max.y <= min.y)
+    {
+        return;
+    }
+
+    UIDrawCommand command;
+    command.Type = UIDrawCommandType::SolidCircle;
+    command.Rect.Min = min;
+    command.Rect.Max = max;
+    command.Color = color;
+    m_Commands.push_back(command);
+}
+
+void UIDrawList::AddPolygon(
+    const std::vector<math::Vec2>& points,
+    const math::Vec4& color)
+{
+    if (points.size() < 3u)
+    {
+        return;
+    }
+
+    UIDrawCommand command;
+    command.Type = UIDrawCommandType::SolidPolygon;
+    command.Color = color;
+    command.Points = points;
+
+    // Polygonは任意頂点列を持つため、Clip/診断に使える保守的BoundsをCPU側で同時に保持します。
+    // 三角形化そのものはRenderer backendへ残し、DrawListはGPU APIにもtessellation方式にも依存しません。
+    command.Rect.Min = points[0u];
+    command.Rect.Max = points[0u];
+    for (const math::Vec2& point : points)
+    {
+        command.Rect.Min.x = std::min(command.Rect.Min.x, point.x);
+        command.Rect.Min.y = std::min(command.Rect.Min.y, point.y);
+        command.Rect.Max.x = std::max(command.Rect.Max.x, point.x);
+        command.Rect.Max.y = std::max(command.Rect.Max.y, point.y);
+    }
+
+    m_Commands.push_back(std::move(command));
 }
 
 void UIDrawList::AddImage(
