@@ -15,6 +15,8 @@ class DocumentLoader
 public:
     DocumentLoader();
 
+    bool CanLoad(const std::string& path) const;
+
     bool Load(
         const std::string& path,
         UIDocument& outDocument,
@@ -24,6 +26,8 @@ public:
     const DocumentImporterRegistry& GetRegistry() const { return m_Registry; }
 
 private:
+    static std::string GetExtension(const std::string& path);
+
     DocumentImporterRegistry m_Registry;
 };
 
