@@ -82,7 +82,8 @@ struct VectorElementReference
 };
 
 // Raven内部で共有するVector Documentです。
-// ファイル形式固有のParserはこの形式へ変換し、描画・Animation基盤は共通データだけを扱います。
+// RuntimeはUIDocument経由へ移行済みですが、既存SvgImporter内部のAnimation生成処理が参照する
+// Viewport/Animation情報はImporter内部の移行が完了するまで互換情報として保持します。
 struct VectorDocument
 {
     math::Vec2 ViewportSize{};
