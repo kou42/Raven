@@ -503,8 +503,92 @@ void RunBoxStackStressTest()
     assert(result.MaximumPenetration < 0.25f);
 }
 
+// Plane一覧はStep内だけ保持します。形状の種類・順序と、Step間のPlane移動/削除を
+// 全Collider走査の参照結果と比較し、キャッシュの取り残しと接触順の変化を防ぎます。
+void RunPlaneCollectionSelfTests()
+{
+    Scene scene;
+    PhysicsWorld world;
+    for (uint32_t i = 0u; i < 3u; ++i)
+    {
+        Entity shape = scene.CreateEntity("PlaneCollectionShape");
+        shape.GetComponent<TransformComponent>().Position = { static_cast<float>(i) * 3.0f, 0.1f, 0.0f };
+        auto& collider = shape.AddComponent<ColliderComponent>();
+        collider.Type = i == 0u ? ColliderType::Sphere : (i == 1u ? ColliderType::Box : ColliderType::Capsule);
+        collider.IsTrigger = true; // 接触応答による位置変化を分離し、検出だけを比較します。
+    }
+
+    const auto checkContacts = [&scene, &world](std::size_t expectedManifoldCount)
+    {
+        std::vector<ContactManifold> expected;
+        for (auto [shape, transform, collider] : scene.View<TransformComponent, ColliderComponent>())
+        {
+            for (auto [plane, planeTransform, planeCollider] : scene.View<TransformComponent, ColliderComponent>())
+            {
+                if (planeCollider.Type != ColliderType::Plane)
+                {
+                    continue;
+                }
+                ContactManifold contact{};
+                bool generated = false;
+                if (collider.Type == ColliderType::Sphere)
+                {
+                    generated = GenerateSpherePlaneManifold(shape, transform, collider, plane, planeTransform, planeCollider, contact);
+                }
+                else if (collider.Type == ColliderType::Box)
+                {
+                    generated = GenerateBoxPlaneManifold(shape, transform, collider, plane, planeTransform, planeCollider, contact);
+                }
+                else if (collider.Type == ColliderType::Capsule)
+                {
+                    generated = GenerateCapsulePlaneManifold(shape, transform, collider, plane, planeTransform, planeCollider, contact);
+                }
+                if (generated == true)
+                {
+                    expected.push_back(contact);
+                }
+            }
+        }
+        // 参照側も空のままなら一致する、という無意味な成功を避けます。
+        assert(expected.size() == expectedManifoldCount);
+        world.Step(scene, 1.0f / 60.0f);
+        const auto& actual = world.GetContactManifolds();
+        assert(actual.size() == expected.size());
+        for (std::size_t i = 0u; i < expected.size(); ++i)
+        {
+            assert(actual[i].A == expected[i].A && actual[i].B == expected[i].B);
+            assert(actual[i].Normal == expected[i].Normal);
+            assert(actual[i].PointCount == expected[i].PointCount);
+            assert(actual[i].IsTrigger == expected[i].IsTrigger);
+            for (std::size_t j = 0u; j < expected[i].PointCount; ++j)
+            {
+                assert(actual[i].Points[j].Position == expected[i].Points[j].Position);
+                assert(actual[i].Points[j].Penetration == expected[i].Points[j].Penetration);
+                assert(actual[i].Points[j].Feature == expected[i].Points[j].Feature);
+            }
+        }
+    };
+
+    checkContacts(0u); // Planeなしでも前Stepの候補を持ち越さないことを確認します。
+    Entity planeA = scene.CreateEntity("PlaneA");
+    planeA.AddComponent<ColliderComponent>().Type = ColliderType::Plane;
+    checkContacts(3u);
+    Entity planeB = scene.CreateEntity("PlaneB");
+    planeB.AddComponent<ColliderComponent>().Type = ColliderType::Plane;
+    checkContacts(6u);
+    planeB.GetComponent<TransformComponent>().Position.y = -0.15f;
+    checkContacts(6u);
+    scene.DestroyEntity(planeA);
+    scene.FlushDestroyedEntities();
+    checkContacts(3u);
+    planeB.GetComponent<ColliderComponent>().Type = ColliderType::Sphere;
+    planeB.GetComponent<TransformComponent>().Position = { 100.0f, 100.0f, 100.0f };
+    checkContacts(0u); // Component削除だけでなくCollider Type変更にも追従します。
+}
+
 void RunPhysicsCollisionSelfTests()
 {
+    RunPlaneCollectionSelfTests();
     // Collisionまわりの回帰テストを一括実行します。
     RunDynamicAABBTreeSelfTests();
     RunOBBFoundationSelfTests();

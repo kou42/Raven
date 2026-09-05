@@ -299,6 +299,7 @@ const math::Vec3& PhysicsWorld::GetGravity() const
 // Solver実行前にDynamic剛体へ蓄積済みForce/Torqueを反映します。
 void PhysicsWorld::ApplyForces(Scene& scene, float dt)
 {
+    RAVEN_PROFILE_SCOPE("Physics.ApplyForces");
     for (auto [entity, transform, rigidBody, collider]
         : scene.View<TransformComponent, RigidBodyComponent, ColliderComponent>())
     {
@@ -332,6 +333,7 @@ void PhysicsWorld::ApplyForces(Scene& scene, float dt)
 // 力が加わっていないときに、線形速度と角速度が自然に減衰するように調整します。
 void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
 {
+    RAVEN_PROFILE_SCOPE("Physics.IntegrateVelocities");
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
     {
         static_cast<void>(entity);
@@ -353,6 +355,7 @@ void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
 // 速度更新後に、剛体の位置と向きを実際に移動させます。
 void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
 {
+    RAVEN_PROFILE_SCOPE("Physics.IntegratePositions");
     for (auto [entity, transform, rigidBody]
         : scene.View<TransformComponent, RigidBodyComponent>())
     {
@@ -375,6 +378,7 @@ void PhysicsWorld::IntegratePositions(Scene& scene, float dt)
 // Broad Phase で見つかったコライダーの組み合わせから、新しい接触マニホールドを生成します。
 void PhysicsWorld::DetectCollisions(Scene& scene)
 {
+    RAVEN_PROFILE_SCOPE("Physics.DetectCollisions");
     // ------------------------------------------------------------
     // 前フレーム接触を退避し、今フレーム結果を作り直します。
     // 後段のRestorePersistentContactsでWarm Start再利用先として参照します。
@@ -387,129 +391,30 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     // STLAllocatorAdapter経由でPhysics専用FrameAllocatorから確保し、通常heapへの
     // 毎step allocationを避けます。Debug表示用m_LastPairsだけはBroadPhase側で永続vectorへコピーします。
     FrameVector<BroadPhasePair> pairs{ STLAllocatorAdapter<BroadPhasePair>(m_FrameAllocator) };
-    m_BroadPhase.ComputePairs(scene, pairs);
+    {
+        RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.BroadPhase");
+        m_BroadPhase.ComputePairs(scene, pairs);
+    }
+    CPUProfiler::Get().AddCounter("Physics.Collision.BroadPhasePairs", static_cast<double>(pairs.size()));
 
     // Broad Phase で抽出された候補ペアだけを調べ、実際に接触が起きるかを判定します。
     // ------------------------------------------------------------------------------
     // Broad Phaseが抽出した有限形状の候補だけをNarrow Phaseへ渡します。
-    for (const auto& pair : pairs)
     {
-        if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B))
+        RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.FiniteNarrowPhase");
+        for (const auto& pair : pairs)
         {
-            continue;
-        }
+            if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B))
+            {
+                continue;
+            }
 
-        auto* transformA = scene.TryGetComponent<TransformComponent>(pair.A.GetIndex());
-        auto* transformB = scene.TryGetComponent<TransformComponent>(pair.B.GetIndex());
-        auto* colliderA = scene.TryGetComponent<ColliderComponent>(pair.A.GetIndex());
-        auto* colliderB = scene.TryGetComponent<ColliderComponent>(pair.B.GetIndex());
+            auto* transformA = scene.TryGetComponent<TransformComponent>(pair.A.GetIndex());
+            auto* transformB = scene.TryGetComponent<TransformComponent>(pair.B.GetIndex());
+            auto* colliderA = scene.TryGetComponent<ColliderComponent>(pair.A.GetIndex());
+            auto* colliderB = scene.TryGetComponent<ColliderComponent>(pair.B.GetIndex());
 
-        if (!transformA || !transformB || !colliderA || !colliderB)
-        {
-            continue;
-        }
-
-        ContactManifold manifold{};
-        bool generated = false;
-
-        // 形状組み合わせごとに専用Narrow Phaseへ振り分けます。
-        if (colliderA->Type == ColliderType::Sphere
-            && colliderB->Type == ColliderType::Sphere)
-        {
-            generated = GenerateSphereSphereManifold(
-                pair.A, *transformA, *colliderA,
-                pair.B, *transformB, *colliderB,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Sphere
-            && colliderB->Type == ColliderType::Box)
-        {
-            generated = GenerateSphereBoxManifold(
-                pair.A, *transformA, *colliderA,
-                pair.B, *transformB, *colliderB,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Box
-            && colliderB->Type == ColliderType::Sphere)
-        {
-            generated = GenerateSphereBoxManifold(
-                pair.B, *transformB, *colliderB,
-                pair.A, *transformA, *colliderA,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Box
-            && colliderB->Type == ColliderType::Box)
-        {
-            generated = GenerateBoxBoxManifold(
-                pair.A, *transformA, *colliderA,
-                pair.B, *transformB, *colliderB,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Sphere
-            && colliderB->Type == ColliderType::Capsule)
-        {
-            generated = GenerateSphereCapsuleManifold(
-                pair.A, *transformA, *colliderA,
-                pair.B, *transformB, *colliderB,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Capsule
-            && colliderB->Type == ColliderType::Sphere)
-        {
-            generated = GenerateSphereCapsuleManifold(
-                pair.B, *transformB, *colliderB,
-                pair.A, *transformA, *colliderA,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Capsule
-            && colliderB->Type == ColliderType::Capsule)
-        {
-            generated = GenerateCapsuleCapsuleManifold(
-                pair.A, *transformA, *colliderA,
-                pair.B, *transformB, *colliderB,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Capsule
-            && colliderB->Type == ColliderType::Box)
-        {
-            generated = GenerateCapsuleBoxManifold(
-                pair.A, *transformA, *colliderA,
-                pair.B, *transformB, *colliderB,
-                manifold);
-        }
-        else if (colliderA->Type == ColliderType::Box
-            && colliderB->Type == ColliderType::Capsule)
-        {
-            generated = GenerateCapsuleBoxManifold(
-                pair.B, *transformB, *colliderB,
-                pair.A, *transformA, *colliderA,
-                manifold);
-        }
-
-        if (generated)
-        {
-            m_Manifolds.push_back(manifold);
-        }
-    }
-
-    // Planeは無限形状なので通常のBroad Phase Treeには登録しません。
-    // Sphere / Box / Capsuleとの組み合わせをここで別途処理します。
-    // -----------------------------------------------------------------------------
-    // Plane は通常の Broad Phase では扱わないため、別途有限形状との組み合わせを確認します。
-    for (auto [shapeEntity, shapeTransform, shapeCollider]
-        : scene.View<TransformComponent, ColliderComponent>())
-    {
-        if (shapeCollider.Type != ColliderType::Sphere
-            && shapeCollider.Type != ColliderType::Box
-            && shapeCollider.Type != ColliderType::Capsule)
-        {
-            continue;
-        }
-
-        for (auto [planeEntity, planeTransform, planeCollider]
-            : scene.View<TransformComponent, ColliderComponent>())
-        {
-            if (planeCollider.Type != ColliderType::Plane || shapeEntity == planeEntity)
+            if (!transformA || !transformB || !colliderA || !colliderB)
             {
                 continue;
             }
@@ -517,25 +422,77 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
             ContactManifold manifold{};
             bool generated = false;
 
-            if (shapeCollider.Type == ColliderType::Sphere)
+            // 形状組み合わせごとに専用Narrow Phaseへ振り分けます。
+            if (colliderA->Type == ColliderType::Sphere
+                && colliderB->Type == ColliderType::Sphere)
             {
-                generated = GenerateSpherePlaneManifold(
-                    shapeEntity, shapeTransform, shapeCollider,
-                    planeEntity, planeTransform, planeCollider,
+                generated = GenerateSphereSphereManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
                     manifold);
             }
-            else if (shapeCollider.Type == ColliderType::Box)
+            else if (colliderA->Type == ColliderType::Sphere
+                && colliderB->Type == ColliderType::Box)
             {
-                generated = GenerateBoxPlaneManifold(
-                    shapeEntity, shapeTransform, shapeCollider,
-                    planeEntity, planeTransform, planeCollider,
+                generated = GenerateSphereBoxManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
                     manifold);
             }
-            else if (shapeCollider.Type == ColliderType::Capsule)
+            else if (colliderA->Type == ColliderType::Box
+                && colliderB->Type == ColliderType::Sphere)
             {
-                generated = GenerateCapsulePlaneManifold(
-                    shapeEntity, shapeTransform, shapeCollider,
-                    planeEntity, planeTransform, planeCollider,
+                generated = GenerateSphereBoxManifold(
+                    pair.B, *transformB, *colliderB,
+                    pair.A, *transformA, *colliderA,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::Box
+                && colliderB->Type == ColliderType::Box)
+            {
+                generated = GenerateBoxBoxManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::Sphere
+                && colliderB->Type == ColliderType::Capsule)
+            {
+                generated = GenerateSphereCapsuleManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::Capsule
+                && colliderB->Type == ColliderType::Sphere)
+            {
+                generated = GenerateSphereCapsuleManifold(
+                    pair.B, *transformB, *colliderB,
+                    pair.A, *transformA, *colliderA,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::Capsule
+                && colliderB->Type == ColliderType::Capsule)
+            {
+                generated = GenerateCapsuleCapsuleManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::Capsule
+                && colliderB->Type == ColliderType::Box)
+            {
+                generated = GenerateCapsuleBoxManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::Box
+                && colliderB->Type == ColliderType::Capsule)
+            {
+                generated = GenerateCapsuleBoxManifold(
+                    pair.B, *transformB, *colliderB,
+                    pair.A, *transformA, *colliderA,
                     manifold);
             }
 
@@ -544,6 +501,99 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
                 m_Manifolds.push_back(manifold);
             }
         }
+    }
+
+    // Planeは無限形状なので通常のBroad Phase Treeには登録しません。
+    // Sphere / Box / Capsuleとの組み合わせをここで別途処理します。
+    // -----------------------------------------------------------------------------
+    // Plane は通常の Broad Phase では扱わないため、別途有限形状との組み合わせを確認します。
+    {
+        RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.PlaneNarrowPhase");
+
+        // PlaneはTree外ですが、形状ごとに全Colliderを探し直す必要はありません。
+        // Step中にECS構造を変更する処理は呼ばないため、Componentへの非所有参照は
+        // このScope内で有効です。FrameVectorを破棄してからStep末尾でArenaをResetします。
+        // Scene Viewの列挙順を保存し、従来のshape -> planeという接触生成順を維持します。
+        struct PlaneReference
+        {
+            Entity EntityValue;
+            const TransformComponent* Transform;
+            const ColliderComponent* Collider;
+        };
+        FrameVector<PlaneReference> planes{ STLAllocatorAdapter<PlaneReference>(m_FrameAllocator) };
+        uint64_t colliderCount = 0u;
+        uint64_t planePairTests = 0u;
+        {
+            RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.CollectPlanes");
+            for (auto [entity, transform, collider] : scene.View<TransformComponent, ColliderComponent>())
+            {
+                ++colliderCount;
+                if (collider.Type == ColliderType::Plane)
+                {
+                    planes.push_back({ entity, &transform, &collider });
+                }
+            }
+        }
+
+        // PlaneがないSceneでは有限形状の再走査も不要です。
+        if (planes.empty() == false)
+        {
+            for (auto [shapeEntity, shapeTransform, shapeCollider]
+                : scene.View<TransformComponent, ColliderComponent>())
+            {
+                if (shapeCollider.Type != ColliderType::Sphere
+                    && shapeCollider.Type != ColliderType::Box
+                    && shapeCollider.Type != ColliderType::Capsule)
+                {
+                    continue;
+                }
+
+                for (const PlaneReference& plane : planes)
+                {
+                    // 外側は有限形状、一覧内はPlaneだけなので同一Entity同士にはなりません。
+                    const Entity planeEntity = plane.EntityValue;
+                    const TransformComponent& planeTransform = *plane.Transform;
+                    const ColliderComponent& planeCollider = *plane.Collider;
+                    ++planePairTests;
+
+                    ContactManifold manifold{};
+                    bool generated = false;
+
+                    if (shapeCollider.Type == ColliderType::Sphere)
+                    {
+                        generated = GenerateSpherePlaneManifold(
+                            shapeEntity, shapeTransform, shapeCollider,
+                            planeEntity, planeTransform, planeCollider,
+                            manifold);
+                    }
+                    else if (shapeCollider.Type == ColliderType::Box)
+                    {
+                        generated = GenerateBoxPlaneManifold(
+                            shapeEntity, shapeTransform, shapeCollider,
+                            planeEntity, planeTransform, planeCollider,
+                            manifold);
+                    }
+                    else if (shapeCollider.Type == ColliderType::Capsule)
+                    {
+                        generated = GenerateCapsulePlaneManifold(
+                            shapeEntity, shapeTransform, shapeCollider,
+                            planeEntity, planeTransform, planeCollider,
+                            manifold);
+                    }
+
+                    if (generated)
+                    {
+                        m_Manifolds.push_back(manifold);
+                    }
+                }
+            }
+        }
+        CPUProfiler& profiler = CPUProfiler::Get();
+        // 規模はStepごとの値なのでcatch-up時はAverage、実判定の総仕事量は
+        // PlanePairTestsのSumで確認します。Timer/Profiler登録は内側のループに置きません。
+        profiler.AddCounter("Physics.Collision.ColliderCount", static_cast<double>(colliderCount));
+        profiler.AddCounter("Physics.Collision.PlaneCount", static_cast<double>(planes.size()));
+        profiler.AddCounter("Physics.Collision.PlanePairTests", static_cast<double>(planePairTests));
     }
 
     RestorePersistentContacts(scene);
@@ -569,6 +619,7 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
 // Feature ID -> Local Anchor -> World Positionの順に対応付けを試みます。
 void PhysicsWorld::RestorePersistentContacts(Scene& scene)
 {
+    RAVEN_PROFILE_SCOPE("Physics.RestorePersistentContacts");
     constexpr float WorldDistanceSq = 0.05f * 0.05f;
     constexpr float LocalAnchorDistanceSq = 0.075f * 0.075f;
     constexpr float NormalThreshold = 0.9f;
@@ -895,6 +946,7 @@ void PhysicsWorld::QueryAABB(
 // 有効なContact Manifoldを解き、Solver統計を更新します。
 void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
 {
+    RAVEN_PROFILE_SCOPE("Physics.SolveCollisions");
     if (m_SolverSettings.EnableWarmStart)
     {
         // Warm Start が有効な場合、前フレームのインパルスを持つ接触だけを数えます。
@@ -951,6 +1003,7 @@ void PhysicsWorld::UpdateSolverDebugStatisticsAfterSolve()
 // 設定された閾値まで静止したDynamic BodyをSleepingへ移行します。
 void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
 {
+    RAVEN_PROFILE_SCOPE("Physics.UpdateSleeping");
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
     {
         static_cast<void>(entity);
@@ -1003,6 +1056,7 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
 // Force/Torqueは1step分だけ蓄積するためStep末尾でクリアします。
 void PhysicsWorld::ClearForces(Scene& scene)
 {
+    RAVEN_PROFILE_SCOPE("Physics.ClearForces");
     for (auto [entity, rigidBody] : scene.View<RigidBodyComponent>())
     {
         static_cast<void>(entity);
@@ -1124,6 +1178,11 @@ void PhysicsWorld::Step(Scene& scene, float dt)
     CPUProfiler::Get().AddCounter(
         "Physics.FrameAllocator.AllocationCount",
         static_cast<double>(m_FrameAllocatorStatistics.LastFrameAllocationCount));
+
+    CPUProfiler::Get().AddCounter("Physics.Collision.Manifolds",
+        static_cast<double>(m_SolverDebugStatistics.ManifoldCount));
+    CPUProfiler::Get().AddCounter("Physics.Collision.ContactPoints",
+        static_cast<double>(m_SolverDebugStatistics.ContactPointCount));
 
     m_FrameAllocator.ResetFrame();
 }

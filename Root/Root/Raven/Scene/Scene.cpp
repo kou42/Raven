@@ -265,6 +265,7 @@ void Scene::OnUpdate(float dt)
 void Scene::OnUpdatePhysics(float dt)
 {
     m_PhysicsAccumulator += dt;
+    uint32_t fixedStepCount = 0u;
 
     while (m_PhysicsAccumulator >= m_FixedDeltaTime)
     {
@@ -275,7 +276,14 @@ void Scene::OnUpdatePhysics(float dt)
             m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
         }
         m_PhysicsAccumulator -= m_FixedDeltaTime;
+        ++fixedStepCount;
     }
+
+    // 0 Stepのframeも記録し、1回あたりの重さとcatch-up回数を区別できるようにします。
+    // 残時間は次frameへ持ち越す元の契約を維持し、時間の破棄やStep数制限は行いません。
+    CPUProfiler::Get().AddCounter("Physics.FixedStep.Count", static_cast<double>(fixedStepCount));
+    CPUProfiler::Get().AddCounter("Physics.FixedStep.SimulatedMilliseconds",
+        static_cast<double>(fixedStepCount) * static_cast<double>(m_FixedDeltaTime) * 1000.0);
 
     // PhysicsDebugRendererには別Worldを再構築させず、このSceneが実際にStepした
     // PhysicsWorldを読み取り専用で関連付けます。

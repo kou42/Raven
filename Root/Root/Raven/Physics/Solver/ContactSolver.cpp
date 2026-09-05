@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Physics/RigidBodyDynamics.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
 #include "Raven/Scene/Components.h"
@@ -454,31 +455,38 @@ void SolveContactManifolds(
         return;
     }
 
-    if (settings.EnableWarmStart)
     {
-        for (ContactManifold& manifold : manifolds)
+        RAVEN_PROFILE_SCOPE("Physics.ContactSolver.WarmStart");
+        if (settings.EnableWarmStart)
         {
-            WarmStartConstraint(scene, manifold);
+            for (ContactManifold& manifold : manifolds)
+            {
+                WarmStartConstraint(scene, manifold);
+            }
         }
     }
-
-    const uint32_t velocityIterations = std::max(settings.VelocityIterations, 1u);
-    // Gauss-Seidel反復: 新しい速度を即時反映しながら順次収束させます。
-    for (uint32_t iteration = 0; iteration < velocityIterations; ++iteration)
     {
-        for (ContactManifold& manifold : manifolds)
+        RAVEN_PROFILE_SCOPE("Physics.ContactSolver.VelocityIterations");
+        const uint32_t velocityIterations = std::max(settings.VelocityIterations, 1u);
+        // Gauss-Seidel反復: 新しい速度を即時反映しながら順次収束させます。
+        for (uint32_t iteration = 0; iteration < velocityIterations; ++iteration)
         {
-            SolveVelocityConstraint(scene, manifold, settings);
+            for (ContactManifold& manifold : manifolds)
+            {
+                SolveVelocityConstraint(scene, manifold, settings);
+            }
         }
     }
-
-    const uint32_t positionIterations = std::max(settings.PositionIterations, 1u);
-    // 位置補正は速度解法後に実行し、残留貫通を段階的に押し戻します。
-    for (uint32_t iteration = 0; iteration < positionIterations; ++iteration)
     {
-        for (ContactManifold& manifold : manifolds)
+        RAVEN_PROFILE_SCOPE("Physics.ContactSolver.PositionIterations");
+        const uint32_t positionIterations = std::max(settings.PositionIterations, 1u);
+        // 位置補正は速度解法後に実行し、残留貫通を段階的に押し戻します。
+        for (uint32_t iteration = 0; iteration < positionIterations; ++iteration)
         {
-            SolvePositionConstraint(scene, manifold, settings);
+            for (ContactManifold& manifold : manifolds)
+            {
+                SolvePositionConstraint(scene, manifold, settings);
+            }
         }
     }
 }
