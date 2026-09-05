@@ -25,6 +25,11 @@ struct SvgImportContext
         return Document.Animation;
     }
 
+    math::Vec2& GetViewportSize()
+    {
+        return Document.ViewportSize;
+    }
+
     void RegisterAnimation(float duration, bool loop)
     {
         MaxAnimationDuration = std::max(MaxAnimationDuration, duration);
@@ -32,14 +37,19 @@ struct SvgImportContext
     }
 
     // 旧Shape ParserがVectorDocumentへ保持している共通状態を一箇所でUIDocumentへ昇格します。
-    // Parser移行中だけ必要な互換処理なので、呼び出し側へViewport/Animationの重複構造を漏らしません。
+    // UIDocumentへ移した後はVector側の互換フィールドを明示的に初期化し、Runtimeへ重複した状態を残しません。
+    // これによりParser内部の移行期間中でも、正規化後のDocumentでは共通状態の所有者をUIDocumentへ一本化できます。
     void TakeLegacyVectorDocument(VectorDocument document)
     {
         Document.ViewportSize = document.ViewportSize;
         Document.Animation = std::move(document.Animation);
         Document.LoopAnimation = document.LoopAnimation;
-        Document.Vector = std::move(document);
         MaxAnimationDuration = Document.Animation.GetDuration();
+
+        document.ViewportSize = {};
+        document.Animation = AnimationClip{};
+        document.LoopAnimation = false;
+        Document.Vector = std::move(document);
     }
 
     void Finalize()
