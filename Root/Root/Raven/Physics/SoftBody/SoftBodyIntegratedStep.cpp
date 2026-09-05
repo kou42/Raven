@@ -1,9 +1,11 @@
 ﻿#include "Raven/Physics/SoftBody/SoftBodySolver.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -31,7 +33,8 @@ namespace
 // Phase ③では同じ型のままFrameAllocatorを渡し、計測方法を変えずにBefore / After比較します。
 //
 // unordered_* はNode/Bucket用の内部型へAllocatorをrebindします。
-// Candidate vectorはSpatialHashからCounter付きvectorへ直接push_backし、中間copyを作りません。
+// Candidate列はSolver memberの容量再利用vectorへ直接生成するため、ここではLambda Mapだけを
+// Step-local FrameAllocatorの対象にします。
 using TemporaryLambdaValue = std::pair<const uint64_t, float>;
 using TemporaryLambdaAllocator = SolverTemporaryAllocator<TemporaryLambdaValue>;
 using TemporaryLambdaMap = std::unordered_map<
@@ -40,17 +43,6 @@ using TemporaryLambdaMap = std::unordered_map<
     std::hash<uint64_t>,
     std::equal_to<uint64_t>,
     TemporaryLambdaAllocator>;
-
-using TemporaryParticleCandidateAllocator = SolverTemporaryAllocator<SoftBodySpatialHashPair>;
-using TemporaryParticleCandidateVector = std::vector<
-    SoftBodySpatialHashPair,
-    TemporaryParticleCandidateAllocator>;
-
-using TemporaryParticleTriangleCandidateAllocator =
-    SolverTemporaryAllocator<SoftBodyParticleTrianglePair>;
-using TemporaryParticleTriangleCandidateVector = std::vector<
-    SoftBodyParticleTrianglePair,
-    TemporaryParticleTriangleCandidateAllocator>;
 
 uint64_t MakeParticlePairKey(uint32_t particleA, uint32_t particleB)
 {
@@ -105,13 +97,6 @@ void BuildClothTriangles(
             outTriangles.push_back({ bottomLeft, bottomRight, topRight });
         }
     }
-}
-
-bool TriangleContainsParticle(const SoftBodyTriangle& triangle, uint32_t particleIndex)
-{
-    return triangle.ParticleA == particleIndex
-        || triangle.ParticleB == particleIndex
-        || triangle.ParticleC == particleIndex;
 }
 
 struct ClosestPointResult
@@ -239,7 +224,8 @@ void SolveParticleSelfCollisionIteration(
     LambdaMap& lambdas,
     CandidatePairVector& candidatePairs,
     float targetDistance,
-    float alphaTilde)
+    float alphaTilde,
+    std::size_t initialLambdaCapacity)
 {
     // Particle-Particle自己衝突はBroad PhaseとNarrow Phaseの両方が重くなり得ます。
     // それぞれを個別Scopeへ分け、Spatial Hash自体が原因なのか候補解決側が原因なのかを判別します。
@@ -260,10 +246,10 @@ void SolveParticleSelfCollisionIteration(
 
         for (const SoftBodySpatialHashPair& pair : candidatePairs)
         {
-            if (pair.ParticleA >= particles.size() || pair.ParticleB >= particles.size())
-            {
-                continue;
-            }
+            // Candidateは直前に同じParticle配列からBuildしたGridだけが生成します。
+            // Release hot pathで全PairのIndexを再検証せず、生成側の不変条件はDebugで検出します。
+            assert(pair.ParticleA < particles.size());
+            assert(pair.ParticleB < particles.size());
 
             const uint64_t pairKey = MakeParticlePairKey(pair.ParticleA, pair.ParticleB);
             if (excludedPairs.find(pairKey) != excludedPairs.end())
@@ -322,6 +308,13 @@ void SolveParticleSelfCollisionIteration(
             const float constraintValue = distance - targetDistance;
             if (lambdaIterator == lambdas.end())
             {
+                if (lambdas.empty())
+                {
+                    // 無接触StepではBucket確保を一切行わず、最初の実接触でだけ定常容量を予約します。
+                    // 以降の接触追加による段階的なrehashとFrameAllocator内の旧Bucket残留を避けます。
+                    lambdas.reserve(initialLambdaCapacity);
+                }
+
                 // 接触候補だけを1回のHash探索で挿入します。
                 // find()後のoperator[]という二重探索も避けるためtry_emplace()を使用します。
                 lambdaIterator = lambdas.try_emplace(pairKey, 0.0f).first;
@@ -373,7 +366,8 @@ void SolveParticleTriangleSelfCollisionIteration(
     SoftBodyParticleTriangleCollisionStatistics& statistics,
     float thickness,
     float alphaTilde,
-    bool detailedStatisticsEnabled)
+    bool detailedStatisticsEnabled,
+    std::size_t initialLambdaCapacity)
 {
     // Particle-Triangleは現在もっとも大きなボトルネック候補です。
     // TriangleのGrid登録、Particleからの候補収集、実Triangle距離計算の3段階へ明確に分離します。
@@ -400,23 +394,18 @@ void SolveParticleTriangleSelfCollisionIteration(
 
         for (const SoftBodyParticleTrianglePair& pair : candidatePairs)
         {
-            if (pair.ParticleIndex >= particles.size() || pair.TriangleIndex >= triangles.size())
-            {
-                continue;
-            }
-
+            // Spatial HashはBuild時に有効Indexだけを登録し、Candidate生成時に自己Triangleを
+            // 除外済みです。この内部契約をDebug assertで監視しつつ、ReleaseではClosest Pointへ
+            // 到達する全候補から重複した5つのIndex/Topology分岐を外します。
+            assert(pair.ParticleIndex < particles.size());
+            assert(pair.TriangleIndex < triangles.size());
             const SoftBodyTriangle& triangle = triangles[pair.TriangleIndex];
-            if (TriangleContainsParticle(triangle, pair.ParticleIndex))
-            {
-                continue;
-            }
-
-            if (triangle.ParticleA >= particles.size()
-                || triangle.ParticleB >= particles.size()
-                || triangle.ParticleC >= particles.size())
-            {
-                continue;
-            }
+            assert(triangle.ParticleA < particles.size());
+            assert(triangle.ParticleB < particles.size());
+            assert(triangle.ParticleC < particles.size());
+            assert(triangle.ParticleA != pair.ParticleIndex);
+            assert(triangle.ParticleB != pair.ParticleIndex);
+            assert(triangle.ParticleC != pair.ParticleIndex);
 
             // ここから先は最近傍点、距離、法線、XPBD Constraintを計算する実Narrow Phaseです。
             // cheap rejectを通過した回数だけを数えることで、CandidateCountとの差から
@@ -504,6 +493,13 @@ void SolveParticleTriangleSelfCollisionIteration(
             const float constraintValue = distance - thickness;
             if (lambdaIterator == lambdas.end())
             {
+                if (lambdas.empty())
+                {
+                    // Particle-Triangleでも実接触が無いStepはゼロ確保を維持します。
+                    // 最初のLambda生成時だけ予約し、その後のNode追加でBucketを作り直さないようにします。
+                    lambdas.reserve(initialLambdaCapacity);
+                }
+
                 // 接触候補ではfind()+operator[]の二重Hash探索を避け、1回でNodeを取得／生成します。
                 lambdaIterator = lambdas.try_emplace(pairKey, 0.0f).first;
             }
@@ -653,9 +649,9 @@ void SoftBodySolver::StepWithSelfCollisions(
     // ========================================================================
     // Phase ③: Step Local Temporary Allocation -> FrameAllocator
     // ========================================================================
-    // ここに残すのは本当にStep寿命のコンテナだけです。
+    // ここに残すのはNode内容も含めて本当にStep寿命となるLambda Mapだけです。
     // SolverTemporaryAllocationStatisticsへ設定されたBackingを各Allocatorが継承するため、
-    // FrameAllocator ModeではHash/Map/Candidate vectorが同じArenaへ集約されます。
+    // FrameAllocator Modeでは2つのLambda Mapを同じArenaへ集約します。
     // Heap Modeでは同じ型・同じCounterのままstd::allocatorへ戻り、④のBefore条件になります。
     TemporaryLambdaMap particleLambdas{
         0u,
@@ -669,11 +665,16 @@ void SoftBodySolver::StepWithSelfCollisions(
         std::equal_to<uint64_t>{},
         TemporaryLambdaAllocator(&m_TemporaryAllocationStatistics) };
 
-    TemporaryParticleCandidateVector particleCandidatePairs{
-        TemporaryParticleCandidateAllocator(&m_TemporaryAllocationStatistics) };
-
-    TemporaryParticleTriangleCandidateVector particleTriangleCandidatePairs{
-        TemporaryParticleTriangleCandidateAllocator(&m_TemporaryAllocationStatistics) };
+    // Active Lambda数は概ねParticle数に比例します。無接触Stepのゼロ確保を維持するため、
+    // 実際のreserveは各Narrow Phaseが最初のLambdaを生成する直前まで遅延します。
+    const std::size_t particleCount = m_Particles.size();
+    constexpr std::size_t ParticleTriangleLambdaCapacityMultiplier = 2u;
+    const std::size_t particleTriangleLambdaCapacity =
+        particleCount <= std::numeric_limits<std::size_t>::max()
+            / ParticleTriangleLambdaCapacityMultiplier
+        ? particleCount * ParticleTriangleLambdaCapacityMultiplier
+        : particleCount;
+    particleTriangleLambdas.reserve(particleTriangleLambdaCapacity);
 
     const float particleCellSize = std::max(particleTargetDistance, 1.0e-4f);
     if (m_ParticleSpatialHash.GetCellSize() != particleCellSize)
@@ -761,9 +762,10 @@ void SoftBodySolver::StepWithSelfCollisions(
                 m_ParticleSpatialHash,
                 m_SelfCollisionExcludedParticlePairs,
                 particleLambdas,
-                particleCandidatePairs,
+                m_ParticleCandidatePairs,
                 particleTargetDistance,
-                particleAlphaTilde);
+                particleAlphaTilde,
+                particleCount);
         }
 
         if (particleTriangleCollisionEnabled && m_SelfCollisionTriangles.empty() == false)
@@ -775,11 +777,12 @@ void SoftBodySolver::StepWithSelfCollisions(
                 m_SelfCollisionTriangles,
                 m_ParticleTriangleSpatialHash,
                 particleTriangleLambdas,
-                particleTriangleCandidatePairs,
+                m_ParticleTriangleCandidatePairs,
                 m_ParticleTriangleCollisionStatistics,
                 triangleThickness,
                 particleTriangleAlphaTilde,
-                m_Settings.DetailedParticleTriangleProfilingEnabled);
+                m_Settings.DetailedParticleTriangleProfilingEnabled,
+                particleTriangleLambdaCapacity);
         }
 
         {
@@ -795,6 +798,11 @@ void SoftBodySolver::StepWithSelfCollisions(
         RAVEN_PROFILE_SCOPE("SoftBody.Solver.UpdateVelocities");
         UpdateVelocities(deltaTime);
     }
+
+    // Candidate内容の寿命はこのStepまでです。capacityだけを次frameへ残し、Solverの定常状態に
+    // 直前frameのPair列を保持し続けないよう論理要素を破棄します。
+    m_ParticleCandidatePairs.clear();
+    m_ParticleTriangleCandidatePairs.clear();
 }
 
 } // namespace ph

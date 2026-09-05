@@ -188,10 +188,12 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
             for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
             {
                 TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
+                TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
 
                 bounds.Valid = false;
                 bounds.PlaneValid = false;
                 bounds.EdgeHalfSpaceValid = false;
+                cellRange.Valid = false;
 
                 const SoftBodyTriangle& triangle = triangles[triangleIndex];
                 if (triangle.ParticleA >= particles.size()
@@ -218,6 +220,14 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 bounds.ParticleB = triangle.ParticleB;
                 bounds.ParticleC = triangle.ParticleC;
                 bounds.Valid = true;
+
+                // BoundsがCPU cache上にある間にCell Rangeまで変換します。
+                // 以前は全TriangleのBounds構築後に別passで再走査していたため、Solver反復ごとに
+                // m_BuildBoundsを読み直していました。登録用Rangeはこの時点で確定できるため、
+                // 1 passへ統合して余分なmemory trafficとloop overheadを避けます。
+                cellRange.Minimum = ComputeCellCoord(bounds.Minimum);
+                cellRange.Maximum = ComputeCellCoord(bounds.Maximum);
+                cellRange.Valid = true;
 
                 // Plane RejectとEdge Half-Spaceは同じ外積法線を使います。
                 // 従来の分離passで同じParticleを再取得せず、この場で両Cacheへ再利用します。
@@ -263,6 +273,26 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 if (m_DetailedProfilingEnabled)
                 {
                     ++validTriangleCount;
+
+                    // Cell SpanはTriangleが何セルへ広がっているかを見る診断指標です。
+                    // 衝突判定には不要なので、通常経路では差分・64-bit変換も行いません。
+                    const uint64_t spanX = static_cast<uint64_t>(
+                        static_cast<int64_t>(cellRange.Maximum.X)
+                        - static_cast<int64_t>(cellRange.Minimum.X) + 1ll);
+                    const uint64_t spanY = static_cast<uint64_t>(
+                        static_cast<int64_t>(cellRange.Maximum.Y)
+                        - static_cast<int64_t>(cellRange.Minimum.Y) + 1ll);
+                    const uint64_t spanZ = static_cast<uint64_t>(
+                        static_cast<int64_t>(cellRange.Maximum.Z)
+                        - static_cast<int64_t>(cellRange.Minimum.Z) + 1ll);
+
+                    m_BuildMaxCellSpanX = std::max(m_BuildMaxCellSpanX, spanX);
+                    m_BuildMaxCellSpanY = std::max(m_BuildMaxCellSpanY, spanY);
+                    m_BuildMaxCellSpanZ = std::max(m_BuildMaxCellSpanZ, spanZ);
+
+                    const uint64_t spanVolume = spanX * spanY * spanZ;
+                    cellSpanVolumeSum += static_cast<double>(spanVolume);
+                    maximumCellSpanVolume = std::max(maximumCellSpanVolume, spanVolume);
                 }
             }
         }
@@ -303,58 +333,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
     }
 
     // ========================================================================
-    // 3. Cell Range conversion
-    // ========================================================================
-    // AABBのmin/maxをUniform Gridの整数Cell座標へ変換します。
-    // std::floorを含む座標変換コストをCell登録ループから分離して確認できます。
-    {
-        RAVEN_PROFILE_SCOPE("SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild.CellRange");
-
-        for (std::size_t triangleIndex = 0u; triangleIndex < triangles.size(); ++triangleIndex)
-        {
-            TriangleBuildCellRange& cellRange = m_BuildCellRanges[triangleIndex];
-            cellRange.Valid = false;
-
-            const TriangleBuildBounds& bounds = m_BuildBounds[triangleIndex];
-            if (bounds.Valid == false)
-            {
-                continue;
-            }
-
-            cellRange.Minimum = ComputeCellCoord(bounds.Minimum);
-            cellRange.Maximum = ComputeCellCoord(bounds.Maximum);
-            cellRange.Valid = true;
-
-            if (m_DetailedProfilingEnabled)
-            {
-                // Cell SpanはTriangleが何セルへ広がっているかを見る診断指標です。
-                // 衝突判定には不要なので、通常経路では差分・64-bit変換も行いません。
-                const uint64_t spanX = static_cast<uint64_t>(
-                    static_cast<int64_t>(cellRange.Maximum.X)
-                    - static_cast<int64_t>(cellRange.Minimum.X) + 1ll);
-                const uint64_t spanY = static_cast<uint64_t>(
-                    static_cast<int64_t>(cellRange.Maximum.Y)
-                    - static_cast<int64_t>(cellRange.Minimum.Y) + 1ll);
-                const uint64_t spanZ = static_cast<uint64_t>(
-                    static_cast<int64_t>(cellRange.Maximum.Z)
-                    - static_cast<int64_t>(cellRange.Minimum.Z) + 1ll);
-
-                m_BuildMaxCellSpanX = std::max(m_BuildMaxCellSpanX, spanX);
-                m_BuildMaxCellSpanY = std::max(m_BuildMaxCellSpanY, spanY);
-                m_BuildMaxCellSpanZ = std::max(m_BuildMaxCellSpanZ, spanZ);
-
-                // 実際の登録回数はspanX * spanY * spanZに比例します。
-                // AverageCellsPerTriangleだけでは最大値に引っ張られた局所的な巨大AABBを判別しづらいため、
-                // 平均と最大のSpan Volumeを別Counterとして記録します。
-                const uint64_t spanVolume = spanX * spanY * spanZ;
-                cellSpanVolumeSum += static_cast<double>(spanVolume);
-                maximumCellSpanVolume = std::max(maximumCellSpanVolume, spanVolume);
-            }
-        }
-    }
-
-    // ========================================================================
-    // 4. Cell registration
+    // 3. Cell registration
     // ========================================================================
     // AABBが跨ぐ全Cellを列挙し、Flat HashからBucketを取得してTriangle Indexを追加します。
     // ここが大きい場合は、Hash/Linear Probe、TriangleIndices push_back、
@@ -384,7 +363,7 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 }
 
                 // TriangleはAABBが跨ぐ全Cellへ登録します。
-                // Pass分離後もBroad Phaseの候補条件は旧実装から変更していません。
+                // Pass統合後もBroad Phaseの候補条件は旧実装から変更していません。
                 for (int32_t z = cellRange.Minimum.Z; z <= cellRange.Maximum.Z; ++z)
                 {
                     for (int32_t y = cellRange.Minimum.Y; y <= cellRange.Maximum.Y; ++y)

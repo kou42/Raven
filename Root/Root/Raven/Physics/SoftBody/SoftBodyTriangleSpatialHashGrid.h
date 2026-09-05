@@ -122,8 +122,7 @@ private:
     // ========================================================================
     // Hash Build Scratch Data
     // ========================================================================
-    // HashBuild内部をProfilerで正確に切り分けるため、TriangleごとのAABB計算と
-    // Cell Range計算を別Passへ分離します。
+    // HashBuild中の再計算を避けるため、TriangleごとのAABBとCell Rangeを同じPassで構築します。
     // Scratch vectorはGridのmemberとして保持し、12回のXPBD iterationごとに
     // allocationし直さないようcapacityを再利用します。
     struct TriangleBuildBounds
@@ -275,7 +274,7 @@ private:
     std::vector<TriangleCellBucket> m_Buckets;
     std::size_t m_BucketMask = 0u;
 
-    // BuildTriangles()をAABB / CellRange / CellRegistrationへ分離するための再利用Scratchです。
+    // BuildTriangles()のAABB + CellRange構築結果をCellRegistrationまで保持する再利用Scratchです。
     std::vector<TriangleBuildBounds> m_BuildBounds;
     std::vector<TriangleBuildCellRange> m_BuildCellRanges;
 

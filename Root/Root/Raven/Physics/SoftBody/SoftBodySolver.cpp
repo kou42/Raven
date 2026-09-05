@@ -146,6 +146,11 @@ SoftBodySolver::SoftBodySolver(const SoftBodySolver& other)
     , m_ParticleSpatialHash(other.m_ParticleSpatialHash)
     , m_ParticleTriangleSpatialHash(other.m_ParticleTriangleSpatialHash)
 {
+    // Candidate内容は物理状態ではないためコピーせず、再利用容量だけを引き継ぎます。
+    // Benchmark snapshotでも定常実行と同じcapacity条件を作り、初回growを計測へ混ぜません。
+    m_ParticleCandidatePairs.reserve(other.m_ParticleCandidatePairs.capacity());
+    m_ParticleTriangleCandidatePairs.reserve(other.m_ParticleTriangleCandidatePairs.capacity());
+
     if (m_Settings.TemporaryAllocatorMode == SoftBodyTemporaryAllocatorMode::FrameAllocator)
     {
         m_TemporaryAllocationStatistics.SetBackingAllocator(&m_TemporaryFrameAllocator);
@@ -188,6 +193,15 @@ SoftBodySolver& SoftBodySolver::operator=(const SoftBodySolver& other)
             other.m_SelfCollisionExcludedParticlePairsDirty;
         m_ParticleSpatialHash = other.m_ParticleSpatialHash;
         m_ParticleTriangleSpatialHash = other.m_ParticleTriangleSpatialHash;
+
+        // Candidate列は直前iterationの一時結果であり、コピー先の物理状態には不要です。
+        // 特にCell Size BenchmarkはSolverを複製するため、大きな候補列までコピーすると
+        // 計測開始前に不要なO(candidate count)の仕事が発生します。次Stepで再生成する空状態にします。
+        m_ParticleCandidatePairs.clear();
+        m_ParticleTriangleCandidatePairs.clear();
+        m_ParticleCandidatePairs.reserve(other.m_ParticleCandidatePairs.capacity());
+        m_ParticleTriangleCandidatePairs.reserve(
+            other.m_ParticleTriangleCandidatePairs.capacity());
     }
 
     return *this;
@@ -378,6 +392,8 @@ void SoftBodySolver::Clear()
     m_SelfCollisionExcludedParticlePairs.clear();
     m_SelfCollisionExcludedParticlePairsDirty = true;
     m_ParticleSpatialHash.Clear();
+    m_ParticleCandidatePairs.clear();
+    m_ParticleTriangleCandidatePairs.clear();
 
     // Debug / Profiler側へ再構築前の自己衝突件数やTemporary allocation値を残しません。
     // Temporary Statistics::Reset()はFrameAllocator ModeではArenaも巻き戻すため、
@@ -474,6 +490,7 @@ void SoftBodySolver::ResetCollisionConstraintState()
 void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
 {
     const float deltaTimeSq = deltaTime * deltaTime;
+    const float inverseDeltaTimeSq = 1.0f / deltaTimeSq;
 
     for (XPBDDistanceConstraint& constraint : m_DistanceConstraints)
     {
@@ -510,7 +527,9 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
         //                 / (wA + wB + alphaTilde)
         //
         // compliance=0なら硬いPBD距離制約となり、値を大きくすると柔らかくなります。
-        const float alphaTilde = constraint.Compliance / deltaTimeSq;
+        // deltaTimeはiteration中不変です。全Constraintで同じ除算を繰り返さず、
+        // 反復冒頭で求めた逆数との乗算にしてHot loopの除算を削減します。
+        const float alphaTilde = constraint.Compliance * inverseDeltaTimeSq;
         const float denominator = inverseMassSum + alphaTilde;
 
         if (denominator <= math::Epsilon)
@@ -539,6 +558,7 @@ void SoftBodySolver::SolveDistanceConstraints(float deltaTime)
 void SoftBodySolver::SolveDihedralConstraints(float deltaTime)
 {
     const float deltaTimeSq = deltaTime * deltaTime;
+    const float inverseDeltaTimeSq = 1.0f / deltaTimeSq;
 
     for (XPBDDihedralConstraint& constraint : m_DihedralConstraints)
     {
@@ -580,7 +600,8 @@ void SoftBodySolver::SolveDihedralConstraints(float deltaTime)
         // Distance Constraintと同じXPBD式ですが、Gradientが4Particleへ分配されます。
         // denominatorには各Particleの inverseMass * |gradient|^2 を足し合わせます。
         const float constraintValue = angle - constraint.RestAngle;
-        const float alphaTilde = std::max(0.0f, constraint.Compliance) / deltaTimeSq;
+        const float alphaTilde =
+            std::max(0.0f, constraint.Compliance) * inverseDeltaTimeSq;
 
         const float denominator =
             particle0.InverseMass * gradient0.LengthSq()

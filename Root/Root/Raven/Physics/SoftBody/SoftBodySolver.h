@@ -456,6 +456,13 @@ private:
     // 毎frame最初のSolver iterationで巨大なBucket配列を再確保してしまいます。
     // Solver寿命まで保持し、frame間でもBucket / Triangle scratch capacityを再利用します。
     SoftBodyTriangleSpatialHashGrid m_ParticleTriangleSpatialHash{ 0.05f };
+
+    // Candidate内容は各iterationでclearしますが、最大件数分の連続領域はSolver寿命で再利用します。
+    // FrameAllocator上のStep-local vectorでは毎Stepごとにgrow用領域を取り直すため、安定状態でも
+    // 同じ候補容量の確保とArena消費が繰り返されます。Topologyや変形による高水位だけを保持し、
+    // Candidate集合・生成順・Gauss-Seidelの解決順序は従来どおり維持します。
+    std::vector<SoftBodySpatialHashPair> m_ParticleCandidatePairs;
+    std::vector<SoftBodyParticleTrianglePair> m_ParticleTriangleCandidatePairs;
 };
 
 } // namespace ph
