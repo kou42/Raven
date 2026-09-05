@@ -50,12 +50,13 @@ struct SvgPolygonElement
     math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
-// 初期path subsetは閉じた1輪郭をPolylineへ正規化して保持します。
-// M/L/H/V/Zをここへ落とすことで、UI RuntimeはSVG command文字列を知らず既存Polygon描画を再利用できます。
+// SVG pathは1つのelement内に複数の閉じたsubpathを持てるため、輪郭ごとにPolylineを分離して保持します。
+// command文字列はImporterで正規化済みとし、UI RuntimeはSVG構文を知らず輪郭列だけを扱います。
+// fill-ruleによる輪郭間の内外判定は後続拡張で追加します。
 struct SvgPathElement
 {
     std::string Name;
-    std::vector<math::Vec2> Points;
+    std::vector<std::vector<math::Vec2>> Subpaths;
     math::Vec4 FillColor{ 0.0f, 0.0f, 0.0f, 1.0f };
 };
 
