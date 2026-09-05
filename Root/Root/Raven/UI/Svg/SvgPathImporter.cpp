@@ -426,9 +426,11 @@ void TessellateEllipticalArc(
 bool ParsePath(
     const std::string& data,
     std::vector<std::vector<math::Vec2>>& outSubpaths,
+    std::vector<bool>& outSubpathClosed,
     std::string* outError)
 {
     outSubpaths.clear();
+    outSubpathClosed.clear();
     std::vector<math::Vec2> currentPoints;
     std::size_t cursor = 0u;
     char command = '\0';
@@ -449,6 +451,21 @@ bool ParsePath(
         return false;
     };
 
+    auto finishSubpath = [&outSubpaths, &outSubpathClosed, &currentPoints, &hasActiveSubpath](bool closed)
+    {
+        if (hasActiveSubpath == false)
+        {
+            return;
+        }
+
+        // open/closedをgeometryと同じindexで保持します。fillではopen輪郭も暗黙closeされますが、
+        // strokeはZ/zの有無で終端接続が変わるため、この状態をRuntimeまで失わず渡します。
+        outSubpaths.push_back(std::move(currentPoints));
+        outSubpathClosed.push_back(closed);
+        currentPoints.clear();
+        hasActiveSubpath = false;
+    };
+
     while (true)
     {
         SkipSeparators(data, cursor);
@@ -467,17 +484,11 @@ bool ParsePath(
                 {
                     return fail("SVG path closes before an active moveto subpath.");
                 }
-                if (currentPoints.size() < 3u)
-                {
-                    return fail("SVG path subpath must contain at least three vertices before closepath.");
-                }
 
-                // Zで現在輪郭を確定し、次のM/mから新しいsubpathを開始できる状態へ戻します。
-                // currentはSVG仕様どおり閉じたsubpathの始点へ戻すため、後続のrelative movetoも正しく解釈できます。
+                // Zはstroke上の閉鎖状態を記録し、currentだけsubpath始点へ戻します。
+                // 先頭頂点の重複追加は行わず、描画側がclosed flagから終端segmentを生成します。
                 current = subpathStart;
-                outSubpaths.push_back(std::move(currentPoints));
-                currentPoints.clear();
-                hasActiveSubpath = false;
+                finishSubpath(true);
                 previousCommand = command;
                 command = '\0';
                 continue;
@@ -522,6 +533,8 @@ bool ParsePath(
             const bool relative = activeCommand == 'm' || activeCommand == 'l';
             if (relative == true)
             {
+                // 新しいrelative movetoも直前subpathの最終currentを基準にするため、
+                // open subpathの確定より先に絶対座標へ変換します。
                 next.x += current.x;
                 next.y += current.y;
             }
@@ -530,9 +543,8 @@ bool ParsePath(
             {
                 if (hasActiveSubpath == true)
                 {
-                    return fail("SVG path requires each subpath to close before the next moveto.");
+                    finishSubpath(false);
                 }
-                currentPoints.clear();
                 subpathStart = next;
                 hasActiveSubpath = true;
                 command = activeCommand == 'm' ? 'l' : 'L';
@@ -775,11 +787,11 @@ bool ParsePath(
 
     if (hasActiveSubpath == true)
     {
-        return fail("SVG path currently requires every subpath to be closed with Z/z.");
+        finishSubpath(false);
     }
     if (outSubpaths.empty() == true)
     {
-        return fail("SVG path must contain at least one closed subpath with three vertices.");
+        return fail("SVG path must contain at least one moveto subpath.");
     }
     return true;
 }
@@ -830,6 +842,25 @@ math::Vec4 ParseColor(const std::string& text)
         }
     }
     return math::Vec4(0.0f, 0.0f, 0.0f, 1.0f);
+}
+
+bool TryParseNonNegativeFloat(const std::string& text, float& outValue)
+{
+    try
+    {
+        std::size_t consumed = 0u;
+        outValue = std::stof(text, &consumed);
+        while (consumed < text.size() &&
+            std::isspace(static_cast<unsigned char>(text[consumed])) != 0)
+        {
+            ++consumed;
+        }
+        return consumed == text.size() && outValue >= 0.0f;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 void CollectExistingNames(
@@ -972,7 +1003,11 @@ bool SvgPathImporter::AppendFilePaths(
         }
 
         SvgPathElement pathElement;
-        if (ParsePath(dataIt->second, pathElement.Subpaths, outError) == false)
+        if (ParsePath(
+                dataIt->second,
+                pathElement.Subpaths,
+                pathElement.SubpathClosed,
+                outError) == false)
         {
             return false;
         }
@@ -996,6 +1031,48 @@ bool SvgPathImporter::AppendFilePaths(
         if (fillIt != attributes.end())
         {
             pathElement.FillColor = ParseColor(fillIt->second);
+        }
+
+        const auto fillRuleIt = attributes.find("fill-rule");
+        if (fillRuleIt != attributes.end())
+        {
+            if (fillRuleIt->second == "nonzero")
+            {
+                pathElement.FillRule = SvgFillRule::NonZero;
+            }
+            else if (fillRuleIt->second == "evenodd")
+            {
+                pathElement.FillRule = SvgFillRule::EvenOdd;
+            }
+            else
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path fill-rule must be nonzero or evenodd: " + fillRuleIt->second;
+                }
+                return false;
+            }
+        }
+
+        const auto strokeIt = attributes.find("stroke");
+        if (strokeIt != attributes.end())
+        {
+            pathElement.StrokeColor = ParseColor(strokeIt->second);
+        }
+
+        const auto strokeWidthIt = attributes.find("stroke-width");
+        if (strokeWidthIt != attributes.end())
+        {
+            float strokeWidth = 0.0f;
+            if (TryParseNonNegativeFloat(strokeWidthIt->second, strokeWidth) == false)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path stroke-width must be a non-negative number: " + strokeWidthIt->second;
+                }
+                return false;
+            }
+            pathElement.StrokeWidth = strokeWidth;
         }
 
         const std::size_t elementIndex = document.Paths.size();

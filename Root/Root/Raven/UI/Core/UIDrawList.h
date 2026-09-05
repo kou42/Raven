@@ -3,6 +3,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
 
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -105,6 +106,46 @@ public:
     void AddPolygon(
         const std::vector<math::Vec2>& points,
         const math::Vec4& color);
+
+    // Polylineの各segmentをstroke-width分だけ法線方向へ押し出し、既存SolidPolygonへ正規化します。
+    // 現段階のcapはSVG既定のbuttです。joinはsegment同士の重なりで接続する基礎実装とし、
+    // miter / round / bevelの厳密な形状は後続拡張でこのAPIへ追加します。
+    void AddPolyline(
+        const std::vector<math::Vec2>& points,
+        float strokeWidth,
+        const math::Vec4& color,
+        bool closed = false)
+    {
+        if (points.size() < 2u || strokeWidth <= 0.0f)
+        {
+            return;
+        }
+
+        const float halfWidth = strokeWidth * 0.5f;
+        const std::size_t segmentCount = closed == true ? points.size() : points.size() - 1u;
+        for (std::size_t index = 0u; index < segmentCount; ++index)
+        {
+            const math::Vec2& start = points[index];
+            const math::Vec2& end = points[(index + 1u) % points.size()];
+            const float dx = end.x - start.x;
+            const float dy = end.y - start.y;
+            const float lengthSquared = dx * dx + dy * dy;
+            if (lengthSquared <= 0.000001f)
+            {
+                continue;
+            }
+
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            const math::Vec2 normal(-dy * inverseLength * halfWidth, dx * inverseLength * halfWidth);
+            std::vector<math::Vec2> quad;
+            quad.reserve(4u);
+            quad.push_back(math::Vec2(start.x + normal.x, start.y + normal.y));
+            quad.push_back(math::Vec2(end.x + normal.x, end.y + normal.y));
+            quad.push_back(math::Vec2(end.x - normal.x, end.y - normal.y));
+            quad.push_back(math::Vec2(start.x - normal.x, start.y - normal.y));
+            AddPolygon(quad, color);
+        }
+    }
 
     // 複数の閉輪郭をnonzero/evenodd規則で1つの塗り領域として解釈します。
     // 穴を含むためsimple polygon commandへ直接表現できず、CPU側でfilled regionをTriangleへ分解して追加します。
