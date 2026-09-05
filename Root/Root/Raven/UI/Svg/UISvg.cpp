@@ -17,7 +17,9 @@ bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
         return false;
     }
 
-    // Runtime側は具体的なImporterを知らず、DocumentLoaderから正規化済みUIDocumentだけを受け取ります。
+    // SVG path command grammarは専用Parserで共通PathElementへ正規化します。
+    // Path Parserの呼び出し自体はSvgImporter内部へ移動したため、Runtime側はSVG構文を知りません。
+    // Runtime側は完成したUIDocumentだけを受け取り、具体的なImporter選択もDocumentLoaderへ委譲します。
     return SetDocument(std::move(imported), outError);
 }
 
