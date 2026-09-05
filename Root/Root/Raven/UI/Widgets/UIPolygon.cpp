@@ -110,6 +110,16 @@ float UIPolygon::GetStrokeWidth() const
     return m_StrokeWidth;
 }
 
+void UIPolygon::SetStrokeLineCap(UILineCap lineCap)
+{
+    m_StrokeLineCap = lineCap;
+}
+
+UILineCap UIPolygon::GetStrokeLineCap() const
+{
+    return m_StrokeLineCap;
+}
+
 void UIPolygon::OnBuildDrawList(
     UIDrawList& drawList,
     const math::Vec2& absolutePosition) const
@@ -180,7 +190,12 @@ void UIPolygon::OnBuildDrawList(
             continue;
         }
         const bool closed = index >= m_ContourClosed.size() || m_ContourClosed[index] == true;
-        drawList.AddPolyline(absoluteContours[index], m_StrokeWidth, strokeColor, closed);
+        drawList.AddPolyline(
+            absoluteContours[index],
+            m_StrokeWidth,
+            strokeColor,
+            closed,
+            m_StrokeLineCap);
     }
 }
 
