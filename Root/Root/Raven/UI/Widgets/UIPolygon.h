@@ -14,8 +14,8 @@ namespace Raven
 // ============================================================================
 // Raven UIの汎用塗りつぶしPolygon Widgetです。
 //
-// 単一輪郭は従来どおりSetPoints()で扱い、複数輪郭はSetContours()でcompound polygonとして保持します。
-// fill-ruleの解決や穴付き三角形化はWidgetへ持ち込まずUIDrawListへ委譲します。
+// 単一輪郭は従来どおりSetPoints()で扱い、SVG path等のfill-rule対象はSetContours()でcompound polygonとして保持します。
+// fill-ruleの解決やscanline tessellationはWidgetへ持ち込まずUIDrawListへ委譲します。
 class UIPolygon final : public UIElement
 {
 public:
@@ -37,6 +37,7 @@ protected:
 private:
     std::vector<std::vector<math::Vec2>> m_Contours;
     UIFillRule m_FillRule = UIFillRule::NonZero;
+    bool m_UseCompoundFill = false;
     math::Vec4 m_FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
