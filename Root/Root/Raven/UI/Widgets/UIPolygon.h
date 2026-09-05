@@ -1,14 +1,13 @@
 #pragma once
 
 #include "Raven/Math/MathVector.h"
+#include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIElement.h"
 
 #include <vector>
 
 namespace Raven
 {
-
-enum class UIFillRule;
 
 // ============================================================================
 // UIPolygon
@@ -37,7 +36,7 @@ protected:
 
 private:
     std::vector<std::vector<math::Vec2>> m_Contours;
-    UIFillRule m_FillRule;
+    UIFillRule m_FillRule = UIFillRule::NonZero;
     math::Vec4 m_FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
