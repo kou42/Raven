@@ -855,7 +855,9 @@ bool TryParseNonNegativeFloat(const std::string& text, float& outValue)
         {
             ++consumed;
         }
-        return consumed == text.size() && outValue >= 0.0f;
+        return consumed == text.size() &&
+            std::isfinite(outValue) &&
+            outValue >= 0.0f;
     }
     catch (...)
     {
@@ -1073,6 +1075,26 @@ bool SvgPathImporter::AppendFilePaths(
                 return false;
             }
             pathElement.StrokeWidth = strokeWidth;
+        }
+
+        const auto strokeMiterLimitIt = attributes.find("stroke-miterlimit");
+        if (strokeMiterLimitIt != attributes.end())
+        {
+            float miterLimit = 0.0f;
+            if (TryParseNonNegativeFloat(strokeMiterLimitIt->second, miterLimit) == false ||
+                miterLimit < 1.0f)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path stroke-miterlimit must be a finite number greater than or equal to 1: " +
+                        strokeMiterLimitIt->second;
+                }
+                return false;
+            }
+
+            // SVGの既定値4を上書きし、miter join時の鋭角フォールバック判定へそのまま渡します。
+            // round / bevelでは値を保持するだけでgeometryには影響しません。
+            pathElement.StrokeMiterLimit = miterLimit;
         }
 
         const std::size_t elementIndex = document.Paths.size();
