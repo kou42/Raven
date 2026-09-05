@@ -1,12 +1,13 @@
 #pragma once
 
 #include "Raven/UI/Document/IDocumentImporter.h"
-#include "Raven/UI/Document/VectorDocument.h"
 
 #include <string>
 
 namespace Raven
 {
+
+struct VectorDocument;
 
 // SVG固有の構文解析を担当するImporterです。
 // 公開境界はUIDocumentへ統一し、Runtime側からSVG固有のParser構成を隠蔽します。
