@@ -82,8 +82,9 @@ struct VectorElementReference
 };
 
 // Raven内部で共有するVector Documentです。
-// RuntimeはUIDocument経由へ移行済みですが、既存SvgImporter内部のAnimation生成処理が参照する
-// Viewport/Animation情報はImporter内部の移行が完了するまで互換情報として保持します。
+// Viewport/Animation/LoopAnimationは既存SvgImporter.cppだけが解析途中の作業領域として使用する互換フィールドです。
+// SvgImportContextでUIDocumentへ昇格した直後に初期化されるため、Runtime側では共通状態の所有者として扱いません。
+// ParserのContext移行が完了した段階で、この3フィールドとAnimationClip依存を削除します。
 struct VectorDocument
 {
     math::Vec2 ViewportSize{};
