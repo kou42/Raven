@@ -183,7 +183,7 @@ void UIPolygon::OnBuildDrawList(
     const math::Vec4 strokeColor = ApplyVisualColor(m_StrokeColor);
     for (std::size_t index = 0u; index < absoluteContours.size(); ++index)
     {
-        if (absoluteContours[index].size() < 2u)
+        if (absoluteContours[index].empty() == true)
         {
             continue;
         }
