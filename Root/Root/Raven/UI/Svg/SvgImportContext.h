@@ -3,6 +3,7 @@
 #include "Raven/UI/Document/UIDocument.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace Raven
 {
@@ -28,6 +29,17 @@ struct SvgImportContext
     {
         MaxAnimationDuration = std::max(MaxAnimationDuration, duration);
         Document.LoopAnimation = Document.LoopAnimation || loop;
+    }
+
+    // 旧Shape ParserがVectorDocumentへ保持している共通状態を一箇所でUIDocumentへ昇格します。
+    // Parser移行中だけ必要な互換処理なので、呼び出し側へViewport/Animationの重複構造を漏らしません。
+    void TakeLegacyVectorDocument(VectorDocument document)
+    {
+        Document.ViewportSize = document.ViewportSize;
+        Document.Animation = std::move(document.Animation);
+        Document.LoopAnimation = document.LoopAnimation;
+        Document.Vector = std::move(document);
+        MaxAnimationDuration = Document.Animation.GetDuration();
     }
 
     void Finalize()
