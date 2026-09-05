@@ -20,7 +20,7 @@ namespace Raven
 namespace
 {
 
-bool ApplyPathLineCapsFromSource(
+bool ApplyPathStrokeStylesFromSource(
     const std::string& path,
     SvgDocument& document,
     std::string* outError)
@@ -30,7 +30,7 @@ bool ApplyPathLineCapsFromSource(
     {
         if (outError != nullptr)
         {
-            *outError = "Failed to open SVG file while importing stroke-linecap: " + path;
+            *outError = "Failed to open SVG file while importing path stroke style: " + path;
         }
         return false;
     }
@@ -44,6 +44,9 @@ bool ApplyPathLineCapsFromSource(
     const std::regex lineCapRegex(
         R"REGEX(\bstroke-linecap\s*=\s*"([^"]*)")REGEX",
         std::regex::icase);
+    const std::regex lineJoinRegex(
+        R"REGEX(\bstroke-linejoin\s*=\s*"([^"]*)")REGEX",
+        std::regex::icase);
 
     std::size_t pathIndex = 0u;
     for (std::sregex_iterator it(source.begin(), source.end(), pathRegex), end; it != end; ++it)
@@ -52,13 +55,13 @@ bool ApplyPathLineCapsFromSource(
         {
             if (outError != nullptr)
             {
-                *outError = "SVG stroke-linecap source count does not match imported paths.";
+                *outError = "SVG stroke style source count does not match imported paths.";
             }
             return false;
         }
 
-        std::smatch lineCapMatch;
         const std::string attributes = (*it)[1].str();
+        std::smatch lineCapMatch;
         if (std::regex_search(attributes, lineCapMatch, lineCapRegex) == true)
         {
             const std::string value = lineCapMatch[1].str();
@@ -83,6 +86,32 @@ bool ApplyPathLineCapsFromSource(
                 return false;
             }
         }
+
+        std::smatch lineJoinMatch;
+        if (std::regex_search(attributes, lineJoinMatch, lineJoinRegex) == true)
+        {
+            const std::string value = lineJoinMatch[1].str();
+            if (value == "miter")
+            {
+                document.Paths[pathIndex].StrokeLineJoin = SvgLineJoin::Miter;
+            }
+            else if (value == "round")
+            {
+                document.Paths[pathIndex].StrokeLineJoin = SvgLineJoin::Round;
+            }
+            else if (value == "bevel")
+            {
+                document.Paths[pathIndex].StrokeLineJoin = SvgLineJoin::Bevel;
+            }
+            else
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path stroke-linejoin must be miter, round or bevel: " + value;
+                }
+                return false;
+            }
+        }
         ++pathIndex;
     }
 
@@ -90,7 +119,7 @@ bool ApplyPathLineCapsFromSource(
     {
         if (outError != nullptr)
         {
-            *outError = "SVG stroke-linecap source count does not match imported paths.";
+            *outError = "SVG stroke style source count does not match imported paths.";
         }
         return false;
     }
@@ -108,12 +137,12 @@ bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
     }
 
     // path command grammarとpath固有styleは専用Importerで正規化します。
-    // 既存shape Importerと同じSvgDocumentへ追加し、SourceOffsetで描画順を再統合します。
+    // linecap / linejoinの直接属性は、path列と同じ順序でstroke styleとして補完します。
     if (SvgPathImporter::AppendFilePaths(path, imported, outError) == false)
     {
         return false;
     }
-    if (ApplyPathLineCapsFromSource(path, imported, outError) == false)
+    if (ApplyPathStrokeStylesFromSource(path, imported, outError) == false)
     {
         return false;
     }
@@ -315,6 +344,13 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
                     : data.StrokeLineCap == SvgLineCap::Square
                         ? UILineCap::Square
                         : UILineCap::Butt);
+            widget->SetStrokeLineJoin(
+                data.StrokeLineJoin == SvgLineJoin::Round
+                    ? UILineJoin::Round
+                    : data.StrokeLineJoin == SvgLineJoin::Bevel
+                        ? UILineJoin::Bevel
+                        : UILineJoin::Miter);
+            widget->SetStrokeMiterLimit(data.StrokeMiterLimit);
             element = std::move(widget);
         }
 
