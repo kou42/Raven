@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Raven/Animation/AnimationClip.h"
 #include "Raven/Math/MathVector.h"
 
 #include <cstddef>
@@ -82,12 +81,9 @@ struct VectorElementReference
 };
 
 // Raven内部で共有するVector Documentです。
-// Viewport/Animation/LoopAnimationは既存SvgImporter.cppだけが解析途中の作業領域として使用する互換フィールドです。
-// SvgImportContextでUIDocumentへ昇格した直後に初期化されるため、Runtime側では共通状態の所有者として扱いません。
-// ParserのContext移行が完了した段階で、この3フィールドとAnimationClip依存を削除します。
+// Viewport/Animation/Loop等の共通状態はUIDocumentが所有し、この型はVector表現だけを保持します。
 struct VectorDocument
 {
-    math::Vec2 ViewportSize{};
     std::vector<RectElement> Rectangles;
     std::vector<CircleElement> Circles;
     std::vector<EllipseElement> Ellipses;
@@ -95,8 +91,6 @@ struct VectorDocument
     std::vector<PolygonElement> Polygons;
     std::vector<PathElement> Paths;
     std::vector<VectorElementReference> Shapes;
-    AnimationClip Animation;
-    bool LoopAnimation = false;
 };
 
 } // namespace Raven
