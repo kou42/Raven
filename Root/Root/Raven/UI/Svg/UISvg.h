@@ -7,8 +7,8 @@
 namespace Raven
 {
 
-// SVG固有の責務はファイル解析だけに限定し、描画・Animation再生はUIVectorDocumentへ委譲します。
-// SvgImporterはUIDocumentへ正規化するため、Runtime側はSVG固有構文やParser構成を意識しません。
+// SVGファイルを共通DocumentLoader経由でUIDocumentへ読み込み、Vector UIとして表示する互換Widgetです。
+// Importer選択はDocumentLoaderへ委譲するため、この型はSvgImporterの具体実装へ依存しません。
 class UISvg final : public UIVectorDocument
 {
 public:
