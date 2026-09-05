@@ -12,7 +12,7 @@
 namespace Raven
 {
 
-bool UIVectorDocument::SetDocument(VectorDocument document, std::string* outError)
+bool UIVectorDocument::SetDocument(UIDocument document, std::string* outError)
 {
     m_AnimationBinding.Clear();
     ClearChildren();
@@ -25,20 +25,21 @@ bool UIVectorDocument::SetDocument(VectorDocument document, std::string* outErro
 bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
 {
     SetSize(m_Document.ViewportSize);
+    const VectorDocument& vectorDocument = m_Document.Vector;
 
     // 型別vectorの順序ではなく、Importerが統合したShapes順で子を追加し、図形の前後関係を維持します。
-    for (const VectorElementReference& elementReference : m_Document.Shapes)
+    for (const VectorElementReference& elementReference : vectorDocument.Shapes)
     {
         Scope<UIElement> element;
 
         if (elementReference.Type == VectorElementType::Rect)
         {
-            if (elementReference.ElementIndex >= m_Document.Rectangles.size())
+            if (elementReference.ElementIndex >= vectorDocument.Rectangles.size())
             {
                 if (outError != nullptr) { *outError = "Vector rect element reference is out of range."; }
                 ClearChildren(); return false;
             }
-            const RectElement& data = m_Document.Rectangles[elementReference.ElementIndex];
+            const RectElement& data = vectorDocument.Rectangles[elementReference.ElementIndex];
             auto widget = CreateScope<UIPanel>();
             if (widget->SetName(data.Name) == false)
             {
@@ -49,12 +50,12 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
         }
         else if (elementReference.Type == VectorElementType::Circle)
         {
-            if (elementReference.ElementIndex >= m_Document.Circles.size())
+            if (elementReference.ElementIndex >= vectorDocument.Circles.size())
             {
                 if (outError != nullptr) { *outError = "Vector circle element reference is out of range."; }
                 ClearChildren(); return false;
             }
-            const CircleElement& data = m_Document.Circles[elementReference.ElementIndex]; auto widget = CreateScope<UICircle>();
+            const CircleElement& data = vectorDocument.Circles[elementReference.ElementIndex]; auto widget = CreateScope<UICircle>();
             if (widget->SetName(data.Name) == false)
             {
                 if (outError != nullptr) { *outError = "Vector element name is invalid: " + data.Name; }
@@ -64,12 +65,12 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
         }
         else if (elementReference.Type == VectorElementType::Ellipse)
         {
-            if (elementReference.ElementIndex >= m_Document.Ellipses.size())
+            if (elementReference.ElementIndex >= vectorDocument.Ellipses.size())
             {
                 if (outError != nullptr) { *outError = "Vector ellipse element reference is out of range."; }
                 ClearChildren(); return false;
             }
-            const EllipseElement& data = m_Document.Ellipses[elementReference.ElementIndex]; auto widget = CreateScope<UICircle>();
+            const EllipseElement& data = vectorDocument.Ellipses[elementReference.ElementIndex]; auto widget = CreateScope<UICircle>();
             if (widget->SetName(data.Name) == false)
             {
                 if (outError != nullptr) { *outError = "Vector element name is invalid: " + data.Name; }
@@ -79,12 +80,12 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
         }
         else if (elementReference.Type == VectorElementType::Line)
         {
-            if (elementReference.ElementIndex >= m_Document.Lines.size())
+            if (elementReference.ElementIndex >= vectorDocument.Lines.size())
             {
                 if (outError != nullptr) { *outError = "Vector line element reference is out of range."; }
                 ClearChildren(); return false;
             }
-            const LineElement& data = m_Document.Lines[elementReference.ElementIndex];
+            const LineElement& data = vectorDocument.Lines[elementReference.ElementIndex];
             const float dx = data.End.x - data.Start.x; const float dy = data.End.y - data.Start.y; const float length = std::sqrt(dx * dx + dy * dy); const math::Vec2 center((data.Start.x + data.End.x) * 0.5f, (data.Start.y + data.End.y) * 0.5f); auto widget = CreateScope<UIPanel>();
             if (widget->SetName(data.Name) == false)
             {
@@ -98,21 +99,21 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
             const std::vector<math::Vec2>* points = nullptr; const math::Vec4* fillColor = nullptr; const std::string* name = nullptr;
             if (elementReference.Type == VectorElementType::Polygon)
             {
-                if (elementReference.ElementIndex >= m_Document.Polygons.size())
+                if (elementReference.ElementIndex >= vectorDocument.Polygons.size())
                 {
                     if (outError != nullptr) { *outError = "Vector polygon element reference is out of range."; }
                     ClearChildren(); return false;
                 }
-                const PolygonElement& data = m_Document.Polygons[elementReference.ElementIndex]; points = &data.Points; fillColor = &data.FillColor; name = &data.Name;
+                const PolygonElement& data = vectorDocument.Polygons[elementReference.ElementIndex]; points = &data.Points; fillColor = &data.FillColor; name = &data.Name;
             }
             else
             {
-                if (elementReference.ElementIndex >= m_Document.Paths.size())
+                if (elementReference.ElementIndex >= vectorDocument.Paths.size())
                 {
                     if (outError != nullptr) { *outError = "Vector path element reference is out of range."; }
                     ClearChildren(); return false;
                 }
-                const PathElement& data = m_Document.Paths[elementReference.ElementIndex]; points = &data.Points; fillColor = &data.FillColor; name = &data.Name;
+                const PathElement& data = vectorDocument.Paths[elementReference.ElementIndex]; points = &data.Points; fillColor = &data.FillColor; name = &data.Name;
             }
             if (points == nullptr || fillColor == nullptr || name == nullptr || points->size() < 3u)
             {

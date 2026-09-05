@@ -2,6 +2,7 @@
 
 #include "Raven/Animation/AnimationKeyframe.h"
 #include "Raven/Animation/AnimationTrack.h"
+#include "Raven/UI/Svg/SvgImportContext.h"
 
 #include <algorithm>
 #include <cmath>
@@ -213,8 +214,7 @@ void ParseScalarAnimations(
     const std::string& body,
     const std::vector<std::string>& supportedAttributes,
     std::vector<SvgScalarAnimation>& outAnimations,
-    VectorDocument& document,
-    float& maxDuration)
+    SvgImportContext& context)
 {
     const std::regex animateRegex(R"(<animate\b([^>]*)/?>)", std::regex::icase);
     for (std::sregex_iterator animateIt(body.begin(), body.end(), animateRegex), end; animateIt != end; ++animateIt)
@@ -247,8 +247,7 @@ void ParseScalarAnimations(
 
         const auto repeatIt = animateAttributes.find("repeatCount");
         animation.Loop = repeatIt != animateAttributes.end() && repeatIt->second == "indefinite";
-        document.LoopAnimation = document.LoopAnimation || animation.Loop;
-        maxDuration = std::max(maxDuration, animation.Duration);
+        context.RegisterAnimation(animation.Duration, animation.Loop);
         outAnimations.push_back(animation);
     }
 }
@@ -556,7 +555,7 @@ bool ReadTextFile(const std::string& path, std::string& outText)
 
 } // namespace
 
-bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocument, std::string* outError)
+bool SvgImporter::ImportFile(const std::string& path, SvgImportContext& context, std::string* outError)
 {
     std::string source;
     if (ReadTextFile(path, source) == false)
@@ -568,7 +567,7 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
         return false;
     }
 
-    VectorDocument document;
+    VectorDocument& document = context.GetVectorDocument();
     const std::regex svgRegex(R"(<svg\b([^>]*)>)", std::regex::icase);
     std::smatch svgMatch;
     if (std::regex_search(source, svgMatch, svgRegex) == false)
@@ -583,9 +582,10 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
     const AttributeMap svgAttributes = ParseAttributes(svgMatch[1].str());
     const auto widthIt = svgAttributes.find("width");
     const auto heightIt = svgAttributes.find("height");
+    math::Vec2& viewportSize = context.GetViewportSize();
     if (widthIt == svgAttributes.end() || heightIt == svgAttributes.end() ||
-        TryParseFloat(widthIt->second, document.ViewportSize.x) == false ||
-        TryParseFloat(heightIt->second, document.ViewportSize.y) == false)
+        TryParseFloat(widthIt->second, viewportSize.x) == false ||
+        TryParseFloat(heightIt->second, viewportSize.y) == false)
     {
         if (outError != nullptr)
         {
@@ -605,7 +605,6 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
     std::size_t generatedEllipseIndex = 0u;
     std::size_t generatedLineIndex = 0u;
     std::size_t generatedPolygonIndex = 0u;
-    float maxDuration = 0.0f;
     std::unordered_set<std::string> usedNames;
 
     for (std::sregex_iterator it(source.begin(), source.end(), rectRegex), end; it != end; ++it)
@@ -649,18 +648,18 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
         std::vector<SvgScalarAnimation> animations;
         ParseScalarAnimations((*it)[2].str(),
             { "x", "y", "width", "height", "opacity" },
-            animations, document, maxDuration);
+            animations, context);
 
         const std::size_t elementIndex = document.Rectangles.size();
         document.Rectangles.push_back(rectangle);
         document.Shapes.push_back(VectorElementReference{
             VectorElementType::Rect, elementIndex, static_cast<std::size_t>(it->position()) });
 
-        AppendVec2Track(document.Animation, rectangle.Name, "Position", rectangle.Position,
+        AppendVec2Track(context.GetAnimation(), rectangle.Name, "Position", rectangle.Position,
             FindAnimation(animations, "x"), FindAnimation(animations, "y"));
-        AppendVec2Track(document.Animation, rectangle.Name, "Size", rectangle.Size,
+        AppendVec2Track(context.GetAnimation(), rectangle.Name, "Size", rectangle.Size,
             FindAnimation(animations, "width"), FindAnimation(animations, "height"));
-        AppendOpacityTrack(document.Animation, rectangle.Name, FindAnimation(animations, "opacity"));
+        AppendOpacityTrack(context.GetAnimation(), rectangle.Name, FindAnimation(animations, "opacity"));
     }
 
     for (std::sregex_iterator it(source.begin(), source.end(), circleRegex), end; it != end; ++it)
@@ -699,14 +698,14 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
 
         std::vector<SvgScalarAnimation> animations;
         ParseScalarAnimations((*it)[2].str(),
-            { "cx", "cy", "r", "opacity" }, animations, document, maxDuration);
+            { "cx", "cy", "r", "opacity" }, animations, context);
 
         const std::size_t elementIndex = document.Circles.size();
         document.Circles.push_back(circle);
         document.Shapes.push_back(VectorElementReference{
             VectorElementType::Circle, elementIndex, static_cast<std::size_t>(it->position()) });
-        AppendCircleTracks(document.Animation, circle, animations);
-        AppendOpacityTrack(document.Animation, circle.Name, FindAnimation(animations, "opacity"));
+        AppendCircleTracks(context.GetAnimation(), circle, animations);
+        AppendOpacityTrack(context.GetAnimation(), circle.Name, FindAnimation(animations, "opacity"));
     }
 
     for (std::sregex_iterator it(source.begin(), source.end(), ellipseRegex), end; it != end; ++it)
@@ -747,14 +746,14 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
 
         std::vector<SvgScalarAnimation> animations;
         ParseScalarAnimations((*it)[2].str(),
-            { "cx", "cy", "rx", "ry", "opacity" }, animations, document, maxDuration);
+            { "cx", "cy", "rx", "ry", "opacity" }, animations, context);
 
         const std::size_t elementIndex = document.Ellipses.size();
         document.Ellipses.push_back(ellipse);
         document.Shapes.push_back(VectorElementReference{
             VectorElementType::Ellipse, elementIndex, static_cast<std::size_t>(it->position()) });
-        AppendEllipseTracks(document.Animation, ellipse, animations);
-        AppendOpacityTrack(document.Animation, ellipse.Name, FindAnimation(animations, "opacity"));
+        AppendEllipseTracks(context.GetAnimation(), ellipse, animations);
+        AppendOpacityTrack(context.GetAnimation(), ellipse.Name, FindAnimation(animations, "opacity"));
     }
 
     for (std::sregex_iterator it(source.begin(), source.end(), lineRegex), end; it != end; ++it)
@@ -810,14 +809,14 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
         std::vector<SvgScalarAnimation> animations;
         ParseScalarAnimations((*it)[2].str(),
             { "x1", "y1", "x2", "y2", "stroke-width", "opacity" },
-            animations, document, maxDuration);
+            animations, context);
 
         const std::size_t elementIndex = document.Lines.size();
         document.Lines.push_back(line);
         document.Shapes.push_back(VectorElementReference{
             VectorElementType::Line, elementIndex, static_cast<std::size_t>(it->position()) });
-        AppendLineTracks(document.Animation, line, animations);
-        AppendOpacityTrack(document.Animation, line.Name, FindAnimation(animations, "opacity"));
+        AppendLineTracks(context.GetAnimation(), line, animations);
+        AppendOpacityTrack(context.GetAnimation(), line.Name, FindAnimation(animations, "opacity"));
     }
 
     for (std::sregex_iterator it(source.begin(), source.end(), polygonRegex), end; it != end; ++it)
@@ -851,13 +850,13 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
         std::vector<SvgScalarAnimation> animations;
         // points補間は頂点対応・個数変化の仕様が別途必要なため、初期段階ではOpacityのみ既存Animationへ変換します。
         ParseScalarAnimations((*it)[2].str(),
-            { "opacity" }, animations, document, maxDuration);
+            { "opacity" }, animations, context);
 
         const std::size_t elementIndex = document.Polygons.size();
         document.Polygons.push_back(std::move(polygon));
         document.Shapes.push_back(VectorElementReference{
             VectorElementType::Polygon, elementIndex, static_cast<std::size_t>(it->position()) });
-        AppendOpacityTrack(document.Animation,
+        AppendOpacityTrack(context.GetAnimation(),
             document.Polygons[elementIndex].Name,
             FindAnimation(animations, "opacity"));
     }
@@ -873,8 +872,7 @@ bool SvgImporter::ImportFile(const std::string& path, VectorDocument& outDocumen
             return left.SourceOffset < right.SourceOffset;
         });
 
-    document.Animation.SetDuration(maxDuration);
-    outDocument = std::move(document);
+    context.Finalize();
     return true;
 }
 
