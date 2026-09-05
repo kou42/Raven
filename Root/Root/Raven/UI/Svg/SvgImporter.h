@@ -15,7 +15,7 @@ namespace Raven
 class SvgImporter final : public IDocumentImporter
 {
 public:
-    // 既存コードとの互換性を保つ低レベルAPIです。
+    // 既存SvgImporter内部で使用する低レベルAPIです。
     // SVGの基本ShapeをVectorDocumentへ変換し、pathはSvgPathImporterが追加します。
     static bool ImportFile(const std::string& path, VectorDocument& outDocument, std::string* outError = nullptr);
 
@@ -33,9 +33,14 @@ public:
             return false;
         }
 
+        // Viewport/AnimationはDocument共通情報としてUIDocumentへ昇格します。
+        // Vector側の同名情報は既存SvgImporter内部だけの移行用互換データであり、Runtimeは参照しません。
         outDocument.ViewportSize = imported.ViewportSize;
         outDocument.Animation = std::move(imported.Animation);
         outDocument.LoopAnimation = imported.LoopAnimation;
+        imported.ViewportSize = {};
+        imported.Animation = AnimationClip{};
+        imported.LoopAnimation = false;
         outDocument.Vector = std::move(imported);
         return true;
     }
