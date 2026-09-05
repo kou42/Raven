@@ -29,8 +29,18 @@
     <animate attributeName="opacity" from="0.9" to="0.35" dur="2s" repeatCount="indefinite" />
   </polygon>
 
-  <!-- path初期subset: absolute/relative M,L,H,VとZを混在させ、閉じた凹輪郭をPolygon経路へ正規化します。 -->
+  <!-- absolute/relative M,L,H,VとZを混在させた直線Pathです。 -->
   <path id="linearPath" d="M 245 28 h 82 v 20 l -28 0 L 299 72 H 273 V 48 h -28 z" fill="#44dddd">
     <animate attributeName="opacity" from="0.3" to="0.95" dur="2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Quadratic Bezier: 強く曲がる箇所ほどAdaptive Tessellationの分割数が増えます。 -->
+  <path id="quadraticPath" d="M 350 25 Q 395 0 440 25 q 20 42 40 0 L 480 72 L 350 72 Z" fill="#ff6699">
+    <animate attributeName="opacity" from="0.95" to="0.4" dur="2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Cubic Bezier: absolute/relative C/cを混在させ、De Casteljau分割を確認します。 -->
+  <path id="cubicPath" d="M 505 28 C 525 0 575 0 595 28 c 18 24 -8 45 -45 44 c -37 1 -63 -20 -45 -44 Z" fill="#66aaff">
+    <animate attributeName="opacity" from="0.45" to="1" dur="2s" repeatCount="indefinite" />
   </path>
 </svg>

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <regex>
@@ -19,6 +20,10 @@ namespace Raven
 namespace
 {
 using AttributeMap = std::unordered_map<std::string, std::string>;
+
+constexpr float kBezierFlatnessTolerance = 0.5f;
+constexpr uint32_t kBezierMaxSubdivisionDepth = 12u;
+constexpr float kPointMergeEpsilonSquared = 0.000001f;
 
 AttributeMap ParseAttributes(const std::string& text)
 {
@@ -78,7 +83,137 @@ bool TryReadNumber(const std::string& data, std::size_t& cursor, float& outValue
     return true;
 }
 
-bool ParseLinearPath(
+math::Vec2 Midpoint(const math::Vec2& left, const math::Vec2& right)
+{
+    return math::Vec2(
+        (left.x + right.x) * 0.5f,
+        (left.y + right.y) * 0.5f);
+}
+
+float DistanceSquared(const math::Vec2& left, const math::Vec2& right)
+{
+    const float x = left.x - right.x;
+    const float y = left.y - right.y;
+    return x * x + y * y;
+}
+
+float DistanceToLineSquared(
+    const math::Vec2& point,
+    const math::Vec2& lineStart,
+    const math::Vec2& lineEnd)
+{
+    const float lineX = lineEnd.x - lineStart.x;
+    const float lineY = lineEnd.y - lineStart.y;
+    const float lengthSquared = lineX * lineX + lineY * lineY;
+    if (lengthSquared <= kPointMergeEpsilonSquared)
+    {
+        return DistanceSquared(point, lineStart);
+    }
+
+    const float pointX = point.x - lineStart.x;
+    const float pointY = point.y - lineStart.y;
+    const float cross = lineX * pointY - lineY * pointX;
+    return (cross * cross) / lengthSquared;
+}
+
+void AppendPointIfDistinct(
+    std::vector<math::Vec2>& points,
+    const math::Vec2& point)
+{
+    if (points.empty() == false &&
+        DistanceSquared(points.back(), point) <= kPointMergeEpsilonSquared)
+    {
+        return;
+    }
+    points.push_back(point);
+}
+
+void TessellateQuadraticBezier(
+    const math::Vec2& start,
+    const math::Vec2& control,
+    const math::Vec2& end,
+    uint32_t depth,
+    std::vector<math::Vec2>& outPoints)
+{
+    const float toleranceSquared =
+        kBezierFlatnessTolerance * kBezierFlatnessTolerance;
+
+    // 制御点が始点-終点の弦へ十分近ければ、この区間を直線として扱えます。
+    // 固定segment数ではなく局所曲率に応じて再帰分割するため、直線に近いBezierでは頂点数を抑え、
+    // 強く曲がる部分だけ細かく分割できます。最大深度は異常入力に対する安全弁です。
+    if (depth >= kBezierMaxSubdivisionDepth ||
+        DistanceToLineSquared(control, start, end) <= toleranceSquared)
+    {
+        AppendPointIfDistinct(outPoints, end);
+        return;
+    }
+
+    const math::Vec2 startControl = Midpoint(start, control);
+    const math::Vec2 controlEnd = Midpoint(control, end);
+    const math::Vec2 middle = Midpoint(startControl, controlEnd);
+
+    TessellateQuadraticBezier(
+        start,
+        startControl,
+        middle,
+        depth + 1u,
+        outPoints);
+    TessellateQuadraticBezier(
+        middle,
+        controlEnd,
+        end,
+        depth + 1u,
+        outPoints);
+}
+
+void TessellateCubicBezier(
+    const math::Vec2& start,
+    const math::Vec2& control1,
+    const math::Vec2& control2,
+    const math::Vec2& end,
+    uint32_t depth,
+    std::vector<math::Vec2>& outPoints)
+{
+    const float toleranceSquared =
+        kBezierFlatnessTolerance * kBezierFlatnessTolerance;
+    const float control1Distance =
+        DistanceToLineSquared(control1, start, end);
+    const float control2Distance =
+        DistanceToLineSquared(control2, start, end);
+
+    // Cubicは両制御点が弦へ十分近い場合だけ直線近似します。
+    // De Casteljau分割を使うことで数値的に安定し、後続のS command実装でも同じtessellationを再利用できます。
+    if (depth >= kBezierMaxSubdivisionDepth ||
+        std::max(control1Distance, control2Distance) <= toleranceSquared)
+    {
+        AppendPointIfDistinct(outPoints, end);
+        return;
+    }
+
+    const math::Vec2 p01 = Midpoint(start, control1);
+    const math::Vec2 p12 = Midpoint(control1, control2);
+    const math::Vec2 p23 = Midpoint(control2, end);
+    const math::Vec2 p012 = Midpoint(p01, p12);
+    const math::Vec2 p123 = Midpoint(p12, p23);
+    const math::Vec2 middle = Midpoint(p012, p123);
+
+    TessellateCubicBezier(
+        start,
+        p01,
+        p012,
+        middle,
+        depth + 1u,
+        outPoints);
+    TessellateCubicBezier(
+        middle,
+        p123,
+        p23,
+        end,
+        depth + 1u,
+        outPoints);
+}
+
+bool ParsePath(
     const std::string& data,
     std::vector<math::Vec2>& outPoints,
     std::string* outError)
@@ -128,9 +263,11 @@ bool ParseLinearPath(
             if (command != 'M' && command != 'm' &&
                 command != 'L' && command != 'l' &&
                 command != 'H' && command != 'h' &&
-                command != 'V' && command != 'v')
+                command != 'V' && command != 'v' &&
+                command != 'Q' && command != 'q' &&
+                command != 'C' && command != 'c')
             {
-                return fail("SVG path currently supports only M/L/H/V/Z commands.");
+                return fail("SVG path currently supports only M/L/H/V/Q/C/Z commands.");
             }
         }
         else if (command == '\0')
@@ -143,7 +280,8 @@ bool ParseLinearPath(
             return fail("SVG path currently supports one closed subpath only.");
         }
 
-        if (command == 'M' || command == 'm' || command == 'L' || command == 'l')
+        if (command == 'M' || command == 'm' ||
+            command == 'L' || command == 'l')
         {
             float x = 0.0f;
             float y = 0.0f;
@@ -153,15 +291,17 @@ bool ParseLinearPath(
                 return fail("SVG path M/L command requires an x/y pair.");
             }
 
+            const char activeCommand = command;
             math::Vec2 next(x, y);
-            const bool relative = command == 'm' || command == 'l';
+            const bool relative =
+                activeCommand == 'm' || activeCommand == 'l';
             if (relative == true)
             {
                 next.x += current.x;
                 next.y += current.y;
             }
 
-            if (command == 'M' || command == 'm')
+            if (activeCommand == 'M' || activeCommand == 'm')
             {
                 if (hasSubpath == true)
                 {
@@ -169,7 +309,7 @@ bool ParseLinearPath(
                 }
                 subpathStart = next;
                 hasSubpath = true;
-                command = command == 'm' ? 'l' : 'L';
+                command = activeCommand == 'm' ? 'l' : 'L';
             }
             else if (hasCurrent == false)
             {
@@ -178,38 +318,121 @@ bool ParseLinearPath(
 
             current = next;
             hasCurrent = true;
-            outPoints.push_back(current);
+            AppendPointIfDistinct(outPoints, current);
             continue;
         }
 
         if (hasCurrent == false)
         {
-            return fail("SVG path H/V command appears before moveto.");
+            return fail("SVG path command appears before moveto.");
         }
 
-        float value = 0.0f;
-        if (TryReadNumber(data, cursor, value) == false)
+        if (command == 'H' || command == 'h' ||
+            command == 'V' || command == 'v')
         {
-            return fail("SVG path H/V command requires a coordinate.");
+            float value = 0.0f;
+            if (TryReadNumber(data, cursor, value) == false)
+            {
+                return fail("SVG path H/V command requires a coordinate.");
+            }
+
+            if (command == 'H')
+            {
+                current.x = value;
+            }
+            else if (command == 'h')
+            {
+                current.x += value;
+            }
+            else if (command == 'V')
+            {
+                current.y = value;
+            }
+            else
+            {
+                current.y += value;
+            }
+            AppendPointIfDistinct(outPoints, current);
+            continue;
         }
 
-        if (command == 'H')
+        if (command == 'Q' || command == 'q')
         {
-            current.x = value;
+            float controlX = 0.0f;
+            float controlY = 0.0f;
+            float endX = 0.0f;
+            float endY = 0.0f;
+            if (TryReadNumber(data, cursor, controlX) == false ||
+                TryReadNumber(data, cursor, controlY) == false ||
+                TryReadNumber(data, cursor, endX) == false ||
+                TryReadNumber(data, cursor, endY) == false)
+            {
+                return fail("SVG path Q command requires control and end x/y pairs.");
+            }
+
+            const math::Vec2 segmentStart = current;
+            math::Vec2 control(controlX, controlY);
+            math::Vec2 end(endX, endY);
+            if (command == 'q')
+            {
+                control.x += segmentStart.x;
+                control.y += segmentStart.y;
+                end.x += segmentStart.x;
+                end.y += segmentStart.y;
+            }
+
+            TessellateQuadraticBezier(
+                segmentStart,
+                control,
+                end,
+                0u,
+                outPoints);
+            current = end;
+            continue;
         }
-        else if (command == 'h')
+
+        if (command == 'C' || command == 'c')
         {
-            current.x += value;
+            float control1X = 0.0f;
+            float control1Y = 0.0f;
+            float control2X = 0.0f;
+            float control2Y = 0.0f;
+            float endX = 0.0f;
+            float endY = 0.0f;
+            if (TryReadNumber(data, cursor, control1X) == false ||
+                TryReadNumber(data, cursor, control1Y) == false ||
+                TryReadNumber(data, cursor, control2X) == false ||
+                TryReadNumber(data, cursor, control2Y) == false ||
+                TryReadNumber(data, cursor, endX) == false ||
+                TryReadNumber(data, cursor, endY) == false)
+            {
+                return fail("SVG path C command requires two control pairs and one end pair.");
+            }
+
+            const math::Vec2 segmentStart = current;
+            math::Vec2 control1(control1X, control1Y);
+            math::Vec2 control2(control2X, control2Y);
+            math::Vec2 end(endX, endY);
+            if (command == 'c')
+            {
+                control1.x += segmentStart.x;
+                control1.y += segmentStart.y;
+                control2.x += segmentStart.x;
+                control2.y += segmentStart.y;
+                end.x += segmentStart.x;
+                end.y += segmentStart.y;
+            }
+
+            TessellateCubicBezier(
+                segmentStart,
+                control1,
+                control2,
+                end,
+                0u,
+                outPoints);
+            current = end;
+            continue;
         }
-        else if (command == 'V')
-        {
-            current.y = value;
-        }
-        else
-        {
-            current.y += value;
-        }
-        outPoints.push_back(current);
     }
 
     if (hasSubpath == false || closed == false || outPoints.size() < 3u)
@@ -267,13 +490,34 @@ math::Vec4 ParseColor(const std::string& text)
     return math::Vec4(0.0f, 0.0f, 0.0f, 1.0f);
 }
 
-void CollectExistingNames(const SvgDocument& document, std::unordered_set<std::string>& names)
+void CollectExistingNames(
+    const SvgDocument& document,
+    std::unordered_set<std::string>& names)
 {
-    for (const SvgRectElement& element : document.Rectangles) { names.insert(element.Name); }
-    for (const SvgCircleElement& element : document.Circles) { names.insert(element.Name); }
-    for (const SvgEllipseElement& element : document.Ellipses) { names.insert(element.Name); }
-    for (const SvgLineElement& element : document.Lines) { names.insert(element.Name); }
-    for (const SvgPolygonElement& element : document.Polygons) { names.insert(element.Name); }
+    for (const SvgRectElement& element : document.Rectangles)
+    {
+        names.insert(element.Name);
+    }
+    for (const SvgCircleElement& element : document.Circles)
+    {
+        names.insert(element.Name);
+    }
+    for (const SvgEllipseElement& element : document.Ellipses)
+    {
+        names.insert(element.Name);
+    }
+    for (const SvgLineElement& element : document.Lines)
+    {
+        names.insert(element.Name);
+    }
+    for (const SvgPolygonElement& element : document.Polygons)
+    {
+        names.insert(element.Name);
+    }
+    for (const SvgPathElement& element : document.Paths)
+    {
+        names.insert(element.Name);
+    }
 }
 
 bool AppendOpacityAnimation(
@@ -290,7 +534,8 @@ bool AppendOpacityAnimation(
         const auto toIt = attributes.find("to");
         const auto durationIt = attributes.find("dur");
         if (nameIt == attributes.end() || nameIt->second != "opacity" ||
-            fromIt == attributes.end() || toIt == attributes.end() || durationIt == attributes.end())
+            fromIt == attributes.end() || toIt == attributes.end() ||
+            durationIt == attributes.end())
         {
             continue;
         }
@@ -303,7 +548,8 @@ bool AppendOpacityAnimation(
             from = std::stof(fromIt->second);
             to = std::stof(toIt->second);
             std::string durationText = durationIt->second;
-            if (durationText.size() >= 2u && durationText.substr(durationText.size() - 2u) == "ms")
+            if (durationText.size() >= 2u &&
+                durationText.substr(durationText.size() - 2u) == "ms")
             {
                 durationText.resize(durationText.size() - 2u);
                 duration = std::stof(durationText) / 1000.0f;
@@ -333,10 +579,12 @@ bool AppendOpacityAnimation(
         track.Curve.GetKeys().push_back(AnimationKeyframe<float>{ 0.0f, from });
         track.Curve.GetKeys().push_back(AnimationKeyframe<float>{ duration, to });
         document.Animation.AddPropertyTrack(std::move(track));
-        document.Animation.SetDuration(std::max(document.Animation.GetDuration(), duration));
+        document.Animation.SetDuration(
+            std::max(document.Animation.GetDuration(), duration));
 
         const auto repeatIt = attributes.find("repeatCount");
-        if (repeatIt != attributes.end() && repeatIt->second == "indefinite")
+        if (repeatIt != attributes.end() &&
+            repeatIt->second == "indefinite")
         {
             document.LoopAnimation = true;
         }
@@ -365,7 +613,9 @@ bool SvgPathImporter::AppendFilePaths(
     std::unordered_set<std::string> usedNames;
     CollectExistingNames(document, usedNames);
     std::size_t generatedPathIndex = 0u;
-    const std::regex pathRegex(R"(<path\b([^>]*?)(?:/>|>([\s\S]*?)</path>))", std::regex::icase);
+    const std::regex pathRegex(
+        R"(<path\b([^>]*?)(?:/>|>([\s\S]*?)</path>))",
+        std::regex::icase);
 
     for (std::sregex_iterator it(source.begin(), source.end(), pathRegex), end; it != end; ++it)
     {
@@ -381,7 +631,7 @@ bool SvgPathImporter::AppendFilePaths(
         }
 
         SvgPathElement pathElement;
-        if (ParseLinearPath(dataIt->second, pathElement.Points, outError) == false)
+        if (ParsePath(dataIt->second, pathElement.Points, outError) == false)
         {
             return false;
         }
@@ -390,7 +640,8 @@ bool SvgPathImporter::AppendFilePaths(
         pathElement.Name = idIt != attributes.end()
             ? idIt->second
             : "path" + std::to_string(generatedPathIndex++);
-        if (pathElement.Name.empty() || pathElement.Name.find('/') != std::string::npos ||
+        if (pathElement.Name.empty() ||
+            pathElement.Name.find('/') != std::string::npos ||
             usedNames.insert(pathElement.Name).second == false)
         {
             if (outError != nullptr)
@@ -412,7 +663,10 @@ bool SvgPathImporter::AppendFilePaths(
             SvgShapeType::Path,
             elementIndex,
             static_cast<std::size_t>(it->position()) });
-        AppendOpacityAnimation((*it)[2].str(), document.Paths[elementIndex].Name, document);
+        AppendOpacityAnimation(
+            (*it)[2].str(),
+            document.Paths[elementIndex].Name,
+            document);
     }
 
     // 他shapeは既存Importerが型別に解析しているため、path追加後にSourceOffsetで再度統合します。

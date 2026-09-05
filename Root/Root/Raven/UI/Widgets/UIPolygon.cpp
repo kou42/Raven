@@ -7,6 +7,19 @@ namespace Raven
 
 void UIPolygon::SetPoints(std::vector<math::Vec2> points)
 {
+    // SVG path/polygonでは閉輪郭を明示するため、先頭頂点を末尾へ再記述する入力があります。
+    // Ear Clippingでは同一点の重複が0面積cornerを作るため、Polygon表現として不要な閉端点だけ正規化します。
+    if (points.size() >= 2u)
+    {
+        const float deltaX = points.front().x - points.back().x;
+        const float deltaY = points.front().y - points.back().y;
+        constexpr float kDuplicatePointEpsilonSquared = 0.000001f;
+        if (deltaX * deltaX + deltaY * deltaY <= kDuplicatePointEpsilonSquared)
+        {
+            points.pop_back();
+        }
+    }
+
     m_Points = std::move(points);
 }
 
