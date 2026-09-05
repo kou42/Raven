@@ -1,7 +1,7 @@
 #include "Raven/UI/Svg/UISvg.h"
 
+#include "Raven/UI/Document/DocumentLoader.h"
 #include "Raven/UI/Document/UIDocument.h"
-#include "Raven/UI/Svg/SvgImporter.h"
 
 #include <utility>
 
@@ -10,14 +10,14 @@ namespace Raven
 
 bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
 {
-    SvgImporter importer;
+    DocumentLoader loader;
     UIDocument imported;
-    if (importer.ImportFile(path, imported, outError) == false)
+    if (loader.Load(path, imported, outError) == false)
     {
         return false;
     }
 
-    // SVG固有の解析はImporter側で完結し、Runtimeには正規化済みUIDocumentだけを渡します。
+    // Runtime側は具体的なImporterを知らず、DocumentLoaderから正規化済みUIDocumentだけを受け取ります。
     return SetDocument(std::move(imported), outError);
 }
 
