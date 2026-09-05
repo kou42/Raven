@@ -540,6 +540,11 @@ D:.
     |   |   |           SkeletalDeformationSelfTests.h
     |   |   |
     |   |   +---Assets
+    |   |   |   |   TextureAsset.cpp
+    |   |   |   |   TextureAsset.h
+    |   |   |   |   TextureAssetImporter.cpp
+    |   |   |   |   TextureAssetImporter.h
+    |   |   |   |
     |   |   |   +---Images
     |   |   |   |   \---test
     |   |   |   |           mountain1.png
@@ -552,20 +557,26 @@ D:.
     |   |   |   +---Profiles
     |   |   |   |       Raven_human_test.json
     |   |   |   |
-    |   |   |   \---Shaders
-    |   |   |       +---Fragment
-    |   |   |       |       test.frag
-    |   |   |       |       texture_test.frag
-    |   |   |       |
-    |   |   |       +---Glsl
-    |   |   |       |       FlatColor.glsl
-    |   |   |       |
-    |   |   |       +---ShaderToy
-    |   |   |       |       test.frag
-    |   |   |       |
-    |   |   |       \---Vertex
-    |   |   |               test.vert
-    |   |   |               texture_test.vert
+    |   |   |   +---Shaders
+    |   |   |   |   +---Fragment
+    |   |   |   |   |       test.frag
+    |   |   |   |   |       texture_test.frag
+    |   |   |   |   |
+    |   |   |   |   +---Glsl
+    |   |   |   |   |       EntityPicking.glsl
+    |   |   |   |   |       FlatColor.glsl
+    |   |   |   |   |       SelectionOutline.glsl
+    |   |   |   |   |       UI.glsl
+    |   |   |   |   |
+    |   |   |   |   +---ShaderToy
+    |   |   |   |   |       test.frag
+    |   |   |   |   |
+    |   |   |   |   \---Vertex
+    |   |   |   |           test.vert
+    |   |   |   |           texture_test.vert
+    |   |   |   |
+    |   |   |   \---Svg
+    |   |   |           AnimatedRect.svg
     |   |   |
     |   |   +---Character
     |   |   |   |   CharacterController.cpp
@@ -632,16 +643,11 @@ D:.
     |   |   |               MemoryAllocatorSelfTests.h
     |   |   |
     |   |   +---Debug
-    |   |   |   |   BrowserDebugConfig.h
-    |   |   |   |   BrowserDebugServer.cpp
-    |   |   |   |   BrowserDebugServer.h
-    |   |   |   |   BrowserDebugViewer.cpp
-    |   |   |   |   BrowserDebugViewer.h
-    |   |   |   |
-    |   |   |   \---Generated
-    |   |   |           CandidateRejects.svg
-    |   |   |           Startup.svg
-    |   |   |           Viewer.html
+    |   |   |       BrowserDebugConfig.h
+    |   |   |       BrowserDebugServer.cpp
+    |   |   |       BrowserDebugServer.h
+    |   |   |       BrowserDebugViewer.cpp
+    |   |   |       BrowserDebugViewer.h
     |   |   |
     |   |   +---Editor
     |   |   |   |   EditorCamera.cpp
@@ -696,6 +702,8 @@ D:.
     |   |   |   |   HumanoidSceneNormalization.h
     |   |   |   |   JsonParser.h
     |   |   |   |   JsonValue.h
+    |   |   |   |   MaterialImporter.cpp
+    |   |   |   |   MaterialImporter.h
     |   |   |   |   NodeHierarchy.cpp
     |   |   |   |   NodeHierarchy.h
     |   |   |   |   SkinImporter.cpp
@@ -943,30 +951,94 @@ D:.
     |   |   |   |       Shader.h
     |   |   |   |
     |   |   |   \---Texture
+    |   |   |           OpenGLTexture.cpp
+    |   |   |           OpenGLTexture.h
     |   |   |           Texture.cpp
     |   |   |           Texture.h
     |   |   |
-    |   |   \---Scene
-    |   |       |   Components.cpp
-    |   |       |   Components.h
-    |   |       |   ComponentStorage.h
-    |   |       |   ComponentView.h
-    |   |       |   Entity.cpp
-    |   |       |   Entity.h
-    |   |       |   Scene.cpp
-    |   |       |   Scene.h
-    |   |       |   SceneCamera.cpp
-    |   |       |   SceneCamera.h
-    |   |       |   SceneCameraSystem.cpp
-    |   |       |   SceneCameraSystem.h
-    |   |       |   SceneGame.cpp
-    |   |       |   SceneGame.h
-    |   |       |   SceneGameAnimation.cpp
-    |   |       |   SceneViewportRenderer.h
+    |   |   +---Scene
+    |   |   |   |   Components.cpp
+    |   |   |   |   Components.h
+    |   |   |   |   ComponentStorage.h
+    |   |   |   |   ComponentView.h
+    |   |   |   |   Entity.cpp
+    |   |   |   |   Entity.h
+    |   |   |   |   Scene.cpp
+    |   |   |   |   Scene.h
+    |   |   |   |   SceneCamera.cpp
+    |   |   |   |   SceneCamera.h
+    |   |   |   |   SceneCameraSystem.cpp
+    |   |   |   |   SceneCameraSystem.h
+    |   |   |   |   SceneGame.cpp
+    |   |   |   |   SceneGame.h
+    |   |   |   |   SceneGameAnimation.cpp
+    |   |   |   |   SceneViewportRenderer.h
+    |   |   |   |
+    |   |   |   \---Tests
+    |   |   |           SceneLifecycleSelfTests.cpp
+    |   |   |           SceneLifecycleSelfTests.h
+    |   |   |
+    |   |   \---UI
+    |   |       +---Animation
+    |   |       |       UIAnimationBinding.cpp
+    |   |       |       UIAnimationBinding.h
     |   |       |
-    |   |       \---Tests
-    |   |               SceneLifecycleSelfTests.cpp
-    |   |               SceneLifecycleSelfTests.h
+    |   |       +---Core
+    |   |       |       UIContext.cpp
+    |   |       |       UIContext.h
+    |   |       |       UIDrawList.cpp
+    |   |       |       UIDrawList.h
+    |   |       |       UIElement.cpp
+    |   |       |       UIElement.h
+    |   |       |       UIEvent.h
+    |   |       |       UIFocusNavigation.inl
+    |   |       |       UIHitTest.cpp
+    |   |       |       UIHitTest.h
+    |   |       |
+    |   |       +---Debug
+    |   |       |       UITreeMutationValidation.h
+    |   |       |
+    |   |       +---Document
+    |   |       |       UIVectorDocument.cpp
+    |   |       |       UIVectorDocument.h
+    |   |       |       VectorDocument.h
+    |   |       |
+    |   |       +---Rendering
+    |   |       |       OpenGLUIRenderer.cpp
+    |   |       |       OpenGLUIRenderer.h
+    |   |       |       UIRenderer.cpp
+    |   |       |       UIRenderer.h
+    |   |       |
+    |   |       +---Svg
+    |   |       |   |   SvgImporter.cpp
+    |   |       |   |   SvgImporter.h
+    |   |       |   |   SvgPathImporter.cpp
+    |   |       |   |   SvgPathImporter.h
+    |   |       |   |   UISvg.cpp
+    |   |       |   |   UISvg.h
+    |   |       |   |
+    |   |       |   \---Debug
+    |   |       |           UISvgDemoLayer.cpp
+    |   |       |           UISvgDemoLayer.h
+    |   |       |
+    |   |       \---Widgets
+    |   |               UIButton.cpp
+    |   |               UIButton.h
+    |   |               UICircle.cpp
+    |   |               UICircle.h
+    |   |               UIImage.cpp
+    |   |               UIImage.h
+    |   |               UIPanel.cpp
+    |   |               UIPanel.h
+    |   |               UIPolygon.cpp
+    |   |               UIPolygon.h
+    |   |               UIScrollView.cpp
+    |   |               UIScrollView.h
+    |   |               UIScrollViewNavigation.inl
+    |   |               UISlider.cpp
+    |   |               UISlider.h
+    |   |               UISplitter.cpp
+    |   |               UISplitter.h
     |   |
     |   +---Root
     |   |   \---x64
