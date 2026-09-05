@@ -9,8 +9,8 @@ namespace Raven
 
 // SVG pathはcommand grammarが他shapeの属性解析より複雑になるため、専用Parserへ分離します。
 // M/L/H/V/ZとQ/T/C/S Bezier、A Elliptical ArcをAdaptive TessellationでPolylineへ正規化し、
-// 複数の閉じたsubpathをSvgDocumentへ輪郭単位で保持します。fill-ruleはUISvg読込時に輪郭全体へ適用します。
-// open pathのstroke描画、CSS/style経由のfill-ruleは後続拡張です。
+// 複数subpathのopen/closed状態とfill / fill-rule / stroke / stroke-width直接属性をSvgDocumentへ保持します。
+// stroke-linecap / stroke-linejoin、CSS/style属性、transform等は後続拡張です。
 class SvgPathImporter
 {
 public:
