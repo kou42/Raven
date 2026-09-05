@@ -207,13 +207,16 @@ void SoftBodyTriangleSpatialHashGrid::BuildTriangles(
                 const math::Vec3& b = particles[triangle.ParticleB].Position;
                 const math::Vec3& c = particles[triangle.ParticleC].Position;
 
-                bounds.Minimum.x = std::min({ a.x, b.x, c.x }) - safeExpansion;
-                bounds.Minimum.y = std::min({ a.y, b.y, c.y }) - safeExpansion;
-                bounds.Minimum.z = std::min({ a.z, b.z, c.z }) - safeExpansion;
+                // 頂点は必ず3点なので、initializer_listの汎用走査を使わず2回の比較で求めます。
+                // 特にDebugではiterator検証がTriangle数 x 6軸端 x Solver反復分発生するため、
+                // 固定長の比較へ置き換えます。a -> b -> cの比較順とThickness拡張は維持します。
+                bounds.Minimum.x = std::min(std::min(a.x, b.x), c.x) - safeExpansion;
+                bounds.Minimum.y = std::min(std::min(a.y, b.y), c.y) - safeExpansion;
+                bounds.Minimum.z = std::min(std::min(a.z, b.z), c.z) - safeExpansion;
 
-                bounds.Maximum.x = std::max({ a.x, b.x, c.x }) + safeExpansion;
-                bounds.Maximum.y = std::max({ a.y, b.y, c.y }) + safeExpansion;
-                bounds.Maximum.z = std::max({ a.z, b.z, c.z }) + safeExpansion;
+                bounds.Maximum.x = std::max(std::max(a.x, b.x), c.x) + safeExpansion;
+                bounds.Maximum.y = std::max(std::max(a.y, b.y), c.y) + safeExpansion;
+                bounds.Maximum.z = std::max(std::max(a.z, b.z), c.z) + safeExpansion;
 
                 // Topology IndexはCandidate生成のcheap rejectでも再利用します。
                 bounds.ParticleA = triangle.ParticleA;

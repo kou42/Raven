@@ -63,10 +63,15 @@ bool EvaluateDihedralConstraint(
         scaledNormal0 * (math::Vec3::Dot(p2 - p0, edge) * inverseEdgeLength)
         + scaledNormal1 * (math::Vec3::Dot(p2 - p1, edge) * inverseEdgeLength);
 
-    math::Vec3 normal0 = rawNormal0;
-    math::Vec3 normal1 = rawNormal1;
-    normal0.Normalize();
-    normal1.Normalize();
+    // 退化判定で求めた長さの二乗を再利用し、Normalize内でのLengthSq再計算を省きます。
+    // sqrtの丸めで長さがちょうどEpsilonになる境界もあるため、従来のfallbackは維持します。
+    // 成分ごとの除算も従来どおりにし、acosへ渡す値の丸めを変えないようにします。
+    const float normalLength0 = std::sqrt(normalLengthSq0);
+    const float normalLength1 = std::sqrt(normalLengthSq1);
+    const math::Vec3 normal0 = normalLength0 <= math::Epsilon
+        ? math::Vec3{} : rawNormal0 / normalLength0;
+    const math::Vec3 normal1 = normalLength1 <= math::Epsilon
+        ? math::Vec3{} : rawNormal1 / normalLength1;
 
     const float normalDot = std::clamp(
         math::Vec3::Dot(normal0, normal1),
