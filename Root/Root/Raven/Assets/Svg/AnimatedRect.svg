@@ -28,4 +28,9 @@
   <polygon id="concaveArrow" points="430,155 515,155 515,130 590,180 515,230 515,205 430,205" fill="#cc66ff">
     <animate attributeName="opacity" from="0.9" to="0.35" dur="2s" repeatCount="indefinite" />
   </polygon>
+
+  <!-- path初期subset: absolute/relative M,L,H,VとZを混在させ、閉じた凹輪郭をPolygon経路へ正規化します。 -->
+  <path id="linearPath" d="M 245 28 h 82 v 20 l -28 0 L 299 72 H 273 V 48 h -28 z" fill="#44dddd">
+    <animate attributeName="opacity" from="0.3" to="0.95" dur="2s" repeatCount="indefinite" />
+  </path>
 </svg>

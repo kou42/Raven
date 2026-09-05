@@ -50,13 +50,23 @@ struct SvgPolygonElement
     math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
+// 初期path subsetは閉じた1輪郭をPolylineへ正規化して保持します。
+// M/L/H/V/Zをここへ落とすことで、UI RuntimeはSVG command文字列を知らず既存Polygon描画を再利用できます。
+struct SvgPathElement
+{
+    std::string Name;
+    std::vector<math::Vec2> Points;
+    math::Vec4 FillColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+};
+
 enum class SvgShapeType
 {
     Rect,
     Circle,
     Ellipse,
     Line,
-    Polygon
+    Polygon,
+    Path
 };
 
 // shape本体は型別vectorへ保持しつつ、SVGソース中の出現順だけを軽量な参照列として保持します。
@@ -80,6 +90,7 @@ struct SvgDocument
     std::vector<SvgEllipseElement> Ellipses;
     std::vector<SvgLineElement> Lines;
     std::vector<SvgPolygonElement> Polygons;
+    std::vector<SvgPathElement> Paths;
     std::vector<SvgShapeReference> Shapes;
     AnimationClip Animation;
     bool LoopAnimation = false;
