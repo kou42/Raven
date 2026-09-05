@@ -425,10 +425,11 @@ void TessellateEllipticalArc(
 
 bool ParsePath(
     const std::string& data,
-    std::vector<math::Vec2>& outPoints,
+    std::vector<std::vector<math::Vec2>>& outSubpaths,
     std::string* outError)
 {
-    outPoints.clear();
+    outSubpaths.clear();
+    std::vector<math::Vec2> currentPoints;
     std::size_t cursor = 0u;
     char command = '\0';
     char previousCommand = '\0';
@@ -437,8 +438,7 @@ bool ParsePath(
     math::Vec2 previousCubicControl{};
     math::Vec2 previousQuadraticControl{};
     bool hasCurrent = false;
-    bool hasSubpath = false;
-    bool closed = false;
+    bool hasActiveSubpath = false;
 
     auto fail = [outError](const std::string& message)
     {
@@ -463,12 +463,21 @@ bool ParsePath(
             command = data[cursor++];
             if (command == 'Z' || command == 'z')
             {
-                if (hasSubpath == false)
+                if (hasActiveSubpath == false)
                 {
-                    return fail("SVG path closes before a moveto command.");
+                    return fail("SVG path closes before an active moveto subpath.");
                 }
+                if (currentPoints.size() < 3u)
+                {
+                    return fail("SVG path subpath must contain at least three vertices before closepath.");
+                }
+
+                // Zで現在輪郭を確定し、次のM/mから新しいsubpathを開始できる状態へ戻します。
+                // currentはSVG仕様どおり閉じたsubpathの始点へ戻すため、後続のrelative movetoも正しく解釈できます。
                 current = subpathStart;
-                closed = true;
+                outSubpaths.push_back(std::move(currentPoints));
+                currentPoints.clear();
+                hasActiveSubpath = false;
                 previousCommand = command;
                 command = '\0';
                 continue;
@@ -492,9 +501,9 @@ bool ParsePath(
             return fail("SVG path number appears without an active command.");
         }
 
-        if (closed == true)
+        if (hasActiveSubpath == false && command != 'M' && command != 'm')
         {
-            return fail("SVG path currently supports one closed subpath only.");
+            return fail("SVG path subpath must begin with a moveto command.");
         }
 
         if (command == 'M' || command == 'm' ||
@@ -519,12 +528,13 @@ bool ParsePath(
 
             if (activeCommand == 'M' || activeCommand == 'm')
             {
-                if (hasSubpath == true)
+                if (hasActiveSubpath == true)
                 {
-                    return fail("SVG path currently supports one subpath only.");
+                    return fail("SVG path requires each subpath to close before the next moveto.");
                 }
+                currentPoints.clear();
                 subpathStart = next;
-                hasSubpath = true;
+                hasActiveSubpath = true;
                 command = activeCommand == 'm' ? 'l' : 'L';
             }
             else if (hasCurrent == false)
@@ -534,12 +544,12 @@ bool ParsePath(
 
             current = next;
             hasCurrent = true;
-            AppendPointIfDistinct(outPoints, current);
+            AppendPointIfDistinct(currentPoints, current);
             previousCommand = activeCommand;
             continue;
         }
 
-        if (hasCurrent == false)
+        if (hasCurrent == false || hasActiveSubpath == false)
         {
             return fail("SVG path command appears before moveto.");
         }
@@ -569,7 +579,7 @@ bool ParsePath(
             {
                 current.y += value;
             }
-            AppendPointIfDistinct(outPoints, current);
+            AppendPointIfDistinct(currentPoints, current);
             previousCommand = command;
             continue;
         }
@@ -599,7 +609,7 @@ bool ParsePath(
                 end.y += segmentStart.y;
             }
 
-            TessellateQuadraticBezier(segmentStart, control, end, 0u, outPoints);
+            TessellateQuadraticBezier(segmentStart, control, end, 0u, currentPoints);
             current = end;
             previousQuadraticControl = control;
             previousCommand = command;
@@ -633,7 +643,7 @@ bool ParsePath(
                 end.y += segmentStart.y;
             }
 
-            TessellateQuadraticBezier(segmentStart, control, end, 0u, outPoints);
+            TessellateQuadraticBezier(segmentStart, control, end, 0u, currentPoints);
             current = end;
             previousQuadraticControl = control;
             previousCommand = command;
@@ -672,7 +682,7 @@ bool ParsePath(
                 end.y += segmentStart.y;
             }
 
-            TessellateCubicBezier(segmentStart, control1, control2, end, 0u, outPoints);
+            TessellateCubicBezier(segmentStart, control1, control2, end, 0u, currentPoints);
             current = end;
             previousCubicControl = control2;
             previousCommand = command;
@@ -713,7 +723,7 @@ bool ParsePath(
                 end.y += segmentStart.y;
             }
 
-            TessellateCubicBezier(segmentStart, control1, control2, end, 0u, outPoints);
+            TessellateCubicBezier(segmentStart, control1, control2, end, 0u, currentPoints);
             current = end;
             previousCubicControl = control2;
             previousCommand = command;
@@ -756,16 +766,20 @@ bool ParsePath(
                 largeArc,
                 sweep,
                 end,
-                outPoints);
+                currentPoints);
             current = end;
             previousCommand = command;
             continue;
         }
     }
 
-    if (hasSubpath == false || closed == false || outPoints.size() < 3u)
+    if (hasActiveSubpath == true)
     {
-        return fail("SVG path must contain one closed subpath with at least three vertices.");
+        return fail("SVG path currently requires every subpath to be closed with Z/z.");
+    }
+    if (outSubpaths.empty() == true)
+    {
+        return fail("SVG path must contain at least one closed subpath with three vertices.");
     }
     return true;
 }
@@ -958,7 +972,7 @@ bool SvgPathImporter::AppendFilePaths(
         }
 
         SvgPathElement pathElement;
-        if (ParsePath(dataIt->second, pathElement.Points, outError) == false)
+        if (ParsePath(dataIt->second, pathElement.Subpaths, outError) == false)
         {
             return false;
         }
