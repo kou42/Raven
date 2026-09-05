@@ -17,12 +17,8 @@ bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
         return false;
     }
 
-    // UIVectorDocumentのUIDocument対応が完了するまでの移行ブリッジです。
-    // SVG固有Parserの統合はImporter側で完結しているため、Runtime側はSVG path grammarを意識しません。
-    imported.Vector.ViewportSize = imported.ViewportSize;
-    imported.Vector.Animation = std::move(imported.Animation);
-    imported.Vector.LoopAnimation = imported.LoopAnimation;
-    return SetDocument(std::move(imported.Vector), outError);
+    // SVG固有の解析はImporter側で完結し、Runtimeには正規化済みUIDocumentだけを渡します。
+    return SetDocument(std::move(imported), outError);
 }
 
 } // namespace Raven
