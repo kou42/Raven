@@ -3,6 +3,7 @@
 #include "Raven/UI/Svg/SvgImporter.h"
 
 #include <memory>
+#include <utility>
 
 namespace Raven
 {
