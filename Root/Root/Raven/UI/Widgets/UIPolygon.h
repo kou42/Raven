@@ -41,6 +41,9 @@ public:
     void SetStrokeWidth(float width);
     float GetStrokeWidth() const;
 
+    void SetStrokeLineCap(UILineCap lineCap);
+    UILineCap GetStrokeLineCap() const;
+
 protected:
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
@@ -52,6 +55,7 @@ private:
     math::Vec4 m_FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     math::Vec4 m_StrokeColor{ 0.0f, 0.0f, 0.0f, 0.0f };
     float m_StrokeWidth = 1.0f;
+    UILineCap m_StrokeLineCap = UILineCap::Butt;
 };
 
 } // namespace Raven

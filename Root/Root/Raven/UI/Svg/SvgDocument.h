@@ -56,6 +56,13 @@ enum class SvgFillRule
     EvenOdd
 };
 
+enum class SvgLineCap
+{
+    Butt,
+    Round,
+    Square
+};
+
 // SVG pathは1つのelement内に複数subpathを持ち、各subpathはopen/closedの状態を個別に保持します。
 // command文字列はImporterでPolylineへ正規化し、UI RuntimeはSVG構文を知らず輪郭列と描画styleだけを扱います。
 struct SvgPathElement
@@ -65,9 +72,10 @@ struct SvgPathElement
     std::vector<bool> SubpathClosed;
     math::Vec4 FillColor{ 0.0f, 0.0f, 0.0f, 1.0f };
     SvgFillRule FillRule = SvgFillRule::NonZero;
-    // SVGのstroke既定値はnoneなのでalpha 0を既定とします。
+    // SVGのstroke既定値はnone、stroke-linecap既定値はbuttです。
     math::Vec4 StrokeColor{ 0.0f, 0.0f, 0.0f, 0.0f };
     float StrokeWidth = 1.0f;
+    SvgLineCap StrokeLineCap = SvgLineCap::Butt;
 };
 
 enum class SvgShapeType

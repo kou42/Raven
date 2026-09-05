@@ -47,10 +47,8 @@ const std::vector<math::Vec2>& UIPolygon::GetPoints() const
 
 void UIPolygon::SetContours(std::vector<std::vector<math::Vec2>> contours)
 {
-    for (std::vector<math::Vec2>& contour : contours)
-    {
-        NormalizeClosedContour(contour);
-    }
+    // SVG pathのopen subpathは、終点が始点と同座標でもZ/zで閉じたとは限りません。
+    // parserが既に重複頂点を整理しているため、compound contourは受け取ったgeometryをそのまま保持します。
     m_Contours = std::move(contours);
     m_UseCompoundFill = true;
 }
@@ -108,6 +106,16 @@ void UIPolygon::SetStrokeWidth(float width)
 float UIPolygon::GetStrokeWidth() const
 {
     return m_StrokeWidth;
+}
+
+void UIPolygon::SetStrokeLineCap(UILineCap lineCap)
+{
+    m_StrokeLineCap = lineCap;
+}
+
+UILineCap UIPolygon::GetStrokeLineCap() const
+{
+    return m_StrokeLineCap;
 }
 
 void UIPolygon::OnBuildDrawList(
@@ -175,12 +183,17 @@ void UIPolygon::OnBuildDrawList(
     const math::Vec4 strokeColor = ApplyVisualColor(m_StrokeColor);
     for (std::size_t index = 0u; index < absoluteContours.size(); ++index)
     {
-        if (absoluteContours[index].size() < 2u)
+        if (absoluteContours[index].empty() == true)
         {
             continue;
         }
         const bool closed = index >= m_ContourClosed.size() || m_ContourClosed[index] == true;
-        drawList.AddPolyline(absoluteContours[index], m_StrokeWidth, strokeColor, closed);
+        drawList.AddPolyline(
+            absoluteContours[index],
+            m_StrokeWidth,
+            strokeColor,
+            closed,
+            m_StrokeLineCap);
     }
 }
 
