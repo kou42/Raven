@@ -130,8 +130,6 @@ public:
         }
 
         constexpr float kSegmentEpsilonSquared = 0.000001f;
-        constexpr std::size_t kRoundCapSegmentCount = 12u;
-        constexpr float kPi = 3.14159265358979323846f;
         const float halfWidth = strokeWidth * 0.5f;
 
         // movetoだけのzero-length open subpathでもround/square capは可視になります。
