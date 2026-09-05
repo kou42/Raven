@@ -19,6 +19,8 @@ bool SvgImporter::ImportFile(
         return false;
     }
 
+    // Path ParserはVector表現だけを追加し、Viewport/Animation等の共通状態には触れません。
+    // 基本Shape ParserとPath Parserの双方が成功した後にUIDocumentを公開します。
     if (SvgPathImporter::AppendFilePaths(path, context.GetVectorDocument(), outError) == false)
     {
         return false;
