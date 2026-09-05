@@ -123,7 +123,7 @@ void UIPolygon::OnBuildDrawList(
     absoluteContours.reserve(m_Contours.size());
     for (const std::vector<math::Vec2>& contour : m_Contours)
     {
-        if (contour.size() < 2u)
+        if (contour.empty() == true)
         {
             absoluteContours.emplace_back();
             continue;
@@ -140,17 +140,16 @@ void UIPolygon::OnBuildDrawList(
         absoluteContours.push_back(std::move(absolutePoints));
     }
 
-    // SVG fillは閉じた輪郭だけを対象にします。open subpathはstrokeには残しますが、
-    // fill-ruleの輪郭集合へ混ぜないことで暗黙のcloseを描画geometryへ誤適用しません。
+    // SVG fillではopen subpathも終点から始点へ暗黙的に閉じた輪郭として評価されます。
+    // 一方strokeはZ/zの有無で終端接続が変わるため、closed情報はstroke側だけに適用します。
     if (m_FillColor.w > 0.0f)
     {
         std::vector<std::vector<math::Vec2>> fillContours;
-        for (std::size_t index = 0u; index < absoluteContours.size(); ++index)
+        for (const std::vector<math::Vec2>& contour : absoluteContours)
         {
-            const bool closed = index >= m_ContourClosed.size() || m_ContourClosed[index] == true;
-            if (closed == true && absoluteContours[index].size() >= 3u)
+            if (contour.size() >= 3u)
             {
-                fillContours.push_back(absoluteContours[index]);
+                fillContours.push_back(contour);
             }
         }
 
