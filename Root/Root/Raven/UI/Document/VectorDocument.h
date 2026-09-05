@@ -73,7 +73,7 @@ enum class VectorElementType
 
 // Element本体は型別vectorが所有し、この参照列は描画順だけを保持します。
 // SourceOffsetは現在のSVG Importerが複数Parserの結果を元ソース順へ再統合するために使用します。
-// 将来Importerが単一pass化された場合は、Elements自体の順序へ一本化できます。
+// 将来Importerが単一pass化された場合は、Shapes自体の順序へ一本化できます。
 struct VectorElementReference
 {
     VectorElementType Type = VectorElementType::Rect;
@@ -92,7 +92,7 @@ struct VectorDocument
     std::vector<LineElement> Lines;
     std::vector<PolygonElement> Polygons;
     std::vector<PathElement> Paths;
-    std::vector<VectorElementReference> Elements;
+    std::vector<VectorElementReference> Shapes;
     AnimationClip Animation;
     bool LoopAnimation = false;
 };
