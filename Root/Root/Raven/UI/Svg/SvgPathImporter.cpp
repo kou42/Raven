@@ -92,6 +92,15 @@ math::Vec2 Midpoint(const math::Vec2& left, const math::Vec2& right)
         (left.y + right.y) * 0.5f);
 }
 
+math::Vec2 ReflectControlPoint(
+    const math::Vec2& current,
+    const math::Vec2& previousControl)
+{
+    return math::Vec2(
+        current.x * 2.0f - previousControl.x,
+        current.y * 2.0f - previousControl.y);
+}
+
 float DistanceSquared(const math::Vec2& left, const math::Vec2& right)
 {
     const float x = left.x - right.x;
@@ -184,7 +193,7 @@ void TessellateCubicBezier(
         DistanceToLineSquared(control2, start, end);
 
     // Cubicは両制御点が弦へ十分近い場合だけ直線近似します。
-    // De Casteljau分割を使うことで数値的に安定し、後続のS command実装でも同じtessellationを再利用できます。
+    // De Casteljau分割を使うことで数値的に安定し、S commandでも同じtessellationを再利用できます。
     if (depth >= kBezierMaxSubdivisionDepth ||
         std::max(control1Distance, control2Distance) <= toleranceSquared)
     {
@@ -199,20 +208,8 @@ void TessellateCubicBezier(
     const math::Vec2 p123 = Midpoint(p12, p23);
     const math::Vec2 middle = Midpoint(p012, p123);
 
-    TessellateCubicBezier(
-        start,
-        p01,
-        p012,
-        middle,
-        depth + 1u,
-        outPoints);
-    TessellateCubicBezier(
-        middle,
-        p123,
-        p23,
-        end,
-        depth + 1u,
-        outPoints);
+    TessellateCubicBezier(start, p01, p012, middle, depth + 1u, outPoints);
+    TessellateCubicBezier(middle, p123, p23, end, depth + 1u, outPoints);
 }
 
 bool ParsePath(
@@ -223,8 +220,11 @@ bool ParsePath(
     outPoints.clear();
     std::size_t cursor = 0u;
     char command = '\0';
+    char previousCommand = '\0';
     math::Vec2 current{};
     math::Vec2 subpathStart{};
+    math::Vec2 previousCubicControl{};
+    math::Vec2 previousQuadraticControl{};
     bool hasCurrent = false;
     bool hasSubpath = false;
     bool closed = false;
@@ -258,6 +258,7 @@ bool ParsePath(
                 }
                 current = subpathStart;
                 closed = true;
+                previousCommand = command;
                 command = '\0';
                 continue;
             }
@@ -267,9 +268,11 @@ bool ParsePath(
                 command != 'H' && command != 'h' &&
                 command != 'V' && command != 'v' &&
                 command != 'Q' && command != 'q' &&
-                command != 'C' && command != 'c')
+                command != 'T' && command != 't' &&
+                command != 'C' && command != 'c' &&
+                command != 'S' && command != 's')
             {
-                return fail("SVG path currently supports only M/L/H/V/Q/C/Z commands.");
+                return fail("SVG path currently supports only M/L/H/V/Q/T/C/S/Z commands.");
             }
         }
         else if (command == '\0')
@@ -295,8 +298,7 @@ bool ParsePath(
 
             const char activeCommand = command;
             math::Vec2 next(x, y);
-            const bool relative =
-                activeCommand == 'm' || activeCommand == 'l';
+            const bool relative = activeCommand == 'm' || activeCommand == 'l';
             if (relative == true)
             {
                 next.x += current.x;
@@ -321,6 +323,7 @@ bool ParsePath(
             current = next;
             hasCurrent = true;
             AppendPointIfDistinct(outPoints, current);
+            previousCommand = activeCommand;
             continue;
         }
 
@@ -355,6 +358,7 @@ bool ParsePath(
                 current.y += value;
             }
             AppendPointIfDistinct(outPoints, current);
+            previousCommand = command;
             continue;
         }
 
@@ -383,13 +387,44 @@ bool ParsePath(
                 end.y += segmentStart.y;
             }
 
-            TessellateQuadraticBezier(
-                segmentStart,
-                control,
-                end,
-                0u,
-                outPoints);
+            TessellateQuadraticBezier(segmentStart, control, end, 0u, outPoints);
             current = end;
+            previousQuadraticControl = control;
+            previousCommand = command;
+            continue;
+        }
+
+        if (command == 'T' || command == 't')
+        {
+            float endX = 0.0f;
+            float endY = 0.0f;
+            if (TryReadNumber(data, cursor, endX) == false ||
+                TryReadNumber(data, cursor, endY) == false)
+            {
+                return fail("SVG path T command requires an end x/y pair.");
+            }
+
+            const math::Vec2 segmentStart = current;
+            const bool followsQuadratic =
+                previousCommand == 'Q' || previousCommand == 'q' ||
+                previousCommand == 'T' || previousCommand == 't';
+
+            // SVG仕様では直前がQ/T系のときだけ前制御点を現在点の反対側へ鏡映します。
+            // それ以外では現在点自身が制御点となり、暗黙制御点を過去の無関係な曲線から引き継ぎません。
+            const math::Vec2 control = followsQuadratic == true
+                ? ReflectControlPoint(segmentStart, previousQuadraticControl)
+                : segmentStart;
+            math::Vec2 end(endX, endY);
+            if (command == 't')
+            {
+                end.x += segmentStart.x;
+                end.y += segmentStart.y;
+            }
+
+            TessellateQuadraticBezier(segmentStart, control, end, 0u, outPoints);
+            current = end;
+            previousQuadraticControl = control;
+            previousCommand = command;
             continue;
         }
 
@@ -425,14 +460,51 @@ bool ParsePath(
                 end.y += segmentStart.y;
             }
 
-            TessellateCubicBezier(
-                segmentStart,
-                control1,
-                control2,
-                end,
-                0u,
-                outPoints);
+            TessellateCubicBezier(segmentStart, control1, control2, end, 0u, outPoints);
             current = end;
+            previousCubicControl = control2;
+            previousCommand = command;
+            continue;
+        }
+
+        if (command == 'S' || command == 's')
+        {
+            float control2X = 0.0f;
+            float control2Y = 0.0f;
+            float endX = 0.0f;
+            float endY = 0.0f;
+            if (TryReadNumber(data, cursor, control2X) == false ||
+                TryReadNumber(data, cursor, control2Y) == false ||
+                TryReadNumber(data, cursor, endX) == false ||
+                TryReadNumber(data, cursor, endY) == false)
+            {
+                return fail("SVG path S command requires control2 and end x/y pairs.");
+            }
+
+            const math::Vec2 segmentStart = current;
+            const bool followsCubic =
+                previousCommand == 'C' || previousCommand == 'c' ||
+                previousCommand == 'S' || previousCommand == 's';
+
+            // Sの第1制御点は直前がC/S系の場合だけ第2制御点を鏡映して生成します。
+            // 直前が別commandなら現在点を使うため、SVGのsmooth curve規則と一致します。
+            const math::Vec2 control1 = followsCubic == true
+                ? ReflectControlPoint(segmentStart, previousCubicControl)
+                : segmentStart;
+            math::Vec2 control2(control2X, control2Y);
+            math::Vec2 end(endX, endY);
+            if (command == 's')
+            {
+                control2.x += segmentStart.x;
+                control2.y += segmentStart.y;
+                end.x += segmentStart.x;
+                end.y += segmentStart.y;
+            }
+
+            TessellateCubicBezier(segmentStart, control1, control2, end, 0u, outPoints);
+            current = end;
+            previousCubicControl = control2;
+            previousCommand = command;
             continue;
         }
     }
@@ -585,8 +657,7 @@ bool AppendOpacityAnimation(
             std::max(document.Animation.GetDuration(), duration));
 
         const auto repeatIt = attributes.find("repeatCount");
-        if (repeatIt != attributes.end() &&
-            repeatIt->second == "indefinite")
+        if (repeatIt != attributes.end() && repeatIt->second == "indefinite")
         {
             document.LoopAnimation = true;
         }
