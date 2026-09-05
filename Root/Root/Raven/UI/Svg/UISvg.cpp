@@ -1,7 +1,7 @@
 #include "Raven/UI/Svg/UISvg.h"
 
+#include "Raven/UI/Document/UIDocument.h"
 #include "Raven/UI/Svg/SvgImporter.h"
-#include "Raven/UI/Svg/SvgPathImporter.h"
 
 #include <utility>
 
@@ -10,20 +10,19 @@ namespace Raven
 
 bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
 {
-    VectorDocument imported;
-    if (SvgImporter::ImportFile(path, imported, outError) == false)
+    SvgImporter importer;
+    UIDocument imported;
+    if (importer.ImportFile(path, imported, outError) == false)
     {
         return false;
     }
 
-    // SVG path command grammarは専用Parserで共通PathElementへ正規化します。
-    // Runtime側はSVG構文を知らず、完成したVectorDocumentだけを受け取ります。
-    if (SvgPathImporter::AppendFilePaths(path, imported, outError) == false)
-    {
-        return false;
-    }
-
-    return SetDocument(std::move(imported), outError);
+    // UIVectorDocumentのUIDocument対応が完了するまでの移行ブリッジです。
+    // SVG固有Parserの統合はImporter側で完結しているため、Runtime側はSVG path grammarを意識しません。
+    imported.Vector.ViewportSize = imported.ViewportSize;
+    imported.Vector.Animation = std::move(imported.Animation);
+    imported.Vector.LoopAnimation = imported.LoopAnimation;
+    return SetDocument(std::move(imported.Vector), outError);
 }
 
 } // namespace Raven
