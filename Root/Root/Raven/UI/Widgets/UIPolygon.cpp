@@ -5,27 +5,65 @@
 namespace Raven
 {
 
-void UIPolygon::SetPoints(std::vector<math::Vec2> points)
+namespace
 {
-    // SVG path/polygonでは閉輪郭を明示するため、先頭頂点を末尾へ再記述する入力があります。
-    // Ear Clippingでは同一点の重複が0面積cornerを作るため、Polygon表現として不要な閉端点だけ正規化します。
-    if (points.size() >= 2u)
+
+void NormalizeClosedContour(std::vector<math::Vec2>& points)
+{
+    if (points.size() < 2u)
     {
-        const float deltaX = points.front().x - points.back().x;
-        const float deltaY = points.front().y - points.back().y;
-        constexpr float kDuplicatePointEpsilonSquared = 0.000001f;
-        if (deltaX * deltaX + deltaY * deltaY <= kDuplicatePointEpsilonSquared)
-        {
-            points.pop_back();
-        }
+        return;
     }
 
-    m_Points = std::move(points);
+    const float deltaX = points.front().x - points.back().x;
+    const float deltaY = points.front().y - points.back().y;
+    constexpr float kDuplicatePointEpsilonSquared = 0.000001f;
+    if (deltaX * deltaX + deltaY * deltaY <= kDuplicatePointEpsilonSquared)
+    {
+        points.pop_back();
+    }
+}
+
+} // namespace
+
+void UIPolygon::SetPoints(std::vector<math::Vec2> points)
+{
+    NormalizeClosedContour(points);
+    m_Contours.clear();
+    if (points.empty() == false)
+    {
+        m_Contours.push_back(std::move(points));
+    }
 }
 
 const std::vector<math::Vec2>& UIPolygon::GetPoints() const
 {
-    return m_Points;
+    static const std::vector<math::Vec2> empty;
+    return m_Contours.empty() == true ? empty : m_Contours[0u];
+}
+
+void UIPolygon::SetContours(std::vector<std::vector<math::Vec2>> contours)
+{
+    for (std::vector<math::Vec2>& contour : contours)
+    {
+        NormalizeClosedContour(contour);
+    }
+    m_Contours = std::move(contours);
+}
+
+const std::vector<std::vector<math::Vec2>>& UIPolygon::GetContours() const
+{
+    return m_Contours;
+}
+
+void UIPolygon::SetFillRule(UIFillRule fillRule)
+{
+    m_FillRule = fillRule;
+}
+
+UIFillRule UIPolygon::GetFillRule() const
+{
+    return m_FillRule;
 }
 
 void UIPolygon::SetFillColor(const math::Vec4& color)
@@ -42,21 +80,44 @@ void UIPolygon::OnBuildDrawList(
     UIDrawList& drawList,
     const math::Vec2& absolutePosition) const
 {
-    if (m_Points.size() < 3u)
+    if (m_Contours.empty() == true)
     {
         return;
     }
 
-    std::vector<math::Vec2> absolutePoints;
-    absolutePoints.reserve(m_Points.size());
-    for (const math::Vec2& point : m_Points)
+    std::vector<std::vector<math::Vec2>> absoluteContours;
+    absoluteContours.reserve(m_Contours.size());
+    for (const std::vector<math::Vec2>& contour : m_Contours)
     {
-        absolutePoints.push_back(math::Vec2(
-            absolutePosition.x + point.x,
-            absolutePosition.y + point.y));
+        if (contour.size() < 3u)
+        {
+            continue;
+        }
+
+        std::vector<math::Vec2> absolutePoints;
+        absolutePoints.reserve(contour.size());
+        for (const math::Vec2& point : contour)
+        {
+            absolutePoints.push_back(math::Vec2(
+                absolutePosition.x + point.x,
+                absolutePosition.y + point.y));
+        }
+        absoluteContours.push_back(std::move(absolutePoints));
     }
 
-    drawList.AddPolygon(absolutePoints, ApplyVisualColor(m_FillColor));
+    if (absoluteContours.empty() == true)
+    {
+        return;
+    }
+
+    const math::Vec4 color = ApplyVisualColor(m_FillColor);
+    if (absoluteContours.size() == 1u)
+    {
+        drawList.AddPolygon(absoluteContours[0u], color);
+        return;
+    }
+
+    drawList.AddCompoundPolygon(absoluteContours, m_FillRule, color);
 }
 
 } // namespace Raven
