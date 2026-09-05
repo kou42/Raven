@@ -118,6 +118,26 @@ UILineCap UIPolygon::GetStrokeLineCap() const
     return m_StrokeLineCap;
 }
 
+void UIPolygon::SetStrokeLineJoin(UILineJoin lineJoin)
+{
+    m_StrokeLineJoin = lineJoin;
+}
+
+UILineJoin UIPolygon::GetStrokeLineJoin() const
+{
+    return m_StrokeLineJoin;
+}
+
+void UIPolygon::SetStrokeMiterLimit(float miterLimit)
+{
+    m_StrokeMiterLimit = miterLimit;
+}
+
+float UIPolygon::GetStrokeMiterLimit() const
+{
+    return m_StrokeMiterLimit;
+}
+
 void UIPolygon::OnBuildDrawList(
     UIDrawList& drawList,
     const math::Vec2& absolutePosition) const
@@ -193,7 +213,9 @@ void UIPolygon::OnBuildDrawList(
             m_StrokeWidth,
             strokeColor,
             closed,
-            m_StrokeLineCap);
+            m_StrokeLineCap,
+            m_StrokeLineJoin,
+            m_StrokeMiterLimit);
     }
 }
 

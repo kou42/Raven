@@ -44,6 +44,12 @@ public:
     void SetStrokeLineCap(UILineCap lineCap);
     UILineCap GetStrokeLineCap() const;
 
+    void SetStrokeLineJoin(UILineJoin lineJoin);
+    UILineJoin GetStrokeLineJoin() const;
+
+    void SetStrokeMiterLimit(float miterLimit);
+    float GetStrokeMiterLimit() const;
+
 protected:
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
@@ -56,6 +62,8 @@ private:
     math::Vec4 m_StrokeColor{ 0.0f, 0.0f, 0.0f, 0.0f };
     float m_StrokeWidth = 1.0f;
     UILineCap m_StrokeLineCap = UILineCap::Butt;
+    UILineJoin m_StrokeLineJoin = UILineJoin::Miter;
+    float m_StrokeMiterLimit = 4.0f;
 };
 
 } // namespace Raven
