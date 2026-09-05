@@ -2,45 +2,29 @@
 
 #include "Raven/UI/Document/IDocumentImporter.h"
 #include "Raven/UI/Document/VectorDocument.h"
-#include "Raven/UI/Svg/SvgPathImporter.h"
 
 #include <string>
-#include <utility>
 
 namespace Raven
 {
 
 // SVG固有の構文解析を担当するImporterです。
-// IDocumentImporter経由ではUIDocumentへ正規化し、Runtime側からSVG固有処理を隠蔽します。
+// 公開境界はUIDocumentへ統一し、Runtime側からSVG固有処理とVectorDocument互換処理を隠蔽します。
 class SvgImporter final : public IDocumentImporter
 {
 public:
-    // 既存SvgImporter内部で使用する低レベルAPIです。
-    // SVGの基本ShapeをVectorDocumentへ変換し、pathはSvgPathImporterが追加します。
-    static bool ImportFile(const std::string& path, VectorDocument& outDocument, std::string* outError = nullptr);
+    bool ImportFile(
+        const std::string& path,
+        UIDocument& outDocument,
+        std::string* outError = nullptr) const override;
 
-    // 新しい共通Importer境界です。
-    // SVGの基本Shapeとpathをここで統合し、呼び出し側が複数Parserを意識しないようにします。
-    bool ImportFile(const std::string& path, UIDocument& outDocument, std::string* outError = nullptr) const override
-    {
-        VectorDocument imported;
-        if (ImportFile(path, imported, outError) == false)
-        {
-            return false;
-        }
-        if (SvgPathImporter::AppendFilePaths(path, imported, outError) == false)
-        {
-            return false;
-        }
-
-        // Viewport/AnimationはDocument共通情報としてUIDocumentへ昇格します。
-        // Vector側の同名情報は既存SvgImporter内部だけの移行用互換データであり、Runtimeは参照しません。
-        outDocument.ViewportSize = imported.ViewportSize;
-        outDocument.Animation = std::move(imported.Animation);
-        outDocument.LoopAnimation = imported.LoopAnimation;
-        outDocument.Vector = std::move(imported);
-        return true;
-    }
+private:
+    // 基本Shapeの解析は既存実装を段階的に移行するため、当面VectorDocumentを内部作業領域として利用します。
+    // このAPIは外部へ公開せず、Viewport/Animationの共通状態はSvgImportContextへ集約します。
+    static bool ImportVectorShapes(
+        const std::string& path,
+        VectorDocument& outDocument,
+        std::string* outError = nullptr);
 };
 
 } // namespace Raven
