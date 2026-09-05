@@ -5,9 +5,311 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace Raven
 {
+
+namespace
+{
+constexpr float kCompoundPolygonEpsilon = 0.00001f;
+constexpr float kCompoundPolygonEpsilonSquared =
+    kCompoundPolygonEpsilon * kCompoundPolygonEpsilon;
+
+struct CompoundScanEdge
+{
+    math::Vec2 Start{};
+    math::Vec2 End{};
+    int WindingDelta = 0;
+};
+
+struct ActiveScanEdge
+{
+    const CompoundScanEdge* Edge = nullptr;
+    float MiddleX = 0.0f;
+};
+
+float DistanceSquared(const math::Vec2& left, const math::Vec2& right)
+{
+    const float dx = left.x - right.x;
+    const float dy = left.y - right.y;
+    return dx * dx + dy * dy;
+}
+
+bool IsSamePoint(const math::Vec2& left, const math::Vec2& right)
+{
+    return DistanceSquared(left, right) <= kCompoundPolygonEpsilonSquared;
+}
+
+float Cross2D(
+    const math::Vec2& a,
+    const math::Vec2& b,
+    const math::Vec2& c)
+{
+    return (b.x - a.x) * (c.y - a.y) -
+        (b.y - a.y) * (c.x - a.x);
+}
+
+std::vector<math::Vec2> NormalizeContour(const std::vector<math::Vec2>& input)
+{
+    std::vector<math::Vec2> result;
+    result.reserve(input.size());
+    for (const math::Vec2& point : input)
+    {
+        if (result.empty() == true || IsSamePoint(result.back(), point) == false)
+        {
+            result.push_back(point);
+        }
+    }
+
+    if (result.size() >= 2u && IsSamePoint(result.front(), result.back()) == true)
+    {
+        result.pop_back();
+    }
+    return result;
+}
+
+float EvaluateEdgeX(const CompoundScanEdge& edge, float y)
+{
+    const float deltaY = edge.End.y - edge.Start.y;
+    if (std::abs(deltaY) <= kCompoundPolygonEpsilon)
+    {
+        return edge.Start.x;
+    }
+
+    const float t = (y - edge.Start.y) / deltaY;
+    return edge.Start.x + (edge.End.x - edge.Start.x) * t;
+}
+
+bool TryFindProperIntersectionY(
+    const CompoundScanEdge& left,
+    const CompoundScanEdge& right,
+    float& outY)
+{
+    const float leftDx = left.End.x - left.Start.x;
+    const float leftDy = left.End.y - left.Start.y;
+    const float rightDx = right.End.x - right.Start.x;
+    const float rightDy = right.End.y - right.Start.y;
+    const float denominator = leftDx * rightDy - leftDy * rightDx;
+    if (std::abs(denominator) <= kCompoundPolygonEpsilon)
+    {
+        return false;
+    }
+
+    const float offsetX = right.Start.x - left.Start.x;
+    const float offsetY = right.Start.y - left.Start.y;
+    const float leftT = (offsetX * rightDy - offsetY * rightDx) / denominator;
+    const float rightT = (offsetX * leftDy - offsetY * leftDx) / denominator;
+
+    // endpoint交差は既に頂点Yがscan boundaryへ入るため、区間内部の交差だけを追加します。
+    if (leftT <= kCompoundPolygonEpsilon ||
+        leftT >= 1.0f - kCompoundPolygonEpsilon ||
+        rightT <= kCompoundPolygonEpsilon ||
+        rightT >= 1.0f - kCompoundPolygonEpsilon)
+    {
+        return false;
+    }
+
+    outY = left.Start.y + leftDy * leftT;
+    return true;
+}
+
+void AppendUniqueScanY(std::vector<float>& values, float value)
+{
+    for (float existing : values)
+    {
+        if (std::abs(existing - value) <= kCompoundPolygonEpsilon)
+        {
+            return;
+        }
+    }
+    values.push_back(value);
+}
+
+bool IsFillStateActive(int value, UIFillRule fillRule)
+{
+    if (fillRule == UIFillRule::EvenOdd)
+    {
+        return (value & 1) != 0;
+    }
+    return value != 0;
+}
+
+void AppendTriangleIfValid(
+    UIDrawList& drawList,
+    const math::Vec2& a,
+    const math::Vec2& b,
+    const math::Vec2& c,
+    const math::Vec4& color)
+{
+    if (std::abs(Cross2D(a, b, c)) <= kCompoundPolygonEpsilon)
+    {
+        return;
+    }
+    drawList.AddPolygon(std::vector<math::Vec2>{ a, b, c }, color);
+}
+
+void TessellateCompoundPolygon(
+    UIDrawList& drawList,
+    const std::vector<std::vector<math::Vec2>>& contours,
+    UIFillRule fillRule,
+    const math::Vec4& color)
+{
+    std::vector<CompoundScanEdge> edges;
+    std::vector<float> scanYValues;
+
+    for (const std::vector<math::Vec2>& sourceContour : contours)
+    {
+        const std::vector<math::Vec2> contour = NormalizeContour(sourceContour);
+        if (contour.size() < 3u)
+        {
+            continue;
+        }
+
+        for (const math::Vec2& point : contour)
+        {
+            AppendUniqueScanY(scanYValues, point.y);
+        }
+
+        for (std::size_t index = 0u; index < contour.size(); ++index)
+        {
+            const math::Vec2& start = contour[index];
+            const math::Vec2& end = contour[(index + 1u) % contour.size()];
+            if (IsSamePoint(start, end) == true ||
+                std::abs(end.y - start.y) <= kCompoundPolygonEpsilon)
+            {
+                // horizontal edgeはscanlineを横切らないためwinding更新には不要です。
+                // ただし両endpointのYは上でscan boundaryへ追加済みなので形状境界は失われません。
+                continue;
+            }
+
+            CompoundScanEdge edge;
+            edge.Start = start;
+            edge.End = end;
+            edge.WindingDelta = end.y > start.y ? 1 : -1;
+            edges.push_back(edge);
+        }
+    }
+
+    if (edges.size() < 2u || scanYValues.size() < 2u)
+    {
+        return;
+    }
+
+    // subpath同士が交差する場合もfill-ruleを正しく評価できるよう、edge交点のYでscan slabを分割します。
+    // これにより各slab内部ではactive edgeの左右順序が変化せず、区間ごとのwinding/parityを安定して追跡できます。
+    for (std::size_t leftIndex = 0u; leftIndex < edges.size(); ++leftIndex)
+    {
+        for (std::size_t rightIndex = leftIndex + 1u; rightIndex < edges.size(); ++rightIndex)
+        {
+            float intersectionY = 0.0f;
+            if (TryFindProperIntersectionY(edges[leftIndex], edges[rightIndex], intersectionY) == true)
+            {
+                AppendUniqueScanY(scanYValues, intersectionY);
+            }
+        }
+    }
+
+    std::sort(scanYValues.begin(), scanYValues.end());
+
+    for (std::size_t slabIndex = 0u; slabIndex + 1u < scanYValues.size(); ++slabIndex)
+    {
+        const float topY = scanYValues[slabIndex];
+        const float bottomY = scanYValues[slabIndex + 1u];
+        if (bottomY - topY <= kCompoundPolygonEpsilon)
+        {
+            continue;
+        }
+
+        const float middleY = (topY + bottomY) * 0.5f;
+        std::vector<ActiveScanEdge> activeEdges;
+        activeEdges.reserve(edges.size());
+        for (const CompoundScanEdge& edge : edges)
+        {
+            const float minY = std::min(edge.Start.y, edge.End.y);
+            const float maxY = std::max(edge.Start.y, edge.End.y);
+            if (middleY <= minY || middleY >= maxY)
+            {
+                continue;
+            }
+
+            ActiveScanEdge active;
+            active.Edge = &edge;
+            active.MiddleX = EvaluateEdgeX(edge, middleY);
+            activeEdges.push_back(active);
+        }
+
+        if (activeEdges.size() < 2u)
+        {
+            continue;
+        }
+
+        std::sort(activeEdges.begin(), activeEdges.end(), [](const ActiveScanEdge& left, const ActiveScanEdge& right)
+        {
+            if (std::abs(left.MiddleX - right.MiddleX) <= kCompoundPolygonEpsilon)
+            {
+                return left.Edge->WindingDelta < right.Edge->WindingDelta;
+            }
+            return left.MiddleX < right.MiddleX;
+        });
+
+        int fillValue = 0;
+        std::size_t groupBegin = 0u;
+        while (groupBegin < activeEdges.size())
+        {
+            std::size_t groupEnd = groupBegin + 1u;
+            while (groupEnd < activeEdges.size() &&
+                std::abs(activeEdges[groupEnd].MiddleX - activeEdges[groupBegin].MiddleX) <= kCompoundPolygonEpsilon)
+            {
+                ++groupEnd;
+            }
+
+            if (fillRule == UIFillRule::EvenOdd)
+            {
+                fillValue ^= static_cast<int>((groupEnd - groupBegin) & 1u);
+            }
+            else
+            {
+                for (std::size_t index = groupBegin; index < groupEnd; ++index)
+                {
+                    fillValue += activeEdges[index].Edge->WindingDelta;
+                }
+            }
+
+            if (groupEnd >= activeEdges.size())
+            {
+                break;
+            }
+
+            std::size_t nextGroupEnd = groupEnd + 1u;
+            while (nextGroupEnd < activeEdges.size() &&
+                std::abs(activeEdges[nextGroupEnd].MiddleX - activeEdges[groupEnd].MiddleX) <= kCompoundPolygonEpsilon)
+            {
+                ++nextGroupEnd;
+            }
+
+            if (IsFillStateActive(fillValue, fillRule) == true)
+            {
+                const CompoundScanEdge& leftEdge = *activeEdges[groupBegin].Edge;
+                const CompoundScanEdge& rightEdge = *activeEdges[groupEnd].Edge;
+                const math::Vec2 topLeft(EvaluateEdgeX(leftEdge, topY), topY);
+                const math::Vec2 topRight(EvaluateEdgeX(rightEdge, topY), topY);
+                const math::Vec2 bottomRight(EvaluateEdgeX(rightEdge, bottomY), bottomY);
+                const math::Vec2 bottomLeft(EvaluateEdgeX(leftEdge, bottomY), bottomY);
+
+                // 1 scan slab内のfilled intervalは左右2本の線形edgeで囲まれる台形です。
+                // 2 triangleへ分解して既存SolidPolygon commandへ落とすため、OpenGL backendへSVG固有概念を追加しません。
+                AppendTriangleIfValid(drawList, topLeft, topRight, bottomRight, color);
+                AppendTriangleIfValid(drawList, bottomRight, bottomLeft, topLeft, color);
+            }
+
+            groupBegin = groupEnd;
+            static_cast<void>(nextGroupEnd);
+        }
+    }
+}
+
+} // namespace
 
 UIClipRect UIClipRect::Disabled()
 {
@@ -36,8 +338,6 @@ UIClipRect UIClipRect::Intersect(const UIClipRect& inheritedClip, const UIRect& 
     result.Rect.Max.x = std::min(inheritedClip.Rect.Max.x, rect.Max.x);
     result.Rect.Max.y = std::min(inheritedClip.Rect.Max.y, rect.Max.y);
 
-    // Clipが交差しない場合もEnabled状態を維持し、面積0のScissorとして表現します。
-    // これによりDescendant側で「Clipなし」と「完全にClipされた状態」を区別できます。
     if (result.Rect.Max.x < result.Rect.Min.x)
     {
         result.Rect.Max.x = result.Rect.Min.x;
@@ -80,8 +380,6 @@ UITransform2D UITransform2D::CreateScaleRotation(
     result.M01 = -sine * scale.y;
     result.M10 = sine * scale.x;
     result.M11 = cosine * scale.y;
-
-    // pivotを不変点にするため、T(pivot) * R * S * T(-pivot) のTranslationを展開します。
     result.Translation.x = pivot.x - (result.M00 * pivot.x + result.M01 * pivot.y);
     result.Translation.y = pivot.y - (result.M10 * pivot.x + result.M11 * pivot.y);
     return result;
@@ -92,14 +390,10 @@ UITransform2D UITransform2D::Combine(
     const UITransform2D& local)
 {
     UITransform2D result;
-
-    // parent(local(point)) を直接展開します。
-    // Rotation / 非一様Scaleの組み合わせでShearが発生しても2x2線形部へそのまま保持できます。
     result.M00 = parent.M00 * local.M00 + parent.M01 * local.M10;
     result.M01 = parent.M00 * local.M01 + parent.M01 * local.M11;
     result.M10 = parent.M10 * local.M00 + parent.M11 * local.M10;
     result.M11 = parent.M10 * local.M01 + parent.M11 * local.M11;
-
     result.Translation.x =
         parent.M00 * local.Translation.x +
         parent.M01 * local.Translation.y +
@@ -146,7 +440,6 @@ bool UITransform2D::TryInverseTransformPoint(
     const float translatedX = point.x - Translation.x;
     const float translatedY = point.y - Translation.y;
     const float inverseDeterminant = 1.0f / determinant;
-
     outPoint.x = (M11 * translatedX - M01 * translatedY) * inverseDeterminant;
     outPoint.y = (-M10 * translatedX + M00 * translatedY) * inverseDeterminant;
     return true;
@@ -162,9 +455,6 @@ void UIDrawList::AddRect(
     const math::Vec2& max,
     const math::Vec4& color)
 {
-    // 面積0以下の矩形は描画対象にしません。
-    // Layout計算中の非表示Elementや、Window最小化時の0 sizeがそのままRendererへ
-    // 流れ込むことを避けます。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
@@ -183,8 +473,6 @@ void UIDrawList::AddCircle(
     const math::Vec2& max,
     const math::Vec4& color)
 {
-    // CircleもLayout上はBoundsを持つため、面積0以下なら描画Commandを生成しません。
-    // Tessellation分割数やGPU APIはDrawListへ持ち込まず、Renderer backendの責務とします。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
@@ -211,9 +499,6 @@ void UIDrawList::AddPolygon(
     command.Type = UIDrawCommandType::SolidPolygon;
     command.Color = color;
     command.Points = points;
-
-    // Polygonは任意頂点列を持つため、Clip/診断に使える保守的BoundsをCPU側で同時に保持します。
-    // 三角形化そのものはRenderer backendへ残し、DrawListはGPU APIにもtessellation方式にも依存しません。
     command.Rect.Min = points[0u];
     command.Rect.Max = points[0u];
     for (const math::Vec2& point : points)
@@ -227,6 +512,14 @@ void UIDrawList::AddPolygon(
     m_Commands.push_back(std::move(command));
 }
 
+void UIDrawList::AddCompoundPolygon(
+    const std::vector<std::vector<math::Vec2>>& contours,
+    UIFillRule fillRule,
+    const math::Vec4& color)
+{
+    TessellateCompoundPolygon(*this, contours, fillRule, color);
+}
+
 void UIDrawList::AddImage(
     const math::Vec2& min,
     const math::Vec2& max,
@@ -235,15 +528,10 @@ void UIDrawList::AddImage(
     const math::Vec2& uvMin,
     const math::Vec2& uvMax)
 {
-    // SolidRectと同様、面積0以下のImage CommandはRendererへ流しません。
-    // Layout中の0 sizeやWindow最小化時にも不要なDraw Callを生成しないためです。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
     }
-
-    // WidgetからRenderer IDを直接渡さず、Runtime Assetの有効性だけをUI Coreで確認します。
-    // GPU Resourceの解決とBindはUIRenderer backendの責務です。
     if (texture == nullptr || texture->IsValid() == false)
     {
         return;
@@ -267,8 +555,6 @@ void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& t
         return;
     }
 
-    // Element単位のWorld Transformは、そのElementが生成したCommandだけへ付与します。
-    // ChildはUIElement再帰側でParent World Transformと自身のLocal Transformを合成してから別途設定します。
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
         m_Commands[index].Transform = transform;

@@ -8,11 +8,103 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <regex>
+#include <sstream>
 #include <utility>
 #include <vector>
 
 namespace Raven
 {
+
+namespace
+{
+
+bool ReadSvgSource(const std::string& path, std::string& outSource)
+{
+    std::ifstream stream(path, std::ios::binary);
+    if (stream.is_open() == false)
+    {
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    outSource = buffer.str();
+    return true;
+}
+
+bool ApplyPathFillRulesFromSource(
+    const std::string& path,
+    SvgDocument& document,
+    std::string* outError)
+{
+    std::string source;
+    if (ReadSvgSource(path, source) == false)
+    {
+        if (outError != nullptr)
+        {
+            *outError = "Failed to open SVG file while importing path fill-rule: " + path;
+        }
+        return false;
+    }
+
+    const std::regex pathRegex(
+        R"(<path\b([^>]*?)(?:/>|>([\s\S]*?)</path>))",
+        std::regex::icase);
+    const std::regex fillRuleRegex(
+        R"REGEX(\bfill-rule\s*=\s*"([^"]*)")REGEX",
+        std::regex::icase);
+
+    std::size_t pathIndex = 0u;
+    for (std::sregex_iterator it(source.begin(), source.end(), pathRegex), end; it != end; ++it)
+    {
+        if (pathIndex >= document.Paths.size())
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG path fill-rule source count does not match imported paths.";
+            }
+            return false;
+        }
+
+        const std::string attributes = (*it)[1].str();
+        std::smatch fillRuleMatch;
+        if (std::regex_search(attributes, fillRuleMatch, fillRuleRegex) == true)
+        {
+            const std::string value = fillRuleMatch[1].str();
+            if (value == "nonzero")
+            {
+                document.Paths[pathIndex].FillRule = SvgFillRule::NonZero;
+            }
+            else if (value == "evenodd")
+            {
+                document.Paths[pathIndex].FillRule = SvgFillRule::EvenOdd;
+            }
+            else
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path fill-rule must be nonzero or evenodd: " + value;
+                }
+                return false;
+            }
+        }
+        ++pathIndex;
+    }
+
+    if (pathIndex != document.Paths.size())
+    {
+        if (outError != nullptr)
+        {
+            *outError = "SVG path fill-rule source count does not match imported paths.";
+        }
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
 {
@@ -25,6 +117,10 @@ bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
     // path command grammarは専用ParserでPolylineへ正規化します。
     // 既存shape Importerと同じSvgDocumentへ追加し、SourceOffsetで描画順を再統合します。
     if (SvgPathImporter::AppendFilePaths(path, imported, outError) == false)
+    {
+        return false;
+    }
+    if (ApplyPathFillRulesFromSource(path, imported, outError) == false)
     {
         return false;
     }
@@ -188,20 +284,8 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
                 ClearChildren(); return false;
             }
 
-            const math::Vec2 pathSize(max.x - min.x, max.y - min.y);
-            auto pathContainer = CreateScope<UIPanel>();
-            if (pathContainer->SetName(data.Name) == false)
-            {
-                if (outError != nullptr) { *outError = "SVG element name is invalid: " + data.Name; }
-                ClearChildren(); return false;
-            }
-            pathContainer->SetPosition(min);
-            pathContainer->SetSize(pathSize);
-            pathContainer->SetBackgroundColor(math::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
-
-            // 1つのSVG path名を親Containerへ割り当てることで、opacity animation等は従来どおり
-            // path全体へ適用されます。各subpathは同じ座標原点を共有する子UIPolygonとして描画します。
-            // 現段階では各輪郭を独立fillするため、穴抜きの最終判定は次のfill-rule対応で統合します。
+            std::vector<std::vector<math::Vec2>> localContours;
+            localContours.reserve(data.Subpaths.size());
             for (const std::vector<math::Vec2>& subpath : data.Subpaths)
             {
                 std::vector<math::Vec2> localPoints;
@@ -210,19 +294,27 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
                 {
                     localPoints.push_back(math::Vec2(point.x - min.x, point.y - min.y));
                 }
-
-                auto polygon = CreateScope<UIPolygon>();
-                polygon->SetPosition(math::Vec2(0.0f, 0.0f));
-                polygon->SetSize(pathSize);
-                polygon->SetPoints(std::move(localPoints));
-                polygon->SetFillColor(data.FillColor);
-                if (pathContainer->AddChild(std::move(polygon)) == nullptr)
-                {
-                    if (outError != nullptr) { *outError = "Failed to attach SVG path subpath to runtime container."; }
-                    ClearChildren(); return false;
-                }
+                localContours.push_back(std::move(localPoints));
             }
-            element = std::move(pathContainer);
+
+            auto widget = CreateScope<UIPolygon>();
+            if (widget->SetName(data.Name) == false)
+            {
+                if (outError != nullptr) { *outError = "SVG element name is invalid: " + data.Name; }
+                ClearChildren(); return false;
+            }
+
+            // 1つのpathを1つのcompound polygonとしてDrawListへ渡し、subpath間の内外関係を保持します。
+            // SVGのfill-ruleだけをUIFillRuleへ変換し、winding判定・穴付き三角形化はUIDrawList側へ委譲します。
+            widget->SetPosition(min);
+            widget->SetSize(math::Vec2(max.x - min.x, max.y - min.y));
+            widget->SetContours(std::move(localContours));
+            widget->SetFillRule(
+                data.FillRule == SvgFillRule::EvenOdd
+                    ? UIFillRule::EvenOdd
+                    : UIFillRule::NonZero);
+            widget->SetFillColor(data.FillColor);
+            element = std::move(widget);
         }
 
         if (element == nullptr)
