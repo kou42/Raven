@@ -8,19 +8,26 @@
 namespace Raven
 {
 
+enum class UIFillRule;
+
 // ============================================================================
 // UIPolygon
 // ============================================================================
 // Raven UIの汎用塗りつぶしPolygon Widgetです。
 //
-// PointsはElement左上を原点とするLocal座標で保持します。SVG専用型にはせず、
-// Editor Overlayや将来のVector Path tessellation結果からも同じDrawList経路を利用できます。
-// 三角形化アルゴリズムはWidgetへ持ち込まずRenderer backend側へ閉じ込めます。
+// 単一輪郭は従来どおりSetPoints()で扱い、複数輪郭はSetContours()でcompound polygonとして保持します。
+// fill-ruleの解決や穴付き三角形化はWidgetへ持ち込まずUIDrawListへ委譲します。
 class UIPolygon final : public UIElement
 {
 public:
     void SetPoints(std::vector<math::Vec2> points);
     const std::vector<math::Vec2>& GetPoints() const;
+
+    void SetContours(std::vector<std::vector<math::Vec2>> contours);
+    const std::vector<std::vector<math::Vec2>>& GetContours() const;
+
+    void SetFillRule(UIFillRule fillRule);
+    UIFillRule GetFillRule() const;
 
     void SetFillColor(const math::Vec4& color);
     const math::Vec4& GetFillColor() const;
@@ -29,7 +36,8 @@ protected:
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
-    std::vector<math::Vec2> m_Points;
+    std::vector<std::vector<math::Vec2>> m_Contours;
+    UIFillRule m_FillRule;
     math::Vec4 m_FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
