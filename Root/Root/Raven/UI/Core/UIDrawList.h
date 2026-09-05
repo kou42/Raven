@@ -11,14 +11,6 @@ namespace Raven
 
 class TextureAsset;
 
-// ============================================================================
-// UIDrawCommandType
-// ============================================================================
-// UIContextが生成する描画要求の種類です。
-//
-// Widget側へGPU実装を漏らさず、Rect / Circle / Polygon / Imageの幾何生成はRenderer backendへ集約します。
-// Text / Border / Path等も今後このコマンド列へ追加していきます。
-// ImageもGPU Texture IDではなくTextureAssetを参照し、UI層からRenderer API固有値を排除します。
 enum class UIDrawCommandType
 {
     SolidRect,
@@ -27,23 +19,18 @@ enum class UIDrawCommandType
     Image
 };
 
-// ============================================================================
-// UIRect
-// ============================================================================
-// UI座標系上の矩形です。
-// Minを左上、Maxを右下として扱い、座標単位はpixelを基本とします。
+enum class UIFillRule
+{
+    NonZero,
+    EvenOdd
+};
+
 struct UIRect
 {
     math::Vec2 Min{};
     math::Vec2 Max{};
 };
 
-// ============================================================================
-// UIClipRect
-// ============================================================================
-// Draw Commandへ継承するscreen-spaceのaxis-aligned Clipです。
-// OpenGL Scissorへ直接変換できる表現に限定し、回転・ShearしたElementのClipは
-// Transform後4頂点を包含するAABBとして扱います。
 struct UIClipRect
 {
     UIRect Rect{};
@@ -56,12 +43,6 @@ struct UIClipRect
     bool Contains(const math::Vec2& point) const;
 };
 
-// ============================================================================
-// UITransform2D
-// ============================================================================
-// Layout後のUI座標へ適用する2D Affine Transformです。
-// 2x2線形部 + Translationで保持するため、親の非一様Scaleと子Rotationを合成した際に生じる
-// Shear成分も失わず表現できます。LayoutのDesiredSize / Arrange結果自体は変更しません。
 struct UITransform2D
 {
     float M00 = 1.0f;
@@ -72,46 +53,23 @@ struct UITransform2D
 
     static UITransform2D Identity();
 
-    // pivotを画面上の不変点として、Scale -> Rotationの順に適用するTransformを生成します。
     static UITransform2D CreateScaleRotation(
         const math::Vec2& pivot,
         float rotation,
         const math::Vec2& scale);
 
-    // parent(local(point)) の順で適用されるWorld Transformを返します。
     static UITransform2D Combine(
         const UITransform2D& parent,
         const UITransform2D& local);
 
     math::Vec2 TransformPoint(const math::Vec2& point) const;
-
-    // Rectの4頂点をTransformし、それらを包含するscreen-space AABBを返します。
-    // Scissorはaxis-aligned矩形しか表現できないため、回転・Shear Clipの保守的境界として利用します。
     UIRect TransformRectBounds(const UIRect& rect) const;
 
-    // Screen/World座標をTransform適用前の座標へ戻します。
-    // 行列式0のTransformは逆変換できないためfalseを返します。
     bool TryInverseTransformPoint(
         const math::Vec2& point,
         math::Vec2& outPoint) const;
 };
 
-// ============================================================================
-// UIDrawCommand
-// ============================================================================
-// UI Tree / WidgetからRenderer backendへ渡す、GPU API非依存の描画要求です。
-//
-// 重要:
-// この構造体へOpenGLのTexture IDやVertexArray等を直接持たせないことで、
-// Editor UIとGame UIのどちらから利用してもPlatform Rendererへ依存しない境界を保ちます。
-// Circleも中心/radiusではなくLayout済みBoundsを保持し、Transformの適用責務を既存Commandと統一します。
-// Polygonは任意頂点列だけを保持し、三角形化アルゴリズムはRenderer backendへ閉じ込めます。
-// ImageではEngine側のTextureAssetを保持し、OpenGL固有値への解決はUIRenderer実装でのみ行います。
-// TextureAssetのRefをframe中保持することで、DrawListが参照しているRuntime Textureの寿命も保証します。
-//
-// Raven UIのnormalized UVは左上原点です。
-// UV=(0, 0)を画像左上、UV=(1, 1)を画像右下とし、Vは下方向へ増加します。
-// OpenGL等のnative Texture座標との差はUIRenderer backendが変換するため、Widget側ではAPI差を扱いません。
 struct UIDrawCommand
 {
     UIDrawCommandType Type = UIDrawCommandType::SolidRect;
@@ -125,14 +83,10 @@ struct UIDrawCommand
     Ref<TextureAsset> Texture;
 };
 
-// ============================================================================
-// UIDrawList
-// ============================================================================
 // 1 UI frame分の描画要求をCPU側へ蓄積します。
-//
-// ImGuiと同様に最終的な描画データはframeごとに再構築しますが、UIElementそのものは
-// Retained Modeとして別途保持できるよう、DrawListはUI Treeの所有権を一切持ちません。
-// これにより、将来のLayout / HitTest / Event処理とRenderingを分離できます。
+// 通常のsimple polygonは従来どおりRenderer backendで三角形化します。
+// Compound polygonだけはfill-ruleを解決するため、DrawListで輪郭関係を解析してTriangle単位へ正規化します。
+// fill-ruleはGPU API固有ではないPath semanticsなので、この境界で解決することでSVG固有知識をRendererへ持ち込みません。
 class UIDrawList
 {
 public:
@@ -143,21 +97,22 @@ public:
         const math::Vec2& max,
         const math::Vec4& color);
 
-    // min/maxで指定したBoundsへ円を内接させます。
-    // 非正方形BoundsはRenderer側で楕円としてtessellationされるため、Transform/Animationと自然に合成できます。
     void AddCircle(
         const math::Vec2& min,
         const math::Vec2& max,
         const math::Vec4& color);
 
-    // simple polygonの頂点列をそのまま保持します。
-    // Convex/Concaveの三角形化はRenderer backendが行い、Widget側へtessellation知識を漏らしません。
     void AddPolygon(
         const std::vector<math::Vec2>& points,
         const math::Vec4& color);
 
-    // uvMin / uvMaxもRaven UIの左上原点UV規約で指定します。
-    // 画像全体を表示する既定値は左上(0, 0)から右下(1, 1)です。
+    // 複数の閉輪郭をnonzero/evenodd規則で1つの塗り領域として解釈します。
+    // 穴を含むためsimple polygon commandへ直接表現できず、CPU側でfilled regionをTriangleへ分解して追加します。
+    void AddCompoundPolygon(
+        const std::vector<std::vector<math::Vec2>>& contours,
+        UIFillRule fillRule,
+        const math::Vec4& color);
+
     void AddImage(
         const math::Vec2& min,
         const math::Vec2& max,
@@ -166,12 +121,7 @@ public:
         const math::Vec2& uvMin = math::Vec2{ 0.0f, 0.0f },
         const math::Vec2& uvMax = math::Vec2{ 1.0f, 1.0f });
 
-    // 直前に追加されたCommandへElementのWorld Visual Transformを付与します。
-    // WidgetのOnBuildDrawList()が複数Commandを追加する場合にも対応できるよう、範囲指定で適用します。
     void ApplyTransform(std::size_t firstCommand, const UITransform2D& transform);
-
-    // 直前に追加されたCommandへAncestorから継承したClipを付与します。
-    // Element自身のClipChildrenはSelf描画ではなくDescendantへ適用するため、呼び出し側で適用範囲を分けます。
     void ApplyClip(std::size_t firstCommand, const UIClipRect& clip);
 
     const std::vector<UIDrawCommand>& GetCommands() const;
