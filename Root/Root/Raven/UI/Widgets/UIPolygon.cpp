@@ -34,6 +34,7 @@ void UIPolygon::SetPoints(std::vector<math::Vec2> points)
     {
         m_Contours.push_back(std::move(points));
     }
+    m_UseCompoundFill = false;
 }
 
 const std::vector<math::Vec2>& UIPolygon::GetPoints() const
@@ -49,6 +50,7 @@ void UIPolygon::SetContours(std::vector<std::vector<math::Vec2>> contours)
         NormalizeClosedContour(contour);
     }
     m_Contours = std::move(contours);
+    m_UseCompoundFill = true;
 }
 
 const std::vector<std::vector<math::Vec2>>& UIPolygon::GetContours() const
@@ -111,13 +113,14 @@ void UIPolygon::OnBuildDrawList(
     }
 
     const math::Vec4 color = ApplyVisualColor(m_FillColor);
-    if (absoluteContours.size() == 1u)
+    if (m_UseCompoundFill == true)
     {
-        drawList.AddPolygon(absoluteContours[0u], color);
+        // SVG pathは輪郭数1でも自己交差時にfill-ruleの結果が変わるため、常にcompound経路を使います。
+        drawList.AddCompoundPolygon(absoluteContours, m_FillRule, color);
         return;
     }
 
-    drawList.AddCompoundPolygon(absoluteContours, m_FillRule, color);
+    drawList.AddPolygon(absoluteContours[0u], color);
 }
 
 } // namespace Raven
