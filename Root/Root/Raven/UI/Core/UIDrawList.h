@@ -124,7 +124,7 @@ public:
         bool closed = false,
         UILineCap lineCap = UILineCap::Butt)
     {
-        if (points.size() < 2u || strokeWidth <= 0.0f)
+        if (points.empty() == true || strokeWidth <= 0.0f)
         {
             return;
         }
@@ -133,8 +133,31 @@ public:
         constexpr std::size_t kRoundCapSegmentCount = 12u;
         constexpr float kPi = 3.14159265358979323846f;
         const float halfWidth = strokeWidth * 0.5f;
-        const std::size_t segmentCount = closed == true ? points.size() : points.size() - 1u;
 
+        // movetoだけのzero-length open subpathでもround/square capは可視になります。
+        // buttは面積を持たないため何も生成しません。closed側はcap概念を持たないので同様に描画しません。
+        if (points.size() == 1u)
+        {
+            if (closed == true || lineCap == UILineCap::Butt)
+            {
+                return;
+            }
+
+            const math::Vec2& center = points[0u];
+            const math::Vec2 min(center.x - halfWidth, center.y - halfWidth);
+            const math::Vec2 max(center.x + halfWidth, center.y + halfWidth);
+            if (lineCap == UILineCap::Round)
+            {
+                AddCircle(min, max, color);
+            }
+            else
+            {
+                AddRect(min, max, color);
+            }
+            return;
+        }
+
+        const std::size_t segmentCount = closed == true ? points.size() : points.size() - 1u;
         std::size_t firstValidSegment = segmentCount;
         std::size_t lastValidSegment = segmentCount;
         for (std::size_t index = 0u; index < segmentCount; ++index)
@@ -209,13 +232,15 @@ public:
             const math::Vec2& center,
             const math::Vec2& outwardTangent)
         {
-            const float baseAngle = std::atan2(outwardTangent.y, outwardTangent.x) - kPi * 0.5f;
-            for (std::size_t index = 0u; index < kRoundCapSegmentCount; ++index)
+            constexpr std::size_t roundCapSegmentCount = 12u;
+            constexpr float pi = 3.14159265358979323846f;
+            const float baseAngle = std::atan2(outwardTangent.y, outwardTangent.x) - pi * 0.5f;
+            for (std::size_t index = 0u; index < roundCapSegmentCount; ++index)
             {
-                const float t0 = static_cast<float>(index) / static_cast<float>(kRoundCapSegmentCount);
-                const float t1 = static_cast<float>(index + 1u) / static_cast<float>(kRoundCapSegmentCount);
-                const float angle0 = baseAngle + kPi * t0;
-                const float angle1 = baseAngle + kPi * t1;
+                const float t0 = static_cast<float>(index) / static_cast<float>(roundCapSegmentCount);
+                const float t1 = static_cast<float>(index + 1u) / static_cast<float>(roundCapSegmentCount);
+                const float angle0 = baseAngle + pi * t0;
+                const float angle1 = baseAngle + pi * t1;
 
                 std::vector<math::Vec2> triangle;
                 triangle.reserve(3u);
