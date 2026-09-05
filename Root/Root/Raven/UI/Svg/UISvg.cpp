@@ -8,11 +8,96 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <regex>
+#include <sstream>
 #include <utility>
 #include <vector>
 
 namespace Raven
 {
+
+namespace
+{
+
+bool ApplyPathLineCapsFromSource(
+    const std::string& path,
+    SvgDocument& document,
+    std::string* outError)
+{
+    std::ifstream stream(path, std::ios::binary);
+    if (stream.is_open() == false)
+    {
+        if (outError != nullptr)
+        {
+            *outError = "Failed to open SVG file while importing stroke-linecap: " + path;
+        }
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    const std::string source = buffer.str();
+    const std::regex pathRegex(
+        R"(<path\b([^>]*?)(?:/>|>([\s\S]*?)</path>))",
+        std::regex::icase);
+    const std::regex lineCapRegex(
+        R"REGEX(\bstroke-linecap\s*=\s*"([^"]*)")REGEX",
+        std::regex::icase);
+
+    std::size_t pathIndex = 0u;
+    for (std::sregex_iterator it(source.begin(), source.end(), pathRegex), end; it != end; ++it)
+    {
+        if (pathIndex >= document.Paths.size())
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG stroke-linecap source count does not match imported paths.";
+            }
+            return false;
+        }
+
+        std::smatch lineCapMatch;
+        const std::string attributes = (*it)[1].str();
+        if (std::regex_search(attributes, lineCapMatch, lineCapRegex) == true)
+        {
+            const std::string value = lineCapMatch[1].str();
+            if (value == "butt")
+            {
+                document.Paths[pathIndex].StrokeLineCap = SvgLineCap::Butt;
+            }
+            else if (value == "round")
+            {
+                document.Paths[pathIndex].StrokeLineCap = SvgLineCap::Round;
+            }
+            else if (value == "square")
+            {
+                document.Paths[pathIndex].StrokeLineCap = SvgLineCap::Square;
+            }
+            else
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path stroke-linecap must be butt, round or square: " + value;
+                }
+                return false;
+            }
+        }
+        ++pathIndex;
+    }
+
+    if (pathIndex != document.Paths.size())
+    {
+        if (outError != nullptr)
+        {
+            *outError = "SVG stroke-linecap source count does not match imported paths.";
+        }
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
 {
@@ -25,6 +110,10 @@ bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
     // path command grammarとpath固有styleは専用Importerで正規化します。
     // 既存shape Importerと同じSvgDocumentへ追加し、SourceOffsetで描画順を再統合します。
     if (SvgPathImporter::AppendFilePaths(path, imported, outError) == false)
+    {
+        return false;
+    }
+    if (ApplyPathLineCapsFromSource(path, imported, outError) == false)
     {
         return false;
     }
@@ -220,6 +309,12 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
             widget->SetFillColor(data.FillColor);
             widget->SetStrokeColor(data.StrokeColor);
             widget->SetStrokeWidth(data.StrokeWidth);
+            widget->SetStrokeLineCap(
+                data.StrokeLineCap == SvgLineCap::Round
+                    ? UILineCap::Round
+                    : data.StrokeLineCap == SvgLineCap::Square
+                        ? UILineCap::Square
+                        : UILineCap::Butt);
             element = std::move(widget);
         }
 
