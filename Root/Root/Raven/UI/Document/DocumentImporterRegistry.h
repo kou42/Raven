@@ -18,6 +18,7 @@ public:
     using ImporterFactory = std::function<std::unique_ptr<IDocumentImporter>()>;
 
     bool Register(const std::string& extension, ImporterFactory factory);
+    bool Unregister(const std::string& extension);
     bool Contains(const std::string& extension) const;
     std::unique_ptr<IDocumentImporter> Create(const std::string& extension) const;
 
