@@ -3,11 +3,552 @@
 #include "Raven/Assets/TextureAsset.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace Raven
 {
+
+namespace
+{
+constexpr float kCompoundPolygonEpsilon = 0.00001f;
+constexpr float kCompoundPolygonEpsilonSquared =
+    kCompoundPolygonEpsilon * kCompoundPolygonEpsilon;
+constexpr std::size_t kInvalidContourIndex = static_cast<std::size_t>(-1);
+
+enum class CompoundBoundaryKind
+{
+    None,
+    Outer,
+    Hole
+};
+
+struct CompoundContourInfo
+{
+    std::vector<math::Vec2> Points;
+    float SignedArea = 0.0f;
+    std::size_t Parent = kInvalidContourIndex;
+    int InsideValue = 0;
+    bool OutsideFilled = false;
+    bool InsideFilled = false;
+    CompoundBoundaryKind BoundaryKind = CompoundBoundaryKind::None;
+};
+
+float DistanceSquared(const math::Vec2& left, const math::Vec2& right)
+{
+    const float dx = left.x - right.x;
+    const float dy = left.y - right.y;
+    return dx * dx + dy * dy;
+}
+
+bool IsSamePoint(const math::Vec2& left, const math::Vec2& right)
+{
+    return DistanceSquared(left, right) <= kCompoundPolygonEpsilonSquared;
+}
+
+float Cross2D(
+    const math::Vec2& a,
+    const math::Vec2& b,
+    const math::Vec2& c)
+{
+    return (b.x - a.x) * (c.y - a.y) -
+        (b.y - a.y) * (c.x - a.x);
+}
+
+float CalculateSignedArea(const std::vector<math::Vec2>& points)
+{
+    float doubledArea = 0.0f;
+    for (std::size_t index = 0u; index < points.size(); ++index)
+    {
+        const math::Vec2& current = points[index];
+        const math::Vec2& next = points[(index + 1u) % points.size()];
+        doubledArea += current.x * next.y - next.x * current.y;
+    }
+    return doubledArea * 0.5f;
+}
+
+std::vector<math::Vec2> NormalizeContour(const std::vector<math::Vec2>& input)
+{
+    std::vector<math::Vec2> result;
+    result.reserve(input.size());
+    for (const math::Vec2& point : input)
+    {
+        if (result.empty() == true || IsSamePoint(result.back(), point) == false)
+        {
+            result.push_back(point);
+        }
+    }
+
+    if (result.size() >= 2u && IsSamePoint(result.front(), result.back()) == true)
+    {
+        result.pop_back();
+    }
+    return result;
+}
+
+bool IsPointOnSegment(
+    const math::Vec2& point,
+    const math::Vec2& start,
+    const math::Vec2& end)
+{
+    if (std::abs(Cross2D(start, end, point)) > kCompoundPolygonEpsilon)
+    {
+        return false;
+    }
+
+    const float minX = std::min(start.x, end.x) - kCompoundPolygonEpsilon;
+    const float maxX = std::max(start.x, end.x) + kCompoundPolygonEpsilon;
+    const float minY = std::min(start.y, end.y) - kCompoundPolygonEpsilon;
+    const float maxY = std::max(start.y, end.y) + kCompoundPolygonEpsilon;
+    return point.x >= minX && point.x <= maxX &&
+        point.y >= minY && point.y <= maxY;
+}
+
+bool IsPointInsidePolygon(
+    const math::Vec2& point,
+    const std::vector<math::Vec2>& polygon)
+{
+    bool inside = false;
+    for (std::size_t index = 0u, previous = polygon.size() - 1u;
+        index < polygon.size();
+        previous = index++)
+    {
+        const math::Vec2& a = polygon[previous];
+        const math::Vec2& b = polygon[index];
+        if (IsPointOnSegment(point, a, b) == true)
+        {
+            return true;
+        }
+
+        const bool crossesY = (a.y > point.y) != (b.y > point.y);
+        if (crossesY == true)
+        {
+            const float intersectionX =
+                (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x;
+            if (point.x < intersectionX)
+            {
+                inside = inside == false;
+            }
+        }
+    }
+    return inside;
+}
+
+bool SegmentsIntersect(
+    const math::Vec2& a0,
+    const math::Vec2& a1,
+    const math::Vec2& b0,
+    const math::Vec2& b1)
+{
+    const float c0 = Cross2D(a0, a1, b0);
+    const float c1 = Cross2D(a0, a1, b1);
+    const float c2 = Cross2D(b0, b1, a0);
+    const float c3 = Cross2D(b0, b1, a1);
+
+    if (((c0 > kCompoundPolygonEpsilon && c1 < -kCompoundPolygonEpsilon) ||
+         (c0 < -kCompoundPolygonEpsilon && c1 > kCompoundPolygonEpsilon)) &&
+        ((c2 > kCompoundPolygonEpsilon && c3 < -kCompoundPolygonEpsilon) ||
+         (c2 < -kCompoundPolygonEpsilon && c3 > kCompoundPolygonEpsilon)))
+    {
+        return true;
+    }
+
+    if (std::abs(c0) <= kCompoundPolygonEpsilon && IsPointOnSegment(b0, a0, a1) == true)
+    {
+        return true;
+    }
+    if (std::abs(c1) <= kCompoundPolygonEpsilon && IsPointOnSegment(b1, a0, a1) == true)
+    {
+        return true;
+    }
+    if (std::abs(c2) <= kCompoundPolygonEpsilon && IsPointOnSegment(a0, b0, b1) == true)
+    {
+        return true;
+    }
+    if (std::abs(c3) <= kCompoundPolygonEpsilon && IsPointOnSegment(a1, b0, b1) == true)
+    {
+        return true;
+    }
+    return false;
+}
+
+bool BridgeIntersectsContour(
+    const math::Vec2& bridgeStart,
+    const math::Vec2& bridgeEnd,
+    const std::vector<math::Vec2>& contour,
+    const math::Vec2* allowedEndpoint)
+{
+    for (std::size_t index = 0u; index < contour.size(); ++index)
+    {
+        const math::Vec2& edgeStart = contour[index];
+        const math::Vec2& edgeEnd = contour[(index + 1u) % contour.size()];
+        if (allowedEndpoint != nullptr &&
+            (IsSamePoint(edgeStart, *allowedEndpoint) == true ||
+             IsSamePoint(edgeEnd, *allowedEndpoint) == true))
+        {
+            continue;
+        }
+
+        if (SegmentsIntersect(bridgeStart, bridgeEnd, edgeStart, edgeEnd) == true)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool FindVisibleBridge(
+    const std::vector<math::Vec2>& outer,
+    const std::vector<math::Vec2>& hole,
+    const std::vector<std::vector<math::Vec2>>& allHoles,
+    std::size_t& outOuterIndex,
+    std::size_t& outHoleIndex)
+{
+    float bestDistance = std::numeric_limits<float>::max();
+    bool found = false;
+
+    for (std::size_t outerIndex = 0u; outerIndex < outer.size(); ++outerIndex)
+    {
+        for (std::size_t holeIndex = 0u; holeIndex < hole.size(); ++holeIndex)
+        {
+            const math::Vec2& outerPoint = outer[outerIndex];
+            const math::Vec2& holePoint = hole[holeIndex];
+            const float distance = DistanceSquared(outerPoint, holePoint);
+            if (distance >= bestDistance)
+            {
+                continue;
+            }
+
+            if (BridgeIntersectsContour(
+                    outerPoint,
+                    holePoint,
+                    outer,
+                    &outerPoint) == true ||
+                BridgeIntersectsContour(
+                    outerPoint,
+                    holePoint,
+                    hole,
+                    &holePoint) == true)
+            {
+                continue;
+            }
+
+            bool intersectsOtherHole = false;
+            for (const std::vector<math::Vec2>& otherHole : allHoles)
+            {
+                if (&otherHole == &hole)
+                {
+                    continue;
+                }
+                if (BridgeIntersectsContour(
+                        outerPoint,
+                        holePoint,
+                        otherHole,
+                        nullptr) == true)
+                {
+                    intersectsOtherHole = true;
+                    break;
+                }
+            }
+            if (intersectsOtherHole == true)
+            {
+                continue;
+            }
+
+            const math::Vec2 midpoint(
+                (outerPoint.x + holePoint.x) * 0.5f,
+                (outerPoint.y + holePoint.y) * 0.5f);
+            if (IsPointInsidePolygon(midpoint, outer) == false)
+            {
+                continue;
+            }
+
+            bool midpointInsideHole = false;
+            for (const std::vector<math::Vec2>& candidateHole : allHoles)
+            {
+                if (IsPointInsidePolygon(midpoint, candidateHole) == true)
+                {
+                    midpointInsideHole = true;
+                    break;
+                }
+            }
+            if (midpointInsideHole == true)
+            {
+                continue;
+            }
+
+            bestDistance = distance;
+            outOuterIndex = outerIndex;
+            outHoleIndex = holeIndex;
+            found = true;
+        }
+    }
+    return found;
+}
+
+std::vector<math::Vec2> MergeHoleIntoOuter(
+    const std::vector<math::Vec2>& outer,
+    const std::vector<math::Vec2>& hole,
+    std::size_t outerIndex,
+    std::size_t holeIndex)
+{
+    std::vector<math::Vec2> merged;
+    merged.reserve(outer.size() + hole.size() + 2u);
+
+    for (std::size_t index = 0u; index <= outerIndex; ++index)
+    {
+        merged.push_back(outer[index]);
+    }
+
+    // Holeを一周して同じbridgeを戻ることで、穴領域を切り開いたweakly-simple polygonへ変換します。
+    // bridge端点の重複は意図的で、後段Ear Clippingでは同座標点をTriangle内部判定から除外します。
+    for (std::size_t step = 0u; step < hole.size(); ++step)
+    {
+        merged.push_back(hole[(holeIndex + step) % hole.size()]);
+    }
+    merged.push_back(hole[holeIndex]);
+    merged.push_back(outer[outerIndex]);
+
+    for (std::size_t index = outerIndex + 1u; index < outer.size(); ++index)
+    {
+        merged.push_back(outer[index]);
+    }
+    return merged;
+}
+
+bool IsPointStrictlyInsideTriangle(
+    const math::Vec2& point,
+    const math::Vec2& a,
+    const math::Vec2& b,
+    const math::Vec2& c,
+    float windingSign)
+{
+    if (IsSamePoint(point, a) == true ||
+        IsSamePoint(point, b) == true ||
+        IsSamePoint(point, c) == true)
+    {
+        return false;
+    }
+
+    return Cross2D(a, b, point) * windingSign > kCompoundPolygonEpsilon &&
+        Cross2D(b, c, point) * windingSign > kCompoundPolygonEpsilon &&
+        Cross2D(c, a, point) * windingSign > kCompoundPolygonEpsilon;
+}
+
+bool TriangulateWeakPolygon(
+    const std::vector<math::Vec2>& polygon,
+    std::vector<std::array<math::Vec2, 3u>>& outTriangles)
+{
+    outTriangles.clear();
+    if (polygon.size() < 3u)
+    {
+        return false;
+    }
+
+    const float signedArea = CalculateSignedArea(polygon);
+    if (std::abs(signedArea) <= kCompoundPolygonEpsilon)
+    {
+        return false;
+    }
+    const float windingSign = signedArea > 0.0f ? 1.0f : -1.0f;
+
+    std::vector<std::size_t> remaining;
+    remaining.reserve(polygon.size());
+    for (std::size_t index = 0u; index < polygon.size(); ++index)
+    {
+        remaining.push_back(index);
+    }
+
+    while (remaining.size() > 3u)
+    {
+        bool earFound = false;
+        for (std::size_t currentIndex = 0u; currentIndex < remaining.size(); ++currentIndex)
+        {
+            const std::size_t previousIndex =
+                (currentIndex + remaining.size() - 1u) % remaining.size();
+            const std::size_t nextIndex = (currentIndex + 1u) % remaining.size();
+            const std::size_t previousVertex = remaining[previousIndex];
+            const std::size_t currentVertex = remaining[currentIndex];
+            const std::size_t nextVertex = remaining[nextIndex];
+
+            const math::Vec2& a = polygon[previousVertex];
+            const math::Vec2& b = polygon[currentVertex];
+            const math::Vec2& c = polygon[nextVertex];
+            if (Cross2D(a, b, c) * windingSign <= kCompoundPolygonEpsilon)
+            {
+                continue;
+            }
+
+            bool containsVertex = false;
+            for (std::size_t candidateVertex : remaining)
+            {
+                if (candidateVertex == previousVertex ||
+                    candidateVertex == currentVertex ||
+                    candidateVertex == nextVertex)
+                {
+                    continue;
+                }
+                if (IsPointStrictlyInsideTriangle(
+                        polygon[candidateVertex],
+                        a,
+                        b,
+                        c,
+                        windingSign) == true)
+                {
+                    containsVertex = true;
+                    break;
+                }
+            }
+            if (containsVertex == true)
+            {
+                continue;
+            }
+
+            outTriangles.push_back({ a, b, c });
+            remaining.erase(remaining.begin() + static_cast<std::ptrdiff_t>(currentIndex));
+            earFound = true;
+            break;
+        }
+
+        if (earFound == false)
+        {
+            // bridge端点やtessellation由来の一直線頂点が残った場合は、面積を持たないcornerだけ除去して再試行します。
+            bool removedDegenerate = false;
+            for (std::size_t currentIndex = 0u; currentIndex < remaining.size(); ++currentIndex)
+            {
+                const std::size_t previousIndex =
+                    (currentIndex + remaining.size() - 1u) % remaining.size();
+                const std::size_t nextIndex = (currentIndex + 1u) % remaining.size();
+                const math::Vec2& a = polygon[remaining[previousIndex]];
+                const math::Vec2& b = polygon[remaining[currentIndex]];
+                const math::Vec2& c = polygon[remaining[nextIndex]];
+                if (IsSamePoint(a, b) == true ||
+                    IsSamePoint(b, c) == true ||
+                    std::abs(Cross2D(a, b, c)) <= kCompoundPolygonEpsilon)
+                {
+                    remaining.erase(remaining.begin() + static_cast<std::ptrdiff_t>(currentIndex));
+                    removedDegenerate = true;
+                    break;
+                }
+            }
+
+            if (removedDegenerate == false || remaining.size() < 3u)
+            {
+                outTriangles.clear();
+                return false;
+            }
+        }
+    }
+
+    const math::Vec2& a = polygon[remaining[0u]];
+    const math::Vec2& b = polygon[remaining[1u]];
+    const math::Vec2& c = polygon[remaining[2u]];
+    if (std::abs(Cross2D(a, b, c)) > kCompoundPolygonEpsilon)
+    {
+        outTriangles.push_back({ a, b, c });
+    }
+    return outTriangles.empty() == false;
+}
+
+bool ResolveCompoundContours(
+    const std::vector<std::vector<math::Vec2>>& contours,
+    UIFillRule fillRule,
+    std::vector<CompoundContourInfo>& outInfos)
+{
+    outInfos.clear();
+    for (const std::vector<math::Vec2>& source : contours)
+    {
+        CompoundContourInfo info;
+        info.Points = NormalizeContour(source);
+        if (info.Points.size() < 3u)
+        {
+            continue;
+        }
+        info.SignedArea = CalculateSignedArea(info.Points);
+        if (std::abs(info.SignedArea) <= kCompoundPolygonEpsilon)
+        {
+            continue;
+        }
+        outInfos.push_back(std::move(info));
+    }
+
+    if (outInfos.empty() == true)
+    {
+        return false;
+    }
+
+    // 各輪郭の直接包含親を求めます。最小面積の包含輪郭を選ぶことで、輪郭の入れ子階層を構築できます。
+    for (std::size_t childIndex = 0u; childIndex < outInfos.size(); ++childIndex)
+    {
+        float bestParentArea = std::numeric_limits<float>::max();
+        const float childArea = std::abs(outInfos[childIndex].SignedArea);
+        const math::Vec2 sample = outInfos[childIndex].Points[0u];
+        for (std::size_t parentIndex = 0u; parentIndex < outInfos.size(); ++parentIndex)
+        {
+            if (parentIndex == childIndex)
+            {
+                continue;
+            }
+            const float parentArea = std::abs(outInfos[parentIndex].SignedArea);
+            if (parentArea <= childArea || parentArea >= bestParentArea)
+            {
+                continue;
+            }
+            if (IsPointInsidePolygon(sample, outInfos[parentIndex].Points) == true)
+            {
+                outInfos[childIndex].Parent = parentIndex;
+                bestParentArea = parentArea;
+            }
+        }
+    }
+
+    std::vector<std::size_t> order(outInfos.size());
+    for (std::size_t index = 0u; index < order.size(); ++index)
+    {
+        order[index] = index;
+    }
+    std::sort(order.begin(), order.end(), [&outInfos](std::size_t left, std::size_t right)
+    {
+        return std::abs(outInfos[left].SignedArea) > std::abs(outInfos[right].SignedArea);
+    });
+
+    for (std::size_t index : order)
+    {
+        CompoundContourInfo& info = outInfos[index];
+        const int outsideValue = info.Parent == kInvalidContourIndex
+            ? 0
+            : outInfos[info.Parent].InsideValue;
+
+        int insideValue = outsideValue;
+        if (fillRule == UIFillRule::EvenOdd)
+        {
+            insideValue = outsideValue == 0 ? 1 : 0;
+            info.OutsideFilled = outsideValue != 0;
+            info.InsideFilled = insideValue != 0;
+        }
+        else
+        {
+            insideValue += info.SignedArea > 0.0f ? 1 : -1;
+            info.OutsideFilled = outsideValue != 0;
+            info.InsideFilled = insideValue != 0;
+        }
+        info.InsideValue = insideValue;
+
+        if (info.OutsideFilled == false && info.InsideFilled == true)
+        {
+            info.BoundaryKind = CompoundBoundaryKind::Outer;
+        }
+        else if (info.OutsideFilled == true && info.InsideFilled == false)
+        {
+            info.BoundaryKind = CompoundBoundaryKind::Hole;
+        }
+    }
+    return true;
+}
+
+} // namespace
 
 UIClipRect UIClipRect::Disabled()
 {
@@ -36,8 +577,6 @@ UIClipRect UIClipRect::Intersect(const UIClipRect& inheritedClip, const UIRect& 
     result.Rect.Max.x = std::min(inheritedClip.Rect.Max.x, rect.Max.x);
     result.Rect.Max.y = std::min(inheritedClip.Rect.Max.y, rect.Max.y);
 
-    // Clipが交差しない場合もEnabled状態を維持し、面積0のScissorとして表現します。
-    // これによりDescendant側で「Clipなし」と「完全にClipされた状態」を区別できます。
     if (result.Rect.Max.x < result.Rect.Min.x)
     {
         result.Rect.Max.x = result.Rect.Min.x;
@@ -80,8 +619,6 @@ UITransform2D UITransform2D::CreateScaleRotation(
     result.M01 = -sine * scale.y;
     result.M10 = sine * scale.x;
     result.M11 = cosine * scale.y;
-
-    // pivotを不変点にするため、T(pivot) * R * S * T(-pivot) のTranslationを展開します。
     result.Translation.x = pivot.x - (result.M00 * pivot.x + result.M01 * pivot.y);
     result.Translation.y = pivot.y - (result.M10 * pivot.x + result.M11 * pivot.y);
     return result;
@@ -92,14 +629,10 @@ UITransform2D UITransform2D::Combine(
     const UITransform2D& local)
 {
     UITransform2D result;
-
-    // parent(local(point)) を直接展開します。
-    // Rotation / 非一様Scaleの組み合わせでShearが発生しても2x2線形部へそのまま保持できます。
     result.M00 = parent.M00 * local.M00 + parent.M01 * local.M10;
     result.M01 = parent.M00 * local.M01 + parent.M01 * local.M11;
     result.M10 = parent.M10 * local.M00 + parent.M11 * local.M10;
     result.M11 = parent.M10 * local.M01 + parent.M11 * local.M11;
-
     result.Translation.x =
         parent.M00 * local.Translation.x +
         parent.M01 * local.Translation.y +
@@ -146,7 +679,6 @@ bool UITransform2D::TryInverseTransformPoint(
     const float translatedX = point.x - Translation.x;
     const float translatedY = point.y - Translation.y;
     const float inverseDeterminant = 1.0f / determinant;
-
     outPoint.x = (M11 * translatedX - M01 * translatedY) * inverseDeterminant;
     outPoint.y = (-M10 * translatedX + M00 * translatedY) * inverseDeterminant;
     return true;
@@ -162,9 +694,6 @@ void UIDrawList::AddRect(
     const math::Vec2& max,
     const math::Vec4& color)
 {
-    // 面積0以下の矩形は描画対象にしません。
-    // Layout計算中の非表示Elementや、Window最小化時の0 sizeがそのままRendererへ
-    // 流れ込むことを避けます。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
@@ -183,8 +712,6 @@ void UIDrawList::AddCircle(
     const math::Vec2& max,
     const math::Vec4& color)
 {
-    // CircleもLayout上はBoundsを持つため、面積0以下なら描画Commandを生成しません。
-    // Tessellation分割数やGPU APIはDrawListへ持ち込まず、Renderer backendの責務とします。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
@@ -211,9 +738,6 @@ void UIDrawList::AddPolygon(
     command.Type = UIDrawCommandType::SolidPolygon;
     command.Color = color;
     command.Points = points;
-
-    // Polygonは任意頂点列を持つため、Clip/診断に使える保守的BoundsをCPU側で同時に保持します。
-    // 三角形化そのものはRenderer backendへ残し、DrawListはGPU APIにもtessellation方式にも依存しません。
     command.Rect.Min = points[0u];
     command.Rect.Max = points[0u];
     for (const math::Vec2& point : points)
@@ -227,6 +751,91 @@ void UIDrawList::AddPolygon(
     m_Commands.push_back(std::move(command));
 }
 
+void UIDrawList::AddCompoundPolygon(
+    const std::vector<std::vector<math::Vec2>>& contours,
+    UIFillRule fillRule,
+    const math::Vec4& color)
+{
+    std::vector<CompoundContourInfo> infos;
+    if (ResolveCompoundContours(contours, fillRule, infos) == false)
+    {
+        return;
+    }
+
+    for (std::size_t outerIndex = 0u; outerIndex < infos.size(); ++outerIndex)
+    {
+        if (infos[outerIndex].BoundaryKind != CompoundBoundaryKind::Outer)
+        {
+            continue;
+        }
+
+        std::vector<math::Vec2> outer = infos[outerIndex].Points;
+        if (CalculateSignedArea(outer) < 0.0f)
+        {
+            std::reverse(outer.begin(), outer.end());
+        }
+
+        std::vector<std::vector<math::Vec2>> holes;
+        for (std::size_t holeIndex = 0u; holeIndex < infos.size(); ++holeIndex)
+        {
+            if (infos[holeIndex].BoundaryKind != CompoundBoundaryKind::Hole)
+            {
+                continue;
+            }
+
+            std::size_t ancestor = infos[holeIndex].Parent;
+            while (ancestor != kInvalidContourIndex &&
+                infos[ancestor].BoundaryKind == CompoundBoundaryKind::None)
+            {
+                ancestor = infos[ancestor].Parent;
+            }
+            if (ancestor != outerIndex)
+            {
+                continue;
+            }
+
+            std::vector<math::Vec2> hole = infos[holeIndex].Points;
+            if (CalculateSignedArea(hole) > 0.0f)
+            {
+                std::reverse(hole.begin(), hole.end());
+            }
+            holes.push_back(std::move(hole));
+        }
+
+        std::vector<math::Vec2> merged = outer;
+        for (const std::vector<math::Vec2>& hole : holes)
+        {
+            std::size_t bridgeOuter = 0u;
+            std::size_t bridgeHole = 0u;
+            if (FindVisibleBridge(merged, hole, holes, bridgeOuter, bridgeHole) == false)
+            {
+                // 接触輪郭など可視bridgeを安全に決められない入力は、誤ったfillを生成せずこのregionだけ描画しません。
+                merged.clear();
+                break;
+            }
+            merged = MergeHoleIntoOuter(merged, hole, bridgeOuter, bridgeHole);
+        }
+
+        if (merged.size() < 3u)
+        {
+            continue;
+        }
+
+        std::vector<std::array<math::Vec2, 3u>> triangles;
+        if (TriangulateWeakPolygon(merged, triangles) == false)
+        {
+            continue;
+        }
+
+        for (const std::array<math::Vec2, 3u>& triangle : triangles)
+        {
+            AddPolygon(
+                std::vector<math::Vec2>{ triangle[0u], triangle[1u], triangle[2u] },
+                color);
+        }
+    }
+}
+
 void UIDrawList::AddImage(
     const math::Vec2& min,
     const math::Vec2& max,
@@ -235,15 +844,10 @@ void UIDrawList::AddImage(
     const math::Vec2& uvMin,
     const math::Vec2& uvMax)
 {
-    // SolidRectと同様、面積0以下のImage CommandはRendererへ流しません。
-    // Layout中の0 sizeやWindow最小化時にも不要なDraw Callを生成しないためです。
     if (max.x <= min.x || max.y <= min.y)
     {
         return;
     }
-
-    // WidgetからRenderer IDを直接渡さず、Runtime Assetの有効性だけをUI Coreで確認します。
-    // GPU Resourceの解決とBindはUIRenderer backendの責務です。
     if (texture == nullptr || texture->IsValid() == false)
     {
         return;
@@ -267,8 +871,6 @@ void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& t
         return;
     }
 
-    // Element単位のWorld Transformは、そのElementが生成したCommandだけへ付与します。
-    // ChildはUIElement再帰側でParent World Transformと自身のLocal Transformを合成してから別途設定します。
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
         m_Commands[index].Transform = transform;
