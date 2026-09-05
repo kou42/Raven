@@ -47,10 +47,8 @@ const std::vector<math::Vec2>& UIPolygon::GetPoints() const
 
 void UIPolygon::SetContours(std::vector<std::vector<math::Vec2>> contours)
 {
-    for (std::vector<math::Vec2>& contour : contours)
-    {
-        NormalizeClosedContour(contour);
-    }
+    // SVG pathのopen subpathは、終点が始点と同座標でもZ/zで閉じたとは限りません。
+    // parserが既に重複頂点を整理しているため、compound contourは受け取ったgeometryをそのまま保持します。
     m_Contours = std::move(contours);
     m_UseCompoundFill = true;
 }
