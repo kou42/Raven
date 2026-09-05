@@ -8,7 +8,7 @@ namespace Raven
 {
 
 // SVG解析中に必要な共通Document状態をまとめる内部Contextです。
-// Vector形状とViewport/Animationを明示的に分離し、VectorDocumentへ共通メタデータを持たせない設計へ移行します。
+// Vector形状はVectorDocument、Viewport/Animation/LoopはUIDocumentへ直接書き込み、所有者を明確に分離します。
 struct SvgImportContext
 {
     UIDocument Document;
@@ -29,6 +29,7 @@ struct SvgImportContext
         return Document.ViewportSize;
     }
 
+    // 個々のanimate要素からduration/loop情報を集約し、最終的なUIDocumentの再生設定へ反映します。
     void RegisterAnimation(float duration, bool loop)
     {
         MaxAnimationDuration = std::max(MaxAnimationDuration, duration);
