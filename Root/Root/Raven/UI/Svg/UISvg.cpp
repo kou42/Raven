@@ -8,103 +8,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <fstream>
-#include <regex>
-#include <sstream>
 #include <utility>
 #include <vector>
 
 namespace Raven
 {
-
-namespace
-{
-
-bool ReadSvgSource(const std::string& path, std::string& outSource)
-{
-    std::ifstream stream(path, std::ios::binary);
-    if (stream.is_open() == false)
-    {
-        return false;
-    }
-
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    outSource = buffer.str();
-    return true;
-}
-
-bool ApplyPathFillRulesFromSource(
-    const std::string& path,
-    SvgDocument& document,
-    std::string* outError)
-{
-    std::string source;
-    if (ReadSvgSource(path, source) == false)
-    {
-        if (outError != nullptr)
-        {
-            *outError = "Failed to open SVG file while importing path fill-rule: " + path;
-        }
-        return false;
-    }
-
-    const std::regex pathRegex(
-        R"(<path\b([^>]*?)(?:/>|>([\s\S]*?)</path>))",
-        std::regex::icase);
-    const std::regex fillRuleRegex(
-        R"REGEX(\bfill-rule\s*=\s*"([^"]*)")REGEX",
-        std::regex::icase);
-
-    std::size_t pathIndex = 0u;
-    for (std::sregex_iterator it(source.begin(), source.end(), pathRegex), end; it != end; ++it)
-    {
-        if (pathIndex >= document.Paths.size())
-        {
-            if (outError != nullptr)
-            {
-                *outError = "SVG path fill-rule source count does not match imported paths.";
-            }
-            return false;
-        }
-
-        const std::string attributes = (*it)[1].str();
-        std::smatch fillRuleMatch;
-        if (std::regex_search(attributes, fillRuleMatch, fillRuleRegex) == true)
-        {
-            const std::string value = fillRuleMatch[1].str();
-            if (value == "nonzero")
-            {
-                document.Paths[pathIndex].FillRule = SvgFillRule::NonZero;
-            }
-            else if (value == "evenodd")
-            {
-                document.Paths[pathIndex].FillRule = SvgFillRule::EvenOdd;
-            }
-            else
-            {
-                if (outError != nullptr)
-                {
-                    *outError = "SVG path fill-rule must be nonzero or evenodd: " + value;
-                }
-                return false;
-            }
-        }
-        ++pathIndex;
-    }
-
-    if (pathIndex != document.Paths.size())
-    {
-        if (outError != nullptr)
-        {
-            *outError = "SVG path fill-rule source count does not match imported paths.";
-        }
-        return false;
-    }
-    return true;
-}
-
-} // namespace
 
 bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
 {
@@ -114,13 +22,9 @@ bool UISvg::LoadFromFile(const std::string& path, std::string* outError)
         return false;
     }
 
-    // path command grammarは専用ParserでPolylineへ正規化します。
+    // path command grammarとpath固有styleは専用Importerで正規化します。
     // 既存shape Importerと同じSvgDocumentへ追加し、SourceOffsetで描画順を再統合します。
     if (SvgPathImporter::AppendFilePaths(path, imported, outError) == false)
-    {
-        return false;
-    }
-    if (ApplyPathFillRulesFromSource(path, imported, outError) == false)
     {
         return false;
     }
@@ -248,7 +152,12 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
             const SvgPathElement& data = m_Document.Paths[shape.ElementIndex];
             if (data.Subpaths.empty() == true)
             {
-                if (outError != nullptr) { *outError = "SVG path has no closed subpaths."; }
+                if (outError != nullptr) { *outError = "SVG path has no subpaths."; }
+                ClearChildren(); return false;
+            }
+            if (data.SubpathClosed.size() != data.Subpaths.size())
+            {
+                if (outError != nullptr) { *outError = "SVG path subpath state count does not match geometry."; }
                 ClearChildren(); return false;
             }
 
@@ -257,12 +166,6 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
             math::Vec2 max{};
             for (const std::vector<math::Vec2>& subpath : data.Subpaths)
             {
-                if (subpath.size() < 3u)
-                {
-                    if (outError != nullptr) { *outError = "SVG path subpath has fewer than three points."; }
-                    ClearChildren(); return false;
-                }
-
                 for (const math::Vec2& point : subpath)
                 {
                     if (hasBounds == false)
@@ -304,16 +207,19 @@ bool UISvg::BuildRuntimeTree(std::string* outError)
                 ClearChildren(); return false;
             }
 
-            // 1つのpathを1つのcompound polygonとしてDrawListへ渡し、subpath間の内外関係を保持します。
-            // SVGのfill-ruleだけをUIFillRuleへ変換し、winding判定・穴付き三角形化はUIDrawList側へ委譲します。
+            // fillではopen subpathも暗黙closeしてfill-ruleを評価し、strokeではZ/zの有無をそのまま保持します。
+            // Geometry生成はUIPolygon/UIDrawListへ委譲し、UISvgはSVG中間表現からUI属性への変換だけを担当します。
             widget->SetPosition(min);
             widget->SetSize(math::Vec2(max.x - min.x, max.y - min.y));
             widget->SetContours(std::move(localContours));
+            widget->SetContourClosed(data.SubpathClosed);
             widget->SetFillRule(
                 data.FillRule == SvgFillRule::EvenOdd
                     ? UIFillRule::EvenOdd
                     : UIFillRule::NonZero);
             widget->SetFillColor(data.FillColor);
+            widget->SetStrokeColor(data.StrokeColor);
+            widget->SetStrokeWidth(data.StrokeWidth);
             element = std::move(widget);
         }
 
