@@ -19,12 +19,15 @@ bool SvgImporter::ImportFile(
         return false;
     }
 
-    // Path ParserはVector表現だけを追加し、Viewport/Animation等の共通状態には触れません。
+    // Path ParserもVector表現とAnimationの共通状態をContextへ追加します。
     // 基本Shape ParserとPath Parserの双方が成功した後にUIDocumentを公開します。
-    if (SvgPathImporter::AppendFilePaths(path, context.GetVectorDocument(), outError) == false)
+    if (SvgPathImporter::AppendFilePaths(path, context, outError) == false)
     {
         return false;
     }
+
+    // PathのみのAnimationや基本Shapeより長いAnimationも含め、全体の再生時間を確定します。
+    context.Finalize();
 
     // Import途中で失敗した場合に呼び出し側の既存Documentを壊さないよう、成功後にまとめて置き換えます。
     outDocument = std::move(context.Document);
