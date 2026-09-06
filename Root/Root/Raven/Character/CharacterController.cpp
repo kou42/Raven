@@ -140,6 +140,7 @@ CharacterControllerInput CharacterController::ReadDefaultKeyboardInput()
     input.Run = Input::IsKeyPressed(GLFW_KEY_LEFT_SHIFT);
     input.Sprint = Input::IsKeyPressed(GLFW_KEY_LEFT_CONTROL);
     input.Jump = Input::IsKeyPressed(GLFW_KEY_SPACE);
+    input.Dash = Input::IsKeyPressed(GLFW_KEY_LEFT_ALT);
     return input;
 }
 
@@ -543,6 +544,12 @@ bool CharacterController::UpdateInternal(
     {
         return SetError(errorMessage, "deltaTimeは0以上の有限値である必要があります");
     }
+    if (input.HasHorizontalVelocityOverride == true
+        && (std::isfinite(input.HorizontalVelocityOverride.x) == false
+            || std::isfinite(input.HorizontalVelocityOverride.y) == false))
+    {
+        return SetError(errorMessage, "HorizontalVelocityOverrideは有限値である必要があります");
+    }
 
     math::Vec2 moveInput = input.Move;
     const float inputLengthSquared = moveInput.x * moveInput.x + moveInput.y * moveInput.y;
@@ -554,6 +561,15 @@ bool CharacterController::UpdateInternal(
     }
 
     const bool hasMoveInput = (moveInput.x * moveInput.x + moveInput.y * moveInput.y) > 1.0e-6f;
+
+    // Dash Actionは入力Edgeと継続時間をControllerの通常Updateと同じFrame時間で進めます。
+    // Dash方向は開始Frameで固定し、途中のStick旋回で軌道が不自然に曲がらないようにします。
+    m_DashAction.Update(
+        input.Dash,
+        moveInput,
+        transform.Rotation.y,
+        true,
+        deltaTime);
 
     // Sprint要求を最優先し、次にRun、最後にWalkを選択します。
     // Input flagを速度値へ直接埋め込まず、Gameplay設定の責務をCharacterControllerConfigへ維持します。
@@ -567,8 +583,23 @@ bool CharacterController::UpdateInternal(
         targetSpeed = m_Config.RunSpeed;
     }
 
+    const bool hasActionVelocityOverride = input.HasHorizontalVelocityOverride == true
+        || m_DashAction.IsActive() == true;
+
     math::Vec3 desiredVelocity{ 0.0f, 0.0f, 0.0f };
-    if (hasMoveInput)
+    if (input.HasHorizontalVelocityOverride == true)
+    {
+        // 外部Gameplay Actionの明示Overrideを最優先します。
+        desiredVelocity.x = input.HorizontalVelocityOverride.x;
+        desiredVelocity.z = input.HorizontalVelocityOverride.y;
+    }
+    else if (m_DashAction.IsActive() == true)
+    {
+        const math::Vec2 dashVelocity = m_DashAction.GetHorizontalVelocity();
+        desiredVelocity.x = dashVelocity.x;
+        desiredVelocity.z = dashVelocity.y;
+    }
+    else if (hasMoveInput)
     {
         desiredVelocity.x = moveInput.x * targetSpeed;
         desiredVelocity.z = moveInput.y * targetSpeed;
@@ -577,13 +608,23 @@ bool CharacterController::UpdateInternal(
     // ========================================================================
     // Horizontal acceleration / deceleration
     // ========================================================================
-    // 入力がある間はAcceleration、入力を離した後はDecelerationで0へ戻します。
-    // これによりKey入力を直接Positionへ足す実装より、Character Controllerらしい慣性を持たせます。
-    const float horizontalRate = hasMoveInput ? m_Config.Acceleration : m_Config.Deceleration;
-    const float maxHorizontalDelta = horizontalRate * deltaTime;
+    // Dash等のAction Override中は立ち上がりを通常Accelerationで鈍らせず、指定速度を即座に採用します。
+    // 位置更新自体はこの後の既存Capsule Castへ流すため、Collision-aware移動経路は共通のままです。
+    if (hasActionVelocityOverride == true)
+    {
+        m_Velocity.x = desiredVelocity.x;
+        m_Velocity.z = desiredVelocity.z;
+    }
+    else
+    {
+        // 入力がある間はAcceleration、入力を離した後はDecelerationで0へ戻します。
+        // これによりKey入力を直接Positionへ足す実装より、Character Controllerらしい慣性を持たせます。
+        const float horizontalRate = hasMoveInput ? m_Config.Acceleration : m_Config.Deceleration;
+        const float maxHorizontalDelta = horizontalRate * deltaTime;
 
-    m_Velocity.x = MoveTowards(m_Velocity.x, desiredVelocity.x, maxHorizontalDelta);
-    m_Velocity.z = MoveTowards(m_Velocity.z, desiredVelocity.z, maxHorizontalDelta);
+        m_Velocity.x = MoveTowards(m_Velocity.x, desiredVelocity.x, maxHorizontalDelta);
+        m_Velocity.z = MoveTowards(m_Velocity.z, desiredVelocity.z, maxHorizontalDelta);
+    }
 
     // ========================================================================
     // Facing rotation
@@ -779,6 +820,7 @@ bool CharacterController::RestoreAfterRagdoll(
     m_Velocity = inheritedVelocity;
     m_Grounded = grounded;
     m_GroundNormal = math::Vec3{ 0.0f, 1.0f, 0.0f };
+    m_DashAction.Reset();
 
     // Grounded復帰時にRagdoll最後の下向き速度を残すと、次UpdateのGround判定前後で
     // Characterが一瞬床へ潜る可能性があります。水平慣性は保持しつつ鉛直方向だけ安全に止めます。

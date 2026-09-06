@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <GLFW/glfw3.h>
+
 #include "Raven/Core/Input.h"
 
 namespace Raven
@@ -78,6 +80,7 @@ CharacterControllerInput CharacterController::ReadDefaultGamepadInput(
         stickDeadZone);
 
     input.Jump = gamepadState.ButtonA;
+    input.Dash = gamepadState.ButtonB;
 
     const float clampedRunThreshold = std::clamp(runTriggerThreshold, 0.0f, 1.0f);
     input.Run = gamepadState.RightTrigger >= clampedRunThreshold;
@@ -93,11 +96,15 @@ CharacterControllerInput CharacterController::ReadDefaultPlayerInput(
     float stickDeadZone,
     float runTriggerThreshold)
 {
-    const CharacterControllerInput keyboard = ReadDefaultKeyboardInput();
+    CharacterControllerInput keyboard = ReadDefaultKeyboardInput();
     const CharacterControllerInput gamepad = ReadDefaultGamepadInput(
         gamepadIndex,
         stickDeadZone,
         runTriggerThreshold);
+
+    // Dashは通常移動とは異なるGameplay Action要求なので、Device固有キーをここでboolへ変換します。
+    // CharacterDashAction側はKeyboard/Gamepadを意識せず、このDash要求だけを受け取れます。
+    keyboard.Dash = Input::IsKeyPressed(GLFW_KEY_LEFT_ALT);
 
     CharacterControllerInput input{};
 
@@ -111,6 +118,7 @@ CharacterControllerInput CharacterController::ReadDefaultPlayerInput(
     input.Run = keyboard.Run || gamepad.Run;
     input.Sprint = keyboard.Sprint || gamepad.Sprint;
     input.Jump = keyboard.Jump || gamepad.Jump;
+    input.Dash = keyboard.Dash || gamepad.Dash;
     return input;
 }
 

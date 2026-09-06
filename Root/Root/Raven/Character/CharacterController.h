@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 
+#include "Raven/Character/CharacterDashAction.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Entity.h"
@@ -35,11 +36,18 @@ struct CharacterControllerInput
     // Y: Forward(+1) / Backward(-1)
     math::Vec2 Move{ 0.0f, 0.0f };
 
-    // RunとSprintを別要求として保持します。
-    // SprintをRunの別名にしないことで、将来Stamina・禁止状態・専用遷移を独立して追加できます。
+    // Run / Sprint / Jump / Dashを個別要求として保持します。
+    // Dashは通常移動速度の別名ではなく、CharacterDashActionへ渡す一時Action要求です。
     bool Run = false;
     bool Sprint = false;
     bool Jump = false;
+    bool Dash = false;
+
+    // Dash以外のGameplay Actionでも通常のWalk/Run/Sprint加減速を一時的に置き換えられる入口です。
+    // trueのFrameはHorizontalVelocityOverrideをWorld XZ速度としてそのまま使用しますが、
+    // 実際の移動は従来どおりCharacterControllerのCapsule Cast / Step / Wall Slideを通します。
+    bool HasHorizontalVelocityOverride = false;
+    math::Vec2 HorizontalVelocityOverride{ 0.0f, 0.0f };
 };
 
 // ============================================================================
@@ -226,11 +234,11 @@ public:
     void ResetCrushTracking();
 
     // Raven標準Keyboard入力(WASD / Left Shift / Left Ctrl / Space)をDevice非依存入力へ変換します。
-    // Left ShiftはRun、Left CtrlはSprintです。Input Mapping System導入後はこの関数だけを置き換えます。
+    // Dashは標準Player入力でLeft Altへ割り当てます。Input Mapping System導入後は入力変換層だけを置き換えます。
     static CharacterControllerInput ReadDefaultKeyboardInput();
 
     // Raven標準Gamepad入力をDevice非依存入力へ変換します。
-    // 左Stick: Move / A: Jump / RT: Run / RB: Sprint。
+    // 左Stick: Move / A: Jump / B: Dash / RT: Run / RB: Sprint。
     // 円形Dead Zoneを適用し、Dead Zone外を0..1へ再マッピングします。
     static CharacterControllerInput ReadDefaultGamepadInput(
         int gamepadIndex = 0,
@@ -238,7 +246,7 @@ public:
         float runTriggerThreshold = 0.25f);
 
     // KeyboardとGamepadを統合した標準Player入力です。
-    // 移動は両Deviceを加算後に長さ1へClampし、Jump/Run/Sprintはどちらか一方が有効なら有効にします。
+    // 移動は両Deviceを加算後に長さ1へClampし、Jump/Run/Sprint/Dashはどちらか一方が有効なら有効にします。
     static CharacterControllerInput ReadDefaultPlayerInput(
         int gamepadIndex = 0,
         float stickDeadZone = 0.15f,
@@ -275,6 +283,12 @@ public:
     // 最後にPhysics Ground Queryで採用した床Normalです。
     // Legacy UpdateやAirborne中はWorld Upを返します。
     const math::Vec3& GetGroundNormal() const { return m_GroundNormal; }
+
+    // Dash開始FrameはRoll One-Shot等のAnimation Triggerへ利用できます。
+    bool IsDashing() const { return m_DashAction.IsActive(); }
+    bool WasDashStartedThisFrame() const { return m_DashAction.WasStartedThisFrame(); }
+    const CharacterDashAction& GetDashAction() const { return m_DashAction; }
+    CharacterDashAction& GetDashAction() { return m_DashAction; }
 
     bool IsOnMovingPlatform() const { return m_HasMovingPlatform; }
     const math::Vec3& GetMovingPlatformVelocity() const { return m_MovingPlatformVelocity; }
@@ -343,6 +357,7 @@ private:
 
 private:
     CharacterControllerConfig m_Config{};
+    CharacterDashAction m_DashAction{};
     math::Vec3 m_Velocity{ 0.0f, 0.0f, 0.0f };
     math::Vec3 m_GroundNormal{ 0.0f, 1.0f, 0.0f };
     bool m_Grounded = false;
