@@ -9,7 +9,8 @@ namespace Raven
 
 // SVG pathはcommand grammarが他shapeの属性解析より複雑になるため、専用Parserへ分離します。
 // M/L/H/V/Q/T/C/S/A/Z をAdaptive TessellationでPolylineへ正規化し、
-// 複数の閉じたsubpathをVectorDocumentへ輪郭単位で保持します。fill-rule、open pathのstroke描画は後続拡張です。
+// open/closedを含む複数subpathとfill/stroke情報をVectorDocumentへ保持します。
+// linecap/linejoinやfill-ruleは後続拡張としてRuntime側の描画規則へ分離します。
 class SvgPathImporter
 {
 public:
