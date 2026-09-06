@@ -175,20 +175,8 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
                 ClearChildren(); return false;
             }
 
-            const math::Vec2 pathSize(max.x - min.x, max.y - min.y);
-            auto pathContainer = CreateScope<UIPanel>();
-            if (pathContainer->SetName(data.Name) == false)
-            {
-                if (outError != nullptr) { *outError = "Vector element name is invalid: " + data.Name; }
-                ClearChildren(); return false;
-            }
-            pathContainer->SetPosition(min);
-            pathContainer->SetSize(pathSize);
-            pathContainer->SetBackgroundColor(math::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
-
-            // Path名を親Containerへ維持することで、Opacity Animationなど既存Bindingはpath全体へ適用できます。
-            // 各subpathは同じローカル原点を共有する子UIPolygonとして描画します。
-            // 現段階では輪郭を独立fillするため、穴抜きは次のfill-rule対応で統合します。
+            std::vector<std::vector<math::Vec2>> localContours;
+            localContours.reserve(data.Subpaths.size());
             for (const std::vector<math::Vec2>& subpath : data.Subpaths)
             {
                 std::vector<math::Vec2> localPoints;
@@ -197,19 +185,27 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
                 {
                     localPoints.push_back(math::Vec2(point.x - min.x, point.y - min.y));
                 }
-
-                auto polygon = CreateScope<UIPolygon>();
-                polygon->SetPosition(math::Vec2(0.0f, 0.0f));
-                polygon->SetSize(pathSize);
-                polygon->SetPoints(std::move(localPoints));
-                polygon->SetFillColor(data.FillColor);
-                if (pathContainer->AddChild(std::move(polygon)) == nullptr)
-                {
-                    if (outError != nullptr) { *outError = "Failed to attach Vector path subpath to runtime container."; }
-                    ClearChildren(); return false;
-                }
+                localContours.push_back(std::move(localPoints));
             }
-            element = std::move(pathContainer);
+
+            auto widget = CreateScope<UIPolygon>();
+            if (widget->SetName(data.Name) == false)
+            {
+                if (outError != nullptr) { *outError = "Vector element name is invalid: " + data.Name; }
+                ClearChildren(); return false;
+            }
+
+            // Path全体を1つのcompound polygonとして扱うことで、subpath間の穴・重なりをfill-ruleで同時に評価します。
+            // SVG由来の規則はImporterでVectorFillRuleへ正規化済みなので、Runtimeは汎用Vector semanticsだけを扱います。
+            widget->SetPosition(min);
+            widget->SetSize(math::Vec2(max.x - min.x, max.y - min.y));
+            widget->SetContours(std::move(localContours));
+            widget->SetFillRule(
+                data.FillRule == VectorFillRule::EvenOdd
+                    ? UIFillRule::EvenOdd
+                    : UIFillRule::NonZero);
+            widget->SetFillColor(data.FillColor);
+            element = std::move(widget);
         }
 
         if (element == nullptr)
