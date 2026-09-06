@@ -24,6 +24,7 @@ struct CharacterDashConfig
 // ============================================================================
 // このStateはDashの開始可否・方向・Timerだけを担当し、Transformを直接変更しません。
 // 最終的な水平速度はCharacterControllerの既存Capsule Cast / Step / Wall Slide経路へ渡す設計です。
+// Dash専用の移動経路を作らないことで、通常移動と異なる壁抜けや段差判定を発生させません。
 class CharacterDashAction
 {
 public:
@@ -59,7 +60,14 @@ public:
     }
 
     // Button Level値を内部でPress Edgeへ変換します。Holdでは再発火しません。
-    bool Update(bool dashRequested, const math::Vec2& moveInput, const math::Vec3& fallbackForward, bool grounded, float deltaTime, std::string* errorMessage = nullptr)
+    // moveInputはWorld XZへ変換済みの X=Right / Y=Forward を想定します。
+    bool Update(
+        bool dashRequested,
+        const math::Vec2& moveInput,
+        const math::Vec3& fallbackForward,
+        bool grounded,
+        float deltaTime,
+        std::string* errorMessage = nullptr)
     {
         if (errorMessage != nullptr)
         {
@@ -78,6 +86,7 @@ public:
             return false;
         }
 
+        // Animation One-Shot等がDash開始を正確に検出できるよう、開始EventをState自身が発行します。
         m_StartedThisFrame = false;
         m_ActiveRemaining = std::max(0.0f, m_ActiveRemaining - deltaTime);
         m_CooldownRemaining = std::max(0.0f, m_CooldownRemaining - deltaTime);
@@ -92,6 +101,7 @@ public:
             return true;
         }
 
+        // 開始時に方向を確定し、Dash中の入力変更では方向転換しません。
         math::Vec3 direction{ moveInput.x, 0.0f, moveInput.y };
         float lengthSquared = direction.LengthSq();
         if (lengthSquared <= 1.0e-8f)
@@ -109,7 +119,6 @@ public:
             return false;
         }
 
-        // Dash中の方向転換を許さず、開始時の方向をDuration終了まで固定します。
         direction /= std::sqrt(lengthSquared);
         m_Direction = direction;
         m_ActiveRemaining = m_Config.Duration;
