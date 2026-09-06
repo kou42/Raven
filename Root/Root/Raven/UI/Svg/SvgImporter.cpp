@@ -872,7 +872,6 @@ bool SvgImporter::ImportFile(const std::string& path, SvgImportContext& context,
             return left.SourceOffset < right.SourceOffset;
         });
 
-    context.Finalize();
     return true;
 }
 

@@ -16,7 +16,7 @@ class SvgImporter final : public IDocumentImporter
 public:
     // SVG 1.1全体ではなく、Raven UIへ安全に取り込めるVector Shape subsetを扱います。
     // SVG固有構文はImporter内部で解釈し、ファイル形式非依存のUIDocumentへ正規化します。
-    // pathは専用SvgPathImporterがM/L/H/V/Q/T/C/S/A/Zを複数の閉輪郭Polylineへ変換します。
+    // pathは専用SvgPathImporterがM/L/H/V/Q/T/C/S/A/Zをopen/closed状態を持つ複数subpathのPolylineへ変換します。
     bool ImportFile(
         const std::string& path,
         UIDocument& outDocument,
