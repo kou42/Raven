@@ -71,8 +71,13 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    if (dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false
-        || dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false)
+    const bool releaseDuringCooldown = dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage);
+    if (releaseDuringCooldown == false)
+    {
+        return false;
+    }
+    const bool pressDuringCooldown = dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage);
+    if (pressDuringCooldown == false)
     {
         return false;
     }
@@ -82,8 +87,13 @@ inline bool Run(std::string* errorMessage = nullptr)
     }
 
     // Cooldown終了後は新しいPress Edgeを受け付け、MoveなしならForwardへDashします。
-    if (dash.Update(false, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.50f, errorMessage) == false
-        || dash.Update(true, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.0f, errorMessage) == false)
+    const bool releaseAfterCooldown = dash.Update(false, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.50f, errorMessage);
+    if (releaseAfterCooldown == false)
+    {
+        return false;
+    }
+    const bool pressAfterCooldown = dash.Update(true, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.0f, errorMessage);
+    if (pressAfterCooldown == false)
     {
         return false;
     }
@@ -99,8 +109,13 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    if (dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false
-        || dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false)
+    const bool airborneRelease = dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage);
+    if (airborneRelease == false)
+    {
+        return false;
+    }
+    const bool airbornePress = dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage);
+    if (airbornePress == false)
     {
         return false;
     }
