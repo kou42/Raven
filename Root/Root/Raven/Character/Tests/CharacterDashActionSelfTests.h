@@ -52,7 +52,6 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    // Hold中は方向を変更せず、開始Eventも再発火しません。
     if (dash.Update(true, { -1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, true, 0.10f, errorMessage) == false)
     {
         return false;
@@ -72,7 +71,6 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    // ReleaseしてもCooldown中の再入力は拒否します。
     if (dash.Update(false, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false
         || dash.Update(true, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false)
     {
@@ -83,14 +81,24 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    // ResetはScene切替/Ragdoll境界で全Action履歴を破棄します。
+    // Cooldown終了後は新しいPress Edgeを受け付け、MoveなしならForwardへDashします。
+    if (dash.Update(false, { 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, true, 0.50f, errorMessage) == false
+        || dash.Update(true, { 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, true, 0.0f, errorMessage) == false)
+    {
+        return false;
+    }
+    const math::Vec3 fallbackVelocity = dash.GetHorizontalVelocity();
+    if (Detail::Expect(dash.StartedThisFrame() && Detail::NearlyEqual(fallbackVelocity.x, 0.0f) && Detail::NearlyEqual(fallbackVelocity.z, -config.Speed), "Cooldown終了後のForward Dashが不正です", errorMessage) == false)
+    {
+        return false;
+    }
+
     dash.Reset();
     if (Detail::Expect(dash.IsActive() == false && dash.IsCoolingDown() == false && dash.StartedThisFrame() == false, "Dash Resetが不完全です", errorMessage) == false)
     {
         return false;
     }
 
-    // GroundedOnlyではAir Dashを許可しません。
     if (dash.Update(false, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false
         || dash.Update(true, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false)
     {
