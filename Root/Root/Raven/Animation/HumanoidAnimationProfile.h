@@ -39,14 +39,25 @@ struct HumanoidLocomotionProfile
 };
 
 // ============================================================================
+// HumanoidActionProfile
+// ============================================================================
+// Locomotion BlendTree外で一時再生するGameplay Action用Clip名をまとめます。
+// Dashの移動ロジックはCharacterController側、Asset固有のRoll Clip名はProfile側へ分離し、
+// Demo LayerへQuaternius固有名を直書きしない構造を維持します。
+struct HumanoidActionProfile
+{
+    std::string DashAnimationName = "Roll";
+};
+
+// ============================================================================
 // HumanoidAnimationProfile
 // ============================================================================
 // 1体のHumanoid Assetに対するAnimation設定の入口です。
-// 今回はLocomotionのみですが、今後Jump / Fall / Landing / UpperBody Layer等を追加しても
-// Character側へAsset固有値を戻さず、このProfileを拡張できる構造にします。
+// Locomotionと一時ActionのAsset固有設定を同じProfileへ集約し、Gameplay側は正式Clip名を知りません。
 struct HumanoidAnimationProfile
 {
     HumanoidLocomotionProfile Locomotion{};
+    HumanoidActionProfile Actions{};
 };
 
 // Raven_human_test.glb専用の初期設定を返します。
@@ -65,6 +76,7 @@ inline HumanoidAnimationProfile CreateRavenHumanTestAnimationProfile()
     profile.Locomotion.WalkAuthoredMotionSpeed = 1.8f;
     profile.Locomotion.RunAuthoredMotionSpeed = 5.5f;
     profile.Locomotion.SprintAuthoredMotionSpeed = 8.0f;
+    profile.Actions.DashAnimationName = "Roll";
     return profile;
 }
 
@@ -86,6 +98,7 @@ inline HumanoidAnimationProfile CreateQuaterniusUAL1StandardAnimationProfile()
     profile.Locomotion.WalkAuthoredMotionSpeed = 1.8f;
     profile.Locomotion.RunAuthoredMotionSpeed = 5.5f;
     profile.Locomotion.SprintAuthoredMotionSpeed = 8.0f;
+    profile.Actions.DashAnimationName = "Roll";
     return profile;
 }
 
