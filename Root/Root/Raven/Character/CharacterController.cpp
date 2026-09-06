@@ -140,6 +140,7 @@ CharacterControllerInput CharacterController::ReadDefaultKeyboardInput()
     input.Run = Input::IsKeyPressed(GLFW_KEY_LEFT_SHIFT);
     input.Sprint = Input::IsKeyPressed(GLFW_KEY_LEFT_CONTROL);
     input.Jump = Input::IsKeyPressed(GLFW_KEY_SPACE);
+    input.Dash = Input::IsKeyPressed(GLFW_KEY_LEFT_ALT);
     return input;
 }
 
@@ -185,11 +186,6 @@ bool CharacterController::TrySnapToPhysicsGround(
     settings.IncludeDynamic = false;
     settings.IncludePlanes = true;
 
-    // ========================================================================
-    // Root Foot Point -> Ground Probe Origin
-    // ========================================================================
-    // Transform::Positionは現在のKinematic Controllerでは足元Rootとして扱います。
-    // 少し上からQueryすることで、床へ数mm潜った状態や小段差の上面も安定して検出できます。
     const math::Vec3 probeOrigin = transform.Position
         + math::Vec3{ 0.0f, m_Config.GroundProbeStartOffset, 0.0f };
 
@@ -203,9 +199,6 @@ bool CharacterController::TrySnapToPhysicsGround(
         return false;
     }
 
-    // HitがProbe開始位置から近すぎても、GroundQuery側で上向きWalkable Normalを検証済みです。
-    // Root Yを実際のContact Pointへ合わせることで、水平GroundHeight固定では不可能だった
-    // 上り坂 / 下り坂 / 高さの異なる床へ追従できます。
     transform.Position.y = groundHit.Point.y;
     m_Velocity.y = 0.0f;
     m_Grounded = true;
@@ -240,11 +233,6 @@ bool CharacterController::TryStepUp(
     castSettings.IncludePlanes = true;
     castSettings.IncludeTriggers = false;
 
-    // ========================================================================
-    // Step Up clearance test
-    // ========================================================================
-    // 現在位置からMaxStepHeightだけCapsule全体を持ち上げ、同じ水平変位を再Castします。
-    // ここでもHitする場合は障害物が高すぎる、または上方空間が塞がっているため通常のWall Slideへ戻します。
     const math::Vec3 raisedStart = transform.Position
         + math::Vec3{ 0.0f, m_Config.MaxStepHeight, 0.0f };
 
@@ -261,12 +249,6 @@ bool CharacterController::TryStepUp(
 
     const math::Vec3 raisedDestination = raisedStart + horizontalDisplacement;
 
-    // ========================================================================
-    // Landing surface search
-    // ========================================================================
-    // 上側が空いていても、その先に床が無ければ段差として乗り越えてはいけません。
-    // raisedDestinationより少し上から下向きへGround Queryし、現在足元からMaxStepHeight以内の
-    // 上面、またはGroundSnapDistance以内の下り面へ安全に着地できることを確認します。
     ph::PhysicsGroundQuerySettings groundSettings{};
     groundSettings.MaxDistance = m_Config.GroundProbeStartOffset
         + m_Config.MaxStepHeight
@@ -297,9 +279,6 @@ bool CharacterController::TryStepUp(
         return false;
     }
 
-    // Stepが成立した場合は水平変位を全て消費し、着地点の実Ground高さへ足元を合わせます。
-    // 狭い低障害物を1Frameで跨いだ場合も、raised Castが上方Clearanceを保証しているため、
-    // 着地点が元の床高さならそのまま向こう側へ降りることができます。
     transform.Position.x = raisedDestination.x;
     transform.Position.y = groundHit.Point.y;
     transform.Position.z = raisedDestination.z;
@@ -318,11 +297,6 @@ bool CharacterController::TryPushDynamicBody(
         return false;
     }
 
-    // ========================================================================
-    // Dynamic Body判定
-    // ========================================================================
-    // Capsule CastはCollider Entityを返すため、RigidBodyComponentが存在し、かつDynamicである場合だけ
-    // Character Push対象にします。Static/Kinematicは従来どおりStep/Slide処理へ流します。
     if (scene.IsEntityAlive(hit.HitEntity) == false)
     {
         return false;
@@ -336,11 +310,6 @@ bool CharacterController::TryPushDynamicBody(
         return false;
     }
 
-    // ========================================================================
-    // Horizontal contact normal
-    // ========================================================================
-    // Characterの通常移動はXZ平面なので、斜面形状などでHit NormalにY成分が含まれても
-    // Dynamic Bodyへ上下Impulseを注入しません。水平成分だけを正規化して押す方向に使用します。
     math::Vec3 horizontalNormal{ hit.Normal.x, 0.0f, hit.Normal.z };
     const float horizontalNormalLengthSquared = horizontalNormal.LengthSq();
     if (horizontalNormalLengthSquared <= 1.0e-10f)
@@ -349,12 +318,6 @@ bool CharacterController::TryPushDynamicBody(
     }
     horizontalNormal /= std::sqrt(horizontalNormalLengthSquared);
 
-    // ========================================================================
-    // Relative closing speed
-    // ========================================================================
-    // hit.Normalは「障害物表面からCharacter側」を向くため、CharacterがBodyへ近付いている場合、
-    // relativeVelocity・normal は負になります。Bodyが同方向へ十分速く離れている場合は
-    // 追加Impulseを与えず、すでに離れつつある運動を邪魔しません。
     const math::Vec3 characterHorizontalVelocity{ m_Velocity.x, 0.0f, m_Velocity.z };
     const math::Vec3 bodyVelocity = scene.GetPhysicsWorld().GetLinearVelocity(scene, hit.HitEntity);
     const math::Vec3 bodyHorizontalVelocity{ bodyVelocity.x, 0.0f, bodyVelocity.z };
@@ -365,12 +328,6 @@ bool CharacterController::TryPushDynamicBody(
         return true;
     }
 
-    // ========================================================================
-    // Kinematic Character用のReduced Mass
-    // ========================================================================
-    // Character自身はSolver上のDynamic Bodyではないため、Push計算専用の仮想質量を導入します。
-    //   effectiveMass = 1 / (1 / characterPushMass + bodyInverseMass)
-    // とすることで、軽いBodyは大きく速度変化し、重いBodyは押しにくい挙動になります。
     const float inverseCharacterPushMass = 1.0f / m_Config.DynamicBodyPushMass;
     const float effectiveInverseMass = inverseCharacterPushMass + rigidBody->InverseMass;
     if (effectiveInverseMass <= math::Epsilon)
@@ -391,8 +348,6 @@ bool CharacterController::TryPushDynamicBody(
         return true;
     }
 
-    // Contact PointへImpulseを与えるため、重心から外れた位置を押した箱には自然にTorqueも発生します。
-    // Character側はこの後通常のBlocking Hit / Slideとして解決し、Dynamic Body内部へ貫通しません。
     const math::Vec3 impulse = -horizontalNormal * impulseMagnitude;
     scene.GetPhysicsWorld().AddImpulseAtPoint(
         scene,
@@ -430,18 +385,6 @@ bool CharacterController::ResolvePhysicsMovement(
 
     math::Vec3 remainingDisplacement = horizontalDisplacement;
 
-    // ========================================================================
-    // Kinematic Capsule Move And Slide
-    // ========================================================================
-    // 1. 残り変位をCapsule Cast
-    // 2. Dynamic Bodyなら接触点へPush Impulseを与える
-    // 3. Static/Kinematicの低い段差ならStep Upを試す
-    // 4. Step不可なら最初のHit位置まで移動
-    // 5. 壁へ向かう成分を法線方向から除去
-    // 6. 残った接線方向変位を再Cast
-    //
-    // Dynamic BodyもCharacter側ではBlocking Hitとして扱うため、Impulseを与えた同じFrameに
-    // CharacterだけがBody内部へ進んでしまうことを防ぎます。
     for (uint32_t iteration = 0u; iteration < m_Config.MaxSlideIterations; ++iteration)
     {
         if (remainingDisplacement.LengthSq() <= 1.0e-10f)
@@ -462,9 +405,6 @@ bool CharacterController::ResolvePhysicsMovement(
             break;
         }
 
-        // Dynamic BodyはStepとして跨がず、接触点へImpulseを与えたうえで通常のBlocking Hitとして扱います。
-        // Static/Kinematicだけ従来のStep Up候補にすることで、低いDynamic箱をCharacterが瞬間移動で
-        // 飛び越え、その後から箱だけが押される不整合を避けます。
         const bool hitDynamicBody = TryPushDynamicBody(scene, hit);
         if (hitDynamicBody == false)
         {
@@ -479,8 +419,6 @@ bool CharacterController::ResolvePhysicsMovement(
             }
         }
 
-        // Shape CastはSkinWidth込みCapsuleで最初の接触時刻を返すため、Hit Fractionまで進めても
-        // 実Capsuleには僅かな隙間が残ります。数値誤差だけ避けるためFractionを微小量手前へ寄せます。
         const float safeFraction = std::clamp(hit.Fraction - 1.0e-4f, 0.0f, 1.0f);
         transform.Position += remainingDisplacement * safeFraction;
 
@@ -488,7 +426,6 @@ bool CharacterController::ResolvePhysicsMovement(
         const float intoSurface = math::Vec3::Dot(remainingAfterHit, hit.Normal);
         if (intoSurface < 0.0f)
         {
-            // 壁へ入る法線成分だけ除去し、接線成分を次反復へ残します。
             remainingAfterHit -= hit.Normal * intoSurface;
         }
         else
@@ -496,11 +433,6 @@ bool CharacterController::ResolvePhysicsMovement(
             remainingAfterHit = math::Vec3{};
         }
 
-        // ====================================================================
-        // Velocity projection
-        // ====================================================================
-        // PositionだけSlideさせてもVelocityが毎Frame壁へ向いたままだと、次Frameも同じ押し込みを
-        // 繰り返します。Characterの水平速度からも壁法線方向成分を除去します。
         math::Vec3 horizontalNormal{ hit.Normal.x, 0.0f, hit.Normal.z };
         const float horizontalNormalLengthSquared = horizontalNormal.LengthSq();
         if (horizontalNormalLengthSquared > 1.0e-10f)
@@ -543,6 +475,12 @@ bool CharacterController::UpdateInternal(
     {
         return SetError(errorMessage, "deltaTimeは0以上の有限値である必要があります");
     }
+    if (input.HasHorizontalVelocityOverride == true
+        && (std::isfinite(input.HorizontalVelocityOverride.x) == false
+            || std::isfinite(input.HorizontalVelocityOverride.y) == false))
+    {
+        return SetError(errorMessage, "HorizontalVelocityOverrideは有限値である必要があります");
+    }
 
     math::Vec2 moveInput = input.Move;
     const float inputLengthSquared = moveInput.x * moveInput.x + moveInput.y * moveInput.y;
@@ -555,8 +493,6 @@ bool CharacterController::UpdateInternal(
 
     const bool hasMoveInput = (moveInput.x * moveInput.x + moveInput.y * moveInput.y) > 1.0e-6f;
 
-    // Sprint要求を最優先し、次にRun、最後にWalkを選択します。
-    // Input flagを速度値へ直接埋め込まず、Gameplay設定の責務をCharacterControllerConfigへ維持します。
     float targetSpeed = m_Config.WalkSpeed;
     if (input.Sprint == true)
     {
@@ -568,28 +504,32 @@ bool CharacterController::UpdateInternal(
     }
 
     math::Vec3 desiredVelocity{ 0.0f, 0.0f, 0.0f };
-    if (hasMoveInput)
+    if (input.HasHorizontalVelocityOverride == true)
+    {
+        desiredVelocity.x = input.HorizontalVelocityOverride.x;
+        desiredVelocity.z = input.HorizontalVelocityOverride.y;
+    }
+    else if (hasMoveInput)
     {
         desiredVelocity.x = moveInput.x * targetSpeed;
         desiredVelocity.z = moveInput.y * targetSpeed;
     }
 
-    // ========================================================================
-    // Horizontal acceleration / deceleration
-    // ========================================================================
-    // 入力がある間はAcceleration、入力を離した後はDecelerationで0へ戻します。
-    // これによりKey入力を直接Positionへ足す実装より、Character Controllerらしい慣性を持たせます。
-    const float horizontalRate = hasMoveInput ? m_Config.Acceleration : m_Config.Deceleration;
-    const float maxHorizontalDelta = horizontalRate * deltaTime;
+    // Dash等のAction Override中は通常のAcceleration/Decelerationを通すとDash立ち上がりが鈍るため、
+    // Gameplay側が指定した水平速度を即座に採用します。ただしその後の位置解決は既存Capsule Castへ流します。
+    if (input.HasHorizontalVelocityOverride == true)
+    {
+        m_Velocity.x = desiredVelocity.x;
+        m_Velocity.z = desiredVelocity.z;
+    }
+    else
+    {
+        const float horizontalRate = hasMoveInput ? m_Config.Acceleration : m_Config.Deceleration;
+        const float maxHorizontalDelta = horizontalRate * deltaTime;
+        m_Velocity.x = MoveTowards(m_Velocity.x, desiredVelocity.x, maxHorizontalDelta);
+        m_Velocity.z = MoveTowards(m_Velocity.z, desiredVelocity.z, maxHorizontalDelta);
+    }
 
-    m_Velocity.x = MoveTowards(m_Velocity.x, desiredVelocity.x, maxHorizontalDelta);
-    m_Velocity.z = MoveTowards(m_Velocity.z, desiredVelocity.z, maxHorizontalDelta);
-
-    // ========================================================================
-    // Facing rotation
-    // ========================================================================
-    // CharacterのForwardを+Zとして、移動方向へYawだけを向けます。
-    // Character本体はKinematicなので、床のNormalに合わせてPitch/Rollを傾けず直立を維持します。
     const float horizontalSpeedSquared = m_Velocity.x * m_Velocity.x + m_Velocity.z * m_Velocity.z;
     if (horizontalSpeedSquared > 1.0e-6f)
     {
@@ -608,11 +548,6 @@ bool CharacterController::UpdateInternal(
         }
     }
 
-    // ========================================================================
-    // Grounded / Gravity / Jump
-    // ========================================================================
-    // 上昇中は下に床があってもSnapするとJumpを即座に打ち消してしまうため、Ground Probeは
-    // 鉛直速度が0以下のFrameだけ許可します。
     m_Grounded = false;
     m_GroundNormal = math::Vec3{ 0.0f, 1.0f, 0.0f };
 
@@ -627,7 +562,6 @@ bool CharacterController::UpdateInternal(
     else if (transform.Position.y <= m_Config.GroundHeight + 1.0e-4f
         && m_Velocity.y <= 0.0f)
     {
-        // Legacy fallback: PhysicsWorldを渡さない呼び出しだけ固定水平Groundを使います。
         transform.Position.y = m_Config.GroundHeight;
         m_Velocity.y = 0.0f;
         m_Grounded = true;
@@ -644,9 +578,6 @@ bool CharacterController::UpdateInternal(
         m_Velocity.y += m_Config.Gravity * deltaTime;
     }
 
-    // ========================================================================
-    // Horizontal Capsule Move
-    // ========================================================================
     const math::Vec3 horizontalDisplacement{
         m_Velocity.x * deltaTime,
         0.0f,
@@ -669,12 +600,6 @@ bool CharacterController::UpdateInternal(
         transform.Position += horizontalDisplacement;
     }
 
-    // ========================================================================
-    // Vertical Capsule Move / Ceiling Collision
-    // ========================================================================
-    // 上昇時は足元RootからCharacter Capsule全体を+YへSweepし、天井へ当たる直前で停止します。
-    // PositionだけClampしてVelocityを残すと次Frameも天井へ押し込み続けるため、上向き速度も0へします。
-    // 下降時の床処理は既存Ground Query / Ground Snapが担当するため、ここでは上昇だけをCapsule Castします。
     const float verticalDisplacement = m_Velocity.y * deltaTime;
     if (scene != nullptr && verticalDisplacement > 0.0f)
     {
@@ -699,9 +624,6 @@ bool CharacterController::UpdateInternal(
                 castSettings,
                 ceilingHit) == true)
         {
-            // SkinWidth込みCapsuleが最初に接触する位置より僅かに手前まで進みます。
-            // Ceiling法線は通常下向きですが、Shape種類に依存せず「上昇SweepでHitした」ことを
-            // Blocking条件として扱うため、法線符号だけには依存しません。
             const float safeFraction = std::clamp(ceilingHit.Fraction - 1.0e-4f, 0.0f, 1.0f);
             transform.Position += upwardDisplacement * safeFraction;
             m_Velocity.y = 0.0f;
@@ -716,11 +638,6 @@ bool CharacterController::UpdateInternal(
         transform.Position.y += verticalDisplacement;
     }
 
-    // ========================================================================
-    // End-of-frame Ground Snap / Step Down
-    // ========================================================================
-    // 水平移動後の新しいXZで再Queryすることで、坂や小段差を降りたFrameにも床へ追従します。
-    // GroundSnapDistance以内なら小さな下り段差をStep Downとして吸収し、Airborne化を防ぎます。
     if (scene != nullptr)
     {
         if (m_Velocity.y <= 0.0f)
@@ -731,7 +648,6 @@ bool CharacterController::UpdateInternal(
     else if (transform.Position.y < m_Config.GroundHeight
         && m_Velocity.y <= 0.0f)
     {
-        // 大きなdeltaTimeでLegacy Groundを突き抜けた場合もFrame末尾で必ずClampします。
         transform.Position.y = m_Config.GroundHeight;
         m_Velocity.y = 0.0f;
         m_Grounded = true;
@@ -764,13 +680,6 @@ bool CharacterController::RestoreAfterRagdoll(
         return SetError(errorMessage, "Ragdoll復帰Stateに非有限値が含まれています");
     }
 
-    // ========================================================================
-    // Dynamic Ragdoll -> Kinematic Controller
-    // ========================================================================
-    // Ragdoll中のCharacter本体TransformはPhysics Boneと独立しているため、復帰時には
-    // Reference Boneから解決したWorld位置へController Rootを明示的に移動させます。
-    // 倒れていたPitch / Rollを残すと次のKinematic UpdateでもCharacter全体が傾いたままになるため、
-    // Controllerが責任を持つYawだけを維持して直立状態へ戻します。
     transform.Position = worldPosition;
     transform.Rotation.x = 0.0f;
     transform.Rotation.y = NormalizeAngle(yawRadians);
@@ -780,8 +689,6 @@ bool CharacterController::RestoreAfterRagdoll(
     m_Grounded = grounded;
     m_GroundNormal = math::Vec3{ 0.0f, 1.0f, 0.0f };
 
-    // Grounded復帰時にRagdoll最後の下向き速度を残すと、次UpdateのGround判定前後で
-    // Characterが一瞬床へ潜る可能性があります。水平慣性は保持しつつ鉛直方向だけ安全に止めます。
     if (m_Grounded && m_Velocity.y < 0.0f)
     {
         m_Velocity.y = 0.0f;
@@ -800,10 +707,6 @@ bool CharacterController::UpdateLocomotionAnimation(
     std::size_t skinIndex,
     std::string* errorMessage) const
 {
-    // BlendTreeへ渡すのは入力値ではなく「実際の現在水平速度」です。
-    // 加減速中のCharacter見た目も物理的な速度へ追従するため、Inputを離した瞬間に
-    // AnimationだけIdleへ飛ぶことを防げます。
-    // Sprint-aware版は4 Child時のAuthored Motion Speedを正しく解決し、3 Childでは従来と同じ結果になります。
     return animationRuntime.SetMovementSpeedSprintAware(
         skinIndex,
         GetHorizontalSpeed(),
