@@ -1,0 +1,22 @@
+<svg width="640" height="280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Zなしのpolyline相当。fill="none" によりstrokeだけを確認します。 -->
+  <path id="openPolyline"
+        d="M 40 60 L 160 40 L 260 100 L 360 50"
+        fill="none"
+        stroke="#4488ff"
+        stroke-width="10" />
+
+  <!-- Curve commandもopenのままstrokeできることを確認します。 -->
+  <path id="openCurve"
+        d="M 40 170 C 120 100 200 240 280 170 S 440 100 520 170"
+        fill="none"
+        stroke="#ff8844"
+        stroke-width="8" />
+
+  <!-- Zありでは最後の点から始点へstrokeが閉じることを比較確認します。 -->
+  <path id="closedStroke"
+        d="M 430 40 L 540 40 L 590 110 L 470 120 Z"
+        fill="none"
+        stroke="#44bb66"
+        stroke-width="6" />
+</svg>
