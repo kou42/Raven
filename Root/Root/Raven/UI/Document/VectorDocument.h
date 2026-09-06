@@ -51,14 +51,23 @@ struct PolygonElement
     math::Vec4 FillColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
+// Vector Pathの複数輪郭に対して内外を決定する汎用規則です。
+// SVGのnonzero/evenoddをImporterでこの型へ正規化し、Runtime側へSVG固有型を持ち込みません。
+enum class VectorFillRule
+{
+    NonZero,
+    EvenOdd
+};
+
 // PathはImporter側で曲線command等をPolylineへ正規化した後の共通表現だけを保持します。
 // 1つのPathが複数の閉輪郭を持てるよう、輪郭単位のPolylineとして分離して保持します。
-// fill-ruleなど特定フォーマット由来の意味付けは後段の描画規則へ分離します。
+// 輪郭間の塗り規則も汎用Vector semanticsとして保持し、SVG command grammar自体は保持しません。
 struct PathElement
 {
     std::string Name;
     std::vector<std::vector<math::Vec2>> Subpaths;
     math::Vec4 FillColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+    VectorFillRule FillRule = VectorFillRule::NonZero;
 };
 
 enum class VectorElementType
