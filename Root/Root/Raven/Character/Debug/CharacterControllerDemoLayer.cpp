@@ -78,7 +78,7 @@ std::string JoinAnimationNames(const std::vector<std::string>& names)
     return joined;
 }
 
-bool ResolveLocomotionAnimationName(
+bool ResolveAnimationName(
     const std::vector<std::string>& availableNames,
     const std::string& expectedName,
     std::string& outResolvedName,
@@ -90,7 +90,7 @@ bool ResolveLocomotionAnimationName(
     {
         if (errorMessage != nullptr)
         {
-            *errorMessage = "Locomotion Animation期待名が空です";
+            *errorMessage = "Animation期待名が空です";
         }
         return false;
     }
@@ -138,12 +138,12 @@ bool ResolveLocomotionAnimationName(
     {
         if (candidates.empty())
         {
-            *errorMessage = "Locomotion Animationを解決できません: expected='"
+            *errorMessage = "Animationを解決できません: expected='"
                 + expectedName + "' available=[" + JoinAnimationNames(availableNames) + "]";
         }
         else
         {
-            *errorMessage = "Locomotion Animation名が曖昧です: expected='"
+            *errorMessage = "Animation名が曖昧です: expected='"
                 + expectedName + "' candidates=[" + JoinAnimationNames(candidates) + "]";
         }
     }
@@ -301,6 +301,7 @@ void CharacterControllerDemoLayer::OnAttach()
     m_CharacterRootTransform.Scale = { 1.0f, 1.0f, 1.0f };
 
     m_CharacterController = CharacterController{};
+    m_HumanoidDashOneShotActive = false;
     m_GamepadConnected = false;
     m_RawGamepadState = GamepadState{};
     m_ResolvedInput = CharacterControllerInput{};
@@ -334,7 +335,8 @@ void CharacterControllerDemoLayer::OnAttach()
 
     std::cout
         << "[CharacterController] Controls: WASD / Left Stick Camera-relative Move, "
-        << "Right Stick Camera, Space / A Jump, Left Shift / RT Run, Left Ctrl / RB Sprint\n";
+        << "Right Stick Camera, Space / A Jump, Left Shift / RT Run, Left Ctrl / RB Sprint, "
+        << "Left Alt / B Dash\n";
 }
 
 void CharacterControllerDemoLayer::OnDetach()
@@ -352,6 +354,7 @@ void CharacterControllerDemoLayer::OnDetach()
     m_CharacterMaterial.reset();
     m_CharacterController = CharacterController{};
     m_CharacterRootTransform = TransformComponent{};
+    m_HumanoidDashOneShotActive = false;
     m_GamepadConnected = false;
     m_RawGamepadState = GamepadState{};
     m_ResolvedInput = CharacterControllerInput{};
@@ -402,11 +405,10 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     }
 
     // ========================================================================
-    // Character actual velocity -> Humanoid Locomotion BlendTree
+    // Character actual velocity -> Humanoid Locomotion / Dash One-Shot
     // ========================================================================
-    // 入力値ではなく、CharacterControllerが加減速・壁Slide・Moving Platform等を解決した後の
-    // m_Velocityから水平速度を取得してBlendTreeへ渡します。
-    // Run/Sprint入力中でも壁へ正面衝突して実速度が0になればAnimationもIdle側へ戻ります。
+    // 通常時はCharacterControllerの実水平速度をBlendTreeへ同期し、Dash開始FrameだけProfileで指定した
+    // One-ShotへCrossFadeします。Roll中もGameplay DashのCollision-aware移動は独立して継続します。
     if (m_HumanoidLocomotionAnimationActive == true)
     {
         if (UpdateHumanoidLocomotionAnimation(safeDeltaTime, &errorMessage) == false)
@@ -415,6 +417,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
                 << "[CharacterController] Humanoid Locomotion Animation更新に失敗したため無効化します: "
                 << errorMessage << '\n';
             m_HumanoidLocomotionAnimationActive = false;
+            m_HumanoidDashOneShotActive = false;
         }
     }
 
@@ -530,6 +533,7 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     }
 
     m_HumanoidLocomotionAnimationActive = false;
+    m_HumanoidDashOneShotActive = false;
     m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     m_HumanoidLocomotionRuntime = Gltf::SkinnedBlendTreeRuntime{};
     m_HumanoidAvailableAnimationNames.clear();
@@ -638,22 +642,22 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
 
     // SprintもIdle / Walk / Runと同じ解決規則を使用します。
     // 4 Clipのどれか1つでも曖昧なら、誤ったMotionを自動採用せず初期化を失敗させます。
-    if (ResolveLocomotionAnimationName(
+    if (ResolveAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.IdleAnimationName,
             m_ResolvedHumanoidIdleAnimationName,
             errorMessage) == false
-        || ResolveLocomotionAnimationName(
+        || ResolveAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.WalkAnimationName,
             m_ResolvedHumanoidWalkAnimationName,
             errorMessage) == false
-        || ResolveLocomotionAnimationName(
+        || ResolveAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.RunAnimationName,
             m_ResolvedHumanoidRunAnimationName,
             errorMessage) == false
-        || ResolveLocomotionAnimationName(
+        || ResolveAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.SprintAnimationName,
             m_ResolvedHumanoidSprintAnimationName,
@@ -724,6 +728,7 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
         << "' Run='" << m_ResolvedHumanoidRunAnimationName
         << "' Sprint='" << m_ResolvedHumanoidSprintAnimationName
+        << "' Dash='" << m_HumanoidAnimationProfile.Actions.DashAnimationName
         << "' AnimationThresholds=" << locomotionProfile.IdleThreshold
         << "/" << locomotionProfile.WalkThreshold
         << "/" << locomotionProfile.RunThreshold
@@ -740,6 +745,98 @@ bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
 {
     if (m_HumanoidLocomotionAnimationActive == false)
     {
+        return true;
+    }
+
+    // ========================================================================
+    // Dash start -> Profile-defined one-shot
+    // ========================================================================
+    // Gameplay Dashの開始EdgeだけをAnimation Triggerに使用します。DashのDurationとRoll Clipの長さは
+    // 別責務なので、RollはDash移動終了後もClip終端まで再生し、終了時点でLocomotionへ戻します。
+    if (m_CharacterController.WasDashStartedThisFrame() == true
+        && m_HumanoidDashOneShotActive == false)
+    {
+        std::string resolvedDashAnimationName;
+        std::string dashAnimationError;
+        if (ResolveAnimationName(
+                m_HumanoidAvailableAnimationNames,
+                m_HumanoidAnimationProfile.Actions.DashAnimationName,
+                resolvedDashAnimationName,
+                &dashAnimationError) == true)
+        {
+            if (m_HumanoidLocomotionRuntime.PlayOneShotAnimation(
+                    m_HumanoidAnimationSkinIndex,
+                    resolvedDashAnimationName,
+                    0.10f,
+                    &dashAnimationError) == true)
+            {
+                m_HumanoidDashOneShotActive = true;
+            }
+            else
+            {
+                // Rollだけ失敗してもCharacter Dashと通常Locomotionは継続します。
+                // Asset差し替え時のClip欠落をAnimation全体の停止へ波及させないfail-soft経路です。
+                std::cerr
+                    << "[CharacterController] Dash Roll One-Shotを開始できません。"
+                    << " Locomotionを継続します: " << dashAnimationError << '\n';
+            }
+        }
+        else
+        {
+            std::cerr
+                << "[CharacterController] Dash Animationを解決できません。"
+                << " Locomotionを継続します: " << dashAnimationError << '\n';
+        }
+    }
+
+    // ========================================================================
+    // Dash one-shot playback -> Locomotion return
+    // ========================================================================
+    if (m_HumanoidDashOneShotActive == true)
+    {
+        // One-Shot中も診断用のCharacter実速度だけは更新しますが、BlendTree Parameter/Playback Speedは
+        // 書き換えません。非Loop RollへLocomotion補正値を混ぜないためです。
+        m_HumanoidActualHorizontalSpeed = m_CharacterController.GetHorizontalSpeed();
+
+        if (m_HumanoidLocomotionRuntime.Update(deltaTime, errorMessage) == false)
+        {
+            return false;
+        }
+
+        bool oneShotFinished = false;
+        if (m_HumanoidLocomotionRuntime.IsOneShotAnimationFinished(
+                m_HumanoidAnimationSkinIndex,
+                oneShotFinished,
+                errorMessage) == false)
+        {
+            return false;
+        }
+
+        if (oneShotFinished == true)
+        {
+            const float returnMovementSpeed = m_CharacterController.GetHorizontalSpeed();
+            if (m_HumanoidLocomotionRuntime.ReturnToLocomotion(
+                    m_HumanoidAnimationSkinIndex,
+                    returnMovementSpeed,
+                    0.15f,
+                    errorMessage) == false)
+            {
+                return false;
+            }
+
+            m_HumanoidDashOneShotActive = false;
+            m_HumanoidActualHorizontalSpeed = returnMovementSpeed;
+
+            // ReturnToLocomotion()が現在速度をBlendTreeへ同期した直後のWeightを診断値へ反映します。
+            if (m_HumanoidLocomotionRuntime.GetDebugInfo(
+                    m_HumanoidAnimationSkinIndex,
+                    m_HumanoidLocomotionDebugInfo,
+                    errorMessage) == false)
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -778,6 +875,7 @@ void CharacterControllerDemoLayer::DestroyHumanoidVisual()
     // BlendTree RuntimeはSkinnedMeshRuntimeAssetを非所有ポインタで参照します。
     // SceneInstanceを先に破棄すると参照先が消えるため、Runtime状態を先に破棄します。
     m_HumanoidLocomotionAnimationActive = false;
+    m_HumanoidDashOneShotActive = false;
     m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     m_HumanoidLocomotionRuntime = Gltf::SkinnedBlendTreeRuntime{};
     m_HumanoidAvailableAnimationNames.clear();

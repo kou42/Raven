@@ -13,5 +13,8 @@
     "walkAuthoredMotionSpeed": 1.8,
     "runAuthoredMotionSpeed": 5.5,
     "sprintAuthoredMotionSpeed": 8.0
+  },
+  "actions": {
+    "dashAnimation": "Roll"
   }
 }

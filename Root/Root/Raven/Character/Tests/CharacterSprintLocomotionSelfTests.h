@@ -70,6 +70,7 @@ inline void RunQuaterniusDefaultProfileTest()
     assert(profile.Locomotion.WalkAnimationName == "Walk_Loop");
     assert(profile.Locomotion.RunAnimationName == "Jog_Fwd_Loop");
     assert(profile.Locomotion.SprintAnimationName == "Sprint_Loop");
+    assert(profile.Actions.DashAnimationName == "Roll");
     assert(NearlyEqual(profile.Locomotion.IdleThreshold, 0.0f));
     assert(NearlyEqual(profile.Locomotion.WalkThreshold, 1.8f));
     assert(NearlyEqual(profile.Locomotion.RunThreshold, 5.5f));
@@ -92,6 +93,7 @@ inline void RunQuaterniusMissingProfileFallbackContractTest()
     assert(profile.Locomotion.WalkAnimationName == "Walk_Loop");
     assert(profile.Locomotion.RunAnimationName == "Jog_Fwd_Loop");
     assert(profile.Locomotion.SprintAnimationName == "Sprint_Loop");
+    assert(profile.Actions.DashAnimationName == "Roll");
 }
 
 inline void RunSprintProfileRoundTripTest()
@@ -108,14 +110,16 @@ inline void RunSprintProfileRoundTripTest()
     assert(restored.Locomotion.WalkAnimationName == "Walk_Loop");
     assert(restored.Locomotion.RunAnimationName == "Jog_Fwd_Loop");
     assert(restored.Locomotion.SprintAnimationName == "Sprint_Loop");
+    assert(restored.Actions.DashAnimationName == "Roll");
     assert(NearlyEqual(restored.Locomotion.SprintThreshold, 8.0f));
     assert(NearlyEqual(restored.Locomotion.SprintAuthoredMotionSpeed, 8.0f));
 }
 
 inline void RunLegacyProfileSprintFallbackTest()
 {
-    // Sprint追加前のversion 1 Profileを模したJSONです。
+    // Sprint / Action追加前のversion 1 Profileを模したJSONです。
     // Run値が新しいSprint既定値8.0を超えていても、Deserialize側がRunより上へSprint値を補完する必要があります。
+    // actions自体が無い場合もDash One-Shot既定値を維持し、旧Profileを読み込めることを固定します。
     constexpr const char* LegacyProfile = R"json(
 {
   "type": "RavenHumanoidAnimationProfile",
@@ -139,6 +143,7 @@ inline void RunLegacyProfileSprintFallbackTest()
     assert(restored.Locomotion.SprintAnimationName.empty() == false);
     assert(restored.Locomotion.SprintThreshold > restored.Locomotion.RunThreshold);
     assert(restored.Locomotion.SprintAuthoredMotionSpeed > restored.Locomotion.RunAuthoredMotionSpeed);
+    assert(restored.Actions.DashAnimationName == "Roll");
 }
 
 } // namespace sprint_locomotion_tests
