@@ -4,6 +4,7 @@
 #include "Raven/Core/JsonParser.h"
 #include "Raven/Core/JsonWriter.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -15,6 +16,7 @@ namespace
 {
 constexpr int CurrentProfileVersion = 1;
 constexpr const char* ProfileType = "RavenHumanoidAnimationProfile";
+constexpr float MinimumSprintGap = 0.05f;
 
 bool SetError(std::string* errorMessage, const std::string& message)
 {
@@ -182,6 +184,9 @@ bool DeserializeHumanoidAnimationProfile(
 
     HumanoidAnimationProfile profile{};
     HumanoidLocomotionProfile& value = profile.Locomotion;
+    const bool hasSprintThreshold = locomotion->Find("sprintThreshold") != nullptr;
+    const bool hasSprintAuthoredMotionSpeed = locomotion->Find("sprintAuthoredMotionSpeed") != nullptr;
+
     if (ReadString(*locomotion, "idleAnimation", value.IdleAnimationName, errorMessage) == false
         || ReadString(*locomotion, "walkAnimation", value.WalkAnimationName, errorMessage) == false
         || ReadString(*locomotion, "runAnimation", value.RunAnimationName, errorMessage) == false
@@ -196,13 +201,34 @@ bool DeserializeHumanoidAnimationProfile(
             *locomotion,
             "sprintAuthoredMotionSpeed",
             value.SprintAuthoredMotionSpeed,
-            errorMessage) == false
-        || ValidateProfile(profile, errorMessage) == false)
+            errorMessage) == false)
     {
         return false;
     }
-    // Sprint項目はversion 1へのadditive extensionです。旧Profileに項目が無い場合は
-    // HumanoidLocomotionProfileの既定値を維持し、既存Assetを読めなくしないようにします。
+
+    // Sprint項目はversion 1へのadditive extensionです。
+    // 旧ProfileではRun値が現在のSprint既定値8.0を超えている可能性があるため、単に既定値を残すと
+    // Run < Sprintという新しい検証条件に違反します。Sprint項目が欠落している場合だけ、既定値と
+    // 「旧Run値 + 最小間隔」の大きい方へ補完し、既存Assetの意味を壊さず新しい4段階規約へ昇格させます。
+    if (hasSprintThreshold == false)
+    {
+        value.SprintThreshold = std::max(
+            value.SprintThreshold,
+            value.RunThreshold + MinimumSprintGap);
+    }
+    if (hasSprintAuthoredMotionSpeed == false)
+    {
+        value.SprintAuthoredMotionSpeed = std::max(
+            value.SprintAuthoredMotionSpeed,
+            value.RunAuthoredMotionSpeed + MinimumSprintGap);
+    }
+
+    if (ValidateProfile(profile, errorMessage) == false)
+    {
+        return false;
+    }
+
+    // 全検査後にだけ反映し、壊れたAssetによって利用中の設定を失わないようにします。
     outProfile = std::move(profile);
     return true;
 }
