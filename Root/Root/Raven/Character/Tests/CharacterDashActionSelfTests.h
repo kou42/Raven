@@ -52,6 +52,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
+    // Hold中に入力方向を変えても開始時のDash方向を維持し、開始Eventも再発火しません。
     if (dash.Update(true, math::Vec2{ -1.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.10f, errorMessage) == false)
     {
         return false;
@@ -86,7 +87,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    // Cooldown終了後は新しいPress Edgeを受け付け、MoveなしならForwardへDashします。
+    // Cooldown終了後は新しいPress Edgeを受け付け、MoveなしならCharacter ForwardへDashします。
     const bool releaseAfterCooldown = dash.Update(false, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.50f, errorMessage);
     if (releaseAfterCooldown == false)
     {
@@ -109,6 +110,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
+    // GroundedOnly=trueではAirborneからDashを開始できません。
     const bool airborneRelease = dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage);
     if (airborneRelease == false)
     {
