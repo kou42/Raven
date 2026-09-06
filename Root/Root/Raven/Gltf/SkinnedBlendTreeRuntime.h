@@ -27,8 +27,8 @@ class SkinnedMeshRuntimeAsset;
 //
 // AuthoredMotionSpeedはClipを1.0倍速で再生したときに見た目上想定している移動速度です。
 // Thresholdと分離することで、Gameplay速度を変えずに足滑りだけをPlayback Speedで補正できます。
-// これらはAnimation Assetごとの設定なので、CharacterControllerのGameplay目標速度を既定値として
-// 流用しません。Configure() / ConfigureSprint()の呼び出し側がProfile等から明示します。
+// これらはAnimation Assetごとの設定なので、CharacterControllerのWalk / Run / Sprint目標速度を既定値として
+// 流用しません。Configure() / ConfigureSprint()の呼び出し側がProfile等の正規の設定元から全値を明示します。
 struct LocomotionBlendTreeConfig
 {
     std::string IdleAnimationName;
@@ -67,15 +67,16 @@ struct LocomotionPlaybackDebugInfo
 // ============================================================================
 // SkinnedBlendTreeRuntime
 // ============================================================================
-// 1D Locomotion BlendTree Runtimeです。
+// Stage 4から拡張している1D Locomotion BlendTree Runtimeです。
 //
 // 重要:
 // - BlendTree1D自身は時間を持たない
 // - AnimatorがNormalizedTimeを1つだけ進める
-// - Locomotion Childは同じNormalizedTimeでSampleする
+// - Idle / Walk / Run / Sprintは同じNormalizedTimeでSampleする
 // - Speed変更時は再生をRestartせずParameterだけ更新する
 // - Gameplay実速度とClip想定速度の差はAnimator Playback Speedで吸収する
 //
+// この構成によりWalk -> Run -> Sprintで足運びの位相を保ったまま連続Pose Blendできます。
 // 既存3段階APIは互換用として維持し、Sprintを使うCharacterだけ4段階APIを選択します。
 class SkinnedBlendTreeRuntime
 {
@@ -85,6 +86,9 @@ public:
         SkinnedMeshRuntimeAsset& targetAsset,
         std::string* errorMessage = nullptr);
 
+    // Attach済みSkinで利用可能なAnimation名をglTF animations[]順で返します。
+    // Character側で固定名を推測せず、Assetが実際に持つClip名を診断・解決するための入口です。
+    // Clip本体を外部へ公開しないことで、Animation所有権とAnimator状態はRuntime内部へ閉じたまま維持します。
     bool GetAnimationNames(
         std::size_t skinIndex,
         std::vector<std::string>& outNames,
@@ -103,17 +107,23 @@ public:
         const LocomotionBlendTreeConfig& config,
         std::string* errorMessage = nullptr);
 
+    // Character Controllerから毎Frame渡す速度Parameterです。
+    // Parameter更新と同時に現在のBlend WeightからReference Motion Speedを求め、
+    // Animator Playback Speedも更新してFoot Slidingを補正します。
     bool SetMovementSpeed(
         std::size_t skinIndex,
         float movementSpeed,
         std::string* errorMessage = nullptr);
 
     // 4 ChildのAuthored Motion Speedを用いてFoot Sliding補正まで行うSprint対応版です。
+    // 既存3 ChildのSetMovementSpeed()と同様、再生をRestartせずParameterとPlayback Speedだけを更新します。
     bool SetMovementSpeedSprintAware(
         std::size_t skinIndex,
         float movementSpeed,
         std::string* errorMessage = nullptr);
 
+    // Runtime調整UIからLocomotion Thresholdだけを更新する入口です。
+    // 既存BlendTreeオブジェクトとAnimatorのNormalizedTimeを維持し、Clipの再生位相をリスタートしません。
     bool SetLocomotionThresholds(
         std::size_t skinIndex,
         float idleThreshold,
@@ -121,6 +131,7 @@ public:
         float runThreshold,
         std::string* errorMessage = nullptr);
 
+    // Sprint対応4 Child版です。Idle / Walk / Run / SprintのChild順を維持したままThresholdだけを更新します。
     bool SetLocomotionThresholds(
         std::size_t skinIndex,
         float idleThreshold,
@@ -129,6 +140,8 @@ public:
         float sprintThreshold,
         std::string* errorMessage = nullptr);
 
+    // Runtime調整UIからAuthored Motion Speedだけを更新する入口です。
+    // BlendTreeの再Configureや再生Restartは行わず、現在Parameterに対する補正倍率だけを即座に再計算します。
     bool SetLocomotionAuthoredMotionSpeeds(
         std::size_t skinIndex,
         float walkAuthoredMotionSpeed,
@@ -175,6 +188,7 @@ public:
         return UpdateLocomotionPlaybackSpeed(*state, errorMessage);
     }
 
+    // Sprint対応4 Child版です。現在Parameterを維持したままWalk / Run / Sprintの補正値を再計算します。
     bool SetLocomotionAuthoredMotionSpeeds(
         std::size_t skinIndex,
         float walkAuthoredMotionSpeed,
@@ -182,6 +196,9 @@ public:
         float sprintAuthoredMotionSpeed,
         std::string* errorMessage = nullptr);
 
+    // 汎用の明示Playback Speed設定です。
+    // Locomotion中はSetMovementSpeed() / SetMovementSpeedSprintAware()が毎Frame補正値を書き戻すため、
+    // 手動値は一時的なOverrideになります。
     bool SetPlaybackSpeed(
         std::size_t skinIndex,
         float playbackSpeed,
@@ -200,18 +217,28 @@ public:
     // ========================================================================
     // Temporary One-Shot Animation
     // ========================================================================
+    // Locomotion BlendTreeからGet-Up / Hit Reactionなどの単発Clipへ遷移します。
+    // Animatorの既存CrossFade経路を利用し、Clipは非Loopで再生します。
+    //
+    // one-shot再生中は通常のMovement Speed同期を停止し、終了後ReturnToLocomotion()へ
+    // Character Controllerの現在速度を渡してLocomotion Parameterを再同期します。
     bool PlayOneShotAnimation(
         std::size_t skinIndex,
         const std::string& animationName,
         float crossFadeDuration = 0.10f,
         std::string* errorMessage = nullptr);
 
+    // one-shot Clipから設定済みIdle / Walk / Run / Sprint BlendTreeへ戻します。
+    // movementSpeedを明示的に受け取ることで、Ragdoll突入前の古い走行速度ではなく
+    // Get-Up完了時点のCharacter Controller速度へ直接復帰できます。
     bool ReturnToLocomotion(
         std::size_t skinIndex,
         float movementSpeed,
         float crossFadeDuration = 0.15f,
         std::string* errorMessage = nullptr);
 
+    // one-shotが非Loop終端へ到達したかを取得します。
+    // one-shot状態でない場合はoutFinished=falseを返します。
     bool IsOneShotAnimationFinished(
         std::size_t skinIndex,
         bool& outFinished,
@@ -235,7 +262,9 @@ private:
         std::shared_ptr<BlendTree1D> LocomotionTree;
         float MovementSpeed = 0.0f;
 
-        // Idleは移動距離0として扱い、移動ClipだけAuthored Motion Speedを保持します。
+        // Locomotion Playback Speed補正用のAsset側速度メタデータです。
+        // Idleは移動距離0として扱い、Walk / Run / Sprintだけ明示値を保持します。
+        // Configure() / ConfigureSprint()成功時にProfile由来の値で初期化し、未設定状態では中立値を維持します。
         float WalkAuthoredMotionSpeed = 0.0f;
         float RunAuthoredMotionSpeed = 0.0f;
         float SprintAuthoredMotionSpeed = 0.0f;
@@ -245,6 +274,10 @@ private:
         float LocomotionPlaybackSpeed = 1.0f;
 
         bool Configured = false;
+
+        // Locomotion以外の非Loop Clipを一時再生しているかをRuntime側で追跡します。
+        // Animator::IsFinished()だけでは「Locomotion停止」と「one-shot完了」を区別できないため、
+        // 呼び出し側がGet-Up終了を安全に判定できるよう明示Stateを持ちます。
         bool OneShotActive = false;
     };
 
@@ -271,6 +304,8 @@ private:
 // ============================================================================
 // Sprint-aware inline extensions
 // ============================================================================
+// 既存3段階Runtimeの実装を変更せず、Sprint対応Assetだけが明示的に使用する4段階経路です。
+// Child順は Idle / Walk / Run / Sprint に固定し、Debug SnapshotとAuthored Motion Speed解決でも同じIndex規約を使います。
 inline bool SkinnedBlendTreeRuntime::ConfigureSprint(
     std::size_t skinIndex,
     const LocomotionBlendTreeConfig& config,
@@ -361,6 +396,8 @@ inline bool SkinnedBlendTreeRuntime::ConfigureSprint(
         return false;
     }
 
+    // Configure()と同様、一時Treeへ4 Childすべて登録してからRuntime Stateへ反映します。
+    // 途中まで構築したTreeを公開しないため、Clip欠落やThreshold重複時も既存Stateを壊しません。
     std::shared_ptr<BlendTree1D> blendTree = std::make_shared<BlendTree1D>();
     if (blendTree == nullptr)
     {
@@ -395,6 +432,8 @@ inline bool SkinnedBlendTreeRuntime::ConfigureSprint(
     state->Configured = true;
     state->OneShotActive = false;
 
+    // 初回だけPlayBlendTree()し、以後はSetMovementSpeedSprintAware()でParameterを更新します。
+    // restart=trueでIdle側の位相0から開始します。
     state->AnimatorInstance.PlayBlendTree(state->LocomotionTree, state->MovementSpeed, true);
     state->AnimatorInstance.SetSpeed(1.0f);
     return true;
@@ -453,12 +492,26 @@ inline bool SkinnedBlendTreeRuntime::SetMovementSpeedSprintAware(
         return false;
     }
 
+    // Pose Blendと同じWeightでAsset側の想定速度も補間します。
+    // Run -> Sprint境界でもReference Motion Speedを連続にすることでPlayback Speedの段差を避けます。
     const auto resolveAuthoredMotionSpeed = [state](std::size_t childIndex)
     {
-        if (childIndex == 0u) { return 0.0f; }
-        if (childIndex == 1u) { return state->WalkAuthoredMotionSpeed; }
-        if (childIndex == 2u) { return state->RunAuthoredMotionSpeed; }
-        if (childIndex == 3u) { return state->SprintAuthoredMotionSpeed; }
+        if (childIndex == 0u)
+        {
+            return 0.0f;
+        }
+        if (childIndex == 1u)
+        {
+            return state->WalkAuthoredMotionSpeed;
+        }
+        if (childIndex == 2u)
+        {
+            return state->RunAuthoredMotionSpeed;
+        }
+        if (childIndex == 3u)
+        {
+            return state->SprintAuthoredMotionSpeed;
+        }
         return 0.0f;
     };
 
@@ -466,6 +519,7 @@ inline bool SkinnedBlendTreeRuntime::SetMovementSpeedSprintAware(
         resolveAuthoredMotionSpeed(blendInfo.LeftChildIndex) * blendInfo.LeftWeight
         + resolveAuthoredMotionSpeed(blendInfo.RightChildIndex) * blendInfo.RightWeight;
 
+    // 完全IdleではReference Speedが0になるため、Idle Clip自体を止めず1.0倍速を維持します。
     constexpr float ReferenceSpeedEpsilon = 1.0e-5f;
     if (state->ReferenceMotionSpeed <= ReferenceSpeedEpsilon)
     {
@@ -517,6 +571,8 @@ inline bool SkinnedBlendTreeRuntime::SetLocomotionThresholds(
         return false;
     }
 
+    // SetThresholds()はChild順を並べ替えないため、Idle / Walk / Run / SprintのIndex規約を維持できます。
+    // 成功後は現在Movement Speedを再評価し、Blend WeightとFoot Sliding補正を同じFrameで同期します。
     if (state->LocomotionTree->SetThresholds(
             { idleThreshold, walkThreshold, runThreshold, sprintThreshold }) == false)
     {
@@ -564,6 +620,8 @@ inline bool SkinnedBlendTreeRuntime::SetLocomotionAuthoredMotionSpeeds(
     state->WalkAuthoredMotionSpeed = walkAuthoredMotionSpeed;
     state->RunAuthoredMotionSpeed = runAuthoredMotionSpeed;
     state->SprintAuthoredMotionSpeed = sprintAuthoredMotionSpeed;
+
+    // BlendTreeを再構築せず、現在Parameterに対するPlayback補正だけを再計算します。
     return SetMovementSpeedSprintAware(skinIndex, state->MovementSpeed, errorMessage);
 }
 
