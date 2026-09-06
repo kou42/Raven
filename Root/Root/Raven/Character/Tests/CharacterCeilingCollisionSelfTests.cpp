@@ -34,6 +34,11 @@ Entity CreateCeiling(Scene& scene, float bottomHeight)
     return ceiling;
 }
 
+bool NearlyEqual(float a, float b, float tolerance = 1.0e-4f)
+{
+    return std::fabs(a - b) <= tolerance;
+}
+
 } // namespace
 
 void RunCharacterCeilingCollisionSelfTests()
@@ -95,6 +100,67 @@ void RunCharacterCeilingCollisionSelfTests()
         assert(transform.Position.y > 0.35f);
         assert(controller.GetVelocity().y > 0.0f);
         assert(controller.IsGrounded() == false);
+    }
+
+    // ========================================================================
+    // Walk / Run / Sprint speed priority
+    // ========================================================================
+    // Sprint追加後も通常移動とRunの既存意味を変えず、Sprint要求時だけ最高速へ昇格することを固定します。
+    // 各CaseでControllerを作り直し、前CaseのVelocityや加速履歴が判定へ影響しないようにします。
+    {
+        CharacterControllerConfig config{};
+        config.WalkSpeed = 2.0f;
+        config.RunSpeed = 4.0f;
+        config.SprintSpeed = 7.0f;
+        config.Acceleration = 100.0f;
+        config.Deceleration = 100.0f;
+
+        CharacterControllerInput input{};
+        input.Move = math::Vec2{ 0.0f, 1.0f };
+
+        TransformComponent walkTransform{};
+        CharacterController walkController(config);
+        assert(walkController.Update(input, 0.10f, walkTransform));
+        assert(NearlyEqual(walkController.GetHorizontalSpeed(), config.WalkSpeed));
+
+        TransformComponent runTransform{};
+        CharacterController runController(config);
+        input.Run = true;
+        assert(runController.Update(input, 0.10f, runTransform));
+        assert(NearlyEqual(runController.GetHorizontalSpeed(), config.RunSpeed));
+
+        TransformComponent sprintTransform{};
+        CharacterController sprintController(config);
+        input.Run = false;
+        input.Sprint = true;
+        assert(sprintController.Update(input, 0.10f, sprintTransform));
+        assert(NearlyEqual(sprintController.GetHorizontalSpeed(), config.SprintSpeed));
+
+        // KeyboardとGamepadを同時に使う場合などRun/Sprintが両方trueでも、Sprintを優先する規約を固定します。
+        TransformComponent combinedTransform{};
+        CharacterController combinedController(config);
+        input.Run = true;
+        input.Sprint = true;
+        assert(combinedController.Update(input, 0.10f, combinedTransform));
+        assert(NearlyEqual(combinedController.GetHorizontalSpeed(), config.SprintSpeed));
+    }
+
+    // SprintSpeedがRunSpeed未満のConfigは4段階速度規約に反するため、更新開始前に拒否します。
+    {
+        CharacterControllerConfig invalidConfig{};
+        invalidConfig.WalkSpeed = 2.0f;
+        invalidConfig.RunSpeed = 5.0f;
+        invalidConfig.SprintSpeed = 4.0f;
+        CharacterController controller(invalidConfig);
+
+        TransformComponent transform{};
+        CharacterControllerInput input{};
+        input.Move = math::Vec2{ 0.0f, 1.0f };
+        input.Sprint = true;
+
+        std::string errorMessage;
+        assert(controller.Update(input, 0.10f, transform, &errorMessage) == false);
+        assert(errorMessage.empty() == false);
     }
 }
 
