@@ -114,6 +114,29 @@ bool TryReadFlag(const std::string& data, std::size_t& cursor, bool& outValue)
     return false;
 }
 
+bool TryParseNonNegativeFloat(const std::string& text, float& outValue)
+{
+    const char* begin = text.c_str();
+    char* end = nullptr;
+    const float value = std::strtof(begin, &end);
+    if (end == begin)
+    {
+        return false;
+    }
+
+    while (*end != '\0' && std::isspace(static_cast<unsigned char>(*end)) != 0)
+    {
+        ++end;
+    }
+    if (*end != '\0' || std::isfinite(value) == false || value < 0.0f)
+    {
+        return false;
+    }
+
+    outValue = value;
+    return true;
+}
+
 math::Vec2 Midpoint(const math::Vec2& left, const math::Vec2& right)
 {
     return math::Vec2(
@@ -339,7 +362,8 @@ void TessellateEllipticalArc(
         return;
     }
 
-    const float rotation = std::fmod(xAxisRotationDegrees, 360.0f) * (kPi / 180.0f);
+    const float rotation =
+        std::fmod(xAxisRotationDegrees, 360.0f) * (kPi / 180.0f);
     const float cosRotation = std::cos(rotation);
     const float sinRotation = std::sin(rotation);
     const float halfDx = (start.x - end.x) * 0.5f;
@@ -349,6 +373,7 @@ void TessellateEllipticalArc(
     // いったん楕円ローカル座標へ回転し、center parameterizationへ変換します。
     const float transformedX = cosRotation * halfDx + sinRotation * halfDy;
     const float transformedY = -sinRotation * halfDx + cosRotation * halfDy;
+
     float radiusXSquared = radiusX * radiusX;
     float radiusYSquared = radiusY * radiusY;
     const float transformedXSquared = transformedX * transformedX;
@@ -426,9 +451,12 @@ void TessellateEllipticalArc(
 bool ParsePath(
     const std::string& data,
     std::vector<std::vector<math::Vec2>>& outSubpaths,
+    std::vector<bool>& outSubpathClosed,
     std::string* outError)
 {
     outSubpaths.clear();
+    outSubpathClosed.clear();
+
     std::vector<math::Vec2> currentPoints;
     std::size_t cursor = 0u;
     char command = '\0';
@@ -449,6 +477,17 @@ bool ParsePath(
         return false;
     };
 
+    auto finishSubpath = [&outSubpaths, &outSubpathClosed, &currentPoints](bool closed)
+    {
+        // MだけのsubpathもSVGとしては合法です。描画段階で頂点数に応じてfill/strokeを省略します。
+        if (currentPoints.empty() == false)
+        {
+            outSubpaths.push_back(std::move(currentPoints));
+            outSubpathClosed.push_back(closed);
+            currentPoints.clear();
+        }
+    };
+
     while (true)
     {
         SkipSeparators(data, cursor);
@@ -467,16 +506,11 @@ bool ParsePath(
                 {
                     return fail("SVG path closes before an active moveto subpath.");
                 }
-                if (currentPoints.size() < 3u)
-                {
-                    return fail("SVG path subpath must contain at least three vertices before closepath.");
-                }
 
-                // Z/zで現在輪郭を確定し、次のM/mから別のsubpathを開始できる状態へ戻します。
+                // Z/zはstrokeの終端を始点へ接続する意味を持つため、点列そのものとは別にclosed状態を保持します。
                 // currentはSVG仕様どおり閉じたsubpathの始点へ戻すため、後続relative movetoの基準も維持されます。
                 current = subpathStart;
-                outSubpaths.push_back(std::move(currentPoints));
-                currentPoints.clear();
+                finishSubpath(true);
                 hasActiveSubpath = false;
                 previousCommand = command;
                 command = '\0';
@@ -528,9 +562,10 @@ bool ParsePath(
 
             if (activeCommand == 'M' || activeCommand == 'm')
             {
+                // Z/zが無いMは前subpathをopenのまま確定します。これにより複数open subpathも保持できます。
                 if (hasActiveSubpath == true)
                 {
-                    return fail("SVG path requires each subpath to close before the next moveto.");
+                    finishSubpath(false);
                 }
                 currentPoints.clear();
                 subpathStart = next;
@@ -775,11 +810,12 @@ bool ParsePath(
 
     if (hasActiveSubpath == true)
     {
-        return fail("SVG path currently requires every subpath to be closed with Z/z.");
+        // EOFはopen subpathの正常な終端です。Z/zが無いこと自体をエラーにしません。
+        finishSubpath(false);
     }
     if (outSubpaths.empty() == true)
     {
-        return fail("SVG path must contain at least one closed subpath with three vertices.");
+        return fail("SVG path must contain at least one moveto subpath.");
     }
     return true;
 }
@@ -972,7 +1008,11 @@ bool SvgPathImporter::AppendFilePaths(
         }
 
         PathElement pathElement;
-        if (ParsePath(dataIt->second, pathElement.Subpaths, outError) == false)
+        if (ParsePath(
+                dataIt->second,
+                pathElement.Subpaths,
+                pathElement.SubpathClosed,
+                outError) == false)
         {
             return false;
         }
@@ -996,6 +1036,25 @@ bool SvgPathImporter::AppendFilePaths(
         if (fillIt != attributes.end())
         {
             pathElement.FillColor = ParseColor(fillIt->second);
+        }
+
+        const auto strokeIt = attributes.find("stroke");
+        if (strokeIt != attributes.end())
+        {
+            pathElement.StrokeColor = ParseColor(strokeIt->second);
+        }
+
+        const auto strokeWidthIt = attributes.find("stroke-width");
+        if (strokeWidthIt != attributes.end())
+        {
+            if (TryParseNonNegativeFloat(strokeWidthIt->second, pathElement.StrokeWidth) == false)
+            {
+                if (outError != nullptr)
+                {
+                    *outError = "SVG path stroke-width must be a non-negative number.";
+                }
+                return false;
+            }
         }
 
         const std::size_t elementIndex = document.Paths.size();
