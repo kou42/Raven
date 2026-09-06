@@ -88,6 +88,51 @@ bool ReadFloat(const Core::JsonValue& object, const char* key, float& output, st
     output = converted;
     return true;
 }
+
+bool ReadOptionalString(
+    const Core::JsonValue& object,
+    const char* key,
+    std::string& output,
+    std::string* errorMessage)
+{
+    const Core::JsonValue* value = object.Find(key);
+    if (value == nullptr)
+    {
+        return true;
+    }
+    if (value->GetType() != Core::JsonValue::Type::String)
+    {
+        return SetError(errorMessage, std::string("Profile項目の型不一致: ") + key);
+    }
+    output = value->GetString();
+    return true;
+}
+
+bool ReadOptionalFloat(
+    const Core::JsonValue& object,
+    const char* key,
+    float& output,
+    std::string* errorMessage)
+{
+    const Core::JsonValue* value = object.Find(key);
+    if (value == nullptr)
+    {
+        return true;
+    }
+    if (value->GetType() != Core::JsonValue::Type::Number)
+    {
+        return SetError(errorMessage, std::string("Profile項目の型不一致: ") + key);
+    }
+
+    const double number = value->GetNumber();
+    const float converted = static_cast<float>(number);
+    if (std::isfinite(number) == false || std::isfinite(converted) == false)
+    {
+        return SetError(errorMessage, std::string("Profile数値がfloat範囲外です: ") + key);
+    }
+    output = converted;
+    return true;
+}
 } // namespace
 
 bool SerializeHumanoidAnimationProfile(
@@ -140,19 +185,24 @@ bool DeserializeHumanoidAnimationProfile(
     if (ReadString(*locomotion, "idleAnimation", value.IdleAnimationName, errorMessage) == false
         || ReadString(*locomotion, "walkAnimation", value.WalkAnimationName, errorMessage) == false
         || ReadString(*locomotion, "runAnimation", value.RunAnimationName, errorMessage) == false
-        || ReadString(*locomotion, "sprintAnimation", value.SprintAnimationName, errorMessage) == false
+        || ReadOptionalString(*locomotion, "sprintAnimation", value.SprintAnimationName, errorMessage) == false
         || ReadFloat(*locomotion, "idleThreshold", value.IdleThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "walkThreshold", value.WalkThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "runThreshold", value.RunThreshold, errorMessage) == false
-        || ReadFloat(*locomotion, "sprintThreshold", value.SprintThreshold, errorMessage) == false
+        || ReadOptionalFloat(*locomotion, "sprintThreshold", value.SprintThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "walkAuthoredMotionSpeed", value.WalkAuthoredMotionSpeed, errorMessage) == false
         || ReadFloat(*locomotion, "runAuthoredMotionSpeed", value.RunAuthoredMotionSpeed, errorMessage) == false
-        || ReadFloat(*locomotion, "sprintAuthoredMotionSpeed", value.SprintAuthoredMotionSpeed, errorMessage) == false
+        || ReadOptionalFloat(
+            *locomotion,
+            "sprintAuthoredMotionSpeed",
+            value.SprintAuthoredMotionSpeed,
+            errorMessage) == false
         || ValidateProfile(profile, errorMessage) == false)
     {
         return false;
     }
-    // 全検査後にだけ反映し、壊れたAssetによって利用中の設定を失わないようにします。
+    // Sprint項目はversion 1へのadditive extensionです。旧Profileに項目が無い場合は
+    // HumanoidLocomotionProfileの既定値を維持し、既存Assetを読めなくしないようにします。
     outProfile = std::move(profile);
     return true;
 }
