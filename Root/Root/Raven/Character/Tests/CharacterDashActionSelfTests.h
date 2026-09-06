@@ -40,14 +40,14 @@ inline bool Run(std::string* errorMessage = nullptr)
     {
         return false;
     }
-    if (Detail::Expect(dash.IsActive() && dash.StartedThisFrame(), "Dash開始Eventが不正です", errorMessage) == false)
+    if (Detail::Expect(dash.IsActive() == true && dash.StartedThisFrame() == true, "Dash開始Eventが不正です", errorMessage) == false)
     {
         return false;
     }
 
     const math::Vec3 initialVelocity = dash.GetHorizontalVelocity();
     const float component = config.Speed / std::sqrt(2.0f);
-    if (Detail::Expect(Detail::NearlyEqual(initialVelocity.x, component) && Detail::NearlyEqual(initialVelocity.z, component), "Dash方向の正規化が不正です", errorMessage) == false)
+    if (Detail::Expect(Detail::NearlyEqual(initialVelocity.x, component) == true && Detail::NearlyEqual(initialVelocity.z, component) == true, "Dash方向の正規化が不正です", errorMessage) == false)
     {
         return false;
     }
@@ -57,7 +57,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
     const math::Vec3 heldVelocity = dash.GetHorizontalVelocity();
-    if (Detail::Expect(dash.StartedThisFrame() == false && Detail::NearlyEqual(heldVelocity.x, initialVelocity.x) && Detail::NearlyEqual(heldVelocity.z, initialVelocity.z), "Dash Hold中に再発火または方向変更しました", errorMessage) == false)
+    if (Detail::Expect(dash.StartedThisFrame() == false && Detail::NearlyEqual(heldVelocity.x, initialVelocity.x) == true && Detail::NearlyEqual(heldVelocity.z, initialVelocity.z) == true, "Dash Hold中に再発火または方向変更しました", errorMessage) == false)
     {
         return false;
     }
@@ -88,7 +88,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
     const math::Vec3 fallbackVelocity = dash.GetHorizontalVelocity();
-    if (Detail::Expect(dash.StartedThisFrame() && Detail::NearlyEqual(fallbackVelocity.x, 0.0f) && Detail::NearlyEqual(fallbackVelocity.z, -config.Speed), "Cooldown終了後のForward Dashが不正です", errorMessage) == false)
+    if (Detail::Expect(dash.StartedThisFrame() == true && Detail::NearlyEqual(fallbackVelocity.x, 0.0f) == true && Detail::NearlyEqual(fallbackVelocity.z, -config.Speed) == true, "Cooldown終了後のForward Dashが不正です", errorMessage) == false)
     {
         return false;
     }
