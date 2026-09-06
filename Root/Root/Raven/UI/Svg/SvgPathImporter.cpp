@@ -2,6 +2,7 @@
 
 #include "Raven/Animation/AnimationKeyframe.h"
 #include "Raven/Animation/AnimationTrack.h"
+#include "Raven/UI/Svg/SvgImportContext.h"
 
 #include <algorithm>
 #include <cctype>
@@ -865,7 +866,7 @@ void CollectExistingNames(
 bool AppendOpacityAnimation(
     const std::string& body,
     const std::string& targetPath,
-    VectorDocument& document)
+    SvgImportContext& context)
 {
     const std::regex animateRegex(R"(<animate\b([^>]*)/?>)", std::regex::icase);
     for (std::sregex_iterator it(body.begin(), body.end(), animateRegex), end; it != end; ++it)
@@ -920,15 +921,18 @@ bool AppendOpacityAnimation(
         track.Binding.Property = "Opacity";
         track.Curve.GetKeys().push_back(AnimationKeyframe<float>{ 0.0f, from });
         track.Curve.GetKeys().push_back(AnimationKeyframe<float>{ duration, to });
-        document.Animation.AddPropertyTrack(std::move(track));
-        document.Animation.SetDuration(
-            std::max(document.Animation.GetDuration(), duration));
+
+        // Path Animationも他shapeと同じUIDocument::Animationへ登録します。
+        // duration/loopはSvgImportContextへ集約し、Importer終了時のFinalizeでClip全体へ反映します。
+        if (context.GetAnimation().AddPropertyTrack(std::move(track)) == false)
+        {
+            return false;
+        }
 
         const auto repeatIt = attributes.find("repeatCount");
-        if (repeatIt != attributes.end() && repeatIt->second == "indefinite")
-        {
-            document.LoopAnimation = true;
-        }
+        const bool loop =
+            repeatIt != attributes.end() && repeatIt->second == "indefinite";
+        context.RegisterAnimation(duration, loop);
         return true;
     }
     return true;
@@ -938,7 +942,7 @@ bool AppendOpacityAnimation(
 
 bool SvgPathImporter::AppendFilePaths(
     const std::string& path,
-    VectorDocument& document,
+    SvgImportContext& context,
     std::string* outError)
 {
     std::string source;
@@ -951,6 +955,7 @@ bool SvgPathImporter::AppendFilePaths(
         return false;
     }
 
+    VectorDocument& document = context.GetVectorDocument();
     std::unordered_set<std::string> usedNames;
     CollectExistingNames(document, usedNames);
     std::size_t generatedPathIndex = 0u;
@@ -1004,10 +1009,18 @@ bool SvgPathImporter::AppendFilePaths(
             VectorElementType::Path,
             elementIndex,
             static_cast<std::size_t>(it->position()) });
-        AppendOpacityAnimation(
-            (*it)[2].str(),
-            document.Paths[elementIndex].Name,
-            document);
+        if (AppendOpacityAnimation(
+                (*it)[2].str(),
+                document.Paths[elementIndex].Name,
+                context) == false)
+        {
+            if (outError != nullptr)
+            {
+                *outError = "SVG path opacity animation duplicates an existing property track: " +
+                    document.Paths[elementIndex].Name;
+            }
+            return false;
+        }
     }
 
     // 他shapeは既存Importerが型別に解析しているため、path追加後にSourceOffsetで再度統合します。
