@@ -81,6 +81,10 @@ CharacterControllerInput CharacterController::ReadDefaultGamepadInput(
 
     const float clampedRunThreshold = std::clamp(runTriggerThreshold, 0.0f, 1.0f);
     input.Run = gamepadState.RightTrigger >= clampedRunThreshold;
+
+    // SprintはRun Triggerとは別入力にします。
+    // Right Bumperを独立要求にすることで、将来Stamina等でSprintだけ拒否してもRunを維持できます。
+    input.Sprint = gamepadState.RightBumper;
     return input;
 }
 
@@ -105,6 +109,7 @@ CharacterControllerInput CharacterController::ReadDefaultPlayerInput(
     });
 
     input.Run = keyboard.Run || gamepad.Run;
+    input.Sprint = keyboard.Sprint || gamepad.Sprint;
     input.Jump = keyboard.Jump || gamepad.Jump;
     return input;
 }
