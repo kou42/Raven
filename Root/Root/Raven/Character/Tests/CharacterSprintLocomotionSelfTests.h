@@ -76,6 +76,24 @@ inline void RunQuaterniusDefaultProfileTest()
     assert(NearlyEqual(profile.Locomotion.SprintThreshold, 8.0f));
 }
 
+inline void RunQuaterniusMissingProfileFallbackContractTest()
+{
+    HumanoidAnimationProfile profile = CreateQuaterniusUAL1StandardAnimationProfile();
+    std::string errorMessage;
+
+    // Load失敗時は呼び出し側が事前に設定したfallback Profileを破壊しないことが重要です。
+    // DemoLayerはこの契約を利用して、JSON欠落時もQuaternius用Clip名をそのまま維持できます。
+    assert(LoadHumanoidAnimationProfile(
+        "Raven/Assets/Profiles/__missing_quaternius_profile_for_self_test__.json",
+        profile,
+        &errorMessage) == false);
+    assert(errorMessage.empty() == false);
+    assert(profile.Locomotion.IdleAnimationName == "Idle_Loop");
+    assert(profile.Locomotion.WalkAnimationName == "Walk_Loop");
+    assert(profile.Locomotion.RunAnimationName == "Jog_Fwd_Loop");
+    assert(profile.Locomotion.SprintAnimationName == "Sprint_Loop");
+}
+
 inline void RunSprintProfileRoundTripTest()
 {
     HumanoidAnimationProfile source = CreateQuaterniusUAL1StandardAnimationProfile();
@@ -131,6 +149,7 @@ inline void RunCharacterSprintLocomotionSelfTests()
 {
     sprint_locomotion_tests::RunFourChildBlendTreeTest();
     sprint_locomotion_tests::RunQuaterniusDefaultProfileTest();
+    sprint_locomotion_tests::RunQuaterniusMissingProfileFallbackContractTest();
     sprint_locomotion_tests::RunSprintProfileRoundTripTest();
     sprint_locomotion_tests::RunLegacyProfileSprintFallbackTest();
 }
