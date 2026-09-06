@@ -41,6 +41,12 @@ struct CharacterControllerInput
     bool Sprint = false;
     bool Jump = false;
     bool Dash = false;
+
+    // Dash等のGameplay Actionが通常のWalk/Run/Sprint加減速を一時的に置き換えるための入口です。
+    // trueのFrameはHorizontalVelocityOverrideをWorld XZ速度としてそのまま使用しますが、
+    // 実際の移動は従来どおりCharacterControllerのCapsule Cast / Step / Wall Slideを通します。
+    bool HasHorizontalVelocityOverride = false;
+    math::Vec2 HorizontalVelocityOverride{ 0.0f, 0.0f };
 };
 
 // ============================================================================
