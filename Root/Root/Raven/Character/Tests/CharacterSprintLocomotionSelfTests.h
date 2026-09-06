@@ -60,20 +60,25 @@ inline void RunFourChildBlendTreeTest()
     assert(NearlyEqual(info.RightWeight, 0.5f));
 }
 
+inline void RunQuaterniusDefaultProfileTest()
+{
+    const HumanoidAnimationProfile profile = CreateQuaterniusUAL1StandardAnimationProfile();
+
+    // JSON Profile読込前のfallbackでも、現在接続しているUAL1 Standard GLBの正式名を使用します。
+    // Raven Human用のIdle/Walk/Run名へ戻る退行をここで検出します。
+    assert(profile.Locomotion.IdleAnimationName == "Idle_Loop");
+    assert(profile.Locomotion.WalkAnimationName == "Walk_Loop");
+    assert(profile.Locomotion.RunAnimationName == "Jog_Fwd_Loop");
+    assert(profile.Locomotion.SprintAnimationName == "Sprint_Loop");
+    assert(NearlyEqual(profile.Locomotion.IdleThreshold, 0.0f));
+    assert(NearlyEqual(profile.Locomotion.WalkThreshold, 1.8f));
+    assert(NearlyEqual(profile.Locomotion.RunThreshold, 5.5f));
+    assert(NearlyEqual(profile.Locomotion.SprintThreshold, 8.0f));
+}
+
 inline void RunSprintProfileRoundTripTest()
 {
-    HumanoidAnimationProfile source = CreateRavenHumanTestAnimationProfile();
-    source.Locomotion.IdleAnimationName = "Idle_Loop";
-    source.Locomotion.WalkAnimationName = "Walk_Loop";
-    source.Locomotion.RunAnimationName = "Jog_Fwd_Loop";
-    source.Locomotion.SprintAnimationName = "Sprint_Loop";
-    source.Locomotion.IdleThreshold = 0.0f;
-    source.Locomotion.WalkThreshold = 1.8f;
-    source.Locomotion.RunThreshold = 5.5f;
-    source.Locomotion.SprintThreshold = 8.0f;
-    source.Locomotion.WalkAuthoredMotionSpeed = 1.8f;
-    source.Locomotion.RunAuthoredMotionSpeed = 5.5f;
-    source.Locomotion.SprintAuthoredMotionSpeed = 8.0f;
+    HumanoidAnimationProfile source = CreateQuaterniusUAL1StandardAnimationProfile();
 
     std::string serialized;
     std::string errorMessage;
@@ -81,6 +86,9 @@ inline void RunSprintProfileRoundTripTest()
 
     HumanoidAnimationProfile restored{};
     assert(DeserializeHumanoidAnimationProfile(serialized, restored, &errorMessage));
+    assert(restored.Locomotion.IdleAnimationName == "Idle_Loop");
+    assert(restored.Locomotion.WalkAnimationName == "Walk_Loop");
+    assert(restored.Locomotion.RunAnimationName == "Jog_Fwd_Loop");
     assert(restored.Locomotion.SprintAnimationName == "Sprint_Loop");
     assert(NearlyEqual(restored.Locomotion.SprintThreshold, 8.0f));
     assert(NearlyEqual(restored.Locomotion.SprintAuthoredMotionSpeed, 8.0f));
@@ -122,6 +130,7 @@ inline void RunLegacyProfileSprintFallbackTest()
 inline void RunCharacterSprintLocomotionSelfTests()
 {
     sprint_locomotion_tests::RunFourChildBlendTreeTest();
+    sprint_locomotion_tests::RunQuaterniusDefaultProfileTest();
     sprint_locomotion_tests::RunSprintProfileRoundTripTest();
     sprint_locomotion_tests::RunLegacyProfileSprintFallbackTest();
 }
