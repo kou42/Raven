@@ -52,11 +52,12 @@ struct PolygonElement
 };
 
 // PathはImporter側で曲線command等をPolylineへ正規化した後の共通表現だけを保持します。
-// そのためSVG path grammarなど、特定フォーマットの構文情報はここへ持ち込みません。
+// 1つのPathが複数の閉輪郭を持てるよう、輪郭単位のPolylineとして分離して保持します。
+// fill-ruleなど特定フォーマット由来の意味付けは後段の描画規則へ分離します。
 struct PathElement
 {
     std::string Name;
-    std::vector<math::Vec2> Points;
+    std::vector<std::vector<math::Vec2>> Subpaths;
     math::Vec4 FillColor{ 0.0f, 0.0f, 0.0f, 1.0f };
 };
 
