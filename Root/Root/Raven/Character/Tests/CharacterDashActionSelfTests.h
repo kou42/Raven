@@ -12,16 +12,16 @@ namespace CharacterDashActionSelfTests
 {
 namespace Detail
 {
-inline bool NearlyEqual(float a, float b) { return std::fabs(a - b) <= 1.0e-4f; }
-inline bool Expect(bool value, const char* message, std::string* error)
+inline bool NearlyEqual(float left, float right) { return std::fabs(left - right) <= 1.0e-4f; }
+inline bool Expect(bool condition, const char* message, std::string* errorMessage)
 {
-    if (value == true)
+    if (condition == true)
     {
         return true;
     }
-    if (error != nullptr)
+    if (errorMessage != nullptr)
     {
-        *error = message;
+        *errorMessage = message;
     }
     return false;
 }
