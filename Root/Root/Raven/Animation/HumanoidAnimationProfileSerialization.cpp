@@ -25,22 +25,32 @@ bool SetError(std::string* errorMessage, const std::string& message)
 bool ValidateProfile(const HumanoidAnimationProfile& profile, std::string* errorMessage)
 {
     const HumanoidLocomotionProfile& value = profile.Locomotion;
-    if (value.IdleAnimationName.empty() || value.WalkAnimationName.empty() || value.RunAnimationName.empty())
+    if (value.IdleAnimationName.empty()
+        || value.WalkAnimationName.empty()
+        || value.RunAnimationName.empty()
+        || value.SprintAnimationName.empty())
     {
         return SetError(errorMessage, "Animation名は空にできません");
     }
-    if (std::isfinite(value.IdleThreshold) == false || std::isfinite(value.WalkThreshold) == false
-        || std::isfinite(value.RunThreshold) == false || value.IdleThreshold < 0.0f
-        || value.WalkThreshold <= value.IdleThreshold || value.RunThreshold <= value.WalkThreshold)
+    if (std::isfinite(value.IdleThreshold) == false
+        || std::isfinite(value.WalkThreshold) == false
+        || std::isfinite(value.RunThreshold) == false
+        || std::isfinite(value.SprintThreshold) == false
+        || value.IdleThreshold < 0.0f
+        || value.WalkThreshold <= value.IdleThreshold
+        || value.RunThreshold <= value.WalkThreshold
+        || value.SprintThreshold <= value.RunThreshold)
     {
-        return SetError(errorMessage, "Thresholdは 0 <= Idle < Walk < Run を満たす必要があります");
+        return SetError(errorMessage, "Thresholdは 0 <= Idle < Walk < Run < Sprint を満たす必要があります");
     }
     if (std::isfinite(value.WalkAuthoredMotionSpeed) == false
         || std::isfinite(value.RunAuthoredMotionSpeed) == false
+        || std::isfinite(value.SprintAuthoredMotionSpeed) == false
         || value.WalkAuthoredMotionSpeed <= 0.0f
-        || value.RunAuthoredMotionSpeed <= value.WalkAuthoredMotionSpeed)
+        || value.RunAuthoredMotionSpeed <= value.WalkAuthoredMotionSpeed
+        || value.SprintAuthoredMotionSpeed <= value.RunAuthoredMotionSpeed)
     {
-        return SetError(errorMessage, "Authored Motion Speedは 0 < Walk < Run を満たす必要があります");
+        return SetError(errorMessage, "Authored Motion Speedは 0 < Walk < Run < Sprint を満たす必要があります");
     }
     return true;
 }
@@ -91,11 +101,14 @@ bool SerializeHumanoidAnimationProfile(
     locomotion.emplace("idleAnimation", Core::JsonValue(value.IdleAnimationName));
     locomotion.emplace("walkAnimation", Core::JsonValue(value.WalkAnimationName));
     locomotion.emplace("runAnimation", Core::JsonValue(value.RunAnimationName));
+    locomotion.emplace("sprintAnimation", Core::JsonValue(value.SprintAnimationName));
     locomotion.emplace("idleThreshold", Core::JsonValue(static_cast<double>(value.IdleThreshold)));
     locomotion.emplace("walkThreshold", Core::JsonValue(static_cast<double>(value.WalkThreshold)));
     locomotion.emplace("runThreshold", Core::JsonValue(static_cast<double>(value.RunThreshold)));
+    locomotion.emplace("sprintThreshold", Core::JsonValue(static_cast<double>(value.SprintThreshold)));
     locomotion.emplace("walkAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.WalkAuthoredMotionSpeed)));
     locomotion.emplace("runAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.RunAuthoredMotionSpeed)));
+    locomotion.emplace("sprintAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.SprintAuthoredMotionSpeed)));
     Core::JsonValue::Object root;
     root.emplace("type", Core::JsonValue(std::string(ProfileType)));
     root.emplace("version", Core::JsonValue(static_cast<double>(CurrentProfileVersion)));
@@ -127,11 +140,14 @@ bool DeserializeHumanoidAnimationProfile(
     if (ReadString(*locomotion, "idleAnimation", value.IdleAnimationName, errorMessage) == false
         || ReadString(*locomotion, "walkAnimation", value.WalkAnimationName, errorMessage) == false
         || ReadString(*locomotion, "runAnimation", value.RunAnimationName, errorMessage) == false
+        || ReadString(*locomotion, "sprintAnimation", value.SprintAnimationName, errorMessage) == false
         || ReadFloat(*locomotion, "idleThreshold", value.IdleThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "walkThreshold", value.WalkThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "runThreshold", value.RunThreshold, errorMessage) == false
+        || ReadFloat(*locomotion, "sprintThreshold", value.SprintThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "walkAuthoredMotionSpeed", value.WalkAuthoredMotionSpeed, errorMessage) == false
         || ReadFloat(*locomotion, "runAuthoredMotionSpeed", value.RunAuthoredMotionSpeed, errorMessage) == false
+        || ReadFloat(*locomotion, "sprintAuthoredMotionSpeed", value.SprintAuthoredMotionSpeed, errorMessage) == false
         || ValidateProfile(profile, errorMessage) == false)
     {
         return false;
