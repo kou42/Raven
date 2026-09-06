@@ -2,6 +2,7 @@
 
 #include "Raven/UI/Svg/SvgImportContext.h"
 #include "Raven/UI/Svg/SvgPathImporter.h"
+#include "Raven/UI/Svg/SvgPathStyleImporter.h"
 
 #include <utility>
 
@@ -19,9 +20,16 @@ bool SvgImporter::ImportFile(
         return false;
     }
 
-    // Path ParserはVector表現だけを追加し、Viewport/Animation等の共通状態には触れません。
-    // 基本Shape ParserとPath Parserの双方が成功した後にUIDocumentを公開します。
+    // Path geometryは専用ParserでPolylineへ正規化し、presentation属性は後段Style Importerで
+    // Vector semanticsへ変換します。geometry grammarとstyle解釈を分離して責務を明確に保ちます。
     if (SvgPathImporter::AppendFilePaths(path, context.GetVectorDocument(), outError) == false)
+    {
+        return false;
+    }
+    if (SvgPathStyleImporter::ApplyFilePathStyles(
+            path,
+            context.GetVectorDocument(),
+            outError) == false)
     {
         return false;
     }
