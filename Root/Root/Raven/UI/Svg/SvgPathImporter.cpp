@@ -98,7 +98,7 @@ bool TryReadFlag(const std::string& data, std::size_t& cursor, bool& outValue)
     }
 
     // SVGのarc flagは数値一般ではなく1文字の0/1です。
-    // 1文字だけ消費することで、2つのflagが空白なしで並ぶ合法表現も扱えます。
+    // 1文字だけ消費することで "... 0 01 ..." のように2つのflagが区切りなしで並ぶ合法表現も扱えます。
     if (data[cursor] == '0')
     {
         outValue = false;
@@ -201,7 +201,9 @@ void TessellateQuadraticBezier(
     const float toleranceSquared =
         kBezierFlatnessTolerance * kBezierFlatnessTolerance;
 
-    // 局所曲率に応じたadaptive subdivisionで、直線に近いBezierの頂点増加を抑えます。
+    // 制御点が始点-終点の弦へ十分近ければ、この区間を直線として扱えます。
+    // 固定segment数ではなく局所曲率に応じて再帰分割するため、直線に近いBezierでは頂点数を抑え、
+    // 強く曲がる部分だけ細かく分割できます。最大深度は異常入力に対する安全弁です。
     if (depth >= kBezierMaxSubdivisionDepth ||
         DistanceToLineSquared(control, start, end) <= toleranceSquared)
     {
@@ -242,6 +244,8 @@ void TessellateCubicBezier(
     const float control2Distance =
         DistanceToLineSquared(control2, start, end);
 
+    // Cubicは両制御点が弦へ十分近い場合だけ直線近似します。
+    // De Casteljau分割を使うことで数値的に安定し、S commandでも同じtessellationを再利用できます。
     if (depth >= kBezierMaxSubdivisionDepth ||
         std::max(control1Distance, control2Distance) <= toleranceSquared)
     {
@@ -298,6 +302,8 @@ void TessellateEllipticalArcRecursive(
         middleAngle);
     const float toleranceSquared = kArcFlatnessTolerance * kArcFlatnessTolerance;
 
+    // ArcもBezierと同様に弦からの誤差でadaptive subdivisionします。
+    // 固定角度刻みよりも大きな円弧・強い曲率だけを細分化でき、既存path tessellationの密度感と揃えられます。
     if (depth >= kArcMaxSubdivisionDepth ||
         DistanceToLineSquared(middle, start, end) <= toleranceSquared)
     {
@@ -343,6 +349,7 @@ void TessellateEllipticalArc(
 {
     if (DistanceSquared(start, end) <= kPointMergeEpsilonSquared)
     {
+        // SVG仕様では始点と終点が一致するarc segmentは描画されません。
         return;
     }
 
@@ -350,6 +357,7 @@ void TessellateEllipticalArc(
     radiusY = std::abs(radiusY);
     if (radiusX <= 0.0f || radiusY <= 0.0f)
     {
+        // どちらかの半径が0ならarcは直線segmentとして扱います。
         AppendPointIfDistinct(outPoints, end);
         return;
     }
@@ -360,6 +368,9 @@ void TessellateEllipticalArc(
     const float sinRotation = std::sin(rotation);
     const float halfDx = (start.x - end.x) * 0.5f;
     const float halfDy = (start.y - end.y) * 0.5f;
+
+    // SVG arcはendpoint parameterizationで与えられるため、仕様の手順に従って
+    // いったん楕円ローカル座標へ回転し、center parameterizationへ変換します。
     const float transformedX = cosRotation * halfDx + sinRotation * halfDy;
     const float transformedY = -sinRotation * halfDx + cosRotation * halfDy;
 
@@ -367,6 +378,8 @@ void TessellateEllipticalArc(
     float radiusYSquared = radiusY * radiusY;
     const float transformedXSquared = transformedX * transformedX;
     const float transformedYSquared = transformedY * transformedY;
+
+    // 指定半径で両endpointを結べない場合、SVG仕様では両半径を同じ倍率で拡大します。
     const float radiusScaleSquared =
         transformedXSquared / radiusXSquared + transformedYSquared / radiusYSquared;
     if (radiusScaleSquared > 1.0f)
@@ -495,6 +508,7 @@ bool ParsePath(
                 }
 
                 // Z/zはstrokeの終端を始点へ接続する意味を持つため、点列そのものとは別にclosed状態を保持します。
+                // currentはSVG仕様どおり閉じたsubpathの始点へ戻すため、後続relative movetoの基準も維持されます。
                 current = subpathStart;
                 finishSubpath(true);
                 hasActiveSubpath = false;
@@ -651,6 +665,9 @@ bool ParsePath(
             const bool followsQuadratic =
                 previousCommand == 'Q' || previousCommand == 'q' ||
                 previousCommand == 'T' || previousCommand == 't';
+
+            // SVG仕様では直前がQ/T系のときだけ前制御点を現在点の反対側へ鏡映します。
+            // それ以外では現在点自身が制御点となり、暗黙制御点を過去の無関係な曲線から引き継ぎません。
             const math::Vec2 control = followsQuadratic == true
                 ? ReflectControlPoint(segmentStart, previousQuadraticControl)
                 : segmentStart;
@@ -725,6 +742,9 @@ bool ParsePath(
             const bool followsCubic =
                 previousCommand == 'C' || previousCommand == 'c' ||
                 previousCommand == 'S' || previousCommand == 's';
+
+            // Sの第1制御点は直前がC/S系の場合だけ第2制御点を鏡映して生成します。
+            // 直前が別commandなら現在点を使うため、SVGのsmooth curve規則と一致します。
             const math::Vec2 control1 = followsCubic == true
                 ? ReflectControlPoint(segmentStart, previousCubicControl)
                 : segmentStart;
