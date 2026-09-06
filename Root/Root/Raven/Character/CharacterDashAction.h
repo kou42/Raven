@@ -128,8 +128,10 @@ public:
     }
 
     bool IsActive() const { return m_ActiveRemaining > 0.0f; }
+
     // Roll等のOne-Shot開始用。Dashが実際に成立したFrameだけtrueです。
     bool StartedThisFrame() const { return m_StartedThisFrame; }
+
     bool IsCoolingDown() const { return m_CooldownRemaining > 0.0f; }
     float GetActiveRemaining() const { return m_ActiveRemaining; }
     float GetCooldownRemaining() const { return m_CooldownRemaining; }
