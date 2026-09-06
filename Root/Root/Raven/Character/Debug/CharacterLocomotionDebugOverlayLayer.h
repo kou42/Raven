@@ -23,6 +23,10 @@ namespace Raven
 // CharacterControllerDemoLayer本体はPhysics更新順を守るためScene-owned Layerのまま維持し、
 // このOverlayだけをApplication Layerへ分離します。ApplicationはImGui::NewFrame()～Render()の間に
 // Application LayerのOnImGuiRender()を呼ぶため、Runtime Characterの診断値を画面へ安全に表示できます。
+//
+// Lifetimeについて:
+// Application終了時はApplication LayerがSceneより先にDetach/破棄されるため、借用している
+// CharacterControllerDemoLayerへのpointerはOverlayのLifetime中は有効です。
 class CharacterLocomotionDebugOverlayLayer final : public Layer
 {
 public:
@@ -35,6 +39,7 @@ public:
     void OnDetach() override
     {
         // 借用pointerであり所有権は持ちません。
+        // Application LayerはSceneより先に破棄されますが、Detach後に誤利用しないよう明示的に切ります。
         m_CharacterLayer = nullptr;
     }
 
@@ -50,6 +55,11 @@ public:
         const CharacterLocomotionDebugSnapshot snapshot =
             m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
 
+        // ====================================================================
+        // Runtime Locomotion overlay
+        // ====================================================================
+        // Foot Sliding調整をその場で行えるよう、診断専用HUDから最小限のInteractive Tuning HUDへ拡張します。
+        // Window位置は従来どおり左上へ固定し、移動/Resize/Dockingは許可しません。
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr)
         {
@@ -84,11 +94,18 @@ public:
             ImGui::Text("Actual Speed : %.2f", snapshot.ActualHorizontalSpeed);
             ImGui::Text("Parameter    : %.2f", snapshot.ParameterValue);
 
+            // =================================================================
+            // Foot Sliding correction diagnostic
+            // =================================================================
             // Reference Speedは現在のBlend Weightで補間されたClip側の想定速度です。
             // Playback SpeedはActual / Referenceへ安全Clampを適用した、Animatorに実際に設定された倍率です。
+            // UI側では再計算せずRuntime値をそのまま表示し、補正ロジックとの食い違いを防ぎます。
             ImGui::Text("Reference    : %.2f", snapshot.ReferenceMotionSpeed);
             ImGui::Text("Playback     : %.2fx", snapshot.PlaybackSpeed);
 
+            // 現在のLocomotionBlendTreeConfig既定Clamp範囲と同じ値です。
+            // Playbackが端へ張り付いている場合、Authored Motion Speedが実際のClip速度から大きく外れている、
+            // またはGameplay速度との差がClamp範囲だけでは吸収できない可能性があるため、調整時に強調表示します。
             constexpr float MinPlaybackSpeed = 0.50f;
             constexpr float MaxPlaybackSpeed = 2.00f;
             constexpr float ClampDisplayEpsilon = 1.0e-3f;
@@ -155,13 +172,15 @@ public:
                 "Clamped      : %s",
                 snapshot.IsClamped == true ? "true" : "false");
 
-            // RightWeightを進行率としてBar表示します。
+            // Weightの数値だけでなく割合を直感的に確認できるよう、右側MotionのWeightをBar表示します。
+            // LeftWeight + RightWeight = 1.0というBlendTree1Dの規約を利用し、RightWeightを進行率とします。
             ImGui::ProgressBar(snapshot.RightWeight, ImVec2(220.0f, 0.0f));
 
             ImGui::Separator();
             ImGui::TextUnformatted("Blend Threshold Tuning");
 
-            // Threshold変更は同じBlendTreeへ反映されるため再生位相を維持します。
+            // Threshold変更は同じBlendTreeオブジェクトへ反映されるため、再生位相を維持したまま
+            // 現在速度に対するBlend WeightとPlayback補正を即時再評価できます。
             float idleThreshold = snapshot.IdleThreshold;
             float walkThreshold = snapshot.WalkThreshold;
             float runThreshold = snapshot.RunThreshold;
@@ -220,6 +239,11 @@ public:
             ImGui::Separator();
             ImGui::TextUnformatted("Foot Sliding Tuning");
 
+            // =================================================================
+            // Runtime Authored Motion Speed tuning
+            // =================================================================
+            // Snapshot値を編集用一時値へコピーし、変更があったFrameだけCharacter Layer経由でRuntimeへ反映します。
+            // Runtime側APIが現在Blend WeightでPlayback倍率を即時再計算するため、BlendTreeの再生位相はリスタートしません。
             float walkAuthoredSpeed = snapshot.WalkAuthoredMotionSpeed;
             float runAuthoredSpeed = snapshot.RunAuthoredMotionSpeed;
             float sprintAuthoredSpeed = snapshot.SprintAuthoredMotionSpeed;
@@ -261,6 +285,11 @@ public:
                     sprintAuthoredSpeed);
             }
 
+            // =================================================================
+            // Tuning utility actions
+            // =================================================================
+            // ResetはCharacterControllerのGameplay速度ではなく、現在AssetのProfile初期値へ戻します。
+            // ProfileをSnapshot経由で参照することで、Asset差し替え後もOverlayへMagic Numberを残しません。
             if (ImGui::Button("Reset Authored Speeds") == true)
             {
                 ApplyAuthoredMotionSpeeds(
@@ -270,6 +299,10 @@ public:
             }
 
             ImGui::SameLine();
+
+            // 調整結果はAsset固有設定の正規の保存先であるHumanoidAnimationProfileへ
+            // そのまま転記できるC++形式にします。
+            // Drag/Resetと同じFrameでCopyしても古い値を拾わないよう、Button判定時に最新Snapshotを取り直します。
             if (ImGui::Button("Copy Config") == true)
             {
                 const CharacterLocomotionDebugSnapshot latestSnapshot =
