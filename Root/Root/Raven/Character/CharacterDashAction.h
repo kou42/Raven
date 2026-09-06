@@ -117,6 +117,10 @@ public:
             return false;
         }
 
+        // StartedThisFrameはAnimation One-Shot等へ渡す1Frame Eventです。
+        // IsActive()の立ち上がりを外部で再推測させず、Gameplay State自身を正規のEvent発生元にします。
+        m_StartedThisFrame = false;
+
         // Timerは入力判定より先に進めます。Cooldown=0へ到達したFrameから新しい押下Edgeを受け付けます。
         m_ActiveRemaining = std::max(0.0f, m_ActiveRemaining - deltaTime);
         m_CooldownRemaining = std::max(0.0f, m_CooldownRemaining - deltaTime);
@@ -156,12 +160,20 @@ public:
         m_Direction = dashDirection;
         m_ActiveRemaining = m_Config.Duration;
         m_CooldownRemaining = m_Config.Cooldown;
+        m_StartedThisFrame = true;
         return true;
     }
 
     bool IsActive() const
     {
         return m_ActiveRemaining > 0.0f;
+    }
+
+    // Dash開始が成立したFrameだけtrueです。
+    // Roll等のOne-Shot AnimationはこのEventで開始し、Button HoldやCooldown中には再発火させません。
+    bool StartedThisFrame() const
+    {
+        return m_StartedThisFrame;
     }
 
     bool IsCoolingDown() const
@@ -201,6 +213,7 @@ public:
         m_ActiveRemaining = 0.0f;
         m_CooldownRemaining = 0.0f;
         m_DashRequestedLastFrame = false;
+        m_StartedThisFrame = false;
     }
 
 private:
@@ -209,6 +222,7 @@ private:
     float m_ActiveRemaining = 0.0f;
     float m_CooldownRemaining = 0.0f;
     bool m_DashRequestedLastFrame = false;
+    bool m_StartedThisFrame = false;
 };
 
 } // namespace Raven
