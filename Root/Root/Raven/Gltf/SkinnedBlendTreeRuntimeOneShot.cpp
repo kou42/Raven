@@ -79,7 +79,6 @@ bool SkinnedBlendTreeRuntime::PlayOneShotAnimation(
             crossFadeDuration,
             true) == false)
     {
-        // CrossFade中の再割り込みなどで失敗した場合、元のLoop設定を復元します。
         animator.SetLoop(previousLoop);
         return SetError(errorMessage, "one-shot AnimationへのCrossFadeを開始できません");
     }
@@ -117,9 +116,17 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     {
         return SetError(errorMessage, "Locomotionへ戻すBlendTreeがConfigureされていません");
     }
+
+    // Sprint用Authored Motion Speedが設定されているStateだけ4 Child補正を使います。
+    // 既存3段階Assetでは0のままなので従来のSetMovementSpeed()へ流し、互換挙動を維持します。
+    const bool sprintLocomotion = state->SprintAuthoredMotionSpeed > 0.0f;
+
     if (state->OneShotActive == false)
     {
-        // 既にLocomotion中ならParameterだけ最新値へ合わせます。
+        if (sprintLocomotion == true)
+        {
+            return SetMovementSpeedSprintAware(skinIndex, movementSpeed, errorMessage);
+        }
         return SetMovementSpeed(skinIndex, movementSpeed, errorMessage);
     }
 
@@ -129,13 +136,10 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     // ========================================================================
     // Non-loop Get-Up -> Locomotion BlendTree
     // ========================================================================
-    // Ragdoll突入前のMovementSpeedを残したまま戻すと、Get-Up完了直後にRun Poseへ飛ぶ可能性があります。
-    // そのため復帰時点のCharacter Controller速度をここでStateへ保存し、その値を遷移先BlendTreeへ
-    // 直接渡します。
+    // Ragdoll突入前のMovementSpeedを残したまま戻すと、Get-Up完了直後にRun/Sprint Poseへ飛ぶ可能性があります。
+    // そのため復帰時点のCharacter Controller速度をStateへ保存し、その値を遷移先BlendTreeへ直接渡します。
     state->MovementSpeed = movementSpeed;
 
-    // Get-Up Clipの終端NormalizedTime=1を歩行周期へ持ち込む意味はないためrestart=trueとし、
-    // 現在MovementSpeedに対応したIdle / Walk / Run Poseから新しい周期を開始します。
     animator.SetLoop(true);
     if (animator.CrossFadeBlendTree(
             state->LocomotionTree,
@@ -148,7 +152,14 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     }
 
     state->OneShotActive = false;
-    return true;
+
+    // CrossFade先のBlendTree ParameterとFoot Sliding補正を同じFrameで再同期します。
+    // Sprint中に復帰した場合もJog用Reference Speedへ誤ってClampされません。
+    if (sprintLocomotion == true)
+    {
+        return SetMovementSpeedSprintAware(skinIndex, movementSpeed, errorMessage);
+    }
+    return SetMovementSpeed(skinIndex, movementSpeed, errorMessage);
 }
 
 bool SkinnedBlendTreeRuntime::IsOneShotAnimationFinished(
