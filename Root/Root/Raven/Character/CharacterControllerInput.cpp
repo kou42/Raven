@@ -78,7 +78,6 @@ CharacterControllerInput CharacterController::ReadDefaultGamepadInput(
         stickDeadZone);
 
     input.Jump = gamepadState.ButtonA;
-    input.Dash = gamepadState.ButtonB;
 
     const float clampedRunThreshold = std::clamp(runTriggerThreshold, 0.0f, 1.0f);
     input.Run = gamepadState.RightTrigger >= clampedRunThreshold;
@@ -112,7 +111,6 @@ CharacterControllerInput CharacterController::ReadDefaultPlayerInput(
     input.Run = keyboard.Run || gamepad.Run;
     input.Sprint = keyboard.Sprint || gamepad.Sprint;
     input.Jump = keyboard.Jump || gamepad.Jump;
-    input.Dash = keyboard.Dash || gamepad.Dash;
     return input;
 }
 
