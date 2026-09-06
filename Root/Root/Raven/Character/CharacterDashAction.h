@@ -24,7 +24,6 @@ struct CharacterDashConfig
 // ============================================================================
 // このStateはDashの開始可否・方向・Timerだけを担当し、Transformを直接変更しません。
 // 最終的な水平速度はCharacterControllerの既存Capsule Cast / Step / Wall Slide経路へ渡す設計です。
-// これにより通常移動とDashでCollision規則が分岐し、Dashだけ壁を抜ける実装になることを防ぎます。
 class CharacterDashAction
 {
 public:
@@ -43,7 +42,6 @@ public:
         {
             errorMessage->clear();
         }
-
         if (std::isfinite(m_Config.Speed) == false
             || std::isfinite(m_Config.Duration) == false
             || std::isfinite(m_Config.Cooldown) == false
@@ -60,15 +58,8 @@ public:
         return true;
     }
 
-    // dashRequestedはButton Level値です。この関数内でPress Edgeへ変換するため、Holdでは再発火しません。
-    // moveInputはWorld XZへ変換済みの X=Right / Y=Forward を想定します。
-    bool Update(
-        bool dashRequested,
-        const math::Vec2& moveInput,
-        const math::Vec3& fallbackForward,
-        bool grounded,
-        float deltaTime,
-        std::string* errorMessage = nullptr)
+    // Button Level値を内部でPress Edgeへ変換します。Holdでは再発火しません。
+    bool Update(bool dashRequested, const math::Vec2& moveInput, const math::Vec3& fallbackForward, bool grounded, float deltaTime, std::string* errorMessage = nullptr)
     {
         if (errorMessage != nullptr)
         {
@@ -87,8 +78,6 @@ public:
             return false;
         }
 
-        // Animation One-Shot等がDash開始を正確に検出できるよう、開始EventをState自身が発行します。
-        // IsActive()の前Frame値を外部で保持して立ち上がりを再計算させないことが目的です。
         m_StartedThisFrame = false;
         m_ActiveRemaining = std::max(0.0f, m_ActiveRemaining - deltaTime);
         m_CooldownRemaining = std::max(0.0f, m_CooldownRemaining - deltaTime);
@@ -103,12 +92,11 @@ public:
             return true;
         }
 
-        // Dash方向は開始時に確定し、Active中は入力方向が変わっても固定します。
         math::Vec3 direction{ moveInput.x, 0.0f, moveInput.y };
         float lengthSquared = direction.LengthSq();
         if (lengthSquared <= 1.0e-8f)
         {
-            // Idle状態からのDashではCharacterの現在Forwardを使用します。
+            // Idle Dashでは現在のCharacter Forwardを使用します。
             direction = math::Vec3{ fallbackForward.x, 0.0f, fallbackForward.z };
             lengthSquared = direction.LengthSq();
         }
@@ -121,6 +109,7 @@ public:
             return false;
         }
 
+        // Dash中の方向転換を許さず、開始時の方向をDuration終了まで固定します。
         direction /= std::sqrt(lengthSquared);
         m_Direction = direction;
         m_ActiveRemaining = m_Config.Duration;
@@ -130,6 +119,7 @@ public:
     }
 
     bool IsActive() const { return m_ActiveRemaining > 0.0f; }
+    // Roll等のOne-Shot開始用。Dashが実際に成立したFrameだけtrueです。
     bool StartedThisFrame() const { return m_StartedThisFrame; }
     bool IsCoolingDown() const { return m_CooldownRemaining > 0.0f; }
     float GetActiveRemaining() const { return m_ActiveRemaining; }
