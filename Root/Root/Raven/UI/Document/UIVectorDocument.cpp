@@ -139,7 +139,12 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
             const PathElement& data = vectorDocument.Paths[elementReference.ElementIndex];
             if (data.Subpaths.empty() == true)
             {
-                if (outError != nullptr) { *outError = "Vector path has no closed subpaths."; }
+                if (outError != nullptr) { *outError = "Vector path has no subpaths."; }
+                ClearChildren(); return false;
+            }
+            if (data.SubpathClosed.size() != data.Subpaths.size())
+            {
+                if (outError != nullptr) { *outError = "Vector path subpath closed-state count does not match subpath count."; }
                 ClearChildren(); return false;
             }
 
@@ -148,12 +153,6 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
             math::Vec2 max{};
             for (const std::vector<math::Vec2>& subpath : data.Subpaths)
             {
-                if (subpath.size() < 3u)
-                {
-                    if (outError != nullptr) { *outError = "Vector path subpath has fewer than three points."; }
-                    ClearChildren(); return false;
-                }
-
                 for (const math::Vec2& point : subpath)
                 {
                     if (hasBounds == false)
@@ -175,6 +174,17 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
                 ClearChildren(); return false;
             }
 
+            // Strokeは中心線の両側へ半幅ずつ張り出すため、Container boundsにもその余白を含めます。
+            const bool drawsStroke = data.StrokeColor.w > 0.0f && data.StrokeWidth > 0.0f;
+            if (drawsStroke == true)
+            {
+                const float halfStrokeWidth = data.StrokeWidth * 0.5f;
+                min.x -= halfStrokeWidth;
+                min.y -= halfStrokeWidth;
+                max.x += halfStrokeWidth;
+                max.y += halfStrokeWidth;
+            }
+
             const math::Vec2 pathSize(max.x - min.x, max.y - min.y);
             auto pathContainer = CreateScope<UIPanel>();
             if (pathContainer->SetName(data.Name) == false)
@@ -186,29 +196,102 @@ bool UIVectorDocument::BuildRuntimeTree(std::string* outError)
             pathContainer->SetSize(pathSize);
             pathContainer->SetBackgroundColor(math::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
 
-            // Path名を親Containerへ維持することで、Opacity Animationなど既存Bindingはpath全体へ適用できます。
-            // 各subpathは同じローカル原点を共有する子UIPolygonとして描画します。
-            // 現段階では輪郭を独立fillするため、穴抜きは次のfill-rule対応で統合します。
-            for (const std::vector<math::Vec2>& subpath : data.Subpaths)
+            // SVGのfillはopen subpathでも暗黙に終点から始点へ閉じて評価されます。
+            // UIPolygonも同じ閉領域として扱うため、3点以上ならZ/zの有無に関係なくfillできます。
+            if (data.FillColor.w > 0.0f)
             {
-                std::vector<math::Vec2> localPoints;
-                localPoints.reserve(subpath.size());
-                for (const math::Vec2& point : subpath)
+                for (const std::vector<math::Vec2>& subpath : data.Subpaths)
                 {
-                    localPoints.push_back(math::Vec2(point.x - min.x, point.y - min.y));
-                }
+                    if (subpath.size() < 3u)
+                    {
+                        continue;
+                    }
 
-                auto polygon = CreateScope<UIPolygon>();
-                polygon->SetPosition(math::Vec2(0.0f, 0.0f));
-                polygon->SetSize(pathSize);
-                polygon->SetPoints(std::move(localPoints));
-                polygon->SetFillColor(data.FillColor);
-                if (pathContainer->AddChild(std::move(polygon)) == nullptr)
-                {
-                    if (outError != nullptr) { *outError = "Failed to attach Vector path subpath to runtime container."; }
-                    ClearChildren(); return false;
+                    std::vector<math::Vec2> localPoints;
+                    localPoints.reserve(subpath.size());
+                    for (const math::Vec2& point : subpath)
+                    {
+                        localPoints.push_back(math::Vec2(point.x - min.x, point.y - min.y));
+                    }
+
+                    auto polygon = CreateScope<UIPolygon>();
+                    polygon->SetPosition(math::Vec2(0.0f, 0.0f));
+                    polygon->SetSize(pathSize);
+                    polygon->SetPoints(std::move(localPoints));
+                    polygon->SetFillColor(data.FillColor);
+                    if (pathContainer->AddChild(std::move(polygon)) == nullptr)
+                    {
+                        if (outError != nullptr) { *outError = "Failed to attach Vector path fill subpath to runtime container."; }
+                        ClearChildren(); return false;
+                    }
                 }
             }
+
+            if (drawsStroke == true)
+            {
+                auto addStrokeSegment = [&pathContainer, &data, &min, outError](
+                    const math::Vec2& start,
+                    const math::Vec2& end)
+                {
+                    const float dx = end.x - start.x;
+                    const float dy = end.y - start.y;
+                    const float length = std::sqrt(dx * dx + dy * dy);
+                    if (length <= 0.000001f)
+                    {
+                        return true;
+                    }
+
+                    // 現段階のstrokeは既存LineElementと同じ矩形segment表現を再利用します。
+                    // linecap/linejoinは後続のstroke tessellationで置き換えやすいよう、segment生成をここへ集約します。
+                    const math::Vec2 localStart(start.x - min.x, start.y - min.y);
+                    const math::Vec2 localEnd(end.x - min.x, end.y - min.y);
+                    const math::Vec2 center(
+                        (localStart.x + localEnd.x) * 0.5f,
+                        (localStart.y + localEnd.y) * 0.5f);
+
+                    auto segment = CreateScope<UIPanel>();
+                    segment->SetSize(math::Vec2(length, data.StrokeWidth));
+                    segment->SetPosition(math::Vec2(
+                        center.x - length * 0.5f,
+                        center.y - data.StrokeWidth * 0.5f));
+                    segment->SetRotation(std::atan2(dy, dx));
+                    segment->SetBackgroundColor(data.StrokeColor);
+                    if (pathContainer->AddChild(std::move(segment)) == nullptr)
+                    {
+                        if (outError != nullptr) { *outError = "Failed to attach Vector path stroke segment to runtime container."; }
+                        return false;
+                    }
+                    return true;
+                };
+
+                for (std::size_t subpathIndex = 0u; subpathIndex < data.Subpaths.size(); ++subpathIndex)
+                {
+                    const std::vector<math::Vec2>& subpath = data.Subpaths[subpathIndex];
+                    if (subpath.size() < 2u)
+                    {
+                        continue;
+                    }
+
+                    for (std::size_t pointIndex = 1u; pointIndex < subpath.size(); ++pointIndex)
+                    {
+                        if (addStrokeSegment(subpath[pointIndex - 1u], subpath[pointIndex]) == false)
+                        {
+                            ClearChildren(); return false;
+                        }
+                    }
+
+                    // Z/zがあるsubpathだけ終点から始点へのstroke segmentを追加します。
+                    // open pathではこのsegmentを作らないことが、fillとの最も重要な意味差です。
+                    if (data.SubpathClosed[subpathIndex] == true)
+                    {
+                        if (addStrokeSegment(subpath.back(), subpath.front()) == false)
+                        {
+                            ClearChildren(); return false;
+                        }
+                    }
+                }
+            }
+
             element = std::move(pathContainer);
         }
 
