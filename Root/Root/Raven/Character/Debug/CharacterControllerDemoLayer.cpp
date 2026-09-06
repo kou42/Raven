@@ -328,6 +328,8 @@ void CharacterControllerDemoLayer::OnAttach()
     }
 
     SyncVisualTransform();
+
+    // 初回からCharacterを画面中央付近へ捉えるため、Gamepad入力が無くてもCameraを一度同期します。
     UpdateGamepadCamera(0.0f);
 
     std::cout
@@ -361,11 +363,27 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     // Human/Cubeの表示初期化に失敗してもCharacterControllerの入力・衝突検証は継続できるようにします。
     const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.05f);
 
+    // ========================================================================
+    // Gamepad diagnostic snapshot
+    // ========================================================================
+    // Raw値を先に取得し、その後にCharacterControllerInputへ変換します。
+    // これにより例えば「Stick Raw値は動いているのにMoveが0」の場合はDead Zone、
+    // 「RT Raw値は上がるのにRun=false」の場合はThresholdを疑う、という切り分けができます。
     CaptureGamepadDebugState();
 
+    // ========================================================================
+    // Keyboard + Gamepad -> Device-independent Character input
+    // ========================================================================
     // ReadDefaultPlayerInput()はKeyboardとGamepadを同じCharacterControllerInputへ統合します。
+    // Gamepad未接続時はKeyboardだけ、接続時は両方を利用でき、同時入力時のMove長も1以内へClampされます。
+    // CharacterController本体は入力Deviceを知らず、最終的なGameplay入力だけを受け取ります。
     // Sprint要求もRunと独立したままここまで保持され、Controller内部で最高速へ解決されます。
     m_ResolvedInput = CharacterController::ReadDefaultPlayerInput();
+
+    // Device入力としてのMoveは「右=+X / 前=+Y」の2D値です。
+    // CharacterControllerへ渡す直前にRuntime CameraのYawを基準としたWorld XZへ変換します。
+    // KeyboardのWASDとGamepad Left Stickの両方へ同じCamera-relative規則を適用することで、
+    // Deviceを切り替えても移動方向の意味が変わらないようにします。
     ApplyCameraRelativeMovement(m_ResolvedInput);
 
     std::string errorMessage;
@@ -383,8 +401,12 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
         return;
     }
 
-    // 入力値ではなく、CharacterControllerが衝突・加減速を解決した後の実水平速度をBlendTreeへ渡します。
-    // Sprint入力中でも壁へ正面衝突して実速度が0になればAnimationもIdle側へ戻ります。
+    // ========================================================================
+    // Character actual velocity -> Humanoid Locomotion BlendTree
+    // ========================================================================
+    // 入力値ではなく、CharacterControllerが加減速・壁Slide・Moving Platform等を解決した後の
+    // m_Velocityから水平速度を取得してBlendTreeへ渡します。
+    // Run/Sprint入力中でも壁へ正面衝突して実速度が0になればAnimationもIdle側へ戻ります。
     if (m_HumanoidLocomotionAnimationActive == true)
     {
         if (UpdateHumanoidLocomotionAnimation(safeDeltaTime, &errorMessage) == false)
@@ -397,6 +419,9 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     }
 
     SyncVisualTransform();
+
+    // Character移動後のRootをTargetにすることで、Cameraは同じFrame内で最新位置へ追従します。
+    // Scene-owned LayerはRender前に更新されるため、このCamera Transformも同じFrameの描画へ反映されます。
     UpdateGamepadCamera(safeDeltaTime);
 }
 
@@ -447,7 +472,9 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidVisual()
         return false;
     }
 
-    // 正規化後のTransformをCharacter Root相対のVisual Local Transformとして保存します。
+    // 正規化後はHumanの足元がWorld原点、身長がCapsule全高になっています。
+    // この状態をCharacter Root相対のVisual Local Transformとして一度だけ保存します。
+    // 毎Frame現在TransformへRoot差分を累積すると誤差が蓄積するため、常にこのSnapshotから再構築します。
     m_HumanoidLocalTransforms.clear();
     m_HumanoidLocalTransforms.reserve(primitives.size());
     for (const Gltf::SpawnedSkinnedPrimitive& primitive : primitives)
@@ -476,8 +503,12 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidVisual()
         return false;
     }
 
+    // ========================================================================
+    // Humanoid Animation initialization
+    // ========================================================================
     // 表示初期化とAnimation初期化は意図的に分離します。
-    // Animationだけ失敗した場合はBind Pose表示を維持してCharacter Controller / Physics検証を続行します。
+    // GLB内Animation名が期待値と異なる場合でもHumanoid表示は維持し、Bind Poseのまま
+    // Character Controller / Physics検証を続行できるようにします。
     if (TryInitializeHumanoidLocomotionAnimation(&errorMessage) == false)
     {
         std::cerr
@@ -510,8 +541,10 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
     // GLBと対になるJSON Asset ProfileをAnimation初期化前に読み込みます。
-    // Assetが欠落・破損していても表示/Physics検証全体を止めないためC++既定値へfallbackします。
-    HumanoidAnimationProfile loadedProfile = CreateRavenHumanTestAnimationProfile();
+    // Assetが欠落・破損していてもCharacter / Animation検証全体を止めないため、
+    // 現在接続しているQuaternius UAL1 Standard専用のC++既定値をfallbackとして使用します。
+    // 汎用RuntimeにはAsset名やfallback値を持ち込まず、Asset固有知識はProfile Factoryへ集約します。
+    HumanoidAnimationProfile loadedProfile = CreateQuaterniusUAL1StandardAnimationProfile();
     std::string profileLoadError;
     if (LoadHumanoidAnimationProfile(
             m_HumanoidAnimationProfilePath,
@@ -520,11 +553,14 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     {
         std::cerr
             << "[CharacterController] Humanoid Animation Profileを読み込めないため"
-            << " C++既定値へfallbackします: " << profileLoadError << '\n';
+            << " Quaternius UAL1 Standard既定値へfallbackします: " << profileLoadError << '\n';
     }
     m_HumanoidAnimationProfile = std::move(loadedProfile);
 
-    // Gameplay速度とAnimation Asset Threshold/Authored Speedは責務を分離します。
+    // Animation ProfileはAsset固有設定の正規の参照元です。
+    // CharacterControllerConfigのWalkSpeed / RunSpeed / SprintSpeedはGameplay上の目標速度であり、
+    // ClipをBlendTree上のどこへ配置するかを表すThresholdとは責務が異なるため、
+    // ここで相互変換や値のコピーを行いません。
     const HumanoidLocomotionProfile& locomotionProfile =
         m_HumanoidAnimationProfile.Locomotion;
     m_HumanoidWalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
@@ -565,7 +601,9 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
-    // 同一Skinを共有するBody / ClothesはSkinごとに1つのAnimatorで同じPoseを配布します。
+    // 現在のCharacter Humanoidは同一Skinを共有するBody / Clothesを想定しています。
+    // AnimatorはSkinごとに1つだけPoseを評価し、SkinnedBlendTreeRuntimeが同じSkinを使う
+    // 全Primitiveへ同一Poseを配布するため、BodyとClothesのAnimation時刻がずれません。
     m_HumanoidAnimationSkinIndex = primitives.front().SkinIndex;
     if (m_HumanoidAnimationSkinIndex == Gltf::InvalidGltfIndex)
     {
@@ -584,6 +622,12 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
+    // ========================================================================
+    // Asset Animation名の取得と安全なLocomotion名解決
+    // ========================================================================
+    // Character側でGLB内部の正式名を推測せず、Attach時にImport済みのRuntime Clip一覧を取得します。
+    // 完全一致を優先し、部分一致は候補が1つだけの場合に限定することで、WalkForward / WalkBackward等を
+    // 誤って自動選択することを防ぎます。
     if (m_HumanoidLocomotionRuntime.GetAnimationNames(
             m_HumanoidAnimationSkinIndex,
             m_HumanoidAvailableAnimationNames,
@@ -592,8 +636,8 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
-    // Profile要求名をAssetが持つ実名へ解決します。
-    // Sprintも他のLocomotion Clipと同じ規則を使用し、部分一致で複数候補が出た場合は失敗させます。
+    // SprintもIdle / Walk / Runと同じ解決規則を使用します。
+    // 4 Clipのどれか1つでも曖昧なら、誤ったMotionを自動採用せず初期化を失敗させます。
     if (ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.IdleAnimationName,
@@ -632,6 +676,10 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     animationConfig.WalkAnimationName = m_ResolvedHumanoidWalkAnimationName;
     animationConfig.RunAnimationName = m_ResolvedHumanoidRunAnimationName;
     animationConfig.SprintAnimationName = m_ResolvedHumanoidSprintAnimationName;
+
+    // BlendTree Thresholdは「State切替境界」ではなく、そのMotionが100%になる実速度です。
+    // GameplayのWalk / Run / Sprint目標速度とは独立したAnimation Asset設定としてProfileから転送します。
+    // Authored Motion SpeedもProfileから明示し、汎用Runtimeの既定値へ暗黙に依存させません。
     animationConfig.IdleThreshold = locomotionProfile.IdleThreshold;
     animationConfig.WalkThreshold = locomotionProfile.WalkThreshold;
     animationConfig.RunThreshold = locomotionProfile.RunThreshold;
@@ -650,7 +698,8 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
-    // 初期Frameも現在実速度を渡し、Save/Loadや再初期化時に古いParameterを残しません。
+    // 初期FrameもCharacterControllerの現在実速度を渡しておきます。
+    // 通常は0ですが、将来Save/LoadやRagdoll復帰直後にこの初期化を使っても古いParameterを残しません。
     if (m_CharacterController.UpdateLocomotionAnimation(
             m_HumanoidLocomotionRuntime,
             m_HumanoidAnimationSkinIndex,
@@ -694,7 +743,11 @@ bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
         return true;
     }
 
-    // Run/Sprintの入力Flagではなく、このFrameで実際に残った水平速度をAnimationの正規入力にします。
+    // ========================================================================
+    // Actual horizontal speed -> BlendTree Parameter
+    // ========================================================================
+    // CharacterController::UpdateLocomotionAnimation()内部でGetHorizontalSpeed()を使用するため、
+    // Run/Sprint入力そのものではなく「このFrameで実際に残った水平速度」がAnimationの正規入力です。
     if (m_CharacterController.UpdateLocomotionAnimation(
             m_HumanoidLocomotionRuntime,
             m_HumanoidAnimationSkinIndex,
@@ -703,6 +756,9 @@ bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
         return false;
     }
 
+    // SpeedとBlend Weightは同じFrameの診断値として保持します。
+    // Debug UI側でThreshold補間を再計算せずRuntimeのGetDebugInfo()を使うことで、表示と実Animationの
+    // Weightが食い違う可能性を無くします。
     m_HumanoidActualHorizontalSpeed = m_CharacterController.GetHorizontalSpeed();
     if (m_HumanoidLocomotionRuntime.GetDebugInfo(
             m_HumanoidAnimationSkinIndex,
@@ -712,7 +768,8 @@ bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
         return false;
     }
 
-    // Speed同期 -> Runtime Updateの順を守り、同じFrameの速度でPoseを評価します。
+    // Parameter更新後にAnimator時間を進め、評価PoseをBody / Clothesへ配布してMesh変形まで更新します。
+    // 順序を逆にするとAnimationが1Frame前の速度を使うため、必ずSpeed同期 -> Runtime Updateとします。
     return m_HumanoidLocomotionRuntime.Update(deltaTime, errorMessage);
 }
 
@@ -806,7 +863,8 @@ void CharacterControllerDemoLayer::CaptureGamepadDebugState()
 
     if (m_GamepadConnected == false)
     {
-        // 切断後の前Frame値を診断表示へ残さないよう明示的にNeutralへ戻します。
+        // Input::GetGamepadState()も失敗時にNeutralへ戻しますが、Layer側でも明示的に初期化して
+        // Debuggerで「切断後の前Frame値」が見える余地を残さないようにします。
         m_RawGamepadState = GamepadState{};
     }
 }
@@ -820,13 +878,21 @@ void CharacterControllerDemoLayer::ApplyCameraRelativeMovement(CharacterControll
         return;
     }
 
-    // Orbit CameraのYawだけからXZ Forwardを作ることで、Camera Pitchを移動方向へ混ぜません。
+    // ========================================================================
+    // Camera basis projected onto ground plane
+    // ========================================================================
+    // Orbit CameraのYawだけからXZ Forwardを作ることで、Cameraを上下へPitchしても
+    // Stick前入力にY成分が混ざらず、Characterは常に地面平面上を移動します。
+    //
+    // Yaw=0のCameraはLocal Forward=-Zを向くため、画面奥方向はWorld -Zです。
     const math::Vec3 cameraForward{
         std::sin(m_CameraYaw),
         0.0f,
         -std::cos(m_CameraYaw)
     };
 
+    // Camera RightはForwardとWorld Upの外積と等価なXZ直交Basisです。
+    // Yaw=0では+Xとなり、Stick右入力が画面右方向へ移動します。
     const math::Vec3 cameraRight{
         std::cos(m_CameraYaw),
         0.0f,
@@ -834,6 +900,10 @@ void CharacterControllerDemoLayer::ApplyCameraRelativeMovement(CharacterControll
     };
 
     const math::Vec3 worldMove = cameraRight * input.Move.x + cameraForward * input.Move.y;
+
+    // CharacterControllerInput::Moveは歴史的にVec2(x, forward)を受け取り、内部で
+    // desiredDirection = Vec3{ Move.x, 0, Move.y } としてWorld XZへ展開します。
+    // そのためここではWorld X/Zを再びMove.x/Move.yへ格納します。
     input.Move = math::Vec2{ worldMove.x, worldMove.z };
 }
 
@@ -848,6 +918,8 @@ void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
         return;
     }
 
+    // WindowsInput側でRightStickYは「上へ倒すと+」になるよう正規化済みです。
+    // 右Stick上でCameraを上側へ回したいのでPitchへ正方向として加算します。
     const math::Vec2 cameraStick = ApplyCameraStickDeadZone(
         math::Vec2{ m_RawGamepadState.RightStickX, m_RawGamepadState.RightStickY },
         m_CameraStickDeadZone);
@@ -856,6 +928,9 @@ void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
     m_CameraPitch += cameraStick.y * m_CameraPitchSpeed * deltaTime;
     m_CameraPitch = std::clamp(m_CameraPitch, m_CameraMinPitch, m_CameraMaxPitch);
 
+    // Raven Runtime CameraのLocal Forwardは-Zです。
+    // SceneCameraSystemのX -> Y回転と同じ意味になるよう、Yaw/PitchからWorld Forwardを構築します。
+    // Pitchが負なら下向き、Yaw=0なら-Z向きです。
     const float cosPitch = std::cos(m_CameraPitch);
     math::Vec3 cameraForward{
         std::sin(m_CameraYaw) * cosPitch,
@@ -871,7 +946,9 @@ void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
     cameraTransform.Position = target - cameraForward * m_CameraDistance;
     cameraTransform.Rotation = math::Vec3{ m_CameraPitch, m_CameraYaw, 0.0f };
 
-    // View Matrixはここでは更新せず、SceneCameraSystemをCamera姿勢同期の唯一の入口として維持します。
+    // View Matrixはここでは更新しません。
+    // SceneCameraSystem::UpdatePrimaryCamera()がRender直前にTransformからViewを再構築するため、
+    // Camera姿勢の正規データをTransformComponentへ一本化したまま維持できます。
 }
 
 void CharacterControllerDemoLayer::SyncVisualTransform()
