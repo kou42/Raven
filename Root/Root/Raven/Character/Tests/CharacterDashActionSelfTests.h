@@ -36,7 +36,7 @@ inline bool Run(std::string* errorMessage = nullptr)
     config.Cooldown = 0.50f;
     CharacterDashAction dash(config);
 
-    if (dash.Update(true, { 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, true, 0.0f, errorMessage) == false)
+    if (dash.Update(true, math::Vec2{ 1.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.0f, errorMessage) == false)
     {
         return false;
     }
@@ -52,7 +52,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    if (dash.Update(true, { -1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, true, 0.10f, errorMessage) == false)
+    if (dash.Update(true, math::Vec2{ -1.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.10f, errorMessage) == false)
     {
         return false;
     }
@@ -62,7 +62,7 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    if (dash.Update(true, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, true, 0.11f, errorMessage) == false)
+    if (dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.11f, errorMessage) == false)
     {
         return false;
     }
@@ -71,8 +71,8 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    if (dash.Update(false, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false
-        || dash.Update(true, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false)
+    if (dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false
+        || dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, true, 0.01f, errorMessage) == false)
     {
         return false;
     }
@@ -82,8 +82,8 @@ inline bool Run(std::string* errorMessage = nullptr)
     }
 
     // Cooldown終了後は新しいPress Edgeを受け付け、MoveなしならForwardへDashします。
-    if (dash.Update(false, { 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, true, 0.50f, errorMessage) == false
-        || dash.Update(true, { 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, true, 0.0f, errorMessage) == false)
+    if (dash.Update(false, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.50f, errorMessage) == false
+        || dash.Update(true, math::Vec2{ 0.0f, 0.0f }, math::Vec3{ 0.0f, 0.0f, -1.0f }, true, 0.0f, errorMessage) == false)
     {
         return false;
     }
@@ -99,8 +99,8 @@ inline bool Run(std::string* errorMessage = nullptr)
         return false;
     }
 
-    if (dash.Update(false, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false
-        || dash.Update(true, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false)
+    if (dash.Update(false, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false
+        || dash.Update(true, math::Vec2{ 0.0f, 1.0f }, math::Vec3{ 0.0f, 0.0f, 1.0f }, false, 0.0f, errorMessage) == false)
     {
         return false;
     }
