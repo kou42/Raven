@@ -15,5 +15,8 @@ Raven/Assets/Models/Quaternius/UAL1_Standard.glb
 - Idle: `Idle_Loop`
 - Walk: `Walk_Loop`
 - Run: `Jog_Fwd_Loop`
+- Sprint: `Sprint_Loop`
+
+CharacterController側では通常移動をWalk、`Left Shift` / `RT` をRun、`Left Ctrl` / `RB` をSprintとして分離しています。SprintはRunの別名ではなく独立したGameplay要求として保持するため、将来Stamina消費やSprint禁止状態を追加してもRunへ影響させず拡張できます。
 
 この段階ではQuaternius GLB自身のMesh/Skeleton/Animationを同時に読み込み、Retargetingを介さず既存のSkinnedBlendTreeRuntime経路を検証します。`Raven_human_test.glb` へ適用するRetargetingは別実装単位とします。

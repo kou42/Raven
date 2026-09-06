@@ -5,10 +5,13 @@
     "idleAnimation": "Idle_Loop",
     "walkAnimation": "Walk_Loop",
     "runAnimation": "Jog_Fwd_Loop",
+    "sprintAnimation": "Sprint_Loop",
     "idleThreshold": 0,
     "walkThreshold": 1.8,
     "runThreshold": 5.5,
+    "sprintThreshold": 8.0,
     "walkAuthoredMotionSpeed": 1.8,
-    "runAuthoredMotionSpeed": 5.5
+    "runAuthoredMotionSpeed": 5.5,
+    "sprintAuthoredMotionSpeed": 8.0
   }
 }

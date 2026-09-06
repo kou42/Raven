@@ -117,9 +117,18 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     {
         return SetError(errorMessage, "Locomotionへ戻すBlendTreeがConfigureされていません");
     }
+
+    // Sprint対応かどうかは調整値ではなくTree構成そのものから判定します。
+    // Authored Motion SpeedをRuntime UIで変更しても3/4 Childの意味が変化しないためです。
+    const bool sprintLocomotion = state->LocomotionTree->GetChildCount() == 4u;
+
     if (state->OneShotActive == false)
     {
         // 既にLocomotion中ならParameterだけ最新値へ合わせます。
+        if (sprintLocomotion == true)
+        {
+            return SetMovementSpeedSprintAware(skinIndex, movementSpeed, errorMessage);
+        }
         return SetMovementSpeed(skinIndex, movementSpeed, errorMessage);
     }
 
@@ -129,13 +138,12 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     // ========================================================================
     // Non-loop Get-Up -> Locomotion BlendTree
     // ========================================================================
-    // Ragdoll突入前のMovementSpeedを残したまま戻すと、Get-Up完了直後にRun Poseへ飛ぶ可能性があります。
-    // そのため復帰時点のCharacter Controller速度をここでStateへ保存し、その値を遷移先BlendTreeへ
-    // 直接渡します。
+    // Ragdoll突入前のMovementSpeedを残したまま戻すと、Get-Up完了直後にRun/Sprint Poseへ飛ぶ可能性があります。
+    // そのため復帰時点のCharacter Controller速度をStateへ保存し、その値を遷移先BlendTreeへ直接渡します。
     state->MovementSpeed = movementSpeed;
 
     // Get-Up Clipの終端NormalizedTime=1を歩行周期へ持ち込む意味はないためrestart=trueとし、
-    // 現在MovementSpeedに対応したIdle / Walk / Run Poseから新しい周期を開始します。
+    // 現在MovementSpeedに対応したLocomotion Poseから新しい周期を開始します。
     animator.SetLoop(true);
     if (animator.CrossFadeBlendTree(
             state->LocomotionTree,
@@ -148,7 +156,14 @@ bool SkinnedBlendTreeRuntime::ReturnToLocomotion(
     }
 
     state->OneShotActive = false;
-    return true;
+
+    // CrossFade先のBlendTree ParameterとFoot Sliding補正を同じFrameで再同期します。
+    // Sprint中に復帰した場合もJog用Reference Speedへ誤ってClampされません。
+    if (sprintLocomotion == true)
+    {
+        return SetMovementSpeedSprintAware(skinIndex, movementSpeed, errorMessage);
+    }
+    return SetMovementSpeed(skinIndex, movementSpeed, errorMessage);
 }
 
 bool SkinnedBlendTreeRuntime::IsOneShotAnimationFinished(

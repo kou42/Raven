@@ -334,7 +334,7 @@ void CharacterControllerDemoLayer::OnAttach()
 
     std::cout
         << "[CharacterController] Controls: WASD / Left Stick Camera-relative Move, "
-        << "Right Stick Camera, Space / A Jump, Left Shift / RT Run\n";
+        << "Right Stick Camera, Space / A Jump, Left Shift / RT Run, Left Ctrl / RB Sprint\n";
 }
 
 void CharacterControllerDemoLayer::OnDetach()
@@ -377,6 +377,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     // ReadDefaultPlayerInput()はKeyboardとGamepadを同じCharacterControllerInputへ統合します。
     // Gamepad未接続時はKeyboardだけ、接続時は両方を利用でき、同時入力時のMove長も1以内へClampされます。
     // CharacterController本体は入力Deviceを知らず、最終的なGameplay入力だけを受け取ります。
+    // Sprint要求もRunと独立したままここまで保持され、Controller内部で最高速へ解決されます。
     m_ResolvedInput = CharacterController::ReadDefaultPlayerInput();
 
     // Device入力としてのMoveは「右=+X / 前=+Y」の2D値です。
@@ -405,7 +406,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     // ========================================================================
     // 入力値ではなく、CharacterControllerが加減速・壁Slide・Moving Platform等を解決した後の
     // m_Velocityから水平速度を取得してBlendTreeへ渡します。
-    // 例えばRun入力中でも壁へ正面衝突して実速度が0になればAnimationもIdle側へ戻ります。
+    // Run/Sprint入力中でも壁へ正面衝突して実速度が0になればAnimationもIdle側へ戻ります。
     if (m_HumanoidLocomotionAnimationActive == true)
     {
         if (UpdateHumanoidLocomotionAnimation(safeDeltaTime, &errorMessage) == false)
@@ -516,7 +517,7 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidVisual()
     }
 
     std::cout
-        << "[CharacterController] Raven_human_test.glbをCharacter表示へ接続しました。"
+        << "[CharacterController] Quaternius UAL1_Standard.glbをCharacter表示へ接続しました。"
         << " Height=" << capsuleHeight << '\n';
     return true;
 }
@@ -535,13 +536,15 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     m_ResolvedHumanoidIdleAnimationName.clear();
     m_ResolvedHumanoidWalkAnimationName.clear();
     m_ResolvedHumanoidRunAnimationName.clear();
+    m_ResolvedHumanoidSprintAnimationName.clear();
     m_HumanoidActualHorizontalSpeed = 0.0f;
     m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 
     // GLBと対になるJSON Asset ProfileをAnimation初期化前に読み込みます。
-    // Assetが欠落・破損していてもCharacter / Animation検証全体を止めないため、Raven Human専用の
-    // C++既定値を明示fallbackとして使用します。汎用RuntimeにはAsset名やfallback値を持ち込みません。
-    HumanoidAnimationProfile loadedProfile = CreateRavenHumanTestAnimationProfile();
+    // Assetが欠落・破損していてもCharacter / Animation検証全体を止めないため、
+    // 現在接続しているQuaternius UAL1 Standard専用のC++既定値をfallbackとして使用します。
+    // 汎用RuntimeにはAsset名やfallback値を持ち込まず、Asset固有知識はProfile Factoryへ集約します。
+    HumanoidAnimationProfile loadedProfile = CreateQuaterniusUAL1StandardAnimationProfile();
     std::string profileLoadError;
     if (LoadHumanoidAnimationProfile(
             m_HumanoidAnimationProfilePath,
@@ -550,20 +553,23 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
     {
         std::cerr
             << "[CharacterController] Humanoid Animation Profileを読み込めないため"
-            << " Raven Human既定値へfallbackします: " << profileLoadError << '\n';
+            << " Quaternius UAL1 Standard既定値へfallbackします: " << profileLoadError << '\n';
     }
     m_HumanoidAnimationProfile = std::move(loadedProfile);
 
     // Animation ProfileはAsset固有設定の正規の参照元です。
-    // CharacterControllerConfigのWalkSpeed / RunSpeedはGameplay上の目標速度であり、ClipをBlendTree上の
-    // どこへ配置するかを表すThresholdとは責務が異なるため、ここで相互変換や値のコピーを行いません。
+    // CharacterControllerConfigのWalkSpeed / RunSpeed / SprintSpeedはGameplay上の目標速度であり、
+    // ClipをBlendTree上のどこへ配置するかを表すThresholdとは責務が異なるため、
+    // ここで相互変換や値のコピーを行いません。
     const HumanoidLocomotionProfile& locomotionProfile =
         m_HumanoidAnimationProfile.Locomotion;
     m_HumanoidWalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
     m_HumanoidRunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
+    m_HumanoidSprintAuthoredMotionSpeed = locomotionProfile.SprintAuthoredMotionSpeed;
     m_HumanoidIdleThreshold = locomotionProfile.IdleThreshold;
     m_HumanoidWalkThreshold = locomotionProfile.WalkThreshold;
     m_HumanoidRunThreshold = locomotionProfile.RunThreshold;
+    m_HumanoidSprintThreshold = locomotionProfile.SprintThreshold;
 
     if (m_HumanoidVisualActive == false
         || m_HumanoidInstance.IsValid() == false)
@@ -630,26 +636,27 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         return false;
     }
 
+    // SprintもIdle / Walk / Runと同じ解決規則を使用します。
+    // 4 Clipのどれか1つでも曖昧なら、誤ったMotionを自動採用せず初期化を失敗させます。
     if (ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.IdleAnimationName,
             m_ResolvedHumanoidIdleAnimationName,
-            errorMessage) == false)
-    {
-        return false;
-    }
-    if (ResolveLocomotionAnimationName(
+            errorMessage) == false
+        || ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.WalkAnimationName,
             m_ResolvedHumanoidWalkAnimationName,
-            errorMessage) == false)
-    {
-        return false;
-    }
-    if (ResolveLocomotionAnimationName(
+            errorMessage) == false
+        || ResolveLocomotionAnimationName(
             m_HumanoidAvailableAnimationNames,
             locomotionProfile.RunAnimationName,
             m_ResolvedHumanoidRunAnimationName,
+            errorMessage) == false
+        || ResolveLocomotionAnimationName(
+            m_HumanoidAvailableAnimationNames,
+            locomotionProfile.SprintAnimationName,
+            m_ResolvedHumanoidSprintAnimationName,
             errorMessage) == false)
     {
         return false;
@@ -661,23 +668,29 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         << "[CharacterController] Locomotion Animation解決:"
         << " Idle='" << m_ResolvedHumanoidIdleAnimationName
         << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
-        << "' Run='" << m_ResolvedHumanoidRunAnimationName << "'\n";
+        << "' Run='" << m_ResolvedHumanoidRunAnimationName
+        << "' Sprint='" << m_ResolvedHumanoidSprintAnimationName << "'\n";
 
     Gltf::LocomotionBlendTreeConfig animationConfig{};
     animationConfig.IdleAnimationName = m_ResolvedHumanoidIdleAnimationName;
     animationConfig.WalkAnimationName = m_ResolvedHumanoidWalkAnimationName;
     animationConfig.RunAnimationName = m_ResolvedHumanoidRunAnimationName;
+    animationConfig.SprintAnimationName = m_ResolvedHumanoidSprintAnimationName;
 
     // BlendTree Thresholdは「State切替境界」ではなく、そのMotionが100%になる実速度です。
-    // GameplayのWalk / Run目標速度とは独立したAnimation Asset設定としてProfileから転送します。
+    // GameplayのWalk / Run / Sprint目標速度とは独立したAnimation Asset設定としてProfileから転送します。
     // Authored Motion SpeedもProfileから明示し、汎用Runtimeの既定値へ暗黙に依存させません。
     animationConfig.IdleThreshold = locomotionProfile.IdleThreshold;
     animationConfig.WalkThreshold = locomotionProfile.WalkThreshold;
     animationConfig.RunThreshold = locomotionProfile.RunThreshold;
+    animationConfig.SprintThreshold = locomotionProfile.SprintThreshold;
     animationConfig.WalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
     animationConfig.RunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
+    animationConfig.SprintAuthoredMotionSpeed = locomotionProfile.SprintAuthoredMotionSpeed;
 
-    if (m_HumanoidLocomotionRuntime.Configure(
+    // QuaterniusはJogとSprintを別Clipとして持つため、4 Child版を明示的に選択します。
+    // 既存3段階Configure()は他Assetとの互換用としてRuntime側に残しています。
+    if (m_HumanoidLocomotionRuntime.ConfigureSprint(
             m_HumanoidAnimationSkinIndex,
             animationConfig,
             errorMessage) == false)
@@ -710,11 +723,14 @@ bool CharacterControllerDemoLayer::TryInitializeHumanoidLocomotionAnimation(std:
         << " Idle='" << m_ResolvedHumanoidIdleAnimationName
         << "' Walk='" << m_ResolvedHumanoidWalkAnimationName
         << "' Run='" << m_ResolvedHumanoidRunAnimationName
+        << "' Sprint='" << m_ResolvedHumanoidSprintAnimationName
         << "' AnimationThresholds=" << locomotionProfile.IdleThreshold
         << "/" << locomotionProfile.WalkThreshold
         << "/" << locomotionProfile.RunThreshold
+        << "/" << locomotionProfile.SprintThreshold
         << " AuthoredMotionSpeeds=" << locomotionProfile.WalkAuthoredMotionSpeed
-        << "/" << locomotionProfile.RunAuthoredMotionSpeed << '\n';
+        << "/" << locomotionProfile.RunAuthoredMotionSpeed
+        << "/" << locomotionProfile.SprintAuthoredMotionSpeed << '\n';
     return true;
 }
 
@@ -731,7 +747,7 @@ bool CharacterControllerDemoLayer::UpdateHumanoidLocomotionAnimation(
     // Actual horizontal speed -> BlendTree Parameter
     // ========================================================================
     // CharacterController::UpdateLocomotionAnimation()内部でGetHorizontalSpeed()を使用するため、
-    // Run入力そのものではなく「このFrameで実際に残った水平速度」がAnimationの正規入力です。
+    // Run/Sprint入力そのものではなく「このFrameで実際に残った水平速度」がAnimationの正規入力です。
     if (m_CharacterController.UpdateLocomotionAnimation(
             m_HumanoidLocomotionRuntime,
             m_HumanoidAnimationSkinIndex,
@@ -768,6 +784,7 @@ void CharacterControllerDemoLayer::DestroyHumanoidVisual()
     m_ResolvedHumanoidIdleAnimationName.clear();
     m_ResolvedHumanoidWalkAnimationName.clear();
     m_ResolvedHumanoidRunAnimationName.clear();
+    m_ResolvedHumanoidSprintAnimationName.clear();
     m_HumanoidActualHorizontalSpeed = 0.0f;
     m_HumanoidLocomotionDebugInfo = BlendTree1DDebugInfo{};
 

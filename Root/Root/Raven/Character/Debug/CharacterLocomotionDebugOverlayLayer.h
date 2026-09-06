@@ -152,19 +152,22 @@ public:
                 snapshot.LeftThreshold,
                 snapshot.RightThreshold);
             ImGui::Text(
-                "Gameplay Goal: Walk %.2f / Run %.2f m/s",
+                "Gameplay Goal: Walk %.2f / Run %.2f / Sprint %.2f m/s",
                 snapshot.GameplayWalkSpeed,
-                snapshot.GameplayRunSpeed);
+                snapshot.GameplayRunSpeed,
+                snapshot.GameplaySprintSpeed);
             ImGui::Text(
-                "Runtime Axis : Idle %.2f / Walk %.2f / Run %.2f",
+                "Runtime Axis : Idle %.2f / Walk %.2f / Run %.2f / Sprint %.2f",
                 snapshot.IdleThreshold,
                 snapshot.WalkThreshold,
-                snapshot.RunThreshold);
+                snapshot.RunThreshold,
+                snapshot.SprintThreshold);
             ImGui::Text(
-                "Profile Axis : Idle %.2f / Walk %.2f / Run %.2f",
+                "Profile Axis : Idle %.2f / Walk %.2f / Run %.2f / Sprint %.2f",
                 snapshot.ProfileIdleThreshold,
                 snapshot.ProfileWalkThreshold,
-                snapshot.ProfileRunThreshold);
+                snapshot.ProfileRunThreshold,
+                snapshot.ProfileSprintThreshold);
             ImGui::Text(
                 "Clamped      : %s",
                 snapshot.IsClamped == true ? "true" : "false");
@@ -181,6 +184,7 @@ public:
             float idleThreshold = snapshot.IdleThreshold;
             float walkThreshold = snapshot.WalkThreshold;
             float runThreshold = snapshot.RunThreshold;
+            float sprintThreshold = snapshot.SprintThreshold;
             const bool idleThresholdChanged = ImGui::DragFloat(
                 "Idle Threshold",
                 &idleThreshold,
@@ -202,16 +206,25 @@ public:
                 0.10f,
                 15.0f,
                 "%.2f");
+            const bool sprintThresholdChanged = ImGui::DragFloat(
+                "Sprint Threshold",
+                &sprintThreshold,
+                0.01f,
+                0.15f,
+                20.0f,
+                "%.2f");
 
             if (idleThresholdChanged == true
                 || walkThresholdChanged == true
-                || runThresholdChanged == true)
+                || runThresholdChanged == true
+                || sprintThresholdChanged == true)
             {
                 constexpr float MinimumThresholdGap = 0.05f;
                 idleThreshold = std::max(idleThreshold, 0.0f);
                 walkThreshold = std::max(walkThreshold, idleThreshold + MinimumThresholdGap);
                 runThreshold = std::max(runThreshold, walkThreshold + MinimumThresholdGap);
-                ApplyThresholds(idleThreshold, walkThreshold, runThreshold);
+                sprintThreshold = std::max(sprintThreshold, runThreshold + MinimumThresholdGap);
+                ApplyThresholds(idleThreshold, walkThreshold, runThreshold, sprintThreshold);
             }
 
             if (ImGui::Button("Reset Thresholds") == true)
@@ -219,7 +232,8 @@ public:
                 ApplyThresholds(
                     snapshot.ProfileIdleThreshold,
                     snapshot.ProfileWalkThreshold,
-                    snapshot.ProfileRunThreshold);
+                    snapshot.ProfileRunThreshold,
+                    snapshot.ProfileSprintThreshold);
             }
 
             ImGui::Separator();
@@ -232,6 +246,7 @@ public:
             // Runtime側APIが現在Blend WeightでPlayback倍率を即時再計算するため、BlendTreeの再生位相はリスタートしません。
             float walkAuthoredSpeed = snapshot.WalkAuthoredMotionSpeed;
             float runAuthoredSpeed = snapshot.RunAuthoredMotionSpeed;
+            float sprintAuthoredSpeed = snapshot.SprintAuthoredMotionSpeed;
 
             const bool walkChanged = ImGui::DragFloat(
                 "Walk Authored m/s",
@@ -247,14 +262,27 @@ public:
                 0.15f,
                 15.0f,
                 "%.2f");
+            const bool sprintChanged = ImGui::DragFloat(
+                "Sprint Authored m/s",
+                &sprintAuthoredSpeed,
+                0.01f,
+                0.20f,
+                20.0f,
+                "%.2f");
 
-            if (walkChanged == true || runChanged == true)
+            if (walkChanged == true || runChanged == true || sprintChanged == true)
             {
                 constexpr float MinimumSpeedGap = 0.05f;
                 walkAuthoredSpeed = std::max(walkAuthoredSpeed, 0.10f);
                 runAuthoredSpeed = std::max(runAuthoredSpeed, walkAuthoredSpeed + MinimumSpeedGap);
+                sprintAuthoredSpeed = std::max(
+                    sprintAuthoredSpeed,
+                    runAuthoredSpeed + MinimumSpeedGap);
 
-                ApplyAuthoredMotionSpeeds(walkAuthoredSpeed, runAuthoredSpeed);
+                ApplyAuthoredMotionSpeeds(
+                    walkAuthoredSpeed,
+                    runAuthoredSpeed,
+                    sprintAuthoredSpeed);
             }
 
             // =================================================================
@@ -266,7 +294,8 @@ public:
             {
                 ApplyAuthoredMotionSpeeds(
                     snapshot.ProfileWalkAuthoredMotionSpeed,
-                    snapshot.ProfileRunAuthoredMotionSpeed);
+                    snapshot.ProfileRunAuthoredMotionSpeed,
+                    snapshot.ProfileSprintAuthoredMotionSpeed);
             }
 
             ImGui::SameLine();
@@ -318,7 +347,8 @@ public:
 private:
     void ApplyAuthoredMotionSpeeds(
         float walkAuthoredSpeed,
-        float runAuthoredSpeed)
+        float runAuthoredSpeed,
+        float sprintAuthoredSpeed)
     {
         if (m_CharacterLayer == nullptr)
         {
@@ -329,6 +359,7 @@ private:
         if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
                 walkAuthoredSpeed,
                 runAuthoredSpeed,
+                sprintAuthoredSpeed,
                 &tuningError) == false)
         {
             m_LastTuningError = tuningError;
@@ -342,7 +373,8 @@ private:
     void ApplyThresholds(
         float idleThreshold,
         float walkThreshold,
-        float runThreshold)
+        float runThreshold,
+        float sprintThreshold)
     {
         if (m_CharacterLayer == nullptr)
         {
@@ -354,6 +386,7 @@ private:
                 idleThreshold,
                 walkThreshold,
                 runThreshold,
+                sprintThreshold,
                 &tuningError) == false)
         {
             m_LastTuningError = tuningError;
@@ -377,10 +410,14 @@ private:
             << snapshot.WalkThreshold << "f; "
             << "profile.Locomotion.RunThreshold = "
             << snapshot.RunThreshold << "f; "
+            << "profile.Locomotion.SprintThreshold = "
+            << snapshot.SprintThreshold << "f; "
             << "profile.Locomotion.WalkAuthoredMotionSpeed = "
             << snapshot.WalkAuthoredMotionSpeed << "f; "
             << "profile.Locomotion.RunAuthoredMotionSpeed = "
-            << snapshot.RunAuthoredMotionSpeed << "f;";
+            << snapshot.RunAuthoredMotionSpeed << "f; "
+            << "profile.Locomotion.SprintAuthoredMotionSpeed = "
+            << snapshot.SprintAuthoredMotionSpeed << "f;";
         return stream.str();
     }
 

@@ -4,6 +4,7 @@
 #include "Raven/Core/JsonParser.h"
 #include "Raven/Core/JsonWriter.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -15,6 +16,7 @@ namespace
 {
 constexpr int CurrentProfileVersion = 1;
 constexpr const char* ProfileType = "RavenHumanoidAnimationProfile";
+constexpr float MinimumSprintGap = 0.05f;
 
 bool SetError(std::string* errorMessage, const std::string& message)
 {
@@ -25,22 +27,32 @@ bool SetError(std::string* errorMessage, const std::string& message)
 bool ValidateProfile(const HumanoidAnimationProfile& profile, std::string* errorMessage)
 {
     const HumanoidLocomotionProfile& value = profile.Locomotion;
-    if (value.IdleAnimationName.empty() || value.WalkAnimationName.empty() || value.RunAnimationName.empty())
+    if (value.IdleAnimationName.empty()
+        || value.WalkAnimationName.empty()
+        || value.RunAnimationName.empty()
+        || value.SprintAnimationName.empty())
     {
         return SetError(errorMessage, "Animation名は空にできません");
     }
-    if (std::isfinite(value.IdleThreshold) == false || std::isfinite(value.WalkThreshold) == false
-        || std::isfinite(value.RunThreshold) == false || value.IdleThreshold < 0.0f
-        || value.WalkThreshold <= value.IdleThreshold || value.RunThreshold <= value.WalkThreshold)
+    if (std::isfinite(value.IdleThreshold) == false
+        || std::isfinite(value.WalkThreshold) == false
+        || std::isfinite(value.RunThreshold) == false
+        || std::isfinite(value.SprintThreshold) == false
+        || value.IdleThreshold < 0.0f
+        || value.WalkThreshold <= value.IdleThreshold
+        || value.RunThreshold <= value.WalkThreshold
+        || value.SprintThreshold <= value.RunThreshold)
     {
-        return SetError(errorMessage, "Thresholdは 0 <= Idle < Walk < Run を満たす必要があります");
+        return SetError(errorMessage, "Thresholdは 0 <= Idle < Walk < Run < Sprint を満たす必要があります");
     }
     if (std::isfinite(value.WalkAuthoredMotionSpeed) == false
         || std::isfinite(value.RunAuthoredMotionSpeed) == false
+        || std::isfinite(value.SprintAuthoredMotionSpeed) == false
         || value.WalkAuthoredMotionSpeed <= 0.0f
-        || value.RunAuthoredMotionSpeed <= value.WalkAuthoredMotionSpeed)
+        || value.RunAuthoredMotionSpeed <= value.WalkAuthoredMotionSpeed
+        || value.SprintAuthoredMotionSpeed <= value.RunAuthoredMotionSpeed)
     {
-        return SetError(errorMessage, "Authored Motion Speedは 0 < Walk < Run を満たす必要があります");
+        return SetError(errorMessage, "Authored Motion Speedは 0 < Walk < Run < Sprint を満たす必要があります");
     }
     return true;
 }
@@ -78,6 +90,51 @@ bool ReadFloat(const Core::JsonValue& object, const char* key, float& output, st
     output = converted;
     return true;
 }
+
+bool ReadOptionalString(
+    const Core::JsonValue& object,
+    const char* key,
+    std::string& output,
+    std::string* errorMessage)
+{
+    const Core::JsonValue* value = object.Find(key);
+    if (value == nullptr)
+    {
+        return true;
+    }
+    if (value->GetType() != Core::JsonValue::Type::String)
+    {
+        return SetError(errorMessage, std::string("Profile項目の型不一致: ") + key);
+    }
+    output = value->GetString();
+    return true;
+}
+
+bool ReadOptionalFloat(
+    const Core::JsonValue& object,
+    const char* key,
+    float& output,
+    std::string* errorMessage)
+{
+    const Core::JsonValue* value = object.Find(key);
+    if (value == nullptr)
+    {
+        return true;
+    }
+    if (value->GetType() != Core::JsonValue::Type::Number)
+    {
+        return SetError(errorMessage, std::string("Profile項目の型不一致: ") + key);
+    }
+
+    const double number = value->GetNumber();
+    const float converted = static_cast<float>(number);
+    if (std::isfinite(number) == false || std::isfinite(converted) == false)
+    {
+        return SetError(errorMessage, std::string("Profile数値がfloat範囲外です: ") + key);
+    }
+    output = converted;
+    return true;
+}
 } // namespace
 
 bool SerializeHumanoidAnimationProfile(
@@ -91,11 +148,14 @@ bool SerializeHumanoidAnimationProfile(
     locomotion.emplace("idleAnimation", Core::JsonValue(value.IdleAnimationName));
     locomotion.emplace("walkAnimation", Core::JsonValue(value.WalkAnimationName));
     locomotion.emplace("runAnimation", Core::JsonValue(value.RunAnimationName));
+    locomotion.emplace("sprintAnimation", Core::JsonValue(value.SprintAnimationName));
     locomotion.emplace("idleThreshold", Core::JsonValue(static_cast<double>(value.IdleThreshold)));
     locomotion.emplace("walkThreshold", Core::JsonValue(static_cast<double>(value.WalkThreshold)));
     locomotion.emplace("runThreshold", Core::JsonValue(static_cast<double>(value.RunThreshold)));
+    locomotion.emplace("sprintThreshold", Core::JsonValue(static_cast<double>(value.SprintThreshold)));
     locomotion.emplace("walkAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.WalkAuthoredMotionSpeed)));
     locomotion.emplace("runAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.RunAuthoredMotionSpeed)));
+    locomotion.emplace("sprintAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.SprintAuthoredMotionSpeed)));
     Core::JsonValue::Object root;
     root.emplace("type", Core::JsonValue(std::string(ProfileType)));
     root.emplace("version", Core::JsonValue(static_cast<double>(CurrentProfileVersion)));
@@ -124,18 +184,50 @@ bool DeserializeHumanoidAnimationProfile(
 
     HumanoidAnimationProfile profile{};
     HumanoidLocomotionProfile& value = profile.Locomotion;
+    const bool hasSprintThreshold = locomotion->Find("sprintThreshold") != nullptr;
+    const bool hasSprintAuthoredMotionSpeed = locomotion->Find("sprintAuthoredMotionSpeed") != nullptr;
+
     if (ReadString(*locomotion, "idleAnimation", value.IdleAnimationName, errorMessage) == false
         || ReadString(*locomotion, "walkAnimation", value.WalkAnimationName, errorMessage) == false
         || ReadString(*locomotion, "runAnimation", value.RunAnimationName, errorMessage) == false
+        || ReadOptionalString(*locomotion, "sprintAnimation", value.SprintAnimationName, errorMessage) == false
         || ReadFloat(*locomotion, "idleThreshold", value.IdleThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "walkThreshold", value.WalkThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "runThreshold", value.RunThreshold, errorMessage) == false
+        || ReadOptionalFloat(*locomotion, "sprintThreshold", value.SprintThreshold, errorMessage) == false
         || ReadFloat(*locomotion, "walkAuthoredMotionSpeed", value.WalkAuthoredMotionSpeed, errorMessage) == false
         || ReadFloat(*locomotion, "runAuthoredMotionSpeed", value.RunAuthoredMotionSpeed, errorMessage) == false
-        || ValidateProfile(profile, errorMessage) == false)
+        || ReadOptionalFloat(
+            *locomotion,
+            "sprintAuthoredMotionSpeed",
+            value.SprintAuthoredMotionSpeed,
+            errorMessage) == false)
     {
         return false;
     }
+
+    // Sprint項目はversion 1へのadditive extensionです。
+    // 旧ProfileではRun値が現在のSprint既定値8.0を超えている可能性があるため、単に既定値を残すと
+    // Run < Sprintという新しい検証条件に違反します。Sprint項目が欠落している場合だけ、既定値と
+    // 「旧Run値 + 最小間隔」の大きい方へ補完し、既存Assetの意味を壊さず新しい4段階規約へ昇格させます。
+    if (hasSprintThreshold == false)
+    {
+        value.SprintThreshold = std::max(
+            value.SprintThreshold,
+            value.RunThreshold + MinimumSprintGap);
+    }
+    if (hasSprintAuthoredMotionSpeed == false)
+    {
+        value.SprintAuthoredMotionSpeed = std::max(
+            value.SprintAuthoredMotionSpeed,
+            value.RunAuthoredMotionSpeed + MinimumSprintGap);
+    }
+
+    if (ValidateProfile(profile, errorMessage) == false)
+    {
+        return false;
+    }
+
     // 全検査後にだけ反映し、壊れたAssetによって利用中の設定を失わないようにします。
     outProfile = std::move(profile);
     return true;

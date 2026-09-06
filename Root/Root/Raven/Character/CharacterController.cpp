@@ -68,6 +68,7 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
 {
     if (std::isfinite(m_Config.WalkSpeed) == false
         || std::isfinite(m_Config.RunSpeed) == false
+        || std::isfinite(m_Config.SprintSpeed) == false
         || std::isfinite(m_Config.Acceleration) == false
         || std::isfinite(m_Config.Deceleration) == false
         || std::isfinite(m_Config.TurnSpeed) == false
@@ -91,6 +92,7 @@ bool CharacterController::ValidateConfig(std::string* errorMessage) const
     constexpr float HalfPi = 1.57079632679489661923f;
     if (m_Config.WalkSpeed < 0.0f
         || m_Config.RunSpeed < m_Config.WalkSpeed
+        || m_Config.SprintSpeed < m_Config.RunSpeed
         || m_Config.Acceleration < 0.0f
         || m_Config.Deceleration < 0.0f
         || m_Config.JumpSpeed < 0.0f
@@ -136,6 +138,7 @@ CharacterControllerInput CharacterController::ReadDefaultKeyboardInput()
     }
 
     input.Run = Input::IsKeyPressed(GLFW_KEY_LEFT_SHIFT);
+    input.Sprint = Input::IsKeyPressed(GLFW_KEY_LEFT_CONTROL);
     input.Jump = Input::IsKeyPressed(GLFW_KEY_SPACE);
     return input;
 }
@@ -551,7 +554,18 @@ bool CharacterController::UpdateInternal(
     }
 
     const bool hasMoveInput = (moveInput.x * moveInput.x + moveInput.y * moveInput.y) > 1.0e-6f;
-    const float targetSpeed = input.Run ? m_Config.RunSpeed : m_Config.WalkSpeed;
+
+    // Sprint要求を最優先し、次にRun、最後にWalkを選択します。
+    // Input flagを速度値へ直接埋め込まず、Gameplay設定の責務をCharacterControllerConfigへ維持します。
+    float targetSpeed = m_Config.WalkSpeed;
+    if (input.Sprint == true)
+    {
+        targetSpeed = m_Config.SprintSpeed;
+    }
+    else if (input.Run == true)
+    {
+        targetSpeed = m_Config.RunSpeed;
+    }
 
     math::Vec3 desiredVelocity{ 0.0f, 0.0f, 0.0f };
     if (hasMoveInput)
@@ -789,7 +803,8 @@ bool CharacterController::UpdateLocomotionAnimation(
     // BlendTreeへ渡すのは入力値ではなく「実際の現在水平速度」です。
     // 加減速中のCharacter見た目も物理的な速度へ追従するため、Inputを離した瞬間に
     // AnimationだけIdleへ飛ぶことを防げます。
-    return animationRuntime.SetMovementSpeed(
+    // Sprint-aware版は4 Child時のAuthored Motion Speedを正しく解決し、3 Childでは従来と同じ結果になります。
+    return animationRuntime.SetMovementSpeedSprintAware(
         skinIndex,
         GetHorizontalSpeed(),
         errorMessage);

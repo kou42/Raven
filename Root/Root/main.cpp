@@ -19,6 +19,9 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
 #ifdef _DEBUG
+#include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
+#include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
+#include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
 #include "Raven/UI/Svg/Debug/UISvgDemoLayer.h"
 #endif
@@ -34,6 +37,11 @@ int main()
     // ========================================================================
     // Debug Startup Self Tests
     // ========================================================================
+    // Character locomotionの速度選択とBlendTree/Animation Profileの回帰テストも
+    // 実際のDebug起動時に必ず通し、Sprint追加後の互換性退行を早い段階で検出します。
+    Raven::tests::RunCharacterCeilingCollisionSelfTests();
+    Raven::tests::RunCharacterSprintLocomotionSelfTests();
+    Raven::tests::RunBlendTreeRuntimeSelfTests();
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
 
     // ========================================================================

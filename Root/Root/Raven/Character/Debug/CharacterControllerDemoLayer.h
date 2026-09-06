@@ -44,12 +44,15 @@ struct CharacterLocomotionDebugSnapshot
     // Debug UIが両者を同じ値として扱わず、設定元ごとの差を並べて診断するためのSnapshotです。
     float GameplayWalkSpeed = 0.0f;
     float GameplayRunSpeed = 0.0f;
+    float GameplaySprintSpeed = 0.0f;
     float IdleThreshold = 0.0f;
     float WalkThreshold = 0.0f;
     float RunThreshold = 0.0f;
+    float SprintThreshold = 0.0f;
     float ProfileIdleThreshold = 0.0f;
     float ProfileWalkThreshold = 0.0f;
     float ProfileRunThreshold = 0.0f;
+    float ProfileSprintThreshold = 0.0f;
 
     std::string LeftAnimationName;
     std::string RightAnimationName;
@@ -70,8 +73,10 @@ struct CharacterLocomotionDebugSnapshot
     // Asset固有の初期値はProfileからSnapshot生成時に設定されるため、構造体の既定値は中立値にします。
     float WalkAuthoredMotionSpeed = 0.0f;
     float RunAuthoredMotionSpeed = 0.0f;
+    float SprintAuthoredMotionSpeed = 0.0f;
     float ProfileWalkAuthoredMotionSpeed = 0.0f;
     float ProfileRunAuthoredMotionSpeed = 0.0f;
+    float ProfileSprintAuthoredMotionSpeed = 0.0f;
 };
 
 // ============================================================================
@@ -93,6 +98,7 @@ struct CharacterLocomotionDebugSnapshot
 //   Right Stick       : Characterを中心にRuntime CameraをYaw / Pitch回転
 //   Space / A         : Jump
 //   Left Shift / RT   : Run
+//   Left Ctrl / RB    : Sprint
 //
 // Quaternius UAL1_Standard.glbを読み込める場合はHumanoidをCharacter表示として使用し、
 // CharacterController Capsule全高へ正規化します。Asset読込または正規化に失敗した場合だけ
@@ -100,8 +106,8 @@ struct CharacterLocomotionDebugSnapshot
 //
 // Humanoid表示が有効な場合は同じSkinnedMeshRuntimeAssetへSkinnedBlendTreeRuntimeを接続し、
 // CharacterControllerが衝突・加減速まで解決した「実水平速度」を毎Frame Speed Parameterへ渡します。
-// これにより入力のRunフラグではなく、壁Slideや加速途中を含む実際の移動結果で
-// Idle / Walk / Run Poseが連続補間されます。
+// これにより入力Flagそのものではなく、壁Slideや加速途中を含む実際の移動結果で
+// Idle / Walk / Run / Sprint Poseが連続補間されます。
 //
 // Raw Gamepad値とCharacterControllerInput変換後の値を保持し、
 // Dead Zone / Trigger Threshold / Button MappingをDebuggerや後続Debug UIから比較できるようにします。
@@ -135,7 +141,7 @@ public:
     }
 
     // CharacterControllerが衝突解決まで終えた後の実水平速度です。
-    // InputのWalk/Run要求値ではないため、壁衝突や加減速を含めてAnimationが実際に受け取った値を確認できます。
+    // InputのWalk/Run/Sprint要求値ではないため、壁衝突や加減速を含めてAnimationが実際に受け取った値を確認できます。
     float GetHumanoidActualHorizontalSpeed() const
     {
         return m_HumanoidActualHorizontalSpeed;
@@ -151,11 +157,25 @@ public:
     // ========================================================================
     // Locomotion runtime tuning
     // ========================================================================
-    // Walk / Run Clipを1.0倍再生したときの想定移動速度を実行中に変更します。
+    // 既存呼び出し互換用の2値版です。Sprint値は現在値を維持します。
+    bool SetHumanoidLocomotionAuthoredMotionSpeeds(
+        float walkAuthoredMotionSpeed,
+        float runAuthoredMotionSpeed,
+        std::string* errorMessage = nullptr)
+    {
+        return SetHumanoidLocomotionAuthoredMotionSpeeds(
+            walkAuthoredMotionSpeed,
+            runAuthoredMotionSpeed,
+            m_HumanoidSprintAuthoredMotionSpeed,
+            errorMessage);
+    }
+
+    // Walk / Run / Sprint Clipを1.0倍再生したときの想定移動速度を実行中に変更します。
     // BlendTree自体を再構築しないためAnimation位相は維持され、足滑りだけを連続的に調整できます。
     bool SetHumanoidLocomotionAuthoredMotionSpeeds(
         float walkAuthoredMotionSpeed,
         float runAuthoredMotionSpeed,
+        float sprintAuthoredMotionSpeed,
         std::string* errorMessage = nullptr)
     {
         if (m_HumanoidLocomotionAnimationActive == false
@@ -172,6 +192,7 @@ public:
                 m_HumanoidAnimationSkinIndex,
                 walkAuthoredMotionSpeed,
                 runAuthoredMotionSpeed,
+                sprintAuthoredMotionSpeed,
                 errorMessage) == false)
         {
             return false;
@@ -179,15 +200,32 @@ public:
 
         m_HumanoidWalkAuthoredMotionSpeed = walkAuthoredMotionSpeed;
         m_HumanoidRunAuthoredMotionSpeed = runAuthoredMotionSpeed;
+        m_HumanoidSprintAuthoredMotionSpeed = sprintAuthoredMotionSpeed;
         return true;
     }
 
-    // BlendTreeのIdle / Walk / Run配置だけを実行中に変更します。
+    // 既存呼び出し互換用の3 Threshold版です。Sprint Thresholdは現在値を維持します。
+    bool SetHumanoidLocomotionThresholds(
+        float idleThreshold,
+        float walkThreshold,
+        float runThreshold,
+        std::string* errorMessage = nullptr)
+    {
+        return SetHumanoidLocomotionThresholds(
+            idleThreshold,
+            walkThreshold,
+            runThreshold,
+            m_HumanoidSprintThreshold,
+            errorMessage);
+    }
+
+    // BlendTreeのIdle / Walk / Run / Sprint配置だけを実行中に変更します。
     // Runtime側は同じTreeを更新するため、AnimatorのNormalizedTimeと足運びの位相を維持します。
     bool SetHumanoidLocomotionThresholds(
         float idleThreshold,
         float walkThreshold,
         float runThreshold,
+        float sprintThreshold,
         std::string* errorMessage = nullptr)
     {
         if (m_HumanoidLocomotionAnimationActive == false
@@ -205,6 +243,7 @@ public:
                 idleThreshold,
                 walkThreshold,
                 runThreshold,
+                sprintThreshold,
                 errorMessage) == false)
         {
             return false;
@@ -213,6 +252,7 @@ public:
         m_HumanoidIdleThreshold = idleThreshold;
         m_HumanoidWalkThreshold = walkThreshold;
         m_HumanoidRunThreshold = runThreshold;
+        m_HumanoidSprintThreshold = sprintThreshold;
         return true;
     }
 
@@ -224,8 +264,10 @@ public:
         profile.Locomotion.IdleThreshold = m_HumanoidIdleThreshold;
         profile.Locomotion.WalkThreshold = m_HumanoidWalkThreshold;
         profile.Locomotion.RunThreshold = m_HumanoidRunThreshold;
+        profile.Locomotion.SprintThreshold = m_HumanoidSprintThreshold;
         profile.Locomotion.WalkAuthoredMotionSpeed = m_HumanoidWalkAuthoredMotionSpeed;
         profile.Locomotion.RunAuthoredMotionSpeed = m_HumanoidRunAuthoredMotionSpeed;
+        profile.Locomotion.SprintAuthoredMotionSpeed = m_HumanoidSprintAuthoredMotionSpeed;
 
         if (SaveHumanoidAnimationProfile(
                 m_HumanoidAnimationProfilePath,
@@ -244,8 +286,8 @@ public:
     // Locomotion Debug UI boundary
     // ========================================================================
     // BlendTree1DDebugInfoのChildIndexを、Character側で解決済みのAnimation名へ変換します。
-    // LocomotionTreeはConfigure時にThreshold昇順の Idle / Walk / Run となるため、Index 0/1/2を
-    // それぞれ解決済み名へ対応させられます。未知Indexは空文字列にして誤表示を避けます。
+    // LocomotionTreeはConfigureSprint時にThreshold昇順の Idle / Walk / Run / Sprint となるため、
+    // Index 0/1/2/3をそれぞれ解決済み名へ対応させられます。未知Indexは空文字列にして誤表示を避けます。
     CharacterLocomotionDebugSnapshot GetHumanoidLocomotionDebugSnapshot() const
     {
         CharacterLocomotionDebugSnapshot snapshot{};
@@ -260,12 +302,15 @@ public:
             m_HumanoidAnimationProfile.Locomotion;
         snapshot.GameplayWalkSpeed = characterConfig.WalkSpeed;
         snapshot.GameplayRunSpeed = characterConfig.RunSpeed;
+        snapshot.GameplaySprintSpeed = characterConfig.SprintSpeed;
         snapshot.IdleThreshold = m_HumanoidIdleThreshold;
         snapshot.WalkThreshold = m_HumanoidWalkThreshold;
         snapshot.RunThreshold = m_HumanoidRunThreshold;
+        snapshot.SprintThreshold = m_HumanoidSprintThreshold;
         snapshot.ProfileIdleThreshold = locomotionProfile.IdleThreshold;
         snapshot.ProfileWalkThreshold = locomotionProfile.WalkThreshold;
         snapshot.ProfileRunThreshold = locomotionProfile.RunThreshold;
+        snapshot.ProfileSprintThreshold = locomotionProfile.SprintThreshold;
         snapshot.LeftAnimationName = ResolveLocomotionDebugChildName(
             m_HumanoidLocomotionDebugInfo.LeftChildIndex);
         snapshot.RightAnimationName = ResolveLocomotionDebugChildName(
@@ -277,8 +322,10 @@ public:
         snapshot.IsClamped = m_HumanoidLocomotionDebugInfo.IsClamped;
         snapshot.WalkAuthoredMotionSpeed = m_HumanoidWalkAuthoredMotionSpeed;
         snapshot.RunAuthoredMotionSpeed = m_HumanoidRunAuthoredMotionSpeed;
+        snapshot.SprintAuthoredMotionSpeed = m_HumanoidSprintAuthoredMotionSpeed;
         snapshot.ProfileWalkAuthoredMotionSpeed = locomotionProfile.WalkAuthoredMotionSpeed;
         snapshot.ProfileRunAuthoredMotionSpeed = locomotionProfile.RunAuthoredMotionSpeed;
+        snapshot.ProfileSprintAuthoredMotionSpeed = locomotionProfile.SprintAuthoredMotionSpeed;
 
         // Playback補正値もBlendTreeと同じRuntime Stateから取得します。
         // Overlay側でActual/Reference比を再計算するとClamp規則やIdle例外と表示がずれるため、
@@ -314,17 +361,21 @@ public:
         stream << "Actual Speed         : " << snapshot.ActualHorizontalSpeed << '\n';
         stream << "Blend Parameter      : " << snapshot.ParameterValue << '\n';
         stream << "Gameplay Goal Speed  : Walk " << snapshot.GameplayWalkSpeed
-            << " / Run " << snapshot.GameplayRunSpeed << '\n';
+            << " / Run " << snapshot.GameplayRunSpeed
+            << " / Sprint " << snapshot.GameplaySprintSpeed << '\n';
         stream << "Runtime Thresholds   : " << snapshot.IdleThreshold
             << " / " << snapshot.WalkThreshold
-            << " / " << snapshot.RunThreshold << '\n';
+            << " / " << snapshot.RunThreshold
+            << " / " << snapshot.SprintThreshold << '\n';
         stream << "Profile Thresholds   : " << snapshot.ProfileIdleThreshold
             << " / " << snapshot.ProfileWalkThreshold
-            << " / " << snapshot.ProfileRunThreshold << '\n';
+            << " / " << snapshot.ProfileRunThreshold
+            << " / " << snapshot.ProfileSprintThreshold << '\n';
         stream << "Reference Speed      : " << snapshot.ReferenceMotionSpeed << '\n';
         stream << "Playback Speed       : " << snapshot.PlaybackSpeed << "x\n";
         stream << "Walk Authored Speed  : " << snapshot.WalkAuthoredMotionSpeed << '\n';
         stream << "Run Authored Speed   : " << snapshot.RunAuthoredMotionSpeed << '\n';
+        stream << "Sprint Authored Speed: " << snapshot.SprintAuthoredMotionSpeed << '\n';
         stream << "Blend                : "
             << FormatDebugAnimationName(snapshot.LeftAnimationName)
             << " -> "
@@ -341,6 +392,7 @@ public:
 private:
     // DebugInfoのChildIndexを解決済みLocomotion名へ変換します。
     // ここを1か所に集約することで、Debug UIがBlendTreeのChild配置規約を知る必要を無くします。
+    // 4 Childの配置順は Idle / Walk / Run / Sprint です。
     std::string ResolveLocomotionDebugChildName(std::size_t childIndex) const
     {
         if (childIndex == 0u)
@@ -354,6 +406,10 @@ private:
         if (childIndex == 2u)
         {
             return m_ResolvedHumanoidRunAnimationName;
+        }
+        if (childIndex == 3u)
+        {
+            return m_ResolvedHumanoidSprintAnimationName;
         }
         return {};
     }
@@ -378,7 +434,7 @@ private:
     void DestroyHumanoidVisual();
     bool SyncHumanoidVisualTransform(std::string* errorMessage = nullptr);
 
-    // Spawn済みHumanoidと同じRuntime AssetへIdle / Walk / Run BlendTreeを接続します。
+    // Spawn済みHumanoidと同じRuntime AssetへIdle / Walk / Run / Sprint BlendTreeを接続します。
     // Animation初期化だけ失敗した場合はHumanoid表示自体を破棄せずBind Pose表示を継続します。
     // これによりAnimation名の不一致とCharacter表示/Physicsの不具合を独立して切り分けられます。
     bool TryInitializeHumanoidLocomotionAnimation(std::string* errorMessage = nullptr);
@@ -426,7 +482,7 @@ private:
     bool m_HumanoidVisualActive = false;
 
     // ========================================================================
-    // Humanoid Idle / Walk / Run animation
+    // Humanoid Idle / Walk / Run / Sprint animation
     // ========================================================================
     // BlendTree RuntimeはSceneInstanceが所有するSkinnedMeshRuntimeAssetを参照します。
     // そのためDestroyHumanoidVisual()ではRuntimeを先に初期状態へ戻してからSceneInstanceを破棄します。
@@ -436,7 +492,9 @@ private:
 
     // ProfileファイルからAsset固有のClip名・Threshold・Authored Motion Speedを読み込みます。
     // 読み込み成功時はQuaternius用JSONが正規の設定元となり、Demo LayerへClip名を直書きしません。
-    HumanoidAnimationProfile m_HumanoidAnimationProfile = CreateRavenHumanTestAnimationProfile();
+    // JSON欠落時のfallbackも同じAsset向けFactoryを使い、別Humanoid用Clip名へ戻らないようにします。
+    HumanoidAnimationProfile m_HumanoidAnimationProfile =
+        CreateQuaterniusUAL1StandardAnimationProfile();
 
     // Profileの要求名をGetAnimationNames()でAsset側の実名へ解決した結果を保持します。
     // 要求名の複製メンバーは持たず、再初期化時も常にProfileを正規の参照元として使用します。
@@ -446,6 +504,7 @@ private:
     std::string m_ResolvedHumanoidIdleAnimationName;
     std::string m_ResolvedHumanoidWalkAnimationName;
     std::string m_ResolvedHumanoidRunAnimationName;
+    std::string m_ResolvedHumanoidSprintAnimationName;
 
     // Foot Sliding補正のRuntime調整値です。
     // Profile値は初期値としてのみ使用し、Debug UIから調整後は現在Runtime値として独立して保持します。
@@ -454,6 +513,8 @@ private:
         m_HumanoidAnimationProfile.Locomotion.WalkAuthoredMotionSpeed;
     float m_HumanoidRunAuthoredMotionSpeed =
         m_HumanoidAnimationProfile.Locomotion.RunAuthoredMotionSpeed;
+    float m_HumanoidSprintAuthoredMotionSpeed =
+        m_HumanoidAnimationProfile.Locomotion.SprintAuthoredMotionSpeed;
 
     // ProfileはAsset初期値として保持し、Runtime調整値は別Stateとして管理します。
     // Overlay調整でProfile自体を書き換えないため、Resetは常に元のAsset設定へ戻せます。
@@ -463,6 +524,8 @@ private:
         m_HumanoidAnimationProfile.Locomotion.WalkThreshold;
     float m_HumanoidRunThreshold =
         m_HumanoidAnimationProfile.Locomotion.RunThreshold;
+    float m_HumanoidSprintThreshold =
+        m_HumanoidAnimationProfile.Locomotion.SprintThreshold;
 
     // 毎Frame更新するLocomotion診断値です。
     // SpeedとBlend Weightを同じFrameのSnapshotとして保持し、後続Debug Overlayから参照できるようにします。
