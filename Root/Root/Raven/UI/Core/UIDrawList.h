@@ -27,6 +27,14 @@ enum class UIDrawCommandType
     Image
 };
 
+// 複数輪郭の塗り領域を決定する汎用規則です。
+// SVG固有型にせず、Vector Pathや将来のcompound shapeでも同じ描画経路を再利用します。
+enum class UIFillRule
+{
+    NonZero,
+    EvenOdd
+};
+
 // ============================================================================
 // UIRect
 // ============================================================================
@@ -132,7 +140,7 @@ struct UIDrawCommand
 //
 // ImGuiと同様に最終的な描画データはframeごとに再構築しますが、UIElementそのものは
 // Retained Modeとして別途保持できるよう、DrawListはUI Treeの所有権を一切持ちません。
-// これにより、将来のLayout / HitTest / Event処理とRenderingを分離できます。
+// Compound polygonはfill-ruleを解決してTriangleへ正規化し、既存SolidPolygon commandへ落とします。
 class UIDrawList
 {
 public:
@@ -154,6 +162,13 @@ public:
     // Convex/Concaveの三角形化はRenderer backendが行い、Widget側へtessellation知識を漏らしません。
     void AddPolygon(
         const std::vector<math::Vec2>& points,
+        const math::Vec4& color);
+
+    // 複数の閉輪郭をnonzero/evenodd規則で1つの塗り領域として解釈します。
+    // scanlineでfilled regionをTriangleへ分解するため、穴や自己交差を単一simple polygonへ無理に変換しません。
+    void AddCompoundPolygon(
+        const std::vector<std::vector<math::Vec2>>& contours,
+        UIFillRule fillRule,
         const math::Vec4& color);
 
     // uvMin / uvMaxもRaven UIの左上原点UV規約で指定します。
