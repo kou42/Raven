@@ -54,6 +54,10 @@ bool ValidateProfile(const HumanoidAnimationProfile& profile, std::string* error
     {
         return SetError(errorMessage, "Authored Motion Speedは 0 < Walk < Run < Sprint を満たす必要があります");
     }
+    if (profile.Actions.DashAnimationName.empty())
+    {
+        return SetError(errorMessage, "Dash Animation名は空にできません");
+    }
     return true;
 }
 
@@ -156,10 +160,15 @@ bool SerializeHumanoidAnimationProfile(
     locomotion.emplace("walkAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.WalkAuthoredMotionSpeed)));
     locomotion.emplace("runAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.RunAuthoredMotionSpeed)));
     locomotion.emplace("sprintAuthoredMotionSpeed", Core::JsonValue(static_cast<double>(value.SprintAuthoredMotionSpeed)));
+
+    Core::JsonValue::Object actions;
+    actions.emplace("dashAnimation", Core::JsonValue(profile.Actions.DashAnimationName));
+
     Core::JsonValue::Object root;
     root.emplace("type", Core::JsonValue(std::string(ProfileType)));
     root.emplace("version", Core::JsonValue(static_cast<double>(CurrentProfileVersion)));
     root.emplace("locomotion", Core::JsonValue(std::move(locomotion)));
+    root.emplace("actions", Core::JsonValue(std::move(actions)));
     return Core::JsonWriter::Write(Core::JsonValue(std::move(root)), outText, errorMessage);
 }
 
@@ -204,6 +213,25 @@ bool DeserializeHumanoidAnimationProfile(
             errorMessage) == false)
     {
         return false;
+    }
+
+    // actionsはversion 1へのadditive extensionです。旧ProfileではFactory既定値を維持するため、
+    // Object自体もdashAnimationも任意項目として扱い、既存Assetを壊さず段階的に拡張します。
+    const Core::JsonValue* actions = root.Find("actions");
+    if (actions != nullptr)
+    {
+        if (actions->GetType() != Core::JsonValue::Type::Object)
+        {
+            return SetError(errorMessage, "Profile項目の型不一致: actions");
+        }
+        if (ReadOptionalString(
+                *actions,
+                "dashAnimation",
+                profile.Actions.DashAnimationName,
+                errorMessage) == false)
+        {
+            return false;
+        }
     }
 
     // Sprint項目はversion 1へのadditive extensionです。
