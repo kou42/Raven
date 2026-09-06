@@ -94,7 +94,7 @@ struct CharacterLocomotionDebugSnapshot
 //   Space / A         : Jump
 //   Left Shift / RT   : Run
 //
-// Raven_human_test.glbを読み込める場合はHumanoidをCharacter表示として使用し、
+// Quaternius UAL1_Standard.glbを読み込める場合はHumanoidをCharacter表示として使用し、
 // CharacterController Capsule全高へ正規化します。Asset読込または正規化に失敗した場合だけ
 // 従来のCube表示へfallbackするため、入力・Physics検証自体は継続できます。
 //
@@ -417,9 +417,12 @@ private:
     // Character RootのWorld Transformを毎Frame左から合成して表示Humanを追従させます。
     Gltf::SkinnedMeshSceneInstance m_HumanoidInstance{};
     std::vector<TransformComponent> m_HumanoidLocalTransforms;
-    std::string m_HumanoidModelPath = "Raven/Assets/Models/Raven_human_test.glb";
+    // QuaterniusのStandard版はMesh/Skeleton/Animationを同一GLBに含むため、
+    // Retargetingを挟まず既存のSkinnedBlendTreeRuntime経路を直接検証できます。
+    std::string m_HumanoidModelPath =
+        "Raven/Assets/Models/Quaternius/UAL1_Standard.glb";
     std::string m_HumanoidAnimationProfilePath =
-        "Raven/Assets/Profiles/Raven_human_test.json";
+        "Raven/Assets/Profiles/Quaternius_UAL1_Standard.json";
     bool m_HumanoidVisualActive = false;
 
     // ========================================================================
@@ -431,9 +434,8 @@ private:
     std::size_t m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     bool m_HumanoidLocomotionAnimationActive = false;
 
-    // Raven_human_test.glb固有のLocomotion初期設定です。
-    // Asset固有のClip名・Threshold・Authored Motion SpeedはDemo Layerへ直接記述せず、
-    // HumanoidAnimationProfileを唯一の設定元として保持します。
+    // ProfileファイルからAsset固有のClip名・Threshold・Authored Motion Speedを読み込みます。
+    // 読み込み成功時はQuaternius用JSONが正規の設定元となり、Demo LayerへClip名を直書きしません。
     HumanoidAnimationProfile m_HumanoidAnimationProfile = CreateRavenHumanTestAnimationProfile();
 
     // Profileの要求名をGetAnimationNames()でAsset側の実名へ解決した結果を保持します。
