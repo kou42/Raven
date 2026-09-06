@@ -99,6 +99,7 @@ struct CharacterLocomotionDebugSnapshot
 //   Space / A         : Jump
 //   Left Shift / RT   : Run
 //   Left Ctrl / RB    : Sprint
+//   Left Alt / B      : Dash
 //
 // Quaternius UAL1_Standard.glbを読み込める場合はHumanoidをCharacter表示として使用し、
 // CharacterController Capsule全高へ正規化します。Asset読込または正規化に失敗した場合だけ
@@ -489,6 +490,10 @@ private:
     Gltf::SkinnedBlendTreeRuntime m_HumanoidLocomotionRuntime{};
     std::size_t m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     bool m_HumanoidLocomotionAnimationActive = false;
+
+    // Dash RollはGameplay Dashより長いClipでも最後まで再生するため、Dash ActionのActive時間とは分離して追跡します。
+    // One-Shot完了時だけ現在のCharacter実速度を使ってLocomotionへ戻し、移動と見た目の時間責務を混在させません。
+    bool m_HumanoidDashOneShotActive = false;
 
     // ProfileファイルからAsset固有のClip名・Threshold・Authored Motion Speedを読み込みます。
     // 読み込み成功時はQuaternius用JSONが正規の設定元となり、Demo LayerへClip名を直書きしません。
