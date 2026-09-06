@@ -52,13 +52,17 @@ struct PolygonElement
 };
 
 // PathはImporter側で曲線command等をPolylineへ正規化した後の共通表現だけを保持します。
-// 1つのPathが複数の閉輪郭を持てるよう、輪郭単位のPolylineとして分離して保持します。
+// 1つのPathが複数subpathを持てるため、Polylineとopen/closed状態をsubpath単位で保持します。
+// SubpathClosed[i]はSubpaths[i]に対応し、trueのときZ/zによって明示的に閉じられた輪郭です。
 // fill-ruleなど特定フォーマット由来の意味付けは後段の描画規則へ分離します。
 struct PathElement
 {
     std::string Name;
     std::vector<std::vector<math::Vec2>> Subpaths;
+    std::vector<bool> SubpathClosed;
     math::Vec4 FillColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+    math::Vec4 StrokeColor{ 0.0f, 0.0f, 0.0f, 0.0f };
+    float StrokeWidth = 1.0f;
 };
 
 enum class VectorElementType
