@@ -35,7 +35,10 @@ struct CharacterControllerInput
     // Y: Forward(+1) / Backward(-1)
     math::Vec2 Move{ 0.0f, 0.0f };
 
+    // RunとSprintを別要求として保持します。
+    // SprintをRunの別名にしないことで、将来Stamina・禁止状態・専用遷移を独立して追加できます。
     bool Run = false;
+    bool Sprint = false;
     bool Jump = false;
 };
 
@@ -46,6 +49,7 @@ struct CharacterControllerConfig
 {
     float WalkSpeed = 1.8f;
     float RunSpeed = 5.5f;
+    float SprintSpeed = 8.0f;
 
     // 目標速度へ近付く水平加速度です。
     float Acceleration = 14.0f;
@@ -221,12 +225,12 @@ public:
     // 境界ではResetMovingPlatformTracking()とは別にこの関数も呼びます。
     void ResetCrushTracking();
 
-    // Raven標準Keyboard入力(WASD / Left Shift / Space)をDevice非依存入力へ変換します。
-    // Input Mapping System導入後はこの関数だけを置き換え、運動計算は維持できます。
+    // Raven標準Keyboard入力(WASD / Left Shift / Left Ctrl / Space)をDevice非依存入力へ変換します。
+    // Left ShiftはRun、Left CtrlはSprintです。Input Mapping System導入後はこの関数だけを置き換えます。
     static CharacterControllerInput ReadDefaultKeyboardInput();
 
     // Raven標準Gamepad入力をDevice非依存入力へ変換します。
-    // 左Stick: Move / A: Jump / RT: Run。
+    // 左Stick: Move / A: Jump / RT: Run / RB: Sprint。
     // 円形Dead Zoneを適用し、Dead Zone外を0..1へ再マッピングします。
     static CharacterControllerInput ReadDefaultGamepadInput(
         int gamepadIndex = 0,
@@ -234,7 +238,7 @@ public:
         float runTriggerThreshold = 0.25f);
 
     // KeyboardとGamepadを統合した標準Player入力です。
-    // 移動は両Deviceを加算後に長さ1へClampし、Jump/Runはどちらか一方が有効なら有効にします。
+    // 移動は両Deviceを加算後に長さ1へClampし、Jump/Run/Sprintはどちらか一方が有効なら有効にします。
     static CharacterControllerInput ReadDefaultPlayerInput(
         int gamepadIndex = 0,
         float stickDeadZone = 0.15f,
