@@ -1,4 +1,6 @@
 // Raven/Character/Tests/CharacterCeilingCollisionSelfTests.cpp
+#include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
+
 #include <cassert>
 #include <cmath>
 
