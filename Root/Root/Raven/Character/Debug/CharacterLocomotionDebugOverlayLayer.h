@@ -23,10 +23,6 @@ namespace Raven
 // CharacterControllerDemoLayer本体はPhysics更新順を守るためScene-owned Layerのまま維持し、
 // このOverlayだけをApplication Layerへ分離します。ApplicationはImGui::NewFrame()～Render()の間に
 // Application LayerのOnImGuiRender()を呼ぶため、Runtime Characterの診断値を画面へ安全に表示できます。
-//
-// Lifetimeについて:
-// Application終了時はApplication LayerがSceneより先にDetach/破棄されるため、借用している
-// CharacterControllerDemoLayerへのpointerはOverlayのLifetime中は有効です。
 class CharacterLocomotionDebugOverlayLayer final : public Layer
 {
 public:
@@ -39,7 +35,6 @@ public:
     void OnDetach() override
     {
         // 借用pointerであり所有権は持ちません。
-        // Application LayerはSceneより先に破棄されますが、Detach後に誤利用しないよう明示的に切ります。
         m_CharacterLayer = nullptr;
     }
 
@@ -55,11 +50,6 @@ public:
         const CharacterLocomotionDebugSnapshot snapshot =
             m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
 
-        // ====================================================================
-        // Runtime Locomotion overlay
-        // ====================================================================
-        // Foot Sliding調整をその場で行えるよう、診断専用HUDから最小限のInteractive Tuning HUDへ拡張します。
-        // Window位置は従来どおり左上へ固定し、移動/Resize/Dockingは許可しません。
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         if (viewport == nullptr)
         {
@@ -94,18 +84,11 @@ public:
             ImGui::Text("Actual Speed : %.2f", snapshot.ActualHorizontalSpeed);
             ImGui::Text("Parameter    : %.2f", snapshot.ParameterValue);
 
-            // =================================================================
-            // Foot Sliding correction diagnostic
-            // =================================================================
             // Reference Speedは現在のBlend Weightで補間されたClip側の想定速度です。
             // Playback SpeedはActual / Referenceへ安全Clampを適用した、Animatorに実際に設定された倍率です。
-            // UI側では再計算せずRuntime値をそのまま表示し、補正ロジックとの食い違いを防ぎます。
             ImGui::Text("Reference    : %.2f", snapshot.ReferenceMotionSpeed);
             ImGui::Text("Playback     : %.2fx", snapshot.PlaybackSpeed);
 
-            // 現在のLocomotionBlendTreeConfig既定Clamp範囲と同じ値です。
-            // Playbackが端へ張り付いている場合、Authored Motion Speedが実際のClip速度から大きく外れている、
-            // またはGameplay速度との差がClamp範囲だけでは吸収できない可能性があるため、調整時に強調表示します。
             constexpr float MinPlaybackSpeed = 0.50f;
             constexpr float MaxPlaybackSpeed = 2.00f;
             constexpr float ClampDisplayEpsilon = 1.0e-3f;
@@ -152,35 +135,37 @@ public:
                 snapshot.LeftThreshold,
                 snapshot.RightThreshold);
             ImGui::Text(
-                "Gameplay Goal: Walk %.2f / Run %.2f m/s",
+                "Gameplay Goal: Walk %.2f / Run %.2f / Sprint %.2f m/s",
                 snapshot.GameplayWalkSpeed,
-                snapshot.GameplayRunSpeed);
+                snapshot.GameplayRunSpeed,
+                snapshot.GameplaySprintSpeed);
             ImGui::Text(
-                "Runtime Axis : Idle %.2f / Walk %.2f / Run %.2f",
+                "Runtime Axis : Idle %.2f / Walk %.2f / Run %.2f / Sprint %.2f",
                 snapshot.IdleThreshold,
                 snapshot.WalkThreshold,
-                snapshot.RunThreshold);
+                snapshot.RunThreshold,
+                snapshot.SprintThreshold);
             ImGui::Text(
-                "Profile Axis : Idle %.2f / Walk %.2f / Run %.2f",
+                "Profile Axis : Idle %.2f / Walk %.2f / Run %.2f / Sprint %.2f",
                 snapshot.ProfileIdleThreshold,
                 snapshot.ProfileWalkThreshold,
-                snapshot.ProfileRunThreshold);
+                snapshot.ProfileRunThreshold,
+                snapshot.ProfileSprintThreshold);
             ImGui::Text(
                 "Clamped      : %s",
                 snapshot.IsClamped == true ? "true" : "false");
 
-            // Weightの数値だけでなく割合を直感的に確認できるよう、右側MotionのWeightをBar表示します。
-            // LeftWeight + RightWeight = 1.0というBlendTree1Dの規約を利用し、RightWeightを進行率とします。
+            // RightWeightを進行率としてBar表示します。
             ImGui::ProgressBar(snapshot.RightWeight, ImVec2(220.0f, 0.0f));
 
             ImGui::Separator();
             ImGui::TextUnformatted("Blend Threshold Tuning");
 
-            // Threshold変更は同じBlendTreeオブジェクトへ反映されるため、再生位相を維持したまま
-            // 現在速度に対するBlend WeightとPlayback補正を即時再評価できます。
+            // Threshold変更は同じBlendTreeへ反映されるため再生位相を維持します。
             float idleThreshold = snapshot.IdleThreshold;
             float walkThreshold = snapshot.WalkThreshold;
             float runThreshold = snapshot.RunThreshold;
+            float sprintThreshold = snapshot.SprintThreshold;
             const bool idleThresholdChanged = ImGui::DragFloat(
                 "Idle Threshold",
                 &idleThreshold,
@@ -202,16 +187,25 @@ public:
                 0.10f,
                 15.0f,
                 "%.2f");
+            const bool sprintThresholdChanged = ImGui::DragFloat(
+                "Sprint Threshold",
+                &sprintThreshold,
+                0.01f,
+                0.15f,
+                20.0f,
+                "%.2f");
 
             if (idleThresholdChanged == true
                 || walkThresholdChanged == true
-                || runThresholdChanged == true)
+                || runThresholdChanged == true
+                || sprintThresholdChanged == true)
             {
                 constexpr float MinimumThresholdGap = 0.05f;
                 idleThreshold = std::max(idleThreshold, 0.0f);
                 walkThreshold = std::max(walkThreshold, idleThreshold + MinimumThresholdGap);
                 runThreshold = std::max(runThreshold, walkThreshold + MinimumThresholdGap);
-                ApplyThresholds(idleThreshold, walkThreshold, runThreshold);
+                sprintThreshold = std::max(sprintThreshold, runThreshold + MinimumThresholdGap);
+                ApplyThresholds(idleThreshold, walkThreshold, runThreshold, sprintThreshold);
             }
 
             if (ImGui::Button("Reset Thresholds") == true)
@@ -219,19 +213,16 @@ public:
                 ApplyThresholds(
                     snapshot.ProfileIdleThreshold,
                     snapshot.ProfileWalkThreshold,
-                    snapshot.ProfileRunThreshold);
+                    snapshot.ProfileRunThreshold,
+                    snapshot.ProfileSprintThreshold);
             }
 
             ImGui::Separator();
             ImGui::TextUnformatted("Foot Sliding Tuning");
 
-            // =================================================================
-            // Runtime Authored Motion Speed tuning
-            // =================================================================
-            // Snapshot値を編集用一時値へコピーし、変更があったFrameだけCharacter Layer経由でRuntimeへ反映します。
-            // Runtime側APIが現在Blend WeightでPlayback倍率を即時再計算するため、BlendTreeの再生位相はリスタートしません。
             float walkAuthoredSpeed = snapshot.WalkAuthoredMotionSpeed;
             float runAuthoredSpeed = snapshot.RunAuthoredMotionSpeed;
+            float sprintAuthoredSpeed = snapshot.SprintAuthoredMotionSpeed;
 
             const bool walkChanged = ImGui::DragFloat(
                 "Walk Authored m/s",
@@ -247,33 +238,38 @@ public:
                 0.15f,
                 15.0f,
                 "%.2f");
+            const bool sprintChanged = ImGui::DragFloat(
+                "Sprint Authored m/s",
+                &sprintAuthoredSpeed,
+                0.01f,
+                0.20f,
+                20.0f,
+                "%.2f");
 
-            if (walkChanged == true || runChanged == true)
+            if (walkChanged == true || runChanged == true || sprintChanged == true)
             {
                 constexpr float MinimumSpeedGap = 0.05f;
                 walkAuthoredSpeed = std::max(walkAuthoredSpeed, 0.10f);
                 runAuthoredSpeed = std::max(runAuthoredSpeed, walkAuthoredSpeed + MinimumSpeedGap);
+                sprintAuthoredSpeed = std::max(
+                    sprintAuthoredSpeed,
+                    runAuthoredSpeed + MinimumSpeedGap);
 
-                ApplyAuthoredMotionSpeeds(walkAuthoredSpeed, runAuthoredSpeed);
+                ApplyAuthoredMotionSpeeds(
+                    walkAuthoredSpeed,
+                    runAuthoredSpeed,
+                    sprintAuthoredSpeed);
             }
 
-            // =================================================================
-            // Tuning utility actions
-            // =================================================================
-            // ResetはCharacterControllerのGameplay速度ではなく、現在AssetのProfile初期値へ戻します。
-            // ProfileをSnapshot経由で参照することで、Asset差し替え後もOverlayへMagic Numberを残しません。
             if (ImGui::Button("Reset Authored Speeds") == true)
             {
                 ApplyAuthoredMotionSpeeds(
                     snapshot.ProfileWalkAuthoredMotionSpeed,
-                    snapshot.ProfileRunAuthoredMotionSpeed);
+                    snapshot.ProfileRunAuthoredMotionSpeed,
+                    snapshot.ProfileSprintAuthoredMotionSpeed);
             }
 
             ImGui::SameLine();
-
-            // 調整結果はAsset固有設定の正規の保存先であるHumanoidAnimationProfileへ
-            // そのまま転記できるC++形式にします。
-            // Drag/Resetと同じFrameでCopyしても古い値を拾わないよう、Button判定時に最新Snapshotを取り直します。
             if (ImGui::Button("Copy Config") == true)
             {
                 const CharacterLocomotionDebugSnapshot latestSnapshot =
@@ -318,7 +314,8 @@ public:
 private:
     void ApplyAuthoredMotionSpeeds(
         float walkAuthoredSpeed,
-        float runAuthoredSpeed)
+        float runAuthoredSpeed,
+        float sprintAuthoredSpeed)
     {
         if (m_CharacterLayer == nullptr)
         {
@@ -329,6 +326,7 @@ private:
         if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
                 walkAuthoredSpeed,
                 runAuthoredSpeed,
+                sprintAuthoredSpeed,
                 &tuningError) == false)
         {
             m_LastTuningError = tuningError;
@@ -342,7 +340,8 @@ private:
     void ApplyThresholds(
         float idleThreshold,
         float walkThreshold,
-        float runThreshold)
+        float runThreshold,
+        float sprintThreshold)
     {
         if (m_CharacterLayer == nullptr)
         {
@@ -354,6 +353,7 @@ private:
                 idleThreshold,
                 walkThreshold,
                 runThreshold,
+                sprintThreshold,
                 &tuningError) == false)
         {
             m_LastTuningError = tuningError;
@@ -377,10 +377,14 @@ private:
             << snapshot.WalkThreshold << "f; "
             << "profile.Locomotion.RunThreshold = "
             << snapshot.RunThreshold << "f; "
+            << "profile.Locomotion.SprintThreshold = "
+            << snapshot.SprintThreshold << "f; "
             << "profile.Locomotion.WalkAuthoredMotionSpeed = "
             << snapshot.WalkAuthoredMotionSpeed << "f; "
             << "profile.Locomotion.RunAuthoredMotionSpeed = "
-            << snapshot.RunAuthoredMotionSpeed << "f;";
+            << snapshot.RunAuthoredMotionSpeed << "f; "
+            << "profile.Locomotion.SprintAuthoredMotionSpeed = "
+            << snapshot.SprintAuthoredMotionSpeed << "f;";
         return stream.str();
     }
 
