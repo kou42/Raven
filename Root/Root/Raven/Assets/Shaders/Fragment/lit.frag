@@ -6,8 +6,9 @@ in vec3 v_WorldNormal;
 
 out vec4 FragColor;
 
-uniform vec3 u_Tint;
-uniform float u_Alpha;
+uniform vec4 u_BaseColorFactor;
+uniform sampler2D u_BaseColorTexture;
+uniform int u_HasBaseColorTexture;
 uniform vec3 u_LightDirection;
 uniform vec3 u_LightColor;
 uniform float u_LightIntensity;
@@ -22,9 +23,17 @@ void main()
     vec3 toLight = normalize(-u_LightDirection);
     float nDotL = max(dot(normal, toLight), 0.0);
 
-    vec3 baseColor = v_Color * u_Tint;
-    vec3 ambient = baseColor * u_AmbientIntensity;
-    vec3 diffuse = baseColor * u_LightColor * (nDotL * u_LightIntensity);
+    // glTFのbaseColorはFactorとTextureの積です。
+    // Texture未指定Materialも同じShaderを使えるよう、明示Flagで白Texture相当へfallbackします。
+    vec4 textureColor = vec4(1.0);
+    if (u_HasBaseColorTexture != 0)
+    {
+        textureColor = texture(u_BaseColorTexture, v_TexCoord);
+    }
 
-    FragColor = vec4(ambient + diffuse, u_Alpha);
+    vec4 baseColor = vec4(v_Color, 1.0) * u_BaseColorFactor * textureColor;
+    vec3 ambient = baseColor.rgb * u_AmbientIntensity;
+    vec3 diffuse = baseColor.rgb * u_LightColor * (nDotL * u_LightIntensity);
+
+    FragColor = vec4(ambient + diffuse, baseColor.a);
 }

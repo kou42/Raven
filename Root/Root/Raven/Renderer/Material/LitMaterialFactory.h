@@ -8,6 +8,7 @@ namespace Raven
 {
 
 class Material;
+class Texture;
 
 // ============================================================================
 // DirectionalLightSettings
@@ -26,12 +27,17 @@ struct DirectionalLightSettings
 // LitMaterialFactory
 // ============================================================================
 // Scene側へShader/Pipeline構築詳細を漏らさず、Normalを使う最小Lambert Materialを生成します。
-// PBR Material Bridgeを追加するまでは、StaticSceneSpawnerへこのMaterialを渡すことで
-// Terrain GLBをDirectional Light付きで確認できます。
+// glTF Material Bridgeからも同じ経路を利用し、baseColorFactor / baseColorTextureだけを
+// Renderer Materialへ接続します。Metallic-Roughness等は後続のPBR段階で追加します。
 class LitMaterialFactory
 {
 public:
     static Ref<Material> CreateDirectionalLit(
+        const DirectionalLightSettings& light = DirectionalLightSettings{});
+
+    static Ref<Material> CreateDirectionalLit(
+        const math::Vec4& baseColorFactor,
+        const Ref<Texture>& baseColorTexture,
         const DirectionalLightSettings& light = DirectionalLightSettings{});
 };
 
