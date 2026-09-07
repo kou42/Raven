@@ -4,11 +4,15 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/Texture/Texture.h"
 
 namespace Raven
 {
-
-Ref<Material> LitMaterialFactory::CreateDirectionalLit(
+namespace
+{
+Ref<Material> CreateLitMaterial(
+    const math::Vec4& baseColorFactor,
+    const Ref<Texture>& baseColorTexture,
     const DirectionalLightSettings& light)
 {
     Ref<Shader> shader = Shader::Create(
@@ -42,16 +46,37 @@ Ref<Material> LitMaterialFactory::CreateDirectionalLit(
         return nullptr;
     }
 
-    // Base Color Texture/PBR接続前の最小Lit Materialです。
-    // Terrain GLBの頂点Colorをそのまま活かせるようTintは白を既定値にします。
-    material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
-    material->SetUniform("u_Alpha", 1.0f);
+    material->SetUniform("u_BaseColorFactor", baseColorFactor);
+    material->SetUniform("u_HasBaseColorTexture", baseColorTexture != nullptr ? 1 : 0);
+    if (baseColorTexture != nullptr)
+    {
+        material->SetTexture("u_BaseColorTexture", baseColorTexture, 0);
+    }
+
     material->SetUniform("u_LightDirection", light.Direction);
     material->SetUniform("u_LightColor", light.Color);
     material->SetUniform("u_LightIntensity", light.Intensity);
     material->SetUniform("u_AmbientIntensity", light.AmbientIntensity);
 
     return material;
+}
+} // namespace
+
+Ref<Material> LitMaterialFactory::CreateDirectionalLit(
+    const DirectionalLightSettings& light)
+{
+    return CreateLitMaterial(
+        math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f },
+        nullptr,
+        light);
+}
+
+Ref<Material> LitMaterialFactory::CreateDirectionalLit(
+    const math::Vec4& baseColorFactor,
+    const Ref<Texture>& baseColorTexture,
+    const DirectionalLightSettings& light)
+{
+    return CreateLitMaterial(baseColorFactor, baseColorTexture, light);
 }
 
 } // namespace Raven
