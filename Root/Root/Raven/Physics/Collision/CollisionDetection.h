@@ -99,9 +99,20 @@ bool GenerateCapsuleBoxManifold(
     ContactManifold& outManifold);
 
 // Capsule-StaticMesh:
-// Capsule中心線分と各Triangleの最近接距離を評価し、最も深い接触を1点Manifoldとして返します。
-// 法線は既存Manifold規約に合わせて A(Capsule) -> B(StaticMesh) 方向です。
+// 全Triangle走査版です。BVHを利用できない場合のfallbackと回帰比較用として維持します。
 bool GenerateCapsuleStaticMeshManifold(
+    Entity capsuleEntity,
+    const TransformComponent& capsuleTransform,
+    const ColliderComponent& capsuleCollider,
+    Entity staticMeshEntity,
+    const TransformComponent& staticMeshTransform,
+    const ColliderComponent& staticMeshCollider,
+    ContactManifold& outManifold);
+
+// Capsule-StaticMesh BVH:
+// Capsule World AABBからStaticMeshローカルBVH候補を絞り、候補Triangleだけに既存の
+// Segment-Triangle最近接Narrow Phaseを適用します。BVH利用不能時は全走査版へfallbackします。
+bool GenerateCapsuleStaticMeshBVHManifold(
     Entity capsuleEntity,
     const TransformComponent& capsuleTransform,
     const ColliderComponent& capsuleCollider,
