@@ -1,9 +1,12 @@
 // Raven/Character/Tests/CharacterCapsuleCollisionSelfTests.cpp
 #include <cassert>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include "Raven/Character/CharacterController.h"
 #include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
@@ -31,6 +34,28 @@ Entity CreateWall(Scene& scene)
     ColliderComponent& collider = wall.AddComponent<ColliderComponent>();
     collider.Type = ColliderType::Box;
     collider.HalfExtents = math::Vec3{ 0.25f, 1.0f, 5.0f };
+    collider.IsTrigger = false;
+    return wall;
+}
+
+Entity CreateStaticMeshWall(Scene& scene)
+{
+    // x=1平面を2 Triangleで構成し、Terrainの急斜面/崖へ横から進入するケースを再現します。
+    // Triangle windingへ依存せず、Capsule側へ向くObstacle Normalが得られることを検証します。
+    std::vector<MeshVertex> vertices{
+        MeshVertex{ math::Vec3{ 1.0f, 0.0f, -2.0f } },
+        MeshVertex{ math::Vec3{ 1.0f, 2.0f, -2.0f } },
+        MeshVertex{ math::Vec3{ 1.0f, 2.0f,  2.0f } },
+        MeshVertex{ math::Vec3{ 1.0f, 0.0f,  2.0f } }
+    };
+    std::vector<uint32_t> indices{ 0u, 1u, 2u, 0u, 2u, 3u };
+
+    Entity wall = scene.CreateEntity("CharacterCapsuleStaticMeshWall");
+    ColliderComponent& collider = wall.AddComponent<ColliderComponent>();
+    collider.Type = ColliderType::StaticMesh;
+    collider.StaticMeshGeometry = std::make_shared<MeshGeometry>(
+        std::move(vertices),
+        std::move(indices));
     collider.IsTrigger = false;
     return wall;
 }
@@ -107,6 +132,36 @@ void RunCharacterCapsuleCollisionSelfTests()
     }
 
     // ========================================================================
+    // PhysicsWorld::CapsuleCast - Static Mesh
+    // ========================================================================
+    // Box Wallと同じx=1位置をTriangle Meshで表現し、Terrainの崖面でも同じTOIと
+    // 障害物法線が得られることを確認します。
+    {
+        Scene scene;
+        Entity staticMeshWall = CreateStaticMeshWall(scene);
+
+        ph::PhysicsCapsuleCastSettings settings{};
+        settings.Radius = 0.35f;
+        settings.HalfLength = 0.55f;
+        settings.SkinWidth = 0.02f;
+
+        ph::PhysicsCapsuleCastHit hit{};
+        assert(scene.GetPhysicsWorld().CapsuleCast(
+            scene,
+            math::Vec3{ 0.0f, 0.0f, 0.0f },
+            math::Vec3{ 2.0f, 0.0f, 0.0f },
+            settings,
+            hit));
+
+        assert(hit.HitEntity == staticMeshWall);
+        assert(hit.Fraction > 0.0f);
+        assert(hit.Fraction < 1.0f);
+        assert(hit.Position.x > 0.60f);
+        assert(hit.Position.x < 0.66f);
+        assert(hit.Normal.x < -0.99f);
+    }
+
+    // ========================================================================
     // Character Controller: front wall stop
     // ========================================================================
     {
@@ -133,6 +188,39 @@ void RunCharacterCapsuleCollisionSelfTests()
         assert(controller.Update(input, 1.0f, scene, transform));
 
         // 2m進もうとしてもWall手前で停止し、CapsuleがBoxを貫通しません。
+        assert(transform.Position.x > 0.60f);
+        assert(transform.Position.x < 0.66f);
+        assert(NearlyEqual(transform.Position.y, 0.0f));
+        assert(std::fabs(controller.GetVelocity().x) < 1.0e-3f);
+    }
+
+    // ========================================================================
+    // Character Controller: Static Mesh wall stop
+    // ========================================================================
+    // Character Controller自身も同じCapsuleCastを利用するため、Terrainの崖面をBoxへ
+    // 置き換えなくても横方向の貫通を防げることを確認します。
+    {
+        Scene scene;
+        CreateGround(scene);
+        CreateStaticMeshWall(scene);
+
+        CharacterControllerConfig config{};
+        config.WalkSpeed = 2.0f;
+        config.RunSpeed = 2.0f;
+        config.Acceleration = 100.0f;
+        config.Deceleration = 100.0f;
+        config.CapsuleRadius = 0.35f;
+        config.CapsuleHalfLength = 0.55f;
+        config.CollisionSkinWidth = 0.02f;
+        CharacterController controller(config);
+
+        TransformComponent transform{};
+        transform.Position = math::Vec3{ 0.0f, 0.0f, 0.0f };
+
+        CharacterControllerInput input{};
+        input.Move.x = 1.0f;
+
+        assert(controller.Update(input, 1.0f, scene, transform));
         assert(transform.Position.x > 0.60f);
         assert(transform.Position.x < 0.66f);
         assert(NearlyEqual(transform.Position.y, 0.0f));

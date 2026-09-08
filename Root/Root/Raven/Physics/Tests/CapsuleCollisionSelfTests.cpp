@@ -62,7 +62,40 @@ void RunCapsuleCollisionSelfTests()
     assert(NearlyEqual(std::abs(capsule.SegmentB.x), 1.0f, 1.0e-3f));
 
     // ------------------------------------------------------------------------
-    // 2. Sphere - Capsule
+    // 2. Segment - Triangle closest points
+    // ------------------------------------------------------------------------
+    // Terrain Triangleの面領域へ垂直に近づく場合と、中心線分が面を貫く場合を検証します。
+    const math::Vec3 triangleA{ -1.0f, 0.0f, -1.0f };
+    const math::Vec3 triangleB{ 1.0f, 0.0f, -1.0f };
+    const math::Vec3 triangleC{ 0.0f, 0.0f, 1.0f };
+    math::Vec3 segmentPoint{};
+    math::Vec3 trianglePoint{};
+
+    ClosestPointsSegmentTriangle(
+        math::Vec3{ 0.0f, 0.25f, 0.0f },
+        math::Vec3{ 0.0f, 1.0f, 0.0f },
+        triangleA,
+        triangleB,
+        triangleC,
+        segmentPoint,
+        trianglePoint);
+    assert(NearlyEqual(segmentPoint.y, 0.25f));
+    assert(NearlyEqual(trianglePoint.y, 0.0f));
+    assert(NearlyEqual((segmentPoint - trianglePoint).Length(), 0.25f));
+
+    ClosestPointsSegmentTriangle(
+        math::Vec3{ 0.0f, -1.0f, 0.0f },
+        math::Vec3{ 0.0f, 1.0f, 0.0f },
+        triangleA,
+        triangleB,
+        triangleC,
+        segmentPoint,
+        trianglePoint);
+    assert((segmentPoint - trianglePoint).LengthSq() <= 1.0e-10f);
+    assert(NearlyEqual(segmentPoint.y, 0.0f));
+
+    // ------------------------------------------------------------------------
+    // 3. Sphere - Capsule
     // ------------------------------------------------------------------------
     ColliderComponent sphereCollider{};
     sphereCollider.Type = ColliderType::Sphere;
@@ -87,7 +120,7 @@ void RunCapsuleCollisionSelfTests()
         manifold) == false);
 
     // ------------------------------------------------------------------------
-    // 3. Capsule - Capsule
+    // 4. Capsule - Capsule
     // ------------------------------------------------------------------------
     TransformComponent capsuleTransformA{};
     TransformComponent capsuleTransformB{};
@@ -104,7 +137,7 @@ void RunCapsuleCollisionSelfTests()
         manifold) == false);
 
     // ------------------------------------------------------------------------
-    // 4. Capsule - Plane
+    // 5. Capsule - Plane
     // ------------------------------------------------------------------------
     ColliderComponent planeCollider{};
     planeCollider.Type = ColliderType::Plane;
@@ -127,7 +160,7 @@ void RunCapsuleCollisionSelfTests()
         manifold) == false);
 
     // ------------------------------------------------------------------------
-    // 5. Capsule - Box
+    // 6. Capsule - Box
     // ------------------------------------------------------------------------
     ColliderComponent boxCollider{};
     boxCollider.Type = ColliderType::Box;
@@ -148,7 +181,7 @@ void RunCapsuleCollisionSelfTests()
         manifold) == false);
 
     // ------------------------------------------------------------------------
-    // 6. Ray - Capsule
+    // 7. Ray - Capsule
     // ------------------------------------------------------------------------
     capsuleTransform = TransformComponent{};
     assert(ComputeCapsule(capsuleTransform, capsuleCollider, capsule));
