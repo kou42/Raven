@@ -98,6 +98,18 @@ bool GenerateCapsuleBoxManifold(
     const ColliderComponent& boxCollider,
     ContactManifold& outManifold);
 
+// Capsule-StaticMesh:
+// Capsule中心線分と各Triangleの最近接距離を評価し、最も深い接触を1点Manifoldとして返します。
+// 法線は既存Manifold規約に合わせて A(Capsule) -> B(StaticMesh) 方向です。
+bool GenerateCapsuleStaticMeshManifold(
+    Entity capsuleEntity,
+    const TransformComponent& capsuleTransform,
+    const ColliderComponent& capsuleCollider,
+    Entity staticMeshEntity,
+    const TransformComponent& staticMeshTransform,
+    const ColliderComponent& staticMeshCollider,
+    ContactManifold& outManifold);
+
 // Ray-Capsule:
 // 有限円柱と両端半球を評価し、最短fractionと表面法線を返します。
 bool RayCastCapsule(
