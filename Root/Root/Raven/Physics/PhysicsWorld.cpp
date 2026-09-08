@@ -8,6 +8,7 @@
 #include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/RigidBodyDynamics.h"
+#include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/BroadPhase.inl"
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
@@ -984,7 +985,7 @@ void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
     m_SolverDebugStatistics.VelocityIterations =
         std::max(m_SolverSettings.VelocityIterations, 1u);
 
-    // 実際の接触制約解決を実行し、結果のインパルスをデバッグ統計へ反映します。
+    // 実際の接触制約解決を実行し、結果のインパルスをデバッグ統計に反映します。
     SolveContactManifolds(scene, m_Manifolds, dt, m_SolverSettings);
     UpdateSolverDebugStatisticsAfterSolve();
 }
@@ -1043,7 +1044,7 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
         const float linearThreshold = std::max(rigidBody.SleepThreshold, 0.0f);
         const float angularThreshold = std::max(rigidBody.AngularSleepThreshold, 0.0f);
 
-        // 速度が十分に小さい剛体を睡眠候補として扱い、しきい値を超えたら実際に睡眠状態へ移行します。
+        // 速度が十分に小さければ睡眠候補と見なし、しきい値を超えたら実際に睡眠状態へ移行します。
         if (rigidBody.LinearVelocity.LengthSq() <= linearThreshold * linearThreshold
             && rigidBody.AngularVelocity.LengthSq() <= angularThreshold * angularThreshold)
         {
