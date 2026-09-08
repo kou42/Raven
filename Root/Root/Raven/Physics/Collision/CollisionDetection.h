@@ -111,7 +111,8 @@ bool GenerateCapsuleStaticMeshManifold(
 
 // Capsule-StaticMesh BVH:
 // Capsule World AABBからStaticMeshローカルBVH候補を絞り、候補Triangleだけに既存の
-// Segment-Triangle最近接Narrow Phaseを適用します。BVH利用不能時は全走査版へfallbackします。
+// Segment-Triangle最近接Narrow Phaseを適用します。PhysicsWorldのRigidBody接触と
+// Character CapsuleCastの双方で利用し、BVH利用不能時は全走査版へfallbackします。
 bool GenerateCapsuleStaticMeshBVHManifold(
     Entity capsuleEntity,
     const TransformComponent& capsuleTransform,
