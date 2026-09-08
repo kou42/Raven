@@ -74,7 +74,7 @@ int main()
             browserDebugSvgPath,
             250u);
 
-        Raven::BrowserDebugServer& browserDebugServer = BrowserDebugServer::Get();
+        Raven::BrowserDebugServer& browserDebugServer = Raven::BrowserDebugServer::Get();
         const bool serverStarted = browserDebugServer.Start(browserDebugDirectory, 18765u);
 
         if (svgWritten == true
