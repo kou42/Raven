@@ -3,17 +3,13 @@
 #include <algorithm>
 #include <cmath>
 
-#include "Raven/Physics/Collision/StaticMeshTriangleBVH.h"
 #include "Raven/Scene/Components.h"
 
 namespace Raven::ph
 {
 namespace
 {
-
-bool BuildInverseStaticMeshTransform(
-    const TransformComponent& transform,
-    math::Mat4& outInverseTransform)
+bool BuildInverseStaticMeshTransform(const TransformComponent& transform, math::Mat4& outInverseTransform)
 {
     constexpr float scaleEpsilon = 1.0e-8f;
     if (std::abs(transform.Scale.x) <= scaleEpsilon
@@ -23,11 +19,8 @@ bool BuildInverseStaticMeshTransform(
         return false;
     }
 
-    // TransformComponent::GetTransform()は
-    //   T * Rx * Ry * Rz * S
-    // の順でLocal Pointへ作用します。したがって逆変換は右から逆順に
-    //   S^-1 * Rz^-1 * Ry^-1 * Rx^-1 * T^-1
-    // です。一般4x4 inverseを導入せず、既存Transform規約を明示したまま構築します。
+    // TransformComponent::GetTransform() = T * Rx * Ry * Rz * S なので、
+    // inverseは S^-1 * Rz^-1 * Ry^-1 * Rx^-1 * T^-1 の順で構築します。
     const math::Mat4 inverseScale = math::Mat4::Scaling(math::Vec3{
         1.0f / transform.Scale.x,
         1.0f / transform.Scale.y,
@@ -37,12 +30,7 @@ bool BuildInverseStaticMeshTransform(
     const math::Mat4 inverseRotationY = math::Mat4::RotationY(-transform.Rotation.y);
     const math::Mat4 inverseRotationX = math::Mat4::RotationX(-transform.Rotation.x);
     const math::Mat4 inverseTranslation = math::Mat4::Translation(-transform.Position);
-
-    outInverseTransform = inverseScale
-        * inverseRotationZ
-        * inverseRotationY
-        * inverseRotationX
-        * inverseTranslation;
+    outInverseTransform = inverseScale * inverseRotationZ * inverseRotationY * inverseRotationX * inverseTranslation;
     return true;
 }
 
@@ -59,9 +47,7 @@ math::Vec3 TransformPointToStaticMeshLocal(
     };
 }
 
-math::Vec3 TransformDirectionToStaticMeshLocal(
-    const math::Mat4& inverseTransform,
-    const math::Vec3& worldDirection)
+math::Vec3 TransformDirectionToStaticMeshLocal(const math::Mat4& inverseTransform, const math::Vec3& worldDirection)
 {
     const math::Vec4 localDirection = inverseTransform * math::Vec4{ worldDirection, 0.0f };
     return math::Vec3{ localDirection.x, localDirection.y, localDirection.z };
@@ -71,16 +57,13 @@ bool ResolveStaticMeshBVH(
     const ColliderComponent& collider,
     std::shared_ptr<const StaticMeshTriangleBVH>& outBVH)
 {
-    if (collider.Type != ColliderType::StaticMesh
-        || collider.StaticMeshGeometry == nullptr)
+    if (collider.Type != ColliderType::StaticMesh || collider.StaticMeshGeometry == nullptr)
     {
         return false;
     }
-
     outBVH = StaticMeshTriangleBVH::GetOrBuildCached(collider.StaticMeshGeometry);
     return outBVH != nullptr && outBVH->IsEmpty() == false;
 }
-
 } // namespace
 
 bool QueryStaticMeshBVHByWorldRay(
@@ -90,10 +73,15 @@ bool QueryStaticMeshBVHByWorldRay(
     const TransformComponent& staticMeshTransform,
     const ColliderComponent& staticMeshCollider,
     std::shared_ptr<const StaticMeshTriangleBVH>& outBVH,
-    std::vector<uint32_t>& outTriangleIndices)
+    std::vector<uint32_t>& outTriangleIndices,
+    StaticMeshTriangleBVH::QueryStatistics* statistics)
 {
     outBVH.reset();
     outTriangleIndices.clear();
+    if (statistics != nullptr)
+    {
+        statistics->Clear();
+    }
 
     if (maxFraction < 0.0f
         || worldDirection.LengthSq() <= 1.0e-12f
@@ -110,23 +98,15 @@ bool QueryStaticMeshBVHByWorldRay(
     }
 
     const math::Vec3 localOrigin = TransformPointToStaticMeshLocal(
-        inverseTransform,
-        staticMeshCollider.Offset,
-        worldOrigin);
-    const math::Vec3 localDirection = TransformDirectionToStaticMeshLocal(
-        inverseTransform,
-        worldDirection);
+        inverseTransform, staticMeshCollider.Offset, worldOrigin);
+    const math::Vec3 localDirection = TransformDirectionToStaticMeshLocal(inverseTransform, worldDirection);
     if (localDirection.LengthSq() <= 1.0e-12f)
     {
         outBVH.reset();
         return false;
     }
 
-    outBVH->QueryRay(
-        localOrigin,
-        localDirection,
-        maxFraction,
-        outTriangleIndices);
+    outBVH->QueryRay(localOrigin, localDirection, maxFraction, outTriangleIndices, statistics);
     return true;
 }
 
@@ -135,13 +115,17 @@ bool QueryStaticMeshBVHByWorldAABB(
     const TransformComponent& staticMeshTransform,
     const ColliderComponent& staticMeshCollider,
     std::shared_ptr<const StaticMeshTriangleBVH>& outBVH,
-    std::vector<uint32_t>& outTriangleIndices)
+    std::vector<uint32_t>& outTriangleIndices,
+    StaticMeshTriangleBVH::QueryStatistics* statistics)
 {
     outBVH.reset();
     outTriangleIndices.clear();
+    if (statistics != nullptr)
+    {
+        statistics->Clear();
+    }
 
-    if (worldBounds.IsValid() == false
-        || ResolveStaticMeshBVH(staticMeshCollider, outBVH) == false)
+    if (worldBounds.IsValid() == false || ResolveStaticMeshBVH(staticMeshCollider, outBVH) == false)
     {
         return false;
     }
@@ -156,7 +140,6 @@ bool QueryStaticMeshBVHByWorldAABB(
     math::Vec3 localMinimum{};
     math::Vec3 localMaximum{};
     bool initialized = false;
-
     for (int x = 0; x < 2; ++x)
     {
         for (int y = 0; y < 2; ++y)
@@ -169,10 +152,7 @@ bool QueryStaticMeshBVHByWorldAABB(
                     z == 0 ? worldBounds.Min.z : worldBounds.Max.z
                 };
                 const math::Vec3 localCorner = TransformPointToStaticMeshLocal(
-                    inverseTransform,
-                    staticMeshCollider.Offset,
-                    worldCorner);
-
+                    inverseTransform, staticMeshCollider.Offset, worldCorner);
                 if (initialized == false)
                 {
                     localMinimum = localCorner;
@@ -197,7 +177,7 @@ bool QueryStaticMeshBVHByWorldAABB(
         return false;
     }
 
-    outBVH->QueryAABB(localMinimum, localMaximum, outTriangleIndices);
+    outBVH->QueryAABB(localMinimum, localMaximum, outTriangleIndices, statistics);
     return true;
 }
 
