@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Collision/OBB.h"
@@ -433,6 +435,8 @@ bool GenerateCapsuleStaticMeshManifold(
         return false;
     }
 
+    RAVEN_PROFILE_SCOPE("Physics.StaticMesh.CapsuleNarrowPhase");
+
     // ========================================================================
     // Capsule - Static Mesh
     // ========================================================================
@@ -447,9 +451,19 @@ bool GenerateCapsuleStaticMeshManifold(
     math::Vec3 bestNormal{};
     math::Vec3 bestPosition{};
 
+    // Profiler自体のmutex/文字列処理をTriangle hot loopへ持ち込まないよう、整数だけを
+    // ローカル集計し、Mesh 1回分の判定が終わってからまとめてCounterへ登録します。
+    // 現在はBVH未導入なのでCandidateTriangleCountは実質Mesh全Triangle数ですが、
+    // 将来BVH導入後は「BVH候補数」と「実際に最近接計算した数」を同じ指標名で比較できます。
+    uint64_t candidateTriangleCount = 0u;
+    uint64_t narrowPhaseTriangleTestCount = 0u;
+    uint64_t overlapTriangleCount = 0u;
+
     const auto testTriangle =
         [&](std::size_t indexA, std::size_t indexB, std::size_t indexC)
         {
+            ++candidateTriangleCount;
+
             if (indexA >= vertices.size()
                 || indexB >= vertices.size()
                 || indexC >= vertices.size())
@@ -480,6 +494,8 @@ bool GenerateCapsuleStaticMeshManifold(
                 return;
             }
 
+            ++narrowPhaseTriangleTestCount;
+
             math::Vec3 capsulePoint{};
             math::Vec3 trianglePoint{};
             ClosestPointsSegmentTriangle(
@@ -497,6 +513,8 @@ bool GenerateCapsuleStaticMeshManifold(
             {
                 return;
             }
+
+            ++overlapTriangleCount;
 
             float distance = 0.0f;
             math::Vec3 capsuleToMeshNormal{};
@@ -545,6 +563,18 @@ bool GenerateCapsuleStaticMeshManifold(
             testTriangle(index, index + 1u, index + 2u);
         }
     }
+
+    CPUProfiler& profiler = CPUProfiler::Get();
+    profiler.AddCounter("Physics.StaticMesh.Capsule.ManifoldCallCount", 1.0);
+    profiler.AddCounter(
+        "Physics.StaticMesh.Capsule.CandidateTriangleCount",
+        static_cast<double>(candidateTriangleCount));
+    profiler.AddCounter(
+        "Physics.StaticMesh.Capsule.NarrowPhaseTriangleTestCount",
+        static_cast<double>(narrowPhaseTriangleTestCount));
+    profiler.AddCounter(
+        "Physics.StaticMesh.Capsule.OverlapTriangleCount",
+        static_cast<double>(overlapTriangleCount));
 
     if (found == false)
     {
