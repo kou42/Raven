@@ -1,9 +1,11 @@
 // Raven/Gltf/StaticSceneSpawner.cpp
 #include "Raven/Gltf/StaticSceneSpawner.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -128,6 +130,114 @@ bool DecomposeWorldTransform(const math::Mat4& matrix, TransformComponent& outTr
     outTransform.Rotation = math::Vec3{ rotationX, rotationY, rotationZ };
     outTransform.Scale = math::Vec3{ scaleX, scaleY, scaleZ };
     return true;
+}
+
+math::Vec3 TransformPoint(const math::Mat4& matrix, const math::Vec3& point)
+{
+    const math::Vec4 transformed = matrix * math::Vec4{ point.x, point.y, point.z, 1.0f };
+    return math::Vec3{ transformed.x, transformed.y, transformed.z };
+}
+
+bool ComputeLocalBounds(const MeshGeometry& geometry, math::Vec3& outMin, math::Vec3& outMax)
+{
+    const std::vector<MeshVertex>& vertices = geometry.GetVertices();
+    if (vertices.empty())
+    {
+        return false;
+    }
+
+    const float maxFloat = std::numeric_limits<float>::max();
+    outMin = math::Vec3{ maxFloat, maxFloat, maxFloat };
+    outMax = math::Vec3{ -maxFloat, -maxFloat, -maxFloat };
+
+    for (const MeshVertex& vertex : vertices)
+    {
+        outMin.x = std::min(outMin.x, vertex.Position.x);
+        outMin.y = std::min(outMin.y, vertex.Position.y);
+        outMin.z = std::min(outMin.z, vertex.Position.z);
+        outMax.x = std::max(outMax.x, vertex.Position.x);
+        outMax.y = std::max(outMax.y, vertex.Position.y);
+        outMax.z = std::max(outMax.z, vertex.Position.z);
+    }
+    return true;
+}
+
+void ComputeWorldBounds(
+    const math::Vec3& localMin,
+    const math::Vec3& localMax,
+    const math::Mat4& worldTransform,
+    math::Vec3& outMin,
+    math::Vec3& outMax)
+{
+    const float maxFloat = std::numeric_limits<float>::max();
+    outMin = math::Vec3{ maxFloat, maxFloat, maxFloat };
+    outMax = math::Vec3{ -maxFloat, -maxFloat, -maxFloat };
+
+    // 回転・非一様Scaleを含むため、Local AABBの8頂点をWorldへ変換して包み直します。
+    // min/maxだけを直接変換すると回転時にBoundsを過小評価するため、診断値でも同じ誤差を持ち込まないようにします。
+    for (uint32_t cornerIndex = 0u; cornerIndex < 8u; ++cornerIndex)
+    {
+        const math::Vec3 localCorner{
+            (cornerIndex & 1u) != 0u ? localMax.x : localMin.x,
+            (cornerIndex & 2u) != 0u ? localMax.y : localMin.y,
+            (cornerIndex & 4u) != 0u ? localMax.z : localMin.z
+        };
+        const math::Vec3 worldCorner = TransformPoint(worldTransform, localCorner);
+        outMin.x = std::min(outMin.x, worldCorner.x);
+        outMin.y = std::min(outMin.y, worldCorner.y);
+        outMin.z = std::min(outMin.z, worldCorner.z);
+        outMax.x = std::max(outMax.x, worldCorner.x);
+        outMax.y = std::max(outMax.y, worldCorner.y);
+        outMax.z = std::max(outMax.z, worldCorner.z);
+    }
+}
+
+void PrintTerrainPrimitiveDiagnostics(
+    const SpawnedStaticPrimitive& primitive,
+    const TransformComponent& transform,
+    const MeshRendererComponent& meshRenderer,
+    const MeshGeometry& geometry)
+{
+    math::Vec3 localMin{};
+    math::Vec3 localMax{};
+    const bool hasBounds = ComputeLocalBounds(geometry, localMin, localMax);
+
+    const std::vector<MeshVertex>& vertices = geometry.GetVertices();
+    const std::vector<uint32_t>& indices = geometry.GetIndices();
+    const std::size_t triangleCount = indices.empty() ? vertices.size() / 3u : indices.size() / 3u;
+
+    std::cout
+        << "[TerrainStaticScene] Primitive診断"
+        << " Node=" << primitive.NodeIndex
+        << " Mesh=" << primitive.MeshIndex
+        << " Primitive=" << primitive.PrimitiveIndex << '\n'
+        << "  Vertices=" << vertices.size()
+        << " Indices=" << indices.size()
+        << " Triangles=" << triangleCount << '\n'
+        << "  Material=" << (meshRenderer.Material != nullptr ? "valid" : "nullptr") << '\n'
+        << "  Position=(" << transform.Position.x << ", " << transform.Position.y << ", " << transform.Position.z << ")\n"
+        << "  Rotation=(" << transform.Rotation.x << ", " << transform.Rotation.y << ", " << transform.Rotation.z << ") rad\n"
+        << "  Scale=(" << transform.Scale.x << ", " << transform.Scale.y << ", " << transform.Scale.z << ")\n";
+
+    if (hasBounds == false)
+    {
+        std::cout << "  Bounds=unavailable (vertexなし)\n";
+        return;
+    }
+
+    math::Vec3 worldMin{};
+    math::Vec3 worldMax{};
+    ComputeWorldBounds(localMin, localMax, transform.GetTransform(), worldMin, worldMax);
+
+    const math::Vec3 worldCenter = (worldMin + worldMax) * 0.5f;
+    const math::Vec3 worldExtent = worldMax - worldMin;
+    std::cout
+        << "  LocalAABB Min=(" << localMin.x << ", " << localMin.y << ", " << localMin.z << ")"
+        << " Max=(" << localMax.x << ", " << localMax.y << ", " << localMax.z << ")\n"
+        << "  WorldAABB Min=(" << worldMin.x << ", " << worldMin.y << ", " << worldMin.z << ")"
+        << " Max=(" << worldMax.x << ", " << worldMax.y << ", " << worldMax.z << ")\n"
+        << "  WorldCenter=(" << worldCenter.x << ", " << worldCenter.y << ", " << worldCenter.z << ")"
+        << " Size=(" << worldExtent.x << ", " << worldExtent.y << ", " << worldExtent.z << ")\n";
 }
 
 std::string BuildPrimitiveEntityName(const ImportedStaticMeshInstance& imported, std::size_t instanceIndex)
@@ -367,6 +477,19 @@ bool TerrainStaticSceneLayer::TryLoadTerrain()
             StaticSceneSpawner::Destroy(m_Scene, m_TerrainInstance);
             return SetError(&m_LastError, "Terrain PrimitiveのMeshGeometryがnullptrです");
         }
+
+        const TransformComponent* transform =
+            m_Scene.TryGetComponent<TransformComponent>(primitive.EntityHandle.GetIndex());
+        if (transform == nullptr)
+        {
+            StaticSceneSpawner::Destroy(m_Scene, m_TerrainInstance);
+            return SetError(&m_LastError, "Terrain PrimitiveのTransformが見つかりません");
+        }
+
+        // GLB読込成功だけでは「Cameraから見える位置にある」ことまでは保証できません。
+        // Geometry量、TRS、Local/World AABBを一度出力し、Importer・Transform・Cameraのどこで
+        // 可視性が失われているかを実Asset値から切り分けられるようにします。
+        PrintTerrainPrimitiveDiagnostics(primitive, *transform, *meshRenderer, *geometry);
 
         ColliderComponent collider{};
         collider.Type = ColliderType::StaticMesh;
