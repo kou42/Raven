@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <numeric>
+#include <unordered_map>
 
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 
@@ -101,6 +103,24 @@ int LongestAxis(const math::Vec3& extent)
     return axis;
 }
 
+struct CachedBVHEntry
+{
+    std::weak_ptr<const MeshGeometry> Geometry;
+    std::shared_ptr<const StaticMeshTriangleBVH> BVH;
+};
+
+std::mutex& GetBVHCacheMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::unordered_map<const MeshGeometry*, CachedBVHEntry>& GetBVHCache()
+{
+    static std::unordered_map<const MeshGeometry*, CachedBVHEntry> cache;
+    return cache;
+}
+
 } // namespace
 
 bool StaticMeshTriangleBVH::Build(
@@ -182,6 +202,64 @@ void StaticMeshTriangleBVH::Clear()
     m_TriangleOrder.clear();
     m_Nodes.clear();
     m_MaxTrianglesPerLeaf = DefaultMaxTrianglesPerLeaf;
+}
+
+std::shared_ptr<const StaticMeshTriangleBVH> StaticMeshTriangleBVH::GetOrBuildCached(
+    const std::shared_ptr<const MeshGeometry>& geometry)
+{
+    if (geometry == nullptr
+        || geometry->GetGeometryUsage() != GeometryUsage::Static)
+    {
+        // Dynamic Geometryは頂点Revisionに追従するRefit/Rebuildが必要なため、
+        // StaticMesh用Cacheへ誤って固定しません。
+        return nullptr;
+    }
+
+    std::lock_guard<std::mutex> lock(GetBVHCacheMutex());
+    auto& cache = GetBVHCache();
+    const MeshGeometry* geometryKey = geometry.get();
+
+    auto found = cache.find(geometryKey);
+    if (found != cache.end())
+    {
+        const std::shared_ptr<const MeshGeometry> cachedGeometry = found->second.Geometry.lock();
+        if (cachedGeometry != nullptr
+            && cachedGeometry.get() == geometryKey
+            && found->second.BVH != nullptr)
+        {
+            return found->second.BVH;
+        }
+
+        // raw pointer addressが再利用された場合でも、weak_ptrの寿命確認で古いEntryを識別できます。
+        cache.erase(found);
+    }
+
+    auto bvh = std::make_shared<StaticMeshTriangleBVH>();
+    if (bvh->Build(*geometry) == false)
+    {
+        return nullptr;
+    }
+
+    CachedBVHEntry entry{};
+    entry.Geometry = geometry;
+    entry.BVH = bvh;
+    cache.emplace(geometryKey, std::move(entry));
+
+    // Scene入れ替えで失効したEntryを、Build発生時だけ軽く掃除します。
+    // Query hot pathで毎回全Cacheを走査しないことを優先します。
+    for (auto iterator = cache.begin(); iterator != cache.end();)
+    {
+        if (iterator->second.Geometry.expired())
+        {
+            iterator = cache.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
+
+    return bvh;
 }
 
 uint32_t StaticMeshTriangleBVH::BuildNode(
