@@ -5,6 +5,87 @@
 
 namespace Raven::ph
 {
+namespace
+{
+math::Vec3 TransformStaticMeshPoint(
+    const math::Mat4& worldTransform,
+    const math::Vec3& colliderOffset,
+    const math::Vec3& localPoint)
+{
+    const math::Vec4 worldPoint = worldTransform * math::Vec4{
+        localPoint.x + colliderOffset.x,
+        localPoint.y + colliderOffset.y,
+        localPoint.z + colliderOffset.z,
+        1.0f
+    };
+    return math::Vec3{ worldPoint.x, worldPoint.y, worldPoint.z };
+}
+
+// Moller-Trumbore法で両面Triangleを判定します。
+// determinantの符号でBack Faceを除外せず絶対値だけを見ることで、Terrain裏面からの
+// Queryでも幾何交差自体は取得できます。返却NormalだけはRayと逆向きへ揃え、
+// Ground Query側が常にHit面から外向きの法線として扱えるようにします。
+bool RayCastTriangleTwoSided(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const math::Vec3& a,
+    const math::Vec3& b,
+    const math::Vec3& c,
+    float& outFraction,
+    math::Vec3& outNormal)
+{
+    constexpr float determinantEpsilon = 1.0e-8f;
+    constexpr float normalLengthEpsilon = 1.0e-12f;
+
+    const math::Vec3 edgeAB = b - a;
+    const math::Vec3 edgeAC = c - a;
+    const math::Vec3 p = math::Vec3::Cross(direction, edgeAC);
+    const float determinant = math::Vec3::Dot(edgeAB, p);
+    if (std::abs(determinant) <= determinantEpsilon)
+    {
+        return false;
+    }
+
+    const float inverseDeterminant = 1.0f / determinant;
+    const math::Vec3 fromA = origin - a;
+    const float barycentricU = math::Vec3::Dot(fromA, p) * inverseDeterminant;
+    if (barycentricU < 0.0f || barycentricU > 1.0f)
+    {
+        return false;
+    }
+
+    const math::Vec3 q = math::Vec3::Cross(fromA, edgeAB);
+    const float barycentricV = math::Vec3::Dot(direction, q) * inverseDeterminant;
+    if (barycentricV < 0.0f || barycentricU + barycentricV > 1.0f)
+    {
+        return false;
+    }
+
+    const float fraction = math::Vec3::Dot(edgeAC, q) * inverseDeterminant;
+    if (fraction < 0.0f || fraction > maxFraction)
+    {
+        return false;
+    }
+
+    math::Vec3 normal = math::Vec3::Cross(edgeAB, edgeAC);
+    const float normalLengthSquared = normal.LengthSq();
+    if (normalLengthSquared <= normalLengthEpsilon)
+    {
+        return false;
+    }
+    normal /= std::sqrt(normalLengthSquared);
+
+    if (math::Vec3::Dot(normal, direction) > 0.0f)
+    {
+        normal = -normal;
+    }
+
+    outFraction = fraction;
+    outNormal = normal;
+    return true;
+}
+} // namespace
 
 bool ComputeColliderAABB(
     const TransformComponent& transform,
@@ -115,24 +196,18 @@ bool ComputeColliderAABB(
         // StaticMeshは静的用途に限定するため、このO(N)走査は通常Proxy作成時にだけ意味を持ちます。
         // 将来大規模Terrainへ進む段階ではGeometry側にlocal boundsをcacheし、8 corner変換へ置換できます。
         const math::Mat4 worldTransform = transform.GetTransform();
-        const auto transformPoint =
-            [&](const math::Vec3& localPoint) -> math::Vec3
-            {
-                const math::Vec4 worldPoint = worldTransform * math::Vec4{
-                    localPoint.x + collider.Offset.x,
-                    localPoint.y + collider.Offset.y,
-                    localPoint.z + collider.Offset.z,
-                    1.0f
-                };
-                return math::Vec3{ worldPoint.x, worldPoint.y, worldPoint.z };
-            };
-
-        math::Vec3 minimum = transformPoint(vertices.front().Position);
+        math::Vec3 minimum = TransformStaticMeshPoint(
+            worldTransform,
+            collider.Offset,
+            vertices.front().Position);
         math::Vec3 maximum = minimum;
 
         for (std::size_t index = 1; index < vertices.size(); ++index)
         {
-            const math::Vec3 point = transformPoint(vertices[index].Position);
+            const math::Vec3 point = TransformStaticMeshPoint(
+                worldTransform,
+                collider.Offset,
+                vertices[index].Position);
             minimum.x = std::min(minimum.x, point.x);
             minimum.y = std::min(minimum.y, point.y);
             minimum.z = std::min(minimum.z, point.z);
@@ -148,6 +223,107 @@ bool ComputeColliderAABB(
 
     // Planeは無限形状なので有限AABBを持ちません。
     return false;
+}
+
+bool RayCastStaticMeshCollider(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const TransformComponent& transform,
+    const ColliderComponent& collider,
+    float& outFraction,
+    math::Vec3& outNormal)
+{
+    if (collider.Type != ColliderType::StaticMesh
+        || collider.StaticMeshGeometry == nullptr
+        || maxFraction < 0.0f
+        || direction.LengthSq() <= 1.0e-12f)
+    {
+        return false;
+    }
+
+    const auto& vertices = collider.StaticMeshGeometry->GetVertices();
+    const auto& indices = collider.StaticMeshGeometry->GetIndices();
+    if (vertices.size() < 3)
+    {
+        return false;
+    }
+
+    const math::Mat4 worldTransform = transform.GetTransform();
+    bool hit = false;
+    float closestFraction = maxFraction;
+    math::Vec3 closestNormal{};
+
+    const auto testTriangle =
+        [&](std::size_t indexA, std::size_t indexB, std::size_t indexC)
+        {
+            if (indexA >= vertices.size()
+                || indexB >= vertices.size()
+                || indexC >= vertices.size())
+            {
+                // 壊れたIndexを持つTriangleだけを除外し、他の正常TriangleのQueryは継続します。
+                return;
+            }
+
+            const math::Vec3 a = TransformStaticMeshPoint(
+                worldTransform,
+                collider.Offset,
+                vertices[indexA].Position);
+            const math::Vec3 b = TransformStaticMeshPoint(
+                worldTransform,
+                collider.Offset,
+                vertices[indexB].Position);
+            const math::Vec3 c = TransformStaticMeshPoint(
+                worldTransform,
+                collider.Offset,
+                vertices[indexC].Position);
+
+            float fraction = 0.0f;
+            math::Vec3 normal{};
+            if (RayCastTriangleTwoSided(
+                    origin,
+                    direction,
+                    closestFraction,
+                    a,
+                    b,
+                    c,
+                    fraction,
+                    normal) == false)
+            {
+                return;
+            }
+
+            hit = true;
+            closestFraction = fraction;
+            closestNormal = normal;
+        };
+
+    if (indices.empty() == false)
+    {
+        // glTF Terrainの通常経路です。末尾に3未満の不完全Indexがあっても読み越さないよう、
+        // index + 2 が範囲内のTriangleだけを評価します。
+        for (std::size_t index = 0; index + 2 < indices.size(); index += 3)
+        {
+            testTriangle(indices[index], indices[index + 1], indices[index + 2]);
+        }
+    }
+    else
+    {
+        // 非Indexed Geometryは頂点3個を1Triangleとして扱います。
+        for (std::size_t index = 0; index + 2 < vertices.size(); index += 3)
+        {
+            testTriangle(index, index + 1, index + 2);
+        }
+    }
+
+    if (hit == false)
+    {
+        return false;
+    }
+
+    outFraction = closestFraction;
+    outNormal = closestNormal;
+    return true;
 }
 
 } // namespace Raven::ph
