@@ -345,7 +345,7 @@ void PhysicsWorld::ApplyForces(Scene& scene, float dt)
 
 // 線形速度・角速度へDampingを適用します。
 // ----------------------------------------------------------
-// 力が加わっていないときに、線形速度・角速度が自然に減衰するように調整します。
+// 力が加わっていないときに、線形速度と角速度が自然に減衰するように調整します。
 void PhysicsWorld::IntegrateVelocities(Scene& scene, float dt)
 {
     RAVEN_PROFILE_SCOPE("Physics.IntegrateVelocities");
