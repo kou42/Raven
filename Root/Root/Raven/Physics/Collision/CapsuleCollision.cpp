@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Collision/OBB.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven::ph
 {
@@ -101,6 +103,20 @@ void ClosestPointsSegmentOBB(
         t,
         &outSegmentPoint,
         &outBoxPoint);
+}
+
+math::Vec3 TransformStaticMeshPoint(
+    const math::Mat4& worldTransform,
+    const math::Vec3& colliderOffset,
+    const math::Vec3& localPoint)
+{
+    const math::Vec4 worldPoint = worldTransform * math::Vec4{
+        localPoint.x + colliderOffset.x,
+        localPoint.y + colliderOffset.y,
+        localPoint.z + colliderOffset.z,
+        1.0f
+    };
+    return math::Vec3{ worldPoint.x, worldPoint.y, worldPoint.z };
 }
 
 bool BuildSinglePointManifold(
@@ -385,6 +401,164 @@ bool GenerateCapsuleBoxManifold(
         normal,
         contactPosition,
         penetration,
+        outManifold);
+}
+
+bool GenerateCapsuleStaticMeshManifold(
+    Entity capsuleEntity,
+    const TransformComponent& capsuleTransform,
+    const ColliderComponent& capsuleCollider,
+    Entity staticMeshEntity,
+    const TransformComponent& staticMeshTransform,
+    const ColliderComponent& staticMeshCollider,
+    ContactManifold& outManifold)
+{
+    if (capsuleCollider.Type != ColliderType::Capsule
+        || staticMeshCollider.Type != ColliderType::StaticMesh
+        || staticMeshCollider.StaticMeshGeometry == nullptr)
+    {
+        return false;
+    }
+
+    Capsule capsule{};
+    if (ComputeCapsule(capsuleTransform, capsuleCollider, capsule) == false)
+    {
+        return false;
+    }
+
+    const auto& vertices = staticMeshCollider.StaticMeshGeometry->GetVertices();
+    const auto& indices = staticMeshCollider.StaticMeshGeometry->GetIndices();
+    if (vertices.size() < 3u)
+    {
+        return false;
+    }
+
+    // ========================================================================
+    // Capsule - Static Mesh
+    // ========================================================================
+    // Capsuleを中心線分+Radiusへ還元し、StaticMeshの各Triangleとの最近接距離を評価します。
+    // 複数Triangleへ同時に接触する場合、現段階では最大Penetrationの1面を代表接触として
+    // 採用します。Character ControllerのSlideとRigidBody Solverで同じ幾何判定を共有しつつ、
+    // 将来Triangle BVHや複数点Manifoldへ拡張しても公開APIを変えないための基礎実装です。
+    const math::Mat4 worldTransform = staticMeshTransform.GetTransform();
+    const float radiusSquared = capsule.Radius * capsule.Radius;
+    bool found = false;
+    float bestPenetration = -std::numeric_limits<float>::max();
+    math::Vec3 bestNormal{};
+    math::Vec3 bestPosition{};
+
+    const auto testTriangle =
+        [&](std::size_t indexA, std::size_t indexB, std::size_t indexC)
+        {
+            if (indexA >= vertices.size()
+                || indexB >= vertices.size()
+                || indexC >= vertices.size())
+            {
+                // 壊れたTriangleだけを除外し、残りの正常なTriangle判定は継続します。
+                return;
+            }
+
+            const math::Vec3 triangleA = TransformStaticMeshPoint(
+                worldTransform,
+                staticMeshCollider.Offset,
+                vertices[indexA].Position);
+            const math::Vec3 triangleB = TransformStaticMeshPoint(
+                worldTransform,
+                staticMeshCollider.Offset,
+                vertices[indexB].Position);
+            const math::Vec3 triangleC = TransformStaticMeshPoint(
+                worldTransform,
+                staticMeshCollider.Offset,
+                vertices[indexC].Position);
+
+            const math::Vec3 rawTriangleNormal = math::Vec3::Cross(
+                triangleB - triangleA,
+                triangleC - triangleA);
+            const float triangleNormalLengthSquared = rawTriangleNormal.LengthSq();
+            if (triangleNormalLengthSquared <= 1.0e-12f)
+            {
+                return;
+            }
+
+            math::Vec3 capsulePoint{};
+            math::Vec3 trianglePoint{};
+            ClosestPointsSegmentTriangle(
+                capsule.SegmentA,
+                capsule.SegmentB,
+                triangleA,
+                triangleB,
+                triangleC,
+                capsulePoint,
+                trianglePoint);
+
+            const math::Vec3 delta = trianglePoint - capsulePoint;
+            const float distanceSquared = delta.LengthSq();
+            if (distanceSquared > radiusSquared)
+            {
+                return;
+            }
+
+            float distance = 0.0f;
+            math::Vec3 capsuleToMeshNormal{};
+            if (distanceSquared > 1.0e-12f)
+            {
+                distance = std::sqrt(distanceSquared);
+                capsuleToMeshNormal = delta / distance;
+            }
+            else
+            {
+                // 中心線分がTriangle面を横切る深いOverlapでは最近接差分から法線を作れません。
+                // Triangle windingを基準にしつつ、Mesh表面からCapsule中心へ向く側を障害物法線へ
+                // 揃え、その反対をA(Capsule)->B(StaticMesh)法線として採用します。
+                math::Vec3 obstacleNormal = rawTriangleNormal / std::sqrt(triangleNormalLengthSquared);
+                if (math::Vec3::Dot(obstacleNormal, capsule.Center() - trianglePoint) < 0.0f)
+                {
+                    obstacleNormal = -obstacleNormal;
+                }
+                capsuleToMeshNormal = -obstacleNormal;
+            }
+
+            const float penetration = capsule.Radius - distance;
+            if (found == true && penetration <= bestPenetration)
+            {
+                return;
+            }
+
+            const math::Vec3 capsuleSurface = capsulePoint + capsuleToMeshNormal * capsule.Radius;
+            found = true;
+            bestPenetration = penetration;
+            bestNormal = capsuleToMeshNormal;
+            bestPosition = (capsuleSurface + trianglePoint) * 0.5f;
+        };
+
+    if (indices.empty() == false)
+    {
+        for (std::size_t index = 0u; index + 2u < indices.size(); index += 3u)
+        {
+            testTriangle(indices[index], indices[index + 1u], indices[index + 2u]);
+        }
+    }
+    else
+    {
+        for (std::size_t index = 0u; index + 2u < vertices.size(); index += 3u)
+        {
+            testTriangle(index, index + 1u, index + 2u);
+        }
+    }
+
+    if (found == false)
+    {
+        return false;
+    }
+
+    return BuildSinglePointManifold(
+        capsuleEntity,
+        staticMeshEntity,
+        capsuleCollider,
+        staticMeshCollider,
+        bestNormal,
+        bestPosition,
+        bestPenetration,
         outManifold);
 }
 

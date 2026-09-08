@@ -510,6 +510,24 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
                     pair.A, *transformA, *colliderA,
                     manifold);
             }
+            else if (colliderA->Type == ColliderType::Capsule
+                && colliderB->Type == ColliderType::StaticMesh)
+            {
+                generated = GenerateCapsuleStaticMeshManifold(
+                    pair.A, *transformA, *colliderA,
+                    pair.B, *transformB, *colliderB,
+                    manifold);
+            }
+            else if (colliderA->Type == ColliderType::StaticMesh
+                && colliderB->Type == ColliderType::Capsule)
+            {
+                // ManifoldのA->B法線規約をCapsule起点へ統一するため、pair順序とは逆でも
+                // CapsuleをA、StaticMeshをBとして専用Narrow Phaseへ渡します。
+                generated = GenerateCapsuleStaticMeshManifold(
+                    pair.B, *transformB, *colliderB,
+                    pair.A, *transformA, *colliderA,
+                    manifold);
+            }
 
             if (generated)
             {

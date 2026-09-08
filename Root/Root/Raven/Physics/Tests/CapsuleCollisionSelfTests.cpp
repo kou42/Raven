@@ -1,9 +1,14 @@
 #include <cassert>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
+#include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven::ph::tests
 {
@@ -23,6 +28,18 @@ ColliderComponent MakeCapsule(float radius, float halfLength)
     collider.Radius = radius;
     collider.HalfLength = halfLength;
     return collider;
+}
+
+std::shared_ptr<MeshGeometry> MakeStaticMeshGroundGeometry()
+{
+    std::vector<MeshVertex> vertices{
+        MeshVertex{ math::Vec3{ -2.0f, 0.0f, -2.0f } },
+        MeshVertex{ math::Vec3{  2.0f, 0.0f, -2.0f } },
+        MeshVertex{ math::Vec3{  2.0f, 0.0f,  2.0f } },
+        MeshVertex{ math::Vec3{ -2.0f, 0.0f,  2.0f } }
+    };
+    std::vector<uint32_t> indices{ 0u, 1u, 2u, 0u, 2u, 3u };
+    return std::make_shared<MeshGeometry>(std::move(vertices), std::move(indices));
 }
 
 } // namespace
@@ -181,7 +198,84 @@ void RunCapsuleCollisionSelfTests()
         manifold) == false);
 
     // ------------------------------------------------------------------------
-    // 7. Ray - Capsule
+    // 7. Capsule - Static Mesh Manifold
+    // ------------------------------------------------------------------------
+    // Capsule下端をTerrain面へ0.1だけ貫通させ、法線・貫通量・Material合成を確認します。
+    ColliderComponent staticMeshCollider{};
+    staticMeshCollider.Type = ColliderType::StaticMesh;
+    staticMeshCollider.StaticMeshGeometry = MakeStaticMeshGroundGeometry();
+    staticMeshCollider.StaticFriction = 0.2f;
+    staticMeshCollider.DynamicFriction = 0.45f;
+    staticMeshCollider.Restitution = 0.1f;
+
+    capsuleCollider.StaticFriction = 0.8f;
+    capsuleCollider.DynamicFriction = 0.2f;
+    capsuleCollider.Restitution = 0.5f;
+    capsuleTransform = TransformComponent{};
+    capsuleTransform.Position = { 0.0f, 1.4f, 0.0f };
+    TransformComponent staticMeshTransform{};
+
+    assert(GenerateCapsuleStaticMeshManifold(
+        Entity{}, capsuleTransform, capsuleCollider,
+        Entity{}, staticMeshTransform, staticMeshCollider,
+        manifold));
+    assert(manifold.PointCount == 1u);
+    assert(NearlyEqual(manifold.Points[0].Penetration, 0.1f, 1.0e-3f));
+    assert(manifold.Normal.y < -0.99f);
+    assert(NearlyEqual(manifold.StaticFriction, 0.4f));
+    assert(NearlyEqual(manifold.DynamicFriction, 0.3f));
+    assert(NearlyEqual(manifold.Restitution, 0.1f));
+
+    capsuleTransform.Position = { 0.0f, 2.0f, 0.0f };
+    assert(GenerateCapsuleStaticMeshManifold(
+        Entity{}, capsuleTransform, capsuleCollider,
+        Entity{}, staticMeshTransform, staticMeshCollider,
+        manifold) == false);
+
+    // ------------------------------------------------------------------------
+    // 8. PhysicsWorld dispatch - Dynamic Capsule / Static Mesh
+    // ------------------------------------------------------------------------
+    // Direct Narrow PhaseだけでなくBroad Phase -> PhysicsWorld dispatch -> Manifoldまで
+    // 実際のStep経路で到達することを確認します。
+    {
+        Scene scene;
+        PhysicsWorld world;
+        world.SetGravity({ 0.0f, 0.0f, 0.0f });
+
+        Entity terrain = scene.CreateEntity("CapsuleStaticMeshSelfTestTerrain");
+        ColliderComponent& terrainCollider = terrain.AddComponent<ColliderComponent>();
+        terrainCollider.Type = ColliderType::StaticMesh;
+        terrainCollider.StaticMeshGeometry = MakeStaticMeshGroundGeometry();
+
+        Entity capsuleEntity = scene.CreateEntity("CapsuleStaticMeshSelfTestCapsule");
+        capsuleEntity.GetComponent<TransformComponent>().Position = { 0.0f, 1.4f, 0.0f };
+        ColliderComponent& dynamicCapsuleCollider = capsuleEntity.AddComponent<ColliderComponent>();
+        dynamicCapsuleCollider = MakeCapsule(0.5f, 1.0f);
+        RigidBodyComponent& rigidBody = capsuleEntity.AddComponent<RigidBodyComponent>();
+        rigidBody.SetBodyType(BodyType::Dynamic);
+        rigidBody.UseGravity = false;
+        rigidBody.AllowSleep = false;
+
+        world.Step(scene, 1.0f / 60.0f);
+        const auto& manifolds = world.GetContactManifolds();
+        assert(manifolds.empty() == false);
+
+        bool foundTerrainContact = false;
+        for (const ContactManifold& contact : manifolds)
+        {
+            if (contact.A == capsuleEntity && contact.B == terrain)
+            {
+                foundTerrainContact = true;
+                assert(contact.PointCount > 0u);
+                assert(contact.Normal.y < -0.99f);
+                break;
+            }
+        }
+        assert(foundTerrainContact);
+    }
+
+    // ------------------------------------------------------------------------
+    // 9. Ray - Capsule
     // ------------------------------------------------------------------------
     capsuleTransform = TransformComponent{};
     assert(ComputeCapsule(capsuleTransform, capsuleCollider, capsule));
