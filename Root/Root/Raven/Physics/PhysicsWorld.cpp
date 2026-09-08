@@ -235,6 +235,20 @@ bool RayCastCollider(
             outNormal);
     }
 
+    if (collider.Type == ColliderType::StaticMesh)
+    {
+        // StaticMeshはBroad PhaseでMesh全体AABBまで絞り込まれています。
+        // ここで実TriangleへRayCastし、AABBだけのfalse positiveを除外します。
+        return RayCastStaticMeshCollider(
+            origin,
+            direction,
+            maxFraction,
+            transform,
+            collider,
+            outFraction,
+            outNormal);
+    }
+
     if (collider.Type == ColliderType::Plane)
     {
         return RayCastPlane(
@@ -1029,7 +1043,7 @@ void PhysicsWorld::UpdateSleeping(Scene& scene, float dt)
         const float linearThreshold = std::max(rigidBody.SleepThreshold, 0.0f);
         const float angularThreshold = std::max(rigidBody.AngularSleepThreshold, 0.0f);
 
-        // 速度が十分に小さければ睡眠候補と見なし、しきい値を超えたら実際に睡眠状態へ移行します。
+        // 速度が十分に小さい剛体を睡眠候補として扱い、しきい値を超えたら実際に睡眠状態へ移行します。
         if (rigidBody.LinearVelocity.LengthSq() <= linearThreshold * linearThreshold
             && rigidBody.AngularVelocity.LengthSq() <= angularThreshold * angularThreshold)
         {
