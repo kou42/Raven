@@ -2,6 +2,8 @@
 #include "Raven/Gltf/StaticSceneSpawner.h"
 
 #include <cmath>
+#include <filesystem>
+#include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -143,14 +145,9 @@ std::string BuildPrimitiveEntityName(const ImportedStaticMeshInstance& imported,
     return name;
 }
 
-bool SpawnImportedInstances(
-    Scene& scene,
-    const std::vector<ImportedStaticMeshInstance>& importedInstances,
-    const Ref<Material>& fallbackMaterial,
-    bool useImportedMaterials,
-    const DirectionalLightSettings& light,
-    StaticSceneInstance& outInstance,
-    std::string* errorMessage)
+bool SpawnImportedInstances(Scene& scene, const std::vector<ImportedStaticMeshInstance>& importedInstances,
+    const Ref<Material>& fallbackMaterial, bool useImportedMaterials, const DirectionalLightSettings& light,
+    StaticSceneInstance& outInstance, std::string* errorMessage)
 {
     if (importedInstances.empty())
     {
@@ -278,6 +275,74 @@ void StaticSceneSpawner::Destroy(Scene& scene, StaticSceneInstance& instance)
         scene.DestroyEntity(primitive.EntityHandle);
     }
     instance.GetPrimitives().clear();
+}
+
+TerrainStaticSceneLayer::TerrainStaticSceneLayer(
+    Scene& scene,
+    std::string modelPath,
+    const DirectionalLightSettings& light)
+    : m_Scene(scene)
+    , m_ModelPath(std::move(modelPath))
+    , m_Light(light)
+{
+}
+
+void TerrainStaticSceneLayer::OnDetach()
+{
+    // LayerがSceneより先にDetachされる通常ライフサイクルで、Spawnerが生成したPrimitiveを
+    // 一括破棄します。Entity個別のLifetimeをLayer側へ複製管理しません。
+    StaticSceneSpawner::Destroy(m_Scene, m_TerrainInstance);
+    m_LoadAttempted = false;
+    m_LastError.clear();
+}
+
+void TerrainStaticSceneLayer::OnUpdate(float dt)
+{
+    (void)dt;
+
+    if (m_LoadAttempted == true || m_TerrainInstance.IsValid())
+    {
+        return;
+    }
+
+    TryLoadTerrain();
+}
+
+bool TerrainStaticSceneLayer::TryLoadTerrain()
+{
+    m_LoadAttempted = true;
+    m_LastError.clear();
+
+    // Scene構築時点ではRenderer/OpenGL初期化順に依存しないよう、Human Debug Layerと同じく
+    // 最初のUpdateで実Assetを解決します。Terrain.glb未配置は開発途中の正常状態として扱います。
+    const std::filesystem::path resolvedPath = std::filesystem::absolute(m_ModelPath);
+    if (std::filesystem::exists(resolvedPath) == false)
+    {
+        std::cout
+            << "[TerrainStaticScene] " << m_ModelPath << "\n"
+            << "  解決パス: " << resolvedPath << "\n"
+            << " が見つからないためTerrain読込をskipします。\n";
+        return false;
+    }
+
+    if (StaticSceneSpawner::SpawnLitFromGlb(
+            m_Scene,
+            m_ModelPath,
+            m_TerrainInstance,
+            m_Light,
+            &m_LastError) == false)
+    {
+        std::cerr
+            << "[TerrainStaticScene] Terrain GLBのScene配置に失敗しました: "
+            << m_LastError << '\n';
+        return false;
+    }
+
+    std::cout
+        << "[TerrainStaticScene] Terrain GLBを読み込みました: "
+        << m_ModelPath << " (Primitive="
+        << m_TerrainInstance.GetPrimitives().size() << ")\n";
+    return true;
 }
 
 } // namespace Gltf

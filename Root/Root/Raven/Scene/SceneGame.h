@@ -9,6 +9,7 @@
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
+#include "Raven/Gltf/StaticSceneSpawner.h"
 
 #include <unordered_map>
 #include <vector>
@@ -40,6 +41,10 @@ public:
         // Human.glbが未配置でもLayer側が安全にskipします。
         // 実際のGLB読込はSceneGame::OnCreate()完了後、最初のUpdateまで遅延されます。
         PushLayer(CreateScope<Gltf::HumanSkinningDebugLayer>(*this));
+
+        // TerrainもHumanと同じ遅延Load契約へ揃えます。
+        // Raven/Assets/Models/Terrain.glb が未配置なら既存検証Sceneを変更せずskipします。
+        PushLayer(CreateScope<Gltf::TerrainStaticSceneLayer>(*this));
     }
 
     virtual void OnCreate() override;
