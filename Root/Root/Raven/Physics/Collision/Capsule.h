@@ -166,4 +166,177 @@ inline void ClosestPointsOnSegments(
     outPoint2 = p2 + d2 * t;
 }
 
+// Triangle上でpointに最も近い点を返します。
+// Face / Edge / VertexのVoronoi領域を明示的に分けるEricson方式を使い、
+// Segment-Triangle最近接計算のendpoint-face候補として再利用します。
+inline math::Vec3 ClosestPointOnTriangle(
+    const math::Vec3& point,
+    const math::Vec3& a,
+    const math::Vec3& b,
+    const math::Vec3& c)
+{
+    constexpr float Epsilon = 1.0e-12f;
+    const math::Vec3 ab = b - a;
+    const math::Vec3 ac = c - a;
+    const math::Vec3 triangleNormal = math::Vec3::Cross(ab, ac);
+
+    // 退化Triangleでは面領域を定義できないため、3辺のうち最も近い点へfallbackします。
+    if (triangleNormal.LengthSq() <= Epsilon)
+    {
+        const math::Vec3 pointAB = ClosestPointOnSegment(a, b, point);
+        const math::Vec3 pointBC = ClosestPointOnSegment(b, c, point);
+        const math::Vec3 pointCA = ClosestPointOnSegment(c, a, point);
+        const float distanceAB = (point - pointAB).LengthSq();
+        const float distanceBC = (point - pointBC).LengthSq();
+        const float distanceCA = (point - pointCA).LengthSq();
+
+        if (distanceAB <= distanceBC && distanceAB <= distanceCA)
+        {
+            return pointAB;
+        }
+        if (distanceBC <= distanceCA)
+        {
+            return pointBC;
+        }
+        return pointCA;
+    }
+
+    const math::Vec3 ap = point - a;
+    const float d1 = math::Vec3::Dot(ab, ap);
+    const float d2 = math::Vec3::Dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f)
+    {
+        return a;
+    }
+
+    const math::Vec3 bp = point - b;
+    const float d3 = math::Vec3::Dot(ab, bp);
+    const float d4 = math::Vec3::Dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3)
+    {
+        return b;
+    }
+
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+    {
+        const float v = d1 / (d1 - d3);
+        return a + ab * v;
+    }
+
+    const math::Vec3 cp = point - c;
+    const float d5 = math::Vec3::Dot(ab, cp);
+    const float d6 = math::Vec3::Dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6)
+    {
+        return c;
+    }
+
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+    {
+        const float w = d2 / (d2 - d6);
+        return a + ac * w;
+    }
+
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+    {
+        const math::Vec3 bc = c - b;
+        const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + bc * w;
+    }
+
+    const float denominator = 1.0f / (va + vb + vc);
+    const float v = vb * denominator;
+    const float w = vc * denominator;
+    return a + ab * v + ac * w;
+}
+
+// SegmentとTriangleの最近接点を返します。
+// 最短点は「SegmentがTriangle面を貫く」「Segment端点-Triangle面」「Segment-Triangle辺」
+// のいずれかに存在するため、その候補をすべて評価して最小距離を選びます。
+// これによりCapsule-Terrainを、中心線分とTriangleの距離 <= Radius へ還元できます。
+inline void ClosestPointsSegmentTriangle(
+    const math::Vec3& segmentA,
+    const math::Vec3& segmentB,
+    const math::Vec3& triangleA,
+    const math::Vec3& triangleB,
+    const math::Vec3& triangleC,
+    math::Vec3& outSegmentPoint,
+    math::Vec3& outTrianglePoint)
+{
+    constexpr float Epsilon = 1.0e-10f;
+    const math::Vec3 segmentDirection = segmentB - segmentA;
+    const math::Vec3 triangleNormal = math::Vec3::Cross(
+        triangleB - triangleA,
+        triangleC - triangleA);
+    const float normalLengthSquared = triangleNormal.LengthSq();
+
+    // SegmentがTriangle面を横切り、その交点がTriangle内部なら距離0が厳密な最短です。
+    if (normalLengthSquared > Epsilon)
+    {
+        const float denominator = math::Vec3::Dot(triangleNormal, segmentDirection);
+        if (std::abs(denominator) > Epsilon)
+        {
+            const float t = math::Vec3::Dot(triangleNormal, triangleA - segmentA) / denominator;
+            if (t >= 0.0f && t <= 1.0f)
+            {
+                const math::Vec3 segmentPoint = segmentA + segmentDirection * t;
+                const math::Vec3 trianglePoint = ClosestPointOnTriangle(
+                    segmentPoint,
+                    triangleA,
+                    triangleB,
+                    triangleC);
+                if ((segmentPoint - trianglePoint).LengthSq() <= Epsilon)
+                {
+                    outSegmentPoint = segmentPoint;
+                    outTrianglePoint = trianglePoint;
+                    return;
+                }
+            }
+        }
+    }
+
+    outSegmentPoint = segmentA;
+    outTrianglePoint = ClosestPointOnTriangle(segmentA, triangleA, triangleB, triangleC);
+    float bestDistanceSquared = (outSegmentPoint - outTrianglePoint).LengthSq();
+
+    const math::Vec3 endpointBTriangle = ClosestPointOnTriangle(
+        segmentB,
+        triangleA,
+        triangleB,
+        triangleC);
+    const float endpointBDistanceSquared = (segmentB - endpointBTriangle).LengthSq();
+    if (endpointBDistanceSquared < bestDistanceSquared)
+    {
+        bestDistanceSquared = endpointBDistanceSquared;
+        outSegmentPoint = segmentB;
+        outTrianglePoint = endpointBTriangle;
+    }
+
+    const math::Vec3 edgeStarts[3]{ triangleA, triangleB, triangleC };
+    const math::Vec3 edgeEnds[3]{ triangleB, triangleC, triangleA };
+    for (int edgeIndex = 0; edgeIndex < 3; ++edgeIndex)
+    {
+        math::Vec3 segmentPoint{};
+        math::Vec3 edgePoint{};
+        ClosestPointsOnSegments(
+            segmentA,
+            segmentB,
+            edgeStarts[edgeIndex],
+            edgeEnds[edgeIndex],
+            segmentPoint,
+            edgePoint);
+
+        const float distanceSquared = (segmentPoint - edgePoint).LengthSq();
+        if (distanceSquared < bestDistanceSquared)
+        {
+            bestDistanceSquared = distanceSquared;
+            outSegmentPoint = segmentPoint;
+            outTrianglePoint = edgePoint;
+        }
+    }
+}
+
 } // namespace Raven::ph
