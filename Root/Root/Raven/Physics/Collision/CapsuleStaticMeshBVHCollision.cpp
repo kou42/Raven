@@ -166,7 +166,11 @@ bool GenerateCapsuleStaticMeshBVHManifold(
     math::Vec3 bestNormal{};
     math::Vec3 bestPosition{};
 
-    uint64_t candidateTriangleCount = static_cast<uint64_t>(candidateTriangles.size());
+    // SourceTriangleCountはBVH構築時に正常Indexだけへ正規化されたTriangle総数です。
+    // CandidateTriangleCountとの比をProfiler上で比較することで、実Terrainに対する
+    // BVHの枝刈り効果を全走査時の仕事量を基準に定量化できます。
+    const uint64_t sourceTriangleCount = static_cast<uint64_t>(bvh->GetTriangleCount());
+    const uint64_t candidateTriangleCount = static_cast<uint64_t>(candidateTriangles.size());
     uint64_t narrowPhaseTriangleTestCount = 0u;
     uint64_t overlapTriangleCount = 0u;
 
@@ -259,6 +263,9 @@ bool GenerateCapsuleStaticMeshBVHManifold(
 
     CPUProfiler& profiler = CPUProfiler::Get();
     profiler.AddCounter("Physics.StaticMesh.Capsule.ManifoldCallCount", 1.0);
+    profiler.AddCounter(
+        "Physics.StaticMesh.Capsule.SourceTriangleCount",
+        static_cast<double>(sourceTriangleCount));
     profiler.AddCounter(
         "Physics.StaticMesh.Capsule.CandidateTriangleCount",
         static_cast<double>(candidateTriangleCount));
