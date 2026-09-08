@@ -513,7 +513,9 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
             else if (colliderA->Type == ColliderType::Capsule
                 && colliderB->Type == ColliderType::StaticMesh)
             {
-                generated = GenerateCapsuleStaticMeshManifold(
+                // RigidBody接触もCharacter CapsuleCastと同じBVH候補抽出を利用します。
+                // BVH利用不能時は関数内部で従来の全Triangle走査へfallbackします。
+                generated = GenerateCapsuleStaticMeshBVHManifold(
                     pair.A, *transformA, *colliderA,
                     pair.B, *transformB, *colliderB,
                     manifold);
@@ -523,7 +525,7 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
             {
                 // ManifoldのA->B法線規約をCapsule起点へ統一するため、pair順序とは逆でも
                 // CapsuleをA、StaticMeshをBとして専用Narrow Phaseへ渡します。
-                generated = GenerateCapsuleStaticMeshManifold(
+                generated = GenerateCapsuleStaticMeshBVHManifold(
                     pair.B, *transformB, *colliderB,
                     pair.A, *transformA, *colliderA,
                     manifold);

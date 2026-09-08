@@ -151,7 +151,7 @@ bool GenerateCastOverlap(
 
     if (targetCollider.Type == ColliderType::StaticMesh)
     {
-        if (GenerateCapsuleStaticMeshManifold(
+        if (GenerateCapsuleStaticMeshBVHManifold(
                 castEntity,
                 castTransform,
                 castCollider,

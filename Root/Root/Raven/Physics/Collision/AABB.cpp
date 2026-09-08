@@ -1,6 +1,8 @@
 #include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/OBB.h"
+#include "Raven/Physics/Collision/StaticMeshTriangleBVH.h"
+#include "Raven/Physics/Collision/StaticMeshTriangleBVHQuery.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven::ph
@@ -298,7 +300,35 @@ bool RayCastStaticMeshCollider(
             closestNormal = normal;
         };
 
-    if (indices.empty() == false)
+    // ========================================================================
+    // Triangle BVH candidate query
+    // ========================================================================
+    // GeometryはLocal SpaceでBVH化し、RayだけをLocalへ逆変換します。
+    // Query helperが非特異Transformを扱えない場合やBVH Buildに失敗した場合は、
+    // 既存の全Triangle走査へfallbackして正しさを維持します。
+    std::shared_ptr<const StaticMeshTriangleBVH> bvh;
+    std::vector<uint32_t> candidateTriangles;
+    if (QueryStaticMeshBVHByWorldRay(
+            origin,
+            direction,
+            maxFraction,
+            transform,
+            collider,
+            bvh,
+            candidateTriangles))
+    {
+        for (uint32_t triangleIndex : candidateTriangles)
+        {
+            const StaticMeshTriangleBVH::Triangle* triangle = bvh->GetTriangle(triangleIndex);
+            if (triangle == nullptr)
+            {
+                continue;
+            }
+
+            testTriangle(triangle->IndexA, triangle->IndexB, triangle->IndexC);
+        }
+    }
+    else if (indices.empty() == false)
     {
         // glTF Terrainの通常経路です。末尾に3未満の不完全Indexがあっても読み越さないよう、
         // index + 2 が範囲内のTriangleだけを評価します。
