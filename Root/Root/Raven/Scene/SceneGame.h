@@ -17,8 +17,20 @@
 namespace Raven
 {
 
+// ============================================================================
+// SceneGame
+// ============================================================================
+// Runtime Sceneとして通常のSceneライフサイクルを実装すると同時に、Scene View用に
+// SceneViewportRendererも実装します。
+//
+// Camera行列はSceneGameへミラーせず、描画時にCameraをRenderer::BeginScene()へ渡します。
+// Game ViewはPrimary SceneCamera、Scene Viewは渡されたEditor Cameraを同じRenderScene()へ
+// 流すことで、Material / PhysicsDebugを含む全描画がRenderer Camera Contextを共有します。
 class SceneGame : public Scene, public SceneViewportRenderer
 {
+    // Human検証LayerはSceneGame共通Materialを利用するため、最小限のprivateアクセスだけを許可します。
+    // Human Entity自体のLifetimeはHumanSkinningDebugLayer / SkinnedMeshSceneSpawner側が管理し、
+    // SceneGameへ所有権を移譲しません。
     friend class Gltf::HumanSkinningDebugLayer;
 
 public:
@@ -26,9 +38,12 @@ public:
         : m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
-        // Human/Terrainとも実Asset読込はOnCreate完了後の最初のUpdateまで遅延します。
-        // Terrain.glbが未配置でもLayer側で安全にskipするため、既存検証Sceneはそのまま利用できます。
+        // Human.glbが未配置でもLayer側が安全にskipします。
+        // 実際のGLB読込はSceneGame::OnCreate()完了後、最初のUpdateまで遅延されます。
         PushLayer(CreateScope<Gltf::HumanSkinningDebugLayer>(*this));
+
+        // TerrainもHumanと同じ遅延Load契約へ揃えます。
+        // Raven/Assets/Models/Terrain.glb が未配置なら既存検証Sceneを変更せずskipします。
         PushLayer(CreateScope<Gltf::TerrainStaticSceneLayer>(*this));
     }
 
@@ -38,6 +53,8 @@ public:
     virtual void OnRender() override;
     virtual void OnEvent(Event& e) override;
 
+    // Scene ViewはEditor Cameraをそのまま描画入口へ渡します。
+    // Runtime Cameraの状態を書き換えないため、Game ViewとScene ViewのCameraが完全に分離されます。
     void RenderWithCamera(const Camera& camera) override
     {
         RenderScene(camera);
@@ -55,11 +72,42 @@ private:
     void SpawnSphereBatch(int count);
     void ClearSphereBatch();
     int ComputeOptimizedSpawnCount() const;
+
+    // Box物理の目視確認用Entityを生成します。
+    // SceneGameは「何を置くか」だけを担当し、Cube頂点生成はPrimitiveMeshFactoryへ分離します。
     void SpawnBoxTestBody();
+
+    // AnimationClip -> Animator -> AnimatorComponent -> AnimationSystem の
+    // 一連の再生経路を目視確認するためのCubeを生成します。
+    // Physics Componentを付けないことで、Transformの所有者をAnimationSystemだけに限定します。
     void SpawnAnimationTestCube();
+
+    // StateMachine検証CubeへSpeed / Grounded / Jumpを自動入力します。
+    // Physicsや実入力に依存しない決定的なシーケンスにすることで、Transition実装だけを
+    // Scene上で切り分けて目視確認できるようにします。
     void UpdateAnimationStateMachineTest(float deltaTime);
+
+    // ========================================================================
+    // Runtime Camera
+    // ========================================================================
+    // Primary Camera EntityのTransform/CameraComponentを同期し、実際に利用するSceneCameraを返します。
+    // SceneGameはView/Projectionを保持せず、Cameraオブジェクト自体を正規データとして扱います。
     SceneCamera* UpdateRuntimeCamera();
+
+    // 指定CameraでScene本体を描画する共通入口です。
+    // Game View / Scene Viewの差は引数Cameraだけに限定し、Renderer Camera Contextを確定します。
+    //
+    // 描画対象はSceneGame固有の所有リストではなく、
+    // View<TransformComponent, MeshRendererComponent>()を正規データとして直接走査します。
+    // そのためCloth/JellyなどScene外部のLayerが生成した通常Entityも、MeshRendererComponentを
+    // 持つだけでGame View / Scene Viewの両方へ自動的に参加できます。
     void RenderScene(const Camera& camera);
+
+    // ========================================================================
+    // Mouse Drag Impulse / Physics Ray Picking
+    // ========================================================================
+    // Mouse PickingはPrimary SceneCameraのViewを直接参照します。
+    // SceneGameにCamera行列を複製しないことで、描画Cameraとの状態二重化を防ぎます。
     void UpdateMouseDragImpulse();
     bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
 
@@ -78,6 +126,12 @@ private:
     TextureLibrary m_TextureLibrary;
     Ref<Texture> m_Texture;
 
+    // ========================================================================
+    // SceneGame-owned Entity handles
+    // ========================================================================
+    // 「Sceneに存在する全Entity」を別配列で複製管理しません。
+    // SceneGameが生成責務を持つ単体Entityは個別Handle、複数SphereはSphereBody配列が所有情報を保持します。
+    // 外部Layerが生成したCloth/Jelly/Humanは各Layer自身が破棄責務を持ちます。
     std::vector<SphereBody> m_SphereBodies;
     std::unordered_map<EntityID, size_t> m_SphereBodyIndexByEntity;
     Entity m_RuntimeCameraEntity;
@@ -86,21 +140,42 @@ private:
     Entity m_BoxEntity;
     Entity m_AnimationTestEntity;
 
+    // StateMachine検証用の周期タイマーです。Animation再生時間とは分離し、
+    // Parameter入力シーケンスの時間だけを管理します。
     float m_AnimationStateMachineTime = 0.0f;
 
+    // ========================================================================
+    // Debug Visualization
+    // ========================================================================
+    // Physics Debug: H/B/O/F/T/P/C/N
+    // Animation Debug: Y
+    // PhysicsDebugRendererはRenderer Camera Contextを参照するため、Game ViewではSceneCamera、
+    // Scene ViewではEditor Cameraへ自動的に追従します。
     ph::PhysicsDebugRenderer m_PhysicsDebugRenderer;
     AnimationDebugOverlayRenderer m_AnimationDebugRenderer;
 
     bool m_WasSpacePressed = false;
+
+    // 左ボタンの前フレーム状態を保持してPressed/Releasedのエッジを検出します。
     bool m_WasLeftMousePressed = false;
     Entity m_DraggedEntity{};
     math::Vec2 m_DragStartScreen{};
+
+    // RayCastが返した「実際にクリックしたワールド座標」です。
+    // ドラッグ終了まで保持し、AddImpulseAtPoint()の作用点として使用します。
     math::Vec3 m_DragHitPoint{};
 
+    // Projectionとマウス座標を対応させるViewportサイズ。
+    // ※Windowサイズに合わせたほうがいいかも。TODO：合わせる対応をする
     float m_ViewportWidth = 1920.0f;
     float m_ViewportHeight = 1080.0f;
+
+    // Mouse Ray生成ではPrimary SceneCameraのFOVを毎回同期して利用します。
     float m_CameraFovY = 0.7854f;
     float m_MouseRayMaxDistance = 1000.0f;
+
+    // ドラッグ距離1pxあたりのImpulse量。
+    // 長すぎるドラッグによる極端な速度を避けるため最大ピクセル数も制限します。
     float m_DragImpulsePerPixel = 0.035f;
     float m_MaxDragPixels = 350.0f;
     float m_MinDragPixels = 3.0f;
