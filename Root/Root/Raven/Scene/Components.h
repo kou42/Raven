@@ -14,6 +14,7 @@ namespace Raven
 {
 
 class Mesh;
+class MeshGeometry;
 class Material;
 class MeshDeformationInstance;
 class Animator;
@@ -211,12 +212,13 @@ struct RigidBodyComponent
 
 enum class ColliderType
 {
-    // 既存のSphere / Box / Planeの数値は保存データやEditor連携との互換性のため維持します。
-    // Capsuleは末尾へ追加し、既存enum値をずらさないようにします。
+    // 既存のSphere / Box / Plane / Capsuleの数値は保存データやEditor連携との互換性のため維持します。
+    // 新しいColliderは必ず末尾へ追加し、既存enum値をずらさないようにします。
     Sphere,
     Box,
     Plane,
-    Capsule
+    Capsule,
+    StaticMesh
 };
 
 // ============================================================================
@@ -248,6 +250,11 @@ struct ColliderComponent
 
     math::Vec3 PlaneNormal{ 0.0f, 1.0f, 0.0f };
     float PlaneOffset = 0.0f;
+
+    // StaticMesh ColliderはRendererのGPU Meshではなく、CPU側の論理頂点・Indexを共有します。
+    // glTF Terrainで描画と衝突が同じGeometryを参照でき、頂点データの二重所有を避けます。
+    // 現段階では静的Terrain用途に限定し、Dynamic Mesh変形との同期は扱いません。
+    std::shared_ptr<const MeshGeometry> StaticMeshGeometry = nullptr;
 
     float Restitution = 0.2f;
     float StaticFriction = 0.6f;
