@@ -9,11 +9,23 @@ namespace Raven
 {
 namespace Gltf
 {
+namespace
+{
+// Terrain.glbの「Geometryは存在するが画面に出ない」問題を切り分ける一時診断スイッチです。
+// trueではImported Static SceneだけをTexture / Normal / Lighting非依存の固定Magentaへ置換します。
+// 原因特定後はfalseへ戻し、通常のglTF Lit Material経路を再確認します。
+constexpr bool ForceStaticSceneVisibilityDiagnosticMaterial = true;
+}
 
 Ref<Material> GltfLitMaterialBridge::Create(
     const ImportedMaterial& importedMaterial,
     const DirectionalLightSettings& light)
 {
+    if (ForceStaticSceneVisibilityDiagnosticMaterial == true)
+    {
+        return LitMaterialFactory::CreateStaticSceneVisibilityDiagnostic();
+    }
+
     Ref<Texture> baseColorTexture;
     if (importedMaterial.BaseColorTexture != nullptr
         && importedMaterial.BaseColorTexture->IsValid())
