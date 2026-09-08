@@ -53,6 +53,9 @@ private:
 };
 
 // StaticSceneImporterのAsset変換結果をScene/ECSへ接続するBridgeです。
+// 共通Materialを明示する旧経路に加え、ImportedMaterialをDirectional Lit Materialへ
+// 自動変換する経路を提供します。これによりTerrain GLBのbaseColorFactor/Textureを保持したまま
+// Primitiveごとに適切なMaterialを割り当てられます。
 class StaticSceneSpawner
 {
 public:
