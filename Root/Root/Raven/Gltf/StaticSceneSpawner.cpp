@@ -338,6 +338,42 @@ bool TerrainStaticSceneLayer::TryLoadTerrain()
         return false;
     }
 
+    // Terrain固有の責務として、描画PrimitiveへStaticMesh Colliderを接続します。
+    // GenericなStaticSceneSpawnerは背景オブジェクトや装飾Meshにも再利用するため、
+    // すべてのStatic SceneへColliderを自動付与する設計にはしません。
+    //
+    // ColliderはRendererのGPU Meshではなく同じCPU MeshGeometryを共有します。
+    // これにより描画とPhysicsで頂点/Indexを二重所有せず、Broad Phase AABBと
+    // Triangle RayCast / 後続Capsule-vs-Triangleへ同じGeometryを渡せます。
+    for (SpawnedStaticPrimitive& primitive : m_TerrainInstance.GetPrimitives())
+    {
+        if (static_cast<bool>(primitive.EntityHandle) == false
+            || m_Scene.IsEntityAlive(primitive.EntityHandle) == false)
+        {
+            continue;
+        }
+
+        MeshRendererComponent* meshRenderer =
+            m_Scene.TryGetComponent<MeshRendererComponent>(primitive.EntityHandle.GetIndex());
+        if (meshRenderer == nullptr || meshRenderer->Mesh == nullptr)
+        {
+            StaticSceneSpawner::Destroy(m_Scene, m_TerrainInstance);
+            return SetError(&m_LastError, "Terrain Primitiveの描画Meshが見つかりません");
+        }
+
+        const Ref<MeshGeometry>& geometry = meshRenderer->Mesh->GetGeometry();
+        if (geometry == nullptr)
+        {
+            StaticSceneSpawner::Destroy(m_Scene, m_TerrainInstance);
+            return SetError(&m_LastError, "Terrain PrimitiveのMeshGeometryがnullptrです");
+        }
+
+        ColliderComponent collider{};
+        collider.Type = ColliderType::StaticMesh;
+        collider.StaticMeshGeometry = geometry;
+        primitive.EntityHandle.AddComponent<ColliderComponent>(std::move(collider));
+    }
+
     std::cout
         << "[TerrainStaticScene] Terrain GLBを読み込みました: "
         << m_ModelPath << " (Primitive="
