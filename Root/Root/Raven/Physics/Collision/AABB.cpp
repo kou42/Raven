@@ -1,6 +1,7 @@
 #include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/OBB.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 
 namespace Raven::ph
 {
@@ -88,6 +89,60 @@ bool ComputeColliderAABB(
             std::max(capsule.SegmentA.y, capsule.SegmentB.y),
             std::max(capsule.SegmentA.z, capsule.SegmentB.z)
         } + radius;
+        return true;
+    }
+
+    if (collider.Type == ColliderType::StaticMesh)
+    {
+        if (collider.StaticMeshGeometry == nullptr)
+        {
+            return false;
+        }
+
+        const auto& vertices = collider.StaticMeshGeometry->GetVertices();
+        if (vertices.empty())
+        {
+            return false;
+        }
+
+        // ====================================================================
+        // Static Mesh -> World AABB
+        // ====================================================================
+        // Terrainは回転・非一様Scaleを含むTransformを持てるため、local AABBのMin/Maxだけを
+        // 変換する方法ではworld boundsを正しく包めません。初期構築時は全頂点をworldへ変換し、
+        // 必ずMesh全体を包含するtight AABBを作ります。
+        //
+        // StaticMeshは静的用途に限定するため、このO(N)走査は通常Proxy作成時にだけ意味を持ちます。
+        // 将来大規模Terrainへ進む段階ではGeometry側にlocal boundsをcacheし、8 corner変換へ置換できます。
+        const math::Mat4 worldTransform = transform.GetTransform();
+        const auto transformPoint =
+            [&](const math::Vec3& localPoint) -> math::Vec3
+            {
+                const math::Vec4 worldPoint = worldTransform * math::Vec4{
+                    localPoint.x + collider.Offset.x,
+                    localPoint.y + collider.Offset.y,
+                    localPoint.z + collider.Offset.z,
+                    1.0f
+                };
+                return math::Vec3{ worldPoint.x, worldPoint.y, worldPoint.z };
+            };
+
+        math::Vec3 minimum = transformPoint(vertices.front().Position);
+        math::Vec3 maximum = minimum;
+
+        for (std::size_t index = 1; index < vertices.size(); ++index)
+        {
+            const math::Vec3 point = transformPoint(vertices[index].Position);
+            minimum.x = std::min(minimum.x, point.x);
+            minimum.y = std::min(minimum.y, point.y);
+            minimum.z = std::min(minimum.z, point.z);
+            maximum.x = std::max(maximum.x, point.x);
+            maximum.y = std::max(maximum.y, point.y);
+            maximum.z = std::max(maximum.z, point.z);
+        }
+
+        outAABB.Min = minimum;
+        outAABB.Max = maximum;
         return true;
     }
 
