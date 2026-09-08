@@ -208,12 +208,31 @@ struct AABB
 // 生成します。Dynamic Tree導入後は、このtight AABBをFat AABBへ拡張してLeafへ
 // 格納します。
 //
-// Sphere / Boxを包むBroad Phase用AABBを生成します。
+// Sphere / Box / Capsule / StaticMeshを包むBroad Phase用AABBを生成します。
 // Planeは無限形状なので有限AABBを作らずfalseを返します。
 bool ComputeColliderAABB(
     const TransformComponent& transform,
     const ColliderComponent& collider,
     AABB& outAABB)
 ;
+
+// ============================================================================
+// RayCastStaticMeshCollider
+// ============================================================================
+// StaticMesh ColliderのTriangle列へRayCastし、最も近い交点を返します。
+// Indexed Geometryと非Indexed Geometryの両方を扱い、Collider OffsetとEntity Transformを
+// AABB計算と同じ規約で適用します。
+//
+// 現段階は正しさを優先して全Triangleを走査します。Terrainが大規模化した段階では
+// Triangle BVHなどの局所Acceleration StructureをこのAPI内部へ追加し、呼び出し側を変えずに
+// 候補Triangle数を削減する想定です。
+bool RayCastStaticMeshCollider(
+    const math::Vec3& origin,
+    const math::Vec3& direction,
+    float maxFraction,
+    const TransformComponent& transform,
+    const ColliderComponent& collider,
+    float& outFraction,
+    math::Vec3& outNormal);
 
 } // namespace Raven::ph
