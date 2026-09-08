@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "Raven/Math/MathVector.h"
@@ -83,6 +84,12 @@ public:
         }
         return &m_Triangles[triangleIndex];
     }
+
+    // StaticMeshGeometry単位でBVHを1回だけ構築し、同じGeometryを参照するCollider間で共有します。
+    // CacheはGeometryをweak_ptrで追跡するため、Scene破棄後にGeometry寿命を不必要に延長しません。
+    // Build失敗時はnullptrを返し、呼び出し側が従来の全Triangle走査へfallbackできます。
+    static std::shared_ptr<const StaticMeshTriangleBVH> GetOrBuildCached(
+        const std::shared_ptr<const MeshGeometry>& geometry);
 
     // Query AABBと重なるLeaf TriangleのIDをoutTriangleIndicesへ追記します。
     // 返却IDはGetTriangle()へ渡せるBVH内部Triangle IDです。
