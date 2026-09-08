@@ -39,6 +39,11 @@ public:
         const math::Vec4& baseColorFactor,
         const Ref<Texture>& baseColorTexture,
         const DirectionalLightSettings& light = DirectionalLightSettings{});
+
+    // Static Sceneの可視性問題をRenderer/Material層で切り分ける診断専用Materialです。
+    // Texture / Normal / Lightingを使わず固定色で描画し、Cullも無効化します。
+    // 本番表現用ではなく、Geometry -> Camera -> Rasterize経路の確認だけに使用します。
+    static Ref<Material> CreateStaticSceneVisibilityDiagnostic();
 };
 
 } // namespace Raven
