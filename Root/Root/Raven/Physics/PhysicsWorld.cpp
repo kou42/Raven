@@ -8,6 +8,7 @@
 #include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/RigidBodyDynamics.h"
+#include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/BroadPhase.inl"
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
@@ -231,6 +232,20 @@ bool RayCastCollider(
             direction,
             maxFraction,
             capsule,
+            outFraction,
+            outNormal);
+    }
+
+    if (collider.Type == ColliderType::StaticMesh)
+    {
+        // StaticMeshはBroad PhaseでMesh全体AABBまで絞り込まれています。
+        // ここで実TriangleへRayCastし、AABBだけのfalse positiveを除外します。
+        return RayCastStaticMeshCollider(
+            origin,
+            direction,
+            maxFraction,
+            transform,
+            collider,
             outFraction,
             outNormal);
     }
@@ -970,7 +985,7 @@ void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
     m_SolverDebugStatistics.VelocityIterations =
         std::max(m_SolverSettings.VelocityIterations, 1u);
 
-    // 実際の接触制約解決を実行し、結果のインパルスをデバッグ統計へ反映します。
+    // 実際の接触制約解決を実行し、結果のインパルスをデバッグ統計に反映します。
     SolveContactManifolds(scene, m_Manifolds, dt, m_SolverSettings);
     UpdateSolverDebugStatisticsAfterSolve();
 }

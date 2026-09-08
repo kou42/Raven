@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 #include "Raven/Physics/Collision/AABB.h"
@@ -9,6 +10,7 @@
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/RigidBodyDynamics.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Scene.h"
 
 namespace Raven::ph::tests
@@ -197,6 +199,71 @@ void RunOBBRayCastSelfTests()
     const math::Vec3 start{ aabb.Max.x - 0.02f, -2.0f, 0.0f };
     assert(aabb.RayCast(start, { 0.0f, 1.0f, 0.0f }, 10.0f, fraction, &normal));
     assert(box.RayCast(start, { 0.0f, 1.0f, 0.0f }, 10.0f, fraction, &normal) == false);
+}
+
+void RunStaticMeshRayCastSelfTests()
+{
+    Scene scene;
+    PhysicsWorld world;
+
+    // Terrainの最小モデルとして水平Quadを2 Triangleで構成します。
+    // Entity PositionとCollider Offsetを両方設定し、AABB計算とTriangle RayCastが
+    // 同じworld変換規約を使っていることも同時に確認します。
+    std::vector<MeshVertex> vertices{
+        MeshVertex{ math::Vec3{ -2.0f, 0.0f, -2.0f } },
+        MeshVertex{ math::Vec3{  2.0f, 0.0f, -2.0f } },
+        MeshVertex{ math::Vec3{  2.0f, 0.0f,  2.0f } },
+        MeshVertex{ math::Vec3{ -2.0f, 0.0f,  2.0f } }
+    };
+    std::vector<uint32_t> indices{ 0u, 1u, 2u, 0u, 2u, 3u };
+    const std::shared_ptr<MeshGeometry> geometry =
+        std::make_shared<MeshGeometry>(std::move(vertices), std::move(indices));
+
+    Entity terrain = scene.CreateEntity("StaticMeshRayCastTerrain");
+    terrain.GetComponent<TransformComponent>().Position = { 0.0f, 1.0f, 0.0f };
+
+    ColliderComponent& collider = terrain.AddComponent<ColliderComponent>();
+    collider.Type = ColliderType::StaticMesh;
+    collider.Offset = { 0.0f, 0.5f, 0.0f };
+    collider.StaticMeshGeometry = geometry;
+
+    const math::Vec3 rayOrigin{ 0.0f, 5.0f, 0.0f };
+    const math::Vec3 rayDirection{ 0.0f, -1.0f, 0.0f };
+
+    // 既定RayCastはMouse Picking向けにDynamicだけを見るため、RigidBodyを持たないTerrainは除外されます。
+    PhysicsRayCastHit defaultHit{};
+    assert(world.RayCast(scene, rayOrigin, rayDirection, 10.0f, defaultHit) == false);
+
+    PhysicsRayCastFilter filter = PhysicsRayCastFilter::All();
+    filter.IncludePlanes = false;
+
+    PhysicsRayCastHit hit{};
+    assert(world.RayCast(scene, rayOrigin, rayDirection, 10.0f, filter, hit));
+    assert(hit.HitEntity == terrain);
+    assert(NearlyEqual(hit.Fraction, 3.5f));
+    assert(NearlyEqual(hit.Point.x, 0.0f));
+    assert(NearlyEqual(hit.Point.y, 1.5f));
+    assert(NearlyEqual(hit.Point.z, 0.0f));
+    assert(NearlyEqual(hit.Normal.x, 0.0f));
+    assert(NearlyEqual(hit.Normal.y, 1.0f));
+    assert(NearlyEqual(hit.Normal.z, 0.0f));
+
+    // GroundQueryはPhysicsWorld::RayCastを共有するため、StaticMesh dispatchが接続されれば
+    // Character Controller用の床問い合わせも同じTerrain Triangleをそのまま利用できます。
+    PhysicsGroundQuerySettings groundSettings{};
+    groundSettings.MaxDistance = 3.0f;
+    groundSettings.IncludePlanes = false;
+
+    PhysicsGroundQueryHit groundHit{};
+    assert(world.GroundQuery(
+        scene,
+        math::Vec3{ 0.0f, 3.0f, 0.0f },
+        groundSettings,
+        groundHit));
+    assert(groundHit.HitEntity == terrain);
+    assert(NearlyEqual(groundHit.Distance, 1.5f));
+    assert(NearlyEqual(groundHit.Point.y, 1.5f));
+    assert(NearlyEqual(groundHit.Normal.y, 1.0f));
 }
 
 void RunSphereBoxSelfTests()
@@ -593,6 +660,7 @@ void RunPhysicsCollisionSelfTests()
     RunDynamicAABBTreeSelfTests();
     RunOBBFoundationSelfTests();
     RunOBBRayCastSelfTests();
+    RunStaticMeshRayCastSelfTests();
     RunSphereBoxSelfTests();
     RunBoxPlaneSelfTests();
     RunBoxBoxSelfTests();
