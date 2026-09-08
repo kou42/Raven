@@ -20,13 +20,8 @@ namespace Raven::ph
 // StaticMeshTriangleBVH
 // ============================================================================
 // StaticMesh ColliderのTriangle候補数を削減するためのローカル空間BVHです。
-//
 // GeometryのPositionをそのまま使って構築し、Entity Transform / Collider Offsetは
-// Query側でローカル空間へ変換して扱う想定です。Static Geometryは生成後に不変という
-// MeshGeometryの契約に合わせ、Refitではなく一度BuildしたTreeを再利用します。
-//
-// Nodeはvector上へ連続配置し、Leafはm_TriangleOrderの連続区間を参照します。
-// PointerをNode内に持たないため、vector再配置が起きてもTree構造が壊れません。
+// Query側でローカル空間へ変換して扱います。
 class StaticMeshTriangleBVH
 {
 public:
@@ -38,7 +33,6 @@ public:
         uint32_t IndexA = 0u;
         uint32_t IndexB = 0u;
         uint32_t IndexC = 0u;
-
         math::Vec3 BoundsMin{};
         math::Vec3 BoundsMax{};
         math::Vec3 Centroid{};
@@ -48,7 +42,6 @@ public:
     {
         math::Vec3 BoundsMin{};
         math::Vec3 BoundsMax{};
-
         uint32_t LeftChild = InvalidNode;
         uint32_t RightChild = InvalidNode;
         uint32_t FirstTriangle = 0u;
@@ -60,10 +53,30 @@ public:
         }
     };
 
+    // Queryの枝刈り効率を計測するための統計です。
+    // CandidateTriangleCountだけではTree内部でどれだけNodeを辿ったか分からないため、
+    // SAH等の分割戦略を比較する前段としてTraversalそのものを可視化します。
+    struct QueryStatistics
+    {
+        uint64_t VisitedNodeCount = 0u;
+        uint64_t RejectedNodeCount = 0u;
+        uint64_t VisitedLeafCount = 0u;
+        uint64_t TestedTriangleBoundsCount = 0u;
+        uint64_t RejectedTriangleBoundsCount = 0u;
+
+        void Clear()
+        {
+            VisitedNodeCount = 0u;
+            RejectedNodeCount = 0u;
+            VisitedLeafCount = 0u;
+            TestedTriangleBoundsCount = 0u;
+            RejectedTriangleBoundsCount = 0u;
+        }
+    };
+
     bool Build(
         const MeshGeometry& geometry,
         uint32_t maxTrianglesPerLeaf = DefaultMaxTrianglesPerLeaf);
-
     void Clear();
 
     bool IsEmpty() const { return m_Nodes.empty(); }
@@ -85,26 +98,23 @@ public:
         return &m_Triangles[triangleIndex];
     }
 
-    // StaticMeshGeometry単位でBVHを1回だけ構築し、同じGeometryを参照するCollider間で共有します。
-    // CacheはGeometryをweak_ptrで追跡するため、Scene破棄後にGeometry寿命を不必要に延長しません。
-    // Build失敗時はnullptrを返し、呼び出し側が従来の全Triangle走査へfallbackできます。
+    // Static Geometry単位でBVHを共有します。Dynamic GeometryはCache対象外です。
     static std::shared_ptr<const StaticMeshTriangleBVH> GetOrBuildCached(
         const std::shared_ptr<const MeshGeometry>& geometry);
 
-    // Query AABBと重なるLeaf TriangleのIDをoutTriangleIndicesへ追記します。
-    // 返却IDはGetTriangle()へ渡せるBVH内部Triangle IDです。
+    // statisticsは任意です。指定した場合はQuery開始時にClearして今回分だけを返します。
     void QueryAABB(
         const math::Vec3& queryMin,
         const math::Vec3& queryMax,
-        std::vector<uint32_t>& outTriangleIndices) const;
+        std::vector<uint32_t>& outTriangleIndices,
+        QueryStatistics* statistics = nullptr) const;
 
-    // Rayと交差するNodeだけを辿り、候補Triangle IDを追記します。
-    // Triangleそのものとの交差判定は呼び出し側で行います。
     void QueryRay(
         const math::Vec3& origin,
         const math::Vec3& direction,
         float maxFraction,
-        std::vector<uint32_t>& outTriangleIndices) const;
+        std::vector<uint32_t>& outTriangleIndices,
+        QueryStatistics* statistics = nullptr) const;
 
 private:
     uint32_t BuildNode(uint32_t firstTriangle, uint32_t triangleCount);
