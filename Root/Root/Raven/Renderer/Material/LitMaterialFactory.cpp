@@ -79,4 +79,37 @@ Ref<Material> LitMaterialFactory::CreateDirectionalLit(
     return CreateLitMaterial(baseColorFactor, baseColorTexture, light);
 }
 
+Ref<Material> LitMaterialFactory::CreateStaticSceneVisibilityDiagnostic()
+{
+    Ref<Shader> shader = Shader::Create(
+        "Raven/Assets/Shaders/Vertex/static_scene_visibility_debug.vert",
+        "Raven/Assets/Shaders/Fragment/static_scene_visibility_debug.frag");
+    if (shader == nullptr)
+    {
+        return nullptr;
+    }
+
+    PipelineSpecification pipelineSpecification{};
+    pipelineSpecification.DebugName = "Static Scene Visibility Diagnostic Pipeline";
+    pipelineSpecification.Shader = shader;
+    pipelineSpecification.Topology = PrimitiveTopology::Triangles;
+
+    // glTFのwinding / FrontFace解釈が原因でも強制表示できるよう、診断中はCullを無効にします。
+    // Depthは通常Sceneと同じ条件を維持し、奥行き関係そのものは壊さないようにします。
+    pipelineSpecification.Cull = CullMode::None;
+    pipelineSpecification.FrontFaceMode = FrontFace::CounterClockwise;
+    pipelineSpecification.DepthTest = true;
+    pipelineSpecification.DepthWrite = true;
+    pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
+    pipelineSpecification.Blend = false;
+
+    Ref<Pipeline> pipeline = Pipeline::Create(pipelineSpecification);
+    if (pipeline == nullptr)
+    {
+        return nullptr;
+    }
+
+    return CreateRef<Material>(pipeline);
+}
+
 } // namespace Raven
