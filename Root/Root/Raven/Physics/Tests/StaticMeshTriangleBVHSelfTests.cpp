@@ -115,6 +115,7 @@ void RunAABBQueryTest()
 
     assert(candidates.size() == 1u);
     assert(ContainsTriangleIndex(candidates, 1u));
+    assert(candidates.size() < bvh.GetTriangleCount());
 }
 
 void RunRayQueryTest()
@@ -144,6 +145,7 @@ void RunRayQueryTest()
 
     assert(candidates.size() == 1u);
     assert(ContainsTriangleIndex(candidates, 1u));
+    assert(candidates.size() < bvh.GetTriangleCount());
 
     candidates.clear();
     bvh.QueryRay(
