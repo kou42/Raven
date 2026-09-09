@@ -1,8 +1,5 @@
 ﻿#include "Renderer.h"
 
-#include <iostream>
-#include <string_view>
-
 #include "RenderCommand.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
@@ -11,21 +8,12 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
-#include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 
 namespace Raven
 {
-namespace
-{
-constexpr std::string_view StaticSceneVisibilityDiagnosticPipelineName =
-    "Static Scene Visibility Diagnostic Pipeline";
-
-// 診断Materialは毎frame描画されるため、Consoleを埋めないよう最初の1 Drawだけ詳細を出します。
-bool s_StaticSceneVisibilityDiagnosticDrawLogged = false;
-}
 
 RendererStatistics Renderer::s_Statistics{};
 RendererCameraContext Renderer::s_CameraContext{};
@@ -132,36 +120,6 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
         return;
     }
 
-    const Ref<Pipeline>& pipeline = material->GetPipeline();
-    bool logStaticSceneDiagnosticDraw = false;
-    if (pipeline != nullptr
-        && pipeline->GetSpecification().DebugName != nullptr
-        && std::string_view{ pipeline->GetSpecification().DebugName }
-            == StaticSceneVisibilityDiagnosticPipelineName
-        && s_StaticSceneVisibilityDiagnosticDrawLogged == false)
-    {
-        logStaticSceneDiagnosticDraw = true;
-
-        const Ref<MeshGeometry>& geometry = mesh->GetGeometry();
-        std::cout
-            << "[Renderer::Draw] StaticScene診断MaterialがDraw経路へ到達しました\n"
-            << "  CameraContext=" << (s_CameraContext.Valid ? "valid" : "invalid") << '\n'
-            << "  Pipeline=" << pipeline->GetSpecification().DebugName << '\n'
-            << "  VertexArray=" << (mesh->GetVertexArray() != nullptr ? "valid" : "nullptr") << '\n';
-
-        if (geometry != nullptr)
-        {
-            std::cout
-                << "  Vertices=" << geometry->GetVertices().size()
-                << " Indices=" << geometry->GetIndices().size()
-                << " Triangles=" << geometry->GetIndices().size() / 3u << '\n';
-        }
-        else
-        {
-            std::cout << "  Geometry=nullptr\n";
-        }
-    }
-
     // ========================================================================
     // Per-draw Camera Uniform
     // ========================================================================
@@ -180,12 +138,6 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
     material->SetUniform("u_Model", transform);
     material->Bind(RenderCommand::GetAPI());
     mesh->Draw();
-
-    if (logStaticSceneDiagnosticDraw == true)
-    {
-        std::cout << "  Mesh::Draw()まで実行しました\n";
-        s_StaticSceneVisibilityDiagnosticDrawLogged = true;
-    }
 }
 
 }
