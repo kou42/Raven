@@ -6,11 +6,13 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 
 #include <GLFW/glfw3.h>
 
 #include "Raven/Gltf/HumanoidSceneNormalization.h"
 #include "Raven/Gltf/SkinnedMeshRuntime.h"
+#include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -24,6 +26,50 @@ namespace Raven
 {
 namespace
 {
+
+// CharacterControllerDemoLayerはSceneへ複数配置される可能性もあるため、
+// 初回地表配置の完了状態をinstance pointer単位で保持します。
+// Demo Layerのprivate Headerへ一時的なTerrain依存Stateを増やさず、OnAttach/OnDetachで必ず破棄します。
+std::unordered_set<const CharacterControllerDemoLayer*> s_InitialGroundPlacementResolvedLayers;
+
+bool TryPlaceCharacterOnInitialStaticGround(
+    Scene& scene,
+    const CharacterControllerConfig& config,
+    TransformComponent& transform,
+    ph::PhysicsGroundQueryHit& outHit)
+{
+    constexpr float InitialProbeWorldY = 100.0f;
+    constexpr float InitialProbeMaxDistance = 200.0f;
+
+    ph::PhysicsGroundQuerySettings settings{};
+    settings.MaxDistance = InitialProbeMaxDistance;
+    settings.MaxSlopeRadians = config.MaxGroundSlopeRadians;
+    settings.IncludeStatic = true;
+    settings.IncludeKinematic = false;
+    settings.IncludeDynamic = false;
+
+    // SceneGameには従来検証用の無限Plane(Y=0)も存在します。
+    // TerrainがPlaneより上にある場合でも、初期配置の目的は実StaticMesh地形へ合わせることなので
+    // Planeは明示的に除外し、Terrain等の有限Static Colliderだけを探索します。
+    settings.IncludePlanes = false;
+
+    math::Vec3 probeOrigin = transform.Position;
+    probeOrigin.y = InitialProbeWorldY;
+
+    if (scene.GetPhysicsWorld().GroundQuery(
+            scene,
+            probeOrigin,
+            settings,
+            outHit) == false)
+    {
+        return false;
+    }
+
+    // CharacterControllerのPositionはCapsule中心ではなく足元Rootです。
+    // そのためGround hit pointへ直接合わせれば、次の通常Ground Query/Snapと同じ座標契約になります。
+    transform.Position.y = outHit.Point.y;
+    return true;
+}
 
 math::Vec2 ApplyCameraStickDeadZone(const math::Vec2& stick, float deadZone)
 {
@@ -252,6 +298,9 @@ bool DecomposeComposedTransform(
 
 void CharacterControllerDemoLayer::OnAttach()
 {
+    // Scene再生成時に前instanceの初期配置完了状態を持ち越さないよう、Attach境界で必ず未解決へ戻します。
+    s_InitialGroundPlacementResolvedLayers.erase(this);
+
     // ========================================================================
     // Character visual resource
     // ========================================================================
@@ -293,8 +342,8 @@ void CharacterControllerDemoLayer::OnAttach()
     // Character Controller root
     // ========================================================================
     // CharacterControllerではTransform::PositionをCapsuleの中心ではなく「足元Root」として扱います。
-    // SceneGameの床はY=0なので、初期RootもY=0へ置けば最初のGround Queryで安定して接地できます。
-    // 他の検証Entityと重なりにくいよう、初期位置だけ+Zへ離しています。
+    // XZは従来どおり他の検証Entityから離した位置を初期候補とし、Yは最初のScene Updateで
+    // Static Groundへ解決します。Terrainが存在しないSceneでは従来のY=0をfallbackとして維持します。
     m_CharacterRootTransform = TransformComponent{};
     m_CharacterRootTransform.Position = { 0.0f, 0.0f, 18.0f };
     m_CharacterRootTransform.Rotation = { 0.0f, 0.0f, 0.0f };
@@ -339,6 +388,8 @@ void CharacterControllerDemoLayer::OnAttach()
 
 void CharacterControllerDemoLayer::OnDetach()
 {
+    s_InitialGroundPlacementResolvedLayers.erase(this);
+
     DestroyHumanoidVisual();
 
     if (static_cast<bool>(m_CharacterEntity)
@@ -362,6 +413,48 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
     // 表示Entityの有無はGameplay/Physics更新の成立条件にしません。
     // Human/Cubeの表示初期化に失敗してもCharacterControllerの入力・衝突検証は継続できるようにします。
     const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.05f);
+
+    // ========================================================================
+    // Initial Static Ground placement
+    // ========================================================================
+    // TerrainStaticSceneLayerはSceneGame constructorでCharacter Layerより先に登録されているため、
+    // 最初のScene UpdateではTerrain GLB/StaticMesh Colliderの生成後にここへ到達します。
+    // OnAttach時点ではTerrainが遅延Load前なので、地表解決はこの初回Updateまで意図的に遅らせます。
+    if (s_InitialGroundPlacementResolvedLayers.find(this)
+        == s_InitialGroundPlacementResolvedLayers.end())
+    {
+        const float fallbackY = m_CharacterRootTransform.Position.y;
+        ph::PhysicsGroundQueryHit initialGroundHit{};
+        if (TryPlaceCharacterOnInitialStaticGround(
+                m_Scene,
+                m_CharacterController.GetConfig(),
+                m_CharacterRootTransform,
+                initialGroundHit) == true)
+        {
+            // Teleport相当の配置境界では前Scene/前位置のMoving Platform・Crush履歴を持ち越しません。
+            m_CharacterController.ResetMovingPlatformTracking();
+            m_CharacterController.ResetCrushTracking();
+            SyncVisualTransform();
+            UpdateGamepadCamera(0.0f);
+
+            std::cout
+                << "[CharacterController] 初期位置をStatic Groundへ配置しました: "
+                << "Y=" << fallbackY << " -> " << m_CharacterRootTransform.Position.y
+                << " Hit=(" << initialGroundHit.Point.x
+                << ", " << initialGroundHit.Point.y
+                << ", " << initialGroundHit.Point.z << ")\n";
+        }
+        else
+        {
+            // Terrain.glbが無い従来の検証SceneではY=0 PlaneをCharacterController自身が利用するため、
+            // 初期配置用Static Groundが見つからなくても起動失敗にはしません。
+            std::cout
+                << "[CharacterController] 初期Static Groundが見つからないため従来位置を使用します: Y="
+                << fallbackY << '\n';
+        }
+
+        s_InitialGroundPlacementResolvedLayers.insert(this);
+    }
 
     // ========================================================================
     // Gamepad diagnostic snapshot
