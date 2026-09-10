@@ -134,7 +134,9 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                 // Editor側でTrajectoryPredictorを再実行しないため、検索入力との不一致が発生しません。
                 ImGui::SeparatorText("Predicted Trajectory");
                 std::vector<MotionTrajectoryPoint> trajectory;
-                if (locomotionRuntime->GetMotionMatchingTrajectoryDebugInfo(trajectory) == true)
+                const bool hasTrajectory =
+                    locomotionRuntime->GetMotionMatchingTrajectoryDebugInfo(trajectory);
+                if (hasTrajectory == true)
                 {
                     for (std::size_t trajectoryIndex = 0u;
                         trajectoryIndex < trajectory.size();
@@ -158,6 +160,97 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                 else
                 {
                     ImGui::TextDisabled("Trajectory is available after the first successful Motion Matching update.");
+                }
+
+                // ====================================================================
+                // Search Candidates
+                // ====================================================================
+                // MotionMatcherが実検索の1回のDatabase走査中に保持したTop-Nです。
+                // CostをEditor側で再計算しないため、最良候補と表示順位は実際の検索判断と一致します。
+                ImGui::SeparatorText("Search Candidates");
+                if (motionMatching.SearchCandidates.empty() == false)
+                {
+                    for (std::size_t candidateIndex = 0u;
+                        candidateIndex < motionMatching.SearchCandidates.size();
+                        ++candidateIndex)
+                    {
+                        const MotionSearchCandidateDebugInfo& candidate =
+                            motionMatching.SearchCandidates[candidateIndex];
+
+                        ImGui::PushID(static_cast<int>(candidateIndex));
+                        const bool isBest = candidateIndex == 0u;
+                        const bool isPlayingFrame =
+                            motionMatching.HasSelection == true
+                            && candidate.FrameIndex == motionMatching.SelectedFrameIndex;
+
+                        const char* candidateStatus = isBest == true
+                            ? " [BEST]"
+                            : (isPlayingFrame == true ? " [PLAYING]" : "");
+
+                        if (ImGui::TreeNode(
+                                "Candidate",
+                                "#%zu  Frame %zu  Clip %u @ %.3fs  Cost %.6f%s",
+                                candidateIndex + 1u,
+                                candidate.FrameIndex,
+                                candidate.ClipIndex,
+                                candidate.ClipTime,
+                                candidate.Cost,
+                                candidateStatus))
+                        {
+                            if (hasTrajectory == true
+                                && candidate.Trajectory.size() == trajectory.size())
+                            {
+                                for (std::size_t pointIndex = 0u;
+                                    pointIndex < candidate.Trajectory.size();
+                                    ++pointIndex)
+                                {
+                                    const MotionTrajectoryPoint& queryPoint = trajectory[pointIndex];
+                                    const MotionTrajectoryPoint& candidatePoint = candidate.Trajectory[pointIndex];
+                                    const math::Vec3 positionDelta =
+                                        candidatePoint.Position - queryPoint.Position;
+                                    const math::Vec3 directionDelta =
+                                        candidatePoint.Direction - queryPoint.Direction;
+
+                                    ImGui::Text("+%.2fs", candidatePoint.TimeOffset);
+                                    ImGui::Text(
+                                        "  Query     Pos (%.3f, %.3f, %.3f) Dir (%.3f, %.3f, %.3f)",
+                                        queryPoint.Position.x,
+                                        queryPoint.Position.y,
+                                        queryPoint.Position.z,
+                                        queryPoint.Direction.x,
+                                        queryPoint.Direction.y,
+                                        queryPoint.Direction.z);
+                                    ImGui::Text(
+                                        "  Candidate Pos (%.3f, %.3f, %.3f) Dir (%.3f, %.3f, %.3f)",
+                                        candidatePoint.Position.x,
+                                        candidatePoint.Position.y,
+                                        candidatePoint.Position.z,
+                                        candidatePoint.Direction.x,
+                                        candidatePoint.Direction.y,
+                                        candidatePoint.Direction.z);
+                                    ImGui::Text(
+                                        "  Delta     Pos (%.3f, %.3f, %.3f) Dir (%.3f, %.3f, %.3f)",
+                                        positionDelta.x,
+                                        positionDelta.y,
+                                        positionDelta.z,
+                                        directionDelta.x,
+                                        directionDelta.y,
+                                        directionDelta.z);
+                                }
+                            }
+                            else
+                            {
+                                ImGui::TextDisabled("Candidate trajectory layout does not match the current query.");
+                            }
+
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("Search candidates are available after the first database search.");
                 }
 
                 // ====================================================================
