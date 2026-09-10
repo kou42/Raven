@@ -20,6 +20,7 @@
 
 #ifdef _DEBUG
 #include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
+#include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
@@ -38,11 +39,12 @@ int main()
     // ========================================================================
     // Debug Startup Self Tests
     // ========================================================================
-    // Character locomotionの速度選択とBlendTree/Animation Profileの回帰テストも
-    // 実際のDebug起動時に必ず通し、Sprint追加後の互換性退行を早い段階で検出します。
+    // Character locomotionの速度選択とBlendTree/Animation Profileの回帰テストに加えて、
+    // Motion Matching切替時のPose/速度連続性も実際のDebug起動時に必ず検証します。
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();
+    Raven::tests::RunPoseInertializerSelfTests();
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
     Raven::ph::tests::RunStaticMeshTriangleBVHSelfTests();
 
