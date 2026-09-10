@@ -11,17 +11,40 @@ namespace Raven
 {
 
 // ============================================================================
+// MotionPoseFeature
+// ============================================================================
+// Motion MatchingのPose検索に使用する1 Bone分の特徴量です。
+// PositionはRoot基準座標、VelocityはWorldで求めたBone速度を現在Root座標へ変換した値です。
+// BoneIndexを保持することで、後続のQuery生成・Debug表示時に特徴量の意味を失わないようにします。
+struct MotionPoseFeature
+{
+    BoneIndex Bone = InvalidBoneIndex;
+    math::Vec3 Position{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 Velocity{ 0.0f, 0.0f, 0.0f };
+};
+
+// ============================================================================
+// MotionPoseFeatureConfig
+// ============================================================================
+// Feature生成対象をSkeleton固有のBoneIndexで明示します。
+// Bone名検索を毎Frame行わず、Asset準備時に一度だけ解決したIndexを渡す想定です。
+struct MotionPoseFeatureConfig
+{
+    BoneIndex RootBone = InvalidBoneIndex;
+    std::vector<BoneIndex> PoseBones;
+};
+
+// ============================================================================
 // MotionFrame
 // ============================================================================
 // Motion Database内の1サンプルを「どのAnimationClipの何秒地点か」で表します。
-//
-// この段階ではPose / Trajectory Featureを保持しません。
-// まずClip群を一定周期の検索候補へ展開する責務だけを固定し、Feature生成・検索ロジックは
-// 後続実装でこのFrameへ追加できるよう、元Clipへ戻れる最小情報だけを保持します。
+// PoseFeaturesはBuildPoseFeatures()を実行した後に設定されます。
+// Trajectory Featureは後続実装で別責務として追加します。
 struct MotionFrame
 {
     std::uint32_t ClipIndex = 0;
     float Time = 0.0f;
+    std::vector<MotionPoseFeature> PoseFeatures;
 };
 
 // ============================================================================
@@ -30,8 +53,8 @@ struct MotionFrame
 // 複数のAnimationClipをMotion Matching用の固定周期サンプル列へ変換するAsset側データです。
 //
 // AnimationClip自身は再生状態を持たない既存設計を維持し、MotionDatabaseもCurrent Frameなどの
-// Runtime状態を持ちません。将来のMotion Matcher / Animatorが検索結果のFrameを選び、
-// ClipIndex + TimeからAnimationClip::Sample()を呼び出す構成を想定しています。
+// Runtime状態を持ちません。既存Animator / BlendTree / StateMachine経路には依存せず、
+// Motion Matchingを使用するRuntimeだけがこのDatabaseを参照する構成にします。
 class MotionDatabase
 {
 public:
@@ -49,6 +72,14 @@ public:
     // 二重登録されるのを避けるため、この基盤段階では終端を含めません。
     bool Build(float sampleRate);
 
+    // Build()済みの全MotionFrameについて、指定BoneのPose Featureを生成します。
+    // RootBoneはSkeleton階層のRootである必要があります。Root以外を許可するとGlobal Transformの
+    // 逆変換が別途必要になり座標系契約が曖昧になるため、まずは明示的に制限します。
+    // PoseBonesの重複、不正Index、空リストは拒否し、失敗時は全FrameのFeatureを空へ戻します。
+    bool BuildPoseFeatures(
+        const Skeleton& skeleton,
+        const MotionPoseFeatureConfig& config);
+
     std::size_t GetClipCount() const { return m_Clips.size(); }
     std::size_t GetFrameCount() const { return m_Frames.size(); }
     float GetSampleRate() const { return m_SampleRate; }
@@ -57,6 +88,9 @@ public:
     const MotionFrame* GetFrame(std::size_t frameIndex) const;
 
     const std::vector<MotionFrame>& GetFrames() const { return m_Frames; }
+
+private:
+    void ClearPoseFeatures();
 
 private:
     std::vector<std::shared_ptr<AnimationClip>> m_Clips;
