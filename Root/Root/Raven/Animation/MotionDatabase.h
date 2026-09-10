@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -35,16 +36,63 @@ struct MotionPoseFeatureConfig
 };
 
 // ============================================================================
+// MotionTrajectoryPoint
+// ============================================================================
+// 現在Rootから見た将来Rootの位置・向きを表します。
+// Raven Character Controllerは+ZをForwardとしてYawを決定しているため、Directionも+Z基準です。
+struct MotionTrajectoryPoint
+{
+    float TimeOffset = 0.0f;
+    math::Vec3 Position{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 Direction{ 0.0f, 0.0f, 1.0f };
+};
+
+struct MotionTrajectoryFeatureConfig
+{
+    BoneIndex RootBone = InvalidBoneIndex;
+    std::vector<float> FutureTimeOffsets;
+};
+
+// ============================================================================
 // MotionFrame
 // ============================================================================
 // Motion Database内の1サンプルを「どのAnimationClipの何秒地点か」で表します。
-// PoseFeaturesはBuildPoseFeatures()を実行した後に設定されます。
-// Trajectory Featureは後続実装で別責務として追加します。
 struct MotionFrame
 {
     std::uint32_t ClipIndex = 0;
     float Time = 0.0f;
     std::vector<MotionPoseFeature> PoseFeatures;
+    std::vector<MotionTrajectoryPoint> Trajectory;
+};
+
+// ============================================================================
+// MotionSearchQuery / Result
+// ============================================================================
+// QueryはDatabaseと同じRoot基準座標へ変換済みの値だけを保持します。
+// Character ControllerやAnimatorへの依存をここへ持ち込まず、Query生成はRuntime側へ分離します。
+struct MotionSearchQuery
+{
+    std::vector<MotionPoseFeature> PoseFeatures;
+    std::vector<MotionTrajectoryPoint> Trajectory;
+};
+
+struct MotionSearchWeights
+{
+    float PosePosition = 1.0f;
+    float PoseVelocity = 1.0f;
+    float TrajectoryPosition = 1.0f;
+    float TrajectoryDirection = 1.0f;
+};
+
+struct MotionSearchResult
+{
+    std::size_t FrameIndex = std::numeric_limits<std::size_t>::max();
+    float Cost = std::numeric_limits<float>::max();
+
+    bool IsValid() const
+    {
+        return FrameIndex != std::numeric_limits<std::size_t>::max();
+    }
 };
 
 // ============================================================================
@@ -58,27 +106,29 @@ struct MotionFrame
 class MotionDatabase
 {
 public:
-    // nullptrや同一Clipの重複登録は、検索候補の無効化・重複化を防ぐため拒否します。
     bool AddClip(std::shared_ptr<AnimationClip> clip);
-
     void Clear();
 
-    // 登録済みClipをsampleRate HzでMotionFrame列へ展開します。
-    // sampleRate <= 0、Clip未登録、Duration <= 0のClipを含む場合はfalseを返し、
-    // 部分的なDatabaseを残さないようFrame列を空にします。
-    //
-    // 各Clipは [0, Duration) を一定間隔でサンプルします。
-    // Duration地点はLoop Clipでは0秒地点と重複しやすく、Motion Matching候補として
-    // 二重登録されるのを避けるため、この基盤段階では終端を含めません。
+    // 登録済みClipをsampleRate Hzで [0, Duration) のMotionFrame列へ展開します。
     bool Build(float sampleRate);
 
-    // Build()済みの全MotionFrameについて、指定BoneのPose Featureを生成します。
-    // RootBoneはSkeleton階層のRootである必要があります。Root以外を許可するとGlobal Transformの
-    // 逆変換が別途必要になり座標系契約が曖昧になるため、まずは明示的に制限します。
-    // PoseBonesの重複、不正Index、空リストは拒否し、失敗時は全FrameのFeatureを空へ戻します。
+    // 指定BoneのRoot-relative Position / Velocityを全Frameへ生成します。
     bool BuildPoseFeatures(
         const Skeleton& skeleton,
         const MotionPoseFeatureConfig& config);
+
+    // 現在Root基準で将来のRoot Position / Directionを全Frameへ生成します。
+    // FutureTimeOffsetsは0より大きい昇順値を要求します。
+    bool BuildTrajectoryFeatures(
+        const Skeleton& skeleton,
+        const MotionTrajectoryFeatureConfig& config);
+
+    // 全Frameを線形走査し、重み付き二乗距離が最小の候補を返します。
+    // 最適化構造は検索仕様を固めてから追加し、まず結果の正しさを優先します。
+    bool FindBestMatch(
+        const MotionSearchQuery& query,
+        const MotionSearchWeights& weights,
+        MotionSearchResult& outResult) const;
 
     std::size_t GetClipCount() const { return m_Clips.size(); }
     std::size_t GetFrameCount() const { return m_Frames.size(); }
@@ -86,11 +136,11 @@ public:
 
     const std::shared_ptr<AnimationClip>& GetClip(std::size_t clipIndex) const;
     const MotionFrame* GetFrame(std::size_t frameIndex) const;
-
     const std::vector<MotionFrame>& GetFrames() const { return m_Frames; }
 
 private:
     void ClearPoseFeatures();
+    void ClearTrajectoryFeatures();
 
 private:
     std::vector<std::shared_ptr<AnimationClip>> m_Clips;
