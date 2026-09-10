@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Raven
 {
@@ -71,6 +72,10 @@ public:
 
     bool GetDebugInfo(CharacterMotionMatchingRuntimeDebugInfo& outInfo) const;
 
+    // 直近UpdateでMotionMatcherへ渡したQueryの将来TrajectoryだけをSnapshotとして返します。
+    // Editor側でCharacterTrajectoryPredictorを再実行せず、実際の検索入力をそのまま可視化できます。
+    bool GetTrajectoryDebugInfo(std::vector<MotionTrajectoryPoint>& outTrajectory) const;
+
     bool GetInertializationBoneDebugInfo(
         BoneIndex boneIndex,
         PoseInertializerBoneDebugInfo& outInfo) const;
@@ -81,6 +86,8 @@ private:
     MotionPoseFeatureConfig m_PoseFeatures{};
     MotionTrajectoryFeatureConfig m_TrajectoryFeatures{};
     CharacterTrajectoryPredictorConfig m_PredictorConfig{};
+    MotionSearchQuery m_LastQuery{};
+    bool m_HasLastQuery = false;
     bool m_Configured = false;
 };
 
