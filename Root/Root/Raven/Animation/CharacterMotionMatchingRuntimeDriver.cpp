@@ -215,6 +215,7 @@ bool CharacterMotionMatchingRuntimeDriver::GetDebugInfo(
     outInfo.ClipIndex = matcher->GetCurrentClipIndex();
     outInfo.ClipTime = matcher->GetCurrentTime();
     outInfo.SearchCost = matcher->GetLastSearchCost();
+    outInfo.SearchCandidates = matcher->GetLastSearchCandidates();
     outInfo.Inertializing = matcher->IsInertializing();
     outInfo.InertializationElapsedTime = matcher->GetInertializationElapsedTime();
     return true;
