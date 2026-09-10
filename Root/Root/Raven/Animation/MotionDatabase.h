@@ -70,13 +70,8 @@ struct MotionSearchResult
     }
 };
 
-// ============================================================================
-// MotionFeatureNormalization
-// ============================================================================
-// Feature種別ごとにDatabase全Frameから求めた平均・標準偏差です。
-// 現段階では各Vec3のXYZを同一Feature種別のScalar集合として集計します。
-// Bone/Trajectory slotごとの過学習的なScale差を避けつつ、m と m/s とDirectionという
-// 単位差を検索Costから取り除くことを優先した最初のNormalizationです。
+// Feature種別ごとのDatabase統計です。平均はDebug/分析用、標準偏差は検索Scale補正に使います。
+// XYZを同じFeature種別のScalar集合として集計し、まず単位差(m / m/s / direction)を除去します。
 struct MotionFeatureNormalization
 {
     float PosePositionMean = 0.0f;
@@ -95,7 +90,6 @@ class MotionDatabase
 public:
     bool AddClip(std::shared_ptr<AnimationClip> clip);
     void Clear();
-
     bool Build(float sampleRate);
 
     bool BuildPoseFeatures(
@@ -106,12 +100,12 @@ public:
         const Skeleton& skeleton,
         const MotionTrajectoryFeatureConfig& config);
 
-    // Pose / Trajectory Feature構築後に呼び、Databaseの単位Scaleを統計化します。
-    // Featureを再構築した場合は、検索前にこの関数も再実行してください。
+    // BuildPoseFeatures / BuildTrajectoryFeaturesの後に呼びます。
+    // Featureを再構築した場合は検索前に必ず再実行し、統計とFeature内容を同期させます。
     bool BuildFeatureNormalization();
 
-    // 正規化距離 ||delta / sigma||^2 は raw距離へ 1/sigma^2 のWeightを掛けることと等価です。
-    // その性質を使い、既存FindBestMatch / StayBonus経路を変更せず同一Cost規約へ揃えます。
+    // ||delta / sigma||^2 == ||delta||^2 / sigma^2 を利用してWeightへ正規化を畳み込みます。
+    // 既存FindBestMatchとMotionMatcherのContinuation Costを同じ式のまま利用できます。
     bool MakeNormalizedSearchWeights(
         const MotionSearchWeights& semanticWeights,
         MotionSearchWeights& outWeights) const;
