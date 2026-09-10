@@ -24,6 +24,7 @@ struct CharacterMotionMatchingRuntimeDebugInfo
     std::uint32_t ClipIndex = 0u;
     float ClipTime = 0.0f;
     float SearchCost = 0.0f;
+    std::vector<MotionSearchCandidateDebugInfo> SearchCandidates;
     bool Inertializing = false;
     float InertializationElapsedTime = 0.0f;
 };
