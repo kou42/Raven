@@ -1,11 +1,54 @@
 #include "Raven/Animation/MotionDatabase.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
 
 namespace Raven
 {
+namespace
+{
+
+math::Vec3 ExtractTranslation(const math::Mat4& matrix)
+{
+    return {
+        matrix.m[0][3],
+        matrix.m[1][3],
+        matrix.m[2][3]
+    };
+}
+
+math::Vec3 TransformPoint(const math::Mat4& matrix, const math::Vec3& point)
+{
+    const math::Vec4 transformed = matrix * math::Vec4(point, 1.0f);
+    return { transformed.x, transformed.y, transformed.z };
+}
+
+math::Vec3 TransformVector(const math::Mat4& matrix, const math::Vec3& vector)
+{
+    // w=0として扱い、Rootの平行移動成分をBone速度へ混ぜません。
+    const math::Vec4 transformed = matrix * math::Vec4(vector, 0.0f);
+    return { transformed.x, transformed.y, transformed.z };
+}
+
+bool ContainsDuplicateBoneIndex(const std::vector<BoneIndex>& boneIndices)
+{
+    for (std::size_t i = 0; i < boneIndices.size(); ++i)
+    {
+        for (std::size_t j = i + 1; j < boneIndices.size(); ++j)
+        {
+            if (boneIndices[i] == boneIndices[j])
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+} // namespace
 
 bool MotionDatabase::AddClip(std::shared_ptr<AnimationClip> clip)
 {
@@ -117,7 +160,7 @@ bool MotionDatabase::Build(float sampleRate)
             // 浮動小数点誤差があっても維持します。
             if (frame.Time < duration)
             {
-                m_Frames.emplace_back(frame);
+                m_Frames.emplace_back(std::move(frame));
             }
         }
     }
@@ -128,6 +171,113 @@ bool MotionDatabase::Build(float sampleRate)
     }
 
     m_SampleRate = sampleRate;
+    return true;
+}
+
+bool MotionDatabase::BuildPoseFeatures(
+    const Skeleton& skeleton,
+    const MotionPoseFeatureConfig& config)
+{
+    ClearPoseFeatures();
+
+    if (m_Frames.empty() == true || m_SampleRate <= 0.0f)
+    {
+        return false;
+    }
+
+    if (skeleton.IsValidBoneIndex(config.RootBone) == false)
+    {
+        return false;
+    }
+
+    // 現段階ではRoot自身のLocal Transformから安全に逆行列を作るため、
+    // Skeleton階層のRoot Boneだけを基準Boneとして許可します。
+    if (skeleton.GetBone(config.RootBone).Parent != InvalidBoneIndex)
+    {
+        return false;
+    }
+
+    if (config.PoseBones.empty() == true || ContainsDuplicateBoneIndex(config.PoseBones) == true)
+    {
+        return false;
+    }
+
+    for (BoneIndex boneIndex : config.PoseBones)
+    {
+        if (skeleton.IsValidBoneIndex(boneIndex) == false)
+        {
+            return false;
+        }
+    }
+
+    const float sampleInterval = 1.0f / m_SampleRate;
+
+    SkeletonPose currentPose;
+    SkeletonPose previousPose;
+    SkeletonPose nextPose;
+
+    for (MotionFrame& frame : m_Frames)
+    {
+        if (frame.ClipIndex >= m_Clips.size())
+        {
+            ClearPoseFeatures();
+            return false;
+        }
+
+        const std::shared_ptr<AnimationClip>& clip = m_Clips[frame.ClipIndex];
+        if (clip == nullptr)
+        {
+            ClearPoseFeatures();
+            return false;
+        }
+
+        const float duration = clip->GetDuration();
+        const float previousTime = std::max(0.0f, frame.Time - sampleInterval);
+        const float nextTime = std::min(duration, frame.Time + sampleInterval);
+        const float velocityDeltaTime = nextTime - previousTime;
+
+        if (velocityDeltaTime <= 0.0f)
+        {
+            ClearPoseFeatures();
+            return false;
+        }
+
+        if (clip->Sample(skeleton, frame.Time, currentPose) == false ||
+            clip->Sample(skeleton, previousTime, previousPose) == false ||
+            clip->Sample(skeleton, nextTime, nextPose) == false)
+        {
+            ClearPoseFeatures();
+            return false;
+        }
+
+        // Root Boneは階層Rootに限定しているため、そのLocal TransformはGlobal Transformと同じです。
+        // Bone位置はRoot Transform全体の逆変換、Bone速度はw=0で同じ逆変換を適用し、
+        // CharacterのWorld位置・向きに依存しない検索特徴量へ変換します。
+        const math::Mat4 rootInverse = currentPose.GetLocalTransform(config.RootBone).ToInverseMatrix();
+
+        frame.PoseFeatures.reserve(config.PoseBones.size());
+
+        for (BoneIndex boneIndex : config.PoseBones)
+        {
+            const math::Vec3 currentWorldPosition =
+                ExtractTranslation(currentPose.GetGlobalTransform(boneIndex));
+            const math::Vec3 previousWorldPosition =
+                ExtractTranslation(previousPose.GetGlobalTransform(boneIndex));
+            const math::Vec3 nextWorldPosition =
+                ExtractTranslation(nextPose.GetGlobalTransform(boneIndex));
+
+            const math::Vec3 worldVelocity =
+                (nextWorldPosition - previousWorldPosition) / velocityDeltaTime;
+
+            MotionPoseFeature feature{};
+            feature.Bone = boneIndex;
+            feature.Position = TransformPoint(rootInverse, currentWorldPosition);
+            feature.Velocity = TransformVector(rootInverse, worldVelocity);
+
+            frame.PoseFeatures.emplace_back(feature);
+        }
+    }
+
     return true;
 }
 
@@ -151,6 +301,14 @@ const MotionFrame* MotionDatabase::GetFrame(std::size_t frameIndex) const
     }
 
     return &m_Frames[frameIndex];
+}
+
+void MotionDatabase::ClearPoseFeatures()
+{
+    for (MotionFrame& frame : m_Frames)
+    {
+        frame.PoseFeatures.clear();
+    }
 }
 
 } // namespace Raven
