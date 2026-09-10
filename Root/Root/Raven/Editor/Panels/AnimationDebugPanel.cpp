@@ -7,6 +7,8 @@
 
 #include <imgui.h>
 
+#include <vector>
+
 namespace Raven
 {
 namespace
@@ -125,30 +127,101 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                     motionMatching.Inertializing == true ? "Active" : "Inactive");
                 ImGui::Text("Inertialization Time: %.4f", motionMatching.InertializationElapsedTime);
 
-                ImGui::SeparatorText("Bone Inertialization");
-                ImGui::SetNextItemWidth(120.0f);
-                if (ImGui::InputInt("Bone Index", &m_SelectedInertializationBoneIndex))
+                // ====================================================================
+                // Predicted Trajectory
+                // ====================================================================
+                // Driverが実際にMotionMatcherへ渡した直近Queryを表示します。
+                // Editor側でTrajectoryPredictorを再実行しないため、検索入力との不一致が発生しません。
+                ImGui::SeparatorText("Predicted Trajectory");
+                std::vector<MotionTrajectoryPoint> trajectory;
+                if (locomotionRuntime->GetMotionMatchingTrajectoryDebugInfo(trajectory) == true)
                 {
-                    if (m_SelectedInertializationBoneIndex < 0)
+                    for (std::size_t trajectoryIndex = 0u;
+                        trajectoryIndex < trajectory.size();
+                        ++trajectoryIndex)
                     {
-                        m_SelectedInertializationBoneIndex = 0;
+                        const MotionTrajectoryPoint& point = trajectory[trajectoryIndex];
+                        ImGui::PushID(static_cast<int>(trajectoryIndex));
+                        ImGui::Text("+%.2fs", point.TimeOffset);
+                        ImGui::SameLine();
+                        ImGui::Text(
+                            "Pos (%.3f, %.3f, %.3f)  Dir (%.3f, %.3f, %.3f)",
+                            point.Position.x,
+                            point.Position.y,
+                            point.Position.z,
+                            point.Direction.x,
+                            point.Direction.y,
+                            point.Direction.z);
+                        ImGui::PopID();
                     }
-                }
-
-                PoseInertializerBoneDebugInfo boneDebug{};
-                const BoneIndex boneIndex = static_cast<BoneIndex>(m_SelectedInertializationBoneIndex);
-                if (locomotionRuntime->GetInertializationBoneDebugInfo(boneIndex, boneDebug) == true)
-                {
-                    ImGui::Text("Bone: %u", static_cast<unsigned int>(boneDebug.Bone));
-                    DrawVec3("Translation Offset", boneDebug.InitialTranslationOffset);
-                    DrawVec3("Rotation Offset", boneDebug.InitialRotationOffset);
-                    DrawVec3("Linear Velocity Error", boneDebug.InitialLinearVelocityError);
-                    DrawVec3("Angular Velocity Error", boneDebug.InitialAngularVelocityError);
                 }
                 else
                 {
-                    ImGui::TextDisabled(
-                        "Bone diagnostics are available while Pose Inertialization is active.");
+                    ImGui::TextDisabled("Trajectory is available after the first successful Motion Matching update.");
+                }
+
+                // ====================================================================
+                // Bone Inertialization
+                // ====================================================================
+                // 数値IndexだけでなくRuntime SkeletonのBone名から選べるようにします。
+                // 同名Boneが存在してもPushID(Index)によりImGui ID衝突を避けます。
+                ImGui::SeparatorText("Bone Inertialization");
+                const Skeleton* skeleton = locomotionRuntime->GetMotionMatchingSkeleton();
+                if (skeleton != nullptr && skeleton->GetBoneCount() > 0u)
+                {
+                    if (m_SelectedInertializationBoneIndex < 0
+                        || static_cast<std::size_t>(m_SelectedInertializationBoneIndex) >= skeleton->GetBoneCount())
+                    {
+                        m_SelectedInertializationBoneIndex = 0;
+                    }
+
+                    const BoneIndex selectedBoneIndex =
+                        static_cast<BoneIndex>(m_SelectedInertializationBoneIndex);
+                    const Bone& selectedBone = skeleton->GetBone(selectedBoneIndex);
+
+                    if (ImGui::BeginCombo("Bone", selectedBone.Name.c_str()))
+                    {
+                        for (std::size_t boneIndex = 0u; boneIndex < skeleton->GetBoneCount(); ++boneIndex)
+                        {
+                            const bool selected =
+                                boneIndex == static_cast<std::size_t>(m_SelectedInertializationBoneIndex);
+                            const Bone& bone = skeleton->GetBone(static_cast<BoneIndex>(boneIndex));
+
+                            ImGui::PushID(static_cast<int>(boneIndex));
+                            if (ImGui::Selectable(bone.Name.c_str(), selected))
+                            {
+                                m_SelectedInertializationBoneIndex = static_cast<int>(boneIndex);
+                            }
+                            if (selected == true)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::PopID();
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::Text("Bone Index: %d", m_SelectedInertializationBoneIndex);
+
+                    PoseInertializerBoneDebugInfo boneDebug{};
+                    if (locomotionRuntime->GetInertializationBoneDebugInfo(
+                            selectedBoneIndex,
+                            boneDebug) == true)
+                    {
+                        DrawVec3("Translation Offset", boneDebug.InitialTranslationOffset);
+                        DrawVec3("Rotation Offset", boneDebug.InitialRotationOffset);
+                        DrawVec3("Linear Velocity Error", boneDebug.InitialLinearVelocityError);
+                        DrawVec3("Angular Velocity Error", boneDebug.InitialAngularVelocityError);
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled(
+                            "Bone diagnostics are available while Pose Inertialization is active.");
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("Motion Matching Skeleton is unavailable.");
                 }
             }
             else if (currentMode == CharacterLocomotionRuntimeMode::BlendTree)
