@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <vector>
 
 namespace Raven
 {
@@ -22,9 +23,22 @@ struct MotionMatcherConfig
     bool Loop = true;
 };
 
+// 直近のDatabase検索でCostが小さかった候補を、検索本体と同じCost空間で保持します。
+// EditorがDatabase全体を再評価せず「なぜこのFrameが候補になったか」を確認するための診断値です。
+struct MotionSearchCandidateDebugInfo
+{
+    std::size_t FrameIndex = std::numeric_limits<std::size_t>::max();
+    std::uint32_t ClipIndex = 0u;
+    float ClipTime = 0.0f;
+    float Cost = std::numeric_limits<float>::max();
+    std::vector<MotionTrajectoryPoint> Trajectory;
+};
+
 class MotionMatcher
 {
 public:
+    static constexpr std::size_t SearchCandidateDebugCount = 5u;
+
     void SetDatabase(std::shared_ptr<const MotionDatabase> database);
     const std::shared_ptr<const MotionDatabase>& GetDatabase() const { return m_Database; }
 
@@ -49,6 +63,10 @@ public:
     std::uint32_t GetCurrentClipIndex() const { return m_CurrentClipIndex; }
     float GetCurrentTime() const { return m_CurrentTime; }
     float GetLastSearchCost() const { return m_LastSearchCost; }
+    const std::vector<MotionSearchCandidateDebugInfo>& GetLastSearchCandidates() const
+    {
+        return m_LastSearchCandidates;
+    }
     bool IsInertializing() const { return m_Inertializer.IsActive(); }
     float GetInertializationElapsedTime() const { return m_Inertializer.GetElapsedTime(); }
 
@@ -64,6 +82,12 @@ public:
 private:
     bool SelectFrame(const MotionSearchResult& searchResult);
     bool AdvanceCurrentTime(float deltaTime);
+
+    // Databaseを1回だけ走査し、最良候補とDebug用Top-Nを同時に構築します。
+    // Editor用に別検索を行わないため、表示候補と実際の切替判断のCostを完全に一致させます。
+    bool SearchDatabase(
+        const MotionSearchQuery& query,
+        MotionSearchResult& outBestResult);
 
     // 新しく選択したMotionの切替地点より1履歴Frame前をSampleします。
     // Source側の直前出力Pose履歴と同じ時間幅を使うことで、Bone速度差の比較基準を揃えます。
@@ -93,6 +117,7 @@ private:
     float m_CurrentTime = 0.0f;
     float m_TimeSinceSwitch = 0.0f;
     float m_LastSearchCost = std::numeric_limits<float>::max();
+    std::vector<MotionSearchCandidateDebugInfo> m_LastSearchCandidates;
 
     // PreviousOutputPose -> LastOutputPoseの実時間幅です。
     // 可変dt環境でもsource/targetの速度推定へ同じ時間幅を使うため別途保持します。
