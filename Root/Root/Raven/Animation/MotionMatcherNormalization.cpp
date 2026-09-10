@@ -5,7 +5,7 @@ namespace Raven
 
 bool MotionMatcher::SetNormalizedSearchWeights(const MotionSearchWeights& semanticWeights)
 {
-    if (m_Database == nullptr)
+    if (m_Database == nullptr || m_Database->HasFeatureNormalization() == false)
     {
         return false;
     }
