@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace Raven
 {
@@ -115,6 +116,23 @@ public:
     bool GetRuntimeDebugInfo(CharacterLocomotionRuntimeDebugInfo& outInfo) const
     {
         return m_RuntimeSelector.GetDebugInfo(outInfo);
+    }
+
+    const Skeleton* GetMotionMatchingSkeleton() const
+    {
+        if (m_Mode != CharacterLocomotionRuntimeMode::MotionMatching
+            || m_ConfiguredSkinIndex == Gltf::InvalidGltfIndex)
+        {
+            return nullptr;
+        }
+
+        return m_MotionMatchingRuntime.GetSkeleton(m_ConfiguredSkinIndex);
+    }
+
+    bool GetMotionMatchingTrajectoryDebugInfo(
+        std::vector<MotionTrajectoryPoint>& outTrajectory) const
+    {
+        return m_RuntimeSelector.GetMotionMatchingTrajectoryDebugInfo(outTrajectory);
     }
 
     bool GetInertializationBoneDebugInfo(
