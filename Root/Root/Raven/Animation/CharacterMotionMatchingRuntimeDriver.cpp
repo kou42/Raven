@@ -130,6 +130,8 @@ void CharacterMotionMatchingRuntimeDriver::Reset()
     m_PoseFeatures = MotionPoseFeatureConfig{};
     m_TrajectoryFeatures = MotionTrajectoryFeatureConfig{};
     m_PredictorConfig = CharacterTrajectoryPredictorConfig{};
+    m_LastQuery = MotionSearchQuery{};
+    m_HasLastQuery = false;
     m_Configured = false;
 }
 
@@ -179,7 +181,16 @@ bool CharacterMotionMatchingRuntimeDriver::Update(
         return SetError(errorMessage, "Character状態からMotion Matching Queryを構築できません");
     }
 
-    return m_Runtime->Update(m_SkinIndex, query, deltaTime, errorMessage);
+    // Runtime更新が成功したQueryだけを診断用Snapshotとして残します。
+    // Editor表示が失敗Frameの未適用Queryへ進んでしまわないよう、成功後に状態を更新します。
+    if (m_Runtime->Update(m_SkinIndex, query, deltaTime, errorMessage) == false)
+    {
+        return false;
+    }
+
+    m_LastQuery = std::move(query);
+    m_HasLastQuery = true;
+    return true;
 }
 
 bool CharacterMotionMatchingRuntimeDriver::GetDebugInfo(
@@ -206,6 +217,20 @@ bool CharacterMotionMatchingRuntimeDriver::GetDebugInfo(
     outInfo.SearchCost = matcher->GetLastSearchCost();
     outInfo.Inertializing = matcher->IsInertializing();
     outInfo.InertializationElapsedTime = matcher->GetInertializationElapsedTime();
+    return true;
+}
+
+bool CharacterMotionMatchingRuntimeDriver::GetTrajectoryDebugInfo(
+    std::vector<MotionTrajectoryPoint>& outTrajectory) const
+{
+    outTrajectory.clear();
+
+    if (IsConfigured() == false || m_HasLastQuery == false)
+    {
+        return false;
+    }
+
+    outTrajectory = m_LastQuery.Trajectory;
     return true;
 }
 
