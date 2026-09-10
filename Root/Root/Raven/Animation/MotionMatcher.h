@@ -50,6 +50,16 @@ public:
     float GetCurrentTime() const { return m_CurrentTime; }
     float GetLastSearchCost() const { return m_LastSearchCost; }
     bool IsInertializing() const { return m_Inertializer.IsActive(); }
+    float GetInertializationElapsedTime() const { return m_Inertializer.GetElapsedTime(); }
+
+    // MotionMatcher利用側からInertialization内部の切替診断値だけを安全に取得します。
+    // EditorやGame側がPoseInertializerそのものへ依存せず、Boneごとの速度Errorを表示できます。
+    bool GetInertializationBoneDebugInfo(
+        BoneIndex boneIndex,
+        PoseInertializerBoneDebugInfo& outInfo) const
+    {
+        return m_Inertializer.GetBoneDebugInfo(boneIndex, outInfo);
+    }
 
 private:
     bool SelectFrame(const MotionSearchResult& searchResult);

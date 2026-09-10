@@ -25,6 +25,21 @@ struct PoseInertializerConfig
     float MaxDuration = 0.0f;
 };
 
+// Bone単位のInertialization診断Snapshotです。
+// EditorやRuntime Debugは内部状態へ直接触れず、切替時点で生じたPose差・速度差を観測できます。
+struct PoseInertializerBoneDebugInfo
+{
+    BoneIndex Bone = InvalidBoneIndex;
+
+    // Begin時点のSource - Target差分です。Rotationは最短rotation-vector[rad]です。
+    math::Vec3 InitialTranslationOffset{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 InitialRotationOffset{ 0.0f, 0.0f, 0.0f };
+
+    // Source速度 - Target速度です。AngularVelocityはrad/sです。
+    math::Vec3 InitialLinearVelocityError{ 0.0f, 0.0f, 0.0f };
+    math::Vec3 InitialAngularVelocityError{ 0.0f, 0.0f, 0.0f };
+};
+
 // ============================================================================
 // PoseInertializer
 // ============================================================================
@@ -70,6 +85,27 @@ public:
         const SkeletonPose& targetPose,
         float deltaTime,
         SkeletonPose& outPose);
+
+    // Bone単位の切替時診断値を取得します。
+    // Activeでない場合やBoneが範囲外の場合はfalseを返し、outInfoを変更しません。
+    bool GetBoneDebugInfo(BoneIndex boneIndex, PoseInertializerBoneDebugInfo& outInfo) const
+    {
+        if (m_Active == false || boneIndex == InvalidBoneIndex ||
+            static_cast<std::size_t>(boneIndex) >= m_Offsets.size())
+        {
+            return false;
+        }
+
+        const BoneOffset& offset = m_Offsets[static_cast<std::size_t>(boneIndex)];
+        PoseInertializerBoneDebugInfo info{};
+        info.Bone = boneIndex;
+        info.InitialTranslationOffset = offset.Translation;
+        info.InitialRotationOffset = offset.RotationVector;
+        info.InitialLinearVelocityError = offset.LinearVelocity;
+        info.InitialAngularVelocityError = offset.AngularVelocity;
+        outInfo = info;
+        return true;
+    }
 
     bool IsActive() const { return m_Active; }
     float GetElapsedTime() const { return m_ElapsedTime; }
