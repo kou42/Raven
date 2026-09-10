@@ -3,6 +3,8 @@
 #include "Raven/Animation/MotionDatabase.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 
 namespace Raven
@@ -53,7 +55,10 @@ public:
         SkeletonPose& outPose);
 
     bool HasSelection() const { return m_HasSelection; }
-    std::size_t GetCurrentFrameIndex() const { return m_CurrentFrameIndex; }
+
+    // 最後に遷移先として選んだDatabase Frameです。
+    // 再生中はCurrentTimeが連続的に進むため「現在時刻に最も近いFrame Index」ではありません。
+    std::size_t GetSelectedFrameIndex() const { return m_SelectedFrameIndex; }
     std::uint32_t GetCurrentClipIndex() const { return m_CurrentClipIndex; }
     float GetCurrentTime() const { return m_CurrentTime; }
     float GetLastSearchCost() const { return m_LastSearchCost; }
@@ -66,7 +71,7 @@ private:
     std::shared_ptr<const MotionDatabase> m_Database;
     MotionMatcherConfig m_Config{};
 
-    std::size_t m_CurrentFrameIndex = std::numeric_limits<std::size_t>::max();
+    std::size_t m_SelectedFrameIndex = std::numeric_limits<std::size_t>::max();
     std::uint32_t m_CurrentClipIndex = 0;
     float m_CurrentTime = 0.0f;
     float m_TimeSinceSwitch = 0.0f;
