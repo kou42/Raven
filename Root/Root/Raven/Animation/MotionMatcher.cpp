@@ -51,46 +51,55 @@ bool MotionMatcher::Update(
         m_TimeSinceSwitch += deltaTime;
     }
 
-    MotionSearchResult searchResult{};
-    if (m_Database->FindBestMatch(query, m_Config.SearchWeights, searchResult) == false)
+    // 初回選択、または最低保持時間を過ぎたときだけDatabase検索を行います。
+    // MinimumSwitchInterval中に毎Frame検索しても結果を採用できずCostだけが揺れるため、
+    // 検索負荷とDebug値の意味を揃えるために検索自体を抑制します。
+    const bool shouldSearch =
+        m_HasSelection == false ||
+        m_TimeSinceSwitch >= m_Config.MinimumSwitchInterval;
+
+    if (shouldSearch == true)
     {
-        return false;
-    }
-
-    m_LastSearchCost = searchResult.Cost;
-
-    bool shouldSwitch = m_HasSelection == false;
-
-    if (m_HasSelection == true &&
-        m_TimeSinceSwitch >= m_Config.MinimumSwitchInterval)
-    {
-        const MotionFrame* candidateFrame = m_Database->GetFrame(searchResult.FrameIndex);
-        if (candidateFrame == nullptr)
+        MotionSearchResult searchResult{};
+        if (m_Database->FindBestMatch(query, m_Config.SearchWeights, searchResult) == false)
         {
             return false;
         }
 
-        // 同じClipの現在再生地点とほぼ同じ候補を検索した場合は、再選択してTimeを巻き戻さず
-        // そのまま連続再生します。Databaseの1サンプル間隔を許容幅として扱います。
-        const float sampleRate = m_Database->GetSampleRate();
-        const float continuityTolerance =
-            (sampleRate > 0.0f) ? (1.5f / sampleRate) : 0.0f;
+        m_LastSearchCost = searchResult.Cost;
 
-        const bool sameClip = candidateFrame->ClipIndex == m_CurrentClipIndex;
-        const bool nearCurrentTime =
-            std::fabs(candidateFrame->Time - m_CurrentTime) <= continuityTolerance;
+        bool shouldSwitch = m_HasSelection == false;
 
-        if (sameClip == false || nearCurrentTime == false)
+        if (m_HasSelection == true)
         {
-            shouldSwitch = true;
+            const MotionFrame* candidateFrame = m_Database->GetFrame(searchResult.FrameIndex);
+            if (candidateFrame == nullptr)
+            {
+                return false;
+            }
+
+            // 同じClipの現在再生地点とほぼ同じ候補を検索した場合は、再選択してTimeを巻き戻さず
+            // そのまま連続再生します。Databaseの1サンプル間隔を許容幅として扱います。
+            const float sampleRate = m_Database->GetSampleRate();
+            const float continuityTolerance =
+                (sampleRate > 0.0f) ? (1.5f / sampleRate) : 0.0f;
+
+            const bool sameClip = candidateFrame->ClipIndex == m_CurrentClipIndex;
+            const bool nearCurrentTime =
+                std::fabs(candidateFrame->Time - m_CurrentTime) <= continuityTolerance;
+
+            if (sameClip == false || nearCurrentTime == false)
+            {
+                shouldSwitch = true;
+            }
         }
-    }
 
-    if (shouldSwitch == true)
-    {
-        if (SelectFrame(searchResult) == false)
+        if (shouldSwitch == true)
         {
-            return false;
+            if (SelectFrame(searchResult) == false)
+            {
+                return false;
+            }
         }
     }
 
