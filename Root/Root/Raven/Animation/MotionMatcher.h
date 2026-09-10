@@ -59,8 +59,12 @@ public:
     // 最後に遷移先として選んだDatabase Frameです。
     // 再生中はCurrentTimeが連続的に進むため「現在時刻に最も近いFrame Index」ではありません。
     std::size_t GetSelectedFrameIndex() const { return m_SelectedFrameIndex; }
+
     std::uint32_t GetCurrentClipIndex() const { return m_CurrentClipIndex; }
     float GetCurrentTime() const { return m_CurrentTime; }
+
+    // 最後に実際にDatabase検索を行ったときのCostです。
+    // MinimumSwitchInterval中は検索を抑制するため、その間は直前の値を維持します。
     float GetLastSearchCost() const { return m_LastSearchCost; }
 
 private:
