@@ -1,10 +1,22 @@
 #include "Raven/Animation/MotionMatcher.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
 namespace Raven
 {
+namespace
+{
+
+double LengthSquared(const math::Vec3& value)
+{
+    return static_cast<double>(value.x) * static_cast<double>(value.x) +
+        static_cast<double>(value.y) * static_cast<double>(value.y) +
+        static_cast<double>(value.z) * static_cast<double>(value.z);
+}
+
+} // namespace
 
 void MotionMatcher::SetDatabase(std::shared_ptr<const MotionDatabase> database)
 {
@@ -40,7 +52,9 @@ bool MotionMatcher::Update(
     if (m_Database == nullptr ||
         deltaTime < 0.0f || std::isfinite(deltaTime) == false ||
         m_Config.MinimumSwitchInterval < 0.0f ||
-        std::isfinite(m_Config.MinimumSwitchInterval) == false)
+        std::isfinite(m_Config.MinimumSwitchInterval) == false ||
+        m_Config.StayBonus < 0.0f || std::isfinite(m_Config.StayBonus) == false ||
+        m_Config.SwitchCost < 0.0f || std::isfinite(m_Config.SwitchCost) == false)
     {
         return false;
     }
@@ -72,6 +86,7 @@ bool MotionMatcher::Update(
             return false;
         }
 
+        // Debug表示ではFeatureそのものの品質を確認できるよう、Bias適用前の最良Costを保持します。
         m_LastSearchCost = searchResult.Cost;
 
         bool shouldSwitch = m_HasSelection == false;
@@ -97,6 +112,39 @@ bool MotionMatcher::Update(
             if (sameClip == false || nearCurrentTime == false)
             {
                 shouldSwitch = true;
+
+                // ====================================================================
+                // Stay Bonus / Switch Cost
+                // ====================================================================
+                // Global最良候補だけを見ると、ほぼ同CostのFrame同士で毎検索時にJumpしやすくなります。
+                // 現在の連続再生地点に最も近いDatabase Frameも同じQueryで評価し、
+                //   continuationCost - StayBonus <= candidateCost + SwitchCost
+                // なら現在Motionを維持します。
+                //
+                // MinimumSwitchIntervalは「切替直後の時間的Lock」、このBiasは「Lock解除後のCostヒステリシス」
+                // と役割を分けることで、入力が明確に変化した場合は新候補へ切り替えつつ微小なCost揺れを抑えます。
+                std::size_t continuationFrameIndex = std::numeric_limits<std::size_t>::max();
+                if (FindContinuationFrame(continuationFrameIndex) == false)
+                {
+                    return false;
+                }
+
+                float continuationCost = 0.0f;
+                if (CalculateFrameCost(query, continuationFrameIndex, continuationCost) == false)
+                {
+                    return false;
+                }
+
+                const double adjustedContinuationCost = std::max(
+                    0.0,
+                    static_cast<double>(continuationCost) - static_cast<double>(m_Config.StayBonus));
+                const double adjustedCandidateCost =
+                    static_cast<double>(searchResult.Cost) + static_cast<double>(m_Config.SwitchCost);
+
+                if (adjustedContinuationCost <= adjustedCandidateCost)
+                {
+                    shouldSwitch = false;
+                }
             }
         }
 
@@ -229,6 +277,130 @@ bool MotionMatcher::AdvanceCurrentTime(float deltaTime)
         m_CurrentTime = duration;
     }
 
+    return true;
+}
+
+bool MotionMatcher::FindContinuationFrame(std::size_t& outFrameIndex) const
+{
+    outFrameIndex = std::numeric_limits<std::size_t>::max();
+
+    if (m_Database == nullptr || m_HasSelection == false)
+    {
+        return false;
+    }
+
+    const std::shared_ptr<AnimationClip>& clip =
+        m_Database->GetClip(static_cast<std::size_t>(m_CurrentClipIndex));
+    if (clip == nullptr)
+    {
+        return false;
+    }
+
+    const float duration = clip->GetDuration();
+    if (duration <= 0.0f || std::isfinite(duration) == false)
+    {
+        return false;
+    }
+
+    float bestTimeDistance = std::numeric_limits<float>::max();
+
+    for (std::size_t frameIndex = 0; frameIndex < m_Database->GetFrameCount(); ++frameIndex)
+    {
+        const MotionFrame* frame = m_Database->GetFrame(frameIndex);
+        if (frame == nullptr || frame->ClipIndex != m_CurrentClipIndex)
+        {
+            continue;
+        }
+
+        float timeDistance = std::fabs(frame->Time - m_CurrentTime);
+
+        // Loop再生では0秒とDuration直前は時間軸上で隣接しています。
+        // Wrap境界だけ別Motion扱いになるのを防ぐため、円環上の短い方の距離を使用します。
+        if (m_Config.Loop == true)
+        {
+            timeDistance = std::min(timeDistance, duration - timeDistance);
+        }
+
+        if (timeDistance < bestTimeDistance)
+        {
+            bestTimeDistance = timeDistance;
+            outFrameIndex = frameIndex;
+        }
+    }
+
+    return outFrameIndex != std::numeric_limits<std::size_t>::max();
+}
+
+bool MotionMatcher::CalculateFrameCost(
+    const MotionSearchQuery& query,
+    std::size_t frameIndex,
+    float& outCost) const
+{
+    outCost = std::numeric_limits<float>::max();
+
+    if (m_Database == nullptr)
+    {
+        return false;
+    }
+
+    const MotionFrame* frame = m_Database->GetFrame(frameIndex);
+    if (frame == nullptr ||
+        frame->PoseFeatures.size() != query.PoseFeatures.size() ||
+        frame->Trajectory.size() != query.Trajectory.size())
+    {
+        return false;
+    }
+
+    const MotionSearchWeights& weights = m_Config.SearchWeights;
+    if (weights.PosePosition < 0.0f || std::isfinite(weights.PosePosition) == false ||
+        weights.PoseVelocity < 0.0f || std::isfinite(weights.PoseVelocity) == false ||
+        weights.TrajectoryPosition < 0.0f || std::isfinite(weights.TrajectoryPosition) == false ||
+        weights.TrajectoryDirection < 0.0f || std::isfinite(weights.TrajectoryDirection) == false)
+    {
+        return false;
+    }
+
+    double cost = 0.0;
+
+    for (std::size_t i = 0; i < frame->PoseFeatures.size(); ++i)
+    {
+        if (frame->PoseFeatures[i].Bone != query.PoseFeatures[i].Bone)
+        {
+            return false;
+        }
+
+        const math::Vec3 positionDelta =
+            frame->PoseFeatures[i].Position - query.PoseFeatures[i].Position;
+        const math::Vec3 velocityDelta =
+            frame->PoseFeatures[i].Velocity - query.PoseFeatures[i].Velocity;
+
+        cost += static_cast<double>(weights.PosePosition) * LengthSquared(positionDelta);
+        cost += static_cast<double>(weights.PoseVelocity) * LengthSquared(velocityDelta);
+    }
+
+    for (std::size_t i = 0; i < frame->Trajectory.size(); ++i)
+    {
+        if (std::fabs(frame->Trajectory[i].TimeOffset - query.Trajectory[i].TimeOffset) > 1.0e-4f)
+        {
+            return false;
+        }
+
+        const math::Vec3 positionDelta =
+            frame->Trajectory[i].Position - query.Trajectory[i].Position;
+        const math::Vec3 directionDelta =
+            frame->Trajectory[i].Direction - query.Trajectory[i].Direction;
+
+        cost += static_cast<double>(weights.TrajectoryPosition) * LengthSquared(positionDelta);
+        cost += static_cast<double>(weights.TrajectoryDirection) * LengthSquared(directionDelta);
+    }
+
+    if (std::isfinite(cost) == false ||
+        cost > static_cast<double>(std::numeric_limits<float>::max()))
+    {
+        return false;
+    }
+
+    outCost = static_cast<float>(cost);
     return true;
 }
 
