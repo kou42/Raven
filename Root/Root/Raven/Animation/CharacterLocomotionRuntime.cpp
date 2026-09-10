@@ -103,13 +103,20 @@ bool CharacterLocomotionRuntime::Update(
     {
         return true;
     }
-    if (std::isfinite(deltaTime) == false || deltaTime <= 0.0f)
+    if (std::isfinite(deltaTime) == false || deltaTime < 0.0f)
     {
-        return SetError(errorMessage, "Locomotion Runtime deltaTimeは0より大きい有限値である必要があります");
+        return SetError(errorMessage, "Locomotion Runtime deltaTimeは0以上の有限値である必要があります");
     }
 
     if (m_Mode == CharacterLocomotionRuntimeMode::MotionMatching)
     {
+        // Motion Matching QueryはCurrent/Previous Poseの有限差分速度を使うため、
+        // 0秒Frameでは履歴時間幅を定義できません。BlendTreeの従来契約とは分けて厳密に拒否します。
+        if (deltaTime <= 0.0f)
+        {
+            return SetError(errorMessage, "Motion Matching Locomotion deltaTimeは0より大きい必要があります");
+        }
+
         return m_MotionMatchingDriver.Update(
             controller,
             input,
@@ -126,6 +133,7 @@ bool CharacterLocomotionRuntime::Update(
 
     // BlendTree経路では既存CharacterController APIを唯一のSpeed Parameter同期入口として再利用します。
     // 入力Flagではなく衝突解決後の実水平速度を使う従来契約をMode抽象化後も維持します。
+    // dt==0も従来SkinnedBlendTreeRuntimeの契約へそのまま渡し、Pause/停止Frameの互換性を保ちます。
     if (controller.UpdateLocomotionAnimation(
             *m_BlendTreeRuntime,
             m_BlendTreeSkinIndex,
