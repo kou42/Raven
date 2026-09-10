@@ -15,7 +15,7 @@ namespace Raven
 // MotionPoseFeature
 // ============================================================================
 // Motion MatchingのPose検索に使用する1 Bone分の特徴量です。
-// PositionはRoot基準座標、VelocityはWorldで求めたBone速度を現在Root座標へ変換した値です。
+// PositionはRoot基準座標、VelocityはSkeleton Global空間で求めたBone速度を現在Root座標へ変換した値です。
 // BoneIndexを保持することで、後続のQuery生成・Debug表示時に特徴量の意味を失わないようにします。
 struct MotionPoseFeature
 {
