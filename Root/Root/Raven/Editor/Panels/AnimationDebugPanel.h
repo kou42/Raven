@@ -26,6 +26,8 @@ public:
     void OnImGuiRender(Scene* scene);
 
 private:
+    // Motion Matching切替中に調べたいBoneをIndexで保持します。
+    // Skeleton名一覧のEditor公開は後段で追加し、まずRuntimeのBone診断APIを直接確認できる入口を用意します。
     int m_SelectedInertializationBoneIndex = 0;
     std::string m_LocomotionRuntimeError;
 };
