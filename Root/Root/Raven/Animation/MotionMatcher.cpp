@@ -73,6 +73,9 @@ bool MotionMatcher::Update(
         m_TimeSinceSwitch += deltaTime;
     }
 
+    // 初回選択、または最低保持時間を過ぎたときだけDatabase検索を行います。
+    // MinimumSwitchInterval中に毎Frame検索しても結果を採用できずCostだけが揺れるため、
+    // 検索負荷とDebug値の意味を揃えるために検索自体を抑制します。
     const bool shouldSearch =
         m_HasSelection == false ||
         m_TimeSinceSwitch >= m_Config.MinimumSwitchInterval;
@@ -87,6 +90,7 @@ bool MotionMatcher::Update(
             return false;
         }
 
+        // Debug表示ではFeatureそのものの品質を確認できるよう、Bias適用前の最良Costを保持します。
         m_LastSearchCost = searchResult.Cost;
         bool shouldSwitch = m_HasSelection == false;
 
@@ -98,6 +102,8 @@ bool MotionMatcher::Update(
                 return false;
             }
 
+            // 同じClipの現在再生地点とほぼ同じ候補を検索した場合は、再選択してTimeを巻き戻さず
+            // そのまま連続再生します。Databaseの1サンプル間隔を許容幅として扱います。
             const float sampleRate = m_Database->GetSampleRate();
             const float continuityTolerance =
                 (sampleRate > 0.0f) ? (1.5f / sampleRate) : 0.0f;
@@ -114,6 +120,7 @@ bool MotionMatcher::Update(
                     return false;
                 }
 
+                // Loop境界ではDuration直前と0秒が隣接するため、線形時間差ではなく円環距離を使います。
                 candidateTimeDistance = std::min(
                     candidateTimeDistance,
                     currentClip->GetDuration() - candidateTimeDistance);
@@ -125,6 +132,16 @@ bool MotionMatcher::Update(
             {
                 shouldSwitch = true;
 
+                // ====================================================================
+                // Stay Bonus / Switch Cost
+                // ====================================================================
+                // Global最良候補だけを見ると、ほぼ同CostのFrame同士で毎検索時にJumpしやすくなります。
+                // 現在の連続再生地点に最も近いDatabase Frameも同じQueryで評価し、
+                //   continuationCost - StayBonus <= candidateCost + SwitchCost
+                // なら現在Motionを維持します。
+                //
+                // MinimumSwitchIntervalは「切替直後の時間的Lock」、このBiasは「Lock解除後のCostヒステリシス」
+                // と役割を分けることで、入力が明確に変化した場合は新候補へ切り替えつつ微小なCost揺れを抑えます。
                 std::size_t continuationFrameIndex = std::numeric_limits<std::size_t>::max();
                 if (FindContinuationFrame(continuationFrameIndex) == false)
                 {
@@ -196,6 +213,9 @@ bool MotionMatcher::Update(
                     return false;
                 }
 
+                // Source側は実際に画面へ出した直近2Frame、Target側は新Motionの切替地点と
+                // 同じ時間幅だけ過去のPoseを使います。これによりTranslation/Rotationとも
+                // 切替直前の表示速度と新Motion固有速度との差をInertialization初期条件へ渡せます。
                 if (m_Inertializer.Begin(
                         skeleton,
                         m_PreviousOutputPose,
@@ -212,6 +232,8 @@ bool MotionMatcher::Update(
 
             if (beganWithVelocity == false)
             {
+                // 履歴が1Frameしか無い場合や直前dt=0の場合は、従来どおりPose連続性だけを守ります。
+                // 初回近辺の特殊状態でも速度推定のために不正な除算を行わないFallbackです。
                 if (m_Inertializer.Begin(skeleton, m_LastOutputPose, targetPose) == false)
                 {
                     return false;
@@ -220,9 +242,13 @@ bool MotionMatcher::Update(
         }
         else if (switchedThisFrame == true)
         {
+            // 初回選択では比較元Poseがないため、Inertializationを開始しません。
             m_Inertializer.Reset();
         }
 
+        // 切替Frameではelapsed=0のOffsetをそのまま適用し、直前表示Poseを再現します。
+        // 次Frame以降にdeltaTime分ずつ減衰させることで、切替瞬間に1Frame分先へ進んだOffsetを
+        // 適用して小さなPose Jumpを生むことを避けます。
         const float inertialDeltaTime = switchedThisFrame ? 0.0f : deltaTime;
         if (m_Inertializer.Apply(skeleton, targetPose, inertialDeltaTime, outPose) == false)
         {
@@ -231,10 +257,14 @@ bool MotionMatcher::Update(
     }
     else
     {
+        // Debugで検索先Poseそのものを確認できるよう、Inertialization無効時は完全に迂回します。
         m_Inertializer.Reset();
         outPose = targetPose;
     }
 
+    // 次回切替時に「直前に実際に表示したBone速度」を復元するため、出力履歴を1段ずらします。
+    // Animation Clipの生PoseではなくInertialization適用後Poseを履歴にすることで、連続切替でも
+    // 見えていた運動の速度を次の初期条件として引き継げます。
     if (m_HasLastOutputPose == true)
     {
         m_PreviousOutputPose = m_LastOutputPose;
@@ -285,6 +315,8 @@ bool MotionMatcher::SearchDatabase(
         candidate.CostBreakdown = costBreakdown;
         candidate.Trajectory = frame->Trajectory;
 
+        // Top-NはCost昇順を常に維持します。N=5固定なので全候補をsortするより、
+        // 1回のDatabase走査中に小さな配列へ挿入する方が診断用追加負荷を限定できます。
         const auto insertPosition = std::lower_bound(
             m_LastSearchCandidates.begin(),
             m_LastSearchCandidates.end(),
@@ -367,6 +399,8 @@ bool MotionMatcher::AdvanceCurrentTime(float deltaTime)
 
     if (m_Config.Loop == true)
     {
+        // AnimationClipへLoop状態を持たせず、再生InstanceであるMotionMatcherだけがWrapします。
+        // fmod後が負になる経路はdeltaTime>=0の契約上ありません。
         if (m_CurrentTime >= duration)
         {
             m_CurrentTime = std::fmod(m_CurrentTime, duration);
@@ -401,6 +435,8 @@ bool MotionMatcher::SamplePreviousTargetPose(
 
     if (m_Config.Loop == true)
     {
+        // 選択FrameがLoop先頭付近でも、Target Motion自身の直前速度を得るためDuration側へwrapします。
+        // deltaTimeがDurationより大きい場合もfmodで正規化し、負の剰余だけDurationを加えて[0,duration)へ戻します。
         previousTime = std::fmod(previousTime, duration);
         if (previousTime < 0.0f)
         {
@@ -448,6 +484,9 @@ bool MotionMatcher::FindContinuationFrame(std::size_t& outFrameIndex) const
         }
 
         float timeDistance = std::fabs(frame->Time - m_CurrentTime);
+
+        // Loop再生では0秒とDuration直前は時間軸上で隣接しています。
+        // Wrap境界だけ別Motion扱いになるのを防ぐため、円環上の短い方の距離を使用します。
         if (m_Config.Loop == true)
         {
             timeDistance = std::min(timeDistance, duration - timeDistance);
