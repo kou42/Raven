@@ -45,9 +45,6 @@ bool CharacterMotionMatchingAdapter::BuildTrajectoryInput(
         return false;
     }
 
-    // Locomotion検索ではJump/Gravityの鉛直速度をTrajectoryへ混ぜません。
-    // 現在のMotionDatabaseは地上移動のRoot XZ trajectoryを対象としているため、
-    // Character Controllerの水平実速度だけをRoot基準へ変換します。
     const math::Vec3 horizontalWorldVelocity{
         worldVelocity.x,
         0.0f,
@@ -72,8 +69,6 @@ bool CharacterMotionMatchingAdapter::BuildTrajectoryInput(
     }
     else
     {
-        // 停止時は進行方向が定義できないため、Root自身のForward(+Z)を維持します。
-        // 0ベクトルを渡してQueryBuilder側のFallbackへ依存するより契約を明示します。
         outInput.DesiredDirection = { 0.0f, 0.0f, 1.0f };
     }
 
@@ -106,6 +101,53 @@ bool CharacterMotionMatchingAdapter::BuildQuery(
         trajectoryConfig,
         trajectoryInput,
         outQuery);
+}
+
+bool CharacterMotionMatchingAdapter::BuildPredictedQuery(
+    const CharacterController& controller,
+    const CharacterControllerInput& input,
+    const TransformComponent& characterTransform,
+    const Skeleton& skeleton,
+    const SkeletonPose& currentPose,
+    const SkeletonPose& previousPose,
+    float deltaTime,
+    const MotionPoseFeatureConfig& poseConfig,
+    const MotionTrajectoryFeatureConfig& trajectoryConfig,
+    const CharacterTrajectoryPredictorConfig& predictorConfig,
+    MotionSearchQuery& outQuery)
+{
+    // Pose Feature生成の座標系・入力検証は既存Builderへ一本化します。
+    // Trajectoryはこの直後にPredictor結果へ差し替えるため、ここでは現在実速度を仮入力として使います。
+    if (BuildQuery(
+            controller,
+            characterTransform,
+            skeleton,
+            currentPose,
+            previousPose,
+            deltaTime,
+            poseConfig,
+            trajectoryConfig,
+            outQuery) == false)
+    {
+        return false;
+    }
+
+    std::vector<MotionTrajectoryPoint> predictedTrajectory;
+    if (CharacterTrajectoryPredictor::Predict(
+            controller,
+            input,
+            characterTransform,
+            trajectoryConfig,
+            predictorConfig,
+            predictedTrajectory) == false)
+    {
+        outQuery = MotionSearchQuery{};
+        return false;
+    }
+
+    // Databaseと同じTimeOffset配列をPredictorへ渡しているためFeature Layoutは維持されます。
+    outQuery.Trajectory = std::move(predictedTrajectory);
+    return true;
 }
 
 } // namespace Raven
