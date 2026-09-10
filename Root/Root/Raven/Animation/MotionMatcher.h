@@ -23,6 +23,21 @@ struct MotionMatcherConfig
     bool Loop = true;
 };
 
+// 検索CostをFeature種別ごとに分解した診断値です。
+// 各値はSearchWeights適用後のCostなので、合計値は実際の検索Costと一致します。
+struct MotionSearchCostBreakdown
+{
+    float PosePosition = 0.0f;
+    float PoseVelocity = 0.0f;
+    float TrajectoryPosition = 0.0f;
+    float TrajectoryDirection = 0.0f;
+
+    float GetTotal() const
+    {
+        return PosePosition + PoseVelocity + TrajectoryPosition + TrajectoryDirection;
+    }
+};
+
 // 直近のDatabase検索でCostが小さかった候補を、検索本体と同じCost空間で保持します。
 // EditorがDatabase全体を再評価せず「なぜこのFrameが候補になったか」を確認するための診断値です。
 struct MotionSearchCandidateDebugInfo
@@ -31,6 +46,7 @@ struct MotionSearchCandidateDebugInfo
     std::uint32_t ClipIndex = 0u;
     float ClipTime = 0.0f;
     float Cost = std::numeric_limits<float>::max();
+    MotionSearchCostBreakdown CostBreakdown{};
     std::vector<MotionTrajectoryPoint> Trajectory;
 };
 
@@ -70,8 +86,6 @@ public:
     bool IsInertializing() const { return m_Inertializer.IsActive(); }
     float GetInertializationElapsedTime() const { return m_Inertializer.GetElapsedTime(); }
 
-    // MotionMatcher利用側からInertialization内部の切替診断値だけを安全に取得します。
-    // EditorやGame側がPoseInertializerそのものへ依存せず、Boneごとの速度Errorを表示できます。
     bool GetInertializationBoneDebugInfo(
         BoneIndex boneIndex,
         PoseInertializerBoneDebugInfo& outInfo) const
@@ -83,14 +97,10 @@ private:
     bool SelectFrame(const MotionSearchResult& searchResult);
     bool AdvanceCurrentTime(float deltaTime);
 
-    // Databaseを1回だけ走査し、最良候補とDebug用Top-Nを同時に構築します。
-    // Editor用に別検索を行わないため、表示候補と実際の切替判断のCostを完全に一致させます。
     bool SearchDatabase(
         const MotionSearchQuery& query,
         MotionSearchResult& outBestResult);
 
-    // 新しく選択したMotionの切替地点より1履歴Frame前をSampleします。
-    // Source側の直前出力Pose履歴と同じ時間幅を使うことで、Bone速度差の比較基準を揃えます。
     bool SamplePreviousTargetPose(
         const Skeleton& skeleton,
         const AnimationClip& clip,
@@ -98,17 +108,20 @@ private:
         SkeletonPose& outPose) const;
 
     bool FindContinuationFrame(std::size_t& outFrameIndex) const;
+
+    // Cost合計とFeature別内訳を同じ1回の計算から生成します。
+    // 検索判定とDebug表示で式を二重管理しないことが重要です。
     bool CalculateFrameCost(
         const MotionSearchQuery& query,
         std::size_t frameIndex,
-        float& outCost) const;
+        float& outCost,
+        MotionSearchCostBreakdown* outBreakdown = nullptr) const;
 
 private:
     std::shared_ptr<const MotionDatabase> m_Database;
     MotionMatcherConfig m_Config{};
     PoseInertializer m_Inertializer{};
 
-    // Inertialization開始時に切替直前の表示速度を復元できるよう、最終出力を2Frame保持します。
     SkeletonPose m_PreviousOutputPose{};
     SkeletonPose m_LastOutputPose{};
 
@@ -119,8 +132,6 @@ private:
     float m_LastSearchCost = std::numeric_limits<float>::max();
     std::vector<MotionSearchCandidateDebugInfo> m_LastSearchCandidates;
 
-    // PreviousOutputPose -> LastOutputPoseの実時間幅です。
-    // 可変dt環境でもsource/targetの速度推定へ同じ時間幅を使うため別途保持します。
     float m_LastOutputDeltaTime = 0.0f;
 
     bool m_HasSelection = false;
