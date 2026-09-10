@@ -18,6 +18,7 @@ math::Vec3 WorldToRootYawSpace(const math::Vec3& worldVector, float yaw)
 {
     // CharacterControllerのYawは+Z Forwardを基準にしているため、Worldベクトルへ-Yawを適用すると
     // MotionDatabase / MotionQueryBuilderが使用するRoot基準(+Z Forward)へ変換できます。
+    // Local +ZがWorldで(sin(yaw), cos(yaw))を向くRavenのYaw規約に対する逆変換です。
     const float cosine = std::cos(yaw);
     const float sine = std::sin(yaw);
 
