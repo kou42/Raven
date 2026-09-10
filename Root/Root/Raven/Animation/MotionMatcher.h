@@ -54,6 +54,15 @@ public:
 private:
     bool SelectFrame(const MotionSearchResult& searchResult);
     bool AdvanceCurrentTime(float deltaTime);
+
+    // 新しく選択したMotionの切替地点より1履歴Frame前をSampleします。
+    // Source側の直前出力Pose履歴と同じ時間幅を使うことで、Bone速度差の比較基準を揃えます。
+    bool SamplePreviousTargetPose(
+        const Skeleton& skeleton,
+        const AnimationClip& clip,
+        float velocityDeltaTime,
+        SkeletonPose& outPose) const;
+
     bool FindContinuationFrame(std::size_t& outFrameIndex) const;
     bool CalculateFrameCost(
         const MotionSearchQuery& query,
@@ -64,6 +73,9 @@ private:
     std::shared_ptr<const MotionDatabase> m_Database;
     MotionMatcherConfig m_Config{};
     PoseInertializer m_Inertializer{};
+
+    // Inertialization開始時に切替直前の表示速度を復元できるよう、最終出力を2Frame保持します。
+    SkeletonPose m_PreviousOutputPose{};
     SkeletonPose m_LastOutputPose{};
 
     std::size_t m_SelectedFrameIndex = std::numeric_limits<std::size_t>::max();
@@ -71,7 +83,13 @@ private:
     float m_CurrentTime = 0.0f;
     float m_TimeSinceSwitch = 0.0f;
     float m_LastSearchCost = std::numeric_limits<float>::max();
+
+    // PreviousOutputPose -> LastOutputPoseの実時間幅です。
+    // 可変dt環境でもsource/targetの速度推定へ同じ時間幅を使うため別途保持します。
+    float m_LastOutputDeltaTime = 0.0f;
+
     bool m_HasSelection = false;
+    bool m_HasPreviousOutputPose = false;
     bool m_HasLastOutputPose = false;
 };
 
