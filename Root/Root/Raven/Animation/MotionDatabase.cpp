@@ -347,29 +347,30 @@ bool MotionDatabase::BuildPoseFeatures(
             return false;
         }
 
-        // Root Boneは階層Rootに限定しているため、そのLocal TransformはGlobal Transformと同じです。
+        // SkeletonPose::GlobalTransformはEntity WorldではなくSkeleton階層内のGlobal空間です。
+        // Root Boneは階層Rootに限定しているため、そのLocal TransformはGlobal Transformと同じになります。
         // Bone位置はRoot Transform全体の逆変換、Bone速度はw=0で同じ逆変換を適用し、
-        // CharacterのWorld位置・向きに依存しない検索特徴量へ変換します。
+        // Characterの配置やAnimation Rootの向きに依存しない検索特徴量へ変換します。
         const math::Mat4 rootInverse = currentPose.GetLocalTransform(config.RootBone).ToInverseMatrix();
 
         frame.PoseFeatures.reserve(config.PoseBones.size());
 
         for (BoneIndex boneIndex : config.PoseBones)
         {
-            const math::Vec3 currentWorldPosition =
+            const math::Vec3 currentSkeletonPosition =
                 ExtractTranslation(currentPose.GetGlobalTransform(boneIndex));
-            const math::Vec3 previousWorldPosition =
+            const math::Vec3 previousSkeletonPosition =
                 ExtractTranslation(previousPose.GetGlobalTransform(boneIndex));
-            const math::Vec3 nextWorldPosition =
+            const math::Vec3 nextSkeletonPosition =
                 ExtractTranslation(nextPose.GetGlobalTransform(boneIndex));
 
-            const math::Vec3 worldVelocity =
-                (nextWorldPosition - previousWorldPosition) / velocityDeltaTime;
+            const math::Vec3 skeletonVelocity =
+                (nextSkeletonPosition - previousSkeletonPosition) / velocityDeltaTime;
 
             MotionPoseFeature feature{};
             feature.Bone = boneIndex;
-            feature.Position = TransformPoint(rootInverse, currentWorldPosition);
-            feature.Velocity = TransformVector(rootInverse, worldVelocity);
+            feature.Position = TransformPoint(rootInverse, currentSkeletonPosition);
+            feature.Velocity = TransformVector(rootInverse, skeletonVelocity);
 
             frame.PoseFeatures.emplace_back(feature);
         }
@@ -438,15 +439,15 @@ bool MotionDatabase::BuildTrajectoryFeatures(
             }
 
             const BoneTransform& futureRoot = futurePose.GetLocalTransform(config.RootBone);
-            const math::Vec3 futureWorldPosition =
+            const math::Vec3 futureSkeletonPosition =
                 ExtractTranslation(futurePose.GetGlobalTransform(config.RootBone));
-            const math::Vec3 futureWorldDirection =
+            const math::Vec3 futureSkeletonDirection =
                 futureRoot.Rotation.Normalized().Rotate(math::Vec3{ 0.0f, 0.0f, 1.0f });
 
             MotionTrajectoryPoint point{};
             point.TimeOffset = timeOffset;
-            point.Position = TransformPoint(currentRootInverse, futureWorldPosition);
-            point.Direction = inverseCurrentRootRotation.Rotate(futureWorldDirection).Normalized();
+            point.Position = TransformPoint(currentRootInverse, futureSkeletonPosition);
+            point.Direction = inverseCurrentRootRotation.Rotate(futureSkeletonDirection).Normalized();
 
             frame.Trajectory.emplace_back(point);
         }
