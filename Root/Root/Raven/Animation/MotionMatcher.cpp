@@ -1,6 +1,7 @@
 #include "Raven/Animation/MotionMatcher.h"
 
 #include <cmath>
+#include <utility>
 
 namespace Raven
 {
@@ -18,7 +19,7 @@ void MotionMatcher::SetDatabase(std::shared_ptr<const MotionDatabase> database)
 
 void MotionMatcher::Reset()
 {
-    m_CurrentFrameIndex = std::numeric_limits<std::size_t>::max();
+    m_SelectedFrameIndex = std::numeric_limits<std::size_t>::max();
     m_CurrentClipIndex = 0;
     m_CurrentTime = 0.0f;
     m_TimeSinceSwitch = 0.0f;
@@ -123,7 +124,7 @@ bool MotionMatcher::SelectFrame(const MotionSearchResult& searchResult)
         return false;
     }
 
-    m_CurrentFrameIndex = searchResult.FrameIndex;
+    m_SelectedFrameIndex = searchResult.FrameIndex;
     m_CurrentClipIndex = frame->ClipIndex;
     m_CurrentTime = frame->Time;
     m_TimeSinceSwitch = 0.0f;
