@@ -1,5 +1,6 @@
 #include "Raven/Animation/MotionDatabase.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -52,8 +53,6 @@ struct ScalarStatisticsAccumulator
             return false;
         }
 
-        // ほぼ一定のFeatureをsigma≈0で割ると、数値Noiseだけが巨大なCostになります。
-        // そのため下限を設け、一定Featureは実質的に通常Scaleで比較します。
         const double safeStandardDeviation = std::max(
             standardDeviation,
             MinimumStandardDeviation);
@@ -163,8 +162,6 @@ bool MotionDatabase::BuildFeatureNormalization()
         }
     }
 
-    // 現在のMotion Matching QueryはPoseとTrajectoryを組み合わせる設計なので、
-    // 片方だけの不完全なDatabaseから統計を作らず、Feature構築漏れを早期に検出します。
     if (hasPoseFeature == false || hasTrajectoryFeature == false)
     {
         return false;
