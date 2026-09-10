@@ -106,8 +106,24 @@ bool MotionMatcher::Update(
                 (sampleRate > 0.0f) ? (1.5f / sampleRate) : 0.0f;
 
             const bool sameClip = candidateFrame->ClipIndex == m_CurrentClipIndex;
-            const bool nearCurrentTime =
-                std::fabs(candidateFrame->Time - m_CurrentTime) <= continuityTolerance;
+            float candidateTimeDistance = std::fabs(candidateFrame->Time - m_CurrentTime);
+
+            if (sameClip == true && m_Config.Loop == true)
+            {
+                const std::shared_ptr<AnimationClip>& currentClip =
+                    m_Database->GetClip(static_cast<std::size_t>(m_CurrentClipIndex));
+                if (currentClip == nullptr || currentClip->GetDuration() <= 0.0f)
+                {
+                    return false;
+                }
+
+                // Loop境界ではDuration直前と0秒が隣接するため、線形時間差ではなく円環距離を使います。
+                candidateTimeDistance = std::min(
+                    candidateTimeDistance,
+                    currentClip->GetDuration() - candidateTimeDistance);
+            }
+
+            const bool nearCurrentTime = candidateTimeDistance <= continuityTolerance;
 
             if (sameClip == false || nearCurrentTime == false)
             {
