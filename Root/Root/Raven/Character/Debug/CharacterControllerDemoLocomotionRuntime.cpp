@@ -37,16 +37,6 @@ CharacterControllerDemoLocomotionRuntime& CharacterControllerDemoLocomotionRunti
     return *this;
 }
 
-void CharacterControllerDemoLocomotionRuntime::BindCharacterContext(
-    CharacterController& controller,
-    CharacterControllerInput& input,
-    TransformComponent& characterTransform)
-{
-    m_Controller = &controller;
-    m_Input = &input;
-    m_CharacterTransform = &characterTransform;
-}
-
 bool CharacterControllerDemoLocomotionRuntime::AttachFromGlb(
     const std::string& filePath,
     Gltf::SkinnedMeshRuntimeAsset& targetAsset,
