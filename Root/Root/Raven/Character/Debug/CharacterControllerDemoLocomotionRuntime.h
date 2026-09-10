@@ -36,6 +36,15 @@ public:
           m_Input(&input),
           m_CharacterTransform(&characterTransform)
     {
+        s_ActiveDebugRuntime = this;
+    }
+
+    ~CharacterControllerDemoLocomotionRuntime()
+    {
+        if (s_ActiveDebugRuntime == this)
+        {
+            s_ActiveDebugRuntime = nullptr;
+        }
     }
 
     CharacterControllerDemoLocomotionRuntime& operator=(Gltf::SkinnedBlendTreeRuntime&& runtime);
@@ -43,7 +52,22 @@ public:
     void BindCharacterContext(
         CharacterController& controller,
         CharacterControllerInput& input,
-        TransformComponent& characterTransform);
+        TransformComponent& characterTransform)
+    {
+        m_Controller = &controller;
+        m_Input = &input;
+        m_CharacterTransform = &characterTransform;
+
+        // 現在Editorで診断するDemo Runtimeをここで登録します。
+        // Demo用途では実行中Characterが1体のため、Scene/EditorへCharacter固有Accessorを追加せず
+        // Debug Runtime自身を診断境界として扱います。
+        s_ActiveDebugRuntime = this;
+    }
+
+    static CharacterControllerDemoLocomotionRuntime* GetActiveDebugRuntime()
+    {
+        return s_ActiveDebugRuntime;
+    }
 
     bool AttachFromGlb(
         const std::string& filePath,
@@ -64,6 +88,24 @@ public:
         CharacterLocomotionRuntimeMode mode,
         std::size_t skinIndex,
         std::string* errorMessage = nullptr);
+
+    // Editor Debug UI向けの簡易入口です。Configure済みSkinIndexをRuntime自身が保持しているため、
+    // UI側がglTF Skin選択規約を知る必要をなくします。
+    bool SetMode(
+        CharacterLocomotionRuntimeMode mode,
+        std::string* errorMessage = nullptr)
+    {
+        if (m_ConfiguredSkinIndex == Gltf::InvalidGltfIndex)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Humanoid Locomotion RuntimeがまだConfigureされていません";
+            }
+            return false;
+        }
+
+        return SetMode(mode, m_ConfiguredSkinIndex, errorMessage);
+    }
 
     CharacterLocomotionRuntimeMode GetMode() const
     {
@@ -90,6 +132,8 @@ private:
     void ResetMotionMatchingState();
 
 private:
+    inline static CharacterControllerDemoLocomotionRuntime* s_ActiveDebugRuntime = nullptr;
+
     CharacterController* m_Controller = nullptr;
     CharacterControllerInput* m_Input = nullptr;
     TransformComponent* m_CharacterTransform = nullptr;
