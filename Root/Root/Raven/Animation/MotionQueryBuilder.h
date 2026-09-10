@@ -13,7 +13,10 @@ namespace Raven
 // Motion Matching本体を変更せず利用できます。
 struct MotionTrajectoryQueryInput
 {
+    // Root基準の希望移動速度です。
     math::Vec3 DesiredVelocity{ 0.0f, 0.0f, 0.0f };
+
+    // Root基準の希望進行方向です。0ベクトルの場合は+Z Forwardを使用します。
     math::Vec3 DesiredDirection{ 0.0f, 0.0f, 1.0f };
 };
 
