@@ -18,9 +18,10 @@ struct PoseInertializerConfig
     // 小さいほど素早く新Poseへ収束します。
     float HalfLife = 0.08f;
 
-    // 長い微小Offsetを残し続けないための最大適用時間[秒]です。
-    // 0の場合はHalfLifeだけで十分小さくなるまで減衰を続けます。
-    float MaxDuration = 0.35f;
+    // 長い微小Offsetを残し続けないための任意の最大適用時間[秒]です。
+    // 0の場合は強制終了せず、HalfLifeの10倍で残差が1/1024未満になった時点で終了します。
+    // 強制終了は微小なPose差を生む可能性があるため既定では無効にしています。
+    float MaxDuration = 0.0f;
 };
 
 // ============================================================================
@@ -46,7 +47,8 @@ public:
         const SkeletonPose& sourcePose,
         const SkeletonPose& targetPose);
 
-    // Target Poseへ現在のOffsetを重ねたPoseを返し、その後deltaTime分だけ減衰を進めます。
+    // deltaTime分だけ減衰を進めたOffsetをTarget Poseへ重ねて返します。
+    // Begin直後の切替FrameだけdeltaTime=0で呼ぶことでSource Poseを厳密に再現できます。
     // Activeでない場合はTarget Poseをそのままコピーします。
     bool Apply(
         const Skeleton& skeleton,
