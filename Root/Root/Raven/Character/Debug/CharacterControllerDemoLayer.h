@@ -11,9 +11,9 @@
 #include "Raven/Animation/HumanoidAnimationProfile.h"
 #include "Raven/Animation/HumanoidAnimationProfileSerialization.h"
 #include "Raven/Character/CharacterController.h"
+#include "Raven/Character/Debug/CharacterControllerDemoLocomotionRuntime.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Core/Input.h"
-#include "Raven/Gltf/SkinnedBlendTreeRuntime.h"
 #include "Raven/Gltf/SkinnedMeshSceneSpawner.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
@@ -104,10 +104,10 @@ struct CharacterLocomotionDebugSnapshot
 // CharacterController Capsule全高へ正規化します。Asset読込または正規化に失敗した場合だけ
 // 従来のCube表示へfallbackするため、入力・Physics検証自体は継続できます。
 //
-// Humanoid表示が有効な場合は同じSkinnedMeshRuntimeAssetへSkinnedBlendTreeRuntimeを接続し、
-// CharacterControllerが衝突・加減速まで解決した「実水平速度」を毎Frame Speed Parameterへ渡します。
-// これにより入力Flagそのものではなく、壁Slideや加速途中を含む実際の移動結果で
-// Idle / Walk / Run / Sprint Poseが連続補間されます。
+// Humanoid表示が有効な場合は同じSkinnedMeshRuntimeAssetへLocomotion Runtime Bridgeを接続します。
+// 既定は従来BlendTreeで、必要に応じてMotion Matchingへ排他的に切り替えられます。
+// BlendTree時はCharacterControllerが衝突・加減速まで解決した「実水平速度」をSpeed Parameterへ渡し、
+// Motion Matching時は同じ入力・Transform・Pose履歴から予測Trajectoryを生成してMotionを検索します。
 //
 // Raw Gamepad値とCharacterControllerInput変換後の値を保持し、
 // Dead Zone / Trigger Threshold / Button MappingをDebuggerや後続Debug UIから比較できるようにします。
@@ -119,6 +119,12 @@ public:
     explicit CharacterControllerDemoLayer(Scene& scene)
         : m_Scene(scene)
     {
+        // 全Member構築後のconstructor bodyでContextを接続します。
+        // Runtime Bridgeは非所有参照だけを保持するため、DemoLayer自身のLifetime内で常に有効です。
+        m_HumanoidLocomotionRuntime.BindCharacterContext(
+            m_CharacterController,
+            m_ResolvedInput,
+            m_CharacterRootTransform);
     }
 
     void OnAttach() override;
@@ -152,6 +158,51 @@ public:
     const BlendTree1DDebugInfo& GetHumanoidLocomotionDebugInfo() const
     {
         return m_HumanoidLocomotionDebugInfo;
+    }
+
+    // ========================================================================
+    // Locomotion runtime mode
+    // ========================================================================
+    // 既定はBlendTreeです。Motion Matchingへ切り替える場合は現在のDeformer Poseを起点に
+    // Runtimeを再Attachし、古い初期Pose履歴を速度Featureへ混ぜないようにします。
+    bool SetHumanoidLocomotionRuntimeMode(
+        CharacterLocomotionRuntimeMode mode,
+        std::string* errorMessage = nullptr)
+    {
+        if (m_HumanoidLocomotionAnimationActive == false
+            || m_HumanoidAnimationSkinIndex == Gltf::InvalidGltfIndex)
+        {
+            if (errorMessage != nullptr)
+            {
+                *errorMessage = "Humanoid Locomotion Animationが有効ではありません";
+            }
+            return false;
+        }
+
+        return m_HumanoidLocomotionRuntime.SetMode(
+            mode,
+            m_HumanoidAnimationSkinIndex,
+            errorMessage);
+    }
+
+    CharacterLocomotionRuntimeMode GetHumanoidLocomotionRuntimeMode() const
+    {
+        return m_HumanoidLocomotionRuntime.GetMode();
+    }
+
+    bool GetHumanoidLocomotionRuntimeDebugInfo(
+        CharacterLocomotionRuntimeDebugInfo& outInfo) const
+    {
+        return m_HumanoidLocomotionRuntime.GetRuntimeDebugInfo(outInfo);
+    }
+
+    bool GetHumanoidInertializationBoneDebugInfo(
+        BoneIndex boneIndex,
+        PoseInertializerBoneDebugInfo& outInfo) const
+    {
+        return m_HumanoidLocomotionRuntime.GetInertializationBoneDebugInfo(
+            boneIndex,
+            outInfo);
     }
 
     // ========================================================================
@@ -484,9 +535,9 @@ private:
     // ========================================================================
     // Humanoid Idle / Walk / Run / Sprint animation
     // ========================================================================
-    // BlendTree RuntimeはSceneInstanceが所有するSkinnedMeshRuntimeAssetを参照します。
-    // そのためDestroyHumanoidVisual()ではRuntimeを先に初期状態へ戻してからSceneInstanceを破棄します。
-    Gltf::SkinnedBlendTreeRuntime m_HumanoidLocomotionRuntime{};
+    // Demo専用Bridgeが既存BlendTree APIを保ったままMotion Matching選択境界を追加します。
+    // SceneInstanceが所有するSkinnedMeshRuntimeAssetより先にBridgeを破棄するLifetime規約は従来と同じです。
+    CharacterControllerDemoLocomotionRuntime m_HumanoidLocomotionRuntime{};
     std::size_t m_HumanoidAnimationSkinIndex = Gltf::InvalidGltfIndex;
     bool m_HumanoidLocomotionAnimationActive = false;
 
