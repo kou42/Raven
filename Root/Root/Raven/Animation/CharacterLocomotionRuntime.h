@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace Raven
 {
@@ -71,6 +72,20 @@ public:
     }
 
     bool GetDebugInfo(CharacterLocomotionRuntimeDebugInfo& outInfo) const;
+
+    bool GetMotionMatchingTrajectoryDebugInfo(
+        std::vector<MotionTrajectoryPoint>& outTrajectory) const
+    {
+        outTrajectory.clear();
+
+        if (m_Active == false
+            || m_Mode != CharacterLocomotionRuntimeMode::MotionMatching)
+        {
+            return false;
+        }
+
+        return m_MotionMatchingDriver.GetTrajectoryDebugInfo(outTrajectory);
+    }
 
     bool GetInertializationBoneDebugInfo(
         BoneIndex boneIndex,
