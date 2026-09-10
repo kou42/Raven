@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Animation/MotionDatabase.h"
+#include "Raven/Animation/PoseInertializer.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +24,11 @@ struct MotionMatcherConfig
     // 0なら検索結果に応じて毎Frame切替可能です。
     float MinimumSwitchInterval = 0.15f;
 
+    // Motion Matchingの候補切替時だけPose差分を減衰させます。
+    // falseの場合は検索先Poseをそのまま出力するため、検索品質を確認したいDebug用途にも使えます。
+    bool EnableInertialization = true;
+    PoseInertializerConfig Inertialization{};
+
     // 現段階ではLocomotion Databaseを主対象とするため、選択Clipの終端でLoopできます。
     // AnimationClip自体へLoop状態は追加せず、再生InstanceであるMotionMatcherが保持します。
     bool Loop = true;
@@ -34,7 +40,8 @@ struct MotionMatcherConfig
 // MotionDatabaseの検索結果から再生するClip / Timeを選び、SkeletonPoseを評価するRuntime Stateです。
 //
 // 既存Animator / BlendTree / StateMachineを置き換えず、Motion Matchingを選択したCharacterだけが
-// このRuntimeを使用します。Inertializationは後続段階で出力Poseの直前へ追加します。
+// このRuntimeを使用します。候補切替時のPose接続はPoseInertializerへ分離し、既存CrossFadeとは
+// 独立した経路として扱います。
 class MotionMatcher
 {
 public:
@@ -47,7 +54,8 @@ public:
     void Reset();
 
     // Queryから最良候補を検索し、必要ならClipを切り替えた後でPoseを評価します。
-    // 初回Updateでは必ず検索結果のFrameから開始します。
+    // 初回Updateでは比較元PoseがないためTarget Poseをそのまま返し、2回目以降の候補切替で
+    // Inertializationを開始します。
     bool Update(
         const Skeleton& skeleton,
         const MotionSearchQuery& query,
@@ -67,6 +75,8 @@ public:
     // MinimumSwitchInterval中は検索を抑制するため、その間は直前の値を維持します。
     float GetLastSearchCost() const { return m_LastSearchCost; }
 
+    bool IsInertializing() const { return m_Inertializer.IsActive(); }
+
 private:
     bool SelectFrame(const MotionSearchResult& searchResult);
     bool AdvanceCurrentTime(float deltaTime);
@@ -74,6 +84,8 @@ private:
 private:
     std::shared_ptr<const MotionDatabase> m_Database;
     MotionMatcherConfig m_Config{};
+    PoseInertializer m_Inertializer{};
+    SkeletonPose m_LastOutputPose{};
 
     std::size_t m_SelectedFrameIndex = std::numeric_limits<std::size_t>::max();
     std::uint32_t m_CurrentClipIndex = 0;
@@ -81,6 +93,7 @@ private:
     float m_TimeSinceSwitch = 0.0f;
     float m_LastSearchCost = std::numeric_limits<float>::max();
     bool m_HasSelection = false;
+    bool m_HasLastOutputPose = false;
 };
 
 } // namespace Raven
