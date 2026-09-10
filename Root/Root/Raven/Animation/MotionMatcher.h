@@ -86,6 +86,8 @@ public:
     bool IsInertializing() const { return m_Inertializer.IsActive(); }
     float GetInertializationElapsedTime() const { return m_Inertializer.GetElapsedTime(); }
 
+    // MotionMatcher利用側からInertialization内部の切替診断値だけを安全に取得します。
+    // EditorやGame側がPoseInertializerそのものへ依存せず、Boneごとの速度Errorを表示できます。
     bool GetInertializationBoneDebugInfo(
         BoneIndex boneIndex,
         PoseInertializerBoneDebugInfo& outInfo) const
@@ -97,10 +99,14 @@ private:
     bool SelectFrame(const MotionSearchResult& searchResult);
     bool AdvanceCurrentTime(float deltaTime);
 
+    // Databaseを1回だけ走査し、最良候補とDebug用Top-Nを同時に構築します。
+    // Editor用に別検索を行わないため、表示候補と実際の切替判断のCostを一致させます。
     bool SearchDatabase(
         const MotionSearchQuery& query,
         MotionSearchResult& outBestResult);
 
+    // 新しく選択したMotionの切替地点より1履歴Frame前をSampleします。
+    // Source側の直前出力Pose履歴と同じ時間幅を使うことで、Bone速度差の比較基準を揃えます。
     bool SamplePreviousTargetPose(
         const Skeleton& skeleton,
         const AnimationClip& clip,
@@ -122,6 +128,7 @@ private:
     MotionMatcherConfig m_Config{};
     PoseInertializer m_Inertializer{};
 
+    // Inertialization開始時に切替直前の表示速度を復元できるよう、最終出力を2Frame保持します。
     SkeletonPose m_PreviousOutputPose{};
     SkeletonPose m_LastOutputPose{};
 
@@ -132,6 +139,8 @@ private:
     float m_LastSearchCost = std::numeric_limits<float>::max();
     std::vector<MotionSearchCandidateDebugInfo> m_LastSearchCandidates;
 
+    // PreviousOutputPose -> LastOutputPoseの実時間幅です。
+    // 可変dt環境でもsource/targetの速度推定へ同じ時間幅を使うため別途保持します。
     float m_LastOutputDeltaTime = 0.0f;
 
     bool m_HasSelection = false;
