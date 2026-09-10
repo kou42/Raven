@@ -28,6 +28,29 @@ math::Vec3 TransformVector(const math::Mat4& matrix, const math::Vec3& vector)
     return { transformed.x, transformed.y, transformed.z };
 }
 
+bool IsFiniteVector(const math::Vec3& value)
+{
+    return std::isfinite(value.x) &&
+        std::isfinite(value.y) &&
+        std::isfinite(value.z);
+}
+
+bool ContainsDuplicateBoneIndex(const std::vector<BoneIndex>& boneIndices)
+{
+    for (std::size_t i = 0; i < boneIndices.size(); ++i)
+    {
+        for (std::size_t j = i + 1; j < boneIndices.size(); ++j)
+        {
+            if (boneIndices[i] == boneIndices[j])
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 bool ValidateRootBone(const Skeleton& skeleton, BoneIndex rootBone)
 {
     if (skeleton.IsValidBoneIndex(rootBone) == false)
@@ -92,7 +115,14 @@ bool MotionQueryBuilder::Build(
     if (poseConfig.RootBone != trajectoryConfig.RootBone ||
         ValidateRootBone(skeleton, poseConfig.RootBone) == false ||
         poseConfig.PoseBones.empty() == true ||
+        ContainsDuplicateBoneIndex(poseConfig.PoseBones) == true ||
         ValidateTrajectoryOffsets(trajectoryConfig.FutureTimeOffsets) == false)
+    {
+        return false;
+    }
+
+    if (IsFiniteVector(trajectoryInput.DesiredVelocity) == false ||
+        IsFiniteVector(trajectoryInput.DesiredDirection) == false)
     {
         return false;
     }
