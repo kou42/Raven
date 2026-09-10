@@ -40,6 +40,7 @@ void MotionMatcher::Reset()
     m_CurrentTime = 0.0f;
     m_TimeSinceSwitch = 0.0f;
     m_LastSearchCost = std::numeric_limits<float>::max();
+    m_LastSearchCandidates.clear();
     m_LastOutputDeltaTime = 0.0f;
     m_HasSelection = false;
     m_HasPreviousOutputPose = false;
@@ -84,7 +85,7 @@ bool MotionMatcher::Update(
     if (shouldSearch == true)
     {
         MotionSearchResult searchResult{};
-        if (m_Database->FindBestMatch(query, m_Config.SearchWeights, searchResult) == false)
+        if (SearchDatabase(query, searchResult) == false)
         {
             return false;
         }
@@ -274,6 +275,74 @@ bool MotionMatcher::Update(
     m_LastOutputPose = outPose;
     m_LastOutputDeltaTime = deltaTime;
     m_HasLastOutputPose = true;
+    return true;
+}
+
+bool MotionMatcher::SearchDatabase(
+    const MotionSearchQuery& query,
+    MotionSearchResult& outBestResult)
+{
+    outBestResult = MotionSearchResult{};
+    m_LastSearchCandidates.clear();
+
+    if (m_Database == nullptr ||
+        (query.PoseFeatures.empty() == true && query.Trajectory.empty() == true))
+    {
+        return false;
+    }
+
+    m_LastSearchCandidates.reserve(SearchCandidateDebugCount);
+
+    for (std::size_t frameIndex = 0u; frameIndex < m_Database->GetFrameCount(); ++frameIndex)
+    {
+        float cost = 0.0f;
+        if (CalculateFrameCost(query, frameIndex, cost) == false)
+        {
+            continue;
+        }
+
+        const MotionFrame* frame = m_Database->GetFrame(frameIndex);
+        if (frame == nullptr)
+        {
+            continue;
+        }
+
+        MotionSearchCandidateDebugInfo candidate{};
+        candidate.FrameIndex = frameIndex;
+        candidate.ClipIndex = frame->ClipIndex;
+        candidate.ClipTime = frame->Time;
+        candidate.Cost = cost;
+        candidate.Trajectory = frame->Trajectory;
+
+        // Top-NはCost昇順を常に維持します。N=5固定なので全候補をsortするより、
+        // 1回のDatabase走査中に小さな配列へ挿入する方が診断用追加負荷を限定できます。
+        const auto insertPosition = std::lower_bound(
+            m_LastSearchCandidates.begin(),
+            m_LastSearchCandidates.end(),
+            candidate.Cost,
+            [](const MotionSearchCandidateDebugInfo& existing, float candidateCost)
+            {
+                return existing.Cost < candidateCost;
+            });
+
+        if (m_LastSearchCandidates.size() < SearchCandidateDebugCount ||
+            insertPosition != m_LastSearchCandidates.end())
+        {
+            m_LastSearchCandidates.insert(insertPosition, std::move(candidate));
+            if (m_LastSearchCandidates.size() > SearchCandidateDebugCount)
+            {
+                m_LastSearchCandidates.pop_back();
+            }
+        }
+    }
+
+    if (m_LastSearchCandidates.empty() == true)
+    {
+        return false;
+    }
+
+    outBestResult.FrameIndex = m_LastSearchCandidates.front().FrameIndex;
+    outBestResult.Cost = m_LastSearchCandidates.front().Cost;
     return true;
 }
 
