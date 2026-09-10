@@ -110,6 +110,9 @@ bool MotionMatcher::Update(
         return false;
     }
 
+    // 現段階では選択Poseをそのまま返します。
+    // 後続のInertializationでは、ここで得たTarget Poseに対して前Poseとの差分を減衰させ、
+    // MotionMatcherの検索・時間管理とPose接続処理を分離します。
     return clip->Sample(skeleton, m_CurrentTime, outPose);
 }
 
