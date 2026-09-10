@@ -138,6 +138,8 @@ bool PoseInertializer::Apply(
     }
 
     float decayWeight = 0.0f;
+    float evaluationTime = m_ElapsedTime;
+
     if (m_Active == true)
     {
         if (m_Offsets.size() != boneCount)
@@ -145,7 +147,10 @@ bool PoseInertializer::Apply(
             return false;
         }
 
-        decayWeight = ComputeDecayWeight(m_ElapsedTime, m_Config.HalfLife);
+        // 切替FrameはdeltaTime=0なのでSource Poseを厳密に再現し、次FrameからはそのFrame分だけ
+        // 先へ進んだ時刻で減衰を評価します。これにより切替Poseを1Frame余分に保持しません。
+        evaluationTime += deltaTime;
+        decayWeight = ComputeDecayWeight(evaluationTime, m_Config.HalfLife);
     }
 
     for (BoneIndex boneIndex = 0;
@@ -182,15 +187,16 @@ bool PoseInertializer::Apply(
 
     if (m_Active == true)
     {
-        m_ElapsedTime += deltaTime;
+        m_ElapsedTime = evaluationTime;
 
         // MaxDurationが指定されている場合は明示的に終了します。
-        // 指数減衰は理論上0にならないため、Runtimeで永続的にActiveを維持しないための上限です。
+        // 既定値は0なので通常は十分小さくなるまで指数減衰を継続します。
         const bool exceededMaxDuration =
             m_Config.MaxDuration > 0.0f &&
             m_ElapsedTime >= m_Config.MaxDuration;
 
-        // 半減期の約10回分で残差は1/1024未満なので、MaxDuration=0でも十分小さくなったら終了します。
+        // 半減期の約10回分で残差は1/1024未満なので、強制終了を無効にしていても
+        // 実用上無視できる値になった時点でRuntime Stateを解放します。
         const bool sufficientlyDecayed =
             m_ElapsedTime >= (m_Config.HalfLife * 10.0f);
 
