@@ -19,12 +19,16 @@ void MotionMatcher::SetDatabase(std::shared_ptr<const MotionDatabase> database)
 
 void MotionMatcher::Reset()
 {
+    m_Inertializer.Reset();
+    m_LastOutputPose = SkeletonPose{};
+
     m_SelectedFrameIndex = std::numeric_limits<std::size_t>::max();
     m_CurrentClipIndex = 0;
     m_CurrentTime = 0.0f;
     m_TimeSinceSwitch = 0.0f;
     m_LastSearchCost = std::numeric_limits<float>::max();
     m_HasSelection = false;
+    m_HasLastOutputPose = false;
 }
 
 bool MotionMatcher::Update(
@@ -57,6 +61,8 @@ bool MotionMatcher::Update(
     const bool shouldSearch =
         m_HasSelection == false ||
         m_TimeSinceSwitch >= m_Config.MinimumSwitchInterval;
+
+    bool switchedThisFrame = false;
 
     if (shouldSearch == true)
     {
@@ -100,6 +106,8 @@ bool MotionMatcher::Update(
             {
                 return false;
             }
+
+            switchedThisFrame = true;
         }
     }
 
@@ -110,10 +118,51 @@ bool MotionMatcher::Update(
         return false;
     }
 
-    // 現段階では選択Poseをそのまま返します。
-    // 後続のInertializationでは、ここで得たTarget Poseに対して前Poseとの差分を減衰させ、
-    // MotionMatcherの検索・時間管理とPose接続処理を分離します。
-    return clip->Sample(skeleton, m_CurrentTime, outPose);
+    SkeletonPose targetPose;
+    if (clip->Sample(skeleton, m_CurrentTime, targetPose) == false)
+    {
+        return false;
+    }
+
+    if (m_Config.EnableInertialization == true)
+    {
+        m_Inertializer.SetConfig(m_Config.Inertialization);
+
+        if (switchedThisFrame == true && m_HasLastOutputPose == true)
+        {
+            // 新しいClipへはこのFrameで即座に切り替えます。
+            // ただし表示Poseは直前Frameとの差分をOffsetとして保持してから減衰させるため、
+            // CrossFadeのように旧Clipを継続SampleせずPoseの連続性だけを維持できます。
+            if (m_Inertializer.Begin(skeleton, m_LastOutputPose, targetPose) == false)
+            {
+                return false;
+            }
+        }
+        else if (switchedThisFrame == true)
+        {
+            // 初回選択では比較元Poseがないため、Inertializationを開始しません。
+            m_Inertializer.Reset();
+        }
+
+        // 切替Frameではelapsed=0のOffsetをそのまま適用し、直前表示Poseを再現します。
+        // 次Frame以降にdeltaTime分ずつ減衰させることで、切替瞬間に1Frame分先へ進んだOffsetを
+        // 適用して小さなPose Jumpを生むことを避けます。
+        const float inertialDeltaTime = switchedThisFrame ? 0.0f : deltaTime;
+        if (m_Inertializer.Apply(skeleton, targetPose, inertialDeltaTime, outPose) == false)
+        {
+            return false;
+        }
+    }
+    else
+    {
+        // Debugで検索先Poseそのものを確認できるよう、Inertialization無効時は完全に迂回します。
+        m_Inertializer.Reset();
+        outPose = targetPose;
+    }
+
+    m_LastOutputPose = outPose;
+    m_HasLastOutputPose = true;
+    return true;
 }
 
 bool MotionMatcher::SelectFrame(const MotionSearchResult& searchResult)
