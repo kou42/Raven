@@ -164,6 +164,9 @@ bool CharacterControllerDemoLocomotionRuntime::ActivateBlendTree(
         return false;
     }
 
+    // SelectorがMotion Matching Driverの非所有参照を破棄した後でDatabaseを解放します。
+    // 切替後に未使用の全Clip Featureを保持し続けないため、DemoのMemory Footprintも元へ戻します。
+    m_MotionMatchingRuntime = Gltf::SkinnedMotionMatchingRuntime{};
     m_Mode = CharacterLocomotionRuntimeMode::BlendTree;
     return true;
 }
@@ -207,7 +210,8 @@ bool CharacterControllerDemoLocomotionRuntime::ActivateMotionMatching(
         return false;
     }
 
-    // 一時RuntimeでAttach/Configを完了してからMemberへ移すことで、失敗時は現在のBlendTreeを維持します。
+    // 一時RuntimeでAttachまで成功してからMemberへ移し、Driver Configureを開始します。
+    // Configure失敗時はSelectorをBlendTreeへ戻すため、呼び出し側は従来Animationを継続できます。
     m_MotionMatchingRuntime = std::move(motionMatchingRuntime);
     if (m_RuntimeSelector.UseMotionMatching(
             m_MotionMatchingRuntime,
@@ -216,7 +220,15 @@ bool CharacterControllerDemoLocomotionRuntime::ActivateMotionMatching(
             CharacterTrajectoryPredictorConfig{},
             errorMessage) == false)
     {
-        ResetMotionMatchingState();
+        m_MotionMatchingRuntime = Gltf::SkinnedMotionMatchingRuntime{};
+
+        // errorMessageはMotion Matching失敗理由を保持したまま、既存BlendTreeを再選択します。
+        // UseBlendTree側へnullptrを渡し、診断文字列を上書きしません。
+        if (m_ConfiguredSkinIndex != Gltf::InvalidGltfIndex)
+        {
+            m_RuntimeSelector.UseBlendTree(*this, m_ConfiguredSkinIndex, nullptr);
+        }
+        m_Mode = CharacterLocomotionRuntimeMode::BlendTree;
         return false;
     }
 
