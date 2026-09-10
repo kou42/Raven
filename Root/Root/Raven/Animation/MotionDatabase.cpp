@@ -10,6 +10,8 @@ namespace Raven
 namespace
 {
 
+constexpr float TrajectoryOffsetEpsilon = 1.0e-4f;
+
 math::Vec3 ExtractTranslation(const math::Mat4& matrix)
 {
     return {
@@ -46,6 +48,108 @@ bool ContainsDuplicateBoneIndex(const std::vector<BoneIndex>& boneIndices)
     }
 
     return false;
+}
+
+bool ValidateRootBone(const Skeleton& skeleton, BoneIndex rootBone)
+{
+    if (skeleton.IsValidBoneIndex(rootBone) == false)
+    {
+        return false;
+    }
+
+    // 現段階ではRoot自身のLocal Transformから安全に逆行列を作るため、
+    // Skeleton階層のRoot Boneだけを基準Boneとして許可します。
+    return skeleton.GetBone(rootBone).Parent == InvalidBoneIndex;
+}
+
+bool ValidateTrajectoryOffsets(const std::vector<float>& offsets)
+{
+    if (offsets.empty() == true)
+    {
+        return false;
+    }
+
+    float previousOffset = 0.0f;
+    for (float offset : offsets)
+    {
+        if (offset <= 0.0f || std::isfinite(offset) == false)
+        {
+            return false;
+        }
+
+        if (offset <= previousOffset)
+        {
+            return false;
+        }
+
+        previousOffset = offset;
+    }
+
+    return true;
+}
+
+bool ValidateSearchWeights(const MotionSearchWeights& weights)
+{
+    const float values[] = {
+        weights.PosePosition,
+        weights.PoseVelocity,
+        weights.TrajectoryPosition,
+        weights.TrajectoryDirection
+    };
+
+    bool hasPositiveWeight = false;
+    for (float value : values)
+    {
+        if (value < 0.0f || std::isfinite(value) == false)
+        {
+            return false;
+        }
+
+        if (value > 0.0f)
+        {
+            hasPositiveWeight = true;
+        }
+    }
+
+    return hasPositiveWeight;
+}
+
+double LengthSquared(const math::Vec3& value)
+{
+    const double x = static_cast<double>(value.x);
+    const double y = static_cast<double>(value.y);
+    const double z = static_cast<double>(value.z);
+    return x * x + y * y + z * z;
+}
+
+bool HasMatchingFeatureLayout(
+    const MotionFrame& frame,
+    const MotionSearchQuery& query)
+{
+    if (frame.PoseFeatures.size() != query.PoseFeatures.size() ||
+        frame.Trajectory.size() != query.Trajectory.size())
+    {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < frame.PoseFeatures.size(); ++i)
+    {
+        if (frame.PoseFeatures[i].Bone != query.PoseFeatures[i].Bone)
+        {
+            return false;
+        }
+    }
+
+    for (std::size_t i = 0; i < frame.Trajectory.size(); ++i)
+    {
+        if (std::fabs(frame.Trajectory[i].TimeOffset - query.Trajectory[i].TimeOffset) >
+            TrajectoryOffsetEpsilon)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace
@@ -185,14 +289,7 @@ bool MotionDatabase::BuildPoseFeatures(
         return false;
     }
 
-    if (skeleton.IsValidBoneIndex(config.RootBone) == false)
-    {
-        return false;
-    }
-
-    // 現段階ではRoot自身のLocal Transformから安全に逆行列を作るため、
-    // Skeleton階層のRoot Boneだけを基準Boneとして許可します。
-    if (skeleton.GetBone(config.RootBone).Parent != InvalidBoneIndex)
+    if (ValidateRootBone(skeleton, config.RootBone) == false)
     {
         return false;
     }
@@ -281,6 +378,154 @@ bool MotionDatabase::BuildPoseFeatures(
     return true;
 }
 
+bool MotionDatabase::BuildTrajectoryFeatures(
+    const Skeleton& skeleton,
+    const MotionTrajectoryFeatureConfig& config)
+{
+    ClearTrajectoryFeatures();
+
+    if (m_Frames.empty() == true || m_SampleRate <= 0.0f)
+    {
+        return false;
+    }
+
+    if (ValidateRootBone(skeleton, config.RootBone) == false ||
+        ValidateTrajectoryOffsets(config.FutureTimeOffsets) == false)
+    {
+        return false;
+    }
+
+    SkeletonPose currentPose;
+    SkeletonPose futurePose;
+
+    for (MotionFrame& frame : m_Frames)
+    {
+        if (frame.ClipIndex >= m_Clips.size())
+        {
+            ClearTrajectoryFeatures();
+            return false;
+        }
+
+        const std::shared_ptr<AnimationClip>& clip = m_Clips[frame.ClipIndex];
+        if (clip == nullptr)
+        {
+            ClearTrajectoryFeatures();
+            return false;
+        }
+
+        if (clip->Sample(skeleton, frame.Time, currentPose) == false)
+        {
+            ClearTrajectoryFeatures();
+            return false;
+        }
+
+        const BoneTransform& currentRoot = currentPose.GetLocalTransform(config.RootBone);
+        const math::Mat4 currentRootInverse = currentRoot.ToInverseMatrix();
+        const math::Quat inverseCurrentRootRotation =
+            currentRoot.Rotation.Normalized().Conjugate();
+
+        frame.Trajectory.reserve(config.FutureTimeOffsets.size());
+
+        for (float timeOffset : config.FutureTimeOffsets)
+        {
+            // AnimationClipはLoop情報を持たない既存設計なので、Database側で勝手にWrapしません。
+            // Clip終端を越えるTrajectoryはDurationへClampし、Loop/遷移先の扱いは後続Runtimeへ残します。
+            const float futureTime = std::min(frame.Time + timeOffset, clip->GetDuration());
+            if (clip->Sample(skeleton, futureTime, futurePose) == false)
+            {
+                ClearTrajectoryFeatures();
+                return false;
+            }
+
+            const BoneTransform& futureRoot = futurePose.GetLocalTransform(config.RootBone);
+            const math::Vec3 futureWorldPosition =
+                ExtractTranslation(futurePose.GetGlobalTransform(config.RootBone));
+            const math::Vec3 futureWorldDirection =
+                futureRoot.Rotation.Normalized().Rotate(math::Vec3{ 0.0f, 0.0f, 1.0f });
+
+            MotionTrajectoryPoint point{};
+            point.TimeOffset = timeOffset;
+            point.Position = TransformPoint(currentRootInverse, futureWorldPosition);
+            point.Direction = inverseCurrentRootRotation.Rotate(futureWorldDirection).Normalized();
+
+            frame.Trajectory.emplace_back(point);
+        }
+    }
+
+    return true;
+}
+
+bool MotionDatabase::FindBestMatch(
+    const MotionSearchQuery& query,
+    const MotionSearchWeights& weights,
+    MotionSearchResult& outResult) const
+{
+    outResult = MotionSearchResult{};
+
+    if (m_Frames.empty() == true ||
+        (query.PoseFeatures.empty() == true && query.Trajectory.empty() == true) ||
+        ValidateSearchWeights(weights) == false)
+    {
+        return false;
+    }
+
+    double bestCost = std::numeric_limits<double>::max();
+
+    for (std::size_t frameIndex = 0; frameIndex < m_Frames.size(); ++frameIndex)
+    {
+        const MotionFrame& frame = m_Frames[frameIndex];
+        if (HasMatchingFeatureLayout(frame, query) == false)
+        {
+            continue;
+        }
+
+        double cost = 0.0;
+
+        for (std::size_t i = 0; i < frame.PoseFeatures.size(); ++i)
+        {
+            const math::Vec3 positionDelta =
+                frame.PoseFeatures[i].Position - query.PoseFeatures[i].Position;
+            const math::Vec3 velocityDelta =
+                frame.PoseFeatures[i].Velocity - query.PoseFeatures[i].Velocity;
+
+            cost += static_cast<double>(weights.PosePosition) * LengthSquared(positionDelta);
+            cost += static_cast<double>(weights.PoseVelocity) * LengthSquared(velocityDelta);
+        }
+
+        for (std::size_t i = 0; i < frame.Trajectory.size(); ++i)
+        {
+            const math::Vec3 positionDelta =
+                frame.Trajectory[i].Position - query.Trajectory[i].Position;
+            const math::Vec3 directionDelta =
+                frame.Trajectory[i].Direction - query.Trajectory[i].Direction;
+
+            cost += static_cast<double>(weights.TrajectoryPosition) * LengthSquared(positionDelta);
+            cost += static_cast<double>(weights.TrajectoryDirection) * LengthSquared(directionDelta);
+        }
+
+        if (std::isfinite(cost) == false)
+        {
+            continue;
+        }
+
+        if (cost < bestCost)
+        {
+            bestCost = cost;
+            outResult.FrameIndex = frameIndex;
+        }
+    }
+
+    if (outResult.IsValid() == false ||
+        bestCost > static_cast<double>(std::numeric_limits<float>::max()))
+    {
+        outResult = MotionSearchResult{};
+        return false;
+    }
+
+    outResult.Cost = static_cast<float>(bestCost);
+    return true;
+}
+
 const std::shared_ptr<AnimationClip>& MotionDatabase::GetClip(std::size_t clipIndex) const
 {
     static const std::shared_ptr<AnimationClip> NullClip{};
@@ -308,6 +553,14 @@ void MotionDatabase::ClearPoseFeatures()
     for (MotionFrame& frame : m_Frames)
     {
         frame.PoseFeatures.clear();
+    }
+}
+
+void MotionDatabase::ClearTrajectoryFeatures()
+{
+    for (MotionFrame& frame : m_Frames)
+    {
+        frame.Trajectory.clear();
     }
 }
 
