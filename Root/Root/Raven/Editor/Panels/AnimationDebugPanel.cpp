@@ -1,10 +1,13 @@
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
 
 #include "Raven/Animation/AnimationRuntimeDebug.h"
+#include "Raven/Character/Debug/CharacterControllerDemoLocomotionRuntime.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
 #include <imgui.h>
+
+#include <vector>
 
 namespace Raven
 {
@@ -29,6 +32,24 @@ const char* StateNameOrNone(const AnimatorStateRuntimeDebugInfo& state)
 {
     return state.HasState ? state.StateName.c_str() : "-";
 }
+
+const char* LocomotionModeText(CharacterLocomotionRuntimeMode mode)
+{
+    switch (mode)
+    {
+    case CharacterLocomotionRuntimeMode::BlendTree:
+        return "Blend Tree";
+    case CharacterLocomotionRuntimeMode::MotionMatching:
+        return "Motion Matching";
+    }
+
+    return "Unknown";
+}
+
+void DrawVec3(const char* label, const math::Vec3& value)
+{
+    ImGui::Text("%s: (%.4f, %.4f, %.4f)", label, value.x, value.y, value.z);
+}
 } // namespace
 
 void AnimationDebugPanel::OnImGuiRender(Scene* scene)
@@ -43,6 +64,175 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
     }
 
     // ========================================================================
+    // Character Locomotion Runtime
+    // ========================================================================
+    // Character DemoのLocomotionはECS AnimatorComponentを経由しないため、StateMachine探索より先に
+    // 専用Runtime Snapshotを表示します。Panel側では検索やInertialization計算を再実装しません。
+    CharacterControllerDemoLocomotionRuntime* locomotionRuntime =
+        CharacterControllerDemoLocomotionRuntime::GetActiveDebugRuntime();
+
+    if (ImGui::CollapsingHeader("Character Locomotion", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (locomotionRuntime == nullptr)
+        {
+            ImGui::TextDisabled("No active Character Locomotion Runtime.");
+        }
+        else
+        {
+            CharacterLocomotionRuntimeDebugInfo locomotionDebug{};
+            const bool hasRuntimeDebug = locomotionRuntime->GetRuntimeDebugInfo(locomotionDebug);
+            const CharacterLocomotionRuntimeMode currentMode = locomotionRuntime->GetMode();
+
+            int selectedMode = currentMode == CharacterLocomotionRuntimeMode::MotionMatching ? 1 : 0;
+            const char* modeItems[] = { "Blend Tree", "Motion Matching" };
+            if (ImGui::Combo("Runtime Mode", &selectedMode, modeItems, 2))
+            {
+                const CharacterLocomotionRuntimeMode requestedMode = selectedMode == 1
+                    ? CharacterLocomotionRuntimeMode::MotionMatching
+                    : CharacterLocomotionRuntimeMode::BlendTree;
+
+                if (locomotionRuntime->SetMode(requestedMode, &m_LocomotionRuntimeError) == true)
+                {
+                    m_LocomotionRuntimeError.clear();
+                }
+            }
+
+            ImGui::Text("Mode: %s", LocomotionModeText(currentMode));
+            ImGui::Text("Runtime: %s",
+                hasRuntimeDebug == true && locomotionDebug.Active == true ? "Active" : "Inactive");
+
+            if (m_LocomotionRuntimeError.empty() == false)
+            {
+                ImGui::TextWrapped("Runtime Error: %s", m_LocomotionRuntimeError.c_str());
+            }
+
+            if (hasRuntimeDebug == true
+                && currentMode == CharacterLocomotionRuntimeMode::MotionMatching)
+            {
+                const CharacterMotionMatchingRuntimeDebugInfo& motionMatching =
+                    locomotionDebug.MotionMatching;
+
+                ImGui::SeparatorText("Motion Matching");
+                ImGui::Text("Selection: %s", motionMatching.HasSelection == true ? "Valid" : "None");
+
+                if (motionMatching.HasSelection == true)
+                {
+                    ImGui::Text("Selected Frame: %zu", motionMatching.SelectedFrameIndex);
+                    ImGui::Text("Clip Index: %u", motionMatching.ClipIndex);
+                    ImGui::Text("Clip Time: %.4f", motionMatching.ClipTime);
+                    ImGui::Text("Search Cost: %.6f", motionMatching.SearchCost);
+                }
+
+                ImGui::Text("Inertialization: %s",
+                    motionMatching.Inertializing == true ? "Active" : "Inactive");
+                ImGui::Text("Inertialization Time: %.4f", motionMatching.InertializationElapsedTime);
+
+                // ====================================================================
+                // Predicted Trajectory
+                // ====================================================================
+                // Driverが実際にMotionMatcherへ渡した直近Queryを表示します。
+                // Editor側でTrajectoryPredictorを再実行しないため、検索入力との不一致が発生しません。
+                ImGui::SeparatorText("Predicted Trajectory");
+                std::vector<MotionTrajectoryPoint> trajectory;
+                if (locomotionRuntime->GetMotionMatchingTrajectoryDebugInfo(trajectory) == true)
+                {
+                    for (std::size_t trajectoryIndex = 0u;
+                        trajectoryIndex < trajectory.size();
+                        ++trajectoryIndex)
+                    {
+                        const MotionTrajectoryPoint& point = trajectory[trajectoryIndex];
+                        ImGui::PushID(static_cast<int>(trajectoryIndex));
+                        ImGui::Text("+%.2fs", point.TimeOffset);
+                        ImGui::SameLine();
+                        ImGui::Text(
+                            "Pos (%.3f, %.3f, %.3f)  Dir (%.3f, %.3f, %.3f)",
+                            point.Position.x,
+                            point.Position.y,
+                            point.Position.z,
+                            point.Direction.x,
+                            point.Direction.y,
+                            point.Direction.z);
+                        ImGui::PopID();
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("Trajectory is available after the first successful Motion Matching update.");
+                }
+
+                // ====================================================================
+                // Bone Inertialization
+                // ====================================================================
+                // 数値IndexだけでなくRuntime SkeletonのBone名から選べるようにします。
+                // 同名Boneが存在してもPushID(Index)によりImGui ID衝突を避けます。
+                ImGui::SeparatorText("Bone Inertialization");
+                const Skeleton* skeleton = locomotionRuntime->GetMotionMatchingSkeleton();
+                if (skeleton != nullptr && skeleton->GetBoneCount() > 0u)
+                {
+                    if (m_SelectedInertializationBoneIndex < 0
+                        || static_cast<std::size_t>(m_SelectedInertializationBoneIndex) >= skeleton->GetBoneCount())
+                    {
+                        m_SelectedInertializationBoneIndex = 0;
+                    }
+
+                    const BoneIndex selectedBoneIndex =
+                        static_cast<BoneIndex>(m_SelectedInertializationBoneIndex);
+                    const Bone& selectedBone = skeleton->GetBone(selectedBoneIndex);
+
+                    if (ImGui::BeginCombo("Bone", selectedBone.Name.c_str()))
+                    {
+                        for (std::size_t boneIndex = 0u; boneIndex < skeleton->GetBoneCount(); ++boneIndex)
+                        {
+                            const bool selected =
+                                boneIndex == static_cast<std::size_t>(m_SelectedInertializationBoneIndex);
+                            const Bone& bone = skeleton->GetBone(static_cast<BoneIndex>(boneIndex));
+
+                            ImGui::PushID(static_cast<int>(boneIndex));
+                            if (ImGui::Selectable(bone.Name.c_str(), selected))
+                            {
+                                m_SelectedInertializationBoneIndex = static_cast<int>(boneIndex);
+                            }
+                            if (selected == true)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::PopID();
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::Text("Bone Index: %d", m_SelectedInertializationBoneIndex);
+
+                    PoseInertializerBoneDebugInfo boneDebug{};
+                    if (locomotionRuntime->GetInertializationBoneDebugInfo(
+                            selectedBoneIndex,
+                            boneDebug) == true)
+                    {
+                        DrawVec3("Translation Offset", boneDebug.InitialTranslationOffset);
+                        DrawVec3("Rotation Offset", boneDebug.InitialRotationOffset);
+                        DrawVec3("Linear Velocity Error", boneDebug.InitialLinearVelocityError);
+                        DrawVec3("Angular Velocity Error", boneDebug.InitialAngularVelocityError);
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled(
+                            "Bone diagnostics are available while Pose Inertialization is active.");
+                    }
+                }
+                else
+                {
+                    ImGui::TextDisabled("Motion Matching Skeleton is unavailable.");
+                }
+            }
+            else if (currentMode == CharacterLocomotionRuntimeMode::BlendTree)
+            {
+                ImGui::TextDisabled(
+                    "Motion Matching diagnostics are hidden while Blend Tree mode is active.");
+            }
+        }
+    }
+
+    // ========================================================================
     // Target Animator
     // ========================================================================
     // 現段階ではScene内で最初に見つかった有効なStateMachine付きAnimatorを表示対象にします。
@@ -53,7 +243,7 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
     {
         static_cast<void>(entity);
 
-        if (animatorComponent.Enabled && animatorComponent.StateMachine != nullptr)
+        if (animatorComponent.Enabled == true && animatorComponent.StateMachine != nullptr)
         {
             stateMachine = animatorComponent.StateMachine.get();
             break;
@@ -62,6 +252,7 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
 
     if (stateMachine == nullptr)
     {
+        ImGui::Separator();
         ImGui::TextDisabled("No enabled Animator StateMachine found.");
         ImGui::End();
         return;
@@ -84,9 +275,9 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
     {
         ImGui::Text("Current: %s", StateNameOrNone(runtime.Current));
         ImGui::Text("Pending: %s", StateNameOrNone(runtime.Pending));
-        ImGui::Text("Queued: %s", runtime.QueuedStateName.empty() ? "-" : runtime.QueuedStateName.c_str());
+        ImGui::Text("Queued: %s", runtime.QueuedStateName.empty() == true ? "-" : runtime.QueuedStateName.c_str());
         ImGui::Text("Normalized Time: %.3f", runtime.Current.NormalizedTime);
-        ImGui::Text("Cross Fade: %s", runtime.IsCrossFading ? "Active" : "Inactive");
+        ImGui::Text("Cross Fade: %s", runtime.IsCrossFading == true ? "Active" : "Inactive");
         ImGui::Text("Cross Fade Weight: %.3f", runtime.CrossFadeWeight);
     }
 
@@ -95,7 +286,8 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
     // ========================================================================
     // Current Stateが1D Blend Treeの場合だけ、Parameter値と各ChildのThreshold/Weightを表示します。
     // WeightはAnimationRuntimeDebugで既に解決済みなのでEditorは表示だけを担当します。
-    if (runtime.Current.IsBlendTree && ImGui::CollapsingHeader("Blend Tree", ImGuiTreeNodeFlags_DefaultOpen))
+    if (runtime.Current.IsBlendTree == true
+        && ImGui::CollapsingHeader("Blend Tree", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("Parameter: %s", runtime.Current.BlendParameterName.c_str());
         ImGui::Text("Value: %.3f", runtime.Current.BlendParameterValue);
@@ -120,22 +312,22 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
         for (const AnimatorStateMachineNodeRuntimeDebugInfo& node : runtime.Nodes)
         {
             const char* status = "";
-            if (node.IsCurrent)
+            if (node.IsCurrent == true)
             {
                 status = " [CURRENT]";
             }
-            else if (node.IsPending)
+            else if (node.IsPending == true)
             {
                 status = " [PENDING]";
             }
-            else if (node.IsQueued)
+            else if (node.IsQueued == true)
             {
                 status = " [QUEUED]";
             }
 
             ImGui::BulletText("%s%s%s",
                 node.StateName.c_str(),
-                node.IsBlendTree ? " [BLEND TREE]" : "",
+                node.IsBlendTree == true ? " [BLEND TREE]" : "",
                 status);
         }
     }
@@ -158,15 +350,15 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
             ImGui::PushID(static_cast<int>(transitionIndex));
 
             const char* status = "";
-            if (transition.IsActive)
+            if (transition.IsActive == true)
             {
                 status = " [ACTIVE]";
             }
-            else if (transition.IsSelectedCandidate)
+            else if (transition.IsSelectedCandidate == true)
             {
                 status = " [SELECTED]";
             }
-            else if (transition.IsEligible)
+            else if (transition.IsEligible == true)
             {
                 status = " [ELIGIBLE]";
             }
@@ -177,19 +369,19 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                 ImGui::Text("Priority: %d", transition.Priority);
                 ImGui::Text("Cross Fade Duration: %.3f", transition.CrossFadeDuration);
 
-                if (transition.HasExitTime)
+                if (transition.HasExitTime == true)
                 {
                     ImGui::Text("Exit Time: %.3f / Source %.3f  %s",
                         transition.ExitTime,
                         transition.SourceNormalizedTime,
-                        transition.IsExitTimeMet ? "[OK]" : "[NG]");
+                        transition.IsExitTimeMet == true ? "[OK]" : "[NG]");
                 }
                 else
                 {
                     ImGui::TextDisabled("Exit Time: disabled");
                 }
 
-                if (transition.Conditions.empty())
+                if (transition.Conditions.empty() == true)
                 {
                     ImGui::TextDisabled("No conditions.");
                 }
@@ -198,23 +390,23 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                     ImGui::SeparatorText("Conditions");
                     for (const AnimatorConditionRuntimeDebugInfo& condition : transition.Conditions)
                     {
-                        if (condition.IsFloat)
+                        if (condition.IsFloat == true)
                         {
                             ImGui::BulletText("%s %s %.3f | Actual %.3f %s",
                                 condition.ParameterName.c_str(),
                                 ConditionOperatorText(condition.Operator),
                                 condition.ExpectedFloat,
                                 condition.ActualFloat,
-                                condition.IsMet ? "[OK]" : "[NG]");
+                                condition.IsMet == true ? "[OK]" : "[NG]");
                         }
                         else
                         {
                             ImGui::BulletText("%s %s %s | Actual %s %s",
                                 condition.ParameterName.c_str(),
                                 ConditionOperatorText(condition.Operator),
-                                condition.ExpectedBool ? "true" : "false",
-                                condition.ActualBool ? "true" : "false",
-                                condition.IsMet ? "[OK]" : "[NG]");
+                                condition.ExpectedBool == true ? "true" : "false",
+                                condition.ActualBool == true ? "true" : "false",
+                                condition.IsMet == true ? "[OK]" : "[NG]");
                         }
                     }
                 }

@@ -32,6 +32,7 @@ void MotionMatcher::SetDatabase(std::shared_ptr<const MotionDatabase> database)
 void MotionMatcher::Reset()
 {
     m_Inertializer.Reset();
+    m_PreviousOutputPose = SkeletonPose{};
     m_LastOutputPose = SkeletonPose{};
 
     m_SelectedFrameIndex = std::numeric_limits<std::size_t>::max();
@@ -39,7 +40,9 @@ void MotionMatcher::Reset()
     m_CurrentTime = 0.0f;
     m_TimeSinceSwitch = 0.0f;
     m_LastSearchCost = std::numeric_limits<float>::max();
+    m_LastOutputDeltaTime = 0.0f;
     m_HasSelection = false;
+    m_HasPreviousOutputPose = false;
     m_HasLastOutputPose = false;
 }
 
@@ -194,12 +197,47 @@ bool MotionMatcher::Update(
 
         if (switchedThisFrame == true && m_HasLastOutputPose == true)
         {
-            // 新しいClipへはこのFrameで即座に切り替えます。
-            // ただし表示Poseは直前Frameとの差分をOffsetとして保持してから減衰させるため、
-            // CrossFadeのように旧Clipを継続SampleせずPoseの連続性だけを維持できます。
-            if (m_Inertializer.Begin(skeleton, m_LastOutputPose, targetPose) == false)
+            bool beganWithVelocity = false;
+
+            if (m_HasPreviousOutputPose == true &&
+                m_LastOutputDeltaTime > 0.0f &&
+                std::isfinite(m_LastOutputDeltaTime) == true)
             {
-                return false;
+                SkeletonPose previousTargetPose;
+                if (SamplePreviousTargetPose(
+                        skeleton,
+                        *clip,
+                        m_LastOutputDeltaTime,
+                        previousTargetPose) == false)
+                {
+                    return false;
+                }
+
+                // Source側は実際に画面へ出した直近2Frame、Target側は新Motionの切替地点と
+                // 同じ時間幅だけ過去のPoseを使います。これによりTranslation/Rotationとも
+                // 切替直前の表示速度と新Motion固有速度との差をInertialization初期条件へ渡せます。
+                if (m_Inertializer.Begin(
+                        skeleton,
+                        m_PreviousOutputPose,
+                        m_LastOutputPose,
+                        previousTargetPose,
+                        targetPose,
+                        m_LastOutputDeltaTime) == false)
+                {
+                    return false;
+                }
+
+                beganWithVelocity = true;
+            }
+
+            if (beganWithVelocity == false)
+            {
+                // 履歴が1Frameしか無い場合や直前dt=0の場合は、従来どおりPose連続性だけを守ります。
+                // 初回近辺の特殊状態でも速度推定のために不正な除算を行わないFallbackです。
+                if (m_Inertializer.Begin(skeleton, m_LastOutputPose, targetPose) == false)
+                {
+                    return false;
+                }
             }
         }
         else if (switchedThisFrame == true)
@@ -224,7 +262,17 @@ bool MotionMatcher::Update(
         outPose = targetPose;
     }
 
+    // 次回切替時に「直前に実際に表示したBone速度」を復元するため、出力履歴を1段ずらします。
+    // Animation Clipの生PoseではなくInertialization適用後Poseを履歴にすることで、連続切替でも
+    // 見えていた運動の速度を次の初期条件として引き継げます。
+    if (m_HasLastOutputPose == true)
+    {
+        m_PreviousOutputPose = m_LastOutputPose;
+        m_HasPreviousOutputPose = true;
+    }
+
     m_LastOutputPose = outPose;
+    m_LastOutputDeltaTime = deltaTime;
     m_HasLastOutputPose = true;
     return true;
 }
@@ -294,6 +342,43 @@ bool MotionMatcher::AdvanceCurrentTime(float deltaTime)
     }
 
     return true;
+}
+
+bool MotionMatcher::SamplePreviousTargetPose(
+    const Skeleton& skeleton,
+    const AnimationClip& clip,
+    float velocityDeltaTime,
+    SkeletonPose& outPose) const
+{
+    if (velocityDeltaTime <= 0.0f || std::isfinite(velocityDeltaTime) == false)
+    {
+        return false;
+    }
+
+    const float duration = clip.GetDuration();
+    if (duration <= 0.0f || std::isfinite(duration) == false)
+    {
+        return false;
+    }
+
+    float previousTime = m_CurrentTime - velocityDeltaTime;
+
+    if (m_Config.Loop == true)
+    {
+        // 選択FrameがLoop先頭付近でも、Target Motion自身の直前速度を得るためDuration側へwrapします。
+        // deltaTimeがDurationより大きい場合もfmodで正規化し、負の剰余だけDurationを加えて[0,duration)へ戻します。
+        previousTime = std::fmod(previousTime, duration);
+        if (previousTime < 0.0f)
+        {
+            previousTime += duration;
+        }
+    }
+    else
+    {
+        previousTime = std::max(0.0f, previousTime);
+    }
+
+    return clip.Sample(skeleton, previousTime, outPose);
 }
 
 bool MotionMatcher::FindContinuationFrame(std::size_t& outFrameIndex) const
