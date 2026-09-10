@@ -106,9 +106,15 @@ public:
         const Skeleton& skeleton,
         const MotionTrajectoryFeatureConfig& config);
 
-    // 現在構築済みのPose / Trajectory Feature全体から正規化統計を計算します。
-    // Featureを再構築した場合は統計を無効化するため、最後にこの関数を呼び直します。
+    // Pose / Trajectory Feature構築後に呼び、Databaseの単位Scaleを統計化します。
+    // Featureを再構築した場合は、検索前にこの関数も再実行してください。
     bool BuildFeatureNormalization();
+
+    // 正規化距離 ||delta / sigma||^2 は raw距離へ 1/sigma^2 のWeightを掛けることと等価です。
+    // その性質を使い、既存FindBestMatch / StayBonus経路を変更せず同一Cost規約へ揃えます。
+    bool MakeNormalizedSearchWeights(
+        const MotionSearchWeights& semanticWeights,
+        MotionSearchWeights& outWeights) const;
 
     bool FindBestMatch(
         const MotionSearchQuery& query,
