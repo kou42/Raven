@@ -33,8 +33,17 @@ public:
 
     // SoftBody SimulationとMesh同期をFixed Stepへ段階移管するための任意境界です。
     // falseのDeformerは従来どおりUpdate()が全責務を持つため、既存実装への影響はありません。
-    // trueの実装ではPhysics State更新と描画用Mesh同期を別々に呼び出せます。
+    // trueの実装では事前準備、Physics State更新、描画用Mesh同期を別々に呼び出せます。
     virtual bool HasSeparatedSoftBodyUpdate() const { return false; }
+
+    // Clothのように初回だけMesh GeometryからPhysics Stateを構築するDeformer向けです。
+    // JellyのようにConstructorだけでPhysics Stateが完成する実装は既定値trueのままで構いません。
+    virtual bool PrepareSoftBodySimulation(Mesh& mesh)
+    {
+        static_cast<void>(mesh);
+        return true;
+    }
+
     virtual void SimulateSoftBody(float deltaTime) { static_cast<void>(deltaTime); }
     virtual void SynchronizeSoftBodyMesh(Mesh& mesh) { static_cast<void>(mesh); }
 };

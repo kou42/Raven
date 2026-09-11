@@ -107,7 +107,7 @@ void SoftBodyClothDeformer::SetCollisionSphere(const math::Vec3& center, float r
     m_CollisionSphereCenter = center;
     m_CollisionSphereRadius = std::max(0.0f, radius);
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         ApplyCollisionSphereToSolver();
     }
@@ -118,7 +118,7 @@ void SoftBodyClothDeformer::DisableCollisionSphere()
     m_CollisionSphereEnabled = false;
     m_CollisionSphereRadius = 0.0f;
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         m_Solver.ClearSphereColliders();
     }
@@ -131,7 +131,7 @@ void SoftBodyClothDeformer::SetCollisionPlane(const math::Vec3& normal, float of
     m_CollisionPlaneNormal = normal;
     m_CollisionPlaneOffset = offset;
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         ApplyCollisionPlaneToSolver();
     }
@@ -141,7 +141,7 @@ void SoftBodyClothDeformer::DisableCollisionPlane()
 {
     m_CollisionPlaneEnabled = false;
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         m_Solver.ClearPlaneColliders();
     }
@@ -241,16 +241,35 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
 {
     RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Update");
 
-    if (m_Initialized == false)
+    // 現段階では既存の可変dt更新契約を維持します。
+    // 次段階でMeshDeformationSystemがPrepare/Synchronizeだけを担当し、Simulateを
+    // PhysicsSimulationWorldのFixed Stepへ移すため、ここでは分離済み関数を順番に呼ぶだけにします。
+    if (PrepareSimulation(mesh) == false)
     {
-        if (InitializeFromMesh(mesh) == false)
-        {
-            return;
-        }
+        return;
     }
 
-    const Ref<MeshGeometry>& geometry = mesh.GetGeometry();
-    if (geometry == nullptr || geometry->GetGeometryUsage() != GeometryUsage::Dynamic)
+    Simulate(deltaTime);
+    SynchronizeMesh(mesh);
+}
+
+bool SoftBodyClothDeformer::PrepareSimulation(Mesh& mesh)
+{
+    if (m_Initialized == true)
+    {
+        return true;
+    }
+
+    return InitializeFromMesh(mesh);
+}
+
+void SoftBodyClothDeformer::Simulate(float deltaTime)
+{
+    RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Simulate");
+
+    // Physics StateがまだMeshから構築されていない場合、Fixed Step側からMeshへ逆依存して
+    // 初期化することは避けます。必ずPrepareSimulation()を先に成功させる契約です。
+    if (m_Initialized == false)
     {
         return;
     }
@@ -284,18 +303,12 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
     // ========================================================================
     // Unified Cloth XPBD Step
     // ========================================================================
-    // 旧実装:
-    //   Solver::Step -> Particle-Particle後処理 -> Particle-Triangle後処理
-    //
-    // 現実装:
-    //   [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle
-    //    -> Sphere -> Plane] x SolverIterations
+    // [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle
+    //  -> Sphere -> Plane] x SolverIterations
     //
     // 全Constraintが同じ反復内で最新Positionを見られるため、外部Colliderへ押されたClothが
     // 自己貫通した場合も次iterationで直ちに再評価されます。またVelocity再構築は最後の1回だけです。
     {
-        // 現在もっとも高コストになりやすい領域です。
-        // 自己衝突Broad PhaseとConstraint反復もこの時間へ含まれるため、まずSolver全体の比率を確認します。
         RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Solver");
         m_Solver.StepWithSelfCollisions(
             deltaTime,
@@ -304,30 +317,13 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
             particleTriangleSettings);
     }
 
-    // ========================================================================
-    // Temporary Allocation Counter Submission
-    // ========================================================================
-    // StepWithSelfCollisions()から戻った時点で、関数内のStep-local unordered_map / unordered_set /
-    // candidate vectorはすべて破棄済みです。そのためAllocation/Deallocationの完成値と
-    // FrameAllocatorのStep使用量を、Solver CPU Scopeと同じProfiler Frameへ安全に送信できます。
-    //
-    // 次Step冒頭のReset()にも未送信時のFallbackがありますが、通常のCloth経路ではここで送信済みとなるため
-    // 1Step遅延や二重送信は発生しません。
+    // Step-local temporary containerが破棄された後の完成値を同じProfiler Frameへ送ります。
     m_Solver.GetTemporaryAllocationStatistics().SubmitProfilerCounters();
 
     // ========================================================================
     // Particle-Triangle Spatial Hash / NarrowPhase Funnel Counters
     // ========================================================================
-    // Scope時間と同じProfiler Frameへ比較条件と件数を記録します。
-    // Candidate -> NarrowPhase -> Distance -> Constraint -> DeltaLambda -> PositionCorrection の順で並べ、
-    // Constraint後半はDenominatorReject / DeltaLambdaRejectも別Counterとして記録します。
-    // これによりConstraintへ到達した候補が、どの理由で実Position更新へ進まなかったかを直接確認できます。
-    //
-    // DenominatorRejectが多い場合は固定Particle構成など「そもそも解けないConstraint」の前倒し除外、
-    // DeltaLambdaRejectが多い場合はLambda状態を利用したcheap rejectを次の最適化候補として判断できます。
-    // Funnel Counterは調査時だけ必要です。通常frameで12回以上のAddCounter()を行うと、
-    // Profiler内部のmutex・文字列copy・vector追記がCloth.Update時間へ混入します。
-    // Solver側の詳細集計と同じopt-in設定へ揃え、通常Gameplayでは観測コストを発生させません。
+    // 詳細Counterはopt-in時だけ送信し、通常GameplayでProfiler観測コストを発生させません。
     if (m_Solver.GetSettings().DetailedParticleTriangleProfilingEnabled
         && CPUProfiler::Get().IsEnabled())
     {
@@ -392,6 +388,22 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         CPUProfiler::Get().AddCounter(
             "SoftBody.ParticleTriangle.NarrowPhaseRatio",
             narrowPhaseRatio);
+    }
+}
+
+void SoftBodyClothDeformer::SynchronizeMesh(Mesh& mesh)
+{
+    RAVEN_PROFILE_SCOPE("SoftBody.Cloth.SynchronizeMesh");
+
+    if (m_Initialized == false)
+    {
+        return;
+    }
+
+    const Ref<MeshGeometry>& geometry = mesh.GetGeometry();
+    if (geometry == nullptr || geometry->GetGeometryUsage() != GeometryUsage::Dynamic)
+    {
+        return;
     }
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();
