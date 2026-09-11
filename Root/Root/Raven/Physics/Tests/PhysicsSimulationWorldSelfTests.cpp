@@ -146,6 +146,7 @@ void RunPhysicsSimulationWorldSelfTests()
     // 同じFixed Step内でSoftBody SolverのSphereへ反映されることを検証します。
     Scene scene;
     Entity rigidSphereEntity = scene.CreateEntity("Rigid Soft Sync Source");
+    Entity secondRigidSphereEntity = scene.CreateEntity("Rigid Soft Sync Duplicate Source");
     Entity softBodyEntity = scene.CreateEntity("Rigid Soft Sync Target");
 
     TransformComponent& rigidTransform = rigidSphereEntity.GetComponent<TransformComponent>();
@@ -174,6 +175,12 @@ void RunPhysicsSimulationWorldSelfTests()
 
     assert(sceneSimulationWorld.RegisterRigidSoftSphereColliderBinding(binding) == true);
     assert(sceneSimulationWorld.RegisterRigidSoftSphereColliderBinding(binding) == false);
+
+    // 同じSoft Colliderへ別Rigid Sourceを割り当てても、同期先が同一なら登録を拒否します。
+    // これによりRigid -> Softの上書き順依存と、Soft -> Rigid反作用の二重適用を防ぎます。
+    RigidSoftSphereColliderBinding conflictingBinding = binding;
+    conflictingBinding.SourceRigidEntity = secondRigidSphereEntity.GetHandle();
+    assert(sceneSimulationWorld.RegisterRigidSoftSphereColliderBinding(conflictingBinding) == false);
     assert(sceneSimulationWorld.GetRigidSoftSphereColliderBindingCount() == 1u);
 
     sceneSimulationWorld.StepSimulation(scene, fixedDeltaTime);
