@@ -79,11 +79,6 @@ math::Vec3 ClothLocalToWorldPosition(const math::Vec3& localPosition)
     return kClothWorldPosition + localPosition * kClothWorldScale;
 }
 
-math::Vec3 WorldToClothLocalPosition(const math::Vec3& worldPosition)
-{
-    return (worldPosition - kClothWorldPosition) / kClothWorldScale;
-}
-
 float WorldToClothLocalLength(float worldLength)
 {
     return worldLength / kClothWorldScale;
@@ -343,6 +338,25 @@ void SoftBodyClothDemoLayer::OnDetach()
 {
     Scene* scene = m_Application.GetScene();
 
+    if (scene != nullptr && m_RigidSoftSphereBindingRegistered == true
+        && m_ClothDeformationInstance != nullptr)
+    {
+        MeshDeformer* baseDeformer = m_ClothDeformationInstance->GetDeformer();
+        SoftBodyClothDeformer* clothDeformer = dynamic_cast<SoftBodyClothDeformer*>(baseDeformer);
+        if (clothDeformer != nullptr)
+        {
+            uint32_t colliderIndex = 0u;
+            if (clothDeformer->TryGetCollisionSphereIndex(colliderIndex) == true)
+            {
+                // BindingはSolverへの非所有pointerを保持するため、Deformer/Entityを破棄する前に必ず解除します。
+                scene->GetPhysicsSimulationWorld().UnregisterRigidSoftSphereColliderBinding(
+                    clothDeformer->GetSolver(),
+                    colliderIndex);
+            }
+        }
+    }
+    m_RigidSoftSphereBindingRegistered = false;
+
     // Layerだけが破棄されるケースでもScene内にデモEntityを残さないよう明示的に破棄します。
     if (scene != nullptr)
     {
@@ -373,6 +387,8 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
     Scene* scene = m_Application.GetScene();
     if (scene == nullptr
         || m_ClothDeformationInstance == nullptr
+        || static_cast<bool>(m_ClothEntity) == false
+        || scene->IsEntityAlive(m_ClothEntity) == false
         || static_cast<bool>(m_RigidSphereEntity) == false
         || scene->IsEntityAlive(m_RigidSphereEntity) == false)
     {
@@ -387,14 +403,39 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
     }
 
     ph::SoftBodySolver& solver = clothDeformer->GetSolver();
+
+    // ========================================================================
+    // Rigid Body -> Soft Body collider binding registration
+    // ========================================================================
+    // ClothのMesh依存初期化はMeshDeformationSystemがScene Physicsより前に済ませます。
+    // Collider Indexが確定した最初のApplication Layer UpdateでBindingを1回だけ登録し、以降の位置同期は
+    // PhysicsSimulationWorldが各Fixed StepのRigid Step直後、Soft Step直前に行います。
+    // 初期ColliderはOnAttach時にRigid Sphere初期位置と一致させているため、Binding登録前の最初のStepも
+    // 不整合なCollider位置から開始しません。
+    if (m_RigidSoftSphereBindingRegistered == false)
+    {
+        uint32_t colliderIndex = 0u;
+        if (clothDeformer->TryGetCollisionSphereIndex(colliderIndex) == true)
+        {
+            ph::RigidSoftSphereColliderBinding binding{};
+            binding.SourceRigidEntity = m_RigidSphereEntity.GetHandle();
+            binding.TargetSoftBodyEntity = m_ClothEntity.GetHandle();
+            binding.TargetSolver = &solver;
+            binding.TargetColliderIndex = colliderIndex;
+
+            m_RigidSoftSphereBindingRegistered =
+                scene->GetPhysicsSimulationWorld().RegisterRigidSoftSphereColliderBinding(binding);
+        }
+    }
+
     const std::vector<ph::SoftBodySphereCollider>& sphereColliders = solver.GetSphereColliders();
 
     // ========================================================================
     // Soft Body -> Rigid Body reaction
     // ========================================================================
-    // Scene更新内ではCloth StepがRigidBody固定Stepより前に走ります。
-    // Application LayerであるこのOnUpdate()はScene更新後に呼ばれるため、ここで直前Cloth Stepの
-    // FeedbackをRigidBody速度へ即時反映し、次のPhysics固定Stepから運動へ参加させます。
+    // PhysicsSimulationWorld内ではRigid Step -> Collider同期 -> Soft Stepの順で進みます。
+    // Application LayerであるこのOnUpdate()はScene更新後に呼ばれるため、ここでは直前Soft Stepの
+    // FeedbackをRigidBody速度へ反映し、次のPhysics固定Stepから運動へ参加させます。
     if (sphereColliders.empty() == false)
     {
         const ph::SoftBodySphereCollider& softSphere = sphereColliders.front();
@@ -425,23 +466,6 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
             }
         }
     }
-
-    // ========================================================================
-    // Rigid Body -> Soft Body collider synchronization
-    // ========================================================================
-    // SceneのPhysics Stepを終えた最新TransformをClothローカルColliderへ変換します。
-    // この値は次フレームのMeshDeformationSystem::Update()で使用されるため、RigidBody Sphereが
-    // 移動してもCloth側Collision Sphereが追従します。
-    const TransformComponent& sphereTransform =
-        m_RigidSphereEntity.GetComponent<TransformComponent>();
-    const ColliderComponent& sphereCollider =
-        m_RigidSphereEntity.GetComponent<ColliderComponent>();
-
-    const math::Vec3 localSphereCenter =
-        WorldToClothLocalPosition(sphereTransform.Position + sphereCollider.Offset);
-    const float localSphereRadius = WorldToClothLocalLength(sphereCollider.Radius);
-
-    clothDeformer->SetCollisionSphere(localSphereCenter, localSphereRadius);
 
 #ifdef _DEBUG
     // ========================================================================
