@@ -27,7 +27,6 @@ public:
         const math::Vec3& color = math::Vec3{ 0.35f, 0.85f, 0.55f });
 
     // 互換Updateは現段階ではSimulation -> Mesh同期を連続実行します。
-    // 呼び出し側の挙動を変えず、次PhaseでFixed Stepへ移管できる境界だけを先に作ります。
     void Update(Mesh& mesh, float deltaTime) override;
 
     // Physics Stateだけを進めます。Renderer / Meshには触れません。
@@ -36,15 +35,16 @@ public:
     // 現在のParticle PositionをMeshへ反映します。Physics Stateは変更しません。
     void SynchronizeMesh(Mesh& mesh);
 
-    // MeshDeformationSystemが具体的なJelly型を知らずにSoftBodyWorldへ登録するための境界です。
-    // Registryは非所有なので、Solverのlifetimeは従来どおりDeformerが管理します。
     ph::SoftBodySolver* GetSoftBodySolver() override { return &m_Solver; }
 
-    // Deformerが保持するSurface Topologyに対応したDynamic Geometryを生成します。
+    // MeshDeformer共通境界へJellyの分離済み処理を接続します。
+    // この段階では呼び出し元を切り替えず、Fixed Step移管時に具体型downcastを不要にします。
+    bool HasSeparatedSoftBodyUpdate() const override { return true; }
+    void SimulateSoftBody(float deltaTime) override { Simulate(deltaTime); }
+    void SynchronizeSoftBodyMesh(Mesh& mesh) override { SynchronizeMesh(mesh); }
+
     Ref<MeshGeometry> CreateGeometry() const;
 
-    // Jellyローカル空間上のPlane Colliderを設定します。
-    // dot(normal, x) = offset をPlaneとし、normal側をParticleが存在できる側とします。
     void SetCollisionPlane(const math::Vec3& normal, float offset);
     void DisableCollisionPlane();
 
