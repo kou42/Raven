@@ -24,10 +24,9 @@ class MeshDeformationInstance;
 //   MeshRendererComponent + RigidBodyComponent + ColliderComponent
 // を持つ通常EntityとしてPhysicsWorldとScene描画の両方へ参加します。
 //
-// Application LayerのOnUpdate()はScene::OnUpdate()後に呼ばれるため、ここでは
-//   1. 直前Cloth Stepで得た反作用ImpulseをRigidBodyへ返す
-//   2. Physics Step後の最新RigidBody Transformを次フレーム用Cloth Colliderへ同期する
-// というSoft/Rigid連成の橋渡しだけを担当します。
+// Rigid -> Soft Collider同期はPhysicsSimulationWorldのFixed Step境界へ移管します。
+// Application LayerのOnUpdate()は、現在はSoft -> Rigid反作用の適用とDebug Snapshotだけを担当し、
+// RigidBody TransformからSoftBody Colliderへの毎frame手動同期は行いません。
 //
 // 描画そのものはScene側へ統合するため、OnRender()は追加Passを持ちません。
 class SoftBodyClothDemoLayer : public Layer
@@ -57,6 +56,10 @@ private:
     // Deformerを直接所有せず、MeshDeformationInstanceのshared ownershipを保持します。
     // 必要なときだけGetDeformer()からSoftBodyClothDeformerへdowncastして連成情報を交換します。
     Ref<MeshDeformationInstance> m_ClothDeformationInstance;
+
+    // ClothのMesh依存初期化後にSolver Collider Indexが確定してからBindingを1回だけ登録します。
+    // OnDetachではこの状態を使ってPhysicsSimulationWorldから非所有参照を解除してからEntityを破棄します。
+    bool m_RigidSoftSphereBindingRegistered = false;
 };
 
 } // namespace Raven
