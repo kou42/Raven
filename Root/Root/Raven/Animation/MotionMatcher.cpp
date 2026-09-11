@@ -40,6 +40,7 @@ void MotionMatcher::Reset()
     m_CurrentTime = 0.0f;
     m_TimeSinceSwitch = 0.0f;
     m_LastSearchCost = std::numeric_limits<float>::max();
+    m_LastSearchCandidates.clear();
     m_LastOutputDeltaTime = 0.0f;
     m_HasSelection = false;
     m_HasPreviousOutputPose = false;
@@ -84,14 +85,13 @@ bool MotionMatcher::Update(
     if (shouldSearch == true)
     {
         MotionSearchResult searchResult{};
-        if (m_Database->FindBestMatch(query, m_Config.SearchWeights, searchResult) == false)
+        if (SearchDatabase(query, searchResult) == false)
         {
             return false;
         }
 
         // Debug表示ではFeatureそのものの品質を確認できるよう、Bias適用前の最良Costを保持します。
         m_LastSearchCost = searchResult.Cost;
-
         bool shouldSwitch = m_HasSelection == false;
 
         if (m_HasSelection == true)
@@ -277,6 +277,76 @@ bool MotionMatcher::Update(
     return true;
 }
 
+bool MotionMatcher::SearchDatabase(
+    const MotionSearchQuery& query,
+    MotionSearchResult& outBestResult)
+{
+    outBestResult = MotionSearchResult{};
+    m_LastSearchCandidates.clear();
+
+    if (m_Database == nullptr ||
+        (query.PoseFeatures.empty() == true && query.Trajectory.empty() == true))
+    {
+        return false;
+    }
+
+    m_LastSearchCandidates.reserve(SearchCandidateDebugCount);
+
+    for (std::size_t frameIndex = 0u; frameIndex < m_Database->GetFrameCount(); ++frameIndex)
+    {
+        float cost = 0.0f;
+        MotionSearchCostBreakdown costBreakdown{};
+        if (CalculateFrameCost(query, frameIndex, cost, &costBreakdown) == false)
+        {
+            continue;
+        }
+
+        const MotionFrame* frame = m_Database->GetFrame(frameIndex);
+        if (frame == nullptr)
+        {
+            continue;
+        }
+
+        MotionSearchCandidateDebugInfo candidate{};
+        candidate.FrameIndex = frameIndex;
+        candidate.ClipIndex = frame->ClipIndex;
+        candidate.ClipTime = frame->Time;
+        candidate.Cost = cost;
+        candidate.CostBreakdown = costBreakdown;
+        candidate.Trajectory = frame->Trajectory;
+
+        // Top-NはCost昇順を常に維持します。N=5固定なので全候補をsortするより、
+        // 1回のDatabase走査中に小さな配列へ挿入する方が診断用追加負荷を限定できます。
+        const auto insertPosition = std::lower_bound(
+            m_LastSearchCandidates.begin(),
+            m_LastSearchCandidates.end(),
+            candidate.Cost,
+            [](const MotionSearchCandidateDebugInfo& existing, float candidateCost)
+            {
+                return existing.Cost < candidateCost;
+            });
+
+        if (m_LastSearchCandidates.size() < SearchCandidateDebugCount ||
+            insertPosition != m_LastSearchCandidates.end())
+        {
+            m_LastSearchCandidates.insert(insertPosition, std::move(candidate));
+            if (m_LastSearchCandidates.size() > SearchCandidateDebugCount)
+            {
+                m_LastSearchCandidates.pop_back();
+            }
+        }
+    }
+
+    if (m_LastSearchCandidates.empty() == true)
+    {
+        return false;
+    }
+
+    outBestResult.FrameIndex = m_LastSearchCandidates.front().FrameIndex;
+    outBestResult.Cost = m_LastSearchCandidates.front().Cost;
+    return true;
+}
+
 bool MotionMatcher::SelectFrame(const MotionSearchResult& searchResult)
 {
     if (m_Database == nullptr || searchResult.IsValid() == false)
@@ -435,9 +505,14 @@ bool MotionMatcher::FindContinuationFrame(std::size_t& outFrameIndex) const
 bool MotionMatcher::CalculateFrameCost(
     const MotionSearchQuery& query,
     std::size_t frameIndex,
-    float& outCost) const
+    float& outCost,
+    MotionSearchCostBreakdown* outBreakdown) const
 {
     outCost = std::numeric_limits<float>::max();
+    if (outBreakdown != nullptr)
+    {
+        *outBreakdown = MotionSearchCostBreakdown{};
+    }
 
     if (m_Database == nullptr)
     {
@@ -461,7 +536,10 @@ bool MotionMatcher::CalculateFrameCost(
         return false;
     }
 
-    double cost = 0.0;
+    double posePositionCost = 0.0;
+    double poseVelocityCost = 0.0;
+    double trajectoryPositionCost = 0.0;
+    double trajectoryDirectionCost = 0.0;
 
     for (std::size_t i = 0; i < frame->PoseFeatures.size(); ++i)
     {
@@ -475,8 +553,8 @@ bool MotionMatcher::CalculateFrameCost(
         const math::Vec3 velocityDelta =
             frame->PoseFeatures[i].Velocity - query.PoseFeatures[i].Velocity;
 
-        cost += static_cast<double>(weights.PosePosition) * LengthSquared(positionDelta);
-        cost += static_cast<double>(weights.PoseVelocity) * LengthSquared(velocityDelta);
+        posePositionCost += static_cast<double>(weights.PosePosition) * LengthSquared(positionDelta);
+        poseVelocityCost += static_cast<double>(weights.PoseVelocity) * LengthSquared(velocityDelta);
     }
 
     for (std::size_t i = 0; i < frame->Trajectory.size(); ++i)
@@ -491,9 +569,17 @@ bool MotionMatcher::CalculateFrameCost(
         const math::Vec3 directionDelta =
             frame->Trajectory[i].Direction - query.Trajectory[i].Direction;
 
-        cost += static_cast<double>(weights.TrajectoryPosition) * LengthSquared(positionDelta);
-        cost += static_cast<double>(weights.TrajectoryDirection) * LengthSquared(directionDelta);
+        trajectoryPositionCost +=
+            static_cast<double>(weights.TrajectoryPosition) * LengthSquared(positionDelta);
+        trajectoryDirectionCost +=
+            static_cast<double>(weights.TrajectoryDirection) * LengthSquared(directionDelta);
     }
+
+    const double cost =
+        posePositionCost +
+        poseVelocityCost +
+        trajectoryPositionCost +
+        trajectoryDirectionCost;
 
     if (std::isfinite(cost) == false ||
         cost > static_cast<double>(std::numeric_limits<float>::max()))
@@ -502,6 +588,17 @@ bool MotionMatcher::CalculateFrameCost(
     }
 
     outCost = static_cast<float>(cost);
+
+    if (outBreakdown != nullptr)
+    {
+        // 内訳は実検索と同じdouble累積値から最後にfloatへ落とします。
+        // そのためDebug側で別式を使うより丸め差が小さく、Weight調整時の比較にも使えます。
+        outBreakdown->PosePosition = static_cast<float>(posePositionCost);
+        outBreakdown->PoseVelocity = static_cast<float>(poseVelocityCost);
+        outBreakdown->TrajectoryPosition = static_cast<float>(trajectoryPositionCost);
+        outBreakdown->TrajectoryDirection = static_cast<float>(trajectoryDirectionCost);
+    }
+
     return true;
 }
 
