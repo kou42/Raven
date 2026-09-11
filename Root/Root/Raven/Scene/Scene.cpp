@@ -269,14 +269,20 @@ void Scene::OnUpdatePhysics(float dt)
 
     while (m_PhysicsAccumulator >= m_FixedDeltaTime)
     {
-        // Fixed timestepが1 Application frame中に複数回走った場合も1回ずつ記録します。
-        // Statistics側で同名Scopeを集計することで、Physics catch-upによる負荷増加も確認できます。
+        // Fixed timestepが1 Application frame中に複数回走った場合、Physics Stateだけを連続して進めます。
+        // SoftBody Mesh/GPU同期はloop終了後へ集約し、catch-up途中Stateの不要なuploadを避けます。
         {
             RAVEN_PROFILE_SCOPE("Physics.FixedStep");
-            m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
+            m_PhysicsWorld.StepSimulation(*this, m_FixedDeltaTime);
         }
         m_PhysicsAccumulator -= m_FixedDeltaTime;
         ++fixedStepCount;
+    }
+
+    if (fixedStepCount > 0u)
+    {
+        RAVEN_PROFILE_SCOPE("Physics.OutputSynchronization");
+        m_PhysicsWorld.SynchronizeOutputs();
     }
 
     // 0 Stepのframeも記録し、1回あたりの重さとcatch-up回数を区別できるようにします。
@@ -501,6 +507,9 @@ void TestEntityGeneration()
     assert(!first);
 
     Entity second = scene.CreateEntity("Second");
+
+    const EntityHandle newHandle = second.GetHandle();
+    static_cast<void>(newHandle);
 
     assert(second.GetIndex() == reusedIndex);
 

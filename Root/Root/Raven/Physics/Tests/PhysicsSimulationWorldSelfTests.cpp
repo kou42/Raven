@@ -69,7 +69,7 @@ void RunPhysicsSimulationWorldSelfTests()
     constexpr float fixedDeltaTime = 1.0f / 60.0f;
     softBodyWorld.Step(fixedDeltaTime);
 
-    // 全Participantは1 Fixed StepにつきSimulation -> Output同期をそれぞれ1回だけ受け取ります。
+    // 互換Stepは従来どおりSimulation -> Output同期を1回ずつ実行します。
     assert(firstParticipant.StepCount == 1u);
     assert(secondParticipant.StepCount == 1u);
     assert(firstParticipant.SynchronizationCount == 1u);
@@ -77,16 +77,29 @@ void RunPhysicsSimulationWorldSelfTests()
     assert(firstParticipant.LastFixedDeltaTime == fixedDeltaTime);
     assert(secondParticipant.LastFixedDeltaTime == fixedDeltaTime);
 
+    // catch-upを模した2回のSimulationでは、途中StateをOutputへ同期しません。
+    softBodyWorld.StepSimulation(fixedDeltaTime);
+    softBodyWorld.StepSimulation(fixedDeltaTime);
+    assert(firstParticipant.StepCount == 3u);
+    assert(secondParticipant.StepCount == 3u);
+    assert(firstParticipant.SynchronizationCount == 1u);
+    assert(secondParticipant.SynchronizationCount == 1u);
+
+    // Application frameの最終Fixed Step後に1回だけ最新Stateを同期します。
+    softBodyWorld.SynchronizeOutputs();
+    assert(firstParticipant.SynchronizationCount == 2u);
+    assert(secondParticipant.SynchronizationCount == 2u);
+
     assert(softBodyWorld.UnregisterSimulationParticipant(firstParticipant) == true);
     assert(softBodyWorld.UnregisterSimulationParticipant(firstParticipant) == false);
     assert(softBodyWorld.ContainsSimulationParticipant(firstParticipant) == false);
 
     // Unregister後は残ったParticipantだけがSimulation/同期されます。
     softBodyWorld.Step(fixedDeltaTime);
-    assert(firstParticipant.StepCount == 1u);
-    assert(firstParticipant.SynchronizationCount == 1u);
-    assert(secondParticipant.StepCount == 2u);
-    assert(secondParticipant.SynchronizationCount == 2u);
+    assert(firstParticipant.StepCount == 3u);
+    assert(firstParticipant.SynchronizationCount == 2u);
+    assert(secondParticipant.StepCount == 4u);
+    assert(secondParticipant.SynchronizationCount == 3u);
 
     assert(softBodyWorld.UnregisterSolver(firstSolver) == true);
     assert(softBodyWorld.UnregisterSolver(firstSolver) == false);

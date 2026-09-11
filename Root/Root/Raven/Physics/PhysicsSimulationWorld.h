@@ -29,8 +29,15 @@ public:
     bool RegisterSimulationParticipant(SoftBodySimulationParticipant& participant);
     bool UnregisterSimulationParticipant(SoftBodySimulationParticipant& participant);
 
-    void Clear();
+    // 互換入口です。単独Step時はSimulationと出力同期を連続実行します。
     void Step(float fixedDeltaTime);
+
+    // Application frame内で複数Fixed Stepをcatch-upする場合、Simulationだけを繰り返し、
+    // 最終Stateの出力同期を1回へ集約できるようPhaseを明示的に分離します。
+    void StepSimulation(float fixedDeltaTime);
+    void SynchronizeOutputs();
+
+    void Clear();
 
     bool ContainsSolver(const SoftBodySolver& solver) const;
     bool ContainsSimulationParticipant(const SoftBodySimulationParticipant& participant) const;
@@ -58,7 +65,12 @@ private:
 class PhysicsSimulationWorld
 {
 public:
+    // 単発実行向けの互換入口です。Simulation後に出力同期まで完了します。
     void Step(Scene& scene, float fixedDeltaTime);
+
+    // Sceneのcatch-up loopから使用するSimulation専用入口です。
+    void StepSimulation(Scene& scene, float fixedDeltaTime);
+    void SynchronizeOutputs();
 
     PhysicsWorld& GetRigidBodyWorld();
     const PhysicsWorld& GetRigidBodyWorld() const;
