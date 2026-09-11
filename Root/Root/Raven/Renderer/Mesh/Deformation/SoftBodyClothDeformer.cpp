@@ -107,7 +107,7 @@ void SoftBodyClothDeformer::SetCollisionSphere(const math::Vec3& center, float r
     m_CollisionSphereCenter = center;
     m_CollisionSphereRadius = std::max(0.0f, radius);
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         ApplyCollisionSphereToSolver();
     }
@@ -118,7 +118,7 @@ void SoftBodyClothDeformer::DisableCollisionSphere()
     m_CollisionSphereEnabled = false;
     m_CollisionSphereRadius = 0.0f;
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         m_Solver.ClearSphereColliders();
     }
@@ -131,7 +131,7 @@ void SoftBodyClothDeformer::SetCollisionPlane(const math::Vec3& normal, float of
     m_CollisionPlaneNormal = normal;
     m_CollisionPlaneOffset = offset;
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         ApplyCollisionPlaneToSolver();
     }
@@ -141,7 +141,7 @@ void SoftBodyClothDeformer::DisableCollisionPlane()
 {
     m_CollisionPlaneEnabled = false;
 
-    if (m_Initialized)
+    if (m_Initialized == true)
     {
         m_Solver.ClearPlaneColliders();
     }
@@ -241,16 +241,34 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
 {
     RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Update");
 
-    if (m_Initialized == false)
+    // 互換Updateでは従来と同じく、初期化 -> Simulation -> Mesh/GPU同期を1回の呼び出しで完了します。
+    // MeshDeformationSystemからFixed Stepへ参加する場合は、この3責務を個別hookとして呼び分けます。
+    if (PrepareSimulation(mesh) == false)
     {
-        if (InitializeFromMesh(mesh) == false)
-        {
-            return;
-        }
+        return;
     }
 
-    const Ref<MeshGeometry>& geometry = mesh.GetGeometry();
-    if (geometry == nullptr || geometry->GetGeometryUsage() != GeometryUsage::Dynamic)
+    Simulate(deltaTime);
+    SynchronizeMesh(mesh);
+}
+
+bool SoftBodyClothDeformer::PrepareSimulation(Mesh& mesh)
+{
+    if (m_Initialized == true)
+    {
+        return true;
+    }
+
+    return InitializeFromMesh(mesh);
+}
+
+void SoftBodyClothDeformer::Simulate(float deltaTime)
+{
+    RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Simulate");
+
+    // Physics StateがまだMeshから構築されていない場合、Fixed Step側からMeshへ逆依存して
+    // 初期化することは避けます。必ずPrepareSimulation()を先に成功させる契約です。
+    if (m_Initialized == false)
     {
         return;
     }
@@ -392,6 +410,22 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
         CPUProfiler::Get().AddCounter(
             "SoftBody.ParticleTriangle.NarrowPhaseRatio",
             narrowPhaseRatio);
+    }
+}
+
+void SoftBodyClothDeformer::SynchronizeMesh(Mesh& mesh)
+{
+    RAVEN_PROFILE_SCOPE("SoftBody.Cloth.SynchronizeMesh");
+
+    if (m_Initialized == false)
+    {
+        return;
+    }
+
+    const Ref<MeshGeometry>& geometry = mesh.GetGeometry();
+    if (geometry == nullptr || geometry->GetGeometryUsage() != GeometryUsage::Dynamic)
+    {
+        return;
     }
 
     const std::vector<ph::SoftBodyParticle>& particles = m_Solver.GetParticles();

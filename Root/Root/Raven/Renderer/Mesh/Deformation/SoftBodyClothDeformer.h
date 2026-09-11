@@ -14,8 +14,10 @@ namespace Raven
 // SoftBodyClothDeformer
 // ============================================================================
 // Dynamic Gridの頂点とXPBD Cloth Particleを1対1で対応させるMeshDeformerです。
-// Scene側はSoftBodyの具体的なSolver処理を知る必要がなく、既存MeshDeformationSystemから
-// Update()を呼ぶだけで物理更新、頂点反映、法線再計算、GPU同期まで進みます。
+// 従来はScene側がSoftBodyの具体的なSolver処理を知らず、既存MeshDeformationSystemから
+// Update()を呼ぶだけで物理更新、頂点反映、法線再計算、GPU同期まで進む構造でした。
+// 現在も互換Update()ではその契約を維持しつつ、Physics State更新とMesh同期を分離して
+// SimulationをFixed Stepへ移管できる境界を追加しています。
 //
 // 現段階の物理計算はClothローカル空間で完結します。World-spaceのRigidBodyとの双方向連成は
 // このDeformerへ直接混ぜず、後続の連成レイヤーからSolverへCollider情報を渡す想定です。
@@ -24,8 +26,30 @@ class SoftBodyClothDeformer : public MeshDeformer
 public:
     SoftBodyClothDeformer(uint32_t rows, uint32_t columns);
 
-    // 初回はDynamic GridからClothを構築し、以降はSolver更新結果をMeshへ同期します。
+    // 初回はDynamic GridからClothを構築し、以降はSolver更新結果をMeshへ同期する従来契約を維持します。
+    // 内部では Prepare -> Simulation -> Mesh同期へ責務を分離し、Fixed Step経路から個別に呼び出せます。
     void Update(Mesh& mesh, float deltaTime) override;
+
+    // Clothは初回だけDynamic Grid頂点からParticleを構築するため、Mesh依存初期化を
+    // Physics Step本体から切り離します。初期化済みなら副作用なくtrueを返します。
+    bool PrepareSimulation(Mesh& mesh);
+
+    // XPBD SolverとProfiler Counterだけを更新し、Mesh / GPUには触れません。
+    void Simulate(float deltaTime);
+
+    // 現在のParticle PositionをMeshへ反映し、Normal再計算とGPU同期を行います。
+    // Physics Stateは変更しません。
+    void SynchronizeMesh(Mesh& mesh);
+
+    // MeshDeformationSystemが具体的なCloth型を知らずにSoftBodyWorldへ登録するための境界です。
+    // Solverの所有権は引き続きDeformerが保持し、返却pointerは非所有参照としてのみ使用します。
+    ph::SoftBodySolver* GetSoftBodySolver() override { return &m_Solver; }
+
+    // Jellyと同じ共通SoftBody更新境界へClothの分離済み処理を接続します。
+    bool HasSeparatedSoftBodyUpdate() const override { return true; }
+    bool PrepareSoftBodySimulation(Mesh& mesh) override { return PrepareSimulation(mesh); }
+    void SimulateSoftBody(float deltaTime) override { Simulate(deltaTime); }
+    void SynchronizeSoftBodyMesh(Mesh& mesh) override { SynchronizeMesh(mesh); }
 
     // Clothローカル空間上の静的Sphere Colliderを設定します。
     // 初期化後に変更された場合もSolverへ設定を再登録します。

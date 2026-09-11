@@ -159,12 +159,12 @@ void Scene::DestroyEntity(Entity entity)
 
 const ph::PhysicsWorld& Scene::GetPhysicsWorld() const
 {
-    return m_PhysicsWorld;
+    return m_PhysicsWorld.GetRigidBodyWorld();
 }
 
 ph::PhysicsWorld& Scene::GetPhysicsWorld()
 {
-    return m_PhysicsWorld;
+    return m_PhysicsWorld.GetRigidBodyWorld();
 }
 
 void Scene::OnCreate()
@@ -269,14 +269,20 @@ void Scene::OnUpdatePhysics(float dt)
 
     while (m_PhysicsAccumulator >= m_FixedDeltaTime)
     {
-        // Fixed timestepが1 Application frame中に複数回走った場合も1回ずつ記録します。
-        // Statistics側で同名Scopeを集計することで、Physics catch-upによる負荷増加も確認できます。
+        // Fixed timestepが1 Application frame中に複数回走った場合、Physics Stateだけを連続して進めます。
+        // SoftBody Mesh/GPU同期はloop終了後へ集約し、catch-up途中Stateの不要なuploadを避けます。
         {
             RAVEN_PROFILE_SCOPE("Physics.FixedStep");
-            m_PhysicsWorld.Step(*this, m_FixedDeltaTime);
+            m_PhysicsWorld.StepSimulation(*this, m_FixedDeltaTime);
         }
         m_PhysicsAccumulator -= m_FixedDeltaTime;
         ++fixedStepCount;
+    }
+
+    if (fixedStepCount > 0u)
+    {
+        RAVEN_PROFILE_SCOPE("Physics.OutputSynchronization");
+        m_PhysicsWorld.SynchronizeOutputs();
     }
 
     // 0 Stepのframeも記録し、1回あたりの重さとcatch-up回数を区別できるようにします。
@@ -286,8 +292,8 @@ void Scene::OnUpdatePhysics(float dt)
         static_cast<double>(fixedStepCount) * static_cast<double>(m_FixedDeltaTime) * 1000.0);
 
     // PhysicsDebugRendererには別Worldを再構築させず、このSceneが実際にStepした
-    // PhysicsWorldを読み取り専用で関連付けます。
-    ph::PhysicsDebugRenderer::BindPhysicsWorld(*this, m_PhysicsWorld);
+    // Rigid Body PhysicsWorldを読み取り専用で関連付けます。
+    ph::PhysicsDebugRenderer::BindPhysicsWorld(*this, m_PhysicsWorld.GetRigidBodyWorld());
 }
 
 void Scene::OnUpdateLayer(float dt)
@@ -501,6 +507,9 @@ void TestEntityGeneration()
     assert(!first);
 
     Entity second = scene.CreateEntity("Second");
+
+    const EntityHandle newHandle = second.GetHandle();
+    static_cast<void>(newHandle);
 
     assert(second.GetIndex() == reusedIndex);
 

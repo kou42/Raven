@@ -18,7 +18,7 @@
 #include "Raven/Scene/ComponentStorage.h"
 #include "Raven/Scene/ComponentView.h"
 
-#include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Physics/PhysicsSimulationWorld.h"
 
 // コンポーネント汎用化
 #define USE_STORAGE_VERSION_2 1
@@ -69,14 +69,17 @@ public:
     // ========================================================================
     // Physics World Access
     // ========================================================================
-    // Sceneが所有しているPhysicsWorldへアクセスします。
-    //
-    // ゲーム側からRayCast / AddImpulse / QueryAABBなどの
-    // PhysicsWorld公開APIを利用するための正式な入口です。
-    //
-    // PhysicsWorldそのものの所有権はSceneが保持します。
+    // Sceneは上位PhysicsSimulationWorldを所有しますが、既存ゲームコードからの
+    // RayCast / AddImpulse / QueryAABBなどは従来どおりRigid Body PhysicsWorld経由で
+    // 利用できるよう、GetPhysicsWorld()を互換APIとして維持します。
     const ph::PhysicsWorld& GetPhysicsWorld() const;
     ph::PhysicsWorld& GetPhysicsWorld();
+
+    // General Physics側のDomain Registryや将来のCoupling制御へアクセスする明示APIです。
+    // 既存Rigid Body利用側はGetPhysicsWorld()を使い続け、上位Worldが必要なSystemだけが
+    // このAccessorを使用することで依存範囲を限定します。
+    const ph::PhysicsSimulationWorld& GetPhysicsSimulationWorld() const { return m_PhysicsWorld; }
+    ph::PhysicsSimulationWorld& GetPhysicsSimulationWorld() { return m_PhysicsWorld; }
 
     //+---------------------------------------------------------------------
     // テンプレート
@@ -131,7 +134,9 @@ private:
     //そのため、キューにはEntityハンドル全体を保存します。
     std::vector<Entity> m_DestroyQueue;
 
-    ph::PhysicsWorld m_PhysicsWorld;
+    // Sceneは個別Physics Domainを直接所有せず、上位Worldを所有します。
+    // Phase 0では内部にRigid Body PhysicsWorldだけを保持し、既存挙動をそのまま委譲します。
+    ph::PhysicsSimulationWorld m_PhysicsWorld;
 
     float m_PhysicsAccumulator = 0.0f;
     float m_FixedDeltaTime = 1.0f / 60.0f;
