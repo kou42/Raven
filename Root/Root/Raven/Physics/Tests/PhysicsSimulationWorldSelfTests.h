@@ -3,7 +3,8 @@
 namespace Raven::ph::tests
 {
 
-// PhysicsSimulationWorldが既存Rigid Body Worldを単一所有するPhase 0の契約を確認します。
+// PhysicsSimulationWorldがRigid Body / Soft Body Domain境界を保持し、
+// SoftBodyWorld Registryの登録・重複防止・解除を確認します。
 void RunPhysicsSimulationWorldSelfTests();
 
 }

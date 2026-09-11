@@ -2,12 +2,13 @@
 
 #include <cassert>
 
+#include "Raven/Physics/SoftBody/SoftBodySolver.h"
+
 namespace Raven::ph::tests
 {
 
-// Phase 0の責務は上位Worldが既存Rigid Body Worldを所有し、
-// const / non-constの両方から同一インスタンスへ到達できることです。
-// Physics挙動そのものは既存PhysicsWorldのSelf Testへ委ねます。
+// PhysicsSimulationWorldがRigid Body / Soft Body Domainの入口を単一所有し、
+// SoftBodyWorld Registryが非所有参照を重複なく管理できることを確認します。
 void RunPhysicsSimulationWorldSelfTests()
 {
     PhysicsSimulationWorld simulationWorld;
@@ -17,6 +18,30 @@ void RunPhysicsSimulationWorldSelfTests()
     const PhysicsWorld& constRigidBodyWorld = constSimulationWorld.GetRigidBodyWorld();
 
     assert(&rigidBodyWorld == &constRigidBodyWorld);
+
+    SoftBodyWorld& softBodyWorld = simulationWorld.GetSoftBodyWorld();
+    const SoftBodyWorld& constSoftBodyWorld = constSimulationWorld.GetSoftBodyWorld();
+
+    assert(&softBodyWorld == &constSoftBodyWorld);
+    assert(softBodyWorld.GetRegisteredSolverCount() == 0u);
+
+    SoftBodySolver firstSolver;
+    SoftBodySolver secondSolver;
+
+    assert(softBodyWorld.RegisterSolver(firstSolver) == true);
+    assert(softBodyWorld.RegisterSolver(firstSolver) == false);
+    assert(softBodyWorld.RegisterSolver(secondSolver) == true);
+    assert(softBodyWorld.GetRegisteredSolverCount() == 2u);
+    assert(softBodyWorld.ContainsSolver(firstSolver) == true);
+    assert(softBodyWorld.ContainsSolver(secondSolver) == true);
+
+    assert(softBodyWorld.UnregisterSolver(firstSolver) == true);
+    assert(softBodyWorld.UnregisterSolver(firstSolver) == false);
+    assert(softBodyWorld.ContainsSolver(firstSolver) == false);
+    assert(softBodyWorld.GetRegisteredSolverCount() == 1u);
+
+    softBodyWorld.Clear();
+    assert(softBodyWorld.GetRegisteredSolverCount() == 0u);
 }
 
 }
