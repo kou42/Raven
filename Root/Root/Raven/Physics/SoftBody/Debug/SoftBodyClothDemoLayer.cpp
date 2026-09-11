@@ -25,25 +25,48 @@ namespace Raven
 {
 namespace
 {
+// ============================================================================
+// XPBD Cloth Demo Parameters
+// ============================================================================
+// 24x24セル = 25x25 Particleです。
+// 最初の検証として十分に滑らかでありながら、Constraint数もまだ扱いやすい規模にしています。
 constexpr uint32_t kClothRows = 24u;
 constexpr uint32_t kClothColumns = 24u;
 
-// Solverは小さなローカル座標で計算し、Entity TransformだけでWorldへ配置します。
+// Solverは[-0.5,+0.5]程度の小さなローカル座標で計算し、Entity TransformだけでWorldへ拡大・移動します。
+// 物理計算を巨大なWorld座標から分離し、Constraint計算の数値スケールを安定させる狙いです。
+// 描画をSceneへ統合した現在も、Solver座標系とWorld座標系を分離する設計自体は変わりません。
 constexpr math::Vec3 kClothWorldPosition{ 0.0f, 18.0f, -10.0f };
 constexpr float kClothWorldScale = 22.0f;
+
+// SceneGameの床はWorld Y=0です。
+// SolverはClothローカル空間で動くため、worldY = localY * scale + translationY を逆変換し、
+// localY = (0 - 18) / 22 として同じ床面をSoftBody Solverへ登録します。
 constexpr float kFloorLocalY = -18.0f / 22.0f;
 
+// ============================================================================
+// Dynamic RigidBody Sphere Parameters
+// ============================================================================
+// SphereはCloth正面(+Z側)から-Z方向へ飛ばし、垂直に吊ったClothへ衝突させます。
+// 初期位置もClothローカル座標で記述し、World変換規則をClothと共有します。
 constexpr math::Vec3 kRigidSphereInitialLocalCenter{ 0.0f, 0.0f, 0.36f };
 constexpr float kRigidSphereWorldRadius = 2.4f;
 constexpr float kRigidSphereMass = 4.0f;
 constexpr math::Vec3 kRigidSphereInitialVelocity{ 0.0f, 0.0f, -8.0f };
 
-// SoftBody ParticleとRigidBodyの質量単位系はまだ完全には校正していないため、
-// デモでは反作用ScaleとClampを永続Coupling設定として明示します。
+// XPBD Sphere Collisionは現在DeltaLambda / dtから反作用Impulseを計算します。
+// 以前のPosition Correction由来の推定より反復回数への依存は小さくなりましたが、SoftBody Particleの
+// mass scaleとRigidBodyのkgはまだ共通単位系として校正していません。そのためデモ段階では
+// Reaction ScaleとClampをBinding設定として残し、異なる質量系を接続した際の過大反作用を防ぎます。
+// 将来Rigid/Soft共通Constraint Solverへ統合した段階で、この経験的Scaleを除去する想定です。
 constexpr float kSoftRigidReactionScale = 0.12f;
 constexpr float kMaxReactionImpulse = 18.0f;
 
 #ifdef _DEBUG
+// Browser側は250ms間隔でSVGを再取得します。
+// Raven側はそれより少し細かい100ms間隔でSnapshotを更新し、ブラウザの再取得時に
+// ほぼ常に新しいSolver状態が存在するようにします。毎フレームofstreamを開く方式にしないことで、
+// Physics / RendererのProfiler計測へファイルI/Oが混入する量も抑えます。
 constexpr float kBrowserDebugWriteIntervalSeconds = 0.10f;
 const std::filesystem::path kBrowserDebugSvgPath =
     std::filesystem::path("Raven") / "Debug" / "Generated" / "Startup.svg";
@@ -62,6 +85,13 @@ float WorldToClothLocalLength(float worldLength)
 }
 
 #ifdef _DEBUG
+// ============================================================================
+// WriteBrowserDebugSnapshot
+// ============================================================================
+// Mesh GeometryのIndexは「Cloth内の頂点Index」であり、SVG Writerが要求するのは
+// Solver全体のParticle Indexです。現在はSolver::Clear()直後にClothを構築するため両者は
+// 実質一致しますが、将来1 Solverへ複数SoftBodyを登録しても壊れないよう、必ず
+// SoftBodyCloth::ParticleIndicesを通して明示的に変換します。
 void WriteBrowserDebugSnapshot(
     const SoftBodyClothDeformer& clothDeformer,
     const Ref<Mesh>& clothMesh)
@@ -87,6 +117,8 @@ void WriteBrowserDebugSnapshot(
     {
         if (meshVertexIndex >= cloth.ParticleIndices.size())
         {
+            // Topologyが不整合なSnapshotを部分的に書き出すより、このFrameは出力しない方が
+            // Debug Viewer上で誤ったTriangleを正しい状態と誤認しにくくなります。
             return;
         }
 
@@ -95,6 +127,9 @@ void WriteBrowserDebugSnapshot(
 
     const ph::SoftBodySolver& solver = clothDeformer.GetSolver();
 
+    // Spatial Hash本体やBucket配列をViewerへ公開せず、直近BuildのActive Cellだけを値型へコピーします。
+    // このSnapshot生成は100ms間隔のBrowser Debug更新時だけ行うため、毎Solver iterationのBroad Phase
+    // hot pathへDebug用vector allocationや走査を追加しません。
     std::vector<ph::SoftBodyTriangleSpatialHashCellDebugInfo> spatialHashCells;
     solver.CollectParticleTriangleSpatialHashDebugInfo(spatialHashCells);
 
@@ -106,6 +141,12 @@ void WriteBrowserDebugSnapshot(
         clothDeformer.GetParticleTriangleSpatialHashCellSize(),
         spatialHashCells);
 
+    // ========================================================================
+    // Particle-Triangle Reject Funnel Snapshot
+    // ========================================================================
+    // Snapshot BuilderはSoftBodyTriangle配列を入力にするため、描画用Index列と同じTopologyを
+    // 3要素ずつ値型へ変換します。これはBrowser更新時だけの診断処理であり、Simulation側の
+    // m_SelfCollisionTrianglesやFlat Hashのprivate状態を公開しません。
     std::vector<ph::SoftBodyTriangle> debugTriangles;
     debugTriangles.reserve(particleTriangleIndices.size() / 3u);
 
@@ -118,6 +159,8 @@ void WriteBrowserDebugSnapshot(
         debugTriangles.push_back(triangle);
     }
 
+    // SoftBodyClothDeformer::Update()で使っているParticle-Triangle Thicknessと同じ計算です。
+    // Debug Snapshotだけ別値を使うとReject分類がRuntimeと一致しなくなるため、Grid寸法から同じ値を再現します。
     const float horizontalSpacing = 1.0f / static_cast<float>(kClothColumns);
     const float verticalSpacing = 1.0f / static_cast<float>(kClothRows);
     const float minimumSpacing = std::min(horizontalSpacing, verticalSpacing);
@@ -148,6 +191,8 @@ void SoftBodyClothDemoLayer::OnAttach()
         return;
     }
 
+    // Clothは毎フレーム頂点が変化するためDynamic Gridを使用します。
+    // Sphere MeshはSoft/Rigid連成対象のDynamic RigidBodyを通常Scene描画で可視化するために使用します。
     m_ClothMesh = PrimitiveMeshFactory::CreateDynamicGrid(
         static_cast<int>(kClothRows),
         static_cast<int>(kClothColumns));
@@ -173,6 +218,8 @@ void SoftBodyClothDemoLayer::OnAttach()
         return;
     }
 
+    // ClothとRigidBody Sphereは同じShader/Pipeline設定を利用します。
+    // Clothは表裏の両方を確認したいためCullMode::Noneにしています。
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.DebugName = "SoftBody Cloth Demo Pipeline";
     pipelineSpecification.Shader = shader;
@@ -184,6 +231,8 @@ void SoftBodyClothDemoLayer::OnAttach()
     pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
     pipelineSpecification.Blend = true;
 
+    // MaterialをEntityごとに分ける理由は、u_TintがMaterialの可変状態だからです。
+    // ClothとSphereが同じMaterialを共有すると、描画順によって色が上書きされます。
     m_ClothMaterial = CreateRef<Material>(Pipeline::Create(pipelineSpecification));
     m_ClothMaterial->SetUniform("u_Tint", math::Vec3{ 0.35f, 0.65f, 1.0f });
     m_ClothMaterial->SetUniform("u_Alpha", 1.0f);
@@ -196,8 +245,14 @@ void SoftBodyClothDemoLayer::OnAttach()
     // ========================================================================
     // Cloth Entity
     // ========================================================================
+    // Scene側にはSoftBody専用描画処理を増やさず、既存の
+    // MeshRendererComponent + MeshDeformationComponentとして登録します。
+    // MeshDeformationSystemがComponentを自動走査するため、SoftBody固有の頂点Update呼び出しを
+    // SceneGameへ埋め込まずに済みます。また描画も通常MeshRenderer経路へ統合できます。
     m_ClothEntity = scene->CreateEntity("XPBD Cloth Demo");
 
+    // Solver内部はローカル座標のまま維持し、Worldへの配置はTransformComponentだけで表現します。
+    // これによりMeshDeformerはScene上の配置位置を知る必要がありません。
     TransformComponent& clothTransform = m_ClothEntity.GetComponent<TransformComponent>();
     clothTransform.Position = kClothWorldPosition;
     clothTransform.Scale = { kClothWorldScale, kClothWorldScale, kClothWorldScale };
@@ -206,9 +261,14 @@ void SoftBodyClothDemoLayer::OnAttach()
         MeshRendererComponent{ m_ClothMesh, m_ClothMaterial });
 
     auto clothDeformer = CreateScope<SoftBodyClothDeformer>(kClothRows, kClothColumns);
+
+    // 最初のSphere Collider位置は、この後生成するRigidBody Sphereの初期Transformと一致させます。
     clothDeformer->SetCollisionSphere(
         kRigidSphereInitialLocalCenter,
         WorldToClothLocalLength(kRigidSphereWorldRadius));
+
+    // +Yを外側とするPlaneをScene床と同じWorld Y=0へ配置します。
+    // Clothが衝突後に落下しても床より下へ抜けないことを目視確認できます。
     clothDeformer->SetCollisionPlane({ 0.0f, 1.0f, 0.0f }, kFloorLocalY);
 
     m_ClothDeformationInstance = CreateRef<MeshDeformationInstance>(
@@ -221,11 +281,16 @@ void SoftBodyClothDemoLayer::OnAttach()
     // ========================================================================
     // Dynamic RigidBody Sphere Entity
     // ========================================================================
+    // このSphereは表示専用ではなく、通常のPhysicsWorldへ参加するDynamic Bodyです。
+    // 現在はMeshRendererComponentも同じEntityへ登録しているため、PhysicsWorldが更新するTransformを
+    // Scene Rendererも直接参照します。表示用位置をLayer側へ複製せず、床や既存RigidBodyとの衝突と
+    // 描画を同じECS Entityから処理できることが今回のScene統合で重要な点です。
     m_RigidSphereEntity = scene->CreateEntity("SoftBody Coupling Rigid Sphere");
 
     TransformComponent& sphereTransform = m_RigidSphereEntity.GetComponent<TransformComponent>();
     sphereTransform.Position = ClothLocalToWorldPosition(kRigidSphereInitialLocalCenter);
 
+    // PrimitiveMeshFactory::CreateSphere()は半径0.5なので、直径2RをScaleへ設定します。
     const float sphereDiameter = kRigidSphereWorldRadius * 2.0f;
     sphereTransform.Scale = { sphereDiameter, sphereDiameter, sphereDiameter };
 
@@ -239,6 +304,8 @@ void SoftBodyClothDemoLayer::OnAttach()
     rigidBody.LinearDamping = 0.02f;
     rigidBody.AngularDamping = 0.04f;
     rigidBody.UseGravity = true;
+
+    // 連成確認中に微小速度でSleepすると反作用の検証が分かりにくいため、デモSphereはSleepを無効化します。
     rigidBody.AllowSleep = false;
     m_RigidSphereEntity.AddComponent<RigidBodyComponent>(rigidBody);
 
@@ -249,6 +316,9 @@ void SoftBodyClothDemoLayer::OnAttach()
     collider.StaticFriction = 0.5f;
     collider.DynamicFriction = 0.35f;
     m_RigidSphereEntity.AddComponent<ColliderComponent>(collider);
+
+    // RenderSceneはTransformComponent + MeshRendererComponentを持つEntityをECSから直接走査します。
+    // そのためCloth/Sphereを別の描画対象リストへ登録する必要はありません。
 
     // ========================================================================
     // Persistent Rigid <-> Soft coupling configuration
@@ -272,6 +342,7 @@ void SoftBodyClothDemoLayer::OnDetach()
 
     // Runtime Binding RegistryはMeshDeformationSystemがECSから毎frame再構築するため、
     // LayerはSolverへの非所有pointerを直接解除しません。Entityを破棄すれば次回再構築から自然に消えます。
+    // Layerだけが破棄されるケースでもScene内にデモEntityを残さないよう明示的に破棄します。
     if (scene != nullptr)
     {
         if (static_cast<bool>(m_ClothEntity)
@@ -315,8 +386,18 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
         return;
     }
 
+    // ========================================================================
+    // Runtime SoftBody -> Browser Debug Viewer
+    // ========================================================================
     // CouplingのRuntime処理はSystem/Physicsへ移管済みなので、Application LayerのUpdateは
     // 完了済みSoftBody Stepを可視化するDebug Snapshotだけを担当します。
+    // Application Layer::OnUpdate()はScene更新後なので、この時点のSolverは当該FrameのCloth Stepを
+    // 完了しています。したがってParticle位置とFunnel Counterを同一SnapshotとしてSVGへ保存できます。
+    // static accumulatorはこのDebug Demo Layerが1個だけ生成される現在の構成に限定した簡易Throttleです。
+    //
+    // BrowserDebugConfig.hの共通フラグがfalseなら、このブロックへ入らないため、Reject Snapshot再評価、
+    // Active Cell収集、SVG Writer、ファイルI/Oのすべてを停止できます。ブラウザ起動側も同じフラグを
+    // 参照するため、Profiler計測時に片側だけ動き続ける状態を避けられます。
     if (kEnableBrowserDebugViewer == true)
     {
         static float browserDebugWriteAccumulator = kBrowserDebugWriteIntervalSeconds;
@@ -335,8 +416,19 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
 
 void SoftBodyClothDemoLayer::OnRender()
 {
-    // ClothとRigidBody Sphereは通常のMeshRendererComponentを持つため、描画はScene側へ一本化します。
-    // Browser Debug ViewerもOnUpdate後に保存されたPhysics Snapshotを読み取るだけで、追加Render Passは持ちません。
+    // ========================================================================
+    // Rendering is intentionally owned by Scene
+    // ========================================================================
+    // 旧実装ではここでRuntime Cameraを再取得し、Renderer::BeginScene()/EndScene()による
+    // Cloth専用の追加描画Passを実行していました。
+    //
+    // 現在はClothとRigidBody Sphereの両方がMeshRendererComponentを持つ通常Entityです。
+    // そのため描画はSceneの共通MeshRenderer経路へ一本化し、このLayerでは追加描画を行いません。
+    // これによりGame View / Scene ViewでSoftBodyだけ描画経路が分岐する問題を避け、
+    // Camera Context・Depth・Material・Entity Transformも他のScene Objectと同じ規則で扱えます。
+    //
+    // Browser Debug Viewerも描画Passからは独立しており、OnUpdate後に保存されたPhysics Snapshotを
+    // 読み取ります。そのためBrowser可視化を追加してもSceneの描画責務はここへ戻しません。
 }
 
 } // namespace Raven
