@@ -241,9 +241,8 @@ void SoftBodyClothDeformer::Update(Mesh& mesh, float deltaTime)
 {
     RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Update");
 
-    // 現段階では既存の可変dt更新契約を維持します。
-    // 次段階でMeshDeformationSystemがPrepare/Synchronizeだけを担当し、Simulateを
-    // PhysicsSimulationWorldのFixed Stepへ移すため、ここでは分離済み関数を順番に呼ぶだけにします。
+    // 互換Updateでは従来と同じく、初期化 -> Simulation -> Mesh/GPU同期を1回の呼び出しで完了します。
+    // MeshDeformationSystemからFixed Stepへ参加する場合は、この3責務を個別hookとして呼び分けます。
     if (PrepareSimulation(mesh) == false)
     {
         return;
@@ -303,12 +302,18 @@ void SoftBodyClothDeformer::Simulate(float deltaTime)
     // ========================================================================
     // Unified Cloth XPBD Step
     // ========================================================================
-    // [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle
-    //  -> Sphere -> Plane] x SolverIterations
+    // 旧実装:
+    //   Solver::Step -> Particle-Particle後処理 -> Particle-Triangle後処理
+    //
+    // 現実装:
+    //   [Distance -> Dihedral -> Particle-Particle -> Particle-Triangle
+    //    -> Sphere -> Plane] x SolverIterations
     //
     // 全Constraintが同じ反復内で最新Positionを見られるため、外部Colliderへ押されたClothが
     // 自己貫通した場合も次iterationで直ちに再評価されます。またVelocity再構築は最後の1回だけです。
     {
+        // 現在もっとも高コストになりやすい領域です。
+        // 自己衝突Broad PhaseとConstraint反復もこの時間へ含まれるため、まずSolver全体の比率を確認します。
         RAVEN_PROFILE_SCOPE("SoftBody.Cloth.Solver");
         m_Solver.StepWithSelfCollisions(
             deltaTime,
@@ -317,13 +322,30 @@ void SoftBodyClothDeformer::Simulate(float deltaTime)
             particleTriangleSettings);
     }
 
-    // Step-local temporary containerが破棄された後の完成値を同じProfiler Frameへ送ります。
+    // ========================================================================
+    // Temporary Allocation Counter Submission
+    // ========================================================================
+    // StepWithSelfCollisions()から戻った時点で、関数内のStep-local unordered_map / unordered_set /
+    // candidate vectorはすべて破棄済みです。そのためAllocation/Deallocationの完成値と
+    // FrameAllocatorのStep使用量を、Solver CPU Scopeと同じProfiler Frameへ安全に送信できます。
+    //
+    // 次Step冒頭のReset()にも未送信時のFallbackがありますが、通常のCloth経路ではここで送信済みとなるため
+    // 1Step遅延や二重送信は発生しません。
     m_Solver.GetTemporaryAllocationStatistics().SubmitProfilerCounters();
 
     // ========================================================================
     // Particle-Triangle Spatial Hash / NarrowPhase Funnel Counters
     // ========================================================================
-    // 詳細Counterはopt-in時だけ送信し、通常GameplayでProfiler観測コストを発生させません。
+    // Scope時間と同じProfiler Frameへ比較条件と件数を記録します。
+    // Candidate -> NarrowPhase -> Distance -> Constraint -> DeltaLambda -> PositionCorrection の順で並べ、
+    // Constraint後半はDenominatorReject / DeltaLambdaRejectも別Counterとして記録します。
+    // これによりConstraintへ到達した候補が、どの理由で実Position更新へ進まなかったかを直接確認できます。
+    //
+    // DenominatorRejectが多い場合は固定Particle構成など「そもそも解けないConstraint」の前倒し除外、
+    // DeltaLambdaRejectが多い場合はLambda状態を利用したcheap rejectを次の最適化候補として判断できます。
+    // Funnel Counterは調査時だけ必要です。通常frameで12回以上のAddCounter()を行うと、
+    // Profiler内部のmutex・文字列copy・vector追記がCloth.Update時間へ混入します。
+    // Solver側の詳細集計と同じopt-in設定へ揃え、通常Gameplayでは観測コストを発生させません。
     if (m_Solver.GetSettings().DetailedParticleTriangleProfilingEnabled
         && CPUProfiler::Get().IsEnabled())
     {

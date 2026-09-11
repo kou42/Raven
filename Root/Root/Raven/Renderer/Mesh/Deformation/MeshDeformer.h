@@ -15,7 +15,16 @@ class SoftBodySolver;
 // ============================================================================
 // MeshDeformer
 // ============================================================================
-// Meshの頂点変形処理を抽象化する共通インターフェースです。
+// Meshの頂点変形処理だけを抽象化する共通インターフェースです。
+//
+// 重要:
+// - MeshGeometry      : CPU側の論理頂点を保持する
+// - MeshDeformer      : CPU頂点をどう変形するかを決める
+// - Mesh::SyncGeometry: 変形結果をGPUへ同期する
+//
+// という3段階に責務を分離します。
+// Skeletal / SoftBody / Morphはこのインターフェースを実装し、Renderer固有の
+// VertexArray / VertexBufferを直接操作しない構造を維持します。
 //
 // SoftBody Simulation Participantも基底として持ちますが、通常Deformerは既定no-opのままです。
 // HasSeparatedSoftBodyUpdate()==trueの実装だけをMeshDeformationSystemがPhysics Registryへ登録します。
@@ -24,10 +33,17 @@ class MeshDeformer : public ph::SoftBodySimulationParticipant
 public:
     virtual ~MeshDeformer() = default;
 
+    // deltaTime秒だけ変形状態を進め、必要ならMeshGeometryを更新します。
+    // 非SoftBody Deformerでは従来どおりGPU同期までDeformer側で完結し、Scene側はUpdate()を呼ぶだけです。
+    // SoftBodyはFixed Step移管のため、下記のPrepare / Simulate / Synchronize境界へ責務を分離できます。
     virtual void Update(Mesh& mesh, float deltaTime) = 0;
 
+    // SoftBody DeformerだけがSolver参照を公開する任意インターフェースです。
+    // 所有権はDeformer側に残し、SoftBodyWorldではDebug/Coupling用の非所有参照として扱います。
     virtual ph::SoftBodySolver* GetSoftBodySolver() { return nullptr; }
 
+    // falseのDeformerは従来どおりUpdate()が全責務を持ちます。
+    // trueの実装だけがPhysics Fixed StepのSimulation Participantとして登録されます。
     virtual bool HasSeparatedSoftBodyUpdate() const { return false; }
 
     // Clothのように初回だけMesh GeometryからPhysics Stateを構築するDeformer向けです。

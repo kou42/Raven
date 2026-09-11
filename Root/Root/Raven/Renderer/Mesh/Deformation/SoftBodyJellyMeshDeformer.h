@@ -16,9 +16,24 @@ namespace Raven
 // ============================================================================
 // Soft Body Jelly Mesh Deformer
 // ============================================================================
-// JellyのPhysics StateとMesh表示を橋渡しするDeformerです。
-// SimulationとMesh同期を分離しておき、後続でSimulationだけをPhysics Fixed Stepへ
-// 移管してもRenderer側の頂点同期処理を再利用できる構造にします。
+// SoftBodyClothDeformerと同じく、JellyのPhysics StateとMesh変形を橋渡しするDeformerです。
+//
+// Constructor:
+//   Jelly格子 / Tetrahedron / Volume Constraint / Surface Topologyを構築します。
+//
+// CreateGeometry():
+//   現在のSurface ParticleからDynamic MeshGeometryを生成します。
+//
+// 従来のUpdate():
+//   1. StepSoftBodyJelly()でXPBD Simulationを進める
+//   2. Surface Particle PositionをMesh Vertexへコピー
+//   3. Surface Triangleから面積加重Vertex Normalを再計算
+//   4. MeshGeometry::SetVertices()
+//   5. Mesh::SyncGeometry()
+//
+// 現在は上記責務をSimulate()とSynchronizeMesh()へ分離しています。
+// これによりSimulationだけをPhysics Fixed Stepへ移管しても、Renderer側の頂点同期処理を
+// そのまま再利用できます。互換Update()は両処理を連続実行するため、直接利用時の契約も維持します。
 class SoftBodyJellyMeshDeformer final : public MeshDeformer
 {
 public:
@@ -26,7 +41,7 @@ public:
         const ph::SoftBodyJellySettings& settings = ph::SoftBodyJellySettings{},
         const math::Vec3& color = math::Vec3{ 0.35f, 0.85f, 0.55f });
 
-    // 互換Updateは現段階ではSimulation -> Mesh同期を連続実行します。
+    // 互換UpdateはSimulation -> Mesh同期を連続実行します。
     void Update(Mesh& mesh, float deltaTime) override;
 
     // Physics Stateだけを進めます。Renderer / Meshには触れません。
@@ -38,13 +53,16 @@ public:
     ph::SoftBodySolver* GetSoftBodySolver() override { return &m_Solver; }
 
     // MeshDeformer共通境界へJellyの分離済み処理を接続します。
-    // この段階では呼び出し元を切り替えず、Fixed Step移管時に具体型downcastを不要にします。
+    // Fixed Step側は具体型へのdowncastを行わず、この共通境界だけを使用します。
     bool HasSeparatedSoftBodyUpdate() const override { return true; }
     void SimulateSoftBody(float deltaTime) override { Simulate(deltaTime); }
     void SynchronizeSoftBodyMesh(Mesh& mesh) override { SynchronizeMesh(mesh); }
 
+    // Deformerが保持するSurface Topologyに対応したDynamic Geometryを生成します。
     Ref<MeshGeometry> CreateGeometry() const;
 
+    // Jellyローカル空間上のPlane Colliderを設定します。
+    // dot(normal, x) = offset をPlaneとし、normal側をParticleが存在できる側とします。
     void SetCollisionPlane(const math::Vec3& normal, float offset);
     void DisableCollisionPlane();
 

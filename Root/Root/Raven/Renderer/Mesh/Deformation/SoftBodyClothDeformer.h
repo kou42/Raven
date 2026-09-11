@@ -14,7 +14,10 @@ namespace Raven
 // SoftBodyClothDeformer
 // ============================================================================
 // Dynamic Gridの頂点とXPBD Cloth Particleを1対1で対応させるMeshDeformerです。
-// Physics State更新とMesh同期を分離し、後続でSimulationをFixed Stepへ移管できる境界を持ちます。
+// 従来はScene側がSoftBodyの具体的なSolver処理を知らず、既存MeshDeformationSystemから
+// Update()を呼ぶだけで物理更新、頂点反映、法線再計算、GPU同期まで進む構造でした。
+// 現在も互換Update()ではその契約を維持しつつ、Physics State更新とMesh同期を分離して
+// SimulationをFixed Stepへ移管できる境界を追加しています。
 //
 // 現段階の物理計算はClothローカル空間で完結します。World-spaceのRigidBodyとの双方向連成は
 // このDeformerへ直接混ぜず、後続の連成レイヤーからSolverへCollider情報を渡す想定です。
@@ -23,8 +26,8 @@ class SoftBodyClothDeformer : public MeshDeformer
 public:
     SoftBodyClothDeformer(uint32_t rows, uint32_t columns);
 
-    // 互換Updateは Prepare -> Simulation -> Mesh同期を連続実行します。
-    // 呼び出し側の更新順序はまだ変更せず、Fixed Step移管用の責務境界だけを先に作ります。
+    // 初回はDynamic GridからClothを構築し、以降はSolver更新結果をMeshへ同期する従来契約を維持します。
+    // 内部では Prepare -> Simulation -> Mesh同期へ責務を分離し、Fixed Step経路から個別に呼び出せます。
     void Update(Mesh& mesh, float deltaTime) override;
 
     // Clothは初回だけDynamic Grid頂点からParticleを構築するため、Mesh依存初期化を

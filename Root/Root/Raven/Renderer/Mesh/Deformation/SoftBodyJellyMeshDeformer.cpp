@@ -42,9 +42,8 @@ void SoftBodyJellyMeshDeformer::DisableCollisionPlane()
 
 void SoftBodyJellyMeshDeformer::Update(Mesh& mesh, float deltaTime)
 {
-    // 現段階では既存の可変dt更新契約を維持します。
-    // SimulationとMesh同期を別関数に分けることで、後続PhaseではSimulate()だけを
-    // PhysicsSimulationWorldのFixed Stepへ移し、SynchronizeMesh()を描画更新側へ残せます。
+    // 互換Updateでは従来と同じくSimulation + Renderingを1回の呼び出しで完了します。
+    // Fixed Step経路では下記のSimulate() / SynchronizeMesh()を個別に呼び分けます。
     Simulate(deltaTime);
     SynchronizeMesh(mesh);
 }
@@ -56,8 +55,12 @@ void SoftBodyJellyMeshDeformer::Simulate(float deltaTime)
         return;
     }
 
-    // Renderer / Meshへ触れず、SoftBody Physics Stateだけを更新します。
-    // StepSoftBodyJelly()内部ではDistance -> Volume -> Collisionを同一XPBD iterationで解き、
+    // ========================================================================
+    // Physics Step
+    // ========================================================================
+    // 従来はCloth Deformerと同様にMeshDeformationSystemのUpdate入口からSimulationまで進めていました。
+    // 現在はRenderer / Meshへ触れない独立Phaseとして切り出し、Physics Fixed Stepから実行できます。
+    // StepSoftBodyJelly()内部では Distance -> Volume -> Collision を同一XPBD iterationで解き、
     // 最後にJelly MaterialのVelocity Dampingを適用します。
     ph::StepSoftBodyJelly(m_Solver, m_Jelly, deltaTime);
 }

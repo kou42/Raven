@@ -10,6 +10,15 @@ namespace Raven
 
 void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
 {
+    // ========================================================================
+    // ECS -> Deformation bridge
+    // ========================================================================
+    // ComponentViewがMeshDeformationComponentのStorageだけを走査するため、
+    // Meshを持つ全Entityを毎フレーム総当たりする必要はありません。
+    //
+    // 従来はMeshDeformationInstance::Update()だけを呼ぶ共通経路でしたが、SoftBodyだけは
+    // Fixed Physics Stepへ移管するため、具体型を判定せずMeshDeformerの共通境界からRegistryへ参加させます。
+    // Wave / Skeletal / Morph等は引き続き従来の可変dt Update経路を使用します。
     ph::SoftBodyWorld& softBodyWorld = scene.GetPhysicsSimulationWorld().GetSoftBodyWorld();
 
     // SoftBodyWorldは非所有Registryなので、Entity/Deformer破棄後のpointerを次frameへ残さないよう
@@ -21,6 +30,8 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
     {
         static_cast<void>(entity);
 
+        // EnabledとInstanceの有効性は責務が異なるため明示的に分けて判定します。
+        // Instanceが無効ならSolver/Participant自体へ到達できないため、最初に除外します。
         if (deformation.IsValid() == false)
         {
             continue;
@@ -62,7 +73,7 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
             // MeshDeformationInstanceがMesh/Deformerを同時所有するため、登録frame中はpointer lifetimeが一致します。
             deformer->BindSoftBodySynchronizationMesh(*mesh);
 
-            // SimulationとPost-Simulation Mesh同期はPhysicsSimulationWorld::Step()へ移管します。
+            // SimulationとPost-Simulation Mesh同期はPhysicsSimulationWorldへ移管します。
             // このGame Updateでは登録だけを行うため、Fixed Step前の古いPhysics StateをMeshへ書き戻しません。
             softBodyWorld.RegisterSimulationParticipant(*deformer);
             continue;
