@@ -159,12 +159,12 @@ void Scene::DestroyEntity(Entity entity)
 
 const ph::PhysicsWorld& Scene::GetPhysicsWorld() const
 {
-    return m_PhysicsWorld;
+    return m_PhysicsWorld.GetRigidBodyWorld();
 }
 
 ph::PhysicsWorld& Scene::GetPhysicsWorld()
 {
-    return m_PhysicsWorld;
+    return m_PhysicsWorld.GetRigidBodyWorld();
 }
 
 void Scene::OnCreate()
@@ -286,8 +286,8 @@ void Scene::OnUpdatePhysics(float dt)
         static_cast<double>(fixedStepCount) * static_cast<double>(m_FixedDeltaTime) * 1000.0);
 
     // PhysicsDebugRendererには別Worldを再構築させず、このSceneが実際にStepした
-    // PhysicsWorldを読み取り専用で関連付けます。
-    ph::PhysicsDebugRenderer::BindPhysicsWorld(*this, m_PhysicsWorld);
+    // Rigid Body PhysicsWorldを読み取り専用で関連付けます。
+    ph::PhysicsDebugRenderer::BindPhysicsWorld(*this, m_PhysicsWorld.GetRigidBodyWorld());
 }
 
 void Scene::OnUpdateLayer(float dt)
