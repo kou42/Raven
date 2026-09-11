@@ -69,6 +69,13 @@ public:
         return true;
     }
 
+    // MeshDeformationSystemのECS Coupling構築では具体的なCloth型を知らないため、
+    // 基底の共通境界から既存Collision Sphere Indexを公開します。
+    bool TryGetSoftBodySphereColliderIndex(uint32_t& outColliderIndex) const override
+    {
+        return TryGetCollisionSphereIndex(outColliderIndex);
+    }
+
     // Clothローカル空間のPlane Colliderです。
     // Plane式は dot(normal, x) - offset = 0 とし、normal側をClothが存在できる外側とします。
     void SetCollisionPlane(const math::Vec3& normal, float offset);

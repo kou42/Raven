@@ -65,6 +65,10 @@ private:
 // SourceRigidEntityはWorld-space Colliderの正規データ、TargetSoftBodyEntityはSolver local-spaceを
 // 定義するTransform、TargetSolver/TargetColliderIndexは同期先を表します。
 //
+// TargetSolver + TargetColliderIndexはBinding Registry内で一意な同期先です。1つのSoft Colliderへ
+// 複数Rigid Sourceを割り当てると、Collider状態の上書き順が不定になり、同じSoft反作用を複数Rigidへ
+// 返してしまうため、PhysicsSimulationWorldは同一同期先への2件目の登録を拒否します。
+//
 // Soft -> Rigid反作用も同じ接触Pairに属するため、このBindingへ設定を集約します。
 // ReactionImpulseScaleはSoftBody local-spaceで得た反作用をworld-spaceへ変換した後に掛ける係数です。
 // 現段階ではRigid/Softの質量単位系が完全統一されていないため、Demo側で校正値を指定できます。
@@ -101,7 +105,8 @@ public:
     void SynchronizeOutputs();
 
     // Rigid -> Soft Sphere Collider同期Bindingを登録します。
-    // 同一Source/Target/Colliderの重複登録はfalseを返し、既存Bindingを維持します。
+    // TargetSolver + TargetColliderIndexを一意な同期先として扱い、同一Soft Colliderへ
+    // 2件目のBindingを登録しようとした場合はfalseを返して既存Bindingを維持します。
     bool RegisterRigidSoftSphereColliderBinding(const RigidSoftSphereColliderBinding& binding);
     bool UnregisterRigidSoftSphereColliderBinding(
         SoftBodySolver& targetSolver,

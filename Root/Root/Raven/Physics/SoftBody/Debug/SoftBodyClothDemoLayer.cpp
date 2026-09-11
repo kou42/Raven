@@ -6,6 +6,7 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
+#include "Raven/Physics/RigidSoftCouplingComponent.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyParticleTriangleCandidateDebugSnapshot.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyParticleTriangleCandidateDebugSvgWriter.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyPhysicsDebugSvgWriter.h"
@@ -318,31 +319,29 @@ void SoftBodyClothDemoLayer::OnAttach()
 
     // RenderSceneはTransformComponent + MeshRendererComponentを持つEntityをECSから直接走査します。
     // そのためCloth/Sphereを別の描画対象リストへ登録する必要はありません。
+
+    // ========================================================================
+    // Persistent Rigid <-> Soft coupling configuration
+    // ========================================================================
+    // LayerはSolver pointerやCollider Indexを保持しません。これらはMesh依存初期化後にしか
+    // 確定しないRuntime情報なので、MeshDeformationSystemがこのComponentとDeformer共通境界から
+    // 毎Game Update解決し、PhysicsSimulationWorldの非所有Binding Registryを再構築します。
+    // そのため初回Physics Stepより前にBindingが成立し、OnDetachでの手動Unregisterも不要です。
+    ph::RigidSoftCouplingComponent coupling{};
+    coupling.SourceRigidEntity = m_RigidSphereEntity.GetHandle();
+    coupling.Enabled = true;
+    coupling.ReactionEnabled = true;
+    coupling.ReactionImpulseScale = kSoftRigidReactionScale;
+    coupling.MaximumReactionImpulse = kMaxReactionImpulse;
+    m_ClothEntity.AddComponent<ph::RigidSoftCouplingComponent>(coupling);
 }
 
 void SoftBodyClothDemoLayer::OnDetach()
 {
     Scene* scene = m_Application.GetScene();
 
-    if (scene != nullptr && m_RigidSoftSphereBindingRegistered == true
-        && m_ClothDeformationInstance != nullptr)
-    {
-        MeshDeformer* baseDeformer = m_ClothDeformationInstance->GetDeformer();
-        SoftBodyClothDeformer* clothDeformer = dynamic_cast<SoftBodyClothDeformer*>(baseDeformer);
-        if (clothDeformer != nullptr)
-        {
-            uint32_t colliderIndex = 0u;
-            if (clothDeformer->TryGetCollisionSphereIndex(colliderIndex) == true)
-            {
-                // BindingはSolverへの非所有pointerを保持するため、Deformer/Entityを破棄する前に必ず解除します。
-                scene->GetPhysicsSimulationWorld().UnregisterRigidSoftSphereColliderBinding(
-                    clothDeformer->GetSolver(),
-                    colliderIndex);
-            }
-        }
-    }
-    m_RigidSoftSphereBindingRegistered = false;
-
+    // Runtime Binding RegistryはMeshDeformationSystemがECSから毎frame再構築するため、
+    // LayerはSolverへの非所有pointerを直接解除しません。Entityを破棄すれば次回再構築から自然に消えます。
     // Layerだけが破棄されるケースでもScene内にデモEntityを残さないよう明示的に破棄します。
     if (scene != nullptr)
     {
@@ -374,13 +373,12 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
     if (scene == nullptr
         || m_ClothDeformationInstance == nullptr
         || static_cast<bool>(m_ClothEntity) == false
-        || scene->IsEntityAlive(m_ClothEntity) == false
-        || static_cast<bool>(m_RigidSphereEntity) == false
-        || scene->IsEntityAlive(m_RigidSphereEntity) == false)
+        || scene->IsEntityAlive(m_ClothEntity) == false)
     {
         return;
     }
 
+#ifdef _DEBUG
     MeshDeformer* baseDeformer = m_ClothDeformationInstance->GetDeformer();
     SoftBodyClothDeformer* clothDeformer = dynamic_cast<SoftBodyClothDeformer*>(baseDeformer);
     if (clothDeformer == nullptr)
@@ -388,39 +386,11 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
         return;
     }
 
-    ph::SoftBodySolver& solver = clothDeformer->GetSolver();
-
-    // ========================================================================
-    // Bidirectional Rigid <-> Soft coupling binding registration
-    // ========================================================================
-    // ClothのMesh依存初期化はMeshDeformationSystemがScene Physicsより前に済ませます。
-    // Collider Indexが確定した最初のApplication Layer UpdateでBindingを1回だけ登録します。
-    // 以降はPhysicsSimulationWorldがFixed Step内で
-    //   Rigid Step -> Collider同期 -> Soft Step -> Reaction Impulse
-    // を一括管理するため、このLayerはCouplingの毎frameデータ交換を行いません。
-    if (m_RigidSoftSphereBindingRegistered == false)
-    {
-        uint32_t colliderIndex = 0u;
-        if (clothDeformer->TryGetCollisionSphereIndex(colliderIndex) == true)
-        {
-            ph::RigidSoftSphereColliderBinding binding{};
-            binding.SourceRigidEntity = m_RigidSphereEntity.GetHandle();
-            binding.TargetSoftBodyEntity = m_ClothEntity.GetHandle();
-            binding.TargetSolver = &solver;
-            binding.TargetColliderIndex = colliderIndex;
-            binding.ReactionEnabled = true;
-            binding.ReactionImpulseScale = kSoftRigidReactionScale;
-            binding.MaximumReactionImpulse = kMaxReactionImpulse;
-
-            m_RigidSoftSphereBindingRegistered =
-                scene->GetPhysicsSimulationWorld().RegisterRigidSoftSphereColliderBinding(binding);
-        }
-    }
-
-#ifdef _DEBUG
     // ========================================================================
     // Runtime SoftBody -> Browser Debug Viewer
     // ========================================================================
+    // CouplingのRuntime処理はSystem/Physicsへ移管済みなので、Application LayerのUpdateは
+    // 完了済みSoftBody Stepを可視化するDebug Snapshotだけを担当します。
     // Application Layer::OnUpdate()はScene更新後なので、この時点のSolverは当該FrameのCloth Stepを
     // 完了しています。したがってParticle位置とFunnel Counterを同一SnapshotとしてSVGへ保存できます。
     // static accumulatorはこのDebug Demo Layerが1個だけ生成される現在の構成に限定した簡易Throttleです。
@@ -439,6 +409,8 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
             WriteBrowserDebugSnapshot(*clothDeformer, m_ClothMesh);
         }
     }
+#else
+    static_cast<void>(deltaTime);
 #endif
 }
 

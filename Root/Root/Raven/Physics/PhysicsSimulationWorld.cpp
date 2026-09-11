@@ -11,13 +11,11 @@ namespace Raven::ph
 {
 namespace
 {
-bool IsSameRigidSoftSphereColliderBinding(
+bool HasSameRigidSoftSphereColliderDestination(
     const RigidSoftSphereColliderBinding& left,
     const RigidSoftSphereColliderBinding& right)
 {
-    return left.SourceRigidEntity == right.SourceRigidEntity
-        && left.TargetSoftBodyEntity == right.TargetSoftBodyEntity
-        && left.TargetSolver == right.TargetSolver
+    return left.TargetSolver == right.TargetSolver
         && left.TargetColliderIndex == right.TargetColliderIndex;
 }
 
@@ -244,11 +242,14 @@ bool PhysicsSimulationWorld::RegisterRigidSoftSphereColliderBinding(
         m_RigidSoftSphereColliderBindings.end(),
         [&binding](const RigidSoftSphereColliderBinding& registeredBinding)
         {
-            return IsSameRigidSoftSphereColliderBinding(registeredBinding, binding);
+            return HasSameRigidSoftSphereColliderDestination(registeredBinding, binding);
         });
 
     if (iterator != m_RigidSoftSphereColliderBindings.end())
     {
+        // 1つのSoft Sphere Colliderは1つのRigid Sourceだけが所有します。
+        // 複数Sourceを許可するとRigid -> Soft同期で後勝ちになり、Soft -> Rigid反作用も
+        // 同じColliderのFeedbackを複数Rigidへ返せるため、登録時点で曖昧なPairを拒否します。
         return false;
     }
 

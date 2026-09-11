@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "Raven/Physics/SoftBody/SoftBodySimulationParticipant.h"
 
 namespace Raven
@@ -41,6 +43,14 @@ public:
     // SoftBody DeformerだけがSolver参照を公開する任意インターフェースです。
     // 所有権はDeformer側に残し、SoftBodyWorldではDebug/Coupling用の非所有参照として扱います。
     virtual ph::SoftBodySolver* GetSoftBodySolver() { return nullptr; }
+
+    // Rigid/Soft Sphere Couplingへ参加できるDeformerだけが同期先Collider Indexを公開します。
+    // MeshDeformationSystemは具体的なCloth型へdowncastせず、この共通境界からRuntime Bindingを構築します。
+    virtual bool TryGetSoftBodySphereColliderIndex(uint32_t& outColliderIndex) const
+    {
+        static_cast<void>(outColliderIndex);
+        return false;
+    }
 
     // falseのDeformerは従来どおりUpdate()が全責務を持ちます。
     // trueの実装だけがPhysics Fixed StepのSimulation Participantとして登録されます。
