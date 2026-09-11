@@ -21,6 +21,24 @@ bool IsSameRigidSoftSphereColliderBinding(
         && left.TargetColliderIndex == right.TargetColliderIndex;
 }
 
+math::Vec3 ClampMagnitude(const math::Vec3& value, float maximumMagnitude)
+{
+    if (maximumMagnitude <= 0.0f)
+    {
+        return value;
+    }
+
+    const float lengthSq = value.LengthSq();
+    const float maximumMagnitudeSq = maximumMagnitude * maximumMagnitude;
+    if (lengthSq <= maximumMagnitudeSq
+        || lengthSq <= math::Epsilon * math::Epsilon)
+    {
+        return value;
+    }
+
+    return value * (maximumMagnitude / std::sqrt(lengthSq));
+}
+
 bool BuildInverseSoftBodyTransform(
     const TransformComponent& transform,
     math::Mat4& outInverseTransform,
@@ -197,17 +215,20 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
     // ========================================================================
-    // Rigid -> Soft fixed-step ordering
+    // Bidirectional Rigid <-> Soft fixed-step ordering
     // ========================================================================
     // 1. Rigid Bodyを進めてWorld Transformを確定
     // 2. 最新Rigid ColliderをSoftBody local-spaceへ同期
-    // 3. Soft Bodyを進める
+    // 3. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
+    // 4. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
     //
-    // これにより従来Demo Layer::OnUpdate()で行っていた「Scene Physics終了後に同期し、次frameで使用」
-    // という1frame遅延をなくし、同じFixed StepのRigid結果をそのままSoft Collisionへ入力できます。
+    // Rigid側へ返したImpulseは速度へ即時反映されるため、catch-upで次のFixed Stepが続く場合は
+    // その次のRigid Stepから反作用が運動へ参加します。Application Layerを経由しないため、
+    // 複数substep時にもframe境界までFeedbackを保留しません。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
+    ApplySoftBodyReactionsToRigidBodies(scene);
 }
 
 bool PhysicsSimulationWorld::RegisterRigidSoftSphereColliderBinding(
@@ -315,6 +336,88 @@ void PhysicsSimulationWorld::SynchronizeRigidBodyCollidersToSoftBody(Scene& scen
             binding.TargetColliderIndex,
             localCenter,
             localRadius);
+    }
+}
+
+void PhysicsSimulationWorld::ApplySoftBodyReactionsToRigidBodies(Scene& scene)
+{
+    for (const RigidSoftSphereColliderBinding& binding : m_RigidSoftSphereColliderBindings)
+    {
+        if (binding.ReactionEnabled == false
+            || binding.TargetSolver == nullptr
+            || scene.IsEntityAlive(binding.SourceRigidEntity) == false
+            || scene.IsEntityAlive(binding.TargetSoftBodyEntity) == false)
+        {
+            continue;
+        }
+
+        const TransformComponent* softBodyTransform =
+            scene.TryGetComponent<TransformComponent>(binding.TargetSoftBodyEntity.m_Index);
+        if (softBodyTransform == nullptr)
+        {
+            continue;
+        }
+
+        // Rigid -> Soft同期と同じShape契約を使います。非一様ScaleではSphereがlocal-spaceで
+        // EllipsoidになるためCollider同期自体を行わず、古いFeedbackを誤ってRigidへ返すことも避けます。
+        math::Mat4 unusedInverseTransform{};
+        float unusedUniformScale = 1.0f;
+        if (BuildInverseSoftBodyTransform(
+            *softBodyTransform,
+            unusedInverseTransform,
+            unusedUniformScale) == false)
+        {
+            continue;
+        }
+
+        const std::vector<SoftBodySphereCollider>& sphereColliders =
+            binding.TargetSolver->GetSphereColliders();
+        if (binding.TargetColliderIndex >= sphereColliders.size())
+        {
+            continue;
+        }
+
+        const SoftBodySphereCollider& softSphere = sphereColliders[binding.TargetColliderIndex];
+        if (softSphere.ContactCount == 0u)
+        {
+            continue;
+        }
+
+        // AccumulatedReactionImpulseと平均Contact PointはSolver local-spaceです。
+        // Vectorはw=0、Pointはw=1でEntity Transformを適用し、translationがImpulseへ混ざらないようにします。
+        const math::Mat4 softBodyWorldTransform = softBodyTransform->GetTransform();
+        const math::Vec4 worldReactionImpulse4 = softBodyWorldTransform
+            * math::Vec4{ softSphere.AccumulatedReactionImpulse, 0.0f };
+        math::Vec3 worldReactionImpulse{
+            worldReactionImpulse4.x,
+            worldReactionImpulse4.y,
+            worldReactionImpulse4.z
+        };
+        worldReactionImpulse *= binding.ReactionImpulseScale;
+        worldReactionImpulse = ClampMagnitude(
+            worldReactionImpulse,
+            binding.MaximumReactionImpulse);
+
+        if (worldReactionImpulse.LengthSq() <= math::Epsilon * math::Epsilon)
+        {
+            continue;
+        }
+
+        const math::Vec4 worldContactPoint4 = softBodyWorldTransform
+            * math::Vec4{ softSphere.GetAverageContactPoint(), 1.0f };
+        const math::Vec3 worldContactPoint{
+            worldContactPoint4.x,
+            worldContactPoint4.y,
+            worldContactPoint4.z
+        };
+
+        // AddImpulseAtPoint()側がDynamic Body判定、InverseMass判定、Wake-up、r x Jによる角Impulseを
+        // 共通処理するため、Coupling側ではRigidBody内部状態を直接変更しません。
+        m_RigidBodyWorld.AddImpulseAtPoint(
+            scene,
+            Entity(binding.SourceRigidEntity, &scene),
+            worldReactionImpulse,
+            worldContactPoint);
     }
 }
 
