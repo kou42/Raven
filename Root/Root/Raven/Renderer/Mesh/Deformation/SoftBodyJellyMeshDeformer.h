@@ -42,6 +42,10 @@ public:
 
     void Update(Mesh& mesh, float deltaTime) override;
 
+    // MeshDeformationSystemが具体的なJelly型を知らずにSoftBodyWorldへ登録するための境界です。
+    // Registryは非所有なので、Solverのlifetimeは従来どおりDeformerが管理します。
+    ph::SoftBodySolver* GetSoftBodySolver() override { return &m_Solver; }
+
     // Deformerが保持するSurface Topologyに対応したDynamic Geometryを生成します。
     Ref<MeshGeometry> CreateGeometry() const;
 

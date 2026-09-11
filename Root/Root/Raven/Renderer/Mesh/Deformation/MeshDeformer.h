@@ -5,6 +5,11 @@ namespace Raven
 
 class Mesh;
 
+namespace ph
+{
+class SoftBodySolver;
+}
+
 // ============================================================================
 // MeshDeformer
 // ============================================================================
@@ -26,6 +31,11 @@ public:
     // deltaTime秒だけ変形状態を進め、必要ならMeshGeometryを更新します。
     // GPU同期までDeformer側で完結させることで、Scene側はUpdate()を呼ぶだけで済みます。
     virtual void Update(Mesh& mesh, float deltaTime) = 0;
+
+    // SoftBody DeformerだけがSolver参照を公開するための任意インターフェースです。
+    // Skeletal / Morph / WaveなどPhysics Solverを持たないDeformerはnullptrのままとし、
+    // MeshDeformationSystemが具体型へdowncastせずSoftBodyWorldへ登録できる境界にします。
+    virtual ph::SoftBodySolver* GetSoftBodySolver() { return nullptr; }
 };
 
 } // namespace Raven

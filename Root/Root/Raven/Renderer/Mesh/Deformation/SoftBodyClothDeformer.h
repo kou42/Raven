@@ -27,6 +27,10 @@ public:
     // 初回はDynamic GridからClothを構築し、以降はSolver更新結果をMeshへ同期します。
     void Update(Mesh& mesh, float deltaTime) override;
 
+    // MeshDeformationSystemが具体的なCloth型を知らずにSoftBodyWorldへ登録するための境界です。
+    // Solverの所有権は引き続きDeformerが保持し、返却pointerは非所有参照としてのみ使用します。
+    ph::SoftBodySolver* GetSoftBodySolver() override { return &m_Solver; }
+
     // Clothローカル空間上の静的Sphere Colliderを設定します。
     // 初期化後に変更された場合もSolverへ設定を再登録します。
     void SetCollisionSphere(const math::Vec3& center, float radius);
