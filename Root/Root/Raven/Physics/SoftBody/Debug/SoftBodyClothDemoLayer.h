@@ -18,15 +18,16 @@ class MeshDeformationInstance;
 // XPBD Clothの目視確認と、RigidBody Sphereとの最小Soft/Rigid連成を検証するLayerです。
 //
 // SceneGame本体へSoftBody固有コードを埋め込まず、Clothは
-//   MeshRendererComponent + MeshDeformationComponent
+//   MeshRendererComponent + MeshDeformationComponent + RigidSoftCouplingComponent
 // を持つ通常のScene Entityとして登録します。
 // RigidBody Sphereも
 //   MeshRendererComponent + RigidBodyComponent + ColliderComponent
 // を持つ通常EntityとしてPhysicsWorldとScene描画の両方へ参加します。
 //
-// 双方向Couplingの毎Fixed Step処理はPhysicsSimulationWorldへ集約します。
-// Application LayerのOnUpdate()は、Solver Collider Index確定後のBinding登録とDebug Snapshotだけを担当し、
-// Rigid -> Soft Collider同期やSoft -> Rigid Reaction Impulseの毎frame手動交換は行いません。
+// 双方向CouplingのBinding構築はMeshDeformationSystem、毎Fixed Step処理は
+// PhysicsSimulationWorldへ集約します。Application Layerは永続設定となるComponentを
+// OnAttach()で構成するだけで、Runtime BindingのRegister/Unregisterや毎frameのデータ交換を行いません。
+// OnUpdate()はDebug Snapshotだけを担当します。
 //
 // 描画そのものはScene側へ統合するため、OnRender()は追加Passを持ちません。
 class SoftBodyClothDemoLayer : public Layer
@@ -54,12 +55,9 @@ private:
     Ref<Material> m_RigidSphereMaterial;
 
     // Deformerを直接所有せず、MeshDeformationInstanceのshared ownershipを保持します。
-    // 必要なときだけGetDeformer()からSoftBodyClothDeformerへdowncastして連成情報を交換します。
+    // OnUpdate()のBrowser Debug Snapshotでだけ具体的なSoftBodyClothDeformerへdowncastします。
+    // Coupling設定・Runtime Binding lifetimeはLayer外へ移管済みです。
     Ref<MeshDeformationInstance> m_ClothDeformationInstance;
-
-    // ClothのMesh依存初期化後にSolver Collider Indexが確定してからBindingを1回だけ登録します。
-    // OnDetachではこの状態を使ってPhysicsSimulationWorldから非所有参照を解除してからEntityを破棄します。
-    bool m_RigidSoftSphereBindingRegistered = false;
 };
 
 } // namespace Raven
