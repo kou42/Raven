@@ -1,12 +1,77 @@
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
 namespace Raven::ph
 {
+namespace
+{
+bool IsSameRigidSoftSphereColliderBinding(
+    const RigidSoftSphereColliderBinding& left,
+    const RigidSoftSphereColliderBinding& right)
+{
+    return left.SourceRigidEntity == right.SourceRigidEntity
+        && left.TargetSoftBodyEntity == right.TargetSoftBodyEntity
+        && left.TargetSolver == right.TargetSolver
+        && left.TargetColliderIndex == right.TargetColliderIndex;
+}
+
+bool BuildInverseSoftBodyTransform(
+    const TransformComponent& transform,
+    math::Mat4& outInverseTransform,
+    float& outUniformScale)
+{
+    constexpr float scaleEpsilon = 1.0e-8f;
+    constexpr float uniformScaleTolerance = 1.0e-4f;
+
+    const float scaleX = std::abs(transform.Scale.x);
+    const float scaleY = std::abs(transform.Scale.y);
+    const float scaleZ = std::abs(transform.Scale.z);
+
+    if (scaleX <= scaleEpsilon
+        || scaleY <= scaleEpsilon
+        || scaleZ <= scaleEpsilon)
+    {
+        return false;
+    }
+
+    // Sphereを非一様ScaleのSoftBody local-spaceへ写すと楕円体になります。
+    // 現在のSoftBody SolverはSphere Colliderだけを扱うため、形状を暗黙に歪めず
+    // uniform scaleだけを同期対象とします。非一様Scale対応はEllipsoid等の形状追加時に行います。
+    const float maximumScale = std::max(scaleX, std::max(scaleY, scaleZ));
+    if (std::abs(scaleX - scaleY) > maximumScale * uniformScaleTolerance
+        || std::abs(scaleX - scaleZ) > maximumScale * uniformScaleTolerance)
+    {
+        return false;
+    }
+
+    // TransformComponent::GetTransform() = T * Rx * Ry * Rz * S の逆変換を明示的に構築します。
+    // Collider centerはpointとしてw=1で変換し、Radiusはuniform scaleだけで長さ変換します。
+    const math::Mat4 inverseScale = math::Mat4::Scaling(math::Vec3{
+        1.0f / transform.Scale.x,
+        1.0f / transform.Scale.y,
+        1.0f / transform.Scale.z
+    });
+    const math::Mat4 inverseRotationZ = math::Mat4::RotationZ(-transform.Rotation.z);
+    const math::Mat4 inverseRotationY = math::Mat4::RotationY(-transform.Rotation.y);
+    const math::Mat4 inverseRotationX = math::Mat4::RotationX(-transform.Rotation.x);
+    const math::Mat4 inverseTranslation = math::Mat4::Translation(-transform.Position);
+
+    outInverseTransform =
+        inverseScale
+        * inverseRotationZ
+        * inverseRotationY
+        * inverseRotationX
+        * inverseTranslation;
+    outUniformScale = scaleX;
+    return true;
+}
+}
 
 bool SoftBodyWorld::RegisterSolver(SoftBodySolver& solver)
 {
@@ -131,11 +196,126 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
-    // Domain更新順序を上位Worldへ集約します。
-    // Rigid Bodyを先に確定し、その後Soft Body Physics Stateだけを進めます。
-    // Renderer出力同期を別Phaseにしたことで、catch-up中にGPU uploadを挟まずに済みます。
+    // ========================================================================
+    // Rigid -> Soft fixed-step ordering
+    // ========================================================================
+    // 1. Rigid Bodyを進めてWorld Transformを確定
+    // 2. 最新Rigid ColliderをSoftBody local-spaceへ同期
+    // 3. Soft Bodyを進める
+    //
+    // これにより従来Demo Layer::OnUpdate()で行っていた「Scene Physics終了後に同期し、次frameで使用」
+    // という1frame遅延をなくし、同じFixed StepのRigid結果をそのままSoft Collisionへ入力できます。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
+    SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
+}
+
+bool PhysicsSimulationWorld::RegisterRigidSoftSphereColliderBinding(
+    const RigidSoftSphereColliderBinding& binding)
+{
+    if (binding.TargetSolver == nullptr)
+    {
+        return false;
+    }
+
+    const auto iterator = std::find_if(
+        m_RigidSoftSphereColliderBindings.begin(),
+        m_RigidSoftSphereColliderBindings.end(),
+        [&binding](const RigidSoftSphereColliderBinding& registeredBinding)
+        {
+            return IsSameRigidSoftSphereColliderBinding(registeredBinding, binding);
+        });
+
+    if (iterator != m_RigidSoftSphereColliderBindings.end())
+    {
+        return false;
+    }
+
+    m_RigidSoftSphereColliderBindings.push_back(binding);
+    return true;
+}
+
+bool PhysicsSimulationWorld::UnregisterRigidSoftSphereColliderBinding(
+    SoftBodySolver& targetSolver,
+    uint32_t targetColliderIndex)
+{
+    const auto iterator = std::find_if(
+        m_RigidSoftSphereColliderBindings.begin(),
+        m_RigidSoftSphereColliderBindings.end(),
+        [&targetSolver, targetColliderIndex](const RigidSoftSphereColliderBinding& binding)
+        {
+            return binding.TargetSolver == &targetSolver
+                && binding.TargetColliderIndex == targetColliderIndex;
+        });
+
+    if (iterator == m_RigidSoftSphereColliderBindings.end())
+    {
+        return false;
+    }
+
+    m_RigidSoftSphereColliderBindings.erase(iterator);
+    return true;
+}
+
+void PhysicsSimulationWorld::ClearRigidSoftSphereColliderBindings()
+{
+    // BindingはEntity/Solverを所有しません。SceneやDeformer破棄前に参照だけを解除します。
+    m_RigidSoftSphereColliderBindings.clear();
+}
+
+void PhysicsSimulationWorld::SynchronizeRigidBodyCollidersToSoftBody(Scene& scene)
+{
+    for (const RigidSoftSphereColliderBinding& binding : m_RigidSoftSphereColliderBindings)
+    {
+        if (binding.TargetSolver == nullptr
+            || scene.IsEntityAlive(binding.SourceRigidEntity) == false
+            || scene.IsEntityAlive(binding.TargetSoftBodyEntity) == false)
+        {
+            continue;
+        }
+
+        const TransformComponent* rigidTransform =
+            scene.TryGetComponent<TransformComponent>(binding.SourceRigidEntity.m_Index);
+        const ColliderComponent* rigidCollider =
+            scene.TryGetComponent<ColliderComponent>(binding.SourceRigidEntity.m_Index);
+        const TransformComponent* softBodyTransform =
+            scene.TryGetComponent<TransformComponent>(binding.TargetSoftBodyEntity.m_Index);
+
+        if (rigidTransform == nullptr
+            || rigidCollider == nullptr
+            || softBodyTransform == nullptr
+            || rigidCollider->Type != ColliderType::Sphere)
+        {
+            continue;
+        }
+
+        math::Mat4 inverseSoftBodyTransform{};
+        float softBodyUniformScale = 1.0f;
+        if (BuildInverseSoftBodyTransform(
+            *softBodyTransform,
+            inverseSoftBodyTransform,
+            softBodyUniformScale) == false)
+        {
+            continue;
+        }
+
+        // 既存Rigid/Soft Demoと同じCollider center契約を維持し、Transform PositionへOffsetを加えた
+        // World centerをSoftBody local-spaceへ逆変換します。
+        const math::Vec3 worldCenter = rigidTransform->Position + rigidCollider->Offset;
+        const math::Vec4 localCenter4 =
+            inverseSoftBodyTransform * math::Vec4{ worldCenter, 1.0f };
+        const math::Vec3 localCenter{
+            localCenter4.x,
+            localCenter4.y,
+            localCenter4.z
+        };
+        const float localRadius = rigidCollider->Radius / softBodyUniformScale;
+
+        binding.TargetSolver->SetSphereCollider(
+            binding.TargetColliderIndex,
+            localCenter,
+            localRadius);
+    }
 }
 
 void PhysicsSimulationWorld::SynchronizeOutputs()
