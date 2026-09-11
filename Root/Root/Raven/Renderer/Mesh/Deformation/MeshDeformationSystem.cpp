@@ -10,24 +10,13 @@ namespace Raven
 
 void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
 {
-    // ========================================================================
-    // ECS -> SoftBodyWorld lifetime bridge
-    // ========================================================================
-    // SoftBodyWorldはSolverを所有しないため、前フレームのpointerを保持し続けると
-    // Entity / MeshDeformationInstance破棄後にdangling pointerになる可能性があります。
-    // そこで毎Updateの先頭でRegistryを再構築し、このフレームでECSから到達できる
-    // SoftBody Solverだけを登録します。登録自体は軽量なpointer列挙で、Physics所有権は移しません。
     ph::SoftBodyWorld& softBodyWorld = scene.GetPhysicsSimulationWorld().GetSoftBodyWorld();
+
+    // SoftBodyWorldは非所有Registryなので、Entity/Deformer破棄後のpointerを次frameへ残さないよう
+    // Game UpdateごとにECSから再構築します。Destroy QueueはPhysics後にflushされるため、
+    // このframeで登録したParticipantはFixed Step終了まで有効です。
     softBodyWorld.Clear();
 
-    // ========================================================================
-    // ECS -> Deformation bridge
-    // ========================================================================
-    // ComponentViewがMeshDeformationComponentのStorageだけを走査するため、
-    // Meshを持つ全Entityを毎フレーム総当たりする必要はありません。
-    //
-    // MeshDeformer::GetSoftBodySolver()を任意境界として使うため、SystemはCloth / Jellyなどの
-    // 具体型を知らず、将来SoftBody Deformerが増えても同じ経路でRegistryへ参加できます。
     for (auto [entity, deformation] : scene.View<MeshDeformationComponent>())
     {
         static_cast<void>(entity);
@@ -38,25 +27,49 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
         }
 
         MeshDeformer* deformer = deformation.Instance->GetDeformer();
-        if (deformer != nullptr)
+        if (deformer == nullptr)
         {
-            ph::SoftBodySolver* softBodySolver = deformer->GetSoftBodySolver();
-            if (softBodySolver != nullptr)
-            {
-                // Enabled=falseでもInstanceが生存している間はRegistryへ残します。
-                // Registryは「現在Sceneが所有するSoftBody」を表し、Simulationを進めるかどうかは
-                // Deformation側のEnabled判定と、後続のPhysics Step移管時に別責務として扱います。
-                softBodyWorld.RegisterSolver(*softBodySolver);
-            }
+            continue;
         }
 
-        // 既存のDeformation更新条件は変更しません。
-        // SoftBody SolverのStepもまだ各Deformer::Update()内で行うため、二重積分は発生しません。
+        ph::SoftBodySolver* softBodySolver = deformer->GetSoftBodySolver();
+        if (softBodySolver != nullptr)
+        {
+            // Solver RegistryはDebug/Coupling用なので、Enabled=falseでもSceneに存在するSolverを保持します。
+            softBodyWorld.RegisterSolver(*softBodySolver);
+        }
+
         if (deformation.Enabled == false)
         {
             continue;
         }
 
+        if (deformer->HasSeparatedSoftBodyUpdate() == true)
+        {
+            const Ref<Mesh>& mesh = deformation.Instance->GetMesh();
+            if (mesh == nullptr)
+            {
+                continue;
+            }
+
+            // ClothのMesh依存初期化はGame/Renderer側で済ませ、Physics Fixed StepからMeshへ逆依存させません。
+            if (deformer->PrepareSoftBodySimulation(*mesh) == false)
+            {
+                continue;
+            }
+
+            // SimulationだけをPhysicsSimulationWorld::Step()へ移管します。
+            // 同一Deformerの重複登録はSoftBodyWorld側で拒否されるため、1 Fixed Stepにつき1回だけ進みます。
+            softBodyWorld.RegisterSimulationParticipant(*deformer);
+
+            // 現在のPhysics Stateを描画Meshへ同期します。
+            // Sceneの現行順序ではGame UpdateがPhysicsより先なので、Fixed Step後の結果は次frameで反映されます。
+            // この1frame遅延は次段階でPost-Physics Synchronize passを追加して解消します。
+            deformer->SynchronizeSoftBodyMesh(*mesh);
+            continue;
+        }
+
+        // Wave/Skeletal/Morph等、Fixed Physics Stepへ参加しないDeformerは従来の可変dt更新を維持します。
         deformation.Instance->Update(deltaTime);
     }
 }

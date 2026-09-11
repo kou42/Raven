@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Physics/SoftBody/SoftBodySimulationParticipant.h"
+
 namespace Raven
 {
 
@@ -13,38 +15,31 @@ class SoftBodySolver;
 // ============================================================================
 // MeshDeformer
 // ============================================================================
-// Meshの頂点変形処理だけを抽象化する共通インターフェースです。
+// Meshの頂点変形処理を抽象化する共通インターフェースです。
 //
-// 重要:
-// - MeshGeometry      : CPU側の論理頂点を保持する
-// - MeshDeformer      : CPU頂点をどう変形するかを決める
-// - Mesh::SyncGeometry: 変形結果をGPUへ同期する
-//
-// という3段階に責務を分離します。
-class MeshDeformer
+// SoftBody Simulation Participantも基底として持ちますが、通常Deformerは既定no-opのままです。
+// HasSeparatedSoftBodyUpdate()==trueの実装だけをMeshDeformationSystemがPhysics Registryへ登録します。
+class MeshDeformer : public ph::SoftBodySimulationParticipant
 {
 public:
     virtual ~MeshDeformer() = default;
 
     virtual void Update(Mesh& mesh, float deltaTime) = 0;
 
-    // SoftBody DeformerだけがSolver参照を公開する任意インターフェースです。
     virtual ph::SoftBodySolver* GetSoftBodySolver() { return nullptr; }
 
-    // SoftBody SimulationとMesh同期をFixed Stepへ段階移管するための任意境界です。
-    // falseのDeformerは従来どおりUpdate()が全責務を持つため、既存実装への影響はありません。
-    // trueの実装では事前準備、Physics State更新、描画用Mesh同期を別々に呼び出せます。
     virtual bool HasSeparatedSoftBodyUpdate() const { return false; }
 
     // Clothのように初回だけMesh GeometryからPhysics Stateを構築するDeformer向けです。
-    // JellyのようにConstructorだけでPhysics Stateが完成する実装は既定値trueのままで構いません。
     virtual bool PrepareSoftBodySimulation(Mesh& mesh)
     {
         static_cast<void>(mesh);
         return true;
     }
 
-    virtual void SimulateSoftBody(float deltaTime) { static_cast<void>(deltaTime); }
+    // SoftBody実装だけがoverrideします。通常DeformerはRegistryへ参加しないため呼ばれません。
+    void SimulateSoftBody(float deltaTime) override { static_cast<void>(deltaTime); }
+
     virtual void SynchronizeSoftBodyMesh(Mesh& mesh) { static_cast<void>(mesh); }
 };
 
