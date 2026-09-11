@@ -56,6 +56,19 @@ public:
     void SetCollisionSphere(const math::Vec3& center, float radius);
     void DisableCollisionSphere();
 
+    // PhysicsSimulationWorldへRigid -> Soft同期先を登録するときだけ使用するIndex参照です。
+    // Colliderが無効ならfalseを返し、未初期化時のIndexを有効値として扱わないようにします。
+    bool TryGetCollisionSphereIndex(uint32_t& outColliderIndex) const
+    {
+        if (m_CollisionSphereEnabled == false || m_Initialized == false)
+        {
+            return false;
+        }
+
+        outColliderIndex = m_CollisionSphereIndex;
+        return true;
+    }
+
     // Clothローカル空間のPlane Colliderです。
     // Plane式は dot(normal, x) - offset = 0 とし、normal側をClothが存在できる外側とします。
     void SetCollisionPlane(const math::Vec3& normal, float offset);
