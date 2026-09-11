@@ -41,6 +41,27 @@ public:
     void SimulateSoftBody(float deltaTime) override { static_cast<void>(deltaTime); }
 
     virtual void SynchronizeSoftBodyMesh(Mesh& mesh) { static_cast<void>(mesh); }
+
+    // Physics側はRendererのMesh型を知らないため、Game/Renderer側で事前に同期対象だけを関連付けます。
+    // MeshDeformationInstanceがMeshとDeformerを同じlifetimeで所有し、Destroy QueueはPhysics後に処理されるため、
+    // 登録frame中はこの非所有pointerを安全に使用できます。
+    void BindSoftBodySynchronizationMesh(Mesh& mesh)
+    {
+        m_SoftBodySynchronizationMesh = &mesh;
+    }
+
+    void SynchronizeSoftBodyOutput() override
+    {
+        if (m_SoftBodySynchronizationMesh == nullptr)
+        {
+            return;
+        }
+
+        SynchronizeSoftBodyMesh(*m_SoftBodySynchronizationMesh);
+    }
+
+private:
+    Mesh* m_SoftBodySynchronizationMesh = nullptr;
 };
 
 } // namespace Raven

@@ -14,7 +14,7 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
 
     // SoftBodyWorldは非所有Registryなので、Entity/Deformer破棄後のpointerを次frameへ残さないよう
     // Game UpdateごとにECSから再構築します。Destroy QueueはPhysics後にflushされるため、
-    // このframeで登録したParticipantはFixed Step終了まで有効です。
+    // このframeで登録したParticipantはFixed Stepと、その直後のMesh同期まで有効です。
     softBodyWorld.Clear();
 
     for (auto [entity, deformation] : scene.View<MeshDeformationComponent>())
@@ -58,14 +58,13 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
                 continue;
             }
 
-            // SimulationだけをPhysicsSimulationWorld::Step()へ移管します。
-            // 同一Deformerの重複登録はSoftBodyWorld側で拒否されるため、1 Fixed Stepにつき1回だけ進みます。
-            softBodyWorld.RegisterSimulationParticipant(*deformer);
+            // Physics側はRenderer型を参照せずParticipantだけを扱うため、同期対象Meshはここで事前にbindします。
+            // MeshDeformationInstanceがMesh/Deformerを同時所有するため、登録frame中はpointer lifetimeが一致します。
+            deformer->BindSoftBodySynchronizationMesh(*mesh);
 
-            // 現在のPhysics Stateを描画Meshへ同期します。
-            // Sceneの現行順序ではGame UpdateがPhysicsより先なので、Fixed Step後の結果は次frameで反映されます。
-            // この1frame遅延は次段階でPost-Physics Synchronize passを追加して解消します。
-            deformer->SynchronizeSoftBodyMesh(*mesh);
+            // SimulationとPost-Simulation Mesh同期はPhysicsSimulationWorld::Step()へ移管します。
+            // このGame Updateでは登録だけを行うため、Fixed Step前の古いPhysics StateをMeshへ書き戻しません。
+            softBodyWorld.RegisterSimulationParticipant(*deformer);
             continue;
         }
 

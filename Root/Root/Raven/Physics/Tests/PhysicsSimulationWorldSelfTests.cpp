@@ -18,7 +18,13 @@ public:
         LastFixedDeltaTime = fixedDeltaTime;
     }
 
+    void SynchronizeSoftBodyOutput() override
+    {
+        ++SynchronizationCount;
+    }
+
     uint32_t StepCount = 0u;
+    uint32_t SynchronizationCount = 0u;
     float LastFixedDeltaTime = 0.0f;
 };
 }
@@ -62,14 +68,25 @@ void RunPhysicsSimulationWorldSelfTests()
 
     constexpr float fixedDeltaTime = 1.0f / 60.0f;
     softBodyWorld.Step(fixedDeltaTime);
+
+    // 全Participantは1 Fixed StepにつきSimulation -> Output同期をそれぞれ1回だけ受け取ります。
     assert(firstParticipant.StepCount == 1u);
     assert(secondParticipant.StepCount == 1u);
+    assert(firstParticipant.SynchronizationCount == 1u);
+    assert(secondParticipant.SynchronizationCount == 1u);
     assert(firstParticipant.LastFixedDeltaTime == fixedDeltaTime);
     assert(secondParticipant.LastFixedDeltaTime == fixedDeltaTime);
 
     assert(softBodyWorld.UnregisterSimulationParticipant(firstParticipant) == true);
     assert(softBodyWorld.UnregisterSimulationParticipant(firstParticipant) == false);
     assert(softBodyWorld.ContainsSimulationParticipant(firstParticipant) == false);
+
+    // Unregister後は残ったParticipantだけがSimulation/同期されます。
+    softBodyWorld.Step(fixedDeltaTime);
+    assert(firstParticipant.StepCount == 1u);
+    assert(firstParticipant.SynchronizationCount == 1u);
+    assert(secondParticipant.StepCount == 2u);
+    assert(secondParticipant.SynchronizationCount == 2u);
 
     assert(softBodyWorld.UnregisterSolver(firstSolver) == true);
     assert(softBodyWorld.UnregisterSolver(firstSolver) == false);

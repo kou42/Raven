@@ -67,8 +67,12 @@ void SoftBodyWorld::Clear()
 
 void SoftBodyWorld::Step(float fixedDeltaTime)
 {
+    // ========================================================================
+    // SoftBody Simulation Phase
+    // ========================================================================
     // Meshや具体的なCloth/Jelly型をPhysics Domainへ持ち込まず、登録済みParticipantだけを進めます。
-    // RegistryはGame Updateで毎frame再構築されるため、Enabled=falseや未初期化のSoftBodyは登録されません。
+    // 全ParticipantのPhysics Stateを先に確定させてから出力同期へ進むことで、将来Soft-Soft Couplingを
+    // 追加する場合もMesh更新がSimulation途中へ割り込まない順序を維持します。
     for (SoftBodySimulationParticipant* participant : m_SimulationParticipants)
     {
         if (participant == nullptr)
@@ -77,6 +81,24 @@ void SoftBodyWorld::Step(float fixedDeltaTime)
         }
 
         participant->SimulateSoftBody(fixedDeltaTime);
+    }
+
+    // ========================================================================
+    // Post-Simulation Output Synchronization
+    // ========================================================================
+    // 現在はMeshDeformerがこのhookを使ってParticle結果をMesh/GPUへ同期します。
+    // Physics側は具体的な出力型を知らず、Participantの抽象境界だけを呼びます。
+    //
+    // Fixed timestep catch-upで1frame中に複数Stepした場合は同期も複数回走ります。
+    // 正しさを優先して1frame遅延を先に解消し、最終Step後だけ同期する最適化は後続で扱います。
+    for (SoftBodySimulationParticipant* participant : m_SimulationParticipants)
+    {
+        if (participant == nullptr)
+        {
+            continue;
+        }
+
+        participant->SynchronizeSoftBodyOutput();
     }
 }
 
@@ -96,7 +118,7 @@ bool SoftBodyWorld::ContainsSimulationParticipant(const SoftBodySimulationPartic
 void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 {
     // Domain更新順序を上位Worldへ集約します。
-    // 現段階ではRigid Bodyを先に確定し、その後Soft Bodyを進めます。
+    // 現段階ではRigid Bodyを先に確定し、その後Soft Body Simulationと出力同期を進めます。
     // 次PhaseのRigid-Soft Couplingでは、この境界の間にCollider同期/Impulse反映を挿入します。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
     m_SoftBodyWorld.Step(fixedDeltaTime);
