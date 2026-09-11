@@ -231,8 +231,11 @@ struct ColliderComponent
 {
     ColliderType Type = ColliderType::Box;
 
-    // Sphere / Box / Capsuleの中心をTransform::Positionからずらすローカルオフセットです。
-    // Box / CapsuleではTransformの回転に追従します。
+    // Collider中心をTransform::PositionからずらすOffsetです。
+    // Box / Capsule / StaticMeshではShape local-spaceとしてTransformの回転に追従します。
+    // Sphereは既存PhysicsWorldの互換契約としてworld軸方向へ直接加算します。Sphere自体は回転に
+    // 依存しませんが、中心Offsetまでlocal-space化すると既存Sceneの衝突位置が変わるため、
+    // Rigid/Soft Couplingを含む全Sphere経路で Position + Offset の契約を維持します。
     math::Vec3 Offset{ 0.0f, 0.0f, 0.0f };
 
     // Box用パラメータです。現在はTransform::Rotationを反映したOBBの半サイズです。
