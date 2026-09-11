@@ -1,7 +1,6 @@
 ﻿#include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -57,7 +56,7 @@ constexpr math::Vec3 kRigidSphereInitialVelocity{ 0.0f, 0.0f, -8.0f };
 // XPBD Sphere Collisionは現在DeltaLambda / dtから反作用Impulseを計算します。
 // 以前のPosition Correction由来の推定より反復回数への依存は小さくなりましたが、SoftBody Particleの
 // mass scaleとRigidBodyのkgはまだ共通単位系として校正していません。そのためデモ段階では
-// Reaction ScaleとClampを残し、異なる質量系を接続した際の過大反作用を防ぎます。
+// Reaction ScaleとClampをBinding設定として残し、異なる質量系を接続した際の過大反作用を防ぎます。
 // 将来Rigid/Soft共通Constraint Solverへ統合した段階で、この経験的Scaleを除去する想定です。
 constexpr float kSoftRigidReactionScale = 0.12f;
 constexpr float kMaxReactionImpulse = 18.0f;
@@ -82,19 +81,6 @@ math::Vec3 ClothLocalToWorldPosition(const math::Vec3& localPosition)
 float WorldToClothLocalLength(float worldLength)
 {
     return worldLength / kClothWorldScale;
-}
-
-math::Vec3 ClampMagnitude(const math::Vec3& value, float maxMagnitude)
-{
-    const float lengthSq = value.LengthSq();
-    const float maxMagnitudeSq = maxMagnitude * maxMagnitude;
-
-    if (lengthSq <= maxMagnitudeSq || lengthSq <= math::Epsilon * math::Epsilon)
-    {
-        return value;
-    }
-
-    return value * (maxMagnitude / std::sqrt(lengthSq));
 }
 
 #ifdef _DEBUG
@@ -405,13 +391,13 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
     ph::SoftBodySolver& solver = clothDeformer->GetSolver();
 
     // ========================================================================
-    // Rigid Body -> Soft Body collider binding registration
+    // Bidirectional Rigid <-> Soft coupling binding registration
     // ========================================================================
     // ClothのMesh依存初期化はMeshDeformationSystemがScene Physicsより前に済ませます。
-    // Collider Indexが確定した最初のApplication Layer UpdateでBindingを1回だけ登録し、以降の位置同期は
-    // PhysicsSimulationWorldが各Fixed StepのRigid Step直後、Soft Step直前に行います。
-    // 初期ColliderはOnAttach時にRigid Sphere初期位置と一致させているため、Binding登録前の最初のStepも
-    // 不整合なCollider位置から開始しません。
+    // Collider Indexが確定した最初のApplication Layer UpdateでBindingを1回だけ登録します。
+    // 以降はPhysicsSimulationWorldがFixed Step内で
+    //   Rigid Step -> Collider同期 -> Soft Step -> Reaction Impulse
+    // を一括管理するため、このLayerはCouplingの毎frameデータ交換を行いません。
     if (m_RigidSoftSphereBindingRegistered == false)
     {
         uint32_t colliderIndex = 0u;
@@ -422,48 +408,12 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
             binding.TargetSoftBodyEntity = m_ClothEntity.GetHandle();
             binding.TargetSolver = &solver;
             binding.TargetColliderIndex = colliderIndex;
+            binding.ReactionEnabled = true;
+            binding.ReactionImpulseScale = kSoftRigidReactionScale;
+            binding.MaximumReactionImpulse = kMaxReactionImpulse;
 
             m_RigidSoftSphereBindingRegistered =
                 scene->GetPhysicsSimulationWorld().RegisterRigidSoftSphereColliderBinding(binding);
-        }
-    }
-
-    const std::vector<ph::SoftBodySphereCollider>& sphereColliders = solver.GetSphereColliders();
-
-    // ========================================================================
-    // Soft Body -> Rigid Body reaction
-    // ========================================================================
-    // PhysicsSimulationWorld内ではRigid Step -> Collider同期 -> Soft Stepの順で進みます。
-    // Application LayerであるこのOnUpdate()はScene更新後に呼ばれるため、ここでは直前Soft Stepの
-    // FeedbackをRigidBody速度へ反映し、次のPhysics固定Stepから運動へ参加させます。
-    if (sphereColliders.empty() == false)
-    {
-        const ph::SoftBodySphereCollider& softSphere = sphereColliders.front();
-
-        if (softSphere.ContactCount > 0u)
-        {
-            // AccumulatedReactionImpulseはXPBD Sphere ConstraintのDeltaLambda / dtから求めた
-            // Clothローカル単位のImpulse相当です。uniform scaleを掛けてWorld長さ単位へ変換した後、
-            // Particle質量系とRigidBody kg系の未校正差だけをReaction Scaleで抑えます。
-            math::Vec3 worldReactionImpulse =
-                softSphere.AccumulatedReactionImpulse
-                * (kClothWorldScale * kSoftRigidReactionScale);
-
-            worldReactionImpulse = ClampMagnitude(worldReactionImpulse, kMaxReactionImpulse);
-
-            const math::Vec3 worldContactPoint =
-                ClothLocalToWorldPosition(softSphere.GetAverageContactPoint());
-
-            if (worldReactionImpulse.LengthSq() > math::Epsilon * math::Epsilon)
-            {
-                // 接触点へImpulseを返すことで、中心を外れたCloth接触ではRigidBodyのAngularVelocityにも
-                // r x J が反映されます。これによりSoft/Rigid連成の回転反作用も最小構成で確認できます。
-                scene->GetPhysicsWorld().AddImpulseAtPoint(
-                    *scene,
-                    m_RigidSphereEntity,
-                    worldReactionImpulse,
-                    worldContactPoint);
-            }
         }
     }
 

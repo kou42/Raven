@@ -24,9 +24,9 @@ class MeshDeformationInstance;
 //   MeshRendererComponent + RigidBodyComponent + ColliderComponent
 // を持つ通常EntityとしてPhysicsWorldとScene描画の両方へ参加します。
 //
-// Rigid -> Soft Collider同期はPhysicsSimulationWorldのFixed Step境界へ移管します。
-// Application LayerのOnUpdate()は、現在はSoft -> Rigid反作用の適用とDebug Snapshotだけを担当し、
-// RigidBody TransformからSoftBody Colliderへの毎frame手動同期は行いません。
+// 双方向Couplingの毎Fixed Step処理はPhysicsSimulationWorldへ集約します。
+// Application LayerのOnUpdate()は、Solver Collider Index確定後のBinding登録とDebug Snapshotだけを担当し、
+// Rigid -> Soft Collider同期やSoft -> Rigid Reaction Impulseの毎frame手動交換は行いません。
 //
 // 描画そのものはScene側へ統合するため、OnRender()は追加Passを持ちません。
 class SoftBodyClothDemoLayer : public Layer

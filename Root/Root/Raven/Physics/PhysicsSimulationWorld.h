@@ -65,6 +65,11 @@ private:
 // SourceRigidEntityはWorld-space Colliderの正規データ、TargetSoftBodyEntityはSolver local-spaceを
 // 定義するTransform、TargetSolver/TargetColliderIndexは同期先を表します。
 //
+// Soft -> Rigid反作用も同じ接触Pairに属するため、このBindingへ設定を集約します。
+// ReactionImpulseScaleはSoftBody local-spaceで得た反作用をworld-spaceへ変換した後に掛ける係数です。
+// 現段階ではRigid/Softの質量単位系が完全統一されていないため、Demo側で校正値を指定できます。
+// MaximumReactionImpulseが0以下ならClampしません。
+//
 // Solverの所有権はDeformer側、Entityの所有権はScene側に残します。PhysicsSimulationWorldは
 // Fixed Step境界で両Domainを接続する情報だけを保持し、Renderer/具体的なCloth型へ依存しません。
 struct RigidSoftSphereColliderBinding
@@ -73,6 +78,10 @@ struct RigidSoftSphereColliderBinding
     EntityHandle TargetSoftBodyEntity{};
     SoftBodySolver* TargetSolver = nullptr;
     uint32_t TargetColliderIndex = 0u;
+
+    bool ReactionEnabled = false;
+    float ReactionImpulseScale = 1.0f;
+    float MaximumReactionImpulse = 0.0f;
 };
 
 // ============================================================================
@@ -114,6 +123,11 @@ private:
     // Rigid Body Stepで確定した最新Transform/ColliderをSoftBody local-spaceへ変換します。
     // SoftBody Step直前に呼ぶことで、同じFixed Step内で最新Rigid状態をCollision Constraintへ渡します。
     void SynchronizeRigidBodyCollidersToSoftBody(Scene& scene);
+
+    // SoftBody Stepで生成されたTransientなSphere反作用をworld-spaceへ変換し、
+    // 対応するDynamic RigidBodyへImpulseとして返します。
+    // catch-up中も各Soft Step直後に適用するため、次のRigid substepから反作用を利用できます。
+    void ApplySoftBodyReactionsToRigidBodies(Scene& scene);
 
 private:
     PhysicsWorld m_RigidBodyWorld;
