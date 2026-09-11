@@ -87,19 +87,38 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
                 && coupling->SourceRigidEntity.IsValid() == true
                 && softBodySolver != nullptr)
             {
-                uint32_t colliderIndex = 0u;
-                if (deformer->TryGetSoftBodySphereColliderIndex(colliderIndex) == true)
+                // Runtime Bindingへ不正なSourceを持ち込むと、Fixed Stepごとに同じ失敗判定を繰り返します。
+                // ECSからRegistryを再構築するこの境界でEntityのGenerationを含む生存確認とShape契約を検証し、
+                // Rigid/Soft Sphere Couplingとして成立するPairだけをPhysicsSimulationWorldへ渡します。
+                const bool sourceIsAlive = scene.IsEntityAlive(coupling->SourceRigidEntity);
+                const TransformComponent* sourceTransform = nullptr;
+                const ColliderComponent* sourceCollider = nullptr;
+                if (sourceIsAlive == true)
                 {
-                    ph::RigidSoftSphereColliderBinding binding{};
-                    binding.SourceRigidEntity = coupling->SourceRigidEntity;
-                    binding.TargetSoftBodyEntity = entity.GetHandle();
-                    binding.TargetSolver = softBodySolver;
-                    binding.TargetColliderIndex = colliderIndex;
-                    binding.ReactionEnabled = coupling->ReactionEnabled;
-                    binding.ReactionImpulseScale = coupling->ReactionImpulseScale;
-                    binding.MaximumReactionImpulse = coupling->MaximumReactionImpulse;
+                    sourceTransform = scene.TryGetComponent<TransformComponent>(
+                        coupling->SourceRigidEntity.m_Index);
+                    sourceCollider = scene.TryGetComponent<ColliderComponent>(
+                        coupling->SourceRigidEntity.m_Index);
+                }
 
-                    physicsSimulationWorld.RegisterRigidSoftSphereColliderBinding(binding);
+                if (sourceTransform != nullptr
+                    && sourceCollider != nullptr
+                    && sourceCollider->Type == ColliderType::Sphere)
+                {
+                    uint32_t colliderIndex = 0u;
+                    if (deformer->TryGetSoftBodySphereColliderIndex(colliderIndex) == true)
+                    {
+                        ph::RigidSoftSphereColliderBinding binding{};
+                        binding.SourceRigidEntity = coupling->SourceRigidEntity;
+                        binding.TargetSoftBodyEntity = entity.GetHandle();
+                        binding.TargetSolver = softBodySolver;
+                        binding.TargetColliderIndex = colliderIndex;
+                        binding.ReactionEnabled = coupling->ReactionEnabled;
+                        binding.ReactionImpulseScale = coupling->ReactionImpulseScale;
+                        binding.MaximumReactionImpulse = coupling->MaximumReactionImpulse;
+
+                        physicsSimulationWorld.RegisterRigidSoftSphereColliderBinding(binding);
+                    }
                 }
             }
 
