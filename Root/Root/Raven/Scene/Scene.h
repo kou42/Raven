@@ -75,6 +75,12 @@ public:
     const ph::PhysicsWorld& GetPhysicsWorld() const;
     ph::PhysicsWorld& GetPhysicsWorld();
 
+    // General Physics側のDomain Registryや将来のCoupling制御へアクセスする明示APIです。
+    // 既存Rigid Body利用側はGetPhysicsWorld()を使い続け、上位Worldが必要なSystemだけが
+    // このAccessorを使用することで依存範囲を限定します。
+    const ph::PhysicsSimulationWorld& GetPhysicsSimulationWorld() const { return m_PhysicsWorld; }
+    ph::PhysicsSimulationWorld& GetPhysicsSimulationWorld() { return m_PhysicsWorld; }
+
     //+---------------------------------------------------------------------
     // テンプレート
     //+---------------------------------------------------------------------
