@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include "Raven/Physics/Particle/ParticleSpatialHashGrid.h"
-#include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyParticle.h"
 
 namespace Raven
@@ -18,27 +18,37 @@ using SoftBodySpatialHashPair = ParticleSpatialHashPair;
 // ============================================================================
 // Soft Body Spatial Hash Adapter
 // ============================================================================
-// Spatial Hash本体はParticleSpatialHashGridへ集約し、このClassはSoftBodyParticleから
-// Positionを取り出してCoreへ登録する薄いAdapterとして維持します。
-// これにより既存Self Collision側のAPIを変更せず、Fluidなど別Particle系Simulationでも
-// 同じHash実装を再利用できます。
-class SoftBodySpatialHashGrid : public ParticleSpatialHashGrid
+// SoftBodyParticle固有のBuild処理だけを担当し、Hash実装そのものは
+// ParticleSpatialHashGridへcompositionで委譲します。
+//
+// 継承を使わないことでSoftBody側からCore内部表現へ触れる経路を閉じ、Fluid / Molecular
+// Dynamicsなど別Simulationと同じ「Particle型Adapter -> 共通Spatial Query」という境界に揃えます。
+class SoftBodySpatialHashGrid
 {
 public:
     explicit SoftBodySpatialHashGrid(float cellSize = 0.05f);
 
-    // Base Classの通常vector版を、下記Temporary Allocator版で隠さないよう公開します。
-    using ParticleSpatialHashGrid::GenerateCandidatePairs;
+    void SetCellSize(float cellSize);
+    float GetCellSize() const;
+
+    void Clear();
 
     // 現在のSoftBody Particle PositionからGridを再構築します。
     void Build(const std::vector<SoftBodyParticle>& particles);
 
-    // Temporary allocation計測用Overloadです。
-    // 第一段階では既存の計測経路を維持し、性能比較結果を変えないようにします。
-    void GenerateCandidatePairs(
-        std::vector<
-            SoftBodySpatialHashPair,
-            SolverTemporaryAllocator<SoftBodySpatialHashPair>>& outPairs) const;
+    // PairContainerのAllocatorには依存しません。
+    // 通常std::vectorとSolverTemporaryAllocator版の双方が同じCore走査を利用します。
+    template <typename PairContainer>
+    void GenerateCandidatePairs(PairContainer& outPairs) const
+    {
+        m_Core.GenerateCandidatePairs(outPairs);
+    }
+
+    std::size_t GetOccupiedCellCount() const;
+    std::size_t GetParticleCount() const;
+
+private:
+    ParticleSpatialHashGrid m_Core;
 };
 
 } // namespace ph

@@ -1,4 +1,3 @@
-#include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
 #include <cstdint>
@@ -9,17 +8,6 @@ namespace Raven
 {
 namespace ph
 {
-
-void SoftBodySpatialHashGrid::GenerateCandidatePairs(
-    std::vector<
-        SoftBodySpatialHashPair,
-        SolverTemporaryAllocator<SoftBodySpatialHashPair>>& outPairs) const
-{
-    // Pair走査はParticleSpatialHashGridへ一本化します。
-    // Temporary Allocator版でも同じContainerへ直接push_backするため、
-    // 既存のAllocation計測対象とPair順序を維持したまま重複実装を除去できます。
-    ParticleSpatialHashGrid::GenerateCandidatePairs(outPairs);
-}
 
 void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
     const std::vector<SoftBodyParticle>& particles,
