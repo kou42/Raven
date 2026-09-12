@@ -17,6 +17,7 @@
 #include "Raven/Debug/BrowserDebugServer.h"
 #include "Raven/Debug/BrowserDebugViewer.h"
 #include "Raven/Math/MathVector.h"
+#include "Raven/Physics/Fluid/Debug/FluidBuoyancyDebugOverlayLayer.h"
 #include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
@@ -137,6 +138,9 @@ int main()
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
     // SPH Particleも通常EntityとしてActive Sceneへ登録し、既存ECS描画経路で可視化します。
     app.PushLayer(Raven::CreateScope<Raven::FluidSPHDemoLayer>(app));
+    // Fluid LayerがBox / Sphereを生成した後にHUDを登録し、起動時Resetで水面付近へ揃えます。
+    // Solver/Coupling本体へDebug入力依存を持ち込まず、検証操作だけをApplication Overlayへ分離します。
+    app.PushLayer(Raven::CreateScope<Raven::FluidBuoyancyDebugOverlayLayer>(app));
 
 #ifdef _DEBUG
     // 実ファイルの読み込みからUI Tree展開、AnimationClip再生、OpenGL UI描画までを
