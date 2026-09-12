@@ -1,7 +1,6 @@
 #include "Raven/Physics/Particle/ParticleSpatialHashGrid.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 
 namespace Raven
@@ -23,34 +22,6 @@ std::size_t NextPowerOfTwo(std::size_t value)
     }
     return result;
 }
-
-struct NeighborOffset
-{
-    int32_t X = 0;
-    int32_t Y = 0;
-    int32_t Z = 0;
-};
-
-// 3x3x3近傍のうち辞書順で正方向となる13 Cellだけを走査し、
-// Cell A -> B と Cell B -> A の二重処理を防ぎます。
-constexpr std::array<NeighborOffset, 13u> UniqueNeighborOffsets =
-{
-    NeighborOffset{  1,  0,  0 },
-
-    NeighborOffset{ -1,  1,  0 },
-    NeighborOffset{  0,  1,  0 },
-    NeighborOffset{  1,  1,  0 },
-
-    NeighborOffset{ -1, -1,  1 },
-    NeighborOffset{  0, -1,  1 },
-    NeighborOffset{  1, -1,  1 },
-    NeighborOffset{ -1,  0,  1 },
-    NeighborOffset{  0,  0,  1 },
-    NeighborOffset{  1,  0,  1 },
-    NeighborOffset{ -1,  1,  1 },
-    NeighborOffset{  0,  1,  1 },
-    NeighborOffset{  1,  1,  1 }
-};
 }
 
 ParticleSpatialHashGrid::ParticleSpatialHashGrid(float cellSize)
@@ -91,63 +62,6 @@ void ParticleSpatialHashGrid::AddParticle(
     const CellCoord cell = ComputeCellCoord(position);
     CellBucket& bucket = GetOrActivateBucket(cell);
     bucket.ParticleIndices.Append(particleIndex);
-}
-
-void ParticleSpatialHashGrid::GenerateCandidatePairs(
-    std::vector<ParticleSpatialHashPair>& outPairs) const
-{
-    // vector capacityは呼び出し側でiteration間に再利用できるようclear()だけにします。
-    outPairs.clear();
-
-    for (std::size_t activeBucketIndex : m_ActiveBucketIndices)
-    {
-        const CellBucket& centerBucket = m_Buckets[activeBucketIndex];
-        const CellCoord& centerCell = centerBucket.Coord;
-        const ParticleIndexBuffer& centerParticles = centerBucket.ParticleIndices;
-
-        // 同一Cell内はi<jだけを生成します。
-        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.Count; ++firstIndex)
-        {
-            for (std::size_t secondIndex = firstIndex + 1u;
-                 secondIndex < centerParticles.Count;
-                 ++secondIndex)
-            {
-                AppendNormalizedPair(
-                    centerParticles.Storage.data()[firstIndex],
-                    centerParticles.Storage.data()[secondIndex],
-                    outPairs);
-            }
-        }
-
-        // 全26方向ではなく13方向だけを見ることで、隣接Cell Pairを厳密に1回だけ処理します。
-        for (const NeighborOffset& offset : UniqueNeighborOffsets)
-        {
-            CellCoord neighborCell{};
-            neighborCell.X = centerCell.X + offset.X;
-            neighborCell.Y = centerCell.Y + offset.Y;
-            neighborCell.Z = centerCell.Z + offset.Z;
-
-            const CellBucket* neighborBucket = FindActiveBucket(neighborCell);
-            if (neighborBucket == nullptr)
-            {
-                continue;
-            }
-
-            const ParticleIndexBuffer& neighborParticles = neighborBucket->ParticleIndices;
-            for (std::size_t centerIndex = 0u; centerIndex < centerParticles.Count; ++centerIndex)
-            {
-                const uint32_t centerParticle = centerParticles.Storage.data()[centerIndex];
-                for (std::size_t neighborIndex = 0u;
-                     neighborIndex < neighborParticles.Count;
-                     ++neighborIndex)
-                {
-                    const uint32_t neighborParticle =
-                        neighborParticles.Storage.data()[neighborIndex];
-                    AppendNormalizedPair(centerParticle, neighborParticle, outPairs);
-                }
-            }
-        }
-    }
 }
 
 std::size_t ParticleSpatialHashGrid::HashCell(const CellCoord& cell) const
@@ -258,22 +172,6 @@ ParticleSpatialHashGrid::CellCoord ParticleSpatialHashGrid::ComputeCellCoord(
     coord.Y = static_cast<int32_t>(std::floor(position.y * m_InverseCellSize));
     coord.Z = static_cast<int32_t>(std::floor(position.z * m_InverseCellSize));
     return coord;
-}
-
-void ParticleSpatialHashGrid::AppendNormalizedPair(
-    uint32_t particleA,
-    uint32_t particleB,
-    std::vector<ParticleSpatialHashPair>& outPairs)
-{
-    if (particleA == particleB)
-    {
-        return;
-    }
-
-    ParticleSpatialHashPair pair{};
-    pair.ParticleA = std::min(particleA, particleB);
-    pair.ParticleB = std::max(particleA, particleB);
-    outPairs.push_back(pair);
 }
 
 } // namespace ph
