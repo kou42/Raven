@@ -95,6 +95,7 @@ struct CharacterLocomotionDebugSnapshot
 //
 // 現段階の標準操作:
 //   WASD / Left Stick : Runtime Camera基準でXZ平面を移動
+//   Right Mouse Drag  : Characterを中心にRuntime CameraをYaw / Pitch回転
 //   Right Stick       : Characterを中心にRuntime CameraをYaw / Pitch回転
 //   Space / A         : Jump
 //   Left Shift / RT   : Run
@@ -503,7 +504,7 @@ private:
     // Primary Runtime CameraをCharacter中心のOrbit Cameraとして更新します。
     // CameraComponentのView Matrixを直接変更せずTransformComponentだけを更新し、
     // SceneCameraSystemをCamera姿勢同期の唯一の入口として維持します。
-    void UpdateGamepadCamera(float deltaTime);
+    void UpdateOrbitCamera(float deltaTime);
 
 private:
     Scene& m_Scene;
@@ -598,9 +599,15 @@ private:
     float m_CameraTargetHeight = 1.1f;
     float m_CameraYawSpeed = 2.2f;
     float m_CameraPitchSpeed = 1.8f;
+    float m_CameraMouseSensitivity = 0.0035f;
     float m_CameraStickDeadZone = 0.15f;
     float m_CameraMinPitch = -1.20f;
     float m_CameraMaxPitch = 0.65f;
+
+    // 右Mouseを押した最初のFrameは現在位置を基準点として保存し、次Frameから差分を適用します。
+    // EditorCameraと同じ符号規約を共有しつつ、更新先はRuntime Camera用Yaw/Pitchへ一本化します。
+    bool m_CameraMouseDragging = false;
+    math::Vec2 m_CameraLastMousePosition{};
 };
 
 } // namespace Raven
