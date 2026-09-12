@@ -27,6 +27,10 @@ struct FluidRigidBodyCouplingSettings
     // SPH Particleが保持する正圧をCollider表面への面圧としてRigidBodyへ返す倍率です。
     // 0で無効です。初版では負圧を吸着へ変換せず0へクランプします。
     float PressureReactionCoefficient = 0.0f;
+
+    // Colliderと重なったFluid Particleの排除質量からArchimedes相当の浮力を構築する倍率です。
+    // 0で無効、1を基準値とします。局所排除量はParticle半径とPenetrationDepthから近似します。
+    float BuoyancyCoefficient = 0.0f;
 };
 
 struct FluidRigidBodyCouplingStatistics
@@ -37,15 +41,19 @@ struct FluidRigidBodyCouplingStatistics
     uint64_t AppliedImpulseCount = 0u;
     uint64_t AppliedDragImpulseCount = 0u;
     uint64_t AppliedPressureImpulseCount = 0u;
+    uint64_t AppliedBuoyancyImpulseCount = 0u;
     float TotalNormalImpulse = 0.0f;
     float TotalDragImpulse = 0.0f;
     float TotalPressureImpulse = 0.0f;
+    float TotalBuoyancyImpulse = 0.0f;
+    float TotalDisplacedFluidMass = 0.0f;
 };
 
 // ============================================================================
 // Fluid <-> Dynamic RigidBody Coupling
 // ============================================================================
-// ParticleとDynamic RigidBody間で法線衝突、接線Drag、SPH Pressure Reactionを双方向へ適用します。
+// ParticleとDynamic RigidBody間で法線衝突、接線Drag、SPH Pressure Reaction、
+// 排除Fluid質量に基づくBuoyancyを双方向へ適用します。
 // 接触幾何はStatic Couplingと共通化し、SPH Solver自体へScene / RigidBody依存を入れません。
 class FluidRigidBodyCoupling
 {
