@@ -1,7 +1,5 @@
-#include "Raven/Physics/SoftBody/SoftBodySpatialHashGrid.h"
 #include "Raven/Physics/SoftBody/SoftBodyTriangleSpatialHashGrid.h"
 
-#include <array>
 #include <cstdint>
 
 #include "Raven/Core/CPUProfiler.h"
@@ -10,117 +8,6 @@ namespace Raven
 {
 namespace ph
 {
-namespace
-{
-
-// ============================================================================
-// Temporary-allocation measured Candidate Output
-// ============================================================================
-// Phase ②ではCandidate vectorそのもののHeap allocationを計測対象に含めます。
-// 通常vectorへ一度生成してからCounter付きvectorへcopyすると、元vectorのallocationが
-// Counterから漏れてしまうため、Spatial Hashから計測vectorへ直接push_backします。
-//
-// ここでは既存Candidate生成アルゴリズムと判定順を変更しません。
-// Phase ③でFrameAllocatorへ切り替えた際にも、候補集合やNarrow Phaseの仕事量を変えず、
-// backing allocatorだけの差としてBefore / After比較できることを優先します。
-struct TemporaryNeighborOffset
-{
-    int32_t X = 0;
-    int32_t Y = 0;
-    int32_t Z = 0;
-};
-
-constexpr std::array<TemporaryNeighborOffset, 13u> TemporaryUniqueNeighborOffsets =
-{
-    TemporaryNeighborOffset{  1,  0,  0 },
-    TemporaryNeighborOffset{ -1,  1,  0 },
-    TemporaryNeighborOffset{  0,  1,  0 },
-    TemporaryNeighborOffset{  1,  1,  0 },
-    TemporaryNeighborOffset{ -1, -1,  1 },
-    TemporaryNeighborOffset{  0, -1,  1 },
-    TemporaryNeighborOffset{  1, -1,  1 },
-    TemporaryNeighborOffset{ -1,  0,  1 },
-    TemporaryNeighborOffset{  0,  0,  1 },
-    TemporaryNeighborOffset{  1,  0,  1 },
-    TemporaryNeighborOffset{ -1,  1,  1 },
-    TemporaryNeighborOffset{  0,  1,  1 },
-    TemporaryNeighborOffset{  1,  1,  1 }
-};
-
-} // namespace
-
-void SoftBodySpatialHashGrid::GenerateCandidatePairs(
-    std::vector<
-        SoftBodySpatialHashPair,
-        SolverTemporaryAllocator<SoftBodySpatialHashPair>>& outPairs) const
-{
-    outPairs.clear();
-
-    // 通常vector版と同じ「Occupied Cell + 13 Neighbor」走査です。
-    // Candidate vectorのAllocatorだけが違い、Pair集合とPair順序は維持します。
-    for (std::size_t activeBucketIndex : m_ActiveBucketIndices)
-    {
-        const CellBucket& centerBucket = m_Buckets[activeBucketIndex];
-        const CellCoord& centerCell = centerBucket.Coord;
-        const ParticleIndexBuffer& centerParticles = centerBucket.ParticleIndices;
-
-        for (std::size_t firstIndex = 0u; firstIndex < centerParticles.Count; ++firstIndex)
-        {
-            for (std::size_t secondIndex = firstIndex + 1u;
-                 secondIndex < centerParticles.Count;
-                 ++secondIndex)
-            {
-                const uint32_t particleA = centerParticles.Storage.data()[firstIndex];
-                const uint32_t particleB = centerParticles.Storage.data()[secondIndex];
-                if (particleA == particleB)
-                {
-                    continue;
-                }
-
-                SoftBodySpatialHashPair pair{};
-                pair.ParticleA = std::min(particleA, particleB);
-                pair.ParticleB = std::max(particleA, particleB);
-                outPairs.push_back(pair);
-            }
-        }
-
-        for (const TemporaryNeighborOffset& offset : TemporaryUniqueNeighborOffsets)
-        {
-            CellCoord neighborCell{};
-            neighborCell.X = centerCell.X + offset.X;
-            neighborCell.Y = centerCell.Y + offset.Y;
-            neighborCell.Z = centerCell.Z + offset.Z;
-
-            const CellBucket* neighborBucket = FindActiveBucket(neighborCell);
-            if (neighborBucket == nullptr)
-            {
-                continue;
-            }
-
-            const ParticleIndexBuffer& neighborParticles = neighborBucket->ParticleIndices;
-            for (std::size_t centerIndex = 0u; centerIndex < centerParticles.Count; ++centerIndex)
-            {
-                const uint32_t centerParticle = centerParticles.Storage.data()[centerIndex];
-                for (std::size_t neighborIndex = 0u;
-                     neighborIndex < neighborParticles.Count;
-                     ++neighborIndex)
-                {
-                    const uint32_t neighborParticle =
-                        neighborParticles.Storage.data()[neighborIndex];
-                    if (centerParticle == neighborParticle)
-                    {
-                        continue;
-                    }
-
-                    SoftBodySpatialHashPair pair{};
-                    pair.ParticleA = std::min(centerParticle, neighborParticle);
-                    pair.ParticleB = std::max(centerParticle, neighborParticle);
-                    outPairs.push_back(pair);
-                }
-            }
-        }
-    }
-}
 
 void SoftBodyTriangleSpatialHashGrid::GenerateParticleTriangleCandidates(
     const std::vector<SoftBodyParticle>& particles,

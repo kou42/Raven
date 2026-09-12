@@ -280,6 +280,205 @@ void DrawSoftBodyCellSizeComparison(
         ImGui::EndTable();
     }
 }
+
+void DrawFluidSpatialHashComparison(
+    const std::vector<CPUProfileAggregate>& profileAggregates,
+    const std::vector<CPUCounterAggregate>& counterAggregates)
+{
+    // ========================================================================
+    // Fluid SPH Spatial Hash Comparison
+    // ========================================================================
+    // SmoothingRadiusは物理条件として固定し、SpatialHashCellSizeScaleだけを変えて比較します。
+    // CellSizeを小さくすると走査Cell数が増え、大きくすると1 Cell内の候補Particleが増えるため、
+    // Hash Build時間・候補数・Acceptance Ratioを同時に見て最適値を判断します。
+    const CPUProfileAggregate* step = FindCPUProfileAggregate(
+        profileAggregates,
+        "Physics.Fluid.SPH.Step");
+    const CPUProfileAggregate* spatialHashBuild = FindCPUProfileAggregate(
+        profileAggregates,
+        "Physics.Fluid.SPH.SpatialHashBuild");
+    const CPUProfileAggregate* density = FindCPUProfileAggregate(
+        profileAggregates,
+        "Physics.Fluid.SPH.Density");
+    const CPUProfileAggregate* force = FindCPUProfileAggregate(
+        profileAggregates,
+        "Physics.Fluid.SPH.Force");
+
+    const CPUCounterAggregate* cellSize = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.SpatialHashCellSize");
+    const CPUCounterAggregate* occupiedCellCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.SpatialHashOccupiedCellCount");
+    const CPUCounterAggregate* particleCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.ParticleCount");
+    const CPUCounterAggregate* substepCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.SubstepCount");
+    const CPUCounterAggregate* substepLimitReached = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.SubstepLimitReached");
+    const CPUCounterAggregate* densityCandidateCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.DensityNeighborCandidateCount");
+    const CPUCounterAggregate* densityAcceptedCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.DensityNeighborAcceptedCount");
+    const CPUCounterAggregate* forceCandidateCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.ForceNeighborCandidateCount");
+    const CPUCounterAggregate* forceAcceptedCount = FindCPUCounterAggregate(
+        counterAggregates,
+        "Physics.Fluid.SPH.ForceNeighborAcceptedCount");
+
+    if (step == nullptr
+        && spatialHashBuild == nullptr
+        && density == nullptr
+        && force == nullptr
+        && cellSize == nullptr
+        && occupiedCellCount == nullptr)
+    {
+        ImGui::TextDisabled("No Fluid SPH profile data in the last frame.");
+        return;
+    }
+
+    ImGui::TextDisabled(
+        "Cell Size focus: compare 0.75h / 1.00h / 1.25h with the same initial state and h.");
+
+    if (ImGui::BeginTable(
+            "FluidSpatialHashComparison",
+            2,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    {
+        ImGui::TableSetupColumn("Metric");
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+        ImGui::TableHeadersRow();
+
+        const auto drawMilliseconds = [](const char* label, const CPUProfileAggregate* aggregate)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            if (aggregate != nullptr)
+            {
+                ImGui::Text("%.3f ms", aggregate->TotalMilliseconds);
+            }
+            else
+            {
+                ImGui::TextDisabled("N/A");
+            }
+        };
+
+        const auto drawTotalCounter = [](const char* label, const CPUCounterAggregate* aggregate)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            if (aggregate != nullptr)
+            {
+                ImGui::Text("%.0f", aggregate->Total);
+            }
+            else
+            {
+                ImGui::TextDisabled("N/A");
+            }
+        };
+
+        const auto drawAverageCounter = [](const char* label, const CPUCounterAggregate* aggregate)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            if (aggregate != nullptr && aggregate->SampleCount > 0u)
+            {
+                const double average = aggregate->Total / static_cast<double>(aggregate->SampleCount);
+                ImGui::Text("%.3f", average);
+            }
+            else
+            {
+                ImGui::TextDisabled("N/A");
+            }
+        };
+
+        // CellSize / Occupied Cellsは各Substepで同じ意味の標本が追加されるため平均値を表示します。
+        // Candidate / AcceptedはFrame中に実行した全Substepの仕事量を見るため合計値を表示します。
+        drawAverageCounter("Cell Size", cellSize);
+        drawAverageCounter("Occupied Cells", occupiedCellCount);
+        drawAverageCounter("Particle Count", particleCount);
+        drawTotalCounter("Substeps", substepCount);
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Substep Limit Reached");
+        ImGui::TableSetColumnIndex(1);
+        if (substepLimitReached != nullptr)
+        {
+            if (substepLimitReached->Max > 0.0)
+            {
+                ImGui::TextUnformatted("YES");
+            }
+            else
+            {
+                ImGui::TextUnformatted("No");
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("N/A");
+        }
+
+        drawMilliseconds("SPH Step", step);
+        drawMilliseconds("Spatial Hash Build", spatialHashBuild);
+        drawMilliseconds("Density", density);
+        drawMilliseconds("Force", force);
+
+        drawTotalCounter("Density Candidates", densityCandidateCount);
+        drawTotalCounter("Density Accepted", densityAcceptedCount);
+
+        // SubstepごとのRatioを単純平均すると、候補数が少ないSubstepも同じ重みになります。
+        // Focus表ではAccepted合計 / Candidate合計からFrame全体の加重Acceptanceを再計算します。
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Density Acceptance");
+        ImGui::TableSetColumnIndex(1);
+        if (densityCandidateCount != nullptr
+            && densityAcceptedCount != nullptr
+            && densityCandidateCount->Total > 0.0)
+        {
+            const double ratio = densityAcceptedCount->Total / densityCandidateCount->Total;
+            ImGui::Text("%.1f %%", ratio * 100.0);
+        }
+        else
+        {
+            ImGui::TextDisabled("N/A");
+        }
+
+        drawTotalCounter("Force Candidates", forceCandidateCount);
+        drawTotalCounter("Force Accepted", forceAcceptedCount);
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Force Acceptance");
+        ImGui::TableSetColumnIndex(1);
+        if (forceCandidateCount != nullptr
+            && forceAcceptedCount != nullptr
+            && forceCandidateCount->Total > 0.0)
+        {
+            const double ratio = forceAcceptedCount->Total / forceCandidateCount->Total;
+            ImGui::Text("%.1f %%", ratio * 100.0);
+        }
+        else
+        {
+            ImGui::TextDisabled("N/A");
+        }
+
+        ImGui::EndTable();
+    }
+}
 } // namespace
 
 void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const Scene* scene)
@@ -339,6 +538,14 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
             if (ImGui::TreeNodeEx("SoftBody Cell Size Comparison", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 DrawSoftBodyCellSizeComparison(aggregates, counterAggregates);
+                ImGui::TreePop();
+            }
+
+            // Fluidではhを固定し、SpatialHashCellSizeScaleだけを変えて比較します。
+            // SoftBodyと同様に、最適化判断で頻繁に見る値を通常一覧より先にまとめます。
+            if (ImGui::TreeNodeEx("Fluid SPH Spatial Hash Comparison", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                DrawFluidSpatialHashComparison(aggregates, counterAggregates);
                 ImGui::TreePop();
             }
 

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -144,9 +144,9 @@
     <ClInclude Include="Raven\**\*.h" />
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)'=='Debug' and '$(RavenOptimizePhysicsInDebug)'=='true'">
-    <!-- 実測で支配的だった5ファイルに限定します。Scene / Demo / Testsは通常Debugのままです。
+    <!-- 実測で支配的なPhysics Kernelだけを最適化します。Scene / Demo / Testsは通常Debugのままです。
          /O2と両立しない/RTC、Edit and ContinueをこのKernelだけ外し、PDBと浮動小数点精度は維持します。 -->
-    <ClCompile Update="Raven\Physics\SoftBody\SoftBodySolver.cpp;Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp;Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp;Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp;Raven\Physics\Solver\ContactSolver.cpp">
+    <ClCompile Update="Raven\Physics\SoftBody\SoftBodySolver.cpp;Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp;Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp;Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp;Raven\Physics\Particle\ParticleSpatialHashGrid.cpp;Raven\Physics\Solver\ContactSolver.cpp">
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>

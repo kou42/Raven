@@ -15,6 +15,7 @@
 #include "Raven/Debug/BrowserDebugConfig.h"
 #include "Raven/Debug/BrowserDebugServer.h"
 #include "Raven/Debug/BrowserDebugViewer.h"
+#include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -95,7 +96,7 @@ int main()
     // Runtime Sceneを先に生成した後、Character / SoftBody検証LayerとEditorLayerを登録します。
     // Character ControllerはPhysics Query後のTransformを同じFrameのScene Renderへ反映したいため、
     // Application LayerではなくScene-owned Layerとして登録します。
-    // Cloth / Jelly Layerは従来どおりApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
+    // Cloth / Jelly / Fluid LayerはApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
     app.SetScene(Raven::CreateScope<Raven::SceneGame>());
 
     Raven::Scene* runtimeScene = app.GetScene();
@@ -129,6 +130,8 @@ int main()
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyJellyDemoLayer>(app));
+    // SPH Particleも通常EntityとしてActive Sceneへ登録し、既存ECS描画経路で可視化します。
+    app.PushLayer(Raven::CreateScope<Raven::FluidSPHDemoLayer>(app));
 
 #ifdef _DEBUG
     // 実ファイルの読み込みからUI Tree展開、AnimationClip再生、OpenGL UI描画までを
