@@ -66,6 +66,26 @@ void FluidSPHDemoLayer::OnAttach()
     initialSettings.AccelerationTimeStepFactor = 0.20f;
     initialSettings.MaximumSubsteps = 16u;
     m_Solver.SetSettings(initialSettings);
+
+    // Static / Dynamic Couplingは同じParticle半径と反発係数を使用します。
+    // 接触応答の設定をSPHSolverへ混ぜず、Domain間Coupling固有値として分離します。
+    ph::FluidStaticColliderCouplingSettings staticCouplingSettings{};
+    staticCouplingSettings.ParticleRadius = RenderParticleRadius;
+    staticCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
+    m_StaticColliderCoupling.SetSettings(staticCouplingSettings);
+
+    ph::FluidRigidBodyCouplingSettings rigidBodyCouplingSettings{};
+    rigidBodyCouplingSettings.ParticleRadius = RenderParticleRadius;
+    rigidBodyCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
+    // Demoでは弱めのDragを有効にし、RigidBody表面をFluidが完全に滑り抜ける状態を避けます。
+    rigidBodyCouplingSettings.DragCoefficient = 0.15f;
+    // Particleの正圧を代表投影面積へ作用させ、RigidBodyへ面圧反作用として返します。
+    rigidBodyCouplingSettings.PressureReactionCoefficient = 1.0f;
+    // 接触Particleの排除質量からArchimedes相当の浮力を構築します。
+    // 係数1.0を基準に、RigidBody質量と排除Fluid質量の比で浮く/沈む挙動が変わります。
+    rigidBodyCouplingSettings.BuoyancyCoefficient = 1.0f;
+    m_RigidBodyCoupling.SetSettings(rigidBodyCouplingSettings);
+
     m_Solver.ComputeDensity(m_Particles);
 
     float densitySum = 0.0f;
@@ -161,6 +181,20 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     }
 
     m_Solver.Step(m_Particles, safeDeltaTime);
+
+    Scene* scene = m_Application.GetScene();
+    if (scene != nullptr)
+    {
+        // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
+        // Normal / Pressure / Buoyancy / Dragの運動量交換を返します。
+        m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
+        m_RigidBodyCoupling.ResolveScene(
+            *scene,
+            scene->GetPhysicsWorld(),
+            m_Particles,
+            safeDeltaTime);
+    }
+
     SynchronizeRenderEntities();
 }
 
@@ -173,10 +207,7 @@ void FluidSPHDemoLayer::OnRender()
 void FluidSPHDemoLayer::CreateParticles()
 {
     m_Particles.clear();
-    m_Particles.reserve(
-        static_cast<std::size_t>(ParticleCountX)
-        * static_cast<std::size_t>(ParticleCountY)
-        * static_cast<std::size_t>(ParticleCountZ));
+    m_Particles.reserve(static_cast<std::size_t>(ParticleCountX) * static_cast<std::size_t>(ParticleCountY) * static_cast<std::size_t>(ParticleCountZ));
 
     for (uint32_t y = 0u; y < ParticleCountY; ++y)
     {
@@ -185,10 +216,7 @@ void FluidSPHDemoLayer::CreateParticles()
             for (uint32_t x = 0u; x < ParticleCountX; ++x)
             {
                 ph::FluidParticle particle{};
-                particle.Position = FluidOrigin + math::Vec3{
-                    static_cast<float>(x) * ParticleSpacing,
-                    static_cast<float>(y) * ParticleSpacing,
-                    static_cast<float>(z) * ParticleSpacing };
+                particle.Position = FluidOrigin + math::Vec3{ static_cast<float>(x) * ParticleSpacing, static_cast<float>(y) * ParticleSpacing, static_cast<float>(z) * ParticleSpacing };
                 particle.Mass = ParticleMass;
                 m_Particles.push_back(particle);
             }
@@ -211,72 +239,18 @@ void FluidSPHDemoLayer::CreateRenderEntities()
 
     for (std::size_t i = 0u; i < m_Particles.size(); ++i)
     {
-        // Material instanceはParticleごとに分けますが、内部Pipelineは共有Refです。
-        // Debug Demo規模ではUniform状態の明確さを優先し、Renderer全体へ個別Tint機構を追加しません。
-        Ref<Material> material = CreateRef<Material>(m_ParticlePipeline);
-        material->SetUniform("u_Tint", ComputeParticleDebugColor(m_Particles[i]));
-        material->SetUniform("u_Alpha", 1.0f);
+        Entity entity = scene->CreateEntity("Fluid Particle");
+        entity.GetComponent<TransformComponent>().Scale = { RenderParticleRadius, RenderParticleRadius, RenderParticleRadius };
 
-        Entity entity = scene->CreateEntity("SPH Fluid Particle");
-        entity.AddComponent<MeshRendererComponent>(
-            MeshRendererComponent{ m_ParticleMesh, material });
+        Ref<Material> material = Material::Create(m_ParticlePipeline);
+        MeshRendererComponent renderer{};
+        renderer.MeshAsset = m_ParticleMesh;
+        renderer.MaterialAsset = material;
+        entity.AddComponent<MeshRendererComponent>(renderer);
 
-        m_ParticleMaterials.push_back(std::move(material));
         m_ParticleEntities.push_back(entity);
+        m_ParticleMaterials.push_back(material);
     }
-}
-
-math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
-    const ph::FluidParticle& particle) const
-{
-    const ph::SPHSettings& settings = m_Solver.GetSettings();
-
-    // Density偏差はRestDensityに対する割合で正規化します。
-    // ±15%を可視化レンジの端に置き、それ以上は色を飽和させて外れ値で全体が見づらくなるのを防ぎます。
-    float normalizedDensityDeviation = 0.0f;
-    if (settings.RestDensity > math::Epsilon)
-    {
-        const float relativeDensityDeviation =
-            (particle.Density - settings.RestDensity) / settings.RestDensity;
-        normalizedDensityDeviation = std::clamp(
-            relativeDensityDeviation / DensityVisualizationRange,
-            -1.0f,
-            1.0f);
-    }
-
-    // PressureはEOSの係数が変わっても同じ色レンジで比較できるよう、
-    // 「RestDensityから15%ずれたときのPressure」を基準値にします。
-    float normalizedPressure = 0.0f;
-    const float pressureReference =
-        settings.PressureStiffness
-        * settings.RestDensity
-        * DensityVisualizationRange;
-    if (pressureReference > math::Epsilon)
-    {
-        normalizedPressure = std::clamp(
-            particle.Pressure / pressureReference,
-            -1.0f,
-            1.0f);
-    }
-
-    // 現在の線形EOSではDensity偏差とPressureはほぼ同じ情報ですが、
-    // hueはPressure、明るさはDensityへ分けておくと、将来Tait EOS等へ変更したときも
-    // 「圧力」と「密度」の違いを同じ可視化関数で表現できます。
-    math::Vec3 color = RestDensityColor;
-    if (normalizedPressure < 0.0f)
-    {
-        color = LerpColor(RestDensityColor, LowDensityColor, -normalizedPressure);
-    }
-    else
-    {
-        color = LerpColor(RestDensityColor, HighDensityColor, normalizedPressure);
-    }
-
-    const float densityBrightness = std::clamp(
-        0.90f + 0.10f * normalizedDensityDeviation,
-        0.80f,
-        1.00f);
-    return color * densityBrightness;
 }
 
 void FluidSPHDemoLayer::SynchronizeRenderEntities()
@@ -287,9 +261,8 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
         return;
     }
 
-    const std::size_t count = std::min(
-        m_Particles.size(),
-        std::min(m_ParticleEntities.size(), m_ParticleMaterials.size()));
+    const std::size_t count = std::min(m_Particles.size(), m_ParticleEntities.size());
+    const float restDensity = std::max(m_Solver.GetSettings().RestDensity, math::Epsilon);
     for (std::size_t i = 0u; i < count; ++i)
     {
         Entity& entity = m_ParticleEntities[i];
@@ -298,15 +271,26 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
             continue;
         }
 
-        TransformComponent& transform = entity.GetComponent<TransformComponent>();
-        transform.Position = m_Particles[i].Position;
-        transform.Scale = math::Vec3(RenderParticleRadius * 2.0f);
+        entity.GetComponent<TransformComponent>().Position = m_Particles[i].Position;
 
-        Ref<Material>& material = m_ParticleMaterials[i];
-        if (material != nullptr)
+        if (i >= m_ParticleMaterials.size() || m_ParticleMaterials[i] == nullptr)
         {
-            material->SetUniform("u_Tint", ComputeParticleDebugColor(m_Particles[i]));
+            continue;
         }
+
+        const float normalizedDensity = (m_Particles[i].Density - restDensity) / (restDensity * DensityVisualizationRange);
+        const float positive = std::clamp(normalizedDensity, 0.0f, 1.0f);
+        const float negative = std::clamp(-normalizedDensity, 0.0f, 1.0f);
+        math::Vec3 color = RestDensityColor;
+        if (normalizedDensity >= 0.0f)
+        {
+            color = LerpColor(RestDensityColor, HighDensityColor, positive);
+        }
+        else
+        {
+            color = LerpColor(RestDensityColor, LowDensityColor, negative);
+        }
+        m_ParticleMaterials[i]->Set("u_Tint", math::Vec4{ color.x, color.y, color.z, 0.72f });
     }
 }
 

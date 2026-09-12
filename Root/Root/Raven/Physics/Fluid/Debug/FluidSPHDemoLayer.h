@@ -3,6 +3,8 @@
 #include <vector>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Physics/Coupling/FluidRigidBodyCoupling.h"
+#include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/SPHSolver.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -20,8 +22,8 @@ class Pipeline;
 // Fluid SPH Demo Layer
 // ============================================================================
 // SPHSolverのParticleを通常のSphere Entityへ同期し、Game View / Scene View上で
-// Density -> Pressure -> Force -> Integration -> Boundary の結果を目視確認します。
-// Simulation本体はSPHSolverへ閉じ、Layerは初期配置・描画Entity同期だけを担当します。
+// Density -> Pressure -> Force -> Integration -> Collider Coupling の結果を目視確認します。
+// Simulation本体はSPHSolverへ閉じ、Scene Collider / RigidBodyとの接続はCoupling層へ分離します。
 class FluidSPHDemoLayer final : public Layer
 {
 public:
@@ -47,6 +49,12 @@ private:
 private:
     Application& m_Application;
     ph::SPHSolver m_Solver{};
+
+    // SPHSolverへScene / RigidBody依存を持ち込まないため、Colliderとの境界応答と
+    // Dynamic RigidBodyへの反作用はDemo側から独立したCouplingへ明示的に委譲します。
+    ph::FluidStaticColliderCoupling m_StaticColliderCoupling{};
+    ph::FluidRigidBodyCoupling m_RigidBodyCoupling{};
+
     std::vector<ph::FluidParticle> m_Particles;
     std::vector<Entity> m_ParticleEntities;
     Ref<Mesh> m_ParticleMesh;

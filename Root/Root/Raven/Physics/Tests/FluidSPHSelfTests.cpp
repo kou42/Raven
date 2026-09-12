@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/FluidSpatialHashGrid.h"
 #include "Raven/Physics/Fluid/SPHKernel.h"
@@ -268,6 +269,71 @@ void RunFluidSPHSelfTests()
         solver.Step(particles, 0.12f);
         assert(solver.GetLastSubstepCount() == 2u);
         assert(solver.WasLastSubstepLimitReached());
+    }
+
+    // Fluid Particle <-> Sphere Static Collider:
+    // Particle半径を含む表面まで押し出し、内向き速度だけを反発させます。
+    {
+        FluidStaticColliderCouplingSettings settings{};
+        settings.ParticleRadius = 0.1f;
+        settings.Restitution = 0.5f;
+        FluidStaticColliderCoupling coupling(settings);
+
+        TransformComponent transform{};
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Sphere;
+        collider.Radius = 0.5f;
+        collider.Restitution = 0.25f;
+
+        FluidParticle particle{};
+        particle.Position = { 0.25f, 0.0f, 0.0f };
+        particle.Velocity = { -2.0f, 0.0f, 0.0f };
+
+        assert(coupling.ResolveParticleAgainstCollider(particle, transform, collider));
+        assert(std::abs(particle.Position.x - 0.6f) <= 1.0e-6f);
+        assert(std::abs(particle.Velocity.x - 0.5f) <= 1.0e-6f);
+    }
+
+    // Fluid Particle <-> Box Static Collider:
+    // Particle中心がBox内部にある場合は最寄り面 + Particle Radiusまで押し出します。
+    {
+        FluidStaticColliderCouplingSettings settings{};
+        settings.ParticleRadius = 0.1f;
+        settings.Restitution = 0.0f;
+        FluidStaticColliderCoupling coupling(settings);
+
+        TransformComponent transform{};
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Box;
+        collider.HalfExtents = { 0.5f, 0.5f, 0.5f };
+
+        FluidParticle particle{};
+        particle.Position = { 0.2f, 0.0f, 0.0f };
+        particle.Velocity = { -1.0f, 0.0f, 0.0f };
+
+        assert(coupling.ResolveParticleAgainstCollider(particle, transform, collider));
+        assert(std::abs(particle.Position.x - 0.6f) <= 1.0e-6f);
+        assert(std::abs(particle.Velocity.x) <= 1.0e-6f);
+    }
+
+    // Trigger ColliderはFluidの物理Constraintとして扱いません。
+    {
+        FluidStaticColliderCouplingSettings settings{};
+        settings.ParticleRadius = 0.1f;
+        FluidStaticColliderCoupling coupling(settings);
+
+        TransformComponent transform{};
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Sphere;
+        collider.Radius = 1.0f;
+        collider.IsTrigger = true;
+
+        FluidParticle particle{};
+        particle.Position = { 0.25f, 0.0f, 0.0f };
+        const math::Vec3 originalPosition = particle.Position;
+
+        assert(coupling.ResolveParticleAgainstCollider(particle, transform, collider) == false);
+        assert((particle.Position - originalPosition).LengthSq() <= 1.0e-12f);
     }
 }
 
