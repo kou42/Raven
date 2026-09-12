@@ -71,7 +71,6 @@ void RunFluidRigidBodyCouplingSelfTests()
     }
 
     // Sphere上面へわずかに貫通したParticleを接線方向へ滑らせ、Dragを確認します。
-    // DragはInternal Impulseなのでx方向線形運動量を保存しつつ、接触点のr x JでBodyを回転させます。
     {
         Scene scene{};
         Entity bodyEntity = scene.CreateEntity("Fluid Coupling Drag Sphere");
@@ -106,8 +105,7 @@ void RunFluidRigidBodyCouplingSelfTests()
         assert(coupling.GetLastStatistics().TotalDragImpulse > 0.0f);
     }
 
-    // 正圧pをParticleの投影面積pi*r^2へ作用させ、J=p*A*dtの反作用が
-    // ParticleとRigidBodyへ等量反対向きに入ることを確認します。
+    // 正圧pをParticleの投影面積pi*r^2へ作用させ、J=p*A*dtの反作用を確認します。
     {
         Scene scene{};
         Entity bodyEntity = scene.CreateEntity("Fluid Coupling Pressure Sphere");
@@ -146,6 +144,51 @@ void RunFluidRigidBodyCouplingSelfTests()
         assert(std::abs(momentum) <= 1.0e-5f);
         assert(coupling.GetLastStatistics().AppliedPressureImpulseCount == 1u);
         assert(std::abs(coupling.GetLastStatistics().TotalPressureImpulse - expectedImpulse) <= 1.0e-5f);
+    }
+
+    // Particle中心がSphere表面上にある場合、PenetrationDepth=rなので排除率は0.5です。
+    // m_displaced=0.5m と F_b=-m_displaced*g から、Bodyへ上向きImpulseが入ることを確認します。
+    {
+        Scene scene{};
+        scene.GetPhysicsWorld().SetGravity({ 0.0f, -10.0f, 0.0f });
+
+        Entity bodyEntity = scene.CreateEntity("Fluid Coupling Buoyancy Sphere");
+        RigidBodyComponent rigidBody{};
+        rigidBody.SetBodyType(BodyType::Dynamic);
+        rigidBody.SetMass(2.0f);
+        rigidBody.UseGravity = false;
+        bodyEntity.AddComponent<RigidBodyComponent>(rigidBody);
+
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Sphere;
+        collider.Radius = 0.5f;
+        bodyEntity.AddComponent<ColliderComponent>(collider);
+
+        std::vector<FluidParticle> particles(1u);
+        particles[0].Position = { 0.0f, 0.5f, 0.0f };
+        particles[0].Velocity = {};
+        particles[0].Mass = 2.0f;
+
+        FluidRigidBodyCouplingSettings settings{};
+        settings.ParticleRadius = 0.1f;
+        settings.BuoyancyCoefficient = 1.0f;
+        FluidRigidBodyCoupling coupling(settings);
+        constexpr float deltaTime = 0.1f;
+        coupling.ResolveScene(scene, scene.GetPhysicsWorld(), particles, deltaTime);
+
+        const RigidBodyComponent& resolvedBody = bodyEntity.GetComponent<RigidBodyComponent>();
+        const float expectedDisplacedMass = 1.0f;
+        const float expectedImpulse = expectedDisplacedMass * 10.0f * deltaTime;
+        assert(std::abs(resolvedBody.LinearVelocity.y - expectedImpulse / 2.0f) <= 1.0e-5f);
+        assert(std::abs(particles[0].Velocity.y + expectedImpulse / 2.0f) <= 1.0e-5f);
+        assert(std::abs(resolvedBody.AngularVelocity.Length()) <= 1.0e-5f);
+
+        const float momentum = particles[0].Mass * particles[0].Velocity.y
+            + resolvedBody.Mass * resolvedBody.LinearVelocity.y;
+        assert(std::abs(momentum) <= 1.0e-5f);
+        assert(coupling.GetLastStatistics().AppliedBuoyancyImpulseCount == 1u);
+        assert(std::abs(coupling.GetLastStatistics().TotalBuoyancyImpulse - expectedImpulse) <= 1.0e-5f);
+        assert(std::abs(coupling.GetLastStatistics().TotalDisplacedFluidMass - expectedDisplacedMass) <= 1.0e-5f);
     }
 
     {
