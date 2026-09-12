@@ -182,8 +182,9 @@ bool ComputeColliderAABB(
             return false;
         }
 
-        const auto& vertices = collider.StaticMeshGeometry->GetVertices();
-        if (vertices.empty())
+        math::Vec3 localMinimum{};
+        math::Vec3 localMaximum{};
+        if (collider.StaticMeshGeometry->GetLocalBounds(localMinimum, localMaximum) == false)
         {
             return false;
         }
@@ -192,24 +193,29 @@ bool ComputeColliderAABB(
         // Static Mesh -> World AABB
         // ====================================================================
         // Terrainは回転・非一様Scaleを含むTransformを持てるため、local AABBのMin/Maxだけを
-        // 変換する方法ではworld boundsを正しく包めません。初期構築時は全頂点をworldへ変換し、
-        // 必ずMesh全体を包含するtight AABBを作ります。
+        // 変換する方法ではworld boundsを正しく包めません。8隅すべてをworldへ変換し、
+        // 必ずMesh全体を包含する保守的なAABBを作ります。
         //
-        // StaticMeshは静的用途に限定するため、このO(N)走査は通常Proxy作成時にだけ意味を持ちます。
-        // 将来大規模Terrainへ進む段階ではGeometry側にlocal boundsをcacheし、8 corner変換へ置換できます。
+        // BroadPhase同期はQueryのたびにも呼ばれるため、全頂点変換は常時負荷になります。
+        // Static Geometry側の境界再利用により頂点数に依存しない8点の変換へ抑えます。
+        // 回転時は従来のtight boundsより広くなる場合がありますが、実Triangle判定はNarrow Phaseが担当します。
+        // Offsetは従来どおりlocal-spaceで加算し、負Scale・非一様Scaleも同じ行列で処理します。
         const math::Mat4 worldTransform = transform.GetTransform();
         math::Vec3 minimum = TransformStaticMeshPoint(
             worldTransform,
             collider.Offset,
-            vertices.front().Position);
+            localMinimum);
         math::Vec3 maximum = minimum;
 
-        for (std::size_t index = 1; index < vertices.size(); ++index)
+        for (uint32_t corner = 1u; corner < 8u; ++corner)
         {
             const math::Vec3 point = TransformStaticMeshPoint(
                 worldTransform,
                 collider.Offset,
-                vertices[index].Position);
+                math::Vec3{
+                    (corner & 1u) != 0u ? localMaximum.x : localMinimum.x,
+                    (corner & 2u) != 0u ? localMaximum.y : localMinimum.y,
+                    (corner & 4u) != 0u ? localMaximum.z : localMinimum.z });
             minimum.x = std::min(minimum.x, point.x);
             minimum.y = std::min(minimum.y, point.y);
             minimum.z = std::min(minimum.z, point.z);

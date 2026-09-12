@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -75,6 +76,12 @@ public:
           m_GeometryUsage(geometryUsage),
           m_TopologyUsage(topologyUsage)
     {
+        // Static Geometryは更新を拒否するため、生成時の境界を共有して再利用できます。
+        // Dynamic Geometryにはこの走査を追加せず、必要なQuery時だけ現在の頂点を参照します。
+        if (m_GeometryUsage == GeometryUsage::Static)
+        {
+            ComputeLocalBounds(m_LocalMinimum, m_LocalMaximum);
+        }
     }
 
     const std::vector<MeshVertex>& GetVertices() const { return m_Vertices; }
@@ -84,6 +91,26 @@ public:
     TopologyUsage GetTopologyUsage() const { return m_TopologyUsage; }
 
     uint64_t GetRevision() const { return m_Revision; }
+
+    // CPU形状のローカル境界です。Physics型への依存やQuery時のmutable cacheを持ちません。
+    // DynamicではSetVertices/SwapVertices後の値を必ず読み、古い境界による衝突漏れを防ぎます。
+    bool GetLocalBounds(math::Vec3& minimum, math::Vec3& maximum) const
+    {
+        if (m_Vertices.empty() == true)
+        {
+            return false;
+        }
+        if (m_GeometryUsage == GeometryUsage::Dynamic)
+        {
+            ComputeLocalBounds(minimum, maximum);
+        }
+        else
+        {
+            minimum = m_LocalMinimum;
+            maximum = m_LocalMaximum;
+        }
+        return true;
+    }
 
     // ========================================================================
     // Dynamic vertex update
@@ -135,6 +162,27 @@ public:
     }
 
 private:
+    void ComputeLocalBounds(math::Vec3& minimum, math::Vec3& maximum) const
+    {
+        if (m_Vertices.empty() == true)
+        {
+            return;
+        }
+        minimum = m_Vertices.front().Position;
+        maximum = minimum;
+        for (const MeshVertex& vertex : m_Vertices)
+        {
+            minimum.x = std::min(minimum.x, vertex.Position.x);
+            minimum.y = std::min(minimum.y, vertex.Position.y);
+            minimum.z = std::min(minimum.z, vertex.Position.z);
+            maximum.x = std::max(maximum.x, vertex.Position.x);
+            maximum.y = std::max(maximum.y, vertex.Position.y);
+            maximum.z = std::max(maximum.z, vertex.Position.z);
+        }
+    }
+
+    math::Vec3 m_LocalMinimum{};
+    math::Vec3 m_LocalMaximum{};
     std::vector<MeshVertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
 

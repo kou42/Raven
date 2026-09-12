@@ -37,6 +37,54 @@ bool ContainsTriangleIndex(
         triangleIndex) != triangleIndices.end();
 }
 
+void RunStaticMeshBoundsTest()
+{
+    auto geometry = std::make_shared<MeshGeometry>(
+        std::vector<MeshVertex>{ MakeVertex(-3, -2, -1), MakeVertex(4, 5, 6), MakeVertex(0, 2, -4) },
+        std::vector<uint32_t>{}, GeometryUsage::Dynamic);
+    ColliderComponent collider{};
+    collider.Type = ColliderType::StaticMesh;
+    collider.StaticMeshGeometry = geometry;
+    collider.Offset = math::Vec3{ 2, -1, 3 };
+    TransformComponent transform{};
+    transform.Position = math::Vec3{ 10, -3, 2 };
+    transform.Rotation = math::Vec3{ 0.3f, -0.7f, 1.1f };
+    transform.Scale = math::Vec3{ -2, 3, 0.5f };
+
+    // 回転・負の非一様Scale・local Offsetを組み合わせても全頂点を包含します。
+    const auto checkBounds = [&]()
+    {
+        AABB bounds{};
+        assert(ComputeColliderAABB(transform, collider, bounds));
+        for (const auto& vertex : collider.StaticMeshGeometry->GetVertices())
+        {
+            const auto local = vertex.Position + collider.Offset;
+            const auto world = transform.GetTransform() * math::Vec4{ local.x, local.y, local.z, 1.0f };
+            constexpr float tolerance = 1.0e-4f;
+            assert(world.x >= bounds.Min.x - tolerance && world.x <= bounds.Max.x + tolerance);
+            assert(world.y >= bounds.Min.y - tolerance && world.y <= bounds.Max.y + tolerance);
+            assert(world.z >= bounds.Min.z - tolerance && world.z <= bounds.Max.z + tolerance);
+        }
+    };
+    checkBounds();
+    auto changed = geometry->GetVertices();
+    changed[0].Position = math::Vec3{ -100, 50, 20 };
+    assert(geometry->SetVertices(changed));
+    checkBounds();
+    changed[1].Position = math::Vec3{ 200, -80, -30 };
+    assert(geometry->SwapVertices(changed));
+    checkBounds();
+
+    // Staticの生成時cacheも同じ境界を返し、Transform変更では再生成不要です。
+    collider.StaticMeshGeometry = std::make_shared<MeshGeometry>(geometry->GetVertices(), std::vector<uint32_t>{});
+    checkBounds();
+    transform.Position.x += 30.0f;
+    checkBounds();
+    collider.StaticMeshGeometry = std::make_shared<MeshGeometry>();
+    AABB bounds{};
+    assert(ComputeColliderAABB(transform, collider, bounds) == false);
+}
+
 void RunIndexedGeometryBuildTest()
 {
     std::vector<MeshVertex> vertices{
@@ -259,6 +307,7 @@ void RunCapsuleBVHManifoldTest()
 
 void RunStaticMeshTriangleBVHSelfTests()
 {
+    RunStaticMeshBoundsTest();
     RunIndexedGeometryBuildTest();
     RunInvalidIndexFilterTest();
     RunAABBQueryTest();
