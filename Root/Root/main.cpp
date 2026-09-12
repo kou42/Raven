@@ -122,10 +122,10 @@ int main()
                 Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
                     *characterLayerPointer));
 
-            // 水槽本体は(100, 4, 100)を中心にXZ各4mの範囲です。
+            // 水槽本体は(50, 4, 50)を中心にXZ各4mの範囲です。
             // Characterを+Z側の外へ配置すると、既定Yaw=0のOrbit Cameraが+Z側から-Zを向くため、
             // Character越しに水槽全体を正面へ捉えやすくなります。Y=0は既存の無限Plane床上です。
-            const Raven::math::Vec3 fluidDemoCharacterDebugPosition{ 100.0f, 0.0f, 108.0f };
+            const Raven::math::Vec3 fluidDemoCharacterDebugPosition{ 50.0f, 0.0f, 58.0f };
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterPositionDebugOverlayLayer>(
                     *characterLayerPointer,
