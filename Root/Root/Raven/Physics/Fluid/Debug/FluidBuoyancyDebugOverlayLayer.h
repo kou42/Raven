@@ -132,10 +132,9 @@ private:
 
         ph::PhysicsWorld& physicsWorld = scene->GetPhysicsWorld();
 
-        for (auto [entityHandle, tag, transform, rigidBody, collider]
+        for (auto [entity, tag, transform, rigidBody, collider]
             : scene->View<TagComponent, TransformComponent, RigidBodyComponent, ColliderComponent>())
         {
-            const Entity entity(entityHandle, scene);
             math::Vec3 resetPosition{};
             bool isTarget = false;
 
@@ -159,9 +158,9 @@ private:
                 continue;
             }
 
-            // Dynamic RigidBodyの位置変更はTransformを直接書き換えずPhysicsWorld::Teleport()を通します。
-            // PhysicsWorld側の起床処理と同じ経路を利用することで、Debug Resetも通常のWarp/Respawn操作と
-            // 同じ意味になり、次のPhysics Stepへ確実に新しいWorld位置を渡せます。
+            // Scene::View()の先頭要素は既にGenerationを含むEntityです。
+            // Dynamic RigidBodyの位置変更はこのEntityをそのままPhysicsWorldへ渡し、
+            // Transform直接更新ではなく通常のTeleport経路で起床処理まで行います。
             physicsWorld.Teleport(*scene, entity, resetPosition);
 
             // Reset前の落下速度・回転・Fluidから受けたImpulse履歴を次の試行へ持ち越さないよう、
