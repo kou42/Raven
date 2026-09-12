@@ -67,13 +67,17 @@ void FluidSPHDemoLayer::OnAttach()
     initialSettings.MaximumSubsteps = 16u;
     m_Solver.SetSettings(initialSettings);
 
-    // Fluid粒子の見た目半径とCollider判定半径を揃えます。
-    // Coupling設定はSPHSolverから独立させ、将来RigidBody / SoftBodyとの双方向Couplingへ
-    // 発展させてもFluid Solverの設定構造へ他Domain固有値を混ぜないようにします。
-    ph::FluidStaticColliderCouplingSettings couplingSettings{};
-    couplingSettings.ParticleRadius = RenderParticleRadius;
-    couplingSettings.Restitution = initialSettings.BoundaryRestitution;
-    m_StaticColliderCoupling.SetSettings(couplingSettings);
+    // Static / Dynamic Couplingは同じParticle半径と反発係数を使用します。
+    // 接触応答の設定をSPHSolverへ混ぜず、Domain間Coupling固有値として分離します。
+    ph::FluidStaticColliderCouplingSettings staticCouplingSettings{};
+    staticCouplingSettings.ParticleRadius = RenderParticleRadius;
+    staticCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
+    m_StaticColliderCoupling.SetSettings(staticCouplingSettings);
+
+    ph::FluidRigidBodyCouplingSettings rigidBodyCouplingSettings{};
+    rigidBodyCouplingSettings.ParticleRadius = RenderParticleRadius;
+    rigidBodyCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
+    m_RigidBodyCoupling.SetSettings(rigidBodyCouplingSettings);
 
     m_Solver.ComputeDensity(m_Particles);
 
@@ -174,9 +178,13 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     Scene* scene = m_Application.GetScene();
     if (scene != nullptr)
     {
-        // Static Colliderとの幾何接触はSPHSolverの外で解決します。
-        // 現段階は一方向CouplingなのでStatic側へImpulseは返しません。
+        // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
+        // 等量反対向きのImpulseを返します。両者は同じ接触幾何生成を共有します。
         m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
+        m_RigidBodyCoupling.ResolveScene(
+            *scene,
+            scene->GetPhysicsWorld(),
+            m_Particles);
     }
 
     SynchronizeRenderEntities();
@@ -249,8 +257,6 @@ math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
 {
     const ph::SPHSettings& settings = m_Solver.GetSettings();
 
-    // Density偏差はRestDensityに対する割合で正規化します。
-    // ±15%を可視化レンジの端に置き、それ以上は色を飽和させて外れ値で全体が見づらくなるのを防ぎます。
     float normalizedDensityDeviation = 0.0f;
     if (settings.RestDensity > math::Epsilon)
     {
@@ -262,8 +268,6 @@ math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
             1.0f);
     }
 
-    // PressureはEOSの係数が変わっても同じ色レンジで比較できるよう、
-    // 「RestDensityから15%ずれたときのPressure」を基準値にします。
     float normalizedPressure = 0.0f;
     const float pressureReference =
         settings.PressureStiffness
@@ -277,9 +281,6 @@ math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
             1.0f);
     }
 
-    // 現在の線形EOSではDensity偏差とPressureはほぼ同じ情報ですが、
-    // hueはPressure、明るさはDensityへ分けておくと、将来Tait EOS等へ変更したときも
-    // 「圧力」と「密度」の違いを同じ可視化関数で表現できます。
     math::Vec3 color = RestDensityColor;
     if (normalizedPressure < 0.0f)
     {
