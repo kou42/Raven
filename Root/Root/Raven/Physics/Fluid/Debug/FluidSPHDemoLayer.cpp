@@ -80,8 +80,10 @@ void FluidSPHDemoLayer::OnAttach()
     // Demoでは弱めのDragを有効にし、RigidBody表面をFluidが完全に滑り抜ける状態を避けます。
     rigidBodyCouplingSettings.DragCoefficient = 0.15f;
     // Particleの正圧を代表投影面積へ作用させ、RigidBodyへ面圧反作用として返します。
-    // 係数1.0を基準とし、SPHのPressure値とParticle半径から直接Impulseを構築します。
     rigidBodyCouplingSettings.PressureReactionCoefficient = 1.0f;
+    // 接触Particleの排除質量からArchimedes相当の浮力を構築します。
+    // 係数1.0を基準に、RigidBody質量と排除Fluid質量の比で浮く/沈む挙動が変わります。
+    rigidBodyCouplingSettings.BuoyancyCoefficient = 1.0f;
     m_RigidBodyCoupling.SetSettings(rigidBodyCouplingSettings);
 
     m_Solver.ComputeDensity(m_Particles);
@@ -184,7 +186,7 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     if (scene != nullptr)
     {
         // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
-        // Normal / Pressure / Dragの等量反対向きImpulseを返します。
+        // Normal / Pressure / Buoyancy / Dragの運動量交換を返します。
         m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
         m_RigidBodyCoupling.ResolveScene(
             *scene,
