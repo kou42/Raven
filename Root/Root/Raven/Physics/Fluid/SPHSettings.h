@@ -19,6 +19,8 @@ namespace ph
 struct SPHSettings
 {
     // Kernelのsupport radius hです。Spatial HashのCellSizeにも同じ値を使用します。
+    // まずProfilerで現在の候補効率を計測し、CellSizeをhから独立させる価値を確認してから
+    // 専用設定を追加します。物理パラメータと最適化パラメータを不用意に混在させないためです。
     float SmoothingRadius = 0.1f;
 
     // Equation of Stateが目標とする静止密度 rho_0 です。
