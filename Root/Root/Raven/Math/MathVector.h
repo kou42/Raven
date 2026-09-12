@@ -1,8 +1,9 @@
 #pragma once
 
 #include "Raven/Math/Math.h"
-#include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
+
+#include <cassert>
+#include <cmath>
 
 namespace Raven
 {

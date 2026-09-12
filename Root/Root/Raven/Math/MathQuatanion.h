@@ -3,8 +3,6 @@
 #include "Raven/Math/Math.h"
 //#include "MathVector.h"
 #include "Raven/Math/MathMatrix.h"
-#include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
 
 namespace Raven
 {
