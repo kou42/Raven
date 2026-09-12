@@ -380,7 +380,7 @@ void CharacterControllerDemoLayer::OnAttach()
 
     SyncVisualTransform();
 
-    // 初回からCharacterを画面中央付近へ捉えるため、Gamepad入力が無くてもCameraを一度同期します。
+    // 初回からCharacterを画面中央付近へ捉えるため、Camera入力が無くてもCameraを一度同期します。
     UpdateOrbitCamera(0.0f);
 
     std::cout
@@ -1060,7 +1060,7 @@ void CharacterControllerDemoLayer::UpdateOrbitCamera(float deltaTime)
         return;
     }
 
-    // Raven Runtime CameraのLocal Forwardは-Zです.
+    // Raven Runtime CameraのLocal Forwardは-Zです。
     // SceneCameraSystemのX -> Y回転と同じ意味になるよう、Yaw/PitchからWorld Forwardを構築します。
     // Pitchが負なら下向き、Yaw=0なら-Z向きです。
     const float cosPitch = std::cos(m_CameraPitch);
