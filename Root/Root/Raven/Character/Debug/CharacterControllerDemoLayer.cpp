@@ -10,6 +10,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include "Raven/Core/MouseCodes.h"
 #include "Raven/Gltf/HumanoidSceneNormalization.h"
 #include "Raven/Gltf/SkinnedMeshRuntime.h"
 #include "Raven/Physics/PhysicsWorld.h"
@@ -353,6 +354,7 @@ void CharacterControllerDemoLayer::OnAttach()
     m_GamepadConnected = false;
     m_RawGamepadState = GamepadState{};
     m_ResolvedInput = CharacterControllerInput{};
+    m_CameraMouseDragging = false;
 
     // ========================================================================
     // Fallback visual Entity
@@ -379,11 +381,12 @@ void CharacterControllerDemoLayer::OnAttach()
     SyncVisualTransform();
 
     // 初回からCharacterを画面中央付近へ捉えるため、Gamepad入力が無くてもCameraを一度同期します。
-    UpdateGamepadCamera(0.0f);
+    UpdateOrbitCamera(0.0f);
 
     std::cout
         << "[CharacterController] Controls: WASD / Left Stick Camera-relative Move, "
-        << "Right Stick Camera, Space / A Jump, Left Shift / RT Run, Left Ctrl / RB Sprint\n";
+        << "Right Mouse Drag / Right Stick Orbit Camera, Space / A Jump, "
+        << "Left Shift / RT Run, Left Ctrl / RB Sprint\n";
 }
 
 void CharacterControllerDemoLayer::OnDetach()
@@ -406,6 +409,7 @@ void CharacterControllerDemoLayer::OnDetach()
     m_GamepadConnected = false;
     m_RawGamepadState = GamepadState{};
     m_ResolvedInput = CharacterControllerInput{};
+    m_CameraMouseDragging = false;
 }
 
 void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
@@ -435,7 +439,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
             m_CharacterController.ResetMovingPlatformTracking();
             m_CharacterController.ResetCrushTracking();
             SyncVisualTransform();
-            UpdateGamepadCamera(0.0f);
+            UpdateOrbitCamera(0.0f);
 
             std::cout
                 << "[CharacterController] 初期位置をStatic Groundへ配置しました: "
@@ -515,7 +519,7 @@ void CharacterControllerDemoLayer::OnUpdate(float deltaTime)
 
     // Character移動後のRootをTargetにすることで、Cameraは同じFrame内で最新位置へ追従します。
     // Scene-owned LayerはRender前に更新されるため、このCamera Transformも同じFrameの描画へ反映されます。
-    UpdateGamepadCamera(safeDeltaTime);
+    UpdateOrbitCamera(safeDeltaTime);
 }
 
 bool CharacterControllerDemoLayer::TryInitializeHumanoidVisual()
@@ -1000,8 +1004,53 @@ void CharacterControllerDemoLayer::ApplyCameraRelativeMovement(CharacterControll
     input.Move = math::Vec2{ worldMove.x, worldMove.z };
 }
 
-void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
+void CharacterControllerDemoLayer::UpdateOrbitCamera(float deltaTime)
 {
+    const bool rightMousePressed = Input::IsMouseButtonPressed(Mouse::Right);
+    const auto [mouseX, mouseY] = Input::GetMousePosition();
+    const math::Vec2 mousePosition{ mouseX, mouseY };
+
+    // ========================================================================
+    // Right Mouse Drag -> shared Orbit angles
+    // ========================================================================
+    // 押下開始Frameでは現在座標を基準点として保存するだけにし、古い座標との差によるCamera Jumpを防ぎます。
+    // 2Frame目以降はEditorCameraと同じ符号規約で、Right Stickと共通のYaw/Pitchへ加算します。
+    if (rightMousePressed == true)
+    {
+        if (m_CameraMouseDragging == false)
+        {
+            m_CameraMouseDragging = true;
+            m_CameraLastMousePosition = mousePosition;
+        }
+        else
+        {
+            const math::Vec2 mouseDelta = mousePosition - m_CameraLastMousePosition;
+            m_CameraLastMousePosition = mousePosition;
+
+            m_CameraYaw += mouseDelta.x * m_CameraMouseSensitivity;
+            m_CameraPitch -= mouseDelta.y * m_CameraMouseSensitivity;
+        }
+    }
+    else
+    {
+        m_CameraMouseDragging = false;
+    }
+
+    // ========================================================================
+    // Right Stick -> shared Orbit angles
+    // ========================================================================
+    // WindowsInput側でRightStickYは「上へ倒すと+」になるよう正規化済みです。
+    // 右Stick上でCameraを上側へ回したいのでPitchへ正方向として加算します。
+    const math::Vec2 cameraStick = ApplyCameraStickDeadZone(
+        math::Vec2{ m_RawGamepadState.RightStickX, m_RawGamepadState.RightStickY },
+        m_CameraStickDeadZone);
+
+    m_CameraYaw += cameraStick.x * m_CameraYawSpeed * deltaTime;
+    m_CameraPitch += cameraStick.y * m_CameraPitchSpeed * deltaTime;
+
+    // MouseとRight Stickの両方を加算してから共通Clampを適用し、入力Device切替時も同じ姿勢を継続します。
+    m_CameraPitch = std::clamp(m_CameraPitch, m_CameraMinPitch, m_CameraMaxPitch);
+
     Entity cameraEntity = SceneCameraSystem::ResolveRuntimeCameraEntity(m_Scene);
     if (static_cast<bool>(cameraEntity) == false
         || m_Scene.IsEntityAlive(cameraEntity) == false
@@ -1011,17 +1060,7 @@ void CharacterControllerDemoLayer::UpdateGamepadCamera(float deltaTime)
         return;
     }
 
-    // WindowsInput側でRightStickYは「上へ倒すと+」になるよう正規化済みです。
-    // 右Stick上でCameraを上側へ回したいのでPitchへ正方向として加算します。
-    const math::Vec2 cameraStick = ApplyCameraStickDeadZone(
-        math::Vec2{ m_RawGamepadState.RightStickX, m_RawGamepadState.RightStickY },
-        m_CameraStickDeadZone);
-
-    m_CameraYaw += cameraStick.x * m_CameraYawSpeed * deltaTime;
-    m_CameraPitch += cameraStick.y * m_CameraPitchSpeed * deltaTime;
-    m_CameraPitch = std::clamp(m_CameraPitch, m_CameraMinPitch, m_CameraMaxPitch);
-
-    // Raven Runtime CameraのLocal Forwardは-Zです。
+    // Raven Runtime CameraのLocal Forwardは-Zです.
     // SceneCameraSystemのX -> Y回転と同じ意味になるよう、Yaw/PitchからWorld Forwardを構築します。
     // Pitchが負なら下向き、Yaw=0なら-Z向きです。
     const float cosPitch = std::cos(m_CameraPitch);
