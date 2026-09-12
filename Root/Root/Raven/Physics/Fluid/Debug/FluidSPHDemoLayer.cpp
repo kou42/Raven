@@ -25,9 +25,18 @@ constexpr float SmoothingRadius = 0.55f;
 constexpr float ParticleMass = 1.0f;
 constexpr float RenderParticleRadius = 0.12f;
 constexpr float DensityVisualizationRange = 0.15f;
-constexpr math::Vec3 FluidOrigin{ -0.8f, 4.0f, -0.8f };
-constexpr math::Vec3 BoundaryMinimum{ -4.0f, 0.2f, -4.0f };
-constexpr math::Vec3 BoundaryMaximum{ 4.0f, 8.0f, 4.0f };
+
+// Terrainが存在する原点周辺を避け、Fluid検証専用エリアを(+100, +100)側へ分離します。
+// Particle / SPH Boundary / 水槽Collider / 落下Bodyはすべてこの基準位置から配置します。
+// 個別の座標を直接100付近へずらすのではなく共通基準から導出し、将来デモ位置を変更した場合も
+// Simulation境界と可視化水槽、Coupling対象Bodyが互いにずれないようにします。
+constexpr math::Vec3 FluidDemoCenter{ 100.0f, 4.0f, 100.0f };
+constexpr math::Vec3 FluidOrigin = FluidDemoCenter + math::Vec3{ -0.8f, 0.0f, -0.8f };
+constexpr math::Vec3 BoundaryMinimum = FluidDemoCenter + math::Vec3{ -4.0f, -3.8f, -4.0f };
+constexpr math::Vec3 BoundaryMaximum = FluidDemoCenter + math::Vec3{ 4.0f, 4.0f, 4.0f };
+constexpr float TankHalfWidth = 4.0f;
+constexpr float TankWallThickness = 0.20f;
+constexpr float TankHeight = 7.8f;
 constexpr math::Vec3 LowDensityColor{ 0.08f, 0.25f, 1.00f };
 constexpr math::Vec3 RestDensityColor{ 0.10f, 0.80f, 0.95f };
 constexpr math::Vec3 HighDensityColor{ 1.00f, 0.20f, 0.08f };
@@ -104,7 +113,8 @@ void FluidSPHDemoLayer::OnAttach()
     m_Solver.ComputePressure(m_Particles);
 
     m_ParticleMesh = PrimitiveMeshFactory::CreateSphere(8u, 6u);
-    if (m_ParticleMesh == nullptr)
+    m_DemoCubeMesh = PrimitiveMeshFactory::CreateCube();
+    if (m_ParticleMesh == nullptr || m_DemoCubeMesh == nullptr)
     {
         return;
     }
@@ -117,6 +127,7 @@ void FluidSPHDemoLayer::OnAttach()
     if (shader == nullptr)
     {
         m_ParticleMesh.reset();
+        m_DemoCubeMesh.reset();
         return;
     }
 
@@ -131,16 +142,18 @@ void FluidSPHDemoLayer::OnAttach()
     pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
     pipelineSpecification.Blend = true;
 
-    // GPU Pipelineは全Particleで共有します。MaterialだけをParticleごとに分け、
-    // u_Tintの状態が別Particleへ漏れないようにします。
+    // GPU PipelineはParticle / 水槽 / Coupling確認Bodyで共有します。
+    // Particleは密度ごとにu_Tintが変化するためMaterialだけを個別に持ち、色状態が別Particleへ漏れないようにします。
     m_ParticlePipeline = Pipeline::Create(pipelineSpecification);
     if (m_ParticlePipeline == nullptr)
     {
         m_ParticleMesh.reset();
+        m_DemoCubeMesh.reset();
         return;
     }
 
     CreateRenderEntities();
+    CreateDemoTank();
     SynchronizeRenderEntities();
 }
 
@@ -149,7 +162,15 @@ void FluidSPHDemoLayer::OnDetach()
     Scene* scene = m_Application.GetScene();
     if (scene != nullptr)
     {
+        // Demo Layerが生成したEntityだけを明示的に破棄し、Active Scene側へ検証用Entityを残しません。
         for (Entity& entity : m_ParticleEntities)
+        {
+            if (static_cast<bool>(entity) && scene->IsEntityAlive(entity))
+            {
+                scene->DestroyEntity(entity);
+            }
+        }
+        for (Entity& entity : m_DemoEntities)
         {
             if (static_cast<bool>(entity) && scene->IsEntityAlive(entity))
             {
@@ -159,9 +180,11 @@ void FluidSPHDemoLayer::OnDetach()
     }
 
     m_ParticleEntities.clear();
+    m_DemoEntities.clear();
     m_ParticleMaterials.clear();
     m_Particles.clear();
     m_ParticlePipeline.reset();
+    m_DemoCubeMesh.reset();
     m_ParticleMesh.reset();
 }
 
@@ -187,6 +210,7 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     {
         // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
         // Normal / Pressure / Buoyancy / Dragの運動量交換を返します。
+        // SPHSolver自体にはScene依存を持たせず、異なるPhysics Domain間の接続はCoupling層へ委譲します。
         m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
         m_RigidBodyCoupling.ResolveScene(
             *scene,
@@ -200,7 +224,7 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
 
 void FluidSPHDemoLayer::OnRender()
 {
-    // Particleは通常のMeshRendererComponentとしてSceneへ登録済みです。
+    // Particleと水槽は通常のMeshRendererComponentとしてSceneへ登録済みです。
     // SceneGame::RenderScene()のECS描画経路へ自動参加するため、専用Render処理は不要です。
 }
 
@@ -209,6 +233,8 @@ void FluidSPHDemoLayer::CreateParticles()
     m_Particles.clear();
     m_Particles.reserve(static_cast<std::size_t>(ParticleCountX) * static_cast<std::size_t>(ParticleCountY) * static_cast<std::size_t>(ParticleCountZ));
 
+    // 初期状態は規則的な3次元格子にします。
+    // FluidOrigin自体がFluidDemoCenter基準なので、Simulationを移動しても粒子配置の局所形状は変化しません。
     for (uint32_t y = 0u; y < ParticleCountY; ++y)
     {
         for (uint32_t z = 0u; z < ParticleCountZ; ++z)
@@ -243,14 +269,108 @@ void FluidSPHDemoLayer::CreateRenderEntities()
         entity.GetComponent<TransformComponent>().Scale = { RenderParticleRadius, RenderParticleRadius, RenderParticleRadius };
 
         // RavenのMaterialはFactoryではなくコンストラクタでPipelineを受け取る設計です。
-        // ParticleごとにMaterialを分離し、各Entityのu_Tintを独立して保持します。
+        // ParticleごとにMaterialを分離し、各Entityの密度可視化色を独立して保持します。
         Ref<Material> material = CreateRef<Material>(m_ParticlePipeline);
+        // test.fragはTint(vec3)とAlpha(float)を別Uniformとして受け取ります。
+        // Vec4をu_Tintへ渡すとu_Alphaが設定されず透明になるため、Alphaは必ず別Uniformへ設定します。
+        material->SetUniform("u_Alpha", 0.72f);
         entity.AddComponent<MeshRendererComponent>(
             MeshRendererComponent{ m_ParticleMesh, material });
 
         m_ParticleEntities.push_back(entity);
         m_ParticleMaterials.push_back(material);
     }
+}
+
+void FluidSPHDemoLayer::CreateDemoTank()
+{
+    Scene* scene = m_Application.GetScene();
+    if (scene == nullptr || m_DemoCubeMesh == nullptr || m_ParticlePipeline == nullptr)
+    {
+        return;
+    }
+
+    m_DemoEntities.clear();
+
+    // 水槽はFluidデモエリアを遠距離から見つけやすくする視覚ガイドでもあります。
+    // test.fragのUniform契約に合わせてTintとAlphaを分離し、内部のParticleや落下Bodyを確認できる透明度にします。
+    Ref<Material> tankMaterial = CreateRef<Material>(m_ParticlePipeline);
+    tankMaterial->SetUniform("u_Tint", math::Vec3{ 0.20f, 0.65f, 0.85f });
+    tankMaterial->SetUniform("u_Alpha", 0.35f);
+
+    auto createStaticWall = [&](const char* name, const math::Vec3& position, const math::Vec3& scale)
+    {
+        Entity wall = scene->CreateEntity(name);
+        TransformComponent& transform = wall.GetComponent<TransformComponent>();
+        transform.Position = position;
+        transform.Scale = scale;
+        wall.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_DemoCubeMesh, tankMaterial });
+
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Box;
+        // Primitive Cubeは各軸[-0.5,+0.5]なので、見た目のScaleの半分をColliderへ設定します。
+        // 描画壁とPhysics壁を同じTransformから構築し、見えている水槽面と接触位置のずれを避けます。
+        collider.HalfExtents = scale * 0.5f;
+        collider.Restitution = 0.05f;
+        collider.StaticFriction = 0.4f;
+        collider.DynamicFriction = 0.2f;
+        wall.AddComponent<ColliderComponent>(collider);
+        m_DemoEntities.push_back(wall);
+    };
+
+    const float tankCenterY = (BoundaryMinimum.y + BoundaryMaximum.y) * 0.5f;
+    createStaticWall(
+        "Fluid Tank Floor",
+        { FluidDemoCenter.x, BoundaryMinimum.y - TankWallThickness * 0.5f, FluidDemoCenter.z },
+        { TankHalfWidth * 2.0f, TankWallThickness, TankHalfWidth * 2.0f });
+    createStaticWall(
+        "Fluid Tank Wall -X",
+        { BoundaryMinimum.x - TankWallThickness * 0.5f, tankCenterY, FluidDemoCenter.z },
+        { TankWallThickness, TankHeight, TankHalfWidth * 2.0f });
+    createStaticWall(
+        "Fluid Tank Wall +X",
+        { BoundaryMaximum.x + TankWallThickness * 0.5f, tankCenterY, FluidDemoCenter.z },
+        { TankWallThickness, TankHeight, TankHalfWidth * 2.0f });
+    createStaticWall(
+        "Fluid Tank Wall -Z",
+        { FluidDemoCenter.x, tankCenterY, BoundaryMinimum.z - TankWallThickness * 0.5f },
+        { TankHalfWidth * 2.0f, TankHeight, TankWallThickness });
+    createStaticWall(
+        "Fluid Tank Wall +Z",
+        { FluidDemoCenter.x, tankCenterY, BoundaryMaximum.z + TankWallThickness * 0.5f },
+        { TankHalfWidth * 2.0f, TankHeight, TankWallThickness });
+
+    // 水面へ向けて落下させる目印兼Coupling検証Bodyです。
+    // 質量をParticle総量より十分小さくし、Pressure Reaction / Buoyancyによる反作用を目視しやすくします。
+    Ref<Material> bodyMaterial = CreateRef<Material>(m_ParticlePipeline);
+    bodyMaterial->SetUniform("u_Tint", math::Vec3{ 1.0f, 0.55f, 0.10f });
+    bodyMaterial->SetUniform("u_Alpha", 1.0f);
+
+    Entity body = scene->CreateEntity("Fluid Buoyancy Test Body");
+    TransformComponent& bodyTransform = body.GetComponent<TransformComponent>();
+    bodyTransform.Position = FluidDemoCenter + math::Vec3{ 0.0f, 3.0f, 0.0f };
+    bodyTransform.Scale = { 0.8f, 0.8f, 0.8f };
+    body.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_DemoCubeMesh, bodyMaterial });
+
+    // 通常のPhysicsWorldで重力・慣性を受けるDynamic Bodyとして作成します。
+    // Fluid側からはFluidRigidBodyCouplingを通してのみImpulseを返し、RigidBody統合処理を二重化しません。
+    RigidBodyComponent rigidBody{};
+    rigidBody.SetBodyType(BodyType::Dynamic);
+    rigidBody.SetMass(2.0f);
+    rigidBody.LinearDamping = 0.02f;
+    rigidBody.AngularDamping = 0.05f;
+    rigidBody.UseGravity = true;
+    rigidBody.AllowSleep = false;
+    body.AddComponent<RigidBodyComponent>(rigidBody);
+
+    ColliderComponent bodyCollider{};
+    bodyCollider.Type = ColliderType::Box;
+    bodyCollider.HalfExtents = bodyTransform.Scale * 0.5f;
+    bodyCollider.Restitution = 0.05f;
+    bodyCollider.StaticFriction = 0.4f;
+    bodyCollider.DynamicFriction = 0.2f;
+    body.AddComponent<ColliderComponent>(bodyCollider);
+    m_DemoEntities.push_back(body);
 }
 
 void FluidSPHDemoLayer::SynchronizeRenderEntities()
@@ -271,6 +391,8 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
             continue;
         }
 
+        // Simulation Particleを描画Entityへ一方向同期します。
+        // ECS TransformをSimulation入力に戻さないことで、SPHSolverをSceneから独立した状態に保ちます。
         entity.GetComponent<TransformComponent>().Position = m_Particles[i].Position;
 
         if (i >= m_ParticleMaterials.size() || m_ParticleMaterials[i] == nullptr)
@@ -278,6 +400,8 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
             continue;
         }
 
+        // RestDensityからの相対偏差を[-1,+1]へClampし、低密度=青 / 基準=水色 / 高密度=赤で表示します。
+        // Alphaは密度とは独立した視認性設定なので、Shader契約どおり別Uniformへ渡します。
         const float normalizedDensity = (m_Particles[i].Density - restDensity) / (restDensity * DensityVisualizationRange);
         const float positive = std::clamp(normalizedDensity, 0.0f, 1.0f);
         const float negative = std::clamp(-normalizedDensity, 0.0f, 1.0f);
@@ -290,9 +414,8 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
         {
             color = LerpColor(RestDensityColor, LowDensityColor, negative);
         }
-        m_ParticleMaterials[i]->SetUniform(
-            "u_Tint",
-            math::Vec4{ color.x, color.y, color.z, 0.72f });
+        m_ParticleMaterials[i]->SetUniform("u_Tint", color);
+        m_ParticleMaterials[i]->SetUniform("u_Alpha", 0.72f);
     }
 }
 

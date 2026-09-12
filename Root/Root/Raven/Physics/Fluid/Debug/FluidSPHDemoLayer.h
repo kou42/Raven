@@ -40,6 +40,7 @@ public:
 private:
     void CreateParticles();
     void CreateRenderEntities();
+    void CreateDemoTank();
     void SynchronizeRenderEntities();
 
     // RestDensity付近を水色、低密度/負圧側を青、高密度/正圧側を赤へ写像します。
@@ -57,7 +58,10 @@ private:
 
     std::vector<ph::FluidParticle> m_Particles;
     std::vector<Entity> m_ParticleEntities;
+    // 水槽壁と落下テストBodyもLayerの寿命に合わせて明示的に破棄します。
+    std::vector<Entity> m_DemoEntities;
     Ref<Mesh> m_ParticleMesh;
+    Ref<Mesh> m_DemoCubeMesh;
 
     // 全Particleは同じPipeline/Meshを共有し、Material instanceだけを分離します。
     // u_TintはMaterialに保存されるため、1つのMaterialを共有すると最後に設定したParticle色で
