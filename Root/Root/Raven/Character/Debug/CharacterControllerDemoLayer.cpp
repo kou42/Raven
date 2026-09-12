@@ -198,7 +198,7 @@ bool ResolveLocomotionAnimationName(
     return false;
 }
 
-bool DecomposeComposedTransform(
+bool DecomposeTransformMatrix(
     const math::Mat4& matrix,
     TransformComponent& outTransform)
 {
@@ -934,7 +934,7 @@ bool CharacterControllerDemoLayer::SyncHumanoidVisualTransform(std::string* erro
             * m_HumanoidLocalTransforms[primitiveIndex].GetTransform();
 
         TransformComponent composedComponent{};
-        if (DecomposeComposedTransform(composedTransform, composedComponent) == false)
+        if (DecomposeTransformMatrix(composedTransform, composedComponent) == false)
         {
             if (errorMessage != nullptr)
             {
@@ -1074,9 +1074,39 @@ void CharacterControllerDemoLayer::UpdateOrbitCamera(float deltaTime)
     const math::Vec3 target = m_CharacterRootTransform.Position
         + math::Vec3{ 0.0f, m_CameraTargetHeight, 0.0f };
 
+    const math::Vec3 cameraPosition = target - cameraForward * m_CameraDistance;
+
+    // ========================================================================
+    // Look-at orientation -> TransformComponent Euler
+    // ========================================================================
+    // Camera位置はYaw/Pitchの球面座標で公転させ、姿勢は必ずCameraからCharacter Targetを向く
+    // Forward/Right/Up Basisから構築します。単純にRotation={ Pitch, Yaw, 0 }とすると、
+    // TransformComponentのRx * Ry * Rz順では同じForwardにならず、視線だけが自転するように見えます。
+    const math::Vec3 worldUp{ 0.0f, 1.0f, 0.0f };
+    const math::Vec3 cameraRight = math::Vec3::Cross(cameraForward, worldUp).Normalized();
+    const math::Vec3 cameraUp = math::Vec3::Cross(cameraRight, cameraForward).Normalized();
+
+    // Local +X / +Y / +ZがWorldのRight / Up / Backwardへ移る行列を作り、
+    // Raven TransformのRx * Ry * Rz Eulerへ分解してSceneCameraSystemと同じ姿勢規約へ戻します。
+    math::Mat4 cameraWorldTransform = math::Mat4::Identity();
+    cameraWorldTransform[0][0] = cameraRight.x;
+    cameraWorldTransform[1][0] = cameraRight.y;
+    cameraWorldTransform[2][0] = cameraRight.z;
+    cameraWorldTransform[0][1] = cameraUp.x;
+    cameraWorldTransform[1][1] = cameraUp.y;
+    cameraWorldTransform[2][1] = cameraUp.z;
+    cameraWorldTransform[0][2] = -cameraForward.x;
+    cameraWorldTransform[1][2] = -cameraForward.y;
+    cameraWorldTransform[2][2] = -cameraForward.z;
+    cameraWorldTransform[0][3] = cameraPosition.x;
+    cameraWorldTransform[1][3] = cameraPosition.y;
+    cameraWorldTransform[2][3] = cameraPosition.z;
+
     TransformComponent& cameraTransform = cameraEntity.GetComponent<TransformComponent>();
-    cameraTransform.Position = target - cameraForward * m_CameraDistance;
-    cameraTransform.Rotation = math::Vec3{ m_CameraPitch, m_CameraYaw, 0.0f };
+    if (DecomposeTransformMatrix(cameraWorldTransform, cameraTransform) == false)
+    {
+        return;
+    }
 
     // View Matrixはここでは更新しません。
     // SceneCameraSystem::UpdatePrimaryCamera()がRender直前にTransformからViewを再構築するため、
