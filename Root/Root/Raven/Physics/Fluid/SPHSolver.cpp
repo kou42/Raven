@@ -78,6 +78,13 @@ void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
     m_SpatialHash.Build(particles);
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
+
+    // Spatial Hashが返したCell候補数と、厳密なsupport radius判定を通過した数を分離します。
+    // Hot loopでは整数加算だけに留め、Profiler登録は処理末尾でまとめて行います。
+    // Candidate/Accepted比を見ることで、CellSizeや検索範囲に無駄があるか判断できます。
+    uint64_t candidateVisitCount = 0u;
+    uint64_t acceptedNeighborCount = 0u;
+
     for (std::size_t i = 0u; i < particles.size(); ++i)
     {
         FluidParticle& particle = particles[i];
@@ -85,21 +92,48 @@ void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
         // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
         m_SpatialHash.ForEachNeighborParticle(particle.Position, h, [&](uint32_t j)
         {
+            ++candidateVisitCount;
+
             if (j >= particles.size())
             {
                 return;
             }
+
             const FluidParticle& neighbor = particles[j];
             const float rSq = (particle.Position - neighbor.Position).LengthSq();
             if (rSq > hSq)
             {
                 return;
             }
+
+            ++acceptedNeighborCount;
             density += std::max(0.0f, neighbor.Mass)
                 * SPHKernel::EvaluatePoly6Density(rSq, h);
         });
         particle.Density = density;
     }
+
+    CPUProfiler& profiler = CPUProfiler::Get();
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.DensityNeighborCandidateCount",
+        static_cast<double>(candidateVisitCount));
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.DensityNeighborAcceptedCount",
+        static_cast<double>(acceptedNeighborCount));
+
+    const double densityAcceptanceRatio = candidateVisitCount > 0u
+        ? static_cast<double>(acceptedNeighborCount) / static_cast<double>(candidateVisitCount)
+        : 0.0;
+    const double averageDensityNeighbors = particles.empty() == false
+        ? static_cast<double>(acceptedNeighborCount) / static_cast<double>(particles.size())
+        : 0.0;
+
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.DensityNeighborAcceptanceRatio",
+        densityAcceptanceRatio);
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.DensityAverageAcceptedNeighborsPerParticle",
+        averageDensityNeighbors);
 }
 
 void SPHSolver::ComputePressure(std::vector<FluidParticle>& particles) const
@@ -129,6 +163,12 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& partic
     RAVEN_PROFILE_SCOPE("Physics.Fluid.SPH.Force");
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
+
+    // Force側はself、無効Mass/Density、support radius外を除外した後の数をAcceptedとします。
+    // Density側との差を見ることで、密度計算では有効でも力計算には使われない候補量も追跡できます。
+    uint64_t candidateVisitCount = 0u;
+    uint64_t acceptedNeighborCount = 0u;
+
     for (std::size_t i = 0u; i < particles.size(); ++i)
     {
         FluidParticle& particle = particles[i];
@@ -138,30 +178,40 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& partic
         {
             continue;
         }
+
         const float inverseDensityISq = 1.0f / (particle.Density * particle.Density);
         m_SpatialHash.ForEachNeighborParticle(particle.Position, h, [&](uint32_t j)
         {
+            ++candidateVisitCount;
+
             if (j >= particles.size() || j == static_cast<uint32_t>(i))
             {
                 return;
             }
+
             const FluidParticle& neighbor = particles[j];
             const float massJ = std::max(0.0f, neighbor.Mass);
             if (massJ <= math::Epsilon || neighbor.Density <= math::Epsilon)
             {
                 return;
             }
+
             const math::Vec3 displacement = particle.Position - neighbor.Position;
             const float rSq = displacement.LengthSq();
             if (rSq <= math::Epsilon * math::Epsilon || rSq > hSq)
             {
                 return;
             }
+
+            // ここまで通過したParticleだけがPressure / Viscosityの実際の相互作用に参加します。
+            ++acceptedNeighborCount;
+
             const float r = std::sqrt(rSq);
             const float pressureTerm = particle.Pressure * inverseDensityISq
                 + neighbor.Pressure / (neighbor.Density * neighbor.Density);
             particle.Force += SPHKernel::EvaluateSpikyGradient(displacement, r, h)
                 * (-massI * massJ * pressureTerm);
+
             if (m_Settings.Viscosity > 0.0f)
             {
                 particle.Force += (neighbor.Velocity - particle.Velocity)
@@ -170,6 +220,28 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& partic
             }
         });
     }
+
+    CPUProfiler& profiler = CPUProfiler::Get();
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.ForceNeighborCandidateCount",
+        static_cast<double>(candidateVisitCount));
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.ForceNeighborAcceptedCount",
+        static_cast<double>(acceptedNeighborCount));
+
+    const double forceAcceptanceRatio = candidateVisitCount > 0u
+        ? static_cast<double>(acceptedNeighborCount) / static_cast<double>(candidateVisitCount)
+        : 0.0;
+    const double averageForceNeighbors = particles.empty() == false
+        ? static_cast<double>(acceptedNeighborCount) / static_cast<double>(particles.size())
+        : 0.0;
+
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.ForceNeighborAcceptanceRatio",
+        forceAcceptanceRatio);
+    profiler.AddCounter(
+        "Physics.Fluid.SPH.ForceAverageAcceptedNeighborsPerParticle",
+        averageForceNeighbors);
 }
 
 float SPHSolver::ComputeStableTimeStep(
