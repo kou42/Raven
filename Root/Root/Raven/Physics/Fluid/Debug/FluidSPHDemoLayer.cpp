@@ -373,6 +373,35 @@ void FluidSPHDemoLayer::CreateDemoTank()
     m_DemoEntities.push_back(body);
 }
 
+math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
+    const ph::FluidParticle& particle) const
+{
+    // Densityの絶対値ではなくRestDensityからの相対偏差を使います。
+    // Demo起動時にRestDensityを初期格子から較正しているため、ParticleMassやSpacingを変更しても
+    // 「基準密度=水色」という可視化の意味を維持できます。
+    const float restDensity = std::max(m_Solver.GetSettings().RestDensity, math::Epsilon);
+    const float visualizationRange = std::max(
+        restDensity * DensityVisualizationRange,
+        math::Epsilon);
+    const float normalizedDensity =
+        (particle.Density - restDensity) / visualizationRange;
+
+    if (normalizedDensity >= 0.0f)
+    {
+        // 高密度側は圧縮の強さを水色 -> 赤で示します。
+        return LerpColor(
+            RestDensityColor,
+            HighDensityColor,
+            std::clamp(normalizedDensity, 0.0f, 1.0f));
+    }
+
+    // 低密度側は膨張/負圧側を水色 -> 青で示します。
+    return LerpColor(
+        RestDensityColor,
+        LowDensityColor,
+        std::clamp(-normalizedDensity, 0.0f, 1.0f));
+}
+
 void FluidSPHDemoLayer::SynchronizeRenderEntities()
 {
     Scene* scene = m_Application.GetScene();
@@ -382,7 +411,6 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
     }
 
     const std::size_t count = std::min(m_Particles.size(), m_ParticleEntities.size());
-    const float restDensity = std::max(m_Solver.GetSettings().RestDensity, math::Epsilon);
     for (std::size_t i = 0u; i < count; ++i)
     {
         Entity& entity = m_ParticleEntities[i];
@@ -400,20 +428,9 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
             continue;
         }
 
-        // RestDensityからの相対偏差を[-1,+1]へClampし、低密度=青 / 基準=水色 / 高密度=赤で表示します。
-        // Alphaは密度とは独立した視認性設定なので、Shader契約どおり別Uniformへ渡します。
-        const float normalizedDensity = (m_Particles[i].Density - restDensity) / (restDensity * DensityVisualizationRange);
-        const float positive = std::clamp(normalizedDensity, 0.0f, 1.0f);
-        const float negative = std::clamp(-normalizedDensity, 0.0f, 1.0f);
-        math::Vec3 color = RestDensityColor;
-        if (normalizedDensity >= 0.0f)
-        {
-            color = LerpColor(RestDensityColor, HighDensityColor, positive);
-        }
-        else
-        {
-            color = LerpColor(RestDensityColor, LowDensityColor, negative);
-        }
+        // Density色の判定はComputeParticleDebugColor()へ集約します。
+        // Synchronize側は「Simulation値をRendererへ転送する」責務だけを持ち、可視化規則の重複を避けます。
+        const math::Vec3 color = ComputeParticleDebugColor(m_Particles[i]);
         m_ParticleMaterials[i]->SetUniform("u_Tint", color);
         m_ParticleMaterials[i]->SetUniform("u_Alpha", 0.72f);
     }

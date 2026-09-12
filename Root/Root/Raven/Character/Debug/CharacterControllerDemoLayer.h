@@ -147,6 +147,30 @@ public:
         return m_ResolvedInput;
     }
 
+    // CharacterControllerが管理する足元RootのWorld座標です。
+    // 表示用Humanoid/CubeのTransformではなくGameplay上の正規位置を返すため、
+    // Asset固有のVisual Offsetに左右されずDebug HUDから現在座標を確認できます。
+    const math::Vec3& GetCharacterWorldPosition() const
+    {
+        return m_CharacterRootTransform.Position;
+    }
+
+    // 遠隔Debugエリアへ即座に移動するための診断専用APIです。
+    // CharacterControllerを同じConfigで再初期化して速度・接地・Moving Platform・Crush等の履歴を破棄し、
+    // Teleport前の運動状態が移動先へ持ち越されないようにします。Runtime Bridgeが参照するObject自体の
+    // アドレスは変わらないため、CharacterControllerへの既存Bindingは維持されます。
+    void TeleportCharacterForDebug(const math::Vec3& worldPosition)
+    {
+        const CharacterControllerConfig characterConfig = m_CharacterController.GetConfig();
+        m_CharacterController = CharacterController{ characterConfig };
+        m_CharacterRootTransform.Position = worldPosition;
+        m_ResolvedInput = CharacterControllerInput{};
+        m_HumanoidActualHorizontalSpeed = 0.0f;
+
+        SyncVisualTransform();
+        UpdateOrbitCamera(0.0f);
+    }
+
     // CharacterControllerが衝突解決まで終えた後の実水平速度です。
     // InputのWalk/Run/Sprint要求値ではないため、壁衝突や加減速を含めてAnimationが実際に受け取った値を確認できます。
     float GetHumanoidActualHorizontalSpeed() const
