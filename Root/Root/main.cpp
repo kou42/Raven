@@ -38,11 +38,6 @@ int main()
 #endif
 
 #ifdef _DEBUG
-    // ========================================================================
-    // Debug Startup Self Tests
-    // ========================================================================
-    // Character locomotionの速度選択とBlendTree/Animation Profileの回帰テストに加えて、
-    // Motion Matching切替時のPose/速度連続性も実際のDebug起動時に必ず検証します。
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();
@@ -51,21 +46,6 @@ int main()
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
     Raven::ph::tests::RunStaticMeshTriangleBVHSelfTests();
 
-    // ========================================================================
-    // Browser Debug Viewer
-    // ========================================================================
-    // ブラウザではSVGそのものではなくViewer.htmlを開きます。
-    // Viewer.htmlはStartup.svg / CandidateRejects.svgを定期的に再読み込みするため、後続のPhysics Writerが
-    // 同じSVGを上書きすればブラウザを再起動せず最新のデバッグ表示へ更新できます。
-    //
-    // Viewer.html / Startup.svg / CandidateRejects.svgはDebug生成物として従来どおりファイルへ書き出しますが、
-    // ブラウザからはfile://で直接開かず、127.0.0.1限定のBrowserDebugServer経由で表示します。
-    // これにより自動reloadだけでなく、BrowserのParticle / Triangle選択を/filter endpointから
-    // Raven Processへ返し、次のCandidateRejects.svg生成条件へ反映できます。
-    //
-    // Browser Debugは診断時だけ必要で、SoftBody Snapshot再評価やSVG I/OはProfilerへ無視できない負荷を
-    // 与える可能性があります。そのため起動処理とRuntime Snapshot処理はBrowserDebugConfig.hの
-    // kEnableBrowserDebugViewerで一括してON/OFFします。
     if (Raven::kEnableBrowserDebugViewer == true)
     {
         const std::filesystem::path browserDebugDirectory =
@@ -96,36 +76,24 @@ int main()
     // Runtime Sceneを先に生成した後、Character / SoftBody検証LayerとEditorLayerを登録します。
     // Character ControllerはPhysics Query後のTransformを同じFrameのScene Renderへ反映したいため、
     // Application LayerではなくScene-owned Layerとして登録します。
-    // Cloth / Jelly / Fluid LayerはApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
     app.SetScene(Raven::CreateScope<Raven::SceneGame>());
 
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
     {
         // Character本体はScene-ownedのまま維持し、ImGui表示だけをApplication-owned Overlayへ分離します。
-        // OverlayはCharacter Layerを非所有pointerで参照しますが、ApplicationはApplication LayerをSceneより先に
-        // 破棄するため、終了順序上もdangling pointerになりません。
-        //
-        // 現在はRaven UI実装中の描画確認を優先するため、Overlayの「登録処理だけ」を#if 0で一時停止しています。
-        // CharacterControllerDemoLayer本体とRuntimeのCharacter Controller / Animation / Locomotion処理は
-        // 従来どおり動作します。デバッグHUDを再度確認する場合は下の#if 0を有効化してください。
+        // Fluidデモ位置へ移動するとき現在座標を常時確認できるよう、診断HUDを再有効化します。
         auto characterLayer = Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene);
         Raven::CharacterControllerDemoLayer* characterLayerPointer = characterLayer.get();
 
         runtimeScene->PushLayer(std::move(characterLayer));
 
-#if 0
         if (characterLayerPointer != nullptr)
         {
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
                     *characterLayerPointer));
         }
-#else
-        // Overlayを無効化している間はpointerを使用しません。
-        // Character Layer自体の所有権はすでにruntimeSceneへ移譲済みです。
-        static_cast<void>(characterLayerPointer);
-#endif
     }
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
@@ -134,8 +102,6 @@ int main()
     app.PushLayer(Raven::CreateScope<Raven::FluidSPHDemoLayer>(app));
 
 #ifdef _DEBUG
-    // 実ファイルの読み込みからUI Tree展開、AnimationClip再生、OpenGL UI描画までを
-    // 起動中に一続きで確認するSVG検証Layerです。Asset固有PathはDebug Layer内へ閉じ込めます。
     app.PushLayer(Raven::CreateScope<Raven::UISvgDemoLayer>(app));
 #endif
 
