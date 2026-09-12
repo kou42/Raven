@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "Raven/Math/MathVector.h"
 
 namespace Raven
@@ -12,7 +14,8 @@ namespace ph
 // ============================================================================
 // Density / Pressureだけでなく、Pressure Force・Viscosity・Gravity・Integration・
 // Box Boundaryまで1 Stepで追える最小SPH設定です。
-// 高度な安定化（CFL/Substep/PBF）は別段階とし、まず各物理項の意味がコードから追える構成を優先します。
+// Stable Time StepではFrame deltaTimeを必要に応じて複数Substepへ分割し、
+// 明示積分が1回で進み過ぎることを抑えます。
 struct SPHSettings
 {
     // Kernelのsupport radius hです。Spatial HashのCellSizeにも同じ値を使用します。
@@ -29,6 +32,27 @@ struct SPHSettings
 
     // 外力として各Particleへ m*g を加えます。
     math::Vec3 Gravity{ 0.0f, -9.81f, 0.0f };
+
+    // Stable Time Stepを有効にすると、Frame deltaTimeをCFL系の上限で分割します。
+    bool StableTimeStepEnabled = true;
+
+    // dt_velocity = CFLFactor * h / max(|v|, c) の安全係数です。
+    // 1未満にしてParticleがsupport radiusを1 Substepで大きく飛び越えないようにします。
+    float CFLFactor = 0.4f;
+
+    // 線形EOSのPressureStiffnessから推定する数値的な音速 c = sqrt(k) に掛ける係数です。
+    // 剛性が高いほど圧力波が速く伝わるため、時間刻みを小さくするために使用します。
+    float SpeedOfSoundScale = 1.0f;
+
+    // 加速度による移動量にも制約を掛けます。
+    // dt_acceleration = AccelerationTimeStepFactor * sqrt(h / max(|a|))
+    float AccelerationTimeStepFactor = 0.25f;
+
+    // Substepが極端に細かくなりCPU時間が暴走することを防ぐ下限です。
+    float MinimumTimeStep = 1.0e-5f;
+
+    // 1 Frameで許可するSubstep数の上限です。
+    uint32_t MaximumSubsteps = 16u;
 
     // 最初の境界条件は軸平行Boxです。
     // falseならBoundary処理を完全にスキップします。

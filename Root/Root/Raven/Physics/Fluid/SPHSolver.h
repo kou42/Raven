@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "Raven/Physics/Fluid/FluidParticle.h"
@@ -14,8 +15,8 @@ namespace ph
 // ============================================================================
 // SPH Solver
 // ============================================================================
-// Density -> Pressure -> Force -> Integration -> Boundary の順で1 Stepを進めます。
-// 現段階では理解しやすいCPU実装を優先し、CFL/Substep/PBFなどの安定化は次段階で追加します。
+// Density -> Pressure -> Force -> Integration -> Boundary の順で1 Substepを進めます。
+// Frame deltaTimeはStable Time Stepに基づいて必要な回数へ分割します。
 class SPHSolver
 {
 public:
@@ -27,27 +28,31 @@ public:
     void ComputeDensity(std::vector<FluidParticle>& particles);
     void ComputePressure(std::vector<FluidParticle>& particles) const;
     void ComputeDensityAndPressure(std::vector<FluidParticle>& particles);
-
-    // Pressure / Viscosity / GravityをParticle::Forceへ実際の力として蓄積します。
     void ComputeForces(std::vector<FluidParticle>& particles);
 
-    // v += (F / m) * dt, x += v * dt のSemi-Implicit Eulerです。
+    // 現在の速度・Force・SPH剛性から、次のSubstepで安全側となる時間刻みを推定します。
+    float ComputeStableTimeStep(
+        const std::vector<FluidParticle>& particles,
+        float maximumDeltaTime) const;
+
     void Integrate(std::vector<FluidParticle>& particles, float deltaTime) const;
-
-    // 軸平行Boxの内側へParticle中心を保持し、壁へ向かう速度成分だけを反射します。
     void ResolveBoundary(std::vector<FluidParticle>& particles) const;
-
-    // 1回のSPH Simulation Stepです。
     void Step(std::vector<FluidParticle>& particles, float deltaTime);
 
+    uint32_t GetLastSubstepCount() const { return m_LastSubstepCount; }
+    float GetLastMinimumSubstepDeltaTime() const { return m_LastMinimumSubstepDeltaTime; }
+    bool WasLastSubstepLimitReached() const { return m_LastSubstepLimitReached; }
+
 private:
-    // ComputeDensity()後は同じPositionに対するSpatial Hashが既に構築済みなので、
-    // Step()では再Buildせずこの内部関数を使います。
     void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles) const;
+    void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime);
 
 private:
     SPHSettings m_Settings{};
     FluidSpatialHashGrid m_SpatialHash;
+    uint32_t m_LastSubstepCount = 0u;
+    float m_LastMinimumSubstepDeltaTime = 0.0f;
+    bool m_LastSubstepLimitReached = false;
 };
 
 } // namespace ph
