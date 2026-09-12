@@ -25,9 +25,16 @@ constexpr float SmoothingRadius = 0.55f;
 constexpr float ParticleMass = 1.0f;
 constexpr float RenderParticleRadius = 0.12f;
 constexpr float DensityVisualizationRange = 0.15f;
-constexpr math::Vec3 FluidOrigin{ -0.8f, 4.0f, -0.8f };
-constexpr math::Vec3 BoundaryMinimum{ -4.0f, 0.2f, -4.0f };
-constexpr math::Vec3 BoundaryMaximum{ 4.0f, 8.0f, 4.0f };
+
+// Terrainが存在する原点周辺を避け、Fluid検証専用エリアを(+100, +100)側へ分離します。
+// Particle / SPH Boundary / 水槽Collider / 落下Bodyはすべてこの基準位置から配置します。
+constexpr math::Vec3 FluidDemoCenter{ 100.0f, 4.0f, 100.0f };
+constexpr math::Vec3 FluidOrigin = FluidDemoCenter + math::Vec3{ -0.8f, 0.0f, -0.8f };
+constexpr math::Vec3 BoundaryMinimum = FluidDemoCenter + math::Vec3{ -4.0f, -3.8f, -4.0f };
+constexpr math::Vec3 BoundaryMaximum = FluidDemoCenter + math::Vec3{ 4.0f, 4.0f, 4.0f };
+constexpr float TankHalfWidth = 4.0f;
+constexpr float TankWallThickness = 0.20f;
+constexpr float TankHeight = 7.8f;
 constexpr math::Vec3 LowDensityColor{ 0.08f, 0.25f, 1.00f };
 constexpr math::Vec3 RestDensityColor{ 0.10f, 0.80f, 0.95f };
 constexpr math::Vec3 HighDensityColor{ 1.00f, 0.20f, 0.08f };
@@ -104,7 +111,8 @@ void FluidSPHDemoLayer::OnAttach()
     m_Solver.ComputePressure(m_Particles);
 
     m_ParticleMesh = PrimitiveMeshFactory::CreateSphere(8u, 6u);
-    if (m_ParticleMesh == nullptr)
+    m_DemoCubeMesh = PrimitiveMeshFactory::CreateCube();
+    if (m_ParticleMesh == nullptr || m_DemoCubeMesh == nullptr)
     {
         return;
     }
@@ -117,6 +125,7 @@ void FluidSPHDemoLayer::OnAttach()
     if (shader == nullptr)
     {
         m_ParticleMesh.reset();
+        m_DemoCubeMesh.reset();
         return;
     }
 
@@ -137,10 +146,12 @@ void FluidSPHDemoLayer::OnAttach()
     if (m_ParticlePipeline == nullptr)
     {
         m_ParticleMesh.reset();
+        m_DemoCubeMesh.reset();
         return;
     }
 
     CreateRenderEntities();
+    CreateDemoTank();
     SynchronizeRenderEntities();
 }
 
@@ -156,12 +167,21 @@ void FluidSPHDemoLayer::OnDetach()
                 scene->DestroyEntity(entity);
             }
         }
+        for (Entity& entity : m_DemoEntities)
+        {
+            if (static_cast<bool>(entity) && scene->IsEntityAlive(entity))
+            {
+                scene->DestroyEntity(entity);
+            }
+        }
     }
 
     m_ParticleEntities.clear();
+    m_DemoEntities.clear();
     m_ParticleMaterials.clear();
     m_Particles.clear();
     m_ParticlePipeline.reset();
+    m_DemoCubeMesh.reset();
     m_ParticleMesh.reset();
 }
 
@@ -200,7 +220,7 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
 
 void FluidSPHDemoLayer::OnRender()
 {
-    // Particleは通常のMeshRendererComponentとしてSceneへ登録済みです。
+    // Particleと水槽は通常のMeshRendererComponentとしてSceneへ登録済みです。
     // SceneGame::RenderScene()のECS描画経路へ自動参加するため、専用Render処理は不要です。
 }
 
@@ -251,6 +271,90 @@ void FluidSPHDemoLayer::CreateRenderEntities()
         m_ParticleEntities.push_back(entity);
         m_ParticleMaterials.push_back(material);
     }
+}
+
+void FluidSPHDemoLayer::CreateDemoTank()
+{
+    Scene* scene = m_Application.GetScene();
+    if (scene == nullptr || m_DemoCubeMesh == nullptr || m_ParticlePipeline == nullptr)
+    {
+        return;
+    }
+
+    m_DemoEntities.clear();
+
+    Ref<Material> tankMaterial = CreateRef<Material>(m_ParticlePipeline);
+    tankMaterial->SetUniform("u_Tint", math::Vec4{ 0.20f, 0.65f, 0.85f, 0.22f });
+
+    auto createStaticWall = [&](const char* name, const math::Vec3& position, const math::Vec3& scale)
+    {
+        Entity wall = scene->CreateEntity(name);
+        TransformComponent& transform = wall.GetComponent<TransformComponent>();
+        transform.Position = position;
+        transform.Scale = scale;
+        wall.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_DemoCubeMesh, tankMaterial });
+
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Box;
+        // Primitive Cubeは各軸[-0.5,+0.5]なので、見た目のScaleの半分をColliderへ設定します。
+        collider.HalfExtents = scale * 0.5f;
+        collider.Restitution = 0.05f;
+        collider.StaticFriction = 0.4f;
+        collider.DynamicFriction = 0.2f;
+        wall.AddComponent<ColliderComponent>(collider);
+        m_DemoEntities.push_back(wall);
+    };
+
+    const float tankCenterY = (BoundaryMinimum.y + BoundaryMaximum.y) * 0.5f;
+    createStaticWall(
+        "Fluid Tank Floor",
+        { FluidDemoCenter.x, BoundaryMinimum.y - TankWallThickness * 0.5f, FluidDemoCenter.z },
+        { TankHalfWidth * 2.0f, TankWallThickness, TankHalfWidth * 2.0f });
+    createStaticWall(
+        "Fluid Tank Wall -X",
+        { BoundaryMinimum.x - TankWallThickness * 0.5f, tankCenterY, FluidDemoCenter.z },
+        { TankWallThickness, TankHeight, TankHalfWidth * 2.0f });
+    createStaticWall(
+        "Fluid Tank Wall +X",
+        { BoundaryMaximum.x + TankWallThickness * 0.5f, tankCenterY, FluidDemoCenter.z },
+        { TankWallThickness, TankHeight, TankHalfWidth * 2.0f });
+    createStaticWall(
+        "Fluid Tank Wall -Z",
+        { FluidDemoCenter.x, tankCenterY, BoundaryMinimum.z - TankWallThickness * 0.5f },
+        { TankHalfWidth * 2.0f, TankHeight, TankWallThickness });
+    createStaticWall(
+        "Fluid Tank Wall +Z",
+        { FluidDemoCenter.x, tankCenterY, BoundaryMaximum.z + TankWallThickness * 0.5f },
+        { TankHalfWidth * 2.0f, TankHeight, TankWallThickness });
+
+    // 水面へ向けて落下させる目印兼Coupling検証Bodyです。
+    // 質量をParticle総量より十分小さくし、Pressure Reaction / Buoyancyによる反作用を目視しやすくします。
+    Ref<Material> bodyMaterial = CreateRef<Material>(m_ParticlePipeline);
+    bodyMaterial->SetUniform("u_Tint", math::Vec4{ 1.0f, 0.55f, 0.10f, 1.0f });
+
+    Entity body = scene->CreateEntity("Fluid Buoyancy Test Body");
+    TransformComponent& bodyTransform = body.GetComponent<TransformComponent>();
+    bodyTransform.Position = FluidDemoCenter + math::Vec3{ 0.0f, 3.0f, 0.0f };
+    bodyTransform.Scale = { 0.8f, 0.8f, 0.8f };
+    body.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_DemoCubeMesh, bodyMaterial });
+
+    RigidBodyComponent rigidBody{};
+    rigidBody.SetBodyType(BodyType::Dynamic);
+    rigidBody.SetMass(2.0f);
+    rigidBody.LinearDamping = 0.02f;
+    rigidBody.AngularDamping = 0.05f;
+    rigidBody.UseGravity = true;
+    rigidBody.AllowSleep = false;
+    body.AddComponent<RigidBodyComponent>(rigidBody);
+
+    ColliderComponent bodyCollider{};
+    bodyCollider.Type = ColliderType::Box;
+    bodyCollider.HalfExtents = bodyTransform.Scale * 0.5f;
+    bodyCollider.Restitution = 0.05f;
+    bodyCollider.StaticFriction = 0.4f;
+    bodyCollider.DynamicFriction = 0.2f;
+    body.AddComponent<ColliderComponent>(bodyCollider);
+    m_DemoEntities.push_back(body);
 }
 
 void FluidSPHDemoLayer::SynchronizeRenderEntities()
