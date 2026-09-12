@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Math/Math.h"
 #include "Raven/Physics/Fluid/SPHKernel.h"
 
@@ -16,23 +17,35 @@ namespace ph
 namespace
 {
 constexpr float MinimumSmoothingRadius = 1.0e-4f;
+
 void ResolveBoundaryAxis(float& position, float& velocity, float minimum, float maximum, float restitution)
 {
     if (position < minimum)
     {
         position = minimum;
-        if (velocity < 0.0f) { velocity = -velocity * restitution; }
+        if (velocity < 0.0f)
+        {
+            velocity = -velocity * restitution;
+        }
         return;
     }
+
     if (position > maximum)
     {
         position = maximum;
-        if (velocity > 0.0f) { velocity = -velocity * restitution; }
+        if (velocity > 0.0f)
+        {
+            velocity = -velocity * restitution;
+        }
     }
 }
 }
 
-SPHSolver::SPHSolver(const SPHSettings& settings) : m_SpatialHash(settings.SmoothingRadius) { SetSettings(settings); }
+SPHSolver::SPHSolver(const SPHSettings& settings)
+    : m_SpatialHash(settings.SmoothingRadius)
+{
+    SetSettings(settings);
+}
 
 void SPHSolver::SetSettings(const SPHSettings& settings)
 {
@@ -61,6 +74,7 @@ void SPHSolver::SetSettings(const SPHSettings& settings)
 
 void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
 {
+    RAVEN_PROFILE_SCOPE("Physics.Fluid.SPH.Density");
     m_SpatialHash.Build(particles);
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
@@ -71,11 +85,18 @@ void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
         // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
         m_SpatialHash.ForEachNeighborParticle(particle.Position, h, [&](uint32_t j)
         {
-            if (j >= particles.size()) { return; }
+            if (j >= particles.size())
+            {
+                return;
+            }
             const FluidParticle& neighbor = particles[j];
             const float rSq = (particle.Position - neighbor.Position).LengthSq();
-            if (rSq > hSq) { return; }
-            density += std::max(0.0f, neighbor.Mass) * SPHKernel::EvaluatePoly6Density(rSq, h);
+            if (rSq > hSq)
+            {
+                return;
+            }
+            density += std::max(0.0f, neighbor.Mass)
+                * SPHKernel::EvaluatePoly6Density(rSq, h);
         });
         particle.Density = density;
     }
@@ -83,17 +104,29 @@ void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
 
 void SPHSolver::ComputePressure(std::vector<FluidParticle>& particles) const
 {
+    RAVEN_PROFILE_SCOPE("Physics.Fluid.SPH.Pressure");
     for (FluidParticle& particle : particles)
     {
-        particle.Pressure = m_Settings.PressureStiffness * (particle.Density - m_Settings.RestDensity);
+        particle.Pressure = m_Settings.PressureStiffness
+            * (particle.Density - m_Settings.RestDensity);
     }
 }
 
-void SPHSolver::ComputeDensityAndPressure(std::vector<FluidParticle>& particles) { ComputeDensity(particles); ComputePressure(particles); }
-void SPHSolver::ComputeForces(std::vector<FluidParticle>& particles) { m_SpatialHash.Build(particles); ComputeForcesUsingCurrentGrid(particles); }
+void SPHSolver::ComputeDensityAndPressure(std::vector<FluidParticle>& particles)
+{
+    ComputeDensity(particles);
+    ComputePressure(particles);
+}
+
+void SPHSolver::ComputeForces(std::vector<FluidParticle>& particles)
+{
+    m_SpatialHash.Build(particles);
+    ComputeForcesUsingCurrentGrid(particles);
+}
 
 void SPHSolver::ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles) const
 {
+    RAVEN_PROFILE_SCOPE("Physics.Fluid.SPH.Force");
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
     for (std::size_t i = 0u; i < particles.size(); ++i)
@@ -101,19 +134,30 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& partic
         FluidParticle& particle = particles[i];
         const float massI = std::max(0.0f, particle.Mass);
         particle.Force = m_Settings.Gravity * massI;
-        if (massI <= math::Epsilon || particle.Density <= math::Epsilon) { continue; }
+        if (massI <= math::Epsilon || particle.Density <= math::Epsilon)
+        {
+            continue;
+        }
         const float inverseDensityISq = 1.0f / (particle.Density * particle.Density);
         m_SpatialHash.ForEachNeighborParticle(particle.Position, h, [&](uint32_t j)
         {
-            if (j >= particles.size() || j == static_cast<uint32_t>(i)) { return; }
+            if (j >= particles.size() || j == static_cast<uint32_t>(i))
+            {
+                return;
+            }
             const FluidParticle& neighbor = particles[j];
             const float massJ = std::max(0.0f, neighbor.Mass);
-            if (massJ <= math::Epsilon || neighbor.Density <= math::Epsilon) { return; }
+            if (massJ <= math::Epsilon || neighbor.Density <= math::Epsilon)
+            {
+                return;
+            }
             const math::Vec3 displacement = particle.Position - neighbor.Position;
             const float rSq = displacement.LengthSq();
-            if (rSq <= math::Epsilon * math::Epsilon || rSq > hSq) { return; }
+            if (rSq <= math::Epsilon * math::Epsilon || rSq > hSq)
+            {
+                return;
+            }
             const float r = std::sqrt(rSq);
-            // F_i^p = -m_i sum_j m_j (p_i/rho_i^2 + p_j/rho_j^2) grad W_ij
             const float pressureTerm = particle.Pressure * inverseDensityISq
                 + neighbor.Pressure / (neighbor.Density * neighbor.Density);
             particle.Force += SPHKernel::EvaluateSpikyGradient(displacement, r, h)
@@ -128,10 +172,19 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& partic
     }
 }
 
-float SPHSolver::ComputeStableTimeStep(const std::vector<FluidParticle>& particles, float maximumDeltaTime) const
+float SPHSolver::ComputeStableTimeStep(
+    const std::vector<FluidParticle>& particles,
+    float maximumDeltaTime) const
 {
-    if (maximumDeltaTime <= 0.0f) { return 0.0f; }
-    if (m_Settings.StableTimeStepEnabled == false) { return maximumDeltaTime; }
+    if (maximumDeltaTime <= 0.0f)
+    {
+        return 0.0f;
+    }
+    if (m_Settings.StableTimeStepEnabled == false)
+    {
+        return maximumDeltaTime;
+    }
+
     float maximumSpeed = 0.0f;
     float maximumAcceleration = 0.0f;
     for (const FluidParticle& particle : particles)
@@ -140,7 +193,9 @@ float SPHSolver::ComputeStableTimeStep(const std::vector<FluidParticle>& particl
         const float mass = std::max(0.0f, particle.Mass);
         if (mass > math::Epsilon)
         {
-            maximumAcceleration = std::max(maximumAcceleration, particle.Force.Length() / mass);
+            maximumAcceleration = std::max(
+                maximumAcceleration,
+                particle.Force.Length() / mass);
         }
     }
 
@@ -148,30 +203,46 @@ float SPHSolver::ComputeStableTimeStep(const std::vector<FluidParticle>& particl
     float speedOfSound = 0.0f;
     if (m_Settings.PressureStiffness > 0.0f)
     {
-        speedOfSound = std::sqrt(m_Settings.PressureStiffness) * m_Settings.SpeedOfSoundScale;
+        speedOfSound = std::sqrt(m_Settings.PressureStiffness)
+            * m_Settings.SpeedOfSoundScale;
     }
+
     float stableDt = maximumDeltaTime;
     const float characteristicSpeed = std::max(maximumSpeed, speedOfSound);
     if (m_Settings.CFLFactor > 0.0f && characteristicSpeed > math::Epsilon)
     {
-        stableDt = std::min(stableDt, m_Settings.CFLFactor * m_Settings.SmoothingRadius / characteristicSpeed);
+        stableDt = std::min(
+            stableDt,
+            m_Settings.CFLFactor * m_Settings.SmoothingRadius / characteristicSpeed);
     }
-    if (m_Settings.AccelerationTimeStepFactor > 0.0f && maximumAcceleration > math::Epsilon)
+    if (m_Settings.AccelerationTimeStepFactor > 0.0f
+        && maximumAcceleration > math::Epsilon)
     {
-        stableDt = std::min(stableDt, m_Settings.AccelerationTimeStepFactor
-            * std::sqrt(m_Settings.SmoothingRadius / maximumAcceleration));
+        stableDt = std::min(
+            stableDt,
+            m_Settings.AccelerationTimeStepFactor
+                * std::sqrt(m_Settings.SmoothingRadius / maximumAcceleration));
     }
-    if (m_Settings.MinimumTimeStep > 0.0f) { stableDt = std::max(stableDt, m_Settings.MinimumTimeStep); }
+    if (m_Settings.MinimumTimeStep > 0.0f)
+    {
+        stableDt = std::max(stableDt, m_Settings.MinimumTimeStep);
+    }
     return std::min(stableDt, maximumDeltaTime);
 }
 
 void SPHSolver::Integrate(std::vector<FluidParticle>& particles, float deltaTime) const
 {
-    if (deltaTime <= 0.0f) { return; }
+    if (deltaTime <= 0.0f)
+    {
+        return;
+    }
     for (FluidParticle& particle : particles)
     {
         const float mass = std::max(0.0f, particle.Mass);
-        if (mass <= math::Epsilon) { continue; }
+        if (mass <= math::Epsilon)
+        {
+            continue;
+        }
         const math::Vec3 acceleration = particle.Force / mass;
         particle.Velocity += acceleration * deltaTime;
         particle.Position += particle.Velocity * deltaTime;
@@ -180,14 +251,32 @@ void SPHSolver::Integrate(std::vector<FluidParticle>& particles, float deltaTime
 
 void SPHSolver::ResolveBoundary(std::vector<FluidParticle>& particles) const
 {
-    if (m_Settings.BoundaryEnabled == false) { return; }
+    if (m_Settings.BoundaryEnabled == false)
+    {
+        return;
+    }
     const float radius = m_Settings.BoundaryParticleRadius;
     const float restitution = m_Settings.BoundaryRestitution;
     math::Vec3 minimum = m_Settings.BoundaryMinimum + math::Vec3(radius);
     math::Vec3 maximum = m_Settings.BoundaryMaximum - math::Vec3(radius);
-    if (minimum.x > maximum.x) { const float c=(m_Settings.BoundaryMinimum.x+m_Settings.BoundaryMaximum.x)*0.5f; minimum.x=c; maximum.x=c; }
-    if (minimum.y > maximum.y) { const float c=(m_Settings.BoundaryMinimum.y+m_Settings.BoundaryMaximum.y)*0.5f; minimum.y=c; maximum.y=c; }
-    if (minimum.z > maximum.z) { const float c=(m_Settings.BoundaryMinimum.z+m_Settings.BoundaryMaximum.z)*0.5f; minimum.z=c; maximum.z=c; }
+    if (minimum.x > maximum.x)
+    {
+        const float center = (m_Settings.BoundaryMinimum.x + m_Settings.BoundaryMaximum.x) * 0.5f;
+        minimum.x = center;
+        maximum.x = center;
+    }
+    if (minimum.y > maximum.y)
+    {
+        const float center = (m_Settings.BoundaryMinimum.y + m_Settings.BoundaryMaximum.y) * 0.5f;
+        minimum.y = center;
+        maximum.y = center;
+    }
+    if (minimum.z > maximum.z)
+    {
+        const float center = (m_Settings.BoundaryMinimum.z + m_Settings.BoundaryMaximum.z) * 0.5f;
+        minimum.z = center;
+        maximum.z = center;
+    }
     for (FluidParticle& particle : particles)
     {
         ResolveBoundaryAxis(particle.Position.x, particle.Velocity.x, minimum.x, maximum.x, restitution);
@@ -207,39 +296,87 @@ void SPHSolver::AdvanceSubstep(std::vector<FluidParticle>& particles, float delt
 
 void SPHSolver::Step(std::vector<FluidParticle>& particles, float deltaTime)
 {
+    RAVEN_PROFILE_SCOPE("Physics.Fluid.SPH.Step");
+
     m_LastSubstepCount = 0u;
     m_LastMinimumSubstepDeltaTime = 0.0f;
     m_LastSubstepLimitReached = false;
-    if (deltaTime <= 0.0f || particles.empty()) { return; }
+    if (deltaTime <= 0.0f || particles.empty())
+    {
+        return;
+    }
+
     if (m_Settings.StableTimeStepEnabled == false)
     {
         AdvanceSubstep(particles, deltaTime);
         m_LastSubstepCount = 1u;
         m_LastMinimumSubstepDeltaTime = deltaTime;
-        return;
+    }
+    else
+    {
+        float remainingTime = deltaTime;
+        float minimumSubstepDeltaTime = std::numeric_limits<float>::max();
+        while (remainingTime > math::Epsilon
+            && m_LastSubstepCount < m_Settings.MaximumSubsteps)
+        {
+            float substepDt = ComputeStableTimeStep(particles, remainingTime);
+            const uint32_t remainingSlots = m_Settings.MaximumSubsteps - m_LastSubstepCount;
+            if (remainingSlots == 1u && substepDt + math::Epsilon < remainingTime)
+            {
+                // 安全なdtでは残時間を消化できない状態を記録し、最後のslotでFrame時間を消化します。
+                m_LastSubstepLimitReached = true;
+                substepDt = remainingTime;
+            }
+            if (substepDt <= 0.0f)
+            {
+                break;
+            }
+            substepDt = std::min(substepDt, remainingTime);
+            AdvanceSubstep(particles, substepDt);
+            remainingTime -= substepDt;
+            minimumSubstepDeltaTime = std::min(minimumSubstepDeltaTime, substepDt);
+            ++m_LastSubstepCount;
+        }
+        if (m_LastSubstepCount > 0u)
+        {
+            m_LastMinimumSubstepDeltaTime = minimumSubstepDeltaTime;
+        }
     }
 
-    float remainingTime = deltaTime;
-    float minimumSubstepDeltaTime = std::numeric_limits<float>::max();
-    while (remainingTime > math::Epsilon && m_LastSubstepCount < m_Settings.MaximumSubsteps)
+    // Hot loop内ではProfilerへ触らず、Step完了後にParticleを1回だけ走査して状態を集約します。
+    // これによりSPH本体のNeighbor loopへmutex/文字列処理を持ち込まず、計測汚染を抑えます。
+    float maximumDensity = 0.0f;
+    float maximumAbsolutePressure = 0.0f;
+    float maximumSpeed = 0.0f;
+    float maximumAcceleration = 0.0f;
+    for (const FluidParticle& particle : particles)
     {
-        float substepDt = ComputeStableTimeStep(particles, remainingTime);
-        const uint32_t remainingSlots = m_Settings.MaximumSubsteps - m_LastSubstepCount;
-        if (remainingSlots == 1u && substepDt + math::Epsilon < remainingTime)
+        maximumDensity = std::max(maximumDensity, particle.Density);
+        maximumAbsolutePressure = std::max(maximumAbsolutePressure, std::abs(particle.Pressure));
+        maximumSpeed = std::max(maximumSpeed, particle.Velocity.Length());
+
+        const float mass = std::max(0.0f, particle.Mass);
+        if (mass > math::Epsilon)
         {
-            // 安全なdtでは残時間を消化できない状態を記録し、最後のslotでFrame時間を消化します。
-            // この状態は安定性を犠牲にするため、Profilerで頻度を観測してMaximumSubstepsを調整します。
-            m_LastSubstepLimitReached = true;
-            substepDt = remainingTime;
+            maximumAcceleration = std::max(
+                maximumAcceleration,
+                particle.Force.Length() / mass);
         }
-        if (substepDt <= 0.0f) { break; }
-        substepDt = std::min(substepDt, remainingTime);
-        AdvanceSubstep(particles, substepDt);
-        remainingTime -= substepDt;
-        minimumSubstepDeltaTime = std::min(minimumSubstepDeltaTime, substepDt);
-        ++m_LastSubstepCount;
     }
-    if (m_LastSubstepCount > 0u) { m_LastMinimumSubstepDeltaTime = minimumSubstepDeltaTime; }
+
+    CPUProfiler& profiler = CPUProfiler::Get();
+    profiler.AddCounter("Physics.Fluid.SPH.ParticleCount", static_cast<double>(particles.size()));
+    profiler.AddCounter("Physics.Fluid.SPH.SubstepCount", static_cast<double>(m_LastSubstepCount));
+    profiler.AddCounter("Physics.Fluid.SPH.MinimumSubstepMilliseconds",
+        static_cast<double>(m_LastMinimumSubstepDeltaTime) * 1000.0);
+    profiler.AddCounter("Physics.Fluid.SPH.SubstepLimitReached",
+        m_LastSubstepLimitReached ? 1.0 : 0.0);
+    profiler.AddCounter("Physics.Fluid.SPH.MaximumDensity", static_cast<double>(maximumDensity));
+    profiler.AddCounter("Physics.Fluid.SPH.MaximumAbsolutePressure",
+        static_cast<double>(maximumAbsolutePressure));
+    profiler.AddCounter("Physics.Fluid.SPH.MaximumSpeed", static_cast<double>(maximumSpeed));
+    profiler.AddCounter("Physics.Fluid.SPH.MaximumAcceleration",
+        static_cast<double>(maximumAcceleration));
 }
 
 } // namespace ph
