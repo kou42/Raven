@@ -6,6 +6,7 @@
 #include "Raven/Math/Math.h"
 #include "Raven/Physics/Coupling/FluidColliderContact.h"
 #include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Physics/RigidBodyDynamics.h"
 #include "Raven/Scene/Scene.h"
 
 namespace Raven::ph
@@ -141,7 +142,22 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
     }
 
     const float particleInverseMass = 1.0f / particleMass;
-    const float effectiveInverseMass = particleInverseMass + rigidBody.InverseMass;
+
+    // RigidBodyの接触点が重心から外れている場合、法線Impulseは並進だけでなく回転も起こします。
+    // その回転しやすさを分母へ含めないと、箱の端などで必要以上に大きなImpulseを与えてしまいます。
+    // k_rot = n dot ((I^-1 * (r x n)) x r)
+    const math::Mat3 bodyInverseInertia = ComputeWorldInverseInertia(
+        &transform,
+        &rigidBody,
+        &collider);
+    const math::Vec3 angularResponse = bodyInverseInertia
+        * math::Vec3::Cross(leverArm, contact.Normal);
+    const float rotationalInverseMass = math::Vec3::Dot(
+        math::Vec3::Cross(angularResponse, leverArm),
+        contact.Normal);
+    const float effectiveInverseMass = particleInverseMass
+        + rigidBody.InverseMass
+        + std::max(0.0f, rotationalInverseMass);
     if (effectiveInverseMass <= math::Epsilon)
     {
         return true;
@@ -151,9 +167,10 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
         m_Settings.Restitution,
         std::clamp(collider.Restitution, 0.0f, 1.0f));
 
-    // J = -(1+e) v_rel,n / (m_p^-1 + m_b^-1)
-    // 現段階では回転有効質量を分母へ含めません。Impulse作用点は既存PhysicsWorldへ渡すため、
-    // 得られた反作用はLinearVelocityだけでなくr x Jを通じてAngularVelocityにも反映されます。
+    // J = -(1+e) v_rel,n / K
+    // KにはParticle/Bodyの並進InverseMassに加え、接触点の回転有効質量を含めます。
+    // これにより重心接触では従来式へ退化し、オフセンター接触では回転へ使われる分だけ
+    // 法線Impulseが自然に小さくなります。
     const float impulseMagnitude =
         -(1.0f + restitution) * relativeNormalVelocity / effectiveInverseMass;
     if (impulseMagnitude <= 0.0f)
