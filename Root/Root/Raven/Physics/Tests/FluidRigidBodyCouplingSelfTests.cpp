@@ -24,7 +24,6 @@ void RunFluidRigidBodyCouplingSelfTests()
         ColliderComponent collider{};
         collider.Type = ColliderType::Sphere;
         collider.Radius = 0.5f;
-        collider.Restitution = 0.0f;
         bodyEntity.AddComponent<ColliderComponent>(collider);
         std::vector<FluidParticle> particles(1u);
         particles[0].Position = { 0.4f, 0.0f, 0.0f };
