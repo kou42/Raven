@@ -23,6 +23,10 @@ struct FluidRigidBodyCouplingSettings
     // 接触しているFluidとRigidBody表面の相対速度を減衰させる係数です。
     // 0で無効、1で1回のCoupling解決時に可能な範囲まで相対接線速度を揃えます。
     float DragCoefficient = 0.0f;
+
+    // SPH Particleが保持する正圧をCollider表面への面圧としてRigidBodyへ返す倍率です。
+    // 0で無効です。初版では負圧を吸着へ変換せず0へクランプします。
+    float PressureReactionCoefficient = 0.0f;
 };
 
 struct FluidRigidBodyCouplingStatistics
@@ -32,19 +36,17 @@ struct FluidRigidBodyCouplingStatistics
     uint64_t ResolvedContactCount = 0u;
     uint64_t AppliedImpulseCount = 0u;
     uint64_t AppliedDragImpulseCount = 0u;
+    uint64_t AppliedPressureImpulseCount = 0u;
     float TotalNormalImpulse = 0.0f;
     float TotalDragImpulse = 0.0f;
+    float TotalPressureImpulse = 0.0f;
 };
 
 // ============================================================================
 // Fluid <-> Dynamic RigidBody Coupling
 // ============================================================================
-// ParticleとDynamic RigidBody間で法線Impulseと接線Drag Impulseを双方向へ適用します。
-// 接触幾何はStatic Couplingと共通化し、SPHのDensity / Pressure計算から独立させます。
-//
-// Normal / Drag双方でRigidBodyのworld-space逆慣性を有効質量へ含めます。
-// これにより接触点が重心から外れた場合も、並進と回転へ使われるImpulse量を
-// 同じ剛体力学モデルで計算できます。
+// ParticleとDynamic RigidBody間で法線衝突、接線Drag、SPH Pressure Reactionを双方向へ適用します。
+// 接触幾何はStatic Couplingと共通化し、SPH Solver自体へScene / RigidBody依存を入れません。
 class FluidRigidBodyCoupling
 {
 public:
@@ -57,7 +59,8 @@ public:
     void ResolveScene(
         Scene& scene,
         PhysicsWorld& physicsWorld,
-        std::vector<FluidParticle>& particles);
+        std::vector<FluidParticle>& particles,
+        float deltaTime = 0.0f);
 
     // Self Testや将来Broad Phase候補から直接呼べる単一Body版です。
     bool ResolveParticleAgainstRigidBody(
@@ -67,7 +70,8 @@ public:
         FluidParticle& particle,
         const TransformComponent& transform,
         RigidBodyComponent& rigidBody,
-        const ColliderComponent& collider);
+        const ColliderComponent& collider,
+        float deltaTime = 0.0f);
 
     const FluidRigidBodyCouplingStatistics& GetLastStatistics() const
     {
