@@ -33,6 +33,19 @@ float ComputeDirectionalEffectiveInverseMass(
         + bodyInverseMass
         + std::max(0.0f, rotationalInverseMass);
 }
+
+float ComputeDisplacedFluidFraction(float penetrationDepth, float particleRadius)
+{
+    if (particleRadius <= math::Epsilon)
+    {
+        return 0.0f;
+    }
+
+    // Collider表面を局所平面とみなし、Particle Sphereが表面へどれだけ入り込んだかを
+    // 0..1の排除率へ変換します。接触開始で0、Particle中心が表面上で0.5、
+    // 中心が半径分Collider内部へ入った状態で1となるため、部分浸水を連続的に扱えます。
+    return std::clamp(penetrationDepth / (2.0f * particleRadius), 0.0f, 1.0f);
+}
 }
 
 FluidRigidBodyCoupling::FluidRigidBodyCoupling(
@@ -49,6 +62,7 @@ void FluidRigidBodyCoupling::SetSettings(
     m_Settings.Restitution = std::clamp(settings.Restitution, 0.0f, 1.0f);
     m_Settings.DragCoefficient = std::clamp(settings.DragCoefficient, 0.0f, 1.0f);
     m_Settings.PressureReactionCoefficient = std::max(0.0f, settings.PressureReactionCoefficient);
+    m_Settings.BuoyancyCoefficient = std::max(0.0f, settings.BuoyancyCoefficient);
 }
 
 void FluidRigidBodyCoupling::ResolveScene(
@@ -109,9 +123,12 @@ void FluidRigidBodyCoupling::ResolveScene(
     profiler.AddCounter("Physics.Fluid.RigidBody.AppliedImpulseCount", static_cast<double>(m_LastStatistics.AppliedImpulseCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.AppliedDragImpulseCount", static_cast<double>(m_LastStatistics.AppliedDragImpulseCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.AppliedPressureImpulseCount", static_cast<double>(m_LastStatistics.AppliedPressureImpulseCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.AppliedBuoyancyImpulseCount", static_cast<double>(m_LastStatistics.AppliedBuoyancyImpulseCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.TotalNormalImpulse", static_cast<double>(m_LastStatistics.TotalNormalImpulse));
     profiler.AddCounter("Physics.Fluid.RigidBody.TotalDragImpulse", static_cast<double>(m_LastStatistics.TotalDragImpulse));
     profiler.AddCounter("Physics.Fluid.RigidBody.TotalPressureImpulse", static_cast<double>(m_LastStatistics.TotalPressureImpulse));
+    profiler.AddCounter("Physics.Fluid.RigidBody.TotalBuoyancyImpulse", static_cast<double>(m_LastStatistics.TotalBuoyancyImpulse));
+    profiler.AddCounter("Physics.Fluid.RigidBody.TotalDisplacedFluidMass", static_cast<double>(m_LastStatistics.TotalDisplacedFluidMass));
 }
 
 bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
@@ -139,6 +156,12 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
     {
         return false;
     }
+
+    // Position correction前のPenetrationDepthをBuoyancyの部分排除率へ利用します。
+    // 補正後はParticle中心がCollider外へ移動するため、この値を後から再構築しないことが重要です。
+    const float displacedFluidFraction = ComputeDisplacedFluidFraction(
+        contact.PenetrationDepth,
+        m_Settings.ParticleRadius);
 
     // Position correctionはParticle側だけへ適用し、RigidBody Transformは既存Contact Solverへ任せます。
     particle.Position = contact.CorrectedParticlePosition;
@@ -209,8 +232,6 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
 
         if (pressureImpulseMagnitude > math::Epsilon)
         {
-            // Collider -> Particle法線方向へFluidを押し返し、RigidBodyへ等量反対向きの反作用を返します。
-            // これによりParticle側だけに境界圧力を加えるのではなく、系全体の線形運動量を保存します。
             const math::Vec3 pressureImpulseOnParticle = contact.Normal * pressureImpulseMagnitude;
             particle.Velocity += pressureImpulseOnParticle * particleInverseMass;
             physicsWorld.AddImpulseAtPoint(
@@ -221,6 +242,41 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
 
             ++m_LastStatistics.AppliedPressureImpulseCount;
             m_LastStatistics.TotalPressureImpulse += pressureImpulseMagnitude;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Buoyancy impulse
+    // ------------------------------------------------------------------------
+    if (m_Settings.BuoyancyCoefficient > 0.0f
+        && deltaTime > 0.0f
+        && displacedFluidFraction > 0.0f)
+    {
+        // Particle MassをそのParticleが代表するFluid質量とみなし、Colliderが排除した割合だけを
+        // displaced fluid massとして数えます。Archimedesの原理 F_b = -m_displaced * g を
+        // impulseへ積分するため、流体密度を別の定数として二重管理する必要がありません。
+        const float displacedFluidMass = particleMass
+            * displacedFluidFraction
+            * m_Settings.BuoyancyCoefficient;
+        const math::Vec3 buoyancyImpulseOnBody = -physicsWorld.GetGravity()
+            * displacedFluidMass
+            * deltaTime;
+        const float buoyancyImpulseMagnitude = buoyancyImpulseOnBody.Length();
+
+        if (buoyancyImpulseMagnitude > math::Epsilon)
+        {
+            // BuoyancyはFluid内部の圧力勾配がBodyへ伝える反作用なので、Bodyだけへ外力を追加せず、
+            // Particleへ等量反対向きImpulseを返してCoupling内部の運動量交換として扱います。
+            physicsWorld.AddImpulseAtPoint(
+                scene,
+                entity,
+                buoyancyImpulseOnBody,
+                contact.Point);
+            particle.Velocity -= buoyancyImpulseOnBody * particleInverseMass;
+
+            ++m_LastStatistics.AppliedBuoyancyImpulseCount;
+            m_LastStatistics.TotalBuoyancyImpulse += buoyancyImpulseMagnitude;
+            m_LastStatistics.TotalDisplacedFluidMass += displacedFluidMass;
         }
     }
 
