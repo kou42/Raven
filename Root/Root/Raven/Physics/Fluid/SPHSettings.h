@@ -18,10 +18,14 @@ namespace ph
 // 明示積分が1回で進み過ぎることを抑えます。
 struct SPHSettings
 {
-    // Kernelのsupport radius hです。Spatial HashのCellSizeにも同じ値を使用します。
-    // まずProfilerで現在の候補効率を計測し、CellSizeをhから独立させる価値を確認してから
-    // 専用設定を追加します。物理パラメータと最適化パラメータを不用意に混在させないためです。
+    // Kernelのsupport radius hです。Density / Forceの物理的な近傍範囲を決めます。
     float SmoothingRadius = 0.1f;
+
+    // Spatial HashのCellSizeをhに対する倍率で指定します。
+    // 1.0なら従来どおりCellSize == SmoothingRadiusです。
+    // Neighbor QueryはsearchRadiusから必要Cell範囲を計算するため、この値を変更しても
+    // 厳密なsupport radius判定はhのままで、物理結果を変えずに候補探索効率だけ比較できます。
+    float SpatialHashCellSizeScale = 1.0f;
 
     // Equation of Stateが目標とする静止密度 rho_0 です。
     float RestDensity = 1000.0f;

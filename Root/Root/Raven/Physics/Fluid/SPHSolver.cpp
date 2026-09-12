@@ -17,6 +17,7 @@ namespace ph
 namespace
 {
 constexpr float MinimumSmoothingRadius = 1.0e-4f;
+constexpr float MinimumSpatialHashCellSizeScale = 0.01f;
 
 void ResolveBoundaryAxis(float& position, float& velocity, float minimum, float maximum, float restitution)
 {
@@ -51,6 +52,9 @@ void SPHSolver::SetSettings(const SPHSettings& settings)
 {
     m_Settings = settings;
     m_Settings.SmoothingRadius = std::max(settings.SmoothingRadius, MinimumSmoothingRadius);
+    m_Settings.SpatialHashCellSizeScale = std::max(
+        settings.SpatialHashCellSizeScale,
+        MinimumSpatialHashCellSizeScale);
     m_Settings.RestDensity = std::max(0.0f, settings.RestDensity);
     m_Settings.PressureStiffness = std::max(0.0f, settings.PressureStiffness);
     m_Settings.Viscosity = std::max(0.0f, settings.Viscosity);
@@ -69,7 +73,13 @@ void SPHSolver::SetSettings(const SPHSettings& settings)
         std::max(settings.BoundaryMinimum.x, settings.BoundaryMaximum.x),
         std::max(settings.BoundaryMinimum.y, settings.BoundaryMaximum.y),
         std::max(settings.BoundaryMinimum.z, settings.BoundaryMaximum.z) };
-    m_SpatialHash.SetCellSize(m_Settings.SmoothingRadius);
+
+    // Kernel support radius hとSpatial Hash CellSizeは役割が異なります。
+    // hはDensity / Forceの物理結果を決め、CellSizeは候補探索の効率だけを決めます。
+    // Neighbor Queryはhから走査Cell数を求めるため、CellSizeを変更してもh内のParticleを取りこぼしません。
+    const float spatialHashCellSize =
+        m_Settings.SmoothingRadius * m_Settings.SpatialHashCellSizeScale;
+    m_SpatialHash.SetCellSize(spatialHashCellSize);
 }
 
 void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
