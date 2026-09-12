@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <vector>
 
 #include "Raven/Physics/Fluid/FluidParticle.h"
@@ -16,18 +15,11 @@ namespace ph
 // ============================================================================
 // SPH Solver
 // ============================================================================
-// Density -> Pressure -> Force -> Integration -> External Constraint -> Boundary
-// の順で1 Substepを進めます。
+// Density -> Pressure -> Force -> Integration -> Boundary の順で1 Substepを進めます。
 // Frame deltaTimeはStable Time Stepに基づいて必要な回数へ分割します。
-//
-// Scene / RigidBodyなど他Domainの型はSPHSolverへ持ち込まず、必要なCouplingは
-// SubstepConstraintCallback経由で外側から差し込みます。
 class SPHSolver
 {
 public:
-    using SubstepConstraintCallback =
-        std::function<void(std::vector<FluidParticle>& particles, float deltaTime)>;
-
     explicit SPHSolver(const SPHSettings& settings = SPHSettings{});
 
     void SetSettings(const SPHSettings& settings);
@@ -45,17 +37,7 @@ public:
 
     void Integrate(std::vector<FluidParticle>& particles, float deltaTime) const;
     void ResolveBoundary(std::vector<FluidParticle>& particles) const;
-
-    // 従来互換のStepです。外部Couplingを必要としない場合はこちらを使用します。
     void Step(std::vector<FluidParticle>& particles, float deltaTime);
-
-    // 各SubstepでIntegration直後に外部Constraint/Couplingを解決します。
-    // callbackはFluid固有のScene型を知らないため、Static Colliderだけでなく将来の
-    // RigidBody / SoftBody / Thermal Couplingにも同じ境界を利用できます。
-    void Step(
-        std::vector<FluidParticle>& particles,
-        float deltaTime,
-        const SubstepConstraintCallback& constraintCallback);
 
     uint32_t GetLastSubstepCount() const { return m_LastSubstepCount; }
     float GetLastMinimumSubstepDeltaTime() const { return m_LastMinimumSubstepDeltaTime; }
@@ -63,10 +45,7 @@ public:
 
 private:
     void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles) const;
-    void AdvanceSubstep(
-        std::vector<FluidParticle>& particles,
-        float deltaTime,
-        const SubstepConstraintCallback& constraintCallback);
+    void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime);
 
 private:
     SPHSettings m_Settings{};
