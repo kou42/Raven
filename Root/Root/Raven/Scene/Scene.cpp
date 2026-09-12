@@ -5,6 +5,8 @@
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/AnimationSystem.h"
 
+#include <cmath>
+
 namespace Raven
 {
 
@@ -267,7 +269,8 @@ void Scene::OnUpdatePhysics(float dt)
     m_PhysicsAccumulator += dt;
     uint32_t fixedStepCount = 0u;
 
-    while (m_PhysicsAccumulator >= m_FixedDeltaTime)
+    while (m_PhysicsAccumulator >= m_FixedDeltaTime
+        && fixedStepCount < m_MaxPhysicsStepsPerFrame)
     {
         // Fixed timestepが1 Application frame中に複数回走った場合、Physics Stateだけを連続して進めます。
         // SoftBody Mesh/GPU同期はloop終了後へ集約し、catch-up途中Stateの不要なuploadを避けます。
@@ -285,11 +288,24 @@ void Scene::OnUpdatePhysics(float dt)
         m_PhysicsWorld.SynchronizeOutputs();
     }
 
+    // 遅いframeの遅れを全て次frameへ持ち越すと、catch-up自身が次の遅れを作り続けます。
+    // 上限到達後は整数step分だけ破棄し、1step未満の端数は保持して通常時の時間積分を維持します。
+    // Solverのdtを大きくして追いつかせないため、衝突・XPBD・Rigid/Soft反作用の順序と精度は変わりません。
+    // 過負荷時はPhysicsの進行時間が実時間より短くなるため、破棄量も必ず診断へ公開します。
+    float droppedTime = 0.0f;
+    if (m_PhysicsAccumulator >= m_FixedDeltaTime)
+    {
+        const float remainder = std::fmod(m_PhysicsAccumulator, m_FixedDeltaTime);
+        droppedTime = m_PhysicsAccumulator - remainder;
+        m_PhysicsAccumulator = remainder;
+    }
+
     // 0 Stepのframeも記録し、1回あたりの重さとcatch-up回数を区別できるようにします。
-    // 残時間は次frameへ持ち越す元の契約を維持し、時間の破棄やStep数制限は行いません。
     CPUProfiler::Get().AddCounter("Physics.FixedStep.Count", static_cast<double>(fixedStepCount));
     CPUProfiler::Get().AddCounter("Physics.FixedStep.SimulatedMilliseconds",
         static_cast<double>(fixedStepCount) * static_cast<double>(m_FixedDeltaTime) * 1000.0);
+    CPUProfiler::Get().AddCounter("Physics.FixedStep.DroppedMilliseconds", droppedTime * 1000.0);
+    CPUProfiler::Get().AddCounter("Physics.FixedStep.AccumulatorMilliseconds", m_PhysicsAccumulator * 1000.0);
 
     // PhysicsDebugRendererには別Worldを再構築させず、このSceneが実際にStepした
     // Rigid Body PhysicsWorldを読み取り専用で関連付けます。

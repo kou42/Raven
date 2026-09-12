@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
@@ -56,12 +57,69 @@ bool IsNearlyEqual(float left, float right)
 {
     return std::abs(left - right) <= 1.0e-5f;
 }
+
+void RunScenePhysicsStepBudgetTest()
+{
+    // Sceneより先に生成し、Sceneの非所有RegistryよりParticipantを長生きさせます。
+    TestSoftBodySimulationParticipant participant;
+    Scene scene;
+    auto& world = scene.GetPhysicsSimulationWorld().GetSoftBodyWorld();
+    assert(world.RegisterSimulationParticipant(participant) == true);
+    assert(scene.GetMaxPhysicsStepsPerFrame() == 4u);
+    constexpr float step = 1.0f / 60.0f;
+
+    scene.OnUpdate(0.5f * step);
+    assert(participant.StepCount == 0u);
+    assert(participant.SynchronizationCount == 0u);
+    scene.OnUpdate(2.0f * step);
+    assert(participant.StepCount == 2u);
+    assert(participant.SynchronizationCount == 1u);
+
+    CPUProfiler& profiler = CPUProfiler::Get();
+    const bool wasEnabled = profiler.IsEnabled();
+    profiler.SetEnabled(true);
+    profiler.BeginFrame();
+    scene.OnUpdate(10.0f * step);
+    profiler.BeginFrame();
+    assert(participant.StepCount == 6u);
+    assert(participant.SynchronizationCount == 2u);
+    assert(IsNearlyEqual(participant.LastFixedDeltaTime, step));
+
+    // 実行4step / 破棄6step / 残り0.5stepが診断値にもそのまま出ることを確認します。
+    const auto counterValue = [&](const char* name)
+    {
+        for (const CPUProfileCounter& counter : profiler.GetLastFrame().Counters)
+        {
+            if (counter.Name == name)
+            {
+                return counter.Value;
+            }
+        }
+        assert(false);
+        return -1.0;
+    };
+    assert(counterValue("Physics.FixedStep.Count") == 4.0);
+    assert(std::abs(counterValue("Physics.FixedStep.DroppedMilliseconds") - 100.0) < 0.01);
+    assert(std::abs(counterValue("Physics.FixedStep.AccumulatorMilliseconds") - 500.0 * step) < 0.01);
+    profiler.SetEnabled(wasEnabled);
+
+    // 過負荷の整数stepは持ち越さず、端数だけが次frameの積分へ参加します。
+    scene.OnUpdate(0.6f * step);
+    assert(participant.StepCount == 7u);
+    assert(participant.SynchronizationCount == 3u);
+    scene.SetMaxPhysicsStepsPerFrame(0u);
+    assert(scene.GetMaxPhysicsStepsPerFrame() == 1u);
+    scene.OnUpdate(5.0f * step);
+    assert(participant.StepCount == 8u);
+    scene.OnDestroy();
+}
 }
 
 // PhysicsSimulationWorldがRigid Body / Soft Body Domainの入口を単一所有し、
 // SoftBodyWorldがSolver参照とFixed Step Participantを重複なく非所有管理できることを確認します。
 void RunPhysicsSimulationWorldSelfTests()
 {
+    RunScenePhysicsStepBudgetTest();
     PhysicsSimulationWorld simulationWorld;
 
     PhysicsWorld& rigidBodyWorld = simulationWorld.GetRigidBodyWorld();

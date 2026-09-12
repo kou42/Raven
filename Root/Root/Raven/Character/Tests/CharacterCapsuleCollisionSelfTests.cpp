@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "Raven/Character/CharacterController.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Components.h"
@@ -102,6 +103,43 @@ bool NearlyEqual(float a, float b, float epsilon = 1.0e-3f)
 
 void RunCharacterCapsuleCollisionSelfTests()
 {
+    {
+        Scene scene;
+        Entity wall = CreateWall(scene);
+        ph::PhysicsCapsuleCastSettings settings{};
+        ph::PhysicsCapsuleCastHit reference{};
+        assert(scene.GetPhysicsWorld().CapsuleCast(
+            scene, math::Vec3{}, math::Vec3{ 2.0f, 0.0f, 0.0f }, settings, reference));
+
+        // 遠方Colliderを増やしてもHitとTOIは変わらず、精密判定前に除外されることを確認します。
+        for (uint32_t index = 0u; index < 64u; ++index)
+        {
+            Entity distantWall = CreateWall(scene);
+            distantWall.GetComponent<TransformComponent>().Position.x = 100.0f + index * 2.0f;
+        }
+        CPUProfiler& profiler = CPUProfiler::Get();
+        const bool wasEnabled = profiler.IsEnabled();
+        profiler.SetEnabled(true);
+        profiler.BeginFrame();
+        ph::PhysicsCapsuleCastHit hit{};
+        assert(scene.GetPhysicsWorld().CapsuleCast(
+            scene, math::Vec3{}, math::Vec3{ 2.0f, 0.0f, 0.0f }, settings, hit));
+        profiler.BeginFrame();
+        assert(hit.HitEntity == wall);
+        assert(hit.Fraction == reference.Fraction);
+        assert(hit.Normal == reference.Normal);
+        assert(hit.Point == reference.Point);
+        double rejectedCount = 0.0;
+        for (const auto& counter : profiler.GetLastFrame().Counters)
+        {
+            if (counter.Name == "Physics.CapsuleCast.AABBRejectedCount")
+            {
+                rejectedCount += counter.Value;
+            }
+        }
+        assert(rejectedCount >= 64.0);
+        profiler.SetEnabled(wasEnabled);
+    }
     // ========================================================================
     // PhysicsWorld::CapsuleCast
     // ========================================================================

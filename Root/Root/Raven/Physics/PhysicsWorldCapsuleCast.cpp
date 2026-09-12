@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "Raven/Core/CPUProfiler.h"
+#include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -205,6 +207,17 @@ bool FindBlockingOverlap(
         settings.HalfLength);
     const ColliderComponent castCollider = BuildCastCollider(settings);
 
+    // CapsuleCastは初期Overlap・substep・二分探索のたびにここへ来ます。
+    // 離れたColliderへ高価なCapsule/Box等のNarrow Phaseを繰り返さないよう、
+    // 現在のCapsule AABBで先に除外します。SkinWidth込みの半径・中心を使い、
+    // 境界一致も候補に残すため、壁際・初期貫通の検出を省略しません。
+    // BuildCastTransformは常に直立・無回転です。汎用Capsuleの回転行列構築は不要です。
+    const math::Vec3 castExtents{
+        castCollider.Radius, castCollider.Radius + castCollider.HalfLength, castCollider.Radius };
+    const AABB castBounds{ castTransform.Position - castExtents, castTransform.Position + castExtents };
+    uint32_t aabbRejectedCount = 0u;
+    uint32_t narrowPhaseCount = 0u;
+
     bool foundBlockingOverlap = false;
     float bestIntoSurface = 0.0f;
 
@@ -216,6 +229,16 @@ bool FindBlockingOverlap(
             continue;
         }
 
+        AABB targetBounds{};
+        if (ComputeColliderAABB(targetTransform, targetCollider, targetBounds) == true
+            && castBounds.Overlaps(targetBounds) == false)
+        {
+            ++aabbRejectedCount;
+            continue;
+        }
+
+        // Plane等の有限AABBを作れないShapeは従来の判定へ必ずfallbackします。
+        ++narrowPhaseCount;
         ContactManifold manifold{};
         math::Vec3 obstacleNormal{};
         if (GenerateCastOverlap(
@@ -258,6 +281,8 @@ bool FindBlockingOverlap(
         }
     }
 
+    CPUProfiler::Get().AddCounter("Physics.CapsuleCast.AABBRejectedCount", aabbRejectedCount);
+    CPUProfiler::Get().AddCounter("Physics.CapsuleCast.NarrowPhaseCount", narrowPhaseCount);
     return foundBlockingOverlap;
 }
 
@@ -270,6 +295,7 @@ bool PhysicsWorld::CapsuleCast(
     const PhysicsCapsuleCastSettings& settings,
     PhysicsCapsuleCastHit& outHit)
 {
+    RAVEN_PROFILE_SCOPE("Physics.CapsuleCast");
     if (std::isfinite(settings.Radius) == false
         || std::isfinite(settings.HalfLength) == false
         || std::isfinite(settings.SkinWidth) == false

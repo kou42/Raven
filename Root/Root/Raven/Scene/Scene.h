@@ -81,6 +81,11 @@ public:
     const ph::PhysicsSimulationWorld& GetPhysicsSimulationWorld() const { return m_PhysicsWorld; }
     ph::PhysicsSimulationWorld& GetPhysicsSimulationWorld() { return m_PhysicsWorld; }
 
+    // 1描画frameが物理catch-upだけで占有されないようにする実行予算です。
+    // fixed dtやSolver反復数とは独立し、上限超過時は整数step分の遅れだけを破棄します。
+    void SetMaxPhysicsStepsPerFrame(uint32_t count) { m_MaxPhysicsStepsPerFrame = std::max(1u, count); }
+    uint32_t GetMaxPhysicsStepsPerFrame() const { return m_MaxPhysicsStepsPerFrame; }
+
     //+---------------------------------------------------------------------
     // テンプレート
     //+---------------------------------------------------------------------
@@ -140,6 +145,7 @@ private:
 
     float m_PhysicsAccumulator = 0.0f;
     float m_FixedDeltaTime = 1.0f / 60.0f;
+    uint32_t m_MaxPhysicsStepsPerFrame = 4u;
 
 private:
 

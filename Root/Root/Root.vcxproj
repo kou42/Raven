@@ -67,7 +67,12 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <!-- Debugの数値Kernelだけを最適化し、_DEBUG / Debug CRT / assertは維持します。
+         通常Sceneでは未最適化Clothがfixed-step予算を超え、catch-upを連鎖させていました。
+         Kernel内部を逐次デバッグする場合は /p:RavenOptimizePhysicsInDebug=false で無効化できます。 -->
+    <RavenOptimizePhysicsInDebug Condition="'$(RavenOptimizePhysicsInDebug)'==''">true</RavenOptimizePhysicsInDebug>
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -137,6 +142,18 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Raven\**\*.h" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)'=='Debug' and '$(RavenOptimizePhysicsInDebug)'=='true'">
+    <!-- 実測で支配的だった5ファイルに限定します。Scene / Demo / Testsは通常Debugのままです。
+         /O2と両立しない/RTC、Edit and ContinueをこのKernelだけ外し、PDBと浮動小数点精度は維持します。 -->
+    <ClCompile Update="Raven\Physics\SoftBody\SoftBodySolver.cpp;Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp;Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp;Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp;Raven\Physics\Solver\ContactSolver.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <FloatingPointModel>Precise</FloatingPointModel>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
