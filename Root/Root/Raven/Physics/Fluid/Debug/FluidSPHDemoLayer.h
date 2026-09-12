@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/SPHSolver.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -21,7 +22,7 @@ class Pipeline;
 // ============================================================================
 // SPHSolverのParticleを通常のSphere Entityへ同期し、Game View / Scene View上で
 // Density -> Pressure -> Force -> Integration -> Boundary の結果を目視確認します。
-// Simulation本体はSPHSolverへ閉じ、Layerは初期配置・描画Entity同期だけを担当します。
+// Simulation本体はSPHSolverへ閉じ、Scene Colliderとの接続はCoupling層へ分離します。
 class FluidSPHDemoLayer final : public Layer
 {
 public:
@@ -47,6 +48,7 @@ private:
 private:
     Application& m_Application;
     ph::SPHSolver m_Solver{};
+    ph::FluidStaticColliderCoupling m_StaticColliderCoupling{};
     std::vector<ph::FluidParticle> m_Particles;
     std::vector<Entity> m_ParticleEntities;
     Ref<Mesh> m_ParticleMesh;
