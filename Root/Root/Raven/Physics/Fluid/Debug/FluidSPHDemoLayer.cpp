@@ -49,6 +49,9 @@ void FluidSPHDemoLayer::OnAttach()
 
     CreateParticles();
 
+    // 初期格子のDensityを一度測り、その平均値をEOSのRestDensityへ採用します。
+    // Kernel・Mass・Spacingの組み合わせから自然に決まる密度を基準にすることで、
+    // Demo固有の見た目調整値をSPHSolver本体へ埋め込まずに済みます。
     ph::SPHSettings initialSettings{};
     initialSettings.SmoothingRadius = SmoothingRadius;
     initialSettings.PressureStiffness = 0.0f;
@@ -64,6 +67,8 @@ void FluidSPHDemoLayer::OnAttach()
     initialSettings.MaximumSubsteps = 16u;
     m_Solver.SetSettings(initialSettings);
 
+    // Static / Dynamic Couplingは同じParticle半径と反発係数を使用します。
+    // 接触応答の設定をSPHSolverへ混ぜず、Domain間Coupling固有値として分離します。
     ph::FluidStaticColliderCouplingSettings staticCouplingSettings{};
     staticCouplingSettings.ParticleRadius = RenderParticleRadius;
     staticCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
@@ -122,6 +127,8 @@ void FluidSPHDemoLayer::OnAttach()
     pipelineSpecification.DepthCompare = DepthCompareOperator::Less;
     pipelineSpecification.Blend = true;
 
+    // GPU Pipelineは全Particleで共有します。MaterialだけをParticleごとに分け、
+    // u_Tintの状態が別Particleへ漏れないようにします。
     m_ParticlePipeline = Pipeline::Create(pipelineSpecification);
     if (m_ParticlePipeline == nullptr)
     {
@@ -161,6 +168,8 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
         return;
     }
 
+    // Application frameの極端なstallをそのままSPHへ渡さないよう上限を設けます。
+    // その内側ではSPHSolver自身のStable Time Stepが必要なSubstepへ分割します。
     const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.0333333f);
     if (safeDeltaTime <= 0.0f)
     {
@@ -172,6 +181,8 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     Scene* scene = m_Application.GetScene();
     if (scene != nullptr)
     {
+        // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
+        // Normal / Dragの等量反対向きImpulseを返します。
         m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
         m_RigidBodyCoupling.ResolveScene(*scene, scene->GetPhysicsWorld(), m_Particles);
     }
@@ -181,6 +192,8 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
 
 void FluidSPHDemoLayer::OnRender()
 {
+    // Particleは通常のMeshRendererComponentとしてSceneへ登録済みです。
+    // SceneGame::RenderScene()のECS描画経路へ自動参加するため、専用Render処理は不要です。
 }
 
 void FluidSPHDemoLayer::CreateParticles()
