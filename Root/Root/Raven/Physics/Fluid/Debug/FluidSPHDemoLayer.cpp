@@ -78,8 +78,10 @@ void FluidSPHDemoLayer::OnAttach()
     rigidBodyCouplingSettings.ParticleRadius = RenderParticleRadius;
     rigidBodyCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
     // Demoでは弱めのDragを有効にし、RigidBody表面をFluidが完全に滑り抜ける状態を避けます。
-    // 物性値としての粘性抵抗はPressure Reaction等と合わせて後続工程で高精度化します。
     rigidBodyCouplingSettings.DragCoefficient = 0.15f;
+    // Particleの正圧を代表投影面積へ作用させ、RigidBodyへ面圧反作用として返します。
+    // 係数1.0を基準とし、SPHのPressure値とParticle半径から直接Impulseを構築します。
+    rigidBodyCouplingSettings.PressureReactionCoefficient = 1.0f;
     m_RigidBodyCoupling.SetSettings(rigidBodyCouplingSettings);
 
     m_Solver.ComputeDensity(m_Particles);
@@ -182,9 +184,13 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     if (scene != nullptr)
     {
         // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
-        // Normal / Dragの等量反対向きImpulseを返します。
+        // Normal / Pressure / Dragの等量反対向きImpulseを返します。
         m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
-        m_RigidBodyCoupling.ResolveScene(*scene, scene->GetPhysicsWorld(), m_Particles);
+        m_RigidBodyCoupling.ResolveScene(
+            *scene,
+            scene->GetPhysicsWorld(),
+            m_Particles,
+            safeDeltaTime);
     }
 
     SynchronizeRenderEntities();
