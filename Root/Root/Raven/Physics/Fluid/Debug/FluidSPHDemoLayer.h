@@ -14,6 +14,7 @@ namespace Raven
 class Application;
 class Material;
 class Mesh;
+class Pipeline;
 
 // ============================================================================
 // Fluid SPH Demo Layer
@@ -39,13 +40,22 @@ private:
     void CreateRenderEntities();
     void SynchronizeRenderEntities();
 
+    // RestDensity付近を水色、低密度/負圧側を青、高密度/正圧側を赤へ写像します。
+    // DensityとPressureを分けて参照することで、将来EOSを非線形化しても可視化側を拡張できます。
+    math::Vec3 ComputeParticleDebugColor(const ph::FluidParticle& particle) const;
+
 private:
     Application& m_Application;
     ph::SPHSolver m_Solver{};
     std::vector<ph::FluidParticle> m_Particles;
     std::vector<Entity> m_ParticleEntities;
     Ref<Mesh> m_ParticleMesh;
-    Ref<Material> m_ParticleMaterial;
+
+    // 全Particleは同じPipeline/Meshを共有し、Material instanceだけを分離します。
+    // u_TintはMaterialに保存されるため、1つのMaterialを共有すると最後に設定したParticle色で
+    // 全Entityが描画されてしまいます。Debug Demoでは288個程度なので、色の正しさを優先します。
+    Ref<Pipeline> m_ParticlePipeline;
+    std::vector<Ref<Material>> m_ParticleMaterials;
 };
 
 } // namespace Raven
