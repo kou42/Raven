@@ -7,6 +7,7 @@
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
 #include "Raven/Character/Debug/CharacterLocomotionDebugOverlayLayer.h"
+#include "Raven/Character/Debug/CharacterPositionDebugOverlayLayer.h"
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
@@ -15,6 +16,7 @@
 #include "Raven/Debug/BrowserDebugConfig.h"
 #include "Raven/Debug/BrowserDebugServer.h"
 #include "Raven/Debug/BrowserDebugViewer.h"
+#include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
@@ -106,26 +108,29 @@ int main()
         // OverlayはCharacter Layerを非所有pointerで参照しますが、ApplicationはApplication LayerをSceneより先に
         // 破棄するため、終了順序上もdangling pointerになりません。
         //
-        // 現在はRaven UI実装中の描画確認を優先するため、Overlayの「登録処理だけ」を#if 0で一時停止しています。
-        // CharacterControllerDemoLayer本体とRuntimeのCharacter Controller / Animation / Locomotion処理は
-        // 従来どおり動作します。デバッグHUDを再度確認する場合は下の#if 0を有効化してください。
+        // FluidデモはTerrainの影響を避けるため原点から離れた位置へ配置しています。
+        // そのためデモエリアへ移動するときに現在座標を確認できるよう、Character診断HUDを有効にします。
+        // HUDは表示専用のApplication Layerであり、Character Controller本体のPhysics更新順には影響しません。
         auto characterLayer = Raven::CreateScope<Raven::CharacterControllerDemoLayer>(*runtimeScene);
         Raven::CharacterControllerDemoLayer* characterLayerPointer = characterLayer.get();
 
         runtimeScene->PushLayer(std::move(characterLayer));
 
-#if 0
         if (characterLayerPointer != nullptr)
         {
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
                     *characterLayerPointer));
+
+            // 水槽本体は(100, 4, 100)を中心にXZ各4mの範囲です。
+            // Characterを+Z側の外へ配置すると、既定Yaw=0のOrbit Cameraが+Z側から-Zを向くため、
+            // Character越しに水槽全体を正面へ捉えやすくなります。Y=0は既存の無限Plane床上です。
+            const Raven::math::Vec3 fluidDemoCharacterDebugPosition{ 100.0f, 0.0f, 108.0f };
+            app.PushLayer(
+                Raven::CreateScope<Raven::CharacterPositionDebugOverlayLayer>(
+                    *characterLayerPointer,
+                    fluidDemoCharacterDebugPosition));
         }
-#else
-        // Overlayを無効化している間はpointerを使用しません。
-        // Character Layer自体の所有権はすでにruntimeSceneへ移譲済みです。
-        static_cast<void>(characterLayerPointer);
-#endif
     }
 
     app.PushLayer(Raven::CreateScope<Raven::SoftBodyClothDemoLayer>(app));
