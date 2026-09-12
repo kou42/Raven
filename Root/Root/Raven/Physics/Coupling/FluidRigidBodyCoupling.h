@@ -19,6 +19,10 @@ struct FluidRigidBodyCouplingSettings
 {
     float ParticleRadius = 0.02f;
     float Restitution = 0.0f;
+
+    // 接触しているFluidとRigidBody表面の相対速度を減衰させる係数です。
+    // 0で無効、1で1回のCoupling解決時に可能な範囲まで相対接線速度を揃えます。
+    float DragCoefficient = 0.0f;
 };
 
 struct FluidRigidBodyCouplingStatistics
@@ -27,18 +31,20 @@ struct FluidRigidBodyCouplingStatistics
     uint64_t CandidatePairCount = 0u;
     uint64_t ResolvedContactCount = 0u;
     uint64_t AppliedImpulseCount = 0u;
+    uint64_t AppliedDragImpulseCount = 0u;
     float TotalNormalImpulse = 0.0f;
+    float TotalDragImpulse = 0.0f;
 };
 
 // ============================================================================
 // Fluid <-> Dynamic RigidBody Coupling
 // ============================================================================
-// ParticleとDynamic RigidBody間で法線Impulseを双方向へ適用します。
+// ParticleとDynamic RigidBody間で法線Impulseと接線Drag Impulseを双方向へ適用します。
 // 接触幾何はStatic Couplingと共通化し、SPHのDensity / Pressure計算から独立させます。
 //
-// 現段階のImpulse有効質量はParticleとRigidBodyの並進InverseMassを使用します。
-// 作用点Impulse自体はPhysicsWorld::AddImpulseAtPointへ渡すため角速度も更新されますが、
-// r x I^-1 x r を含む回転有効質量はDrag / Pressure Reaction工程で拡張予定です。
+// Normal / Drag双方でRigidBodyのworld-space逆慣性を有効質量へ含めます。
+// これにより接触点が重心から外れた場合も、並進と回転へ使われるImpulse量を
+// 同じ剛体力学モデルで計算できます。
 class FluidRigidBodyCoupling
 {
 public:
