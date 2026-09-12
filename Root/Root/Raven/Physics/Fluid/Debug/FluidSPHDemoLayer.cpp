@@ -66,6 +66,15 @@ void FluidSPHDemoLayer::OnAttach()
     initialSettings.AccelerationTimeStepFactor = 0.20f;
     initialSettings.MaximumSubsteps = 16u;
     m_Solver.SetSettings(initialSettings);
+
+    // Fluid粒子の見た目半径とCollider判定半径を揃えます。
+    // Coupling設定はSPHSolverから独立させ、将来RigidBody / SoftBodyとの双方向Couplingへ
+    // 発展させてもFluid Solverの設定構造へ他Domain固有値を混ぜないようにします。
+    ph::FluidStaticColliderCouplingSettings couplingSettings{};
+    couplingSettings.ParticleRadius = RenderParticleRadius;
+    couplingSettings.Restitution = initialSettings.BoundaryRestitution;
+    m_StaticColliderCoupling.SetSettings(couplingSettings);
+
     m_Solver.ComputeDensity(m_Particles);
 
     float densitySum = 0.0f;
@@ -161,6 +170,15 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     }
 
     m_Solver.Step(m_Particles, safeDeltaTime);
+
+    Scene* scene = m_Application.GetScene();
+    if (scene != nullptr)
+    {
+        // Static Colliderとの幾何接触はSPHSolverの外で解決します。
+        // 現段階は一方向CouplingなのでStatic側へImpulseは返しません。
+        m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
+    }
+
     SynchronizeRenderEntities();
 }
 
