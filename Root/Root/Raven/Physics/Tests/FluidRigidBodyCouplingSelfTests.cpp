@@ -86,6 +86,7 @@ void RunFluidRigidBodyCouplingSelfTests()
         bodyEntity.AddComponent<ColliderComponent>(collider);
 
         std::vector<FluidParticle> particles(1u);
+        // Collider radius 0.5 + Particle radius 0.1 = 0.6 より内側に置き、接触Queryを成立させます。
         particles[0].Position = { 0.0f, 0.55f, 0.0f };
         particles[0].Velocity = { 1.0f, 0.0f, 0.0f };
         particles[0].Mass = 1.0f;
