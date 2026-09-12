@@ -242,11 +242,11 @@ void FluidSPHDemoLayer::CreateRenderEntities()
         Entity entity = scene->CreateEntity("Fluid Particle");
         entity.GetComponent<TransformComponent>().Scale = { RenderParticleRadius, RenderParticleRadius, RenderParticleRadius };
 
-        Ref<Material> material = Material::Create(m_ParticlePipeline);
-        MeshRendererComponent renderer{};
-        renderer.MeshAsset = m_ParticleMesh;
-        renderer.MaterialAsset = material;
-        entity.AddComponent<MeshRendererComponent>(renderer);
+        // RavenのMaterialはFactoryではなくコンストラクタでPipelineを受け取る設計です。
+        // ParticleごとにMaterialを分離し、各Entityのu_Tintを独立して保持します。
+        Ref<Material> material = CreateRef<Material>(m_ParticlePipeline);
+        entity.AddComponent<MeshRendererComponent>(
+            MeshRendererComponent{ m_ParticleMesh, material });
 
         m_ParticleEntities.push_back(entity);
         m_ParticleMaterials.push_back(material);
@@ -290,7 +290,9 @@ void FluidSPHDemoLayer::SynchronizeRenderEntities()
         {
             color = LerpColor(RestDensityColor, LowDensityColor, negative);
         }
-        m_ParticleMaterials[i]->Set("u_Tint", math::Vec4{ color.x, color.y, color.z, 0.72f });
+        m_ParticleMaterials[i]->SetUniform(
+            "u_Tint",
+            math::Vec4{ color.x, color.y, color.z, 0.72f });
     }
 }
 
