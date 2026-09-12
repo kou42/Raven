@@ -4,7 +4,6 @@
 #include <string>
 #include <unordered_map>
 #include <variant>
-#include <glm/glm.hpp>
 
 #include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Math/Math.h"
