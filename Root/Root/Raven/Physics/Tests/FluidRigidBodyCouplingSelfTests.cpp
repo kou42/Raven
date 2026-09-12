@@ -86,7 +86,6 @@ void RunFluidRigidBodyCouplingSelfTests()
         bodyEntity.AddComponent<ColliderComponent>(collider);
 
         std::vector<FluidParticle> particles(1u);
-        // Collider radius 0.5 + Particle radius 0.1 = 0.6 より内側に置き、接触Queryを成立させます。
         particles[0].Position = { 0.0f, 0.55f, 0.0f };
         particles[0].Velocity = { 1.0f, 0.0f, 0.0f };
         particles[0].Mass = 1.0f;
@@ -105,6 +104,48 @@ void RunFluidRigidBodyCouplingSelfTests()
         assert(std::abs(momentum - 1.0f) <= 1.0e-5f);
         assert(coupling.GetLastStatistics().AppliedDragImpulseCount == 1u);
         assert(coupling.GetLastStatistics().TotalDragImpulse > 0.0f);
+    }
+
+    // 正圧pをParticleの投影面積pi*r^2へ作用させ、J=p*A*dtの反作用が
+    // ParticleとRigidBodyへ等量反対向きに入ることを確認します。
+    {
+        Scene scene{};
+        Entity bodyEntity = scene.CreateEntity("Fluid Coupling Pressure Sphere");
+        RigidBodyComponent rigidBody{};
+        rigidBody.SetBodyType(BodyType::Dynamic);
+        rigidBody.SetMass(1.0f);
+        rigidBody.UseGravity = false;
+        bodyEntity.AddComponent<RigidBodyComponent>(rigidBody);
+
+        ColliderComponent collider{};
+        collider.Type = ColliderType::Sphere;
+        collider.Radius = 0.5f;
+        bodyEntity.AddComponent<ColliderComponent>(collider);
+
+        std::vector<FluidParticle> particles(1u);
+        particles[0].Position = { 0.0f, 0.55f, 0.0f };
+        particles[0].Velocity = {};
+        particles[0].Mass = 1.0f;
+        particles[0].Pressure = 10.0f;
+
+        FluidRigidBodyCouplingSettings settings{};
+        settings.ParticleRadius = 0.1f;
+        settings.PressureReactionCoefficient = 1.0f;
+        FluidRigidBodyCoupling coupling(settings);
+        constexpr float deltaTime = 0.1f;
+        coupling.ResolveScene(scene, scene.GetPhysicsWorld(), particles, deltaTime);
+
+        const RigidBodyComponent& resolvedBody = bodyEntity.GetComponent<RigidBodyComponent>();
+        constexpr float pi = 3.14159265358979323846f;
+        const float expectedImpulse = 10.0f * pi * 0.1f * 0.1f * deltaTime;
+        assert(std::abs(particles[0].Velocity.y - expectedImpulse) <= 1.0e-5f);
+        assert(std::abs(resolvedBody.LinearVelocity.y + expectedImpulse) <= 1.0e-5f);
+        assert(std::abs(resolvedBody.AngularVelocity.Length()) <= 1.0e-5f);
+
+        const float momentum = particles[0].Velocity.y + resolvedBody.LinearVelocity.y;
+        assert(std::abs(momentum) <= 1.0e-5f);
+        assert(coupling.GetLastStatistics().AppliedPressureImpulseCount == 1u);
+        assert(std::abs(coupling.GetLastStatistics().TotalPressureImpulse - expectedImpulse) <= 1.0e-5f);
     }
 
     {
