@@ -64,25 +64,30 @@ public:
             return;
         }
 
+        // 初回表示時だけ右上へ配置します。
+        // 以降はImGuiのWindow位置を固定しないことで、タイトルバーをドラッグして
+        // Fluid HUDなど他のDebug UIと重ならない位置へ自由に移動できます。
         constexpr float Margin = 10.0f;
-        const ImVec2 windowPosition{
+        const ImVec2 initialWindowPosition{
             viewport->WorkPos.x + viewport->WorkSize.x - Margin,
             viewport->WorkPos.y + Margin
         };
 
         ImGui::SetNextWindowPos(
-            windowPosition,
-            ImGuiCond_Always,
+            initialWindowPosition,
+            ImGuiCond_FirstUseEver,
             ImVec2{ 1.0f, 0.0f });
         ImGui::SetNextWindowBgAlpha(0.78f);
 
+        // ドラッグ用タイトルバーを残しつつResize/Collapse等は不要なので個別に無効化します。
+        // NoDecoration / NoMoveを使うとWindow全体がドラッグ不能になるため使用しません。
         const ImGuiWindowFlags windowFlags =
-            ImGuiWindowFlags_NoDecoration
-            | ImGuiWindowFlags_AlwaysAutoResize
+            ImGuiWindowFlags_AlwaysAutoResize
+            | ImGuiWindowFlags_NoResize
+            | ImGuiWindowFlags_NoCollapse
             | ImGuiWindowFlags_NoSavedSettings
             | ImGuiWindowFlags_NoFocusOnAppearing
-            | ImGuiWindowFlags_NoNav
-            | ImGuiWindowFlags_NoMove;
+            | ImGuiWindowFlags_NoNav;
 
         if (ImGui::Begin("Character Position Debug", nullptr, windowFlags) == true)
         {
