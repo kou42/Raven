@@ -71,9 +71,8 @@ void RunFluidRigidBodyCouplingSelfTests()
         assert(std::abs(resolvedBody.AngularVelocity.z + expectedImpulse * 0.75f) <= 1.0e-5f);
     }
 
-    // Sphere表面を接線方向へ滑るParticleへDragを適用します。
-    // 中心を通る接線作用点なのでRigidBodyには回転も発生しますが、ParticleとBodyの
-    // x方向線形運動量はInternal Impulseによって保存されます。
+    // Sphere上面へわずかに貫通したParticleを接線方向へ滑らせ、Dragを確認します。
+    // DragはInternal Impulseなのでx方向線形運動量を保存しつつ、接触点のr x JでBodyを回転させます。
     {
         Scene scene{};
         Entity bodyEntity = scene.CreateEntity("Fluid Coupling Drag Sphere");
