@@ -26,11 +26,11 @@ constexpr float ParticleMass = 1.0f;
 constexpr float RenderParticleRadius = 0.12f;
 constexpr float DensityVisualizationRange = 0.15f;
 
-// Terrainが存在する原点周辺を避け、Fluid検証専用エリアを(+100, +100)側へ分離します。
+// Terrainが存在する原点周辺を避け、Fluid検証専用エリアを(+50, +50)側へ分離します。
 // Particle / SPH Boundary / 水槽Collider / 落下Bodyはすべてこの基準位置から配置します。
-// 個別の座標を直接100付近へずらすのではなく共通基準から導出し、将来デモ位置を変更した場合も
+// 個別の座標を直接50付近へずらすのではなく共通基準から導出し、将来デモ位置を変更した場合も
 // Simulation境界と可視化水槽、Coupling対象Bodyが互いにずれないようにします。
-constexpr math::Vec3 FluidDemoCenter{ 100.0f, 4.0f, 100.0f };
+constexpr math::Vec3 FluidDemoCenter{ 50.0f, 4.0f, 50.0f };
 constexpr math::Vec3 FluidOrigin = FluidDemoCenter + math::Vec3{ -0.8f, 0.0f, -0.8f };
 constexpr math::Vec3 BoundaryMinimum = FluidDemoCenter + math::Vec3{ -4.0f, -3.8f, -4.0f };
 constexpr math::Vec3 BoundaryMaximum = FluidDemoCenter + math::Vec3{ 4.0f, 4.0f, 4.0f };
@@ -340,37 +340,72 @@ void FluidSPHDemoLayer::CreateDemoTank()
         { FluidDemoCenter.x, tankCenterY, BoundaryMaximum.z + TankWallThickness * 0.5f },
         { TankHalfWidth * 2.0f, TankHeight, TankWallThickness });
 
-    // 水面へ向けて落下させる目印兼Coupling検証Bodyです。
-    // 質量をParticle総量より十分小さくし、Pressure Reaction / Buoyancyによる反作用を目視しやすくします。
-    Ref<Material> bodyMaterial = CreateRef<Material>(m_ParticlePipeline);
-    bodyMaterial->SetUniform("u_Tint", math::Vec3{ 1.0f, 0.55f, 0.10f });
-    bodyMaterial->SetUniform("u_Alpha", 1.0f);
+    // BoxとSphereを同じ高さから左右へ並べて落下させ、Collider形状が異なっても
+    // 同じFluidRigidBodyCouplingから浮力・面圧・Dragを受けることを比較できるようにします。
+    // 現在の浮力はParticle接触量から近似するため、厳密な排水体積比較ではなく挙動確認用です。
+    constexpr float TestBodyMass = 0.50f;
+    constexpr float TestBodyHeightOffset = 3.0f;
 
-    Entity body = scene->CreateEntity("Fluid Buoyancy Test Body");
-    TransformComponent& bodyTransform = body.GetComponent<TransformComponent>();
-    bodyTransform.Position = FluidDemoCenter + math::Vec3{ 0.0f, 3.0f, 0.0f };
-    bodyTransform.Scale = { 0.8f, 0.8f, 0.8f };
-    body.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_DemoCubeMesh, bodyMaterial });
+    Ref<Material> boxMaterial = CreateRef<Material>(m_ParticlePipeline);
+    boxMaterial->SetUniform("u_Tint", math::Vec3{ 1.0f, 0.55f, 0.10f });
+    boxMaterial->SetUniform("u_Alpha", 1.0f);
 
-    // 通常のPhysicsWorldで重力・慣性を受けるDynamic Bodyとして作成します。
-    // Fluid側からはFluidRigidBodyCouplingを通してのみImpulseを返し、RigidBody統合処理を二重化しません。
-    RigidBodyComponent rigidBody{};
-    rigidBody.SetBodyType(BodyType::Dynamic);
-    rigidBody.SetMass(2.0f);
-    rigidBody.LinearDamping = 0.02f;
-    rigidBody.AngularDamping = 0.05f;
-    rigidBody.UseGravity = true;
-    rigidBody.AllowSleep = false;
-    body.AddComponent<RigidBodyComponent>(rigidBody);
+    Entity box = scene->CreateEntity("Fluid Buoyancy Test Box");
+    TransformComponent& boxTransform = box.GetComponent<TransformComponent>();
+    boxTransform.Position = FluidDemoCenter + math::Vec3{ -0.75f, TestBodyHeightOffset, 0.0f };
+    boxTransform.Scale = { 0.8f, 0.8f, 0.8f };
+    box.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_DemoCubeMesh, boxMaterial });
 
-    ColliderComponent bodyCollider{};
-    bodyCollider.Type = ColliderType::Box;
-    bodyCollider.HalfExtents = bodyTransform.Scale * 0.5f;
-    bodyCollider.Restitution = 0.05f;
-    bodyCollider.StaticFriction = 0.4f;
-    bodyCollider.DynamicFriction = 0.2f;
-    body.AddComponent<ColliderComponent>(bodyCollider);
-    m_DemoEntities.push_back(body);
+    RigidBodyComponent boxRigidBody{};
+    boxRigidBody.SetBodyType(BodyType::Dynamic);
+    boxRigidBody.SetMass(TestBodyMass);
+    boxRigidBody.LinearDamping = 0.02f;
+    boxRigidBody.AngularDamping = 0.05f;
+    boxRigidBody.UseGravity = true;
+    boxRigidBody.AllowSleep = false;
+    box.AddComponent<RigidBodyComponent>(boxRigidBody);
+
+    ColliderComponent boxCollider{};
+    boxCollider.Type = ColliderType::Box;
+    boxCollider.HalfExtents = boxTransform.Scale * 0.5f;
+    boxCollider.Restitution = 0.05f;
+    boxCollider.StaticFriction = 0.4f;
+    boxCollider.DynamicFriction = 0.2f;
+    box.AddComponent<ColliderComponent>(boxCollider);
+    m_DemoEntities.push_back(box);
+
+    Ref<Material> sphereMaterial = CreateRef<Material>(m_ParticlePipeline);
+    sphereMaterial->SetUniform("u_Tint", math::Vec3{ 0.55f, 1.0f, 0.20f });
+    sphereMaterial->SetUniform("u_Alpha", 1.0f);
+
+    // PrimitiveMeshFactory::CreateSphere()は半径0.5のSphereです。
+    // Scaleを直径として扱い、見た目の半径とCollider::Radiusを一致させます。
+    constexpr float SphereDiameter = 0.90f;
+    constexpr float SphereRadius = SphereDiameter * 0.5f;
+
+    Entity sphere = scene->CreateEntity("Fluid Buoyancy Test Sphere");
+    TransformComponent& sphereTransform = sphere.GetComponent<TransformComponent>();
+    sphereTransform.Position = FluidDemoCenter + math::Vec3{ 0.75f, TestBodyHeightOffset, 0.0f };
+    sphereTransform.Scale = { SphereDiameter, SphereDiameter, SphereDiameter };
+    sphere.AddComponent<MeshRendererComponent>(MeshRendererComponent{ m_ParticleMesh, sphereMaterial });
+
+    RigidBodyComponent sphereRigidBody{};
+    sphereRigidBody.SetBodyType(BodyType::Dynamic);
+    sphereRigidBody.SetMass(TestBodyMass);
+    sphereRigidBody.LinearDamping = 0.02f;
+    sphereRigidBody.AngularDamping = 0.05f;
+    sphereRigidBody.UseGravity = true;
+    sphereRigidBody.AllowSleep = false;
+    sphere.AddComponent<RigidBodyComponent>(sphereRigidBody);
+
+    ColliderComponent sphereCollider{};
+    sphereCollider.Type = ColliderType::Sphere;
+    sphereCollider.Radius = SphereRadius;
+    sphereCollider.Restitution = 0.05f;
+    sphereCollider.StaticFriction = 0.4f;
+    sphereCollider.DynamicFriction = 0.2f;
+    sphere.AddComponent<ColliderComponent>(sphereCollider);
+    m_DemoEntities.push_back(sphere);
 }
 
 math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
