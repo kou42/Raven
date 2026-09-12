@@ -1,6 +1,7 @@
 #include "Raven/Physics/Coupling/FluidRigidBodyCoupling.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Math/Math.h"
@@ -14,6 +15,25 @@ namespace Raven::ph
 namespace
 {
 constexpr float MinimumParticleRadius = 0.0f;
+
+float ComputeDirectionalEffectiveInverseMass(
+    float particleInverseMass,
+    float bodyInverseMass,
+    const math::Mat3& bodyInverseInertia,
+    const math::Vec3& leverArm,
+    const math::Vec3& direction)
+{
+    // 任意方向のImpulseに対するRigidBodyの回転応答を有効質量へ変換します。
+    // NormalとDragで同じ式を使うことで、重心から外れた接触の回転しやすさを一貫して扱います。
+    const math::Vec3 angularResponse = bodyInverseInertia
+        * math::Vec3::Cross(leverArm, direction);
+    const float rotationalInverseMass = math::Vec3::Dot(
+        math::Vec3::Cross(angularResponse, leverArm),
+        direction);
+    return particleInverseMass
+        + bodyInverseMass
+        + std::max(0.0f, rotationalInverseMass);
+}
 }
 
 FluidRigidBodyCoupling::FluidRigidBodyCoupling(
@@ -28,6 +48,7 @@ void FluidRigidBodyCoupling::SetSettings(
     m_Settings = settings;
     m_Settings.ParticleRadius = std::max(MinimumParticleRadius, settings.ParticleRadius);
     m_Settings.Restitution = std::clamp(settings.Restitution, 0.0f, 1.0f);
+    m_Settings.DragCoefficient = std::clamp(settings.DragCoefficient, 0.0f, 1.0f);
 }
 
 void FluidRigidBodyCoupling::ResolveScene(
@@ -78,21 +99,13 @@ void FluidRigidBodyCoupling::ResolveScene(
     }
 
     CPUProfiler& profiler = CPUProfiler::Get();
-    profiler.AddCounter(
-        "Physics.Fluid.RigidBody.DynamicBodyCount",
-        static_cast<double>(m_LastStatistics.DynamicBodyCount));
-    profiler.AddCounter(
-        "Physics.Fluid.RigidBody.CandidatePairCount",
-        static_cast<double>(m_LastStatistics.CandidatePairCount));
-    profiler.AddCounter(
-        "Physics.Fluid.RigidBody.ResolvedContactCount",
-        static_cast<double>(m_LastStatistics.ResolvedContactCount));
-    profiler.AddCounter(
-        "Physics.Fluid.RigidBody.AppliedImpulseCount",
-        static_cast<double>(m_LastStatistics.AppliedImpulseCount));
-    profiler.AddCounter(
-        "Physics.Fluid.RigidBody.TotalNormalImpulse",
-        static_cast<double>(m_LastStatistics.TotalNormalImpulse));
+    profiler.AddCounter("Physics.Fluid.RigidBody.DynamicBodyCount", static_cast<double>(m_LastStatistics.DynamicBodyCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.CandidatePairCount", static_cast<double>(m_LastStatistics.CandidatePairCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.ResolvedContactCount", static_cast<double>(m_LastStatistics.ResolvedContactCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.AppliedImpulseCount", static_cast<double>(m_LastStatistics.AppliedImpulseCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.AppliedDragImpulseCount", static_cast<double>(m_LastStatistics.AppliedDragImpulseCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.TotalNormalImpulse", static_cast<double>(m_LastStatistics.TotalNormalImpulse));
+    profiler.AddCounter("Physics.Fluid.RigidBody.TotalDragImpulse", static_cast<double>(m_LastStatistics.TotalDragImpulse));
 }
 
 bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
@@ -110,19 +123,11 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
     }
 
     FluidColliderContact contact{};
-    if (GenerateFluidParticleColliderContact(
-        particle,
-        m_Settings.ParticleRadius,
-        transform,
-        collider,
-        contact) == false)
+    if (GenerateFluidParticleColliderContact(particle, m_Settings.ParticleRadius, transform, collider, contact) == false)
     {
         return false;
     }
 
-    // Penetration correctionはParticle側へ適用します。
-    // RigidBodyのTransformを直接移動するとPhysicsWorldのContact Solverと競合するため、
-    // Body側の反応はImpulseだけに限定します。
     particle.Position = contact.CorrectedParticlePosition;
 
     const float particleMass = std::max(0.0f, particle.Mass);
@@ -131,65 +136,88 @@ bool FluidRigidBodyCoupling::ResolveParticleAgainstRigidBody(
         return true;
     }
 
-    const math::Vec3 leverArm = contact.Point - transform.Position;
-    const math::Vec3 bodyPointVelocity = rigidBody.LinearVelocity
-        + math::Vec3::Cross(rigidBody.AngularVelocity, leverArm);
-    const math::Vec3 relativeVelocity = particle.Velocity - bodyPointVelocity;
-    const float relativeNormalVelocity = math::Vec3::Dot(relativeVelocity, contact.Normal);
-    if (relativeNormalVelocity >= 0.0f)
-    {
-        return true;
-    }
-
     const float particleInverseMass = 1.0f / particleMass;
+    const math::Vec3 leverArm = contact.Point - transform.Position;
+    const math::Mat3 bodyInverseInertia = ComputeWorldInverseInertia(&transform, &rigidBody, &collider);
 
-    // RigidBodyの接触点が重心から外れている場合、法線Impulseは並進だけでなく回転も起こします。
-    // その回転しやすさを分母へ含めないと、箱の端などで必要以上に大きなImpulseを与えてしまいます。
-    // k_rot = n dot ((I^-1 * (r x n)) x r)
-    const math::Mat3 bodyInverseInertia = ComputeWorldInverseInertia(
-        &transform,
-        &rigidBody,
-        &collider);
-    const math::Vec3 angularResponse = bodyInverseInertia
-        * math::Vec3::Cross(leverArm, contact.Normal);
-    const float rotationalInverseMass = math::Vec3::Dot(
-        math::Vec3::Cross(angularResponse, leverArm),
-        contact.Normal);
-    const float effectiveInverseMass = particleInverseMass
-        + rigidBody.InverseMass
-        + std::max(0.0f, rotationalInverseMass);
-    if (effectiveInverseMass <= math::Epsilon)
+    // ------------------------------------------------------------------------
+    // Normal collision impulse
+    // ------------------------------------------------------------------------
+    math::Vec3 bodyPointVelocity = rigidBody.LinearVelocity
+        + math::Vec3::Cross(rigidBody.AngularVelocity, leverArm);
+    math::Vec3 relativeVelocity = particle.Velocity - bodyPointVelocity;
+    const float relativeNormalVelocity = math::Vec3::Dot(relativeVelocity, contact.Normal);
+
+    if (relativeNormalVelocity < 0.0f)
     {
-        return true;
+        const float normalEffectiveInverseMass = ComputeDirectionalEffectiveInverseMass(
+            particleInverseMass,
+            rigidBody.InverseMass,
+            bodyInverseInertia,
+            leverArm,
+            contact.Normal);
+        if (normalEffectiveInverseMass > math::Epsilon)
+        {
+            const float restitution = std::min(
+                m_Settings.Restitution,
+                std::clamp(collider.Restitution, 0.0f, 1.0f));
+            const float impulseMagnitude =
+                -(1.0f + restitution) * relativeNormalVelocity / normalEffectiveInverseMass;
+
+            if (impulseMagnitude > 0.0f)
+            {
+                const math::Vec3 impulseOnParticle = contact.Normal * impulseMagnitude;
+                particle.Velocity += impulseOnParticle * particleInverseMass;
+                physicsWorld.AddImpulseAtPoint(scene, entity, -impulseOnParticle, contact.Point);
+
+                ++m_LastStatistics.AppliedImpulseCount;
+                m_LastStatistics.TotalNormalImpulse += impulseMagnitude;
+            }
+        }
     }
 
-    const float restitution = std::min(
-        m_Settings.Restitution,
-        std::clamp(collider.Restitution, 0.0f, 1.0f));
-
-    // J = -(1+e) v_rel,n / K
-    // KにはParticle/Bodyの並進InverseMassに加え、接触点の回転有効質量を含めます。
-    // これにより重心接触では従来式へ退化し、オフセンター接触では回転へ使われる分だけ
-    // 法線Impulseが自然に小さくなります。
-    const float impulseMagnitude =
-        -(1.0f + restitution) * relativeNormalVelocity / effectiveInverseMass;
-    if (impulseMagnitude <= 0.0f)
+    // ------------------------------------------------------------------------
+    // Tangential drag impulse
+    // ------------------------------------------------------------------------
+    // Normal impulse適用後の速度から接線成分を再計算します。
+    // Dragは法線方向の反発量を変えず、FluidとRigidBody表面の滑りだけを減衰させます。
+    if (m_Settings.DragCoefficient > 0.0f)
     {
-        return true;
+        bodyPointVelocity = rigidBody.LinearVelocity
+            + math::Vec3::Cross(rigidBody.AngularVelocity, leverArm);
+        relativeVelocity = particle.Velocity - bodyPointVelocity;
+        const math::Vec3 tangentialVelocity = relativeVelocity
+            - contact.Normal * math::Vec3::Dot(relativeVelocity, contact.Normal);
+        const float tangentialSpeedSq = tangentialVelocity.LengthSq();
+
+        if (tangentialSpeedSq > math::Epsilon * math::Epsilon)
+        {
+            const float tangentialSpeed = std::sqrt(tangentialSpeedSq);
+            const math::Vec3 tangent = tangentialVelocity / tangentialSpeed;
+            const float dragEffectiveInverseMass = ComputeDirectionalEffectiveInverseMass(
+                particleInverseMass,
+                rigidBody.InverseMass,
+                bodyInverseInertia,
+                leverArm,
+                tangent);
+
+            if (dragEffectiveInverseMass > math::Epsilon)
+            {
+                // 相対接線速度を0へ近づけるImpulseへDragCoefficientを掛けます。
+                // 係数を[0,1]へ制限することで、1回の解決で相対速度を反転させません。
+                const float dragImpulseMagnitude = m_Settings.DragCoefficient
+                    * tangentialSpeed / dragEffectiveInverseMass;
+                const math::Vec3 dragImpulseOnParticle = -tangent * dragImpulseMagnitude;
+
+                particle.Velocity += dragImpulseOnParticle * particleInverseMass;
+                physicsWorld.AddImpulseAtPoint(scene, entity, -dragImpulseOnParticle, contact.Point);
+
+                ++m_LastStatistics.AppliedDragImpulseCount;
+                m_LastStatistics.TotalDragImpulse += dragImpulseMagnitude;
+            }
+        }
     }
 
-    const math::Vec3 impulseOnParticle = contact.Normal * impulseMagnitude;
-    particle.Velocity += impulseOnParticle * particleInverseMass;
-
-    // Newtonの第三法則に従い、RigidBodyへ等量反対向きのImpulseを返します。
-    physicsWorld.AddImpulseAtPoint(
-        scene,
-        entity,
-        -impulseOnParticle,
-        contact.Point);
-
-    ++m_LastStatistics.AppliedImpulseCount;
-    m_LastStatistics.TotalNormalImpulse += impulseMagnitude;
     return true;
 }
 
