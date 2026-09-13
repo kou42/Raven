@@ -11,21 +11,21 @@ namespace Raven::ph
 // ThermalContact
 // ============================================================================
 // 2つの集中熱容量間で熱を伝える接続を表します。
-// Solver内部では形状や距離を直接解釈せず、熱コンダクタンス G[W/K] だけを使用します。
-// これによりRigid Contact、明示Link、将来のSoftBody Contactなど異なる接触モデルを
-// 同じ熱伝導Solverへ接続できます。
+// Solverの正規入力は熱コンダクタンス G[W/K] です。
+// ContactArea等は既存呼び出しとの互換性と診断表示用に残し、RegisterContact時に
+// ThermalConductanceが未指定の場合だけ G = k_eff*A/d へ正規化します。
 struct ThermalContact
 {
     ThermalBody* BodyA = nullptr;
     ThermalBody* BodyB = nullptr;
     float ThermalConductance = 0.0f;
+
+    // Legacy/diagnostic geometry. SolverのStep()はこれらを直接参照しません。
+    float ContactArea = 0.0f;
+    float ConductionDistance = 0.0f;
+    float ConductivityScale = 1.0f;
 };
 
-// ============================================================================
-// ThermalWorld
-// ============================================================================
-// Ravenの熱Domainを担当する最小Worldです。
-// Body/Contactは所有せず、登録された参照をFixed Stepで更新します。
 class ThermalWorld
 {
 public:
@@ -39,7 +39,7 @@ public:
     void Step(float fixedDeltaTime);
 
     // 材料熱伝導率と簡易形状パラメータから G[W/K] を構築します。
-    // k*A/d は境界側の近似に閉じ込め、Solver本体はConductanceだけを扱います。
+    // 将来、接触熱抵抗を直接モデル化する境界はこの関数を使わずGを直接設定できます。
     static float CalculateConductance(
         const ThermalBody& bodyA,
         const ThermalBody& bodyB,
