@@ -19,7 +19,6 @@ float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody
     }
 
     // 2材料が同じ有効距離を分担する簡易直列熱抵抗モデルとして調和平均を使用します。
-    // 接触抵抗をより詳細に扱う場合は、境界側で直接ThermalConductanceへ変換します。
     return (2.0f * conductivityA * conductivityB) / (conductivityA + conductivityB);
 }
 }
@@ -69,12 +68,25 @@ bool ThermalWorld::RegisterContact(const ThermalContact& contact)
         return false;
     }
 
-    if (contact.ThermalConductance <= 0.0f)
+    ThermalContact normalizedContact = contact;
+    if (normalizedContact.ThermalConductance <= 0.0f)
+    {
+        // 旧来のA/d入力も登録境界で一度だけGへ変換します。
+        // Step()は正規化済みThermalConductanceだけを見るため、Solverを形状モデルから分離できます。
+        normalizedContact.ThermalConductance = CalculateConductance(
+            *normalizedContact.BodyA,
+            *normalizedContact.BodyB,
+            normalizedContact.ContactArea,
+            normalizedContact.ConductionDistance,
+            normalizedContact.ConductivityScale);
+    }
+
+    if (normalizedContact.ThermalConductance <= 0.0f)
     {
         return false;
     }
 
-    m_Contacts.push_back(contact);
+    m_Contacts.push_back(normalizedContact);
     return true;
 }
 
