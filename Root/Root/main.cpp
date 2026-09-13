@@ -30,6 +30,7 @@
 #include "Raven/Physics/Tests/PhysicsSimulationWorldSelfTests.h"
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
 #include "Raven/Physics/Tests/StaticMeshTriangleBVHSelfTests.h"
+#include "Raven/Physics/Tests/ThermalWorldSelfTests.h"
 #include "Raven/UI/Svg/Debug/UISvgDemoLayer.h"
 #endif
 
@@ -53,6 +54,7 @@ int main()
     Raven::ph::tests::RunPhysicsSimulationWorldSelfTests();
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
     Raven::ph::tests::RunStaticMeshTriangleBVHSelfTests();
+    Raven::ph::tests::RunThermalWorldSelfTests();
 
     // ========================================================================
     // Browser Debug Viewer
