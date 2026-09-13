@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/SoftBody/SoftBodySimulationParticipant.h"
 #include "Raven/Physics/Thermal/ThermalWorld.h"
@@ -60,6 +61,43 @@ private:
 };
 
 // ============================================================================
+// FluidWorld
+// ============================================================================
+// Fluid DomainをPhysicsSimulationWorld配下へ統合するための非所有Registryです。
+// SPH / PBF / FLIPなど具体的なSolverやParticle所有権はParticipant側へ残し、
+// WorldはFixed Step実行順序とApplication frame末尾の出力同期だけを担当します。
+class FluidWorld
+{
+public:
+    bool RegisterSimulationParticipant(FluidSimulationParticipant& participant);
+    bool UnregisterSimulationParticipant(FluidSimulationParticipant& participant);
+
+    // 単独利用向けの互換入口です。Simulation後に出力同期まで完了します。
+    void Step(float fixedDeltaTime);
+
+    // catch-up時はSimulationだけを繰り返し、最終Stateの外部出力同期を1回へ集約します。
+    void StepSimulation(float fixedDeltaTime);
+    void SynchronizeOutputs();
+
+    void Clear();
+
+    bool ContainsSimulationParticipant(const FluidSimulationParticipant& participant) const;
+
+    std::size_t GetRegisteredSimulationParticipantCount() const
+    {
+        return m_SimulationParticipants.size();
+    }
+
+    const std::vector<FluidSimulationParticipant*>& GetRegisteredSimulationParticipants() const
+    {
+        return m_SimulationParticipants;
+    }
+
+private:
+    std::vector<FluidSimulationParticipant*> m_SimulationParticipants;
+};
+
+// ============================================================================
 // RigidSoftSphereColliderBinding
 // ============================================================================
 // RigidBody側のSphere ColliderをSoftBody SolverのSphere Colliderへ同期するための非所有Bindingです。
@@ -93,7 +131,7 @@ struct RigidSoftSphereColliderBinding
 // PhysicsSimulationWorld
 // ============================================================================
 // Raven全体のPhysics Domainを統括する上位Worldです。
-// Rigid Body / Soft Body / ThermalのFixed Step順序をここへ集約し、後続のCoupling実装でも
+// Rigid Body / Fluid / Soft Body / ThermalのFixed Step順序をここへ集約し、後続のCoupling実装でも
 // Scene/Game/RendererへDomain間依存を漏らさない構造を維持します。
 class PhysicsSimulationWorld
 {
@@ -122,6 +160,9 @@ public:
     PhysicsWorld& GetRigidBodyWorld();
     const PhysicsWorld& GetRigidBodyWorld() const;
 
+    FluidWorld& GetFluidWorld();
+    const FluidWorld& GetFluidWorld() const;
+
     SoftBodyWorld& GetSoftBodyWorld();
     const SoftBodyWorld& GetSoftBodyWorld() const;
 
@@ -140,10 +181,10 @@ private:
 
 private:
     PhysicsWorld m_RigidBodyWorld;
+    FluidWorld m_FluidWorld;
     SoftBodyWorld m_SoftBodyWorld;
     ThermalWorld m_ThermalWorld;
     std::vector<RigidSoftSphereColliderBinding> m_RigidSoftSphereColliderBindings;
 };
 
-}
 }
