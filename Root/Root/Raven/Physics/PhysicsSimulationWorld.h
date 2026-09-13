@@ -77,7 +77,7 @@ public:
 
     // Fluid Particle群をScene/RigidBody Couplingへ接続するBindingです。
     // 同じParticle配列への二重BindingはCouplingの二重適用になるため拒否します。
-    bool RegisterCouplingBinding(const FluidCouplingBinding& binding);
+    bool RegisterCouplingBinding(FluidCouplingBinding& binding);
     bool UnregisterCouplingBinding(std::vector<FluidParticle>& particles);
 
     // Scene非依存の単独利用向け入口です。Couplingは実行せずSimulationと出力同期だけを行います。
@@ -114,7 +114,7 @@ public:
         return m_SimulationParticipants;
     }
 
-    const std::vector<FluidCouplingBinding>& GetCouplingBindings() const
+    const std::vector<FluidCouplingBinding*>& GetCouplingBindings() const
     {
         return m_CouplingBindings;
     }
@@ -137,10 +137,10 @@ private:
 
 private:
     std::vector<FluidSimulationParticipant*> m_SimulationParticipants;
-    std::vector<FluidCouplingBinding> m_CouplingBindings;
+    std::vector<FluidCouplingBinding*> m_CouplingBindings;
 
     // Coupling SolverはFluidWorldが共有所有します。
-    // Bindingごとの設定をResolve直前に反映することで、複数Fluid Simulationの設定差を保持します。
+    // Binding自体はParticipant所有の非所有参照なので、設定変更は次Fixed Stepへそのまま反映されます。
     FluidStaticColliderCoupling m_StaticColliderCoupling{};
     FluidRigidBodyCoupling m_RigidBodyCoupling{};
 };
