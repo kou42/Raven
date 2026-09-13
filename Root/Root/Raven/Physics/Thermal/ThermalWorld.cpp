@@ -8,397 +8,170 @@ namespace Raven::ph
 namespace
 {
 constexpr float MinimumThermalValue = 1.0e-8f;
-constexpr float StefanBoltzmannConstant = 5.670374419e-8f; // sigma [W/(m^2*K^4)]
+constexpr float StefanBoltzmannConstant = 5.670374419e-8f;
 
 float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody& bodyB)
 {
     const float conductivityA = bodyA.Material.ThermalConductivity;
     const float conductivityB = bodyB.Material.ThermalConductivity;
-    if (conductivityA <= MinimumThermalValue || conductivityB <= MinimumThermalValue)
-    {
-        return 0.0f;
-    }
+    if (conductivityA <= MinimumThermalValue || conductivityB <= MinimumThermalValue) { return 0.0f; }
     return (2.0f * conductivityA * conductivityB) / (conductivityA + conductivityB);
+}
+
+float ClampHeatTowardTemperature(float heat, float heatCapacity, float currentTemperature, float targetTemperature)
+{
+    const float heatToTarget = heatCapacity * (targetTemperature - currentTemperature);
+    if (heatToTarget >= 0.0f) { return std::min(heat, heatToTarget); }
+    return std::max(heat, heatToTarget);
 }
 }
 
 bool ThermalWorld::RegisterBody(ThermalBody& body)
 {
-    if (ContainsBody(body) == true)
-    {
-        return false;
-    }
-    m_Bodies.push_back(&body);
-    return true;
+    if (ContainsBody(body) == true) { return false; }
+    m_Bodies.push_back(&body); return true;
 }
 
 bool ThermalWorld::UnregisterBody(ThermalBody& body)
 {
     const auto iterator = std::find(m_Bodies.begin(), m_Bodies.end(), &body);
-    if (iterator == m_Bodies.end())
-    {
-        return false;
-    }
+    if (iterator == m_Bodies.end()) { return false; }
     m_Bodies.erase(iterator);
-    m_Contacts.erase(std::remove_if(m_Contacts.begin(), m_Contacts.end(), [&body](const ThermalContact& contact)
-    {
-        return contact.BodyA == &body || contact.BodyB == &body;
-    }), m_Contacts.end());
-    m_EnvironmentContacts.erase(std::remove_if(m_EnvironmentContacts.begin(), m_EnvironmentContacts.end(), [&body](const ThermalEnvironmentContact& contact)
-    {
-        return contact.Body == &body;
-    }), m_EnvironmentContacts.end());
-    m_RadiationContacts.erase(std::remove_if(m_RadiationContacts.begin(), m_RadiationContacts.end(), [&body](const ThermalRadiationContact& contact)
-    {
-        return contact.Body == &body;
-    }), m_RadiationContacts.end());
+    m_Contacts.erase(std::remove_if(m_Contacts.begin(), m_Contacts.end(), [&body](const ThermalContact& c) { return c.BodyA == &body || c.BodyB == &body; }), m_Contacts.end());
+    m_EnvironmentContacts.erase(std::remove_if(m_EnvironmentContacts.begin(), m_EnvironmentContacts.end(), [&body](const ThermalEnvironmentContact& c) { return c.Body == &body; }), m_EnvironmentContacts.end());
+    m_RadiationContacts.erase(std::remove_if(m_RadiationContacts.begin(), m_RadiationContacts.end(), [&body](const ThermalRadiationContact& c) { return c.Body == &body; }), m_RadiationContacts.end());
     return true;
 }
 
 bool ThermalWorld::RegisterContact(const ThermalContact& contact)
 {
-    if (contact.BodyA == nullptr || contact.BodyB == nullptr || contact.BodyA == contact.BodyB)
-    {
-        return false;
-    }
-    if (ContainsBody(*contact.BodyA) == false || ContainsBody(*contact.BodyB) == false)
-    {
-        return false;
-    }
+    if (contact.BodyA == nullptr || contact.BodyB == nullptr || contact.BodyA == contact.BodyB) { return false; }
+    if (ContainsBody(*contact.BodyA) == false || ContainsBody(*contact.BodyB) == false) { return false; }
     ThermalContact normalizedContact = contact;
     if (normalizedContact.ThermalConductance <= 0.0f)
     {
         normalizedContact.ThermalConductance = CalculateConductance(*normalizedContact.BodyA, *normalizedContact.BodyB,
             normalizedContact.ContactArea, normalizedContact.ConductionDistance, normalizedContact.ConductivityScale);
     }
-    if (normalizedContact.ThermalConductance <= 0.0f)
-    {
-        return false;
-    }
-    m_Contacts.push_back(normalizedContact);
-    return true;
+    if (normalizedContact.ThermalConductance <= 0.0f) { return false; }
+    m_Contacts.push_back(normalizedContact); return true;
 }
 
 bool ThermalWorld::RegisterEnvironmentContact(const ThermalEnvironmentContact& contact)
 {
-    if (contact.Body == nullptr || ContainsBody(*contact.Body) == false || contact.AmbientTemperature < 0.0f)
-    {
-        return false;
-    }
+    if (contact.Body == nullptr || ContainsBody(*contact.Body) == false || contact.AmbientTemperature < 0.0f) { return false; }
     ThermalEnvironmentContact normalizedContact = contact;
     if (normalizedContact.ThermalConductance <= 0.0f)
     {
         normalizedContact.ThermalConductance = CalculateConvectionConductance(normalizedContact.HeatTransferCoefficient, normalizedContact.SurfaceArea);
     }
-    if (normalizedContact.ThermalConductance <= 0.0f)
-    {
-        return false;
-    }
-    m_EnvironmentContacts.push_back(normalizedContact);
-    return true;
+    if (normalizedContact.ThermalConductance <= 0.0f) { return false; }
+    m_EnvironmentContacts.push_back(normalizedContact); return true;
 }
 
 bool ThermalWorld::RegisterRadiationContact(const ThermalRadiationContact& contact)
 {
-    if (contact.Body == nullptr
-        || ContainsBody(*contact.Body) == false
-        || contact.EnvironmentTemperature < 0.0f
-        || contact.Emissivity < 0.0f
-        || contact.Emissivity > 1.0f
-        || contact.SurfaceArea <= 0.0f)
-    {
-        return false;
-    }
-    if (contact.Emissivity <= MinimumThermalValue)
-    {
-        return false;
-    }
-    m_RadiationContacts.push_back(contact);
-    return true;
+    if (contact.Body == nullptr || ContainsBody(*contact.Body) == false || contact.EnvironmentTemperature < 0.0f
+        || contact.Emissivity < 0.0f || contact.Emissivity > 1.0f || contact.SurfaceArea <= 0.0f) { return false; }
+    if (contact.Emissivity <= MinimumThermalValue) { return false; }
+    m_RadiationContacts.push_back(contact); return true;
 }
 
-void ThermalWorld::ClearContacts()
+void ThermalWorld::ClearContacts() { m_Contacts.clear(); m_EnvironmentContacts.clear(); m_RadiationContacts.clear(); }
+void ThermalWorld::Clear() { ClearContacts(); m_Bodies.clear(); m_LastSubstepCount = 0u; }
+void ThermalWorld::SetSubstepSafetyFactor(float value) { if (value > MinimumThermalValue) { m_SubstepSafetyFactor = value; } }
+void ThermalWorld::SetMaximumSubsteps(std::size_t value) { if (value > 0u) { m_MaximumSubsteps = value; } }
+
+float ThermalWorld::CalculateConductance(const ThermalBody& bodyA, const ThermalBody& bodyB, float area, float distance, float scale)
 {
-    m_Contacts.clear();
-    m_EnvironmentContacts.clear();
-    m_RadiationContacts.clear();
+    if (area <= 0.0f || distance <= MinimumThermalValue || scale <= 0.0f) { return 0.0f; }
+    const float k = CalculateEffectiveConductivity(bodyA, bodyB); if (k <= 0.0f) { return 0.0f; }
+    return k * scale * area / distance;
 }
+float ThermalWorld::CalculateConvectionConductance(float h, float area) { return (h > 0.0f && area > 0.0f) ? h * area : 0.0f; }
 
-void ThermalWorld::Clear()
+float ThermalWorld::CalculateRadiationHeatFlow(float bodyT, float envT, float emissivity, float area)
 {
-    ClearContacts();
-    m_Bodies.clear();
-    m_LastSubstepCount = 0u;
+    if (bodyT < 0.0f || envT < 0.0f || emissivity <= 0.0f || emissivity > 1.0f || area <= 0.0f) { return 0.0f; }
+    const float b2 = bodyT * bodyT; const float e2 = envT * envT;
+    return emissivity * StefanBoltzmannConstant * area * (e2 * e2 - b2 * b2);
 }
 
-void ThermalWorld::SetSubstepSafetyFactor(float safetyFactor)
+float ThermalWorld::CalculateRadiationTangentConductance(float bodyT, float emissivity, float area)
 {
-    if (safetyFactor <= MinimumThermalValue)
-    {
-        return;
-    }
-    m_SubstepSafetyFactor = safetyFactor;
+    if (bodyT < 0.0f || emissivity <= 0.0f || emissivity > 1.0f || area <= 0.0f) { return 0.0f; }
+    return 4.0f * emissivity * StefanBoltzmannConstant * area * bodyT * bodyT * bodyT;
 }
 
-void ThermalWorld::SetMaximumSubsteps(std::size_t maximumSubsteps)
-{
-    if (maximumSubsteps == 0u)
-    {
-        return;
-    }
-    m_MaximumSubsteps = maximumSubsteps;
-}
-
-float ThermalWorld::CalculateConductance(const ThermalBody& bodyA, const ThermalBody& bodyB,
-    float contactArea, float conductionDistance, float conductivityScale)
-{
-    if (contactArea <= 0.0f || conductionDistance <= MinimumThermalValue || conductivityScale <= 0.0f)
-    {
-        return 0.0f;
-    }
-    const float effectiveConductivity = CalculateEffectiveConductivity(bodyA, bodyB);
-    if (effectiveConductivity <= 0.0f)
-    {
-        return 0.0f;
-    }
-    return effectiveConductivity * conductivityScale * contactArea / conductionDistance;
-}
-
-float ThermalWorld::CalculateConvectionConductance(float heatTransferCoefficient, float surfaceArea)
-{
-    if (heatTransferCoefficient <= 0.0f || surfaceArea <= 0.0f)
-    {
-        return 0.0f;
-    }
-    return heatTransferCoefficient * surfaceArea;
-}
-
-float ThermalWorld::CalculateRadiationHeatFlow(
-    float bodyTemperature,
-    float environmentTemperature,
-    float emissivity,
-    float surfaceArea)
-{
-    if (bodyTemperature < 0.0f || environmentTemperature < 0.0f
-        || emissivity <= 0.0f || emissivity > 1.0f || surfaceArea <= 0.0f)
-    {
-        return 0.0f;
-    }
-
-    const float bodyTemperatureSquared = bodyTemperature * bodyTemperature;
-    const float environmentTemperatureSquared = environmentTemperature * environmentTemperature;
-    const float bodyTemperatureFourth = bodyTemperatureSquared * bodyTemperatureSquared;
-    const float environmentTemperatureFourth = environmentTemperatureSquared * environmentTemperatureSquared;
-    return emissivity * StefanBoltzmannConstant * surfaceArea
-        * (environmentTemperatureFourth - bodyTemperatureFourth);
-}
-
-float ThermalWorld::CalculateRadiationTangentConductance(
-    float bodyTemperature,
-    float emissivity,
-    float surfaceArea)
-{
-    if (bodyTemperature < 0.0f || emissivity <= 0.0f || emissivity > 1.0f || surfaceArea <= 0.0f)
-    {
-        return 0.0f;
-    }
-
-    // |dQdot/dTbody| = 4*epsilon*sigma*A*Tbody^3 を局所的なGとして安定性判定に使います。
-    return 4.0f * emissivity * StefanBoltzmannConstant * surfaceArea
-        * bodyTemperature * bodyTemperature * bodyTemperature;
-}
-
-void ThermalWorld::Step(float fixedDeltaTime)
+void ThermalWorld::Step(float dt)
 {
     m_LastSubstepCount = 0u;
-    if (fixedDeltaTime <= 0.0f || m_Bodies.empty() == true
-        || (m_Contacts.empty() == true && m_EnvironmentContacts.empty() == true && m_RadiationContacts.empty() == true))
+    if (dt <= 0.0f || m_Bodies.empty() == true || (m_Contacts.empty() == true && m_EnvironmentContacts.empty() == true && m_RadiationContacts.empty() == true)) { return; }
+    std::vector<float> sums(m_Bodies.size(), 0.0f);
+    for (const ThermalContact& c : m_Contacts)
     {
-        return;
+        const auto a = std::find(m_Bodies.begin(), m_Bodies.end(), c.BodyA); const auto b = std::find(m_Bodies.begin(), m_Bodies.end(), c.BodyB);
+        if (c.BodyA != nullptr && c.BodyB != nullptr && c.ThermalConductance > 0.0f && a != m_Bodies.end() && b != m_Bodies.end())
+        { sums[static_cast<std::size_t>(a - m_Bodies.begin())] += c.ThermalConductance; sums[static_cast<std::size_t>(b - m_Bodies.begin())] += c.ThermalConductance; }
     }
-
-    std::vector<float> conductanceSums(m_Bodies.size(), 0.0f);
-    for (const ThermalContact& contact : m_Contacts)
+    for (const ThermalEnvironmentContact& c : m_EnvironmentContacts)
     {
-        if (contact.BodyA == nullptr || contact.BodyB == nullptr || contact.ThermalConductance <= 0.0f)
-        {
-            continue;
-        }
-        const auto bodyAIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.BodyA);
-        const auto bodyBIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.BodyB);
-        if (bodyAIterator == m_Bodies.end() || bodyBIterator == m_Bodies.end())
-        {
-            continue;
-        }
-        conductanceSums[static_cast<std::size_t>(bodyAIterator - m_Bodies.begin())] += contact.ThermalConductance;
-        conductanceSums[static_cast<std::size_t>(bodyBIterator - m_Bodies.begin())] += contact.ThermalConductance;
+        const auto it = std::find(m_Bodies.begin(), m_Bodies.end(), c.Body);
+        if (c.Body != nullptr && c.ThermalConductance > 0.0f && it != m_Bodies.end()) { sums[static_cast<std::size_t>(it - m_Bodies.begin())] += c.ThermalConductance; }
     }
-    for (const ThermalEnvironmentContact& contact : m_EnvironmentContacts)
+    for (const ThermalRadiationContact& c : m_RadiationContacts)
     {
-        if (contact.Body == nullptr || contact.ThermalConductance <= 0.0f)
-        {
-            continue;
-        }
-        const auto bodyIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.Body);
-        if (bodyIterator != m_Bodies.end())
-        {
-            conductanceSums[static_cast<std::size_t>(bodyIterator - m_Bodies.begin())] += contact.ThermalConductance;
-        }
+        const auto it = std::find(m_Bodies.begin(), m_Bodies.end(), c.Body);
+        if (c.Body != nullptr && it != m_Bodies.end())
+        { sums[static_cast<std::size_t>(it - m_Bodies.begin())] += CalculateRadiationTangentConductance(c.Body->Temperature, c.Emissivity, c.SurfaceArea); }
     }
-    for (const ThermalRadiationContact& contact : m_RadiationContacts)
+    float stableDt = dt;
+    for (std::size_t i = 0; i < m_Bodies.size(); ++i)
     {
-        if (contact.Body == nullptr)
-        {
-            continue;
-        }
-        const auto bodyIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.Body);
-        if (bodyIterator == m_Bodies.end())
-        {
-            continue;
-        }
-
-        // 放射はT^4の非線形境界なので、Step開始温度で線形化した接線Gを
-        // substep数の安定性見積もりへ加えます。実際の熱流は各substepでT^4から再計算します。
-        const float tangentConductance = CalculateRadiationTangentConductance(
-            contact.Body->Temperature, contact.Emissivity, contact.SurfaceArea);
-        conductanceSums[static_cast<std::size_t>(bodyIterator - m_Bodies.begin())] += tangentConductance;
+        if (m_Bodies[i] != nullptr && sums[i] > MinimumThermalValue && m_Bodies[i]->GetHeatCapacity() > MinimumThermalValue)
+        { stableDt = std::min(stableDt, m_SubstepSafetyFactor * m_Bodies[i]->GetHeatCapacity() / sums[i]); }
     }
-
-    float stableSubstepTime = fixedDeltaTime;
-    for (std::size_t bodyIndex = 0; bodyIndex < m_Bodies.size(); ++bodyIndex)
+    std::size_t count = 1u;
+    if (stableDt > MinimumThermalValue && stableDt < dt) { count = std::min(static_cast<std::size_t>(std::ceil(dt / stableDt)), m_MaximumSubsteps); }
+    m_LastSubstepCount = count;
+    const float subDt = dt / static_cast<float>(count); std::vector<float> deltas(m_Bodies.size(), 0.0f);
+    for (std::size_t step = 0; step < count; ++step)
     {
-        const ThermalBody* body = m_Bodies[bodyIndex];
-        if (body == nullptr || conductanceSums[bodyIndex] <= MinimumThermalValue)
+        std::fill(deltas.begin(), deltas.end(), 0.0f);
+        for (const ThermalContact& c : m_Contacts)
         {
-            continue;
+            const auto a = std::find(m_Bodies.begin(), m_Bodies.end(), c.BodyA); const auto b = std::find(m_Bodies.begin(), m_Bodies.end(), c.BodyB);
+            if (c.BodyA == nullptr || c.BodyB == nullptr || c.ThermalConductance <= 0.0f || a == m_Bodies.end() || b == m_Bodies.end()) { continue; }
+            const float ca = c.BodyA->GetHeatCapacity(); const float cb = c.BodyB->GetHeatCapacity(); if (ca <= MinimumThermalValue || cb <= MinimumThermalValue) { continue; }
+            float q = c.ThermalConductance * (c.BodyB->Temperature - c.BodyA->Temperature) * subDt;
+            const float eq = (ca * c.BodyA->Temperature + cb * c.BodyB->Temperature) / (ca + cb);
+            q = ClampHeatTowardTemperature(q, ca, c.BodyA->Temperature, eq);
+            deltas[static_cast<std::size_t>(a - m_Bodies.begin())] += q; deltas[static_cast<std::size_t>(b - m_Bodies.begin())] -= q;
         }
-        const float heatCapacity = body->GetHeatCapacity();
-        if (heatCapacity <= MinimumThermalValue)
+        for (const ThermalEnvironmentContact& c : m_EnvironmentContacts)
         {
-            continue;
+            const auto it = std::find(m_Bodies.begin(), m_Bodies.end(), c.Body); if (c.Body == nullptr || it == m_Bodies.end()) { continue; }
+            const float cap = c.Body->GetHeatCapacity(); if (cap <= MinimumThermalValue) { continue; }
+            float q = c.ThermalConductance * (c.AmbientTemperature - c.Body->Temperature) * subDt;
+            q = ClampHeatTowardTemperature(q, cap, c.Body->Temperature, c.AmbientTemperature);
+            deltas[static_cast<std::size_t>(it - m_Bodies.begin())] += q;
         }
-        stableSubstepTime = std::min(stableSubstepTime, m_SubstepSafetyFactor * heatCapacity / conductanceSums[bodyIndex]);
-    }
-
-    std::size_t substepCount = 1u;
-    if (stableSubstepTime > MinimumThermalValue && stableSubstepTime < fixedDeltaTime)
-    {
-        substepCount = static_cast<std::size_t>(std::ceil(fixedDeltaTime / stableSubstepTime));
-        substepCount = std::min(substepCount, m_MaximumSubsteps);
-    }
-    m_LastSubstepCount = substepCount;
-
-    const float substepDeltaTime = fixedDeltaTime / static_cast<float>(substepCount);
-    std::vector<float> heatDeltas(m_Bodies.size(), 0.0f);
-    for (std::size_t substepIndex = 0; substepIndex < substepCount; ++substepIndex)
-    {
-        std::fill(heatDeltas.begin(), heatDeltas.end(), 0.0f);
-
-        for (const ThermalContact& contact : m_Contacts)
+        for (const ThermalRadiationContact& c : m_RadiationContacts)
         {
-            if (contact.BodyA == nullptr || contact.BodyB == nullptr || contact.ThermalConductance <= 0.0f)
-            {
-                continue;
-            }
-            const auto bodyAIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.BodyA);
-            const auto bodyBIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.BodyB);
-            if (bodyAIterator == m_Bodies.end() || bodyBIterator == m_Bodies.end())
-            {
-                continue;
-            }
-            const float heatCapacityA = contact.BodyA->GetHeatCapacity();
-            const float heatCapacityB = contact.BodyB->GetHeatCapacity();
-            if (heatCapacityA <= MinimumThermalValue || heatCapacityB <= MinimumThermalValue)
-            {
-                continue;
-            }
-            float transferredHeat = contact.ThermalConductance * (contact.BodyB->Temperature - contact.BodyA->Temperature) * substepDeltaTime;
-            const float equilibriumTemperature = (heatCapacityA * contact.BodyA->Temperature + heatCapacityB * contact.BodyB->Temperature)
-                / (heatCapacityA + heatCapacityB);
-            const float heatToEquilibrium = heatCapacityA * (equilibriumTemperature - contact.BodyA->Temperature);
-            if (heatToEquilibrium >= 0.0f)
-            {
-                transferredHeat = std::min(transferredHeat, heatToEquilibrium);
-            }
-            else
-            {
-                transferredHeat = std::max(transferredHeat, heatToEquilibrium);
-            }
-            heatDeltas[static_cast<std::size_t>(bodyAIterator - m_Bodies.begin())] += transferredHeat;
-            heatDeltas[static_cast<std::size_t>(bodyBIterator - m_Bodies.begin())] -= transferredHeat;
+            const auto it = std::find(m_Bodies.begin(), m_Bodies.end(), c.Body); if (c.Body == nullptr || it == m_Bodies.end()) { continue; }
+            const float cap = c.Body->GetHeatCapacity(); if (cap <= MinimumThermalValue) { continue; }
+            float q = CalculateRadiationHeatFlow(c.Body->Temperature, c.EnvironmentTemperature, c.Emissivity, c.SurfaceArea) * subDt;
+            q = ClampHeatTowardTemperature(q, cap, c.Body->Temperature, c.EnvironmentTemperature);
+            deltas[static_cast<std::size_t>(it - m_Bodies.begin())] += q;
         }
-
-        for (const ThermalEnvironmentContact& contact : m_EnvironmentContacts)
+        for (std::size_t i = 0; i < m_Bodies.size(); ++i)
         {
-            if (contact.Body == nullptr || contact.ThermalConductance <= 0.0f)
-            {
-                continue;
-            }
-            const auto bodyIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.Body);
-            if (bodyIterator == m_Bodies.end())
-            {
-                continue;
-            }
-            const std::size_t bodyIndex = static_cast<std::size_t>(bodyIterator - m_Bodies.begin());
-            const float heatCapacity = contact.Body->GetHeatCapacity();
-            if (heatCapacity <= MinimumThermalValue)
-            {
-                continue;
-            }
-            const float transferredHeat = contact.ThermalConductance
-                * (contact.AmbientTemperature - contact.Body->Temperature) * substepDeltaTime;
-            heatDeltas[bodyIndex] += transferredHeat;
-        }
-
-        for (const ThermalRadiationContact& contact : m_RadiationContacts)
-        {
-            if (contact.Body == nullptr)
-            {
-                continue;
-            }
-            const auto bodyIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.Body);
-            if (bodyIterator == m_Bodies.end())
-            {
-                continue;
-            }
-            const std::size_t bodyIndex = static_cast<std::size_t>(bodyIterator - m_Bodies.begin());
-            if (contact.Body->GetHeatCapacity() <= MinimumThermalValue)
-            {
-                continue;
-            }
-
-            const float radiationHeatFlow = CalculateRadiationHeatFlow(
-                contact.Body->Temperature,
-                contact.EnvironmentTemperature,
-                contact.Emissivity,
-                contact.SurfaceArea);
-            heatDeltas[bodyIndex] += radiationHeatFlow * substepDeltaTime;
-        }
-
-        for (std::size_t bodyIndex = 0; bodyIndex < m_Bodies.size(); ++bodyIndex)
-        {
-            ThermalBody* body = m_Bodies[bodyIndex];
-            if (body == nullptr)
-            {
-                continue;
-            }
-            const float heatCapacity = body->GetHeatCapacity();
-            if (heatCapacity <= MinimumThermalValue)
-            {
-                continue;
-            }
-
-            // 伝導・対流・放射を全て同じsubstep開始温度から評価して一括反映します。
-            // 最後の0K ClampはMaximumSubsteps上限を超える極端な入力に対する安全網です。
-            body->Temperature += heatDeltas[bodyIndex] / heatCapacity;
-            body->Temperature = std::max(body->Temperature, 0.0f);
+            ThermalBody* body = m_Bodies[i]; if (body == nullptr || body->GetHeatCapacity() <= MinimumThermalValue) { continue; }
+            body->Temperature += deltas[i] / body->GetHeatCapacity(); body->Temperature = std::max(body->Temperature, 0.0f);
         }
     }
 }
 
-bool ThermalWorld::ContainsBody(const ThermalBody& body) const
-{
-    return std::find(m_Bodies.begin(), m_Bodies.end(), &body) != m_Bodies.end();
-}
+bool ThermalWorld::ContainsBody(const ThermalBody& body) const { return std::find(m_Bodies.begin(), m_Bodies.end(), &body) != m_Bodies.end(); }
 
 }
