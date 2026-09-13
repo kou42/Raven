@@ -204,6 +204,83 @@ bool SoftBodyWorld::ContainsSimulationParticipant(const SoftBodySimulationPartic
         &participant) != m_SimulationParticipants.end();
 }
 
+bool FluidWorld::RegisterSimulationParticipant(FluidSimulationParticipant& participant)
+{
+    if (ContainsSimulationParticipant(participant) == true)
+    {
+        return false;
+    }
+
+    m_SimulationParticipants.push_back(&participant);
+    return true;
+}
+
+bool FluidWorld::UnregisterSimulationParticipant(FluidSimulationParticipant& participant)
+{
+    const auto iterator = std::find(
+        m_SimulationParticipants.begin(),
+        m_SimulationParticipants.end(),
+        &participant);
+
+    if (iterator == m_SimulationParticipants.end())
+    {
+        return false;
+    }
+
+    m_SimulationParticipants.erase(iterator);
+    return true;
+}
+
+void FluidWorld::Step(float fixedDeltaTime)
+{
+    StepSimulation(fixedDeltaTime);
+    SynchronizeOutputs();
+}
+
+void FluidWorld::StepSimulation(float fixedDeltaTime)
+{
+    // FluidWorldは具体的なSolverを所有しません。
+    // 登録されたParticipantをFixed Stepで進めることで、SPH/PBF/FLIPの実装差を
+    // PhysicsSimulationWorldへ漏らさずDomain単位の実行順序だけを統一します。
+    for (FluidSimulationParticipant* participant : m_SimulationParticipants)
+    {
+        if (participant == nullptr)
+        {
+            continue;
+        }
+
+        participant->SimulateFluid(fixedDeltaTime);
+    }
+}
+
+void FluidWorld::SynchronizeOutputs()
+{
+    // catch-up中の途中StateをRender/GPUへ送らず、Application frame末尾の最新状態だけを同期します。
+    for (FluidSimulationParticipant* participant : m_SimulationParticipants)
+    {
+        if (participant == nullptr)
+        {
+            continue;
+        }
+
+        participant->SynchronizeFluidOutput();
+    }
+}
+
+void FluidWorld::Clear()
+{
+    // 非所有RegistryなのでParticipantを破棄せず参照だけを解除します。
+    m_SimulationParticipants.clear();
+}
+
+bool FluidWorld::ContainsSimulationParticipant(const FluidSimulationParticipant& participant) const
+{
+    return std::find(
+        m_SimulationParticipants.begin(),
+        m_SimulationParticipants.end(),
+        &participant) != m_SimulationParticipants.end();
+}
+
 void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 {
     // 単発Step利用側の互換性を維持し、Simulationと出力同期を連続して完了させます。
@@ -214,18 +291,21 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
     // ========================================================================
-    // Rigid / Soft / Thermal fixed-step ordering
+    // Rigid / Fluid / Soft / Thermal fixed-step ordering
     // ========================================================================
     // 1. Rigid Bodyを進め、Collision Detection / Contact Solverまで完了させる
-    // 2. 最新Rigid ColliderをSoftBody local-spaceへ同期
-    // 3. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
-    // 4. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
-    // 5. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
-    // 6. Thermal Domainの熱伝導を同じFixed Step幅で進める
+    // 2. Fluid Domainを同じFixed Step幅で進める
+    //    Fluid Participant内部のCouplingは最新Rigid状態を参照し、その反作用を次Rigid Stepへ渡せます
+    // 3. 最新Rigid ColliderをSoftBody local-spaceへ同期
+    // 4. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
+    // 5. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
+    // 6. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 7. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
-    // Rigid Contactを前frameから持ち越さず、現在のFixed Stepで確定したManifoldをそのまま利用します。
-    // catch-upで複数Stepを処理する場合も、各substepの接触状態に追従して熱接触を再構築します。
+    // FluidをApplication Layerの可変dt更新から切り離し、Rigid/Soft/Thermalと同じFixed Step予算へ
+    // 統合することで、frame rateに依存しないDomain間の時間順序を維持します。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
+    m_FluidWorld.StepSimulation(fixedDeltaTime);
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
     ApplySoftBodyReactionsToRigidBodies(scene);
@@ -430,6 +510,7 @@ void PhysicsSimulationWorld::ApplySoftBodyReactionsToRigidBodies(Scene& scene)
 
 void PhysicsSimulationWorld::SynchronizeOutputs()
 {
+    m_FluidWorld.SynchronizeOutputs();
     m_SoftBodyWorld.SynchronizeOutputs();
 }
 
@@ -441,6 +522,16 @@ PhysicsWorld& PhysicsSimulationWorld::GetRigidBodyWorld()
 const PhysicsWorld& PhysicsSimulationWorld::GetRigidBodyWorld() const
 {
     return m_RigidBodyWorld;
+}
+
+FluidWorld& PhysicsSimulationWorld::GetFluidWorld()
+{
+    return m_FluidWorld;
+}
+
+const FluidWorld& PhysicsSimulationWorld::GetFluidWorld() const
+{
+    return m_FluidWorld;
 }
 
 SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld()
