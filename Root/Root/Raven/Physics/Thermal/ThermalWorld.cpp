@@ -179,7 +179,6 @@ float ThermalWorld::CalculateRadiationTangentConductance(float t, float emissivi
     {
         return 0.0f;
     }
-    // T^4の非線形境界をStep開始温度で線形化し、安定性見積もりだけに接線Gを使います。
     return 4.0f * emissivity * StefanBoltzmannConstant * area * t * t * t;
 }
 
@@ -325,7 +324,9 @@ void ThermalWorld::Step(float dt)
             heat = ClampHeat(heat, cap, c.Body->Temperature, c.EnvironmentTemperature);
             heatDeltas[static_cast<std::size_t>(it - m_Bodies.begin())] += heat;
         }
-        // 伝導・対流・放射を同じsubstep開始温度から評価してから一括反映します。
+
+        // 熱量の蓄積までは全境界を同じsubstep開始状態から評価し、最後に各Bodyへ一括適用します。
+        // ApplyHeatが顕熱と潜熱の配分を担当するため、相転移中もSolver側は熱量ベースのまま保てます。
         for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
         {
             ThermalBody* body = m_Bodies[i];
@@ -333,13 +334,11 @@ void ThermalWorld::Step(float dt)
             {
                 continue;
             }
-            const float cap = body->GetHeatCapacity();
-            if (cap <= MinimumThermalValue)
+            if (body->GetHeatCapacity() <= MinimumThermalValue)
             {
                 continue;
             }
-            body->Temperature += heatDeltas[i] / cap;
-            body->Temperature = std::max(body->Temperature, 0.0f);
+            body->ApplyHeat(heatDeltas[i]);
         }
     }
 }
