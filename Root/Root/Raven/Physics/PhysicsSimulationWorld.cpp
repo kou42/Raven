@@ -213,20 +213,21 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
     // ========================================================================
-    // Bidirectional Rigid <-> Soft fixed-step ordering
+    // Rigid / Soft / Thermal fixed-step ordering
     // ========================================================================
     // 1. Rigid Bodyを進めてWorld Transformを確定
     // 2. 最新Rigid ColliderをSoftBody local-spaceへ同期
     // 3. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
     // 4. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
+    // 5. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
-    // Rigid側へ返したImpulseは速度へ即時反映されるため、catch-upで次のFixed Stepが続く場合は
-    // その次のRigid Stepから反作用が運動へ参加します。Application Layerを経由しないため、
-    // 複数substep時にもframe境界までFeedbackを保留しません。
+    // Thermalは現段階ではPhysics Contactから独立した明示Contactを使用します。
+    // 将来Rigid Contact Manifoldと接続するときも、この上位WorldをDomain境界として維持します。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
     ApplySoftBodyReactionsToRigidBodies(scene);
+    m_ThermalWorld.Step(fixedDeltaTime);
 }
 
 bool PhysicsSimulationWorld::RegisterRigidSoftSphereColliderBinding(
@@ -445,6 +446,16 @@ SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld()
 const SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld() const
 {
     return m_SoftBodyWorld;
+}
+
+ThermalWorld& PhysicsSimulationWorld::GetThermalWorld()
+{
+    return m_ThermalWorld;
+}
+
+const ThermalWorld& PhysicsSimulationWorld::GetThermalWorld() const
+{
+    return m_ThermalWorld;
 }
 
 }
