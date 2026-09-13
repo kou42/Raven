@@ -55,10 +55,76 @@ void RunThermalConductionTest()
     assert(coldBody.Temperature > 293.15f);
     assert(std::abs(finalEnergy - initialEnergy) < 1.0f);
 
-    // 十分大きいStepでも平衡温度を飛び越えないことを確認します。
     world.Step(100000.0f);
     assert(std::abs(hotBody.Temperature - 333.15f) < 1.0e-3f);
     assert(std::abs(coldBody.Temperature - 333.15f) < 1.0e-3f);
+}
+
+void RunThermalNetworkSubstepTest()
+{
+    ThermalBody hotBody{};
+    ThermalBody centerBody{};
+    ThermalBody coldBody{};
+
+    hotBody.Temperature = 400.0f;
+    centerBody.Temperature = 300.0f;
+    coldBody.Temperature = 200.0f;
+
+    // 小さい熱容量と大きいGを意図的に組み合わせ、1回のExplicit Eulerでは
+    // 多接触の熱量和が大きくなりやすい条件を作ります。
+    hotBody.Mass = 1.0f;
+    centerBody.Mass = 1.0f;
+    coldBody.Mass = 1.0f;
+    hotBody.Material.SpecificHeatCapacity = 1.0f;
+    centerBody.Material.SpecificHeatCapacity = 1.0f;
+    coldBody.Material.SpecificHeatCapacity = 1.0f;
+
+    ThermalWorld world{};
+    assert(world.RegisterBody(hotBody) == true);
+    assert(world.RegisterBody(centerBody) == true);
+    assert(world.RegisterBody(coldBody) == true);
+
+    ThermalContact hotToCenter{};
+    hotToCenter.BodyA = &hotBody;
+    hotToCenter.BodyB = &centerBody;
+    hotToCenter.ThermalConductance = 10.0f;
+    assert(world.RegisterContact(hotToCenter) == true);
+
+    ThermalContact centerToCold{};
+    centerToCold.BodyA = &centerBody;
+    centerToCold.BodyB = &coldBody;
+    centerToCold.ThermalConductance = 10.0f;
+    assert(world.RegisterContact(centerToCold) == true);
+
+    const float initialEnergy =
+        CalculateThermalEnergy(hotBody)
+        + CalculateThermalEnergy(centerBody)
+        + CalculateThermalEnergy(coldBody);
+
+    world.Step(1.0f);
+
+    const float finalEnergy =
+        CalculateThermalEnergy(hotBody)
+        + CalculateThermalEnergy(centerBody)
+        + CalculateThermalEnergy(coldBody);
+
+    // centerはsum(G)=20W/K、C=1J/Kなのでtau=0.05sです。
+    // SafetyFactor=0.5から要求dt<=0.025sとなり、1秒Stepは40 substepへ分割されます。
+    assert(world.GetLastSubstepCount() == 40u);
+    assert(std::abs(finalEnergy - initialEnergy) < 1.0e-3f);
+
+    // 対称な3 Body chainなので中心温度は300Kを維持し、両端は中心へ単調に近づきます。
+    assert(hotBody.Temperature < 400.0f);
+    assert(hotBody.Temperature >= 300.0f);
+    assert(std::abs(centerBody.Temperature - 300.0f) < 1.0e-3f);
+    assert(coldBody.Temperature > 200.0f);
+    assert(coldBody.Temperature <= 300.0f);
+
+    // 不正設定値は採用せず、Solverの安定性設定を壊さないことも確認します。
+    world.SetSubstepSafetyFactor(0.0f);
+    world.SetMaximumSubsteps(0u);
+    assert(std::abs(world.GetSubstepSafetyFactor() - 0.5f) < 1.0e-6f);
+    assert(world.GetMaximumSubsteps() == 64u);
 }
 
 void RunThermalEcsSynchronizationTest()
@@ -67,8 +133,6 @@ void RunThermalEcsSynchronizationTest()
     Entity hotEntity = scene.CreateEntity("ThermalHot");
     Entity coldEntity = scene.CreateEntity("ThermalCold");
 
-    // ComponentStorageはdense vectorなので、2件目の追加で1件目の参照が無効化される可能性があります。
-    // すべて追加してからGetComponent()で参照を取得し直します。
     hotEntity.AddComponent<ThermalBodyComponent>();
     coldEntity.AddComponent<ThermalBodyComponent>();
 
@@ -93,8 +157,6 @@ void RunThermalEcsSynchronizationTest()
     assert(hotComponent.Body.Temperature < 373.15f);
     assert(coldComponent.Body.Temperature > 293.15f);
 
-    // Target Entityを破棄した後は、次のRegistry再構築でContactもBodyも除外されます。
-    // EntityHandleのGeneration検証により、同じIndexが再利用されても古いPairへ接続しません。
     scene.DestroyEntity(coldEntity);
     ThermalSystem::SynchronizeWorld(scene);
     assert(world.GetRegisteredBodyCount() == 1u);
@@ -143,23 +205,20 @@ void RunRigidContactThermalCouplingTest()
     assert(world.GetContactCount() == 1u);
 
     const ThermalContact& generatedContact = world.GetContacts().front();
-    // 面積はPair双方の小さい設定値0.001m^2 x 2点、距離は平均0.03mです。
-    // ConductivityScaleは幾何平均sqrt(1.0 * 0.25) = 0.5を使用します。
     assert(std::abs(generatedContact.ContactArea - 0.002f) < 1.0e-6f);
     assert(std::abs(generatedContact.ConductionDistance - 0.03f) < 1.0e-6f);
     assert(std::abs(generatedContact.ConductivityScale - 0.5f) < 1.0e-6f);
+    assert(generatedContact.ThermalConductance > 0.0f);
 
     world.Step(1.0f);
     assert(hotComponent.Body.Temperature < 373.15f);
     assert(coldComponent.Body.Temperature > 293.15f);
 
-    // Triggerは物理的な接触面を意味しないため熱接触へ変換しません。
     ThermalSystem::SynchronizeWorld(scene);
     manifolds.front().IsTrigger = true;
     ThermalSystem::AppendRigidBodyContacts(scene, manifolds);
     assert(world.GetContactCount() == 0u);
 
-    // Pairの片側がopt-in設定を無効化した場合も自動熱伝導を生成しません。
     coldSettings.Enabled = false;
     manifolds.front().IsTrigger = false;
     ThermalSystem::SynchronizeWorld(scene);
@@ -221,8 +280,6 @@ void RunPhysicsSimulationThermalContactTest()
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
     simulationWorld.StepSimulation(scene, fixedDeltaTime);
 
-    // Sphere同士のOverlapから同じFixed StepでManifoldが生成され、そのManifoldを熱接触へ変換して
-    // Thermal Stepまで完了することを確認します。前frameの接触情報へ依存してはいけません。
     assert(simulationWorld.GetRigidBodyWorld().GetContactManifolds().empty() == false);
     assert(simulationWorld.GetThermalWorld().GetContactCount() == 1u);
     assert(hotThermal.Body.Temperature < 373.15f);
@@ -230,11 +287,10 @@ void RunPhysicsSimulationThermalContactTest()
 }
 }
 
-// Debuggerや既存Self Test runnerから呼び出すための基礎検証です。
-// Solver単体、ECS Registry lifetime、Rigid Contact -> Thermal Contact変換と同一Fixed Step連成を確認します。
 void RunThermalWorldSelfTests()
 {
     RunThermalConductionTest();
+    RunThermalNetworkSubstepTest();
     RunThermalEcsSynchronizationTest();
     RunRigidContactThermalCouplingTest();
     RunPhysicsSimulationThermalContactTest();
