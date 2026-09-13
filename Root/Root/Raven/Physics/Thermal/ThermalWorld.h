@@ -10,16 +10,15 @@ namespace Raven::ph
 // ============================================================================
 // ThermalContact
 // ============================================================================
-// 2つの集中熱容量間で熱を伝える接触を表します。
-// ContactArea[m^2]とConductionDistance[m]からFourier則の離散形を評価します。
-// ConductivityScaleは接触抵抗などを後から表現できるようにする無次元係数です。
+// 2つの集中熱容量間で熱を伝える接続を表します。
+// Solver内部では形状や距離を直接解釈せず、熱コンダクタンス G[W/K] だけを使用します。
+// これによりRigid Contact、明示Link、将来のSoftBody Contactなど異なる接触モデルを
+// 同じ熱伝導Solverへ接続できます。
 struct ThermalContact
 {
     ThermalBody* BodyA = nullptr;
     ThermalBody* BodyB = nullptr;
-    float ContactArea = 1.0f;
-    float ConductionDistance = 1.0f;
-    float ConductivityScale = 1.0f;
+    float ThermalConductance = 0.0f;
 };
 
 // ============================================================================
@@ -27,9 +26,6 @@ struct ThermalContact
 // ============================================================================
 // Ravenの熱Domainを担当する最小Worldです。
 // Body/Contactは所有せず、登録された参照をFixed Stepで更新します。
-//
-// 初期段階では熱伝導だけを扱い、対流・放射・相転移・Physics Contactとの自動Couplingは
-// この基礎モデルのエネルギー保存を確認した後に追加します。
 class ThermalWorld
 {
 public:
@@ -41,6 +37,15 @@ public:
     void Clear();
 
     void Step(float fixedDeltaTime);
+
+    // 材料熱伝導率と簡易形状パラメータから G[W/K] を構築します。
+    // k*A/d は境界側の近似に閉じ込め、Solver本体はConductanceだけを扱います。
+    static float CalculateConductance(
+        const ThermalBody& bodyA,
+        const ThermalBody& bodyB,
+        float contactArea,
+        float conductionDistance,
+        float conductivityScale = 1.0f);
 
     bool ContainsBody(const ThermalBody& body) const;
     std::size_t GetRegisteredBodyCount() const { return m_Bodies.size(); }
