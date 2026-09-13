@@ -18,8 +18,8 @@ float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody
         return 0.0f;
     }
 
-    // 2材料が直列に熱抵抗を持つ接触として扱うため、調和平均を使用します。
-    // 単純な算術平均より低熱伝導側の影響を正しく強く反映できます。
+    // 2材料が同じ有効距離を分担する簡易直列熱抵抗モデルとして調和平均を使用します。
+    // 接触抵抗をより詳細に扱う場合は、境界側で直接ThermalConductanceへ変換します。
     return (2.0f * conductivityA * conductivityB) / (conductivityA + conductivityB);
 }
 }
@@ -44,9 +44,6 @@ bool ThermalWorld::UnregisterBody(ThermalBody& body)
     }
 
     m_Bodies.erase(iterator);
-
-    // Body参照を外した後もContactにdangling pointerを残さないよう、
-    // 関連Contactも同時にRegistryから除去します。
     m_Contacts.erase(
         std::remove_if(
             m_Contacts.begin(),
@@ -72,9 +69,7 @@ bool ThermalWorld::RegisterContact(const ThermalContact& contact)
         return false;
     }
 
-    if (contact.ContactArea <= 0.0f
-        || contact.ConductionDistance <= MinimumThermalValue
-        || contact.ConductivityScale < 0.0f)
+    if (contact.ThermalConductance <= 0.0f)
     {
         return false;
     }
@@ -90,9 +85,31 @@ void ThermalWorld::ClearContacts()
 
 void ThermalWorld::Clear()
 {
-    // ThermalWorldはBodyを所有しないため、参照だけを解除します。
     m_Contacts.clear();
     m_Bodies.clear();
+}
+
+float ThermalWorld::CalculateConductance(
+    const ThermalBody& bodyA,
+    const ThermalBody& bodyB,
+    float contactArea,
+    float conductionDistance,
+    float conductivityScale)
+{
+    if (contactArea <= 0.0f
+        || conductionDistance <= MinimumThermalValue
+        || conductivityScale <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    const float effectiveConductivity = CalculateEffectiveConductivity(bodyA, bodyB);
+    if (effectiveConductivity <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    return effectiveConductivity * conductivityScale * contactArea / conductionDistance;
 }
 
 void ThermalWorld::Step(float fixedDeltaTime)
@@ -102,14 +119,15 @@ void ThermalWorld::Step(float fixedDeltaTime)
         return;
     }
 
-    // Contactを順番に直接Temperatureへ反映すると、同じStep内で後続Contactが
-    // 更新済み温度を参照し、Contact列挙順によって結果が変わります。
-    // そこで全ContactをStep開始時温度から評価し、Bodyごとの熱量[J]を蓄積してから一括反映します。
+    // 全ContactをStep開始時温度から評価し、Bodyごとの熱量[J]を蓄積してから一括反映します。
+    // Solverは接触形状を知らず、各境界モデルが生成した G[W/K] のみを共通入力として扱います。
     std::vector<float> heatDeltas(m_Bodies.size(), 0.0f);
 
     for (const ThermalContact& contact : m_Contacts)
     {
-        if (contact.BodyA == nullptr || contact.BodyB == nullptr)
+        if (contact.BodyA == nullptr
+            || contact.BodyB == nullptr
+            || contact.ThermalConductance <= 0.0f)
         {
             continue;
         }
@@ -128,24 +146,11 @@ void ThermalWorld::Step(float fixedDeltaTime)
             continue;
         }
 
-        const float effectiveConductivity = CalculateEffectiveConductivity(*contact.BodyA, *contact.BodyB);
-        if (effectiveConductivity <= 0.0f || contact.ConductivityScale <= 0.0f)
-        {
-            continue;
-        }
-
-        const float thermalConductance =
-            effectiveConductivity
-            * contact.ConductivityScale
-            * contact.ContactArea
-            / contact.ConductionDistance;
-
         const float temperatureDifference = contact.BodyB->Temperature - contact.BodyA->Temperature;
-        float transferredHeat = thermalConductance * temperatureDifference * fixedDeltaTime;
+        float transferredHeat = contact.ThermalConductance * temperatureDifference * fixedDeltaTime;
 
-        // Explicit Eulerで1 Step中に平衡温度を飛び越えると、温度が振動・発散する可能性があります。
-        // 2 Bodyだけが熱交換した場合の平衡温度から求めた最大移動熱量でClampし、
-        // 少なくとも単一Contactについては1 Stepで熱流方向が反転しないようにします。
+        // Explicit Eulerで単一Contactの平衡温度を飛び越えないよう、2 Bodyだけが熱交換した場合の
+        // 平衡熱量でClampします。多接触Networkの安定性は次段階でsubstep条件として扱います。
         const float equilibriumTemperature =
             (heatCapacityA * contact.BodyA->Temperature + heatCapacityB * contact.BodyB->Temperature)
             / (heatCapacityA + heatCapacityB);
@@ -182,9 +187,6 @@ void ThermalWorld::Step(float fixedDeltaTime)
         }
 
         body->Temperature += heatDeltas[bodyIndex] / heatCapacity;
-
-        // Kelvinは負値を取らないため、入力異常や将来の外部熱源実装から負温度が入っても
-        // Thermal Domain内部では絶対零度を下回らないようにします。
         body->Temperature = std::max(body->Temperature, 0.0f);
     }
 }
