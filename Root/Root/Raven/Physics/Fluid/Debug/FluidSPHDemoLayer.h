@@ -3,9 +3,9 @@
 #include <vector>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Physics/Fluid/FluidCouplingBinding.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
-#include "Raven/Physics/Fluid/FluidWorldCouplingHandle.h"
 #include "Raven/Physics/Fluid/SPHSolver.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
@@ -56,12 +56,12 @@ private:
     Application& m_Application;
     ph::SPHSolver m_Solver{};
 
-    // DemoはCoupling Solverそのものを所有しません。
-    // Participant固有の設定だけをHandleへ保持し、Resolve時にFluidWorld所有のCoupling Solverへ委譲します。
-    ph::FluidStaticColliderCouplingHandle m_StaticColliderCoupling{};
-    ph::FluidRigidBodyCouplingHandle m_RigidBodyCoupling{};
-
     std::vector<ph::FluidParticle> m_Particles;
+
+    // DemoはParticle群とCoupling設定だけを保持します。
+    // Scene Collider走査やRigidBody反作用の実行責務はFluidWorldのFixed Stepへ集約します。
+    ph::FluidCouplingBinding m_CouplingBinding{};
+
     std::vector<Entity> m_ParticleEntities;
     // 水槽壁と落下テストBodyもLayerの寿命に合わせて明示的に破棄します。
     std::vector<Entity> m_DemoEntities;
