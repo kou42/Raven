@@ -18,7 +18,6 @@
 #include "Raven/Debug/BrowserDebugViewer.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Fluid/Debug/FluidBuoyancyDebugOverlayLayer.h"
-#include "Raven/Physics/Fluid/Debug/FluidDemoCameraViewLayer.h"
 #include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
@@ -121,24 +120,8 @@ int main()
         if (characterLayerPointer != nullptr)
         {
             // 水槽本体は(50, 4, 50)を中心にXZ各4mの範囲です。
-            // Characterは+Z側の外へ配置し、Teleport後は専用Scene LayerがCharacter更新後に
-            // Runtime Cameraを上書きして、水面上のBox/Sphereを含む水槽全体を画面へ収めます。
+            // Teleport先は水槽の+Z側とし、視点は通常のCharacter Cameraで操作します。
             const Raven::math::Vec3 fluidDemoCharacterDebugPosition{ 50.0f, 0.0f, 58.0f };
-            const Raven::math::Vec3 fluidDemoCameraDebugPosition{ 50.0f, 5.0f, 64.0f };
-            const Raven::math::Vec3 fluidDemoCameraDebugRotation{ 0.0f, 0.0f, 0.0f };
-            constexpr float fluidDemoCameraActivationRadius = 2.0f;
-
-            // Characterの通常Orbit CameraはCharacter Layer内で更新されます。
-            // Fluid用Camera Layerをその直後へ積むことで、Fluid地点にいる間だけScene描画前の最終Cameraを
-            // 固定視点へ差し替え、CharacterController本体へFluid固有座標を持ち込みません。
-            runtimeScene->PushLayer(
-                Raven::CreateScope<Raven::FluidDemoCameraViewLayer>(
-                    *runtimeScene,
-                    *characterLayerPointer,
-                    fluidDemoCharacterDebugPosition,
-                    fluidDemoCameraDebugPosition,
-                    fluidDemoCameraDebugRotation,
-                    fluidDemoCameraActivationRadius));
 
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
