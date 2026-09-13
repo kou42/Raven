@@ -17,9 +17,16 @@ class Pipeline;
 class Shader;
 class Texture;
 
+// ============================================================================
+// MaterialSurfaceType
+// ============================================================================
+// Graphics API固有のBlend/Depth stateではなく、Materialが持つ描画上の意味を表します。
+// Opaque / MaskedはOpaque PassでDepthを書き込み、TransparentだけをTransparent Passへ送ります。
+// Maskedのalpha cutoff判定はFragment Shader側のdiscardで行い、Blendは使用しません。
 enum class MaterialSurfaceType
 {
     Opaque = 0,
+    Masked,
     Transparent
 };
 
