@@ -6,6 +6,7 @@
 #include "Raven/Physics/Coupling/FluidRigidBodyCoupling.h"
 #include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
+#include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
 #include "Raven/Physics/Fluid/SPHSolver.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
@@ -24,7 +25,8 @@ class Pipeline;
 // SPHSolverのParticleを通常のSphere Entityへ同期し、Game View / Scene View上で
 // Density -> Pressure -> Force -> Integration -> Collider Coupling の結果を目視確認します。
 // Simulation本体はSPHSolverへ閉じ、Scene Collider / RigidBodyとの接続はCoupling層へ分離します。
-class FluidSPHDemoLayer final : public Layer
+// Fixed Step実行はFluidSimulationParticipantとしてPhysicsSimulationWorldへ参加します。
+class FluidSPHDemoLayer final : public Layer, public ph::FluidSimulationParticipant
 {
 public:
     explicit FluidSPHDemoLayer(Application& application)
@@ -36,6 +38,10 @@ public:
     void OnDetach() override;
     void OnUpdate(float deltaTime) override;
     void OnRender() override;
+
+    // FluidSimulationParticipant
+    void SimulateFluid(float fixedDeltaTime) override;
+    void SynchronizeFluidOutput() override;
 
 private:
     void CreateParticles();
