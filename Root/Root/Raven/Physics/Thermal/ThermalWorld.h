@@ -7,13 +7,6 @@
 
 namespace Raven::ph
 {
-// ============================================================================
-// ThermalContact
-// ============================================================================
-// 2つの集中熱容量間で熱を伝える接続を表します。
-// Solverの正規入力は熱コンダクタンス G[W/K] です。
-// ContactArea等は既存呼び出しとの互換性と診断表示用に残し、RegisterContact時に
-// ThermalConductanceが未指定の場合だけ G = k_eff*A/d へ正規化します。
 struct ThermalContact
 {
     ThermalBody* BodyA = nullptr;
@@ -26,6 +19,21 @@ struct ThermalContact
     float ConductivityScale = 1.0f;
 };
 
+// ============================================================================
+// ThermalEnvironmentContact
+// ============================================================================
+// 無限熱容量の環境Reservoirとの熱交換境界です。
+// Newtonの冷却則 Qdot = h*A*(Tambient - Tbody) を G=h*A としてSolverへ渡します。
+// Environment側の温度は熱交換で変化しないため、Body間Contactとは異なり熱量を返しません。
+struct ThermalEnvironmentContact
+{
+    ThermalBody* Body = nullptr;
+    float AmbientTemperature = 293.15f;
+    float HeatTransferCoefficient = 10.0f; // h [W/(m^2*K)]
+    float SurfaceArea = 1.0f;              // A [m^2]
+    float ThermalConductance = 0.0f;       // G=h*A [W/K]
+};
+
 class ThermalWorld
 {
 public:
@@ -33,14 +41,12 @@ public:
     bool UnregisterBody(ThermalBody& body);
 
     bool RegisterContact(const ThermalContact& contact);
+    bool RegisterEnvironmentContact(const ThermalEnvironmentContact& contact);
     void ClearContacts();
     void Clear();
 
     void Step(float fixedDeltaTime);
 
-    // Explicit Eulerの多接触Networkを安定化するための設定です。
-    // 各Bodyについて tau = C / sum(G) を求め、SafetyFactor*tau以下になるよう
-    // Thermal Domain内部だけをsubstepへ分割します。
     void SetSubstepSafetyFactor(float safetyFactor);
     float GetSubstepSafetyFactor() const { return m_SubstepSafetyFactor; }
 
@@ -48,8 +54,6 @@ public:
     std::size_t GetMaximumSubsteps() const { return m_MaximumSubsteps; }
     std::size_t GetLastSubstepCount() const { return m_LastSubstepCount; }
 
-    // 材料熱伝導率と簡易形状パラメータから G[W/K] を構築します。
-    // 将来、接触熱抵抗を直接モデル化する境界はこの関数を使わずGを直接設定できます。
     static float CalculateConductance(
         const ThermalBody& bodyA,
         const ThermalBody& bodyB,
@@ -57,16 +61,23 @@ public:
         float conductionDistance,
         float conductivityScale = 1.0f);
 
+    static float CalculateConvectionConductance(
+        float heatTransferCoefficient,
+        float surfaceArea);
+
     bool ContainsBody(const ThermalBody& body) const;
     std::size_t GetRegisteredBodyCount() const { return m_Bodies.size(); }
     std::size_t GetContactCount() const { return m_Contacts.size(); }
+    std::size_t GetEnvironmentContactCount() const { return m_EnvironmentContacts.size(); }
 
     const std::vector<ThermalBody*>& GetRegisteredBodies() const { return m_Bodies; }
     const std::vector<ThermalContact>& GetContacts() const { return m_Contacts; }
+    const std::vector<ThermalEnvironmentContact>& GetEnvironmentContacts() const { return m_EnvironmentContacts; }
 
 private:
     std::vector<ThermalBody*> m_Bodies;
     std::vector<ThermalContact> m_Contacts;
+    std::vector<ThermalEnvironmentContact> m_EnvironmentContacts;
 
     float m_SubstepSafetyFactor = 0.5f;
     std::size_t m_MaximumSubsteps = 64u;
