@@ -271,6 +271,9 @@ void FluidSPHDemoLayer::CreateRenderEntities()
         // RavenのMaterialはFactoryではなくコンストラクタでPipelineを受け取る設計です。
         // ParticleごとにMaterialを分離し、各Entityの密度可視化色を独立して保持します。
         Ref<Material> material = CreateRef<Material>(m_ParticlePipeline);
+        // Fluid ParticleはRender Queue上の意味として明示的にTransparentです。
+        // u_Alphaは見た目のOpacityだけを担当させ、Surface分類をShader Uniform名から切り離します。
+        material->SetSurfaceType(MaterialSurfaceType::Transparent);
         // test.fragはTint(vec3)とAlpha(float)を別Uniformとして受け取ります。
         // Vec4をu_Tintへ渡すとu_Alphaが設定されず透明になるため、Alphaは必ず別Uniformへ設定します。
         material->SetUniform("u_Alpha", 0.72f);
@@ -295,6 +298,9 @@ void FluidSPHDemoLayer::CreateDemoTank()
     // 水槽はFluidデモエリアを遠距離から見つけやすくする視覚ガイドでもあります。
     // test.fragのUniform契約に合わせてTintとAlphaを分離し、内部のParticleや落下Bodyを確認できる透明度にします。
     Ref<Material> tankMaterial = CreateRef<Material>(m_ParticlePipeline);
+    // 水槽壁もOpacity値ではなくMaterialの描画意味としてTransparentへ分類します。
+    // これにより将来ShaderのUniform名を変更してもTransparent Passへの登録規約は変わりません。
+    tankMaterial->SetSurfaceType(MaterialSurfaceType::Transparent);
     tankMaterial->SetUniform("u_Tint", math::Vec3{ 0.20f, 0.65f, 0.85f });
     tankMaterial->SetUniform("u_Alpha", 0.35f);
 
