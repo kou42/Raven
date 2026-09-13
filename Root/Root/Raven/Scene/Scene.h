@@ -315,8 +315,10 @@ bool Scene::RemoveComponent(EntityIndex index)
 {
     ComponentStorage<T>* storage = FindStorage<T>();
 
-    if (storage == nullptr) {
-        return;
+    if (storage == nullptr)
+    {
+        // Storage未生成時は削除対象が存在しないため、削除失敗を返します。
+        return false;
     }
 
     return storage->Remove(index);
@@ -372,11 +374,14 @@ bool Entity::HasComponent() const
 template <class T>
 bool Entity::RemoveComponent()
 {
-    if (!*this) {
-        return;
+    if (static_cast<bool>(*this) == false)
+    {
+        // 無効なEntityからSceneへアクセスせず、削除失敗を返します。
+        return false;
     }
 
-    m_Scene->RemoveComponent<T>(m_Handle.m_Index);
+    // Storageで実際に削除できたかを呼び出し元まで伝えます。
+    return m_Scene->RemoveComponent<T>(m_Handle.m_Index);
 }
 
 // ============================================================
