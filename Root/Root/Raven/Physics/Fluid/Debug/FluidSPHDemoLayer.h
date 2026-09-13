@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Physics/Fluid/FluidCouplingBinding.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
 #include "Raven/Physics/Fluid/FluidWorldCouplingHandle.h"
@@ -30,7 +31,12 @@ class FluidSPHDemoLayer final : public Layer, public ph::FluidSimulationParticip
 public:
     explicit FluidSPHDemoLayer(Application& application)
         : m_Application(application)
+        , m_StaticColliderCoupling(m_CouplingBinding)
+        , m_RigidBodyCoupling(m_CouplingBinding)
     {
+        // Particle vector object自体のaddressはLayer lifetime中不変です。
+        // vector内部bufferの再配置とは独立して、Bindingはvector objectを非所有参照します。
+        m_CouplingBinding.Particles = &m_Particles;
     }
 
     void OnAttach() override;
@@ -40,6 +46,10 @@ public:
 
     // FluidSimulationParticipant
     void SimulateFluid(float fixedDeltaTime) override;
+    ph::FluidCouplingBinding* GetFluidCouplingBinding() override
+    {
+        return &m_CouplingBinding;
+    }
     void SynchronizeFluidOutput() override;
 
 private:
@@ -56,12 +66,17 @@ private:
     Application& m_Application;
     ph::SPHSolver m_Solver{};
 
-    // DemoはCoupling Solverそのものを所有しません。
-    // Participant固有の設定だけをHandleへ保持し、Resolve時にFluidWorld所有のCoupling Solverへ委譲します。
-    ph::FluidStaticColliderCouplingHandle m_StaticColliderCoupling{};
-    ph::FluidRigidBodyCouplingHandle m_RigidBodyCoupling{};
-
     std::vector<ph::FluidParticle> m_Particles;
+
+    // DemoはParticle群とCoupling設定だけを保持します。
+    // Scene Collider走査やRigidBody反作用の実行責務はFluidWorldのFixed Stepへ集約します。
+    ph::FluidCouplingBinding m_CouplingBinding{};
+
+    // 既存Demo初期化コードのSetSettings()呼び出しをBindingへ転送する互換Handleです。
+    // ResolveScene()はno-opで、Couplingの実処理はFluidWorldだけが行います。
+    ph::FluidStaticColliderCouplingHandle m_StaticColliderCoupling;
+    ph::FluidRigidBodyCouplingHandle m_RigidBodyCoupling;
+
     std::vector<Entity> m_ParticleEntities;
     // 水槽壁と落下テストBodyもLayerの寿命に合わせて明示的に破棄します。
     std::vector<Entity> m_DemoEntities;

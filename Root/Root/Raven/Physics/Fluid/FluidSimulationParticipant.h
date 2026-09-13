@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Physics/Fluid/FluidCouplingBinding.h"
+
 namespace Raven::ph
 {
 
@@ -18,6 +20,13 @@ public:
     virtual ~FluidSimulationParticipant() = default;
 
     virtual void SimulateFluid(float fixedDeltaTime) = 0;
+
+    // Scene/RigidBody Couplingを必要とするParticipantだけBindingを公開します。
+    // Particle-based Couplingを使わない実装は既定nullptrのまま利用できます。
+    virtual FluidCouplingBinding* GetFluidCouplingBinding()
+    {
+        return nullptr;
+    }
 
     // Simulation参加者がRender EntityやGPU Bufferなど外部出力を持つ場合だけoverrideします。
     // 純粋なPhysics Test Participantは既定no-opのまま利用できます。

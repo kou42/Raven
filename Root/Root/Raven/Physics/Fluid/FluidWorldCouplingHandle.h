@@ -2,24 +2,44 @@
 
 #include <vector>
 
-#include "Raven/Physics/PhysicsSimulationWorld.h"
-#include "Raven/Scene/Scene.h"
+#include "Raven/Physics/Fluid/FluidCouplingBinding.h"
+#include "Raven/Physics/PhysicsWorld.h"
 
-namespace Raven::ph
+namespace Raven
+{
+class Scene;
+
+namespace ph
 {
 
 // ============================================================================
 // FluidStaticColliderCouplingHandle
 // ============================================================================
-// Fluid Participant側が保持する軽量な設定Handleです。
-// 実際のFluidStaticColliderCouplingはFluidWorldが所有し、このHandleはResolve時に
-// Participant固有設定とParticle配列だけをFluidWorldへ渡します。
+// 既存Demoコードとの互換性を保つ設定Handleです。
+// Coupling実行本体はFluidWorldのFixed Stepへ移行したため、ResolveScene()は実行を行いません。
 class FluidStaticColliderCouplingHandle
 {
 public:
+    FluidStaticColliderCouplingHandle() = default;
+
+    explicit FluidStaticColliderCouplingHandle(FluidCouplingBinding& binding)
+        : m_Binding(&binding)
+    {
+    }
+
+    void Bind(FluidCouplingBinding& binding)
+    {
+        m_Binding = &binding;
+        m_Binding->StaticColliderSettings = m_Settings;
+    }
+
     void SetSettings(const FluidStaticColliderCouplingSettings& settings)
     {
         m_Settings = settings;
+        if (m_Binding != nullptr)
+        {
+            m_Binding->StaticColliderSettings = settings;
+        }
     }
 
     const FluidStaticColliderCouplingSettings& GetSettings() const
@@ -29,26 +49,43 @@ public:
 
     void ResolveScene(Scene& scene, std::vector<FluidParticle>& particles) const
     {
-        FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
-        fluidWorld.SetStaticColliderCouplingSettings(m_Settings);
-        fluidWorld.ResolveStaticColliderCoupling(scene, particles);
+        // CouplingはFluidWorld::StepSimulation(Scene&, PhysicsWorld&, ...)がParticipant Simulation後に
+        // 一括解決します。既存Demoの呼び出し形を一時的に維持するため、この入口はno-opです。
+        (void)scene;
+        (void)particles;
     }
 
 private:
+    FluidCouplingBinding* m_Binding = nullptr;
     FluidStaticColliderCouplingSettings m_Settings{};
 };
 
 // ============================================================================
 // FluidRigidBodyCouplingHandle
 // ============================================================================
-// Dynamic RigidBody CouplingについてもSolver本体はFluidWorldへ集約し、Participant側には
-// Simulation固有の設定値だけを残します。PhysicsWorld参照は既存Coupling APIとの互換性を維持します。
 class FluidRigidBodyCouplingHandle
 {
 public:
+    FluidRigidBodyCouplingHandle() = default;
+
+    explicit FluidRigidBodyCouplingHandle(FluidCouplingBinding& binding)
+        : m_Binding(&binding)
+    {
+    }
+
+    void Bind(FluidCouplingBinding& binding)
+    {
+        m_Binding = &binding;
+        m_Binding->RigidBodySettings = m_Settings;
+    }
+
     void SetSettings(const FluidRigidBodyCouplingSettings& settings)
     {
         m_Settings = settings;
+        if (m_Binding != nullptr)
+        {
+            m_Binding->RigidBodySettings = settings;
+        }
     }
 
     const FluidRigidBodyCouplingSettings& GetSettings() const
@@ -62,17 +99,17 @@ public:
         std::vector<FluidParticle>& particles,
         float fixedDeltaTime = 0.0f) const
     {
-        FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
-        fluidWorld.SetRigidBodyCouplingSettings(m_Settings);
-        fluidWorld.ResolveRigidBodyCoupling(
-            scene,
-            physicsWorld,
-            particles,
-            fixedDeltaTime);
+        // 実CouplingはFluidWorldのFixed Stepで一度だけ行います。
+        (void)scene;
+        (void)physicsWorld;
+        (void)particles;
+        (void)fixedDeltaTime;
     }
 
 private:
+    FluidCouplingBinding* m_Binding = nullptr;
     FluidRigidBodyCouplingSettings m_Settings{};
 };
 
-} // namespace Raven::ph
+} // namespace ph
+} // namespace Raven
