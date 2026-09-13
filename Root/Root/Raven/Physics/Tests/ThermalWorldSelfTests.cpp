@@ -64,7 +64,6 @@ void RunThermalRadiationTest()
     body.Temperature = 800.0f;
     body.Mass = 1.0f;
     body.Material.SpecificHeatCapacity = 100.0f;
-
     ThermalWorld world{};
     assert(world.RegisterBody(body) == true);
 
@@ -76,7 +75,6 @@ void RunThermalRadiationTest()
     assert(world.RegisterRadiationContact(radiation) == true);
     assert(world.GetRadiationContactCount() == 1u);
 
-    // 800K黒体から300K環境への正味放射は負(Bodyから放熱)になることを確認します。
     const float heatFlow = ThermalWorld::CalculateRadiationHeatFlow(800.0f, 300.0f, 1.0f, 1.0f);
     assert(heatFlow < 0.0f);
     assert(ThermalWorld::CalculateRadiationTangentConductance(800.0f, 1.0f, 1.0f) > 0.0f);
@@ -86,8 +84,8 @@ void RunThermalRadiationTest()
     assert(body.Temperature < initialTemperature);
     assert(body.Temperature >= 300.0f);
 
-    // 非線形T^4熱流を反復し、Environment温度へ近づくことを確認します。
-    for (std::size_t stepIndex = 0u; stepIndex < 2000u; ++stepIndex)
+    // 放射冷却は300K付近で熱流が小さくなるため、十分な物理時間を進めて漸近収束を確認します。
+    for (std::size_t stepIndex = 0u; stepIndex < 10000u; ++stepIndex)
     {
         world.Step(0.1f);
     }
