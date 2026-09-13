@@ -77,11 +77,11 @@ void FluidSPHDemoLayer::OnAttach()
     m_Solver.SetSettings(initialSettings);
 
     // Static / Dynamic Couplingは同じParticle半径と反発係数を使用します。
-    // 接触応答の設定をSPHSolverへ混ぜず、Domain間Coupling固有値として分離します。
+    // Coupling設定はBindingへ保持し、実行自体はFluidWorldのFixed Stepへ一元化します。
     ph::FluidStaticColliderCouplingSettings staticCouplingSettings{};
     staticCouplingSettings.ParticleRadius = RenderParticleRadius;
     staticCouplingSettings.Restitution = initialSettings.BoundaryRestitution;
-    m_StaticColliderCoupling.SetSettings(staticCouplingSettings);
+    m_CouplingBinding.StaticColliderSettings = staticCouplingSettings;
 
     ph::FluidRigidBodyCouplingSettings rigidBodyCouplingSettings{};
     rigidBodyCouplingSettings.ParticleRadius = RenderParticleRadius;
@@ -93,7 +93,7 @@ void FluidSPHDemoLayer::OnAttach()
     // 接触Particleの排除質量からArchimedes相当の浮力を構築します。
     // 係数1.0を基準に、RigidBody質量と排除Fluid質量の比で浮く/沈む挙動が変わります。
     rigidBodyCouplingSettings.BuoyancyCoefficient = 1.0f;
-    m_RigidBodyCoupling.SetSettings(rigidBodyCouplingSettings);
+    m_CouplingBinding.RigidBodySettings = rigidBodyCouplingSettings;
 
     m_Solver.ComputeDensity(m_Particles);
 
@@ -215,25 +215,9 @@ void FluidSPHDemoLayer::SimulateFluid(float fixedDeltaTime)
         return;
     }
 
-    // Scene側のFixed StepをSPHSolverへ渡し、その内側でCFL等に基づくFluid substepへ分割します。
-    // Engine fixed-stepとFluid stability substepを分離することで、Domain間同期周期を一定に保ちます。
+    // Fluid Participantは純粋な数値計算だけを担当します。
+    // Static Collider / Dynamic RigidBody Couplingは、このStep直後にFluidWorldが一度だけ解決します。
     m_Solver.Step(m_Particles, fixedDeltaTime);
-
-    Scene* scene = m_Application.GetScene();
-    if (scene == nullptr)
-    {
-        return;
-    }
-
-    // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
-    // Normal / Pressure / Buoyancy / Dragの運動量交換を返します。
-    // SPHSolver自体にはScene依存を持たせず、異なるPhysics Domain間の接続はCoupling層へ委譲します。
-    m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
-    m_RigidBodyCoupling.ResolveScene(
-        *scene,
-        scene->GetPhysicsWorld(),
-        m_Particles,
-        fixedDeltaTime);
 }
 
 void FluidSPHDemoLayer::SynchronizeFluidOutput()
