@@ -34,10 +34,6 @@ bool HasRegisteredThermalPair(
 void ThermalSystem::SynchronizeWorld(Scene& scene)
 {
     ThermalWorld& thermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
-
-    // ComponentStorageはdense vectorのため、Component追加・削除で要素アドレスが変化し得ます。
-    // ThermalWorldへpointerを長期保存せず、Fixed Step直前にRegistryを作り直すことで、
-    // ECSのlifetimeを正規データとしてdangling pointerを次Stepへ持ち越さないようにします。
     thermalWorld.Clear();
 
     for (auto [entity, thermalBodyComponent] : scene.View<ThermalBodyComponent>())
@@ -75,9 +71,12 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         ThermalContact contact{};
         contact.BodyA = &sourceBodyComponent->Body;
         contact.BodyB = &targetBodyComponent->Body;
-        contact.ContactArea = thermalContactComponent.ContactArea;
-        contact.ConductionDistance = thermalContactComponent.ConductionDistance;
-        contact.ConductivityScale = thermalContactComponent.ConductivityScale;
+        contact.ThermalConductance = ThermalWorld::CalculateConductance(
+            sourceBodyComponent->Body,
+            targetBodyComponent->Body,
+            thermalContactComponent.ContactArea,
+            thermalContactComponent.ConductionDistance,
+            thermalContactComponent.ConductivityScale);
 
         thermalWorld.RegisterContact(contact);
     }
@@ -124,8 +123,6 @@ void ThermalSystem::AppendRigidBodyContacts(
             continue;
         }
 
-        // 明示ThermalContactが同じPairに存在する場合は、ユーザー指定を優先します。
-        // 同一Pairへ自動Contactも重ねると熱伝導率を意図せず二重計上するためです。
         if (HasRegisteredThermalPair(
             thermalWorld,
             bodyComponentA->Body,
@@ -144,20 +141,24 @@ void ThermalSystem::AppendRigidBodyContacts(
             continue;
         }
 
-        // Contact Manifoldは真の面積を持たないため、接触点数を面積の離散近似として使用します。
-        // Pair双方の設定のうち小さい面積を採用し、過大な熱流を作りにくい保守的な値にします。
         const float areaPerPoint = std::min(
             settingsA->NominalContactAreaPerPoint,
             settingsB->NominalContactAreaPerPoint);
+        const float contactArea = areaPerPoint * static_cast<float>(manifold.PointCount);
+        const float conductionDistance = 0.5f
+            * (settingsA->ConductionDistance + settingsB->ConductionDistance);
+        const float conductivityScale = std::sqrt(
+            settingsA->ConductivityScale * settingsB->ConductivityScale);
 
         ThermalContact contact{};
         contact.BodyA = &bodyComponentA->Body;
         contact.BodyB = &bodyComponentB->Body;
-        contact.ContactArea = areaPerPoint * static_cast<float>(manifold.PointCount);
-        contact.ConductionDistance = 0.5f
-            * (settingsA->ConductionDistance + settingsB->ConductionDistance);
-        contact.ConductivityScale = std::sqrt(
-            settingsA->ConductivityScale * settingsB->ConductivityScale);
+        contact.ThermalConductance = ThermalWorld::CalculateConductance(
+            bodyComponentA->Body,
+            bodyComponentB->Body,
+            contactArea,
+            conductionDistance,
+            conductivityScale);
 
         thermalWorld.RegisterContact(contact);
     }
