@@ -5,35 +5,44 @@
 
 namespace Raven::ph
 {
+// Entityが持つ熱状態そのものです。ThermalWorldはこのBodyを所有せず、
+// Fixed Step開始時にThermalSystemがECSからpointerを解決してRuntime Registryへ登録します。
 struct ThermalBodyComponent
 {
     ThermalBody Body{};
     bool Enabled = true;
 };
 
+// Entity間に明示的な熱伝導リンクを設定します。
+// ContactAreaとConductionDistanceから k_eff*A/d を計算し、Solverへ渡す時点では
+// ThermalConductance G [W/K]へ正規化します。Rigid Contact由来の自動リンクより優先されます。
 struct ThermalContactComponent
 {
     EntityHandle TargetEntity{};
-    float ContactArea = 1.0f;
-    float ConductionDistance = 1.0f;
-    float ConductivityScale = 1.0f;
+    float ContactArea = 1.0f;        // A [m^2]
+    float ConductionDistance = 1.0f; // d [m]
+    float ConductivityScale = 1.0f;  // 無次元補正係数
     bool Enabled = true;
 };
 
+// Rigid BodyのContact Manifoldから熱接触を自動生成するための近似パラメータです。
+// 現在のPhysics Contactは実接触面積を直接持たないため、ContactPoint数×代表面積でAを近似します。
+// ConductionDistanceも実際の表面粗さ・接触熱抵抗を解いている値ではなく、基礎モデル用の有効距離です。
 struct ThermalRigidContactComponent
 {
-    float NominalContactAreaPerPoint = 1.0e-4f;
-    float ConductionDistance = 1.0e-2f;
-    float ConductivityScale = 1.0f;
+    float NominalContactAreaPerPoint = 1.0e-4f; // 1 ContactPointあたりの代表面積 [m^2]
+    float ConductionDistance = 1.0e-2f;         // 有効伝導距離 [m]
+    float ConductivityScale = 1.0f;             // 無次元補正係数
     bool Enabled = true;
 };
 
 // Entity表面と一定温度の周囲流体との対流熱伝達です。
+// Newtonの冷却則 Qdot=h*A*(Tenv-Tbody) を使用し、Environmentは無限Reservoirとみなします。
 struct ThermalConvectionComponent
 {
-    float AmbientTemperature = 293.15f;
-    float HeatTransferCoefficient = 10.0f; // h [W/(m^2*K)]
-    float SurfaceArea = 1.0f;              // A [m^2]
+    float AmbientTemperature = 293.15f;      // Tenv [K]
+    float HeatTransferCoefficient = 10.0f;   // h [W/(m^2*K)]
+    float SurfaceArea = 1.0f;                // A [m^2]
     bool Enabled = true;
 };
 
