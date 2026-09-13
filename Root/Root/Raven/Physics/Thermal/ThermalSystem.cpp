@@ -1,18 +1,43 @@
 #include "Raven/Physics/Thermal/ThermalSystem.h"
 
+#include <algorithm>
+#include <cmath>
+
+#include "Raven/Physics/Contact.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Physics/Thermal/ThermalComponents.h"
 #include "Raven/Scene/Scene.h"
 
 namespace Raven::ph
 {
+namespace
+{
+bool HasRegisteredThermalPair(
+    const ThermalWorld& thermalWorld,
+    const ThermalBody& bodyA,
+    const ThermalBody& bodyB)
+{
+    for (const ThermalContact& contact : thermalWorld.GetContacts())
+    {
+        const bool sameOrder = contact.BodyA == &bodyA && contact.BodyB == &bodyB;
+        const bool reverseOrder = contact.BodyA == &bodyB && contact.BodyB == &bodyA;
+        if (sameOrder == true || reverseOrder == true)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+}
+
 void ThermalSystem::SynchronizeWorld(Scene& scene)
 {
     ThermalWorld& thermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
 
     // ComponentStorageはdense vectorのため、Component追加・削除で要素アドレスが変化し得ます。
-    // ThermalWorldへpointerを長期保存せず、Fixed Step群の直前にRegistryを作り直すことで、
-    // ECSのlifetimeを正規データとしてdangling pointerを次frameへ持ち越さないようにします。
+    // ThermalWorldへpointerを長期保存せず、Fixed Step直前にRegistryを作り直すことで、
+    // ECSのlifetimeを正規データとしてdangling pointerを次Stepへ持ち越さないようにします。
     thermalWorld.Clear();
 
     for (auto [entity, thermalBodyComponent] : scene.View<ThermalBodyComponent>())
@@ -54,8 +79,86 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         contact.ConductionDistance = thermalContactComponent.ConductionDistance;
         contact.ConductivityScale = thermalContactComponent.ConductivityScale;
 
-        // ThermalWorld側でも数値範囲と登録済みBodyを検証します。
-        // ECS System側はEntity lifetimeとComponent有効状態、Solver側は熱モデルの契約を担当します。
+        thermalWorld.RegisterContact(contact);
+    }
+}
+
+void ThermalSystem::AppendRigidBodyContacts(
+    Scene& scene,
+    const std::vector<ContactManifold>& manifolds)
+{
+    ThermalWorld& thermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
+
+    for (const ContactManifold& manifold : manifolds)
+    {
+        if (manifold.IsTrigger == true || manifold.PointCount == 0u)
+        {
+            continue;
+        }
+
+        const EntityHandle handleA = manifold.A.GetHandle();
+        const EntityHandle handleB = manifold.B.GetHandle();
+        if (scene.IsEntityAlive(handleA) == false || scene.IsEntityAlive(handleB) == false)
+        {
+            continue;
+        }
+
+        ThermalBodyComponent* bodyComponentA =
+            scene.TryGetComponent<ThermalBodyComponent>(handleA.m_Index);
+        ThermalBodyComponent* bodyComponentB =
+            scene.TryGetComponent<ThermalBodyComponent>(handleB.m_Index);
+        const ThermalRigidContactComponent* settingsA =
+            scene.TryGetComponent<ThermalRigidContactComponent>(handleA.m_Index);
+        const ThermalRigidContactComponent* settingsB =
+            scene.TryGetComponent<ThermalRigidContactComponent>(handleB.m_Index);
+
+        if (bodyComponentA == nullptr
+            || bodyComponentB == nullptr
+            || settingsA == nullptr
+            || settingsB == nullptr
+            || bodyComponentA->Enabled == false
+            || bodyComponentB->Enabled == false
+            || settingsA->Enabled == false
+            || settingsB->Enabled == false)
+        {
+            continue;
+        }
+
+        // 明示ThermalContactが同じPairに存在する場合は、ユーザー指定を優先します。
+        // 同一Pairへ自動Contactも重ねると熱伝導率を意図せず二重計上するためです。
+        if (HasRegisteredThermalPair(
+            thermalWorld,
+            bodyComponentA->Body,
+            bodyComponentB->Body) == true)
+        {
+            continue;
+        }
+
+        if (settingsA->NominalContactAreaPerPoint <= 0.0f
+            || settingsB->NominalContactAreaPerPoint <= 0.0f
+            || settingsA->ConductionDistance <= 0.0f
+            || settingsB->ConductionDistance <= 0.0f
+            || settingsA->ConductivityScale < 0.0f
+            || settingsB->ConductivityScale < 0.0f)
+        {
+            continue;
+        }
+
+        // Contact Manifoldは真の面積を持たないため、接触点数を面積の離散近似として使用します。
+        // Pair双方の設定のうち小さい面積を採用し、過大な熱流を作りにくい保守的な値にします。
+        const float areaPerPoint = std::min(
+            settingsA->NominalContactAreaPerPoint,
+            settingsB->NominalContactAreaPerPoint);
+
+        ThermalContact contact{};
+        contact.BodyA = &bodyComponentA->Body;
+        contact.BodyB = &bodyComponentB->Body;
+        contact.ContactArea = areaPerPoint * static_cast<float>(manifold.PointCount);
+        contact.ConductionDistance = 0.5f
+            * (settingsA->ConductionDistance + settingsB->ConductionDistance);
+        contact.ConductivityScale = std::sqrt(
+            settingsA->ConductivityScale * settingsB->ConductivityScale);
+
         thermalWorld.RegisterContact(contact);
     }
 }
