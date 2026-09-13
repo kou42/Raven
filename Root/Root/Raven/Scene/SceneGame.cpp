@@ -470,6 +470,8 @@ void SceneGame::OnCreate()
     shadowPipelineSpecification.DepthWrite = false;
     shadowPipelineSpecification.DepthCompare = DepthCompareOperator::LessEqual;
     m_ShadowMaterial = CreateRef<Material>(Pipeline::Create(shadowPipelineSpecification));
+    // 半透明の影をu_Alphaの推論に依存せずTransparent Passへ分類します。
+    m_ShadowMaterial->SetSurfaceType(MaterialSurfaceType::Transparent);
     m_ShadowMaterial->SetUniform("u_Tint", math::Vec3{ 0.0f, 0.0f, 0.0f });
     m_ShadowMaterial->SetUniform("u_Alpha", 0.35f);
 
