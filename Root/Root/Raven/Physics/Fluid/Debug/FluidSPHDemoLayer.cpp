@@ -155,6 +155,10 @@ void FluidSPHDemoLayer::OnAttach()
     CreateRenderEntities();
     CreateDemoTank();
     SynchronizeRenderEntities();
+
+    // Demo Layer自身を非所有Participantとして登録し、SPH Simulationを可変frame dtではなく
+    // SceneのPhysics fixed-stepへ参加させます。所有権はLayer側に残るためDetach時に必ず解除します。
+    scene->GetPhysicsSimulationWorld().GetFluidWorld().RegisterSimulationParticipant(*this);
 }
 
 void FluidSPHDemoLayer::OnDetach()
@@ -162,6 +166,9 @@ void FluidSPHDemoLayer::OnDetach()
     Scene* scene = m_Application.GetScene();
     if (scene != nullptr)
     {
+        // Layer破棄後のdangling pointerをFluidWorldへ残さないよう、Entity破棄より先にRegistryを解除します。
+        scene->GetPhysicsSimulationWorld().GetFluidWorld().UnregisterSimulationParticipant(*this);
+
         // Demo Layerが生成したEntityだけを明示的に破棄し、Active Scene側へ検証用Entityを残しません。
         for (Entity& entity : m_ParticleEntities)
         {
@@ -190,35 +197,47 @@ void FluidSPHDemoLayer::OnDetach()
 
 void FluidSPHDemoLayer::OnUpdate(float deltaTime)
 {
+    // Fluid SimulationはPhysicsSimulationWorldのfixed-stepから実行します。
+    // Layerの可変frame dtを使うとRigid/Soft/Thermalとの時間順序がframe rate依存になるため、
+    // OnUpdateではSimulationやRender同期を行いません。
+    (void)deltaTime;
+}
+
+void FluidSPHDemoLayer::SimulateFluid(float fixedDeltaTime)
+{
     if (m_Particles.empty())
     {
         return;
     }
 
-    // Application frameの極端なstallをそのままSPHへ渡さないよう上限を設けます。
-    // その内側ではSPHSolver自身のStable Time Stepが必要なSubstepへ分割します。
-    const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.0333333f);
-    if (safeDeltaTime <= 0.0f)
+    if (fixedDeltaTime <= 0.0f)
     {
         return;
     }
 
-    m_Solver.Step(m_Particles, safeDeltaTime);
+    // Scene側のFixed StepをSPHSolverへ渡し、その内側でCFL等に基づくFluid substepへ分割します。
+    // Engine fixed-stepとFluid stability substepを分離することで、Domain間同期周期を一定に保ちます。
+    m_Solver.Step(m_Particles, fixedDeltaTime);
 
     Scene* scene = m_Application.GetScene();
-    if (scene != nullptr)
+    if (scene == nullptr)
     {
-        // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
-        // Normal / Pressure / Buoyancy / Dragの運動量交換を返します。
-        // SPHSolver自体にはScene依存を持たせず、異なるPhysics Domain間の接続はCoupling層へ委譲します。
-        m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
-        m_RigidBodyCoupling.ResolveScene(
-            *scene,
-            scene->GetPhysicsWorld(),
-            m_Particles,
-            safeDeltaTime);
+        return;
     }
 
+    // StaticはParticleだけを補正し、Dynamic RigidBodyにはNewtonの第三法則に従って
+    // Normal / Pressure / Buoyancy / Dragの運動量交換を返します。
+    // SPHSolver自体にはScene依存を持たせず、異なるPhysics Domain間の接続はCoupling層へ委譲します。
+    m_StaticColliderCoupling.ResolveScene(*scene, m_Particles);
+    m_RigidBodyCoupling.ResolveScene(
+        *scene,
+        scene->GetPhysicsWorld(),
+        m_Particles,
+        fixedDeltaTime);
+}
+
+void FluidSPHDemoLayer::SynchronizeFluidOutput()
+{
     SynchronizeRenderEntities();
 }
 
