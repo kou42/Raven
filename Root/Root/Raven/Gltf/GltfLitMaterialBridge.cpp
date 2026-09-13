@@ -2,16 +2,14 @@
 #include "Raven/Gltf/GltfLitMaterialBridge.h"
 
 #include "Raven/Assets/TextureAsset.h"
-#include "Raven/Gltf/MaterialImporter.h"
 #include "Raven/Renderer/Texture/Texture.h"
 
 namespace Raven
 {
 namespace Gltf
 {
-namespace
-{
-MaterialSurfaceType ToSurfaceType(MaterialAlphaMode alphaMode)
+
+MaterialSurfaceType GltfLitMaterialBridge::ResolveSurfaceType(MaterialAlphaMode alphaMode)
 {
     switch (alphaMode)
     {
@@ -24,7 +22,6 @@ MaterialSurfaceType ToSurfaceType(MaterialAlphaMode alphaMode)
         return MaterialSurfaceType::Opaque;
     }
 }
-} // namespace
 
 Ref<Material> GltfLitMaterialBridge::Create(
     const ImportedMaterial& importedMaterial,
@@ -43,7 +40,7 @@ Ref<Material> GltfLitMaterialBridge::Create(
     return LitMaterialFactory::CreateDirectionalLit(
         importedMaterial.BaseColorFactor,
         baseColorTexture,
-        ToSurfaceType(importedMaterial.AlphaMode),
+        ResolveSurfaceType(importedMaterial.AlphaMode),
         importedMaterial.AlphaCutoff,
         light);
 }
