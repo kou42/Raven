@@ -99,6 +99,27 @@ void ThermalWorld::Clear()
 {
     m_Contacts.clear();
     m_Bodies.clear();
+    m_LastSubstepCount = 0u;
+}
+
+void ThermalWorld::SetSubstepSafetyFactor(float safetyFactor)
+{
+    if (safetyFactor <= MinimumThermalValue)
+    {
+        return;
+    }
+
+    m_SubstepSafetyFactor = safetyFactor;
+}
+
+void ThermalWorld::SetMaximumSubsteps(std::size_t maximumSubsteps)
+{
+    if (maximumSubsteps == 0u)
+    {
+        return;
+    }
+
+    m_MaximumSubsteps = maximumSubsteps;
 }
 
 float ThermalWorld::CalculateConductance(
@@ -126,14 +147,17 @@ float ThermalWorld::CalculateConductance(
 
 void ThermalWorld::Step(float fixedDeltaTime)
 {
-    if (fixedDeltaTime <= 0.0f || m_Contacts.empty() == true)
+    m_LastSubstepCount = 0u;
+    if (fixedDeltaTime <= 0.0f || m_Contacts.empty() == true || m_Bodies.empty() == true)
     {
         return;
     }
 
-    // 全ContactをStep開始時温度から評価し、Bodyごとの熱量[J]を蓄積してから一括反映します。
-    // Solverは接触形状を知らず、各境界モデルが生成した G[W/K] のみを共通入力として扱います。
-    std::vector<float> heatDeltas(m_Bodies.size(), 0.0f);
+    // 各Bodyへ接続されたGの総和を求めます。集中熱容量C[J/K]に対して
+    // tau = C / sum(G) [s] が、そのBodyの温度が変化する代表時定数になります。
+    // Explicit Eulerをこの時定数より十分細かく刻むことで、多接触でも一括更新の
+    // Contact順序非依存性を保ったまま振動・発散を抑えます。
+    std::vector<float> conductanceSums(m_Bodies.size(), 0.0f);
 
     for (const ThermalContact& contact : m_Contacts)
     {
@@ -151,43 +175,17 @@ void ThermalWorld::Step(float fixedDeltaTime)
             continue;
         }
 
-        const float heatCapacityA = contact.BodyA->GetHeatCapacity();
-        const float heatCapacityB = contact.BodyB->GetHeatCapacity();
-        if (heatCapacityA <= MinimumThermalValue || heatCapacityB <= MinimumThermalValue)
-        {
-            continue;
-        }
-
-        const float temperatureDifference = contact.BodyB->Temperature - contact.BodyA->Temperature;
-        float transferredHeat = contact.ThermalConductance * temperatureDifference * fixedDeltaTime;
-
-        // Explicit Eulerで単一Contactの平衡温度を飛び越えないよう、2 Bodyだけが熱交換した場合の
-        // 平衡熱量でClampします。多接触Networkの安定性は次段階でsubstep条件として扱います。
-        const float equilibriumTemperature =
-            (heatCapacityA * contact.BodyA->Temperature + heatCapacityB * contact.BodyB->Temperature)
-            / (heatCapacityA + heatCapacityB);
-        const float heatToEquilibrium =
-            heatCapacityA * (equilibriumTemperature - contact.BodyA->Temperature);
-
-        if (heatToEquilibrium >= 0.0f)
-        {
-            transferredHeat = std::min(transferredHeat, heatToEquilibrium);
-        }
-        else
-        {
-            transferredHeat = std::max(transferredHeat, heatToEquilibrium);
-        }
-
         const std::size_t bodyAIndex = static_cast<std::size_t>(bodyAIterator - m_Bodies.begin());
         const std::size_t bodyBIndex = static_cast<std::size_t>(bodyBIterator - m_Bodies.begin());
-        heatDeltas[bodyAIndex] += transferredHeat;
-        heatDeltas[bodyBIndex] -= transferredHeat;
+        conductanceSums[bodyAIndex] += contact.ThermalConductance;
+        conductanceSums[bodyBIndex] += contact.ThermalConductance;
     }
 
+    float stableSubstepTime = fixedDeltaTime;
     for (std::size_t bodyIndex = 0; bodyIndex < m_Bodies.size(); ++bodyIndex)
     {
-        ThermalBody* body = m_Bodies[bodyIndex];
-        if (body == nullptr)
+        const ThermalBody* body = m_Bodies[bodyIndex];
+        if (body == nullptr || conductanceSums[bodyIndex] <= MinimumThermalValue)
         {
             continue;
         }
@@ -198,8 +196,96 @@ void ThermalWorld::Step(float fixedDeltaTime)
             continue;
         }
 
-        body->Temperature += heatDeltas[bodyIndex] / heatCapacity;
-        body->Temperature = std::max(body->Temperature, 0.0f);
+        const float thermalTimeConstant = heatCapacity / conductanceSums[bodyIndex];
+        stableSubstepTime = std::min(
+            stableSubstepTime,
+            m_SubstepSafetyFactor * thermalTimeConstant);
+    }
+
+    std::size_t substepCount = 1u;
+    if (stableSubstepTime > MinimumThermalValue && stableSubstepTime < fixedDeltaTime)
+    {
+        substepCount = static_cast<std::size_t>(
+            std::ceil(fixedDeltaTime / stableSubstepTime));
+        substepCount = std::min(substepCount, m_MaximumSubsteps);
+    }
+
+    m_LastSubstepCount = substepCount;
+    const float substepDeltaTime = fixedDeltaTime / static_cast<float>(substepCount);
+    std::vector<float> heatDeltas(m_Bodies.size(), 0.0f);
+
+    for (std::size_t substepIndex = 0; substepIndex < substepCount; ++substepIndex)
+    {
+        std::fill(heatDeltas.begin(), heatDeltas.end(), 0.0f);
+
+        // 各substepでも全Contactを開始時温度から評価して最後に一括反映します。
+        // したがってContactの登録順を変えても同じ温度状態から同じ熱量を計算できます。
+        for (const ThermalContact& contact : m_Contacts)
+        {
+            if (contact.BodyA == nullptr
+                || contact.BodyB == nullptr
+                || contact.ThermalConductance <= 0.0f)
+            {
+                continue;
+            }
+
+            const auto bodyAIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.BodyA);
+            const auto bodyBIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.BodyB);
+            if (bodyAIterator == m_Bodies.end() || bodyBIterator == m_Bodies.end())
+            {
+                continue;
+            }
+
+            const float heatCapacityA = contact.BodyA->GetHeatCapacity();
+            const float heatCapacityB = contact.BodyB->GetHeatCapacity();
+            if (heatCapacityA <= MinimumThermalValue || heatCapacityB <= MinimumThermalValue)
+            {
+                continue;
+            }
+
+            const float temperatureDifference = contact.BodyB->Temperature - contact.BodyA->Temperature;
+            float transferredHeat = contact.ThermalConductance * temperatureDifference * substepDeltaTime;
+
+            // SafetyFactorでNetwork全体を安定化していますが、MaximumSubsteps上限へ到達した場合にも
+            // 単一Edgeが平衡点を大きく飛び越えないよう、局所Clampを安全網として残します。
+            const float equilibriumTemperature =
+                (heatCapacityA * contact.BodyA->Temperature + heatCapacityB * contact.BodyB->Temperature)
+                / (heatCapacityA + heatCapacityB);
+            const float heatToEquilibrium =
+                heatCapacityA * (equilibriumTemperature - contact.BodyA->Temperature);
+
+            if (heatToEquilibrium >= 0.0f)
+            {
+                transferredHeat = std::min(transferredHeat, heatToEquilibrium);
+            }
+            else
+            {
+                transferredHeat = std::max(transferredHeat, heatToEquilibrium);
+            }
+
+            const std::size_t bodyAIndex = static_cast<std::size_t>(bodyAIterator - m_Bodies.begin());
+            const std::size_t bodyBIndex = static_cast<std::size_t>(bodyBIterator - m_Bodies.begin());
+            heatDeltas[bodyAIndex] += transferredHeat;
+            heatDeltas[bodyBIndex] -= transferredHeat;
+        }
+
+        for (std::size_t bodyIndex = 0; bodyIndex < m_Bodies.size(); ++bodyIndex)
+        {
+            ThermalBody* body = m_Bodies[bodyIndex];
+            if (body == nullptr)
+            {
+                continue;
+            }
+
+            const float heatCapacity = body->GetHeatCapacity();
+            if (heatCapacity <= MinimumThermalValue)
+            {
+                continue;
+            }
+
+            body->Temperature += heatDeltas[bodyIndex] / heatCapacity;
+            body->Temperature = std::max(body->Temperature, 0.0f);
+        }
     }
 }
 
