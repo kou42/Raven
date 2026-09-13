@@ -1,4 +1,4 @@
-#include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
+﻿#include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,9 +17,9 @@ namespace Raven
 {
 namespace
 {
-constexpr uint32_t ParticleCountX = 6u;
-constexpr uint32_t ParticleCountY = 8u;
-constexpr uint32_t ParticleCountZ = 6u;
+constexpr uint32_t ParticleCountX = 15u;
+constexpr uint32_t ParticleCountY = 20u;
+constexpr uint32_t ParticleCountZ = 15u;
 constexpr float ParticleSpacing = 0.32f;
 constexpr float SmoothingRadius = 0.55f;
 constexpr float ParticleMass = 1.0f;
