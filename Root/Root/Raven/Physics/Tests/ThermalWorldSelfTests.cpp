@@ -65,11 +65,13 @@ void RunThermalEcsSynchronizationTest()
     Entity hotEntity = scene.CreateEntity("ThermalHot");
     Entity coldEntity = scene.CreateEntity("ThermalCold");
 
-    ThermalBodyComponent& hotComponent =
-        hotEntity.AddComponent<ThermalBodyComponent>();
-    ThermalBodyComponent& coldComponent =
-        coldEntity.AddComponent<ThermalBodyComponent>();
+    // ComponentStorageはdense vectorなので、2件目の追加で1件目の参照が無効化される可能性があります。
+    // すべて追加してからGetComponent()で参照を取得し直します。
+    hotEntity.AddComponent<ThermalBodyComponent>();
+    coldEntity.AddComponent<ThermalBodyComponent>();
 
+    ThermalBodyComponent& hotComponent = hotEntity.GetComponent<ThermalBodyComponent>();
+    ThermalBodyComponent& coldComponent = coldEntity.GetComponent<ThermalBodyComponent>();
     hotComponent.Body.Temperature = 373.15f;
     coldComponent.Body.Temperature = 293.15f;
 
