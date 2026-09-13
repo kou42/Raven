@@ -8,6 +8,7 @@ namespace Raven::ph
 namespace
 {
 constexpr float MinimumThermalValue = 1.0e-8f;
+constexpr float StefanBoltzmannConstant = 5.670374419e-8f; // sigma [W/(m^2*K^4)]
 
 float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody& bodyB)
 {
@@ -47,6 +48,10 @@ bool ThermalWorld::UnregisterBody(ThermalBody& body)
     {
         return contact.Body == &body;
     }), m_EnvironmentContacts.end());
+    m_RadiationContacts.erase(std::remove_if(m_RadiationContacts.begin(), m_RadiationContacts.end(), [&body](const ThermalRadiationContact& contact)
+    {
+        return contact.Body == &body;
+    }), m_RadiationContacts.end());
     return true;
 }
 
@@ -93,10 +98,30 @@ bool ThermalWorld::RegisterEnvironmentContact(const ThermalEnvironmentContact& c
     return true;
 }
 
+bool ThermalWorld::RegisterRadiationContact(const ThermalRadiationContact& contact)
+{
+    if (contact.Body == nullptr
+        || ContainsBody(*contact.Body) == false
+        || contact.EnvironmentTemperature < 0.0f
+        || contact.Emissivity < 0.0f
+        || contact.Emissivity > 1.0f
+        || contact.SurfaceArea <= 0.0f)
+    {
+        return false;
+    }
+    if (contact.Emissivity <= MinimumThermalValue)
+    {
+        return false;
+    }
+    m_RadiationContacts.push_back(contact);
+    return true;
+}
+
 void ThermalWorld::ClearContacts()
 {
     m_Contacts.clear();
     m_EnvironmentContacts.clear();
+    m_RadiationContacts.clear();
 }
 
 void ThermalWorld::Clear()
@@ -148,11 +173,46 @@ float ThermalWorld::CalculateConvectionConductance(float heatTransferCoefficient
     return heatTransferCoefficient * surfaceArea;
 }
 
+float ThermalWorld::CalculateRadiationHeatFlow(
+    float bodyTemperature,
+    float environmentTemperature,
+    float emissivity,
+    float surfaceArea)
+{
+    if (bodyTemperature < 0.0f || environmentTemperature < 0.0f
+        || emissivity <= 0.0f || emissivity > 1.0f || surfaceArea <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    const float bodyTemperatureSquared = bodyTemperature * bodyTemperature;
+    const float environmentTemperatureSquared = environmentTemperature * environmentTemperature;
+    const float bodyTemperatureFourth = bodyTemperatureSquared * bodyTemperatureSquared;
+    const float environmentTemperatureFourth = environmentTemperatureSquared * environmentTemperatureSquared;
+    return emissivity * StefanBoltzmannConstant * surfaceArea
+        * (environmentTemperatureFourth - bodyTemperatureFourth);
+}
+
+float ThermalWorld::CalculateRadiationTangentConductance(
+    float bodyTemperature,
+    float emissivity,
+    float surfaceArea)
+{
+    if (bodyTemperature < 0.0f || emissivity <= 0.0f || emissivity > 1.0f || surfaceArea <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    // |dQdot/dTbody| = 4*epsilon*sigma*A*Tbody^3 を局所的なGとして安定性判定に使います。
+    return 4.0f * emissivity * StefanBoltzmannConstant * surfaceArea
+        * bodyTemperature * bodyTemperature * bodyTemperature;
+}
+
 void ThermalWorld::Step(float fixedDeltaTime)
 {
     m_LastSubstepCount = 0u;
     if (fixedDeltaTime <= 0.0f || m_Bodies.empty() == true
-        || (m_Contacts.empty() == true && m_EnvironmentContacts.empty() == true))
+        || (m_Contacts.empty() == true && m_EnvironmentContacts.empty() == true && m_RadiationContacts.empty() == true))
     {
         return;
     }
@@ -184,6 +244,24 @@ void ThermalWorld::Step(float fixedDeltaTime)
         {
             conductanceSums[static_cast<std::size_t>(bodyIterator - m_Bodies.begin())] += contact.ThermalConductance;
         }
+    }
+    for (const ThermalRadiationContact& contact : m_RadiationContacts)
+    {
+        if (contact.Body == nullptr)
+        {
+            continue;
+        }
+        const auto bodyIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.Body);
+        if (bodyIterator == m_Bodies.end())
+        {
+            continue;
+        }
+
+        // 放射はT^4の非線形境界なので、Step開始温度で線形化した接線Gを
+        // substep数の安定性見積もりへ加えます。実際の熱流は各substepでT^4から再計算します。
+        const float tangentConductance = CalculateRadiationTangentConductance(
+            contact.Body->Temperature, contact.Emissivity, contact.SurfaceArea);
+        conductanceSums[static_cast<std::size_t>(bodyIterator - m_Bodies.begin())] += tangentConductance;
     }
 
     float stableSubstepTime = fixedDeltaTime;
@@ -267,17 +345,34 @@ void ThermalWorld::Step(float fixedDeltaTime)
             {
                 continue;
             }
-
-            float transferredHeat = contact.ThermalConductance
+            const float transferredHeat = contact.ThermalConductance
                 * (contact.AmbientTemperature - contact.Body->Temperature) * substepDeltaTime;
-
-            // 複数のEnvironment境界やBody間Contactが同じBodyへ同時に作用するため、
-            // 個々の環境EdgeをAmbientまでClampすると熱量和が過大になり得ます。
-            // 通常は時定数substepが安定性を保証し、ここでは絶対零度を下回る方向だけ
-            // Bodyに既に蓄積されたheatDeltaも含めた残り熱量で安全Clampします。
-            const float minimumAllowedHeat = -heatCapacity * contact.Body->Temperature - heatDeltas[bodyIndex];
-            transferredHeat = std::max(transferredHeat, minimumAllowedHeat);
             heatDeltas[bodyIndex] += transferredHeat;
+        }
+
+        for (const ThermalRadiationContact& contact : m_RadiationContacts)
+        {
+            if (contact.Body == nullptr)
+            {
+                continue;
+            }
+            const auto bodyIterator = std::find(m_Bodies.begin(), m_Bodies.end(), contact.Body);
+            if (bodyIterator == m_Bodies.end())
+            {
+                continue;
+            }
+            const std::size_t bodyIndex = static_cast<std::size_t>(bodyIterator - m_Bodies.begin());
+            if (contact.Body->GetHeatCapacity() <= MinimumThermalValue)
+            {
+                continue;
+            }
+
+            const float radiationHeatFlow = CalculateRadiationHeatFlow(
+                contact.Body->Temperature,
+                contact.EnvironmentTemperature,
+                contact.Emissivity,
+                contact.SurfaceArea);
+            heatDeltas[bodyIndex] += radiationHeatFlow * substepDeltaTime;
         }
 
         for (std::size_t bodyIndex = 0; bodyIndex < m_Bodies.size(); ++bodyIndex)
@@ -292,6 +387,9 @@ void ThermalWorld::Step(float fixedDeltaTime)
             {
                 continue;
             }
+
+            // 伝導・対流・放射を全て同じsubstep開始温度から評価して一括反映します。
+            // 最後の0K ClampはMaximumSubsteps上限を超える極端な入力に対する安全網です。
             body->Temperature += heatDeltas[bodyIndex] / heatCapacity;
             body->Temperature = std::max(body->Temperature, 0.0f);
         }
