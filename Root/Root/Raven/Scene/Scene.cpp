@@ -226,6 +226,8 @@ void Scene::OnDestroy()
     // shared_ptr等の内部容量もScene終了時に解放するためContainerも破棄します。
     m_ComponentStorages.clear();
 
+    // ThermalWorldはECS Componentを所有しないため、Scene終了時には参照を明示的に解除します。
+    m_PhysicsWorld.GetThermalWorld().Clear();
     m_PhysicsAccumulator = 0.0f;
 }
 

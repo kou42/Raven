@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
@@ -213,20 +214,25 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
     // ========================================================================
-    // Bidirectional Rigid <-> Soft fixed-step ordering
+    // Rigid / Soft / Thermal fixed-step ordering
     // ========================================================================
-    // 1. Rigid Bodyを進めてWorld Transformを確定
+    // 1. Rigid Bodyを進め、Collision Detection / Contact Solverまで完了させる
     // 2. 最新Rigid ColliderをSoftBody local-spaceへ同期
     // 3. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
     // 4. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
+    // 5. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 6. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
-    // Rigid側へ返したImpulseは速度へ即時反映されるため、catch-upで次のFixed Stepが続く場合は
-    // その次のRigid Stepから反作用が運動へ参加します。Application Layerを経由しないため、
-    // 複数substep時にもframe境界までFeedbackを保留しません。
+    // Rigid Contactを前frameから持ち越さず、現在のFixed Stepで確定したManifoldをそのまま利用します。
+    // catch-upで複数Stepを処理する場合も、各substepの接触状態に追従して熱接触を再構築します。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
     ApplySoftBodyReactionsToRigidBodies(scene);
+
+    ThermalSystem::SynchronizeWorld(scene);
+    ThermalSystem::AppendRigidBodyContacts(scene, m_RigidBodyWorld.GetContactManifolds());
+    m_ThermalWorld.Step(fixedDeltaTime);
 }
 
 bool PhysicsSimulationWorld::RegisterRigidSoftSphereColliderBinding(
@@ -445,6 +451,16 @@ SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld()
 const SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld() const
 {
     return m_SoftBodyWorld;
+}
+
+ThermalWorld& PhysicsSimulationWorld::GetThermalWorld()
+{
+    return m_ThermalWorld;
+}
+
+const ThermalWorld& PhysicsSimulationWorld::GetThermalWorld() const
+{
+    return m_ThermalWorld;
 }
 
 }

@@ -6,6 +6,7 @@
 
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/SoftBody/SoftBodySimulationParticipant.h"
+#include "Raven/Physics/Thermal/ThermalWorld.h"
 #include "Raven/Scene/Entity.h"
 
 namespace Raven
@@ -92,7 +93,7 @@ struct RigidSoftSphereColliderBinding
 // PhysicsSimulationWorld
 // ============================================================================
 // Raven全体のPhysics Domainを統括する上位Worldです。
-// Rigid BodyとSoft BodyのFixed Step順序をここへ集約し、後続のCoupling実装でも
+// Rigid Body / Soft Body / ThermalのFixed Step順序をここへ集約し、後続のCoupling実装でも
 // Scene/Game/RendererへDomain間依存を漏らさない構造を維持します。
 class PhysicsSimulationWorld
 {
@@ -124,6 +125,9 @@ public:
     SoftBodyWorld& GetSoftBodyWorld();
     const SoftBodyWorld& GetSoftBodyWorld() const;
 
+    ThermalWorld& GetThermalWorld();
+    const ThermalWorld& GetThermalWorld() const;
+
 private:
     // Rigid Body Stepで確定した最新Transform/ColliderをSoftBody local-spaceへ変換します。
     // SoftBody Step直前に呼ぶことで、同じFixed Step内で最新Rigid状態をCollision Constraintへ渡します。
@@ -137,6 +141,7 @@ private:
 private:
     PhysicsWorld m_RigidBodyWorld;
     SoftBodyWorld m_SoftBodyWorld;
+    ThermalWorld m_ThermalWorld;
     std::vector<RigidSoftSphereColliderBinding> m_RigidSoftSphereColliderBindings;
 };
 
