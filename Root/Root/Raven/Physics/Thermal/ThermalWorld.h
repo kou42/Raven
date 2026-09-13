@@ -38,6 +38,16 @@ public:
 
     void Step(float fixedDeltaTime);
 
+    // Explicit Eulerの多接触Networkを安定化するための設定です。
+    // 各Bodyについて tau = C / sum(G) を求め、SafetyFactor*tau以下になるよう
+    // Thermal Domain内部だけをsubstepへ分割します。
+    void SetSubstepSafetyFactor(float safetyFactor);
+    float GetSubstepSafetyFactor() const { return m_SubstepSafetyFactor; }
+
+    void SetMaximumSubsteps(std::size_t maximumSubsteps);
+    std::size_t GetMaximumSubsteps() const { return m_MaximumSubsteps; }
+    std::size_t GetLastSubstepCount() const { return m_LastSubstepCount; }
+
     // 材料熱伝導率と簡易形状パラメータから G[W/K] を構築します。
     // 将来、接触熱抵抗を直接モデル化する境界はこの関数を使わずGを直接設定できます。
     static float CalculateConductance(
@@ -57,6 +67,10 @@ public:
 private:
     std::vector<ThermalBody*> m_Bodies;
     std::vector<ThermalContact> m_Contacts;
+
+    float m_SubstepSafetyFactor = 0.5f;
+    std::size_t m_MaximumSubsteps = 64u;
+    std::size_t m_LastSubstepCount = 0u;
 };
 
 }
