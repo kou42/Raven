@@ -17,7 +17,6 @@ float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody
     {
         return 0.0f;
     }
-
     return (2.0f * conductivityA * conductivityB) / (conductivityA + conductivityB);
 }
 }
@@ -39,20 +38,15 @@ bool ThermalWorld::UnregisterBody(ThermalBody& body)
     {
         return false;
     }
-
     m_Bodies.erase(iterator);
-    m_Contacts.erase(
-        std::remove_if(m_Contacts.begin(), m_Contacts.end(), [&body](const ThermalContact& contact)
-        {
-            return contact.BodyA == &body || contact.BodyB == &body;
-        }),
-        m_Contacts.end());
-    m_EnvironmentContacts.erase(
-        std::remove_if(m_EnvironmentContacts.begin(), m_EnvironmentContacts.end(), [&body](const ThermalEnvironmentContact& contact)
-        {
-            return contact.Body == &body;
-        }),
-        m_EnvironmentContacts.end());
+    m_Contacts.erase(std::remove_if(m_Contacts.begin(), m_Contacts.end(), [&body](const ThermalContact& contact)
+    {
+        return contact.BodyA == &body || contact.BodyB == &body;
+    }), m_Contacts.end());
+    m_EnvironmentContacts.erase(std::remove_if(m_EnvironmentContacts.begin(), m_EnvironmentContacts.end(), [&body](const ThermalEnvironmentContact& contact)
+    {
+        return contact.Body == &body;
+    }), m_EnvironmentContacts.end());
     return true;
 }
 
@@ -66,20 +60,16 @@ bool ThermalWorld::RegisterContact(const ThermalContact& contact)
     {
         return false;
     }
-
     ThermalContact normalizedContact = contact;
     if (normalizedContact.ThermalConductance <= 0.0f)
     {
-        normalizedContact.ThermalConductance = CalculateConductance(
-            *normalizedContact.BodyA, *normalizedContact.BodyB,
-            normalizedContact.ContactArea, normalizedContact.ConductionDistance,
-            normalizedContact.ConductivityScale);
+        normalizedContact.ThermalConductance = CalculateConductance(*normalizedContact.BodyA, *normalizedContact.BodyB,
+            normalizedContact.ContactArea, normalizedContact.ConductionDistance, normalizedContact.ConductivityScale);
     }
     if (normalizedContact.ThermalConductance <= 0.0f)
     {
         return false;
     }
-
     m_Contacts.push_back(normalizedContact);
     return true;
 }
@@ -90,19 +80,15 @@ bool ThermalWorld::RegisterEnvironmentContact(const ThermalEnvironmentContact& c
     {
         return false;
     }
-
     ThermalEnvironmentContact normalizedContact = contact;
     if (normalizedContact.ThermalConductance <= 0.0f)
     {
-        normalizedContact.ThermalConductance = CalculateConvectionConductance(
-            normalizedContact.HeatTransferCoefficient,
-            normalizedContact.SurfaceArea);
+        normalizedContact.ThermalConductance = CalculateConvectionConductance(normalizedContact.HeatTransferCoefficient, normalizedContact.SurfaceArea);
     }
     if (normalizedContact.ThermalConductance <= 0.0f)
     {
         return false;
     }
-
     m_EnvironmentContacts.push_back(normalizedContact);
     return true;
 }
@@ -138,8 +124,7 @@ void ThermalWorld::SetMaximumSubsteps(std::size_t maximumSubsteps)
     m_MaximumSubsteps = maximumSubsteps;
 }
 
-float ThermalWorld::CalculateConductance(
-    const ThermalBody& bodyA, const ThermalBody& bodyB,
+float ThermalWorld::CalculateConductance(const ThermalBody& bodyA, const ThermalBody& bodyB,
     float contactArea, float conductionDistance, float conductivityScale)
 {
     if (contactArea <= 0.0f || conductionDistance <= MinimumThermalValue || conductivityScale <= 0.0f)
@@ -188,8 +173,6 @@ void ThermalWorld::Step(float fixedDeltaTime)
         conductanceSums[static_cast<std::size_t>(bodyAIterator - m_Bodies.begin())] += contact.ThermalConductance;
         conductanceSums[static_cast<std::size_t>(bodyBIterator - m_Bodies.begin())] += contact.ThermalConductance;
     }
-
-    // 環境ReservoirもBodyから見ればGで接続された1本の熱経路なので、同じ時定数判定へ含めます。
     for (const ThermalEnvironmentContact& contact : m_EnvironmentContacts)
     {
         if (contact.Body == nullptr || contact.ThermalConductance <= 0.0f)
@@ -216,9 +199,7 @@ void ThermalWorld::Step(float fixedDeltaTime)
         {
             continue;
         }
-        stableSubstepTime = std::min(
-            stableSubstepTime,
-            m_SubstepSafetyFactor * heatCapacity / conductanceSums[bodyIndex]);
+        stableSubstepTime = std::min(stableSubstepTime, m_SubstepSafetyFactor * heatCapacity / conductanceSums[bodyIndex]);
     }
 
     std::size_t substepCount = 1u;
@@ -247,18 +228,14 @@ void ThermalWorld::Step(float fixedDeltaTime)
             {
                 continue;
             }
-
             const float heatCapacityA = contact.BodyA->GetHeatCapacity();
             const float heatCapacityB = contact.BodyB->GetHeatCapacity();
             if (heatCapacityA <= MinimumThermalValue || heatCapacityB <= MinimumThermalValue)
             {
                 continue;
             }
-
-            float transferredHeat = contact.ThermalConductance
-                * (contact.BodyB->Temperature - contact.BodyA->Temperature) * substepDeltaTime;
-            const float equilibriumTemperature =
-                (heatCapacityA * contact.BodyA->Temperature + heatCapacityB * contact.BodyB->Temperature)
+            float transferredHeat = contact.ThermalConductance * (contact.BodyB->Temperature - contact.BodyA->Temperature) * substepDeltaTime;
+            const float equilibriumTemperature = (heatCapacityA * contact.BodyA->Temperature + heatCapacityB * contact.BodyB->Temperature)
                 / (heatCapacityA + heatCapacityB);
             const float heatToEquilibrium = heatCapacityA * (equilibriumTemperature - contact.BodyA->Temperature);
             if (heatToEquilibrium >= 0.0f)
@@ -269,7 +246,6 @@ void ThermalWorld::Step(float fixedDeltaTime)
             {
                 transferredHeat = std::max(transferredHeat, heatToEquilibrium);
             }
-
             heatDeltas[static_cast<std::size_t>(bodyAIterator - m_Bodies.begin())] += transferredHeat;
             heatDeltas[static_cast<std::size_t>(bodyBIterator - m_Bodies.begin())] -= transferredHeat;
         }
@@ -285,7 +261,7 @@ void ThermalWorld::Step(float fixedDeltaTime)
             {
                 continue;
             }
-
+            const std::size_t bodyIndex = static_cast<std::size_t>(bodyIterator - m_Bodies.begin());
             const float heatCapacity = contact.Body->GetHeatCapacity();
             if (heatCapacity <= MinimumThermalValue)
             {
@@ -295,18 +271,13 @@ void ThermalWorld::Step(float fixedDeltaTime)
             float transferredHeat = contact.ThermalConductance
                 * (contact.AmbientTemperature - contact.Body->Temperature) * substepDeltaTime;
 
-            // Environmentは無限熱容量Reservoirなので平衡温度はAmbientTemperatureです。
-            // Substep上限へ達した場合にも環境温度を飛び越えないようClampします。
-            const float heatToAmbient = heatCapacity * (contact.AmbientTemperature - contact.Body->Temperature);
-            if (heatToAmbient >= 0.0f)
-            {
-                transferredHeat = std::min(transferredHeat, heatToAmbient);
-            }
-            else
-            {
-                transferredHeat = std::max(transferredHeat, heatToAmbient);
-            }
-            heatDeltas[static_cast<std::size_t>(bodyIterator - m_Bodies.begin())] += transferredHeat;
+            // 複数のEnvironment境界やBody間Contactが同じBodyへ同時に作用するため、
+            // 個々の環境EdgeをAmbientまでClampすると熱量和が過大になり得ます。
+            // 通常は時定数substepが安定性を保証し、ここでは絶対零度を下回る方向だけ
+            // Bodyに既に蓄積されたheatDeltaも含めた残り熱量で安全Clampします。
+            const float minimumAllowedHeat = -heatCapacity * contact.Body->Temperature - heatDeltas[bodyIndex];
+            transferredHeat = std::max(transferredHeat, minimumAllowedHeat);
+            heatDeltas[bodyIndex] += transferredHeat;
         }
 
         for (std::size_t bodyIndex = 0; bodyIndex < m_Bodies.size(); ++bodyIndex)
