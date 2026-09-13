@@ -211,6 +211,15 @@ bool FluidWorld::RegisterSimulationParticipant(FluidSimulationParticipant& parti
         return false;
     }
 
+    FluidCouplingBinding* couplingBinding = participant.GetFluidCouplingBinding();
+    if (couplingBinding != nullptr)
+    {
+        if (RegisterCouplingBinding(*couplingBinding) == false)
+        {
+            return false;
+        }
+    }
+
     m_SimulationParticipants.push_back(&participant);
     return true;
 }
@@ -225,6 +234,13 @@ bool FluidWorld::UnregisterSimulationParticipant(FluidSimulationParticipant& par
     if (iterator == m_SimulationParticipants.end())
     {
         return false;
+    }
+
+    // Participantが所有するParticle配列より先にBinding参照を解除します。
+    FluidCouplingBinding* couplingBinding = participant.GetFluidCouplingBinding();
+    if (couplingBinding != nullptr && couplingBinding->Particles != nullptr)
+    {
+        UnregisterCouplingBinding(*couplingBinding->Particles);
     }
 
     m_SimulationParticipants.erase(iterator);
