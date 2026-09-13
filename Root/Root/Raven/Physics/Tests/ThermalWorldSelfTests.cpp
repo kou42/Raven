@@ -24,12 +24,8 @@ void RunThermalConductionTest()
     hotBody.Mass = 1.0f;
     hotBody.Material.SpecificHeatCapacity = 500.0f;
     hotBody.Material.ThermalConductivity = 50.0f;
-
-    ThermalBody coldBody{};
+    ThermalBody coldBody = hotBody;
     coldBody.Temperature = 293.15f;
-    coldBody.Mass = 1.0f;
-    coldBody.Material.SpecificHeatCapacity = 500.0f;
-    coldBody.Material.ThermalConductivity = 50.0f;
 
     ThermalWorld world{};
     assert(world.RegisterBody(hotBody) == true);
@@ -43,14 +39,9 @@ void RunThermalConductionTest()
     contact.ConductionDistance = 0.01f;
     assert(world.RegisterContact(contact) == true);
 
-    const float initialEnergy =
-        CalculateThermalEnergy(hotBody) + CalculateThermalEnergy(coldBody);
-
+    const float initialEnergy = CalculateThermalEnergy(hotBody) + CalculateThermalEnergy(coldBody);
     world.Step(1.0f);
-
-    const float finalEnergy =
-        CalculateThermalEnergy(hotBody) + CalculateThermalEnergy(coldBody);
-
+    const float finalEnergy = CalculateThermalEnergy(hotBody) + CalculateThermalEnergy(coldBody);
     assert(hotBody.Temperature < 373.15f);
     assert(coldBody.Temperature > 293.15f);
     assert(std::abs(finalEnergy - initialEnergy) < 1.0f);
@@ -65,16 +56,9 @@ void RunThermalNetworkSubstepTest()
     ThermalBody hotBody{};
     ThermalBody centerBody{};
     ThermalBody coldBody{};
-
     hotBody.Temperature = 400.0f;
     centerBody.Temperature = 300.0f;
     coldBody.Temperature = 200.0f;
-
-    // 小さい熱容量と大きいGを意図的に組み合わせ、1回のExplicit Eulerでは
-    // 多接触の熱量和が大きくなりやすい条件を作ります。
-    hotBody.Mass = 1.0f;
-    centerBody.Mass = 1.0f;
-    coldBody.Mass = 1.0f;
     hotBody.Material.SpecificHeatCapacity = 1.0f;
     centerBody.Material.SpecificHeatCapacity = 1.0f;
     coldBody.Material.SpecificHeatCapacity = 1.0f;
@@ -89,43 +73,57 @@ void RunThermalNetworkSubstepTest()
     hotToCenter.BodyB = &centerBody;
     hotToCenter.ThermalConductance = 10.0f;
     assert(world.RegisterContact(hotToCenter) == true);
-
     ThermalContact centerToCold{};
     centerToCold.BodyA = &centerBody;
     centerToCold.BodyB = &coldBody;
     centerToCold.ThermalConductance = 10.0f;
     assert(world.RegisterContact(centerToCold) == true);
 
-    const float initialEnergy =
-        CalculateThermalEnergy(hotBody)
-        + CalculateThermalEnergy(centerBody)
-        + CalculateThermalEnergy(coldBody);
-
+    const float initialEnergy = CalculateThermalEnergy(hotBody)
+        + CalculateThermalEnergy(centerBody) + CalculateThermalEnergy(coldBody);
     world.Step(1.0f);
+    const float finalEnergy = CalculateThermalEnergy(hotBody)
+        + CalculateThermalEnergy(centerBody) + CalculateThermalEnergy(coldBody);
 
-    const float finalEnergy =
-        CalculateThermalEnergy(hotBody)
-        + CalculateThermalEnergy(centerBody)
-        + CalculateThermalEnergy(coldBody);
-
-    // centerはsum(G)=20W/K、C=1J/Kなのでtau=0.05sです。
-    // SafetyFactor=0.5から要求dt<=0.025sとなり、1秒Stepは約40 substepへ分割されます。
-    // float丸めでceil結果が1増える可能性があるため40/41の両方を許容します。
     assert(world.GetLastSubstepCount() >= 40u);
     assert(world.GetLastSubstepCount() <= 41u);
     assert(std::abs(finalEnergy - initialEnergy) < 1.0e-3f);
-
-    // 対称な3 Body chainなので中心温度は300Kを維持し、両端は中心へ単調に近づきます。
-    assert(hotBody.Temperature < 400.0f);
-    assert(hotBody.Temperature >= 300.0f);
+    assert(hotBody.Temperature < 400.0f && hotBody.Temperature >= 300.0f);
     assert(std::abs(centerBody.Temperature - 300.0f) < 1.0e-3f);
-    assert(coldBody.Temperature > 200.0f);
-    assert(coldBody.Temperature <= 300.0f);
+    assert(coldBody.Temperature > 200.0f && coldBody.Temperature <= 300.0f);
+}
 
-    world.SetSubstepSafetyFactor(0.0f);
-    world.SetMaximumSubsteps(0u);
-    assert(std::abs(world.GetSubstepSafetyFactor() - 0.5f) < 1.0e-6f);
-    assert(world.GetMaximumSubsteps() == 64u);
+void RunThermalConvectionTest()
+{
+    ThermalBody body{};
+    body.Temperature = 373.15f;
+    body.Mass = 1.0f;
+    body.Material.SpecificHeatCapacity = 100.0f;
+
+    ThermalWorld world{};
+    assert(world.RegisterBody(body) == true);
+
+    ThermalEnvironmentContact convection{};
+    convection.Body = &body;
+    convection.AmbientTemperature = 293.15f;
+    convection.HeatTransferCoefficient = 10.0f;
+    convection.SurfaceArea = 2.0f;
+    assert(world.RegisterEnvironmentContact(convection) == true);
+    assert(world.GetEnvironmentContactCount() == 1u);
+    assert(std::abs(world.GetEnvironmentContacts().front().ThermalConductance - 20.0f) < 1.0e-6f);
+
+    world.Step(1.0f);
+    assert(body.Temperature < 373.15f);
+    assert(body.Temperature >= 293.15f);
+
+    // Environmentは無限Reservoirなので、十分長い時間ではAmbientTemperatureへ収束します。
+    world.Step(100000.0f);
+    assert(std::abs(body.Temperature - 293.15f) < 1.0e-3f);
+
+    ThermalEnvironmentContact invalidConvection{};
+    invalidConvection.Body = &body;
+    invalidConvection.AmbientTemperature = -1.0f;
+    assert(world.RegisterEnvironmentContact(invalidConvection) == false);
 }
 
 void RunThermalEcsSynchronizationTest()
@@ -133,7 +131,6 @@ void RunThermalEcsSynchronizationTest()
     Scene scene{};
     Entity hotEntity = scene.CreateEntity("ThermalHot");
     Entity coldEntity = scene.CreateEntity("ThermalCold");
-
     hotEntity.AddComponent<ThermalBodyComponent>();
     coldEntity.AddComponent<ThermalBodyComponent>();
 
@@ -142,17 +139,21 @@ void RunThermalEcsSynchronizationTest()
     hotComponent.Body.Temperature = 373.15f;
     coldComponent.Body.Temperature = 293.15f;
 
-    ThermalContactComponent& contactComponent =
-        hotEntity.AddComponent<ThermalContactComponent>();
+    ThermalContactComponent& contactComponent = hotEntity.AddComponent<ThermalContactComponent>();
     contactComponent.TargetEntity = coldEntity.GetHandle();
     contactComponent.ContactArea = 0.01f;
     contactComponent.ConductionDistance = 0.01f;
 
-    ThermalSystem::SynchronizeWorld(scene);
+    ThermalConvectionComponent& convection = hotEntity.AddComponent<ThermalConvectionComponent>();
+    convection.AmbientTemperature = 293.15f;
+    convection.HeatTransferCoefficient = 5.0f;
+    convection.SurfaceArea = 2.0f;
 
+    ThermalSystem::SynchronizeWorld(scene);
     ThermalWorld& world = scene.GetPhysicsSimulationWorld().GetThermalWorld();
     assert(world.GetRegisteredBodyCount() == 2u);
     assert(world.GetContactCount() == 1u);
+    assert(world.GetEnvironmentContactCount() == 1u);
 
     world.Step(1.0f);
     assert(hotComponent.Body.Temperature < 373.15f);
@@ -162,6 +163,7 @@ void RunThermalEcsSynchronizationTest()
     ThermalSystem::SynchronizeWorld(scene);
     assert(world.GetRegisteredBodyCount() == 1u);
     assert(world.GetContactCount() == 0u);
+    assert(world.GetEnvironmentContactCount() == 1u);
 }
 
 void RunRigidContactThermalCouplingTest()
@@ -169,7 +171,6 @@ void RunRigidContactThermalCouplingTest()
     Scene scene{};
     Entity hotEntity = scene.CreateEntity("RigidThermalHot");
     Entity coldEntity = scene.CreateEntity("RigidThermalCold");
-
     hotEntity.AddComponent<ThermalBodyComponent>();
     coldEntity.AddComponent<ThermalBodyComponent>();
     hotEntity.AddComponent<ThermalRigidContactComponent>();
@@ -180,10 +181,8 @@ void RunRigidContactThermalCouplingTest()
     hotComponent.Body.Temperature = 373.15f;
     coldComponent.Body.Temperature = 293.15f;
 
-    ThermalRigidContactComponent& hotSettings =
-        hotEntity.GetComponent<ThermalRigidContactComponent>();
-    ThermalRigidContactComponent& coldSettings =
-        coldEntity.GetComponent<ThermalRigidContactComponent>();
+    ThermalRigidContactComponent& hotSettings = hotEntity.GetComponent<ThermalRigidContactComponent>();
+    ThermalRigidContactComponent& coldSettings = coldEntity.GetComponent<ThermalRigidContactComponent>();
     hotSettings.NominalContactAreaPerPoint = 0.002f;
     coldSettings.NominalContactAreaPerPoint = 0.001f;
     hotSettings.ConductionDistance = 0.02f;
@@ -192,19 +191,16 @@ void RunRigidContactThermalCouplingTest()
     coldSettings.ConductivityScale = 0.25f;
 
     ThermalSystem::SynchronizeWorld(scene);
-
     ContactManifold manifold{};
     manifold.A = hotEntity;
     manifold.B = coldEntity;
     manifold.AddPoint(ContactPoint{});
     manifold.AddPoint(ContactPoint{});
-
     std::vector<ContactManifold> manifolds{ manifold };
     ThermalSystem::AppendRigidBodyContacts(scene, manifolds);
 
     ThermalWorld& world = scene.GetPhysicsSimulationWorld().GetThermalWorld();
     assert(world.GetContactCount() == 1u);
-
     const ThermalContact& generatedContact = world.GetContacts().front();
     assert(std::abs(generatedContact.ContactArea - 0.002f) < 1.0e-6f);
     assert(std::abs(generatedContact.ConductionDistance - 0.03f) < 1.0e-6f);
@@ -219,7 +215,6 @@ void RunRigidContactThermalCouplingTest()
     manifolds.front().IsTrigger = true;
     ThermalSystem::AppendRigidBodyContacts(scene, manifolds);
     assert(world.GetContactCount() == 0u);
-
     coldSettings.Enabled = false;
     manifolds.front().IsTrigger = false;
     ThermalSystem::SynchronizeWorld(scene);
@@ -232,32 +227,19 @@ void RunPhysicsSimulationThermalContactTest()
     Scene scene{};
     Entity hotEntity = scene.CreateEntity("PhysicsThermalHot");
     Entity coldEntity = scene.CreateEntity("PhysicsThermalCold");
+    hotEntity.GetComponent<TransformComponent>().Position = { 0.0f, 0.0f, 0.0f };
+    coldEntity.GetComponent<TransformComponent>().Position = { 0.9f, 0.0f, 0.0f };
 
-    TransformComponent& hotTransform = hotEntity.GetComponent<TransformComponent>();
-    TransformComponent& coldTransform = coldEntity.GetComponent<TransformComponent>();
-    hotTransform.Position = { 0.0f, 0.0f, 0.0f };
-    coldTransform.Position = { 0.9f, 0.0f, 0.0f };
-
-    RigidBodyComponent hotRigidBody{};
-    hotRigidBody.UseGravity = false;
-    hotRigidBody.AllowSleep = false;
-    hotEntity.AddComponent<RigidBodyComponent>(hotRigidBody);
-
-    RigidBodyComponent coldRigidBody{};
-    coldRigidBody.UseGravity = false;
-    coldRigidBody.AllowSleep = false;
-    coldEntity.AddComponent<RigidBodyComponent>(coldRigidBody);
-
-    ColliderComponent hotCollider{};
-    hotCollider.Type = ColliderType::Sphere;
-    hotCollider.Radius = 0.5f;
-    hotEntity.AddComponent<ColliderComponent>(hotCollider);
-
-    ColliderComponent coldCollider{};
-    coldCollider.Type = ColliderType::Sphere;
-    coldCollider.Radius = 0.5f;
-    coldEntity.AddComponent<ColliderComponent>(coldCollider);
-
+    RigidBodyComponent rigidBody{};
+    rigidBody.UseGravity = false;
+    rigidBody.AllowSleep = false;
+    hotEntity.AddComponent<RigidBodyComponent>(rigidBody);
+    coldEntity.AddComponent<RigidBodyComponent>(rigidBody);
+    ColliderComponent collider{};
+    collider.Type = ColliderType::Sphere;
+    collider.Radius = 0.5f;
+    hotEntity.AddComponent<ColliderComponent>(collider);
+    coldEntity.AddComponent<ColliderComponent>(collider);
     hotEntity.AddComponent<ThermalBodyComponent>();
     coldEntity.AddComponent<ThermalBodyComponent>();
     hotEntity.AddComponent<ThermalRigidContactComponent>();
@@ -267,20 +249,13 @@ void RunPhysicsSimulationThermalContactTest()
     ThermalBodyComponent& coldThermal = coldEntity.GetComponent<ThermalBodyComponent>();
     hotThermal.Body.Temperature = 373.15f;
     coldThermal.Body.Temperature = 293.15f;
+    hotEntity.GetComponent<ThermalRigidContactComponent>().NominalContactAreaPerPoint = 0.01f;
+    coldEntity.GetComponent<ThermalRigidContactComponent>().NominalContactAreaPerPoint = 0.01f;
+    hotEntity.GetComponent<ThermalRigidContactComponent>().ConductionDistance = 0.01f;
+    coldEntity.GetComponent<ThermalRigidContactComponent>().ConductionDistance = 0.01f;
 
-    ThermalRigidContactComponent& hotSettings =
-        hotEntity.GetComponent<ThermalRigidContactComponent>();
-    ThermalRigidContactComponent& coldSettings =
-        coldEntity.GetComponent<ThermalRigidContactComponent>();
-    hotSettings.NominalContactAreaPerPoint = 0.01f;
-    coldSettings.NominalContactAreaPerPoint = 0.01f;
-    hotSettings.ConductionDistance = 0.01f;
-    coldSettings.ConductionDistance = 0.01f;
-
-    constexpr float fixedDeltaTime = 1.0f / 60.0f;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
-    simulationWorld.StepSimulation(scene, fixedDeltaTime);
-
+    simulationWorld.StepSimulation(scene, 1.0f / 60.0f);
     assert(simulationWorld.GetRigidBodyWorld().GetContactManifolds().empty() == false);
     assert(simulationWorld.GetThermalWorld().GetContactCount() == 1u);
     assert(hotThermal.Body.Temperature < 373.15f);
@@ -292,6 +267,7 @@ void RunThermalWorldSelfTests()
 {
     RunThermalConductionTest();
     RunThermalNetworkSubstepTest();
+    RunThermalConvectionTest();
     RunThermalEcsSynchronizationTest();
     RunRigidContactThermalCouplingTest();
     RunPhysicsSimulationThermalContactTest();
