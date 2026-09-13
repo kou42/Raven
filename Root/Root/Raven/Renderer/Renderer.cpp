@@ -13,6 +13,7 @@
 #include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 namespace Raven
@@ -24,38 +25,77 @@ struct SceneRenderItem
     Ref<Mesh> Mesh;
     Ref<Material> Material;
     math::Mat4 Transform = math::Mat4::Identity();
-    float CameraDistanceSq = 0.0f;
+    float SortDepth = 0.0f;
 };
 
 std::vector<SceneRenderItem> s_OpaqueQueue;
 std::vector<SceneRenderItem> s_TransparentQueue;
 bool s_SceneQueueActive = false;
 
-math::Vec3 ExtractCameraPosition(const math::Mat4& view)
+float ComputeFallbackSortDepth(const math::Mat4& transform, const math::Mat4& view)
 {
-    // Raven::Mat4::LookAt()は各行にRight / Up / -Forwardを保持します。
-    // Graphics APIのNDC規約には依存せず、Engine共通のView行列だけからWorld位置を復元します。
-    const math::Vec3 cameraRight{ view[0][0], view[0][1], view[0][2] };
-    const math::Vec3 cameraUp{ view[1][0], view[1][1], view[1][2] };
-    const math::Vec3 cameraForward{ -view[2][0], -view[2][1], -view[2][2] };
+    const math::Vec4 worldPosition = transform * math::Vec4{ 0.0f, 0.0f, 0.0f, 1.0f };
+    const math::Vec4 viewPosition = view * worldPosition;
 
-    return
-        cameraRight * (-view[0][3])
-        + cameraUp * (-view[1][3])
-        + cameraForward * view[2][3];
+    // RavenのView spaceではCamera前方が-Zなので、正のSortDepthへ変換します。
+    return -viewPosition.z;
 }
 
-float ComputeCameraDistanceSq(const math::Mat4& transform, const math::Vec3& cameraPosition)
+float ComputeTransparentSortDepth(
+    const Ref<Mesh>& mesh,
+    const math::Mat4& transform,
+    const math::Mat4& view)
 {
-    // 現段階ではMesh BoundsがRenderer共通情報になっていないため、Entity原点をSort中心にします。
-    // 後でWorld-space BoundsをRenderItemへ追加すれば、このQueue構造を変えずに精度を上げられます。
-    const math::Vec3 worldPosition{
-        transform[0][3],
-        transform[1][3],
-        transform[2][3]
-    };
-    const math::Vec3 delta = worldPosition - cameraPosition;
-    return delta.LengthSq();
+    if (mesh == nullptr)
+    {
+        return ComputeFallbackSortDepth(transform, view);
+    }
+
+    const Ref<MeshGeometry>& geometry = mesh->GetGeometry();
+    if (geometry == nullptr)
+    {
+        // Physics Debug等の低レベルMeshはMeshGeometryを持たない場合があります。
+        // 通常Scene Queueへ入った場合でも安全にEntity原点へフォールバックします。
+        return ComputeFallbackSortDepth(transform, view);
+    }
+
+    math::Vec3 localMinimum{};
+    math::Vec3 localMaximum{};
+    if (geometry->GetLocalBounds(localMinimum, localMaximum) == false)
+    {
+        return ComputeFallbackSortDepth(transform, view);
+    }
+
+    // ========================================================================
+    // Local AABB -> World/View space transparent sort key
+    // ========================================================================
+    // MeshのLocal Bounds 8頂点をWorldへ変換し、さらにView spaceへ移して最奥Depthを求めます。
+    // Entity原点だけでなくMeshの大きさ・回転・非一様ScaleをSortへ反映できるため、
+    // 水槽の壁のような大きい透明Meshと小さい透明Meshが混在する場合の順序が安定します。
+    // Projection/NDCを使わないためOpenGL / DirectX / Vulkan間のClip space差異にも依存しません。
+    float farthestDepth = std::numeric_limits<float>::lowest();
+
+    for (int xIndex = 0; xIndex < 2; ++xIndex)
+    {
+        for (int yIndex = 0; yIndex < 2; ++yIndex)
+        {
+            for (int zIndex = 0; zIndex < 2; ++zIndex)
+            {
+                const math::Vec3 localPoint{
+                    xIndex == 0 ? localMinimum.x : localMaximum.x,
+                    yIndex == 0 ? localMinimum.y : localMaximum.y,
+                    zIndex == 0 ? localMinimum.z : localMaximum.z
+                };
+
+                const math::Vec4 worldPoint = transform * math::Vec4{ localPoint, 1.0f };
+                const math::Vec4 viewPoint = view * worldPoint;
+                const float depth = -viewPoint.z;
+                farthestDepth = std::max(farthestDepth, depth);
+            }
+        }
+    }
+
+    return farthestDepth;
 }
 
 void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cameraContext)
@@ -90,14 +130,14 @@ void FlushSceneRenderQueues(const RendererCameraContext& cameraContext)
     // ========================================================================
     // Transparent Pass
     // ========================================================================
-    // Alpha Blendは描画順に依存するため、Cameraから遠いものを先に描画します。
-    // Sort値はWorld-space距離なのでOpenGL / DirectX / VulkanのNDC差異には依存しません。
+    // Alpha Blendは描画順に依存するため、Mesh Boundsの最奥Depthが大きいものから描画します。
+    // View spaceまでの計算で完結しProjection/NDCを使わないため、Graphics API差異へ依存しません。
     std::stable_sort(
         s_TransparentQueue.begin(),
         s_TransparentQueue.end(),
         [](const SceneRenderItem& lhs, const SceneRenderItem& rhs)
         {
-            return lhs.CameraDistanceSq > rhs.CameraDistanceSq;
+            return lhs.SortDepth > rhs.SortDepth;
         });
 
     for (const SceneRenderItem& item : s_TransparentQueue)
@@ -246,8 +286,10 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
 
         if (material->GetSurfaceType() == MaterialSurfaceType::Transparent)
         {
-            const math::Vec3 cameraPosition = ExtractCameraPosition(s_CameraContext.View);
-            item.CameraDistanceSq = ComputeCameraDistanceSq(transform, cameraPosition);
+            item.SortDepth = ComputeTransparentSortDepth(
+                mesh,
+                transform,
+                s_CameraContext.View);
             s_TransparentQueue.push_back(std::move(item));
         }
         else
