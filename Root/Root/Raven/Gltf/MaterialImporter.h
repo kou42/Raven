@@ -17,6 +17,13 @@ class TextureAsset;
 namespace Gltf
 {
 
+enum class MaterialAlphaMode
+{
+    Opaque = 0,
+    Mask,
+    Blend
+};
+
 // ============================================================================
 // ImportedMaterial
 // ============================================================================
@@ -32,6 +39,11 @@ struct ImportedMaterial
     math::Vec4 BaseColorFactor{ 1.0f, 1.0f, 1.0f, 1.0f };
     Ref<TextureAsset> BaseColorTexture;
 
+    // glTF 2.0ではalphaMode省略時はOPAQUE、alphaCutoff省略時は0.5です。
+    // Renderer固有enumをImporterへ持ち込まず、glTFの意味情報として保持します。
+    MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
+    float AlphaCutoff = 0.5f;
+
     std::size_t BaseColorTextureIndex = InvalidGltfIndex;
     std::size_t BaseColorImageIndex = InvalidGltfIndex;
     std::size_t BaseColorTexCoord = 0u;
@@ -41,8 +53,8 @@ struct ImportedMaterial
 // MaterialImporter
 // ============================================================================
 // glTF 2.0 PBR Materialの最小Import経路です。
-// 現段階ではbaseColorFactor / baseColorTextureを対象にし、Metallic-RoughnessやNormal等は
-// 同じ構造へ後から段階的に追加します。
+// 現段階ではbaseColorFactor / baseColorTexture / alphaMode / alphaCutoffを対象にし、
+// Metallic-RoughnessやNormal等は同じ構造へ後から段階的に追加します。
 //
 // .glb内のbufferView画像はTextureAssetImporter::ImportMemory()へ渡します。
 // これによりGltf層がstb_imageやOpenGL Texture生成を直接扱わず、通常画像と同じAssets経路を通ります。
