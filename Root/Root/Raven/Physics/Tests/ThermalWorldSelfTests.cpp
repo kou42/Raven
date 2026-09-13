@@ -166,15 +166,78 @@ void RunRigidContactThermalCouplingTest()
     ThermalSystem::AppendRigidBodyContacts(scene, manifolds);
     assert(world.GetContactCount() == 0u);
 }
+
+void RunPhysicsSimulationThermalContactTest()
+{
+    Scene scene{};
+    Entity hotEntity = scene.CreateEntity("PhysicsThermalHot");
+    Entity coldEntity = scene.CreateEntity("PhysicsThermalCold");
+
+    TransformComponent& hotTransform = hotEntity.GetComponent<TransformComponent>();
+    TransformComponent& coldTransform = coldEntity.GetComponent<TransformComponent>();
+    hotTransform.Position = { 0.0f, 0.0f, 0.0f };
+    coldTransform.Position = { 0.9f, 0.0f, 0.0f };
+
+    RigidBodyComponent hotRigidBody{};
+    hotRigidBody.UseGravity = false;
+    hotRigidBody.AllowSleep = false;
+    hotEntity.AddComponent<RigidBodyComponent>(hotRigidBody);
+
+    RigidBodyComponent coldRigidBody{};
+    coldRigidBody.UseGravity = false;
+    coldRigidBody.AllowSleep = false;
+    coldEntity.AddComponent<RigidBodyComponent>(coldRigidBody);
+
+    ColliderComponent hotCollider{};
+    hotCollider.Type = ColliderType::Sphere;
+    hotCollider.Radius = 0.5f;
+    hotEntity.AddComponent<ColliderComponent>(hotCollider);
+
+    ColliderComponent coldCollider{};
+    coldCollider.Type = ColliderType::Sphere;
+    coldCollider.Radius = 0.5f;
+    coldEntity.AddComponent<ColliderComponent>(coldCollider);
+
+    hotEntity.AddComponent<ThermalBodyComponent>();
+    coldEntity.AddComponent<ThermalBodyComponent>();
+    hotEntity.AddComponent<ThermalRigidContactComponent>();
+    coldEntity.AddComponent<ThermalRigidContactComponent>();
+
+    ThermalBodyComponent& hotThermal = hotEntity.GetComponent<ThermalBodyComponent>();
+    ThermalBodyComponent& coldThermal = coldEntity.GetComponent<ThermalBodyComponent>();
+    hotThermal.Body.Temperature = 373.15f;
+    coldThermal.Body.Temperature = 293.15f;
+
+    ThermalRigidContactComponent& hotSettings =
+        hotEntity.GetComponent<ThermalRigidContactComponent>();
+    ThermalRigidContactComponent& coldSettings =
+        coldEntity.GetComponent<ThermalRigidContactComponent>();
+    hotSettings.NominalContactAreaPerPoint = 0.01f;
+    coldSettings.NominalContactAreaPerPoint = 0.01f;
+    hotSettings.ConductionDistance = 0.01f;
+    coldSettings.ConductionDistance = 0.01f;
+
+    constexpr float fixedDeltaTime = 1.0f / 60.0f;
+    PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
+    simulationWorld.StepSimulation(scene, fixedDeltaTime);
+
+    // Sphere同士のOverlapから同じFixed StepでManifoldが生成され、そのManifoldを熱接触へ変換して
+    // Thermal Stepまで完了することを確認します。前frameの接触情報へ依存してはいけません。
+    assert(simulationWorld.GetRigidBodyWorld().GetContactManifolds().empty() == false);
+    assert(simulationWorld.GetThermalWorld().GetContactCount() == 1u);
+    assert(hotThermal.Body.Temperature < 373.15f);
+    assert(coldThermal.Body.Temperature > 293.15f);
+}
 }
 
 // Debuggerや既存Self Test runnerから呼び出すための基礎検証です。
-// Solver単体、ECS Registry lifetime、Rigid Contact -> Thermal Contact変換を確認します。
+// Solver単体、ECS Registry lifetime、Rigid Contact -> Thermal Contact変換と同一Fixed Step連成を確認します。
 void RunThermalWorldSelfTests()
 {
     RunThermalConductionTest();
     RunThermalEcsSynchronizationTest();
     RunRigidContactThermalCouplingTest();
+    RunPhysicsSimulationThermalContactTest();
 }
 
 }
