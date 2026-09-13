@@ -12,10 +12,7 @@ namespace Raven::ph
 {
 namespace
 {
-bool HasRegisteredThermalPair(
-    const ThermalWorld& thermalWorld,
-    const ThermalBody& bodyA,
-    const ThermalBody& bodyB)
+bool HasRegisteredThermalPair(const ThermalWorld& thermalWorld, const ThermalBody& bodyA, const ThermalBody& bodyB)
 {
     for (const ThermalContact& contact : thermalWorld.GetContacts())
     {
@@ -53,14 +50,10 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
             continue;
         }
 
-        ThermalBodyComponent* sourceBodyComponent =
-            scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
-        ThermalBodyComponent* targetBodyComponent =
-            scene.TryGetComponent<ThermalBodyComponent>(thermalContactComponent.TargetEntity.m_Index);
-        if (sourceBodyComponent == nullptr
-            || targetBodyComponent == nullptr
-            || sourceBodyComponent->Enabled == false
-            || targetBodyComponent->Enabled == false)
+        ThermalBodyComponent* sourceBodyComponent = scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
+        ThermalBodyComponent* targetBodyComponent = scene.TryGetComponent<ThermalBodyComponent>(thermalContactComponent.TargetEntity.m_Index);
+        if (sourceBodyComponent == nullptr || targetBodyComponent == nullptr
+            || sourceBodyComponent->Enabled == false || targetBodyComponent->Enabled == false)
         {
             continue;
         }
@@ -72,18 +65,39 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         contact.ConductionDistance = thermalContactComponent.ConductionDistance;
         contact.ConductivityScale = thermalContactComponent.ConductivityScale;
         contact.ThermalConductance = ThermalWorld::CalculateConductance(
-            sourceBodyComponent->Body,
-            targetBodyComponent->Body,
-            contact.ContactArea,
-            contact.ConductionDistance,
-            contact.ConductivityScale);
+            sourceBodyComponent->Body, targetBodyComponent->Body,
+            contact.ContactArea, contact.ConductionDistance, contact.ConductivityScale);
         thermalWorld.RegisterContact(contact);
+    }
+
+    // 対流境界はBody間Pairではなく、各Entityと一定温度Environmentの接続として登録します。
+    // ECS側にはpointerを保持せず、毎Fixed StepのRegistry再構築時にThermalBodyへ解決します。
+    for (auto [entity, convectionComponent] : scene.View<ThermalConvectionComponent>())
+    {
+        if (convectionComponent.Enabled == false)
+        {
+            continue;
+        }
+
+        ThermalBodyComponent* bodyComponent = scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
+        if (bodyComponent == nullptr || bodyComponent->Enabled == false)
+        {
+            continue;
+        }
+
+        ThermalEnvironmentContact environmentContact{};
+        environmentContact.Body = &bodyComponent->Body;
+        environmentContact.AmbientTemperature = convectionComponent.AmbientTemperature;
+        environmentContact.HeatTransferCoefficient = convectionComponent.HeatTransferCoefficient;
+        environmentContact.SurfaceArea = convectionComponent.SurfaceArea;
+        environmentContact.ThermalConductance = ThermalWorld::CalculateConvectionConductance(
+            environmentContact.HeatTransferCoefficient,
+            environmentContact.SurfaceArea);
+        thermalWorld.RegisterEnvironmentContact(environmentContact);
     }
 }
 
-void ThermalSystem::AppendRigidBodyContacts(
-    Scene& scene,
-    const std::vector<ContactManifold>& manifolds)
+void ThermalSystem::AppendRigidBodyContacts(Scene& scene, const std::vector<ContactManifold>& manifolds)
 {
     ThermalWorld& thermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
 
@@ -105,14 +119,9 @@ void ThermalSystem::AppendRigidBodyContacts(
         ThermalBodyComponent* bodyComponentB = scene.TryGetComponent<ThermalBodyComponent>(handleB.m_Index);
         const ThermalRigidContactComponent* settingsA = scene.TryGetComponent<ThermalRigidContactComponent>(handleA.m_Index);
         const ThermalRigidContactComponent* settingsB = scene.TryGetComponent<ThermalRigidContactComponent>(handleB.m_Index);
-        if (bodyComponentA == nullptr
-            || bodyComponentB == nullptr
-            || settingsA == nullptr
-            || settingsB == nullptr
-            || bodyComponentA->Enabled == false
-            || bodyComponentB->Enabled == false
-            || settingsA->Enabled == false
-            || settingsB->Enabled == false)
+        if (bodyComponentA == nullptr || bodyComponentB == nullptr || settingsA == nullptr || settingsB == nullptr
+            || bodyComponentA->Enabled == false || bodyComponentB->Enabled == false
+            || settingsA->Enabled == false || settingsB->Enabled == false)
         {
             continue;
         }
@@ -122,35 +131,23 @@ void ThermalSystem::AppendRigidBodyContacts(
             continue;
         }
 
-        if (settingsA->NominalContactAreaPerPoint <= 0.0f
-            || settingsB->NominalContactAreaPerPoint <= 0.0f
-            || settingsA->ConductionDistance <= 0.0f
-            || settingsB->ConductionDistance <= 0.0f
-            || settingsA->ConductivityScale < 0.0f
-            || settingsB->ConductivityScale < 0.0f)
+        if (settingsA->NominalContactAreaPerPoint <= 0.0f || settingsB->NominalContactAreaPerPoint <= 0.0f
+            || settingsA->ConductionDistance <= 0.0f || settingsB->ConductionDistance <= 0.0f
+            || settingsA->ConductivityScale < 0.0f || settingsB->ConductivityScale < 0.0f)
         {
             continue;
         }
 
-        const float areaPerPoint = std::min(
-            settingsA->NominalContactAreaPerPoint,
-            settingsB->NominalContactAreaPerPoint);
-
+        const float areaPerPoint = std::min(settingsA->NominalContactAreaPerPoint, settingsB->NominalContactAreaPerPoint);
         ThermalContact contact{};
         contact.BodyA = &bodyComponentA->Body;
         contact.BodyB = &bodyComponentB->Body;
         contact.ContactArea = areaPerPoint * static_cast<float>(manifold.PointCount);
-        contact.ConductionDistance = 0.5f
-            * (settingsA->ConductionDistance + settingsB->ConductionDistance);
-        contact.ConductivityScale = std::sqrt(
-            settingsA->ConductivityScale * settingsB->ConductivityScale);
+        contact.ConductionDistance = 0.5f * (settingsA->ConductionDistance + settingsB->ConductionDistance);
+        contact.ConductivityScale = std::sqrt(settingsA->ConductivityScale * settingsB->ConductivityScale);
         contact.ThermalConductance = ThermalWorld::CalculateConductance(
-            bodyComponentA->Body,
-            bodyComponentB->Body,
-            contact.ContactArea,
-            contact.ConductionDistance,
-            contact.ConductivityScale);
-
+            bodyComponentA->Body, bodyComponentB->Body,
+            contact.ContactArea, contact.ConductionDistance, contact.ConductivityScale);
         thermalWorld.RegisterContact(contact);
     }
 }
