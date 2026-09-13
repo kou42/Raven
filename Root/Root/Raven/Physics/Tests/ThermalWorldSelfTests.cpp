@@ -1,4 +1,7 @@
+#include "Raven/Physics/Thermal/ThermalComponents.h"
+#include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Physics/Thermal/ThermalWorld.h"
+#include "Raven/Scene/Scene.h"
 
 #include <cassert>
 #include <cmath>
@@ -11,12 +14,8 @@ float CalculateThermalEnergy(const ThermalBody& body)
 {
     return body.GetHeatCapacity() * body.Temperature;
 }
-}
 
-// Debuggerや既存Self Test runnerから呼び出すための最小検証です。
-// 373.15Kと293.15Kの同一熱容量Bodyを接触させ、熱が高温側から低温側へ移動し、
-// 閉じた2 Body系の総熱エネルギーが保存されることを確認します。
-void RunThermalWorldSelfTests()
+void RunThermalConductionTest()
 {
     ThermalBody hotBody{};
     hotBody.Temperature = 373.15f;
@@ -58,6 +57,53 @@ void RunThermalWorldSelfTests()
     world.Step(100000.0f);
     assert(std::abs(hotBody.Temperature - 333.15f) < 1.0e-3f);
     assert(std::abs(coldBody.Temperature - 333.15f) < 1.0e-3f);
+}
+
+void RunThermalEcsSynchronizationTest()
+{
+    Scene scene{};
+    Entity hotEntity = scene.CreateEntity("ThermalHot");
+    Entity coldEntity = scene.CreateEntity("ThermalCold");
+
+    ThermalBodyComponent& hotComponent =
+        hotEntity.AddComponent<ThermalBodyComponent>();
+    ThermalBodyComponent& coldComponent =
+        coldEntity.AddComponent<ThermalBodyComponent>();
+
+    hotComponent.Body.Temperature = 373.15f;
+    coldComponent.Body.Temperature = 293.15f;
+
+    ThermalContactComponent& contactComponent =
+        hotEntity.AddComponent<ThermalContactComponent>();
+    contactComponent.TargetEntity = coldEntity.GetHandle();
+    contactComponent.ContactArea = 0.01f;
+    contactComponent.ConductionDistance = 0.01f;
+
+    ThermalSystem::SynchronizeWorld(scene);
+
+    ThermalWorld& world = scene.GetPhysicsSimulationWorld().GetThermalWorld();
+    assert(world.GetRegisteredBodyCount() == 2u);
+    assert(world.GetContactCount() == 1u);
+
+    world.Step(1.0f);
+    assert(hotComponent.Body.Temperature < 373.15f);
+    assert(coldComponent.Body.Temperature > 293.15f);
+
+    // Target Entityを破棄した後は、次のRegistry再構築でContactもBodyも除外されます。
+    // EntityHandleのGeneration検証により、同じIndexが再利用されても古いPairへ接続しません。
+    scene.DestroyEntity(coldEntity);
+    ThermalSystem::SynchronizeWorld(scene);
+    assert(world.GetRegisteredBodyCount() == 1u);
+    assert(world.GetContactCount() == 0u);
+}
+}
+
+// Debuggerや既存Self Test runnerから呼び出すための基礎検証です。
+// Solver単体の熱量保存に加え、ECS -> ThermalWorld Registry再構築のlifetime契約も確認します。
+void RunThermalWorldSelfTests()
+{
+    RunThermalConductionTest();
+    RunThermalEcsSynchronizationTest();
 }
 
 }
