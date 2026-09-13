@@ -9,20 +9,26 @@ namespace Raven::ph
 // ============================================================================
 // ThermalBody
 // ============================================================================
-// 1つの集中熱容量を表します。
+// 1つの集中熱容量を表します。Body内部の温度分布は解かず、全体を一様温度と仮定します。
+// この近似により、伝導・対流・放射から受け取った熱量Q [J]だけで状態を更新できます。
+//
 // 相転移を有効にする場合はLatentHeatOfFusionを正値へ設定します。
-// MeltFractionは0=固相、1=液相で、相転移中は温度をPhaseChangeTemperatureへ固定します。
+// MeltFractionは0=固相、1=液相で、0～1の間では温度をPhaseChangeTemperatureへ固定し、
+// 入出力された熱を温度変化ではなく潜熱として相の変化へ割り当てます。
 struct ThermalBody
 {
-    float Temperature = 293.15f;
-    float Mass = 1.0f;
+    float Temperature = 293.15f; // [K]
+    float Mass = 1.0f;           // [kg]
     ThermalMaterial Material{};
 
-    float PhaseChangeTemperature = 273.15f;    // [K]
-    float LatentHeatOfFusion = 0.0f;           // [J/kg]
-    float LiquidSpecificHeatCapacity = 500.0f; // [J/(kg*K)]
-    float MeltFraction = 0.0f;                 // [0, 1]
+    // 相転移の材料定数とRuntime状態です。MeltFractionだけが時間発展する状態です。
+    float PhaseChangeTemperature = 273.15f;    // 融点 [K]
+    float LatentHeatOfFusion = 0.0f;           // 融解潜熱 L [J/kg]
+    float LiquidSpecificHeatCapacity = 500.0f; // 液相比熱 [J/(kg*K)]
+    float MeltFraction = 0.0f;                 // 液相率 [0, 1]
 
+    // Explicit Solverの時定数評価では現在相の顕熱容量C=m*cを使用します。
+    // 相転移中の潜熱はApplyHeat側で直接処理し、無限大の見かけ比熱としては扱いません。
     float GetHeatCapacity() const
     {
         if (MeltFraction >= 1.0f && LiquidSpecificHeatCapacity > 0.0f)
@@ -37,6 +43,10 @@ struct ThermalBody
         return Mass * LatentHeatOfFusion;
     }
 
+    // Bodyへ正味熱量Q [J]を与えます。
+    // 加熱時は「固相顕熱 -> 融解潜熱 -> 液相顕熱」、冷却時は逆順に熱を配分します。
+    // 相転移処理をWorld SolverではなくBodyへ閉じ込めることで、伝導・対流・放射側は
+    // 相状態を意識せず、共通の「移動熱量Qを計算する」という責務だけを維持できます。
     void ApplyHeat(float heat)
     {
         const float solidHeatCapacity = Mass * Material.SpecificHeatCapacity;
@@ -45,6 +55,7 @@ struct ThermalBody
             return;
         }
 
+        // 潜熱が無効なら従来の集中熱容量モデルそのものです。既存挙動との互換性もここで維持します。
         if (LatentHeatOfFusion <= 0.0f)
         {
             Temperature = std::max(0.0f, Temperature + heat / solidHeatCapacity);
@@ -55,7 +66,7 @@ struct ThermalBody
         const float latentHeatCapacity = GetLatentHeatCapacity();
         float remainingHeat = heat;
 
-        // 固相を加熱して融点へ到達させます。
+        // 固相を加熱して融点へ到達させます。融点を越える分は次の潜熱処理へ残します。
         if (remainingHeat > 0.0f && Temperature < PhaseChangeTemperature)
         {
             const float heatToTransition = solidHeatCapacity * (PhaseChangeTemperature - Temperature);
@@ -64,7 +75,8 @@ struct ThermalBody
             remainingHeat -= usedHeat;
         }
 
-        // 液相を冷却して融点へ到達させます。
+        // 完全液相を冷却する場合は液相比熱を使って融点まで戻します。
+        // 融点より下へ進む熱は凝固潜熱へ回すため、この段階では使い切りません。
         if (remainingHeat < 0.0f && Temperature > PhaseChangeTemperature && liquidHeatCapacity > 0.0f)
         {
             const float heatToTransition = liquidHeatCapacity * (PhaseChangeTemperature - Temperature);
@@ -73,7 +85,7 @@ struct ThermalBody
             remainingHeat -= usedHeat;
         }
 
-        // 融点では温度を変えず、熱を潜熱としてMeltFractionへ蓄えます。
+        // 融点では温度を変えず、入力熱を潜熱へ割り当てて液相率だけを増やします。
         if (remainingHeat > 0.0f && Temperature >= PhaseChangeTemperature && MeltFraction < 1.0f)
         {
             Temperature = PhaseChangeTemperature;
@@ -83,6 +95,7 @@ struct ThermalBody
             remainingHeat -= usedHeat;
         }
 
+        // 冷却時は潜熱を放出しながら液相率を減らします。完全凝固するまでは融点を維持します。
         if (remainingHeat < 0.0f && Temperature <= PhaseChangeTemperature && MeltFraction > 0.0f)
         {
             Temperature = PhaseChangeTemperature;
@@ -92,9 +105,10 @@ struct ThermalBody
             remainingHeat -= usedHeat;
         }
 
+        // 浮動小数点誤差で相率が物理範囲を外れないよう、状態更新の境界で明示的に制限します。
         MeltFraction = std::clamp(MeltFraction, 0.0f, 1.0f);
 
-        // 相転移完了後に残った熱だけを顕熱として扱います。
+        // 相転移完了後に残った熱だけを再び顕熱として扱います。
         if (remainingHeat > 0.0f && MeltFraction >= 1.0f && liquidHeatCapacity > 0.0f)
         {
             Temperature += remainingHeat / liquidHeatCapacity;
@@ -104,6 +118,7 @@ struct ThermalBody
             Temperature += remainingHeat / solidHeatCapacity;
         }
 
+        // Kelvinは負値を取らないため、数値安全性の最終境界として絶対零度でClampします。
         Temperature = std::max(Temperature, 0.0f);
     }
 };
