@@ -231,6 +231,43 @@ bool FluidWorld::UnregisterSimulationParticipant(FluidSimulationParticipant& par
     return true;
 }
 
+bool FluidWorld::RegisterCouplingBinding(const FluidCouplingBinding& binding)
+{
+    if (binding.Particles == nullptr)
+    {
+        return false;
+    }
+
+    if (ContainsCouplingBinding(*binding.Particles) == true)
+    {
+        // 1つのParticle配列へCouplingを二重適用すると位置補正・Impulseが重複するため、
+        // Particle配列を一意なFluid Simulation境界として扱います。
+        return false;
+    }
+
+    m_CouplingBindings.push_back(binding);
+    return true;
+}
+
+bool FluidWorld::UnregisterCouplingBinding(std::vector<FluidParticle>& particles)
+{
+    const auto iterator = std::find_if(
+        m_CouplingBindings.begin(),
+        m_CouplingBindings.end(),
+        [&particles](const FluidCouplingBinding& binding)
+        {
+            return binding.Particles == &particles;
+        });
+
+    if (iterator == m_CouplingBindings.end())
+    {
+        return false;
+    }
+
+    m_CouplingBindings.erase(iterator);
+    return true;
+}
+
 void FluidWorld::Step(float fixedDeltaTime)
 {
     StepSimulation(fixedDeltaTime);
@@ -239,9 +276,7 @@ void FluidWorld::Step(float fixedDeltaTime)
 
 void FluidWorld::StepSimulation(float fixedDeltaTime)
 {
-    // FluidWorldは具体的なSolverを所有しません。
-    // 登録されたParticipantをFixed Stepで進めることで、SPH/PBF/FLIPの実装差を
-    // PhysicsSimulationWorldへ漏らさずDomain単位の実行順序だけを統一します。
+    // Sceneを持たないPhysics単体利用ではFluid数値計算だけを進めます。
     for (FluidSimulationParticipant* participant : m_SimulationParticipants)
     {
         if (participant == nullptr)
@@ -250,6 +285,54 @@ void FluidWorld::StepSimulation(float fixedDeltaTime)
         }
 
         participant->SimulateFluid(fixedDeltaTime);
+    }
+}
+
+void FluidWorld::StepSimulation(
+    Scene& scene,
+    PhysicsWorld& physicsWorld,
+    float fixedDeltaTime)
+{
+    // ========================================================================
+    // Fluid Domain Fixed Step
+    // ========================================================================
+    // 1. 各ParticipantのSPH/PBF/FLIP等の数値計算を完了
+    // 2. 最新Particle位置に対してStatic Collider境界応答を解決
+    // 3. Dynamic RigidBodyとの法線応答・Drag・Pressure・Buoyancyを双方向へ解決
+    //
+    // CouplingをParticipant::SimulateFluid()の外へ出すことで、Application/Debug Layerは
+    // Scene/RigidBodyとのDomain間実行順序を知らず、FluidWorldだけがFixed Step境界を統括します。
+    StepSimulation(fixedDeltaTime);
+    ResolveCouplings(scene, physicsWorld, fixedDeltaTime);
+}
+
+void FluidWorld::ResolveCouplings(
+    Scene& scene,
+    PhysicsWorld& physicsWorld,
+    float fixedDeltaTime)
+{
+    for (const FluidCouplingBinding& binding : m_CouplingBindings)
+    {
+        if (binding.Particles == nullptr)
+        {
+            continue;
+        }
+
+        if (binding.StaticColliderCouplingEnabled == true)
+        {
+            m_StaticColliderCoupling.SetSettings(binding.StaticColliderSettings);
+            m_StaticColliderCoupling.ResolveScene(scene, *binding.Particles);
+        }
+
+        if (binding.RigidBodyCouplingEnabled == true)
+        {
+            m_RigidBodyCoupling.SetSettings(binding.RigidBodySettings);
+            m_RigidBodyCoupling.ResolveScene(
+                scene,
+                physicsWorld,
+                *binding.Particles,
+                fixedDeltaTime);
+        }
     }
 }
 
@@ -269,8 +352,9 @@ void FluidWorld::SynchronizeOutputs()
 
 void FluidWorld::Clear()
 {
-    // 非所有RegistryなのでParticipantを破棄せず参照だけを解除します。
+    // Registryはいずれも非所有です。Particle/Participantを破棄せず参照だけを解除します。
     m_SimulationParticipants.clear();
+    m_CouplingBindings.clear();
 }
 
 bool FluidWorld::ContainsSimulationParticipant(const FluidSimulationParticipant& participant) const
@@ -279,6 +363,17 @@ bool FluidWorld::ContainsSimulationParticipant(const FluidSimulationParticipant&
         m_SimulationParticipants.begin(),
         m_SimulationParticipants.end(),
         &participant) != m_SimulationParticipants.end();
+}
+
+bool FluidWorld::ContainsCouplingBinding(const std::vector<FluidParticle>& particles) const
+{
+    return std::find_if(
+        m_CouplingBindings.begin(),
+        m_CouplingBindings.end(),
+        [&particles](const FluidCouplingBinding& binding)
+        {
+            return binding.Particles == &particles;
+        }) != m_CouplingBindings.end();
 }
 
 void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
@@ -294,18 +389,16 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // Rigid / Fluid / Soft / Thermal fixed-step ordering
     // ========================================================================
     // 1. Rigid Bodyを進め、Collision Detection / Contact Solverまで完了させる
-    // 2. Fluid Domainを同じFixed Step幅で進める
-    //    Fluid Participant内部のCouplingは最新Rigid状態を参照し、その反作用を次Rigid Stepへ渡せます
+    // 2. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了させる
     // 3. 最新Rigid ColliderをSoftBody local-spaceへ同期
     // 4. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
     // 5. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
     // 6. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
     // 7. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
-    // FluidをApplication Layerの可変dt更新から切り離し、Rigid/Soft/Thermalと同じFixed Step予算へ
-    // 統合することで、frame rateに依存しないDomain間の時間順序を維持します。
+    // Fluid -> Rigid反作用はFluid Step内でRigid速度へ反映され、次Fixed StepのRigid積分から利用されます。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
-    m_FluidWorld.StepSimulation(fixedDeltaTime);
+    m_FluidWorld.StepSimulation(scene, m_RigidBodyWorld, fixedDeltaTime);
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
     ApplySoftBodyReactionsToRigidBodies(scene);
