@@ -49,7 +49,6 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         {
             continue;
         }
-
         ThermalBodyComponent* sourceBodyComponent = scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
         ThermalBodyComponent* targetBodyComponent = scene.TryGetComponent<ThermalBodyComponent>(thermalContactComponent.TargetEntity.m_Index);
         if (sourceBodyComponent == nullptr || targetBodyComponent == nullptr
@@ -57,7 +56,6 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         {
             continue;
         }
-
         ThermalContact contact{};
         contact.BodyA = &sourceBodyComponent->Body;
         contact.BodyB = &targetBodyComponent->Body;
@@ -70,51 +68,64 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         thermalWorld.RegisterContact(contact);
     }
 
-    // 対流境界はBody間Pairではなく、各Entityと一定温度Environmentの接続として登録します。
-    // ECS側にはpointerを保持せず、毎Fixed StepのRegistry再構築時にThermalBodyへ解決します。
     for (auto [entity, convectionComponent] : scene.View<ThermalConvectionComponent>())
     {
         if (convectionComponent.Enabled == false)
         {
             continue;
         }
-
         ThermalBodyComponent* bodyComponent = scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
         if (bodyComponent == nullptr || bodyComponent->Enabled == false)
         {
             continue;
         }
-
         ThermalEnvironmentContact environmentContact{};
         environmentContact.Body = &bodyComponent->Body;
         environmentContact.AmbientTemperature = convectionComponent.AmbientTemperature;
         environmentContact.HeatTransferCoefficient = convectionComponent.HeatTransferCoefficient;
         environmentContact.SurfaceArea = convectionComponent.SurfaceArea;
         environmentContact.ThermalConductance = ThermalWorld::CalculateConvectionConductance(
-            environmentContact.HeatTransferCoefficient,
-            environmentContact.SurfaceArea);
+            environmentContact.HeatTransferCoefficient, environmentContact.SurfaceArea);
         thermalWorld.RegisterEnvironmentContact(environmentContact);
+    }
+
+    // 放射境界もECSにはRuntime pointerを保持せず、Fixed StepごとにThermalBodyへ解決します。
+    // 対流とは異なりT^4非線形なので、World側で各substepの現在温度から熱流を再評価します。
+    for (auto [entity, radiationComponent] : scene.View<ThermalRadiationComponent>())
+    {
+        if (radiationComponent.Enabled == false)
+        {
+            continue;
+        }
+        ThermalBodyComponent* bodyComponent = scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
+        if (bodyComponent == nullptr || bodyComponent->Enabled == false)
+        {
+            continue;
+        }
+        ThermalRadiationContact radiationContact{};
+        radiationContact.Body = &bodyComponent->Body;
+        radiationContact.EnvironmentTemperature = radiationComponent.EnvironmentTemperature;
+        radiationContact.Emissivity = radiationComponent.Emissivity;
+        radiationContact.SurfaceArea = radiationComponent.SurfaceArea;
+        thermalWorld.RegisterRadiationContact(radiationContact);
     }
 }
 
 void ThermalSystem::AppendRigidBodyContacts(Scene& scene, const std::vector<ContactManifold>& manifolds)
 {
     ThermalWorld& thermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
-
     for (const ContactManifold& manifold : manifolds)
     {
         if (manifold.IsTrigger == true || manifold.PointCount == 0u)
         {
             continue;
         }
-
         const EntityHandle handleA = manifold.A.GetHandle();
         const EntityHandle handleB = manifold.B.GetHandle();
         if (scene.IsEntityAlive(handleA) == false || scene.IsEntityAlive(handleB) == false)
         {
             continue;
         }
-
         ThermalBodyComponent* bodyComponentA = scene.TryGetComponent<ThermalBodyComponent>(handleA.m_Index);
         ThermalBodyComponent* bodyComponentB = scene.TryGetComponent<ThermalBodyComponent>(handleB.m_Index);
         const ThermalRigidContactComponent* settingsA = scene.TryGetComponent<ThermalRigidContactComponent>(handleA.m_Index);
@@ -125,19 +136,16 @@ void ThermalSystem::AppendRigidBodyContacts(Scene& scene, const std::vector<Cont
         {
             continue;
         }
-
         if (HasRegisteredThermalPair(thermalWorld, bodyComponentA->Body, bodyComponentB->Body) == true)
         {
             continue;
         }
-
         if (settingsA->NominalContactAreaPerPoint <= 0.0f || settingsB->NominalContactAreaPerPoint <= 0.0f
             || settingsA->ConductionDistance <= 0.0f || settingsB->ConductionDistance <= 0.0f
             || settingsA->ConductivityScale < 0.0f || settingsB->ConductivityScale < 0.0f)
         {
             continue;
         }
-
         const float areaPerPoint = std::min(settingsA->NominalContactAreaPerPoint, settingsB->NominalContactAreaPerPoint);
         ThermalContact contact{};
         contact.BodyA = &bodyComponentA->Body;
