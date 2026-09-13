@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "Raven/Physics/Coupling/FluidRigidBodyCoupling.h"
+#include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/SoftBody/SoftBodySimulationParticipant.h"
@@ -65,7 +67,12 @@ private:
 // ============================================================================
 // Fluid DomainをPhysicsSimulationWorld配下へ統合するための非所有Registryです。
 // SPH / PBF / FLIPなど具体的なSolverやParticle所有権はParticipant側へ残し、
-// WorldはFixed Step実行順序とApplication frame末尾の出力同期だけを担当します。
+// WorldはFixed Step実行順序、Application frame末尾の出力同期、Scene/RigidBodyとの
+// Coupling実装を所有します。
+//
+// Coupling設定は各Fluid Participant側のBinding/HandleからResolve直前に渡します。
+// これにより複数Fluid Simulationが異なるParticle Radius等を持っても、Coupling Solver本体を
+// Demo/Application Layerへ所有させずFluid Domain境界へ集約できます。
 class FluidWorld
 {
 public:
@@ -93,8 +100,55 @@ public:
         return m_SimulationParticipants;
     }
 
+    // ------------------------------------------------------------------------
+    // Fluid <-> Scene / RigidBody Coupling
+    // ------------------------------------------------------------------------
+    // SPH SolverやDebug LayerへCollider走査・RigidBody反作用の実装を所有させず、
+    // Fluid Domain側の共通Coupling Solverへ委譲します。
+    void SetStaticColliderCouplingSettings(const FluidStaticColliderCouplingSettings& settings)
+    {
+        m_StaticColliderCoupling.SetSettings(settings);
+    }
+
+    void SetRigidBodyCouplingSettings(const FluidRigidBodyCouplingSettings& settings)
+    {
+        m_RigidBodyCoupling.SetSettings(settings);
+    }
+
+    void ResolveStaticColliderCoupling(
+        Scene& scene,
+        std::vector<FluidParticle>& particles)
+    {
+        m_StaticColliderCoupling.ResolveScene(scene, particles);
+    }
+
+    void ResolveRigidBodyCoupling(
+        Scene& scene,
+        PhysicsWorld& physicsWorld,
+        std::vector<FluidParticle>& particles,
+        float fixedDeltaTime)
+    {
+        m_RigidBodyCoupling.ResolveScene(scene, physicsWorld, particles, fixedDeltaTime);
+    }
+
+    const FluidStaticColliderCouplingStatistics& GetLastStaticColliderCouplingStatistics() const
+    {
+        return m_StaticColliderCoupling.GetLastStatistics();
+    }
+
+    const FluidRigidBodyCouplingStatistics& GetLastRigidBodyCouplingStatistics() const
+    {
+        return m_RigidBodyCoupling.GetLastStatistics();
+    }
+
 private:
     std::vector<FluidSimulationParticipant*> m_SimulationParticipants;
+
+    // Coupling SolverはFluidWorldが所有します。
+    // ParticipantやDemo LayerはParticle状態と設定だけを提供し、Scene/RigidBody依存の処理本体を
+    // 所有しないことで、Fluid Domainの実行責務をPhysics側へ集約します。
+    FluidStaticColliderCoupling m_StaticColliderCoupling{};
+    FluidRigidBodyCoupling m_RigidBodyCoupling{};
 };
 
 // ============================================================================
