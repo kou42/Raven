@@ -84,7 +84,6 @@ void RunThermalRadiationTest()
     assert(body.Temperature < initialTemperature);
     assert(body.Temperature >= 300.0f);
 
-    // 放射冷却は300K付近で熱流が小さくなるため、十分な物理時間を進めて漸近収束を確認します。
     for (std::size_t stepIndex = 0u; stepIndex < 10000u; ++stepIndex)
     {
         world.Step(0.1f);
@@ -96,6 +95,60 @@ void RunThermalRadiationTest()
     invalidRadiation.Body = &body;
     invalidRadiation.Emissivity = 1.1f;
     assert(world.RegisterRadiationContact(invalidRadiation) == false);
+}
+
+void RunThermalPhaseChangeTest()
+{
+    ThermalBody body{};
+    body.Temperature = 263.15f;
+    body.Mass = 1.0f;
+    body.Material.SpecificHeatCapacity = 100.0f;
+    body.PhaseChangeTemperature = 273.15f;
+    body.LatentHeatOfFusion = 1000.0f;
+    body.LiquidSpecificHeatCapacity = 200.0f;
+
+    // 1000Jで固相を10K加熱して融点へ到達します。
+    body.ApplyHeat(1000.0f);
+    assert(std::abs(body.Temperature - 273.15f) < 1.0e-4f);
+    assert(std::abs(body.MeltFraction) < 1.0e-6f);
+
+    // 次の500Jは温度を変えず潜熱へ入り、半分だけ融解します。
+    body.ApplyHeat(500.0f);
+    assert(std::abs(body.Temperature - 273.15f) < 1.0e-4f);
+    assert(std::abs(body.MeltFraction - 0.5f) < 1.0e-6f);
+
+    body.ApplyHeat(500.0f);
+    assert(std::abs(body.MeltFraction - 1.0f) < 1.0e-6f);
+    assert(std::abs(body.Temperature - 273.15f) < 1.0e-4f);
+
+    // 完全融解後は液相比熱で温度が上昇します。
+    body.ApplyHeat(200.0f);
+    assert(std::abs(body.Temperature - 274.15f) < 1.0e-4f);
+
+    // 冷却時は逆順に、液相顕熱→凝固潜熱→固相顕熱へ戻ります。
+    body.ApplyHeat(-200.0f);
+    assert(std::abs(body.Temperature - 273.15f) < 1.0e-4f);
+    body.ApplyHeat(-500.0f);
+    assert(std::abs(body.MeltFraction - 0.5f) < 1.0e-6f);
+    body.ApplyHeat(-500.0f);
+    assert(std::abs(body.MeltFraction) < 1.0e-6f);
+    body.ApplyHeat(-1000.0f);
+    assert(std::abs(body.Temperature - 263.15f) < 1.0e-4f);
+
+    // Solver経由でも熱量がApplyHeatへ流れ、潜熱が温度上昇より先に消費されることを確認します。
+    body.Temperature = 273.15f;
+    body.MeltFraction = 0.0f;
+    ThermalWorld world{};
+    assert(world.RegisterBody(body) == true);
+    ThermalEnvironmentContact environment{};
+    environment.Body = &body;
+    environment.AmbientTemperature = 373.15f;
+    environment.ThermalConductance = 10.0f;
+    assert(world.RegisterEnvironmentContact(environment) == true);
+    world.Step(0.5f);
+    assert(std::abs(body.Temperature - 273.15f) < 1.0e-4f);
+    assert(body.MeltFraction > 0.0f);
+    assert(body.MeltFraction < 1.0f);
 }
 
 void RunThermalEcsSynchronizationTest()
@@ -155,6 +208,7 @@ void RunThermalWorldSelfTests()
     RunThermalNetworkSubstepTest();
     RunThermalConvectionTest();
     RunThermalRadiationTest();
+    RunThermalPhaseChangeTest();
     RunThermalEcsSynchronizationTest();
     RunRigidContactThermalCouplingTest();
     RunPhysicsSimulationThermalContactTest();
