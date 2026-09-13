@@ -9,6 +9,8 @@ out vec4 FragColor;
 uniform vec4 u_BaseColorFactor;
 uniform sampler2D u_BaseColorTexture;
 uniform int u_HasBaseColorTexture;
+uniform int u_AlphaMaskEnabled;
+uniform float u_AlphaCutoff;
 uniform vec3 u_LightDirection;
 uniform vec3 u_LightColor;
 uniform float u_LightIntensity;
@@ -32,6 +34,15 @@ void main()
     }
 
     vec4 baseColor = vec4(v_Color, 1.0) * u_BaseColorFactor * textureColor;
+
+    // Masked MaterialはBlendせずOpaque PassでDepthを書き込みます。
+    // cutoff未満のFragmentだけを破棄することで、葉・フェンス等のcutout形状でも
+    // Opaqueと同じDepth整合性を維持しながら透過部分だけを除外できます。
+    if (u_AlphaMaskEnabled != 0 && baseColor.a < u_AlphaCutoff)
+    {
+        discard;
+    }
+
     vec3 ambient = baseColor.rgb * u_AmbientIntensity;
     vec3 diffuse = baseColor.rgb * u_LightColor * (nDotL * u_LightIntensity);
 

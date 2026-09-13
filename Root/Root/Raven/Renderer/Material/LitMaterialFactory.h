@@ -3,11 +3,11 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
+#include "Raven/Renderer/Material/Material.h"
 
 namespace Raven
 {
 
-class Material;
 class Texture;
 
 // ============================================================================
@@ -27,8 +27,8 @@ struct DirectionalLightSettings
 // LitMaterialFactory
 // ============================================================================
 // Scene側へShader/Pipeline構築詳細を漏らさず、Normalを使う最小Lambert Materialを生成します。
-// glTF Material Bridgeからも同じ経路を利用し、baseColorFactor / baseColorTextureだけを
-// Renderer Materialへ接続します。Metallic-Roughness等は後続のPBR段階で追加します。
+// glTF Material Bridgeからも同じ経路を利用し、baseColorFactor / baseColorTextureに加えて
+// Surface種別とalpha cutoffをRenderer Materialへ接続できます。
 class LitMaterialFactory
 {
 public:
@@ -38,6 +38,15 @@ public:
     static Ref<Material> CreateDirectionalLit(
         const math::Vec4& baseColorFactor,
         const Ref<Texture>& baseColorTexture,
+        const DirectionalLightSettings& light = DirectionalLightSettings{});
+
+    // glTF alphaMode等からSurface意味を明示する経路です。
+    // MaskedはOpaque Pass + shader discard、TransparentはTransparent Passへ分類されます。
+    static Ref<Material> CreateDirectionalLit(
+        const math::Vec4& baseColorFactor,
+        const Ref<Texture>& baseColorTexture,
+        MaterialSurfaceType surfaceType,
+        float alphaCutoff,
         const DirectionalLightSettings& light = DirectionalLightSettings{});
 };
 

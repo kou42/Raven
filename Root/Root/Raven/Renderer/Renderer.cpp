@@ -12,8 +12,143 @@
 
 #include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 
+#include <algorithm>
+#include <limits>
+#include <vector>
+
 namespace Raven
 {
+namespace
+{
+struct SceneRenderItem
+{
+    Ref<Mesh> Mesh;
+    Ref<Material> Material;
+    math::Mat4 Transform = math::Mat4::Identity();
+    float SortDepth = 0.0f;
+};
+
+std::vector<SceneRenderItem> s_OpaqueQueue;
+std::vector<SceneRenderItem> s_TransparentQueue;
+bool s_SceneQueueActive = false;
+
+float ComputeFallbackSortDepth(const math::Mat4& transform, const math::Mat4& view)
+{
+    const math::Vec4 worldPosition = transform * math::Vec4{ 0.0f, 0.0f, 0.0f, 1.0f };
+    const math::Vec4 viewPosition = view * worldPosition;
+
+    // RavenのView spaceではCamera前方が-Zなので、正のSortDepthへ変換します。
+    return -viewPosition.z;
+}
+
+float ComputeTransparentSortDepth(
+    const Ref<Mesh>& mesh,
+    const math::Mat4& transform,
+    const math::Mat4& view)
+{
+    if (mesh == nullptr)
+    {
+        return ComputeFallbackSortDepth(transform, view);
+    }
+
+    const Ref<MeshGeometry>& geometry = mesh->GetGeometry();
+    if (geometry == nullptr)
+    {
+        // Physics Debug等の低レベルMeshはMeshGeometryを持たない場合があります。
+        // 通常Scene Queueへ入った場合でも安全にEntity原点へフォールバックします。
+        return ComputeFallbackSortDepth(transform, view);
+    }
+
+    math::Vec3 localMinimum{};
+    math::Vec3 localMaximum{};
+    if (geometry->GetLocalBounds(localMinimum, localMaximum) == false)
+    {
+        return ComputeFallbackSortDepth(transform, view);
+    }
+
+    // ========================================================================
+    // Local AABB -> World/View space transparent sort key
+    // ========================================================================
+    // MeshのLocal Bounds 8頂点をWorldへ変換し、さらにView spaceへ移して最奥Depthを求めます。
+    // Entity原点だけでなくMeshの大きさ・回転・非一様ScaleをSortへ反映できるため、
+    // 水槽の壁のような大きい透明Meshと小さい透明Meshが混在する場合の順序が安定します。
+    // Projection/NDCを使わないためOpenGL / DirectX / Vulkan間のClip space差異にも依存しません。
+    float farthestDepth = std::numeric_limits<float>::lowest();
+
+    for (int xIndex = 0; xIndex < 2; ++xIndex)
+    {
+        for (int yIndex = 0; yIndex < 2; ++yIndex)
+        {
+            for (int zIndex = 0; zIndex < 2; ++zIndex)
+            {
+                const math::Vec3 localPoint{
+                    xIndex == 0 ? localMinimum.x : localMaximum.x,
+                    yIndex == 0 ? localMinimum.y : localMaximum.y,
+                    zIndex == 0 ? localMinimum.z : localMaximum.z
+                };
+
+                const math::Vec4 worldPoint = transform * math::Vec4{ localPoint, 1.0f };
+                const math::Vec4 viewPoint = view * worldPoint;
+                const float depth = -viewPoint.z;
+                farthestDepth = std::max(farthestDepth, depth);
+            }
+        }
+    }
+
+    return farthestDepth;
+}
+
+void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cameraContext)
+{
+    if (item.Mesh == nullptr || item.Material == nullptr)
+    {
+        return;
+    }
+
+    item.Material->SetUniform("u_View", cameraContext.View);
+    item.Material->SetUniform("u_Projection", cameraContext.Projection);
+    item.Material->SetUniform("u_Model", item.Transform);
+
+    // Scene PassではSurface分類から解決したPipelineを使います。
+    // Debug Overlay等の即時描画はMaterial::Bind()のままなので、特殊なDepth/Blend stateを壊しません。
+    item.Material->BindForSurface(RenderCommand::GetAPI());
+    item.Mesh->Draw();
+}
+
+void FlushSceneRenderQueues(const RendererCameraContext& cameraContext)
+{
+    // ========================================================================
+    // Opaque Pass
+    // ========================================================================
+    // OpaqueはDepthWrite=true / Blend=falseのSurface Pipelineで先に描画し、
+    // Transparent Passが参照するDepth Bufferをここで完成させます。
+    for (const SceneRenderItem& item : s_OpaqueQueue)
+    {
+        DrawSceneItem(item, cameraContext);
+    }
+
+    // ========================================================================
+    // Transparent Pass
+    // ========================================================================
+    // Alpha Blendは描画順に依存するため、Mesh Boundsの最奥Depthが大きいものから描画します。
+    // View spaceまでの計算で完結しProjection/NDCを使わないため、Graphics API差異へ依存しません。
+    std::stable_sort(
+        s_TransparentQueue.begin(),
+        s_TransparentQueue.end(),
+        [](const SceneRenderItem& lhs, const SceneRenderItem& rhs)
+        {
+            return lhs.SortDepth > rhs.SortDepth;
+        });
+
+    for (const SceneRenderItem& item : s_TransparentQueue)
+    {
+        DrawSceneItem(item, cameraContext);
+    }
+
+    s_OpaqueQueue.clear();
+    s_TransparentQueue.clear();
+}
+} // namespace
 
 RendererStatistics Renderer::s_Statistics{};
 RendererCameraContext Renderer::s_CameraContext{};
@@ -49,6 +184,12 @@ void Renderer::BeginScene(const Camera& camera)
     s_CameraContext.View = camera.GetViewMatrix();
     s_CameraContext.Projection = camera.GetProjectionMatrix();
     s_CameraContext.Valid = true;
+
+    // Camera付き3D SceneだけをQueue描画へ切り替えます。
+    // Cameraなしの旧Sandbox経路やEndScene後のLayer描画は従来どおり即時描画です。
+    s_OpaqueQueue.clear();
+    s_TransparentQueue.clear();
+    s_SceneQueueActive = true;
 }
 
 void Renderer::BeginScene()
@@ -56,20 +197,33 @@ void Renderer::BeginScene()
     // Cameraを持たないSandbox等の旧描画経路ではContextを明示的に無効化します。
     // 前回SceneのCameraが残ったままDebug Passへ誤利用されることを防ぎます。
     s_CameraContext.Valid = false;
+    s_SceneQueueActive = false;
+    s_OpaqueQueue.clear();
+    s_TransparentQueue.clear();
 }
 
 void Renderer::EndScene()
 {
-    RAVEN_PROFILE_SCOPE("Renderer::DebugOverlay");
+    // Flush中のDrawが再びQueueへ入らないよう、先に受付を閉じます。
+    s_SceneQueueActive = false;
 
-    // ========================================================================
-    // Debug Overlay Pass
-    // ========================================================================
-    // 通常のScene描画が完了した後に、Physics / Animationのデバッグ表示を重ねます。
-    // Camera依存のPhysics DebugはRenderer Camera Contextを参照するため、Game Viewでは
-    // SceneCamera、Scene ViewではEditorCameraへ自動的に追従します。
-    ph::PhysicsDebugRenderer::RenderRegistered();
-    AnimationDebugOverlayRenderer::RenderRegistered();
+    if (s_CameraContext.Valid)
+    {
+        RAVEN_PROFILE_SCOPE("Renderer::ScenePasses");
+        FlushSceneRenderQueues(s_CameraContext);
+    }
+
+    {
+        RAVEN_PROFILE_SCOPE("Renderer::DebugOverlay");
+
+        // ====================================================================
+        // Debug Overlay Pass
+        // ====================================================================
+        // 通常のOpaque/Transparent描画が完了した後にPhysics / Animation表示を重ねます。
+        // Debug Rendererは独自Pipeline stateを持つためScene Surface Passへ分類しません。
+        ph::PhysicsDebugRenderer::RenderRegistered();
+        AnimationDebugOverlayRenderer::RenderRegistered();
+    }
 }
 
 const RendererCameraContext& Renderer::GetCameraContext()
@@ -79,6 +233,9 @@ const RendererCameraContext& Renderer::GetCameraContext()
 
 void Renderer::Shutdown()
 {
+    s_OpaqueQueue.clear();
+    s_TransparentQueue.clear();
+    s_SceneQueueActive = false;
 }
 
 RendererAPI& Renderer::GetAPI()
@@ -120,15 +277,32 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
         return;
     }
 
+    if (s_SceneQueueActive && s_CameraContext.Valid)
+    {
+        SceneRenderItem item{};
+        item.Mesh = mesh;
+        item.Material = material;
+        item.Transform = transform;
+
+        if (material->GetSurfaceType() == MaterialSurfaceType::Transparent)
+        {
+            item.SortDepth = ComputeTransparentSortDepth(
+                mesh,
+                transform,
+                s_CameraContext.View);
+            s_TransparentQueue.push_back(std::move(item));
+        }
+        else
+        {
+            s_OpaqueQueue.push_back(std::move(item));
+        }
+        return;
+    }
+
     // ========================================================================
-    // Per-draw Camera Uniform
+    // Immediate Draw compatibility path
     // ========================================================================
-    // Scene側がu_View/u_Projectionを個別に設定すると、Game ViewとScene ViewでCameraの
-    // 切り替え責務が各Sceneへ漏れてしまいます。Camera付きBeginScene()で確定したContextを
-    // Renderer::Draw()からMaterialへ反映し、通常描画とDebug PassのCameraを統一します。
-    //
-    // CameraなしBeginScene()を利用する旧Sandbox経路ではValid=falseとなるため、既存の
-    // 手動Uniform設定を上書きしません。これにより段階的なRenderer移行も維持できます。
+    // CameraなしSandbox、Debug/Layer等は既存どおりMaterial自身のPipelineを尊重して即時描画します。
     if (s_CameraContext.Valid)
     {
         material->SetUniform("u_View", s_CameraContext.View);

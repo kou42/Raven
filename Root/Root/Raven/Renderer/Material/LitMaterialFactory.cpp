@@ -13,6 +13,8 @@ namespace
 Ref<Material> CreateLitMaterial(
     const math::Vec4& baseColorFactor,
     const Ref<Texture>& baseColorTexture,
+    MaterialSurfaceType surfaceType,
+    float alphaCutoff,
     const DirectionalLightSettings& light)
 {
     Ref<Shader> shader = Shader::Create(
@@ -46,12 +48,22 @@ Ref<Material> CreateLitMaterial(
         return nullptr;
     }
 
+    // SurfaceTypeはRender Queue分類の正規データです。
+    // MaskedをBlend扱いにせずOpaque Passへ残すことで、cutout部分以外は通常Geometryと同様に
+    // Depthを書き込みます。Transparentだけが後段のTransparent Passへ送られます。
+    material->SetSurfaceType(surfaceType);
+
     material->SetUniform("u_BaseColorFactor", baseColorFactor);
     material->SetUniform("u_HasBaseColorTexture", baseColorTexture != nullptr ? 1 : 0);
     if (baseColorTexture != nullptr)
     {
         material->SetTexture("u_BaseColorTexture", baseColorTexture, 0);
     }
+
+    material->SetUniform(
+        "u_AlphaMaskEnabled",
+        surfaceType == MaterialSurfaceType::Masked ? 1 : 0);
+    material->SetUniform("u_AlphaCutoff", alphaCutoff);
 
     material->SetUniform("u_LightDirection", light.Direction);
     material->SetUniform("u_LightColor", light.Color);
@@ -68,6 +80,8 @@ Ref<Material> LitMaterialFactory::CreateDirectionalLit(
     return CreateLitMaterial(
         math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f },
         nullptr,
+        MaterialSurfaceType::Opaque,
+        0.5f,
         light);
 }
 
@@ -76,7 +90,27 @@ Ref<Material> LitMaterialFactory::CreateDirectionalLit(
     const Ref<Texture>& baseColorTexture,
     const DirectionalLightSettings& light)
 {
-    return CreateLitMaterial(baseColorFactor, baseColorTexture, light);
+    return CreateLitMaterial(
+        baseColorFactor,
+        baseColorTexture,
+        MaterialSurfaceType::Opaque,
+        0.5f,
+        light);
+}
+
+Ref<Material> LitMaterialFactory::CreateDirectionalLit(
+    const math::Vec4& baseColorFactor,
+    const Ref<Texture>& baseColorTexture,
+    MaterialSurfaceType surfaceType,
+    float alphaCutoff,
+    const DirectionalLightSettings& light)
+{
+    return CreateLitMaterial(
+        baseColorFactor,
+        baseColorTexture,
+        surfaceType,
+        alphaCutoff,
+        light);
 }
 
 } // namespace Raven

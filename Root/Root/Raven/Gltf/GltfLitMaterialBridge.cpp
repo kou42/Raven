@@ -2,13 +2,26 @@
 #include "Raven/Gltf/GltfLitMaterialBridge.h"
 
 #include "Raven/Assets/TextureAsset.h"
-#include "Raven/Gltf/MaterialImporter.h"
 #include "Raven/Renderer/Texture/Texture.h"
 
 namespace Raven
 {
 namespace Gltf
 {
+
+MaterialSurfaceType GltfLitMaterialBridge::ResolveSurfaceType(MaterialAlphaMode alphaMode)
+{
+    switch (alphaMode)
+    {
+    case MaterialAlphaMode::Mask:
+        return MaterialSurfaceType::Masked;
+    case MaterialAlphaMode::Blend:
+        return MaterialSurfaceType::Transparent;
+    case MaterialAlphaMode::Opaque:
+    default:
+        return MaterialSurfaceType::Opaque;
+    }
+}
 
 Ref<Material> GltfLitMaterialBridge::Create(
     const ImportedMaterial& importedMaterial,
@@ -21,11 +34,14 @@ Ref<Material> GltfLitMaterialBridge::Create(
         baseColorTexture = importedMaterial.BaseColorTexture->GetTexture();
     }
 
-    // ImportedMaterialはglTF意味情報、LitMaterialFactoryはRenderer契約を担当します。
-    // Bridgeでは値の対応付けだけを行い、ImporterへShader依存を逆流させません。
+    // ImporterはglTFのOPAQUE/MASK/BLENDというAsset意味だけを保持し、
+    // Renderer固有のSurface分類への変換はBridge境界で行います。
+    // これによりImporterが描画BackendやPipeline設計へ依存しません。
     return LitMaterialFactory::CreateDirectionalLit(
         importedMaterial.BaseColorFactor,
         baseColorTexture,
+        ResolveSurfaceType(importedMaterial.AlphaMode),
+        importedMaterial.AlphaCutoff,
         light);
 }
 

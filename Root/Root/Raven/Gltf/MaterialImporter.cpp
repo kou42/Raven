@@ -252,6 +252,53 @@ bool ReadBaseColorFactor(
     return true;
 }
 
+bool ReadAlphaProperties(
+    const JsonValue& materialValue,
+    ImportedMaterial& material,
+    const std::string& context,
+    std::string* errorMessage)
+{
+    const JsonValue* alphaModeValue = materialValue.Find("alphaMode");
+    if (alphaModeValue != nullptr)
+    {
+        if (alphaModeValue->IsString() == false)
+        {
+            return SetError(errorMessage, context + ".alphaMode はStringである必要があります");
+        }
+
+        const std::string& alphaMode = alphaModeValue->GetString();
+        if (alphaMode == "OPAQUE")
+        {
+            material.AlphaMode = MaterialAlphaMode::Opaque;
+        }
+        else if (alphaMode == "MASK")
+        {
+            material.AlphaMode = MaterialAlphaMode::Mask;
+        }
+        else if (alphaMode == "BLEND")
+        {
+            material.AlphaMode = MaterialAlphaMode::Blend;
+        }
+        else
+        {
+            return SetError(
+                errorMessage,
+                context + ".alphaMode はOPAQUE / MASK / BLENDのいずれかである必要があります");
+        }
+    }
+
+    const JsonValue* alphaCutoffValue = materialValue.Find("alphaCutoff");
+    if (alphaCutoffValue != nullptr)
+    {
+        if (ReadFloat(*alphaCutoffValue, material.AlphaCutoff) == false)
+        {
+            return SetError(errorMessage, context + ".alphaCutoff は有限な数値である必要があります");
+        }
+    }
+
+    return true;
+}
+
 bool ResolveImageAsset(
     std::size_t imageIndex,
     const std::string& glbPath,
@@ -383,6 +430,11 @@ bool ParseMaterials(
                 return SetError(errorMessage, materialContext + ".name はStringである必要があります");
             }
             material.Name = nameValue->GetString();
+        }
+
+        if (ReadAlphaProperties(materialValue, material, materialContext, errorMessage) == false)
+        {
+            return false;
         }
 
         const JsonValue* pbrValue = materialValue.Find("pbrMetallicRoughness");
