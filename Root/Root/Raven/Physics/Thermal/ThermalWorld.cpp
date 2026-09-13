@@ -10,6 +10,8 @@ namespace
 constexpr float MinimumThermalValue = 1.0e-8f;
 constexpr float StefanBoltzmannConstant = 5.670374419e-8f;
 
+// 異材質境界では熱流が低い熱伝導率側にも制限されるため、単純平均ではなく調和平均を使います。
+// これにより一方のkが非常に大きい場合でも、もう一方の抵抗を無視した過大なGになりにくくします。
 float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody& bodyB)
 {
     const float a = bodyA.Material.ThermalConductivity;
@@ -21,6 +23,9 @@ float CalculateEffectiveConductivity(const ThermalBody& bodyA, const ThermalBody
     return (2.0f * a * b) / (a + b);
 }
 
+// Explicit更新が大きなdtや強いGで平衡温度を飛び越えないよう、1境界が1substepで
+// 移動できる熱量を「現在温度から目標温度までに必要な熱量」へ制限します。
+// MaximumSubstepsへ到達した場合にも破綻を抑えるための局所的な安全網です。
 float ClampHeat(float heat, float capacity, float current, float target)
 {
     const float limit = capacity * (target - current);
@@ -50,6 +55,8 @@ bool ThermalWorld::UnregisterBody(ThermalBody& body)
         return false;
     }
     m_Bodies.erase(it);
+
+    // 非所有Bodyを外すときは、それを参照する全境界も同時に破棄してdangling pointerを残しません。
     m_Contacts.erase(std::remove_if(m_Contacts.begin(), m_Contacts.end(), [&body](const ThermalContact& c) { return c.BodyA == &body || c.BodyB == &body; }), m_Contacts.end());
     m_EnvironmentContacts.erase(std::remove_if(m_EnvironmentContacts.begin(), m_EnvironmentContacts.end(), [&body](const ThermalEnvironmentContact& c) { return c.Body == &body; }), m_EnvironmentContacts.end());
     m_RadiationContacts.erase(std::remove_if(m_RadiationContacts.begin(), m_RadiationContacts.end(), [&body](const ThermalRadiationContact& c) { return c.Body == &body; }), m_RadiationContacts.end());
@@ -66,6 +73,9 @@ bool ThermalWorld::RegisterContact(const ThermalContact& contact)
     {
         return false;
     }
+
+    // Solverのcanonical inputはG [W/K]です。旧来/診断用の形状値だけが渡された場合も
+    // 登録境界で一度だけGへ正規化し、Step中に形状モデルを再評価しません。
     ThermalContact c = contact;
     if (c.ThermalConductance <= 0.0f)
     {
@@ -179,6 +189,9 @@ float ThermalWorld::CalculateRadiationTangentConductance(float t, float emissivi
     {
         return 0.0f;
     }
+
+    // Stefan-Boltzmann則自体は非線形のまま熱流計算へ使います。
+    // ここで求める |dQdot/dT|=4*epsilon*sigma*A*T^3 は、時定数評価用の局所的なGだけです。
     return 4.0f * emissivity * StefanBoltzmannConstant * area * t * t * t;
 }
 
@@ -191,6 +204,8 @@ void ThermalWorld::Step(float dt)
         return;
     }
 
+    // 各Bodyへ接続する総Conductance sum(G) を集計します。
+    // 集中熱容量C=m*cに対する熱時定数 tau=C/sum(G) から、explicit更新の安定な刻み幅を決めます。
     std::vector<float> sums(m_Bodies.size(), 0.0f);
     for (const ThermalContact& c : m_Contacts)
     {
@@ -230,9 +245,13 @@ void ThermalWorld::Step(float dt)
         {
             continue;
         }
+
+        // 放射は固定Gではないため、Step開始温度における接線Gだけを安定性見積もりへ加えます。
         sums[static_cast<std::size_t>(it - m_Bodies.begin())] += CalculateRadiationTangentConductance(c.Body->Temperature, c.Emissivity, c.SurfaceArea);
     }
 
+    // SafetyFactor=0.5を掛けた最も短い時定数を採用します。
+    // PhysicsSimulationWorldのFixed Step自体は細分化せず、Thermal Domain内部だけをsubstep化します。
     float stable = dt;
     for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
     {
@@ -259,6 +278,8 @@ void ThermalWorld::Step(float dt)
 
     for (std::size_t step = 0u; step < count; ++step)
     {
+        // 全境界を同じsubstep開始温度から評価するため、温度をその場で変更せずQ [J]だけ蓄積します。
+        // これによりContactのvector順が温度結果へ直接影響するGauss-Seidel型更新を避けます。
         std::fill(heatDeltas.begin(), heatDeltas.end(), 0.0f);
         for (const ThermalContact& c : m_Contacts)
         {
@@ -278,6 +299,9 @@ void ThermalWorld::Step(float dt)
             {
                 continue;
             }
+
+            // Fourier型の集中モデル Q=G*(Tb-Ta)*dt です。
+            // Aへ+Q、Bへ-Qを対称に加えることで、Body間伝導では総熱エネルギーを保存します。
             float heat = c.ThermalConductance * (c.BodyB->Temperature - c.BodyA->Temperature) * subDt;
             const float equilibrium = (ca * c.BodyA->Temperature + cb * c.BodyB->Temperature) / (ca + cb);
             heat = ClampHeat(heat, ca, c.BodyA->Temperature, equilibrium);
@@ -300,6 +324,9 @@ void ThermalWorld::Step(float dt)
             {
                 continue;
             }
+
+            // Environmentは無限ReservoirなのでBody側にだけQを加えます。したがってBody集合だけを見た
+            // エネルギーは保存されませんが、これは外部環境との熱交換を表す意図した挙動です。
             float heat = c.ThermalConductance * (c.AmbientTemperature - c.Body->Temperature) * subDt;
             heat = ClampHeat(heat, cap, c.Body->Temperature, c.AmbientTemperature);
             heatDeltas[static_cast<std::size_t>(it - m_Bodies.begin())] += heat;
@@ -320,6 +347,8 @@ void ThermalWorld::Step(float dt)
             {
                 continue;
             }
+
+            // 放射熱流は各substepの現在温度でT^4式を再評価し、線形化誤差を実熱流へ持ち込みません。
             float heat = CalculateRadiationHeatFlow(c.Body->Temperature, c.EnvironmentTemperature, c.Emissivity, c.SurfaceArea) * subDt;
             heat = ClampHeat(heat, cap, c.Body->Temperature, c.EnvironmentTemperature);
             heatDeltas[static_cast<std::size_t>(it - m_Bodies.begin())] += heat;
