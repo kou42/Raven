@@ -31,6 +31,12 @@ public:
 
     void OnAttach() override
     {
+        // 水槽Materialは半透明ですが、現在の共通Fluid PipelineはDepthWrite=trueです。
+        // Camera側にある+Z壁が先にDepthを書き込むと、その後に描画されるBox / Sphereが
+        // Depth Testで落ちてしまいます。Physics用Colliderは残したまま手前壁の描画だけ外し、
+        // 浮力検証BodyとParticleを確実に観察できる断面表示にします。
+        HideFrontTankWallVisual();
+
         // 起動直後から見つけやすいサイズ・水面付近の位置へ揃えます。
         // FluidSPHDemoLayerのOnAttach後にこのOverlayを登録するため、ここで対象Entityを取得できます。
         ResetTestBodies();
@@ -87,6 +93,7 @@ public:
                 }
 
                 ImGui::Separator();
+                ImGui::TextUnformatted("Front wall visual : hidden (collider active)");
                 ImGui::TextUnformatted("R : Reset Box / Sphere");
                 if (ImGui::Button("Reset Buoyancy Test Bodies") == true)
                 {
@@ -115,6 +122,32 @@ private:
             rigidBody.LinearVelocity.x,
             rigidBody.LinearVelocity.y,
             rigidBody.LinearVelocity.z);
+    }
+
+    void HideFrontTankWallVisual()
+    {
+        Scene* scene = m_Application.GetScene();
+        if (scene == nullptr)
+        {
+            return;
+        }
+
+        for (auto [entity, tag, meshRenderer]
+            : scene->View<TagComponent, MeshRendererComponent>())
+        {
+            static_cast<void>(meshRenderer);
+
+            if (tag.Tag != "Fluid Tank Wall +Z")
+            {
+                continue;
+            }
+
+            // +Z側はFluid確認Cameraから見て最前面です。
+            // MeshRendererだけを外すためColliderComponentはEntityに残り、Particle/RigidBodyの
+            // 水槽境界条件は従来どおり維持されます。
+            entity.RemoveComponent<MeshRendererComponent>();
+            return;
+        }
     }
 
     void ResetTestBodies()
