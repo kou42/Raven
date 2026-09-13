@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
@@ -215,18 +216,22 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // ========================================================================
     // Rigid / Soft / Thermal fixed-step ordering
     // ========================================================================
-    // 1. Rigid Bodyを進めてWorld Transformを確定
+    // 1. Rigid Bodyを進め、Collision Detection / Contact Solverまで完了させる
     // 2. 最新Rigid ColliderをSoftBody local-spaceへ同期
     // 3. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
     // 4. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
-    // 5. Thermal Domainの熱伝導を同じFixed Step幅で進める
+    // 5. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 6. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
-    // Thermalは現段階ではPhysics Contactから独立した明示Contactを使用します。
-    // 将来Rigid Contact Manifoldと接続するときも、この上位WorldをDomain境界として維持します。
+    // Rigid Contactを前frameから持ち越さず、現在のFixed Stepで確定したManifoldをそのまま利用します。
+    // catch-upで複数Stepを処理する場合も、各substepの接触状態に追従して熱接触を再構築します。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
     ApplySoftBodyReactionsToRigidBodies(scene);
+
+    ThermalSystem::SynchronizeWorld(scene);
+    ThermalSystem::AppendRigidBodyContacts(scene, m_RigidBodyWorld.GetContactManifolds());
     m_ThermalWorld.Step(fixedDeltaTime);
 }
 
