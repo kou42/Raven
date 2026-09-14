@@ -1,5 +1,6 @@
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -30,6 +31,81 @@ void WakeRigidBody(RigidBodyComponent& rigidBody)
     rigidBody.IsSleeping = false;
     rigidBody.SleepTimer = 0.0f;
 }
+}
+
+bool ElectromagneticSystem::RegisterElectricField(const ElectricField& electricField)
+{
+    if (ContainsElectricField(electricField) == true)
+    {
+        return false;
+    }
+
+    m_ElectricFields.push_back(&electricField);
+    return true;
+}
+
+bool ElectromagneticSystem::UnregisterElectricField(const ElectricField& electricField)
+{
+    const auto iterator = std::find(m_ElectricFields.begin(), m_ElectricFields.end(), &electricField);
+    if (iterator == m_ElectricFields.end())
+    {
+        return false;
+    }
+
+    m_ElectricFields.erase(iterator);
+    return true;
+}
+
+void ElectromagneticSystem::ClearElectricFields()
+{
+    // ElectricFieldの所有権は呼び出し側に残るため、Registryの非所有参照だけを解除します。
+    m_ElectricFields.clear();
+}
+
+bool ElectromagneticSystem::ContainsElectricField(const ElectricField& electricField) const
+{
+    return std::find(m_ElectricFields.begin(), m_ElectricFields.end(), &electricField) != m_ElectricFields.end();
+}
+
+void ElectromagneticSystem::ApplyElectricFieldForces(Scene& scene) const
+{
+    if (m_ElectricFields.empty() == true)
+    {
+        return;
+    }
+
+    for (auto [entity, transform, rigidBody, collider, electricCharge]
+        : scene.View<TransformComponent, RigidBodyComponent, ColliderComponent, ElectricChargeComponent>())
+    {
+        static_cast<void>(entity);
+        static_cast<void>(collider);
+
+        if (electricCharge.IsEnabled == false
+            || electricCharge.ChargeCoulombs == 0.0
+            || CanReceiveForce(&rigidBody) == false)
+        {
+            continue;
+        }
+
+        // Maxwell方程式が線形である範囲では電場は重ね合わせ可能です。
+        // 先に全FieldのEを合成してからF=qEを1度だけ評価し、Force経路を単純に保ちます。
+        math::Vec3 combinedElectricField{};
+        for (const ElectricField* electricField : m_ElectricFields)
+        {
+            if (electricField == nullptr)
+            {
+                continue;
+            }
+            combinedElectricField += electricField->Evaluate(transform.Position);
+        }
+
+        const math::Vec3 force = ComputeElectricForce(electricCharge.ChargeCoulombs, combinedElectricField);
+        rigidBody.Force += force;
+        if (force.LengthSq() > 0.0f)
+        {
+            WakeRigidBody(rigidBody);
+        }
+    }
 }
 
 void ElectromagneticSystem::ApplyCoulombForces(Scene& scene) const
