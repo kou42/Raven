@@ -117,7 +117,8 @@ public:
         m_FrameAllocatorStatistics.Capacity = m_FrameAllocator.GetCapacity();
     }
 
-    // 既存APIは互換性のため維持し、内部では一様GravityFieldへ委譲します。
+    // 既存APIは互換性のため維持します。m_GravityはField所有値への参照なので、
+    // 従来のPhysicsWorld.cppを変更せずにSet/Get/ApplyForcesを同じ保存先へ接続できます。
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
     const UniformGravityField& GetGravityField() const { return m_GravityField; }
@@ -181,9 +182,10 @@ private:
 private:
     static constexpr std::size_t PhysicsFrameAllocatorCapacity = 256u * 1024u;
 
-    // 一様重力も他の物理場と同じEvaluate(position)契約へ統一します。
-    // 現時点ではUniformですが、ApplyForces側を位置評価型にしておくことで将来の非一様重力へ拡張できます。
+    // 実データの所有者はUniformGravityFieldです。
+    // m_Gravityは既存PhysicsWorld.cppとの互換ブリッジで、Field内部値そのものを参照します。
     UniformGravityField m_GravityField{};
+    math::Vec3& m_Gravity = m_GravityField.GetAcceleration();
     BroadPhase m_BroadPhase;
     ContactSolverSettings m_SolverSettings{};
     PhysicsSolverDebugStatistics m_SolverDebugStatistics{};
