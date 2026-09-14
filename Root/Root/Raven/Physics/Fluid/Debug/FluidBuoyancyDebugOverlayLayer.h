@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 
 #include <imgui.h>
 
@@ -32,18 +33,18 @@ public:
     void OnAttach() override
     {
         ResetTestBodies();
+        ResetMeasurement();
     }
 
     void OnImGuiRender(float deltaTime) override
     {
-        static_cast<void>(deltaTime);
-
         const bool resetKeyPressed = Input::IsKeyPressed(Key::R);
         const bool resetRequested = resetKeyPressed == true && m_WasResetKeyPressed == false;
         m_WasResetKeyPressed = resetKeyPressed;
         if (resetRequested == true)
         {
             ResetTestBodies();
+            ResetMeasurement();
         }
 
         ImGui::SetNextWindowBgAlpha(0.82f);
@@ -56,16 +57,20 @@ public:
             }
             else
             {
+                UpdateMeasurement(*scene, deltaTime);
                 DrawTestBodyStates(*scene);
                 ImGui::Separator();
                 DrawCouplingControls(*scene);
                 ImGui::Separator();
                 DrawCouplingStatistics(*scene);
                 ImGui::Separator();
+                DrawMeasurement();
+                ImGui::Separator();
                 ImGui::TextUnformatted("R : Reset Box / Sphere");
                 if (ImGui::Button("Reset Buoyancy Test Bodies") == true)
                 {
                     ResetTestBodies();
+                    ResetMeasurement();
                 }
             }
         }
@@ -73,6 +78,22 @@ public:
     }
 
 private:
+    struct CouplingMeasurement
+    {
+        float ElapsedTime = 0.0f;
+        uint64_t SampleCount = 0u;
+        uint64_t ResolvedContactCount = 0u;
+        uint64_t AppliedNormalImpulseCount = 0u;
+        uint64_t AppliedDragImpulseCount = 0u;
+        uint64_t AppliedPressureImpulseCount = 0u;
+        uint64_t AppliedBuoyancyImpulseCount = 0u;
+        float TotalNormalImpulse = 0.0f;
+        float TotalDragImpulse = 0.0f;
+        float TotalPressureImpulse = 0.0f;
+        float TotalBuoyancyImpulse = 0.0f;
+        float TotalDisplacedFluidMass = 0.0f;
+    };
+
     static void DrawTestBodyStates(Scene& scene)
     {
         bool boxFound = false;
@@ -226,6 +247,7 @@ private:
             // Preset比較ではBodyの位置・速度・回転状態を同一にすることが重要です。
             // すべてのBinding UI処理後に一度だけResetし、複数Bindingでも重複Teleportを避けます。
             ResetTestBodies();
+            ResetMeasurement();
         }
     }
 
@@ -256,6 +278,84 @@ private:
             static_cast<unsigned long long>(rigidStatistics.AppliedPressureImpulseCount),
             static_cast<unsigned long long>(rigidStatistics.AppliedBuoyancyImpulseCount));
         ImGui::Text("Displaced Fluid Mass : %.4f", rigidStatistics.TotalDisplacedFluidMass);
+    }
+
+    void UpdateMeasurement(const Scene& scene, float deltaTime)
+    {
+        if (m_MeasurementRunning == false || deltaTime <= 0.0f)
+        {
+            return;
+        }
+
+        const ph::FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
+        const ph::FluidRigidBodyCouplingStatistics& statistics =
+            fluidWorld.GetLastRigidBodyCouplingStatistics();
+
+        // 現段階のHUDはApplication frameごとに直近fixed-stepのStatisticsをsampleします。
+        // catch-upで1frame内に複数fixed-stepが走った場合は最後のstepだけを観測するため、
+        // ここでのTotalは厳密なPhysics累積値ではなくPreset比較用の同条件sample値として扱います。
+        m_Measurement.ElapsedTime += deltaTime;
+        ++m_Measurement.SampleCount;
+        m_Measurement.ResolvedContactCount += statistics.ResolvedContactCount;
+        m_Measurement.AppliedNormalImpulseCount += statistics.AppliedImpulseCount;
+        m_Measurement.AppliedDragImpulseCount += statistics.AppliedDragImpulseCount;
+        m_Measurement.AppliedPressureImpulseCount += statistics.AppliedPressureImpulseCount;
+        m_Measurement.AppliedBuoyancyImpulseCount += statistics.AppliedBuoyancyImpulseCount;
+        m_Measurement.TotalNormalImpulse += statistics.TotalNormalImpulse;
+        m_Measurement.TotalDragImpulse += statistics.TotalDragImpulse;
+        m_Measurement.TotalPressureImpulse += statistics.TotalPressureImpulse;
+        m_Measurement.TotalBuoyancyImpulse += statistics.TotalBuoyancyImpulse;
+        m_Measurement.TotalDisplacedFluidMass += statistics.TotalDisplacedFluidMass;
+    }
+
+    void DrawMeasurement()
+    {
+        ImGui::TextUnformatted("Preset Comparison Measurement");
+        ImGui::Text("State : %s", m_MeasurementRunning == true ? "Running" : "Paused");
+        ImGui::Text("Elapsed : %.2f sec / Samples : %llu",
+            m_Measurement.ElapsedTime,
+            static_cast<unsigned long long>(m_Measurement.SampleCount));
+
+        if (ImGui::Button(m_MeasurementRunning == true ? "Pause Measurement" : "Start Measurement") == true)
+        {
+            m_MeasurementRunning = m_MeasurementRunning == false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset Measurement") == true)
+        {
+            ResetMeasurement();
+        }
+
+        ImGui::Text("Contacts : %llu",
+            static_cast<unsigned long long>(m_Measurement.ResolvedContactCount));
+        ImGui::Text("Impulse Total : N=%.4f D=%.4f P=%.4f B=%.4f",
+            m_Measurement.TotalNormalImpulse,
+            m_Measurement.TotalDragImpulse,
+            m_Measurement.TotalPressureImpulse,
+            m_Measurement.TotalBuoyancyImpulse);
+        ImGui::Text("Applied Count : N=%llu D=%llu P=%llu B=%llu",
+            static_cast<unsigned long long>(m_Measurement.AppliedNormalImpulseCount),
+            static_cast<unsigned long long>(m_Measurement.AppliedDragImpulseCount),
+            static_cast<unsigned long long>(m_Measurement.AppliedPressureImpulseCount),
+            static_cast<unsigned long long>(m_Measurement.AppliedBuoyancyImpulseCount));
+        ImGui::Text("Displaced Mass Total : %.4f", m_Measurement.TotalDisplacedFluidMass);
+
+        if (m_Measurement.SampleCount > 0u)
+        {
+            const float inverseSampleCount = 1.0f / static_cast<float>(m_Measurement.SampleCount);
+            ImGui::Text("Impulse / Sample : N=%.4f D=%.4f P=%.4f B=%.4f",
+                m_Measurement.TotalNormalImpulse * inverseSampleCount,
+                m_Measurement.TotalDragImpulse * inverseSampleCount,
+                m_Measurement.TotalPressureImpulse * inverseSampleCount,
+                m_Measurement.TotalBuoyancyImpulse * inverseSampleCount);
+        }
+
+        ImGui::TextDisabled("Note: render-frame sampled; catch-up fixed steps are not individually accumulated.");
+    }
+
+    void ResetMeasurement()
+    {
+        m_Measurement = {};
     }
 
     void ResetTestBodies()
@@ -315,6 +415,8 @@ private:
 
 private:
     Application& m_Application;
+    CouplingMeasurement m_Measurement{};
+    bool m_MeasurementRunning = true;
     bool m_WasResetKeyPressed = false;
 };
 
