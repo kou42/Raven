@@ -20,8 +20,12 @@
 namespace Raven
 {
 
-// Fluid SPH Demoが生成するBox / Sphereの状態とCoupling診断値を表示し、
-// 実行中のCoupling設定を比較検証するためのDebug HUDです。
+// ============================================================================
+// FluidBuoyancyDebugOverlayLayer
+// ============================================================================
+// Fluid SPH Demoが生成するBox / SphereのWorld座標とCoupling診断値を表示し、同じ初期条件へ何度でも
+// 戻して設定を比較検証できる専用HUDです。Fluid solverやCoupling本体へDebug入力依存を持ち込まず、
+// Entity名を手掛かりにScene上の検証Bodyだけを操作します。
 class FluidBuoyancyDebugOverlayLayer final : public Layer
 {
 public:
@@ -32,6 +36,8 @@ public:
 
     void OnAttach() override
     {
+        // 起動直後から見つけやすいサイズ・水面付近の位置へ揃えます。
+        // FluidSPHDemoLayerのOnAttach後にこのOverlayを登録するため、ここで対象Entityを取得できます。
         ResetTestBodies();
         ResetMeasurement();
     }
@@ -186,6 +192,9 @@ private:
             return;
         }
 
+        // Debug HUDは登録済みBindingの実体を直接編集します。
+        // FluidWorldはBindingをコピーせず非所有参照しているため、変更値は再登録なしで
+        // 次のfixed-stepのResolveCouplings()から利用されます。
         bool resetRequested = false;
         for (std::size_t bindingIndex = 0u; bindingIndex < bindings.size(); ++bindingIndex)
         {
@@ -209,6 +218,7 @@ private:
             if (ImGui::DragFloat("Particle Radius", &particleRadius, 0.005f, 0.001f, 2.0f, "%.3f") == true)
             {
                 particleRadius = std::max(particleRadius, 0.001f);
+                // DemoではStatic/Dynamic Couplingが同じParticle表面を扱うため、半径を同期します。
                 binding->StaticColliderSettings.ParticleRadius = particleRadius;
                 binding->RigidBodySettings.ParticleRadius = particleRadius;
             }
@@ -253,6 +263,8 @@ private:
 
     static void DrawCouplingStatistics(const Scene& scene)
     {
+        // FluidWorldが保持する直近Fixed Stepの診断値を表示します。
+        // HUD側はCoupling実装へ直接依存せず、Domain境界として公開されたStatisticsだけを参照します。
         const ph::FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
         const ph::FluidStaticColliderCouplingStatistics& staticStatistics =
             fluidWorld.GetLastStaticColliderCouplingStatistics();
@@ -398,9 +410,14 @@ private:
                 continue;
             }
 
-            // Preset比較時も通常のReset操作と同じ経路を利用し、位置だけでなく
-            // 前回試行で蓄積した速度・回転・Force/Torque・Sleep状態まで初期化します。
+            // Scene::View()の先頭要素は既にGenerationを含むEntityです。
+            // Dynamic RigidBodyの位置変更はこのEntityをそのままPhysicsWorldへ渡し、
+            // Transform直接更新ではなく通常のTeleport経路で起床処理まで行います。
             physicsWorld.Teleport(*scene, entity, resetPosition);
+
+            // Reset前の落下速度・回転・Fluidから受けたImpulse履歴を次の試行へ持ち越さないよう、
+            // RigidBodyの運動状態を初期化します。LinearVelocityもPhysicsWorldの制御APIを通し、
+            // Teleport直後のBodyが確実に起床した状態で次の比較を開始します。
             transform.Rotation = { 0.0f, 0.0f, 0.0f };
             physicsWorld.SetLinearVelocity(*scene, entity, { 0.0f, 0.0f, 0.0f });
             rigidBody.AngularVelocity = { 0.0f, 0.0f, 0.0f };
