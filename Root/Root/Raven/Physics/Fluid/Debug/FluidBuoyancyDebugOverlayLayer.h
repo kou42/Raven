@@ -6,6 +6,7 @@
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Math/MathQuatanion.h"
+#include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Components.h"
@@ -87,6 +88,9 @@ public:
                 }
 
                 ImGui::Separator();
+                DrawCouplingStatistics(*scene);
+
+                ImGui::Separator();
                 ImGui::TextUnformatted("R : Reset Box / Sphere");
                 if (ImGui::Button("Reset Buoyancy Test Bodies") == true)
                 {
@@ -115,6 +119,46 @@ private:
             rigidBody.LinearVelocity.x,
             rigidBody.LinearVelocity.y,
             rigidBody.LinearVelocity.z);
+    }
+
+    static void DrawCouplingStatistics(const Scene& scene)
+    {
+        // FluidWorldが保持する直近Fixed Stepの診断値を表示します。
+        // HUD側はCoupling実装へ直接依存せず、Domain境界として公開されたStatisticsだけを参照します。
+        const ph::FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
+        const ph::FluidStaticColliderCouplingStatistics& staticStatistics =
+            fluidWorld.GetLastStaticColliderCouplingStatistics();
+        const ph::FluidRigidBodyCouplingStatistics& rigidStatistics =
+            fluidWorld.GetLastRigidBodyCouplingStatistics();
+
+        ImGui::TextUnformatted("Fluid Coupling Statistics");
+        ImGui::Text(
+            "Static : collider=%llu candidate=%llu resolved=%llu",
+            static_cast<unsigned long long>(staticStatistics.SupportedColliderCount),
+            static_cast<unsigned long long>(staticStatistics.CandidatePairCount),
+            static_cast<unsigned long long>(staticStatistics.ResolvedContactCount));
+        ImGui::Text(
+            "Rigid  : body=%llu candidate=%llu resolved=%llu",
+            static_cast<unsigned long long>(rigidStatistics.DynamicBodyCount),
+            static_cast<unsigned long long>(rigidStatistics.CandidatePairCount),
+            static_cast<unsigned long long>(rigidStatistics.ResolvedContactCount));
+        ImGui::Text(
+            "Impulse: normal=%.4f drag=%.4f",
+            rigidStatistics.TotalNormalImpulse,
+            rigidStatistics.TotalDragImpulse);
+        ImGui::Text(
+            "         pressure=%.4f buoyancy=%.4f",
+            rigidStatistics.TotalPressureImpulse,
+            rigidStatistics.TotalBuoyancyImpulse);
+        ImGui::Text(
+            "Applied: normal=%llu drag=%llu pressure=%llu buoyancy=%llu",
+            static_cast<unsigned long long>(rigidStatistics.AppliedImpulseCount),
+            static_cast<unsigned long long>(rigidStatistics.AppliedDragImpulseCount),
+            static_cast<unsigned long long>(rigidStatistics.AppliedPressureImpulseCount),
+            static_cast<unsigned long long>(rigidStatistics.AppliedBuoyancyImpulseCount));
+        ImGui::Text(
+            "Displaced Fluid Mass : %.4f",
+            rigidStatistics.TotalDisplacedFluidMass);
     }
 
     void ResetTestBodies()
