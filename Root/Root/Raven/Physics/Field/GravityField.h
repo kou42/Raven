@@ -44,6 +44,13 @@ public:
         m_Acceleration = acceleration;
     }
 
+    // PhysicsWorldの既存SetGravity()/GetGravity()実装を段階的に移行するため、
+    // Fieldが所有する値へのmutable参照も提供します。新規コードではSetAcceleration()を優先します。
+    math::Vec3& GetAcceleration()
+    {
+        return m_Acceleration;
+    }
+
     const math::Vec3& GetAcceleration() const
     {
         return m_Acceleration;
