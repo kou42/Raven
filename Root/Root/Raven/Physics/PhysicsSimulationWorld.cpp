@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
 #include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Scene/Components.h"
@@ -432,16 +433,23 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
     // ========================================================================
-    // Rigid / Fluid / Soft / Thermal fixed-step ordering
+    // Electromagnetism / Rigid / Fluid / Soft / Thermal fixed-step ordering
     // ========================================================================
-    // 1. Rigid Bodyを進め、Collision Detection / Contact Solverまで完了させる
-    // 2. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了させる
-    // 3. 最新Rigid ColliderをSoftBody local-spaceへ同期
-    // 4. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
-    // 5. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
-    // 6. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
-    // 7. Thermal Domainの熱伝導を同じFixed Step幅で進める
+    // 1. Scene内の点電荷ペアからCoulomb ForceをRigidBodyのForce accumulatorへ蓄積
+    // 2. Rigid Bodyを進め、蓄積済み外力とCollision Detection / Contact Solverを解決
+    // 3. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了
+    // 4. 最新Rigid ColliderをSoftBody local-spaceへ同期
+    // 5. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
+    // 6. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
+    // 7. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 8. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
+    // ElectromagneticSystemは位置や速度を直接変更せず、RigidBodyComponent::Forceだけへ書き込みます。
+    // PhysicsWorld::Step()が同じfixed-step内でそのForceを積分し、末尾でClearForces()するため、
+    // Coulomb Forceは毎step現在位置から再計算され、古い値が次stepへ持ち越されません。
+    const ElectromagneticSystem electromagneticSystem{};
+    electromagneticSystem.ApplyCoulombForces(scene);
+
     // Fluid -> Rigid反作用はFluid Step内でRigid速度へ反映され、次Fixed StepのRigid積分から利用されます。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
     m_FluidWorld.StepSimulation(scene, m_RigidBodyWorld, fixedDeltaTime);
