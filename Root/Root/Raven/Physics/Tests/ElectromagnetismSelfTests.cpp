@@ -7,6 +7,7 @@
 #include "Raven/Physics/Electromagnetism/ElectricCharge.h"
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
+#include "Raven/Physics/Field/GravityField.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Entity.h"
@@ -48,6 +49,25 @@ Entity CreateChargedSphere(Scene& scene, const char* name, const math::Vec3& pos
 void RunElectromagnetismSelfTests()
 {
     constexpr double microCoulomb = 1.0e-6;
+
+    // 一様GravityFieldは位置に依存せず重力加速度を返します。
+    const UniformGravityField gravityField({ 0.0f, -3.5f, 1.0f });
+    const math::Vec3 gravityAtOrigin = gravityField.Evaluate({ 0.0f, 0.0f, 0.0f });
+    const math::Vec3 gravityFarAway = gravityField.Evaluate({ 100.0f, 50.0f, -20.0f });
+    assert(NearlyEqual(gravityAtOrigin.x, 0.0f));
+    assert(NearlyEqual(gravityAtOrigin.y, -3.5f));
+    assert(NearlyEqual(gravityAtOrigin.z, 1.0f));
+    assert(NearlyEqual(gravityFarAway.y, gravityAtOrigin.y));
+
+    // 既存SetGravity()/GetGravity()はFieldが所有する同じ値へ接続されます。
+    Scene gravityScene;
+    PhysicsWorld& gravityWorld = gravityScene.GetPhysicsSimulationWorld().GetRigidBodyWorld();
+    gravityWorld.SetGravity({ 0.0f, -4.25f, 0.5f });
+    const math::Vec3 legacyGravity = gravityWorld.GetGravity();
+    const math::Vec3 fieldGravity = gravityWorld.GetGravityField().Evaluate({ 10.0f, 20.0f, 30.0f });
+    assert(NearlyEqual(legacyGravity.x, fieldGravity.x));
+    assert(NearlyEqual(legacyGravity.y, fieldGravity.y));
+    assert(NearlyEqual(legacyGravity.z, fieldGravity.z));
 
     const UniformElectricField uniformField({ 2.0f, -3.0f, 4.0f });
     const math::Vec3 uniformAtOrigin = uniformField.Evaluate({ 0.0f, 0.0f, 0.0f });
