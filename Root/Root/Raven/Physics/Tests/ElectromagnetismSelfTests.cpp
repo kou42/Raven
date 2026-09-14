@@ -6,6 +6,7 @@
 #include "Raven/Physics/Electromagnetism/CoulombForce.h"
 #include "Raven/Physics/Electromagnetism/ElectricCharge.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
+#include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Entity.h"
 #include "Raven/Scene/Scene.h"
@@ -88,6 +89,39 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(forceA.x + forceB.x, 0.0f, 1.0e-5f));
     assert(NearlyEqual(forceA.y + forceB.y, 0.0f, 1.0e-5f));
     assert(NearlyEqual(forceA.z + forceB.z, 0.0f, 1.0e-5f));
+
+    // PhysicsSimulationWorldへの統合確認:
+    // 同符号電荷を1 fixed-step進めると、Coulomb ForceがRigidBodyの通常Force経路で積分され、
+    // 左側Bodyは-X、右側Bodyは+Xの速度を得ます。PhysicsWorld::ClearForces()後なので
+    // accumulatorがゼロへ戻ることも合わせて確認し、step間の二重加算を防ぎます。
+    Scene integratedScene;
+    Entity integratedA = CreateChargedSphere(
+        integratedScene,
+        "Integrated Charge A",
+        { -0.5f, 0.0f, 0.0f },
+        microCoulomb);
+    Entity integratedB = CreateChargedSphere(
+        integratedScene,
+        "Integrated Charge B",
+        { 0.5f, 0.0f, 0.0f },
+        microCoulomb);
+
+    constexpr float fixedDeltaTime = 1.0f / 60.0f;
+    integratedScene.GetPhysicsSimulationWorld().StepSimulation(integratedScene, fixedDeltaTime);
+
+    const RigidBodyComponent& integratedBodyA =
+        integratedA.GetComponent<RigidBodyComponent>();
+    const RigidBodyComponent& integratedBodyB =
+        integratedB.GetComponent<RigidBodyComponent>();
+
+    assert(integratedBodyA.LinearVelocity.x < 0.0f);
+    assert(integratedBodyB.LinearVelocity.x > 0.0f);
+    assert(NearlyEqual(
+        integratedBodyA.LinearVelocity.x + integratedBodyB.LinearVelocity.x,
+        0.0f,
+        1.0e-5f));
+    assert(integratedBodyA.Force.LengthSq() <= 1.0e-12f);
+    assert(integratedBodyB.Force.LengthSq() <= 1.0e-12f);
 }
 
 } // namespace Raven::ph::tests
