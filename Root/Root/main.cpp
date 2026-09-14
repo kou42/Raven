@@ -27,6 +27,7 @@
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
+#include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
 #include "Raven/Physics/Tests/FluidWorldSelfTests.h"
 #include "Raven/Physics/Tests/PhysicsSimulationWorldSelfTests.h"
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
@@ -54,6 +55,7 @@ int main()
     Raven::tests::RunPoseInertializerSelfTests();
     Raven::ph::tests::RunPhysicsSimulationWorldSelfTests();
     Raven::ph::tests::RunFluidWorldSelfTests();
+    Raven::ph::tests::RunFluidCouplingMeasurementSelfTests();
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
     Raven::ph::tests::RunStaticMeshTriangleBVHSelfTests();
     Raven::ph::tests::RunThermalWorldSelfTests();
