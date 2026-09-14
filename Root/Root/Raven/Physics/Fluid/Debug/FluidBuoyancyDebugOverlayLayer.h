@@ -114,38 +114,46 @@ private:
             rigidBody.LinearVelocity.x, rigidBody.LinearVelocity.y, rigidBody.LinearVelocity.z);
     }
 
-    static void DrawPresetButtons(ph::FluidCouplingBinding& binding)
+    bool DrawPresetButtons(ph::FluidCouplingBinding& binding)
     {
         ImGui::TextUnformatted("Presets");
 
+        bool presetApplied = false;
         if (ImGui::Button("Water") == true)
         {
             ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::Water);
+            presetApplied = true;
         }
         ImGui::SameLine();
         if (ImGui::Button("Heavy Fluid") == true)
         {
             ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::HeavyFluid);
+            presetApplied = true;
         }
         ImGui::SameLine();
         if (ImGui::Button("High Drag") == true)
         {
             ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::HighDrag);
+            presetApplied = true;
         }
 
         if (ImGui::Button("Coupling Off") == true)
         {
             ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::CouplingOff);
+            presetApplied = true;
         }
         ImGui::SameLine();
         if (ImGui::Button("Reset to Water") == true)
         {
             // WaterをDemoの基準値として扱い、手動調整後もワンクリックで比較条件へ戻せるようにします。
             ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::Water);
+            presetApplied = true;
         }
+
+        return presetApplied;
     }
 
-    static void DrawCouplingControls(Scene& scene)
+    void DrawCouplingControls(Scene& scene)
     {
         ph::FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
         const std::vector<ph::FluidCouplingBinding*>& bindings = fluidWorld.GetCouplingBindings();
@@ -157,6 +165,7 @@ private:
             return;
         }
 
+        bool resetRequested = false;
         for (std::size_t bindingIndex = 0u; bindingIndex < bindings.size(); ++bindingIndex)
         {
             ph::FluidCouplingBinding* binding = bindings[bindingIndex];
@@ -167,7 +176,10 @@ private:
 
             ImGui::PushID(static_cast<int>(bindingIndex));
             ImGui::Text("Binding %llu", static_cast<unsigned long long>(bindingIndex));
-            DrawPresetButtons(*binding);
+            if (DrawPresetButtons(*binding) == true)
+            {
+                resetRequested = true;
+            }
 
             ImGui::Checkbox("Static Collider", &binding->StaticColliderCouplingEnabled);
             ImGui::Checkbox("Rigid Body", &binding->RigidBodyCouplingEnabled);
@@ -207,6 +219,13 @@ private:
                 ImGui::Separator();
             }
             ImGui::PopID();
+        }
+
+        if (resetRequested == true)
+        {
+            // Preset比較ではBodyの位置・速度・回転状態を同一にすることが重要です。
+            // すべてのBinding UI処理後に一度だけResetし、複数Bindingでも重複Teleportを避けます。
+            ResetTestBodies();
         }
     }
 
@@ -279,6 +298,8 @@ private:
                 continue;
             }
 
+            // Preset比較時も通常のReset操作と同じ経路を利用し、位置だけでなく
+            // 前回試行で蓄積した速度・回転・Force/Torque・Sleep状態まで初期化します。
             physicsWorld.Teleport(*scene, entity, resetPosition);
             transform.Rotation = { 0.0f, 0.0f, 0.0f };
             physicsWorld.SetLinearVelocity(*scene, entity, { 0.0f, 0.0f, 0.0f });
