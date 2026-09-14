@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -440,4 +440,5 @@ private:
     std::vector<RigidSoftSphereColliderBinding> m_RigidSoftSphereColliderBindings;
 };
 
-}
+} // namespace ph
+} // namespace Raven
