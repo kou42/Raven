@@ -49,6 +49,16 @@ public:
         ++SynchronizationCount;
     }
 
+    void SetStaticColliderCouplingEnabled(bool enabled)
+    {
+        m_CouplingBinding.StaticColliderCouplingEnabled = enabled;
+    }
+
+    void SetStaticColliderParticleRadius(float particleRadius)
+    {
+        m_CouplingBinding.StaticColliderSettings.ParticleRadius = particleRadius;
+    }
+
     uint32_t StepCount = 0u;
     uint32_t SynchronizationCount = 0u;
     float LastFixedDeltaTime = 0.0f;
@@ -215,6 +225,44 @@ void RunFluidWorldMultipleBindingStatisticsTest()
     assert(fluidWorld.UnregisterSimulationParticipant(secondParticipant) == true);
     assert(fluidWorld.GetLastStaticColliderCouplingStatistics().SupportedColliderCount == 0u);
 }
+
+void RunFluidWorldRuntimeCouplingBindingTest()
+{
+    Scene scene;
+    PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
+    FluidWorld& fluidWorld = simulationWorld.GetFluidWorld();
+
+    Entity staticSphereEntity = scene.CreateEntity("FluidWorld Runtime Coupling Binding Sphere");
+    ColliderComponent collider{};
+    collider.Type = ColliderType::Sphere;
+    collider.Radius = 1.0f;
+    collider.Restitution = 0.0f;
+    staticSphereEntity.AddComponent<ColliderComponent>(collider);
+
+    std::vector<FluidParticle> particles(1u);
+    TestFluidSimulationParticipant participant(particles);
+    assert(fluidWorld.RegisterSimulationParticipant(participant) == true);
+
+    constexpr float fixedDeltaTime = 1.0f / 60.0f;
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
+    assert(IsNearlyEqual(particles[0].Position.x, 1.5f));
+
+    // FluidWorldはBindingのコピーではなくParticipant所有Bindingへの非所有参照を保持します。
+    // 登録後にCouplingを無効化した場合、再登録なしで次のfixed-stepから反映されることを固定します。
+    participant.SetStaticColliderCouplingEnabled(false);
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
+    assert(IsNearlyEqual(particles[0].Position.x, 0.75f));
+    assert(fluidWorld.GetLastStaticColliderCouplingStatistics().SupportedColliderCount == 0u);
+
+    // Enable状態だけでなく設定値も同じBindingから毎step参照します。
+    // Particle Radiusを0.5から0.25へ変更すると、Sphere半径1.0との合計境界はx=1.25になります。
+    participant.SetStaticColliderParticleRadius(0.25f);
+    participant.SetStaticColliderCouplingEnabled(true);
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
+    assert(IsNearlyEqual(particles[0].Position.x, 1.25f));
+
+    assert(fluidWorld.UnregisterSimulationParticipant(participant) == true);
+}
 }
 
 void RunFluidWorldSelfTests()
@@ -308,6 +356,7 @@ void RunFluidWorldSelfTests()
 
     RunFluidWorldRigidBodyCouplingTest();
     RunFluidWorldMultipleBindingStatisticsTest();
+    RunFluidWorldRuntimeCouplingBindingTest();
 }
 
 } // namespace Raven::ph::tests
