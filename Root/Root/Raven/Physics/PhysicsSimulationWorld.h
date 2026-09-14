@@ -120,14 +120,17 @@ public:
         return m_CouplingBindings;
     }
 
+    // 直近のFluid fixed-stepで全Bindingに対して発生したCoupling診断値の合計です。
+    // Solver単体のLastStatisticsを直接公開すると最後に処理したBindingだけが見えるため、
+    // World境界では複数Fluid Domainを横断した値へ集約して公開します。
     const FluidStaticColliderCouplingStatistics& GetLastStaticColliderCouplingStatistics() const
     {
-        return m_StaticColliderCoupling.GetLastStatistics();
+        return m_LastStaticColliderCouplingStatistics;
     }
 
     const FluidRigidBodyCouplingStatistics& GetLastRigidBodyCouplingStatistics() const
     {
-        return m_RigidBodyCoupling.GetLastStatistics();
+        return m_LastRigidBodyCouplingStatistics;
     }
 
 private:
@@ -143,6 +146,11 @@ private:
     // Bindingごとの設定をResolve直前に反映し、Participant固有のParticle Radius等を維持します。
     FluidStaticColliderCoupling m_StaticColliderCoupling{};
     FluidRigidBodyCoupling m_RigidBodyCoupling{};
+
+    // SolverのLastStatisticsはBindingごとに上書きされるため、FluidWorldがFixed Step開始時に
+    // 0へ戻して各Bindingの結果を加算します。Debug HUDやProfilerはこのWorld集約値を参照します。
+    FluidStaticColliderCouplingStatistics m_LastStaticColliderCouplingStatistics{};
+    FluidRigidBodyCouplingStatistics m_LastRigidBodyCouplingStatistics{};
 };
 
 // ============================================================================
