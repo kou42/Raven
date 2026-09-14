@@ -44,6 +44,31 @@ Entity CreateChargedSphere(Scene& scene, const char* name, const math::Vec3& pos
     entity.AddComponent<ElectricChargeComponent>(electricCharge);
     return entity;
 }
+
+Entity CreateGravityTestSphere(
+    Scene& scene,
+    const char* name,
+    const math::Vec3& position,
+    bool useGravity)
+{
+    Entity entity = scene.CreateEntity(name);
+    entity.GetComponent<TransformComponent>().Position = position;
+
+    RigidBodyComponent rigidBody{};
+    rigidBody.SetBodyType(BodyType::Dynamic);
+    rigidBody.SetMass(1.0f);
+    rigidBody.UseGravity = useGravity;
+    rigidBody.AllowSleep = false;
+    rigidBody.LinearDamping = 0.0f;
+    rigidBody.AngularDamping = 0.0f;
+    entity.AddComponent<RigidBodyComponent>(rigidBody);
+
+    ColliderComponent collider{};
+    collider.Type = ColliderType::Sphere;
+    collider.Radius = 0.1f;
+    entity.AddComponent<ColliderComponent>(collider);
+    return entity;
+}
 }
 
 void RunElectromagnetismSelfTests()
@@ -57,17 +82,44 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(gravityAtOrigin.x, 0.0f));
     assert(NearlyEqual(gravityAtOrigin.y, -3.5f));
     assert(NearlyEqual(gravityAtOrigin.z, 1.0f));
+    assert(NearlyEqual(gravityFarAway.x, gravityAtOrigin.x));
     assert(NearlyEqual(gravityFarAway.y, gravityAtOrigin.y));
+    assert(NearlyEqual(gravityFarAway.z, gravityAtOrigin.z));
 
     // 既存SetGravity()/GetGravity()はFieldが所有する同じ値へ接続されます。
     Scene gravityScene;
     PhysicsWorld& gravityWorld = gravityScene.GetPhysicsSimulationWorld().GetRigidBodyWorld();
-    gravityWorld.SetGravity({ 0.0f, -4.25f, 0.5f });
+    const math::Vec3 defaultGravity = gravityWorld.GetGravity();
+    assert(NearlyEqual(defaultGravity.x, 0.0f));
+    assert(NearlyEqual(defaultGravity.y, -9.80665f));
+    assert(NearlyEqual(defaultGravity.z, 0.0f));
+
+    gravityWorld.SetGravity({ 0.0f, -4.0f, 0.0f });
     const math::Vec3 legacyGravity = gravityWorld.GetGravity();
     const math::Vec3 fieldGravity = gravityWorld.GetGravityField().Evaluate({ 10.0f, 20.0f, 30.0f });
     assert(NearlyEqual(legacyGravity.x, fieldGravity.x));
     assert(NearlyEqual(legacyGravity.y, fieldGravity.y));
     assert(NearlyEqual(legacyGravity.z, fieldGravity.z));
+
+    // RigidBodyはFieldが返した加速度だけをfixed-stepで速度へ積分し、UseGravityを尊重します。
+    // Dampingを0に固定し、1 step後の差分を重力加速度 * dtとして直接検証します。
+    Entity gravityEnabledBody = CreateGravityTestSphere(
+        gravityScene, "Gravity Enabled", { -10.0f, 0.0f, 0.0f }, true);
+    Entity gravityDisabledBody = CreateGravityTestSphere(
+        gravityScene, "Gravity Disabled", { 10.0f, 0.0f, 0.0f }, false);
+    constexpr float gravityFixedDeltaTime = 1.0f / 60.0f;
+    gravityWorld.Step(gravityScene, gravityFixedDeltaTime);
+
+    const math::Vec3 enabledVelocity =
+        gravityEnabledBody.GetComponent<RigidBodyComponent>().LinearVelocity;
+    const math::Vec3 disabledVelocity =
+        gravityDisabledBody.GetComponent<RigidBodyComponent>().LinearVelocity;
+    assert(NearlyEqual(enabledVelocity.x, 0.0f));
+    assert(NearlyEqual(enabledVelocity.y, -4.0f * gravityFixedDeltaTime));
+    assert(NearlyEqual(enabledVelocity.z, 0.0f));
+    assert(NearlyEqual(disabledVelocity.x, 0.0f));
+    assert(NearlyEqual(disabledVelocity.y, 0.0f));
+    assert(NearlyEqual(disabledVelocity.z, 0.0f));
 
     const UniformElectricField uniformField({ 2.0f, -3.0f, 4.0f });
     const math::Vec3 uniformAtOrigin = uniformField.Evaluate({ 0.0f, 0.0f, 0.0f });
