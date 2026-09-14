@@ -58,9 +58,116 @@ private:
     FluidCouplingBinding m_CouplingBinding{};
 };
 
+class TestFluidRigidBodyParticipant final : public FluidSimulationParticipant
+{
+public:
+    explicit TestFluidRigidBodyParticipant(std::vector<FluidParticle>& particles)
+        : m_Particles(particles)
+    {
+        m_CouplingBinding.Particles = &m_Particles;
+        m_CouplingBinding.StaticColliderCouplingEnabled = false;
+        m_CouplingBinding.RigidBodyCouplingEnabled = true;
+        m_CouplingBinding.RigidBodySettings.ParticleRadius = 0.1f;
+        m_CouplingBinding.RigidBodySettings.Restitution = 0.0f;
+        m_CouplingBinding.RigidBodySettings.DragCoefficient = 0.5f;
+        m_CouplingBinding.RigidBodySettings.PressureReactionCoefficient = 1.0f;
+        m_CouplingBinding.RigidBodySettings.BuoyancyCoefficient = 1.0f;
+    }
+
+    void SimulateFluid(float fixedDeltaTime) override
+    {
+        ++StepCount;
+        LastFixedDeltaTime = fixedDeltaTime;
+
+        if (m_Particles.empty() == false)
+        {
+            // Dynamic Sphere上面へ半径分だけ侵入させます。
+            // +X接線速度はDrag、正圧はPressure、侵入量はBuoyancyを同じCouplingで発生させます。
+            m_Particles[0].Position = { 0.0f, 0.5f, 0.0f };
+            m_Particles[0].Velocity = { 1.0f, -1.0f, 0.0f };
+            m_Particles[0].Mass = 2.0f;
+            m_Particles[0].Pressure = 10.0f;
+        }
+    }
+
+    FluidCouplingBinding* GetFluidCouplingBinding() override
+    {
+        return &m_CouplingBinding;
+    }
+
+    uint32_t StepCount = 0u;
+    float LastFixedDeltaTime = 0.0f;
+
+private:
+    std::vector<FluidParticle>& m_Particles;
+    FluidCouplingBinding m_CouplingBinding{};
+};
+
 bool IsNearlyEqual(float left, float right)
 {
     return std::abs(left - right) <= 1.0e-5f;
+}
+
+void RunFluidWorldRigidBodyCouplingTest()
+{
+    Scene scene;
+    PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
+    FluidWorld& fluidWorld = simulationWorld.GetFluidWorld();
+    PhysicsWorld& rigidBodyWorld = simulationWorld.GetRigidBodyWorld();
+    rigidBodyWorld.SetGravity({ 0.0f, -10.0f, 0.0f });
+
+    Entity bodyEntity = scene.CreateEntity("FluidWorld RigidBody Coupling Sphere");
+    RigidBodyComponent rigidBody{};
+    rigidBody.SetBodyType(BodyType::Dynamic);
+    rigidBody.SetMass(2.0f);
+    rigidBody.UseGravity = false;
+    rigidBody.AllowSleep = false;
+    bodyEntity.AddComponent<RigidBodyComponent>(rigidBody);
+
+    ColliderComponent collider{};
+    collider.Type = ColliderType::Sphere;
+    collider.Radius = 0.5f;
+    collider.Restitution = 0.0f;
+    bodyEntity.AddComponent<ColliderComponent>(collider);
+
+    std::vector<FluidParticle> particles(1u);
+    TestFluidRigidBodyParticipant participant(particles);
+    assert(fluidWorld.RegisterSimulationParticipant(participant) == true);
+
+    constexpr float fixedDeltaTime = 0.1f;
+    fluidWorld.StepSimulation(scene, rigidBodyWorld, fixedDeltaTime);
+
+    assert(participant.StepCount == 1u);
+    assert(IsNearlyEqual(participant.LastFixedDeltaTime, fixedDeltaTime));
+
+    const RigidBodyComponent& resolvedBody = bodyEntity.GetComponent<RigidBodyComponent>();
+    const FluidRigidBodyCouplingStatistics& statistics =
+        fluidWorld.GetLastRigidBodyCouplingStatistics();
+
+    // Participant Simulationで作った接触状態を同じFixed StepのFluidWorld Couplingが消費します。
+    // 法線衝突・Drag・Pressure・BuoyancyがすべてWorld経由で実行されたことをCounterでも固定します。
+    assert(statistics.DynamicBodyCount == 1u);
+    assert(statistics.CandidatePairCount == 1u);
+    assert(statistics.ResolvedContactCount == 1u);
+    assert(statistics.AppliedImpulseCount == 1u);
+    assert(statistics.AppliedDragImpulseCount == 1u);
+    assert(statistics.AppliedPressureImpulseCount == 1u);
+    assert(statistics.AppliedBuoyancyImpulseCount == 1u);
+    assert(statistics.TotalNormalImpulse > 0.0f);
+    assert(statistics.TotalDragImpulse > 0.0f);
+    assert(statistics.TotalPressureImpulse > 0.0f);
+    assert(statistics.TotalBuoyancyImpulse > 0.0f);
+    assert(statistics.TotalDisplacedFluidMass > 0.0f);
+
+    // DragはParticleの+X運動量をBodyへ、Pressure/法線反作用は-Y、Buoyancyは+YをBodyへ伝えます。
+    // 各項の厳密値ではなく、World統合経路で双方向Impulseが実際にBodyへ届くことを確認します。
+    assert(resolvedBody.LinearVelocity.x > 0.0f);
+    assert(std::abs(resolvedBody.LinearVelocity.y) > 1.0e-5f);
+    assert(particles[0].Velocity.x < 1.0f);
+
+    assert(fluidWorld.UnregisterSimulationParticipant(participant) == true);
+    assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 0u);
+    assert(fluidWorld.GetCouplingBindingCount() == 0u);
 }
 }
 
@@ -152,6 +259,8 @@ void RunFluidWorldSelfTests()
     fluidWorld.Clear();
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 0u);
     assert(fluidWorld.GetCouplingBindingCount() == 0u);
+
+    RunFluidWorldRigidBodyCouplingTest();
 }
 
 } // namespace Raven::ph::tests
