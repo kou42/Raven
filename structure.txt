@@ -794,6 +794,21 @@ D:.
     |   |   |   |       PhysicsDebugRendererCameraContext.cpp
     |   |   |   |       PhysicsDebugSettings.h
     |   |   |   |
+    |   |   |   +---Electromagnetism
+    |   |   |   |       CoulombForce.cpp
+    |   |   |   |       CoulombForce.h
+    |   |   |   |       ElectricCharge.h
+    |   |   |   |       ElectricField.cpp
+    |   |   |   |       ElectricField.h
+    |   |   |   |       ElectromagneticSystem.cpp
+    |   |   |   |       ElectromagneticSystem.h
+    |   |   |   |       MagneticField.cpp
+    |   |   |   |       MagneticField.h
+    |   |   |   |
+    |   |   |   +---Field
+    |   |   |   |       GravityField.h
+    |   |   |   |       PhysicsField.h
+    |   |   |   |
     |   |   |   +---Ragdoll
     |   |   |   |       RagdollAnimationVelocity.cpp
     |   |   |   |       RagdollConstraintSolver.cpp

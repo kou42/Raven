@@ -7,6 +7,7 @@
 #include "Raven/Physics/Electromagnetism/ElectricCharge.h"
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
+#include "Raven/Physics/Electromagnetism/MagneticField.h"
 #include "Raven/Physics/Field/GravityField.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -160,6 +161,25 @@ void RunElectromagnetismSelfTests()
         { 2.0f, 0.0f, 0.0f }, microCoulomb);
     assert(NearlyEqual(forceAtTwoMeters.x / repulsiveForce.x, 0.25f, 1.0e-3f));
 
+    // 一様磁場は位置に依存せず、F=q(v x B)の向きは右手系の外積に従います。
+    const UniformMagneticField uniformMagneticField({ 0.0f, 0.0f, 4.0f });
+    const math::Vec3 magneticFieldAtOrigin =
+        uniformMagneticField.Evaluate({ 0.0f, 0.0f, 0.0f });
+    const math::Vec3 magneticFieldFarAway =
+        uniformMagneticField.Evaluate({ 100.0f, -50.0f, 25.0f });
+    assert(NearlyEqual(magneticFieldFarAway.x, magneticFieldAtOrigin.x));
+    assert(NearlyEqual(magneticFieldFarAway.y, magneticFieldAtOrigin.y));
+    assert(NearlyEqual(magneticFieldFarAway.z, magneticFieldAtOrigin.z));
+
+    const math::Vec3 positiveMagneticForce = ComputeMagneticForce(
+        2.0, { 3.0f, 0.0f, 0.0f }, magneticFieldAtOrigin);
+    const math::Vec3 negativeMagneticForce = ComputeMagneticForce(
+        -2.0, { 3.0f, 0.0f, 0.0f }, magneticFieldAtOrigin);
+    assert(NearlyEqual(positiveMagneticForce.x, 0.0f));
+    assert(NearlyEqual(positiveMagneticForce.y, -24.0f));
+    assert(NearlyEqual(positiveMagneticForce.z, 0.0f));
+    assert(NearlyEqual(negativeMagneticForce.y, 24.0f));
+
     Scene scene;
     Entity a = CreateChargedSphere(scene, "Positive Charge A", { -0.5f, 0.0f, 0.0f }, microCoulomb);
     Entity b = CreateChargedSphere(scene, "Positive Charge B", { 0.5f, 0.0f, 0.0f }, microCoulomb);
@@ -216,6 +236,8 @@ void RunElectromagnetismSelfTests()
     assert(&persistentSystem
         == &constPersistentSimulationWorld.GetElectromagneticSystem());
     assert(persistentSystem.RegisterElectricField(persistentField) == true);
+    assert(persistentSystem.RegisterMagneticField(uniformMagneticField) == true);
+    assert(persistentSystem.RegisterMagneticField(uniformMagneticField) == false);
 
     CoulombForceSettings persistentSettings{};
     persistentSettings.CoulombConstant = 1234.0;
@@ -235,11 +257,36 @@ void RunElectromagnetismSelfTests()
 
     persistentSimulationWorld.StepSimulation(persistentFieldScene, fixedDeltaTime);
     assert(NearlyEqual(persistentBody.LinearVelocity.x, 12.0f * fixedDeltaTime));
+    assert(NearlyEqual(persistentBody.LinearVelocity.y, -0.8f * fixedDeltaTime));
     assert(persistentBody.Force.LengthSq() <= 1.0e-12f);
     assert(persistentSystem.ContainsElectricField(persistentField) == true);
     assert(persistentSystem.GetCoulombForceSettings().CoulombConstant == 1234.0);
     assert(NearlyEqual(persistentSystem.GetCoulombForceSettings().MinimumDistance, 0.25f));
     assert(persistentSystem.UnregisterElectricField(persistentField) == true);
+    assert(persistentSystem.UnregisterMagneticField(uniformMagneticField) == true);
+    assert(persistentSystem.UnregisterMagneticField(uniformMagneticField) == false);
+
+    // 磁気ローレンツ力もPhysicsSimulationWorldのfixed-step入口からForceとして積分されます。
+    UniformMagneticField integratedMagneticField({ 0.0f, 0.0f, 4.0f });
+    Scene magneticScene;
+    ElectromagneticSystem& magneticSystem =
+        magneticScene.GetPhysicsSimulationWorld().GetElectromagneticSystem();
+    assert(magneticSystem.RegisterMagneticField(integratedMagneticField) == true);
+    Entity magneticCharge = CreateChargedSphere(
+        magneticScene, "Magnetic Field Charge", { 0.0f, 0.0f, 0.0f }, 2.0);
+    RigidBodyComponent& magneticBody = magneticCharge.GetComponent<RigidBodyComponent>();
+    magneticBody.LinearVelocity = { 3.0f, 0.0f, 0.0f };
+    magneticBody.LinearDamping = 0.0f;
+    magneticBody.AngularDamping = 0.0f;
+
+    magneticScene.GetPhysicsSimulationWorld().StepSimulation(magneticScene, fixedDeltaTime);
+    assert(NearlyEqual(magneticBody.LinearVelocity.x, 3.0f));
+    assert(NearlyEqual(magneticBody.LinearVelocity.y, -24.0f * fixedDeltaTime));
+    assert(NearlyEqual(magneticBody.LinearVelocity.z, 0.0f));
+    assert(magneticBody.Force.LengthSq() <= 1.0e-12f);
+    assert(magneticSystem.ContainsMagneticField(integratedMagneticField) == true);
+    magneticSystem.ClearMagneticFields();
+    assert(magneticSystem.GetRegisteredMagneticFieldCount() == 0u);
 
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
