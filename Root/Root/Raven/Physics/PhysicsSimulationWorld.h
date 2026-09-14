@@ -6,6 +6,7 @@
 
 #include "Raven/Physics/Coupling/FluidRigidBodyCoupling.h"
 #include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
+#include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/Fluid/FluidCouplingBinding.h"
 #include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
 #include "Raven/Physics/PhysicsWorld.h"
@@ -384,8 +385,8 @@ struct RigidSoftSphereColliderBinding
 // PhysicsSimulationWorld
 // ============================================================================
 // Raven全体のPhysics Domainを統括する上位Worldです。
-// Rigid Body / Fluid / Soft Body / ThermalのFixed Step順序をここへ集約し、後続のCoupling実装でも
-// Scene/Game/RendererへDomain間依存を漏らさない構造を維持します。
+// Electromagnetism / Rigid Body / Fluid / Soft Body / ThermalのFixed Step順序をここへ集約し、
+// 後続のCoupling実装でもScene/Game/RendererへDomain間依存を漏らさない構造を維持します。
 class PhysicsSimulationWorld
 {
 public:
@@ -413,6 +414,9 @@ public:
     PhysicsWorld& GetRigidBodyWorld();
     const PhysicsWorld& GetRigidBodyWorld() const;
 
+    ElectromagneticSystem& GetElectromagneticSystem();
+    const ElectromagneticSystem& GetElectromagneticSystem() const;
+
     FluidWorld& GetFluidWorld();
     const FluidWorld& GetFluidWorld() const;
 
@@ -433,6 +437,9 @@ private:
     void ApplySoftBodyReactionsToRigidBodies(Scene& scene);
 
 private:
+    // 外部Electric Field RegistryとCoulomb設定をfixed-step間で保持します。
+    // 登録Fieldは非所有参照のため、所有側はField破棄前に登録解除する必要があります。
+    ElectromagneticSystem m_ElectromagneticSystem;
     PhysicsWorld m_RigidBodyWorld;
     FluidWorld m_FluidWorld;
     SoftBodyWorld m_SoftBodyWorld;

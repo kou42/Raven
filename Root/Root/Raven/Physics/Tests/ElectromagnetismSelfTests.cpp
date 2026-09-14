@@ -202,13 +202,51 @@ void RunElectromagnetismSelfTests()
     externalFieldSystem.ClearElectricFields();
     assert(externalFieldSystem.GetRegisteredElectricFieldCount() == 0u);
 
+    constexpr float fixedDeltaTime = 1.0f / 60.0f;
+
+    // PhysicsSimulationWorldがElectromagneticSystemを永続所有し、外部Fieldと設定を
+    // 複数fixed-step間で保持しながら、毎stepのForceだけを再計算することを確認します。
+    UniformElectricField persistentField({ 3.0f, 0.0f, 0.0f });
+    Scene persistentFieldScene;
+    PhysicsSimulationWorld& persistentSimulationWorld =
+        persistentFieldScene.GetPhysicsSimulationWorld();
+    ElectromagneticSystem& persistentSystem =
+        persistentSimulationWorld.GetElectromagneticSystem();
+    const PhysicsSimulationWorld& constPersistentSimulationWorld = persistentSimulationWorld;
+    assert(&persistentSystem
+        == &constPersistentSimulationWorld.GetElectromagneticSystem());
+    assert(persistentSystem.RegisterElectricField(persistentField) == true);
+
+    CoulombForceSettings persistentSettings{};
+    persistentSettings.CoulombConstant = 1234.0;
+    persistentSettings.MinimumDistance = 0.25f;
+    persistentSystem.SetCoulombForceSettings(persistentSettings);
+
+    Entity persistentCharge = CreateChargedSphere(
+        persistentFieldScene, "Persistent External Field Charge", { 0.0f, 0.0f, 0.0f }, 2.0);
+    RigidBodyComponent& persistentBody = persistentCharge.GetComponent<RigidBodyComponent>();
+    persistentBody.LinearDamping = 0.0f;
+    persistentBody.AngularDamping = 0.0f;
+
+    persistentSimulationWorld.StepSimulation(persistentFieldScene, fixedDeltaTime);
+    assert(NearlyEqual(persistentBody.LinearVelocity.x, 6.0f * fixedDeltaTime));
+    assert(persistentBody.Force.LengthSq() <= 1.0e-12f);
+    assert(persistentSystem.GetRegisteredElectricFieldCount() == 1u);
+
+    persistentSimulationWorld.StepSimulation(persistentFieldScene, fixedDeltaTime);
+    assert(NearlyEqual(persistentBody.LinearVelocity.x, 12.0f * fixedDeltaTime));
+    assert(persistentBody.Force.LengthSq() <= 1.0e-12f);
+    assert(persistentSystem.ContainsElectricField(persistentField) == true);
+    assert(persistentSystem.GetCoulombForceSettings().CoulombConstant == 1234.0);
+    assert(NearlyEqual(persistentSystem.GetCoulombForceSettings().MinimumDistance, 0.25f));
+    assert(persistentSystem.UnregisterElectricField(persistentField) == true);
+
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
         integratedScene, "Integrated Charge A", { -0.5f, 0.0f, 0.0f }, microCoulomb);
     Entity integratedB = CreateChargedSphere(
         integratedScene, "Integrated Charge B", { 0.5f, 0.0f, 0.0f }, microCoulomb);
 
-    constexpr float fixedDeltaTime = 1.0f / 60.0f;
     integratedScene.GetPhysicsSimulationWorld().StepSimulation(integratedScene, fixedDeltaTime);
 
     const RigidBodyComponent& integratedBodyA = integratedA.GetComponent<RigidBodyComponent>();
