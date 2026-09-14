@@ -29,9 +29,6 @@ public:
     {
         ++StepCount;
         LastFixedDeltaTime = fixedDeltaTime;
-
-        // Couplingより先にSimulationが実行されたことを確認できるよう、
-        // Static Sphere内部へParticleを配置します。
         if (m_Particles.empty() == false)
         {
             m_Particles[0].Position = { 0.75f, 0.0f, 0.0f };
@@ -39,15 +36,8 @@ public:
         }
     }
 
-    FluidCouplingBinding* GetFluidCouplingBinding() override
-    {
-        return &m_CouplingBinding;
-    }
-
-    void SynchronizeFluidOutput() override
-    {
-        ++SynchronizationCount;
-    }
+    FluidCouplingBinding* GetFluidCouplingBinding() override { return &m_CouplingBinding; }
+    void SynchronizeFluidOutput() override { ++SynchronizationCount; }
 
     uint32_t StepCount = 0u;
     uint32_t SynchronizationCount = 0u;
@@ -78,11 +68,8 @@ public:
     {
         ++StepCount;
         LastFixedDeltaTime = fixedDeltaTime;
-
         if (m_Particles.empty() == false)
         {
-            // Dynamic Sphere上面へ半径分だけ侵入させます。
-            // +X接線速度はDrag、正圧はPressure、侵入量はBuoyancyを同じCouplingで発生させます。
             m_Particles[0].Position = { 0.0f, 0.5f, 0.0f };
             m_Particles[0].Velocity = { 1.0f, -1.0f, 0.0f };
             m_Particles[0].Mass = 2.0f;
@@ -90,10 +77,7 @@ public:
         }
     }
 
-    FluidCouplingBinding* GetFluidCouplingBinding() override
-    {
-        return &m_CouplingBinding;
-    }
+    FluidCouplingBinding* GetFluidCouplingBinding() override { return &m_CouplingBinding; }
 
     uint32_t StepCount = 0u;
     float LastFixedDeltaTime = 0.0f;
@@ -141,11 +125,7 @@ void RunFluidWorldRigidBodyCouplingTest()
     assert(IsNearlyEqual(participant.LastFixedDeltaTime, fixedDeltaTime));
 
     const RigidBodyComponent& resolvedBody = bodyEntity.GetComponent<RigidBodyComponent>();
-    const FluidRigidBodyCouplingStatistics& statistics =
-        fluidWorld.GetLastRigidBodyCouplingStatistics();
-
-    // Participant Simulationで作った接触状態を同じFixed StepのFluidWorld Couplingが消費します。
-    // 法線衝突・Drag・Pressure・BuoyancyがすべてWorld経由で実行されたことをCounterでも固定します。
+    const FluidRigidBodyCouplingStatistics& statistics = fluidWorld.GetLastRigidBodyCouplingStatistics();
     assert(statistics.DynamicBodyCount == 1u);
     assert(statistics.CandidatePairCount == 1u);
     assert(statistics.ResolvedContactCount == 1u);
@@ -158,9 +138,6 @@ void RunFluidWorldRigidBodyCouplingTest()
     assert(statistics.TotalPressureImpulse > 0.0f);
     assert(statistics.TotalBuoyancyImpulse > 0.0f);
     assert(statistics.TotalDisplacedFluidMass > 0.0f);
-
-    // DragはParticleの+X運動量をBodyへ、Pressure/法線反作用は-Y、Buoyancyは+YをBodyへ伝えます。
-    // 各項の厳密値ではなく、World統合経路で双方向Impulseが実際にBodyへ届くことを確認します。
     assert(resolvedBody.LinearVelocity.x > 0.0f);
     assert(std::abs(resolvedBody.LinearVelocity.y) > 1.0e-5f);
     assert(particles[0].Velocity.x < 1.0f);
@@ -168,6 +145,52 @@ void RunFluidWorldRigidBodyCouplingTest()
     assert(fluidWorld.UnregisterSimulationParticipant(participant) == true);
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 0u);
     assert(fluidWorld.GetCouplingBindingCount() == 0u);
+}
+
+void RunFluidWorldMultipleBindingStatisticsTest()
+{
+    Scene scene;
+    PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
+    FluidWorld& fluidWorld = simulationWorld.GetFluidWorld();
+
+    Entity staticSphereEntity = scene.CreateEntity("FluidWorld Aggregate Statistics Sphere");
+    ColliderComponent collider{};
+    collider.Type = ColliderType::Sphere;
+    collider.Radius = 1.0f;
+    collider.Restitution = 0.0f;
+    staticSphereEntity.AddComponent<ColliderComponent>(collider);
+
+    std::vector<FluidParticle> firstParticles(1u);
+    std::vector<FluidParticle> secondParticles(1u);
+    TestFluidSimulationParticipant firstParticipant(firstParticles);
+    TestFluidSimulationParticipant secondParticipant(secondParticles);
+
+    assert(fluidWorld.RegisterSimulationParticipant(firstParticipant) == true);
+    assert(fluidWorld.RegisterSimulationParticipant(secondParticipant) == true);
+
+    constexpr float fixedDeltaTime = 1.0f / 60.0f;
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
+
+    // Coupling Solver単体ではResolveSceneごとにStatisticsが初期化されます。
+    // FluidWorld公開値は2つのBindingを同じfixed-step内で合算し、最後のBindingだけへ
+    // 上書きされないことを固定します。
+    const FluidStaticColliderCouplingStatistics& statistics =
+        fluidWorld.GetLastStaticColliderCouplingStatistics();
+    assert(statistics.SupportedColliderCount == 2u);
+    assert(statistics.CandidatePairCount == 2u);
+    assert(statistics.ResolvedContactCount == 2u);
+
+    // 次fixed-stepでは前step値へ累積せず、そのstepの2 Binding分だけを再集計します。
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
+    const FluidStaticColliderCouplingStatistics& nextStatistics =
+        fluidWorld.GetLastStaticColliderCouplingStatistics();
+    assert(nextStatistics.SupportedColliderCount == 2u);
+    assert(nextStatistics.CandidatePairCount == 2u);
+    assert(nextStatistics.ResolvedContactCount == 2u);
+
+    assert(fluidWorld.UnregisterSimulationParticipant(firstParticipant) == true);
+    assert(fluidWorld.UnregisterSimulationParticipant(secondParticipant) == true);
+    assert(fluidWorld.GetLastStaticColliderCouplingStatistics().SupportedColliderCount == 0u);
 }
 }
 
@@ -185,7 +208,6 @@ void RunFluidWorldSelfTests()
 
     std::vector<FluidParticle> particles(1u);
     particles[0].Position = { 5.0f, 0.0f, 0.0f };
-
     TestFluidSimulationParticipant firstParticipant(particles);
     TestFluidSimulationParticipant duplicateParticleParticipant(particles);
 
@@ -195,13 +217,10 @@ void RunFluidWorldSelfTests()
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 1u);
     assert(fluidWorld.GetCouplingBindingCount() == 1u);
     assert(fluidWorld.ContainsCouplingBinding(particles) == true);
-
-    // 同じParticle配列へCouplingを二重登録すると位置補正やImpulseが重複するため拒否します。
     assert(fluidWorld.RegisterSimulationParticipant(duplicateParticleParticipant) == false);
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 1u);
     assert(fluidWorld.GetCouplingBindingCount() == 1u);
 
-    // RigidBodyを持たないSphere ColliderはStatic Fluid Coupling対象です。
     Entity staticSphereEntity = scene.CreateEntity("FluidWorld Self Test Static Sphere");
     ColliderComponent staticSphereCollider{};
     staticSphereCollider.Type = ColliderType::Sphere;
@@ -210,32 +229,22 @@ void RunFluidWorldSelfTests()
     staticSphereEntity.AddComponent<ColliderComponent>(staticSphereCollider);
 
     constexpr float fixedDeltaTime = 1.0f / 60.0f;
-    fluidWorld.StepSimulation(
-        scene,
-        simulationWorld.GetRigidBodyWorld(),
-        fixedDeltaTime);
-
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
     assert(firstParticipant.StepCount == 1u);
     assert(firstParticipant.SynchronizationCount == 0u);
     assert(IsNearlyEqual(firstParticipant.LastFixedDeltaTime, fixedDeltaTime));
-
-    // Simulationでx=0.75へ移したParticleは、半径1.0のSphereとParticle半径0.5の合計境界
-    // x=1.5まで同じFixed Step内のStatic Couplingで押し出されます。
     assert(IsNearlyEqual(particles[0].Position.x, 1.5f));
     assert(IsNearlyEqual(particles[0].Position.y, 0.0f));
     assert(IsNearlyEqual(particles[0].Position.z, 0.0f));
     assert(IsNearlyEqual(particles[0].Velocity.x, 0.0f));
 
-    const FluidStaticColliderCouplingStatistics& staticStatistics =
-        fluidWorld.GetLastStaticColliderCouplingStatistics();
+    const FluidStaticColliderCouplingStatistics& staticStatistics = fluidWorld.GetLastStaticColliderCouplingStatistics();
     assert(staticStatistics.SupportedColliderCount == 1u);
     assert(staticStatistics.CandidatePairCount == 1u);
     assert(staticStatistics.ResolvedContactCount == 1u);
 
-    // catch-up中のSimulation/Couplingと外部出力同期は分離されます。
     fluidWorld.SynchronizeOutputs();
     assert(firstParticipant.SynchronizationCount == 1u);
-
     assert(fluidWorld.UnregisterSimulationParticipant(firstParticipant) == true);
     assert(fluidWorld.UnregisterSimulationParticipant(firstParticipant) == false);
     assert(fluidWorld.ContainsSimulationParticipant(firstParticipant) == false);
@@ -243,24 +252,19 @@ void RunFluidWorldSelfTests()
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 0u);
     assert(fluidWorld.GetCouplingBindingCount() == 0u);
 
-    // Unregister後はParticipantもCouplingも実行されません。
     particles[0].Position = { 0.75f, 0.0f, 0.0f };
-    fluidWorld.StepSimulation(
-        scene,
-        simulationWorld.GetRigidBodyWorld(),
-        fixedDeltaTime);
+    fluidWorld.StepSimulation(scene, simulationWorld.GetRigidBodyWorld(), fixedDeltaTime);
     assert(firstParticipant.StepCount == 1u);
     assert(IsNearlyEqual(particles[0].Position.x, 0.75f));
 
-    // nullptr Particle BindingはRegistryへ受け入れません。
     FluidCouplingBinding invalidBinding{};
     assert(fluidWorld.RegisterCouplingBinding(invalidBinding) == false);
-
     fluidWorld.Clear();
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 0u);
     assert(fluidWorld.GetCouplingBindingCount() == 0u);
 
     RunFluidWorldRigidBodyCouplingTest();
+    RunFluidWorldMultipleBindingStatisticsTest();
 }
 
 } // namespace Raven::ph::tests

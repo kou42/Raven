@@ -64,6 +64,155 @@ private:
 };
 
 // ============================================================================
+// Fluid Coupling Statistics Accumulator
+// ============================================================================
+// FluidWorldは同じCoupling SolverをBindingごとに設定し直して利用します。Solver単体の
+// LastStatisticsはResolveSceneごとに初期化されるため、そのまま公開すると最後のBindingだけが
+// 見えてしまいます。このAdapterは既存Solver APIを維持したまま、登録順の先頭Bindingを
+// fixed-step境界として検出し、全Bindingの診断値を加算します。
+class FluidStaticColliderCouplingAccumulator
+{
+public:
+    explicit FluidStaticColliderCouplingAccumulator(const std::vector<FluidCouplingBinding>& bindings)
+        : m_Bindings(bindings)
+    {
+    }
+
+    void SetSettings(const FluidStaticColliderCouplingSettings& settings) { m_Solver.SetSettings(settings); }
+
+    void ResolveScene(Scene& scene, std::vector<FluidParticle>& particles)
+    {
+        if (IsFirstEnabledBinding(particles) == true)
+        {
+            m_AggregatedStatistics = {};
+        }
+
+        m_Solver.ResolveScene(scene, particles);
+        const FluidStaticColliderCouplingStatistics& statistics = m_Solver.GetLastStatistics();
+        m_AggregatedStatistics.SupportedColliderCount += statistics.SupportedColliderCount;
+        m_AggregatedStatistics.CandidatePairCount += statistics.CandidatePairCount;
+        m_AggregatedStatistics.ResolvedContactCount += statistics.ResolvedContactCount;
+    }
+
+    const FluidStaticColliderCouplingStatistics& GetLastStatistics() const
+    {
+        if (HasEnabledBinding() == false)
+        {
+            static const FluidStaticColliderCouplingStatistics EmptyStatistics{};
+            return EmptyStatistics;
+        }
+        return m_AggregatedStatistics;
+    }
+
+private:
+    bool HasEnabledBinding() const
+    {
+        for (const FluidCouplingBinding& binding : m_Bindings)
+        {
+            if (binding.Particles != nullptr && binding.StaticColliderCouplingEnabled == true)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool IsFirstEnabledBinding(const std::vector<FluidParticle>& particles) const
+    {
+        for (const FluidCouplingBinding& binding : m_Bindings)
+        {
+            if (binding.Particles == nullptr || binding.StaticColliderCouplingEnabled == false)
+            {
+                continue;
+            }
+            return binding.Particles == &particles;
+        }
+        return false;
+    }
+
+private:
+    const std::vector<FluidCouplingBinding>& m_Bindings;
+    FluidStaticColliderCoupling m_Solver{};
+    FluidStaticColliderCouplingStatistics m_AggregatedStatistics{};
+};
+
+class FluidRigidBodyCouplingAccumulator
+{
+public:
+    explicit FluidRigidBodyCouplingAccumulator(const std::vector<FluidCouplingBinding>& bindings)
+        : m_Bindings(bindings)
+    {
+    }
+
+    void SetSettings(const FluidRigidBodyCouplingSettings& settings) { m_Solver.SetSettings(settings); }
+
+    void ResolveScene(Scene& scene, PhysicsWorld& physicsWorld, std::vector<FluidParticle>& particles,
+        float fixedDeltaTime)
+    {
+        if (IsFirstEnabledBinding(particles) == true)
+        {
+            m_AggregatedStatistics = {};
+        }
+
+        m_Solver.ResolveScene(scene, physicsWorld, particles, fixedDeltaTime);
+        const FluidRigidBodyCouplingStatistics& statistics = m_Solver.GetLastStatistics();
+        m_AggregatedStatistics.DynamicBodyCount += statistics.DynamicBodyCount;
+        m_AggregatedStatistics.CandidatePairCount += statistics.CandidatePairCount;
+        m_AggregatedStatistics.ResolvedContactCount += statistics.ResolvedContactCount;
+        m_AggregatedStatistics.AppliedImpulseCount += statistics.AppliedImpulseCount;
+        m_AggregatedStatistics.AppliedDragImpulseCount += statistics.AppliedDragImpulseCount;
+        m_AggregatedStatistics.AppliedPressureImpulseCount += statistics.AppliedPressureImpulseCount;
+        m_AggregatedStatistics.AppliedBuoyancyImpulseCount += statistics.AppliedBuoyancyImpulseCount;
+        m_AggregatedStatistics.TotalNormalImpulse += statistics.TotalNormalImpulse;
+        m_AggregatedStatistics.TotalDragImpulse += statistics.TotalDragImpulse;
+        m_AggregatedStatistics.TotalPressureImpulse += statistics.TotalPressureImpulse;
+        m_AggregatedStatistics.TotalBuoyancyImpulse += statistics.TotalBuoyancyImpulse;
+        m_AggregatedStatistics.TotalDisplacedFluidMass += statistics.TotalDisplacedFluidMass;
+    }
+
+    const FluidRigidBodyCouplingStatistics& GetLastStatistics() const
+    {
+        if (HasEnabledBinding() == false)
+        {
+            static const FluidRigidBodyCouplingStatistics EmptyStatistics{};
+            return EmptyStatistics;
+        }
+        return m_AggregatedStatistics;
+    }
+
+private:
+    bool HasEnabledBinding() const
+    {
+        for (const FluidCouplingBinding& binding : m_Bindings)
+        {
+            if (binding.Particles != nullptr && binding.RigidBodyCouplingEnabled == true)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool IsFirstEnabledBinding(const std::vector<FluidParticle>& particles) const
+    {
+        for (const FluidCouplingBinding& binding : m_Bindings)
+        {
+            if (binding.Particles == nullptr || binding.RigidBodyCouplingEnabled == false)
+            {
+                continue;
+            }
+            return binding.Particles == &particles;
+        }
+        return false;
+    }
+
+private:
+    const std::vector<FluidCouplingBinding>& m_Bindings;
+    FluidRigidBodyCoupling m_Solver{};
+    FluidRigidBodyCouplingStatistics m_AggregatedStatistics{};
+};
+
+// ============================================================================
 // FluidWorld
 // ============================================================================
 // Fluid DomainをPhysicsSimulationWorld配下へ統合するための非所有Registryです。
@@ -76,6 +225,12 @@ private:
 class FluidWorld
 {
 public:
+    FluidWorld()
+        : m_StaticColliderCoupling(m_CouplingBindings)
+        , m_RigidBodyCoupling(m_CouplingBindings)
+    {
+    }
+
     bool RegisterSimulationParticipant(FluidSimulationParticipant& participant);
     bool UnregisterSimulationParticipant(FluidSimulationParticipant& participant);
 
@@ -120,6 +275,7 @@ public:
         return m_CouplingBindings;
     }
 
+    // 直近のFluid fixed-stepで有効な全Bindingに対して発生したCoupling診断値の合計です。
     const FluidStaticColliderCouplingStatistics& GetLastStaticColliderCouplingStatistics() const
     {
         return m_StaticColliderCoupling.GetLastStatistics();
@@ -141,8 +297,8 @@ private:
 
     // Coupling SolverはFluidWorldが所有します。
     // Bindingごとの設定をResolve直前に反映し、Participant固有のParticle Radius等を維持します。
-    FluidStaticColliderCoupling m_StaticColliderCoupling{};
-    FluidRigidBodyCoupling m_RigidBodyCoupling{};
+    FluidStaticColliderCouplingAccumulator m_StaticColliderCoupling;
+    FluidRigidBodyCouplingAccumulator m_RigidBodyCoupling;
 };
 
 // ============================================================================
