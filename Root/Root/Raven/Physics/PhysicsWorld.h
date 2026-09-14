@@ -175,7 +175,7 @@ public:
     // SetGravity()/GetGravity()は既存互換APIとして維持し、保存先はUniformGravityFieldが所有します。
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
-    const UniformGravityField& GetGravityField() const { return m_GravityField; }
+    const UniformGravityField& GetGravityField() const { return m_Gravity; }
     void Step(Scene& scene, float fixedDeltaTime);
 
     void SetSolverSettings(const ContactSolverSettings& settings) { m_SolverSettings = settings; }
@@ -270,10 +270,9 @@ private:
     // 初期値は256 KiBとし、GetFrameAllocatorStatistics()のPeakを見て後から調整します。
     static constexpr std::size_t PhysicsFrameAllocatorCapacity = 256u * 1024u;
 
-    // 一様重力の実データはFieldが所有します。m_Gravityは既存PhysicsWorld.cppを段階移行するための
-    // 互換参照で、SetGravity()/GetGravity()/ApplyForces()はField内部の同じ値を読み書きします。
-    UniformGravityField m_GravityField{};
-    math::Vec3& m_Gravity = m_GravityField.GetAcceleration();
+    // Field自身が重力加速度を所有します。UniformGravityFieldの互換演算により、
+    // 既存PhysicsWorld.cppのm_Gravity利用箇所を保ったまま参照メンバを除去しています。
+    UniformGravityField m_Gravity{};
     BroadPhase m_BroadPhase;
     ContactSolverSettings m_SolverSettings{};
     PhysicsSolverDebugStatistics m_SolverDebugStatistics{};
