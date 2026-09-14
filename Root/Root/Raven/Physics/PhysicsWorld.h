@@ -175,7 +175,7 @@ public:
     // SetGravity()/GetGravity()は既存互換APIとして維持し、保存先はUniformGravityFieldが所有します。
     void SetGravity(const math::Vec3& gravity);
     const math::Vec3& GetGravity() const;
-    const UniformGravityField& GetGravityField() const { return m_Gravity; }
+    const UniformGravityField& GetGravityField() const { return m_GravityField; }
     void Step(Scene& scene, float fixedDeltaTime);
 
     void SetSolverSettings(const ContactSolverSettings& settings) { m_SolverSettings = settings; }
@@ -270,9 +270,9 @@ private:
     // 初期値は256 KiBとし、GetFrameAllocatorStatistics()のPeakを見て後から調整します。
     static constexpr std::size_t PhysicsFrameAllocatorCapacity = 256u * 1024u;
 
-    // Field自身が重力加速度を所有します。UniformGravityFieldの互換演算により、
-    // 既存PhysicsWorld.cppのm_Gravity利用箇所を保ったまま参照メンバを除去しています。
-    UniformGravityField m_Gravity{};
+    // 重力加速度の所有者をFieldへ一本化し、RigidBody側はEvaluate()の結果だけを積分します。
+    // Uniformという具体実装を適用側へ漏らさないことで、位置依存Fieldへの拡張余地を維持します。
+    UniformGravityField m_GravityField{};
     BroadPhase m_BroadPhase;
     ContactSolverSettings m_SolverSettings{};
     PhysicsSolverDebugStatistics m_SolverDebugStatistics{};

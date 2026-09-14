@@ -54,19 +54,6 @@ public:
         return m_Acceleration;
     }
 
-    // PhysicsWorldの既存m_Gravity利用箇所を段階的にFieldへ移すための互換演算です。
-    // Field自身が値を所有するため、参照メンバを持つ場合のコピー時の参照先問題を避けられます。
-    UniformGravityField& operator=(const math::Vec3& acceleration)
-    {
-        SetAcceleration(acceleration);
-        return *this;
-    }
-
-    operator const math::Vec3&() const
-    {
-        return m_Acceleration;
-    }
-
 private:
     math::Vec3 m_Acceleration{ 0.0f, -9.80665f, 0.0f };
 };
