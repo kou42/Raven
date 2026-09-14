@@ -236,7 +236,7 @@ bool FluidWorld::UnregisterSimulationParticipant(FluidSimulationParticipant& par
         return false;
     }
 
-    // Participantが所有するParticle配列より先にBinding参照を解除します。
+    // Participantが所有するParticle配列やBindingより先に非所有参照を解除します。
     FluidCouplingBinding* couplingBinding = participant.GetFluidCouplingBinding();
     if (couplingBinding != nullptr && couplingBinding->Particles != nullptr)
     {
@@ -247,7 +247,7 @@ bool FluidWorld::UnregisterSimulationParticipant(FluidSimulationParticipant& par
     return true;
 }
 
-bool FluidWorld::RegisterCouplingBinding(const FluidCouplingBinding& binding)
+bool FluidWorld::RegisterCouplingBinding(FluidCouplingBinding& binding)
 {
     if (binding.Particles == nullptr)
     {
@@ -261,7 +261,9 @@ bool FluidWorld::RegisterCouplingBinding(const FluidCouplingBinding& binding)
         return false;
     }
 
-    m_CouplingBindings.push_back(binding);
+    // BindingはParticipant側が所有します。コピーせず参照を保持することで、Runtimeに変更された
+    // Coupling係数やEnable状態を次のfixed-stepからそのまま使用します。
+    m_CouplingBindings.push_back(&binding);
     return true;
 }
 
@@ -270,9 +272,9 @@ bool FluidWorld::UnregisterCouplingBinding(std::vector<FluidParticle>& particles
     const auto iterator = std::find_if(
         m_CouplingBindings.begin(),
         m_CouplingBindings.end(),
-        [&particles](const FluidCouplingBinding& binding)
+        [&particles](const FluidCouplingBinding* binding)
         {
-            return binding.Particles == &particles;
+            return binding != nullptr && binding->Particles == &particles;
         });
 
     if (iterator == m_CouplingBindings.end())
@@ -327,26 +329,26 @@ void FluidWorld::ResolveCouplings(
     PhysicsWorld& physicsWorld,
     float fixedDeltaTime)
 {
-    for (const FluidCouplingBinding& binding : m_CouplingBindings)
+    for (FluidCouplingBinding* binding : m_CouplingBindings)
     {
-        if (binding.Particles == nullptr)
+        if (binding == nullptr || binding->Particles == nullptr)
         {
             continue;
         }
 
-        if (binding.StaticColliderCouplingEnabled == true)
+        if (binding->StaticColliderCouplingEnabled == true)
         {
-            m_StaticColliderCoupling.SetSettings(binding.StaticColliderSettings);
-            m_StaticColliderCoupling.ResolveScene(scene, *binding.Particles);
+            m_StaticColliderCoupling.SetSettings(binding->StaticColliderSettings);
+            m_StaticColliderCoupling.ResolveScene(scene, *binding->Particles);
         }
 
-        if (binding.RigidBodyCouplingEnabled == true)
+        if (binding->RigidBodyCouplingEnabled == true)
         {
-            m_RigidBodyCoupling.SetSettings(binding.RigidBodySettings);
+            m_RigidBodyCoupling.SetSettings(binding->RigidBodySettings);
             m_RigidBodyCoupling.ResolveScene(
                 scene,
                 physicsWorld,
-                *binding.Particles,
+                *binding->Particles,
                 fixedDeltaTime);
         }
     }
@@ -368,7 +370,7 @@ void FluidWorld::SynchronizeOutputs()
 
 void FluidWorld::Clear()
 {
-    // Registryはいずれも非所有です。Particle/Participantを破棄せず参照だけを解除します。
+    // Registryはいずれも非所有です。Binding/Particle/Participantを破棄せず参照だけを解除します。
     m_SimulationParticipants.clear();
     m_CouplingBindings.clear();
 }
@@ -386,9 +388,9 @@ bool FluidWorld::ContainsCouplingBinding(const std::vector<FluidParticle>& parti
     return std::find_if(
         m_CouplingBindings.begin(),
         m_CouplingBindings.end(),
-        [&particles](const FluidCouplingBinding& binding)
+        [&particles](const FluidCouplingBinding* binding)
         {
-            return binding.Particles == &particles;
+            return binding != nullptr && binding->Particles == &particles;
         }) != m_CouplingBindings.end();
 }
 
