@@ -221,6 +221,27 @@ private:
 };
 
 // ============================================================================
+// Fluid Coupling Measurement
+// ============================================================================
+// Render frameではなくFluid fixed-step境界でCoupling診断値を累積します。
+// catch-upで1 frame中に複数Fixed Stepが実行された場合も、各Stepを1回ずつ正確に記録します。
+struct FluidCouplingMeasurement
+{
+    float ElapsedFixedTime = 0.0f;
+    uint64_t FixedStepCount = 0u;
+    uint64_t ResolvedContactCount = 0u;
+    uint64_t AppliedNormalImpulseCount = 0u;
+    uint64_t AppliedDragImpulseCount = 0u;
+    uint64_t AppliedPressureImpulseCount = 0u;
+    uint64_t AppliedBuoyancyImpulseCount = 0u;
+    float TotalNormalImpulse = 0.0f;
+    float TotalDragImpulse = 0.0f;
+    float TotalPressureImpulse = 0.0f;
+    float TotalBuoyancyImpulse = 0.0f;
+    float TotalDisplacedFluidMass = 0.0f;
+};
+
+// ============================================================================
 // FluidWorld
 // ============================================================================
 // Fluid DomainをPhysicsSimulationWorld配下へ統合するための非所有Registryです。
@@ -296,10 +317,25 @@ public:
         return m_RigidBodyCoupling.GetLastStatistics();
     }
 
+    // Measurementの開始・停止は累積値を保持したまま切り替えます。
+    // Resetは計測状態を変更せず、同じPreset条件で再計測できるよう累積値だけを初期化します。
+    void SetCouplingMeasurementEnabled(bool enabled) { m_CouplingMeasurementEnabled = enabled; }
+    bool IsCouplingMeasurementEnabled() const { return m_CouplingMeasurementEnabled; }
+    void ResetCouplingMeasurement() { m_CouplingMeasurement = {}; }
+
+    const FluidCouplingMeasurement& GetCouplingMeasurement() const
+    {
+        return m_CouplingMeasurement;
+    }
+
 private:
     // Participantの数値計算が確定したParticle状態へCouplingを適用します。
     // Domain間依存をDebug/Application Layerへ戻さず、Fluid fixed-step境界へ閉じ込めます。
     void ResolveCouplings(Scene& scene, PhysicsWorld& physicsWorld, float fixedDeltaTime);
+
+    // ResolveCouplings()で確定したWorld集約Statisticsを1 fixed-stepにつき1回だけ記録します。
+    // Binding数やApplication render frame数に依存させないことで、catch-up時も測定漏れを防ぎます。
+    void AccumulateCouplingMeasurement(float fixedDeltaTime);
 
 private:
     std::vector<FluidSimulationParticipant*> m_SimulationParticipants;
@@ -309,6 +345,9 @@ private:
     // Bindingごとの設定をResolve直前に反映し、Participant固有のParticle Radius等を維持します。
     FluidStaticColliderCouplingAccumulator m_StaticColliderCoupling;
     FluidRigidBodyCouplingAccumulator m_RigidBodyCoupling;
+
+    FluidCouplingMeasurement m_CouplingMeasurement{};
+    bool m_CouplingMeasurementEnabled = true;
 };
 
 // ============================================================================

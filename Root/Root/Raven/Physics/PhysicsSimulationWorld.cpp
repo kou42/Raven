@@ -322,6 +322,7 @@ void FluidWorld::StepSimulation(
     // Scene/RigidBodyとのDomain間実行順序を知らず、FluidWorldだけがFixed Step境界を統括します。
     StepSimulation(fixedDeltaTime);
     ResolveCouplings(scene, physicsWorld, fixedDeltaTime);
+    AccumulateCouplingMeasurement(fixedDeltaTime);
 }
 
 void FluidWorld::ResolveCouplings(
@@ -352,6 +353,33 @@ void FluidWorld::ResolveCouplings(
                 fixedDeltaTime);
         }
     }
+}
+
+void FluidWorld::AccumulateCouplingMeasurement(float fixedDeltaTime)
+{
+    if (m_CouplingMeasurementEnabled == false || fixedDeltaTime <= 0.0f)
+    {
+        return;
+    }
+
+    const FluidRigidBodyCouplingStatistics& statistics =
+        GetLastRigidBodyCouplingStatistics();
+
+    // World集約済みStatisticsをfixed-step終了時に1回だけ加算します。
+    // Binding数が増えても二重計上せず、Couplingを無効化したStepも時間・Step数は進むため、
+    // Preset間で同じ固定時間幅を基準に比較できます。
+    m_CouplingMeasurement.ElapsedFixedTime += fixedDeltaTime;
+    ++m_CouplingMeasurement.FixedStepCount;
+    m_CouplingMeasurement.ResolvedContactCount += statistics.ResolvedContactCount;
+    m_CouplingMeasurement.AppliedNormalImpulseCount += statistics.AppliedImpulseCount;
+    m_CouplingMeasurement.AppliedDragImpulseCount += statistics.AppliedDragImpulseCount;
+    m_CouplingMeasurement.AppliedPressureImpulseCount += statistics.AppliedPressureImpulseCount;
+    m_CouplingMeasurement.AppliedBuoyancyImpulseCount += statistics.AppliedBuoyancyImpulseCount;
+    m_CouplingMeasurement.TotalNormalImpulse += statistics.TotalNormalImpulse;
+    m_CouplingMeasurement.TotalDragImpulse += statistics.TotalDragImpulse;
+    m_CouplingMeasurement.TotalPressureImpulse += statistics.TotalPressureImpulse;
+    m_CouplingMeasurement.TotalBuoyancyImpulse += statistics.TotalBuoyancyImpulse;
+    m_CouplingMeasurement.TotalDisplacedFluidMass += statistics.TotalDisplacedFluidMass;
 }
 
 void FluidWorld::SynchronizeOutputs()
