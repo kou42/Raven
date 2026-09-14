@@ -5,6 +5,7 @@
 
 #include "Raven/Physics/Electromagnetism/CoulombForce.h"
 #include "Raven/Physics/Electromagnetism/ElectricCharge.h"
+#include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -48,6 +49,37 @@ void RunElectromagnetismSelfTests()
 {
     constexpr double microCoulomb = 1.0e-6;
 
+    // 一様電場は評価位置に依存せず、設定したEをそのまま返します。
+    const UniformElectricField uniformField({ 2.0f, -3.0f, 4.0f });
+    const math::Vec3 uniformAtOrigin = uniformField.Evaluate({ 0.0f, 0.0f, 0.0f });
+    const math::Vec3 uniformFarAway = uniformField.Evaluate({ 100.0f, -50.0f, 25.0f });
+    assert(NearlyEqual(uniformAtOrigin.x, 2.0f));
+    assert(NearlyEqual(uniformAtOrigin.y, -3.0f));
+    assert(NearlyEqual(uniformAtOrigin.z, 4.0f));
+    assert(NearlyEqual(uniformFarAway.x, uniformAtOrigin.x));
+    assert(NearlyEqual(uniformFarAway.y, uniformAtOrigin.y));
+    assert(NearlyEqual(uniformFarAway.z, uniformAtOrigin.z));
+
+    // F=qE: 正電荷はEと同方向、負電荷は反対方向へ力を受けます。
+    const math::Vec3 positiveElectricForce = ComputeElectricForce(2.0, { 3.0f, 0.0f, 0.0f });
+    const math::Vec3 negativeElectricForce = ComputeElectricForce(-2.0, { 3.0f, 0.0f, 0.0f });
+    assert(NearlyEqual(positiveElectricForce.x, 6.0f));
+    assert(NearlyEqual(negativeElectricForce.x, -6.0f));
+
+    // 点電荷電場: 正のsourceから+X側を評価すると電場は外向きの+Xになります。
+    const PointChargeElectricField pointField(
+        { 0.0f, 0.0f, 0.0f },
+        microCoulomb);
+    const math::Vec3 electricFieldAtOneMeter = pointField.Evaluate({ 1.0f, 0.0f, 0.0f });
+    const math::Vec3 electricFieldAtTwoMeters = pointField.Evaluate({ 2.0f, 0.0f, 0.0f });
+    assert(electricFieldAtOneMeter.x > 0.0f);
+    assert(NearlyEqual(electricFieldAtOneMeter.y, 0.0f));
+    assert(NearlyEqual(electricFieldAtOneMeter.z, 0.0f));
+    assert(NearlyEqual(
+        electricFieldAtTwoMeters.x / electricFieldAtOneMeter.x,
+        0.25f,
+        1.0e-3f));
+
     // 同符号電荷: x=0 のsourceから x=1 のtargetへ、+X方向の斥力が働きます。
     const math::Vec3 repulsiveForce = ComputeCoulombForce(
         { 0.0f, 0.0f, 0.0f },
@@ -57,6 +89,12 @@ void RunElectromagnetismSelfTests()
     assert(repulsiveForce.x > 0.0f);
     assert(NearlyEqual(repulsiveForce.y, 0.0f));
     assert(NearlyEqual(repulsiveForce.z, 0.0f));
+
+    // Coulomb ForceはPointChargeElectricField + F=qEと同じ結果になることを確認します。
+    const math::Vec3 forceFromField = ComputeElectricForce(microCoulomb, electricFieldAtOneMeter);
+    assert(NearlyEqual(forceFromField.x, repulsiveForce.x, 1.0e-5f));
+    assert(NearlyEqual(forceFromField.y, repulsiveForce.y, 1.0e-5f));
+    assert(NearlyEqual(forceFromField.z, repulsiveForce.z, 1.0e-5f));
 
     // 異符号電荷: target側の力向きがsourceへ反転し、引力になります。
     const math::Vec3 attractiveForce = ComputeCoulombForce(
