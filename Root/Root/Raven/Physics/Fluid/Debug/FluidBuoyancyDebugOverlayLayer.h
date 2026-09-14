@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <imgui.h>
 
 #include "Raven/Core/Application.h"
@@ -88,6 +90,9 @@ public:
                 }
 
                 ImGui::Separator();
+                DrawCouplingControls(*scene);
+
+                ImGui::Separator();
                 DrawCouplingStatistics(*scene);
 
                 ImGui::Separator();
@@ -119,6 +124,89 @@ private:
             rigidBody.LinearVelocity.x,
             rigidBody.LinearVelocity.y,
             rigidBody.LinearVelocity.z);
+    }
+
+    static void DrawCouplingControls(Scene& scene)
+    {
+        ph::FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
+        const std::vector<ph::FluidCouplingBinding*>& bindings = fluidWorld.GetCouplingBindings();
+
+        ImGui::TextUnformatted("Fluid Coupling Runtime Controls");
+        if (bindings.empty() == true)
+        {
+            ImGui::TextUnformatted("Coupling Binding : not registered");
+            return;
+        }
+
+        // Debug HUDは登録済みBindingの実体を直接編集します。
+        // FluidWorldはBindingをコピーせず非所有参照しているため、変更値は再登録なしで
+        // 次のfixed-stepのResolveCouplings()から利用されます。
+        for (std::size_t bindingIndex = 0u; bindingIndex < bindings.size(); ++bindingIndex)
+        {
+            ph::FluidCouplingBinding* binding = bindings[bindingIndex];
+            if (binding == nullptr)
+            {
+                continue;
+            }
+
+            ImGui::PushID(static_cast<int>(bindingIndex));
+            ImGui::Text("Binding %llu", static_cast<unsigned long long>(bindingIndex));
+
+            ImGui::Checkbox("Static Collider", &binding->StaticColliderCouplingEnabled);
+            ImGui::Checkbox("Rigid Body", &binding->RigidBodyCouplingEnabled);
+
+            float particleRadius = binding->RigidBodySettings.ParticleRadius;
+            if (ImGui::DragFloat("Particle Radius", &particleRadius, 0.005f, 0.001f, 2.0f, "%.3f") == true)
+            {
+                particleRadius = std::max(particleRadius, 0.001f);
+                // DemoではStatic/Dynamic Couplingが同じParticle表面を扱うため、半径を同期します。
+                binding->StaticColliderSettings.ParticleRadius = particleRadius;
+                binding->RigidBodySettings.ParticleRadius = particleRadius;
+            }
+
+            float restitution = binding->RigidBodySettings.Restitution;
+            if (ImGui::SliderFloat("Restitution", &restitution, 0.0f, 1.0f, "%.2f") == true)
+            {
+                binding->StaticColliderSettings.Restitution = restitution;
+                binding->RigidBodySettings.Restitution = restitution;
+            }
+
+            ImGui::DragFloat(
+                "Drag",
+                &binding->RigidBodySettings.DragCoefficient,
+                0.01f,
+                0.0f,
+                5.0f,
+                "%.2f");
+            binding->RigidBodySettings.DragCoefficient =
+                std::max(binding->RigidBodySettings.DragCoefficient, 0.0f);
+
+            ImGui::DragFloat(
+                "Pressure Reaction",
+                &binding->RigidBodySettings.PressureReactionCoefficient,
+                0.05f,
+                0.0f,
+                10.0f,
+                "%.2f");
+            binding->RigidBodySettings.PressureReactionCoefficient =
+                std::max(binding->RigidBodySettings.PressureReactionCoefficient, 0.0f);
+
+            ImGui::DragFloat(
+                "Buoyancy",
+                &binding->RigidBodySettings.BuoyancyCoefficient,
+                0.05f,
+                0.0f,
+                10.0f,
+                "%.2f");
+            binding->RigidBodySettings.BuoyancyCoefficient =
+                std::max(binding->RigidBodySettings.BuoyancyCoefficient, 0.0f);
+
+            if (bindings.size() > 1u && bindingIndex + 1u < bindings.size())
+            {
+                ImGui::Separator();
+            }
+            ImGui::PopID();
+        }
     }
 
     static void DrawCouplingStatistics(const Scene& scene)
