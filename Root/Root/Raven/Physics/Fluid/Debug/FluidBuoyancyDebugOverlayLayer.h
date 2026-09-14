@@ -8,6 +8,7 @@
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Math/MathQuatanion.h"
+#include "Raven/Physics/Fluid/Debug/FluidCouplingPreset.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -18,12 +19,8 @@
 namespace Raven
 {
 
-// ============================================================================
-// FluidBuoyancyDebugOverlayLayer
-// ============================================================================
-// Fluid SPH Demoが生成するBox / SphereのWorld座標を表示し、同じ初期条件へ何度でも
-// 戻せる検証専用HUDです。Fluid solverやCoupling本体へDebug入力依存を持ち込まず、
-// Entity名を手掛かりにScene上の検証Bodyだけを操作します。
+// Fluid SPH Demoが生成するBox / Sphereの状態とCoupling診断値を表示し、
+// 実行中のCoupling設定を比較検証するためのDebug HUDです。
 class FluidBuoyancyDebugOverlayLayer final : public Layer
 {
 public:
@@ -34,8 +31,6 @@ public:
 
     void OnAttach() override
     {
-        // 起動直後から見つけやすいサイズ・水面付近の位置へ揃えます。
-        // FluidSPHDemoLayerのOnAttach後にこのOverlayを登録するため、ここで対象Entityを取得できます。
         ResetTestBodies();
     }
 
@@ -46,7 +41,6 @@ public:
         const bool resetKeyPressed = Input::IsKeyPressed(Key::R);
         const bool resetRequested = resetKeyPressed == true && m_WasResetKeyPressed == false;
         m_WasResetKeyPressed = resetKeyPressed;
-
         if (resetRequested == true)
         {
             ResetTestBodies();
@@ -62,39 +56,11 @@ public:
             }
             else
             {
-                bool boxFound = false;
-                bool sphereFound = false;
-
-                for (auto [entity, tag, transform, rigidBody]
-                    : scene->View<TagComponent, TransformComponent, RigidBodyComponent>())
-                {
-                    if (tag.Tag == "Fluid Buoyancy Test Box")
-                    {
-                        boxFound = true;
-                        DrawBodyState("Box", transform, rigidBody);
-                    }
-                    else if (tag.Tag == "Fluid Buoyancy Test Sphere")
-                    {
-                        sphereFound = true;
-                        DrawBodyState("Sphere", transform, rigidBody);
-                    }
-                }
-
-                if (boxFound == false)
-                {
-                    ImGui::TextUnformatted("Box : not found");
-                }
-                if (sphereFound == false)
-                {
-                    ImGui::TextUnformatted("Sphere : not found");
-                }
-
+                DrawTestBodyStates(*scene);
                 ImGui::Separator();
                 DrawCouplingControls(*scene);
-
                 ImGui::Separator();
                 DrawCouplingStatistics(*scene);
-
                 ImGui::Separator();
                 ImGui::TextUnformatted("R : Reset Box / Sphere");
                 if (ImGui::Button("Reset Buoyancy Test Bodies") == true)
@@ -107,23 +73,76 @@ public:
     }
 
 private:
+    static void DrawTestBodyStates(Scene& scene)
+    {
+        bool boxFound = false;
+        bool sphereFound = false;
+
+        for (auto [entity, tag, transform, rigidBody]
+            : scene.View<TagComponent, TransformComponent, RigidBodyComponent>())
+        {
+            if (tag.Tag == "Fluid Buoyancy Test Box")
+            {
+                boxFound = true;
+                DrawBodyState("Box", transform, rigidBody);
+            }
+            else if (tag.Tag == "Fluid Buoyancy Test Sphere")
+            {
+                sphereFound = true;
+                DrawBodyState("Sphere", transform, rigidBody);
+            }
+        }
+
+        if (boxFound == false)
+        {
+            ImGui::TextUnformatted("Box : not found");
+        }
+        if (sphereFound == false)
+        {
+            ImGui::TextUnformatted("Sphere : not found");
+        }
+    }
+
     static void DrawBodyState(
         const char* label,
         const TransformComponent& transform,
         const RigidBodyComponent& rigidBody)
     {
-        ImGui::Text(
-            "%s Pos : (%.2f, %.2f, %.2f)",
-            label,
-            transform.Position.x,
-            transform.Position.y,
-            transform.Position.z);
-        ImGui::Text(
-            "%s Vel : (%.2f, %.2f, %.2f)",
-            label,
-            rigidBody.LinearVelocity.x,
-            rigidBody.LinearVelocity.y,
-            rigidBody.LinearVelocity.z);
+        ImGui::Text("%s Pos : (%.2f, %.2f, %.2f)", label,
+            transform.Position.x, transform.Position.y, transform.Position.z);
+        ImGui::Text("%s Vel : (%.2f, %.2f, %.2f)", label,
+            rigidBody.LinearVelocity.x, rigidBody.LinearVelocity.y, rigidBody.LinearVelocity.z);
+    }
+
+    static void DrawPresetButtons(ph::FluidCouplingBinding& binding)
+    {
+        ImGui::TextUnformatted("Presets");
+
+        if (ImGui::Button("Water") == true)
+        {
+            ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::Water);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Heavy Fluid") == true)
+        {
+            ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::HeavyFluid);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("High Drag") == true)
+        {
+            ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::HighDrag);
+        }
+
+        if (ImGui::Button("Coupling Off") == true)
+        {
+            ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::CouplingOff);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset to Water") == true)
+        {
+            // WaterをDemoの基準値として扱い、手動調整後もワンクリックで比較条件へ戻せるようにします。
+            ph::ApplyFluidCouplingPreset(binding, ph::FluidCouplingPreset::Water);
+        }
     }
 
     static void DrawCouplingControls(Scene& scene)
@@ -138,9 +157,6 @@ private:
             return;
         }
 
-        // Debug HUDは登録済みBindingの実体を直接編集します。
-        // FluidWorldはBindingをコピーせず非所有参照しているため、変更値は再登録なしで
-        // 次のfixed-stepのResolveCouplings()から利用されます。
         for (std::size_t bindingIndex = 0u; bindingIndex < bindings.size(); ++bindingIndex)
         {
             ph::FluidCouplingBinding* binding = bindings[bindingIndex];
@@ -151,6 +167,7 @@ private:
 
             ImGui::PushID(static_cast<int>(bindingIndex));
             ImGui::Text("Binding %llu", static_cast<unsigned long long>(bindingIndex));
+            DrawPresetButtons(*binding);
 
             ImGui::Checkbox("Static Collider", &binding->StaticColliderCouplingEnabled);
             ImGui::Checkbox("Rigid Body", &binding->RigidBodyCouplingEnabled);
@@ -159,7 +176,6 @@ private:
             if (ImGui::DragFloat("Particle Radius", &particleRadius, 0.005f, 0.001f, 2.0f, "%.3f") == true)
             {
                 particleRadius = std::max(particleRadius, 0.001f);
-                // DemoではStatic/Dynamic Couplingが同じParticle表面を扱うため、半径を同期します。
                 binding->StaticColliderSettings.ParticleRadius = particleRadius;
                 binding->RigidBodySettings.ParticleRadius = particleRadius;
             }
@@ -171,33 +187,18 @@ private:
                 binding->RigidBodySettings.Restitution = restitution;
             }
 
-            ImGui::DragFloat(
-                "Drag",
-                &binding->RigidBodySettings.DragCoefficient,
-                0.01f,
-                0.0f,
-                5.0f,
-                "%.2f");
+            ImGui::DragFloat("Drag", &binding->RigidBodySettings.DragCoefficient,
+                0.01f, 0.0f, 5.0f, "%.2f");
             binding->RigidBodySettings.DragCoefficient =
                 std::max(binding->RigidBodySettings.DragCoefficient, 0.0f);
 
-            ImGui::DragFloat(
-                "Pressure Reaction",
-                &binding->RigidBodySettings.PressureReactionCoefficient,
-                0.05f,
-                0.0f,
-                10.0f,
-                "%.2f");
+            ImGui::DragFloat("Pressure Reaction", &binding->RigidBodySettings.PressureReactionCoefficient,
+                0.05f, 0.0f, 10.0f, "%.2f");
             binding->RigidBodySettings.PressureReactionCoefficient =
                 std::max(binding->RigidBodySettings.PressureReactionCoefficient, 0.0f);
 
-            ImGui::DragFloat(
-                "Buoyancy",
-                &binding->RigidBodySettings.BuoyancyCoefficient,
-                0.05f,
-                0.0f,
-                10.0f,
-                "%.2f");
+            ImGui::DragFloat("Buoyancy", &binding->RigidBodySettings.BuoyancyCoefficient,
+                0.05f, 0.0f, 10.0f, "%.2f");
             binding->RigidBodySettings.BuoyancyCoefficient =
                 std::max(binding->RigidBodySettings.BuoyancyCoefficient, 0.0f);
 
@@ -211,8 +212,6 @@ private:
 
     static void DrawCouplingStatistics(const Scene& scene)
     {
-        // FluidWorldが保持する直近Fixed Stepの診断値を表示します。
-        // HUD側はCoupling実装へ直接依存せず、Domain境界として公開されたStatisticsだけを参照します。
         const ph::FluidWorld& fluidWorld = scene.GetPhysicsSimulationWorld().GetFluidWorld();
         const ph::FluidStaticColliderCouplingStatistics& staticStatistics =
             fluidWorld.GetLastStaticColliderCouplingStatistics();
@@ -220,33 +219,24 @@ private:
             fluidWorld.GetLastRigidBodyCouplingStatistics();
 
         ImGui::TextUnformatted("Fluid Coupling Statistics");
-        ImGui::Text(
-            "Static : collider=%llu candidate=%llu resolved=%llu",
+        ImGui::Text("Static : collider=%llu candidate=%llu resolved=%llu",
             static_cast<unsigned long long>(staticStatistics.SupportedColliderCount),
             static_cast<unsigned long long>(staticStatistics.CandidatePairCount),
             static_cast<unsigned long long>(staticStatistics.ResolvedContactCount));
-        ImGui::Text(
-            "Rigid  : body=%llu candidate=%llu resolved=%llu",
+        ImGui::Text("Rigid  : body=%llu candidate=%llu resolved=%llu",
             static_cast<unsigned long long>(rigidStatistics.DynamicBodyCount),
             static_cast<unsigned long long>(rigidStatistics.CandidatePairCount),
             static_cast<unsigned long long>(rigidStatistics.ResolvedContactCount));
-        ImGui::Text(
-            "Impulse: normal=%.4f drag=%.4f",
-            rigidStatistics.TotalNormalImpulse,
-            rigidStatistics.TotalDragImpulse);
-        ImGui::Text(
-            "         pressure=%.4f buoyancy=%.4f",
-            rigidStatistics.TotalPressureImpulse,
-            rigidStatistics.TotalBuoyancyImpulse);
-        ImGui::Text(
-            "Applied: normal=%llu drag=%llu pressure=%llu buoyancy=%llu",
+        ImGui::Text("Impulse: normal=%.4f drag=%.4f",
+            rigidStatistics.TotalNormalImpulse, rigidStatistics.TotalDragImpulse);
+        ImGui::Text("         pressure=%.4f buoyancy=%.4f",
+            rigidStatistics.TotalPressureImpulse, rigidStatistics.TotalBuoyancyImpulse);
+        ImGui::Text("Applied: normal=%llu drag=%llu pressure=%llu buoyancy=%llu",
             static_cast<unsigned long long>(rigidStatistics.AppliedImpulseCount),
             static_cast<unsigned long long>(rigidStatistics.AppliedDragImpulseCount),
             static_cast<unsigned long long>(rigidStatistics.AppliedPressureImpulseCount),
             static_cast<unsigned long long>(rigidStatistics.AppliedBuoyancyImpulseCount));
-        ImGui::Text(
-            "Displaced Fluid Mass : %.4f",
-            rigidStatistics.TotalDisplacedFluidMass);
+        ImGui::Text("Displaced Fluid Mass : %.4f", rigidStatistics.TotalDisplacedFluidMass);
     }
 
     void ResetTestBodies()
@@ -263,7 +253,6 @@ private:
         constexpr float SphereRadius = BodyVisualSize * 0.5f;
 
         ph::PhysicsWorld& physicsWorld = scene->GetPhysicsWorld();
-
         for (auto [entity, tag, transform, rigidBody, collider]
             : scene->View<TagComponent, TransformComponent, RigidBodyComponent, ColliderComponent>())
         {
@@ -290,14 +279,7 @@ private:
                 continue;
             }
 
-            // Scene::View()の先頭要素は既にGenerationを含むEntityです。
-            // Dynamic RigidBodyの位置変更はこのEntityをそのままPhysicsWorldへ渡し、
-            // Transform直接更新ではなく通常のTeleport経路で起床処理まで行います。
             physicsWorld.Teleport(*scene, entity, resetPosition);
-
-            // Reset前の落下速度・回転・Fluidから受けたImpulse履歴を次の試行へ持ち越さないよう、
-            // RigidBodyの運動状態を初期化します。LinearVelocityもPhysicsWorldの制御APIを通し、
-            // Teleport直後のBodyが確実に起床した状態で次の試行を開始できるようにします。
             transform.Rotation = { 0.0f, 0.0f, 0.0f };
             physicsWorld.SetLinearVelocity(*scene, entity, { 0.0f, 0.0f, 0.0f });
             rigidBody.AngularVelocity = { 0.0f, 0.0f, 0.0f };
