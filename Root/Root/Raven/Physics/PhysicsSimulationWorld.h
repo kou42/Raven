@@ -73,7 +73,7 @@ private:
 class FluidStaticColliderCouplingAccumulator
 {
 public:
-    explicit FluidStaticColliderCouplingAccumulator(const std::vector<FluidCouplingBinding>& bindings)
+    explicit FluidStaticColliderCouplingAccumulator(const std::vector<FluidCouplingBinding*>& bindings)
         : m_Bindings(bindings)
     {
     }
@@ -107,9 +107,11 @@ public:
 private:
     bool HasEnabledBinding() const
     {
-        for (const FluidCouplingBinding& binding : m_Bindings)
+        for (const FluidCouplingBinding* binding : m_Bindings)
         {
-            if (binding.Particles != nullptr && binding.StaticColliderCouplingEnabled == true)
+            if (binding != nullptr
+                && binding->Particles != nullptr
+                && binding->StaticColliderCouplingEnabled == true)
             {
                 return true;
             }
@@ -119,19 +121,21 @@ private:
 
     bool IsFirstEnabledBinding(const std::vector<FluidParticle>& particles) const
     {
-        for (const FluidCouplingBinding& binding : m_Bindings)
+        for (const FluidCouplingBinding* binding : m_Bindings)
         {
-            if (binding.Particles == nullptr || binding.StaticColliderCouplingEnabled == false)
+            if (binding == nullptr
+                || binding->Particles == nullptr
+                || binding->StaticColliderCouplingEnabled == false)
             {
                 continue;
             }
-            return binding.Particles == &particles;
+            return binding->Particles == &particles;
         }
         return false;
     }
 
 private:
-    const std::vector<FluidCouplingBinding>& m_Bindings;
+    const std::vector<FluidCouplingBinding*>& m_Bindings;
     FluidStaticColliderCoupling m_Solver{};
     FluidStaticColliderCouplingStatistics m_AggregatedStatistics{};
 };
@@ -139,7 +143,7 @@ private:
 class FluidRigidBodyCouplingAccumulator
 {
 public:
-    explicit FluidRigidBodyCouplingAccumulator(const std::vector<FluidCouplingBinding>& bindings)
+    explicit FluidRigidBodyCouplingAccumulator(const std::vector<FluidCouplingBinding*>& bindings)
         : m_Bindings(bindings)
     {
     }
@@ -183,9 +187,11 @@ public:
 private:
     bool HasEnabledBinding() const
     {
-        for (const FluidCouplingBinding& binding : m_Bindings)
+        for (const FluidCouplingBinding* binding : m_Bindings)
         {
-            if (binding.Particles != nullptr && binding.RigidBodyCouplingEnabled == true)
+            if (binding != nullptr
+                && binding->Particles != nullptr
+                && binding->RigidBodyCouplingEnabled == true)
             {
                 return true;
             }
@@ -195,19 +201,21 @@ private:
 
     bool IsFirstEnabledBinding(const std::vector<FluidParticle>& particles) const
     {
-        for (const FluidCouplingBinding& binding : m_Bindings)
+        for (const FluidCouplingBinding* binding : m_Bindings)
         {
-            if (binding.Particles == nullptr || binding.RigidBodyCouplingEnabled == false)
+            if (binding == nullptr
+                || binding->Particles == nullptr
+                || binding->RigidBodyCouplingEnabled == false)
             {
                 continue;
             }
-            return binding.Particles == &particles;
+            return binding->Particles == &particles;
         }
         return false;
     }
 
 private:
-    const std::vector<FluidCouplingBinding>& m_Bindings;
+    const std::vector<FluidCouplingBinding*>& m_Bindings;
     FluidRigidBodyCoupling m_Solver{};
     FluidRigidBodyCouplingStatistics m_AggregatedStatistics{};
 };
@@ -220,8 +228,9 @@ private:
 // WorldはFixed Step実行順序、Application frame末尾の出力同期、Scene/RigidBodyとの
 // Coupling実装を所有します。
 //
-// Coupling設定は各Fluid Participant側のBindingから登録時に取得します。
-// Particle配列はParticipant所有のまま非所有参照し、Coupling実行順序だけをFluidWorldへ集約します。
+// Coupling BindingとParticle配列はいずれもParticipant側が所有し、FluidWorldは非所有参照だけを保持します。
+// 登録中のBindingはFluidWorldより長く生存し、所有者は破棄前に必ずUnregisterする必要があります。
+// この契約により登録後のCoupling設定変更を次のfixed-stepからそのまま反映できます。
 class FluidWorld
 {
 public:
@@ -235,7 +244,8 @@ public:
     bool UnregisterSimulationParticipant(FluidSimulationParticipant& participant);
 
     // 同じParticle配列へCouplingを二重適用しないよう、Particle配列を一意キーとして管理します。
-    bool RegisterCouplingBinding(const FluidCouplingBinding& binding);
+    // Binding自体はコピーせず非所有参照するため、登録後に変更した設定は次のfixed-stepで使用されます。
+    bool RegisterCouplingBinding(FluidCouplingBinding& binding);
     bool UnregisterCouplingBinding(std::vector<FluidParticle>& particles);
 
     // 単独利用向けの互換入口です。Simulation後に出力同期まで完了します。
@@ -270,7 +280,7 @@ public:
         return m_SimulationParticipants;
     }
 
-    const std::vector<FluidCouplingBinding>& GetCouplingBindings() const
+    const std::vector<FluidCouplingBinding*>& GetCouplingBindings() const
     {
         return m_CouplingBindings;
     }
@@ -293,7 +303,7 @@ private:
 
 private:
     std::vector<FluidSimulationParticipant*> m_SimulationParticipants;
-    std::vector<FluidCouplingBinding> m_CouplingBindings;
+    std::vector<FluidCouplingBinding*> m_CouplingBindings;
 
     // Coupling SolverはFluidWorldが所有します。
     // Bindingごとの設定をResolve直前に反映し、Participant固有のParticle Radius等を維持します。
