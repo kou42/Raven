@@ -44,14 +44,25 @@ public:
         m_Acceleration = acceleration;
     }
 
-    // PhysicsWorldの既存m_GravityをField所有値への互換参照として残す移行期間だけ使用します。
-    // 新規コードはSetAcceleration()/Evaluate()を使い、重力値の所有者をFieldへ一本化します。
     math::Vec3& GetAcceleration()
     {
         return m_Acceleration;
     }
 
     const math::Vec3& GetAcceleration() const
+    {
+        return m_Acceleration;
+    }
+
+    // PhysicsWorldの既存m_Gravity利用箇所を段階的にFieldへ移すための互換演算です。
+    // Field自身が値を所有するため、参照メンバを持つ場合のコピー時の参照先問題を避けられます。
+    UniformGravityField& operator=(const math::Vec3& acceleration)
+    {
+        SetAcceleration(acceleration);
+        return *this;
+    }
+
+    operator const math::Vec3&() const
     {
         return m_Acceleration;
     }
