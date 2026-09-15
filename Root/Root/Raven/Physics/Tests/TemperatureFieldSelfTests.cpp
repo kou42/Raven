@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Raven/Physics/Thermal/TemperatureField.h"
+#include "Raven/Physics/Thermal/ThermalWorld.h"
 
 namespace Raven::ph::tests
 {
@@ -33,6 +34,26 @@ void RunTemperatureFieldSelfTests()
     heatedField.SetTemperatureKelvin(-10.0f);
     assert(NearlyEqual(heatedField.GetTemperatureKelvin(), 0.0f));
     assert(NearlyEqual(heatedField.Evaluate(math::Vec3{}), 0.0f));
+
+    // Fieldの評価値は既存ThermalEnvironmentContactへKelvinのまま渡せます。
+    // Runtime Registry統合前に、ScalarFieldとThermal Solverの単位・境界条件が一致することを固定します。
+    ThermalBody body{};
+    body.Temperature = 300.0f;
+    body.Material.SpecificHeatCapacity = 100.0f;
+
+    ThermalWorld world{};
+    assert(world.RegisterBody(body) == true);
+
+    const UniformTemperatureField environmentField{ 350.0f };
+    ThermalEnvironmentContact environment{};
+    environment.Body = &body;
+    environment.AmbientTemperature = environmentField.Evaluate(math::Vec3{ 4.0f, 5.0f, 6.0f });
+    environment.ThermalConductance = 10.0f;
+    assert(world.RegisterEnvironmentContact(environment) == true);
+
+    world.Step(1.0f);
+    assert(body.Temperature > 300.0f);
+    assert(body.Temperature <= 350.0f);
 }
 
 } // namespace Raven::ph::tests
