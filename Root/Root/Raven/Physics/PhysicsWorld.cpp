@@ -303,12 +303,12 @@ bool PassesRayCastFilter(
 
 void PhysicsWorld::SetGravity(const math::Vec3& gravity)
 {
-    m_Gravity = gravity;
+    m_GravityField.SetAcceleration(gravity);
 }
 
 const math::Vec3& PhysicsWorld::GetGravity() const
 {
-    return m_Gravity;
+    return m_GravityField.GetAcceleration();
 }
 
 // Solver実行前にDynamic剛体へ蓄積済みForce/Torqueを反映します。
@@ -328,9 +328,11 @@ void PhysicsWorld::ApplyForces(Scene& scene, float dt)
         }
 
         math::Vec3 acceleration{};
-        if (rigidBody.UseGravity)
+        if (rigidBody.UseGravity == true)
         {
-            acceleration += m_Gravity;
+            // GravityFieldはForceではなくworld-space加速度を返します。
+            // 位置をField契約へ渡し、将来の非一様重力場でも積分経路を変更せず利用できるようにします。
+            acceleration += m_GravityField.Evaluate(transform.Position);
         }
 
         acceleration += rigidBody.Force * rigidBody.InverseMass;

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
 #include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Scene/Components.h"
@@ -435,20 +434,24 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // ========================================================================
     // Electromagnetism / Rigid / Fluid / Soft / Thermal fixed-step ordering
     // ========================================================================
-    // 1. Scene内の点電荷ペアからCoulomb ForceをRigidBodyのForce accumulatorへ蓄積
-    // 2. Rigid Bodyを進め、蓄積済み外力とCollision Detection / Contact Solverを解決
-    // 3. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了
-    // 4. 最新Rigid ColliderをSoftBody local-spaceへ同期
-    // 5. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
-    // 6. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
-    // 7. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
-    // 8. Thermal Domainの熱伝導を同じFixed Step幅で進める
+    // 1. 永続Registryの外部Electric FieldからF=qEをRigidBodyのForce accumulatorへ蓄積
+    // 2. 永続Registryの外部Magnetic FieldからF=q(v x B)を同じAccumulatorへ蓄積
+    // 3. Scene内の点電荷ペアからCoulomb Forceを同じAccumulatorへ蓄積
+    // 4. Rigid Bodyを進め、蓄積済み外力とCollision Detection / Contact Solverを解決
+    // 5. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了
+    // 6. 最新Rigid ColliderをSoftBody local-spaceへ同期
+    // 7. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
+    // 8. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
+    // 9. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 10. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
     // ElectromagneticSystemは位置や速度を直接変更せず、RigidBodyComponent::Forceだけへ書き込みます。
     // PhysicsWorld::Step()が同じfixed-step内でそのForceを積分し、末尾でClearForces()するため、
-    // Coulomb Forceは毎step現在位置から再計算され、古い値が次stepへ持ち越されません。
-    const ElectromagneticSystem electromagneticSystem{};
-    electromagneticSystem.ApplyCoulombForces(scene);
+    // Electric / Magnetic FieldとCoulomb Forceは毎step現在状態から再計算され、古い値を持ち越しません。
+    // System自体は永続所有するため、外部Field RegistryとCoulomb設定だけがstep間で維持されます。
+    m_ElectromagneticSystem.ApplyElectricFieldForces(scene);
+    m_ElectromagneticSystem.ApplyMagneticFieldForces(scene);
+    m_ElectromagneticSystem.ApplyCoulombForces(scene);
 
     // Fluid -> Rigid反作用はFluid Step内でRigid速度へ反映され、次Fixed StepのRigid積分から利用されます。
     m_RigidBodyWorld.Step(scene, fixedDeltaTime);
@@ -669,6 +672,16 @@ PhysicsWorld& PhysicsSimulationWorld::GetRigidBodyWorld()
 const PhysicsWorld& PhysicsSimulationWorld::GetRigidBodyWorld() const
 {
     return m_RigidBodyWorld;
+}
+
+ElectromagneticSystem& PhysicsSimulationWorld::GetElectromagneticSystem()
+{
+    return m_ElectromagneticSystem;
+}
+
+const ElectromagneticSystem& PhysicsSimulationWorld::GetElectromagneticSystem() const
+{
+    return m_ElectromagneticSystem;
 }
 
 FluidWorld& PhysicsSimulationWorld::GetFluidWorld()

@@ -327,6 +327,9 @@
     <ClCompile Include="Raven\Physics\Debug\PhysicsDebugRendererCameraContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Raven\Physics\Electromagnetism\MagneticField.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Raven\Physics\PhysicsWorld.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -999,6 +1002,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Physics\PhysicsType.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\Physics\Electromagnetism\MagneticField.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Raven\Physics\PhysicsWorld.h">
