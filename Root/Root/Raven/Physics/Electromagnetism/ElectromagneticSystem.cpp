@@ -67,6 +67,40 @@ bool ElectromagneticSystem::ContainsElectricField(const ElectricField& electricF
     return std::find(m_ElectricFields.begin(), m_ElectricFields.end(), &electricField) != m_ElectricFields.end();
 }
 
+bool ElectromagneticSystem::RegisterMagneticField(const MagneticField& magneticField)
+{
+    if (ContainsMagneticField(magneticField) == true)
+    {
+        return false;
+    }
+
+    m_MagneticFields.push_back(&magneticField);
+    return true;
+}
+
+bool ElectromagneticSystem::UnregisterMagneticField(const MagneticField& magneticField)
+{
+    const auto iterator = std::find(m_MagneticFields.begin(), m_MagneticFields.end(), &magneticField);
+    if (iterator == m_MagneticFields.end())
+    {
+        return false;
+    }
+
+    m_MagneticFields.erase(iterator);
+    return true;
+}
+
+void ElectromagneticSystem::ClearMagneticFields()
+{
+    // MagneticFieldも非所有参照だけを保持するため、Field本体は破棄しません。
+    m_MagneticFields.clear();
+}
+
+bool ElectromagneticSystem::ContainsMagneticField(const MagneticField& magneticField) const
+{
+    return std::find(m_MagneticFields.begin(), m_MagneticFields.end(), &magneticField) != m_MagneticFields.end();
+}
+
 void ElectromagneticSystem::ApplyElectricFieldForces(Scene& scene) const
 {
     if (m_ElectricFields.empty() == true)
@@ -100,6 +134,51 @@ void ElectromagneticSystem::ApplyElectricFieldForces(Scene& scene) const
         }
 
         const math::Vec3 force = ComputeElectricForce(electricCharge.ChargeCoulombs, combinedElectricField);
+        rigidBody.Force += force;
+        if (force.LengthSq() > 0.0f)
+        {
+            WakeRigidBody(rigidBody);
+        }
+    }
+}
+
+void ElectromagneticSystem::ApplyMagneticFieldForces(Scene& scene) const
+{
+    if (m_MagneticFields.empty() == true)
+    {
+        return;
+    }
+
+    for (auto [entity, transform, rigidBody, collider, electricCharge]
+        : scene.View<TransformComponent, RigidBodyComponent, ColliderComponent, ElectricChargeComponent>())
+    {
+        static_cast<void>(entity);
+        static_cast<void>(collider);
+
+        if (electricCharge.IsEnabled == false
+            || electricCharge.ChargeCoulombs == 0.0
+            || CanReceiveForce(&rigidBody) == false)
+        {
+            continue;
+        }
+
+        // Bも線形に重ね合わせ可能なので、全Fieldを合成してからLorentz Forceを1度だけ評価します。
+        // 磁気力はvに直交するため理想的には仕事をしませんが、Force accumulatorへ通常の外力として渡し、
+        // 積分方法はRigidBody側へ一元化します。
+        math::Vec3 combinedMagneticField{};
+        for (const MagneticField* magneticField : m_MagneticFields)
+        {
+            if (magneticField == nullptr)
+            {
+                continue;
+            }
+            combinedMagneticField += magneticField->Evaluate(transform.Position);
+        }
+
+        const math::Vec3 force = ComputeMagneticForce(
+            electricCharge.ChargeCoulombs,
+            rigidBody.LinearVelocity,
+            combinedMagneticField);
         rigidBody.Force += force;
         if (force.LengthSq() > 0.0f)
         {
