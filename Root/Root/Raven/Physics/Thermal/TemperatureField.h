@@ -15,6 +15,14 @@ class TemperatureField : public ScalarField
 {
 public:
     ~TemperatureField() override = default;
+
+    // Registryで複数Fieldを合成するときの位置依存Weightを返します。
+    // Global Fieldは既定で1、局所Fieldは領域外で0を返すことで平均対象から自然に除外できます。
+    virtual float EvaluateInfluence(const math::Vec3& worldPosition) const
+    {
+        (void)worldPosition;
+        return 1.0f;
+    }
 };
 
 // 空間全体で一定の環境温度を返す最小のTemperatureField実装です。
@@ -63,9 +71,16 @@ private:
     math::Vec3 m_GradientKelvinPerUnit{};
 };
 
-// 球形のworld-space領域内外で異なる温度を返す局所TemperatureFieldです。
-// 現段階では境界を明確に保つためHard Regionとし、Radius以内をInside、それ以外をOutsideとして評価します。
-// Smooth Falloffが必要になった場合はRegion形状とBlend Policyを分離して拡張できるよう、Field自身は状態を持つだけにします。
+enum class TemperatureRegionFalloff
+{
+    Hard,
+    Linear,
+    SmoothStep
+};
+
+// 球形のworld-space領域に局所温度を与えるTemperatureFieldです。
+// Radius内部はInfluence=1、Radius外側のFalloffDistance区間で0へ減衰し、それより外ではRegistry平均から除外されます。
+// Evaluate()は局所Field自身の温度値だけを返し、位置依存の有効度はEvaluateInfluence()へ分離します。
 class SphericalTemperatureRegionField final : public TemperatureField
 {
 public:
@@ -74,9 +89,11 @@ public:
         const math::Vec3& center,
         float radius,
         float insideTemperatureKelvin,
-        float outsideTemperatureKelvin = 293.15f);
+        float falloffDistance = 0.0f,
+        TemperatureRegionFalloff falloff = TemperatureRegionFalloff::Hard);
 
     float Evaluate(const math::Vec3& worldPosition) const override;
+    float EvaluateInfluence(const math::Vec3& worldPosition) const override;
 
     void SetCenter(const math::Vec3& center) { m_Center = center; }
     const math::Vec3& GetCenter() const { return m_Center; }
@@ -87,14 +104,18 @@ public:
     void SetInsideTemperatureKelvin(float temperatureKelvin);
     float GetInsideTemperatureKelvin() const { return m_InsideTemperatureKelvin; }
 
-    void SetOutsideTemperatureKelvin(float temperatureKelvin);
-    float GetOutsideTemperatureKelvin() const { return m_OutsideTemperatureKelvin; }
+    void SetFalloffDistance(float falloffDistance);
+    float GetFalloffDistance() const { return m_FalloffDistance; }
+
+    void SetFalloff(TemperatureRegionFalloff falloff) { m_Falloff = falloff; }
+    TemperatureRegionFalloff GetFalloff() const { return m_Falloff; }
 
 private:
     math::Vec3 m_Center{};
     float m_Radius = 1.0f;
     float m_InsideTemperatureKelvin = 293.15f;
-    float m_OutsideTemperatureKelvin = 293.15f;
+    float m_FalloffDistance = 0.0f;
+    TemperatureRegionFalloff m_Falloff = TemperatureRegionFalloff::Hard;
 };
 
 } // namespace Raven::ph
