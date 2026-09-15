@@ -13,6 +13,8 @@ namespace Raven::ph
 {
 namespace
 {
+// 明示ThermalContactとRigid Contact由来の自動接触を同じPairへ二重登録しないための確認です。
+// 明示設定を優先することで、ユーザーが指定した接触面積・伝導距離をRigid近似で上書きしません。
 bool HasRegisteredThermalPair(const ThermalWorld& thermalWorld, const ThermalBody& bodyA, const ThermalBody& bodyB)
 {
     for (const ThermalContact& contact : thermalWorld.GetContacts())
@@ -37,6 +39,8 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
     // ECSを唯一の正規データにすることで、Entity破棄後のdangling pointerも持ち越しません。
     thermalWorld.Clear();
 
+    // 先に全Bodyを登録します。Contact登録時は両端BodyがWorldへ存在することを検証するため、
+    // Body -> 境界/Contactの順序を固定しています。
     for (auto [entity, thermalBodyComponent] : scene.View<ThermalBodyComponent>())
     {
         if (thermalBodyComponent.Enabled == false)
@@ -46,6 +50,8 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         thermalWorld.RegisterBody(thermalBodyComponent.Body);
     }
 
+    // ECS上の明示的なBody間伝導リンクをRuntime ThermalContactへ変換します。
+    // TargetEntityはgenerationを含むHandleで生存確認し、破棄済みEntityへの参照を登録しません。
     for (auto [entity, thermalContactComponent] : scene.View<ThermalContactComponent>())
     {
         if (thermalContactComponent.Enabled == false
@@ -62,6 +68,7 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
             continue;
         }
 
+        // Solverへ形状依存式を持ち込まないため、ECS境界で k_eff*A/d をG [W/K]へ正規化します。
         ThermalContact contact{};
         contact.BodyA = &sourceBodyComponent->Body;
         contact.BodyB = &targetBodyComponent->Body;
@@ -74,6 +81,8 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         thermalWorld.RegisterContact(contact);
     }
 
+    // 対流もhと面積をECS側の入力として保持し、RuntimeではG=h*Aへ変換します。
+    // Environmentは無限Reservoirなので、ThermalBodyをもう1つ生成して熱容量を持たせる必要はありません。
     // TemperatureFieldは空間側の環境境界なので、各Entityのworld-space Transform位置で評価します。
     // Field未登録時はRegistryがComponentのAmbientTemperatureへfallbackするため、既存Sceneの挙動は変わりません。
     for (auto [entity, convectionComponent] : scene.View<ThermalConvectionComponent>())
@@ -100,6 +109,8 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
         thermalWorld.RegisterEnvironmentContact(environmentContact);
     }
 
+    // 放射境界もECSにはRuntime pointerを保持せず、Fixed StepごとにThermalBodyへ解決します。
+    // 対流とは異なりT^4非線形なので、World側で各substepの現在温度から熱流を再評価します。
     for (auto [entity, radiationComponent] : scene.View<ThermalRadiationComponent>())
     {
         if (radiationComponent.Enabled == false)
@@ -124,8 +135,11 @@ void ThermalSystem::AppendRigidBodyContacts(Scene& scene, const std::vector<Cont
 {
     ThermalWorld& thermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
 
+    // PhysicsWorldが「このFixed Step」で確定したManifoldだけを熱接触へ変換します。
+    // これにより、離れたBody間へ前Stepの熱接触が残ることを避け、機械接触と熱接触を同期させます。
     for (const ContactManifold& manifold : manifolds)
     {
+        // Triggerは物理的な接触面を表さないため伝導対象にせず、接触点なしのManifoldも除外します。
         if (manifold.IsTrigger == true || manifold.PointCount == 0u)
         {
             continue;
@@ -147,6 +161,7 @@ void ThermalSystem::AppendRigidBodyContacts(Scene& scene, const std::vector<Cont
             continue;
         }
 
+        // 明示ThermalContactが存在するPairはそちらを正とし、自動生成による二重熱伝導を防ぎます。
         if (HasRegisteredThermalPair(thermalWorld, bodyComponentA->Body, bodyComponentB->Body) == true)
         {
             continue;
@@ -158,6 +173,9 @@ void ThermalSystem::AppendRigidBodyContacts(Scene& scene, const std::vector<Cont
             continue;
         }
 
+        // 現在のContact Manifoldには厳密な接触面積がないため、Point数×代表面積で近似します。
+        // Pair両側で設定値が異なる場合、面積は過大評価を避けるため小さい側、距離は平均、
+        // Scaleは対称性を保ち片側だけに偏らないよう幾何平均を採用します。
         const float areaPerPoint = std::min(settingsA->NominalContactAreaPerPoint, settingsB->NominalContactAreaPerPoint);
         ThermalContact contact{};
         contact.BodyA = &bodyComponentA->Body;
