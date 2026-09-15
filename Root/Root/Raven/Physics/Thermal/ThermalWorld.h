@@ -3,8 +3,6 @@
 #include <cstddef>
 #include <vector>
 
-#include "Raven/Math/MathVector.h"
-#include "Raven/Physics/Thermal/TemperatureField.h"
 #include "Raven/Physics/Thermal/ThermalBody.h"
 
 namespace Raven::ph
@@ -33,7 +31,6 @@ struct ThermalContact
 // Newtonの冷却則 Qdot = h*A*(Tenv - Tbody) を表す線形な環境境界です。
 // Environmentは一定温度の無限Reservoirとして扱うため、Bodyから出入りした熱で
 // AmbientTemperature自身は変化しません。h*Aは登録時にG [W/K]へ正規化します。
-// TemperatureFieldを指定した場合はBodyPositionでFieldを評価し、AmbientTemperatureより優先します。
 struct ThermalEnvironmentContact
 {
     ThermalBody* Body = nullptr;
@@ -41,17 +38,6 @@ struct ThermalEnvironmentContact
     float HeatTransferCoefficient = 10.0f;    // h [W/(m^2*K)]
     float SurfaceArea = 1.0f;                 // A [m^2]
     float ThermalConductance = 0.0f;          // G=h*A [W/K]
-    const TemperatureField* AmbientTemperatureField = nullptr; // 非所有。登録中は呼び出し側が寿命を保証します。
-    math::Vec3 BodyPosition{};                 // Fieldを評価するworld-space位置
-
-    float EvaluateAmbientTemperature() const
-    {
-        if (AmbientTemperatureField != nullptr)
-        {
-            return AmbientTemperatureField->Evaluate(BodyPosition);
-        }
-        return AmbientTemperature;
-    }
 };
 
 // ============================================================================
