@@ -30,6 +30,7 @@
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
 #include "Raven/Physics/Tests/FluidWorldSelfTests.h"
+#include "Raven/Physics/Tests/PhysicsFieldSelfTests.h"
 #include "Raven/Physics/Tests/PhysicsSimulationWorldSelfTests.h"
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
 #include "Raven/Physics/Tests/StaticMeshTriangleBVHSelfTests.h"
@@ -56,6 +57,8 @@ int main()
     Raven::tests::RunPoseInertializerSelfTests();
     Raven::ph::tests::RunPhysicsSimulationWorldSelfTests();
     Raven::ph::tests::RunElectromagnetismSelfTests();
+    // ScalarField派生の回帰テストは集約入口から実行し、今後Field型が増えてもmain.cppを肥大化させません。
+    Raven::ph::tests::RunPhysicsFieldSelfTests();
     Raven::ph::tests::RunFluidWorldSelfTests();
     Raven::ph::tests::RunFluidCouplingMeasurementSelfTests();
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
