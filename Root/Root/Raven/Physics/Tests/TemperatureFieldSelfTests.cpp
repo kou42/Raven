@@ -74,6 +74,7 @@ void RunTemperatureFieldSelfTests()
     assert(registry.GetRegisteredFieldCount() == 0u);
 
     // Fieldの評価値は既存ThermalEnvironmentContactへKelvinのまま渡せます。
+    // ScalarFieldとThermal Solverの単位・境界条件が一致することを固定します。
     ThermalBody body{};
     body.Temperature = 300.0f;
     body.Material.SpecificHeatCapacity = 100.0f;
