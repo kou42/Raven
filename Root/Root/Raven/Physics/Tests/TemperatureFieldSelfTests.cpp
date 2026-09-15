@@ -4,7 +4,11 @@
 #include <cmath>
 
 #include "Raven/Physics/Thermal/TemperatureField.h"
+#include "Raven/Physics/Thermal/ThermalComponents.h"
+#include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Physics/Thermal/ThermalWorld.h"
+#include "Raven/Scene/Components.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven::ph::tests
 {
@@ -15,6 +19,16 @@ bool NearlyEqual(float lhs, float rhs, float epsilon = 1.0e-5f)
 {
     return std::fabs(lhs - rhs) <= epsilon;
 }
+
+// ECS Runtimeが固定値ではなくEntityのworld-space位置をFieldへ渡していることを確認するTest用Fieldです。
+class PositionTemperatureField final : public TemperatureField
+{
+public:
+    float Evaluate(const math::Vec3& worldPosition) const override
+    {
+        return 300.0f + worldPosition.x * 10.0f;
+    }
+};
 
 } // namespace
 
@@ -75,6 +89,28 @@ void RunTemperatureFieldSelfTests()
     world.Step(1.0f);
     assert(body.Temperature > 300.0f);
     assert(body.Temperature <= 350.0f);
+
+    // ThermalSystemはConvection EntityのTransform位置でTemperatureFieldを評価します。
+    // Component側のAmbientTemperatureはField未登録時のfallbackであり、Field登録時は空間温度が優先されます。
+    Scene scene{};
+    Entity thermalEntity = scene.CreateEntity("TemperatureFieldRuntimeTest");
+    thermalEntity.GetComponent<TransformComponent>().Position = { 4.0f, 2.0f, -1.0f };
+    thermalEntity.AddComponent<ThermalBodyComponent>();
+    ThermalConvectionComponent& convection = thermalEntity.AddComponent<ThermalConvectionComponent>();
+    convection.AmbientTemperature = 280.0f;
+
+    ThermalWorld& sceneThermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
+    PositionTemperatureField positionField{};
+    assert(sceneThermalWorld.GetTemperatureFieldRegistry().RegisterField(positionField) == true);
+
+    ThermalSystem::SynchronizeWorld(scene);
+    assert(sceneThermalWorld.GetEnvironmentContactCount() == 1u);
+    assert(NearlyEqual(sceneThermalWorld.GetEnvironmentContacts().front().AmbientTemperature, 340.0f));
+
+    // Fieldを外すと既存Component値へ戻り、従来Sceneとの後方互換性を維持します。
+    assert(sceneThermalWorld.GetTemperatureFieldRegistry().UnregisterField(positionField) == true);
+    ThermalSystem::SynchronizeWorld(scene);
+    assert(NearlyEqual(sceneThermalWorld.GetEnvironmentContacts().front().AmbientTemperature, 280.0f));
 }
 
 } // namespace Raven::ph::tests
