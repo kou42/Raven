@@ -38,6 +38,8 @@ struct ThermalRigidContactComponent
 
 // Entity表面と一定温度の周囲流体との対流熱伝達です。
 // Newtonの冷却則 Qdot=h*A*(Tenv-Tbody) を使用し、Environmentは無限Reservoirとみなします。
+// TemperatureFieldがThermalWorldへ登録されている場合、AmbientTemperatureはField未登録時のfallback値となり、
+// RuntimeではEntityのworld-space位置で評価したField温度をTenvとして使用します。
 struct ThermalConvectionComponent
 {
     float AmbientTemperature = 293.15f;      // Tenv [K]

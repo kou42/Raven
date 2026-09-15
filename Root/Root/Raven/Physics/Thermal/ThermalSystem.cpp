@@ -6,6 +6,7 @@
 #include "Raven/Physics/Contact.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Physics/Thermal/ThermalComponents.h"
+#include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 
 namespace Raven::ph
@@ -82,6 +83,8 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
 
     // 対流もhと面積をECS側の入力として保持し、RuntimeではG=h*Aへ変換します。
     // Environmentは無限Reservoirなので、ThermalBodyをもう1つ生成して熱容量を持たせる必要はありません。
+    // TemperatureFieldは空間側の環境境界なので、各Entityのworld-space Transform位置で評価します。
+    // Field未登録時はRegistryがComponentのAmbientTemperatureへfallbackするため、既存Sceneの挙動は変わりません。
     for (auto [entity, convectionComponent] : scene.View<ThermalConvectionComponent>())
     {
         if (convectionComponent.Enabled == false)
@@ -89,13 +92,16 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
             continue;
         }
         ThermalBodyComponent* bodyComponent = scene.TryGetComponent<ThermalBodyComponent>(entity.GetIndex());
-        if (bodyComponent == nullptr || bodyComponent->Enabled == false)
+        const TransformComponent* transformComponent = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+        if (bodyComponent == nullptr || bodyComponent->Enabled == false || transformComponent == nullptr)
         {
             continue;
         }
+
         ThermalEnvironmentContact environmentContact{};
         environmentContact.Body = &bodyComponent->Body;
-        environmentContact.AmbientTemperature = convectionComponent.AmbientTemperature;
+        environmentContact.AmbientTemperature = thermalWorld.GetTemperatureFieldRegistry().Evaluate(
+            transformComponent->Position, convectionComponent.AmbientTemperature);
         environmentContact.HeatTransferCoefficient = convectionComponent.HeatTransferCoefficient;
         environmentContact.SurfaceArea = convectionComponent.SurfaceArea;
         environmentContact.ThermalConductance = ThermalWorld::CalculateConvectionConductance(

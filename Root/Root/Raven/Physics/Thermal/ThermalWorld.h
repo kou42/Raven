@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <vector>
 
+#include "Raven/Physics/Thermal/TemperatureFieldRegistry.h"
 #include "Raven/Physics/Thermal/ThermalBody.h"
 
 namespace Raven::ph
@@ -74,6 +75,11 @@ public:
     void ClearContacts();
     void Clear();
 
+    // TemperatureField RegistryはECS由来のTransient Contactと異なりfixed-step間で維持します。
+    // Field本体は非所有のため、所有側はField破棄前に必ず登録解除する必要があります。
+    TemperatureFieldRegistry& GetTemperatureFieldRegistry() { return m_TemperatureFieldRegistry; }
+    const TemperatureFieldRegistry& GetTemperatureFieldRegistry() const { return m_TemperatureFieldRegistry; }
+
     void Step(float fixedDeltaTime);
 
     // Explicit熱Solverの安定性を保つため、各Bodyの熱時定数 tau=C/sum(G) から
@@ -121,6 +127,10 @@ private:
     std::vector<ThermalContact> m_Contacts;
     std::vector<ThermalEnvironmentContact> m_EnvironmentContacts;
     std::vector<ThermalRadiationContact> m_RadiationContacts;
+
+    // Field RegistryはScene/ECS同期でClearしません。外部FieldはPhysicsSimulationWorld配下の
+    // ThermalWorldへ明示登録し、Fixed Stepを跨いで同じ環境分布を利用します。
+    TemperatureFieldRegistry m_TemperatureFieldRegistry;
 
     // 0.5はexplicit Eulerに対して保守的な既定値です。64上限は極端に硬いNetworkで
     // Thermalだけが無制限に計算量を増やすことを防ぐための実行時間側の安全弁です。
