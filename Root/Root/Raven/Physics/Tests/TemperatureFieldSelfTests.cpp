@@ -49,6 +49,42 @@ void RunTemperatureFieldSelfTests()
     assert(NearlyEqual(heatedField.GetTemperatureKelvin(), 0.0f));
     assert(NearlyEqual(heatedField.Evaluate(math::Vec3{}), 0.0f));
 
+    // GradientTemperatureFieldは基準位置からの変位を任意方向Gradientへ射影して線形温度分布を作ります。
+    const GradientTemperatureField gradientField{
+        math::Vec3{ 10.0f, 20.0f, 30.0f },
+        300.0f,
+        math::Vec3{ 2.0f, -5.0f, 1.0f }
+    };
+    assert(NearlyEqual(gradientField.Evaluate(math::Vec3{ 10.0f, 20.0f, 30.0f }), 300.0f));
+    assert(NearlyEqual(gradientField.Evaluate(math::Vec3{ 12.0f, 21.0f, 33.0f }), 302.0f));
+
+    // 強い負勾配で線形式が負値になっても、TemperatureFieldのKelvin契約として0K未満を返しません。
+    const GradientTemperatureField coldGradientField{
+        math::Vec3{},
+        10.0f,
+        math::Vec3{ -20.0f, 0.0f, 0.0f }
+    };
+    assert(NearlyEqual(coldGradientField.Evaluate(math::Vec3{ 1.0f, 0.0f, 0.0f }), 0.0f));
+
+    // SphericalTemperatureRegionFieldはCenterからRadius以内だけ局所温度を返し、境界上もInsideへ含めます。
+    SphericalTemperatureRegionField regionField{
+        math::Vec3{ 5.0f, 0.0f, 0.0f },
+        2.0f,
+        400.0f,
+        290.0f
+    };
+    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 5.0f, 0.0f, 0.0f }), 400.0f));
+    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 7.0f, 0.0f, 0.0f }), 400.0f));
+    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 7.01f, 0.0f, 0.0f }), 290.0f));
+
+    // 不正な負半径・負温度は設定時にClampし、Radius=0ではCenter一点のみをInsideとして扱います。
+    regionField.SetRadius(-1.0f);
+    regionField.SetInsideTemperatureKelvin(-50.0f);
+    regionField.SetOutsideTemperatureKelvin(-10.0f);
+    assert(NearlyEqual(regionField.GetRadius(), 0.0f));
+    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 5.0f, 0.0f, 0.0f }), 0.0f));
+    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 5.001f, 0.0f, 0.0f }), 0.0f));
+
     // Registry未登録時は既存AmbientTemperatureをそのままfallbackとして利用します。
     ThermalWorld world{};
     TemperatureFieldRegistry& registry = world.GetTemperatureFieldRegistry();
