@@ -27,6 +27,8 @@ void RunTemperatureFieldSelfTests()
     const UniformTemperatureField defaultField{};
     assert(NearlyEqual(defaultField.Evaluate(math::Vec3{}), 293.15f));
     assert(NearlyEqual(defaultField.EvaluateInfluence(math::Vec3{ 100.0f, -20.0f, 3.0f }), 1.0f));
+    assert(defaultField.GetBlendMode() == TemperatureFieldBlendMode::WeightedAverage);
+    assert(defaultField.GetPriority() == 0);
 
     UniformTemperatureField heatedField{ 350.0f };
     heatedField.SetTemperatureKelvin(-10.0f);
@@ -47,17 +49,14 @@ void RunTemperatureFieldSelfTests()
     assert(NearlyEqual(linearRegion.EvaluateInfluence(math::Vec3{ 3.0f, 0.0f, 0.0f }), 0.5f));
     assert(linearRegion.EvaluateInfluence(math::Vec3{ 2.5f, 0.0f, 0.0f }) > 0.75f);
 
-    // Box RegionはHalfExtentsでCoreを定義し、Face/Edge/Cornerを含む表面上をInfluence=1として扱います。
     BoxTemperatureRegionField boxRegion{
         math::Vec3{ 10.0f, 0.0f, 0.0f }, math::Vec3{ 2.0f, 1.0f, 3.0f }, 360.0f,
         2.0f, TemperatureRegionFalloff::Linear
     };
     assert(NearlyEqual(boxRegion.EvaluateInfluence(math::Vec3{ 10.0f, 0.0f, 0.0f }), 1.0f));
     assert(NearlyEqual(boxRegion.EvaluateInfluence(math::Vec3{ 12.0f, 1.0f, 3.0f }), 1.0f));
-    // +X Faceから1 unit外側なのでFalloffの中点です。
     assert(NearlyEqual(boxRegion.EvaluateInfluence(math::Vec3{ 13.0f, 0.0f, 0.0f }), 0.5f));
     assert(NearlyEqual(boxRegion.EvaluateInfluence(math::Vec3{ 14.0f, 0.0f, 0.0f }), 0.0f));
-    // Corner外側は各軸距離のEuclidean長で判定します。sqrt(0.5^2+0.5^2)だけ外側ならInfluenceは0と1の間です。
     const float cornerInfluence = boxRegion.EvaluateInfluence(math::Vec3{ 12.5f, 1.5f, 3.0f });
     assert(cornerInfluence > 0.0f && cornerInfluence < 1.0f);
 
@@ -81,6 +80,32 @@ void RunTemperatureFieldSelfTests()
     assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 280.0f), 350.0f));
     assert(NearlyEqual(registry.Evaluate(math::Vec3{ 2.0f, 0.0f, 0.0f }, 280.0f), 333.33334f, 1.0e-4f));
     assert(NearlyEqual(registry.Evaluate(math::Vec3{ 4.0f, 0.0f, 0.0f }, 280.0f), 300.0f));
+
+    // OverrideはCoreで基礎環境を完全置換し、FalloffではInfluenceをAlphaとして基礎環境へ戻します。
+    localField.SetBlendMode(TemperatureFieldBlendMode::Override);
+    localField.SetPriority(10);
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 280.0f), 400.0f));
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 2.0f, 0.0f, 0.0f }, 280.0f), 350.0f));
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 4.0f, 0.0f, 0.0f }, 280.0f), 300.0f));
+
+    // 重なったOverrideでは最高Priorityだけが採用されます。
+    SphericalTemperatureRegionField highPriorityField{ math::Vec3{}, 1.0f, 500.0f };
+    highPriorityField.SetBlendMode(TemperatureFieldBlendMode::Override);
+    highPriorityField.SetPriority(20);
+    assert(registry.RegisterField(highPriorityField) == true);
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 280.0f), 500.0f));
+
+    // 同Priorityは登録順ではなくInfluence加重平均で決定します。Core同士なら400Kと600Kの平均500Kです。
+    registry.Clear();
+    SphericalTemperatureRegionField samePriorityA{ math::Vec3{}, 1.0f, 400.0f };
+    SphericalTemperatureRegionField samePriorityB{ math::Vec3{}, 1.0f, 600.0f };
+    samePriorityA.SetBlendMode(TemperatureFieldBlendMode::Override);
+    samePriorityB.SetBlendMode(TemperatureFieldBlendMode::Override);
+    samePriorityA.SetPriority(5);
+    samePriorityB.SetPriority(5);
+    assert(registry.RegisterField(samePriorityA) == true);
+    assert(registry.RegisterField(samePriorityB) == true);
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 280.0f), 500.0f));
 
     registry.Clear();
     BoxTemperatureRegionField isolatedBox{ math::Vec3{}, math::Vec3{ 1.0f, 1.0f, 1.0f }, 420.0f };
