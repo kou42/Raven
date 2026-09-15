@@ -1,6 +1,7 @@
 #include "Raven/Physics/Thermal/TemperatureField.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Raven::ph
 {
@@ -54,28 +55,58 @@ SphericalTemperatureRegionField::SphericalTemperatureRegionField(
     const math::Vec3& center,
     float radius,
     float insideTemperatureKelvin,
-    float outsideTemperatureKelvin)
+    float falloffDistance,
+    TemperatureRegionFalloff falloff)
     : m_Center(center)
+    , m_Falloff(falloff)
 {
     SetRadius(radius);
     SetInsideTemperatureKelvin(insideTemperatureKelvin);
-    SetOutsideTemperatureKelvin(outsideTemperatureKelvin);
+    SetFalloffDistance(falloffDistance);
 }
 
 float SphericalTemperatureRegionField::Evaluate(const math::Vec3& worldPosition) const
+{
+    (void)worldPosition;
+    // Regionの外側温度をField自身に持たせると、領域外でもRegistry平均へ参加してしまいます。
+    // 温度値と空間的な有効度を分離し、合成はRegistryのInfluence Weightへ一元化します。
+    return m_InsideTemperatureKelvin;
+}
+
+float SphericalTemperatureRegionField::EvaluateInfluence(const math::Vec3& worldPosition) const
 {
     const math::Vec3 offset = worldPosition - m_Center;
     const float distanceSquared = math::Vec3::Dot(offset, offset);
     const float radiusSquared = m_Radius * m_Radius;
 
-    // sqrtを避けた二乗距離比較により、Region判定だけのための不要な平方根計算を発生させません。
-    // 境界上はInsideへ含め、Radius=0でもCenter一点を明確に局所領域として扱います。
+    // Core内部は平方根なしで判定できるため、最も頻繁な完全Influenceケースではsqrtを避けます。
     if (distanceSquared <= radiusSquared)
     {
-        return m_InsideTemperatureKelvin;
+        return 1.0f;
     }
 
-    return m_OutsideTemperatureKelvin;
+    if (m_Falloff == TemperatureRegionFalloff::Hard || m_FalloffDistance <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    const float outerRadius = m_Radius + m_FalloffDistance;
+    if (distanceSquared >= outerRadius * outerRadius)
+    {
+        return 0.0f;
+    }
+
+    const float distance = std::sqrt(distanceSquared);
+    float influence = 1.0f - (distance - m_Radius) / m_FalloffDistance;
+    influence = std::clamp(influence, 0.0f, 1.0f);
+
+    if (m_Falloff == TemperatureRegionFalloff::SmoothStep)
+    {
+        // smoothstep(0,1,x)により境界両端の一次微分を0にし、移動Bodyが境界を横切る際の温度変化を滑らかにします。
+        influence = influence * influence * (3.0f - 2.0f * influence);
+    }
+
+    return influence;
 }
 
 void SphericalTemperatureRegionField::SetRadius(float radius)
@@ -89,9 +120,9 @@ void SphericalTemperatureRegionField::SetInsideTemperatureKelvin(float temperatu
     m_InsideTemperatureKelvin = std::max(temperatureKelvin, 0.0f);
 }
 
-void SphericalTemperatureRegionField::SetOutsideTemperatureKelvin(float temperatureKelvin)
+void SphericalTemperatureRegionField::SetFalloffDistance(float falloffDistance)
 {
-    m_OutsideTemperatureKelvin = std::max(temperatureKelvin, 0.0f);
+    m_FalloffDistance = std::max(falloffDistance, 0.0f);
 }
 
 } // namespace Raven::ph
