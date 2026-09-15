@@ -163,6 +163,7 @@ void RunElectromagnetismSelfTests()
     assert(forceB.x > 0.0f);
     assert(NearlyEqual(forceA.x + forceB.x, 0.0f, 1.0e-5f));
 
+    // 外部Field Registryは同一Fieldの二重登録を拒否し、複数Fieldを線形に重ね合わせます。
     UniformElectricField fieldX({ 10.0f, 0.0f, 0.0f });
     UniformElectricField fieldY({ 0.0f, 20.0f, 0.0f });
     ElectromagneticSystem externalFieldSystem;
