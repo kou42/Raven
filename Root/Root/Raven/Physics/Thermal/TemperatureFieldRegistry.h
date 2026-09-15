@@ -13,7 +13,7 @@ namespace Raven::ph
 // ============================================================================
 // Thermal Runtimeから参照するTemperatureFieldの非所有Registryです。
 // Fieldの所有権は呼び出し側に残し、RegistryはFixed Step中の評価対象だけを管理します。
-// 複数Fieldが登録されている場合は、各Fieldの温度を平均して1つの環境境界温度へ集約します。
+// 複数Fieldは各位置でのInfluenceをWeightとして加重平均し、局所Fieldの領域外寄与を除外します。
 class TemperatureFieldRegistry
 {
 public:
@@ -26,7 +26,7 @@ public:
     const std::vector<TemperatureField*>& GetRegisteredFields() const { return m_Fields; }
 
     // worldPositionはConvection EntityのTransformComponent::Positionを想定します。
-    // Field未登録時はfallbackTemperatureKelvinを返し、既存AmbientTemperature契約を維持します。
+    // 有効なFieldがない位置ではfallbackTemperatureKelvinを返し、既存AmbientTemperature契約を維持します。
     float Evaluate(const math::Vec3& worldPosition, float fallbackTemperatureKelvin) const;
 
 private:
