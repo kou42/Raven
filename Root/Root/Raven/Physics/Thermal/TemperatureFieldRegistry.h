@@ -25,6 +25,7 @@ public:
     std::size_t GetRegisteredFieldCount() const { return m_Fields.size(); }
     const std::vector<TemperatureField*>& GetRegisteredFields() const { return m_Fields; }
 
+    // worldPositionはConvection EntityのTransformComponent::Positionを想定します。
     // Field未登録時はfallbackTemperatureKelvinを返し、既存AmbientTemperature契約を維持します。
     float Evaluate(const math::Vec3& worldPosition, float fallbackTemperatureKelvin) const;
 
