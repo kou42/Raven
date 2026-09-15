@@ -61,9 +61,24 @@ void FluidStaticColliderCoupling::ResolveScene(
         }
 
         ++m_LastStatistics.SupportedColliderCount;
+        FluidColliderBroadPhaseBounds broadPhaseBounds{};
+        if (ComputeFluidColliderBroadPhaseBounds(
+            m_Settings.ParticleRadius,
+            transform,
+            collider,
+            broadPhaseBounds) == false)
+        {
+            continue;
+        }
+
         for (FluidParticle& particle : particles)
         {
             ++m_LastStatistics.CandidatePairCount;
+            if (broadPhaseBounds.Contains(particle.Position) == false)
+            {
+                ++m_LastStatistics.BroadPhaseRejectedPairCount;
+                continue;
+            }
             if (ResolveParticleAgainstCollider(particle, transform, collider))
             {
                 ++m_LastStatistics.ResolvedContactCount;
@@ -78,6 +93,9 @@ void FluidStaticColliderCoupling::ResolveScene(
     profiler.AddCounter(
         "Physics.Fluid.StaticCollider.CandidatePairCount",
         static_cast<double>(m_LastStatistics.CandidatePairCount));
+    profiler.AddCounter(
+        "Physics.Fluid.StaticCollider.BroadPhaseRejectedPairCount",
+        static_cast<double>(m_LastStatistics.BroadPhaseRejectedPairCount));
     profiler.AddCounter(
         "Physics.Fluid.StaticCollider.ResolvedContactCount",
         static_cast<double>(m_LastStatistics.ResolvedContactCount));

@@ -23,6 +23,7 @@ struct FluidStaticColliderCouplingStatistics
 {
     uint64_t SupportedColliderCount = 0u;
     uint64_t CandidatePairCount = 0u;
+    uint64_t BroadPhaseRejectedPairCount = 0u;
     uint64_t ResolvedContactCount = 0u;
 };
 

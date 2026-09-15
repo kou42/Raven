@@ -37,6 +37,7 @@ struct FluidRigidBodyCouplingStatistics
 {
     uint64_t DynamicBodyCount = 0u;
     uint64_t CandidatePairCount = 0u;
+    uint64_t BroadPhaseRejectedPairCount = 0u;
     uint64_t ResolvedContactCount = 0u;
     uint64_t AppliedImpulseCount = 0u;
     uint64_t AppliedDragImpulseCount = 0u;

@@ -92,6 +92,7 @@ public:
         const FluidStaticColliderCouplingStatistics& statistics = m_Solver.GetLastStatistics();
         m_AggregatedStatistics.SupportedColliderCount += statistics.SupportedColliderCount;
         m_AggregatedStatistics.CandidatePairCount += statistics.CandidatePairCount;
+        m_AggregatedStatistics.BroadPhaseRejectedPairCount += statistics.BroadPhaseRejectedPairCount;
         m_AggregatedStatistics.ResolvedContactCount += statistics.ResolvedContactCount;
     }
 
@@ -163,6 +164,7 @@ public:
         const FluidRigidBodyCouplingStatistics& statistics = m_Solver.GetLastStatistics();
         m_AggregatedStatistics.DynamicBodyCount += statistics.DynamicBodyCount;
         m_AggregatedStatistics.CandidatePairCount += statistics.CandidatePairCount;
+        m_AggregatedStatistics.BroadPhaseRejectedPairCount += statistics.BroadPhaseRejectedPairCount;
         m_AggregatedStatistics.ResolvedContactCount += statistics.ResolvedContactCount;
         m_AggregatedStatistics.AppliedImpulseCount += statistics.AppliedImpulseCount;
         m_AggregatedStatistics.AppliedDragImpulseCount += statistics.AppliedDragImpulseCount;

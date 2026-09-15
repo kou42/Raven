@@ -146,9 +146,9 @@
     <ClInclude Include="Raven\**\*.h" />
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)'=='Debug' and '$(RavenOptimizePhysicsInDebug)'=='true'">
-    <!-- 実測で支配的なPhysics Kernelだけを最適化します。Scene / Demo / Testsは通常Debugのままです。
+    <!-- 実測で支配的なPhysics KernelとFluid描画同期だけを最適化します。Scene / Testsは通常Debugのままです。
          /O2と両立しない/RTC、Edit and ContinueをこのKernelだけ外し、PDBと浮動小数点精度は維持します。 -->
-    <ClCompile Update="Raven\Physics\SoftBody\SoftBodySolver.cpp;Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp;Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp;Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp;Raven\Physics\Particle\ParticleSpatialHashGrid.cpp;Raven\Physics\Solver\ContactSolver.cpp">
+    <ClCompile Update="Raven\Physics\SoftBody\SoftBodySolver.cpp;Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp;Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp;Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp;Raven\Physics\Particle\ParticleSpatialHashGrid.cpp;Raven\Physics\Fluid\SPHSolver.cpp;Raven\Physics\Fluid\FluidSpatialHashGrid.cpp;Raven\Physics\Fluid\Debug\FluidSPHDemoLayer.cpp;Raven\Physics\Coupling\FluidColliderContact.cpp;Raven\Physics\Coupling\FluidStaticColliderCoupling.cpp;Raven\Physics\Coupling\FluidRigidBodyCoupling.cpp;Raven\Physics\Solver\ContactSolver.cpp;Raven\Renderer\Mesh\Mesh.cpp">
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>

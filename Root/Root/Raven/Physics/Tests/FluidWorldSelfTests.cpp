@@ -140,7 +140,9 @@ void RunFluidWorldRigidBodyCouplingTest()
     collider.Restitution = 0.0f;
     bodyEntity.AddComponent<ColliderComponent>(collider);
 
-    std::vector<FluidParticle> particles(1u);
+    std::vector<FluidParticle> particles(2u);
+    // 遠方ParticleはCandidate統計へ残しつつBroad Phaseで厳密接触から除外されます。
+    particles[1].Position = { 100.0f, 100.0f, 100.0f };
     TestFluidRigidBodyParticipant participant(particles);
     assert(fluidWorld.RegisterSimulationParticipant(participant) == true);
 
@@ -157,7 +159,8 @@ void RunFluidWorldRigidBodyCouplingTest()
     // Participant Simulationで作った接触状態を同じFixed StepのFluidWorld Couplingが消費します。
     // 法線衝突・Drag・Pressure・BuoyancyがすべてWorld経由で実行されたことをCounterでも固定します。
     assert(statistics.DynamicBodyCount == 1u);
-    assert(statistics.CandidatePairCount == 1u);
+    assert(statistics.CandidatePairCount == 2u);
+    assert(statistics.BroadPhaseRejectedPairCount == 1u);
     assert(statistics.ResolvedContactCount == 1u);
     assert(statistics.AppliedImpulseCount == 1u);
     assert(statistics.AppliedDragImpulseCount == 1u);
@@ -277,8 +280,9 @@ void RunFluidWorldSelfTests()
     assert(fluidWorld.GetRegisteredSimulationParticipantCount() == 0u);
     assert(fluidWorld.GetCouplingBindingCount() == 0u);
 
-    std::vector<FluidParticle> particles(1u);
+    std::vector<FluidParticle> particles(2u);
     particles[0].Position = { 5.0f, 0.0f, 0.0f };
+    particles[1].Position = { 100.0f, 100.0f, 100.0f };
 
     TestFluidSimulationParticipant firstParticipant(particles);
     TestFluidSimulationParticipant duplicateParticleParticipant(particles);
@@ -323,7 +327,8 @@ void RunFluidWorldSelfTests()
     const FluidStaticColliderCouplingStatistics& staticStatistics =
         fluidWorld.GetLastStaticColliderCouplingStatistics();
     assert(staticStatistics.SupportedColliderCount == 1u);
-    assert(staticStatistics.CandidatePairCount == 1u);
+    assert(staticStatistics.CandidatePairCount == 2u);
+    assert(staticStatistics.BroadPhaseRejectedPairCount == 1u);
     assert(staticStatistics.ResolvedContactCount == 1u);
 
     // catch-up中のSimulation/Couplingと外部出力同期は分離されます。

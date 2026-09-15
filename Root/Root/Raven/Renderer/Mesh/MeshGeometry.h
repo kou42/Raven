@@ -76,12 +76,9 @@ public:
           m_GeometryUsage(geometryUsage),
           m_TopologyUsage(topologyUsage)
     {
-        // Static Geometryは更新を拒否するため、生成時の境界を共有して再利用できます。
-        // Dynamic Geometryにはこの走査を追加せず、必要なQuery時だけ現在の頂点を参照します。
-        if (m_GeometryUsage == GeometryUsage::Static)
-        {
-            ComputeLocalBounds(m_LocalMinimum, m_LocalMaximum);
-        }
+        // BoundsはGeometry更新時に一度だけ計算します。Dynamic Geometryも描画Viewごとに
+        // 全頂点を再走査せず、Set/SwapVerticesで更新されたcacheを共有します。
+        ComputeLocalBounds(m_LocalMinimum, m_LocalMaximum);
     }
 
     const std::vector<MeshVertex>& GetVertices() const { return m_Vertices; }
@@ -93,22 +90,15 @@ public:
     uint64_t GetRevision() const { return m_Revision; }
 
     // CPU形状のローカル境界です。Physics型への依存やQuery時のmutable cacheを持ちません。
-    // DynamicではSetVertices/SwapVertices後の値を必ず読み、古い境界による衝突漏れを防ぎます。
+    // DynamicでもSetVertices/SwapVerticesが同時に更新するcacheを返します。
     bool GetLocalBounds(math::Vec3& minimum, math::Vec3& maximum) const
     {
         if (m_Vertices.empty() == true)
         {
             return false;
         }
-        if (m_GeometryUsage == GeometryUsage::Dynamic)
-        {
-            ComputeLocalBounds(minimum, maximum);
-        }
-        else
-        {
-            minimum = m_LocalMinimum;
-            maximum = m_LocalMaximum;
-        }
+        minimum = m_LocalMinimum;
+        maximum = m_LocalMaximum;
         return true;
     }
 
@@ -135,6 +125,7 @@ public:
         }
 
         m_Vertices = std::move(vertices);
+        ComputeLocalBounds(m_LocalMinimum, m_LocalMaximum);
         ++m_Revision;
         return true;
     }
@@ -157,6 +148,7 @@ public:
         }
 
         m_Vertices.swap(vertices);
+        ComputeLocalBounds(m_LocalMinimum, m_LocalMaximum);
         ++m_Revision;
         return true;
     }

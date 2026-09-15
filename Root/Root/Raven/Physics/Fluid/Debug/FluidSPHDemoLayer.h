@@ -8,6 +8,7 @@
 #include "Raven/Physics/Fluid/FluidSimulationParticipant.h"
 #include "Raven/Physics/Fluid/SPHSolver.h"
 #include "Raven/Renderer/Layer/Layer.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Scene/Entity.h"
 
 namespace Raven
@@ -21,7 +22,7 @@ class Pipeline;
 // ============================================================================
 // Fluid SPH Demo Layer
 // ============================================================================
-// SPHSolverのParticleを通常のSphere Entityへ同期し、Game View / Scene View上で
+// SPHSolverのParticleを1つの結合Sphere Meshへ同期し、Game View / Scene View上で
 // Density -> Pressure -> Force -> Integration -> Collider Coupling の結果を目視確認します。
 // Simulation本体はSPHSolverへ閉じ、Scene Collider / RigidBodyとの接続実装はFluidWorldへ集約します。
 // Fixed Step実行はFluidSimulationParticipantとしてPhysicsSimulationWorldへ参加します。
@@ -75,11 +76,14 @@ private:
     Ref<Mesh> m_ParticleMesh;
     Ref<Mesh> m_DemoCubeMesh;
 
-    // 全Particleは同じPipeline/Meshを共有し、Material instanceだけを分離します。
-    // u_TintはMaterialに保存されるため、1つのMaterialを共有すると最後に設定したParticle色で
-    // 全Entityが描画されてしまいます。Debug Demoでは288個程度なので、色の正しさを優先します。
+    // Particleは1つのDynamic Meshへ結合し、頂点色で密度を可視化します。
+    // 数千個のEntity / Material / Draw Callを作らず、Topologyと作業Bufferを再利用して
+    // 毎frameの位置・色だけを1回のGPU uploadへまとめます。
     Ref<Pipeline> m_ParticlePipeline;
-    std::vector<Ref<Material>> m_ParticleMaterials;
+    Ref<Mesh> m_ParticleBatchMesh;
+    Ref<Material> m_ParticleBatchMaterial;
+    std::vector<MeshVertex> m_ParticleTemplateVertices;
+    std::vector<MeshVertex> m_ParticleBatchVertices;
 };
 
 } // namespace Raven

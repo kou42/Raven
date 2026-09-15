@@ -5,8 +5,11 @@
 #include <cstddef>
 
 #include "Raven/Core/Application.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Math/Math.h"
 #include "Raven/Renderer/Material/Material.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Shader/Shader.h"
@@ -18,7 +21,10 @@ namespace Raven
 namespace
 {
 constexpr uint32_t ParticleCountX = 15u;
-constexpr uint32_t ParticleCountY = 20u;
+// FluidOriginからBoundary上面までに収まる12層に制限します。
+// 20層では上側7層(1,575 Particle)が初回Stepで同じ上面へclampされ、
+// 密度・圧力・Neighbor候補とStable Substep数を不必要に増加させていました。
+constexpr uint32_t ParticleCountY = 12u;
 constexpr uint32_t ParticleCountZ = 15u;
 constexpr float ParticleSpacing = 0.32f;
 constexpr float SmoothingRadius = 0.55f;
@@ -45,6 +51,11 @@ math::Vec3 LerpColor(const math::Vec3& a, const math::Vec3& b, float t)
 {
     const float clampedT = std::clamp(t, 0.0f, 1.0f);
     return a + (b - a) * clampedT;
+}
+
+math::Vec3 MultiplyColor(const math::Vec3& a, const math::Vec3& b)
+{
+    return { a.x * b.x, a.y * b.y, a.z * b.z };
 }
 }
 
@@ -143,7 +154,7 @@ void FluidSPHDemoLayer::OnAttach()
     pipelineSpecification.Blend = true;
 
     // GPU PipelineはParticle / 水槽 / Coupling確認Bodyで共有します。
-    // Particleは密度ごとにu_Tintが変化するためMaterialだけを個別に持ち、色状態が別Particleへ漏れないようにします。
+    // Particleごとの密度色は結合Meshの頂点色へ格納し、MaterialとDraw Callは1つにまとめます。
     m_ParticlePipeline = Pipeline::Create(pipelineSpecification);
     if (m_ParticlePipeline == nullptr)
     {
@@ -188,8 +199,11 @@ void FluidSPHDemoLayer::OnDetach()
 
     m_ParticleEntities.clear();
     m_DemoEntities.clear();
-    m_ParticleMaterials.clear();
+    m_ParticleTemplateVertices.clear();
+    m_ParticleBatchVertices.clear();
     m_Particles.clear();
+    m_ParticleBatchMaterial.reset();
+    m_ParticleBatchMesh.reset();
     m_ParticlePipeline.reset();
     m_DemoCubeMesh.reset();
     m_ParticleMesh.reset();
@@ -262,30 +276,72 @@ void FluidSPHDemoLayer::CreateRenderEntities()
     }
 
     m_ParticleEntities.clear();
-    m_ParticleMaterials.clear();
-    m_ParticleEntities.reserve(m_Particles.size());
-    m_ParticleMaterials.reserve(m_Particles.size());
+    m_ParticleTemplateVertices.clear();
+    m_ParticleBatchVertices.clear();
+    m_ParticleBatchMesh.reset();
+    m_ParticleBatchMaterial.reset();
 
-    for (std::size_t i = 0u; i < m_Particles.size(); ++i)
+    const Ref<MeshGeometry>& sphereGeometry = m_ParticleMesh->GetGeometry();
+    if (sphereGeometry == nullptr || sphereGeometry->GetVertices().empty()
+        || sphereGeometry->GetIndices().empty())
     {
-        Entity entity = scene->CreateEntity("Fluid Particle");
-        entity.GetComponent<TransformComponent>().Scale = { RenderParticleRadius, RenderParticleRadius, RenderParticleRadius };
-
-        // RavenのMaterialはFactoryではなくコンストラクタでPipelineを受け取る設計です。
-        // ParticleごとにMaterialを分離し、各Entityの密度可視化色を独立して保持します。
-        Ref<Material> material = CreateRef<Material>(m_ParticlePipeline);
-        // Fluid ParticleはRender Queue上の意味として明示的にTransparentです。
-        // u_Alphaは見た目のOpacityだけを担当させ、Surface分類をShader Uniform名から切り離します。
-        material->SetSurfaceType(MaterialSurfaceType::Transparent);
-        // test.fragはTint(vec3)とAlpha(float)を別Uniformとして受け取ります。
-        // Vec4をu_Tintへ渡すとu_Alphaが設定されず透明になるため、Alphaは必ず別Uniformへ設定します。
-        material->SetUniform("u_Alpha", 0.72f);
-        entity.AddComponent<MeshRendererComponent>(
-            MeshRendererComponent{ m_ParticleMesh, material });
-
-        m_ParticleEntities.push_back(entity);
-        m_ParticleMaterials.push_back(material);
+        return;
     }
+
+    m_ParticleTemplateVertices = sphereGeometry->GetVertices();
+    const std::vector<uint32_t>& sphereIndices = sphereGeometry->GetIndices();
+    const std::size_t verticesPerParticle = m_ParticleTemplateVertices.size();
+
+    std::vector<MeshVertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(m_Particles.size() * verticesPerParticle);
+    indices.reserve(m_Particles.size() * sphereIndices.size());
+
+    // Sphere topologyをParticle数だけ一度だけ複製します。以降は頂点Bufferをswapして再利用し、
+    // Entity/MaterialをParticleごとに作る経路と毎frameのheap allocationを避けます。
+    for (std::size_t particleIndex = 0u; particleIndex < m_Particles.size(); ++particleIndex)
+    {
+        const ph::FluidParticle& particle = m_Particles[particleIndex];
+        const math::Vec3 tint = ComputeParticleDebugColor(particle);
+        const uint32_t vertexOffset = static_cast<uint32_t>(vertices.size());
+
+        for (const MeshVertex& templateVertex : m_ParticleTemplateVertices)
+        {
+            MeshVertex vertex = templateVertex;
+            vertex.Position = particle.Position + templateVertex.Position * RenderParticleRadius;
+            vertex.Color = MultiplyColor(templateVertex.Color, tint);
+            vertices.push_back(vertex);
+        }
+        for (uint32_t index : sphereIndices)
+        {
+            indices.push_back(vertexOffset + index);
+        }
+    }
+
+    Ref<MeshGeometry> batchGeometry = CreateRef<MeshGeometry>(
+        std::move(vertices),
+        std::move(indices),
+        GeometryUsage::Dynamic,
+        TopologyUsage::Fixed);
+    m_ParticleBatchMesh = CreateRef<Mesh>(batchGeometry);
+    if (m_ParticleBatchMesh == nullptr)
+    {
+        return;
+    }
+
+    // SwapVertices()の相手側Buffer。初回だけ確保し、その後はGeometry側とcapacityを往復利用します。
+    m_ParticleBatchVertices = batchGeometry->GetVertices();
+
+    m_ParticleBatchMaterial = CreateRef<Material>(m_ParticlePipeline);
+    m_ParticleBatchMaterial->SetSurfaceType(MaterialSurfaceType::Transparent);
+    // Particle別Tintは頂点色へ焼き込むため、Material uniformは全体へ白を掛けます。
+    m_ParticleBatchMaterial->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
+    m_ParticleBatchMaterial->SetUniform("u_Alpha", 0.72f);
+
+    Entity entity = scene->CreateEntity("Fluid Particles");
+    entity.AddComponent<MeshRendererComponent>(
+        MeshRendererComponent{ m_ParticleBatchMesh, m_ParticleBatchMaterial });
+    m_ParticleEntities.push_back(entity);
 }
 
 void FluidSPHDemoLayer::CreateDemoTank()
@@ -448,35 +504,50 @@ math::Vec3 FluidSPHDemoLayer::ComputeParticleDebugColor(
 
 void FluidSPHDemoLayer::SynchronizeRenderEntities()
 {
+    RAVEN_PROFILE_SCOPE("Physics.Fluid.Demo.RenderBatchSync");
+
     Scene* scene = m_Application.GetScene();
-    if (scene == nullptr)
+    if (scene == nullptr || m_ParticleBatchMesh == nullptr
+        || m_ParticleTemplateVertices.empty())
     {
         return;
     }
 
-    const std::size_t count = std::min(m_Particles.size(), m_ParticleEntities.size());
-    for (std::size_t i = 0u; i < count; ++i)
+    if (m_ParticleEntities.empty()
+        || static_cast<bool>(m_ParticleEntities.front()) == false
+        || scene->IsEntityAlive(m_ParticleEntities.front()) == false)
     {
-        Entity& entity = m_ParticleEntities[i];
-        if (static_cast<bool>(entity) == false || scene->IsEntityAlive(entity) == false)
+        return;
+    }
+
+    const std::size_t verticesPerParticle = m_ParticleTemplateVertices.size();
+    const std::size_t expectedVertexCount = m_Particles.size() * verticesPerParticle;
+    if (m_ParticleBatchVertices.size() != expectedVertexCount)
+    {
+        return;
+    }
+
+    // Simulation Particleを結合Meshへ一方向同期します。Topology、UV、Normalは不変なので、
+    // hot pathではPositionとColorだけを書き換えます。
+    for (std::size_t particleIndex = 0u; particleIndex < m_Particles.size(); ++particleIndex)
+    {
+        const ph::FluidParticle& particle = m_Particles[particleIndex];
+        const math::Vec3 tint = ComputeParticleDebugColor(particle);
+        const std::size_t vertexOffset = particleIndex * verticesPerParticle;
+
+        for (std::size_t vertexIndex = 0u; vertexIndex < verticesPerParticle; ++vertexIndex)
         {
-            continue;
+            const MeshVertex& templateVertex = m_ParticleTemplateVertices[vertexIndex];
+            MeshVertex& vertex = m_ParticleBatchVertices[vertexOffset + vertexIndex];
+            vertex.Position = particle.Position + templateVertex.Position * RenderParticleRadius;
+            vertex.Color = MultiplyColor(templateVertex.Color, tint);
         }
+    }
 
-        // Simulation Particleを描画Entityへ一方向同期します。
-        // ECS TransformをSimulation入力に戻さないことで、SPHSolverをSceneから独立した状態に保ちます。
-        entity.GetComponent<TransformComponent>().Position = m_Particles[i].Position;
-
-        if (i >= m_ParticleMaterials.size() || m_ParticleMaterials[i] == nullptr)
-        {
-            continue;
-        }
-
-        // Density色の判定はComputeParticleDebugColor()へ集約します。
-        // Synchronize側は「Simulation値をRendererへ転送する」責務だけを持ち、可視化規則の重複を避けます。
-        const math::Vec3 color = ComputeParticleDebugColor(m_Particles[i]);
-        m_ParticleMaterials[i]->SetUniform("u_Tint", color);
-        m_ParticleMaterials[i]->SetUniform("u_Alpha", 0.72f);
+    const Ref<MeshGeometry>& batchGeometry = m_ParticleBatchMesh->GetGeometry();
+    if (batchGeometry != nullptr && batchGeometry->SwapVertices(m_ParticleBatchVertices))
+    {
+        m_ParticleBatchMesh->SyncGeometry();
     }
 }
 

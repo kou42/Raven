@@ -134,6 +134,55 @@ bool GenerateBoxContact(
 }
 }
 
+bool ComputeFluidColliderBroadPhaseBounds(
+    float particleRadius,
+    const TransformComponent& transform,
+    const ColliderComponent& collider,
+    FluidColliderBroadPhaseBounds& outBounds)
+{
+    const float radius = std::max(0.0f, particleRadius);
+    if (collider.IsTrigger)
+    {
+        return false;
+    }
+
+    if (collider.Type == ColliderType::Sphere)
+    {
+        const math::Vec3 center = transform.Position + collider.Offset;
+        const float extentValue = std::max(0.0f, collider.Radius) + radius;
+        const math::Vec3 extent{ extentValue, extentValue, extentValue };
+        outBounds.Minimum = center - extent;
+        outBounds.Maximum = center + extent;
+        return extentValue > math::Epsilon;
+    }
+
+    if (collider.Type == ColliderType::Box)
+    {
+        OBB box{};
+        if (ComputeBoxOBB(transform, collider, box) == false)
+        {
+            return false;
+        }
+
+        // OBB各軸のworld成分絶対値をHalfExtentで重み付けし、world AABB extentを得ます。
+        const math::Vec3 extent{
+            std::abs(box.Axis[0].x) * box.HalfExtents.x
+                + std::abs(box.Axis[1].x) * box.HalfExtents.y
+                + std::abs(box.Axis[2].x) * box.HalfExtents.z + radius,
+            std::abs(box.Axis[0].y) * box.HalfExtents.x
+                + std::abs(box.Axis[1].y) * box.HalfExtents.y
+                + std::abs(box.Axis[2].y) * box.HalfExtents.z + radius,
+            std::abs(box.Axis[0].z) * box.HalfExtents.x
+                + std::abs(box.Axis[1].z) * box.HalfExtents.y
+                + std::abs(box.Axis[2].z) * box.HalfExtents.z + radius };
+        outBounds.Minimum = box.Center - extent;
+        outBounds.Maximum = box.Center + extent;
+        return true;
+    }
+
+    return false;
+}
+
 bool GenerateFluidParticleColliderContact(
     const FluidParticle& particle,
     float particleRadius,

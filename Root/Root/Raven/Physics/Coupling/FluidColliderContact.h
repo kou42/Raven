@@ -27,6 +27,27 @@ struct FluidColliderContact
     float PenetrationDepth = 0.0f;
 };
 
+// ColliderをParticle半径だけ拡張したworld-space AABBです。
+// Scene Couplingは安価な包含判定で遠方Particleを除外してから厳密接触を生成します。
+struct FluidColliderBroadPhaseBounds
+{
+    math::Vec3 Minimum{};
+    math::Vec3 Maximum{};
+
+    bool Contains(const math::Vec3& position) const
+    {
+        return position.x >= Minimum.x && position.x <= Maximum.x
+            && position.y >= Minimum.y && position.y <= Maximum.y
+            && position.z >= Minimum.z && position.z <= Maximum.z;
+    }
+};
+
+bool ComputeFluidColliderBroadPhaseBounds(
+    float particleRadius,
+    const TransformComponent& transform,
+    const ColliderComponent& collider,
+    FluidColliderBroadPhaseBounds& outBounds);
+
 // 現段階ではSphere / Box Colliderを対象にします。
 // 応答を含めない純粋な幾何Queryなので、Static / Dynamic Coupling双方から再利用できます。
 bool GenerateFluidParticleColliderContact(

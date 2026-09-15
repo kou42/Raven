@@ -98,9 +98,24 @@ void FluidRigidBodyCoupling::ResolveScene(
         }
 
         ++m_LastStatistics.DynamicBodyCount;
+        FluidColliderBroadPhaseBounds broadPhaseBounds{};
+        if (ComputeFluidColliderBroadPhaseBounds(
+            m_Settings.ParticleRadius,
+            transform,
+            collider,
+            broadPhaseBounds) == false)
+        {
+            continue;
+        }
+
         for (FluidParticle& particle : particles)
         {
             ++m_LastStatistics.CandidatePairCount;
+            if (broadPhaseBounds.Contains(particle.Position) == false)
+            {
+                ++m_LastStatistics.BroadPhaseRejectedPairCount;
+                continue;
+            }
             if (ResolveParticleAgainstRigidBody(
                 scene,
                 physicsWorld,
@@ -119,6 +134,7 @@ void FluidRigidBodyCoupling::ResolveScene(
     CPUProfiler& profiler = CPUProfiler::Get();
     profiler.AddCounter("Physics.Fluid.RigidBody.DynamicBodyCount", static_cast<double>(m_LastStatistics.DynamicBodyCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.CandidatePairCount", static_cast<double>(m_LastStatistics.CandidatePairCount));
+    profiler.AddCounter("Physics.Fluid.RigidBody.BroadPhaseRejectedPairCount", static_cast<double>(m_LastStatistics.BroadPhaseRejectedPairCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.ResolvedContactCount", static_cast<double>(m_LastStatistics.ResolvedContactCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.AppliedImpulseCount", static_cast<double>(m_LastStatistics.AppliedImpulseCount));
     profiler.AddCounter("Physics.Fluid.RigidBody.AppliedDragImpulseCount", static_cast<double>(m_LastStatistics.AppliedDragImpulseCount));
