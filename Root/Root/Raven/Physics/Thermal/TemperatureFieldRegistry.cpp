@@ -47,14 +47,21 @@ float TemperatureFieldRegistry::Evaluate(const math::Vec3& worldPosition, float 
     // これによりUniform Fieldを複数登録しても温度を加算して非物理的に増幅せず、将来のBlend Policyも
     // Registry内部だけで差し替えられます。
     double temperatureSum = 0.0;
+    std::size_t evaluatedFieldCount = 0u;
     for (const TemperatureField* field : m_Fields)
     {
-        if (field != nullptr)
+        if (field == nullptr)
         {
-            temperatureSum += static_cast<double>(field->Evaluate(worldPosition));
+            continue;
         }
+        temperatureSum += static_cast<double>(field->Evaluate(worldPosition));
+        ++evaluatedFieldCount;
     }
-    return std::max(static_cast<float>(temperatureSum / static_cast<double>(m_Fields.size())), 0.0f);
+    if (evaluatedFieldCount == 0u)
+    {
+        return std::max(fallbackTemperatureKelvin, 0.0f);
+    }
+    return std::max(static_cast<float>(temperatureSum / static_cast<double>(evaluatedFieldCount)), 0.0f);
 }
 
 } // namespace Raven::ph
