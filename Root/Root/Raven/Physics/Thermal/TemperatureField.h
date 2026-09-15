@@ -5,6 +5,12 @@
 namespace Raven::ph
 {
 
+enum class TemperatureFieldBlendMode
+{
+    WeightedAverage,
+    Override
+};
+
 class TemperatureField : public ScalarField
 {
 public:
@@ -17,6 +23,18 @@ public:
         (void)worldPosition;
         return 1.0f;
     }
+
+    void SetBlendMode(TemperatureFieldBlendMode blendMode) { m_BlendMode = blendMode; }
+    TemperatureFieldBlendMode GetBlendMode() const { return m_BlendMode; }
+
+    // PriorityはOverride Field同士が重なった場合だけ使用します。
+    // 数値が大きいFieldを優先し、同PriorityはInfluence加重平均して登録順依存を避けます。
+    void SetPriority(int priority) { m_Priority = priority; }
+    int GetPriority() const { return m_Priority; }
+
+private:
+    TemperatureFieldBlendMode m_BlendMode = TemperatureFieldBlendMode::WeightedAverage;
+    int m_Priority = 0;
 };
 
 class UniformTemperatureField final : public TemperatureField
