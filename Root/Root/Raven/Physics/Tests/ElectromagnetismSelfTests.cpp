@@ -60,6 +60,8 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(gravityAtOrigin.z, 1.0f));
     assert(NearlyEqual(gravityFarAway.y, gravityAtOrigin.y));
 
+    // PointGravityFieldは中心へ向かう逆二乗則の加速度を返します。
+    // 1mと2mで加速度比が1:1/4になること、中心を跨いだとき方向が反転することを確認します。
     const PointGravityField pointGravityField({ 0.0f, 0.0f, 0.0f }, 12.0f);
     const math::Vec3 pointGravityAtOneMeter = pointGravityField.Evaluate({ 1.0f, 0.0f, 0.0f });
     const math::Vec3 pointGravityAtTwoMeters = pointGravityField.Evaluate({ 2.0f, 0.0f, 0.0f });
@@ -69,13 +71,16 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(pointGravityAtOneMeter.x, -12.0f));
     assert(NearlyEqual(pointGravityAtTwoMeters.x / pointGravityAtOneMeter.x, 0.25f, 1.0e-3f));
 
+    // 点質量中心では方向が定義できないため、SimulationへNaN/Infを流さずゼロを返します。
     const math::Vec3 pointGravityAtCenter = pointGravityField.Evaluate({ 0.0f, 0.0f, 0.0f });
     assert(pointGravityAtCenter.LengthSq() <= 1.0e-12f);
 
+    // MinDistance内では距離をClampし、中心近傍でも有限な加速度を維持します。
     const PointGravityField softenedPointGravity({ 0.0f, 0.0f, 0.0f }, 10.0f, 0.5f);
     const math::Vec3 softenedGravity = softenedPointGravity.Evaluate({ 0.25f, 0.0f, 0.0f });
     assert(NearlyEqual(softenedGravity.x, -40.0f));
 
+    // 既存SetGravity()/GetGravity()はFieldが所有する同じ値へ接続されます。
     Scene gravityScene;
     PhysicsWorld& gravityWorld = gravityScene.GetPhysicsSimulationWorld().GetRigidBodyWorld();
     gravityWorld.SetGravity({ 0.0f, -4.25f, 0.5f });
