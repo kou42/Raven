@@ -35,13 +35,34 @@ void RunTemperatureFieldSelfTests()
     assert(NearlyEqual(heatedField.GetTemperatureKelvin(), 0.0f));
     assert(NearlyEqual(heatedField.Evaluate(math::Vec3{}), 0.0f));
 
+    // Registry未登録時は既存AmbientTemperatureをそのままfallbackとして利用します。
+    ThermalWorld world{};
+    TemperatureFieldRegistry& registry = world.GetTemperatureFieldRegistry();
+    assert(registry.GetRegisteredFieldCount() == 0u);
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 310.0f), 310.0f));
+
+    UniformTemperatureField firstEnvironmentField{ 330.0f };
+    UniformTemperatureField secondEnvironmentField{ 350.0f };
+    assert(registry.RegisterField(firstEnvironmentField) == true);
+    assert(registry.RegisterField(firstEnvironmentField) == false);
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 1.0f, 2.0f, 3.0f }, 310.0f), 330.0f));
+
+    // 複数Fieldは現段階のBlend Policyとして平均し、単純加算による温度増幅を避けます。
+    assert(registry.RegisterField(secondEnvironmentField) == true);
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 310.0f), 340.0f));
+
+    // ThermalWorld::Clear()はECS由来のTransient Body/Contactだけを破棄し、外部Field Registryは維持します。
+    world.Clear();
+    assert(registry.GetRegisteredFieldCount() == 2u);
+    assert(registry.UnregisterField(firstEnvironmentField) == true);
+    assert(registry.UnregisterField(firstEnvironmentField) == false);
+    registry.Clear();
+    assert(registry.GetRegisteredFieldCount() == 0u);
+
     // Fieldの評価値は既存ThermalEnvironmentContactへKelvinのまま渡せます。
-    // Runtime Registry統合前に、ScalarFieldとThermal Solverの単位・境界条件が一致することを固定します。
     ThermalBody body{};
     body.Temperature = 300.0f;
     body.Material.SpecificHeatCapacity = 100.0f;
-
-    ThermalWorld world{};
     assert(world.RegisterBody(body) == true);
 
     const UniformTemperatureField environmentField{ 350.0f };
