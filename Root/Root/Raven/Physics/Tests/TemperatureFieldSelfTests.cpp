@@ -34,83 +34,84 @@ public:
 
 void RunTemperatureFieldSelfTests()
 {
-    // UniformTemperatureFieldは空間位置に依存せず、既定の室温293.15Kを返します。
     const UniformTemperatureField defaultField{};
-    assert(NearlyEqual(defaultField.Evaluate(math::Vec3{ 0.0f, 0.0f, 0.0f }), 293.15f));
-    assert(NearlyEqual(defaultField.Evaluate(math::Vec3{ 100.0f, -20.0f, 3.0f }), 293.15f));
+    assert(NearlyEqual(defaultField.Evaluate(math::Vec3{}), 293.15f));
+    assert(NearlyEqual(defaultField.EvaluateInfluence(math::Vec3{ 100.0f, -20.0f, 3.0f }), 1.0f));
 
-    // TemperatureFieldは環境温度をKelvinで表し、設定値を位置非依存で保持します。
     UniformTemperatureField heatedField{ 350.0f };
     assert(NearlyEqual(heatedField.GetTemperatureKelvin(), 350.0f));
-    assert(NearlyEqual(heatedField.Evaluate(math::Vec3{ -4.0f, 8.0f, 2.0f }), 350.0f));
-
-    // Kelvinの物理範囲をField境界で守り、負の絶対温度は0KへClampします。
     heatedField.SetTemperatureKelvin(-10.0f);
     assert(NearlyEqual(heatedField.GetTemperatureKelvin(), 0.0f));
-    assert(NearlyEqual(heatedField.Evaluate(math::Vec3{}), 0.0f));
 
-    // GradientTemperatureFieldは基準位置からの変位を任意方向Gradientへ射影して線形温度分布を作ります。
     const GradientTemperatureField gradientField{
-        math::Vec3{ 10.0f, 20.0f, 30.0f },
-        300.0f,
-        math::Vec3{ 2.0f, -5.0f, 1.0f }
+        math::Vec3{ 10.0f, 20.0f, 30.0f }, 300.0f, math::Vec3{ 2.0f, -5.0f, 1.0f }
     };
     assert(NearlyEqual(gradientField.Evaluate(math::Vec3{ 10.0f, 20.0f, 30.0f }), 300.0f));
     assert(NearlyEqual(gradientField.Evaluate(math::Vec3{ 12.0f, 21.0f, 33.0f }), 302.0f));
 
-    // 強い負勾配で線形式が負値になっても、TemperatureFieldのKelvin契約として0K未満を返しません。
     const GradientTemperatureField coldGradientField{
-        math::Vec3{},
-        10.0f,
-        math::Vec3{ -20.0f, 0.0f, 0.0f }
+        math::Vec3{}, 10.0f, math::Vec3{ -20.0f, 0.0f, 0.0f }
     };
     assert(NearlyEqual(coldGradientField.Evaluate(math::Vec3{ 1.0f, 0.0f, 0.0f }), 0.0f));
 
-    // SphericalTemperatureRegionFieldはCenterからRadius以内だけ局所温度を返し、境界上もInsideへ含めます。
-    SphericalTemperatureRegionField regionField{
-        math::Vec3{ 5.0f, 0.0f, 0.0f },
-        2.0f,
-        400.0f,
-        290.0f
+    // Hard RegionはCore内部だけInfluence=1となり、外側では温度値を持っていてもRegistry合成対象になりません。
+    SphericalTemperatureRegionField hardRegion{
+        math::Vec3{ 5.0f, 0.0f, 0.0f }, 2.0f, 400.0f
     };
-    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 5.0f, 0.0f, 0.0f }), 400.0f));
-    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 7.0f, 0.0f, 0.0f }), 400.0f));
-    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 7.01f, 0.0f, 0.0f }), 290.0f));
+    assert(NearlyEqual(hardRegion.Evaluate(math::Vec3{ 100.0f, 0.0f, 0.0f }), 400.0f));
+    assert(NearlyEqual(hardRegion.EvaluateInfluence(math::Vec3{ 5.0f, 0.0f, 0.0f }), 1.0f));
+    assert(NearlyEqual(hardRegion.EvaluateInfluence(math::Vec3{ 7.0f, 0.0f, 0.0f }), 1.0f));
+    assert(NearlyEqual(hardRegion.EvaluateInfluence(math::Vec3{ 7.01f, 0.0f, 0.0f }), 0.0f));
 
-    // 不正な負半径・負温度は設定時にClampし、Radius=0ではCenter一点のみをInsideとして扱います。
-    regionField.SetRadius(-1.0f);
-    regionField.SetInsideTemperatureKelvin(-50.0f);
-    regionField.SetOutsideTemperatureKelvin(-10.0f);
-    assert(NearlyEqual(regionField.GetRadius(), 0.0f));
-    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 5.0f, 0.0f, 0.0f }), 0.0f));
-    assert(NearlyEqual(regionField.Evaluate(math::Vec3{ 5.001f, 0.0f, 0.0f }), 0.0f));
+    // Linear FalloffはRadius外側の指定距離で1->0へ線形減衰します。
+    SphericalTemperatureRegionField linearRegion{
+        math::Vec3{}, 2.0f, 400.0f, 2.0f, TemperatureRegionFalloff::Linear
+    };
+    assert(NearlyEqual(linearRegion.EvaluateInfluence(math::Vec3{ 2.0f, 0.0f, 0.0f }), 1.0f));
+    assert(NearlyEqual(linearRegion.EvaluateInfluence(math::Vec3{ 3.0f, 0.0f, 0.0f }), 0.5f));
+    assert(NearlyEqual(linearRegion.EvaluateInfluence(math::Vec3{ 4.0f, 0.0f, 0.0f }), 0.0f));
 
-    // Registry未登録時は既存AmbientTemperatureをそのままfallbackとして利用します。
+    // SmoothStepは中点ではLinearと同じ0.5ですが、端点付近の変化率を滑らかにします。
+    linearRegion.SetFalloff(TemperatureRegionFalloff::SmoothStep);
+    assert(NearlyEqual(linearRegion.EvaluateInfluence(math::Vec3{ 3.0f, 0.0f, 0.0f }), 0.5f));
+    assert(linearRegion.EvaluateInfluence(math::Vec3{ 2.5f, 0.0f, 0.0f }) > 0.75f);
+
+    linearRegion.SetRadius(-1.0f);
+    linearRegion.SetFalloffDistance(-1.0f);
+    linearRegion.SetInsideTemperatureKelvin(-50.0f);
+    assert(NearlyEqual(linearRegion.GetRadius(), 0.0f));
+    assert(NearlyEqual(linearRegion.GetFalloffDistance(), 0.0f));
+    assert(NearlyEqual(linearRegion.GetInsideTemperatureKelvin(), 0.0f));
+
     ThermalWorld world{};
     TemperatureFieldRegistry& registry = world.GetTemperatureFieldRegistry();
-    assert(registry.GetRegisteredFieldCount() == 0u);
     assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 310.0f), 310.0f));
 
-    UniformTemperatureField firstEnvironmentField{ 330.0f };
-    UniformTemperatureField secondEnvironmentField{ 350.0f };
-    assert(registry.RegisterField(firstEnvironmentField) == true);
-    assert(registry.RegisterField(firstEnvironmentField) == false);
-    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 1.0f, 2.0f, 3.0f }, 310.0f), 330.0f));
+    UniformTemperatureField globalField{ 300.0f };
+    SphericalTemperatureRegionField localField{
+        math::Vec3{}, 1.0f, 400.0f, 2.0f, TemperatureRegionFalloff::Linear
+    };
+    assert(registry.RegisterField(globalField) == true);
+    assert(registry.RegisterField(globalField) == false);
+    assert(registry.RegisterField(localField) == true);
 
-    // 複数Fieldは現段階のBlend Policyとして平均し、単純加算による温度増幅を避けます。
-    assert(registry.RegisterField(secondEnvironmentField) == true);
-    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 310.0f), 340.0f));
+    // CoreではGlobal(Weight=1)とLocal(Weight=1)を平均します。
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{}, 280.0f), 350.0f));
+    // Falloff中はLocal Weightだけ減少します。x=2ではLocal=0.5なので (300+400*0.5)/1.5 = 333.333...Kです。
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 2.0f, 0.0f, 0.0f }, 280.0f), 333.33334f, 1.0e-4f));
+    // Region外ではLocalが平均対象から外れ、Global Fieldだけが残ります。
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 4.0f, 0.0f, 0.0f }, 280.0f), 300.0f));
 
-    // ThermalWorld::Clear()はECS由来のTransient Body/Contactだけを破棄し、外部Field Registryは維持します。
-    world.Clear();
-    assert(registry.GetRegisteredFieldCount() == 2u);
-    assert(registry.UnregisterField(firstEnvironmentField) == true);
-    assert(registry.UnregisterField(firstEnvironmentField) == false);
     registry.Clear();
-    assert(registry.GetRegisteredFieldCount() == 0u);
+    SphericalTemperatureRegionField isolatedRegion{ math::Vec3{}, 1.0f, 400.0f };
+    assert(registry.RegisterField(isolatedRegion) == true);
+    // 登録Fieldが存在しても、その位置で全Influenceが0ならComponent側fallbackへ戻ります。
+    assert(NearlyEqual(registry.Evaluate(math::Vec3{ 10.0f, 0.0f, 0.0f }, 280.0f), 280.0f));
 
-    // Fieldの評価値は既存ThermalEnvironmentContactへKelvinのまま渡せます。
-    // ScalarFieldとThermal Solverの単位・境界条件が一致することを固定します。
+    world.Clear();
+    assert(registry.GetRegisteredFieldCount() == 1u);
+    registry.Clear();
+
     ThermalBody body{};
     body.Temperature = 300.0f;
     body.Material.SpecificHeatCapacity = 100.0f;
@@ -122,13 +123,10 @@ void RunTemperatureFieldSelfTests()
     environment.AmbientTemperature = environmentField.Evaluate(math::Vec3{ 4.0f, 5.0f, 6.0f });
     environment.ThermalConductance = 10.0f;
     assert(world.RegisterEnvironmentContact(environment) == true);
-
     world.Step(1.0f);
     assert(body.Temperature > 300.0f);
     assert(body.Temperature <= 350.0f);
 
-    // ThermalSystemはConvection EntityのTransform位置でTemperatureFieldを評価します。
-    // Component側のAmbientTemperatureはField未登録時のfallbackであり、Field登録時は空間温度が優先されます。
     Scene scene{};
     Entity thermalEntity = scene.CreateEntity("TemperatureFieldRuntimeTest");
     thermalEntity.GetComponent<TransformComponent>().Position = { 4.0f, 2.0f, -1.0f };
@@ -139,12 +137,10 @@ void RunTemperatureFieldSelfTests()
     ThermalWorld& sceneThermalWorld = scene.GetPhysicsSimulationWorld().GetThermalWorld();
     PositionTemperatureField positionField{};
     assert(sceneThermalWorld.GetTemperatureFieldRegistry().RegisterField(positionField) == true);
-
     ThermalSystem::SynchronizeWorld(scene);
     assert(sceneThermalWorld.GetEnvironmentContactCount() == 1u);
     assert(NearlyEqual(sceneThermalWorld.GetEnvironmentContacts().front().AmbientTemperature, 340.0f));
 
-    // Fieldを外すと既存Component値へ戻り、従来Sceneとの後方互換性を維持します。
     assert(sceneThermalWorld.GetTemperatureFieldRegistry().UnregisterField(positionField) == true);
     ThermalSystem::SynchronizeWorld(scene);
     assert(NearlyEqual(sceneThermalWorld.GetEnvironmentContacts().front().AmbientTemperature, 280.0f));
