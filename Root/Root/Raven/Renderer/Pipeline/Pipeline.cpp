@@ -3,7 +3,7 @@
 #include <cassert>
 
 #include "Raven/Renderer/RHI/RHITypes.h"
-#include "Raven/Renderer/Pipeline/OpenGLPipeline.h"
+#include "Raven/Platform/OpenGL/OpenGLPipeline.h"
 
 namespace Raven
 {
