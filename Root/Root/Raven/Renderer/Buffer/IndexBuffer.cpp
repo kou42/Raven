@@ -1,7 +1,7 @@
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 
 #include "Raven/Renderer/RHI/RHITypes.h"
-#include "Raven/Renderer/Buffer/OpenGLIndexBuffer.h"
+#include "Raven/Platform/OpenGL/OpenGLIndexBuffer.h"
 
 namespace Raven
 {
