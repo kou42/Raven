@@ -45,6 +45,9 @@ float TemperatureFieldRegistry::Evaluate(const math::Vec3& worldPosition, float 
         return safeFallbackTemperatureKelvin;
     }
 
+    // TemperatureFieldの合成は温度そのものを単純加算しません。
+    // 複数の環境Fieldを加算すると非物理的な温度増幅になるため、WeightedAverageでは位置依存InfluenceをWeightとして平均します。
+    // Blend PolicyはRegistry内部へ閉じ込め、Field実装やThermal Solverが複数Fieldの合成規則を意識しなくてよい構造を維持します。
     // WeightedAverage Fieldは従来互換の基礎環境温度を構成します。
     // Override Fieldは別Passで評価し、最も高いPriority Groupだけをこの基礎温度へ重ねます。
     // これにより局所的な炉・冷却室などがCore内部では環境温度を完全に置換しつつ、
