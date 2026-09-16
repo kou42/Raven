@@ -78,9 +78,14 @@ const RHIBufferSpecification& OpenGLRHIBuffer::GetSpecification() const
 
 void OpenGLRHIBuffer::Resize(std::size_t size, const void* data)
 {
-    if (size == 0 || size == m_Specification.Size)
+    if (size == 0)
     {
-        if (data != nullptr && size != 0)
+        return;
+    }
+
+    if (size == m_Specification.Size)
+    {
+        if (data != nullptr)
         {
             SetData(data, size);
         }
