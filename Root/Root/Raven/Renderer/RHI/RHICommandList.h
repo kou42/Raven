@@ -1,13 +1,16 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/RendererAPI.h"
 
 namespace Raven
 {
 
 class Pipeline;
+class Texture;
 class VertexArray;
 
 // ============================================================================
@@ -18,8 +21,8 @@ class VertexArray;
 // commandを記録する実装へ置き換えられるよう、Renderer上位層はこのinterfaceだけを参照します。
 //
 // Pipeline bindingとDrawIndexedはPrimitiveTopologyを共有する必要があるため同じCommandListで扱います。
-// 現段階のPipeline自体はLegacy abstractionですが、描画stateとDraw commandの責務を先にRHI境界へ
-// 移すことで、後続のRHIPipeline導入時に上位Rendererを再変更せず置き換えられる構成にします。
+// Texture / Uniformも現在PipelineのShaderへ適用するためCommandListへ集約し、MaterialがLegacy
+// RendererAPIへ依存せず描画Resourceを設定できる境界へ段階的に移行します。
 class RHICommandList
 {
 public:
@@ -30,6 +33,8 @@ public:
     virtual void Clear() = 0;
 
     virtual void BindPipeline(const Ref<Pipeline>& pipeline) = 0;
+    virtual void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot) = 0;
+    virtual void UploadUniform(const std::string& name, const UniformValue& value) = 0;
 
     // indexCount == 0 は既存RenderCommandとの互換規約として、
     // VertexArrayに設定されたIndexBuffer全体を描画します。
