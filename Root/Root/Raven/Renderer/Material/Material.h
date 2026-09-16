@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <variant>
 
-#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/Shader/ShaderTypes.h"
 #include "Raven/Math/Math.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Math/MathMatrix.h"
@@ -56,17 +56,10 @@ public:
     // RenderCommandを通して現在のRHICommandListへPipeline / Texture / Uniformを設定します。
     void Bind() const;
 
-    // 既存呼び出し元を段階的に移行するための互換overloadです。
-    // RendererAPIは使用せず、標準Bind()へ転送します。
-    void Bind(RendererAPI& api) const;
-
     // 通常SceneのRender Passから利用するBindです。
     // MaterialSurfaceTypeに応じてAPI非依存のPipelineSpecificationを派生させるため、
     // OpenGL固有のDepthMask切り替えを上位Rendererへ漏らしません。
     void BindForSurface() const;
-
-    // 既存Scene描画コードとの互換overloadです。RendererAPIは使用しません。
-    void BindForSurface(RendererAPI& api) const;
 
     template<class T>
     void SetUniform(const std::string& name, const T& value) {
