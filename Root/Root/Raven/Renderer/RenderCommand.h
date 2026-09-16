@@ -5,13 +5,13 @@
 //RHI移行中は公開APIを維持しつつ、描画命令をRHICommandListへ転送する互換層として機能します。
 
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/RHI/RHICommandList.h"
 #include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
 {
 
 class Pipeline;
-class RHICommandList;
 class RHIDevice;
 class RendererAPI;
 class Texture;
@@ -24,6 +24,7 @@ public:
     static void Init();
 
     static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    static RHIViewport GetViewport();
 
     static void SetClearColor(float r, float g, float b, float a);
 
