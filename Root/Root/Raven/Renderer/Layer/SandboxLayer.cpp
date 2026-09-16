@@ -84,18 +84,29 @@ void SandboxLayer::OnAttach()
     m_Shader = m_ShaderLibrary.Load("Test", vertPath, fragPath);
     //m_Shader = Shader::Create(vertPath, fragPath);
 #endif
+
+    // Sandboxも通常のRHI描画経路と同じくPipelineを明示します。
+    // Shaderだけを直接Bindすると、直前のPhysics Debug等が設定したLines topologyを
+    // CommandListが保持したままDrawする可能性があるため、Triangle PipelineをLayer寿命で保持します。
+    PipelineSpecification pipelineSpecification{};
+    pipelineSpecification.Shader = m_Shader;
+    pipelineSpecification.Topology = PrimitiveTopology::Triangles;
+    pipelineSpecification.DebugName = "Sandbox Pipeline";
+    m_Pipeline = Pipeline::Create(pipelineSpecification);
 }
 
 void SandboxLayer::OnUpdate(float dt)
 {
-    m_Shader->Bind();
-    m_Texture->Bind();
-
     RenderCommand::Clear();
 
     Renderer::BeginScene();
 
-    Renderer::Submit(m_Shader, m_VertexArray);
+    if (m_Pipeline != nullptr)
+    {
+        RenderCommand::BindPipeline(m_Pipeline);
+        RenderCommand::BindTexture("u_Texture", m_Texture, 0);
+        RenderCommand::DrawIndexed(m_VertexArray);
+    }
 
     Renderer::EndScene();
 
