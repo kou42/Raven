@@ -1,6 +1,6 @@
 #include "Raven/Renderer/Shader/Shader.h"
 
-#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/Shader/OpenGLShader.h"
 
 #include <iostream>
@@ -10,43 +10,47 @@ namespace Raven
 
 Ref<Shader> Shader::Create(const std::string& filepath)
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateRef<OpenGLShader>(filepath);
 
-    case RendererAPI::API::DirectX11:
+    case RHIBackend::DirectX11:
         // return CreateRef<DirectX11Shader>(filepath);
         return nullptr;
-    case RendererAPI::API::DirectX12:
+    case RHIBackend::DirectX12:
         // return CreateRef<DirectX12Shader>(filepath);
         return nullptr;
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
+    default:
+        return nullptr;
     }
-
-    return nullptr;
 }
 
 Ref<Shader> Shader::Create(const std::string& vertFilePath, const std::string& fragFilePath)
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateRef<OpenGLShader>(vertFilePath, fragFilePath);
 
-    case RendererAPI::API::DirectX11:
+    case RHIBackend::DirectX11:
         // return CreateRef<DirectX11Shader>(vertFilePath, fragFilePath);
         return nullptr;
-    case RendererAPI::API::DirectX12:
+    case RHIBackend::DirectX12:
         // return CreateRef<DirectX12Shader>(vertFilePath, fragFilePath);
         return nullptr;
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
+    default:
+        return nullptr;
     }
-
-    return nullptr;
 }
 
 void ShaderLibrary::Add(const std::string& name, const Ref<Shader>& shader)
 {
-    if (!shader)
+    if (shader == nullptr)
     {
         std::cerr << "ShaderLibrary::Add failed. Shader is null: " << name << std::endl;
         return;
