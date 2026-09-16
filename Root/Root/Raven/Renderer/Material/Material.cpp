@@ -1,5 +1,6 @@
 // Material.cpp
 #include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -97,7 +98,9 @@ void Material::Bind(RendererAPI& api) const
         return;
     }
 
-    api.BindPipeline(m_pipeline);
+    // Pipeline / Texture / Uniformを同じRHICommandListへ集約することで、
+    // Materialの描画Resource設定がRendererAPI内部stateへ依存しない経路へ移行します。
+    RenderCommand::BindPipeline(m_pipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
@@ -105,12 +108,12 @@ void Material::Bind(RendererAPI& api) const
             continue;
         }
 
-        api.BindTexture(name, binding.texture, binding.slot);
+        RenderCommand::BindTexture(name, binding.texture, binding.slot);
     }
 
     for (const auto& [name, value] : m_uniforms)
     {
-        api.UploadUniform(name, value);
+        RenderCommand::UploadUniform(name, value);
     }
 #else
     api.BindShader(m_shader);
@@ -135,7 +138,9 @@ void Material::BindForSurface(RendererAPI& api) const
         return;
     }
 
-    api.BindPipeline(surfacePipeline);
+    // Surface Pipelineも通常Pipelineと同じCommandListへbindし、Opaque / Transparentごとの
+    // DepthWrite / Blend stateとPrimitiveTopologyを後続Resource設定・Drawへ引き継ぎます。
+    RenderCommand::BindPipeline(surfacePipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
@@ -144,12 +149,12 @@ void Material::BindForSurface(RendererAPI& api) const
             continue;
         }
 
-        api.BindTexture(name, binding.texture, binding.slot);
+        RenderCommand::BindTexture(name, binding.texture, binding.slot);
     }
 
     for (const auto& [name, value] : m_uniforms)
     {
-        api.UploadUniform(name, value);
+        RenderCommand::UploadUniform(name, value);
     }
 }
 
