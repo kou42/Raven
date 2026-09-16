@@ -1,5 +1,5 @@
 #include "Raven/Renderer/RenderCommand.h"
-#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHICommandList.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHIDevice.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -16,21 +16,20 @@ Ref<Pipeline> RenderCommand::s_CurrentPipeline = nullptr;
 
 void RenderCommand::Init()
 {
-    // Backend選択情報は移行期間中RendererAPI::API enumを再利用しますが、
-    // 実際の描画objectはRHIDevice / RHICommandListだけを生成します。
-    // これによりLegacy RendererAPI objectを初期化目的で保持する必要がなくなります。
-    switch (RendererAPI::GetAPI())
+    // Backend選択と実際の描画object生成をRHI層の識別子へ統一します。
+    // Renderer上位層やLegacy RendererAPIを経由せず、RHIDevice / RHICommandListを直接構築します。
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
     {
         s_Device = CreateScope<OpenGLRHIDevice>();
         s_CommandList = CreateScope<OpenGLRHICommandList>();
         break;
     }
-    case RendererAPI::API::DirectX11:
-    case RendererAPI::API::DirectX12:
-    case RendererAPI::API::Vulkan:
-    case RendererAPI::API::None:
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
     default:
         break;
     }
