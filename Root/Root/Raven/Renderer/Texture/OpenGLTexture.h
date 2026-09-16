@@ -1,18 +1,19 @@
 #pragma once
 
 #include "Raven/Renderer/Texture/Texture.h"
+#include "Raven/Renderer/RHI/RHITexture.h"
 
 namespace Raven
 {
 
-// OpenGL固有のTexture実装です。
-// Textureインターフェースを継承し、OpenGL APIへの依存をこのクラス内に閉じ込めます。
-// Source AssetのdecodeはImporter側で完了させ、このクラスはGPU Resource生成だけを担当します。
+// OpenGL固有のTexture互換実装です。
+// GPU Resource本体はOpenGLRHITextureへ移し、このクラスは既存Texture APIとRHIのBridgeを担当します。
+// Source AssetのdecodeはImporter側で完了させ、このクラスはRHI Resource生成だけを担当します。
 class OpenGLTexture final : public Texture
 {
 public:
     explicit OpenGLTexture(const TextureSpecification& specification);
-    ~OpenGLTexture() override;
+    ~OpenGLTexture() override = default;
 
     void Bind(unsigned int slot = 0) const override;
     void Unbind() const override;
@@ -24,15 +25,13 @@ public:
     const TextureSpecification& GetSpecification() const override;
 
 private:
-    // SpecificationをOpenGL Texture Objectへ反映します。
-    // OpenGLのinternal format / data format変換もここだけで行います。
-    void Invalidate();
-
-    static std::uint32_t GetBytesPerPixel(TextureFormat format);
+    // Legacy TextureSpecificationをRHI共通Specificationへ変換します。
+    // Graphics API固有値への変換はOpenGLRHITextureだけが担当します。
+    static RHITextureSpecification ToRHISpecification(const TextureSpecification& specification);
 
 private:
-    unsigned int m_ID = 0;
     TextureSpecification m_Specification;
+    Ref<RHITexture> m_RHITexture;
 };
 
 }
