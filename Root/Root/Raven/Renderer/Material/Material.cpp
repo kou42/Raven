@@ -99,8 +99,12 @@ void Material::Bind(RendererAPI& api) const
     }
 
     // Pipeline stateとDraw commandは同じRHICommandListで管理し、PrimitiveTopologyを
-    // DrawIndexedまで保持します。Texture / UniformはまだRendererAPI互換経路を利用します。
+    // DrawIndexedまで保持します。
     RenderCommand::BindPipeline(m_pipeline);
+
+    // Texture / UniformはまだRendererAPIがm_CurrentPipelineを参照してShaderを解決します。
+    // 完全なRHIPipeline / Descriptor移行までは互換状態も同期し、既存Material描画を維持します。
+    api.BindPipeline(m_pipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
@@ -141,6 +145,10 @@ void Material::BindForSurface(RendererAPI& api) const
     // Surface Pipelineも通常Pipelineと同じCommandListへbindし、Opaque / Transparentごとの
     // DepthWrite / Blend stateとPrimitiveTopologyを後続Drawへ引き継ぎます。
     RenderCommand::BindPipeline(surfacePipeline);
+
+    // Texture / Uniform互換経路が参照するRendererAPI側のCurrent Pipelineも同期します。
+    // 現段階ではPipeline::Bindが二度呼ばれますが、描画stateは同値であり、次のRHI Resource移行で解消します。
+    api.BindPipeline(surfacePipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
