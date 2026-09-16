@@ -10,6 +10,7 @@
 namespace Raven
 {
 
+class Pipeline;
 class RHICommandList;
 class RendererAPI;
 class VertexArray;
@@ -25,6 +26,8 @@ public:
     static void SetClearColor(float r, float g, float b, float a);
 
     static void Clear();
+
+    static void BindPipeline(const Ref<Pipeline>& pipeline);
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0);
 
