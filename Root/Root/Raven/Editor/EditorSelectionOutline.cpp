@@ -133,7 +133,9 @@ void EditorLayer::RenderSelectionOutlinePass(
         "u_Model",
         outlineTransform);
 
-    m_SelectionOutlineMaterial->Bind(Renderer::GetAPI());
+    // OutlineもPickingと同様にRHI標準Material APIを使用します。
+    // Editor PassからRendererAPIへの直接依存をなくし、将来Backend追加時の分岐を上位層へ持ち込みません。
+    m_SelectionOutlineMaterial->Bind();
     meshRenderer.Mesh->Draw();
 }
 
