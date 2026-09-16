@@ -62,6 +62,12 @@ float TemperatureFieldRegistry::Evaluate(const math::Vec3& worldPosition, float 
 {
     const float safeFallbackTemperatureKelvin = std::max(fallbackTemperatureKelvin, 0.0f);
 
+    // TemperatureFieldの合成は温度そのものを単純加算しません。
+    // 複数の環境Fieldを加算すると非物理的な温度増幅になるため、WeightedAverageでは位置依存InfluenceをWeightとして平均します。
+    // Blend PolicyはRegistry内部へ閉じ込め、Field実装やThermal Solverが複数Fieldの合成規則を意識しなくてよい構造を維持します。
+    // WeightedAverage Fieldは従来互換の基礎環境温度を構成します。
+    // Override Fieldは最も高いPriority Groupだけを基礎温度へ重ねます。
+    // Coreでは環境温度を完全に置換し、Falloff領域ではEvaluateInfluence()をAlphaとして自然に基礎環境へ戻します。
     double weightedTemperatureSum = 0.0;
     double totalInfluence = 0.0;
     int highestOverridePriority = std::numeric_limits<int>::min();
@@ -100,6 +106,8 @@ float TemperatureFieldRegistry::Evaluate(const math::Vec3& worldPosition, float 
             }
             if (priority > highestOverridePriority)
             {
+                // より高いPriorityを発見した時点で低Priority Groupの集計を破棄します。
+                // 同Priority内だけをまとめることで、Field登録順によって結果が変化することを防ぎます。
                 highestOverridePriority = priority;
                 overrideTemperatureSum = 0.0;
                 overrideInfluenceSum = 0.0;
@@ -108,7 +116,7 @@ float TemperatureFieldRegistry::Evaluate(const math::Vec3& worldPosition, float 
 
             overrideTemperatureSum += static_cast<double>(field->Evaluate(worldPosition)) * static_cast<double>(influence);
             overrideInfluenceSum += static_cast<double>(influence);
-            // 同Priority Field数によってOverride強度が増幅しないよう、Group Alphaは最大Influenceを採用します。
+            // 同Priority Fieldの数が増えただけでOverride強度が増幅しないよう、Group Alphaは最大Influenceを採用します。
             overrideAlpha = std::max(overrideAlpha, influence);
         }
     };
