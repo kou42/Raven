@@ -17,12 +17,23 @@ Raven の RHI 移行で残っている Legacy RendererAPI 依存と、移行完�
 - [x] Buffer / VertexArray / Texture / Shader / Pipeline / Framebuffer / UI factoryのBackend判定を `RHIBackend` へ統一する。
 - [x] `RendererAPI` / `OpenGLRendererAPI` のLegacy classを削除する。
 - [x] OpenGL Pipelineのnative state適用実装を `Renderer/Pipeline` から `Platform/OpenGL` へ移す。
+- [x] OpenGL VertexArray / VertexBuffer / IndexBuffer実装を `Renderer/Buffer` から `Platform/OpenGL` へ移す。
+- [x] OpenGL Shader実装を `Renderer/Shader` から `Platform/OpenGL` へ移す。
+- [x] OpenGL Texture互換Bridgeを `Renderer/Texture` から `Platform/OpenGL` へ移す。
 
 ### Legacy として数えないもの
 
 `Platform/OpenGL` 以下の `gl*` 呼び出しは OpenGL Backend 実装そのものなので、上位層の Legacy API 依存とは区別します。`glad.c` / `glad.h` も OpenGL loader のため移行対象外です。
 
 現在のBackend選択は `RHITypes.h` の `RHIBackend` / `GetRHIBackend()` に集約しています。DirectX / Vulkanは識別子のみ定義済みで、実装がないfactoryではOpenGLへ暗黙fallbackせず `nullptr` またはassertで未実装を明示します。
+
+### OpenGL依存の最終分類
+
+- `Platform/OpenGL` 以下のPipeline / Buffer / VertexArray / Shader / Texture / RHI実装はBackend固有コードとして意図的に残します。
+- `UI/Rendering/OpenGLUIRenderer.cpp` は `UIRenderer::Create()` から選択されるOpenGL UI Backendです。現状はDrawListのtessellationとOpenGL state保存・復元が同居しているため、RHI移行の完了条件として機械的にPlatformへ移動しません。
+- `OpenGLUIRenderer` の `glBindFramebuffer` / viewport / scissor / blend / draw / state restoreをRHI化する場合は、RenderTarget・Scissor・UI用Draw offset等のCommandList APIを先に設計し、UI/SVGの既存描画を維持したまま別実装単位で移行します。
+- `Core/Application.cpp` のGLFW利用はWindow/Input/Frame timing境界として現行Platform構成に依存しています。`glad` includeは直接OpenGL描画依存とは分けて扱い、Platform入力抽象化を行う際に整理します。
+- Dear ImGuiのOpenGL Backendは外部UI Backendとの統合境界であり、Raven RendererのLegacy RendererAPI依存とは別管理とします。
 
 ## 2. Physics Debug 経路
 
@@ -46,7 +57,7 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [x] Physics Debug 上位層からOpenGLの `gl*` 呼び出しを削除済み。
 - [x] Legacy `RendererAPI` / `OpenGLRendererAPI` classを削除済み。
 - [x] 削除したLegacy RendererAPIファイルはwildcard project構成のため、Visual Studio project metadataに個別参照を残さないことを確認済み。
-- [ ] Editor / Rendererの上位層に今回の対象となる直接OpenGL依存が残っていないことを最終検索する。
+- [x] Renderer resource / pipeline具体実装のOpenGL依存を `Platform/OpenGL` へ配置し、残るUI / Window / ImGui依存をBackend境界として分類済み。
 
 ### Scene rendering
 
@@ -71,7 +82,7 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 
 ## 次の実装単位
 
-1. Editor / Renderer上位層の直接OpenGL依存を最終検索し、Backend実装と上位層依存を切り分ける。
-2. masterとの差分を最終レビューする。
-3. Debug / Release x64のcompile / linkを確認する。
-4. Scene / Sandbox / Physics Debugの実動作を確認する。
+1. masterとの差分を最終レビューし、Legacy RendererAPI削除とOpenGL具体実装移動に取りこぼしがないことを確認する。
+2. Debug / Release x64のcompile / linkを確認する。
+3. Scene / Sandbox / Physics Debugの実動作を確認する。
+4. UI描画の完全RHI化は、RenderTarget / Scissor / Draw offset API設計を含む独立した移行単位として進める。
