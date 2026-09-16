@@ -22,7 +22,8 @@ void Material::SetShader(Ref<Shader> shader)
 Ref<Shader> Material::GetShader() const 
 {
 #if 1
-    if (m_pipeline == nullptr) {
+    if (m_pipeline == nullptr)
+    {
         return nullptr;
     }
     return m_pipeline->GetShader();
@@ -129,7 +130,8 @@ void Material::BindForSurface() const
 void Material::Bind() const 
 {
 #if 1
-    if (m_pipeline == nullptr) {
+    if (m_pipeline == nullptr)
+    {
         return;
     }
 
@@ -139,7 +141,8 @@ void Material::Bind() const
 
     for (const auto& [name, binding] : m_textures)
     {
-        if (binding.texture == nullptr) {
+        if (binding.texture == nullptr)
+        {
             continue;
         }
 
