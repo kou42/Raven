@@ -1,11 +1,10 @@
 #pragma once
 
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
+#include "Raven/Platform/OpenGL/RHI/OpenGLRHIBuffer.h"
 
 namespace Raven
 {
-
-class OpenGLRHIBuffer;
 
 // 既存VertexBuffer APIと新しいRHI Bufferを接続する互換Bridgeです。
 // VAO構築側がまだBind/Unbindを必要とするためOpenGL binding操作はここへ残し、
