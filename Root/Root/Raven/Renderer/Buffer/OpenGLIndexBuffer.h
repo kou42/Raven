@@ -32,7 +32,7 @@ private:
     uint32_t m_Count = 0;
 
     // GPU側へ確保済みのindex容量です。
-    // 容量を超えた場合だけRHIBufferを再生成します。
+    // 容量を超えた場合もEBO object名を維持し、storageだけを拡張します。
     uint32_t m_Capacity = 0;
 };
 
