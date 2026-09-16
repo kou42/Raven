@@ -36,15 +36,23 @@ void OpenGLVertexBuffer::SetData(const void* data, uint32_t size)
         return;
     }
 
-    if (m_RHIBuffer != nullptr && data != nullptr && size <= m_Capacity)
+    if (m_RHIBuffer == nullptr)
+    {
+        RecreateBuffer(data, size);
+        return;
+    }
+
+    if (data != nullptr && size <= m_Capacity)
     {
         m_RHIBuffer->SetData(data, size);
         return;
     }
 
-    // RHIBufferはSpecificationでResource容量を固定する低レベル抽象です。
-    // そのため容量拡張は互換VertexBuffer側で新しいResourceへ置き換えます。
-    RecreateBuffer(data, size);
+    // glVertexAttribPointerは設定時のBuffer object名をVAOへ保持します。
+    // 容量拡張でRHIBuffer objectを交換すると既存VAOが古いBufferを参照するため、
+    // OpenGL Backendでは同一objectのstorageだけを拡張します。
+    m_RHIBuffer->Resize(size, data);
+    m_Capacity = size;
 }
 
 void OpenGLVertexBuffer::SetLayout(const BufferLayout& layout)
