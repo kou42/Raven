@@ -12,7 +12,6 @@ namespace Raven
 class Camera;
 class Material;
 class Mesh;
-class Shader;
 class VertexArray;
 
 // ============================================================================
@@ -67,7 +66,6 @@ public:
 
     static const RendererCameraContext& GetCameraContext();
 
-    static void Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray);
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
     static void Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform);
 
