@@ -30,6 +30,8 @@ void OpenGLIndexBuffer::Bind() const
     // GL_ELEMENT_ARRAY_BUFFER は VAO 状態に紐づくため、
     // Resource生成・更新では触らず、VertexArray::SetIndexBufferから呼ばれる
     // この互換経路だけでEBOを対象VAOへ関連付けます。
+    // RHI Resource生成側ではGL_COPY_WRITE_BUFFERを使用するため、以前必要だった
+    // 「一時的にVAO 0をbindしてから初期化する」回避処理もBackend側へ安全に置き換えられています。
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, openGLBuffer->GetRendererID());
 }
 
@@ -59,6 +61,7 @@ void OpenGLIndexBuffer::SetData(const uint32_t* indices, uint32_t count)
     // ========================================================================
     // 既存容量へ収まる場合はBuffer Object自体を再生成せず、内容だけを更新します。
     // UI DrawListは毎frame再構築されるため、このFast Pathが通常経路になります。
+    // RHI移行後はRHIBuffer::SetDataがBackend内部でglBufferSubData相当の更新を担当します。
     if (indices != nullptr && count <= m_Capacity)
     {
         m_RHIBuffer->SetData(indices, dataSize);
@@ -66,6 +69,9 @@ void OpenGLIndexBuffer::SetData(const uint32_t* indices, uint32_t count)
         return;
     }
 
+    // 容量不足時のみGPU領域を拡張します。
+    // 以降の更新は新しい容量内でSetDataのFast Pathへ戻ります。
+    //
     // EBO object名はVAOに保存されるため、容量拡張時もResource object自体は交換しません。
     // BackendのRHIBuffer::Resize()へstorage再確保を委譲し、既存VAOとの関連付けを維持します。
     m_RHIBuffer->Resize(dataSize, indices);
