@@ -1,6 +1,7 @@
 #include "Raven/Physics/Thermal/TemperatureFieldRegistry.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace Raven::ph
 {
@@ -38,30 +39,92 @@ bool TemperatureFieldRegistry::ContainsField(const TemperatureField& field) cons
 
 float TemperatureFieldRegistry::Evaluate(const math::Vec3& worldPosition, float fallbackTemperatureKelvin) const
 {
+    const float safeFallbackTemperatureKelvin = std::max(fallbackTemperatureKelvin, 0.0f);
     if (m_Fields.empty() == true)
     {
-        return std::max(fallbackTemperatureKelvin, 0.0f);
+        return safeFallbackTemperatureKelvin;
     }
 
-    // 現段階ではFieldごとの優先度・Blend Weightを導入せず、登録Fieldを等価な環境寄与として平均します。
-    // これによりUniform Fieldを複数登録しても温度を加算して非物理的に増幅せず、将来のBlend Policyも
-    // Registry内部だけで差し替えられます。
-    double temperatureSum = 0.0;
-    std::size_t evaluatedFieldCount = 0u;
+    // TemperatureFieldの合成は温度そのものを単純加算しません。
+    // 複数の環境Fieldを加算すると非物理的な温度増幅になるため、WeightedAverageでは位置依存InfluenceをWeightとして平均します。
+    // Blend PolicyはRegistry内部へ閉じ込め、Field実装やThermal Solverが複数Fieldの合成規則を意識しなくてよい構造を維持します。
+    // WeightedAverage Fieldは従来互換の基礎環境温度を構成します。
+    // Override Fieldは別Passで評価し、最も高いPriority Groupだけをこの基礎温度へ重ねます。
+    // これにより局所的な炉・冷却室などがCore内部では環境温度を完全に置換しつつ、
+    // Falloff領域ではEvaluateInfluence()をAlphaとして自然に基礎環境へ戻れます。
+    double weightedTemperatureSum = 0.0;
+    double totalInfluence = 0.0;
     for (const TemperatureField* field : m_Fields)
     {
-        if (field == nullptr)
+        if (field == nullptr || field->GetBlendMode() != TemperatureFieldBlendMode::WeightedAverage)
         {
             continue;
         }
-        temperatureSum += static_cast<double>(field->Evaluate(worldPosition));
-        ++evaluatedFieldCount;
+
+        const float influence = std::clamp(field->EvaluateInfluence(worldPosition), 0.0f, 1.0f);
+        if (influence <= 0.0f)
+        {
+            continue;
+        }
+
+        weightedTemperatureSum += static_cast<double>(field->Evaluate(worldPosition)) * static_cast<double>(influence);
+        totalInfluence += static_cast<double>(influence);
     }
-    if (evaluatedFieldCount == 0u)
+
+    float baseTemperatureKelvin = safeFallbackTemperatureKelvin;
+    if (totalInfluence > 0.0)
     {
-        return std::max(fallbackTemperatureKelvin, 0.0f);
+        baseTemperatureKelvin = std::max(static_cast<float>(weightedTemperatureSum / totalInfluence), 0.0f);
     }
-    return std::max(static_cast<float>(temperatureSum / static_cast<double>(evaluatedFieldCount)), 0.0f);
+
+    int highestOverridePriority = std::numeric_limits<int>::min();
+    double overrideTemperatureSum = 0.0;
+    double overrideInfluenceSum = 0.0;
+    float overrideAlpha = 0.0f;
+
+    for (const TemperatureField* field : m_Fields)
+    {
+        if (field == nullptr || field->GetBlendMode() != TemperatureFieldBlendMode::Override)
+        {
+            continue;
+        }
+
+        const float influence = std::clamp(field->EvaluateInfluence(worldPosition), 0.0f, 1.0f);
+        if (influence <= 0.0f)
+        {
+            continue;
+        }
+
+        const int priority = field->GetPriority();
+        if (priority < highestOverridePriority)
+        {
+            continue;
+        }
+
+        if (priority > highestOverridePriority)
+        {
+            // より高いPriorityを発見した時点で低Priority Groupの集計を破棄します。
+            // 同Priority内だけをまとめることで、Field登録順によって結果が変化することを防ぎます。
+            highestOverridePriority = priority;
+            overrideTemperatureSum = 0.0;
+            overrideInfluenceSum = 0.0;
+            overrideAlpha = 0.0f;
+        }
+
+        overrideTemperatureSum += static_cast<double>(field->Evaluate(worldPosition)) * static_cast<double>(influence);
+        overrideInfluenceSum += static_cast<double>(influence);
+        // 同Priority Fieldの数が増えただけでOverride強度が増幅しないよう、Group Alphaは最大Influenceを採用します。
+        overrideAlpha = std::max(overrideAlpha, influence);
+    }
+
+    if (overrideInfluenceSum <= 0.0)
+    {
+        return baseTemperatureKelvin;
+    }
+
+    const float overrideTemperatureKelvin =
+        std::max(static_cast<float>(overrideTemperatureSum / overrideInfluenceSum), 0.0f);
+    return baseTemperatureKelvin + (overrideTemperatureKelvin - baseTemperatureKelvin) * overrideAlpha;
 }
 
 } // namespace Raven::ph
