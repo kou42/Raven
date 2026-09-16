@@ -16,10 +16,11 @@ Raven の RHI 移行で残っている Legacy RendererAPI 依存と、移行完�
 - [x] `Renderer::Submit()` の直接Shader bind経路をPipeline / RenderCommand経路へ移行して削除する。
 - [x] Buffer / VertexArray / Texture / Shader / Pipeline / Framebuffer / UI factoryのBackend判定を `RHIBackend` へ統一する。
 - [x] `RendererAPI` / `OpenGLRendererAPI` のLegacy classを削除する。
+- [x] OpenGL Pipelineのnative state適用実装を `Renderer/Pipeline` から `Platform/OpenGL` へ移す。
 
 ### Legacy として数えないもの
 
-`Platform/OpenGL/RHI` 以下の `gl*` 呼び出しは OpenGL Backend 実装そのものなので、上位層の Legacy API 依存とは区別します。`glad.c` / `glad.h` も OpenGL loader のため移行対象外です。
+`Platform/OpenGL` 以下の `gl*` 呼び出しは OpenGL Backend 実装そのものなので、上位層の Legacy API 依存とは区別します。`glad.c` / `glad.h` も OpenGL loader のため移行対象外です。
 
 現在のBackend選択は `RHITypes.h` の `RHIBackend` / `GetRHIBackend()` に集約しています。DirectX / Vulkanは識別子のみ定義済みで、実装がないfactoryではOpenGLへ暗黙fallbackせず `nullptr` またはassertで未実装を明示します。
 
@@ -44,6 +45,7 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [x] Legacy `RendererAPI&` を要求する Material bind APIを削除済み。
 - [x] Physics Debug 上位層からOpenGLの `gl*` 呼び出しを削除済み。
 - [x] Legacy `RendererAPI` / `OpenGLRendererAPI` classを削除済み。
+- [x] 削除したLegacy RendererAPIファイルはwildcard project構成のため、Visual Studio project metadataに個別参照を残さないことを確認済み。
 - [ ] Editor / Rendererの上位層に今回の対象となる直接OpenGL依存が残っていないことを最終検索する。
 
 ### Scene rendering
@@ -69,7 +71,7 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 
 ## 次の実装単位
 
-1. masterとの差分をレビューし、Legacy RendererAPI削除に伴うinclude / dead code / project metadataの残存を確認する。
-2. Editor / Renderer上位層の直接OpenGL依存を最終検索する。
+1. Editor / Renderer上位層の直接OpenGL依存を最終検索し、Backend実装と上位層依存を切り分ける。
+2. masterとの差分を最終レビューする。
 3. Debug / Release x64のcompile / linkを確認する。
 4. Scene / Sandbox / Physics Debugの実動作を確認する。
