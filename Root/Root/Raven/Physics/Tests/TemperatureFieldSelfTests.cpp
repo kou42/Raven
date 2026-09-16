@@ -145,6 +145,68 @@ void RunTemperatureFieldSelfTests()
     assert(sceneThermalWorld.GetTemperatureFieldRegistry().UnregisterField(positionField) == true);
     ThermalSystem::SynchronizeWorld(scene);
     assert(NearlyEqual(sceneThermalWorld.GetEnvironmentContacts().front().AmbientTemperature, 280.0f));
+
+    // ECS Temperature VolumeはTransient Fieldとして毎Fixed Step再構築します。
+    // Persistent Fieldは同時に維持されるため、Scene同期で外部Fieldを失わないことも確認します。
+    Scene volumeScene{};
+    ThermalWorld& volumeWorld = volumeScene.GetPhysicsSimulationWorld().GetThermalWorld();
+    TemperatureFieldRegistry& volumeRegistry = volumeWorld.GetTemperatureFieldRegistry();
+    UniformTemperatureField persistentField{ 300.0f };
+    assert(volumeRegistry.RegisterField(persistentField) == true);
+
+    Entity probeEntity = volumeScene.CreateEntity("TemperatureVolumeProbe");
+    probeEntity.GetComponent<TransformComponent>().Position = { 10.0f, 0.0f, 0.0f };
+    probeEntity.AddComponent<ThermalBodyComponent>();
+    ThermalConvectionComponent& probeConvection = probeEntity.AddComponent<ThermalConvectionComponent>();
+    probeConvection.AmbientTemperature = 280.0f;
+
+    Entity sphereVolumeEntity = volumeScene.CreateEntity("SphereTemperatureVolume");
+    sphereVolumeEntity.GetComponent<TransformComponent>().Position = { 10.0f, 0.0f, 0.0f };
+    SphericalTemperatureVolumeComponent& sphereVolume = sphereVolumeEntity.AddComponent<SphericalTemperatureVolumeComponent>();
+    sphereVolume.Field.SetRadius(2.0f);
+    sphereVolume.Field.SetInsideTemperatureKelvin(400.0f);
+    sphereVolume.Field.SetBlendMode(TemperatureFieldBlendMode::Override);
+    sphereVolume.Field.SetPriority(10);
+
+    ThermalSystem::SynchronizeWorld(volumeScene);
+    assert(volumeRegistry.GetPersistentFieldCount() == 1u);
+    assert(volumeRegistry.GetTransientFieldCount() == 1u);
+    assert(NearlyEqual(sphereVolume.Field.GetCenter().x, 10.0f));
+    assert(NearlyEqual(volumeWorld.GetEnvironmentContacts().front().AmbientTemperature, 400.0f));
+
+    // Transform移動後はField Centerも追従し、古い位置のProbeはPersistent環境へ戻ります。
+    sphereVolumeEntity.GetComponent<TransformComponent>().Position = { 20.0f, 0.0f, 0.0f };
+    ThermalSystem::SynchronizeWorld(volumeScene);
+    assert(volumeRegistry.GetPersistentFieldCount() == 1u);
+    assert(volumeRegistry.GetTransientFieldCount() == 1u);
+    assert(NearlyEqual(sphereVolume.Field.GetCenter().x, 20.0f));
+    assert(NearlyEqual(volumeWorld.GetEnvironmentContacts().front().AmbientTemperature, 300.0f));
+
+    // Disabled Volumeは次同期でTransient Registryから外れます。
+    sphereVolume.Enabled = false;
+    ThermalSystem::SynchronizeWorld(volumeScene);
+    assert(volumeRegistry.GetTransientFieldCount() == 0u);
+    assert(volumeRegistry.ContainsField(persistentField) == true);
+
+    // Box Volumeも同じTransient契約を使用し、Axis-Aligned FieldのCenterだけをTransformへ同期します。
+    Entity boxVolumeEntity = volumeScene.CreateEntity("BoxTemperatureVolume");
+    boxVolumeEntity.GetComponent<TransformComponent>().Position = { 10.0f, 0.0f, 0.0f };
+    BoxTemperatureVolumeComponent& boxVolume = boxVolumeEntity.AddComponent<BoxTemperatureVolumeComponent>();
+    boxVolume.Field.SetHalfExtents(math::Vec3{ 1.0f, 2.0f, 3.0f });
+    boxVolume.Field.SetInsideTemperatureKelvin(420.0f);
+    boxVolume.Field.SetBlendMode(TemperatureFieldBlendMode::Override);
+    boxVolume.Field.SetPriority(20);
+    ThermalSystem::SynchronizeWorld(volumeScene);
+    assert(volumeRegistry.GetTransientFieldCount() == 1u);
+    assert(NearlyEqual(boxVolume.Field.GetCenter().x, 10.0f));
+    assert(NearlyEqual(volumeWorld.GetEnvironmentContacts().front().AmbientTemperature, 420.0f));
+
+    // Entity破棄後も前StepのComponent pointerを保持せず、次同期でTransient登録が消えることを確認します。
+    volumeScene.DestroyEntity(boxVolumeEntity);
+    ThermalSystem::SynchronizeWorld(volumeScene);
+    assert(volumeRegistry.GetPersistentFieldCount() == 1u);
+    assert(volumeRegistry.GetTransientFieldCount() == 0u);
+    assert(NearlyEqual(volumeWorld.GetEnvironmentContacts().front().AmbientTemperature, 300.0f));
 }
 
 } // namespace Raven::ph::tests
