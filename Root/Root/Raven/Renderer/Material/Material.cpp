@@ -98,13 +98,9 @@ void Material::Bind(RendererAPI& api) const
         return;
     }
 
-    // Pipeline stateとDraw commandは同じRHICommandListで管理し、PrimitiveTopologyを
-    // DrawIndexedまで保持します。
+    // Pipeline / Texture / Uniformを同じRHICommandListへ集約することで、
+    // Materialの描画Resource設定がRendererAPI内部stateへ依存しない経路へ移行します。
     RenderCommand::BindPipeline(m_pipeline);
-
-    // Texture / UniformはまだRendererAPIがm_CurrentPipelineを参照してShaderを解決します。
-    // 完全なRHIPipeline / Descriptor移行までは互換状態も同期し、既存Material描画を維持します。
-    api.BindPipeline(m_pipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
@@ -112,12 +108,12 @@ void Material::Bind(RendererAPI& api) const
             continue;
         }
 
-        api.BindTexture(name, binding.texture, binding.slot);
+        RenderCommand::BindTexture(name, binding.texture, binding.slot);
     }
 
     for (const auto& [name, value] : m_uniforms)
     {
-        api.UploadUniform(name, value);
+        RenderCommand::UploadUniform(name, value);
     }
 #else
     api.BindShader(m_shader);
@@ -143,12 +139,8 @@ void Material::BindForSurface(RendererAPI& api) const
     }
 
     // Surface Pipelineも通常Pipelineと同じCommandListへbindし、Opaque / Transparentごとの
-    // DepthWrite / Blend stateとPrimitiveTopologyを後続Drawへ引き継ぎます。
+    // DepthWrite / Blend stateとPrimitiveTopologyを後続Resource設定・Drawへ引き継ぎます。
     RenderCommand::BindPipeline(surfacePipeline);
-
-    // Texture / Uniform互換経路が参照するRendererAPI側のCurrent Pipelineも同期します。
-    // 現段階ではPipeline::Bindが二度呼ばれますが、描画stateは同値であり、次のRHI Resource移行で解消します。
-    api.BindPipeline(surfacePipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
@@ -157,12 +149,12 @@ void Material::BindForSurface(RendererAPI& api) const
             continue;
         }
 
-        api.BindTexture(name, binding.texture, binding.slot);
+        RenderCommand::BindTexture(name, binding.texture, binding.slot);
     }
 
     for (const auto& [name, value] : m_uniforms)
     {
-        api.UploadUniform(name, value);
+        RenderCommand::UploadUniform(name, value);
     }
 }
 
