@@ -4,6 +4,7 @@
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHIDevice.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
+#include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Renderer.h"
 
 namespace Raven
@@ -12,6 +13,7 @@ namespace Raven
 Scope<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
 Scope<RHIDevice> RenderCommand::s_Device = nullptr;
 Scope<RHICommandList> RenderCommand::s_CommandList = nullptr;
+Ref<Pipeline> RenderCommand::s_CurrentPipeline = nullptr;
 
 // ダミーのRendererAPIを作成しておくことで、RenderCommandの呼び出しがRendererAPIの初期化前に行われてもクラッシュしないようにする
 Scope<RendererAPI> s_dummyRendererAPI = CreateScope<OpenGLRendererAPI>();
@@ -134,6 +136,7 @@ void RenderCommand::BindPipeline(const Ref<Pipeline>& pipeline)
     }
 
     s_CommandList->BindPipeline(pipeline);
+    s_CurrentPipeline = pipeline;
 }
 
 void RenderCommand::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
@@ -179,7 +182,21 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
         }
     }
 
-    Renderer::RecordIndexedDraw(resolvedIndexCount);
+    if (resolvedIndexCount == 0)
+    {
+        return;
+    }
+
+    // Pipeline未指定の旧描画経路は従来どおりTriangle Listとして扱います。
+    // Material / Physics Debug等のPipeline経路では実Topologyを使うため、Lines/Pointsを
+    // TriangleCountへ誤計上せずDrawCallsとIndexCountだけへ反映できます。
+    PrimitiveTopology topology = PrimitiveTopology::Triangles;
+    if (s_CurrentPipeline != nullptr)
+    {
+        topology = s_CurrentPipeline->GetSpecification().Topology;
+    }
+
+    Renderer::RecordIndexedDraw(resolvedIndexCount, topology);
     s_CommandList->DrawIndexed(vertexArray, indexCount);
 }
 
