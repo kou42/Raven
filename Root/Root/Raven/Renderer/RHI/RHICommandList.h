@@ -4,7 +4,7 @@
 #include <string>
 
 #include "Raven/Core/Base.h"
-#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
 {

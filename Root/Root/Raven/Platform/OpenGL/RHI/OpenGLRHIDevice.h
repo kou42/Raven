@@ -15,6 +15,11 @@ public:
     Ref<RHIBuffer> CreateBuffer(
         const RHIBufferSpecification& specification,
         const void* initialData = nullptr) override;
+
+    Ref<RHITexture> CreateTexture(
+        const RHITextureSpecification& specification,
+        const void* initialData = nullptr,
+        std::size_t initialDataSize = 0) override;
 };
 
 } // namespace Raven

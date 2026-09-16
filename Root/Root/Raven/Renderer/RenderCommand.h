@@ -4,14 +4,15 @@
 //Application 側から glClear() などを直接呼ばないための薄いラッパーです。
 //RHI移行中は公開APIを維持しつつ、描画命令をRHICommandListへ転送する互換層として機能します。
 
-#include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
 {
 
 class Pipeline;
 class RHICommandList;
+class RHIDevice;
 class RendererAPI;
 class Texture;
 class VertexArray;
@@ -34,12 +35,17 @@ public:
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0);
 
+    // GPU Resource生成はCommandListとは責務が異なるためDeviceを経由します。
+    // Legacy Renderer/Texture層がBackend実装を直接生成しないための段階移行用窓口です。
+    static RHIDevice* GetDevice();
+
     static RendererAPI& GetAPI();
 
     static void SetAPI(std::unique_ptr<RendererAPI> api);
 
 private:
     static Scope<RendererAPI> s_RendererAPI;
+    static Scope<RHIDevice> s_Device;
     static Scope<RHICommandList> s_CommandList;
 };
 

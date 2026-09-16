@@ -1,6 +1,7 @@
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHICommandList.h"
+#include "Raven/Platform/OpenGL/RHI/OpenGLRHIDevice.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Renderer.h"
@@ -9,6 +10,7 @@ namespace Raven
 {
 
 Scope<RendererAPI> RenderCommand::s_RendererAPI = nullptr;
+Scope<RHIDevice> RenderCommand::s_Device = nullptr;
 Scope<RHICommandList> RenderCommand::s_CommandList = nullptr;
 
 // ダミーのRendererAPIを作成しておくことで、RenderCommandの呼び出しがRendererAPIの初期化前に行われてもクラッシュしないようにする
@@ -62,11 +64,12 @@ void RenderCommand::Init()
     s_RendererAPI->Init();
 
     // RHI移行中もRendererAPI object自体は既存互換のため維持しますが、
-    // Materialから利用するPipeline / Texture / UniformとDraw commandはCommandListへ集約します。
+    // GPU Resource生成はDevice、描画命令はCommandListへ責務を分離します。
     switch (RendererAPI::GetAPI())
     {
     case RendererAPI::API::OpenGL:
     {
+        s_Device = CreateScope<OpenGLRHIDevice>();
         s_CommandList = CreateScope<OpenGLRHICommandList>();
         break;
     }
@@ -167,6 +170,11 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
 
     Renderer::RecordIndexedDraw(resolvedIndexCount);
     s_CommandList->DrawIndexed(vertexArray, indexCount);
+}
+
+RHIDevice* RenderCommand::GetDevice()
+{
+    return s_Device.get();
 }
 
 RendererAPI& RenderCommand::GetAPI()

@@ -1,5 +1,4 @@
 // Material.cpp
-#include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Shader/Shader.h"
@@ -23,7 +22,8 @@ void Material::SetShader(Ref<Shader> shader)
 Ref<Shader> Material::GetShader() const 
 {
 #if 1
-    if (m_pipeline == nullptr) {
+    if (m_pipeline == nullptr)
+    {
         return nullptr;
     }
     return m_pipeline->GetShader();
@@ -93,44 +93,13 @@ Ref<Pipeline> Material::ResolveSurfacePipeline() const
 
 void Material::Bind(RendererAPI& api) const
 {
-#if 1
-    if (m_pipeline == nullptr) {
-        return;
-    }
-
-    // Pipeline / Texture / Uniformを同じRHICommandListへ集約することで、
-    // Materialの描画Resource設定がRendererAPI内部stateへ依存しない経路へ移行します。
-    RenderCommand::BindPipeline(m_pipeline);
-
-    for (const auto& [name, binding] : m_textures)
-    {
-        if (binding.texture == nullptr) {
-            continue;
-        }
-
-        RenderCommand::BindTexture(name, binding.texture, binding.slot);
-    }
-
-    for (const auto& [name, value] : m_uniforms)
-    {
-        RenderCommand::UploadUniform(name, value);
-    }
-#else
-    api.BindShader(m_shader);
-
-    for (const auto& [name, binding] : m_textures)
-    {
-        api.BindTexture(name, binding.texture, binding.slot);
-    }
-
-    for (const auto& [name, value] : m_uniforms)
-    {
-        api.UploadUniform(name, value);
-    }
-#endif
+    // 残存するDebug描画の段階移行用互換窓口です。
+    // RendererAPIへ描画Resourceを設定せず、RHI標準経路へ転送します。
+    static_cast<void>(api);
+    Bind();
 }
 
-void Material::BindForSurface(RendererAPI& api) const
+void Material::BindForSurface() const
 {
     Ref<Pipeline> surfacePipeline = ResolveSurfacePipeline();
     if (surfacePipeline == nullptr)
@@ -160,7 +129,31 @@ void Material::BindForSurface(RendererAPI& api) const
 
 void Material::Bind() const 
 {
-#if 0
+#if 1
+    if (m_pipeline == nullptr)
+    {
+        return;
+    }
+
+    // Pipeline / Texture / Uniformを同じRHICommandListへ集約することで、
+    // Materialの描画Resource設定がRendererAPI内部stateへ依存しない経路へ移行します。
+    RenderCommand::BindPipeline(m_pipeline);
+
+    for (const auto& [name, binding] : m_textures)
+    {
+        if (binding.texture == nullptr)
+        {
+            continue;
+        }
+
+        RenderCommand::BindTexture(name, binding.texture, binding.slot);
+    }
+
+    for (const auto& [name, value] : m_uniforms)
+    {
+        RenderCommand::UploadUniform(name, value);
+    }
+#else
     if (m_shader == nullptr) return;
 
     m_shader.Bind();
