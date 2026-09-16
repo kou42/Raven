@@ -1,13 +1,13 @@
 #pragma once
 
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
-#include "Raven/Platform/OpenGL/RHI/OpenGLRHIBuffer.h"
+#include "Raven/Renderer/RHI/RHIBuffer.h"
 
 namespace Raven
 {
 
 // 既存IndexBuffer APIとRHIBufferを接続する互換Bridgeです。
-// EBOのVAO関連付けだけはVertexArray側の責務として維持し、Resource管理をRHIへ移します。
+// EBOのVAO関連付けだけはVertexArray側の責務として維持し、Resource管理をRHIDevice / RHIへ移します。
 class OpenGLIndexBuffer : public IndexBuffer
 {
 public:
@@ -27,7 +27,7 @@ private:
     void RecreateBuffer(const uint32_t* indices, uint32_t count);
 
 private:
-    Ref<OpenGLRHIBuffer> m_RHIBuffer;
+    Ref<RHIBuffer> m_RHIBuffer;
     uint32_t m_Count = 0;
 
     // GPU側へ確保済みのindex容量です。
