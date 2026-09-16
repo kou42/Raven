@@ -19,6 +19,7 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Scene.h"
@@ -394,9 +395,13 @@ void PhysicsDebugRenderer::SubmitLines(
     m_Material->SetUniform("u_Projection", projection);
     m_Material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
     m_Material->SetUniform("u_Alpha", 1.0f);
-    m_Material->Bind(Renderer::GetAPI());
+
+    // Debug描画も通常Materialと同じRHI経路へ統一します。
+    // PipelineのTopology=LinesはMaterial::Bind()でRHICommandListへ設定されるため、
+    // DrawIndexedをLegacy RendererAPIへ戻さずRenderCommandから発行することが重要です。
+    m_Material->Bind();
     vertexArray->Bind();
-    Renderer::GetAPI().DrawIndexed(vertexArray, uint32_t(indices.size()));
+    RenderCommand::DrawIndexed(vertexArray, uint32_t(indices.size()));
 }
 
 void PhysicsDebugRenderer::AddLine(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
@@ -428,8 +433,16 @@ void PhysicsDebugRenderer::AddAABB(std::vector<DebugVertex>& vertices, std::vect
 void PhysicsDebugRenderer::AddOBB(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
     const OBB& bounds, const math::Vec3& color)
 {
-    math::Vec3 corners[8]{};
-    bounds.GetCorners(corners);
+    const math::Vec3 corners[8] = {
+        bounds.Center - bounds.Axis[0] * bounds.HalfExtents.x - bounds.Axis[1] * bounds.HalfExtents.y - bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center + bounds.Axis[0] * bounds.HalfExtents.x - bounds.Axis[1] * bounds.HalfExtents.y - bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center + bounds.Axis[0] * bounds.HalfExtents.x + bounds.Axis[1] * bounds.HalfExtents.y - bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center - bounds.Axis[0] * bounds.HalfExtents.x + bounds.Axis[1] * bounds.HalfExtents.y - bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center - bounds.Axis[0] * bounds.HalfExtents.x - bounds.Axis[1] * bounds.HalfExtents.y + bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center + bounds.Axis[0] * bounds.HalfExtents.x - bounds.Axis[1] * bounds.HalfExtents.y + bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center + bounds.Axis[0] * bounds.HalfExtents.x + bounds.Axis[1] * bounds.HalfExtents.y + bounds.Axis[2] * bounds.HalfExtents.z,
+        bounds.Center - bounds.Axis[0] * bounds.HalfExtents.x + bounds.Axis[1] * bounds.HalfExtents.y + bounds.Axis[2] * bounds.HalfExtents.z
+    };
     const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
     for (const auto& edge : edges)
     {
@@ -438,69 +451,63 @@ void PhysicsDebugRenderer::AddOBB(std::vector<DebugVertex>& vertices, std::vecto
 }
 
 void PhysicsDebugRenderer::AddPointMarker(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
-    const math::Vec3& position, float radius, const math::Vec3& color)
+    const math::Vec3& center, float radius, const math::Vec3& color)
 {
-    AddLine(vertices, indices, position - math::Vec3{radius,0,0}, position + math::Vec3{radius,0,0}, color);
-    AddLine(vertices, indices, position - math::Vec3{0,radius,0}, position + math::Vec3{0,radius,0}, color);
-    AddLine(vertices, indices, position - math::Vec3{0,0,radius}, position + math::Vec3{0,0,radius}, color);
+    AddLine(vertices, indices, center - math::Vec3{radius, 0, 0}, center + math::Vec3{radius, 0, 0}, color);
+    AddLine(vertices, indices, center - math::Vec3{0, radius, 0}, center + math::Vec3{0, radius, 0}, color);
+    AddLine(vertices, indices, center - math::Vec3{0, 0, radius}, center + math::Vec3{0, 0, radius}, color);
 }
 
-void PhysicsDebugRenderer::AddOverlayText(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
-    const std::string& text, float pixelX, float pixelY, float pixelScale,
-    int viewportWidth, int viewportHeight, const math::Vec3& color)
+void PhysicsDebugRenderer::AddOverlayText(
+    std::vector<DebugVertex>& vertices,
+    std::vector<uint32_t>& indices,
+    const std::string& text,
+    float x,
+    float y,
+    float scale,
+    int viewportWidth,
+    int viewportHeight,
+    const math::Vec3& color)
 {
-    if (viewportWidth <= 0 || viewportHeight <= 0 || pixelScale <= 0.0f)
-    {
-        return;
-    }
-
-    const float glyphWidth = 5.0f * pixelScale;
-    const float glyphHeight = 7.0f * pixelScale;
-    const float advance = 6.0f * pixelScale;
-    const float lineThickness = std::max(1.0f, pixelScale);
-
-    float cursorX = pixelX;
+    float cursorX = x;
     for (char c : text)
     {
-        if (c == ' ')
+        const uint8_t* rows = GetPhysicsDebugGlyph(c);
+        for (int row = 0; row < PhysicsDebugGlyphHeight; ++row)
         {
-            cursorX += advance;
-            continue;
-        }
-
-        const auto glyph = detail::GetPhysicsDebugGlyph(c);
-
-        for (int row = 0; row < 7; ++row)
-        {
-            const uint8_t rowBits = glyph[row];
-            int column = 0;
-            while (column < 5)
+            for (int col = 0; col < PhysicsDebugGlyphWidth; ++col)
             {
-                const bool lit = (rowBits & (1u << (4 - column))) != 0;
-                if (lit == false)
+                if ((rows[row] & (1u << (PhysicsDebugGlyphWidth - 1 - col))) == 0)
                 {
-                    ++column;
                     continue;
                 }
 
-                const int startColumn = column;
-                while (column + 1 < 5 && (rowBits & (1u << (4 - (column + 1)))) != 0)
-                {
-                    ++column;
-                }
+                const float px0 = cursorX + float(col) * scale;
+                const float py0 = y + float(row) * scale;
+                const float px1 = px0 + scale;
+                const float py1 = py0 + scale;
 
-                const float startX = cursorX + float(startColumn) * pixelScale;
-                const float endX = cursorX + float(column + 1) * pixelScale;
-                const float centerY = pixelY + float(row) * pixelScale + lineThickness * 0.5f;
+                const float x0 = (px0 / float(viewportWidth)) * 2.0f - 1.0f;
+                const float y0 = 1.0f - (py0 / float(viewportHeight)) * 2.0f;
+                const float x1 = (px1 / float(viewportWidth)) * 2.0f - 1.0f;
+                const float y1 = 1.0f - (py1 / float(viewportHeight)) * 2.0f;
 
-                const float x0 = (startX / float(viewportWidth)) * 2.0f - 1.0f;
-                const float x1 = (endX / float(viewportWidth)) * 2.0f - 1.0f;
-                const float y = 1.0f - (centerY / float(viewportHeight)) * 2.0f;
-                AddLine(vertices, indices, {x0,y,0.0f}, {x1,y,0.0f}, color);
-                ++column;
+                const uint32_t base = uint32_t(vertices.size());
+                vertices.push_back({ {x0, y0, 0.0f}, color, {} });
+                vertices.push_back({ {x1, y0, 0.0f}, color, {} });
+                vertices.push_back({ {x1, y1, 0.0f}, color, {} });
+                vertices.push_back({ {x0, y1, 0.0f}, color, {} });
+
+                // PipelineはLinesなので各辺を線分として追加します。
+                indices.insert(indices.end(), {
+                    base + 0, base + 1,
+                    base + 1, base + 2,
+                    base + 2, base + 3,
+                    base + 3, base + 0
+                });
             }
         }
-        cursorX += advance;
+        cursorX += float(PhysicsDebugGlyphWidth + 1) * scale;
     }
 }
 
