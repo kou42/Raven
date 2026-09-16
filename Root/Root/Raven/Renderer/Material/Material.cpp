@@ -91,38 +91,20 @@ Ref<Pipeline> Material::ResolveSurfacePipeline() const
     return m_SurfacePipeline;
 }
 
-void Material::Bind() const
-{
-    if (m_pipeline == nullptr)
-    {
-        return;
-    }
-
-    // Pipeline / Texture / Uniformを同じRHICommandListへ集約することで、
-    // Materialの描画Resource設定がRendererAPI内部stateへ依存しない経路へ移行します。
-    RenderCommand::BindPipeline(m_pipeline);
-
-    for (const auto& [name, binding] : m_textures)
-    {
-        if (binding.texture == nullptr)
-        {
-            continue;
-        }
-
-        RenderCommand::BindTexture(name, binding.texture, binding.slot);
-    }
-
-    for (const auto& [name, value] : m_uniforms)
-    {
-        RenderCommand::UploadUniform(name, value);
-    }
-}
-
 void Material::Bind(RendererAPI& api) const
 {
-    // 互換overloadではRendererAPIへ描画stateを戻さず、RHI標準経路だけを使用します。
+    // 既存呼び出し元との互換overloadです。
+    // 描画Resource設定はRendererAPIへ戻さず、RHI標準経路へ転送します。
     static_cast<void>(api);
     Bind();
+}
+
+void Material::BindForSurface(RendererAPI& api) const
+{
+    // 既存Scene描画コードとの互換overloadです。
+    // RendererAPIは使用せず、RHI標準経路へ転送します。
+    static_cast<void>(api);
+    BindForSurface();
 }
 
 void Material::BindForSurface() const
@@ -153,11 +135,68 @@ void Material::BindForSurface() const
     }
 }
 
-void Material::BindForSurface(RendererAPI& api) const
+void Material::Bind() const 
 {
-    // Scene側の既存呼び出しを壊さず段階移行するための互換overloadです。
-    static_cast<void>(api);
-    BindForSurface();
+#if 1
+    if (m_pipeline == nullptr) {
+        return;
+    }
+
+    // Pipeline / Texture / Uniformを同じRHICommandListへ集約することで、
+    // Materialの描画Resource設定がRendererAPI内部stateへ依存しない経路へ移行します。
+    RenderCommand::BindPipeline(m_pipeline);
+
+    for (const auto& [name, binding] : m_textures)
+    {
+        if (binding.texture == nullptr) {
+            continue;
+        }
+
+        RenderCommand::BindTexture(name, binding.texture, binding.slot);
+    }
+
+    for (const auto& [name, value] : m_uniforms)
+    {
+        RenderCommand::UploadUniform(name, value);
+    }
+#else
+    if (m_shader == nullptr) return;
+
+    m_shader.Bind();
+
+    for (const auto& [name, binding] : m_textures) {
+        if (binding.texture == nullptr) continue;
+
+        binding.texture->Bind(binding.slot);
+        m_shader.SetInt(name, binding.slot);
+    }
+
+    for (const auto& [name, value] : m_uniforms) {
+        std::visit([&](const auto& v) {
+            using T = std::decay_t<decltype(v)>;
+
+            if constexpr (std::is_same_v<T, int>) {
+                m_shader.SetInt(name, v);
+            }
+            else if constexpr (std::is_same_v<T, float>) {
+                m_shader.SetFloat(name, v);
+            }
+            else if constexpr (std::is_same_v<T, math::Vec2>) {
+                m_shader.SetVec2(name, v);
+            }
+            else if constexpr (std::is_same_v<T, math::Vec3>) {
+                m_shader.SetVec3(name, v);
+            }
+            else if constexpr (std::is_same_v<T, math::Vec4>) {
+                m_shader.SetVec4(name, v);
+            }
+            else if constexpr (std::is_same_v<T, math::Mat4>) {
+                m_shader.SetMat4(name, v);
+            }
+        }, value);
+    }
+#endif
+
 }
 
 }
