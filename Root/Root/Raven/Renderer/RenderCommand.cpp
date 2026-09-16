@@ -61,8 +61,8 @@ void RenderCommand::Init()
 
     s_RendererAPI->Init();
 
-    // RHI移行中はRendererAPIをMaterial / Pipeline互換経路として残し、
-    // APIから独立させやすい描画命令だけをCommandListへ段階的に移します。
+    // RHI移行中はRendererAPIをTexture / Uniform互換経路として残し、
+    // 描画stateとDraw commandはCommandListへ段階的に移します。
     switch (RendererAPI::GetAPI())
     {
     case RendererAPI::API::OpenGL:
@@ -111,15 +111,26 @@ void RenderCommand::Clear()
     s_CommandList->Clear();
 }
 
-void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
+void RenderCommand::BindPipeline(const Ref<Pipeline>& pipeline)
 {
-    if (s_RendererAPI == nullptr || vertexArray == nullptr)
+    if (s_CommandList == nullptr || pipeline == nullptr)
     {
-        assert(s_RendererAPI);
+        assert(s_CommandList);
         return;
     }
 
-    // indexCount == 0 はRendererAPI側と同じく「VAOのIndexBuffer全体を描画する」意味です。
+    s_CommandList->BindPipeline(pipeline);
+}
+
+void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
+{
+    if (s_CommandList == nullptr || vertexArray == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    // indexCount == 0 は「VAOのIndexBuffer全体を描画する」意味です。
     // 実際に発行されるIndex数へ解決してから統計へ記録することで、呼び出し経路によらず
     // StatisticsPanelの値を実Draw Callと一致させます。
     uint32_t resolvedIndexCount = indexCount;
@@ -133,11 +144,7 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
     }
 
     Renderer::RecordIndexedDraw(resolvedIndexCount);
-
-    // DrawIndexedは現在のPipelineが保持するPrimitiveTopologyに依存します。
-    // Pipeline bindingをRHIへ移す前にDrawだけを移すとLines / PointsがTrianglesとして描画されるため、
-    // この命令はPipeline移行までRendererAPI経路を維持します。
-    s_RendererAPI->DrawIndexed(vertexArray, indexCount);
+    s_CommandList->DrawIndexed(vertexArray, indexCount);
 }
 
 RendererAPI& RenderCommand::GetAPI()
