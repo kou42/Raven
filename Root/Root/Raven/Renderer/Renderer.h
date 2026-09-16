@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Renderer/Pipeline/Pipeline.h"
 
 #include <cstdint>
 
@@ -74,7 +75,7 @@ public:
     static RendererAPI& GetAPI();
 
     static const RendererStatistics& GetStatistics();
-    static void RecordIndexedDraw(uint32_t indexCount);
+    static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);
 
 private:
     static RendererStatistics s_Statistics;
