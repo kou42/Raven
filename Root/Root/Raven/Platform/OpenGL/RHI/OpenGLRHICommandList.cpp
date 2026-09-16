@@ -1,10 +1,14 @@
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHICommandList.h"
 
+#include <type_traits>
+
 #include <glad/glad.h>
 
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/Texture/Texture.h"
 
 namespace Raven
 {
@@ -59,10 +63,76 @@ void OpenGLRHICommandList::BindPipeline(const Ref<Pipeline>& pipeline)
     }
 
     // 現段階ではLegacy PipelineがOpenGL stateとShader bindingを適用します。
-    // CommandList側で現在Pipelineを保持することで、DrawIndexedはRendererAPIへ戻らず
-    // PrimitiveTopologyを正しく解決できます。RHIPipeline導入後はこの依存を置き換えます。
+    // CommandList側で現在Pipelineを保持することで、DrawIndexed / Texture / Uniformは
+    // RendererAPIへ戻らず同じPipeline stateを基準に処理できます。
     pipeline->Bind();
     m_CurrentPipeline = pipeline;
+}
+
+void OpenGLRHICommandList::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
+{
+    if (texture == nullptr || m_CurrentPipeline == nullptr)
+    {
+        return;
+    }
+
+    const Ref<Shader> shader = m_CurrentPipeline->GetShader();
+    if (shader == nullptr)
+    {
+        return;
+    }
+
+    // Texture objectのnative bindingは現行Texture abstractionへ委譲します。
+    // Sampler / DescriptorをRHI化する段階で、このLegacy Texture依存をRHI Resourceへ置き換えます。
+    texture->Bind(slot);
+    shader->SetInt(name, static_cast<int>(slot));
+}
+
+void OpenGLRHICommandList::UploadUniform(const std::string& name, const UniformValue& value)
+{
+    if (m_CurrentPipeline == nullptr)
+    {
+        return;
+    }
+
+    const Ref<Shader> shader = m_CurrentPipeline->GetShader();
+    if (shader == nullptr)
+    {
+        return;
+    }
+
+    // 現行UniformValueをOpenGL Shader setterへ変換する互換Bridgeです。
+    // 将来Constant/Uniform BufferとDescriptor bindingを導入した後は、Material parameterを
+    // BufferへpackしてCommandListからResource bindingする経路へ置き換えます。
+    std::visit([&](const auto& uniform)
+    {
+        using T = std::decay_t<decltype(uniform)>;
+
+        if constexpr (std::is_same_v<T, int>)
+        {
+            shader->SetInt(name, uniform);
+        }
+        else if constexpr (std::is_same_v<T, float>)
+        {
+            shader->SetFloat(name, uniform);
+        }
+        else if constexpr (std::is_same_v<T, math::Vec2>)
+        {
+            shader->SetVec2(name, uniform);
+        }
+        else if constexpr (std::is_same_v<T, math::Vec3>)
+        {
+            shader->SetVec3(name, uniform);
+        }
+        else if constexpr (std::is_same_v<T, math::Vec4>)
+        {
+            shader->SetVec4(name, uniform);
+        }
+        else if constexpr (std::is_same_v<T, math::Mat4>)
+        {
+            shader->SetMat4(name, uniform);
+        }
+    }, value);
 }
 
 void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
