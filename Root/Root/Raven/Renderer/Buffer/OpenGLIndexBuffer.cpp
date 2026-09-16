@@ -37,14 +37,25 @@ void OpenGLIndexBuffer::SetData(const uint32_t* indices, uint32_t count)
         return;
     }
 
-    if (m_RHIBuffer != nullptr && indices != nullptr && count <= m_Capacity)
+    if (m_RHIBuffer == nullptr)
     {
-        m_RHIBuffer->SetData(indices, static_cast<std::size_t>(count) * sizeof(uint32_t));
+        RecreateBuffer(indices, count);
+        return;
+    }
+
+    const std::size_t dataSize = static_cast<std::size_t>(count) * sizeof(uint32_t);
+    if (indices != nullptr && count <= m_Capacity)
+    {
+        m_RHIBuffer->SetData(indices, dataSize);
         m_Count = count;
         return;
     }
 
-    RecreateBuffer(indices, count);
+    // EBO object名はVAOに保存されるため、容量拡張時もResource object自体は交換しません。
+    // storageだけを再確保することで既存VAOとの関連付けを維持します。
+    m_RHIBuffer->Resize(dataSize, indices);
+    m_Count = count;
+    m_Capacity = count;
 }
 
 void OpenGLIndexBuffer::RecreateBuffer(const uint32_t* indices, uint32_t count)
