@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Physics/Thermal/TemperatureField.h"
 #include "Raven/Physics/Thermal/ThermalBody.h"
 #include "Raven/Scene/Entity.h"
 
@@ -60,6 +61,24 @@ struct ThermalRadiationComponent
     float EnvironmentTemperature = 293.15f; // [K]
     float Emissivity = 0.9f;                 // epsilon [-]
     float SurfaceArea = 1.0f;                // A [m^2]
+    bool Enabled = true;
+};
+
+// Scene上に配置する球形Temperature Volumeです。
+// FieldのCenterは毎Fixed Stepで同じEntityのTransformComponent::Positionから更新されるため、
+// Entity移動に追従します。Radius/Falloff/Blend/PriorityなどのField設定はComponent側に保持します。
+struct SphericalTemperatureVolumeComponent
+{
+    SphericalTemperatureRegionField Field{};
+    bool Enabled = true;
+};
+
+// Scene上に配置するAxis-Aligned Box Temperature Volumeです。
+// 現段階ではTransformのPositionだけをCenterへ反映し、Rotation/ScaleはField形状へ適用しません。
+// 回転Box対応を暗黙に近似せず、将来のOriented Temperature Volume実装と責務を分けます。
+struct BoxTemperatureVolumeComponent
+{
+    BoxTemperatureRegionField Field{};
     bool Enabled = true;
 };
 

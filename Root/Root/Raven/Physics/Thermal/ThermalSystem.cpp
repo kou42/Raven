@@ -39,6 +39,40 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
     // ECSを唯一の正規データにすることで、Entity破棄後のdangling pointerも持ち越しません。
     thermalWorld.Clear();
 
+    TemperatureFieldRegistry& fieldRegistry = thermalWorld.GetTemperatureFieldRegistry();
+    fieldRegistry.ClearTransientFields();
+
+    // Temperature VolumeもECS storage内のField addressを永続保持しません。
+    // 同期時にTransform位置をCenterへ反映してTransient登録し、Entity移動・破棄・storage再配置へ追従します。
+    for (auto [entity, volumeComponent] : scene.View<SphericalTemperatureVolumeComponent>())
+    {
+        if (volumeComponent.Enabled == false)
+        {
+            continue;
+        }
+        const TransformComponent* transformComponent = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+        if (transformComponent == nullptr)
+        {
+            continue;
+        }
+        volumeComponent.Field.SetCenter(transformComponent->Position);
+        fieldRegistry.RegisterTransientField(volumeComponent.Field);
+    }
+    for (auto [entity, volumeComponent] : scene.View<BoxTemperatureVolumeComponent>())
+    {
+        if (volumeComponent.Enabled == false)
+        {
+            continue;
+        }
+        const TransformComponent* transformComponent = scene.TryGetComponent<TransformComponent>(entity.GetIndex());
+        if (transformComponent == nullptr)
+        {
+            continue;
+        }
+        volumeComponent.Field.SetCenter(transformComponent->Position);
+        fieldRegistry.RegisterTransientField(volumeComponent.Field);
+    }
+
     // 先に全Bodyを登録します。Contact登録時は両端BodyがWorldへ存在することを検証するため、
     // Body -> 境界/Contactの順序を固定しています。
     for (auto [entity, thermalBodyComponent] : scene.View<ThermalBodyComponent>())
@@ -100,8 +134,7 @@ void ThermalSystem::SynchronizeWorld(Scene& scene)
 
         ThermalEnvironmentContact environmentContact{};
         environmentContact.Body = &bodyComponent->Body;
-        environmentContact.AmbientTemperature = thermalWorld.GetTemperatureFieldRegistry().Evaluate(
-            transformComponent->Position, convectionComponent.AmbientTemperature);
+        environmentContact.AmbientTemperature = fieldRegistry.Evaluate(transformComponent->Position, convectionComponent.AmbientTemperature);
         environmentContact.HeatTransferCoefficient = convectionComponent.HeatTransferCoefficient;
         environmentContact.SurfaceArea = convectionComponent.SurfaceArea;
         environmentContact.ThermalConductance = ThermalWorld::CalculateConvectionConductance(
