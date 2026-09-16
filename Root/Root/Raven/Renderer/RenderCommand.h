@@ -4,8 +4,8 @@
 //Application 側から glClear() などを直接呼ばないための薄いラッパーです。
 //RHI移行中は公開APIを維持しつつ、描画命令をRHICommandListへ転送する互換層として機能します。
 
-#include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
 {
