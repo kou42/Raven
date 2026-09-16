@@ -1,11 +1,10 @@
 #pragma once
 
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
+#include "Raven/Platform/OpenGL/RHI/OpenGLRHIBuffer.h"
 
 namespace Raven
 {
-
-class OpenGLRHIBuffer;
 
 // 既存IndexBuffer APIとRHIBufferを接続する互換Bridgeです。
 // EBOのVAO関連付けだけはVertexArray側の責務として維持し、Resource管理をRHIへ移します。
