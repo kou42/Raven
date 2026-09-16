@@ -248,14 +248,18 @@ const RendererStatistics& Renderer::GetStatistics()
     return s_Statistics;
 }
 
-void Renderer::RecordIndexedDraw(uint32_t indexCount)
+void Renderer::RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology)
 {
     ++s_Statistics.DrawCalls;
     s_Statistics.IndexCount += indexCount;
 
-    // 現在のRavenのIndexed描画はTriangle Listを前提としているため3 index = 1 triangleです。
-    // Line/Point topologyを追加する場合はPrimitiveTopologyを統計APIへ渡す形へ拡張します。
-    s_Statistics.TriangleCount += indexCount / 3u;
+    // TriangleCountはTriangle Listだけを対象にします。
+    // Physics DebugのLinesや将来のPointsもDrawCalls/IndexCountには含めますが、
+    // 三角形数へは加算しないことでStatisticsの意味をTopology間で維持します。
+    if (topology == PrimitiveTopology::Triangles)
+    {
+        s_Statistics.TriangleCount += indexCount / 3u;
+    }
 }
 
 void Renderer::Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray)
