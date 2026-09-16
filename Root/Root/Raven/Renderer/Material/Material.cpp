@@ -1,5 +1,4 @@
 // Material.cpp
-#include "Raven/Renderer/RendererAPI.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Shader/Shader.h"
@@ -89,22 +88,6 @@ Ref<Pipeline> Material::ResolveSurfacePipeline() const
 
     m_SurfacePipeline = Pipeline::Create(surfaceSpecification);
     return m_SurfacePipeline;
-}
-
-void Material::Bind(RendererAPI& api) const
-{
-    // 既存呼び出し元との互換overloadです。
-    // 描画Resource設定はRendererAPIへ戻さず、RHI標準経路へ転送します。
-    static_cast<void>(api);
-    Bind();
-}
-
-void Material::BindForSurface(RendererAPI& api) const
-{
-    // 既存Scene描画コードとの互換overloadです。
-    // RendererAPIは使用せず、RHI標準経路へ転送します。
-    static_cast<void>(api);
-    BindForSurface();
 }
 
 void Material::BindForSurface() const
