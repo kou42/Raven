@@ -36,6 +36,10 @@ class RHICommandList
 public:
     virtual ~RHICommandList() = default;
 
+    // Graphics Backend固有の初期描画stateを設定します。
+    // Context生成そのものはPlatform層の責務とし、CommandListは有効なContext上で描画stateだけを初期化します。
+    virtual void Init() = 0;
+
     virtual void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
 
     // Debug Overlay等の上位層がGraphics API固有のstate queryを直接行わないための参照APIです。
