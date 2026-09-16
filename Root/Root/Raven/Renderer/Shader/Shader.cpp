@@ -1,7 +1,7 @@
 #include "Raven/Renderer/Shader/Shader.h"
 
 #include "Raven/Renderer/RHI/RHITypes.h"
-#include "Raven/Renderer/Shader/OpenGLShader.h"
+#include "Raven/Platform/OpenGL/OpenGLShader.h"
 
 #include <iostream>
 
