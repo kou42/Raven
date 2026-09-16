@@ -113,9 +113,9 @@ void RenderCommand::Clear()
 
 void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
 {
-    if (s_CommandList == nullptr || vertexArray == nullptr)
+    if (s_RendererAPI == nullptr || vertexArray == nullptr)
     {
-        assert(s_CommandList);
+        assert(s_RendererAPI);
         return;
     }
 
@@ -133,7 +133,11 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
     }
 
     Renderer::RecordIndexedDraw(resolvedIndexCount);
-    s_CommandList->DrawIndexed(vertexArray, indexCount);
+
+    // DrawIndexedは現在のPipelineが保持するPrimitiveTopologyに依存します。
+    // Pipeline bindingをRHIへ移す前にDrawだけを移すとLines / PointsがTrianglesとして描画されるため、
+    // この命令はPipeline移行までRendererAPI経路を維持します。
+    s_RendererAPI->DrawIndexed(vertexArray, indexCount);
 }
 
 RendererAPI& RenderCommand::GetAPI()
