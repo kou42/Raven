@@ -2,7 +2,7 @@
 
 #include "Raven/Assets/TextureAssetImporter.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
-#include "Raven/Renderer/Texture/OpenGLTexture.h"
+#include "Raven/Platform/OpenGL/OpenGLTexture.h"
 
 #include <iostream>
 
