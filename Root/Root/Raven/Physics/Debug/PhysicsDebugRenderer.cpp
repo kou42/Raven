@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <glad/glad.h>
-
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
@@ -19,6 +17,7 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Scene.h"
@@ -310,9 +309,10 @@ void PhysicsDebugRenderer::RenderOverlay()
         return;
     }
 
-    GLint viewport[4] = {};
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    if (viewport[2] <= 0 || viewport[3] <= 0)
+    // Viewport取得もRenderCommand経由に統一し、Physics Debug層からOpenGL state参照を排除します。
+    // 実際の取得方法はRHI Backend側が担当するため、Debug RendererはGraphics APIに依存しません。
+    const RHIViewport viewport = RenderCommand::GetViewport();
+    if (viewport.Width == 0 || viewport.Height == 0)
     {
         return;
     }
@@ -329,7 +329,16 @@ void PhysicsDebugRenderer::RenderOverlay()
     float y = 16.0f;
     auto addLine = [&](const std::string& text, const math::Vec3& color)
     {
-        AddOverlayText(vertices, indices, text, 16.0f, y, 2.0f, viewport[2], viewport[3], color);
+        AddOverlayText(
+            vertices,
+            indices,
+            text,
+            16.0f,
+            y,
+            2.0f,
+            static_cast<int>(viewport.Width),
+            static_cast<int>(viewport.Height),
+            color);
         y += 18.0f;
     };
 
@@ -394,9 +403,12 @@ void PhysicsDebugRenderer::SubmitLines(
     m_Material->SetUniform("u_Projection", projection);
     m_Material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });
     m_Material->SetUniform("u_Alpha", 1.0f);
-    m_Material->Bind(Renderer::GetAPI());
-    vertexArray->Bind();
-    Renderer::GetAPI().DrawIndexed(vertexArray, uint32_t(indices.size()));
+
+    // Material bindingとDrawの両方をRHI互換窓口へ統一します。
+    // Physics Debug層がRendererAPIやOpenGL primitiveを直接扱わないことで、
+    // PipelineのLines topologyを各RHI Backendが解決できる構造にします。
+    m_Material->Bind();
+    RenderCommand::DrawIndexed(vertexArray, uint32_t(indices.size()));
 }
 
 void PhysicsDebugRenderer::AddLine(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices,
