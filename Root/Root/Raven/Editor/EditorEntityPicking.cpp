@@ -130,7 +130,9 @@ void EditorLayer::RenderEntityPickingPass(
             "u_Model",
             transform.GetTransform());
 
-        m_EntityPickingMaterial->Bind(Renderer::GetAPI());
+        // Editor専用Passも通常Materialと同じRHICommandList経路を利用します。
+        // RendererAPI objectを受け渡さないことでPicking描画をBackend非依存のMaterial APIへ揃えます。
+        m_EntityPickingMaterial->Bind();
         meshRenderer.Mesh->Draw();
     }
 
