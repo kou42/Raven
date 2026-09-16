@@ -33,6 +33,19 @@ GLenum ToOpenGLPrimitiveTopology(PrimitiveTopology topology)
 
 } // namespace
 
+void OpenGLRHICommandList::Init()
+{
+    // 旧OpenGLRendererAPI::Init()が担当していた既定stateです。
+    // Backend固有stateをRHI側へ集約し、Renderer上位層がLegacy RendererAPI objectを
+    // 初期化のためだけに保持しなくても同じ描画条件から開始できるようにします。
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
 void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     glViewport(
