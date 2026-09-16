@@ -90,6 +90,14 @@ Ref<Pipeline> Material::ResolveSurfacePipeline() const
     return m_SurfacePipeline;
 }
 
+void Material::Bind(RendererAPI& api) const
+{
+    // 残存するDebug描画の段階移行用互換窓口です。
+    // RendererAPIへ描画Resourceを設定せず、RHI標準経路へ転送します。
+    static_cast<void>(api);
+    Bind();
+}
+
 void Material::BindForSurface() const
 {
     Ref<Pipeline> surfacePipeline = ResolveSurfacePipeline();
