@@ -10,8 +10,6 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
-#include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
-
 #include <algorithm>
 #include <limits>
 #include <vector>
@@ -156,7 +154,8 @@ RendererCameraContext Renderer::s_CameraContext{};
 // 呼び出し元はApplication::Application()
 void Renderer::Init()
 {
-    RenderCommand::SetAPI(std::make_unique<OpenGLRendererAPI>());
+    // Graphics Backendの生成と初期state設定はRenderCommand/RHI側へ集約します。
+    // Renderer上位層はOpenGL等の具体Backendを直接生成しません。
     RenderCommand::Init();
 }
 
@@ -236,11 +235,6 @@ void Renderer::Shutdown()
     s_OpaqueQueue.clear();
     s_TransparentQueue.clear();
     s_SceneQueueActive = false;
-}
-
-RendererAPI& Renderer::GetAPI()
-{
-    return RenderCommand::GetAPI();
 }
 
 const RendererStatistics& Renderer::GetStatistics()
