@@ -1,8 +1,8 @@
 #include "Raven/Renderer/Texture/Texture.h"
 
 #include "Raven/Assets/TextureAssetImporter.h"
-#include "Raven/Renderer/RendererAPI.h"
-#include "Raven/Renderer/Texture/OpenGLTexture.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Platform/OpenGL/OpenGLTexture.h"
 
 #include <iostream>
 
@@ -18,16 +18,18 @@ Ref<Texture> Texture::Create(const std::string& path)
 
 Ref<Texture> Texture::Create(const TextureSpecification& specification)
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateRef<OpenGLTexture>(specification);
-    case RendererAPI::API::DirectX11:
-        return nullptr;
-    case RendererAPI::API::DirectX12:
+
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
+    default:
         return nullptr;
     }
-    return nullptr;
 }
 
 Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data, std::size_t dataSize)

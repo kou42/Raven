@@ -1,21 +1,25 @@
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 
-#include "Raven/Renderer/RendererAPI.h"
-#include "Raven/Renderer/Buffer/OpenGLIndexBuffer.h"
-
+#include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Platform/OpenGL/OpenGLIndexBuffer.h"
 
 namespace Raven
 {
 
 Ref<IndexBuffer> IndexBuffer::Create(const uint32_t* indices, uint32_t count)
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateRef<OpenGLIndexBuffer>(indices, count);
-    }
 
-    return nullptr;
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
+    default:
+        return nullptr;
+    }
 }
 
 }

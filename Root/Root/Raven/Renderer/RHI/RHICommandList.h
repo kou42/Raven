@@ -13,6 +13,14 @@ class Pipeline;
 class Texture;
 class VertexArray;
 
+struct RHIViewport
+{
+    uint32_t X = 0;
+    uint32_t Y = 0;
+    uint32_t Width = 0;
+    uint32_t Height = 0;
+};
+
 // ============================================================================
 // RHICommandList
 // ============================================================================
@@ -28,7 +36,16 @@ class RHICommandList
 public:
     virtual ~RHICommandList() = default;
 
+    // Graphics Backend固有の初期描画stateを設定します。
+    // Context生成そのものはPlatform層の責務とし、CommandListは有効なContext上で描画stateだけを初期化します。
+    virtual void Init() = 0;
+
     virtual void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+
+    // Debug Overlay等の上位層がGraphics API固有のstate queryを直接行わないための参照APIです。
+    // OpenGLでは現在のGL viewportを取得し、Explicit APIではCommandListが保持するstateを返す想定です。
+    virtual RHIViewport GetViewport() const = 0;
+
     virtual void SetClearColor(float r, float g, float b, float a) = 0;
     virtual void Clear() = 0;
 

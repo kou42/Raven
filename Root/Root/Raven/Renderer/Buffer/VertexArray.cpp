@@ -1,20 +1,25 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 
-#include "Raven/Renderer/RendererAPI.h"
-#include "Raven/Renderer/Buffer/OpenGLVertexArray.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Platform/OpenGL/OpenGLVertexArray.h"
 
 namespace Raven
 {
 
 Ref<VertexArray> VertexArray::Create()
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateRef<OpenGLVertexArray>();
-    }
 
-    return nullptr;
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
+    default:
+        return nullptr;
+    }
 }
 
 }

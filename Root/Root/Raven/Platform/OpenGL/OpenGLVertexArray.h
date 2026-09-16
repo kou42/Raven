@@ -6,6 +6,8 @@
 namespace Raven
 {
 
+// OpenGL固有のVAO実装はPlatform層へ閉じ込めます。
+// Renderer/Buffer側はAPI非依存interfaceとfactoryだけを保持します。
 class OpenGLVertexArray : public VertexArray
 {
 public:

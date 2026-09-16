@@ -1,4 +1,4 @@
-#include "Raven/Renderer/Pipeline/OpenGLPipeline.h"
+#include "Raven/Platform/OpenGL/OpenGLPipeline.h"
 
 #include <cassert>
 
@@ -81,22 +81,22 @@ GLenum ToOpenGLCullFace(CullMode cullMode)
 OpenGLPipeline::OpenGLPipeline(const PipelineSpecification& specification)
 {
     m_Specification = specification;
-    assert(m_Specification.Shader && "Pipeline requires a shader");
+    assert(m_Specification.Shader != nullptr && "Pipeline requires a shader");
 }
 
 void OpenGLPipeline::Bind() const
 {
-    if (!m_Specification.Shader) {
+    if (m_Specification.Shader == nullptr)
+    {
         return;
     }
 
     m_Specification.Shader->Bind();
 
-    // Depth test
+    // Depth / Blend / CullingはGraphics API固有stateなので、このPlatform実装だけで適用します。
     if (m_Specification.DepthTest)
     {
         glEnable(GL_DEPTH_TEST);
-
         glDepthFunc(ToOpenGLDepthFunction(m_Specification.DepthCompare));
     }
     else
@@ -106,11 +106,9 @@ void OpenGLPipeline::Bind() const
 
     glDepthMask(m_Specification.DepthWrite ? GL_TRUE : GL_FALSE);
 
-    // Blend
     if (m_Specification.Blend)
     {
         glEnable(GL_BLEND);
-
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
     else
@@ -118,7 +116,6 @@ void OpenGLPipeline::Bind() const
         glDisable(GL_BLEND);
     }
 
-    // Culling
     if (m_Specification.Cull == CullMode::None)
     {
         glDisable(GL_CULL_FACE);
@@ -126,16 +123,15 @@ void OpenGLPipeline::Bind() const
     else
     {
         glEnable(GL_CULL_FACE);
-
         glCullFace(ToOpenGLCullFace(m_Specification.Cull));
-
         glFrontFace(ToOpenGLFrontFace(m_Specification.FrontFaceMode));
     }
 }
 
 void OpenGLPipeline::Unbind() const
 {
-    if (m_Specification.Shader) {
+    if (m_Specification.Shader != nullptr)
+    {
         m_Specification.Shader->Unbind();
     }
 }

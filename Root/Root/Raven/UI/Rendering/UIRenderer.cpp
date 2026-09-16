@@ -1,6 +1,6 @@
 #include "Raven/UI/Rendering/UIRenderer.h"
 
-#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/UI/Rendering/OpenGLUIRenderer.h"
 
 namespace Raven
@@ -8,13 +8,18 @@ namespace Raven
 
 Scope<UIRenderer> UIRenderer::Create()
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateScope<OpenGLUIRenderer>();
-    }
 
-    return nullptr;
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+    case RHIBackend::None:
+    default:
+        return nullptr;
+    }
 }
 
 } // namespace Raven

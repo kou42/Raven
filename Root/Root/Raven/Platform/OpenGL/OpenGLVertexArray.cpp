@@ -1,4 +1,4 @@
-#include "Raven/Renderer/Buffer/OpenGLVertexArray.h"
+#include "Raven/Platform/OpenGL/OpenGLVertexArray.h"
 
 #include <glad/glad.h>
 

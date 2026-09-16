@@ -4,13 +4,10 @@
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Renderer/Camera/Camera.h"
-#include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
-
-#include "Raven/Platform/OpenGL/OpenGLRendererAPI.h"
 
 #include <algorithm>
 #include <limits>
@@ -156,7 +153,8 @@ RendererCameraContext Renderer::s_CameraContext{};
 // 呼び出し元はApplication::Application()
 void Renderer::Init()
 {
-    RenderCommand::SetAPI(std::make_unique<OpenGLRendererAPI>());
+    // Graphics Backendの生成と初期state設定はRenderCommand/RHI側へ集約します。
+    // Renderer上位層はOpenGL等の具体Backendを直接生成しません。
     RenderCommand::Init();
 }
 
@@ -238,31 +236,23 @@ void Renderer::Shutdown()
     s_SceneQueueActive = false;
 }
 
-RendererAPI& Renderer::GetAPI()
-{
-    return RenderCommand::GetAPI();
-}
-
 const RendererStatistics& Renderer::GetStatistics()
 {
     return s_Statistics;
 }
 
-void Renderer::RecordIndexedDraw(uint32_t indexCount)
+void Renderer::RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology)
 {
     ++s_Statistics.DrawCalls;
     s_Statistics.IndexCount += indexCount;
 
-    // 現在のRavenのIndexed描画はTriangle Listを前提としているため3 index = 1 triangleです。
-    // Line/Point topologyを追加する場合はPrimitiveTopologyを統計APIへ渡す形へ拡張します。
-    s_Statistics.TriangleCount += indexCount / 3u;
-}
-
-void Renderer::Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray)
-{
-    shader->Bind();
-    vertexArray->Bind();
-    RenderCommand::DrawIndexed(vertexArray);
+    // TriangleCountはTriangle Listだけを対象にします。
+    // Physics DebugのLinesや将来のPointsもDrawCalls/IndexCountには含めますが、
+    // 三角形数へは加算しないことでStatisticsの意味をTopology間で維持します。
+    if (topology == PrimitiveTopology::Triangles)
+    {
+        s_Statistics.TriangleCount += indexCount / 3u;
+    }
 }
 
 void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)

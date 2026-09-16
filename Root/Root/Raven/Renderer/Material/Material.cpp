@@ -21,15 +21,11 @@ void Material::SetShader(Ref<Shader> shader)
 
 Ref<Shader> Material::GetShader() const 
 {
-#if 1
     if (m_pipeline == nullptr)
     {
         return nullptr;
     }
     return m_pipeline->GetShader();
-#else
-    return m_shader;
-#endif
 }
 
 void Material::SetPipeline(Ref<Pipeline> pipeline)
@@ -91,14 +87,6 @@ Ref<Pipeline> Material::ResolveSurfacePipeline() const
     return m_SurfacePipeline;
 }
 
-void Material::Bind(RendererAPI& api) const
-{
-    // 残存するDebug描画の段階移行用互換窓口です。
-    // RendererAPIへ描画Resourceを設定せず、RHI標準経路へ転送します。
-    static_cast<void>(api);
-    Bind();
-}
-
 void Material::BindForSurface() const
 {
     Ref<Pipeline> surfacePipeline = ResolveSurfacePipeline();
@@ -129,7 +117,6 @@ void Material::BindForSurface() const
 
 void Material::Bind() const 
 {
-#if 1
     if (m_pipeline == nullptr)
     {
         return;
@@ -153,44 +140,6 @@ void Material::Bind() const
     {
         RenderCommand::UploadUniform(name, value);
     }
-#else
-    if (m_shader == nullptr) return;
-
-    m_shader.Bind();
-
-    for (const auto& [name, binding] : m_textures) {
-        if (binding.texture == nullptr) continue;
-
-        binding.texture->Bind(binding.slot);
-        m_shader.SetInt(name, binding.slot);
-    }
-
-    for (const auto& [name, value] : m_uniforms) {
-        std::visit([&](const auto& v) {
-            using T = std::decay_t<decltype(v)>;
-
-            if constexpr (std::is_same_v<T, int>) {
-                m_shader.SetInt(name, v);
-            }
-            else if constexpr (std::is_same_v<T, float>) {
-                m_shader.SetFloat(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Vec2>) {
-                m_shader.SetVec2(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Vec3>) {
-                m_shader.SetVec3(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Vec4>) {
-                m_shader.SetVec4(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Mat4>) {
-                m_shader.SetMat4(name, v);
-            }
-        }, value);
-    }
-#endif
-
 }
 
 }

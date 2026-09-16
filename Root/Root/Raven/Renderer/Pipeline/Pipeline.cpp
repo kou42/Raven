@@ -2,28 +2,28 @@
 
 #include <cassert>
 
-#include "Raven/Renderer/RendererAPI.h"
-#include "Raven/Renderer/Pipeline/OpenGLPipeline.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Platform/OpenGL/OpenGLPipeline.h"
 
 namespace Raven
 {
 
 Ref<Pipeline> Pipeline::Create(const PipelineSpecification& specification)
 {
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return CreateRef<OpenGLPipeline>(specification);
 
-    case RendererAPI::API::DirectX11:
-    case RendererAPI::API::DirectX12:
-    case RendererAPI::API::Vulkan:
-        assert(false && "Renderer API is not implemented");
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+        assert(false && "RHI Backend is not implemented");
         return nullptr;
 
-    case RendererAPI::API::None:
+    case RHIBackend::None:
     default:
-        assert(false && "Renderer API is None");
+        assert(false && "RHI Backend is None");
         return nullptr;
     }
 }

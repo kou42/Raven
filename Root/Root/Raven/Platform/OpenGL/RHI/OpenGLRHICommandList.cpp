@@ -33,6 +33,19 @@ GLenum ToOpenGLPrimitiveTopology(PrimitiveTopology topology)
 
 } // namespace
 
+void OpenGLRHICommandList::Init()
+{
+    // 旧OpenGLRendererAPI::Init()が担当していた既定stateです。
+    // Backend固有stateをRHI側へ集約し、Renderer上位層がLegacy RendererAPI objectを
+    // 初期化のためだけに保持しなくても同じ描画条件から開始できるようにします。
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
 void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     glViewport(
@@ -40,6 +53,19 @@ void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, u
         static_cast<GLint>(y),
         static_cast<GLsizei>(width),
         static_cast<GLsizei>(height));
+}
+
+RHIViewport OpenGLRHICommandList::GetViewport() const
+{
+    GLint viewport[4] = {};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    RHIViewport result{};
+    result.X = viewport[0] > 0 ? static_cast<uint32_t>(viewport[0]) : 0u;
+    result.Y = viewport[1] > 0 ? static_cast<uint32_t>(viewport[1]) : 0u;
+    result.Width = viewport[2] > 0 ? static_cast<uint32_t>(viewport[2]) : 0u;
+    result.Height = viewport[3] > 0 ? static_cast<uint32_t>(viewport[3]) : 0u;
+    return result;
 }
 
 void OpenGLRHICommandList::SetClearColor(float r, float g, float b, float a)

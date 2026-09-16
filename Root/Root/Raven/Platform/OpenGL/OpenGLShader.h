@@ -11,12 +11,12 @@
 
 namespace Raven
 {
-    
+
+// GLSLのcompile/linkとOpenGL uniform更新を担当するBackend実装です。
+// Renderer層にはShader抽象APIだけを残し、OpenGL固有型とGL handleはPlatform層へ閉じ込めます。
 class OpenGLShader : public Shader
 {
-
 public:
-
     enum ShaderType
     {
         SHADER_TYPE_VERTEXT,
@@ -42,7 +42,6 @@ public:
     virtual void SetMat4(const std::string& name, const math::Mat4& mat4) override;
 
 private:
-
     std::string ReadFile(const std::string& filepath);
     std::unordered_map<GLuint, std::string> PreProcess(const std::string& source);
     std::unordered_map<GLuint, std::string> PreProcess(const std::string& vertexFilePath, const std::string& fragFilePath);
@@ -55,4 +54,4 @@ private:
     unsigned int m_RendererID = 0;
 };
 
-}
+} // namespace Raven

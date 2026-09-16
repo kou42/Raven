@@ -1,4 +1,4 @@
-#include "Raven/Renderer/Texture/OpenGLTexture.h"
+#include "Raven/Platform/OpenGL/OpenGLTexture.h"
 
 #include <glad/glad.h>
 
@@ -93,6 +93,8 @@ void OpenGLTexture::Bind(unsigned int slot) const
         return;
     }
 
+    // Texture::Bind互換APIはまだnative OpenGL bindingを必要とするため、
+    // RHI Textureのnative handleへ触れる処理をPlatform/OpenGL境界内へ閉じ込めます。
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, openGLTexture->GetRendererID());
 }

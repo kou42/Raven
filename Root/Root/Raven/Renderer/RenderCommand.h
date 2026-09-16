@@ -5,15 +5,14 @@
 //RHI移行中は公開APIを維持しつつ、描画命令をRHICommandListへ転送する互換層として機能します。
 
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/RHI/RHICommandList.h"
 #include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
 {
 
 class Pipeline;
-class RHICommandList;
 class RHIDevice;
-class RendererAPI;
 class Texture;
 class VertexArray;
 
@@ -24,6 +23,7 @@ public:
     static void Init();
 
     static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    static RHIViewport GetViewport();
 
     static void SetClearColor(float r, float g, float b, float a);
 
@@ -39,14 +39,13 @@ public:
     // Legacy Renderer/Texture層がBackend実装を直接生成しないための段階移行用窓口です。
     static RHIDevice* GetDevice();
 
-    static RendererAPI& GetAPI();
-
-    static void SetAPI(std::unique_ptr<RendererAPI> api);
-
 private:
-    static Scope<RendererAPI> s_RendererAPI;
     static Scope<RHIDevice> s_Device;
     static Scope<RHICommandList> s_CommandList;
+
+    // Draw統計は実際にbindされているPipelineのTopologyを基準に集計します。
+    // Backend固有stateをRendererへ問い合わせず、RenderCommandが発行した命令列と同じ状態を保持します。
+    static Ref<Pipeline> s_CurrentPipeline;
 };
 
 }
