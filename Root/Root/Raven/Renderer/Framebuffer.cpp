@@ -1,7 +1,7 @@
 #include "Raven/Renderer/Framebuffer.h"
 
 #include "Raven/Platform/OpenGL/OpenGLFramebuffer.h"
-#include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/Texture/Texture.h"
 
 #include <cassert>
@@ -45,29 +45,29 @@ std::unique_ptr<Framebuffer> Framebuffer::Create(std::uint32_t width, std::uint3
 std::unique_ptr<Framebuffer> Framebuffer::Create(const FramebufferSpecification& specification)
 {
     // ========================================================================
-    // Renderer API factory
+    // RHI Backend factory
     // ========================================================================
     // Editor等の上位層は具体的なOpenGLFramebufferを知りません。
-    // RendererAPI::GetAPI()を見て、このRenderer層だけでPlatform実装を選択します。
+    // RHI Backend識別子だけを見て、このRenderer層でPlatform実装を選択します。
     //
     // DirectX / Vulkan対応時は各Platform実装を追加し、このswitchへ生成処理を足します。
-    switch (RendererAPI::GetAPI())
+    switch (GetRHIBackend())
     {
-    case RendererAPI::API::OpenGL:
+    case RHIBackend::OpenGL:
         return std::make_unique<OpenGLFramebuffer>(specification);
 
-    case RendererAPI::API::DirectX11:
-    case RendererAPI::API::DirectX12:
-    case RendererAPI::API::Vulkan:
-        // API enum自体は既に存在しますが、Framebuffer実装はまだありません。
-        // 未実装APIでOpenGL実装へ暗黙fallbackするとPlatform依存のバグを隠してしまうため、
+    case RHIBackend::DirectX11:
+    case RHIBackend::DirectX12:
+    case RHIBackend::Vulkan:
+        // Backend enum自体は既に存在しますが、Framebuffer実装はまだありません。
+        // 未実装BackendでOpenGL実装へ暗黙fallbackするとPlatform依存のバグを隠してしまうため、
         // 明示的にassertして対応漏れを検出します。
-        assert(false && "Framebuffer implementation is not available for the selected RendererAPI.");
+        assert(false && "Framebuffer implementation is not available for the selected RHI backend.");
         return nullptr;
 
-    case RendererAPI::API::None:
+    case RHIBackend::None:
     default:
-        assert(false && "RendererAPI::None cannot create a Framebuffer.");
+        assert(false && "RHIBackend::None cannot create a Framebuffer.");
         return nullptr;
     }
 }
