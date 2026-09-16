@@ -7,16 +7,21 @@ Raven の RHI 移行で残っている Legacy RendererAPI 依存と、移行完�
 - [x] Scene の Material bind は `Material::Bind()` / `BindForSurface()` から `RenderCommand` → `RHICommandList` へ送る。
 - [x] Editor Entity Picking は `RendererAPI` を受け取らない `Material::Bind()` を利用する。
 - [x] Editor Selection Outline は `RendererAPI` を受け取らない `Material::Bind()` を利用する。
-- [x] `PhysicsDebugRenderer` の `Material::Bind(Renderer::GetAPI())` を `Material::Bind()` へ移行する。
-- [x] `PhysicsDebugRenderer` の `Renderer::GetAPI().DrawIndexed()` を `RenderCommand::DrawIndexed()` へ移行する。
+- [x] `PhysicsDebugRenderer` の Legacy Material bind を `Material::Bind()` へ移行する。
+- [x] `PhysicsDebugRenderer` の Legacy DrawIndexed を `RenderCommand::DrawIndexed()` へ移行する。
 - [x] Physics Debug Overlay の `glGetIntegerv(GL_VIEWPORT, ...)` を RHI 管理の viewport 情報へ移行する。
-- [x] Physics Debug 移行後、`Material::Bind(RendererAPI&)` 互換 overload を削除する。
-- [ ] `Renderer::GetAPI()` / `RenderCommand::GetAPI()` の呼び出し元を再検索し、不要になった公開 Legacy API を削除する。
-- [ ] `Renderer::Init()` の OpenGL 固有 `SetAPI(std::make_unique<OpenGLRendererAPI>())` を Backend 選択責務へ寄せる。
+- [x] Physics Debug 移行後、Legacy Material bind互換 overload を削除する。
+- [x] `Renderer::GetAPI()` / `RenderCommand::GetAPI()` / `SetAPI()` を削除する。
+- [x] `Renderer::Init()` の OpenGL 固有 Legacy API生成を削除し、`RHICommandList::Init()` へBackend初期stateを移す。
+- [x] `Renderer::Submit()` の直接Shader bind経路をPipeline / RenderCommand経路へ移行して削除する。
+- [x] Buffer / VertexArray / Texture / Shader / Pipeline / Framebuffer / UI factoryのBackend判定を `RHIBackend` へ統一する。
+- [x] `RendererAPI` / `OpenGLRendererAPI` のLegacy classを削除する。
 
 ### Legacy として数えないもの
 
 `Platform/OpenGL/RHI` 以下の `gl*` 呼び出しは OpenGL Backend 実装そのものなので、上位層の Legacy API 依存とは区別します。`glad.c` / `glad.h` も OpenGL loader のため移行対象外です。
+
+現在のBackend選択は `RHITypes.h` の `RHIBackend` / `GetRHIBackend()` に集約しています。DirectX / Vulkanは識別子のみ定義済みで、実装がないfactoryではOpenGLへ暗黙fallbackせず `nullptr` またはassertで未実装を明示します。
 
 ## 2. Physics Debug 経路
 
@@ -28,14 +33,17 @@ Physics Debug の Line topology は `PipelineSpecification::Topology = Primitive
 
 Overlay の画面サイズ取得は `RenderCommand::GetViewport()` → `RHICommandList::GetViewport()` を使用します。OpenGLではBackend内部だけが `GL_VIEWPORT` を参照するため、Physics Debug側へGraphics API依存を持ち込みません。
 
+Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`PrimitiveTopology::Triangles` の場合だけ `TriangleCount` を加算します。Line / Point drawも `DrawCalls` / `IndexCount` には含めますが、Triangleとしては数えません。
+
 ## 3. ビルド・動作確認項目
 
 ### Compile / Link
 
 - [ ] Debug x64 が compile / link できる。
 - [ ] Release x64 が compile / link できる。
-- [x] `RendererAPI&` を要求する Material bind APIを削除済み。
+- [x] Legacy `RendererAPI&` を要求する Material bind APIを削除済み。
 - [x] Physics Debug 上位層からOpenGLの `gl*` 呼び出しを削除済み。
+- [x] Legacy `RendererAPI` / `OpenGLRendererAPI` classを削除済み。
 - [ ] Editor / Rendererの上位層に今回の対象となる直接OpenGL依存が残っていないことを最終検索する。
 
 ### Scene rendering
@@ -44,6 +52,7 @@ Overlay の画面サイズ取得は `RenderCommand::GetViewport()` → `RHIComma
 - [ ] Transparent Mesh の depth write / blend と描画順が維持される。
 - [ ] Entity Picking が正しい Entity ID を返す。
 - [ ] Selection Outline が選択 Mesh に表示される。
+- [ ] SandboxのTriangle描画がPipeline経路で従来どおり表示される。
 
 ### Physics Debug
 
@@ -60,7 +69,7 @@ Overlay の画面サイズ取得は `RenderCommand::GetViewport()` → `RHIComma
 
 ## 次の実装単位
 
-1. `Renderer::GetAPI()` / `RenderCommand::GetAPI()` の不要な公開Legacy APIを削除する。
-2. `Renderer::Init()` に残るOpenGL Backend直接選択を整理する。
-3. masterとの差分を最終確認する。
-4. Debug / Release x64のcompile / linkとScene / Physics Debugの実動作を確認する。
+1. masterとの差分をレビューし、Legacy RendererAPI削除に伴うinclude / dead code / project metadataの残存を確認する。
+2. Editor / Renderer上位層の直接OpenGL依存を最終検索する。
+3. Debug / Release x64のcompile / linkを確認する。
+4. Scene / Sandbox / Physics Debugの実動作を確認する。
