@@ -15,10 +15,12 @@ public:
     void Clear() override;
 
     void BindPipeline(const Ref<Pipeline>& pipeline) override;
+    void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot) override;
+    void UploadUniform(const std::string& name, const UniformValue& value) override;
     void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0) override;
 
 private:
-    // DrawIndexed時のPrimitiveTopology解決に使用します。
+    // DrawIndexedのPrimitiveTopologyとTexture / UniformのShader解決に使用します。
     // OpenGLはImmediate APIですが、Explicit APIのCommandListと同様に現在の描画stateを保持します。
     Ref<Pipeline> m_CurrentPipeline;
 };
