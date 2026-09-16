@@ -61,8 +61,8 @@ void RenderCommand::Init()
 
     s_RendererAPI->Init();
 
-    // RHI移行中はRendererAPIをTexture / Uniform互換経路として残し、
-    // 描画stateとDraw commandはCommandListへ段階的に移します。
+    // RHI移行中もRendererAPI object自体は既存互換のため維持しますが、
+    // Materialから利用するPipeline / Texture / UniformとDraw commandはCommandListへ集約します。
     switch (RendererAPI::GetAPI())
     {
     case RendererAPI::API::OpenGL:
@@ -120,6 +120,28 @@ void RenderCommand::BindPipeline(const Ref<Pipeline>& pipeline)
     }
 
     s_CommandList->BindPipeline(pipeline);
+}
+
+void RenderCommand::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
+{
+    if (s_CommandList == nullptr || texture == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->BindTexture(name, texture, slot);
+}
+
+void RenderCommand::UploadUniform(const std::string& name, const UniformValue& value)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->UploadUniform(name, value);
 }
 
 void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
