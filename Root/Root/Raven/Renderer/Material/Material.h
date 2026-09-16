@@ -14,6 +14,7 @@
 namespace Raven {
 
 class Pipeline;
+class RendererAPI;
 class Shader;
 class Texture;
 
@@ -55,6 +56,10 @@ public:
     // RHI移行後の標準Bind経路です。MaterialはGraphics API objectを受け取らず、
     // RenderCommandを通して現在のRHICommandListへPipeline / Texture / Uniformを設定します。
     void Bind() const;
+
+    // Physics Debug等の残存呼び出しを段階移行するための互換overloadです。
+    // RendererAPIは参照せず、標準Bind()へ転送します。
+    void Bind(RendererAPI& api) const;
 
     // 通常SceneのRender Passから利用するBindです。
     // MaterialSurfaceTypeに応じてAPI非依存のPipelineSpecificationを派生させるため、
