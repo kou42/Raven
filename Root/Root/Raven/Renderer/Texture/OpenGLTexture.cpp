@@ -5,6 +5,8 @@
 #include <iostream>
 
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHITexture.h"
+#include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
 
 namespace Raven
 {
@@ -60,9 +62,16 @@ OpenGLTexture::OpenGLTexture(const TextureSpecification& specification)
         return;
     }
 
-    // 既存Texture APIの寿命は維持しつつ、GPU Resourceの所有権をRHI側へ移します。
-    // Framebuffer / ImGuiが必要とするnative handleはGetID()でBridgeから取得します。
-    m_RHITexture = CreateRef<OpenGLRHITexture>(rhiSpecification);
+    RHIDevice* device = RenderCommand::GetDevice();
+    if (device == nullptr)
+    {
+        std::cerr << "OpenGLTexture creation failed. RHI device is not initialized." << std::endl;
+        return;
+    }
+
+    // 既存Texture APIの寿命は維持しつつ、GPU Resource生成をRHIDeviceへ集約します。
+    // これによりBridge自身がOpenGLRHITextureを直接生成せず、Backend選択をDevice境界へ閉じ込めます。
+    m_RHITexture = device->CreateTexture(rhiSpecification);
 }
 
 void OpenGLTexture::SetData(const void* data, std::size_t dataSize)
