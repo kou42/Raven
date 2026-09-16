@@ -1,5 +1,6 @@
 // Material.cpp
 #include "Raven/Renderer/RendererAPI.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -97,7 +98,9 @@ void Material::Bind(RendererAPI& api) const
         return;
     }
 
-    api.BindPipeline(m_pipeline);
+    // Pipeline stateとDraw commandは同じRHICommandListで管理し、PrimitiveTopologyを
+    // DrawIndexedまで保持します。Texture / UniformはまだRendererAPI互換経路を利用します。
+    RenderCommand::BindPipeline(m_pipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
@@ -135,7 +138,9 @@ void Material::BindForSurface(RendererAPI& api) const
         return;
     }
 
-    api.BindPipeline(surfacePipeline);
+    // Surface Pipelineも通常Pipelineと同じCommandListへbindし、Opaque / Transparentごとの
+    // DepthWrite / Blend stateとPrimitiveTopologyを後続Drawへ引き継ぎます。
+    RenderCommand::BindPipeline(surfacePipeline);
 
     for (const auto& [name, binding] : m_textures)
     {
