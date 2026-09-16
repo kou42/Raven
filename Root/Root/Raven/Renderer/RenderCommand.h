@@ -48,6 +48,10 @@ private:
     static Scope<RendererAPI> s_RendererAPI;
     static Scope<RHIDevice> s_Device;
     static Scope<RHICommandList> s_CommandList;
+
+    // Draw統計は実際にbindされているPipelineのTopologyを基準に集計します。
+    // Backend固有stateをRendererへ問い合わせず、RenderCommandが発行した命令列と同じ状態を保持します。
+    static Ref<Pipeline> s_CurrentPipeline;
 };
 
 }
