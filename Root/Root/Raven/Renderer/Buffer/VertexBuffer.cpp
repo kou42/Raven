@@ -1,7 +1,7 @@
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
 
 #include "Raven/Renderer/RHI/RHITypes.h"
-#include "Raven/Renderer/Buffer/OpenGLVertexBuffer.h"
+#include "Raven/Platform/OpenGL/OpenGLVertexBuffer.h"
 
 namespace Raven
 {
