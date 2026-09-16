@@ -91,10 +91,10 @@ Ref<Pipeline> Material::ResolveSurfacePipeline() const
     return m_SurfacePipeline;
 }
 
-void Material::Bind(RendererAPI& api) const
+void Material::Bind() const
 {
-#if 1
-    if (m_pipeline == nullptr) {
+    if (m_pipeline == nullptr)
+    {
         return;
     }
 
@@ -104,7 +104,8 @@ void Material::Bind(RendererAPI& api) const
 
     for (const auto& [name, binding] : m_textures)
     {
-        if (binding.texture == nullptr) {
+        if (binding.texture == nullptr)
+        {
             continue;
         }
 
@@ -115,22 +116,16 @@ void Material::Bind(RendererAPI& api) const
     {
         RenderCommand::UploadUniform(name, value);
     }
-#else
-    api.BindShader(m_shader);
-
-    for (const auto& [name, binding] : m_textures)
-    {
-        api.BindTexture(name, binding.texture, binding.slot);
-    }
-
-    for (const auto& [name, value] : m_uniforms)
-    {
-        api.UploadUniform(name, value);
-    }
-#endif
 }
 
-void Material::BindForSurface(RendererAPI& api) const
+void Material::Bind(RendererAPI& api) const
+{
+    // 互換overloadではRendererAPIへ描画stateを戻さず、RHI標準経路だけを使用します。
+    static_cast<void>(api);
+    Bind();
+}
+
+void Material::BindForSurface() const
 {
     Ref<Pipeline> surfacePipeline = ResolveSurfacePipeline();
     if (surfacePipeline == nullptr)
@@ -158,46 +153,11 @@ void Material::BindForSurface(RendererAPI& api) const
     }
 }
 
-void Material::Bind() const 
+void Material::BindForSurface(RendererAPI& api) const
 {
-#if 0
-    if (m_shader == nullptr) return;
-
-    m_shader.Bind();
-
-    for (const auto& [name, binding] : m_textures) {
-        if (binding.texture == nullptr) continue;
-
-        binding.texture->Bind(binding.slot);
-        m_shader.SetInt(name, binding.slot);
-    }
-
-    for (const auto& [name, value] : m_uniforms) {
-        std::visit([&](const auto& v) {
-            using T = std::decay_t<decltype(v)>;
-
-            if constexpr (std::is_same_v<T, int>) {
-                m_shader.SetInt(name, v);
-            }
-            else if constexpr (std::is_same_v<T, float>) {
-                m_shader.SetFloat(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Vec2>) {
-                m_shader.SetVec2(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Vec3>) {
-                m_shader.SetVec3(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Vec4>) {
-                m_shader.SetVec4(name, v);
-            }
-            else if constexpr (std::is_same_v<T, math::Mat4>) {
-                m_shader.SetMat4(name, v);
-            }
-        }, value);
-    }
-#endif
-
+    // Scene側の既存呼び出しを壊さず段階移行するための互換overloadです。
+    static_cast<void>(api);
+    BindForSurface();
 }
 
 }
