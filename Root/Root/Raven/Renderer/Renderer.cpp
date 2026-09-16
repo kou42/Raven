@@ -111,7 +111,7 @@ void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cam
 
     // Scene PassではSurface分類から解決したPipelineを使います。
     // Debug Overlay等の即時描画はMaterial::Bind()のままなので、特殊なDepth/Blend stateを壊しません。
-    item.Material->BindForSurface(RenderCommand::GetAPI());
+    item.Material->BindForSurface();
     item.Mesh->Draw();
 }
 
@@ -310,7 +310,7 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
     }
 
     material->SetUniform("u_Model", transform);
-    material->Bind(RenderCommand::GetAPI());
+    material->Bind();
     mesh->Draw();
 }
 
