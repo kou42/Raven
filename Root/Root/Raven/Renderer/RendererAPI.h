@@ -1,11 +1,7 @@
 #pragma once
 
-#include <variant>
-
-#include "Raven/Math/Math.h"
-#include "Raven/Math/MathVector.h"
-#include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
+#include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
 {
@@ -13,15 +9,6 @@ namespace Raven
 class Pipeline;
 class Shader;
 class Texture;
-
-using UniformValue = std::variant<
-    int,
-    float,
-    math::Vec2,
-    math::Vec3,
-    math::Vec4,
-    math::Mat4
->;
 
 class RendererAPI
 {
