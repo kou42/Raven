@@ -56,6 +56,7 @@ void OpenGLVertexBuffer::SetData(const void* data, uint32_t size)
     // 既存容量に収まる通常の頂点変形(Skeletal / SoftBody / Morph)では、VBOを再確保せず
     // 内容だけを更新します。Fixed TopologyのDynamic Geometryでは頂点数が変わらないため、
     // 基本的にこの経路を通ります。
+    // RHI移行後はRHIBuffer::SetDataがBackend内部でglBufferSubData相当の更新を担当します。
     if (data != nullptr && size <= m_Capacity)
     {
         m_RHIBuffer->SetData(data, size);
@@ -63,8 +64,11 @@ void OpenGLVertexBuffer::SetData(const void* data, uint32_t size)
     }
 
     // 容量を超える場合、または空データで明示的に領域だけ確保したい場合は再確保します。
-    // glVertexAttribPointerは設定時のBuffer object名をVAOへ保持するため、OpenGL Backendでは
-    // RHIBuffer::Resize()が同一objectのstorageだけを拡張します。
+    // 再確保後は更新用途であることをDriverへ伝えるためDynamic用途を維持します。
+    //
+    // glVertexAttribPointerは設定時のBuffer object名をVAOへ保持します。
+    // 容量拡張でRHIBuffer objectを交換すると既存VAOが古いBufferを参照するため、
+    // OpenGL BackendではRHIBuffer::Resize()により同一objectのstorageだけを拡張します。
     m_RHIBuffer->Resize(size, data);
     m_Capacity = size;
 }
