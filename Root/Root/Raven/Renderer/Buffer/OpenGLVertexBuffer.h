@@ -32,7 +32,7 @@ private:
     BufferLayout m_Layout;
 
     // 現在GPU側に確保しているVBO容量(byte)。
-    // 容量を超えた場合だけRHIBufferを再生成し、通常更新では同じResourceを再利用します。
+    // 容量を超えた場合もOpenGL object名を維持し、storageだけを拡張します。
     uint32_t m_Capacity = 0;
 };
 
