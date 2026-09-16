@@ -52,12 +52,20 @@ public:
     void SetShader(Ref<Shader> shader);
     Ref<Shader> GetShader() const;
 
+    // RHI移行後の標準Bind経路です。MaterialはGraphics API objectを受け取らず、
+    // RenderCommandを通して現在のRHICommandListへPipeline / Texture / Uniformを設定します。
     void Bind() const;
+
+    // 既存呼び出し元を段階的に移行するための互換overloadです。
+    // RendererAPIは使用せず、標準Bind()へ転送します。
     void Bind(RendererAPI& api) const;
 
     // 通常SceneのRender Passから利用するBindです。
     // MaterialSurfaceTypeに応じてAPI非依存のPipelineSpecificationを派生させるため、
     // OpenGL固有のDepthMask切り替えを上位Rendererへ漏らしません。
+    void BindForSurface() const;
+
+    // 既存Scene描画コードとの互換overloadです。RendererAPIは使用しません。
     void BindForSurface(RendererAPI& api) const;
 
     template<class T>
