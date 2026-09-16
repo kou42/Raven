@@ -4,7 +4,6 @@
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Renderer/Camera/Camera.h"
-#include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
@@ -254,13 +253,6 @@ void Renderer::RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology
     {
         s_Statistics.TriangleCount += indexCount / 3u;
     }
-}
-
-void Renderer::Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray)
-{
-    shader->Bind();
-    vertexArray->Bind();
-    RenderCommand::DrawIndexed(vertexArray);
 }
 
 void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
