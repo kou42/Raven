@@ -93,6 +93,17 @@ void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t
     s_CommandList->SetViewport(x, y, width, height);
 }
 
+RHIViewport RenderCommand::GetViewport()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return {};
+    }
+
+    return s_CommandList->GetViewport();
+}
+
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
     if (s_CommandList == nullptr)
