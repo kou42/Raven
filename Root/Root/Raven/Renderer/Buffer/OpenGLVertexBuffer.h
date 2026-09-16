@@ -1,14 +1,14 @@
 #pragma once
 
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
-#include "Raven/Platform/OpenGL/RHI/OpenGLRHIBuffer.h"
+#include "Raven/Renderer/RHI/RHIBuffer.h"
 
 namespace Raven
 {
 
 // 既存VertexBuffer APIと新しいRHI Bufferを接続する互換Bridgeです。
 // VAO構築側がまだBind/Unbindを必要とするためOpenGL binding操作はここへ残し、
-// GPU Bufferの生成・データ更新・破棄はOpenGLRHIBufferへ委譲します。
+// GPU Bufferの生成・データ更新・破棄はRHIDevice / RHIBufferへ委譲します。
 class OpenGLVertexBuffer : public VertexBuffer
 {
 public:
@@ -27,7 +27,7 @@ private:
     void RecreateBuffer(const void* data, uint32_t size);
 
 private:
-    Ref<OpenGLRHIBuffer> m_RHIBuffer;
+    Ref<RHIBuffer> m_RHIBuffer;
     BufferLayout m_Layout;
 
     // 現在GPU側に確保しているVBO容量(byte)。
