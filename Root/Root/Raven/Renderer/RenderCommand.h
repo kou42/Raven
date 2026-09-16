@@ -13,6 +13,7 @@ namespace Raven
 class Pipeline;
 class RHICommandList;
 class RendererAPI;
+class Texture;
 class VertexArray;
 
 class RenderCommand
@@ -28,6 +29,8 @@ public:
     static void Clear();
 
     static void BindPipeline(const Ref<Pipeline>& pipeline);
+    static void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot);
+    static void UploadUniform(const std::string& name, const UniformValue& value);
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0);
 
