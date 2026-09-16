@@ -76,6 +76,30 @@ const RHIBufferSpecification& OpenGLRHIBuffer::GetSpecification() const
     return m_Specification;
 }
 
+void OpenGLRHIBuffer::Resize(std::size_t size, const void* data)
+{
+    if (size == 0 || size == m_Specification.Size)
+    {
+        if (data != nullptr && size != 0)
+        {
+            SetData(data, size);
+        }
+        return;
+    }
+
+    // OpenGL object名を維持したままstorageだけを再確保します。
+    // GL_COPY_WRITE_BUFFERを使うことで、現在bind中のVAOが保持するEBO関連付けも変更しません。
+    glBindBuffer(GL_COPY_WRITE_BUFFER, m_RendererID);
+    glBufferData(
+        GL_COPY_WRITE_BUFFER,
+        static_cast<GLsizeiptr>(size),
+        data,
+        ToOpenGLBufferUsage(m_Specification.MemoryUsage));
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+
+    m_Specification.Size = size;
+}
+
 std::uint32_t OpenGLRHIBuffer::GetRendererID() const
 {
     return m_RendererID;
