@@ -13,7 +13,6 @@ namespace Raven
 
 class Pipeline;
 class RHIDevice;
-class RendererAPI;
 class Texture;
 class VertexArray;
 
@@ -40,12 +39,7 @@ public:
     // Legacy Renderer/Texture層がBackend実装を直接生成しないための段階移行用窓口です。
     static RHIDevice* GetDevice();
 
-    static RendererAPI& GetAPI();
-
-    static void SetAPI(std::unique_ptr<RendererAPI> api);
-
 private:
-    static Scope<RendererAPI> s_RendererAPI;
     static Scope<RHIDevice> s_Device;
     static Scope<RHICommandList> s_CommandList;
 
