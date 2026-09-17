@@ -78,18 +78,17 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
 
 void VulkanDevice::Shutdown()
 {
+    if (m_Device != VK_NULL_HANDLE)
+    {
+        // 今後Command Buffer等を所有する場合は、それらの利用完了を保証した後でDeviceを破棄します。
+        vkDestroyDevice(m_Device, nullptr);
+    }
+
+    // 親Deviceを破棄した後で、Device由来のQueueと選択情報をまとめて無効化します。
+    m_Device = VK_NULL_HANDLE;
     m_GraphicsQueue = VK_NULL_HANDLE;
     m_GraphicsQueueFamilyIndex = VulkanPhysicalDevice::InvalidQueueFamilyIndex;
     m_PhysicalDevice = VK_NULL_HANDLE;
-
-    if (m_Device == VK_NULL_HANDLE)
-    {
-        return;
-    }
-
-    // 今後Command Buffer等を所有する場合は、それらの利用完了を保証した後でDeviceを破棄します。
-    vkDestroyDevice(m_Device, nullptr);
-    m_Device = VK_NULL_HANDLE;
 }
 
 } // namespace Raven
