@@ -55,6 +55,13 @@ bool VulkanInstance::Init()
         return false;
     }
 
+    if (m_PhysicalDevices.FindFirstGraphicsDevice() == nullptr)
+    {
+        std::cout << "No Vulkan physical device with a Graphics Queue was found.\n";
+        Shutdown();
+        return false;
+    }
+
     std::cout << "Vulkan VkInstance created successfully.\n";
     return true;
 }
