@@ -17,10 +17,11 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
         const bool samePhysicalDevice = m_PhysicalDevice == physicalDevice.Handle;
         const bool sameGraphicsQueueFamily =
             m_GraphicsQueueFamilyIndex == physicalDevice.GraphicsQueueFamilyIndex;
+        const bool hasGraphicsQueue = m_GraphicsQueue != VK_NULL_HANDLE;
 
         if (samePhysicalDevice == true &&
             sameGraphicsQueueFamily == true &&
-            m_GraphicsQueue != VK_NULL_HANDLE)
+            hasGraphicsQueue == true)
         {
             return true;
         }
