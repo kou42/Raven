@@ -75,8 +75,10 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
             for (uint32_t queueIndex = 0; queueIndex < queueFamilyCount; ++queueIndex)
             {
                 const VkQueueFamilyProperties& queueFamily = info.QueueFamilies[queueIndex];
-                if (queueFamily.queueCount > 0 &&
-                    (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0)
+                const bool supportsGraphics =
+                    (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+
+                if (queueFamily.queueCount > 0 && supportsGraphics == true)
                 {
                     info.GraphicsQueueFamilyIndex = queueIndex;
                     break;
