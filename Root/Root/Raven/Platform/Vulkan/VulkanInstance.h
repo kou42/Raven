@@ -28,6 +28,10 @@ public:
     bool IsValid() const { return m_Instance != VK_NULL_HANDLE; }
 
     const VulkanPhysicalDevice& GetPhysicalDevices() const { return m_PhysicalDevices; }
+    const VulkanPhysicalDevice::DeviceInfo* GetGraphicsDevice() const
+    {
+        return m_PhysicalDevices.FindFirstGraphicsDevice();
+    }
 
 private:
     VkInstance m_Instance = VK_NULL_HANDLE;
