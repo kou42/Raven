@@ -30,17 +30,37 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         return false;
     }
 
-    std::vector<VkPhysicalDevice> handles(deviceCount, VK_NULL_HANDLE);
-    result = vkEnumeratePhysicalDevices(instance, &deviceCount, handles.data());
-    if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+    std::vector<VkPhysicalDevice> handles;
+
+    // 列挙中にDevice数が変化するとVK_INCOMPLETEが返る可能性があります。
+    // その場合は最新の件数を再取得して配列を作り直し、欠けた一覧を後続処理へ渡さないようにします。
+    do
+    {
+        handles.assign(deviceCount, VK_NULL_HANDLE);
+        result = vkEnumeratePhysicalDevices(instance, &deviceCount, handles.data());
+
+        if (result == VK_INCOMPLETE)
+        {
+            uint32_t updatedDeviceCount = 0;
+            const VkResult countResult = vkEnumeratePhysicalDevices(instance, &updatedDeviceCount, nullptr);
+            if (countResult != VK_SUCCESS || updatedDeviceCount == 0)
+            {
+                std::cout << "Failed to refresh Vulkan physical device count. VkResult = "
+                          << static_cast<int>(countResult) << '\n';
+                return false;
+            }
+
+            deviceCount = updatedDeviceCount;
+        }
+    } while (result == VK_INCOMPLETE);
+
+    if (result != VK_SUCCESS)
     {
         std::cout << "Failed to enumerate Vulkan physical devices. VkResult = "
                   << static_cast<int>(result) << '\n';
         return false;
     }
 
-    // VK_INCOMPLETEの場合、列挙の途中でDevice数が変化した可能性があります。
-    // Vulkanが実際に書き込んだdeviceCountだけを採用し、範囲外のHandleを参照しません。
     handles.resize(deviceCount);
     m_Devices.reserve(deviceCount);
 
