@@ -46,6 +46,8 @@ bool VulkanInstance::Init()
         return false;
     }
 
+    std::cout << "Vulkan VkInstance created successfully.\n";
+
     // VkInstance生成直後にGPU一覧まで取得しておくことで、次段階のQueue Family選択が
     // VulkanInstanceのLifetime内にある有効なVkPhysicalDeviceだけを参照できます。
     if (m_PhysicalDevices.Enumerate(m_Instance) == false)
@@ -73,7 +75,7 @@ bool VulkanInstance::Init()
         return false;
     }
 
-    std::cout << "Vulkan VkInstance created successfully.\n";
+    std::cout << "Vulkan base device initialization completed successfully.\n";
     return true;
 }
 
