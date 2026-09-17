@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "VulkanPhysicalDevice.h"
+
 namespace Raven
 {
 
@@ -25,8 +27,11 @@ public:
     VkInstance GetHandle() const { return m_Instance; }
     bool IsValid() const { return m_Instance != VK_NULL_HANDLE; }
 
+    const VulkanPhysicalDevice& GetPhysicalDevices() const { return m_PhysicalDevices; }
+
 private:
     VkInstance m_Instance = VK_NULL_HANDLE;
+    VulkanPhysicalDevice m_PhysicalDevices;
 };
 
 } // namespace Raven
