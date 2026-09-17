@@ -35,6 +35,7 @@ public:
     void Clear();
 
     const std::vector<DeviceInfo>& GetDevices() const { return m_Devices; }
+    const DeviceInfo* FindFirstGraphicsDevice() const;
     bool HasDevices() const { return m_Devices.empty() == false; }
 
 private:
