@@ -55,6 +55,10 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
     if (result != VK_SUCCESS)
     {
         m_Device = VK_NULL_HANDLE;
+        m_PhysicalDevice = VK_NULL_HANDLE;
+        m_GraphicsQueue = VK_NULL_HANDLE;
+        m_GraphicsQueueFamilyIndex = VulkanPhysicalDevice::InvalidQueueFamilyIndex;
+
         std::cout << "Failed to create Vulkan VkDevice. VkResult = "
                   << static_cast<int>(result) << '\n';
         return false;
