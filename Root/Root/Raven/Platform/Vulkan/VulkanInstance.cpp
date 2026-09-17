@@ -46,19 +46,31 @@ bool VulkanInstance::Init()
         return false;
     }
 
+    // VkInstance生成直後にGPU一覧まで取得しておくことで、次段階のQueue Family選択が
+    // VulkanInstanceのLifetime内にある有効なVkPhysicalDeviceだけを参照できます。
+    if (m_PhysicalDevices.Enumerate(m_Instance) == false)
+    {
+        std::cout << "Failed to initialize Vulkan physical device list.\n";
+        Shutdown();
+        return false;
+    }
+
     std::cout << "Vulkan VkInstance created successfully.\n";
     return true;
 }
 
 void VulkanInstance::Shutdown()
 {
+    // VkPhysicalDevice自体の明示破棄は不要ですが、Instance破棄後に無効Handleを
+    // 保持し続けないよう、先に列挙結果を破棄します。
+    m_PhysicalDevices.Clear();
+
     if (m_Instance == VK_NULL_HANDLE)
     {
         return;
     }
 
     // VkInstanceが所有するVulkanオブジェクトは、今後この呼び出しより先に破棄します。
-    // 現段階では子オブジェクトをまだ生成しないため、Instanceのみを破棄します。
     vkDestroyInstance(m_Instance, nullptr);
     m_Instance = VK_NULL_HANDLE;
 }
