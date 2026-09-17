@@ -41,6 +41,14 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
         return false;
     }
 
+    const uint32_t queueFamilyCount =
+        static_cast<uint32_t>(physicalDevice.QueueFamilies.size());
+    if (physicalDevice.GraphicsQueueFamilyIndex >= queueFamilyCount)
+    {
+        std::cout << "Cannot create Vulkan logical device because Graphics Queue Family index is out of range.\n";
+        return false;
+    }
+
     constexpr float graphicsQueuePriority = 1.0f;
 
     VkDeviceQueueCreateInfo queueCreateInfo{};
