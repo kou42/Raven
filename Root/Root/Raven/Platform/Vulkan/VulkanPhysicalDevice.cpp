@@ -30,36 +30,13 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         return false;
     }
 
-    std::vector<VkPhysicalDevice> handles;
-    constexpr uint32_t maxEnumerationAttempts = 4;
-    uint32_t enumerationAttempt = 0;
-
-    // 列挙中にDevice数が変化するとVK_INCOMPLETEが返る可能性があります。
-    // 最新件数で再試行しますが、Driver異常等で無限ループにならないよう回数を制限します。
-    do
-    {
-        ++enumerationAttempt;
-        handles.assign(deviceCount, VK_NULL_HANDLE);
-        result = vkEnumeratePhysicalDevices(instance, &deviceCount, handles.data());
-
-        if (result == VK_INCOMPLETE && enumerationAttempt < maxEnumerationAttempts)
-        {
-            uint32_t updatedDeviceCount = 0;
-            const VkResult countResult = vkEnumeratePhysicalDevices(instance, &updatedDeviceCount, nullptr);
-            if (countResult != VK_SUCCESS || updatedDeviceCount == 0)
-            {
-                std::cout << "Failed to refresh Vulkan physical device count. VkResult = "
-                          << static_cast<int>(countResult) << '\n';
-                return false;
-            }
-
-            deviceCount = updatedDeviceCount;
-        }
-    } while (result == VK_INCOMPLETE && enumerationAttempt < maxEnumerationAttempts);
-
+    std::vector<VkPhysicalDevice> handles(deviceCount, VK_NULL_HANDLE);
+    result = vkEnumeratePhysicalDevices(instance, &deviceCount, handles.data());
     if (result != VK_SUCCESS)
     {
-        std::cout << "Failed to enumerate a stable Vulkan physical device list. VkResult = "
+        // VK_INCOMPLETEも不完全な一覧なので成功扱いにしません。
+        // 次のQueue Family / Device選択へ欠けたGPU一覧を渡さないことを優先します。
+        std::cout << "Failed to enumerate complete Vulkan physical device list. VkResult = "
                   << static_cast<int>(result) << '\n';
         return false;
     }
