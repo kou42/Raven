@@ -33,6 +33,7 @@ public:
         }
     };
 
+    // 全GPUの情報を保持し、少なくとも1つGraphics Queue対応GPUがあればtrueを返します。
     bool Enumerate(VkInstance instance);
     void Clear();
 
