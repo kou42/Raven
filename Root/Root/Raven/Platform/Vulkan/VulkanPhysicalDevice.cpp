@@ -72,7 +72,11 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
 
             // まず描画可能なGraphics Queueだけを選択します。
             // Present対応はSurface導入後にvkGetPhysicalDeviceSurfaceSupportKHRで別途判定します。
-            for (uint32_t queueIndex = 0; queueIndex < queueFamilyCount; ++queueIndex)
+            const uint32_t availableQueueFamilyCount =
+                static_cast<uint32_t>(info.QueueFamilies.size());
+            for (uint32_t queueIndex = 0;
+                 queueIndex < availableQueueFamilyCount;
+                 ++queueIndex)
             {
                 const VkQueueFamilyProperties& queueFamily = info.QueueFamilies[queueIndex];
                 const bool supportsGraphics =
@@ -123,7 +127,12 @@ const VulkanPhysicalDevice::DeviceInfo* VulkanPhysicalDevice::FindFirstGraphicsD
     // Surface / SwapChain対応後にPresent対応やDevice Extensionを選択条件へ追加します。
     for (const DeviceInfo& device : m_Devices)
     {
-        if (device.Handle != VK_NULL_HANDLE && device.HasGraphicsQueue() == true)
+        if (device.Handle == VK_NULL_HANDLE)
+        {
+            continue;
+        }
+
+        if (device.HasGraphicsQueue() == true)
         {
             return &device;
         }
