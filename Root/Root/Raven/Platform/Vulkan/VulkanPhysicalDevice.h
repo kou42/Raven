@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
 #include <vector>
 
 namespace Raven
@@ -13,6 +14,8 @@ namespace Raven
 class VulkanPhysicalDevice
 {
 public:
+    static constexpr uint32_t InvalidQueueFamilyIndex = UINT32_MAX;
+
     struct DeviceInfo
     {
         VkPhysicalDevice Handle = VK_NULL_HANDLE;
@@ -20,6 +23,12 @@ public:
         VkPhysicalDeviceFeatures Features{};
         VkPhysicalDeviceMemoryProperties MemoryProperties{};
         std::vector<VkQueueFamilyProperties> QueueFamilies;
+        uint32_t GraphicsQueueFamilyIndex = InvalidQueueFamilyIndex;
+
+        bool HasGraphicsQueue() const
+        {
+            return GraphicsQueueFamilyIndex != InvalidQueueFamilyIndex;
+        }
     };
 
     bool Enumerate(VkInstance instance);
