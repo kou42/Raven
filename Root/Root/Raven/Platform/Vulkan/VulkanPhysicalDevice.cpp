@@ -117,4 +117,19 @@ void VulkanPhysicalDevice::Clear()
     m_Devices.clear();
 }
 
+const VulkanPhysicalDevice::DeviceInfo* VulkanPhysicalDevice::FindFirstGraphicsDevice() const
+{
+    // 現段階ではGPUスコアリングを行わず、Graphics Queueを持つ最初のDeviceを返します。
+    // Surface / SwapChain対応後にPresent対応やDevice Extensionを選択条件へ追加します。
+    for (const DeviceInfo& device : m_Devices)
+    {
+        if (device.Handle != VK_NULL_HANDLE && device.HasGraphicsQueue() == true)
+        {
+            return &device;
+        }
+    }
+
+    return nullptr;
+}
+
 } // namespace Raven
