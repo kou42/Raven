@@ -36,6 +36,8 @@ public:
     {
         return m_PhysicalDevices.FindFirstGraphicsDevice();
     }
+
+    VulkanDevice& GetDevice() { return m_Device; }
     const VulkanDevice& GetDevice() const { return m_Device; }
 
 private:
