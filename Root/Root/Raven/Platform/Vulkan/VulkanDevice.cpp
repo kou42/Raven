@@ -80,11 +80,31 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
     return true;
 }
 
+bool VulkanDevice::WaitIdle() const
+{
+    if (m_Device == VK_NULL_HANDLE)
+    {
+        return true;
+    }
+
+    const VkResult result = vkDeviceWaitIdle(m_Device);
+    if (result != VK_SUCCESS)
+    {
+        std::cout << "Failed to wait for Vulkan device idle. VkResult = "
+                  << static_cast<int>(result) << '\n';
+        return false;
+    }
+
+    return true;
+}
+
 void VulkanDevice::Shutdown()
 {
     if (m_Device != VK_NULL_HANDLE)
     {
-        // 今後Command Buffer等を所有する場合は、それらの利用完了を保証した後でDeviceを破棄します。
+        // 将来Command BufferやSwapChainを所有した後も安全に破棄できるよう、
+        // Device配下の処理完了を待ってから親Deviceを破棄します。
+        WaitIdle();
         vkDestroyDevice(m_Device, nullptr);
     }
 
