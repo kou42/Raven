@@ -114,7 +114,7 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         }
     }
 
-    return m_Devices.empty() == false;
+    return FindFirstGraphicsDevice() != nullptr;
 }
 
 void VulkanPhysicalDevice::Clear()
