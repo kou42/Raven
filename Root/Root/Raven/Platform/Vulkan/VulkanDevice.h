@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
+
 #include "VulkanPhysicalDevice.h"
 
 namespace Raven
