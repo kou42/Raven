@@ -8,9 +8,9 @@
 namespace Raven
 {
 
-// Vulkan APIを利用する最初の入口となるVkInstanceの所有クラスです。
-// VkInstance -> PhysicalDevice -> Logical DeviceのLifetime順序をこのクラスで束ね、
-// 後続のSurface / SwapChain / Command実装が有効なDeviceを参照できるようにします。
+// Vulkan APIを利用する初期化Rootです。
+// VkInstance -> PhysicalDevice列挙 -> Graphics Queue選択 -> Logical Device生成までを束ね、
+// 後続のSurface / SwapChain / Command実装が有効なDeviceを参照できる状態を作ります。
 class VulkanInstance
 {
 public:
