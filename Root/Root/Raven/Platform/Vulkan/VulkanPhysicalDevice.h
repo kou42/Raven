@@ -16,6 +16,8 @@ class VulkanPhysicalDevice
 public:
     static constexpr uint32_t InvalidQueueFamilyIndex = UINT32_MAX;
 
+    // Vulkan Driverから取得したGPU能力のSnapshotです。
+    // VkPhysicalDevice自体のLifetimeはVkInstanceに従い、この構造体は破棄責務を持ちません。
     struct DeviceInfo
     {
         VkPhysicalDevice Handle = VK_NULL_HANDLE;
