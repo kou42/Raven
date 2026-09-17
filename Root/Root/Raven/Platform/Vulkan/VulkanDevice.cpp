@@ -60,6 +60,7 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
         return false;
     }
 
+    m_PhysicalDevice = physicalDevice.Handle;
     m_GraphicsQueueFamilyIndex = physicalDevice.GraphicsQueueFamilyIndex;
     vkGetDeviceQueue(m_Device, m_GraphicsQueueFamilyIndex, 0, &m_GraphicsQueue);
 
@@ -79,6 +80,7 @@ void VulkanDevice::Shutdown()
 {
     m_GraphicsQueue = VK_NULL_HANDLE;
     m_GraphicsQueueFamilyIndex = VulkanPhysicalDevice::InvalidQueueFamilyIndex;
+    m_PhysicalDevice = VK_NULL_HANDLE;
 
     if (m_Device == VK_NULL_HANDLE)
     {
