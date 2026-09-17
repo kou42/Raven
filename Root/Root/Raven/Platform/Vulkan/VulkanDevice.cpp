@@ -14,7 +14,19 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
 {
     if (m_Device != VK_NULL_HANDLE)
     {
-        return true;
+        const bool samePhysicalDevice = m_PhysicalDevice == physicalDevice.Handle;
+        const bool sameGraphicsQueueFamily =
+            m_GraphicsQueueFamilyIndex == physicalDevice.GraphicsQueueFamilyIndex;
+
+        if (samePhysicalDevice == true &&
+            sameGraphicsQueueFamily == true &&
+            m_GraphicsQueue != VK_NULL_HANDLE)
+        {
+            return true;
+        }
+
+        // 別GPU/Queue Familyで再初期化する場合は、既存Deviceを安全に破棄して作り直します。
+        Shutdown();
     }
 
     if (physicalDevice.Handle == VK_NULL_HANDLE || physicalDevice.HasGraphicsQueue() == false)
