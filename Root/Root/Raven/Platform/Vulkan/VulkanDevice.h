@@ -25,7 +25,14 @@ public:
     bool WaitIdle() const;
     void Shutdown();
 
-    bool IsValid() const { return m_Device != VK_NULL_HANDLE; }
+    bool IsValid() const
+    {
+        return m_PhysicalDevice != VK_NULL_HANDLE &&
+               m_Device != VK_NULL_HANDLE &&
+               m_GraphicsQueue != VK_NULL_HANDLE &&
+               m_GraphicsQueueFamilyIndex != VulkanPhysicalDevice::InvalidQueueFamilyIndex;
+    }
+
     VkPhysicalDevice GetPhysicalDeviceHandle() const { return m_PhysicalDevice; }
     VkDevice GetHandle() const { return m_Device; }
     VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
