@@ -22,6 +22,7 @@ public:
     VulkanDevice& operator=(VulkanDevice&&) = delete;
 
     bool Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice);
+    bool WaitIdle() const;
     void Shutdown();
 
     bool IsValid() const { return m_Device != VK_NULL_HANDLE; }
