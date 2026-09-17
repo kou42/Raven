@@ -16,7 +16,7 @@ bool VulkanInstance::Init()
     {
         // Instanceだけが残った部分初期化状態を成功扱いにしないよう、
         // Logical Deviceまで有効な場合に限って二重初期化を成功とします。
-        if (m_Device.IsValid() == true)
+        if (IsValid() == true)
         {
             return true;
         }
