@@ -86,9 +86,9 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
     m_GraphicsQueueFamilyIndex = physicalDevice.GraphicsQueueFamilyIndex;
     vkGetDeviceQueue(m_Device, m_GraphicsQueueFamilyIndex, 0, &m_GraphicsQueue);
 
-    if (m_GraphicsQueue == VK_NULL_HANDLE)
+    if (IsValid() == false)
     {
-        std::cout << "Failed to get Vulkan Graphics Queue.\n";
+        std::cout << "Failed to initialize a complete Vulkan Graphics Device state.\n";
         Shutdown();
         return false;
     }
