@@ -46,6 +46,7 @@ bool VulkanInstance::Init()
     const VkResult result = vkCreateInstance(&createInfo, nullptr, &m_Instance);
     if (result != VK_SUCCESS)
     {
+        // vkCreateInstance失敗時に未定義Handleを残さないよう、明示的に初期状態へ戻します。
         m_Instance = VK_NULL_HANDLE;
         std::cout << "Failed to create Vulkan VkInstance. VkResult = "
                   << static_cast<int>(result) << '\n';
