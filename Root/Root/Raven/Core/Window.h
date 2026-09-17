@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "Raven/Core/Event.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 
 namespace Raven
 {
@@ -13,13 +14,15 @@ struct WindowProps
     std::string Title;
     unsigned int Width;
     unsigned int Height;
+    RHIBackend Backend;
 
     WindowProps(
         const std::string& title = "My Engine",
         unsigned int width = 1920,
-        unsigned int height = 1080
+        unsigned int height = 1080,
+        RHIBackend backend = GetRHIBackend()
     )
-        : Title(title), Width(width), Height(height)
+        : Title(title), Width(width), Height(height), Backend(backend)
     {
     }
 };
@@ -35,10 +38,12 @@ public:
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
+    virtual RHIBackend GetBackend() const = 0;
 
-    // Platform固有Window Handleを外部backendへ渡すための最小限の窓口です。
-    // Core層からGLFW型を公開せず、ImGui等のPlatform integration側で必要な型へ変換します。
+    // GLFWwindowはVulkan Surface生成で必要になるため従来どおり公開します。
+    // DX12側のHWNDはPlatformWindowHandleから取得し、Core層へWin32型を漏らしません。
     virtual void* GetNativeWindow() const = 0;
+    virtual void* GetPlatformWindowHandle() const = 0;
 
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
     virtual void SetVSync(bool enabled) = 0;
