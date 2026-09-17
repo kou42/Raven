@@ -49,6 +49,16 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
         return false;
     }
 
+    const VkQueueFamilyProperties& graphicsQueueFamily =
+        physicalDevice.QueueFamilies[physicalDevice.GraphicsQueueFamilyIndex];
+    const bool supportsGraphics =
+        (graphicsQueueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+    if (graphicsQueueFamily.queueCount == 0 || supportsGraphics == false)
+    {
+        std::cout << "Cannot create Vulkan logical device because selected Queue Family cannot execute graphics commands.\n";
+        return false;
+    }
+
     constexpr float graphicsQueuePriority = 1.0f;
 
     VkDeviceQueueCreateInfo queueCreateInfo{};
