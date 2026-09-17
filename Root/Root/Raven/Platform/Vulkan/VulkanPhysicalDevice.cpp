@@ -114,7 +114,8 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         }
     }
 
-    return FindFirstGraphicsDevice() != nullptr;
+    const DeviceInfo* graphicsDevice = FindFirstGraphicsDevice();
+    return graphicsDevice != nullptr;
 }
 
 void VulkanPhysicalDevice::Clear()
