@@ -72,6 +72,9 @@ bool VulkanInstance::Init()
         return false;
     }
 
+    std::cout << "Selected Vulkan Physical Device : "
+              << graphicsDevice->Properties.deviceName << '\n';
+
     // 現段階ではGraphics Queueを持つ最初のGPUから最小Logical Deviceを生成します。
     // Present対応とSwapChain Extension条件はSurface導入時にDevice選択へ追加します。
     if (m_Device.Init(*graphicsDevice) == false)
