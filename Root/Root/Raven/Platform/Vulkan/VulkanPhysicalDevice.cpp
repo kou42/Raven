@@ -56,6 +56,21 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         vkGetPhysicalDeviceProperties(handle, &info.Properties);
         vkGetPhysicalDeviceFeatures(handle, &info.Features);
         vkGetPhysicalDeviceMemoryProperties(handle, &info.MemoryProperties);
+
+        // Logical Device作成では必要なQueue Family indexを指定するため、
+        // GPU基本情報と同じタイミングでQueue能力もSnapshotとして保持します。
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(handle, &queueFamilyCount, nullptr);
+        if (queueFamilyCount > 0)
+        {
+            info.QueueFamilies.resize(queueFamilyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(
+                handle,
+                &queueFamilyCount,
+                info.QueueFamilies.data());
+            info.QueueFamilies.resize(queueFamilyCount);
+        }
+
         m_Devices.push_back(info);
 
         const uint32_t apiMajor = VK_VERSION_MAJOR(info.Properties.apiVersion);
@@ -67,6 +82,7 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         std::cout << "  Vendor ID : " << info.Properties.vendorID << '\n';
         std::cout << "  Device ID : " << info.Properties.deviceID << '\n';
         std::cout << "  API Version : " << apiMajor << '.' << apiMinor << '.' << apiPatch << '\n';
+        std::cout << "  Queue Families : " << info.QueueFamilies.size() << '\n';
     }
 
     return m_Devices.empty() == false;
