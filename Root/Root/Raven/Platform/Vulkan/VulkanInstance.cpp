@@ -85,6 +85,13 @@ bool VulkanInstance::Init()
         return false;
     }
 
+    if (IsValid() == false)
+    {
+        std::cout << "Vulkan base device initialization ended in an invalid state.\n";
+        Shutdown();
+        return false;
+    }
+
     std::cout << "Vulkan base device initialization completed successfully.\n";
     return true;
 }
