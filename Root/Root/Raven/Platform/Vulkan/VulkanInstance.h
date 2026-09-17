@@ -26,7 +26,10 @@ public:
     void Shutdown();
 
     VkInstance GetHandle() const { return m_Instance; }
-    bool IsValid() const { return m_Instance != VK_NULL_HANDLE; }
+    bool IsValid() const
+    {
+        return m_Instance != VK_NULL_HANDLE && m_Device.IsValid() == true;
+    }
 
     const VulkanPhysicalDevice& GetPhysicalDevices() const { return m_PhysicalDevices; }
     const VulkanPhysicalDevice::DeviceInfo* GetGraphicsDevice() const
