@@ -1,6 +1,7 @@
 #include <iostream>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
 #include "Raven/Platform/Windows/WindowsWindow.h"
@@ -97,7 +98,7 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
-            if (data.EventCallback)
+            if (static_cast<bool>(data.EventCallback) == true)
             {
                 WindowCloseEvent event;
                 data.EventCallback(event);
@@ -110,7 +111,7 @@ void WindowsWindow::Init(const WindowProps& props)
             data.Width = static_cast<unsigned int>(width);
             data.Height = static_cast<unsigned int>(height);
 
-            if (data.EventCallback)
+            if (static_cast<bool>(data.EventCallback) == true)
             {
                 WindowResizeEvent event(data.Width, data.Height);
                 data.EventCallback(event);
@@ -120,7 +121,7 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetWindowFocusCallback(m_Window, [](GLFWwindow* window, int focused)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
-            if (data.EventCallback == false)
+            if (static_cast<bool>(data.EventCallback) == false)
             {
                 return;
             }
@@ -142,7 +143,7 @@ void WindowsWindow::Init(const WindowProps& props)
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
             static_cast<void>(scancode);
 
-            if (data.EventCallback == false)
+            if (static_cast<bool>(data.EventCallback) == false)
             {
                 return;
             }
@@ -162,7 +163,7 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, double x, double y)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
-            if (data.EventCallback)
+            if (static_cast<bool>(data.EventCallback) == true)
             {
                 MouseMovedEvent event(static_cast<float>(x), static_cast<float>(y));
                 data.EventCallback(event);
@@ -174,7 +175,7 @@ void WindowsWindow::Init(const WindowProps& props)
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
             static_cast<void>(mods);
 
-            if (data.EventCallback == false)
+            if (static_cast<bool>(data.EventCallback) == false)
             {
                 return;
             }
@@ -198,7 +199,7 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetScrollCallback(m_Window, [](GLFWwindow* window, double offsetX, double offsetY)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
-            if (data.EventCallback == false)
+            if (static_cast<bool>(data.EventCallback) == false)
             {
                 return;
             }
