@@ -69,6 +69,19 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
                 &queueFamilyCount,
                 info.QueueFamilies.data());
             info.QueueFamilies.resize(queueFamilyCount);
+
+            // まず描画可能なGraphics Queueだけを選択します。
+            // Present対応はSurface導入後にvkGetPhysicalDeviceSurfaceSupportKHRで別途判定します。
+            for (uint32_t queueIndex = 0; queueIndex < queueFamilyCount; ++queueIndex)
+            {
+                const VkQueueFamilyProperties& queueFamily = info.QueueFamilies[queueIndex];
+                if (queueFamily.queueCount > 0 &&
+                    (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0)
+                {
+                    info.GraphicsQueueFamilyIndex = queueIndex;
+                    break;
+                }
+            }
         }
 
         m_Devices.push_back(info);
@@ -83,6 +96,15 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
         std::cout << "  Device ID : " << info.Properties.deviceID << '\n';
         std::cout << "  API Version : " << apiMajor << '.' << apiMinor << '.' << apiPatch << '\n';
         std::cout << "  Queue Families : " << info.QueueFamilies.size() << '\n';
+
+        if (info.HasGraphicsQueue())
+        {
+            std::cout << "  Graphics Queue Family : " << info.GraphicsQueueFamilyIndex << '\n';
+        }
+        else
+        {
+            std::cout << "  Graphics Queue Family : not found\n";
+        }
     }
 
     return m_Devices.empty() == false;
