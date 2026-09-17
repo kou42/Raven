@@ -121,8 +121,8 @@ void VulkanDevice::Shutdown()
 {
     if (m_Device != VK_NULL_HANDLE)
     {
-        // 将来Command BufferやSwapChainを所有した後も安全に破棄できるよう、
-        // Device配下の処理完了を待ってから親Deviceを破棄します。
+        // 正常終了ではGPU処理完了を待ちます。Device lost等でWaitIdleが失敗した場合も、
+        // Shutdownを停止してHandleを残さないため、そのままDevice破棄処理へ進みます。
         WaitIdle();
         vkDestroyDevice(m_Device, nullptr);
     }
