@@ -55,9 +55,20 @@ bool VulkanInstance::Init()
         return false;
     }
 
-    if (m_PhysicalDevices.FindFirstGraphicsDevice() == nullptr)
+    const VulkanPhysicalDevice::DeviceInfo* graphicsDevice =
+        m_PhysicalDevices.FindFirstGraphicsDevice();
+    if (graphicsDevice == nullptr)
     {
         std::cout << "No Vulkan physical device with a Graphics Queue was found.\n";
+        Shutdown();
+        return false;
+    }
+
+    // 現段階ではGraphics Queueを持つ最初のGPUから最小Logical Deviceを生成します。
+    // Present対応とSwapChain Extension条件はSurface導入時にDevice選択へ追加します。
+    if (m_Device.Init(*graphicsDevice) == false)
+    {
+        std::cout << "Failed to initialize Vulkan logical device.\n";
         Shutdown();
         return false;
     }
@@ -68,6 +79,9 @@ bool VulkanInstance::Init()
 
 void VulkanInstance::Shutdown()
 {
+    // Vulkanの親子Lifetimeに従い、Logical DeviceをInstanceより先に破棄します。
+    m_Device.Shutdown();
+
     // VkPhysicalDevice自体の明示破棄は不要ですが、Instance破棄後に無効Handleを
     // 保持し続けないよう、先に列挙結果を破棄します。
     m_PhysicalDevices.Clear();
