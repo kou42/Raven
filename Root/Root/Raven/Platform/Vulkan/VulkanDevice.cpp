@@ -30,9 +30,15 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
         Shutdown();
     }
 
-    if (physicalDevice.Handle == VK_NULL_HANDLE || physicalDevice.HasGraphicsQueue() == false)
+    if (physicalDevice.Handle == VK_NULL_HANDLE)
     {
-        std::cout << "Cannot create Vulkan logical device because PhysicalDevice/Graphics Queue is invalid.\n";
+        std::cout << "Cannot create Vulkan logical device because PhysicalDevice is invalid.\n";
+        return false;
+    }
+
+    if (physicalDevice.HasGraphicsQueue() == false)
+    {
+        std::cout << "Cannot create Vulkan logical device because Graphics Queue is unavailable.\n";
         return false;
     }
 
