@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -16,630 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\AnimationClip.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\AnimationRuntimeDebug.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\AnimationSystem.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Animator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\AnimatorStateMachine.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\AnimatorStateMachineBlendTree.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\AnimatorStateMachineLocomotion.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\BlendTree1D.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Debug\AnimationDebugOverlayRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Debug\AnimationStateMachineGraphLayout.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\HumanoidAnimationProfileSerialization.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\PoseBlending.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\SkeletalMeshDeformer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Skeleton.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\SkeletonPose.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Skinning.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Tests\BlendTreeRuntimeSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Animation\Tests\SkeletalDeformationSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Assets\TextureAsset.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Assets\TextureAssetImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\CharacterController.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\CharacterControllerInput.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\CharacterControllerMovingPlatform.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\CharacterCrushReaction.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\CharacterRagdollRecoveryRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Debug\CharacterControllerDemoLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Tests\CharacterCapsuleCollisionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Tests\CharacterCeilingCollisionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Tests\CharacterCrushReactionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Tests\CharacterMovingPlatformSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Tests\CharacterPhysicsGroundQuerySelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Character\Tests\CharacterRagdollRecoverySelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Application.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Base.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Containers\Tests\FlatHashSetSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\CPUProfiler.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Event.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Input.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\JsonParser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\JsonWriter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Memory\FrameAllocator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Memory\LinearAllocator.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Memory\Tests\MemoryAllocatorSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Core\Window.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Debug\BrowserDebugServer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Debug\BrowserDebugViewer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Command\CreateEntityCommand.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Command\RenameEntityCommand.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Command\TransformCommand.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorCamera.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorCommandHistory.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorEntityPicking.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorGizmo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorRotateGizmo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorScaleGizmo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorSelectionOutline.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\EditorTranslateGizmo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Panels\AnimationDebugPanel.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Panels\InspectorPanel.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Panels\SceneHierarchyPanel.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Editor\Panels\StatisticsPanel.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\AccessorReader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\AccessorReaderSkin.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\AnimationImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\Debug\HumanSkinningDebugController.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\Debug\HumanSkinningDebugLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\GlbReader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\GltfDocument.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\HumanoidSceneNormalization.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\MaterialImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\NodeHierarchy.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedAnimationRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedAnimationRuntimeLocomotion.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedBlendTreeRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedBlendTreeRuntimeOneShot.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedMeshImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedMeshRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedMeshSceneSpawner.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\SkinnedRagdollRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\StaticMeshImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\StaticSceneImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\Tests\GltfAccessorSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\Tests\GltfNodeHierarchySelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Gltf\Tests\GltfSkinAccessorSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\ImGui\ImGuiLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Math\Math.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Math\MathMatrix.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Math\MathQuatanion.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Math\MathUtility.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Math\MathVector.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\AABB.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\BoxCollision.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\BroadPhase.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\CapsuleCollision.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\CollisionDetection.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\DynamicAABBTree.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\DynamicAABBTreeValidation.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\PlaneCollision.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Collision\SphereCollision.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Debug\PhysicsDebugRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Debug\PhysicsDebugRendererCameraContext.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Electromagnetism\MagneticField.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\PhysicsWorld.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\PhysicsWorldCapsuleCast.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\PhysicsWorldControl.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\PhysicsWorldGroundQuery.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Ragdoll\RagdollAnimationVelocity.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Ragdoll\RagdollConstraintSolver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Ragdoll\RagdollPhysicsBridge.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Ragdoll\RagdollRuntime.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Ragdoll\RagdollRuntimeLookup.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\Debug\SoftBodyClothDemoLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\Debug\SoftBodyJellyDemoLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\Debug\SoftBodyParticleTriangleCandidateDebugSnapshot.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\Debug\SoftBodyParticleTriangleCandidateDebugSvgWriter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\Debug\SoftBodyParticleTrianglePairInspector.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\Debug\SoftBodyPhysicsDebugSvgWriter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyCloth.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyJelly.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyJellySurface.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyParticleTriangleSelfCollision.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodySelfCollision.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodySolver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyTemporaryCandidateOutput.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGridDebug.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\SoftBodyVolumeStep.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\SoftBody\XPBDVolumeConstraint.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Solver\ContactSolver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\CapsuleCollisionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\PhysicsCollisionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\PhysicsFrameAllocatorSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\RagdollAnimationVelocitySelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodyIntegratedStepSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodyJellySelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodyJellySurfaceSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodyParticleTriangleSelfCollisionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodySelfCollisionSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodySpatialHashSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Physics\Tests\SoftBodyVolumeConstraintSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Platform\OpenGL\OpenGLContext.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Platform\OpenGL\OpenGLFramebuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Platform\OpenGL\OpenGLRendererAPI.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Platform\Windows\WindowsInput.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Platform\Windows\WindowsWindow.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Buffer\IndexBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Buffer\OpenGLIndexBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Buffer\OpenGLVertexArray.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Buffer\OpenGLVertexBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Buffer\VertexArray.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Buffer\VertexBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Framebuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\GraphicsContext.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Layer\Layer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Layer\SandboxLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Material\Material.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Mesh\Deformation\MeshDeformationSystem.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Mesh\Deformation\SoftBodyClothDeformer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Mesh\Deformation\SoftBodyJellyMeshDeformer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Mesh\Deformation\WaveMeshDeformer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Mesh\Mesh.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Mesh\PrimitiveMeshFactory.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Pipeline\OpenGLPipeline.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Pipeline\Pipeline.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\RenderCommand.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Renderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\RendererAPI.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Shader\OpenGLShader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Shader\Shader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Texture\OpenGLTexture.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Renderer\Texture\Texture.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\sample.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\Components.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\Entity.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\Scene.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\SceneCamera.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\SceneCameraSystem.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\SceneGame.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\SceneGameAnimation.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\Scene\Tests\SceneLifecycleSelfTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Animation\UIAnimationBinding.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Core\UIContext.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Core\UIDrawList.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Core\UIElement.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Core\UIHitTest.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Document\DefaultDocumentImporters.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Document\DocumentImporterRegistry.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Document\DocumentLoader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Document\UIVectorDocument.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Rendering\OpenGLUIRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Rendering\UIRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Svg\Debug\UISvgDemoLayer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Svg\SvgImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Svg\SvgImporterDocument.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Svg\SvgPathImporter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Svg\UISvg.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UIButton.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UICircle.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UIImage.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UIPanel.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UIPolygon.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UIScrollView.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UISlider.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Raven\UI\Widgets\UISplitter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\glad.c">
@@ -663,654 +39,1599 @@
     <ClCompile Include="vendor\imgui\imgui_widgets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Raven\**\*.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Raven\Animation\AnimationClip.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimationKeyframe.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimationRuntimeDebug.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimationSystem.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimationTrack.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Animator.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimatorParameter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimatorState.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimatorStateMachine.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\AnimatorTransition.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\BlendTree1D.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Bone.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Debug\AnimationDebugOverlayRenderer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Debug\AnimationStateMachineGraphLayout.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\HumanoidAnimationProfile.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\HumanoidAnimationProfileSerialization.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\PoseBlending.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\SkeletalMeshDeformer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Skeleton.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\SkeletonPose.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\SkinnedMeshData.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Skinning.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\SkinWeight.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Tests\BlendTreeRuntimeSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Animation\Tests\SkeletalDeformationSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Assets\TextureAsset.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Assets\TextureAssetImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Character\CharacterController.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Character\CharacterCrushReaction.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Character\CharacterRagdollRecoveryRuntime.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Character\Debug\CharacterControllerDemoLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Character\Debug\CharacterLocomotionDebugOverlayLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Application.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Base.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Containers\FlatHashSet.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Containers\Tests\FlatHashSetSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\CPUProfiler.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Event.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Input.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\JsonParser.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\JsonValue.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\JsonWriter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\KeyCodes.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Memory\Allocator.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Memory\FrameAllocator.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Memory\FrameVector.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Memory\LinearAllocator.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Memory\STLAllocatorAdapter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Memory\Tests\MemoryAllocatorSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\MouseCodes.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Core\Window.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Debug\BrowserDebugConfig.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Debug\BrowserDebugServer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Debug\BrowserDebugViewer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Command\CreateEntityCommand.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Command\IEditorCommand.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Command\InspectorEditCommand.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Command\RenameEntityCommand.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Command\TransformCommand.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorCamera.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorCommandHistory.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorGizmo.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorRotateGizmo.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorScaleGizmo.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\EditorTranslateGizmo.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Panels\AnimationDebugPanel.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Panels\InspectorPanel.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Panels\SceneHierarchyPanel.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Editor\Panels\StatisticsPanel.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\AccessorReader.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\AnimationImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\Debug\HumanSkinningDebugController.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\Debug\HumanSkinningDebugLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\GlbReader.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\GltfCoordinateSystem.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\GltfDocument.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\HumanoidSceneNormalization.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\JsonParser.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\JsonValue.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\MaterialImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\NodeHierarchy.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinnedAnimationRuntime.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinnedBlendTreeRuntime.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinnedMeshImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinnedMeshRuntime.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinnedMeshSceneSpawner.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\SkinnedRagdollRuntime.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\StaticMeshImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\StaticSceneImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\Tests\GltfAccessorSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\Tests\GltfNodeHierarchySelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Gltf\Tests\GltfSkinAccessorSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\ImGui\ImGuiLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Math\Math.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Math\MathMatrix.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Math\MathQuatanion.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Math\MathUtility.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Math\MathVector.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\AABB.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\BroadPhase.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\Capsule.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\CollisionDetection.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\DynamicAABBTree.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\DynamicAABBTreeNode.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\DynamicAABBTreeValidation.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Collision\OBB.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Contact.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Debug\PhysicsDebugOverlayFont.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Debug\PhysicsDebugRenderer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Debug\PhysicsDebugSettings.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\PhysicsType.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Electromagnetism\MagneticField.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\PhysicsWorld.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Ragdoll\RagdollConstraintSolver.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Ragdoll\RagdollPhysicsBridge.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Ragdoll\RagdollRuntime.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\RigidBodyDynamics.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\Debug\SoftBodyClothDemoLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\Debug\SoftBodyJellyDemoLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\Debug\SoftBodyParticleTriangleCandidateDebugSnapshot.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\Debug\SoftBodyParticleTriangleCandidateDebugSvgWriter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\Debug\SoftBodyParticleTrianglePairInspector.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\Debug\SoftBodyPhysicsDebugSvgWriter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodyCloth.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodyJelly.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodyJellySurface.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodyParticle.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodyParticleTriangleSelfCollision.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodySelfCollision.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodySolver.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodySpatialHashGrid.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\XPBDDihedralConstraint.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\XPBDDistanceConstraint.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\SoftBody\XPBDVolumeConstraint.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Solver\ContactSolver.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Solver\SolverTemporaryAllocationCounter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Physics\Tests\SoftBodyIntegratedStepSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Platform\OpenGL\OpenGLContext.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Platform\OpenGL\OpenGLFramebuffer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Platform\OpenGL\OpenGLRendererAPI.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Platform\Windows\WindowsInput.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Platform\Windows\WindowsWindow.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\BufferLayout.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\IndexBuffer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\OpenGLIndexBuffer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\OpenGLVertexArray.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\OpenGLVertexBuffer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\VertexArray.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Buffer\VertexBuffer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Camera\Camera.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Framebuffer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\GraphicsContext.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Layer\Layer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Layer\SandboxLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Material\Material.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Deformation\MeshDeformationInstance.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Deformation\MeshDeformationSystem.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Deformation\MeshDeformer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Deformation\SoftBodyClothDeformer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Deformation\SoftBodyJellyMeshDeformer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Deformation\WaveMeshDeformer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\Mesh.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\MeshGeometry.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Mesh\PrimitiveMeshFactory.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Pipeline\OpenGLPipeline.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Pipeline\Pipeline.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\RenderCommand.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Renderer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\RendererAPI.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Shader\OpenGLShader.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Shader\Shader.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Texture\OpenGLTexture.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Renderer\Texture\Texture.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\sample.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\Components.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\ComponentStorage.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\ComponentView.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\Entity.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\Scene.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\SceneCamera.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\SceneCameraSystem.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\SceneGame.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\SceneViewportRenderer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\Scene\Tests\SceneLifecycleSelfTests.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Animation\UIAnimationBinding.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Core\UIContext.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Core\UIDrawList.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Core\UIElement.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Core\UIEvent.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Core\UIHitTest.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Debug\UITreeMutationValidation.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\DefaultDocumentImporters.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\DocumentImporterRegistry.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\DocumentLoader.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\IDocumentImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\UIDocument.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\UIVectorDocument.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Document\VectorDocument.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Rendering\OpenGLUIRenderer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Rendering\UIRenderer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Svg\Debug\UISvgDemoLayer.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Svg\SvgImportContext.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Svg\SvgImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Svg\SvgPathImporter.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Svg\UISvg.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UIButton.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UICircle.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UIImage.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UIPanel.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UIPolygon.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UIScrollView.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UISlider.h">
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Raven\UI\Widgets\UISplitter.h">
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Raven\**\*.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
