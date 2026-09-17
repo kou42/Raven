@@ -98,6 +98,7 @@ bool VulkanPhysicalDevice::Enumerate(VkInstance instance)
 
         std::cout << "Vulkan Physical Device [" << (m_Devices.size() - 1) << "]\n";
         std::cout << "  Name : " << info.Properties.deviceName << '\n';
+        std::cout << "  Type : " << static_cast<int>(info.Properties.deviceType) << '\n';
         std::cout << "  Vendor ID : " << info.Properties.vendorID << '\n';
         std::cout << "  Device ID : " << info.Properties.deviceID << '\n';
         std::cout << "  API Version : " << apiMajor << '.' << apiMinor << '.' << apiPatch << '\n';
