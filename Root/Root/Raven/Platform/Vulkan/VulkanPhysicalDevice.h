@@ -19,6 +19,7 @@ public:
         VkPhysicalDeviceProperties Properties{};
         VkPhysicalDeviceFeatures Features{};
         VkPhysicalDeviceMemoryProperties MemoryProperties{};
+        std::vector<VkQueueFamilyProperties> QueueFamilies;
     };
 
     bool Enumerate(VkInstance instance);
