@@ -1,6 +1,10 @@
 #include "VulkanInstance.h"
 
 #include <iostream>
+#include <vector>
+
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 namespace Raven
 {
@@ -24,36 +28,10 @@ bool VulkanInstance::Init()
         Shutdown();
     }
 
-    VkApplicationInfo applicationInfo{};
-    applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    applicationInfo.pApplicationName = "Raven";
-    applicationInfo.applicationVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
-    applicationInfo.pEngineName = "Raven";
-    applicationInfo.engineVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
-    applicationInfo.apiVersion = VK_API_VERSION_1_0;
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &applicationInfo;
-
-    // この段階ではGPU列挙とDevice生成に必要な最小Instanceだけを作ります。
-    // Window Surface用ExtensionやValidation Layerは、対応する学習ステップで追加します。
-    createInfo.enabledExtensionCount = 0;
-    createInfo.ppEnabledExtensionNames = nullptr;
-    createInfo.enabledLayerCount = 0;
-    createInfo.ppEnabledLayerNames = nullptr;
-
-    const VkResult result = vkCreateInstance(&createInfo, nullptr, &m_Instance);
-    if (result != VK_SUCCESS)
+    if (CreateInstance() == false)
     {
-        // vkCreateInstance失敗時に未定義Handleを残さないよう、明示的に初期状態へ戻します。
-        m_Instance = VK_NULL_HANDLE;
-        std::cout << "Failed to create Vulkan VkInstance. VkResult = "
-                  << static_cast<int>(result) << '\n';
         return false;
     }
-
-    std::cout << "Vulkan VkInstance created successfully.\n";
 
     // VkInstance生成直後にGPU一覧まで取得しておくことで、次段階のQueue Family選択が
     // VulkanInstanceのLifetime内にある有効なVkPhysicalDeviceだけを参照できます。
@@ -76,8 +54,8 @@ bool VulkanInstance::Init()
     std::cout << "Selected Vulkan Physical Device : "
               << graphicsDevice->Properties.deviceName << '\n';
 
-    // 現段階ではGraphics Queueを持つ最初のGPUから最小Logical Deviceを生成します。
-    // Present対応とSwapChain Extension条件はSurface導入時にDevice選択へ追加します。
+    // SwapChain実装ではLogical Device生成時点でVK_KHR_swapchainが必要です。
+    // Present Queueの最終判定はSurface生成後に行います。
     if (m_Device.Init(*graphicsDevice) == false)
     {
         std::cout << "Failed to initialize Vulkan logical device.\n";
@@ -93,6 +71,59 @@ bool VulkanInstance::Init()
     }
 
     std::cout << "Vulkan base device initialization completed successfully.\n";
+    return true;
+}
+
+bool VulkanInstance::CreateInstance()
+{
+    if (glfwVulkanSupported() == GLFW_FALSE)
+    {
+        std::cout << "GLFW reports that Vulkan is not supported by the current environment.\n";
+        return false;
+    }
+
+    uint32_t requiredExtensionCount = 0;
+    const char** requiredExtensions =
+        glfwGetRequiredInstanceExtensions(&requiredExtensionCount);
+    if (requiredExtensions == nullptr || requiredExtensionCount == 0)
+    {
+        std::cout << "Failed to query GLFW Vulkan instance extensions.\n";
+        return false;
+    }
+
+    // GLFWが返すExtensionにはVK_KHR_surfaceとWindows用Surface Extensionが含まれます。
+    // Platform固有Extension名をVulkan層へ直接ハードコードせず、Window libraryに必要条件を問い合わせます。
+    std::vector<const char*> enabledExtensions(
+        requiredExtensions,
+        requiredExtensions + requiredExtensionCount);
+
+    VkApplicationInfo applicationInfo{};
+    applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    applicationInfo.pApplicationName = "Raven";
+    applicationInfo.applicationVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
+    applicationInfo.pEngineName = "Raven";
+    applicationInfo.engineVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
+    applicationInfo.apiVersion = VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &applicationInfo;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size());
+    createInfo.ppEnabledExtensionNames = enabledExtensions.data();
+    createInfo.enabledLayerCount = 0;
+    createInfo.ppEnabledLayerNames = nullptr;
+
+    const VkResult result = vkCreateInstance(&createInfo, nullptr, &m_Instance);
+    if (result != VK_SUCCESS)
+    {
+        m_Instance = VK_NULL_HANDLE;
+        std::cout << "Failed to create Vulkan VkInstance. VkResult = "
+                  << static_cast<int>(result) << '\n';
+        return false;
+    }
+
+    std::cout << "Vulkan VkInstance created successfully.\n";
+    std::cout << "  Enabled Instance Extensions : " << enabledExtensions.size() << '\n';
     return true;
 }
 
