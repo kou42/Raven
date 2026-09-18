@@ -41,6 +41,9 @@ public:
     uint32_t GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamilyIndex; }
 
 private:
+    bool SupportsRequiredExtensions(const VulkanPhysicalDevice::DeviceInfo& physicalDevice) const;
+
+private:
     VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
     VkDevice m_Device = VK_NULL_HANDLE;
     VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
