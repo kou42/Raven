@@ -1,6 +1,8 @@
 #include "VulkanDevice.h"
 
+#include <cstring>
 #include <iostream>
+#include <vector>
 
 namespace Raven
 {
@@ -8,6 +10,42 @@ namespace Raven
 VulkanDevice::~VulkanDevice()
 {
     Shutdown();
+}
+
+bool VulkanDevice::SupportsRequiredExtensions(
+    const VulkanPhysicalDevice::DeviceInfo& physicalDevice) const
+{
+    uint32_t extensionCount = 0;
+    VkResult result = vkEnumerateDeviceExtensionProperties(
+        physicalDevice.Handle,
+        nullptr,
+        &extensionCount,
+        nullptr);
+    if (result != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    result = vkEnumerateDeviceExtensionProperties(
+        physicalDevice.Handle,
+        nullptr,
+        &extensionCount,
+        extensions.data());
+    if (result != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    for (const VkExtensionProperties& extension : extensions)
+    {
+        if (std::strcmp(extension.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
@@ -25,7 +63,6 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
             return true;
         }
 
-        // 別GPU/Queue Familyで再初期化する場合は、既存Deviceを安全に破棄して作り直します。
         Shutdown();
     }
 
@@ -38,6 +75,12 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
     if (physicalDevice.HasGraphicsQueue() == false)
     {
         std::cout << "Cannot create Vulkan logical device because Graphics Queue is unavailable.\n";
+        return false;
+    }
+
+    if (SupportsRequiredExtensions(physicalDevice) == false)
+    {
+        std::cout << "Cannot create Vulkan logical device because VK_KHR_swapchain is unavailable.\n";
         return false;
     }
 
@@ -77,16 +120,18 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
 
     VkPhysicalDeviceFeatures enabledFeatures{};
 
+    const char* requiredExtensions[] =
+    {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.pEnabledFeatures = &enabledFeatures;
-
-    // SwapChain Extension等はSurface/SwapChain実装時に追加します。
-    // 現段階ではGraphics Queueを取得できる最小Logical Deviceを生成します。
-    createInfo.enabledExtensionCount = 0;
-    createInfo.ppEnabledExtensionNames = nullptr;
+    createInfo.enabledExtensionCount = 1;
+    createInfo.ppEnabledExtensionNames = requiredExtensions;
     createInfo.enabledLayerCount = 0;
     createInfo.ppEnabledLayerNames = nullptr;
 
@@ -121,6 +166,7 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
 
     std::cout << "Vulkan VkDevice created successfully.\n";
     std::cout << "  Graphics Queue Family : " << m_GraphicsQueueFamilyIndex << '\n';
+    std::cout << "  VK_KHR_swapchain : enabled\n";
     return true;
 }
 
@@ -146,13 +192,10 @@ void VulkanDevice::Shutdown()
 {
     if (m_Device != VK_NULL_HANDLE)
     {
-        // 正常終了ではGPU処理完了を待ちます。Device lost等でWaitIdleが失敗した場合も、
-        // Shutdownを停止してHandleを残さないため、そのままDevice破棄処理へ進みます。
         WaitIdle();
         vkDestroyDevice(m_Device, nullptr);
     }
 
-    // 親Deviceを破棄した後で、Device由来のQueueと選択情報をまとめて無効化します。
     m_Device = VK_NULL_HANDLE;
     m_GraphicsQueue = VK_NULL_HANDLE;
     m_GraphicsQueueFamilyIndex = VulkanPhysicalDevice::InvalidQueueFamilyIndex;
