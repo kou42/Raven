@@ -9,24 +9,14 @@ namespace Raven
 {
 
 bool DX12SwapChain::Init(
-    IDXGIFactory6* factory,
-    ID3D12CommandQueue* commandQueue,
-    ID3D12Device* device,
-    void* platformWindowHandle,
-    uint32_t width,
-    uint32_t height)
+    IDXGIFactory6* factory, ID3D12CommandQueue* commandQueue, ID3D12Device* device,
+    void* platformWindowHandle, uint32_t width, uint32_t height)
 {
     Shutdown();
 
-    if (factory == nullptr || commandQueue == nullptr || device == nullptr)
+    if (factory == nullptr || commandQueue == nullptr || device == nullptr ||
+        platformWindowHandle == nullptr || width == 0 || height == 0)
     {
-        std::cout << "Cannot create DX12 SwapChain because Factory, Queue, or Device is null.\n";
-        return false;
-    }
-
-    if (platformWindowHandle == nullptr)
-    {
-        std::cout << "Cannot create DX12 SwapChain because HWND is null.\n";
         return false;
     }
 
@@ -35,70 +25,75 @@ bool DX12SwapChain::Init(
     DXGI_SWAP_CHAIN_DESC1 description{};
     description.Width = width;
     description.Height = height;
-    description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    description.Stereo = FALSE;
+    description.Format = m_Format;
     description.SampleDesc.Count = 1;
-    description.SampleDesc.Quality = 0;
     description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     description.BufferCount = BufferCount;
     description.Scaling = DXGI_SCALING_STRETCH;
     description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    description.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-    description.Flags = 0;
 
     Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
     HRESULT result = factory->CreateSwapChainForHwnd(
-        commandQueue,
-        windowHandle,
-        &description,
-        nullptr,
-        nullptr,
+        commandQueue, windowHandle, &description, nullptr, nullptr,
         swapChain.ReleaseAndGetAddressOf());
-    if (FAILED(result))
-    {
-        std::cout << "Failed to create DX12 SwapChain. HRESULT = 0x"
-                  << std::hex << static_cast<unsigned long>(result)
-                  << std::dec << '\n';
-        return false;
-    }
+    if (FAILED(result)) { return false; }
 
-    // Alt+EnterによるDXGIの自動Fullscreen切替を無効化し、
-    // Window/SwapChainの状態遷移をRaven側で明示的に管理できるようにします。
     result = factory->MakeWindowAssociation(windowHandle, DXGI_MWA_NO_ALT_ENTER);
-    if (FAILED(result))
-    {
-        std::cout << "Failed to configure DXGI Window association. HRESULT = 0x"
-                  << std::hex << static_cast<unsigned long>(result)
-                  << std::dec << '\n';
-        return false;
-    }
+    if (FAILED(result)) { return false; }
 
     result = swapChain.As(&m_SwapChain);
     if (FAILED(result))
     {
-        m_SwapChain.Reset();
+        Shutdown();
         return false;
     }
 
-    m_BackBuffers.resize(BufferCount);
-    for (UINT bufferIndex = 0; bufferIndex < BufferCount; ++bufferIndex)
+    if (AcquireBackBuffers() == false)
     {
-        result = m_SwapChain->GetBuffer(
-            bufferIndex,
-            IID_PPV_ARGS(m_BackBuffers[bufferIndex].ReleaseAndGetAddressOf()));
+        Shutdown();
+        return false;
+    }
+
+    std::cout << "DX12 SwapChain created : " << width << " x " << height << '\n';
+    return true;
+}
+
+bool DX12SwapChain::Resize(uint32_t width, uint32_t height)
+{
+    if (m_SwapChain.Get() == nullptr || width == 0 || height == 0)
+    {
+        return false;
+    }
+
+    // ResizeBuffers前に全BackBuffer参照を解放することがDXGIの必須条件です。
+    // 呼び出し側はFenceでGPU完了を待ってからこの関数を呼びます。
+    m_BackBuffers.clear();
+
+    const HRESULT result = m_SwapChain->ResizeBuffers(
+        BufferCount, width, height, m_Format, 0);
+    if (FAILED(result))
+    {
+        std::cout << "Failed to resize DX12 SwapChain. HRESULT = 0x"
+                  << std::hex << static_cast<unsigned long>(result) << std::dec << '\n';
+        return false;
+    }
+
+    return AcquireBackBuffers();
+}
+
+bool DX12SwapChain::AcquireBackBuffers()
+{
+    m_BackBuffers.resize(BufferCount);
+    for (UINT index = 0; index < BufferCount; ++index)
+    {
+        const HRESULT result = m_SwapChain->GetBuffer(
+            index, IID_PPV_ARGS(m_BackBuffers[index].ReleaseAndGetAddressOf()));
         if (FAILED(result))
         {
-            std::cout << "Failed to get DX12 SwapChain BackBuffer. HRESULT = 0x"
-                      << std::hex << static_cast<unsigned long>(result)
-                      << std::dec << '\n';
-            Shutdown();
+            m_BackBuffers.clear();
             return false;
         }
     }
-
-    std::cout << "DX12 SwapChain created successfully.\n";
-    std::cout << "  BackBuffers : " << m_BackBuffers.size() << '\n';
-    std::cout << "  Size : " << width << " x " << height << '\n';
     return true;
 }
 
@@ -110,11 +105,7 @@ void DX12SwapChain::Shutdown()
 
 UINT DX12SwapChain::GetCurrentBackBufferIndex() const
 {
-    if (m_SwapChain.Get() == nullptr)
-    {
-        return 0;
-    }
-
+    if (m_SwapChain.Get() == nullptr) { return 0; }
     return m_SwapChain->GetCurrentBackBufferIndex();
 }
 
