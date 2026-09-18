@@ -49,7 +49,6 @@ VkPresentModeKHR ChoosePresentMode(
         }
     }
 
-    // FIFOはVulkan仕様上必ず利用可能で、VSync相当の安全なFallbackになります。
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -105,8 +104,6 @@ bool VulkanSwapChain::Init(
         &presentSupported);
     if (result != VK_SUCCESS || presentSupported == VK_FALSE)
     {
-        // 現在の学習実装ではGraphics/Presentを同一Queueへ集約します。
-        // GPUによってQueue Familyが分離される場合は、後続でPresent Queueを独立管理します。
         std::cout << "Selected Vulkan Graphics Queue cannot present to this Surface.\n";
         return false;
     }
@@ -118,29 +115,28 @@ bool VulkanSwapChain::Init(
         &capabilities);
     if (result != VK_SUCCESS)
     {
-        std::cout << "Failed to query Vulkan Surface capabilities. VkResult = "
-                  << static_cast<int>(result) << '\n';
+        return false;
+    }
+
+    // ClearColorImage経路にはTRANSFER_DSTが必要です。
+    // ここでSurface能力を明示確認し、対応しない環境では不正なSwapChainを生成しません。
+    if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0)
+    {
+        std::cout << "Vulkan Surface does not support TRANSFER_DST SwapChain images.\n";
         return false;
     }
 
     uint32_t formatCount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(
-        device.GetPhysicalDeviceHandle(),
-        surface,
-        &formatCount,
-        nullptr);
+        device.GetPhysicalDeviceHandle(), surface, &formatCount, nullptr);
     if (result != VK_SUCCESS || formatCount == 0)
     {
-        std::cout << "No Vulkan Surface format is available.\n";
         return false;
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(
-        device.GetPhysicalDeviceHandle(),
-        surface,
-        &formatCount,
-        formats.data());
+        device.GetPhysicalDeviceHandle(), surface, &formatCount, formats.data());
     if (result != VK_SUCCESS)
     {
         return false;
@@ -149,22 +145,15 @@ bool VulkanSwapChain::Init(
 
     uint32_t presentModeCount = 0;
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(
-        device.GetPhysicalDeviceHandle(),
-        surface,
-        &presentModeCount,
-        nullptr);
+        device.GetPhysicalDeviceHandle(), surface, &presentModeCount, nullptr);
     if (result != VK_SUCCESS || presentModeCount == 0)
     {
-        std::cout << "No Vulkan Present Mode is available.\n";
         return false;
     }
 
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(
-        device.GetPhysicalDeviceHandle(),
-        surface,
-        &presentModeCount,
-        presentModes.data());
+        device.GetPhysicalDeviceHandle(), surface, &presentModeCount, presentModes.data());
     if (result != VK_SUCCESS)
     {
         return false;
@@ -189,7 +178,8 @@ bool VulkanSwapChain::Init(
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage =
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -198,15 +188,10 @@ bool VulkanSwapChain::Init(
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
     result = vkCreateSwapchainKHR(
-        device.GetHandle(),
-        &createInfo,
-        nullptr,
-        &m_SwapChain);
+        device.GetHandle(), &createInfo, nullptr, &m_SwapChain);
     if (result != VK_SUCCESS)
     {
         m_SwapChain = VK_NULL_HANDLE;
-        std::cout << "Failed to create Vulkan VkSwapchainKHR. VkResult = "
-                  << static_cast<int>(result) << '\n';
         return false;
     }
 
@@ -216,10 +201,7 @@ bool VulkanSwapChain::Init(
 
     uint32_t swapChainImageCount = 0;
     result = vkGetSwapchainImagesKHR(
-        m_Device,
-        m_SwapChain,
-        &swapChainImageCount,
-        nullptr);
+        m_Device, m_SwapChain, &swapChainImageCount, nullptr);
     if (result != VK_SUCCESS || swapChainImageCount == 0)
     {
         Shutdown();
@@ -228,10 +210,7 @@ bool VulkanSwapChain::Init(
 
     m_Images.resize(swapChainImageCount, VK_NULL_HANDLE);
     result = vkGetSwapchainImagesKHR(
-        m_Device,
-        m_SwapChain,
-        &swapChainImageCount,
-        m_Images.data());
+        m_Device, m_SwapChain, &swapChainImageCount, m_Images.data());
     if (result != VK_SUCCESS)
     {
         Shutdown();
