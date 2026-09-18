@@ -41,6 +41,9 @@ public:
     const VulkanDevice& GetDevice() const { return m_Device; }
 
 private:
+    bool CreateInstance();
+
+private:
     VkInstance m_Instance = VK_NULL_HANDLE;
     VulkanPhysicalDevice m_PhysicalDevices;
     VulkanDevice m_Device;
