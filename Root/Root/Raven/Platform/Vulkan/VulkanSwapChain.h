@@ -10,8 +10,6 @@ namespace Raven
 
 class VulkanDevice;
 
-// VkSurfaceKHRの能力を調べ、表示用Imageを所有するVkSwapchainKHRを管理します。
-// Resize時はRecreateで安全に再生成し、各Imageの現在LayoutもSwapChain側で追跡します。
 class VulkanSwapChain
 {
 public:
@@ -23,12 +21,7 @@ public:
     VulkanSwapChain(VulkanSwapChain&&) = delete;
     VulkanSwapChain& operator=(VulkanSwapChain&&) = delete;
 
-    bool Init(
-        const VulkanDevice& device,
-        VkSurfaceKHR surface,
-        uint32_t width,
-        uint32_t height,
-        bool vsync);
+    bool Init(const VulkanDevice& device, VkSurfaceKHR surface, uint32_t width, uint32_t height, bool vsync);
     bool Recreate(uint32_t width, uint32_t height, bool vsync);
     void Shutdown();
 
@@ -51,6 +44,7 @@ private:
     VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
     VkDevice m_Device = VK_NULL_HANDLE;
     VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
+    uint32_t m_GraphicsQueueFamilyIndex = UINT32_MAX;
     VkSwapchainKHR m_SwapChain = VK_NULL_HANDLE;
     VkFormat m_ImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D m_Extent{};
