@@ -24,7 +24,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL OnVulkanDebugMessage(
         ? "ERROR" : ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0 ? "WARNING" : "INFO");
     std::cerr << "[Vulkan Validation][" << level << "] "
               << (callbackData != nullptr && callbackData->pMessage != nullptr ? callbackData->pMessage : "")
-              << '\\n';
+              << '\n';
     return VK_FALSE;
 }
 
@@ -175,11 +175,11 @@ bool VulkanInstance::CreateInstance()
     }
     else
     {
-        std::cerr << "[Vulkan Validation] VK_EXT_debug_utils is unavailable.\\n";
+        std::cerr << "[Vulkan Validation] VK_EXT_debug_utils is unavailable.\n";
     }
     if (validationAvailable == false)
     {
-        std::cerr << "[Vulkan Validation] VK_LAYER_KHRONOS_validation is unavailable.\\n";
+        std::cerr << "[Vulkan Validation] VK_LAYER_KHRONOS_validation is unavailable.\n";
     }
     const char* validationLayer = "VK_LAYER_KHRONOS_validation";
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = MakeDebugMessengerInfo();
