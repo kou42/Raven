@@ -1,5 +1,6 @@
 #include "ClearBackendDemo.h"
 #include "RHIClearContext.h"
+#include "RHIFrameLifecycle.h"
 
 #include "Raven/Core/Event.h"
 #include "Raven/Core/Window.h"
@@ -59,17 +60,26 @@ int RunClearBackendDemo(RHIBackend backend)
 
     // Backend選択は生成時のみ行い、Resize/描画/Shutdownは共通のFrame境界で実行します。
     std::unique_ptr<RHIClearContext> context;
+    // RHIClearContextとRHIFrameLifecycleは別の責務です。
+    // 生成時に同じBackend実体への借用ポインタを保持し、RTTIへの依存を避けます。
+    RHIFrameLifecycle* frameLifecycle = nullptr;
     if (backend == RHIBackend::OpenGL)
     {
-        context = std::make_unique<OpenGLClearContext>();
+        auto concrete = std::make_unique<OpenGLClearContext>();
+        frameLifecycle = concrete.get();
+        context = std::move(concrete);
     }
     else if (backend == RHIBackend::Vulkan)
     {
-        context = std::make_unique<VulkanClearContext>();
+        auto concrete = std::make_unique<VulkanClearContext>();
+        frameLifecycle = concrete.get();
+        context = std::move(concrete);
     }
     else
     {
-        context = std::make_unique<DX12ClearContext>();
+        auto concrete = std::make_unique<DX12ClearContext>();
+        frameLifecycle = concrete.get();
+        context = std::move(concrete);
     }
     const bool initialized = context->Init(*window);
     if (initialized == false)
@@ -121,7 +131,7 @@ int RunClearBackendDemo(RHIBackend backend)
     while (running == true && glfwWindowShouldClose(glfwWindow) == GLFW_FALSE)
     {
         // OpenGLのOnUpdateはSwapBuffersも行うため、Demoではイベントだけ処理します。
-        // Presentは各RHIClearContext::DrawClearFrameに統一し、二重Swapを防ぎます。
+        // PresentはRHIFrameLifecycle::Presentに統一し、二重Swapを防ぎます。
         glfwPollEvents();
         if (running == false || glfwWindowShouldClose(glfwWindow) == GLFW_TRUE)
         {
@@ -172,7 +182,20 @@ int RunClearBackendDemo(RHIBackend backend)
         }
 
         const float clearColor[4] = { 0.08f, 0.16f, 0.28f, 1.0f };
-        const RHIFrameResult frameResult = context->DrawClearFrame(clearColor);
+        // BeginFrameがResizeを要求した場合、描画・Submit・Presentを行わず次のFrameで再生成します。
+        RHIFrameResult frameResult = frameLifecycle->BeginFrame();
+        if (frameResult == RHIFrameResult::Success)
+        {
+            frameResult = frameLifecycle->ClearFrame(clearColor);
+        }
+        if (frameResult == RHIFrameResult::Success)
+        {
+            frameResult = frameLifecycle->EndFrame();
+        }
+        if (frameResult == RHIFrameResult::Success)
+        {
+            frameResult = frameLifecycle->Present();
+        }
         if (frameResult != RHIFrameResult::Success)
         {
             if (frameResult == RHIFrameResult::ResizeRequired)
@@ -182,7 +205,7 @@ int RunClearBackendDemo(RHIBackend backend)
                 resizeReason = "Backend requested framebuffer/swapchain recreation";
                 continue;
             }
-            std::cerr << "Failed to draw Clear Backend frame.\n";
+            std::cerr << "Failed to process Clear Backend frame.\n";
             result = 1;
             break;
         }
