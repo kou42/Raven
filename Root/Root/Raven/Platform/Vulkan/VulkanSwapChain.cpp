@@ -59,7 +59,7 @@ VulkanSwapChain::~VulkanSwapChain() { Shutdown(); }
 bool VulkanSwapChain::Init(const VulkanDevice& device, VkSurfaceKHR surface, uint32_t width, uint32_t height, bool vsync)
 {
     Shutdown();
-    if (device.IsValid() == false || surface == VK_NULL_HANDLE) { return false; }
+    if (device.IsValid() == false || surface == VK_NULL_HANDLE || width == 0 || height == 0) { return false; }
 
     m_PhysicalDevice = device.GetPhysicalDeviceHandle();
     m_Device = device.GetHandle();
@@ -75,8 +75,6 @@ bool VulkanSwapChain::Recreate(uint32_t width, uint32_t height, bool vsync)
     if (vkDeviceWaitIdle(m_Device) != VK_SUCCESS) { return false; }
 
     const VkSwapchainKHR oldSwapChain = m_SwapChain;
-    const std::vector<VkImage> oldImages = m_Images;
-    const std::vector<VkImageLayout> oldLayouts = m_ImageLayouts;
 
     m_SwapChain = VK_NULL_HANDLE;
     m_Images.clear();
@@ -84,9 +82,11 @@ bool VulkanSwapChain::Recreate(uint32_t width, uint32_t height, bool vsync)
 
     if (Create(width, height, vsync, oldSwapChain) == false)
     {
-        m_SwapChain = oldSwapChain;
-        m_Images = oldImages;
-        m_ImageLayouts = oldLayouts;
+        // vkCreateSwapchainKHRが成功した時点でoldSwapchainはretire済みの場合があります。
+        // 旧SwapChainを描画可能と仮定せず、失敗後は明示的な再生成だけを許可します。
+        DestroySwapChain(oldSwapChain);
+        m_ImageFormat = VK_FORMAT_UNDEFINED;
+        m_Extent = {};
         return false;
     }
 
@@ -104,7 +104,8 @@ bool VulkanSwapChain::Create(uint32_t width, uint32_t height, bool vsync, VkSwap
     VkSurfaceCapabilitiesKHR capabilities{};
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &capabilities);
     if (result != VK_SUCCESS ||
-        (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) { return false; }
+        (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0 ||
+        (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == 0) { return false; }
 
     uint32_t formatCount = 0;
     if (vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr) != VK_SUCCESS ||
@@ -137,7 +138,22 @@ bool VulkanSwapChain::Create(uint32_t width, uint32_t height, bool vsync, VkSwap
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.preTransform = capabilities.currentTransform;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    // OPAQUEが非対応のSurfaceでは対応するCompositeAlphaを選びます。
+    const VkCompositeAlphaFlagBitsKHR alphaCandidates[] = {
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR
+    };
+    for (VkCompositeAlphaFlagBitsKHR candidate : alphaCandidates)
+    {
+        if ((capabilities.supportedCompositeAlpha & candidate) != 0)
+        {
+            createInfo.compositeAlpha = candidate;
+            break;
+        }
+    }
+    if (createInfo.compositeAlpha == 0) { return false; }
     createInfo.presentMode = ChoosePresentMode(modes, vsync);
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = oldSwapChain;

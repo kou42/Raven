@@ -41,14 +41,18 @@ bool DX12FrameRenderer::RebuildRenderTargets(ID3D12Device* device, DX12SwapChain
 
 bool DX12FrameRenderer::DrawClearFrame(
     DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
-    DX12CommandList& commandList, DX12Fence& fence,
+    DX12CommandList& commandList, DX12Fence& fence, uint64_t& frameFenceValue,
     const float clearColor[4], bool vsync)
 {
     if (swapChain.IsValid() == false || commandQueue.IsValid() == false ||
         commandList.IsValid() == false || fence.IsValid() == false ||
         m_RtvHeap.Get() == nullptr) { return false; }
 
-    if (commandList.Reset() == false) { return false; }
+    // このSlotの前回GPU処理が完了してからAllocatorをResetします。
+    if (fence.Wait(frameFenceValue) == false || commandList.Reset() == false)
+    {
+        return false;
+    }
 
     const UINT index = swapChain.GetCurrentBackBufferIndex();
     ID3D12Resource* backBuffer = swapChain.GetBackBuffers()[index].Get();
@@ -76,9 +80,17 @@ bool DX12FrameRenderer::DrawClearFrame(
     commandQueue.GetHandle()->ExecuteCommandLists(1, lists);
 
     const UINT syncInterval = vsync == true ? 1 : 0;
-    if (FAILED(swapChain.GetHandle()->Present(syncInterval, 0))) { return false; }
+    const HRESULT presentResult = swapChain.GetHandle()->Present(syncInterval, 0);
 
-    return fence.SignalAndWait(commandQueue.GetHandle());
+    // Present失敗でもExecute済みCommandListはGPUで使用中の可能性があります。
+    // QueueへFenceを積み、次回このSlotを再利用する時に完了を待ちます。
+    uint64_t submittedFenceValue = 0;
+    if (fence.Signal(commandQueue.GetHandle(), submittedFenceValue) == false)
+    {
+        return false;
+    }
+    frameFenceValue = submittedFenceValue;
+    return SUCCEEDED(presentResult);
 }
 
 void DX12FrameRenderer::Shutdown()

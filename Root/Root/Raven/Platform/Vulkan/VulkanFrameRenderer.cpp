@@ -10,27 +10,33 @@
 namespace Raven
 {
 
-bool VulkanFrameRenderer::DrawClearFrame(
+VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     const VulkanDevice& device, VulkanSwapChain& swapChain,
     VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync,
     const VkClearColorValue& clearColor)
 {
     if (device.IsValid() == false || swapChain.IsValid() == false ||
-        commandBuffer.IsValid() == false || frameSync.IsValid() == false) { return false; }
+        commandBuffer.IsValid() == false || frameSync.IsValid() == false) { return VulkanFrameResult::FatalError; }
 
-    if (frameSync.WaitForFrame() == false) { return false; }
+    if (frameSync.WaitForFrame() == false) { return VulkanFrameResult::FatalError; }
 
     uint32_t imageIndex = 0;
     VkResult result = vkAcquireNextImageKHR(
         device.GetHandle(), swapChain.GetHandle(),
         std::numeric_limits<uint64_t>::max(),
         frameSync.GetImageAvailableSemaphore(), VK_NULL_HANDLE, &imageIndex);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) { return false; }
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { return false; }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) { return VulkanFrameResult::ResizeRequired; }
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { return VulkanFrameResult::FatalError; }
+    const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
 
-    if (frameSync.ResetFence() == false ||
-        commandBuffer.Reset() == false ||
-        commandBuffer.Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == false) { return false; }
+    if (imageIndex >= swapChain.GetImages().size() ||
+        frameSync.GetRenderFinishedSemaphore(imageIndex) == VK_NULL_HANDLE)
+    {
+        return VulkanFrameResult::FatalError;
+    }
+
+    if (commandBuffer.Reset() == false ||
+        commandBuffer.Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == false) { return VulkanFrameResult::FatalError; }
 
     const VkImage image = swapChain.GetImages()[imageIndex];
     const VkImageLayout oldLayout = swapChain.GetImageLayout(imageIndex);
@@ -75,10 +81,10 @@ bool VulkanFrameRenderer::DrawClearFrame(
     vkCmdPipelineBarrier(commandBuffer.GetHandle(), VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toPresent);
 
-    if (commandBuffer.End() == false) { return false; }
+    if (commandBuffer.End() == false) { return VulkanFrameResult::FatalError; }
 
     const VkSemaphore waitSemaphore = frameSync.GetImageAvailableSemaphore();
-    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore();
+    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore(imageIndex);
     const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     const VkCommandBuffer commandBufferHandle = commandBuffer.GetHandle();
 
@@ -92,8 +98,17 @@ bool VulkanFrameRenderer::DrawClearFrame(
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &signalSemaphore;
 
+    // Command記録失敗でFenceを未Signalのまま残さないよう、Submit直前にResetします。
+    if (frameSync.ResetFence() == false)
+    {
+        return VulkanFrameResult::FatalError;
+    }
     result = vkQueueSubmit(device.GetGraphicsQueue(), 1, &submitInfo, frameSync.GetInFlightFence());
-    if (result != VK_SUCCESS) { return false; }
+    if (result != VK_SUCCESS)
+    {
+        // Reset済みFenceは未Signalのため、次Frameを試行せずFatalErrorを返します。
+        return VulkanFrameResult::FatalError;
+    }
 
     // Submit成功後は、このImageに記録した最終Layoutを次FrameのBarrierへ引き継ぎます。
     swapChain.SetImageLayout(imageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -108,7 +123,19 @@ bool VulkanFrameRenderer::DrawClearFrame(
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(device.GetGraphicsQueue(), &presentInfo);
-    return result == VK_SUCCESS;
+    // Submit済みのFrame SlotはPresent結果にかかわらず次のSlotへ進めます。
+    // OUT_OF_DATE時はContextがWaitIdleして全Frame Resourceを再生成します。
+    frameSync.AdvanceFrame();
+    if (result == VK_SUCCESS)
+    {
+        return acquiredSuboptimal == true
+            ? VulkanFrameResult::ResizeRequired : VulkanFrameResult::Success;
+    }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+    {
+        return VulkanFrameResult::ResizeRequired;
+    }
+    return VulkanFrameResult::FatalError;
 }
 
 } // namespace Raven

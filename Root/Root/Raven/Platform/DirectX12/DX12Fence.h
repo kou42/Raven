@@ -22,6 +22,8 @@ public:
     DX12Fence& operator=(DX12Fence&&) = delete;
 
     bool Init(ID3D12Device* device);
+    bool Signal(ID3D12CommandQueue* commandQueue, uint64_t& signaledValue);
+    bool Wait(uint64_t fenceValue);
     bool SignalAndWait(ID3D12CommandQueue* commandQueue);
     void Shutdown();
 

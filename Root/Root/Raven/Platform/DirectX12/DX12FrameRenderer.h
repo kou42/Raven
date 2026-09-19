@@ -16,7 +16,8 @@ public:
     bool Init(ID3D12Device* device, DX12SwapChain& swapChain);
     bool RebuildRenderTargets(ID3D12Device* device, DX12SwapChain& swapChain);
     bool DrawClearFrame(DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
-        DX12CommandList& commandList, DX12Fence& fence, const float clearColor[4], bool vsync);
+        DX12CommandList& commandList, DX12Fence& fence, uint64_t& frameFenceValue,
+        const float clearColor[4], bool vsync);
     void Shutdown();
 
 private:

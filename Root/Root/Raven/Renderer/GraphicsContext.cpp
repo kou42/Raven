@@ -1,7 +1,8 @@
+#include "Raven/Renderer/GraphicsContext.h"
 
-#include "Raven/Renderer/RendererAPI.h"
-
+// GraphicsContextはAPI非依存のinterfaceです。
+// Backend選択はRHI/RHITypes.hが担当し、削除済みのLegacy RendererAPIへ依存しません。
 namespace Raven
 {
 
-}
+} // namespace Raven
