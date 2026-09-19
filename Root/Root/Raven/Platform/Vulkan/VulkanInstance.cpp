@@ -222,6 +222,23 @@ bool VulkanInstance::CreateInstance()
         return false;
     }
 
+#if defined(_DEBUG)
+    if (validationAvailable == true && debugUtilsAvailable == true)
+    {
+        const auto createMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(m_Instance, "vkCreateDebugUtilsMessengerEXT"));
+        if (createMessenger != nullptr)
+        {
+            const VkResult debugResult = createMessenger(m_Instance, &debugCreateInfo, nullptr, &m_DebugMessenger);
+            if (debugResult != VK_SUCCESS)
+            {
+                m_DebugMessenger = VK_NULL_HANDLE;
+                std::cerr << "[Vulkan Validation] Failed to create debug messenger: "
+                          << static_cast<int>(debugResult) << '\n';
+            }
+        }
+    }
+#endif
     std::cout << "Vulkan VkInstance created successfully.\n";
     std::cout << "  Enabled Instance Extensions : " << enabledExtensions.size() << '\n';
     return true;
