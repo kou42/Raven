@@ -52,7 +52,6 @@ int RunClearBackendDemo(RHIBackend backend)
     }
 
     int result = 0;
-    bool vulkanRetryAfterResize = false;
     while (running == true && glfwWindowShouldClose(glfwWindow) == GLFW_FALSE)
     {
         // WindowsWindow::OnUpdateはGLFWイベント処理のみ（No-APIではSwapBuffersしません）。
@@ -88,6 +87,7 @@ int RunClearBackendDemo(RHIBackend backend)
         }
 
         bool drawn = false;
+        bool vulkanResizeRequired = false;
         if (backend == RHIBackend::Vulkan)
         {
             VkClearColorValue clearColor{};
@@ -95,7 +95,9 @@ int RunClearBackendDemo(RHIBackend backend)
             clearColor.float32[1] = 0.16f;
             clearColor.float32[2] = 0.28f;
             clearColor.float32[3] = 1.0f;
-            drawn = vulkan.DrawClearFrame(clearColor);
+            const VulkanFrameResult frameResult = vulkan.DrawClearFrame(clearColor);
+            drawn = frameResult == VulkanFrameResult::Success;
+            vulkanResizeRequired = frameResult == VulkanFrameResult::ResizeRequired;
         }
         else
         {
@@ -105,19 +107,16 @@ int RunClearBackendDemo(RHIBackend backend)
 
         if (drawn == false)
         {
-            // Vulkan OUT_OF_DATE/SUBOPTIMALは再生成を要求します。
-            // その他の失敗を無制限に繰り返さないよう、連続失敗時は終了します。
-            if (backend == RHIBackend::Vulkan && vulkanRetryAfterResize == false)
+            if (vulkanResizeRequired == true)
             {
+                // OUT_OF_DATE/SUBOPTIMALだけを再生成で復旧します。
                 resizePending = true;
-                vulkanRetryAfterResize = true;
                 continue;
             }
             std::cerr << "Failed to draw Clear Backend frame.\n";
             result = 1;
             break;
         }
-        vulkanRetryAfterResize = false;
     }
 
     vulkan.Shutdown();
