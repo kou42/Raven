@@ -2,6 +2,8 @@
 
 #include "Raven/Core/Window.h"
 
+#include <GLFW/glfw3.h>
+
 namespace Raven
 {
 DX12ClearContext::~DX12ClearContext()
@@ -14,7 +16,16 @@ bool DX12ClearContext::Init(Window& window)
     Shutdown();
     if (window.GetBackend() != RHIBackend::DirectX12 ||
         window.GetPlatformWindowHandle() == nullptr ||
-        window.GetWidth() == 0 || window.GetHeight() == 0)
+        window.GetNativeWindow() == nullptr)
+    {
+        return false;
+    }
+
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(static_cast<GLFWwindow*>(window.GetNativeWindow()),
+        &framebufferWidth, &framebufferHeight);
+    if (framebufferWidth <= 0 || framebufferHeight <= 0)
     {
         return false;
     }
@@ -39,7 +50,7 @@ bool DX12ClearContext::Init(Window& window)
         m_Queue.Init(m_Device.GetHandle()) == false ||
         m_SwapChain.Init(m_Factory.GetHandle(), m_Queue.GetHandle(),
             m_Device.GetHandle(), window.GetPlatformWindowHandle(),
-            window.GetWidth(), window.GetHeight()) == false ||
+            static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight)) == false ||
         m_CommandList.Init(m_Device.GetHandle()) == false ||
         m_Fence.Init(m_Device.GetHandle()) == false ||
         m_FrameRenderer.Init(m_Device.GetHandle(), m_SwapChain) == false)
