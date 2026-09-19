@@ -69,7 +69,10 @@ bool DX12Fence::SignalAndWait(ID3D12CommandQueue* commandQueue)
             return false;
         }
 
-        WaitForSingleObject(static_cast<HANDLE>(m_EventHandle), INFINITE);
+        if (WaitForSingleObject(static_cast<HANDLE>(m_EventHandle), INFINITE) != WAIT_OBJECT_0)
+        {
+            return false;
+        }
     }
 
     return true;
