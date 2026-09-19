@@ -31,7 +31,9 @@ int RunClearBackendDemo(RHIBackend backend)
     GLFWwindow* glfwWindow = static_cast<GLFWwindow*>(window->GetNativeWindow());
     bool running = true;
     bool resizePending = false;
-    window->SetEventCallback([&running, &resizePending](Event& event)
+    bool wasMinimized = false;
+    const char* resizeReason = "Unknown";
+    window->SetEventCallback([&running, &resizePending, &resizeReason, backend](Event& event)
     {
         if (event.GetEventType() == EventType::WindowClose)
         {
@@ -41,6 +43,11 @@ int RunClearBackendDemo(RHIBackend backend)
         {
             // Callback内ではGPU Resourceを触らず、Frame境界でResizeします。
             resizePending = true;
+            resizeReason = "WindowResize event";
+            if (backend == RHIBackend::Vulkan)
+            {
+                std::cout << "[Vulkan Window] Resize event received.\n";
+            }
         }
     });
 
@@ -110,12 +117,31 @@ int RunClearBackendDemo(RHIBackend backend)
         {
             // Minimize中はAcquire/Presentしない。復帰時に最新Framebuffer寸法で再生成します。
             resizePending = true;
+            if (wasMinimized == false && backend == RHIBackend::Vulkan)
+            {
+                std::cout << "[Vulkan Window] Minimized (zero framebuffer); rendering suspended.\n";
+            }
+            wasMinimized = true;
             glfwWaitEvents();
             continue;
         }
 
+        if (wasMinimized == true)
+        {
+            if (backend == RHIBackend::Vulkan)
+            {
+                std::cout << "[Vulkan Window] Restored; rendering will resume after resize.\n";
+            }
+            wasMinimized = false;
+            resizeReason = "Restore after minimize";
+        }
+
         if (resizePending == true)
         {
+            if (backend == RHIBackend::Vulkan)
+            {
+                std::cout << "[Vulkan Resize] Reason: " << resizeReason << '\n';
+            }
             const bool resized = backend == RHIBackend::Vulkan
                 ? vulkan.Resize(static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight))
                 : dx12.Resize(static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight));
@@ -156,6 +182,7 @@ int RunClearBackendDemo(RHIBackend backend)
             {
                 // OUT_OF_DATE/SUBOPTIMALだけを再生成で復旧します。
                 resizePending = true;
+                resizeReason = "Acquire/Present requested recreation (see Vulkan Resize log)";
                 continue;
             }
             std::cerr << "Failed to draw Clear Backend frame.\n";
