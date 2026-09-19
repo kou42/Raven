@@ -1,6 +1,7 @@
 #include "DX12Device.h"
 #include "Raven/Platform/RHIDebugConfig.h"
 
+#include <cstring>
 #include <iostream>
 #include <vector>
 
@@ -56,7 +57,7 @@ bool DX12Device::Init(const DX12Adapter::AdapterInfo& adapter)
     return false;
 }
 
-void DX12Device::DrainDebugMessages() const
+void DX12Device::DrainDebugMessages(bool shutdownReport) const
 {
 #if defined(_DEBUG)
     if (m_Device.Get() == nullptr)
@@ -93,7 +94,7 @@ void DX12Device::DrainDebugMessages() const
             message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION ||
             verboseMessages == true)
         {
-            // 数値2はINFOでありWARNINGではありません。重大度を名前で出力します。
+            // D3D12のSeverity値2はWARNINGです。数値の解釈違いを防ぐため名前で出力します。
             const char* severityName = "MESSAGE";
             switch (message->Severity)
             {
@@ -105,8 +106,15 @@ void DX12Device::DrainDebugMessages() const
             }
             std::cerr << "[DX12 InfoQueue][" << severityName
                       << "][ID " << static_cast<int>(message->ID) << "] "
-                      << (message->pDescription != nullptr ? message->pDescription : "")
-                      << '\n';
+                      << (message->pDescription != nullptr ? message->pDescription : "");
+            // Report実行時にはRavenがDeviceを所有中です。該当するDevice自身の
+            // Live警告にだけ注記し、他のリソースの警告は区別して調査できるよう残します。
+            if (shutdownReport == true && message->pDescription != nullptr &&
+                std::strncmp(message->pDescription, "Live ID3D12Device ", 18) == 0)
+            {
+                std::cerr << " [Device is still owned during shutdown report]";
+            }
+            std::cerr << '\n';
         }
     }
     // 同じメッセージをフレームごとに繰り返し出さないよう、取得後に消去します。
@@ -122,14 +130,14 @@ void DX12Device::Shutdown()
     {
         // Queue/SwapChainなどを解放した後に呼ぶことで、残存Device子オブジェクトを検出します。
         // Report実行時点ではDeviceを所有中のため、Device自身のLive表示は
-        // INFOとして出る場合があります。これだけでリソースリークとは判断しません。
+        // WARNINGとして出る場合があります。これだけで子リソースのリークとは判断しません。
         Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
         if (SUCCEEDED(m_Device.As(&debugDevice)))
         {
             debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
         }
         debugDevice.Reset();
-        DrainDebugMessages();
+        DrainDebugMessages(true);
     }
 #endif
     m_Device.Reset();
