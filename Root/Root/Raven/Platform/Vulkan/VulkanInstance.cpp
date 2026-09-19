@@ -182,7 +182,7 @@ bool VulkanInstance::CreateInstance()
     {
         enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
-    else
+    else if (debugUtilsAvailable == false && debugConfig.EnableValidation == true)
     {
         std::cerr << "[Vulkan Validation] VK_EXT_debug_utils is unavailable.\n";
     }
