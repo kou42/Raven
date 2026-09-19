@@ -25,7 +25,7 @@ bool VulkanClearContext::Init(Window& window)
         m_SwapChain.Init(m_Instance.GetDevice(), m_Surface.GetHandle(),
             window.GetWidth(), window.GetHeight(), window.IsVSync()) == false ||
         m_CommandBuffer.Init(m_Instance.GetDevice()) == false ||
-        m_FrameSync.Init(m_Instance.GetDevice()) == false)
+        m_FrameSync.Init(m_Instance.GetDevice(), static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false)
     {
         Shutdown();
         return false;
@@ -47,7 +47,15 @@ bool VulkanClearContext::Resize(uint32_t width, uint32_t height)
     {
         return false;
     }
-    return m_SwapChain.Recreate(width, height, m_VSync);
+    if (m_SwapChain.Recreate(width, height, m_VSync) == false)
+    {
+        return false;
+    }
+
+    // Resize後はImage数が変化するため、Present Semaphore配列も作り直します。
+    // SwapChain::RecreateはDeviceWaitIdle済みなので旧同期Resourceを安全に解放できます。
+    return m_FrameSync.Init(m_Instance.GetDevice(),
+        static_cast<uint32_t>(m_SwapChain.GetImages().size()));
 }
 
 void VulkanClearContext::Shutdown()
