@@ -1829,3 +1829,44 @@ D:.
                 Root.exe
                 Root.pdb
 
+
+
+Raven RHI implementation additions (Root/Root/Raven relative paths):
+    Platform/DirectX12/DX12Adapter.h
+    Platform/DirectX12/DX12Adapter.cpp
+    Platform/DirectX12/DX12Factory.h
+    Platform/DirectX12/DX12Factory.cpp
+    Platform/DirectX12/DX12Device.h
+    Platform/DirectX12/DX12Device.cpp
+    Platform/DirectX12/DX12CommandQueue.h
+    Platform/DirectX12/DX12CommandQueue.cpp
+    Platform/DirectX12/DX12SwapChain.h
+    Platform/DirectX12/DX12SwapChain.cpp
+    Platform/DirectX12/DX12CommandList.h
+    Platform/DirectX12/DX12CommandList.cpp
+    Platform/DirectX12/DX12Fence.h
+    Platform/DirectX12/DX12Fence.cpp
+    Platform/DirectX12/DX12FrameRenderer.h
+    Platform/DirectX12/DX12FrameRenderer.cpp
+    Platform/DirectX12/DX12ClearContext.h
+    Platform/DirectX12/DX12ClearContext.cpp
+    Platform/Vulkan/VulkanInstance.h
+    Platform/Vulkan/VulkanInstance.cpp
+    Platform/Vulkan/VulkanPhysicalDevice.h
+    Platform/Vulkan/VulkanPhysicalDevice.cpp
+    Platform/Vulkan/VulkanDevice.h
+    Platform/Vulkan/VulkanDevice.cpp
+    Platform/Vulkan/VulkanSurface.h
+    Platform/Vulkan/VulkanSurface.cpp
+    Platform/Vulkan/VulkanSwapChain.h
+    Platform/Vulkan/VulkanSwapChain.cpp
+    Platform/Vulkan/VulkanCommandBuffer.h
+    Platform/Vulkan/VulkanCommandBuffer.cpp
+    Platform/Vulkan/VulkanFrameSync.h
+    Platform/Vulkan/VulkanFrameSync.cpp
+    Platform/Vulkan/VulkanFrameRenderer.h
+    Platform/Vulkan/VulkanFrameRenderer.cpp
+    Platform/Vulkan/VulkanClearContext.h
+    Platform/Vulkan/VulkanClearContext.cpp
+    Renderer/RHI/ClearBackendDemo.h
+    Renderer/RHI/ClearBackendDemo.cpp
