@@ -8,6 +8,9 @@
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+#include <cstdlib>
+#include <cerrno>
+#include <limits>
 
 namespace Raven
 {
@@ -51,6 +54,28 @@ int RunClearBackendDemo(RHIBackend backend)
         return 1;
     }
 
+    // 自動Smoke Test用。未設定または不正値の場合は従来どおりWindowを閉じるまで実行します。
+    // 0は無制限として扱い、正の整数だけをフレーム上限として採用します。
+    unsigned long smokeFrameLimit = 0;
+    const char* smokeFrames = std::getenv("RAVEN_RHI_SMOKE_FRAMES");
+    if (smokeFrames != nullptr && smokeFrames[0] != '\0')
+    {
+        char* end = nullptr;
+        errno = 0;
+        const unsigned long parsed = std::strtoul(smokeFrames, &end, 10);
+        if (errno == 0 && end != smokeFrames && end != nullptr &&
+            *end == '\0' && parsed > 0 &&
+            parsed <= std::numeric_limits<unsigned int>::max())
+        {
+            smokeFrameLimit = parsed;
+        }
+        else
+        {
+            std::cerr << "[RHI Smoke] Invalid RAVEN_RHI_SMOKE_FRAMES; running interactively.\n";
+        }
+    }
+
+    unsigned long completedFrames = 0;
     int result = 0;
     while (running == true && glfwWindowShouldClose(glfwWindow) == GLFW_FALSE)
     {
@@ -115,6 +140,13 @@ int RunClearBackendDemo(RHIBackend backend)
             }
             std::cerr << "Failed to draw Clear Backend frame.\n";
             result = 1;
+            break;
+        }
+        ++completedFrames;
+        if (smokeFrameLimit > 0 && completedFrames >= smokeFrameLimit)
+        {
+            std::cout << "[RHI Smoke] Completed " << completedFrames
+                      << " frames successfully.\n";
             break;
         }
     }
