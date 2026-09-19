@@ -16,6 +16,13 @@ class DX12FrameRenderer
 public:
     bool Init(ID3D12Device* device, DX12SwapChain& swapChain);
     bool RebuildRenderTargets(ID3D12Device* device, DX12SwapChain& swapChain);
+    bool BeginFrame(DX12SwapChain& swapChain, DX12CommandList& commandList,
+        DX12Fence& fence, uint64_t frameFenceValue);
+    bool ClearFrame(DX12SwapChain& swapChain, DX12CommandList& commandList,
+        const float clearColor[4]);
+    bool EndFrame(DX12CommandQueue& commandQueue, DX12CommandList& commandList);
+    bool Present(DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
+        DX12Fence& fence, uint64_t& frameFenceValue, bool vsync);
     bool DrawClearFrame(DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
         DX12CommandList& commandList, DX12Fence& fence, uint64_t& frameFenceValue,
         const float clearColor[4], bool vsync);
@@ -24,5 +31,9 @@ public:
 private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_RtvHeap;
     UINT m_RtvDescriptorSize = 0;
+    UINT m_BackBufferIndex = 0;
+    bool m_FrameActive = false;
+    bool m_FrameCleared = false;
+    bool m_Submitted = false;
 };
 } // namespace Raven
