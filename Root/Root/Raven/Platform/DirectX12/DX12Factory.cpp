@@ -16,38 +16,37 @@ bool DX12Factory::Init()
     }
 
     UINT factoryFlags = 0;
-    const RHIDebugConfig debugConfig = RHIDebugConfig::FromEnvironment();
-
 #if defined(_DEBUG)
+    const RHIDebugConfig debugConfig = RHIDebugConfig::FromEnvironment();
     // Device生成前に有効化する必要があります。Graphics Tools未導入時は診断を諦めて続行します。
     if (debugConfig.EnableValidation == true)
     {
-    Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
-    const HRESULT debugResult = D3D12GetDebugInterface(IID_PPV_ARGS(debugController.GetAddressOf()));
-    if (SUCCEEDED(debugResult))
-    {
-        debugController->EnableDebugLayer();
-        // GPU-Based Validationは通常のDebug Layerより重いため環境変数で明示的に有効化します。
-        // RAVEN_DX12_GPU_VALIDATION=1 を設定して起動してください。
-        if (debugConfig.EnableGPUValidation == true)
+        Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
+        const HRESULT debugResult = D3D12GetDebugInterface(IID_PPV_ARGS(debugController.GetAddressOf()));
+        if (SUCCEEDED(debugResult))
         {
-            Microsoft::WRL::ComPtr<ID3D12Debug1> debug1;
-            if (SUCCEEDED(debugController.As(&debug1)))
+            debugController->EnableDebugLayer();
+            // GPU-Based Validationは通常のDebug Layerより重いため環境変数で明示的に有効化します。
+            // RAVEN_DX12_GPU_VALIDATION=1 を設定して起動してください。
+            if (debugConfig.EnableGPUValidation == true)
             {
-                debug1->SetEnableGPUBasedValidation(TRUE);
-                std::cout << "[DX12 Debug] GPU-Based Validation enabled.\n";
+                Microsoft::WRL::ComPtr<ID3D12Debug1> debug1;
+                if (SUCCEEDED(debugController.As(&debug1)))
+                {
+                    debug1->SetEnableGPUBasedValidation(TRUE);
+                    std::cout << "[DX12 Debug] GPU-Based Validation enabled.\n";
+                }
+                else
+                {
+                    std::cerr << "[DX12 Debug] ID3D12Debug1 is unavailable.\n";
+                }
             }
-            else
-            {
-                std::cerr << "[DX12 Debug] ID3D12Debug1 is unavailable.\n";
-            }
+            std::cout << "[DX12 Debug] D3D12 Debug Layer enabled.\n";
         }
-        std::cout << "[DX12 Debug] D3D12 Debug Layer enabled.\n";
-    }
-    else
-    {
-        std::cerr << "[DX12 Debug] D3D12 Debug Layer unavailable; continuing without it.\n";
-    }
+        else
+        {
+            std::cerr << "[DX12 Debug] D3D12 Debug Layer unavailable; continuing without it.\n";
+        }
     }
 #endif
 
