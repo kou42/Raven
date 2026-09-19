@@ -12,10 +12,10 @@ VulkanFrameSync::~VulkanFrameSync()
     Shutdown();
 }
 
-bool VulkanFrameSync::Init(const VulkanDevice& device, uint32_t imageCount)
+bool VulkanFrameSync::Init(const VulkanDevice& device, uint32_t imageCount, uint32_t frameCount)
 {
     Shutdown();
-    if (device.IsValid() == false || imageCount == 0)
+    if (device.IsValid() == false || imageCount == 0 || frameCount == 0)
     {
         std::cout << "Cannot create Vulkan FrameSync: invalid device/image count.\n";
         return false;
@@ -24,10 +24,16 @@ bool VulkanFrameSync::Init(const VulkanDevice& device, uint32_t imageCount)
     m_Device = device.GetHandle();
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    if (vkCreateSemaphore(m_Device, &semaphoreCreateInfo, nullptr, &m_ImageAvailableSemaphore) != VK_SUCCESS)
+    // Frame SlotごとにAcquire Semaphoreを分離し、前FrameのGPU処理と重ねます。
+    for (uint32_t index = 0; index < frameCount; ++index)
     {
-        Shutdown();
-        return false;
+        VkSemaphore semaphore = VK_NULL_HANDLE;
+        if (vkCreateSemaphore(m_Device, &semaphoreCreateInfo, nullptr, &semaphore) != VK_SUCCESS)
+        {
+            Shutdown();
+            return false;
+        }
+        m_ImageAvailableSemaphores.push_back(semaphore);
     }
 
     // 再AcquireされたImageについては以前のPresentがそのImageを解放済みなので、
@@ -46,11 +52,17 @@ bool VulkanFrameSync::Init(const VulkanDevice& device, uint32_t imageCount)
     VkFenceCreateInfo fenceCreateInfo{};
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    if (vkCreateFence(m_Device, &fenceCreateInfo, nullptr, &m_InFlightFence) != VK_SUCCESS)
+    for (uint32_t index = 0; index < frameCount; ++index)
     {
-        Shutdown();
-        return false;
+        VkFence fence = VK_NULL_HANDLE;
+        if (vkCreateFence(m_Device, &fenceCreateInfo, nullptr, &fence) != VK_SUCCESS)
+        {
+            Shutdown();
+            return false;
+        }
+        m_InFlightFences.push_back(fence);
     }
+    m_CurrentFrame = 0;
     std::cout << "Vulkan Frame Semaphore/Fence created successfully.\n";
     return true;
 }
@@ -70,7 +82,8 @@ bool VulkanFrameSync::WaitForFrame() const
     {
         return false;
     }
-    return vkWaitForFences(m_Device, 1, &m_InFlightFence, VK_TRUE,
+    const VkFence fence = GetInFlightFence();
+    return vkWaitForFences(m_Device, 1, &fence, VK_TRUE,
         std::numeric_limits<uint64_t>::max()) == VK_SUCCESS;
 }
 
@@ -80,7 +93,16 @@ bool VulkanFrameSync::ResetFence() const
     {
         return false;
     }
-    return vkResetFences(m_Device, 1, &m_InFlightFence) == VK_SUCCESS;
+    const VkFence fence = GetInFlightFence();
+    return vkResetFences(m_Device, 1, &fence) == VK_SUCCESS;
+}
+
+void VulkanFrameSync::AdvanceFrame()
+{
+    if (m_InFlightFences.empty() == false)
+    {
+        m_CurrentFrame = (m_CurrentFrame + 1) % static_cast<uint32_t>(m_InFlightFences.size());
+    }
 }
 
 void VulkanFrameSync::Shutdown()
@@ -88,9 +110,12 @@ void VulkanFrameSync::Shutdown()
     // GPU利用中に破棄しないこと。Context側がDeviceWaitIdleを保証します。
     if (m_Device != VK_NULL_HANDLE)
     {
-        if (m_InFlightFence != VK_NULL_HANDLE)
+        for (VkFence fence : m_InFlightFences)
         {
-            vkDestroyFence(m_Device, m_InFlightFence, nullptr);
+            if (fence != VK_NULL_HANDLE)
+            {
+                vkDestroyFence(m_Device, fence, nullptr);
+            }
         }
         for (VkSemaphore semaphore : m_RenderFinishedSemaphores)
         {
@@ -99,14 +124,18 @@ void VulkanFrameSync::Shutdown()
                 vkDestroySemaphore(m_Device, semaphore, nullptr);
             }
         }
-        if (m_ImageAvailableSemaphore != VK_NULL_HANDLE)
+        for (VkSemaphore semaphore : m_ImageAvailableSemaphores)
         {
-            vkDestroySemaphore(m_Device, m_ImageAvailableSemaphore, nullptr);
+            if (semaphore != VK_NULL_HANDLE)
+            {
+                vkDestroySemaphore(m_Device, semaphore, nullptr);
+            }
         }
     }
-    m_InFlightFence = VK_NULL_HANDLE;
+    m_InFlightFences.clear();
+    m_CurrentFrame = 0;
     m_RenderFinishedSemaphores.clear();
-    m_ImageAvailableSemaphore = VK_NULL_HANDLE;
+    m_ImageAvailableSemaphores.clear();
     m_Device = VK_NULL_HANDLE;
 }
 } // namespace Raven
