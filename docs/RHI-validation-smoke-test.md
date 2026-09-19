@@ -48,7 +48,7 @@ Releaseでは環境変数にかかわらず診断を無効化する。
 | Vulkan/DX12 Release | 起動→描画→終了 | Debug機能への依存がないこと |
 
 `RAVEN_RHI_SMOKE_FRAMES`による自動終了だけではResize・最小化復帰は検証できないため、別途手動操作する。
-DX12 Live Object ReportはVisual StudioのDebug Outputにも出力される場合がある。
+DX12 Live Object ReportはVisual StudioのDebug Outputにも出力される場合がある。Device自身のLive警告には終了時の所有に関する注記を出すが、警告自体は隠さない。
 Reportが出ない場合はGraphics ToolsとDebug Layerの有効化を確認する。
 実行時ログを保存し、警告が既知のものか、新規回帰かを区別する。
 
@@ -56,7 +56,7 @@ Reportが出ない場合はGraphics ToolsとDebug Layerの有効化を確認す�
 
 - DX12 / VulkanともにRTX 3080で120フレーム描画し、終了コード0を確認。
 - DX12 Debug LayerおよびVulkan `VK_LAYER_KHRONOS_validation`の有効化を確認。
-- DX12の`Live ID3D12Device ..., Refcount: 2`はINFO（Severity 2）。Report呼び出し時点でDeviceを所有しているため、この表示だけではリークと判定しない。子オブジェクトのLive報告やWARNING/ERRORがないか別途確認する。
+- DX12の`Live ID3D12Device ..., Refcount: 2`はWARNING（Severity 2）。Report呼び出し時点でDeviceを所有しているため、この表示だけではリークと判定しない。子オブジェクトのLive報告やWARNING/ERRORがないか別途確認する。
 - Vulkan LoaderからEOS Overlay Layer重複のWARNINGが出たが、RavenのVulkan APIに対するValidationエラーは記録されていない。
-- DX12のResize・最小化復帰はユーザーの実機操作で成功を確認。添付コンソールログにはResizeの詳細や正常Shutdownの記録がないため、最新のResize/Shutdownログを用いて再確認する。VulkanのResize・最小化復帰とReleaseは未確認。
+- DX12のResize・最小化復帰はユーザーの実機操作で成功を確認。最新のDebugログではResize成功2回・1875フレーム描画・Shutdown完了・終了コード0を確認。VulkanのResize・最小化復帰とReleaseは未確認。
 - `RAVEN_RHI_SMOKE_FRAMES=0`で対話モードとなる。正常なウィンドウ終了では`[RHI Smoke] Shutdown completed`とResize回数が表示される。Visual Studioの停止ボタンによる強制終了ではこのログが出ない場合がある。
