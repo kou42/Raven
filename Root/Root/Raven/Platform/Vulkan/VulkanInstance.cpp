@@ -1,4 +1,5 @@
 #include "VulkanInstance.h"
+#include "Raven/Platform/RHIDebugConfig.h"
 
 #include <iostream>
 #include <cstring>
@@ -18,11 +19,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL OnVulkanDebugMessage(
     const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
     void* userData)
 {
-    (void)type;
     (void)userData;
     const char* level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0
         ? "ERROR" : ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0 ? "WARNING" : "INFO");
-    std::cerr << "[Vulkan Validation][" << level << "] "
+    const char* category = (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) != 0
+        ? "VALIDATION" : ((type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) != 0
+            ? "PERFORMANCE" : "GENERAL");
+    std::cerr << "[Vulkan Validation][" << level << "][" << category << "] "
               << (callbackData != nullptr && callbackData->pMessage != nullptr ? callbackData->pMessage : "")
               << '\n';
     return VK_FALSE;
@@ -34,6 +37,11 @@ VkDebugUtilsMessengerCreateInfoEXT MakeDebugMessengerInfo()
     info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    if (RHIDebugConfig::FromEnvironment().VerboseMessages == true)
+    {
+        info.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+    }
     info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -134,6 +142,7 @@ bool VulkanInstance::CreateInstance()
 
 #if defined(_DEBUG)
     // SDKが未導入の環境でも通常の描画確認を継続できるよう、Layerは存在を確認してから有効化します。
+    const RHIDebugConfig debugConfig = RHIDebugConfig::FromEnvironment();
     bool validationAvailable = false;
     uint32_t layerCount = 0;
     if (vkEnumerateInstanceLayerProperties(&layerCount, nullptr) == VK_SUCCESS)
@@ -169,7 +178,7 @@ bool VulkanInstance::CreateInstance()
             }
         }
     }
-    if (debugUtilsAvailable == true)
+    if (debugUtilsAvailable == true && debugConfig.EnableValidation == true)
     {
         enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -177,7 +186,7 @@ bool VulkanInstance::CreateInstance()
     {
         std::cerr << "[Vulkan Validation] VK_EXT_debug_utils is unavailable.\n";
     }
-    if (validationAvailable == false)
+    if (validationAvailable == false && debugConfig.EnableValidation == true)
     {
         std::cerr << "[Vulkan Validation] VK_LAYER_KHRONOS_validation is unavailable.\n";
     }
@@ -201,7 +210,7 @@ bool VulkanInstance::CreateInstance()
     createInfo.enabledLayerCount = 0;
     createInfo.ppEnabledLayerNames = nullptr;
 #if defined(_DEBUG)
-    if (validationAvailable == true)
+    if (validationAvailable == true && debugConfig.EnableValidation == true)
     {
         createInfo.enabledLayerCount = 1;
         createInfo.ppEnabledLayerNames = &validationLayer;
@@ -223,7 +232,7 @@ bool VulkanInstance::CreateInstance()
     }
 
 #if defined(_DEBUG)
-    if (validationAvailable == true && debugUtilsAvailable == true)
+    if (validationAvailable == true && debugUtilsAvailable == true && debugConfig.EnableValidation == true)
     {
         const auto createMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
             vkGetInstanceProcAddr(m_Instance, "vkCreateDebugUtilsMessengerEXT"));
