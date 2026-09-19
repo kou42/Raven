@@ -1,7 +1,7 @@
 #include "DX12Factory.h"
+#include "Raven/Platform/RHIDebugConfig.h"
 
 #include <iostream>
-#include <cstdlib>
 #include <d3d12.h>
 
 namespace Raven
@@ -16,9 +16,12 @@ bool DX12Factory::Init()
     }
 
     UINT factoryFlags = 0;
+    const RHIDebugConfig debugConfig = RHIDebugConfig::FromEnvironment();
 
 #if defined(_DEBUG)
     // Device生成前に有効化する必要があります。Graphics Tools未導入時は診断を諦めて続行します。
+    if (debugConfig.EnableValidation == true)
+    {
     Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
     const HRESULT debugResult = D3D12GetDebugInterface(IID_PPV_ARGS(debugController.GetAddressOf()));
     if (SUCCEEDED(debugResult))
@@ -26,10 +29,7 @@ bool DX12Factory::Init()
         debugController->EnableDebugLayer();
         // GPU-Based Validationは通常のDebug Layerより重いため環境変数で明示的に有効化します。
         // RAVEN_DX12_GPU_VALIDATION=1 を設定して起動してください。
-        char gpuValidation[8]{};
-        size_t valueLength = 0;
-        if (getenv_s(&valueLength, gpuValidation, sizeof(gpuValidation),
-            "RAVEN_DX12_GPU_VALIDATION") == 0 && gpuValidation[0] == '1')
+        if (debugConfig.EnableGPUValidation == true)
         {
             Microsoft::WRL::ComPtr<ID3D12Debug1> debug1;
             if (SUCCEEDED(debugController.As(&debug1)))
@@ -48,12 +48,16 @@ bool DX12Factory::Init()
     {
         std::cerr << "[DX12 Debug] D3D12 Debug Layer unavailable; continuing without it.\n";
     }
+    }
 #endif
 
 #if defined(_DEBUG)
     // DXGI Debug flagはデバッグビルドでのみ有効化します。
     // DXGI側の診断情報を得やすくしつつ、Releaseビルドへ不要なDebug依存を持ち込みません。
-    factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+    if (debugConfig.EnableValidation == true)
+    {
+        factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+    }
 #endif
 
     const HRESULT result = CreateDXGIFactory2(
