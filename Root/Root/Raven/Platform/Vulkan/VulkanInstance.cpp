@@ -1,6 +1,7 @@
 #include "VulkanInstance.h"
 
 #include <iostream>
+#include <cstring>
 #include <vector>
 
 #define GLFW_INCLUDE_VULKAN
@@ -8,6 +9,40 @@
 
 namespace Raven
 {
+#if defined(_DEBUG)
+namespace
+{
+VKAPI_ATTR VkBool32 VKAPI_CALL OnVulkanDebugMessage(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT type,
+    const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
+    void* userData)
+{
+    (void)type;
+    (void)userData;
+    const char* level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0
+        ? "ERROR" : ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0 ? "WARNING" : "INFO");
+    std::cerr << "[Vulkan Validation][" << level << "] "
+              << (callbackData != nullptr && callbackData->pMessage != nullptr ? callbackData->pMessage : "")
+              << '\\n';
+    return VK_FALSE;
+}
+
+VkDebugUtilsMessengerCreateInfoEXT MakeDebugMessengerInfo()
+{
+    VkDebugUtilsMessengerCreateInfoEXT info{};
+    info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    info.pfnUserCallback = OnVulkanDebugMessage;
+    return info;
+}
+} // namespace
+#endif
+
 
 VulkanInstance::~VulkanInstance()
 {
@@ -97,6 +132,59 @@ bool VulkanInstance::CreateInstance()
         requiredExtensions,
         requiredExtensions + requiredExtensionCount);
 
+#if defined(_DEBUG)
+    // SDKが未導入の環境でも通常の描画確認を継続できるよう、Layerは存在を確認してから有効化します。
+    bool validationAvailable = false;
+    uint32_t layerCount = 0;
+    if (vkEnumerateInstanceLayerProperties(&layerCount, nullptr) == VK_SUCCESS)
+    {
+        std::vector<VkLayerProperties> layers(layerCount);
+        if (vkEnumerateInstanceLayerProperties(&layerCount, layers.data()) == VK_SUCCESS)
+        {
+            for (const auto& layer : layers)
+            {
+                if (std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0)
+                {
+                    validationAvailable = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    bool debugUtilsAvailable = false;
+    uint32_t extensionCount = 0;
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr) == VK_SUCCESS)
+    {
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data()) == VK_SUCCESS)
+        {
+            for (const auto& extension : extensions)
+            {
+                if (std::strcmp(extension.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+                {
+                    debugUtilsAvailable = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (debugUtilsAvailable == true)
+    {
+        enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+    else
+    {
+        std::cerr << "[Vulkan Validation] VK_EXT_debug_utils is unavailable.\\n";
+    }
+    if (validationAvailable == false)
+    {
+        std::cerr << "[Vulkan Validation] VK_LAYER_KHRONOS_validation is unavailable.\\n";
+    }
+    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = MakeDebugMessengerInfo();
+#endif
+
     VkApplicationInfo applicationInfo{};
     applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     applicationInfo.pApplicationName = "Raven";
@@ -112,6 +200,18 @@ bool VulkanInstance::CreateInstance()
     createInfo.ppEnabledExtensionNames = enabledExtensions.data();
     createInfo.enabledLayerCount = 0;
     createInfo.ppEnabledLayerNames = nullptr;
+#if defined(_DEBUG)
+    if (validationAvailable == true)
+    {
+        createInfo.enabledLayerCount = 1;
+        createInfo.ppEnabledLayerNames = &validationLayer;
+        // Instance生成・破棄時のメッセージも捕捉します。
+        if (debugUtilsAvailable == true)
+        {
+            createInfo.pNext = &debugCreateInfo;
+        }
+    }
+#endif
 
     const VkResult result = vkCreateInstance(&createInfo, nullptr, &m_Instance);
     if (result != VK_SUCCESS)
@@ -141,6 +241,18 @@ void VulkanInstance::Shutdown()
         return;
     }
 
+#if defined(_DEBUG)
+    if (m_DebugMessenger != VK_NULL_HANDLE)
+    {
+        const auto destroyMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(m_Instance, "vkDestroyDebugUtilsMessengerEXT"));
+        if (destroyMessenger != nullptr)
+        {
+            destroyMessenger(m_Instance, m_DebugMessenger, nullptr);
+        }
+        m_DebugMessenger = VK_NULL_HANDLE;
+    }
+#endif
     // VkInstanceが所有するVulkanオブジェクトは、今後この呼び出しより先に破棄します。
     vkDestroyInstance(m_Instance, nullptr);
     m_Instance = VK_NULL_HANDLE;
