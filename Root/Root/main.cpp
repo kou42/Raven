@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
         }
-        std::cerr << "Unknown argument. Use --clear-vulkan or --clear-dx12.\\n";
+        std::cerr << "Unknown argument. Use --clear-vulkan or --clear-dx12.\n";
         return 1;
     }
 
