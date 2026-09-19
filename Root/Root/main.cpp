@@ -3,6 +3,9 @@
 #endif
 
 #include <filesystem>
+#include <string>
+#include <iostream>
+#include "Raven/Renderer/RHI/ClearBackendDemo.h"
 #include <utility>
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
@@ -38,12 +41,29 @@
 #include "Raven/UI/Svg/Debug/UISvgDemoLayer.h"
 #endif
 
-int main()
+int main(int argc, char* argv[])
 {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
+
+    // 引数指定時のみ独立したNo-API検証Windowを起動します。
+    // 通常起動では従来のOpenGL Application / Editorをそのまま維持します。
+    if (argc > 1)
+    {
+        const std::string backendArgument = argv[1];
+        if (backendArgument == "--clear-vulkan")
+        {
+            return Raven::RunClearBackendDemo(Raven::RHIBackend::Vulkan);
+        }
+        if (backendArgument == "--clear-dx12")
+        {
+            return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
+        }
+        std::cerr << "Unknown argument. Use --clear-vulkan or --clear-dx12.\n";
+        return 1;
+    }
 
 #ifdef _DEBUG
     // ========================================================================

@@ -4,7 +4,6 @@
 #include "Raven/Renderer/GraphicsContext.h"
 #include "Raven/Core/Input.h"
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 namespace Raven
@@ -20,7 +19,9 @@ public:
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }
+    RHIBackend GetBackend() const override { return m_Data.Backend; }
     void* GetNativeWindow() const override { return m_Window; }
+    void* GetPlatformWindowHandle() const override;
 
     void SetEventCallback(const EventCallbackFn& callback) override
     {
@@ -42,6 +43,7 @@ private:
         std::string Title;
         unsigned int Width;
         unsigned int Height;
+        RHIBackend Backend = RHIBackend::OpenGL;
         bool VSync = false;
 
         EventCallbackFn EventCallback;
@@ -49,6 +51,8 @@ private:
 
     WindowData m_Data;
 
+    // OpenGLだけがGLFW OpenGL Contextを所有します。
+    // Vulkan/DX12はSwapChain実装前なのでNo-API Windowとしてイベント処理のみ行います。
     Scope<GraphicsContext> m_Context;
     Scope<Input> m_Input;
 };
