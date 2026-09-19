@@ -86,6 +86,7 @@ bool DX12ClearContext::DrawClearFrame(const float clearColor[4])
     if (m_FrameRenderer.DrawClearFrame(m_SwapChain, m_Queue,
         *frame.CommandList, m_Fence, frame.FenceValue, clearColor, m_VSync) == false)
     {
+        m_Device.DrainDebugMessages();
         return false;
     }
     m_Device.DrainDebugMessages();
@@ -105,6 +106,7 @@ bool DX12ClearContext::Resize(uint32_t width, uint32_t height)
     if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false ||
         m_SwapChain.Resize(width, height) == false)
     {
+        m_Device.DrainDebugMessages();
         return false;
     }
     const bool rebuilt = m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain);
