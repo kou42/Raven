@@ -1,6 +1,7 @@
 #include "DX12Factory.h"
 
 #include <iostream>
+#include <cstdlib>
 #include <d3d12.h>
 
 namespace Raven
@@ -23,6 +24,24 @@ bool DX12Factory::Init()
     if (SUCCEEDED(debugResult))
     {
         debugController->EnableDebugLayer();
+        // GPU-Based Validationは通常のDebug Layerより重いため環境変数で明示的に有効化します。
+        // RAVEN_DX12_GPU_VALIDATION=1 を設定して起動してください。
+        char gpuValidation[8]{};
+        size_t valueLength = 0;
+        if (getenv_s(&valueLength, gpuValidation, sizeof(gpuValidation),
+            "RAVEN_DX12_GPU_VALIDATION") == 0 && gpuValidation[0] == '1')
+        {
+            Microsoft::WRL::ComPtr<ID3D12Debug1> debug1;
+            if (SUCCEEDED(debugController.As(&debug1)))
+            {
+                debug1->SetEnableGPUBasedValidation(TRUE);
+                std::cout << "[DX12 Debug] GPU-Based Validation enabled.\n";
+            }
+            else
+            {
+                std::cerr << "[DX12 Debug] ID3D12Debug1 is unavailable.\n";
+            }
+        }
         std::cout << "[DX12 Debug] D3D12 Debug Layer enabled.\n";
     }
     else
