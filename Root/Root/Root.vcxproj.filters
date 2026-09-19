@@ -1667,4 +1667,14 @@
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
+
+  <!-- Clear Backend検証経路: 新規ファイルを既存の論理Filterへ登録 -->
+  <ItemGroup>
+    <ClInclude Include="Raven\Renderer\RHI\ClearBackendDemo.h"><Filter>Header Files</Filter></ClInclude>
+    <ClCompile Include="Raven\Renderer\RHI\ClearBackendDemo.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClInclude Include="Raven\Platform\Vulkan\VulkanClearContext.h"><Filter>Header Files</Filter></ClInclude>
+    <ClCompile Include="Raven\Platform\Vulkan\VulkanClearContext.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClInclude Include="Raven\Platform\DirectX12\DX12ClearContext.h"><Filter>Header Files</Filter></ClInclude>
+    <ClCompile Include="Raven\Platform\DirectX12\DX12ClearContext.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
 </Project>
