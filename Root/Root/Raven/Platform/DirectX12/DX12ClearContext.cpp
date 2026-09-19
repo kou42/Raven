@@ -1,0 +1,93 @@
+#include "DX12ClearContext.h"
+
+#include "Raven/Core/Window.h"
+
+namespace Raven
+{
+DX12ClearContext::~DX12ClearContext()
+{
+    Shutdown();
+}
+
+bool DX12ClearContext::Init(Window& window)
+{
+    Shutdown();
+    if (window.GetBackend() != RHIBackend::DirectX12 ||
+        window.GetPlatformWindowHandle() == nullptr ||
+        window.GetWidth() == 0 || window.GetHeight() == 0)
+    {
+        return false;
+    }
+
+    if (m_Factory.Init() == false || m_Adapters.Enumerate(m_Factory.GetHandle()) == false)
+    {
+        Shutdown();
+        return false;
+    }
+
+    // Adapterの列挙順はD3D12 Device生成可能性を保証しないため、候補を順に試します。
+    bool deviceCreated = false;
+    for (const auto& adapter : m_Adapters.GetAdapters())
+    {
+        if (m_Device.Init(adapter) == true)
+        {
+            deviceCreated = true;
+            break;
+        }
+    }
+    if (deviceCreated == false ||
+        m_Queue.Init(m_Device.GetHandle()) == false ||
+        m_SwapChain.Init(m_Factory.GetHandle(), m_Queue.GetHandle(),
+            m_Device.GetHandle(), window.GetPlatformWindowHandle(),
+            window.GetWidth(), window.GetHeight()) == false ||
+        m_CommandList.Init(m_Device.GetHandle()) == false ||
+        m_Fence.Init(m_Device.GetHandle()) == false ||
+        m_FrameRenderer.Init(m_Device.GetHandle(), m_SwapChain) == false)
+    {
+        Shutdown();
+        return false;
+    }
+
+    m_VSync = window.IsVSync();
+    return true;
+}
+
+bool DX12ClearContext::DrawClearFrame(const float clearColor[4])
+{
+    return m_FrameRenderer.DrawClearFrame(
+        m_SwapChain, m_Queue, m_CommandList, m_Fence, clearColor, m_VSync);
+}
+
+bool DX12ClearContext::Resize(uint32_t width, uint32_t height)
+{
+    if (width == 0 || height == 0 ||
+        m_SwapChain.IsValid() == false || m_Queue.IsValid() == false)
+    {
+        return false;
+    }
+
+    // 旧BackBufferへのGPU参照を終わらせてからResizeBuffersします。
+    if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false ||
+        m_SwapChain.Resize(width, height) == false)
+    {
+        return false;
+    }
+    return m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain);
+}
+
+void DX12ClearContext::Shutdown()
+{
+    if (m_Fence.IsValid() == true && m_Queue.IsValid() == true)
+    {
+        m_Fence.SignalAndWait(m_Queue.GetHandle());
+    }
+    m_FrameRenderer.Shutdown();
+    m_Fence.Shutdown();
+    m_CommandList.Shutdown();
+    m_SwapChain.Shutdown();
+    m_Queue.Shutdown();
+    m_Device.Shutdown();
+    m_Adapters.Clear();
+    m_Factory.Shutdown();
+}
+} // namespace Raven
