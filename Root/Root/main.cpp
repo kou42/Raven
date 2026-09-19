@@ -48,11 +48,15 @@ int main(int argc, char* argv[])
     SetConsoleCP(CP_UTF8);
 #endif
 
-    // 引数指定時のみ独立したNo-API検証Windowを起動します。
+    // 引数指定時のみ独立したClear検証Windowを起動します。
     // 通常起動では従来のOpenGL Application / Editorをそのまま維持します。
     if (argc > 1)
     {
         const std::string backendArgument = argv[1];
+        if (backendArgument == "--clear-opengl")
+        {
+            return Raven::RunClearBackendDemo(Raven::RHIBackend::OpenGL);
+        }
         if (backendArgument == "--clear-vulkan")
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::Vulkan);
@@ -61,7 +65,7 @@ int main(int argc, char* argv[])
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
         }
-        std::cerr << "Unknown argument. Use --clear-vulkan or --clear-dx12.\n";
+        std::cerr << "Unknown argument. Use --clear-opengl, --clear-vulkan or --clear-dx12.\n";
         return 1;
     }
 
