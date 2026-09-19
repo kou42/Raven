@@ -126,9 +126,12 @@ void DX12Device::Shutdown()
         Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
         if (SUCCEEDED(m_Device.As(&debugDevice)))
         {
-            // InfoQueueの警告文字列を加工せず、Reportの前後を明示します。
-            // この時点ではm_Deviceを保持しているため、Device自身のLive報告は想定内です。
+            // ReportLiveDeviceObjectsには生存中のDevice自身も含まれます。
+            // m_DeviceとdebugDeviceが参照を保持している間に出る
+            // Live ID3D12Device (ID 274) は、それ単独では子リソースのリークを示しません。
+            // WARNINGを隠さず、CommandQueue/Resource/Fence等の報告と区別して診断します。
             std::cerr << "[DX12 Live Objects] Begin (Device is still owned by Raven).\n";
+            std::cerr << "[DX12 Live Objects] Note: Live ID3D12Device is expected here; inspect other live objects separately.\n";
             const HRESULT reportResult = debugDevice->ReportLiveDeviceObjects(
                 D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
             debugDevice.Reset();
