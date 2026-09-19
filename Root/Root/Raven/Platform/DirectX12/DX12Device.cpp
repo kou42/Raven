@@ -1,4 +1,5 @@
 #include "DX12Device.h"
+#include "Raven/Platform/RHIDebugConfig.h"
 
 #include <iostream>
 #include <vector>
@@ -88,7 +89,8 @@ void DX12Device::DrainDebugMessages() const
         // 通常のINFO/MESSAGEは大量に発生するため、調査対象の警告とエラーに絞ります。
         if (message->Severity == D3D12_MESSAGE_SEVERITY_WARNING ||
             message->Severity == D3D12_MESSAGE_SEVERITY_ERROR ||
-            message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION)
+            message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION ||
+            RHIDebugConfig::FromEnvironment().VerboseMessages == true)
         {
             std::cerr << "[DX12 InfoQueue][" << static_cast<int>(message->Severity)
                       << "][ID " << static_cast<int>(message->ID) << "] "
@@ -114,6 +116,8 @@ void DX12Device::Shutdown()
         {
             debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
         }
+        debugDevice.Reset();
+        DrainDebugMessages();
     }
 #endif
     m_Device.Reset();
