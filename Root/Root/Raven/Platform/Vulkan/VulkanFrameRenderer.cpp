@@ -123,6 +123,9 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(device.GetGraphicsQueue(), &presentInfo);
+    // Submit済みのFrame SlotはPresent結果にかかわらず次のSlotへ進めます。
+    // OUT_OF_DATE時はContextがWaitIdleして全Frame Resourceを再生成します。
+    frameSync.AdvanceFrame();
     if (result == VK_SUCCESS)
     {
         return acquiredSuboptimal == true
