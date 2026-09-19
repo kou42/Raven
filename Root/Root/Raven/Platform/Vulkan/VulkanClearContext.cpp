@@ -58,24 +58,10 @@ bool VulkanClearContext::Init(Window& window)
     return true;
 }
 
-RHIFrameResult VulkanClearContext::DrawClearFrame(const float clearColor[4])
+namespace
 {
-    const uint32_t frame = m_FrameSync.GetCurrentFrameIndex();
-    if (frame >= m_CommandBuffers.size() || m_CommandBuffers[frame] == nullptr)
-    {
-        return RHIFrameResult::FatalError;
-    }
-    if (clearColor == nullptr)
-    {
-        return RHIFrameResult::FatalError;
-    }
-    VkClearColorValue vulkanColor{};
-    for (uint32_t component = 0; component < 4; ++component)
-    {
-        vulkanColor.float32[component] = clearColor[component];
-    }
-    const VulkanFrameResult result = m_FrameRenderer.DrawClearFrame(
-        m_Instance.GetDevice(), m_SwapChain, *m_CommandBuffers[frame], m_FrameSync, vulkanColor);
+RHIFrameResult ToRHIFrameResult(VulkanFrameResult result)
+{
     if (result == VulkanFrameResult::Success)
     {
         return RHIFrameResult::Success;
@@ -85,6 +71,90 @@ RHIFrameResult VulkanClearContext::DrawClearFrame(const float clearColor[4])
         return RHIFrameResult::ResizeRequired;
     }
     return RHIFrameResult::FatalError;
+}
+} // namespace
+
+RHIFrameResult VulkanClearContext::DrawClearFrame(const float clearColor[4])
+{
+    RHIFrameResult result = BeginFrame();
+    if (result != RHIFrameResult::Success)
+    {
+        return result;
+    }
+    result = ClearFrame(clearColor);
+    if (result != RHIFrameResult::Success)
+    {
+        return result;
+    }
+    result = EndFrame();
+    if (result != RHIFrameResult::Success)
+    {
+        return result;
+    }
+    return Present();
+}
+
+RHIFrameResult VulkanClearContext::BeginFrame()
+{
+    if (m_FrameActive == true)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const uint32_t frame = m_FrameSync.GetCurrentFrameIndex();
+    if (frame >= m_CommandBuffers.size() || m_CommandBuffers[frame] == nullptr)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    const VulkanFrameResult result = m_FrameRenderer.BeginFrame(
+        m_Instance.GetDevice(), m_SwapChain, *m_CommandBuffers[frame], m_FrameSync);
+    if (result == VulkanFrameResult::Success)
+    {
+        m_ActiveFrame = frame;
+        m_FrameActive = true;
+    }
+    return ToRHIFrameResult(result);
+}
+
+RHIFrameResult VulkanClearContext::ClearFrame(const float clearColor[4])
+{
+    if (m_FrameActive == false || clearColor == nullptr)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    VkClearColorValue vulkanColor{};
+    for (uint32_t component = 0; component < 4; ++component)
+    {
+        vulkanColor.float32[component] = clearColor[component];
+    }
+    return ToRHIFrameResult(m_FrameRenderer.ClearFrame(
+        m_SwapChain, *m_CommandBuffers[m_ActiveFrame], vulkanColor));
+}
+
+RHIFrameResult VulkanClearContext::EndFrame()
+{
+    if (m_FrameActive == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    return ToRHIFrameResult(m_FrameRenderer.EndFrame(
+        m_Instance.GetDevice(), m_SwapChain, *m_CommandBuffers[m_ActiveFrame], m_FrameSync));
+}
+
+RHIFrameResult VulkanClearContext::Present()
+{
+    if (m_FrameActive == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    // Submit成功後はPresent結果にかかわらずRendererがFrame Slotを進めます。
+    const VulkanFrameResult result = m_FrameRenderer.Present(
+        m_Instance.GetDevice(), m_SwapChain, m_FrameSync);
+    if (result != VulkanFrameResult::FatalError)
+    {
+        m_FrameActive = false;
+    }
+    return ToRHIFrameResult(result);
 }
 
 bool VulkanClearContext::Resize(uint32_t width, uint32_t height)
@@ -123,6 +193,8 @@ void VulkanClearContext::Shutdown()
     {
         m_Instance.GetDevice().WaitIdle();
     }
+    m_FrameActive = false;
+    m_ActiveFrame = 0;
     // 子Resourceから順に解放します。
     m_FrameSync.Shutdown();
     // ContextのWaitIdle後に全Frame SlotのCommandPoolを破棄します。

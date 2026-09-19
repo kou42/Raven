@@ -39,14 +39,16 @@ bool DX12FrameRenderer::RebuildRenderTargets(ID3D12Device* device, DX12SwapChain
     return true;
 }
 
-bool DX12FrameRenderer::DrawClearFrame(
-    DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
-    DX12CommandList& commandList, DX12Fence& fence, uint64_t& frameFenceValue,
-    const float clearColor[4], bool vsync)
+bool DX12FrameRenderer::BeginFrame(
+    DX12SwapChain& swapChain, DX12CommandList& commandList,
+    DX12Fence& fence, uint64_t frameFenceValue)
 {
-    if (swapChain.IsValid() == false || commandQueue.IsValid() == false ||
+    if (m_FrameActive == true || swapChain.IsValid() == false ||
         commandList.IsValid() == false || fence.IsValid() == false ||
-        m_RtvHeap.Get() == nullptr) { return false; }
+        m_RtvHeap.Get() == nullptr)
+    {
+        return false;
+    }
 
     // このSlotの前回GPU処理が完了してからAllocatorをResetします。
     if (fence.Wait(frameFenceValue) == false || commandList.Reset() == false)
@@ -54,8 +56,29 @@ bool DX12FrameRenderer::DrawClearFrame(
         return false;
     }
 
-    const UINT index = swapChain.GetCurrentBackBufferIndex();
-    ID3D12Resource* backBuffer = swapChain.GetBackBuffers()[index].Get();
+    m_BackBufferIndex = swapChain.GetCurrentBackBufferIndex();
+    if (m_BackBufferIndex >= swapChain.GetBackBuffers().size())
+    {
+        return false;
+    }
+    m_FrameActive = true;
+    m_FrameCleared = false;
+    m_Submitted = false;
+    return true;
+}
+
+bool DX12FrameRenderer::ClearFrame(
+    DX12SwapChain& swapChain, DX12CommandList& commandList,
+    const float clearColor[4])
+{
+    if (m_FrameActive == false || m_FrameCleared == true ||
+        clearColor == nullptr || commandList.IsValid() == false ||
+        swapChain.IsValid() == false)
+    {
+        return false;
+    }
+
+    ID3D12Resource* backBuffer = swapChain.GetBackBuffers()[m_BackBufferIndex].Get();
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -66,7 +89,7 @@ bool DX12FrameRenderer::DrawClearFrame(
     commandList.GetHandle()->ResourceBarrier(1, &barrier);
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
-    rtv.ptr += static_cast<SIZE_T>(index) * m_RtvDescriptorSize;
+    rtv.ptr += static_cast<SIZE_T>(m_BackBufferIndex) * m_RtvDescriptorSize;
     commandList.GetHandle()->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
     commandList.GetHandle()->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
 
@@ -74,10 +97,41 @@ bool DX12FrameRenderer::DrawClearFrame(
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     commandList.GetHandle()->ResourceBarrier(1, &barrier);
 
-    if (commandList.Close() == false) { return false; }
+    m_FrameCleared = true;
+    return true;
+}
+
+bool DX12FrameRenderer::EndFrame(
+    DX12CommandQueue& commandQueue, DX12CommandList& commandList)
+{
+    if (m_FrameActive == false || m_FrameCleared == false ||
+        m_Submitted == true || commandQueue.IsValid() == false ||
+        commandList.IsValid() == false)
+    {
+        return false;
+    }
+
+    if (commandList.Close() == false)
+    {
+        return false;
+    }
 
     ID3D12CommandList* lists[] = { commandList.GetHandle() };
     commandQueue.GetHandle()->ExecuteCommandLists(1, lists);
+    m_Submitted = true;
+    return true;
+}
+
+bool DX12FrameRenderer::Present(
+    DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
+    DX12Fence& fence, uint64_t& frameFenceValue, bool vsync)
+{
+    if (m_FrameActive == false || m_Submitted == false ||
+        swapChain.IsValid() == false || commandQueue.IsValid() == false ||
+        fence.IsValid() == false)
+    {
+        return false;
+    }
 
     const UINT syncInterval = vsync == true ? 1 : 0;
     const HRESULT presentResult = swapChain.GetHandle()->Present(syncInterval, 0);
@@ -90,12 +144,33 @@ bool DX12FrameRenderer::DrawClearFrame(
         return false;
     }
     frameFenceValue = submittedFenceValue;
+    m_FrameActive = false;
+    m_FrameCleared = false;
+    m_Submitted = false;
     return SUCCEEDED(presentResult);
+}
+
+bool DX12FrameRenderer::DrawClearFrame(
+    DX12SwapChain& swapChain, DX12CommandQueue& commandQueue,
+    DX12CommandList& commandList, DX12Fence& fence, uint64_t& frameFenceValue,
+    const float clearColor[4], bool vsync)
+{
+    if (BeginFrame(swapChain, commandList, fence, frameFenceValue) == false ||
+        ClearFrame(swapChain, commandList, clearColor) == false ||
+        EndFrame(commandQueue, commandList) == false)
+    {
+        return false;
+    }
+    return Present(swapChain, commandQueue, fence, frameFenceValue, vsync);
 }
 
 void DX12FrameRenderer::Shutdown()
 {
     m_RtvDescriptorSize = 0;
+    m_BackBufferIndex = 0;
+    m_FrameActive = false;
+    m_FrameCleared = false;
+    m_Submitted = false;
     m_RtvHeap.Reset();
 }
 

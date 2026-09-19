@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHIClearContext.h"
+#include "Raven/Renderer/RHI/RHIFrameLifecycle.h"
 
 #include "DX12Adapter.h"
 #include "DX12CommandList.h"
@@ -20,11 +21,15 @@ namespace Raven
 class Window;
 
 // DX12初期化とClear表示を束ねる学習用Context。既存OpenGL Rendererとは独立です。
-class DX12ClearContext : public RHIClearContext
+class DX12ClearContext : public RHIClearContext, public RHIFrameLifecycle
 {
 public:
     bool Init(Window& window) override;
     RHIFrameResult DrawClearFrame(const float clearColor[4]) override;
+    RHIFrameResult BeginFrame() override;
+    RHIFrameResult ClearFrame(const float clearColor[4]) override;
+    RHIFrameResult EndFrame() override;
+    RHIFrameResult Present() override;
     bool Resize(uint32_t width, uint32_t height) override;
     void Shutdown() override;
     ~DX12ClearContext();
@@ -45,5 +50,7 @@ private:
     DX12Fence m_Fence;
     DX12FrameRenderer m_FrameRenderer;
     bool m_VSync = true;
+    bool m_FrameActive = false;
+    bool m_FrameSubmitted = false;
 };
 } // namespace Raven
