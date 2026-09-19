@@ -23,11 +23,11 @@ bool DX12Factory::Init()
     if (SUCCEEDED(debugResult))
     {
         debugController->EnableDebugLayer();
-        std::cout << "[DX12 Debug] D3D12 Debug Layer enabled.\\n";
+        std::cout << "[DX12 Debug] D3D12 Debug Layer enabled.\n";
     }
     else
     {
-        std::cerr << "[DX12 Debug] D3D12 Debug Layer unavailable; continuing without it.\\n";
+        std::cerr << "[DX12 Debug] D3D12 Debug Layer unavailable; continuing without it.\n";
     }
 #endif
 
@@ -47,7 +47,7 @@ bool DX12Factory::Init()
         // DXGI debug runtimeがない場合はDebug flagなしでFactoryを再試行します。
         if (factoryFlags != 0)
         {
-            std::cerr << "[DX12 Debug] DXGI debug factory unavailable; retrying without debug flag.\\n";
+            std::cerr << "[DX12 Debug] DXGI debug factory unavailable; retrying without debug flag.\n";
             const HRESULT fallbackResult = CreateDXGIFactory2(
                 0, IID_PPV_ARGS(m_Factory.ReleaseAndGetAddressOf()));
             if (SUCCEEDED(fallbackResult))
