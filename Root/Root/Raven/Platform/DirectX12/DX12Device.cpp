@@ -1,7 +1,6 @@
 #include "DX12Device.h"
 #include "Raven/Platform/RHIDebugConfig.h"
 
-#include <cstring>
 #include <iostream>
 #include <vector>
 
@@ -57,7 +56,7 @@ bool DX12Device::Init(const DX12Adapter::AdapterInfo& adapter)
     return false;
 }
 
-void DX12Device::DrainDebugMessages(bool shutdownReport) const
+void DX12Device::DrainDebugMessages() const
 {
 #if defined(_DEBUG)
     if (m_Device.Get() == nullptr)
@@ -107,13 +106,6 @@ void DX12Device::DrainDebugMessages(bool shutdownReport) const
             std::cerr << "[DX12 InfoQueue][" << severityName
                       << "][ID " << static_cast<int>(message->ID) << "] "
                       << (message->pDescription != nullptr ? message->pDescription : "");
-            // Report実行時にはRavenがDeviceを所有中です。該当するDevice自身の
-            // Live警告にだけ注記し、他のリソースの警告は区別して調査できるよう残します。
-            if (shutdownReport == true && message->pDescription != nullptr &&
-                std::strncmp(message->pDescription, "Live ID3D12Device ", 18) == 0)
-            {
-                std::cerr << " [Device is still owned during shutdown report]";
-            }
             std::cerr << '\n';
         }
     }
@@ -134,10 +126,25 @@ void DX12Device::Shutdown()
         Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
         if (SUCCEEDED(m_Device.As(&debugDevice)))
         {
-            debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
+            // InfoQueueの警告文字列を加工せず、Reportの前後を明示します。
+            // この時点ではm_Deviceを保持しているため、Device自身のLive報告は想定内です。
+            std::cerr << "[DX12 Live Objects] Begin (Device is still owned by Raven).\n";
+            const HRESULT reportResult = debugDevice->ReportLiveDeviceObjects(
+                D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
+            debugDevice.Reset();
+            DrainDebugMessages();
+            if (FAILED(reportResult))
+            {
+                std::cerr << "[DX12 Live Objects] Report failed. HRESULT = 0x"
+                          << std::hex << static_cast<unsigned long>(reportResult)
+                          << std::dec << '\n';
+            }
+            std::cerr << "[DX12 Live Objects] End.\n";
         }
-        debugDevice.Reset();
-        DrainDebugMessages(true);
+        else
+        {
+            std::cerr << "[DX12 Live Objects] ID3D12DebugDevice unavailable.\n";
+        }
     }
 #endif
     m_Device.Reset();
