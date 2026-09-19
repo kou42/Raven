@@ -142,7 +142,7 @@ VulkanFrameResult VulkanFrameRenderer::EndFrame(
     {
         return VulkanFrameResult::FatalError;
     }
-    result = vkQueueSubmit(device.GetGraphicsQueue(), 1, &submitInfo, frameSync.GetInFlightFence());
+    VkResult result = vkQueueSubmit(device.GetGraphicsQueue(), 1, &submitInfo, frameSync.GetInFlightFence());
     if (result != VK_SUCCESS)
     {
         // Reset済みFenceは未Signalのため、次Frameを試行せずFatalErrorを返します。
@@ -169,12 +169,13 @@ VulkanFrameResult VulkanFrameRenderer::Present(
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
+    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore(m_ImageIndex);
     presentInfo.pWaitSemaphores = &signalSemaphore;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &swapChainHandle;
     presentInfo.pImageIndices = &m_ImageIndex;
 
-    result = vkQueuePresentKHR(device.GetGraphicsQueue(), &presentInfo);
+    const VkResult result = vkQueuePresentKHR(device.GetGraphicsQueue(), &presentInfo);
     // Submit済みのFrame SlotはPresent結果にかかわらず次のSlotへ進めます。
     // OUT_OF_DATE時はContextがWaitIdleして全Frame Resourceを再生成します。
     frameSync.AdvanceFrame();
