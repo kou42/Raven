@@ -33,7 +33,10 @@ int RunClearBackendDemo(RHIBackend backend)
     bool resizePending = false;
     bool wasMinimized = false;
     const char* resizeReason = "Unknown";
-    window->SetEventCallback([&running, &resizePending, &resizeReason, backend](Event& event)
+    unsigned long totalResizeEvents = 0;
+    unsigned long pendingResizeEvents = 0;
+    window->SetEventCallback([&running, &resizePending, &resizeReason,
+        &totalResizeEvents, &pendingResizeEvents](Event& event)
     {
         if (event.GetEventType() == EventType::WindowClose)
         {
@@ -44,10 +47,9 @@ int RunClearBackendDemo(RHIBackend backend)
             // Callback内ではGPU Resourceを触らず、Frame境界でResizeします。
             resizePending = true;
             resizeReason = "WindowResize event";
-            if (backend == RHIBackend::Vulkan)
-            {
-                std::cout << "[Vulkan Window] Resize event received.\n";
-            }
+            // ドラッグ中の連続イベントは個別出力せず、次の再生成時にまとめて報告します。
+            ++totalResizeEvents;
+            ++pendingResizeEvents;
         }
     });
 
@@ -140,7 +142,9 @@ int RunClearBackendDemo(RHIBackend backend)
         {
             if (backend == RHIBackend::Vulkan)
             {
-                std::cout << "[Vulkan Resize] Reason: " << resizeReason << '\n';
+                std::cout << "[Vulkan Resize] Reason: " << resizeReason
+                          << ", WindowResize events since last recreation: "
+                          << pendingResizeEvents << '\n';
             }
             const bool resized = backend == RHIBackend::Vulkan
                 ? vulkan.Resize(static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight))
@@ -155,6 +159,7 @@ int RunClearBackendDemo(RHIBackend backend)
             std::cout << "[RHI Smoke] Resize completed: "
                       << framebufferWidth << " x " << framebufferHeight << '\n';
             resizePending = false;
+            pendingResizeEvents = 0;
         }
 
         bool drawn = false;
@@ -204,6 +209,8 @@ int RunClearBackendDemo(RHIBackend backend)
     dx12.Shutdown();
     std::cout << "[RHI Smoke] Shutdown completed. Frames: " << completedFrames
               << ", Resizes: " << completedResizes
+              << ", WindowResize events: " << totalResizeEvents
+              << ", Pending WindowResize events: " << pendingResizeEvents
               << ", Exit code: " << result << '\n';
     return result;
 }
