@@ -23,6 +23,8 @@ public:
 
     bool Init(const DX12Adapter::AdapterInfo& adapter);
     void Shutdown();
+    // Debugビルドでは蓄積されたWarning/Errorを出力します。
+    void DrainDebugMessages() const;
 
     ID3D12Device* GetHandle() const { return m_Device.Get(); }
     bool IsValid() const { return m_Device.Get() != nullptr; }

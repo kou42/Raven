@@ -1,6 +1,8 @@
 #include "DX12Device.h"
+#include "Raven/Platform/RHIDebugConfig.h"
 
 #include <iostream>
+#include <vector>
 
 namespace Raven
 {
@@ -54,8 +56,70 @@ bool DX12Device::Init(const DX12Adapter::AdapterInfo& adapter)
     return false;
 }
 
+void DX12Device::DrainDebugMessages() const
+{
+#if defined(_DEBUG)
+    if (m_Device.Get() == nullptr)
+    {
+        return;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue;
+    if (FAILED(m_Device.As(&infoQueue)))
+    {
+        return;
+    }
+
+    const UINT64 messageCount = infoQueue->GetNumStoredMessagesAllowedByRetrievalFilter();
+    for (UINT64 index = 0; index < messageCount; ++index)
+    {
+        SIZE_T messageSize = 0;
+        if (FAILED(infoQueue->GetMessage(index, nullptr, &messageSize)) || messageSize == 0)
+        {
+            continue;
+        }
+
+        std::vector<unsigned char> storage(messageSize);
+        auto* message = reinterpret_cast<D3D12_MESSAGE*>(storage.data());
+        if (FAILED(infoQueue->GetMessage(index, message, &messageSize)))
+        {
+            continue;
+        }
+
+        // 通常のINFO/MESSAGEは大量に発生するため、調査対象の警告とエラーに絞ります。
+        if (message->Severity == D3D12_MESSAGE_SEVERITY_WARNING ||
+            message->Severity == D3D12_MESSAGE_SEVERITY_ERROR ||
+            message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION ||
+            RHIDebugConfig::FromEnvironment().VerboseMessages == true)
+        {
+            std::cerr << "[DX12 InfoQueue][" << static_cast<int>(message->Severity)
+                      << "][ID " << static_cast<int>(message->ID) << "] "
+                      << (message->pDescription != nullptr ? message->pDescription : "")
+                      << '\n';
+        }
+    }
+    // 同じメッセージをフレームごとに繰り返し出さないよう、取得後に消去します。
+    infoQueue->ClearStoredMessages();
+#endif
+}
+
 void DX12Device::Shutdown()
 {
+    DrainDebugMessages();
+#if defined(_DEBUG)
+    if (m_Device.Get() != nullptr)
+    {
+        // Queue/SwapChainなどを解放した後に呼ぶことで、残存Device子オブジェクトを検出します。
+        // ReportLiveDeviceObjectsはDevice自体の参照カウントを調べるAPIではありません。
+        Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
+        if (SUCCEEDED(m_Device.As(&debugDevice)))
+        {
+            debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
+        }
+        debugDevice.Reset();
+        DrainDebugMessages();
+    }
+#endif
     m_Device.Reset();
     m_FeatureLevel = D3D_FEATURE_LEVEL_11_0;
 }

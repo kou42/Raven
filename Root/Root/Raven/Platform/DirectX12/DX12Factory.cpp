@@ -1,6 +1,8 @@
 #include "DX12Factory.h"
+#include "Raven/Platform/RHIDebugConfig.h"
 
 #include <iostream>
+#include <d3d12.h>
 
 namespace Raven
 {
@@ -14,11 +16,47 @@ bool DX12Factory::Init()
     }
 
     UINT factoryFlags = 0;
+#if defined(_DEBUG)
+    const RHIDebugConfig debugConfig = RHIDebugConfig::FromEnvironment();
+    // Device生成前に有効化する必要があります。Graphics Tools未導入時は診断を諦めて続行します。
+    if (debugConfig.EnableValidation == true)
+    {
+        Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
+        const HRESULT debugResult = D3D12GetDebugInterface(IID_PPV_ARGS(debugController.GetAddressOf()));
+        if (SUCCEEDED(debugResult))
+        {
+            debugController->EnableDebugLayer();
+            // GPU-Based Validationは通常のDebug Layerより重いため環境変数で明示的に有効化します。
+            // RAVEN_DX12_GPU_VALIDATION=1 を設定して起動してください。
+            if (debugConfig.EnableGPUValidation == true)
+            {
+                Microsoft::WRL::ComPtr<ID3D12Debug1> debug1;
+                if (SUCCEEDED(debugController.As(&debug1)))
+                {
+                    debug1->SetEnableGPUBasedValidation(TRUE);
+                    std::cout << "[DX12 Debug] GPU-Based Validation enabled.\n";
+                }
+                else
+                {
+                    std::cerr << "[DX12 Debug] ID3D12Debug1 is unavailable.\n";
+                }
+            }
+            std::cout << "[DX12 Debug] D3D12 Debug Layer enabled.\n";
+        }
+        else
+        {
+            std::cerr << "[DX12 Debug] D3D12 Debug Layer unavailable; continuing without it.\n";
+        }
+    }
+#endif
 
 #if defined(_DEBUG)
     // DXGI Debug flagはデバッグビルドでのみ有効化します。
     // DXGI側の診断情報を得やすくしつつ、Releaseビルドへ不要なDebug依存を持ち込みません。
-    factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+    if (debugConfig.EnableValidation == true)
+    {
+        factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+    }
 #endif
 
     const HRESULT result = CreateDXGIFactory2(
@@ -27,6 +65,19 @@ bool DX12Factory::Init()
 
     if (FAILED(result))
     {
+#if defined(_DEBUG)
+        // DXGI debug runtimeがない場合はDebug flagなしでFactoryを再試行します。
+        if (factoryFlags != 0)
+        {
+            std::cerr << "[DX12 Debug] DXGI debug factory unavailable; retrying without debug flag.\n";
+            const HRESULT fallbackResult = CreateDXGIFactory2(
+                0, IID_PPV_ARGS(m_Factory.ReleaseAndGetAddressOf()));
+            if (SUCCEEDED(fallbackResult))
+            {
+                return true;
+            }
+        }
+#endif
         m_Factory.Reset();
         std::cout << "Failed to create DXGI Factory. HRESULT = 0x"
                   << std::hex << static_cast<unsigned long>(result)

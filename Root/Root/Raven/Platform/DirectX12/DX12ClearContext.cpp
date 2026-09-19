@@ -70,6 +70,7 @@ bool DX12ClearContext::Init(Window& window)
         }
         m_Frames.push_back(std::move(frame));
     }
+    m_Device.DrainDebugMessages();
     m_CurrentFrame = 0;
     m_VSync = window.IsVSync();
     return true;
@@ -85,8 +86,10 @@ bool DX12ClearContext::DrawClearFrame(const float clearColor[4])
     if (m_FrameRenderer.DrawClearFrame(m_SwapChain, m_Queue,
         *frame.CommandList, m_Fence, frame.FenceValue, clearColor, m_VSync) == false)
     {
+        m_Device.DrainDebugMessages();
         return false;
     }
+    m_Device.DrainDebugMessages();
     m_CurrentFrame = (m_CurrentFrame + 1) % static_cast<uint32_t>(m_Frames.size());
     return true;
 }
@@ -103,9 +106,12 @@ bool DX12ClearContext::Resize(uint32_t width, uint32_t height)
     if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false ||
         m_SwapChain.Resize(width, height) == false)
     {
+        m_Device.DrainDebugMessages();
         return false;
     }
-    return m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain);
+    const bool rebuilt = m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain);
+    m_Device.DrainDebugMessages();
+    return rebuilt;
 }
 
 void DX12ClearContext::Shutdown()
