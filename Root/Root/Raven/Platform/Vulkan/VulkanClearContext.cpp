@@ -4,6 +4,8 @@
 
 #include <GLFW/glfw3.h>
 
+#include <iostream>
+
 namespace Raven
 {
 VulkanClearContext::~VulkanClearContext()
@@ -73,6 +75,11 @@ bool VulkanClearContext::Resize(uint32_t width, uint32_t height)
     {
         return false;
     }
+    // 要求サイズとSurfaceが実際に選択したExtentは異なる場合があるため両方記録します。
+    const VkExtent2D oldExtent = m_SwapChain.GetExtent();
+    std::cout << "[Vulkan Resize] Old Extent: " << oldExtent.width
+              << " x " << oldExtent.height << ", Requested: "
+              << width << " x " << height << '\n';
     if (m_SwapChain.Recreate(width, height, m_VSync) == false)
     {
         return false;
@@ -80,8 +87,16 @@ bool VulkanClearContext::Resize(uint32_t width, uint32_t height)
 
     // Resize後はImage数が変化するため、Present Semaphore配列も作り直します。
     // SwapChain::RecreateはDeviceWaitIdle済みなので旧同期Resourceを安全に解放できます。
-    return m_FrameSync.Init(m_Instance.GetDevice(),
-        static_cast<uint32_t>(m_SwapChain.GetImages().size()));
+    if (m_FrameSync.Init(m_Instance.GetDevice(),
+        static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false)
+    {
+        std::cerr << "[Vulkan Resize] FrameSync recreation failed.\n";
+        return false;
+    }
+    const VkExtent2D newExtent = m_SwapChain.GetExtent();
+    std::cout << "[Vulkan Resize] Recreated Extent: " << newExtent.width
+              << " x " << newExtent.height << '\n';
+    return true;
 }
 
 void VulkanClearContext::Shutdown()
