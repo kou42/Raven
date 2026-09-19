@@ -1,4 +1,5 @@
 #include "ClearBackendDemo.h"
+#include "RHIClearContext.h"
 
 #include "Raven/Core/Event.h"
 #include "Raven/Core/Window.h"
@@ -11,6 +12,7 @@
 #include <cstdlib>
 #include <cerrno>
 #include <limits>
+#include <memory>
 
 namespace Raven
 {
@@ -53,10 +55,17 @@ int RunClearBackendDemo(RHIBackend backend)
         }
     });
 
-    VulkanClearContext vulkan;
-    DX12ClearContext dx12;
-    const bool initialized = backend == RHIBackend::Vulkan
-        ? vulkan.Init(*window) : dx12.Init(*window);
+    // Backend選択は生成時のみ行い、Resize/描画/Shutdownは共通のFrame境界で実行します。
+    std::unique_ptr<RHIClearContext> context;
+    if (backend == RHIBackend::Vulkan)
+    {
+        context = std::make_unique<VulkanClearContext>();
+    }
+    else
+    {
+        context = std::make_unique<DX12ClearContext>();
+    }
+    const bool initialized = context->Init(*window);
     if (initialized == false)
     {
         std::cerr << "Failed to initialize Clear Backend Demo.\n";
@@ -146,9 +155,8 @@ int RunClearBackendDemo(RHIBackend backend)
                           << ", WindowResize events since last recreation: "
                           << pendingResizeEvents << '\n';
             }
-            const bool resized = backend == RHIBackend::Vulkan
-                ? vulkan.Resize(static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight))
-                : dx12.Resize(static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight));
+            const bool resized = context->Resize(
+                static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight));
             if (resized == false)
             {
                 std::cerr << "Failed to resize Clear Backend SwapChain.\n";
@@ -162,30 +170,13 @@ int RunClearBackendDemo(RHIBackend backend)
             pendingResizeEvents = 0;
         }
 
-        bool drawn = false;
-        bool vulkanResizeRequired = false;
-        if (backend == RHIBackend::Vulkan)
+        const float clearColor[4] = { 0.08f, 0.16f, 0.28f, 1.0f };
+        const RHIFrameResult frameResult = context->DrawClearFrame(clearColor);
+        if (frameResult != RHIFrameResult::Success)
         {
-            VkClearColorValue clearColor{};
-            clearColor.float32[0] = 0.08f;
-            clearColor.float32[1] = 0.16f;
-            clearColor.float32[2] = 0.28f;
-            clearColor.float32[3] = 1.0f;
-            const VulkanFrameResult frameResult = vulkan.DrawClearFrame(clearColor);
-            drawn = frameResult == VulkanFrameResult::Success;
-            vulkanResizeRequired = frameResult == VulkanFrameResult::ResizeRequired;
-        }
-        else
-        {
-            const float clearColor[4] = { 0.08f, 0.16f, 0.28f, 1.0f };
-            drawn = dx12.DrawClearFrame(clearColor);
-        }
-
-        if (drawn == false)
-        {
-            if (vulkanResizeRequired == true)
+            if (frameResult == RHIFrameResult::ResizeRequired)
             {
-                // OUT_OF_DATE/SUBOPTIMALだけを再生成で復旧します。
+                // BackendがSwapChain再生成を要求した場合だけ次のFrame境界で復旧します。
                 resizePending = true;
                 resizeReason = "Acquire/Present requested recreation (see Vulkan Resize log)";
                 continue;
@@ -205,8 +196,7 @@ int RunClearBackendDemo(RHIBackend backend)
 
     // 正常なWindow Closeとデバッガーの強制停止を区別できるよう、
     // Shutdown後にも対話モードの結果を出力します。
-    vulkan.Shutdown();
-    dx12.Shutdown();
+    context->Shutdown();
     std::cout << "[RHI Smoke] Shutdown completed. Frames: " << completedFrames
               << ", Resizes: " << completedResizes
               << ", WindowResize events: " << totalResizeEvents
