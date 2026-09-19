@@ -6,6 +6,7 @@
 #include "VulkanSwapChain.h"
 
 #include <limits>
+#include <iostream>
 
 namespace Raven
 {
@@ -25,9 +26,17 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
         device.GetHandle(), swapChain.GetHandle(),
         std::numeric_limits<uint64_t>::max(),
         frameSync.GetImageAvailableSemaphore(), VK_NULL_HANDLE, &imageIndex);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) { return VulkanFrameResult::ResizeRequired; }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        std::cout << "[Vulkan Resize] Acquire: VK_ERROR_OUT_OF_DATE_KHR\n";
+        return VulkanFrameResult::ResizeRequired;
+    }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { return VulkanFrameResult::FatalError; }
     const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
+    if (acquiredSuboptimal == true)
+    {
+        std::cout << "[Vulkan Resize] Acquire: VK_SUBOPTIMAL_KHR\n";
+    }
 
     if (imageIndex >= swapChain.GetImages().size() ||
         frameSync.GetRenderFinishedSemaphore(imageIndex) == VK_NULL_HANDLE)
@@ -133,6 +142,9 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     }
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
     {
+        std::cout << "[Vulkan Resize] Present: "
+                  << (result == VK_ERROR_OUT_OF_DATE_KHR
+                      ? "VK_ERROR_OUT_OF_DATE_KHR" : "VK_SUBOPTIMAL_KHR") << '\n';
         return VulkanFrameResult::ResizeRequired;
     }
     return VulkanFrameResult::FatalError;
