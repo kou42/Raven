@@ -51,3 +51,11 @@ Releaseでは環境変数にかかわらず診断を無効化する。
 DX12 Live Object ReportはVisual StudioのDebug Outputにも出力される場合がある。
 Reportが出ない場合はGraphics ToolsとDebug Layerの有効化を確認する。
 実行時ログを保存し、警告が既知のものか、新規回帰かを区別する。
+
+## 実機で確認されたDebug Smoke Test（2026-09-20）
+
+- DX12 / VulkanともにRTX 3080で120フレーム描画し、終了コード0を確認。
+- DX12 Debug LayerおよびVulkan `VK_LAYER_KHRONOS_validation`の有効化を確認。
+- DX12の`Live ID3D12Device ..., Refcount: 2`はINFO（Severity 2）。Report呼び出し時点でDeviceを所有しているため、この表示だけではリークと判定しない。子オブジェクトのLive報告やWARNING/ERRORがないか別途確認する。
+- Vulkan LoaderからEOS Overlay Layer重複のWARNINGが出たが、RavenのVulkan APIに対するValidationエラーは記録されていない。
+- Resize・最小化復帰・Releaseは、このログでは未検証。`RAVEN_RHI_SMOKE_FRAMES`を未設定にして手動確認する。
