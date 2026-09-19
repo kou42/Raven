@@ -15,6 +15,7 @@
 #include <cerrno>
 #include <limits>
 #include <memory>
+#include <utility>
 
 namespace Raven
 {
