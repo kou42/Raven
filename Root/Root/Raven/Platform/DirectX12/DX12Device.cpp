@@ -104,6 +104,18 @@ void DX12Device::DrainDebugMessages() const
 void DX12Device::Shutdown()
 {
     DrainDebugMessages();
+#if defined(_DEBUG)
+    if (m_Device.Get() != nullptr)
+    {
+        // Queue/SwapChainなどを解放した後に呼ぶことで、残存Device子オブジェクトを検出します。
+        // ReportLiveDeviceObjectsはDevice自体の参照カウントを調べるAPIではありません。
+        Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
+        if (SUCCEEDED(m_Device.As(&debugDevice)))
+        {
+            debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
+        }
+    }
+#endif
     m_Device.Reset();
     m_FeatureLevel = D3D_FEATURE_LEVEL_11_0;
 }
