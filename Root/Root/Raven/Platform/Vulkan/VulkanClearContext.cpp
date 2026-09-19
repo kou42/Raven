@@ -58,15 +58,33 @@ bool VulkanClearContext::Init(Window& window)
     return true;
 }
 
-VulkanFrameResult VulkanClearContext::DrawClearFrame(const VkClearColorValue& clearColor)
+RHIFrameResult VulkanClearContext::DrawClearFrame(const float clearColor[4])
 {
     const uint32_t frame = m_FrameSync.GetCurrentFrameIndex();
     if (frame >= m_CommandBuffers.size() || m_CommandBuffers[frame] == nullptr)
     {
-        return VulkanFrameResult::FatalError;
+        return RHIFrameResult::FatalError;
     }
-    return m_FrameRenderer.DrawClearFrame(
-        m_Instance.GetDevice(), m_SwapChain, *m_CommandBuffers[frame], m_FrameSync, clearColor);
+    if (clearColor == nullptr)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    VkClearColorValue vulkanColor{};
+    for (uint32_t component = 0; component < 4; ++component)
+    {
+        vulkanColor.float32[component] = clearColor[component];
+    }
+    const VulkanFrameResult result = m_FrameRenderer.DrawClearFrame(
+        m_Instance.GetDevice(), m_SwapChain, *m_CommandBuffers[frame], m_FrameSync, vulkanColor);
+    if (result == VulkanFrameResult::Success)
+    {
+        return RHIFrameResult::Success;
+    }
+    if (result == VulkanFrameResult::ResizeRequired)
+    {
+        return RHIFrameResult::ResizeRequired;
+    }
+    return RHIFrameResult::FatalError;
 }
 
 bool VulkanClearContext::Resize(uint32_t width, uint32_t height)
