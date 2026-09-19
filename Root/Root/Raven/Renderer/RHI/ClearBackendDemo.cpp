@@ -57,7 +57,15 @@ int RunClearBackendDemo(RHIBackend backend)
     // 自動Smoke Test用。未設定または不正値の場合は従来どおりWindowを閉じるまで実行します。
     // 0は無制限として扱い、正の整数だけをフレーム上限として採用します。
     unsigned long smokeFrameLimit = 0;
+#if defined(_MSC_VER)
+    // MSVCの安全なCRT APIで環境変数を複製し、解析後に必ず解放します。
+    char* smokeFrames = nullptr;
+    size_t smokeFramesLength = 0;
+    const errno_t environmentResult = _dupenv_s(
+        &smokeFrames, &smokeFramesLength, "RAVEN_RHI_SMOKE_FRAMES");
+#else
     const char* smokeFrames = std::getenv("RAVEN_RHI_SMOKE_FRAMES");
+#endif
     if (smokeFrames != nullptr && smokeFrames[0] != '\0')
     {
         char* end = nullptr;
@@ -74,6 +82,14 @@ int RunClearBackendDemo(RHIBackend backend)
             std::cerr << "[RHI Smoke] Invalid RAVEN_RHI_SMOKE_FRAMES; running interactively.\n";
         }
     }
+
+#if defined(_MSC_VER)
+    if (environmentResult != 0)
+    {
+        std::cerr << "[RHI Smoke] Failed to read RAVEN_RHI_SMOKE_FRAMES.\n";
+    }
+    std::free(smokeFrames);
+#endif
 
     unsigned long completedFrames = 0;
     int result = 0;
