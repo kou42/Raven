@@ -27,12 +27,27 @@ struct RHIDebugConfig
 private:
     static bool EnvironmentEnabled(const char* name, bool defaultValue)
     {
+#if defined(_MSC_VER)
+        // MSVCではgetenvが非推奨のため、呼び出し側所有のコピーを取得します。
+        char* value = nullptr;
+        size_t length = 0;
+        if (_dupenv_s(&value, &length, name) != 0 || value == nullptr)
+        {
+            std::free(value);
+            return defaultValue;
+        }
+        const bool enabled = std::strcmp(value, "1") == 0 ||
+            std::strcmp(value, "true") == 0;
+        std::free(value);
+        return enabled;
+#else
         const char* value = std::getenv(name);
         if (value == nullptr)
         {
             return defaultValue;
         }
         return std::strcmp(value, "1") == 0 || std::strcmp(value, "true") == 0;
+#endif
     }
 };
 } // namespace Raven
