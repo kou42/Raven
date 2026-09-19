@@ -28,8 +28,13 @@ bool VulkanFrameRenderer::DrawClearFrame(
     if (result == VK_ERROR_OUT_OF_DATE_KHR) { return false; }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { return false; }
 
-    if (frameSync.ResetFence() == false ||
-        commandBuffer.Reset() == false ||
+    if (imageIndex >= swapChain.GetImages().size() ||
+        frameSync.GetRenderFinishedSemaphore(imageIndex) == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    if (commandBuffer.Reset() == false ||
         commandBuffer.Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == false) { return false; }
 
     const VkImage image = swapChain.GetImages()[imageIndex];
@@ -78,7 +83,7 @@ bool VulkanFrameRenderer::DrawClearFrame(
     if (commandBuffer.End() == false) { return false; }
 
     const VkSemaphore waitSemaphore = frameSync.GetImageAvailableSemaphore();
-    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore();
+    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore(imageIndex);
     const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     const VkCommandBuffer commandBufferHandle = commandBuffer.GetHandle();
 
@@ -92,6 +97,11 @@ bool VulkanFrameRenderer::DrawClearFrame(
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &signalSemaphore;
 
+    // Command記録失敗でFenceを未Signalのまま残さないよう、Submit直前にResetします。
+    if (frameSync.ResetFence() == false)
+    {
+        return false;
+    }
     result = vkQueueSubmit(device.GetGraphicsQueue(), 1, &submitInfo, frameSync.GetInFlightFence());
     if (result != VK_SUCCESS) { return false; }
 
