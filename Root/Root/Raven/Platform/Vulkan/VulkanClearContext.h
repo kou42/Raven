@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Renderer/RHI/RHIClearContext.h"
+
 #include "VulkanCommandBuffer.h"
 #include "VulkanFrameRenderer.h"
 #include "VulkanFrameSync.h"
@@ -16,13 +18,13 @@ namespace Raven
 class Window;
 
 // 既存OpenGL Applicationを変更せず、No-API Windowに接続できる独立した描画検証Contextです。
-class VulkanClearContext
+class VulkanClearContext : public RHIClearContext
 {
 public:
-    bool Init(Window& window);
-    VulkanFrameResult DrawClearFrame(const VkClearColorValue& clearColor);
-    bool Resize(uint32_t width, uint32_t height);
-    void Shutdown();
+    bool Init(Window& window) override;
+    RHIFrameResult DrawClearFrame(const float clearColor[4]) override;
+    bool Resize(uint32_t width, uint32_t height) override;
+    void Shutdown() override;
     ~VulkanClearContext();
 
 private:
