@@ -11,11 +11,14 @@
 namespace Raven
 {
 
-VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
+VulkanFrameResult VulkanFrameRenderer::BeginFrame(
     const VulkanDevice& device, VulkanSwapChain& swapChain,
-    VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync,
-    const VkClearColorValue& clearColor)
+    VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync)
 {
+    if (m_FrameActive == true || m_Submitted == true)
+    {
+        return VulkanFrameResult::FatalError;
+    }
     if (device.IsValid() == false || swapChain.IsValid() == false ||
         commandBuffer.IsValid() == false || frameSync.IsValid() == false) { return VulkanFrameResult::FatalError; }
 
@@ -44,11 +47,26 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
         return VulkanFrameResult::FatalError;
     }
 
+    m_ImageIndex = imageIndex;
+    m_AcquiredSuboptimal = acquiredSuboptimal;
     if (commandBuffer.Reset() == false ||
         commandBuffer.Begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == false) { return VulkanFrameResult::FatalError; }
 
-    const VkImage image = swapChain.GetImages()[imageIndex];
-    const VkImageLayout oldLayout = swapChain.GetImageLayout(imageIndex);
+
+    m_FrameActive = true;
+    return VulkanFrameResult::Success;
+}
+
+VulkanFrameResult VulkanFrameRenderer::ClearFrame(
+    VulkanSwapChain& swapChain, VulkanCommandBuffer& commandBuffer,
+    const VkClearColorValue& clearColor)
+{
+    if (m_FrameActive == false || m_Submitted == true)
+    {
+        return VulkanFrameResult::FatalError;
+    }
+    const VkImage image = swapChain.GetImages()[m_ImageIndex];
+    const VkImageLayout oldLayout = swapChain.GetImageLayout(m_ImageIndex);
 
     VkImageMemoryBarrier toTransfer{};
     toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -90,10 +108,22 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     vkCmdPipelineBarrier(commandBuffer.GetHandle(), VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toPresent);
 
+
+    return VulkanFrameResult::Success;
+}
+
+VulkanFrameResult VulkanFrameRenderer::EndFrame(
+    const VulkanDevice& device, VulkanSwapChain& swapChain,
+    VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync)
+{
+    if (m_FrameActive == false || m_Submitted == true)
+    {
+        return VulkanFrameResult::FatalError;
+    }
     if (commandBuffer.End() == false) { return VulkanFrameResult::FatalError; }
 
     const VkSemaphore waitSemaphore = frameSync.GetImageAvailableSemaphore();
-    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore(imageIndex);
+    const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore(m_ImageIndex);
     const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     const VkCommandBuffer commandBufferHandle = commandBuffer.GetHandle();
 
@@ -120,8 +150,21 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     }
 
     // Submit成功後は、このImageに記録した最終Layoutを次FrameのBarrierへ引き継ぎます。
-    swapChain.SetImageLayout(imageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    swapChain.SetImageLayout(m_ImageIndex, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
+
+    // FenceをResetした後のSubmit失敗は再試行できないため、FatalErrorを返します。
+    m_Submitted = true;
+    return VulkanFrameResult::Success;
+}
+
+VulkanFrameResult VulkanFrameRenderer::Present(
+    const VulkanDevice& device, VulkanSwapChain& swapChain, VulkanFrameSync& frameSync)
+{
+    if (m_FrameActive == false || m_Submitted == false)
+    {
+        return VulkanFrameResult::FatalError;
+    }
     const VkSwapchainKHR swapChainHandle = swapChain.GetHandle();
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -129,15 +172,17 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     presentInfo.pWaitSemaphores = &signalSemaphore;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &swapChainHandle;
-    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pImageIndices = &m_ImageIndex;
 
     result = vkQueuePresentKHR(device.GetGraphicsQueue(), &presentInfo);
     // Submit済みのFrame SlotはPresent結果にかかわらず次のSlotへ進めます。
     // OUT_OF_DATE時はContextがWaitIdleして全Frame Resourceを再生成します。
     frameSync.AdvanceFrame();
+    m_FrameActive = false;
+    m_Submitted = false;
     if (result == VK_SUCCESS)
     {
-        return acquiredSuboptimal == true
+        return m_AcquiredSuboptimal == true
             ? VulkanFrameResult::ResizeRequired : VulkanFrameResult::Success;
     }
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
@@ -148,6 +193,29 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
         return VulkanFrameResult::ResizeRequired;
     }
     return VulkanFrameResult::FatalError;
+}
+
+VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
+    const VulkanDevice& device, VulkanSwapChain& swapChain,
+    VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync,
+    const VkClearColorValue& clearColor)
+{
+    VulkanFrameResult result = BeginFrame(device, swapChain, commandBuffer, frameSync);
+    if (result != VulkanFrameResult::Success)
+    {
+        return result;
+    }
+    result = ClearFrame(swapChain, commandBuffer, clearColor);
+    if (result != VulkanFrameResult::Success)
+    {
+        return result;
+    }
+    result = EndFrame(device, swapChain, commandBuffer, frameSync);
+    if (result != VulkanFrameResult::Success)
+    {
+        return result;
+    }
+    return Present(device, swapChain, frameSync);
 }
 
 } // namespace Raven
