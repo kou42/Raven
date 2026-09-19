@@ -76,9 +76,12 @@ bool DX12FrameRenderer::DrawClearFrame(
     commandQueue.GetHandle()->ExecuteCommandLists(1, lists);
 
     const UINT syncInterval = vsync == true ? 1 : 0;
-    if (FAILED(swapChain.GetHandle()->Present(syncInterval, 0))) { return false; }
+    const HRESULT presentResult = swapChain.GetHandle()->Present(syncInterval, 0);
 
-    return fence.SignalAndWait(commandQueue.GetHandle());
+    // Present失敗でもExecute済みCommandListはGPUで使用中の可能性があります。
+    // 必ずFenceで完了を待ち、次FrameでAllocatorを早期Resetしないようにします。
+    const bool completed = fence.SignalAndWait(commandQueue.GetHandle());
+    return SUCCEEDED(presentResult) && completed == true;
 }
 
 void DX12FrameRenderer::Shutdown()
