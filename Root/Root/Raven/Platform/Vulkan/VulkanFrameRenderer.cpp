@@ -27,6 +27,7 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
         frameSync.GetImageAvailableSemaphore(), VK_NULL_HANDLE, &imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) { return VulkanFrameResult::ResizeRequired; }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) { return VulkanFrameResult::FatalError; }
+    const bool acquiredSuboptimal = result == VK_SUBOPTIMAL_KHR;
 
     if (imageIndex >= swapChain.GetImages().size() ||
         frameSync.GetRenderFinishedSemaphore(imageIndex) == VK_NULL_HANDLE)
@@ -124,7 +125,8 @@ VulkanFrameResult VulkanFrameRenderer::DrawClearFrame(
     result = vkQueuePresentKHR(device.GetGraphicsQueue(), &presentInfo);
     if (result == VK_SUCCESS)
     {
-        return VulkanFrameResult::Success;
+        return acquiredSuboptimal == true
+            ? VulkanFrameResult::ResizeRequired : VulkanFrameResult::Success;
     }
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
     {
