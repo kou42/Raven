@@ -35,11 +35,21 @@ bool VulkanClearContext::Init(Window& window)
         m_SwapChain.Init(m_Instance.GetDevice(), m_Surface.GetHandle(),
             static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight),
             window.IsVSync()) == false ||
-        m_CommandBuffer.Init(m_Instance.GetDevice()) == false ||
         m_FrameSync.Init(m_Instance.GetDevice(), static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false)
     {
         Shutdown();
         return false;
+    }
+
+    for (uint32_t frame = 0; frame < m_FrameSync.GetFrameCount(); ++frame)
+    {
+        auto commandBuffer = std::make_unique<VulkanCommandBuffer>();
+        if (commandBuffer->Init(m_Instance.GetDevice()) == false)
+        {
+            Shutdown();
+            return false;
+        }
+        m_CommandBuffers.push_back(std::move(commandBuffer));
     }
 
     m_VSync = window.IsVSync();
@@ -48,8 +58,13 @@ bool VulkanClearContext::Init(Window& window)
 
 VulkanFrameResult VulkanClearContext::DrawClearFrame(const VkClearColorValue& clearColor)
 {
+    const uint32_t frame = m_FrameSync.GetCurrentFrameIndex();
+    if (frame >= m_CommandBuffers.size() || m_CommandBuffers[frame] == nullptr)
+    {
+        return VulkanFrameResult::FatalError;
+    }
     return m_FrameRenderer.DrawClearFrame(
-        m_Instance.GetDevice(), m_SwapChain, m_CommandBuffer, m_FrameSync, clearColor);
+        m_Instance.GetDevice(), m_SwapChain, *m_CommandBuffers[frame], m_FrameSync, clearColor);
 }
 
 bool VulkanClearContext::Resize(uint32_t width, uint32_t height)
@@ -77,7 +92,8 @@ void VulkanClearContext::Shutdown()
     }
     // 子Resourceから順に解放します。
     m_FrameSync.Shutdown();
-    m_CommandBuffer.Shutdown();
+    // ContextのWaitIdle後に全Frame SlotのCommandPoolを破棄します。
+    m_CommandBuffers.clear();
     m_SwapChain.Shutdown();
     m_Surface.Shutdown();
     m_Instance.Shutdown();
