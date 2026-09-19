@@ -40,7 +40,7 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 - [x] OpenGLClearContextが各段階を実装し、従来のDrawClearFrameを互換入口として維持。
 - [x] VulkanのAcquire / Clear / Submit / Presentを段階別に分離し、既存のDrawClearFrameを互換入口として維持。
 - [x] DX12のFence / Clear / Execute / Presentを段階別に分離し、既存のDrawClearFrameを互換入口として維持。
-- [ ] ClearBackendDemoの共通Frame呼び出しへの切り替え。
+- [x] ClearBackendDemoをBeginFrame / ClearFrame / EndFrame / Presentの共通呼び出しへ切り替え。
 - [ ] Scene Rendererとの統合。
 
 ## 検証条件
@@ -51,4 +51,4 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 4. DX12 Present失敗時にもExecute済みCommandListへFenceをSignalし、再利用前にWaitする。
 5. SceneのOpenGL描画・Physics Debug経路を維持し、Window更新との二重Swapを起こさない。
 
-> 共通契約とOpenGL/Vulkan/DX12の段階別経路は実装済みです。ClearBackendDemoの共通API呼び出しへの切替・ビルド・実行検証は未完了です。
+> 共通契約・3 Backendの段階別経路・ClearBackendDemoの呼び出し切替は実装済みです。Scene Renderer統合・ビルド・実行検証は未完了です。
