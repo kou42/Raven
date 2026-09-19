@@ -76,22 +76,23 @@ bool DX12ClearContext::Init(Window& window)
     return true;
 }
 
-bool DX12ClearContext::DrawClearFrame(const float clearColor[4])
+RHIFrameResult DX12ClearContext::DrawClearFrame(const float clearColor[4])
 {
-    if (m_CurrentFrame >= m_Frames.size() || m_Frames[m_CurrentFrame].CommandList == nullptr)
+    if (clearColor == nullptr || m_CurrentFrame >= m_Frames.size() ||
+        m_Frames[m_CurrentFrame].CommandList == nullptr)
     {
-        return false;
+        return RHIFrameResult::FatalError;
     }
     FrameResource& frame = m_Frames[m_CurrentFrame];
     if (m_FrameRenderer.DrawClearFrame(m_SwapChain, m_Queue,
         *frame.CommandList, m_Fence, frame.FenceValue, clearColor, m_VSync) == false)
     {
         m_Device.DrainDebugMessages();
-        return false;
+        return RHIFrameResult::FatalError;
     }
     m_Device.DrainDebugMessages();
     m_CurrentFrame = (m_CurrentFrame + 1) % static_cast<uint32_t>(m_Frames.size());
-    return true;
+    return RHIFrameResult::Success;
 }
 
 bool DX12ClearContext::Resize(uint32_t width, uint32_t height)
