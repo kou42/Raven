@@ -19,11 +19,22 @@ bool VulkanClearContext::Init(Window& window)
         return false;
     }
 
+    // Windowの論理サイズと実Framebufferサイズは高DPI環境で異なる場合があります。
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(static_cast<GLFWwindow*>(window.GetNativeWindow()),
+        &framebufferWidth, &framebufferHeight);
+    if (framebufferWidth <= 0 || framebufferHeight <= 0)
+    {
+        return false;
+    }
+
     // WindowsWindow生成後なのでGLFWは初期化済みです。
     if (m_Instance.Init() == false ||
         m_Surface.Init(m_Instance.GetHandle(), static_cast<GLFWwindow*>(window.GetNativeWindow())) == false ||
         m_SwapChain.Init(m_Instance.GetDevice(), m_Surface.GetHandle(),
-            window.GetWidth(), window.GetHeight(), window.IsVSync()) == false ||
+            static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight),
+            window.IsVSync()) == false ||
         m_CommandBuffer.Init(m_Instance.GetDevice()) == false ||
         m_FrameSync.Init(m_Instance.GetDevice(), static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false)
     {
@@ -35,7 +46,7 @@ bool VulkanClearContext::Init(Window& window)
     return true;
 }
 
-bool VulkanClearContext::DrawClearFrame(const VkClearColorValue& clearColor)
+VulkanFrameResult VulkanClearContext::DrawClearFrame(const VkClearColorValue& clearColor)
 {
     return m_FrameRenderer.DrawClearFrame(
         m_Instance.GetDevice(), m_SwapChain, m_CommandBuffer, m_FrameSync, clearColor);
