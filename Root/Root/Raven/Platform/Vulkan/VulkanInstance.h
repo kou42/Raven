@@ -43,6 +43,11 @@ public:
 private:
     bool CreateInstance();
 
+#if defined(_DEBUG)
+    // Instanceより先に破棄するValidation診断用Messengerです。
+    VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
+#endif
+
 private:
     VkInstance m_Instance = VK_NULL_HANDLE;
     VulkanPhysicalDevice m_PhysicalDevices;
