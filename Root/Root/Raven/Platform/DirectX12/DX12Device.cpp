@@ -70,6 +70,7 @@ void DX12Device::DrainDebugMessages() const
         return;
     }
 
+    const bool verboseMessages = RHIDebugConfig::FromEnvironment().VerboseMessages;
     const UINT64 messageCount = infoQueue->GetNumStoredMessagesAllowedByRetrievalFilter();
     for (UINT64 index = 0; index < messageCount; ++index)
     {
@@ -90,9 +91,19 @@ void DX12Device::DrainDebugMessages() const
         if (message->Severity == D3D12_MESSAGE_SEVERITY_WARNING ||
             message->Severity == D3D12_MESSAGE_SEVERITY_ERROR ||
             message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION ||
-            RHIDebugConfig::FromEnvironment().VerboseMessages == true)
+            verboseMessages == true)
         {
-            std::cerr << "[DX12 InfoQueue][" << static_cast<int>(message->Severity)
+            // 数値2はINFOでありWARNINGではありません。重大度を名前で出力します。
+            const char* severityName = "MESSAGE";
+            switch (message->Severity)
+            {
+            case D3D12_MESSAGE_SEVERITY_CORRUPTION: severityName = "CORRUPTION"; break;
+            case D3D12_MESSAGE_SEVERITY_ERROR: severityName = "ERROR"; break;
+            case D3D12_MESSAGE_SEVERITY_WARNING: severityName = "WARNING"; break;
+            case D3D12_MESSAGE_SEVERITY_INFO: severityName = "INFO"; break;
+            default: break;
+            }
+            std::cerr << "[DX12 InfoQueue][" << severityName
                       << "][ID " << static_cast<int>(message->ID) << "] "
                       << (message->pDescription != nullptr ? message->pDescription : "")
                       << '\n';
@@ -110,7 +121,8 @@ void DX12Device::Shutdown()
     if (m_Device.Get() != nullptr)
     {
         // Queue/SwapChainなどを解放した後に呼ぶことで、残存Device子オブジェクトを検出します。
-        // ReportLiveDeviceObjectsはDevice自体の参照カウントを調べるAPIではありません。
+        // Report実行時点ではDeviceを所有中のため、Device自身のLive表示は
+        // INFOとして出る場合があります。これだけでリソースリークとは判断しません。
         Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
         if (SUCCEEDED(m_Device.As(&debugDevice)))
         {

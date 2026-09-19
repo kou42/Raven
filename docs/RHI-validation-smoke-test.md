@@ -11,13 +11,13 @@
 
 Visual Studioで`Root/Root.sln`を開き、Debug|x64とRelease|x64をそれぞれビルドする。
 ソリューション名が異なる場合は`Root/Root/Root.vcxproj`を直接開く。
-本PRはGitHub上でコードを変更しており、Windowsビルド・GPU実行の成功をまだ確認していない。
+実機でDebug構成のVulkan/DX12 120フレーム描画は確認済み。最新変更後の再ビルドとRelease構成の確認は別途必要。
 
 ## 実行
 
 実行ファイルを`Root/Root`を作業ディレクトリとして起動する。
 `RAVEN_RHI_SMOKE_FRAMES`に正の整数を設定すると、指定フレーム数の描画成功後に終了する。
-未設定・0・不正値では通常の対話操作となる。描画またはResize失敗時は終了コード1、正常終了は0。
+未設定・0では警告なしで対話操作となる。不正値でも対話操作となるが警告を出力する。描画またはResize失敗時は終了コード1、正常終了は0。
 
 PowerShell例（実行ファイルの場所はビルド出力に合わせて変更）：
 
@@ -51,3 +51,12 @@ Releaseでは環境変数にかかわらず診断を無効化する。
 DX12 Live Object ReportはVisual StudioのDebug Outputにも出力される場合がある。
 Reportが出ない場合はGraphics ToolsとDebug Layerの有効化を確認する。
 実行時ログを保存し、警告が既知のものか、新規回帰かを区別する。
+
+## 実機で確認されたDebug Smoke Test（2026-09-20）
+
+- DX12 / VulkanともにRTX 3080で120フレーム描画し、終了コード0を確認。
+- DX12 Debug LayerおよびVulkan `VK_LAYER_KHRONOS_validation`の有効化を確認。
+- DX12の`Live ID3D12Device ..., Refcount: 2`はINFO（Severity 2）。Report呼び出し時点でDeviceを所有しているため、この表示だけではリークと判定しない。子オブジェクトのLive報告やWARNING/ERRORがないか別途確認する。
+- Vulkan LoaderからEOS Overlay Layer重複のWARNINGが出たが、RavenのVulkan APIに対するValidationエラーは記録されていない。
+- DX12のResize・最小化復帰はユーザーの実機操作で成功を確認。添付コンソールログにはResizeの詳細や正常Shutdownの記録がないため、最新のResize/Shutdownログを用いて再確認する。VulkanのResize・最小化復帰とReleaseは未確認。
+- `RAVEN_RHI_SMOKE_FRAMES=0`で対話モードとなる。正常なウィンドウ終了では`[RHI Smoke] Shutdown completed`とResize回数が表示される。Visual Studioの停止ボタンによる強制終了ではこのログが出ない場合がある。

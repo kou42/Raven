@@ -72,7 +72,7 @@ int RunClearBackendDemo(RHIBackend backend)
         errno = 0;
         const unsigned long parsed = std::strtoul(smokeFrames, &end, 10);
         if (errno == 0 && end != smokeFrames && end != nullptr &&
-            *end == '\0' && parsed > 0 &&
+            *end == '\0' &&
             parsed <= std::numeric_limits<unsigned int>::max())
         {
             smokeFrameLimit = parsed;
@@ -92,6 +92,7 @@ int RunClearBackendDemo(RHIBackend backend)
 #endif
 
     unsigned long completedFrames = 0;
+    unsigned long completedResizes = 0;
     int result = 0;
     while (running == true && glfwWindowShouldClose(glfwWindow) == GLFW_FALSE)
     {
@@ -124,6 +125,9 @@ int RunClearBackendDemo(RHIBackend backend)
                 result = 1;
                 break;
             }
+            ++completedResizes;
+            std::cout << "[RHI Smoke] Resize completed: "
+                      << framebufferWidth << " x " << framebufferHeight << '\n';
             resizePending = false;
         }
 
@@ -167,8 +171,13 @@ int RunClearBackendDemo(RHIBackend backend)
         }
     }
 
+    // 正常なWindow Closeとデバッガーの強制停止を区別できるよう、
+    // Shutdown後にも対話モードの結果を出力します。
     vulkan.Shutdown();
     dx12.Shutdown();
+    std::cout << "[RHI Smoke] Shutdown completed. Frames: " << completedFrames
+              << ", Resizes: " << completedResizes
+              << ", Exit code: " << result << '\n';
     return result;
 }
 } // namespace Raven
