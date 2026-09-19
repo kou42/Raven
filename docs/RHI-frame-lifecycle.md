@@ -34,6 +34,15 @@
 `RHIClearContext::DrawClearFrame` は移行期間中の互換経路として残し、各段階を内部で呼ぶ形へ変更する。
 OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame別FenceValueはBackend内部に保持する。
 
+## 実装進捗
+
+- [x] `RHIFrameLifecycle` に BeginFrame / ClearFrame / EndFrame / Present の最小契約を追加。
+- [x] OpenGLClearContextが各段階を実装し、従来のDrawClearFrameを互換入口として維持。
+- [ ] VulkanのAcquire / Submit / Presentを段階別に分離。
+- [ ] DX12のFence / Execute / Presentを段階別に分離。
+- [ ] ClearBackendDemoの共通Frame呼び出しへの切り替え。
+- [ ] Scene Rendererとの統合。
+
 ## 検証条件
 
 1. OpenGL / Vulkan / DX12のClear Demoで連続120フレームと正常終了。
@@ -42,4 +51,4 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 4. DX12 Present失敗時にもExecute済みCommandListへFenceをSignalし、再利用前にWaitする。
 5. SceneのOpenGL描画・Physics Debug経路を維持し、Window更新との二重Swapを起こさない。
 
-> この文書は設計契約であり、BeginFrame/EndFrame/Presentの実装完了を示すものではありません。
+> 共通契約とOpenGL経路のみ実装済みです。Vulkan/DX12の分離・ビルド・実行検証は未完了です。
