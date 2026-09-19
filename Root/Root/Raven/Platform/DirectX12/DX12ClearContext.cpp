@@ -51,7 +51,6 @@ bool DX12ClearContext::Init(Window& window)
         m_SwapChain.Init(m_Factory.GetHandle(), m_Queue.GetHandle(),
             m_Device.GetHandle(), window.GetPlatformWindowHandle(),
             static_cast<uint32_t>(framebufferWidth), static_cast<uint32_t>(framebufferHeight)) == false ||
-        m_CommandList.Init(m_Device.GetHandle()) == false ||
         m_Fence.Init(m_Device.GetHandle()) == false ||
         m_FrameRenderer.Init(m_Device.GetHandle(), m_SwapChain) == false)
     {
@@ -59,14 +58,37 @@ bool DX12ClearContext::Init(Window& window)
         return false;
     }
 
+    // SwapChainのBufferCountに合わせてFrame別Allocatorを確保します。
+    for (uint32_t index = 0; index < DX12SwapChain::BufferCount; ++index)
+    {
+        FrameResource frame;
+        frame.CommandList = std::make_unique<DX12CommandList>();
+        if (frame.CommandList->Init(m_Device.GetHandle()) == false)
+        {
+            Shutdown();
+            return false;
+        }
+        m_Frames.push_back(std::move(frame));
+    }
+    m_CurrentFrame = 0;
     m_VSync = window.IsVSync();
     return true;
 }
 
 bool DX12ClearContext::DrawClearFrame(const float clearColor[4])
 {
-    return m_FrameRenderer.DrawClearFrame(
-        m_SwapChain, m_Queue, m_CommandList, m_Fence, clearColor, m_VSync);
+    if (m_CurrentFrame >= m_Frames.size() || m_Frames[m_CurrentFrame].CommandList == nullptr)
+    {
+        return false;
+    }
+    FrameResource& frame = m_Frames[m_CurrentFrame];
+    if (m_FrameRenderer.DrawClearFrame(m_SwapChain, m_Queue,
+        *frame.CommandList, m_Fence, frame.FenceValue, clearColor, m_VSync) == false)
+    {
+        return false;
+    }
+    m_CurrentFrame = (m_CurrentFrame + 1) % static_cast<uint32_t>(m_Frames.size());
+    return true;
 }
 
 bool DX12ClearContext::Resize(uint32_t width, uint32_t height)
@@ -94,7 +116,8 @@ void DX12ClearContext::Shutdown()
     }
     m_FrameRenderer.Shutdown();
     m_Fence.Shutdown();
-    m_CommandList.Shutdown();
+    m_Frames.clear();
+    m_CurrentFrame = 0;
     m_SwapChain.Shutdown();
     m_Queue.Shutdown();
     m_Device.Shutdown();
