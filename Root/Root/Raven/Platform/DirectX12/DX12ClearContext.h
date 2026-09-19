@@ -10,6 +10,8 @@
 #include "DX12SwapChain.h"
 
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace Raven
 {
@@ -31,7 +33,13 @@ private:
     DX12Device m_Device;
     DX12CommandQueue m_Queue;
     DX12SwapChain m_SwapChain;
-    DX12CommandList m_CommandList;
+    struct FrameResource
+    {
+        std::unique_ptr<DX12CommandList> CommandList;
+        uint64_t FenceValue = 0;
+    };
+    std::vector<FrameResource> m_Frames;
+    uint32_t m_CurrentFrame = 0;
     DX12Fence m_Fence;
     DX12FrameRenderer m_FrameRenderer;
     bool m_VSync = true;
