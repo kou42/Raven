@@ -18,7 +18,7 @@ class VulkanClearContext
 {
 public:
     bool Init(Window& window);
-    bool DrawClearFrame(const VkClearColorValue& clearColor);
+    VulkanFrameResult DrawClearFrame(const VkClearColorValue& clearColor);
     bool Resize(uint32_t width, uint32_t height);
     void Shutdown();
     ~VulkanClearContext();
