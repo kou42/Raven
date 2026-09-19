@@ -8,6 +8,8 @@
 #include "VulkanSwapChain.h"
 
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace Raven
 {
@@ -27,7 +29,8 @@ private:
     VulkanInstance m_Instance;
     VulkanSurface m_Surface;
     VulkanSwapChain m_SwapChain;
-    VulkanCommandBuffer m_CommandBuffer;
+    // 各Frame Slot専用のCommandPool/Buffer。GPU実行中のBufferをResetしないため分離します。
+    std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VulkanFrameSync m_FrameSync;
     VulkanFrameRenderer m_FrameRenderer;
     bool m_VSync = true;
