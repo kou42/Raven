@@ -22,6 +22,7 @@
 namespace Raven
 {
 class VulkanSceneRHIBuffer;
+class VulkanSceneRHITexture;
 
 // Scene専用のVulkan Frame Contextです。Clear DemoとはGPU Resourceを共有しません。
 // ApplicationへのFactory接続はScene用RHICommandList完成後に行います。
@@ -41,6 +42,7 @@ public:
     // Frame記録中・Submit済みPresent前は更新を許可しません。
     bool SynchronizeBufferAccess(const VulkanSceneRHIBuffer& buffer);
     void RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer);
+    void RegisterTexture(const Ref<VulkanSceneRHITexture>& texture);
     void RetainDrawBuffers(const Ref<RHIBuffer>& vertex, const Ref<RHIBuffer>& index);
 
     // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
@@ -85,6 +87,8 @@ private:
     std::vector<Ref<VulkanGraphicsPipeline>> m_GraphicsPipelines;
     // 外部RefがDeviceより長生きしてもnative Bufferを安全に無効化するため追跡します。
     std::vector<std::weak_ptr<VulkanSceneRHIBuffer>> m_Buffers;
+    // 外部RHITextureのRefがContextより長生きしてもDevice破棄前に無効化します。
+    std::vector<std::weak_ptr<VulkanSceneRHITexture>> m_Textures;
     // Frame SlotごとにBufferを一度だけ強参照します。キーは検索専用で、
     // 値のRefが実体を保持するためFence完了までポインタが無効になりません。
     using RecordedBufferSet = std::unordered_map<const RHIBuffer*, Ref<RHIBuffer>>;

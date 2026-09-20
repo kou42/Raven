@@ -1,5 +1,6 @@
 #include "VulkanSceneContext.h"
 #include "VulkanSceneRHIBuffer.h"
+#include "VulkanSceneRHITexture.h"
 
 #include "Raven/Core/Window.h"
 
@@ -539,6 +540,28 @@ void VulkanSceneContext::RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer)
     m_Buffers.push_back(buffer);
 }
 
+void VulkanSceneContext::RegisterTexture(
+    const Ref<VulkanSceneRHITexture>& texture)
+{
+    if (texture == nullptr)
+    {
+        return;
+    }
+    // 破棄済みTextureの弱参照を整理し、Contextは所有権を奪いません。
+    for (auto iterator = m_Textures.begin(); iterator != m_Textures.end();)
+    {
+        if (iterator->expired() == true)
+        {
+            iterator = m_Textures.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
+    m_Textures.push_back(texture);
+}
+
 void VulkanSceneContext::Shutdown()
 {
     if (m_Instance.IsValid() == true)
@@ -556,6 +579,16 @@ void VulkanSceneContext::Shutdown()
         }
     }
     m_Buffers.clear();
+    // VkDeviceを破棄する前に外部RefのVkImage/ImageView/Samplerを解放します。
+    for (const auto& weakTexture : m_Textures)
+    {
+        auto texture = weakTexture.lock();
+        if (texture != nullptr)
+        {
+            texture->Shutdown();
+        }
+    }
+    m_Textures.clear();
     m_RecordedBuffers.clear();
     m_SubmittedBufferFrames.clear();
     m_FrameActive = false;

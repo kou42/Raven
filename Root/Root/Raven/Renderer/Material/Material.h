@@ -1,10 +1,14 @@
 // Material.h
 #pragma once
+#include <array>
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <variant>
+
+#include "Raven/Renderer/RHI/RHIMaterialProperties.h"
 
 #include "Raven/Renderer/Shader/ShaderTypes.h"
 #include "Raven/Math/Math.h"
@@ -16,19 +20,6 @@ namespace Raven {
 class Pipeline;
 class Shader;
 class Texture;
-
-// ============================================================================
-// MaterialSurfaceType
-// ============================================================================
-// Graphics API固有のBlend/Depth stateではなく、Materialが持つ描画上の意味を表します。
-// Opaque / MaskedはOpaque PassでDepthを書き込み、TransparentだけをTransparent Passへ送ります。
-// Maskedのalpha cutoff判定はFragment Shader側のdiscardで行い、Blendは使用しません。
-enum class MaterialSurfaceType
-{
-    Opaque = 0,
-    Masked,
-    Transparent
-};
 
 class Material {
 
@@ -48,6 +39,17 @@ public:
     MaterialSurfaceType GetSurfaceType() const;
 
     void SetTexture(const std::string& name, Ref<Texture> texture, int slot);
+
+    // Explicit API向けの最小Materialデータ。Legacy Texture Bindとは独立して保持します。
+    // Texture未設定時はScene側の既定Textureを使用します。
+    void SetRHITexture(Ref<RHITexture> texture) { m_RHITexture = std::move(texture); }
+    const Ref<RHITexture>& GetRHITexture() const { return m_RHITexture; }
+    void SetRHITint(const std::array<float, 4>& tint) { m_RHITint = tint; }
+    const std::array<float, 4>& GetRHITint() const { return m_RHITint; }
+    RHIMaterialProperties GetRHIProperties() const
+    {
+        return {m_RHITint, m_RHITexture, m_SurfaceType};
+    }
 
     void SetShader(Ref<Shader> shader);
     Ref<Shader> GetShader() const;
@@ -99,6 +101,9 @@ private:
     Ref<Shader> m_shader;
     std::unordered_map<std::string, TextureBinding> m_textures;
     std::unordered_map<std::string, UniformValue> m_uniforms;
+    // RHI描画用の値。Legacy Shader Uniformとの自動同期は行いません。
+    Ref<RHITexture> m_RHITexture;
+    std::array<float, 4> m_RHITint = {1.0f, 1.0f, 1.0f, 1.0f};
 
     MaterialSurfaceType m_SurfaceType = MaterialSurfaceType::Opaque;
     bool m_SurfaceTypeExplicit = false;
