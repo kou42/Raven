@@ -355,6 +355,21 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
     return true;
 }
 
+bool VulkanSceneContext::SetMaterialTint(const std::array<float, 4>& tint)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
+        m_BoundGraphicsPipeline->IsValid() == false)
+    {
+        return false;
+    }
+    // Vertex用64byteと重ならないFragment専用領域へ書き込みます。
+    vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
+        VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(float) * 16,
+        static_cast<uint32_t>(sizeof(float) * tint.size()), tint.data());
+    return true;
+}
+
 bool VulkanSceneContext::SetClipTransform(const std::array<float, 16>& model)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
