@@ -293,13 +293,9 @@ bool VulkanSceneTriangleDemo::AddTexture(
     m_Textures.push_back({std::move(image), VK_NULL_HANDLE});
     if (descriptorsExist == true && CreateTextureDescriptor() == false)
     {
-        // 追加失敗時は旧Texture群を残し、Descriptorを再構築して既存Meshを復旧します。
+        // 新Pool構築が失敗しても旧Poolは有効です。追加Textureだけ取り消します。
         m_Textures.back().Image->Shutdown();
         m_Textures.pop_back();
-        if (CreateTextureDescriptor() == false)
-        {
-            std::cerr << "Vulkan Scene Triangle: Texture descriptor recovery failed.\n";
-        }
         return false;
     }
     return true;
