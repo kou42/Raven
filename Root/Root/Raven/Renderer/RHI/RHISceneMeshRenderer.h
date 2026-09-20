@@ -25,6 +25,37 @@ struct RHISceneDrawItem
 class RHISceneMeshRenderer final
 {
 public:
+    // Frameの開始・終了・Presentを共通Lifecycle経由で実行します。
+    // BeginFrameのResizeRequiredは描画せず返し、呼び出し元がResizeを判断します。
+    // 描画中の失敗時はFrameが未完了のため、呼び出し元がContextをShutdownします。
+    static RHIFrameResult DrawFrame(RHISceneFrameLifecycle& frame,
+        RHISceneCommandList& commands,
+        const Ref<RHIGraphicsPipeline>& opaquePipeline,
+        const Ref<RHIGraphicsPipeline>& transparentPipeline,
+        const std::vector<RHISceneDrawItem>& items)
+    {
+        // 入力が不正な場合はGPU Frameを開始しません。
+        if (opaquePipeline == nullptr || transparentPipeline == nullptr)
+        {
+            return RHIFrameResult::FatalError;
+        }
+        const RHIFrameResult begin = frame.BeginFrame();
+        if (begin != RHIFrameResult::Success)
+        {
+            return begin;
+        }
+        if (Draw(commands, opaquePipeline, transparentPipeline, items) == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
+        const RHIFrameResult end = frame.EndFrame();
+        if (end != RHIFrameResult::Success)
+        {
+            return end;
+        }
+        return frame.Present();
+    }
+
     // Opaqueを登録順、Transparentを遠方から描画します。
     // Maskedはalpha cutoff対応Shaderを導入するまで明示的に拒否します。
     // 失敗時は呼び出し側がFrameを破棄・終了する責務を持ちます。
