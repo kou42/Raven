@@ -354,6 +354,21 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
     return true;
 }
 
+bool VulkanSceneContext::SetModelTransform(const std::array<float, 16>& model)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
+        m_BoundGraphicsPipeline->IsValid() == false)
+    {
+        return false;
+    }
+    // Push ConstantはCommand Bufferへ値をコピーするため、CPU側の行列はDraw後に変更できます。
+    vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT, 0, static_cast<uint32_t>(sizeof(float) * model.size()),
+        model.data());
+    return true;
+}
+
 bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     const VulkanSceneBuffer& indexBuffer, uint32_t indexCount,
     bool usePipelineVertexStride)
