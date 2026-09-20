@@ -176,9 +176,9 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     }
     m_BoundGraphicsPipeline.reset();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
-    for (const auto& weakPipeline : m_GraphicsPipelines)
+    for (const auto& pipeline : m_GraphicsPipelines)
     {
-        if (auto pipeline = weakPipeline.lock())
+        if (pipeline != nullptr)
         {
             pipeline->Shutdown();
         }
@@ -285,9 +285,9 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
 
     // 別のVkDevice/RenderPassで生成されたPipelineをこのSceneへBindさせません。
     bool owned = false;
-    for (const auto& weakPipeline : m_GraphicsPipelines)
+    for (const auto& registeredPipeline : m_GraphicsPipelines)
     {
-        if (weakPipeline.lock() == nativePipeline)
+        if (registeredPipeline == nativePipeline)
         {
             owned = true;
             break;
@@ -349,9 +349,9 @@ void VulkanSceneContext::Shutdown()
     m_ActiveFrame = 0;
     m_BoundGraphicsPipeline.reset();
     // 外部Refが残っていてもVkDevice破棄後のDestructorでVulkanを呼ばせません。
-    for (const auto& weakPipeline : m_GraphicsPipelines)
+    for (const auto& pipeline : m_GraphicsPipelines)
     {
-        if (auto pipeline = weakPipeline.lock())
+        if (pipeline != nullptr)
         {
             pipeline->Shutdown();
         }
