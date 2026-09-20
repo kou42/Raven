@@ -396,7 +396,7 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         return false;
     }
     // 既存Poolを残したまま新Poolを構築し、途中失敗でも既存Meshの描画を維持します。
-    // 呼び出し側は旧Descriptorを参照するGPU処理の完了を保証します。
+    // 旧Descriptorを参照するGPU処理は上記WaitIdleで完了済みです。
     const VkDevice device = GetDevice().GetHandle();
     VkDescriptorPool newPool = VK_NULL_HANDLE;
     VkDescriptorPoolSize poolSize{};
@@ -453,7 +453,7 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     m_TextureDescriptors.resize(descriptors.size());
     for (std::size_t index = 0; index < textures.size(); ++index)
     {
-        textures[index].Descriptor = descriptors[index];
+        m_TextureDescriptors[index] = descriptors[index];
     }
     return true;
 }
@@ -686,6 +686,8 @@ void VulkanSceneContext::Shutdown()
         }
     }
     m_Buffers.clear();
+    // Descriptorが参照するImageView/Samplerより先にPoolを解放します。
+    DestroyTextureDescriptors();
     // VkDeviceを破棄する前に外部RefのVkImage/ImageView/Samplerを解放します。
     for (const auto& weakTexture : m_Textures)
     {
@@ -696,7 +698,6 @@ void VulkanSceneContext::Shutdown()
         }
     }
     m_Textures.clear();
-    DestroyTextureDescriptors();
     m_RecordedBuffers.clear();
     m_SubmittedBufferFrames.clear();
     m_FrameActive = false;
