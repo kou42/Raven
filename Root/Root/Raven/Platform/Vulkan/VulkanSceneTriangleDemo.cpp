@@ -1,4 +1,5 @@
 #include "VulkanSceneTriangleDemo.h"
+#include "Raven/Renderer/Material/Material.h"
 #include "VulkanSceneRHIDevice.h"
 #include "VulkanSceneRHITexture.h"
 
@@ -293,6 +294,27 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
     }
     // 上記で検証済みのため、Material更新はTexture登録成功後にのみ行います。
     return SetMeshMaterial(meshIndex, tint, alphaBlend, textureIndex);
+}
+
+bool VulkanSceneTriangleDemo::SetMeshMaterial(
+    std::size_t meshIndex, const Material& material)
+{
+    if (meshIndex >= m_Meshes.size() ||
+        material.GetSurfaceType() == MaterialSurfaceType::Masked)
+    {
+        // 現行Scene Shaderにはalpha cutoffがないため、MaskedをOpaque扱いしません。
+        return false;
+    }
+    const bool alphaBlend =
+        material.GetSurfaceType() == MaterialSurfaceType::Transparent;
+    const Ref<RHITexture>& texture = material.GetRHITexture();
+    if (texture != nullptr)
+    {
+        return SetMeshMaterial(meshIndex, material.GetRHITint(),
+            alphaBlend, texture);
+    }
+    // Texture未指定のMaterialでは、Meshの既存Textureを維持します。
+    return SetMeshMaterial(meshIndex, material.GetRHITint(), alphaBlend);
 }
 
 bool VulkanSceneTriangleDemo::AddTexture(
