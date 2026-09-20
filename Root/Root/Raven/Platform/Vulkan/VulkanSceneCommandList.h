@@ -25,6 +25,13 @@ public:
         return m_Context.SetViewport(x, y, width, height);
     }
 
+    // OpenGLのRenderCommand::Clearに対応するScene描画途中のClearです。
+    // BeginFrameのLoadOp Clearとは異なり、呼び出した位置でGPU命令を記録します。
+    bool ClearColor(const float color[4])
+    {
+        return m_Context.ClearColorAttachment(color);
+    }
+
     bool BindPipeline(const Ref<RHIGraphicsPipeline>& pipeline)
     {
         return m_Context.BindGraphicsPipeline(pipeline);

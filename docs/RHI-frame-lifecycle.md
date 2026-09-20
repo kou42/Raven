@@ -156,3 +156,10 @@ Contextが所有するVkDeviceより前に、外部が保持するRHIBufferを�
 `VulkanSceneTriangleDemo` はContext所有Deviceの `VulkanSceneRHIDevice::CreateBuffer` でVertex/Indexを生成し、共通Buffer版DrawIndexedを通るように変更しました。終了時はWaitIdle後にBufferのRefをresetし、ContextのVkDeviceより先に解放します。Resize後もBufferは維持し、Pipelineのみ再生成します。
 
 Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Sceneへの接続時にはVertex Input Layoutの共有、複数Binding、Buffer lifetimeとGPU同期を共通設計に移す必要があります。ビルド・GPU実機・Validation Layerは未検証です。確認項目：Triangle表示、Resize後再描画、誤ったStride/用途/Device/IndexCountの拒否、終了時Validation Layer、OpenGL回帰。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
