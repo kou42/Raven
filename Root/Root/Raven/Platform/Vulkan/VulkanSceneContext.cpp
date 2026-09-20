@@ -430,13 +430,14 @@ void VulkanSceneContext::RetainDrawBuffers(
     }
     // 同一Bufferが複数DrawやVertex/Indexの両方で指定されても、
     // Frame Slot内で強参照は一つだけ保持し、Fence検索を重複させません。
-    if (vertex != nullptr)
+    auto& recorded = m_RecordedBuffers[m_ActiveFrame];
+    if (vertex != nullptr && recorded.find(vertex.get()) == recorded.end())
     {
-        m_RecordedBuffers[m_ActiveFrame].try_emplace(vertex.get(), vertex);
+        recorded.emplace(vertex.get(), vertex);
     }
-    if (index != nullptr)
+    if (index != nullptr && recorded.find(index.get()) == recorded.end())
     {
-        m_RecordedBuffers[m_ActiveFrame].try_emplace(index.get(), index);
+        recorded.emplace(index.get(), index);
     }
 }
 
