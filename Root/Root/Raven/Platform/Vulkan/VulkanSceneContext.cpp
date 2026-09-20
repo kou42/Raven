@@ -1,5 +1,7 @@
 #include "VulkanSceneContext.h"
 
+#include "Raven/Core/Window.h"
+
 #include <GLFW/glfw3.h>
 
 namespace Raven
