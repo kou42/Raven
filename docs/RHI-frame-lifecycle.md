@@ -106,3 +106,7 @@ ResizeはFrame外でFence完了後にSwapChainとRTVを再生成します。Fata
 Vulkan/DX12 Scene Contextに `SetViewport(x,y,width,height)` を追加し、各FrameのRenderPass/RenderTarget開始後にSwapChain全体のViewport/Scissorを初期設定します。Vulkanは `vkCmdSetViewport` / `vkCmdSetScissor` を記録し、将来のGraphics Pipelineでは `VK_DYNAMIC_STATE_VIEWPORT` / `VK_DYNAMIC_STATE_SCISSOR` を有効にする必要があります。DX12は `RSSetViewports` / `RSSetScissorRects` を記録します。VulkanはSwapChain Extent外の矩形を拒否し、DX12はScissor座標の整数オーバーフローを拒否します。
 
 既存の `RHICommandList` はPipeline/Texture/Uniform/Indexed Drawを一体として要求するため、未実装のResource/Pipelineを成功扱いする空実装は追加していません。今回のViewportはNative Scene Context内の準備段階であり、`RenderCommand` のBackend切替はまだ行いません。
+
+### DX12 Scene Buffer（今回追加）
+
+`DX12SceneBuffer` は既存のOpenGL用 `VertexBuffer` / `IndexBuffer` を無理に置換せず、Scene用のNative GPU Resourceとして追加しました。`InitVertex(device,data,byteSize,stride)` と `InitIndex(device,indices,count)` でUpload Heap Bufferを作り、Vertex/Index Buffer Viewを生成します。Index形式は `DXGI_FORMAT_R32_UINT` です。`SetData` は容量内のCPU書き込みのみを担当し、GPUが読み取り中のBufferを書き換えないよう呼び出し側でFence同期してください。部分更新後もViewのサイズは初期容量のままです。現時点ではDefault Heapへのコピー、Pipeline/Root Signature、Native DrawIndexedの接続は未実装です。
