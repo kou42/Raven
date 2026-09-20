@@ -125,7 +125,7 @@ bool Mesh::SyncGeometry()
 {
     if (m_Geometry == nullptr
         || m_Geometry->GetGeometryUsage() != GeometryUsage::Dynamic
-        || m_VertexBuffer == nullptr)
+        || (m_VertexBuffer == nullptr && m_RHIVertexBuffer == nullptr))
     {
         return false;
     }
@@ -140,6 +140,7 @@ bool Mesh::SyncGeometry()
 
     const uint64_t geometryRevision = m_Geometry->GetRevision();
     const bool legacyUploadRequired =
+        m_VertexBuffer != nullptr &&
         m_UploadedGeometryRevision != geometryRevision;
     const bool rhiUploadRequired =
         m_RHIVertexBuffer != nullptr &&

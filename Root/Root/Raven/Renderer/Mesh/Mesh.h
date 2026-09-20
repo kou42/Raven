@@ -34,9 +34,9 @@ public:
     // ========================================================================
     // Dynamic Geometry synchronization
     // ========================================================================
-    // MeshGeometry::SetVertices()で更新されたCPU頂点を既存VBOへ反映します。
-    // Revisionが変化していなければ何もしないため、毎フレーム呼び出しても不要なUploadは
-    // 発生しません。Static Geometryや低レベルVertexArray Meshではfalseを返します。
+    // MeshGeometry::SetVertices()で更新されたCPU頂点をLegacy VBOと、構築済みであれば
+    // Explicit RHI用Bufferへ反映します。各ResourceのRevisionが変化していなければ、
+    // 毎フレーム呼び出しても不要なUploadは発生しません。
     bool SyncGeometry();
 
     // 任意のRHIDeviceからExplicit Scene描画用Bufferを構築します。
@@ -80,7 +80,8 @@ private:
     // 初期UploadとDynamic更新で同じ変換規約を共有するためのヘルパーです。
     bool UploadVertexData();
 
-    // rebuildUploadDataがfalseの場合、同じSyncGeometry内でLegacy更新に使用した変換結果を再利用します。
+    // rebuildUploadDataがfalseの場合、同じSyncGeometry内でLegacy更新に使用した
+    // 変換結果を再利用します。
     bool UploadRHIVertexData(bool rebuildUploadData);
 
 private:
