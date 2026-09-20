@@ -6,7 +6,6 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
-#include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Scene/SceneCamera.h"
@@ -69,7 +68,13 @@ int RunVulkanSceneRuntimeDemo()
     }
 
     // Explicit Scene QueueはMaterialのRHI値だけを参照するため、Legacy Pipelineは不要です。
-    Ref<Material> material = CreateRef<Material>(Ref<Pipeline>{});
+    Ref<Material> material = CreateRef<Material>();
+    if (material == nullptr || material->HasLegacyPipeline() == true)
+    {
+        std::cerr << "Vulkan Scene Runtime material creation failed.\n";
+        runtime.Shutdown();
+        return 1;
+    }
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
     material->SetSurfaceType(MaterialSurfaceType::Opaque);
 

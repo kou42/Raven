@@ -152,8 +152,10 @@ bool BuildRHISceneMeshSnapshot(
 
 void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cameraContext)
 {
-    if (item.Mesh == nullptr || item.Material == nullptr)
+    if (item.Mesh == nullptr || item.Material == nullptr ||
+        item.Material->HasLegacyPipeline() == false)
     {
+        // RHI専用MaterialをLegacy Passへ誤って流しても、直前にBindされたPipelineで描画しません。
         return;
     }
 
@@ -562,6 +564,12 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
         {
             s_OpaqueQueue.push_back(std::move(item));
         }
+        return;
+    }
+
+    if (material->HasLegacyPipeline() == false)
+    {
+        // Queue外の即時描画はLegacy Pipelineが必須です。RHI専用MaterialはExplicit Sceneだけで扱います。
         return;
     }
 
