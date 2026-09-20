@@ -136,3 +136,11 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 Vulkan三角形デモは `RHISceneFrameLifecycle` の参照からBeginFrame/EndFrame/Present/Resizeを呼び、`RHISceneDraw` に描画を委譲します。Resize後のPipeline再生成とFrame途中失敗時のContext破棄は従来どおりデモ側で扱います。
 
 **未接続:** 通常ApplicationのScene/Layerは従来のOpenGL `RenderCommand` 経路を使用します。Scene Resourceの共通Factory、DX12のScene Pipeline/Buffer/CommandList、Metal実装、Texture/Uniform/Material移行は後続です。今回のDraw入口はそれらの実装済みを意味しません。
+
+### Scene Resource Factory（段階的移行）
+
+`RHISceneResourceFactory` はScene用Vertex/Index BufferとGraphics Pipelineの生成をBackend非依存にします。Vulkan実装の `VulkanSceneResourceFactory` は既存 `VulkanSceneContext` を借用し、同じDevice/RenderTargetで生成します。PipelineのColorFormatが未指定なら現在のSwapChain Formatを設定し、明示指定と不一致なら失敗します。三角形デモはFactory経由でBuffer/Pipelineを生成し、`RHISceneBuffer` を所有します。
+
+**寿命:** GPU使用中のBufferを解放せず、WaitIdle後かつContext/Device破棄前に解放します。Resize時は既存Vulkan Contextが旧Pipelineを無効化するため、Factory経由で再生成します。
+
+**未実装:** DX12/MetalのScene Resource Factory、通常ApplicationのSceneへの接続、Texture/Uniform/Material、GPU staging転送。既存 `RHIDevice` / `RenderCommand` のOpenGL Legacy経路は変更しません。

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
+#include "VulkanSceneResourceFactory.h"
 
 #include <array>
 
@@ -38,8 +39,8 @@ private:
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
-    VulkanSceneBuffer m_VertexBuffer;
-    VulkanSceneBuffer m_IndexBuffer;
+    Scope<RHISceneBuffer> m_VertexBuffer;
+    Scope<RHISceneBuffer> m_IndexBuffer;
     Ref<RHIGraphicsPipeline> m_Pipeline;
     RHIShaderBinary m_VertexShader;
     RHIShaderBinary m_FragmentShader;
