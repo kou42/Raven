@@ -354,6 +354,27 @@ bool Renderer::BuildRHISceneMeshes(
     return true;
 }
 
+bool Renderer::BuildRHISceneDrawItems(
+    const Ref<RHITexture>& defaultTexture,
+    const math::Mat4& clipCorrection,
+    std::vector<RHISceneDrawItem>& outItems)
+{
+    std::vector<RHISceneMesh> meshes;
+    if (BuildRHISceneMeshes(defaultTexture, meshes) == false)
+    {
+        return false;
+    }
+
+    // Cameraは参照保持せず、BeginScene()で確定した行列値だけを利用します。
+    std::vector<RHISceneDrawItem> items = RHISceneDrawItemBuilder::Build(
+        s_CameraContext.View,
+        s_CameraContext.Projection,
+        meshes,
+        clipCorrection);
+    outItems = std::move(items);
+    return true;
+}
+
 void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
 {
     if (mesh == nullptr || material == nullptr)

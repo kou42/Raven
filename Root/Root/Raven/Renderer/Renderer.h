@@ -14,6 +14,7 @@ class Camera;
 class Material;
 class Mesh;
 class RHITexture;
+struct RHISceneDrawItem;
 struct RHISceneMesh;
 class VertexArray;
 
@@ -78,6 +79,12 @@ public:
     static bool BuildRHISceneMeshes(
         const Ref<RHITexture>& defaultTexture,
         std::vector<RHISceneMesh>& outMeshes);
+
+    // 通常RendererのCamera Contextを使い、Explicit RHIへ渡す最終Draw Itemまで構築します。
+    static bool BuildRHISceneDrawItems(
+        const Ref<RHITexture>& defaultTexture,
+        const math::Mat4& clipCorrection,
+        std::vector<RHISceneDrawItem>& outItems);
 
     static const RendererStatistics& GetStatistics();
     static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);
