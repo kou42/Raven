@@ -10,7 +10,7 @@ namespace Raven
 // Scene Contextが所有するVkDevice/RenderPassを借用するRHIDevice Adapterです。
 // Contextより長く保持しないこと。Resize後は新しいRenderPassでPipelineを再生成します。
 // Vertex/Index Bufferのみ共通RHIBuffer経由で生成します。Textureは未対応です。
-// BufferのGPU同期とDeviceより先の破棄は呼び出し側が保証してください。
+// Buffer更新はContextでGPU同期し、Shutdown時は外部Refのnative Bufferも無効化します。
 class VulkanSceneRHIDevice final : public RHIDevice
 {
 public:
@@ -30,10 +30,11 @@ public:
     {
         // Contextが所有するDeviceで作成し、別DeviceのResourceを混在させません。
         auto buffer = CreateRef<VulkanSceneRHIBuffer>();
-        if (buffer->Init(m_Context.GetDevice(), specification, initialData) == false)
+        if (buffer->Init(m_Context, specification, initialData) == false)
         {
             return nullptr;
         }
+        m_Context.RegisterBuffer(buffer);
         return buffer;
     }
 
