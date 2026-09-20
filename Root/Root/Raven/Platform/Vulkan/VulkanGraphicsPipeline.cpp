@@ -90,7 +90,7 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
 {
     Shutdown();
     // Scene RenderPassはColorとD32 Depthの2 Attachment、SampleCount=1です。
-    // DescriptorやStencilは後続の実装で対応します。
+    // Texture用Combined Image Samplerをset=0/binding=0に固定します。
     if (device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE ||
         specification.IsValidForBackend(RHIBackend::Vulkan) == false ||
         specification.DepthFormat != RHIDepthFormat::D32Float ||
@@ -223,8 +223,28 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
     materialRange.offset = sizeof(float) * 16;
     materialRange.size = sizeof(float) * 4;
     const VkPushConstantRange ranges[] = {modelRange, materialRange};
+    // Opaque/Transparentで同じDescriptor定義を使い、Setの互換性を維持します。
+    VkDescriptorSetLayoutBinding textureBinding{};
+    textureBinding.binding = 0;
+    textureBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    textureBinding.descriptorCount = 1;
+    textureBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo setInfo{};
+    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setInfo.bindingCount = 1;
+    setInfo.pBindings = &textureBinding;
+    if (vkCreateDescriptorSetLayout(device, &setInfo, nullptr,
+        &m_TextureSetLayout) != VK_SUCCESS)
+    {
+        vkDestroyShaderModule(device, fragmentModule, nullptr);
+        vkDestroyShaderModule(device, vertexModule, nullptr);
+        Shutdown();
+        return false;
+    }
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &m_TextureSetLayout;
     layoutInfo.pushConstantRangeCount = 2;
     layoutInfo.pPushConstantRanges = ranges;
     const VkResult layoutResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Layout);
@@ -271,9 +291,14 @@ void VulkanGraphicsPipeline::Shutdown()
         {
             vkDestroyPipelineLayout(m_Device, m_Layout, nullptr);
         }
+        if (m_TextureSetLayout != VK_NULL_HANDLE)
+        {
+            vkDestroyDescriptorSetLayout(m_Device, m_TextureSetLayout, nullptr);
+        }
     }
     m_Pipeline = VK_NULL_HANDLE;
     m_Layout = VK_NULL_HANDLE;
+    m_TextureSetLayout = VK_NULL_HANDLE;
     m_Device = VK_NULL_HANDLE;
     m_Specification = {};
 }
