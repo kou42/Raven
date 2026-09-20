@@ -1,4 +1,5 @@
 #include "VulkanSceneTriangleDemo.h"
+#include "VulkanSceneRHIDevice.h"
 
 #include "Raven/Core/Window.h"
 
@@ -35,15 +36,26 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         {{-0.6f,  0.6f }, { 0.0f, 0.0f, 1.0f }}
     }};
     const std::array<uint32_t, 3> indices = {{ 0, 1, 2 }};
-    if (m_VertexBuffer.InitVertex(m_Context.GetDevice(), vertices.data(),
-        static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex)) == false)
+    // 共通RHIDeviceを経由してScene Contextと同じVkDeviceに確保します。
+    VulkanSceneRHIDevice device(m_Context);
+    RHIBufferSpecification vertexSpecification{};
+    vertexSpecification.Size = sizeof(vertices);
+    vertexSpecification.Usage = RHIBufferUsage::Vertex;
+    vertexSpecification.DebugName = "Vulkan Scene Triangle Vertex";
+    m_VertexBuffer = device.CreateBuffer(vertexSpecification, vertices.data());
+    if (m_VertexBuffer == nullptr)
     {
         std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\n";
         Shutdown();
         return false;
     }
-    if (m_IndexBuffer.InitIndex(m_Context.GetDevice(), indices.data(),
-        static_cast<uint32_t>(indices.size())) == false)
+
+    RHIBufferSpecification indexSpecification{};
+    indexSpecification.Size = sizeof(indices);
+    indexSpecification.Usage = RHIBufferUsage::Index;
+    indexSpecification.DebugName = "Vulkan Scene Triangle Index";
+    m_IndexBuffer = device.CreateBuffer(indexSpecification, indices.data());
+    if (m_IndexBuffer == nullptr)
     {
         std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\n";
         Shutdown();
@@ -97,7 +109,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
     if (m_Window == nullptr || m_Pipeline == nullptr ||
-        m_VertexBuffer.IsValid() == false || m_IndexBuffer.IsValid() == false)
+        m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
     {
         return RHIFrameResult::FatalError;
     }
@@ -110,7 +122,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 
     VulkanSceneCommandList commands(m_Context);
     if (commands.BindPipeline(m_Pipeline) == false ||
-        commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer) == false)
+        commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer, sizeof(Vertex)) == false)
     {
         // BeginFrame成功後の記録失敗時はSubmit/PresentせずContextを破棄します。
         // Acquire済Semaphoreを再利用してはならないため、次Frameも禁止します。
@@ -153,8 +165,9 @@ void VulkanSceneTriangleDemo::Shutdown()
         m_Context.GetDevice().WaitIdle();
     }
     m_Pipeline.reset();
-    m_IndexBuffer.Shutdown();
-    m_VertexBuffer.Shutdown();
+    // native VkBufferを所有するRefはContextのVkDeviceより先に破棄します。
+    m_IndexBuffer.reset();
+    m_VertexBuffer.reset();
     m_Context.Shutdown();
     m_VertexShader = {};
     m_FragmentShader = {};
