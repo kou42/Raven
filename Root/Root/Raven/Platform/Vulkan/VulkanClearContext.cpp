@@ -76,24 +76,9 @@ RHIFrameResult ToRHIFrameResult(VulkanFrameResult result)
 
 RHIFrameResult VulkanClearContext::DrawClearFrame(const float clearColor[4])
 {
-    RHIFrameResult result = BeginFrame();
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    result = ClearFrame(clearColor);
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    result = EndFrame();
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    return Present();
+    // 旧入口とClear Demoが同じFrame進行規則を使用します。
+    return RunRHIClearFrame(*this, clearColor);
 }
-
 RHIFrameResult VulkanClearContext::BeginFrame()
 {
     if (m_FrameActive == true)
