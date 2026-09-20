@@ -244,7 +244,7 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
         }
     }
     // すべての入力を検証してから反映し、無効なTexture番号で半端な更新を残しません。
-    SceneMaterial& material = m_Meshes[meshIndex].Material;
+    RHIMaterialProperties& material = m_Meshes[meshIndex].Material;
     material.Tint = tint;
     material.SurfaceType = alphaBlend == true ?
         MaterialSurfaceType::Transparent : MaterialSurfaceType::Opaque;
