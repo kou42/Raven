@@ -38,22 +38,64 @@ bool OpenGLClearContext::Init(Window& window)
 
 RHIFrameResult OpenGLClearContext::DrawClearFrame(const float clearColor[4])
 {
-    if (m_Window == nullptr || clearColor == nullptr)
+    // 旧入口とClear Demoが同じFrame進行規則を使用します。
+    return RunRHIClearFrame(*this, clearColor);
+}
+RHIFrameResult OpenGLClearContext::BeginFrame()
+{
+    if (m_Window == nullptr || m_FrameActive == true)
     {
         return RHIFrameResult::FatalError;
     }
 
-    // OpenGLにはAcquire/Present用Frame Slotがないため、このContextでClearとSwapを完結します。
+    // OpenGLはSwapChain Image Acquireを持たないため、ContextをCurrentにするだけです。
     glfwMakeContextCurrent(m_Window);
+    m_FrameActive = true;
+    m_FrameEnded = false;
+    return RHIFrameResult::Success;
+}
+
+RHIFrameResult OpenGLClearContext::ClearFrame(const float clearColor[4])
+{
+    if (m_FrameActive == false || m_FrameEnded == true || clearColor == nullptr)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
     glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
     glClear(GL_COLOR_BUFFER_BIT);
+    return RHIFrameResult::Success;
+}
+
+RHIFrameResult OpenGLClearContext::EndFrame()
+{
+    if (m_FrameActive == false || m_FrameEnded == true)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    // OpenGL命令は現在のContextへ発行済み。明示的なQueue Submitは不要です。
+    m_FrameEnded = true;
+    return RHIFrameResult::Success;
+}
+
+RHIFrameResult OpenGLClearContext::Present()
+{
+    if (m_Window == nullptr || m_FrameActive == false || m_FrameEnded == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    // Window::OnUpdate側ではSwapしない。Clear DemoのPresentはここだけで行います。
     glfwSwapBuffers(m_Window);
+    m_FrameActive = false;
+    m_FrameEnded = false;
     return RHIFrameResult::Success;
 }
 
 bool OpenGLClearContext::Resize(uint32_t width, uint32_t height)
 {
-    if (m_Window == nullptr || width == 0 || height == 0)
+    if (m_Window == nullptr || width == 0 || height == 0 || m_FrameActive == true)
     {
         return false;
     }
@@ -67,6 +109,8 @@ bool OpenGLClearContext::Resize(uint32_t width, uint32_t height)
 void OpenGLClearContext::Shutdown()
 {
     // OpenGL Contextの破棄はWindow所有者に任せます。
+    m_FrameActive = false;
+    m_FrameEnded = false;
     m_Window = nullptr;
 }
 } // namespace Raven

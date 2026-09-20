@@ -16,6 +16,8 @@ public:
     ~WindowsWindow() override;
 
     void OnUpdate() override;
+    void PollEvents() override;
+    void Present() override;
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }

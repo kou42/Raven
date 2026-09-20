@@ -34,7 +34,10 @@ public:
 
     virtual ~Window() = default;
 
+    // 互換入口。新しいApplication経路ではPollEvents/Presentを明示的に呼びます。
     virtual void OnUpdate() = 0;
+    virtual void PollEvents() = 0;
+    virtual void Present() = 0;
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
