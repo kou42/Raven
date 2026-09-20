@@ -183,20 +183,9 @@ int RunClearBackendDemo(RHIBackend backend)
         }
 
         const float clearColor[4] = { 0.08f, 0.16f, 0.28f, 1.0f };
-        // BeginFrameがResizeを要求した場合、描画・Submit・Presentを行わず次のFrameで再生成します。
-        RHIFrameResult frameResult = frameLifecycle->BeginFrame();
-        if (frameResult == RHIFrameResult::Success)
-        {
-            frameResult = frameLifecycle->ClearFrame(clearColor);
-        }
-        if (frameResult == RHIFrameResult::Success)
-        {
-            frameResult = frameLifecycle->EndFrame();
-        }
-        if (frameResult == RHIFrameResult::Success)
-        {
-            frameResult = frameLifecycle->Present();
-        }
+        // Frame段階の順序と失敗時の打ち切りは共通ヘルパーへ集約します。
+        // ResizeRequired時は後続の描画・Submit・Presentを実行しません。
+        const RHIFrameResult frameResult = RunRHIClearFrame(*frameLifecycle, clearColor);
         if (frameResult != RHIFrameResult::Success)
         {
             if (frameResult == RHIFrameResult::ResizeRequired)
