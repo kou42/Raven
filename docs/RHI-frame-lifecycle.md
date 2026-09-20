@@ -128,3 +128,11 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 `RHISceneCommandList` は `SetViewport` / `BindPipeline` / `DrawIndexed` を共通の記録命令として定義します。`RHISceneBuffer` は頂点・Index Bufferの参照契約のみを持ち、native GPU handleやGPUメモリの所有は各Backendに残します。Vulkanは `VulkanSceneCommandList` がBackendのBuffer型を検証し、既存 `VulkanSceneContext` の記録処理へ委譲します。三角形デモも共通CommandList参照を使うよう変更しました。
 
 既存 `RHICommandList` / `RenderCommand` / `RHIDevice` はOpenGL Legacy経路のまま維持します。今回の追加だけではApplicationのVulkan/DX12通常Scene、Material/Texture/Uniform、Pipeline生成の共通化は完了しません。DX12用CommandListと将来MetalのRender Command Encoderは、同じ共通命令契約をそれぞれのBackendで実装する想定です。Metalの列挙値やShader形式は、実際にBackendを追加する段階で導入します。
+
+### Scene Draw入口の接続
+
+`RHISceneDrawItem` はPipeline・Vertex Buffer・Index Buffer・描画Index数をまとめ、`RHISceneDraw::Draw` がBackend共通の入力検証、Pipeline Bind、Indexed Drawを順に実行します。GPU命令の記録やGPU Resourceの所有は引き続き各Backendの責務です。
+
+Vulkan三角形デモは `RHISceneFrameLifecycle` の参照からBeginFrame/EndFrame/Present/Resizeを呼び、`RHISceneDraw` に描画を委譲します。Resize後のPipeline再生成とFrame途中失敗時のContext破棄は従来どおりデモ側で扱います。
+
+**未接続:** 通常ApplicationのScene/Layerは従来のOpenGL `RenderCommand` 経路を使用します。Scene Resourceの共通Factory、DX12のScene Pipeline/Buffer/CommandList、Metal実装、Texture/Uniform/Material移行は後続です。今回のDraw入口はそれらの実装済みを意味しません。

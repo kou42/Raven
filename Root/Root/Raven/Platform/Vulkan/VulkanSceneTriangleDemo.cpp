@@ -1,6 +1,7 @@
 #include "VulkanSceneTriangleDemo.h"
 
 #include "Raven/Core/Window.h"
+#include "Raven/Renderer/RHI/RHISceneDraw.h"
 
 #include <iostream>
 
@@ -102,7 +103,9 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         return RHIFrameResult::FatalError;
     }
 
-    const RHIFrameResult begin = m_Context.BeginFrame();
+    // Frame境界は共通契約から呼び出し、Acquire/Submitの実装はContextに任せます。
+    RHISceneFrameLifecycle& frame = m_Context;
+    const RHIFrameResult begin = frame.BeginFrame();
     if (begin != RHIFrameResult::Success)
     {
         return begin;
@@ -111,8 +114,8 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     VulkanSceneCommandList vulkanCommands(m_Context);
     // Scene描画側は共通CommandListだけを参照し、native記録はBackendへ委譲します。
     RHISceneCommandList& commands = vulkanCommands;
-    if (commands.BindPipeline(m_Pipeline) == false ||
-        commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer) == false)
+    const RHISceneDrawItem item(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
+    if (RHISceneDraw::Draw(commands, item) == false)
     {
         // BeginFrame成功後の記録失敗時はSubmit/PresentせずContextを破棄します。
         // Acquire済Semaphoreを再利用してはならないため、次Frameも禁止します。
@@ -120,13 +123,13 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         return RHIFrameResult::FatalError;
     }
 
-    const RHIFrameResult end = m_Context.EndFrame();
+    const RHIFrameResult end = frame.EndFrame();
     if (end != RHIFrameResult::Success)
     {
         Shutdown();
         return end;
     }
-    const RHIFrameResult present = m_Context.Present();
+    const RHIFrameResult present = frame.Present();
     if (present == RHIFrameResult::FatalError)
     {
         Shutdown();
@@ -136,8 +139,13 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 
 bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
 {
-    if (m_Window == nullptr || width == 0 || height == 0 ||
-        m_Context.Resize(width, height) == false)
+    if (m_Window == nullptr || width == 0 || height == 0)
+    {
+        return false;
+    }
+
+    RHISceneFrameLifecycle& frame = m_Context;
+    if (frame.Resize(width, height) == false)
     {
         return false;
     }

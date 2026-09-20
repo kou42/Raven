@@ -9,3 +9,4 @@
 #include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/RHI/RHISceneBuffer.h"
 #include "Raven/Renderer/RHI/RHISceneCommandList.h"
+#include "Raven/Renderer/RHI/RHISceneDraw.h"
