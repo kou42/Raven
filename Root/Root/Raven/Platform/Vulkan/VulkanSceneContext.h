@@ -56,8 +56,9 @@ private:
     VulkanFrameSync m_FrameSync;
     VulkanFrameRenderer m_FrameRenderer;
     VulkanSceneRenderTarget m_RenderTarget;
-    // 呼び出し元のRefを所有せず、Device破棄前にnative handleだけ解放します。
-    std::vector<std::weak_ptr<VulkanGraphicsPipeline>> m_GraphicsPipelines;
+    // Submit後もGPUが参照するため、Fence完了までPipelineを強参照で保持します。
+    // Resize/ShutdownではWaitIdle後にnative handleを破棄します。
+    std::vector<Ref<VulkanGraphicsPipeline>> m_GraphicsPipelines;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};
