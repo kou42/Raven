@@ -260,6 +260,36 @@ void VulkanSceneContext::SetClearColor(const float color[4])
     }
 }
 
+bool VulkanSceneContext::ClearColorAttachment(const float color[4])
+{
+    // vkCmdClearAttachmentsはRenderPass内でのみ有効です。
+    // Frame開始時のLoadOp Clearと異なり、Scene描画途中のClearを明示的に記録します。
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    const VkExtent2D extent = m_SwapChain.GetExtent();
+    if (color == nullptr || commandBuffer == VK_NULL_HANDLE ||
+        m_RenderTarget.IsValid() == false || extent.width == 0 || extent.height == 0)
+    {
+        return false;
+    }
+
+    VkClearAttachment attachment{};
+    attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    attachment.colorAttachment = 0;
+    for (uint32_t component = 0; component < 4; ++component)
+    {
+        attachment.clearValue.color.float32[component] = color[component];
+    }
+
+    // Viewport/ScissorはClear範囲を制限しません。SwapChain全体を消去します。
+    VkClearRect rectangle{};
+    rectangle.rect.offset = { 0, 0 };
+    rectangle.rect.extent = extent;
+    rectangle.baseArrayLayer = 0;
+    rectangle.layerCount = 1;
+    vkCmdClearAttachments(commandBuffer, 1, &attachment, 1, &rectangle);
+    return true;
+}
+
 VkCommandBuffer VulkanSceneContext::GetActiveCommandBuffer() const
 {
     if (m_FrameActive == false || m_FrameSubmitted == true ||

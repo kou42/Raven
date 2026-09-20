@@ -186,3 +186,10 @@ Device経由で生成したBufferはContextがweak参照で追跡し、Context::
 **重要：** 対象BufferのFence待機が完了しても、同じFrameの別BufferはGPU使用中かもしれません。このため更新時にはFrame Slot全体の強参照やSubmit状態を消去せず、既存の `BeginFrame` のSlot Fence待機後に回収します。これにより他Bufferの早期破棄を避けます。Frame中/Submit後Present前の更新拒否、Resize/ShutdownのDeviceWaitIdleは維持します。
 
 前節の「全Submit済みScene Frameを待つ」は本変更より前の仕様です。対象は共通RHIBuffer版DrawIndexedで追跡したScene Graphics Queue利用のみです。外部Queue、native SceneBuffer直接利用、別スレッドの同時更新は対象外です。確認項目：未使用Bufferの更新、別Bufferだけを使用したFrameの待機省略、同一Bufferを2 Frameで使用した場合の両Fence待機、対象Buffer更新後の他Bufferの寿命、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
