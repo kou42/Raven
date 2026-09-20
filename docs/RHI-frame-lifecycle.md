@@ -122,3 +122,11 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 `RHISceneFrameLifecycle` に `Resize(width, height)` を追加し、OpenGL / Vulkan / DX12で同じFrame外呼び出し口を用意しました。幅・高さ0は最小化中として呼び出し側で保留し、各実装も失敗を返します。OpenGLではWindowのResize Event経由のViewport更新を維持し、Frame外かつ正のサイズなら成功を返します。Vulkan / DX12は既存の同期・SwapChain再生成処理を `override` で公開します。
 
 **注意:** これはScene描画のBackend切替を有効化する変更ではありません。`RHISceneFrameLifecycle::Create` と `RenderCommand::Init` は従来どおりOpenGLのみ対応します。VulkanのResize後はRenderPass依存Pipelineを再生成する必要があり、Application側の `ResizeRequired` / 最小化処理とScene Resourceの再生成は後続で接続します。DX12についても同じ共通契約を維持します。
+
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
