@@ -335,7 +335,7 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
 
 bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     const VulkanSceneBuffer& indexBuffer, uint32_t indexCount,
-    uint32_t vertexStrideOverride)
+    bool usePipelineVertexStride)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
@@ -356,14 +356,18 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     // 現在のSceneBufferはVertex 1本、uint32_t Indexのみをサポートします。
     // Pipelineの入力宣言とBufferのStrideが一致することを記録前に確認します。
     const auto& bindings = m_BoundGraphicsPipeline->GetSpecification().VertexBindings;
-    // 共通RHIBufferのVertexはstride=1で確保されるため、描画時に
-    // Pipeline入力宣言のstrideを明示します。従来のnative経路は元のstrideを使用します。
-    const uint32_t vertexStride = vertexStrideOverride == 0 ?
-        vertexBuffer.GetVertexStride() : vertexStrideOverride;
+    // 共通RHIBufferのVertexはbyte単位で確保されるため、描画に必要なStrideは
+    // 現在Bind中のPipelineのBinding 0から取得します。native経路は保持Strideを検証します。
+    if (bindings.size() != 1 || bindings[0].Binding != 0 ||
+        bindings[0].Stride == 0)
+    {
+        return false;
+    }
+    const uint32_t vertexStride = usePipelineVertexStride == true ?
+        bindings[0].Stride : vertexBuffer.GetVertexStride();
     if (vertexStride == 0 ||
-        (vertexStrideOverride != 0 && vertexBuffer.GetVertexStride() != 1) ||
+        (usePipelineVertexStride == true && vertexBuffer.GetVertexStride() != 1) ||
         vertexBuffer.GetCapacity() % vertexStride != 0 ||
-        bindings.size() != 1 || bindings[0].Binding != 0 ||
         bindings[0].Stride != vertexStride)
     {
         return false;

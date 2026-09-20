@@ -122,7 +122,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 
     VulkanSceneCommandList commands(m_Context);
     if (commands.BindPipeline(m_Pipeline) == false ||
-        commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer, sizeof(Vertex)) == false)
+        commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer) == false)
     {
         // BeginFrame成功後の記録失敗時はSubmit/PresentせずContextを破棄します。
         // Acquire済Semaphoreを再利用してはならないため、次Frameも禁止します。

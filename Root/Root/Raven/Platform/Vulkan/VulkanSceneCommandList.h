@@ -46,13 +46,11 @@ public:
     }
 
     // 共通RHIDeviceから生成したBufferをSceneの描画へ接続します。
-    // VertexStrideはPipelineのBinding 0と一致する値を呼び出し側が渡します。
+    // Strideは現在Bind中のPipelineのBinding 0から取得します。
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
-        const Ref<RHIBuffer>& indexBuffer, uint32_t vertexStride,
-        uint32_t indexCount = 0)
+        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0)
     {
         if (vertexBuffer == nullptr || indexBuffer == nullptr ||
-            vertexStride == 0 ||
             vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
             indexBuffer->GetSpecification().Usage != RHIBufferUsage::Index)
         {
@@ -65,7 +63,7 @@ public:
             return false;
         }
         return m_Context.DrawIndexed(vertex->GetSceneBuffer(),
-            index->GetSceneBuffer(), indexCount, vertexStride);
+            index->GetSceneBuffer(), indexCount, true);
     }
 
 private:
