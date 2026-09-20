@@ -84,7 +84,8 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         {{ 0.0f,  0.6f, 0.0f}, {1.0f, 1.0f, 0.0f}}
     };
     const std::vector<uint32_t> indices = {0, 1, 2};
-    if (AddMesh(right, indices) == false || AddMesh(left, indices) == false)
+    if (AddMesh(right, indices) == false || AddMesh(left, indices) == false ||
+        AddMesh(left, indices) == false)
     {
         std::cerr << "Vulkan Scene Triangle: Mesh creation failed.\n";
         Shutdown();
@@ -93,17 +94,22 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     // 同じローカル座標を独立したModel行列で左右へ配置します。
     auto rightModel = m_Meshes[0].Model;
     auto leftModel = m_Meshes[1].Model;
+    auto farModel = m_Meshes[2].Model;
     leftModel[12] = -0.15f;
     rightModel[12] = 0.15f;
     rightModel[14] = 0.4f; // Cameraに近い右Meshが重複部分で前面に表示されます。
+    farModel[12] = -0.05f;
+    farModel[14] = -0.4f; // 追加Meshは奥に配置し、登録順に依存しないBlendを検証します。
     if (SetMeshTransform(0, rightModel) == false ||
-        SetMeshTransform(1, leftModel) == false)
+        SetMeshTransform(1, leftModel) == false ||
+        SetMeshTransform(2, farModel) == false)
     {
         Shutdown();
         return false;
     }
-    // 奥のMeshに半透明Tintを適用し、OpaqueとBlendのPipeline切替を確認します。
-    if (SetMeshMaterial(1, {1.0f, 0.8f, 0.8f, 0.65f}, true) == false)
+    // 透明Meshは手前を先に登録しても、描画時に奥からソートします。
+    if (SetMeshMaterial(1, {1.0f, 0.8f, 0.8f, 0.65f}, true) == false ||
+        SetMeshMaterial(2, {0.5f, 0.8f, 1.0f, 0.45f}, true) == false)
     {
         Shutdown();
         return false;
