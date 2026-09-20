@@ -2,8 +2,8 @@
 
 #include "VulkanSceneTriangleDemo.h"
 
+#include "Raven/Assets/RHIShaderAsset.h"
 #include "Raven/Core/Window.h"
-#include "Raven/Renderer/RHI/RHIShaderBinaryLoader.h"
 
 #include <GLFW/glfw3.h>
 
@@ -23,27 +23,32 @@ int RunVulkanSceneTriangleDemo()
         return 1;
     }
 
-    RHIShaderBinary vertexShader;
-    RHIShaderBinary fragmentShader;
     const std::filesystem::path shaderDirectory =
-        std::filesystem::path("Raven") / "Assets" / "Shaders" / "Vulkan";
-    const std::filesystem::path vertexPath =
-        shaderDirectory / "SceneTriangle.vert.spv";
-    const std::filesystem::path fragmentPath =
-        shaderDirectory / "SceneTriangle.frag.spv";
+        std::filesystem::path("Raven") / "Assets" / "Shaders";
+    RHIShaderAssetSpecification vertexSpecification{};
+    vertexSpecification.VulkanPath =
+        (shaderDirectory / "Vulkan" / "SceneTriangle.vert.spv").generic_string();
+    RHIShaderAssetSpecification fragmentSpecification{};
+    fragmentSpecification.VulkanPath =
+        (shaderDirectory / "Vulkan" / "SceneTriangle.frag.spv").generic_string();
 
-    // デモ固有のFile I/Oを持たず、通常Rendererでも再利用できる共通Loaderを使用します。
-    if (RHIShaderBinaryLoader::LoadForBackend(
-        vertexPath, RHIBackend::Vulkan, vertexShader) == false ||
-        RHIShaderBinaryLoader::LoadForBackend(
-            fragmentPath, RHIBackend::Vulkan, fragmentShader) == false)
+    // Asset ManagerがBackend別Pathの選択と重複読込の防止を担当します。
+    RHIShaderAssetManager shaderAssets;
+    const Ref<RHIShaderAsset> vertexShader =
+        shaderAssets.Load(vertexSpecification, RHIBackend::Vulkan);
+    const Ref<RHIShaderAsset> fragmentShader =
+        shaderAssets.Load(fragmentSpecification, RHIBackend::Vulkan);
+    if (vertexShader == nullptr || fragmentShader == nullptr)
     {
-        std::cerr << "Vulkan Scene Triangle shader binary load failed.\n";
+        std::cerr << "Vulkan Scene Triangle shader asset load failed.\n";
         return 1;
     }
 
     VulkanSceneTriangleDemo demo;
-    if (demo.Init(*window, vertexShader, fragmentShader) == false)
+    if (demo.Init(
+        *window,
+        vertexShader->GetBinary(),
+        fragmentShader->GetBinary()) == false)
     {
         std::cerr << "Vulkan Scene Triangle initialization failed.\n";
         return 1;
