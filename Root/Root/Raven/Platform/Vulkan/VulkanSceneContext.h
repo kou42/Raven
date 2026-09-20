@@ -38,6 +38,7 @@ public:
     // Frame記録中・Submit済みPresent前は更新を許可しません。
     bool SynchronizeBufferAccess();
     void RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer);
+    void RetainDrawBuffers(const Ref<RHIBuffer>& vertex, const Ref<RHIBuffer>& index);
 
     // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
     bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
@@ -72,6 +73,8 @@ private:
     std::vector<Ref<VulkanGraphicsPipeline>> m_GraphicsPipelines;
     // 外部RefがDeviceより長生きしてもnative Bufferを安全に無効化するため追跡します。
     std::vector<std::weak_ptr<VulkanSceneRHIBuffer>> m_Buffers;
+    // Draw記録後、GPU完了まで最後の外部Refが消えてもBufferを保持します。
+    std::vector<Ref<RHIBuffer>> m_RecordedBuffers;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};
