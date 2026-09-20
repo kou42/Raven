@@ -38,6 +38,11 @@ public:
     }
 
     // Model・View・Projection合成済みのclip-space変換を設定します。
+    bool SetMaterialTint(const std::array<float, 4>& tint)
+    {
+        return m_Context.SetMaterialTint(tint);
+    }
+
     bool SetClipTransform(const std::array<float, 16>& model)
     {
         return m_Context.SetClipTransform(model);
