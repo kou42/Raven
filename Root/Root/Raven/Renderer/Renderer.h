@@ -3,6 +3,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 
 #include <cstdint>
 #include <vector>

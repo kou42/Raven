@@ -12,6 +12,7 @@
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include <algorithm>
+#include <cassert>
 #include <limits>
 #include <vector>
 
