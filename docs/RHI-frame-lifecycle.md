@@ -41,7 +41,15 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 - [x] VulkanのAcquire / Clear / Submit / Presentを段階別に分離し、既存のDrawClearFrameを互換入口として維持。
 - [x] DX12のFence / Clear / Execute / Presentを段階別に分離し、既存のDrawClearFrameを互換入口として維持。
 - [x] ClearBackendDemoをBeginFrame / ClearFrame / EndFrame / Presentの共通呼び出しへ切り替え。
-- [ ] Scene Rendererとの統合。
+- [x] 共通RunRHIClearFrameへClear Demoと3 Backendの互換入口を集約。
+- [ ] Scene Rendererとの統合（現行SceneはOpenGL RHICommandListとWindow::OnUpdateのSwapBuffersを利用）。
+
+## Scene Rendererとの接続で確認した現状
+
+- `Application::Run()` は `Renderer::BeginFrame()` でCPU Profilerと描画統計を開始し、Scene / Layer / ImGui / Raven UI描画の後に `Window::OnUpdate()` を呼ぶ。
+- `WindowsWindow::OnUpdate()` はイベント処理とOpenGLのSwapBuffersを兼ねる。SceneにClear Demo用のPresentを重ねると二重Swapになるため、そのまま接続しない。
+- `RenderCommand::Init()` が作るScene用 `RHIDevice / RHICommandList` はOpenGLのみ。Vulkan/DX12は現状Clear Demoの経路であり、Scene描画を実行できると見なさない。
+- 次段階はWindowのイベント処理とPresent責務を分離したうえで、Scene描画のFrame境界と同期する。Clear DemoのContextをSceneへ転用しない。
 
 ## 検証条件
 
