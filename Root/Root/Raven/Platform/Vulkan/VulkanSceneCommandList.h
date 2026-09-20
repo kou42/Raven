@@ -44,7 +44,7 @@ public:
         const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0)
     {
         if (vertexBuffer == nullptr || indexBuffer == nullptr ||
-             vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
+            vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
             indexBuffer->GetSpecification().Usage != RHIBufferUsage::Index)
         {
             return false;
