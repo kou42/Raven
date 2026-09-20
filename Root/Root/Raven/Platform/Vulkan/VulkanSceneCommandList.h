@@ -38,13 +38,6 @@ public:
         return m_Context.BindGraphicsPipeline(pipeline);
     }
 
-    // Model・View・Projection合成済みのclip-space変換を設定します。
-    // Texture番号を共通RHITextureの登録順として受け取り、native Descriptorを公開しません。
-    bool BindTexture(std::size_t textureIndex)
-    {
-        return m_Context.BindTexture(textureIndex);
-    }
-
     // Material Snapshotを共通RHIのTextureとTintとしてBindします。
     // Maskedは現行Shaderでalpha cutoff未実装のため拒否します。
     bool BindMaterial(const RHIMaterialProperties& material)
