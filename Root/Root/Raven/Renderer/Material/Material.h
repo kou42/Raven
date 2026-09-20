@@ -2,10 +2,10 @@
 #pragma once
 #include <array>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "Raven/Renderer/RHI/RHITexture.h"
-#include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
@@ -34,6 +34,15 @@ enum class MaterialSurfaceType
     Transparent
 };
 
+// API非依存の描画用Material Snapshot。SceneはLegacy Pipeline/Shaderを参照せず、
+// Surface分類とRHI Resourceだけを取得します。
+struct RHIMaterialProperties
+{
+    std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
+    Ref<RHITexture> Texture;
+    MaterialSurfaceType SurfaceType = MaterialSurfaceType::Opaque;
+};
+
 class Material {
 
 public:
@@ -59,6 +68,10 @@ public:
     const Ref<RHITexture>& GetRHITexture() const { return m_RHITexture; }
     void SetRHITint(const std::array<float, 4>& tint) { m_RHITint = tint; }
     const std::array<float, 4>& GetRHITint() const { return m_RHITint; }
+    RHIMaterialProperties GetRHIProperties() const
+    {
+        return {m_RHITint, m_RHITexture, m_SurfaceType};
+    }
 
     void SetShader(Ref<Shader> shader);
     Ref<Shader> GetShader() const;
