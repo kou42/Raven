@@ -36,23 +36,27 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         {{-0.6f,  0.6f }, { 0.0f, 0.0f, 1.0f }}
     }};
     const std::array<uint32_t, 3> indices = {{ 0, 1, 2 }};
-    if (m_VertexBuffer.InitVertex(m_Context.GetDevice(), vertices.data(),
-        static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex)) == false)
+    VulkanSceneResourceFactory vulkanResources(m_Context);
+    RHISceneResourceFactory& resources = vulkanResources;
+    m_VertexBuffer = resources.CreateVertexBuffer(vertices.data(),
+        static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex));
+    if (m_VertexBuffer == nullptr)
     {
-        std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\n";
+        std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\\n";
         Shutdown();
         return false;
     }
-    if (m_IndexBuffer.InitIndex(m_Context.GetDevice(), indices.data(),
-        static_cast<uint32_t>(indices.size())) == false)
+    m_IndexBuffer = resources.CreateIndexBuffer(indices.data(),
+        static_cast<uint32_t>(indices.size()));
+    if (m_IndexBuffer == nullptr)
     {
-        std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\n";
+        std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\\n";
         Shutdown();
         return false;
     }
     if (CreatePipeline() == false)
     {
-        std::cerr << "Vulkan Scene Triangle: Graphics Pipeline creation failed.\n";
+        std::cerr << "Vulkan Scene Triangle: Graphics Pipeline creation failed.\\n";
         Shutdown();
         return false;
     }
@@ -71,34 +75,18 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     };
     specification.Cull = CullMode::None;
     specification.DebugName = "Vulkan Scene Triangle";
-    switch (m_Context.GetColorFormat())
-    {
-    case VK_FORMAT_R8G8B8A8_UNORM:
-        specification.ColorFormat = RHIColorFormat::RGBA8Unorm;
-        break;
-    case VK_FORMAT_B8G8R8A8_UNORM:
-        specification.ColorFormat = RHIColorFormat::BGRA8Unorm;
-        break;
-    case VK_FORMAT_R8G8B8A8_SRGB:
-        specification.ColorFormat = RHIColorFormat::RGBA8Srgb;
-        break;
-    case VK_FORMAT_B8G8R8A8_SRGB:
-        specification.ColorFormat = RHIColorFormat::BGRA8Srgb;
-        break;
-    default:
-        // SwapChainの実FormatとPipelineのAttachment Formatを一致させます。
-        std::cerr << "Vulkan Scene Triangle: Unsupported SwapChain color format: "
-            << static_cast<int>(m_Context.GetColorFormat()) << '\n';
-        return false;
-    }
-    m_Pipeline = m_Context.CreateGraphicsPipeline(specification);
+    // ColorFormatはFactoryが現在のScene RenderTargetから解決します。
+    VulkanSceneResourceFactory vulkanResources(m_Context);
+    RHISceneResourceFactory& resources = vulkanResources;
+    m_Pipeline = resources.CreateGraphicsPipeline(specification);
     return m_Pipeline != nullptr;
 }
 
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
     if (m_Window == nullptr || m_Pipeline == nullptr ||
-        m_VertexBuffer.IsValid() == false || m_IndexBuffer.IsValid() == false)
+        m_VertexBuffer == nullptr || m_IndexBuffer == nullptr ||
+        m_VertexBuffer->IsValid() == false || m_IndexBuffer->IsValid() == false)
     {
         return RHIFrameResult::FatalError;
     }
@@ -114,7 +102,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     VulkanSceneCommandList vulkanCommands(m_Context);
     // Scene描画側は共通CommandListだけを参照し、native記録はBackendへ委譲します。
     RHISceneCommandList& commands = vulkanCommands;
-    const RHISceneDrawItem item(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
+    const RHISceneDrawItem item(m_Pipeline, *m_VertexBuffer, *m_IndexBuffer);
     if (RHISceneDraw::Draw(commands, item) == false)
     {
         // BeginFrame成功後の記録失敗時はSubmit/PresentせずContextを破棄します。
@@ -163,8 +151,8 @@ void VulkanSceneTriangleDemo::Shutdown()
         m_Context.GetDevice().WaitIdle();
     }
     m_Pipeline.reset();
-    m_IndexBuffer.Shutdown();
-    m_VertexBuffer.Shutdown();
+    m_IndexBuffer.reset();
+    m_VertexBuffer.reset();
     m_Context.Shutdown();
     m_VertexShader = {};
     m_FragmentShader = {};
