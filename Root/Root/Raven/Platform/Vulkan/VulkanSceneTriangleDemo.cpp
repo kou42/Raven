@@ -3,6 +3,7 @@
 
 #include "Raven/Core/Window.h"
 
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <utility>
@@ -99,6 +100,12 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         Shutdown();
         return false;
     }
+    // 奥のMeshに半透明Tintを適用し、OpaqueとBlendのPipeline切替を確認します。
+    if (SetMeshMaterial(1, {1.0f, 0.8f, 0.8f, 0.65f}, true) == false)
+    {
+        Shutdown();
+        return false;
+    }
     if (CreatePipeline() == false)
     {
         std::cerr << "Vulkan Scene Triangle: Graphics Pipeline creation failed.\n";
@@ -167,6 +174,26 @@ bool VulkanSceneTriangleDemo::SetMeshTransform(
     return true;
 }
 
+bool VulkanSceneTriangleDemo::SetMeshMaterial(
+    std::size_t meshIndex, const std::array<float, 4>& tint, bool alphaBlend)
+{
+    if (meshIndex >= m_Meshes.size())
+    {
+        return false;
+    }
+    for (float component : tint)
+    {
+        if (std::isfinite(component) == false || component < 0.0f ||
+            component > 1.0f)
+        {
+            return false;
+        }
+    }
+    m_Meshes[meshIndex].Tint = tint;
+    m_Meshes[meshIndex].AlphaBlend = alphaBlend;
+    return true;
+}
+
 bool VulkanSceneTriangleDemo::ClearMeshes()
 {
     if (m_Context.GetDevice().IsValid() == false ||
@@ -216,12 +243,22 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
         return false;
     }
     m_Pipeline = m_Context.CreateGraphicsPipeline(specification);
-    return m_Pipeline != nullptr;
+    if (m_Pipeline == nullptr)
+    {
+        return false;
+    }
+    // BlendはDepth Writeを無効にした別Pipelineとし、Opaqueと混在可能にします。
+    specification.Blend = true;
+    specification.DepthWrite = false;
+    specification.DebugName = "Vulkan Scene Triangle Transparent";
+    m_TransparentPipeline = m_Context.CreateGraphicsPipeline(specification);
+    return m_TransparentPipeline != nullptr;
 }
 
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
-    if (m_Window == nullptr || m_Pipeline == nullptr)
+    if (m_Window == nullptr || m_Pipeline == nullptr ||
+        m_TransparentPipeline == nullptr)
     {
         return RHIFrameResult::FatalError;
     }
@@ -240,12 +277,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     }
 
     VulkanSceneCommandList commands(m_Context);
-    if (commands.BindPipeline(m_Pipeline) == false)
-    {
-        Shutdown();
-        return RHIFrameResult::FatalError;
-    }
-    // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
+     // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
     // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
     const math::Mat4 vulkanClipCorrection(
         1.0f,  0.0f, 0.0f, 0.0f,
@@ -254,14 +286,31 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         0.0f,  0.0f, 0.0f, 1.0f);
     const math::Mat4 viewProjection = vulkanClipCorrection *
         m_Camera.GetProjectionMatrix() * m_Camera.GetViewMatrix();
+    // Opaqueを先に描き、その後に透明Meshを描画します。
+    // 透明Mesh同士の奥行きソートは未実装のため、登録順で描画します。
+    for (uint32_t pass = 0; pass < 2; ++pass)
+    {
+    const bool transparentPass = pass == 1;
+    const auto& pipeline = transparentPass == true ?
+        m_TransparentPipeline : m_Pipeline;
+    if (commands.BindPipeline(pipeline) == false)
+    {
+        Shutdown();
+        return RHIFrameResult::FatalError;
+    }
     for (const Mesh& mesh : m_Meshes)
     {
+        if (mesh.AlphaBlend != transparentPass)
+        {
+            continue;
+        }
         // 同じFrameに異なるVertex/Index Bufferを記録します。
         // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
         // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
         const auto clipTransform = ToColumnMajor(
             viewProjection * FromColumnMajor(mesh.Model));
         if (commands.SetClipTransform(clipTransform) == false ||
+            commands.SetMaterialTint(mesh.Tint) == false ||
             commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
         {
             Shutdown();
@@ -269,6 +318,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         }
     }
 
+    }
     const RHIFrameResult end = m_Context.EndFrame();
     if (end != RHIFrameResult::Success)
     {
@@ -293,6 +343,7 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
     // Resize時にScene Contextが旧RenderPass用Pipelineを無効化します。
     // 新SwapChainのFormatを読み直してから再生成します。
     m_Pipeline.reset();
+    m_TransparentPipeline.reset();
     m_Camera.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
     return CreatePipeline();
 }
@@ -305,6 +356,7 @@ void VulkanSceneTriangleDemo::Shutdown()
         m_Context.GetDevice().WaitIdle();
     }
     m_Pipeline.reset();
+    m_TransparentPipeline.reset();
     // native VkBufferを所有するRefはContextのVkDeviceより先に破棄します。
     m_Meshes.clear();
     m_Context.Shutdown();
