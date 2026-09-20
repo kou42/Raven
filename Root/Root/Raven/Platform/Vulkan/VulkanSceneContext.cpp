@@ -55,7 +55,8 @@ bool VulkanSceneContext::Init(Window& window)
             static_cast<uint32_t>(width), static_cast<uint32_t>(height), m_VSync) == false ||
         m_FrameSync.Init(m_Instance.GetDevice(),
             static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false ||
-        m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(), m_SwapChain) == false)
+        m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(),
+            m_Instance.GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
     {
         Shutdown();
         return false;
