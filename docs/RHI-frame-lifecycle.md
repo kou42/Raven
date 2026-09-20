@@ -122,3 +122,11 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 `RHISceneFrameLifecycle` に `Resize(width, height)` を追加し、OpenGL / Vulkan / DX12で同じFrame外呼び出し口を用意しました。幅・高さ0は最小化中として呼び出し側で保留し、各実装も失敗を返します。OpenGLではWindowのResize Event経由のViewport更新を維持し、Frame外かつ正のサイズなら成功を返します。Vulkan / DX12は既存の同期・SwapChain再生成処理を `override` で公開します。
 
 **注意:** これはScene描画のBackend切替を有効化する変更ではありません。`RHISceneFrameLifecycle::Create` と `RenderCommand::Init` は従来どおりOpenGLのみ対応します。VulkanのResize後はRenderPass依存Pipelineを再生成する必要があり、Application側の `ResizeRequired` / 最小化処理とScene Resourceの再生成は後続で接続します。DX12についても同じ共通契約を維持します。
+
+### Vulkan Scene Buffer部分更新（追加）
+
+`VulkanSceneBuffer::SetData(data, byteSize, offset = 0)` は既存の全体先頭更新を維持しつつ、`RHIBuffer::SetData` と同様のoffset付き部分更新に対応します。offset/sizeは減算形式で容量を検証し、範囲外・空更新・null dataを拒否します。VkDeviceMemoryは割当先頭からMapしてCPU pointerにoffsetを加算し、Map offsetのalignment制約を回避します。Host Coherentのため明示Flushは不要です。
+
+この変更だけでは `VulkanSceneBuffer` はまだ `RHIBuffer` の実装ではありません。共通Buffer化には用途別のStride/IndexCount、Resize時のnative handle更新、GPU同期とDevice寿命の契約を先に確定する必要があります。OpenGLは変更していません。
+
+検証項目：先頭・中間・末尾の部分更新、容量境界とoverflow拒否、既存Triangle描画、GPU完了待ち後の更新、OpenGL回帰。ビルド・GPU実機検証は未実施です。
