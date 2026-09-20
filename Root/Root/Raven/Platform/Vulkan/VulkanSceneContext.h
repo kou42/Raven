@@ -29,7 +29,7 @@ public:
     RHIFrameResult BeginFrame() override;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
-    bool Resize(uint32_t width, uint32_t height);
+    bool Resize(uint32_t width, uint32_t height) override;
     void Shutdown();
 
     // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
