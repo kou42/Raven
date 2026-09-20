@@ -401,10 +401,11 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     return true;
 }
 
-bool VulkanSceneContext::SynchronizeBufferAccess()
+bool VulkanSceneContext::SynchronizeBufferAccess(
+    const VulkanSceneRHIBuffer& buffer)
 {
-    // Host CoherentはGPUとの競合を防ぎません。Device全体ではなく、
-    // このSceneがSubmitしたFrame SlotのFenceだけを待機します。
+    // Host CoherentはGPUとの競合を防ぎません。Frame外で、更新対象Bufferを
+    // 実際に参照したSubmit済みSlotだけを調べ、対応するFenceを待機します。
     if (m_Instance.IsValid() == false || m_FrameActive == true ||
         m_FrameSubmitted == true || m_FrameSync.IsValid() == false ||
         m_RecordedBuffers.size() != m_FrameSync.GetFrameCount() ||
@@ -416,16 +417,33 @@ bool VulkanSceneContext::SynchronizeBufferAccess()
     std::vector<VkFence> fences;
     for (uint32_t frame = 0; frame < m_FrameSync.GetFrameCount(); ++frame)
     {
-        if (m_SubmittedBufferFrames[frame] == true)
+        if (m_SubmittedBufferFrames[frame] == false)
         {
-            const VkFence fence = m_FrameSync.GetFenceForFrame(frame);
-            if (fence == VK_NULL_HANDLE)
-            {
-                return false;
-            }
-            fences.push_back(fence);
+            continue;
         }
+
+        bool usesBuffer = false;
+        for (const auto& recorded : m_RecordedBuffers[frame])
+        {
+            if (recorded.get() == &buffer)
+            {
+                usesBuffer = true;
+                break;
+            }
+        }
+        if (usesBuffer == false)
+        {
+            continue;
+        }
+
+        const VkFence fence = m_FrameSync.GetFenceForFrame(frame);
+        if (fence == VK_NULL_HANDLE)
+        {
+            return false;
+        }
+        fences.push_back(fence);
     }
+
     if (fences.empty() == false &&
         vkWaitForFences(m_Instance.GetDevice().GetHandle(),
             static_cast<uint32_t>(fences.size()), fences.data(), VK_TRUE,
@@ -434,12 +452,8 @@ bool VulkanSceneContext::SynchronizeBufferAccess()
         return false;
     }
 
-    // 全SubmitのGPU完了後なら、旧native Bufferを更新・Resize・破棄できます。
-    for (uint32_t frame = 0; frame < m_FrameSync.GetFrameCount(); ++frame)
-    {
-        m_SubmittedBufferFrames[frame] = false;
-        m_RecordedBuffers[frame].clear();
-    }
+    // 他のBufferは同じSlotでまだGPU使用中の可能性があるため、
+    // Slot全体の参照とSubmit状態は変更しません。BeginFrameのFence待機後に回収します。
     return true;
 }
 

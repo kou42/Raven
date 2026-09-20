@@ -34,9 +34,9 @@ public:
     bool Resize(uint32_t width, uint32_t height) override;
     void Shutdown();
 
-    // Scene共通Bufferの更新/Resize前にSubmit済みFrame Fenceを待ちます。
+    // 更新対象Bufferを参照するSubmit済みFrameのFenceだけを待機します。
     // Frame記録中・Submit済みPresent前は更新を許可しません。
-    bool SynchronizeBufferAccess();
+    bool SynchronizeBufferAccess(const VulkanSceneRHIBuffer& buffer);
     void RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer);
     void RetainDrawBuffers(const Ref<RHIBuffer>& vertex, const Ref<RHIBuffer>& index);
 

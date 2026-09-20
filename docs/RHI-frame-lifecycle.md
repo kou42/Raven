@@ -178,6 +178,14 @@ Device経由で生成したBufferはContextがweak参照で追跡し、Context::
 `BeginFrame` では既存FrameRendererが該当SlotのFenceを待機した後、旧Buffer参照を回収します。Submit成功時だけSlotを待機対象に登録します。Resize/ShutdownではSwapChain/Presentation Resourceも扱うため、従来どおりDeviceWaitIdleを維持します。Buffer Destructorは参照回収中の再入同期を避け、Draw成功時のContext強参照によってGPU利用中の破棄を防ぎます。
 
 制約：本方式はSceneのGraphics QueueへSubmitしたBufferのみ追跡します。外部Queue/Scene外での同一Buffer使用、別スレッド操作は未対応です。更新時には使用Buffer個別ではなく全Submit済みScene Frameを待ちます。Frame FenceはPresent EngineによるSemaphore消費完了を保証しないため、SwapChainの再生成・終了はDeviceWaitIdleのままです。ビルド・実機・Validation Layer未検証。
+
+### 共通Buffer単位のFrame Fence待機（追加）
+
+`VulkanSceneRHIBuffer::TrySetData/TryResize` は更新対象自身を `VulkanSceneContext::SynchronizeBufferAccess(buffer)` に渡します。Contextは各Submit済みFrame Slotの記録済み `RHIBuffer` を同一Resourceのポインタで照合し、そのBufferを実際に描画で使用したSlotのFenceだけを `vkWaitForFences` で待機します。未使用Bufferの更新ではFence待機を発行しません。同一Bufferを複数Frameで使用した場合は、該当する全Frameを待ちます。
+
+**重要：** 対象BufferのFence待機が完了しても、同じFrameの別BufferはGPU使用中かもしれません。このため更新時にはFrame Slot全体の強参照やSubmit状態を消去せず、既存の `BeginFrame` のSlot Fence待機後に回収します。これにより他Bufferの早期破棄を避けます。Frame中/Submit後Present前の更新拒否、Resize/ShutdownのDeviceWaitIdleは維持します。
+
+前節の「全Submit済みScene Frameを待つ」は本変更より前の仕様です。対象は共通RHIBuffer版DrawIndexedで追跡したScene Graphics Queue利用のみです。外部Queue、native SceneBuffer直接利用、別スレッドの同時更新は対象外です。確認項目：未使用Bufferの更新、別Bufferだけを使用したFrameの待機省略、同一Bufferを2 Frameで使用した場合の両Fence待機、対象Buffer更新後の他Bufferの寿命、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
 ### Vulkan Scene CommandListのColor Clear（追加）
 
 `VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。

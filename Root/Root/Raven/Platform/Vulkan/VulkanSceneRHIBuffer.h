@@ -12,7 +12,7 @@ namespace Raven
 
 // 共通RHIBufferとScene用VkBufferを接続するAdapterです。
 // SetData/ResizeはContextでGPU同期し、Context終了時はnative Bufferを無効化します。
-// Draw記録済みBufferのRefはGPU完了まで呼び出し側が保持してください。
+// Draw記録済みBufferはContextが対応Frame Fence完了まで保持します。
 class VulkanSceneRHIBuffer final : public RHIBuffer
 {
 public:
@@ -72,7 +72,7 @@ public:
             size == 0 || size > std::numeric_limits<uint32_t>::max() ||
             offset > m_Specification.Size ||
             size > m_Specification.Size - offset ||
-            m_Context->SynchronizeBufferAccess() == false)
+            m_Context->SynchronizeBufferAccess(*this) == false)
         {
             return false;
         }
@@ -90,7 +90,7 @@ public:
     {
         if (m_Context == nullptr || size == 0 ||
             size > std::numeric_limits<uint32_t>::max() ||
-            m_Context->SynchronizeBufferAccess() == false)
+            m_Context->SynchronizeBufferAccess(*this) == false)
         {
             return false;
         }
