@@ -378,8 +378,11 @@ void Application::Run()
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
         m_UIContext.EndFrame();
 
-        // GLFW Event polling / Buffer swap等、Window側の1 frame終了処理を最後に行います。
-        m_Window->OnUpdate();
+        // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
+        // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
+        // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
+        m_Window->PollEvents();
+        m_Window->Present();
     }
 }
 
