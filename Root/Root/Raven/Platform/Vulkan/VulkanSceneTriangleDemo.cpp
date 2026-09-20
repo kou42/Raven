@@ -251,8 +251,8 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
             return false;
         }
     }
-    m_Meshes[meshIndex].Tint = tint;
-    m_Meshes[meshIndex].AlphaBlend = alphaBlend;
+    m_Meshes[meshIndex].Material.Tint = tint;
+    m_Meshes[meshIndex].Material.AlphaBlend = alphaBlend;
     return true;
 }
 
@@ -262,9 +262,15 @@ bool VulkanSceneTriangleDemo::AddTexture(
     if (m_Context.GetDevice().IsValid() == false ||
         m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE ||
         width == 0 || height == 0 || rgba == nullptr ||
-        m_TextureDescriptorPool != VK_NULL_HANDLE)
+        m_Textures.size() >= std::numeric_limits<uint32_t>::max())
     {
-        // Descriptor生成後の追加はPool再構築とGPU同期が必要なため現段階では禁止します。
+        return false;
+    }
+    // Pool再生成時には旧Descriptorを参照するGPU仕事が残っていてはいけません。
+    // Init中（Pipeline未作成）はTextureだけ登録し、CreatePipeline時にまとめて生成します。
+    const bool descriptorsExist = m_TextureDescriptorPool != VK_NULL_HANDLE;
+    if (descriptorsExist == true && m_Context.GetDevice().WaitIdle() == false)
+    {
         return false;
     }
     auto image = std::make_shared<VulkanSceneTexture>();
@@ -273,6 +279,17 @@ bool VulkanSceneTriangleDemo::AddTexture(
         return false;
     }
     m_Textures.push_back({std::move(image), VK_NULL_HANDLE});
+    if (descriptorsExist == true && CreateTextureDescriptor() == false)
+    {
+        // 追加失敗時は旧Texture群を残し、Descriptorを再構築して既存Meshを復旧します。
+        m_Textures.back().Image->Shutdown();
+        m_Textures.pop_back();
+        if (CreateTextureDescriptor() == false)
+        {
+            std::cerr << "Vulkan Scene Triangle: Texture descriptor recovery failed.\\n";
+        }
+        return false;
+    }
     return true;
 }
 
@@ -283,7 +300,7 @@ bool VulkanSceneTriangleDemo::SetMeshTexture(
     {
         return false;
     }
-    m_Meshes[meshIndex].TextureIndex = textureIndex;
+    m_Meshes[meshIndex].Material.TextureIndex = textureIndex;
     return true;
 }
 
@@ -456,7 +473,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     transparentIndices.reserve(m_Meshes.size());
     for (std::size_t index = 0; index < m_Meshes.size(); ++index)
     {
-        if (m_Meshes[index].AlphaBlend == true)
+        if (m_Meshes[index].Material.AlphaBlend == true)
         {
             transparentIndices.push_back(index);
         }
@@ -511,18 +528,18 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         {
             const Mesh& mesh = transparentPass == true ?
                 m_Meshes[transparentIndices[draw]] : m_Meshes[draw];
-            if (mesh.AlphaBlend != transparentPass)
+            if (mesh.Material.AlphaBlend != transparentPass)
             {
                 continue;
             }
             // CameraとMeshのModelを合成して、DrawごとにPush Constantを更新します。
             const auto clipTransform = ToColumnMajor(
                 viewProjection * FromColumnMajor(mesh.Model));
-            if (mesh.TextureIndex >= m_Textures.size() ||
-                m_Textures[mesh.TextureIndex].Descriptor == VK_NULL_HANDLE ||
-                commands.BindTextureDescriptor(m_Textures[mesh.TextureIndex].Descriptor) == false ||
+            if (mesh.Material.TextureIndex >= m_Textures.size() ||
+                m_Textures[mesh.Material.TextureIndex].Descriptor == VK_NULL_HANDLE ||
+                commands.BindTextureDescriptor(m_Textures[mesh.Material.TextureIndex].Descriptor) == false ||
                 commands.SetClipTransform(clipTransform) == false ||
-                commands.SetMaterialTint(mesh.Tint) == false ||
+                commands.SetMaterialTint(mesh.Material.Tint) == false ||
                 commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
                     mesh.IndexCount) == false)
             {
