@@ -193,8 +193,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     }
     m_BoundGraphicsPipeline.reset();
     m_RecordedBuffers.clear();
-    m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
-    m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
+    m_SubmittedBufferFrames.clear();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
     for (const auto& pipeline : m_GraphicsPipelines)
     {
@@ -212,6 +211,8 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     {
         return false;
     }
+    m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
+    m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
     return true;
 }
 
