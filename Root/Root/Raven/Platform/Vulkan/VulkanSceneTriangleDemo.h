@@ -12,6 +12,7 @@
 namespace Raven
 {
 class Material;
+struct RHIMaterialProperties;
 
 // OpenGL Applicationを変更せずVulkan Sceneの描画経路を検証する最小Triangleです。
 // 呼び出し元はVulkan Windowと、以下の入力宣言に一致するSPIR-Vを渡します。
@@ -50,6 +51,8 @@ public:
     // 汎用MaterialのRHI Tint/TextureとSurfaceTypeをSceneへ反映します。
     // Maskedは現行Shaderがalpha cutoff未対応のため失敗します。
     bool SetMeshMaterial(std::size_t meshIndex, const Material& material);
+    // RendererがMaterial本体を保持せずに描画Snapshotを渡すための共通境界です。
+    bool SetMeshMaterial(std::size_t meshIndex, const RHIMaterialProperties& properties);
     // Texture番号はAddTexture()の登録順です。0は既定Checker Textureです。
     // MaterialはMesh単位でTexture番号を保持し、同じ番号のGPU Textureを共有します。
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
