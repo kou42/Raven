@@ -53,7 +53,7 @@ public:
     // RendererがMaterial本体を保持せずに描画Snapshotを渡すための共通境界です。
     bool SetMeshMaterial(std::size_t meshIndex, const RHIMaterialProperties& properties);
     // Texture番号はAddTexture()の登録順です。0は既定Checker Textureです。
-    // MaterialはMesh単位でTexture番号を保持し、同じ番号のGPU Textureを共有します。
+    // Mesh内部ではRef<RHITexture>を保持し、同じGPU Textureを共有します。
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
     // RHITextureを直接割り当てます。未登録なら共有登録し、同一Textureは重複登録しません。
     bool SetMeshTexture(std::size_t meshIndex, const Ref<RHITexture>& texture);
@@ -84,19 +84,13 @@ private:
     SceneCamera m_Camera;
     // Sceneは共通RHITextureだけを保持し、DescriptorはVulkan Backendが管理します。
     std::vector<Ref<RHITexture>> m_Textures;
-    // 汎用Materialとは別のVulkan Scene検証用データ。API固有handleはTextureResourceに閉じ込めます。
-    struct SceneMaterial
-    {
-        std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
-        bool AlphaBlend = false;
-        std::size_t TextureIndex = 0;
-    };
+    // Meshは共通Material Snapshotを保持します。Texture登録番号は互換APIの引数に限定します。
     struct Mesh
     {
         Ref<RHIBuffer> VertexBuffer;
         Ref<RHIBuffer> IndexBuffer;
         uint32_t IndexCount = 0;
-        SceneMaterial Material;
+        RHIMaterialProperties Material;
         // 透明Meshの近似ソートに使うローカル空間の頂点平均位置です。
         std::array<float, 3> LocalCenter = {0.0f, 0.0f, 0.0f};
         std::array<float, 16> Model = {
