@@ -209,6 +209,11 @@ bool VulkanSceneTriangleDemo::AddMesh(
         return false;
     }
     mesh.IndexCount = static_cast<uint32_t>(indices.size());
+    // 従来のTextureIndex=0と同様に、新規Meshには既定Checker Textureを設定します。
+    if (m_Textures.empty() == false)
+    {
+        mesh.Material.Texture = m_Textures.front();
+    }
     // ローカル中心を登録時に計算し、Camera移動時のソートは行列計算だけで済ませます。
     for (const Vertex& vertex : vertices)
     {
