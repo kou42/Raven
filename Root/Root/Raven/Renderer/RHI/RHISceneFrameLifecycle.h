@@ -19,6 +19,11 @@ public:
     virtual RHIFrameResult EndFrame() = 0;
     virtual RHIFrameResult Present() = 0;
 
+    // Frame外でのみ呼び出します。0サイズは最小化中として呼び出し側が保留します。
+    // Vulkan/DX12は旧BackBufferへのGPU参照を完了させてから再生成します。
+    // RenderTargetに依存するPipeline等の再生成は描画側の責務です。
+    virtual bool Resize(uint32_t width, uint32_t height) = 0;
+
     // Windowの所有権はApplicationに残し、Scene用Frame境界だけを生成します。
     // 未実装BackendをOpenGLへ暗黙に切り替えず、呼び出し元が明示的に失敗を扱います。
     static Scope<RHISceneFrameLifecycle> Create(Window& window);
@@ -71,6 +76,19 @@ public:
         m_FrameActive = false;
         m_FrameEnded = false;
         return RHIFrameResult::Success;
+    }
+
+    bool Resize(uint32_t width, uint32_t height) override
+    {
+        if (m_Window.GetBackend() != RHIBackend::OpenGL ||
+            m_FrameActive == true || width == 0 || height == 0)
+        {
+            return false;
+        }
+
+        // OpenGLはSwapChain/Framebufferの再生成を必要としません。
+        // Viewportは既存のWindow Resize Event -> Renderer経路が更新します。
+        return true;
     }
 
 private:
