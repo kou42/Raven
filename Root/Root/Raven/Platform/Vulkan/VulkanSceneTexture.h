@@ -293,6 +293,7 @@ public:
         return m_Image != VK_NULL_HANDLE && m_View != VK_NULL_HANDLE &&
             m_Sampler != VK_NULL_HANDLE;
     }
+    VkDevice GetDeviceHandle() const { return m_Device; }
     VkImageView GetView() const { return m_View; }
     VkSampler GetSampler() const { return m_Sampler; }
 
