@@ -37,9 +37,10 @@ public:
         return m_Context.BindGraphicsPipeline(pipeline);
     }
 
-    bool SetModelTransform(const std::array<float, 16>& model)
+    // Model・View・Projection合成済みのclip-space変換を設定します。
+    bool SetClipTransform(const std::array<float, 16>& model)
     {
-        return m_Context.SetModelTransform(model);
+        return m_Context.SetClipTransform(model);
     }
 
     // indexCount == 0 はIndexBuffer全体を描画します。
