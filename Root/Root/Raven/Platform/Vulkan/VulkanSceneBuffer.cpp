@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <limits>
+#include <utility>
 
 namespace Raven
 {
@@ -42,8 +43,21 @@ bool VulkanSceneBuffer::Init(const VulkanDevice& device, const void* data,
     {
         return false;
     }
+    return InitNative(device.GetHandle(), device.GetPhysicalDeviceHandle(),
+        data, byteSize, stride, indexBuffer, indexCount);
+}
 
-    m_Device = device.GetHandle();
+bool VulkanSceneBuffer::InitNative(VkDevice device, VkPhysicalDevice physicalDevice,
+    const void* data, uint32_t byteSize, uint32_t stride,
+    bool indexBuffer, uint32_t indexCount)
+{
+    if (device == VK_NULL_HANDLE || physicalDevice == VK_NULL_HANDLE ||
+        byteSize == 0 || stride == 0)
+    {
+        return false;
+    }
+    m_Device = device;
+    m_PhysicalDevice = physicalDevice;
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = byteSize;
@@ -59,7 +73,7 @@ bool VulkanSceneBuffer::Init(const VulkanDevice& device, const void* data,
     VkMemoryRequirements requirements{};
     vkGetBufferMemoryRequirements(m_Device, m_Buffer, &requirements);
     VkPhysicalDeviceMemoryProperties memoryProperties{};
-    vkGetPhysicalDeviceMemoryProperties(device.GetPhysicalDeviceHandle(), &memoryProperties);
+    vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memoryProperties);
 
     // Host CoherentなMemory Typeのみ採用し、SetDataの明示Flushを不要にします。
     // 該当TypeがないGPUでは失敗を返し、後続のStaging転送実装で対応します。
@@ -96,11 +110,49 @@ bool VulkanSceneBuffer::Init(const VulkanDevice& device, const void* data,
     m_VertexStride = indexBuffer == true ? 0 : stride;
     m_IndexCount = indexCount;
     m_IsIndexBuffer = indexBuffer;
-    if (SetData(data, byteSize) == false)
+    if (data != nullptr && SetData(data, byteSize) == false)
     {
         Shutdown();
         return false;
     }
+    return true;
+}
+
+bool VulkanSceneBuffer::Resize(uint32_t byteSize, const void* data)
+{
+    if (IsValid() == false || byteSize == 0)
+    {
+        return false;
+    }
+    const uint32_t stride = m_IsIndexBuffer == true ?
+        static_cast<uint32_t>(sizeof(uint32_t)) : m_VertexStride;
+    if (stride == 0 || byteSize % stride != 0)
+    {
+        return false;
+    }
+    if (byteSize == m_Capacity)
+    {
+        return data == nullptr || SetData(data, byteSize);
+    }
+
+    // 先に新Resourceを完成させ、失敗した場合は旧Bufferを維持します。
+    // 旧Bufferの破棄はGPUの読み取り完了後でなければならないため、
+    // 呼び出し元はResize前にFence/WaitIdle等で同期してください。
+    VulkanSceneBuffer replacement;
+    if (replacement.InitNative(m_Device, m_PhysicalDevice, data, byteSize,
+        stride, m_IsIndexBuffer,
+        m_IsIndexBuffer == true ? byteSize / sizeof(uint32_t) : 0) == false)
+    {
+        return false;
+    }
+    std::swap(m_Device, replacement.m_Device);
+    std::swap(m_PhysicalDevice, replacement.m_PhysicalDevice);
+    std::swap(m_Buffer, replacement.m_Buffer);
+    std::swap(m_Memory, replacement.m_Memory);
+    std::swap(m_Capacity, replacement.m_Capacity);
+    std::swap(m_VertexStride, replacement.m_VertexStride);
+    std::swap(m_IndexCount, replacement.m_IndexCount);
+    std::swap(m_IsIndexBuffer, replacement.m_IsIndexBuffer);
     return true;
 }
 
@@ -143,6 +195,7 @@ void VulkanSceneBuffer::Shutdown()
         }
     }
     m_Device = VK_NULL_HANDLE;
+    m_PhysicalDevice = VK_NULL_HANDLE;
     m_Buffer = VK_NULL_HANDLE;
     m_Memory = VK_NULL_HANDLE;
     m_Capacity = 0;
