@@ -47,6 +47,33 @@ public:
         return m_Context.CreateGraphicsPipeline(specification);
     }
 
+    bool GetGraphicsPipelineTarget(
+        RHIGraphicsPipelineTarget& target) const override
+    {
+        target = {};
+        switch (m_Context.GetColorFormat())
+        {
+        case VK_FORMAT_R8G8B8A8_UNORM:
+            target.ColorFormat = RHIColorFormat::RGBA8Unorm;
+            break;
+        case VK_FORMAT_B8G8R8A8_UNORM:
+            target.ColorFormat = RHIColorFormat::BGRA8Unorm;
+            break;
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            target.ColorFormat = RHIColorFormat::RGBA8Srgb;
+            break;
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            target.ColorFormat = RHIColorFormat::BGRA8Srgb;
+            break;
+        default:
+            return false;
+        }
+
+        target.DepthFormat = RHIDepthFormat::D32Float;
+        target.SampleCount = 1;
+        return true;
+    }
+
     Ref<RHITexture> CreateTexture(
         const RHITextureSpecification& specification,
         const void* initialData = nullptr,

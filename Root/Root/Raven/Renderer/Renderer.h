@@ -13,8 +13,11 @@ namespace Raven
 class Camera;
 class Material;
 class Mesh;
+class RHIDevice;
+class RHIGraphicsPipeline;
 class RHITexture;
 struct RHISceneDrawItem;
+struct RHIShaderBinary;
 struct RHISceneMesh;
 class VertexArray;
 
@@ -85,6 +88,16 @@ public:
         const Ref<RHITexture>& defaultTexture,
         const math::Mat4& clipCorrection,
         std::vector<RHISceneDrawItem>& outItems);
+
+    // 通常MaterialのPipeline stateと標準Mesh Layoutから、Explicit Scene用の
+    // Opaque / Transparent Pipelineを同じRender Target向けに生成します。
+    static bool CreateRHIScenePipelines(
+        RHIDevice& device,
+        const Material& material,
+        const RHIShaderBinary& vertexShader,
+        const RHIShaderBinary& fragmentShader,
+        Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+        Ref<RHIGraphicsPipeline>& outTransparentPipeline);
 
     static const RendererStatistics& GetStatistics();
     static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);

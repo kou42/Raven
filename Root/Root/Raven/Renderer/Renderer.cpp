@@ -7,6 +7,7 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
@@ -372,6 +373,81 @@ bool Renderer::BuildRHISceneDrawItems(
         meshes,
         clipCorrection);
     outItems = std::move(items);
+    return true;
+}
+
+bool Renderer::CreateRHIScenePipelines(
+    RHIDevice& device,
+    const Material& material,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+    Ref<RHIGraphicsPipeline>& outTransparentPipeline)
+{
+    const Ref<Pipeline>& sourcePipeline = material.GetPipeline();
+    if (sourcePipeline == nullptr)
+    {
+        return false;
+    }
+
+    RHIGraphicsPipelineTarget target{};
+    if (device.GetGraphicsPipelineTarget(target) == false ||
+        target.IsValid() == false)
+    {
+        return false;
+    }
+
+    const PipelineSpecification& source = sourcePipeline->GetSpecification();
+    RHIGraphicsPipelineSpecification specification{};
+    specification.VertexShader = vertexShader;
+    specification.FragmentShader = fragmentShader;
+
+    // Mesh::BuildVertexUploadData()の
+    // Position(3) + Color(3) + TexCoord(2) + Normal(3) と一致させます。
+    constexpr uint32_t floatSize = sizeof(float);
+    specification.VertexBindings = {{ 0, 11u * floatSize }};
+    specification.VertexAttributes = {
+        { 0, 0, ShaderDataType::Float3, 0 },
+        { 1, 0, ShaderDataType::Float3, 3u * floatSize },
+        { 2, 0, ShaderDataType::Float2, 6u * floatSize },
+        { 3, 0, ShaderDataType::Float3, 8u * floatSize }
+    };
+
+    specification.Topology = source.Topology;
+    specification.Cull = source.Cull;
+    specification.FrontFaceMode = source.FrontFaceMode;
+    specification.DepthCompare = source.DepthCompare;
+    specification.DepthTest = source.DepthTest;
+    specification.ColorFormat = target.ColorFormat;
+    specification.DepthFormat = target.DepthFormat;
+    specification.SampleCount = target.SampleCount;
+
+    // 通常RendererのSurface契約と同じく、OpaqueはDepthを書き込み、
+    // TransparentはDepth Testを維持したままBlendを有効化して書き込みを止めます。
+    specification.DepthWrite = true;
+    specification.Blend = false;
+    specification.DebugName = std::string(source.DebugName) + " RHI Opaque";
+
+    Ref<RHIGraphicsPipeline> opaque =
+        device.CreateGraphicsPipeline(specification);
+    if (opaque == nullptr)
+    {
+        return false;
+    }
+
+    specification.DepthWrite = false;
+    specification.Blend = true;
+    specification.DebugName = std::string(source.DebugName) + " RHI Transparent";
+    Ref<RHIGraphicsPipeline> transparent =
+        device.CreateGraphicsPipeline(specification);
+    if (transparent == nullptr)
+    {
+        return false;
+    }
+
+    // 両方揃ってから出力を更新し、呼び出し側に片方だけのPipelineを残しません。
+    outOpaquePipeline = std::move(opaque);
+    outTransparentPipeline = std::move(transparent);
     return true;
 }
 

@@ -38,6 +38,15 @@ public:
         return nullptr;
     }
 
+    // 現在のScene Render Targetと互換なAttachment情報を返します。
+    // Legacy BackendやScene Pipeline未対応Backendはfalseを返します。
+    virtual bool GetGraphicsPipelineTarget(
+        RHIGraphicsPipelineTarget& target) const
+    {
+        (void)target;
+        return false;
+    }
+
     virtual Ref<RHITexture> CreateTexture(
         const RHITextureSpecification& specification,
         const void* initialData = nullptr,
