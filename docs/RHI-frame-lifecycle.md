@@ -44,6 +44,8 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 - [x] 共通RunRHIClearFrameへClear Demoと3 Backendの互換入口を集約。
 - [x] SceneのWindow側Frame終端をPollEvents / Presentへ分離（OnUpdate互換入口は維持）。
 - [x] OpenGL SceneにRHISceneFrameLifecycleのBeginFrame / EndFrame / Presentを接続。
+- [x] Scene Frame Lifecycleの生成をBackend選択付きFactoryへ移し、ApplicationのOpenGL具象型依存を解消（Vulkan/DX12は未実装としてnullptr）。
+- [x] DX12 FrameRendererでBackBufferのPRESENT→RENDER_TARGET→PRESENTをScene描画区間に分離し、Clear DemoのClearFrame互換入口を維持。
 - [ ] Vulkan/DX12のScene用CommandList/RenderPassとRHISceneFrameLifecycle実装。
 
 ## Scene Rendererとの接続で確認した現状
@@ -51,7 +53,7 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 - `Application::Run()` は `Renderer::BeginFrame()` でCPU Profilerと描画統計を開始し、Scene / Layer / ImGui / Raven UI描画の後に `Window::OnUpdate()` を呼ぶ。
 - `WindowsWindow::OnUpdate()` は互換入口として `PollEvents()` と `Present()` を呼ぶ。Sceneの `Application::Run()` は両者を明示的に呼び、OpenGLのSwapBuffersを一度だけ実行する。
 - `RenderCommand::Init()` が作るScene用 `RHIDevice / RHICommandList` はOpenGLのみ。Vulkan/DX12は現状Clear Demoの経路であり、Scene描画を実行できると見なさない。
-- OpenGL SceneではOpenGLSceneFrameLifecycleがWindowを借用し、Scene / Layer / UIの描画前後とPresentを管理する。Clear DemoのContextは転用しない。
+- OpenGL SceneではFactoryが生成したOpenGLSceneFrameLifecycleがWindowを借用し、Scene / Layer / UIの描画前後とPresentを管理する。Clear DemoのContextは転用しない。
 - RHISceneFrameLifecycleはClearを必須としない。SceneのClear命令は既存のRHICommandListが担当し、Clear DemoのRHIFrameLifecycleとは分離する。
 
 ## 検証条件
@@ -63,3 +65,54 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 5. SceneのOpenGL描画・Physics Debug経路を維持し、Window更新との二重Swapを起こさない。
 
 > 共通契約・3 BackendのClear経路・共通Frame進行・Scene Windowのイベント/Present分離は実装済みです。OpenGL SceneのFrame境界は接続済みです。Vulkan/DX12 Scene実装・今回の変更のビルド/実行検証は未完了です。
+
+## 次のScene実装単位
+
+1. Vulkan / DX12のScene用Frame ContextをClear Demoから独立して用意し、Windowを借用したAcquire / Submit / PresentとResizeを実装する。
+2. SceneのRenderTarget / RenderPass境界を定義し、ClearだけでなくDraw中も適切なImage Layout / Resource Stateを維持する。
+3. RHICommandListに各Backendの実装を接続する。現在のPipeline / Texture / VertexArrayはOpenGL具象リソース生成に依存するため、Scene描画可能と宣言する前にBackend別生成を整備する。
+4. Scene / Layer / UIの各描画経路を検証し、OpenGLの既存描画とPresent回数を回帰確認する。
+
+この段階のFactory追加はVulkan/DX12のScene描画を有効化しません。`RenderCommand::Init()`も引き続きOpenGLのみであり、Backendを切り替えるだけでは通常Sceneを起動できません。
+
+### DX12 RenderTarget区間（今回追加）
+
+`DX12FrameRenderer::BeginFrame` → `BeginRenderTarget` → Scene Draw命令 → `EndRenderTarget` → `EndFrame` → `Present` の順で呼びます。`EndFrame` はRenderTarget終了前にSubmitしません。従来のClear Demoは `ClearFrame` がBeginRenderTarget / ClearRenderTargetView / EndRenderTargetを内部で呼ぶため、外側の呼び出し順は維持されます。これはDX12 Scene ContextやRHICommandListを接続する前段階であり、まだ通常Sceneを起動しません。Depth Target、複数Pass、Offscreen描画は後続実装です。
+
+### Vulkan Scene Color Target区間（今回追加）
+
+`VulkanFrameRenderer::BeginFrame` → `BeginSceneColorTarget` → RenderPass開始 / Scene Draw / RenderPass終了（後続実装）→ `EndSceneColorTarget` → `EndFrame` → `Present` の順です。Begin/EndSceneColorTargetはSwapChain Imageを `UNDEFINED` または `PRESENT_SRC_KHR` → `COLOR_ATTACHMENT_OPTIMAL` → `PRESENT_SRC_KHR` へ遷移させるのみで、RenderPassやPipelineはまだ生成しません。SubmitのAcquire Semaphore待機StageはScene時 `COLOR_ATTACHMENT_OUTPUT`、従来Clear Demo時 `TRANSFER` です。両描画経路を同一Frame内で混在させることは未対応です。
+
+### Vulkan Scene RenderTarget（今回追加）
+
+`VulkanSceneRenderTarget` はSwapChain ImageごとにImageView/Framebufferを生成し、Color AttachmentのみのRenderPassを所有します。RenderPassのinitial/final Layoutは両方 `COLOR_ATTACHMENT_OPTIMAL` で、前後のLayout遷移は `VulkanFrameRenderer::BeginSceneColorTarget` / `EndSceneColorTarget` が担当します。`BeginFrame` 成功後の `GetAcquiredImageIndex()` で対応するFramebufferを選択します。想定順序は `BeginFrame` → `BeginSceneColorTarget` → `VulkanSceneRenderTarget::Begin` → Draw → `VulkanSceneRenderTarget::End` → `EndSceneColorTarget` → `EndFrame` → `Present` です。
+
+SwapChain Resize時はGPU完了を待ってからScene RenderTargetのFramebuffer/ImageViewを先に `Shutdown` し、SwapChainを再生成した後に `Init` してください。今回追加したのはRenderPass/Framebufferの部品であり、Scene専用Contextへの接続、Depth Attachment、Pipeline、RHICommandListはまだ未実装です。
+
+### Vulkan Scene専用Frame Context（今回追加）
+
+`VulkanSceneContext` は `RHISceneFrameLifecycle` を実装し、Clear Demoとは独立してVulkan Instance/Surface/SwapChain/FrameSync/CommandBuffer/SceneRenderTargetを所有します。`Init(Window&)` 後に `BeginFrame`（Acquire→Color Layout遷移→RenderPass開始）→Scene Draw記録→`EndFrame`（RenderPass終了→Present Layout遷移→Submit）→`Present` を呼びます。`GetActiveCommandBuffer()` と `GetRenderPass()` は後続のScene用CommandList/Pipeline接続点です。Clear色はBeginFrame前に `SetClearColor()` で指定します。
+
+`Resize` はFrame外でのみ呼び、WaitIdle後に古いRenderTargetを先に破棄してからSwapChain/FrameSync/RenderTargetを再生成します。Acquire後のFatalErrorは同期状態が不明になり得るため、同Contextで継続せず `Shutdown` → `Init` が必要です。`RHISceneFrameLifecycle::Create` は引き続きOpenGLのみを返し、RenderCommandのVulkan経路も未接続です。Scene用RHICommandList/Pipelineが揃うまでApplicationに接続しません。
+
+### DX12 Scene専用Frame Context（今回追加）
+
+`DX12SceneContext` は `RHISceneFrameLifecycle` を実装し、Clear Demoとは独立したFactory/Adapter/Device/Queue/SwapChain/Fence/Frame別CommandList/FrameRendererを所有します。`BeginFrame` でFence待機・CommandList Reset・BackBufferをRENDER_TARGETへ遷移・Clearし、`EndFrame` でPRESENTへ遷移してSubmit、`Present` で表示・Fence Signal・Frame Slot進行を行います。Scene用DrawはBeginFrameとEndFrameの間で `GetActiveCommandList()` に記録します。Clear Demoの `ClearFrame` は従来どおりRenderTargetを内部で閉じ、新しい `ClearRenderTarget` はSceneの描画区間を開いたままClearします。
+
+ResizeはFrame外でFence完了後にSwapChainとRTVを再生成します。FatalError後は同Contextを再利用せず `Shutdown` → `Init` してください。DX12/VulkanともScene専用Contextは部品として追加済みですが、Scene用RHICommandList/Pipeline/ResourceとApplicationのResizeRequired処理が揃うまで `RHISceneFrameLifecycle::Create` には登録しません。
+
+### Scene Viewport/Scissor（今回追加）
+
+Vulkan/DX12 Scene Contextに `SetViewport(x,y,width,height)` を追加し、各FrameのRenderPass/RenderTarget開始後にSwapChain全体のViewport/Scissorを初期設定します。Vulkanは `vkCmdSetViewport` / `vkCmdSetScissor` を記録し、将来のGraphics Pipelineでは `VK_DYNAMIC_STATE_VIEWPORT` / `VK_DYNAMIC_STATE_SCISSOR` を有効にする必要があります。DX12は `RSSetViewports` / `RSSetScissorRects` を記録します。VulkanはSwapChain Extent外の矩形を拒否し、DX12はScissor座標の整数オーバーフローを拒否します。
+
+既存の `RHICommandList` はPipeline/Texture/Uniform/Indexed Drawを一体として要求するため、未実装のResource/Pipelineを成功扱いする空実装は追加していません。今回のViewportはNative Scene Context内の準備段階であり、`RenderCommand` のBackend切替はまだ行いません。
+
+### DX12 Scene Buffer（今回追加）
+
+`DX12SceneBuffer` は既存のOpenGL用 `VertexBuffer` / `IndexBuffer` を無理に置換せず、Scene用のNative GPU Resourceとして追加しました。`InitVertex(device,data,byteSize,stride)` と `InitIndex(device,indices,count)` でUpload Heap Bufferを作り、Vertex/Index Buffer Viewを生成します。Index形式は `DXGI_FORMAT_R32_UINT` です。`SetData` は容量内のCPU書き込みのみを担当し、GPUが読み取り中のBufferを書き換えないよう呼び出し側でFence同期してください。部分更新後もViewのサイズは初期容量のままです。現時点ではDefault Heapへのコピー、Pipeline/Root Signature、Native DrawIndexedの接続は未実装です。
+
+### Vulkan Scene Buffer（今回追加）
+
+`VulkanSceneBuffer` は `InitVertex(device,data,byteSize,stride)` / `InitIndex(device,indices,count)` で `VK_BUFFER_USAGE_VERTEX_BUFFER_BIT` / `VK_BUFFER_USAGE_INDEX_BUFFER_BIT` の `VkBuffer` と `VkDeviceMemory` を所有します。Memory Typeは `HOST_VISIBLE | HOST_COHERENT` を要求し、`SetData` は `vkMapMemory` → コピー → `vkUnmapMemory` で容量内のCPU更新を行います。対応するMemory Typeがない場合は失敗し、Staging Buffer転送へのフォールバックは今後実装します。Index形式は32-bit unsigned integerです。
+
+DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出し元でFence等による完了確認が必要です。Vulkan Bufferの破棄はVulkanDeviceより前に行ってください。今回のBufferは既存OpenGL `VertexBuffer` / `IndexBuffer` とまだ接続せず、Graphics PipelineとIndexed Drawの実装後に統合します。

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Core/Base.h"
 #include "Raven/Core/Window.h"
 #include "Raven/Renderer/RHI/RHIClearContext.h"
 
@@ -17,6 +18,10 @@ public:
     virtual RHIFrameResult BeginFrame() = 0;
     virtual RHIFrameResult EndFrame() = 0;
     virtual RHIFrameResult Present() = 0;
+
+    // Windowの所有権はApplicationに残し、Scene用Frame境界だけを生成します。
+    // 未実装BackendをOpenGLへ暗黙に切り替えず、呼び出し元が明示的に失敗を扱います。
+    static Scope<RHISceneFrameLifecycle> Create(Window& window);
 };
 
 // 現行Scene描画はOpenGLのImmediate CommandListを使用します。
@@ -73,5 +78,22 @@ private:
     bool m_FrameActive = false;
     bool m_FrameEnded = false;
 };
+
+// 現時点で通常Sceneを実行できるのはOpenGLのみです。
+// Vulkan / DX12はScene用Acquire・Submit・RenderTargetの実装後にここへ追加します。
+inline Scope<RHISceneFrameLifecycle> RHISceneFrameLifecycle::Create(Window& window)
+{
+    switch (window.GetBackend())
+    {
+    case RHIBackend::OpenGL:
+        return CreateScope<OpenGLSceneFrameLifecycle>(window);
+    case RHIBackend::Vulkan:
+    case RHIBackend::DirectX12:
+    case RHIBackend::DirectX11:
+    case RHIBackend::None:
+    default:
+        return nullptr;
+    }
+}
 
 } // namespace Raven

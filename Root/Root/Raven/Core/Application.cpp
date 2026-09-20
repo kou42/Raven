@@ -281,9 +281,15 @@ void Application::SetScene(Scope<Scene> scene)
 
 void Application::Run()
 {
-    // 現在の通常SceneはOpenGL CommandList専用です。
-    // Clear DemoのContextとは別のFrame境界を使用し、Windowの二重Presentを防ぎます。
-    OpenGLSceneFrameLifecycle sceneFrame(*m_Window);
+    // Scene用Frame境界はBackendに応じて生成し、Applicationは共通契約だけを扱います。
+    // Windowの所有権はApplicationに残し、Clear DemoのContextは流用しません。
+    // Vulkan / DX12の通常Sceneが未実装の間は、OpenGLへ暗黙fallbackせず起動を中止します。
+    Scope<RHISceneFrameLifecycle> sceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
+    if (sceneFrame == nullptr)
+    {
+        m_Running = false;
+        return;
+    }
     double previousTime = glfwGetTime();
 
     while (m_Running)
@@ -313,7 +319,7 @@ void Application::Run()
         // CPUProfilerもRenderer::BeginFrame()と同じ境界で、次frame開始時に直前frameを確定します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
-        if (sceneFrame.BeginFrame() != RHIFrameResult::Success)
+        if (sceneFrame->BeginFrame() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
@@ -390,14 +396,14 @@ void Application::Run()
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
         // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
-        if (sceneFrame.EndFrame() != RHIFrameResult::Success)
+        if (sceneFrame->EndFrame() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
         }
 
         m_Window->PollEvents();
-        if (sceneFrame.Present() != RHIFrameResult::Success)
+        if (sceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;

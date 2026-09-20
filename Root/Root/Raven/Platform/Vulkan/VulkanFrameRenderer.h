@@ -24,12 +24,20 @@ class VulkanFrameRenderer
 public:
     VulkanFrameResult BeginFrame(const VulkanDevice& device, VulkanSwapChain& swapChain,
         VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync);
+    // SceneのColor Attachment用Layout遷移。RenderPassの開始・終了は後続の描画層が担当します。
+    VulkanFrameResult BeginSceneColorTarget(VulkanSwapChain& swapChain,
+        VulkanCommandBuffer& commandBuffer);
+    VulkanFrameResult EndSceneColorTarget(VulkanSwapChain& swapChain,
+        VulkanCommandBuffer& commandBuffer);
     VulkanFrameResult ClearFrame(VulkanSwapChain& swapChain,
         VulkanCommandBuffer& commandBuffer, const VkClearColorValue& clearColor);
     VulkanFrameResult EndFrame(const VulkanDevice& device, VulkanSwapChain& swapChain,
         VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync);
     VulkanFrameResult Present(const VulkanDevice& device, VulkanSwapChain& swapChain,
         VulkanFrameSync& frameSync);
+
+    // BeginFrame成功後のSwapChain ImageをRenderPass用Framebuffer選択に使用します。
+    uint32_t GetAcquiredImageIndex() const { return m_ImageIndex; }
 
     VulkanFrameResult DrawClearFrame(
         const VulkanDevice& device,
@@ -44,6 +52,9 @@ private:
     bool m_AcquiredSuboptimal = false;
     bool m_FrameActive = false;
     bool m_Submitted = false;
+    bool m_ColorTargetActive = false;
+    bool m_ColorTargetFinished = false;
+    bool m_TransferClearFinished = false;
 };
 
 } // namespace Raven

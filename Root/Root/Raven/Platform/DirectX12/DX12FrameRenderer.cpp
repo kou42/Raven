@@ -62,24 +62,32 @@ bool DX12FrameRenderer::BeginFrame(
         return false;
     }
     m_FrameActive = true;
-    m_FrameCleared = false;
+    m_RenderTargetActive = false;
+    m_RenderTargetFinished = false;
     m_Submitted = false;
     return true;
 }
 
-bool DX12FrameRenderer::ClearFrame(
-    DX12SwapChain& swapChain, DX12CommandList& commandList,
-    const float clearColor[4])
+bool DX12FrameRenderer::BeginRenderTarget(
+    DX12SwapChain& swapChain, DX12CommandList& commandList)
 {
-    if (m_FrameActive == false || m_FrameCleared == true ||
-        clearColor == nullptr || commandList.IsValid() == false ||
-        swapChain.IsValid() == false)
+    if (m_FrameActive == false || m_RenderTargetActive == true ||
+        m_RenderTargetFinished == true || m_Submitted == true ||
+        commandList.IsValid() == false || swapChain.IsValid() == false ||
+        m_RtvHeap.Get() == nullptr ||
+        m_BackBufferIndex >= swapChain.GetBackBuffers().size())
     {
         return false;
     }
 
     ID3D12Resource* backBuffer = swapChain.GetBackBuffers()[m_BackBufferIndex].Get();
+    if (backBuffer == nullptr)
+    {
+        return false;
+    }
 
+    // Clear Demoと通常Sceneで同じBackBuffer遷移を使用します。
+    // Draw中にPRESENTへ戻すとRTVへの書き込みが不正になるため、終了時まで保持します。
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = backBuffer;
@@ -91,20 +99,78 @@ bool DX12FrameRenderer::ClearFrame(
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
     rtv.ptr += static_cast<SIZE_T>(m_BackBufferIndex) * m_RtvDescriptorSize;
     commandList.GetHandle()->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-    commandList.GetHandle()->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    m_RenderTargetActive = true;
+    return true;
+}
 
+bool DX12FrameRenderer::EndRenderTarget(
+    DX12SwapChain& swapChain, DX12CommandList& commandList)
+{
+    if (m_FrameActive == false || m_RenderTargetActive == false ||
+        m_Submitted == true || commandList.IsValid() == false ||
+        swapChain.IsValid() == false ||
+        m_BackBufferIndex >= swapChain.GetBackBuffers().size())
+    {
+        return false;
+    }
+
+    ID3D12Resource* backBuffer = swapChain.GetBackBuffers()[m_BackBufferIndex].Get();
+    if (backBuffer == nullptr)
+    {
+        return false;
+    }
+
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = backBuffer;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     commandList.GetHandle()->ResourceBarrier(1, &barrier);
 
-    m_FrameCleared = true;
+    m_RenderTargetActive = false;
+    m_RenderTargetFinished = true;
     return true;
+}
+
+bool DX12FrameRenderer::ClearRenderTarget(
+    DX12CommandList& commandList, const float clearColor[4])
+{
+    if (m_FrameActive == false || m_RenderTargetActive == false ||
+        m_Submitted == true || clearColor == nullptr ||
+        commandList.IsValid() == false || m_RtvHeap.Get() == nullptr)
+    {
+        return false;
+    }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += static_cast<SIZE_T>(m_BackBufferIndex) * m_RtvDescriptorSize;
+    commandList.GetHandle()->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    return true;
+}
+
+bool DX12FrameRenderer::ClearFrame(
+    DX12SwapChain& swapChain, DX12CommandList& commandList,
+    const float clearColor[4])
+{
+    if (clearColor == nullptr ||
+        BeginRenderTarget(swapChain, commandList) == false)
+    {
+        return false;
+    }
+
+    // Clear Demoは従来どおりClearFrame内でRenderTargetを閉じます。
+    if (ClearRenderTarget(commandList, clearColor) == false)
+    {
+        return false;
+    }
+    return EndRenderTarget(swapChain, commandList);
 }
 
 bool DX12FrameRenderer::EndFrame(
     DX12CommandQueue& commandQueue, DX12CommandList& commandList)
 {
-    if (m_FrameActive == false || m_FrameCleared == false ||
+    if (m_FrameActive == false || m_RenderTargetFinished == false || m_RenderTargetActive == true ||
         m_Submitted == true || commandQueue.IsValid() == false ||
         commandList.IsValid() == false)
     {
@@ -145,7 +211,8 @@ bool DX12FrameRenderer::Present(
     }
     frameFenceValue = submittedFenceValue;
     m_FrameActive = false;
-    m_FrameCleared = false;
+    m_RenderTargetActive = false;
+    m_RenderTargetFinished = false;
     m_Submitted = false;
     return SUCCEEDED(presentResult);
 }
@@ -169,7 +236,8 @@ void DX12FrameRenderer::Shutdown()
     m_RtvDescriptorSize = 0;
     m_BackBufferIndex = 0;
     m_FrameActive = false;
-    m_FrameCleared = false;
+    m_RenderTargetActive = false;
+    m_RenderTargetFinished = false;
     m_Submitted = false;
     m_RtvHeap.Reset();
 }
