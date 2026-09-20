@@ -176,6 +176,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
         return false;
     }
     m_BoundGraphicsPipeline.reset();
+    m_RecordedBuffers.clear();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
     for (const auto& pipeline : m_GraphicsPipelines)
     {
@@ -360,7 +361,20 @@ bool VulkanSceneContext::SynchronizeBufferAccess()
     {
         return false;
     }
-    return m_Instance.GetDevice().WaitIdle();
+    if (m_Instance.GetDevice().WaitIdle() == false)
+    {
+        return false;
+    }
+    m_RecordedBuffers.clear();
+    return true;
+}
+
+void VulkanSceneContext::RetainDrawBuffers(
+    const Ref<RHIBuffer>& vertex, const Ref<RHIBuffer>& index)
+{
+    // Frame記録中に呼び出し元の最後のRefが消えても、GPU利用完了まで保持します。
+    m_RecordedBuffers.push_back(vertex);
+    m_RecordedBuffers.push_back(index);
 }
 
 void VulkanSceneContext::RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer)
@@ -401,6 +415,7 @@ void VulkanSceneContext::Shutdown()
         }
     }
     m_Buffers.clear();
+    m_RecordedBuffers.clear();
     m_FrameActive = false;
     m_FrameSubmitted = false;
     m_ActiveFrame = 0;
