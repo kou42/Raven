@@ -36,6 +36,9 @@ public:
     VulkanFrameResult Present(const VulkanDevice& device, VulkanSwapChain& swapChain,
         VulkanFrameSync& frameSync);
 
+    // BeginFrame成功後のSwapChain ImageをRenderPass用Framebuffer選択に使用します。
+    uint32_t GetAcquiredImageIndex() const { return m_ImageIndex; }
+
     VulkanFrameResult DrawClearFrame(
         const VulkanDevice& device,
         VulkanSwapChain& swapChain,
