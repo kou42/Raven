@@ -32,6 +32,11 @@ public:
     VkSemaphore GetImageAvailableSemaphore() const { return m_ImageAvailableSemaphores[m_CurrentFrame]; }
     VkSemaphore GetRenderFinishedSemaphore(uint32_t imageIndex) const;
     VkFence GetInFlightFence() const { return m_InFlightFences[m_CurrentFrame]; }
+    // SceneのBuffer同期で、Submit済みFrame SlotのFenceを個別に待つための取得口。
+    VkFence GetFenceForFrame(uint32_t frame) const
+    {
+        return frame < m_InFlightFences.size() ? m_InFlightFences[frame] : VK_NULL_HANDLE;
+    }
     bool IsValid() const
     {
         return m_Device != VK_NULL_HANDLE &&

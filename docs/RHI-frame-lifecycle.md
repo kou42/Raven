@@ -138,6 +138,71 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 **重要：** Resize前にGPUの旧Buffer参照が完了している必要があります。成功後はVkBuffer handleが変わるため、古いhandleをキャッシュした描画処理は再取得してください。Scene Context/DeviceのShutdown前にBufferを破棄してください。これは共通RHIBuffer派生・RHIDevice::CreateBuffer接続を完了したことを意味しません。
 
 追加検証項目：Vertex/Index容量変更、同容量更新、stride不整合拒否、確保失敗時の旧handle維持、Resize後のDrawIndexed、GPU同期、Validation Layer。ビルド・実機実行は未確認です。
+
+### Vulkan Scene RHIBuffer接続（追加）
+
+`VulkanSceneRHIDevice::CreateBuffer` は `VulkanSceneRHIBuffer` を通して、Context所有DeviceにVertex/Index用のHost Visible + Coherent Bufferを生成します。初期データ省略も可能です（内容は未定義）。サイズ0・uint32_t上限超過・Indexの4byte非整列・未対応用途（Uniform/Storage等）は `nullptr` を返します。`RHIBuffer::SetData/Resize` のvoid APIではnative失敗を上位へ返せないため、失敗時は既存状態を維持します。
+
+`RHIBufferSpecification` はVertex Strideを持たないため、共通Device生成のVertex Bufferはbyte単位（stride=1）で作成します。**そのままSceneのDrawIndexedに渡しても通常のVertex PipelineのStride検証を通りません。** 後続でPipeline入力宣言との対応を実装してください。既存Triangleは従来のVulkanSceneBuffer経路を維持します。
+
+Contextが所有するVkDeviceより前に、外部が保持するRHIBufferをすべて破棄してください。SetData/Resize/破棄の前にはGPU読み取り完了の同期が必要です。Texture生成と通常SceneのVulkan切替は未対応です。PR #220のPipeline生成Adapterをこのブランチにも含むため、マージ順によっては同一ファイルの重複を整理してください。
+
+追加検証項目：Vertex/Index生成、初期データ省略、Indexサイズ境界、offset更新、Resize後のSpecification更新、未対応用途の拒否、Contextより前のBuffer破棄、OpenGL回帰。ビルド・GPU実機検証は未実施です。
+
+### Vulkan Sceneの共通Buffer描画（追加）
+
+`VulkanSceneCommandList::DrawIndexed(Ref<RHIBuffer> vertex, Ref<RHIBuffer> index, uint32_t vertexStride, uint32_t indexCount = 0)` を追加しました。Vertex/Index用途、VulkanSceneRHIBuffer型、Contextと同一VkDevice、Pipeline Binding 0のStride一致、Vertex容量のStride整列、Index数を検証してから描画します。native VulkanSceneBuffer版のDrawIndexedは引き続き使用できます。
+
+`VulkanSceneTriangleDemo` はContext所有Deviceの `VulkanSceneRHIDevice::CreateBuffer` でVertex/Indexを生成し、共通Buffer版DrawIndexedを通るように変更しました。終了時はWaitIdle後にBufferのRefをresetし、ContextのVkDeviceより先に解放します。Resize後もBufferは維持し、Pipelineのみ再生成します。
+
+Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Sceneへの接続時にはVertex Input Layoutの共有、複数Binding、Buffer lifetimeとGPU同期を共通設計に移す必要があります。ビルド・GPU実機・Validation Layerは未検証です。確認項目：Triangle表示、Resize後再描画、誤ったStride/用途/Device/IndexCountの拒否、終了時Validation Layer、OpenGL回帰。
+
+### 共通Vertex StrideのPipeline入力への一本化
+
+共通RHIBuffer版 `DrawIndexed(vertex, index, indexCount = 0)` は、Bind済PipelineのBinding 0からStrideを取得します。呼び出し側でStrideを重複指定する必要はありません。Bindingが0以外・複数・Stride 0、Vertex容量がStrideで割り切れない場合は描画を拒否します。従来のnative SceneBuffer版はBuffer保持StrideとPipeline Strideの一致を検証します。
+
+本変更は単一Vertex Binding限定です。複数Binding/Instance Rate、頂点範囲やIndex値のCPU検査は未対応です。共通Bufferはbyte単位で確保する仕様のままであり、GPU同期とDevice寿命の制約も変わりません。ビルド・GPU実機・Validation Layerは未検証です。
+
+### Vulkan Scene共通BufferのGPU同期とDevice寿命（追加）
+
+`VulkanSceneRHIBuffer::TrySetData/TryResize` はContextの `SynchronizeBufferAccess` を通し、Frame外かつ未Submit状態で `VkDeviceWaitIdle` に成功した場合だけnative Bufferを変更します。既存の共通 `RHIBuffer::SetData/Resize` はvoid APIのため失敗を通知できません。更新成否が必要なScene固有コードではTry版を使用してください。安全性優先の暫定実装であり、毎回Device全体を待つためDynamic Bufferの頻繁な更新には適しません。
+
+Device経由で生成したBufferはContextがweak参照で追跡し、Context::ShutdownのWaitIdle後、VkDevice破棄前にnative Bufferを無効化します。外部に残ったRefの更新は失敗し、破棄時に破棄済みVkDeviceを呼びません。共通RHIBuffer版DrawIndexedで記録に成功したBufferはContextが強参照を保持し、WaitIdle成功時・Resize・Shutdownで解放します。native VulkanSceneBuffer版の寿命は従来どおり呼び出し側の責務です。別スレッドから同時に操作することは未対応です。Context破棄後のAdapter使用は不可です。
+
+確認項目：Frame外のTrySetData/TryResize成功、BeginFrame～EndFrame中の拒否、Submit後Present前の拒否、Context::Shutdown後に外部Refを破棄してもVulkan呼び出しなし、Triangle表示とResize、OpenGL回帰。ビルド・GPU実機・Validation Layerは未検証です。
+
+### 共通Buffer更新のFrame Fence同期（追加）
+
+`SynchronizeBufferAccess` は従来の `VkDeviceWaitIdle` を廃止し、このSceneがSubmitに成功したFrame SlotのFenceを `vkWaitForFences(..., VK_TRUE, ...)` で待機します。未Submitの初期Signal Fenceは待機対象に含めません。Frame記録中とSubmit後Present前の更新拒否は維持します。GPU完了後にSlot別のBuffer強参照を解放します。
+
+`BeginFrame` では既存FrameRendererが該当SlotのFenceを待機した後、旧Buffer参照を回収します。Submit成功時だけSlotを待機対象に登録します。Resize/ShutdownではSwapChain/Presentation Resourceも扱うため、従来どおりDeviceWaitIdleを維持します。Buffer Destructorは参照回収中の再入同期を避け、Draw成功時のContext強参照によってGPU利用中の破棄を防ぎます。
+
+制約：本方式はSceneのGraphics QueueへSubmitしたBufferのみ追跡します。外部Queue/Scene外での同一Buffer使用、別スレッド操作は未対応です。更新時には使用Buffer個別ではなく全Submit済みScene Frameを待ちます。Frame FenceはPresent EngineによるSemaphore消費完了を保証しないため、SwapChainの再生成・終了はDeviceWaitIdleのままです。ビルド・実機・Validation Layer未検証。
+
+### 共通Buffer単位のFrame Fence待機（追加）
+
+`VulkanSceneRHIBuffer::TrySetData/TryResize` は更新対象自身を `VulkanSceneContext::SynchronizeBufferAccess(buffer)` に渡します。Contextは各Submit済みFrame Slotの記録済み `RHIBuffer` を同一Resourceのポインタで照合し、そのBufferを実際に描画で使用したSlotのFenceだけを `vkWaitForFences` で待機します。未使用Bufferの更新ではFence待機を発行しません。同一Bufferを複数Frameで使用した場合は、該当する全Frameを待ちます。
+
+**重要：** 対象BufferのFence待機が完了しても、同じFrameの別BufferはGPU使用中かもしれません。このため更新時にはFrame Slot全体の強参照やSubmit状態を消去せず、既存の `BeginFrame` のSlot Fence待機後に回収します。これにより他Bufferの早期破棄を避けます。Frame中/Submit後Present前の更新拒否、Resize/ShutdownのDeviceWaitIdleは維持します。
+
+前節の「全Submit済みScene Frameを待つ」は本変更より前の仕様です。対象は共通RHIBuffer版DrawIndexedで追跡したScene Graphics Queue利用のみです。外部Queue、native SceneBuffer直接利用、別スレッドの同時更新は対象外です。確認項目：未使用Bufferの更新、別Bufferだけを使用したFrameの待機省略、同一Bufferを2 Frameで使用した場合の両Fence待機、対象Buffer更新後の他Bufferの寿命、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
+
+### Frame Slot内のBuffer参照重複排除（追加）
+
+`m_RecordedBuffers` をSlotごとの `unordered_map<const RHIBuffer*, Ref<RHIBuffer>>` に変更しました。同一Bufferを同じFrame内で繰り返しDrawしても一度だけ登録し、強参照の重複と更新対象Bufferの線形検索を避けます。Mapのキーは識別用の非所有ポインタですが、値のRefが対応ResourceをGPU完了まで保持します。Frame SlotのFence待機後・Resize・Shutdownの参照回収は従来どおりです。
+
+Buffer別Fence同期は各Submit済みSlotでキーの存在を調べます。計算量は従来の「Slot数 × 各SlotのDraw Buffer登録数」から、平均的に「Slot数 × Mapキー検索」になります。重複Drawが多いSceneほど強参照数も削減します。Frameごとの異なるBuffer数に応じたMapのメモリ使用とハッシュ管理コストは発生します。外部Queue/別スレッドは引き続き対象外です。
+
+確認項目：同一Vertex/Index Bufferを繰り返し描画、異なるBufferの混在、同一Bufferの複数Frame使用、Fence完了後のRef回収、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
+
+### Vulkan Sceneの2 Mesh描画検証経路（追加）
+
+`VulkanSceneTriangleDemo` は左右2つの三角形を、独立したVertex BufferとIndex Buffer（合計4本）で描画する構成に変更しました。同一PipelineをBindした後、同一FrameのCommandListに2回DrawIndexedを記録します。共通RHIDeviceによるBuffer生成、PR #228のFrame Slot別重複排除、PR #227のBuffer別Fence待機を、複数Resourceが混在する実際の描画経路で確認するための変更です。
+
+Resize時は従来どおりPipelineだけを再生成し、2 MeshのBufferを保持します。Shutdown時はGPU完了待機後に4本のBuffer Refを解放し、ContextのDeviceを破棄します。既存の`--scene-triangle-vulkan`起動方法・SPIR-V・通常OpenGL Applicationは変更していません。
+
+確認項目：左右2つの色付き三角形が同時に表示されること、連続Frame描画、最小化・Resize後の再描画、途中Buffer生成失敗時のShutdown、Validation LayerのBuffer寿命エラーなし、OpenGL回帰。ビルド・GPU実機・Validation Layer未検証。
+
 ### Vulkan Scene CommandListのColor Clear（追加）
 
 `VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。

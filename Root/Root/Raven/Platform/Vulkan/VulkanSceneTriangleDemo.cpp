@@ -1,4 +1,5 @@
 #include "VulkanSceneTriangleDemo.h"
+#include "VulkanSceneRHIDevice.h"
 
 #include "Raven/Core/Window.h"
 
@@ -27,27 +28,49 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         return false;
     }
 
-    // CPU上の頂点データをHost VisibleなScene Bufferへ転送します。
-    // 色補間が確認できるよう各頂点に別のRGB値を設定します。
-    const std::array<Vertex, 3> vertices = {{
-        {{ 0.0f, -0.6f }, { 1.0f, 0.0f, 0.0f }},
-        {{ 0.6f,  0.6f }, { 0.0f, 1.0f, 0.0f }},
-        {{-0.6f,  0.6f }, { 0.0f, 0.0f, 1.0f }}
+    // 同じPipelineで2つの独立Meshを描画し、Frame内の複数Buffer追跡を検証します。
+    // 左右に配置してDrawが片方だけ欠落した場合も視覚的に確認できます。
+    const std::array<std::array<Vertex, 3>, MeshCount> meshVertices = {{
+        {{
+            {{-0.7f, -0.6f }, { 1.0f, 0.0f, 0.0f }},
+            {{-0.1f, -0.6f }, { 0.0f, 1.0f, 0.0f }},
+            {{-0.4f,  0.6f }, { 0.0f, 0.0f, 1.0f }}
+        }},
+        {{
+            {{ 0.1f, -0.6f }, { 0.0f, 1.0f, 1.0f }},
+            {{ 0.7f, -0.6f }, { 1.0f, 0.0f, 1.0f }},
+            {{ 0.4f,  0.6f }, { 1.0f, 1.0f, 0.0f }}
+        }}
     }};
     const std::array<uint32_t, 3> indices = {{ 0, 1, 2 }};
-    if (m_VertexBuffer.InitVertex(m_Context.GetDevice(), vertices.data(),
-        static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex)) == false)
+    VulkanSceneRHIDevice device(m_Context);
+    for (std::size_t mesh = 0; mesh < MeshCount; ++mesh)
     {
-        std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\n";
-        Shutdown();
-        return false;
-    }
-    if (m_IndexBuffer.InitIndex(m_Context.GetDevice(), indices.data(),
-        static_cast<uint32_t>(indices.size())) == false)
-    {
-        std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\n";
-        Shutdown();
-        return false;
+        RHIBufferSpecification vertexSpecification{};
+        vertexSpecification.Size = sizeof(meshVertices[mesh]);
+        vertexSpecification.Usage = RHIBufferUsage::Vertex;
+        vertexSpecification.DebugName = "Vulkan Scene Mesh Vertex";
+        m_VertexBuffers[mesh] = device.CreateBuffer(
+            vertexSpecification, meshVertices[mesh].data());
+        if (m_VertexBuffers[mesh] == nullptr)
+        {
+            std::cerr << "Vulkan Scene Triangle: Mesh Vertex Buffer creation failed.\n";
+            Shutdown();
+            return false;
+        }
+
+        RHIBufferSpecification indexSpecification{};
+        indexSpecification.Size = sizeof(indices);
+        indexSpecification.Usage = RHIBufferUsage::Index;
+        indexSpecification.DebugName = "Vulkan Scene Mesh Index";
+        m_IndexBuffers[mesh] = device.CreateBuffer(
+            indexSpecification, indices.data());
+        if (m_IndexBuffers[mesh] == nullptr)
+        {
+            std::cerr << "Vulkan Scene Triangle: Mesh Index Buffer creation failed.\n";
+            Shutdown();
+            return false;
+        }
     }
     if (CreatePipeline() == false)
     {
@@ -96,10 +119,16 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
 
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
-    if (m_Window == nullptr || m_Pipeline == nullptr ||
-        m_VertexBuffer.IsValid() == false || m_IndexBuffer.IsValid() == false)
+    if (m_Window == nullptr || m_Pipeline == nullptr)
     {
         return RHIFrameResult::FatalError;
+    }
+    for (std::size_t mesh = 0; mesh < MeshCount; ++mesh)
+    {
+        if (m_VertexBuffers[mesh] == nullptr || m_IndexBuffers[mesh] == nullptr)
+        {
+            return RHIFrameResult::FatalError;
+        }
     }
 
     const RHIFrameResult begin = m_Context.BeginFrame();
@@ -109,13 +138,20 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     }
 
     VulkanSceneCommandList commands(m_Context);
-    if (commands.BindPipeline(m_Pipeline) == false ||
-        commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer) == false)
+    if (commands.BindPipeline(m_Pipeline) == false)
     {
-        // BeginFrame成功後の記録失敗時はSubmit/PresentせずContextを破棄します。
-        // Acquire済Semaphoreを再利用してはならないため、次Frameも禁止します。
         Shutdown();
         return RHIFrameResult::FatalError;
+    }
+    for (std::size_t mesh = 0; mesh < MeshCount; ++mesh)
+    {
+        // 同じFrameに異なるVertex/Index Bufferを記録します。
+        // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
+        if (commands.DrawIndexed(m_VertexBuffers[mesh], m_IndexBuffers[mesh]) == false)
+        {
+            Shutdown();
+            return RHIFrameResult::FatalError;
+        }
     }
 
     const RHIFrameResult end = m_Context.EndFrame();
@@ -153,8 +189,12 @@ void VulkanSceneTriangleDemo::Shutdown()
         m_Context.GetDevice().WaitIdle();
     }
     m_Pipeline.reset();
-    m_IndexBuffer.Shutdown();
-    m_VertexBuffer.Shutdown();
+    // native VkBufferを所有するRefはContextのVkDeviceより先に破棄します。
+    for (std::size_t mesh = 0; mesh < MeshCount; ++mesh)
+    {
+        m_IndexBuffers[mesh].reset();
+        m_VertexBuffers[mesh].reset();
+    }
     m_Context.Shutdown();
     m_VertexShader = {};
     m_FragmentShader = {};
