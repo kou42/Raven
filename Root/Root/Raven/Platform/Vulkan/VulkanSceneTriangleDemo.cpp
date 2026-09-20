@@ -9,6 +9,36 @@
 
 namespace Raven
 {
+namespace
+{
+// RavenのMat4はrow-major、GLSLのmat4はcolumn-majorです。
+// Push Constantへ送る直前に転置配置し、座標変換の向きを保ちます。
+std::array<float, 16> ToColumnMajor(const math::Mat4& matrix)
+{
+    std::array<float, 16> result{};
+    for (std::size_t column = 0; column < 4; ++column)
+    {
+        for (std::size_t row = 0; row < 4; ++row)
+        {
+            result[column * 4 + row] = matrix.m[row][column];
+        }
+    }
+    return result;
+}
+
+math::Mat4 FromColumnMajor(const std::array<float, 16>& values)
+{
+    math::Mat4 result{};
+    for (std::size_t column = 0; column < 4; ++column)
+    {
+        for (std::size_t row = 0; row < 4; ++row)
+        {
+            result.m[row][column] = values[column * 4 + row];
+        }
+    }
+    return result;
+}
+} // namespace
 bool VulkanSceneTriangleDemo::Init(Window& window,
     const RHIShaderBinary& vertexShader, const RHIShaderBinary& fragmentShader)
 {
@@ -29,6 +59,15 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         Shutdown();
         return false;
     }
+
+    // 既存SceneCameraを利用し、右手系で-Z方向を見るViewを設定します。
+    // RavenのPerspectiveはOpenGLのNDC深度を返すため、Draw時にVulkanへ補正します。
+    m_Camera = SceneCamera();
+    const VkExtent2D extent = m_Context.GetExtent();
+    m_Camera.SetViewportSize(static_cast<float>(extent.width),
+        static_cast<float>(extent.height));
+    m_Camera.SetViewMatrix(math::Mat4::LookAt(
+        {0.0f, 0.0f, 2.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}));
 
     // デモでは2つを登録しますが、描画側は任意個数のMeshを処理します。
     const std::vector<Vertex> left = {
@@ -202,11 +241,23 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         Shutdown();
         return RHIFrameResult::FatalError;
     }
+    // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
+    // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
+    const math::Mat4 vulkanClipCorrection(
+        1.0f,  0.0f, 0.0f, 0.0f,
+        0.0f, -1.0f, 0.0f, 0.0f,
+        0.0f,  0.0f, 0.5f, 0.5f,
+        0.0f,  0.0f, 0.0f, 1.0f);
+    const math::Mat4 viewProjection = vulkanClipCorrection *
+        m_Camera.GetProjectionMatrix() * m_Camera.GetViewMatrix();
     for (const Mesh& mesh : m_Meshes)
     {
         // 同じFrameに異なるVertex/Index Bufferを記録します。
         // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
-        if (commands.SetModelTransform(mesh.Model) == false ||
+        // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
+        const auto clipTransform = ToColumnMajor(
+            viewProjection * FromColumnMajor(mesh.Model));
+        if (commands.SetModelTransform(clipTransform) == false ||
             commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
         {
             Shutdown();
@@ -238,6 +289,7 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
     // Resize時にScene Contextが旧RenderPass用Pipelineを無効化します。
     // 新SwapChainのFormatを読み直してから再生成します。
     m_Pipeline.reset();
+    m_Camera.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
     return CreatePipeline();
 }
 
