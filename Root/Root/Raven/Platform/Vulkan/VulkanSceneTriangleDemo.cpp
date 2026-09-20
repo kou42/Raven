@@ -242,8 +242,13 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
         return false;
     }
     // 既存APIではTextureを維持し、TintとBlendだけを更新します。
-    return SetMeshMaterial(meshIndex, tint, alphaBlend,
-        m_Meshes[meshIndex].Material.TextureIndex);
+    // Textureを変更せずにTintとSurfaceTypeだけを更新します。
+    const Ref<RHITexture>& texture = m_Meshes[meshIndex].Material.Texture;
+    if (texture == nullptr)
+    {
+        return false;
+    }
+    return SetMeshMaterial(meshIndex, tint, alphaBlend, texture);
 }
 
 bool VulkanSceneTriangleDemo::SetMeshMaterial(
@@ -265,8 +270,9 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
     // すべての入力を検証してから反映し、無効なTexture番号で半端な更新を残しません。
     SceneMaterial& material = m_Meshes[meshIndex].Material;
     material.Tint = tint;
-    material.AlphaBlend = alphaBlend;
-    material.TextureIndex = textureIndex;
+    material.SurfaceType = alphaBlend == true ?
+        MaterialSurfaceType::Transparent : MaterialSurfaceType::Opaque;
+    material.Texture = m_Textures[textureIndex];
     return true;
 }
 
@@ -404,7 +410,7 @@ bool VulkanSceneTriangleDemo::SetMeshTexture(
     {
         return false;
     }
-    m_Meshes[meshIndex].Material.TextureIndex = textureIndex;
+    m_Meshes[meshIndex].Material.Texture = m_Textures[textureIndex];
     return true;
 }
 
@@ -415,7 +421,7 @@ bool VulkanSceneTriangleDemo::SetMeshTexture(
     {
         return false;
     }
-    // 失敗時は既存MaterialのTextureIndexを維持します。
+    // 失敗時は既存MaterialのTextureを維持します。
     std::size_t textureIndex = 0;
     if (AddTexture(texture, textureIndex) == false)
     {
@@ -567,26 +573,15 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         {
             const Mesh& mesh = transparentPass == true ?
                 m_Meshes[transparentIndices[draw]] : m_Meshes[draw];
-            if (mesh.Material.AlphaBlend != transparentPass)
+            if ((mesh.Material.SurfaceType == MaterialSurfaceType::Transparent) != transparentPass)
             {
                 continue;
             }
             // CameraとMeshのModelを合成して、DrawごとにPush Constantを更新します。
             const auto clipTransform = ToColumnMajor(
                 viewProjection * FromColumnMajor(mesh.Model));
-            if (mesh.Material.TextureIndex >= m_Textures.size())
-            {
-                Shutdown();
-                return RHIFrameResult::FatalError;
-            }
-            // 描画時はSceneのTexture番号を共通Material Snapshotへ変換し、
-            // Descriptorの選択はBackendのCommandListに任せます。
-            RHIMaterialProperties material;
-            material.Tint = mesh.Material.Tint;
-            material.Texture = m_Textures[mesh.Material.TextureIndex];
-            material.SurfaceType = mesh.Material.AlphaBlend == true ?
-                MaterialSurfaceType::Transparent : MaterialSurfaceType::Opaque;
-            if (commands.BindMaterial(material) == false ||
+            // Meshの共通Material Snapshotを直接渡し、Texture番号を描画経路から排除します。
+            if (commands.BindMaterial(mesh.Material) == false ||
                 commands.SetClipTransform(clipTransform) == false ||
                 commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
                     mesh.IndexCount) == false)
