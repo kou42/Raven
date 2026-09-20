@@ -2,6 +2,7 @@
 
 #include "VulkanSceneContext.h"
 #include "VulkanSceneRHIBuffer.h"
+#include "Raven/Renderer/RHI/RHIMaterialProperties.h"
 
 namespace Raven
 {
@@ -42,6 +43,19 @@ public:
     bool BindTexture(std::size_t textureIndex)
     {
         return m_Context.BindTexture(textureIndex);
+    }
+
+    // Material Snapshotを共通RHIのTextureとTintとしてBindします。
+    // Maskedは現行Shaderでalpha cutoff未実装のため拒否します。
+    bool BindMaterial(const RHIMaterialProperties& material)
+    {
+        if (material.SurfaceType == MaterialSurfaceType::Masked ||
+            material.Texture == nullptr ||
+            m_Context.BindTexture(material.Texture) == false)
+        {
+            return false;
+        }
+        return m_Context.SetMaterialTint(material.Tint);
     }
 
     bool SetMaterialTint(const std::array<float, 4>& tint)
