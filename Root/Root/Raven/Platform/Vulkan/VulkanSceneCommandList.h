@@ -55,8 +55,15 @@ public:
         {
             return false;
         }
-        return m_Context.DrawIndexed(vertex->GetSceneBuffer(),
-            index->GetSceneBuffer(), indexCount, true);
+        if (m_Context.DrawIndexed(vertex->GetSceneBuffer(),
+            index->GetSceneBuffer(), indexCount, true) == false)
+        {
+            return false;
+        }
+        // 記録済みCommand BufferはSubmit後にもResourceを参照するため、
+        // 呼び出し側のRefが解放されてもContextがGPU完了まで保持します。
+        m_Context.RetainDrawBuffers(vertexBuffer, indexBuffer);
+        return true;
     }
 
 private:
