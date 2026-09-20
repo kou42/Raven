@@ -4,6 +4,8 @@
 
 #include <GLFW/glfw3.h>
 
+#include <climits>
+
 namespace Raven
 {
 DX12SceneContext::~DX12SceneContext()
@@ -172,7 +174,9 @@ bool DX12SceneContext::SetViewport(
     uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
-    if (commandList == nullptr || width == 0 || height == 0)
+    if (commandList == nullptr || width == 0 || height == 0 ||
+        static_cast<uint64_t>(x) + width > static_cast<uint64_t>(LONG_MAX) ||
+        static_cast<uint64_t>(y) + height > static_cast<uint64_t>(LONG_MAX))
     {
         return false;
     }
