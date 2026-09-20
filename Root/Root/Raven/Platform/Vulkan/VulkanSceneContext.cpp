@@ -110,6 +110,7 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
         return RHIFrameResult::FatalError;
     }
     m_FrameSubmitted = false;
+    m_BoundGraphicsPipeline.reset();
     const VkExtent2D extent = m_SwapChain.GetExtent();
     // Resize直後も初回Draw前に有効なViewport/Scissorを記録します。
     if (SetViewport(0, 0, extent.width, extent.height) == false)
@@ -128,6 +129,7 @@ RHIFrameResult VulkanSceneContext::EndFrame()
     }
 
     VulkanCommandBuffer& commandBuffer = *m_CommandBuffers[m_ActiveFrame];
+    m_BoundGraphicsPipeline.reset();
     m_RenderTarget.End(commandBuffer.GetHandle());
     if (m_FrameRenderer.EndSceneColorTarget(m_SwapChain, commandBuffer) !=
         VulkanFrameResult::Success)
@@ -172,6 +174,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     {
         return false;
     }
+    m_BoundGraphicsPipeline.reset();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
     for (const auto& weakPipeline : m_GraphicsPipelines)
     {
@@ -267,6 +270,74 @@ Ref<RHIGraphicsPipeline> VulkanSceneContext::CreateGraphicsPipeline(
     return pipeline;
 }
 
+bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || pipeline == nullptr)
+    {
+        return false;
+    }
+    auto nativePipeline = std::dynamic_pointer_cast<VulkanGraphicsPipeline>(pipeline);
+    if (nativePipeline == nullptr || nativePipeline->IsValid() == false)
+    {
+        return false;
+    }
+
+    // 別のVkDevice/RenderPassで生成されたPipelineをこのSceneへBindさせません。
+    bool owned = false;
+    for (const auto& weakPipeline : m_GraphicsPipelines)
+    {
+        if (weakPipeline.lock() == nativePipeline)
+        {
+            owned = true;
+            break;
+        }
+    }
+    if (owned == false)
+    {
+        return false;
+    }
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        nativePipeline->GetHandle());
+    m_BoundGraphicsPipeline = nativePipeline;
+    return true;
+}
+
+bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
+    const VulkanSceneBuffer& indexBuffer, uint32_t indexCount)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
+        m_BoundGraphicsPipeline->IsValid() == false ||
+        vertexBuffer.IsValid() == false || indexBuffer.IsValid() == false ||
+        vertexBuffer.IsIndexBuffer() == true || indexBuffer.IsIndexBuffer() == false ||
+        vertexBuffer.GetDeviceHandle() != m_Instance.GetDevice().GetHandle() ||
+        indexBuffer.GetDeviceHandle() != m_Instance.GetDevice().GetHandle())
+    {
+        return false;
+    }
+    const uint32_t drawCount = indexCount == 0 ? indexBuffer.GetIndexCount() : indexCount;
+    if (drawCount == 0 || drawCount > indexBuffer.GetIndexCount())
+    {
+        return false;
+    }
+
+    // 現在のSceneBufferはVertex 1本、uint32_t Indexのみをサポートします。
+    // Pipelineの入力宣言とBufferのStrideが一致することを記録前に確認します。
+    const auto& bindings = m_BoundGraphicsPipeline->GetSpecification().VertexBindings;
+    if (bindings.size() != 1 || bindings[0].Binding != 0 ||
+        bindings[0].Stride != vertexBuffer.GetVertexStride())
+    {
+        return false;
+    }
+    const VkBuffer vertex = vertexBuffer.GetHandle();
+    const VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertex, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer.GetHandle(), 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, drawCount, 1, 0, 0, 0);
+    return true;
+}
+
 void VulkanSceneContext::Shutdown()
 {
     if (m_Instance.IsValid() == true)
@@ -276,6 +347,7 @@ void VulkanSceneContext::Shutdown()
     m_FrameActive = false;
     m_FrameSubmitted = false;
     m_ActiveFrame = 0;
+    m_BoundGraphicsPipeline.reset();
     // 外部Refが残っていてもVkDevice破棄後のDestructorでVulkanを呼ばせません。
     for (const auto& weakPipeline : m_GraphicsPipelines)
     {
