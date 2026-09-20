@@ -279,13 +279,6 @@ bool VulkanSceneTriangleDemo::AddTexture(
     {
         return false;
     }
-    // Pool再生成時には旧Descriptorを参照するGPU仕事が残っていてはいけません。
-    // Init中（Pipeline未作成）はTextureだけ登録し、CreatePipeline時にまとめて生成します。
-    const bool descriptorsExist = m_TextureDescriptorPool != VK_NULL_HANDLE;
-    if (descriptorsExist == true && m_Context.GetDevice().WaitIdle() == false)
-    {
-        return false;
-    }
     // Texture本体はRHIDeviceで生成し、DescriptorだけをSceneが所有します。
     VulkanSceneRHIDevice device(m_Context);
     RHITextureSpecification specification{};
