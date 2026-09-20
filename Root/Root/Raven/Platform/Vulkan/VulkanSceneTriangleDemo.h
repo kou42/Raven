@@ -1,7 +1,6 @@
 #pragma once
 
-#include "VulkanSceneCommandList.h"
-#include "VulkanSceneResourceFactory.h"
+#include "VulkanSceneRenderServices.h"
 
 #include <array>
 
@@ -39,6 +38,8 @@ private:
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
+    // Contextの後に構築し、Contextより先に破棄します。
+    VulkanSceneRenderServices m_Services{ m_Context };
     Scope<RHISceneBuffer> m_VertexBuffer;
     Scope<RHISceneBuffer> m_IndexBuffer;
     Ref<RHIGraphicsPipeline> m_Pipeline;
