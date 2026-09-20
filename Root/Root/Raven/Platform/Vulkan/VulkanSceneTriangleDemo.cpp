@@ -74,14 +74,14 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
 
     // 手前のMeshを先に描画し、奥のMeshがDepth Testで隠れることを検証します。
     const std::vector<Vertex> left = {
-        {{-0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-        {{ 0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-        {{ 0.0f,  0.6f, 0.0f}, {0.0f, 0.0f, 1.0f}}
+        {{-0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.0f,  0.6f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.5f, 1.0f}}
     };
     const std::vector<Vertex> right = {
-        {{-0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 1.0f}},
-        {{ 0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 1.0f}},
-        {{ 0.0f,  0.6f, 0.0f}, {1.0f, 1.0f, 0.0f}}
+        {{-0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.0f,  0.6f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.5f, 1.0f}}
     };
     const std::vector<uint32_t> indices = {0, 1, 2};
     if (AddMesh(right, indices) == false || AddMesh(left, indices) == false ||
@@ -232,7 +232,9 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     specification.VertexBindings = {{ 0, sizeof(Vertex) }};
     specification.VertexAttributes = {
         { 0, 0, ShaderDataType::Float3, 0 },
-        { 1, 0, ShaderDataType::Float3, sizeof(Vertex::Position) }
+        { 1, 0, ShaderDataType::Float3, sizeof(Vertex::Position) },
+        { 2, 0, ShaderDataType::Float2,
+            sizeof(Vertex::Position) + sizeof(Vertex::Color) }
     };
     specification.Cull = CullMode::None;
     specification.DepthFormat = RHIDepthFormat::D32Float;
