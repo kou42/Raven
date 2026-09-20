@@ -54,6 +54,86 @@ VulkanFrameResult VulkanFrameRenderer::BeginFrame(
 
 
     m_FrameActive = true;
+    m_ColorTargetActive = false;
+    m_ColorTargetFinished = false;
+    m_TransferClearFinished = false;
+    return VulkanFrameResult::Success;
+}
+
+VulkanFrameResult VulkanFrameRenderer::BeginSceneColorTarget(
+    VulkanSwapChain& swapChain, VulkanCommandBuffer& commandBuffer)
+{
+    if (m_FrameActive == false || m_Submitted == true ||
+        m_ColorTargetActive == true || m_ColorTargetFinished == true ||
+        m_TransferClearFinished == true ||
+        swapChain.IsValid() == false || commandBuffer.IsValid() == false ||
+        m_ImageIndex >= swapChain.GetImages().size())
+    {
+        return VulkanFrameResult::FatalError;
+    }
+
+    const VkImageLayout oldLayout = swapChain.GetImageLayout(m_ImageIndex);
+    if (oldLayout != VK_IMAGE_LAYOUT_UNDEFINED &&
+        oldLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+    {
+        return VulkanFrameResult::FatalError;
+    }
+
+    // SwapChain ImageをColor Attachmentとして使える状態へ移行します。
+    // このAPIはRenderPass自体を開始しません。後続のScene描画層が開始・終了を担当します。
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = swapChain.GetImages()[m_ImageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    const VkPipelineStageFlags sourceStage =
+        oldLayout == VK_IMAGE_LAYOUT_UNDEFINED
+        ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+        : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    vkCmdPipelineBarrier(commandBuffer.GetHandle(), sourceStage,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+    m_ColorTargetActive = true;
+    return VulkanFrameResult::Success;
+}
+
+VulkanFrameResult VulkanFrameRenderer::EndSceneColorTarget(
+    VulkanSwapChain& swapChain, VulkanCommandBuffer& commandBuffer)
+{
+    if (m_FrameActive == false || m_Submitted == true ||
+        m_ColorTargetActive == false ||
+        swapChain.IsValid() == false || commandBuffer.IsValid() == false ||
+        m_ImageIndex >= swapChain.GetImages().size())
+    {
+        return VulkanFrameResult::FatalError;
+    }
+
+    // RenderPass終了後に呼び、Color Attachmentの書き込みをPresent前に完了させます。
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = swapChain.GetImages()[m_ImageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(commandBuffer.GetHandle(),
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+    m_ColorTargetActive = false;
+    m_ColorTargetFinished = true;
     return VulkanFrameResult::Success;
 }
 
@@ -61,7 +141,11 @@ VulkanFrameResult VulkanFrameRenderer::ClearFrame(
     VulkanSwapChain& swapChain, VulkanCommandBuffer& commandBuffer,
     const VkClearColorValue& clearColor)
 {
-    if (m_FrameActive == false || m_Submitted == true)
+    if (m_FrameActive == false || m_Submitted == true ||
+        m_ColorTargetActive == true || m_ColorTargetFinished == true ||
+        m_TransferClearFinished == true ||
+        swapChain.IsValid() == false || commandBuffer.IsValid() == false ||
+        m_ImageIndex >= swapChain.GetImages().size())
     {
         return VulkanFrameResult::FatalError;
     }
@@ -109,6 +193,7 @@ VulkanFrameResult VulkanFrameRenderer::ClearFrame(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toPresent);
 
 
+    m_TransferClearFinished = true;
     return VulkanFrameResult::Success;
 }
 
@@ -116,7 +201,9 @@ VulkanFrameResult VulkanFrameRenderer::EndFrame(
     const VulkanDevice& device, VulkanSwapChain& swapChain,
     VulkanCommandBuffer& commandBuffer, VulkanFrameSync& frameSync)
 {
-    if (m_FrameActive == false || m_Submitted == true)
+    if (m_FrameActive == false || m_Submitted == true ||
+        m_ColorTargetActive == true ||
+        (m_ColorTargetFinished == false && m_TransferClearFinished == false))
     {
         return VulkanFrameResult::FatalError;
     }
@@ -124,7 +211,10 @@ VulkanFrameResult VulkanFrameRenderer::EndFrame(
 
     const VkSemaphore waitSemaphore = frameSync.GetImageAvailableSemaphore();
     const VkSemaphore signalSemaphore = frameSync.GetRenderFinishedSemaphore(m_ImageIndex);
-    const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    // Acquire Semaphoreの待機Stageは、最初にSwapChainへ書き込む用途に合わせます。
+    const VkPipelineStageFlags waitStage = m_ColorTargetFinished == true
+        ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+        : VK_PIPELINE_STAGE_TRANSFER_BIT;
     const VkCommandBuffer commandBufferHandle = commandBuffer.GetHandle();
 
     VkSubmitInfo submitInfo{};
@@ -181,6 +271,9 @@ VulkanFrameResult VulkanFrameRenderer::Present(
     frameSync.AdvanceFrame();
     m_FrameActive = false;
     m_Submitted = false;
+    m_ColorTargetActive = false;
+    m_ColorTargetFinished = false;
+    m_TransferClearFinished = false;
     if (result == VK_SUCCESS)
     {
         return m_AcquiredSuboptimal == true
