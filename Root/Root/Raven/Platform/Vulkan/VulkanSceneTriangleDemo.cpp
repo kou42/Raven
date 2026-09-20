@@ -108,7 +108,9 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         return begin;
     }
 
-    VulkanSceneCommandList commands(m_Context);
+    VulkanSceneCommandList vulkanCommands(m_Context);
+    // Scene描画側は共通CommandListだけを参照し、native記録はBackendへ委譲します。
+    RHISceneCommandList& commands = vulkanCommands;
     if (commands.BindPipeline(m_Pipeline) == false ||
         commands.DrawIndexed(m_VertexBuffer, m_IndexBuffer) == false)
     {
