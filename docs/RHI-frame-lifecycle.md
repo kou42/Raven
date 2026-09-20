@@ -178,3 +178,10 @@ Device経由で生成したBufferはContextがweak参照で追跡し、Context::
 `BeginFrame` では既存FrameRendererが該当SlotのFenceを待機した後、旧Buffer参照を回収します。Submit成功時だけSlotを待機対象に登録します。Resize/ShutdownではSwapChain/Presentation Resourceも扱うため、従来どおりDeviceWaitIdleを維持します。Buffer Destructorは参照回収中の再入同期を避け、Draw成功時のContext強参照によってGPU利用中の破棄を防ぎます。
 
 制約：本方式はSceneのGraphics QueueへSubmitしたBufferのみ追跡します。外部Queue/Scene外での同一Buffer使用、別スレッド操作は未対応です。更新時には使用Buffer個別ではなく全Submit済みScene Frameを待ちます。Frame FenceはPresent EngineによるSemaphore消費完了を保証しないため、SwapChainの再生成・終了はDeviceWaitIdleのままです。ビルド・実機・Validation Layer未検証。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
