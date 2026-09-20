@@ -127,6 +127,14 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 
 `VulkanSceneBuffer::SetData(data, byteSize, offset = 0)` は既存の全体先頭更新を維持しつつ、`RHIBuffer::SetData` と同様のoffset付き部分更新に対応します。offset/sizeは減算形式で容量を検証し、範囲外・空更新・null dataを拒否します。VkDeviceMemoryは割当先頭からMapしてCPU pointerにoffsetを加算し、Map offsetのalignment制約を回避します。Host Coherentのため明示Flushは不要です。
 
-この変更だけでは `VulkanSceneBuffer` はまだ `RHIBuffer` の実装ではありません。共通Buffer化には用途別のStride/IndexCount、Resize時のnative handle更新、GPU同期とDevice寿命の契約を先に確定する必要があります。OpenGLは変更していません。
+この変更だけでは `VulkanSceneBuffer` はまだ `RHIBuffer` の実装ではありません。共通Buffer化にはGPU同期とDevice寿命の契約、RHIBuffer派生とRHIDevice::CreateBuffer接続を確定する必要があります。OpenGLは変更していません。
 
 検証項目：先頭・中間・末尾の部分更新、容量境界とoverflow拒否、既存Triangle描画、GPU完了待ち後の更新、OpenGL回帰。ビルド・GPU実機検証は未実施です。
+
+### Vulkan Scene Buffer Resize（追加）
+
+`VulkanSceneBuffer::Resize(byteSize, data = nullptr)` はVertexのstride境界またはIndexのuint32_t境界を検証します。同容量の場合は任意の全体更新のみ実行します。容量変更時は新しいVkBuffer/VkDeviceMemoryを先に確保し、成功した場合だけ旧Resourceと入れ替えます。失敗時は旧Resourceを保持します。IndexCountは新容量から再計算し、VertexStrideは維持します。`data == nullptr` の新規領域は未初期化です。
+
+**重要：** Resize前にGPUの旧Buffer参照が完了している必要があります。成功後はVkBuffer handleが変わるため、古いhandleをキャッシュした描画処理は再取得してください。Scene Context/DeviceのShutdown前にBufferを破棄してください。これは共通RHIBuffer派生・RHIDevice::CreateBuffer接続を完了したことを意味しません。
+
+追加検証項目：Vertex/Index容量変更、同容量更新、stride不整合拒否、確保失敗時の旧handle維持、Resize後のDrawIndexed、GPU同期、Validation Layer。ビルド・実機実行は未確認です。
