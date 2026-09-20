@@ -390,6 +390,23 @@ bool Renderer::CreateRHIScenePipelines(
         return false;
     }
 
+    return CreateRHIScenePipelines(
+        device,
+        sourcePipeline->GetSpecification(),
+        vertexShader,
+        fragmentShader,
+        outOpaquePipeline,
+        outTransparentPipeline);
+}
+
+bool Renderer::CreateRHIScenePipelines(
+    RHIDevice& device,
+    const PipelineSpecification& source,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+    Ref<RHIGraphicsPipeline>& outTransparentPipeline)
+{
     RHIGraphicsPipelineTarget target{};
     if (device.GetGraphicsPipelineTarget(target) == false ||
         target.IsValid() == false)
@@ -397,7 +414,6 @@ bool Renderer::CreateRHIScenePipelines(
         return false;
     }
 
-    const PipelineSpecification& source = sourcePipeline->GetSpecification();
     RHIGraphicsPipelineSpecification specification{};
     specification.VertexShader = vertexShader;
     specification.FragmentShader = fragmentShader;

@@ -6,7 +6,6 @@
 namespace Raven
 {
 
-class Material;
 class Mesh;
 class RHIDevice;
 class VulkanSceneRHIDevice;
@@ -24,7 +23,7 @@ public:
 
     bool Init(
         Window& window,
-        const Ref<Material>& pipelineMaterial,
+        const PipelineSpecification& pipelineSpecification,
         const RHIShaderAssetSpecification& vertexShader,
         const RHIShaderAssetSpecification& fragmentShader);
 
@@ -58,7 +57,8 @@ private:
     RHIShaderAssetManager m_ShaderAssets;
     Ref<RHIShaderAsset> m_VertexShader;
     Ref<RHIShaderAsset> m_FragmentShader;
-    Ref<Material> m_PipelineMaterial;
+    PipelineSpecification m_PipelineSpecification;
+    std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHITexture> m_DefaultTexture;

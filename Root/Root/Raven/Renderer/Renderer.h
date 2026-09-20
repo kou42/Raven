@@ -102,6 +102,16 @@ public:
         Ref<RHIGraphicsPipeline>& outOpaquePipeline,
         Ref<RHIGraphicsPipeline>& outTransparentPipeline);
 
+    // Legacy Pipeline実体を生成できないExplicit-only起動では、共通Specificationを
+    // 直接受け取り、同じPipeline変換規約を利用します。
+    static bool CreateRHIScenePipelines(
+        RHIDevice& device,
+        const PipelineSpecification& source,
+        const RHIShaderBinary& vertexShader,
+        const RHIShaderBinary& fragmentShader,
+        Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+        Ref<RHIGraphicsPipeline>& outTransparentPipeline);
+
     // Queueを閉じ、Texture Binding準備後にExplicit RHIのBegin/Draw/End/Presentを実行します。
     // Debug OverlayはまだLegacy専用のため、この経路には含めません。
     static RHIFrameResult DrawRHISceneFrame(

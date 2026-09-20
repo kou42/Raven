@@ -4,7 +4,6 @@
 #include "VulkanSceneRHIDevice.h"
 
 #include "Raven/Core/Window.h"
-#include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
@@ -22,14 +21,13 @@ VulkanSceneRuntime::~VulkanSceneRuntime()
 
 bool VulkanSceneRuntime::Init(
     Window& window,
-    const Ref<Material>& pipelineMaterial,
+    const PipelineSpecification& pipelineSpecification,
     const RHIShaderAssetSpecification& vertexShader,
     const RHIShaderAssetSpecification& fragmentShader)
 {
     Shutdown();
     if (window.GetBackend() != RHIBackend::Vulkan ||
-        pipelineMaterial == nullptr ||
-        pipelineMaterial->GetPipeline() == nullptr)
+        pipelineSpecification.Topology == PrimitiveTopology::None)
     {
         return false;
     }
@@ -42,7 +40,10 @@ bool VulkanSceneRuntime::Init(
     }
 
     m_Device = CreateScope<VulkanSceneRHIDevice>(m_Context);
-    m_PipelineMaterial = pipelineMaterial;
+    m_PipelineDebugName = pipelineSpecification.DebugName != nullptr ?
+        pipelineSpecification.DebugName : "Unnamed Pipeline";
+    m_PipelineSpecification = pipelineSpecification;
+    m_PipelineSpecification.DebugName = m_PipelineDebugName.c_str();
     m_VertexShader = m_ShaderAssets.Load(vertexShader, RHIBackend::Vulkan);
     m_FragmentShader = m_ShaderAssets.Load(fragmentShader, RHIBackend::Vulkan);
     if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
@@ -131,7 +132,8 @@ void VulkanSceneRuntime::Shutdown()
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
     m_DefaultTexture.reset();
-    m_PipelineMaterial.reset();
+    m_PipelineSpecification = {};
+    m_PipelineDebugName.clear();
     m_VertexShader.reset();
     m_FragmentShader.reset();
     m_ShaderAssets.Clear();
@@ -168,7 +170,7 @@ uint32_t VulkanSceneRuntime::GetHeight() const
 
 bool VulkanSceneRuntime::CreatePipelines()
 {
-    if (m_Device == nullptr || m_PipelineMaterial == nullptr ||
+    if (m_Device == nullptr ||
         m_VertexShader == nullptr || m_FragmentShader == nullptr ||
         m_VertexShader->IsValid() == false ||
         m_FragmentShader->IsValid() == false)
@@ -180,7 +182,7 @@ bool VulkanSceneRuntime::CreatePipelines()
     Ref<RHIGraphicsPipeline> transparent;
     if (Renderer::CreateRHIScenePipelines(
         *m_Device,
-        *m_PipelineMaterial,
+        m_PipelineSpecification,
         m_VertexShader->GetBinary(),
         m_FragmentShader->GetBinary(),
         opaque,
