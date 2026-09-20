@@ -64,6 +64,8 @@ private:
         uint32_t IndexCount = 0;
         std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
         bool AlphaBlend = false;
+        // 透明Meshの近似ソートに使うローカル空間の頂点平均位置です。
+        std::array<float, 3> LocalCenter = {0.0f, 0.0f, 0.0f};
         std::array<float, 16> Model = {
             1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f, 0.0f,
