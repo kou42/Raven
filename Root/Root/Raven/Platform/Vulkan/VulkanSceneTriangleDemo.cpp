@@ -71,14 +71,14 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
 
     // デモでは2つを登録しますが、描画側は任意個数のMeshを処理します。
     const std::vector<Vertex> left = {
-        {{-0.3f, -0.6f}, {1.0f, 0.0f, 0.0f}},
-        {{ 0.3f, -0.6f}, {0.0f, 1.0f, 0.0f}},
-        {{ 0.0f,  0.6f}, {0.0f, 0.0f, 1.0f}}
+        {{-0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 0.0f}},
+        {{ 0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+        {{ 0.0f,  0.6f, 0.0f}, {0.0f, 0.0f, 1.0f}}
     };
     const std::vector<Vertex> right = {
-        {{-0.3f, -0.6f}, {0.0f, 1.0f, 1.0f}},
-        {{ 0.3f, -0.6f}, {1.0f, 0.0f, 1.0f}},
-        {{ 0.0f,  0.6f}, {1.0f, 1.0f, 0.0f}}
+        {{-0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 1.0f}},
+        {{ 0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 1.0f}},
+        {{ 0.0f,  0.6f, 0.0f}, {1.0f, 1.0f, 0.0f}}
     };
     const std::vector<uint32_t> indices = {0, 1, 2};
     if (AddMesh(left, indices) == false || AddMesh(right, indices) == false)
@@ -90,8 +90,9 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     // 同じローカル座標を独立したModel行列で左右へ配置します。
     auto leftModel = m_Meshes[0].Model;
     auto rightModel = m_Meshes[1].Model;
-    leftModel[12] = -0.4f;
-    rightModel[12] = 0.4f;
+    leftModel[12] = -0.15f;
+    rightModel[12] = 0.15f;
+    rightModel[14] = 0.4f; // Cameraに近い右Meshが重複部分で前面に表示されます。
     if (SetMeshTransform(0, leftModel) == false ||
         SetMeshTransform(1, rightModel) == false)
     {
@@ -186,10 +187,13 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     specification.FragmentShader = m_FragmentShader;
     specification.VertexBindings = {{ 0, sizeof(Vertex) }};
     specification.VertexAttributes = {
-        { 0, 0, ShaderDataType::Float2, 0 },
+        { 0, 0, ShaderDataType::Float3, 0 },
         { 1, 0, ShaderDataType::Float3, sizeof(Vertex::Position) }
     };
     specification.Cull = CullMode::None;
+    specification.DepthFormat = RHIDepthFormat::D32Float;
+    specification.DepthTest = true;
+    specification.DepthWrite = true;
     specification.DebugName = "Vulkan Scene Triangle";
     switch (m_Context.GetColorFormat())
     {
