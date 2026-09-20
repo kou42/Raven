@@ -451,6 +451,7 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     DestroyTextureDescriptors();
     m_TextureDescriptorPool = newPool;
     m_TextureDescriptors.resize(descriptors.size());
+    m_DescriptorTextures = textures;
     for (std::size_t index = 0; index < textures.size(); ++index)
     {
         m_TextureDescriptors[index] = descriptors[index];
@@ -468,6 +469,7 @@ void VulkanSceneContext::DestroyTextureDescriptors()
     }
     m_TextureDescriptorPool = VK_NULL_HANDLE;
     m_TextureDescriptors.clear();
+    m_DescriptorTextures.clear();
 }
 
 bool VulkanSceneContext::BindTexture(std::size_t textureIndex)
@@ -477,6 +479,22 @@ bool VulkanSceneContext::BindTexture(std::size_t textureIndex)
         return false;
     }
     return BindTextureDescriptor(m_TextureDescriptors[textureIndex]);
+}
+
+bool VulkanSceneContext::BindTexture(const Ref<RHITexture>& texture)
+{
+    if (texture == nullptr)
+    {
+        return false;
+    }
+    for (std::size_t index = 0; index < m_DescriptorTextures.size(); ++index)
+    {
+        if (m_DescriptorTextures[index] == texture)
+        {
+            return BindTexture(index);
+        }
+    }
+    return false;
 }
 
 bool VulkanSceneContext::SetMaterialTint(const std::array<float, 4>& tint)
