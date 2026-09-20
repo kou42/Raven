@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <limits>
+#include <utility>
 
 namespace Raven
 {
@@ -60,6 +61,7 @@ bool VulkanSceneTriangleDemo::AddMesh(
     const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
 {
     if (m_Window == nullptr || m_Context.GetDevice().IsValid() == false ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE ||
         vertices.empty() == true || indices.empty() == true ||
         vertices.size() > std::numeric_limits<uint32_t>::max() / sizeof(Vertex) ||
         indices.size() > std::numeric_limits<uint32_t>::max() / sizeof(uint32_t))
@@ -105,6 +107,7 @@ bool VulkanSceneTriangleDemo::AddMesh(
 bool VulkanSceneTriangleDemo::ClearMeshes()
 {
     if (m_Context.GetDevice().IsValid() == false ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE ||
         m_Context.GetDevice().WaitIdle() == false)
     {
         return false;
