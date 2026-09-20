@@ -57,6 +57,14 @@ public:
         return m_RHIIndexBuffer;
     }
 
+    bool AreRHIResourcesSynchronized() const
+    {
+        return m_Geometry != nullptr &&
+            m_RHIVertexBuffer != nullptr &&
+            m_RHIIndexBuffer != nullptr &&
+            m_RHIUploadedGeometryRevision == m_Geometry->GetRevision();
+    }
+
     const Ref<MeshGeometry>& GetGeometry() const
     {
         return m_Geometry;

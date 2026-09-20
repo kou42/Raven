@@ -7,6 +7,7 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
+#include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include <algorithm>
@@ -93,6 +94,59 @@ float ComputeTransparentSortDepth(
     }
 
     return farthestDepth;
+}
+
+bool BuildRHISceneMeshSnapshot(
+    const SceneRenderItem& item,
+    const Ref<RHITexture>& defaultTexture,
+    RHISceneMesh& outMesh)
+{
+    if (item.Mesh == nullptr || item.Material == nullptr ||
+        item.Mesh->AreRHIResourcesSynchronized() == false ||
+        item.Mesh->GetIndexCount() == 0)
+    {
+        return false;
+    }
+
+    RHIMaterialProperties material = item.Material->GetRHIProperties();
+    if (material.SurfaceType == MaterialSurfaceType::Masked)
+    {
+        // Masked描画はalpha cutoff対応Shaderが揃うまでExplicit Scene RHI側で未対応です。
+        return false;
+    }
+    if (material.Texture == nullptr)
+    {
+        material.Texture = defaultTexture;
+    }
+    if (material.Texture == nullptr)
+    {
+        return false;
+    }
+
+    RHISceneMesh snapshot{};
+    snapshot.VertexBuffer = item.Mesh->GetRHIVertexBuffer();
+    snapshot.IndexBuffer = item.Mesh->GetRHIIndexBuffer();
+    snapshot.IndexCount = item.Mesh->GetIndexCount();
+    snapshot.Material = std::move(material);
+    snapshot.Model = RHISceneDrawItemBuilder::ToColumnMajor(item.Transform);
+
+    const Ref<MeshGeometry>& geometry = item.Mesh->GetGeometry();
+    math::Vec3 localMinimum{};
+    math::Vec3 localMaximum{};
+    if (geometry != nullptr &&
+        geometry->GetLocalBounds(localMinimum, localMaximum))
+    {
+        // Transparent sortの代表点には、Entity原点ではなくLocal Bounds中心を使用します。
+        const math::Vec3 localCenter = (localMinimum + localMaximum) * 0.5f;
+        snapshot.LocalCenter = {
+            localCenter.x,
+            localCenter.y,
+            localCenter.z
+        };
+    }
+
+    outMesh = std::move(snapshot);
+    return true;
 }
 
 void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cameraContext)
@@ -258,6 +312,46 @@ void Renderer::RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology
 void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
 {
     RenderCommand::DrawIndexed(vertexArray);
+}
+
+bool Renderer::BuildRHISceneMeshes(
+    const Ref<RHITexture>& defaultTexture,
+    std::vector<RHISceneMesh>& outMeshes)
+{
+    if (s_SceneQueueActive == false || s_CameraContext.Valid == false)
+    {
+        return false;
+    }
+
+    std::vector<RHISceneMesh> snapshots;
+    snapshots.reserve(s_OpaqueQueue.size() + s_TransparentQueue.size());
+
+    const auto appendQueue =
+        [&snapshots, &defaultTexture](const std::vector<SceneRenderItem>& queue)
+        {
+            for (const SceneRenderItem& item : queue)
+            {
+                RHISceneMesh snapshot{};
+                if (BuildRHISceneMeshSnapshot(
+                    item, defaultTexture, snapshot) == false)
+                {
+                    return false;
+                }
+                snapshots.push_back(std::move(snapshot));
+            }
+            return true;
+        };
+
+    // Opaque / Transparentの分類は通常Rendererと共有し、Transparentの最終sortは
+    // Camera行列を適用するRHISceneDrawItemBuilderへ委譲します。
+    if (appendQueue(s_OpaqueQueue) == false ||
+        appendQueue(s_TransparentQueue) == false)
+    {
+        return false;
+    }
+
+    outMeshes = std::move(snapshots);
+    return true;
 }
 
 void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)

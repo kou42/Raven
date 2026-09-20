@@ -5,6 +5,7 @@
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 
 #include <cstdint>
+#include <vector>
 
 namespace Raven
 {
@@ -12,6 +13,8 @@ namespace Raven
 class Camera;
 class Material;
 class Mesh;
+class RHITexture;
+struct RHISceneMesh;
 class VertexArray;
 
 // ============================================================================
@@ -68,6 +71,13 @@ public:
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
     static void Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform);
+
+    // 現在の通常Scene QueueをExplicit RHI用の値Snapshotへ変換します。
+    // Buffer生成・更新はFrame開始前に完了している必要があり、ここではGPU操作を行いません。
+    // 失敗時はoutMeshesを変更せず、半端なSnapshotを呼び出し側へ残しません。
+    static bool BuildRHISceneMeshes(
+        const Ref<RHITexture>& defaultTexture,
+        std::vector<RHISceneMesh>& outMeshes);
 
     static const RendererStatistics& GetStatistics();
     static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);
