@@ -392,16 +392,10 @@ bool VulkanSceneContext::SynchronizeBufferAccess(
             continue;
         }
 
-        bool usesBuffer = false;
-        for (const auto& recorded : m_RecordedBuffers[frame])
-        {
-            if (recorded.get() == &buffer)
-            {
-                usesBuffer = true;
-                break;
-            }
-        }
-        if (usesBuffer == false)
+        // Frame内で同じBufferを何度Drawしてもキーは一度だけ登録されます。
+        // 強参照がキーのResource寿命を保持するため、アドレスの再利用は起きません。
+        if (m_RecordedBuffers[frame].find(&buffer) ==
+            m_RecordedBuffers[frame].end())
         {
             continue;
         }
@@ -434,9 +428,16 @@ void VulkanSceneContext::RetainDrawBuffers(
     {
         return;
     }
-    // Draw成功後のBufferを該当FrameのFence完了まで保持します。
-    m_RecordedBuffers[m_ActiveFrame].push_back(vertex);
-    m_RecordedBuffers[m_ActiveFrame].push_back(index);
+    // 同一Bufferが複数DrawやVertex/Indexの両方で指定されても、
+    // Frame Slot内で強参照は一つだけ保持し、Fence検索を重複させません。
+    if (vertex != nullptr)
+    {
+        m_RecordedBuffers[m_ActiveFrame].try_emplace(vertex.get(), vertex);
+    }
+    if (index != nullptr)
+    {
+        m_RecordedBuffers[m_ActiveFrame].try_emplace(index.get(), index);
+    }
 }
 
 void VulkanSceneContext::RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer)
