@@ -82,3 +82,9 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 ### Vulkan Scene Color Target区間（今回追加）
 
 `VulkanFrameRenderer::BeginFrame` → `BeginSceneColorTarget` → RenderPass開始 / Scene Draw / RenderPass終了（後続実装）→ `EndSceneColorTarget` → `EndFrame` → `Present` の順です。Begin/EndSceneColorTargetはSwapChain Imageを `UNDEFINED` または `PRESENT_SRC_KHR` → `COLOR_ATTACHMENT_OPTIMAL` → `PRESENT_SRC_KHR` へ遷移させるのみで、RenderPassやPipelineはまだ生成しません。SubmitのAcquire Semaphore待機StageはScene時 `COLOR_ATTACHMENT_OUTPUT`、従来Clear Demo時 `TRANSFER` です。両描画経路を同一Frame内で混在させることは未対応です。
+
+### Vulkan Scene RenderTarget（今回追加）
+
+`VulkanSceneRenderTarget` はSwapChain ImageごとにImageView/Framebufferを生成し、Color AttachmentのみのRenderPassを所有します。RenderPassのinitial/final Layoutは両方 `COLOR_ATTACHMENT_OPTIMAL` で、前後のLayout遷移は `VulkanFrameRenderer::BeginSceneColorTarget` / `EndSceneColorTarget` が担当します。`BeginFrame` 成功後の `GetAcquiredImageIndex()` で対応するFramebufferを選択します。想定順序は `BeginFrame` → `BeginSceneColorTarget` → `VulkanSceneRenderTarget::Begin` → Draw → `VulkanSceneRenderTarget::End` → `EndSceneColorTarget` → `EndFrame` → `Present` です。
+
+SwapChain Resize時はGPU完了を待ってからScene RenderTargetのFramebuffer/ImageViewを先に `Shutdown` し、SwapChainを再生成した後に `Init` してください。今回追加したのはRenderPass/Framebufferの部品であり、Scene専用Contextへの接続、Depth Attachment、Pipeline、RHICommandListはまだ未実装です。
