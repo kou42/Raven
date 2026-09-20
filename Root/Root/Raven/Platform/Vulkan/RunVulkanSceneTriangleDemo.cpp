@@ -3,41 +3,15 @@
 #include "VulkanSceneTriangleDemo.h"
 
 #include "Raven/Core/Window.h"
+#include "Raven/Renderer/RHI/RHIShaderBinaryLoader.h"
 
 #include <GLFW/glfw3.h>
 
-#include <fstream>
+#include <filesystem>
 #include <iostream>
-#include <iterator>
-#include <string>
-#include <vector>
 
 namespace Raven
 {
-namespace
-{
-bool ReadSPIRV(const std::string& path, RHIShaderBinary& shader)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (file.is_open() == false)
-    {
-        std::cerr << "SPIR-V file not found: " << path << '\n';
-        return false;
-    }
-    std::vector<char> bytes(
-        (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (file.bad() == true || bytes.empty() == true ||
-        bytes.size() % sizeof(uint32_t) != 0)
-    {
-        std::cerr << "Invalid SPIR-V file: " << path << '\n';
-        return false;
-    }
-    shader.Format = RHIShaderBinaryFormat::SPIRV;
-    shader.Code.assign(bytes.begin(), bytes.end());
-    shader.EntryPoint = "main";
-    return true;
-}
-} // namespace
 
 int RunVulkanSceneTriangleDemo()
 {
@@ -51,10 +25,20 @@ int RunVulkanSceneTriangleDemo()
 
     RHIShaderBinary vertexShader;
     RHIShaderBinary fragmentShader;
-    const std::string shaderDirectory = "Raven/Assets/Shaders/Vulkan/";
-    if (ReadSPIRV(shaderDirectory + "SceneTriangle.vert.spv", vertexShader) == false ||
-        ReadSPIRV(shaderDirectory + "SceneTriangle.frag.spv", fragmentShader) == false)
+    const std::filesystem::path shaderDirectory =
+        std::filesystem::path("Raven") / "Assets" / "Shaders" / "Vulkan";
+    const std::filesystem::path vertexPath =
+        shaderDirectory / "SceneTriangle.vert.spv";
+    const std::filesystem::path fragmentPath =
+        shaderDirectory / "SceneTriangle.frag.spv";
+
+    // デモ固有のFile I/Oを持たず、通常Rendererでも再利用できる共通Loaderを使用します。
+    if (RHIShaderBinaryLoader::LoadForBackend(
+        vertexPath, RHIBackend::Vulkan, vertexShader) == false ||
+        RHIShaderBinaryLoader::LoadForBackend(
+            fragmentPath, RHIBackend::Vulkan, fragmentShader) == false)
     {
+        std::cerr << "Vulkan Scene Triangle shader binary load failed.\n";
         return 1;
     }
 
