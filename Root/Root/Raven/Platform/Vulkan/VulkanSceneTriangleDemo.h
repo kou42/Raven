@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
-#include "Raven/Renderer/RHI/RHITexture.h"
+#include "Raven/Renderer/RHI/RHIMaterialProperties.h"
 #include "Raven/Scene/SceneCamera.h"
 
 #include <array>
@@ -12,7 +12,6 @@
 namespace Raven
 {
 class Material;
-struct RHIMaterialProperties;
 
 // OpenGL Applicationを変更せずVulkan Sceneの描画経路を検証する最小Triangleです。
 // 呼び出し元はVulkan Windowと、以下の入力宣言に一致するSPIR-Vを渡します。
