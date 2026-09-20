@@ -104,21 +104,25 @@ bool VulkanSceneBuffer::Init(const VulkanDevice& device, const void* data,
     return true;
 }
 
-bool VulkanSceneBuffer::SetData(const void* data, uint32_t byteSize)
+bool VulkanSceneBuffer::SetData(const void* data, uint32_t byteSize, uint32_t offset)
 {
-    if (IsValid() == false || data == nullptr ||
-        byteSize == 0 || byteSize > m_Capacity)
+    // 減算で範囲検証し、offset + byteSizeの整数overflowを防ぎます。
+    // GPU実行中の書き込みは呼び出し側がFence等で同期してください。
+    if (IsValid() == false || data == nullptr || byteSize == 0 ||
+        offset > m_Capacity || byteSize > m_Capacity - offset)
     {
         return false;
     }
 
     void* mapped = nullptr;
-    if (vkMapMemory(m_Device, m_Memory, 0, byteSize, 0, &mapped) != VK_SUCCESS ||
+    // VkDeviceMemoryのMap offsetにはminMemoryMapAlignment等の制約があるため、
+    // 割当先頭からMapし、CPU側pointerで更新位置を指定します。
+    if (vkMapMemory(m_Device, m_Memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS ||
         mapped == nullptr)
     {
         return false;
     }
-    std::memcpy(mapped, data, byteSize);
+    std::memcpy(static_cast<uint8_t*>(mapped) + offset, data, byteSize);
     // Host Coherentを要求しているため、vkFlushMappedMemoryRangesは不要です。
     vkUnmapMemory(m_Device, m_Memory);
     return true;
