@@ -172,6 +172,15 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     {
         return false;
     }
+    // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
+    for (const auto& weakPipeline : m_GraphicsPipelines)
+    {
+        if (auto pipeline = weakPipeline.lock())
+        {
+            pipeline->Shutdown();
+        }
+    }
+    m_GraphicsPipelines.clear();
     m_RenderTarget.Shutdown();
     if (m_SwapChain.Recreate(width, height, m_VSync) == false ||
         m_FrameSync.Init(m_Instance.GetDevice(),
@@ -238,6 +247,26 @@ VkCommandBuffer VulkanSceneContext::GetActiveCommandBuffer() const
     return m_CommandBuffers[m_ActiveFrame]->GetHandle();
 }
 
+Ref<RHIGraphicsPipeline> VulkanSceneContext::CreateGraphicsPipeline(
+    const RHIGraphicsPipelineSpecification& specification)
+{
+    if (m_FrameActive == true || m_Instance.IsValid() == false ||
+        m_RenderTarget.IsValid() == false ||
+        specification.IsValidForBackend(RHIBackend::Vulkan) == false)
+    {
+        return nullptr;
+    }
+
+    auto pipeline = CreateRef<VulkanGraphicsPipeline>();
+    if (pipeline->Init(m_Instance.GetDevice().GetHandle(),
+        m_RenderTarget.GetRenderPass(), m_SwapChain.GetImageFormat(), specification) == false)
+    {
+        return nullptr;
+    }
+    m_GraphicsPipelines.push_back(pipeline);
+    return pipeline;
+}
+
 void VulkanSceneContext::Shutdown()
 {
     if (m_Instance.IsValid() == true)
@@ -247,6 +276,15 @@ void VulkanSceneContext::Shutdown()
     m_FrameActive = false;
     m_FrameSubmitted = false;
     m_ActiveFrame = 0;
+    // 外部Refが残っていてもVkDevice破棄後のDestructorでVulkanを呼ばせません。
+    for (const auto& weakPipeline : m_GraphicsPipelines)
+    {
+        if (auto pipeline = weakPipeline.lock())
+        {
+            pipeline->Shutdown();
+        }
+    }
+    m_GraphicsPipelines.clear();
     m_FrameSync.Shutdown();
     m_CommandBuffers.clear();
     m_RenderTarget.Shutdown();
