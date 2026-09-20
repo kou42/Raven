@@ -48,6 +48,9 @@ public:
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
     // Frame外でRGBA8 Textureを追加します。Descriptor生成済みならGPU完了待ち後に再構築します。
     bool AddTexture(uint32_t width, uint32_t height, const uint8_t* rgba);
+    // 同じScene Deviceから生成したRHITextureを共有登録します。登録成功時に番号を返します。
+    // 別Deviceや未対応形式のTextureは受け付けません。
+    bool AddTexture(const Ref<RHITexture>& texture, std::size_t& textureIndex);
     std::size_t GetTextureCount() const { return m_Textures.size(); }
     // 既存Cameraを借用せず値で保持し、Viewport変更時にProjectionを再計算します。
     SceneCamera& GetCamera() { return m_Camera; }
