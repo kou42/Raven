@@ -150,3 +150,11 @@ Vulkan三角形デモは `RHISceneFrameLifecycle` の参照からBeginFrame/EndF
 `RHISceneRenderServices` は同じScene Contextに紐付く `RHISceneFrameLifecycle`、`RHISceneCommandList`、`RHISceneResourceFactory` をまとめて参照できる共通入口です。`VulkanSceneRenderServices` は既存 `VulkanSceneContext` を借用し、Vulkan用CommandList/ResourceFactoryを保持します。ContextのInit/ShutdownやGPUリソースの所有権は移動しません。
 
 Vulkan三角形デモはRender ServicesからFrame/Command/Factoryを取得し、描画には `RHISceneDraw` を使用します。Resize後のPipeline再生成とFatalError時のContext破棄はデモ側で維持します。DX12/将来Metalも同じServices契約を実装する想定ですが、通常ApplicationのSceneへの接続や他Backendの実装はまだ行いません。
+
+### Scene Runtimeの所有権（段階的移行）
+
+`RHISceneRuntime` はBackend識別・同一Contextに紐付くRender Services・描画サイズ・GPU完了待機・Shutdownを公開します。`VulkanSceneRuntime::Create(Window&)` はVulkan Windowに限り既存 `VulkanSceneContext` を初期化し、所有するContextを借用するServicesを提供します。Windowは所有しません。未対応Backendへの暗黙fallbackは行いません。
+
+Vulkan三角形デモは `Scope<RHISceneRuntime>` を所有し、Resource/Frame/Command取得をRuntimeのServicesに集約します。Shutdown時はWaitIdle → Pipeline/Buffer解放 → Runtime/Device破棄の順序です。Resize後のPipeline再生成は引き続きデモ側の責務です。
+
+**注意:** 通常ApplicationはOpenGL LegacyのFrame/Renderer/UI経路を継続します。今回のRuntimeは通常SceneをVulkanへ自動切替するFactoryではなく、Vulkan Sceneの所有構造を明確にする中間段階です。DX12と将来Metalには各BackendのContext/Services/Runtimeを実装してから接続します。

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VulkanSceneRenderServices.h"
+#include "VulkanSceneRuntime.h"
 
 #include <array>
 
@@ -25,7 +25,14 @@ public:
     RHIFrameResult DrawFrame();
     bool Resize(uint32_t width, uint32_t height);
     void Shutdown();
-    VkExtent2D GetExtent() const { return m_Context.GetExtent(); }
+    VkExtent2D GetExtent() const
+    {
+        if (m_Runtime == nullptr)
+        {
+            return { 0, 0 };
+        }
+        return { m_Runtime->GetWidth(), m_Runtime->GetHeight() };
+    }
 
 private:
     struct Vertex
@@ -37,9 +44,8 @@ private:
     bool CreatePipeline();
 
     Window* m_Window = nullptr;
-    VulkanSceneContext m_Context;
-    // Contextの後に構築し、Contextより先に破棄します。
-    VulkanSceneRenderServices m_Services{ m_Context };
+    // RuntimeはBufferより後に破棄され、Deviceの寿命を保証します。
+    Scope<RHISceneRuntime> m_Runtime;
     Scope<RHISceneBuffer> m_VertexBuffer;
     Scope<RHISceneBuffer> m_IndexBuffer;
     Ref<RHIGraphicsPipeline> m_Pipeline;
