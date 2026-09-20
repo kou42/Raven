@@ -1,5 +1,6 @@
 #include "VulkanSceneTriangleDemo.h"
 #include "Raven/Renderer/Material/Material.h"
+#include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 #include "VulkanSceneRHIDevice.h"
 #include "VulkanSceneRHITexture.h"
 
@@ -517,32 +518,35 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         }
     }
 
-    // View空間のZが小さい（Cameraから遠い）Meshから透明描画します。
-    // Meshの頂点平均を代表点とする近似のため、交差する透明形状は完全には解決しません。
-    std::vector<std::size_t> transparentIndices;
-    transparentIndices.reserve(m_Meshes.size());
-    for (std::size_t index = 0; index < m_Meshes.size(); ++index)
-    {
-        if (m_Meshes[index].Material.SurfaceType == MaterialSurfaceType::Transparent)
-        {
-            transparentIndices.push_back(index);
-        }
-    }
+    // Rendererへ渡すDraw ItemをFrame前に構築し、GPU命令とScene走査を分離します。
     const math::Mat4 view = m_Camera.GetViewMatrix();
-    const auto viewDepth = [this, &view](std::size_t index)
+    // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
+    // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
+    const math::Mat4 vulkanClipCorrection(
+        1.0f,  0.0f, 0.0f, 0.0f,
+        0.0f, -1.0f, 0.0f, 0.0f,
+        0.0f,  0.0f, 0.5f, 0.5f,
+        0.0f,  0.0f, 0.0f, 1.0f);
+    const math::Mat4 viewProjection = vulkanClipCorrection *
+        m_Camera.GetProjectionMatrix() * view;
+    std::vector<RHISceneDrawItem> drawItems;
+    drawItems.reserve(m_Meshes.size());
+    for (const Mesh& mesh : m_Meshes)
     {
-        const Mesh& mesh = m_Meshes[index];
+        RHISceneDrawItem item;
+        item.VertexBuffer = mesh.VertexBuffer;
+        item.IndexBuffer = mesh.IndexBuffer;
+        item.IndexCount = mesh.IndexCount;
+        item.Material = mesh.Material;
+        item.ClipTransform = ToColumnMajor(
+            viewProjection * FromColumnMajor(mesh.Model));
         const math::Mat4 modelView = view * FromColumnMajor(mesh.Model);
         const auto& center = mesh.LocalCenter;
-        return modelView.m[2][0] * center[0] +
+        item.ViewDepth = modelView.m[2][0] * center[0] +
             modelView.m[2][1] * center[1] +
             modelView.m[2][2] * center[2] + modelView.m[2][3];
-    };
-    std::stable_sort(transparentIndices.begin(), transparentIndices.end(),
-        [&viewDepth](std::size_t left, std::size_t right)
-        {
-            return viewDepth(left) < viewDepth(right);
-        });
+        drawItems.push_back(std::move(item));
+    }
 
     const RHIFrameResult begin = m_Context.BeginFrame();
     if (begin != RHIFrameResult::Success)
@@ -553,50 +557,12 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     VulkanSceneCommandList vulkanCommands(m_Context);
     // Scene描画の呼び出し側はVulkan固有CommandListの実体に依存しません。
     RHISceneCommandList& commands = vulkanCommands;
-    // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
-    // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
-    const math::Mat4 vulkanClipCorrection(
-        1.0f,  0.0f, 0.0f, 0.0f,
-        0.0f, -1.0f, 0.0f, 0.0f,
-        0.0f,  0.0f, 0.5f, 0.5f,
-        0.0f,  0.0f, 0.0f, 1.0f);
-    const math::Mat4 viewProjection = vulkanClipCorrection *
-        m_Camera.GetProjectionMatrix() * m_Camera.GetViewMatrix();
-    // Opaqueの後、透明MeshをCameraから遠い順に描画します。
-    // BlendのDepth Writeは無効のまま、OpaqueのDepthとは比較します。
-    for (uint32_t pass = 0; pass < 2; ++pass)
+    // Opaque/Transparentの順序とMaterial Bindingは共通Rendererが担当します。
+    if (RHISceneMeshRenderer::Draw(commands, m_Pipeline,
+        m_TransparentPipeline, drawItems) == false)
     {
-        const bool transparentPass = pass == 1;
-        const auto& pipeline = transparentPass == true ?
-            m_TransparentPipeline : m_Pipeline;
-        if (commands.BindPipeline(pipeline) == false)
-        {
-            Shutdown();
-            return RHIFrameResult::FatalError;
-        }
-        const std::size_t drawCount = transparentPass == true ?
-            transparentIndices.size() : m_Meshes.size();
-        for (std::size_t draw = 0; draw < drawCount; ++draw)
-        {
-            const Mesh& mesh = transparentPass == true ?
-                m_Meshes[transparentIndices[draw]] : m_Meshes[draw];
-            if ((mesh.Material.SurfaceType == MaterialSurfaceType::Transparent) != transparentPass)
-            {
-                continue;
-            }
-            // CameraとMeshのModelを合成して、DrawごとにPush Constantを更新します。
-            const auto clipTransform = ToColumnMajor(
-                viewProjection * FromColumnMajor(mesh.Model));
-            // Meshの共通Material Snapshotを直接渡し、Texture番号を描画経路から排除します。
-            if (commands.BindMaterial(mesh.Material) == false ||
-                commands.SetClipTransform(clipTransform) == false ||
-                commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
-                    mesh.IndexCount) == false)
-            {
-                Shutdown();
-                return RHIFrameResult::FatalError;
-            }
-        }
+        Shutdown();
+        return RHIFrameResult::FatalError;
     }
     const RHIFrameResult end = m_Context.EndFrame();
     if (end != RHIFrameResult::Success)
