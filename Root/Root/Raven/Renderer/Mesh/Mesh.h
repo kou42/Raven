@@ -8,6 +8,8 @@
 namespace Raven
 {
 
+class RHIBuffer;
+class RHIDevice;
 class VertexArray;
 class VertexBuffer;
 
@@ -37,6 +39,24 @@ public:
     // 発生しません。Static Geometryや低レベルVertexArray Meshではfalseを返します。
     bool SyncGeometry();
 
+    // 任意のRHIDeviceからExplicit Scene描画用Bufferを構築します。
+    // Vulkan固有ContextはDevice実装側へ閉じ込め、Meshは共通RHIBufferだけを保持します。
+    bool BuildRHIResources(RHIDevice& device);
+
+    // Dynamic Fixed Topologyの頂点変更をExplicit RHI用Bufferへ同期します。
+    // 更新に失敗した場合はRevisionを進めず、次回呼び出しで再試行できる状態を維持します。
+    bool SyncRHIResources();
+
+    const Ref<RHIBuffer>& GetRHIVertexBuffer() const
+    {
+        return m_RHIVertexBuffer;
+    }
+
+    const Ref<RHIBuffer>& GetRHIIndexBuffer() const
+    {
+        return m_RHIIndexBuffer;
+    }
+
     const Ref<MeshGeometry>& GetGeometry() const
     {
         return m_Geometry;
@@ -60,6 +80,9 @@ private:
     // 初期UploadとDynamic更新で同じ変換規約を共有するためのヘルパーです。
     bool UploadVertexData();
 
+    // rebuildUploadDataがfalseの場合、同じSyncGeometry内でLegacy更新に使用した変換結果を再利用します。
+    bool UploadRHIVertexData(bool rebuildUploadData);
+
 private:
     Ref<MeshGeometry> m_Geometry;
     Ref<VertexArray> m_VertexArray;
@@ -67,8 +90,13 @@ private:
     // Dynamic更新ではVertexArrayを作り直さず、このVBOだけをSetData()で更新します。
     Ref<VertexBuffer> m_VertexBuffer;
 
+    // Explicit Scene RHIはLegacy VertexArrayとは独立したGPU ResourceとRevisionを持ちます。
+    Ref<RHIBuffer> m_RHIVertexBuffer;
+    Ref<RHIBuffer> m_RHIIndexBuffer;
+
     uint32_t m_IndexCount = 0;
     uint64_t m_UploadedGeometryRevision = 0;
+    uint64_t m_RHIUploadedGeometryRevision = 0;
 
     // Dynamic Geometryの毎frame uploadでcapacityを再利用する変換先です。
     // MeshVertexの論理LayoutとGPUの11-float Layoutを分離したままHeap allocationを避けます。

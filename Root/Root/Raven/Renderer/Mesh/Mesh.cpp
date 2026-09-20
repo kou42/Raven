@@ -6,6 +6,7 @@
 
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Renderer/RenderCommand.h"
 
 namespace Raven
@@ -129,14 +130,6 @@ bool Mesh::SyncGeometry()
         return false;
     }
 
-    // CPU Geometryに変更が無い場合はVBO Uploadを行いません。
-    // Deformer側は毎フレームSyncGeometry()を呼べるため、呼び出し側でdirty管理を重複して
-    // 実装する必要がありません。
-    if (m_UploadedGeometryRevision == m_Geometry->GetRevision())
-    {
-        return false;
-    }
-
     // この段階ではFixed TopologyのDynamic Geometryだけを対象にしています。
     // Dynamic TopologyはIndexBuffer更新とVAO再構築の責務が増えるため、頂点変形とは分離して
     // 後続実装で追加します。
@@ -145,7 +138,122 @@ bool Mesh::SyncGeometry()
         return false;
     }
 
-    return UploadVertexData();
+    const uint64_t geometryRevision = m_Geometry->GetRevision();
+    const bool legacyUploadRequired =
+        m_UploadedGeometryRevision != geometryRevision;
+    const bool rhiUploadRequired =
+        m_RHIVertexBuffer != nullptr &&
+        m_RHIUploadedGeometryRevision != geometryRevision;
+
+    // LegacyとExplicit RHIのRevisionを別々に追跡します。
+    // 一方だけ失敗しても成功済みResourceを再Uploadせず、失敗側だけ次回再試行できます。
+    if (legacyUploadRequired == false && rhiUploadRequired == false)
+    {
+        return false;
+    }
+
+    bool synchronized = false;
+    if (legacyUploadRequired == true)
+    {
+        synchronized = UploadVertexData();
+    }
+
+    if (rhiUploadRequired == true)
+    {
+        // Legacy更新が先に変換済みなら11-float列を共有し、毎frameの二重変換を避けます。
+        const bool rebuildUploadData = legacyUploadRequired == false;
+        const bool rhiSynchronized =
+            UploadRHIVertexData(rebuildUploadData);
+        synchronized = synchronized || rhiSynchronized;
+    }
+    return synchronized;
+}
+
+bool Mesh::BuildRHIResources(RHIDevice& device)
+{
+    if (m_Geometry == nullptr ||
+        m_Geometry->GetVertices().empty() ||
+        m_Geometry->GetIndices().empty())
+    {
+        return false;
+    }
+
+    BuildVertexUploadData(m_Geometry->GetVertices(), m_VertexUploadData);
+
+    RHIBufferSpecification vertexSpecification{};
+    vertexSpecification.Size = m_VertexUploadData.size() * sizeof(float);
+    vertexSpecification.Usage = RHIBufferUsage::Vertex;
+    vertexSpecification.MemoryUsage =
+        m_Geometry->GetGeometryUsage() == GeometryUsage::Dynamic ?
+        RHIMemoryUsage::Dynamic : RHIMemoryUsage::Static;
+    vertexSpecification.DebugName = "Mesh Vertex Buffer";
+
+    RHIBufferSpecification indexSpecification{};
+    indexSpecification.Size =
+        m_Geometry->GetIndices().size() * sizeof(uint32_t);
+    indexSpecification.Usage = RHIBufferUsage::Index;
+    indexSpecification.MemoryUsage = vertexSpecification.MemoryUsage;
+    indexSpecification.DebugName = "Mesh Index Buffer";
+
+    // 両Bufferの生成に成功してから所有Resourceを入れ替え、途中失敗では既存描画を維持します。
+    Ref<RHIBuffer> vertexBuffer =
+        device.CreateBuffer(vertexSpecification, m_VertexUploadData.data());
+    if (vertexBuffer == nullptr)
+    {
+        return false;
+    }
+
+    Ref<RHIBuffer> indexBuffer =
+        device.CreateBuffer(indexSpecification, m_Geometry->GetIndices().data());
+    if (indexBuffer == nullptr)
+    {
+        return false;
+    }
+
+    m_RHIVertexBuffer = std::move(vertexBuffer);
+    m_RHIIndexBuffer = std::move(indexBuffer);
+    m_RHIUploadedGeometryRevision = m_Geometry->GetRevision();
+    return true;
+}
+
+bool Mesh::SyncRHIResources()
+{
+    if (m_Geometry == nullptr ||
+        m_Geometry->GetGeometryUsage() != GeometryUsage::Dynamic ||
+        m_Geometry->GetTopologyUsage() != TopologyUsage::Fixed ||
+        m_RHIVertexBuffer == nullptr ||
+        m_RHIIndexBuffer == nullptr ||
+        m_RHIUploadedGeometryRevision == m_Geometry->GetRevision())
+    {
+        return false;
+    }
+
+    return UploadRHIVertexData(true);
+}
+
+bool Mesh::UploadRHIVertexData(bool rebuildUploadData)
+{
+    if (m_Geometry == nullptr || m_RHIVertexBuffer == nullptr ||
+        m_Geometry->GetVertices().empty())
+    {
+        return false;
+    }
+
+    if (rebuildUploadData == true)
+    {
+        BuildVertexUploadData(m_Geometry->GetVertices(), m_VertexUploadData);
+    }
+
+    const std::size_t uploadSize =
+        m_VertexUploadData.size() * sizeof(float);
+    if (m_RHIVertexBuffer->TrySetData(
+        m_VertexUploadData.data(), uploadSize) == false)
+    {
+        return false;
+    }
+
+    m_RHIUploadedGeometryRevision = m_Geometry->GetRevision();
+    return true;
 }
 
 void Mesh::Draw() const
