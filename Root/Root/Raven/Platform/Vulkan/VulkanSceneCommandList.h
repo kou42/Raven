@@ -37,6 +37,11 @@ public:
         return m_Context.BindGraphicsPipeline(pipeline);
     }
 
+    bool SetModelTransform(const std::array<float, 16>& model)
+    {
+        return m_Context.SetModelTransform(model);
+    }
+
     // indexCount == 0 はIndexBuffer全体を描画します。
     // BeginFrame/EndFrameの外側ではContextがfalseを返し、GPU命令を記録しません。
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
