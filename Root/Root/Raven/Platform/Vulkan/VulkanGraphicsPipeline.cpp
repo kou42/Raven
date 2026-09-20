@@ -212,8 +212,15 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
     dynamic.dynamicStateCount = 2;
     dynamic.pDynamicStates = dynamicStates;
 
+    // MeshごとのModel行列は小容量のPush ConstantでDraw直前に更新します。
+    VkPushConstantRange modelRange{};
+    modelRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    modelRange.offset = 0;
+    modelRange.size = sizeof(float) * 16;
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &modelRange;
     const VkResult layoutResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Layout);
     if (layoutResult == VK_SUCCESS)
     {
