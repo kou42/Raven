@@ -144,3 +144,9 @@ Vulkan三角形デモは `RHISceneFrameLifecycle` の参照からBeginFrame/EndF
 **寿命:** GPU使用中のBufferを解放せず、WaitIdle後かつContext/Device破棄前に解放します。Resize時は既存Vulkan Contextが旧Pipelineを無効化するため、Factory経由で再生成します。
 
 **未実装:** DX12/MetalのScene Resource Factory、通常ApplicationのSceneへの接続、Texture/Uniform/Material、GPU staging転送。既存 `RHIDevice` / `RenderCommand` のOpenGL Legacy経路は変更しません。
+
+### Scene Render Services（Frame / Command / Resourceの組み立て）
+
+`RHISceneRenderServices` は同じScene Contextに紐付く `RHISceneFrameLifecycle`、`RHISceneCommandList`、`RHISceneResourceFactory` をまとめて参照できる共通入口です。`VulkanSceneRenderServices` は既存 `VulkanSceneContext` を借用し、Vulkan用CommandList/ResourceFactoryを保持します。ContextのInit/ShutdownやGPUリソースの所有権は移動しません。
+
+Vulkan三角形デモはRender ServicesからFrame/Command/Factoryを取得し、描画には `RHISceneDraw` を使用します。Resize後のPipeline再生成とFatalError時のContext破棄はデモ側で維持します。DX12/将来Metalも同じServices契約を実装する想定ですが、通常ApplicationのSceneへの接続や他Backendの実装はまだ行いません。
