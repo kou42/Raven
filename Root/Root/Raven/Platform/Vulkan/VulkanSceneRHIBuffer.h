@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHIBuffer.h"
-#include "VulkanDevice.h"
+#include "VulkanSceneContext.h"
 #include "VulkanSceneBuffer.h"
 
 #include <cstdint>
@@ -11,15 +11,20 @@ namespace Raven
 {
 
 // 共通RHIBufferとScene用VkBufferを接続するAdapterです。
-// GPUが使用中のSetData/Resize/破棄は呼び出し元が同期してください。
-// ContextのVkDeviceより先にこのResourceを破棄する必要があります。
+// SetData/ResizeはContextでGPU同期し、Context終了時はnative Bufferを無効化します。
+// Draw記録済みBufferのRefはGPU完了まで呼び出し側が保持してください。
 class VulkanSceneRHIBuffer final : public RHIBuffer
 {
 public:
-    bool Init(const VulkanDevice& device,
+    ~VulkanSceneRHIBuffer() override
+    {
+        Shutdown();
+    }
+
+    bool Init(VulkanSceneContext& context,
         const RHIBufferSpecification& specification, const void* initialData)
     {
-        if (device.IsValid() == false || specification.Size == 0 ||
+        if (context.GetDevice().IsValid() == false || specification.Size == 0 ||
             specification.Size > std::numeric_limits<uint32_t>::max())
         {
             return false;
@@ -31,15 +36,15 @@ public:
         {
         case RHIBufferUsage::Vertex:
             // RHIBufferSpecificationにstrideはないため、ここではbyte単位で確保します。
-            // Scene DrawIndexedへ接続する際はPipeline入力宣言のstrideを別途伝えます。
-            created = m_Buffer.InitVertex(device, initialData, byteSize, 1);
+            // DrawIndexedはBind済PipelineのBinding 0からstrideを取得します。
+            created = m_Buffer.InitVertex(context.GetDevice(), initialData, byteSize, 1);
             break;
         case RHIBufferUsage::Index:
             if (byteSize % sizeof(uint32_t) != 0)
             {
                 return false;
             }
-            created = m_Buffer.InitIndex(device,
+            created = m_Buffer.InitIndex(context.GetDevice(),
                 static_cast<const uint32_t*>(initialData),
                 byteSize / static_cast<uint32_t>(sizeof(uint32_t)));
             break;
@@ -56,33 +61,58 @@ public:
             return false;
         }
         m_Specification = specification;
+        m_Context = &context;
         return true;
+    }
+
+    // 共通RHIBufferのvoid APIは失敗を返せないため、結果が必要な場合はTry版を使います。
+    bool TrySetData(const void* data, std::size_t size, std::size_t offset = 0)
+    {
+        if (m_Context == nullptr || data == nullptr ||
+            size == 0 || size > std::numeric_limits<uint32_t>::max() ||
+            offset > m_Specification.Size ||
+            size > m_Specification.Size - offset ||
+            m_Context->SynchronizeBufferAccess() == false)
+        {
+            return false;
+        }
+        return m_Buffer.SetData(data, static_cast<uint32_t>(size),
+            static_cast<uint32_t>(offset));
     }
 
     void SetData(const void* data, std::size_t size,
         std::size_t offset = 0) override
     {
-        if (size == 0 || size > std::numeric_limits<uint32_t>::max() ||
-            offset > m_Specification.Size ||
-            size > m_Specification.Size - offset)
+        (void)TrySetData(data, size, offset);
+    }
+
+    bool TryResize(std::size_t size, const void* data = nullptr)
+    {
+        if (m_Context == nullptr || size == 0 ||
+            size > std::numeric_limits<uint32_t>::max() ||
+            m_Context->SynchronizeBufferAccess() == false)
         {
-            return;
+            return false;
         }
-        m_Buffer.SetData(data, static_cast<uint32_t>(size),
-            static_cast<uint32_t>(offset));
+        // native Bufferの再生成に失敗した場合、Specificationも旧値を保持します。
+        if (m_Buffer.Resize(static_cast<uint32_t>(size), data) == false)
+        {
+            return false;
+        }
+        m_Specification.Size = size;
+        return true;
     }
 
     void Resize(std::size_t size, const void* data = nullptr) override
     {
-        if (size == 0 || size > std::numeric_limits<uint32_t>::max())
-        {
-            return;
-        }
-        // 失敗時はnative Bufferと共通Specificationの両方を変更しません。
-        if (m_Buffer.Resize(static_cast<uint32_t>(size), data) == true)
-        {
-            m_Specification.Size = size;
-        }
+        (void)TryResize(size, data);
+    }
+
+    // Context::ShutdownはWaitIdle後に呼び、外部RefからのDevice破棄後アクセスを防ぎます。
+    void InvalidateAfterDeviceIdle()
+    {
+        m_Buffer.Shutdown();
+        m_Context = nullptr;
     }
 
     const RHIBufferSpecification& GetSpecification() const override
@@ -94,6 +124,18 @@ public:
     const VulkanSceneBuffer& GetSceneBuffer() const { return m_Buffer; }
 
 private:
+    void Shutdown()
+    {
+        if (m_Context != nullptr)
+        {
+            // 通常破棄時はGPU使用完了を待ちます。記録中のBufferは呼び出し側が保持します。
+            (void)m_Context->SynchronizeBufferAccess();
+        }
+        m_Buffer.Shutdown();
+        m_Context = nullptr;
+    }
+
+    VulkanSceneContext* m_Context = nullptr;
     RHIBufferSpecification m_Specification{};
     VulkanSceneBuffer m_Buffer;
 };
