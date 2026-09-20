@@ -43,7 +43,7 @@ public:
     // Texture番号はAddTexture()の登録順です。0は既定Checker Textureです。
     // MaterialはMesh単位でTexture番号を保持し、同じ番号のGPU Textureを共有します。
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
-    // Frame外でRGBA8 Textureを追加します。失敗時は既存Textureを維持します。
+    // Frame外でRGBA8 Textureを追加します。Descriptor生成済みならGPU完了待ち後に再構築します。
     bool AddTexture(uint32_t width, uint32_t height, const uint8_t* rgba);
     std::size_t GetTextureCount() const { return m_Textures.size(); }
     // 既存Cameraを借用せず値で保持し、Viewport変更時にProjectionを再計算します。
@@ -75,14 +75,19 @@ private:
     // TextureResourceはSceneが所有し、Meshは登録番号だけを参照します。
     std::vector<TextureResource> m_Textures;
     VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
+    // 汎用Materialとは別のVulkan Scene検証用データ。API固有handleはTextureResourceに閉じ込めます。
+    struct SceneMaterial
+    {
+        std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
+        bool AlphaBlend = false;
+        std::size_t TextureIndex = 0;
+    };
     struct Mesh
     {
         Ref<RHIBuffer> VertexBuffer;
         Ref<RHIBuffer> IndexBuffer;
         uint32_t IndexCount = 0;
-        std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
-        bool AlphaBlend = false;
-        std::size_t TextureIndex = 0;
+        SceneMaterial Material;
         // 透明Meshの近似ソートに使うローカル空間の頂点平均位置です。
         std::array<float, 3> LocalCenter = {0.0f, 0.0f, 0.0f};
         std::array<float, 16> Model = {
