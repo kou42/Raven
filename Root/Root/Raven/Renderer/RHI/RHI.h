@@ -5,4 +5,5 @@
 #include "Raven/Renderer/RHI/RHITexture.h"
 #include "Raven/Renderer/RHI/RHICommandList.h"
 #include "Raven/Renderer/RHI/RHIResource.h"
+#include "Raven/Renderer/RHI/RHIGraphicsPipeline.h"
 #include "Raven/Renderer/RHI/RHITypes.h"

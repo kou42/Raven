@@ -6,6 +6,7 @@
 #include <string>
 #include <iostream>
 #include "Raven/Renderer/RHI/ClearBackendDemo.h"
+#include "Raven/Platform/Vulkan/RunVulkanSceneTriangleDemo.h"
 #include <utility>
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
@@ -53,6 +54,10 @@ int main(int argc, char* argv[])
     if (argc > 1)
     {
         const std::string backendArgument = argv[1];
+        if (backendArgument == "--scene-triangle-vulkan")
+        {
+            return Raven::RunVulkanSceneTriangleDemo();
+        }
         if (backendArgument == "--clear-opengl")
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::OpenGL);
@@ -65,7 +70,7 @@ int main(int argc, char* argv[])
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
         }
-        std::cerr << "Unknown argument. Use --clear-opengl, --clear-vulkan or --clear-dx12.\n";
+        std::cerr << "Unknown argument. Use --scene-triangle-vulkan, --clear-opengl, --clear-vulkan or --clear-dx12.\n";
         return 1;
     }
 

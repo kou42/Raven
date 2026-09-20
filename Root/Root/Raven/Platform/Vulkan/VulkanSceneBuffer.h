@@ -28,6 +28,7 @@ public:
     bool IsValid() const { return m_Buffer != VK_NULL_HANDLE && m_Memory != VK_NULL_HANDLE; }
     bool IsIndexBuffer() const { return m_IsIndexBuffer; }
     VkBuffer GetHandle() const { return m_Buffer; }
+    VkDevice GetDeviceHandle() const { return m_Device; }
     uint32_t GetIndexCount() const { return m_IndexCount; }
     uint32_t GetCapacity() const { return m_Capacity; }
     uint32_t GetVertexStride() const { return m_VertexStride; }
