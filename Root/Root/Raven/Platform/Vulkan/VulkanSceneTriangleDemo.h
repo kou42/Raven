@@ -38,8 +38,8 @@ private:
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
-    VulkanSceneBuffer m_VertexBuffer;
-    VulkanSceneBuffer m_IndexBuffer;
+    Ref<RHIBuffer> m_VertexBuffer;
+    Ref<RHIBuffer> m_IndexBuffer;
     Ref<RHIGraphicsPipeline> m_Pipeline;
     RHIShaderBinary m_VertexShader;
     RHIShaderBinary m_FragmentShader;
