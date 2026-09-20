@@ -1,5 +1,6 @@
 #include "VulkanSceneTriangleDemo.h"
 #include "VulkanSceneRHIDevice.h"
+#include "VulkanSceneRHITexture.h"
 
 #include "Raven/Core/Window.h"
 
@@ -285,8 +286,22 @@ bool VulkanSceneTriangleDemo::AddTexture(
     {
         return false;
     }
-    auto image = std::make_shared<VulkanSceneTexture>();
-    if (image->Init(m_Context.GetDevice(), width, height, rgba) == false)
+    // Texture本体はRHIDeviceで生成し、DescriptorだけをSceneが所有します。
+    VulkanSceneRHIDevice device(m_Context);
+    RHITextureSpecification specification{};
+    specification.Width = width;
+    specification.Height = height;
+    specification.Format = RHITextureFormat::RGBA8;
+    specification.Usage = RHITextureUsage::Sampled;
+    specification.GenerateMips = false;
+    if (static_cast<uint64_t>(width) * height >
+        std::numeric_limits<std::size_t>::max() / 4)
+    {
+        return false;
+    }
+    const std::size_t bytes = static_cast<std::size_t>(width) * height * 4;
+    Ref<RHITexture> image = device.CreateTexture(specification, rgba, bytes);
+    if (image == nullptr)
     {
         return false;
     }
@@ -294,7 +309,6 @@ bool VulkanSceneTriangleDemo::AddTexture(
     if (descriptorsExist == true && CreateTextureDescriptor() == false)
     {
         // 新Pool構築が失敗しても旧Poolは有効です。追加Textureだけ取り消します。
-        m_Textures.back().Image->Shutdown();
         m_Textures.pop_back();
         return false;
     }
@@ -424,14 +438,17 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
     for (std::size_t index = 0; index < m_Textures.size(); ++index)
     {
         const TextureResource& resource = m_Textures[index];
-        if (resource.Image == nullptr || resource.Image->IsValid() == false)
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(resource.Image);
+        if (nativeTexture == nullptr ||
+            nativeTexture->GetNativeTexture().IsValid() == false)
         {
             vkDestroyDescriptorPool(device, newPool, nullptr);
             return false;
         }
         VkDescriptorImageInfo image{};
-        image.sampler = resource.Image->GetSampler();
-        image.imageView = resource.Image->GetView();
+        image.sampler = nativeTexture->GetNativeTexture().GetSampler();
+        image.imageView = nativeTexture->GetNativeTexture().GetView();
         image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -606,9 +623,11 @@ void VulkanSceneTriangleDemo::Shutdown()
     // TextureはVkDevice破棄前、GPUの読み取り完了後に解放します。
     for (TextureResource& resource : m_Textures)
     {
-        if (resource.Image != nullptr)
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(resource.Image);
+        if (nativeTexture != nullptr)
         {
-            resource.Image->Shutdown();
+            nativeTexture->Shutdown();
         }
     }
     m_Textures.clear();
