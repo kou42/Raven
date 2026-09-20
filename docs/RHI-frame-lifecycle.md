@@ -100,3 +100,9 @@ SwapChain Resize時はGPU完了を待ってからScene RenderTargetのFramebuffe
 `DX12SceneContext` は `RHISceneFrameLifecycle` を実装し、Clear Demoとは独立したFactory/Adapter/Device/Queue/SwapChain/Fence/Frame別CommandList/FrameRendererを所有します。`BeginFrame` でFence待機・CommandList Reset・BackBufferをRENDER_TARGETへ遷移・Clearし、`EndFrame` でPRESENTへ遷移してSubmit、`Present` で表示・Fence Signal・Frame Slot進行を行います。Scene用DrawはBeginFrameとEndFrameの間で `GetActiveCommandList()` に記録します。Clear Demoの `ClearFrame` は従来どおりRenderTargetを内部で閉じ、新しい `ClearRenderTarget` はSceneの描画区間を開いたままClearします。
 
 ResizeはFrame外でFence完了後にSwapChainとRTVを再生成します。FatalError後は同Contextを再利用せず `Shutdown` → `Init` してください。DX12/VulkanともScene専用Contextは部品として追加済みですが、Scene用RHICommandList/Pipeline/ResourceとApplicationのResizeRequired処理が揃うまで `RHISceneFrameLifecycle::Create` には登録しません。
+
+### Scene Viewport/Scissor（今回追加）
+
+Vulkan/DX12 Scene Contextに `SetViewport(x,y,width,height)` を追加し、各FrameのRenderPass/RenderTarget開始後にSwapChain全体のViewport/Scissorを初期設定します。Vulkanは `vkCmdSetViewport` / `vkCmdSetScissor` を記録し、将来のGraphics Pipelineでは `VK_DYNAMIC_STATE_VIEWPORT` / `VK_DYNAMIC_STATE_SCISSOR` を有効にする必要があります。DX12は `RSSetViewports` / `RSSetScissorRects` を記録します。VulkanはSwapChain Extent外の矩形を拒否し、DX12はScissor座標の整数オーバーフローを拒否します。
+
+既存の `RHICommandList` はPipeline/Texture/Uniform/Indexed Drawを一体として要求するため、未実装のResource/Pipelineを成功扱いする空実装は追加していません。今回のViewportはNative Scene Context内の準備段階であり、`RenderCommand` のBackend切替はまだ行いません。
