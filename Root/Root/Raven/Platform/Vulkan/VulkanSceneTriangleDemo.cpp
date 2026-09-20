@@ -307,7 +307,7 @@ bool VulkanSceneTriangleDemo::AddTexture(
 {
     if (m_Context.GetDevice().IsValid() == false ||
         m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE ||
-        m_Textures.size() >= std::numeric_limits<uint32_t>::max())
+        texture == nullptr)
     {
         return false;
     }
@@ -353,6 +353,22 @@ bool VulkanSceneTriangleDemo::SetMeshTexture(
     }
     m_Meshes[meshIndex].Material.TextureIndex = textureIndex;
     return true;
+}
+
+bool VulkanSceneTriangleDemo::SetMeshTexture(
+    std::size_t meshIndex, const Ref<RHITexture>& texture)
+{
+    if (meshIndex >= m_Meshes.size())
+    {
+        return false;
+    }
+    // 失敗時は既存MaterialのTextureIndexを維持します。
+    std::size_t textureIndex = 0;
+    if (AddTexture(texture, textureIndex) == false)
+    {
+        return false;
+    }
+    return SetMeshTexture(meshIndex, textureIndex);
 }
 
 bool VulkanSceneTriangleDemo::ClearMeshes()
