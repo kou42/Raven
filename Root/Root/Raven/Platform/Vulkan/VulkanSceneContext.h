@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHIBuffer.h"
+#include "Raven/Renderer/RHI/RHITexture.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 #include "VulkanCommandBuffer.h"
@@ -64,6 +65,14 @@ public:
     // Fragment ShaderへMesh別Tint RGBAをPushします。
     // set=0/binding=0のTexture Descriptorを現在のGraphics PipelineへBindします。
     bool BindTextureDescriptor(VkDescriptorSet descriptorSet);
+    // Sceneから受け取った共通TextureのDescriptorをBackendが一括管理します。
+    // Frame外でのみ再構築し、失敗時は旧Bindingを維持します。
+    bool RebuildTextureDescriptors(const std::vector<Ref<RHITexture>>& textures,
+        const Ref<RHIGraphicsPipeline>& pipeline);
+    void DestroyTextureDescriptors();
+    bool HasTextureDescriptors() const { return m_TextureDescriptorPool != VK_NULL_HANDLE; }
+    // 共通Textureの同一性で解決し、SceneへDescriptor番号を公開しません。
+    bool BindTexture(const Ref<RHITexture>& texture);
     bool SetMaterialTint(const std::array<float, 4>& tint);
     bool SetClipTransform(const std::array<float, 16>& model);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
@@ -96,6 +105,9 @@ private:
     // Reset前の初期Signal FenceはSubmit済みとして扱わないよう区別します。
     std::vector<bool> m_SubmittedBufferFrames;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
+    VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> m_TextureDescriptors;
+    std::vector<Ref<RHITexture>> m_DescriptorTextures;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};
     uint32_t m_ActiveFrame = 0;

@@ -372,6 +372,122 @@ bool VulkanSceneContext::BindTextureDescriptor(VkDescriptorSet descriptorSet)
     return true;
 }
 
+bool VulkanSceneContext::RebuildTextureDescriptors(
+    const std::vector<Ref<RHITexture>>& textures, const Ref<RHIGraphicsPipeline>& pipeline)
+{
+    if (textures.empty() == true || pipeline == nullptr ||
+        GetDevice().IsValid() == false ||
+        textures.size() > std::numeric_limits<uint32_t>::max())
+    {
+        return false;
+    }
+    if (GetActiveCommandBuffer() != VK_NULL_HANDLE)
+    {
+        return false;
+    }
+    const auto native = std::dynamic_pointer_cast<VulkanGraphicsPipeline>(pipeline);
+    if (native == nullptr || native->GetTextureSetLayout() == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+    // Poolを差し替えるため、旧Descriptorを参照するGPU仕事の完了を確認します。
+    if (m_TextureDescriptorPool != VK_NULL_HANDLE && GetDevice().WaitIdle() == false)
+    {
+        return false;
+    }
+    // 既存Poolを残したまま新Poolを構築し、途中失敗でも既存Meshの描画を維持します。
+    // 旧Descriptorを参照するGPU処理は上記WaitIdleで完了済みです。
+    const VkDevice device = GetDevice().GetHandle();
+    VkDescriptorPool newPool = VK_NULL_HANDLE;
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = static_cast<uint32_t>(textures.size());
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = static_cast<uint32_t>(textures.size());
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &newPool) != VK_SUCCESS)
+    {
+        return false;
+    }
+    const VkDescriptorSetLayout layout = native->GetTextureSetLayout();
+    std::vector<VkDescriptorSetLayout> layouts(textures.size(), layout);
+    std::vector<VkDescriptorSet> descriptors(textures.size(), VK_NULL_HANDLE);
+    VkDescriptorSetAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocation.descriptorPool = newPool;
+    allocation.descriptorSetCount = static_cast<uint32_t>(layouts.size());
+    allocation.pSetLayouts = layouts.data();
+    if (vkAllocateDescriptorSets(device, &allocation, descriptors.data()) != VK_SUCCESS)
+    {
+        vkDestroyDescriptorPool(device, newPool, nullptr);
+        return false;
+    }
+    for (std::size_t index = 0; index < textures.size(); ++index)
+    {
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(textures[index]);
+        if (nativeTexture == nullptr ||
+            nativeTexture->GetNativeTexture().IsValid() == false)
+        {
+            vkDestroyDescriptorPool(device, newPool, nullptr);
+            return false;
+        }
+        VkDescriptorImageInfo image{};
+        image.sampler = nativeTexture->GetNativeTexture().GetSampler();
+        image.imageView = nativeTexture->GetNativeTexture().GetView();
+        image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptors[index];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &image;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+    // すべて成功した場合だけ旧Poolを破棄し、登録済みTextureのBindingを切り替えます。
+    DestroyTextureDescriptors();
+    m_TextureDescriptorPool = newPool;
+    m_TextureDescriptors.resize(descriptors.size());
+    m_DescriptorTextures = textures;
+    for (std::size_t index = 0; index < textures.size(); ++index)
+    {
+        m_TextureDescriptors[index] = descriptors[index];
+    }
+    return true;
+}
+
+void VulkanSceneContext::DestroyTextureDescriptors()
+{
+    if (m_TextureDescriptorPool != VK_NULL_HANDLE &&
+        GetDevice().IsValid() == true)
+    {
+        vkDestroyDescriptorPool(GetDevice().GetHandle(),
+            m_TextureDescriptorPool, nullptr);
+    }
+    m_TextureDescriptorPool = VK_NULL_HANDLE;
+    m_TextureDescriptors.clear();
+    m_DescriptorTextures.clear();
+}
+
+bool VulkanSceneContext::BindTexture(const Ref<RHITexture>& texture)
+{
+    if (texture == nullptr)
+    {
+        return false;
+    }
+    for (std::size_t index = 0; index < m_DescriptorTextures.size(); ++index)
+    {
+        if (m_DescriptorTextures[index] == texture)
+        {
+            return BindTextureDescriptor(m_TextureDescriptors[index]);
+        }
+    }
+    return false;
+}
+
 bool VulkanSceneContext::SetMaterialTint(const std::array<float, 4>& tint)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
@@ -579,6 +695,8 @@ void VulkanSceneContext::Shutdown()
         }
     }
     m_Buffers.clear();
+    // Descriptorが参照するImageView/Samplerより先にPoolを解放します。
+    DestroyTextureDescriptors();
     // VkDeviceを破棄する前に外部RefのVkImage/ImageView/Samplerを解放します。
     for (const auto& weakTexture : m_Textures)
     {

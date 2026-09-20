@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
-#include "Raven/Renderer/RHI/RHIMaterialProperties.h"
+#include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Scene/SceneCamera.h"
 
 #include <array>
@@ -53,7 +53,7 @@ public:
     // RendererがMaterial本体を保持せずに描画Snapshotを渡すための共通境界です。
     bool SetMeshMaterial(std::size_t meshIndex, const RHIMaterialProperties& properties);
     // Texture番号はAddTexture()の登録順です。0は既定Checker Textureです。
-    // MaterialはMesh単位でTexture番号を保持し、同じ番号のGPU Textureを共有します。
+    // Mesh内部ではRef<RHITexture>を保持し、同じGPU Textureを共有します。
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
     // RHITextureを直接割り当てます。未登録なら共有登録し、同一Textureは重複登録しません。
     bool SetMeshTexture(std::size_t meshIndex, const Ref<RHITexture>& texture);
@@ -78,44 +78,14 @@ public:
 
 private:
     bool CreatePipeline();
-    bool CreateTextureDescriptor();
-    void DestroyTextureDescriptor();
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
     SceneCamera m_Camera;
-    struct TextureResource
-    {
-        Ref<RHITexture> Image;
-        VkDescriptorSet Descriptor = VK_NULL_HANDLE;
-    };
-    // TextureResourceはSceneが所有し、Meshは登録番号だけを参照します。
-    std::vector<TextureResource> m_Textures;
-    VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
-    // 汎用Materialとは別のVulkan Scene検証用データ。API固有handleはTextureResourceに閉じ込めます。
-    struct SceneMaterial
-    {
-        std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
-        bool AlphaBlend = false;
-        std::size_t TextureIndex = 0;
-    };
-    struct Mesh
-    {
-        Ref<RHIBuffer> VertexBuffer;
-        Ref<RHIBuffer> IndexBuffer;
-        uint32_t IndexCount = 0;
-        SceneMaterial Material;
-        // 透明Meshの近似ソートに使うローカル空間の頂点平均位置です。
-        std::array<float, 3> LocalCenter = {0.0f, 0.0f, 0.0f};
-        std::array<float, 16> Model = {
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 1.0f
-        };
-    };
+    // Sceneは共通RHITextureだけを保持し、DescriptorはVulkan Backendが管理します。
+    std::vector<Ref<RHITexture>> m_Textures;
     // Mesh数は固定せず、Bufferの所有権はRefで保持します。
-    std::vector<Mesh> m_Meshes;
+    std::vector<RHISceneMesh> m_Meshes;
     Ref<RHIGraphicsPipeline> m_Pipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     RHIShaderBinary m_VertexShader;

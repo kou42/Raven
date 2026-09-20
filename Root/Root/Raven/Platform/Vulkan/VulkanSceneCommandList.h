@@ -2,6 +2,7 @@
 
 #include "VulkanSceneContext.h"
 #include "VulkanSceneRHIBuffer.h"
+#include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 namespace Raven
 {
@@ -9,7 +10,7 @@ namespace Raven
 // Legacy RHICommandListはOpenGLのVertexArray/Shader APIを前提とするため、
 // Explicit APIのScene Drawをそこへ無理に流用しない専用CommandListです。
 // Frameとnative DeviceはVulkanSceneContextが所有し、このクラスは借用します。
-class VulkanSceneCommandList final
+class VulkanSceneCommandList final : public RHISceneCommandList
 {
 public:
     explicit VulkanSceneCommandList(VulkanSceneContext& context)
@@ -20,27 +21,34 @@ public:
     VulkanSceneCommandList(const VulkanSceneCommandList&) = delete;
     VulkanSceneCommandList& operator=(const VulkanSceneCommandList&) = delete;
 
-    bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+    bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override
     {
         return m_Context.SetViewport(x, y, width, height);
     }
 
     // OpenGLのRenderCommand::Clearに対応するScene描画途中のClearです。
     // BeginFrameのLoadOp Clearとは異なり、呼び出した位置でGPU命令を記録します。
-    bool ClearColor(const float color[4])
+    bool ClearColor(const float color[4]) override
     {
         return m_Context.ClearColorAttachment(color);
     }
 
-    bool BindPipeline(const Ref<RHIGraphicsPipeline>& pipeline)
+    bool BindPipeline(const Ref<RHIGraphicsPipeline>& pipeline) override
     {
         return m_Context.BindGraphicsPipeline(pipeline);
     }
 
-    // Model・View・Projection合成済みのclip-space変換を設定します。
-    bool BindTextureDescriptor(VkDescriptorSet descriptorSet)
+    // Material Snapshotを共通RHIのTextureとTintとしてBindします。
+    // Maskedは現行Shaderでalpha cutoff未実装のため拒否します。
+    bool BindMaterial(const RHIMaterialProperties& material) override
     {
-        return m_Context.BindTextureDescriptor(descriptorSet);
+        if (material.SurfaceType == MaterialSurfaceType::Masked ||
+            material.Texture == nullptr ||
+            m_Context.BindTexture(material.Texture) == false)
+        {
+            return false;
+        }
+        return m_Context.SetMaterialTint(material.Tint);
     }
 
     bool SetMaterialTint(const std::array<float, 4>& tint)
@@ -48,7 +56,7 @@ public:
         return m_Context.SetMaterialTint(tint);
     }
 
-    bool SetClipTransform(const std::array<float, 16>& model)
+    bool SetClipTransform(const std::array<float, 16>& model) override
     {
         return m_Context.SetClipTransform(model);
     }
@@ -64,7 +72,7 @@ public:
     // 共通RHIDeviceから生成したBufferをSceneの描画へ接続します。
     // Strideは現在Bind中のPipelineのBinding 0から取得します。
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
-        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0)
+        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0) override
     {
         if (vertexBuffer == nullptr || indexBuffer == nullptr ||
             vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
