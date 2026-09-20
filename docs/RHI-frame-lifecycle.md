@@ -122,3 +122,11 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 `RHISceneFrameLifecycle` に `Resize(width, height)` を追加し、OpenGL / Vulkan / DX12で同じFrame外呼び出し口を用意しました。幅・高さ0は最小化中として呼び出し側で保留し、各実装も失敗を返します。OpenGLではWindowのResize Event経由のViewport更新を維持し、Frame外かつ正のサイズなら成功を返します。Vulkan / DX12は既存の同期・SwapChain再生成処理を `override` で公開します。
 
 **注意:** これはScene描画のBackend切替を有効化する変更ではありません。`RHISceneFrameLifecycle::Create` と `RenderCommand::Init` は従来どおりOpenGLのみ対応します。VulkanのResize後はRenderPass依存Pipelineを再生成する必要があり、Application側の `ResizeRequired` / 最小化処理とScene Resourceの再生成は後続で接続します。DX12についても同じ共通契約を維持します。
+
+### Vulkan Scene RHIDevice Adapter（追加）
+
+`VulkanSceneRHIDevice` は `VulkanSceneContext` を借用し、共通 `RHIDevice::CreateGraphicsPipeline` を既存 `VulkanSceneContext::CreateGraphicsPipeline` に委譲します。独立したVkDeviceやRenderPassは作成しません。Vulkan Scene TriangleのPipeline生成をこの共通入口へ切り替えました。ContextのShutdown後はAdapterを使用しないでください。Resize後は従来どおりPipelineを再生成します。
+
+`RHIDevice::CreateBuffer` / `CreateTexture` は現段階で明示的に `nullptr` を返します。既存 `VulkanSceneBuffer` は `RHIBuffer` の更新・Resize契約をまだ満たさないため、未対応機能を偽装していません。通常ApplicationのBackend切替やRenderCommandのVulkan接続は行わず、OpenGL実装も変更していません。
+
+検証項目：Vulkan Scene TriangleのSPIR-V Pipeline生成と描画、Resize後のPipeline再生成、無効なShader/ColorFormatでの生成拒否、OpenGL Sceneの回帰。ビルド・実機GPU実行は未確認です。
