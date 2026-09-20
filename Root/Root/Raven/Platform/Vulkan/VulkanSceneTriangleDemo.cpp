@@ -21,7 +21,8 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     m_Window = &window;
     m_VertexShader = vertexShader;
     m_FragmentShader = fragmentShader;
-    m_Runtime = VulkanSceneRuntime::Create(window);
+    // Backendの選択は共通Factoryへ委譲し、Vulkan固有Runtimeを直接生成しません。
+    m_Runtime = RHISceneRuntime::Create(window);
     if (m_Runtime == nullptr)
     {
         std::cerr << "Vulkan Scene Triangle: Scene Context initialization failed.\n";
