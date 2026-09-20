@@ -174,4 +174,18 @@
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
+  <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
+       入出力を対にすることで未生成時・Shader更新時だけglslcを起動します。 -->
+  <ItemGroup>
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.vert" />
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.frag" />
+  </ItemGroup>
+  <Target Name="CompileVulkanSceneShaders"
+          BeforeTargets="ClCompile"
+          Inputs="@(VulkanSceneShader)"
+          Outputs="@(VulkanSceneShader->'%(FullPath).spv')">
+    <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')"
+           Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
+    <Exec Command="&quot;$(VULKAN_SDK)\Bin\glslc.exe&quot; &quot;%(VulkanSceneShader.FullPath)&quot; -o &quot;%(VulkanSceneShader.FullPath).spv&quot;" />
+  </Target>
 </Project>
