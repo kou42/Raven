@@ -1,4 +1,5 @@
 #include "VulkanSceneContext.h"
+#include "VulkanSceneRuntime.h"
 
 #include "Raven/Core/Window.h"
 
@@ -6,6 +7,25 @@
 
 namespace Raven
 {
+// Scene Runtimeの共通Factory。現段階ではVulkan Sceneだけが完全な描画Servicesを持ちます。
+// OpenGLは既存ApplicationのLegacy Renderer経路を維持し、ここで偽のServicesを返しません。
+// DX12/将来MetalはContext・CommandList・ResourceFactoryが揃った段階で追加します。
+Scope<RHISceneRuntime> RHISceneRuntime::Create(Window& window)
+{
+    switch (window.GetBackend())
+    {
+    case RHIBackend::Vulkan:
+        return VulkanSceneRuntime::Create(window);
+    case RHIBackend::OpenGL:
+    case RHIBackend::DirectX12:
+    case RHIBackend::DirectX11:
+    case RHIBackend::None:
+    default:
+        return nullptr;
+    }
+}
+
+
 namespace
 {
 RHIFrameResult ToSceneFrameResult(VulkanFrameResult result)
