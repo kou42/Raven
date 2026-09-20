@@ -88,3 +88,9 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 `VulkanSceneRenderTarget` はSwapChain ImageごとにImageView/Framebufferを生成し、Color AttachmentのみのRenderPassを所有します。RenderPassのinitial/final Layoutは両方 `COLOR_ATTACHMENT_OPTIMAL` で、前後のLayout遷移は `VulkanFrameRenderer::BeginSceneColorTarget` / `EndSceneColorTarget` が担当します。`BeginFrame` 成功後の `GetAcquiredImageIndex()` で対応するFramebufferを選択します。想定順序は `BeginFrame` → `BeginSceneColorTarget` → `VulkanSceneRenderTarget::Begin` → Draw → `VulkanSceneRenderTarget::End` → `EndSceneColorTarget` → `EndFrame` → `Present` です。
 
 SwapChain Resize時はGPU完了を待ってからScene RenderTargetのFramebuffer/ImageViewを先に `Shutdown` し、SwapChainを再生成した後に `Init` してください。今回追加したのはRenderPass/Framebufferの部品であり、Scene専用Contextへの接続、Depth Attachment、Pipeline、RHICommandListはまだ未実装です。
+
+### Vulkan Scene専用Frame Context（今回追加）
+
+`VulkanSceneContext` は `RHISceneFrameLifecycle` を実装し、Clear Demoとは独立してVulkan Instance/Surface/SwapChain/FrameSync/CommandBuffer/SceneRenderTargetを所有します。`Init(Window&)` 後に `BeginFrame`（Acquire→Color Layout遷移→RenderPass開始）→Scene Draw記録→`EndFrame`（RenderPass終了→Present Layout遷移→Submit）→`Present` を呼びます。`GetActiveCommandBuffer()` と `GetRenderPass()` は後続のScene用CommandList/Pipeline接続点です。Clear色はBeginFrame前に `SetClearColor()` で指定します。
+
+`Resize` はFrame外でのみ呼び、WaitIdle後に古いRenderTargetを先に破棄してからSwapChain/FrameSync/RenderTargetを再生成します。Acquire後のFatalErrorは同期状態が不明になり得るため、同Contextで継続せず `Shutdown` → `Init` が必要です。`RHISceneFrameLifecycle::Create` は引き続きOpenGLのみを返し、RenderCommandのVulkan経路も未接続です。Scene用RHICommandList/Pipelineが揃うまでApplicationに接続しません。
