@@ -28,7 +28,9 @@ public:
         if (device.IsValid() == false || rgba == nullptr ||
             width == 0 || height == 0 ||
             static_cast<uint64_t>(width) * height >
-                std::numeric_limits<VkDeviceSize>::max() / 4)
+                std::numeric_limits<VkDeviceSize>::max() / 4 ||
+            static_cast<uint64_t>(width) * height >
+                std::numeric_limits<size_t>::max() / 4)
         {
             return false;
         }
@@ -37,7 +39,10 @@ public:
         vkGetPhysicalDeviceFormatProperties(device.GetPhysicalDeviceHandle(),
             VK_FORMAT_R8G8B8A8_UNORM, &properties);
         if ((properties.optimalTilingFeatures &
-            VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0)
+            (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) !=
+            (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
         {
             return false;
         }
