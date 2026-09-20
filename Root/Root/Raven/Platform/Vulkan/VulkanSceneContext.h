@@ -46,7 +46,7 @@ public:
     bool BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0,
-        uint32_t vertexStrideOverride = 0);
+        bool usePipelineVertexStride = false);
     // Scene Buffer生成と検証用。DeviceはContextが所有し、Shutdown後は使用不可です。
     const VulkanDevice& GetDevice() const { return m_Instance.GetDevice(); }
     VkFormat GetColorFormat() const { return m_SwapChain.GetImageFormat(); }
