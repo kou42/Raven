@@ -47,7 +47,9 @@ enum class RHIColorFormat
 {
     None = 0,
     RGBA8Unorm,
-    BGRA8Unorm
+    BGRA8Unorm,
+    RGBA8Srgb,
+    BGRA8Srgb
 };
 
 enum class RHIDepthFormat
