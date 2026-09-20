@@ -162,3 +162,10 @@ Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Scene�
 共通RHIBuffer版 `DrawIndexed(vertex, index, indexCount = 0)` は、Bind済PipelineのBinding 0からStrideを取得します。呼び出し側でStrideを重複指定する必要はありません。Bindingが0以外・複数・Stride 0、Vertex容量がStrideで割り切れない場合は描画を拒否します。従来のnative SceneBuffer版はBuffer保持StrideとPipeline Strideの一致を検証します。
 
 本変更は単一Vertex Binding限定です。複数Binding/Instance Rate、頂点範囲やIndex値のCPU検査は未対応です。共通Bufferはbyte単位で確保する仕様のままであり、GPU同期とDevice寿命の制約も変わりません。ビルド・GPU実機・Validation Layerは未検証です。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
