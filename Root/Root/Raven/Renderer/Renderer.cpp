@@ -426,7 +426,9 @@ bool Renderer::CreateRHIScenePipelines(
     // TransparentはDepth Testを維持したままBlendを有効化して書き込みを止めます。
     specification.DepthWrite = true;
     specification.Blend = false;
-    specification.DebugName = std::string(source.DebugName) + " RHI Opaque";
+    const std::string sourceName = source.DebugName != nullptr ?
+        source.DebugName : "Unnamed Pipeline";
+    specification.DebugName = sourceName + " RHI Opaque";
 
     Ref<RHIGraphicsPipeline> opaque =
         device.CreateGraphicsPipeline(specification);
@@ -437,7 +439,7 @@ bool Renderer::CreateRHIScenePipelines(
 
     specification.DepthWrite = false;
     specification.Blend = true;
-    specification.DebugName = std::string(source.DebugName) + " RHI Transparent";
+    specification.DebugName = sourceName + " RHI Transparent";
     Ref<RHIGraphicsPipeline> transparent =
         device.CreateGraphicsPipeline(specification);
     if (transparent == nullptr)

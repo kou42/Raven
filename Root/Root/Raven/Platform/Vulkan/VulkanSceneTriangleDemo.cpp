@@ -432,31 +432,22 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
             sizeof(Vertex::Position) + sizeof(Vertex::Color) }
     };
     specification.Cull = CullMode::None;
-    specification.DepthFormat = RHIDepthFormat::D32Float;
     specification.DepthTest = true;
     specification.DepthWrite = true;
     specification.DebugName = "Vulkan Scene Triangle";
-    switch (m_Context.GetColorFormat())
+
+    VulkanSceneRHIDevice device(m_Context);
+    RHIGraphicsPipelineTarget target{};
+    if (device.GetGraphicsPipelineTarget(target) == false)
     {
-    case VK_FORMAT_R8G8B8A8_UNORM:
-        specification.ColorFormat = RHIColorFormat::RGBA8Unorm;
-        break;
-    case VK_FORMAT_B8G8R8A8_UNORM:
-        specification.ColorFormat = RHIColorFormat::BGRA8Unorm;
-        break;
-    case VK_FORMAT_R8G8B8A8_SRGB:
-        specification.ColorFormat = RHIColorFormat::RGBA8Srgb;
-        break;
-    case VK_FORMAT_B8G8R8A8_SRGB:
-        specification.ColorFormat = RHIColorFormat::BGRA8Srgb;
-        break;
-    default:
-        // SwapChainの実FormatとPipelineのAttachment Formatを一致させます。
-        std::cerr << "Vulkan Scene Triangle: Unsupported SwapChain color format: "
-            << static_cast<int>(m_Context.GetColorFormat()) << '\n';
+        std::cerr << "Vulkan Scene Triangle: Unsupported render target format.\n";
         return false;
     }
-    m_Pipeline = m_Context.CreateGraphicsPipeline(specification);
+    // Demoと通常Rendererで同じRender Target互換情報を利用します。
+    specification.ColorFormat = target.ColorFormat;
+    specification.DepthFormat = target.DepthFormat;
+    specification.SampleCount = target.SampleCount;
+    m_Pipeline = device.CreateGraphicsPipeline(specification);
     if (m_Pipeline == nullptr)
     {
         return false;
@@ -465,7 +456,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     specification.Blend = true;
     specification.DepthWrite = false;
     specification.DebugName = "Vulkan Scene Triangle Transparent";
-    m_TransparentPipeline = m_Context.CreateGraphicsPipeline(specification);
+    m_TransparentPipeline = device.CreateGraphicsPipeline(specification);
     if (m_TransparentPipeline == nullptr)
     {
         return false;

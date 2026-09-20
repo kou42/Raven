@@ -68,7 +68,7 @@ public:
     }
 
     // GPU操作前に描画データを値で構築し、Frame中のScene変更を参照しません。
-    // ソート深度は従来どおりMeshの頂点平均位置を代表点とする近似です。
+    // ソート深度はMeshごとに事前計算したLocalCenterを代表点とする近似です。
     static std::vector<RHISceneDrawItem> Build(
         const math::Mat4& view,
         const math::Mat4& projection,
