@@ -87,7 +87,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     default:
         // SwapChainの実FormatとPipelineのAttachment Formatを一致させます。
         std::cerr << "Vulkan Scene Triangle: Unsupported SwapChain color format: "
-            << static_cast<int>(m_Context.GetColorFormat()) << '\\n';
+            << static_cast<int>(m_Context.GetColorFormat()) << '\n';
         return false;
     }
     m_Pipeline = m_Context.CreateGraphicsPipeline(specification);
