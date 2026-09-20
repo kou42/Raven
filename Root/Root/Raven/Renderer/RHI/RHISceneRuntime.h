@@ -4,6 +4,7 @@
 
 #include "Raven/Renderer/RHI/RHISceneRenderServices.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Core/Window.h"
 
 namespace Raven
 {
@@ -15,6 +16,11 @@ class RHISceneRuntime
 {
 public:
     virtual ~RHISceneRuntime() = default;
+
+    // WindowのBackendを唯一の選択基準としてRuntimeを生成します。
+    // 未対応Backendではnullptrを返し、OpenGLへの暗黙fallbackを行いません。
+    // Windowの所有権は移しません。
+    static Scope<RHISceneRuntime> Create(Window& window);
 
     virtual RHIBackend GetBackend() const = 0;
     virtual RHISceneRenderServices& GetServices() = 0;
