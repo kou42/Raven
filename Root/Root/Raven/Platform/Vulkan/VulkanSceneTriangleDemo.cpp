@@ -1,4 +1,5 @@
 #include "VulkanSceneTriangleDemo.h"
+#include "VulkanSceneRHIDevice.h"
 
 #include "Raven/Core/Window.h"
 
@@ -90,7 +91,10 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
             << static_cast<int>(m_Context.GetColorFormat()) << '\n';
         return false;
     }
-    m_Pipeline = m_Context.CreateGraphicsPipeline(specification);
+    // Graphics Pipelineの生成口を共通RHIDeviceへ揃えます。
+    // AdapterはContextを借用するため、この関数内だけで使用します。
+    VulkanSceneRHIDevice device(m_Context);
+    m_Pipeline = device.CreateGraphicsPipeline(specification);
     return m_Pipeline != nullptr;
 }
 
