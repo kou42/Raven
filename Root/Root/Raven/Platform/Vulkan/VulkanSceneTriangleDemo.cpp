@@ -21,7 +21,8 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     m_Window = &window;
     m_VertexShader = vertexShader;
     m_FragmentShader = fragmentShader;
-    if (m_Context.Init(window) == false)
+    m_Runtime = VulkanSceneRuntime::Create(window);
+    if (m_Runtime == nullptr)
     {
         std::cerr << "Vulkan Scene Triangle: Scene Context initialization failed.\n";
         Shutdown();
@@ -36,7 +37,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         {{-0.6f,  0.6f }, { 0.0f, 0.0f, 1.0f }}
     }};
     const std::array<uint32_t, 3> indices = {{ 0, 1, 2 }};
-    RHISceneRenderServices& services = m_Services;
+    RHISceneRenderServices& services = m_Runtime->GetServices();
     RHISceneResourceFactory& resources = services.GetResourceFactory();
     m_VertexBuffer = resources.CreateVertexBuffer(vertices.data(),
         static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex));
@@ -76,7 +77,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     specification.Cull = CullMode::None;
     specification.DebugName = "Vulkan Scene Triangle";
     // ColorFormatはFactoryが現在のScene RenderTargetから解決します。
-    RHISceneRenderServices& services = m_Services;
+    RHISceneRenderServices& services = m_Runtime->GetServices();
     RHISceneResourceFactory& resources = services.GetResourceFactory();
     m_Pipeline = resources.CreateGraphicsPipeline(specification);
     return m_Pipeline != nullptr;
@@ -92,7 +93,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     }
 
     // Frame境界は共通契約から呼び出し、Acquire/Submitの実装はContextに任せます。
-    RHISceneRenderServices& services = m_Services;
+    RHISceneRenderServices& services = m_Runtime->GetServices();
     RHISceneFrameLifecycle& frame = services.GetFrameLifecycle();
     const RHIFrameResult begin = frame.BeginFrame();
     if (begin != RHIFrameResult::Success)
@@ -132,7 +133,7 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
         return false;
     }
 
-    RHISceneFrameLifecycle& frame = m_Services.GetFrameLifecycle();
+    RHISceneFrameLifecycle& frame = m_Runtime->GetServices().GetFrameLifecycle();
     if (frame.Resize(width, height) == false)
     {
         return false;
@@ -146,14 +147,15 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
 void VulkanSceneTriangleDemo::Shutdown()
 {
     // BufferはGPUが参照しているため、必ずWaitIdle後、Device破棄前に解放します。
-    if (m_Context.GetDevice().IsValid() == true)
+    if (m_Runtime != nullptr)
     {
-        m_Context.GetDevice().WaitIdle();
+        m_Runtime->WaitIdle();
     }
     m_Pipeline.reset();
     m_IndexBuffer.reset();
     m_VertexBuffer.reset();
-    m_Context.Shutdown();
+    // GPU Resourceを先に破棄してからDevice/SwapChainを所有するRuntimeを終了します。
+    m_Runtime.reset();
     m_VertexShader = {};
     m_FragmentShader = {};
     m_Window = nullptr;
