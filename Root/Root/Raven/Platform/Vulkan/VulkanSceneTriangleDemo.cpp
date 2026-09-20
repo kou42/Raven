@@ -299,22 +299,26 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
 bool VulkanSceneTriangleDemo::SetMeshMaterial(
     std::size_t meshIndex, const Material& material)
 {
-    if (meshIndex >= m_Meshes.size() ||
-        material.GetSurfaceType() == MaterialSurfaceType::Masked)
+    if (meshIndex >= m_Meshes.size())
+    {
+        return false;
+    }
+    // Legacy Shader/Pipelineを参照せず、MaterialのAPI非依存Snapshotだけを使用します。
+    const RHIMaterialProperties properties = material.GetRHIProperties();
+    if (properties.SurfaceType == MaterialSurfaceType::Masked)
     {
         // 現行Scene Shaderにはalpha cutoffがないため、MaskedをOpaque扱いしません。
         return false;
     }
     const bool alphaBlend =
-        material.GetSurfaceType() == MaterialSurfaceType::Transparent;
-    const Ref<RHITexture>& texture = material.GetRHITexture();
-    if (texture != nullptr)
+        properties.SurfaceType == MaterialSurfaceType::Transparent;
+    if (properties.Texture != nullptr)
     {
-        return SetMeshMaterial(meshIndex, material.GetRHITint(),
-            alphaBlend, texture);
+        return SetMeshMaterial(meshIndex, properties.Tint,
+            alphaBlend, properties.Texture);
     }
-    // Texture未指定のMaterialでは、Meshの既存Textureを維持します。
-    return SetMeshMaterial(meshIndex, material.GetRHITint(), alphaBlend);
+    // Texture未指定の場合はMeshの既存Textureを維持します。
+    return SetMeshMaterial(meshIndex, properties.Tint, alphaBlend);
 }
 
 bool VulkanSceneTriangleDemo::AddTexture(
