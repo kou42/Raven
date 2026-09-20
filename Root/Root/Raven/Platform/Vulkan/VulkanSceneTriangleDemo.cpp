@@ -3,7 +3,9 @@
 
 #include "Raven/Core/Window.h"
 
+#include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <iostream>
 #include <limits>
 #include <utility>
@@ -158,6 +160,15 @@ bool VulkanSceneTriangleDemo::AddMesh(
         return false;
     }
     mesh.IndexCount = static_cast<uint32_t>(indices.size());
+    // ローカル中心を登録時に計算し、Camera移動時のソートは行列計算だけで済ませます。
+    for (const Vertex& vertex : vertices)
+    {
+        for (std::size_t axis = 0; axis < 3; ++axis)
+        {
+            mesh.LocalCenter[axis] += vertex.Position[axis] /
+                static_cast<float>(vertices.size());
+        }
+    }
     m_Meshes.push_back(std::move(mesh));
     return true;
 }
@@ -270,6 +281,33 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         }
     }
 
+    // View空間のZが小さい（Cameraから遠い）Meshから透明描画します。
+    // Meshの頂点平均を代表点とする近似のため、交差する透明形状は完全には解決しません。
+    std::vector<std::size_t> transparentIndices;
+    transparentIndices.reserve(m_Meshes.size());
+    for (std::size_t index = 0; index < m_Meshes.size(); ++index)
+    {
+        if (m_Meshes[index].AlphaBlend == true)
+        {
+            transparentIndices.push_back(index);
+        }
+    }
+    const math::Mat4 view = m_Camera.GetViewMatrix();
+    const auto viewDepth = [this, &view](std::size_t index)
+    {
+        const Mesh& mesh = m_Meshes[index];
+        const math::Mat4 modelView = view * FromColumnMajor(mesh.Model);
+        const auto& center = mesh.LocalCenter;
+        return modelView.m[2][0] * center[0] +
+            modelView.m[2][1] * center[1] +
+            modelView.m[2][2] * center[2] + modelView.m[2][3];
+    };
+    std::stable_sort(transparentIndices.begin(), transparentIndices.end(),
+        [&viewDepth](std::size_t left, std::size_t right)
+        {
+            return viewDepth(left) < viewDepth(right);
+        });
+
     const RHIFrameResult begin = m_Context.BeginFrame();
     if (begin != RHIFrameResult::Success)
     {
@@ -286,8 +324,8 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         0.0f,  0.0f, 0.0f, 1.0f);
     const math::Mat4 viewProjection = vulkanClipCorrection *
         m_Camera.GetProjectionMatrix() * m_Camera.GetViewMatrix();
-    // Opaqueを先に描き、その後に透明Meshを描画します。
-    // 透明Mesh同士の奥行きソートは未実装のため、登録順で描画します。
+    // Opaqueの後、透明MeshをCameraから遠い順に描画します。
+    // BlendのDepth Writeは無効のまま、OpaqueのDepthとは比較します。
     for (uint32_t pass = 0; pass < 2; ++pass)
     {
         const bool transparentPass = pass == 1;
@@ -298,20 +336,23 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
             Shutdown();
             return RHIFrameResult::FatalError;
         }
-        for (const Mesh& mesh : m_Meshes)
+        const std::size_t drawCount = transparentPass == true ?
+            transparentIndices.size() : m_Meshes.size();
+        for (std::size_t draw = 0; draw < drawCount; ++draw)
         {
+            const Mesh& mesh = transparentPass == true ?
+                m_Meshes[transparentIndices[draw]] : m_Meshes[draw];
             if (mesh.AlphaBlend != transparentPass)
             {
                 continue;
             }
-            // 同じFrameに異なるVertex/Index Bufferを記録します。
-            // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
-            // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
+            // CameraとMeshのModelを合成して、DrawごとにPush Constantを更新します。
             const auto clipTransform = ToColumnMajor(
                 viewProjection * FromColumnMajor(mesh.Model));
             if (commands.SetClipTransform(clipTransform) == false ||
                 commands.SetMaterialTint(mesh.Tint) == false ||
-                commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
+                commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
+                    mesh.IndexCount) == false)
             {
                 Shutdown();
                 return RHIFrameResult::FatalError;
