@@ -116,3 +116,9 @@ Vulkan/DX12 Scene Contextに `SetViewport(x,y,width,height)` を追加し、各F
 `VulkanSceneBuffer` は `InitVertex(device,data,byteSize,stride)` / `InitIndex(device,indices,count)` で `VK_BUFFER_USAGE_VERTEX_BUFFER_BIT` / `VK_BUFFER_USAGE_INDEX_BUFFER_BIT` の `VkBuffer` と `VkDeviceMemory` を所有します。Memory Typeは `HOST_VISIBLE | HOST_COHERENT` を要求し、`SetData` は `vkMapMemory` → コピー → `vkUnmapMemory` で容量内のCPU更新を行います。対応するMemory Typeがない場合は失敗し、Staging Buffer転送へのフォールバックは今後実装します。Index形式は32-bit unsigned integerです。
 
 DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出し元でFence等による完了確認が必要です。Vulkan Bufferの破棄はVulkanDeviceより前に行ってください。今回のBufferは既存OpenGL `VertexBuffer` / `IndexBuffer` とまだ接続せず、Graphics PipelineとIndexed Drawの実装後に統合します。
+
+### Scene Frame共通Resize契約（今回追加）
+
+`RHISceneFrameLifecycle` に `Resize(width, height)` を追加し、OpenGL / Vulkan / DX12で同じFrame外呼び出し口を用意しました。幅・高さ0は最小化中として呼び出し側で保留し、各実装も失敗を返します。OpenGLではWindowのResize Event経由のViewport更新を維持し、Frame外かつ正のサイズなら成功を返します。Vulkan / DX12は既存の同期・SwapChain再生成処理を `override` で公開します。
+
+**注意:** これはScene描画のBackend切替を有効化する変更ではありません。`RHISceneFrameLifecycle::Create` と `RenderCommand::Init` は従来どおりOpenGLのみ対応します。VulkanのResize後はRenderPass依存Pipelineを再生成する必要があり、Application側の `ResizeRequired` / 最小化処理とScene Resourceの再生成は後続で接続します。DX12についても同じ共通契約を維持します。
