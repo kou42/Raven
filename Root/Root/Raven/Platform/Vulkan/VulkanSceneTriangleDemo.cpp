@@ -32,19 +32,30 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
 
     // デモでは2つを登録しますが、描画側は任意個数のMeshを処理します。
     const std::vector<Vertex> left = {
-        {{-0.7f, -0.6f}, {1.0f, 0.0f, 0.0f}},
-        {{-0.1f, -0.6f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.4f,  0.6f}, {0.0f, 0.0f, 1.0f}}
+        {{-0.3f, -0.6f}, {1.0f, 0.0f, 0.0f}},
+        {{ 0.3f, -0.6f}, {0.0f, 1.0f, 0.0f}},
+        {{ 0.0f,  0.6f}, {0.0f, 0.0f, 1.0f}}
     };
     const std::vector<Vertex> right = {
-        {{ 0.1f, -0.6f}, {0.0f, 1.0f, 1.0f}},
-        {{ 0.7f, -0.6f}, {1.0f, 0.0f, 1.0f}},
-        {{ 0.4f,  0.6f}, {1.0f, 1.0f, 0.0f}}
+        {{-0.3f, -0.6f}, {0.0f, 1.0f, 1.0f}},
+        {{ 0.3f, -0.6f}, {1.0f, 0.0f, 1.0f}},
+        {{ 0.0f,  0.6f}, {1.0f, 1.0f, 0.0f}}
     };
     const std::vector<uint32_t> indices = {0, 1, 2};
     if (AddMesh(left, indices) == false || AddMesh(right, indices) == false)
     {
-        std::cerr << "Vulkan Scene Triangle: Mesh creation failed.\\n";
+        std::cerr << "Vulkan Scene Triangle: Mesh creation failed.\n";
+        Shutdown();
+        return false;
+    }
+    // 同じローカル座標を独立したModel行列で左右へ配置します。
+    auto leftModel = m_Meshes[0].Model;
+    auto rightModel = m_Meshes[1].Model;
+    leftModel[12] = -0.4f;
+    rightModel[12] = 0.4f;
+    if (SetMeshTransform(0, leftModel) == false ||
+        SetMeshTransform(1, rightModel) == false)
+    {
         Shutdown();
         return false;
     }
@@ -101,6 +112,18 @@ bool VulkanSceneTriangleDemo::AddMesh(
     }
     mesh.IndexCount = static_cast<uint32_t>(indices.size());
     m_Meshes.push_back(std::move(mesh));
+    return true;
+}
+
+bool VulkanSceneTriangleDemo::SetMeshTransform(
+    std::size_t meshIndex, const std::array<float, 16>& model)
+{
+    if (meshIndex >= m_Meshes.size())
+    {
+        return false;
+    }
+    // DrawFrameは行列の値をPush Constantへコピーします。
+    m_Meshes[meshIndex].Model = model;
     return true;
 }
 
@@ -183,7 +206,8 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     {
         // 同じFrameに異なるVertex/Index Bufferを記録します。
         // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
-        if (commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
+        if (commands.SetModelTransform(mesh.Model) == false ||
+            commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
         {
             Shutdown();
             return RHIFrameResult::FatalError;
