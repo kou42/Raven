@@ -63,13 +63,26 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         return false;
     }
 
-    // 2x2の検証用TextureをStaging転送でGPUへ配置します。
+    // 64x64のChecker Textureを生成し、8x8ピクセルごとに白と暗灰色を切り替えます。
     // TextureはDescriptor Setを通じてFragment Shaderから参照します。
-    const std::array<uint8_t, 16> checker = {
-        255, 255, 255, 255,  40, 40, 40, 255,
-        40, 40, 40, 255,     255, 255, 255, 255
-    };
-    if (m_TestTexture.Init(m_Context.GetDevice(), 2, 2,
+    constexpr uint32_t textureSize = 64;
+    constexpr uint32_t cellSize = 8;
+    std::array<uint8_t, textureSize * textureSize * 4> checker{};
+    for (uint32_t y = 0; y < textureSize; ++y)
+    {
+        for (uint32_t x = 0; x < textureSize; ++x)
+        {
+            const bool white = ((x / cellSize) + (y / cellSize)) % 2 == 0;
+            const uint8_t value = white == true ? 255 : 40;
+            const std::size_t offset =
+                (static_cast<std::size_t>(y) * textureSize + x) * 4;
+            checker[offset + 0] = value;
+            checker[offset + 1] = value;
+            checker[offset + 2] = value;
+            checker[offset + 3] = 255;
+        }
+    }
+    if (m_TestTexture.Init(m_Context.GetDevice(), textureSize, textureSize,
         checker.data()) == false)
     {
         std::cerr << "Vulkan Scene Triangle: Texture upload failed.\n";
