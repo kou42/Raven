@@ -71,7 +71,6 @@ public:
         const Ref<RHIGraphicsPipeline>& pipeline);
     void DestroyTextureDescriptors();
     bool HasTextureDescriptors() const { return m_TextureDescriptorPool != VK_NULL_HANDLE; }
-    bool BindTexture(std::size_t textureIndex);
     // 共通Textureの同一性で解決し、SceneへDescriptor番号を公開しません。
     bool BindTexture(const Ref<RHITexture>& texture);
     bool SetMaterialTint(const std::array<float, 4>& tint);
