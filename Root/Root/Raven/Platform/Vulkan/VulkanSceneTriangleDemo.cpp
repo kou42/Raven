@@ -54,7 +54,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
             vertexSpecification, meshVertices[mesh].data());
         if (m_VertexBuffers[mesh] == nullptr)
         {
-            std::cerr << "Vulkan Scene Triangle: Mesh Vertex Buffer creation failed.\\n";
+            std::cerr << "Vulkan Scene Triangle: Mesh Vertex Buffer creation failed.\n";
             Shutdown();
             return false;
         }
@@ -67,7 +67,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
             indexSpecification, indices.data());
         if (m_IndexBuffers[mesh] == nullptr)
         {
-            std::cerr << "Vulkan Scene Triangle: Mesh Index Buffer creation failed.\\n";
+            std::cerr << "Vulkan Scene Triangle: Mesh Index Buffer creation failed.\n";
             Shutdown();
             return false;
         }
