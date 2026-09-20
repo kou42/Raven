@@ -38,9 +38,10 @@ public:
     }
 
     // Model・View・Projection合成済みのclip-space変換を設定します。
-    bool BindTextureDescriptor(VkDescriptorSet descriptorSet)
+    // Texture番号を共通RHITextureの登録順として受け取り、native Descriptorを公開しません。
+    bool BindTexture(std::size_t textureIndex)
     {
-        return m_Context.BindTextureDescriptor(descriptorSet);
+        return m_Context.BindTexture(textureIndex);
     }
 
     bool SetMaterialTint(const std::array<float, 4>& tint)
