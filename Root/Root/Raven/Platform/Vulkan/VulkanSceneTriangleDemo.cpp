@@ -15,36 +15,6 @@
 
 namespace Raven
 {
-namespace
-{
-// RavenのMat4はrow-major、GLSLのmat4はcolumn-majorです。
-// Push Constantへ送る直前に転置配置し、座標変換の向きを保ちます。
-std::array<float, 16> ToColumnMajor(const math::Mat4& matrix)
-{
-    std::array<float, 16> result{};
-    for (std::size_t column = 0; column < 4; ++column)
-    {
-        for (std::size_t row = 0; row < 4; ++row)
-        {
-            result[column * 4 + row] = matrix.m[row][column];
-        }
-    }
-    return result;
-}
-
-math::Mat4 FromColumnMajor(const std::array<float, 16>& values)
-{
-    math::Mat4 result{};
-    for (std::size_t column = 0; column < 4; ++column)
-    {
-        for (std::size_t row = 0; row < 4; ++row)
-        {
-            result.m[row][column] = values[column * 4 + row];
-        }
-    }
-    return result;
-}
-} // namespace
 bool VulkanSceneTriangleDemo::Init(Window& window,
     const RHIShaderBinary& vertexShader, const RHIShaderBinary& fragmentShader)
 {
@@ -198,7 +168,7 @@ bool VulkanSceneTriangleDemo::AddMesh(
     indexSpecification.DebugName = "Vulkan Scene Mesh Index";
 
     // 両Bufferの生成が成功してからSceneに登録し、途中失敗で半端なMeshを残しません。
-    Mesh mesh;
+    RHISceneMesh mesh;
     mesh.VertexBuffer = device.CreateBuffer(vertexSpecification, vertices.data());
     if (mesh.VertexBuffer == nullptr)
     {
@@ -510,7 +480,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     {
         return RHIFrameResult::FatalError;
     }
-    for (const Mesh& mesh : m_Meshes)
+    for (const RHISceneMesh& mesh : m_Meshes)
     {
         if (mesh.VertexBuffer == nullptr || mesh.IndexBuffer == nullptr)
         {
@@ -518,35 +488,10 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         }
     }
 
-    // Rendererへ渡すDraw ItemをFrame前に構築し、GPU命令とScene走査を分離します。
-    const math::Mat4 view = m_Camera.GetViewMatrix();
-    // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
-    // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
-    const math::Mat4 vulkanClipCorrection(
-        1.0f,  0.0f, 0.0f, 0.0f,
-        0.0f, -1.0f, 0.0f, 0.0f,
-        0.0f,  0.0f, 0.5f, 0.5f,
-        0.0f,  0.0f, 0.0f, 1.0f);
-    const math::Mat4 viewProjection = vulkanClipCorrection *
-        m_Camera.GetProjectionMatrix() * view;
-    std::vector<RHISceneDrawItem> drawItems;
-    drawItems.reserve(m_Meshes.size());
-    for (const Mesh& mesh : m_Meshes)
-    {
-        RHISceneDrawItem item;
-        item.VertexBuffer = mesh.VertexBuffer;
-        item.IndexBuffer = mesh.IndexBuffer;
-        item.IndexCount = mesh.IndexCount;
-        item.Material = mesh.Material;
-        item.ClipTransform = ToColumnMajor(
-            viewProjection * FromColumnMajor(mesh.Model));
-        const math::Mat4 modelView = view * FromColumnMajor(mesh.Model);
-        const auto& center = mesh.LocalCenter;
-        item.ViewDepth = modelView.m[2][0] * center[0] +
-            modelView.m[2][1] * center[1] +
-            modelView.m[2][2] * center[2] + modelView.m[2][3];
-        drawItems.push_back(std::move(item));
-    }
+    // CameraとMeshから共通Draw ItemをFrame開始前に構築します。
+    // Vulkan固有のClip補正値のみBackend側で選択します。
+    const std::vector<RHISceneDrawItem> drawItems = RHISceneDrawItemBuilder::Build(
+        m_Camera, m_Meshes, RHISceneDrawItemBuilder::VulkanClipCorrection());
 
     // Contextの所有権はDemoに残し、Frame操作は共通Lifecycle境界を使用します。
     RHISceneFrameLifecycle& frame = m_Context;
