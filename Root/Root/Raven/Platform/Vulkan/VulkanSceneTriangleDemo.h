@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
+#include "VulkanSceneTexture.h"
 #include "Raven/Scene/SceneCamera.h"
 
 #include <array>
@@ -58,6 +59,7 @@ private:
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
     SceneCamera m_Camera;
+    VulkanSceneTexture m_TestTexture;
     struct Mesh
     {
         Ref<RHIBuffer> VertexBuffer;
