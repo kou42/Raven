@@ -194,3 +194,10 @@ Device経由で生成したBufferはContextがweak参照で追跡し、Context::
 Buffer別Fence同期は各Submit済みSlotでキーの存在を調べます。計算量は従来の「Slot数 × 各SlotのDraw Buffer登録数」から、平均的に「Slot数 × Mapキー検索」になります。重複Drawが多いSceneほど強参照数も削減します。Frameごとの異なるBuffer数に応じたMapのメモリ使用とハッシュ管理コストは発生します。外部Queue/別スレッドは引き続き対象外です。
 
 確認項目：同一Vertex/Index Bufferを繰り返し描画、異なるBufferの混在、同一Bufferの複数Frame使用、Fence完了後のRef回収、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。

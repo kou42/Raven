@@ -44,6 +44,9 @@ public:
     // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
     bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
+    // RenderPass中にColor Attachment全体を消去します。Frame外・Submit後は失敗します。
+    // BeginFrame時のLoadOp Clearとは別に、Scene描画命令としてClearを発行する入口です。
+    bool ClearColorAttachment(const float color[4]);
     VkCommandBuffer GetActiveCommandBuffer() const;
 
     // Scene RenderPassと同じDevice/Color FormatでPipelineを生成します。
