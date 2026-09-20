@@ -29,6 +29,8 @@ VkFormat ToColorFormat(RHIColorFormat format)
     {
     case RHIColorFormat::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
     case RHIColorFormat::BGRA8Unorm: return VK_FORMAT_B8G8R8A8_UNORM;
+    case RHIColorFormat::RGBA8Srgb: return VK_FORMAT_R8G8B8A8_SRGB;
+    case RHIColorFormat::BGRA8Srgb: return VK_FORMAT_B8G8R8A8_SRGB;
     default: return VK_FORMAT_UNDEFINED;
     }
 }
