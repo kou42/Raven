@@ -354,7 +354,7 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
     return true;
 }
 
-bool VulkanSceneContext::SetModelTransform(const std::array<float, 16>& model)
+bool VulkanSceneContext::SetClipTransform(const std::array<float, 16>& model)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
@@ -362,7 +362,7 @@ bool VulkanSceneContext::SetModelTransform(const std::array<float, 16>& model)
     {
         return false;
     }
-    // Push ConstantはCommand Bufferへ値をコピーするため、CPU側の行列はDraw後に変更できます。
+    // Model/View/Projectionを合成した行列をCommand Bufferへコピーします。
     vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT, 0, static_cast<uint32_t>(sizeof(float) * model.size()),
         model.data());
