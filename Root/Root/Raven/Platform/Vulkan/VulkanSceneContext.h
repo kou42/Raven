@@ -58,8 +58,8 @@ public:
     // BeginFrame～EndFrameのRenderPass内だけで描画命令を記録します。
     // PipelineはこのContextで生成されたものに限定します。
     bool BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
-    // Bind済みPipelineのVertex Shaderへcolumn-major Model行列を設定します。
-    bool SetModelTransform(const std::array<float, 16>& model);
+    // Bind済みPipelineのVertex Shaderへcolumn-major Model-View-Projection行列を設定します。
+    bool SetClipTransform(const std::array<float, 16>& model);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0,
         bool usePipelineVertexStride = false);
