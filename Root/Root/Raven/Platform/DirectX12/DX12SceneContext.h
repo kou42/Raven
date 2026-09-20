@@ -31,6 +31,8 @@ public:
     bool Resize(uint32_t width, uint32_t height);
     void Shutdown();
 
+    // Scene DrawのRasterizer領域とScissorを同時に設定します。
+    bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
     ID3D12GraphicsCommandList* GetActiveCommandList() const;
 
