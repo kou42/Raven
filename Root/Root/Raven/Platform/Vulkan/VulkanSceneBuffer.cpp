@@ -38,8 +38,8 @@ bool VulkanSceneBuffer::Init(const VulkanDevice& device, const void* data,
     uint32_t byteSize, uint32_t stride, bool indexBuffer, uint32_t indexCount)
 {
     Shutdown();
-    if (device.IsValid() == false || data == nullptr ||
-        byteSize == 0 || stride == 0)
+    // 共通RHIDeviceではinitialData == nullptrの未初期化Bufferも生成します。
+    if (device.IsValid() == false || byteSize == 0 || stride == 0)
     {
         return false;
     }
