@@ -2,6 +2,7 @@
 
 #include "VulkanSceneCommandList.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -31,6 +32,8 @@ public:
 
     // Frame外でのみMeshを追加・削除します。追加失敗時は既存Meshを維持します。
     bool AddMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+    // 行列はGLSL mat4と同じcolumn-major順。Mesh番号は登録順です。
+    bool SetMeshTransform(std::size_t meshIndex, const std::array<float, 16>& model);
     bool ClearMeshes();
     std::size_t GetMeshCount() const { return m_Meshes.size(); }
 
@@ -51,6 +54,12 @@ private:
         Ref<RHIBuffer> VertexBuffer;
         Ref<RHIBuffer> IndexBuffer;
         uint32_t IndexCount = 0;
+        std::array<float, 16> Model = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
     };
     // Mesh数は固定せず、Bufferの所有権はRefで保持します。
     std::vector<Mesh> m_Meshes;
