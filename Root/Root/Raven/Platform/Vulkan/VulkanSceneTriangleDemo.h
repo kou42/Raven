@@ -78,20 +78,12 @@ public:
 
 private:
     bool CreatePipeline();
-    bool CreateTextureDescriptor();
-    void DestroyTextureDescriptor();
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
     SceneCamera m_Camera;
-    struct TextureResource
-    {
-        Ref<RHITexture> Image;
-        VkDescriptorSet Descriptor = VK_NULL_HANDLE;
-    };
-    // TextureResourceはSceneが所有し、Meshは登録番号だけを参照します。
-    std::vector<TextureResource> m_Textures;
-    VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
+    // Sceneは共通RHITextureだけを保持し、DescriptorはVulkan Backendが管理します。
+    std::vector<Ref<RHITexture>> m_Textures;
     // 汎用Materialとは別のVulkan Scene検証用データ。API固有handleはTextureResourceに閉じ込めます。
     struct SceneMaterial
     {
