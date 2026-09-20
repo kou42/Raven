@@ -78,24 +78,9 @@ bool DX12ClearContext::Init(Window& window)
 
 RHIFrameResult DX12ClearContext::DrawClearFrame(const float clearColor[4])
 {
-    RHIFrameResult result = BeginFrame();
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    result = ClearFrame(clearColor);
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    result = EndFrame();
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    return Present();
+    // 旧入口とClear Demoが同じFrame進行規則を使用します。
+    return RunRHIClearFrame(*this, clearColor);
 }
-
 RHIFrameResult DX12ClearContext::BeginFrame()
 {
     if (m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||
