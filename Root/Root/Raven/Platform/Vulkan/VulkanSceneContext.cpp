@@ -472,15 +472,6 @@ void VulkanSceneContext::DestroyTextureDescriptors()
     m_DescriptorTextures.clear();
 }
 
-bool VulkanSceneContext::BindTexture(std::size_t textureIndex)
-{
-    if (textureIndex >= m_TextureDescriptors.size())
-    {
-        return false;
-    }
-    return BindTextureDescriptor(m_TextureDescriptors[textureIndex]);
-}
-
 bool VulkanSceneContext::BindTexture(const Ref<RHITexture>& texture)
 {
     if (texture == nullptr)
@@ -491,7 +482,7 @@ bool VulkanSceneContext::BindTexture(const Ref<RHITexture>& texture)
     {
         if (m_DescriptorTextures[index] == texture)
         {
-            return BindTexture(index);
+            return BindTextureDescriptor(m_TextureDescriptors[index]);
         }
     }
     return false;
