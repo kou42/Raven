@@ -156,3 +156,9 @@ Contextが所有するVkDeviceより前に、外部が保持するRHIBufferを�
 `VulkanSceneTriangleDemo` はContext所有Deviceの `VulkanSceneRHIDevice::CreateBuffer` でVertex/Indexを生成し、共通Buffer版DrawIndexedを通るように変更しました。終了時はWaitIdle後にBufferのRefをresetし、ContextのVkDeviceより先に解放します。Resize後もBufferは維持し、Pipelineのみ再生成します。
 
 Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Sceneへの接続時にはVertex Input Layoutの共有、複数Binding、Buffer lifetimeとGPU同期を共通設計に移す必要があります。ビルド・GPU実機・Validation Layerは未検証です。確認項目：Triangle表示、Resize後再描画、誤ったStride/用途/Device/IndexCountの拒否、終了時Validation Layer、OpenGL回帰。
+
+### 共通Vertex StrideのPipeline入力への一本化
+
+共通RHIBuffer版 `DrawIndexed(vertex, index, indexCount = 0)` は、Bind済PipelineのBinding 0からStrideを取得します。呼び出し側でStrideを重複指定する必要はありません。Bindingが0以外・複数・Stride 0、Vertex容量がStrideで割り切れない場合は描画を拒否します。従来のnative SceneBuffer版はBuffer保持StrideとPipeline Strideの一致を検証します。
+
+本変更は単一Vertex Binding限定です。複数Binding/Instance Rate、頂点範囲やIndex値のCPU検査は未対応です。共通Bufferはbyte単位で確保する仕様のままであり、GPU同期とDevice寿命の制約も変わりません。ビルド・GPU実機・Validation Layerは未検証です。
