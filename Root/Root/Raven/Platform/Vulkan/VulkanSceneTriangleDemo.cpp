@@ -2,6 +2,8 @@
 
 #include "Raven/Core/Window.h"
 
+#include <iostream>
+
 namespace Raven
 {
 bool VulkanSceneTriangleDemo::Init(Window& window,
@@ -20,6 +22,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     m_FragmentShader = fragmentShader;
     if (m_Context.Init(window) == false)
     {
+        std::cerr << "Vulkan Scene Triangle: Scene Context initialization failed.\n";
         Shutdown();
         return false;
     }
@@ -33,11 +36,22 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     }};
     const std::array<uint32_t, 3> indices = {{ 0, 1, 2 }};
     if (m_VertexBuffer.InitVertex(m_Context.GetDevice(), vertices.data(),
-        static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex)) == false ||
-        m_IndexBuffer.InitIndex(m_Context.GetDevice(), indices.data(),
-            static_cast<uint32_t>(indices.size())) == false ||
-        CreatePipeline() == false)
+        static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex)) == false)
     {
+        std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\n";
+        Shutdown();
+        return false;
+    }
+    if (m_IndexBuffer.InitIndex(m_Context.GetDevice(), indices.data(),
+        static_cast<uint32_t>(indices.size())) == false)
+    {
+        std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\n";
+        Shutdown();
+        return false;
+    }
+    if (CreatePipeline() == false)
+    {
+        std::cerr << "Vulkan Scene Triangle: Graphics Pipeline creation failed.\n";
         Shutdown();
         return false;
     }
@@ -64,8 +78,16 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     case VK_FORMAT_B8G8R8A8_UNORM:
         specification.ColorFormat = RHIColorFormat::BGRA8Unorm;
         break;
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        specification.ColorFormat = RHIColorFormat::RGBA8Srgb;
+        break;
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        specification.ColorFormat = RHIColorFormat::BGRA8Srgb;
+        break;
     default:
-        // 現行共通仕様に存在しないSwapChain Formatは黙って代替しません。
+        // SwapChainの実FormatとPipelineのAttachment Formatを一致させます。
+        std::cerr << "Vulkan Scene Triangle: Unsupported SwapChain color format: "
+            << static_cast<int>(m_Context.GetColorFormat()) << '\n';
         return false;
     }
     m_Pipeline = m_Context.CreateGraphicsPipeline(specification);
