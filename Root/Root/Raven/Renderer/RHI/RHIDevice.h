@@ -4,6 +4,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/RHI/RHIBuffer.h"
+#include "Raven/Renderer/RHI/RHIGraphicsPipeline.h"
 #include "Raven/Renderer/RHI/RHITexture.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
 
@@ -26,6 +27,16 @@ public:
     virtual Ref<RHIBuffer> CreateBuffer(
         const RHIBufferSpecification& specification,
         const void* initialData = nullptr) = 0;
+
+    // Explicit API用Graphics Pipeline生成口。既存OpenGLRHIDeviceはLegacy Pipelineを
+    // 使用するため、対応Backendの実装が揃うまでは明示的に未対応を返します。
+    // Vulkan/DX12ではScene Contextと同じnative Device/RenderTargetから生成してください。
+    virtual Ref<RHIGraphicsPipeline> CreateGraphicsPipeline(
+        const RHIGraphicsPipelineSpecification& specification)
+    {
+        (void)specification;
+        return nullptr;
+    }
 
     virtual Ref<RHITexture> CreateTexture(
         const RHITextureSpecification& specification,
