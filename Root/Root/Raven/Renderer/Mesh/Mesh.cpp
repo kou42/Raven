@@ -47,10 +47,22 @@ void BuildVertexUploadData(
 }
 } // namespace
 
-Mesh::Mesh(Ref<MeshGeometry> geometry)
+Mesh::Mesh(
+    Ref<MeshGeometry> geometry,
+    LegacyMeshResourceCreation legacyResourceCreation)
     : m_Geometry(std::move(geometry))
 {
-    BuildRenderResources();
+    // Index数は特定BackendのResourceではなく論理Geometryの情報です。
+    // Legacy生成をDeferredにしてもExplicit RHIのDraw Itemへ正しい値を渡せるよう、先に確定します。
+    if (m_Geometry != nullptr)
+    {
+        m_IndexCount = static_cast<uint32_t>(m_Geometry->GetIndices().size());
+    }
+
+    if (legacyResourceCreation == LegacyMeshResourceCreation::Immediate)
+    {
+        BuildLegacyResources();
+    }
 }
 
 Mesh::Mesh(Ref<VertexArray> vertexArray, int32_t indexCount)
@@ -59,51 +71,61 @@ Mesh::Mesh(Ref<VertexArray> vertexArray, int32_t indexCount)
 {
 }
 
-void Mesh::BuildRenderResources()
+bool Mesh::BuildLegacyResources()
 {
-    m_VertexArray = nullptr;
-    m_VertexBuffer = nullptr;
-    m_IndexCount = 0;
-    m_UploadedGeometryRevision = 0;
-
     if (m_Geometry == nullptr || m_Geometry->GetVertices().empty())
     {
-        return;
+        return false;
     }
 
     const auto& indices = m_Geometry->GetIndices();
     BuildVertexUploadData(m_Geometry->GetVertices(), m_VertexUploadData);
 
-    m_VertexArray = VertexArray::Create();
+    // 構築途中で失敗しても既存Resourceを失わないよう、すべて一時値へ完成させてから差し替えます。
+    Ref<VertexArray> vertexArray = VertexArray::Create();
+    if (vertexArray == nullptr)
+    {
+        return false;
+    }
 
-    m_VertexBuffer = VertexBuffer::Create(
+    Ref<VertexBuffer> vertexBuffer = VertexBuffer::Create(
         m_VertexUploadData.data(),
         static_cast<uint32_t>(m_VertexUploadData.size() * sizeof(float)));
+    if (vertexBuffer == nullptr)
+    {
+        return false;
+    }
 
     // Attributeの順序はBuildVertexUploadData()と必ず一致させます。
     // a_Normalはlocationを自動採番するOpenGLVertexArray側で4番目のattributeになります。
-    m_VertexBuffer->SetLayout({
+    vertexBuffer->SetLayout({
         { ShaderDataType::Float3, "a_Position" },
         { ShaderDataType::Float3, "a_Color" },
         { ShaderDataType::Float2, "a_Texcord" },
         { ShaderDataType::Float3, "a_Normal" }
     });
 
-    m_VertexArray->AddVertexBuffer(m_VertexBuffer);
+    vertexArray->AddVertexBuffer(vertexBuffer);
 
     if (indices.empty() == false)
     {
         auto indexBuffer = IndexBuffer::Create(
             indices.data(),
             static_cast<uint32_t>(indices.size()));
+        if (indexBuffer == nullptr)
+        {
+            return false;
+        }
 
-        m_VertexArray->SetIndexBuffer(indexBuffer);
-        m_IndexCount = static_cast<uint32_t>(indices.size());
+        vertexArray->SetIndexBuffer(indexBuffer);
     }
 
+    m_VertexArray = std::move(vertexArray);
+    m_VertexBuffer = std::move(vertexBuffer);
+    m_IndexCount = static_cast<uint32_t>(indices.size());
     m_UploadedGeometryRevision = m_Geometry->GetRevision();
+    return true;
 }
-
 bool Mesh::UploadVertexData()
 {
     if (m_Geometry == nullptr || m_VertexBuffer == nullptr || m_Geometry->GetVertices().empty())

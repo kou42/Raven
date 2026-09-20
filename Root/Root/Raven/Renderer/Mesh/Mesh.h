@@ -13,6 +13,12 @@ class RHIDevice;
 class VertexArray;
 class VertexBuffer;
 
+enum class LegacyMeshResourceCreation
+{
+    Immediate,
+    Deferred
+};
+
 // ============================================================================
 // Mesh
 // ============================================================================
@@ -23,13 +29,20 @@ class VertexBuffer;
 class Mesh
 {
 public:
-    explicit Mesh(Ref<MeshGeometry> geometry);
+    explicit Mesh(
+        Ref<MeshGeometry> geometry,
+        LegacyMeshResourceCreation legacyResourceCreation =
+            LegacyMeshResourceCreation::Immediate);
 
     // PhysicsDebugRendererのように、そのフレームだけ使うGPUデータを直接組み立てる
     // 低レベル描画経路との互換用です。通常のScene MeshはMeshGeometry経由を使用します。
     Mesh(Ref<VertexArray> vertexArray, int32_t indexCount);
 
     void Draw() const;
+
+    // Explicit-only起動では構築をDeferredにし、OpenGL Contextへ触れずCPU Geometryだけを保持します。
+    // Backend切替などで後からLegacy描画が必要になった場合は、この関数で安全に構築できます。
+    bool BuildLegacyResources();
 
     // ========================================================================
     // Dynamic Geometry synchronization
@@ -81,9 +94,6 @@ public:
     }
 
 private:
-    // MeshGeometryから現在のRenderer用GPUリソースを構築します。
-    void BuildRenderResources();
-
     // MeshVertex配列を現在のShader入力に対応する連続float列へ変換し、VBOへ送ります。
     // 初期UploadとDynamic更新で同じ変換規約を共有するためのヘルパーです。
     bool UploadVertexData();

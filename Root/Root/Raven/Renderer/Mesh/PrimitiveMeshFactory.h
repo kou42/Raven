@@ -1,11 +1,11 @@
 #pragma once
 
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
 
 namespace Raven
 {
 
-class Mesh;
 
 // ============================================================================
 // PrimitiveMeshFactory
@@ -22,12 +22,22 @@ class Mesh;
 class PrimitiveMeshFactory
 {
 public:
-    static Ref<Mesh> CreateCube();
-    static Ref<Mesh> CreateSphere(int stacks = 24, int slices = 48);
+    static Ref<Mesh> CreateCube(
+        LegacyMeshResourceCreation legacyResourceCreation =
+            LegacyMeshResourceCreation::Immediate);
+    static Ref<Mesh> CreateSphere(
+        int stacks = 24,
+        int slices = 48,
+        LegacyMeshResourceCreation legacyResourceCreation =
+            LegacyMeshResourceCreation::Immediate);
 
     // Dynamic Geometry + Fixed Topologyの検証用Gridです。
     // Wave / Morph / SoftBodyなど「頂点だけ動き、接続関係は変わらない」変形の土台に使います。
-    static Ref<Mesh> CreateDynamicGrid(int rows = 20, int columns = 20);
+    static Ref<Mesh> CreateDynamicGrid(
+        int rows = 20,
+        int columns = 20,
+        LegacyMeshResourceCreation legacyResourceCreation =
+            LegacyMeshResourceCreation::Immediate);
 };
 
 } // namespace Raven
