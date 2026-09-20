@@ -42,7 +42,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         static_cast<uint32_t>(sizeof(vertices)), sizeof(Vertex));
     if (m_VertexBuffer == nullptr)
     {
-        std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\\n";
+        std::cerr << "Vulkan Scene Triangle: Vertex Buffer creation failed.\n";
         Shutdown();
         return false;
     }
@@ -50,13 +50,13 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         static_cast<uint32_t>(indices.size()));
     if (m_IndexBuffer == nullptr)
     {
-        std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\\n";
+        std::cerr << "Vulkan Scene Triangle: Index Buffer creation failed.\n";
         Shutdown();
         return false;
     }
     if (CreatePipeline() == false)
     {
-        std::cerr << "Vulkan Scene Triangle: Graphics Pipeline creation failed.\\n";
+        std::cerr << "Vulkan Scene Triangle: Graphics Pipeline creation failed.\n";
         Shutdown();
         return false;
     }
