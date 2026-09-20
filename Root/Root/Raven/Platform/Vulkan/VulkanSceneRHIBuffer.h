@@ -126,11 +126,8 @@ public:
 private:
     void Shutdown()
     {
-        if (m_Context != nullptr)
-        {
-            // 通常破棄時はGPU使用完了を待ちます。記録中のBufferは呼び出し側が保持します。
-            (void)m_Context->SynchronizeBufferAccess();
-        }
+        // 描画済みBufferはContextがFrame Fence完了まで強参照するため、
+        // 最後のRefの破棄時に再入するFence待機は不要です。
         m_Buffer.Shutdown();
         m_Context = nullptr;
     }

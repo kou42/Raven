@@ -34,7 +34,7 @@ public:
     bool Resize(uint32_t width, uint32_t height) override;
     void Shutdown();
 
-    // Scene共通Bufferの更新/Resize前に全GPU利用完了を確認します。
+    // Scene共通Bufferの更新/Resize前にSubmit済みFrame Fenceを待ちます。
     // Frame記録中・Submit済みPresent前は更新を許可しません。
     bool SynchronizeBufferAccess();
     void RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer);
@@ -76,8 +76,10 @@ private:
     std::vector<Ref<VulkanGraphicsPipeline>> m_GraphicsPipelines;
     // 外部RefがDeviceより長生きしてもnative Bufferを安全に無効化するため追跡します。
     std::vector<std::weak_ptr<VulkanSceneRHIBuffer>> m_Buffers;
-    // Draw記録後、GPU完了まで最後の外部Refが消えてもBufferを保持します。
-    std::vector<Ref<RHIBuffer>> m_RecordedBuffers;
+    // Frame Slotごとに描画Bufferを保持し、対応Fence完了後にのみ解放します。
+    std::vector<std::vector<Ref<RHIBuffer>>> m_RecordedBuffers;
+    // Reset前の初期Signal FenceはSubmit済みとして扱わないよう区別します。
+    std::vector<bool> m_SubmittedBufferFrames;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};

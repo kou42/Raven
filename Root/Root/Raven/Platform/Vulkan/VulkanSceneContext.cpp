@@ -5,6 +5,8 @@
 
 #include <GLFW/glfw3.h>
 
+#include <limits>
+
 namespace Raven
 {
 namespace
@@ -70,6 +72,8 @@ bool VulkanSceneContext::Init(Window& window)
         }
         m_CommandBuffers.push_back(std::move(commandBuffer));
     }
+    m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
+    m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
     m_ClearColor.float32[3] = 1.0f;
     return true;
 }
@@ -95,6 +99,16 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
     {
         return ToSceneFrameResult(acquire);
     }
+
+    // BeginFrame内部でこのSlotのFence待機が完了しています。
+    // 前回SubmitのBufferを解放してから、新しいDrawを記録します。
+    if (frame >= m_RecordedBuffers.size() ||
+        frame >= m_SubmittedBufferFrames.size())
+    {
+        return RHIFrameResult::FatalError;
+    }
+    m_RecordedBuffers[frame].clear();
+    m_SubmittedBufferFrames[frame] = false;
 
     // Acquire成功後に記録が失敗した場合はSemaphoreが未消費になり得ます。
     // FatalError後は同じContextで次Frameを開始せず、Shutdownして再生成します。
@@ -142,6 +156,8 @@ RHIFrameResult VulkanSceneContext::EndFrame()
     if (result == VulkanFrameResult::Success)
     {
         m_FrameSubmitted = true;
+        // Submit成功時だけFenceを待機対象にします。
+        m_SubmittedBufferFrames[m_ActiveFrame] = true;
     }
     return ToSceneFrameResult(result);
 }
@@ -177,6 +193,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     }
     m_BoundGraphicsPipeline.reset();
     m_RecordedBuffers.clear();
+    m_SubmittedBufferFrames.clear();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
     for (const auto& pipeline : m_GraphicsPipelines)
     {
@@ -194,6 +211,8 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     {
         return false;
     }
+    m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
+    m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
     return true;
 }
 
@@ -384,27 +403,56 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
 
 bool VulkanSceneContext::SynchronizeBufferAccess()
 {
-    // Host Coherentは可視性を保証しますが、GPUとの競合までは防ぎません。
-    // まずは安全性を優先し、Frame外の更新前にDevice全体の完了を待ちます。
+    // Host CoherentはGPUとの競合を防ぎません。Device全体ではなく、
+    // このSceneがSubmitしたFrame SlotのFenceだけを待機します。
     if (m_Instance.IsValid() == false || m_FrameActive == true ||
-        m_FrameSubmitted == true)
+        m_FrameSubmitted == true || m_FrameSync.IsValid() == false ||
+        m_RecordedBuffers.size() != m_FrameSync.GetFrameCount() ||
+        m_SubmittedBufferFrames.size() != m_FrameSync.GetFrameCount())
     {
         return false;
     }
-    if (m_Instance.GetDevice().WaitIdle() == false)
+
+    std::vector<VkFence> fences;
+    for (uint32_t frame = 0; frame < m_FrameSync.GetFrameCount(); ++frame)
+    {
+        if (m_SubmittedBufferFrames[frame] == true)
+        {
+            const VkFence fence = m_FrameSync.GetFenceForFrame(frame);
+            if (fence == VK_NULL_HANDLE)
+            {
+                return false;
+            }
+            fences.push_back(fence);
+        }
+    }
+    if (fences.empty() == false &&
+        vkWaitForFences(m_Instance.GetDevice().GetHandle(),
+            static_cast<uint32_t>(fences.size()), fences.data(), VK_TRUE,
+            std::numeric_limits<uint64_t>::max()) != VK_SUCCESS)
     {
         return false;
     }
-    m_RecordedBuffers.clear();
+
+    // 全SubmitのGPU完了後なら、旧native Bufferを更新・Resize・破棄できます。
+    for (uint32_t frame = 0; frame < m_FrameSync.GetFrameCount(); ++frame)
+    {
+        m_SubmittedBufferFrames[frame] = false;
+        m_RecordedBuffers[frame].clear();
+    }
     return true;
 }
 
 void VulkanSceneContext::RetainDrawBuffers(
     const Ref<RHIBuffer>& vertex, const Ref<RHIBuffer>& index)
 {
-    // Frame記録中に呼び出し元の最後のRefが消えても、GPU利用完了まで保持します。
-    m_RecordedBuffers.push_back(vertex);
-    m_RecordedBuffers.push_back(index);
+    if (m_FrameActive == false || m_ActiveFrame >= m_RecordedBuffers.size())
+    {
+        return;
+    }
+    // Draw成功後のBufferを該当FrameのFence完了まで保持します。
+    m_RecordedBuffers[m_ActiveFrame].push_back(vertex);
+    m_RecordedBuffers[m_ActiveFrame].push_back(index);
 }
 
 void VulkanSceneContext::RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer)
@@ -446,6 +494,7 @@ void VulkanSceneContext::Shutdown()
     }
     m_Buffers.clear();
     m_RecordedBuffers.clear();
+    m_SubmittedBufferFrames.clear();
     m_FrameActive = false;
     m_FrameSubmitted = false;
     m_ActiveFrame = 0;
