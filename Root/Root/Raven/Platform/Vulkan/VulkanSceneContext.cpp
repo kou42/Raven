@@ -108,6 +108,12 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
         return RHIFrameResult::FatalError;
     }
     m_FrameSubmitted = false;
+    const VkExtent2D extent = m_SwapChain.GetExtent();
+    // Resize直後も初回Draw前に有効なViewport/Scissorを記録します。
+    if (SetViewport(0, 0, extent.width, extent.height) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
     return RHIFrameResult::Success;
 }
 
