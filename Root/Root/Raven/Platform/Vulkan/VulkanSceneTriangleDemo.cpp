@@ -385,9 +385,9 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
 
 bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
 {
-    DestroyTextureDescriptor();
     if (m_Textures.empty() == true || m_Pipeline == nullptr ||
-        m_Context.GetDevice().IsValid() == false)
+        m_Context.GetDevice().IsValid() == false ||
+        m_Textures.size() > std::numeric_limits<uint32_t>::max())
     {
         return false;
     }
@@ -396,7 +396,10 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
     {
         return false;
     }
+    // 既存Poolを残したまま新Poolを構築し、途中失敗でも既存Meshの描画を維持します。
+    // 呼び出し側は旧Descriptorを参照するGPU処理の完了を保証します。
     const VkDevice device = m_Context.GetDevice().GetHandle();
+    VkDescriptorPool newPool = VK_NULL_HANDLE;
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSize.descriptorCount = static_cast<uint32_t>(m_Textures.size());
@@ -405,8 +408,7 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
     poolInfo.maxSets = static_cast<uint32_t>(m_Textures.size());
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr,
-        &m_TextureDescriptorPool) != VK_SUCCESS)
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &newPool) != VK_SUCCESS)
     {
         return false;
     }
@@ -415,21 +417,20 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
     std::vector<VkDescriptorSet> descriptors(m_Textures.size(), VK_NULL_HANDLE);
     VkDescriptorSetAllocateInfo allocation{};
     allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocation.descriptorPool = m_TextureDescriptorPool;
+    allocation.descriptorPool = newPool;
     allocation.descriptorSetCount = static_cast<uint32_t>(layouts.size());
     allocation.pSetLayouts = layouts.data();
     if (vkAllocateDescriptorSets(device, &allocation, descriptors.data()) != VK_SUCCESS)
     {
-        DestroyTextureDescriptor();
+        vkDestroyDescriptorPool(device, newPool, nullptr);
         return false;
     }
-    // DescriptorはTextureごとに一度だけ生成し、複数Meshから共有します。
     for (std::size_t index = 0; index < m_Textures.size(); ++index)
     {
-        TextureResource& resource = m_Textures[index];
+        const TextureResource& resource = m_Textures[index];
         if (resource.Image == nullptr || resource.Image->IsValid() == false)
         {
-            DestroyTextureDescriptor();
+            vkDestroyDescriptorPool(device, newPool, nullptr);
             return false;
         }
         VkDescriptorImageInfo image{};
@@ -444,7 +445,13 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.pImageInfo = &image;
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
-        resource.Descriptor = descriptors[index];
+    }
+    // 全Textureの更新成功後にだけPoolとDescriptorを切り替えます。
+    DestroyTextureDescriptor();
+    m_TextureDescriptorPool = newPool;
+    for (std::size_t index = 0; index < m_Textures.size(); ++index)
+    {
+        m_Textures[index].Descriptor = descriptors[index];
     }
     return true;
 }
