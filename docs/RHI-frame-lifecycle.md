@@ -45,6 +45,7 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 - [x] SceneのWindow側Frame終端をPollEvents / Presentへ分離（OnUpdate互換入口は維持）。
 - [x] OpenGL SceneにRHISceneFrameLifecycleのBeginFrame / EndFrame / Presentを接続。
 - [x] Scene Frame Lifecycleの生成をBackend選択付きFactoryへ移し、ApplicationのOpenGL具象型依存を解消（Vulkan/DX12は未実装としてnullptr）。
+- [x] DX12 FrameRendererでBackBufferのPRESENT→RENDER_TARGET→PRESENTをScene描画区間に分離し、Clear DemoのClearFrame互換入口を維持。
 - [ ] Vulkan/DX12のScene用CommandList/RenderPassとRHISceneFrameLifecycle実装。
 
 ## Scene Rendererとの接続で確認した現状
@@ -73,3 +74,7 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 4. Scene / Layer / UIの各描画経路を検証し、OpenGLの既存描画とPresent回数を回帰確認する。
 
 この段階のFactory追加はVulkan/DX12のScene描画を有効化しません。`RenderCommand::Init()`も引き続きOpenGLのみであり、Backendを切り替えるだけでは通常Sceneを起動できません。
+
+### DX12 RenderTarget区間（今回追加）
+
+`DX12FrameRenderer::BeginFrame` → `BeginRenderTarget` → Scene Draw命令 → `EndRenderTarget` → `EndFrame` → `Present` の順で呼びます。`EndFrame` はRenderTarget終了前にSubmitしません。従来のClear Demoは `ClearFrame` がBeginRenderTarget / ClearRenderTargetView / EndRenderTargetを内部で呼ぶため、外側の呼び出し順は維持されます。これはDX12 Scene ContextやRHICommandListを接続する前段階であり、まだ通常Sceneを起動しません。Depth Target、複数Pass、Offscreen描画は後続実装です。
