@@ -148,3 +148,11 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 Contextが所有するVkDeviceより前に、外部が保持するRHIBufferをすべて破棄してください。SetData/Resize/破棄の前にはGPU読み取り完了の同期が必要です。Texture生成と通常SceneのVulkan切替は未対応です。PR #220のPipeline生成Adapterをこのブランチにも含むため、マージ順によっては同一ファイルの重複を整理してください。
 
 追加検証項目：Vertex/Index生成、初期データ省略、Indexサイズ境界、offset更新、Resize後のSpecification更新、未対応用途の拒否、Contextより前のBuffer破棄、OpenGL回帰。ビルド・GPU実機検証は未実施です。
+
+### Vulkan Sceneの共通Buffer描画（追加）
+
+`VulkanSceneCommandList::DrawIndexed(Ref<RHIBuffer> vertex, Ref<RHIBuffer> index, uint32_t vertexStride, uint32_t indexCount = 0)` を追加しました。Vertex/Index用途、VulkanSceneRHIBuffer型、Contextと同一VkDevice、Pipeline Binding 0のStride一致、Vertex容量のStride整列、Index数を検証してから描画します。native VulkanSceneBuffer版のDrawIndexedは引き続き使用できます。
+
+`VulkanSceneTriangleDemo` はContext所有Deviceの `VulkanSceneRHIDevice::CreateBuffer` でVertex/Indexを生成し、共通Buffer版DrawIndexedを通るように変更しました。終了時はWaitIdle後にBufferのRefをresetし、ContextのVkDeviceより先に解放します。Resize後もBufferは維持し、Pipelineのみ再生成します。
+
+Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Sceneへの接続時にはVertex Input Layoutの共有、複数Binding、Buffer lifetimeとGPU同期を共通設計に移す必要があります。ビルド・GPU実機・Validation Layerは未検証です。確認項目：Triangle表示、Resize後再描画、誤ったStride/用途/Device/IndexCountの拒否、終了時Validation Layer、OpenGL回帰。
