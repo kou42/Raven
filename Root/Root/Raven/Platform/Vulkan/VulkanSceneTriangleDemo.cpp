@@ -286,7 +286,7 @@ bool VulkanSceneTriangleDemo::AddTexture(
         m_Textures.pop_back();
         if (CreateTextureDescriptor() == false)
         {
-            std::cerr << "Vulkan Scene Triangle: Texture descriptor recovery failed.\\n";
+            std::cerr << "Vulkan Scene Triangle: Texture descriptor recovery failed.\n";
         }
         return false;
     }
