@@ -94,3 +94,9 @@ SwapChain Resize時はGPU完了を待ってからScene RenderTargetのFramebuffe
 `VulkanSceneContext` は `RHISceneFrameLifecycle` を実装し、Clear Demoとは独立してVulkan Instance/Surface/SwapChain/FrameSync/CommandBuffer/SceneRenderTargetを所有します。`Init(Window&)` 後に `BeginFrame`（Acquire→Color Layout遷移→RenderPass開始）→Scene Draw記録→`EndFrame`（RenderPass終了→Present Layout遷移→Submit）→`Present` を呼びます。`GetActiveCommandBuffer()` と `GetRenderPass()` は後続のScene用CommandList/Pipeline接続点です。Clear色はBeginFrame前に `SetClearColor()` で指定します。
 
 `Resize` はFrame外でのみ呼び、WaitIdle後に古いRenderTargetを先に破棄してからSwapChain/FrameSync/RenderTargetを再生成します。Acquire後のFatalErrorは同期状態が不明になり得るため、同Contextで継続せず `Shutdown` → `Init` が必要です。`RHISceneFrameLifecycle::Create` は引き続きOpenGLのみを返し、RenderCommandのVulkan経路も未接続です。Scene用RHICommandList/Pipelineが揃うまでApplicationに接続しません。
+
+### DX12 Scene専用Frame Context（今回追加）
+
+`DX12SceneContext` は `RHISceneFrameLifecycle` を実装し、Clear Demoとは独立したFactory/Adapter/Device/Queue/SwapChain/Fence/Frame別CommandList/FrameRendererを所有します。`BeginFrame` でFence待機・CommandList Reset・BackBufferをRENDER_TARGETへ遷移・Clearし、`EndFrame` でPRESENTへ遷移してSubmit、`Present` で表示・Fence Signal・Frame Slot進行を行います。Scene用DrawはBeginFrameとEndFrameの間で `GetActiveCommandList()` に記録します。Clear Demoの `ClearFrame` は従来どおりRenderTargetを内部で閉じ、新しい `ClearRenderTarget` はSceneの描画区間を開いたままClearします。
+
+ResizeはFrame外でFence完了後にSwapChainとRTVを再生成します。FatalError後は同Contextを再利用せず `Shutdown` → `Init` してください。DX12/VulkanともScene専用Contextは部品として追加済みですが、Scene用RHICommandList/Pipeline/ResourceとApplicationのResizeRequired処理が揃うまで `RHISceneFrameLifecycle::Create` には登録しません。
