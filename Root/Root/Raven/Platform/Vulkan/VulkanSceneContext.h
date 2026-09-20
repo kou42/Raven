@@ -5,6 +5,7 @@
 #include "VulkanCommandBuffer.h"
 #include "VulkanFrameRenderer.h"
 #include "VulkanFrameSync.h"
+#include "VulkanGraphicsPipeline.h"
 #include "VulkanInstance.h"
 #include "VulkanSceneRenderTarget.h"
 #include "VulkanSurface.h"
@@ -34,6 +35,11 @@ public:
     bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
     VkCommandBuffer GetActiveCommandBuffer() const;
+
+    // Scene RenderPassと同じDevice/Color FormatでPipelineを生成します。
+    // Resize時はnative Pipelineを無効化するため、呼び出し元は再生成してください。
+    Ref<RHIGraphicsPipeline> CreateGraphicsPipeline(
+        const RHIGraphicsPipelineSpecification& specification);
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
     VkExtent2D GetExtent() const { return m_SwapChain.GetExtent(); }
 
@@ -44,6 +50,8 @@ private:
     VulkanFrameSync m_FrameSync;
     VulkanFrameRenderer m_FrameRenderer;
     VulkanSceneRenderTarget m_RenderTarget;
+    // 呼び出し元のRefを所有せず、Device破棄前にnative handleだけ解放します。
+    std::vector<std::weak_ptr<VulkanGraphicsPipeline>> m_GraphicsPipelines;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};
     uint32_t m_ActiveFrame = 0;
