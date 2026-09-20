@@ -43,14 +43,16 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 - [x] ClearBackendDemoをBeginFrame / ClearFrame / EndFrame / Presentの共通呼び出しへ切り替え。
 - [x] 共通RunRHIClearFrameへClear Demoと3 Backendの互換入口を集約。
 - [x] SceneのWindow側Frame終端をPollEvents / Presentへ分離（OnUpdate互換入口は維持）。
-- [ ] SceneのRHIFrameLifecycle本体との統合（Vulkan/DX12のScene用CommandList/RenderPass等が必要）。
+- [x] OpenGL SceneにRHISceneFrameLifecycleのBeginFrame / EndFrame / Presentを接続。
+- [ ] Vulkan/DX12のScene用CommandList/RenderPassとRHISceneFrameLifecycle実装。
 
 ## Scene Rendererとの接続で確認した現状
 
 - `Application::Run()` は `Renderer::BeginFrame()` でCPU Profilerと描画統計を開始し、Scene / Layer / ImGui / Raven UI描画の後に `Window::OnUpdate()` を呼ぶ。
 - `WindowsWindow::OnUpdate()` は互換入口として `PollEvents()` と `Present()` を呼ぶ。Sceneの `Application::Run()` は両者を明示的に呼び、OpenGLのSwapBuffersを一度だけ実行する。
 - `RenderCommand::Init()` が作るScene用 `RHIDevice / RHICommandList` はOpenGLのみ。Vulkan/DX12は現状Clear Demoの経路であり、Scene描画を実行できると見なさない。
-- Windowのイベント処理とPresent責務の分離は完了。次段階はScene用のBegin/End/PresentをBackendごとに実装し、Clear DemoのContextをSceneへ転用しない。
+- OpenGL SceneではOpenGLSceneFrameLifecycleがWindowを借用し、Scene / Layer / UIの描画前後とPresentを管理する。Clear DemoのContextは転用しない。
+- RHISceneFrameLifecycleはClearを必須としない。SceneのClear命令は既存のRHICommandListが担当し、Clear DemoのRHIFrameLifecycleとは分離する。
 
 ## 検証条件
 
@@ -60,4 +62,4 @@ OpenGLのWindow所有Context、VulkanのImage別Present Semaphore、DX12のFrame
 4. DX12 Present失敗時にもExecute済みCommandListへFenceをSignalし、再利用前にWaitする。
 5. SceneのOpenGL描画・Physics Debug経路を維持し、Window更新との二重Swapを起こさない。
 
-> 共通契約・3 BackendのClear経路・共通Frame進行・Scene Windowのイベント/Present分離は実装済みです。SceneのRHIFrameLifecycle本体との統合・今回の変更のビルド/実行検証は未完了です。
+> 共通契約・3 BackendのClear経路・共通Frame進行・Scene Windowのイベント/Present分離は実装済みです。OpenGL SceneのFrame境界は接続済みです。Vulkan/DX12 Scene実装・今回の変更のビルド/実行検証は未完了です。
