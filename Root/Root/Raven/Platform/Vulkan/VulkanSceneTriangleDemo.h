@@ -40,6 +40,9 @@ public:
     // Tintは頂点色に乗算します。AlphaBlendは透明Pipelineを使用します。
     bool SetMeshMaterial(std::size_t meshIndex, const std::array<float, 4>& tint,
         bool alphaBlend = false);
+    // Tint・Blend・Textureを一括更新します。検証失敗時は既存Materialを変更しません。
+    bool SetMeshMaterial(std::size_t meshIndex, const std::array<float, 4>& tint,
+        bool alphaBlend, std::size_t textureIndex);
     // Texture番号はAddTexture()の登録順です。0は既定Checker Textureです。
     // MaterialはMesh単位でTexture番号を保持し、同じ番号のGPU Textureを共有します。
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
