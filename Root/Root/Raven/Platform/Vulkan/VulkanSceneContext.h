@@ -72,6 +72,8 @@ public:
     void DestroyTextureDescriptors();
     bool HasTextureDescriptors() const { return m_TextureDescriptorPool != VK_NULL_HANDLE; }
     bool BindTexture(std::size_t textureIndex);
+    // 共通Textureの同一性で解決し、SceneへDescriptor番号を公開しません。
+    bool BindTexture(const Ref<RHITexture>& texture);
     bool SetMaterialTint(const std::array<float, 4>& tint);
     bool SetClipTransform(const std::array<float, 16>& model);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
@@ -106,6 +108,7 @@ private:
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> m_TextureDescriptors;
+    std::vector<Ref<RHITexture>> m_DescriptorTextures;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};
     uint32_t m_ActiveFrame = 0;
