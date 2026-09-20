@@ -22,7 +22,8 @@ public:
     bool InitVertex(const VulkanDevice& device, const void* data,
         uint32_t byteSize, uint32_t stride);
     bool InitIndex(const VulkanDevice& device, const uint32_t* indices, uint32_t count);
-    bool SetData(const void* data, uint32_t byteSize);
+    // RHIBuffer::SetDataと同じく部分更新を許可します。GPU利用中の同期は呼び出し側の責務です。
+    bool SetData(const void* data, uint32_t byteSize, uint32_t offset = 0);
     void Shutdown();
 
     bool IsValid() const { return m_Buffer != VK_NULL_HANDLE && m_Memory != VK_NULL_HANDLE; }
