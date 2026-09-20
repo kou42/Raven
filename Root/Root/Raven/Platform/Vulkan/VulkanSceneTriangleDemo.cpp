@@ -147,14 +147,10 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         Shutdown();
         return false;
     }
-    if (SetMeshTexture(0, 1) == false || SetMeshTexture(2, 1) == false)
-    {
-        Shutdown();
-        return false;
-    }
-    // 透明Meshは手前を先に登録しても、描画時に奥からソートします。
-    if (SetMeshMaterial(1, {1.0f, 0.8f, 0.8f, 0.65f}, true) == false ||
-        SetMeshMaterial(2, {0.5f, 0.8f, 1.0f, 0.45f}, true) == false)
+    // OpaqueとTransparentの両方で、Texture番号を含むMaterialを個別に設定します。
+    if (SetMeshMaterial(0, {1.0f, 1.0f, 1.0f, 1.0f}, false, 1) == false ||
+        SetMeshMaterial(1, {1.0f, 0.8f, 0.8f, 0.65f}, true, 0) == false ||
+        SetMeshMaterial(2, {0.5f, 0.8f, 1.0f, 0.45f}, true, 1) == false)
     {
         Shutdown();
         return false;
@@ -243,6 +239,19 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
     {
         return false;
     }
+    // 既存APIではTextureを維持し、TintとBlendだけを更新します。
+    return SetMeshMaterial(meshIndex, tint, alphaBlend,
+        m_Meshes[meshIndex].Material.TextureIndex);
+}
+
+bool VulkanSceneTriangleDemo::SetMeshMaterial(
+    std::size_t meshIndex, const std::array<float, 4>& tint,
+    bool alphaBlend, std::size_t textureIndex)
+{
+    if (meshIndex >= m_Meshes.size() || textureIndex >= m_Textures.size())
+    {
+        return false;
+    }
     for (float component : tint)
     {
         if (std::isfinite(component) == false || component < 0.0f ||
@@ -251,8 +260,11 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
             return false;
         }
     }
-    m_Meshes[meshIndex].Material.Tint = tint;
-    m_Meshes[meshIndex].Material.AlphaBlend = alphaBlend;
+    // すべての入力を検証してから反映し、無効なTexture番号で半端な更新を残しません。
+    SceneMaterial& material = m_Meshes[meshIndex].Material;
+    material.Tint = tint;
+    material.AlphaBlend = alphaBlend;
+    material.TextureIndex = textureIndex;
     return true;
 }
 
