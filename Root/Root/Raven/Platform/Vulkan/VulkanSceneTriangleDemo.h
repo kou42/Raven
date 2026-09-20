@@ -55,11 +55,15 @@ public:
 
 private:
     bool CreatePipeline();
+    bool CreateTextureDescriptor();
+    void DestroyTextureDescriptor();
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
     SceneCamera m_Camera;
     VulkanSceneTexture m_TestTexture;
+    VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_TextureDescriptor = VK_NULL_HANDLE;
     struct Mesh
     {
         Ref<RHIBuffer> VertexBuffer;
