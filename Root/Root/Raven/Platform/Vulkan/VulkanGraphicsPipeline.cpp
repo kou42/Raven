@@ -213,15 +213,20 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
     dynamic.dynamicStateCount = 2;
     dynamic.pDynamicStates = dynamicStates;
 
-    // MeshごとのModel行列は小容量のPush ConstantでDraw直前に更新します。
+    // Model/View/Projection合成行列とMaterial色をPush ConstantでDraw直前に更新します。
     VkPushConstantRange modelRange{};
     modelRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     modelRange.offset = 0;
     modelRange.size = sizeof(float) * 16;
+    VkPushConstantRange materialRange{};
+    materialRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    materialRange.offset = sizeof(float) * 16;
+    materialRange.size = sizeof(float) * 4;
+    const VkPushConstantRange ranges[] = {modelRange, materialRange};
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.pushConstantRangeCount = 1;
-    layoutInfo.pPushConstantRanges = &modelRange;
+    layoutInfo.pushConstantRangeCount = 2;
+    layoutInfo.pPushConstantRanges = ranges;
     const VkResult layoutResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Layout);
     if (layoutResult == VK_SUCCESS)
     {
