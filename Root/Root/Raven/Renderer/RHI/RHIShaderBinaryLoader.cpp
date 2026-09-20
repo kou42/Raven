@@ -1,8 +1,9 @@
 #include "RHIShaderBinaryLoader.h"
 
-#include <cstring>
+#include <cstdint>
 #include <fstream>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace Raven
@@ -38,15 +39,12 @@ bool IsValidCode(
     {
         // Vulkanへ渡す前にword境界とSPIR-V magicを確認し、
         // 任意のファイルをShader Moduleとして解釈しないようにします。
-        if (code.size() < sizeof(uint32_t) ||
-            code.size() % sizeof(uint32_t) != 0)
-        {
-            return false;
-        }
-
-        uint32_t magic = 0;
-        std::memcpy(&magic, code.data(), sizeof(magic));
-        return magic == 0x07230203u;
+        return code.size() >= sizeof(uint32_t) &&
+            code.size() % sizeof(uint32_t) == 0 &&
+            code[0] == 0x03u &&
+            code[1] == 0x02u &&
+            code[2] == 0x23u &&
+            code[3] == 0x07u;
     }
 
     // DXILにはContainerとraw bitcodeの両形式があるため、
@@ -74,19 +72,23 @@ bool RHIShaderBinaryLoader::LoadFromFile(
         return false;
     }
 
-    const std::streampos end = file.tellg();
-    if (end <= std::streampos(0) ||
-        end > static_cast<std::streampos>(
+    const std::streamoff fileSize =
+        static_cast<std::streamoff>(file.tellg());
+    if (fileSize <= 0 ||
+        static_cast<uintmax_t>(fileSize) >
+            static_cast<uintmax_t>(std::numeric_limits<std::size_t>::max()) ||
+        fileSize > static_cast<std::streamoff>(
             std::numeric_limits<std::streamsize>::max()))
     {
         return false;
     }
 
-    const std::streamsize size = static_cast<std::streamsize>(end);
-    std::vector<uint8_t> code(static_cast<std::size_t>(size));
+    const std::streamsize readSize =
+        static_cast<std::streamsize>(fileSize);
+    std::vector<uint8_t> code(static_cast<std::size_t>(fileSize));
     file.seekg(0, std::ios::beg);
-    if (file.read(
-        reinterpret_cast<char*>(code.data()), size).gcount() != size ||
+    if (file.good() == false ||
+        file.read(reinterpret_cast<char*>(code.data()), readSize).gcount() != readSize ||
         file.bad() == true ||
         IsValidCode(format, code) == false)
     {
