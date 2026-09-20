@@ -292,7 +292,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     {
         const bool transparentPass = pass == 1;
         const auto& pipeline = transparentPass == true ?
-        m_TransparentPipeline : m_Pipeline;
+            m_TransparentPipeline : m_Pipeline;
         if (commands.BindPipeline(pipeline) == false)
         {
             Shutdown();
@@ -308,10 +308,10 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
             // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
             // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
             const auto clipTransform = ToColumnMajor(
-            viewProjection * FromColumnMajor(mesh.Model));
+                viewProjection * FromColumnMajor(mesh.Model));
             if (commands.SetClipTransform(clipTransform) == false ||
-            commands.SetMaterialTint(mesh.Tint) == false ||
-            commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
+                commands.SetMaterialTint(mesh.Tint) == false ||
+                commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
             {
                 Shutdown();
                 return RHIFrameResult::FatalError;
