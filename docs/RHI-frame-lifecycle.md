@@ -170,3 +170,11 @@ Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Scene�
 Device経由で生成したBufferはContextがweak参照で追跡し、Context::ShutdownのWaitIdle後、VkDevice破棄前にnative Bufferを無効化します。外部に残ったRefの更新は失敗し、破棄時に破棄済みVkDeviceを呼びません。共通RHIBuffer版DrawIndexedで記録に成功したBufferはContextが強参照を保持し、WaitIdle成功時・Resize・Shutdownで解放します。native VulkanSceneBuffer版の寿命は従来どおり呼び出し側の責務です。別スレッドから同時に操作することは未対応です。Context破棄後のAdapter使用は不可です。
 
 確認項目：Frame外のTrySetData/TryResize成功、BeginFrame～EndFrame中の拒否、Submit後Present前の拒否、Context::Shutdown後に外部Refを破棄してもVulkan呼び出しなし、Triangle表示とResize、OpenGL回帰。ビルド・GPU実機・Validation Layerは未検証です。
+
+### 共通Buffer更新のFrame Fence同期（追加）
+
+`SynchronizeBufferAccess` は従来の `VkDeviceWaitIdle` を廃止し、このSceneがSubmitに成功したFrame SlotのFenceを `vkWaitForFences(..., VK_TRUE, ...)` で待機します。未Submitの初期Signal Fenceは待機対象に含めません。Frame記録中とSubmit後Present前の更新拒否は維持します。GPU完了後にSlot別のBuffer強参照を解放します。
+
+`BeginFrame` では既存FrameRendererが該当SlotのFenceを待機した後、旧Buffer参照を回収します。Submit成功時だけSlotを待機対象に登録します。Resize/ShutdownではSwapChain/Presentation Resourceも扱うため、従来どおりDeviceWaitIdleを維持します。Buffer Destructorは参照回収中の再入同期を避け、Draw成功時のContext強参照によってGPU利用中の破棄を防ぎます。
+
+制約：本方式はSceneのGraphics QueueへSubmitしたBufferのみ追跡します。外部Queue/Scene外での同一Buffer使用、別スレッド操作は未対応です。更新時には使用Buffer個別ではなく全Submit済みScene Frameを待ちます。Frame FenceはPresent EngineによるSemaphore消費完了を保証しないため、SwapChainの再生成・終了はDeviceWaitIdleのままです。ビルド・実機・Validation Layer未検証。
