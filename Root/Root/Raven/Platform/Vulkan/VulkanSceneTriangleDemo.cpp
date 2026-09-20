@@ -63,6 +63,20 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         return false;
     }
 
+    // 2x2の検証用TextureをStaging転送でGPUへ配置します。
+    // Descriptor接続前なので、現段階ではShaderからのSamplingは行いません。
+    const std::array<uint8_t, 16> checker = {
+        255, 255, 255, 255,  40, 40, 40, 255,
+        40, 40, 40, 255,     255, 255, 255, 255
+    };
+    if (m_TestTexture.Init(m_Context.GetDevice(), 2, 2,
+        checker.data()) == false)
+    {
+        std::cerr << "Vulkan Scene Triangle: Texture upload failed.\\n";
+        Shutdown();
+        return false;
+    }
+
     // 既存SceneCameraを利用し、右手系で-Z方向を見るViewを設定します。
     // RavenのPerspectiveはOpenGLのNDC深度を返すため、Draw時にVulkanへ補正します。
     m_Camera = SceneCamera();
@@ -405,6 +419,8 @@ void VulkanSceneTriangleDemo::Shutdown()
     }
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
+    // TextureはVkDevice破棄前、GPUの読み取り完了後に解放します。
+    m_TestTexture.Shutdown();
     // native VkBufferを所有するRefはContextのVkDeviceより先に破棄します。
     m_Meshes.clear();
     m_Context.Shutdown();
