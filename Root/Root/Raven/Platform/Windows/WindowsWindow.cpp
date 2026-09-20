@@ -232,10 +232,20 @@ void WindowsWindow::Shutdown()
 
 void WindowsWindow::OnUpdate()
 {
-    glfwPollEvents();
+    // 既存呼び出し元の互換性を維持します。Scene側は2段階を明示的に呼びます。
+    PollEvents();
+    Present();
+}
 
-    // Vulkan/DX12のPresentはSwapChain導入後にBackend側で行います。
-    // No-API Windowに対してglfwSwapBuffersを呼ばないことが重要です。
+void WindowsWindow::PollEvents()
+{
+    glfwPollEvents();
+}
+
+void WindowsWindow::Present()
+{
+    // Vulkan/DX12のPresentは各SwapChain側が所有します。
+    // No-API WindowへglfwSwapBuffersを呼ばないようにします。
     if (m_Context != nullptr)
     {
         m_Context->SwapBuffers();
