@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
+#include "Raven/Scene/SceneCamera.h"
 
 #include <array>
 #include <cstddef>
@@ -34,6 +35,9 @@ public:
     bool AddMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     // 行列はGLSL mat4と同じcolumn-major順。Mesh番号は登録順です。
     bool SetMeshTransform(std::size_t meshIndex, const std::array<float, 16>& model);
+    // 既存Cameraを借用せず値で保持し、Viewport変更時にProjectionを再計算します。
+    SceneCamera& GetCamera() { return m_Camera; }
+    const SceneCamera& GetCamera() const { return m_Camera; }
     bool ClearMeshes();
     std::size_t GetMeshCount() const { return m_Meshes.size(); }
 
@@ -49,6 +53,7 @@ private:
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
+    SceneCamera m_Camera;
     struct Mesh
     {
         Ref<RHIBuffer> VertexBuffer;
