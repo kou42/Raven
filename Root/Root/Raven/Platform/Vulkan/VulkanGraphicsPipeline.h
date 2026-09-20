@@ -31,11 +31,13 @@ public:
 
     VkPipeline GetHandle() const { return m_Pipeline; }
     VkPipelineLayout GetLayout() const { return m_Layout; }
+    VkDescriptorSetLayout GetTextureSetLayout() const { return m_TextureSetLayout; }
     bool IsValid() const { return m_Pipeline != VK_NULL_HANDLE; }
 
 private:
     VkDevice m_Device = VK_NULL_HANDLE;
     VkPipelineLayout m_Layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_TextureSetLayout = VK_NULL_HANDLE;
     VkPipeline m_Pipeline = VK_NULL_HANDLE;
     RHIGraphicsPipelineSpecification m_Specification;
 };

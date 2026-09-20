@@ -38,6 +38,11 @@ public:
     }
 
     // Model・View・Projection合成済みのclip-space変換を設定します。
+    bool BindTextureDescriptor(VkDescriptorSet descriptorSet)
+    {
+        return m_Context.BindTextureDescriptor(descriptorSet);
+    }
+
     bool SetMaterialTint(const std::array<float, 4>& tint)
     {
         return m_Context.SetMaterialTint(tint);

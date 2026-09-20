@@ -60,6 +60,8 @@ public:
     bool BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
     // Bind済みPipelineのVertex Shaderへcolumn-major Model-View-Projection行列を設定します。
     // Fragment ShaderへMesh別Tint RGBAをPushします。
+    // set=0/binding=0のTexture Descriptorを現在のGraphics PipelineへBindします。
+    bool BindTextureDescriptor(VkDescriptorSet descriptorSet);
     bool SetMaterialTint(const std::array<float, 4>& tint);
     bool SetClipTransform(const std::array<float, 16>& model);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
