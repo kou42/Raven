@@ -38,28 +38,9 @@ bool OpenGLClearContext::Init(Window& window)
 
 RHIFrameResult OpenGLClearContext::DrawClearFrame(const float clearColor[4])
 {
-    // 従来のClear Demo入口を維持し、段階別のFrame APIへ委譲します。
-    RHIFrameResult result = BeginFrame();
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    result = ClearFrame(clearColor);
-    if (result != RHIFrameResult::Success)
-    {
-        // 不正な描画要求ではPresentせず、次Frameを開始できる状態へ戻します。
-        m_FrameActive = false;
-        m_FrameEnded = false;
-        return result;
-    }
-    result = EndFrame();
-    if (result != RHIFrameResult::Success)
-    {
-        return result;
-    }
-    return Present();
+    // 旧入口とClear Demoが同じFrame進行規則を使用します。
+    return RunRHIClearFrame(*this, clearColor);
 }
-
 RHIFrameResult OpenGLClearContext::BeginFrame()
 {
     if (m_Window == nullptr || m_FrameActive == true)
