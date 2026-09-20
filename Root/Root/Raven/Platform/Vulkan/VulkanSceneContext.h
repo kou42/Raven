@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace Raven
@@ -76,8 +77,10 @@ private:
     std::vector<Ref<VulkanGraphicsPipeline>> m_GraphicsPipelines;
     // 外部RefがDeviceより長生きしてもnative Bufferを安全に無効化するため追跡します。
     std::vector<std::weak_ptr<VulkanSceneRHIBuffer>> m_Buffers;
-    // Frame Slotごとに描画Bufferを保持し、対応Fence完了後にのみ解放します。
-    std::vector<std::vector<Ref<RHIBuffer>>> m_RecordedBuffers;
+    // Frame SlotごとにBufferを一度だけ強参照します。キーは検索専用で、
+    // 値のRefが実体を保持するためFence完了までポインタが無効になりません。
+    using RecordedBufferSet = std::unordered_map<const RHIBuffer*, Ref<RHIBuffer>>;
+    std::vector<RecordedBufferSet> m_RecordedBuffers;
     // Reset前の初期Signal FenceはSubmit済みとして扱わないよう区別します。
     std::vector<bool> m_SubmittedBufferFrames;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
