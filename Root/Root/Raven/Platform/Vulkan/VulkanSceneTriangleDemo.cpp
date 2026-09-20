@@ -550,7 +550,9 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         return begin;
     }
 
-    VulkanSceneCommandList commands(m_Context);
+    VulkanSceneCommandList vulkanCommands(m_Context);
+    // Scene描画の呼び出し側はVulkan固有CommandListの実体に依存しません。
+    RHISceneCommandList& commands = vulkanCommands;
     // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
     // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
     const math::Mat4 vulkanClipCorrection(
