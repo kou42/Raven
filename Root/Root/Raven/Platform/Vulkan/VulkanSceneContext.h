@@ -8,6 +8,7 @@
 #include "VulkanGraphicsPipeline.h"
 #include "VulkanInstance.h"
 #include "VulkanSceneRenderTarget.h"
+#include "VulkanSceneBuffer.h"
 #include "VulkanSurface.h"
 #include "VulkanSwapChain.h"
 
@@ -40,6 +41,11 @@ public:
     // Resize時はnative Pipelineを無効化するため、呼び出し元は再生成してください。
     Ref<RHIGraphicsPipeline> CreateGraphicsPipeline(
         const RHIGraphicsPipelineSpecification& specification);
+    // BeginFrame～EndFrameのRenderPass内だけで描画命令を記録します。
+    // PipelineはこのContextで生成されたものに限定します。
+    bool BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
+    bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
+        const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0);
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
     VkExtent2D GetExtent() const { return m_SwapChain.GetExtent(); }
 
@@ -52,6 +58,7 @@ private:
     VulkanSceneRenderTarget m_RenderTarget;
     // 呼び出し元のRefを所有せず、Device破棄前にnative handleだけ解放します。
     std::vector<std::weak_ptr<VulkanGraphicsPipeline>> m_GraphicsPipelines;
+    Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;
     VkClearColorValue m_ClearColor{};
     uint32_t m_ActiveFrame = 0;
