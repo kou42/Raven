@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/Renderer/RHI/RHIBuffer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 #include "VulkanCommandBuffer.h"
