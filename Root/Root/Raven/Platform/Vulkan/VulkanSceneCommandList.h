@@ -37,6 +37,17 @@ public:
         return m_Context.BindGraphicsPipeline(pipeline);
     }
 
+    // Model・View・Projection合成済みのclip-space変換を設定します。
+    bool SetMaterialTint(const std::array<float, 4>& tint)
+    {
+        return m_Context.SetMaterialTint(tint);
+    }
+
+    bool SetClipTransform(const std::array<float, 16>& model)
+    {
+        return m_Context.SetClipTransform(model);
+    }
+
     // indexCount == 0 はIndexBuffer全体を描画します。
     // BeginFrame/EndFrameの外側ではContextがfalseを返し、GPU命令を記録しません。
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,

@@ -13,6 +13,7 @@
 #include "VulkanSurface.h"
 #include "VulkanSwapChain.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -57,6 +58,10 @@ public:
     // BeginFrame～EndFrameのRenderPass内だけで描画命令を記録します。
     // PipelineはこのContextで生成されたものに限定します。
     bool BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
+    // Bind済みPipelineのVertex Shaderへcolumn-major Model-View-Projection行列を設定します。
+    // Fragment ShaderへMesh別Tint RGBAをPushします。
+    bool SetMaterialTint(const std::array<float, 4>& tint);
+    bool SetClipTransform(const std::array<float, 16>& model);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0,
         bool usePipelineVertexStride = false);

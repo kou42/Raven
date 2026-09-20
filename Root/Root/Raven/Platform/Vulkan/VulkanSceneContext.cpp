@@ -55,7 +55,8 @@ bool VulkanSceneContext::Init(Window& window)
             static_cast<uint32_t>(width), static_cast<uint32_t>(height), m_VSync) == false ||
         m_FrameSync.Init(m_Instance.GetDevice(),
             static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false ||
-        m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(), m_SwapChain) == false)
+        m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(),
+            m_Instance.GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
     {
         Shutdown();
         return false;
@@ -351,6 +352,36 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         nativePipeline->GetHandle());
     m_BoundGraphicsPipeline = nativePipeline;
+    return true;
+}
+
+bool VulkanSceneContext::SetMaterialTint(const std::array<float, 4>& tint)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
+        m_BoundGraphicsPipeline->IsValid() == false)
+    {
+        return false;
+    }
+    // Vertex用64byteと重ならないFragment専用領域へ書き込みます。
+    vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
+        VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(float) * 16,
+        static_cast<uint32_t>(sizeof(float) * tint.size()), tint.data());
+    return true;
+}
+
+bool VulkanSceneContext::SetClipTransform(const std::array<float, 16>& model)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
+        m_BoundGraphicsPipeline->IsValid() == false)
+    {
+        return false;
+    }
+    // Model/View/Projectionを合成した行列をCommand Bufferへコピーします。
+    vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT, 0, static_cast<uint32_t>(sizeof(float) * model.size()),
+        model.data());
     return true;
 }
 

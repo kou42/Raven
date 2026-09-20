@@ -20,12 +20,13 @@ public:
     VulkanSceneRenderTarget(const VulkanSceneRenderTarget&) = delete;
     VulkanSceneRenderTarget& operator=(const VulkanSceneRenderTarget&) = delete;
 
-    bool Init(VkDevice device, const VulkanSwapChain& swapChain);
+    bool Init(VkDevice device, VkPhysicalDevice physicalDevice, const VulkanSwapChain& swapChain);
     bool Begin(VkCommandBuffer commandBuffer, uint32_t imageIndex,
         const VkClearColorValue& clearColor) const;
     void End(VkCommandBuffer commandBuffer) const;
     void Shutdown();
 
+    VkFormat GetDepthFormat() const { return m_DepthFormat; }
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     bool IsValid() const
     {
@@ -35,6 +36,10 @@ public:
 
 private:
     VkDevice m_Device = VK_NULL_HANDLE;
+    VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
+    std::vector<VkImage> m_DepthImages;
+    std::vector<VkDeviceMemory> m_DepthMemories;
+    std::vector<VkImageView> m_DepthViews;
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
     VkExtent2D m_Extent{};
     std::vector<VkImageView> m_ImageViews;
