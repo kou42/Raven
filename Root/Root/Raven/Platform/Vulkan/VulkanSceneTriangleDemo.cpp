@@ -305,13 +305,49 @@ bool VulkanSceneTriangleDemo::AddTexture(
     {
         return false;
     }
-    m_Textures.push_back({std::move(image), VK_NULL_HANDLE});
+    std::size_t textureIndex = 0;
+    return AddTexture(image, textureIndex);
+}
+
+bool VulkanSceneTriangleDemo::AddTexture(
+    const Ref<RHITexture>& texture, std::size_t& textureIndex)
+{
+    if (m_Context.GetDevice().IsValid() == false ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE ||
+        m_Textures.size() >= std::numeric_limits<uint32_t>::max())
+    {
+        return false;
+    }
+    // RHITextureだけを受け取り、Vulkan固有handleはScene内部で検証します。
+    const auto native = std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
+    if (native == nullptr || native->GetNativeTexture().IsValid() == false ||
+        native->GetNativeTexture().GetDeviceHandle() !=
+            m_Context.GetDevice().GetHandle())
+    {
+        return false;
+    }
+    const RHITextureSpecification& specification = texture->GetSpecification();
+    if (specification.Format != RHITextureFormat::RGBA8 ||
+        specification.Usage != RHITextureUsage::Sampled ||
+        specification.GenerateMips == true)
+    {
+        return false;
+    }
+    // Pool切り替えの前に旧Descriptorを参照するGPU仕事の完了を待ちます。
+    const bool descriptorsExist = m_TextureDescriptorPool != VK_NULL_HANDLE;
+    if (descriptorsExist == true && m_Context.GetDevice().WaitIdle() == false)
+    {
+        return false;
+    }
+    const std::size_t newIndex = m_Textures.size();
+    m_Textures.push_back({texture, VK_NULL_HANDLE});
     if (descriptorsExist == true && CreateTextureDescriptor() == false)
     {
-        // 新Pool構築が失敗しても旧Poolは有効です。追加Textureだけ取り消します。
+        // 新Poolが失敗した場合は旧Poolを維持し、登録を取り消します。
         m_Textures.pop_back();
         return false;
     }
+    textureIndex = newIndex;
     return true;
 }
 
