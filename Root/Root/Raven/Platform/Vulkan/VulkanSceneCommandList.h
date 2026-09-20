@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VulkanSceneContext.h"
+#include "VulkanSceneRHIBuffer.h"
 
 namespace Raven
 {
@@ -35,6 +36,29 @@ public:
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0)
     {
         return m_Context.DrawIndexed(vertexBuffer, indexBuffer, indexCount);
+    }
+
+    // 共通RHIDeviceから生成したBufferをSceneの描画へ接続します。
+    // VertexStrideはPipelineのBinding 0と一致する値を呼び出し側が渡します。
+    bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
+        const Ref<RHIBuffer>& indexBuffer, uint32_t vertexStride,
+        uint32_t indexCount = 0)
+    {
+        if (vertexBuffer == nullptr || indexBuffer == nullptr ||
+            vertexStride == 0 ||
+            vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
+            indexBuffer->GetSpecification().Usage != RHIBufferUsage::Index)
+        {
+            return false;
+        }
+        auto vertex = std::dynamic_pointer_cast<VulkanSceneRHIBuffer>(vertexBuffer);
+        auto index = std::dynamic_pointer_cast<VulkanSceneRHIBuffer>(indexBuffer);
+        if (vertex == nullptr || index == nullptr)
+        {
+            return false;
+        }
+        return m_Context.DrawIndexed(vertex->GetSceneBuffer(),
+            index->GetSceneBuffer(), indexCount, vertexStride);
     }
 
 private:
