@@ -550,34 +550,17 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 
     // Contextの所有権はDemoに残し、Frame操作は共通Lifecycle境界を使用します。
     RHISceneFrameLifecycle& frame = m_Context;
-    const RHIFrameResult begin = frame.BeginFrame();
-    if (begin != RHIFrameResult::Success)
-    {
-        return begin;
-    }
-
     VulkanSceneCommandList vulkanCommands(m_Context);
     // Scene描画の呼び出し側はVulkan固有CommandListの実体に依存しません。
     RHISceneCommandList& commands = vulkanCommands;
-    // Opaque/Transparentの順序とMaterial Bindingは共通Rendererが担当します。
-    if (RHISceneMeshRenderer::Draw(commands, m_Pipeline,
-        m_TransparentPipeline, drawItems) == false)
-    {
-        Shutdown();
-        return RHIFrameResult::FatalError;
-    }
-    const RHIFrameResult end = frame.EndFrame();
-    if (end != RHIFrameResult::Success)
-    {
-        Shutdown();
-        return end;
-    }
-    const RHIFrameResult present = frame.Present();
-    if (present == RHIFrameResult::FatalError)
+    // Frame実行と描画順を共通Rendererに委譲します。
+    const RHIFrameResult result = RHISceneMeshRenderer::DrawFrame(
+        frame, commands, m_Pipeline, m_TransparentPipeline, drawItems);
+    if (result == RHIFrameResult::FatalError)
     {
         Shutdown();
     }
-    return present;
+    return result;
 }
 
 bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
