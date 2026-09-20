@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
-#include "Raven/Renderer/RHI/RHIMaterialProperties.h"
+#include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Scene/SceneCamera.h"
 
 #include <array>
@@ -84,24 +84,8 @@ private:
     SceneCamera m_Camera;
     // Sceneは共通RHITextureだけを保持し、DescriptorはVulkan Backendが管理します。
     std::vector<Ref<RHITexture>> m_Textures;
-    // Meshは共通Material Snapshotを保持します。Texture登録番号は互換APIの引数に限定します。
-    struct Mesh
-    {
-        Ref<RHIBuffer> VertexBuffer;
-        Ref<RHIBuffer> IndexBuffer;
-        uint32_t IndexCount = 0;
-        RHIMaterialProperties Material;
-        // 透明Meshの近似ソートに使うローカル空間の頂点平均位置です。
-        std::array<float, 3> LocalCenter = {0.0f, 0.0f, 0.0f};
-        std::array<float, 16> Model = {
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 1.0f
-        };
-    };
     // Mesh数は固定せず、Bufferの所有権はRefで保持します。
-    std::vector<Mesh> m_Meshes;
+    std::vector<RHISceneMesh> m_Meshes;
     Ref<RHIGraphicsPipeline> m_Pipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     RHIShaderBinary m_VertexShader;
