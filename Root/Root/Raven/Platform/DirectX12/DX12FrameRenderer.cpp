@@ -133,6 +133,22 @@ bool DX12FrameRenderer::EndRenderTarget(
     return true;
 }
 
+bool DX12FrameRenderer::ClearRenderTarget(
+    DX12CommandList& commandList, const float clearColor[4])
+{
+    if (m_FrameActive == false || m_RenderTargetActive == false ||
+        m_Submitted == true || clearColor == nullptr ||
+        commandList.IsValid() == false || m_RtvHeap.Get() == nullptr)
+    {
+        return false;
+    }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
+    rtv.ptr += static_cast<SIZE_T>(m_BackBufferIndex) * m_RtvDescriptorSize;
+    commandList.GetHandle()->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    return true;
+}
+
 bool DX12FrameRenderer::ClearFrame(
     DX12SwapChain& swapChain, DX12CommandList& commandList,
     const float clearColor[4])
@@ -143,9 +159,11 @@ bool DX12FrameRenderer::ClearFrame(
         return false;
     }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
-    rtv.ptr += static_cast<SIZE_T>(m_BackBufferIndex) * m_RtvDescriptorSize;
-    commandList.GetHandle()->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    // Clear Demoは従来どおりClearFrame内でRenderTargetを閉じます。
+    if (ClearRenderTarget(commandList, clearColor) == false)
+    {
+        return false;
+    }
     return EndRenderTarget(swapChain, commandList);
 }
 
