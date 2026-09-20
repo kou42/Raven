@@ -35,10 +35,21 @@ UIKey ToUIKey(int keyCode)
 } // namespace
 
 Application::Application()
+    : Application(ApplicationSpecification{})
+{
+}
+
+Application::Application(const ApplicationSpecification& specification)
+    : m_RavenUIEnabled(specification.EnableRavenUI)
 {
     // WindowはRenderer / ImGuiより先に生成します。
-    // OpenGL ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
-    m_Window = Window::Create();
+    // 選択BackendのGraphics ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
+    m_Window = Window::Create(specification.WindowProperties);
+    if (m_Window == nullptr)
+    {
+        m_Running = false;
+        return;
+    }
 
     // OS/Window由来のEventをApplicationへ集約します。
     // Application::OnEvent()から後積みLayer優先で逆順伝播することで、
@@ -65,9 +76,18 @@ Application::Application()
     //
     // Dear ImGuiとは別Context / 別DrawListとして並行稼働させるため、既存Editorを維持したまま
     // 独自UIの描画・Layout・Inputを段階的に追加できます。
-    m_UIContext.SetRenderer(UIRenderer::Create(m_Window->GetBackend()));
+    if (m_RavenUIEnabled == true)
+    {
+        m_UIContext.SetRenderer(UIRenderer::Create(m_Window->GetBackend()));
+    }
 
 #if defined(_DEBUG)
+    if (m_RavenUIEnabled == true)
+    {
+        m_UITreeMutationValidationAttached =
+            m_UIContext.GetRootElement().AddChild(
+                UITreeMutationValidation::Create(m_UIContext)) != nullptr;
+
     // ========================================================================
     // Raven UI retained-mode / layout / interaction validation panel
     // ========================================================================
@@ -164,6 +184,7 @@ Application::Application()
     validationPanel->AddChild(std::move(footerSlider));
 
     m_UIContext.GetRootElement().AddChild(std::move(validationPanel));
+    }
 #endif
 
     // ========================================================================
@@ -184,8 +205,16 @@ Application::Application()
     // Applicationが知るのはImGuiのframe境界までです。
     // Statistics / Hierarchy / Inspector等のEditor固有UIはEditorLayer以下へ分離し、
     // ApplicationへEditor固有分岐を増やさない方針とします。
-    m_ImGuiLayer = CreateScope<ImGuiLayer>(*m_Window);
-    m_ImGuiLayer->OnAttach();
+    if (specification.EnableDearImGui == true)
+    {
+        Scope<ImGuiLayer> imguiLayer = CreateScope<ImGuiLayer>(*m_Window);
+        imguiLayer->OnAttach();
+        if (imguiLayer->IsInitialized() == true)
+        {
+            // 初期化済みContextだけをFrame Loopへ公開し、Backend未対応時のUI呼び出しを防ぎます。
+            m_ImGuiLayer = std::move(imguiLayer);
+        }
+    }
 }
 
 Application::~Application()
@@ -339,9 +368,12 @@ void Application::Run()
         // GetUIContext().GetDrawList()へ描画要求を追加できる共通frame境界になります。
         // 現在はUIContextがRoot UIElementを所有しているため、通常WidgetはDrawListへ直接書かず、
         // Root以下のRetained Treeを更新します。EndFrame()時にTreeからDrawListへ自動展開されます。
-        m_UIContext.BeginFrame(math::Vec2(
-            static_cast<float>(m_Window->GetWidth()),
-            static_cast<float>(m_Window->GetHeight())));
+        if (m_RavenUIEnabled == true)
+        {
+            m_UIContext.BeginFrame(math::Vec2(
+                static_cast<float>(m_Window->GetWidth()),
+                static_cast<float>(m_Window->GetHeight())));
+        }
 
         // ====================================================================
         // Runtime Scene
@@ -396,7 +428,10 @@ void Application::Run()
         // 移行期間はRaven UIをDear ImGuiの後へ描画し、既存Editor Windowに隠れず結果を確認できる
         // Overlayとして扱います。将来Game UI用Contextを分離した段階では、Game View用RenderTargetへ
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
-        m_UIContext.EndFrame();
+        if (m_RavenUIEnabled == true)
+        {
+            m_UIContext.EndFrame();
+        }
 
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
@@ -433,7 +468,8 @@ void Application::OnEvent(Event& event)
     // WindowがFocusを失った場合、OS側でMouse Upが別Windowへ配送される可能性があります。
     // Capture所有WidgetへCancelを通知してからPressedも解除し、Slider/SplitterのDragging残留を防ぎます。
     // Focus Event自体はLayerも利用できるためHandledにはせず、後段へ通常通り伝播させます。
-    if (event.GetEventType() == EventType::WindowFocusLost)
+    if (m_RavenUIEnabled == true &&
+        event.GetEventType() == EventType::WindowFocusLost)
     {
         m_UIContext.CancelMouseCapture();
     }
@@ -443,7 +479,8 @@ void Application::OnEvent(Event& event)
     // ========================================================================
     // Platform Key CodeはApplication境界でSemantic UIKeyへ変換します。
     // ModifierもCore Eventが保持する入力時点のsnapshotを使い、後からInput pollingしません。
-    if (event.Handled == false && event.GetEventType() == EventType::KeyPressed)
+    if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::KeyPressed)
     {
         KeyPressedEvent& keyEvent = static_cast<KeyPressedEvent&>(event);
         UIKeyEvent uiEvent;
@@ -454,7 +491,8 @@ void Application::OnEvent(Event& event)
         uiEvent.Context = &m_UIContext;
         event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
     }
-    else if (event.Handled == false && event.GetEventType() == EventType::KeyReleased)
+    else if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::KeyReleased)
     {
         KeyReleasedEvent& keyEvent = static_cast<KeyReleasedEvent&>(event);
         UIKeyEvent uiEvent;
@@ -472,19 +510,22 @@ void Application::OnEvent(Event& event)
     // Button / Scroll Eventも入力発生時の座標を自身に保持するため、ApplicationはInput pollingを行わず
     // Event snapshotだけからUI routingできます。これにより入力時刻と座標の対応を維持します。
     // UIEvent側でHandledになった場合だけCore EventもHandledとして、背後Layerへの入力漏れを防ぎます。
-    if (event.Handled == false && event.GetEventType() == EventType::MouseMoved)
+    if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::MouseMoved)
     {
         MouseMovedEvent& mouseEvent = static_cast<MouseMovedEvent&>(event);
         event.Handled = m_UIContext.RouteMouseMove(math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()));
     }
-    else if (event.Handled == false && event.GetEventType() == EventType::MouseScrolled)
+    else if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::MouseScrolled)
     {
         MouseScrolledEvent& mouseEvent = static_cast<MouseScrolledEvent&>(event);
         event.Handled = m_UIContext.RouteMouseScroll(
             math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()),
             math::Vec2(mouseEvent.GetOffsetX(), mouseEvent.GetOffsetY()));
     }
-    else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonPressed)
+    else if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::MouseButtonPressed)
     {
         MouseButtonPressedEvent& mouseEvent = static_cast<MouseButtonPressedEvent&>(event);
 
@@ -508,7 +549,8 @@ void Application::OnEvent(Event& event)
                 math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
         }
     }
-    else if (event.Handled == false && event.GetEventType() == EventType::MouseButtonReleased)
+    else if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::MouseButtonReleased)
     {
         MouseButtonReleasedEvent& mouseEvent = static_cast<MouseButtonReleasedEvent&>(event);
 

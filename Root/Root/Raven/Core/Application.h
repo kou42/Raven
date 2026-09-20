@@ -21,10 +21,18 @@ namespace Raven
 
 class ImGuiLayer;
 
+struct ApplicationSpecification
+{
+    WindowProps WindowProperties{};
+    bool EnableRavenUI = true;
+    bool EnableDearImGui = true;
+};
+
 class Application
 {
 public:
     Application();
+    explicit Application(const ApplicationSpecification& specification);
     ~Application();
 
     void Run();
@@ -64,14 +72,12 @@ private:
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+    bool m_RavenUIEnabled = true;
 
 #if defined(_DEBUG)
     // Tree Mutation検証はCapture / Hover / PressedのContext状態も自己判定するため、
     // 構築時にMain Window用UIContextを借用します。Rootが検証TreeのLifetimeを所有します。
-    bool m_UITreeMutationValidationAttached = [this]()
-        {
-            return m_UIContext.GetRootElement().AddChild(UITreeMutationValidation::Create(m_UIContext)) != nullptr;
-        }();
+    bool m_UITreeMutationValidationAttached = false;
 #endif
 
     // ImGuiLayerはLayerを継承しますが、Dear ImGuiのBegin/Endは全LayerのOnImGuiRender()を
