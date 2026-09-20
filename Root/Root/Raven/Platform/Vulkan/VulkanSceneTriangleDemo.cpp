@@ -505,7 +505,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
     if (m_Window == nullptr || m_Pipeline == nullptr ||
-        m_TransparentPipeline == nullptr || m_TextureDescriptorPool == VK_NULL_HANDLE)
+        m_TransparentPipeline == nullptr || m_Context.HasTextureDescriptors() == false)
     {
         return RHIFrameResult::FatalError;
     }
@@ -523,7 +523,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     transparentIndices.reserve(m_Meshes.size());
     for (std::size_t index = 0; index < m_Meshes.size(); ++index)
     {
-        if (m_Meshes[index].Material.AlphaBlend == true)
+        if (m_Meshes[index].Material.SurfaceType == MaterialSurfaceType::Transparent)
         {
             transparentIndices.push_back(index);
         }
