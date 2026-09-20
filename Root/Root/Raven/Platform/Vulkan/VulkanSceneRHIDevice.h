@@ -3,13 +3,14 @@
 #include "Raven/Renderer/RHI/RHIDevice.h"
 #include "VulkanSceneContext.h"
 #include "VulkanSceneRHIBuffer.h"
+#include "VulkanSceneRHITexture.h"
 
 namespace Raven
 {
 
 // Scene Contextが所有するVkDevice/RenderPassを借用するRHIDevice Adapterです。
 // Contextより長く保持しないこと。Resize後は新しいRenderPassでPipelineを再生成します。
-// Vertex/Index Bufferのみ共通RHIBuffer経由で生成します。Textureは未対応です。
+// Vertex/Index BufferとRGBA8 Sampled Textureを共通RHI経由で生成します。
 // Buffer更新はContextでGPU同期し、Shutdown時は外部Refのnative Bufferも無効化します。
 class VulkanSceneRHIDevice final : public RHIDevice
 {
@@ -51,10 +52,18 @@ public:
         const void* initialData = nullptr,
         std::size_t initialDataSize = 0) override
     {
-        (void)specification;
-        (void)initialData;
-        (void)initialDataSize;
-        return nullptr;
+        if (m_Context.GetDevice().IsValid() == false ||
+            m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
+        {
+            return nullptr;
+        }
+        auto texture = CreateRef<VulkanSceneRHITexture>();
+        if (texture->Init(m_Context.GetDevice(), specification,
+            initialData, initialDataSize) == false)
+        {
+            return nullptr;
+        }
+        return texture;
     }
 
 private:
