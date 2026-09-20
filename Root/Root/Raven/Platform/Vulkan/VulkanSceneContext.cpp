@@ -175,6 +175,38 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     return true;
 }
 
+bool VulkanSceneContext::SetViewport(
+    uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    const VkExtent2D extent = m_SwapChain.GetExtent();
+    if (width == 0 || height == 0 || x >= extent.width || y >= extent.height ||
+        width > extent.width - x || height > extent.height - y)
+    {
+        return false;
+    }
+
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    // VulkanのViewportはFramebuffer左上を原点にし、PipelineのDynamic Stateと対応させます。
+    VkViewport viewport{};
+    viewport.x = static_cast<float>(x);
+    viewport.y = static_cast<float>(y);
+    viewport.width = static_cast<float>(width);
+    viewport.height = static_cast<float>(height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    VkRect2D scissor{};
+    scissor.offset = { static_cast<int32_t>(x), static_cast<int32_t>(y) };
+    scissor.extent = { width, height };
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    return true;
+}
+
 void VulkanSceneContext::SetClearColor(const float color[4])
 {
     if (color == nullptr)
