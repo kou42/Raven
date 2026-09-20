@@ -104,6 +104,18 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         m_Device.DrainDebugMessages();
         return RHIFrameResult::FatalError;
     }
+    // CommandList Reset後はRasterizer stateを毎Frame記録します。
+    const auto& backBuffers = m_SwapChain.GetBackBuffers();
+    const UINT backBufferIndex = m_SwapChain.GetCurrentBackBufferIndex();
+    if (backBufferIndex >= backBuffers.size() || backBuffers[backBufferIndex] == nullptr)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const D3D12_RESOURCE_DESC description = backBuffers[backBufferIndex]->GetDesc();
+    if (SetViewport(0, 0, static_cast<uint32_t>(description.Width), description.Height) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
     return RHIFrameResult::Success;
 }
 
