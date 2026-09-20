@@ -110,3 +110,9 @@ Vulkan/DX12 Scene Contextに `SetViewport(x,y,width,height)` を追加し、各F
 ### DX12 Scene Buffer（今回追加）
 
 `DX12SceneBuffer` は既存のOpenGL用 `VertexBuffer` / `IndexBuffer` を無理に置換せず、Scene用のNative GPU Resourceとして追加しました。`InitVertex(device,data,byteSize,stride)` と `InitIndex(device,indices,count)` でUpload Heap Bufferを作り、Vertex/Index Buffer Viewを生成します。Index形式は `DXGI_FORMAT_R32_UINT` です。`SetData` は容量内のCPU書き込みのみを担当し、GPUが読み取り中のBufferを書き換えないよう呼び出し側でFence同期してください。部分更新後もViewのサイズは初期容量のままです。現時点ではDefault Heapへのコピー、Pipeline/Root Signature、Native DrawIndexedの接続は未実装です。
+
+### Vulkan Scene Buffer（今回追加）
+
+`VulkanSceneBuffer` は `InitVertex(device,data,byteSize,stride)` / `InitIndex(device,indices,count)` で `VK_BUFFER_USAGE_VERTEX_BUFFER_BIT` / `VK_BUFFER_USAGE_INDEX_BUFFER_BIT` の `VkBuffer` と `VkDeviceMemory` を所有します。Memory Typeは `HOST_VISIBLE | HOST_COHERENT` を要求し、`SetData` は `vkMapMemory` → コピー → `vkUnmapMemory` で容量内のCPU更新を行います。対応するMemory Typeがない場合は失敗し、Staging Buffer転送へのフォールバックは今後実装します。Index形式は32-bit unsigned integerです。
+
+DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出し元でFence等による完了確認が必要です。Vulkan Bufferの破棄はVulkanDeviceより前に行ってください。今回のBufferは既存OpenGL `VertexBuffer` / `IndexBuffer` とまだ接続せず、Graphics PipelineとIndexed Drawの実装後に統合します。
