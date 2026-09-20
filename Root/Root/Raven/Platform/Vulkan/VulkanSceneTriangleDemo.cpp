@@ -269,6 +269,32 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
     return true;
 }
 
+bool VulkanSceneTriangleDemo::SetMeshMaterial(
+    std::size_t meshIndex, const std::array<float, 4>& tint,
+    bool alphaBlend, const Ref<RHITexture>& texture)
+{
+    if (meshIndex >= m_Meshes.size())
+    {
+        return false;
+    }
+    // Texture登録より先にTintを検証し、無効入力でDescriptorを増やしません。
+    for (float component : tint)
+    {
+        if (std::isfinite(component) == false || component < 0.0f ||
+            component > 1.0f)
+        {
+            return false;
+        }
+    }
+    std::size_t textureIndex = 0;
+    if (AddTexture(texture, textureIndex) == false)
+    {
+        return false;
+    }
+    // 上記で検証済みのため、Material更新はTexture登録成功後にのみ行います。
+    return SetMeshMaterial(meshIndex, tint, alphaBlend, textureIndex);
+}
+
 bool VulkanSceneTriangleDemo::AddTexture(
     uint32_t width, uint32_t height, const uint8_t* rgba)
 {
