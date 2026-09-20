@@ -22,6 +22,8 @@ public:
     // Clear DemoはClearFrame互換入口から同じ遷移を使用します。
     bool BeginRenderTarget(DX12SwapChain& swapChain, DX12CommandList& commandList);
     bool EndRenderTarget(DX12SwapChain& swapChain, DX12CommandList& commandList);
+    // RenderTargetを開いたままClearします。Scene Drawはこの後に記録します。
+    bool ClearRenderTarget(DX12CommandList& commandList, const float clearColor[4]);
     bool ClearFrame(DX12SwapChain& swapChain, DX12CommandList& commandList,
         const float clearColor[4]);
     bool EndFrame(DX12CommandQueue& commandQueue, DX12CommandList& commandList);
