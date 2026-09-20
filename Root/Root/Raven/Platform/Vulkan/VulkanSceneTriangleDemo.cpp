@@ -548,7 +548,9 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         drawItems.push_back(std::move(item));
     }
 
-    const RHIFrameResult begin = m_Context.BeginFrame();
+    // Contextの所有権はDemoに残し、Frame操作は共通Lifecycle境界を使用します。
+    RHISceneFrameLifecycle& frame = m_Context;
+    const RHIFrameResult begin = frame.BeginFrame();
     if (begin != RHIFrameResult::Success)
     {
         return begin;
@@ -564,13 +566,13 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         Shutdown();
         return RHIFrameResult::FatalError;
     }
-    const RHIFrameResult end = m_Context.EndFrame();
+    const RHIFrameResult end = frame.EndFrame();
     if (end != RHIFrameResult::Success)
     {
         Shutdown();
         return end;
     }
-    const RHIFrameResult present = m_Context.Present();
+    const RHIFrameResult present = frame.Present();
     if (present == RHIFrameResult::FatalError)
     {
         Shutdown();
@@ -581,7 +583,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
 {
     if (m_Window == nullptr || width == 0 || height == 0 ||
-        m_Context.Resize(width, height) == false)
+        static_cast<RHISceneFrameLifecycle&>(m_Context).Resize(width, height) == false)
     {
         return false;
     }
