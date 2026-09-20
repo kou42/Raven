@@ -63,6 +63,7 @@ public:
         {
             return nullptr;
         }
+        m_Context.RegisterTexture(texture);
         return texture;
     }
 
