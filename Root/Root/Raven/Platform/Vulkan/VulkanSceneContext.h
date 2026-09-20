@@ -30,6 +30,8 @@ public:
     bool Resize(uint32_t width, uint32_t height);
     void Shutdown();
 
+    // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
+    bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
     VkCommandBuffer GetActiveCommandBuffer() const;
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
