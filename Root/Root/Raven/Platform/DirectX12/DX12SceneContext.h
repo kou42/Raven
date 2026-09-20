@@ -28,7 +28,7 @@ public:
     RHIFrameResult BeginFrame() override;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
-    bool Resize(uint32_t width, uint32_t height);
+    bool Resize(uint32_t width, uint32_t height) override;
     void Shutdown();
 
     // Scene DrawのRasterizer領域とScissorを同時に設定します。
