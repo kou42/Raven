@@ -64,7 +64,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     }
 
     // 2x2の検証用TextureをStaging転送でGPUへ配置します。
-    // Descriptor接続前なので、現段階ではShaderからのSamplingは行いません。
+    // TextureはDescriptor Setを通じてFragment Shaderから参照します。
     const std::array<uint8_t, 16> checker = {
         255, 255, 255, 255,  40, 40, 40, 255,
         40, 40, 40, 255,     255, 255, 255, 255
@@ -72,7 +72,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     if (m_TestTexture.Init(m_Context.GetDevice(), 2, 2,
         checker.data()) == false)
     {
-        std::cerr << "Vulkan Scene Triangle: Texture upload failed.\\n";
+        std::cerr << "Vulkan Scene Triangle: Texture upload failed.\n";
         Shutdown();
         return false;
     }
@@ -285,13 +285,83 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     specification.DepthWrite = false;
     specification.DebugName = "Vulkan Scene Triangle Transparent";
     m_TransparentPipeline = m_Context.CreateGraphicsPipeline(specification);
-    return m_TransparentPipeline != nullptr;
+    if (m_TransparentPipeline == nullptr)
+    {
+        return false;
+    }
+    return CreateTextureDescriptor();
+}
+
+bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
+{
+    DestroyTextureDescriptor();
+    if (m_TestTexture.IsValid() == false || m_Pipeline == nullptr ||
+        m_Context.GetDevice().IsValid() == false)
+    {
+        return false;
+    }
+    const auto native = std::dynamic_pointer_cast<VulkanGraphicsPipeline>(m_Pipeline);
+    if (native == nullptr || native->GetTextureSetLayout() == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+    const VkDevice device = m_Context.GetDevice().GetHandle();
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 1;
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr,
+        &m_TextureDescriptorPool) != VK_SUCCESS)
+    {
+        return false;
+    }
+    const VkDescriptorSetLayout layout = native->GetTextureSetLayout();
+    VkDescriptorSetAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocation.descriptorPool = m_TextureDescriptorPool;
+    allocation.descriptorSetCount = 1;
+    allocation.pSetLayouts = &layout;
+    if (vkAllocateDescriptorSets(device, &allocation,
+        &m_TextureDescriptor) != VK_SUCCESS)
+    {
+        DestroyTextureDescriptor();
+        return false;
+    }
+    VkDescriptorImageInfo image{};
+    image.sampler = m_TestTexture.GetSampler();
+    image.imageView = m_TestTexture.GetView();
+    image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_TextureDescriptor;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image;
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    return true;
+}
+
+void VulkanSceneTriangleDemo::DestroyTextureDescriptor()
+{
+    if (m_TextureDescriptorPool != VK_NULL_HANDLE &&
+        m_Context.GetDevice().IsValid() == true)
+    {
+        vkDestroyDescriptorPool(m_Context.GetDevice().GetHandle(),
+            m_TextureDescriptorPool, nullptr);
+    }
+    m_TextureDescriptorPool = VK_NULL_HANDLE;
+    m_TextureDescriptor = VK_NULL_HANDLE;
 }
 
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
     if (m_Window == nullptr || m_Pipeline == nullptr ||
-        m_TransparentPipeline == nullptr)
+        m_TransparentPipeline == nullptr || m_TextureDescriptor == VK_NULL_HANDLE)
     {
         return RHIFrameResult::FatalError;
     }
@@ -353,7 +423,8 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         const bool transparentPass = pass == 1;
         const auto& pipeline = transparentPass == true ?
             m_TransparentPipeline : m_Pipeline;
-        if (commands.BindPipeline(pipeline) == false)
+        if (commands.BindPipeline(pipeline) == false ||
+            commands.BindTextureDescriptor(m_TextureDescriptor) == false)
         {
             Shutdown();
             return RHIFrameResult::FatalError;
@@ -404,6 +475,7 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
     }
     // Resize時にScene Contextが旧RenderPass用Pipelineを無効化します。
     // 新SwapChainのFormatを読み直してから再生成します。
+    DestroyTextureDescriptor();
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
     m_Camera.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
@@ -417,6 +489,7 @@ void VulkanSceneTriangleDemo::Shutdown()
     {
         m_Context.GetDevice().WaitIdle();
     }
+    DestroyTextureDescriptor();
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
     // TextureはVkDevice破棄前、GPUの読み取り完了後に解放します。
