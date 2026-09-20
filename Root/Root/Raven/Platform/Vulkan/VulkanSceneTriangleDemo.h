@@ -11,6 +11,7 @@
 
 namespace Raven
 {
+class Material;
 
 // OpenGL Applicationを変更せずVulkan Sceneの描画経路を検証する最小Triangleです。
 // 呼び出し元はVulkan Windowと、以下の入力宣言に一致するSPIR-Vを渡します。
@@ -46,6 +47,9 @@ public:
     // Tint・Blend・RHITextureを一括設定します。入力が不正なら登録もMaterial更新もしません。
     bool SetMeshMaterial(std::size_t meshIndex, const std::array<float, 4>& tint,
         bool alphaBlend, const Ref<RHITexture>& texture);
+    // 汎用MaterialのRHI Tint/TextureとSurfaceTypeをSceneへ反映します。
+    // Maskedは現行Shaderがalpha cutoff未対応のため失敗します。
+    bool SetMeshMaterial(std::size_t meshIndex, const Material& material);
     // Texture番号はAddTexture()の登録順です。0は既定Checker Textureです。
     // MaterialはMesh単位でTexture番号を保持し、同じ番号のGPU Textureを共有します。
     bool SetMeshTexture(std::size_t meshIndex, std::size_t textureIndex);
