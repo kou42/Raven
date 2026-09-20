@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VulkanSceneCommandList.h"
-#include "VulkanSceneTexture.h"
+#include "Raven/Renderer/RHI/RHITexture.h"
 #include "Raven/Scene/SceneCamera.h"
 
 #include <array>
@@ -72,7 +72,7 @@ private:
     SceneCamera m_Camera;
     struct TextureResource
     {
-        Ref<VulkanSceneTexture> Image;
+        Ref<RHITexture> Image;
         VkDescriptorSet Descriptor = VK_NULL_HANDLE;
     };
     // TextureResourceはSceneが所有し、Meshは登録番号だけを参照します。
