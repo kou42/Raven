@@ -356,6 +356,21 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
     return true;
 }
 
+bool VulkanSceneContext::BindTextureDescriptor(VkDescriptorSet descriptorSet)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE ||
+        m_BoundGraphicsPipeline == nullptr ||
+        m_BoundGraphicsPipeline->IsValid() == false)
+    {
+        return false;
+    }
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_BoundGraphicsPipeline->GetLayout(), 0, 1, &descriptorSet,
+        0, nullptr);
+    return true;
+}
+
 bool VulkanSceneContext::SetMaterialTint(const std::array<float, 4>& tint)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
