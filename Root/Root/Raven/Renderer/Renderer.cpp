@@ -453,6 +453,73 @@ bool Renderer::CreateRHIScenePipelines(
     return true;
 }
 
+RHIFrameResult Renderer::DrawRHISceneFrame(
+    RHIDevice& device,
+    RHISceneFrameLifecycle& frame,
+    RHISceneCommandList& commands,
+    const Ref<RHIGraphicsPipeline>& opaquePipeline,
+    const Ref<RHIGraphicsPipeline>& transparentPipeline,
+    const Ref<RHITexture>& defaultTexture,
+    const math::Mat4& clipCorrection)
+{
+    std::vector<RHISceneDrawItem> items;
+    const bool built = BuildRHISceneDrawItems(
+        defaultTexture, clipCorrection, items);
+
+    // 成否にかかわらずQueue受付を閉じ、次Sceneへ古い参照を持ち越しません。
+    s_SceneQueueActive = false;
+    s_OpaqueQueue.clear();
+    s_TransparentQueue.clear();
+    if (built == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    std::vector<Ref<RHITexture>> textures;
+    textures.reserve(items.size());
+    for (const RHISceneDrawItem& item : items)
+    {
+        const Ref<RHITexture>& texture = item.Material.Texture;
+        bool registered = false;
+        for (const Ref<RHITexture>& existing : textures)
+        {
+            if (existing == texture)
+            {
+                registered = true;
+                break;
+            }
+        }
+        if (registered == false)
+        {
+            textures.push_back(texture);
+        }
+    }
+
+    // Descriptor等のResource BindingはBeginFrameより前に準備します。
+    if (textures.empty() == false &&
+        device.PrepareSceneTextures(textures, opaquePipeline) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    const RHIFrameResult result = RHISceneMeshRenderer::DrawFrame(
+        frame,
+        commands,
+        opaquePipeline,
+        transparentPipeline,
+        items);
+    if (result == RHIFrameResult::Success)
+    {
+        const PrimitiveTopology topology =
+            opaquePipeline->GetSpecification().Topology;
+        for (const RHISceneDrawItem& item : items)
+        {
+            RecordIndexedDraw(item.IndexCount, topology);
+        }
+    }
+    return result;
+}
+
 void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
 {
     if (mesh == nullptr || material == nullptr)

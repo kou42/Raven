@@ -74,6 +74,13 @@ public:
         return true;
     }
 
+    bool PrepareSceneTextures(
+        const std::vector<Ref<RHITexture>>& textures,
+        const Ref<RHIGraphicsPipeline>& pipeline) override
+    {
+        return m_Context.RebuildTextureDescriptors(textures, pipeline);
+    }
+
     Ref<RHITexture> CreateTexture(
         const RHITextureSpecification& specification,
         const void* initialData = nullptr,

@@ -15,7 +15,10 @@ class Material;
 class Mesh;
 class RHIDevice;
 class RHIGraphicsPipeline;
+class RHISceneCommandList;
+class RHISceneFrameLifecycle;
 class RHITexture;
+enum class RHIFrameResult;
 struct RHISceneDrawItem;
 struct RHIShaderBinary;
 struct RHISceneMesh;
@@ -98,6 +101,17 @@ public:
         const RHIShaderBinary& fragmentShader,
         Ref<RHIGraphicsPipeline>& outOpaquePipeline,
         Ref<RHIGraphicsPipeline>& outTransparentPipeline);
+
+    // Queueを閉じ、Texture Binding準備後にExplicit RHIのBegin/Draw/End/Presentを実行します。
+    // Debug OverlayはまだLegacy専用のため、この経路には含めません。
+    static RHIFrameResult DrawRHISceneFrame(
+        RHIDevice& device,
+        RHISceneFrameLifecycle& frame,
+        RHISceneCommandList& commands,
+        const Ref<RHIGraphicsPipeline>& opaquePipeline,
+        const Ref<RHIGraphicsPipeline>& transparentPipeline,
+        const Ref<RHITexture>& defaultTexture,
+        const math::Mat4& clipCorrection);
 
     static const RendererStatistics& GetStatistics();
     static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);

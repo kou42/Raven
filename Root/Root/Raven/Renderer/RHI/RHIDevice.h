@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/RHI/RHIBuffer.h"
@@ -44,6 +45,17 @@ public:
         RHIGraphicsPipelineTarget& target) const
     {
         (void)target;
+        return false;
+    }
+
+    // Scene描画で参照するTexture BindingをFrame開始前に準備します。
+    // Pipeline layoutとの互換性はBackend側で検証します。
+    virtual bool PrepareSceneTextures(
+        const std::vector<Ref<RHITexture>>& textures,
+        const Ref<RHIGraphicsPipeline>& pipeline)
+    {
+        (void)textures;
+        (void)pipeline;
         return false;
     }
 
