@@ -162,3 +162,11 @@ Strideは現状CommandListへ明示的に渡す暫定仕様です。一般Scene�
 共通RHIBuffer版 `DrawIndexed(vertex, index, indexCount = 0)` は、Bind済PipelineのBinding 0からStrideを取得します。呼び出し側でStrideを重複指定する必要はありません。Bindingが0以外・複数・Stride 0、Vertex容量がStrideで割り切れない場合は描画を拒否します。従来のnative SceneBuffer版はBuffer保持StrideとPipeline Strideの一致を検証します。
 
 本変更は単一Vertex Binding限定です。複数Binding/Instance Rate、頂点範囲やIndex値のCPU検査は未対応です。共通Bufferはbyte単位で確保する仕様のままであり、GPU同期とDevice寿命の制約も変わりません。ビルド・GPU実機・Validation Layerは未検証です。
+
+### Vulkan Scene共通BufferのGPU同期とDevice寿命（追加）
+
+`VulkanSceneRHIBuffer::TrySetData/TryResize` はContextの `SynchronizeBufferAccess` を通し、Frame外かつ未Submit状態で `VkDeviceWaitIdle` に成功した場合だけnative Bufferを変更します。既存の共通 `RHIBuffer::SetData/Resize` はvoid APIのため失敗を通知できません。更新成否が必要なScene固有コードではTry版を使用してください。安全性優先の暫定実装であり、毎回Device全体を待つためDynamic Bufferの頻繁な更新には適しません。
+
+Device経由で生成したBufferはContextがweak参照で追跡し、Context::ShutdownのWaitIdle後、VkDevice破棄前にnative Bufferを無効化します。外部に残ったRefの更新は失敗し、破棄時に破棄済みVkDeviceを呼びません。**描画命令を記録したBufferのRefはGPU完了まで保持してください。** Frame記録中に最後のRefを解放することや、別スレッドから同時に操作することは未対応です。Context破棄後のAdapter使用は不可です。
+
+確認項目：Frame外のTrySetData/TryResize成功、BeginFrame～EndFrame中の拒否、Submit後Present前の拒否、Context::Shutdown後に外部Refを破棄してもVulkan呼び出しなし、Triangle表示とResize、OpenGL回帰。ビルド・GPU実機・Validation Layerは未検証です。
