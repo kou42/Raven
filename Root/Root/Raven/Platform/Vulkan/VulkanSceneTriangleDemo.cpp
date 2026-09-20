@@ -384,14 +384,10 @@ bool VulkanSceneTriangleDemo::AddTexture(
         return false;
     }
     // Pool切り替えの前に旧Descriptorを参照するGPU仕事の完了を待ちます。
-    const bool descriptorsExist = m_TextureDescriptorPool != VK_NULL_HANDLE;
-    if (descriptorsExist == true && m_Context.GetDevice().WaitIdle() == false)
-    {
-        return false;
-    }
+    const bool descriptorsExist = m_Context.HasTextureDescriptors();
     const std::size_t newIndex = m_Textures.size();
-    m_Textures.push_back({texture, VK_NULL_HANDLE});
-    if (descriptorsExist == true && CreateTextureDescriptor() == false)
+    m_Textures.push_back(texture);
+    if (descriptorsExist == true && m_Context.RebuildTextureDescriptors(m_Textures, m_Pipeline) == false)
     {
         // 新Poolが失敗した場合は旧Poolを維持し、登録を取り消します。
         m_Textures.pop_back();
@@ -492,98 +488,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     {
         return false;
     }
-    return CreateTextureDescriptor();
-}
-
-bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
-{
-    if (m_Textures.empty() == true || m_Pipeline == nullptr ||
-        m_Context.GetDevice().IsValid() == false ||
-        m_Textures.size() > std::numeric_limits<uint32_t>::max())
-    {
-        return false;
-    }
-    const auto native = std::dynamic_pointer_cast<VulkanGraphicsPipeline>(m_Pipeline);
-    if (native == nullptr || native->GetTextureSetLayout() == VK_NULL_HANDLE)
-    {
-        return false;
-    }
-    // 既存Poolを残したまま新Poolを構築し、途中失敗でも既存Meshの描画を維持します。
-    // 呼び出し側は旧Descriptorを参照するGPU処理の完了を保証します。
-    const VkDevice device = m_Context.GetDevice().GetHandle();
-    VkDescriptorPool newPool = VK_NULL_HANDLE;
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = static_cast<uint32_t>(m_Textures.size());
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = static_cast<uint32_t>(m_Textures.size());
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &newPool) != VK_SUCCESS)
-    {
-        return false;
-    }
-    const VkDescriptorSetLayout layout = native->GetTextureSetLayout();
-    std::vector<VkDescriptorSetLayout> layouts(m_Textures.size(), layout);
-    std::vector<VkDescriptorSet> descriptors(m_Textures.size(), VK_NULL_HANDLE);
-    VkDescriptorSetAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocation.descriptorPool = newPool;
-    allocation.descriptorSetCount = static_cast<uint32_t>(layouts.size());
-    allocation.pSetLayouts = layouts.data();
-    if (vkAllocateDescriptorSets(device, &allocation, descriptors.data()) != VK_SUCCESS)
-    {
-        vkDestroyDescriptorPool(device, newPool, nullptr);
-        return false;
-    }
-    for (std::size_t index = 0; index < m_Textures.size(); ++index)
-    {
-        const TextureResource& resource = m_Textures[index];
-        const auto nativeTexture =
-            std::dynamic_pointer_cast<VulkanSceneRHITexture>(resource.Image);
-        if (nativeTexture == nullptr ||
-            nativeTexture->GetNativeTexture().IsValid() == false)
-        {
-            vkDestroyDescriptorPool(device, newPool, nullptr);
-            return false;
-        }
-        VkDescriptorImageInfo image{};
-        image.sampler = nativeTexture->GetNativeTexture().GetSampler();
-        image.imageView = nativeTexture->GetNativeTexture().GetView();
-        image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = descriptors[index];
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &image;
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
-    }
-    // 全Textureの更新成功後にだけPoolとDescriptorを切り替えます。
-    DestroyTextureDescriptor();
-    m_TextureDescriptorPool = newPool;
-    for (std::size_t index = 0; index < m_Textures.size(); ++index)
-    {
-        m_Textures[index].Descriptor = descriptors[index];
-    }
-    return true;
-}
-
-void VulkanSceneTriangleDemo::DestroyTextureDescriptor()
-{
-    if (m_TextureDescriptorPool != VK_NULL_HANDLE &&
-        m_Context.GetDevice().IsValid() == true)
-    {
-        vkDestroyDescriptorPool(m_Context.GetDevice().GetHandle(),
-            m_TextureDescriptorPool, nullptr);
-    }
-    m_TextureDescriptorPool = VK_NULL_HANDLE;
-    for (TextureResource& resource : m_Textures)
-    {
-        resource.Descriptor = VK_NULL_HANDLE;
-    }
+    return m_Context.RebuildTextureDescriptors(m_Textures, m_Pipeline);
 }
 
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
@@ -670,8 +575,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
             const auto clipTransform = ToColumnMajor(
                 viewProjection * FromColumnMajor(mesh.Model));
             if (mesh.Material.TextureIndex >= m_Textures.size() ||
-                m_Textures[mesh.Material.TextureIndex].Descriptor == VK_NULL_HANDLE ||
-                commands.BindTextureDescriptor(m_Textures[mesh.Material.TextureIndex].Descriptor) == false ||
+                commands.BindTexture(mesh.Material.TextureIndex) == false ||
                 commands.SetClipTransform(clipTransform) == false ||
                 commands.SetMaterialTint(mesh.Material.Tint) == false ||
                 commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
@@ -705,7 +609,7 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
     }
     // Resize時にScene Contextが旧RenderPass用Pipelineを無効化します。
     // 新SwapChainのFormatを読み直してから再生成します。
-    DestroyTextureDescriptor();
+    m_Context.DestroyTextureDescriptors();
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
     m_Camera.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
@@ -719,7 +623,7 @@ void VulkanSceneTriangleDemo::Shutdown()
     {
         m_Context.GetDevice().WaitIdle();
     }
-    DestroyTextureDescriptor();
+    m_Context.DestroyTextureDescriptors();
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
     // Sceneは共有RHITextureのRefだけを解放します。
