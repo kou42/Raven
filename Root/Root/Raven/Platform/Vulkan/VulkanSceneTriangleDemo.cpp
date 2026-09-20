@@ -656,16 +656,8 @@ void VulkanSceneTriangleDemo::Shutdown()
     DestroyTextureDescriptor();
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
-    // TextureはVkDevice破棄前、GPUの読み取り完了後に解放します。
-    for (TextureResource& resource : m_Textures)
-    {
-        const auto nativeTexture =
-            std::dynamic_pointer_cast<VulkanSceneRHITexture>(resource.Image);
-        if (nativeTexture != nullptr)
-        {
-            nativeTexture->Shutdown();
-        }
-    }
+    // Sceneは共有RHITextureのRefだけを解放します。
+    // 外部Refが残るTextureのnative handleはContext::ShutdownがDevice破棄前に無効化します。
     m_Textures.clear();
     // native VkBufferを所有するRefはContextのVkDeviceより先に破棄します。
     m_Meshes.clear();
