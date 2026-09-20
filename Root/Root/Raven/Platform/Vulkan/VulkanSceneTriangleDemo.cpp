@@ -257,7 +257,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
         const auto clipTransform = ToColumnMajor(
             viewProjection * FromColumnMajor(mesh.Model));
-        if (commands.SetModelTransform(clipTransform) == false ||
+        if (commands.SetClipTransform(clipTransform) == false ||
             commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
         {
             Shutdown();
