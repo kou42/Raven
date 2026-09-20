@@ -277,7 +277,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     }
 
     VulkanSceneCommandList commands(m_Context);
-     // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
+    // RavenのPerspectiveのNDC z=[-1,1]をVulkanの[0,1]へ変換します。
     // 同時にYを反転し、Vulkanの正のViewport Heightと整合させます。
     const math::Mat4 vulkanClipCorrection(
         1.0f,  0.0f, 0.0f, 0.0f,
@@ -290,34 +290,33 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     // 透明Mesh同士の奥行きソートは未実装のため、登録順で描画します。
     for (uint32_t pass = 0; pass < 2; ++pass)
     {
-    const bool transparentPass = pass == 1;
-    const auto& pipeline = transparentPass == true ?
+        const bool transparentPass = pass == 1;
+        const auto& pipeline = transparentPass == true ?
         m_TransparentPipeline : m_Pipeline;
-    if (commands.BindPipeline(pipeline) == false)
-    {
-        Shutdown();
-        return RHIFrameResult::FatalError;
-    }
-    for (const Mesh& mesh : m_Meshes)
-    {
-        if (mesh.AlphaBlend != transparentPass)
-        {
-            continue;
-        }
-        // 同じFrameに異なるVertex/Index Bufferを記録します。
-        // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
-        // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
-        const auto clipTransform = ToColumnMajor(
-            viewProjection * FromColumnMajor(mesh.Model));
-        if (commands.SetClipTransform(clipTransform) == false ||
-            commands.SetMaterialTint(mesh.Tint) == false ||
-            commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
+        if (commands.BindPipeline(pipeline) == false)
         {
             Shutdown();
             return RHIFrameResult::FatalError;
         }
-    }
-
+        for (const Mesh& mesh : m_Meshes)
+        {
+            if (mesh.AlphaBlend != transparentPass)
+            {
+                continue;
+            }
+            // 同じFrameに異なるVertex/Index Bufferを記録します。
+            // BeginFrame成功後の失敗時はAcquire済Semaphoreを再利用せず破棄します。
+            // 各MeshのModelとCameraのView/Projectionを合成し、1回のPushで渡します。
+            const auto clipTransform = ToColumnMajor(
+            viewProjection * FromColumnMajor(mesh.Model));
+            if (commands.SetClipTransform(clipTransform) == false ||
+            commands.SetMaterialTint(mesh.Tint) == false ||
+            commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer, mesh.IndexCount) == false)
+            {
+                Shutdown();
+                return RHIFrameResult::FatalError;
+            }
+        }
     }
     const RHIFrameResult end = m_Context.EndFrame();
     if (end != RHIFrameResult::Success)
