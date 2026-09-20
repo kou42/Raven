@@ -69,7 +69,7 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     m_Camera.SetViewMatrix(math::Mat4::LookAt(
         {0.0f, 0.0f, 2.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}));
 
-    // デモでは2つを登録しますが、描画側は任意個数のMeshを処理します。
+    // 手前のMeshを先に描画し、奥のMeshがDepth Testで隠れることを検証します。
     const std::vector<Vertex> left = {
         {{-0.3f, -0.6f, 0.0f}, {1.0f, 0.0f, 0.0f}},
         {{ 0.3f, -0.6f, 0.0f}, {0.0f, 1.0f, 0.0f}},
@@ -81,20 +81,20 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
         {{ 0.0f,  0.6f, 0.0f}, {1.0f, 1.0f, 0.0f}}
     };
     const std::vector<uint32_t> indices = {0, 1, 2};
-    if (AddMesh(left, indices) == false || AddMesh(right, indices) == false)
+    if (AddMesh(right, indices) == false || AddMesh(left, indices) == false)
     {
         std::cerr << "Vulkan Scene Triangle: Mesh creation failed.\n";
         Shutdown();
         return false;
     }
     // 同じローカル座標を独立したModel行列で左右へ配置します。
-    auto leftModel = m_Meshes[0].Model;
-    auto rightModel = m_Meshes[1].Model;
+    auto rightModel = m_Meshes[0].Model;
+    auto leftModel = m_Meshes[1].Model;
     leftModel[12] = -0.15f;
     rightModel[12] = 0.15f;
     rightModel[14] = 0.4f; // Cameraに近い右Meshが重複部分で前面に表示されます。
-    if (SetMeshTransform(0, leftModel) == false ||
-        SetMeshTransform(1, rightModel) == false)
+    if (SetMeshTransform(0, rightModel) == false ||
+        SetMeshTransform(1, leftModel) == false)
     {
         Shutdown();
         return false;
