@@ -194,3 +194,11 @@ Device経由で生成したBufferはContextがweak参照で追跡し、Context::
 Buffer別Fence同期は各Submit済みSlotでキーの存在を調べます。計算量は従来の「Slot数 × 各SlotのDraw Buffer登録数」から、平均的に「Slot数 × Mapキー検索」になります。重複Drawが多いSceneほど強参照数も削減します。Frameごとの異なるBuffer数に応じたMapのメモリ使用とハッシュ管理コストは発生します。外部Queue/別スレッドは引き続き対象外です。
 
 確認項目：同一Vertex/Index Bufferを繰り返し描画、異なるBufferの混在、同一Bufferの複数Frame使用、Fence完了後のRef回収、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
+
+### Vulkan Sceneの2 Mesh描画検証経路（追加）
+
+`VulkanSceneTriangleDemo` は左右2つの三角形を、独立したVertex BufferとIndex Buffer（合計4本）で描画する構成に変更しました。同一PipelineをBindした後、同一FrameのCommandListに2回DrawIndexedを記録します。共通RHIDeviceによるBuffer生成、PR #228のFrame Slot別重複排除、PR #227のBuffer別Fence待機を、複数Resourceが混在する実際の描画経路で確認するための変更です。
+
+Resize時は従来どおりPipelineだけを再生成し、2 MeshのBufferを保持します。Shutdown時はGPU完了待機後に4本のBuffer Refを解放し、ContextのDeviceを破棄します。既存の`--scene-triangle-vulkan`起動方法・SPIR-V・通常OpenGL Applicationは変更していません。
+
+確認項目：左右2つの色付き三角形が同時に表示されること、連続Frame描画、最小化・Resize後の再描画、途中Buffer生成失敗時のShutdown、Validation LayerのBuffer寿命エラーなし、OpenGL回帰。ビルド・GPU実機・Validation Layer未検証。
