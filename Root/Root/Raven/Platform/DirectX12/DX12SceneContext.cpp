@@ -168,6 +168,33 @@ bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
     return true;
 }
 
+bool DX12SceneContext::SetViewport(
+    uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || width == 0 || height == 0)
+    {
+        return false;
+    }
+
+    // DX12のViewport/ScissorはDraw時のCommandList stateとして記録します。
+    D3D12_VIEWPORT viewport{};
+    viewport.TopLeftX = static_cast<float>(x);
+    viewport.TopLeftY = static_cast<float>(y);
+    viewport.Width = static_cast<float>(width);
+    viewport.Height = static_cast<float>(height);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    D3D12_RECT scissor{};
+    scissor.left = static_cast<LONG>(x);
+    scissor.top = static_cast<LONG>(y);
+    scissor.right = static_cast<LONG>(x + width);
+    scissor.bottom = static_cast<LONG>(y + height);
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissor);
+    return true;
+}
+
 void DX12SceneContext::SetClearColor(const float color[4])
 {
     if (color == nullptr)
