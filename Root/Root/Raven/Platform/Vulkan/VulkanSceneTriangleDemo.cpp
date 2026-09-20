@@ -76,8 +76,8 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
     specification.Cull = CullMode::None;
     specification.DebugName = "Vulkan Scene Triangle";
     // ColorFormatはFactoryが現在のScene RenderTargetから解決します。
-    VulkanSceneResourceFactory vulkanResources(m_Context);
-    RHISceneResourceFactory& resources = vulkanResources;
+    RHISceneRenderServices& services = m_Services;
+    RHISceneResourceFactory& resources = services.GetResourceFactory();
     m_Pipeline = resources.CreateGraphicsPipeline(specification);
     return m_Pipeline != nullptr;
 }
@@ -132,7 +132,7 @@ bool VulkanSceneTriangleDemo::Resize(uint32_t width, uint32_t height)
         return false;
     }
 
-    RHISceneFrameLifecycle& frame = m_Context;
+    RHISceneFrameLifecycle& frame = m_Services.GetFrameLifecycle();
     if (frame.Resize(width, height) == false)
     {
         return false;
