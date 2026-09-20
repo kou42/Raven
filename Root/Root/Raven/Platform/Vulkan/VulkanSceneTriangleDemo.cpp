@@ -574,10 +574,20 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
             // CameraとMeshのModelを合成して、DrawごとにPush Constantを更新します。
             const auto clipTransform = ToColumnMajor(
                 viewProjection * FromColumnMajor(mesh.Model));
-            if (mesh.Material.TextureIndex >= m_Textures.size() ||
-                commands.BindTexture(mesh.Material.TextureIndex) == false ||
+            if (mesh.Material.TextureIndex >= m_Textures.size())
+            {
+                Shutdown();
+                return RHIFrameResult::FatalError;
+            }
+            // 描画時はSceneのTexture番号を共通Material Snapshotへ変換し、
+            // Descriptorの選択はBackendのCommandListに任せます。
+            RHIMaterialProperties material;
+            material.Tint = mesh.Material.Tint;
+            material.Texture = m_Textures[mesh.Material.TextureIndex];
+            material.SurfaceType = mesh.Material.AlphaBlend == true ?
+                MaterialSurfaceType::Transparent : MaterialSurfaceType::Opaque;
+            if (commands.BindMaterial(material) == false ||
                 commands.SetClipTransform(clipTransform) == false ||
-                commands.SetMaterialTint(mesh.Material.Tint) == false ||
                 commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
                     mesh.IndexCount) == false)
             {
