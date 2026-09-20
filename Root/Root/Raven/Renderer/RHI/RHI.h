@@ -7,3 +7,5 @@
 #include "Raven/Renderer/RHI/RHIResource.h"
 #include "Raven/Renderer/RHI/RHIGraphicsPipeline.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Renderer/RHI/RHISceneBuffer.h"
+#include "Raven/Renderer/RHI/RHISceneCommandList.h"
