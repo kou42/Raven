@@ -82,10 +82,23 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
             checker[offset + 3] = 255;
         }
     }
-    if (m_TestTexture.Init(m_Context.GetDevice(), textureSize, textureSize,
-        checker.data()) == false)
+    if (AddTexture(textureSize, textureSize, checker.data()) == false)
     {
         std::cerr << "Vulkan Scene Triangle: Texture upload failed.\n";
+        Shutdown();
+        return false;
+    }
+
+    // 2番目のTextureは色付きChecker。MeshごとのDescriptor切り替えを目視検証します。
+    auto alternate = checker;
+    for (std::size_t pixel = 0; pixel < alternate.size(); pixel += 4)
+    {
+        alternate[pixel + 0] = 40;
+        alternate[pixel + 1] = checker[pixel];
+        alternate[pixel + 2] = 255;
+    }
+    if (AddTexture(textureSize, textureSize, alternate.data()) == false)
+    {
         Shutdown();
         return false;
     }
@@ -130,6 +143,11 @@ bool VulkanSceneTriangleDemo::Init(Window& window,
     if (SetMeshTransform(0, rightModel) == false ||
         SetMeshTransform(1, leftModel) == false ||
         SetMeshTransform(2, farModel) == false)
+    {
+        Shutdown();
+        return false;
+    }
+    if (SetMeshTexture(0, 1) == false || SetMeshTexture(2, 1) == false)
     {
         Shutdown();
         return false;
@@ -238,6 +256,37 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
     return true;
 }
 
+bool VulkanSceneTriangleDemo::AddTexture(
+    uint32_t width, uint32_t height, const uint8_t* rgba)
+{
+    if (m_Context.GetDevice().IsValid() == false ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE ||
+        width == 0 || height == 0 || rgba == nullptr ||
+        m_TextureDescriptorPool != VK_NULL_HANDLE)
+    {
+        // Descriptor生成後の追加はPool再構築とGPU同期が必要なため現段階では禁止します。
+        return false;
+    }
+    auto image = std::make_shared<VulkanSceneTexture>();
+    if (image->Init(m_Context.GetDevice(), width, height, rgba) == false)
+    {
+        return false;
+    }
+    m_Textures.push_back({std::move(image), VK_NULL_HANDLE});
+    return true;
+}
+
+bool VulkanSceneTriangleDemo::SetMeshTexture(
+    std::size_t meshIndex, std::size_t textureIndex)
+{
+    if (meshIndex >= m_Meshes.size() || textureIndex >= m_Textures.size())
+    {
+        return false;
+    }
+    m_Meshes[meshIndex].TextureIndex = textureIndex;
+    return true;
+}
+
 bool VulkanSceneTriangleDemo::ClearMeshes()
 {
     if (m_Context.GetDevice().IsValid() == false ||
@@ -308,7 +357,7 @@ bool VulkanSceneTriangleDemo::CreatePipeline()
 bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
 {
     DestroyTextureDescriptor();
-    if (m_TestTexture.IsValid() == false || m_Pipeline == nullptr ||
+    if (m_Textures.empty() == true || m_Pipeline == nullptr ||
         m_Context.GetDevice().IsValid() == false)
     {
         return false;
@@ -321,10 +370,10 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
     const VkDevice device = m_Context.GetDevice().GetHandle();
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
+    poolSize.descriptorCount = static_cast<uint32_t>(m_Textures.size());
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
+    poolInfo.maxSets = static_cast<uint32_t>(m_Textures.size());
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr,
@@ -333,29 +382,41 @@ bool VulkanSceneTriangleDemo::CreateTextureDescriptor()
         return false;
     }
     const VkDescriptorSetLayout layout = native->GetTextureSetLayout();
+    std::vector<VkDescriptorSetLayout> layouts(m_Textures.size(), layout);
+    std::vector<VkDescriptorSet> descriptors(m_Textures.size(), VK_NULL_HANDLE);
     VkDescriptorSetAllocateInfo allocation{};
     allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocation.descriptorPool = m_TextureDescriptorPool;
-    allocation.descriptorSetCount = 1;
-    allocation.pSetLayouts = &layout;
-    if (vkAllocateDescriptorSets(device, &allocation,
-        &m_TextureDescriptor) != VK_SUCCESS)
+    allocation.descriptorSetCount = static_cast<uint32_t>(layouts.size());
+    allocation.pSetLayouts = layouts.data();
+    if (vkAllocateDescriptorSets(device, &allocation, descriptors.data()) != VK_SUCCESS)
     {
         DestroyTextureDescriptor();
         return false;
     }
-    VkDescriptorImageInfo image{};
-    image.sampler = m_TestTexture.GetSampler();
-    image.imageView = m_TestTexture.GetView();
-    image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_TextureDescriptor;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &image;
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    // DescriptorはTextureごとに一度だけ生成し、複数Meshから共有します。
+    for (std::size_t index = 0; index < m_Textures.size(); ++index)
+    {
+        TextureResource& resource = m_Textures[index];
+        if (resource.Image == nullptr || resource.Image->IsValid() == false)
+        {
+            DestroyTextureDescriptor();
+            return false;
+        }
+        VkDescriptorImageInfo image{};
+        image.sampler = resource.Image->GetSampler();
+        image.imageView = resource.Image->GetView();
+        image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptors[index];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &image;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        resource.Descriptor = descriptors[index];
+    }
     return true;
 }
 
@@ -368,13 +429,16 @@ void VulkanSceneTriangleDemo::DestroyTextureDescriptor()
             m_TextureDescriptorPool, nullptr);
     }
     m_TextureDescriptorPool = VK_NULL_HANDLE;
-    m_TextureDescriptor = VK_NULL_HANDLE;
+    for (TextureResource& resource : m_Textures)
+    {
+        resource.Descriptor = VK_NULL_HANDLE;
+    }
 }
 
 RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
 {
     if (m_Window == nullptr || m_Pipeline == nullptr ||
-        m_TransparentPipeline == nullptr || m_TextureDescriptor == VK_NULL_HANDLE)
+        m_TransparentPipeline == nullptr || m_TextureDescriptorPool == VK_NULL_HANDLE)
     {
         return RHIFrameResult::FatalError;
     }
@@ -436,8 +500,7 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
         const bool transparentPass = pass == 1;
         const auto& pipeline = transparentPass == true ?
             m_TransparentPipeline : m_Pipeline;
-        if (commands.BindPipeline(pipeline) == false ||
-            commands.BindTextureDescriptor(m_TextureDescriptor) == false)
+        if (commands.BindPipeline(pipeline) == false)
         {
             Shutdown();
             return RHIFrameResult::FatalError;
@@ -455,7 +518,10 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
             // CameraとMeshのModelを合成して、DrawごとにPush Constantを更新します。
             const auto clipTransform = ToColumnMajor(
                 viewProjection * FromColumnMajor(mesh.Model));
-            if (commands.SetClipTransform(clipTransform) == false ||
+            if (mesh.TextureIndex >= m_Textures.size() ||
+                m_Textures[mesh.TextureIndex].Descriptor == VK_NULL_HANDLE ||
+                commands.BindTextureDescriptor(m_Textures[mesh.TextureIndex].Descriptor) == false ||
+                commands.SetClipTransform(clipTransform) == false ||
                 commands.SetMaterialTint(mesh.Tint) == false ||
                 commands.DrawIndexed(mesh.VertexBuffer, mesh.IndexBuffer,
                     mesh.IndexCount) == false)
@@ -506,7 +572,14 @@ void VulkanSceneTriangleDemo::Shutdown()
     m_Pipeline.reset();
     m_TransparentPipeline.reset();
     // TextureはVkDevice破棄前、GPUの読み取り完了後に解放します。
-    m_TestTexture.Shutdown();
+    for (TextureResource& resource : m_Textures)
+    {
+        if (resource.Image != nullptr)
+        {
+            resource.Image->Shutdown();
+        }
+    }
+    m_Textures.clear();
     // native VkBufferを所有するRefはContextのVkDeviceより先に破棄します。
     m_Meshes.clear();
     m_Context.Shutdown();
