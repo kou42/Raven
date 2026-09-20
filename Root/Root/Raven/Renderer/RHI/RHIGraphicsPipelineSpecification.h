@@ -6,6 +6,7 @@
 
 #include "Raven/Renderer/Buffer/BufferLayout.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 
 namespace Raven
 {
@@ -82,6 +83,88 @@ struct RHIGraphicsPipelineSpecification
     uint32_t SampleCount = 1;
 
     std::string DebugName = "Unnamed RHI Graphics Pipeline";
+
+    // native API呼び出し前に共通の入力不備を検出します。
+    // Format/RenderPass/Root SignatureなどBackend固有の互換性は別途確認が必要です。
+    bool IsValidForBackend(RHIBackend backend) const
+    {
+        RHIShaderBinaryFormat requiredFormat = RHIShaderBinaryFormat::None;
+        switch (backend)
+        {
+        case RHIBackend::Vulkan:
+            requiredFormat = RHIShaderBinaryFormat::SPIRV;
+            break;
+        case RHIBackend::DirectX12:
+            requiredFormat = RHIShaderBinaryFormat::DXIL;
+            break;
+        case RHIBackend::OpenGL:
+        case RHIBackend::DirectX11:
+        case RHIBackend::None:
+        default:
+            return false;
+        }
+
+        if (VertexShader.Format != requiredFormat ||
+            FragmentShader.Format != requiredFormat ||
+            VertexShader.Code.empty() == true ||
+            FragmentShader.Code.empty() == true ||
+            VertexShader.EntryPoint.empty() == true ||
+            FragmentShader.EntryPoint.empty() == true ||
+            ColorFormat == RHIColorFormat::None ||
+            SampleCount == 0 ||
+            (DepthTest == true && DepthFormat == RHIDepthFormat::None) ||
+            (DepthWrite == true && DepthFormat == RHIDepthFormat::None))
+        {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < VertexBindings.size(); ++index)
+        {
+            if (VertexBindings[index].Stride == 0)
+            {
+                return false;
+            }
+            for (std::size_t previous = 0; previous < index; ++previous)
+            {
+                if (VertexBindings[previous].Binding == VertexBindings[index].Binding)
+                {
+                    return false;
+                }
+            }
+        }
+
+        for (std::size_t index = 0; index < VertexAttributes.size(); ++index)
+        {
+            const RHIVertexAttribute& attribute = VertexAttributes[index];
+            const uint32_t size = ShaderDataTypeSize(attribute.Type);
+            bool bindingFound = false;
+            for (const RHIVertexBinding& binding : VertexBindings)
+            {
+                if (binding.Binding == attribute.Binding)
+                {
+                    bindingFound = true;
+                    if (size == 0 || attribute.Offset > binding.Stride ||
+                        size > binding.Stride - attribute.Offset)
+                    {
+                        return false;
+                    }
+                    break;
+                }
+            }
+            if (bindingFound == false)
+            {
+                return false;
+            }
+            for (std::size_t previous = 0; previous < index; ++previous)
+            {
+                if (VertexAttributes[previous].Location == attribute.Location)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
 };
 
 } // namespace Raven
