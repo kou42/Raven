@@ -1,4 +1,5 @@
 #include "VulkanSceneContext.h"
+#include "VulkanSceneRHIBuffer.h"
 
 #include "Raven/Core/Window.h"
 
@@ -350,12 +351,56 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     return true;
 }
 
+bool VulkanSceneContext::SynchronizeBufferAccess()
+{
+    // Host Coherentは可視性を保証しますが、GPUとの競合までは防ぎません。
+    // まずは安全性を優先し、Frame外の更新前にDevice全体の完了を待ちます。
+    if (m_Instance.IsValid() == false || m_FrameActive == true ||
+        m_FrameSubmitted == true)
+    {
+        return false;
+    }
+    return m_Instance.GetDevice().WaitIdle();
+}
+
+void VulkanSceneContext::RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer)
+{
+    if (buffer == nullptr)
+    {
+        return;
+    }
+    // 破棄済みのweak参照は登録時に整理し、長時間のBuffer生成でも増加を抑えます。
+    for (auto iterator = m_Buffers.begin(); iterator != m_Buffers.end();)
+    {
+        if (iterator->expired() == true)
+        {
+            iterator = m_Buffers.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
+    m_Buffers.push_back(buffer);
+}
+
 void VulkanSceneContext::Shutdown()
 {
     if (m_Instance.IsValid() == true)
     {
         m_Instance.GetDevice().WaitIdle();
     }
+    // Device破棄前に、外部がRefを保持しているBufferもnative handleを解放します。
+    // WaitIdle済みであることを前提にするため、Buffer側で再度同期しません。
+    for (const auto& weakBuffer : m_Buffers)
+    {
+        auto buffer = weakBuffer.lock();
+        if (buffer != nullptr)
+        {
+            buffer->InvalidateAfterDeviceIdle();
+        }
+    }
+    m_Buffers.clear();
     m_FrameActive = false;
     m_FrameSubmitted = false;
     m_ActiveFrame = 0;
