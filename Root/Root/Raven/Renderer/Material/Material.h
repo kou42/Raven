@@ -3,12 +3,12 @@
 #include <array>
 #include <memory>
 #include <string>
-#include <utility>
-
-#include "Raven/Renderer/RHI/RHITexture.h"
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <variant>
+
+#include "Raven/Renderer/RHI/RHIMaterialProperties.h"
 
 #include "Raven/Renderer/Shader/ShaderTypes.h"
 #include "Raven/Math/Math.h"
@@ -20,28 +20,6 @@ namespace Raven {
 class Pipeline;
 class Shader;
 class Texture;
-
-// ============================================================================
-// MaterialSurfaceType
-// ============================================================================
-// Graphics API固有のBlend/Depth stateではなく、Materialが持つ描画上の意味を表します。
-// Opaque / MaskedはOpaque PassでDepthを書き込み、TransparentだけをTransparent Passへ送ります。
-// Maskedのalpha cutoff判定はFragment Shader側のdiscardで行い、Blendは使用しません。
-enum class MaterialSurfaceType
-{
-    Opaque = 0,
-    Masked,
-    Transparent
-};
-
-// API非依存の描画用Material Snapshot。SceneはLegacy Pipeline/Shaderを参照せず、
-// Surface分類とRHI Resourceだけを取得します。
-struct RHIMaterialProperties
-{
-    std::array<float, 4> Tint = {1.0f, 1.0f, 1.0f, 1.0f};
-    Ref<RHITexture> Texture;
-    MaterialSurfaceType SurfaceType = MaterialSurfaceType::Opaque;
-};
 
 class Material {
 
