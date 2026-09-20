@@ -1,5 +1,6 @@
 #include "Application.h"
 #include "../Renderer/Renderer.h"
+#include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Widgets/UIButton.h"
@@ -280,6 +281,9 @@ void Application::SetScene(Scope<Scene> scene)
 
 void Application::Run()
 {
+    // 現在の通常SceneはOpenGL CommandList専用です。
+    // Clear DemoのContextとは別のFrame境界を使用し、Windowの二重Presentを防ぎます。
+    OpenGLSceneFrameLifecycle sceneFrame(*m_Window);
     double previousTime = glfwGetTime();
 
     while (m_Running)
@@ -309,6 +313,11 @@ void Application::Run()
         // CPUProfilerもRenderer::BeginFrame()と同じ境界で、次frame開始時に直前frameを確定します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
+        if (sceneFrame.BeginFrame() != RHIFrameResult::Success)
+        {
+            m_Running = false;
+            break;
+        }
         Renderer::BeginFrame();
 
         // ====================================================================
@@ -381,8 +390,18 @@ void Application::Run()
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
         // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
+        if (sceneFrame.EndFrame() != RHIFrameResult::Success)
+        {
+            m_Running = false;
+            break;
+        }
+
         m_Window->PollEvents();
-        m_Window->Present();
+        if (sceneFrame.Present() != RHIFrameResult::Success)
+        {
+            m_Running = false;
+            break;
+        }
     }
 }
 
