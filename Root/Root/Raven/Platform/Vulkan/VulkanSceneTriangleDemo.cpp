@@ -299,12 +299,17 @@ bool VulkanSceneTriangleDemo::SetMeshMaterial(
 bool VulkanSceneTriangleDemo::SetMeshMaterial(
     std::size_t meshIndex, const Material& material)
 {
+    // Legacy APIを使う呼び出し元との互換入口。以後の描画判断はSnapshotに集約します。
+    return SetMeshMaterial(meshIndex, material.GetRHIProperties());
+}
+
+bool VulkanSceneTriangleDemo::SetMeshMaterial(
+    std::size_t meshIndex, const RHIMaterialProperties& properties)
+{
     if (meshIndex >= m_Meshes.size())
     {
         return false;
     }
-    // Legacy Shader/Pipelineを参照せず、MaterialのAPI非依存Snapshotだけを使用します。
-    const RHIMaterialProperties properties = material.GetRHIProperties();
     if (properties.SurfaceType == MaterialSurfaceType::Masked)
     {
         // 現行Scene Shaderにはalpha cutoffがないため、MaskedをOpaque扱いしません。
