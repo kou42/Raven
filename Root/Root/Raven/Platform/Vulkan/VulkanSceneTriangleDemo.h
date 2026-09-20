@@ -38,8 +38,11 @@ private:
 
     Window* m_Window = nullptr;
     VulkanSceneContext m_Context;
-    Ref<RHIBuffer> m_VertexBuffer;
-    Ref<RHIBuffer> m_IndexBuffer;
+    // 2つのMeshが独立したVertex/Index Bufferを持つことで、
+    // 同一Frameの複数Resource保持とBuffer別Fence追跡を描画経路から検証します。
+    static constexpr std::size_t MeshCount = 2;
+    std::array<Ref<RHIBuffer>, MeshCount> m_VertexBuffers{};
+    std::array<Ref<RHIBuffer>, MeshCount> m_IndexBuffers{};
     Ref<RHIGraphicsPipeline> m_Pipeline;
     RHIShaderBinary m_VertexShader;
     RHIShaderBinary m_FragmentShader;
