@@ -158,3 +158,9 @@ Vulkan三角形デモはRender ServicesからFrame/Command/Factoryを取得し�
 Vulkan三角形デモは `Scope<RHISceneRuntime>` を所有し、Resource/Frame/Command取得をRuntimeのServicesに集約します。Shutdown時はWaitIdle → Pipeline/Buffer解放 → Runtime/Device破棄の順序です。Resize後のPipeline再生成は引き続きデモ側の責務です。
 
 **注意:** 通常ApplicationはOpenGL LegacyのFrame/Renderer/UI経路を継続します。今回のRuntimeは通常SceneをVulkanへ自動切替するFactoryではなく、Vulkan Sceneの所有構造を明確にする中間段階です。DX12と将来Metalには各BackendのContext/Services/Runtimeを実装してから接続します。
+
+### Window Backendに応じたScene Runtime生成
+
+`RHISceneRuntime::Create(Window&)` を共通Factory入口として追加しました。WindowのBackendがVulkanなら `VulkanSceneRuntime` を生成し、Context初期化に失敗した場合もnullptrを返します。OpenGL/DirectX12/DirectX11/Noneは、Scene用のFrame・CommandList・Resource Factoryが揃っていないためnullptrを返し、OpenGLへの暗黙fallbackを行いません。
+
+Vulkan三角形デモは共通FactoryからRuntimeを取得します。既存Applicationの `RHISceneFrameLifecycle::Create` とOpenGL Legacy Renderer/ImGui/UI経路は変更せず、通常ApplicationでVulkan Sceneを有効化したことを意味しません。FactoryのBackend分岐は既存VulkanSceneContext.cpp内に置き、新しいビルド対象.cppの登録を不要にしています。DX12/Metal接続時には実装配置とBackend登録点を再整理します。
