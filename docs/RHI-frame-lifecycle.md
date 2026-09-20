@@ -138,3 +138,13 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 **重要：** Resize前にGPUの旧Buffer参照が完了している必要があります。成功後はVkBuffer handleが変わるため、古いhandleをキャッシュした描画処理は再取得してください。Scene Context/DeviceのShutdown前にBufferを破棄してください。これは共通RHIBuffer派生・RHIDevice::CreateBuffer接続を完了したことを意味しません。
 
 追加検証項目：Vertex/Index容量変更、同容量更新、stride不整合拒否、確保失敗時の旧handle維持、Resize後のDrawIndexed、GPU同期、Validation Layer。ビルド・実機実行は未確認です。
+
+### Vulkan Scene RHIBuffer接続（追加）
+
+`VulkanSceneRHIDevice::CreateBuffer` は `VulkanSceneRHIBuffer` を通して、Context所有DeviceにVertex/Index用のHost Visible + Coherent Bufferを生成します。初期データ省略も可能です（内容は未定義）。サイズ0・uint32_t上限超過・Indexの4byte非整列・未対応用途（Uniform/Storage等）は `nullptr` を返します。`RHIBuffer::SetData/Resize` のvoid APIではnative失敗を上位へ返せないため、失敗時は既存状態を維持します。
+
+`RHIBufferSpecification` はVertex Strideを持たないため、共通Device生成のVertex Bufferはbyte単位（stride=1）で作成します。**そのままSceneのDrawIndexedに渡しても通常のVertex PipelineのStride検証を通りません。** 後続でPipeline入力宣言との対応を実装してください。既存Triangleは従来のVulkanSceneBuffer経路を維持します。
+
+Contextが所有するVkDeviceより前に、外部が保持するRHIBufferをすべて破棄してください。SetData/Resize/破棄の前にはGPU読み取り完了の同期が必要です。Texture生成と通常SceneのVulkan切替は未対応です。PR #220のPipeline生成Adapterをこのブランチにも含むため、マージ順によっては同一ファイルの重複を整理してください。
+
+追加検証項目：Vertex/Index生成、初期データ省略、Indexサイズ境界、offset更新、Resize後のSpecification更新、未対応用途の拒否、Contextより前のBuffer破棄、OpenGL回帰。ビルド・GPU実機検証は未実施です。
