@@ -202,3 +202,10 @@ Buffer別Fence同期は各Submit済みSlotでキーの存在を調べます。�
 Resize時は従来どおりPipelineだけを再生成し、2 MeshのBufferを保持します。Shutdown時はGPU完了待機後に4本のBuffer Refを解放し、ContextのDeviceを破棄します。既存の`--scene-triangle-vulkan`起動方法・SPIR-V・通常OpenGL Applicationは変更していません。
 
 確認項目：左右2つの色付き三角形が同時に表示されること、連続Frame描画、最小化・Resize後の再描画、途中Buffer生成失敗時のShutdown、Validation LayerのBuffer寿命エラーなし、OpenGL回帰。ビルド・GPU実機・Validation Layer未検証。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
