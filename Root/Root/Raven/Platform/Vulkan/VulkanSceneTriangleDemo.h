@@ -13,7 +13,7 @@ namespace Raven
 
 // OpenGL Applicationを変更せずVulkan Sceneの描画経路を検証する最小Triangleです。
 // 呼び出し元はVulkan Windowと、以下の入力宣言に一致するSPIR-Vを渡します。
-// location 0: vec3 position / location 1: vec3 color、Fragmentはlocation 0の色を出力。
+// location 0: vec3 position / location 1: vec3 color / location 2: vec2 UV。
 // WindowとShaderバイナリの読み込み・イベントループは呼び出し元が管理します。
 class VulkanSceneTriangleDemo final
 {
@@ -24,11 +24,12 @@ public:
     VulkanSceneTriangleDemo(const VulkanSceneTriangleDemo&) = delete;
     VulkanSceneTriangleDemo& operator=(const VulkanSceneTriangleDemo&) = delete;
 
-    // 3D位置・色を持つMeshを共通Pipelineで描画します。
+    // 3D位置・色・UVを持つMeshを共通Pipelineで描画します。
     struct Vertex
     {
         float Position[3];
         float Color[3];
+        float UV[2];
     };
 
     // Frame外でのみMeshを追加・削除します。追加失敗時は既存Meshを維持します。
