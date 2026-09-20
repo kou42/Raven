@@ -138,3 +138,10 @@ DX12/Vulkanとも、GPUが読み取り中のBufferの更新・破棄は呼び出
 **重要：** Resize前にGPUの旧Buffer参照が完了している必要があります。成功後はVkBuffer handleが変わるため、古いhandleをキャッシュした描画処理は再取得してください。Scene Context/DeviceのShutdown前にBufferを破棄してください。これは共通RHIBuffer派生・RHIDevice::CreateBuffer接続を完了したことを意味しません。
 
 追加検証項目：Vertex/Index容量変更、同容量更新、stride不整合拒否、確保失敗時の旧handle維持、Resize後のDrawIndexed、GPU同期、Validation Layer。ビルド・実機実行は未確認です。
+### Vulkan Scene CommandListのColor Clear（追加）
+
+`VulkanSceneCommandList::ClearColor(color)` は `VulkanSceneContext::ClearColorAttachment` を経由して、開始済みScene RenderPass内で `vkCmdClearAttachments` を記録します。Clear対象はSwapChain Color Attachment全体です。Viewport/Scissorには制限されません。Frame外・Submit後・null色指定では `false` を返し、空実装で成功扱いしません。
+
+`VulkanSceneContext::SetClearColor` は従来どおり**次のBeginFrameで使用するLoadOp Clear色**を設定します。描画途中のClearとは区別してください。Depth Attachmentは未実装のため、OpenGLのColor + Depth Clearと完全に等価ではありません。通常SceneへのBackend切替、Texture/Uniform、Legacy `RHICommandList` 接続は今回行いません。OpenGL実装は変更していません。
+
+検証項目：Vulkan Scene Triangleの従来描画、BeginFrame後のClearColor→DrawIndexed、DrawIndexed後のClearColor、Frame外のClearColor拒否、Resize/最小化復帰、Validation Layer警告、OpenGL Sceneの回帰。実機ビルド・実行は未確認です。
