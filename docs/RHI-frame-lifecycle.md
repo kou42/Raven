@@ -186,3 +186,11 @@ Device経由で生成したBufferはContextがweak参照で追跡し、Context::
 **重要：** 対象BufferのFence待機が完了しても、同じFrameの別BufferはGPU使用中かもしれません。このため更新時にはFrame Slot全体の強参照やSubmit状態を消去せず、既存の `BeginFrame` のSlot Fence待機後に回収します。これにより他Bufferの早期破棄を避けます。Frame中/Submit後Present前の更新拒否、Resize/ShutdownのDeviceWaitIdleは維持します。
 
 前節の「全Submit済みScene Frameを待つ」は本変更より前の仕様です。対象は共通RHIBuffer版DrawIndexedで追跡したScene Graphics Queue利用のみです。外部Queue、native SceneBuffer直接利用、別スレッドの同時更新は対象外です。確認項目：未使用Bufferの更新、別Bufferだけを使用したFrameの待機省略、同一Bufferを2 Frameで使用した場合の両Fence待機、対象Buffer更新後の他Bufferの寿命、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
+
+### Frame Slot内のBuffer参照重複排除（追加）
+
+`m_RecordedBuffers` をSlotごとの `unordered_map<const RHIBuffer*, Ref<RHIBuffer>>` に変更しました。同一Bufferを同じFrame内で繰り返しDrawしても一度だけ登録し、強参照の重複と更新対象Bufferの線形検索を避けます。Mapのキーは識別用の非所有ポインタですが、値のRefが対応ResourceをGPU完了まで保持します。Frame SlotのFence待機後・Resize・Shutdownの参照回収は従来どおりです。
+
+Buffer別Fence同期は各Submit済みSlotでキーの存在を調べます。計算量は従来の「Slot数 × 各SlotのDraw Buffer登録数」から、平均的に「Slot数 × Mapキー検索」になります。重複Drawが多いSceneほど強参照数も削減します。Frameごとの異なるBuffer数に応じたMapのメモリ使用とハッシュ管理コストは発生します。外部Queue/別スレッドは引き続き対象外です。
+
+確認項目：同一Vertex/Index Bufferを繰り返し描画、異なるBufferの混在、同一Bufferの複数Frame使用、Fence完了後のRef回収、Resize/Shutdown、Validation Layer。ビルド・実機未検証。
