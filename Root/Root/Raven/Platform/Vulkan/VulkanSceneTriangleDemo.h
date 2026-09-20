@@ -25,6 +25,7 @@ public:
     RHIFrameResult DrawFrame();
     bool Resize(uint32_t width, uint32_t height);
     void Shutdown();
+    VkExtent2D GetExtent() const { return m_Context.GetExtent(); }
 
 private:
     struct Vertex
