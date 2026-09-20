@@ -61,6 +61,7 @@ class Renderer
 {
 public:
     static void Init();
+    static bool TryInit(RHIBackend backend);
     static void Shutdown();
 
     static void BeginFrame();

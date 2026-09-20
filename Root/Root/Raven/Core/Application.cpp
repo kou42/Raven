@@ -48,8 +48,13 @@ Application::Application()
             OnEvent(event);
         });
 
-    // Rendererは有効なGraphics Contextを必要とするため、Window生成後に初期化します。
-    Renderer::Init();
+    // RendererはWindowと同じBackendを明示的に受け取ります。
+    // Legacy CommandList未対応BackendをOpenGLへ暗黙fallbackせず、安全に起動を中止します。
+    if (Renderer::TryInit(m_Window->GetBackend()) == false)
+    {
+        m_Running = false;
+        return;
+    }
 
     // ========================================================================
     // Raven UI renderer lifecycle
@@ -60,7 +65,7 @@ Application::Application()
     //
     // Dear ImGuiとは別Context / 別DrawListとして並行稼働させるため、既存Editorを維持したまま
     // 独自UIの描画・Layout・Inputを段階的に追加できます。
-    m_UIContext.SetRenderer(UIRenderer::Create());
+    m_UIContext.SetRenderer(UIRenderer::Create(m_Window->GetBackend()));
 
 #if defined(_DEBUG)
     // ========================================================================

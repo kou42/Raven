@@ -23,12 +23,21 @@ Ref<Pipeline> RenderCommand::s_CurrentPipeline = nullptr;
 
 void RenderCommand::Init()
 {
+    const bool initialized = TryInit(GetRHIBackend());
+    assert(initialized == true);
+}
+
+bool RenderCommand::TryInit(RHIBackend backend)
+{
+    // 再初期化時は旧Backendの参照を先に破棄し、異なるAPIのResourceを混在させません。
+    s_CurrentPipeline.reset();
+    s_CommandList.reset();
+    s_Device.reset();
+
     // Backend選択と実際の描画object生成をRHI層の識別子へ統一します。
-    // Renderer上位層やLegacy RendererAPIを経由せず、RHIDevice / RHICommandListを直接構築します。
-    //
-    // 現段階ではOpenGL Backendのみ実装済みです。未実装BackendをOpenGLへ暗黙fallbackすると、
-    // 将来のBackend追加時に設定ミスを見逃すため、未対応Backendではobjectを生成しません。
-    switch (GetRHIBackend())
+    // 現段階のLegacy CommandListはOpenGLのみです。未対応BackendをOpenGLへ暗黙fallbackせず、
+    // 呼び出し側がExplicit Runtimeへ切り替えられるよう失敗を返します。
+    switch (backend)
     {
     case RHIBackend::OpenGL:
     {
@@ -44,16 +53,18 @@ void RenderCommand::Init()
         break;
     }
 
-    if (s_CommandList == nullptr)
+    if (s_Device == nullptr || s_CommandList == nullptr)
     {
-        assert(s_CommandList);
-        return;
+        s_Device.reset();
+        s_CommandList.reset();
+        return false;
     }
 
     // Graphics ContextはApplication/Platform層で既に生成済みです。
     // CommandList::Init()ではBackend固有の初期描画stateだけを設定します。
     // 旧RendererAPI::Init()が担当していた初期stateも、このRHI Backend境界へ移行しています。
     s_CommandList->Init();
+    return true;
 }
 
 void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)

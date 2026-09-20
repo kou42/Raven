@@ -210,9 +210,15 @@ RendererCameraContext Renderer::s_CameraContext{};
 // 呼び出し元はApplication::Application()
 void Renderer::Init()
 {
+    const bool initialized = TryInit(GetRHIBackend());
+    assert(initialized == true);
+}
+
+bool Renderer::TryInit(RHIBackend backend)
+{
     // Graphics Backendの生成と初期state設定はRenderCommand/RHI側へ集約します。
-    // Renderer上位層はOpenGL等の具体Backendを直接生成しません。
-    RenderCommand::Init();
+    // Windowと同じBackendを明示的に渡し、Legacy未対応Backendでは失敗を上位へ返します。
+    return RenderCommand::TryInit(backend);
 }
 
 void Renderer::BeginFrame()
