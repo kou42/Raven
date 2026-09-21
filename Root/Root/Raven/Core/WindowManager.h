@@ -73,6 +73,15 @@ public:
     bool UnregisterWindow(WindowID id)
     {
         // 借用Windowは登録だけ解除し、所有Windowはunique_ptrによって破棄します。
+        if (m_Windows.find(id) == m_Windows.end())
+        {
+            return false;
+        }
+        if (m_PollingEvents == true)
+        {
+            m_PendingClose.push_back(id);
+            return true;
+        }
         return m_Windows.erase(id) != 0;
     }
 
@@ -82,6 +91,7 @@ public:
     // 全WindowでPollEventsを呼ぶと同じFrame内で余分にQueueを処理するため、一度だけ呼びます。
     void PollEvents()
     {
+        m_PollingEvents = true;
         if (m_Windows.empty() == false)
         {
             Window* window = m_Windows.begin()->second.Handle;
@@ -92,12 +102,13 @@ public:
         }
 
         // GLFWが全callbackを返した後にだけ補助Windowを破棄します。
+        m_PollingEvents = false;
         std::vector<WindowID> pendingClose;
         pendingClose.swap(m_PendingClose);
         for (WindowID id : pendingClose)
         {
             const auto it = m_Windows.find(id);
-            if (it != m_Windows.end() && it->second.OwnedWindow != nullptr)
+            if (it != m_Windows.end())
             {
                 m_Windows.erase(it);
             }
@@ -114,6 +125,7 @@ private:
     WindowID m_NextID = 1;
     std::unordered_map<WindowID, Entry> m_Windows;
     std::vector<WindowID> m_PendingClose;
+    bool m_PollingEvents = false;
 };
 
 } // namespace Raven
