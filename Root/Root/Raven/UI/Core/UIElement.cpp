@@ -214,6 +214,11 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
     BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
 }
 
+math::Vec2 UIElement::OnMeasureContent() const
+{
+    return math::Vec2(0.0f, 0.0f);
+}
+
 void UIElement::OnMouseEvent(UIMouseEvent& event) { static_cast<void>(event); }
 void UIElement::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const
 {
@@ -314,6 +319,10 @@ void UIElement::MeasureRecursive()
     {
         content.x += m_Spacing * static_cast<float>(count - 1u);
     }
+
+    const math::Vec2 intrinsic = OnMeasureContent();
+    content.x = std::max(content.x, intrinsic.x);
+    content.y = std::max(content.y, intrinsic.y);
 
     content.x += m_Padding.Left + m_Padding.Right;
     content.y += m_Padding.Top + m_Padding.Bottom;
