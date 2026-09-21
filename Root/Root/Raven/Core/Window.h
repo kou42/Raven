@@ -61,6 +61,9 @@ public:
     virtual void Present() = 0;
     // OpenGL描画対象を切り替えます。No-API Windowではfalseを返します。
     virtual bool MakeContextCurrent() { return false; }
+    // Current ContextのViewportをFramebuffer実Pixelサイズへ合わせます。
+    // FBOのbind状態は変更せず、描画先Framebufferの選択は描画側に委ねます。
+    virtual bool SetFramebufferViewport() { return false; }
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
