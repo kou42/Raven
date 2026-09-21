@@ -195,6 +195,12 @@ void TestInputEventRouting()
     context.ClearFocus();
     Check(context.GetFocusedElement() == nullptr, "focus cleared");
     Check(numberPtr->GetEditText() == "4.5", "ClearFocus commits number");
+    Check(context.SetFocus(edit), "focus before outside click");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select before outside click");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('-')), "incomplete before outside click");
+    context.RouteMouseDown(Raven::math::Vec2(-100.0f, -100.0f), Raven::UIMouseButton::Left);
+    Check(context.GetFocusedElement() == nullptr, "outside click clears focus");
+    Check(numberPtr->GetEditText() == "4.5", "outside click commits number");
 }
 } // namespace
 
