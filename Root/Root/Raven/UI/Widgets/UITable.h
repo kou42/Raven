@@ -104,13 +104,39 @@ public:
     {
         EndColumnResize();
         EndScrollBarDrag();
+        EndHorizontalDrag();
         SelectRow(NoSelection);
         m_Rows.clear();
         m_Columns.clear();
         m_ScrollOffset = 0.0f;
+        m_HorizontalOffset = 0.0f;
         InvalidateMeasure();
     }
 
+    float GetMaxHorizontalOffset() const
+    {
+        return std::max(0.0f, TotalColumnWidth() - ContentWidth());
+    }
+    float GetHorizontalOffset() const
+    {
+        return std::min(m_HorizontalOffset, GetMaxHorizontalOffset());
+    }
+    void SetHorizontalOffset(float value)
+    {
+        if (std::isfinite(value))
+        {
+            m_HorizontalOffset = std::clamp(value, 0.0f, GetMaxHorizontalOffset());
+        }
+    }
+    bool IsHorizontalScrollBarVisible() const
+    {
+        // 横Trackの追加で縦Scrollbarが必要になるケースも考慮し、相互依存を避けて判定します。
+        const float rawHeight = std::max(0.0f, GetSize().y - m_HeaderHeight);
+        const bool vertical = static_cast<float>(m_Rows.size()) * m_RowHeight >
+            std::max(0.0f, rawHeight - m_ScrollBarThickness);
+        return TotalColumnWidth() > std::max(0.0f,
+            GetSize().x - (vertical ? m_ScrollBarThickness : 0.0f));
+    }
     bool IsScrollBarVisible() const { return GetMaxScrollOffset() > 0.0f && BodyHeight() > 0.0f; }
     float GetMaxScrollOffset() const
     {
@@ -144,6 +170,27 @@ public:
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (m_DraggingHorizontal == true)
+        {
+            if (event.Type == UIMouseEventType::Cancel ||
+                (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left))
+            {
+                EndHorizontalDrag();
+                event.Handled = true;
+                return;
+            }
+            if (event.Type == UIMouseEventType::Move)
+            {
+                math::Vec2 local;
+                if (TryScreenToLocalPosition(event.ScreenPosition, local) == true)
+                {
+                    SetHorizontalOffset(HorizontalMetrics().OffsetFromThumbStart(
+                        local.x - m_HorizontalGrabOffset));
+                }
+                event.Handled = true;
+                return;
+            }
+        }
         if (m_DraggingScrollBar == true)
         {
             if (event.Type == UIMouseEventType::Cancel ||
@@ -189,8 +236,10 @@ protected:
         if (event.Type == UIMouseEventType::Scroll)
         {
             const float previous = GetScrollOffset();
+            const float previousHorizontal = GetHorizontalOffset();
             SetScrollOffset(previous - event.ScrollDelta.y * m_WheelScrollStep);
-            if (previous != GetScrollOffset())
+            SetHorizontalOffset(previousHorizontal - event.ScrollDelta.x * m_WheelScrollStep);
+            if (previous != GetScrollOffset() || previousHorizontal != GetHorizontalOffset())
             {
                 event.Handled = true;
             }
@@ -206,6 +255,28 @@ protected:
             local.x < 0.0f || local.x >= GetSize().x ||
             local.y < 0.0f || local.y >= GetSize().y)
         {
+            return;
+        }
+        if (IsHorizontalScrollBarVisible() == true &&
+            local.y >= GetSize().y - m_ScrollBarThickness &&
+            local.x < ContentWidth())
+        {
+            const float start = HorizontalMetrics().ThumbStart();
+            const float length = HorizontalMetrics().ThumbLength();
+            if (local.x >= start && local.x < start + length)
+            {
+                if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
+                {
+                    m_DraggingHorizontal = true;
+                    m_HorizontalGrabOffset = local.x - start;
+                }
+            }
+            else
+            {
+                SetHorizontalOffset(GetHorizontalOffset() +
+                    (local.x < start ? -ContentWidth() : ContentWidth()));
+            }
+            event.Handled = true;
             return;
         }
         if (IsScrollBarVisible() == true && local.y >= m_HeaderHeight &&
@@ -229,13 +300,18 @@ protected:
             event.Handled = true;
             return;
         }
+        if (local.x >= ContentWidth())
+        {
+            return;
+        }
         if (local.y < m_HeaderHeight)
         {
             float edge = 0.0f;
             for (std::size_t column = 0u; column < m_Columns.size(); ++column)
             {
                 edge += m_Columns[column].Width;
-                if (edge <= GetSize().x && std::abs(local.x - edge) <= m_ResizeHitMargin)
+                if (edge - GetHorizontalOffset() <= ContentWidth() &&
+                    std::abs(local.x - (edge - GetHorizontalOffset())) <= m_ResizeHitMargin)
                 {
                     if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
                     {
@@ -321,18 +397,18 @@ protected:
             if (row == m_SelectedIndex)
             {
                 drawList.AddRect(math::Vec2(position.x, std::max(y, position.y + m_HeaderHeight)),
-                    math::Vec2(position.x + width, std::min(y + m_RowHeight, position.y + height)),
+                    math::Vec2(position.x + ContentWidth(), std::min(y + m_RowHeight, position.y + m_HeaderHeight + BodyHeight())),
                     ApplyVisualColor(math::Vec4(0.22f, 0.38f, 0.64f, 1.0f)));
             }
-            x = position.x;
+            x = position.x - GetHorizontalOffset();
             for (std::size_t col = 0u; col < m_Columns.size(); ++col)
             {
                 // 各セルの横境界とBodyの縦境界を交差し、隣の列や固定Headerへの文字漏れを防ぎます。
                 UIRect cellClip;
                 cellClip.Min = math::Vec2(std::max(x, position.x),
                     std::max(y, position.y + m_HeaderHeight));
-                cellClip.Max = math::Vec2(std::min(x + m_Columns[col].Width, position.x + width),
-                    std::min(y + m_RowHeight, position.y + height));
+                cellClip.Max = math::Vec2(std::min(x + m_Columns[col].Width, position.x + ContentWidth()),
+                    std::min(y + m_RowHeight, position.y + m_HeaderHeight + BodyHeight()));
                 if (cellClip.Max.x > cellClip.Min.x && cellClip.Max.y > cellClip.Min.y)
                 {
                     DrawText(drawList, m_Rows[row][col],
@@ -340,6 +416,19 @@ protected:
                 }
                 x += m_Columns[col].Width;
             }
+        }
+        if (IsHorizontalScrollBarVisible() == true)
+        {
+            const float top = position.y + height - m_ScrollBarThickness;
+            drawList.AddRect(math::Vec2(position.x, top),
+                math::Vec2(position.x + ContentWidth(), position.y + m_HeaderHeight + BodyHeight()),
+                ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
+            const float left = position.x + HorizontalMetrics().ThumbStart();
+            drawList.AddRect(math::Vec2(left, top),
+                math::Vec2(left + HorizontalMetrics().ThumbLength(), position.y + height),
+                ApplyVisualColor(m_DraggingHorizontal == true
+                    ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
+                    : math::Vec4(0.42f, 0.45f, 0.52f, 0.95f)));
         }
         if (IsScrollBarVisible() == true)
         {
@@ -357,12 +446,12 @@ protected:
         // BodyがHeaderへ重ならないようHeaderを最後に重ねて描画します。
         drawList.AddRect(position, math::Vec2(position.x + width, position.y + m_HeaderHeight),
             ApplyVisualColor(math::Vec4(0.17f, 0.19f, 0.23f, 1.0f)));
-        x = position.x;
+        x = position.x - GetHorizontalOffset();
         for (const auto& column : m_Columns)
         {
             UIRect headerClip;
             headerClip.Min = math::Vec2(std::max(x, position.x), position.y);
-            headerClip.Max = math::Vec2(std::min(x + column.Width, position.x + width),
+            headerClip.Max = math::Vec2(std::min(x + column.Width, position.x + ContentWidth()),
                 position.y + std::min(m_HeaderHeight, height));
             if (headerClip.Max.x > headerClip.Min.x)
             {
@@ -374,6 +463,41 @@ protected:
     }
 
 private:
+    float TotalColumnWidth() const
+    {
+        float width = 0.0f;
+        for (const auto& column : m_Columns)
+        {
+            width += column.Width;
+        }
+        return width;
+    }
+
+    float ContentWidth() const
+    {
+        return std::max(0.0f, GetSize().x -
+            (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f));
+    }
+
+    UIScrollBarMetrics HorizontalMetrics() const
+    {
+        return UIScrollBarMetrics{ ContentWidth(), TotalColumnWidth(), GetHorizontalOffset() };
+    }
+
+    void EndHorizontalDrag()
+    {
+        if (m_DraggingHorizontal == false)
+        {
+            return;
+        }
+        m_DraggingHorizontal = false;
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+    }
+
     UIScrollBarMetrics ScrollMetrics() const
     {
         return UIScrollBarMetrics{ BodyHeight(),
@@ -411,7 +535,8 @@ private:
         }
     }
 
-    float BodyHeight() const { return std::max(0.0f, GetSize().y - m_HeaderHeight); }
+    float BodyHeight() const { return std::max(0.0f, GetSize().y - m_HeaderHeight -
+        (IsHorizontalScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f)); }
     void DrawText(UIDrawList& drawList, const std::string& text, const math::Vec2& position, const UIRect& clip) const
     {
         if (m_Font == nullptr || m_Font->GetTexture() == nullptr)
@@ -445,6 +570,9 @@ private:
     float m_ScrollBarThickness = 10.0f;
     float m_ThumbGrabOffset = 0.0f;
     bool m_DraggingScrollBar = false;
+    float m_HorizontalOffset = 0.0f;
+    float m_HorizontalGrabOffset = 0.0f;
+    bool m_DraggingHorizontal = false;
 };
 
 } // namespace Raven
