@@ -44,9 +44,29 @@ float UIInputText::CursorX(std::size_t index) const
     return x;
 }
 
+void UIInputText::EnsureCursorVisible() const
+{
+    const float width = std::max(0.0f, GetSize().x - m_Padding * 2.0f);
+    const float contentWidth = std::max(0.0f, CursorX(m_Edit.GetLength()) - m_Padding);
+    const float maxScroll = std::max(0.0f, contentWidth - width);
+    const float caret = CursorX(m_Edit.GetCursor()) - m_Padding;
+    // Cursorを常に表示範囲へ収め、削除・Undo・リサイズ時は余ったScrollを戻します。
+    m_ScrollX = std::clamp(m_ScrollX, 0.0f, maxScroll);
+    if (caret < m_ScrollX)
+    {
+        m_ScrollX = caret;
+    }
+    else if (caret > m_ScrollX + width)
+    {
+        m_ScrollX = caret - width;
+    }
+    m_ScrollX = std::clamp(m_ScrollX, 0.0f, maxScroll);
+}
+
 std::size_t UIInputText::HitCursor(float localX) const
 {
     const std::size_t length = m_Edit.GetLength();
+    localX += m_ScrollX;
     for (std::size_t index = 0u; index < length; ++index)
     {
         if (localX < (CursorX(index) + CursorX(index + 1u)) * 0.5f)
@@ -75,6 +95,7 @@ bool UIInputText::InsertFiltered(std::string_view text)
 
 void UIInputText::NotifyChanged()
 {
+    EnsureCursorVisible();
     InvalidateMeasure();
     if (m_OnChange != nullptr)
     {
@@ -103,6 +124,7 @@ void UIInputText::OnMouseEvent(UIMouseEvent& event)
         {
             event.Context->SetFocus(this);
         }
+        EnsureCursorVisible();
         math::Vec2 local{};
         if (TryScreenToLocalPosition(event.ScreenPosition, local))
         {
@@ -248,6 +270,7 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
     {
         return;
     }
+    EnsureCursorVisible();
     event.Handled = true;
 }
 
@@ -268,6 +291,7 @@ void UIInputText::OnCharacterEvent(UICharacterEvent& event)
 void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position) const
 {
     const math::Vec2 size = GetSize();
+    EnsureCursorVisible();
     drawList.AddRect(position, position + size,
         ApplyVisualColor(IsFocused() ? math::Vec4{ 0.18f, 0.22f, 0.30f, 1.0f }
                                      : math::Vec4{ 0.13f, 0.13f, 0.16f, 1.0f }));
@@ -279,17 +303,17 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
         {
             const auto selection = m_Edit.GetSelection();
             drawList.AddRect(
-                position + math::Vec2(CursorX(selection.first), 3.0f),
-                position + math::Vec2(CursorX(selection.second), size.y - 3.0f),
+                position + math::Vec2(CursorX(selection.first) - m_ScrollX, 3.0f),
+                position + math::Vec2(CursorX(selection.second) - m_ScrollX, size.y - 3.0f),
                 ApplyVisualColor(math::Vec4{ 0.24f, 0.40f, 0.68f, 0.75f }));
         }
         m_Font->AppendText(drawList, m_Edit.GetText(),
-            position + math::Vec2(m_Padding, m_Baseline), m_Height,
+            position + math::Vec2(m_Padding - m_ScrollX, m_Baseline), m_Height,
             ApplyVisualColor(m_TextColor));
     }
     if (IsFocused())
     {
-        const float x = CursorX(m_Edit.GetCursor());
+        const float x = CursorX(m_Edit.GetCursor()) - m_ScrollX;
         drawList.AddRect(position + math::Vec2(x, 4.0f),
             position + math::Vec2(x + 1.0f, size.y - 4.0f),
             ApplyVisualColor(m_TextColor));
