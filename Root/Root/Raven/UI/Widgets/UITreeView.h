@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/UI/Widgets/UIScrollBarMetrics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -243,11 +244,7 @@ protected:
                 math::Vec2 local;
                 if (TryScreenToLocalPosition(event.ScreenPosition, local) == true)
                 {
-                    const float travel = std::max(0.0f, GetSize().y - GetThumbLength());
-                    if (travel > 0.0f)
-                    {
-                        SetScrollOffset((local.y - m_DragGrabOffset) / travel * GetMaxScrollOffset());
-                    }
+                    SetScrollOffset(ScrollMetrics().OffsetFromThumbStart(local.y - m_DragGrabOffset));
                 }
                 event.Handled = true;
                 return;
@@ -417,27 +414,14 @@ protected:
     }
 
 private:
-    // ThumbはViewportと全行の比率で決め、最小長を保証します。
-    float GetThumbLength() const
+    UIScrollBarMetrics ScrollMetrics() const
     {
-        const float viewport = GetSize().y;
-        const float content = static_cast<float>(VisibleNodes().size()) * m_RowHeight;
-        if (viewport <= 0.0f || content <= 0.0f)
-        {
-            return 0.0f;
-        }
-        return std::min(viewport, std::max(20.0f, viewport * viewport / content));
+        return UIScrollBarMetrics{ GetSize().y,
+            static_cast<float>(VisibleNodes().size()) * m_RowHeight, GetScrollOffset() };
     }
 
-    float GetThumbStart() const
-    {
-        const float maxOffset = GetMaxScrollOffset();
-        if (maxOffset <= 0.0f)
-        {
-            return 0.0f;
-        }
-        return GetScrollOffset() / maxOffset * (GetSize().y - GetThumbLength());
-    }
+    float GetThumbLength() const { return ScrollMetrics().ThumbLength(); }
+    float GetThumbStart() const { return ScrollMetrics().ThumbStart(); }
 
     void EndScrollBarDrag()
     {
