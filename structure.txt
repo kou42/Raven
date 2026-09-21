@@ -1025,6 +1025,10 @@ D:.
     |   |       |       UIFontAtlasBuilder.h
     |   |       |       UIUtf8.h
     |   |       |
+    |   |       |   +---Debug
+    |   |       |           UITextDemoLayer.cpp
+    |   |       |           UITextDemoLayer.h
+    |   |       |
     |   |       +---Rendering
     |   |       |       OpenGLUIRenderer.cpp
     |   |       |       OpenGLUIRenderer.h
