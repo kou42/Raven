@@ -297,7 +297,9 @@ void UIDrawList::ApplyClip(std::size_t firstCommand, const UIClipRect& clip)
 
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
-        m_Commands[index].Clip = clip;
+        // Widgetが設定したセルClipとElement/AncestorのClipを両方維持します。
+        m_Commands[index].Clip = m_Commands[index].Clip.Enabled == true
+            ? UIClipRect::Intersect(clip, m_Commands[index].Clip.Rect) : clip;
     }
 }
 
