@@ -205,6 +205,7 @@ public:
     // Childの描画とHit Testを自身のVisual Bounds内へ制限します。
     // 回転/Shear時はRendererのScissor制約に合わせ、screen-space AABBとして扱います。
     void SetClipChildren(bool value) { m_ClipChildren = value; }
+    void SetClipSelf(bool value) { m_ClipSelf = value; }
     bool GetClipChildren() const { return m_ClipChildren; }
 
     // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
@@ -341,6 +342,7 @@ private:
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
     bool m_ClipChildren = false;
+    bool m_ClipSelf = false;
     bool m_AffectsParentMeasure = true;
 };
 
