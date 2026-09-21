@@ -64,6 +64,9 @@ public:
     // Current ContextのViewportをFramebuffer実Pixelサイズへ合わせます。
     // FBOのbind状態は変更せず、描画先Framebufferの選択は描画側に委ねます。
     virtual bool SetFramebufferViewport() { return false; }
+    // 補助Windowの画面へ直接描画する場合に既定Framebufferを選択します。
+    // Renderer管理のFBOを使う場合は描画側で明示的にBindし直します。
+    virtual bool BindDefaultFramebuffer() { return false; }
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
