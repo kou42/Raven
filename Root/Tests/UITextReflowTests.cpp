@@ -1,5 +1,6 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
+#include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
@@ -120,12 +121,88 @@ void TestInputNumber()
     number.SetStep(0.0);
     CheckNear("invalid step ignored", static_cast<float>(number.GetStep()), 0.5f);
 }
+
+Raven::UIKeyEvent Press(Raven::UIKey key, bool control = false, bool shift = false)
+{
+    Raven::UIKeyEvent event;
+    event.Key = key;
+    event.Pressed = true;
+    event.Control = control;
+    event.Shift = shift;
+    return event;
+}
+
+// UIContextを通して実際のFocus/Keyboard/Character/Clipboard配送を検証します。
+void TestInputEventRouting()
+{
+    Raven::UIContext context;
+    auto number = std::make_unique<Raven::UIInputNumber>();
+    Raven::UIInputNumber* numberPtr = number.get();
+    number->SetRange(-10.0, 10.0);
+    number->SetValue(2.0);
+    number->SetStep(0.5);
+    std::string clipboard;
+    number->SetClipboard([&clipboard]() { return clipboard; },
+        [&clipboard](const std::string& text) { clipboard = text; });
+    context.GetRootElement().AddChild(std::move(number));
+
+    auto other = std::make_unique<Raven::UIInputText>();
+    Raven::UIInputText* otherPtr = other.get();
+    other->SetText("other");
+    context.GetRootElement().AddChild(std::move(other));
+
+    Raven::UIInputText* edit = &numberPtr->GetInputText();
+    Check(context.SetFocus(edit), "focus numeric input");
+    Check(context.GetFocusedElement() == edit, "numeric input focused");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select all");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('-')), "type minus");
+    Check(numberPtr->GetEditText() == "-", "incomplete numeric prefix");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('x')), "reject invalid character");
+    Check(numberPtr->GetEditText() == "-", "invalid character unchanged");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "commit invalid number");
+    Check(numberPtr->GetEditText() == "2", "Enter restores committed value");
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Up)), "step up routed");
+    CheckNear("routed step up", static_cast<float>(numberPtr->GetValue()), 2.5f);
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "step down routed");
+    CheckNear("routed step down", static_cast<float>(numberPtr->GetValue()), 2.0f);
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select numeric value");
+    clipboard = "4.5";
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::V, true)), "paste numeric value");
+    Check(numberPtr->GetEditText() == "4.5", "numeric clipboard paste");
+    clipboard = "invalid";
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select pasted number");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::V, true)), "reject invalid paste");
+    Check(numberPtr->GetEditText() == "4.5", "invalid paste is atomic");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Z, true)), "undo paste");
+    Check(numberPtr->GetEditText() == "2", "undo paste restores text");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Y, true)), "redo paste");
+    Check(numberPtr->GetEditText() == "4.5", "redo paste restores text");
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select for copy");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::C, true)), "copy numeric value");
+    Check(clipboard == "4.5", "clipboard copy");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select for cut");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::X, true)), "cut numeric value");
+    Check(numberPtr->GetEditText().empty(), "cut clears edit text");
+    Check(context.SetFocus(otherPtr), "focus other widget");
+    Check(numberPtr->GetEditText() == "4.5", "Focus Lost restores incomplete edit");
+    Check(context.GetFocusedElement() == otherPtr, "focus transferred");
+    Check(context.SetFocus(edit), "refocus numeric input");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select before focus loss");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('-')), "type invalid prefix");
+    context.ClearFocus();
+    Check(context.GetFocusedElement() == nullptr, "focus cleared");
+    Check(numberPtr->GetEditText() == "4.5", "ClearFocus commits number");
+}
 } // namespace
 
 int main()
 {
     TestTextEditBuffer();
     TestInputNumber();
+    TestInputEventRouting();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
