@@ -76,6 +76,12 @@ public:
         {
             return RHIFrameResult::FatalError;
         }
+        // ContextごとにViewport状態は独立するため、切替直後に実Pixelサイズを設定します。
+        // 最小化中は0サイズを渡さずFrame開始を保留します。
+        if (m_Window.SetFramebufferViewport() == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
         m_FrameActive = true;
         m_FrameEnded = false;
         return RHIFrameResult::Success;
