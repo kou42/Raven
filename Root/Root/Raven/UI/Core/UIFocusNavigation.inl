@@ -118,6 +118,11 @@ inline bool UIContext::MoveFocus(bool reverse)
 
 inline bool UIContext::RouteKeyEvent(const UIKeyEvent& event)
 {
+    if (event.Pressed == true && event.Key == UIKey::Escape && m_OpenPopup != nullptr)
+    {
+        ClosePopup();
+        return true;
+    }
     if (event.Pressed == true && event.Repeat == false && event.Key == UIKey::Tab)
     {
         return MoveFocus(event.Shift);
