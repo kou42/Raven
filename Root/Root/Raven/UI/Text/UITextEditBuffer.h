@@ -31,6 +31,8 @@ public:
         }
         m_Cursor = GetLength();
         m_Anchor = m_Cursor;
+        m_Undo.clear();
+        m_Redo.clear();
     }
 
     const std::string& GetText() const { return m_Text; }
@@ -62,6 +64,38 @@ public:
         {
             m_Anchor = m_Cursor;
         }
+    }
+
+    std::string GetSelectedText() const
+    {
+        const auto selection = GetSelection();
+        const std::size_t begin = ByteOffset(selection.first);
+        return m_Text.substr(begin, ByteOffset(selection.second) - begin);
+    }
+
+    // Undo/Redoは文字列だけでなくCursor/Anchorも保存し、選択範囲を正確に復元します。
+    bool Undo()
+    {
+        if (m_Undo.empty())
+        {
+            return false;
+        }
+        m_Redo.push_back(Snapshot());
+        Restore(m_Undo.back());
+        m_Undo.pop_back();
+        return true;
+    }
+
+    bool Redo()
+    {
+        if (m_Redo.empty())
+        {
+            return false;
+        }
+        m_Undo.push_back(Snapshot());
+        Restore(m_Redo.back());
+        m_Redo.pop_back();
+        return true;
     }
 
     void SelectAll()
@@ -105,6 +139,7 @@ public:
         const auto selection = GetSelection();
         const std::size_t begin = ByteOffset(selection.first);
         const std::size_t end = ByteOffset(selection.second);
+        RecordEdit();
         m_Text.replace(begin, end - begin, normalized);
         m_Cursor = selection.first + CountCodepoints(normalized);
         m_Anchor = m_Cursor;
@@ -123,6 +158,7 @@ public:
         }
         const std::size_t end = ByteOffset(m_Cursor);
         const std::size_t begin = ByteOffset(m_Cursor - 1u);
+        RecordEdit();
         m_Text.erase(begin, end - begin);
         --m_Cursor;
         m_Anchor = m_Cursor;
@@ -141,6 +177,7 @@ public:
         }
         const std::size_t begin = ByteOffset(m_Cursor);
         const std::size_t end = ByteOffset(m_Cursor + 1u);
+        RecordEdit();
         m_Text.erase(begin, end - begin);
         return true;
     }
@@ -154,6 +191,7 @@ public:
         const auto selection = GetSelection();
         const std::size_t begin = ByteOffset(selection.first);
         const std::size_t end = ByteOffset(selection.second);
+        RecordEdit();
         m_Text.erase(begin, end - begin);
         m_Cursor = selection.first;
         m_Anchor = m_Cursor;
@@ -161,6 +199,32 @@ public:
     }
 
 private:
+    struct EditState
+    {
+        std::string Text;
+        std::size_t Cursor = 0u;
+        std::size_t Anchor = 0u;
+    };
+
+    EditState Snapshot() const { return { m_Text, m_Cursor, m_Anchor }; }
+    void Restore(const EditState& state)
+    {
+        m_Text = state.Text;
+        m_Cursor = state.Cursor;
+        m_Anchor = state.Anchor;
+    }
+    void RecordEdit()
+    {
+        // 履歴は有限長とし、長時間のEditor利用で無制限に増えないようにします。
+        constexpr std::size_t maxHistory = 128u;
+        if (m_Undo.size() >= maxHistory)
+        {
+            m_Undo.erase(m_Undo.begin());
+        }
+        m_Undo.push_back(Snapshot());
+        m_Redo.clear();
+    }
+
     static std::size_t CountCodepoints(std::string_view text)
     {
         std::size_t count = 0u;
@@ -211,6 +275,8 @@ private:
         }
     }
 
+    std::vector<EditState> m_Undo;
+    std::vector<EditState> m_Redo;
     std::string m_Text;
     std::size_t m_Cursor = 0u;
     std::size_t m_Anchor = 0u;
