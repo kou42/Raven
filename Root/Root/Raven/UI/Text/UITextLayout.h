@@ -53,7 +53,7 @@ struct UITextLayoutResult
     math::Vec2 FinalPen{};
 };
 
-// 描画とMeasurementの共通配置計算。折り返し・Kerningは後続Phaseで拡張します。
+// 描画とMeasurementの共通配置計算。文字/ASCII単語折り返しに対応し、Kerningは後続Phaseで拡張します。
 class UITextLayout
 {
 public:
