@@ -905,6 +905,7 @@ D:.
     |   |   |   |   Renderer.h
     |   |   |   |   RendererAPI.cpp
     |   |   |   |   RendererAPI.h
+    |   |   |   |   TextLayout.h
     |   |   |   |
     |   |   |   +---Buffer
     |   |   |   |       BufferLayout.h
