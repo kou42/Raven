@@ -465,6 +465,17 @@ void TestTable()
         Raven::UIMouseButton::Left), "table click scrolled row");
     Check(view->GetSelectedIndex() == 1u, "table scroll-aware hit test");
     context.RouteMouseUp(Raven::math::Vec2(30.0f, 55.0f), Raven::UIMouseButton::Left);
+    Check(view->SetColumnWidth(0u, 150.0f), "table set column width");
+    CheckNear("table resized width", view->GetColumns()[0u].Width, 150.0f);
+    Check(view->SetColumnWidth(0u, 10.0f) == false, "table reject too narrow");
+    Check(view->SetColumnWidth(2u, 100.0f) == false, "table reject missing column");
+    Check(context.RouteMouseDown(Raven::math::Vec2(170.0f, 30.0f),
+        Raven::UIMouseButton::Left), "table resize header down");
+    Check(context.HasMouseCapture(view), "table resize capture");
+    context.RouteMouseMove(Raven::math::Vec2(190.0f, 30.0f));
+    CheckNear("table drag resized width", view->GetColumns()[0u].Width, 170.0f);
+    context.RouteMouseUp(Raven::math::Vec2(190.0f, 30.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "table resize capture released");
     view->Clear();
     Check(view->GetColumns().empty() && view->GetRows().empty(), "table clear data");
     Check(view->GetSelectedIndex() == Raven::UITable::NoSelection, "table clear selection");
