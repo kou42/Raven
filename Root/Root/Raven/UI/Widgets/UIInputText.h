@@ -19,6 +19,7 @@ public:
     using ClipboardWriter = std::function<void(const std::string&)>;
     using InputFilter = std::function<bool(const std::string&)>;
     using SubmitHandler = std::function<void()>;
+    using StepHandler = std::function<void(bool)>;
 
     UIInputText() { SetFocusable(true); SetClipChildren(true); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; InvalidateMeasure(); }
@@ -33,6 +34,8 @@ public:
     }
     void SetInputFilter(InputFilter filter) { m_InputFilter = std::move(filter); }
     void SetOnSubmit(SubmitHandler handler) { m_OnSubmit = std::move(handler); }
+    void SetOnFocusLost(SubmitHandler handler) { m_OnFocusLost = std::move(handler); }
+    void SetOnStep(StepHandler handler) { m_OnStep = std::move(handler); }
     void SetTextColor(const math::Vec4& color) { m_TextColor = color; }
 
 protected:
@@ -40,6 +43,7 @@ protected:
     void OnMouseEvent(UIMouseEvent& event) override;
     void OnKeyEvent(UIKeyEvent& event) override;
     void OnCharacterEvent(UICharacterEvent& event) override;
+    void OnFocusChanged(bool focused) override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
@@ -55,6 +59,8 @@ private:
     ClipboardWriter m_WriteClipboard;
     InputFilter m_InputFilter;
     SubmitHandler m_OnSubmit;
+    SubmitHandler m_OnFocusLost;
+    StepHandler m_OnStep;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     bool m_Selecting = false;
     float m_Padding = 6.0f;
