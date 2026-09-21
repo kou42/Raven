@@ -324,6 +324,16 @@ UIElement* UIContext::AddPopup(Scope<UIElement> popup)
     return m_PopupLayer->AddChild(std::move(popup));
 }
 
+bool UIContext::RemovePopup(UIElement* popup)
+{
+    if (popup == nullptr || m_PopupLayer == nullptr || popup->GetParent() != m_PopupLayer)
+    {
+        return false;
+    }
+    // RemoveChildがOnSubtreeRemovingを通るため、開いているPopupも安全にCloseされます。
+    return m_PopupLayer->RemoveChild(popup);
+}
+
 bool UIContext::OpenPopup(UIElement* popup)
 {
     if (popup == nullptr || popup->GetParent() != m_PopupLayer)
