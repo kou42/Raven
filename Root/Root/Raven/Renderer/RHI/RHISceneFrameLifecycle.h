@@ -70,6 +70,12 @@ public:
             return RHIFrameResult::FatalError;
         }
 
+        // 各WindowのContextをFrame開始時にCurrentにします。
+        // RendererのGPUリソース共有は別途扱い、ここでは描画先の切替だけを保証します。
+        if (m_Window.MakeContextCurrent() == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
         m_FrameActive = true;
         m_FrameEnded = false;
         return RHIFrameResult::Success;
