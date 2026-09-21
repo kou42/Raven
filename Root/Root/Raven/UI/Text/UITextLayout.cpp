@@ -57,6 +57,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
 
     std::size_t offset = 0u;
     std::uint32_t codepoint = 0u;
+    bool skipAutomaticLeadingSpaces = false;
     while (UIUtf8::DecodeNext(text, offset, codepoint))
     {
         if (codepoint == static_cast<std::uint32_t>('\r'))
@@ -65,6 +66,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
         }
         if (codepoint == static_cast<std::uint32_t>('\n'))
         {
+            skipAutomaticLeadingSpaces = false;
             result.Metrics.Width = std::max(result.Metrics.Width, result.Lines.back().Width);
             result.FinalPen.x = 0.0f;
             result.FinalPen.y += options.LineHeight;
@@ -75,6 +77,13 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
             }
             continue;
         }
+
+        // 自動折り返し直後だけASCIIスペースを抑制します。明示改行直後の空白は保持します。
+        if (skipAutomaticLeadingSpaces && codepoint == static_cast<std::uint32_t>(' '))
+        {
+            continue;
+        }
+        skipAutomaticLeadingSpaces = false;
 
         // 単語先頭で残りのAdvanceを先読みし、収まる単語は途中で分割しません。
         // 制限幅より長い単語はCharacter WrapへFallbackして無限の折り返しを防ぎます。
@@ -151,6 +160,18 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
         if (wrap && result.Lines.back().Width > 0.0f &&
             glyph->Advance > options.MaxWidth - result.Lines.back().Width)
         {
+            // Word Wrapの行末空白は改行の原因となっても次行へ移さず、幅にも加算しません。
+            if (options.Wrap == UITextWrapMode::Word &&
+                codepoint == static_cast<std::uint32_t>(' '))
+            {
+                result.Metrics.Width = std::max(result.Metrics.Width, result.Lines.back().Width);
+                result.FinalPen.x = 0.0f;
+                result.FinalPen.y += options.LineHeight;
+                result.Lines.push_back({ 0.0f, result.FinalPen.y });
+                skipAutomaticLeadingSpaces = true;
+                continue;
+            }
+
             result.Metrics.Width = std::max(result.Metrics.Width, result.Lines.back().Width);
             result.FinalPen.x = 0.0f;
             result.FinalPen.y += options.LineHeight;
