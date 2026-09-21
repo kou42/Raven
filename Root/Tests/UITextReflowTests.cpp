@@ -4,6 +4,7 @@
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
+#include "Raven/UI/Widgets/UIButton.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -202,6 +203,58 @@ void TestInputEventRouting()
     Check(context.GetFocusedElement() == nullptr, "outside click clears focus");
     Check(numberPtr->GetEditText() == "4.5", "outside click commits number");
 }
+// Popupの開閉・Painter順・外側入力消費・Focus/Capture破棄をGPUなしで検証します。
+void TestPopupRouting()
+{
+    Raven::UIContext context;
+    auto behind = std::make_unique<Raven::UIButton>();
+    behind->SetPosition(Raven::math::Vec2(10.0f, 10.0f));
+    behind->SetSize(Raven::math::Vec2(120.0f, 80.0f));
+    int behindClicks = 0;
+    behind->SetOnClick([&behindClicks]() { ++behindClicks; });
+    Raven::UIElement* behindPtr = context.GetRootElement().AddChild(std::move(behind));
+
+    auto popup = std::make_unique<Raven::UIElement>();
+    popup->SetPosition(Raven::math::Vec2(10.0f, 10.0f));
+    popup->SetSize(Raven::math::Vec2(120.0f, 80.0f));
+    auto item = std::make_unique<Raven::UIButton>();
+    item->SetPosition(Raven::math::Vec2(5.0f, 5.0f));
+    item->SetSize(Raven::math::Vec2(60.0f, 30.0f));
+    item->SetFocusable(true);
+    int itemClicks = 0;
+    item->SetOnClick([&itemClicks]() { ++itemClicks; });
+    Raven::UIButton* itemPtr = item.get();
+    popup->AddChild(std::move(item));
+    Raven::UIElement* popupPtr = context.AddPopup(std::move(popup));
+    Check(popupPtr != nullptr, "popup registered");
+    Check(context.OpenPopup(behindPtr) == false, "reject non-popup element");
+    Check(context.OpenPopup(popupPtr), "open popup");
+    Check(context.GetOpenPopup() == popupPtr, "open popup identity");
+    Check(context.SetFocus(itemPtr), "focus popup item");
+    context.RouteMouseDown(Raven::math::Vec2(20.0f, 20.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(20.0f, 20.0f), Raven::UIMouseButton::Left);
+    Check(itemClicks == 1 && behindClicks == 0, "popup is topmost");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Escape)), "Escape closes popup");
+    Check(context.GetOpenPopup() == nullptr && popupPtr->IsVisible() == false, "popup hidden");
+    Check(context.GetFocusedElement() == nullptr, "popup focus cleared");
+
+    Check(context.OpenPopup(popupPtr), "reopen popup");
+    Check(context.CaptureMouse(itemPtr), "capture popup item");
+    Check(context.RouteMouseDown(Raven::math::Vec2(200.0f, 200.0f), Raven::UIMouseButton::Left),
+        "outside Down consumed");
+    Check(context.HasMouseCapture() == false, "popup capture cancelled");
+    Check(context.GetOpenPopup() == nullptr, "outside Down closes popup");
+    context.RouteMouseUp(Raven::math::Vec2(200.0f, 200.0f), Raven::UIMouseButton::Left);
+    Check(behindClicks == 0, "outside Down not forwarded");
+
+    Check(context.OpenPopup(popupPtr), "reopen for detach");
+    Check(context.GetRootElement().GetChildren().size() >= 2u, "popup layer attached");
+    // Layerの所有権をContextが保持するため、通常のRoot Childを消してもPopupは生存します。
+    Check(context.GetRootElement().RemoveChild(behindPtr), "remove ordinary child");
+    Check(context.GetOpenPopup() == popupPtr, "popup survives ordinary removal");
+    context.ClosePopup();
+    context.ClosePopup();
+}
 } // namespace
 
 int main()
@@ -209,6 +262,7 @@ int main()
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
+    TestPopupRouting();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
