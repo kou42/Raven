@@ -3,7 +3,7 @@
 #include "Raven/Math/MathVector.h"
 #include <cstdint>
 #include <cstddef>
-#include <string> 
+#include <string>
 
 namespace Raven
 {
