@@ -209,6 +209,8 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
     }
     if (m_ArrangeDirty == true)
     {
+        // 初回Measureの自然幅からRootの実幅を決め、幅依存の高さを親へ再集約します。
+        ReflowForWidth(ResolveRootSize().x);
         ArrangeRecursive(m_Position, ResolveRootSize());
     }
     BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
@@ -335,6 +337,81 @@ void UIElement::MeasureRecursive()
     m_DesiredSize = ClampSize(math::Vec2(std::max(m_PreferredSize.x, content.x), std::max(m_PreferredSize.y, content.y)));
     m_MeasureDirty = false;
     m_ArrangeDirty = true;
+}
+
+void UIElement::ReflowForWidth(float arrangedWidth)
+{
+    if (m_Visible == false)
+    {
+        return;
+    }
+
+    const float contentWidth = std::max(0.0f,
+        arrangedWidth - m_Padding.Left - m_Padding.Right);
+
+    // 親の幅を先に配り、子の折り返し後の高さを得てから親のDesiredSizeを集約します。
+    for (auto& child : m_Children)
+    {
+        if (child == nullptr || child->m_Visible == false)
+        {
+            continue;
+        }
+
+        float childWidth = child->m_DesiredSize.x;
+        if (m_LayoutMode == UILayoutMode::Vertical &&
+            child->m_HorizontalAlignment == UIAlignment::Stretch)
+        {
+            const float available = std::max(0.0f,
+                contentWidth - child->m_Margin.Left - child->m_Margin.Right);
+            childWidth = child->ClampSize(math::Vec2(available, child->m_DesiredSize.y)).x;
+        }
+        child->ReflowForWidth(childWidth);
+    }
+
+    math::Vec2 content(0.0f, 0.0f);
+    std::uint32_t count = 0u;
+    for (const auto& child : m_Children)
+    {
+        if (child == nullptr || child->m_Visible == false ||
+            child->m_AffectsParentMeasure == false)
+        {
+            continue;
+        }
+        ++count;
+        const math::Vec2 outer = child->GetDesiredSizeWithMargin();
+        if (m_LayoutMode == UILayoutMode::Vertical)
+        {
+            content.x = std::max(content.x, outer.x);
+            content.y += outer.y;
+        }
+        else if (m_LayoutMode == UILayoutMode::Horizontal)
+        {
+            content.x += outer.x;
+            content.y = std::max(content.y, outer.y);
+        }
+        else
+        {
+            content.x = std::max(content.x, child->m_Position.x + outer.x);
+            content.y = std::max(content.y, child->m_Position.y + outer.y);
+        }
+    }
+    if (count > 1u && m_LayoutMode == UILayoutMode::Vertical)
+    {
+        content.y += m_Spacing * static_cast<float>(count - 1u);
+    }
+    else if (count > 1u && m_LayoutMode == UILayoutMode::Horizontal)
+    {
+        content.x += m_Spacing * static_cast<float>(count - 1u);
+    }
+
+    const math::Vec2 intrinsic = OnMeasureContentForWidth(contentWidth);
+    content.x = std::max(content.x, intrinsic.x);
+    content.y = std::max(content.y, intrinsic.y);
+    content.x += m_Padding.Left + m_Padding.Right;
+    content.y += m_Padding.Top + m_Padding.Bottom;
+    m_DesiredSize = ClampSize(math::Vec2(
+        std::max(m_PreferredSize.x, content.x),
+        std::max(m_PreferredSize.y, content.y)));
 }
 
 float UIElement::ResolveAlignedOffset(float available, float size, UIAlignment alignment)
