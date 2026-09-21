@@ -487,6 +487,13 @@ void Application::OnEvent(Event& event)
     // Editor入力が増えてログ量が問題になった場合はDebug Logger側へ移行する想定です。
     std::cout << event.ToString() << std::endl;
 
+    // UI側でFocus/編集位置が変わる前のIME所有者を記録します。
+    // WindowからのCommit通知自体ではOSへ取消を返さず、Tab/Mouse Downだけを同期境界にします。
+    UIInputText* imeOwner = m_RavenUIEnabled == true
+        ? dynamic_cast<UIInputText*>(m_UIContext.GetFocusedElement()) : nullptr;
+    const bool imeWasActive = imeOwner != nullptr &&
+        imeOwner->GetIMEComposition().IsActive() == true;
+
     // WindowCloseはApplication自身が処理すべき最上位Eventです。
     // 処理済みにしてLayer側へ不要な伝播を行わないようにします。
     if (event.GetEventType() == EventType::WindowClose)
@@ -637,6 +644,18 @@ void Application::OnEvent(Event& event)
             event.Handled = m_UIContext.RouteMouseUp(
                 math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
         }
+    }
+
+    // Focus移動・同じ入力欄でのCaret再配置はUIInputTextの未確定表示を破棄します。
+    // OS側のIMEにも取消を依頼し、古い置換範囲へ後から確定文字が届くのを防ぎます。
+    const bool imeEditingBoundary =
+        event.GetEventType() == EventType::MouseButtonPressed ||
+        (event.GetEventType() == EventType::KeyPressed &&
+            static_cast<KeyPressedEvent&>(event).GetKeyCode() == GLFW_KEY_TAB);
+    if (imeWasActive == true && imeEditingBoundary == true &&
+        imeOwner->GetIMEComposition().IsActive() == false)
+    {
+        m_Window->CancelIMEComposition();
     }
 
     // ========================================================================
