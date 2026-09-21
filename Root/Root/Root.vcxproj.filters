@@ -1680,4 +1680,7 @@
     <ClInclude Include="Raven\Platform\DirectX12\DX12ClearContext.h"><Filter>Header Files</Filter></ClInclude>
     <ClCompile Include="Raven\Platform\DirectX12\DX12ClearContext.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
-  <ItemGroup>\n    <ClInclude Include="Raven\\UI\\Text\\UIFontAtlas.h"><Filter>Header Files</Filter></ClInclude>\n  </ItemGroup>\n</Project>
+  <ItemGroup>\n    <ClInclude Include="Raven\\UI\\Text\\UIFontAtlas.h"><Filter>Header Files</Filter></ClInclude>\n  </ItemGroup>\n  <ItemGroup>
+    <ClInclude Include="Raven\\UI\\Text\\UIUtf8.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+</Project>
