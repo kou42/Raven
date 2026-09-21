@@ -130,12 +130,9 @@ public:
     }
     bool IsHorizontalScrollBarVisible() const
     {
-        // 横Trackの追加で縦Scrollbarが必要になるケースも考慮し、相互依存を避けて判定します。
-        const float rawHeight = std::max(0.0f, GetSize().y - m_HeaderHeight);
-        const bool vertical = static_cast<float>(m_Rows.size()) * m_RowHeight >
-            std::max(0.0f, rawHeight - m_ScrollBarThickness);
-        return TotalColumnWidth() > std::max(0.0f,
-            GetSize().x - (vertical ? m_ScrollBarThickness : 0.0f));
+        // 縦ScrollbarはOverlay表示のため、横方向のOverflow判定にはTable全幅を使います。
+        // これにより縦Scrollbarの出現だけで横Scrollbarが連鎖表示されることを防ぎます。
+        return TotalColumnWidth() > GetSize().x;
     }
     bool IsScrollBarVisible() const { return GetMaxScrollOffset() > 0.0f && BodyHeight() > 0.0f; }
     float GetMaxScrollOffset() const
