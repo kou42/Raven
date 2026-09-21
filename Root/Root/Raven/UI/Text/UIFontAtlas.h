@@ -132,44 +132,7 @@ public:
         std::string_view text,
         const math::Vec2& baseline,
         float lineHeight,
-        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const
-    {
-        math::Vec2 pen = baseline;
-        std::size_t offset = 0u;
-        std::uint32_t codepoint = 0u;
-        while (UIUtf8::DecodeNext(text, offset, codepoint))
-        {
-            if (codepoint == static_cast<std::uint32_t>('\r'))
-            {
-                continue;
-            }
-            if (codepoint == static_cast<std::uint32_t>('\n'))
-            {
-                pen.x = baseline.x;
-                pen.y += lineHeight;
-                continue;
-            }
-
-            const UIGlyphMetrics* glyph = FindGlyph(codepoint);
-            std::uint32_t renderCodepoint = codepoint;
-            if (glyph == nullptr)
-            {
-                renderCodepoint = UIUtf8::ReplacementCharacter;
-                glyph = FindGlyph(renderCodepoint);
-            }
-            if (glyph == nullptr)
-            {
-                renderCodepoint = static_cast<std::uint32_t>('?');
-                glyph = FindGlyph(renderCodepoint);
-            }
-            if (glyph != nullptr)
-            {
-                AppendGlyph(drawList, renderCodepoint, pen, color);
-                pen.x += glyph->Advance;
-            }
-        }
-        return pen;
-    }
+        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const;
 
     // Font全体のBaseline基準Metrics（pixel）。Descentは通常負値です。
     void SetVerticalMetrics(float ascent, float descent, float lineGap)
