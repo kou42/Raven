@@ -1020,6 +1020,8 @@ D:.
     |   |       |
     |   |       +---Text
     |   |       |       UIFontAtlas.h
+    |   |       |       UIFontAtlasBuilder.cpp
+    |   |       |       UIFontAtlasBuilder.h
     |   |       |       UIUtf8.h
     |   |       |
     |   |       +---Rendering
