@@ -6,6 +6,7 @@
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIInputText.h"
+#include "Raven/UI/Widgets/UIInputNumber.h"
 
 #include <GLFW/glfw3.h>
 
@@ -163,6 +164,39 @@ void UITextDemoLayer::OnAttach()
         m_InputText = static_cast<UIInputText*>(attachedInput);
     }
 
+    auto number = CreateScope<UIInputNumber>();
+    number->SetPosition(math::Vec2(24.0f, 260.0f));
+    number->SetSize(math::Vec2(180.0f, 30.0f));
+    number->SetFont(atlas);
+    number->SetRange(-100.0, 100.0);
+    number->SetValue(42.0);
+    number->SetClipboard(
+        [window]() -> std::string
+        {
+            if (window == nullptr)
+            {
+                return {};
+            }
+            const char* text = glfwGetClipboardString(window);
+            return text != nullptr ? std::string(text) : std::string{};
+        },
+        [window](const std::string& text)
+        {
+            if (window != nullptr)
+            {
+                glfwSetClipboardString(window, text.c_str());
+            }
+        });
+    number->SetOnValueChanged([](double value)
+        {
+            std::cout << "[Raven UI InputNumber] " << value << '\n';
+        });
+    UIElement* attachedNumber = m_Application.GetUIContext().GetRootElement().AddChild(std::move(number));
+    if (attachedNumber != nullptr)
+    {
+        m_InputNumber = static_cast<UIInputNumber*>(attachedNumber);
+    }
+
     m_Atlas = std::move(atlas);
     m_Label = static_cast<UILabel*>(attached);
     std::cout << "[Raven UI Text] Demo font: " << fontPath << '\n';
@@ -170,6 +204,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_InputNumber != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_InputNumber);
+        m_InputNumber = nullptr;
+    }
     if (m_InputText != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_InputText);
