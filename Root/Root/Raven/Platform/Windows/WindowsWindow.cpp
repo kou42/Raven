@@ -88,6 +88,8 @@ struct Win32IMEBridge
     HWND Handle = nullptr;
     WNDPROC Previous = nullptr;
     Window::EventCallbackFn* Callback = nullptr;
+    Window::IMECaretPositionFn* CaretCallback = nullptr;
+    GLFWwindow* GLFWHandle = nullptr;
     bool OwnedByRavenUI = false;
     std::size_t SuppressIMEChars = 0u;
 
@@ -103,6 +105,56 @@ struct Win32IMEBridge
         return event.Handled;
     }
 
+    void UpdateCandidatePosition()
+    {
+        if (OwnedByRavenUI == false || CaretCallback == nullptr ||
+            static_cast<bool>(*CaretCallback) == false || GLFWHandle == nullptr)
+        {
+            return;
+        }
+        float x = 0.0f;
+        float y = 0.0f;
+        if ((*CaretCallback)(x, y) == false)
+        {
+            return;
+        }
+
+        // GLFWの論理Window座標をWin32 Client pixelへ変換します。
+        // DPIが異なるMonitorへ移動しても候補位置をCaretへ追従させます。
+        int glfwWidth = 0;
+        int glfwHeight = 0;
+        RECT client{};
+        glfwGetWindowSize(GLFWHandle, &glfwWidth, &glfwHeight);
+        if (glfwWidth <= 0 || glfwHeight <= 0 ||
+            GetClientRect(Handle, &client) == FALSE)
+        {
+            return;
+        }
+        const float scaleX = static_cast<float>(client.right - client.left) / glfwWidth;
+        const float scaleY = static_cast<float>(client.bottom - client.top) / glfwHeight;
+        const POINT caret{
+            static_cast<LONG>(x * scaleX),
+            static_cast<LONG>(y * scaleY)
+        };
+
+        HIMC context = ImmGetContext(Handle);
+        if (context == nullptr)
+        {
+            return;
+        }
+        COMPOSITIONFORM composition{};
+        composition.dwStyle = CFS_POINT;
+        composition.ptCurrentPos = caret;
+        ImmSetCompositionWindow(context, &composition);
+
+        CANDIDATEFORM candidate{};
+        candidate.dwIndex = 0;
+        candidate.dwStyle = CFS_CANDIDATEPOS;
+        candidate.ptCurrentPos = caret;
+        ImmSetCandidateWindow(context, &candidate);
+        ImmReleaseContext(Handle, context);
+    }
+
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
     {
         auto* bridge = static_cast<Win32IMEBridge*>(GetPropW(window, kIMEBridgeProperty));
@@ -116,6 +168,7 @@ struct Win32IMEBridge
             // Raven UI以外（Dear ImGui等）が入力を所有する場合はGLFWへ従来どおり渡します。
             bridge->OwnedByRavenUI = bridge->Send(IMECompositionEventType::Begin);
             bridge->SuppressIMEChars = 0u;
+            bridge->UpdateCandidatePosition();
         }
         else if (message == WM_IME_COMPOSITION && bridge->OwnedByRavenUI == true)
         {
@@ -146,6 +199,7 @@ struct Win32IMEBridge
                     bridge->Send(IMECompositionEventType::Update, ToIMEUtf8(composition), cursor);
                 }
                 ImmReleaseContext(window, context);
+                bridge->UpdateCandidatePosition();
             }
         }
         else if (message == WM_IME_CHAR && bridge->SuppressIMEChars > 0u)
@@ -174,7 +228,8 @@ struct Win32IMEBridge
         return CallWindowProcW(bridge->Previous, window, message, wparam, lparam);
     }
 
-    bool Install(HWND window, Window::EventCallbackFn* callback)
+    bool Install(HWND window, GLFWwindow* glfwWindow,
+        Window::EventCallbackFn* callback, Window::IMECaretPositionFn* caretCallback)
     {
         if (window == nullptr || callback == nullptr)
         {
@@ -182,6 +237,8 @@ struct Win32IMEBridge
         }
         Handle = window;
         Callback = callback;
+        CaretCallback = caretCallback;
+        GLFWHandle = glfwWindow;
         if (SetPropW(Handle, kIMEBridgeProperty, this) == FALSE)
         {
             Handle = nullptr;
@@ -216,6 +273,8 @@ struct Win32IMEBridge
         Handle = nullptr;
         Previous = nullptr;
         Callback = nullptr;
+        CaretCallback = nullptr;
+        GLFWHandle = nullptr;
         OwnedByRavenUI = false;
         SuppressIMEChars = 0u;
     }
@@ -439,7 +498,8 @@ void WindowsWindow::Init(const WindowProps& props)
         });
     // GLFWのWndProcが完成してからsubclassし、GLFWとDear ImGuiの既存callbackを保持します。
     m_IMEBridge = std::make_unique<Win32IMEBridge>();
-    if (m_IMEBridge->Install(glfwGetWin32Window(m_Window), &m_Data.EventCallback) == false)
+    if (m_IMEBridge->Install(glfwGetWin32Window(m_Window), m_Window,
+        &m_Data.EventCallback, &m_Data.IMECaretPositionCallback) == false)
     {
         m_IMEBridge.reset();
         std::cerr << "Failed to install Win32 IME bridge\\n";
@@ -491,6 +551,11 @@ void* WindowsWindow::GetPlatformWindowHandle() const
     }
 
     return static_cast<void*>(glfwGetWin32Window(m_Window));
+}
+
+void WindowsWindow::SetIMECaretPositionCallback(IMECaretPositionFn callback)
+{
+    m_Data.IMECaretPositionCallback = std::move(callback);
 }
 
 void WindowsWindow::SetVSync(bool enabled)
