@@ -486,8 +486,6 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
     const std::size_t firstCommand = drawList.GetCommandCount();
     OnBuildDrawList(drawList, absolutePosition);
     drawList.ApplyTransform(firstCommand, worldTransform);
-    drawList.ApplyClip(firstCommand, inheritedClip);
-
     UIClipRect childClip = inheritedClip;
     if (m_ClipChildren == true)
     {
@@ -497,6 +495,9 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
         const UIRect transformedBounds = worldTransform.TransformRectBounds(layoutRect);
         childClip = UIClipRect::Intersect(inheritedClip, transformedBounds);
     }
+
+    // 自身の描画と子の描画は独立してClipを選択します。入力欄は自身もClipします。
+    drawList.ApplyClip(firstCommand, m_ClipSelf == true ? childClip : inheritedClip);
 
     for (const auto& child : m_Children)
     {
