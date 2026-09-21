@@ -13,7 +13,8 @@ namespace Raven
 enum class UITextWrapMode
 {
     None,
-    Character
+    Character,
+    Word
 };
 
 enum class UITextHorizontalAlignment
