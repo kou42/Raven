@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace Raven
 {
@@ -29,7 +30,8 @@ public:
 
     // 将来のEditor補助WindowをManagerが所有するための入口です。
     // Window::Createが失敗した場合は無効ID(0)を返します。
-    WindowID CreateWindow(const WindowSpecification& specification = WindowSpecification())
+    WindowID CreateWindow(const WindowSpecification& specification = WindowSpecification(),
+        Window::EventCallbackFn callback = {})
     {
         std::unique_ptr<Window> window = Window::Create(specification);
         if (window == nullptr || window->GetNativeWindow() == nullptr)
@@ -40,6 +42,19 @@ public:
         const WindowID id = m_NextID++;
         Window* rawWindow = window.get();
         m_Windows.emplace(id, Entry{ rawWindow, std::move(window) });
+        // 補助WindowのEventはMain WindowのUIContextへ流さず、Windowごとに配送します。
+        // Close中のGLFW callbackから直接Windowを破棄するとuse-after-freeになるため遅延します。
+        rawWindow->SetEventCallback([this, id, callback = std::move(callback)](Event& event)
+            {
+                if (static_cast<bool>(callback) == true)
+                {
+                    callback(event);
+                }
+                if (event.GetEventType() == EventType::WindowClose)
+                {
+                    m_PendingClose.push_back(id);
+                }
+            });
         return id;
     }
 
@@ -75,6 +90,18 @@ public:
                 window->PollEvents();
             }
         }
+
+        // GLFWが全callbackを返した後にだけ補助Windowを破棄します。
+        std::vector<WindowID> pendingClose;
+        pendingClose.swap(m_PendingClose);
+        for (WindowID id : pendingClose)
+        {
+            const auto it = m_Windows.find(id);
+            if (it != m_Windows.end() && it->second.OwnedWindow != nullptr)
+            {
+                m_Windows.erase(it);
+            }
+        }
     }
 
 private:
@@ -86,6 +113,7 @@ private:
 
     WindowID m_NextID = 1;
     std::unordered_map<WindowID, Entry> m_Windows;
+    std::vector<WindowID> m_PendingClose;
 };
 
 } // namespace Raven
