@@ -535,6 +535,12 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
 
 void UIElement::SetContextRecursive(UIContext* context)
 {
+    UIContext* previous = m_Context;
+    if (previous != context)
+    {
+        // Detach時も旧Contextが有効な間にWidget固有のPopup等を解除します。
+        OnContextChanged(previous, context);
+    }
     m_Context = context;
     for (auto& child : m_Children)
     {
