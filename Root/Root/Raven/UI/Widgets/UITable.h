@@ -59,7 +59,14 @@ public:
         {
             return false;
         }
-        Clear();
+        EndColumnResize();
+        EndScrollBarDrag();
+        EndHorizontalDrag();
+        SelectRow(NoSelection);
+        m_Rows.clear();
+        m_ScrollOffset = 0.0f;
+        m_HorizontalOffset = 0.0f;
+        // 列定義は表示設定なので維持し、内部行だけ外部モデルへ切り替えます。
         m_RowCountProvider = std::move(rowCount);
         m_CellTextProvider = std::move(cellText);
         InvalidateMeasure();
@@ -72,7 +79,15 @@ public:
         {
             return;
         }
-        Clear();
+        EndColumnResize();
+        EndScrollBarDrag();
+        EndHorizontalDrag();
+        SelectRow(NoSelection);
+        m_RowCountProvider = nullptr;
+        m_CellTextProvider = nullptr;
+        m_ScrollOffset = 0.0f;
+        m_HorizontalOffset = 0.0f;
+        InvalidateMeasure();
     }
 
     // 外部データの件数が変わった際に呼び、無効な選択とScrollを補正します。
