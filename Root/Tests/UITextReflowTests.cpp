@@ -493,6 +493,33 @@ void TestTable()
     view->Clear();
     Check(view->GetColumns().empty() && view->GetRows().empty(), "table clear data");
     Check(view->GetSelectedIndex() == Raven::UITable::NoSelection, "table clear selection");
+    Check(view->AddColumn("Wide", 260.0f), "table horizontal wide column");
+    Check(view->AddColumn("Other", 100.0f), "table horizontal second column");
+    Check(view->AddRow({ "Wide cell", "Value" }), "table horizontal first row");
+    Check(view->AddRow({ "Another", "Value" }), "table horizontal second row");
+    Check(view->IsHorizontalScrollBarVisible(), "table horizontal scrollbar visible");
+    CheckNear("table horizontal max", view->GetMaxHorizontalOffset(), 160.0f);
+    view->SetHorizontalOffset(1000.0f);
+    CheckNear("table horizontal clamp", view->GetHorizontalOffset(), 160.0f);
+    view->SetHorizontalOffset(0.0f);
+    Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 60.0f),
+        Raven::math::Vec2(-1.0f, 0.0f)), "table horizontal wheel");
+    CheckNear("table horizontal wheel offset", view->GetHorizontalOffset(), 48.0f);
+    view->SetHorizontalOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(210.0f, 91.0f),
+        Raven::UIMouseButton::Left), "table horizontal track click");
+    CheckNear("table horizontal track page", view->GetHorizontalOffset(), 160.0f);
+    context.RouteMouseUp(Raven::math::Vec2(210.0f, 91.0f), Raven::UIMouseButton::Left);
+    view->SetHorizontalOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(40.0f, 91.0f),
+        Raven::UIMouseButton::Left), "table horizontal thumb down");
+    Check(context.HasMouseCapture(view), "table horizontal capture");
+    context.RouteMouseMove(Raven::math::Vec2(130.0f, 91.0f));
+    Check(view->GetHorizontalOffset() > 0.0f, "table horizontal thumb drag");
+    context.RouteMouseUp(Raven::math::Vec2(130.0f, 91.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "table horizontal release");
+    view->Clear();
+    CheckNear("table horizontal clear", view->GetHorizontalOffset(), 0.0f);
 }
 } // namespace
 
