@@ -270,12 +270,22 @@ protected:
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
+    virtual void OnFocusChanged(bool focused) { (void)focused; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
     friend class UIContext;
 
-    void SetFocused(bool value) { m_Focused = value; }
+    void SetFocused(bool value)
+    {
+        if (m_Focused == value)
+        {
+            return;
+        }
+        m_Focused = value;
+        // Focus遷移の通知はUIContextの所有権更新後にWidgetへ伝えます。
+        OnFocusChanged(value);
+    }
     math::Vec2 ClampSize(const math::Vec2& size) const;
     math::Vec2 ResolveRootSize() const;
     math::Vec2 GetDesiredSizeWithMargin() const;
