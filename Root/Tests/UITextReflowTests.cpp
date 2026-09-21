@@ -483,12 +483,12 @@ void TestTable()
     CheckNear("table scrollbar page", view->GetScrollOffset(), 24.0f);
     context.RouteMouseUp(Raven::math::Vec2(215.0f, 88.0f), Raven::UIMouseButton::Left);
     view->SetScrollOffset(0.0f);
-    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 32.0f),
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 52.0f),
         Raven::UIMouseButton::Left), "table scrollbar thumb down");
     Check(context.HasMouseCapture(view), "table scrollbar capture");
-    context.RouteMouseMove(Raven::math::Vec2(215.0f, 60.0f));
+    context.RouteMouseMove(Raven::math::Vec2(215.0f, 80.0f));
     CheckNear("table scrollbar drag", view->GetScrollOffset(), 24.0f);
-    context.RouteMouseUp(Raven::math::Vec2(215.0f, 60.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 80.0f), Raven::UIMouseButton::Left);
     Check(context.HasMouseCapture(view) == false, "table scrollbar release");
     view->Clear();
     Check(view->GetColumns().empty() && view->GetRows().empty(), "table clear data");
