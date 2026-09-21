@@ -177,6 +177,47 @@ bool UIInputText::InsertFiltered(std::string_view text)
     return m_Edit.InsertText(text);
 }
 
+// IME確定結果はUTF-8文字列として一括挿入します。
+// Composition開始時の選択範囲を復元してから一度だけInsertTextするため、
+// 日本語の複数文字確定・選択範囲置換ともUndo一回で元に戻せます。
+// Filter拒否時には本文・選択・Undo履歴を変更しません。
+bool UIInputText::CommitIMEText(std::string_view text)
+{
+    UITextEditBuffer candidate = m_Edit;
+    if (m_Composition.IsActive() == true)
+    {
+        const std::size_t begin = m_Composition.GetReplacementStart();
+        const std::size_t end = m_Composition.GetReplacementEnd();
+        candidate.MoveCursor(begin);
+        candidate.MoveCursor(end, true);
+    }
+
+    if (candidate.InsertText(text) == false ||
+        (m_InputFilter != nullptr && m_InputFilter(candidate.GetText()) == false))
+    {
+        m_Composition.End();
+        EnsureCursorVisible();
+        return false;
+    }
+
+    // Candidateを直接代入するとUndo履歴までコピーするため、
+    // 検証後に本体へ同じ編集を一度だけ適用します。
+    if (m_Composition.IsActive() == true)
+    {
+        const std::size_t begin = m_Composition.GetReplacementStart();
+        const std::size_t end = m_Composition.GetReplacementEnd();
+        m_Edit.MoveCursor(begin);
+        m_Edit.MoveCursor(end, true);
+    }
+    const bool inserted = m_Edit.InsertText(text);
+    m_Composition.End();
+    if (inserted == true)
+    {
+        NotifyChanged();
+    }
+    return inserted;
+}
+
 void UIInputText::NotifyChanged()
 {
     EnsureCursorVisible();
@@ -430,6 +471,11 @@ void UIInputText::OnIMEEvent(UIIMEEvent& event)
             m_Composition.Begin(selection.first, selection.second);
         }
         m_Composition.Update(event.Text, event.Cursor, event.SelectionStart, event.SelectionEnd);
+    }
+    else if (event.Type == UIIMEEventType::Commit)
+    {
+        // Platformはこの確定結果をCharacter Eventで重複配送しない契約です。
+        CommitIMEText(event.Text);
     }
     else if (event.Type == UIIMEEventType::End)
     {
