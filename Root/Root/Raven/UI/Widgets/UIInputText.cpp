@@ -82,6 +82,15 @@ std::string UIInputText::GetDisplayText() const
     return display;
 }
 
+math::Vec2 UIInputText::GetIMECaretScreenPosition() const
+{
+    EnsureCursorVisible();
+    const std::string display = GetDisplayText();
+    const float x = std::clamp(TextCursorX(display, GetDisplayCursor()) - m_ScrollX,
+        m_Padding, std::max(m_Padding, GetSize().x - m_Padding));
+    return LocalToScreenPosition(math::Vec2(x, GetSize().y - 2.0f));
+}
+
 std::size_t UIInputText::GetDisplayCursor() const
 {
     if (m_Composition.IsActive() == true)
