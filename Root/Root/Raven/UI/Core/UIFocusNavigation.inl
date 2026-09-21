@@ -144,4 +144,19 @@ inline bool UIContext::RouteCharacterEvent(std::uint32_t codepoint)
     return event.Handled;
 }
 
+inline bool UIContext::RouteIMEEvent(const UIIMEEvent& event)
+{
+    UIElement* focusedElement = GetFocusedElement();
+    if (focusedElement == nullptr)
+    {
+        return false;
+    }
+
+    // Mouseと異なりIMEの所有者はKeyboard Focusです。親へBubbleせず一意に配送します。
+    UIIMEEvent routedEvent = event;
+    routedEvent.Context = this;
+    focusedElement->HandleIMEEvent(routedEvent);
+    return routedEvent.Handled;
+}
+
 } // namespace Raven
