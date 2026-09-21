@@ -57,6 +57,7 @@ public:
     // ApplicationでPlatform Key CodeをSemantic UIKeyへ変換した後のKeyboard Event入口です。
     // 現段階ではTab / Shift+TabをFocus Navigationとして扱い、RepeatではFocusを進めません。
     bool RouteKeyEvent(const UIKeyEvent& event);
+    bool RouteCharacterEvent(std::uint32_t codepoint);
 
     // Keyboard / Gamepad Navigation対象のFocusをContext内で一意に管理します。
     // Focus状態はElement自身へ保持し、Contextは必要時にTreeを検索するためSubtree破棄でraw pointerを残しません。
