@@ -57,6 +57,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
 
     std::size_t offset = 0u;
     std::uint32_t codepoint = 0u;
+    bool skipWrappedSpaces = false;
     while (UIUtf8::DecodeNext(text, offset, codepoint))
     {
         if (codepoint == static_cast<std::uint32_t>('\r'))
@@ -68,6 +69,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
             result.Metrics.Width = std::max(result.Metrics.Width, result.Lines.back().Width);
             result.FinalPen.x = 0.0f;
             result.FinalPen.y += options.LineHeight;
+            skipWrappedSpaces = false;
             // 末尾改行でも空行を保持します。
             if (result.Lines.size() < std::numeric_limits<std::uint32_t>::max())
             {
@@ -75,6 +77,12 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
             }
             continue;
         }
+
+        if (skipWrappedSpaces && codepoint == static_cast<std::uint32_t>(' '))
+        {
+            continue;
+        }
+        skipWrappedSpaces = false;
 
         // 単語先頭で残りのAdvanceを先読みし、収まる単語は途中で分割しません。
         // 制限幅より長い単語はCharacter WrapへFallbackして無限の折り返しを防ぎます。
@@ -111,10 +119,25 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
                 wordWidth <= options.MaxWidth &&
                 wordWidth > options.MaxWidth - result.Lines.back().Width)
             {
+                // 折り返しで行末に残るASCIIスペースは表示幅にも含めません。
+                while (result.Glyphs.empty() == false &&
+                    result.Glyphs.back().Pen.y == result.FinalPen.y &&
+                    result.Glyphs.back().Codepoint == static_cast<std::uint32_t>(' '))
+                {
+                    const UIGlyphMetrics* space = font.FindGlyph(static_cast<std::uint32_t>(' '));
+                    if (space == nullptr)
+                    {
+                        break;
+                    }
+                    result.FinalPen.x -= space->Advance;
+                    result.Glyphs.pop_back();
+                    result.Lines.back().Width = result.FinalPen.x;
+                }
                 result.Metrics.Width = std::max(result.Metrics.Width, result.Lines.back().Width);
                 result.FinalPen.x = 0.0f;
                 result.FinalPen.y += options.LineHeight;
                 result.Lines.push_back({ 0.0f, result.FinalPen.y });
+                skipWrappedSpaces = true;
             }
         }
 
