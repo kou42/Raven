@@ -524,6 +524,29 @@ void Application::OnEvent(Event& event)
         event.Handled = m_UIContext.RouteCharacterEvent(characterEvent.GetCodepoint());
     }
 
+    // CoreのIME通知をFocus所有Widgetへ橋渡しします。
+    // UI無効時や未処理の場合はLayerへ従来どおり伝播します。
+    if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::IMEComposition)
+    {
+        IMECompositionEvent& imeEvent = static_cast<IMECompositionEvent&>(event);
+        UIIMEEvent uiEvent;
+        switch (imeEvent.GetCompositionType())
+        {
+        case IMECompositionEventType::Begin: uiEvent.Type = UIIMEEventType::Begin; break;
+        case IMECompositionEventType::Update: uiEvent.Type = UIIMEEventType::Update; break;
+        case IMECompositionEventType::Commit: uiEvent.Type = UIIMEEventType::Commit; break;
+        case IMECompositionEventType::End: uiEvent.Type = UIIMEEventType::End; break;
+        case IMECompositionEventType::Cancel: uiEvent.Type = UIIMEEventType::Cancel; break;
+        default: break;
+        }
+        uiEvent.Text = imeEvent.GetText();
+        uiEvent.Cursor = imeEvent.GetCursor();
+        uiEvent.SelectionStart = imeEvent.GetSelectionStart();
+        uiEvent.SelectionEnd = imeEvent.GetSelectionEnd();
+        event.Handled = m_UIContext.RouteIMEEvent(uiEvent);
+    }
+
     // ========================================================================
     // Raven UI Mouse Event routing
     // ========================================================================
