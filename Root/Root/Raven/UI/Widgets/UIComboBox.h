@@ -127,6 +127,16 @@ public:
     }
 
 protected:
+    void OnContextChanged(UIContext* previous, UIContext* current) override
+    {
+        if (previous != nullptr && previous != current)
+        {
+            // DetachChildは破棄より先にContextを解除するため、Destructorだけでは
+            // Popup Layerに残る選択肢を回収できません。
+            DestroyPopup();
+        }
+    }
+
     void OnMouseEvent(UIMouseEvent& event) override
     {
         if (event.Target != this || event.Button != UIMouseButton::Left)
