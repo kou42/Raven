@@ -11,6 +11,10 @@ UIContext::UIContext()
 {
     // Rootから追加される全ElementへContext所属を伝播し、Tree変更時にInteraction Stateを安全に掃除できるようにします。
     m_RootElement->SetContextRecursive(this);
+    // Layer自体はHit対象にならず、Popupだけを前面で描画・Hit Testします。
+    auto layer = CreateScope<UIElement>();
+    layer->SetAffectsParentMeasure(false);
+    m_PopupLayer = m_RootElement->AddChild(std::move(layer));
 }
 
 void UIContext::CancelIMEComposition(UIElement* element)
@@ -92,6 +96,19 @@ bool UIContext::RouteMouseEvent(
     {
         UIDrawList layoutResolveDrawList;
         m_RootElement->BuildDrawList(layoutResolveDrawList);
+    }
+
+    // 外側Downを消費し、閉じた直後に背面Buttonを誤操作しないようにします。
+    if (m_OpenPopup != nullptr && type == UIMouseEventType::Down)
+    {
+        UIElement* popupHit = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
+        if (IsElementInSubtree(popupHit, m_OpenPopup) == false)
+        {
+            ClosePopup();
+            UpdateHoverTarget(nullptr);
+            UpdatePressedTarget(nullptr);
+            return true;
+        }
     }
 
     // Hoverは常に実際のPointer位置を表す必要があるため、Capture中でもHit Test結果から更新します。
@@ -296,6 +313,61 @@ bool UIContext::HasMouseCapture(const UIElement* element) const
 UIElement* UIContext::GetMouseCaptureElement() { return m_MouseCaptureElement; }
 const UIElement* UIContext::GetMouseCaptureElement() const { return m_MouseCaptureElement; }
 
+UIElement* UIContext::AddPopup(Scope<UIElement> popup)
+{
+    if (popup == nullptr || m_PopupLayer == nullptr)
+    {
+        return nullptr;
+    }
+    popup->SetVisible(false);
+    popup->SetAffectsParentMeasure(false);
+    return m_PopupLayer->AddChild(std::move(popup));
+}
+
+bool UIContext::OpenPopup(UIElement* popup)
+{
+    if (popup == nullptr || popup->GetParent() != m_PopupLayer)
+    {
+        return false;
+    }
+    if (m_OpenPopup == popup)
+    {
+        return true;
+    }
+    ClosePopup();
+    m_OpenPopup = popup;
+    popup->SetVisible(true);
+    return true;
+}
+
+void UIContext::ClosePopup()
+{
+    UIElement* popup = m_OpenPopup;
+    if (popup == nullptr)
+    {
+        return;
+    }
+    m_OpenPopup = nullptr;
+    // 非表示になるWidgetのCaptureとFocusを先に解放します。
+    if (IsElementInSubtree(m_MouseCaptureElement, popup))
+    {
+        CancelMouseCapture();
+    }
+    if (IsElementInSubtree(GetFocusedElement(), popup))
+    {
+        ClearFocus();
+    }
+    if (IsElementInSubtree(m_HoveredElement, popup))
+    {
+        UpdateHoverTarget(nullptr);
+    }
+    if (IsElementInSubtree(m_PressedElement, popup))
+    {
+        UpdatePressedTarget(nullptr);
+    }
+    popup->SetVisible(false);
+}
+
 void UIContext::SetRenderer(Scope<UIRenderer> renderer)
 {
     m_Renderer = std::move(renderer);
@@ -358,6 +430,16 @@ void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
     if (subtreeRoot == nullptr)
     {
         return;
+    }
+
+    // 外部からPopupを削除した場合も非所有Pointerを残しません。
+    if (IsElementInSubtree(m_OpenPopup, subtreeRoot))
+    {
+        ClosePopup();
+    }
+    if (IsElementInSubtree(m_PopupLayer, subtreeRoot))
+    {
+        m_PopupLayer = nullptr;
     }
 
     // Widget破棄前にOSとUI双方のIME変換を破棄します。
