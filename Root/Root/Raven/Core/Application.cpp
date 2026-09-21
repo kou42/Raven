@@ -485,7 +485,8 @@ void Application::Run()
             break;
         }
 
-        m_Window->PollEvents();
+        // GLFWのProcess共通Event Queueを一度処理し、補助WindowのCloseも安全に確定します。
+        m_WindowManager.PollEvents();
         if (sceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
