@@ -1,12 +1,15 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIElement.h"
+#include "Raven/UI/Text/UITextEditBuffer.h"
+#include "Raven/UI/Widgets/UIInputNumber.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <cmath>
 #include <memory>
+#include <string>
 
 namespace
 {
@@ -41,10 +44,88 @@ void CheckNear(const char* label, float actual, float expected)
         std::exit(EXIT_FAILURE);
     }
 }
+
+void Check(bool condition, const char* label)
+{
+    if (condition == false)
+    {
+        std::cerr << label << ": failed\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+// UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
+void TestTextEditBuffer()
+{
+    Raven::UITextEditBuffer buffer;
+    buffer.SetText("A\\xE3\\x81\\x82" "B");
+    Check(buffer.GetLength() == 3u, "UTF-8 codepoint length");
+    buffer.MoveCursor(1u);
+    buffer.MoveCursor(2u, true);
+    Check(buffer.GetSelectedText() == "\\xE3\\x81\\x82", "UTF-8 selected text");
+    Check(buffer.InsertText("X"), "replace selection");
+    Check(buffer.GetText() == "AXB", "replace UTF-8 selection");
+    Check(buffer.Undo(), "undo replace");
+    Check(buffer.GetText() == "A\\xE3\\x81\\x82" "B", "undo restores text");
+    Check(buffer.GetCursor() == 2u && buffer.GetAnchor() == 1u, "undo restores selection");
+    Check(buffer.Redo(), "redo replace");
+    Check(buffer.GetText() == "AXB", "redo restores text");
+    Check(buffer.Backspace(), "backspace");
+    Check(buffer.GetText() == "AB", "backspace text");
+    Check(buffer.Undo(), "undo backspace");
+    Check(buffer.GetText() == "AXB", "undo backspace text");
+    Check(buffer.InsertText("!"), "insert after undo");
+    Check(buffer.Redo() == false, "new edit invalidates redo");
+    buffer.SetText("reset");
+    Check(buffer.Undo() == false, "SetText clears history");
+}
+
+// 数値確定・範囲制限・Stepと通知を、Window/Fontなしで検証します。
+void TestInputNumber()
+{
+    Raven::UIInputNumber number;
+    int notifications = 0;
+    number.SetOnValueChanged([&notifications](double)
+        {
+            ++notifications;
+        });
+    number.SetRange(-10.0, 10.0);
+    number.SetValue(2.0);
+    number.SetStep(0.5);
+    number.Increment();
+    CheckNear("step up", static_cast<float>(number.GetValue()), 2.5f);
+    number.Decrement();
+    CheckNear("step down", static_cast<float>(number.GetValue()), 2.0f);
+    Check(notifications == 2, "step change notifications");
+    number.SetValue(100.0);
+    CheckNear("SetValue clamp", static_cast<float>(number.GetValue()), 10.0f);
+    number.Increment();
+    CheckNear("step at maximum", static_cast<float>(number.GetValue()), 10.0f);
+    Check(notifications == 2, "no notification at limit");
+    number.GetInputText().SetText("-4.25");
+    number.Commit();
+    CheckNear("commit valid value", static_cast<float>(number.GetValue()), -4.25f);
+    Check(number.GetEditText() == "-4.25", "commit normalizes text");
+    number.GetInputText().SetText("-");
+    number.Commit();
+    CheckNear("incomplete input retains value", static_cast<float>(number.GetValue()), -4.25f);
+    Check(number.GetEditText() == "-4.25", "incomplete input restores text");
+    number.GetInputText().SetText("999");
+    number.Commit();
+    CheckNear("commit clamp", static_cast<float>(number.GetValue()), 10.0f);
+    Check(number.GetEditText() == "10", "commit clamp normalizes text");
+    number.GetInputText().SetText("1e2");
+    number.Commit();
+    CheckNear("exponent clamp", static_cast<float>(number.GetValue()), 10.0f);
+    number.SetStep(0.0);
+    CheckNear("invalid step ignored", static_cast<float>(number.GetStep()), 0.5f);
+}
 } // namespace
 
 int main()
 {
+    TestTextEditBuffer();
+    TestInputNumber();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
