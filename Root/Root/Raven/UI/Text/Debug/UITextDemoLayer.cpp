@@ -9,6 +9,8 @@
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
+#include "Raven/UI/Widgets/UITreeView.h"
+#include "Raven/UI/Widgets/UITable.h"
 
 #include <GLFW/glfw3.h>
 
@@ -237,10 +239,60 @@ void UITextDemoLayer::OnAttach()
     combo->SetSelectedIndex(0u);
     combo->SetOnSelectionChanged([](std::size_t index, const std::string& text)
         {
-            std::cout << "[Raven UI ComboBox] " << index << ": " << text << '\\n';
+            std::cout << "[Raven UI ComboBox] " << index << ": " << text << '\n';
         });
     m_ComboBox = static_cast<UIComboBox*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(combo)));
+
+    // TreeViewはSceneの実体を所有せず、Hierarchy相当の表示ノードだけを保持します。
+    // 左端の開閉記号、行クリック、上下左右キーとEnterを確認できます。
+    auto tree = CreateScope<UITreeView>();
+    tree->SetPosition(math::Vec2(560.0f, 200.0f));
+    tree->SetSize(math::Vec2(280.0f, 264.0f));
+    tree->SetFont(atlas);
+    UITreeNode* scene = tree->AddRoot(1u, "Scene");
+    UITreeNode* player = tree->AddNode(scene, 2u, "Player");
+    tree->AddNode(player, 3u, "Mesh");
+    tree->AddNode(player, 4u, "Collider");
+    tree->AddNode(scene, 5u, "Camera");
+    tree->AddNode(scene, 6u, "Directional Light");
+    UITreeNode* environment = tree->AddRoot(7u, "Environment");
+    tree->AddNode(environment, 8u, "Terrain");
+    tree->AddNode(environment, 9u, "Sky");
+    // Viewportを超える行数にしてWheelとKeyboard選択追従を確認します。
+    for (std::uint64_t id = 10u; id < 26u; ++id)
+    {
+        tree->AddNode(environment, id, "Environment Item " + std::to_string(id));
+    }
+    tree->SetOnSelectionChanged([](std::uint64_t id)
+        {
+            std::cout << "[Raven UI TreeView] selected ID: " << id << '\n';
+        });
+    tree->SetOnExpansionChanged([](std::uint64_t id, bool expanded)
+        {
+            std::cout << "[Raven UI TreeView] node " << id
+                << (expanded ? " expanded" : " collapsed") << '\n';
+        });
+    m_TreeView = static_cast<UITreeView*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(tree)));
+
+    // TableはHeaderを固定し、Bodyだけをスクロールします。
+    auto table = CreateScope<UITable>();
+    table->SetPosition(math::Vec2(860.0f, 200.0f));
+    table->SetSize(math::Vec2(350.0f, 264.0f));
+    table->SetFont(atlas);
+    table->AddColumn("Entity", 170.0f);
+    table->AddColumn("Type", 160.0f);
+    for (std::size_t index = 0u; index < 20u; ++index)
+    {
+        table->AddRow({ "Entity " + std::to_string(index), index % 2u == 0u ? "Mesh" : "Light" });
+    }
+    table->SetOnSelectionChanged([](std::size_t index)
+        {
+            std::cout << "[Raven UI Table] selected row: " << index << '\\n';
+        });
+    m_Table = static_cast<UITable*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(table)));
 
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
@@ -254,6 +306,16 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_Table != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_Table);
+        m_Table = nullptr;
+    }
+    if (m_TreeView != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_TreeView);
+        m_TreeView = nullptr;
+    }
     if (m_ComboBox != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_ComboBox);

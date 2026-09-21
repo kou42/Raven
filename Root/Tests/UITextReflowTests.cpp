@@ -7,6 +7,8 @@
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UITooltip.h"
+#include "Raven/UI/Widgets/UITreeView.h"
+#include "Raven/UI/Widgets/UITable.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -350,6 +352,221 @@ void TestTooltip()
     Check(context.GetRootElement().RemoveChild(target), "tooltip target removed");
     Check(context.ClearTooltip(target) == false, "tooltip registration cleaned on removal");
 }
+// TreeViewの所有権・展開・Scroll・Keyboard/Mouse経路をFont/GPUなしで検証します。
+void TestTreeView()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 48.0f));
+    Raven::UITreeView* view = tree.get();
+    Raven::UITreeNode* root = tree->AddRoot(1u, "Scene");
+    Raven::UITreeNode* child = tree->AddNode(root, 2u, "Player");
+    Raven::UITreeNode* leaf = tree->AddNode(child, 3u, "Mesh");
+    Raven::UITreeNode* sibling = tree->AddRoot(4u, "Environment");
+    Check(root != nullptr && child != nullptr && leaf != nullptr && sibling != nullptr, "tree nodes added");
+    Check(tree->AddRoot(2u, "duplicate") == nullptr, "tree rejects duplicate id");
+    Raven::UITreeNode external;
+    Check(tree->AddNode(&external, 5u, "foreign") == nullptr, "tree rejects foreign parent");
+    Check(tree->FindNode(3u) == leaf, "tree find nested node");
+    int selections = 0;
+    int expansions = 0;
+    tree->SetOnSelectionChanged([&selections](std::uint64_t) { ++selections; });
+    tree->SetOnExpansionChanged([&expansions](std::uint64_t, bool) { ++expansions; });
+    context.GetRootElement().AddChild(std::move(tree));
+    Check(view->Select(leaf), "tree select leaf");
+    CheckNear("tree selected row visible", view->GetScrollOffset(), 24.0f);
+    Check(view->Select(leaf), "tree select same leaf");
+    Check(selections == 1, "tree unchanged selection no callback");
+    Check(view->SetExpanded(root, false), "tree collapse root");
+    Check(view->GetSelectedNode() == root, "tree collapse selects visible ancestor");
+    CheckNear("tree collapsed range", view->GetMaxScrollOffset(), 0.0f);
+    Check(expansions == 1, "tree collapse callback");
+    Check(view->SetExpanded(root, true), "tree expand root");
+    Check(view->SetExpanded(child, false), "tree collapse child");
+    CheckNear("tree collapsed child range", view->GetMaxScrollOffset(), 24.0f);
+    Check(view->SetExpanded(child, true), "tree expand child");
+    CheckNear("tree expanded range", view->GetMaxScrollOffset(), 48.0f);
+    view->SetScrollOffset(1000.0f);
+    CheckNear("tree scroll max clamp", view->GetScrollOffset(), 48.0f);
+    view->SetScrollOffset(-10.0f);
+    CheckNear("tree scroll min clamp", view->GetScrollOffset(), 0.0f);
+    Check(context.SetFocus(view), "tree focus");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "tree key down");
+    Check(view->GetSelectedNode() == child, "tree keyboard next row");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "tree key down to leaf");
+    Check(view->GetSelectedNode() == leaf, "tree keyboard leaf");
+    CheckNear("tree keyboard ensure visible", view->GetScrollOffset(), 24.0f);
+    Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 30.0f),
+        Raven::math::Vec2(0.0f, -1.0f)), "tree wheel scroll");
+    CheckNear("tree wheel clamp", view->GetScrollOffset(), 48.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(60.0f, 32.0f),
+        Raven::UIMouseButton::Left), "tree mouse selects scrolled row");
+    Check(view->GetSelectedNode() == leaf, "tree scroll-aware hit test");
+    context.RouteMouseUp(Raven::math::Vec2(60.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(view->IsScrollBarVisible(), "tree scrollbar visible on overflow");
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 60.0f),
+        Raven::UIMouseButton::Left), "tree scrollbar track click");
+    CheckNear("tree track page scroll", view->GetScrollOffset(), 48.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 60.0f), Raven::UIMouseButton::Left);
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 24.0f),
+        Raven::UIMouseButton::Left), "tree scrollbar thumb down");
+    Check(context.HasMouseCapture(view), "tree scrollbar capture");
+    context.RouteMouseMove(Raven::math::Vec2(215.0f, 60.0f));
+    CheckNear("tree scrollbar drag", view->GetScrollOffset(), 48.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 60.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "tree scrollbar releases capture");
+    view->SetExpanded(root, false);
+    Check(view->IsScrollBarVisible() == false, "tree scrollbar hidden without overflow");
+    view->Clear();
+    Check(view->GetSelectedNode() == nullptr, "tree clear selection");
+    Check(view->FindNode(1u) == nullptr, "tree clear nodes");
+    CheckNear("tree clear scroll", view->GetScrollOffset(), 0.0f);
+}
+// Tableの列数検証・単一選択・Keyboard・ScrollをGPUなしで確認します。
+void TestTable()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto table = std::make_unique<Raven::UITable>();
+    table->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    table->SetSize(Raven::math::Vec2(200.0f, 76.0f));
+    Raven::UITable* view = table.get();
+    Check(table->AddColumn("Name", 100.0f), "table first column");
+    Check(table->AddColumn("Type", 100.0f), "table second column");
+    Check(table->AddColumn("Invalid", -1.0f) == false, "table invalid width");
+    Check(table->AddRow({ "Only one" }) == false, "table rejects invalid cell count");
+    Check(table->AddRow({ "A", "Mesh" }), "table first row");
+    Check(table->AddRow({ "B", "Light" }), "table second row");
+    Check(table->AddRow({ "C", "Camera" }), "table third row");
+    Check(table->GetRows().size() == 3u, "table row count");
+    int notifications = 0;
+    table->SetOnSelectionChanged([&notifications](std::size_t) { ++notifications; });
+    context.GetRootElement().AddChild(std::move(table));
+    CheckNear("table scroll range", view->GetMaxScrollOffset(), 24.0f);
+    Check(view->GetVisibleRowRange().first == 0u &&
+        view->GetVisibleRowRange().second == 2u, "table initial visible row range");
+    view->SetScrollOffset(24.0f);
+    Check(view->GetVisibleRowRange().first == 1u &&
+        view->GetVisibleRowRange().second == 3u, "table scrolled visible row range");
+    view->SetScrollOffset(0.0f);
+    Check(view->SelectRow(2u), "table select last");
+    CheckNear("table ensure selected visible", view->GetScrollOffset(), 24.0f);
+    Check(view->SelectRow(2u), "table repeat selection");
+    Check(notifications == 1, "table repeat selection no callback");
+    Check(view->SelectRow(3u) == false, "table invalid selection");
+    Check(context.SetFocus(view), "table focus");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Home)), "table home");
+    Check(view->GetSelectedIndex() == 0u, "table first selected");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::End)), "table end");
+    Check(view->GetSelectedIndex() == 2u, "table last selected");
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 60.0f),
+        Raven::math::Vec2(0.0f, -1.0f)), "table wheel");
+    CheckNear("table wheel clamp", view->GetScrollOffset(), 24.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(30.0f, 55.0f),
+        Raven::UIMouseButton::Left), "table click scrolled row");
+    Check(view->GetSelectedIndex() == 1u, "table scroll-aware hit test");
+    context.RouteMouseUp(Raven::math::Vec2(30.0f, 55.0f), Raven::UIMouseButton::Left);
+    Check(view->SetColumnWidth(0u, 150.0f), "table set column width");
+    CheckNear("table resized width", view->GetColumns()[0u].Width, 150.0f);
+    Check(view->SetColumnWidth(0u, 10.0f) == false, "table reject too narrow");
+    Check(view->SetColumnWidth(2u, 100.0f) == false, "table reject missing column");
+    Check(context.RouteMouseDown(Raven::math::Vec2(170.0f, 30.0f),
+        Raven::UIMouseButton::Left), "table resize header down");
+    Check(context.HasMouseCapture(view), "table resize capture");
+    context.RouteMouseMove(Raven::math::Vec2(190.0f, 30.0f));
+    CheckNear("table drag resized width", view->GetColumns()[0u].Width, 170.0f);
+    context.RouteMouseUp(Raven::math::Vec2(190.0f, 30.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "table resize capture released");
+    Check(view->IsScrollBarVisible(), "table scrollbar overflow visible");
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 88.0f),
+        Raven::UIMouseButton::Left), "table scrollbar track down");
+    CheckNear("table scrollbar page", view->GetScrollOffset(), 24.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 88.0f), Raven::UIMouseButton::Left);
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 52.0f),
+        Raven::UIMouseButton::Left), "table scrollbar thumb down");
+    Check(context.HasMouseCapture(view), "table scrollbar capture");
+    context.RouteMouseMove(Raven::math::Vec2(215.0f, 80.0f));
+    CheckNear("table scrollbar drag", view->GetScrollOffset(), 24.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 80.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "table scrollbar release");
+    view->Clear();
+    Check(view->GetColumns().empty() && view->GetRows().empty(), "table clear data");
+    Check(view->GetSelectedIndex() == Raven::UITable::NoSelection, "table clear selection");
+    Check(view->AddColumn("Wide", 260.0f), "table horizontal wide column");
+    Check(view->AddColumn("Other", 100.0f), "table horizontal second column");
+    Check(view->AddRow({ "Wide cell", "Value" }), "table horizontal first row");
+    Check(view->AddRow({ "Another", "Value" }), "table horizontal second row");
+    Check(view->IsHorizontalScrollBarVisible(), "table horizontal scrollbar visible");
+    CheckNear("table horizontal max", view->GetMaxHorizontalOffset(), 160.0f);
+    view->SetHorizontalOffset(1000.0f);
+    CheckNear("table horizontal clamp", view->GetHorizontalOffset(), 160.0f);
+    view->SetHorizontalOffset(0.0f);
+    Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 60.0f),
+        Raven::math::Vec2(-1.0f, 0.0f)), "table horizontal wheel");
+    CheckNear("table horizontal wheel offset", view->GetHorizontalOffset(), 48.0f);
+    view->SetHorizontalOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(210.0f, 91.0f),
+        Raven::UIMouseButton::Left), "table horizontal track click");
+    CheckNear("table horizontal track page", view->GetHorizontalOffset(), 160.0f);
+    context.RouteMouseUp(Raven::math::Vec2(210.0f, 91.0f), Raven::UIMouseButton::Left);
+    view->SetHorizontalOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(40.0f, 91.0f),
+        Raven::UIMouseButton::Left), "table horizontal thumb down");
+    Check(context.HasMouseCapture(view), "table horizontal capture");
+    context.RouteMouseMove(Raven::math::Vec2(130.0f, 91.0f));
+    Check(view->GetHorizontalOffset() > 0.0f, "table horizontal thumb drag");
+    context.RouteMouseUp(Raven::math::Vec2(130.0f, 91.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "table horizontal release");
+    view->Clear();
+    CheckNear("table horizontal clear", view->GetHorizontalOffset(), 0.0f);
+    Check(view->GetVisibleRowRange().first == 0u &&
+        view->GetVisibleRowRange().second == 0u, "table empty visible range");
+    // 10,000行でも可視範囲はViewport内の数行だけになります。
+    Check(view->AddColumn("Index", 100.0f), "table bulk column");
+    for (std::size_t i = 0u; i < 10000u; ++i)
+    {
+        Check(view->AddRow({ std::to_string(i) }), "table bulk row");
+    }
+    view->SetScrollOffset(view->GetMaxScrollOffset());
+    const auto visible = view->GetVisibleRowRange();
+    Check(visible.second == 10000u, "table bulk last row visible");
+    Check(visible.second - visible.first <= 3u, "table bulk bounded visible rows");
+    // 外部モデルは全行の文字列をTableに保持せず、表示セルだけを問い合わせます。
+    std::size_t externalCount = 1000000u;
+    std::size_t cellQueries = 0u;
+    Check(view->SetDataSource([&externalCount]() { return externalCount; },
+        [&cellQueries](std::size_t row, std::size_t column)
+        {
+            ++cellQueries;
+            return std::to_string(row) + ":" + std::to_string(column);
+        }), "table set external model");
+    Check(view->GetColumns().size() == 1u, "table external keeps columns");
+    Check(view->GetRows().empty(), "table external does not copy rows");
+    Check(view->GetRowCount() == 1000000u, "table external count");
+    Check(view->AddRow({ "invalid" }) == false, "table external rejects internal rows");
+    view->SetScrollOffset(view->GetMaxScrollOffset());
+    const auto externalVisible = view->GetVisibleRowRange();
+    Check(externalVisible.second == externalCount, "table external last visible");
+    Check(externalVisible.second - externalVisible.first <= 3u, "table external bounded visible");
+    Check(cellQueries == 0u, "table external no eager cell requests");
+    Check(view->SelectRow(externalCount - 1u), "table external select last");
+    externalCount = 2u;
+    view->NotifyDataSourceChanged();
+    Check(view->GetSelectedIndex() == Raven::UITable::NoSelection,
+        "table external invalid selection cleared");
+    CheckNear("table external scroll clamped", view->GetScrollOffset(), 0.0f);
+    view->ClearDataSource();
+    Check(view->HasDataSource() == false, "table external detached");
+    Check(view->GetColumns().size() == 1u, "table external detach keeps columns");
+    Check(view->AddRow({ "local" }), "table local rows restored");
+}
 } // namespace
 
 int main()
@@ -360,6 +577,42 @@ int main()
     TestPopupRouting();
     TestComboBox();
     TestTooltip();
+    TestTreeView();
+    TestTable();
+    // 共通Scrollbar幾何: HeaderなしTreeとHeaderありTableでTrack原点だけが異なります。
+    Raven::UIScrollBarMetrics metrics{ 48.0f, 72.0f, 0.0f };
+    Check(metrics.IsVisible(), "scrollbar metrics visible");
+    CheckNear("scrollbar metrics max", metrics.MaxOffset(), 24.0f);
+    CheckNear("scrollbar metrics thumb", metrics.ThumbLength(), 32.0f);
+    CheckNear("scrollbar metrics start", metrics.ThumbStart(), 0.0f);
+    CheckNear("scrollbar metrics drag end", metrics.OffsetFromThumbStart(16.0f), 24.0f);
+    metrics.Offset = 12.0f;
+    CheckNear("scrollbar metrics middle", metrics.ThumbStart(), 8.0f);
+    metrics.Content = 24.0f;
+    Check(metrics.IsVisible() == false, "scrollbar metrics hidden");
+    CheckNear("scrollbar metrics no scroll", metrics.OffsetFromThumbStart(16.0f), 0.0f);
+
+    // Widget個別ClipはWorld Transform後に親Clipと交差することを検証します。
+    Raven::UIDrawList clipDrawList;
+    clipDrawList.AddRect(Raven::math::Vec2(0.0f, 0.0f),
+        Raven::math::Vec2(20.0f, 20.0f),
+        Raven::math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    Raven::UIRect localClip;
+    localClip.Min = Raven::math::Vec2(2.0f, 3.0f);
+    localClip.Max = Raven::math::Vec2(12.0f, 13.0f);
+    clipDrawList.ApplyClip(0u, Raven::UIClipRect::FromRect(localClip));
+    Raven::UITransform2D clipTransform = Raven::UITransform2D::Identity();
+    clipTransform.Translation = Raven::math::Vec2(10.0f, 20.0f);
+    clipDrawList.ApplyTransform(0u, clipTransform);
+    Raven::UIRect ancestorClip;
+    ancestorClip.Min = Raven::math::Vec2(15.0f, 20.0f);
+    ancestorClip.Max = Raven::math::Vec2(40.0f, 40.0f);
+    clipDrawList.ApplyClip(0u, Raven::UIClipRect::FromRect(ancestorClip));
+    CheckNear("transformed cell clip min x", clipDrawList.GetCommands()[0u].Clip.Rect.Min.x, 15.0f);
+    CheckNear("transformed cell clip min y", clipDrawList.GetCommands()[0u].Clip.Rect.Min.y, 23.0f);
+    CheckNear("transformed cell clip max x", clipDrawList.GetCommands()[0u].Clip.Rect.Max.x, 22.0f);
+    CheckNear("transformed cell clip max y", clipDrawList.GetCommands()[0u].Clip.Rect.Max.y, 33.0f);
+
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);

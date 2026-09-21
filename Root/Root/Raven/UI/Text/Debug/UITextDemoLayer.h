@@ -10,6 +10,8 @@ class UILabel;
 class UIInputText;
 class UIInputNumber;
 class UIComboBox;
+class UITreeView;
+class UITable;
 class UIElement;
 
 // Raven UIのFont Rasterize -> Atlas -> UILabel -> DrawListを検証するDebug Layerです。
@@ -27,6 +29,8 @@ private:
     UILabel* m_Label = nullptr; // 所有者はUIContextのRoot Treeです。
     UIInputNumber* m_InputNumber = nullptr; // 所有権はRoot Treeです。
     UIComboBox* m_ComboBox = nullptr;
+    UITreeView* m_TreeView = nullptr; // Root Treeが所有する階層表示Demoです。
+    UITable* m_Table = nullptr; // Root Treeが所有する表表示Demoです。
     UIElement* m_PopupTrigger = nullptr;
     UIElement* m_Popup = nullptr;
     UIInputText* m_InputText = nullptr; // 同じFont Atlasを共有する入力Demoです。

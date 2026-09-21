@@ -284,6 +284,12 @@ void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& t
     // ChildはUIElement再帰側でParent World Transformと自身のLocal Transformを合成してから別途設定します。
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
+        // Widget個別ClipはOnBuildDrawListでLayout座標として設定されます。
+        // Command本体と同じWorld TransformでAABBへ変換してからAncestor Clipと交差します。
+        if (m_Commands[index].Clip.Enabled == true)
+        {
+            m_Commands[index].Clip.Rect = transform.TransformRectBounds(m_Commands[index].Clip.Rect);
+        }
         m_Commands[index].Transform = transform;
     }
 }
@@ -297,7 +303,9 @@ void UIDrawList::ApplyClip(std::size_t firstCommand, const UIClipRect& clip)
 
     for (std::size_t index = firstCommand; index < m_Commands.size(); ++index)
     {
-        m_Commands[index].Clip = clip;
+        // Widgetが設定したセルClipとElement/AncestorのClipを両方維持します。
+        m_Commands[index].Clip = m_Commands[index].Clip.Enabled == true
+            ? UIClipRect::Intersect(clip, m_Commands[index].Clip.Rect) : clip;
     }
 }
 
