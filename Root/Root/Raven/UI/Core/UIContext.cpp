@@ -335,6 +335,9 @@ bool UIContext::OpenPopup(UIElement* popup)
         return true;
     }
     ClosePopup();
+    // Rootへ後から通常Widgetが追加されてもPopupが常に最前面になるよう、
+    // Open時にLayerをPainter's Orderの末尾へ移します。
+    m_RootElement->BringChildToFront(m_PopupLayer);
     m_OpenPopup = popup;
     popup->SetVisible(true);
     return true;
