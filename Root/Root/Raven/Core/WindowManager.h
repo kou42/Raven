@@ -97,6 +97,45 @@ public:
         return it == m_Windows.end() ? nullptr : it->second.FrameLifecycle.get();
     }
 
+    // 補助Windowを一Frame描画します。Main WindowのContextを呼び出し後に復元します。
+    // draw内では対象WindowのContextがCurrentです。GPU Resource共有は保証しません。
+    // Windowの破棄・登録変更をdraw中に行わないでください。
+    bool RenderWindow(WindowID id, WindowID restoreWindowID,
+        const std::function<void(Window&)>& draw)
+    {
+        const auto it = m_Windows.find(id);
+        const auto restoreIt = m_Windows.find(restoreWindowID);
+        if (it == m_Windows.end() || restoreIt == m_Windows.end() ||
+            it->second.FrameLifecycle == nullptr || static_cast<bool>(draw) == false ||
+            id == restoreWindowID)
+        {
+            return false;
+        }
+
+        Window& window = *it->second.Handle;
+        Window& restoreWindow = *restoreIt->second.Handle;
+        RHISceneFrameLifecycle& frame = *it->second.FrameLifecycle;
+        if (window.GetBackend() != RHIBackend::OpenGL ||
+            restoreWindow.GetBackend() != RHIBackend::OpenGL ||
+            window.GetState() == WindowState::Minimized)
+        {
+            return false;
+        }
+
+        if (frame.BeginFrame() != RHIFrameResult::Success)
+        {
+            restoreWindow.MakeContextCurrent();
+            return false;
+        }
+        draw(window);
+        const bool ended = frame.EndFrame() == RHIFrameResult::Success;
+        const bool presented = ended == true &&
+            frame.Present() == RHIFrameResult::Success;
+        // 補助WindowのSwapBuffers後、Main WindowのContextへ戻します。
+        const bool restored = restoreWindow.MakeContextCurrent();
+        return presented == true && restored == true;
+    }
+
     bool DetachFrameLifecycle(WindowID id)
     {
         const auto it = m_Windows.find(id);
