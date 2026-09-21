@@ -257,6 +257,7 @@ public:
     // Widget側はOnMouseEvent()/OnKeyEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
     void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
+    void HandleCharacterEvent(UICharacterEvent& event) { OnCharacterEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
 
@@ -268,6 +269,7 @@ protected:
     void InvalidateMeasure();
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
+    virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
