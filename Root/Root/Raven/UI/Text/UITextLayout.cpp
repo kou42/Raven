@@ -94,6 +94,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
 
     // 幅指定がある場合は指定幅、なければ最長行をAlignmentの基準にします。
     const float alignmentWidth = constrained ? options.MaxWidth : result.Metrics.Width;
+    std::size_t glyphIndex = 0u;
     for (std::size_t lineIndex = 0u; lineIndex < result.Lines.size(); ++lineIndex)
     {
         const float remainder = std::max(0.0f, alignmentWidth - result.Lines[lineIndex].Width);
@@ -107,13 +108,12 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
             shift = remainder;
         }
 
-        // 行のBaselineYは改行ごとに増えるため、Glyphの所属行を順番に判定できます。
-        for (UITextLayoutGlyph& glyph : result.Glyphs)
+        // Glyphは行順に格納されているため、一度だけ走査します。
+        while (glyphIndex < result.Glyphs.size() &&
+            result.Glyphs[glyphIndex].Pen.y == result.Lines[lineIndex].BaselineY)
         {
-            if (glyph.Pen.y == result.Lines[lineIndex].BaselineY)
-            {
-                glyph.Pen.x += shift;
-            }
+            result.Glyphs[glyphIndex].Pen.x += shift;
+            ++glyphIndex;
         }
         if (lineIndex + 1u == result.Lines.size())
         {
