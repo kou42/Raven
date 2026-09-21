@@ -1,6 +1,8 @@
 #include "Raven/Platform/OpenGL/OpenGLVertexArray.h"
 
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <memory>
 
 namespace Raven
 {
@@ -78,6 +80,30 @@ void OpenGLVertexArray::AddVertexBuffer(const Ref<VertexBuffer>& vertexBuffer)
     }
 
     m_VertexBuffers.push_back(vertexBuffer);
+}
+
+Ref<VertexArray> OpenGLVertexArray::CloneForCurrentContext() const
+{
+    if (glfwGetCurrentContext() == nullptr)
+    {
+        return nullptr;
+    }
+
+    // VBO/EBOは共有Contextで利用できても、属性定義とEBO Bindを保持するVAOは共有されません。
+    // 現在のContextに新しいVAOを作り、元VAOのBuffer LayoutとIndex Bufferを再登録します。
+    Ref<OpenGLVertexArray> clone = std::make_shared<OpenGLVertexArray>();
+    for (const Ref<VertexBuffer>& vertexBuffer : m_VertexBuffers)
+    {
+        if (vertexBuffer != nullptr)
+        {
+            clone->AddVertexBuffer(vertexBuffer);
+        }
+    }
+    if (m_IndexBuffer != nullptr)
+    {
+        clone->SetIndexBuffer(m_IndexBuffer);
+    }
+    return clone;
 }
 
 void OpenGLVertexArray::SetIndexBuffer(
