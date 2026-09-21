@@ -502,7 +502,7 @@ void WindowsWindow::Init(const WindowProps& props)
         &m_Data.EventCallback, &m_Data.IMECaretPositionCallback) == false)
     {
         m_IMEBridge.reset();
-        std::cerr << "Failed to install Win32 IME bridge\\n";
+        std::cerr << "Failed to install Win32 IME bridge\n";
     }
 }
 
