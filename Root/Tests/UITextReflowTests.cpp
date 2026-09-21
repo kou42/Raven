@@ -476,6 +476,20 @@ void TestTable()
     CheckNear("table drag resized width", view->GetColumns()[0u].Width, 170.0f);
     context.RouteMouseUp(Raven::math::Vec2(190.0f, 30.0f), Raven::UIMouseButton::Left);
     Check(context.HasMouseCapture(view) == false, "table resize capture released");
+    Check(view->IsScrollBarVisible(), "table scrollbar overflow visible");
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 88.0f),
+        Raven::UIMouseButton::Left), "table scrollbar track down");
+    CheckNear("table scrollbar page", view->GetScrollOffset(), 24.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 88.0f), Raven::UIMouseButton::Left);
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 32.0f),
+        Raven::UIMouseButton::Left), "table scrollbar thumb down");
+    Check(context.HasMouseCapture(view), "table scrollbar capture");
+    context.RouteMouseMove(Raven::math::Vec2(215.0f, 60.0f));
+    CheckNear("table scrollbar drag", view->GetScrollOffset(), 24.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 60.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "table scrollbar release");
     view->Clear();
     Check(view->GetColumns().empty() && view->GetRows().empty(), "table clear data");
     Check(view->GetSelectedIndex() == Raven::UITable::NoSelection, "table clear selection");
@@ -492,6 +506,27 @@ int main()
     TestTooltip();
     TestTreeView();
     TestTable();
+    // Widget個別ClipはWorld Transform後に親Clipと交差することを検証します。
+    Raven::UIDrawList clipDrawList;
+    clipDrawList.AddRect(Raven::math::Vec2(0.0f, 0.0f),
+        Raven::math::Vec2(20.0f, 20.0f),
+        Raven::math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    Raven::UIRect localClip;
+    localClip.Min = Raven::math::Vec2(2.0f, 3.0f);
+    localClip.Max = Raven::math::Vec2(12.0f, 13.0f);
+    clipDrawList.ApplyClip(0u, Raven::UIClipRect::FromRect(localClip));
+    Raven::UITransform2D clipTransform = Raven::UITransform2D::Identity();
+    clipTransform.Translation = Raven::math::Vec2(10.0f, 20.0f);
+    clipDrawList.ApplyTransform(0u, clipTransform);
+    Raven::UIRect ancestorClip;
+    ancestorClip.Min = Raven::math::Vec2(15.0f, 20.0f);
+    ancestorClip.Max = Raven::math::Vec2(40.0f, 40.0f);
+    clipDrawList.ApplyClip(0u, Raven::UIClipRect::FromRect(ancestorClip));
+    CheckNear("transformed cell clip min x", clipDrawList.GetCommands()[0u].Clip.Rect.Min.x, 15.0f);
+    CheckNear("transformed cell clip min y", clipDrawList.GetCommands()[0u].Clip.Rect.Min.y, 23.0f);
+    CheckNear("transformed cell clip max x", clipDrawList.GetCommands()[0u].Clip.Rect.Max.x, 22.0f);
+    CheckNear("transformed cell clip max y", clipDrawList.GetCommands()[0u].Clip.Rect.Max.y, 33.0f);
+
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
