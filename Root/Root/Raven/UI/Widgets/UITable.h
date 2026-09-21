@@ -88,8 +88,20 @@ public:
         return true;
     }
 
+    bool SetColumnWidth(std::size_t index, float width)
+    {
+        if (index >= m_Columns.size() || std::isfinite(width) == false || width < m_MinColumnWidth)
+        {
+            return false;
+        }
+        m_Columns[index].Width = width;
+        InvalidateMeasure();
+        return true;
+    }
+
     void Clear()
     {
+        EndColumnResize();
         SelectRow(NoSelection);
         m_Rows.clear();
         m_Columns.clear();
@@ -129,6 +141,27 @@ public:
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (m_ResizingColumn != NoSelection)
+        {
+            if (event.Type == UIMouseEventType::Cancel ||
+                (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left))
+            {
+                EndColumnResize();
+                event.Handled = true;
+                return;
+            }
+            if (event.Type == UIMouseEventType::Move)
+            {
+                math::Vec2 local;
+                if (TryScreenToLocalPosition(event.ScreenPosition, local) == true)
+                {
+                    SetColumnWidth(m_ResizingColumn, std::max(m_MinColumnWidth,
+                        m_ResizeInitialWidth + local.x - m_ResizeStartX));
+                }
+                event.Handled = true;
+                return;
+            }
+        }
         if (event.Type == UIMouseEventType::Scroll)
         {
             const float previous = GetScrollOffset();
@@ -147,8 +180,28 @@ protected:
         math::Vec2 local;
         if (TryScreenToLocalPosition(event.ScreenPosition, local) == false ||
             local.x < 0.0f || local.x >= GetSize().x ||
-            local.y < m_HeaderHeight || local.y >= GetSize().y)
+            local.y < 0.0f || local.y >= GetSize().y)
         {
+            return;
+        }
+        if (local.y < m_HeaderHeight)
+        {
+            float edge = 0.0f;
+            for (std::size_t column = 0u; column < m_Columns.size(); ++column)
+            {
+                edge += m_Columns[column].Width;
+                if (std::abs(local.x - edge) <= m_ResizeHitMargin)
+                {
+                    if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
+                    {
+                        m_ResizingColumn = column;
+                        m_ResizeStartX = local.x;
+                        m_ResizeInitialWidth = m_Columns[column].Width;
+                    }
+                    event.Handled = true;
+                    return;
+                }
+            }
             return;
         }
         const std::size_t index = static_cast<std::size_t>(
@@ -229,8 +282,17 @@ protected:
             x = position.x;
             for (std::size_t col = 0u; col < m_Columns.size(); ++col)
             {
-                // 行の上下端に跨る文字はClipSelfで制限されます。
-                DrawText(drawList, m_Rows[row][col], math::Vec2(x + 5.0f, y + m_Baseline));
+                // 各セルの横境界とBodyの縦境界を交差し、隣の列や固定Headerへの文字漏れを防ぎます。
+                UIRect cellClip;
+                cellClip.Min = math::Vec2(std::max(x, position.x),
+                    std::max(y, position.y + m_HeaderHeight));
+                cellClip.Max = math::Vec2(std::min(x + m_Columns[col].Width, position.x + width),
+                    std::min(y + m_RowHeight, position.y + height));
+                if (cellClip.Max.x > cellClip.Min.x && cellClip.Max.y > cellClip.Min.y)
+                {
+                    DrawText(drawList, m_Rows[row][col],
+                        math::Vec2(x + 5.0f, y + m_Baseline), cellClip);
+                }
                 x += m_Columns[col].Width;
             }
         }
@@ -240,14 +302,36 @@ protected:
         x = position.x;
         for (const auto& column : m_Columns)
         {
-            DrawText(drawList, column.Title, math::Vec2(x + 5.0f, position.y + m_Baseline));
+            UIRect headerClip;
+            headerClip.Min = math::Vec2(std::max(x, position.x), position.y);
+            headerClip.Max = math::Vec2(std::min(x + column.Width, position.x + width),
+                position.y + std::min(m_HeaderHeight, height));
+            if (headerClip.Max.x > headerClip.Min.x)
+            {
+                DrawText(drawList, column.Title,
+                    math::Vec2(x + 5.0f, position.y + m_Baseline), headerClip);
+            }
             x += column.Width;
         }
     }
 
 private:
+    void EndColumnResize()
+    {
+        if (m_ResizingColumn == NoSelection)
+        {
+            return;
+        }
+        m_ResizingColumn = NoSelection;
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+    }
+
     float BodyHeight() const { return std::max(0.0f, GetSize().y - m_HeaderHeight); }
-    void DrawText(UIDrawList& drawList, const std::string& text, const math::Vec2& position) const
+    void DrawText(UIDrawList& drawList, const std::string& text, const math::Vec2& position, const UIRect& clip) const
     {
         if (m_Font == nullptr || m_Font->GetTexture() == nullptr)
         {
@@ -255,8 +339,11 @@ private:
         }
         UITextLayoutOptions options{};
         options.Wrap = UITextWrapMode::None;
+        const std::size_t firstCommand = drawList.GetCommandCount();
         m_Font->AppendText(drawList, text, position, options,
             ApplyVisualColor(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)));
+        // DrawListのElement Clip適用時にも、このセル固有のClipを交差して保持します。
+        drawList.ApplyClip(firstCommand, UIClipRect::FromRect(clip));
     }
 
     std::vector<UITableColumn> m_Columns;
@@ -269,6 +356,11 @@ private:
     float m_RowHeight = 24.0f;
     float m_Baseline = 18.0f;
     float m_WheelScrollStep = 48.0f;
+    float m_MinColumnWidth = 32.0f;
+    float m_ResizeHitMargin = 5.0f;
+    float m_ResizeStartX = 0.0f;
+    float m_ResizeInitialWidth = 0.0f;
+    std::size_t m_ResizingColumn = NoSelection;
 };
 
 } // namespace Raven
