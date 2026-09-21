@@ -171,6 +171,8 @@ public:
         return presented == true && restored == true;
     }
 
+    // Rendererは補助Windowの描画Callback内で、このAPIからWindow専用VAOを取得します。
+    // 外部に保持するVAO参照はWindowの破棄前に解放してください。
     // WindowごとのVAOをキャッシュします。初回だけ共有Bufferから対象Context用に再構築します。
     // 呼び出し前後のCurrent Contextを維持するため、復元先Windowを明示します。
     // 元VAOのLayout/IndexBufferを変更した場合はInvalidateWindowVertexArraysで再生成してください。
@@ -232,6 +234,15 @@ public:
             restoreIt->second.Handle->MakeContextCurrent();
             return false;
         }
+        // 外部参照が残る場合はContext破棄後のglDeleteVertexArraysを避けるため拒否します。
+        for (const auto& item : it->second.VertexArrays)
+        {
+            if (item.second.second.use_count() != 1)
+            {
+                restoreIt->second.Handle->MakeContextCurrent();
+                return false;
+            }
+        }
         it->second.VertexArrays.clear();
         return restoreIt->second.Handle->MakeContextCurrent();
     }
@@ -267,6 +278,13 @@ public:
             if (it->second.Handle->MakeContextCurrent() == false)
             {
                 return false;
+            }
+            for (const auto& item : it->second.VertexArrays)
+            {
+                if (item.second.second.use_count() != 1)
+                {
+                    return false;
+                }
             }
             it->second.VertexArrays.clear();
         }
@@ -315,6 +333,21 @@ public:
                 {
                     if (it->second.Handle->MakeContextCurrent() == false)
                     {
+                        continue;
+                    }
+                    bool hasExternalReferences = false;
+                    for (const auto& item : it->second.VertexArrays)
+                    {
+                        if (item.second.second.use_count() != 1)
+                        {
+                            hasExternalReferences = true;
+                            break;
+                        }
+                    }
+                    if (hasExternalReferences == true)
+                    {
+                        // 参照が解放された後の次回PollEventsで再試行します。
+                        m_PendingClose.push_back(id);
                         continue;
                     }
                     it->second.VertexArrays.clear();
