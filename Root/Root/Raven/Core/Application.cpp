@@ -70,6 +70,15 @@ Application::Application(const ApplicationSpecification& specification)
             OnEvent(event);
         });
 
+    // プログラムからのSetFocus/SetText/Tree変更もUIContext経由でOS側IMEへ同期します。
+    m_UIContext.SetIMECancelCallback([this]()
+        {
+            if (m_Window != nullptr)
+            {
+                m_Window->CancelIMEComposition();
+            }
+        });
+
     // WindowsのIME候補Windowが必要とするCaret座標は、Focus中のUIInputTextだけが提供します。
     // WindowへUI型を依存させずApplicationで橋渡しし、他Widget/ImGuiではOS既定の位置を維持します。
     m_Window->SetIMECaretPositionCallback([this](float& x, float& y)
