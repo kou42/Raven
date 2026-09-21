@@ -77,6 +77,16 @@ UITextHorizontalAlignment UILabel::GetTextAlignment() const
 
 math::Vec2 UILabel::OnMeasureContent() const
 {
+    return MeasureText(GetPreferredSize().x);
+}
+
+math::Vec2 UILabel::OnMeasureContentForWidth(float availableWidth) const
+{
+    return MeasureText(availableWidth);
+}
+
+math::Vec2 UILabel::MeasureText(float maxWidth) const
+{
     if (m_Font == nullptr || m_Text.empty())
     {
         return math::Vec2(0.0f, 0.0f);
@@ -84,9 +94,8 @@ math::Vec2 UILabel::OnMeasureContent() const
 
     UITextLayoutOptions options{};
     options.LineHeight = m_LineHeight;
-    // MeasureはArrange前に走るため、前FrameのGetSize()ではなく明示Preferred幅を使います。
-    // Preferred幅が未指定なら自然幅を測り、親のStretch幅での再折り返しは後続課題です。
-    options.MaxWidth = GetPreferredSize().x;
+    // 初回MeasureはPreferred幅、Stretch時の再Measureは親から確定した幅を使います。
+    options.MaxWidth = maxWidth;
     options.Wrap = m_WrapMode;
     const UITextMetrics metrics = UITextLayout::Build(*m_Font, m_Text, options).Metrics;
     const float lastBaseline = (metrics.LineCount > 0u)
