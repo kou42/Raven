@@ -44,7 +44,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 ## Phase 1: 実装分割
 
 1. [ ] 既存TextureAsset / Texture生成API、Shader、OpenGLUIRenderer、Visual Studio project設定、Fontライブラリの利用条件を確認し、Atlasの所有権・更新方法を決定する。
-2. [ ] UIFont / Glyph metrics / Font Atlasの最小構造を実装する。Fontファイルの寿命とTexture再生成を明確にする。
+2. [x] Glyph Metrics / Font Atlasの最小Runtime構造を実装する。Font読込・Rasterize・Texture再生成は未実装。
 3. [ ] UTF-8 decode、代替Glyph、ASCII・日本語のGlyph取得を実装する。不正UTF-8と未収録文字をテストする。
 4. [x] DrawListへGlyph Quadの入口を追加し、既存Image Commandを再利用する方針を決定する。Font Atlasからの呼び出し・描画検証は未実施。
 5. [ ] OpenGLUIRendererでAtlas描画を接続する。既存矩形/画像描画とScissor/Transformを回帰確認する。
@@ -61,7 +61,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 
 | 日付 | ブランチ / PR | 変更 | 検証 | 次の作業 |
 | --- | --- | --- | --- | --- |
-| 2026-09-21 | feature/raven-ui-roadmap | ロードマップとPhase 1の分割・完了条件を作成 | 文書のみ | Phase 1-1の依存関係確認、Font Atlas設計 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIDrawList::AddGlyphを追加。TextureAssetとImage Commandを再利用 | コードレビューのみ。ビルド・実行未検証 | Font Atlas / Glyph Metrics、Font読込とUTF-8対応 |
+| 2026-09-21 | feature/raven-ui-roadmap | ロードマップとPhase 1の分割・完了条件を作成 | 文書のみ | Phase 1-1の依存関係確認、Font Atlas設計 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIDrawList::AddGlyphを追加。TextureAssetとImage Commandを再利用 | コードレビューのみ。ビルド・実行未検証 | Font Atlas / Glyph Metrics、Font読込とUTF-8対応 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIFontAtlasにGlyph Metrics登録・Atlas範囲検証・UV変換・DrawList接続を追加 | ビルド・実行未検証 | Font Loader、Rasterizer、Texture生成、UTF-8 |
 
 ## 更新ルール
 
