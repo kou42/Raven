@@ -362,18 +362,31 @@ void WindowsWindow::Init(const WindowProps& props)
         return;
     }
 
+    // GLFWのshare引数はOpenGL Context間でTexture/Buffer/Program等を共有します。
+    // VAO/FBOなどContext固有ObjectやGL状態は共有されません。
+    GLFWwindow* sharedContext = nullptr;
+    if (m_Data.Backend == RHIBackend::OpenGL && props.ShareContext != nullptr)
+    {
+        sharedContext = static_cast<GLFWwindow*>(props.ShareContext);
+    }
     m_Window = glfwCreateWindow(
         static_cast<int>(props.Width),
         static_cast<int>(props.Height),
         props.Title.c_str(),
         nullptr,
-        nullptr);
+        sharedContext);
 
     if (m_Window == nullptr)
     {
         std::cerr << "Failed to create GLFW window\n";
         return;
     }
+
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(m_Window, &framebufferWidth, &framebufferHeight);
+    m_Data.FramebufferWidth = static_cast<unsigned int>(std::max(framebufferWidth, 0));
+    m_Data.FramebufferHeight = static_cast<unsigned int>(std::max(framebufferHeight, 0));
 
     GLFWwindow* previousContext = glfwGetCurrentContext();
     if (m_Data.Backend == RHIBackend::OpenGL)
@@ -487,6 +500,8 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            data.FramebufferWidth = static_cast<unsigned int>(std::max(width, 0));
+            data.FramebufferHeight = static_cast<unsigned int>(std::max(height, 0));
             if (static_cast<bool>(data.EventCallback) == true)
             {
                 WindowFramebufferResizeEvent event(
