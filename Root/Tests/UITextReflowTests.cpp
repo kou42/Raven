@@ -403,6 +403,7 @@ void TestTreeView()
     Check(context.RouteMouseDown(Raven::math::Vec2(60.0f, 32.0f),
         Raven::UIMouseButton::Left), "tree mouse selects scrolled row");
     Check(view->GetSelectedNode() == leaf, "tree scroll-aware hit test");
+    context.RouteMouseUp(Raven::math::Vec2(60.0f, 32.0f), Raven::UIMouseButton::Left);
     Check(view->IsScrollBarVisible(), "tree scrollbar visible on overflow");
     view->SetScrollOffset(0.0f);
     Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 60.0f),
