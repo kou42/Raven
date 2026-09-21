@@ -42,7 +42,13 @@ enum class UIKey
     Home,
     End,
     Backspace,
-    Delete
+    Delete,
+    A,
+    C,
+    V,
+    X,
+    Y,
+    Z
 };
 
 struct UIKeyEvent
@@ -50,6 +56,8 @@ struct UIKeyEvent
     UIKey Key = UIKey::Unknown;
     bool Pressed = false;
     bool Shift = false;
+    bool Control = false;
+    bool Super = false;
     bool Repeat = false;
     UIContext* Context = nullptr;
     bool Handled = false;
