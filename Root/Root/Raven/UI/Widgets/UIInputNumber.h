@@ -26,6 +26,7 @@ public:
         input->SetPosition(math::Vec2(0.0f, 0.0f));
         input->SetSize(math::Vec2(180.0f, 30.0f));
         m_Input = input.get();
+        m_Input->SetOnSubmit([this]() { Commit(); });
         m_Input->SetInputFilter([](const std::string& text)
             {
                 return IsNumericPrefix(text);
