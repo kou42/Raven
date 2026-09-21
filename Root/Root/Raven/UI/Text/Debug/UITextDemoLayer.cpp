@@ -5,6 +5,7 @@
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Widgets/UIInputText.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -125,6 +126,22 @@ void UITextDemoLayer::OnAttach()
         std::cout << "[Raven UI Text] Failed to attach UILabel.\n";
         return;
     }
+    // Font AtlasはUILabelとInputTextで共有し、入力後もGlyph Textureを保持します。
+    auto input = CreateScope<UIInputText>();
+    input->SetPosition(math::Vec2(24.0f, 200.0f));
+    input->SetSize(math::Vec2(500.0f, 36.0f));
+    input->SetFont(atlas);
+    input->SetText("Raven UI: edit me!");
+    input->SetOnChange([](const std::string& text)
+        {
+            std::cout << "[Raven UI InputText] " << text << '\\n';
+        });
+    UIElement* attachedInput = m_Application.GetUIContext().GetRootElement().AddChild(std::move(input));
+    if (attachedInput != nullptr)
+    {
+        m_InputText = static_cast<UIInputText*>(attachedInput);
+    }
+
     m_Atlas = std::move(atlas);
     m_Label = static_cast<UILabel*>(attached);
     std::cout << "[Raven UI Text] Demo font: " << fontPath << '\n';
@@ -132,6 +149,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_InputText != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_InputText);
+        m_InputText = nullptr;
+    }
     if (m_Label != nullptr)
     {
         // Treeの所有するWidgetを先に破棄してから、Font Atlas参照を解放します。
