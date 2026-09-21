@@ -33,6 +33,13 @@ inline bool UIContext::SetFocus(UIElement* element)
         return false;
     }
 
+    UIElement* previous = GetFocusedElement();
+    if (previous != element)
+    {
+        // プログラムから直接SetFocus/ClearFocusした場合もOS側変換を取り消します。
+        CancelIMEComposition(previous);
+    }
+
     std::vector<UIElement*> focusableElements;
     CollectFocusableElements(m_RootElement.get(), focusableElements);
     for (UIElement* candidate : focusableElements)
