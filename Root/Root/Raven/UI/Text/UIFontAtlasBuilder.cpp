@@ -9,6 +9,7 @@
 #include <iterator>
 #include <limits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 // Dear ImGui submoduleに同梱されたstb_truetypeを、この翻訳単位だけで使用します。
@@ -83,7 +84,6 @@ bool UIFontAtlasBuilder::BuildFromFile(
     const std::size_t width = options.AtlasWidth;
     const std::size_t height = options.AtlasHeight;
     std::vector<unsigned char> pixels(width * height * 4u, 0u);
-    UIFontAtlasBuildOptions settings = options;
     struct PendingGlyph
     {
         std::uint32_t Codepoint = 0u;
