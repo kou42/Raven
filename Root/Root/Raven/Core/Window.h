@@ -31,6 +31,7 @@ class Window
 {
 public:
     using EventCallbackFn = std::function<void(Event&)>;
+    using IMECaretPositionFn = std::function<bool(float&, float&)>;
 
     virtual ~Window() = default;
 
@@ -49,6 +50,8 @@ public:
     virtual void* GetPlatformWindowHandle() const = 0;
 
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
+    // GLFW論理Window座標でCaret位置を取得します。非対応Platformは既定で無視します。
+    virtual void SetIMECaretPositionCallback(IMECaretPositionFn callback) { (void)callback; }
     virtual void SetVSync(bool enabled) = 0;
     virtual bool IsVSync() const = 0;
 
