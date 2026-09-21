@@ -308,6 +308,13 @@ Application::~Application()
         m_ImGuiLayer->OnDetach();
         m_ImGuiLayer.reset();
     }
+
+    // 補助WindowはMain WindowのOpenGL ContextとGPU資産を共有します。
+    // Main Windowが破棄される前に補助WindowのCleanup/VAO解放を完了させます。
+    // 外部参照が残る場合はShutdownOwnedWindowsがfalseを返すため、
+    // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
+    const bool auxiliaryWindowsClosed = m_WindowManager.ShutdownOwnedWindows();
+    assert(auxiliaryWindowsClosed == true);
 }
 
 void Application::PushLayer(Layer* layer)
