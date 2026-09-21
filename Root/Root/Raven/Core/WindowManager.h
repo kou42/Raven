@@ -270,7 +270,18 @@ public:
             }
             it->second.VertexArrays.clear();
         }
-        return m_Windows.erase(id) != 0;
+        const bool removed = m_Windows.erase(id) != 0;
+        // GLFW破棄時に対象ContextがCurrentのままになることを避けます。
+        for (const auto& item : m_Windows)
+        {
+            if (item.second.Handle != nullptr &&
+                item.second.Handle->GetBackend() == RHIBackend::OpenGL &&
+                item.second.Handle->MakeContextCurrent() == true)
+            {
+                break;
+            }
+        }
+        return removed;
     }
 
     std::size_t GetWindowCount() const { return m_Windows.size(); }
