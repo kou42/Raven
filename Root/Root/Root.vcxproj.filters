@@ -1692,4 +1692,8 @@
     <ClInclude Include="Raven\\UI\\Widgets\\UILabel.h"><Filter>Header Files</Filter></ClInclude>
     <ClCompile Include="Raven\\UI\\Widgets\\UILabel.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Raven\\UI\\Text\\Debug\\UITextDemoLayer.h"><Filter>Header Files</Filter></ClInclude>
+    <ClCompile Include="Raven\\UI\\Text\\Debug\\UITextDemoLayer.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
 </Project>
