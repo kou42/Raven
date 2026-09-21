@@ -10,7 +10,7 @@ namespace Raven
 {
 
 // 明示Sizeを持つ文字表示Widgetです。折り返し・水平Alignmentは配置済み幅を使います。
-// 自動Measureは後続PhaseでUIElementのMeasure経路に統合します。
+// Fontと文字列から固有SizeをMeasureします。折り返し時はPreferredSize.xを幅制約に使用します。
 class UILabel final : public UIElement
 {
 public:
@@ -33,6 +33,7 @@ public:
     UITextHorizontalAlignment GetTextAlignment() const;
 
 protected:
+    math::Vec2 OnMeasureContent() const override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
