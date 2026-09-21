@@ -340,6 +340,8 @@ void WindowsWindow::Init(const WindowProps& props)
     // GLFWのHintはProcess内で保持されるため、Window生成ごとに既定値へ戻してから
     // Backend固有Hintを設定します。これによりOpenGL WindowとNo-API Windowを連続生成できます。
     glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_RESIZABLE, props.Resizable ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_DECORATED, props.Decorated ? GLFW_TRUE : GLFW_FALSE);
 
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
@@ -382,7 +384,20 @@ void WindowsWindow::Init(const WindowProps& props)
     m_Input = CreateScope<WindowsInput>(m_Window);
     glfwSetWindowUserPointer(m_Window, &m_Data);
 
-    SetVSync(true);
+    if (props.MinWidth > 0 && props.MinHeight > 0)
+    {
+        glfwSetWindowSizeLimits(m_Window, static_cast<int>(props.MinWidth),
+            static_cast<int>(props.MinHeight), GLFW_DONT_CARE, GLFW_DONT_CARE);
+    }
+    SetVSync(props.VSync);
+    if (props.Fullscreen == true)
+    {
+        SetFullscreen(true);
+    }
+    else if (props.Maximized == true)
+    {
+        Maximize();
+    }
 
     glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
         {
@@ -570,6 +585,138 @@ void* WindowsWindow::GetPlatformWindowHandle() const
     }
 
     return static_cast<void*>(glfwGetWin32Window(m_Window));
+}
+
+WindowState WindowsWindow::GetState() const
+{
+    if (m_Window == nullptr)
+    {
+        return WindowState::Normal;
+    }
+    if (glfwGetWindowMonitor(m_Window) != nullptr)
+    {
+        return WindowState::Fullscreen;
+    }
+    if (glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED) == GLFW_TRUE)
+    {
+        return WindowState::Minimized;
+    }
+    if (glfwGetWindowAttrib(m_Window, GLFW_MAXIMIZED) == GLFW_TRUE)
+    {
+        return WindowState::Maximized;
+    }
+    return WindowState::Normal;
+}
+
+void WindowsWindow::SetTitle(const std::string& title)
+{
+    m_Data.Title = title;
+    if (m_Window != nullptr)
+    {
+        glfwSetWindowTitle(m_Window, title.c_str());
+    }
+}
+
+void WindowsWindow::SetSize(unsigned int width, unsigned int height)
+{
+    if (m_Window != nullptr && width > 0 && height > 0)
+    {
+        glfwSetWindowSize(m_Window, static_cast<int>(width), static_cast<int>(height));
+    }
+}
+
+void WindowsWindow::SetPosition(int x, int y)
+{
+    if (m_Window != nullptr)
+    {
+        glfwSetWindowPos(m_Window, x, y);
+    }
+}
+
+void WindowsWindow::Minimize()
+{
+    if (m_Window != nullptr)
+    {
+        glfwIconifyWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Maximize()
+{
+    if (m_Window != nullptr)
+    {
+        glfwMaximizeWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Restore()
+{
+    if (m_Window != nullptr)
+    {
+        if (GetState() == WindowState::Fullscreen)
+        {
+            SetFullscreen(false);
+        }
+        glfwRestoreWindow(m_Window);
+    }
+}
+
+void WindowsWindow::SetFullscreen(bool enabled)
+{
+    if (m_Window == nullptr || (GetState() == WindowState::Fullscreen) == enabled)
+    {
+        return;
+    }
+    if (enabled == true)
+    {
+        GLFWmonitor* monitor = glfwGetWindowMonitor(m_Window);
+        if (monitor == nullptr)
+        {
+            monitor = glfwGetPrimaryMonitor();
+        }
+        if (monitor == nullptr)
+        {
+            return;
+        }
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        if (mode == nullptr)
+        {
+            return;
+        }
+        // Fullscreen前の通常配置を保存し、解除時に元のサイズへ戻します。
+        glfwGetWindowPos(m_Window, &m_WindowedX, &m_WindowedY);
+        glfwGetWindowSize(m_Window, &m_WindowedWidth, &m_WindowedHeight);
+        glfwSetWindowMonitor(m_Window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    }
+    else
+    {
+        glfwSetWindowMonitor(m_Window, nullptr, m_WindowedX, m_WindowedY,
+            m_WindowedWidth, m_WindowedHeight, GLFW_DONT_CARE);
+    }
+}
+
+void WindowsWindow::Show()
+{
+    if (m_Window != nullptr)
+    {
+        glfwShowWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Hide()
+{
+    if (m_Window != nullptr)
+    {
+        glfwHideWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Focus()
+{
+    if (m_Window != nullptr)
+    {
+        glfwFocusWindow(m_Window);
+    }
 }
 
 void WindowsWindow::CancelIMEComposition()
