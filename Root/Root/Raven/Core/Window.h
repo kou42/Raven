@@ -15,6 +15,13 @@ struct WindowProps
     unsigned int Width;
     unsigned int Height;
     RHIBackend Backend;
+    unsigned int MinWidth = 320;
+    unsigned int MinHeight = 240;
+    bool Resizable = true;
+    bool Decorated = true;
+    bool Maximized = false;
+    bool Fullscreen = false;
+    bool VSync = true;
 
     WindowProps(
         const std::string& title = "My Engine",
@@ -25,6 +32,17 @@ struct WindowProps
         : Title(title), Width(width), Height(height), Backend(backend)
     {
     }
+};
+
+// 既存WindowPropsを維持しながら新しい設定名も使用可能にします。
+using WindowSpecification = WindowProps;
+
+enum class WindowState
+{
+    Normal,
+    Minimized,
+    Maximized,
+    Fullscreen
 };
 
 class Window
@@ -43,6 +61,17 @@ public:
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
     virtual RHIBackend GetBackend() const = 0;
+    virtual WindowState GetState() const = 0;
+    virtual void SetTitle(const std::string& title) = 0;
+    virtual void SetSize(unsigned int width, unsigned int height) = 0;
+    virtual void SetPosition(int x, int y) = 0;
+    virtual void Minimize() = 0;
+    virtual void Maximize() = 0;
+    virtual void Restore() = 0;
+    virtual void SetFullscreen(bool enabled) = 0;
+    virtual void Show() = 0;
+    virtual void Hide() = 0;
+    virtual void Focus() = 0;
 
     // GLFWwindowはVulkan Surface生成で必要になるため従来どおり公開します。
     // DX12側のHWNDはPlatformWindowHandleから取得し、Core層へWin32型を漏らしません。
