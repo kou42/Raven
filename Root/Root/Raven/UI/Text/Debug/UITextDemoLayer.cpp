@@ -222,7 +222,7 @@ void UITextDemoLayer::OnAttach()
             }
             else if (m_Popup != nullptr)
             {
-                context.OpenPopup(m_Popup);
+                context.OpenPopupAt(m_Popup, m_PopupTrigger);
             }
         });
     m_PopupTrigger = m_Application.GetUIContext().GetRootElement().AddChild(std::move(trigger));
