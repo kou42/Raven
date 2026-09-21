@@ -2,6 +2,7 @@
 #include "Raven/UI/Core/UIHitTest.h"
 
 #include <utility>
+#include <algorithm>
 
 namespace Raven
 {
@@ -351,6 +352,43 @@ bool UIContext::OpenPopup(UIElement* popup)
     m_OpenPopup = popup;
     popup->SetVisible(true);
     return true;
+}
+
+bool UIContext::OpenPopupAt(UIElement* popup, const UIElement* anchor, float gap)
+{
+    if (popup == nullptr || anchor == nullptr ||
+        anchor->GetContext() != this || popup->GetParent() != m_PopupLayer)
+    {
+        return false;
+    }
+
+    const math::Vec2 topLeft = anchor->LocalToScreenPosition(math::Vec2(0.0f, 0.0f));
+    const math::Vec2 bottomLeft = anchor->LocalToScreenPosition(
+        math::Vec2(0.0f, anchor->GetSize().y));
+    const math::Vec2 popupSize = popup->GetPreferredSize();
+    const float viewportWidth = m_ViewportSize.x;
+    const float viewportHeight = m_ViewportSize.y;
+    float x = bottomLeft.x;
+    float y = bottomLeft.y + gap;
+
+    // 下側に収まらない場合はAnchorの上側を優先します。
+    if (viewportHeight > 0.0f && y + popupSize.y > viewportHeight)
+    {
+        y = topLeft.y - gap - popupSize.y;
+    }
+    if (viewportWidth > 0.0f)
+    {
+        x = std::clamp(x, 0.0f, std::max(0.0f, viewportWidth - popupSize.x));
+    }
+    if (viewportHeight > 0.0f)
+    {
+        y = std::clamp(y, 0.0f, std::max(0.0f, viewportHeight - popupSize.y));
+    }
+
+    // Popup LayerはRootのAbsolute ChildなのでScreen座標からRoot原点を引きます。
+    const math::Vec2 rootPosition = m_RootElement->LocalToScreenPosition(math::Vec2(0.0f, 0.0f));
+    popup->SetPosition(math::Vec2(x - rootPosition.x, y - rootPosition.y));
+    return OpenPopup(popup);
 }
 
 void UIContext::ClosePopup()
