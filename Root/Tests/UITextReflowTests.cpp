@@ -76,6 +76,14 @@ int main()
     CheckNear("root.GetDesiredSize().y", root.GetDesiredSize().y, 51.0f);
     CheckNear("siblingPtr->GetPosition().y", siblingPtr->GetPosition().y, 32.0f);
 
+    // さらに幅を縮めた場合も、古い高さを流用せず5行へ増加することを確認します。
+    root.SetPreferredSize(Raven::math::Vec2(35.0f, 0.0f));
+    root.BuildDrawList(drawList);
+    CheckNear("narrow wrapping height", wrappingPtr->GetDesiredSize().y, 50.0f);
+    CheckNear("narrow container height", containerPtr->GetDesiredSize().y, 61.0f);
+    CheckNear("narrow root height", root.GetDesiredSize().y, 71.0f);
+    CheckNear("narrow sibling position", siblingPtr->GetPosition().y, 52.0f);
+
     // Rootの幅変更による再Measureで、子と親の高さ・Sibling位置が揃って更新されます。
     root.SetPreferredSize(Raven::math::Vec2(120.0f, 0.0f));
     root.BuildDrawList(drawList);
