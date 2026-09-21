@@ -5,6 +5,7 @@
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UIComboBox.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -265,6 +266,52 @@ void TestPopupRouting()
     context.ClosePopup();
     context.ClosePopup();
 }
+// ComboBoxの選択変更、Keyboard操作、Popup経由のMouse選択を検証します。
+void TestComboBox()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto combo = std::make_unique<Raven::UIComboBox>();
+    combo->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    combo->SetOptions({ "Idle", "Walk", "Run" });
+    int notifications = 0;
+    combo->SetOnSelectionChanged([&notifications](std::size_t, const std::string&)
+        {
+            ++notifications;
+        });
+    Raven::UIComboBox* comboPtr = combo.get();
+    context.GetRootElement().AddChild(std::move(combo));
+    Check(comboPtr->GetSelectedIndex() == Raven::UIComboBox::NoSelection, "combo initial selection");
+    Check(comboPtr->SetSelectedIndex(1u), "combo set selection");
+    Check(comboPtr->GetSelectedText() == "Walk", "combo selected text");
+    Check(comboPtr->SetSelectedIndex(1u), "combo same selection");
+    Check(notifications == 1, "combo unchanged selection no notification");
+    Check(comboPtr->SetSelectedIndex(10u) == false, "combo invalid index");
+    Check(context.SetFocus(comboPtr), "combo focus");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "combo keyboard open");
+    Check(comboPtr->IsOpen(), "combo opened");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "combo next item");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "combo keyboard select");
+    Check(comboPtr->GetSelectedIndex() == 2u && comboPtr->IsOpen() == false,
+        "combo keyboard selection");
+    Check(notifications == 2, "combo keyboard notification");
+
+    Check(comboPtr->Open(), "combo reopen");
+    context.RouteMouseDown(Raven::math::Vec2(30.0f, 58.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(30.0f, 58.0f), Raven::UIMouseButton::Left);
+    Check(comboPtr->GetSelectedIndex() == 0u && comboPtr->IsOpen() == false,
+        "combo mouse selects first row");
+    Check(notifications == 3, "combo mouse notification");
+    Check(comboPtr->Open(), "combo open for Escape");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Escape)), "combo Escape");
+    Check(comboPtr->IsOpen() == false, "combo Escape closed");
+    comboPtr->SetOptions({ "Only" });
+    Check(comboPtr->GetSelectedIndex() == Raven::UIComboBox::NoSelection,
+        "combo options reset selection");
+    Check(comboPtr->SetSelectedIndex(0u), "combo new options selection");
+    Check(notifications == 4, "combo new selection notification");
+    Check(context.GetRootElement().RemoveChild(comboPtr), "combo removal releases popup");
+}
 } // namespace
 
 int main()
@@ -273,6 +320,7 @@ int main()
     TestInputNumber();
     TestInputEventRouting();
     TestPopupRouting();
+    TestComboBox();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
