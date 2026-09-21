@@ -525,6 +525,21 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
                 position + math::Vec2(CursorX(selection.second) - m_ScrollX, size.y - 3.0f),
                 ApplyVisualColor(math::Vec4{ 0.24f, 0.40f, 0.68f, 0.75f }));
         }
+        if (m_Composition.IsActive() == true)
+        {
+            // IMEが選択中の変換候補範囲を本文の選択とは独立して装飾します。
+            // indexはComposition文字列のcodepoint単位なので、表示上の置換開始を加算します。
+            const auto selection = m_Composition.GetSelection();
+            if (selection.second > selection.first)
+            {
+                const std::size_t begin = m_Composition.GetReplacementStart();
+                const float left = TextCursorX(display, begin + selection.first) - m_ScrollX;
+                const float right = TextCursorX(display, begin + selection.second) - m_ScrollX;
+                drawList.AddRect(position + math::Vec2(left, 3.0f),
+                    position + math::Vec2(right, size.y - 3.0f),
+                    ApplyVisualColor(math::Vec4{ 0.34f, 0.44f, 0.62f, 0.65f }));
+            }
+        }
         m_Font->AppendText(drawList, display,
             position + math::Vec2(m_Padding - m_ScrollX, m_Baseline), m_Height,
             ApplyVisualColor(m_TextColor));
