@@ -1,7 +1,9 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIHitTest.h"
+#include "Raven/UI/Widgets/UITooltip.h"
 
 #include <utility>
+#include <algorithm>
 
 namespace Raven
 {
@@ -11,6 +13,10 @@ UIContext::UIContext()
 {
     // Rootから追加される全ElementへContext所属を伝播し、Tree変更時にInteraction Stateを安全に掃除できるようにします。
     m_RootElement->SetContextRecursive(this);
+    // Layer自体はHit対象にならず、Popupだけを前面で描画・Hit Testします。
+    auto layer = CreateScope<UIElement>();
+    layer->SetAffectsParentMeasure(false);
+    m_PopupLayer = m_RootElement->AddChild(std::move(layer));
 }
 
 void UIContext::CancelIMEComposition(UIElement* element)
@@ -43,6 +49,7 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize)
     m_DrawList.Clear();
     m_ViewportSize = viewportSize;
     m_FrameActive = true;
+    UpdateTooltip();
 }
 
 void UIContext::EndFrame()
@@ -57,6 +64,7 @@ void UIContext::EndFrame()
     // ====================================================================
     // UIElement Treeはframeを跨いで保持し、描画直前にAbsolute / Vertical / Horizontal Layoutを解決して
     // 今frame用DrawCommandへ展開します。将来Measure / Arrangeを分離してもUIContextのframe境界は維持します。
+    UpdateTooltip();
     if (m_RootElement != nullptr)
     {
         m_RootElement->BuildDrawList(m_DrawList);
@@ -94,9 +102,38 @@ bool UIContext::RouteMouseEvent(
         m_RootElement->BuildDrawList(layoutResolveDrawList);
     }
 
+    m_LastPointerPosition = screenPosition;
+    if (type == UIMouseEventType::Down || type == UIMouseEventType::Scroll)
+    {
+        HideTooltip();
+        m_TooltipSuppressedUntilMove = true;
+    }
+    if (type == UIMouseEventType::Move && m_TooltipSuppressedUntilMove)
+    {
+        m_TooltipSuppressedUntilMove = false;
+        m_HoverStarted = std::chrono::steady_clock::now();
+    }
+
+    // 外側Downを消費し、閉じた直後に背面Buttonを誤操作しないようにします。
+    if (m_OpenPopup != nullptr && type == UIMouseEventType::Down)
+    {
+        UIElement* popupHit = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
+        if (IsElementInSubtree(popupHit, m_OpenPopup) == false)
+        {
+            ClosePopup();
+            UpdateHoverTarget(nullptr);
+            UpdatePressedTarget(nullptr);
+            return true;
+        }
+    }
+
     // Hoverは常に実際のPointer位置を表す必要があるため、Capture中でもHit Test結果から更新します。
     UIElement* hitTarget = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
     UpdateHoverTarget(hitTarget);
+    if (type == UIMouseEventType::Move)
+    {
+        UpdateTooltip();
+    }
 
     if (type == UIMouseEventType::Down && button == UIMouseButton::Left)
     {
@@ -296,6 +333,209 @@ bool UIContext::HasMouseCapture(const UIElement* element) const
 UIElement* UIContext::GetMouseCaptureElement() { return m_MouseCaptureElement; }
 const UIElement* UIContext::GetMouseCaptureElement() const { return m_MouseCaptureElement; }
 
+UIElement* UIContext::AddPopup(Scope<UIElement> popup)
+{
+    if (popup == nullptr || m_PopupLayer == nullptr)
+    {
+        return nullptr;
+    }
+    popup->SetVisible(false);
+    popup->SetAffectsParentMeasure(false);
+    return m_PopupLayer->AddChild(std::move(popup));
+}
+
+bool UIContext::RemovePopup(UIElement* popup)
+{
+    if (popup == nullptr || m_PopupLayer == nullptr || popup->GetParent() != m_PopupLayer)
+    {
+        return false;
+    }
+    // RemoveChildがOnSubtreeRemovingを通るため、開いているPopupも安全にCloseされます。
+    return m_PopupLayer->RemoveChild(popup);
+}
+
+bool UIContext::OpenPopup(UIElement* popup)
+{
+    if (popup == nullptr || popup->GetParent() != m_PopupLayer)
+    {
+        return false;
+    }
+    if (m_OpenPopup == popup)
+    {
+        return true;
+    }
+    ClosePopup();
+    HideTooltip();
+    // Rootへ後から通常Widgetが追加されてもPopupが常に最前面になるよう、
+    // Open時にLayerをPainter's Orderの末尾へ移します。
+    m_RootElement->BringChildToFront(m_PopupLayer);
+    m_OpenPopup = popup;
+    popup->SetVisible(true);
+    return true;
+}
+
+bool UIContext::OpenPopupAt(UIElement* popup, const UIElement* anchor, float gap)
+{
+    if (popup == nullptr || anchor == nullptr ||
+        anchor->GetContext() != this || popup->GetParent() != m_PopupLayer)
+    {
+        return false;
+    }
+
+    const math::Vec2 topLeft = anchor->LocalToScreenPosition(math::Vec2(0.0f, 0.0f));
+    const math::Vec2 bottomLeft = anchor->LocalToScreenPosition(
+        math::Vec2(0.0f, anchor->GetSize().y));
+    const math::Vec2 popupSize = popup->GetPreferredSize();
+    const float viewportWidth = m_ViewportSize.x;
+    const float viewportHeight = m_ViewportSize.y;
+    float x = bottomLeft.x;
+    float y = bottomLeft.y + gap;
+
+    // 下側に収まらない場合はAnchorの上側を優先します。
+    if (viewportHeight > 0.0f && y + popupSize.y > viewportHeight)
+    {
+        y = topLeft.y - gap - popupSize.y;
+    }
+    if (viewportWidth > 0.0f)
+    {
+        x = std::clamp(x, 0.0f, std::max(0.0f, viewportWidth - popupSize.x));
+    }
+    if (viewportHeight > 0.0f)
+    {
+        y = std::clamp(y, 0.0f, std::max(0.0f, viewportHeight - popupSize.y));
+    }
+
+    // Popup LayerはRootのAbsolute ChildなのでScreen座標からRoot原点を引きます。
+    const math::Vec2 rootPosition = m_RootElement->LocalToScreenPosition(math::Vec2(0.0f, 0.0f));
+    popup->SetPosition(math::Vec2(x - rootPosition.x, y - rootPosition.y));
+    return OpenPopup(popup);
+}
+
+void UIContext::ClosePopup()
+{
+    UIElement* popup = m_OpenPopup;
+    if (popup == nullptr)
+    {
+        return;
+    }
+    m_OpenPopup = nullptr;
+    // 非表示になるWidgetのCaptureとFocusを先に解放します。
+    if (IsElementInSubtree(m_MouseCaptureElement, popup))
+    {
+        CancelMouseCapture();
+    }
+    if (IsElementInSubtree(GetFocusedElement(), popup))
+    {
+        ClearFocus();
+    }
+    if (IsElementInSubtree(m_HoveredElement, popup))
+    {
+        UpdateHoverTarget(nullptr);
+    }
+    if (IsElementInSubtree(m_PressedElement, popup))
+    {
+        UpdatePressedTarget(nullptr);
+    }
+    popup->SetVisible(false);
+}
+
+bool UIContext::SetTooltip(UIElement* target, std::string text,
+    const Ref<UIFontAtlas>& font, float delaySeconds)
+{
+    if (target == nullptr || target->GetContext() != this || text.empty() ||
+        delaySeconds < 0.0f)
+    {
+        return false;
+    }
+    ClearTooltip(target);
+    m_Tooltips.push_back({ target, std::move(text), font, delaySeconds });
+    if (m_Tooltip == nullptr && m_PopupLayer != nullptr)
+    {
+        auto tooltip = CreateScope<UITooltip>();
+        m_Tooltip = static_cast<UITooltip*>(m_PopupLayer->AddChild(std::move(tooltip)));
+    }
+    if (m_HoveredElement != nullptr && IsElementInSubtree(m_HoveredElement, target))
+    {
+        m_TooltipTarget = target;
+        m_HoverStarted = std::chrono::steady_clock::now();
+    }
+    return m_Tooltip != nullptr;
+}
+
+bool UIContext::ClearTooltip(UIElement* target)
+{
+    if (target == nullptr)
+    {
+        return false;
+    }
+    const auto found = std::find_if(m_Tooltips.begin(), m_Tooltips.end(),
+        [target](const TooltipRegistration& entry) { return entry.Target == target; });
+    if (found == m_Tooltips.end())
+    {
+        return false;
+    }
+    if (m_TooltipTarget == target)
+    {
+        HideTooltip();
+        m_TooltipTarget = nullptr;
+    }
+    m_Tooltips.erase(found);
+    return true;
+}
+
+const UITooltip* UIContext::GetVisibleTooltip() const
+{
+    return m_Tooltip != nullptr && m_Tooltip->IsVisible() ? m_Tooltip : nullptr;
+}
+
+void UIContext::HideTooltip()
+{
+    if (m_Tooltip != nullptr && m_Tooltip->IsVisible())
+    {
+        m_Tooltip->SetVisible(false);
+    }
+}
+
+void UIContext::UpdateTooltip()
+{
+    if (m_Tooltip == nullptr || m_TooltipTarget == nullptr || m_OpenPopup != nullptr ||
+        m_TooltipSuppressedUntilMove)
+    {
+        HideTooltip();
+        return;
+    }
+    const auto found = std::find_if(m_Tooltips.begin(), m_Tooltips.end(),
+        [this](const TooltipRegistration& entry) { return entry.Target == m_TooltipTarget; });
+    if (found == m_Tooltips.end())
+    {
+        HideTooltip();
+        return;
+    }
+    const float elapsed = std::chrono::duration<float>(
+        std::chrono::steady_clock::now() - m_HoverStarted).count();
+    if (elapsed < found->DelaySeconds)
+    {
+        HideTooltip();
+        return;
+    }
+    m_Tooltip->SetContent(found->Text, found->Font);
+    const math::Vec2 size = m_Tooltip->GetPreferredSize();
+    float x = m_LastPointerPosition.x + 12.0f;
+    float y = m_LastPointerPosition.y + 18.0f;
+    if (m_ViewportSize.x > 0.0f)
+    {
+        x = std::clamp(x, 0.0f, std::max(0.0f, m_ViewportSize.x - size.x));
+    }
+    if (m_ViewportSize.y > 0.0f)
+    {
+        y = std::clamp(y, 0.0f, std::max(0.0f, m_ViewportSize.y - size.y));
+    }
+    const math::Vec2 origin = m_RootElement->LocalToScreenPosition(math::Vec2(0.0f, 0.0f));
+    m_Tooltip->SetPosition(math::Vec2(x - origin.x, y - origin.y));
+    m_RootElement->BringChildToFront(m_PopupLayer);
+    m_Tooltip->SetVisible(true);
+}
+
 void UIContext::SetRenderer(Scope<UIRenderer> renderer)
 {
     m_Renderer = std::move(renderer);
@@ -328,6 +568,17 @@ void UIContext::UpdateHoverTarget(UIElement* target)
     }
 
     m_HoveredElement = target;
+    HideTooltip();
+    m_TooltipTarget = nullptr;
+    for (const TooltipRegistration& entry : m_Tooltips)
+    {
+        if (IsElementInSubtree(target, entry.Target))
+        {
+            m_TooltipTarget = entry.Target;
+            m_HoverStarted = std::chrono::steady_clock::now();
+            break;
+        }
+    }
     if (m_HoveredElement != nullptr)
     {
         m_HoveredElement->SetHovered(true);
@@ -358,6 +609,39 @@ void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
     if (subtreeRoot == nullptr)
     {
         return;
+    }
+
+    // 対象Treeが切り離される前にTooltip登録を解除し、dangling pointerを防ぎます。
+    for (auto iterator = m_Tooltips.begin(); iterator != m_Tooltips.end();)
+    {
+        if (IsElementInSubtree(iterator->Target, subtreeRoot))
+        {
+            if (m_TooltipTarget == iterator->Target)
+            {
+                HideTooltip();
+                m_TooltipTarget = nullptr;
+            }
+            iterator = m_Tooltips.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
+    if (IsElementInSubtree(m_PopupLayer, subtreeRoot))
+    {
+        m_Tooltip = nullptr;
+        m_TooltipTarget = nullptr;
+    }
+
+    // 外部からPopupを削除した場合も非所有Pointerを残しません。
+    if (IsElementInSubtree(m_OpenPopup, subtreeRoot))
+    {
+        ClosePopup();
+    }
+    if (IsElementInSubtree(m_PopupLayer, subtreeRoot))
+    {
+        m_PopupLayer = nullptr;
     }
 
     // Widget破棄前にOSとUI双方のIME変換を破棄します。

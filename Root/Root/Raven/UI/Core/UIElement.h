@@ -55,6 +55,9 @@ public:
     bool RemoveChild(UIElement* child);
     void ClearChildren();
 
+    // Painter's OrderとHit Testの両方でChildを最前面へ移動します。
+    bool BringChildToFront(UIElement* child);
+
     // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
     // '/' はPath区切りとして予約し、含む名前は拒否します。
     bool SetName(std::string name);
@@ -140,6 +143,9 @@ public:
 
     // Keyboard / Gamepad Navigationの対象にするElementだけ明示的に有効化します。
     // Focus状態そのものはUIContextがTree単位で一意になるよう更新します。
+    // falseの場合は自身とDescendantをHit Testから除外し、描画だけを行います。
+    void SetHitTestVisible(bool value) { m_HitTestVisible = value; }
+    bool IsHitTestVisible() const { return m_HitTestVisible; }
     void SetFocusable(bool value) { m_Focusable = value; }
     bool IsFocusable() const { return m_Focusable; }
     bool IsFocused() const { return m_Focused; }
@@ -304,6 +310,11 @@ protected:
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
     virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }
     virtual void OnFocusChanged(bool focused) { (void)focused; }
+    virtual void OnContextChanged(UIContext* previous, UIContext* current)
+    {
+        (void)previous;
+        (void)current;
+    }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
@@ -367,6 +378,7 @@ private:
     math::Vec4 m_TintColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     uint64_t m_TreeGeneration = 1u;
     bool m_Visible = true;
+    bool m_HitTestVisible = true;
     bool m_Hovered = false;
     bool m_Pressed = false;
     bool m_Focusable = false;

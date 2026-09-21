@@ -5,6 +5,8 @@
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 
@@ -197,6 +199,54 @@ void UITextDemoLayer::OnAttach()
         m_InputNumber = static_cast<UIInputNumber*>(attachedNumber);
     }
 
+    // Popupは通常Rootの後に描画され、外側ClickとEscapeで閉じます。
+    auto popup = CreateScope<UIButton>();
+    popup->SetPosition(math::Vec2(24.0f, 340.0f));
+    popup->SetSize(math::Vec2(220.0f, 80.0f));
+    popup->SetOnClick([this]()
+        {
+            std::cout << "[Raven UI Popup] Item clicked\\n";
+            m_Application.GetUIContext().ClosePopup();
+        });
+    m_Popup = m_Application.GetUIContext().AddPopup(std::move(popup));
+
+    auto trigger = CreateScope<UIButton>();
+    trigger->SetPosition(math::Vec2(24.0f, 300.0f));
+    trigger->SetSize(math::Vec2(220.0f, 34.0f));
+    trigger->SetFocusable(true);
+    trigger->SetOnClick([this]()
+        {
+            UIContext& context = m_Application.GetUIContext();
+            if (context.GetOpenPopup() == m_Popup)
+            {
+                context.ClosePopup();
+            }
+            else if (m_Popup != nullptr)
+            {
+                context.OpenPopupAt(m_Popup, m_PopupTrigger);
+            }
+        });
+    m_PopupTrigger = m_Application.GetUIContext().GetRootElement().AddChild(std::move(trigger));
+    std::cout << "[Raven UI Popup] Click the button at (24, 300); Escape/outside click closes.\\n";
+
+    auto combo = CreateScope<UIComboBox>();
+    combo->SetPosition(math::Vec2(270.0f, 300.0f));
+    combo->SetSize(math::Vec2(180.0f, 30.0f));
+    combo->SetFont(atlas);
+    combo->SetOptions({ "Idle", "Walk", "Run" });
+    combo->SetSelectedIndex(0u);
+    combo->SetOnSelectionChanged([](std::size_t index, const std::string& text)
+        {
+            std::cout << "[Raven UI ComboBox] " << index << ": " << text << '\\n';
+        });
+    m_ComboBox = static_cast<UIComboBox*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(combo)));
+
+    // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
+    UIContext& tooltipContext = m_Application.GetUIContext();
+    tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
+    tooltipContext.SetTooltip(m_ComboBox, "Select animation", atlas);
+
     m_Atlas = std::move(atlas);
     m_Label = static_cast<UILabel*>(attached);
     std::cout << "[Raven UI Text] Demo font: " << fontPath << '\n';
@@ -204,6 +254,21 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_ComboBox != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_ComboBox);
+        m_ComboBox = nullptr;
+    }
+    if (m_PopupTrigger != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_PopupTrigger);
+        m_PopupTrigger = nullptr;
+    }
+    if (m_Popup != nullptr)
+    {
+        m_Application.GetUIContext().RemovePopup(m_Popup);
+        m_Popup = nullptr;
+    }
     if (m_InputNumber != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_InputNumber);

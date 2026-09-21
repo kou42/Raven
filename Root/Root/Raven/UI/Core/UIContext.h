@@ -2,6 +2,9 @@
 
 #include "Raven/Core/Base.h"
 #include <functional>
+#include <chrono>
+#include <string>
+#include <vector>
 #include "Raven/Math/MathVector.h"
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIElement.h"
@@ -32,6 +35,9 @@ namespace Raven
 //
 // Interaction StateとしてHover / Pressed / Mouse Captureに加え、Keyboard FocusもContext単位で管理します。
 // Windowや描画TargetごとにContextを分離した場合でも、入力状態が別Contextへ漏れない構造を維持します。
+class UIFontAtlas;
+class UITooltip;
+
 class UIContext
 {
 public:
@@ -90,6 +96,22 @@ public:
     UIElement* GetMouseCaptureElement();
     const UIElement* GetMouseCaptureElement() const;
 
+    // PopupはRoot末尾の専用Layerへ所有させ、通常のPanel Clipから分離します。
+    UIElement* AddPopup(Scope<UIElement> popup);
+    bool RemovePopup(UIElement* popup);
+    bool OpenPopup(UIElement* popup);
+    // AnchorのScreen位置からPopupの配置を決定し、Viewport外へはみ出す場合は反対側へ展開します。
+    bool OpenPopupAt(UIElement* popup, const UIElement* anchor, float gap = 4.0f);
+    void ClosePopup();
+    UIElement* GetOpenPopup() const { return m_OpenPopup; }
+
+    // TooltipはPopupと独立した描画専用Overlayです。targetのTree離脱時は自動解除します。
+    bool SetTooltip(UIElement* target, std::string text,
+        const Ref<UIFontAtlas>& font, float delaySeconds = 0.5f);
+    bool ClearTooltip(UIElement* target);
+    const UITooltip* GetVisibleTooltip() const;
+    void UpdateTooltip();
+
     void SetRenderer(Scope<UIRenderer> renderer);
 
     UIElement& GetRootElement();
@@ -109,6 +131,7 @@ public:
 private:
     friend class UIElement;
 
+    void HideTooltip();
     void UpdateHoverTarget(UIElement* target);
     void UpdatePressedTarget(UIElement* target);
     void CollectFocusableElements(UIElement* root, std::vector<UIElement*>& outElements) const;
@@ -123,6 +146,21 @@ private:
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
     Scope<UIElement> m_RootElement;
+    UIElement* m_PopupLayer = nullptr;
+    UITooltip* m_Tooltip = nullptr;
+    struct TooltipRegistration
+    {
+        UIElement* Target = nullptr;
+        std::string Text;
+        Ref<UIFontAtlas> Font;
+        float DelaySeconds = 0.5f;
+    };
+    std::vector<TooltipRegistration> m_Tooltips;
+    UIElement* m_TooltipTarget = nullptr;
+    std::chrono::steady_clock::time_point m_HoverStarted{};
+    math::Vec2 m_LastPointerPosition{};
+    bool m_TooltipSuppressedUntilMove = false;
+    UIElement* m_OpenPopup = nullptr;
     Scope<UIRenderer> m_Renderer;
     UIElement* m_HoveredElement = nullptr;
     UIElement* m_PressedElement = nullptr;

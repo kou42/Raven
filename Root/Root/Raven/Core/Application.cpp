@@ -24,6 +24,7 @@ UIKey ToUIKey(int keyCode)
     switch (keyCode)
     {
     case GLFW_KEY_TAB: return UIKey::Tab;
+    case GLFW_KEY_ESCAPE: return UIKey::Escape;
     case GLFW_KEY_ENTER: return UIKey::Enter;
     case GLFW_KEY_SPACE: return UIKey::Space;
     case GLFW_KEY_LEFT: return UIKey::Left;
