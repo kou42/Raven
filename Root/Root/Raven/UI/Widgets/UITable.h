@@ -28,6 +28,8 @@ class UITable final : public UIElement
 {
 public:
     using SelectionHandler = std::function<void(std::size_t)>;
+    using RowCountProvider = std::function<std::size_t()>;
+    using CellTextProvider = std::function<std::string(std::size_t, std::size_t)>;
     static constexpr std::size_t NoSelection = std::numeric_limits<std::size_t>::max();
 
     UITable()
@@ -43,19 +45,64 @@ public:
     const std::vector<UITableColumn>& GetColumns() const { return m_Columns; }
     const std::vector<std::vector<std::string>>& GetRows() const { return m_Rows; }
     std::size_t GetSelectedIndex() const { return m_SelectedIndex; }
+    std::size_t GetRowCount() const
+    {
+        return m_RowCountProvider ? m_RowCountProvider() : m_Rows.size();
+    }
+    bool HasDataSource() const { return static_cast<bool>(m_RowCountProvider); }
+
+    // 外部モデルはTableが所有しません。ProviderはTableより長く生存するデータを参照してください。
+    // 内部行との混在を避け、切替時には既存行・選択・Scrollをリセットします。
+    bool SetDataSource(RowCountProvider rowCount, CellTextProvider cellText)
+    {
+        if (rowCount == nullptr || cellText == nullptr)
+        {
+            return false;
+        }
+        Clear();
+        m_RowCountProvider = std::move(rowCount);
+        m_CellTextProvider = std::move(cellText);
+        InvalidateMeasure();
+        return true;
+    }
+
+    void ClearDataSource()
+    {
+        if (HasDataSource() == false)
+        {
+            return;
+        }
+        Clear();
+    }
+
+    // 外部データの件数が変わった際に呼び、無効な選択とScrollを補正します。
+    void NotifyDataSourceChanged()
+    {
+        if (HasDataSource() == false)
+        {
+            return;
+        }
+        if (m_SelectedIndex != NoSelection && m_SelectedIndex >= GetRowCount())
+        {
+            SelectRow(NoSelection);
+        }
+        SetScrollOffset(m_ScrollOffset);
+        InvalidateMeasure();
+    }
 
     // 描画対象の行区間は半開区間[first, last)。行データ全体を走査せずViewportから算出します。
     std::pair<std::size_t, std::size_t> GetVisibleRowRange() const
     {
         const float viewport = BodyHeight();
-        if (viewport <= 0.0f || m_Rows.empty())
+        if (viewport <= 0.0f || GetRowCount() == 0u)
         {
             return { 0u, 0u };
         }
         const float scroll = GetScrollOffset();
-        const std::size_t first = std::min(m_Rows.size(),
+        const std::size_t count = GetRowCount();
+        const std::size_t first = std::min(count,
             static_cast<std::size_t>(scroll / m_RowHeight));
-        const std::size_t last = std::min(m_Rows.size(),
+        const std::size_t last = std::min(count,
             static_cast<std::size_t>(std::ceil((scroll + viewport) / m_RowHeight)));
         return { first, std::max(first, last) };
     }
@@ -77,7 +124,7 @@ public:
 
     bool AddRow(std::vector<std::string> cells)
     {
-        if (m_Columns.empty() || cells.size() != m_Columns.size())
+        if (HasDataSource() == true || m_Columns.empty() || cells.size() != m_Columns.size())
         {
             return false;
         }
@@ -88,7 +135,7 @@ public:
 
     bool SelectRow(std::size_t index)
     {
-        if (index != NoSelection && index >= m_Rows.size())
+        if (index != NoSelection && index >= GetRowCount())
         {
             return false;
         }
@@ -124,6 +171,8 @@ public:
         SelectRow(NoSelection);
         m_Rows.clear();
         m_Columns.clear();
+        m_RowCountProvider = nullptr;
+        m_CellTextProvider = nullptr;
         m_ScrollOffset = 0.0f;
         m_HorizontalOffset = 0.0f;
         InvalidateMeasure();
@@ -153,7 +202,7 @@ public:
     bool IsScrollBarVisible() const { return GetMaxScrollOffset() > 0.0f && BodyHeight() > 0.0f; }
     float GetMaxScrollOffset() const
     {
-        return std::max(0.0f, static_cast<float>(m_Rows.size()) * m_RowHeight - BodyHeight());
+        return std::max(0.0f, static_cast<float>(GetRowCount()) * m_RowHeight - BodyHeight());
     }
     float GetScrollOffset() const { return std::min(m_ScrollOffset, GetMaxScrollOffset()); }
     void SetScrollOffset(float value)
@@ -165,7 +214,7 @@ public:
     }
     void EnsureSelectedVisible()
     {
-        if (m_SelectedIndex >= m_Rows.size() || BodyHeight() <= 0.0f)
+        if (m_SelectedIndex >= GetRowCount() || BodyHeight() <= 0.0f)
         {
             return;
         }
@@ -340,7 +389,7 @@ protected:
         }
         const std::size_t index = static_cast<std::size_t>(
             (local.y - m_HeaderHeight + GetScrollOffset()) / m_RowHeight);
-        if (index >= m_Rows.size())
+        if (index >= GetRowCount())
         {
             return;
         }
@@ -355,14 +404,14 @@ protected:
     void OnKeyEvent(UIKeyEvent& event) override
     {
         if (IsFocused() == false || event.Pressed == false || event.Control || event.Super ||
-            m_Rows.empty())
+            GetRowCount() == 0u)
         {
             return;
         }
         if (event.Key == UIKey::Down)
         {
             SelectRow(m_SelectedIndex == NoSelection ? 0u :
-                std::min(m_SelectedIndex + 1u, m_Rows.size() - 1u));
+                std::min(m_SelectedIndex + 1u, GetRowCount() - 1u));
         }
         else if (event.Key == UIKey::Up)
         {
@@ -375,7 +424,7 @@ protected:
         }
         else if (event.Key == UIKey::End)
         {
-            SelectRow(m_Rows.size() - 1u);
+            SelectRow(GetRowCount() - 1u);
         }
         else
         {
@@ -427,7 +476,7 @@ protected:
                     std::min(y + m_RowHeight, position.y + m_HeaderHeight + BodyHeight()));
                 if (cellClip.Max.x > cellClip.Min.x && cellClip.Max.y > cellClip.Min.y)
                 {
-                    DrawText(drawList, m_Rows[row][col],
+                    DrawText(drawList, HasDataSource() == true ? m_CellTextProvider(row, col) : m_Rows[row][col],
                         math::Vec2(x + 5.0f, y + m_Baseline), cellClip);
                 }
                 x += m_Columns[col].Width;
@@ -577,6 +626,8 @@ private:
         drawList.ApplyClip(firstCommand, UIClipRect::FromRect(clip));
     }
 
+    RowCountProvider m_RowCountProvider;
+    CellTextProvider m_CellTextProvider;
     std::vector<UITableColumn> m_Columns;
     std::vector<std::vector<std::string>> m_Rows;
     Ref<UIFontAtlas> m_Font;
