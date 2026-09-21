@@ -15,6 +15,8 @@ class UIInputText final : public UIElement
 {
 public:
     using ChangeHandler = std::function<void(const std::string&)>;
+    using ClipboardReader = std::function<std::string()>;
+    using ClipboardWriter = std::function<void(const std::string&)>;
 
     UIInputText() { SetFocusable(true); SetClipChildren(true); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; InvalidateMeasure(); }
@@ -22,6 +24,11 @@ public:
     const std::string& GetText() const { return m_Edit.GetText(); }
     const UITextEditBuffer& GetEditBuffer() const { return m_Edit; }
     void SetOnChange(ChangeHandler handler) { m_OnChange = std::move(handler); }
+    void SetClipboard(ClipboardReader reader, ClipboardWriter writer)
+    {
+        m_ReadClipboard = std::move(reader);
+        m_WriteClipboard = std::move(writer);
+    }
     void SetTextColor(const math::Vec4& color) { m_TextColor = color; }
 
 protected:
@@ -39,6 +46,8 @@ private:
     Ref<UIFontAtlas> m_Font;
     UITextEditBuffer m_Edit;
     ChangeHandler m_OnChange;
+    ClipboardReader m_ReadClipboard;
+    ClipboardWriter m_WriteClipboard;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     bool m_Selecting = false;
     float m_Padding = 6.0f;
