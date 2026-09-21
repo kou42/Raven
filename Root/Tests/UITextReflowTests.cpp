@@ -37,7 +37,7 @@ void CheckNear(const char* label, float actual, float expected)
     // Release構成でも検証が無効化されないよう、assertではなく終了コードで失敗を通知します。
     if (Near(actual, expected) == false)
     {
-        std::cerr << label << ": expected " << expected << ", actual " << actual << '\\n';
+        std::cerr << label << ": expected " << expected << ", actual " << actual << '\n';
         std::exit(EXIT_FAILURE);
     }
 }
