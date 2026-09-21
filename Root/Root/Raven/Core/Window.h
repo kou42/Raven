@@ -52,6 +52,8 @@ public:
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
     // GLFW論理Window座標でCaret位置を取得します。非対応Platformは既定で無視します。
     virtual void SetIMECaretPositionCallback(IMECaretPositionFn callback) { (void)callback; }
+    // UI側で編集位置/Focusが変わった際、OS側に残る未確定変換も破棄します。
+    virtual void CancelIMEComposition() {}
     virtual void SetVSync(bool enabled) = 0;
     virtual bool IsVSync() const = 0;
 
