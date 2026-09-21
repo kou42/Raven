@@ -30,6 +30,7 @@ D:.
     |   |
     |   +---include
     |   |   |   stb_image.h
+    |   |   |   stb_truetype.h
     |   |   |
     |   |   +---glad
     |   |   |       glad.h
@@ -1018,6 +1019,16 @@ D:.
     |   |       |       UIVectorDocument.h
     |   |       |       VectorDocument.h
     |   |       |
+    |   |       +---Text
+    |   |       |       UIFontAtlas.h
+    |   |       |       UIFontAtlasBuilder.cpp
+    |   |       |       UIFontAtlasBuilder.h
+    |   |       |       UIUtf8.h
+    |   |       |
+    |   |       |   +---Debug
+    |   |       |           UITextDemoLayer.cpp
+    |   |       |           UITextDemoLayer.h
+    |   |       |
     |   |       +---Rendering
     |   |       |       OpenGLUIRenderer.cpp
     |   |       |       OpenGLUIRenderer.h
@@ -1043,6 +1054,8 @@ D:.
     |   |               UICircle.h
     |   |               UIImage.cpp
     |   |               UIImage.h
+    |   |               UILabel.cpp
+    |   |               UILabel.h
     |   |               UIPanel.cpp
     |   |               UIPanel.h
     |   |               UIPolygon.cpp
