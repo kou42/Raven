@@ -34,7 +34,23 @@ public:
     WindowID CreateWindow(const WindowSpecification& specification = WindowSpecification(),
         Window::EventCallbackFn callback = {})
     {
-        std::unique_ptr<Window> window = Window::Create(specification);
+        WindowSpecification windowSpecification = specification;
+        // Main Window等の既存OpenGL Contextと共有してGPU資産を再アップロードしません。
+        // Vulkan/DX12のNo-API Windowにはshare引数を渡しません。
+        if (windowSpecification.Backend == RHIBackend::OpenGL &&
+            windowSpecification.ShareContext == nullptr)
+        {
+            for (const auto& item : m_Windows)
+            {
+                if (item.second.Handle != nullptr &&
+                    item.second.Handle->GetBackend() == RHIBackend::OpenGL)
+                {
+                    windowSpecification.ShareContext = item.second.Handle->GetNativeWindow();
+                    break;
+                }
+            }
+        }
+        std::unique_ptr<Window> window = Window::Create(windowSpecification);
         if (window == nullptr || window->GetNativeWindow() == nullptr)
         {
             return 0;
@@ -117,7 +133,8 @@ public:
         RHISceneFrameLifecycle& frame = *it->second.FrameLifecycle;
         if (window.GetBackend() != RHIBackend::OpenGL ||
             restoreWindow.GetBackend() != RHIBackend::OpenGL ||
-            window.GetState() == WindowState::Minimized)
+            window.GetState() == WindowState::Minimized ||
+            window.GetFramebufferWidth() == 0 || window.GetFramebufferHeight() == 0)
         {
             return false;
         }
