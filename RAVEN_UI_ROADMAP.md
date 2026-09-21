@@ -28,7 +28,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | --- | --- | --- | --- |
 | 1 | Font Atlas / Text Rendering | 実装中 | Font読込、Glyph Atlas、DrawList経由の文字表示、日本語fallback、基本描画検証 |
 | 2 | Text Layout / Text Measurement | 未着手 | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
-| 3 | InputText / InputNumber | 実装中（UTF-8編集バッファ追加・未検証） | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
+| 3 | InputText / InputNumber | 実装中（文字入力経路・InputText Widget追加、未検証） | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
 | 4 | ComboBox / Popup / Tooltip | 未着手 | Focus、閉じる条件、重なり順、入力伝播の検証 |
 | 5 | TreeView / Table | 未着手 | Hierarchy相当の選択・展開、表の列・Scroll・基本操作 |
 | 6 | Window System | 未着手 | 論理UI Windowの移動・Resize・Focus・Z順 |
@@ -69,6 +69,6 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 2026-09-21 | feature/raven-ui-roadmap | upstream stb_truetype v1.26をincludeへ独立配置、BuilderのImGui依存を解消。UILabelを追加 | GitHub差分確認のみ。ビルド・GPU実描画未検証 | DemoへのFontロード・UILabel組込み、文字表示検証 |
 | 2026-09-21 | feature/raven-ui-roadmap | UITextDemoLayerをDebug起動へ接続。RAVEN_UI_DEMO_FONTとOS標準候補からFontを選び、ASCII・日本語・改行・fallbackの文字列を表示する構成を追加 | GitHub差分確認のみ。ビルド・GPU実描画未検証 | Windows Debugビルド、文字表示・Font欠落・Atlas容量・Clip検証 |
 
-| 2026-09-21 | feature/ui-input-text | UITextEditBufferを追加。codepoint境界のCursor/選択、挿入、Backspace/Deleteを実装 | GitHub上のコード確認のみ。ビルド・単体テスト未実施 | Character Event経路、InputText WidgetとCursor描画、InputNumber |\n\n## 更新ルール
+| 2026-09-21 | feature/ui-input-text | UITextEditBufferを追加。codepoint境界のCursor/選択、挿入、Backspace/Deleteを実装 | GitHub上のコード確認のみ。ビルド・単体テスト未実施 | Character Event経路、InputText WidgetとCursor描画、InputNumber |\n\n| 2026-09-21 | feature/ui-input-text | GLFW char callback → Core Event → UIContext → InputTextを接続。文字表示、Caret、選択表示、左右/Home/End/Backspace/Delete、Click位置移動を追加 | GitHub差分確認のみ。ビルド・実描画未検証 | Demo接続、Mouse Drag選択、Clipboard、Undo/Redo、IME、InputNumber |\n\n## 更新ルール
 
 各PRで該当Phaseのチェックリスト、状態、作業記録、未検証項目を更新する。未着手 → 実装中 → 実装済み（未検証） → 検証済みの順で記録し、後から問題が見つかれば状態を戻す。Phaseの完了は完了条件を満たした場合のみとする。
