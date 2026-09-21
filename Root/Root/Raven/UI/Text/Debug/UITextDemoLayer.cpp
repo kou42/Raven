@@ -258,6 +258,11 @@ void UITextDemoLayer::OnAttach()
     UITreeNode* environment = tree->AddRoot(7u, "Environment");
     tree->AddNode(environment, 8u, "Terrain");
     tree->AddNode(environment, 9u, "Sky");
+    // Viewportを超える行数にしてWheelとKeyboard選択追従を確認します。
+    for (std::uint64_t id = 10u; id < 26u; ++id)
+    {
+        tree->AddNode(environment, id, "Environment Item " + std::to_string(id));
+    }
     tree->SetOnSelectionChanged([](std::uint64_t id)
         {
             std::cout << "[Raven UI TreeView] selected ID: " << id << '\n';
