@@ -129,6 +129,11 @@ void UIElement::SetVisible(bool value)
 {
     if (m_Visible != value)
     {
+        if (value == false && m_Context != nullptr)
+        {
+            // 非表示前ならFocus対象を探索できるため、OS側IMEもこの時点で終了します。
+            m_Context->OnSubtreeRemoving(this);
+        }
         m_Visible = value;
         InvalidateMeasure();
     }

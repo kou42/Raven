@@ -13,6 +13,28 @@ UIContext::UIContext()
     m_RootElement->SetContextRecursive(this);
 }
 
+void UIContext::CancelIMEComposition(UIElement* element)
+{
+    if (element == nullptr || element->HasActiveIMEComposition() == false)
+    {
+        return;
+    }
+
+    // OS側を先に取消し、同期的に返るEND通知も生存中のWidgetへ配送します。
+    // OSがENDを返さない場合もUIの一時状態を必ず消去します。
+    if (m_IMECancelCallback)
+    {
+        m_IMECancelCallback();
+    }
+    if (element->HasActiveIMEComposition() == true)
+    {
+        UIIMEEvent cancel;
+        cancel.Type = UIIMEEventType::Cancel;
+        cancel.Context = this;
+        element->HandleIMEEvent(cancel);
+    }
+}
+
 void UIContext::BeginFrame(const math::Vec2& viewportSize)
 {
     // 前frameのDrawCommandを必ず破棄してから新しいframeを開始します。
@@ -336,6 +358,15 @@ void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
     if (subtreeRoot == nullptr)
     {
         return;
+    }
+
+    // Widget破棄前にOSとUI双方のIME変換を破棄します。
+    // Focusが属するSubtreeだけを対象とし、他の入力欄の変換は維持します。
+    UIElement* focused = GetFocusedElement();
+    if (IsElementInSubtree(focused, subtreeRoot) == true)
+    {
+        CancelIMEComposition(focused);
+        ClearFocus();
     }
 
     // Capture対象が破棄Subtree内なら、Elementが生存してParent chainも接続された状態でCancelを送ります。

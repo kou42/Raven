@@ -143,6 +143,8 @@ public:
     void SetFocusable(bool value) { m_Focusable = value; }
     bool IsFocusable() const { return m_Focusable; }
     bool IsFocused() const { return m_Focused; }
+    // UIContextがWidget型へ依存せずIME所有者を検出するための拡張点です。
+    virtual bool HasActiveIMEComposition() const { return false; }
 
     // Rotation / ScaleはMeasure / Arrangeへ影響しないVisual Transformです。
     // TransformPivotはElement矩形に対するnormalized座標で、親子階層ではAffine Transformとして合成されます。
@@ -202,6 +204,34 @@ public:
         return true;
     }
 
+    // IME候補Window等のOS側UIへCaret位置を渡すためのLocal→Screen変換です。
+    // Hit Testと同じ親子Transform合成を用い、Scroll/Rotation/Scaleを反映します。
+    math::Vec2 LocalToScreenPosition(const math::Vec2& localPosition) const
+    {
+        std::vector<const UIElement*> chain;
+        const UIElement* current = this;
+        while (current != nullptr)
+        {
+            chain.push_back(current);
+            current = current->m_Parent;
+        }
+        std::reverse(chain.begin(), chain.end());
+
+        UITransform2D worldTransform = UITransform2D::Identity();
+        math::Vec2 absolutePosition(0.0f, 0.0f);
+        for (const UIElement* element : chain)
+        {
+            absolutePosition.x += element->m_Position.x;
+            absolutePosition.y += element->m_Position.y;
+            const math::Vec2 pivot(
+                absolutePosition.x + element->m_Size.x * element->m_TransformPivot.x,
+                absolutePosition.y + element->m_Size.y * element->m_TransformPivot.y);
+            worldTransform = UITransform2D::Combine(worldTransform,
+                UITransform2D::CreateScaleRotation(pivot, element->m_Rotation, element->m_Scale));
+        }
+        return worldTransform.TransformPoint(absolutePosition + localPosition);
+    }
+
     // Childの描画とHit Testを自身のVisual Bounds内へ制限します。
     // 回転/Shear時はRendererのScissor制約に合わせ、screen-space AABBとして扱います。
     void SetClipChildren(bool value) { m_ClipChildren = value; }
@@ -259,6 +289,7 @@ public:
     void HandleMouseEvent(UIMouseEvent& event);
     void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
     void HandleCharacterEvent(UICharacterEvent& event) { OnCharacterEvent(event); }
+    void HandleIMEEvent(UIIMEEvent& event) { OnIMEEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
 
@@ -271,6 +302,7 @@ protected:
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
+    virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }
     virtual void OnFocusChanged(bool focused) { (void)focused; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 

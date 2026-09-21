@@ -7,6 +7,7 @@
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UISplitter.h"
+#include "Raven/UI/Widgets/UIInputText.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -67,6 +68,34 @@ Application::Application(const ApplicationSpecification& specification)
     m_Window->SetEventCallback([this](Event& event)
         {
             OnEvent(event);
+        });
+
+    // プログラムからのSetFocus/SetText/Tree変更もUIContext経由でOS側IMEへ同期します。
+    m_UIContext.SetIMECancelCallback([this]()
+        {
+            if (m_Window != nullptr)
+            {
+                m_Window->CancelIMEComposition();
+            }
+        });
+
+    // WindowsのIME候補Windowが必要とするCaret座標は、Focus中のUIInputTextだけが提供します。
+    // WindowへUI型を依存させずApplicationで橋渡しし、他Widget/ImGuiではOS既定の位置を維持します。
+    m_Window->SetIMECaretPositionCallback([this](float& x, float& y)
+        {
+            if (m_RavenUIEnabled == false)
+            {
+                return false;
+            }
+            UIInputText* input = dynamic_cast<UIInputText*>(m_UIContext.GetFocusedElement());
+            if (input == nullptr)
+            {
+                return false;
+            }
+            const math::Vec2 caret = input->GetIMECaretScreenPosition();
+            x = caret.x;
+            y = caret.y;
+            return true;
         });
 
     // RendererはWindowと同じBackendを明示的に受け取ります。
@@ -467,6 +496,13 @@ void Application::OnEvent(Event& event)
     // Editor入力が増えてログ量が問題になった場合はDebug Logger側へ移行する想定です。
     std::cout << event.ToString() << std::endl;
 
+    // UI側でFocus/編集位置が変わる前のIME所有者を記録します。
+    // WindowからのCommit通知自体ではOSへ取消を返さず、Tab/Mouse Downだけを同期境界にします。
+    UIInputText* imeOwner = m_RavenUIEnabled == true
+        ? dynamic_cast<UIInputText*>(m_UIContext.GetFocusedElement()) : nullptr;
+    const bool imeWasActive = imeOwner != nullptr &&
+        imeOwner->GetIMEComposition().IsActive() == true;
+
     // WindowCloseはApplication自身が処理すべき最上位Eventです。
     // 処理済みにしてLayer側へ不要な伝播を行わないようにします。
     if (event.GetEventType() == EventType::WindowClose)
@@ -522,6 +558,29 @@ void Application::OnEvent(Event& event)
     {
         CharacterTypedEvent& characterEvent = static_cast<CharacterTypedEvent&>(event);
         event.Handled = m_UIContext.RouteCharacterEvent(characterEvent.GetCodepoint());
+    }
+
+    // CoreのIME通知をFocus所有Widgetへ橋渡しします。
+    // UI無効時や未処理の場合はLayerへ従来どおり伝播します。
+    if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::IMEComposition)
+    {
+        IMECompositionEvent& imeEvent = static_cast<IMECompositionEvent&>(event);
+        UIIMEEvent uiEvent;
+        switch (imeEvent.GetCompositionType())
+        {
+        case IMECompositionEventType::Begin: uiEvent.Type = UIIMEEventType::Begin; break;
+        case IMECompositionEventType::Update: uiEvent.Type = UIIMEEventType::Update; break;
+        case IMECompositionEventType::Commit: uiEvent.Type = UIIMEEventType::Commit; break;
+        case IMECompositionEventType::End: uiEvent.Type = UIIMEEventType::End; break;
+        case IMECompositionEventType::Cancel: uiEvent.Type = UIIMEEventType::Cancel; break;
+        default: break;
+        }
+        uiEvent.Text = imeEvent.GetText();
+        uiEvent.Cursor = imeEvent.GetCursor();
+        uiEvent.SelectionStart = imeEvent.GetSelectionStart();
+        uiEvent.SelectionEnd = imeEvent.GetSelectionEnd();
+        event.Handled = m_UIContext.RouteIMEEvent(uiEvent);
     }
 
     // ========================================================================
@@ -594,6 +653,22 @@ void Application::OnEvent(Event& event)
             event.Handled = m_UIContext.RouteMouseUp(
                 math::Vec2(mouseEvent.GetX(), mouseEvent.GetY()), uiButton);
         }
+    }
+
+    // Focus移動・同じ入力欄でのCaret再配置はUIInputTextの未確定表示を破棄します。
+    // OS側のIMEにも取消を依頼し、古い置換範囲へ後から確定文字が届くのを防ぎます。
+    const bool imeEditingBoundary =
+        event.GetEventType() == EventType::MouseButtonPressed ||
+        (event.GetEventType() == EventType::KeyPressed &&
+            static_cast<KeyPressedEvent&>(event).GetKeyCode() == GLFW_KEY_TAB);
+    const UIInputText* currentIMEOwner = m_RavenUIEnabled == true
+        ? dynamic_cast<UIInputText*>(m_UIContext.GetFocusedElement()) : nullptr;
+    if (imeWasActive == true && imeEditingBoundary == true &&
+        (currentIMEOwner != imeOwner ||
+            (currentIMEOwner != nullptr &&
+                currentIMEOwner->GetIMEComposition().IsActive() == false)))
+    {
+        m_Window->CancelIMEComposition();
     }
 
     // ========================================================================

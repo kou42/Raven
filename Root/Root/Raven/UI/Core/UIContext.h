@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Core/Base.h"
+#include <functional>
 #include "Raven/Math/MathVector.h"
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIElement.h"
@@ -58,11 +59,16 @@ public:
     // 現段階ではTab / Shift+TabをFocus Navigationとして扱い、RepeatではFocusを進めません。
     bool RouteKeyEvent(const UIKeyEvent& event);
     bool RouteCharacterEvent(std::uint32_t codepoint);
+    // IME未確定状態と一括確定文字列をFocus所有Widgetへ配送します。通常文字はCharacter Eventです。
+    bool RouteIMEEvent(const UIIMEEvent& event);
 
     // Keyboard / Gamepad Navigation対象のFocusをContext内で一意に管理します。
     // Focus状態はElement自身へ保持し、Contextは必要時にTreeを検索するためSubtree破棄でraw pointerを残しません。
     bool SetFocus(UIElement* element);
     void ClearFocus();
+    // Focus/Tree/外部Text変更時にOS側の未確定変換を同期的に取り消します。
+    void SetIMECancelCallback(std::function<void()> callback) { m_IMECancelCallback = std::move(callback); }
+    void CancelIMEComposition(UIElement* element);
     UIElement* GetFocusedElement();
     const UIElement* GetFocusedElement() const;
     bool MoveFocus(bool reverse = false);
@@ -122,6 +128,7 @@ private:
     UIElement* m_PressedElement = nullptr;
     UIElement* m_MouseCaptureElement = nullptr;
     bool m_FrameActive = false;
+    std::function<void()> m_IMECancelCallback;
 };
 
 } // namespace Raven

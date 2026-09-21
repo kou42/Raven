@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
+#include "Raven/UI/Text/UIIMEComposition.h"
 
 #include <functional>
 #include <string>
@@ -23,9 +24,13 @@ public:
 
     UIInputText() { SetFocusable(true); SetClipChildren(true); SetClipSelf(true); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; m_ScrollX = 0.0f; InvalidateMeasure(); }
-    void SetText(std::string_view text) { m_Edit.SetText(text); m_ScrollX = 0.0f; InvalidateMeasure(); }
+    void SetText(std::string_view text);
     const std::string& GetText() const { return m_Edit.GetText(); }
     const UITextEditBuffer& GetEditBuffer() const { return m_Edit; }
+    const UIIMEComposition& GetIMEComposition() const { return m_Composition; }
+    bool HasActiveIMEComposition() const override { return m_Composition.IsActive(); }
+    // OSのIME候補WindowをCaret直下へ配置するためのGLFW論理画面座標です。
+    math::Vec2 GetIMECaretScreenPosition() const;
     void SetOnChange(ChangeHandler handler) { m_OnChange = std::move(handler); }
     void SetClipboard(ClipboardReader reader, ClipboardWriter writer)
     {
@@ -43,18 +48,24 @@ protected:
     void OnMouseEvent(UIMouseEvent& event) override;
     void OnKeyEvent(UIKeyEvent& event) override;
     void OnCharacterEvent(UICharacterEvent& event) override;
+    void OnIMEEvent(UIIMEEvent& event) override;
     void OnFocusChanged(bool focused) override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
     float CursorX(std::size_t index) const;
+    float TextCursorX(std::string_view text, std::size_t index) const;
+    std::string GetDisplayText() const;
+    std::size_t GetDisplayCursor() const;
     void EnsureCursorVisible() const;
     std::size_t HitCursor(float localX) const;
     void NotifyChanged();
     bool InsertFiltered(std::string_view text);
+    bool CommitIMEText(std::string_view text);
 
     Ref<UIFontAtlas> m_Font;
     UITextEditBuffer m_Edit;
+    UIIMEComposition m_Composition;
     ChangeHandler m_OnChange;
     ClipboardReader m_ReadClipboard;
     ClipboardWriter m_WriteClipboard;

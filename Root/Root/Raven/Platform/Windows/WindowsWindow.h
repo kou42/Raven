@@ -9,6 +9,8 @@
 namespace Raven
 {
 
+struct Win32IMEBridge;
+
 class WindowsWindow : public Window
 {
 public:
@@ -30,6 +32,8 @@ public:
         m_Data.EventCallback = callback;
     }
 
+    void SetIMECaretPositionCallback(IMECaretPositionFn callback) override;
+    void CancelIMEComposition() override;
     void SetVSync(bool enabled) override;
     bool IsVSync() const override;
 
@@ -39,6 +43,8 @@ private:
 
 private:
     GLFWwindow* m_Window = nullptr;
+    // GLFWのWin32 WndProcへIME通知を追加するAdapter。Window破棄前に復元します。
+    std::unique_ptr<Win32IMEBridge> m_IMEBridge;
 
     struct WindowData
     {
@@ -49,6 +55,7 @@ private:
         bool VSync = false;
 
         EventCallbackFn EventCallback;
+        IMECaretPositionFn IMECaretPositionCallback;
     };
 
     WindowData m_Data;

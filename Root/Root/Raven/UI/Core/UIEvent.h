@@ -2,6 +2,8 @@
 
 #include "Raven/Math/MathVector.h"
 #include <cstdint>
+#include <cstddef>
+#include <string>
 
 namespace Raven
 {
@@ -65,10 +67,35 @@ struct UIKeyEvent
     bool Handled = false;
 };
 
-// Unicode文字入力は物理キー操作とは分離します。IME確定文字もこの入口へ接続します。
+// Unicode文字入力は物理キー操作とは分離します。通常文字はこの入口へ配送し、
+// IMEの一括確定結果はUIIMEEvent::Commitへ配送します。
 struct UICharacterEvent
 {
     std::uint32_t Codepoint = 0u;
+    UIContext* Context = nullptr;
+    bool Handled = false;
+};
+
+// IME未確定文字列の通知。確定文字の挿入は既存Character Event経路を維持します。
+// TextはUTF-8、Cursor/SelectionはUnicode codepoint indexです。
+// Begin時の置換対象範囲はWidgetが保持し、Platformから編集バッファの位置を渡しません。
+// CommitのTextは確定済み全文です。Platformは同じ確定文字をCharacter Eventでも送らないでください。
+enum class UIIMEEventType
+{
+    Begin = 0,
+    Update,
+    Commit,
+    End,
+    Cancel
+};
+
+struct UIIMEEvent
+{
+    UIIMEEventType Type = UIIMEEventType::Begin;
+    std::string Text;
+    std::size_t Cursor = 0u;
+    std::size_t SelectionStart = 0u;
+    std::size_t SelectionEnd = 0u;
     UIContext* Context = nullptr;
     bool Handled = false;
 };

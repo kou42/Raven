@@ -1,4 +1,10 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <iostream>
+#include <algorithm>
+#include <utility>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -9,8 +15,291 @@
 #include "Raven/Platform/OpenGL/OpenGLContext.h"
 #include "Raven/Platform/Windows/WindowsInput.h"
 
+
+#include <windows.h>
+#include <imm.h>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#pragma comment(lib, "imm32.lib")
+
 namespace Raven
 {
+
+namespace
+{
+constexpr wchar_t kIMEBridgeProperty[] = L"Raven.Win32IMEBridge";
+
+// IMM32が返すUTF-16の位置をUI Coreのcodepoint indexへ変換します。
+// サロゲートペアを一文字と数えるため、補助平面の文字でもCaretがずれません。
+std::size_t CountIMECodepoints(std::wstring_view text, std::size_t utf16Offset)
+{
+    const std::size_t end = std::min(utf16Offset, text.size());
+    std::size_t count = 0u;
+    for (std::size_t i = 0u; i < end; ++i)
+    {
+        if (text[i] >= 0xD800 && text[i] <= 0xDBFF &&
+            i + 1u < end && text[i + 1u] >= 0xDC00 && text[i + 1u] <= 0xDFFF)
+        {
+            ++i;
+        }
+        ++count;
+    }
+    return count;
+}
+
+std::string ToIMEUtf8(std::wstring_view text)
+{
+    if (text.empty())
+    {
+        return {};
+    }
+    const int required = WideCharToMultiByte(CP_UTF8, 0, text.data(),
+        static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    if (required <= 0)
+    {
+        return {};
+    }
+    std::string output(static_cast<std::size_t>(required), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+        output.data(), required, nullptr, nullptr);
+    return output;
+}
+
+std::wstring ReadIMEString(HIMC context, DWORD kind)
+{
+    const LONG bytes = ImmGetCompositionStringW(context, kind, nullptr, 0);
+    if (bytes <= 0 || bytes % sizeof(wchar_t) != 0)
+    {
+        return {};
+    }
+    std::wstring text(static_cast<std::size_t>(bytes) / sizeof(wchar_t), L'\0');
+    if (ImmGetCompositionStringW(context, kind, text.data(), static_cast<DWORD>(bytes)) < 0)
+    {
+        return {};
+    }
+    return text;
+}
+} // namespace
+
+struct Win32IMEBridge
+{
+    HWND Handle = nullptr;
+    WNDPROC Previous = nullptr;
+    Window::EventCallbackFn* Callback = nullptr;
+    Window::IMECaretPositionFn* CaretCallback = nullptr;
+    GLFWwindow* GLFWHandle = nullptr;
+    bool OwnedByRavenUI = false;
+    std::size_t SuppressIMEChars = 0u;
+
+    bool Send(IMECompositionEventType type, std::string text = {},
+        std::size_t cursor = 0u)
+    {
+        if (Callback == nullptr || static_cast<bool>(*Callback) == false)
+        {
+            return false;
+        }
+        IMECompositionEvent event(type, std::move(text), cursor);
+        (*Callback)(event);
+        return event.Handled;
+    }
+
+    void CancelComposition()
+    {
+        if (Handle == nullptr || OwnedByRavenUI == false)
+        {
+            return;
+        }
+
+        // UIの置換対象が変わった後にOSの古い変換が確定されないよう、
+        // IME自身へ取消を依頼します。同期的に届くEND通知は既存経路で処理します。
+        HIMC context = ImmGetContext(Handle);
+        if (context != nullptr)
+        {
+            ImmNotifyIME(context, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+            ImmReleaseContext(Handle, context);
+        }
+        OwnedByRavenUI = false;
+        SuppressIMEChars = 0u;
+    }
+
+    void UpdateCandidatePosition()
+    {
+        if (OwnedByRavenUI == false || CaretCallback == nullptr ||
+            static_cast<bool>(*CaretCallback) == false || GLFWHandle == nullptr)
+        {
+            return;
+        }
+        float x = 0.0f;
+        float y = 0.0f;
+        if ((*CaretCallback)(x, y) == false)
+        {
+            return;
+        }
+
+        // GLFWの論理Window座標をWin32 Client pixelへ変換します。
+        // DPIが異なるMonitorへ移動しても候補位置をCaretへ追従させます。
+        int glfwWidth = 0;
+        int glfwHeight = 0;
+        RECT client{};
+        glfwGetWindowSize(GLFWHandle, &glfwWidth, &glfwHeight);
+        if (glfwWidth <= 0 || glfwHeight <= 0 ||
+            GetClientRect(Handle, &client) == FALSE)
+        {
+            return;
+        }
+        const float scaleX = static_cast<float>(client.right - client.left) / glfwWidth;
+        const float scaleY = static_cast<float>(client.bottom - client.top) / glfwHeight;
+        const POINT caret{
+            static_cast<LONG>(x * scaleX),
+            static_cast<LONG>(y * scaleY)
+        };
+
+        HIMC context = ImmGetContext(Handle);
+        if (context == nullptr)
+        {
+            return;
+        }
+        COMPOSITIONFORM composition{};
+        composition.dwStyle = CFS_POINT;
+        composition.ptCurrentPos = caret;
+        ImmSetCompositionWindow(context, &composition);
+
+        CANDIDATEFORM candidate{};
+        candidate.dwIndex = 0;
+        candidate.dwStyle = CFS_CANDIDATEPOS;
+        candidate.ptCurrentPos = caret;
+        ImmSetCandidateWindow(context, &candidate);
+        ImmReleaseContext(Handle, context);
+    }
+
+    static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+    {
+        auto* bridge = static_cast<Win32IMEBridge*>(GetPropW(window, kIMEBridgeProperty));
+        if (bridge == nullptr || bridge->Previous == nullptr)
+        {
+            return DefWindowProcW(window, message, wparam, lparam);
+        }
+
+        if (message == WM_IME_STARTCOMPOSITION)
+        {
+            // Raven UI以外（Dear ImGui等）が入力を所有する場合はGLFWへ従来どおり渡します。
+            bridge->OwnedByRavenUI = bridge->Send(IMECompositionEventType::Begin);
+            bridge->SuppressIMEChars = 0u;
+            bridge->UpdateCandidatePosition();
+        }
+        else if (message == WM_IME_COMPOSITION && bridge->OwnedByRavenUI == true)
+        {
+            HIMC context = ImmGetContext(window);
+            if (context != nullptr)
+            {
+                if ((lparam & GCS_RESULTSTR) != 0)
+                {
+                    const std::wstring result = ReadIMEString(context, GCS_RESULTSTR);
+                    if (result.empty() == false)
+                    {
+                        if (bridge->Send(IMECompositionEventType::Commit, ToIMEUtf8(result)) == true)
+                        {
+                            // DefWindowProcが続けて発行するWM_IME_CHARを抑止し、
+                            // GLFW char callbackから同じ確定結果が二重挿入されるのを防ぎます。
+                            bridge->SuppressIMEChars += result.size();
+                        }
+                    }
+                }
+                // 同一通知にRESULTとCOMPがある場合は確定結果を優先し、
+                // Commit直後に古い未確定文字列を再表示しません。
+                if ((lparam & GCS_COMPSTR) != 0 && (lparam & GCS_RESULTSTR) == 0)
+                {
+                    const std::wstring composition = ReadIMEString(context, GCS_COMPSTR);
+                    const LONG rawCursor = ImmGetCompositionStringW(context, GCS_CURSORPOS, nullptr, 0);
+                    const std::size_t cursor = rawCursor < 0 ? 0u :
+                        CountIMECodepoints(composition, static_cast<std::size_t>(rawCursor));
+                    bridge->Send(IMECompositionEventType::Update, ToIMEUtf8(composition), cursor);
+                }
+                ImmReleaseContext(window, context);
+                bridge->UpdateCandidatePosition();
+            }
+        }
+        else if (message == WM_IME_CHAR && bridge->SuppressIMEChars > 0u)
+        {
+            --bridge->SuppressIMEChars;
+            return 0;
+        }
+        else if (message == WM_IME_ENDCOMPOSITION)
+        {
+            if (bridge->OwnedByRavenUI == true)
+            {
+                bridge->Send(IMECompositionEventType::End);
+            }
+            bridge->OwnedByRavenUI = false;
+            bridge->SuppressIMEChars = 0u;
+        }
+        else if (message == WM_KILLFOCUS)
+        {
+            if (bridge->OwnedByRavenUI == true)
+            {
+                bridge->Send(IMECompositionEventType::Cancel);
+            }
+            bridge->OwnedByRavenUI = false;
+            bridge->SuppressIMEChars = 0u;
+        }
+        return CallWindowProcW(bridge->Previous, window, message, wparam, lparam);
+    }
+
+    bool Install(HWND window, GLFWwindow* glfwWindow,
+        Window::EventCallbackFn* callback, Window::IMECaretPositionFn* caretCallback)
+    {
+        if (window == nullptr || callback == nullptr)
+        {
+            return false;
+        }
+        Handle = window;
+        Callback = callback;
+        CaretCallback = caretCallback;
+        GLFWHandle = glfwWindow;
+        if (SetPropW(Handle, kIMEBridgeProperty, this) == FALSE)
+        {
+            Handle = nullptr;
+            Callback = nullptr;
+            return false;
+        }
+        SetLastError(0);
+        const LONG_PTR previous = SetWindowLongPtrW(Handle, GWLP_WNDPROC,
+            reinterpret_cast<LONG_PTR>(&Win32IMEBridge::Procedure));
+        if (previous == 0 && GetLastError() != 0)
+        {
+            RemovePropW(Handle, kIMEBridgeProperty);
+            Handle = nullptr;
+            Callback = nullptr;
+            return false;
+        }
+        Previous = reinterpret_cast<WNDPROC>(previous);
+        return true;
+    }
+
+    void Uninstall()
+    {
+        if (Handle == nullptr)
+        {
+            return;
+        }
+        if (Previous != nullptr)
+        {
+            SetWindowLongPtrW(Handle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(Previous));
+        }
+        RemovePropW(Handle, kIMEBridgeProperty);
+        Handle = nullptr;
+        Previous = nullptr;
+        Callback = nullptr;
+        CaretCallback = nullptr;
+        GLFWHandle = nullptr;
+        OwnedByRavenUI = false;
+        SuppressIMEChars = 0u;
+    }
+
+    ~Win32IMEBridge() { Uninstall(); }
+};
 
 static bool s_GLFWInitialized = false;
 
@@ -226,6 +515,14 @@ void WindowsWindow::Init(const WindowProps& props)
                 static_cast<float>(mouseY));
             data.EventCallback(event);
         });
+    // GLFWのWndProcが完成してからsubclassし、GLFWとDear ImGuiの既存callbackを保持します。
+    m_IMEBridge = std::make_unique<Win32IMEBridge>();
+    if (m_IMEBridge->Install(glfwGetWin32Window(m_Window), m_Window,
+        &m_Data.EventCallback, &m_Data.IMECaretPositionCallback) == false)
+    {
+        m_IMEBridge.reset();
+        std::cerr << "Failed to install Win32 IME bridge\n";
+    }
 }
 
 void WindowsWindow::Shutdown()
@@ -233,6 +530,8 @@ void WindowsWindow::Shutdown()
     // Graphics ContextはNative Windowより先に破棄します。
     m_Context.reset();
     m_Input.reset();
+    // HWNDが有効な間にGLFWの元WndProcへ戻します。
+    m_IMEBridge.reset();
 
     if (m_Window != nullptr)
     {
@@ -271,6 +570,19 @@ void* WindowsWindow::GetPlatformWindowHandle() const
     }
 
     return static_cast<void*>(glfwGetWin32Window(m_Window));
+}
+
+void WindowsWindow::CancelIMEComposition()
+{
+    if (m_IMEBridge != nullptr)
+    {
+        m_IMEBridge->CancelComposition();
+    }
+}
+
+void WindowsWindow::SetIMECaretPositionCallback(IMECaretPositionFn callback)
+{
+    m_Data.IMECaretPositionCallback = std::move(callback);
 }
 
 void WindowsWindow::SetVSync(bool enabled)
