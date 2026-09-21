@@ -259,6 +259,7 @@ public:
     void HandleMouseEvent(UIMouseEvent& event);
     void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
     void HandleCharacterEvent(UICharacterEvent& event) { OnCharacterEvent(event); }
+    void HandleIMEEvent(UIIMEEvent& event) { OnIMEEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
 
@@ -271,6 +272,7 @@ protected:
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
+    virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }
     virtual void OnFocusChanged(bool focused) { (void)focused; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
