@@ -66,6 +66,9 @@ public:
     // Focus状態はElement自身へ保持し、Contextは必要時にTreeを検索するためSubtree破棄でraw pointerを残しません。
     bool SetFocus(UIElement* element);
     void ClearFocus();
+    // Focus/Tree/外部Text変更時にOS側の未確定変換を同期的に取り消します。
+    void SetIMECancelCallback(std::function<void()> callback) { m_IMECancelCallback = std::move(callback); }
+    void CancelIMEComposition(UIElement* element);
     UIElement* GetFocusedElement();
     const UIElement* GetFocusedElement() const;
     bool MoveFocus(bool reverse = false);
@@ -125,6 +128,7 @@ private:
     UIElement* m_PressedElement = nullptr;
     UIElement* m_MouseCaptureElement = nullptr;
     bool m_FrameActive = false;
+    std::function<void()> m_IMECancelCallback;
 };
 
 } // namespace Raven
