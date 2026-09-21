@@ -29,6 +29,8 @@ UIKey ToUIKey(int keyCode)
     case GLFW_KEY_RIGHT: return UIKey::Right;
     case GLFW_KEY_HOME: return UIKey::Home;
     case GLFW_KEY_END: return UIKey::End;
+    case GLFW_KEY_BACKSPACE: return UIKey::Backspace;
+    case GLFW_KEY_DELETE: return UIKey::Delete;
     default: return UIKey::Unknown;
     }
 }
@@ -501,6 +503,13 @@ void Application::OnEvent(Event& event)
         uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
         uiEvent.Context = &m_UIContext;
         event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+    }
+
+    if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::CharacterTyped)
+    {
+        CharacterTypedEvent& characterEvent = static_cast<CharacterTypedEvent&>(event);
+        event.Handled = m_UIContext.RouteCharacterEvent(characterEvent.GetCodepoint());
     }
 
     // ========================================================================
