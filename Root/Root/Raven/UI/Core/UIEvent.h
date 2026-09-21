@@ -37,6 +37,7 @@ enum class UIKey
 {
     Unknown = 0,
     Tab,
+    Escape,
     Enter,
     Space,
     Left,
