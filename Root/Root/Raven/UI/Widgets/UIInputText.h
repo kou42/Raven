@@ -40,6 +40,7 @@ private:
     UITextEditBuffer m_Edit;
     ChangeHandler m_OnChange;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+    bool m_Selecting = false;
     float m_Padding = 6.0f;
     float m_Baseline = 22.0f;
     float m_Height = 30.0f;
