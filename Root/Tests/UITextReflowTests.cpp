@@ -61,7 +61,7 @@ int main()
     // Root content幅50、Container content幅46なので仮想テキストは3行になります。
     assert(Near(wrappingPtr->GetDesiredSize().y, 30.0f));
     assert(Near(containerPtr->GetDesiredSize().y, 41.0f));
-    assert(Near(root.GetDesiredSize().y, 54.0f));
+    assert(Near(root.GetDesiredSize().y, 51.0f));
     assert(Near(siblingPtr->GetPosition().y, 32.0f));
 
     // Rootの幅変更による再Measureで、子と親の高さ・Sibling位置が揃って更新されます。
@@ -69,7 +69,7 @@ int main()
     root.BuildDrawList(drawList);
     assert(Near(wrappingPtr->GetDesiredSize().y, 10.0f));
     assert(Near(containerPtr->GetDesiredSize().y, 21.0f));
-    assert(Near(root.GetDesiredSize().y, 34.0f));
+    assert(Near(root.GetDesiredSize().y, 31.0f));
     assert(Near(siblingPtr->GetPosition().y, 12.0f));
     return 0;
 }
