@@ -58,15 +58,15 @@ void Check(bool condition, const char* label)
 void TestTextEditBuffer()
 {
     Raven::UITextEditBuffer buffer;
-    buffer.SetText("A\\xE3\\x81\\x82" "B");
+    buffer.SetText("A\xE3\x81\x82" "B");
     Check(buffer.GetLength() == 3u, "UTF-8 codepoint length");
     buffer.MoveCursor(1u);
     buffer.MoveCursor(2u, true);
-    Check(buffer.GetSelectedText() == "\\xE3\\x81\\x82", "UTF-8 selected text");
+    Check(buffer.GetSelectedText() == "\xE3\x81\x82", "UTF-8 selected text");
     Check(buffer.InsertText("X"), "replace selection");
     Check(buffer.GetText() == "AXB", "replace UTF-8 selection");
     Check(buffer.Undo(), "undo replace");
-    Check(buffer.GetText() == "A\\xE3\\x81\\x82" "B", "undo restores text");
+    Check(buffer.GetText() == "A\xE3\x81\x82" "B", "undo restores text");
     Check(buffer.GetCursor() == 2u && buffer.GetAnchor() == 1u, "undo restores selection");
     Check(buffer.Redo(), "redo replace");
     Check(buffer.GetText() == "AXB", "redo restores text");
