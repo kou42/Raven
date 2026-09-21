@@ -91,5 +91,31 @@ int main()
     CheckNear("containerPtr->GetDesiredSize().y", containerPtr->GetDesiredSize().y, 21.0f);
     CheckNear("root.GetDesiredSize().y", root.GetDesiredSize().y, 31.0f);
     CheckNear("siblingPtr->GetPosition().y", siblingPtr->GetPosition().y, 12.0f);
+
+    // Measure対象外の子もArrangeには参加します。親の高さだけが減ることを検証します。
+    siblingPtr->SetAffectsParentMeasure(false);
+    root.BuildDrawList(drawList);
+    CheckNear("excluded container height", containerPtr->GetDesiredSize().y, 14.0f);
+    CheckNear("excluded root height", root.GetDesiredSize().y, 24.0f);
+    CheckNear("excluded sibling position", siblingPtr->GetPosition().y, 12.0f);
+
+    siblingPtr->SetAffectsParentMeasure(true);
+    root.BuildDrawList(drawList);
+    CheckNear("restored container height", containerPtr->GetDesiredSize().y, 21.0f);
+    CheckNear("restored root height", root.GetDesiredSize().y, 31.0f);
+
+    // Marginは外側の必要高さにだけ加算し、折り返し自体の行数には影響しません。
+    wrappingPtr->SetMargin(Raven::UIThickness(1.0f, 2.0f));
+    root.BuildDrawList(drawList);
+    CheckNear("margin wrapping height", wrappingPtr->GetDesiredSize().y, 10.0f);
+    CheckNear("margin container height", containerPtr->GetDesiredSize().y, 25.0f);
+    CheckNear("margin root height", root.GetDesiredSize().y, 35.0f);
+    CheckNear("margin sibling position", siblingPtr->GetPosition().y, 16.0f);
+
+    // 非表示の子はMeasure集約とArrangeの双方から除外されます。
+    siblingPtr->SetVisible(false);
+    root.BuildDrawList(drawList);
+    CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
+    CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     return 0;
 }
