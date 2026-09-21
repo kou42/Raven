@@ -238,7 +238,7 @@ void UITextDemoLayer::OnAttach()
     combo->SetSelectedIndex(0u);
     combo->SetOnSelectionChanged([](std::size_t index, const std::string& text)
         {
-            std::cout << "[Raven UI ComboBox] " << index << ": " << text << '\\n';
+            std::cout << "[Raven UI ComboBox] " << index << ": " << text << '\n';
         });
     m_ComboBox = static_cast<UIComboBox*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(combo)));
@@ -260,12 +260,12 @@ void UITextDemoLayer::OnAttach()
     tree->AddNode(environment, 9u, "Sky");
     tree->SetOnSelectionChanged([](std::uint64_t id)
         {
-            std::cout << "[Raven UI TreeView] selected ID: " << id << '\\n';
+            std::cout << "[Raven UI TreeView] selected ID: " << id << '\n';
         });
     tree->SetOnExpansionChanged([](std::uint64_t id, bool expanded)
         {
             std::cout << "[Raven UI TreeView] node " << id
-                << (expanded ? " expanded" : " collapsed") << '\\n';
+                << (expanded ? " expanded" : " collapsed") << '\n';
         });
     m_TreeView = static_cast<UITreeView*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(tree)));
