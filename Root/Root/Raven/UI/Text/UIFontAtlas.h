@@ -137,8 +137,7 @@ public:
             {
                 continue;
             }
-            if (codepoint == static_cast<std::uint32_t>('\
-'))
+            if (codepoint == static_cast<std::uint32_t>('\n'))
             {
                 pen.x = baseline.x;
                 pen.y += lineHeight;
