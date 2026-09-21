@@ -279,6 +279,7 @@ private:
     math::Vec2 GetDesiredSizeWithMargin() const;
     void InvalidateArrange();
     void MeasureRecursive();
+    void ReflowForWidth(float arrangedWidth);
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
     void BuildDrawListRecursive(
