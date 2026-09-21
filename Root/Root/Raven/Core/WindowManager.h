@@ -171,6 +171,34 @@ public:
         return presented == true && restored == true;
     }
 
+    // Renderer用の入口。補助Window専用VAOを取得してから描画Callbackへ渡します。
+    // Callbackは取得したVAOをBindしてRenderCommand::DrawIndexed等へ渡せます。
+    // VAOをCallback外へ保存する場合はWindow終了前にその参照を解放してください。
+    bool RenderWindowWithVertexArray(WindowID id, WindowID restoreWindowID,
+        const Ref<VertexArray>& source,
+        const std::function<void(Window&, const Ref<VertexArray>&)>& draw)
+    {
+        if (source == nullptr || static_cast<bool>(draw) == false)
+        {
+            return false;
+        }
+        // Windowの描画Frame開始前にVAOを準備し、Frame中のContext切替を避けます。
+        Ref<VertexArray> windowVAO =
+            GetOrCreateWindowVertexArray(id, restoreWindowID, source);
+        if (windowVAO == nullptr)
+        {
+            return false;
+        }
+        const bool rendered = RenderWindow(id, restoreWindowID,
+            [&draw, &windowVAO](Window& window)
+            {
+                draw(window, windowVAO);
+            });
+        // 破棄要求時に外部参照として残らないよう一時参照を明示的に解放します。
+        windowVAO.reset();
+        return rendered;
+    }
+
     // Rendererは補助Windowの描画Callback内で、このAPIからWindow専用VAOを取得します。
     // 外部に保持するVAO参照はWindowの破棄前に解放してください。
     // WindowごとのVAOをキャッシュします。初回だけ共有Bufferから対象Context用に再構築します。
