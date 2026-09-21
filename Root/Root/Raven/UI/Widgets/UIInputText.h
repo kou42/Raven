@@ -17,6 +17,7 @@ public:
     using ChangeHandler = std::function<void(const std::string&)>;
     using ClipboardReader = std::function<std::string()>;
     using ClipboardWriter = std::function<void(const std::string&)>;
+    using InputFilter = std::function<bool(const std::string&)>;
 
     UIInputText() { SetFocusable(true); SetClipChildren(true); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; InvalidateMeasure(); }
@@ -29,6 +30,7 @@ public:
         m_ReadClipboard = std::move(reader);
         m_WriteClipboard = std::move(writer);
     }
+    void SetInputFilter(InputFilter filter) { m_InputFilter = std::move(filter); }
     void SetTextColor(const math::Vec4& color) { m_TextColor = color; }
 
 protected:
@@ -42,12 +44,14 @@ private:
     float CursorX(std::size_t index) const;
     std::size_t HitCursor(float localX) const;
     void NotifyChanged();
+    bool InsertFiltered(std::string_view text);
 
     Ref<UIFontAtlas> m_Font;
     UITextEditBuffer m_Edit;
     ChangeHandler m_OnChange;
     ClipboardReader m_ReadClipboard;
     ClipboardWriter m_WriteClipboard;
+    InputFilter m_InputFilter;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     bool m_Selecting = false;
     float m_Padding = 6.0f;
