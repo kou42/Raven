@@ -10,6 +10,7 @@ enum class EventType
     WindowFocusLost,
     KeyPressed,
     KeyReleased,
+    CharacterTyped,
     MouseMoved,
     MouseButtonPressed,
     MouseButtonReleased,
@@ -154,6 +155,19 @@ public:
     {
         return "KeyReleasedEvent: " + std::to_string(GetKeyCode());
     }
+};
+
+// GLFW character callbackから届くUnicode scalar valueを保持します。
+// KeyPressedとは分離し、キーボード配列やShiftから文字を推測しません。
+class CharacterTypedEvent : public Event
+{
+public:
+    explicit CharacterTypedEvent(unsigned int codepoint) : m_Codepoint(codepoint) {}
+    unsigned int GetCodepoint() const { return m_Codepoint; }
+    EventType GetEventType() const override { return EventType::CharacterTyped; }
+    std::string ToString() const override { return "CharacterTypedEvent: " + std::to_string(m_Codepoint); }
+private:
+    unsigned int m_Codepoint;
 };
 
 // ============================================================================
