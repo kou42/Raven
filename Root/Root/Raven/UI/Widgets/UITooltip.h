@@ -2,7 +2,10 @@
 
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/UI/Text/UIUtf8.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -24,19 +27,14 @@ public:
     {
         m_Text = std::move(text);
         m_Font = font;
-        // 文字数からの概算幅。Atlasに登録済みのGlyph Advanceを使う精密Measureは後続対応。
+        // UTF-8をCodepoint単位で走査し、日本語の各byteを別文字として数えません。
         float width = 0.0f;
-        for (unsigned char character : m_Text)
+        std::size_t offset = 0u;
+        std::uint32_t codepoint = 0u;
+        while (UIUtf8::DecodeNext(m_Text, offset, codepoint))
         {
-            if (character < 0x80u)
-            {
-                const UIGlyphMetrics* glyph = m_Font != nullptr ? m_Font->FindGlyph(character) : nullptr;
-                width += glyph != nullptr ? glyph->Advance : 12.0f;
-            }
-            else
-            {
-                width += 12.0f;
-            }
+            const UIGlyphMetrics* glyph = m_Font != nullptr ? m_Font->FindGlyph(codepoint) : nullptr;
+            width += glyph != nullptr ? glyph->Advance : 12.0f;
         }
         SetSize(math::Vec2(std::max(40.0f, width + 16.0f), 32.0f));
     }
