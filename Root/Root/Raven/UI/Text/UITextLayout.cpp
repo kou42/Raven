@@ -78,7 +78,8 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
 
         // 単語先頭で残りのAdvanceを先読みし、収まる単語は途中で分割しません。
         // 制限幅より長い単語はCharacter WrapへFallbackして無限の折り返しを防ぎます。
-        if (wrap && options.Wrap == UITextWrapMode::Word && IsWordCodepoint(codepoint))
+        if (wrap && options.Wrap == UITextWrapMode::Word && IsWordCodepoint(codepoint) &&
+            (offset <= 1u || IsWordCodepoint(static_cast<unsigned char>(text[offset - 2u])) == false))
         {
             std::size_t lookahead = offset;
             std::uint32_t next = 0u;
@@ -106,11 +107,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
                     break;
                 }
             }
-            // 単語途中で毎回先読みしないよう、直前の入力文字も確認します。
-            // UTF-8 ASCIIの単語構成文字は1byteです。
-            const bool atWordStart = offset <= 1u ||
-                IsWordCodepoint(static_cast<unsigned char>(text[offset - 2u])) == false;
-            if (atWordStart && result.Lines.back().Width > 0.0f &&
+            if (result.Lines.back().Width > 0.0f &&
                 wordWidth <= options.MaxWidth &&
                 wordWidth > options.MaxWidth - result.Lines.back().Width)
             {
