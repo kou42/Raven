@@ -29,7 +29,7 @@ struct UITreeNode
 };
 
 // 最小のRetained TreeView。描画・Hit判定は展開済みNodeの同一の深さ優先順序を使います。
-// Wheel縦Scrollと選択行の可視化に対応します。Scrollbar/仮想化/複数選択は別段階です。
+// Wheel縦Scroll・Scrollbar・選択行の可視化に対応します。仮想化/複数選択は別段階です。
 class UITreeView final : public UIElement
 {
 public:
@@ -76,6 +76,7 @@ public:
 
     void Clear()
     {
+        EndScrollBarDrag();
         // Callbackへ渡したNode*も無効になるので、先に選択を解除します。
         Select(nullptr);
         m_Roots.clear();
@@ -126,6 +127,16 @@ public:
     }
 
     UITreeNode* GetSelectedNode() const { return m_Selected; }
+
+    bool IsScrollBarVisible() const { return GetMaxScrollOffset() > 0.0f; }
+    void SetScrollBarThickness(float value)
+    {
+        if (std::isfinite(value) && value > 0.0f)
+        {
+            m_ScrollBarThickness = value;
+        }
+    }
+    float GetScrollBarThickness() const { return m_ScrollBarThickness; }
 
     float GetScrollOffset() const { return std::min(m_ScrollOffset, GetMaxScrollOffset()); }
     float GetMaxScrollOffset() const
@@ -218,6 +229,30 @@ public:
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (m_DraggingScrollBar == true)
+        {
+            if (event.Type == UIMouseEventType::Cancel ||
+                (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left))
+            {
+                EndScrollBarDrag();
+                event.Handled = true;
+                return;
+            }
+            if (event.Type == UIMouseEventType::Move)
+            {
+                math::Vec2 local;
+                if (TryScreenToLocalPosition(event.ScreenPosition, local) == true)
+                {
+                    const float travel = std::max(0.0f, GetSize().y - GetThumbLength());
+                    if (travel > 0.0f)
+                    {
+                        SetScrollOffset((local.y - m_DragGrabOffset) / travel * GetMaxScrollOffset());
+                    }
+                }
+                event.Handled = true;
+                return;
+            }
+        }
         if (event.Type == UIMouseEventType::Scroll)
         {
             const float previous = GetScrollOffset();
@@ -237,6 +272,28 @@ protected:
         if (TryScreenToLocalPosition(event.ScreenPosition, local) == false ||
             local.x < 0.0f || local.y < 0.0f || local.x >= GetSize().x || local.y >= GetSize().y)
         {
+            return;
+        }
+        // ScrollbarのHit判定を行より優先し、Trackクリックは1ページ分移動します。
+        if (IsScrollBarVisible() == true &&
+            local.x >= GetSize().x - m_ScrollBarThickness)
+        {
+            const float thumbStart = GetThumbStart();
+            const float thumbLength = GetThumbLength();
+            if (local.y >= thumbStart && local.y < thumbStart + thumbLength)
+            {
+                if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
+                {
+                    m_DraggingScrollBar = true;
+                    m_DragGrabOffset = local.y - thumbStart;
+                }
+            }
+            else
+            {
+                SetScrollOffset(GetScrollOffset() +
+                    (local.y < thumbStart ? -GetSize().y : GetSize().y));
+            }
+            event.Handled = true;
             return;
         }
         const auto visible = VisibleNodes();
@@ -331,7 +388,7 @@ protected:
             if (node == m_Selected)
             {
                 drawList.AddRect(math::Vec2(absolutePosition.x, y),
-                    math::Vec2(absolutePosition.x + GetSize().x, y + m_RowHeight),
+                    math::Vec2(absolutePosition.x + GetSize().x - (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
                     ApplyVisualColor(math::Vec4(0.22f, 0.38f, 0.64f, 1.0f)));
             }
             if (m_Font != nullptr && m_Font->GetTexture() != nullptr)
@@ -344,9 +401,58 @@ protected:
                     ApplyVisualColor(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)));
             }
         }
+        if (IsScrollBarVisible() == true)
+        {
+            const float left = absolutePosition.x + GetSize().x - m_ScrollBarThickness;
+            drawList.AddRect(math::Vec2(left, absolutePosition.y),
+                math::Vec2(absolutePosition.x + GetSize().x, absolutePosition.y + GetSize().y),
+                ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
+            const float top = absolutePosition.y + GetThumbStart();
+            drawList.AddRect(math::Vec2(left, top),
+                math::Vec2(absolutePosition.x + GetSize().x, top + GetThumbLength()),
+                ApplyVisualColor(m_DraggingScrollBar == true
+                    ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
+                    : math::Vec4(0.42f, 0.45f, 0.52f, 0.95f)));
+        }
     }
 
 private:
+    // ThumbはViewportと全行の比率で決め、最小長を保証します。
+    float GetThumbLength() const
+    {
+        const float viewport = GetSize().y;
+        const float content = static_cast<float>(VisibleNodes().size()) * m_RowHeight;
+        if (viewport <= 0.0f || content <= 0.0f)
+        {
+            return 0.0f;
+        }
+        return std::min(viewport, std::max(20.0f, viewport * viewport / content));
+    }
+
+    float GetThumbStart() const
+    {
+        const float maxOffset = GetMaxScrollOffset();
+        if (maxOffset <= 0.0f)
+        {
+            return 0.0f;
+        }
+        return GetScrollOffset() / maxOffset * (GetSize().y - GetThumbLength());
+    }
+
+    void EndScrollBarDrag()
+    {
+        if (m_DraggingScrollBar == false)
+        {
+            return;
+        }
+        m_DraggingScrollBar = false;
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+    }
+
     using VisibleEntry = std::pair<UITreeNode*, std::size_t>;
 
     bool Contains(const UITreeNode* target) const
@@ -398,6 +504,9 @@ private:
     float m_Baseline = 17.0f;
     float m_ScrollOffset = 0.0f;
     float m_WheelScrollStep = 48.0f;
+    float m_ScrollBarThickness = 10.0f;
+    float m_DragGrabOffset = 0.0f;
+    bool m_DraggingScrollBar = false;
 };
 
 } // namespace Raven
