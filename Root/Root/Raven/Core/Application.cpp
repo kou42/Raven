@@ -7,6 +7,7 @@
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UISplitter.h"
+#include "Raven/UI/Widgets/UIInputText.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -67,6 +68,25 @@ Application::Application(const ApplicationSpecification& specification)
     m_Window->SetEventCallback([this](Event& event)
         {
             OnEvent(event);
+        });
+
+    // WindowsのIME候補Windowが必要とするCaret座標は、Focus中のUIInputTextだけが提供します。
+    // WindowへUI型を依存させずApplicationで橋渡しし、他Widget/ImGuiではOS既定の位置を維持します。
+    m_Window->SetIMECaretPositionCallback([this](float& x, float& y)
+        {
+            if (m_RavenUIEnabled == false)
+            {
+                return false;
+            }
+            UIInputText* input = dynamic_cast<UIInputText*>(m_UIContext.GetFocusedElement());
+            if (input == nullptr)
+            {
+                return false;
+            }
+            const math::Vec2 caret = input->GetIMECaretScreenPosition();
+            x = caret.x;
+            y = caret.y;
+            return true;
         });
 
     // RendererはWindowと同じBackendを明示的に受け取ります。
