@@ -538,6 +538,34 @@ void TestTable()
     const auto visible = view->GetVisibleRowRange();
     Check(visible.second == 10000u, "table bulk last row visible");
     Check(visible.second - visible.first <= 3u, "table bulk bounded visible rows");
+    // 外部モデルは全行の文字列をTableに保持せず、表示セルだけを問い合わせます。
+    std::size_t externalCount = 1000000u;
+    std::size_t cellQueries = 0u;
+    Check(view->SetDataSource([&externalCount]() { return externalCount; },
+        [&cellQueries](std::size_t row, std::size_t column)
+        {
+            ++cellQueries;
+            return std::to_string(row) + ":" + std::to_string(column);
+        }), "table set external model");
+    Check(view->GetColumns().size() == 1u, "table external keeps columns");
+    Check(view->GetRows().empty(), "table external does not copy rows");
+    Check(view->GetRowCount() == 1000000u, "table external count");
+    Check(view->AddRow({ "invalid" }) == false, "table external rejects internal rows");
+    view->SetScrollOffset(view->GetMaxScrollOffset());
+    const auto externalVisible = view->GetVisibleRowRange();
+    Check(externalVisible.second == externalCount, "table external last visible");
+    Check(externalVisible.second - externalVisible.first <= 3u, "table external bounded visible");
+    Check(cellQueries == 0u, "table external no eager cell requests");
+    Check(view->SelectRow(externalCount - 1u), "table external select last");
+    externalCount = 2u;
+    view->NotifyDataSourceChanged();
+    Check(view->GetSelectedIndex() == Raven::UITable::NoSelection,
+        "table external invalid selection cleared");
+    CheckNear("table external scroll clamped", view->GetScrollOffset(), 0.0f);
+    view->ClearDataSource();
+    Check(view->HasDataSource() == false, "table external detached");
+    Check(view->GetColumns().size() == 1u, "table external detach keeps columns");
+    Check(view->AddRow({ "local" }), "table local rows restored");
 }
 } // namespace
 
