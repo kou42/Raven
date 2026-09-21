@@ -148,8 +148,21 @@ void UIInputText::OnMouseEvent(UIMouseEvent& event)
         math::Vec2 local{};
         if (TryScreenToLocalPosition(event.ScreenPosition, local))
         {
-            // Mouse Down時のAnchorを保持し、Widget外へ出ても選択範囲を更新します。
-            m_Edit.MoveCursor(HitCursor(local.x), true);
+            // Capture中に左右の表示領域を越えた場合は、選択を維持しつつ横スクロールします。
+            // Pointerのはみ出し量を一度のMoveで進める量とし、内容の両端では停止します。
+            const float right = std::max(m_Padding, GetSize().x - m_Padding);
+            const float contentWidth = std::max(0.0f, CursorX(m_Edit.GetLength()) - m_Padding);
+            const float visibleWidth = std::max(0.0f, GetSize().x - m_Padding * 2.0f);
+            const float maxScroll = std::max(0.0f, contentWidth - visibleWidth);
+            if (local.x < m_Padding)
+            {
+                m_ScrollX = std::max(0.0f, m_ScrollX - (m_Padding - local.x));
+            }
+            else if (local.x > right)
+            {
+                m_ScrollX = std::min(maxScroll, m_ScrollX + local.x - right);
+            }
+            m_Edit.MoveCursor(HitCursor(std::clamp(local.x, m_Padding, right)), true);
         }
         if (event.Type == UIMouseEventType::Up)
         {
