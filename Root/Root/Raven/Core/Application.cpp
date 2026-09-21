@@ -482,6 +482,8 @@ void Application::OnEvent(Event& event)
         event.GetEventType() == EventType::WindowFocusLost)
     {
         m_UIContext.CancelMouseCapture();
+        // OSのFocus喪失でも編集中の数値を確定し、再Focus時に途中入力を残しません。
+        m_UIContext.ClearFocus();
     }
 
     // ========================================================================
