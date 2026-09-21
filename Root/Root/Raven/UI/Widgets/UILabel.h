@@ -34,9 +34,12 @@ public:
 
 protected:
     math::Vec2 OnMeasureContent() const override;
+    math::Vec2 OnMeasureContentForWidth(float availableWidth) const override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
+    math::Vec2 MeasureText(float maxWidth) const;
+
     Ref<UIFontAtlas> m_Font;
     std::string m_Text;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
