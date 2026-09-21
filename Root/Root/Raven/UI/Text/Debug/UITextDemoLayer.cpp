@@ -7,6 +7,8 @@
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 
+#include <GLFW/glfw3.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -132,6 +134,25 @@ void UITextDemoLayer::OnAttach()
     input->SetSize(math::Vec2(500.0f, 36.0f));
     input->SetFont(atlas);
     input->SetText("Raven UI: edit me!");
+    // ClipboardのPlatform依存はDemo側に閉じ込め、Widgetと編集バッファにはGLFWを持ち込みません。
+    GLFWwindow* window = static_cast<GLFWwindow*>(m_Application.GetWindow().GetNativeWindow());
+    input->SetClipboard(
+        [window]() -> std::string
+        {
+            if (window == nullptr)
+            {
+                return {};
+            }
+            const char* text = glfwGetClipboardString(window);
+            return text != nullptr ? std::string(text) : std::string{};
+        },
+        [window](const std::string& text)
+        {
+            if (window != nullptr)
+            {
+                glfwSetClipboardString(window, text.c_str());
+            }
+        });
     input->SetOnChange([](const std::string& text)
         {
             std::cout << "[Raven UI InputText] " << text << '\n';
