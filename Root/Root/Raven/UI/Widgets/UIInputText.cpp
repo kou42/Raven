@@ -65,16 +65,41 @@ void UIInputText::EnsureCursorVisible() const
 
 std::size_t UIInputText::HitCursor(float localX) const
 {
-    const std::size_t length = m_Edit.GetLength();
-    localX += m_ScrollX;
-    for (std::size_t index = 0u; index < length; ++index)
+    // 各文字のCursorXを先頭から再計算すると長文でO(n^2)になるため、
+    // UTF-8を一度だけ走査し、Glyph Advanceを累積してHit位置を判定します。
+    const std::string& text = m_Edit.GetText();
+    const float targetX = localX + m_ScrollX;
+    float penX = m_Padding;
+    std::size_t offset = 0u;
+    std::size_t index = 0u;
+    std::uint32_t codepoint = 0u;
+    while (UIUtf8::DecodeNext(text, offset, codepoint))
     {
-        if (localX < (CursorX(index) + CursorX(index + 1u)) * 0.5f)
+        float advance = 0.0f;
+        if (m_Font != nullptr)
+        {
+            const UIGlyphMetrics* glyph = m_Font->FindGlyph(codepoint);
+            if (glyph == nullptr)
+            {
+                glyph = m_Font->FindGlyph(UIUtf8::ReplacementCharacter);
+            }
+            if (glyph == nullptr)
+            {
+                glyph = m_Font->FindGlyph(static_cast<std::uint32_t>('?'));
+            }
+            if (glyph != nullptr)
+            {
+                advance = glyph->Advance;
+            }
+        }
+        if (targetX < penX + advance * 0.5f)
         {
             return index;
         }
+        penX += advance;
+        ++index;
     }
-    return length;
+    return index;
 }
 
 bool UIInputText::InsertFiltered(std::string_view text)
