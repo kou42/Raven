@@ -20,6 +20,7 @@ public:
     void OnUpdate() override;
     void PollEvents() override;
     void Present() override;
+    bool MakeContextCurrent() override;
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }
