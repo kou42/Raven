@@ -84,6 +84,8 @@ public:
 
     // 編集途中の文字列は保持し、Enter/Focus Lost等の確定境界から呼び出します。
     // 不正・空入力は直前の確定値に戻し、範囲外はClampした値を表示します。
+    // 編集途中は「-」「1e-」など数値として未完成の入力を許容します。
+    // Enter/Focus Lostでは確定可能な値だけ採用し、表示を確定値へ正規化します。
     void Commit()
     {
         double parsed = 0.0;
@@ -105,6 +107,8 @@ public:
     void Increment() { StepBy(1.0); }
     void Decrement() { StepBy(-1.0); }
 
+    // NaN/無限大や逆転した範囲は受け入れず、既存の値と制約を保持します。
+    // 有効な範囲へ変更した際は現在値を再Clampして表示を同期します。
     void SetRange(double minimum, double maximum)
     {
         if (std::isfinite(minimum) == false || std::isfinite(maximum) == false ||
@@ -139,6 +143,8 @@ public:
     UIInputText& GetInputText() { return *m_Input; }
 
 private:
+    // 入力途中の文字列ではなく最後に解析できたValueを基準にStepします。
+    // 範囲端で値が変わらない場合もCommitして途中入力を確定表示へ戻します。
     void StepBy(double direction)
     {
         const double next = m_Value + direction * m_Step;
@@ -203,6 +209,8 @@ private:
         return index == text.size();
     }
 
+    // from_charsはロケールに依存せず十進/指数表記を解析します。
+    // 全文字を消費した有限数のみ採用し、途中入力や末尾の不正文字を弾きます。
     static bool TryParse(const std::string& text, double& value)
     {
         if (text.empty())
