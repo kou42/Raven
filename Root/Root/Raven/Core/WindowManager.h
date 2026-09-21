@@ -334,41 +334,8 @@ public:
         {
             return RequestWindowClose(id);
         }
-        // 即時登録解除でもRenderer側の解放Callbackを先に実行します。
-        if (RunCloseCleanup(id) == false)
-        {
-            return false;
-        }
-        // VAOをWindow破棄後に解放しないよう、Contextが生存している間に解放します。
-        const auto it = m_Windows.find(id);
-        if (it->second.Handle->GetBackend() == RHIBackend::OpenGL &&
-            it->second.VertexArrays.empty() == false)
-        {
-            if (it->second.Handle->MakeContextCurrent() == false)
-            {
-                return false;
-            }
-            for (const auto& item : it->second.VertexArrays)
-            {
-                if (item.second.second.use_count() != 1)
-                {
-                    return false;
-                }
-            }
-            it->second.VertexArrays.clear();
-        }
-        const bool removed = m_Windows.erase(id) != 0;
-        // GLFW破棄時に対象ContextがCurrentのままになることを避けます。
-        for (const auto& item : m_Windows)
-        {
-            if (item.second.Handle != nullptr &&
-                item.second.Handle->GetBackend() == RHIBackend::OpenGL &&
-                item.second.Handle->MakeContextCurrent() == true)
-            {
-                break;
-            }
-        }
-        return removed;
+        // 明示的な解除もClose Eventと同じ破棄経路を使い、Context復元漏れを防ぎます。
+        return TryCloseWindow(id);
     }
 
     std::size_t GetWindowCount() const { return m_Windows.size(); }
@@ -393,47 +360,91 @@ public:
         pendingClose.swap(m_PendingClose);
         for (WindowID id : pendingClose)
         {
-            // Close callbackはGLFWのイベント配送が終了してから実行します。
-            if (RunCloseCleanup(id) == false)
+            if (TryCloseWindow(id) == false && m_Windows.find(id) != m_Windows.end())
             {
+                // 外部VAO参照が残る場合は次回のPollEventsで再試行します。
                 m_PendingClose.push_back(id);
-                continue;
-            }
-            const auto it = m_Windows.find(id);
-            if (it != m_Windows.end())
-            {
-                // GLFW callbackを抜けた後、VAOを対象Contextで先に解放します。
-                if (it->second.Handle->GetBackend() == RHIBackend::OpenGL &&
-                    it->second.VertexArrays.empty() == false)
-                {
-                    if (it->second.Handle->MakeContextCurrent() == false)
-                    {
-                        m_PendingClose.push_back(id);
-                        continue;
-                    }
-                    bool hasExternalReferences = false;
-                    for (const auto& item : it->second.VertexArrays)
-                    {
-                        if (item.second.second.use_count() != 1)
-                        {
-                            hasExternalReferences = true;
-                            break;
-                        }
-                    }
-                    if (hasExternalReferences == true)
-                    {
-                        // 参照が解放された後の次回PollEventsで再試行します。
-                        m_PendingClose.push_back(id);
-                        continue;
-                    }
-                    it->second.VertexArrays.clear();
-                }
-                m_Windows.erase(it);
             }
         }
+        // 複数Windowを同時に閉じても、破棄済みContextをCurrentのままにしません。
+        RestoreSurvivingContext();
     }
 
 private:
+    // unordered_mapの反復順ではなく登録順で復元先を選びます。
+    // Main Windowが残っていれば最も小さいIDなので通常はMainへ戻ります。
+    bool RestoreSurvivingContext()
+    {
+        WindowID oldestID = 0;
+        Window* candidate = nullptr;
+        for (const auto& item : m_Windows)
+        {
+            if (item.second.Handle != nullptr &&
+                item.second.Handle->GetBackend() == RHIBackend::OpenGL &&
+                (oldestID == 0 || item.first < oldestID))
+            {
+                oldestID = item.first;
+                candidate = item.second.Handle;
+            }
+        }
+        return candidate != nullptr && candidate->MakeContextCurrent();
+    }
+
+    bool TryCloseWindow(WindowID id)
+    {
+        const auto it = m_Windows.find(id);
+        if (it == m_Windows.end())
+        {
+            return false;
+        }
+
+        // CleanupとVAO解放を対象Contextで行い、Window破棄前に生存Contextへ復帰します。
+        Window& window = *it->second.Handle;
+        if (RunCloseCleanup(id) == false)
+        {
+            RestoreSurvivingContext();
+            return false;
+        }
+        if (window.GetBackend() == RHIBackend::OpenGL &&
+            it->second.VertexArrays.empty() == false)
+        {
+            if (window.MakeContextCurrent() == false)
+            {
+                RestoreSurvivingContext();
+                return false;
+            }
+            for (const auto& item : it->second.VertexArrays)
+            {
+                if (item.second.second.use_count() != 1)
+                {
+                    RestoreSurvivingContext();
+                    return false;
+                }
+            }
+            it->second.VertexArrays.clear();
+        }
+
+        // 復元先を破棄対象以外から探します。最後のWindowならGLFW側の破棄に任せます。
+        WindowID oldestID = 0;
+        Window* restore = nullptr;
+        for (const auto& item : m_Windows)
+        {
+            if (item.first != id && item.second.Handle != nullptr &&
+                item.second.Handle->GetBackend() == RHIBackend::OpenGL &&
+                (oldestID == 0 || item.first < oldestID))
+            {
+                oldestID = item.first;
+                restore = item.second.Handle;
+            }
+        }
+        if (restore != nullptr && restore->MakeContextCurrent() == false)
+        {
+            return false;
+        }
+        m_Windows.erase(it);
+        return true;
+    }
+
     bool RunCloseCleanup(WindowID id)
     {
         const auto it = m_Windows.find(id);
