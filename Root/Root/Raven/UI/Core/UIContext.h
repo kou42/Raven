@@ -94,6 +94,8 @@ public:
     UIElement* AddPopup(Scope<UIElement> popup);
     bool RemovePopup(UIElement* popup);
     bool OpenPopup(UIElement* popup);
+    // AnchorのScreen位置からPopupの配置を決定し、Viewport外へはみ出す場合は反対側へ展開します。
+    bool OpenPopupAt(UIElement* popup, const UIElement* anchor, float gap = 4.0f);
     void ClosePopup();
     UIElement* GetOpenPopup() const { return m_OpenPopup; }
 
