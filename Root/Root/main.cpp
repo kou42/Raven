@@ -41,6 +41,7 @@
 #include "Raven/Physics/Tests/StaticMeshTriangleBVHSelfTests.h"
 #include "Raven/Physics/Tests/ThermalWorldSelfTests.h"
 #include "Raven/UI/Svg/Debug/UISvgDemoLayer.h"
+#include "Raven/UI/Text/Debug/UITextDemoLayer.h"
 #endif
 
 int main(int argc, char* argv[])
@@ -192,6 +193,8 @@ int main(int argc, char* argv[])
     // 実ファイルの読み込みからUI Tree展開、AnimationClip再生、OpenGL UI描画までを
     // 起動中に一続きで確認するSVG検証Layerです。Asset固有PathはDebug Layer内へ閉じ込めます。
     app.PushLayer(Raven::CreateScope<Raven::UISvgDemoLayer>(app));
+    // 独自UIの文字描画をEditorと並行して確認します。Font未検出時はLayer側で安全にスキップします。
+    app.PushLayer(Raven::CreateScope<Raven::UITextDemoLayer>(app));
 #endif
 
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
