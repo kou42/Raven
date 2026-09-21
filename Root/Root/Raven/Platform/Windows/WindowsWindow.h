@@ -22,6 +22,7 @@ public:
     void Present() override;
     bool MakeContextCurrent() override;
     bool SetFramebufferViewport() override;
+    bool BindDefaultFramebuffer() override;
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }
