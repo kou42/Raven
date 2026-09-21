@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Math/MathVector.h"
+#include <cstdint>
 
 namespace Raven
 {
@@ -39,7 +40,17 @@ enum class UIKey
     Left,
     Right,
     Home,
-    End
+    End,
+    Up,
+    Down,
+    Backspace,
+    Delete,
+    A,
+    C,
+    V,
+    X,
+    Y,
+    Z
 };
 
 struct UIKeyEvent
@@ -47,7 +58,17 @@ struct UIKeyEvent
     UIKey Key = UIKey::Unknown;
     bool Pressed = false;
     bool Shift = false;
+    bool Control = false;
+    bool Super = false;
     bool Repeat = false;
+    UIContext* Context = nullptr;
+    bool Handled = false;
+};
+
+// Unicode文字入力は物理キー操作とは分離します。IME確定文字もこの入口へ接続します。
+struct UICharacterEvent
+{
+    std::uint32_t Codepoint = 0u;
     UIContext* Context = nullptr;
     bool Handled = false;
 };

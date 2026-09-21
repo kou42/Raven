@@ -160,6 +160,17 @@ void WindowsWindow::Init(const WindowProps& props)
             }
         });
 
+    // Key callbackは物理キー操作、char callbackは文字入力として別々に配送します。
+    glfwSetCharCallback(m_Window, [](GLFWwindow* window, unsigned int codepoint)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == true)
+            {
+                CharacterTypedEvent event(codepoint);
+                data.EventCallback(event);
+            }
+        });
+
     glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, double x, double y)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));

@@ -1,12 +1,16 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
+#include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
+#include "Raven/UI/Text/UITextEditBuffer.h"
+#include "Raven/UI/Widgets/UIInputNumber.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <cmath>
 #include <memory>
+#include <string>
 
 namespace
 {
@@ -41,10 +45,170 @@ void CheckNear(const char* label, float actual, float expected)
         std::exit(EXIT_FAILURE);
     }
 }
+
+void Check(bool condition, const char* label)
+{
+    if (condition == false)
+    {
+        std::cerr << label << ": failed\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+// UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
+void TestTextEditBuffer()
+{
+    Raven::UITextEditBuffer buffer;
+    buffer.SetText("A\xE3\x81\x82" "B");
+    Check(buffer.GetLength() == 3u, "UTF-8 codepoint length");
+    buffer.MoveCursor(1u);
+    buffer.MoveCursor(2u, true);
+    Check(buffer.GetSelectedText() == "\xE3\x81\x82", "UTF-8 selected text");
+    Check(buffer.InsertText("X"), "replace selection");
+    Check(buffer.GetText() == "AXB", "replace UTF-8 selection");
+    Check(buffer.Undo(), "undo replace");
+    Check(buffer.GetText() == "A\xE3\x81\x82" "B", "undo restores text");
+    Check(buffer.GetCursor() == 2u && buffer.GetAnchor() == 1u, "undo restores selection");
+    Check(buffer.Redo(), "redo replace");
+    Check(buffer.GetText() == "AXB", "redo restores text");
+    Check(buffer.Backspace(), "backspace");
+    Check(buffer.GetText() == "AB", "backspace text");
+    Check(buffer.Undo(), "undo backspace");
+    Check(buffer.GetText() == "AXB", "undo backspace text");
+    Check(buffer.InsertText("!"), "insert after undo");
+    Check(buffer.Redo() == false, "new edit invalidates redo");
+    buffer.SetText("reset");
+    Check(buffer.Undo() == false, "SetText clears history");
+}
+
+// 数値確定・範囲制限・Stepと通知を、Window/Fontなしで検証します。
+void TestInputNumber()
+{
+    Raven::UIInputNumber number;
+    int notifications = 0;
+    number.SetOnValueChanged([&notifications](double)
+        {
+            ++notifications;
+        });
+    number.SetRange(-10.0, 10.0);
+    number.SetValue(2.0);
+    number.SetStep(0.5);
+    number.Increment();
+    CheckNear("step up", static_cast<float>(number.GetValue()), 2.5f);
+    number.Decrement();
+    CheckNear("step down", static_cast<float>(number.GetValue()), 2.0f);
+    Check(notifications == 2, "step change notifications");
+    number.SetValue(100.0);
+    CheckNear("SetValue clamp", static_cast<float>(number.GetValue()), 10.0f);
+    number.Increment();
+    CheckNear("step at maximum", static_cast<float>(number.GetValue()), 10.0f);
+    Check(notifications == 2, "no notification at limit");
+    number.GetInputText().SetText("-4.25");
+    number.Commit();
+    CheckNear("commit valid value", static_cast<float>(number.GetValue()), -4.25f);
+    Check(number.GetEditText() == "-4.25", "commit normalizes text");
+    number.GetInputText().SetText("-");
+    number.Commit();
+    CheckNear("incomplete input retains value", static_cast<float>(number.GetValue()), -4.25f);
+    Check(number.GetEditText() == "-4.25", "incomplete input restores text");
+    number.GetInputText().SetText("999");
+    number.Commit();
+    CheckNear("commit clamp", static_cast<float>(number.GetValue()), 10.0f);
+    Check(number.GetEditText() == "10", "commit clamp normalizes text");
+    number.GetInputText().SetText("1e2");
+    number.Commit();
+    CheckNear("exponent clamp", static_cast<float>(number.GetValue()), 10.0f);
+    number.SetStep(0.0);
+    CheckNear("invalid step ignored", static_cast<float>(number.GetStep()), 0.5f);
+}
+
+Raven::UIKeyEvent Press(Raven::UIKey key, bool control = false, bool shift = false)
+{
+    Raven::UIKeyEvent event;
+    event.Key = key;
+    event.Pressed = true;
+    event.Control = control;
+    event.Shift = shift;
+    return event;
+}
+
+// UIContextを通して実際のFocus/Keyboard/Character/Clipboard配送を検証します。
+void TestInputEventRouting()
+{
+    Raven::UIContext context;
+    auto number = std::make_unique<Raven::UIInputNumber>();
+    Raven::UIInputNumber* numberPtr = number.get();
+    number->SetRange(-10.0, 10.0);
+    number->SetValue(2.0);
+    number->SetStep(0.5);
+    std::string clipboard;
+    number->SetClipboard([&clipboard]() { return clipboard; },
+        [&clipboard](const std::string& text) { clipboard = text; });
+    context.GetRootElement().AddChild(std::move(number));
+
+    auto other = std::make_unique<Raven::UIInputText>();
+    Raven::UIInputText* otherPtr = other.get();
+    other->SetText("other");
+    context.GetRootElement().AddChild(std::move(other));
+
+    Raven::UIInputText* edit = &numberPtr->GetInputText();
+    Check(context.SetFocus(edit), "focus numeric input");
+    Check(context.GetFocusedElement() == edit, "numeric input focused");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select all");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('-')), "type minus");
+    Check(numberPtr->GetEditText() == "-", "incomplete numeric prefix");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('x')), "reject invalid character");
+    Check(numberPtr->GetEditText() == "-", "invalid character unchanged");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "commit invalid number");
+    Check(numberPtr->GetEditText() == "2", "Enter restores committed value");
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Up)), "step up routed");
+    CheckNear("routed step up", static_cast<float>(numberPtr->GetValue()), 2.5f);
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "step down routed");
+    CheckNear("routed step down", static_cast<float>(numberPtr->GetValue()), 2.0f);
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select numeric value");
+    clipboard = "4.5";
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::V, true)), "paste numeric value");
+    Check(numberPtr->GetEditText() == "4.5", "numeric clipboard paste");
+    clipboard = "invalid";
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select pasted number");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::V, true)), "reject invalid paste");
+    Check(numberPtr->GetEditText() == "4.5", "invalid paste is atomic");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Z, true)), "undo paste");
+    Check(numberPtr->GetEditText() == "2", "undo paste restores text");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Y, true)), "redo paste");
+    Check(numberPtr->GetEditText() == "4.5", "redo paste restores text");
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select for copy");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::C, true)), "copy numeric value");
+    Check(clipboard == "4.5", "clipboard copy");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select for cut");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::X, true)), "cut numeric value");
+    Check(numberPtr->GetEditText().empty(), "cut clears edit text");
+    Check(context.SetFocus(otherPtr), "focus other widget");
+    Check(numberPtr->GetEditText() == "4.5", "Focus Lost restores incomplete edit");
+    Check(context.GetFocusedElement() == otherPtr, "focus transferred");
+    Check(context.SetFocus(edit), "refocus numeric input");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select before focus loss");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('-')), "type invalid prefix");
+    context.ClearFocus();
+    Check(context.GetFocusedElement() == nullptr, "focus cleared");
+    Check(numberPtr->GetEditText() == "4.5", "ClearFocus commits number");
+    Check(context.SetFocus(edit), "focus before outside click");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::A, true)), "select before outside click");
+    Check(context.RouteCharacterEvent(static_cast<std::uint32_t>('-')), "incomplete before outside click");
+    context.RouteMouseDown(Raven::math::Vec2(-100.0f, -100.0f), Raven::UIMouseButton::Left);
+    Check(context.GetFocusedElement() == nullptr, "outside click clears focus");
+    Check(numberPtr->GetEditText() == "4.5", "outside click commits number");
+}
 } // namespace
 
 int main()
 {
+    TestTextEditBuffer();
+    TestInputNumber();
+    TestInputEventRouting();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);

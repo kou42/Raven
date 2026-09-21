@@ -29,6 +29,16 @@ UIKey ToUIKey(int keyCode)
     case GLFW_KEY_RIGHT: return UIKey::Right;
     case GLFW_KEY_HOME: return UIKey::Home;
     case GLFW_KEY_END: return UIKey::End;
+    case GLFW_KEY_UP: return UIKey::Up;
+    case GLFW_KEY_DOWN: return UIKey::Down;
+    case GLFW_KEY_BACKSPACE: return UIKey::Backspace;
+    case GLFW_KEY_DELETE: return UIKey::Delete;
+    case GLFW_KEY_A: return UIKey::A;
+    case GLFW_KEY_C: return UIKey::C;
+    case GLFW_KEY_V: return UIKey::V;
+    case GLFW_KEY_X: return UIKey::X;
+    case GLFW_KEY_Y: return UIKey::Y;
+    case GLFW_KEY_Z: return UIKey::Z;
     default: return UIKey::Unknown;
     }
 }
@@ -472,6 +482,8 @@ void Application::OnEvent(Event& event)
         event.GetEventType() == EventType::WindowFocusLost)
     {
         m_UIContext.CancelMouseCapture();
+        // OSのFocus喪失でも編集中の数値を確定し、再Focus時に途中入力を残しません。
+        m_UIContext.ClearFocus();
     }
 
     // ========================================================================
@@ -488,6 +500,8 @@ void Application::OnEvent(Event& event)
         uiEvent.Pressed = true;
         uiEvent.Repeat = keyEvent.IsRepeat();
         uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
+        uiEvent.Control = (keyEvent.GetModifiers() & GLFW_MOD_CONTROL) != 0;
+        uiEvent.Super = (keyEvent.GetModifiers() & GLFW_MOD_SUPER) != 0;
         uiEvent.Context = &m_UIContext;
         event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
     }
@@ -501,6 +515,13 @@ void Application::OnEvent(Event& event)
         uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
         uiEvent.Context = &m_UIContext;
         event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+    }
+
+    if (m_RavenUIEnabled == true && event.Handled == false &&
+        event.GetEventType() == EventType::CharacterTyped)
+    {
+        CharacterTypedEvent& characterEvent = static_cast<CharacterTypedEvent&>(event);
+        event.Handled = m_UIContext.RouteCharacterEvent(characterEvent.GetCodepoint());
     }
 
     // ========================================================================

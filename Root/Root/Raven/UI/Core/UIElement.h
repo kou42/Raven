@@ -205,6 +205,7 @@ public:
     // Childの描画とHit Testを自身のVisual Bounds内へ制限します。
     // 回転/Shear時はRendererのScissor制約に合わせ、screen-space AABBとして扱います。
     void SetClipChildren(bool value) { m_ClipChildren = value; }
+    void SetClipSelf(bool value) { m_ClipSelf = value; }
     bool GetClipChildren() const { return m_ClipChildren; }
 
     // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
@@ -257,6 +258,7 @@ public:
     // Widget側はOnMouseEvent()/OnKeyEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
     void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
+    void HandleCharacterEvent(UICharacterEvent& event) { OnCharacterEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
 
@@ -268,12 +270,23 @@ protected:
     void InvalidateMeasure();
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
+    virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
+    virtual void OnFocusChanged(bool focused) { (void)focused; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
     friend class UIContext;
 
-    void SetFocused(bool value) { m_Focused = value; }
+    void SetFocused(bool value)
+    {
+        if (m_Focused == value)
+        {
+            return;
+        }
+        m_Focused = value;
+        // Focus遷移の通知はUIContextの所有権更新後にWidgetへ伝えます。
+        OnFocusChanged(value);
+    }
     math::Vec2 ClampSize(const math::Vec2& size) const;
     math::Vec2 ResolveRootSize() const;
     math::Vec2 GetDesiredSizeWithMargin() const;
@@ -329,6 +342,7 @@ private:
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
     bool m_ClipChildren = false;
+    bool m_ClipSelf = false;
     bool m_AffectsParentMeasure = true;
 };
 

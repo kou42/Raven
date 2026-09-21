@@ -130,4 +130,18 @@ inline bool UIContext::RouteKeyEvent(const UIKeyEvent& event)
     return routedEvent.Handled;
 }
 
+inline bool UIContext::RouteCharacterEvent(std::uint32_t codepoint)
+{
+    UIElement* focusedElement = GetFocusedElement();
+    if (focusedElement == nullptr)
+    {
+        return false;
+    }
+    UICharacterEvent event;
+    event.Codepoint = codepoint;
+    event.Context = this;
+    focusedElement->HandleCharacterEvent(event);
+    return event.Handled;
+}
+
 } // namespace Raven

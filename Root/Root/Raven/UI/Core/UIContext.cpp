@@ -76,6 +76,17 @@ bool UIContext::RouteMouseEvent(
     UIElement* hitTarget = UIHitTest::FindTopmost(*m_RootElement, screenPosition);
     UpdateHoverTarget(hitTarget);
 
+    if (type == UIMouseEventType::Down && button == UIMouseButton::Left)
+    {
+        UIElement* focused = GetFocusedElement();
+        // 別Widgetや背景をクリックした時点で編集を確定します。
+        // Focus対象自身の子をクリックした場合はFocusを維持します。
+        if (focused != nullptr && IsElementInSubtree(hitTarget, focused) == false)
+        {
+            ClearFocus();
+        }
+    }
+
     // Pressedは「どのElement上で押し始めたか」を保持する状態です。
     // MouseUpでは解除前のElementをEventへ保存し、ButtonがDown開始ElementとUp時Targetを比較できるようにします。
     UIElement* pressedTargetForEvent = m_PressedElement;
