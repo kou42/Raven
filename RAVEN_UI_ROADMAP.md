@@ -2,7 +2,7 @@
 
 最終更新: 2026-09-21  
 対象: `Root/Root/Raven/UI` / Raven Editor  
-状態: Phase 1 実装中（Font Loader / Rasterizerを追加、実描画未検証）
+状態: Phase 1 実装中（ImGui非依存のFont LoaderとUILabelを追加、実描画未検証）
 
 ## 目的と原則
 
@@ -43,16 +43,16 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 
 ## Phase 1: 実装分割
 
-1. [x] 既存TextureAsset / Texture生成API、Shader、OpenGLUIRenderer、Visual Studio project設定を確認。ImGui submodule同梱stb_truetypeを翻訳単位内に限定して使用し、AtlasをTextureAssetで所有する方針を決定。
+1. [x] 既存TextureAsset / Texture生成API、Shader、OpenGLUIRenderer、Visual Studio project設定を確認。独立管理のinclude/stb_truetype.hを翻訳単位内に限定して使用し、AtlasをTextureAssetで所有する方針を決定。
 2. [x] Glyph Metrics / Font Atlasの最小Runtime構造を実装する。Font読込・RasterizeはBuilderで実装、Texture再生成はAtlasの再Buildで対応（実行未検証）。
 3. [x] UTF-8 decode、代替Glyph、ASCII・日本語コードポイントのGlyph取得経路を実装する。不正UTF-8と未収録文字の実行テストは未実施。
 4. [x] DrawListへGlyph Quadの入口を追加し、既存Image Commandを再利用する方針を決定する。Font Atlasからの呼び出しは実装済み・描画検証は未実施。
 5. [ ] RGBA8 Atlasを既存Image経路へ接続済み（BuilderからのGPU実行は未検証）。矩形/画像描画とScissor/Transformを回帰確認する。
-6. [ ] UILabelまたは最小Text検証UIを追加し、ASCII・日本語・複数行・Resize・高DPIを確認する。
+6. [ ] UILabelを追加済み。ASCII・日本語・複数行・Resize・高DPIの実描画確認は未実施。
 
 ### Phase 1で注意する点
 
-- ImGui vendor内部のFont Atlasを独自UIの恒久依存にしない。採用するライブラリのライセンスを確認する。
+- Font Rasterizerは独立管理のinclude/stb_truetype.h（upstream nothings/stb v1.26、public domain / MIT）を使用する。ImGui vendorへの新規依存は作らない。
 - AtlasのTextureはDrawListの描画完了まで有効にする。GPU Texture IDをUI Coreに持ち込まない。
 - 現在のOpenGLUIRendererはメインWindowのdefault framebufferを描画先にしている。別RenderTarget対応は別Phaseで整理する。
 - Text表示が成功しても、Text Measurement / InputText完成とは扱わない。
@@ -61,7 +61,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 
 | 日付 | ブランチ / PR | 変更 | 検証 | 次の作業 |
 | --- | --- | --- | --- | --- |
-| 2026-09-21 | feature/raven-ui-roadmap | ロードマップとPhase 1の分割・完了条件を作成 | 文書のみ | Phase 1-1の依存関係確認、Font Atlas設計 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIDrawList::AddGlyphを追加。TextureAssetとImage Commandを再利用 | コードレビューのみ。ビルド・実行未検証 | Font Atlas / Glyph Metrics、Font読込とUTF-8対応 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIFontAtlasにGlyph Metrics登録・Atlas範囲検証・UV変換・DrawList接続を追加 | ビルド・実行未検証 | Font Loader、Rasterizer、Texture生成、UTF-8 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIUtf8とAppendTextを追加。代替Glyph・改行・Advanceに対応 | ビルド・実行未検証 | Font Loader、Rasterizer、Texture生成、文字列描画検証 |\n| 2026-09-21 | feature/raven-ui-roadmap | stb_truetypeで指定文字集合をRasterizeしRGBA8 TextureAssetを生成するBuilderを追加。AppendTextの改行リテラルも修正 | ビルド・実行未検証。Fontファイル・GPU Contextが必要 | UILabelまたはText検証UI、実描画・日本語フォント・Atlas容量検証 |
+| 2026-09-21 | feature/raven-ui-roadmap | ロードマップとPhase 1の分割・完了条件を作成 | 文書のみ | Phase 1-1の依存関係確認、Font Atlas設計 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIDrawList::AddGlyphを追加。TextureAssetとImage Commandを再利用 | コードレビューのみ。ビルド・実行未検証 | Font Atlas / Glyph Metrics、Font読込とUTF-8対応 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIFontAtlasにGlyph Metrics登録・Atlas範囲検証・UV変換・DrawList接続を追加 | ビルド・実行未検証 | Font Loader、Rasterizer、Texture生成、UTF-8 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIUtf8とAppendTextを追加。代替Glyph・改行・Advanceに対応 | ビルド・実行未検証 | Font Loader、Rasterizer、Texture生成、文字列描画検証 |\n| 2026-09-21 | feature/raven-ui-roadmap | stb_truetypeで指定文字集合をRasterizeしRGBA8 TextureAssetを生成するBuilderを追加。AppendTextの改行リテラルも修正 | ビルド・実行未検証。Fontファイル・GPU Contextが必要 | UILabelまたはText検証UI、実描画・日本語フォント・Atlas容量検証 |\n| 2026-09-21 | feature/raven-ui-roadmap | upstream stb_truetype v1.26をincludeへ独立配置、BuilderのImGui依存を解消。UILabelを追加 | GitHub差分確認のみ。ビルド・GPU実描画未検証 | DemoへのFontロード・UILabel組込み、文字表示検証 |
 
 ## 更新ルール
 
