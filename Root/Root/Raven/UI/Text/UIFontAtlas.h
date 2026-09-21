@@ -12,6 +12,8 @@
 namespace Raven
 {
 
+struct UITextLayoutOptions;
+
 // Glyphの矩形はAtlas内のpixel座標、BearingはBaselineからGlyph左上へのoffsetです。
 // Advanceは次のGlyphのPen位置までの距離であり、Bitmapの幅とは一致しない場合があります。
 struct UIGlyphMetrics
@@ -46,6 +48,9 @@ public:
         m_Width = width;
         m_Height = height;
         m_Glyphs.clear();
+        m_Ascent = 0.0f;
+        m_Descent = 0.0f;
+        m_LineGap = 0.0f;
         return true;
     }
 
@@ -55,6 +60,9 @@ public:
         m_Texture = nullptr;
         m_Width = 0u;
         m_Height = 0u;
+        m_Ascent = 0.0f;
+        m_Descent = 0.0f;
+        m_LineGap = 0.0f;
     }
 
     bool AddGlyph(std::uint32_t codepoint, const UIGlyphMetrics& metrics)
@@ -126,44 +134,26 @@ public:
         std::string_view text,
         const math::Vec2& baseline,
         float lineHeight,
-        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const
-    {
-        math::Vec2 pen = baseline;
-        std::size_t offset = 0u;
-        std::uint32_t codepoint = 0u;
-        while (UIUtf8::DecodeNext(text, offset, codepoint))
-        {
-            if (codepoint == static_cast<std::uint32_t>('\r'))
-            {
-                continue;
-            }
-            if (codepoint == static_cast<std::uint32_t>('\n'))
-            {
-                pen.x = baseline.x;
-                pen.y += lineHeight;
-                continue;
-            }
+        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const;
 
-            const UIGlyphMetrics* glyph = FindGlyph(codepoint);
-            std::uint32_t renderCodepoint = codepoint;
-            if (glyph == nullptr)
-            {
-                renderCodepoint = UIUtf8::ReplacementCharacter;
-                glyph = FindGlyph(renderCodepoint);
-            }
-            if (glyph == nullptr)
-            {
-                renderCodepoint = static_cast<std::uint32_t>('?');
-                glyph = FindGlyph(renderCodepoint);
-            }
-            if (glyph != nullptr)
-            {
-                AppendGlyph(drawList, renderCodepoint, pen, color);
-                pen.x += glyph->Advance;
-            }
-        }
-        return pen;
+    // Layout設定を指定した描画。従来のAppendTextは幅制限なし・左寄せのままです。
+    math::Vec2 AppendText(
+        UIDrawList& drawList,
+        std::string_view text,
+        const math::Vec2& baseline,
+        const UITextLayoutOptions& options,
+        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const;
+
+    // Font全体のBaseline基準Metrics（pixel）。Descentは通常負値です。
+    void SetVerticalMetrics(float ascent, float descent, float lineGap)
+    {
+        m_Ascent = ascent;
+        m_Descent = descent;
+        m_LineGap = lineGap;
     }
+    float GetAscent() const { return m_Ascent; }
+    float GetDescent() const { return m_Descent; }
+    float GetLineGap() const { return m_LineGap; }
 
     const Ref<TextureAsset>& GetTexture() const { return m_Texture; }
     std::uint32_t GetWidth() const { return m_Width; }
@@ -174,6 +164,9 @@ private:
     std::uint32_t m_Width = 0u;
     std::uint32_t m_Height = 0u;
     std::unordered_map<std::uint32_t, UIGlyphMetrics> m_Glyphs;
+    float m_Ascent = 0.0f;
+    float m_Descent = 0.0f;
+    float m_LineGap = 0.0f;
 };
 
 } // namespace Raven

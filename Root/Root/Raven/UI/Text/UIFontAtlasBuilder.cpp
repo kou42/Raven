@@ -211,6 +211,11 @@ bool UIFontAtlasBuilder::BuildFromFile(
     {
         return false;
     }
+    int ascent = 0;
+    int descent = 0;
+    int lineGap = 0;
+    stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
+    built.SetVerticalMetrics(ascent * scale, descent * scale, lineGap * scale);
     for (const PendingGlyph& entry : pending)
     {
         if (built.AddGlyph(entry.Codepoint, entry.Metrics) == false)

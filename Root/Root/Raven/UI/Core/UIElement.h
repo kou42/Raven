@@ -261,6 +261,11 @@ public:
     void BuildDrawList(UIDrawList& drawList);
 
 protected:
+    // Leaf Widgetが自身のContentに必要な論理Sizeを返します。ContainerのChild集約は基底側で継続します。
+    virtual math::Vec2 OnMeasureContent() const;
+    // Arrange時に親から幅が確定したWidgetだけ、高さを再計算するための拡張点です。
+    virtual math::Vec2 OnMeasureContentForWidth(float availableWidth) const;
+    void InvalidateMeasure();
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
@@ -272,9 +277,9 @@ private:
     math::Vec2 ClampSize(const math::Vec2& size) const;
     math::Vec2 ResolveRootSize() const;
     math::Vec2 GetDesiredSizeWithMargin() const;
-    void InvalidateMeasure();
     void InvalidateArrange();
     void MeasureRecursive();
+    void ReflowForWidth(float arrangedWidth);
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
     void BuildDrawListRecursive(

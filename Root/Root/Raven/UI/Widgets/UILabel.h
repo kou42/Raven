@@ -2,14 +2,15 @@
 
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/UI/Text/UITextLayout.h"
 
 #include <string>
 
 namespace Raven
 {
 
-// 明示Sizeを持つ最小の文字表示Widgetです。
-// 文字列のMeasure/折り返しはPhase 2で追加し、現段階では配置済みBounds内へGlyphを発行します。
+// 明示Sizeを持つ文字表示Widgetです。折り返し・水平Alignmentは配置済み幅を使います。
+// Fontと文字列から固有SizeをMeasureします。折り返し時はPreferredSize.xを幅制約に使用します。
 class UILabel final : public UIElement
 {
 public:
@@ -26,15 +27,26 @@ public:
     void SetBaselineOffset(float offset);
     void SetLineHeight(float height);
 
+    void SetWrapMode(UITextWrapMode mode);
+    void SetTextAlignment(UITextHorizontalAlignment alignment);
+    UITextWrapMode GetWrapMode() const;
+    UITextHorizontalAlignment GetTextAlignment() const;
+
 protected:
+    math::Vec2 OnMeasureContent() const override;
+    math::Vec2 OnMeasureContentForWidth(float availableWidth) const override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
+    math::Vec2 MeasureText(float maxWidth) const;
+
     Ref<UIFontAtlas> m_Font;
     std::string m_Text;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     float m_BaselineOffset = 16.0f;
     float m_LineHeight = 20.0f;
+    UITextWrapMode m_WrapMode = UITextWrapMode::None;
+    UITextHorizontalAlignment m_TextAlignment = UITextHorizontalAlignment::Left;
 };
 
 } // namespace Raven
