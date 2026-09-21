@@ -1,3 +1,7 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <iostream>
 #include <algorithm>
 #include <utility>
@@ -131,7 +135,9 @@ struct Win32IMEBridge
                         }
                     }
                 }
-                if ((lparam & GCS_COMPSTR) != 0)
+                // 同一通知にRESULTとCOMPがある場合は確定結果を優先し、
+                // Commit直後に古い未確定文字列を再表示しません。
+                if ((lparam & GCS_COMPSTR) != 0 && (lparam & GCS_RESULTSTR) == 0)
                 {
                     const std::wstring composition = ReadIMEString(context, GCS_COMPSTR);
                     const LONG rawCursor = ImmGetCompositionStringW(context, GCS_CURSORPOS, nullptr, 0);
