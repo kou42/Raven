@@ -166,6 +166,17 @@ public:
         const math::Vec2& uvMin = math::Vec2{ 0.0f, 0.0f },
         const math::Vec2& uvMax = math::Vec2{ 1.0f, 1.0f });
 
+    // Font Atlasの1 Glyphを描画します。TextureはAtlasを保持するTextureAssetを参照します。
+    // Rasterize/文字幅計算はFont層が担当し、DrawListは配置済みQuadのみを受け取ります。
+    // GlyphもImageと同じGPU API非依存経路を通すことで、描画順・Clip・Transformを共有します。
+    void AddGlyph(
+        const math::Vec2& min,
+        const math::Vec2& max,
+        const Ref<TextureAsset>& atlasTexture,
+        const math::Vec2& uvMin,
+        const math::Vec2& uvMax,
+        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+
     // 直前に追加されたCommandへElementのWorld Visual Transformを付与します。
     // WidgetのOnBuildDrawList()が複数Commandを追加する場合にも対応できるよう、範囲指定で適用します。
     void ApplyTransform(std::size_t firstCommand, const UITransform2D& transform);
