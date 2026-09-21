@@ -90,6 +90,12 @@ public:
     UIElement* GetMouseCaptureElement();
     const UIElement* GetMouseCaptureElement() const;
 
+    // PopupはRoot末尾の専用Layerへ所有させ、通常のPanel Clipから分離します。
+    UIElement* AddPopup(Scope<UIElement> popup);
+    bool OpenPopup(UIElement* popup);
+    void ClosePopup();
+    UIElement* GetOpenPopup() const { return m_OpenPopup; }
+
     void SetRenderer(Scope<UIRenderer> renderer);
 
     UIElement& GetRootElement();
@@ -123,6 +129,8 @@ private:
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
     Scope<UIElement> m_RootElement;
+    UIElement* m_PopupLayer = nullptr;
+    UIElement* m_OpenPopup = nullptr;
     Scope<UIRenderer> m_Renderer;
     UIElement* m_HoveredElement = nullptr;
     UIElement* m_PressedElement = nullptr;
