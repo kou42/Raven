@@ -12,6 +12,8 @@
 namespace Raven
 {
 
+struct UITextLayoutOptions;
+
 // Glyphの矩形はAtlas内のpixel座標、BearingはBaselineからGlyph左上へのoffsetです。
 // Advanceは次のGlyphのPen位置までの距離であり、Bitmapの幅とは一致しない場合があります。
 struct UIGlyphMetrics
@@ -132,6 +134,14 @@ public:
         std::string_view text,
         const math::Vec2& baseline,
         float lineHeight,
+        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const;
+
+    // Layout設定を指定した描画。従来のAppendTextは幅制限なし・左寄せのままです。
+    math::Vec2 AppendText(
+        UIDrawList& drawList,
+        std::string_view text,
+        const math::Vec2& baseline,
+        const UITextLayoutOptions& options,
         const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const;
 
     // Font全体のBaseline基準Metrics（pixel）。Descentは通常負値です。
