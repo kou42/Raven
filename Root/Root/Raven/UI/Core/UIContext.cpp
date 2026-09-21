@@ -106,6 +106,12 @@ bool UIContext::RouteMouseEvent(
     if (type == UIMouseEventType::Down || type == UIMouseEventType::Scroll)
     {
         HideTooltip();
+        m_TooltipSuppressedUntilMove = true;
+    }
+    if (type == UIMouseEventType::Move && m_TooltipSuppressedUntilMove)
+    {
+        m_TooltipSuppressedUntilMove = false;
+        m_HoverStarted = std::chrono::steady_clock::now();
     }
 
     // 外側Downを消費し、閉じた直後に背面Buttonを誤操作しないようにします。
@@ -492,7 +498,8 @@ void UIContext::HideTooltip()
 
 void UIContext::UpdateTooltip()
 {
-    if (m_Tooltip == nullptr || m_TooltipTarget == nullptr || m_OpenPopup != nullptr)
+    if (m_Tooltip == nullptr || m_TooltipTarget == nullptr || m_OpenPopup != nullptr ||
+        m_TooltipSuppressedUntilMove)
     {
         HideTooltip();
         return;
