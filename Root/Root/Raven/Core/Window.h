@@ -22,6 +22,8 @@ struct WindowProps
     bool Maximized = false;
     bool Fullscreen = false;
     bool VSync = true;
+    // OpenGL補助Windowのみ使用。共有元GLFWwindowの寿命は新Windowより長く保ちます。
+    void* ShareContext = nullptr;
 
     WindowProps(
         const std::string& title = "My Engine",
@@ -62,6 +64,9 @@ public:
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
+    // 論理Windowサイズとは別の実Pixel数。高DPIでは両者が異なります。
+    virtual unsigned int GetFramebufferWidth() const { return GetWidth(); }
+    virtual unsigned int GetFramebufferHeight() const { return GetHeight(); }
     virtual RHIBackend GetBackend() const = 0;
     virtual WindowState GetState() const = 0;
     virtual void SetTitle(const std::string& title) = 0;
