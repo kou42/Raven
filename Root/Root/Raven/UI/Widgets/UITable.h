@@ -206,15 +206,7 @@ protected:
             return;
         }
         // Headerは固定し、BodyだけScrollします。ClipSelfが行のViewport外描画を切ります。
-        drawList.AddRect(position, math::Vec2(position.x + width, position.y + m_HeaderHeight),
-            ApplyVisualColor(math::Vec4(0.17f, 0.19f, 0.23f, 1.0f)));
         float x = position.x;
-        for (const auto& column : m_Columns)
-        {
-            DrawText(drawList, column.Title, math::Vec2(x + 5.0f, position.y + m_Baseline));
-            x += column.Width;
-        }
-
         const float scroll = GetScrollOffset();
         for (std::size_t row = 0u; row < m_Rows.size(); ++row)
         {
