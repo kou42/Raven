@@ -141,6 +141,14 @@ void UIInputText::OnMouseEvent(UIMouseEvent& event)
     }
 }
 
+void UIInputText::OnFocusChanged(bool focused)
+{
+    if (focused == false && m_OnFocusLost != nullptr)
+    {
+        m_OnFocusLost();
+    }
+}
+
 void UIInputText::OnKeyEvent(UIKeyEvent& event)
 {
     if (IsFocused() == false || event.Pressed == false)
@@ -193,6 +201,14 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
     if (event.Key == UIKey::Enter && m_OnSubmit != nullptr)
     {
         m_OnSubmit();
+        event.Handled = true;
+        return;
+    }
+
+    if ((event.Key == UIKey::Up || event.Key == UIKey::Down) &&
+        m_OnStep != nullptr)
+    {
+        m_OnStep(event.Key == UIKey::Up);
         event.Handled = true;
         return;
     }
