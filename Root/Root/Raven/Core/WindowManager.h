@@ -40,13 +40,17 @@ public:
         if (windowSpecification.Backend == RHIBackend::OpenGL &&
             windowSpecification.ShareContext == nullptr)
         {
+            // unordered_mapの反復順に依存せず、最初に登録した生存Windowを共有元にします。
+            // ApplicationのMain Windowは最初に登録されるため通常はMainが選ばれます。
+            WindowID oldestID = 0;
             for (const auto& item : m_Windows)
             {
                 if (item.second.Handle != nullptr &&
-                    item.second.Handle->GetBackend() == RHIBackend::OpenGL)
+                    item.second.Handle->GetBackend() == RHIBackend::OpenGL &&
+                    (oldestID == 0 || item.first < oldestID))
                 {
+                    oldestID = item.first;
                     windowSpecification.ShareContext = item.second.Handle->GetNativeWindow();
-                    break;
                 }
             }
         }
