@@ -12,9 +12,9 @@
 #include <utility>
 #include <vector>
 
-// Dear ImGui submoduleに同梱されたstb_truetypeを、この翻訳単位だけで使用します。
-// STBTT_STATICでシンボルを内部リンケージにし、ImGui側の実装と衝突させません。
-// 独自UIの公開ヘッダはImGuiの型に依存しません。
+// Ravenが独立管理するinclude/stb_truetype.hを、この翻訳単位だけで実装します。
+// STBTT_STATICでシンボルを内部リンケージにし、外部ライブラリとの衝突を防ぎます。
+// UI公開ヘッダもビルド時のFont処理もImGuiのヘッダを参照しません。
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "imstb_truetype.h"
