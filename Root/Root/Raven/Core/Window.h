@@ -57,6 +57,8 @@ public:
     virtual void OnUpdate() = 0;
     virtual void PollEvents() = 0;
     virtual void Present() = 0;
+    // OpenGL描画対象を切り替えます。No-API Windowではfalseを返します。
+    virtual bool MakeContextCurrent() { return false; }
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
