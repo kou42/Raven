@@ -307,6 +307,11 @@ protected:
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
     virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }
     virtual void OnFocusChanged(bool focused) { (void)focused; }
+    virtual void OnContextChanged(UIContext* previous, UIContext* current)
+    {
+        (void)previous;
+        (void)current;
+    }
     virtual void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const;
 
 private:
