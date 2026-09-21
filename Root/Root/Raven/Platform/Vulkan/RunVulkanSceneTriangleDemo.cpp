@@ -2,42 +2,16 @@
 
 #include "VulkanSceneTriangleDemo.h"
 
+#include "Raven/Assets/RHIShaderAsset.h"
 #include "Raven/Core/Window.h"
 
 #include <GLFW/glfw3.h>
 
-#include <fstream>
+#include <filesystem>
 #include <iostream>
-#include <iterator>
-#include <string>
-#include <vector>
 
 namespace Raven
 {
-namespace
-{
-bool ReadSPIRV(const std::string& path, RHIShaderBinary& shader)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (file.is_open() == false)
-    {
-        std::cerr << "SPIR-V file not found: " << path << '\n';
-        return false;
-    }
-    std::vector<char> bytes(
-        (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (file.bad() == true || bytes.empty() == true ||
-        bytes.size() % sizeof(uint32_t) != 0)
-    {
-        std::cerr << "Invalid SPIR-V file: " << path << '\n';
-        return false;
-    }
-    shader.Format = RHIShaderBinaryFormat::SPIRV;
-    shader.Code.assign(bytes.begin(), bytes.end());
-    shader.EntryPoint = "main";
-    return true;
-}
-} // namespace
 
 int RunVulkanSceneTriangleDemo()
 {
@@ -49,17 +23,32 @@ int RunVulkanSceneTriangleDemo()
         return 1;
     }
 
-    RHIShaderBinary vertexShader;
-    RHIShaderBinary fragmentShader;
-    const std::string shaderDirectory = "Raven/Assets/Shaders/Vulkan/";
-    if (ReadSPIRV(shaderDirectory + "SceneTriangle.vert.spv", vertexShader) == false ||
-        ReadSPIRV(shaderDirectory + "SceneTriangle.frag.spv", fragmentShader) == false)
+    const std::filesystem::path shaderDirectory =
+        std::filesystem::path("Raven") / "Assets" / "Shaders";
+    RHIShaderAssetSpecification vertexSpecification{};
+    vertexSpecification.VulkanPath =
+        (shaderDirectory / "Vulkan" / "SceneTriangle.vert.spv").generic_string();
+    RHIShaderAssetSpecification fragmentSpecification{};
+    fragmentSpecification.VulkanPath =
+        (shaderDirectory / "Vulkan" / "SceneTriangle.frag.spv").generic_string();
+
+    // Asset ManagerがBackend別Pathの選択と重複読込の防止を担当します。
+    RHIShaderAssetManager shaderAssets;
+    const Ref<RHIShaderAsset> vertexShader =
+        shaderAssets.Load(vertexSpecification, RHIBackend::Vulkan);
+    const Ref<RHIShaderAsset> fragmentShader =
+        shaderAssets.Load(fragmentSpecification, RHIBackend::Vulkan);
+    if (vertexShader == nullptr || fragmentShader == nullptr)
     {
+        std::cerr << "Vulkan Scene Triangle shader asset load failed.\n";
         return 1;
     }
 
     VulkanSceneTriangleDemo demo;
-    if (demo.Init(*window, vertexShader, fragmentShader) == false)
+    if (demo.Init(
+        *window,
+        vertexShader->GetBinary(),
+        fragmentShader->GetBinary()) == false)
     {
         std::cerr << "Vulkan Scene Triangle initialization failed.\n";
         return 1;

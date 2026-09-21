@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 
 namespace Raven
 {
@@ -28,6 +29,7 @@ public:
     // 現在有効なRendererAPIに対応するUIRenderer実装を生成します。
     // Application側へOpenGL具体型を漏らさないため、生成責務をこのFactoryへ集約します。
     static Scope<UIRenderer> Create();
+    static Scope<UIRenderer> Create(RHIBackend backend);
 };
 
 } // namespace Raven

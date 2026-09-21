@@ -48,18 +48,19 @@ OpenGLRHIBuffer::~OpenGLRHIBuffer()
     }
 }
 
-void OpenGLRHIBuffer::SetData(const void* data, std::size_t size, std::size_t offset)
+bool OpenGLRHIBuffer::TrySetData(
+    const void* data, std::size_t size, std::size_t offset)
 {
-    if (data == nullptr || size == 0)
+    if (m_RendererID == 0 || data == nullptr || size == 0)
     {
-        return;
+        return false;
     }
 
     // Buffer範囲外への書き込みはGraphics APIへ渡しません。
     // subtraction形式で検証し、offset + sizeの整数overflowも避けます。
     if (offset > m_Specification.Size || size > m_Specification.Size - offset)
     {
-        return;
+        return false;
     }
 
     glBindBuffer(GL_COPY_WRITE_BUFFER, m_RendererID);
@@ -69,6 +70,7 @@ void OpenGLRHIBuffer::SetData(const void* data, std::size_t size, std::size_t of
         static_cast<GLsizeiptr>(size),
         data);
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    return true;
 }
 
 const RHIBufferSpecification& OpenGLRHIBuffer::GetSpecification() const
@@ -76,20 +78,20 @@ const RHIBufferSpecification& OpenGLRHIBuffer::GetSpecification() const
     return m_Specification;
 }
 
-void OpenGLRHIBuffer::Resize(std::size_t size, const void* data)
+bool OpenGLRHIBuffer::TryResize(std::size_t size, const void* data)
 {
-    if (size == 0)
+    if (m_RendererID == 0 || size == 0)
     {
-        return;
+        return false;
     }
 
     if (size == m_Specification.Size)
     {
         if (data != nullptr)
         {
-            SetData(data, size);
+            return TrySetData(data, size);
         }
-        return;
+        return true;
     }
 
     // OpenGL object名を維持したままstorageだけを再確保します。
@@ -103,6 +105,7 @@ void OpenGLRHIBuffer::Resize(std::size_t size, const void* data)
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
 
     m_Specification.Size = size;
+    return true;
 }
 
 std::uint32_t OpenGLRHIBuffer::GetRendererID() const

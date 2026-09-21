@@ -3,8 +3,10 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 
 #include <cstdint>
+#include <vector>
 
 namespace Raven
 {
@@ -12,6 +14,15 @@ namespace Raven
 class Camera;
 class Material;
 class Mesh;
+class RHIDevice;
+class RHIGraphicsPipeline;
+class RHISceneCommandList;
+class RHISceneFrameLifecycle;
+class RHITexture;
+enum class RHIFrameResult;
+struct RHISceneDrawItem;
+struct RHIShaderBinary;
+struct RHISceneMesh;
 class VertexArray;
 
 // ============================================================================
@@ -51,6 +62,7 @@ class Renderer
 {
 public:
     static void Init();
+    static bool TryInit(RHIBackend backend);
     static void Shutdown();
 
     static void BeginFrame();
@@ -68,6 +80,50 @@ public:
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
     static void Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform);
+
+    // 現在の通常Scene QueueをExplicit RHI用の値Snapshotへ変換します。
+    // Buffer生成・更新はFrame開始前に完了している必要があり、ここではGPU操作を行いません。
+    // 失敗時はoutMeshesを変更せず、半端なSnapshotを呼び出し側へ残しません。
+    static bool BuildRHISceneMeshes(
+        const Ref<RHITexture>& defaultTexture,
+        std::vector<RHISceneMesh>& outMeshes);
+
+    // 通常RendererのCamera Contextを使い、Explicit RHIへ渡す最終Draw Itemまで構築します。
+    static bool BuildRHISceneDrawItems(
+        const Ref<RHITexture>& defaultTexture,
+        const math::Mat4& clipCorrection,
+        std::vector<RHISceneDrawItem>& outItems);
+
+    // 通常MaterialのPipeline stateと標準Mesh Layoutから、Explicit Scene用の
+    // Opaque / Transparent Pipelineを同じRender Target向けに生成します。
+    static bool CreateRHIScenePipelines(
+        RHIDevice& device,
+        const Material& material,
+        const RHIShaderBinary& vertexShader,
+        const RHIShaderBinary& fragmentShader,
+        Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+        Ref<RHIGraphicsPipeline>& outTransparentPipeline);
+
+    // Legacy Pipeline実体を生成できないExplicit-only起動では、共通Specificationを
+    // 直接受け取り、同じPipeline変換規約を利用します。
+    static bool CreateRHIScenePipelines(
+        RHIDevice& device,
+        const PipelineSpecification& source,
+        const RHIShaderBinary& vertexShader,
+        const RHIShaderBinary& fragmentShader,
+        Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+        Ref<RHIGraphicsPipeline>& outTransparentPipeline);
+
+    // Queueを閉じ、Texture Binding準備後にExplicit RHIのBegin/Draw/End/Presentを実行します。
+    // Debug OverlayはまだLegacy専用のため、この経路には含めません。
+    static RHIFrameResult DrawRHISceneFrame(
+        RHIDevice& device,
+        RHISceneFrameLifecycle& frame,
+        RHISceneCommandList& commands,
+        const Ref<RHIGraphicsPipeline>& opaquePipeline,
+        const Ref<RHIGraphicsPipeline>& transparentPipeline,
+        const Ref<RHITexture>& defaultTexture,
+        const math::Mat4& clipCorrection);
 
     static const RendererStatistics& GetStatistics();
     static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);

@@ -22,6 +22,10 @@ public:
 
     static void Init();
 
+    // Windowが選択したBackendを明示的に受け取り、未対応時はfalseを返します。
+    // 引数なし版は既存互換用としてGetRHIBackend()を使用します。
+    static bool TryInit(RHIBackend backend);
+
     static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     static RHIViewport GetViewport();
 

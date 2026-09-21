@@ -194,6 +194,8 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
         return false;
     }
     m_BoundGraphicsPipeline.reset();
+    // Descriptor Setは旧Pipeline Layoutに対応するため、Pipeline無効化より先に破棄します。
+    DestroyTextureDescriptors();
     m_RecordedBuffers.clear();
     m_SubmittedBufferFrames.clear();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
@@ -390,6 +392,25 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     {
         return false;
     }
+
+    bool sameTextures = textures.size() == m_DescriptorTextures.size();
+    if (sameTextures == true)
+    {
+        for (std::size_t index = 0; index < textures.size(); ++index)
+        {
+            if (textures[index] != m_DescriptorTextures[index])
+            {
+                sameTextures = false;
+                break;
+            }
+        }
+    }
+    if (m_TextureDescriptorPool != VK_NULL_HANDLE &&
+        m_TextureDescriptorPipeline == native && sameTextures == true)
+    {
+        return true;
+    }
+
     // Poolを差し替えるため、旧Descriptorを参照するGPU仕事の完了を確認します。
     if (m_TextureDescriptorPool != VK_NULL_HANDLE && GetDevice().WaitIdle() == false)
     {
@@ -450,6 +471,7 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     // すべて成功した場合だけ旧Poolを破棄し、登録済みTextureのBindingを切り替えます。
     DestroyTextureDescriptors();
     m_TextureDescriptorPool = newPool;
+    m_TextureDescriptorPipeline = native;
     m_TextureDescriptors.resize(descriptors.size());
     m_DescriptorTextures = textures;
     for (std::size_t index = 0; index < textures.size(); ++index)
@@ -468,6 +490,7 @@ void VulkanSceneContext::DestroyTextureDescriptors()
             m_TextureDescriptorPool, nullptr);
     }
     m_TextureDescriptorPool = VK_NULL_HANDLE;
+    m_TextureDescriptorPipeline.reset();
     m_TextureDescriptors.clear();
     m_DescriptorTextures.clear();
 }

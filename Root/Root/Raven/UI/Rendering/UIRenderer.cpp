@@ -8,7 +8,12 @@ namespace Raven
 
 Scope<UIRenderer> UIRenderer::Create()
 {
-    switch (GetRHIBackend())
+    return Create(GetRHIBackend());
+}
+
+Scope<UIRenderer> UIRenderer::Create(RHIBackend backend)
+{
+    switch (backend)
     {
     case RHIBackend::OpenGL:
         return CreateScope<OpenGLUIRenderer>();

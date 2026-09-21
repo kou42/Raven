@@ -106,6 +106,8 @@ private:
     std::vector<bool> m_SubmittedBufferFrames;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
+    // 同じPipelineとTexture列ならDescriptor再生成とWaitIdleを省略します。
+    Ref<VulkanGraphicsPipeline> m_TextureDescriptorPipeline;
     std::vector<VkDescriptorSet> m_TextureDescriptors;
     std::vector<Ref<RHITexture>> m_DescriptorTextures;
     std::vector<std::unique_ptr<VulkanCommandBuffer>> m_CommandBuffers;

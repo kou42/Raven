@@ -30,8 +30,10 @@ void ImGuiLayer::OnAttach()
         return;
     }
 
-    if (m_Window == nullptr)
+    if (m_Window == nullptr || m_Window->GetBackend() != RHIBackend::OpenGL)
     {
+        // 現在のDear ImGui実装はOpenGL3 Backend専用です。
+        // Explicit Windowへ誤ってOpenGL Context操作を行わず、対応Backend実装の追加を待ちます。
         return;
     }
 

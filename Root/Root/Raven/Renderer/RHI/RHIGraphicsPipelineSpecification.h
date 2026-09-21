@@ -59,6 +59,20 @@ enum class RHIDepthFormat
     D32Float
 };
 
+// 現在のScene Render Targetと互換なPipeline Attachment情報です。
+// native FormatはBackend内で変換し、Rendererへ公開しません。
+struct RHIGraphicsPipelineTarget
+{
+    RHIColorFormat ColorFormat = RHIColorFormat::None;
+    RHIDepthFormat DepthFormat = RHIDepthFormat::None;
+    uint32_t SampleCount = 1;
+
+    bool IsValid() const
+    {
+        return ColorFormat != RHIColorFormat::None && SampleCount > 0;
+    }
+};
+
 // Sceneの描画先とShader入力を含むGraphics Pipelineの共通作成情報。
 // ColorFormatは実際のScene RenderTargetと一致させる必要がある。
 // VulkanのRenderPass互換性やDX12のRoot Signature等のnative詳細は

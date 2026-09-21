@@ -68,14 +68,15 @@ public:
     }
 
     // GPU操作前に描画データを値で構築し、Frame中のScene変更を参照しません。
-    // ソート深度は従来どおりMeshの頂点平均位置を代表点とする近似です。
-    static std::vector<RHISceneDrawItem> Build(const SceneCamera& camera,
+    // ソート深度はMeshごとに事前計算したLocalCenterを代表点とする近似です。
+    static std::vector<RHISceneDrawItem> Build(
+        const math::Mat4& view,
+        const math::Mat4& projection,
         const std::vector<RHISceneMesh>& meshes,
         const math::Mat4& clipCorrection)
     {
-        const math::Mat4 view = camera.GetViewMatrix();
         const math::Mat4 viewProjection =
-            clipCorrection * camera.GetProjectionMatrix() * view;
+            clipCorrection * projection * view;
         std::vector<RHISceneDrawItem> items;
         items.reserve(meshes.size());
         for (const RHISceneMesh& mesh : meshes)
@@ -95,6 +96,19 @@ public:
             items.push_back(std::move(item));
         }
         return items;
+    }
+
+    // 既存DemoのSceneCamera入口は行列版へ委譲し、変換規約を一か所に保ちます。
+    static std::vector<RHISceneDrawItem> Build(
+        const SceneCamera& camera,
+        const std::vector<RHISceneMesh>& meshes,
+        const math::Mat4& clipCorrection)
+    {
+        return Build(
+            camera.GetViewMatrix(),
+            camera.GetProjectionMatrix(),
+            meshes,
+            clipCorrection);
     }
 };
 

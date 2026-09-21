@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/RHI/RHIBuffer.h"
@@ -36,6 +37,26 @@ public:
     {
         (void)specification;
         return nullptr;
+    }
+
+    // 現在のScene Render Targetと互換なAttachment情報を返します。
+    // Legacy BackendやScene Pipeline未対応Backendはfalseを返します。
+    virtual bool GetGraphicsPipelineTarget(
+        RHIGraphicsPipelineTarget& target) const
+    {
+        (void)target;
+        return false;
+    }
+
+    // Scene描画で参照するTexture BindingをFrame開始前に準備します。
+    // Pipeline layoutとの互換性はBackend側で検証します。
+    virtual bool PrepareSceneTextures(
+        const std::vector<Ref<RHITexture>>& textures,
+        const Ref<RHIGraphicsPipeline>& pipeline)
+    {
+        (void)textures;
+        (void)pipeline;
+        return false;
     }
 
     virtual Ref<RHITexture> CreateTexture(

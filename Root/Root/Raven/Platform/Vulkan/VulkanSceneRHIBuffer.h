@@ -65,8 +65,9 @@ public:
         return true;
     }
 
-    // 共通RHIBufferのvoid APIは失敗を返せないため、結果が必要な場合はTry版を使います。
-    bool TrySetData(const void* data, std::size_t size, std::size_t offset = 0)
+    // GPU同期を含む更新結果を共通RHIBuffer APIへ返します。
+    bool TrySetData(
+        const void* data, std::size_t size, std::size_t offset = 0) override
     {
         if (m_Context == nullptr || data == nullptr ||
             size == 0 || size > std::numeric_limits<uint32_t>::max() ||
@@ -80,13 +81,7 @@ public:
             static_cast<uint32_t>(offset));
     }
 
-    void SetData(const void* data, std::size_t size,
-        std::size_t offset = 0) override
-    {
-        (void)TrySetData(data, size, offset);
-    }
-
-    bool TryResize(std::size_t size, const void* data = nullptr)
+    bool TryResize(std::size_t size, const void* data = nullptr) override
     {
         if (m_Context == nullptr || size == 0 ||
             size > std::numeric_limits<uint32_t>::max() ||
@@ -101,11 +96,6 @@ public:
         }
         m_Specification.Size = size;
         return true;
-    }
-
-    void Resize(std::size_t size, const void* data = nullptr) override
-    {
-        (void)TryResize(size, data);
     }
 
     // Context::ShutdownはWaitIdle後に呼び、外部RefからのDevice破棄後アクセスを防ぎます。

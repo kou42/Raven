@@ -7,9 +7,12 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Material/Material.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
+#include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include <algorithm>
+#include <cassert>
 #include <limits>
 #include <vector>
 
@@ -95,10 +98,65 @@ float ComputeTransparentSortDepth(
     return farthestDepth;
 }
 
+bool BuildRHISceneMeshSnapshot(
+    const SceneRenderItem& item,
+    const Ref<RHITexture>& defaultTexture,
+    RHISceneMesh& outMesh)
+{
+    if (item.Mesh == nullptr || item.Material == nullptr ||
+        item.Mesh->AreRHIResourcesSynchronized() == false ||
+        item.Mesh->GetIndexCount() == 0)
+    {
+        return false;
+    }
+
+    RHIMaterialProperties material = item.Material->GetRHIProperties();
+    if (material.SurfaceType == MaterialSurfaceType::Masked)
+    {
+        // Masked描画はalpha cutoff対応Shaderが揃うまでExplicit Scene RHI側で未対応です。
+        return false;
+    }
+    if (material.Texture == nullptr)
+    {
+        material.Texture = defaultTexture;
+    }
+    if (material.Texture == nullptr)
+    {
+        return false;
+    }
+
+    RHISceneMesh snapshot{};
+    snapshot.VertexBuffer = item.Mesh->GetRHIVertexBuffer();
+    snapshot.IndexBuffer = item.Mesh->GetRHIIndexBuffer();
+    snapshot.IndexCount = item.Mesh->GetIndexCount();
+    snapshot.Material = std::move(material);
+    snapshot.Model = RHISceneDrawItemBuilder::ToColumnMajor(item.Transform);
+
+    const Ref<MeshGeometry>& geometry = item.Mesh->GetGeometry();
+    math::Vec3 localMinimum{};
+    math::Vec3 localMaximum{};
+    if (geometry != nullptr &&
+        geometry->GetLocalBounds(localMinimum, localMaximum))
+    {
+        // Transparent sortの代表点には、Entity原点ではなくLocal Bounds中心を使用します。
+        const math::Vec3 localCenter = (localMinimum + localMaximum) * 0.5f;
+        snapshot.LocalCenter = {
+            localCenter.x,
+            localCenter.y,
+            localCenter.z
+        };
+    }
+
+    outMesh = std::move(snapshot);
+    return true;
+}
+
 void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cameraContext)
 {
-    if (item.Mesh == nullptr || item.Material == nullptr)
+    if (item.Mesh == nullptr || item.Material == nullptr ||
+        item.Material->HasLegacyPipeline() == false)
     {
+        // RHI専用MaterialをLegacy Passへ誤って流しても、直前にBindされたPipelineで描画しません。
         return;
     }
 
@@ -153,9 +211,15 @@ RendererCameraContext Renderer::s_CameraContext{};
 // 呼び出し元はApplication::Application()
 void Renderer::Init()
 {
+    const bool initialized = TryInit(GetRHIBackend());
+    assert(initialized == true);
+}
+
+bool Renderer::TryInit(RHIBackend backend)
+{
     // Graphics Backendの生成と初期state設定はRenderCommand/RHI側へ集約します。
-    // Renderer上位層はOpenGL等の具体Backendを直接生成しません。
-    RenderCommand::Init();
+    // Windowと同じBackendを明示的に渡し、Legacy未対応Backendでは失敗を上位へ返します。
+    return RenderCommand::TryInit(backend);
 }
 
 void Renderer::BeginFrame()
@@ -260,6 +324,227 @@ void Renderer::DrawIndexed(const Ref<VertexArray>& vertexArray)
     RenderCommand::DrawIndexed(vertexArray);
 }
 
+bool Renderer::BuildRHISceneMeshes(
+    const Ref<RHITexture>& defaultTexture,
+    std::vector<RHISceneMesh>& outMeshes)
+{
+    if (s_SceneQueueActive == false || s_CameraContext.Valid == false)
+    {
+        return false;
+    }
+
+    std::vector<RHISceneMesh> snapshots;
+    snapshots.reserve(s_OpaqueQueue.size() + s_TransparentQueue.size());
+
+    const auto appendQueue =
+        [&snapshots, &defaultTexture](const std::vector<SceneRenderItem>& queue)
+        {
+            for (const SceneRenderItem& item : queue)
+            {
+                RHISceneMesh snapshot{};
+                if (BuildRHISceneMeshSnapshot(
+                    item, defaultTexture, snapshot) == false)
+                {
+                    return false;
+                }
+                snapshots.push_back(std::move(snapshot));
+            }
+            return true;
+        };
+
+    // Opaque / Transparentの分類は通常Rendererと共有し、Transparentの最終sortは
+    // Camera行列を適用するRHISceneDrawItemBuilderへ委譲します。
+    if (appendQueue(s_OpaqueQueue) == false ||
+        appendQueue(s_TransparentQueue) == false)
+    {
+        return false;
+    }
+
+    outMeshes = std::move(snapshots);
+    return true;
+}
+
+bool Renderer::BuildRHISceneDrawItems(
+    const Ref<RHITexture>& defaultTexture,
+    const math::Mat4& clipCorrection,
+    std::vector<RHISceneDrawItem>& outItems)
+{
+    std::vector<RHISceneMesh> meshes;
+    if (BuildRHISceneMeshes(defaultTexture, meshes) == false)
+    {
+        return false;
+    }
+
+    // Cameraは参照保持せず、BeginScene()で確定した行列値だけを利用します。
+    std::vector<RHISceneDrawItem> items = RHISceneDrawItemBuilder::Build(
+        s_CameraContext.View,
+        s_CameraContext.Projection,
+        meshes,
+        clipCorrection);
+    outItems = std::move(items);
+    return true;
+}
+
+bool Renderer::CreateRHIScenePipelines(
+    RHIDevice& device,
+    const Material& material,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+    Ref<RHIGraphicsPipeline>& outTransparentPipeline)
+{
+    const Ref<Pipeline>& sourcePipeline = material.GetPipeline();
+    if (sourcePipeline == nullptr)
+    {
+        return false;
+    }
+
+    return CreateRHIScenePipelines(
+        device,
+        sourcePipeline->GetSpecification(),
+        vertexShader,
+        fragmentShader,
+        outOpaquePipeline,
+        outTransparentPipeline);
+}
+
+bool Renderer::CreateRHIScenePipelines(
+    RHIDevice& device,
+    const PipelineSpecification& source,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outOpaquePipeline,
+    Ref<RHIGraphicsPipeline>& outTransparentPipeline)
+{
+    RHIGraphicsPipelineTarget target{};
+    if (device.GetGraphicsPipelineTarget(target) == false ||
+        target.IsValid() == false)
+    {
+        return false;
+    }
+
+    RHIGraphicsPipelineSpecification specification{};
+    specification.VertexShader = vertexShader;
+    specification.FragmentShader = fragmentShader;
+
+    // Mesh::BuildVertexUploadData()の
+    // Position(3) + Color(3) + TexCoord(2) + Normal(3) と一致させます。
+    constexpr uint32_t floatSize = sizeof(float);
+    specification.VertexBindings = {{ 0, 11u * floatSize }};
+    specification.VertexAttributes = {
+        { 0, 0, ShaderDataType::Float3, 0 },
+        { 1, 0, ShaderDataType::Float3, 3u * floatSize },
+        { 2, 0, ShaderDataType::Float2, 6u * floatSize },
+        { 3, 0, ShaderDataType::Float3, 8u * floatSize }
+    };
+
+    specification.Topology = source.Topology;
+    specification.Cull = source.Cull;
+    specification.FrontFaceMode = source.FrontFaceMode;
+    specification.DepthCompare = source.DepthCompare;
+    specification.DepthTest = source.DepthTest;
+    specification.ColorFormat = target.ColorFormat;
+    specification.DepthFormat = target.DepthFormat;
+    specification.SampleCount = target.SampleCount;
+
+    // 通常RendererのSurface契約と同じく、OpaqueはDepthを書き込み、
+    // TransparentはDepth Testを維持したままBlendを有効化して書き込みを止めます。
+    specification.DepthWrite = true;
+    specification.Blend = false;
+    const std::string sourceName = source.DebugName != nullptr ?
+        source.DebugName : "Unnamed Pipeline";
+    specification.DebugName = sourceName + " RHI Opaque";
+
+    Ref<RHIGraphicsPipeline> opaque =
+        device.CreateGraphicsPipeline(specification);
+    if (opaque == nullptr)
+    {
+        return false;
+    }
+
+    specification.DepthWrite = false;
+    specification.Blend = true;
+    specification.DebugName = sourceName + " RHI Transparent";
+    Ref<RHIGraphicsPipeline> transparent =
+        device.CreateGraphicsPipeline(specification);
+    if (transparent == nullptr)
+    {
+        return false;
+    }
+
+    // 両方揃ってから出力を更新し、呼び出し側に片方だけのPipelineを残しません。
+    outOpaquePipeline = std::move(opaque);
+    outTransparentPipeline = std::move(transparent);
+    return true;
+}
+
+RHIFrameResult Renderer::DrawRHISceneFrame(
+    RHIDevice& device,
+    RHISceneFrameLifecycle& frame,
+    RHISceneCommandList& commands,
+    const Ref<RHIGraphicsPipeline>& opaquePipeline,
+    const Ref<RHIGraphicsPipeline>& transparentPipeline,
+    const Ref<RHITexture>& defaultTexture,
+    const math::Mat4& clipCorrection)
+{
+    std::vector<RHISceneDrawItem> items;
+    const bool built = BuildRHISceneDrawItems(
+        defaultTexture, clipCorrection, items);
+
+    // 成否にかかわらずQueue受付を閉じ、次Sceneへ古い参照を持ち越しません。
+    s_SceneQueueActive = false;
+    s_OpaqueQueue.clear();
+    s_TransparentQueue.clear();
+    if (built == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    std::vector<Ref<RHITexture>> textures;
+    textures.reserve(items.size());
+    for (const RHISceneDrawItem& item : items)
+    {
+        const Ref<RHITexture>& texture = item.Material.Texture;
+        bool registered = false;
+        for (const Ref<RHITexture>& existing : textures)
+        {
+            if (existing == texture)
+            {
+                registered = true;
+                break;
+            }
+        }
+        if (registered == false)
+        {
+            textures.push_back(texture);
+        }
+    }
+
+    // Descriptor等のResource BindingはBeginFrameより前に準備します。
+    if (textures.empty() == false &&
+        device.PrepareSceneTextures(textures, opaquePipeline) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    const RHIFrameResult result = RHISceneMeshRenderer::DrawFrame(
+        frame,
+        commands,
+        opaquePipeline,
+        transparentPipeline,
+        items);
+    if (result == RHIFrameResult::Success)
+    {
+        const PrimitiveTopology topology =
+            opaquePipeline->GetSpecification().Topology;
+        for (const RHISceneDrawItem& item : items)
+        {
+            RecordIndexedDraw(item.IndexCount, topology);
+        }
+    }
+    return result;
+}
+
 void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
 {
     if (mesh == nullptr || material == nullptr)
@@ -286,6 +571,12 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
         {
             s_OpaqueQueue.push_back(std::move(item));
         }
+        return;
+    }
+
+    if (material->HasLegacyPipeline() == false)
+    {
+        // Queue外の即時描画はLegacy Pipelineが必須です。RHI専用MaterialはExplicit Sceneだけで扱います。
         return;
     }
 

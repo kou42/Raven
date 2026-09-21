@@ -32,6 +32,8 @@ public:
     void Begin();
     void End();
 
+    bool IsInitialized() const { return m_Initialized; }
+
 private:
     Window* m_Window = nullptr;
     bool m_Initialized = false;

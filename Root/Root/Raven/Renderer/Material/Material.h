@@ -25,6 +25,10 @@ class Material {
 
 public:
 
+    // Explicit RHIのRenderer QueueではMaterial値だけをSnapshot化するため、
+    // Legacy Pipelineを生成しないMaterialを明示的に構築できます。
+    Material() = default;
+
     explicit Material(Ref<Pipeline> pipeline) {
         m_pipeline = std::move(pipeline);
     }
@@ -34,6 +38,7 @@ public:
 
     void SetPipeline(Ref<Pipeline> pipeline);
     const Ref<Pipeline>& GetPipeline() const;
+    bool HasLegacyPipeline() const { return m_pipeline != nullptr; }
 
     void SetSurfaceType(MaterialSurfaceType surfaceType);
     MaterialSurfaceType GetSurfaceType() const;
