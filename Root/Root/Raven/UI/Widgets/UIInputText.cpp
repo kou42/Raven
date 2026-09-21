@@ -9,6 +9,19 @@
 namespace Raven
 {
 
+void UIInputText::SetText(std::string_view text)
+{
+    // 外部Bindingから本文を更新する場合、古い置換範囲をOSへ残さないよう先に変換を取消します。
+    if (GetContext() != nullptr)
+    {
+        GetContext()->CancelIMEComposition(this);
+    }
+    m_Composition.Cancel();
+    m_Edit.SetText(text);
+    m_ScrollX = 0.0f;
+    InvalidateMeasure();
+}
+
 math::Vec2 UIInputText::OnMeasureContent() const
 {
     return math::Vec2(180.0f, m_Height);
