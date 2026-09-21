@@ -1,5 +1,6 @@
 #pragma once
 #include "Raven/Core/Window.h"
+#include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 #include <cstddef>
 #include <memory>
@@ -70,6 +71,43 @@ public:
         return it == m_Windows.end() ? nullptr : it->second.Handle;
     }
 
+    // 描画先のLifecycleはWindow単位で保持し、Native Windowより先に破棄します。
+    // 現行のApplication Main WindowのLifecycleはRun()が所有するため、ここへ二重登録しません。
+    // Vulkan/DX12のScene Lifecycleは未実装なので、Create失敗時はfalseを返します。
+    bool AttachFrameLifecycle(WindowID id)
+    {
+        const auto it = m_Windows.find(id);
+        if (it == m_Windows.end() || it->second.FrameLifecycle != nullptr)
+        {
+            return false;
+        }
+        Scope<RHISceneFrameLifecycle> lifecycle =
+            RHISceneFrameLifecycle::Create(*it->second.Handle);
+        if (lifecycle == nullptr)
+        {
+            return false;
+        }
+        it->second.FrameLifecycle = std::move(lifecycle);
+        return true;
+    }
+
+    RHISceneFrameLifecycle* GetFrameLifecycle(WindowID id)
+    {
+        const auto it = m_Windows.find(id);
+        return it == m_Windows.end() ? nullptr : it->second.FrameLifecycle.get();
+    }
+
+    bool DetachFrameLifecycle(WindowID id)
+    {
+        const auto it = m_Windows.find(id);
+        if (it == m_Windows.end() || it->second.FrameLifecycle == nullptr)
+        {
+            return false;
+        }
+        it->second.FrameLifecycle.reset();
+        return true;
+    }
+
     bool UnregisterWindow(WindowID id)
     {
         // 借用Windowは登録だけ解除し、所有Windowはunique_ptrによって破棄します。
@@ -120,6 +158,7 @@ private:
     {
         Window* Handle = nullptr;
         std::unique_ptr<Window> OwnedWindow;
+        Scope<RHISceneFrameLifecycle> FrameLifecycle;
     };
 
     WindowID m_NextID = 1;
