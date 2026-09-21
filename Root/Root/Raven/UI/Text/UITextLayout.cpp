@@ -9,6 +9,30 @@
 
 namespace Raven
 {
+namespace
+{
+// ASCIIの英数字とアンダースコアを一語として扱います。日本語は文字単位で折り返します。
+bool IsWordCodepoint(std::uint32_t codepoint)
+{
+    return (codepoint >= 'A' && codepoint <= 'Z') ||
+        (codepoint >= 'a' && codepoint <= 'z') ||
+        (codepoint >= '0' && codepoint <= '9') || codepoint == '_';
+}
+
+const UIGlyphMetrics* ResolveGlyph(const UIFontAtlas& font, std::uint32_t codepoint)
+{
+    const UIGlyphMetrics* glyph = font.FindGlyph(codepoint);
+    if (glyph == nullptr)
+    {
+        glyph = font.FindGlyph(UIUtf8::ReplacementCharacter);
+    }
+    if (glyph == nullptr)
+    {
+        glyph = font.FindGlyph(static_cast<std::uint32_t>('?'));
+    }
+    return glyph;
+}
+} // namespace
 
 UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view text, float lineHeight)
 {
@@ -26,7 +50,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
     }
 
     const bool constrained = std::isfinite(options.MaxWidth) && options.MaxWidth > 0.0f;
-    const bool wrap = constrained && options.Wrap == UITextWrapMode::Character;
+    const bool wrap = constrained && options.Wrap != UITextWrapMode::None;
     result.Metrics.Ascent = font.GetAscent();
     result.Metrics.Descent = font.GetDescent();
     result.Lines.push_back({ 0.0f, 0.0f });
@@ -52,17 +76,60 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
             continue;
         }
 
-        const UIGlyphMetrics* glyph = font.FindGlyph(codepoint);
+        // 単語先頭で残りのAdvanceを先読みし、収まる単語は途中で分割しません。
+        // 制限幅より長い単語はCharacter WrapへFallbackして無限の折り返しを防ぎます。
+        if (wrap && options.Wrap == UITextWrapMode::Word && IsWordCodepoint(codepoint))
+        {
+            std::size_t lookahead = offset;
+            std::uint32_t next = 0u;
+            float wordWidth = 0.0f;
+            const UIGlyphMetrics* first = ResolveGlyph(font, codepoint);
+            if (first != nullptr)
+            {
+                wordWidth += first->Advance;
+            }
+            while (lookahead < text.size())
+            {
+                const std::size_t previous = lookahead;
+                if (UIUtf8::DecodeNext(text, lookahead, next) == false ||
+                    IsWordCodepoint(next) == false)
+                {
+                    break;
+                }
+                const UIGlyphMetrics* nextGlyph = ResolveGlyph(font, next);
+                if (nextGlyph != nullptr)
+                {
+                    wordWidth += nextGlyph->Advance;
+                }
+                if (lookahead <= previous)
+                {
+                    break;
+                }
+            }
+            // 単語途中で毎回先読みしないよう、直前の入力文字も確認します。
+            // UTF-8 ASCIIの単語構成文字は1byteです。
+            const bool atWordStart = offset <= 1u ||
+                IsWordCodepoint(static_cast<unsigned char>(text[offset - 2u])) == false;
+            if (atWordStart && result.Lines.back().Width > 0.0f &&
+                wordWidth <= options.MaxWidth &&
+                wordWidth > options.MaxWidth - result.Lines.back().Width)
+            {
+                result.Metrics.Width = std::max(result.Metrics.Width, result.Lines.back().Width);
+                result.FinalPen.x = 0.0f;
+                result.FinalPen.y += options.LineHeight;
+                result.Lines.push_back({ 0.0f, result.FinalPen.y });
+            }
+        }
+
+        const UIGlyphMetrics* glyph = ResolveGlyph(font, codepoint);
         std::uint32_t resolved = codepoint;
-        if (glyph == nullptr)
+        if (font.FindGlyph(resolved) == nullptr)
         {
             resolved = UIUtf8::ReplacementCharacter;
-            glyph = font.FindGlyph(resolved);
-        }
-        if (glyph == nullptr)
-        {
-            resolved = static_cast<std::uint32_t>('?');
-            glyph = font.FindGlyph(resolved);
+            if (font.FindGlyph(resolved) == nullptr)
+            {
+                resolved = static_cast<std::uint32_t>('?');
+            }
         }
         if (glyph == nullptr)
         {
