@@ -1,8 +1,10 @@
 #pragma once
 #include "Raven/Core/Window.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/Buffer/VertexArray.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -169,6 +171,71 @@ public:
         return presented == true && restored == true;
     }
 
+    // WindowごとのVAOをキャッシュします。初回だけ共有Bufferから対象Context用に再構築します。
+    // 呼び出し前後のCurrent Contextを維持するため、復元先Windowを明示します。
+    // 元VAOのLayout/IndexBufferを変更した場合はInvalidateWindowVertexArraysで再生成してください。
+    Ref<VertexArray> GetOrCreateWindowVertexArray(WindowID id, WindowID restoreWindowID,
+        const Ref<VertexArray>& source)
+    {
+        const auto it = m_Windows.find(id);
+        const auto restoreIt = m_Windows.find(restoreWindowID);
+        if (it == m_Windows.end() || restoreIt == m_Windows.end() ||
+            source == nullptr || id == restoreWindowID ||
+            it->second.Handle->GetBackend() != RHIBackend::OpenGL ||
+            restoreIt->second.Handle->GetBackend() != RHIBackend::OpenGL)
+        {
+            return nullptr;
+        }
+
+        const auto cached = it->second.VertexArrays.find(source.get());
+        if (cached != it->second.VertexArrays.end())
+        {
+            return cached->second;
+        }
+
+        if (it->second.Handle->MakeContextCurrent() == false)
+        {
+            restoreIt->second.Handle->MakeContextCurrent();
+            return nullptr;
+        }
+
+        Ref<VertexArray> clone = source->CloneForCurrentContext();
+        // Contextを切り替えたままにせず、呼び出し側の描画先へ戻します。
+        if (restoreIt->second.Handle->MakeContextCurrent() == false)
+        {
+            // VAO破棄は生成元Contextで行います。
+            it->second.Handle->MakeContextCurrent();
+            clone.reset();
+            restoreIt->second.Handle->MakeContextCurrent();
+            return nullptr;
+        }
+        if (clone != nullptr)
+        {
+            it->second.VertexArrays.emplace(source.get(), clone);
+        }
+        return clone;
+    }
+
+    // VAOは生成先ContextがCurrentの間に破棄します。Window破棄前に必ず呼びます。
+    bool InvalidateWindowVertexArrays(WindowID id, WindowID restoreWindowID)
+    {
+        const auto it = m_Windows.find(id);
+        const auto restoreIt = m_Windows.find(restoreWindowID);
+        if (it == m_Windows.end() || restoreIt == m_Windows.end() ||
+            id == restoreWindowID || it->second.Handle->GetBackend() != RHIBackend::OpenGL ||
+            restoreIt->second.Handle->GetBackend() != RHIBackend::OpenGL)
+        {
+            return false;
+        }
+        if (it->second.Handle->MakeContextCurrent() == false)
+        {
+            restoreIt->second.Handle->MakeContextCurrent();
+            return false;
+        }
+        it->second.VertexArrays.clear();
+        return restoreIt->second.Handle->MakeContextCurrent();
+    }
+
     bool DetachFrameLifecycle(WindowID id)
     {
         const auto it = m_Windows.find(id);
@@ -191,6 +258,17 @@ public:
         {
             m_PendingClose.push_back(id);
             return true;
+        }
+        // VAOをWindow破棄後に解放しないよう、Contextが生存している間に解放します。
+        const auto it = m_Windows.find(id);
+        if (it->second.Handle->GetBackend() == RHIBackend::OpenGL &&
+            it->second.VertexArrays.empty() == false)
+        {
+            if (it->second.Handle->MakeContextCurrent() == false)
+            {
+                return false;
+            }
+            it->second.VertexArrays.clear();
         }
         return m_Windows.erase(id) != 0;
     }
@@ -220,6 +298,16 @@ public:
             const auto it = m_Windows.find(id);
             if (it != m_Windows.end())
             {
+                // GLFW callbackを抜けた後、VAOを対象Contextで先に解放します。
+                if (it->second.Handle->GetBackend() == RHIBackend::OpenGL &&
+                    it->second.VertexArrays.empty() == false)
+                {
+                    if (it->second.Handle->MakeContextCurrent() == false)
+                    {
+                        continue;
+                    }
+                    it->second.VertexArrays.clear();
+                }
                 m_Windows.erase(it);
             }
         }
@@ -231,6 +319,8 @@ private:
         Window* Handle = nullptr;
         std::unique_ptr<Window> OwnedWindow;
         Scope<RHISceneFrameLifecycle> FrameLifecycle;
+        // sourceのAddressをKeyに使うため、source自体も保持してAddressの再利用を防ぎます。
+        std::unordered_map<const VertexArray*, Ref<VertexArray>> VertexArrays;
     };
 
     WindowID m_NextID = 1;
