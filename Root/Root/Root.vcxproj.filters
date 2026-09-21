@@ -1687,4 +1687,9 @@
     <ClInclude Include="Raven\\UI\\Text\\UIFontAtlasBuilder.h"><Filter>Header Files</Filter></ClInclude>
     <ClCompile Include="Raven\\UI\\Text\\UIFontAtlasBuilder.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\\stb_truetype.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Raven\\UI\\Widgets\\UILabel.h"><Filter>Header Files</Filter></ClInclude>
+    <ClCompile Include="Raven\\UI\\Widgets\\UILabel.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
 </Project>
