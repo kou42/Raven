@@ -242,6 +242,11 @@ void UITextDemoLayer::OnAttach()
     m_ComboBox = static_cast<UIComboBox*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(combo)));
 
+    // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
+    UIContext& tooltipContext = m_Application.GetUIContext();
+    tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
+    tooltipContext.SetTooltip(m_ComboBox, "Select animation", atlas);
+
     m_Atlas = std::move(atlas);
     m_Label = static_cast<UILabel*>(attached);
     std::cout << "[Raven UI Text] Demo font: " << fontPath << '\n';
