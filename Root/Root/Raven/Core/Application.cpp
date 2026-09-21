@@ -29,6 +29,8 @@ UIKey ToUIKey(int keyCode)
     case GLFW_KEY_RIGHT: return UIKey::Right;
     case GLFW_KEY_HOME: return UIKey::Home;
     case GLFW_KEY_END: return UIKey::End;
+    case GLFW_KEY_UP: return UIKey::Up;
+    case GLFW_KEY_DOWN: return UIKey::Down;
     case GLFW_KEY_BACKSPACE: return UIKey::Backspace;
     case GLFW_KEY_DELETE: return UIKey::Delete;
     case GLFW_KEY_A: return UIKey::A;
