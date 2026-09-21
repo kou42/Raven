@@ -14,6 +14,8 @@ math::Vec2 UIInputText::OnMeasureContent() const
     return math::Vec2(180.0f, m_Height);
 }
 
+// UTF-8のbyte位置ではなくcodepoint indexから表示上のX座標を求めます。
+// Fontに未収録の文字はAppendTextと同じ順序で代替Glyphを探索し、描画との位置ずれを防ぎます。
 float UIInputText::CursorX(std::size_t index) const
 {
     float x = m_Padding;
@@ -44,6 +46,8 @@ float UIInputText::CursorX(std::size_t index) const
     return x;
 }
 
+// Caretの位置を優先して可視範囲を決めます。const描画経路からも呼ぶためScrollのみmutableです。
+// 内容が短くなった場合やWidgetの幅が広がった場合はmaxScrollで余分なOffsetを戻します。
 void UIInputText::EnsureCursorVisible() const
 {
     const float width = std::max(0.0f, GetSize().x - m_Padding * 2.0f);
@@ -102,6 +106,8 @@ std::size_t UIInputText::HitCursor(float localX) const
     return index;
 }
 
+// InputNumber等の制約を「挿入後の全文」に対して評価します。
+// 選択文字列の置換・貼り付けでも、不正な候補を本体のUndo履歴へ残しません。
 bool UIInputText::InsertFiltered(std::string_view text)
 {
     if (m_InputFilter != nullptr)
@@ -201,6 +207,8 @@ void UIInputText::OnMouseEvent(UIMouseEvent& event)
     }
 }
 
+// UIInputNumberはFocus喪失を確定境界として利用します。
+// Focus取得時には通知せず、確定処理の重複を避けます。
 void UIInputText::OnFocusChanged(bool focused)
 {
     if (focused == false && m_OnFocusLost != nullptr)
@@ -209,6 +217,8 @@ void UIInputText::OnFocusChanged(bool focused)
     }
 }
 
+// 物理キー由来の編集・ショートカットだけを処理します。
+// 日本語等の確定文字はOnCharacterEventへ分離し、キー押下で二重挿入しません。
 void UIInputText::OnKeyEvent(UIKeyEvent& event)
 {
     if (IsFocused() == false || event.Pressed == false)
@@ -326,6 +336,8 @@ void UIInputText::OnCharacterEvent(UICharacterEvent& event)
     }
 }
 
+// UIElement側のClipSelfで入力欄の外へはみ出す文字・選択矩形・Caretを切り取ります。
+// ここではScrollを各描画座標へ反映し、背景だけは固定位置に描きます。
 void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position) const
 {
     const math::Vec2 size = GetSize();
