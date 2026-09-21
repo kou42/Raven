@@ -7,6 +7,7 @@
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UITooltip.h"
+#include "Raven/UI/Widgets/UITreeView.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -350,6 +351,63 @@ void TestTooltip()
     Check(context.GetRootElement().RemoveChild(target), "tooltip target removed");
     Check(context.ClearTooltip(target) == false, "tooltip registration cleaned on removal");
 }
+// TreeViewの所有権・展開・Scroll・Keyboard/Mouse経路をFont/GPUなしで検証します。
+void TestTreeView()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 48.0f));
+    Raven::UITreeView* view = tree.get();
+    Raven::UITreeNode* root = tree->AddRoot(1u, "Scene");
+    Raven::UITreeNode* child = tree->AddNode(root, 2u, "Player");
+    Raven::UITreeNode* leaf = tree->AddNode(child, 3u, "Mesh");
+    Raven::UITreeNode* sibling = tree->AddRoot(4u, "Environment");
+    Check(root != nullptr && child != nullptr && leaf != nullptr && sibling != nullptr, "tree nodes added");
+    Check(tree->AddRoot(2u, "duplicate") == nullptr, "tree rejects duplicate id");
+    Raven::UITreeNode external;
+    Check(tree->AddNode(&external, 5u, "foreign") == nullptr, "tree rejects foreign parent");
+    Check(tree->FindNode(3u) == leaf, "tree find nested node");
+    int selections = 0;
+    int expansions = 0;
+    tree->SetOnSelectionChanged([&selections](std::uint64_t) { ++selections; });
+    tree->SetOnExpansionChanged([&expansions](std::uint64_t, bool) { ++expansions; });
+    context.GetRootElement().AddChild(std::move(tree));
+    Check(view->Select(leaf), "tree select leaf");
+    CheckNear("tree selected row visible", view->GetScrollOffset(), 24.0f);
+    Check(view->Select(leaf), "tree select same leaf");
+    Check(selections == 1, "tree unchanged selection no callback");
+    Check(view->SetExpanded(root, false), "tree collapse root");
+    Check(view->GetSelectedNode() == root, "tree collapse selects visible ancestor");
+    CheckNear("tree collapsed range", view->GetMaxScrollOffset(), 0.0f);
+    Check(expansions == 1, "tree collapse callback");
+    Check(view->SetExpanded(root, true), "tree expand root");
+    Check(view->SetExpanded(child, false), "tree collapse child");
+    CheckNear("tree collapsed child range", view->GetMaxScrollOffset(), 24.0f);
+    Check(view->SetExpanded(child, true), "tree expand child");
+    CheckNear("tree expanded range", view->GetMaxScrollOffset(), 48.0f);
+    view->SetScrollOffset(1000.0f);
+    CheckNear("tree scroll max clamp", view->GetScrollOffset(), 48.0f);
+    view->SetScrollOffset(-10.0f);
+    CheckNear("tree scroll min clamp", view->GetScrollOffset(), 0.0f);
+    Check(context.SetFocus(view), "tree focus");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "tree key down");
+    Check(view->GetSelectedNode() == child, "tree keyboard next row");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "tree key down to leaf");
+    Check(view->GetSelectedNode() == leaf, "tree keyboard leaf");
+    CheckNear("tree keyboard ensure visible", view->GetScrollOffset(), 24.0f);
+    Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 30.0f),
+        Raven::math::Vec2(0.0f, -1.0f)), "tree wheel scroll");
+    CheckNear("tree wheel clamp", view->GetScrollOffset(), 48.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(60.0f, 32.0f),
+        Raven::UIMouseButton::Left), "tree mouse selects scrolled row");
+    Check(view->GetSelectedNode() == leaf, "tree scroll-aware hit test");
+    view->Clear();
+    Check(view->GetSelectedNode() == nullptr, "tree clear selection");
+    Check(view->FindNode(1u) == nullptr, "tree clear nodes");
+    CheckNear("tree clear scroll", view->GetScrollOffset(), 0.0f);
+}
 } // namespace
 
 int main()
@@ -360,6 +418,7 @@ int main()
     TestPopupRouting();
     TestComboBox();
     TestTooltip();
+    TestTreeView();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
