@@ -9,6 +9,7 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#include <glad/glad.h>
 
 #include "Raven/Platform/Windows/WindowsWindow.h"
 #include "Raven/Core/Base.h"
@@ -663,6 +664,21 @@ bool WindowsWindow::MakeContextCurrent()
     }
     glfwMakeContextCurrent(m_Window);
     return glfwGetCurrentContext() == m_Window;
+}
+
+bool WindowsWindow::SetFramebufferViewport()
+{
+    if (m_Window == nullptr || m_Data.Backend != RHIBackend::OpenGL ||
+        m_Data.FramebufferWidth == 0 || m_Data.FramebufferHeight == 0 ||
+        glfwGetCurrentContext() != m_Window)
+    {
+        return false;
+    }
+    // 論理Window座標ではなく実Pixelサイズを使います。
+    // VAO/FBOはContext固有なので、ここではbind状態を変更しません。
+    glViewport(0, 0, static_cast<GLsizei>(m_Data.FramebufferWidth),
+        static_cast<GLsizei>(m_Data.FramebufferHeight));
+    return true;
 }
 
 void WindowsWindow::Present()
