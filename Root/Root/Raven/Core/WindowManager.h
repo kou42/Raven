@@ -338,6 +338,47 @@ public:
         return TryCloseWindow(id);
     }
 
+    // Application終了時、借用Main Windowより先にManager所有の補助Windowを解放します。
+    // 外部VAO参照が残るWindowは破棄せずfalseを返すため、所有側で先に参照を解放してください。
+    bool ShutdownOwnedWindows()
+    {
+        if (m_PollingEvents == true)
+        {
+            return false;
+        }
+
+        // unordered_mapを走査しながらeraseしないよう、所有WindowのIDを先に確定します。
+        std::vector<WindowID> ownedIDs;
+        for (const auto& item : m_Windows)
+        {
+            if (item.second.OwnedWindow != nullptr)
+            {
+                ownedIDs.push_back(item.first);
+            }
+        }
+
+        bool success = true;
+        for (WindowID id : ownedIDs)
+        {
+            if (TryCloseWindow(id) == false)
+            {
+                success = false;
+            }
+        }
+        // 既に破棄したWindowのClose要求を次回PollEventsへ持ち越しません。
+        std::vector<WindowID> remaining;
+        for (WindowID id : m_PendingClose)
+        {
+            if (m_Windows.find(id) != m_Windows.end())
+            {
+                remaining.push_back(id);
+            }
+        }
+        m_PendingClose.swap(remaining);
+        RestoreSurvivingContext();
+        return success;
+    }
+
     std::size_t GetWindowCount() const { return m_Windows.size(); }
 
     // GLFWのEvent QueueはWindow単位ではなくProcess単位です。
