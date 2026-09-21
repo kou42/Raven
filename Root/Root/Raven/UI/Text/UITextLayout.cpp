@@ -137,7 +137,6 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
                 result.FinalPen.x = 0.0f;
                 result.FinalPen.y += options.LineHeight;
                 result.Lines.push_back({ 0.0f, result.FinalPen.y });
-                skipWrappedSpaces = true;
             }
         }
 
