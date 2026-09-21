@@ -57,6 +57,22 @@ std::size_t UIInputText::HitCursor(float localX) const
     return length;
 }
 
+bool UIInputText::InsertFiltered(std::string_view text)
+{
+    if (m_InputFilter != nullptr)
+    {
+        // 実際のBufferを変更する前に選択範囲の置換を含めた完成形を検査します。
+        // 拒否時にUndo履歴やCursor位置を変更しないため、貼り付けも原子的に扱えます。
+        UITextEditBuffer candidate = m_Edit;
+        if (candidate.InsertText(text) == false ||
+            m_InputFilter(candidate.GetText()) == false)
+        {
+            return false;
+        }
+    }
+    return m_Edit.InsertText(text);
+}
+
 void UIInputText::NotifyChanged()
 {
     InvalidateMeasure();
@@ -152,7 +168,7 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
         }
         else if (event.Key == UIKey::V)
         {
-            if (m_ReadClipboard != nullptr && m_Edit.InsertText(m_ReadClipboard()))
+            if (m_ReadClipboard != nullptr && InsertFiltered(m_ReadClipboard()))
             {
                 NotifyChanged();
             }
@@ -216,7 +232,10 @@ void UIInputText::OnCharacterEvent(UICharacterEvent& event)
 {
     if (IsFocused() == true)
     {
-        if (m_Edit.InsertCodepoint(event.Codepoint))
+        std::string encoded;
+        UITextEditBuffer character;
+        if (character.InsertCodepoint(event.Codepoint) &&
+            InsertFiltered(character.GetText()))
         {
             NotifyChanged();
         }
