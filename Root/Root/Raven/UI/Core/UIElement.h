@@ -263,6 +263,8 @@ public:
 protected:
     // Leaf Widgetが自身のContentに必要な論理Sizeを返します。ContainerのChild集約は基底側で継続します。
     virtual math::Vec2 OnMeasureContent() const;
+    // Arrange時に親から幅が確定したWidgetだけ、高さを再計算するための拡張点です。
+    virtual math::Vec2 OnMeasureContentForWidth(float availableWidth) const;
     void InvalidateMeasure();
     virtual void OnMouseEvent(UIMouseEvent& event);
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
