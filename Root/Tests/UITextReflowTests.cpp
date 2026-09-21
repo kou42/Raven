@@ -506,6 +506,19 @@ int main()
     TestTooltip();
     TestTreeView();
     TestTable();
+    // 共通Scrollbar幾何: HeaderなしTreeとHeaderありTableでTrack原点だけが異なります。
+    Raven::UIScrollBarMetrics metrics{ 48.0f, 72.0f, 0.0f };
+    Check(metrics.IsVisible(), "scrollbar metrics visible");
+    CheckNear("scrollbar metrics max", metrics.MaxOffset(), 24.0f);
+    CheckNear("scrollbar metrics thumb", metrics.ThumbLength(), 32.0f);
+    CheckNear("scrollbar metrics start", metrics.ThumbStart(), 0.0f);
+    CheckNear("scrollbar metrics drag end", metrics.OffsetFromThumbStart(16.0f), 24.0f);
+    metrics.Offset = 12.0f;
+    CheckNear("scrollbar metrics middle", metrics.ThumbStart(), 8.0f);
+    metrics.Content = 24.0f;
+    Check(metrics.IsVisible() == false, "scrollbar metrics hidden");
+    CheckNear("scrollbar metrics no scroll", metrics.OffsetFromThumbStart(16.0f), 0.0f);
+
     // Widget個別ClipはWorld Transform後に親Clipと交差することを検証します。
     Raven::UIDrawList clipDrawList;
     clipDrawList.AddRect(Raven::math::Vec2(0.0f, 0.0f),
