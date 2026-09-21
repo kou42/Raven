@@ -58,7 +58,7 @@ public:
     // 現段階ではTab / Shift+TabをFocus Navigationとして扱い、RepeatではFocusを進めません。
     bool RouteKeyEvent(const UIKeyEvent& event);
     bool RouteCharacterEvent(std::uint32_t codepoint);
-    // IMEの未確定状態だけをFocus所有Widgetへ配送します。確定文字は既存Character Eventへ送ります。
+    // IME未確定状態と一括確定文字列をFocus所有Widgetへ配送します。通常文字はCharacter Eventです。
     bool RouteIMEEvent(const UIIMEEvent& event);
 
     // Keyboard / Gamepad Navigation対象のFocusをContext内で一意に管理します。
