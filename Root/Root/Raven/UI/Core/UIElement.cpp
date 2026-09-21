@@ -448,14 +448,8 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
             if (child->m_HorizontalAlignment == UIAlignment::Stretch)
             {
                 childSize.x = child->ClampSize(math::Vec2(availableWidth, childSize.y)).x;
-                // 縦積みのStretch子は幅確定後に再Measureし、折り返しで増えた高さを
-                // 次のSiblingのcursorYへ反映します。明示Preferred高さは下限として維持します。
-                const float innerWidth = std::max(0.0f,
-                    childSize.x - child->m_Padding.Left - child->m_Padding.Right);
-                const math::Vec2 intrinsic = child->OnMeasureContentForWidth(innerWidth);
-                const float desiredHeight = std::max(child->m_DesiredSize.y,
-                    intrinsic.y + child->m_Padding.Top + child->m_Padding.Bottom);
-                childSize.y = child->ClampSize(math::Vec2(childSize.x, desiredHeight)).y;
+                // ReflowForWidthが既に確定幅で子のDesiredSizeを再集約しています。
+                // Arrange側で再Measureすると親と子の高さが異なるため、ここでは幅だけ確定します。
             }
             childPosition.x = m_Padding.Left + child->m_Margin.Left + ResolveAlignedOffset(availableWidth, childSize.x, child->m_HorizontalAlignment);
             childPosition.y = cursorY + child->m_Margin.Top;
