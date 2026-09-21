@@ -134,7 +134,7 @@ void UITextDemoLayer::OnAttach()
     input->SetText("Raven UI: edit me!");
     input->SetOnChange([](const std::string& text)
         {
-            std::cout << "[Raven UI InputText] " << text << '\\n';
+            std::cout << "[Raven UI InputText] " << text << '\n';
         });
     UIElement* attachedInput = m_Application.GetUIContext().GetRootElement().AddChild(std::move(input));
     if (attachedInput != nullptr)
