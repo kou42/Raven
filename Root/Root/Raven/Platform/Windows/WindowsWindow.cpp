@@ -377,8 +377,15 @@ void WindowsWindow::Init(const WindowProps& props)
 
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
+        // 補助WindowのContext生成でMain WindowのCurrent Contextを奪ったままにしません。
+        // 初回Window生成時は従来どおり生成したContextをCurrentに維持します。
+        GLFWwindow* previousContext = glfwGetCurrentContext();
         m_Context = CreateScope<OpenGLContext>(m_Window);
         m_Context->Init();
+        if (previousContext != nullptr && previousContext != m_Window)
+        {
+            glfwMakeContextCurrent(previousContext);
+        }
     }
 
     m_Input = CreateScope<WindowsInput>(m_Window);
