@@ -681,6 +681,19 @@ bool WindowsWindow::SetFramebufferViewport()
     return true;
 }
 
+bool WindowsWindow::BindDefaultFramebuffer()
+{
+    if (m_Window == nullptr || m_Data.Backend != RHIBackend::OpenGL ||
+        glfwGetCurrentContext() != m_Window)
+    {
+        return false;
+    }
+    // FBO/VAOはOpenGL Context間で共有されないため、補助Windowの既定FBOを選択します。
+    // glBindFramebufferはVAOやProgramのbind状態を変更しません。
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
+}
+
 void WindowsWindow::Present()
 {
     // Vulkan/DX12のPresentは各SwapChain側が所有します。
