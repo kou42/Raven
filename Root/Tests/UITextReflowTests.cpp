@@ -408,6 +408,7 @@ void TestTreeView()
     Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 60.0f),
         Raven::UIMouseButton::Left), "tree scrollbar track click");
     CheckNear("tree track page scroll", view->GetScrollOffset(), 48.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 60.0f), Raven::UIMouseButton::Left);
     view->SetScrollOffset(0.0f);
     Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 24.0f),
         Raven::UIMouseButton::Left), "tree scrollbar thumb down");
