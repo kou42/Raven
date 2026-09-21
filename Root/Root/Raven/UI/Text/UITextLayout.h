@@ -10,6 +10,27 @@
 namespace Raven
 {
 
+enum class UITextWrapMode
+{
+    None,
+    Character
+};
+
+enum class UITextHorizontalAlignment
+{
+    Left,
+    Center,
+    Right
+};
+
+struct UITextLayoutOptions
+{
+    float LineHeight = 20.0f;
+    float MaxWidth = 0.0f; // 0以下は幅制限なし
+    UITextWrapMode Wrap = UITextWrapMode::None;
+    UITextHorizontalAlignment Alignment = UITextHorizontalAlignment::Left;
+};
+
 // Penは入力Baselineからの相対位置です。CodepointはFallback解決後の値です。
 struct UITextLayoutGlyph
 {
@@ -36,6 +57,7 @@ class UITextLayout
 {
 public:
     static UITextLayoutResult Build(const UIFontAtlas& font, std::string_view text, float lineHeight);
+    static UITextLayoutResult Build(const UIFontAtlas& font, std::string_view text, const UITextLayoutOptions& options);
 };
 
 } // namespace Raven
