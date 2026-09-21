@@ -143,6 +143,8 @@ public:
     void SetFocusable(bool value) { m_Focusable = value; }
     bool IsFocusable() const { return m_Focusable; }
     bool IsFocused() const { return m_Focused; }
+    // UIContextがWidget型へ依存せずIME所有者を検出するための拡張点です。
+    virtual bool HasActiveIMEComposition() const { return false; }
 
     // Rotation / ScaleはMeasure / Arrangeへ影響しないVisual Transformです。
     // TransformPivotはElement矩形に対するnormalized座標で、親子階層ではAffine Transformとして合成されます。
