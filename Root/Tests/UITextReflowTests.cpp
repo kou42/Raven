@@ -403,6 +403,21 @@ void TestTreeView()
     Check(context.RouteMouseDown(Raven::math::Vec2(60.0f, 32.0f),
         Raven::UIMouseButton::Left), "tree mouse selects scrolled row");
     Check(view->GetSelectedNode() == leaf, "tree scroll-aware hit test");
+    Check(view->IsScrollBarVisible(), "tree scrollbar visible on overflow");
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 60.0f),
+        Raven::UIMouseButton::Left), "tree scrollbar track click");
+    CheckNear("tree track page scroll", view->GetScrollOffset(), 48.0f);
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 24.0f),
+        Raven::UIMouseButton::Left), "tree scrollbar thumb down");
+    Check(context.HasMouseCapture(view), "tree scrollbar capture");
+    context.RouteMouseMove(Raven::math::Vec2(215.0f, 60.0f));
+    CheckNear("tree scrollbar drag", view->GetScrollOffset(), 48.0f);
+    context.RouteMouseUp(Raven::math::Vec2(215.0f, 60.0f), Raven::UIMouseButton::Left);
+    Check(context.HasMouseCapture(view) == false, "tree scrollbar releases capture");
+    view->SetExpanded(root, false);
+    Check(view->IsScrollBarVisible() == false, "tree scrollbar hidden without overflow");
     view->Clear();
     Check(view->GetSelectedNode() == nullptr, "tree clear selection");
     Check(view->FindNode(1u) == nullptr, "tree clear nodes");
