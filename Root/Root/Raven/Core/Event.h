@@ -8,6 +8,11 @@ enum class EventType
     None = 0,
     WindowClose,
     WindowResize,
+    WindowMoved,
+    WindowMinimized,
+    WindowRestored,
+    WindowMaximized,
+    WindowFramebufferResize,
     WindowFocusGained,
     WindowFocusLost,
     KeyPressed,
@@ -66,6 +71,63 @@ public:
             std::to_string(m_Height);
     }
 
+private:
+    unsigned int m_Width;
+    unsigned int m_Height;
+};
+
+// 論理Window座標での移動通知です。FramebufferのPixel座標とは区別します。
+class WindowMovedEvent : public Event
+{
+public:
+    WindowMovedEvent(int x, int y) : m_X(x), m_Y(y) {}
+    int GetX() const { return m_X; }
+    int GetY() const { return m_Y; }
+    EventType GetEventType() const override { return EventType::WindowMoved; }
+    std::string ToString() const override
+    {
+        return "WindowMovedEvent: " + std::to_string(m_X) + ", " + std::to_string(m_Y);
+    }
+private:
+    int m_X;
+    int m_Y;
+};
+
+class WindowMinimizedEvent : public Event
+{
+public:
+    EventType GetEventType() const override { return EventType::WindowMinimized; }
+    std::string ToString() const override { return "WindowMinimizedEvent"; }
+};
+
+class WindowRestoredEvent : public Event
+{
+public:
+    EventType GetEventType() const override { return EventType::WindowRestored; }
+    std::string ToString() const override { return "WindowRestoredEvent"; }
+};
+
+class WindowMaximizedEvent : public Event
+{
+public:
+    EventType GetEventType() const override { return EventType::WindowMaximized; }
+    std::string ToString() const override { return "WindowMaximizedEvent"; }
+};
+
+// 描画Surfaceの実Pixel数。WindowResizeEventの論理サイズとはDPI環境で異なります。
+class WindowFramebufferResizeEvent : public Event
+{
+public:
+    WindowFramebufferResizeEvent(unsigned int width, unsigned int height)
+        : m_Width(width), m_Height(height) {}
+    unsigned int GetWidth() const { return m_Width; }
+    unsigned int GetHeight() const { return m_Height; }
+    EventType GetEventType() const override { return EventType::WindowFramebufferResize; }
+    std::string ToString() const override
+    {
+        return "WindowFramebufferResizeEvent: " + std::to_string(m_Width) +
+            ", " + std::to_string(m_Height);
+    }
 private:
     unsigned int m_Width;
     unsigned int m_Height;
