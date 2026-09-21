@@ -6,10 +6,10 @@
 #include <algorithm>
 #include <utility>
 
+#include <glad/glad.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
-#include <glad/glad.h>
 
 #include "Raven/Platform/Windows/WindowsWindow.h"
 #include "Raven/Core/Base.h"
