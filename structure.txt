@@ -1018,6 +1018,9 @@ D:.
     |   |       |       UIVectorDocument.h
     |   |       |       VectorDocument.h
     |   |       |
+    |   |       +---Text
+    |   |       |       UIFontAtlas.h
+    |   |       |
     |   |       +---Rendering
     |   |       |       OpenGLUIRenderer.cpp
     |   |       |       OpenGLUIRenderer.h
