@@ -63,6 +63,9 @@ Application::Application(const ApplicationSpecification& specification)
         return;
     }
 
+    // Main Windowの所有権は従来どおりApplicationが保持し、Managerには借用登録します。
+    m_MainWindowID = m_WindowManager.RegisterWindow(*m_Window);
+
     // OS/Window由来のEventをApplicationへ集約します。
     // Application::OnEvent()から後積みLayer優先で逆順伝播することで、
     // 将来的にEditor/GizmoがRuntime入力より先にEventを消費できる構造にしています。
