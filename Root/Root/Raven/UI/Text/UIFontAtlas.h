@@ -2,10 +2,12 @@
 
 #include "Raven/Assets/TextureAsset.h"
 #include "Raven/UI/Core/UIDrawList.h"
+#include "Raven/UI/Text/UIUtf8.h"
 
 #include <cstdint>
 #include <unordered_map>
 #include <utility>
+#include <string_view>
 
 namespace Raven
 {
@@ -116,7 +118,7 @@ public:
         return true;
     }
 
-    const Ref<TextureAsset>& GetTexture() const { return m_Texture; }
+    // 文字列をBaseline起点で左から右へ並べます。\n    // Glyphが未収録ならU+FFFD、次に'?'を探し、いずれも無ければ描画せず進みます。\n    // 改行はLineHeightでPenを進めます。Kerning・折り返し・複雑な文字形成は後続Phaseです。\n    math::Vec2 AppendText(\n        UIDrawList& drawList,\n        std::string_view text,\n        const math::Vec2& baseline,\n        float lineHeight,\n        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const\n    {\n        math::Vec2 pen = baseline;\n        std::size_t offset = 0u;\n        std::uint32_t codepoint = 0u;\n        while (UIUtf8::DecodeNext(text, offset, codepoint))\n        {\n            if (codepoint == static_cast<std::uint32_t>('\\r'))\n            {\n                continue;\n            }\n            if (codepoint == static_cast<std::uint32_t>('\\n'))\n            {\n                pen.x = baseline.x;\n                pen.y += lineHeight;\n                continue;\n            }\n\n            const UIGlyphMetrics* glyph = FindGlyph(codepoint);\n            std::uint32_t renderCodepoint = codepoint;\n            if (glyph == nullptr)\n            {\n                renderCodepoint = UIUtf8::ReplacementCharacter;\n                glyph = FindGlyph(renderCodepoint);\n            }\n            if (glyph == nullptr)\n            {\n                renderCodepoint = static_cast<std::uint32_t>('?');\n                glyph = FindGlyph(renderCodepoint);\n            }\n            if (glyph != nullptr)\n            {\n                AppendGlyph(drawList, renderCodepoint, pen, color);\n                pen.x += glyph->Advance;\n            }\n        }\n        return pen;\n    }\n\n    const Ref<TextureAsset>& GetTexture() const { return m_Texture; }
     std::uint32_t GetWidth() const { return m_Width; }
     std::uint32_t GetHeight() const { return m_Height; }
 
