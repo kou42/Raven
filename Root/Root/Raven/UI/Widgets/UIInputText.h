@@ -21,9 +21,9 @@ public:
     using SubmitHandler = std::function<void()>;
     using StepHandler = std::function<void(bool)>;
 
-    UIInputText() { SetFocusable(true); SetClipChildren(true); }
-    void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; InvalidateMeasure(); }
-    void SetText(std::string_view text) { m_Edit.SetText(text); InvalidateMeasure(); }
+    UIInputText() { SetFocusable(true); SetClipChildren(true); SetClipSelf(true); }
+    void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; m_ScrollX = 0.0f; InvalidateMeasure(); }
+    void SetText(std::string_view text) { m_Edit.SetText(text); m_ScrollX = 0.0f; InvalidateMeasure(); }
     const std::string& GetText() const { return m_Edit.GetText(); }
     const UITextEditBuffer& GetEditBuffer() const { return m_Edit; }
     void SetOnChange(ChangeHandler handler) { m_OnChange = std::move(handler); }
@@ -48,6 +48,7 @@ protected:
 
 private:
     float CursorX(std::size_t index) const;
+    void EnsureCursorVisible() const;
     std::size_t HitCursor(float localX) const;
     void NotifyChanged();
     bool InsertFiltered(std::string_view text);
@@ -63,6 +64,7 @@ private:
     StepHandler m_OnStep;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     bool m_Selecting = false;
+    mutable float m_ScrollX = 0.0f;
     float m_Padding = 6.0f;
     float m_Baseline = 22.0f;
     float m_Height = 30.0f;
