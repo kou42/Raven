@@ -44,6 +44,22 @@ public:
     const std::vector<std::vector<std::string>>& GetRows() const { return m_Rows; }
     std::size_t GetSelectedIndex() const { return m_SelectedIndex; }
 
+    // 描画対象の行区間は半開区間[first, last)。行データ全体を走査せずViewportから算出します。
+    std::pair<std::size_t, std::size_t> GetVisibleRowRange() const
+    {
+        const float viewport = BodyHeight();
+        if (viewport <= 0.0f || m_Rows.empty())
+        {
+            return { 0u, 0u };
+        }
+        const float scroll = GetScrollOffset();
+        const std::size_t first = std::min(m_Rows.size(),
+            static_cast<std::size_t>(scroll / m_RowHeight));
+        const std::size_t last = std::min(m_Rows.size(),
+            static_cast<std::size_t>(std::ceil((scroll + viewport) / m_RowHeight)));
+        return { first, std::max(first, last) };
+    }
+
     bool AddColumn(std::string title, float width)
     {
         if (std::isfinite(width) == false || width <= 0.0f)
@@ -379,17 +395,10 @@ protected:
         // Headerは固定し、BodyだけScrollします。ClipSelfが行のViewport外描画を切ります。
         float x = position.x;
         const float scroll = GetScrollOffset();
-        for (std::size_t row = 0u; row < m_Rows.size(); ++row)
+        const auto visibleRows = GetVisibleRowRange();
+        for (std::size_t row = visibleRows.first; row < visibleRows.second; ++row)
         {
             const float top = m_HeaderHeight + static_cast<float>(row) * m_RowHeight - scroll;
-            if (top + m_RowHeight <= m_HeaderHeight)
-            {
-                continue;
-            }
-            if (top >= height)
-            {
-                break;
-            }
             const float y = position.y + top;
             if (row == m_SelectedIndex)
             {
@@ -400,6 +409,16 @@ protected:
             x = position.x - GetHorizontalOffset();
             for (std::size_t col = 0u; col < m_Columns.size(); ++col)
             {
+                // 横方向も表示範囲外のセルでは文字レイアウト/Command生成を行いません。
+                if (x >= position.x + ContentWidth())
+                {
+                    break;
+                }
+                if (x + m_Columns[col].Width <= position.x)
+                {
+                    x += m_Columns[col].Width;
+                    continue;
+                }
                 // 各セルの横境界とBodyの縦境界を交差し、隣の列や固定Headerへの文字漏れを防ぎます。
                 UIRect cellClip;
                 cellClip.Min = math::Vec2(std::max(x, position.x),
@@ -446,11 +465,20 @@ protected:
         x = position.x - GetHorizontalOffset();
         for (const auto& column : m_Columns)
         {
+            if (x >= position.x + ContentWidth())
+            {
+                break;
+            }
+            if (x + column.Width <= position.x)
+            {
+                x += column.Width;
+                continue;
+            }
             UIRect headerClip;
             headerClip.Min = math::Vec2(std::max(x, position.x), position.y);
             headerClip.Max = math::Vec2(std::min(x + column.Width, position.x + ContentWidth()),
                 position.y + std::min(m_HeaderHeight, height));
-            if (headerClip.Max.x > headerClip.Min.x)
+            if (headerClip.Max.x > headerClip.Min.x && headerClip.Max.y > headerClip.Min.y)
             {
                 DrawText(drawList, column.Title,
                     math::Vec2(x + 5.0f, position.y + m_Baseline), headerClip);
