@@ -2,7 +2,9 @@
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIElement.h"
 
-#include <cassert>
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
 #include <cmath>
 #include <memory>
 
@@ -28,6 +30,16 @@ protected:
 bool Near(float actual, float expected)
 {
     return std::abs(actual - expected) < 0.001f;
+}
+
+void CheckNear(const char* label, float actual, float expected)
+{
+    // Release構成でも検証が無効化されないよう、assertではなく終了コードで失敗を通知します。
+    if (Near(actual, expected) == false)
+    {
+        std::cerr << label << ": expected " << expected << ", actual " << actual << '\\n';
+        std::exit(EXIT_FAILURE);
+    }
 }
 } // namespace
 
@@ -59,17 +71,17 @@ int main()
     root.BuildDrawList(drawList);
 
     // Root content幅50、Container content幅46なので仮想テキストは3行になります。
-    assert(Near(wrappingPtr->GetDesiredSize().y, 30.0f));
-    assert(Near(containerPtr->GetDesiredSize().y, 41.0f));
-    assert(Near(root.GetDesiredSize().y, 51.0f));
-    assert(Near(siblingPtr->GetPosition().y, 32.0f));
+    CheckNear("wrappingPtr->GetDesiredSize().y", wrappingPtr->GetDesiredSize().y, 30.0f);
+    CheckNear("containerPtr->GetDesiredSize().y", containerPtr->GetDesiredSize().y, 41.0f);
+    CheckNear("root.GetDesiredSize().y", root.GetDesiredSize().y, 51.0f);
+    CheckNear("siblingPtr->GetPosition().y", siblingPtr->GetPosition().y, 32.0f);
 
     // Rootの幅変更による再Measureで、子と親の高さ・Sibling位置が揃って更新されます。
     root.SetPreferredSize(Raven::math::Vec2(120.0f, 0.0f));
     root.BuildDrawList(drawList);
-    assert(Near(wrappingPtr->GetDesiredSize().y, 10.0f));
-    assert(Near(containerPtr->GetDesiredSize().y, 21.0f));
-    assert(Near(root.GetDesiredSize().y, 31.0f));
-    assert(Near(siblingPtr->GetPosition().y, 12.0f));
+    CheckNear("wrappingPtr->GetDesiredSize().y", wrappingPtr->GetDesiredSize().y, 10.0f);
+    CheckNear("containerPtr->GetDesiredSize().y", containerPtr->GetDesiredSize().y, 21.0f);
+    CheckNear("root.GetDesiredSize().y", root.GetDesiredSize().y, 31.0f);
+    CheckNear("siblingPtr->GetPosition().y", siblingPtr->GetPosition().y, 12.0f);
     return 0;
 }
