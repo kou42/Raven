@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Core/Base.h"
+#include <functional>
 #include "Raven/Math/MathVector.h"
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIElement.h"
