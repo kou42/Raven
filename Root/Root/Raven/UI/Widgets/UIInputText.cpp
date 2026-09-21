@@ -190,6 +190,13 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
         return;
     }
 
+    if (event.Key == UIKey::Enter && m_OnSubmit != nullptr)
+    {
+        m_OnSubmit();
+        event.Handled = true;
+        return;
+    }
+
     const std::size_t cursor = m_Edit.GetCursor();
     if (event.Key == UIKey::Left)
     {
@@ -232,7 +239,6 @@ void UIInputText::OnCharacterEvent(UICharacterEvent& event)
 {
     if (IsFocused() == true)
     {
-        std::string encoded;
         UITextEditBuffer character;
         if (character.InsertCodepoint(event.Codepoint) &&
             InsertFiltered(character.GetText()))
