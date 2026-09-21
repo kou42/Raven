@@ -57,7 +57,7 @@ UIElement* UIHitTest::FindTopmostRecursive(
     const UITransform2D& parentWorldTransform,
     const UIClipRect& inheritedClip)
 {
-    if (element.IsVisible() == false)
+    if (element.IsVisible() == false || element.IsHitTestVisible() == false)
     {
         return nullptr;
     }
