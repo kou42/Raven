@@ -33,6 +33,7 @@ public:
     }
 
     void SetIMECaretPositionCallback(IMECaretPositionFn callback) override;
+    void CancelIMEComposition() override;
     void SetVSync(bool enabled) override;
     bool IsVSync() const override;
 
