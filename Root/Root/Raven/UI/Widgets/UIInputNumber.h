@@ -27,6 +27,18 @@ public:
         input->SetSize(math::Vec2(180.0f, 30.0f));
         m_Input = input.get();
         m_Input->SetOnSubmit([this]() { Commit(); });
+        m_Input->SetOnFocusLost([this]() { Commit(); });
+        m_Input->SetOnStep([this](bool increase)
+            {
+                if (increase == true)
+                {
+                    Increment();
+                }
+                else
+                {
+                    Decrement();
+                }
+            });
         m_Input->SetInputFilter([](const std::string& text)
             {
                 return IsNumericPrefix(text);
