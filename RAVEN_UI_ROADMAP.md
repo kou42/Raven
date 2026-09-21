@@ -2,7 +2,7 @@
 
 最終更新: 2026-09-21  
 対象: `Root/Root/Raven/UI` / Raven Editor  
-状態: 計画策定済み・Phase 1 未着手
+状態: Phase 1 実装中（Glyph描画入口を追加、Font Atlasは未実装）
 
 ## 目的と原則
 
@@ -26,7 +26,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 
 | Phase | テーマ | 状態 | 完了条件 |
 | --- | --- | --- | --- |
-| 1 | Font Atlas / Text Rendering | 未着手 | Font読込、Glyph Atlas、DrawList経由の文字表示、日本語fallback、基本描画検証 |
+| 1 | Font Atlas / Text Rendering | 実装中 | Font読込、Glyph Atlas、DrawList経由の文字表示、日本語fallback、基本描画検証 |
 | 2 | Text Layout / Text Measurement | 未着手 | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
 | 3 | InputText / InputNumber | 未着手 | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
 | 4 | ComboBox / Popup / Tooltip | 未着手 | Focus、閉じる条件、重なり順、入力伝播の検証 |
@@ -46,7 +46,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 1. [ ] 既存TextureAsset / Texture生成API、Shader、OpenGLUIRenderer、Visual Studio project設定、Fontライブラリの利用条件を確認し、Atlasの所有権・更新方法を決定する。
 2. [ ] UIFont / Glyph metrics / Font Atlasの最小構造を実装する。Fontファイルの寿命とTexture再生成を明確にする。
 3. [ ] UTF-8 decode、代替Glyph、ASCII・日本語のGlyph取得を実装する。不正UTF-8と未収録文字をテストする。
-4. [ ] TextのDrawList経路を追加する。既存Image Commandの再利用か専用Commandかを描画順・Texture切替・将来のBatchingから決定する。
+4. [x] DrawListへGlyph Quadの入口を追加し、既存Image Commandを再利用する方針を決定する。Font Atlasからの呼び出し・描画検証は未実施。
 5. [ ] OpenGLUIRendererでAtlas描画を接続する。既存矩形/画像描画とScissor/Transformを回帰確認する。
 6. [ ] UILabelまたは最小Text検証UIを追加し、ASCII・日本語・複数行・Resize・高DPIを確認する。
 
@@ -61,7 +61,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 
 | 日付 | ブランチ / PR | 変更 | 検証 | 次の作業 |
 | --- | --- | --- | --- | --- |
-| 2026-09-21 | feature/raven-ui-roadmap | ロードマップとPhase 1の分割・完了条件を作成 | 文書のみ。ビルド対象変更なし | Phase 1-1の依存関係確認、Font Atlas設計 |
+| 2026-09-21 | feature/raven-ui-roadmap | ロードマップとPhase 1の分割・完了条件を作成 | 文書のみ | Phase 1-1の依存関係確認、Font Atlas設計 |\n| 2026-09-21 | feature/raven-ui-roadmap | UIDrawList::AddGlyphを追加。TextureAssetとImage Commandを再利用 | コードレビューのみ。ビルド・実行未検証 | Font Atlas / Glyph Metrics、Font読込とUTF-8対応 |
 
 ## 更新ルール
 
