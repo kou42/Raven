@@ -193,6 +193,18 @@ public:
         {
             return true;
         }
+        // 折りたたみで選択行が隠れる場合は、可視の親へ選択を移します。
+        if (expanded == false && m_Selected != nullptr && m_Selected != node)
+        {
+            for (UITreeNode* ancestor = m_Selected->Parent; ancestor != nullptr; ancestor = ancestor->Parent)
+            {
+                if (ancestor == node)
+                {
+                    Select(node);
+                    break;
+                }
+            }
+        }
         node->Expanded = expanded;
         InvalidateMeasure();
         SetScrollOffset(m_ScrollOffset);
