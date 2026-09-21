@@ -1683,4 +1683,8 @@
   <ItemGroup>\n    <ClInclude Include="Raven\\UI\\Text\\UIFontAtlas.h"><Filter>Header Files</Filter></ClInclude>\n  </ItemGroup>\n  <ItemGroup>
     <ClInclude Include="Raven\\UI\\Text\\UIUtf8.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Raven\\UI\\Text\\UIFontAtlasBuilder.h"><Filter>Header Files</Filter></ClInclude>
+    <ClCompile Include="Raven\\UI\\Text\\UIFontAtlasBuilder.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
 </Project>
