@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/UI/Widgets/UIScrollBarMetrics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -157,12 +158,8 @@ protected:
                 math::Vec2 local;
                 if (TryScreenToLocalPosition(event.ScreenPosition, local) == true)
                 {
-                    const float travel = BodyHeight() - ThumbLength();
-                    if (travel > 0.0f)
-                    {
-                        SetScrollOffset((local.y - m_HeaderHeight - m_ThumbGrabOffset) /
-                            travel * GetMaxScrollOffset());
-                    }
+                    SetScrollOffset(ScrollMetrics().OffsetFromThumbStart(
+                        local.y - m_HeaderHeight - m_ThumbGrabOffset));
                 }
                 event.Handled = true;
                 return;
@@ -377,23 +374,14 @@ protected:
     }
 
 private:
-    float ThumbLength() const
+    UIScrollBarMetrics ScrollMetrics() const
     {
-        const float viewport = BodyHeight();
-        const float content = static_cast<float>(m_Rows.size()) * m_RowHeight;
-        if (viewport <= 0.0f || content <= 0.0f)
-        {
-            return 0.0f;
-        }
-        return std::min(viewport, std::max(20.0f, viewport * viewport / content));
+        return UIScrollBarMetrics{ BodyHeight(),
+            static_cast<float>(m_Rows.size()) * m_RowHeight, GetScrollOffset() };
     }
 
-    float ThumbStart() const
-    {
-        const float maximum = GetMaxScrollOffset();
-        return m_HeaderHeight + (maximum > 0.0f
-            ? GetScrollOffset() / maximum * (BodyHeight() - ThumbLength()) : 0.0f);
-    }
+    float ThumbLength() const { return ScrollMetrics().ThumbLength(); }
+    float ThumbStart() const { return m_HeaderHeight + ScrollMetrics().ThumbStart(); }
 
     void EndScrollBarDrag()
     {
