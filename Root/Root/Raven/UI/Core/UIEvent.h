@@ -78,10 +78,12 @@ struct UICharacterEvent
 // IME未確定文字列の通知。確定文字の挿入は既存Character Event経路を維持します。
 // TextはUTF-8、Cursor/SelectionはUnicode codepoint indexです。
 // Begin時の置換対象範囲はWidgetが保持し、Platformから編集バッファの位置を渡しません。
+// CommitのTextは確定済み全文です。Platformは同じ確定文字をCharacter Eventでも送らないでください。
 enum class UIIMEEventType
 {
     Begin = 0,
     Update,
+    Commit,
     End,
     Cancel
 };
