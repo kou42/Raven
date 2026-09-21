@@ -143,6 +143,9 @@ public:
 
     // Keyboard / Gamepad Navigationの対象にするElementだけ明示的に有効化します。
     // Focus状態そのものはUIContextがTree単位で一意になるよう更新します。
+    // falseの場合は自身とDescendantをHit Testから除外し、描画だけを行います。
+    void SetHitTestVisible(bool value) { m_HitTestVisible = value; }
+    bool IsHitTestVisible() const { return m_HitTestVisible; }
     void SetFocusable(bool value) { m_Focusable = value; }
     bool IsFocusable() const { return m_Focusable; }
     bool IsFocused() const { return m_Focused; }
@@ -375,6 +378,7 @@ private:
     math::Vec4 m_TintColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     uint64_t m_TreeGeneration = 1u;
     bool m_Visible = true;
+    bool m_HitTestVisible = true;
     bool m_Hovered = false;
     bool m_Pressed = false;
     bool m_Focusable = false;
