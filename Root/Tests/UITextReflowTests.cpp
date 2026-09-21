@@ -6,6 +6,7 @@
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
+#include "Raven/UI/Widgets/UITooltip.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -312,6 +313,43 @@ void TestComboBox()
     Check(notifications == 4, "combo new selection notification");
     Check(context.GetRootElement().RemoveChild(comboPtr), "combo removal releases popup");
 }
+// TooltipのHover・入力透過・Popupとの排他・対象削除を検証します。
+void TestTooltip()
+{
+    Raven::UIContext context;
+    auto button = std::make_unique<Raven::UIButton>();
+    button->SetPosition(Raven::math::Vec2(170.0f, 140.0f));
+    button->SetSize(Raven::math::Vec2(30.0f, 20.0f));
+    int clicks = 0;
+    button->SetOnClick([&clicks]() { ++clicks; });
+    Raven::UIElement* target = context.GetRootElement().AddChild(std::move(button));
+    Check(context.SetTooltip(target, "Tooltip", nullptr, 0.0f), "tooltip registration");
+    context.BeginFrame(Raven::math::Vec2(200.0f, 170.0f));
+    context.RouteMouseMove(Raven::math::Vec2(180.0f, 150.0f));
+    context.EndFrame();
+    const Raven::UITooltip* tip = context.GetVisibleTooltip();
+    Check(tip != nullptr && tip->GetText() == "Tooltip", "tooltip visible on hover");
+    Check(tip->GetPosition().x + tip->GetSize().x <= 200.0f,
+        "tooltip right viewport clamp");
+    Check(tip->GetPosition().y + tip->GetSize().y <= 170.0f,
+        "tooltip bottom viewport clamp");
+    context.RouteMouseDown(Raven::math::Vec2(180.0f, 150.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(180.0f, 150.0f), Raven::UIMouseButton::Left);
+    Check(clicks == 1, "tooltip does not block button click");
+    Check(context.GetVisibleTooltip() == nullptr, "tooltip hidden on click");
+    context.RouteMouseMove(Raven::math::Vec2(181.0f, 150.0f));
+    Check(context.GetVisibleTooltip() != nullptr, "tooltip reappears after pointer move");
+    auto popup = std::make_unique<Raven::UIElement>();
+    popup->SetSize(Raven::math::Vec2(40.0f, 30.0f));
+    Raven::UIElement* popupPtr = context.AddPopup(std::move(popup));
+    Check(context.OpenPopup(popupPtr), "popup opens over tooltip");
+    Check(context.GetVisibleTooltip() == nullptr, "popup suppresses tooltip");
+    context.ClosePopup();
+    context.RouteMouseMove(Raven::math::Vec2(0.0f, 0.0f));
+    Check(context.GetVisibleTooltip() == nullptr, "tooltip hides on hover leave");
+    Check(context.GetRootElement().RemoveChild(target), "tooltip target removed");
+    Check(context.ClearTooltip(target) == false, "tooltip registration cleaned on removal");
+}
 } // namespace
 
 int main()
@@ -321,6 +359,7 @@ int main()
     TestInputEventRouting();
     TestPopupRouting();
     TestComboBox();
+    TestTooltip();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
