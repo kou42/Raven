@@ -28,6 +28,8 @@ public:
     const std::string& GetText() const { return m_Edit.GetText(); }
     const UITextEditBuffer& GetEditBuffer() const { return m_Edit; }
     const UIIMEComposition& GetIMEComposition() const { return m_Composition; }
+    // OSのIME候補WindowをCaret直下へ配置するためのGLFW論理画面座標です。
+    math::Vec2 GetIMECaretScreenPosition() const;
     void SetOnChange(ChangeHandler handler) { m_OnChange = std::move(handler); }
     void SetClipboard(ClipboardReader reader, ClipboardWriter writer)
     {
