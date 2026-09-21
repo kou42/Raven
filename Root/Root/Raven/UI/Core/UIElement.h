@@ -55,6 +55,9 @@ public:
     bool RemoveChild(UIElement* child);
     void ClearChildren();
 
+    // Painter's OrderとHit Testの両方でChildを最前面へ移動します。
+    bool BringChildToFront(UIElement* child);
+
     // Animation / Serialization / EditorからElementを安定して参照するための論理名です。
     // '/' はPath区切りとして予約し、含む名前は拒否します。
     bool SetName(std::string name);
