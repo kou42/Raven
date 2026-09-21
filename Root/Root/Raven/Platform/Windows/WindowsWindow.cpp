@@ -422,6 +422,66 @@ void WindowsWindow::Init(const WindowProps& props)
             }
         });
 
+    // Window座標とFramebuffer Pixel数は高DPI環境で一致しないため、別Eventで通知します。
+    glfwSetWindowPosCallback(m_Window, [](GLFWwindow* window, int x, int y)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == true)
+            {
+                WindowMovedEvent event(x, y);
+                data.EventCallback(event);
+            }
+        });
+
+    glfwSetWindowIconifyCallback(m_Window, [](GLFWwindow* window, int iconified)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == false)
+            {
+                return;
+            }
+            if (iconified == GLFW_TRUE)
+            {
+                WindowMinimizedEvent event;
+                data.EventCallback(event);
+            }
+            else
+            {
+                WindowRestoredEvent event;
+                data.EventCallback(event);
+            }
+        });
+
+    glfwSetWindowMaximizeCallback(m_Window, [](GLFWwindow* window, int maximized)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == false)
+            {
+                return;
+            }
+            if (maximized == GLFW_TRUE)
+            {
+                WindowMaximizedEvent event;
+                data.EventCallback(event);
+            }
+            else
+            {
+                WindowRestoredEvent event;
+                data.EventCallback(event);
+            }
+        });
+
+    glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == true)
+            {
+                WindowFramebufferResizeEvent event(
+                    static_cast<unsigned int>(width), static_cast<unsigned int>(height));
+                data.EventCallback(event);
+            }
+        });
+
     glfwSetWindowFocusCallback(m_Window, [](GLFWwindow* window, int focused)
         {
             WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
