@@ -159,6 +159,7 @@ private:
     UIElement* m_TooltipTarget = nullptr;
     std::chrono::steady_clock::time_point m_HoverStarted{};
     math::Vec2 m_LastPointerPosition{};
+    bool m_TooltipSuppressedUntilMove = false;
     UIElement* m_OpenPopup = nullptr;
     Scope<UIRenderer> m_Renderer;
     UIElement* m_HoveredElement = nullptr;
