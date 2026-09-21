@@ -260,6 +260,19 @@ void UIDrawList::AddImage(
     m_Commands.push_back(command);
 }
 
+void UIDrawList::AddGlyph(
+    const math::Vec2& min,
+    const math::Vec2& max,
+    const Ref<TextureAsset>& atlasTexture,
+    const math::Vec2& uvMin,
+    const math::Vec2& uvMax,
+    const math::Vec4& color)
+{
+    // GlyphはAtlasの部分矩形を参照するImageです。既存の描画経路を共有することで
+    // Text専用のGPU Resource管理やOpenGL依存をUI Coreへ追加せずに済みます。
+    AddImage(min, max, atlasTexture, color, uvMin, uvMax);
+}
+
 void UIDrawList::ApplyTransform(std::size_t firstCommand, const UITransform2D& transform)
 {
     if (firstCommand >= m_Commands.size())
