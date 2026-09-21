@@ -29,7 +29,7 @@ struct UITreeNode
 };
 
 // 最小のRetained TreeView。描画・Hit判定は展開済みNodeの同一の深さ優先順序を使います。
-// Scroll/仮想化/複数選択は別段階とし、現段階は単一選択と展開操作に限定します。
+// Wheel縦Scrollと選択行の可視化に対応します。Scrollbar/仮想化/複数選択は別段階です。
 class UITreeView final : public UIElement
 {
 public:
@@ -77,6 +77,7 @@ public:
         // Callbackへ渡したNode*も無効になるので、先に選択を解除します。
         Select(nullptr);
         m_Roots.clear();
+        m_ScrollOffset = 0.0f;
         InvalidateMeasure();
     }
 
@@ -114,6 +115,7 @@ public:
             return true;
         }
         m_Selected = node;
+        EnsureSelectedVisible();
         if (m_OnSelectionChanged)
         {
             m_OnSelectionChanged(node != nullptr ? node->Id : 0u);
@@ -122,6 +124,49 @@ public:
     }
 
     UITreeNode* GetSelectedNode() const { return m_Selected; }
+
+    float GetScrollOffset() const { return std::min(m_ScrollOffset, GetMaxScrollOffset()); }
+    float GetMaxScrollOffset() const
+    {
+        return std::max(0.0f, static_cast<float>(VisibleNodes().size()) * m_RowHeight - GetSize().y);
+    }
+    void SetScrollOffset(float value)
+    {
+        if (std::isfinite(value))
+        {
+            m_ScrollOffset = std::clamp(value, 0.0f, GetMaxScrollOffset());
+        }
+    }
+    void SetWheelScrollStep(float value)
+    {
+        if (std::isfinite(value) && value > 0.0f)
+        {
+            m_WheelScrollStep = value;
+        }
+    }
+    void EnsureSelectedVisible()
+    {
+        if (m_Selected == nullptr || GetSize().y <= 0.0f)
+        {
+            return;
+        }
+        const auto visible = VisibleNodes();
+        const auto it = std::find_if(visible.begin(), visible.end(),
+            [this](const auto& entry) { return entry.first == m_Selected; });
+        if (it == visible.end())
+        {
+            return;
+        }
+        const float top = static_cast<float>(it - visible.begin()) * m_RowHeight;
+        if (top < GetScrollOffset())
+        {
+            SetScrollOffset(top);
+        }
+        else if (top + m_RowHeight > GetScrollOffset() + GetSize().y)
+        {
+            SetScrollOffset(top + m_RowHeight - GetSize().y);
+        }
+    }
     void SetOnSelectionChanged(SelectionHandler handler) { m_OnSelectionChanged = std::move(handler); }
     void SetOnExpansionChanged(ExpansionHandler handler) { m_OnExpansionChanged = std::move(handler); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; }
@@ -131,6 +176,8 @@ public:
         {
             m_RowHeight = value;
             InvalidateMeasure();
+            SetScrollOffset(m_ScrollOffset);
+            EnsureSelectedVisible();
         }
     }
 
@@ -146,6 +193,7 @@ public:
         }
         node->Expanded = expanded;
         InvalidateMeasure();
+        SetScrollOffset(m_ScrollOffset);
         if (m_OnExpansionChanged)
         {
             m_OnExpansionChanged(node->Id, expanded);
@@ -156,6 +204,17 @@ public:
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (event.Type == UIMouseEventType::Scroll)
+        {
+            const float previous = GetScrollOffset();
+            SetScrollOffset(previous - event.ScrollDelta.y * m_WheelScrollStep);
+            // 境界では消費せず、親ScrollViewへWheelを伝播させます。
+            if (GetScrollOffset() != previous)
+            {
+                event.Handled = true;
+            }
+            return;
+        }
         if (event.Type != UIMouseEventType::Down || event.Button != UIMouseButton::Left || event.Target != this)
         {
             return;
@@ -167,7 +226,7 @@ protected:
             return;
         }
         const auto visible = VisibleNodes();
-        const std::size_t index = static_cast<std::size_t>(local.y / m_RowHeight);
+        const std::size_t index = static_cast<std::size_t>((local.y + GetScrollOffset()) / m_RowHeight);
         if (index >= visible.size())
         {
             return;
@@ -244,11 +303,16 @@ protected:
         const auto visible = VisibleNodes();
         for (std::size_t i = 0u; i < visible.size(); ++i)
         {
-            const float y = absolutePosition.y + static_cast<float>(i) * m_RowHeight;
-            if (static_cast<float>(i) * m_RowHeight >= GetSize().y)
+            const float rowTop = static_cast<float>(i) * m_RowHeight - GetScrollOffset();
+            if (rowTop + m_RowHeight <= 0.0f)
+            {
+                continue;
+            }
+            if (rowTop >= GetSize().y)
             {
                 break;
             }
+            const float y = absolutePosition.y + rowTop;
             const UITreeNode* node = visible[i].first;
             if (node == m_Selected)
             {
@@ -318,6 +382,8 @@ private:
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
     float m_Baseline = 17.0f;
+    float m_ScrollOffset = 0.0f;
+    float m_WheelScrollStep = 48.0f;
 };
 
 } // namespace Raven
