@@ -67,7 +67,8 @@ struct UIKeyEvent
     bool Handled = false;
 };
 
-// Unicode文字入力は物理キー操作とは分離します。IME確定文字もこの入口へ接続します。
+// Unicode文字入力は物理キー操作とは分離します。通常文字はこの入口へ配送し、
+// IMEの一括確定結果はUIIMEEvent::Commitへ配送します。
 struct UICharacterEvent
 {
     std::uint32_t Codepoint = 0u;
