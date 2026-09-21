@@ -68,21 +68,61 @@ void UIInputText::NotifyChanged()
 
 void UIInputText::OnMouseEvent(UIMouseEvent& event)
 {
-    if (event.Target != this || event.Type != UIMouseEventType::Down ||
-        event.Button != UIMouseButton::Left)
+    if (event.Target != this)
     {
         return;
     }
-    if (event.Context != nullptr)
+
+    if (event.Type == UIMouseEventType::Cancel)
     {
-        event.Context->SetFocus(this);
+        // Window Focus Lost / Tree破棄時はMouse Upが来ないため、選択状態だけ確実に終了します。
+        m_Selecting = false;
+        event.Handled = true;
+        return;
     }
-    math::Vec2 local{};
-    if (TryScreenToLocalPosition(event.ScreenPosition, local))
+
+    if (event.Type == UIMouseEventType::Down && event.Button == UIMouseButton::Left)
     {
-        m_Edit.MoveCursor(HitCursor(local.x));
+        if (event.Context != nullptr)
+        {
+            event.Context->SetFocus(this);
+        }
+        math::Vec2 local{};
+        if (TryScreenToLocalPosition(event.ScreenPosition, local))
+        {
+            m_Edit.MoveCursor(HitCursor(local.x));
+        }
+
+        // Captureが他Widgetに占有されている場合はDragを開始しません。
+        m_Selecting = event.Context != nullptr && event.Context->CaptureMouse(this);
+        event.Handled = true;
+        return;
     }
-    event.Handled = true;
+
+    if (m_Selecting == false)
+    {
+        return;
+    }
+
+    if (event.Type == UIMouseEventType::Move ||
+        (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left))
+    {
+        math::Vec2 local{};
+        if (TryScreenToLocalPosition(event.ScreenPosition, local))
+        {
+            // Mouse Down時のAnchorを保持し、Widget外へ出ても選択範囲を更新します。
+            m_Edit.MoveCursor(HitCursor(local.x), true);
+        }
+        if (event.Type == UIMouseEventType::Up)
+        {
+            m_Selecting = false;
+            if (event.Context != nullptr)
+            {
+                event.Context->ReleaseMouseCapture(this);
+            }
+        }
+        event.Handled = true;
+    }
 }
 
 void UIInputText::OnKeyEvent(UIKeyEvent& event)
