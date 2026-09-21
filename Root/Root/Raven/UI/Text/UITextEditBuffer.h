@@ -57,6 +57,8 @@ public:
         return count;
     }
 
+    // Shift操作中はAnchorを固定してCursorだけ動かします。
+    // 選択範囲は両者の大小から求めるため、逆方向へのドラッグにも対応します。
     void MoveCursor(std::size_t index, bool extendSelection = false)
     {
         m_Cursor = std::min(index, GetLength());
@@ -119,6 +121,8 @@ public:
         return InsertText(encoded);
     }
 
+    // Clipboard等から届くUTF-8を正規化し、単一行に入れられない制御文字を除外します。
+    // Undoは置換前に一度だけ記録するため、選択範囲の置換を一操作で戻せます。
     bool InsertText(std::string_view text)
     {
         std::string normalized;
@@ -146,6 +150,8 @@ public:
         return true;
     }
 
+    // Cursorはcodepoint indexなので、削除前にbyte境界へ変換します。
+    // UTF-8の途中のbyteだけを消して文字列を壊さないための処理です。
     bool Backspace()
     {
         if (HasSelection() == true)
@@ -165,6 +171,7 @@ public:
         return true;
     }
 
+    // Backspaceと対称に、選択範囲がなければCursorの次のcodepointを削除します。
     bool DeleteForward()
     {
         if (HasSelection() == true)
@@ -213,6 +220,8 @@ private:
         m_Cursor = state.Cursor;
         m_Anchor = state.Anchor;
     }
+    // 編集が発生した時点でRedo分岐を破棄します。
+    // Cursor移動や選択だけでは呼ばず、Undo履歴を文字列変更単位に保ちます。
     void RecordEdit()
     {
         // 履歴は有限長とし、長時間のEditor利用で無制限に増えないようにします。
