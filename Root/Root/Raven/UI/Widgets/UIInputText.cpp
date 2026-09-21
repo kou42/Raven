@@ -204,6 +204,8 @@ void UIInputText::OnMouseEvent(UIMouseEvent& event)
 
     if (event.Type == UIMouseEventType::Down && event.Button == UIMouseButton::Left)
     {
+        // 編集位置を変更する操作では古いIME置換範囲を無効化します。
+        m_Composition.Cancel();
         if (event.Context != nullptr)
         {
             event.Context->SetFocus(this);
