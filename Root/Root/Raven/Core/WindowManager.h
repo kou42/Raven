@@ -148,6 +148,18 @@ public:
             restoreWindow.MakeContextCurrent();
             return false;
         }
+        // 共有ContextのTexture等は利用できますが、FBO/VAOは共有されません。
+        // この経路では補助Windowの既定Framebufferを描画先とします。
+        // 独自FBOを使うCallbackは、自分でそのContextに属するFBOをBindしてください。
+        if (window.BindDefaultFramebuffer() == false ||
+            window.SetFramebufferViewport() == false)
+        {
+            // FrameがActiveのまま残らないよう、Begin成功後は必ずEnd/Presentします。
+            frame.EndFrame();
+            frame.Present();
+            restoreWindow.MakeContextCurrent();
+            return false;
+        }
         draw(window);
         const bool ended = frame.EndFrame() == RHIFrameResult::Success;
         const bool presented = ended == true &&
