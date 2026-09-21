@@ -41,6 +41,8 @@ enum class UIKey
     Right,
     Home,
     End,
+    Up,
+    Down,
     Backspace,
     Delete,
     A,
