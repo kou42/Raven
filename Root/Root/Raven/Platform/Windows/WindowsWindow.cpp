@@ -105,6 +105,25 @@ struct Win32IMEBridge
         return event.Handled;
     }
 
+    void CancelComposition()
+    {
+        if (Handle == nullptr || OwnedByRavenUI == false)
+        {
+            return;
+        }
+
+        // UIの置換対象が変わった後にOSの古い変換が確定されないよう、
+        // IME自身へ取消を依頼します。同期的に届くEND通知は既存経路で処理します。
+        HIMC context = ImmGetContext(Handle);
+        if (context != nullptr)
+        {
+            ImmNotifyIME(context, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+            ImmReleaseContext(Handle, context);
+        }
+        OwnedByRavenUI = false;
+        SuppressIMEChars = 0u;
+    }
+
     void UpdateCandidatePosition()
     {
         if (OwnedByRavenUI == false || CaretCallback == nullptr ||
@@ -551,6 +570,14 @@ void* WindowsWindow::GetPlatformWindowHandle() const
     }
 
     return static_cast<void*>(glfwGetWin32Window(m_Window));
+}
+
+void WindowsWindow::CancelIMEComposition()
+{
+    if (m_IMEBridge != nullptr)
+    {
+        m_IMEBridge->CancelComposition();
+    }
 }
 
 void WindowsWindow::SetIMECaretPositionCallback(IMECaretPositionFn callback)
