@@ -6,6 +6,7 @@
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 
@@ -228,6 +229,19 @@ void UITextDemoLayer::OnAttach()
     m_PopupTrigger = m_Application.GetUIContext().GetRootElement().AddChild(std::move(trigger));
     std::cout << "[Raven UI Popup] Click the button at (24, 300); Escape/outside click closes.\\n";
 
+    auto combo = CreateScope<UIComboBox>();
+    combo->SetPosition(math::Vec2(270.0f, 300.0f));
+    combo->SetSize(math::Vec2(180.0f, 30.0f));
+    combo->SetFont(atlas);
+    combo->SetOptions({ "Idle", "Walk", "Run" });
+    combo->SetSelectedIndex(0u);
+    combo->SetOnSelectionChanged([](std::size_t index, const std::string& text)
+        {
+            std::cout << "[Raven UI ComboBox] " << index << ": " << text << '\\n';
+        });
+    m_ComboBox = static_cast<UIComboBox*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(combo)));
+
     m_Atlas = std::move(atlas);
     m_Label = static_cast<UILabel*>(attached);
     std::cout << "[Raven UI Text] Demo font: " << fontPath << '\n';
@@ -235,6 +249,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_ComboBox != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_ComboBox);
+        m_ComboBox = nullptr;
+    }
     if (m_PopupTrigger != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_PopupTrigger);
