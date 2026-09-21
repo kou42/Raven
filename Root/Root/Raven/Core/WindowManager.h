@@ -75,7 +75,7 @@ public:
                 }
                 if (event.GetEventType() == EventType::WindowClose)
                 {
-                    m_PendingClose.push_back(id);
+                    RequestWindowClose(id);
                 }
             });
         return id;
@@ -128,7 +128,8 @@ public:
         const auto it = m_Windows.find(id);
         const auto restoreIt = m_Windows.find(restoreWindowID);
         if (it == m_Windows.end() || restoreIt == m_Windows.end() ||
-            it->second.FrameLifecycle == nullptr || static_cast<bool>(draw) == false ||
+            it->second.FrameLifecycle == nullptr || it->second.CloseRequested == true ||
+            static_cast<bool>(draw) == false ||
             id == restoreWindowID)
         {
             return false;
@@ -211,6 +212,7 @@ public:
         const auto restoreIt = m_Windows.find(restoreWindowID);
         if (it == m_Windows.end() || restoreIt == m_Windows.end() ||
             source == nullptr || id == restoreWindowID ||
+            it->second.CloseRequested == true ||
             it->second.Handle->GetBackend() != RHIBackend::OpenGL ||
             restoreIt->second.Handle->GetBackend() != RHIBackend::OpenGL)
         {
@@ -275,6 +277,41 @@ public:
         return restoreIt->second.Handle->MakeContextCurrent();
     }
 
+    // Close通知時点でRendererが保持する補助Context専用VAO/FBO等を解放する入口です。
+    // callbackはGLFW event callback内では実行せず、PollEvents終了後に対象Contextで呼びます。
+    // 再入による二重解放を避けるため、同じClose要求に対して一度だけ実行します。
+    bool SetWindowCloseCleanup(WindowID id, std::function<void(Window&)> cleanup)
+    {
+        const auto it = m_Windows.find(id);
+        if (it == m_Windows.end() || it->second.CloseRequested == true)
+        {
+            return false;
+        }
+        it->second.CloseCleanup = std::move(cleanup);
+        return true;
+    }
+
+    bool RequestWindowClose(WindowID id)
+    {
+        const auto it = m_Windows.find(id);
+        if (it == m_Windows.end())
+        {
+            return false;
+        }
+        if (it->second.CloseRequested == false)
+        {
+            it->second.CloseRequested = true;
+            m_PendingClose.push_back(id);
+        }
+        return true;
+    }
+
+    bool IsWindowClosePending(WindowID id) const
+    {
+        const auto it = m_Windows.find(id);
+        return it != m_Windows.end() && it->second.CloseRequested == true;
+    }
+
     bool DetachFrameLifecycle(WindowID id)
     {
         const auto it = m_Windows.find(id);
@@ -295,8 +332,12 @@ public:
         }
         if (m_PollingEvents == true)
         {
-            m_PendingClose.push_back(id);
-            return true;
+            return RequestWindowClose(id);
+        }
+        // 即時登録解除でもRenderer側の解放Callbackを先に実行します。
+        if (RunCloseCleanup(id) == false)
+        {
+            return false;
         }
         // VAOをWindow破棄後に解放しないよう、Contextが生存している間に解放します。
         const auto it = m_Windows.find(id);
@@ -352,6 +393,12 @@ public:
         pendingClose.swap(m_PendingClose);
         for (WindowID id : pendingClose)
         {
+            // Close callbackはGLFWのイベント配送が終了してから実行します。
+            if (RunCloseCleanup(id) == false)
+            {
+                m_PendingClose.push_back(id);
+                continue;
+            }
             const auto it = m_Windows.find(id);
             if (it != m_Windows.end())
             {
@@ -361,6 +408,7 @@ public:
                 {
                     if (it->second.Handle->MakeContextCurrent() == false)
                     {
+                        m_PendingClose.push_back(id);
                         continue;
                     }
                     bool hasExternalReferences = false;
@@ -386,11 +434,38 @@ public:
     }
 
 private:
+    bool RunCloseCleanup(WindowID id)
+    {
+        const auto it = m_Windows.find(id);
+        if (it == m_Windows.end())
+        {
+            return true;
+        }
+        Entry& entry = it->second;
+        if (entry.CloseCleanupDone == true || static_cast<bool>(entry.CloseCleanup) == false)
+        {
+            return true;
+        }
+        if (entry.Handle->GetBackend() == RHIBackend::OpenGL &&
+            entry.Handle->MakeContextCurrent() == false)
+        {
+            return false;
+        }
+        // Cleanup内ではWindowManagerの登録・解除やWindow破棄を行わないでください。
+        // 外部参照を解放した後、VAO cacheのuse_countを確認します。
+        entry.CloseCleanupDone = true;
+        entry.CloseCleanup(*entry.Handle);
+        return true;
+    }
+
     struct Entry
     {
         Window* Handle = nullptr;
         std::unique_ptr<Window> OwnedWindow;
         Scope<RHISceneFrameLifecycle> FrameLifecycle;
+        std::function<void(Window&)> CloseCleanup;
+        bool CloseRequested = false;
+        bool CloseCleanupDone = false;
         // sourceのAddressをKeyに使うため、source自体も保持してAddressの再利用を防ぎます。
         std::unordered_map<const VertexArray*, std::pair<Ref<VertexArray>, Ref<VertexArray>>> VertexArrays;
     };
