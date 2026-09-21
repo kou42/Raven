@@ -102,6 +102,7 @@ public:
     void Clear()
     {
         EndColumnResize();
+        EndScrollBarDrag();
         SelectRow(NoSelection);
         m_Rows.clear();
         m_Columns.clear();
@@ -109,6 +110,7 @@ public:
         InvalidateMeasure();
     }
 
+    bool IsScrollBarVisible() const { return GetMaxScrollOffset() > 0.0f && BodyHeight() > 0.0f; }
     float GetMaxScrollOffset() const
     {
         return std::max(0.0f, static_cast<float>(m_Rows.size()) * m_RowHeight - BodyHeight());
@@ -141,6 +143,31 @@ public:
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (m_DraggingScrollBar == true)
+        {
+            if (event.Type == UIMouseEventType::Cancel ||
+                (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left))
+            {
+                EndScrollBarDrag();
+                event.Handled = true;
+                return;
+            }
+            if (event.Type == UIMouseEventType::Move)
+            {
+                math::Vec2 local;
+                if (TryScreenToLocalPosition(event.ScreenPosition, local) == true)
+                {
+                    const float travel = BodyHeight() - ThumbLength();
+                    if (travel > 0.0f)
+                    {
+                        SetScrollOffset((local.y - m_HeaderHeight - m_ThumbGrabOffset) /
+                            travel * GetMaxScrollOffset());
+                    }
+                }
+                event.Handled = true;
+                return;
+            }
+        }
         if (m_ResizingColumn != NoSelection)
         {
             if (event.Type == UIMouseEventType::Cancel ||
@@ -184,13 +211,34 @@ protected:
         {
             return;
         }
+        if (IsScrollBarVisible() == true && local.y >= m_HeaderHeight &&
+            local.x >= GetSize().x - m_ScrollBarThickness)
+        {
+            const float start = ThumbStart();
+            if (local.y >= start && local.y < start + ThumbLength())
+            {
+                if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
+                {
+                    m_DraggingScrollBar = true;
+                    m_ThumbGrabOffset = local.y - start;
+                }
+            }
+            else
+            {
+                // TrackクリックはBodyの1ページ分移動し、背後の行選択を変更しません。
+                SetScrollOffset(GetScrollOffset() +
+                    (local.y < start ? -BodyHeight() : BodyHeight()));
+            }
+            event.Handled = true;
+            return;
+        }
         if (local.y < m_HeaderHeight)
         {
             float edge = 0.0f;
             for (std::size_t column = 0u; column < m_Columns.size(); ++column)
             {
                 edge += m_Columns[column].Width;
-                if (std::abs(local.x - edge) <= m_ResizeHitMargin)
+                if (edge <= GetSize().x && std::abs(local.x - edge) <= m_ResizeHitMargin)
                 {
                     if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
                     {
@@ -296,6 +344,19 @@ protected:
                 x += m_Columns[col].Width;
             }
         }
+        if (IsScrollBarVisible() == true)
+        {
+            const float left = position.x + width - m_ScrollBarThickness;
+            drawList.AddRect(math::Vec2(left, position.y + m_HeaderHeight),
+                math::Vec2(position.x + width, position.y + height),
+                ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
+            const float top = position.y + ThumbStart();
+            drawList.AddRect(math::Vec2(left, top),
+                math::Vec2(position.x + width, top + ThumbLength()),
+                ApplyVisualColor(m_DraggingScrollBar == true
+                    ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
+                    : math::Vec4(0.42f, 0.45f, 0.52f, 0.95f)));
+        }
         // BodyがHeaderへ重ならないようHeaderを最後に重ねて描画します。
         drawList.AddRect(position, math::Vec2(position.x + width, position.y + m_HeaderHeight),
             ApplyVisualColor(math::Vec4(0.17f, 0.19f, 0.23f, 1.0f)));
@@ -316,6 +377,38 @@ protected:
     }
 
 private:
+    float ThumbLength() const
+    {
+        const float viewport = BodyHeight();
+        const float content = static_cast<float>(m_Rows.size()) * m_RowHeight;
+        if (viewport <= 0.0f || content <= 0.0f)
+        {
+            return 0.0f;
+        }
+        return std::min(viewport, std::max(20.0f, viewport * viewport / content));
+    }
+
+    float ThumbStart() const
+    {
+        const float maximum = GetMaxScrollOffset();
+        return m_HeaderHeight + (maximum > 0.0f
+            ? GetScrollOffset() / maximum * (BodyHeight() - ThumbLength()) : 0.0f);
+    }
+
+    void EndScrollBarDrag()
+    {
+        if (m_DraggingScrollBar == false)
+        {
+            return;
+        }
+        m_DraggingScrollBar = false;
+        UIContext* context = GetContext();
+        if (context != nullptr && context->HasMouseCapture(this) == true)
+        {
+            context->ReleaseMouseCapture(this);
+        }
+    }
+
     void EndColumnResize()
     {
         if (m_ResizingColumn == NoSelection)
@@ -361,6 +454,9 @@ private:
     float m_ResizeStartX = 0.0f;
     float m_ResizeInitialWidth = 0.0f;
     std::size_t m_ResizingColumn = NoSelection;
+    float m_ScrollBarThickness = 10.0f;
+    float m_ThumbGrabOffset = 0.0f;
+    bool m_DraggingScrollBar = false;
 };
 
 } // namespace Raven
