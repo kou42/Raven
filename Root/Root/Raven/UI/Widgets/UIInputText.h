@@ -58,6 +58,7 @@ private:
     std::size_t HitCursor(float localX) const;
     void NotifyChanged();
     bool InsertFiltered(std::string_view text);
+    bool CommitIMEText(std::string_view text);
 
     Ref<UIFontAtlas> m_Font;
     UITextEditBuffer m_Edit;
