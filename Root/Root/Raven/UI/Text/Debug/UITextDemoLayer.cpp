@@ -10,6 +10,7 @@
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UITreeView.h"
+#include "Raven/UI/Widgets/UITable.h"
 
 #include <GLFW/glfw3.h>
 
@@ -275,6 +276,24 @@ void UITextDemoLayer::OnAttach()
     m_TreeView = static_cast<UITreeView*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(tree)));
 
+    // TableはHeaderを固定し、Bodyだけをスクロールします。
+    auto table = CreateScope<UITable>();
+    table->SetPosition(math::Vec2(860.0f, 200.0f));
+    table->SetSize(math::Vec2(350.0f, 264.0f));
+    table->SetFont(atlas);
+    table->AddColumn("Entity", 170.0f);
+    table->AddColumn("Type", 160.0f);
+    for (std::size_t index = 0u; index < 20u; ++index)
+    {
+        table->AddRow({ "Entity " + std::to_string(index), index % 2u == 0u ? "Mesh" : "Light" });
+    }
+    table->SetOnSelectionChanged([](std::size_t index)
+        {
+            std::cout << "[Raven UI Table] selected row: " << index << '\\n';
+        });
+    m_Table = static_cast<UITable*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(table)));
+
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
     tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
@@ -287,6 +306,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_Table != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_Table);
+        m_Table = nullptr;
+    }
     if (m_TreeView != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_TreeView);
