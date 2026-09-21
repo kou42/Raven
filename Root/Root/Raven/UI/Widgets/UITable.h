@@ -377,7 +377,8 @@ protected:
             event.Handled = true;
             return;
         }
-        if (local.x >= ContentWidth())
+        if (local.x >= ContentWidth() ||
+            (IsHorizontalScrollBarVisible() == true && local.y >= GetSize().y - m_ScrollBarThickness))
         {
             return;
         }
@@ -387,7 +388,8 @@ protected:
             for (std::size_t column = 0u; column < m_Columns.size(); ++column)
             {
                 edge += m_Columns[column].Width;
-                if (edge - GetHorizontalOffset() <= ContentWidth() &&
+                if (edge - GetHorizontalOffset() >= 0.0f &&
+                    edge - GetHorizontalOffset() <= ContentWidth() &&
                     std::abs(local.x - (edge - GetHorizontalOffset())) <= m_ResizeHitMargin)
                 {
                     if (event.Context != nullptr && event.Context->CaptureMouse(this) == true)
@@ -501,7 +503,7 @@ protected:
         {
             const float top = position.y + height - m_ScrollBarThickness;
             drawList.AddRect(math::Vec2(position.x, top),
-                math::Vec2(position.x + ContentWidth(), position.y + m_HeaderHeight + BodyHeight()),
+                math::Vec2(position.x + ContentWidth(), position.y + height),
                 ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
             const float left = position.x + HorizontalMetrics().ThumbStart();
             drawList.AddRect(math::Vec2(left, top),
@@ -514,7 +516,7 @@ protected:
         {
             const float left = position.x + width - m_ScrollBarThickness;
             drawList.AddRect(math::Vec2(left, position.y + m_HeaderHeight),
-                math::Vec2(position.x + width, position.y + height),
+                math::Vec2(position.x + width, position.y + m_HeaderHeight + BodyHeight()),
                 ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
             const float top = position.y + ThumbStart();
             drawList.AddRect(math::Vec2(left, top),
