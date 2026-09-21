@@ -132,6 +132,48 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
         return;
     }
 
+    const bool shortcut = event.Control == true || event.Super == true;
+    if (shortcut == true)
+    {
+        if (event.Key == UIKey::A)
+        {
+            m_Edit.SelectAll();
+        }
+        else if (event.Key == UIKey::C || event.Key == UIKey::X)
+        {
+            if (m_WriteClipboard != nullptr && m_Edit.HasSelection() == true)
+            {
+                m_WriteClipboard(m_Edit.GetSelectedText());
+                if (event.Key == UIKey::X && m_Edit.DeleteSelection())
+                {
+                    NotifyChanged();
+                }
+            }
+        }
+        else if (event.Key == UIKey::V)
+        {
+            if (m_ReadClipboard != nullptr && m_Edit.InsertText(m_ReadClipboard()))
+            {
+                NotifyChanged();
+            }
+        }
+        else if (event.Key == UIKey::Z || event.Key == UIKey::Y)
+        {
+            const bool redo = event.Key == UIKey::Y ||
+                (event.Key == UIKey::Z && event.Shift == true);
+            if ((redo == true ? m_Edit.Redo() : m_Edit.Undo()) == true)
+            {
+                NotifyChanged();
+            }
+        }
+        else
+        {
+            return;
+        }
+        event.Handled = true;
+        return;
+    }
+
     const std::size_t cursor = m_Edit.GetCursor();
     if (event.Key == UIKey::Left)
     {
