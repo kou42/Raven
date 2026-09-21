@@ -9,6 +9,7 @@
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
+#include "Raven/UI/Widgets/UITreeView.h"
 
 #include <GLFW/glfw3.h>
 
@@ -242,6 +243,33 @@ void UITextDemoLayer::OnAttach()
     m_ComboBox = static_cast<UIComboBox*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(combo)));
 
+    // TreeViewはSceneの実体を所有せず、Hierarchy相当の表示ノードだけを保持します。
+    // 左端の開閉記号、行クリック、上下左右キーとEnterを確認できます。
+    auto tree = CreateScope<UITreeView>();
+    tree->SetPosition(math::Vec2(560.0f, 200.0f));
+    tree->SetSize(math::Vec2(280.0f, 264.0f));
+    tree->SetFont(atlas);
+    UITreeNode* scene = tree->AddRoot(1u, "Scene");
+    UITreeNode* player = tree->AddNode(scene, 2u, "Player");
+    tree->AddNode(player, 3u, "Mesh");
+    tree->AddNode(player, 4u, "Collider");
+    tree->AddNode(scene, 5u, "Camera");
+    tree->AddNode(scene, 6u, "Directional Light");
+    UITreeNode* environment = tree->AddRoot(7u, "Environment");
+    tree->AddNode(environment, 8u, "Terrain");
+    tree->AddNode(environment, 9u, "Sky");
+    tree->SetOnSelectionChanged([](std::uint64_t id)
+        {
+            std::cout << "[Raven UI TreeView] selected ID: " << id << '\\n';
+        });
+    tree->SetOnExpansionChanged([](std::uint64_t id, bool expanded)
+        {
+            std::cout << "[Raven UI TreeView] node " << id
+                << (expanded ? " expanded" : " collapsed") << '\\n';
+        });
+    m_TreeView = static_cast<UITreeView*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(tree)));
+
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
     tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
@@ -254,6 +282,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_TreeView != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_TreeView);
+        m_TreeView = nullptr;
+    }
     if (m_ComboBox != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_ComboBox);
