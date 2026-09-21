@@ -447,6 +447,12 @@ void TestTable()
     table->SetOnSelectionChanged([&notifications](std::size_t) { ++notifications; });
     context.GetRootElement().AddChild(std::move(table));
     CheckNear("table scroll range", view->GetMaxScrollOffset(), 24.0f);
+    Check(view->GetVisibleRowRange().first == 0u &&
+        view->GetVisibleRowRange().second == 2u, "table initial visible row range");
+    view->SetScrollOffset(24.0f);
+    Check(view->GetVisibleRowRange().first == 1u &&
+        view->GetVisibleRowRange().second == 3u, "table scrolled visible row range");
+    view->SetScrollOffset(0.0f);
     Check(view->SelectRow(2u), "table select last");
     CheckNear("table ensure selected visible", view->GetScrollOffset(), 24.0f);
     Check(view->SelectRow(2u), "table repeat selection");
@@ -520,6 +526,18 @@ void TestTable()
     Check(context.HasMouseCapture(view) == false, "table horizontal release");
     view->Clear();
     CheckNear("table horizontal clear", view->GetHorizontalOffset(), 0.0f);
+    Check(view->GetVisibleRowRange().first == 0u &&
+        view->GetVisibleRowRange().second == 0u, "table empty visible range");
+    // 10,000行でも可視範囲はViewport内の数行だけになります。
+    Check(view->AddColumn("Index", 100.0f), "table bulk column");
+    for (std::size_t i = 0u; i < 10000u; ++i)
+    {
+        Check(view->AddRow({ std::to_string(i) }), "table bulk row");
+    }
+    view->SetScrollOffset(view->GetMaxScrollOffset());
+    const auto visible = view->GetVisibleRowRange();
+    Check(visible.second == 10000u, "table bulk last row visible");
+    Check(visible.second - visible.first <= 3u, "table bulk bounded visible rows");
 }
 } // namespace
 
