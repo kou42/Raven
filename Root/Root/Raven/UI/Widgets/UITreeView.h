@@ -39,6 +39,8 @@ public:
     UITreeView()
     {
         SetFocusable(true);
+        // UIElementはClipChildrenでViewport矩形を構築し、ClipSelfで自身の描画にも適用します。
+        SetClipChildren(true);
         SetClipSelf(true);
         SetPreferredSize(math::Vec2(240.0f, 240.0f));
     }
