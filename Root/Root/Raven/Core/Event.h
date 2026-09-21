@@ -1,5 +1,7 @@
 #pragma once
 #include <string>
+#include <cstddef>
+#include <utility>
 
 enum class EventType
 {
@@ -11,6 +13,7 @@ enum class EventType
     KeyPressed,
     KeyReleased,
     CharacterTyped,
+    IMEComposition,
     MouseMoved,
     MouseButtonPressed,
     MouseButtonReleased,
@@ -168,6 +171,42 @@ public:
     std::string ToString() const override { return "CharacterTypedEvent: " + std::to_string(m_Codepoint); }
 private:
     unsigned int m_Codepoint;
+};
+
+// PlatformからのIME通知。UI固有型をCoreへ持ち込まないため独立したEventにします。
+// TextはUTF-8、各位置はUnicode codepoint indexです。
+enum class IMECompositionEventType
+{
+    Begin = 0,
+    Update,
+    Commit,
+    End,
+    Cancel
+};
+
+class IMECompositionEvent : public Event
+{
+public:
+    IMECompositionEvent(IMECompositionEventType type, std::string text = {},
+        std::size_t cursor = 0u, std::size_t selectionStart = 0u,
+        std::size_t selectionEnd = 0u)
+        : m_Type(type), m_Text(std::move(text)), m_Cursor(cursor),
+          m_SelectionStart(selectionStart), m_SelectionEnd(selectionEnd) {}
+
+    IMECompositionEventType GetCompositionType() const { return m_Type; }
+    const std::string& GetText() const { return m_Text; }
+    std::size_t GetCursor() const { return m_Cursor; }
+    std::size_t GetSelectionStart() const { return m_SelectionStart; }
+    std::size_t GetSelectionEnd() const { return m_SelectionEnd; }
+    EventType GetEventType() const override { return EventType::IMEComposition; }
+    std::string ToString() const override { return "IMECompositionEvent"; }
+
+private:
+    IMECompositionEventType m_Type;
+    std::string m_Text;
+    std::size_t m_Cursor;
+    std::size_t m_SelectionStart;
+    std::size_t m_SelectionEnd;
 };
 
 // ============================================================================
