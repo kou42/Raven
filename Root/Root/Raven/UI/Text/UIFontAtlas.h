@@ -46,6 +46,9 @@ public:
         m_Width = width;
         m_Height = height;
         m_Glyphs.clear();
+        m_Ascent = 0.0f;
+        m_Descent = 0.0f;
+        m_LineGap = 0.0f;
         return true;
     }
 
@@ -55,6 +58,9 @@ public:
         m_Texture = nullptr;
         m_Width = 0u;
         m_Height = 0u;
+        m_Ascent = 0.0f;
+        m_Descent = 0.0f;
+        m_LineGap = 0.0f;
     }
 
     bool AddGlyph(std::uint32_t codepoint, const UIGlyphMetrics& metrics)
@@ -165,6 +171,17 @@ public:
         return pen;
     }
 
+    // Font全体のBaseline基準Metrics（pixel）。Descentは通常負値です。
+    void SetVerticalMetrics(float ascent, float descent, float lineGap)
+    {
+        m_Ascent = ascent;
+        m_Descent = descent;
+        m_LineGap = lineGap;
+    }
+    float GetAscent() const { return m_Ascent; }
+    float GetDescent() const { return m_Descent; }
+    float GetLineGap() const { return m_LineGap; }
+
     const Ref<TextureAsset>& GetTexture() const { return m_Texture; }
     std::uint32_t GetWidth() const { return m_Width; }
     std::uint32_t GetHeight() const { return m_Height; }
@@ -174,6 +191,9 @@ private:
     std::uint32_t m_Width = 0u;
     std::uint32_t m_Height = 0u;
     std::unordered_map<std::uint32_t, UIGlyphMetrics> m_Glyphs;
+    float m_Ascent = 0.0f;
+    float m_Descent = 0.0f;
+    float m_LineGap = 0.0f;
 };
 
 } // namespace Raven
