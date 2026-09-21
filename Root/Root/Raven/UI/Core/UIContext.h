@@ -92,6 +92,7 @@ public:
 
     // PopupはRoot末尾の専用Layerへ所有させ、通常のPanel Clipから分離します。
     UIElement* AddPopup(Scope<UIElement> popup);
+    bool RemovePopup(UIElement* popup);
     bool OpenPopup(UIElement* popup);
     void ClosePopup();
     UIElement* GetOpenPopup() const { return m_OpenPopup; }
