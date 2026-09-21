@@ -24,7 +24,7 @@ public:
 
     UIInputText() { SetFocusable(true); SetClipChildren(true); SetClipSelf(true); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; m_ScrollX = 0.0f; InvalidateMeasure(); }
-    void SetText(std::string_view text) { m_Composition.Cancel(); m_Edit.SetText(text); m_ScrollX = 0.0f; InvalidateMeasure(); }
+    void SetText(std::string_view text);
     const std::string& GetText() const { return m_Edit.GetText(); }
     const UITextEditBuffer& GetEditBuffer() const { return m_Edit; }
     const UIIMEComposition& GetIMEComposition() const { return m_Composition; }
