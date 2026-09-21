@@ -65,6 +65,26 @@ Scope<UIElement> UIElement::DetachChild(UIElement* child)
     return detached;
 }
 
+bool UIElement::BringChildToFront(UIElement* child)
+{
+    auto iterator = std::find_if(m_Children.begin(), m_Children.end(),
+        [child](const Scope<UIElement>& candidate)
+        {
+            return candidate.get() == child;
+        });
+    if (iterator == m_Children.end())
+    {
+        return false;
+    }
+    if (iterator + 1 != m_Children.end())
+    {
+        // Scopeの所有権は変えず、最後に描画される位置へ移動します。
+        std::rotate(iterator, iterator + 1, m_Children.end());
+        InvalidateArrange();
+    }
+    return true;
+}
+
 bool UIElement::RemoveChild(UIElement* child)
 {
     Scope<UIElement> removed = DetachChild(child);
