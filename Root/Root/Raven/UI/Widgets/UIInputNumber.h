@@ -105,7 +105,6 @@ public:
     void Increment() { StepBy(1.0); }
     void Decrement() { StepBy(-1.0); }
 
-
     void SetRange(double minimum, double maximum)
     {
         if (std::isfinite(minimum) == false || std::isfinite(maximum) == false ||
