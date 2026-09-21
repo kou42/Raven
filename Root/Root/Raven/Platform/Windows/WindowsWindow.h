@@ -32,6 +32,7 @@ public:
         m_Data.EventCallback = callback;
     }
 
+    void SetIMECaretPositionCallback(IMECaretPositionFn callback) override;
     void SetVSync(bool enabled) override;
     bool IsVSync() const override;
 
@@ -53,6 +54,7 @@ private:
         bool VSync = false;
 
         EventCallbackFn EventCallback;
+        IMECaretPositionFn IMECaretPositionCallback;
     };
 
     WindowData m_Data;
