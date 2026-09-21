@@ -375,17 +375,13 @@ void WindowsWindow::Init(const WindowProps& props)
         return;
     }
 
+    GLFWwindow* previousContext = glfwGetCurrentContext();
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
         // 補助WindowのContext生成でMain WindowのCurrent Contextを奪ったままにしません。
         // 初回Window生成時は従来どおり生成したContextをCurrentに維持します。
-        GLFWwindow* previousContext = glfwGetCurrentContext();
         m_Context = CreateScope<OpenGLContext>(m_Window);
         m_Context->Init();
-        if (previousContext != nullptr && previousContext != m_Window)
-        {
-            glfwMakeContextCurrent(previousContext);
-        }
     }
 
     m_Input = CreateScope<WindowsInput>(m_Window);
@@ -396,7 +392,17 @@ void WindowsWindow::Init(const WindowProps& props)
         glfwSetWindowSizeLimits(m_Window, static_cast<int>(props.MinWidth),
             static_cast<int>(props.MinHeight), GLFW_DONT_CARE, GLFW_DONT_CARE);
     }
+    // Swap IntervalはCurrent Context単位なので、新WindowをCurrentにして設定します。
+    if (m_Data.Backend == RHIBackend::OpenGL)
+    {
+        glfwMakeContextCurrent(m_Window);
+    }
     SetVSync(props.VSync);
+    if (m_Data.Backend == RHIBackend::OpenGL &&
+        previousContext != nullptr && previousContext != m_Window)
+    {
+        glfwMakeContextCurrent(previousContext);
+    }
     if (props.Fullscreen == true)
     {
         SetFullscreen(true);
