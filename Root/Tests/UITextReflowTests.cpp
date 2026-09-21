@@ -8,6 +8,7 @@
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UITooltip.h"
 #include "Raven/UI/Widgets/UITreeView.h"
+#include "Raven/UI/Widgets/UITable.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -425,6 +426,49 @@ void TestTreeView()
     Check(view->FindNode(1u) == nullptr, "tree clear nodes");
     CheckNear("tree clear scroll", view->GetScrollOffset(), 0.0f);
 }
+// Tableの列数検証・単一選択・Keyboard・ScrollをGPUなしで確認します。
+void TestTable()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto table = std::make_unique<Raven::UITable>();
+    table->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    table->SetSize(Raven::math::Vec2(200.0f, 76.0f));
+    Raven::UITable* view = table.get();
+    Check(table->AddColumn("Name", 100.0f), "table first column");
+    Check(table->AddColumn("Type", 100.0f), "table second column");
+    Check(table->AddColumn("Invalid", -1.0f) == false, "table invalid width");
+    Check(table->AddRow({ "Only one" }) == false, "table rejects invalid cell count");
+    Check(table->AddRow({ "A", "Mesh" }), "table first row");
+    Check(table->AddRow({ "B", "Light" }), "table second row");
+    Check(table->AddRow({ "C", "Camera" }), "table third row");
+    Check(table->GetRows().size() == 3u, "table row count");
+    int notifications = 0;
+    table->SetOnSelectionChanged([&notifications](std::size_t) { ++notifications; });
+    context.GetRootElement().AddChild(std::move(table));
+    CheckNear("table scroll range", view->GetMaxScrollOffset(), 24.0f);
+    Check(view->SelectRow(2u), "table select last");
+    CheckNear("table ensure selected visible", view->GetScrollOffset(), 24.0f);
+    Check(view->SelectRow(2u), "table repeat selection");
+    Check(notifications == 1, "table repeat selection no callback");
+    Check(view->SelectRow(3u) == false, "table invalid selection");
+    Check(context.SetFocus(view), "table focus");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Home)), "table home");
+    Check(view->GetSelectedIndex() == 0u, "table first selected");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::End)), "table end");
+    Check(view->GetSelectedIndex() == 2u, "table last selected");
+    view->SetScrollOffset(0.0f);
+    Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 60.0f),
+        Raven::math::Vec2(0.0f, -1.0f)), "table wheel");
+    CheckNear("table wheel clamp", view->GetScrollOffset(), 24.0f);
+    Check(context.RouteMouseDown(Raven::math::Vec2(30.0f, 55.0f),
+        Raven::UIMouseButton::Left), "table click scrolled row");
+    Check(view->GetSelectedIndex() == 1u, "table scroll-aware hit test");
+    context.RouteMouseUp(Raven::math::Vec2(30.0f, 55.0f), Raven::UIMouseButton::Left);
+    view->Clear();
+    Check(view->GetColumns().empty() && view->GetRows().empty(), "table clear data");
+    Check(view->GetSelectedIndex() == Raven::UITable::NoSelection, "table clear selection");
+}
 } // namespace
 
 int main()
@@ -436,6 +480,7 @@ int main()
     TestComboBox();
     TestTooltip();
     TestTreeView();
+    TestTable();
     Raven::UIDrawList drawList;
     Raven::UIElement root;
     root.SetLayoutMode(Raven::UILayoutMode::Vertical);
