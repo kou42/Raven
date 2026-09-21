@@ -247,6 +247,16 @@ void TestPopupRouting()
     context.RouteMouseUp(Raven::math::Vec2(200.0f, 200.0f), Raven::UIMouseButton::Left);
     Check(behindClicks == 0, "outside Down not forwarded");
 
+    // Viewport右下のAnchorでは左へClampし、下側に収まらない場合は上へ反転します。
+    auto anchor = std::make_unique<Raven::UIElement>();
+    anchor->SetPosition(Raven::math::Vec2(170.0f, 130.0f));
+    anchor->SetSize(Raven::math::Vec2(20.0f, 20.0f));
+    Raven::UIElement* anchorPtr = context.GetRootElement().AddChild(std::move(anchor));
+    context.BeginFrame(Raven::math::Vec2(200.0f, 160.0f));
+    Check(context.OpenPopupAt(popupPtr, anchorPtr), "anchor popup opens");
+    CheckNear("anchor right clamp", popupPtr->GetPosition().x, 80.0f);
+    CheckNear("anchor above flip", popupPtr->GetPosition().y, 46.0f);
+    context.ClosePopup();
     Check(context.OpenPopup(popupPtr), "reopen for detach");
     Check(context.GetRootElement().GetChildren().size() >= 2u, "popup layer attached");
     // Layerの所有権をContextが保持するため、通常のRoot Childを消してもPopupは生存します。
