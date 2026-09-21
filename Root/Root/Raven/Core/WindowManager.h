@@ -190,7 +190,7 @@ public:
         const auto cached = it->second.VertexArrays.find(source.get());
         if (cached != it->second.VertexArrays.end())
         {
-            return cached->second;
+            return cached->second.second;
         }
 
         if (it->second.Handle->MakeContextCurrent() == false)
@@ -211,7 +211,7 @@ public:
         }
         if (clone != nullptr)
         {
-            it->second.VertexArrays.emplace(source.get(), clone);
+            it->second.VertexArrays.emplace(source.get(), std::make_pair(source, clone));
         }
         return clone;
     }
@@ -320,7 +320,7 @@ private:
         std::unique_ptr<Window> OwnedWindow;
         Scope<RHISceneFrameLifecycle> FrameLifecycle;
         // sourceのAddressをKeyに使うため、source自体も保持してAddressの再利用を防ぎます。
-        std::unordered_map<const VertexArray*, Ref<VertexArray>> VertexArrays;
+        std::unordered_map<const VertexArray*, std::pair<Ref<VertexArray>, Ref<VertexArray>>> VertexArrays;
     };
 
     WindowID m_NextID = 1;
