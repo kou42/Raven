@@ -640,6 +640,16 @@ void WindowsWindow::PollEvents()
     glfwPollEvents();
 }
 
+bool WindowsWindow::MakeContextCurrent()
+{
+    if (m_Window == nullptr || m_Data.Backend != RHIBackend::OpenGL)
+    {
+        return false;
+    }
+    glfwMakeContextCurrent(m_Window);
+    return glfwGetCurrentContext() == m_Window;
+}
+
 void WindowsWindow::Present()
 {
     // Vulkan/DX12のPresentは各SwapChain側が所有します。
