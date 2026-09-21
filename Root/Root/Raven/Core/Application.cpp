@@ -652,8 +652,12 @@ void Application::OnEvent(Event& event)
         event.GetEventType() == EventType::MouseButtonPressed ||
         (event.GetEventType() == EventType::KeyPressed &&
             static_cast<KeyPressedEvent&>(event).GetKeyCode() == GLFW_KEY_TAB);
+    const UIInputText* currentIMEOwner = m_RavenUIEnabled == true
+        ? dynamic_cast<UIInputText*>(m_UIContext.GetFocusedElement()) : nullptr;
     if (imeWasActive == true && imeEditingBoundary == true &&
-        imeOwner->GetIMEComposition().IsActive() == false)
+        (currentIMEOwner != imeOwner ||
+            (currentIMEOwner != nullptr &&
+                currentIMEOwner->GetIMEComposition().IsActive() == false)))
     {
         m_Window->CancelIMEComposition();
     }
