@@ -1,5 +1,6 @@
 #pragma once
 #include "Raven/Core/Window.h"
+#include "Raven/Core/WindowManager.h"
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 
@@ -49,6 +50,9 @@ public:
     const Scene* GetScene() const { return m_scene.get(); }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
+    WindowManager& GetWindowManager() { return m_WindowManager; }
+    const WindowManager& GetWindowManager() const { return m_WindowManager; }
+    WindowID GetMainWindowID() const { return m_MainWindowID; }
 
     // ========================================================================
     // Raven UI Context
@@ -65,6 +69,9 @@ public:
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
+    // ManagerはMain Windowを借用登録します。宣言順によりManagerが先に破棄されます。
+    WindowManager m_WindowManager;
+    WindowID m_MainWindowID = 0;
     std::vector<Scope<Layer>> m_Layers;
     Scope<Scene> m_scene;
 
