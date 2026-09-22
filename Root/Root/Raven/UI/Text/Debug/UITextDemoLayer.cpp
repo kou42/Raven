@@ -11,6 +11,7 @@
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
+#include "Raven/UI/Widgets/UITabView.h"
 
 #include <GLFW/glfw3.h>
 
@@ -311,6 +312,47 @@ void UITextDemoLayer::OnAttach()
     m_Table = static_cast<UITable*>(
         m_Application.GetUIContext().GetRootElement().AddChild(std::move(table)));
 
+    // Tab Systemは既存のText Demo内へ独立したPanelとして追加します。
+    // 5つのTabで横Overflow・Drag並び替え・Close・Content切替を一度に確認できます。
+    auto tabView = CreateScope<UITabView>();
+    tabView->SetPosition(math::Vec2(860.0f, 490.0f));
+    tabView->SetSize(math::Vec2(350.0f, 220.0f));
+    tabView->GetTabBar()->SetFont(atlas);
+    tabView->GetTabBar()->SetTabWidth(124.0f);
+    const auto addDemoTab = [&tabView, &atlas](std::uint64_t id,
+        const std::string& title, bool closable)
+    {
+        auto content = CreateScope<UILabel>();
+        content->SetFont(atlas);
+        content->SetText(title + " content: select, drag, scroll or close tabs.");
+        content->SetPreferredSize(math::Vec2(330.0f, 100.0f));
+        content->SetBaselineOffset(30.0f);
+        return tabView->AddTab(id, title, std::move(content), closable);
+    };
+    if (addDemoTab(101u, "Scene", false) == true &&
+        addDemoTab(102u, "Game", true) == true &&
+        addDemoTab(103u, "Inspector", true) == true &&
+        addDemoTab(104u, "Animation Controller", true) == true &&
+        addDemoTab(105u, "Material", true) == true)
+    {
+        tabView->SetOnSelectionChanged([](std::uint64_t id)
+        {
+            std::cout << "[Raven UI Tab] selected ID: " << id << '\n';
+        });
+        tabView->SetOnClosed([](std::uint64_t id)
+        {
+            std::cout << "[Raven UI Tab] closed ID: " << id << '\n';
+        });
+        tabView->SetOnMoved([](std::uint64_t id, std::size_t from, std::size_t to)
+        {
+            std::cout << "[Raven UI Tab] moved ID: " << id
+                << " from " << from << " to " << to << '\n';
+        });
+        m_TabView = static_cast<UITabView*>(
+            m_Application.GetUIContext().GetRootElement().AddChild(std::move(tabView)));
+    }
+    std::cout << "[Raven UI Tab] Panel at (860, 490): wheel / drag / close.\n";
+
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
     tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
@@ -323,6 +365,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_TabView != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_TabView);
+        m_TabView = nullptr;
+    }
     if (m_Table != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_Table);

@@ -9,6 +9,7 @@
 #include "Raven/UI/Widgets/UITooltip.h"
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
+#include "Raven/UI/Widgets/UITabView.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -997,10 +998,77 @@ void TestDragDropRouting()
     Check(context.HasMouseCapture() == false, "remove-target cancel releases capture");
 }
 
+
+void TestTabSystem()
+{
+    Raven::UITabModel model;
+    Check(model.AddTab(0u, "invalid") == false, "tab reserved id");
+    Check(model.AddTab(1u, "Scene"), "tab add first");
+    Check(model.AddTab(1u, "duplicate") == false, "tab duplicate");
+    Check(model.AddTab(2u, "Game", false), "tab add fixed");
+    Check(model.AddTab(3u, "Inspector"), "tab add third");
+    Check(model.GetSelectedTabId() == 1u, "tab first auto selected");
+    Check(model.CloseTab(2u) == false, "tab fixed cannot close");
+    Check(model.MoveTab(1u, 2u), "tab move last");
+    Check(model.GetTabs()[0u].Id == 2u && model.GetTabs()[1u].Id == 3u &&
+        model.GetTabs()[2u].Id == 1u, "tab stable reorder");
+    Check(model.GetSelectedTabId() == 1u, "tab selection survives move");
+    Check(model.CloseTab(1u), "tab close selected");
+    Check(model.GetSelectedTabId() == 3u, "tab select left neighbor");
+    Check(model.RemoveTab(2u), "tab force remove fixed");
+    Check(model.CloseTab(3u), "tab close final");
+    Check(model.GetSelectedTabId() == 0u, "tab empty selection");
+
+    auto view = std::make_unique<Raven::UITabView>();
+    Raven::UITabView* viewPtr = view.get();
+    auto scene = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* scenePtr = scene.get();
+    auto game = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* gamePtr = game.get();
+    Check(view->AddTab(10u, "Scene", std::move(scene)), "tab view add scene");
+    Check(view->AddTab(20u, "Game", std::move(game), false), "tab view add game");
+    Check(scenePtr->IsVisible() && gamePtr->IsVisible() == false,
+        "tab view first content visible");
+    Check(view->SelectTab(20u), "tab view select game");
+    Check(scenePtr->IsVisible() == false && gamePtr->IsVisible(),
+        "tab view switches content");
+    Check(view->CloseTab(20u) == false, "tab view fixed close rejected");
+    Check(view->RemoveTab(20u), "tab view force remove");
+    Check(view->GetTabContent(20u) == nullptr && scenePtr->IsVisible(),
+        "tab view removes content and restores selection");
+
+    Raven::UIContext context;
+    context.GetRootElement().AddChild(std::move(view));
+    context.BeginFrame(Raven::math::Vec2(300.0f, 300.0f));
+    context.EndFrame();
+    Raven::UITabBar* bar = viewPtr->GetTabBar();
+    bar->SetTabWidth(100.0f);
+    Check(viewPtr->AddTab(30u, "Material", std::make_unique<Raven::UIElement>()),
+        "tab view add material");
+    Check(viewPtr->AddTab(40u, "Animation", std::make_unique<Raven::UIElement>()),
+        "tab view add animation");
+    Check(viewPtr->AddTab(50u, "Timeline", std::make_unique<Raven::UIElement>()),
+        "tab view add timeline");
+    context.BeginFrame(Raven::math::Vec2(300.0f, 300.0f));
+    context.EndFrame();
+    CheckNear("tab max scroll", bar->GetMaxScrollOffset(), 100.0f);
+    viewPtr->SelectTab(50u);
+    CheckNear("tab selected auto scroll", bar->GetScrollOffset(), 100.0f);
+    bar->SetScrollOffset(1000.0f);
+    CheckNear("tab scroll clamp", bar->GetScrollOffset(), 100.0f);
+    bar->SetScrollOffset(0.0f);
+    context.RouteMouseDown(Raven::math::Vec2(50.0f, 10.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(250.0f, 10.0f));
+    context.RouteMouseUp(Raven::math::Vec2(250.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(viewPtr->GetModel().GetTabs()[2u].Id == 10u, "tab drag reorder");
+    Check(viewPtr->GetModel().GetSelectedTabId() == 50u, "tab drag retains selection");
+}
+
 } // namespace
 
 int main()
 {
+    TestTabSystem();
     TestDragDropRouting();
     TestTreeViewDragDrop();
     TestTreeViewCrossDrop();
