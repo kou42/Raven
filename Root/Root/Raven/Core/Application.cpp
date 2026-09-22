@@ -517,6 +517,37 @@ WindowID Application::DetachUIRootChildToNewWindow(
     return destinationID;
 }
 
+bool Application::RequestDetachDockTabToNewWindow(
+    WindowID sourceID, UIDockSpace& dock, std::uint64_t leafId,
+    std::uint64_t tabId, const WindowSpecification& specification,
+    UIDetachCompleted onCompleted)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (m_RavenUIEnabled == false || source == nullptr ||
+        dock.GetContext() != source ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return false;
+    }
+    UITabView* view = dock.GetTabView(leafId);
+    if (view == nullptr || view->GetModel().FindTab(tabId) == nullptr ||
+        view->GetTabContent(tabId) == nullptr)
+    {
+        return false;
+    }
+    for (const PendingDockTabDetach& pending : m_PendingDockTabDetaches)
+    {
+        if (pending.SourceID == sourceID && pending.Dock == &dock &&
+            pending.LeafID == leafId && pending.TabID == tabId)
+        {
+            return false;
+        }
+    }
+    m_PendingDockTabDetaches.push_back(PendingDockTabDetach{
+        sourceID, &dock, leafId, tabId, specification, std::move(onCompleted) });
+    return true;
+}
+
 bool Application::RequestDetachUIRootChildToNewWindow(
     WindowID sourceID, UIElement* child, const WindowSpecification& specification,
     UIDetachCompleted onCompleted)
@@ -560,6 +591,43 @@ void Application::FlushPendingUIDetaches()
     // Callbackから次の予約が追加されても反復中のvectorを変更しないよう入れ替えます。
     std::vector<PendingUIDetach> pending;
     pending.swap(m_PendingUIDetaches);
+    // Dock自体が予約後に破棄される可能性があるため、ポインタを逆参照する前に
+    // Source Rootの生存Treeを探索します。Callbackから追加された予約は次Frameへ送ります。
+    std::vector<PendingDockTabDetach> dockPending;
+    dockPending.swap(m_PendingDockTabDetaches);
+    for (PendingDockTabDetach& request : dockPending)
+    {
+        WindowID result = 0;
+        UIContext* source = GetWindowUIContext(request.SourceID);
+        if (source != nullptr && source->IsFrameActive() == false &&
+            m_WindowManager.IsWindowClosePending(request.SourceID) == false)
+        {
+            const auto isAlive = [&](const auto& self, const UIElement& parent) -> bool
+            {
+                for (const auto& child : parent.GetChildren())
+                {
+                    if (child.get() == request.Dock)
+                    {
+                        return true;
+                    }
+                    if (self(self, *child) == true)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (isAlive(isAlive, source->GetRootElement()) == true)
+            {
+                result = DetachDockTabToNewWindow(request.SourceID, *request.Dock,
+                    request.LeafID, request.TabID, request.Specification);
+            }
+        }
+        if (request.OnCompleted)
+        {
+            request.OnCompleted(result);
+        }
+    }
     for (PendingUIDetach& request : pending)
     {
         WindowID result = 0;
