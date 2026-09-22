@@ -141,7 +141,7 @@ uint64_t UIElement::GetTreeGeneration() const { return GetTreeRoot()->m_TreeGene
 
 void UIElement::SetPosition(const math::Vec2& value) { m_Position = value; InvalidateArrange(); }
 void UIElement::SetSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
-void UIElement::SetPreferredSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
+void UIElement::SetPreferredSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
 void UIElement::SetMinSize(const math::Vec2& value) { m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
 void UIElement::SetMaxSize(const math::Vec2& value) { m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
 
@@ -164,6 +164,7 @@ void UIElement::SetLayoutMode(UILayoutMode value)
     if (m_LayoutMode != value)
     {
         m_LayoutMode = value;
+        RefreshDPIMetrics();
         InvalidateMeasure();
     }
 }
@@ -186,11 +187,80 @@ void UIElement::SetVerticalAlignment(UIAlignment value)
     }
 }
 
-void UIElement::SetPadding(const UIThickness& value) { m_Padding = value; InvalidateMeasure(); }
-void UIElement::SetPadding(float value) { m_Padding = UIThickness(value); InvalidateMeasure(); }
-void UIElement::SetMargin(const UIThickness& value) { m_Margin = value; InvalidateMeasure(); }
-void UIElement::SetMargin(float value) { m_Margin = UIThickness(value); InvalidateMeasure(); }
-void UIElement::SetSpacing(float value) { m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
+void UIElement::SetPadding(const UIThickness& value) { m_UsePaddingDIP = false; m_Padding = value; InvalidateMeasure(); }
+void UIElement::SetPadding(float value) { SetPadding(UIThickness(value)); }
+void UIElement::SetMargin(const UIThickness& value) { m_UseMarginDIP = false; m_Margin = value; InvalidateMeasure(); }
+void UIElement::SetMargin(float value) { SetMargin(UIThickness(value)); }
+void UIElement::SetSpacing(float value) { m_UseSpacingDIP = false; m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
+
+void UIElement::SetPreferredSizeDIP(const math::Vec2& value)
+{
+    m_PreferredSizeDIP = value;
+    m_UsePreferredSizeDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetPaddingDIP(const UIThickness& value)
+{
+    m_PaddingDIP = value;
+    m_UsePaddingDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetMarginDIP(const UIThickness& value)
+{
+    m_MarginDIP = value;
+    m_UseMarginDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetSpacingDIP(float value)
+{
+    m_SpacingDIP = value;
+    m_UseSpacingDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::RefreshDPIMetrics()
+{
+    const float x = m_Context != nullptr ? m_Context->GetEffectiveScaleX() : 1.0f;
+    const float y = m_Context != nullptr ? m_Context->GetEffectiveScaleY() : 1.0f;
+    if (m_UsePreferredSizeDIP == true)
+    {
+        m_PreferredSize = ClampSize(math::Vec2(m_PreferredSizeDIP.x * x, m_PreferredSizeDIP.y * y));
+    }
+    if (m_UsePaddingDIP == true)
+    {
+        m_Padding = UIThickness(m_PaddingDIP.Left * x, m_PaddingDIP.Top * y,
+            m_PaddingDIP.Right * x, m_PaddingDIP.Bottom * y);
+    }
+    if (m_UseMarginDIP == true)
+    {
+        m_Margin = UIThickness(m_MarginDIP.Left * x, m_MarginDIP.Top * y,
+            m_MarginDIP.Right * x, m_MarginDIP.Bottom * y);
+    }
+    if (m_UseSpacingDIP == true)
+    {
+        // LayoutのVertical/Horizontal方向に合わせて軸を選択します。
+        m_Spacing = std::max(0.0f, m_SpacingDIP * (m_LayoutMode == UILayoutMode::Horizontal ? x : y));
+    }
+    if (m_UsePreferredSizeDIP || m_UsePaddingDIP || m_UseMarginDIP || m_UseSpacingDIP)
+    {
+        InvalidateMeasure();
+    }
+}
+
+void UIElement::RefreshDPIMetricsRecursive()
+{
+    RefreshDPIMetrics();
+    for (auto& child : m_Children)
+    {
+        if (child != nullptr)
+        {
+            child->RefreshDPIMetricsRecursive();
+        }
+    }
+}
 
 void UIElement::SetAffectsParentMeasure(bool value)
 {
