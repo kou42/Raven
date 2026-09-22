@@ -15,6 +15,7 @@
 #endif
 
 #include <memory>
+#include <unordered_map>
 #include <iostream>
 
 namespace Raven
@@ -66,6 +67,10 @@ public:
     UIContext& GetUIContext() { return m_UIContext; }
     const UIContext& GetUIContext() const { return m_UIContext; }
 
+    // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
+    WindowID CreateUIWindow(const WindowSpecification& specification);
+    UIContext* GetWindowUIContext(WindowID id);
+
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
@@ -79,6 +84,7 @@ private:
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+    std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
     bool m_RavenUIEnabled = true;
 
 #if defined(_DEBUG)
