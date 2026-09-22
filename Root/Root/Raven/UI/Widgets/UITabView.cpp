@@ -78,6 +78,26 @@ bool UITabView::AddTab(std::uint64_t id, std::string title,
     return true;
 }
 
+Scope<UIElement> UITabView::ExtractTab(std::uint64_t id)
+{
+    const auto it = std::find_if(m_Pages.begin(), m_Pages.end(),
+        [id](const Page& page) { return page.Id == id; });
+    if (it == m_Pages.end() || m_Model.FindTab(id) == nullptr)
+    {
+        return nullptr;
+    }
+    // ModelのClosed通知は通常Contentを破棄します。先にPageを管理対象から外して
+    // DetachChildで所有権を回収し、移動先のAddTabへそのまま渡します。
+    Scope<UIElement> content = m_ContentHost->DetachChild(it->Content);
+    if (content == nullptr)
+    {
+        return nullptr;
+    }
+    m_Pages.erase(it);
+    m_Model.RemoveTab(id);
+    return content;
+}
+
 UIElement* UITabView::GetTabContent(std::uint64_t id)
 {
     const auto it = std::find_if(m_Pages.begin(), m_Pages.end(),
