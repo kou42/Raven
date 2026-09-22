@@ -23,6 +23,7 @@ namespace Raven
 
 class ImGuiLayer;
 class UIDockSpace;
+class UIWindow;
 
 struct ApplicationSpecification
 {
@@ -90,6 +91,9 @@ public:
         const WindowSpecification& specification, UIDetachCompleted onCompleted = {});
     bool RequestDetachUIRootChildToNewWindow(WindowID sourceID, UIElement* child,
         const WindowSpecification& specification, UIDetachCompleted onCompleted = {});
+    // 論理Windowの外側ドラッグを既存のFrame境界移譲Queueへ接続します。
+    // UIWindowはRoot直下に配置してください。OS Windowの生成・所有はWindowManagerへ委譲します。
+    bool BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& window);
     UIContext* GetWindowUIContext(WindowID id);
     // Main/補助WindowのRoot直下Widgetを同じObjectのまま移譲します。
     // 補助WindowのClose時はRoot直下の通常WidgetをMainへ自動復帰させます。
