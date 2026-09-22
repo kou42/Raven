@@ -314,7 +314,60 @@ Application::~Application()
     // 外部参照が残る場合はShutdownOwnedWindowsがfalseを返すため、
     // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
     const bool auxiliaryWindowsClosed = m_WindowManager.ShutdownOwnedWindows();
+    m_AuxiliaryUIContexts.clear();
     assert(auxiliaryWindowsClosed == true);
+}
+
+WindowID Application::CreateUIWindow(const WindowSpecification& specification)
+{
+    if (m_RavenUIEnabled == false || specification.Backend != RHIBackend::OpenGL ||
+        m_Window->GetBackend() != RHIBackend::OpenGL)
+    {
+        // 他BackendのMulti-Viewportは描画Target接続後に有効化します。
+        return 0;
+    }
+    const WindowID id = m_WindowManager.CreateManagedWindow(specification);
+    if (id == 0)
+    {
+        return 0;
+    }
+    Window* window = m_WindowManager.GetWindow(id);
+    if (window == nullptr || window->MakeContextCurrent() == false)
+    {
+        m_WindowManager.UnregisterWindow(id);
+        m_Window->MakeContextCurrent();
+        return 0;
+    }
+    auto context = CreateScope<UIContext>();
+    // VAOはContext間で共有されないため、補助WindowをCurrentにしてRendererを生成します。
+    context->SetRenderer(UIRenderer::Create(window->GetBackend()));
+    m_AuxiliaryUIContexts.emplace(id, std::move(context));
+    const bool restored = m_Window->MakeContextCurrent();
+    if (restored == false || m_WindowManager.AttachFrameLifecycle(id) == false ||
+        m_WindowManager.SetWindowCloseCleanup(id, [this, id](Window&)
+            {
+                // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
+                m_AuxiliaryUIContexts.erase(id);
+            }) == false)
+    {
+        // 登録失敗時も補助WindowのContextでRendererを破棄します。
+        window->MakeContextCurrent();
+        m_AuxiliaryUIContexts.erase(id);
+        m_WindowManager.UnregisterWindow(id);
+        m_Window->MakeContextCurrent();
+        return 0;
+    }
+    return id;
+}
+
+UIContext* Application::GetWindowUIContext(WindowID id)
+{
+    if (id == m_MainWindowID)
+    {
+        return &m_UIContext;
+    }
+    const auto it = m_AuxiliaryUIContexts.find(id);
+    return it != m_AuxiliaryUIContexts.end() ? it->second.get() : nullptr;
 }
 
 void Application::PushLayer(Layer* layer)
@@ -495,6 +548,30 @@ void Application::Run()
                 m_UIContext.RefreshPendingDPIFonts();
             }
             m_UIContext.EndFrame();
+        }
+
+        // 補助WindowのUIは専用GL Context/VAOとWindow別DPI・Framebufferで描画します。
+        if (m_RavenUIEnabled == true)
+        {
+            for (const auto& item : m_AuxiliaryUIContexts)
+            {
+                UIContext* ui = item.second.get();
+                m_WindowManager.RenderWindow(item.first, m_MainWindowID,
+                    [ui](Window& window)
+                    {
+                        ui->BeginFrame(
+                            math::Vec2(static_cast<float>(window.GetWidth()),
+                                static_cast<float>(window.GetHeight())),
+                            math::Vec2(static_cast<float>(window.GetFramebufferWidth()),
+                                static_cast<float>(window.GetFramebufferHeight())),
+                            window.GetContentScaleX(), window.GetContentScaleY());
+                        if (ui->GetPendingDPIFontCount() > 0u)
+                        {
+                            ui->RefreshPendingDPIFonts();
+                        }
+                        ui->EndFrame();
+                    });
+            }
         }
 
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
