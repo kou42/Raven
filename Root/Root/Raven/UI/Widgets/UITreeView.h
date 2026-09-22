@@ -335,9 +335,12 @@ protected:
                 m_PendingNodeId = node->Id;
                 // Down時点でCaptureし、PointerがTree外へ出てもMoveを受け取ります。
                 // 閾値未満のUpはUIContextが通常Clickとして扱います。
-                event.Context->BeginDrag(this,
+                if (event.Context->BeginDrag(this,
                     UIDragDropPayload{ "Raven/UITreeNode", std::to_string(node->Id) },
-                    event.ScreenPosition);
+                    event.ScreenPosition) == true)
+                {
+                    event.Context->SetDragPreview(node->Text, m_Font);
+                }
             }
         }
         event.Handled = true;
