@@ -78,6 +78,29 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPIFontBuildFailureDetails()
+{
+    Raven::UIFontAtlas atlas;
+    Raven::UIFontAtlasBuildOptions options{};
+    Raven::UIFontAtlasBuildFailure failure = Raven::UIFontAtlasBuildFailure::None;
+    options.AtlasWidth = 0u;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile("missing-font.ttf", { 65u },
+        options, atlas, &failure) == false, "invalid atlas options rejected");
+    Check(failure == Raven::UIFontAtlasBuildFailure::InvalidDPIOptions,
+        "builder invalid options diagnostic");
+    options.AtlasWidth = 1024u;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile("missing-font.ttf", { 65u },
+        options, atlas, &failure) == false, "missing font rejected before GPU work");
+    Check(failure == Raven::UIFontAtlasBuildFailure::FontFileUnavailable,
+        "builder missing file diagnostic");
+    Raven::UIFontAtlasDPICache cache;
+    float rasterScale = 1.0f;
+    Check(cache.GetOrBuild("missing-font.ttf", { 65u }, options, 0.0f,
+        rasterScale, &failure) == nullptr, "invalid dpi rejected");
+    Check(failure == Raven::UIFontAtlasBuildFailure::InvalidDPIOptions,
+        "cache invalid dpi diagnostic");
+}
+
 void TestDPIFontBatchRefresh()
 {
     Raven::UIContext context;
@@ -1988,6 +2011,7 @@ int main()
     TestDPIAtlasLabelBinding();
     TestDPIFontAutoRebind();
     TestDPIFontBatchRefresh();
+    TestDPIFontBuildFailureDetails();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
