@@ -78,6 +78,28 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPIFontAutoRebind()
+{
+    Raven::UIContext context;
+    auto cache = Raven::CreateRef<Raven::UIFontAtlasDPICache>();
+    auto label = std::make_unique<Raven::UILabel>();
+    Raven::UILabel* ptr = label.get();
+    context.GetRootElement().AddChild(std::move(label));
+    Raven::UIFontAtlasBuildOptions options{};
+    ptr->BindDPIFontCache(cache, "missing-font.ttf", { 65u, 66u }, options);
+    Check(ptr->IsDPIFontPending(), "uncached font waits for GPU context");
+    Check(cache->GetEntryCount() == 0u, "dpi callback does not build atlas");
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(ptr->IsDPIFontPending(), "dpi switch leaves uncached font pending");
+    Check(cache->GetEntryCount() == 0u, "dpi switch remains GPU free");
+    Check(ptr->RefreshDPIFont() == false, "missing font build fails safely");
+    Check(ptr->IsDPIFontPending(), "failed build stays pending");
+    ptr->SetFont(nullptr);
+    Check(ptr->IsDPIFontPending() == false, "legacy font clears pending binding");
+    context.SetDPIScale(1.0f, 1.0f);
+    Check(ptr->IsDPIFontPending() == false, "legacy font remains unbound");
+}
+
 void TestDPIAtlasLabelBinding()
 {
     Raven::UILabel label;
@@ -1930,6 +1952,7 @@ int main()
     TestDPILabelTypographyMetrics();
     TestDPIGlyphScale();
     TestDPIAtlasLabelBinding();
+    TestDPIFontAutoRebind();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
