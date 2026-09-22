@@ -569,8 +569,76 @@ void TestTable()
 }
 } // namespace
 
+// Drag & DropのCapture・閾値・Drop先・CancelをGPUなしで検証します。
+class DragProbe final : public Raven::UIElement
+{
+public:
+    int Begins = 0;
+    int Drops = 0;
+    int Cancels = 0;
+    int Ends = 0;
+    int Ups = 0;
+    bool Accept = false;
+    std::string LastData;
+
+protected:
+    void OnMouseEvent(Raven::UIMouseEvent& event) override
+    {
+        if (event.Type == Raven::UIMouseEventType::Up)
+        {
+            ++Ups;
+        }
+    }
+
+    bool OnDragDropEvent(Raven::UIDragDropEvent& event) override
+    {
+        if (event.Type == Raven::UIDragDropEventType::Begin) { ++Begins; }
+        if (event.Type == Raven::UIDragDropEventType::Cancel) { ++Cancels; }
+        if (event.Type == Raven::UIDragDropEventType::End) { ++Ends; }
+        if (event.Type == Raven::UIDragDropEventType::Drop)
+        {
+            ++Drops;
+            LastData = event.Payload->Data;
+        }
+        return Accept && event.Type == Raven::UIDragDropEventType::Over;
+    }
+};
+
+void TestDragDropRouting()
+{
+    Raven::UIContext context;
+    auto source = std::make_unique<DragProbe>();
+    auto target = std::make_unique<DragProbe>();
+    DragProbe* sourcePtr = source.get();
+    DragProbe* targetPtr = target.get();
+    source->SetPosition(Raven::math::Vec2(0.0f, 0.0f));
+    source->SetSize(Raven::math::Vec2(40.0f, 40.0f));
+    target->SetPosition(Raven::math::Vec2(60.0f, 0.0f));
+    target->SetSize(Raven::math::Vec2(40.0f, 40.0f));
+    target->Accept = true;
+    context.GetRootElement().AddChild(std::move(source));
+    context.GetRootElement().AddChild(std::move(target));
+    context.RouteMouseDown(Raven::math::Vec2(10.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(context.BeginDrag(sourcePtr, {"test/item", "payload"}, Raven::math::Vec2(10.0f, 10.0f)), "drag begins pending");
+    context.RouteMouseMove(Raven::math::Vec2(12.0f, 10.0f));
+    Check(sourcePtr->Begins == 0 && context.IsDragging() == false, "drag threshold");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
+    Check(sourcePtr->Begins == 1 && context.GetDropTarget() == targetPtr, "captured drag finds target");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(targetPtr->Drops == 1 && targetPtr->LastData == "payload", "payload drop");
+    Check(sourcePtr->Ends == 1 && sourcePtr->Ups == 0, "drop suppresses click");
+    Check(context.HasMouseCapture() == false && context.HasPendingDrag() == false, "drop clears capture");
+
+    Check(context.BeginDrag(sourcePtr, {"test/item", "cancel"}, Raven::math::Vec2(10.0f, 10.0f)), "second drag");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Escape)), "escape consumes drag");
+    Check(sourcePtr->Cancels == 1 && context.HasPendingDrag() == false, "escape cancels");
+    Check(context.HasMouseCapture() == false, "escape releases capture");
+}
+
 int main()
 {
+    TestDragDropRouting();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
