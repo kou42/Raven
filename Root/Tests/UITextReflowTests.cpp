@@ -839,6 +839,53 @@ void TestTreeViewNoOpDrop()
         "no-op drops preserve identity without callbacks");
 }
 
+void TestTreeViewDragAutoExpand()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 150.0f));
+    tree->SetNodeDragDropEnabled(true);
+    tree->SetDragAutoExpandDelay(0.5f);
+    Raven::UITreeNode* source = tree->AddRoot(1u, "Source");
+    Raven::UITreeNode* target = tree->AddRoot(2u, "Collapsed");
+    Raven::UITreeNode* child = tree->AddNode(target, 3u, "Child");
+    tree->SetExpanded(target, false);
+    int expansions = 0;
+    tree->SetOnExpansionChanged([&](std::uint64_t id, bool expanded)
+    {
+        if (id == 2u && expanded == true)
+        {
+            ++expansions;
+        }
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 56.0f));
+    Check(context.GetDropTarget() == view && target->Expanded == false,
+        "collapsed node accepts drag without immediate expansion");
+    context.TickDrag(0.3f);
+    Check(target->Expanded == false, "hover shorter than delay keeps node collapsed");
+    context.TickDrag(0.2f);
+    Check(target->Expanded == true && expansions == 1 && view->FindNode(3u) == child,
+        "stationary drag expands collapsed node once");
+    context.TickDrag(0.5f);
+    Check(expansions == 1, "expanded node does not repeat expansion callback");
+    context.CancelDrag();
+
+    view->SetExpanded(target, false);
+    view->SetDragAutoExpandEnabled(false);
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 56.0f));
+    context.TickDrag(1.0f);
+    Check(target->Expanded == false, "disabled drag auto expand keeps node collapsed");
+    context.CancelDrag();
+    Check(view->FindNode(1u) == source, "cancelled drag retains source node");
+}
+
 void TestDragDropRouting()
 {
     Raven::UIContext context;
@@ -907,6 +954,7 @@ int main()
     TestTreeViewEmptyAreaDrop();
     TestTreeViewDragAutoScroll();
     TestTreeViewNoOpDrop();
+    TestTreeViewDragAutoExpand();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
