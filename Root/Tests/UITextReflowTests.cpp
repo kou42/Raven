@@ -70,6 +70,48 @@ void Check(bool condition, const char* label)
 
 
 
+
+void TestDockSnapshotJson()
+{
+    Raven::UIDockSpace dock;
+    const std::uint64_t first = dock.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = dock.Split(first, Raven::UIDockSplitAxis::Vertical, 0.3f);
+    Check(second != nullptr, "dock json split");
+    Check(dock.CreateTabView(first) != nullptr, "dock json first view");
+    Check(dock.CreateTabView(second->GetId()) != nullptr, "dock json second view");
+    const std::uint64_t largeId = UINT64_MAX - 10u;
+    Check(dock.AddTab(first, largeId, "Scene 日本語",
+        std::make_unique<Raven::UIElement>(), false), "dock json large id");
+    const Raven::UIDockSpaceSnapshot original = dock.SaveSnapshot();
+    std::string json;
+    std::string error;
+    Check(Raven::SerializeDockSnapshot(original, json, &error), "dock json serialize");
+    Raven::UIDockSpaceSnapshot decoded;
+    Check(Raven::DeserializeDockSnapshot(json, decoded, &error), "dock json parse");
+    Check(decoded.Tabs.size() == 1u && decoded.Tabs[0u].Tab.Id == largeId &&
+        decoded.Tabs[0u].Tab.Title == "Scene 日本語" &&
+        decoded.Tabs[0u].Tab.Closable == false, "dock json exact tab data");
+    Raven::UIDockSpace restored;
+    const auto factory = [](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        return std::make_unique<Raven::UIElement>();
+    };
+    Check(restored.RestoreSnapshot(decoded, factory), "dock json restore");
+    Check(restored.GetTabView(first)->GetTabContent(largeId) != nullptr,
+        "dock json content factory");
+    const auto before = decoded;
+    Check(Raven::DeserializeDockSnapshot("{", decoded, &error) == false,
+        "dock json malformed rejected");
+    Check(decoded.Tabs.size() == before.Tabs.size() &&
+        decoded.Tabs[0u].Tab.Id == before.Tabs[0u].Tab.Id,
+        "dock json parse failure atomic");
+    Check(Raven::DeserializeDockSnapshot(
+        "{\\"type\\":\\"RavenDockSnapshot\\",\\"version\\":2,"
+        "\\"structure\\":[],\\"tabs\\":[],\\"selections\\":[]}",
+        decoded, &error) == false, "dock json version rejected");
+}
+
 void TestDockFullSnapshot()
 {
     Raven::UIDockSpace source;
@@ -1526,5 +1568,6 @@ int main()
     TestDockCollapse();
     TestDockStructureSnapshot();
     TestDockFullSnapshot();
+    TestDockSnapshotJson();
     return 0;
 }
