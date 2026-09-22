@@ -3,6 +3,8 @@
 #include "Raven/UI/Text/UIFontAtlas.h"
 
 #include <cstdint>
+#include <map>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -23,11 +25,39 @@ struct UIFontAtlasBuildOptions
 class UIFontAtlasBuilder
 {
 public:
+    // DIP基準のPixelHeightから高解像度AtlasのRasterize高さを決定します。
+    // scaleは1/8刻みに量子化し、Monitor移動時の微小変化による再生成を抑えます。
+    static bool ResolveDPIOptions(
+        const UIFontAtlasBuildOptions& baseOptions,
+        float effectiveScale,
+        UIFontAtlasBuildOptions& outOptions,
+        float& outRasterScale);
+
     static bool BuildFromFile(
         const std::string& fontPath,
         const std::vector<std::uint32_t>& codepoints,
         const UIFontAtlasBuildOptions& options,
         UIFontAtlas& outAtlas);
+};
+
+// GPU Contextを持つ呼び出し側が所有する明示Cacheです。
+// Fontパス・文字集合・Atlas設定・量子化したDPI倍率が一致するAtlasだけを再利用します。
+class UIFontAtlasDPICache
+{
+public:
+    Ref<UIFontAtlas> GetOrBuild(
+        const std::string& fontPath,
+        const std::vector<std::uint32_t>& codepoints,
+        const UIFontAtlasBuildOptions& baseOptions,
+        float effectiveScale,
+        float& outRasterScale);
+    void Clear() { m_Entries.clear(); }
+    std::size_t GetEntryCount() const { return m_Entries.size(); }
+
+private:
+    using Key = std::tuple<std::string, std::vector<std::uint32_t>, float,
+        std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t>;
+    std::map<Key, Ref<UIFontAtlas>> m_Entries;
 };
 
 } // namespace Raven
