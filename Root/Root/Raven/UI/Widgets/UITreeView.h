@@ -377,6 +377,7 @@ protected:
         }
         if (event.Type == UIDragDropEventType::Over)
         {
+            m_DropPointerPosition = event.ScreenPosition;
             event.Accepted = true;
             return true;
         }
@@ -470,6 +471,16 @@ protected:
             }
             const float y = absolutePosition.y + rowTop;
             const UITreeNode* node = visible[i].first;
+            const UIContext* context = GetContext();
+            if (context != nullptr && context->IsDragging() == true &&
+                context->GetDropTarget() == this && NodeAt(m_DropPointerPosition) == node)
+            {
+                // 有効なDrop先の行だけを薄く強調し、通常の選択状態と区別します。
+                drawList.AddRect(math::Vec2(absolutePosition.x, y),
+                    math::Vec2(absolutePosition.x + GetSize().x -
+                        (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
+                    ApplyVisualColor(math::Vec4(0.18f, 0.56f, 0.32f, 0.55f)));
+            }
             if (node == m_Selected)
             {
                 drawList.AddRect(math::Vec2(absolutePosition.x, y),
@@ -589,6 +600,7 @@ private:
     NodeDroppedHandler m_OnNodeDropped;
     std::uint64_t m_PendingNodeId = 0u;
     bool m_NodeDragDropEnabled = false;
+    math::Vec2 m_DropPointerPosition{};
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
     float m_Baseline = 17.0f;
