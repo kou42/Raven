@@ -1052,6 +1052,100 @@ void TestDockTabWindowExtraction()
         "window extraction restore retains page identity");
 }
 
+// WindowManagerを起動しないCPU側の復帰シミュレーション。
+// 複数補助WindowのClose順が変わってもContentの所有権とTabメタデータを保持します。
+void TestDockTabMultipleWindowRestore()
+{
+    Raven::UIContext main;
+    Raven::UIContext firstWindow;
+    Raven::UIContext secondWindow;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    main.GetRootElement().AddChild(std::move(dock));
+    const std::uint64_t leaf = dockPtr->GetLayout().GetRoot()->GetId();
+    Check(dockPtr->CreateTabView(leaf) != nullptr, "multiwindow creates tab view");
+
+    auto firstPage = std::make_unique<Raven::UIElement>();
+    auto secondPage = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* firstRaw = firstPage.get();
+    Raven::UIElement* secondRaw = secondPage.get();
+    Check(dockPtr->AddTab(leaf, 2001u, "First", std::move(firstPage), false),
+        "multiwindow adds first tab");
+    Check(dockPtr->AddTab(leaf, 2002u, "Second", std::move(secondPage), true),
+        "multiwindow adds second tab");
+
+    Raven::UITabItem firstTab;
+    Raven::UITabItem secondTab;
+    Raven::Scope<Raven::UIElement> first =
+        dockPtr->ExtractTabForWindow(leaf, 2001u, firstTab);
+    Raven::Scope<Raven::UIElement> second =
+        dockPtr->ExtractTabForWindow(leaf, 2002u, secondTab);
+    Check(first.get() == firstRaw && second.get() == secondRaw,
+        "multiwindow extracts both original pages");
+    Check(firstWindow.AddRootChild(std::move(first)) == firstRaw,
+        "multiwindow attaches first page");
+    Check(secondWindow.AddRootChild(std::move(second)) == secondRaw,
+        "multiwindow attaches second page");
+
+    // 先に2番目のWindowを閉じ、続いて1番目を閉じる順序を模擬します。
+    Raven::Scope<Raven::UIElement> returnedSecond =
+        secondWindow.DetachRootChild(secondRaw);
+    Raven::Scope<Raven::UIElement> returnedFirst =
+        firstWindow.DetachRootChild(firstRaw);
+    Check(returnedSecond.get() == secondRaw && returnedFirst.get() == firstRaw,
+        "multiwindow close keeps both contents alive");
+    Check(dockPtr->AddTab(leaf, secondTab.Id, secondTab.Title,
+        std::move(returnedSecond), secondTab.Closable),
+        "multiwindow restores second tab");
+    Check(dockPtr->AddTab(leaf, firstTab.Id, firstTab.Title,
+        std::move(returnedFirst), firstTab.Closable),
+        "multiwindow restores first tab");
+    Check(dockPtr->GetTabView(leaf)->GetTabContent(2001u) == firstRaw &&
+        dockPtr->GetTabView(leaf)->GetTabContent(2002u) == secondRaw,
+        "multiwindow restore preserves both identities");
+    const Raven::UITabItem* restoredFirst =
+        dockPtr->GetTabView(leaf)->GetModel().FindTab(2001u);
+    const Raven::UITabItem* restoredSecond =
+        dockPtr->GetTabView(leaf)->GetModel().FindTab(2002u);
+    Check(restoredFirst != nullptr && restoredSecond != nullptr &&
+        restoredFirst->Title == "First" && restoredFirst->Closable == false &&
+        restoredSecond->Title == "Second" && restoredSecond->Closable == true,
+        "multiwindow restore preserves metadata");
+}
+
+// 元DockSpaceがWindow Close前に削除された場合はMain Rootへ退避します。
+void TestDockTabMissingSourceFallback()
+{
+    Raven::UIContext main;
+    Raven::UIContext auxiliary;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    main.GetRootElement().AddChild(std::move(dock));
+    const std::uint64_t leaf = dockPtr->GetLayout().GetRoot()->GetId();
+    Check(dockPtr->CreateTabView(leaf) != nullptr,
+        "missing source creates tab view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* raw = page.get();
+    Check(dockPtr->AddTab(leaf, 3001u, "Detached", std::move(page)),
+        "missing source adds tab");
+    Raven::UITabItem tab;
+    Raven::Scope<Raven::UIElement> content =
+        dockPtr->ExtractTabForWindow(leaf, 3001u, tab);
+    Check(auxiliary.AddRootChild(std::move(content)) == raw,
+        "missing source attaches auxiliary page");
+    Check(main.GetRootElement().RemoveChild(dockPtr),
+        "missing source removes original dock");
+    Raven::Scope<Raven::UIElement> returned = auxiliary.DetachRootChild(raw);
+    Check(returned.get() == raw && returned->GetContext() == nullptr,
+        "missing source close retains detached content");
+    returned->SetVisible(true);
+    Check(main.AddRootChild(std::move(returned)) == raw,
+        "missing source returns content to main root");
+    Check(raw->GetContext() == &main &&
+        main.GetRootElement().GetChildren().back().get() != raw,
+        "missing source fallback preserves context and popup order");
+}
+
 // Phase 9-1: Docking論理Treeの所有権・安定ID・不正Split拒否を検証します。
 void TestDockLayout()
 {
@@ -2259,6 +2353,8 @@ int main()
     TestTextureDeviceUnavailableDiagnostic();
     TestDockLayout();
     TestDockSpace();
+    TestDockTabMultipleWindowRestore();
+    TestDockTabMissingSourceFallback();
     TestDockTabWindowExtraction();
     TestDockTabView();
     TestDockTabTransfer();
