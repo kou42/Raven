@@ -1,6 +1,6 @@
 # Raven UI 実装ロードマップ
 
-最終更新: 2026-09-22  
+最終更新: 2026-09-23  
 対象: `Root/Root/Raven/UI` / Raven Editor  
 状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window / Multi-Viewportは未完了
 
@@ -36,7 +36,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
 | 9 | Docking System | 実装・ユーザー動作確認済み（PR #251。Split / Pane間Tab移動 / Dock Preview / Layout保存復元）。RavenUITest単体実行・GitHub Actions結果は未確認 | Split / Tab / Dock preview / Layout保存復元 |
-| 10 | Theme / Style | 未着手 | 共通Style、状態別外観、DPI |
+| 10 | Theme / Style | 共通Style・状態別外観を実装、ユーザー動作確認済み（PR #252）。DPI対応は未実装 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
 | 12 | Multi-Viewport | OS Window / OpenGL Context・補助Window描画の基盤は実装・動作確認済み（PR #247）。UI接続は未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
@@ -89,6 +89,16 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] RestoreSnapshotのWidget生成・Tab追加・選択失敗時に追加Paneを破棄し旧Treeをmove復帰。ID発行状態も保持。Factory失敗時の既存Split不変テスト。
 - [ ] RavenUITest単体実行結果とGitHub Actionsの確認、再起動後のSplit/Tab状態の個別検証記録、正式Editorへの導入、異常なUIElement追加失敗の注入テスト、負荷・再入テスト。
 
+## Phase 10: Theme / Style 実装・検証記録（PR #252）
+
+- [x] UIThemeを追加し、UIContext単位でThemeを値保持。Default Darkは従来の配色を維持し、Default Lightを定義。
+- [x] Button / Panel / Slider / InputText / ScrollBar / Label / TabBar / TreeView / Tableの共通Style・状態別配色を追加。
+- [x] 各Widgetは描画時にContextのThemeを解決し、Retained TreeやTab Model、Table DataSourceの再構築なしで配色を切り替える。
+- [x] 既存の個別色SetterをThemeより優先し、Context非所属のWidgetでは従来配色を維持する。
+- [x] Theme切替・Context分離・DrawList配色・個別指定優先の回帰テストをRavenUITestへ追加。
+- [x] ユーザーから実環境での動作チェックに問題なしとの報告を受ける。個別のテスト実行ログとGitHub Actions結果はこのチャットでは未取得。
+- [ ] DPI / OS WindowごとのScale・Font Atlas再構築・入力座標との整合性を実装・検証する。Phase 10全体の完了とは扱わない。
+
 ## Phase 1: 実装分割
 
 1. [x] 既存TextureAsset / Texture生成API、Shader、OpenGLUIRenderer、Visual Studio project設定を確認。独立管理のinclude/stb_truetype.hを翻訳単位内に限定して使用し、AtlasをTextureAssetで所有する方針を決定。
@@ -124,6 +134,8 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 2026-09-22 | feature/ui-tab-system / PR #250 | UITabModel・UITabBar・UITabView、Close/Drag並び替え、Overflow横スクロール、UTF-8タイトル省略、Text Demo、RavenUITest回帰テストを追加 | ユーザーから実環境で動作問題なしとの報告。追加テスト単体の実行結果やGitHub Actionsは別途確認 | Phase 9 Docking SystemのSplit/Tab構造・Dock Preview・Layout保存復元を段階的に設計 |
 
 | 2026-09-22 | feature/ui-docking-system / PR #251 | UIDockLayout / Geometry / Space、入れ子Split、Pane間Tab移動、Dock Preview、空Pane Collapse、JSON Snapshot保存・起動時復元、Backup保護、復元失敗時巻戻し、Demoと回帰テストを追加 | ユーザーからPhase 9の動作チェック問題なしとの報告。GitHub上でmasterとの差分・レビュー未解決0件を確認。RavenUITest単体実行ログとActions実行結果は未取得 | 正式Editorへの組込み、負荷・再入/例外注入テスト、UIElement内部状態の永続化は別課題 |
+
+| 2026-09-23 | feature/ui-theme-style / PR #252 | UIContextのTheme切替、9種類のWidgetの共通Style・状態別配色、個別色優先、RavenUITest回帰テストを追加 | ユーザーから実環境での動作チェック問題なしとの報告。DPIは未実装、テスト単体実行ログ・GitHub Actions結果は未取得 | Phase 10のDPI対応とWindow別Scale/Fontの検証を別PRで進める |
 
 ## 更新ルール
 

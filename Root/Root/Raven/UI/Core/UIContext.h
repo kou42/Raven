@@ -10,6 +10,7 @@
 #include "Raven/UI/Core/UIDrawList.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Core/UIEvent.h"
+#include "Raven/UI/Style/UITheme.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 
 namespace Raven
@@ -128,6 +129,10 @@ public:
     const UITooltip* GetVisibleTooltip() const;
     void UpdateTooltip();
 
+    // ContextごとにThemeを値保持します。Widgetは描画時に参照するためTree再構築は不要です。
+    void SetTheme(const UITheme& theme) { m_Theme = theme; }
+    const UITheme& GetTheme() const { return m_Theme; }
+
     void SetRenderer(Scope<UIRenderer> renderer);
 
     UIElement& GetRootElement();
@@ -163,6 +168,7 @@ private:
     static bool IsElementInSubtree(const UIElement* element, const UIElement* subtreeRoot);
 
 private:
+    UITheme m_Theme = UITheme::CreateDefaultDark();
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
     Scope<UIElement> m_RootElement;

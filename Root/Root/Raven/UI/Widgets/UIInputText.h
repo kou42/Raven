@@ -41,7 +41,7 @@ public:
     void SetOnSubmit(SubmitHandler handler) { m_OnSubmit = std::move(handler); }
     void SetOnFocusLost(SubmitHandler handler) { m_OnFocusLost = std::move(handler); }
     void SetOnStep(StepHandler handler) { m_OnStep = std::move(handler); }
-    void SetTextColor(const math::Vec4& color) { m_TextColor = color; }
+    void SetTextColor(const math::Vec4& color) { m_TextColor = color; m_TextColorOverride = true; }
 
 protected:
     math::Vec2 OnMeasureContent() const override;
@@ -74,6 +74,8 @@ private:
     SubmitHandler m_OnFocusLost;
     StepHandler m_OnStep;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+    // 明示的なText色はTheme切替後も維持します。
+    bool m_TextColorOverride = false;
     bool m_Selecting = false;
     mutable float m_ScrollX = 0.0f;
     float m_Padding = 6.0f;

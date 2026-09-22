@@ -49,31 +49,37 @@ void UISlider::SetOnValueChanged(ValueChangedHandler handler)
 void UISlider::SetTrackColor(const math::Vec4& color)
 {
     m_TrackColor = color;
+    m_TrackColorOverride = true;
 }
 
 void UISlider::SetFillColor(const math::Vec4& color)
 {
     m_FillColor = color;
+    m_FillColorOverride = true;
 }
 
 void UISlider::SetThumbColor(const math::Vec4& color)
 {
     m_ThumbColor = color;
+    m_ThumbColorOverride = true;
 }
 
 void UISlider::SetHoveredThumbColor(const math::Vec4& color)
 {
     m_HoveredThumbColor = color;
+    m_HoveredThumbColorOverride = true;
 }
 
 void UISlider::SetActiveThumbColor(const math::Vec4& color)
 {
     m_ActiveThumbColor = color;
+    m_ActiveThumbColorOverride = true;
 }
 
 void UISlider::SetFocusedThumbColor(const math::Vec4& color)
 {
     m_FocusedThumbColor = color;
+    m_FocusedThumbColorOverride = true;
 }
 
 float UISlider::GetMinimum() const { return m_Minimum; }
@@ -182,6 +188,16 @@ void UISlider::OnBuildDrawList(
         return;
     }
 
+    // Context非所属時は従来色を使用し、個別指定されていない項目だけThemeから解決します。
+    const UIContext* context = GetContext();
+    const UISliderStyle* style = context != nullptr ? &context->GetTheme().Slider : nullptr;
+    const math::Vec4& trackColor = style != nullptr && m_TrackColorOverride == false ? style->TrackColor : m_TrackColor;
+    const math::Vec4& fillColor = style != nullptr && m_FillColorOverride == false ? style->FillColor : m_FillColor;
+    const math::Vec4& thumbNormal = style != nullptr && m_ThumbColorOverride == false ? style->ThumbColor : m_ThumbColor;
+    const math::Vec4& thumbHovered = style != nullptr && m_HoveredThumbColorOverride == false ? style->HoveredThumbColor : m_HoveredThumbColor;
+    const math::Vec4& thumbActive = style != nullptr && m_ActiveThumbColorOverride == false ? style->ActiveThumbColor : m_ActiveThumbColor;
+    const math::Vec4& thumbFocused = style != nullptr && m_FocusedThumbColorOverride == false ? style->FocusedThumbColor : m_FocusedThumbColor;
+
     const float normalizedValue = GetNormalizedValue();
     const float trackHeight = std::min(m_TrackHeight, size.y);
     const float trackTop = absolutePosition.y + (size.y - trackHeight) * 0.5f;
@@ -192,14 +208,14 @@ void UISlider::OnBuildDrawList(
     drawList.AddRect(
         math::Vec2(absolutePosition.x, trackTop),
         math::Vec2(trackRight, trackBottom),
-        ApplyVisualColor(m_TrackColor));
+        ApplyVisualColor(trackColor));
 
     if (fillRight > absolutePosition.x)
     {
         drawList.AddRect(
             math::Vec2(absolutePosition.x, trackTop),
             math::Vec2(fillRight, trackBottom),
-            ApplyVisualColor(m_FillColor));
+            ApplyVisualColor(fillColor));
     }
 
     const float thumbWidth = std::min(m_ThumbWidth, size.x);
@@ -209,18 +225,18 @@ void UISlider::OnBuildDrawList(
         absolutePosition.x,
         absolutePosition.x + size.x - thumbWidth);
 
-    const math::Vec4* thumbColor = &m_ThumbColor;
+    const math::Vec4* thumbColor = &thumbNormal;
     if (m_Dragging == true || IsPressed() == true)
     {
-        thumbColor = &m_ActiveThumbColor;
+        thumbColor = &thumbActive;
     }
     else if (IsHovered() == true)
     {
-        thumbColor = &m_HoveredThumbColor;
+        thumbColor = &thumbHovered;
     }
     else if (IsFocused() == true)
     {
-        thumbColor = &m_FocusedThumbColor;
+        thumbColor = &thumbFocused;
     }
 
     drawList.AddRect(

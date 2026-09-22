@@ -522,9 +522,14 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
 {
     const math::Vec2 size = GetSize();
     EnsureCursorVisible();
+    // Themeは描画時に参照し、Retained Treeを作り直さず次frameから切替を反映します。
+    // Contextを持たない単体Widgetは従来と同じDark配色を使います。
+    const UIContext* context = GetContext();
+    const UIInputTextStyle defaultStyle;
+    const UIInputTextStyle& style = context != nullptr ? context->GetTheme().InputText : defaultStyle;
+    const math::Vec4& textColor = m_TextColorOverride == true ? m_TextColor : style.TextColor;
     drawList.AddRect(position, position + size,
-        ApplyVisualColor(IsFocused() ? math::Vec4{ 0.18f, 0.22f, 0.30f, 1.0f }
-                                     : math::Vec4{ 0.13f, 0.13f, 0.16f, 1.0f }));
+        ApplyVisualColor(IsFocused() == true ? style.FocusedBackgroundColor : style.BackgroundColor));
 
     const std::string display = GetDisplayText();
     if (m_Font != nullptr && m_Font->GetTexture() != nullptr)
@@ -536,7 +541,7 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
             drawList.AddRect(
                 position + math::Vec2(CursorX(selection.first) - m_ScrollX, 3.0f),
                 position + math::Vec2(CursorX(selection.second) - m_ScrollX, size.y - 3.0f),
-                ApplyVisualColor(math::Vec4{ 0.24f, 0.40f, 0.68f, 0.75f }));
+                ApplyVisualColor(style.SelectionColor));
         }
         if (m_Composition.IsActive() == true)
         {
@@ -550,12 +555,12 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
                 const float right = TextCursorX(display, begin + selection.second) - m_ScrollX;
                 drawList.AddRect(position + math::Vec2(left, 3.0f),
                     position + math::Vec2(right, size.y - 3.0f),
-                    ApplyVisualColor(math::Vec4{ 0.34f, 0.44f, 0.62f, 0.65f }));
+                    ApplyVisualColor(style.IMESelectionColor));
             }
         }
         m_Font->AppendText(drawList, display,
             position + math::Vec2(m_Padding - m_ScrollX, m_Baseline), m_Height,
-            ApplyVisualColor(m_TextColor));
+            ApplyVisualColor(textColor));
 
         if (m_Composition.IsActive() == true)
         {
@@ -574,7 +579,7 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
             {
                 drawList.AddRect(position + math::Vec2(left, size.y - 4.0f),
                     position + math::Vec2(right, size.y - 2.0f),
-                    ApplyVisualColor(m_TextColor));
+                    ApplyVisualColor(textColor));
             }
         }
     }
@@ -583,7 +588,7 @@ void UIInputText::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& positi
         const float x = TextCursorX(display, GetDisplayCursor()) - m_ScrollX;
         drawList.AddRect(position + math::Vec2(x, 4.0f),
             position + math::Vec2(x + 1.0f, size.y - 4.0f),
-            ApplyVisualColor(m_TextColor));
+            ApplyVisualColor(textColor));
     }
 }
 

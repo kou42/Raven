@@ -231,10 +231,10 @@ void UIScrollView::SetMinimumThumbLength(float value) { m_MinimumThumbLength = s
 float UIScrollView::GetMinimumThumbLength() const { return m_MinimumThumbLength; }
 void UIScrollView::SetPageScrollFactor(float value) { m_PageScrollFactor = std::max(0.0f, value); }
 float UIScrollView::GetPageScrollFactor() const { return m_PageScrollFactor; }
-void UIScrollView::SetScrollBarTrackColor(const math::Vec4& value) { m_ScrollBarTrackColor = value; SyncScrollBars(); }
-const math::Vec4& UIScrollView::GetScrollBarTrackColor() const { return m_ScrollBarTrackColor; }
-void UIScrollView::SetScrollBarThumbColor(const math::Vec4& value) { m_ScrollBarThumbColor = value; SyncScrollBars(); }
-const math::Vec4& UIScrollView::GetScrollBarThumbColor() const { return m_ScrollBarThumbColor; }
+void UIScrollView::SetScrollBarTrackColor(const math::Vec4& value) { m_ScrollBarTrackColor = value; m_ScrollBarTrackColorOverride = true; SyncScrollBars(); }
+const math::Vec4& UIScrollView::GetScrollBarTrackColor() const { return m_ScrollBarTrackColorOverride == false && GetContext() != nullptr ? GetContext()->GetTheme().ScrollBar.TrackColor : m_ScrollBarTrackColor; }
+void UIScrollView::SetScrollBarThumbColor(const math::Vec4& value) { m_ScrollBarThumbColor = value; m_ScrollBarThumbColorOverride = true; SyncScrollBars(); }
+const math::Vec4& UIScrollView::GetScrollBarThumbColor() const { return m_ScrollBarThumbColorOverride == false && GetContext() != nullptr ? GetContext()->GetTheme().ScrollBar.ThumbColor : m_ScrollBarThumbColor; }
 
 void UIScrollView::OnMouseEvent(UIMouseEvent& event)
 {
@@ -288,13 +288,13 @@ void UIScrollView::CreateScrollBarElements()
     // ScrollbarはViewport上のOverlayであり、表示状態やThicknessがScrollViewのDesiredSizeを変えてはいけません。
     vertical->SetAffectsParentMeasure(false);
     vertical->SetVisible(false);
-    vertical->SetColors(m_ScrollBarTrackColor, m_ScrollBarThumbColor);
+    vertical->SetColors(GetScrollBarTrackColor(), GetScrollBarThumbColor());
     m_VerticalScrollBar = static_cast<UIScrollBarVisual*>(AddChild(std::move(vertical)));
 
     auto horizontal = CreateScope<UIScrollBarVisual>(false);
     horizontal->SetAffectsParentMeasure(false);
     horizontal->SetVisible(false);
-    horizontal->SetColors(m_ScrollBarTrackColor, m_ScrollBarThumbColor);
+    horizontal->SetColors(GetScrollBarTrackColor(), GetScrollBarThumbColor());
     m_HorizontalScrollBar = static_cast<UIScrollBarVisual*>(AddChild(std::move(horizontal)));
 }
 
@@ -316,8 +316,8 @@ void UIScrollView::SyncScrollBars()
     m_HorizontalScrollBarVisible = m_HorizontalScrollBarEnabled == true && maxOffset.x > 0.0f && viewportSize.x > 0.0f;
     if (m_VerticalScrollBar->IsVisible() != m_VerticalScrollBarVisible) { m_VerticalScrollBar->SetVisible(m_VerticalScrollBarVisible); }
     if (m_HorizontalScrollBar->IsVisible() != m_HorizontalScrollBarVisible) { m_HorizontalScrollBar->SetVisible(m_HorizontalScrollBarVisible); }
-    m_VerticalScrollBar->SetColors(m_ScrollBarTrackColor, m_ScrollBarThumbColor);
-    m_HorizontalScrollBar->SetColors(m_ScrollBarTrackColor, m_ScrollBarThumbColor);
+    m_VerticalScrollBar->SetColors(GetScrollBarTrackColor(), GetScrollBarThumbColor());
+    m_HorizontalScrollBar->SetColors(GetScrollBarTrackColor(), GetScrollBarThumbColor());
 
     if (m_VerticalScrollBarVisible == true)
     {

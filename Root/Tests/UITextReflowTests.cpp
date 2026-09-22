@@ -5,6 +5,10 @@
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UISlider.h"
+#include "Raven/UI/Widgets/UIScrollView.h"
+#include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UITooltip.h"
 #include "Raven/UI/Widgets/UITreeView.h"
@@ -45,6 +49,8 @@ protected:
 
 void TestDockLayout();
 
+
+
 bool Near(float actual, float expected)
 {
     return std::abs(actual - expected) < 0.001f;
@@ -68,6 +74,66 @@ void Check(bool condition, const char* label)
         std::exit(EXIT_FAILURE);
     }
 }
+
+void TestUITheme()
+{
+    Raven::UIContext context;
+    Raven::UIContext otherContext;
+    auto button = std::make_unique<Raven::UIButton>();
+    Raven::UIButton* buttonPtr = button.get();
+    button->SetSize(Raven::math::Vec2(80.0f, 24.0f));
+    context.GetRootElement().AddChild(std::move(button));
+
+    auto panel = std::make_unique<Raven::UIPanel>();
+    Raven::UIPanel* panelPtr = panel.get();
+    panel->SetSize(Raven::math::Vec2(80.0f, 24.0f));
+    context.GetRootElement().AddChild(std::move(panel));
+
+    auto slider = std::make_unique<Raven::UISlider>();
+    slider->SetSize(Raven::math::Vec2(80.0f, 24.0f));
+    context.GetRootElement().AddChild(std::move(slider));
+
+    auto input = std::make_unique<Raven::UIInputText>();
+    input->SetSize(Raven::math::Vec2(80.0f, 24.0f));
+    context.GetRootElement().AddChild(std::move(input));
+
+    auto scroll = std::make_unique<Raven::UIScrollView>();
+    Raven::UIScrollView* scrollPtr = scroll.get();
+    scroll->SetSize(Raven::math::Vec2(80.0f, 24.0f));
+    context.GetRootElement().AddChild(std::move(scroll));
+
+    // Theme変更が既存Treeへ反映され、別Contextへ漏れないことを検証します。
+    const Raven::UITheme light = Raven::UITheme::CreateDefaultLight();
+    context.SetTheme(light);
+    CheckNear("theme button light", buttonPtr->GetNormalColor().x, light.Button.NormalColor.x);
+    CheckNear("theme panel light", panelPtr->GetBackgroundColor().x, light.Panel.BackgroundColor.x);
+    CheckNear("theme scrollbar light", scrollPtr->GetScrollBarTrackColor().x, light.ScrollBar.TrackColor.x);
+    CheckNear("other context dark", otherContext.GetTheme().Button.NormalColor.x, 0.24f);
+
+    context.BeginFrame(Raven::math::Vec2(320.0f, 240.0f));
+    context.EndFrame();
+    const auto& commands = context.GetDrawList().GetCommands();
+    Check(commands.size() >= 5u, "theme draw commands");
+    CheckNear("theme button draw", commands[0u].Color.x, light.Button.NormalColor.x);
+    CheckNear("theme panel draw", commands[1u].Color.x, light.Panel.BackgroundColor.x);
+    CheckNear("theme slider draw", commands[2u].Color.x, light.Slider.TrackColor.x);
+    CheckNear("theme input draw", commands[4u].Color.x, light.InputText.BackgroundColor.x);
+
+    // 個別指定した状態だけThemeより優先し、未指定状態はTheme変更に追従します。
+    buttonPtr->SetNormalColor(Raven::math::Vec4(0.11f, 0.22f, 0.33f, 1.0f));
+    scrollPtr->SetScrollBarThumbColor(Raven::math::Vec4(0.15f, 0.25f, 0.35f, 1.0f));
+    context.SetTheme(Raven::UITheme::CreateDefaultDark());
+    CheckNear("theme button override", buttonPtr->GetNormalColor().x, 0.11f);
+    CheckNear("theme button hover fallback", buttonPtr->GetHoveredColor().x, 0.32f);
+    CheckNear("theme scrollbar override", scrollPtr->GetScrollBarThumbColor().x, 0.15f);
+    CheckNear("theme scrollbar fallback", scrollPtr->GetScrollBarTrackColor().x, 0.06f);
+    context.BeginFrame(Raven::math::Vec2(320.0f, 240.0f));
+    context.EndFrame();
+    CheckNear("theme button draw override",
+        context.GetDrawList().GetCommands()[0u].Color.x, 0.11f);
+}
+
+
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
@@ -1649,6 +1715,7 @@ int main()
     root.BuildDrawList(drawList);
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
+    TestUITheme();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();

@@ -297,10 +297,14 @@ bool UITabBar::OnDragDropEvent(UIDragDropEvent& event)
 
 void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position) const
 {
+    // 毎FrameのDrawList構築時に解決し、既存Tab Modelを変更せずThemeを切替えます。
+    const UIContext* context = GetContext();
+    const UITabBarStyle defaultStyle;
+    const UITabBarStyle& style = context != nullptr ? context->GetTheme().TabBar : defaultStyle;
     const float height = std::min(GetSize().y, m_TabHeight);
     drawList.AddRect(position,
         math::Vec2(position.x + GetSize().x, position.y + height),
-        ApplyVisualColor(math::Vec4(0.13f, 0.14f, 0.17f, 1.0f)));
+        ApplyVisualColor(style.BackgroundColor));
 
     const float scroll = std::min(m_ScrollOffset, GetMaxScrollOffset());
     const auto& tabs = m_Model.GetTabs();
@@ -319,9 +323,9 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
         const bool selected = tab.Id == m_Model.GetSelectedTabId();
         const bool hovered = tab.Id == m_HoveredId;
         const math::Vec4 color = selected
-            ? math::Vec4(0.29f, 0.34f, 0.44f, 1.0f)
-            : hovered ? math::Vec4(0.23f, 0.25f, 0.30f, 1.0f)
-                : math::Vec4(0.18f, 0.19f, 0.23f, 1.0f);
+            ? style.SelectedColor
+            : hovered ? style.HoveredColor
+                : style.NormalColor;
         drawList.AddRect(math::Vec2(position.x + left, position.y),
             math::Vec2(position.x + left + m_TabWidth - 1.0f, position.y + height),
             ApplyVisualColor(color));
@@ -329,7 +333,7 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
         {
             drawList.AddRect(math::Vec2(position.x + left, position.y + height - 2.0f),
                 math::Vec2(position.x + left + m_TabWidth - 1.0f, position.y + height),
-                ApplyVisualColor(math::Vec4(0.48f, 0.68f, 0.96f, 1.0f)));
+                ApplyVisualColor(style.SelectedUnderlineColor));
         }
         if (m_Font != nullptr && m_Font->GetTexture() != nullptr)
         {
@@ -339,12 +343,12 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
             options.MaxWidth = m_TabWidth - (tab.Closable == true ? m_CloseWidth : 0.0f) - 16.0f;
             m_Font->AppendText(drawList, EllipsizeTitle(*m_Font, tab.Title, options.MaxWidth),
                 math::Vec2(position.x + left + 8.0f, position.y + height * 0.5f + 5.0f),
-                options, ApplyVisualColor(math::Vec4(0.95f, 0.95f, 0.97f, 1.0f)));
+                options, ApplyVisualColor(style.TextColor));
             if (tab.Closable == true)
             {
                 const math::Vec4 closeColor = hovered == true && m_HoveredClose == true
-                    ? math::Vec4(1.0f, 0.68f, 0.68f, 1.0f)
-                    : math::Vec4(0.75f, 0.77f, 0.82f, 1.0f);
+                    ? style.HoveredCloseColor
+                    : style.CloseColor;
                 m_Font->AppendText(drawList, "x",
                     math::Vec2(position.x + left + m_TabWidth - m_CloseWidth + 8.0f,
                         position.y + height * 0.5f + 5.0f),
@@ -357,7 +361,7 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
         const float x = position.x + static_cast<float>(m_DropIndex) * m_TabWidth - scroll;
         drawList.AddRect(math::Vec2(x - 2.0f, position.y + 3.0f),
             math::Vec2(x + 2.0f, position.y + height - 3.0f),
-            ApplyVisualColor(math::Vec4(0.55f, 0.78f, 1.0f, 1.0f)));
+            ApplyVisualColor(style.DropIndicatorColor));
     }
 }
 

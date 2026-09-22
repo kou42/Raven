@@ -43,6 +43,7 @@ private:
     Ref<UIFontAtlas> m_Font;
     std::string m_Text;
     math::Vec4 m_TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+    bool m_TextColorOverride = false;
     float m_BaselineOffset = 16.0f;
     float m_LineHeight = 20.0f;
     UITextWrapMode m_WrapMode = UITextWrapMode::None;

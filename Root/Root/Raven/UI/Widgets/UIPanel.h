@@ -24,6 +24,7 @@ protected:
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
+    bool m_BackgroundColorOverride = false;
     math::Vec4 m_BackgroundColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 

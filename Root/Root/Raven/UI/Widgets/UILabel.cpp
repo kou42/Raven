@@ -1,4 +1,5 @@
 #include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,11 +33,14 @@ const std::string& UILabel::GetText() const
 void UILabel::SetTextColor(const math::Vec4& color)
 {
     m_TextColor = color;
+    m_TextColorOverride = true;
 }
 
 const math::Vec4& UILabel::GetTextColor() const
 {
-    return m_TextColor;
+    const UIContext* context = GetContext();
+    return m_TextColorOverride == false && context != nullptr
+        ? context->GetTheme().Label.TextColor : m_TextColor;
 }
 
 void UILabel::SetBaselineOffset(float offset)
@@ -120,7 +124,7 @@ void UILabel::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePo
     options.MaxWidth = GetSize().x;
     options.Wrap = m_WrapMode;
     options.Alignment = m_TextAlignment;
-    m_Font->AppendText(drawList, m_Text, baseline, options, ApplyVisualColor(m_TextColor));
+    m_Font->AppendText(drawList, m_Text, baseline, options, ApplyVisualColor(GetTextColor()));
 }
 
 } // namespace Raven
