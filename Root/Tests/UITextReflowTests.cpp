@@ -92,7 +92,19 @@ void TestDPIFontBatchRefresh()
     ptr->BindDPIFontCache(cache, "missing-font.ttf", { 65u }, options);
     Check(context.GetPendingDPIFontCount() == 1u, "nested label pending count");
     Check(context.RefreshPendingDPIFonts() == 0u, "missing font batch refresh fails safely");
-    Check(context.GetPendingDPIFontCount() == 1u, "failed batch remains pending");
+    Check(ptr->IsDPIFontPending(), "failed label retains pending state");
+    Check(ptr->GetDPIFontFailure() == Raven::UIFontAtlasBuildFailure::FontFileUnavailable,
+        "missing font failure diagnostic");
+    Check(context.GetPendingDPIFontCount() == 0u, "failed batch suppresses automatic retry");
+    Check(context.RefreshPendingDPIFonts() == 0u, "blocked batch does not retry");
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(context.GetPendingDPIFontCount() == 1u, "new dpi permits a fresh attempt");
+    Check(context.RefreshPendingDPIFonts() == 0u, "new dpi missing font still fails");
+    Check(context.GetPendingDPIFontCount() == 0u, "new dpi failure is also blocked");
+    ptr->RetryDPIFont();
+    Check(ptr->GetDPIFontFailure() == Raven::UIFontAtlasBuildFailure::None,
+        "explicit retry clears diagnostic");
+    Check(context.GetPendingDPIFontCount() == 1u, "explicit retry schedules batch");
     ptr->SetFont(nullptr);
     Check(context.GetPendingDPIFontCount() == 0u, "legacy font clears batch pending");
     Check(context.RefreshPendingDPIFonts() == 0u, "empty batch refresh");
@@ -114,6 +126,8 @@ void TestDPIFontAutoRebind()
     Check(cache->GetEntryCount() == 0u, "dpi switch remains GPU free");
     Check(ptr->RefreshDPIFont() == false, "missing font build fails safely");
     Check(ptr->IsDPIFontPending(), "failed build stays pending");
+    Check(ptr->GetDPIFontFailure() == Raven::UIFontAtlasBuildFailure::FontFileUnavailable,
+        "missing font is diagnosed");
     ptr->SetFont(nullptr);
     Check(ptr->IsDPIFontPending() == false, "legacy font clears pending binding");
     context.SetDPIScale(1.0f, 1.0f);
