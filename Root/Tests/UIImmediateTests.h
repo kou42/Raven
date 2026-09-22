@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/UI/Immediate/UIImmediateContext.h"
+#include "Raven/Physics/Debug/PhysicsDebugImmediatePanel.h"
 #include "Raven/UI/Widgets/UIButton.h"
 
 #include <cstdlib>
@@ -106,6 +107,25 @@ void TestUIImmediateContext()
         CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false &&
             enabled == true, "checkbox no replay");
         CheckImmediate(checkImmediate.EndFrame() == true, "checkbox one-shot EndFrame");
+    }
+
+    // Physics Debugは既存Rendererと同じSettingsを参照し、独立した状態を持ちません。
+    {
+        Raven::UIContext debugContext;
+        Raven::UIImmediateContext debugImmediate(debugContext);
+        Raven::ph::PhysicsDebugSettings settings{};
+        CheckImmediate(debugImmediate.BeginFrame() == true, "debug panel BeginFrame");
+        CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
+            debugImmediate, settings, nullptr) == false, "debug panel initially unchanged");
+        CheckImmediate(debugImmediate.EndFrame() == true, "debug panel EndFrame");
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 11u,
+            "debug panel widgets cached");
+        CheckImmediate(debugImmediate.BeginFrame() == true, "debug panel reuse BeginFrame");
+        CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
+            debugImmediate, settings, nullptr) == false, "debug panel reused");
+        CheckImmediate(debugImmediate.EndFrame() == true, "debug panel reuse EndFrame");
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 11u,
+            "debug panel widget count stable");
     }
 
     // UIContextの描画Frame中はTree変更を許可しません。
