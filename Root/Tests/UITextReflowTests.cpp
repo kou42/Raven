@@ -10,6 +10,7 @@
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
+#include "Raven/UI/Docking/UIDockLayout.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -37,6 +38,8 @@ protected:
     }
 };
 
+void TestDockLayout();
+
 bool Near(float actual, float expected)
 {
     return std::abs(actual - expected) < 0.001f;
@@ -62,6 +65,38 @@ void Check(bool condition, const char* label)
 }
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
+
+// Phase 9-1: Docking論理Treeの所有権・安定ID・不正Split拒否を検証します。
+void TestDockLayout()
+{
+    Raven::UIDockLayout layout;
+    Raven::UIDockNode* original = layout.GetRoot();
+    const std::uint64_t originalId = original->GetId();
+    Check(original->GetTabs() != nullptr, "dock root tabs");
+    Check(original->GetTabs()->AddTab(101u, "Scene"), "dock tab add");
+    Raven::UIDockNode* right = layout.Split(originalId, Raven::UIDockSplitAxis::Horizontal, 0.35f);
+    Check(right != nullptr, "dock split");
+    Check(layout.GetRoot()->GetKind() == Raven::UIDockNodeKind::Split, "dock split kind");
+    Check(layout.GetRoot()->GetFirst() == original, "dock leaf address stable");
+    Check(layout.GetRoot()->GetSecond() == right, "dock second leaf");
+    Check(original->GetParent() == layout.GetRoot(), "dock parent");
+    Check(original->GetTabs()->GetSelectedTabId() == 101u, "dock selection preserved");
+    CheckNear("dock split ratio", layout.GetRoot()->GetSplitRatio(), 0.35f);
+    Check(layout.GetRoot()->SetSplitRatio(0.0f) == false, "dock zero ratio rejected");
+    Check(layout.GetRoot()->SetSplitRatio(0.7f), "dock ratio update");
+    Check(layout.Split(originalId, Raven::UIDockSplitAxis::Vertical, 0.5f, true) != nullptr,
+        "dock nested split");
+    Check(layout.FindNode(originalId) == original, "dock nested stable ID");
+    Check(layout.FindNode(right->GetId()) == right, "dock sibling stable ID");
+    Check(layout.Split(layout.GetRoot()->GetId(), Raven::UIDockSplitAxis::Horizontal) == nullptr,
+        "dock split nonleaf rejected");
+    Check(layout.Split(0u, Raven::UIDockSplitAxis::Horizontal) == nullptr,
+        "dock unknown ID rejected");
+    Check(layout.Split(right->GetId(), Raven::UIDockSplitAxis::Horizontal, 1.0f) == nullptr,
+        "dock endpoint rejected");
+    Check(layout.FindNode(999999u) == nullptr, "dock missing node");
+}
+
 void TestTextEditBuffer()
 {
     Raven::UITextEditBuffer buffer;
@@ -1191,5 +1226,6 @@ int main()
     root.BuildDrawList(drawList);
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
+    TestDockLayout();
     return 0;
 }
