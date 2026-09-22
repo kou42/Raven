@@ -20,7 +20,8 @@ struct UIFontAtlasBuildOptions
     std::uint32_t Padding = 1u;
 };
 
-// Font Atlas構築の失敗段階を表します。TextureCreationFailedはGPU側の詳細エラーまでは含みません。
+// Font Atlas構築の失敗段階を表します。TextureCreationFailedはnative Resource生成失敗、
+// TextureDeviceUnavailableはRHI Device未初期化を示します。GPU uploadの詳細診断は未対応です。
 enum class UIFontAtlasBuildFailure
 {
     None,
@@ -29,6 +30,7 @@ enum class UIFontAtlasBuildFailure
     FontDataInvalid,
     AtlasCapacityExceeded,
     TextureCreationFailed,
+    TextureDeviceUnavailable,
     AtlasInitializationFailed
 };
 
