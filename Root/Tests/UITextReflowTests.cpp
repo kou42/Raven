@@ -473,6 +473,20 @@ void TestWindowFramebufferMetrics()
     context.EndFrame();
     CheckNear("restored dpi", context.GetDPIScaleX(), 1.0f);
     CheckNear("restored framebuffer", spy->LastFramebuffer.x, 640.0f);
+
+    // 補助Windowが別UIContextを所有する場合、DPI/Viewport/FramebufferがMainへ漏れません。
+    Raven::UIContext auxiliary;
+    auto auxiliaryRenderer = std::make_unique<FramebufferSizeRenderer>();
+    FramebufferSizeRenderer* auxiliarySpy = auxiliaryRenderer.get();
+    auxiliary.SetRenderer(std::move(auxiliaryRenderer));
+    auxiliary.BeginFrame(Raven::math::Vec2(480.0f, 320.0f),
+        Raven::math::Vec2(720.0f, 480.0f), 1.5f, 1.5f);
+    auxiliary.EndFrame();
+    CheckNear("auxiliary dpi", auxiliary.GetDPIScaleX(), 1.5f);
+    CheckNear("auxiliary framebuffer", auxiliarySpy->LastFramebuffer.x, 720.0f);
+    CheckNear("main dpi isolated", context.GetDPIScaleX(), 1.0f);
+    CheckNear("main viewport isolated", context.GetViewportSize().x, 640.0f);
+    CheckNear("main framebuffer isolated", spy->LastFramebuffer.x, 640.0f);
 }
 
 void TestDPIContextCoordinates()
