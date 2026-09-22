@@ -202,6 +202,37 @@ public:
         return clicked;
     }
 
+    // 専用Checkbox Widgetがない段階ではUIButtonを再利用します。
+    // 状態は呼び出し側が所有し、クリック時だけ反転します。
+    // IDは表示文言と独立させ、状態変化でもWidgetを再生成しません。
+    bool Checkbox(const std::string& id, const std::string& caption, bool* checked,
+        const Ref<UIFontAtlas>& font,
+        const math::Vec2& size = math::Vec2(160.0f, 28.0f))
+    {
+        if (checked == nullptr)
+        {
+            return false;
+        }
+        const std::string display = (*checked == true ? "[x] " : "[ ] ") + caption;
+        const bool clicked = Button(id, display, font, size);
+        if (clicked == true)
+        {
+            *checked = (*checked == false);
+            // 入力を消費したFrame内に表示も同期します。
+            const auto found = m_Widgets.find(MakeKey(id));
+            if (found != m_Widgets.end())
+            {
+                UIButton* button = static_cast<UIButton*>(found->second.Element);
+                if (button->GetChildren().empty() == false)
+                {
+                    UILabel* label = static_cast<UILabel*>(button->GetChildren().front().get());
+                    label->SetText((*checked == true ? "[x] " : "[ ] ") + caption);
+                }
+            }
+        }
+        return clicked;
+    }
+
     // PanelのTreeとID Scopeをまとめて開きます。EndContainer()で閉じてください。
     UIPanel* BeginPanel(const std::string& id, const math::Vec2& position,
         const math::Vec2& size, float padding = 8.0f)
