@@ -275,9 +275,34 @@ bool UIContext::BeginDrag(UIElement* source, UIDragDropPayload payload, const ma
     return true;
 }
 
+bool UIContext::IsLiveDragElement(const UIElement* element) const
+{
+    if (element == nullptr || m_RootElement == nullptr)
+    {
+        return false;
+    }
+    // callbackがElementを削除し得るため、対象を逆参照せず所有Treeからアドレスを照合します。
+    std::function<bool(const UIElement*)> contains = [&](const UIElement* current)
+    {
+        if (current == element)
+        {
+            return true;
+        }
+        for (const auto& child : current->GetChildren())
+        {
+            if (child != nullptr && contains(child.get()) == true)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    return contains(m_RootElement.get());
+}
+
 void UIContext::SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position)
 {
-    if (element == nullptr)
+    if (IsLiveDragElement(element) == false)
     {
         return;
     }
@@ -306,17 +331,25 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
         m_DragActive = true;
         HideTooltip();
         SendDragEvent(m_DragSource, UIDragDropEventType::Begin, position);
-        // Begin callbackがSourceをTreeから外してCancelした場合は以降の参照を禁止します。
         if (m_DragSource == nullptr)
         {
             return;
         }
     }
 
-    // CaptureされたSourceではなく、Pointer下の実Hitから親方向へ受入先を探索します。
-    UIElement* accepted = nullptr;
-    for (UIElement* candidate = hitTarget; candidate != nullptr; candidate = candidate->GetParent())
+    // callbackが現在の候補を削除してもParentを逆参照しないよう、経路を先に保存します。
+    std::vector<UIElement*> candidates;
+    for (UIElement* current = hitTarget; current != nullptr; current = current->GetParent())
     {
+        candidates.push_back(current);
+    }
+    UIElement* accepted = nullptr;
+    for (UIElement* candidate : candidates)
+    {
+        if (IsLiveDragElement(candidate) == false)
+        {
+            continue;
+        }
         UIDragDropEvent event;
         event.Type = UIDragDropEventType::Over;
         event.Payload = &m_DragPayload;
@@ -327,7 +360,8 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
         {
             return;
         }
-        if (acceptedHere == true || event.Accepted == true)
+        if ((acceptedHere == true || event.Accepted == true) &&
+            IsLiveDragElement(candidate) == true)
         {
             accepted = candidate;
             break;
@@ -335,13 +369,19 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
     }
     if (accepted != m_DropTarget)
     {
-        SendDragEvent(m_DropTarget, UIDragDropEventType::Leave, position);
+        UIElement* previous = m_DropTarget;
+        // Leave中の再入処理が古いTargetを再利用しないよう先に解除します。
+        m_DropTarget = nullptr;
+        SendDragEvent(previous, UIDragDropEventType::Leave, position);
         if (m_DragSource == nullptr)
         {
             return;
         }
-        m_DropTarget = accepted;
-        SendDragEvent(m_DropTarget, UIDragDropEventType::Enter, position);
+        if (IsLiveDragElement(accepted) == true)
+        {
+            m_DropTarget = accepted;
+            SendDragEvent(accepted, UIDragDropEventType::Enter, position);
+        }
     }
 }
 
@@ -352,26 +392,33 @@ void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
     {
         return;
     }
-    if (m_DragActive == true)
-    {
-        // Drop callbackはTreeを変更できるため、SourceへのEndはDropより先に通知します。
-        SendDragEvent(m_DragSource, UIDragDropEventType::End, position);
-        if (m_DragSource == nullptr)
-        {
-            return;
-        }
-        SendDragEvent(m_DropTarget, UIDragDropEventType::Drop, position);
-        if (m_DragSource == nullptr)
-        {
-            return;
-        }
-    }
+
+    // Drop先のcallbackがSource/Targetを削除できるので、セッションを先に終了し、
+    // Eventに渡すPayloadだけをローカルへ移して寿命を確保します。
     UIElement* source = m_DragSource;
+    UIElement* target = m_DragActive == true ? m_DropTarget : nullptr;
+    UIDragDropPayload payload = std::move(m_DragPayload);
+    const bool wasActive = m_DragActive;
     m_DragSource = nullptr;
     m_DropTarget = nullptr;
     m_DragActive = false;
     m_DragPayload = {};
     ReleaseMouseCapture(source);
+
+    UIDragDropEvent event;
+    event.Payload = &payload;
+    event.Source = source;
+    event.ScreenPosition = position;
+    if (wasActive == true && IsLiveDragElement(target) == true)
+    {
+        event.Type = UIDragDropEventType::Drop;
+        target->HandleDragDropEvent(event);
+    }
+    if (wasActive == true && IsLiveDragElement(source) == true)
+    {
+        event.Type = UIDragDropEventType::End;
+        source->HandleDragDropEvent(event);
+    }
 }
 
 void UIContext::CancelDrag()
@@ -380,7 +427,7 @@ void UIContext::CancelDrag()
     {
         return;
     }
-    // 先に状態を空にし、Leave/Cancel内のTree変更による再帰Cancelを防ぎます。
+    // Cancel/Leave callbackがTreeを変更しても再帰Cancelせず、削除済み要素へ通知しません。
     UIElement* source = m_DragSource;
     UIElement* target = m_DropTarget;
     UIDragDropPayload payload = std::move(m_DragPayload);
@@ -389,38 +436,21 @@ void UIContext::CancelDrag()
     m_DragActive = false;
     m_DragPayload = {};
     ReleaseMouseCapture(source);
+
     UIDragDropEvent event;
     event.Payload = &payload;
     event.Source = source;
     event.ScreenPosition = m_LastPointerPosition;
-    event.Type = UIDragDropEventType::Leave;
-    if (target != nullptr)
+    if (IsLiveDragElement(target) == true)
     {
+        event.Type = UIDragDropEventType::Leave;
         target->HandleDragDropEvent(event);
     }
-    event.Type = UIDragDropEventType::Cancel;
-    // LeaveでSourceが削除される可能性があるためTree上の生存を確認します。
-    // ポインタの値だけをTree内の所有要素と照合し、削除済みSourceを逆参照しません。
-    std::function<bool(const UIElement*)> isAlive = [&](const UIElement* root)
+    if (IsLiveDragElement(source) == true)
     {
-        if (root == source)
-        {
-            return true;
-        }
-        for (const auto& child : root->GetChildren())
-        {
-            if (child != nullptr && isAlive(child.get()) == true)
-            {
-                return true;
-            }
-        }
-        return false;
-    };
-    if (source != nullptr && m_RootElement != nullptr && isAlive(m_RootElement.get()) == true)
-    {
+        event.Type = UIDragDropEventType::Cancel;
         source->HandleDragDropEvent(event);
     }
-    return;
 }
 
 bool UIContext::CaptureMouse(UIElement* element)
