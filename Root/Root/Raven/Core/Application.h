@@ -33,6 +33,8 @@ struct ApplicationSpecification
     bool EnableDearImGui = true;
     // 既存Editor UIへ重ねるため、Physics Debug Panelは明示的に有効化します。
     bool EnablePhysicsDebugImmediatePanel = false;
+    // 文字表示用Atlasは呼び出し側がGPU Context有効時に生成・共有します。
+    Ref<UIFontAtlas> PhysicsDebugImmediateFont;
 };
 
 class Application
@@ -121,6 +123,7 @@ private:
     // UIContextより先に破棄し、Immediate Widgetの参照寿命を保ちます。
     UIImmediateContext m_ImmediateUI{ m_UIContext };
     bool m_PhysicsDebugImmediatePanelEnabled = false;
+    Ref<UIFontAtlas> m_PhysicsDebugImmediateFont;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
     struct DetachedDockTab
     {
