@@ -162,6 +162,7 @@ private:
     };
     std::vector<PendingUIAttach> m_PendingUIAttaches;
     void FlushPendingUIDetaches();
+    void CompleteReleasedUIWindowDrags();
     void OnAuxiliaryUIEvent(WindowID id, Event& event);
     bool m_RavenUIEnabled = true;
 
