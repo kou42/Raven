@@ -55,6 +55,25 @@ void UIContext::SetUserScale(float scale)
     m_UserScale = std::isfinite(scale) && scale > 0.0f ? scale : 1.0f;
 }
 
+math::Vec2 UIContext::GetLayoutViewportSize() const
+{
+    return WindowToLayoutPosition(m_ViewportSize);
+}
+
+math::Vec2 UIContext::WindowToLayoutPosition(const math::Vec2& windowPosition) const
+{
+    // GLFWのMouse/Window座標は既に論理座標です。Framebuffer倍率はここへ混ぜません。
+    // Layoutへ倍率を適用する段階では、入力とViewportの両方にこの変換を使用します。
+    return math::Vec2(windowPosition.x / GetEffectiveScaleX(),
+        windowPosition.y / GetEffectiveScaleY());
+}
+
+math::Vec2 UIContext::LayoutToWindowPosition(const math::Vec2& layoutPosition) const
+{
+    return math::Vec2(layoutPosition.x * GetEffectiveScaleX(),
+        layoutPosition.y * GetEffectiveScaleY());
+}
+
 void UIContext::BeginFrame(const math::Vec2& viewportSize)
 {
     // 前frameのDrawCommandを必ず破棄してから新しいframeを開始します。
