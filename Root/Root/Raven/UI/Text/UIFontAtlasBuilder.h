@@ -45,6 +45,14 @@ public:
 class UIFontAtlasDPICache
 {
 public:
+    // GPU生成を伴わず、生成済みAtlasだけを検索します。DPI通知から安全に呼べます。
+    Ref<UIFontAtlas> Find(
+        const std::string& fontPath,
+        const std::vector<std::uint32_t>& codepoints,
+        const UIFontAtlasBuildOptions& baseOptions,
+        float effectiveScale,
+        float& outRasterScale) const;
+
     Ref<UIFontAtlas> GetOrBuild(
         const std::string& fontPath,
         const std::vector<std::uint32_t>& codepoints,
