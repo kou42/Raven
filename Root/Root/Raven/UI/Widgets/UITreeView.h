@@ -499,7 +499,7 @@ protected:
             if (ancestor == source)
             {
                 ResetDragAutoExpand();
-            return false;
+                return false;
             }
         }
         if (source == target)
@@ -522,7 +522,7 @@ protected:
                     (placement == DropPlacement::After && targetIt + 1 == sourceIt)))
             {
                 ResetDragAutoExpand();
-            return false;
+                return false;
             }
         }
         // ChildへのDropは子リスト末尾への追加です。既に末尾の子なら並び順は変わりません。
@@ -605,7 +605,7 @@ protected:
             if (oldIt == oldSiblings.end())
             {
                 ResetDragAutoExpand();
-            return false;
+                return false;
             }
             // 所有権移動前に選択の所属を記録します。移動後のParent chainでは判定できません。
             bool clearSourceSelection = false;
