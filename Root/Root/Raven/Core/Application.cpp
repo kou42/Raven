@@ -1,4 +1,6 @@
 #include "Application.h"
+#include "Raven/Scene/SceneGame.h"
+#include "Raven/Physics/Debug/PhysicsDebugImmediatePanel.h"
 #include "../Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/ImGui/ImGuiLayer.h"
@@ -55,6 +57,7 @@ Application::Application()
 
 Application::Application(const ApplicationSpecification& specification)
     : m_RavenUIEnabled(specification.EnableRavenUI)
+    , m_PhysicsDebugImmediatePanelEnabled(specification.EnablePhysicsDebugImmediatePanel)
 {
     // WindowはRenderer / ImGuiより先に生成します。
     // 選択BackendのGraphics ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
@@ -1084,6 +1087,26 @@ void Application::Run()
         // GetUIContext().GetDrawList()へ描画要求を追加できる共通frame境界になります。
         // 現在はUIContextがRoot UIElementを所有しているため、通常WidgetはDrawListへ直接書かず、
         // Root以下のRetained Treeを更新します。EndFrame()時にTreeからDrawListへ自動展開されます。
+        if (m_RavenUIEnabled == true)
+        {
+            // Immediate宣言はUIContext::BeginFrameより前に完了させます。
+            // SceneGame以外へ切り替わったFrameは空宣言で旧Panelを掃除します。
+            if (m_ImmediateUI.BeginFrame() == true)
+            {
+                SceneGame* game = dynamic_cast<SceneGame*>(m_scene.get());
+                if (m_PhysicsDebugImmediatePanelEnabled == true && game != nullptr)
+                {
+                    ph::DrawPhysicsDebugImmediatePanel(m_ImmediateUI,
+                        game->GetPhysicsDebugSettings(), nullptr,
+                        math::Vec2(24.0f, 300.0f));
+                }
+                if (m_ImmediateUI.EndFrame() == false)
+                {
+                    m_ImmediateUI.AbortFrame();
+                }
+            }
+        }
+
         if (m_RavenUIEnabled == true)
         {
             // GLFWのContent ScaleはWindowごとに変化します。毎frame同期することで
