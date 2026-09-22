@@ -85,6 +85,7 @@ private:
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
+    void OnAuxiliaryUIEvent(WindowID id, Event& event);
     bool m_RavenUIEnabled = true;
 
 #if defined(_DEBUG)
