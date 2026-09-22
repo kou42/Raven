@@ -147,6 +147,36 @@ void TestUIImmediateContext()
     CheckImmediate(immediate.EndFrame() == true, "panel EndFrame");
     CheckImmediate(panel->GetChildren().size() == 2u, "panel child count");
 
+    std::string editText = "abc";
+    CheckImmediate(immediate.BeginFrame() == true, "input BeginFrame");
+    CheckImmediate(immediate.InputText("name", &editText) == false,
+        "input initially unchanged");
+    CheckImmediate(immediate.EndFrame() == true, "input EndFrame");
+    Raven::UIInputText* input = nullptr;
+    for (const auto& element : context.GetRootElement().GetChildren())
+    {
+        if (auto* candidate = dynamic_cast<Raven::UIInputText*>(element.get()))
+        {
+            input = candidate;
+            break;
+        }
+    }
+    CheckImmediate(input != nullptr && input->GetText() == "abc",
+        "input initial text");
+    CheckImmediate(context.SetFocus(input) == true, "focus input");
+    CheckImmediate(context.RouteCharacterEvent(static_cast<std::uint32_t>('d')) == true,
+        "type input character");
+    CheckImmediate(immediate.BeginFrame() == true, "input consume BeginFrame");
+    CheckImmediate(immediate.InputText("name", &editText) == true,
+        "input changed");
+    CheckImmediate(editText == input->GetText() && editText != "abc",
+        "input writes caller string");
+    CheckImmediate(immediate.EndFrame() == true, "input consume EndFrame");
+    CheckImmediate(immediate.BeginFrame() == true, "input one-shot BeginFrame");
+    CheckImmediate(immediate.InputText("name", &editText) == false,
+        "input change not replayed");
+    CheckImmediate(immediate.EndFrame() == true, "input one-shot EndFrame");
+
     CheckImmediate(immediate.BeginFrame() == true, "abort BeginFrame");
     CheckImmediate(immediate.PushID("pending") == true, "abort PushID");
     immediate.AbortFrame();
