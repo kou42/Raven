@@ -12,6 +12,8 @@ void UILabel::SetFont(const Ref<UIFontAtlas>& font)
 {
     m_DPIFontCache = nullptr;
     m_DPIFontPending = false;
+    m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+    m_DPIFontFailedScaleStep = 0u;
     m_Font = font;
     m_FontRasterScale = 1.0f;
     InvalidateMeasure();
@@ -37,8 +39,21 @@ void UILabel::BindDPIFontCache(const Ref<UIFontAtlasDPICache>& cache,
     m_DPIFontPath = std::move(fontPath);
     m_DPIFontCodepoints = std::move(codepoints);
     m_DPIFontOptions = options;
+    m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+    m_DPIFontFailedScaleStep = 0u;
     const UIContext* context = GetContext();
     SwitchCachedDPIFont(context != nullptr ? context->GetEffectiveScaleY() : 1.0f);
+}
+
+void UILabel::RetryDPIFont()
+{
+    if (m_DPIFontCache == nullptr)
+    {
+        return;
+    }
+    m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+    m_DPIFontFailedScaleStep = 0u;
+    m_DPIFontPending = true;
 }
 
 void UILabel::SwitchCachedDPIFont(float effectiveScale)
@@ -46,7 +61,21 @@ void UILabel::SwitchCachedDPIFont(float effectiveScale)
     if (m_DPIFontCache == nullptr)
     {
         m_DPIFontPending = false;
+        m_DPIFontFailure = UIFontAtlasBuildFailure::None;
         return;
+    }
+    UIFontAtlasBuildOptions resolved{};
+    float requestedRasterScale = 1.0f;
+    const bool valid = UIFontAtlasBuilder::ResolveDPIOptions(
+        m_DPIFontOptions, effectiveScale, resolved, requestedRasterScale);
+    const std::uint32_t requestedStep = valid == true
+        ? static_cast<std::uint32_t>(requestedRasterScale * 8.0f) : 0u;
+    if (m_DPIFontFailure != UIFontAtlasBuildFailure::None &&
+        requestedStep != m_DPIFontFailedScaleStep)
+    {
+        // 別のDPI倍率なら前回の失敗を引き継がず、新しいAtlasを試します。
+        m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+        m_DPIFontFailedScaleStep = 0u;
     }
     float rasterScale = 1.0f;
     const Ref<UIFontAtlas> atlas = m_DPIFontCache->Find(m_DPIFontPath,
@@ -59,6 +88,8 @@ void UILabel::SwitchCachedDPIFont(float effectiveScale)
         return;
     }
     m_DPIFontPending = false;
+    m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+    m_DPIFontFailedScaleStep = 0u;
     if (m_Font != atlas || m_FontRasterScale != rasterScale || m_ScaleGlyphsWithDPI == false)
     {
         SetFontDPI(atlas, rasterScale);
@@ -74,14 +105,24 @@ bool UILabel::RefreshDPIFont()
     const UIContext* context = GetContext();
     const float scaleY = context != nullptr ? context->GetEffectiveScaleY() : 1.0f;
     float rasterScale = 1.0f;
+    UIFontAtlasBuildFailure failure = UIFontAtlasBuildFailure::None;
     const Ref<UIFontAtlas> atlas = m_DPIFontCache->GetOrBuild(m_DPIFontPath,
-        m_DPIFontCodepoints, m_DPIFontOptions, scaleY, rasterScale);
+        m_DPIFontCodepoints, m_DPIFontOptions, scaleY, rasterScale, &failure);
     if (atlas == nullptr)
     {
         m_DPIFontPending = true;
+        m_DPIFontFailure = failure;
+        UIFontAtlasBuildOptions resolved{};
+        float requestedRasterScale = 1.0f;
+        const bool valid = UIFontAtlasBuilder::ResolveDPIOptions(
+            m_DPIFontOptions, scaleY, resolved, requestedRasterScale);
+        m_DPIFontFailedScaleStep = valid == true
+            ? static_cast<std::uint32_t>(requestedRasterScale * 8.0f) : 0u;
         return false;
     }
     m_DPIFontPending = false;
+    m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+    m_DPIFontFailedScaleStep = 0u;
     if (m_Font != atlas || m_FontRasterScale != rasterScale || m_ScaleGlyphsWithDPI == false)
     {
         SetFontDPI(atlas, rasterScale);
