@@ -126,6 +126,14 @@ public:
         return true;
     }
 
+    // Glyph Quadだけを拡大し、AtlasのUVと元pixel寸法は維持します。
+    bool AppendGlyphScaled(
+        UIDrawList& drawList,
+        std::uint32_t codepoint,
+        const math::Vec2& pen,
+        const math::Vec2& glyphScale,
+        const math::Vec4& color = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f }) const;
+
     // 文字列をBaseline起点で左から右へ並べます。
     // Glyphが未収録ならU+FFFD、次に'?'を探し、いずれも無ければ描画せず進みます。
     // 改行はLineHeightでPenを進めます。Kerning・折り返し・複雑な文字形成は後続Phaseです。

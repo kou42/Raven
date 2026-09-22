@@ -21,6 +21,59 @@ UIContext::UIContext()
     m_PopupLayer = m_RootElement->AddChild(std::move(layer));
 }
 
+std::size_t UIContext::GetPendingDPIFontCount() const
+{
+    if (m_RootElement == nullptr)
+    {
+        return 0u;
+    }
+    std::size_t count = 0u;
+    const auto visit = [&count](const auto& self, const UIElement& element) -> void
+    {
+        if (element.HasPendingDPIFont() == true)
+        {
+            ++count;
+        }
+        for (const auto& child : element.GetChildren())
+        {
+            if (child != nullptr)
+            {
+                self(self, *child);
+            }
+        }
+    };
+    visit(visit, *m_RootElement);
+    return count;
+}
+
+std::size_t UIContext::RefreshPendingDPIFonts()
+{
+    if (m_RootElement == nullptr)
+    {
+        return 0u;
+    }
+    std::size_t refreshed = 0u;
+    // Layoutの前にFontを確定させ、Glyph幅変更によるMeasure/Arrangeを同Frameへ反映します。
+    // Renderer/RHI Contextの有効性は呼び出し側が保証します。
+    const auto visit = [&refreshed](const auto& self, UIElement& element) -> void
+    {
+        if (element.HasPendingDPIFont() == true &&
+            element.RefreshPendingDPIFont() == true)
+        {
+            ++refreshed;
+        }
+        for (const auto& child : element.GetChildren())
+        {
+            if (child != nullptr)
+            {
+                self(self, *child);
+            }
+        }
+    };
+    visit(visit, *m_RootElement);
+    return refreshed;
+}
+
 void UIContext::CancelIMEComposition(UIElement* element)
 {
     if (element == nullptr || element->HasActiveIMEComposition() == false)
@@ -41,6 +94,56 @@ void UIContext::CancelIMEComposition(UIElement* element)
         cancel.Context = this;
         element->HandleIMEEvent(cancel);
     }
+}
+
+void UIContext::SetDPIScale(float x, float y)
+{
+    // 0/NaN/InfinityをUI計算へ流さないため、無効な値は等倍へ戻します。
+    const float nextX = std::isfinite(x) && x > 0.0f ? x : 1.0f;
+    const float nextY = std::isfinite(y) && y > 0.0f ? y : 1.0f;
+    if (m_DPIScaleX == nextX && m_DPIScaleY == nextY)
+    {
+        return;
+    }
+    m_DPIScaleX = nextX;
+    m_DPIScaleY = nextY;
+    if (m_RootElement != nullptr)
+    {
+        m_RootElement->RefreshDPIMetricsRecursive();
+    }
+}
+
+void UIContext::SetUserScale(float scale)
+{
+    const float nextScale = std::isfinite(scale) && scale > 0.0f ? scale : 1.0f;
+    if (m_UserScale == nextScale)
+    {
+        return;
+    }
+    m_UserScale = nextScale;
+    if (m_RootElement != nullptr)
+    {
+        m_RootElement->RefreshDPIMetricsRecursive();
+    }
+}
+
+math::Vec2 UIContext::GetLayoutViewportSize() const
+{
+    return WindowToLayoutPosition(m_ViewportSize);
+}
+
+math::Vec2 UIContext::WindowToLayoutPosition(const math::Vec2& windowPosition) const
+{
+    // GLFWのMouse/Window座標は既に論理座標です。Framebuffer倍率はここへ混ぜません。
+    // Layoutへ倍率を適用する段階では、入力とViewportの両方にこの変換を使用します。
+    return math::Vec2(windowPosition.x / GetEffectiveScaleX(),
+        windowPosition.y / GetEffectiveScaleY());
+}
+
+math::Vec2 UIContext::LayoutToWindowPosition(const math::Vec2& layoutPosition) const
+{
+    return math::Vec2(layoutPosition.x * GetEffectiveScaleX(),
+        layoutPosition.y * GetEffectiveScaleY());
 }
 
 void UIContext::BeginFrame(const math::Vec2& viewportSize)

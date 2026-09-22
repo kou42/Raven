@@ -1,10 +1,14 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/Renderer/Texture/Texture.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
+#include "Raven/UI/Text/UITextLayout.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
@@ -26,6 +30,7 @@
 #include <iostream>
 #include <cmath>
 #include <memory>
+#include <limits>
 #include <string>
 
 namespace
@@ -73,6 +78,378 @@ void Check(bool condition, const char* label)
         std::cerr << label << ": failed\n";
         std::exit(EXIT_FAILURE);
     }
+}
+
+void TestDPIFontBuildFailureDetails()
+{
+    Raven::UIFontAtlas atlas;
+    Raven::UIFontAtlasBuildOptions options{};
+    Raven::UIFontAtlasBuildFailure failure = Raven::UIFontAtlasBuildFailure::None;
+    options.AtlasWidth = 0u;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile("missing-font.ttf", { 65u },
+        options, atlas, &failure) == false, "invalid atlas options rejected");
+    Check(failure == Raven::UIFontAtlasBuildFailure::InvalidDPIOptions,
+        "builder invalid options diagnostic");
+    options.AtlasWidth = 1024u;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile("missing-font.ttf", { 65u },
+        options, atlas, &failure) == false, "missing font rejected before GPU work");
+    Check(failure == Raven::UIFontAtlasBuildFailure::FontFileUnavailable,
+        "builder missing file diagnostic");
+    Raven::UIFontAtlasDPICache cache;
+    float rasterScale = 1.0f;
+    Check(cache.GetOrBuild("missing-font.ttf", { 65u }, options, 0.0f,
+        rasterScale, &failure) == nullptr, "invalid dpi rejected");
+    Check(failure == Raven::UIFontAtlasBuildFailure::InvalidDPIOptions,
+        "cache invalid dpi diagnostic");
+}
+
+// Font解析とGlyph配置で失敗する場合はTexture::Createまで進まないため、GPUなしで診断を検証できます。
+// RHI未初期化の検証はnative OpenGL呼び出し前に終了するためGPU Context不要です。
+void TestTextureDeviceUnavailableDiagnostic()
+{
+    if (Raven::RenderCommand::GetDevice() != nullptr)
+    {
+        std::cout << "[SKIP] Texture Device diagnostic: RHI device already initialized\n";
+        return;
+    }
+    Raven::TextureSpecification specification{};
+    specification.Width = 1u;
+    specification.Height = 1u;
+    specification.Format = Raven::TextureFormat::RGBA8;
+    specification.GenerateMips = false;
+    const std::uint8_t pixels[4] = { 255u, 255u, 255u, 255u };
+    Raven::TextureCreationFailure failure = Raven::TextureCreationFailure::None;
+    Check(Raven::Texture::Create(specification, pixels, sizeof(pixels), &failure) == nullptr,
+        "uninitialized RHI rejects diagnostic texture creation");
+    Check(failure == Raven::TextureCreationFailure::DeviceUnavailable,
+        "uninitialized RHI device diagnostic");
+}
+
+void TestDPIFontDataAndCapacityFailure()
+{
+    namespace fs = std::filesystem;
+    const fs::path invalidFont = fs::temp_directory_path() /
+        ("RavenInvalidFont_" + std::to_string(
+            static_cast<std::uint64_t>(std::chrono::steady_clock::now()
+                .time_since_epoch().count())) + ".ttf");
+    {
+        std::ofstream stream(invalidFont, std::ios::binary | std::ios::trunc);
+        Check(stream.is_open(), "invalid font fixture created");
+        stream << "not a TrueType font";
+        Check(stream.good(), "invalid font fixture written");
+    }
+    Raven::UIFontAtlas atlas;
+    Raven::UIFontAtlasBuildOptions options{};
+    Raven::UIFontAtlasBuildFailure failure = Raven::UIFontAtlasBuildFailure::None;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile(invalidFont.string(), { 65u },
+        options, atlas, &failure) == false, "invalid font data rejected");
+    Check(failure == Raven::UIFontAtlasBuildFailure::FontDataInvalid,
+        "invalid font data diagnostic");
+    std::error_code removeError;
+    fs::remove(invalidFont, removeError);
+    Check(removeError.value() == 0, "invalid font fixture removed");
+
+    // CI/開発機のFontを使用し、存在しない環境では明示的にスキップします。
+    // 1x1 AtlasにASCII 'A'を収められないため、GPU Texture生成前に容量不足が確定します。
+    std::string fontPath;
+    const char* configured = std::getenv("RAVEN_UI_TEST_FONT");
+    if (configured != nullptr && configured[0] != '\0')
+    {
+        fontPath = configured;
+    }
+    else
+    {
+        constexpr const char* candidates[] =
+        {
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/meiryo.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf"
+        };
+        for (const char* candidate : candidates)
+        {
+            std::error_code existsError;
+            if (fs::is_regular_file(candidate, existsError) == true)
+            {
+                fontPath = candidate;
+                break;
+            }
+        }
+    }
+    std::error_code existsError;
+    if (fontPath.empty() == true || fs::is_regular_file(fontPath, existsError) == false)
+    {
+        std::cout << "[SKIP] DPI Font capacity test: set RAVEN_UI_TEST_FONT to a valid TTF/TTC path\n";
+        return;
+    }
+    options.AtlasWidth = 1u;
+    options.AtlasHeight = 1u;
+    options.Padding = 0u;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile(fontPath, { 65u },
+        options, atlas, &failure) == false, "one-pixel atlas rejects glyph A");
+    Check(failure == Raven::UIFontAtlasBuildFailure::AtlasCapacityExceeded,
+        "atlas capacity diagnostic before GPU creation");
+}
+
+void TestDPIFontBatchRefresh()
+{
+    Raven::UIContext context;
+    auto cache = Raven::CreateRef<Raven::UIFontAtlasDPICache>();
+    auto panel = std::make_unique<Raven::UIElement>();
+    auto label = std::make_unique<Raven::UILabel>();
+    Raven::UILabel* ptr = label.get();
+    panel->AddChild(std::move(label));
+    context.GetRootElement().AddChild(std::move(panel));
+    Check(context.GetPendingDPIFontCount() == 0u, "initial pending font count");
+    Raven::UIFontAtlasBuildOptions options{};
+    ptr->BindDPIFontCache(cache, "missing-font.ttf", { 65u }, options);
+    Check(context.GetPendingDPIFontCount() == 1u, "nested label pending count");
+    Check(context.RefreshPendingDPIFonts() == 0u, "missing font batch refresh fails safely");
+    Check(ptr->IsDPIFontPending(), "failed label retains pending state");
+    Check(ptr->GetDPIFontFailure() == Raven::UIFontAtlasBuildFailure::FontFileUnavailable,
+        "missing font failure diagnostic");
+    Check(context.GetPendingDPIFontCount() == 0u, "failed batch suppresses automatic retry");
+    Check(context.RefreshPendingDPIFonts() == 0u, "blocked batch does not retry");
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(context.GetPendingDPIFontCount() == 1u, "new dpi permits a fresh attempt");
+    Check(context.RefreshPendingDPIFonts() == 0u, "new dpi missing font still fails");
+    Check(context.GetPendingDPIFontCount() == 0u, "new dpi failure is also blocked");
+    ptr->RetryDPIFont();
+    Check(ptr->GetDPIFontFailure() == Raven::UIFontAtlasBuildFailure::None,
+        "explicit retry clears diagnostic");
+    Check(context.GetPendingDPIFontCount() == 1u, "explicit retry schedules batch");
+    ptr->SetFont(nullptr);
+    Check(context.GetPendingDPIFontCount() == 0u, "legacy font clears batch pending");
+    Check(context.RefreshPendingDPIFonts() == 0u, "empty batch refresh");
+}
+
+void TestDPIFontAutoRebind()
+{
+    Raven::UIContext context;
+    auto cache = Raven::CreateRef<Raven::UIFontAtlasDPICache>();
+    auto label = std::make_unique<Raven::UILabel>();
+    Raven::UILabel* ptr = label.get();
+    context.GetRootElement().AddChild(std::move(label));
+    Raven::UIFontAtlasBuildOptions options{};
+    ptr->BindDPIFontCache(cache, "missing-font.ttf", { 65u, 66u }, options);
+    Check(ptr->IsDPIFontPending(), "uncached font waits for GPU context");
+    Check(cache->GetEntryCount() == 0u, "dpi callback does not build atlas");
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(ptr->IsDPIFontPending(), "dpi switch leaves uncached font pending");
+    Check(cache->GetEntryCount() == 0u, "dpi switch remains GPU free");
+    Check(ptr->RefreshDPIFont() == false, "missing font build fails safely");
+    Check(ptr->IsDPIFontPending(), "failed build stays pending");
+    Check(ptr->GetDPIFontFailure() == Raven::UIFontAtlasBuildFailure::FontFileUnavailable,
+        "missing font is diagnosed");
+    ptr->SetFont(nullptr);
+    Check(ptr->IsDPIFontPending() == false, "legacy font clears pending binding");
+    context.SetDPIScale(1.0f, 1.0f);
+    Check(ptr->IsDPIFontPending() == false, "legacy font remains unbound");
+}
+
+void TestDPIAtlasLabelBinding()
+{
+    Raven::UILabel label;
+    label.SetScaleGlyphsWithDPI(false);
+    label.SetFontDPI(nullptr, 2.0f);
+    Check(label.GetScaleGlyphsWithDPI(), "dpi atlas enables glyph scaling");
+    label.SetScaleGlyphsWithDPI(false);
+    label.SetFontDPI(nullptr, 0.0f);
+    Check(label.GetScaleGlyphsWithDPI() == false, "invalid atlas raster scale rejected");
+    label.SetFont(nullptr);
+    Check(label.GetFont() == nullptr, "legacy atlas setter retained");
+}
+
+void TestDPIGlyphScale()
+{
+    Raven::UIContext context;
+    auto label = std::make_unique<Raven::UILabel>();
+    label->SetScaleGlyphsWithDPI(true);
+    Raven::UILabel* ptr = label.get();
+    context.GetRootElement().AddChild(std::move(label));
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+    Check(ptr->IsMeasureDirty() == false, "glyph scale clean after frame");
+    context.SetDPIScale(1.5f, 2.0f);
+    Check(ptr->IsMeasureDirty(), "glyph scale dpi invalidates measure");
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+    Check(ptr->IsMeasureDirty() == false, "glyph scale remeasured");
+    context.SetUserScale(1.25f);
+    Check(ptr->IsMeasureDirty(), "glyph scale user scale invalidates measure");
+    ptr->SetScaleGlyphsWithDPI(false);
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(ptr->IsMeasureDirty() == false, "legacy glyph scale unaffected");
+
+    Raven::UIFontAtlas atlas;
+    Raven::UITextLayoutOptions options{};
+    options.GlyphScale = Raven::math::Vec2(0.0f, 1.0f);
+    Check(Raven::UITextLayout::Build(atlas, "A", options).Metrics.LineCount == 0u,
+        "invalid glyph scale rejected");
+}
+
+void TestDPILabelTypographyMetrics()
+{
+    Raven::UIContext context;
+    auto label = std::make_unique<Raven::UILabel>();
+    label->SetBaselineOffsetDIP(12.0f);
+    label->SetLineHeightDIP(18.0f);
+    Raven::UILabel* ptr = label.get();
+    context.GetRootElement().AddChild(std::move(label));
+    context.SetDPIScale(1.5f, 2.0f);
+    CheckNear("label baseline dpi y", ptr->GetBaselineOffset(), 24.0f);
+    CheckNear("label line height dpi y", ptr->GetLineHeight(), 36.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("label baseline user scale", ptr->GetBaselineOffset(), 30.0f);
+    CheckNear("label line height user scale", ptr->GetLineHeight(), 45.0f);
+    ptr->SetLineHeight(21.0f);
+    context.SetDPIScale(2.0f, 1.5f);
+    CheckNear("label legacy line height", ptr->GetLineHeight(), 21.0f);
+    CheckNear("label dip baseline updated", ptr->GetBaselineOffset(), 22.5f);
+    ptr->SetBaselineOffset(7.0f);
+    context.SetUserScale(2.0f);
+    CheckNear("label legacy baseline", ptr->GetBaselineOffset(), 7.0f);
+    CheckNear("label legacy line height after scale", ptr->GetLineHeight(), 21.0f);
+}
+
+void TestDPIAbsolutePosition()
+{
+    Raven::UIContext context;
+    auto container = std::make_unique<Raven::UIElement>();
+    container->SetPositionDIP(Raven::math::Vec2(10.0f, 20.0f));
+    container->SetPreferredSizeDIP(Raven::math::Vec2(100.0f, 80.0f));
+    auto child = std::make_unique<Raven::UIElement>();
+    child->SetPositionDIP(Raven::math::Vec2(5.0f, 7.0f));
+    child->SetPreferredSizeDIP(Raven::math::Vec2(20.0f, 10.0f));
+    Raven::UIElement* childPtr = child.get();
+    container->AddChild(std::move(child));
+    Raven::UIElement* containerPtr = context.GetRootElement().AddChild(std::move(container));
+    context.SetDPIScale(1.5f, 2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("dpi absolute parent x", containerPtr->GetPosition().x, 15.0f);
+    CheckNear("dpi absolute parent y", containerPtr->GetPosition().y, 40.0f);
+    CheckNear("dpi absolute child x", childPtr->GetPosition().x, 7.5f);
+    CheckNear("dpi absolute child y", childPtr->GetPosition().y, 14.0f);
+    context.SetUserScale(2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("rescaled parent x", containerPtr->GetPosition().x, 30.0f);
+    CheckNear("rescaled child x", childPtr->GetPosition().x, 15.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("no position accumulation", childPtr->GetPosition().x, 15.0f);
+    childPtr->SetPosition(Raven::math::Vec2(9.0f, 11.0f));
+    context.SetDPIScale(2.0f, 2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("legacy position after dpi", childPtr->GetPosition().x, 9.0f);
+    CheckNear("legacy position after dpi y", childPtr->GetPosition().y, 11.0f);
+    // Flow Layoutは親の配置結果が優先され、Absolute指定は再配置時まで保存します。
+    containerPtr->SetLayoutMode(Raven::UILayoutMode::Vertical);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("flow overrides position", childPtr->GetPosition().x, 0.0f);
+    containerPtr->SetLayoutMode(Raven::UILayoutMode::Absolute);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("absolute restores position", childPtr->GetPosition().x, 9.0f);
+}
+
+void TestDPISizeConstraints()
+{
+    Raven::UIContext context;
+    auto element = std::make_unique<Raven::UIElement>();
+    element->SetPreferredSizeDIP(Raven::math::Vec2(80.0f, 40.0f));
+    element->SetMinSizeDIP(Raven::math::Vec2(90.0f, 20.0f));
+    element->SetMaxSizeDIP(Raven::math::Vec2(100.0f, 30.0f));
+    Raven::UIElement* ptr = context.GetRootElement().AddChild(std::move(element));
+    context.SetDPIScale(1.5f, 2.0f);
+    CheckNear("dpi min clamps width", ptr->GetPreferredSize().x, 135.0f);
+    CheckNear("dpi max clamps height", ptr->GetPreferredSize().y, 60.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("user scale min width", ptr->GetPreferredSize().x, 168.75f);
+    CheckNear("user scale max height", ptr->GetPreferredSize().y, 75.0f);
+    // Legacy setterへの切替後はDPIが変わっても、その軸の制約は固定値のままです。
+    ptr->SetMinSize(Raven::math::Vec2(10.0f, 10.0f));
+    ptr->SetMaxSize(Raven::math::Vec2(120.0f, 80.0f));
+    context.SetDPIScale(2.0f, 2.0f);
+    CheckNear("legacy max clamps dip width", ptr->GetPreferredSize().x, 120.0f);
+    CheckNear("legacy max clamps dip height", ptr->GetPreferredSize().y, 80.0f);
+    // Contextを離れたElementはDIP等倍で再計算されます。
+    Raven::Scope<Raven::UIElement> detached = context.GetRootElement().DetachChild(ptr);
+    CheckNear("detached dip width", detached->GetPreferredSize().x, 80.0f);
+    CheckNear("detached dip height", detached->GetPreferredSize().y, 40.0f);
+}
+
+void TestDPILayoutMetrics()
+{
+    Raven::UIContext context;
+    auto container = std::make_unique<Raven::UIElement>();
+    container->SetLayoutMode(Raven::UILayoutMode::Vertical);
+    container->SetPaddingDIP(Raven::UIThickness(4.0f));
+    container->SetSpacingDIP(3.0f);
+    auto child = std::make_unique<Raven::UIElement>();
+    child->SetPreferredSizeDIP(Raven::math::Vec2(80.0f, 20.0f));
+    child->SetMarginDIP(Raven::UIThickness(2.0f));
+    Raven::UIElement* childPtr = child.get();
+    container->AddChild(std::move(child));
+    Raven::UIElement* containerPtr = context.GetRootElement().AddChild(std::move(container));
+    context.SetDPIScale(1.5f, 2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("dpi preferred width", childPtr->GetPreferredSize().x, 120.0f);
+    CheckNear("dpi preferred height", childPtr->GetPreferredSize().y, 40.0f);
+    CheckNear("dpi padding x", containerPtr->GetPadding().Left, 6.0f);
+    CheckNear("dpi padding y", containerPtr->GetPadding().Top, 8.0f);
+    CheckNear("dpi margin x", childPtr->GetMargin().Left, 3.0f);
+    CheckNear("dpi margin y", childPtr->GetMargin().Top, 4.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("user scaled width", childPtr->GetPreferredSize().x, 150.0f);
+    CheckNear("user scaled height", childPtr->GetPreferredSize().y, 50.0f);
+    // 同じDPI通知ではLayoutを再度Dirtyにしません。
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    context.SetDPIScale(1.5f, 2.0f);
+    Check(childPtr->IsMeasureDirty() == false, "unchanged dpi does not invalidate");
+    // 従来のWindow座標setterでDIP指定を明示的に解除できます。
+    childPtr->SetPreferredSize(Raven::math::Vec2(33.0f, 11.0f));
+    context.SetDPIScale(2.0f, 2.0f);
+    CheckNear("legacy size after dpi", childPtr->GetPreferredSize().x, 33.0f);
+    CheckNear("legacy size after dpi y", childPtr->GetPreferredSize().y, 11.0f);
+}
+
+void TestDPIContextCoordinates()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(1200.0f, 800.0f));
+    CheckNear("default layout viewport x", context.GetLayoutViewportSize().x, 1200.0f);
+    CheckNear("default layout viewport y", context.GetLayoutViewportSize().y, 800.0f);
+
+    // X/Y別DPIとユーザー倍率を合成しても、Window座標との往復変換が成立します。
+    context.SetDPIScale(1.5f, 2.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("effective dpi x", context.GetEffectiveScaleX(), 1.875f);
+    CheckNear("effective dpi y", context.GetEffectiveScaleY(), 2.5f);
+    CheckNear("layout viewport x", context.GetLayoutViewportSize().x, 640.0f);
+    CheckNear("layout viewport y", context.GetLayoutViewportSize().y, 320.0f);
+    const Raven::math::Vec2 window(375.0f, 250.0f);
+    const Raven::math::Vec2 layout = context.WindowToLayoutPosition(window);
+    CheckNear("window to layout x", layout.x, 200.0f);
+    CheckNear("window to layout y", layout.y, 100.0f);
+    const Raven::math::Vec2 restored = context.LayoutToWindowPosition(layout);
+    CheckNear("layout to window x", restored.x, window.x);
+    CheckNear("layout to window y", restored.y, window.y);
+    // 既存APIの座標系を勝手に変えないことを保証します。
+    CheckNear("window viewport unchanged", context.GetViewportSize().x, 1200.0f);
+    context.SetDPIScale(0.0f, std::numeric_limits<float>::infinity());
+    context.SetUserScale(-1.0f);
+    CheckNear("invalid dpi x", context.GetEffectiveScaleX(), 1.0f);
+    CheckNear("invalid dpi y", context.GetEffectiveScaleY(), 1.0f);
+    context.EndFrame();
 }
 
 void TestUITheme()
@@ -1716,6 +2093,18 @@ int main()
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     TestUITheme();
+    TestDPIContextCoordinates();
+    TestDPILayoutMetrics();
+    TestDPISizeConstraints();
+    TestDPIAbsolutePosition();
+    TestDPILabelTypographyMetrics();
+    TestDPIGlyphScale();
+    TestDPIAtlasLabelBinding();
+    TestDPIFontAutoRebind();
+    TestDPIFontBatchRefresh();
+    TestDPIFontBuildFailureDetails();
+    TestDPIFontDataAndCapacityFailure();
+    TestTextureDeviceUnavailableDiagnostic();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();

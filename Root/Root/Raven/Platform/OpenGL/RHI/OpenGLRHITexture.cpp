@@ -58,9 +58,14 @@ OpenGLRHITexture::~OpenGLRHITexture()
 
 void OpenGLRHITexture::SetData(const void* data, std::size_t dataSize)
 {
+    (void)TrySetData(data, dataSize);
+}
+
+bool OpenGLRHITexture::TrySetData(const void* data, std::size_t dataSize)
+{
     if (data == nullptr || m_RendererID == 0)
     {
-        return;
+        return false;
     }
 
     const std::uint32_t bytesPerPixel = GetBytesPerPixel(m_Specification.Format);
@@ -69,16 +74,19 @@ void OpenGLRHITexture::SetData(const void* data, std::size_t dataSize)
         * bytesPerPixel;
     if (bytesPerPixel == 0 || dataSize != requiredSize)
     {
-        assert(false && "RHI Texture data size does not match specification");
-        return;
+        return false;
     }
 
     const OpenGLTextureFormatInfo format = ToOpenGLTextureFormat(m_Specification.Format);
     if (format.DataFormat == GL_NONE)
     {
-        return;
+        return false;
     }
 
+    if (glGetError() != GL_NO_ERROR)
+    {
+        return false;
+    }
     glBindTexture(GL_TEXTURE_2D, m_RendererID);
     glTexSubImage2D(
         GL_TEXTURE_2D,
@@ -95,6 +103,9 @@ void OpenGLRHITexture::SetData(const void* data, std::size_t dataSize)
     {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
+    // OpenGLのerror flagはContext共有状態です。既存エラーを誤帰属しないよう、
+    // この呼び出し開始時にエラーがある場合は転送を実行せず失敗とします。
+    return glGetError() == GL_NO_ERROR;
 }
 
 const RHITextureSpecification& OpenGLRHITexture::GetSpecification() const

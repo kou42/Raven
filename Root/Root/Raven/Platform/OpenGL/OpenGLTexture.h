@@ -18,6 +18,7 @@ public:
     void Bind(unsigned int slot = 0) const override;
     void Unbind() const override;
     void SetData(const void* data, std::size_t dataSize) override;
+    bool TrySetData(const void* data, std::size_t dataSize) override;
 
     unsigned int GetID() const override;
     int GetWidth() const override;

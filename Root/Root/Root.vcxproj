@@ -75,8 +75,11 @@
     <RavenOptimizePhysicsInDebug Condition="'$(RavenOptimizePhysicsInDebug)'==''">true</RavenOptimizePhysicsInDebug>
     <!-- 通常アプリとUI回帰テストの中間生成物を分離し、mainの重複定義を防ぎます。 -->
     <RavenUITest Condition="'$(RavenUITest)'==''">false</RavenUITest>
+    <RavenUIGPUTest Condition="'$(RavenUIGPUTest)'==''">false</RavenUIGPUTest>
     <TargetName Condition="'$(RavenUITest)'=='true'">RavenUITests</TargetName>
+    <TargetName Condition="'$(RavenUIGPUTest)'=='true'">RavenUIGPUTests</TargetName>
     <IntDir Condition="'$(RavenUITest)'=='true'">$(Platform)\$(Configuration)\UITests\</IntDir>
+    <IntDir Condition="'$(RavenUIGPUTest)'=='true'">$(Platform)\$(Configuration)\UIGPUTests\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -139,8 +142,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" Condition="'$(RavenUITest)'!='true'" />
-    <ClCompile Include="..\Tests\UITextReflowTests.cpp" Condition="'$(RavenUITest)'=='true'" />
+    <ClCompile Include="main.cpp" Condition="'$(RavenUITest)'!='true' and '$(RavenUIGPUTest)'!='true'" />
+    <ClCompile Include="..\Tests\UITextReflowTests.cpp" Condition="'$(RavenUITest)'=='true' and '$(RavenUIGPUTest)'!='true'" />
+    <ClCompile Include="..\Tests\UIFontTextureGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
     <ClCompile Include="src\glad.c" />
     <ClCompile Include="Raven\**\*.cpp" />
     <!-- Dear ImGui core + GLFW/OpenGL3 backend縲ゆｾ晏ｭ倥ヰ繝ｼ繧ｸ繝ｧ繝ｳ縺ｯgit submodule縺ｮcommit縺ｧ蝗ｺ螳壹＠縺ｾ縺吶・-->

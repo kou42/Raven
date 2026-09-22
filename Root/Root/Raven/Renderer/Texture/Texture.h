@@ -63,6 +63,15 @@ struct TextureSpecification
     bool GenerateMips = true;
 };
 
+// Texture生成の診断です。Pixel upload後のDriverエラーは現行void SetDataでは検知できません。
+enum class TextureCreationFailure
+{
+    None,
+    DeviceUnavailable,
+    ResourceUnavailable,
+    UploadFailed
+};
+
 // Textureは描画APIに依存しないインターフェースです。
 // OpenGL固有のGLuintやglBindTextureなどは派生クラス側へ閉じ込めます。
 // これにより、Textureを利用する上位層はOpenGL / DirectXなどの違いを意識せずに扱えます。
@@ -94,6 +103,14 @@ public:
         std::size_t dataSize
     );
 
+    // 既存APIは維持し、診断が必要な呼び出し元だけ失敗理由を取得します。
+    static Ref<Texture> Create(
+        const TextureSpecification& specification,
+        const void* data,
+        std::size_t dataSize,
+        TextureCreationFailure* outFailure
+    );
+
     virtual void Bind(unsigned int slot = 0) const = 0;
     virtual void Unbind() const = 0;
 
@@ -101,6 +118,13 @@ public:
     // 現段階ではSampled用途のColor Texture更新を対象とします。
     // DepthStencil用途はGPUの描画先として利用するため、通常のSetData経路では更新しません。
     virtual void SetData(const void* data, std::size_t dataSize) = 0;
+    // 診断付き生成経路で使用。既存のTexture派生クラスはSetDataを維持できます。
+    virtual bool TrySetData(const void* data, std::size_t dataSize)
+    {
+        (void)data;
+        (void)dataSize;
+        return false;
+    }
 
     // 既存コードとの互換性を維持するためRenderer側のIDを公開しています。
     // 現在のFramebuffer / ImGui連携整理後に、上位層からのRendererID直接参照を削除予定です。

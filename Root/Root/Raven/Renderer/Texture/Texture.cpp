@@ -2,6 +2,7 @@
 
 #include "Raven/Assets/TextureAssetImporter.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Platform/OpenGL/OpenGLTexture.h"
 
 #include <iostream>
@@ -34,17 +35,59 @@ Ref<Texture> Texture::Create(const TextureSpecification& specification)
 
 Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data, std::size_t dataSize)
 {
+    // Legacy呼び出しの戻り値・初期化順は変更しません。
     Ref<Texture> texture = Create(specification);
     if (texture == nullptr)
     {
         return nullptr;
     }
-
     if (data != nullptr)
     {
         texture->SetData(data, dataSize);
     }
+    return texture;
+}
 
+Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data,
+    std::size_t dataSize, TextureCreationFailure* outFailure)
+{
+    if (outFailure != nullptr)
+    {
+        *outFailure = TextureCreationFailure::None;
+    }
+
+    // 現行Texture BridgeはOpenGLのみ実装されています。Deviceが無い場合は
+    // OpenGLTextureを生成してもnative resourceを取得できないため、ここで区別します。
+    if (GetRHIBackend() == RHIBackend::OpenGL && RenderCommand::GetDevice() == nullptr)
+    {
+        if (outFailure != nullptr)
+        {
+            *outFailure = TextureCreationFailure::DeviceUnavailable;
+        }
+        return nullptr;
+    }
+
+    Ref<Texture> texture = Create(specification);
+    if (texture == nullptr || texture->GetID() == 0u)
+    {
+        if (outFailure != nullptr)
+        {
+            *outFailure = TextureCreationFailure::ResourceUnavailable;
+        }
+        return nullptr;
+    }
+
+    if (data != nullptr)
+    {
+        if (texture->TrySetData(data, dataSize) == false)
+        {
+            if (outFailure != nullptr)
+            {
+                *outFailure = TextureCreationFailure::UploadFailed;
+            }
+            return nullptr;
+        }
+    }
     return texture;
 }
 

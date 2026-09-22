@@ -139,11 +139,17 @@ bool UIElement::SetName(std::string name)
 
 uint64_t UIElement::GetTreeGeneration() const { return GetTreeRoot()->m_TreeGeneration; }
 
-void UIElement::SetPosition(const math::Vec2& value) { m_Position = value; InvalidateArrange(); }
-void UIElement::SetSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
-void UIElement::SetPreferredSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
-void UIElement::SetMinSize(const math::Vec2& value) { m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
-void UIElement::SetMaxSize(const math::Vec2& value) { m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
+void UIElement::SetPosition(const math::Vec2& value)
+{
+    m_UsePositionDIP = false;
+    m_RequestedPosition = value;
+    m_Position = value;
+    InvalidateArrange();
+}
+void UIElement::SetSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
+void UIElement::SetPreferredSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
+void UIElement::SetMinSize(const math::Vec2& value) { m_UseMinSizeDIP = false; m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
+void UIElement::SetMaxSize(const math::Vec2& value) { m_UseMaxSizeDIP = false; m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
 
 void UIElement::SetVisible(bool value)
 {
@@ -164,6 +170,7 @@ void UIElement::SetLayoutMode(UILayoutMode value)
     if (m_LayoutMode != value)
     {
         m_LayoutMode = value;
+        RefreshDPIMetrics();
         InvalidateMeasure();
     }
 }
@@ -186,11 +193,128 @@ void UIElement::SetVerticalAlignment(UIAlignment value)
     }
 }
 
-void UIElement::SetPadding(const UIThickness& value) { m_Padding = value; InvalidateMeasure(); }
-void UIElement::SetPadding(float value) { m_Padding = UIThickness(value); InvalidateMeasure(); }
-void UIElement::SetMargin(const UIThickness& value) { m_Margin = value; InvalidateMeasure(); }
-void UIElement::SetMargin(float value) { m_Margin = UIThickness(value); InvalidateMeasure(); }
-void UIElement::SetSpacing(float value) { m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
+void UIElement::SetPadding(const UIThickness& value) { m_UsePaddingDIP = false; m_Padding = value; InvalidateMeasure(); }
+void UIElement::SetPadding(float value) { SetPadding(UIThickness(value)); }
+void UIElement::SetMargin(const UIThickness& value) { m_UseMarginDIP = false; m_Margin = value; InvalidateMeasure(); }
+void UIElement::SetMargin(float value) { SetMargin(UIThickness(value)); }
+void UIElement::SetSpacing(float value) { m_UseSpacingDIP = false; m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
+
+void UIElement::SetPositionDIP(const math::Vec2& value)
+{
+    m_PositionDIP = value;
+    m_UsePositionDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetPreferredSizeDIP(const math::Vec2& value)
+{
+    m_PreferredSizeDIP = value;
+    m_UsePreferredSizeDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetMinSizeDIP(const math::Vec2& value)
+{
+    m_MinSizeDIP = value;
+    m_UseMinSizeDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetMaxSizeDIP(const math::Vec2& value)
+{
+    m_MaxSizeDIP = value;
+    m_UseMaxSizeDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetPaddingDIP(const UIThickness& value)
+{
+    m_PaddingDIP = value;
+    m_UsePaddingDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetMarginDIP(const UIThickness& value)
+{
+    m_MarginDIP = value;
+    m_UseMarginDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::SetSpacingDIP(float value)
+{
+    m_SpacingDIP = value;
+    m_UseSpacingDIP = true;
+    RefreshDPIMetrics();
+}
+
+void UIElement::RefreshDPIMetrics()
+{
+    const float x = m_Context != nullptr ? m_Context->GetEffectiveScaleX() : 1.0f;
+    const float y = m_Context != nullptr ? m_Context->GetEffectiveScaleY() : 1.0f;
+    if (m_UsePositionDIP == true)
+    {
+        m_RequestedPosition = math::Vec2(m_PositionDIP.x * x, m_PositionDIP.y * y);
+        // 実配置位置はArrangeが確定します。ここでは指定位置だけを更新します。
+        InvalidateArrange();
+    }
+    // 制約を先に更新し、PreferredSizeのClampに古いDPIのMin/Maxを使わないようにします。
+    if (m_UseMinSizeDIP == true)
+    {
+        m_MinSize = math::Vec2(std::max(0.0f, m_MinSizeDIP.x * x),
+            std::max(0.0f, m_MinSizeDIP.y * y));
+    }
+    if (m_UseMaxSizeDIP == true)
+    {
+        // MaxSizeの既定上限FLT_MAXは倍率を掛けるとInfinityになり得るため保持します。
+        m_MaxSize = math::Vec2(
+            m_MaxSizeDIP.x == std::numeric_limits<float>::max()
+                ? std::numeric_limits<float>::max() : std::max(0.0f, m_MaxSizeDIP.x * x),
+            m_MaxSizeDIP.y == std::numeric_limits<float>::max()
+                ? std::numeric_limits<float>::max() : std::max(0.0f, m_MaxSizeDIP.y * y));
+    }
+    if (m_UsePreferredSizeDIP == true)
+    {
+        m_PreferredSize = ClampSize(math::Vec2(m_PreferredSizeDIP.x * x, m_PreferredSizeDIP.y * y));
+    }
+    if (m_UsePaddingDIP == true)
+    {
+        m_Padding.Left = m_PaddingDIP.Left * x;
+        m_Padding.Top = m_PaddingDIP.Top * y;
+        m_Padding.Right = m_PaddingDIP.Right * x;
+        m_Padding.Bottom = m_PaddingDIP.Bottom * y;
+    }
+    if (m_UseMarginDIP == true)
+    {
+        m_Margin.Left = m_MarginDIP.Left * x;
+        m_Margin.Top = m_MarginDIP.Top * y;
+        m_Margin.Right = m_MarginDIP.Right * x;
+        m_Margin.Bottom = m_MarginDIP.Bottom * y;
+    }
+    if (m_UseSpacingDIP == true)
+    {
+        // LayoutのVertical/Horizontal方向に合わせて軸を選択します。
+        m_Spacing = std::max(0.0f, m_SpacingDIP * (m_LayoutMode == UILayoutMode::Horizontal ? x : y));
+    }
+    if (m_UsePreferredSizeDIP || m_UseMinSizeDIP || m_UseMaxSizeDIP ||
+        m_UsePaddingDIP || m_UseMarginDIP || m_UseSpacingDIP)
+    {
+        InvalidateMeasure();
+    }
+}
+
+void UIElement::RefreshDPIMetricsRecursive()
+{
+    RefreshDPIMetrics();
+    OnDPIScaleChanged();
+    for (auto& child : m_Children)
+    {
+        if (child != nullptr)
+        {
+            child->RefreshDPIMetricsRecursive();
+        }
+    }
+}
 
 void UIElement::SetAffectsParentMeasure(bool value)
 {
@@ -236,7 +360,7 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
     {
         // 初回Measureの自然幅からRootの実幅を決め、幅依存の高さを親へ再集約します。
         ReflowForWidth(ResolveRootSize().x);
-        ArrangeRecursive(m_Position, ResolveRootSize());
+        ArrangeRecursive(m_RequestedPosition, ResolveRootSize());
     }
     BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
 }
@@ -466,7 +590,7 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
         const float availableWidth = std::max(0.0f, contentWidth - child->m_Margin.Left - child->m_Margin.Right);
         const float availableHeight = std::max(0.0f, contentHeight - child->m_Margin.Top - child->m_Margin.Bottom);
         math::Vec2 childSize = child->m_DesiredSize;
-        math::Vec2 childPosition = child->m_Position;
+        math::Vec2 childPosition = child->m_RequestedPosition;
 
         if (m_LayoutMode == UILayoutMode::Vertical)
         {
@@ -542,6 +666,7 @@ void UIElement::SetContextRecursive(UIContext* context)
         OnContextChanged(previous, context);
     }
     m_Context = context;
+    RefreshDPIMetrics();
     for (auto& child : m_Children)
     {
         if (child != nullptr)

@@ -136,6 +136,16 @@ public:
     void SetMargin(float value);
     void SetSpacing(float value);
 
+    // DIP指定はOpt-inです。従来のSet*はWindow論理座標のまま維持します。
+    // Monitor移動やUserScale変更時に、元のDIP値から再計算して丸め誤差の蓄積を防ぎます。
+    void SetPositionDIP(const math::Vec2& value);
+    void SetPreferredSizeDIP(const math::Vec2& value);
+    void SetMinSizeDIP(const math::Vec2& value);
+    void SetMaxSizeDIP(const math::Vec2& value);
+    void SetPaddingDIP(const UIThickness& value);
+    void SetMarginDIP(const UIThickness& value);
+    void SetSpacingDIP(float value);
+
     // falseにすると自身のMeasureは通常通り実行しつつ、親のDesiredSize集約からだけ除外します。
     // ScrollView ContentやOverlay Decorationのように、子の実サイズと親Viewportサイズを分離したい場合に利用します。
     void SetAffectsParentMeasure(bool value);
@@ -299,6 +309,9 @@ public:
     void HandleIMEEvent(UIIMEEvent& event) { OnIMEEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
+    // UIContextのFont一括更新用拡張点。通常Elementは対象外です。
+    virtual bool HasPendingDPIFont() const { return false; }
+    virtual bool RefreshPendingDPIFont() { return false; }
 
 protected:
     // Leaf Widgetが自身のContentに必要な論理Sizeを返します。ContainerのChild集約は基底側で継続します。
@@ -312,6 +325,8 @@ protected:
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
     virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }
     virtual void OnFocusChanged(bool focused) { (void)focused; }
+    // Contextの倍率変更時にWidget固有のDIP寸法を更新する拡張点です。
+    virtual void OnDPIScaleChanged() {}
     virtual void OnContextChanged(UIContext* previous, UIContext* current)
     {
         (void)previous;
@@ -349,6 +364,8 @@ private:
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
     void SetContextRecursive(UIContext* context);
+    void RefreshDPIMetricsRecursive();
+    void RefreshDPIMetrics();
 
     // Path解決結果を無効化する変更だけをTree Generationへ反映します。
     // PositionやSize変更ではBinding先そのものは変わらないため世代を進めません。
@@ -358,7 +375,11 @@ private:
 
 private:
     std::string m_Name;
+    // SetPositionの指定値とArrangeの結果を分離し、再Layout時に位置が累積しないようにします。
     math::Vec2 m_Position{};
+    math::Vec2 m_RequestedPosition{};
+    math::Vec2 m_PositionDIP{};
+    bool m_UsePositionDIP = false;
     math::Vec2 m_Size{};
     math::Vec2 m_PreferredSize{};
     math::Vec2 m_DesiredSize{};
@@ -373,6 +394,18 @@ private:
     UIAlignment m_HorizontalAlignment = UIAlignment::Start;
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
+    math::Vec2 m_PreferredSizeDIP{};
+    math::Vec2 m_MinSizeDIP{};
+    math::Vec2 m_MaxSizeDIP{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+    UIThickness m_PaddingDIP{};
+    UIThickness m_MarginDIP{};
+    float m_SpacingDIP = 0.0f;
+    bool m_UsePreferredSizeDIP = false;
+    bool m_UseMinSizeDIP = false;
+    bool m_UseMaxSizeDIP = false;
+    bool m_UsePaddingDIP = false;
+    bool m_UseMarginDIP = false;
+    bool m_UseSpacingDIP = false;
     float m_Rotation = 0.0f;
     math::Vec2 m_Scale{ 1.0f, 1.0f };
     math::Vec2 m_TransformPivot{ 0.5f, 0.5f };

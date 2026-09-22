@@ -73,6 +73,10 @@ public:
     // 論理Windowサイズとは別の実Pixel数。高DPIでは両者が異なります。
     virtual unsigned int GetFramebufferWidth() const { return GetWidth(); }
     virtual unsigned int GetFramebufferHeight() const { return GetHeight(); }
+    // OSが通知するWindowのContent Scale。Framebuffer/Window寸法比とは独立です。
+    // 未対応Platformは等倍を返し、UI側で安全に扱えるようにします。
+    virtual float GetContentScaleX() const { return 1.0f; }
+    virtual float GetContentScaleY() const { return 1.0f; }
     virtual RHIBackend GetBackend() const = 0;
     virtual WindowState GetState() const = 0;
     virtual void SetTitle(const std::string& title) = 0;

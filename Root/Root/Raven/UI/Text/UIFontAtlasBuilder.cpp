@@ -2,10 +2,12 @@
 
 #include "Raven/Renderer/Texture/Texture.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <filesystem>
 #include <iterator>
 #include <limits>
 #include <unordered_set>
@@ -33,50 +35,181 @@ bool IsValidCodepoint(std::uint32_t codepoint)
 }
 } // namespace
 
+bool UIFontAtlasBuilder::ResolveDPIOptions(
+    const UIFontAtlasBuildOptions& baseOptions,
+    float effectiveScale,
+    UIFontAtlasBuildOptions& outOptions,
+    float& outRasterScale)
+{
+    if (std::isfinite(effectiveScale) == false || effectiveScale <= 0.0f ||
+        std::isfinite(baseOptions.PixelHeight) == false || baseOptions.PixelHeight <= 0.0f ||
+        effectiveScale > 16.0f)
+    {
+        return false;
+    }
+    // 倍率を1/8刻みに固定し、同一Monitor付近の微小な倍率差でAtlasを増やしません。
+    const float quantized = std::max(1.0f, std::round(effectiveScale * 8.0f)) / 8.0f;
+    const float pixelHeight = baseOptions.PixelHeight * quantized;
+    if (std::isfinite(pixelHeight) == false || pixelHeight > 4096.0f)
+    {
+        return false;
+    }
+    outOptions = baseOptions;
+    outOptions.PixelHeight = pixelHeight;
+    outRasterScale = quantized;
+    return true;
+}
+
+Ref<UIFontAtlas> UIFontAtlasDPICache::Find(
+    const std::string& fontPath,
+    const std::vector<std::uint32_t>& codepoints,
+    const UIFontAtlasBuildOptions& baseOptions,
+    float effectiveScale,
+    float& outRasterScale) const
+{
+    UIFontAtlasBuildOptions resolved{};
+    float rasterScale = 1.0f;
+    if (UIFontAtlasBuilder::ResolveDPIOptions(baseOptions, effectiveScale,
+        resolved, rasterScale) == false)
+    {
+        return nullptr;
+    }
+    std::vector<std::uint32_t> normalized = codepoints;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+    const std::uint32_t scaleStep = static_cast<std::uint32_t>(rasterScale * 8.0f);
+    const Key key(fontPath, normalized, baseOptions.PixelHeight, baseOptions.AtlasWidth,
+        baseOptions.AtlasHeight, baseOptions.Padding, scaleStep);
+    const auto found = m_Entries.find(key);
+    if (found == m_Entries.end())
+    {
+        return nullptr;
+    }
+    outRasterScale = rasterScale;
+    return found->second;
+}
+
+Ref<UIFontAtlas> UIFontAtlasDPICache::GetOrBuild(
+    const std::string& fontPath,
+    const std::vector<std::uint32_t>& codepoints,
+    const UIFontAtlasBuildOptions& baseOptions,
+    float effectiveScale,
+    float& outRasterScale,
+    UIFontAtlasBuildFailure* outFailure)
+{
+    if (outFailure != nullptr)
+    {
+        *outFailure = UIFontAtlasBuildFailure::None;
+    }
+    UIFontAtlasBuildOptions resolved{};
+    float rasterScale = 1.0f;
+    if (UIFontAtlasBuilder::ResolveDPIOptions(baseOptions, effectiveScale,
+        resolved, rasterScale) == false)
+    {
+        if (outFailure != nullptr)
+        {
+            *outFailure = UIFontAtlasBuildFailure::InvalidDPIOptions;
+        }
+        return nullptr;
+    }
+    // 文字集合は順序に依存しないため正規化し、同一内容の重複Atlasを避けます。
+    std::vector<std::uint32_t> normalized = codepoints;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+    const std::uint32_t scaleStep = static_cast<std::uint32_t>(rasterScale * 8.0f);
+    const Key key(fontPath, normalized, baseOptions.PixelHeight, baseOptions.AtlasWidth,
+        baseOptions.AtlasHeight, baseOptions.Padding, scaleStep);
+    const auto found = m_Entries.find(key);
+    if (found != m_Entries.end())
+    {
+        outRasterScale = rasterScale;
+        return found->second;
+    }
+    // ファイル未発見とRasterize/GPU生成失敗を分離して診断します。
+    // filesystemの例外を避け、無効Pathでも従来どおり失敗として返します。
+    std::error_code fileError;
+    if (std::filesystem::is_regular_file(fontPath, fileError) == false)
+    {
+        if (outFailure != nullptr)
+        {
+            *outFailure = UIFontAtlasBuildFailure::FontFileUnavailable;
+        }
+        return nullptr;
+    }
+    Ref<UIFontAtlas> built = CreateRef<UIFontAtlas>();
+    UIFontAtlasBuildFailure buildFailure = UIFontAtlasBuildFailure::None;
+    if (UIFontAtlasBuilder::BuildFromFile(fontPath, normalized, resolved, *built, &buildFailure) == false)
+    {
+        // GPU生成失敗時に空のAtlasをCacheへ登録しません。
+        if (outFailure != nullptr)
+        {
+            *outFailure = buildFailure;
+        }
+        return nullptr;
+    }
+    m_Entries.emplace(key, built);
+    outRasterScale = rasterScale;
+    return built;
+}
+
 bool UIFontAtlasBuilder::BuildFromFile(
     const std::string& fontPath,
     const std::vector<std::uint32_t>& codepoints,
     const UIFontAtlasBuildOptions& options,
-    UIFontAtlas& outAtlas)
+    UIFontAtlas& outAtlas,
+    UIFontAtlasBuildFailure* outFailure)
 {
+    if (outFailure != nullptr)
+    {
+        *outFailure = UIFontAtlasBuildFailure::None;
+    }
+    // エラー代入を一箇所に集約し、outAtlasは成功時だけ変更します。
+    const auto fail = [outFailure](UIFontAtlasBuildFailure reason) -> bool
+    {
+        if (outFailure != nullptr)
+        {
+            *outFailure = reason;
+        }
+        return false;
+    };
     if (fontPath.empty() || std::isfinite(options.PixelHeight) == false ||
         options.PixelHeight <= 0.0f || options.AtlasWidth == 0u ||
         options.AtlasHeight == 0u || options.AtlasWidth > kMaximumAtlasSide ||
         options.AtlasHeight > kMaximumAtlasSide || options.Padding > kMaximumAtlasSide)
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::InvalidDPIOptions);
     }
 
     std::ifstream stream(fontPath, std::ios::binary | std::ios::ate);
     if (stream.is_open() == false)
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::FontFileUnavailable);
     }
 
     const std::streampos end = stream.tellg();
     if (end <= std::streampos(0) || end > static_cast<std::streamoff>(kMaximumFontBytes))
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::FontDataInvalid);
     }
     const std::size_t byteCount = static_cast<std::size_t>(end);
     std::vector<unsigned char> fontBytes(byteCount);
     stream.seekg(0, std::ios::beg);
     if (stream.read(reinterpret_cast<char*>(fontBytes.data()), static_cast<std::streamsize>(byteCount)).fail())
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::FontDataInvalid);
     }
 
     const int fontOffset = stbtt_GetFontOffsetForIndex(fontBytes.data(), 0);
     stbtt_fontinfo font{};
     if (fontOffset < 0 || stbtt_InitFont(&font, fontBytes.data(), fontOffset) == 0)
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::FontDataInvalid);
     }
 
     const float scale = stbtt_ScaleForPixelHeight(&font, options.PixelHeight);
     if (std::isfinite(scale) == false || scale <= 0.0f)
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::FontDataInvalid);
     }
 
     // UI.glslはRGBAのRGBを文字色、AをCoverageとして使用します。
@@ -118,7 +251,7 @@ bool UIFontAtlasBuilder::BuildFromFile(
             static_cast<std::uint32_t>(glyphWidth) > options.AtlasWidth ||
             static_cast<std::uint32_t>(glyphHeight) > options.AtlasHeight)
         {
-            return false;
+            return fail(UIFontAtlasBuildFailure::AtlasCapacityExceeded);
         }
 
         int advance = 0;
@@ -140,7 +273,7 @@ bool UIFontAtlasBuilder::BuildFromFile(
                 options.Padding > options.AtlasHeight ||
                 glyphH > options.AtlasHeight - options.Padding)
             {
-                return false;
+                return fail(UIFontAtlasBuildFailure::AtlasCapacityExceeded);
             }
             if (cursorX > options.AtlasWidth ||
                 glyphW > options.AtlasWidth - cursorX)
@@ -149,14 +282,14 @@ bool UIFontAtlasBuilder::BuildFromFile(
                 if (cursorY > options.AtlasHeight ||
                     rowHeight > options.AtlasHeight - cursorY)
                 {
-                    return false;
+                    return fail(UIFontAtlasBuildFailure::AtlasCapacityExceeded);
                 }
                 cursorY += rowHeight;
                 rowHeight = 0u;
             }
             if (cursorY > options.AtlasHeight || glyphH > options.AtlasHeight - cursorY)
             {
-                return false;
+                return fail(UIFontAtlasBuildFailure::AtlasCapacityExceeded);
             }
 
             std::vector<unsigned char> bitmap(static_cast<std::size_t>(glyphW) * glyphH);
@@ -197,10 +330,20 @@ bool UIFontAtlasBuilder::BuildFromFile(
     specification.Format = TextureFormat::RGBA8;
     specification.Usage = TextureUsage::Sampled;
     specification.GenerateMips = false;
-    Ref<Texture> texture = Texture::Create(specification, pixels.data(), pixels.size());
+    TextureCreationFailure textureFailure = TextureCreationFailure::None;
+    Ref<Texture> texture = Texture::Create(specification, pixels.data(), pixels.size(), &textureFailure);
     if (texture == nullptr || texture->GetID() == 0u)
     {
-        return false;
+        // RHI Deviceが未準備なら再試行すべき原因をLabel側まで伝えます。
+        if (textureFailure == TextureCreationFailure::DeviceUnavailable)
+        {
+            return fail(UIFontAtlasBuildFailure::TextureDeviceUnavailable);
+        }
+        if (textureFailure == TextureCreationFailure::UploadFailed)
+        {
+            return fail(UIFontAtlasBuildFailure::TextureUploadFailed);
+        }
+        return fail(UIFontAtlasBuildFailure::TextureCreationFailed);
     }
 
     // Fontバイト列はRasterize終了後に解放できます。AtlasはGPU Textureだけを所有します。
@@ -209,7 +352,7 @@ bool UIFontAtlasBuilder::BuildFromFile(
     UIFontAtlas built;
     if (built.Initialize(asset, options.AtlasWidth, options.AtlasHeight) == false)
     {
-        return false;
+        return fail(UIFontAtlasBuildFailure::AtlasInitializationFailed);
     }
     int ascent = 0;
     int descent = 0;
@@ -220,7 +363,7 @@ bool UIFontAtlasBuilder::BuildFromFile(
     {
         if (built.AddGlyph(entry.Codepoint, entry.Metrics) == false)
         {
-            return false;
+            return fail(UIFontAtlasBuildFailure::AtlasInitializationFailed);
         }
     }
     outAtlas = std::move(built);

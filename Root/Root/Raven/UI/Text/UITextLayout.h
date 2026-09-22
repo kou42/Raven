@@ -27,6 +27,8 @@ enum class UITextHorizontalAlignment
 struct UITextLayoutOptions
 {
     float LineHeight = 20.0f;
+    // AtlasのRasterize寸法は変更せず、配置と描画でGlyphを拡大する倍率です。
+    math::Vec2 GlyphScale{ 1.0f, 1.0f };
     float MaxWidth = 0.0f; // 0以下は幅制限なし
     UITextWrapMode Wrap = UITextWrapMode::None;
     UITextHorizontalAlignment Alignment = UITextHorizontalAlignment::Left;

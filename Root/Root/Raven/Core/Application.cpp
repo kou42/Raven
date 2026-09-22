@@ -420,6 +420,9 @@ void Application::Run()
         // Root以下のRetained Treeを更新します。EndFrame()時にTreeからDrawListへ自動展開されます。
         if (m_RavenUIEnabled == true)
         {
+            // GLFWのContent ScaleはWindowごとに変化します。毎frame同期することで
+            // Resizeを伴わないMonitor移動も取りこぼさず、既存の論理座標は維持します。
+            m_UIContext.SetDPIScale(m_Window->GetContentScaleX(), m_Window->GetContentScaleY());
             m_UIContext.BeginFrame(math::Vec2(
                 static_cast<float>(m_Window->GetWidth()),
                 static_cast<float>(m_Window->GetHeight())));
@@ -480,6 +483,13 @@ void Application::Run()
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
         if (m_RavenUIEnabled == true)
         {
+            // Scene Frame開始後かつUI Layout前の描画準備段階でFont Atlasをまとめて生成します。
+            // DPI通知から直接GPU Textureを生成せず、同FrameのMeasure/Arrangeへ新Metricsを反映します。
+            // UIが無効な場合はGPU生成・Tree走査とも実施しません。
+            if (m_UIContext.GetPendingDPIFontCount() > 0u)
+            {
+                m_UIContext.RefreshPendingDPIFonts();
+            }
             m_UIContext.EndFrame();
         }
 
