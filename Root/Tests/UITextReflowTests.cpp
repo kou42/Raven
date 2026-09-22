@@ -800,6 +800,45 @@ void TestTreeViewDragAutoScroll()
     context.CancelDrag();
 }
 
+void TestTreeViewNoOpDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    tree->SetNodeDragDropEnabled(true);
+    Raven::UITreeNode* first = tree->AddRoot(1u, "First");
+    Raven::UITreeNode* second = tree->AddRoot(2u, "Second");
+    Raven::UITreeNode* last = tree->AddRoot(3u, "Last");
+    int drops = 0;
+    tree->SetOnNodePlaced([&](std::uint64_t, std::uint64_t, Raven::UITreeView::DropPlacement)
+    {
+        ++drops;
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+
+    // FirstをSecondの直前へDropしても既存順序は変わりません。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 45.0f));
+    Check(context.GetDropTarget() == nullptr, "before adjacent node is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 45.0f), Raven::UIMouseButton::Left);
+    // SecondをFirstの直後へDropしても既存順序は変わりません。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 38.0f));
+    Check(context.GetDropTarget() == nullptr, "after adjacent node is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 38.0f), Raven::UIMouseButton::Left);
+    // 最後のRootを空白へDropしても無変更です。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 110.0f));
+    Check(context.GetDropTarget() == nullptr, "last root to root end is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 110.0f), Raven::UIMouseButton::Left);
+    Check(drops == 0 && view->FindNode(1u) == first &&
+        view->FindNode(2u) == second && view->FindNode(3u) == last,
+        "no-op drops preserve identity without callbacks");
+}
+
 void TestDragDropRouting()
 {
     Raven::UIContext context;
@@ -867,6 +906,7 @@ int main()
     TestTreeViewCrossDrop();
     TestTreeViewEmptyAreaDrop();
     TestTreeViewDragAutoScroll();
+    TestTreeViewNoOpDrop();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
