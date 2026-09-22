@@ -422,14 +422,14 @@ void Application::Run()
         {
             // GLFWのContent ScaleはWindowごとに変化します。毎frame同期することで
             // Resizeを伴わないMonitor移動も取りこぼさず、既存の論理座標は維持します。
-            m_UIContext.SetDPIScale(m_Window->GetContentScaleX(), m_Window->GetContentScaleY());
-            // ClipとOpenGL Viewportは実Pixelを使用し、入力・LayoutはWindow論理座標を維持します。
-            m_UIContext.SetFramebufferSize(math::Vec2(
-                static_cast<float>(m_Window->GetFramebufferWidth()),
-                static_cast<float>(m_Window->GetFramebufferHeight())));
+            // Monitor移動時はDPI・Window論理サイズ・Framebuffer実Pixel数を同じFrameで同期します。
+            // GLFWのMouse座標は論理座標のままUIContextへ配送します。
             m_UIContext.BeginFrame(math::Vec2(
                 static_cast<float>(m_Window->GetWidth()),
-                static_cast<float>(m_Window->GetHeight())));
+                static_cast<float>(m_Window->GetHeight())),
+                math::Vec2(static_cast<float>(m_Window->GetFramebufferWidth()),
+                    static_cast<float>(m_Window->GetFramebufferHeight())),
+                m_Window->GetContentScaleX(), m_Window->GetContentScaleY());
         }
 
         // ====================================================================
