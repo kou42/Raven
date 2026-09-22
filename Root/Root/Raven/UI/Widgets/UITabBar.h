@@ -17,6 +17,9 @@ class UITabBar final : public UIElement
 public:
     explicit UITabBar(UITabModel& model);
 
+    void SetDragReorderEnabled(bool enabled) { m_DragReorderEnabled = enabled; }
+    bool IsDragReorderEnabled() const { return m_DragReorderEnabled; }
+
     void SetFont(const Ref<UIFontAtlas>& font);
     void SetTabWidth(float width);
     void SetTabHeight(float height);
@@ -26,6 +29,7 @@ public:
 protected:
     math::Vec2 OnMeasureContent() const override;
     void OnMouseEvent(UIMouseEvent& event) override;
+    bool OnDragDropEvent(UIDragDropEvent& event) override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:
@@ -38,6 +42,10 @@ private:
     float m_TabHeight = 30.0f;
     float m_CloseWidth = 26.0f;
     std::uint64_t m_HoveredId = 0u;
+    std::uint64_t m_PendingDragId = 0u;
+    std::size_t m_DropIndex = 0u;
+    bool m_DropIndicatorVisible = false;
+    bool m_DragReorderEnabled = true;
     bool m_HoveredClose = false;
 };
 
