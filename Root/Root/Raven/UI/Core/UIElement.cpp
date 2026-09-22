@@ -140,7 +140,7 @@ bool UIElement::SetName(std::string name)
 uint64_t UIElement::GetTreeGeneration() const { return GetTreeRoot()->m_TreeGeneration; }
 
 void UIElement::SetPosition(const math::Vec2& value) { m_Position = value; InvalidateArrange(); }
-void UIElement::SetSize(const math::Vec2& value) { m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
+void UIElement::SetSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
 void UIElement::SetPreferredSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
 void UIElement::SetMinSize(const math::Vec2& value) { m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
 void UIElement::SetMaxSize(const math::Vec2& value) { m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
@@ -231,13 +231,17 @@ void UIElement::RefreshDPIMetrics()
     }
     if (m_UsePaddingDIP == true)
     {
-        m_Padding = UIThickness(m_PaddingDIP.Left * x, m_PaddingDIP.Top * y,
-            m_PaddingDIP.Right * x, m_PaddingDIP.Bottom * y);
+        m_Padding.Left = m_PaddingDIP.Left * x;
+        m_Padding.Top = m_PaddingDIP.Top * y;
+        m_Padding.Right = m_PaddingDIP.Right * x;
+        m_Padding.Bottom = m_PaddingDIP.Bottom * y;
     }
     if (m_UseMarginDIP == true)
     {
-        m_Margin = UIThickness(m_MarginDIP.Left * x, m_MarginDIP.Top * y,
-            m_MarginDIP.Right * x, m_MarginDIP.Bottom * y);
+        m_Margin.Left = m_MarginDIP.Left * x;
+        m_Margin.Top = m_MarginDIP.Top * y;
+        m_Margin.Right = m_MarginDIP.Right * x;
+        m_Margin.Bottom = m_MarginDIP.Bottom * y;
     }
     if (m_UseSpacingDIP == true)
     {
@@ -612,6 +616,7 @@ void UIElement::SetContextRecursive(UIContext* context)
         OnContextChanged(previous, context);
     }
     m_Context = context;
+    RefreshDPIMetrics();
     for (auto& child : m_Children)
     {
         if (child != nullptr)
