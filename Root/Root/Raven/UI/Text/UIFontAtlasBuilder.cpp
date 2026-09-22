@@ -59,6 +59,35 @@ bool UIFontAtlasBuilder::ResolveDPIOptions(
     return true;
 }
 
+Ref<UIFontAtlas> UIFontAtlasDPICache::Find(
+    const std::string& fontPath,
+    const std::vector<std::uint32_t>& codepoints,
+    const UIFontAtlasBuildOptions& baseOptions,
+    float effectiveScale,
+    float& outRasterScale) const
+{
+    UIFontAtlasBuildOptions resolved{};
+    float rasterScale = 1.0f;
+    if (UIFontAtlasBuilder::ResolveDPIOptions(baseOptions, effectiveScale,
+        resolved, rasterScale) == false)
+    {
+        return nullptr;
+    }
+    std::vector<std::uint32_t> normalized = codepoints;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+    const std::uint32_t scaleStep = static_cast<std::uint32_t>(rasterScale * 8.0f);
+    const Key key(fontPath, normalized, baseOptions.PixelHeight, baseOptions.AtlasWidth,
+        baseOptions.AtlasHeight, baseOptions.Padding, scaleStep);
+    const auto found = m_Entries.find(key);
+    if (found == m_Entries.end())
+    {
+        return nullptr;
+    }
+    outRasterScale = rasterScale;
+    return found->second;
+}
+
 Ref<UIFontAtlas> UIFontAtlasDPICache::GetOrBuild(
     const std::string& fontPath,
     const std::vector<std::uint32_t>& codepoints,
