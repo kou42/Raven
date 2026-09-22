@@ -646,6 +646,10 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
     {
         return;
     }
+    // Main Windowと同じく、Focus移動前のIME所有者を記録してOSの未確定変換を同期します。
+    UIInputText* imeOwner = dynamic_cast<UIInputText*>(ui->GetFocusedElement());
+    const bool imeWasActive = imeOwner != nullptr &&
+        imeOwner->GetIMEComposition().IsActive() == true;
     // 補助Windowの入力はMain WindowのLayer/UIContextへ転送しません。
     if (event.GetEventType() == EventType::WindowFocusLost)
     {
@@ -726,6 +730,24 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
             event.Handled = event.GetEventType() == EventType::MouseButtonPressed
                 ? ui->RouteMouseDown(position, button)
                 : ui->RouteMouseUp(position, button);
+        }
+    }
+
+    const bool imeEditingBoundary =
+        event.GetEventType() == EventType::MouseButtonPressed ||
+        (event.GetEventType() == EventType::KeyPressed &&
+            static_cast<KeyPressedEvent&>(event).GetKeyCode() == GLFW_KEY_TAB);
+    const UIInputText* currentIMEOwner =
+        dynamic_cast<UIInputText*>(ui->GetFocusedElement());
+    if (imeWasActive == true && imeEditingBoundary == true &&
+        (currentIMEOwner != imeOwner ||
+            (currentIMEOwner != nullptr &&
+                currentIMEOwner->GetIMEComposition().IsActive() == false)))
+    {
+        Window* window = m_WindowManager.GetWindow(id);
+        if (window != nullptr)
+        {
+            window->CancelIMEComposition();
         }
     }
 }
