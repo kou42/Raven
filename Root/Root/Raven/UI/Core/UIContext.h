@@ -168,6 +168,11 @@ public:
 
     void SetRenderer(Scope<UIRenderer> renderer);
 
+    // Root直下の通常Widgetを別UIContextへ移譲します。Popup/Tooltipなどの内部Layerは対象外です。
+    // DetachChildが旧ContextのCapture/Focus/IMEを解除し、AddChildが新DPIを適用します。
+    // 描画中のTree変更を避けるため、両ContextのFrame外で呼び出してください。
+    bool TransferRootChildTo(UIContext& destination, UIElement* child);
+
     UIElement& GetRootElement();
     const UIElement& GetRootElement() const;
 
