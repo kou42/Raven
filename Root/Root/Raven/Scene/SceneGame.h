@@ -47,6 +47,12 @@ public:
         PushLayer(CreateScope<Gltf::TerrainStaticSceneLayer>(*this));
     }
 
+    // Applicationの任意Physics Debug UIがRendererと同じ設定を編集する入口です。
+    ph::PhysicsDebugSettings& GetPhysicsDebugSettings()
+    {
+        return m_PhysicsDebugRenderer.GetSettings();
+    }
+
     virtual void OnCreate() override;
     virtual void OnDestroy() override;
     virtual void OnUpdateGame(float dt) override;
