@@ -48,6 +48,16 @@ public:
     void BeginFrame(const math::Vec2& viewportSize);
     void EndFrame();
 
+    // OS由来のDPI倍率とユーザー設定倍率を分離して保持します。
+    // 現段階では既存のWindow座標/Layout/Hit Test/描画を変更せず、後続Phaseの基盤とします。
+    void SetDPIScale(float x, float y);
+    float GetDPIScaleX() const { return m_DPIScaleX; }
+    float GetDPIScaleY() const { return m_DPIScaleY; }
+    void SetUserScale(float scale);
+    float GetUserScale() const { return m_UserScale; }
+    float GetEffectiveScaleX() const { return m_DPIScaleX * m_UserScale; }
+    float GetEffectiveScaleY() const { return m_DPIScaleY * m_UserScale; }
+
     // Mouse入力をHit Testし、Hover / Pressedを更新してから最前面TargetからRoot方向へBubbleさせます。
     // Interaction StateはUIContextが一元管理し、WidgetはUIElement上の状態を参照して見た目やClick判定へ利用します。
     // Capture中は物理的なHit先とは別にCapture ElementへEventを配送します。
@@ -169,6 +179,9 @@ private:
 
 private:
     UITheme m_Theme = UITheme::CreateDefaultDark();
+    float m_DPIScaleX = 1.0f;
+    float m_DPIScaleY = 1.0f;
+    float m_UserScale = 1.0f;
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
     Scope<UIElement> m_RootElement;
