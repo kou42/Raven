@@ -749,7 +749,14 @@ void Application::FlushPendingUIDetaches()
             if (TransferUIRootChild(request.SourceID, m_MainWindowID, request.Child) == true)
             {
                 // 新しいRootに所有権が移った後だけPointerを使用します。
-                request.Child->SetPosition(math::Vec2(48.0f, 48.0f));
+                const math::Vec2 size = request.Child->GetSize();
+                const math::Vec2 viewport = m_UIContext.GetViewportSize();
+                // Main側でタイトルバーが掴める範囲を確保しつつ、Drop位置を維持します。
+                request.Child->SetPosition(math::Vec2(
+                    std::clamp(request.MainLocalDropPosition.x - size.x * 0.5f,
+                        0.0f, std::max(0.0f, viewport.x - 48.0f)),
+                    std::clamp(request.MainLocalDropPosition.y - 14.0f,
+                        0.0f, std::max(0.0f, viewport.y - 28.0f))));
                 BindUIWindowViewportTransfer(m_MainWindowID, *request.Child);
                 // 空になった補助Windowは既存の遅延Close経路で安全に破棄します。
                 m_WindowManager.RequestWindowClose(request.SourceID);
@@ -793,7 +800,7 @@ bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& wind
     // CallbackはUIWindowの入力配送中に呼ばれるため、Treeの所有権をその場で変更しません。
     // 既存のRequestDetachUIRootChildToNewWindowが重複予約と生存確認を担当します。
     window.SetOnViewportTransferRequested([this, sourceID](
-        UIWindow* logicalWindow, const math::Vec2&)
+        UIWindow* logicalWindow, const math::Vec2& releasePosition)
         {
             if (logicalWindow == nullptr)
             {
@@ -815,8 +822,32 @@ bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& wind
             // 元Viewportの画面座標を補助Windowへ持ち越さないようにします。
             if (sourceID != m_MainWindowID)
             {
-                // 補助Windowの外へドラッグした場合は新規Windowを増やさずMainへ復帰します。
-                RequestAttachUIWindowToMain(sourceID, logicalWindow);
+                // GLFWのWindow座標はClient Area左上のScreen座標です。
+                // 補助Windowの外なら無条件に戻すのではなく、MainのClient Areaへ
+                // ドロップされた場合だけMain Rootへの移譲を予約します。
+                GLFWwindow* sourceNative =
+                    static_cast<GLFWwindow*>(sourceWindow->GetNativeWindow());
+                GLFWwindow* mainNative =
+                    static_cast<GLFWwindow*>(m_Window->GetNativeWindow());
+                if (sourceNative == nullptr || mainNative == nullptr)
+                {
+                    return;
+                }
+                int sourceX = 0;
+                int sourceY = 0;
+                int mainX = 0;
+                int mainY = 0;
+                glfwGetWindowPos(sourceNative, &sourceX, &sourceY);
+                glfwGetWindowPos(mainNative, &mainX, &mainY);
+                const math::Vec2 mainLocalDrop(
+                    static_cast<float>(sourceX - mainX) + releasePosition.x,
+                    static_cast<float>(sourceY - mainY) + releasePosition.y);
+                if (mainLocalDrop.x >= 0.0f && mainLocalDrop.y >= 0.0f &&
+                    mainLocalDrop.x < static_cast<float>(m_Window->GetWidth()) &&
+                    mainLocalDrop.y < static_cast<float>(m_Window->GetHeight()))
+                {
+                    RequestAttachUIWindowToMain(sourceID, logicalWindow, mainLocalDrop);
+                }
                 return;
             }
             RequestDetachUIRootChildToNewWindow(
@@ -845,7 +876,8 @@ bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& wind
     return true;
 }
 
-bool Application::RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* window)
+bool Application::RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* window,
+    const math::Vec2& mainLocalDropPosition)
 {
     UIContext* source = GetWindowUIContext(sourceID);
     if (sourceID == m_MainWindowID || source == nullptr || window == nullptr ||
@@ -873,7 +905,7 @@ bool Application::RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* windo
             return false;
         }
     }
-    m_PendingUIAttaches.push_back(PendingUIAttach{ sourceID, window });
+    m_PendingUIAttaches.push_back(PendingUIAttach{ sourceID, window, mainLocalDropPosition });
     return true;
 }
 
