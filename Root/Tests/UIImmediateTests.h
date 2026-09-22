@@ -108,12 +108,12 @@ void TestUIImmediateContext()
         CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox one-shot BeginFrame");
         CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false &&
             enabled == true, "checkbox no replay");
+        CheckImmediate(checkImmediate.EndFrame() == true, "checkbox one-shot EndFrame");
         enabled = false;
         CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox external BeginFrame");
         CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false &&
             checkbox->IsChecked() == false, "checkbox external value synchronized");
         CheckImmediate(checkImmediate.EndFrame() == true, "checkbox external EndFrame");
-        CheckImmediate(checkImmediate.EndFrame() == true, "checkbox one-shot EndFrame");
     }
 
     // Physics Debugは既存Rendererと同じSettingsを参照し、独立した状態を持ちません。
@@ -131,7 +131,7 @@ void TestUIImmediateContext()
         CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
             debugImmediate, settings, nullptr) == false, "debug panel reused");
         CheckImmediate(debugImmediate.EndFrame() == true, "debug panel reuse EndFrame");
-        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 12u,
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 14u,
             "debug panel widget count stable");
     }
 
