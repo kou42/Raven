@@ -138,6 +138,7 @@ public:
 
     // DIP指定はOpt-inです。従来のSet*はWindow論理座標のまま維持します。
     // Monitor移動やUserScale変更時に、元のDIP値から再計算して丸め誤差の蓄積を防ぎます。
+    void SetPositionDIP(const math::Vec2& value);
     void SetPreferredSizeDIP(const math::Vec2& value);
     void SetMinSizeDIP(const math::Vec2& value);
     void SetMaxSizeDIP(const math::Vec2& value);
@@ -369,7 +370,11 @@ private:
 
 private:
     std::string m_Name;
+    // SetPositionの指定値とArrangeの結果を分離し、再Layout時に位置が累積しないようにします。
     math::Vec2 m_Position{};
+    math::Vec2 m_RequestedPosition{};
+    math::Vec2 m_PositionDIP{};
+    bool m_UsePositionDIP = false;
     math::Vec2 m_Size{};
     math::Vec2 m_PreferredSize{};
     math::Vec2 m_DesiredSize{};
