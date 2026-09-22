@@ -44,15 +44,17 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
 UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view text, const UITextLayoutOptions& options)
 {
     UITextLayoutResult result{};
-    if (text.empty() || std::isfinite(options.LineHeight) == false || options.LineHeight <= 0.0f)
+    if (text.empty() || std::isfinite(options.LineHeight) == false || options.LineHeight <= 0.0f ||
+        std::isfinite(options.GlyphScale.x) == false || std::isfinite(options.GlyphScale.y) == false ||
+        options.GlyphScale.x <= 0.0f || options.GlyphScale.y <= 0.0f)
     {
         return result;
     }
 
     const bool constrained = std::isfinite(options.MaxWidth) && options.MaxWidth > 0.0f;
     const bool wrap = constrained && options.Wrap != UITextWrapMode::None;
-    result.Metrics.Ascent = font.GetAscent();
-    result.Metrics.Descent = font.GetDescent();
+    result.Metrics.Ascent = font.GetAscent() * options.GlyphScale.y;
+    result.Metrics.Descent = font.GetDescent() * options.GlyphScale.y;
     result.Lines.push_back({ 0.0f, 0.0f });
 
     std::size_t offset = 0u;
@@ -96,7 +98,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
             const UIGlyphMetrics* first = ResolveGlyph(font, codepoint);
             if (first != nullptr)
             {
-                wordWidth += first->Advance;
+                wordWidth += first->Advance * options.GlyphScale.x;
             }
             while (lookahead < text.size())
             {
@@ -109,7 +111,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
                 const UIGlyphMetrics* nextGlyph = ResolveGlyph(font, next);
                 if (nextGlyph != nullptr)
                 {
-                    wordWidth += nextGlyph->Advance;
+                    wordWidth += nextGlyph->Advance * options.GlyphScale.x;
                 }
                 if (lookahead <= previous)
                 {
@@ -130,7 +132,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
                     {
                         break;
                     }
-                    result.FinalPen.x -= space->Advance;
+                    result.FinalPen.x -= space->Advance * options.GlyphScale.x;
                     result.Glyphs.pop_back();
                     result.Lines.back().Width = result.FinalPen.x;
                 }
@@ -158,7 +160,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
 
         // 最初のGlyphが制限幅より大きくても空行を増やさず、その行に配置します。
         if (wrap && result.Lines.back().Width > 0.0f &&
-            glyph->Advance > options.MaxWidth - result.Lines.back().Width)
+            glyph->Advance * options.GlyphScale.x > options.MaxWidth - result.Lines.back().Width)
         {
             // Word Wrapの行末空白は改行の原因となっても次行へ移さず、幅にも加算しません。
             if (options.Wrap == UITextWrapMode::Word &&
@@ -182,7 +184,7 @@ UITextLayoutResult UITextLayout::Build(const UIFontAtlas& font, std::string_view
         }
 
         result.Glyphs.push_back({ resolved, result.FinalPen });
-        result.FinalPen.x += glyph->Advance;
+        result.FinalPen.x += glyph->Advance * options.GlyphScale.x;
         result.Lines.back().Width = result.FinalPen.x;
     }
 
