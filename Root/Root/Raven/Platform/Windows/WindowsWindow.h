@@ -20,10 +20,26 @@ public:
     void OnUpdate() override;
     void PollEvents() override;
     void Present() override;
+    bool MakeContextCurrent() override;
+    bool SetFramebufferViewport() override;
+    bool BindDefaultFramebuffer() override;
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }
+    unsigned int GetFramebufferWidth() const override { return m_Data.FramebufferWidth; }
+    unsigned int GetFramebufferHeight() const override { return m_Data.FramebufferHeight; }
     RHIBackend GetBackend() const override { return m_Data.Backend; }
+    WindowState GetState() const override;
+    void SetTitle(const std::string& title) override;
+    void SetSize(unsigned int width, unsigned int height) override;
+    void SetPosition(int x, int y) override;
+    void Minimize() override;
+    void Maximize() override;
+    void Restore() override;
+    void SetFullscreen(bool enabled) override;
+    void Show() override;
+    void Hide() override;
+    void Focus() override;
     void* GetNativeWindow() const override { return m_Window; }
     void* GetPlatformWindowHandle() const override;
 
@@ -51,6 +67,8 @@ private:
         std::string Title;
         unsigned int Width;
         unsigned int Height;
+        unsigned int FramebufferWidth = 0;
+        unsigned int FramebufferHeight = 0;
         RHIBackend Backend = RHIBackend::OpenGL;
         bool VSync = false;
 
@@ -59,6 +77,11 @@ private:
     };
 
     WindowData m_Data;
+    // Fullscreen解除時に元のWindow配置へ戻すための保存値です。
+    int m_WindowedX = 0;
+    int m_WindowedY = 0;
+    int m_WindowedWidth = 0;
+    int m_WindowedHeight = 0;
 
     // OpenGLだけがGLFW OpenGL Contextを所有します。
     // Vulkan/DX12はSwapChain実装前なのでNo-API Windowとしてイベント処理のみ行います。

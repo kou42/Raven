@@ -15,6 +15,15 @@ struct WindowProps
     unsigned int Width;
     unsigned int Height;
     RHIBackend Backend;
+    unsigned int MinWidth = 320;
+    unsigned int MinHeight = 240;
+    bool Resizable = true;
+    bool Decorated = true;
+    bool Maximized = false;
+    bool Fullscreen = false;
+    bool VSync = true;
+    // OpenGL補助Windowのみ使用。共有元GLFWwindowの寿命は新Windowより長く保ちます。
+    void* ShareContext = nullptr;
 
     WindowProps(
         const std::string& title = "My Engine",
@@ -25,6 +34,17 @@ struct WindowProps
         : Title(title), Width(width), Height(height), Backend(backend)
     {
     }
+};
+
+// 既存WindowPropsを維持しながら新しい設定名も使用可能にします。
+using WindowSpecification = WindowProps;
+
+enum class WindowState
+{
+    Normal,
+    Minimized,
+    Maximized,
+    Fullscreen
 };
 
 class Window
@@ -39,10 +59,32 @@ public:
     virtual void OnUpdate() = 0;
     virtual void PollEvents() = 0;
     virtual void Present() = 0;
+    // OpenGL描画対象を切り替えます。No-API Windowではfalseを返します。
+    virtual bool MakeContextCurrent() { return false; }
+    // Current ContextのViewportをFramebuffer実Pixelサイズへ合わせます。
+    // FBOのbind状態は変更せず、描画先Framebufferの選択は描画側に委ねます。
+    virtual bool SetFramebufferViewport() { return false; }
+    // 補助Windowの画面へ直接描画する場合に既定Framebufferを選択します。
+    // Renderer管理のFBOを使う場合は描画側で明示的にBindし直します。
+    virtual bool BindDefaultFramebuffer() { return false; }
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
+    // 論理Windowサイズとは別の実Pixel数。高DPIでは両者が異なります。
+    virtual unsigned int GetFramebufferWidth() const { return GetWidth(); }
+    virtual unsigned int GetFramebufferHeight() const { return GetHeight(); }
     virtual RHIBackend GetBackend() const = 0;
+    virtual WindowState GetState() const = 0;
+    virtual void SetTitle(const std::string& title) = 0;
+    virtual void SetSize(unsigned int width, unsigned int height) = 0;
+    virtual void SetPosition(int x, int y) = 0;
+    virtual void Minimize() = 0;
+    virtual void Maximize() = 0;
+    virtual void Restore() = 0;
+    virtual void SetFullscreen(bool enabled) = 0;
+    virtual void Show() = 0;
+    virtual void Hide() = 0;
+    virtual void Focus() = 0;
 
     // GLFWwindowはVulkan Surface生成で必要になるため従来どおり公開します。
     // DX12側のHWNDはPlatformWindowHandleから取得し、Core層へWin32型を漏らしません。

@@ -63,6 +63,9 @@ Application::Application(const ApplicationSpecification& specification)
         return;
     }
 
+    // Main Windowの所有権は従来どおりApplicationが保持し、Managerには借用登録します。
+    m_MainWindowID = m_WindowManager.RegisterWindow(*m_Window);
+
     // OS/Window由来のEventをApplicationへ集約します。
     // Application::OnEvent()から後積みLayer優先で逆順伝播することで、
     // 将来的にEditor/GizmoがRuntime入力より先にEventを消費できる構造にしています。
@@ -305,6 +308,13 @@ Application::~Application()
         m_ImGuiLayer->OnDetach();
         m_ImGuiLayer.reset();
     }
+
+    // 補助WindowはMain WindowのOpenGL ContextとGPU資産を共有します。
+    // Main Windowが破棄される前に補助WindowのCleanup/VAO解放を完了させます。
+    // 外部参照が残る場合はShutdownOwnedWindowsがfalseを返すため、
+    // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
+    const bool auxiliaryWindowsClosed = m_WindowManager.ShutdownOwnedWindows();
+    assert(auxiliaryWindowsClosed == true);
 }
 
 void Application::PushLayer(Layer* layer)
@@ -482,7 +492,8 @@ void Application::Run()
             break;
         }
 
-        m_Window->PollEvents();
+        // GLFWのProcess共通Event Queueを一度処理し、補助WindowのCloseも安全に確定します。
+        m_WindowManager.PollEvents();
         if (sceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;

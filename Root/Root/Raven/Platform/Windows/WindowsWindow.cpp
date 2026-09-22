@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <utility>
 
+#include <glad/glad.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -340,6 +341,8 @@ void WindowsWindow::Init(const WindowProps& props)
     // GLFWのHintはProcess内で保持されるため、Window生成ごとに既定値へ戻してから
     // Backend固有Hintを設定します。これによりOpenGL WindowとNo-API Windowを連続生成できます。
     glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_RESIZABLE, props.Resizable ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_DECORATED, props.Decorated ? GLFW_TRUE : GLFW_FALSE);
 
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
@@ -360,12 +363,19 @@ void WindowsWindow::Init(const WindowProps& props)
         return;
     }
 
+    // GLFWのshare引数はOpenGL Context間でTexture/Buffer/Program等を共有します。
+    // VAO/FBOなどContext固有ObjectやGL状態は共有されません。
+    GLFWwindow* sharedContext = nullptr;
+    if (m_Data.Backend == RHIBackend::OpenGL && props.ShareContext != nullptr)
+    {
+        sharedContext = static_cast<GLFWwindow*>(props.ShareContext);
+    }
     m_Window = glfwCreateWindow(
         static_cast<int>(props.Width),
         static_cast<int>(props.Height),
         props.Title.c_str(),
         nullptr,
-        nullptr);
+        sharedContext);
 
     if (m_Window == nullptr)
     {
@@ -373,8 +383,17 @@ void WindowsWindow::Init(const WindowProps& props)
         return;
     }
 
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(m_Window, &framebufferWidth, &framebufferHeight);
+    m_Data.FramebufferWidth = static_cast<unsigned int>(std::max(framebufferWidth, 0));
+    m_Data.FramebufferHeight = static_cast<unsigned int>(std::max(framebufferHeight, 0));
+
+    GLFWwindow* previousContext = glfwGetCurrentContext();
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
+        // 補助WindowのContext生成でMain WindowのCurrent Contextを奪ったままにしません。
+        // 初回Window生成時は従来どおり生成したContextをCurrentに維持します。
         m_Context = CreateScope<OpenGLContext>(m_Window);
         m_Context->Init();
     }
@@ -382,7 +401,30 @@ void WindowsWindow::Init(const WindowProps& props)
     m_Input = CreateScope<WindowsInput>(m_Window);
     glfwSetWindowUserPointer(m_Window, &m_Data);
 
-    SetVSync(true);
+    if (props.MinWidth > 0 && props.MinHeight > 0)
+    {
+        glfwSetWindowSizeLimits(m_Window, static_cast<int>(props.MinWidth),
+            static_cast<int>(props.MinHeight), GLFW_DONT_CARE, GLFW_DONT_CARE);
+    }
+    // Swap IntervalはCurrent Context単位なので、新WindowをCurrentにして設定します。
+    if (m_Data.Backend == RHIBackend::OpenGL)
+    {
+        glfwMakeContextCurrent(m_Window);
+    }
+    SetVSync(props.VSync);
+    if (m_Data.Backend == RHIBackend::OpenGL &&
+        previousContext != nullptr && previousContext != m_Window)
+    {
+        glfwMakeContextCurrent(previousContext);
+    }
+    if (props.Fullscreen == true)
+    {
+        SetFullscreen(true);
+    }
+    else if (props.Maximized == true)
+    {
+        Maximize();
+    }
 
     glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
         {
@@ -403,6 +445,68 @@ void WindowsWindow::Init(const WindowProps& props)
             if (static_cast<bool>(data.EventCallback) == true)
             {
                 WindowResizeEvent event(data.Width, data.Height);
+                data.EventCallback(event);
+            }
+        });
+
+    // Window座標とFramebuffer Pixel数は高DPI環境で一致しないため、別Eventで通知します。
+    glfwSetWindowPosCallback(m_Window, [](GLFWwindow* window, int x, int y)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == true)
+            {
+                WindowMovedEvent event(x, y);
+                data.EventCallback(event);
+            }
+        });
+
+    glfwSetWindowIconifyCallback(m_Window, [](GLFWwindow* window, int iconified)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == false)
+            {
+                return;
+            }
+            if (iconified == GLFW_TRUE)
+            {
+                WindowMinimizedEvent event;
+                data.EventCallback(event);
+            }
+            else
+            {
+                WindowRestoredEvent event;
+                data.EventCallback(event);
+            }
+        });
+
+    glfwSetWindowMaximizeCallback(m_Window, [](GLFWwindow* window, int maximized)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            if (static_cast<bool>(data.EventCallback) == false)
+            {
+                return;
+            }
+            if (maximized == GLFW_TRUE)
+            {
+                WindowMaximizedEvent event;
+                data.EventCallback(event);
+            }
+            else
+            {
+                WindowRestoredEvent event;
+                data.EventCallback(event);
+            }
+        });
+
+    glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            data.FramebufferWidth = static_cast<unsigned int>(std::max(width, 0));
+            data.FramebufferHeight = static_cast<unsigned int>(std::max(height, 0));
+            if (static_cast<bool>(data.EventCallback) == true)
+            {
+                WindowFramebufferResizeEvent event(
+                    static_cast<unsigned int>(width), static_cast<unsigned int>(height));
                 data.EventCallback(event);
             }
         });
@@ -535,6 +639,13 @@ void WindowsWindow::Shutdown()
 
     if (m_Window != nullptr)
     {
+        // 最後のOpenGL Windowも含め、破棄対象をCurrentにしたまま残しません。
+        // 他WindowのContextがCurrentなら変更せず、Manager側の復元結果を維持します。
+        if (m_Data.Backend == RHIBackend::OpenGL &&
+            glfwGetCurrentContext() == m_Window)
+        {
+            glfwMakeContextCurrent(nullptr);
+        }
         glfwDestroyWindow(m_Window);
         m_Window = nullptr;
     }
@@ -550,6 +661,44 @@ void WindowsWindow::OnUpdate()
 void WindowsWindow::PollEvents()
 {
     glfwPollEvents();
+}
+
+bool WindowsWindow::MakeContextCurrent()
+{
+    if (m_Window == nullptr || m_Data.Backend != RHIBackend::OpenGL)
+    {
+        return false;
+    }
+    glfwMakeContextCurrent(m_Window);
+    return glfwGetCurrentContext() == m_Window;
+}
+
+bool WindowsWindow::SetFramebufferViewport()
+{
+    if (m_Window == nullptr || m_Data.Backend != RHIBackend::OpenGL ||
+        m_Data.FramebufferWidth == 0 || m_Data.FramebufferHeight == 0 ||
+        glfwGetCurrentContext() != m_Window)
+    {
+        return false;
+    }
+    // 論理Window座標ではなく実Pixelサイズを使います。
+    // VAO/FBOはContext固有なので、ここではbind状態を変更しません。
+    glViewport(0, 0, static_cast<GLsizei>(m_Data.FramebufferWidth),
+        static_cast<GLsizei>(m_Data.FramebufferHeight));
+    return true;
+}
+
+bool WindowsWindow::BindDefaultFramebuffer()
+{
+    if (m_Window == nullptr || m_Data.Backend != RHIBackend::OpenGL ||
+        glfwGetCurrentContext() != m_Window)
+    {
+        return false;
+    }
+    // FBO/VAOはOpenGL Context間で共有されないため、補助Windowの既定FBOを選択します。
+    // glBindFramebufferはVAOやProgramのbind状態を変更しません。
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
 }
 
 void WindowsWindow::Present()
@@ -570,6 +719,138 @@ void* WindowsWindow::GetPlatformWindowHandle() const
     }
 
     return static_cast<void*>(glfwGetWin32Window(m_Window));
+}
+
+WindowState WindowsWindow::GetState() const
+{
+    if (m_Window == nullptr)
+    {
+        return WindowState::Normal;
+    }
+    if (glfwGetWindowMonitor(m_Window) != nullptr)
+    {
+        return WindowState::Fullscreen;
+    }
+    if (glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED) == GLFW_TRUE)
+    {
+        return WindowState::Minimized;
+    }
+    if (glfwGetWindowAttrib(m_Window, GLFW_MAXIMIZED) == GLFW_TRUE)
+    {
+        return WindowState::Maximized;
+    }
+    return WindowState::Normal;
+}
+
+void WindowsWindow::SetTitle(const std::string& title)
+{
+    m_Data.Title = title;
+    if (m_Window != nullptr)
+    {
+        glfwSetWindowTitle(m_Window, title.c_str());
+    }
+}
+
+void WindowsWindow::SetSize(unsigned int width, unsigned int height)
+{
+    if (m_Window != nullptr && width > 0 && height > 0)
+    {
+        glfwSetWindowSize(m_Window, static_cast<int>(width), static_cast<int>(height));
+    }
+}
+
+void WindowsWindow::SetPosition(int x, int y)
+{
+    if (m_Window != nullptr)
+    {
+        glfwSetWindowPos(m_Window, x, y);
+    }
+}
+
+void WindowsWindow::Minimize()
+{
+    if (m_Window != nullptr)
+    {
+        glfwIconifyWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Maximize()
+{
+    if (m_Window != nullptr)
+    {
+        glfwMaximizeWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Restore()
+{
+    if (m_Window != nullptr)
+    {
+        if (GetState() == WindowState::Fullscreen)
+        {
+            SetFullscreen(false);
+        }
+        glfwRestoreWindow(m_Window);
+    }
+}
+
+void WindowsWindow::SetFullscreen(bool enabled)
+{
+    if (m_Window == nullptr || (GetState() == WindowState::Fullscreen) == enabled)
+    {
+        return;
+    }
+    if (enabled == true)
+    {
+        GLFWmonitor* monitor = glfwGetWindowMonitor(m_Window);
+        if (monitor == nullptr)
+        {
+            monitor = glfwGetPrimaryMonitor();
+        }
+        if (monitor == nullptr)
+        {
+            return;
+        }
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        if (mode == nullptr)
+        {
+            return;
+        }
+        // Fullscreen前の通常配置を保存し、解除時に元のサイズへ戻します。
+        glfwGetWindowPos(m_Window, &m_WindowedX, &m_WindowedY);
+        glfwGetWindowSize(m_Window, &m_WindowedWidth, &m_WindowedHeight);
+        glfwSetWindowMonitor(m_Window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    }
+    else
+    {
+        glfwSetWindowMonitor(m_Window, nullptr, m_WindowedX, m_WindowedY,
+            m_WindowedWidth, m_WindowedHeight, GLFW_DONT_CARE);
+    }
+}
+
+void WindowsWindow::Show()
+{
+    if (m_Window != nullptr)
+    {
+        glfwShowWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Hide()
+{
+    if (m_Window != nullptr)
+    {
+        glfwHideWindow(m_Window);
+    }
+}
+
+void WindowsWindow::Focus()
+{
+    if (m_Window != nullptr)
+    {
+        glfwFocusWindow(m_Window);
+    }
 }
 
 void WindowsWindow::CancelIMEComposition()

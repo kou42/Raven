@@ -70,6 +70,18 @@ public:
             return RHIFrameResult::FatalError;
         }
 
+        // 各WindowのContextをFrame開始時にCurrentにします。
+        // RendererのGPUリソース共有は別途扱い、ここでは描画先の切替だけを保証します。
+        if (m_Window.MakeContextCurrent() == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
+        // ContextごとにViewport状態は独立するため、切替直後に実Pixelサイズを設定します。
+        // 最小化中は0サイズを渡さずFrame開始を保留します。
+        if (m_Window.SetFramebufferViewport() == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
         m_FrameActive = true;
         m_FrameEnded = false;
         return RHIFrameResult::Success;

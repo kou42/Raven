@@ -21,6 +21,8 @@ public:
 
     virtual void SetIndexBuffer(const Ref<IndexBuffer>& indexBuffer) override;
 
+    Ref<VertexArray> CloneForCurrentContext() const override;
+
     virtual const Ref<IndexBuffer>& GetIndexBuffer() const override
     {
         return m_IndexBuffer;
