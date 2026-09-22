@@ -351,6 +351,7 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
     // VAOはContext間で共有されないため、補助WindowをCurrentにしてRendererを生成します。
     context->SetRenderer(UIRenderer::Create(window->GetBackend()));
     m_AuxiliaryUIContexts.emplace(id, std::move(context));
+    // UIContextはWindowManagerのCloseCleanupで破棄し、GL資産の寿命をOS Windowより短くします。
     const bool restored = m_Window->MakeContextCurrent();
     if (restored == false || m_WindowManager.AttachFrameLifecycle(id) == false ||
         m_WindowManager.SetWindowCloseCleanup(id, [this, id](Window&)
@@ -366,6 +367,34 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
         m_Window->MakeContextCurrent();
         return 0;
     }
+    // 補助Window側にもMain Windowと同じIME取消/Caret通知を結びます。
+    // CallbackはWindow破棄と同時に消えるため、WindowIDでContextの生存を確認します。
+    UIContext* auxiliaryUI = GetWindowUIContext(id);
+    auxiliaryUI->SetIMECancelCallback([this, id]()
+        {
+            Window* target = m_WindowManager.GetWindow(id);
+            if (target != nullptr)
+            {
+                target->CancelIMEComposition();
+            }
+        });
+    window->SetIMECaretPositionCallback([this, id](float& x, float& y)
+        {
+            UIContext* target = GetWindowUIContext(id);
+            if (target == nullptr)
+            {
+                return false;
+            }
+            UIInputText* input = dynamic_cast<UIInputText*>(target->GetFocusedElement());
+            if (input == nullptr)
+            {
+                return false;
+            }
+            const math::Vec2 caret = input->GetIMECaretScreenPosition();
+            x = caret.x;
+            y = caret.y;
+            return true;
+        });
     return id;
 }
 
@@ -614,6 +643,25 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
     {
         ui->CancelMouseCapture();
         ui->ClearFocus();
+    }
+    else if (event.GetEventType() == EventType::IMEComposition)
+    {
+        IMECompositionEvent& ime = static_cast<IMECompositionEvent&>(event);
+        UIIMEEvent input;
+        switch (ime.GetCompositionType())
+        {
+        case IMECompositionEventType::Begin: input.Type = UIIMEEventType::Begin; break;
+        case IMECompositionEventType::Update: input.Type = UIIMEEventType::Update; break;
+        case IMECompositionEventType::Commit: input.Type = UIIMEEventType::Commit; break;
+        case IMECompositionEventType::End: input.Type = UIIMEEventType::End; break;
+        case IMECompositionEventType::Cancel: input.Type = UIIMEEventType::Cancel; break;
+        default: return;
+        }
+        input.Text = ime.GetText();
+        input.Cursor = ime.GetCursor();
+        input.SelectionStart = ime.GetSelectionStart();
+        input.SelectionEnd = ime.GetSelectionEnd();
+        event.Handled = ui->RouteIMEEvent(input);
     }
     else if (event.GetEventType() == EventType::KeyPressed ||
         event.GetEventType() == EventType::KeyReleased)
