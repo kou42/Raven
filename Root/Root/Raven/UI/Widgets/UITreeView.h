@@ -591,6 +591,12 @@ protected:
             }
             const float y = absolutePosition.y + rowTop;
             const UITreeNode* node = visible[i].first;
+            if (node == m_Selected)
+            {
+                drawList.AddRect(math::Vec2(absolutePosition.x, y),
+                    math::Vec2(absolutePosition.x + GetSize().x - (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
+                    ApplyVisualColor(math::Vec4(0.22f, 0.38f, 0.64f, 1.0f)));
+            }
             const UIContext* context = GetContext();
             if (context != nullptr && context->IsDragging() == true &&
                 context->GetDropTarget() == this && NodeAt(m_DropPointerPosition) == node)
@@ -611,12 +617,6 @@ protected:
                         math::Vec2(right, lineY + 1.5f),
                         ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
                 }
-            }
-            if (node == m_Selected)
-            {
-                drawList.AddRect(math::Vec2(absolutePosition.x, y),
-                    math::Vec2(absolutePosition.x + GetSize().x - (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
-                    ApplyVisualColor(math::Vec4(0.22f, 0.38f, 0.64f, 1.0f)));
             }
             if (m_Font != nullptr && m_Font->GetTexture() != nullptr)
             {
