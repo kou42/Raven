@@ -600,6 +600,11 @@ void Application::Run()
                 m_WindowManager.RenderWindow(item.first, m_MainWindowID,
                     [ui](Window& window)
                     {
+                        // 補助WindowはSceneのClearを通らないため、前Frameの残像を消します。
+                        // UI Rendererが前Frameに残したScissorがClear範囲を狭めないよう無効化します。
+                        glDisable(GL_SCISSOR_TEST);
+                        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                        glClear(GL_COLOR_BUFFER_BIT);
                         ui->BeginFrame(
                             math::Vec2(static_cast<float>(window.GetWidth()),
                                 static_cast<float>(window.GetHeight())),
