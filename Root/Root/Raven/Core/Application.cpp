@@ -424,6 +424,33 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
     return id;
 }
 
+WindowID Application::DetachUIRootChildToNewWindow(
+    WindowID sourceID, UIElement* child, const WindowSpecification& specification)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (source == nullptr || child == nullptr ||
+        child->GetParent() != &source->GetRootElement() ||
+        source->IsFrameActive() == true ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return 0;
+    }
+
+    // OS Windowを先に確保し、成功した場合だけ既存Widgetの所有権を移します。
+    // 失敗時は空の補助Windowだけを破棄し、元のUI Treeを変更しません。
+    const WindowID destinationID = CreateUIWindow(specification);
+    if (destinationID == 0)
+    {
+        return 0;
+    }
+    if (TransferUIRootChild(sourceID, destinationID, child) == false)
+    {
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    return destinationID;
+}
+
 UIContext* Application::GetWindowUIContext(WindowID id)
 {
     if (id == m_MainWindowID)
