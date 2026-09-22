@@ -139,7 +139,13 @@ bool UIElement::SetName(std::string name)
 
 uint64_t UIElement::GetTreeGeneration() const { return GetTreeRoot()->m_TreeGeneration; }
 
-void UIElement::SetPosition(const math::Vec2& value) { m_Position = value; InvalidateArrange(); }
+void UIElement::SetPosition(const math::Vec2& value)
+{
+    m_UsePositionDIP = false;
+    m_RequestedPosition = value;
+    m_Position = value;
+    InvalidateArrange();
+}
 void UIElement::SetSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
 void UIElement::SetPreferredSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
 void UIElement::SetMinSize(const math::Vec2& value) { m_UseMinSizeDIP = false; m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
@@ -193,6 +199,13 @@ void UIElement::SetMargin(const UIThickness& value) { m_UseMarginDIP = false; m_
 void UIElement::SetMargin(float value) { SetMargin(UIThickness(value)); }
 void UIElement::SetSpacing(float value) { m_UseSpacingDIP = false; m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
 
+void UIElement::SetPositionDIP(const math::Vec2& value)
+{
+    m_PositionDIP = value;
+    m_UsePositionDIP = true;
+    RefreshDPIMetrics();
+}
+
 void UIElement::SetPreferredSizeDIP(const math::Vec2& value)
 {
     m_PreferredSizeDIP = value;
@@ -239,6 +252,12 @@ void UIElement::RefreshDPIMetrics()
 {
     const float x = m_Context != nullptr ? m_Context->GetEffectiveScaleX() : 1.0f;
     const float y = m_Context != nullptr ? m_Context->GetEffectiveScaleY() : 1.0f;
+    if (m_UsePositionDIP == true)
+    {
+        m_RequestedPosition = math::Vec2(m_PositionDIP.x * x, m_PositionDIP.y * y);
+        // 実配置位置はArrangeが確定します。ここでは指定位置だけを更新します。
+        InvalidateArrange();
+    }
     // 制約を先に更新し、PreferredSizeのClampに古いDPIのMin/Maxを使わないようにします。
     if (m_UseMinSizeDIP == true)
     {
@@ -340,7 +359,7 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
     {
         // 初回Measureの自然幅からRootの実幅を決め、幅依存の高さを親へ再集約します。
         ReflowForWidth(ResolveRootSize().x);
-        ArrangeRecursive(m_Position, ResolveRootSize());
+        ArrangeRecursive(m_RequestedPosition, ResolveRootSize());
     }
     BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
 }
@@ -570,7 +589,7 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
         const float availableWidth = std::max(0.0f, contentWidth - child->m_Margin.Left - child->m_Margin.Right);
         const float availableHeight = std::max(0.0f, contentHeight - child->m_Margin.Top - child->m_Margin.Bottom);
         math::Vec2 childSize = child->m_DesiredSize;
-        math::Vec2 childPosition = child->m_Position;
+        math::Vec2 childPosition = child->m_RequestedPosition;
 
         if (m_LayoutMode == UILayoutMode::Vertical)
         {
