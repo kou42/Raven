@@ -120,6 +120,15 @@ private:
         bool Closable = true;
     };
     std::unordered_map<WindowID, DetachedDockTab> m_DetachedDockTabs;
+    struct PendingClosedUIChild
+    {
+        Scope<UIElement> Content;
+        DetachedDockTab DockTab;
+        bool HasDockTab = false;
+    };
+    // Main Frame中にWindowが閉じてもWidgetの所有権を失わず、EndFrame後に復帰します。
+    std::vector<PendingClosedUIChild> m_PendingClosedUIChildren;
+    void FlushPendingClosedUIChildren();
     struct PendingUIDetach
     {
         WindowID SourceID = 0;
