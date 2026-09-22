@@ -45,6 +45,7 @@ public:
 
         m_FrameActive = true;
         m_Used.clear();
+        m_CreatedThisFrame.clear();
         m_IDStack.clear();
         m_IDKinds.clear();
         m_ParentStack.clear();
@@ -96,13 +97,39 @@ public:
         m_IDStack.clear();
         m_IDKinds.clear();
         m_Used.clear();
+        m_CreatedThisFrame.clear();
         m_FrameActive = false;
         return true;
     }
 
-    // 宣言側でBegin/Endの対応を崩した場合に限り、既存Widgetを破棄せずFrameを中断します。
+    // 未確定Frameで新規生成したWidgetだけを逆順で破棄します。
+    // 親より子を先に外すことでCacheに残る子のraw pointerを無効化しません。
+    // 再利用Widgetの値・宣言順変更は巻き戻さないため、完全なTransactionではありません。
     void AbortFrame()
     {
+        if (m_FrameActive == false || m_Context.IsFrameActive() == true)
+        {
+            return;
+        }
+        for (auto it = m_CreatedThisFrame.rbegin(); it != m_CreatedThisFrame.rend(); ++it)
+        {
+            const auto found = m_Widgets.find(*it);
+            if (found == m_Widgets.end())
+            {
+                continue;
+            }
+            UIElement* element = found->second.Element;
+            UIElement* parent = element->GetParent();
+            if (parent != nullptr)
+            {
+                parent->RemoveChild(element);
+            }
+            m_ButtonStates.erase(*it);
+            m_SliderStates.erase(*it);
+            m_TextStates.erase(*it);
+            m_Widgets.erase(found);
+        }
+        m_CreatedThisFrame.clear();
         m_ParentStack.clear();
         m_IDStack.clear();
         m_IDKinds.clear();
@@ -415,6 +442,7 @@ public:
             return nullptr;
         }
         m_Widgets.emplace(key, Entry{ raw, parent, std::type_index(typeid(T)), m_ParentStack.size() });
+        m_CreatedThisFrame.push_back(key);
         m_Used.insert(key);
         return raw;
     }
@@ -494,6 +522,8 @@ private:
     UIContext& m_Context;
     std::unordered_map<std::string, Entry> m_Widgets;
     std::unordered_set<std::string> m_Used;
+    // AbortFrameで新規作成分だけを親子逆順に取り消すための宣言順記録です。
+    std::vector<std::string> m_CreatedThisFrame;
     std::unordered_map<std::string, std::shared_ptr<ButtonState>> m_ButtonStates;
     std::unordered_map<std::string, std::shared_ptr<SliderState>> m_SliderStates;
     std::unordered_map<std::string, std::shared_ptr<TextState>> m_TextStates;
