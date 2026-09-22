@@ -353,12 +353,15 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
     m_AuxiliaryUIContexts.emplace(id, std::move(context));
     // UIContextはWindowManagerのCloseCleanupで破棄し、GL資産の寿命をOS Windowより短くします。
     const bool restored = m_Window->MakeContextCurrent();
-    if (restored == false || m_WindowManager.AttachFrameLifecycle(id) == false ||
-        m_WindowManager.SetWindowCloseCleanup(id, [this, id](Window&)
-            {
-                // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
-                m_AuxiliaryUIContexts.erase(id);
-            }) == false)
+    // CleanupをLifecycleより先に登録し、途中失敗でもWindow破棄前にRendererを解放します。
+    const bool cleanupRegistered = m_WindowManager.SetWindowCloseCleanup(id,
+        [this, id](Window&)
+        {
+            // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
+            m_AuxiliaryUIContexts.erase(id);
+        });
+    if (restored == false || cleanupRegistered == false ||
+        m_WindowManager.AttachFrameLifecycle(id) == false)
     {
         // 登録失敗時も補助WindowのContextでRendererを破棄します。
         window->MakeContextCurrent();
