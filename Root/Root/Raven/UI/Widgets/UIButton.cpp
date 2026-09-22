@@ -1,4 +1,5 @@
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Core/UIContext.h"
 
 #include <utility>
 
@@ -8,21 +9,25 @@ namespace Raven
 void UIButton::SetNormalColor(const math::Vec4& color)
 {
     m_NormalColor = color;
+    m_NormalColorOverride = true;
 }
 
 void UIButton::SetHoveredColor(const math::Vec4& color)
 {
     m_HoveredColor = color;
+    m_HoveredColorOverride = true;
 }
 
 void UIButton::SetPressedColor(const math::Vec4& color)
 {
     m_PressedColor = color;
+    m_PressedColorOverride = true;
 }
 
 void UIButton::SetFocusedColor(const math::Vec4& color)
 {
     m_FocusedColor = color;
+    m_FocusedColorOverride = true;
 }
 
 void UIButton::SetOnClick(ClickHandler handler)
@@ -32,21 +37,41 @@ void UIButton::SetOnClick(ClickHandler handler)
 
 const math::Vec4& UIButton::GetNormalColor() const
 {
+    const UIContext* context = GetContext();
+    if (m_NormalColorOverride == false && context != nullptr)
+    {
+        return context->GetTheme().Button.NormalColor;
+    }
     return m_NormalColor;
 }
 
 const math::Vec4& UIButton::GetHoveredColor() const
 {
+    const UIContext* context = GetContext();
+    if (m_HoveredColorOverride == false && context != nullptr)
+    {
+        return context->GetTheme().Button.HoveredColor;
+    }
     return m_HoveredColor;
 }
 
 const math::Vec4& UIButton::GetPressedColor() const
 {
+    const UIContext* context = GetContext();
+    if (m_PressedColorOverride == false && context != nullptr)
+    {
+        return context->GetTheme().Button.PressedColor;
+    }
     return m_PressedColor;
 }
 
 const math::Vec4& UIButton::GetFocusedColor() const
 {
+    const UIContext* context = GetContext();
+    if (m_FocusedColorOverride == false && context != nullptr)
+    {
+        return context->GetTheme().Button.FocusedColor;
+    }
     return m_FocusedColor;
 }
 
@@ -99,18 +124,18 @@ void UIButton::OnBuildDrawList(
     UIDrawList& drawList,
     const math::Vec2& absolutePosition) const
 {
-    const math::Vec4* color = &m_NormalColor;
+    const math::Vec4* color = &GetNormalColor();
     if (IsPressed() == true)
     {
-        color = &m_PressedColor;
+        color = &GetPressedColor();
     }
     else if (IsHovered() == true)
     {
-        color = &m_HoveredColor;
+        color = &GetHoveredColor();
     }
     else if (IsFocused() == true)
     {
-        color = &m_FocusedColor;
+        color = &GetFocusedColor();
     }
 
     const math::Vec2& size = GetSize();
