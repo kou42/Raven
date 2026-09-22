@@ -229,6 +229,18 @@ Application::Application(const ApplicationSpecification& specification)
     validationPanel->AddChild(std::move(footerSlider));
 
     m_UIContext.GetRootElement().AddChild(std::move(validationPanel));
+
+    // Phase 6 / 12 接続検証用の論理Windowです。既存Editorは変更せず、
+    // タイトルバー移動・右下Resize・画面外Releaseによる補助Window生成を確認できます。
+    auto logicalWindow = CreateScope<UIWindow>();
+    logicalWindow->SetTitle("Raven UI Floating Window");
+    logicalWindow->SetPosition(math::Vec2(420.0f, 48.0f));
+    logicalWindow->SetSize(math::Vec2(320.0f, 240.0f));
+    UIWindow* logicalWindowHandle = logicalWindow.get();
+    if (m_UIContext.AddRootChild(std::move(logicalWindow)) != nullptr)
+    {
+        BindUIWindowViewportTransfer(m_MainWindowID, *logicalWindowHandle);
+    }
     }
 #endif
 
