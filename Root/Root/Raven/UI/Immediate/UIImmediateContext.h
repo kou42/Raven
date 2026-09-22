@@ -285,6 +285,10 @@ public:
         if (state == nullptr)
         {
             state = std::make_shared<TextState>();
+            if (font != nullptr)
+            {
+                input->SetFont(font);
+            }
             const std::weak_ptr<TextState> weak = state;
             input->SetOnChange([weak](const std::string& next)
             {
@@ -299,11 +303,6 @@ public:
             });
         }
         input->SetPreferredSize(size);
-        if (font != nullptr && input->GetContext() != nullptr)
-        {
-            input->SetFont(font);
-        }
-
         const bool changed = state->Changed;
         if (changed == true)
         {
