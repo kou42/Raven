@@ -125,6 +125,16 @@ void UILabel::OnDPIScaleChanged()
     RefreshDIPTypography();
 }
 
+void UILabel::SetScaleGlyphsWithDPI(bool enabled)
+{
+    if (m_ScaleGlyphsWithDPI == enabled)
+    {
+        return;
+    }
+    m_ScaleGlyphsWithDPI = enabled;
+    InvalidateMeasure();
+}
+
 void UILabel::SetWrapMode(UITextWrapMode mode)
 {
     m_WrapMode = mode;
@@ -165,6 +175,10 @@ math::Vec2 UILabel::MeasureText(float maxWidth) const
 
     UITextLayoutOptions options{};
     options.LineHeight = m_LineHeight;
+    if (m_ScaleGlyphsWithDPI == true && GetContext() != nullptr)
+    {
+        options.GlyphScale = math::Vec2(GetContext()->GetEffectiveScaleX(), GetContext()->GetEffectiveScaleY());
+    }
     // 初回MeasureはPreferred幅、Stretch時の再Measureは親から確定した幅を使います。
     options.MaxWidth = maxWidth;
     options.Wrap = m_WrapMode;
