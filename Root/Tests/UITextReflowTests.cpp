@@ -78,6 +78,26 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPIFontBatchRefresh()
+{
+    Raven::UIContext context;
+    auto cache = Raven::CreateRef<Raven::UIFontAtlasDPICache>();
+    auto panel = std::make_unique<Raven::UIElement>();
+    auto label = std::make_unique<Raven::UILabel>();
+    Raven::UILabel* ptr = label.get();
+    panel->AddChild(std::move(label));
+    context.GetRootElement().AddChild(std::move(panel));
+    Check(context.GetPendingDPIFontCount() == 0u, "initial pending font count");
+    Raven::UIFontAtlasBuildOptions options{};
+    ptr->BindDPIFontCache(cache, "missing-font.ttf", { 65u }, options);
+    Check(context.GetPendingDPIFontCount() == 1u, "nested label pending count");
+    Check(context.RefreshPendingDPIFonts() == 0u, "missing font batch refresh fails safely");
+    Check(context.GetPendingDPIFontCount() == 1u, "failed batch remains pending");
+    ptr->SetFont(nullptr);
+    Check(context.GetPendingDPIFontCount() == 0u, "legacy font clears batch pending");
+    Check(context.RefreshPendingDPIFonts() == 0u, "empty batch refresh");
+}
+
 void TestDPIFontAutoRebind()
 {
     Raven::UIContext context;
@@ -1953,6 +1973,7 @@ int main()
     TestDPIGlyphScale();
     TestDPIAtlasLabelBinding();
     TestDPIFontAutoRebind();
+    TestDPIFontBatchRefresh();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
