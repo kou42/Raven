@@ -5,6 +5,7 @@
 
 #include <utility>
 #include <algorithm>
+#include <cmath>
 
 namespace Raven
 {
