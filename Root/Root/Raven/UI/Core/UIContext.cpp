@@ -183,6 +183,17 @@ UIElement* UIContext::AddRootChild(Scope<UIElement> child)
     return added;
 }
 
+Scope<UIElement> UIContext::DetachRootChild(UIElement* child)
+{
+    if (m_FrameActive == true || m_RootElement == nullptr ||
+        child == nullptr || child == m_PopupLayer || child == m_Tooltip ||
+        child->GetParent() != m_RootElement.get())
+    {
+        return nullptr;
+    }
+    return m_RootElement->DetachChild(child);
+}
+
 bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
 {
     if (&destination == this || child == nullptr ||
@@ -196,7 +207,7 @@ bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
 
     // Popup/Tooltipを含む内部OverlayはContext固有の所有物として移譲しません。
     // 一般Widgetの移譲時は旧ContextのInteraction Stateを先に安全に終了します。
-    Scope<UIElement> detached = m_RootElement->DetachChild(child);
+    Scope<UIElement> detached = DetachRootChild(child);
     if (detached == nullptr)
     {
         return false;
