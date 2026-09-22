@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cmath>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -290,6 +291,118 @@ void UIDockSpace::ApplyLayout()
             }
         }
     }
+}
+
+UIDockSpaceSnapshot UIDockSpace::SaveSnapshot() const
+{
+    UIDockSpaceSnapshot snapshot;
+    snapshot.Structure = m_Layout.SaveStructure();
+    for (const UIDockLayoutRecord& record : snapshot.Structure)
+    {
+        if (record.Kind != UIDockNodeKind::Tabs)
+        {
+            continue;
+        }
+        const UIDockNode* leaf = m_Layout.FindNode(record.Id);
+        const UITabModel* model = leaf->GetTabs();
+        for (const UITabItem& tab : model->GetTabs())
+        {
+            snapshot.Tabs.push_back({ record.Id, tab });
+        }
+        snapshot.Selections.emplace_back(record.Id, model->GetSelectedTabId());
+    }
+    return snapshot;
+}
+
+bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
+    const ContentFactory& factory)
+{
+    if (m_Panes.empty() == false || m_TabViews.empty() == false ||
+        static_cast<bool>(factory) == false)
+    {
+        return false;
+    }
+    UIDockLayout candidate;
+    if (candidate.RestoreStructure(snapshot.Structure) == false)
+    {
+        return false;
+    }
+    // 先にTabメタデータと選択状態を検証します。失敗時は既存Treeを触りません。
+    std::unordered_map<std::uint64_t, UITabModel> models;
+    for (const UIDockLayoutRecord& record : snapshot.Structure)
+    {
+        if (record.Kind == UIDockNodeKind::Tabs)
+        {
+            models.emplace(record.Id, UITabModel{});
+        }
+    }
+    if (snapshot.Selections.size() != models.size())
+    {
+        return false;
+    }
+    std::unordered_set<std::uint64_t> selectedLeaves;
+    for (const UIDockTabRecord& record : snapshot.Tabs)
+    {
+        const auto it = models.find(record.LeafId);
+        if (it == models.end() ||
+            it->second.AddTab(record.Tab.Id, record.Tab.Title, record.Tab.Closable) == false)
+        {
+            return false;
+        }
+    }
+    for (const auto& selection : snapshot.Selections)
+    {
+        const auto it = models.find(selection.first);
+        if (it == models.end() ||
+            selectedLeaves.insert(selection.first).second == false ||
+            it->second.SelectTab(selection.second) == false)
+        {
+            return false;
+        }
+    }
+    // Factoryはコミット前に全件実行。nullや親付きContentがあれば何も変更しません。
+    std::vector<Scope<UIElement>> contents;
+    contents.reserve(snapshot.Tabs.size());
+    std::unordered_set<UIElement*> uniqueContents;
+    for (const UIDockTabRecord& record : snapshot.Tabs)
+    {
+        Scope<UIElement> content = factory(record.LeafId, record.Tab);
+        if (content == nullptr || content->GetParent() != nullptr ||
+            content->GetContext() != nullptr ||
+            uniqueContents.insert(content.get()).second == false)
+        {
+            return false;
+        }
+        contents.push_back(std::move(content));
+    }
+    if (RestoreStructure(snapshot.Structure) == false)
+    {
+        return false;
+    }
+    for (const UIDockLayoutRecord& record : snapshot.Structure)
+    {
+        if (record.Kind == UIDockNodeKind::Tabs)
+        {
+            CreateTabView(record.Id);
+        }
+    }
+    for (std::size_t index = 0u; index < snapshot.Tabs.size(); ++index)
+    {
+        const UIDockTabRecord& record = snapshot.Tabs[index];
+        if (AddTab(record.LeafId, record.Tab.Id, record.Tab.Title,
+            std::move(contents[index]), record.Tab.Closable) == false)
+        {
+            return false;
+        }
+    }
+    for (const auto& selection : snapshot.Selections)
+    {
+        if (selection.second != 0u)
+        {
+            SelectTab(selection.first, selection.second);
+        }
+    }
+    return true;
 }
 
 bool UIDockSpace::RestoreStructure(const std::vector<UIDockLayoutRecord>& records)
