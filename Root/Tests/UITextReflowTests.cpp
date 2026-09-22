@@ -49,6 +49,32 @@ protected:
 
 void TestDockLayout();
 
+
+
+bool Near(float actual, float expected)
+{
+    return std::abs(actual - expected) < 0.001f;
+}
+
+void CheckNear(const char* label, float actual, float expected)
+{
+    // Release構成でも検証が無効化されないよう、assertではなく終了コードで失敗を通知します。
+    if (Near(actual, expected) == false)
+    {
+        std::cerr << label << ": expected " << expected << ", actual " << actual << '\n';
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+void Check(bool condition, const char* label)
+{
+    if (condition == false)
+    {
+        std::cerr << label << ": failed\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
+
 void TestUITheme()
 {
     Raven::UIContext context;
@@ -108,30 +134,6 @@ void TestUITheme()
 }
 
 
-
-bool Near(float actual, float expected)
-{
-    return std::abs(actual - expected) < 0.001f;
-}
-
-void CheckNear(const char* label, float actual, float expected)
-{
-    // Release構成でも検証が無効化されないよう、assertではなく終了コードで失敗を通知します。
-    if (Near(actual, expected) == false)
-    {
-        std::cerr << label << ": expected " << expected << ", actual " << actual << '\n';
-        std::exit(EXIT_FAILURE);
-    }
-}
-
-void Check(bool condition, const char* label)
-{
-    if (condition == false)
-    {
-        std::cerr << label << ": failed\n";
-        std::exit(EXIT_FAILURE);
-    }
-}
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
