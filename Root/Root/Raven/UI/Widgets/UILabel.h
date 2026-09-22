@@ -25,7 +25,13 @@ public:
         const UIFontAtlasBuildOptions& options);
     bool RefreshDPIFont(); // 有効なGPU Context上で呼び出してください。
     bool IsDPIFontPending() const { return m_DPIFontPending; }
-    bool HasPendingDPIFont() const override { return m_DPIFontPending; }
+    UIFontAtlasBuildFailure GetDPIFontFailure() const { return m_DPIFontFailure; }
+    // 失敗後は自動再試行を止めます。Font配置/Renderer復旧後に明示的に再試行できます。
+    void RetryDPIFont();
+    bool HasPendingDPIFont() const override
+    {
+        return m_DPIFontPending == true && m_DPIFontFailure == UIFontAtlasBuildFailure::None;
+    }
     bool RefreshPendingDPIFont() override { return m_DPIFontPending == true && RefreshDPIFont(); }
 
     void SetText(std::string text);
@@ -80,6 +86,8 @@ private:
     std::vector<std::uint32_t> m_DPIFontCodepoints;
     UIFontAtlasBuildOptions m_DPIFontOptions{};
     bool m_DPIFontPending = false;
+    UIFontAtlasBuildFailure m_DPIFontFailure = UIFontAtlasBuildFailure::None;
+    std::uint32_t m_DPIFontFailedScaleStep = 0u;
     UITextWrapMode m_WrapMode = UITextWrapMode::None;
     UITextHorizontalAlignment m_TextAlignment = UITextHorizontalAlignment::Left;
 };
