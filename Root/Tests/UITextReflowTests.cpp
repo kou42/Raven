@@ -673,6 +673,51 @@ void TestTreeViewDragDrop()
         child->Parent == nullptr, "tree inserts after root");
 }
 
+void TestTreeViewCrossDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(600.0f, 300.0f));
+    auto left = std::make_unique<Raven::UITreeView>();
+    auto right = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* sourceView = left.get();
+    Raven::UITreeView* targetView = right.get();
+    left->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    left->SetSize(Raven::math::Vec2(200.0f, 100.0f));
+    right->SetPosition(Raven::math::Vec2(260.0f, 20.0f));
+    right->SetSize(Raven::math::Vec2(200.0f, 100.0f));
+    left->SetNodeDragDropEnabled(true);
+    right->SetNodeDragDropEnabled(true);
+    Raven::UITreeNode* moved = left->AddRoot(10u, "Moved");
+    Raven::UITreeNode* nested = left->AddNode(moved, 11u, "Nested");
+    Raven::UITreeNode* target = right->AddRoot(20u, "Target");
+    right->AddRoot(11u, "Collision");
+    context.GetRootElement().AddChild(std::move(left));
+    context.GetRootElement().AddChild(std::move(right));
+
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 32.0f));
+    Check(context.GetDropTarget() == nullptr, "external tree drop disabled by default");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 32.0f), Raven::UIMouseButton::Left);
+    targetView->SetExternalNodeDropEnabled(true);
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 32.0f));
+    Check(context.GetDropTarget() == nullptr, "external subtree id collision rejected");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 32.0f), Raven::UIMouseButton::Left);
+
+    targetView->Clear();
+    target = targetView->AddRoot(20u, "Target");
+    Check(sourceView->Select(nested), "external source selects nested node");
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 32.0f));
+    Check(context.GetDropTarget() == targetView, "external tree accepts node");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(sourceView->FindNode(10u) == nullptr && targetView->FindNode(10u) == moved,
+        "external tree transfers node ownership");
+    Check(moved->Parent == target && targetView->FindNode(11u) == nested,
+        "external tree preserves subtree");
+    Check(sourceView->GetSelectedNode() == nullptr, "external tree clears moved selection");
+}
+
 void TestDragDropRouting()
 {
     Raven::UIContext context;
@@ -737,6 +782,7 @@ int main()
 {
     TestDragDropRouting();
     TestTreeViewDragDrop();
+    TestTreeViewCrossDrop();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
