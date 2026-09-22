@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <vector>
 
 namespace Raven
 {
@@ -19,6 +21,41 @@ UITabBar::UITabBar(UITabModel& model)
     SetPreferredSize(math::Vec2(300.0f, m_TabHeight));
 }
 
+float UITabBar::GetMaxScrollOffset() const
+{
+    return std::max(0.0f, static_cast<float>(m_Model.GetTabCount()) * m_TabWidth -
+        std::max(0.0f, GetSize().x));
+}
+
+void UITabBar::SetScrollOffset(float offset)
+{
+    if (std::isfinite(offset) == true)
+    {
+        m_ScrollOffset = std::clamp(offset, 0.0f, GetMaxScrollOffset());
+    }
+}
+
+void UITabBar::EnsureTabVisible(std::uint64_t id)
+{
+    const auto& tabs = m_Model.GetTabs();
+    const auto it = std::find_if(tabs.begin(), tabs.end(),
+        [id](const UITabItem& tab) { return tab.Id == id; });
+    if (it == tabs.end())
+    {
+        return;
+    }
+    const float left = static_cast<float>(it - tabs.begin()) * m_TabWidth;
+    const float right = left + m_TabWidth;
+    if (left < m_ScrollOffset)
+    {
+        SetScrollOffset(left);
+    }
+    else if (right > m_ScrollOffset + GetSize().x)
+    {
+        SetScrollOffset(right - GetSize().x);
+    }
+}
+
 void UITabBar::SetFont(const Ref<UIFontAtlas>& font)
 {
     m_Font = font;
@@ -30,6 +67,7 @@ void UITabBar::SetTabWidth(float width)
     if (std::isfinite(width) == true && width > m_CloseWidth + 16.0f)
     {
         m_TabWidth = width;
+        SetScrollOffset(m_ScrollOffset);
         InvalidateMeasure();
     }
 }
@@ -46,7 +84,8 @@ void UITabBar::SetTabHeight(float height)
 
 math::Vec2 UITabBar::OnMeasureContent() const
 {
-    return math::Vec2(static_cast<float>(m_Model.GetTabCount()) * m_TabWidth, m_TabHeight);
+    // Headerの総幅で親のViewportを押し広げないようにします。
+    return math::Vec2(0.0f, m_TabHeight);
 }
 
 std::uint64_t UITabBar::HitTab(float x, float y, bool& close) const
@@ -57,14 +96,15 @@ std::uint64_t UITabBar::HitTab(float x, float y, bool& close) const
     {
         return 0u;
     }
-    const std::size_t index = static_cast<std::size_t>(x / m_TabWidth);
+    const std::size_t index = static_cast<std::size_t>((x + std::min(m_ScrollOffset, GetMaxScrollOffset())) / m_TabWidth);
     const auto& tabs = m_Model.GetTabs();
     if (index >= tabs.size())
     {
         return 0u;
     }
     const float tabRight = static_cast<float>(index + 1u) * m_TabWidth;
-    close = tabs[index].Closable == true && x >= tabRight - m_CloseWidth;
+    close = tabs[index].Closable == true &&
+        x + std::min(m_ScrollOffset, GetMaxScrollOffset()) >= tabRight - m_CloseWidth;
     return tabs[index].Id;
 }
 
@@ -93,6 +133,14 @@ void UITabBar::OnMouseEvent(UIMouseEvent& event)
     {
         m_HoveredId = id;
         m_HoveredClose = close;
+        return;
+    }
+    if (event.Type == UIMouseEventType::Scroll)
+    {
+        const float previous = m_ScrollOffset;
+        const float delta = event.ScrollDelta.x != 0.0f ? event.ScrollDelta.x : event.ScrollDelta.y;
+        SetScrollOffset(m_ScrollOffset - delta * 40.0f);
+        event.Handled = m_ScrollOffset != previous;
         return;
     }
     if (event.Button != UIMouseButton::Left)
@@ -171,7 +219,7 @@ bool UITabBar::OnDragDropEvent(UIDragDropEvent& event)
         return false;
     }
     // 境界の左右半分を挿入位置へ変換します。最後尾へのDropも許容します。
-    const float slot = local.x / m_TabWidth;
+    const float slot = (local.x + std::min(m_ScrollOffset, GetMaxScrollOffset())) / m_TabWidth;
     const std::size_t boundary = std::min(tabs.size(),
         static_cast<std::size_t>(slot + 0.5f));
     const auto source = std::find_if(tabs.begin(), tabs.end(),
@@ -205,10 +253,15 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
         math::Vec2(position.x + GetSize().x, position.y + height),
         ApplyVisualColor(math::Vec4(0.13f, 0.14f, 0.17f, 1.0f)));
 
+    const float scroll = std::min(m_ScrollOffset, GetMaxScrollOffset());
     const auto& tabs = m_Model.GetTabs();
     for (std::size_t index = 0u; index < tabs.size(); ++index)
     {
-        const float left = static_cast<float>(index) * m_TabWidth;
+        const float left = static_cast<float>(index) * m_TabWidth - scroll;
+        if (left + m_TabWidth <= 0.0f)
+        {
+            continue;
+        }
         if (left >= GetSize().x)
         {
             break;
@@ -252,7 +305,7 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
     }
     if (m_DropIndicatorVisible == true)
     {
-        const float x = position.x + static_cast<float>(m_DropIndex) * m_TabWidth;
+        const float x = position.x + static_cast<float>(m_DropIndex) * m_TabWidth - scroll;
         drawList.AddRect(math::Vec2(x - 2.0f, position.y + 3.0f),
             math::Vec2(x + 2.0f, position.y + height - 3.0f),
             ApplyVisualColor(math::Vec4(0.55f, 0.78f, 1.0f, 1.0f)));
