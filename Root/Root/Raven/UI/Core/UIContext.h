@@ -47,7 +47,11 @@ public:
 
     void BeginFrame(const math::Vec2& viewportSize);
     // Window論理サイズとは独立した実Pixel数を描画境界へ渡します。
-    void SetFramebufferSize(const math::Vec2& framebufferSize) { m_FramebufferSize = framebufferSize; }
+    void SetFramebufferSize(const math::Vec2& framebufferSize)
+    {
+        m_FramebufferSize = framebufferSize;
+        m_HasFramebufferSize = true;
+    }
     void EndFrame();
 
     // GPU Contextが有効な描画準備段階で呼び、Tree内の未生成DPI Fontをまとめて解決します。
@@ -195,6 +199,7 @@ private:
 private:
     UITheme m_Theme = UITheme::CreateDefaultDark();
     math::Vec2 m_FramebufferSize = math::Vec2(0.0f, 0.0f);
+    bool m_HasFramebufferSize = false;
     float m_DPIScaleX = 1.0f;
     float m_DPIScaleY = 1.0f;
     float m_UserScale = 1.0f;
