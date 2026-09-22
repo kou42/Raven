@@ -2,7 +2,7 @@
 
 最終更新: 2026-09-23  
 対象: `Root/Root/Raven/UI` / Raven Editor  
-状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window / Multi-Viewportは未完了
+状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。Phase 10のDPI対応・Font Atlas診断はPR #253〜#269で実装し、ユーザーの実環境でGPU統合テスト・UI回帰テスト・通常起動の問題なしを確認済み。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window / Multi-Viewportは未完了
 
 ## 目的と原則
 
@@ -36,7 +36,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
 | 9 | Docking System | 実装・ユーザー動作確認済み（PR #251。Split / Pane間Tab移動 / Dock Preview / Layout保存復元）。RavenUITest単体実行・GitHub Actions結果は未確認 | Split / Tab / Dock preview / Layout保存復元 |
-| 10 | Theme / Style | 共通Style・状態別外観を実装、ユーザー動作確認済み（PR #252）。DPI対応は未実装 | 共通Style、状態別外観、DPI |
+| 10 | Theme / Style | 共通Style・状態別外観とDPI基盤・DIPレイアウト・DPI Font Atlas更新・失敗診断を実装、ユーザー動作確認済み（PR #252〜#269）。Window別の実DPI移動検証は継続 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
 | 12 | Multi-Viewport | OS Window / OpenGL Context・補助Window描画の基盤は実装・動作確認済み（PR #247）。UI接続は未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
@@ -97,7 +97,10 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] 既存の個別色SetterをThemeより優先し、Context非所属のWidgetでは従来配色を維持する。
 - [x] Theme切替・Context分離・DrawList配色・個別指定優先の回帰テストをRavenUITestへ追加。
 - [x] ユーザーから実環境での動作チェックに問題なしとの報告を受ける。個別のテスト実行ログとGitHub Actions結果はこのチャットでは未取得。
-- [ ] DPI / OS WindowごとのScale・Font Atlas再構築・入力座標との整合性を実装・検証する。Phase 10全体の完了とは扱わない。
+- [x] PR #253〜#259でDPI取得・UIContext同期、DIP座標・レイアウト・文字描画を実装。PR #260〜#263でDPI別Font Atlasキャッシュと描画前の一括更新を実装。
+- [x] PR #264〜#268でFont Atlas失敗診断を段階追加。RHI Device未初期化、Texture Resource生成失敗、GPU pixel転送失敗を区別。
+- [x] PR #269でOpenGL実ContextのTexture転送・GPU readback・不正サイズ・既存GL error・任意の実Font Atlas生成を検証する独立テストを追加。ユーザーからGPU統合テスト、既存UI回帰テスト、通常Raven起動に問題なしとの報告を受ける（個別ログはこのチャットでは未取得）。
+- [ ] OS Windowを別DPIのMonitor間で移動した際のFont・入力座標・Clip・Multi-Viewport連携を検証する。Phase 10全体の完了とは扱わない。
 
 ## Phase 1: 実装分割
 
@@ -136,6 +139,14 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 2026-09-22 | feature/ui-docking-system / PR #251 | UIDockLayout / Geometry / Space、入れ子Split、Pane間Tab移動、Dock Preview、空Pane Collapse、JSON Snapshot保存・起動時復元、Backup保護、復元失敗時巻戻し、Demoと回帰テストを追加 | ユーザーからPhase 9の動作チェック問題なしとの報告。GitHub上でmasterとの差分・レビュー未解決0件を確認。RavenUITest単体実行ログとActions実行結果は未取得 | 正式Editorへの組込み、負荷・再入/例外注入テスト、UIElement内部状態の永続化は別課題 |
 
 | 2026-09-23 | feature/ui-theme-style / PR #252 | UIContextのTheme切替、9種類のWidgetの共通Style・状態別配色、個別色優先、RavenUITest回帰テストを追加 | ユーザーから実環境での動作チェック問題なしとの報告。DPIは未実装、テスト単体実行ログ・GitHub Actions結果は未取得 | Phase 10のDPI対応とWindow別Scale/Fontの検証を別PRで進める |
+
+## DPI / Font Atlas診断の実装・検証記録（PR #253〜#269）
+
+- PR #253〜#259: DPI倍率取得、UIContext同期、DIP変換、レイアウト制約・Absolute位置、Label文字幅・Baseline・Glyph倍率。
+- PR #260〜#263: DPI別Font Atlasキャッシュ、自動Rebind、Pending一括更新、Application描画準備への接続。
+- PR #264〜#268: Font Atlas失敗の分類、再試行抑制、Font容量・不正データ回帰テスト、RHI Device / Resource / Texture upload診断。
+- PR #269: GPU Contextを使う独立統合テスト、GPU readbackと異常転送、任意Font Atlas生成。ユーザーによるGPU統合テスト・UI回帰テスト・通常Raven起動の動作確認で問題なし。
+- 残課題: 別DPI Monitor移動、OS Window別ContextとMulti-Viewportの入力・描画統合、異常系の自動CI環境整備。
 
 ## 更新ルール
 
