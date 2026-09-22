@@ -1,6 +1,9 @@
 #pragma once
 
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Widgets/UISlider.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -81,6 +84,8 @@ public:
             {
                 parent->RemoveChild(element);
             }
+            m_ButtonStates.erase(item.second);
+            m_SliderStates.erase(item.second);
             m_Widgets.erase(found);
         }
 
@@ -100,6 +105,100 @@ public:
         m_IDKinds.clear();
         m_Used.clear();
         m_FrameActive = false;
+    }
+
+    // Immediate API: IDは表示文字列と独立して指定します。
+    // UIContext側の描画Frameより前に宣言し、入力結果は次回の宣言で受け取ります。
+    UILabel* Text(const std::string& id, const std::string& text,
+        const Ref<UIFontAtlas>& font = nullptr)
+    {
+        UILabel* label = GetOrCreate<UILabel>(id);
+        if (label != nullptr)
+        {
+            label->SetText(text);
+            if (font != nullptr)
+            {
+                label->SetFont(font);
+            }
+        }
+        return label;
+    }
+
+    // Click callbackはWidget生成時だけ登録し、入力Frame中はContext本体を触りません。
+    // Pendingは次に同じIDが宣言された時だけ消費します。
+    bool Button(const std::string& id, const math::Vec2& size = math::Vec2(120.0f, 28.0f))
+    {
+        const std::string key = MakeKey(id);
+        UIButton* button = GetOrCreate<UIButton>(id);
+        if (button == nullptr)
+        {
+            return false;
+        }
+        button->SetPreferredSize(size);
+        auto& state = m_ButtonStates[key];
+        if (state == nullptr)
+        {
+            state = std::make_shared<ButtonState>();
+            const std::weak_ptr<ButtonState> weak = state;
+            button->SetOnClick([weak]()
+            {
+                if (const auto current = weak.lock())
+                {
+                    current->Clicked = true;
+                }
+            });
+        }
+        const bool clicked = state->Clicked;
+        state->Clicked = false;
+        return clicked;
+    }
+
+    // valueは呼び出し側の所有物です。CallbackにそのPointerを保存せず、
+    // UI入力で生じた値だけをCacheし、次回の宣言時にvalueへ反映します。
+    bool SliderFloat(const std::string& id, float* value, float minimum, float maximum,
+        const math::Vec2& size = math::Vec2(160.0f, 24.0f))
+    {
+        if (value == nullptr)
+        {
+            return false;
+        }
+        const std::string key = MakeKey(id);
+        UISlider* slider = GetOrCreate<UISlider>(id);
+        if (slider == nullptr)
+        {
+            return false;
+        }
+        auto& state = m_SliderStates[key];
+        if (state == nullptr)
+        {
+            state = std::make_shared<SliderState>();
+            const std::weak_ptr<SliderState> weak = state;
+            slider->SetOnValueChanged([weak](float next)
+            {
+                if (const auto current = weak.lock())
+                {
+                    if (current->Synchronizing == false)
+                    {
+                        current->Value = next;
+                        current->Changed = true;
+                    }
+                }
+            });
+        }
+        slider->SetPreferredSize(size);
+        // SetRange / SetValueも通知を出すため、外部同期とユーザー操作を分離します。
+        state->Synchronizing = true;
+        slider->SetRange(minimum, maximum);
+        const bool changed = state->Changed;
+        if (changed == true)
+        {
+            *value = state->Value;
+            state->Changed = false;
+        }
+        slider->SetValue(*value);
+        *value = slider->GetValue();
+        state->Synchronizing = false;
+        return changed;
     }
 
     // ID Stackは長さ付きで符号化し、例えば ("ab","c") と ("a","bc") を区別します。
@@ -200,6 +299,14 @@ public:
     std::size_t GetCachedWidgetCount() const { return m_Widgets.size(); }
 
 private:
+    struct ButtonState { bool Clicked = false; };
+    struct SliderState
+    {
+        float Value = 0.0f;
+        bool Changed = false;
+        bool Synchronizing = false;
+    };
+
     struct Entry
     {
         UIElement* Element;
@@ -229,6 +336,8 @@ private:
     UIContext& m_Context;
     std::unordered_map<std::string, Entry> m_Widgets;
     std::unordered_set<std::string> m_Used;
+    std::unordered_map<std::string, std::shared_ptr<ButtonState>> m_ButtonStates;
+    std::unordered_map<std::string, std::shared_ptr<SliderState>> m_SliderStates;
     std::vector<std::string> m_IDStack;
     // PushIDとContainerのPop順序を混同させないためのScope種別です。
     std::vector<bool> m_IDKinds;
