@@ -80,6 +80,34 @@ void TestUIImmediateContext()
             ordered[1].get() == back, "declaration order applied");
     }
 
+    // Checkboxは外部boolを所有せず、クリックを次の宣言で一度だけ反映します。
+    {
+        Raven::UIContext checkContext;
+        Raven::UIImmediateContext checkImmediate(checkContext);
+        bool enabled = false;
+        CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox BeginFrame");
+        CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false,
+            "checkbox initial state");
+        CheckImmediate(checkImmediate.EndFrame() == true, "checkbox EndFrame");
+        auto* button = dynamic_cast<Raven::UIButton*>(
+            checkContext.GetRootElement().GetChildren().front().get());
+        CheckImmediate(button != nullptr && checkContext.SetFocus(button) == true,
+            "checkbox focus");
+        Raven::UIKeyEvent activate{};
+        activate.Key = Raven::UIKey::Space;
+        activate.Pressed = true;
+        CheckImmediate(checkContext.RouteKeyEvent(activate) == true,
+            "checkbox activate");
+        CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox consume BeginFrame");
+        CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == true &&
+            enabled == true, "checkbox toggled");
+        CheckImmediate(checkImmediate.EndFrame() == true, "checkbox consume EndFrame");
+        CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox one-shot BeginFrame");
+        CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false &&
+            enabled == true, "checkbox no replay");
+        CheckImmediate(checkImmediate.EndFrame() == true, "checkbox one-shot EndFrame");
+    }
+
     // UIContextの描画Frame中はTree変更を許可しません。
     context.BeginFrame(Raven::math::Vec2(320.0f, 240.0f));
     CheckImmediate(immediate.BeginFrame() == false, "UIContext active rejects BeginFrame");
