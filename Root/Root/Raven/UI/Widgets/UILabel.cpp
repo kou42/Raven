@@ -11,6 +11,19 @@ namespace Raven
 void UILabel::SetFont(const Ref<UIFontAtlas>& font)
 {
     m_Font = font;
+    m_FontRasterScale = 1.0f;
+    InvalidateMeasure();
+}
+
+void UILabel::SetFontDPI(const Ref<UIFontAtlas>& font, float rasterScale)
+{
+    if (std::isfinite(rasterScale) == false || rasterScale <= 0.0f)
+    {
+        return;
+    }
+    m_Font = font;
+    m_FontRasterScale = rasterScale;
+    m_ScaleGlyphsWithDPI = true;
     InvalidateMeasure();
 }
 
@@ -181,7 +194,8 @@ math::Vec2 UILabel::MeasureText(float maxWidth) const
     options.LineHeight = m_LineHeight;
     if (m_ScaleGlyphsWithDPI == true && GetContext() != nullptr)
     {
-        options.GlyphScale = math::Vec2(GetContext()->GetEffectiveScaleX(), GetContext()->GetEffectiveScaleY());
+        options.GlyphScale = math::Vec2(GetContext()->GetEffectiveScaleX() / m_FontRasterScale,
+            GetContext()->GetEffectiveScaleY() / m_FontRasterScale);
     }
     // 初回MeasureはPreferred幅、Stretch時の再Measureは親から確定した幅を使います。
     options.MaxWidth = maxWidth;
