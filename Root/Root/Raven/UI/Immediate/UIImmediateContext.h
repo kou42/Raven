@@ -2,9 +2,11 @@
 
 #include "Raven/UI/Core/UIContext.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <typeindex>
 #include <unordered_map>
 #include <unordered_set>
@@ -86,6 +88,15 @@ public:
         m_Used.clear();
         m_FrameActive = false;
         return true;
+    }
+
+    // 宣言側でBegin/Endの対応を崩した場合に限り、既存Widgetを破棄せずFrameを中断します。
+    void AbortFrame()
+    {
+        m_ParentStack.clear();
+        m_IDStack.clear();
+        m_Used.clear();
+        m_FrameActive = false;
     }
 
     // ID Stackは長さ付きで符号化し、例えば ("ab","c") と ("a","bc") を区別します。
