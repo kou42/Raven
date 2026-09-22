@@ -123,8 +123,15 @@ void UIDockSpace::SyncWidgets()
 
 void UIDockSpace::ApplyRect(UIElement& element, const UIDockRect& rect)
 {
-    element.SetPosition(math::Vec2(rect.X, rect.Y));
-    element.SetSize(math::Vec2(rect.Width, rect.Height));
+    if (element.GetPosition().x != rect.X || element.GetPosition().y != rect.Y)
+    {
+        element.SetPosition(math::Vec2(rect.X, rect.Y));
+    }
+    if (element.GetPreferredSize().x != rect.Width ||
+        element.GetPreferredSize().y != rect.Height)
+    {
+        element.SetSize(math::Vec2(rect.Width, rect.Height));
+    }
 }
 
 void UIDockSpace::ApplyLayout()
