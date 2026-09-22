@@ -80,7 +80,7 @@ public:
         const WindowSpecification& specification, UIDetachCompleted onCompleted = {});
     UIContext* GetWindowUIContext(WindowID id);
     // Main/補助WindowのRoot直下Widgetを同じObjectのまま移譲します。
-    // Windowを閉じる前にMainへ戻す場合は明示的に呼び出してください。
+    // 補助WindowのClose時はRoot直下の通常WidgetをMainへ自動復帰させます。
     bool TransferUIRootChild(WindowID sourceID, WindowID destinationID, UIElement* child);
 
 private:
