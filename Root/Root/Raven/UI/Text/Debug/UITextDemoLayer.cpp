@@ -12,6 +12,7 @@
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <GLFW/glfw3.h>
 
@@ -353,6 +354,47 @@ void UITextDemoLayer::OnAttach()
     }
     std::cout << "[Raven UI Tab] Panel at (860, 490): wheel / drag / close.\n";
 
+    // Phase 9 Docking Demo: 左右Splitと右側の上下Splitを実際のUI Treeで操作します。
+    // 既存Tab Demoとは別領域に置き、SplitterのDragとTabの選択/Closeを同時確認します。
+    auto dock = CreateScope<UIDockSpace>();
+    dock->SetPosition(math::Vec2(24.0f, 490.0f));
+    dock->SetSize(math::Vec2(800.0f, 220.0f));
+    const std::uint64_t sceneLeaf = dock->GetLayout().GetRoot()->GetId();
+    UIDockNode* inspectorLeaf = dock->Split(sceneLeaf, UIDockSplitAxis::Horizontal, 0.55f);
+    UIDockNode* consoleLeaf = inspectorLeaf != nullptr ?
+        dock->Split(inspectorLeaf->GetId(), UIDockSplitAxis::Vertical, 0.5f) : nullptr;
+    if (inspectorLeaf != nullptr && consoleLeaf != nullptr)
+    {
+        const auto addDockTab = [&dock, &atlas](std::uint64_t leafId,
+            std::uint64_t tabId, const std::string& title, bool closable)
+        {
+            auto page = CreateScope<UILabel>();
+            page->SetFont(atlas);
+            page->SetText(title + ": drag splitters / select or close tabs.");
+            page->SetBaselineOffset(25.0f);
+            page->SetPreferredSize(math::Vec2(150.0f, 55.0f));
+            return dock->AddTab(leafId, tabId, title, std::move(page), closable);
+        };
+        UITabView* sceneView = dock->CreateTabView(sceneLeaf);
+        UITabView* inspectorView = dock->CreateTabView(inspectorLeaf->GetId());
+        UITabView* consoleView = dock->CreateTabView(consoleLeaf->GetId());
+        if (sceneView != nullptr && inspectorView != nullptr && consoleView != nullptr)
+        {
+            sceneView->GetTabBar()->SetFont(atlas);
+            inspectorView->GetTabBar()->SetFont(atlas);
+            consoleView->GetTabBar()->SetFont(atlas);
+            if (addDockTab(sceneLeaf, 201u, "Scene", false) == true &&
+                addDockTab(sceneLeaf, 202u, "Game", true) == true &&
+                addDockTab(inspectorLeaf->GetId(), 203u, "Inspector", false) == true &&
+                addDockTab(consoleLeaf->GetId(), 204u, "Console", false) == true)
+            {
+                m_DockSpace = static_cast<UIDockSpace*>(
+                    m_Application.GetUIContext().GetRootElement().AddChild(std::move(dock)));
+            }
+        }
+    }
+    std::cout << "[Raven UI Dock] Panel at (24, 490): drag vertical/horizontal splitters; select tabs.\\n";
+
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
     tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
@@ -365,6 +407,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_DockSpace != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_DockSpace);
+        m_DockSpace = nullptr;
+    }
     if (m_TabView != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_TabView);
