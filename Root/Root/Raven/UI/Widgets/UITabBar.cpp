@@ -74,6 +74,8 @@ void UITabBar::OnMouseEvent(UIMouseEvent& event)
     {
         m_HoveredId = 0u;
         m_HoveredClose = false;
+        m_PendingDragId = 0u;
+        m_DropIndicatorVisible = false;
         return;
     }
     if (event.Target != this)
@@ -103,6 +105,18 @@ void UITabBar::OnMouseEvent(UIMouseEvent& event)
         {
             event.Context->SetFocus(this);
         }
+        // Close領域はDrag開始対象にしません。閾値未満のUpは通常Clickへ戻ります。
+        if (close == false && m_DragReorderEnabled == true && event.Context != nullptr)
+        {
+            const UITabItem* tab = m_Model.FindTab(id);
+            if (tab != nullptr && event.Context->BeginDrag(this,
+                UIDragDropPayload{ "Raven/UITab", std::to_string(id) },
+                event.ScreenPosition) == true)
+            {
+                m_PendingDragId = id;
+                event.Context->SetDragPreview(tab->Title, m_Font);
+            }
+        }
         event.Handled = true;
         return;
     }
@@ -117,8 +131,66 @@ void UITabBar::OnMouseEvent(UIMouseEvent& event)
         {
             m_Model.SelectTab(id);
         }
+        m_PendingDragId = 0u;
         event.Handled = true;
     }
+}
+
+bool UITabBar::OnDragDropEvent(UIDragDropEvent& event)
+{
+    if (event.Type == UIDragDropEventType::Leave ||
+        event.Type == UIDragDropEventType::Cancel ||
+        event.Type == UIDragDropEventType::End)
+    {
+        m_DropIndicatorVisible = false;
+        m_PendingDragId = 0u;
+        return false;
+    }
+    if (m_DragReorderEnabled == false || event.Source != this ||
+        event.Payload == nullptr || event.Payload->Type != "Raven/UITab" ||
+        m_PendingDragId == 0u ||
+        event.Payload->Data != std::to_string(m_PendingDragId))
+    {
+        return false;
+    }
+    const auto& tabs = m_Model.GetTabs();
+    if (tabs.size() < 2u || m_Model.FindTab(m_PendingDragId) == nullptr)
+    {
+        return false;
+    }
+    math::Vec2 local;
+    if (TryScreenToLocalPosition(event.ScreenPosition, local) == false ||
+        local.x < 0.0f || local.x >= GetSize().x ||
+        local.y < 0.0f || local.y >= std::min(GetSize().y, m_TabHeight))
+    {
+        return false;
+    }
+    // 境界の左右半分を挿入位置へ変換します。最後尾へのDropも許容します。
+    const float slot = local.x / m_TabWidth;
+    const std::size_t boundary = std::min(tabs.size(),
+        static_cast<std::size_t>(slot + 0.5f));
+    const auto source = std::find_if(tabs.begin(), tabs.end(),
+        [this](const UITabItem& tab) { return tab.Id == m_PendingDragId; });
+    const std::size_t from = static_cast<std::size_t>(source - tabs.begin());
+    const std::size_t to = boundary > from ? boundary - 1u : boundary;
+    if (to == from)
+    {
+        m_DropIndicatorVisible = false;
+        return false;
+    }
+    if (event.Type == UIDragDropEventType::Over)
+    {
+        m_DropIndex = boundary;
+        m_DropIndicatorVisible = true;
+        event.Accepted = true;
+        return true;
+    }
+    if (event.Type == UIDragDropEventType::Drop)
+    {
+        m_DropIndicatorVisible = false;
+        return m_Model.MoveTab(m_PendingDragId, to);
+    }
+    return false;
 }
 
 void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position) const
@@ -172,6 +244,13 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
                     options, ApplyVisualColor(closeColor));
             }
         }
+    }
+    if (m_DropIndicatorVisible == true)
+    {
+        const float x = position.x + static_cast<float>(m_DropIndex) * m_TabWidth;
+        drawList.AddRect(math::Vec2(x - 2.0f, position.y + 3.0f),
+            math::Vec2(x + 2.0f, position.y + height - 3.0f),
+            ApplyVisualColor(math::Vec4(0.55f, 0.78f, 1.0f, 1.0f)));
     }
 }
 
