@@ -569,8 +569,444 @@ void TestTable()
 }
 } // namespace
 
+namespace
+{
+// Drag & DropのCapture・閾値・Drop先・CancelをGPUなしで検証します。
+class DragProbe final : public Raven::UIElement
+{
+public:
+    int Begins = 0;
+    int Drops = 0;
+    int Cancels = 0;
+    int Ends = 0;
+    int Ups = 0;
+    bool Accept = false;
+    bool RemoveSourceOnDrop = false;
+    bool RemoveSelfOnOver = false;
+    std::string LastData;
+
+protected:
+    void OnMouseEvent(Raven::UIMouseEvent& event) override
+    {
+        if (event.Type == Raven::UIMouseEventType::Up)
+        {
+            ++Ups;
+        }
+    }
+
+    bool OnDragDropEvent(Raven::UIDragDropEvent& event) override
+    {
+        if (event.Type == Raven::UIDragDropEventType::Over && RemoveSelfOnOver == true)
+        {
+            GetParent()->RemoveChild(this);
+            return false;
+        }
+        if (event.Type == Raven::UIDragDropEventType::Begin) { ++Begins; }
+        if (event.Type == Raven::UIDragDropEventType::Cancel) { ++Cancels; }
+        if (event.Type == Raven::UIDragDropEventType::End) { ++Ends; }
+        if (event.Type == Raven::UIDragDropEventType::Drop)
+        {
+            ++Drops;
+            LastData = event.Payload->Data;
+            if (RemoveSourceOnDrop == true && event.Source != nullptr)
+            {
+                event.Source->GetParent()->RemoveChild(event.Source);
+            }
+        }
+        return Accept && event.Type == Raven::UIDragDropEventType::Over;
+    }
+};
+
+void TestTreeViewDragDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    tree->SetNodeDragDropEnabled(true);
+    Raven::UITreeView* view = tree.get();
+    Raven::UITreeNode* root = tree->AddRoot(1u, "Root");
+    Raven::UITreeNode* child = tree->AddNode(root, 2u, "Child");
+    Raven::UITreeNode* destination = tree->AddRoot(3u, "Destination");
+    std::uint64_t moved = 0u;
+    std::uint64_t parent = 0u;
+    tree->SetOnNodeDropped([&](std::uint64_t source, std::uint64_t target)
+    {
+        moved = source;
+        parent = target;
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    Check(context.HasPendingDrag(), "tree node reserves drag on down");
+    Check(context.GetDragPreviewText() == "Child", "tree drag preview uses node name");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
+    Check(context.IsDragging() && context.GetDropTarget() == view, "tree accepts sibling root");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    Check(child->Parent == destination && moved == 2u && parent == 3u, "tree reparents node on drop");
+    Check(context.HasMouseCapture() == false, "tree drop releases capture");
+    Check(context.GetDragPreviewText().empty(), "tree drop clears preview");
+    // 親を子へDropしても循環を作らないことを検証します。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
+    Check(context.GetDropTarget() == nullptr, "tree rejects descendant target");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    Check(destination->Parent == nullptr, "tree cycle guard keeps root");
+
+    // ChildをDestinationの前へ移すとRoot直下へ戻ります。
+    Raven::UITreeView::DropPlacement placement = Raven::UITreeView::DropPlacement::Child;
+    view->SetOnNodePlaced([&](std::uint64_t, std::uint64_t, Raven::UITreeView::DropPlacement value)
+    {
+        placement = value;
+    });
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 45.0f));
+    Check(context.GetDropTarget() == view, "tree accepts before insertion");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 45.0f), Raven::UIMouseButton::Left);
+    Check(child->Parent == nullptr && placement == Raven::UITreeView::DropPlacement::Before,
+        "tree inserts before root");
+    Check(view->FindNode(2u) == child, "tree preserves moved node identity");
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 90.0f));
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 90.0f), Raven::UIMouseButton::Left);
+    Check(placement == Raven::UITreeView::DropPlacement::After &&
+        child->Parent == nullptr, "tree inserts after root");
+}
+
+void TestTreeViewCrossDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(600.0f, 300.0f));
+    auto left = std::make_unique<Raven::UITreeView>();
+    auto right = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* sourceView = left.get();
+    Raven::UITreeView* targetView = right.get();
+    left->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    left->SetSize(Raven::math::Vec2(200.0f, 100.0f));
+    right->SetPosition(Raven::math::Vec2(260.0f, 20.0f));
+    right->SetSize(Raven::math::Vec2(200.0f, 100.0f));
+    left->SetNodeDragDropEnabled(true);
+    right->SetNodeDragDropEnabled(true);
+    Raven::UITreeNode* moved = left->AddRoot(10u, "Moved");
+    Raven::UITreeNode* nested = left->AddNode(moved, 11u, "Nested");
+    Raven::UITreeNode* target = right->AddRoot(20u, "Target");
+    right->AddRoot(11u, "Collision");
+    context.GetRootElement().AddChild(std::move(left));
+    context.GetRootElement().AddChild(std::move(right));
+
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 32.0f));
+    Check(context.GetDropTarget() == nullptr, "external tree drop disabled by default");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 32.0f), Raven::UIMouseButton::Left);
+    targetView->SetExternalNodeDropEnabled(true);
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 32.0f));
+    Check(context.GetDropTarget() == nullptr, "external subtree id collision rejected");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 32.0f), Raven::UIMouseButton::Left);
+
+    targetView->Clear();
+    target = targetView->AddRoot(20u, "Target");
+    Check(sourceView->Select(nested), "external source selects nested node");
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 32.0f));
+    Check(context.GetDropTarget() == targetView, "external tree accepts node");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(sourceView->FindNode(10u) == nullptr && targetView->FindNode(10u) == moved,
+        "external tree transfers node ownership");
+    Check(moved->Parent == target && targetView->FindNode(11u) == nested,
+        "external tree preserves subtree");
+    Check(sourceView->GetSelectedNode() == nullptr, "external tree clears moved selection");
+}
+
+void TestTreeViewEmptyAreaDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(600.0f, 300.0f));
+    auto left = std::make_unique<Raven::UITreeView>();
+    auto right = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* sourceView = left.get();
+    Raven::UITreeView* targetView = right.get();
+    left->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    left->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    right->SetPosition(Raven::math::Vec2(260.0f, 20.0f));
+    right->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    left->SetNodeDragDropEnabled(true);
+    right->SetNodeDragDropEnabled(true);
+    right->SetExternalNodeDropEnabled(true);
+    Raven::UITreeNode* moved = left->AddRoot(100u, "Moved");
+    Raven::UITreeNode* child = left->AddNode(moved, 101u, "Child");
+    std::uint64_t targetId = 999u;
+    Raven::UITreeView::DropPlacement placement = Raven::UITreeView::DropPlacement::Child;
+    right->SetOnNodePlaced([&](std::uint64_t, std::uint64_t target,
+        Raven::UITreeView::DropPlacement value)
+    {
+        targetId = target;
+        placement = value;
+    });
+    context.GetRootElement().AddChild(std::move(left));
+    context.GetRootElement().AddChild(std::move(right));
+
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 60.0f));
+    Check(context.GetDropTarget() == targetView, "empty tree accepts external root");
+    context.EndFrame();
+    // 空TreeのRootEnd線はViewport上端の外へ半分消えないよう内側に描画します。
+    bool hasVisibleRootEndLine = false;
+    for (const auto& command : context.GetDrawList().GetCommands())
+    {
+        if (command.Type == Raven::UIDrawCommandType::SolidRect &&
+            std::abs(command.Color.y - 0.90f) < 0.001f &&
+            std::abs(command.Rect.Min.x - 260.0f) < 0.001f &&
+            command.Rect.Min.y >= 20.0f && command.Rect.Max.y <= 140.0f)
+        {
+            hasVisibleRootEndLine = true;
+        }
+    }
+    Check(hasVisibleRootEndLine, "empty tree root end line stays inside viewport");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 60.0f), Raven::UIMouseButton::Left);
+    Check(sourceView->FindNode(100u) == nullptr && targetView->FindNode(100u) == moved,
+        "empty tree receives subtree");
+    Check(targetView->FindNode(101u) == child && moved->Parent == nullptr,
+        "empty tree preserves descendants");
+    Check(targetId == 0u && placement == Raven::UITreeView::DropPlacement::RootEnd,
+        "empty tree reports root end placement");
+
+    // 既存Rootより下の空白も、子への移動ではなくRoot末尾への移動になります。
+    Raven::UITreeNode* another = sourceView->AddRoot(102u, "Another");
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 90.0f));
+    Check(context.GetDropTarget() == targetView, "tree blank area accepts root append");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 90.0f), Raven::UIMouseButton::Left);
+    Check(targetView->FindNode(102u) == another && another->Parent == nullptr,
+        "blank area appends another root");
+}
+
+void TestTreeViewDragAutoScroll()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 96.0f));
+    tree->SetNodeDragDropEnabled(true);
+    tree->SetDragAutoScrollStep(24.0f);
+    tree->AddRoot(1u, "First");
+    for (std::uint64_t id = 2u; id <= 12u; ++id)
+    {
+        tree->AddRoot(id, "Row");
+    }
+    context.GetRootElement().AddChild(std::move(tree));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
+    Check(view->GetScrollOffset() == 24.0f, "drag bottom edge scrolls down");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
+    Check(view->GetScrollOffset() == 48.0f, "drag edge scrolls on subsequent move");
+    context.TickDrag(0.1f);
+    Check(view->GetScrollOffset() == 72.0f, "stationary drag scrolls by elapsed time");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 24.0f));
+    Check(view->GetScrollOffset() == 48.0f, "drag top edge scrolls up");
+    view->SetDragAutoScrollEnabled(false);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
+    Check(view->GetScrollOffset() == 48.0f, "disabled drag auto scroll keeps offset");
+    context.TickDrag(0.1f);
+    Check(view->GetScrollOffset() == 48.0f, "disabled stationary drag keeps offset");
+    context.CancelDrag();
+}
+
+void TestTreeViewNoOpDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    tree->SetNodeDragDropEnabled(true);
+    Raven::UITreeNode* first = tree->AddRoot(1u, "First");
+    Raven::UITreeNode* second = tree->AddRoot(2u, "Second");
+    Raven::UITreeNode* last = tree->AddRoot(3u, "Last");
+    int drops = 0;
+    tree->SetOnNodePlaced([&](std::uint64_t, std::uint64_t, Raven::UITreeView::DropPlacement)
+    {
+        ++drops;
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+
+    // FirstをSecondの直前へDropしても既存順序は変わりません。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 45.0f));
+    Check(context.GetDropTarget() == nullptr, "before adjacent node is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 45.0f), Raven::UIMouseButton::Left);
+    // SecondをFirstの直後へDropしても既存順序は変わりません。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 38.0f));
+    Check(context.GetDropTarget() == nullptr, "after adjacent node is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 38.0f), Raven::UIMouseButton::Left);
+    // 最後のRootを空白へDropしても無変更です。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 110.0f));
+    Check(context.GetDropTarget() == nullptr, "last root to root end is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 110.0f), Raven::UIMouseButton::Left);
+    Check(drops == 0 && view->FindNode(1u) == first &&
+        view->FindNode(2u) == second && view->FindNode(3u) == last,
+        "no-op drops preserve identity without callbacks");
+}
+
+void TestTreeViewLastChildNoOpDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 150.0f));
+    tree->SetNodeDragDropEnabled(true);
+    Raven::UITreeNode* parent = tree->AddRoot(1u, "Parent");
+    Raven::UITreeNode* first = tree->AddNode(parent, 2u, "First");
+    Raven::UITreeNode* last = tree->AddNode(parent, 3u, "Last");
+    int drops = 0;
+    tree->SetOnNodePlaced([&](std::uint64_t, std::uint64_t, Raven::UITreeView::DropPlacement)
+    {
+        ++drops;
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+
+    // 末尾Childを親の中央へDropしても、子リスト末尾のままです。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 32.0f));
+    Check(context.GetDropTarget() == nullptr, "last child to parent child position is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(drops == 0 && view->FindNode(2u) == first && view->FindNode(3u) == last &&
+        parent->Children.size() == 2u && parent->Children.back().get() == last,
+        "last child no-op preserves child order and skips callbacks");
+
+    // 先頭Childを親へDropする場合は実際に末尾へ移動するため受け入れます。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 32.0f));
+    Check(context.GetDropTarget() == view, "first child to parent is actual reorder");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(drops == 1 && parent->Children.back().get() == first,
+        "first child moves to end and invokes callback");
+}
+
+void TestTreeViewDragAutoExpand()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 150.0f));
+    tree->SetNodeDragDropEnabled(true);
+    tree->SetDragAutoExpandDelay(0.5f);
+    Raven::UITreeNode* source = tree->AddRoot(1u, "Source");
+    Raven::UITreeNode* target = tree->AddRoot(2u, "Collapsed");
+    Raven::UITreeNode* child = tree->AddNode(target, 3u, "Child");
+    tree->SetExpanded(target, false);
+    int expansions = 0;
+    tree->SetOnExpansionChanged([&](std::uint64_t id, bool expanded)
+    {
+        if (id == 2u && expanded == true)
+        {
+            ++expansions;
+        }
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 56.0f));
+    Check(context.GetDropTarget() == view && target->Expanded == false,
+        "collapsed node accepts drag without immediate expansion");
+    context.TickDrag(0.3f);
+    Check(target->Expanded == false, "hover shorter than delay keeps node collapsed");
+    context.TickDrag(0.2f);
+    Check(target->Expanded == true && expansions == 1 && view->FindNode(3u) == child,
+        "stationary drag expands collapsed node once");
+    context.TickDrag(0.5f);
+    Check(expansions == 1, "expanded node does not repeat expansion callback");
+    context.CancelDrag();
+
+    view->SetExpanded(target, false);
+    view->SetDragAutoExpandEnabled(false);
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 56.0f));
+    context.TickDrag(1.0f);
+    Check(target->Expanded == false, "disabled drag auto expand keeps node collapsed");
+    context.CancelDrag();
+    Check(view->FindNode(1u) == source, "cancelled drag retains source node");
+}
+
+void TestDragDropRouting()
+{
+    Raven::UIContext context;
+    auto source = std::make_unique<DragProbe>();
+    auto target = std::make_unique<DragProbe>();
+    DragProbe* sourcePtr = source.get();
+    DragProbe* targetPtr = target.get();
+    source->SetPosition(Raven::math::Vec2(0.0f, 0.0f));
+    source->SetSize(Raven::math::Vec2(40.0f, 40.0f));
+    target->SetPosition(Raven::math::Vec2(60.0f, 0.0f));
+    target->SetSize(Raven::math::Vec2(40.0f, 40.0f));
+    target->Accept = true;
+    context.GetRootElement().AddChild(std::move(source));
+    context.GetRootElement().AddChild(std::move(target));
+    context.RouteMouseDown(Raven::math::Vec2(10.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(context.BeginDrag(sourcePtr, {"test/item", "payload"}, Raven::math::Vec2(10.0f, 10.0f)), "drag begins pending");
+    context.RouteMouseMove(Raven::math::Vec2(12.0f, 10.0f));
+    Check(sourcePtr->Begins == 0 && context.IsDragging() == false, "drag threshold");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
+    Check(sourcePtr->Begins == 1 && context.GetDropTarget() == targetPtr, "captured drag finds target");
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    context.EndFrame();
+    const auto& previewCommands = context.GetDrawList().GetCommands();
+    Check(previewCommands.size() >= 2u, "drag preview adds overlay commands");
+    Check(previewCommands.back().Type == Raven::UIDrawCommandType::SolidRect,
+        "drag preview accent is a rectangle");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(targetPtr->Drops == 1 && targetPtr->LastData == "payload", "payload drop");
+    Check(sourcePtr->Ends == 1 && sourcePtr->Ups == 0, "drop suppresses click");
+    Check(context.HasMouseCapture() == false && context.HasPendingDrag() == false, "drop clears capture");
+
+    Check(context.BeginDrag(sourcePtr, {"test/item", "cancel"}, Raven::math::Vec2(10.0f, 10.0f)), "second drag");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Escape)), "escape consumes drag");
+    Check(sourcePtr->Cancels == 1 && context.HasPendingDrag() == false, "escape cancels");
+    Check(context.HasMouseCapture() == false, "escape releases capture");
+    Check(context.GetDragPreviewText().empty(), "cancel clears preview");
+    // Drop callbackがSourceを削除してもEndで解放済みPointerへアクセスしません。
+    targetPtr->RemoveSourceOnDrop = true;
+    Check(context.BeginDrag(sourcePtr, {"test/item", "remove"}, Raven::math::Vec2(10.0f, 10.0f)), "remove-source drag");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(targetPtr->Drops == 2 && context.HasPendingDrag() == false, "drop removes source safely");
+
+    // Over callbackが候補自身を削除しても、削除済み候補のParentを辿りません。
+    auto disposable = std::make_unique<DragProbe>();
+    DragProbe* disposablePtr = disposable.get();
+    disposable->SetPosition(Raven::math::Vec2(0.0f, 50.0f));
+    disposable->SetSize(Raven::math::Vec2(40.0f, 40.0f));
+    disposable->RemoveSelfOnOver = true;
+    context.GetRootElement().AddChild(std::move(disposable));
+    Check(context.BeginDrag(targetPtr, {"test/item", "remove-target"}, Raven::math::Vec2(70.0f, 10.0f)), "remove-target drag");
+    context.RouteMouseMove(Raven::math::Vec2(10.0f, 60.0f));
+    Check(context.GetDropTarget() != disposablePtr, "removed candidate is not drop target");
+    context.CancelDrag();
+    Check(context.HasMouseCapture() == false, "remove-target cancel releases capture");
+}
+
+} // namespace
+
 int main()
 {
+    TestDragDropRouting();
+    TestTreeViewDragDrop();
+    TestTreeViewCrossDrop();
+    TestTreeViewEmptyAreaDrop();
+    TestTreeViewDragAutoScroll();
+    TestTreeViewNoOpDrop();
+    TestTreeViewLastChildNoOpDrop();
+    TestTreeViewDragAutoExpand();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();

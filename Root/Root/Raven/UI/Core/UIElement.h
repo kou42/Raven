@@ -293,6 +293,7 @@ public:
     // UIContextのBubble Routingから呼ばれる公開入口です。
     // Widget側はOnMouseEvent()/OnKeyEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
+    bool HandleDragDropEvent(UIDragDropEvent& event) { return OnDragDropEvent(event); }
     void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
     void HandleCharacterEvent(UICharacterEvent& event) { OnCharacterEvent(event); }
     void HandleIMEEvent(UIIMEEvent& event) { OnIMEEvent(event); }
@@ -306,6 +307,7 @@ protected:
     virtual math::Vec2 OnMeasureContentForWidth(float availableWidth) const;
     void InvalidateMeasure();
     virtual void OnMouseEvent(UIMouseEvent& event);
+    virtual bool OnDragDropEvent(UIDragDropEvent& event) { (void)event; return false; }
     virtual void OnKeyEvent(UIKeyEvent& event) { (void)event; }
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
     virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }

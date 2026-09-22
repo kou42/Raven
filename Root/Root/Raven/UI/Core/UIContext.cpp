@@ -1,9 +1,11 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIHitTest.h"
 #include "Raven/UI/Widgets/UITooltip.h"
+#include "Raven/UI/Text/UIUtf8.h"
 
 #include <utility>
 #include <algorithm>
+#include <cmath>
 
 namespace Raven
 {
@@ -65,9 +67,56 @@ void UIContext::EndFrame()
     // UIElement Treeはframeを跨いで保持し、描画直前にAbsolute / Vertical / Horizontal Layoutを解決して
     // 今frame用DrawCommandへ展開します。将来Measure / Arrangeを分離してもUIContextのframe境界は維持します。
     UpdateTooltip();
+    if (m_DragActive == true)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        // 停止・デバッグ復帰後の巨大なDeltaで一気にスクロールしないよう上限を設けます。
+        const float deltaSeconds = std::min(
+            std::chrono::duration<float>(now - m_LastDragTick).count(), 0.05f);
+        m_LastDragTick = now;
+        TickDrag(std::max(0.0f, deltaSeconds));
+    }
     if (m_RootElement != nullptr)
     {
         m_RootElement->BuildDrawList(m_DrawList);
+    }
+
+    // Drag Previewは通常のTree描画後に追加し、WidgetのClip/Transformを継承しません。
+    // Hit Test対象となるUIElementは生成せず、Capture中のDrop先探索を妨げません。
+    if (m_DragActive == true)
+    {
+        const math::Vec2 min(m_LastPointerPosition.x + 12.0f,
+            m_LastPointerPosition.y + 12.0f);
+        float width = 112.0f;
+        if (m_DragPreviewFont != nullptr && m_DragPreviewText.empty() == false)
+        {
+            // UTF-8をCodepoint単位で計測し、非ASCII名もbyte数で幅を誤算しません。
+            float textWidth = 0.0f;
+            std::size_t offset = 0u;
+            std::uint32_t codepoint = 0u;
+            while (UIUtf8::DecodeNext(m_DragPreviewText, offset, codepoint))
+            {
+                const UIGlyphMetrics* glyph = m_DragPreviewFont->FindGlyph(codepoint);
+                textWidth += glyph != nullptr ? glyph->Advance : 12.0f;
+            }
+            width = std::max(width, textWidth + 24.0f);
+        }
+        const math::Vec2 max(min.x + width, min.y + 28.0f);
+        m_DrawList.AddRect(min, max,
+            m_DropTarget != nullptr
+                ? math::Vec4(0.22f, 0.52f, 0.34f, 0.82f)
+                : math::Vec4(0.34f, 0.37f, 0.44f, 0.76f));
+        // 左端のAccentで「受入可能 / 不可」を区別します。
+        m_DrawList.AddRect(min, math::Vec2(min.x + 4.0f, max.y),
+            m_DropTarget != nullptr
+                ? math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)
+                : math::Vec4(0.85f, 0.67f, 0.36f, 0.95f));
+        if (m_DragPreviewFont != nullptr && m_DragPreviewText.empty() == false)
+        {
+            m_DragPreviewFont->AppendText(m_DrawList, m_DragPreviewText,
+                math::Vec2(min.x + 12.0f, min.y + 20.0f), 28.0f,
+                math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        }
     }
 
     // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
@@ -181,7 +230,11 @@ bool UIContext::RouteMouseEvent(
     event.PressedTarget = pressedTargetForEvent;
 
     bool handled = false;
-    if (routeTarget != nullptr)
+    // Drag確定時のUpをButton等へ配送すると、Dropと同時にClickが発火してしまいます。
+    // Drag SourceはEnd/Cancel通知で操作状態を片付けます。
+    const bool suppressMouseUp = type == UIMouseEventType::Up &&
+        button == UIMouseButton::Left && m_DragActive == true;
+    if (routeTarget != nullptr && suppressMouseUp == false)
     {
         // Target -> Parent -> ... -> Root のBubble方式です。
         // Scrollも同じ規則を使うため、内側ScrollViewが境界で消費できない場合に外側ScrollViewへ自然に伝播できます。
@@ -199,6 +252,20 @@ bool UIContext::RouteMouseEvent(
             current = current->GetParent();
         }
         handled = event.Handled;
+    }
+
+    // Captureによる入力配送とDrop先のHit Testは独立させます。
+    // 通常のMouse HandlerがBeginDragを呼ぶため、Drag更新はRoutingの後に実行します。
+    if (type == UIMouseEventType::Move && m_DragSource != nullptr)
+    {
+        UpdateDrag(screenPosition, hitTarget);
+        handled = handled || m_DragActive;
+    }
+    if (type == UIMouseEventType::Up && button == UIMouseButton::Left && m_DragSource != nullptr)
+    {
+        const bool wasActive = m_DragActive;
+        FinishDrag(screenPosition, hitTarget);
+        handled = handled || wasActive;
     }
 
     // MouseUpのHandlerはPressedTargetを参照するため、Routing完了後に状態を解除します。
@@ -235,6 +302,240 @@ bool UIContext::RouteMouseScroll(
         screenPosition,
         UIMouseButton::None,
         scrollDelta);
+}
+
+bool UIContext::BeginDrag(UIElement* source, UIDragDropPayload payload, const math::Vec2& startPosition)
+{
+    if (source == nullptr || source->GetContext() != this ||
+        m_DragSource != nullptr || payload.Type.empty())
+    {
+        return false;
+    }
+    // 他WidgetのCaptureを奪わず、Source自身が入力を継続受信します。
+    if (CaptureMouse(source) == false)
+    {
+        return false;
+    }
+    m_DragPreviewText.clear();
+    m_DragPreviewFont = nullptr;
+    m_DragSource = source;
+    m_DragPayload = std::move(payload);
+    m_DragStart = startPosition;
+    m_DragActive = false;
+    m_DropTarget = nullptr;
+    m_LastDragTick = std::chrono::steady_clock::now();
+    return true;
+}
+
+bool UIContext::IsLiveDragElement(const UIElement* element) const
+{
+    if (element == nullptr || m_RootElement == nullptr)
+    {
+        return false;
+    }
+    // callbackがElementを削除し得るため、対象を逆参照せず所有Treeからアドレスを照合します。
+    std::function<bool(const UIElement*)> contains = [&](const UIElement* current)
+    {
+        if (current == element)
+        {
+            return true;
+        }
+        for (const auto& child : current->GetChildren())
+        {
+            if (child != nullptr && contains(child.get()) == true)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    return contains(m_RootElement.get());
+}
+
+void UIContext::SetDragPreview(std::string text, const Ref<UIFontAtlas>& font)
+{
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+    m_DragPreviewText = std::move(text);
+    m_DragPreviewFont = font;
+}
+
+void UIContext::SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position)
+{
+    if (IsLiveDragElement(element) == false)
+    {
+        return;
+    }
+    UIDragDropEvent event;
+    event.Type = type;
+    event.Payload = &m_DragPayload;
+    event.Source = m_DragSource;
+    event.ScreenPosition = position;
+    element->HandleDragDropEvent(event);
+}
+
+void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget, float deltaSeconds)
+{
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+    if (m_DragActive == false)
+    {
+        const float dx = position.x - m_DragStart.x;
+        const float dy = position.y - m_DragStart.y;
+        if (dx * dx + dy * dy < m_DragThreshold * m_DragThreshold)
+        {
+            return;
+        }
+        m_DragActive = true;
+        m_LastDragTick = std::chrono::steady_clock::now();
+        HideTooltip();
+        SendDragEvent(m_DragSource, UIDragDropEventType::Begin, position);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
+    }
+
+    // callbackが現在の候補を削除してもParentを逆参照しないよう、経路を先に保存します。
+    std::vector<UIElement*> candidates;
+    for (UIElement* current = hitTarget; current != nullptr; current = current->GetParent())
+    {
+        candidates.push_back(current);
+    }
+    UIElement* accepted = nullptr;
+    for (UIElement* candidate : candidates)
+    {
+        if (IsLiveDragElement(candidate) == false)
+        {
+            continue;
+        }
+        UIDragDropEvent event;
+        event.Type = UIDragDropEventType::Over;
+        event.DeltaSeconds = deltaSeconds;
+        event.Payload = &m_DragPayload;
+        event.Source = m_DragSource;
+        event.ScreenPosition = position;
+        const bool acceptedHere = candidate->HandleDragDropEvent(event);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
+        if ((acceptedHere == true || event.Accepted == true) &&
+            IsLiveDragElement(candidate) == true)
+        {
+            accepted = candidate;
+            break;
+        }
+    }
+    if (accepted != m_DropTarget)
+    {
+        UIElement* previous = m_DropTarget;
+        // Leave中の再入処理が古いTargetを再利用しないよう先に解除します。
+        m_DropTarget = nullptr;
+        SendDragEvent(previous, UIDragDropEventType::Leave, position);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
+        if (IsLiveDragElement(accepted) == true)
+        {
+            m_DropTarget = accepted;
+            SendDragEvent(accepted, UIDragDropEventType::Enter, position);
+        }
+    }
+}
+
+void UIContext::TickDrag(float deltaSeconds)
+{
+    if (m_DragActive == false || m_RootElement == nullptr ||
+        std::isfinite(deltaSeconds) == false || deltaSeconds <= 0.0f)
+    {
+        return;
+    }
+    // 自動スクロールによって表示行が変わるため、毎TickでDrop先を再判定します。
+    UIElement* hitTarget = UIHitTest::FindTopmost(*m_RootElement, m_LastPointerPosition);
+    UpdateDrag(m_LastPointerPosition, hitTarget, deltaSeconds);
+}
+
+void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
+{
+    // Upだけで閾値を越えた場合はDragを新規成立させず、Click扱いを維持します。
+    // Drag成立はMoveでのみ判定し、Upでは既存のDrop先を最終更新します。
+    if (m_DragActive == true)
+    {
+        UpdateDrag(position, hitTarget);
+    }
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+
+    // Drop先のcallbackがSource/Targetを削除できるので、セッションを先に終了し、
+    // Eventに渡すPayloadだけをローカルへ移して寿命を確保します。
+    UIElement* source = m_DragSource;
+    UIElement* target = m_DragActive == true ? m_DropTarget : nullptr;
+    UIDragDropPayload payload = std::move(m_DragPayload);
+    const bool wasActive = m_DragActive;
+    m_DragSource = nullptr;
+    m_DropTarget = nullptr;
+    m_DragActive = false;
+    m_DragPayload = {};
+    m_DragPreviewText.clear();
+    m_DragPreviewFont = nullptr;
+    ReleaseMouseCapture(source);
+
+    UIDragDropEvent event;
+    event.Payload = &payload;
+    event.Source = source;
+    event.ScreenPosition = position;
+    if (wasActive == true && IsLiveDragElement(target) == true)
+    {
+        event.Type = UIDragDropEventType::Drop;
+        target->HandleDragDropEvent(event);
+    }
+    if (wasActive == true && IsLiveDragElement(source) == true)
+    {
+        event.Type = UIDragDropEventType::End;
+        source->HandleDragDropEvent(event);
+    }
+}
+
+void UIContext::CancelDrag()
+{
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+    // Cancel/Leave callbackがTreeを変更しても再帰Cancelせず、削除済み要素へ通知しません。
+    UIElement* source = m_DragSource;
+    UIElement* target = m_DropTarget;
+    UIDragDropPayload payload = std::move(m_DragPayload);
+    m_DragSource = nullptr;
+    m_DropTarget = nullptr;
+    m_DragActive = false;
+    m_DragPayload = {};
+    m_DragPreviewText.clear();
+    m_DragPreviewFont = nullptr;
+    ReleaseMouseCapture(source);
+
+    UIDragDropEvent event;
+    event.Payload = &payload;
+    event.Source = source;
+    event.ScreenPosition = m_LastPointerPosition;
+    if (IsLiveDragElement(target) == true)
+    {
+        event.Type = UIDragDropEventType::Leave;
+        target->HandleDragDropEvent(event);
+    }
+    if (IsLiveDragElement(source) == true)
+    {
+        event.Type = UIDragDropEventType::Cancel;
+        source->HandleDragDropEvent(event);
+    }
 }
 
 bool UIContext::CaptureMouse(UIElement* element)
@@ -274,6 +575,7 @@ void UIContext::ReleaseMouseCapture(UIElement* element)
 
 void UIContext::CancelMouseCapture()
 {
+    CancelDrag();
     UIElement* captureTarget = m_MouseCaptureElement;
     if (captureTarget == nullptr)
     {
@@ -651,6 +953,13 @@ void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
     {
         CancelIMEComposition(focused);
         ClearFocus();
+    }
+
+    // Source/TargetのどちらかがTreeから外れる前にDragを終了します。
+    if (IsElementInSubtree(m_DragSource, subtreeRoot) == true ||
+        IsElementInSubtree(m_DropTarget, subtreeRoot) == true)
+    {
+        CancelDrag();
     }
 
     // Capture対象が破棄Subtree内なら、Elementが生存してParent chainも接続された状態でCancelを送ります。
