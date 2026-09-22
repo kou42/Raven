@@ -718,6 +718,55 @@ void TestTreeViewCrossDrop()
     Check(sourceView->GetSelectedNode() == nullptr, "external tree clears moved selection");
 }
 
+void TestTreeViewEmptyAreaDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(600.0f, 300.0f));
+    auto left = std::make_unique<Raven::UITreeView>();
+    auto right = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* sourceView = left.get();
+    Raven::UITreeView* targetView = right.get();
+    left->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    left->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    right->SetPosition(Raven::math::Vec2(260.0f, 20.0f));
+    right->SetSize(Raven::math::Vec2(200.0f, 120.0f));
+    left->SetNodeDragDropEnabled(true);
+    right->SetNodeDragDropEnabled(true);
+    right->SetExternalNodeDropEnabled(true);
+    Raven::UITreeNode* moved = left->AddRoot(100u, "Moved");
+    Raven::UITreeNode* child = left->AddNode(moved, 101u, "Child");
+    std::uint64_t targetId = 999u;
+    Raven::UITreeView::DropPlacement placement = Raven::UITreeView::DropPlacement::Child;
+    right->SetOnNodePlaced([&](std::uint64_t, std::uint64_t target,
+        Raven::UITreeView::DropPlacement value)
+    {
+        targetId = target;
+        placement = value;
+    });
+    context.GetRootElement().AddChild(std::move(left));
+    context.GetRootElement().AddChild(std::move(right));
+
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 60.0f));
+    Check(context.GetDropTarget() == targetView, "empty tree accepts external root");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 60.0f), Raven::UIMouseButton::Left);
+    Check(sourceView->FindNode(100u) == nullptr && targetView->FindNode(100u) == moved,
+        "empty tree receives subtree");
+    Check(targetView->FindNode(101u) == child && moved->Parent == nullptr,
+        "empty tree preserves descendants");
+    Check(targetId == 0u && placement == Raven::UITreeView::DropPlacement::RootEnd,
+        "empty tree reports root end placement");
+
+    // 既存Rootより下の空白も、子への移動ではなくRoot末尾への移動になります。
+    Raven::UITreeNode* another = sourceView->AddRoot(102u, "Another");
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(300.0f, 90.0f));
+    Check(context.GetDropTarget() == targetView, "tree blank area accepts root append");
+    context.RouteMouseUp(Raven::math::Vec2(300.0f, 90.0f), Raven::UIMouseButton::Left);
+    Check(targetView->FindNode(102u) == another && another->Parent == nullptr,
+        "blank area appends another root");
+}
+
 void TestDragDropRouting()
 {
     Raven::UIContext context;
@@ -783,6 +832,7 @@ int main()
     TestDragDropRouting();
     TestTreeViewDragDrop();
     TestTreeViewCrossDrop();
+    TestTreeViewEmptyAreaDrop();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
