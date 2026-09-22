@@ -166,6 +166,28 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize,
     BeginFrame(viewportSize);
 }
 
+bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
+{
+    if (&destination == this || child == nullptr ||
+        m_FrameActive == true || destination.m_FrameActive == true ||
+        m_RootElement == nullptr || destination.m_RootElement == nullptr ||
+        child == m_PopupLayer || child == m_Tooltip ||
+        child->GetParent() != m_RootElement.get())
+    {
+        return false;
+    }
+
+    // Popup/Tooltipを含む内部OverlayはContext固有の所有物として移譲しません。
+    // 一般Widgetの移譲時は旧ContextのInteraction Stateを先に安全に終了します。
+    Scope<UIElement> detached = m_RootElement->DetachChild(child);
+    if (detached == nullptr)
+    {
+        return false;
+    }
+    UIElement* transferred = destination.m_RootElement->AddChild(std::move(detached));
+    return transferred == child;
+}
+
 void UIContext::EndFrame()
 {
     if (m_FrameActive == false)
