@@ -166,6 +166,23 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize,
     BeginFrame(viewportSize);
 }
 
+UIElement* UIContext::AddRootChild(Scope<UIElement> child)
+{
+    if (m_FrameActive == true || m_RootElement == nullptr ||
+        child == nullptr || child->GetParent() != nullptr ||
+        child->GetContext() != nullptr)
+    {
+        return nullptr;
+    }
+    UIElement* added = m_RootElement->AddChild(std::move(child));
+    if (added != nullptr)
+    {
+        // 通常Widgetの追加によってPopupの描画順が後ろへ下がらないようにします。
+        m_RootElement->BringChildToFront(m_PopupLayer);
+    }
+    return added;
+}
+
 bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
 {
     if (&destination == this || child == nullptr ||
@@ -184,12 +201,7 @@ bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
     {
         return false;
     }
-    UIElement* transferred = destination.m_RootElement->AddChild(std::move(detached));
-    if (transferred == child)
-    {
-        // Root末尾へ追加したWidgetがPopupより前面に出ないよう描画順を復元します。
-        destination.m_RootElement->BringChildToFront(destination.m_PopupLayer);
-    }
+    UIElement* transferred = destination.AddRootChild(std::move(detached));
     return transferred == child;
 }
 
