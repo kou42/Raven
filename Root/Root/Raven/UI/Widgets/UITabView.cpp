@@ -28,6 +28,7 @@ UITabView::UITabView()
     m_Model.SetOnSelectionChanged([this](std::uint64_t id)
     {
         SyncContentVisibility();
+        m_TabBar->EnsureTabVisible(id);
         if (m_OnSelectionChanged)
         {
             m_OnSelectionChanged(id);
@@ -36,6 +37,7 @@ UITabView::UITabView()
     m_Model.SetOnClosed([this](std::uint64_t id)
     {
         RemoveContent(id);
+        m_TabBar->SetScrollOffset(m_TabBar->GetScrollOffset());
         if (m_OnClosed)
         {
             m_OnClosed(id);
