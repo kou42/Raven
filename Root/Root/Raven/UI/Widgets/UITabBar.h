@@ -20,6 +20,11 @@ public:
     void SetDragReorderEnabled(bool enabled) { m_DragReorderEnabled = enabled; }
     bool IsDragReorderEnabled() const { return m_DragReorderEnabled; }
 
+    void SetScrollOffset(float offset);
+    float GetScrollOffset() const { return m_ScrollOffset; }
+    float GetMaxScrollOffset() const;
+    void EnsureTabVisible(std::uint64_t id);
+
     void SetFont(const Ref<UIFontAtlas>& font);
     void SetTabWidth(float width);
     void SetTabHeight(float height);
@@ -41,6 +46,7 @@ private:
     float m_TabWidth = 148.0f;
     float m_TabHeight = 30.0f;
     float m_CloseWidth = 26.0f;
+    float m_ScrollOffset = 0.0f;
     std::uint64_t m_HoveredId = 0u;
     std::uint64_t m_PendingDragId = 0u;
     std::size_t m_DropIndex = 0u;
