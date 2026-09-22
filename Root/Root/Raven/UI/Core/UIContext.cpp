@@ -201,6 +201,20 @@ bool UIContext::RouteMouseEvent(
         handled = event.Handled;
     }
 
+    // Captureによる入力配送とDrop先のHit Testは独立させます。
+    // 通常のMouse HandlerがBeginDragを呼ぶため、Drag更新はRoutingの後に実行します。
+    if (type == UIMouseEventType::Move && m_DragSource != nullptr)
+    {
+        UpdateDrag(screenPosition, hitTarget);
+        handled = handled || m_DragActive;
+    }
+    if (type == UIMouseEventType::Up && button == UIMouseButton::Left && m_DragSource != nullptr)
+    {
+        const bool wasActive = m_DragActive;
+        FinishDrag(screenPosition, hitTarget);
+        handled = handled || wasActive;
+    }
+
     // MouseUpのHandlerはPressedTargetを参照するため、Routing完了後に状態を解除します。
     // Hit先がnullptrでも必ず解除し、UI外で離した場合のPressed残留を防ぎます。
     if (type == UIMouseEventType::Up && button == UIMouseButton::Left)
@@ -235,6 +249,114 @@ bool UIContext::RouteMouseScroll(
         screenPosition,
         UIMouseButton::None,
         scrollDelta);
+}
+
+bool UIContext::BeginDrag(UIElement* source, UIDragDropPayload payload, const math::Vec2& startPosition)
+{
+    if (source == nullptr || source->GetContext() != this ||
+        m_DragSource != nullptr || payload.Type.empty())
+    {
+        return false;
+    }
+    // 他WidgetのCaptureを奪わず、Source自身が入力を継続受信します。
+    if (CaptureMouse(source) == false)
+    {
+        return false;
+    }
+    m_DragSource = source;
+    m_DragPayload = std::move(payload);
+    m_DragStart = startPosition;
+    m_DragActive = false;
+    m_DropTarget = nullptr;
+    return true;
+}
+
+void UIContext::SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position)
+{
+    if (element == nullptr)
+    {
+        return;
+    }
+    UIDragDropEvent event;
+    event.Type = type;
+    event.Payload = &m_DragPayload;
+    event.Source = m_DragSource;
+    event.ScreenPosition = position;
+    element->HandleDragDropEvent(event);
+}
+
+void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
+{
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+    if (m_DragActive == false)
+    {
+        const float dx = position.x - m_DragStart.x;
+        const float dy = position.y - m_DragStart.y;
+        if (dx * dx + dy * dy < m_DragThreshold * m_DragThreshold)
+        {
+            return;
+        }
+        m_DragActive = true;
+        HideTooltip();
+        SendDragEvent(m_DragSource, UIDragDropEventType::Begin, position);
+    }
+
+    // CaptureされたSourceではなく、Pointer下の実Hitから親方向へ受入先を探索します。
+    UIElement* accepted = nullptr;
+    for (UIElement* candidate = hitTarget; candidate != nullptr; candidate = candidate->GetParent())
+    {
+        UIDragDropEvent event;
+        event.Type = UIDragDropEventType::Over;
+        event.Payload = &m_DragPayload;
+        event.Source = m_DragSource;
+        event.ScreenPosition = position;
+        if (candidate->HandleDragDropEvent(event) == true || event.Accepted == true)
+        {
+            accepted = candidate;
+            break;
+        }
+    }
+    if (accepted != m_DropTarget)
+    {
+        SendDragEvent(m_DropTarget, UIDragDropEventType::Leave, position);
+        m_DropTarget = accepted;
+        SendDragEvent(m_DropTarget, UIDragDropEventType::Enter, position);
+    }
+}
+
+void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
+{
+    UpdateDrag(position, hitTarget);
+    if (m_DragActive == true)
+    {
+        SendDragEvent(m_DropTarget, UIDragDropEventType::Drop, position);
+        SendDragEvent(m_DragSource, UIDragDropEventType::End, position);
+    }
+    UIElement* source = m_DragSource;
+    m_DragSource = nullptr;
+    m_DropTarget = nullptr;
+    m_DragActive = false;
+    m_DragPayload = {};
+    ReleaseMouseCapture(source);
+}
+
+void UIContext::CancelDrag()
+{
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+    SendDragEvent(m_DropTarget, UIDragDropEventType::Leave, m_LastPointerPosition);
+    SendDragEvent(m_DragSource, UIDragDropEventType::Cancel, m_LastPointerPosition);
+    UIElement* source = m_DragSource;
+    m_DragSource = nullptr;
+    m_DropTarget = nullptr;
+    m_DragActive = false;
+    m_DragPayload = {};
+    ReleaseMouseCapture(source);
 }
 
 bool UIContext::CaptureMouse(UIElement* element)
@@ -274,6 +396,7 @@ void UIContext::ReleaseMouseCapture(UIElement* element)
 
 void UIContext::CancelMouseCapture()
 {
+    CancelDrag();
     UIElement* captureTarget = m_MouseCaptureElement;
     if (captureTarget == nullptr)
     {
@@ -651,6 +774,13 @@ void UIContext::OnSubtreeRemoving(UIElement* subtreeRoot)
     {
         CancelIMEComposition(focused);
         ClearFocus();
+    }
+
+    // Source/TargetのどちらかがTreeから外れる前にDragを終了します。
+    if (IsElementInSubtree(m_DragSource, subtreeRoot) == true ||
+        IsElementInSubtree(m_DropTarget, subtreeRoot) == true)
+    {
+        CancelDrag();
     }
 
     // Capture対象が破棄Subtree内なら、Elementが生存してParent chainも接続された状態でCancelを送ります。
