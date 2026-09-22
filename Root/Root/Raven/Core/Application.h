@@ -83,6 +83,11 @@ public:
     // Layer更新や入力Callbackなど、Main UI Frame中から安全に切り離しを予約します。
     // 実際のWindow生成とTree移譲はMain EndFrame後に実行し、成功時にCallbackへIDを返します。
     using UIDetachCompleted = std::function<void(WindowID)>;
+    // Layer更新中などのFrame内からDock Tabの切り離しを予約します。
+    // 完了Callbackには新Window ID、失敗時には0を渡します。
+    bool RequestDetachDockTabToNewWindow(WindowID sourceID, UIDockSpace& dock,
+        std::uint64_t leafId, std::uint64_t tabId,
+        const WindowSpecification& specification, UIDetachCompleted onCompleted = {});
     bool RequestDetachUIRootChildToNewWindow(WindowID sourceID, UIElement* child,
         const WindowSpecification& specification, UIDetachCompleted onCompleted = {});
     UIContext* GetWindowUIContext(WindowID id);
@@ -112,6 +117,16 @@ private:
         UIDetachCompleted OnCompleted;
     };
     std::vector<PendingUIDetach> m_PendingUIDetaches;
+    struct PendingDockTabDetach
+    {
+        WindowID SourceID = 0;
+        UIDockSpace* Dock = nullptr; // Flush時にRootから辿れる生存Elementと照合します。
+        std::uint64_t LeafID = 0u;
+        std::uint64_t TabID = 0u;
+        WindowSpecification Specification;
+        UIDetachCompleted OnCompleted;
+    };
+    std::vector<PendingDockTabDetach> m_PendingDockTabDetaches;
     void FlushPendingUIDetaches();
     void OnAuxiliaryUIEvent(WindowID id, Event& event);
     bool m_RavenUIEnabled = true;
