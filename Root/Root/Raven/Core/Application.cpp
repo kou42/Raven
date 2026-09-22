@@ -729,6 +729,34 @@ void Application::FlushPendingUIDetaches()
             request.OnCompleted(result);
         }
     }
+    // 補助Windowの入力Callbackから予約された復帰も、UI Frame終了後にだけ移譲します。
+    std::vector<PendingUIAttach> attaches;
+    attaches.swap(m_PendingUIAttaches);
+    for (const PendingUIAttach& request : attaches)
+    {
+        UIContext* source = GetWindowUIContext(request.SourceID);
+        if (source == nullptr || source->IsFrameActive() == true ||
+            m_WindowManager.IsWindowClosePending(request.SourceID) == true)
+        {
+            continue;
+        }
+        for (const auto& child : source->GetRootElement().GetChildren())
+        {
+            if (child.get() != request.Child)
+            {
+                continue;
+            }
+            if (TransferUIRootChild(request.SourceID, m_MainWindowID, request.Child) == true)
+            {
+                // 新しいRootに所有権が移った後だけPointerを使用します。
+                request.Child->SetPosition(math::Vec2(48.0f, 48.0f));
+                BindUIWindowViewportTransfer(m_MainWindowID, *request.Child);
+                // 空になった補助Windowは既存の遅延Close経路で安全に破棄します。
+                m_WindowManager.RequestWindowClose(request.SourceID);
+            }
+            break;
+        }
+    }
     for (PendingUIDetach& request : pending)
     {
         WindowID result = 0;
@@ -785,6 +813,12 @@ bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& wind
                 sourceWindow->GetBackend());
             // 新しいOS Window内では論理Windowの座標原点を戻し、
             // 元Viewportの画面座標を補助Windowへ持ち越さないようにします。
+            if (sourceID != m_MainWindowID)
+            {
+                // 補助Windowの外へドラッグした場合は新規Windowを増やさずMainへ復帰します。
+                RequestAttachUIWindowToMain(sourceID, logicalWindow);
+                return;
+            }
             RequestDetachUIRootChildToNewWindow(
                 sourceID, logicalWindow, specification,
                 [this, logicalWindow](WindowID destinationID)
@@ -801,13 +835,45 @@ bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& wind
                         if (child.get() == logicalWindow)
                         {
                             logicalWindow->SetPosition(math::Vec2(0.0f, 0.0f));
-                            // 再切り離しは新しい所属Window IDで明示的に再Bindします。
-                            logicalWindow->SetOnViewportTransferRequested({});
+                            // 移譲後は補助Window IDで再Bindし、Mainへの復帰要求を受け付けます。
+                            BindUIWindowViewportTransfer(destinationID, *logicalWindow);
                             break;
                         }
                     }
                 });
         });
+    return true;
+}
+
+bool Application::RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* window)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (sourceID == m_MainWindowID || source == nullptr || window == nullptr ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return false;
+    }
+    bool found = false;
+    for (const auto& child : source->GetRootElement().GetChildren())
+    {
+        if (child.get() == window)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (found == false)
+    {
+        return false;
+    }
+    for (const PendingUIAttach& pending : m_PendingUIAttaches)
+    {
+        if (pending.SourceID == sourceID && pending.Child == window)
+        {
+            return false;
+        }
+    }
+    m_PendingUIAttaches.push_back(PendingUIAttach{ sourceID, window });
     return true;
 }
 
