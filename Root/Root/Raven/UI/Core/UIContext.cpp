@@ -1,6 +1,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIHitTest.h"
 #include "Raven/UI/Widgets/UITooltip.h"
+#include "Raven/UI/Text/UIUtf8.h"
 
 #include <utility>
 #include <algorithm>
@@ -76,7 +77,21 @@ void UIContext::EndFrame()
     {
         const math::Vec2 min(m_LastPointerPosition.x + 12.0f,
             m_LastPointerPosition.y + 12.0f);
-        const math::Vec2 max(min.x + 112.0f, min.y + 28.0f);
+        float width = 112.0f;
+        if (m_DragPreviewFont != nullptr && m_DragPreviewText.empty() == false)
+        {
+            // UTF-8をCodepoint単位で計測し、非ASCII名もbyte数で幅を誤算しません。
+            float textWidth = 0.0f;
+            std::size_t offset = 0u;
+            std::uint32_t codepoint = 0u;
+            while (UIUtf8::DecodeNext(m_DragPreviewText, offset, codepoint))
+            {
+                const UIGlyphMetrics* glyph = m_DragPreviewFont->FindGlyph(codepoint);
+                textWidth += glyph != nullptr ? glyph->Advance : 12.0f;
+            }
+            width = std::max(width, textWidth + 24.0f);
+        }
+        const math::Vec2 max(min.x + width, min.y + 28.0f);
         m_DrawList.AddRect(min, max,
             m_DropTarget != nullptr
                 ? math::Vec4(0.22f, 0.52f, 0.34f, 0.82f)
@@ -86,6 +101,12 @@ void UIContext::EndFrame()
             m_DropTarget != nullptr
                 ? math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)
                 : math::Vec4(0.85f, 0.67f, 0.36f, 0.95f));
+        if (m_DragPreviewFont != nullptr && m_DragPreviewText.empty() == false)
+        {
+            m_DragPreviewFont->AppendText(m_DrawList, m_DragPreviewText,
+                math::Vec2(min.x + 12.0f, min.y + 20.0f), 28.0f,
+                math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        }
     }
 
     // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
@@ -285,6 +306,8 @@ bool UIContext::BeginDrag(UIElement* source, UIDragDropPayload payload, const ma
     {
         return false;
     }
+    m_DragPreviewText.clear();
+    m_DragPreviewFont = nullptr;
     m_DragSource = source;
     m_DragPayload = std::move(payload);
     m_DragStart = startPosition;
@@ -316,6 +339,16 @@ bool UIContext::IsLiveDragElement(const UIElement* element) const
         return false;
     };
     return contains(m_RootElement.get());
+}
+
+void UIContext::SetDragPreview(std::string text, const Ref<UIFontAtlas>& font)
+{
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
+    m_DragPreviewText = std::move(text);
+    m_DragPreviewFont = font;
 }
 
 void UIContext::SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position)
@@ -426,6 +459,8 @@ void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
     m_DropTarget = nullptr;
     m_DragActive = false;
     m_DragPayload = {};
+    m_DragPreviewText.clear();
+    m_DragPreviewFont = nullptr;
     ReleaseMouseCapture(source);
 
     UIDragDropEvent event;
@@ -458,6 +493,8 @@ void UIContext::CancelDrag()
     m_DropTarget = nullptr;
     m_DragActive = false;
     m_DragPayload = {};
+    m_DragPreviewText.clear();
+    m_DragPreviewFont = nullptr;
     ReleaseMouseCapture(source);
 
     UIDragDropEvent event;
