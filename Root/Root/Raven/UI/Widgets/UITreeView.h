@@ -481,6 +481,23 @@ protected:
         {
             return false;
         }
+        // 同じ兄弟列の隣接位置へDropしても並び順は変わりません。
+        // 不要なRemove/InsertとCallbackを避け、Scene側のUndo履歴も汚しません。
+        if (sourceView == this && placement != DropPlacement::Child &&
+            placement != DropPlacement::RootEnd && source->Parent == target->Parent)
+        {
+            const auto& siblings = source->Parent != nullptr ? source->Parent->Children : m_Roots;
+            const auto sourceIt = std::find_if(siblings.begin(), siblings.end(),
+                [source](const auto& item) { return item.get() == source; });
+            const auto targetIt = std::find_if(siblings.begin(), siblings.end(),
+                [target](const auto& item) { return item.get() == target; });
+            if (sourceIt != siblings.end() && targetIt != siblings.end() &&
+                ((placement == DropPlacement::Before && sourceIt + 1 == targetIt) ||
+                    (placement == DropPlacement::After && targetIt + 1 == sourceIt)))
+            {
+                return false;
+            }
+        }
         if (placement == DropPlacement::RootEnd && sourceView == this &&
             source->Parent == nullptr && m_Roots.back().get() == source)
         {
