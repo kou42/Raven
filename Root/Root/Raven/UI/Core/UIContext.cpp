@@ -387,7 +387,12 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
 
 void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
 {
-    UpdateDrag(position, hitTarget);
+    // Upだけで閾値を越えた場合はDragを新規成立させず、Click扱いを維持します。
+    // Drag成立はMoveでのみ判定し、Upでは既存のDrop先を最終更新します。
+    if (m_DragActive == true)
+    {
+        UpdateDrag(position, hitTarget);
+    }
     if (m_DragSource == nullptr)
     {
         return;
