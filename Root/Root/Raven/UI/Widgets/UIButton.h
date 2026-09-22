@@ -40,6 +40,11 @@ private:
     math::Vec4 m_HoveredColor{ 0.32f, 0.32f, 0.38f, 1.0f };
     math::Vec4 m_PressedColor{ 0.16f, 0.16f, 0.20f, 1.0f };
     math::Vec4 m_FocusedColor{ 0.38f, 0.46f, 0.68f, 1.0f };
+    // 個別SetColorはThemeより優先します。未設定の色だけTheme変更へ追従します。
+    bool m_NormalColorOverride = false;
+    bool m_HoveredColorOverride = false;
+    bool m_PressedColorOverride = false;
+    bool m_FocusedColorOverride = false;
     ClickHandler m_OnClick;
 };
 
