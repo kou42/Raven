@@ -29,6 +29,16 @@ struct UIDockSpaceSnapshot
     std::vector<std::pair<std::uint64_t, std::uint64_t>> Selections;
 };
 
+// JSONではuint64 IDを文字列化し、doubleの整数精度(2^53)によるID破損を防ぎます。
+bool SerializeDockSnapshot(const UIDockSpaceSnapshot& snapshot,
+    std::string& outText, std::string* errorMessage = nullptr);
+bool DeserializeDockSnapshot(const std::string& text,
+    UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage = nullptr);
+bool SaveDockSnapshot(const std::string& filePath,
+    const UIDockSpaceSnapshot& snapshot, std::string* errorMessage = nullptr);
+bool LoadDockSnapshot(const std::string& filePath,
+    UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage = nullptr);
+
 // Docking論理Treeの配置結果をRetained UI Treeへ反映するHostです。
 // PaneのUIElement所有権はDockSpaceが持ち、論理NodeはIDだけで対応付けます。
 class UIDockSpace final : public UIElement
