@@ -672,6 +672,12 @@ void TestDragDropRouting()
     Check(sourcePtr->Begins == 0 && context.IsDragging() == false, "drag threshold");
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
     Check(sourcePtr->Begins == 1 && context.GetDropTarget() == targetPtr, "captured drag finds target");
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    context.EndFrame();
+    const auto& previewCommands = context.GetDrawList().GetCommands();
+    Check(previewCommands.size() >= 2u, "drag preview adds overlay commands");
+    Check(previewCommands.back().Type == Raven::UIDrawCommandType::SolidRect,
+        "drag preview accent is a rectangle");
     context.RouteMouseUp(Raven::math::Vec2(70.0f, 10.0f), Raven::UIMouseButton::Left);
     Check(targetPtr->Drops == 1 && targetPtr->LastData == "payload", "payload drop");
     Check(sourcePtr->Ends == 1 && sourcePtr->Ups == 0, "drop suppresses click");
