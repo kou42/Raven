@@ -133,6 +133,38 @@ void TestUIImmediateContext()
         CheckImmediate(debugImmediate.EndFrame() == true, "debug panel reuse EndFrame");
         CheckImmediate(debugImmediate.GetCachedWidgetCount() == 14u,
             "debug panel widget count stable");
+        auto* debugPanel = dynamic_cast<Raven::UIPanel*>(
+            debugContext.GetRootElement().GetChildren().front().get());
+        CheckImmediate(debugPanel != nullptr && debugPanel->GetChildren().size() == 13u,
+            "debug panel child count");
+        settings.ContactNormalLength = 1.25f;
+        settings.ContactPointRadius = 0.075f;
+        CheckImmediate(debugImmediate.BeginFrame() == true, "debug external values BeginFrame");
+        CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
+            debugImmediate, settings, nullptr) == false, "debug external values");
+        CheckImmediate(debugImmediate.EndFrame() == true, "debug external values EndFrame");
+        auto* normalLabel = dynamic_cast<Raven::UILabel*>(debugPanel->GetChildren()[9].get());
+        auto* radiusLabel = dynamic_cast<Raven::UILabel*>(debugPanel->GetChildren()[11].get());
+        CheckImmediate(normalLabel != nullptr &&
+            normalLabel->GetText() == "Normal Length: 1.25", "normal length text");
+        CheckImmediate(radiusLabel != nullptr &&
+            radiusLabel->GetText() == "Point Radius: 0.075", "point radius text");
+        // Scene切替などでPanel宣言が消えると、子WidgetとFocusも同時に破棄します。
+        auto* debugCheckbox = dynamic_cast<Raven::UICheckbox*>(
+            debugPanel->GetChildren()[1].get());
+        CheckImmediate(debugCheckbox != nullptr &&
+            debugContext.SetFocus(debugCheckbox) == true, "debug checkbox focus");
+        CheckImmediate(debugImmediate.BeginFrame() == true, "debug hidden BeginFrame");
+        CheckImmediate(debugImmediate.EndFrame() == true, "debug hidden EndFrame");
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 0u &&
+            debugContext.GetRootElement().GetChildren().empty() == true &&
+            debugContext.GetFocusedElement() == nullptr, "debug panel removal clears focus");
+        CheckImmediate(debugImmediate.BeginFrame() == true, "debug restored BeginFrame");
+        CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
+            debugImmediate, settings, nullptr) == false, "debug panel restored");
+        CheckImmediate(debugImmediate.EndFrame() == true, "debug restored EndFrame");
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 14u,
+            "debug panel rebuilt without stale cache");
     }
 
     // UIContextの描画Frame中はTree変更を許可しません。
