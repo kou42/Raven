@@ -450,6 +450,20 @@ protected:
             {
                 return false;
             }
+            // 所有権移動前に選択の所属を記録します。移動後のParent chainでは判定できません。
+            bool clearSourceSelection = false;
+            if (sourceView != this)
+            {
+                for (UITreeNode* selected = sourceView->m_Selected; selected != nullptr;
+                    selected = selected->Parent)
+                {
+                    if (selected == source)
+                    {
+                        clearSourceSelection = true;
+                        break;
+                    }
+                }
+            }
             // 同じ兄弟配列内で移動する場合も、先に抜いてから挿入位置を探します。
             std::unique_ptr<UITreeNode> moved = std::move(*oldIt);
             oldSiblings.erase(oldIt);
@@ -478,14 +492,9 @@ protected:
             if (sourceView != this)
             {
                 // Source側の選択が移動Subtreeを指していたら、無効な選択Pointerを残しません。
-                for (UITreeNode* selected = sourceView->m_Selected; selected != nullptr;
-                    selected = selected->Parent)
+                if (clearSourceSelection == true)
                 {
-                    if (selected == source)
-                    {
-                        sourceView->Select(nullptr);
-                        break;
-                    }
+                    sourceView->Select(nullptr);
                 }
                 sourceView->InvalidateMeasure();
                 sourceView->SetScrollOffset(sourceView->m_ScrollOffset);
