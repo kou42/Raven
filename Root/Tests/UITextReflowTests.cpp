@@ -123,6 +123,42 @@ void TestDockSnapshotFileRecovery()
     fs::remove_all(directory);
 }
 
+// Factory失敗時は復元先の既存Split比率とIDを変更しません。
+void TestDockRestoreFailurePreservesStructure()
+{
+    Raven::UIDockSpace source;
+    const std::uint64_t leaf = source.GetLayout().GetRoot()->GetId();
+    Check(source.CreateTabView(leaf) != nullptr, "dock rollback source view");
+    Check(source.AddTab(leaf, 702u, "Scene",
+        std::make_unique<Raven::UIElement>()), "dock rollback source tab");
+    const Raven::UIDockSpaceSnapshot saved = source.SaveSnapshot();
+
+    Raven::UIDockSpace target;
+    Raven::UIDockNode* newLeaf = target.Split(
+        target.GetLayout().GetRoot()->GetId(),
+        Raven::UIDockSplitAxis::Vertical, 0.37f);
+    Check(newLeaf != nullptr, "dock rollback initial split");
+    const auto before = target.GetLayout().SaveStructure();
+    const auto failFactory = [](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        return nullptr;
+    };
+    Check(target.RestoreSnapshot(saved, failFactory) == false,
+        "dock rollback factory rejected");
+    const auto after = target.GetLayout().SaveStructure();
+    Check(after.size() == before.size(), "dock rollback node count");
+    for (std::size_t i = 0u; i < before.size(); ++i)
+    {
+        Check(after[i].Id == before[i].Id &&
+            after[i].Ratio == before[i].Ratio &&
+            after[i].Depth == before[i].Depth,
+            "dock rollback structure unchanged");
+    }
+    Check(target.GetSplitter(before[0u].Id) != nullptr,
+        "dock rollback existing splitter preserved");
+}
+
 void TestDockSnapshotJson()
 {
     Raven::UIDockSpace dock;
@@ -1622,5 +1658,6 @@ int main()
     TestDockFullSnapshot();
     TestDockSnapshotJson();
     TestDockSnapshotFileRecovery();
+    TestDockRestoreFailurePreservesStructure();
     return 0;
 }
