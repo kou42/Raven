@@ -76,7 +76,7 @@ public:
         const WindowSpecification& specification);
     // Dock TabのContentを新しいOS WindowのRootへ移譲します。
     // Window生成が失敗した場合はDockのTab/Contentを変更しません。
-    // Close時の復帰先は現段階ではMain Rootであり、元Dock Paneへの復元は未対応です。
+    // Close時は元Dock Paneへの復帰を試み、元Paneが無効ならMain Rootへ戻します。
     WindowID DetachDockTabToNewWindow(WindowID sourceID, UIDockSpace& dock,
         std::uint64_t leafId, std::uint64_t tabId,
         const WindowSpecification& specification);
