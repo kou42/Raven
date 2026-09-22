@@ -73,6 +73,11 @@ public:
     // Window生成または移譲に失敗した場合、Widgetの元の所有権を維持します。
     WindowID DetachUIRootChildToNewWindow(WindowID sourceID, UIElement* child,
         const WindowSpecification& specification);
+    // Layer更新や入力Callbackなど、Main UI Frame中から安全に切り離しを予約します。
+    // 実際のWindow生成とTree移譲はMain EndFrame後に実行し、成功時にCallbackへIDを返します。
+    using UIDetachCompleted = std::function<void(WindowID)>;
+    bool RequestDetachUIRootChildToNewWindow(WindowID sourceID, UIElement* child,
+        const WindowSpecification& specification, UIDetachCompleted onCompleted = {});
     UIContext* GetWindowUIContext(WindowID id);
     // Main/補助WindowのRoot直下Widgetを同じObjectのまま移譲します。
     // Windowを閉じる前にMainへ戻す場合は明示的に呼び出してください。
@@ -92,6 +97,15 @@ private:
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
+    struct PendingUIDetach
+    {
+        WindowID SourceID = 0;
+        UIElement* Child = nullptr; // 実行前にRootの生存Child一覧と照合し、直接参照しません。
+        WindowSpecification Specification;
+        UIDetachCompleted OnCompleted;
+    };
+    std::vector<PendingUIDetach> m_PendingUIDetaches;
+    void FlushPendingUIDetaches();
     void OnAuxiliaryUIEvent(WindowID id, Event& event);
     bool m_RavenUIEnabled = true;
 
