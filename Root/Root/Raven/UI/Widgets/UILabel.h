@@ -42,6 +42,7 @@ protected:
     math::Vec2 OnMeasureContentForWidth(float availableWidth) const override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
     void OnContextChanged(UIContext* previous, UIContext* current) override;
+    void OnDPIScaleChanged() override;
 
 private:
     math::Vec2 MeasureText(float maxWidth) const;
