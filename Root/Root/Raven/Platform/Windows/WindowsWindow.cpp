@@ -390,6 +390,9 @@ void WindowsWindow::Init(const WindowProps& props)
     m_Data.FramebufferWidth = static_cast<unsigned int>(std::max(framebufferWidth, 0));
     m_Data.FramebufferHeight = static_cast<unsigned int>(std::max(framebufferHeight, 0));
 
+    // Content ScaleはFramebuffer倍率とは別にGLFWから取得します。
+    glfwGetWindowContentScale(m_Window, &m_Data.ContentScaleX, &m_Data.ContentScaleY);
+
     GLFWwindow* previousContext = glfwGetCurrentContext();
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
@@ -497,6 +500,15 @@ void WindowsWindow::Init(const WindowProps& props)
                 WindowRestoredEvent event;
                 data.EventCallback(event);
             }
+        });
+
+    // 異なるDPIのMonitorへ移動した際も、次のUI frameへ最新倍率を渡します。
+    // Window/FramebufferのResize Eventとは独立して更新します。
+    glfwSetWindowContentScaleCallback(m_Window, [](GLFWwindow* window, float xscale, float yscale)
+        {
+            WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+            data.ContentScaleX = xscale;
+            data.ContentScaleY = yscale;
         });
 
     glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* window, int width, int height)
