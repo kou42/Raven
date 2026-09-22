@@ -639,11 +639,13 @@ void TestTreeViewDragDrop()
     context.GetRootElement().AddChild(std::move(tree));
     context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
     Check(context.HasPendingDrag(), "tree node reserves drag on down");
+    Check(context.GetDragPreviewText() == "Child", "tree drag preview uses node name");
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
     Check(context.IsDragging() && context.GetDropTarget() == view, "tree accepts sibling root");
     context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
     Check(child->Parent == destination && moved == 2u && parent == 3u, "tree reparents node on drop");
     Check(context.HasMouseCapture() == false, "tree drop releases capture");
+    Check(context.GetDragPreviewText().empty(), "tree drop clears preview");
     // 親を子へDropしても循環を作らないことを検証します。
     context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 104.0f));
@@ -707,6 +709,7 @@ void TestDragDropRouting()
     Check(context.RouteKeyEvent(Press(Raven::UIKey::Escape)), "escape consumes drag");
     Check(sourcePtr->Cancels == 1 && context.HasPendingDrag() == false, "escape cancels");
     Check(context.HasMouseCapture() == false, "escape releases capture");
+    Check(context.GetDragPreviewText().empty(), "cancel clears preview");
     // Drop callbackがSourceを削除してもEndで解放済みPointerへアクセスしません。
     targetPtr->RemoveSourceOnDrop = true;
     Check(context.BeginDrag(sourcePtr, {"test/item", "remove"}, Raven::math::Vec2(10.0f, 10.0f)), "remove-source drag");
