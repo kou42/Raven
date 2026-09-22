@@ -351,7 +351,7 @@ void UITextDemoLayer::OnAttach()
         m_TabView = static_cast<UITabView*>(
             m_Application.GetUIContext().GetRootElement().AddChild(std::move(tabView)));
     }
-    std::cout << "[Raven UI Tab] Panel at (860, 490): wheel / drag / close.\\n";
+    std::cout << "[Raven UI Tab] Panel at (860, 490): wheel / drag / close.\n";
 
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
