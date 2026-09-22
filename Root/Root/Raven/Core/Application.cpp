@@ -372,6 +372,61 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
             // DetachChildが旧WindowのCapture/Focus/IMEを解除します。
             // Rootの内部Popup/TooltipはContext固有なので移動せずContextと共に破棄します。
             UIContext& source = *it->second;
+            const auto detached = m_DetachedDockTabs.find(id);
+            if (detached != m_DetachedDockTabs.end())
+            {
+                const DetachedDockTab record = detached->second;
+                m_DetachedDockTabs.erase(detached);
+                UIContext* original = GetWindowUIContext(record.SourceID);
+                // Close済みの元Windowや削除済みDockを逆参照しないよう、Rootの生存Treeを照合します。
+                // 復帰できない場合は従来通りMain Rootへ戻す経路に任せます。
+                if (original != nullptr && original != &source &&
+                    original->IsFrameActive() == false &&
+                    m_WindowManager.IsWindowClosePending(record.SourceID) == false)
+                {
+                    const auto isAlive = [&](const auto& self, const UIElement& parent) -> bool
+                    {
+                        for (const auto& child : parent.GetChildren())
+                        {
+                            if (child.get() == record.Dock)
+                            {
+                                return true;
+                            }
+                            if (self(self, *child) == true)
+                            {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+                    UITabView* view = nullptr;
+                    if (isAlive(isAlive, original->GetRootElement()) == true)
+                    {
+                        view = record.Dock->GetTabView(record.LeafID);
+                    }
+                    if (view != nullptr &&
+                        view->GetModel().FindTab(record.TabID) == nullptr &&
+                        record.Dock->GetLayout().FindNode(record.LeafID) != nullptr)
+                    {
+                        // Rootに現在も所属するContentだけを回収します。
+                        // Window閉鎖前に他へ移された場合は新しい所有者を変更しません。
+                        for (const auto& child : source.GetRootElement().GetChildren())
+                        {
+                            if (child.get() == record.Content)
+                            {
+                                Scope<UIElement> content =
+                                    source.GetRootElement().DetachChild(record.Content);
+                                if (content != nullptr)
+                                {
+                                    record.Dock->AddTab(record.LeafID, record.TabID,
+                                        record.Title, std::move(content), record.Closable);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             std::vector<UIElement*> children;
             for (const auto& child : source.GetRootElement().GetChildren())
             {
@@ -479,6 +534,9 @@ WindowID Application::DetachDockTabToNewWindow(
         m_WindowManager.UnregisterWindow(destinationID);
         return 0;
     }
+    // Rootへの追加が完了してから登録し、失敗した生成経路を復帰対象にしません。
+    m_DetachedDockTabs[destinationID] = DetachedDockTab{
+        sourceID, &dock, raw, leafId, tab.Id, tab.Title, tab.Closable };
     return destinationID;
 }
 
