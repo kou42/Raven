@@ -6,6 +6,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/RHI/RHICommandList.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Raven/Core/Window.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -33,7 +33,8 @@ public:
 
     // 将来のEditor補助WindowをManagerが所有するための入口です。
     // Window::Createが失敗した場合は無効ID(0)を返します。
-    WindowID CreateWindow(const WindowSpecification& specification = WindowSpecification(),
+    // Win32 SDKのCreateWindowマクロと衝突しない名前にし、include順に依存する構文崩れを防ぎます。
+    WindowID CreateManagedWindow(const WindowSpecification& specification = WindowSpecification(),
         Window::EventCallbackFn callback = {})
     {
         WindowSpecification windowSpecification = specification;

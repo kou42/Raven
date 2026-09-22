@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <utility>
 
+// Win32の呼び出し規約マクロを先に確定し、GL loader側の同名定義との競合を防ぎます。
+#include <windows.h>
+#include <imm.h>
+
 #include <glad/glad.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -16,9 +20,6 @@
 #include "Raven/Platform/OpenGL/OpenGLContext.h"
 #include "Raven/Platform/Windows/WindowsInput.h"
 
-
-#include <windows.h>
-#include <imm.h>
 #include <string>
 #include <string_view>
 #include <vector>

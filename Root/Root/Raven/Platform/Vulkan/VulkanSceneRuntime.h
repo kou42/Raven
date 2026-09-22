@@ -15,7 +15,7 @@ class VulkanSceneRHIDevice;
 class VulkanSceneRuntime final
 {
 public:
-    VulkanSceneRuntime() = default;
+    VulkanSceneRuntime();
     ~VulkanSceneRuntime();
 
     VulkanSceneRuntime(const VulkanSceneRuntime&) = delete;

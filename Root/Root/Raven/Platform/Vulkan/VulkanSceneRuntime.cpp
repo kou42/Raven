@@ -14,6 +14,10 @@
 namespace Raven
 {
 
+// VulkanSceneRHIDeviceの完全型が見える実装側で特殊メンバーを定義し、
+// header利用側がunique_ptrの破棄処理を生成しないようにします。
+VulkanSceneRuntime::VulkanSceneRuntime() = default;
+
 VulkanSceneRuntime::~VulkanSceneRuntime()
 {
     Shutdown();

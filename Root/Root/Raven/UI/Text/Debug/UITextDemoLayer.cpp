@@ -36,15 +36,32 @@ constexpr std::string_view kDemoText =
 // 日本語を含むFontが見つからなければ、OS標準の候補を順に確認します。
 std::string FindDemoFont()
 {
-    const char* configured = std::getenv("RAVEN_UI_DEMO_FONT");
-    if (configured != nullptr && configured[0] != '\0')
+    std::string configuredPath;
+#if defined(_MSC_VER)
+    // MSVCでは非推奨警告のないAPIで呼び出し側所有のコピーを取得します。
+    char* configured = nullptr;
+    size_t configuredLength = 0;
+    if (_dupenv_s(&configured, &configuredLength, "RAVEN_UI_DEMO_FONT") == 0 &&
+        configured != nullptr)
     {
-        if (std::filesystem::is_regular_file(configured))
+        configuredPath = configured;
+    }
+    std::free(configured);
+#else
+    const char* configured = std::getenv("RAVEN_UI_DEMO_FONT");
+    if (configured != nullptr)
+    {
+        configuredPath = configured;
+    }
+#endif
+    if (configuredPath.empty() == false)
+    {
+        if (std::filesystem::is_regular_file(configuredPath))
         {
-            return configured;
+            return configuredPath;
         }
         std::cout << "[Raven UI Text] RAVEN_UI_DEMO_FONT not found: "
-            << configured << '\n';
+            << configuredPath << '\n';
         return {};
     }
 
