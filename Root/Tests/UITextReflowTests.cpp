@@ -507,6 +507,20 @@ void TestWindowFramebufferMetrics()
     Check(context.TransferRootChildTo(auxiliary, widget) == false,
         "transfer rejects active frame");
     context.EndFrame();
+
+    auxiliary.BeginFrame(Raven::math::Vec2(480.0f, 320.0f));
+    Check(context.TransferRootChildTo(auxiliary, widget) == false,
+        "transfer rejects destination active frame");
+    auxiliary.EndFrame();
+
+    Raven::UIContext unrelated;
+    auto foreign = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* foreignWidget = foreign.get();
+    unrelated.GetRootElement().AddChild(std::move(foreign));
+    Check(context.TransferRootChildTo(auxiliary, foreignWidget) == false,
+        "transfer rejects child of another context");
+    Check(foreignWidget->GetContext() == &unrelated,
+        "rejected transfer preserves ownership");
 }
 
 void TestDPIContextCoordinates()
