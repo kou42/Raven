@@ -100,6 +100,23 @@ void TestUIImmediateContext()
         "slider no replay");
     CheckImmediate(immediate.EndFrame() == true, "one-shot EndFrame");
 
+    auto* slider = dynamic_cast<Raven::UISlider*>(
+        context.GetRootElement().GetChildren().back().get());
+    CheckImmediate(slider != nullptr && context.SetFocus(slider) == true,
+        "focus immediate slider");
+    Raven::UIKeyEvent right{};
+    right.Key = Raven::UIKey::Right;
+    right.Pressed = true;
+    CheckImmediate(context.RouteKeyEvent(right) == true, "adjust slider");
+
+    CheckImmediate(immediate.BeginFrame() == true, "slider input BeginFrame");
+    CheckImmediate(immediate.Text("caption", "Updated") == label, "label kept");
+    CheckImmediate(immediate.Button("reset") == false, "button kept");
+    CheckImmediate(immediate.SliderFloat("gravity", &gravity, 0.0f, 20.0f) == true,
+        "slider input consumed");
+    CheckImmediate(gravity > 9.8f, "slider writes caller value");
+    CheckImmediate(immediate.EndFrame() == true, "slider input EndFrame");
+
     CheckImmediate(immediate.BeginFrame() == true, "abort BeginFrame");
     CheckImmediate(immediate.PushID("pending") == true, "abort PushID");
     immediate.AbortFrame();
