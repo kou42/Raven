@@ -46,8 +46,14 @@ void UIContext::CancelIMEComposition(UIElement* element)
 void UIContext::SetDPIScale(float x, float y)
 {
     // 0/NaN/InfinityをUI計算へ流さないため、無効な値は等倍へ戻します。
-    m_DPIScaleX = std::isfinite(x) && x > 0.0f ? x : 1.0f;
-    m_DPIScaleY = std::isfinite(y) && y > 0.0f ? y : 1.0f;
+    const float nextX = std::isfinite(x) && x > 0.0f ? x : 1.0f;
+    const float nextY = std::isfinite(y) && y > 0.0f ? y : 1.0f;
+    if (m_DPIScaleX == nextX && m_DPIScaleY == nextY)
+    {
+        return;
+    }
+    m_DPIScaleX = nextX;
+    m_DPIScaleY = nextY;
     if (m_RootElement != nullptr)
     {
         m_RootElement->RefreshDPIMetricsRecursive();
@@ -56,7 +62,12 @@ void UIContext::SetDPIScale(float x, float y)
 
 void UIContext::SetUserScale(float scale)
 {
-    m_UserScale = std::isfinite(scale) && scale > 0.0f ? scale : 1.0f;
+    const float nextScale = std::isfinite(scale) && scale > 0.0f ? scale : 1.0f;
+    if (m_UserScale == nextScale)
+    {
+        return;
+    }
+    m_UserScale = nextScale;
     if (m_RootElement != nullptr)
     {
         m_RootElement->RefreshDPIMetricsRecursive();
