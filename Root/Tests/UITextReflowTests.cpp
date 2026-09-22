@@ -645,11 +645,11 @@ void TestTreeViewDragDrop()
     Check(child->Parent == destination && moved == 2u && parent == 3u, "tree reparents node on drop");
     Check(context.HasMouseCapture() == false, "tree drop releases capture");
     // 親を子へDropしても循環を作らないことを検証します。
-    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
     Check(context.GetDropTarget() == nullptr, "tree rejects descendant target");
     context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
-    Check(root->Parent == nullptr, "tree cycle guard keeps root");
+    Check(destination->Parent == nullptr, "tree cycle guard keeps root");
 }
 
 void TestDragDropRouting()
