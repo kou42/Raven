@@ -100,6 +100,20 @@ void TestDockTabTransfer()
         "dock transfer back");
     Check(firstView->GetTabContent(71u) == original,
         "dock transfer round trip");
+    Raven::UIDrawList drawList;
+    dock.BuildDrawList(drawList);
+    Raven::UIDragDropPayload payload{ "Raven/UITab", "71" };
+    Raven::UIDragDropEvent over;
+    over.Type = Raven::UIDragDropEventType::Over;
+    over.Payload = &payload;
+    over.Source = firstView->GetTabBar();
+    over.ScreenPosition = Raven::math::Vec2(300.0f, 100.0f);
+    Check(dock.HandleDragDropEvent(over), "dock preview over accepted");
+    Check(over.Accepted, "dock preview event accepted");
+    over.Type = Raven::UIDragDropEventType::Drop;
+    Check(dock.HandleDragDropEvent(over), "dock drop transfer");
+    Check(secondView->GetTabContent(71u) == original,
+        "dock drop content preserved");
 }
 
 // DockSpace経由とView上の操作の両方で論理Tab状態を同期します。
