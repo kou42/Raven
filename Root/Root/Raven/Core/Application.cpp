@@ -8,6 +8,7 @@
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UISplitter.h"
 #include "Raven/UI/Widgets/UIInputText.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -426,6 +427,60 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
             return true;
         });
     return id;
+}
+
+WindowID Application::DetachDockTabToNewWindow(
+    WindowID sourceID, UIDockSpace& dock, std::uint64_t leafId,
+    std::uint64_t tabId, const WindowSpecification& specification)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (m_RavenUIEnabled == false || source == nullptr ||
+        dock.GetContext() != source || source->IsFrameActive() == true ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return 0;
+    }
+    UITabView* view = dock.GetTabView(leafId);
+    if (view == nullptr || view->GetModel().FindTab(tabId) == nullptr ||
+        view->GetTabContent(tabId) == nullptr)
+    {
+        return 0;
+    }
+
+    // Dock Modelを変更する前にWindow生成を完了させます。
+    // OS Window生成失敗時はTab Contentと選択状態を元のPaneに残します。
+    const WindowID destinationID = CreateUIWindow(specification);
+    if (destinationID == 0)
+    {
+        return 0;
+    }
+    UIContext* destination = GetWindowUIContext(destinationID);
+    if (destination == nullptr)
+    {
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    destination->SetTheme(source->GetTheme());
+    destination->SetUserScale(source->GetUserScale());
+
+    UITabItem tab;
+    Scope<UIElement> content = dock.ExtractTabForWindow(leafId, tabId, tab);
+    if (content == nullptr)
+    {
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    // 非選択TabはContentが非表示なので、新Windowへ渡す前に表示状態を戻します。
+    content->SetVisible(true);
+    UIElement* raw = content.get();
+    if (destination->GetRootElement().AddChild(std::move(content)) != raw)
+    {
+        // 通常は到達しません。Root追加失敗でも空Windowは残しません。
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    destination->GetRootElement().BringChildToFront(destination->GetPopupLayer());
+    return destinationID;
 }
 
 WindowID Application::DetachUIRootChildToNewWindow(
