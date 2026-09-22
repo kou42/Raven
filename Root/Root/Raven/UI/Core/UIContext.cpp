@@ -227,7 +227,9 @@ void UIContext::EndFrame()
     // SetRenderer()して、この同じframe境界から実描画へ接続します。
     if (m_Renderer != nullptr)
     {
-        m_Renderer->Render(m_DrawList, m_ViewportSize);
+        m_Renderer->Render(m_DrawList, m_ViewportSize,
+            m_FramebufferSize.x > 0.0f && m_FramebufferSize.y > 0.0f
+                ? m_FramebufferSize : m_ViewportSize);
     }
 
     m_FrameActive = false;
