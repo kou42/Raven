@@ -78,6 +78,19 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPIAtlasLabelBinding()
+{
+    Raven::UILabel label;
+    label.SetScaleGlyphsWithDPI(false);
+    label.SetFontDPI(nullptr, 2.0f);
+    Check(label.GetScaleGlyphsWithDPI(), "dpi atlas enables glyph scaling");
+    label.SetScaleGlyphsWithDPI(false);
+    label.SetFontDPI(nullptr, 0.0f);
+    Check(label.GetScaleGlyphsWithDPI() == false, "invalid atlas raster scale rejected");
+    label.SetFont(nullptr);
+    Check(label.GetFont() == nullptr, "legacy atlas setter retained");
+}
+
 void TestDPIGlyphScale()
 {
     Raven::UIContext context;
@@ -1916,6 +1929,7 @@ int main()
     TestDPIAbsolutePosition();
     TestDPILabelTypographyMetrics();
     TestDPIGlyphScale();
+    TestDPIAtlasLabelBinding();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
