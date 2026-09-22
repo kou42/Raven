@@ -1,7 +1,6 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIHitTest.h"
 #include "Raven/UI/Widgets/UITooltip.h"
-#include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Text/UIUtf8.h"
 
 #include <utility>
@@ -31,8 +30,7 @@ std::size_t UIContext::GetPendingDPIFontCount() const
     std::size_t count = 0u;
     const auto visit = [&count](const auto& self, const UIElement& element) -> void
     {
-        const UILabel* label = dynamic_cast<const UILabel*>(&element);
-        if (label != nullptr && label->IsDPIFontPending() == true)
+        if (element.HasPendingDPIFont() == true)
         {
             ++count;
         }
@@ -59,9 +57,8 @@ std::size_t UIContext::RefreshPendingDPIFonts()
     // Renderer/RHI Contextの有効性は呼び出し側が保証します。
     const auto visit = [&refreshed](const auto& self, UIElement& element) -> void
     {
-        UILabel* label = dynamic_cast<UILabel*>(&element);
-        if (label != nullptr && label->IsDPIFontPending() == true &&
-            label->RefreshDPIFont() == true)
+        if (element.HasPendingDPIFont() == true &&
+            element.RefreshPendingDPIFont() == true)
         {
             ++refreshed;
         }
