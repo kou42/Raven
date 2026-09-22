@@ -5,6 +5,7 @@
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
@@ -74,6 +75,30 @@ void Check(bool condition, const char* label)
         std::cerr << label << ": failed\n";
         std::exit(EXIT_FAILURE);
     }
+}
+
+void TestDPILabelTypographyMetrics()
+{
+    Raven::UIContext context;
+    auto label = std::make_unique<Raven::UILabel>();
+    label->SetBaselineOffsetDIP(12.0f);
+    label->SetLineHeightDIP(18.0f);
+    Raven::UILabel* ptr = label.get();
+    context.GetRootElement().AddChild(std::move(label));
+    context.SetDPIScale(1.5f, 2.0f);
+    CheckNear("label baseline dpi y", ptr->GetBaselineOffset(), 24.0f);
+    CheckNear("label line height dpi y", ptr->GetLineHeight(), 36.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("label baseline user scale", ptr->GetBaselineOffset(), 30.0f);
+    CheckNear("label line height user scale", ptr->GetLineHeight(), 45.0f);
+    ptr->SetLineHeight(21.0f);
+    context.SetDPIScale(2.0f, 1.5f);
+    CheckNear("label legacy line height", ptr->GetLineHeight(), 21.0f);
+    CheckNear("label dip baseline updated", ptr->GetBaselineOffset(), 22.5f);
+    ptr->SetBaselineOffset(7.0f);
+    context.SetUserScale(2.0f);
+    CheckNear("label legacy baseline", ptr->GetBaselineOffset(), 7.0f);
+    CheckNear("label legacy line height after scale", ptr->GetLineHeight(), 21.0f);
 }
 
 void TestDPIAbsolutePosition()
@@ -1858,6 +1883,7 @@ int main()
     TestDPILayoutMetrics();
     TestDPISizeConstraints();
     TestDPIAbsolutePosition();
+    TestDPILabelTypographyMetrics();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
