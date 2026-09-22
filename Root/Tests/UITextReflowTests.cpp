@@ -503,6 +503,17 @@ void TestWindowFramebufferMetrics()
     Check(auxiliary.TransferRootChildTo(context, widget),
         "transfer back to main");
     Check(widget->GetContext() == &context, "transfer restores context");
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    Check(context.DetachRootChild(widget) == nullptr,
+        "close child extraction rejects active frame");
+    context.EndFrame();
+    Raven::Scope<Raven::UIElement> saved = context.DetachRootChild(widget);
+    Check(saved.get() == widget && widget->GetContext() == nullptr,
+        "close child extraction preserves ownership");
+    Check(context.AddRootChild(std::move(saved)) == widget,
+        "close child extraction restores main root");
+    Check(context.GetRootElement().GetChildren().back().get() != widget,
+        "close child extraction retains popup front order");
     Check(context.TransferRootChildTo(context, widget) == false,
         "transfer rejects same context");
     context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
