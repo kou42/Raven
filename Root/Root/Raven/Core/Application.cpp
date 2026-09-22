@@ -420,6 +420,9 @@ void Application::Run()
         // Root以下のRetained Treeを更新します。EndFrame()時にTreeからDrawListへ自動展開されます。
         if (m_RavenUIEnabled == true)
         {
+            // GLFWのContent ScaleはWindowごとに変化します。毎frame同期することで
+            // Resizeを伴わないMonitor移動も取りこぼさず、既存の論理座標は維持します。
+            m_UIContext.SetDPIScale(m_Window->GetContentScaleX(), m_Window->GetContentScaleY());
             m_UIContext.BeginFrame(math::Vec2(
                 static_cast<float>(m_Window->GetWidth()),
                 static_cast<float>(m_Window->GetHeight())));
