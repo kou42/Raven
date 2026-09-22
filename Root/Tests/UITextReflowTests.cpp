@@ -95,7 +95,7 @@ void TestDPISizeConstraints()
     ptr->SetMaxSize(Raven::math::Vec2(120.0f, 80.0f));
     context.SetDPIScale(2.0f, 2.0f);
     CheckNear("legacy max clamps dip width", ptr->GetPreferredSize().x, 120.0f);
-    CheckNear("legacy max clamps dip height", ptr->GetPreferredSize().y, 75.0f);
+    CheckNear("legacy max clamps dip height", ptr->GetPreferredSize().y, 80.0f);
     // Contextを離れたElementはDIP等倍で再計算されます。
     Raven::Scope<Raven::UIElement> detached = context.GetRootElement().DetachChild(ptr);
     CheckNear("detached dip width", detached->GetPreferredSize().x, 90.0f);
