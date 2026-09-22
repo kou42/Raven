@@ -330,10 +330,14 @@ bool UIFontAtlasBuilder::BuildFromFile(
     specification.Format = TextureFormat::RGBA8;
     specification.Usage = TextureUsage::Sampled;
     specification.GenerateMips = false;
-    Ref<Texture> texture = Texture::Create(specification, pixels.data(), pixels.size());
+    TextureCreationFailure textureFailure = TextureCreationFailure::None;
+    Ref<Texture> texture = Texture::Create(specification, pixels.data(), pixels.size(), &textureFailure);
     if (texture == nullptr || texture->GetID() == 0u)
     {
-        return fail(UIFontAtlasBuildFailure::TextureCreationFailed);
+        // RHI Deviceが未準備なら再試行すべき原因をLabel側まで伝えます。
+        return fail(textureFailure == TextureCreationFailure::DeviceUnavailable
+            ? UIFontAtlasBuildFailure::TextureDeviceUnavailable
+            : UIFontAtlasBuildFailure::TextureCreationFailed);
     }
 
     // Fontバイト列はRasterize終了後に解放できます。AtlasはGPU Textureだけを所有します。
