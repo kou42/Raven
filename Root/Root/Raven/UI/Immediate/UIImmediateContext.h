@@ -41,6 +41,7 @@ public:
         m_FrameActive = true;
         m_Used.clear();
         m_IDStack.clear();
+        m_IDKinds.clear();
         m_ParentStack.clear();
         m_ParentStack.push_back(&m_Context.GetRootElement());
         return true;
@@ -85,6 +86,7 @@ public:
 
         m_ParentStack.clear();
         m_IDStack.clear();
+        m_IDKinds.clear();
         m_Used.clear();
         m_FrameActive = false;
         return true;
@@ -107,16 +109,18 @@ public:
             return false;
         }
         m_IDStack.push_back(id);
+        m_IDKinds.push_back(false);
         return true;
     }
 
     bool PopID()
     {
-        if (m_FrameActive == false || m_IDStack.empty())
+        if (m_FrameActive == false || m_IDStack.empty() || m_IDKinds.back() == true)
         {
             return false;
         }
         m_IDStack.pop_back();
+        m_IDKinds.pop_back();
         return true;
     }
 
@@ -173,6 +177,7 @@ public:
         {
             m_ParentStack.push_back(container);
             m_IDStack.push_back(id);
+            m_IDKinds.push_back(true);
         }
         return container;
     }
@@ -180,7 +185,7 @@ public:
     bool EndContainer()
     {
         if (m_FrameActive == false || m_ParentStack.size() <= 1u ||
-            m_IDStack.empty())
+            m_IDStack.empty() || m_IDKinds.back() == false)
         {
             return false;
         }
@@ -223,6 +228,8 @@ private:
     std::unordered_map<std::string, Entry> m_Widgets;
     std::unordered_set<std::string> m_Used;
     std::vector<std::string> m_IDStack;
+    // PushIDとContainerのPop順序を混同させないためのScope種別です。
+    std::vector<bool> m_IDKinds;
     std::vector<UIElement*> m_ParentStack;
     bool m_FrameActive = false;
 };
