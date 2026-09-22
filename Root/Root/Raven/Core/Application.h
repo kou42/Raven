@@ -95,7 +95,8 @@ public:
     // UIWindowはRoot直下に配置してください。OS Windowの生成・所有はWindowManagerへ委譲します。
     bool BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& window);
     // 補助WindowからMain Rootへの復帰をFrame境界で予約します。
-    bool RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* window);
+    bool RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* window,
+        const math::Vec2& mainLocalDropPosition);
     UIContext* GetWindowUIContext(WindowID id);
     // Main/補助WindowのRoot直下Widgetを同じObjectのまま移譲します。
     // 補助WindowのClose時はRoot直下の通常WidgetをMainへ自動復帰させます。
@@ -157,6 +158,7 @@ private:
     {
         WindowID SourceID = 0;
         UIWindow* Child = nullptr; // Flush時にRootの生存Childと照合します。
+        math::Vec2 MainLocalDropPosition{};
     };
     std::vector<PendingUIAttach> m_PendingUIAttaches;
     void FlushPendingUIDetaches();
