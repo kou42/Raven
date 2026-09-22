@@ -57,6 +57,21 @@ struct UITabBarStyle
     math::Vec4 DropIndicatorColor{ 0.55f, 0.78f, 1.0f, 1.0f };
 };
 
+struct UITreeViewStyle
+{
+    math::Vec4 SelectedColor{ 0.22f, 0.38f, 0.64f, 1.0f };
+    math::Vec4 DropChildColor{ 0.18f, 0.56f, 0.32f, 0.55f };
+    math::Vec4 DropIndicatorColor{ 0.42f, 0.90f, 0.57f, 0.95f };
+    math::Vec4 TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
+struct UITableStyle
+{
+    math::Vec4 SelectedColor{ 0.22f, 0.38f, 0.64f, 1.0f };
+    math::Vec4 HeaderColor{ 0.17f, 0.19f, 0.23f, 1.0f };
+    math::Vec4 TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
 struct UIPanelStyle
 {
     math::Vec4 BackgroundColor{ 1.0f, 1.0f, 1.0f, 1.0f };
@@ -73,6 +88,8 @@ struct UITheme
     UIScrollBarStyle ScrollBar;
     UILabelStyle Label;
     UITabBarStyle TabBar;
+    UITreeViewStyle TreeView;
+    UITableStyle Table;
 
     static UITheme CreateDefaultDark()
     {
@@ -109,6 +126,13 @@ struct UITheme
         theme.TabBar.CloseColor = math::Vec4(0.35f, 0.40f, 0.49f, 1.0f);
         theme.TabBar.HoveredCloseColor = math::Vec4(0.72f, 0.18f, 0.22f, 1.0f);
         theme.TabBar.DropIndicatorColor = math::Vec4(0.15f, 0.42f, 0.77f, 1.0f);
+        theme.TreeView.SelectedColor = math::Vec4(0.49f, 0.68f, 0.94f, 1.0f);
+        theme.TreeView.DropChildColor = math::Vec4(0.32f, 0.69f, 0.43f, 0.45f);
+        theme.TreeView.DropIndicatorColor = math::Vec4(0.12f, 0.57f, 0.26f, 0.95f);
+        theme.TreeView.TextColor = math::Vec4(0.10f, 0.13f, 0.18f, 1.0f);
+        theme.Table.SelectedColor = math::Vec4(0.49f, 0.68f, 0.94f, 1.0f);
+        theme.Table.HeaderColor = math::Vec4(0.81f, 0.84f, 0.89f, 1.0f);
+        theme.Table.TextColor = math::Vec4(0.10f, 0.13f, 0.18f, 1.0f);
         theme.Panel.BackgroundColor = math::Vec4(0.96f, 0.96f, 0.97f, 1.0f);
         return theme;
     }
