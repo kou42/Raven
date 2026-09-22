@@ -767,6 +767,35 @@ void TestTreeViewEmptyAreaDrop()
         "blank area appends another root");
 }
 
+void TestTreeViewDragAutoScroll()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 96.0f));
+    tree->SetNodeDragDropEnabled(true);
+    tree->SetDragAutoScrollStep(24.0f);
+    tree->AddRoot(1u, "First");
+    for (std::uint64_t id = 2u; id <= 12u; ++id)
+    {
+        tree->AddRoot(id, "Row");
+    }
+    context.GetRootElement().AddChild(std::move(tree));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
+    Check(view->GetScrollOffset() == 24.0f, "drag bottom edge scrolls down");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
+    Check(view->GetScrollOffset() == 48.0f, "drag edge scrolls on subsequent move");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 24.0f));
+    Check(view->GetScrollOffset() == 24.0f, "drag top edge scrolls up");
+    view->SetDragAutoScrollEnabled(false);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
+    Check(view->GetScrollOffset() == 24.0f, "disabled drag auto scroll keeps offset");
+    context.CancelDrag();
+}
+
 void TestDragDropRouting()
 {
     Raven::UIContext context;
@@ -833,6 +862,7 @@ int main()
     TestTreeViewDragDrop();
     TestTreeViewCrossDrop();
     TestTreeViewEmptyAreaDrop();
+    TestTreeViewDragAutoScroll();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
