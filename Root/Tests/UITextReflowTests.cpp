@@ -157,7 +157,7 @@ void TestDPIFontDataAndCapacityFailure()
     std::error_code existsError;
     if (fontPath.empty() == true || fs::is_regular_file(fontPath, existsError) == false)
     {
-        std::cout << "[SKIP] DPI Font capacity test: set RAVEN_UI_TEST_FONT to a valid TTF/TTC path\\n";
+        std::cout << "[SKIP] DPI Font capacity test: set RAVEN_UI_TEST_FONT to a valid TTF/TTC path\n";
         return;
     }
     options.AtlasWidth = 1u;
