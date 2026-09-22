@@ -400,7 +400,23 @@ void UIContext::CancelDrag()
     }
     event.Type = UIDragDropEventType::Cancel;
     // LeaveでSourceが削除される可能性があるためTree上の生存を確認します。
-    if (source != nullptr && source->GetContext() == this)
+    // ポインタの値だけをTree内の所有要素と照合し、削除済みSourceを逆参照しません。
+    std::function<bool(const UIElement*)> isAlive = [&](const UIElement* root)
+    {
+        if (root == source)
+        {
+            return true;
+        }
+        for (const auto& child : root->GetChildren())
+        {
+            if (child != nullptr && isAlive(child.get()) == true)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (source != nullptr && m_RootElement != nullptr && isAlive(m_RootElement.get()) == true)
     {
         source->HandleDragDropEvent(event);
     }
