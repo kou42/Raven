@@ -68,6 +68,40 @@ void Check(bool condition, const char* label)
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
+// Pane間移動ではTabのContentインスタンスとClosable設定を保持します。
+void TestDockTabTransfer()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(400.0f, 300.0f));
+    const std::uint64_t firstId = dock.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = dock.Split(firstId, Raven::UIDockSplitAxis::Horizontal);
+    Check(second != nullptr, "dock transfer split");
+    const std::uint64_t secondId = second->GetId();
+    Raven::UITabView* firstView = dock.CreateTabView(firstId);
+    Raven::UITabView* secondView = dock.CreateTabView(secondId);
+    Check(firstView != nullptr && secondView != nullptr, "dock transfer views");
+    auto content = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = content.get();
+    Check(dock.AddTab(firstId, 71u, "Persistent", std::move(content), false),
+        "dock transfer add");
+    Check(dock.MoveTabToPane(firstId, firstId, 71u) == false,
+        "dock transfer same pane rejected");
+    Check(dock.MoveTabToPane(firstId, secondId, 71u), "dock transfer to second");
+    Check(firstView->GetTabContent(71u) == nullptr, "dock transfer source removed");
+    Check(secondView->GetTabContent(71u) == original,
+        "dock transfer content address stable");
+    Check(dock.GetLayout().FindNode(firstId)->GetTabs()->GetTabCount() == 0u,
+        "dock transfer source model");
+    Check(dock.GetLayout().FindNode(secondId)->GetTabs()->GetSelectedTabId() == 71u,
+        "dock transfer destination selection");
+    Check(dock.CloseTab(secondId, 71u) == false,
+        "dock transfer closable retained");
+    Check(dock.MoveTabToPane(secondId, firstId, 71u),
+        "dock transfer back");
+    Check(firstView->GetTabContent(71u) == original,
+        "dock transfer round trip");
+}
+
 // DockSpace経由とView上の操作の両方で論理Tab状態を同期します。
 void TestDockTabView()
 {
@@ -1326,5 +1360,6 @@ int main()
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
+    TestDockTabTransfer();
     return 0;
 }
