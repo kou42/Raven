@@ -647,8 +647,15 @@ void Application::FlushPendingClosedUIChildren()
                 if (isAlive(isAlive, original->GetRootElement()) == true)
                 {
                     UITabView* view = record.Dock->GetTabView(record.LeafID);
-                    if (view != nullptr &&
-                        view->GetModel().FindTab(record.TabID) == nullptr)
+                    const UIDockNode* leaf =
+                        record.Dock->GetLayout().FindNode(record.LeafID);
+                    if (view != nullptr && leaf != nullptr &&
+                        leaf->GetTabs() != nullptr &&
+                        view->GetModel().FindTab(record.TabID) == nullptr &&
+                        leaf->GetTabs()->FindTab(record.TabID) == nullptr &&
+                        entry.Content != nullptr &&
+                        entry.Content->GetParent() == nullptr &&
+                        entry.Content->GetContext() == nullptr)
                     {
                         // AddTabはScopeを受け取るため、事前に移動先Modelを検証します。
                         // 正常系ではContentを破棄せず元のDock Tabとして復元します。
