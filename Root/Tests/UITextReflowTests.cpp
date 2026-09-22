@@ -483,17 +483,18 @@ void TestTable()
     context.RouteMouseUp(Raven::math::Vec2(190.0f, 30.0f), Raven::UIMouseButton::Left);
     Check(context.HasMouseCapture(view) == false, "table resize capture released");
     Check(view->IsScrollBarVisible(), "table scrollbar overflow visible");
+    // 列幅変更で横Scrollbarも表示されるため、Body高は10px縮み、縦Scroll範囲は34pxになります。
     view->SetScrollOffset(0.0f);
     Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 88.0f),
         Raven::UIMouseButton::Left), "table scrollbar track down");
-    CheckNear("table scrollbar page", view->GetScrollOffset(), 24.0f);
+    CheckNear("table scrollbar page", view->GetScrollOffset(), 34.0f);
     context.RouteMouseUp(Raven::math::Vec2(215.0f, 88.0f), Raven::UIMouseButton::Left);
     view->SetScrollOffset(0.0f);
     Check(context.RouteMouseDown(Raven::math::Vec2(215.0f, 52.0f),
         Raven::UIMouseButton::Left), "table scrollbar thumb down");
     Check(context.HasMouseCapture(view), "table scrollbar capture");
     context.RouteMouseMove(Raven::math::Vec2(215.0f, 80.0f));
-    CheckNear("table scrollbar drag", view->GetScrollOffset(), 24.0f);
+    CheckNear("table scrollbar drag", view->GetScrollOffset(), 34.0f);
     context.RouteMouseUp(Raven::math::Vec2(215.0f, 80.0f), Raven::UIMouseButton::Left);
     Check(context.HasMouseCapture(view) == false, "table scrollbar release");
     view->Clear();
@@ -504,18 +505,19 @@ void TestTable()
     Check(view->AddRow({ "Wide cell", "Value" }), "table horizontal first row");
     Check(view->AddRow({ "Another", "Value" }), "table horizontal second row");
     Check(view->IsHorizontalScrollBarVisible(), "table horizontal scrollbar visible");
-    CheckNear("table horizontal max", view->GetMaxHorizontalOffset(), 160.0f);
+    // 横ScrollbarでBodyが縮んで縦Scrollbarも現れ、横の実表示幅は190pxになります。
+    CheckNear("table horizontal max", view->GetMaxHorizontalOffset(), 170.0f);
     view->SetHorizontalOffset(1000.0f);
-    CheckNear("table horizontal clamp", view->GetHorizontalOffset(), 160.0f);
+    CheckNear("table horizontal clamp", view->GetHorizontalOffset(), 170.0f);
     view->SetHorizontalOffset(0.0f);
     Check(context.RouteMouseScroll(Raven::math::Vec2(30.0f, 60.0f),
         Raven::math::Vec2(-1.0f, 0.0f)), "table horizontal wheel");
     CheckNear("table horizontal wheel offset", view->GetHorizontalOffset(), 48.0f);
     view->SetHorizontalOffset(0.0f);
-    Check(context.RouteMouseDown(Raven::math::Vec2(210.0f, 91.0f),
+    Check(context.RouteMouseDown(Raven::math::Vec2(180.0f, 91.0f),
         Raven::UIMouseButton::Left), "table horizontal track click");
-    CheckNear("table horizontal track page", view->GetHorizontalOffset(), 160.0f);
-    context.RouteMouseUp(Raven::math::Vec2(210.0f, 91.0f), Raven::UIMouseButton::Left);
+    CheckNear("table horizontal track page", view->GetHorizontalOffset(), 170.0f);
+    context.RouteMouseUp(Raven::math::Vec2(180.0f, 91.0f), Raven::UIMouseButton::Left);
     view->SetHorizontalOffset(0.0f);
     Check(context.RouteMouseDown(Raven::math::Vec2(40.0f, 91.0f),
         Raven::UIMouseButton::Left), "table horizontal thumb down");

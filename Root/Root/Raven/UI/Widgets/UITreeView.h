@@ -1,8 +1,9 @@
-#pragma once
+﻿#pragma once
 
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/UI/Text/UITextLayout.h"
 #include "Raven/UI/Widgets/UIScrollBarMetrics.h"
 
 #include <algorithm>

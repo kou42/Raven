@@ -63,6 +63,7 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="RavenUITest.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -185,12 +186,8 @@
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.vert" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.frag" />
   </ItemGroup>
-  <Target Name="CompileVulkanSceneShaders"
-          BeforeTargets="ClCompile"
-          Inputs="@(VulkanSceneShader)"
-          Outputs="@(VulkanSceneShader->'%(FullPath).spv')">
-    <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')"
-           Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
+  <Target Name="CompileVulkanSceneShaders" BeforeTargets="ClCompile" Inputs="@(VulkanSceneShader)" Outputs="@(VulkanSceneShader->'%(FullPath).spv')">
+    <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')" Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
     <Exec Command="&quot;$(VULKAN_SDK)\Bin\glslc.exe&quot; &quot;%(VulkanSceneShader.FullPath)&quot; -o &quot;%(VulkanSceneShader.FullPath).spv&quot;" />
   </Target>
 </Project>
