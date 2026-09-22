@@ -1004,6 +1004,43 @@ void TestDockSpace()
         "dockspace split cannot host pane");
 }
 
+void TestDockTabWindowExtraction()
+{
+    Raven::UIContext context;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    context.GetRootElement().AddChild(std::move(dock));
+    const std::uint64_t leafId = dockPtr->GetLayout().GetRoot()->GetId();
+    Check(dockPtr->CreateTabView(leafId) != nullptr,
+        "window extraction creates dock tab view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = page.get();
+    Check(dockPtr->AddTab(leafId, 1001u, "Inspector", std::move(page), false),
+        "window extraction adds nonclosable tab");
+
+    Raven::UITabItem metadata;
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    Check(dockPtr->ExtractTabForWindow(leafId, 1001u, metadata) == nullptr,
+        "window extraction rejects active frame");
+    context.EndFrame();
+    Check(dockPtr->ExtractTabForWindow(leafId, 9999u, metadata) == nullptr,
+        "window extraction rejects unknown tab");
+    Raven::Scope<Raven::UIElement> extracted =
+        dockPtr->ExtractTabForWindow(leafId, 1001u, metadata);
+    Check(extracted.get() == original, "window extraction retains page identity");
+    Check(extracted->GetContext() == nullptr && extracted->GetParent() == nullptr,
+        "window extraction detaches page from source context");
+    Check(metadata.Id == 1001u && metadata.Title == "Inspector" &&
+        metadata.Closable == false, "window extraction retains tab metadata");
+    Check(dockPtr->GetTabView(leafId)->GetModel().FindTab(1001u) == nullptr &&
+        dockPtr->GetLayout().FindNode(leafId)->GetTabs()->FindTab(1001u) == nullptr,
+        "window extraction synchronizes view and logical model");
+    Check(dockPtr->AddTab(leafId, metadata.Id, metadata.Title,
+        std::move(extracted), metadata.Closable), "window extraction can restore tab");
+    Check(dockPtr->GetTabView(leafId)->GetTabContent(1001u) == original,
+        "window extraction restore retains page identity");
+}
+
 // Phase 9-1: Docking論理Treeの所有権・安定ID・不正Split拒否を検証します。
 void TestDockLayout()
 {
@@ -2211,6 +2248,7 @@ int main()
     TestTextureDeviceUnavailableDiagnostic();
     TestDockLayout();
     TestDockSpace();
+    TestDockTabWindowExtraction();
     TestDockTabView();
     TestDockTabTransfer();
     TestDockCollapse();
