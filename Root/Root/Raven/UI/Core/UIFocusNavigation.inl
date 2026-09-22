@@ -118,6 +118,12 @@ inline bool UIContext::MoveFocus(bool reverse)
 
 inline bool UIContext::RouteKeyEvent(const UIKeyEvent& event)
 {
+    if (event.Pressed == true && event.Key == UIKey::Escape && m_DragSource != nullptr)
+    {
+        CancelDrag();
+        UpdatePressedTarget(nullptr);
+        return true;
+    }
     if (event.Pressed == true && event.Key == UIKey::Escape && m_OpenPopup != nullptr)
     {
         ClosePopup();
