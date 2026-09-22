@@ -1,5 +1,7 @@
 #include "Raven/UI/Widgets/UITabBar.h"
 
+#include "Raven/UI/Core/UIContext.h"
+
 #include "Raven/UI/Text/UITextLayout.h"
 
 #include <algorithm>
