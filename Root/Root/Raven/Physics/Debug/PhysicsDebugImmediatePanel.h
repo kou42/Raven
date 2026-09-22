@@ -65,6 +65,10 @@ inline bool DrawPhysicsDebugImmediatePanel(
     }
     changed = immediate.SliderFloat("normal-length",
         &settings.ContactNormalLength, 0.0f, 2.0f, math::Vec2(280.0f, 24.0f)) || changed;
+    if (normalLabel != nullptr)
+    {
+        normalLabel->SetText(formatValue("Normal Length", settings.ContactNormalLength, 2));
+    }
     UILabel* radiusLabel = immediate.Text("point-radius-label",
         formatValue("Point Radius", settings.ContactPointRadius, 3), font);
     if (radiusLabel != nullptr)
@@ -73,6 +77,10 @@ inline bool DrawPhysicsDebugImmediatePanel(
     }
     changed = immediate.SliderFloat("point-radius",
         &settings.ContactPointRadius, 0.0f, 0.2f, math::Vec2(280.0f, 24.0f)) || changed;
+    if (radiusLabel != nullptr)
+    {
+        radiusLabel->SetText(formatValue("Point Radius", settings.ContactPointRadius, 3));
+    }
 
     // EndContainerの失敗は呼び出し側のFrame不均衡を示します。
     return immediate.EndContainer() == true && changed;
