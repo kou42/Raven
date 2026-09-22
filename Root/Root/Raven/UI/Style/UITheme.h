@@ -24,6 +24,21 @@ struct UISliderStyle
     math::Vec4 FocusedThumbColor{ 0.48f, 0.72f, 1.0f, 1.0f };
 };
 
+struct UIInputTextStyle
+{
+    math::Vec4 BackgroundColor{ 0.13f, 0.13f, 0.16f, 1.0f };
+    math::Vec4 FocusedBackgroundColor{ 0.18f, 0.22f, 0.30f, 1.0f };
+    math::Vec4 SelectionColor{ 0.24f, 0.40f, 0.68f, 0.75f };
+    math::Vec4 IMESelectionColor{ 0.34f, 0.44f, 0.62f, 0.65f };
+    math::Vec4 TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
+struct UIScrollBarStyle
+{
+    math::Vec4 TrackColor{ 0.06f, 0.07f, 0.09f, 0.75f };
+    math::Vec4 ThumbColor{ 0.42f, 0.45f, 0.52f, 0.95f };
+};
+
 struct UIPanelStyle
 {
     math::Vec4 BackgroundColor{ 1.0f, 1.0f, 1.0f, 1.0f };
@@ -36,6 +51,8 @@ struct UITheme
     UIButtonStyle Button;
     UIPanelStyle Panel;
     UISliderStyle Slider;
+    UIInputTextStyle InputText;
+    UIScrollBarStyle ScrollBar;
 
     static UITheme CreateDefaultDark()
     {
@@ -55,6 +72,13 @@ struct UITheme
         theme.Slider.HoveredThumbColor = math::Vec4(0.23f, 0.32f, 0.46f, 1.0f);
         theme.Slider.ActiveThumbColor = math::Vec4(0.14f, 0.26f, 0.45f, 1.0f);
         theme.Slider.FocusedThumbColor = math::Vec4(0.15f, 0.42f, 0.77f, 1.0f);
+        theme.InputText.BackgroundColor = math::Vec4(0.96f, 0.96f, 0.97f, 1.0f);
+        theme.InputText.FocusedBackgroundColor = math::Vec4(0.88f, 0.92f, 0.99f, 1.0f);
+        theme.InputText.SelectionColor = math::Vec4(0.37f, 0.57f, 0.88f, 0.60f);
+        theme.InputText.IMESelectionColor = math::Vec4(0.42f, 0.55f, 0.74f, 0.55f);
+        theme.InputText.TextColor = math::Vec4(0.10f, 0.13f, 0.18f, 1.0f);
+        theme.ScrollBar.TrackColor = math::Vec4(0.85f, 0.86f, 0.89f, 0.90f);
+        theme.ScrollBar.ThumbColor = math::Vec4(0.49f, 0.53f, 0.61f, 0.95f);
         theme.Panel.BackgroundColor = math::Vec4(0.96f, 0.96f, 0.97f, 1.0f);
         return theme;
     }
