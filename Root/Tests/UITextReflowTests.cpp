@@ -11,6 +11,7 @@
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
 #include "Raven/UI/Docking/UIDockLayout.h"
+#include "Raven/UI/Docking/UIDockGeometry.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -95,6 +96,37 @@ void TestDockLayout()
     Check(layout.Split(right->GetId(), Raven::UIDockSplitAxis::Horizontal, 1.0f) == nullptr,
         "dock endpoint rejected");
     Check(layout.FindNode(999999u) == nullptr, "dock missing node");
+    // 既存Leafは入れ子SplitのSecond側にあり、再配置してもIDは変わりません。
+    const Raven::UIDockRect viewport{ 10.0f, 20.0f, 400.0f, 300.0f };
+    auto placements = Raven::UIDockGeometry::Calculate(layout, viewport);
+    Check(placements.size() == 5u, "dock nested placement count");
+    Check(placements[0u].NodeId == layout.GetRoot()->GetId(), "dock root placement");
+    CheckNear("dock root splitter x", placements[0u].Splitter.X, 10.0f + 395.0f * 0.7f);
+    CheckNear("dock root splitter width", placements[0u].Splitter.Width, 5.0f);
+    CheckNear("dock right pane x", placements[4u].Bounds.X, 10.0f + 395.0f * 0.7f + 5.0f);
+    CheckNear("dock right pane width", placements[4u].Bounds.Width, 395.0f * 0.3f);
+    Check(Raven::UIDockGeometry::Resize(*layout.GetRoot(), viewport, 39.5f),
+        "dock resize horizontal");
+    CheckNear("dock resize ratio", layout.GetRoot()->GetSplitRatio(), 0.8f);
+    Check(Raven::UIDockGeometry::Resize(*layout.GetRoot(), viewport, 10000.0f),
+        "dock resize clamp");
+    CheckNear("dock resize minimum pane", layout.GetRoot()->GetSplitRatio(),
+        1.0f - 32.0f / 395.0f);
+    Check(Raven::UIDockGeometry::Resize(*layout.GetRoot(),
+        Raven::UIDockRect{ 0.0f, 0.0f, 30.0f, 20.0f }, 1.0f) == false,
+        "dock resize insufficient extent");
+    Check(Raven::UIDockGeometry::Calculate(layout,
+        Raven::UIDockRect{ 0.0f, 0.0f, -1.0f, 20.0f }).empty(),
+        "dock negative viewport rejected");
+    const auto tiny = Raven::UIDockGeometry::Calculate(layout,
+        Raven::UIDockRect{ 0.0f, 0.0f, 2.0f, 2.0f });
+    Check(tiny.size() == 5u, "dock tiny viewport traversal");
+    for (const auto& placement : tiny)
+    {
+        Check(placement.Bounds.Width >= 0.0f && placement.Bounds.Height >= 0.0f,
+            "dock tiny viewport nonnegative");
+    }
+
 }
 
 void TestTextEditBuffer()
