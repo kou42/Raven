@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
+#include "Raven/UI/Text/UITextLayout.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UILabel.h"
@@ -75,6 +76,36 @@ void Check(bool condition, const char* label)
         std::cerr << label << ": failed\n";
         std::exit(EXIT_FAILURE);
     }
+}
+
+void TestDPIGlyphScale()
+{
+    Raven::UIContext context;
+    auto label = std::make_unique<Raven::UILabel>();
+    label->SetScaleGlyphsWithDPI(true);
+    Raven::UILabel* ptr = label.get();
+    context.GetRootElement().AddChild(std::move(label));
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+    Check(ptr->IsMeasureDirty() == false, "glyph scale clean after frame");
+    context.SetDPIScale(1.5f, 2.0f);
+    Check(ptr->IsMeasureDirty(), "glyph scale dpi invalidates measure");
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+    Check(ptr->IsMeasureDirty() == false, "glyph scale remeasured");
+    context.SetUserScale(1.25f);
+    Check(ptr->IsMeasureDirty(), "glyph scale user scale invalidates measure");
+    ptr->SetScaleGlyphsWithDPI(false);
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(ptr->IsMeasureDirty() == false, "legacy glyph scale unaffected");
+
+    Raven::UIFontAtlas atlas;
+    Raven::UITextLayoutOptions options{};
+    options.GlyphScale = Raven::math::Vec2(0.0f, 1.0f);
+    Check(Raven::UITextLayout::Build(atlas, "A", options).Metrics.LineCount == 0u,
+        "invalid glyph scale rejected");
 }
 
 void TestDPILabelTypographyMetrics()
@@ -1884,6 +1915,7 @@ int main()
     TestDPISizeConstraints();
     TestDPIAbsolutePosition();
     TestDPILabelTypographyMetrics();
+    TestDPIGlyphScale();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
