@@ -487,6 +487,26 @@ void TestWindowFramebufferMetrics()
     CheckNear("main dpi isolated", context.GetDPIScaleX(), 1.0f);
     CheckNear("main viewport isolated", context.GetViewportSize().x, 640.0f);
     CheckNear("main framebuffer isolated", spy->LastFramebuffer.x, 640.0f);
+
+    // Root直下Widgetの所有権を補助Windowへ移し、同一ObjectをMainへ戻せます。
+    auto movable = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* widget = movable.get();
+    Check(context.GetRootElement().AddChild(std::move(movable)) == widget,
+        "transfer source child added");
+    Check(context.TransferRootChildTo(auxiliary, widget),
+        "transfer to auxiliary");
+    Check(widget->GetContext() == &auxiliary, "transfer updates context");
+    Check(widget->GetParent() == &auxiliary.GetRootElement(),
+        "transfer updates parent");
+    Check(auxiliary.TransferRootChildTo(context, widget),
+        "transfer back to main");
+    Check(widget->GetContext() == &context, "transfer restores context");
+    Check(context.TransferRootChildTo(context, widget) == false,
+        "transfer rejects same context");
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    Check(context.TransferRootChildTo(auxiliary, widget) == false,
+        "transfer rejects active frame");
+    context.EndFrame();
 }
 
 void TestDPIContextCoordinates()
