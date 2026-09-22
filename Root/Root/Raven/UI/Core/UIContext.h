@@ -101,6 +101,8 @@ public:
     // Payloadは値で保持し、Drag中に呼び出し元の一時データが破棄されても安全です。
     bool BeginDrag(UIElement* source, UIDragDropPayload payload, const math::Vec2& startPosition);
     void CancelDrag();
+    // Pointerが静止していてもDrag先を更新します。テストから時間を指定可能です。
+    void TickDrag(float deltaSeconds);
     // Drag元が任意で設定するPreview文字列。Font未設定時は従来の矩形表示です。
     void SetDragPreview(std::string text, const Ref<UIFontAtlas>& font);
     const std::string& GetDragPreviewText() const { return m_DragPreviewText; }
@@ -146,7 +148,7 @@ private:
     friend class UIElement;
 
     bool IsLiveDragElement(const UIElement* element) const;
-    void UpdateDrag(const math::Vec2& position, UIElement* hitTarget);
+    void UpdateDrag(const math::Vec2& position, UIElement* hitTarget, float deltaSeconds = 0.0f);
     void FinishDrag(const math::Vec2& position, UIElement* hitTarget);
     void SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position);
     void HideTooltip();
@@ -189,6 +191,7 @@ private:
     math::Vec2 m_DragStart{};
     float m_DragThreshold = 5.0f;
     bool m_DragActive = false;
+    std::chrono::steady_clock::time_point m_LastDragTick{};
     std::string m_DragPreviewText;
     Ref<UIFontAtlas> m_DragPreviewFont;
     bool m_FrameActive = false;
