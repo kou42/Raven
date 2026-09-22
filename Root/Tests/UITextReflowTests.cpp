@@ -101,6 +101,74 @@ void TestDPIFontBuildFailureDetails()
         "cache invalid dpi diagnostic");
 }
 
+// Font解析とGlyph配置で失敗する場合はTexture::Createまで進まないため、GPUなしで診断を検証できます。
+void TestDPIFontDataAndCapacityFailure()
+{
+    namespace fs = std::filesystem;
+    const fs::path invalidFont = fs::temp_directory_path() /
+        ("RavenInvalidFont_" + std::to_string(
+            static_cast<std::uint64_t>(std::chrono::steady_clock::now()
+                .time_since_epoch().count())) + ".ttf");
+    {
+        std::ofstream stream(invalidFont, std::ios::binary | std::ios::trunc);
+        Check(stream.is_open(), "invalid font fixture created");
+        stream << "not a TrueType font";
+        Check(stream.good(), "invalid font fixture written");
+    }
+    Raven::UIFontAtlas atlas;
+    Raven::UIFontAtlasBuildOptions options{};
+    Raven::UIFontAtlasBuildFailure failure = Raven::UIFontAtlasBuildFailure::None;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile(invalidFont.string(), { 65u },
+        options, atlas, &failure) == false, "invalid font data rejected");
+    Check(failure == Raven::UIFontAtlasBuildFailure::FontDataInvalid,
+        "invalid font data diagnostic");
+    std::error_code removeError;
+    fs::remove(invalidFont, removeError);
+    Check(removeError.value() == 0, "invalid font fixture removed");
+
+    // CI/開発機のFontを使用し、存在しない環境では明示的にスキップします。
+    // 1x1 AtlasにASCII 'A'を収められないため、GPU Texture生成前に容量不足が確定します。
+    std::string fontPath;
+    const char* configured = std::getenv("RAVEN_UI_TEST_FONT");
+    if (configured != nullptr && configured[0] != '\0')
+    {
+        fontPath = configured;
+    }
+    else
+    {
+        constexpr const char* candidates[] =
+        {
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/meiryo.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf"
+        };
+        for (const char* candidate : candidates)
+        {
+            std::error_code existsError;
+            if (fs::is_regular_file(candidate, existsError) == true)
+            {
+                fontPath = candidate;
+                break;
+            }
+        }
+    }
+    std::error_code existsError;
+    if (fontPath.empty() == true || fs::is_regular_file(fontPath, existsError) == false)
+    {
+        std::cout << "[SKIP] DPI Font capacity test: set RAVEN_UI_TEST_FONT to a valid TTF/TTC path\\n";
+        return;
+    }
+    options.AtlasWidth = 1u;
+    options.AtlasHeight = 1u;
+    options.Padding = 0u;
+    Check(Raven::UIFontAtlasBuilder::BuildFromFile(fontPath, { 65u },
+        options, atlas, &failure) == false, "one-pixel atlas rejects glyph A");
+    Check(failure == Raven::UIFontAtlasBuildFailure::AtlasCapacityExceeded,
+        "atlas capacity diagnostic before GPU creation");
+}
+
 void TestDPIFontBatchRefresh()
 {
     Raven::UIContext context;
@@ -2012,6 +2080,7 @@ int main()
     TestDPIFontAutoRebind();
     TestDPIFontBatchRefresh();
     TestDPIFontBuildFailureDetails();
+    TestDPIFontDataAndCapacityFailure();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
