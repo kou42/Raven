@@ -68,6 +68,60 @@ void Check(bool condition, const char* label)
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
+
+void TestDockStructureSnapshot()
+{
+    Raven::UIDockSpace source;
+    source.SetSize(Raven::math::Vec2(500.0f, 300.0f));
+    const std::uint64_t originalId = source.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = source.Split(originalId,
+        Raven::UIDockSplitAxis::Horizontal, 0.35f);
+    Check(second != nullptr, "dock snapshot split");
+    const std::uint64_t secondId = second->GetId();
+    Raven::UIDockNode* third = source.Split(secondId,
+        Raven::UIDockSplitAxis::Vertical, 0.7f);
+    Check(third != nullptr, "dock snapshot nested split");
+    const auto records = source.GetLayout().SaveStructure();
+    Raven::UIDockSpace restored;
+    restored.SetSize(Raven::math::Vec2(500.0f, 300.0f));
+    Check(restored.RestoreStructure(records), "dock snapshot restore");
+    const auto roundtrip = restored.GetLayout().SaveStructure();
+    Check(roundtrip.size() == records.size(), "dock snapshot count");
+    for (std::size_t i = 0u; i < records.size(); ++i)
+    {
+        Check(roundtrip[i].Id == records[i].Id &&
+            roundtrip[i].Kind == records[i].Kind &&
+            roundtrip[i].Axis == records[i].Axis &&
+            roundtrip[i].Ratio == records[i].Ratio &&
+            roundtrip[i].Depth == records[i].Depth, "dock snapshot preorder identity");
+    }
+    Check(restored.GetSplitter(records[0u].Id) != nullptr,
+        "dock snapshot splitter rebuilt");
+    Check(restored.CreateTabView(originalId) != nullptr,
+        "dock snapshot original pane binding");
+    Check(restored.CreateTabView(secondId) != nullptr,
+        "dock snapshot second pane binding");
+    Check(restored.CreateTabView(third->GetId()) != nullptr,
+        "dock snapshot third pane binding");
+    Check(restored.RestoreStructure(records) == false,
+        "dock snapshot refuses live panes");
+    Raven::UIDockLayout layout;
+    auto invalid = records;
+    invalid[1u].Id = invalid[0u].Id;
+    const auto before = layout.SaveStructure();
+    Check(layout.RestoreStructure(invalid) == false, "dock snapshot duplicate rejected");
+    Check(layout.SaveStructure()[0u].Id == before[0u].Id,
+        "dock snapshot failure atomic");
+    invalid = records;
+    invalid[0u].Ratio = 0.0f;
+    Check(layout.RestoreStructure(invalid) == false, "dock snapshot ratio rejected");
+    Check(layout.RestoreStructure(records), "dock snapshot layout restored");
+    Check(layout.FindNode(third->GetId()) != nullptr,
+        "dock snapshot leaf ids preserved");
+    Check(layout.Split(third->GetId(), Raven::UIDockSplitAxis::Horizontal) != nullptr,
+        "dock snapshot next id valid");
+}
+
 // 空Paneを畳んだときSiblingのID/Contentと祖先の配置を保持します。
 void TestDockCollapse()
 {
@@ -1411,5 +1465,6 @@ int main()
     TestDockTabView();
     TestDockTabTransfer();
     TestDockCollapse();
+    TestDockStructureSnapshot();
     return 0;
 }
