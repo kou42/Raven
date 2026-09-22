@@ -76,6 +76,43 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPILayoutMetrics()
+{
+    Raven::UIContext context;
+    auto container = std::make_unique<Raven::UIElement>();
+    container->SetLayoutMode(Raven::UILayoutMode::Vertical);
+    container->SetPaddingDIP(Raven::UIThickness(4.0f));
+    container->SetSpacingDIP(3.0f);
+    auto child = std::make_unique<Raven::UIElement>();
+    child->SetPreferredSizeDIP(Raven::math::Vec2(80.0f, 20.0f));
+    child->SetMarginDIP(Raven::UIThickness(2.0f));
+    Raven::UIElement* childPtr = child.get();
+    container->AddChild(std::move(child));
+    Raven::UIElement* containerPtr = context.GetRootElement().AddChild(std::move(container));
+    context.SetDPIScale(1.5f, 2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("dpi preferred width", childPtr->GetPreferredSize().x, 120.0f);
+    CheckNear("dpi preferred height", childPtr->GetPreferredSize().y, 40.0f);
+    CheckNear("dpi padding x", containerPtr->GetPadding().Left, 6.0f);
+    CheckNear("dpi padding y", containerPtr->GetPadding().Top, 8.0f);
+    CheckNear("dpi margin x", childPtr->GetMargin().Left, 3.0f);
+    CheckNear("dpi margin y", childPtr->GetMargin().Top, 4.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("user scaled width", childPtr->GetPreferredSize().x, 150.0f);
+    CheckNear("user scaled height", childPtr->GetPreferredSize().y, 50.0f);
+    // 同じDPI通知ではLayoutを再度Dirtyにしません。
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    context.SetDPIScale(1.5f, 2.0f);
+    Check(childPtr->IsMeasureDirty() == false, "unchanged dpi does not invalidate");
+    // 従来のWindow座標setterでDIP指定を明示的に解除できます。
+    childPtr->SetPreferredSize(Raven::math::Vec2(33.0f, 11.0f));
+    context.SetDPIScale(2.0f, 2.0f);
+    CheckNear("legacy size after dpi", childPtr->GetPreferredSize().x, 33.0f);
+    CheckNear("legacy size after dpi y", childPtr->GetPreferredSize().y, 11.0f);
+}
+
 void TestDPIContextCoordinates()
 {
     Raven::UIContext context;
@@ -1748,6 +1785,7 @@ int main()
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     TestUITheme();
     TestDPIContextCoordinates();
+    TestDPILayoutMetrics();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
