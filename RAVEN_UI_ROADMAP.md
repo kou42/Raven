@@ -35,7 +35,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 6 | Window System | OS Window基盤は実装・動作確認済み（PR #247）。独自UIの論理Windowは未着手 | 論理UI Windowの移動・Resize・Focus・Z順 |
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
-| 9 | Docking System | 実装中（Text Demoの起動時復元・終了時保存、追加分ビルド未検証） | Split / Tab / Dock preview / Layout保存復元 |
+| 9 | Docking System | 実装中（Dock Layout保存の旧版保護・Backup復旧、追加分ビルド未検証） | Split / Tab / Dock preview / Layout保存復元 |
 | 10 | Theme / Style | 未着手 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
 | 12 | Multi-Viewport | OS Window / OpenGL Context・補助Window描画の基盤は実装・動作確認済み（PR #247）。UI接続は未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
@@ -74,7 +74,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] UIElementから独立したUIDockLayout / UIDockNodeを追加。Tabs Leaf / 二分Split、安定ID、親参照、分割比率、既存Leafの所有権移動を実装。
 - [x] RavenUITestに入れ子Split、Tab選択維持、不正比率・非Leaf・未知ID拒否の回帰テストを追加。
 - [ ] Windowsビルド・RavenUITest実行（現時点ではGitHub上のコード確認のみ）。
-- [x] UIDockGeometryで入れ子Splitの矩形配置、Splitter矩形、最小Pane幅、Drag差分からの比率更新を実装。狭いViewportでは負寸法を防ぐ。回帰テストを追加。\n- [x] UIDockSpaceでLeafにPaneを対応付け、SplitにUISplitterを生成。マウスDrag差分をUIDockGeometry::Resizeへ接続し、配置を更新。回帰テスト追加。\n- [x] UIDockSpaceにUITabView生成・Tab追加/選択/Close/並び替えの同期経路を追加。回帰テスト追加。\n- [x] UITextDemoLayerに左右・上下Split、3 Pane、Tab切替を確認するDocking Demoを追加。OnDetachでRootから安全に削除。\n- [x] ユーザーからDocking Demoの実環境動作問題なしとの報告を受ける。\n- [x] UITabView::ExtractTabでContentを破棄せず移動、UIDockSpaceで別Paneへ移動しDrop Previewを表示。Content同一性の回帰テスト追加。\n- [x] 空Tab Leafの削除、親Splitの解消、Siblingの昇格、不要Widgetの解放を追加。入れ子Treeの回帰テスト追加。\n- [x] Dock TreeのPreorder幾何Snapshotを保存・検証付き復元。空DockSpaceへの復元とSplitter再生成、回帰テストを追加。\n- [x] DockSpace SnapshotにTab順序・タイトル・Closable・選択状態を追加。FactoryでContentを再生成し、事前検証失敗時は元Treeを保持。\n- [x] Raven CoreのJsonParser/Writerを再利用したSnapshot JSON/ファイル入出力、version検証、64bit ID文字列保存、破損JSONの無変更保証。\n- [x] Text Demoで起動時にJSON復元、終了時にJSON保存。RAVEN_UI_DOCK_LAYOUT環境変数で保存先指定、初回/不正ファイルは3 Pane構成にフォールバック。\n- [ ] Windowsビルド・RavenUITest・再起動後のSplit/Tab状態確認、正式Editorへの導入、Factory成功後の内部失敗ロールバック。
+- [x] UIDockGeometryで入れ子Splitの矩形配置、Splitter矩形、最小Pane幅、Drag差分からの比率更新を実装。狭いViewportでは負寸法を防ぐ。回帰テストを追加。\n- [x] UIDockSpaceでLeafにPaneを対応付け、SplitにUISplitterを生成。マウスDrag差分をUIDockGeometry::Resizeへ接続し、配置を更新。回帰テスト追加。\n- [x] UIDockSpaceにUITabView生成・Tab追加/選択/Close/並び替えの同期経路を追加。回帰テスト追加。\n- [x] UITextDemoLayerに左右・上下Split、3 Pane、Tab切替を確認するDocking Demoを追加。OnDetachでRootから安全に削除。\n- [x] ユーザーからDocking Demoの実環境動作問題なしとの報告を受ける。\n- [x] UITabView::ExtractTabでContentを破棄せず移動、UIDockSpaceで別Paneへ移動しDrop Previewを表示。Content同一性の回帰テスト追加。\n- [x] 空Tab Leafの削除、親Splitの解消、Siblingの昇格、不要Widgetの解放を追加。入れ子Treeの回帰テスト追加。\n- [x] Dock TreeのPreorder幾何Snapshotを保存・検証付き復元。空DockSpaceへの復元とSplitter再生成、回帰テストを追加。\n- [x] DockSpace SnapshotにTab順序・タイトル・Closable・選択状態を追加。FactoryでContentを再生成し、事前検証失敗時は元Treeを保持。\n- [x] Raven CoreのJsonParser/Writerを再利用したSnapshot JSON/ファイル入出力、version検証、64bit ID文字列保存、破損JSONの無変更保証。\n- [x] Text Demoで起動時にJSON復元、終了時にJSON保存。RAVEN_UI_DOCK_LAYOUT環境変数で保存先指定、初回/不正ファイルは3 Pane構成にフォールバック。\n- [x] 一時ファイルへ全量書込後に旧版を.bakへ退避し置換。置換失敗時の旧版復帰、主ファイル欠落時のBackup読込、8 MiB読込上限とファイル回帰テスト。\n- [ ] Windowsビルド・RavenUITest・再起動後のSplit/Tab状態確認、正式Editorへの導入、Factory成功後の内部失敗ロールバック。
 
 ## Phase 1: 実装分割
 
