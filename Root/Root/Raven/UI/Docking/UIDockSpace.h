@@ -41,6 +41,8 @@ public:
     // Tree変更後は本API経由でWidgetを生成・再配置します。
     UIDockNode* Split(std::uint64_t leafId, UIDockSplitAxis axis,
         float ratio = 0.5f, bool newLeafFirst = false);
+    // Tabが空のLeafだけを閉じ、Siblingを昇格させます。Rootは閉じません。
+    bool CloseEmptyPane(std::uint64_t leafId);
     void RefreshLayout();
     void SetSplitterThickness(float value);
     void SetMinimumPaneExtent(float value);
