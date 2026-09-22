@@ -753,8 +753,12 @@ protected:
                 {
                     // Before/Afterは行全体ではなく境界線で挿入位置を示します。
                     const float lineY = m_DropPlacement == DropPlacement::Before ? y : y + m_RowHeight;
-                    drawList.AddRect(math::Vec2(absolutePosition.x, lineY - 1.5f),
-                        math::Vec2(right, lineY + 1.5f),
+                    // Viewport境界に一致する線はClipで完全に消えるため、内側へ寄せます。
+                    const float indicatorY = std::clamp(lineY,
+                        absolutePosition.y + 1.5f,
+                        absolutePosition.y + GetSize().y - 1.5f);
+                    drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
+                        math::Vec2(right, indicatorY + 1.5f),
                         ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
                 }
             }
@@ -775,10 +779,14 @@ protected:
             // 空白へのDropはRoot末尾への挿入線で表し、ChildへのDropと区別します。
             const float lineY = absolutePosition.y +
                 static_cast<float>(visible.size()) * m_RowHeight - GetScrollOffset();
+            // 空Treeの先頭・Scroll末尾とも線の全幅がViewport内に残るよう補正します。
+            const float indicatorY = std::clamp(lineY,
+                absolutePosition.y + 1.5f,
+                absolutePosition.y + GetSize().y - 1.5f);
             const float right = absolutePosition.x + GetSize().x -
                 (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
-            drawList.AddRect(math::Vec2(absolutePosition.x, lineY - 1.5f),
-                math::Vec2(right, lineY + 1.5f),
+            drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
+                math::Vec2(right, indicatorY + 1.5f),
                 ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
         }
         if (IsScrollBarVisible() == true)
