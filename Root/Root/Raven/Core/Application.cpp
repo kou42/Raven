@@ -758,8 +758,12 @@ void Application::FlushPendingUIDetaches()
                     std::clamp(request.MainLocalDropPosition.y - 14.0f,
                         0.0f, std::max(0.0f, viewport.y - 28.0f))));
                 BindUIWindowViewportTransfer(m_MainWindowID, *request.Child);
-                // 空になった補助Windowは既存の遅延Close経路で安全に破棄します。
-                m_WindowManager.RequestWindowClose(request.SourceID);
+                // 他のRoot Childが残る補助Windowは閉じず、残ったUIの所有権を維持します。
+                // CloseCleanupが残りのChildをMainへ移動してしまう副作用も避けます。
+                if (source->GetRootElement().GetChildren().empty() == true)
+                {
+                    m_WindowManager.RequestWindowClose(request.SourceID);
+                }
             }
             break;
         }
@@ -1225,7 +1229,21 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
     // 補助Windowの入力はMain WindowのLayer/UIContextへ転送しません。
     if (event.GetEventType() == EventType::WindowFocusLost)
     {
-        ui->CancelMouseCapture();
+        // 補助Window間のドラッグでは、Focus喪失がMouse Upより先に届く場合があります。
+        // 左ボタンが押されている論理Window操作だけCaptureを保持し、
+        // ボタン解放はCompleteReleasedUIWindowDragsで補完します。
+        UIWindow* capturedWindow = dynamic_cast<UIWindow*>(ui->GetMouseCaptureElement());
+        Window* sourceWindow = m_WindowManager.GetWindow(id);
+        GLFWwindow* native = sourceWindow != nullptr
+            ? static_cast<GLFWwindow*>(sourceWindow->GetNativeWindow()) : nullptr;
+        const bool keepWindowDrag = capturedWindow != nullptr &&
+            (capturedWindow->IsMoving() == true || capturedWindow->IsResizing() == true) &&
+            native != nullptr &&
+            glfwGetMouseButton(native, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (keepWindowDrag == false)
+        {
+            ui->CancelMouseCapture();
+        }
         ui->ClearFocus();
     }
     else if (event.GetEventType() == EventType::IMEComposition)
