@@ -85,6 +85,15 @@ void OpenGLTexture::SetData(const void* data, std::size_t dataSize)
     m_RHITexture->SetData(data, dataSize);
 }
 
+bool OpenGLTexture::TrySetData(const void* data, std::size_t dataSize)
+{
+    if (m_RHITexture == nullptr)
+    {
+        return false;
+    }
+    return m_RHITexture->TrySetData(data, dataSize);
+}
+
 void OpenGLTexture::Bind(unsigned int slot) const
 {
     const auto openGLTexture = std::dynamic_pointer_cast<OpenGLRHITexture>(m_RHITexture);
