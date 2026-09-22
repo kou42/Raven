@@ -141,6 +141,8 @@ struct UIDragDropEvent
     const UIDragDropPayload* Payload = nullptr;
     UIElement* Source = nullptr;
     math::Vec2 ScreenPosition{};
+    // フレーム更新時の経過秒数。通常のMouse Moveでは0です。
+    float DeltaSeconds = 0.0f;
     // Enter/Overでtrueを返したWidgetだけをDrop対象にします。
     bool Accepted = false;
 };
