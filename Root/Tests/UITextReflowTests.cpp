@@ -68,6 +68,41 @@ void Check(bool condition, const char* label)
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
+// DockSpace経由とView上の操作の両方で論理Tab状態を同期します。
+void TestDockTabView()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(500.0f, 300.0f));
+    const std::uint64_t leafId = dock.GetLayout().GetRoot()->GetId();
+    Raven::UITabView* view = dock.CreateTabView(leafId);
+    Check(view != nullptr, "dock tabview create");
+    Check(dock.GetPane(leafId) == view, "dock tabview pane");
+    Check(dock.CreateTabView(leafId) == nullptr, "dock duplicate tabview");
+    Check(dock.AddTab(leafId, 11u, "Scene", std::make_unique<Raven::UIElement>()),
+        "dock add scene");
+    Check(dock.AddTab(leafId, 12u, "Console", std::make_unique<Raven::UIElement>()),
+        "dock add console");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetTabCount() == 2u,
+        "dock model tab count");
+    Check(dock.SelectTab(leafId, 12u), "dock select console");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetSelectedTabId() == 12u,
+        "dock model selection synced");
+    Check(dock.MoveTab(leafId, 12u, 0u), "dock reorder");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetTabs()[0u].Id == 12u,
+        "dock model order synced");
+    Check(view->CloseTab(12u), "dock view close callback");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetTabCount() == 1u,
+        "dock model close synced");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetSelectedTabId() == 11u,
+        "dock model fallback selection");
+    Check(dock.CloseTab(leafId, 11u), "dock close last");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetSelectedTabId() == 0u,
+        "dock empty selection");
+    Check(dock.AddTab(leafId, 13u, "Inspector",
+        std::make_unique<Raven::UIElement>(), false), "dock nonclosable tab");
+    Check(dock.CloseTab(leafId, 13u) == false, "dock nonclosable respected");
+}
+
 // Phase 9-3: Dockingの配置をUIElement/UISplitterへ反映する経路を検証します。
 void TestDockSpace()
 {
@@ -1290,5 +1325,6 @@ int main()
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     TestDockLayout();
     TestDockSpace();
+    TestDockTabView();
     return 0;
 }
