@@ -160,6 +160,12 @@ public:
         const Ref<UIFontAtlas>& font,
         const math::Vec2& size = math::Vec2(120.0f, 28.0f))
     {
+        // 同一Frameでの二重宣言は既存Widgetのラベルも書き換えません。
+        if (m_FrameActive == false || id.empty() ||
+            m_Used.find(MakeKey(id)) != m_Used.end())
+        {
+            return false;
+        }
         const bool clicked = Button(id, size);
         const auto found = m_Widgets.find(MakeKey(id));
         if (found == m_Widgets.end() || m_Used.find(found->first) == m_Used.end() ||
