@@ -2,6 +2,7 @@
 
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/UI/Text/UIFontAtlasBuilder.h"
 #include "Raven/UI/Text/UITextLayout.h"
 
 #include <string>
@@ -18,6 +19,12 @@ public:
     // DPI用に再RasterizeしたAtlasを指定し、表示倍率との差分だけQuadを補正します。
     void SetFontDPI(const Ref<UIFontAtlas>& font, float rasterScale);
     const Ref<UIFontAtlas>& GetFont() const;
+    // GPU生成は明示Refresh時だけ実施。DPI通知ではCache済みAtlasを自動切替します。
+    void BindDPIFontCache(const Ref<UIFontAtlasDPICache>& cache,
+        std::string fontPath, std::vector<std::uint32_t> codepoints,
+        const UIFontAtlasBuildOptions& options);
+    bool RefreshDPIFont(); // 有効なGPU Context上で呼び出してください。
+    bool IsDPIFontPending() const { return m_DPIFontPending; }
 
     void SetText(std::string text);
     const std::string& GetText() const;
@@ -52,6 +59,7 @@ protected:
 private:
     math::Vec2 MeasureText(float maxWidth) const;
     void RefreshDIPTypography();
+    void SwitchCachedDPIFont(float effectiveScale);
 
     Ref<UIFontAtlas> m_Font;
     std::string m_Text;
@@ -65,6 +73,11 @@ private:
     bool m_UseLineHeightDIP = false;
     bool m_ScaleGlyphsWithDPI = false;
     float m_FontRasterScale = 1.0f;
+    Ref<UIFontAtlasDPICache> m_DPIFontCache;
+    std::string m_DPIFontPath;
+    std::vector<std::uint32_t> m_DPIFontCodepoints;
+    UIFontAtlasBuildOptions m_DPIFontOptions{};
+    bool m_DPIFontPending = false;
     UITextWrapMode m_WrapMode = UITextWrapMode::None;
     UITextHorizontalAlignment m_TextAlignment = UITextHorizontalAlignment::Left;
 };
