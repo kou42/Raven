@@ -193,6 +193,9 @@ public:
     // 同一Tree内のNodeをDrop先Nodeの子へ移動します。初期状態では既存Tree操作に影響しません。
     void SetNodeDragDropEnabled(bool value) { m_NodeDragDropEnabled = value; }
     bool IsNodeDragDropEnabled() const { return m_NodeDragDropEnabled; }
+    // 別TreeView間の所有権移動は明示的に許可した受入側でのみ有効にします。
+    void SetExternalNodeDropEnabled(bool value) { m_ExternalNodeDropEnabled = value; }
+    bool IsExternalNodeDropEnabled() const { return m_ExternalNodeDropEnabled; }
     void SetOnNodeDropped(NodeDroppedHandler handler) { m_OnNodeDropped = std::move(handler); }
     void SetOnNodePlaced(NodePlacedHandler handler) { m_OnNodePlaced = std::move(handler); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; }
@@ -354,18 +357,36 @@ protected:
             return false;
         }
         if (m_NodeDragDropEnabled == false || event.Payload == nullptr ||
-            event.Payload->Type != "Raven/UITreeNode" || event.Source != this)
+            event.Payload->Type != "Raven/UITreeNode")
         {
             return false;
         }
-        // Dataを数値変換せず既存IDと照合し、不正なPayloadでも例外を発生させません。
-        UITreeNode* source = nullptr;
-        for (const auto& entry : VisibleNodes())
+        UITreeView* sourceView = dynamic_cast<UITreeView*>(event.Source);
+        if (sourceView == nullptr || sourceView->m_NodeDragDropEnabled == false ||
+            (sourceView != this && m_ExternalNodeDropEnabled == false))
         {
-            if (std::to_string(entry.first->Id) == event.Payload->Data)
+            return false;
+        }
+        // Source所属の全Nodeを調べるため、折りたたみ中のNodeも識別できます。
+        // IDは数値変換せず照合し、外部からの不正なPayloadで例外を発生させません。
+        UITreeNode* source = nullptr;
+        std::vector<UITreeNode*> pending;
+        for (const auto& root : sourceView->m_Roots)
+        {
+            pending.push_back(root.get());
+        }
+        while (pending.empty() == false)
+        {
+            UITreeNode* candidate = pending.back();
+            pending.pop_back();
+            if (std::to_string(candidate->Id) == event.Payload->Data)
             {
-                source = entry.first;
+                source = candidate;
                 break;
+            }
+            for (const auto& child : candidate->Children)
+            {
+                pending.push_back(child.get());
             }
         }
         UITreeNode* target = NodeAt(event.ScreenPosition);
@@ -395,6 +416,24 @@ protected:
         {
             return false;
         }
+        if (sourceView != this)
+        {
+            // 移動するSubtree全体のIDを検査し、受入先のFindNode一意性を維持します。
+            std::vector<const UITreeNode*> subtree{ source };
+            while (subtree.empty() == false)
+            {
+                const UITreeNode* candidate = subtree.back();
+                subtree.pop_back();
+                if (FindNode(candidate->Id) != nullptr)
+                {
+                    return false;
+                }
+                for (const auto& child : candidate->Children)
+                {
+                    subtree.push_back(child.get());
+                }
+            }
+        }
         if (event.Type == UIDragDropEventType::Over)
         {
             m_DropPointerPosition = event.ScreenPosition;
@@ -404,7 +443,7 @@ protected:
         }
         if (event.Type == UIDragDropEventType::Drop)
         {
-            auto& oldSiblings = source->Parent != nullptr ? source->Parent->Children : m_Roots;
+            auto& oldSiblings = source->Parent != nullptr ? source->Parent->Children : sourceView->m_Roots;
             auto oldIt = std::find_if(oldSiblings.begin(), oldSiblings.end(),
                 [source](const auto& item) { return item.get() == source; });
             if (oldIt == oldSiblings.end())
@@ -436,6 +475,21 @@ protected:
             }
             const std::uint64_t sourceId = source->Id;
             const std::uint64_t targetId = target->Id;
+            if (sourceView != this)
+            {
+                // Source側の選択が移動Subtreeを指していたら、無効な選択Pointerを残しません。
+                for (UITreeNode* selected = sourceView->m_Selected; selected != nullptr;
+                    selected = selected->Parent)
+                {
+                    if (selected == source)
+                    {
+                        sourceView->Select(nullptr);
+                        break;
+                    }
+                }
+                sourceView->InvalidateMeasure();
+                sourceView->SetScrollOffset(sourceView->m_ScrollOffset);
+            }
             InvalidateMeasure();
             EnsureSelectedVisible();
             if (m_OnNodeDropped)
@@ -658,6 +712,7 @@ private:
     DropPlacement m_DropPlacement = DropPlacement::Child;
     std::uint64_t m_PendingNodeId = 0u;
     bool m_NodeDragDropEnabled = false;
+    bool m_ExternalNodeDropEnabled = false;
     math::Vec2 m_DropPointerPosition{};
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
