@@ -741,7 +741,6 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
         if (it == models.end() ||
             it->second.AddTab(record.Tab.Id, record.Tab.Title, record.Tab.Closable) == false)
         {
-            rollback();
             return false;
         }
     }
@@ -811,6 +810,7 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
         if (AddTab(record.LeafId, record.Tab.Id, record.Tab.Title,
             std::move(contents[index]), record.Tab.Closable) == false)
         {
+            rollback();
             return false;
         }
     }
