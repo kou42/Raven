@@ -2,8 +2,11 @@
 #include "Raven/Core/JsonParser.h"
 #include "Raven/Core/JsonWriter.h"
 
+#include <atomic>
 #include <charconv>
+#include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -257,6 +260,36 @@ bool DeserializeDockSnapshot(const std::string& text,
     return true;
 }
 
+namespace
+{
+// 異常終了時に既存の保存ファイルを残せるよう、同じディレクトリに一時ファイルを作ります。
+constexpr std::uintmax_t kMaximumDockSnapshotBytes = 8u * 1024u * 1024u;
+
+bool ReadDockSnapshotFile(const std::filesystem::path& path,
+    UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage)
+{
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    if (error || size > kMaximumDockSnapshotBytes)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotのサイズ取得失敗または上限超過: " +
+            path.string());
+    }
+    std::ifstream file(path, std::ios::binary);
+    if (file.is_open() == false)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotを開けません: " + path.string());
+    }
+    std::string text((std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+    if (file.bad() == true)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotを読み込めません: " + path.string());
+    }
+    return DeserializeDockSnapshot(text, outSnapshot, errorMessage);
+}
+} // namespace
+
 bool SaveDockSnapshot(const std::string& filePath,
     const UIDockSpaceSnapshot& snapshot, std::string* errorMessage)
 {
@@ -265,31 +298,118 @@ bool SaveDockSnapshot(const std::string& filePath,
     {
         return false;
     }
-    std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
-    if (file.is_open() == false)
+    if (filePath.empty() == true || text.size() > kMaximumDockSnapshotBytes)
     {
-        return DockIOError(errorMessage, "Dock Snapshotを開けません: " + filePath);
+        return DockIOError(errorMessage, "Dock Snapshotの保存先またはサイズが不正です");
     }
-    file.write(text.data(), static_cast<std::streamsize>(text.size()));
-    return file.good() == true ? true :
-        DockIOError(errorMessage, "Dock Snapshotを書き込めません: " + filePath);
+
+    const std::filesystem::path destination(filePath);
+    std::filesystem::path temporary = destination;
+    // 同時実行や前回クラッシュで残った一時ファイルを上書きしないよう固有名を使用します。
+    static std::atomic<std::uint64_t> serial{ 0u };
+    temporary += ".tmp." + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count()) +
+        "." + std::to_string(serial.fetch_add(1u));
+    std::filesystem::path backup = destination;
+    backup += ".bak";
+
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        if (file.is_open() == false)
+        {
+            return DockIOError(errorMessage, "Dock Snapshotの一時ファイルを開けません: " +
+                temporary.string());
+        }
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
+        file.close();
+        if (file.fail() == true)
+        {
+            std::error_code cleanup;
+            std::filesystem::remove(temporary, cleanup);
+            return DockIOError(errorMessage, "Dock Snapshotの一時ファイルを書き込めません: " +
+                temporary.string());
+        }
+    }
+
+    std::error_code error;
+    const bool hadDestination = std::filesystem::exists(destination, error);
+    if (error)
+    {
+        std::error_code cleanup;
+        std::filesystem::remove(temporary, cleanup);
+        return DockIOError(errorMessage, "Dock Snapshotの保存先を確認できません: " +
+            error.message());
+    }
+    if (hadDestination == true)
+    {
+        // Windowsではrenameが既存の宛先を置換できないため、旧版を退避してから交換します。
+        std::filesystem::remove(backup, error);
+        if (error)
+        {
+            std::error_code cleanup;
+            std::filesystem::remove(temporary, cleanup);
+            return DockIOError(errorMessage, "Dock Snapshotの旧Backupを削除できません: " +
+                error.message());
+        }
+        std::filesystem::rename(destination, backup, error);
+        if (error)
+        {
+            std::error_code cleanup;
+            std::filesystem::remove(temporary, cleanup);
+            return DockIOError(errorMessage, "Dock Snapshotの旧版を退避できません: " +
+                error.message());
+        }
+    }
+
+    std::filesystem::rename(temporary, destination, error);
+    if (error)
+    {
+        const std::string reason = error.message();
+        std::error_code cleanup;
+        if (hadDestination == true)
+        {
+            // 新版への交換失敗時は旧版を元の名前へ戻します。
+            std::filesystem::rename(backup, destination, cleanup);
+        }
+        std::error_code tempCleanup;
+        std::filesystem::remove(temporary, tempCleanup);
+        return DockIOError(errorMessage, "Dock Snapshotの置換失敗: " + reason +
+            (cleanup ? " / 旧版の復帰失敗: " + cleanup.message() : ""));
+    }
+    if (errorMessage != nullptr)
+    {
+        errorMessage->clear();
+    }
+    return true;
 }
 
 bool LoadDockSnapshot(const std::string& filePath,
     UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage)
 {
-    std::ifstream file(filePath, std::ios::binary);
-    if (file.is_open() == false)
+    if (filePath.empty() == true)
     {
-        return DockIOError(errorMessage, "Dock Snapshotを開けません: " + filePath);
+        return DockIOError(errorMessage, "Dock Snapshotの読み込み先が空です");
     }
-    std::string text((std::istreambuf_iterator<char>(file)),
-        std::istreambuf_iterator<char>());
-    if (file.bad() == true)
+    const std::filesystem::path destination(filePath);
+    std::error_code error;
+    const bool exists = std::filesystem::exists(destination, error);
+    if (error)
     {
-        return DockIOError(errorMessage, "Dock Snapshotを読み込めません: " + filePath);
+        return DockIOError(errorMessage, "Dock Snapshotの保存先を確認できません: " +
+            error.message());
     }
-    return DeserializeDockSnapshot(text, outSnapshot, errorMessage);
+    if (exists == true)
+    {
+        return ReadDockSnapshotFile(destination, outSnapshot, errorMessage);
+    }
+    // 旧版退避後に異常終了した場合のみBackupを復旧候補として読み込みます。
+    std::filesystem::path backup = destination;
+    backup += ".bak";
+    if (std::filesystem::exists(backup, error) == true && error == false)
+    {
+        return ReadDockSnapshotFile(backup, outSnapshot, errorMessage);
+    }
+    return DockIOError(errorMessage, "Dock Snapshotが見つかりません: " + filePath);
 }
 
 UIDockSpace::UIDockSpace()
