@@ -348,6 +348,10 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
         return 0;
     }
     auto context = CreateScope<UIContext>();
+    // UIの見た目とユーザー指定倍率はOS Windowごとに初期化される値ではないため、
+    // Main Windowの設定を引き継ぎます。OS由来のDPIだけは各WindowのBeginFrameで同期します。
+    context->SetTheme(m_UIContext.GetTheme());
+    context->SetUserScale(m_UIContext.GetUserScale());
     // VAOはContext間で共有されないため、補助WindowをCurrentにしてRendererを生成します。
     context->SetRenderer(UIRenderer::Create(window->GetBackend()));
     m_AuxiliaryUIContexts.emplace(id, std::move(context));
@@ -442,6 +446,14 @@ WindowID Application::DetachUIRootChildToNewWindow(
     if (destinationID == 0)
     {
         return 0;
+    }
+    // Main以外の補助Windowから切り離す場合も移動元のTheme/ユーザー倍率を継承します。
+    // 新Windowはまだ空なので、Widgetを追加する前に設定を確定させます。
+    UIContext* destination = GetWindowUIContext(destinationID);
+    if (destination != nullptr)
+    {
+        destination->SetTheme(source->GetTheme());
+        destination->SetUserScale(source->GetUserScale());
     }
     if (TransferUIRootChild(sourceID, destinationID, child) == false)
     {
