@@ -73,6 +73,29 @@ public:
     const UIDockNode* FindNode(std::uint64_t id) const { return FindRecursive(m_Root.get(), id); }
 
     // 戻り値は新しい空Tab Leafです。失敗時はTreeとID発行状態を変更しません。
+    // 空Leafとその親Splitを畳み、Siblingを同じ位置へ昇格します。
+    // Rootは最後のPaneとして残し、IDを再利用しません。
+    bool RemoveEmptyLeaf(std::uint64_t leafId)
+    {
+        UIDockNode* leaf = FindNode(leafId);
+        if (leaf == nullptr || leaf->m_Kind != UIDockNodeKind::Tabs ||
+            leaf->m_Tabs.GetTabCount() != 0u || leaf->m_Parent == nullptr)
+        {
+            return false;
+        }
+        UIDockNode* split = leaf->m_Parent;
+        UIDockNode* grandparent = split->m_Parent;
+        UIDockNode::Ptr* slot = grandparent == nullptr ? &m_Root :
+            (grandparent->m_First.get() == split ?
+                &grandparent->m_First : &grandparent->m_Second);
+        // 親Splitの残った子を先に確保し、元LeafとSplitをslot代入で解放します。
+        UIDockNode::Ptr sibling = split->m_First.get() == leaf ?
+            std::move(split->m_Second) : std::move(split->m_First);
+        sibling->m_Parent = grandparent;
+        *slot = std::move(sibling);
+        return true;
+    }
+
     UIDockNode* Split(std::uint64_t leafId, UIDockSplitAxis axis,
         float ratio = 0.5f, bool newLeafFirst = false)
     {
