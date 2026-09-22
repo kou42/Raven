@@ -457,10 +457,6 @@ protected:
             }
         }
         UITreeNode* target = NodeAt(event.ScreenPosition);
-        if (source == nullptr)
-        {
-            return false;
-        }
         // 最終行より下の空白はRoot末尾への挿入先として扱います。
         // 空のTreeViewにも、既存Rootを持つTreeViewにもDropできます。
         const float rowPosition = std::fmod(local.y + GetScrollOffset(), m_RowHeight);
