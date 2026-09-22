@@ -116,6 +116,35 @@ struct UIIMEEvent
 // ScrollDeltaはPlatformから届いたwheel/trackpadの論理Offsetで、Pixel量への変換はWidget側の責務です。
 // Cancelは通常のMouse入力ではなく、Context側からCaptureを強制終了するときにCapture所有者へ通知します。
 // Window Focus LostやWidget Tree再構築など、Mouse Upが届かない経路でもDrag状態を確実に掃除するためのEventです。
+// Drag PayloadはUIContextが操作終了まで所有し、Eventからは参照のみ渡します。
+// TypeはWidget間で合意した識別子、Dataは任意のUTF-8データです。
+struct UIDragDropPayload
+{
+    std::string Type;
+    std::string Data;
+};
+
+enum class UIDragDropEventType
+{
+    Begin = 0,
+    Enter,
+    Over,
+    Leave,
+    Drop,
+    Cancel,
+    End
+};
+
+struct UIDragDropEvent
+{
+    UIDragDropEventType Type = UIDragDropEventType::Over;
+    const UIDragDropPayload* Payload = nullptr;
+    UIElement* Source = nullptr;
+    math::Vec2 ScreenPosition{};
+    // Enter/Overでtrueを返したWidgetだけをDrop対象にします。
+    bool Accepted = false;
+};
+
 struct UIMouseEvent
 {
     UIMouseEventType Type = UIMouseEventType::Move;
