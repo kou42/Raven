@@ -12,6 +12,7 @@
 #include "Raven/UI/Widgets/UITabView.h"
 #include "Raven/UI/Docking/UIDockLayout.h"
 #include "Raven/UI/Docking/UIDockGeometry.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -66,6 +67,35 @@ void Check(bool condition, const char* label)
 }
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
+
+// Phase 9-3: Dockingの配置をUIElement/UISplitterへ反映する経路を検証します。
+void TestDockSpace()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(400.0f, 300.0f));
+    const std::uint64_t leftId = dock.GetLayout().GetRoot()->GetId();
+    auto left = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* leftRaw = left.get();
+    Check(dock.SetPane(leftId, std::move(left)), "dockspace first pane");
+    Check(dock.SetPane(leftId, std::make_unique<Raven::UIElement>()) == false,
+        "dockspace duplicate pane");
+    Raven::UIDockNode* right = dock.Split(leftId, Raven::UIDockSplitAxis::Horizontal, 0.5f);
+    Check(right != nullptr, "dockspace split");
+    const std::uint64_t splitId = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.GetSplitter(splitId) != nullptr, "dockspace splitter created");
+    Check(dock.GetSplitter(splitId)->GetOrientation() == Raven::UISplitterOrientation::Vertical,
+        "dockspace splitter orientation");
+    Check(dock.SetPane(right->GetId(), std::make_unique<Raven::UIElement>()),
+        "dockspace second pane");
+    Raven::UIDrawList drawList;
+    dock.BuildDrawList(drawList);
+    dock.BuildDrawList(drawList);
+    CheckNear("dockspace first width", leftRaw->GetSize().x, 197.5f);
+    CheckNear("dockspace second x", dock.GetPane(right->GetId())->GetPosition().x, 202.5f);
+    CheckNear("dockspace splitter x", dock.GetSplitter(splitId)->GetPosition().x, 197.5f);
+    Check(dock.SetPane(splitId, std::make_unique<Raven::UIElement>()) == false,
+        "dockspace split cannot host pane");
+}
 
 // Phase 9-1: Docking論理Treeの所有権・安定ID・不正Split拒否を検証します。
 void TestDockLayout()
@@ -1259,5 +1289,6 @@ int main()
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     TestDockLayout();
+    TestDockSpace();
     return 0;
 }
