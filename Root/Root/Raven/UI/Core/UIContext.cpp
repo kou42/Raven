@@ -185,6 +185,11 @@ bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
         return false;
     }
     UIElement* transferred = destination.m_RootElement->AddChild(std::move(detached));
+    if (transferred == child)
+    {
+        // Root末尾へ追加したWidgetがPopupより前面に出ないよう描画順を復元します。
+        destination.m_RootElement->BringChildToFront(destination.m_PopupLayer);
+    }
     return transferred == child;
 }
 
