@@ -498,6 +498,8 @@ void TestWindowFramebufferMetrics()
     Check(widget->GetContext() == &auxiliary, "transfer updates context");
     Check(widget->GetParent() == &auxiliary.GetRootElement(),
         "transfer updates parent");
+    Check(auxiliary.GetRootElement().GetChildren().back().get() != widget,
+        "transfer keeps popup layer in front");
     Check(auxiliary.TransferRootChildTo(context, widget),
         "transfer back to main");
     Check(widget->GetContext() == &context, "transfer restores context");
