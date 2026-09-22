@@ -172,6 +172,9 @@ public:
     // DetachChildが旧ContextのCapture/Focus/IMEを解除し、AddChildが新DPIを適用します。
     // 描画中のTree変更を避けるため、両ContextのFrame外で呼び出してください。
     bool TransferRootChildTo(UIContext& destination, UIElement* child);
+    // Rootへ通常Widgetを追加し、内部Popup Layerの前面描画順を維持します。
+    // 描画中のTree変更を避けるためFrame外で呼び出してください。
+    UIElement* AddRootChild(Scope<UIElement> child);
 
     UIElement& GetRootElement();
     const UIElement& GetRootElement() const;
