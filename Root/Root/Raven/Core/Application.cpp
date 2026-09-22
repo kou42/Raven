@@ -316,6 +316,7 @@ Application::~Application()
     // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
     const bool auxiliaryWindowsClosed = m_WindowManager.ShutdownOwnedWindows();
     m_AuxiliaryUIContexts.clear();
+    FlushPendingClosedUIChildren();
     assert(auxiliaryWindowsClosed == true);
 }
 
@@ -372,60 +373,16 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
             // DetachChildが旧WindowのCapture/Focus/IMEを解除します。
             // Rootの内部Popup/TooltipはContext固有なので移動せずContextと共に破棄します。
             UIContext& source = *it->second;
+            // MainのFrame中でもWindow Closeは発生し得ます。Widgetは破棄せず一時退避し、
+            // 元Dockへの復帰やMain Root追加はMain EndFrame後にまとめて実行します。
+            DetachedDockTab dockRecord;
+            bool hasDockRecord = false;
             const auto detached = m_DetachedDockTabs.find(id);
             if (detached != m_DetachedDockTabs.end())
             {
-                const DetachedDockTab record = detached->second;
+                dockRecord = detached->second;
+                hasDockRecord = true;
                 m_DetachedDockTabs.erase(detached);
-                UIContext* original = GetWindowUIContext(record.SourceID);
-                // Close済みの元Windowや削除済みDockを逆参照しないよう、Rootの生存Treeを照合します。
-                // 復帰できない場合は従来通りMain Rootへ戻す経路に任せます。
-                if (original != nullptr && original != &source &&
-                    original->IsFrameActive() == false &&
-                    m_WindowManager.IsWindowClosePending(record.SourceID) == false)
-                {
-                    const auto isAlive = [&](const auto& self, const UIElement& parent) -> bool
-                    {
-                        for (const auto& child : parent.GetChildren())
-                        {
-                            if (child.get() == record.Dock)
-                            {
-                                return true;
-                            }
-                            if (self(self, *child) == true)
-                            {
-                                return true;
-                            }
-                        }
-                        return false;
-                    };
-                    UITabView* view = nullptr;
-                    if (isAlive(isAlive, original->GetRootElement()) == true)
-                    {
-                        view = record.Dock->GetTabView(record.LeafID);
-                    }
-                    if (view != nullptr &&
-                        view->GetModel().FindTab(record.TabID) == nullptr &&
-                        record.Dock->GetLayout().FindNode(record.LeafID) != nullptr)
-                    {
-                        // Rootに現在も所属するContentだけを回収します。
-                        // Window閉鎖前に他へ移された場合は新しい所有者を変更しません。
-                        for (const auto& child : source.GetRootElement().GetChildren())
-                        {
-                            if (child.get() == record.Content)
-                            {
-                                Scope<UIElement> content =
-                                    source.GetRootElement().DetachChild(record.Content);
-                                if (content != nullptr)
-                                {
-                                    record.Dock->AddTab(record.LeafID, record.TabID,
-                                        record.Title, std::move(content), record.Closable);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
             }
             std::vector<UIElement*> children;
             for (const auto& child : source.GetRootElement().GetChildren())
@@ -437,7 +394,15 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
             }
             for (UIElement* child : children)
             {
-                source.TransferRootChildTo(m_UIContext, child);
+                Scope<UIElement> content = source.DetachRootChild(child);
+                if (content != nullptr)
+                {
+                    const bool isDockContent =
+                        hasDockRecord == true && child == dockRecord.Content;
+                    m_PendingClosedUIChildren.push_back(PendingClosedUIChild{
+                        std::move(content), isDockContent ? dockRecord : DetachedDockTab{},
+                        isDockContent });
+                }
             }
 
             // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
@@ -644,8 +609,66 @@ bool Application::RequestDetachUIRootChildToNewWindow(
     return true;
 }
 
+void Application::FlushPendingClosedUIChildren()
+{
+    if (m_UIContext.IsFrameActive() == true)
+    {
+        return;
+    }
+    // 復帰先のDockが削除済みでも生ポインタを逆参照せず、元Contextの生存Treeで確認します。
+    // Close済みの別Windowへは戻さずMain Rootへ退避させます。
+    std::vector<PendingClosedUIChild> pending;
+    pending.swap(m_PendingClosedUIChildren);
+    for (PendingClosedUIChild& entry : pending)
+    {
+        bool restored = false;
+        if (entry.HasDockTab == true)
+        {
+            const DetachedDockTab& record = entry.DockTab;
+            UIContext* original = GetWindowUIContext(record.SourceID);
+            if (original != nullptr && original->IsFrameActive() == false &&
+                m_WindowManager.IsWindowClosePending(record.SourceID) == false)
+            {
+                const auto isAlive = [&](const auto& self, const UIElement& parent) -> bool
+                {
+                    for (const auto& child : parent.GetChildren())
+                    {
+                        if (child.get() == record.Dock)
+                        {
+                            return true;
+                        }
+                        if (self(self, *child) == true)
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                if (isAlive(isAlive, original->GetRootElement()) == true)
+                {
+                    UITabView* view = record.Dock->GetTabView(record.LeafID);
+                    if (view != nullptr &&
+                        view->GetModel().FindTab(record.TabID) == nullptr)
+                    {
+                        // AddTabはScopeを受け取るため、事前に移動先Modelを検証します。
+                        // 正常系ではContentを破棄せず元のDock Tabとして復元します。
+                        restored = record.Dock->AddTab(record.LeafID, record.TabID,
+                            record.Title, std::move(entry.Content), record.Closable);
+                    }
+                }
+            }
+        }
+        if (restored == false && entry.Content != nullptr)
+        {
+            entry.Content->SetVisible(true);
+            m_UIContext.AddRootChild(std::move(entry.Content));
+        }
+    }
+}
+
 void Application::FlushPendingUIDetaches()
 {
+    FlushPendingClosedUIChildren();
     // Callbackから次の予約が追加されても反復中のvectorを変更しないよう入れ替えます。
     std::vector<PendingUIDetach> pending;
     pending.swap(m_PendingUIDetaches);
