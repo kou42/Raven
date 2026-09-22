@@ -37,7 +37,7 @@ public:
     using SelectionHandler = std::function<void(std::uint64_t)>;
     using ExpansionHandler = std::function<void(std::uint64_t, bool)>;
     using NodeDroppedHandler = std::function<void(std::uint64_t, std::uint64_t)>;
-    enum class DropPlacement { Child, Before, After };
+    enum class DropPlacement { Child, Before, After, RootEnd };
     using NodePlacedHandler = std::function<void(std::uint64_t, std::uint64_t, DropPlacement)>;
 
     UITreeView()
@@ -401,21 +401,27 @@ protected:
                 pending.push_back(child.get());
             }
         }
-        UITreeNode* target = NodeAt(event.ScreenPosition);
-        if (source == nullptr || target == nullptr)
-        {
-            return false;
-        }
         math::Vec2 local;
-        if (TryScreenToLocalPosition(event.ScreenPosition, local) == false)
+        if (TryScreenToLocalPosition(event.ScreenPosition, local) == false ||
+            local.x < 0.0f || local.y < 0.0f ||
+            local.x >= GetSize().x || local.y >= GetSize().y ||
+            (IsScrollBarVisible() == true && local.x >= GetSize().x - m_ScrollBarThickness))
         {
             return false;
         }
+        UITreeNode* target = NodeAt(event.ScreenPosition);
+        if (source == nullptr)
+        {
+            return false;
+        }
+        // 最終行より下の空白はRoot末尾への挿入先として扱います。
+        // 空のTreeViewにも、既存Rootを持つTreeViewにもDropできます。
         const float rowPosition = std::fmod(local.y + GetScrollOffset(), m_RowHeight);
-        const DropPlacement placement = rowPosition < m_RowHeight * 0.25f
-            ? DropPlacement::Before
-            : (rowPosition >= m_RowHeight * 0.75f ? DropPlacement::After : DropPlacement::Child);
-        UITreeNode* newParent = placement == DropPlacement::Child ? target : target->Parent;
+        const DropPlacement placement = target == nullptr ? DropPlacement::RootEnd
+            : (rowPosition < m_RowHeight * 0.25f ? DropPlacement::Before
+                : (rowPosition >= m_RowHeight * 0.75f ? DropPlacement::After : DropPlacement::Child));
+        UITreeNode* newParent = placement == DropPlacement::Child ? target
+            : (target != nullptr ? target->Parent : nullptr);
         // 移動先の親がSource自身または子孫なら循環するため拒否します。
         for (UITreeNode* ancestor = newParent; ancestor != nullptr; ancestor = ancestor->Parent)
         {
@@ -426,6 +432,12 @@ protected:
         }
         if (source == target)
         {
+            return false;
+        }
+        if (placement == DropPlacement::RootEnd && sourceView == this &&
+            source->Parent == nullptr && m_Roots.back().get() == source)
+        {
+            // 最後尾のRootを同じ位置へDropするだけなら受け入れません。
             return false;
         }
         if (sourceView != this)
@@ -481,10 +493,13 @@ protected:
             oldSiblings.erase(oldIt);
             auto& newSiblings = newParent != nullptr ? newParent->Children : m_Roots;
             moved->Parent = newParent;
-            if (placement == DropPlacement::Child)
+            if (placement == DropPlacement::Child || placement == DropPlacement::RootEnd)
             {
                 newSiblings.push_back(std::move(moved));
-                target->Expanded = true;
+                if (target != nullptr)
+                {
+                    target->Expanded = true;
+                }
             }
             else
             {
@@ -500,7 +515,7 @@ protected:
                     std::move(moved));
             }
             const std::uint64_t sourceId = source->Id;
-            const std::uint64_t targetId = target->Id;
+            const std::uint64_t targetId = target != nullptr ? target->Id : 0u;
             if (sourceView != this)
             {
                 // Source側の選択が移動Subtreeを指していたら、無効な選択Pointerを残しません。
@@ -627,6 +642,19 @@ protected:
                 m_Font->AppendText(drawList, label, math::Vec2(x, y + m_Baseline), options,
                     ApplyVisualColor(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)));
             }
+        }
+        const UIContext* context = GetContext();
+        if (context != nullptr && context->IsDragging() == true &&
+            context->GetDropTarget() == this && m_DropPlacement == DropPlacement::RootEnd)
+        {
+            // 空白へのDropはRoot末尾への挿入線で表し、ChildへのDropと区別します。
+            const float lineY = absolutePosition.y +
+                static_cast<float>(visible.size()) * m_RowHeight - GetScrollOffset();
+            const float right = absolutePosition.x + GetSize().x -
+                (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
+            drawList.AddRect(math::Vec2(absolutePosition.x, lineY - 1.5f),
+                math::Vec2(right, lineY + 1.5f),
+                ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
         }
         if (IsScrollBarVisible() == true)
         {
