@@ -10,6 +10,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -80,7 +81,6 @@ bool TestUpload()
     }
 
     // 既存GL errorをTexture転送の成功として扱わないことを確認します。
-    glEnable(GL_TEXTURE_2D); // Core ProfileではINVALID_ENUMになるため、下の明示的な生成を使います。
     while (glGetError() != GL_NO_ERROR)
     {
     }
