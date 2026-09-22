@@ -181,7 +181,11 @@ bool UIContext::RouteMouseEvent(
     event.PressedTarget = pressedTargetForEvent;
 
     bool handled = false;
-    if (routeTarget != nullptr)
+    // Drag確定時のUpをButton等へ配送すると、Dropと同時にClickが発火してしまいます。
+    // Drag SourceはEnd/Cancel通知で操作状態を片付けます。
+    const bool suppressMouseUp = type == UIMouseEventType::Up &&
+        button == UIMouseButton::Left && m_DragActive == true;
+    if (routeTarget != nullptr && suppressMouseUp == false)
     {
         // Target -> Parent -> ... -> Root のBubble方式です。
         // Scrollも同じ規則を使うため、内側ScrollViewが境界で消費できない場合に外側ScrollViewへ自然に伝播できます。
@@ -302,6 +306,11 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
         m_DragActive = true;
         HideTooltip();
         SendDragEvent(m_DragSource, UIDragDropEventType::Begin, position);
+        // Begin callbackがSourceをTreeから外してCancelした場合は以降の参照を禁止します。
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
     }
 
     // CaptureされたSourceではなく、Pointer下の実Hitから親方向へ受入先を探索します。
@@ -313,7 +322,12 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
         event.Payload = &m_DragPayload;
         event.Source = m_DragSource;
         event.ScreenPosition = position;
-        if (candidate->HandleDragDropEvent(event) == true || event.Accepted == true)
+        const bool acceptedHere = candidate->HandleDragDropEvent(event);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
+        if (acceptedHere == true || event.Accepted == true)
         {
             accepted = candidate;
             break;
@@ -322,6 +336,10 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
     if (accepted != m_DropTarget)
     {
         SendDragEvent(m_DropTarget, UIDragDropEventType::Leave, position);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
         m_DropTarget = accepted;
         SendDragEvent(m_DropTarget, UIDragDropEventType::Enter, position);
     }
@@ -330,10 +348,23 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
 void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
 {
     UpdateDrag(position, hitTarget);
+    if (m_DragSource == nullptr)
+    {
+        return;
+    }
     if (m_DragActive == true)
     {
-        SendDragEvent(m_DropTarget, UIDragDropEventType::Drop, position);
+        // Drop callbackはTreeを変更できるため、SourceへのEndはDropより先に通知します。
         SendDragEvent(m_DragSource, UIDragDropEventType::End, position);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
+        SendDragEvent(m_DropTarget, UIDragDropEventType::Drop, position);
+        if (m_DragSource == nullptr)
+        {
+            return;
+        }
     }
     UIElement* source = m_DragSource;
     m_DragSource = nullptr;
@@ -349,14 +380,31 @@ void UIContext::CancelDrag()
     {
         return;
     }
-    SendDragEvent(m_DropTarget, UIDragDropEventType::Leave, m_LastPointerPosition);
-    SendDragEvent(m_DragSource, UIDragDropEventType::Cancel, m_LastPointerPosition);
+    // 先に状態を空にし、Leave/Cancel内のTree変更による再帰Cancelを防ぎます。
     UIElement* source = m_DragSource;
+    UIElement* target = m_DropTarget;
+    UIDragDropPayload payload = std::move(m_DragPayload);
     m_DragSource = nullptr;
     m_DropTarget = nullptr;
     m_DragActive = false;
     m_DragPayload = {};
     ReleaseMouseCapture(source);
+    UIDragDropEvent event;
+    event.Payload = &payload;
+    event.Source = source;
+    event.ScreenPosition = m_LastPointerPosition;
+    event.Type = UIDragDropEventType::Leave;
+    if (target != nullptr)
+    {
+        target->HandleDragDropEvent(event);
+    }
+    event.Type = UIDragDropEventType::Cancel;
+    // LeaveでSourceが削除される可能性があるためTree上の生存を確認します。
+    if (source != nullptr && source->GetContext() == this)
+    {
+        source->HandleDragDropEvent(event);
+    }
+    return;
 }
 
 bool UIContext::CaptureMouse(UIElement* element)
