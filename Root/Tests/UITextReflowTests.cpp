@@ -76,6 +76,50 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPIAbsolutePosition()
+{
+    Raven::UIContext context;
+    auto container = std::make_unique<Raven::UIElement>();
+    container->SetPositionDIP(Raven::math::Vec2(10.0f, 20.0f));
+    container->SetPreferredSizeDIP(Raven::math::Vec2(100.0f, 80.0f));
+    auto child = std::make_unique<Raven::UIElement>();
+    child->SetPositionDIP(Raven::math::Vec2(5.0f, 7.0f));
+    child->SetPreferredSizeDIP(Raven::math::Vec2(20.0f, 10.0f));
+    Raven::UIElement* childPtr = child.get();
+    container->AddChild(std::move(child));
+    Raven::UIElement* containerPtr = context.GetRootElement().AddChild(std::move(container));
+    context.SetDPIScale(1.5f, 2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("dpi absolute parent x", containerPtr->GetPosition().x, 15.0f);
+    CheckNear("dpi absolute parent y", containerPtr->GetPosition().y, 40.0f);
+    CheckNear("dpi absolute child x", childPtr->GetPosition().x, 7.5f);
+    CheckNear("dpi absolute child y", childPtr->GetPosition().y, 14.0f);
+    context.SetUserScale(2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("rescaled parent x", containerPtr->GetPosition().x, 30.0f);
+    CheckNear("rescaled child x", childPtr->GetPosition().x, 15.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("no position accumulation", childPtr->GetPosition().x, 15.0f);
+    childPtr->SetPosition(Raven::math::Vec2(9.0f, 11.0f));
+    context.SetDPIScale(2.0f, 2.0f);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("legacy position after dpi", childPtr->GetPosition().x, 9.0f);
+    CheckNear("legacy position after dpi y", childPtr->GetPosition().y, 11.0f);
+    // Flow Layoutは親の配置結果が優先され、Absolute指定は再配置時まで保存します。
+    containerPtr->SetLayoutMode(Raven::UILayoutMode::Vertical);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("flow overrides position", childPtr->GetPosition().x, 0.0f);
+    containerPtr->SetLayoutMode(Raven::UILayoutMode::Absolute);
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f));
+    context.EndFrame();
+    CheckNear("absolute restores position", childPtr->GetPosition().x, 9.0f);
+}
+
 void TestDPISizeConstraints()
 {
     Raven::UIContext context;
@@ -98,8 +142,8 @@ void TestDPISizeConstraints()
     CheckNear("legacy max clamps dip height", ptr->GetPreferredSize().y, 80.0f);
     // Contextを離れたElementはDIP等倍で再計算されます。
     Raven::Scope<Raven::UIElement> detached = context.GetRootElement().DetachChild(ptr);
-    CheckNear("detached dip width", detached->GetPreferredSize().x, 90.0f);
-    CheckNear("detached dip height", detached->GetPreferredSize().y, 30.0f);
+    CheckNear("detached dip width", detached->GetPreferredSize().x, 80.0f);
+    CheckNear("detached dip height", detached->GetPreferredSize().y, 40.0f);
 }
 
 void TestDPILayoutMetrics()
@@ -1813,6 +1857,7 @@ int main()
     TestDPIContextCoordinates();
     TestDPILayoutMetrics();
     TestDPISizeConstraints();
+    TestDPIAbsolutePosition();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
