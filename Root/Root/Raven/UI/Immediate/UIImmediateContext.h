@@ -97,6 +97,7 @@ public:
     {
         m_ParentStack.clear();
         m_IDStack.clear();
+        m_IDKinds.clear();
         m_Used.clear();
         m_FrameActive = false;
     }
@@ -191,6 +192,7 @@ public:
         }
         m_ParentStack.pop_back();
         m_IDStack.pop_back();
+        m_IDKinds.pop_back();
         return true;
     }
 
