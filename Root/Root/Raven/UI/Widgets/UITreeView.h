@@ -206,6 +206,23 @@ public:
     void SetExternalNodeDropEnabled(bool value) { m_ExternalNodeDropEnabled = value; }
     bool IsExternalNodeDropEnabled() const { return m_ExternalNodeDropEnabled; }
     // Drag中のPointer Moveとフレーム更新の両方で端付近をスクロールします。
+    // Child位置で折りたたみNodeに一定時間Hoverすると展開します。
+    void SetDragAutoExpandEnabled(bool value)
+    {
+        m_DragAutoExpandEnabled = value;
+        if (value == false)
+        {
+            ResetDragAutoExpand();
+        }
+    }
+    bool IsDragAutoExpandEnabled() const { return m_DragAutoExpandEnabled; }
+    void SetDragAutoExpandDelay(float seconds)
+    {
+        if (std::isfinite(seconds) && seconds > 0.0f)
+        {
+            m_DragAutoExpandDelay = seconds;
+        }
+    }
     void SetDragAutoScrollEnabled(bool value) { m_DragAutoScrollEnabled = value; }
     bool IsDragAutoScrollEnabled() const { return m_DragAutoScrollEnabled; }
     void SetDragAutoScrollEdge(float value)
@@ -388,20 +405,31 @@ protected:
 
     bool OnDragDropEvent(UIDragDropEvent& event) override
     {
-        if (event.Type == UIDragDropEventType::End || event.Type == UIDragDropEventType::Cancel)
+        if (event.Type == UIDragDropEventType::End || event.Type == UIDragDropEventType::Cancel ||
+            event.Type == UIDragDropEventType::Leave)
         {
             m_PendingNodeId = 0u;
+            ResetDragAutoExpand();
+            ResetDragAutoExpand();
             return false;
+        }
+        // Dropを拒否する経路ではHoverの蓄積時間を必ず破棄します。
+        // 無効な領域を経由した後に別のNodeが即座に展開されるのを防ぎます。
+        if (event.Type != UIDragDropEventType::Over)
+        {
+            ResetDragAutoExpand();
         }
         if (m_NodeDragDropEnabled == false || event.Payload == nullptr ||
             event.Payload->Type != "Raven/UITreeNode")
         {
+            ResetDragAutoExpand();
             return false;
         }
         UITreeView* sourceView = dynamic_cast<UITreeView*>(event.Source);
         if (sourceView == nullptr || sourceView->m_NodeDragDropEnabled == false ||
             (sourceView != this && m_ExternalNodeDropEnabled == false))
         {
+            ResetDragAutoExpand();
             return false;
         }
         // Source所属の全Nodeを調べるため、折りたたみ中のNodeも識別できます。
@@ -432,12 +460,14 @@ protected:
             local.x >= GetSize().x || local.y >= GetSize().y ||
             (IsScrollBarVisible() == true && local.x >= GetSize().x - m_ScrollBarThickness))
         {
+            ResetDragAutoExpand();
             return false;
         }
         // 端付近のMoveで先にScrollし、その後のHit判定を新しい表示行に合わせます。
         // 無効なPayloadでTreeがスクロールしないようSource確認後に実行します。
         if (source == nullptr)
         {
+            ResetDragAutoExpand();
             return false;
         }
         if (event.Type == UIDragDropEventType::Over &&
@@ -470,11 +500,13 @@ protected:
         {
             if (ancestor == source)
             {
-                return false;
+                ResetDragAutoExpand();
+            return false;
             }
         }
         if (source == target)
         {
+            ResetDragAutoExpand();
             return false;
         }
         // 同じ兄弟列の隣接位置へDropしても並び順は変わりません。
@@ -491,13 +523,15 @@ protected:
                 ((placement == DropPlacement::Before && sourceIt + 1 == targetIt) ||
                     (placement == DropPlacement::After && targetIt + 1 == sourceIt)))
             {
-                return false;
+                ResetDragAutoExpand();
+            return false;
             }
         }
         if (placement == DropPlacement::RootEnd && sourceView == this &&
             source->Parent == nullptr && m_Roots.back().get() == source)
         {
             // 最後尾のRootを同じ位置へDropするだけなら受け入れません。
+            ResetDragAutoExpand();
             return false;
         }
         if (sourceView != this)
@@ -510,7 +544,8 @@ protected:
                 subtree.pop_back();
                 if (FindNode(candidate->Id) != nullptr)
                 {
-                    return false;
+                    ResetDragAutoExpand();
+            return false;
                 }
                 for (const auto& child : candidate->Children)
                 {
@@ -523,16 +558,47 @@ protected:
             m_DropPointerPosition = event.ScreenPosition;
             m_DropPlacement = placement;
             event.Accepted = true;
+            // IDでHover対象を記録し、Node*の破棄後に参照しないようにします。
+            const bool expandable = m_DragAutoExpandEnabled == true &&
+                placement == DropPlacement::Child && target != nullptr &&
+                target->Expanded == false && target->Children.empty() == false;
+            if (expandable == false)
+            {
+                ResetDragAutoExpand();
+            }
+            else
+            {
+                if (m_DragAutoExpandTracking == false || m_DragAutoExpandNodeId != target->Id)
+                {
+                    m_DragAutoExpandNodeId = target->Id;
+                    m_DragAutoExpandTracking = true;
+                    m_DragAutoExpandElapsed = 0.0f;
+                }
+                m_DragAutoExpandElapsed += std::max(0.0f, event.DeltaSeconds);
+                if (m_DragAutoExpandElapsed >= m_DragAutoExpandDelay)
+                {
+                    const std::uint64_t expandId = target->Id;
+                    ResetDragAutoExpand();
+                    // 通常の展開APIを通し、MeasureとExpansion callbackを更新します。
+                    UITreeNode* expandNode = FindNode(expandId);
+                    if (expandNode != nullptr)
+                    {
+                        SetExpanded(expandNode, true);
+                    }
+                }
+            }
             return true;
         }
         if (event.Type == UIDragDropEventType::Drop)
         {
+            ResetDragAutoExpand();
             auto& oldSiblings = source->Parent != nullptr ? source->Parent->Children : sourceView->m_Roots;
             auto oldIt = std::find_if(oldSiblings.begin(), oldSiblings.end(),
                 [source](const auto& item) { return item.get() == source; });
             if (oldIt == oldSiblings.end())
             {
-                return false;
+                ResetDragAutoExpand();
+            return false;
             }
             // 所有権移動前に選択の所属を記録します。移動後のParent chainでは判定できません。
             bool clearSourceSelection = false;
@@ -569,7 +635,8 @@ protected:
                 {
                     // Tree内で不整合が起きた場合も所有権を失わないよう末尾へ退避します。
                     newSiblings.push_back(std::move(moved));
-                    return false;
+                    ResetDragAutoExpand();
+            return false;
                 }
                 newSiblings.insert(placement == DropPlacement::After ? targetIt + 1 : targetIt,
                     std::move(moved));
@@ -732,6 +799,13 @@ protected:
     }
 
 private:
+    void ResetDragAutoExpand()
+    {
+        m_DragAutoExpandNodeId = 0u;
+        m_DragAutoExpandElapsed = 0.0f;
+        m_DragAutoExpandTracking = false;
+    }
+
     UITreeNode* NodeAt(const math::Vec2& screenPosition) const
     {
         math::Vec2 local;
@@ -823,6 +897,11 @@ private:
     bool m_NodeDragDropEnabled = false;
     bool m_ExternalNodeDropEnabled = false;
     bool m_DragAutoScrollEnabled = true;
+    bool m_DragAutoExpandEnabled = true;
+    bool m_DragAutoExpandTracking = false;
+    std::uint64_t m_DragAutoExpandNodeId = 0u;
+    float m_DragAutoExpandElapsed = 0.0f;
+    float m_DragAutoExpandDelay = 0.65f;
     float m_DragAutoScrollEdge = 24.0f;
     float m_DragAutoScrollStep = 12.0f;
     float m_DragAutoScrollSpeed = 240.0f;
