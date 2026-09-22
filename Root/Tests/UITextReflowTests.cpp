@@ -107,8 +107,8 @@ void TestDockSnapshotJson()
         decoded.Tabs[0u].Tab.Id == before.Tabs[0u].Tab.Id,
         "dock json parse failure atomic");
     Check(Raven::DeserializeDockSnapshot(
-        "{\\"type\\":\\"RavenDockSnapshot\\",\\"version\\":2,"
-        "\\"structure\\":[],\\"tabs\\":[],\\"selections\\":[]}",
+        "{\"type\":\"RavenDockSnapshot\",\"version\":2,"
+        "\"structure\":[],\"tabs\":[],\"selections\":[]}",
         decoded, &error) == false, "dock json version rejected");
 }
 
