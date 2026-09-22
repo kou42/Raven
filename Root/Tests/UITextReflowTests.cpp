@@ -1,6 +1,7 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/UI/Core/UIElement.h"
@@ -420,6 +421,58 @@ void TestDPILayoutMetrics()
     context.SetDPIScale(2.0f, 2.0f);
     CheckNear("legacy size after dpi", childPtr->GetPreferredSize().x, 33.0f);
     CheckNear("legacy size after dpi y", childPtr->GetPreferredSize().y, 11.0f);
+}
+
+// GPU不要のRenderer Spyで、DPIとFramebuffer倍率が混同されないことを検証します。
+class FramebufferSizeRenderer final : public Raven::UIRenderer
+{
+public:
+    Raven::math::Vec2 LastViewport{};
+    Raven::math::Vec2 LastFramebuffer{};
+    std::size_t Calls = 0u;
+
+    void Render(const Raven::UIDrawList&,
+        const Raven::math::Vec2& viewportSize,
+        const Raven::math::Vec2& framebufferSize) override
+    {
+        LastViewport = viewportSize;
+        LastFramebuffer = framebufferSize;
+        ++Calls;
+    }
+};
+
+void TestWindowFramebufferMetrics()
+{
+    Raven::UIContext context;
+    auto renderer = std::make_unique<FramebufferSizeRenderer>();
+    FramebufferSizeRenderer* spy = renderer.get();
+    context.SetRenderer(std::move(renderer));
+
+    // Content ScaleとFramebuffer比率はOS/Monitorにより一致するとは限りません。
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f),
+        Raven::math::Vec2(1200.0f, 900.0f), 2.0f, 1.5f);
+    CheckNear("window dpi x", context.GetDPIScaleX(), 2.0f);
+    CheckNear("window dpi y", context.GetDPIScaleY(), 1.5f);
+    CheckNear("window layout width", context.GetLayoutViewportSize().x, 400.0f);
+    CheckNear("window layout height", context.GetLayoutViewportSize().y, 400.0f);
+    context.EndFrame();
+    Check(spy->Calls == 1u, "window renderer called");
+    CheckNear("window logical width", spy->LastViewport.x, 800.0f);
+    CheckNear("window framebuffer width", spy->LastFramebuffer.x, 1200.0f);
+
+    // 最小化中の0 PixelをWindow論理サイズで代替しないことを確認します。
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f),
+        Raven::math::Vec2(0.0f, 0.0f), 1.0f, 1.0f);
+    context.EndFrame();
+    CheckNear("minimized framebuffer width", spy->LastFramebuffer.x, 0.0f);
+    CheckNear("minimized framebuffer height", spy->LastFramebuffer.y, 0.0f);
+
+    // 復帰後は以前のDPI/Framebuffer値を持ち越しません。
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f),
+        Raven::math::Vec2(640.0f, 480.0f), 1.0f, 1.0f);
+    context.EndFrame();
+    CheckNear("restored dpi", context.GetDPIScaleX(), 1.0f);
+    CheckNear("restored framebuffer", spy->LastFramebuffer.x, 640.0f);
 }
 
 void TestDPIContextCoordinates()
@@ -1969,6 +2022,7 @@ void TestTabSystem()
 
 int main()
 {
+    TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();
     TestTreeViewDragDrop();
