@@ -43,6 +43,8 @@ public:
         float ratio = 0.5f, bool newLeafFirst = false);
     // Tabが空のLeafだけを閉じ、Siblingを昇格させます。Rootは閉じません。
     bool CloseEmptyPane(std::uint64_t leafId);
+    // UI Pane未生成のDockSpaceへ幾何Snapshotを復元します。
+    bool RestoreStructure(const std::vector<UIDockLayoutRecord>& records);
     void RefreshLayout();
     void SetSplitterThickness(float value);
     void SetMinimumPaneExtent(float value);
