@@ -1,4 +1,5 @@
 #include "Raven/UI/Docking/UIDockSpace.h"
+#include "Raven/UI/Core/UIContext.h"
 #include "Raven/Core/JsonParser.h"
 #include "Raven/Core/JsonWriter.h"
 
