@@ -924,6 +924,37 @@ void UIDockSpace::OnSplitterDrag(std::uint64_t splitId, float delta)
     }
 }
 
+Scope<UIElement> UIDockSpace::ExtractTabForWindow(
+    std::uint64_t leafId, std::uint64_t tabId, UITabItem& outTab)
+{
+    UITabView* view = GetTabView(leafId);
+    UIDockNode* node = m_Layout.FindNode(leafId);
+    if (view == nullptr || node == nullptr || node->GetTabs() == nullptr ||
+        GetContext() == nullptr || GetContext()->IsFrameActive() == true)
+    {
+        return nullptr;
+    }
+    const UITabItem* visualTab = view->GetModel().FindTab(tabId);
+    const UITabItem* logicalTab = node->GetTabs()->FindTab(tabId);
+    if (visualTab == nullptr || logicalTab == nullptr ||
+        visualTab->Title != logicalTab->Title ||
+        visualTab->Closable != logicalTab->Closable)
+    {
+        return nullptr;
+    }
+
+    // ExtractTabはContentのScopeを返し、UITabViewのClosed通知でDock論理Modelも更新します。
+    // 元のTab情報は削除前に値コピーし、復帰時のID/Title/Closableを保持します。
+    const UITabItem metadata = *visualTab;
+    Scope<UIElement> content = view->ExtractTab(tabId);
+    if (content == nullptr)
+    {
+        return nullptr;
+    }
+    outTab = metadata;
+    return content;
+}
+
 bool UIDockSpace::MoveTabToPane(std::uint64_t sourceLeafId,
     std::uint64_t targetLeafId, std::uint64_t tabId)
 {
