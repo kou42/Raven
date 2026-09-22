@@ -142,6 +142,7 @@ public:
 private:
     friend class UIElement;
 
+    bool IsLiveDragElement(const UIElement* element) const;
     void UpdateDrag(const math::Vec2& position, UIElement* hitTarget);
     void FinishDrag(const math::Vec2& position, UIElement* hitTarget);
     void SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position);
