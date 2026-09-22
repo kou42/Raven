@@ -35,6 +35,8 @@ public:
     bool SelectTab(std::uint64_t leafId, std::uint64_t tabId);
     bool CloseTab(std::uint64_t leafId, std::uint64_t tabId);
     bool MoveTab(std::uint64_t leafId, std::uint64_t tabId, std::size_t index);
+    bool MoveTabToPane(std::uint64_t sourceLeafId, std::uint64_t targetLeafId,
+        std::uint64_t tabId);
 
     // Tree変更後は本API経由でWidgetを生成・再配置します。
     UIDockNode* Split(std::uint64_t leafId, UIDockSplitAxis axis,
@@ -45,17 +47,22 @@ public:
 
 protected:
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
+    bool OnDragDropEvent(UIDragDropEvent& event) override;
 
 private:
     void SyncWidgets();
     void ApplyLayout();
     void OnSplitterDrag(std::uint64_t splitId, float delta);
     static void ApplyRect(UIElement& element, const UIDockRect& rect);
+    std::uint64_t FindLeafAt(const math::Vec2& local) const;
+    std::uint64_t FindSourceLeaf(const UIElement* source) const;
 
     UIDockLayout m_Layout;
     std::unordered_map<std::uint64_t, UIElement*> m_Panes;
     std::unordered_map<std::uint64_t, UITabView*> m_TabViews;
     std::unordered_map<std::uint64_t, UISplitter*> m_Splitters;
+    UIElement* m_Preview = nullptr;
+    std::uint64_t m_PreviewLeaf = 0u;
     float m_SplitterThickness = 5.0f;
     float m_MinimumPaneExtent = 32.0f;
 };
