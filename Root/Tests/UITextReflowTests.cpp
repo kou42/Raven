@@ -76,6 +76,32 @@ void Check(bool condition, const char* label)
     }
 }
 
+void TestDPISizeConstraints()
+{
+    Raven::UIContext context;
+    auto element = std::make_unique<Raven::UIElement>();
+    element->SetPreferredSizeDIP(Raven::math::Vec2(80.0f, 40.0f));
+    element->SetMinSizeDIP(Raven::math::Vec2(90.0f, 20.0f));
+    element->SetMaxSizeDIP(Raven::math::Vec2(100.0f, 30.0f));
+    Raven::UIElement* ptr = context.GetRootElement().AddChild(std::move(element));
+    context.SetDPIScale(1.5f, 2.0f);
+    CheckNear("dpi min clamps width", ptr->GetPreferredSize().x, 135.0f);
+    CheckNear("dpi max clamps height", ptr->GetPreferredSize().y, 60.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("user scale min width", ptr->GetPreferredSize().x, 168.75f);
+    CheckNear("user scale max height", ptr->GetPreferredSize().y, 75.0f);
+    // Legacy setterへの切替後はDPIが変わっても、その軸の制約は固定値のままです。
+    ptr->SetMinSize(Raven::math::Vec2(10.0f, 10.0f));
+    ptr->SetMaxSize(Raven::math::Vec2(120.0f, 80.0f));
+    context.SetDPIScale(2.0f, 2.0f);
+    CheckNear("legacy max clamps dip width", ptr->GetPreferredSize().x, 120.0f);
+    CheckNear("legacy max clamps dip height", ptr->GetPreferredSize().y, 75.0f);
+    // Contextを離れたElementはDIP等倍で再計算されます。
+    Raven::Scope<Raven::UIElement> detached = context.GetRootElement().DetachChild(ptr);
+    CheckNear("detached dip width", detached->GetPreferredSize().x, 90.0f);
+    CheckNear("detached dip height", detached->GetPreferredSize().y, 30.0f);
+}
+
 void TestDPILayoutMetrics()
 {
     Raven::UIContext context;
@@ -1786,6 +1812,7 @@ int main()
     TestUITheme();
     TestDPIContextCoordinates();
     TestDPILayoutMetrics();
+    TestDPISizeConstraints();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
