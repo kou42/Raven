@@ -191,7 +191,15 @@ public:
     void SetOnSelectionChanged(SelectionHandler handler) { m_OnSelectionChanged = std::move(handler); }
     void SetOnExpansionChanged(ExpansionHandler handler) { m_OnExpansionChanged = std::move(handler); }
     // 同一Tree内のNodeをDrop先Nodeの子へ移動します。初期状態では既存Tree操作に影響しません。
-    void SetNodeDragDropEnabled(bool value) { m_NodeDragDropEnabled = value; }
+    void SetNodeDragDropEnabled(bool value)
+    {
+        if (value == false && GetContext() != nullptr &&
+            GetContext()->GetDragSource() == this)
+        {
+            GetContext()->CancelDrag();
+        }
+        m_NodeDragDropEnabled = value;
+    }
     bool IsNodeDragDropEnabled() const { return m_NodeDragDropEnabled; }
     // 別TreeView間の所有権移動は明示的に許可した受入側でのみ有効にします。
     void SetExternalNodeDropEnabled(bool value) { m_ExternalNodeDropEnabled = value; }
@@ -332,17 +340,21 @@ protected:
         }
         else
         {
+            // 選択CallbackがNodeを削除・移動しても古いPointerを逆参照しません。
+            const std::uint64_t nodeId = node->Id;
             Select(node);
-            if (m_NodeDragDropEnabled == true && event.Context != nullptr && node->Id != 0u)
+            UITreeNode* currentNode = FindNode(nodeId);
+            if (m_NodeDragDropEnabled == true && event.Context != nullptr &&
+                nodeId != 0u && currentNode != nullptr)
             {
-                m_PendingNodeId = node->Id;
+                m_PendingNodeId = nodeId;
                 // Down時点でCaptureし、PointerがTree外へ出てもMoveを受け取ります。
                 // 閾値未満のUpはUIContextが通常Clickとして扱います。
                 if (event.Context->BeginDrag(this,
-                    UIDragDropPayload{ "Raven/UITreeNode", std::to_string(node->Id) },
+                    UIDragDropPayload{ "Raven/UITreeNode", std::to_string(nodeId) },
                     event.ScreenPosition) == true)
                 {
-                    event.Context->SetDragPreview(node->Text, m_Font);
+                    event.Context->SetDragPreview(currentNode->Text, m_Font);
                 }
             }
         }
