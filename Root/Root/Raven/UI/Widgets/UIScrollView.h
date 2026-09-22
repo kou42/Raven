@@ -105,6 +105,10 @@ private:
     math::Vec4 m_ScrollBarTrackColor{ 0.06f, 0.07f, 0.09f, 0.75f };
     math::Vec4 m_ScrollBarThumbColor{ 0.42f, 0.45f, 0.52f, 0.95f };
 
+    // 既存SetColorによる個別指定はContext Themeより優先します。
+    bool m_ScrollBarTrackColorOverride = false;
+    bool m_ScrollBarThumbColorOverride = false;
+
     ScrollBarDragAxis m_DragAxis = ScrollBarDragAxis::None;
     float m_DragGrabOffset = 0.0f;
     bool m_VerticalScrollBarEnabled = true;
