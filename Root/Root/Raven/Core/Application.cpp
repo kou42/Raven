@@ -773,25 +773,28 @@ bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& wind
                 sourceWindow->GetBackend());
             // 新しいOS Window内では論理Windowの座標原点を戻し、
             // 元Viewportの画面座標を補助Windowへ持ち越さないようにします。
-            const math::Vec2 oldPosition = logicalWindow->GetPosition();
-            const bool queued = RequestDetachUIRootChildToNewWindow(
+            RequestDetachUIRootChildToNewWindow(
                 sourceID, logicalWindow, specification,
-                [this, logicalWindow, oldPosition](WindowID destinationID)
+                [this, logicalWindow](WindowID destinationID)
                 {
-                    if (destinationID != 0)
+                    // 失敗時には予約後にWidgetが削除されている可能性があるため、
+                    // Pointerを逆参照しません。成功時だけ移譲先Rootの生存確認を行います。
+                    UIContext* destination = GetWindowUIContext(destinationID);
+                    if (destination == nullptr)
                     {
-                        logicalWindow->SetPosition(math::Vec2(0.0f, 0.0f));
-                        // 補助WindowのClose時は既存Application経路でMain Rootへ戻します。
-                        // 再切り離しの際は現在の所属Window IDを改めてBindしてください。
-                        logicalWindow->SetOnViewportTransferRequested({});
+                        return;
                     }
-                    else
+                    for (const auto& child : destination->GetRootElement().GetChildren())
                     {
-                        // 生成失敗時は移動元のTreeを保持する既存契約を尊重します。
-                        logicalWindow->SetPosition(oldPosition);
+                        if (child.get() == logicalWindow)
+                        {
+                            logicalWindow->SetPosition(math::Vec2(0.0f, 0.0f));
+                            // 再切り離しは新しい所属Window IDで明示的に再Bindします。
+                            logicalWindow->SetOnViewportTransferRequested({});
+                            break;
+                        }
                     }
                 });
-            (void)queued;
         });
     return true;
 }
