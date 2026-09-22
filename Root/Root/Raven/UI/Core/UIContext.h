@@ -175,6 +175,8 @@ public:
     // Rootへ通常Widgetを追加し、内部Popup Layerの前面描画順を維持します。
     // 描画中のTree変更を避けるためFrame外で呼び出してください。
     UIElement* AddRootChild(Scope<UIElement> child);
+    // Window Close時に通常Root Childの所有権を一時退避します。内部Overlayは除外します。
+    Scope<UIElement> DetachRootChild(UIElement* child);
 
     UIElement& GetRootElement();
     const UIElement& GetRootElement() const;
