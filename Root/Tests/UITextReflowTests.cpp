@@ -617,6 +617,41 @@ protected:
     }
 };
 
+void TestTreeViewDragDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 96.0f));
+    tree->SetNodeDragDropEnabled(true);
+    Raven::UITreeView* view = tree.get();
+    Raven::UITreeNode* root = tree->AddRoot(1u, "Root");
+    Raven::UITreeNode* child = tree->AddNode(root, 2u, "Child");
+    Raven::UITreeNode* destination = tree->AddRoot(3u, "Destination");
+    std::uint64_t moved = 0u;
+    std::uint64_t parent = 0u;
+    tree->SetOnNodeDropped([&](std::uint64_t source, std::uint64_t target)
+    {
+        moved = source;
+        parent = target;
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    Check(context.HasPendingDrag(), "tree node reserves drag on down");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
+    Check(context.IsDragging() && context.GetDropTarget() == view, "tree accepts sibling root");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    Check(child->Parent == destination && moved == 2u && parent == 3u, "tree reparents node on drop");
+    Check(context.HasMouseCapture() == false, "tree drop releases capture");
+    // 親を子へDropしても循環を作らないことを検証します。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
+    Check(context.GetDropTarget() == nullptr, "tree rejects descendant target");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    Check(root->Parent == nullptr, "tree cycle guard keeps root");
+}
+
 void TestDragDropRouting()
 {
     Raven::UIContext context;
@@ -673,6 +708,7 @@ void TestDragDropRouting()
 int main()
 {
     TestDragDropRouting();
+    TestTreeViewDragDrop();
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
