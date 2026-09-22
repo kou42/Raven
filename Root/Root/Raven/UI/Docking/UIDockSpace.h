@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Docking/UIDockGeometry.h"
 #include "Raven/UI/Widgets/UISplitter.h"
+#include "Raven/UI/Widgets/UITabView.h"
 
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,15 @@ public:
     UIElement* GetPane(std::uint64_t leafId) const;
     UISplitter* GetSplitter(std::uint64_t splitId) const;
 
+    // DockSpaceが生成したTabViewのみを管理し、Tab操作を論理Modelへ同期します。
+    UITabView* CreateTabView(std::uint64_t leafId);
+    UITabView* GetTabView(std::uint64_t leafId) const;
+    bool AddTab(std::uint64_t leafId, std::uint64_t tabId, std::string title,
+        Scope<UIElement> content, bool closable = true);
+    bool SelectTab(std::uint64_t leafId, std::uint64_t tabId);
+    bool CloseTab(std::uint64_t leafId, std::uint64_t tabId);
+    bool MoveTab(std::uint64_t leafId, std::uint64_t tabId, std::size_t index);
+
     // Tree変更後は本API経由でWidgetを生成・再配置します。
     UIDockNode* Split(std::uint64_t leafId, UIDockSplitAxis axis,
         float ratio = 0.5f, bool newLeafFirst = false);
@@ -44,6 +54,7 @@ private:
 
     UIDockLayout m_Layout;
     std::unordered_map<std::uint64_t, UIElement*> m_Panes;
+    std::unordered_map<std::uint64_t, UITabView*> m_TabViews;
     std::unordered_map<std::uint64_t, UISplitter*> m_Splitters;
     float m_SplitterThickness = 5.0f;
     float m_MinimumPaneExtent = 32.0f;
