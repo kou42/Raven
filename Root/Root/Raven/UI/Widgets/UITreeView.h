@@ -756,7 +756,7 @@ protected:
                     // Viewport境界に一致する線はClipで完全に消えるため、内側へ寄せます。
                     const float indicatorY = std::clamp(lineY,
                         absolutePosition.y + 1.5f,
-                        absolutePosition.y + GetSize().y - 1.5f);
+                        absolutePosition.y + std::max(1.5f, GetSize().y - 1.5f));
                     drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
                         math::Vec2(right, indicatorY + 1.5f),
                         ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
@@ -782,7 +782,7 @@ protected:
             // 空Treeの先頭・Scroll末尾とも線の全幅がViewport内に残るよう補正します。
             const float indicatorY = std::clamp(lineY,
                 absolutePosition.y + 1.5f,
-                absolutePosition.y + GetSize().y - 1.5f);
+                absolutePosition.y + std::max(1.5f, GetSize().y - 1.5f));
             const float right = absolutePosition.x + GetSize().x -
                 (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
             drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
