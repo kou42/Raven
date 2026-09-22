@@ -46,6 +46,10 @@ public:
     UIContext();
 
     void BeginFrame(const math::Vec2& viewportSize);
+    // Window単位でDPI・論理サイズ・実Pixelサイズを同じFrame境界に同期します。
+    // 補助Windowもそれぞれ独立したUIContextに対してこの入口を使用します。
+    void BeginFrame(const math::Vec2& viewportSize,
+        const math::Vec2& framebufferSize, float dpiScaleX, float dpiScaleY);
     // Window論理サイズとは独立した実Pixel数を描画境界へ渡します。
     void SetFramebufferSize(const math::Vec2& framebufferSize)
     {
