@@ -789,6 +789,46 @@ void Application::FlushPendingUIDetaches()
     }
 }
 
+void Application::CompleteReleasedUIWindowDrags()
+{
+    if (m_RavenUIEnabled == false)
+    {
+        return;
+    }
+    // GLFWではWindow外でMouse Upが配送されない環境があります。
+    // 通常EventでCaptureが解除されていれば何もせず、残留したUIWindow操作だけを補完します。
+    const auto complete = [this](WindowID id, UIContext& ui)
+    {
+        UIWindow* logicalWindow = dynamic_cast<UIWindow*>(ui.GetMouseCaptureElement());
+        if (logicalWindow == nullptr ||
+            (logicalWindow->IsMoving() == false && logicalWindow->IsResizing() == false))
+        {
+            return;
+        }
+        Window* window = m_WindowManager.GetWindow(id);
+        if (window == nullptr || m_WindowManager.IsWindowClosePending(id) == true)
+        {
+            return;
+        }
+        GLFWwindow* native = static_cast<GLFWwindow*>(window->GetNativeWindow());
+        if (native == nullptr || glfwGetMouseButton(native, GLFW_MOUSE_BUTTON_LEFT) != GLFW_RELEASE)
+        {
+            return;
+        }
+        double x = 0.0;
+        double y = 0.0;
+        glfwGetCursorPos(native, &x, &y);
+        // Widgetへ通常のUpを配送し、Capture解除と移譲要求を一つの経路に統一します。
+        ui.RouteMouseUp(math::Vec2(static_cast<float>(x), static_cast<float>(y)),
+            UIMouseButton::Left);
+    };
+    complete(m_MainWindowID, m_UIContext);
+    for (const auto& entry : m_AuxiliaryUIContexts)
+    {
+        complete(entry.first, *entry.second);
+    }
+}
+
 bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& window)
 {
     UIContext* source = GetWindowUIContext(sourceID);
@@ -1161,6 +1201,8 @@ void Application::Run()
 
         // GLFWのProcess共通Event Queueを一度処理し、補助WindowのCloseも安全に確定します。
         m_WindowManager.PollEvents();
+        // Window外でMouse Upを取りこぼしても、次FrameへDrag/Captureを残しません。
+        CompleteReleasedUIWindowDrags();
         if (sceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
