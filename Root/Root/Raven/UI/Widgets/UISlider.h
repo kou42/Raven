@@ -61,6 +61,13 @@ private:
     math::Vec4 m_HoveredThumbColor{ 0.86f, 0.89f, 0.95f, 1.0f };
     math::Vec4 m_ActiveThumbColor{ 1.0f, 1.0f, 1.0f, 1.0f };
     math::Vec4 m_FocusedThumbColor{ 0.48f, 0.72f, 1.0f, 1.0f };
+    // 明示的なSetColorはTheme切替後も維持し、未設定項目のみThemeへ追従します。
+    bool m_TrackColorOverride = false;
+    bool m_FillColorOverride = false;
+    bool m_ThumbColorOverride = false;
+    bool m_HoveredThumbColorOverride = false;
+    bool m_ActiveThumbColorOverride = false;
+    bool m_FocusedThumbColorOverride = false;
     ValueChangedHandler m_OnValueChanged;
     bool m_Dragging = false;
 };
