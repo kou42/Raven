@@ -348,6 +348,11 @@ protected:
 
     bool OnDragDropEvent(UIDragDropEvent& event) override
     {
+        if (event.Type == UIDragDropEventType::End || event.Type == UIDragDropEventType::Cancel)
+        {
+            m_PendingNodeId = 0u;
+            return false;
+        }
         if (m_NodeDragDropEnabled == false || event.Payload == nullptr ||
             event.Payload->Type != "Raven/UITreeNode" || event.Source != this)
         {
@@ -402,10 +407,6 @@ protected:
                 m_OnNodeDropped(source->Id, target->Id);
             }
             return true;
-        }
-        if (event.Type == UIDragDropEventType::End || event.Type == UIDragDropEventType::Cancel)
-        {
-            m_PendingNodeId = 0u;
         }
         return false;
     }
