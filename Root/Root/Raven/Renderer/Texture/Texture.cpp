@@ -35,7 +35,17 @@ Ref<Texture> Texture::Create(const TextureSpecification& specification)
 
 Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data, std::size_t dataSize)
 {
-    return Create(specification, data, dataSize, nullptr);
+    // Legacy呼び出しの戻り値・初期化順は変更しません。
+    Ref<Texture> texture = Create(specification);
+    if (texture == nullptr)
+    {
+        return nullptr;
+    }
+    if (data != nullptr)
+    {
+        texture->SetData(data, dataSize);
+    }
+    return texture;
 }
 
 Ref<Texture> Texture::Create(const TextureSpecification& specification, const void* data,
