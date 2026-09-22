@@ -463,6 +463,74 @@ WindowID Application::DetachUIRootChildToNewWindow(
     return destinationID;
 }
 
+bool Application::RequestDetachUIRootChildToNewWindow(
+    WindowID sourceID, UIElement* child, const WindowSpecification& specification,
+    UIDetachCompleted onCompleted)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (m_RavenUIEnabled == false || source == nullptr || child == nullptr ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return false;
+    }
+
+    // Pointerを直接逆参照せず、所有Rootの生存Childと同一性を照合します。
+    // Frame中のWidget削除や二重予約はFlush時にも再検証します。
+    bool found = false;
+    for (const auto& item : source->GetRootElement().GetChildren())
+    {
+        if (item.get() == child)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (found == false)
+    {
+        return false;
+    }
+    for (const PendingUIDetach& pending : m_PendingUIDetaches)
+    {
+        if (pending.SourceID == sourceID && pending.Child == child)
+        {
+            return false;
+        }
+    }
+    m_PendingUIDetaches.push_back(
+        PendingUIDetach{ sourceID, child, specification, std::move(onCompleted) });
+    return true;
+}
+
+void Application::FlushPendingUIDetaches()
+{
+    // Callbackから次の予約が追加されても反復中のvectorを変更しないよう入れ替えます。
+    std::vector<PendingUIDetach> pending;
+    pending.swap(m_PendingUIDetaches);
+    for (PendingUIDetach& request : pending)
+    {
+        WindowID result = 0;
+        UIContext* source = GetWindowUIContext(request.SourceID);
+        if (source != nullptr && source->IsFrameActive() == false &&
+            m_WindowManager.IsWindowClosePending(request.SourceID) == false)
+        {
+            // 予約から実行までにWidgetが削除されていてもdangling pointerを逆参照しません。
+            for (const auto& item : source->GetRootElement().GetChildren())
+            {
+                if (item.get() == request.Child)
+                {
+                    result = DetachUIRootChildToNewWindow(
+                        request.SourceID, request.Child, request.Specification);
+                    break;
+                }
+            }
+        }
+        if (request.OnCompleted)
+        {
+            request.OnCompleted(result);
+        }
+    }
+}
+
 UIContext* Application::GetWindowUIContext(WindowID id)
 {
     if (id == m_MainWindowID)
@@ -670,6 +738,10 @@ void Application::Run()
             }
             m_UIContext.EndFrame();
         }
+
+        // Layer更新中はMain UI FrameがActiveなのでTree移譲を行わず、ここで予約を処理します。
+        // 補助Windowの描画反復前に生成を完了させ、unordered_mapの反復子無効化を防ぎます。
+        FlushPendingUIDetaches();
 
         // 補助WindowのUIは専用GL Context/VAOとWindow別DPI・Framebufferで描画します。
         if (m_RavenUIEnabled == true)
