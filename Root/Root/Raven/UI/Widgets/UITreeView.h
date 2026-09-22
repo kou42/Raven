@@ -525,6 +525,15 @@ protected:
             return false;
             }
         }
+        // ChildへのDropは子リスト末尾への追加です。既に末尾の子なら並び順は変わりません。
+        // AutoExpandの待機状態も解除し、無変更Dropで展開や通知を発生させません。
+        if (placement == DropPlacement::Child && sourceView == this &&
+            source->Parent == target && target->Children.empty() == false &&
+            target->Children.back().get() == source)
+        {
+            ResetDragAutoExpand();
+            return false;
+        }
         if (placement == DropPlacement::RootEnd && sourceView == this &&
             source->Parent == nullptr && m_Roots.back().get() == source)
         {
@@ -543,7 +552,7 @@ protected:
                 if (FindNode(candidate->Id) != nullptr)
                 {
                     ResetDragAutoExpand();
-            return false;
+                    return false;
                 }
                 for (const auto& child : candidate->Children)
                 {
@@ -634,7 +643,7 @@ protected:
                     // Tree内で不整合が起きた場合も所有権を失わないよう末尾へ退避します。
                     newSiblings.push_back(std::move(moved));
                     ResetDragAutoExpand();
-            return false;
+                    return false;
                 }
                 newSiblings.insert(placement == DropPlacement::After ? targetIt + 1 : targetIt,
                     std::move(moved));
