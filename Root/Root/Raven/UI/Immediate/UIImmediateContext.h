@@ -2,6 +2,7 @@
 
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UICheckbox.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIPanel.h"
@@ -88,6 +89,7 @@ public:
                 parent->RemoveChild(element);
             }
             m_ButtonStates.erase(item.second);
+            m_CheckboxStates.erase(item.second);
             m_SliderStates.erase(item.second);
             m_TextStates.erase(item.second);
             m_Widgets.erase(found);
@@ -125,6 +127,7 @@ public:
                 parent->RemoveChild(element);
             }
             m_ButtonStates.erase(*it);
+            m_CheckboxStates.erase(*it);
             m_SliderStates.erase(*it);
             m_TextStates.erase(*it);
             m_Widgets.erase(found);
@@ -229,9 +232,8 @@ public:
         return clicked;
     }
 
-    // 専用Checkbox Widgetがない段階ではUIButtonを再利用します。
-    // 状態は呼び出し側が所有し、クリック時だけ反転します。
-    // IDは表示文言と独立させ、状態変化でもWidgetを再生成しません。
+    // 外部boolを正規状態とし、入力通知は次の宣言で一度だけ反映します。
+    // WidgetはUI Frame中に呼び出し側のbool*を参照しません。
     bool Checkbox(const std::string& id, const std::string& caption, bool* checked,
         const Ref<UIFontAtlas>& font,
         const math::Vec2& size = math::Vec2(160.0f, 28.0f))
@@ -240,24 +242,37 @@ public:
         {
             return false;
         }
-        const std::string display = (*checked == true ? "[x] " : "[ ] ") + caption;
-        const bool clicked = Button(id, display, font, size);
-        if (clicked == true)
+        const std::string key = MakeKey(id);
+        UICheckbox* checkbox = GetOrCreate<UICheckbox>(id);
+        if (checkbox == nullptr)
         {
-            *checked = (*checked == false);
-            // 入力を消費したFrame内に表示も同期します。
-            const auto found = m_Widgets.find(MakeKey(id));
-            if (found != m_Widgets.end())
-            {
-                UIButton* button = static_cast<UIButton*>(found->second.Element);
-                if (button->GetChildren().empty() == false)
-                {
-                    UILabel* label = static_cast<UILabel*>(button->GetChildren().front().get());
-                    label->SetText((*checked == true ? "[x] " : "[ ] ") + caption);
-                }
-            }
+            return false;
         }
-        return clicked;
+        auto& state = m_CheckboxStates[key];
+        if (state == nullptr)
+        {
+            state = std::make_shared<CheckboxState>();
+            const std::weak_ptr<CheckboxState> weak = state;
+            checkbox->SetOnToggle([weak](bool next)
+            {
+                const auto current = weak.lock();
+                if (current != nullptr)
+                {
+                    current->Value = next;
+                    current->Changed = true;
+                }
+            });
+        }
+        const bool changed = state->Changed;
+        if (changed == true)
+        {
+            *checked = state->Value;
+            state->Changed = false;
+        }
+        checkbox->SetPreferredSize(size);
+        checkbox->SetChecked(*checked);
+        checkbox->SetCaption(caption, font);
+        return changed;
     }
 
     // PanelのTreeとID Scopeをまとめて開きます。EndContainer()で閉じてください。
@@ -479,6 +494,7 @@ public:
 
 private:
     struct ButtonState { bool Clicked = false; };
+    struct CheckboxState { bool Value = false; bool Changed = false; };
     struct SliderState
     {
         float Value = 0.0f;
@@ -525,6 +541,7 @@ private:
     // AbortFrameで新規作成分だけを親子逆順に取り消すための宣言順記録です。
     std::vector<std::string> m_CreatedThisFrame;
     std::unordered_map<std::string, std::shared_ptr<ButtonState>> m_ButtonStates;
+    std::unordered_map<std::string, std::shared_ptr<CheckboxState>> m_CheckboxStates;
     std::unordered_map<std::string, std::shared_ptr<SliderState>> m_SliderStates;
     std::unordered_map<std::string, std::shared_ptr<TextState>> m_TextStates;
     std::vector<std::string> m_IDStack;
