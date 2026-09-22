@@ -20,6 +20,18 @@ struct UIFontAtlasBuildOptions
     std::uint32_t Padding = 1u;
 };
 
+// Font Atlas構築の失敗段階を表します。TextureCreationFailedはGPU側の詳細エラーまでは含みません。
+enum class UIFontAtlasBuildFailure
+{
+    None,
+    InvalidDPIOptions,
+    FontFileUnavailable,
+    FontDataInvalid,
+    AtlasCapacityExceeded,
+    TextureCreationFailed,
+    AtlasInitializationFailed
+};
+
 // Fontファイルを読み込み、指定されたコードポイントだけを事前Rasterizeします。
 // 呼び出しには有効なRenderer/RHI DeviceとGPU Contextが必要です。
 // 日本語全文字を無条件に展開せず、用途ごとの文字集合を指定してAtlas容量を制御します。
@@ -38,18 +50,12 @@ public:
         const std::string& fontPath,
         const std::vector<std::uint32_t>& codepoints,
         const UIFontAtlasBuildOptions& options,
-        UIFontAtlas& outAtlas);
+        UIFontAtlas& outAtlas,
+        UIFontAtlasBuildFailure* outFailure = nullptr);
 };
 
 // GPU Contextを持つ呼び出し側が所有する明示Cacheです。
 // Fontパス・文字集合・Atlas設定・量子化したDPI倍率が一致するAtlasだけを再利用します。
-enum class UIFontAtlasBuildFailure
-{
-    None,
-    InvalidDPIOptions,
-    FontFileUnavailable,
-    AtlasBuildFailed
-};
 
 class UIFontAtlasDPICache
 {
