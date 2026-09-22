@@ -309,6 +309,9 @@ public:
     void HandleIMEEvent(UIIMEEvent& event) { OnIMEEvent(event); }
 
     void BuildDrawList(UIDrawList& drawList);
+    // UIContextのFont一括更新用拡張点。通常Elementは対象外です。
+    virtual bool HasPendingDPIFont() const { return false; }
+    virtual bool RefreshPendingDPIFont() { return false; }
 
 protected:
     // Leaf Widgetが自身のContentに必要な論理Sizeを返します。ContainerのChild集約は基底側で継続します。
