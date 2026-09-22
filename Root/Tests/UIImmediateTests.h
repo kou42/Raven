@@ -60,6 +60,26 @@ void TestUIImmediateContext()
     CheckImmediate(immediate.GetCachedWidgetCount() == 0u,
         "container and descendants safely removed");
 
+    // Cacheからの再利用でも宣言順を描画順へ反映します。
+    {
+        Raven::UIContext orderContext;
+        Raven::UIImmediateContext orderImmediate(orderContext);
+        CheckImmediate(orderImmediate.BeginFrame() == true, "order first BeginFrame");
+        auto* back = orderImmediate.GetOrCreate<Raven::UIButton>("back");
+        auto* front = orderImmediate.GetOrCreate<Raven::UIButton>("front");
+        CheckImmediate(orderImmediate.EndFrame() == true, "order first EndFrame");
+        CheckImmediate(back != nullptr && front != nullptr, "order widgets created");
+        CheckImmediate(orderImmediate.BeginFrame() == true, "order second BeginFrame");
+        CheckImmediate(orderImmediate.GetOrCreate<Raven::UIButton>("front") == front,
+            "front reused");
+        CheckImmediate(orderImmediate.GetOrCreate<Raven::UIButton>("back") == back,
+            "back reused");
+        CheckImmediate(orderImmediate.EndFrame() == true, "order second EndFrame");
+        const auto& ordered = orderContext.GetRootElement().GetChildren();
+        CheckImmediate(ordered.size() == 2u && ordered[0].get() == front &&
+            ordered[1].get() == back, "declaration order applied");
+    }
+
     // UIContextの描画Frame中はTree変更を許可しません。
     context.BeginFrame(Raven::math::Vec2(320.0f, 240.0f));
     CheckImmediate(immediate.BeginFrame() == false, "UIContext active rejects BeginFrame");
