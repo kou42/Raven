@@ -749,6 +749,20 @@ void TestTreeViewEmptyAreaDrop()
     context.RouteMouseDown(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
     context.RouteMouseMove(Raven::math::Vec2(300.0f, 60.0f));
     Check(context.GetDropTarget() == targetView, "empty tree accepts external root");
+    context.EndFrame();
+    // 空TreeのRootEnd線はViewport上端の外へ半分消えないよう内側に描画します。
+    bool hasVisibleRootEndLine = false;
+    for (const auto& command : context.GetDrawList().GetCommands())
+    {
+        if (command.Type == Raven::UIDrawCommandType::SolidRect &&
+            std::abs(command.Color.y - 0.90f) < 0.001f &&
+            std::abs(command.Rect.Min.x - 260.0f) < 0.001f &&
+            command.Rect.Min.y >= 20.0f && command.Rect.Max.y <= 140.0f)
+        {
+            hasVisibleRootEndLine = true;
+        }
+    }
+    Check(hasVisibleRootEndLine, "empty tree root end line stays inside viewport");
     context.RouteMouseUp(Raven::math::Vec2(300.0f, 60.0f), Raven::UIMouseButton::Left);
     Check(sourceView->FindNode(100u) == nullptr && targetView->FindNode(100u) == moved,
         "empty tree receives subtree");
