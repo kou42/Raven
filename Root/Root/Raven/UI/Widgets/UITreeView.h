@@ -205,6 +205,23 @@ public:
     // 別TreeView間の所有権移動は明示的に許可した受入側でのみ有効にします。
     void SetExternalNodeDropEnabled(bool value) { m_ExternalNodeDropEnabled = value; }
     bool IsExternalNodeDropEnabled() const { return m_ExternalNodeDropEnabled; }
+    // Drag中のPointer Moveごとに端付近でスクロールします（時間駆動は別段階）。
+    void SetDragAutoScrollEnabled(bool value) { m_DragAutoScrollEnabled = value; }
+    bool IsDragAutoScrollEnabled() const { return m_DragAutoScrollEnabled; }
+    void SetDragAutoScrollEdge(float value)
+    {
+        if (std::isfinite(value) && value > 0.0f)
+        {
+            m_DragAutoScrollEdge = value;
+        }
+    }
+    void SetDragAutoScrollStep(float value)
+    {
+        if (std::isfinite(value) && value > 0.0f)
+        {
+            m_DragAutoScrollStep = value;
+        }
+    }
     void SetOnNodeDropped(NodeDroppedHandler handler) { m_OnNodeDropped = std::move(handler); }
     void SetOnNodePlaced(NodePlacedHandler handler) { m_OnNodePlaced = std::move(handler); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; }
@@ -409,6 +426,26 @@ protected:
             (IsScrollBarVisible() == true && local.x >= GetSize().x - m_ScrollBarThickness))
         {
             return false;
+        }
+        // 端付近のMoveで先にScrollし、その後のHit判定を新しい表示行に合わせます。
+        // 無効なPayloadでTreeがスクロールしないようSource確認後に実行します。
+        if (source == nullptr)
+        {
+            return false;
+        }
+        if (event.Type == UIDragDropEventType::Over &&
+            m_DragAutoScrollEnabled == true && GetMaxScrollOffset() > 0.0f)
+        {
+            const float edge = std::min(m_DragAutoScrollEdge, GetSize().y * 0.5f);
+            const float previous = GetScrollOffset();
+            if (local.y < edge)
+            {
+                SetScrollOffset(previous - m_DragAutoScrollStep);
+            }
+            else if (local.y >= GetSize().y - edge)
+            {
+                SetScrollOffset(previous + m_DragAutoScrollStep);
+            }
         }
         UITreeNode* target = NodeAt(event.ScreenPosition);
         if (source == nullptr)
@@ -763,6 +800,9 @@ private:
     std::uint64_t m_PendingNodeId = 0u;
     bool m_NodeDragDropEnabled = false;
     bool m_ExternalNodeDropEnabled = false;
+    bool m_DragAutoScrollEnabled = true;
+    float m_DragAutoScrollEdge = 24.0f;
+    float m_DragAutoScrollStep = 12.0f;
     math::Vec2 m_DropPointerPosition{};
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
