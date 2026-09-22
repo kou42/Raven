@@ -2,6 +2,7 @@
 
 #include "Raven/Renderer/Texture/Texture.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,69 @@ bool IsValidCodepoint(std::uint32_t codepoint)
         (codepoint < 0xD800u || codepoint > 0xDFFFu);
 }
 } // namespace
+
+bool UIFontAtlasBuilder::ResolveDPIOptions(
+    const UIFontAtlasBuildOptions& baseOptions,
+    float effectiveScale,
+    UIFontAtlasBuildOptions& outOptions,
+    float& outRasterScale)
+{
+    if (std::isfinite(effectiveScale) == false || effectiveScale <= 0.0f ||
+        std::isfinite(baseOptions.PixelHeight) == false || baseOptions.PixelHeight <= 0.0f ||
+        effectiveScale > 16.0f)
+    {
+        return false;
+    }
+    // 倍率を1/8刻みに固定し、同一Monitor付近の微小な倍率差でAtlasを増やしません。
+    const float quantized = std::max(1.0f, std::round(effectiveScale * 8.0f)) / 8.0f;
+    const float pixelHeight = baseOptions.PixelHeight * quantized;
+    if (std::isfinite(pixelHeight) == false || pixelHeight > 4096.0f)
+    {
+        return false;
+    }
+    outOptions = baseOptions;
+    outOptions.PixelHeight = pixelHeight;
+    outRasterScale = quantized;
+    return true;
+}
+
+Ref<UIFontAtlas> UIFontAtlasDPICache::GetOrBuild(
+    const std::string& fontPath,
+    const std::vector<std::uint32_t>& codepoints,
+    const UIFontAtlasBuildOptions& baseOptions,
+    float effectiveScale,
+    float& outRasterScale)
+{
+    UIFontAtlasBuildOptions resolved{};
+    float rasterScale = 1.0f;
+    if (UIFontAtlasBuilder::ResolveDPIOptions(baseOptions, effectiveScale,
+        resolved, rasterScale) == false)
+    {
+        return nullptr;
+    }
+    // 文字集合は順序に依存しないため正規化し、同一内容の重複Atlasを避けます。
+    std::vector<std::uint32_t> normalized = codepoints;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+    const std::uint32_t scaleStep = static_cast<std::uint32_t>(rasterScale * 8.0f);
+    const Key key(fontPath, normalized, baseOptions.PixelHeight, baseOptions.AtlasWidth,
+        baseOptions.AtlasHeight, baseOptions.Padding, scaleStep);
+    const auto found = m_Entries.find(key);
+    if (found != m_Entries.end())
+    {
+        outRasterScale = rasterScale;
+        return found->second;
+    }
+    Ref<UIFontAtlas> built = CreateRef<UIFontAtlas>();
+    if (UIFontAtlasBuilder::BuildFromFile(fontPath, normalized, resolved, *built) == false)
+    {
+        // GPU生成失敗時に空のAtlasをCacheへ登録しません。
+        return nullptr;
+    }
+    m_Entries.emplace(key, built);
+    outRasterScale = rasterScale;
+    return built;
+}
 
 bool UIFontAtlasBuilder::BuildFromFile(
     const std::string& fontPath,
