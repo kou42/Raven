@@ -68,7 +68,8 @@ enum class TextureCreationFailure
 {
     None,
     DeviceUnavailable,
-    ResourceUnavailable
+    ResourceUnavailable,
+    UploadFailed
 };
 
 // Textureは描画APIに依存しないインターフェースです。
@@ -117,6 +118,13 @@ public:
     // 現段階ではSampled用途のColor Texture更新を対象とします。
     // DepthStencil用途はGPUの描画先として利用するため、通常のSetData経路では更新しません。
     virtual void SetData(const void* data, std::size_t dataSize) = 0;
+    // 診断付き生成経路で使用。既存のTexture派生クラスはSetDataを維持できます。
+    virtual bool TrySetData(const void* data, std::size_t dataSize)
+    {
+        (void)data;
+        (void)dataSize;
+        return false;
+    }
 
     // 既存コードとの互換性を維持するためRenderer側のIDを公開しています。
     // 現在のFramebuffer / ImGui連携整理後に、上位層からのRendererID直接参照を削除予定です。
