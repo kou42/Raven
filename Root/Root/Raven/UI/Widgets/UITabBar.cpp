@@ -11,6 +11,55 @@
 
 namespace Raven
 {
+namespace
+{
+// UTF-8の途中で切らず、Font MetricsでClose領域に収まるタイトルを求めます。
+std::string EllipsizeTitle(const UIFontAtlas& font, const std::string& title, float maxWidth)
+{
+    if (maxWidth <= 0.0f)
+    {
+        return {};
+    }
+    const auto width = [&font](const std::string& value)
+    {
+        return UITextLayout::Build(font, value, 20.0f).Metrics.Width;
+    };
+    if (width(title) <= maxWidth)
+    {
+        return title;
+    }
+    const std::string suffix = "...";
+    if (width(suffix) > maxWidth)
+    {
+        return {};
+    }
+    std::vector<std::size_t> boundaries{ 0u };
+    for (std::size_t i = 1u; i < title.size(); ++i)
+    {
+        if ((static_cast<unsigned char>(title[i]) & 0xC0u) != 0x80u)
+        {
+            boundaries.push_back(i);
+        }
+    }
+    boundaries.push_back(title.size());
+    std::size_t low = 0u;
+    std::size_t high = boundaries.size() - 1u;
+    while (low < high)
+    {
+        const std::size_t mid = low + (high - low + 1u) / 2u;
+        if (width(title.substr(0u, boundaries[mid]) + suffix) <= maxWidth)
+        {
+            low = mid;
+        }
+        else
+        {
+            high = mid - 1u;
+        }
+    }
+    return title.substr(0u, boundaries[low]) + suffix;
+}
+} // namespace
+
 
 UITabBar::UITabBar(UITabModel& model)
     : m_Model(model)
@@ -286,9 +335,9 @@ void UITabBar::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position)
         {
             UITextLayoutOptions options{};
             options.LineHeight = 20.0f;
-            // Textの切り詰め/ellipsisは後続のOverflow対応で追加します。
+            // UTF-8のCodepoint境界とFont Metricsを考慮して省略します。
             options.MaxWidth = m_TabWidth - (tab.Closable == true ? m_CloseWidth : 0.0f) - 16.0f;
-            m_Font->AppendText(drawList, tab.Title,
+            m_Font->AppendText(drawList, EllipsizeTitle(*m_Font, tab.Title, options.MaxWidth),
                 math::Vec2(position.x + left + 8.0f, position.y + height * 0.5f + 5.0f),
                 options, ApplyVisualColor(math::Vec4(0.95f, 0.95f, 0.97f, 1.0f)));
             if (tab.Closable == true)
