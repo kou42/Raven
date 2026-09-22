@@ -25,6 +25,8 @@ public:
         const UIFontAtlasBuildOptions& options);
     bool RefreshDPIFont(); // 有効なGPU Context上で呼び出してください。
     bool IsDPIFontPending() const { return m_DPIFontPending; }
+    bool HasPendingDPIFont() const override { return m_DPIFontPending; }
+    bool RefreshPendingDPIFont() override { return m_DPIFontPending == true && RefreshDPIFont(); }
 
     void SetText(std::string text);
     const std::string& GetText() const;
