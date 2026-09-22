@@ -47,7 +47,8 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - **実装・動作確認済み（PR #247）**: OS Windowの生成・状態・Event、WindowManagerによる複数Window管理、OpenGL共有Context、Window単位のFrame Lifecycle、補助Windowのdefault framebuffer描画とFramebuffer実Pixelサイズ対応、Context固有VAOの再構築・キャッシュ、Close CleanupとApplication終了時の補助Window解放。
 - **Phase 6で実装・ユーザー動作確認済み（PR #271）**: UIContext内の論理UIWindow、タイトルバー移動・右下Resize・前面化、Mouse Capture/Cancel。Keyboard Focus等の拡張は継続課題。
 - **Phase 12で実装・ユーザー動作確認済み（PR #270）**: OpenGL補助WindowごとのUIContext / UIRenderer、Window別DPI・Framebuffer実Pixel Viewport/Scissor、独立入力/IME配送、Root Widget移譲、Dock Tabの明示的・Frame境界予約切り離し、Close時の元Dock Pane復帰と復帰先消失時Main Root退避。CPU側回帰テストには複数Window逆順CloseとDock削除時の復帰シミュレーションを追加。
-- **Phase 12のPR #271実装・ユーザー動作確認済み**: Mainの論理Windowをドラッグで補助OS Windowへ分離、Main領域へのドロップで再統合、Focus喪失とMouse Up取りこぼし補完、空補助Windowの遅延Close。\n- **Phase 12の残課題**: 別DPIモニター間移動の個別検証、Vulkan/DX12描画Target対応、Window Close経路そのものの自動統合テスト。
+- **Phase 12のPR #271実装・ユーザー動作確認済み**: Mainの論理Windowをドラッグで補助OS Windowへ分離、Main領域へのドロップで再統合、Focus喪失とMouse Up取りこぼし補完、空補助Windowの遅延Close。
+- **Phase 12の残課題**: 別DPIモニター間移動の個別検証、Vulkan/DX12描画Target対応、Window Close経路そのものの自動統合テスト。
 - **次の接続作業**: 異DPIモニター間移動と自動Window Closeの統合テスト、論理WindowのKeyboard Focus/タイトル描画等を段階的に拡張する。既存Dear ImGui Editorは移行検証まで維持する。
 
 ## Phase 7: Drag & Drop 実装・検証記録（PR #249）
@@ -155,10 +156,13 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] 補助WindowごとのUIContext / OpenGLUIRenderer、入力・Focus・IME、DPI Font更新、Window Close時のRenderer解放を接続する。
 - [x] Root Widgetの所有権移譲、Dock Tabの新Window切り離しとFrame境界予約、Close時の元Dock Pane復帰とMain Rootへのフォールバックを追加する。
 - [x] CPU側のDPI/Context分離/所有権移譲/複数Window逆順Close/Dock消失時の回帰テストを追加。ユーザーから実環境で動作問題なしとの報告を受ける。
-- [x] PR #271で論理UIWindowの自動ドラッグ分離・Main領域への再統合、Mouse Up取りこぼし補完を実装。ユーザーから実環境で動作問題なしとの報告を受ける。\n- [ ] 異DPIモニター移動、Vulkan/DX12のUI描画Target、Window Close統合テスト、CI結果の個別確認。
+- [x] PR #271で論理UIWindowの自動ドラッグ分離・Main領域への再統合、Mouse Up取りこぼし補完を実装。ユーザーから実環境で動作問題なしとの報告を受ける。
+- [ ] 異DPIモニター移動、Vulkan/DX12のUI描画Target、Window Close統合テスト、CI結果の個別確認。
 
 | 2026-09-23 | feature/ui-window-framebuffer-dpi / PR #270 | Window別UIContext・Framebuffer実Pixel描画、入力/IME、Dock Tab切り離し/Close復帰、複数Window・復帰先消失のCPU回帰テスト | ユーザーから各段階の動作チェックで問題なしとの報告。CIログ・異DPIモニター移動・他Backendは未確認 | Phase 6の論理Window Widgetと自動分離・再統合、Phase 12の他Backend接続 |
 
-| 2026-09-23 | feature/ui-logical-window-viewport / PR #271 | 論理UIWindowの移動・Resize・前面化、Mainと補助OS Window間のドラッグ分離/復帰、Focus喪失・Mouse Up取りこぼし補完、空補助WindowのClose条件を実装 | ユーザーから実環境で動作チェック問題なしとの報告。GitHub差分レビュー済み。RavenUITest単体ログ・CI結果は未取得 | 異DPIモニター移動、Keyboard Focus/タイトル描画、Window Close統合テスト、他Backend |\n\n## 更新ルール
+| 2026-09-23 | feature/ui-logical-window-viewport / PR #271 | 論理UIWindowの移動・Resize・前面化、Mainと補助OS Window間のドラッグ分離/復帰、Focus喪失・Mouse Up取りこぼし補完、空補助WindowのClose条件を実装 | ユーザーから実環境で動作チェック問題なしとの報告。GitHub差分レビュー済み。RavenUITest単体ログ・CI結果は未取得 | 異DPIモニター移動、Keyboard Focus/タイトル描画、Window Close統合テスト、他Backend |
+
+## 更新ルール
 
 各PRで該当Phaseのチェックリスト、状態、作業記録、未検証項目を更新する。未着手 → 実装中 → 実装済み（未検証） → 検証済みの順で記録し、後から問題が見つかれば状態を戻す。Phaseの完了は完了条件を満たした場合のみとする。
