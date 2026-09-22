@@ -70,14 +70,26 @@ void TestUIImmediateContext()
     auto* label = immediate.Text("caption", "Physics Debug");
     CheckImmediate(label != nullptr && label->GetText() == "Physics Debug",
         "Text creates label");
-    CheckImmediate(immediate.Button("reset") == false, "button initially false");
+    CheckImmediate(immediate.Button("reset", "Reset", nullptr) == false, "button initially false");
     float gravity = 9.8f;
     CheckImmediate(immediate.SliderFloat("gravity", &gravity, 0.0f, 20.0f) == false,
         "slider initially unchanged");
     CheckImmediate(immediate.EndFrame() == true, "widget API EndFrame");
 
-    auto* reset = dynamic_cast<Raven::UIButton*>(
-        context.GetRootElement().GetChildren()[context.GetRootElement().GetChildren().size() - 2u].get());
+    Raven::UIButton* reset = nullptr;
+    for (const auto& element : context.GetRootElement().GetChildren())
+    {
+        if (auto* candidate = dynamic_cast<Raven::UIButton*>(element.get()))
+        {
+            reset = candidate;
+            break;
+        }
+    }
+    CheckImmediate(reset != nullptr && reset->GetChildren().size() == 1u,
+        "button caption created");
+    auto* caption = dynamic_cast<Raven::UILabel*>(reset->GetChildren().front().get());
+    CheckImmediate(caption != nullptr && caption->GetText() == "Reset",
+        "button caption text");
     CheckImmediate(reset != nullptr && context.SetFocus(reset) == true,
         "focus immediate button");
     Raven::UIKeyEvent enter{};
@@ -100,8 +112,15 @@ void TestUIImmediateContext()
         "slider no replay");
     CheckImmediate(immediate.EndFrame() == true, "one-shot EndFrame");
 
-    auto* slider = dynamic_cast<Raven::UISlider*>(
-        context.GetRootElement().GetChildren().back().get());
+    Raven::UISlider* slider = nullptr;
+    for (const auto& element : context.GetRootElement().GetChildren())
+    {
+        if (auto* candidate = dynamic_cast<Raven::UISlider*>(element.get()))
+        {
+            slider = candidate;
+            break;
+        }
+    }
     CheckImmediate(slider != nullptr && context.SetFocus(slider) == true,
         "focus immediate slider");
     Raven::UIKeyEvent right{};
@@ -116,6 +135,17 @@ void TestUIImmediateContext()
         "slider input consumed");
     CheckImmediate(gravity > 9.8f, "slider writes caller value");
     CheckImmediate(immediate.EndFrame() == true, "slider input EndFrame");
+
+    CheckImmediate(immediate.BeginFrame() == true, "panel BeginFrame");
+    auto* panel = immediate.BeginPanel("debug", Raven::math::Vec2(12.0f, 16.0f),
+        Raven::math::Vec2(220.0f, 160.0f));
+    CheckImmediate(panel != nullptr, "panel created");
+    CheckImmediate(immediate.Text("heading", "Debug") != nullptr, "panel text");
+    CheckImmediate(immediate.Button("apply", "Apply", nullptr) == false,
+        "panel button");
+    CheckImmediate(immediate.EndContainer() == true, "panel EndContainer");
+    CheckImmediate(immediate.EndFrame() == true, "panel EndFrame");
+    CheckImmediate(panel->GetChildren().size() == 2u, "panel child count");
 
     CheckImmediate(immediate.BeginFrame() == true, "abort BeginFrame");
     CheckImmediate(immediate.PushID("pending") == true, "abort PushID");
