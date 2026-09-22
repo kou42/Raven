@@ -3,6 +3,7 @@
 #include "Raven/UI/Immediate/UIImmediateContext.h"
 #include "Raven/Physics/Debug/PhysicsDebugImmediatePanel.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UICheckbox.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -90,9 +91,10 @@ void TestUIImmediateContext()
         CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false,
             "checkbox initial state");
         CheckImmediate(checkImmediate.EndFrame() == true, "checkbox EndFrame");
-        auto* button = dynamic_cast<Raven::UIButton*>(
+        auto* checkbox = dynamic_cast<Raven::UICheckbox*>(
             checkContext.GetRootElement().GetChildren().front().get());
-        CheckImmediate(button != nullptr && checkContext.SetFocus(button) == true,
+        CheckImmediate(checkbox != nullptr && checkbox->IsChecked() == false &&
+            checkContext.SetFocus(checkbox) == true,
             "checkbox focus");
         Raven::UIKeyEvent activate{};
         activate.Key = Raven::UIKey::Space;
@@ -101,11 +103,16 @@ void TestUIImmediateContext()
             "checkbox activate");
         CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox consume BeginFrame");
         CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == true &&
-            enabled == true, "checkbox toggled");
+            enabled == true && checkbox->IsChecked() == true, "checkbox toggled");
         CheckImmediate(checkImmediate.EndFrame() == true, "checkbox consume EndFrame");
         CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox one-shot BeginFrame");
         CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false &&
             enabled == true, "checkbox no replay");
+        enabled = false;
+        CheckImmediate(checkImmediate.BeginFrame() == true, "checkbox external BeginFrame");
+        CheckImmediate(checkImmediate.Checkbox("enabled", "Enabled", &enabled, nullptr) == false &&
+            checkbox->IsChecked() == false, "checkbox external value synchronized");
+        CheckImmediate(checkImmediate.EndFrame() == true, "checkbox external EndFrame");
         CheckImmediate(checkImmediate.EndFrame() == true, "checkbox one-shot EndFrame");
     }
 
