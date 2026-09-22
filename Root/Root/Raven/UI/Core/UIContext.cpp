@@ -228,8 +228,7 @@ void UIContext::EndFrame()
     if (m_Renderer != nullptr)
     {
         m_Renderer->Render(m_DrawList, m_ViewportSize,
-            m_FramebufferSize.x > 0.0f && m_FramebufferSize.y > 0.0f
-                ? m_FramebufferSize : m_ViewportSize);
+            m_HasFramebufferSize == true ? m_FramebufferSize : m_ViewportSize);
     }
 
     m_FrameActive = false;
