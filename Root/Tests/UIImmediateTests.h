@@ -118,13 +118,13 @@ void TestUIImmediateContext()
         CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
             debugImmediate, settings, nullptr) == false, "debug panel initially unchanged");
         CheckImmediate(debugImmediate.EndFrame() == true, "debug panel EndFrame");
-        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 11u,
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 12u,
             "debug panel widgets cached");
         CheckImmediate(debugImmediate.BeginFrame() == true, "debug panel reuse BeginFrame");
         CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
             debugImmediate, settings, nullptr) == false, "debug panel reused");
         CheckImmediate(debugImmediate.EndFrame() == true, "debug panel reuse EndFrame");
-        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 11u,
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 12u,
             "debug panel widget count stable");
     }
 
