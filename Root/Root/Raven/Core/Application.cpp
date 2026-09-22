@@ -8,6 +8,7 @@
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UISplitter.h"
 #include "Raven/UI/Widgets/UIInputText.h"
+#include "Raven/UI/Widgets/UIWindow.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <glad/glad.h>
@@ -739,6 +740,60 @@ void Application::FlushPendingUIDetaches()
             request.OnCompleted(result);
         }
     }
+}
+
+bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& window)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (source == nullptr || window.GetParent() != &source->GetRootElement())
+    {
+        return false;
+    }
+
+    // CallbackはUIWindowの入力配送中に呼ばれるため、Treeの所有権をその場で変更しません。
+    // 既存のRequestDetachUIRootChildToNewWindowが重複予約と生存確認を担当します。
+    window.SetOnViewportTransferRequested([this, sourceID](
+        UIWindow* logicalWindow, const math::Vec2&)
+        {
+            if (logicalWindow == nullptr)
+            {
+                return;
+            }
+            Window* sourceWindow = m_WindowManager.GetWindow(sourceID);
+            if (sourceWindow == nullptr)
+            {
+                return;
+            }
+            const math::Vec2 size = logicalWindow->GetSize();
+            WindowSpecification specification(
+                logicalWindow->GetTitle().empty() == true
+                    ? "Raven UI Window" : logicalWindow->GetTitle(),
+                static_cast<unsigned int>(std::max(320.0f, size.x)),
+                static_cast<unsigned int>(std::max(240.0f, size.y)),
+                sourceWindow->GetBackend());
+            // 新しいOS Window内では論理Windowの座標原点を戻し、
+            // 元Viewportの画面座標を補助Windowへ持ち越さないようにします。
+            const math::Vec2 oldPosition = logicalWindow->GetPosition();
+            const bool queued = RequestDetachUIRootChildToNewWindow(
+                sourceID, logicalWindow, specification,
+                [this, logicalWindow, oldPosition](WindowID destinationID)
+                {
+                    if (destinationID != 0)
+                    {
+                        logicalWindow->SetPosition(math::Vec2(0.0f, 0.0f));
+                        // 補助WindowのClose時は既存Application経路でMain Rootへ戻します。
+                        // 再切り離しの際は現在の所属Window IDを改めてBindしてください。
+                        logicalWindow->SetOnViewportTransferRequested({});
+                    }
+                    else
+                    {
+                        // 生成失敗時は移動元のTreeを保持する既存契約を尊重します。
+                        logicalWindow->SetPosition(oldPosition);
+                    }
+                });
+            (void)queued;
+        });
+    return true;
 }
 
 UIContext* Application::GetWindowUIContext(WindowID id)
