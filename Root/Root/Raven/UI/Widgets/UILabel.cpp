@@ -10,6 +10,8 @@ namespace Raven
 
 void UILabel::SetFont(const Ref<UIFontAtlas>& font)
 {
+    m_DPIFontCache = nullptr;
+    m_DPIFontPending = false;
     m_Font = font;
     m_FontRasterScale = 1.0f;
     InvalidateMeasure();
@@ -25,6 +27,66 @@ void UILabel::SetFontDPI(const Ref<UIFontAtlas>& font, float rasterScale)
     m_FontRasterScale = rasterScale;
     m_ScaleGlyphsWithDPI = true;
     InvalidateMeasure();
+}
+
+void UILabel::BindDPIFontCache(const Ref<UIFontAtlasDPICache>& cache,
+    std::string fontPath, std::vector<std::uint32_t> codepoints,
+    const UIFontAtlasBuildOptions& options)
+{
+    m_DPIFontCache = cache;
+    m_DPIFontPath = std::move(fontPath);
+    m_DPIFontCodepoints = std::move(codepoints);
+    m_DPIFontOptions = options;
+    const UIContext* context = GetContext();
+    SwitchCachedDPIFont(context != nullptr ? context->GetEffectiveScaleY() : 1.0f);
+}
+
+void UILabel::SwitchCachedDPIFont(float effectiveScale)
+{
+    if (m_DPIFontCache == nullptr)
+    {
+        m_DPIFontPending = false;
+        return;
+    }
+    float rasterScale = 1.0f;
+    const Ref<UIFontAtlas> atlas = m_DPIFontCache->Find(m_DPIFontPath,
+        m_DPIFontCodepoints, m_DPIFontOptions, effectiveScale, rasterScale);
+    if (atlas == nullptr)
+    {
+        // DPI callbackにはGPU Contextの保証がないため、ここでは生成しません。
+        // 旧Atlasを維持し、次の安全な描画準備段階でRefreshDPIFontを呼べるよう通知します。
+        m_DPIFontPending = true;
+        return;
+    }
+    m_DPIFontPending = false;
+    if (m_Font != atlas || m_FontRasterScale != rasterScale || m_ScaleGlyphsWithDPI == false)
+    {
+        SetFontDPI(atlas, rasterScale);
+    }
+}
+
+bool UILabel::RefreshDPIFont()
+{
+    if (m_DPIFontCache == nullptr)
+    {
+        return false;
+    }
+    const UIContext* context = GetContext();
+    const float scaleY = context != nullptr ? context->GetEffectiveScaleY() : 1.0f;
+    float rasterScale = 1.0f;
+    const Ref<UIFontAtlas> atlas = m_DPIFontCache->GetOrBuild(m_DPIFontPath,
+        m_DPIFontCodepoints, m_DPIFontOptions, scaleY, rasterScale);
+    if (atlas == nullptr)
+    {
+        m_DPIFontPending = true;
+        return false;
+    }
+    m_DPIFontPending = false;
+    if (m_Font != atlas || m_FontRasterScale != rasterScale || m_ScaleGlyphsWithDPI == false)
+    {
+        SetFontDPI(atlas, rasterScale);
+    }
+    return true;
 }
 
 const Ref<UIFontAtlas>& UILabel::GetFont() const
@@ -116,7 +178,6 @@ void UILabel::RefreshDIPTypography()
 void UILabel::OnContextChanged(UIContext* previous, UIContext* current)
 {
     static_cast<void>(previous);
-    static_cast<void>(current);
     // SetContextRecursiveはこの通知後にContextを差し替えるため、倍率は新Contextから直接取得します。
     const float scaleY = current != nullptr ? current->GetEffectiveScaleY() : 1.0f;
     if (m_UseBaselineOffsetDIP == true)
@@ -131,11 +192,14 @@ void UILabel::OnContextChanged(UIContext* previous, UIContext* current)
     {
         InvalidateMeasure();
     }
+    SwitchCachedDPIFont(scaleY);
 }
 
 void UILabel::OnDPIScaleChanged()
 {
     RefreshDIPTypography();
+    const UIContext* context = GetContext();
+    SwitchCachedDPIFont(context != nullptr ? context->GetEffectiveScaleY() : 1.0f);
     if (m_ScaleGlyphsWithDPI == true)
     {
         InvalidateMeasure();
@@ -223,9 +287,13 @@ void UILabel::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePo
     const math::Vec2 baseline(absolutePosition.x, absolutePosition.y + m_BaselineOffset);
     UITextLayoutOptions options{};
     options.LineHeight = m_LineHeight;
-    if (m_ScaleGlyphsWithDPI == true && GetContext() != nullptr)
+    if (m_ScaleGlyphsWithDPI == true)
     {
-        options.GlyphScale = math::Vec2(GetContext()->GetEffectiveScaleX(), GetContext()->GetEffectiveScaleY());
+        const UIContext* context = GetContext();
+        const float scaleX = context != nullptr ? context->GetEffectiveScaleX() : 1.0f;
+        const float scaleY = context != nullptr ? context->GetEffectiveScaleY() : 1.0f;
+        // Measureと同じ補正を描画にも適用し、高解像度Atlasの二重拡大を防ぎます。
+        options.GlyphScale = math::Vec2(scaleX / m_FontRasterScale, scaleY / m_FontRasterScale);
     }
     options.MaxWidth = GetSize().x;
     options.Wrap = m_WrapMode;
