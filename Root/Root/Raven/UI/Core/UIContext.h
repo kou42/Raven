@@ -58,6 +58,12 @@ public:
     float GetEffectiveScaleX() const { return m_DPIScaleX * m_UserScale; }
     float GetEffectiveScaleY() const { return m_DPIScaleY * m_UserScale; }
 
+    // Window座標とDPI非依存のUI設計座標の変換をContextに集約します。
+    // GetViewportSize()は既存互換のWindow論理座標のままです。
+    math::Vec2 GetLayoutViewportSize() const;
+    math::Vec2 WindowToLayoutPosition(const math::Vec2& windowPosition) const;
+    math::Vec2 LayoutToWindowPosition(const math::Vec2& layoutPosition) const;
+
     // Mouse入力をHit Testし、Hover / Pressedを更新してから最前面TargetからRoot方向へBubbleさせます。
     // Interaction StateはUIContextが一元管理し、WidgetはUIElement上の状態を参照して見た目やClick判定へ利用します。
     // Capture中は物理的なHit先とは別にCapture ElementへEventを配送します。
