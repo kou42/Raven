@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Base.h"
 #include <functional>
+#include <algorithm>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -96,6 +97,16 @@ public:
     UIElement* GetMouseCaptureElement();
     const UIElement* GetMouseCaptureElement() const;
 
+    // Downを受けたWidgetが呼び出します。閾値を超えるまで通常Clickを維持します。
+    // Payloadは値で保持し、Drag中に呼び出し元の一時データが破棄されても安全です。
+    bool BeginDrag(UIElement* source, UIDragDropPayload payload, const math::Vec2& startPosition);
+    void CancelDrag();
+    bool IsDragging() const { return m_DragActive; }
+    bool HasPendingDrag() const { return m_DragSource != nullptr; }
+    UIElement* GetDragSource() const { return m_DragSource; }
+    UIElement* GetDropTarget() const { return m_DropTarget; }
+    void SetDragThreshold(float pixels) { m_DragThreshold = std::max(0.0f, pixels); }
+
     // PopupはRoot末尾の専用Layerへ所有させ、通常のPanel Clipから分離します。
     UIElement* AddPopup(Scope<UIElement> popup);
     bool RemovePopup(UIElement* popup);
@@ -131,6 +142,9 @@ public:
 private:
     friend class UIElement;
 
+    void UpdateDrag(const math::Vec2& position, UIElement* hitTarget);
+    void FinishDrag(const math::Vec2& position, UIElement* hitTarget);
+    void SendDragEvent(UIElement* element, UIDragDropEventType type, const math::Vec2& position);
     void HideTooltip();
     void UpdateHoverTarget(UIElement* target);
     void UpdatePressedTarget(UIElement* target);
@@ -165,6 +179,12 @@ private:
     UIElement* m_HoveredElement = nullptr;
     UIElement* m_PressedElement = nullptr;
     UIElement* m_MouseCaptureElement = nullptr;
+    UIElement* m_DragSource = nullptr;
+    UIElement* m_DropTarget = nullptr;
+    UIDragDropPayload m_DragPayload;
+    math::Vec2 m_DragStart{};
+    float m_DragThreshold = 5.0f;
+    bool m_DragActive = false;
     bool m_FrameActive = false;
     std::function<void()> m_IMECancelCallback;
 };
