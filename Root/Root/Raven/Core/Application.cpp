@@ -411,6 +411,24 @@ UIContext* Application::GetWindowUIContext(WindowID id)
     return it != m_AuxiliaryUIContexts.end() ? it->second.get() : nullptr;
 }
 
+bool Application::TransferUIRootChild(
+    WindowID sourceID, WindowID destinationID, UIElement* child)
+{
+    if (m_RavenUIEnabled == false || sourceID == destinationID || child == nullptr ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true ||
+        m_WindowManager.IsWindowClosePending(destinationID) == true)
+    {
+        return false;
+    }
+    UIContext* source = GetWindowUIContext(sourceID);
+    UIContext* destination = GetWindowUIContext(destinationID);
+    if (source == nullptr || destination == nullptr)
+    {
+        return false;
+    }
+    return source->TransferRootChildTo(*destination, child);
+}
+
 void Application::PushLayer(Layer* layer)
 {
 #if 0
