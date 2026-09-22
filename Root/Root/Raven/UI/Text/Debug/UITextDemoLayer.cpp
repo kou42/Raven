@@ -171,8 +171,12 @@ void UITextDemoLayer::OnAttach()
     label->SetSize(math::Vec2(800.0f, 100.0f));
     label->SetFont(atlas);
     label->SetText(std::string(kDemoText));
-    label->SetBaselineOffset(26.0f);
-    label->SetLineHeight(30.0f);
+    label->SetBaselineOffsetDIP(26.0f);
+    label->SetLineHeightDIP(30.0f);
+    // DemoのLabelだけDPI対応をopt-inします。他Widgetは既存Atlasを共有し挙動を維持します。
+    // 初回/Monitor移動時の未生成AtlasはApplicationのUI描画準備段階で一括生成されます。
+    auto dpiCache = CreateRef<UIFontAtlasDPICache>();
+    label->BindDPIFontCache(dpiCache, fontPath, CollectDemoCodepoints(), options);
     UIElement* attached = m_Application.GetUIContext().GetRootElement().AddChild(std::move(label));
     if (attached == nullptr)
     {
