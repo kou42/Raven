@@ -275,16 +275,6 @@ protected:
             }
             return;
         }
-        if (event.Type == UIMouseEventType::Move && m_PendingNodeId != 0u &&
-            event.Context != nullptr && event.Context->HasPendingDrag() == false)
-        {
-            // BeginDragはDown開始位置を保持し、5px閾値をUIContextで一元判定します。
-            event.Context->BeginDrag(this,
-                UIDragDropPayload{ "Raven/UITreeNode", std::to_string(m_PendingNodeId) },
-                m_NodeDragStart);
-            event.Handled = true;
-            return;
-        }
         if (event.Type != UIMouseEventType::Down || event.Button != UIMouseButton::Left || event.Target != this)
         {
             return;
@@ -341,6 +331,11 @@ protected:
             {
                 m_PendingNodeId = node->Id;
                 m_NodeDragStart = event.ScreenPosition;
+                // Down時点でCaptureし、PointerがTree外へ出てもMoveを受け取ります。
+                // 閾値未満のUpはUIContextが通常Clickとして扱います。
+                event.Context->BeginDrag(this,
+                    UIDragDropPayload{ "Raven/UITreeNode", std::to_string(node->Id) },
+                    event.ScreenPosition);
             }
         }
         event.Handled = true;
