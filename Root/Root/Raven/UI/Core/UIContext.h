@@ -50,7 +50,8 @@ public:
 
     // GPU Contextが有効な描画準備段階で呼び、Tree内の未生成DPI Fontをまとめて解決します。
     // DPI通知やBeginFrameではGPU Contextが保証されないため自動生成しません。
-    // 成功したLabel数を返します。失敗したLabelはPendingのまま次回再試行できます。
+    // 成功したLabel数を返します。失敗したLabelはPending状態を保持しつつ自動再試行を停止します。
+    // Font復旧後はUILabel::RetryDPIFont()で再試行を明示してください。
     std::size_t RefreshPendingDPIFonts();
     std::size_t GetPendingDPIFontCount() const;
 
