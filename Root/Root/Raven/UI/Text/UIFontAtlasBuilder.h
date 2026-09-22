@@ -21,7 +21,7 @@ struct UIFontAtlasBuildOptions
 };
 
 // Font Atlas構築の失敗段階を表します。TextureCreationFailedはnative Resource生成失敗、
-// TextureDeviceUnavailableはRHI Device未初期化を示します。GPU uploadの詳細診断は未対応です。
+// TextureDeviceUnavailableはRHI Device未初期化、TextureUploadFailedはpixel転送失敗です。
 enum class UIFontAtlasBuildFailure
 {
     None,
@@ -31,6 +31,7 @@ enum class UIFontAtlasBuildFailure
     AtlasCapacityExceeded,
     TextureCreationFailed,
     TextureDeviceUnavailable,
+    TextureUploadFailed,
     AtlasInitializationFailed
 };
 
