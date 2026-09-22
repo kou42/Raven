@@ -40,6 +40,102 @@ UIElement* UIDockSpace::GetPane(std::uint64_t leafId) const
     return it == m_Panes.end() ? nullptr : it->second;
 }
 
+UITabView* UIDockSpace::CreateTabView(std::uint64_t leafId)
+{
+    UIDockNode* node = m_Layout.FindNode(leafId);
+    if (node == nullptr || node->GetKind() != UIDockNodeKind::Tabs ||
+        node->GetTabs()->GetTabCount() != 0u ||
+        m_Panes.find(leafId) != m_Panes.end())
+    {
+        return nullptr;
+    }
+    auto view = std::make_unique<UITabView>();
+    UITabView* raw = view.get();
+    // UITabViewが表示とContentの所有権を担当し、Dock Nodeは順序・選択だけを保持します。
+    // Close時はViewの内部Content削除が済んでから通知されるため、論理Modelを安全に更新できます。
+    raw->SetOnSelectionChanged([this, leafId](std::uint64_t id)
+    {
+        UIDockNode* current = m_Layout.FindNode(leafId);
+        if (current != nullptr && current->GetTabs() != nullptr)
+        {
+            current->GetTabs()->SelectTab(id);
+        }
+    });
+    raw->SetOnClosed([this, leafId](std::uint64_t id)
+    {
+        UIDockNode* current = m_Layout.FindNode(leafId);
+        if (current != nullptr && current->GetTabs() != nullptr)
+        {
+            current->GetTabs()->RemoveTab(id);
+        }
+    });
+    raw->SetOnMoved([this, leafId](std::uint64_t id, std::size_t from, std::size_t to)
+    {
+        (void)from;
+        UIDockNode* current = m_Layout.FindNode(leafId);
+        if (current != nullptr && current->GetTabs() != nullptr)
+        {
+            current->GetTabs()->MoveTab(id, to);
+        }
+    });
+    if (SetPane(leafId, std::move(view)) == false)
+    {
+        return nullptr;
+    }
+    m_TabViews.emplace(leafId, raw);
+    return raw;
+}
+
+UITabView* UIDockSpace::GetTabView(std::uint64_t leafId) const
+{
+    const auto it = m_TabViews.find(leafId);
+    return it == m_TabViews.end() ? nullptr : it->second;
+}
+
+bool UIDockSpace::AddTab(std::uint64_t leafId, std::uint64_t tabId,
+    std::string title, Scope<UIElement> content, bool closable)
+{
+    UITabView* view = GetTabView(leafId);
+    UIDockNode* node = m_Layout.FindNode(leafId);
+    if (view == nullptr || node == nullptr || node->GetTabs() == nullptr ||
+        content == nullptr || content->GetParent() != nullptr ||
+        content->GetContext() != nullptr || tabId == 0u ||
+        view->GetModel().FindTab(tabId) != nullptr ||
+        node->GetTabs()->FindTab(tabId) != nullptr)
+    {
+        return false;
+    }
+    // View追加中に初回選択Callbackが走るため、論理Modelを先に登録します。
+    if (node->GetTabs()->AddTab(tabId, title, closable) == false)
+    {
+        return false;
+    }
+    if (view->AddTab(tabId, std::move(title), std::move(content), closable) == false)
+    {
+        node->GetTabs()->RemoveTab(tabId);
+        return false;
+    }
+    return true;
+}
+
+bool UIDockSpace::SelectTab(std::uint64_t leafId, std::uint64_t tabId)
+{
+    UITabView* view = GetTabView(leafId);
+    return view != nullptr && view->SelectTab(tabId);
+}
+
+bool UIDockSpace::CloseTab(std::uint64_t leafId, std::uint64_t tabId)
+{
+    UITabView* view = GetTabView(leafId);
+    return view != nullptr && view->CloseTab(tabId);
+}
+
+bool UIDockSpace::MoveTab(std::uint64_t leafId, std::uint64_t tabId, std::size_t index)
+{
+    UITabView* view = GetTabView(leafId);
+    return view != nullptr && view->MoveTab(tabId, index);
+}
+
 UISplitter* UIDockSpace::GetSplitter(std::uint64_t splitId) const
 {
     const auto it = m_Splitters.find(splitId);
