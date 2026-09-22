@@ -410,11 +410,9 @@ protected:
         {
             m_PendingNodeId = 0u;
             ResetDragAutoExpand();
-            ResetDragAutoExpand();
             return false;
         }
-        // Dropを拒否する経路ではHoverの蓄積時間を必ず破棄します。
-        // 無効な領域を経由した後に別のNodeが即座に展開されるのを防ぎます。
+        // Drop時と無効なOverではHoverの蓄積時間を破棄します。
         if (event.Type != UIDragDropEventType::Over)
         {
             ResetDragAutoExpand();
