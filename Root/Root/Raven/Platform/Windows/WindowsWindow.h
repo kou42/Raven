@@ -28,6 +28,8 @@ public:
     unsigned int GetHeight() const override { return m_Data.Height; }
     unsigned int GetFramebufferWidth() const override { return m_Data.FramebufferWidth; }
     unsigned int GetFramebufferHeight() const override { return m_Data.FramebufferHeight; }
+    float GetContentScaleX() const override { return m_Data.ContentScaleX; }
+    float GetContentScaleY() const override { return m_Data.ContentScaleY; }
     RHIBackend GetBackend() const override { return m_Data.Backend; }
     WindowState GetState() const override;
     void SetTitle(const std::string& title) override;
@@ -69,6 +71,8 @@ private:
         unsigned int Height;
         unsigned int FramebufferWidth = 0;
         unsigned int FramebufferHeight = 0;
+        float ContentScaleX = 1.0f;
+        float ContentScaleY = 1.0f;
         RHIBackend Backend = RHIBackend::OpenGL;
         bool VSync = false;
 
