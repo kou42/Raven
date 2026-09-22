@@ -36,6 +36,7 @@ class UITreeView final : public UIElement
 public:
     using SelectionHandler = std::function<void(std::uint64_t)>;
     using ExpansionHandler = std::function<void(std::uint64_t, bool)>;
+    using NodeDroppedHandler = std::function<void(std::uint64_t, std::uint64_t)>;
 
     UITreeView()
     {
@@ -78,6 +79,10 @@ public:
     void Clear()
     {
         EndScrollBarDrag();
+        if (GetContext() != nullptr && GetContext()->GetDragSource() == this)
+        {
+            GetContext()->CancelDrag();
+        }
         // Callbackへ渡したNode*も無効になるので、先に選択を解除します。
         Select(nullptr);
         m_Roots.clear();
@@ -183,6 +188,10 @@ public:
     }
     void SetOnSelectionChanged(SelectionHandler handler) { m_OnSelectionChanged = std::move(handler); }
     void SetOnExpansionChanged(ExpansionHandler handler) { m_OnExpansionChanged = std::move(handler); }
+    // 同一Tree内のNodeをDrop先Nodeの子へ移動します。初期状態では既存Tree操作に影響しません。
+    void SetNodeDragDropEnabled(bool value) { m_NodeDragDropEnabled = value; }
+    bool IsNodeDragDropEnabled() const { return m_NodeDragDropEnabled; }
+    void SetOnNodeDropped(NodeDroppedHandler handler) { m_OnNodeDropped = std::move(handler); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; }
     void SetRowHeight(float value)
     {
@@ -230,6 +239,11 @@ public:
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (event.Type == UIMouseEventType::Cancel ||
+            (event.Type == UIMouseEventType::Up && event.Button == UIMouseButton::Left))
+        {
+            m_PendingNodeId = 0u;
+        }
         if (m_DraggingScrollBar == true)
         {
             if (event.Type == UIMouseEventType::Cancel ||
@@ -259,6 +273,16 @@ protected:
             {
                 event.Handled = true;
             }
+            return;
+        }
+        if (event.Type == UIMouseEventType::Move && m_PendingNodeId != 0u &&
+            event.Context != nullptr && event.Context->HasPendingDrag() == false)
+        {
+            // BeginDragはDown開始位置を保持し、5px閾値をUIContextで一元判定します。
+            event.Context->BeginDrag(this,
+                UIDragDropPayload{ "Raven/UITreeNode", std::to_string(m_PendingNodeId) },
+                m_NodeDragStart);
+            event.Handled = true;
             return;
         }
         if (event.Type != UIMouseEventType::Down || event.Button != UIMouseButton::Left || event.Target != this)
@@ -313,8 +337,77 @@ protected:
         else
         {
             Select(node);
+            if (m_NodeDragDropEnabled == true && event.Context != nullptr && node->Id != 0u)
+            {
+                m_PendingNodeId = node->Id;
+                m_NodeDragStart = event.ScreenPosition;
+            }
         }
         event.Handled = true;
+    }
+
+    bool OnDragDropEvent(UIDragDropEvent& event) override
+    {
+        if (m_NodeDragDropEnabled == false || event.Payload == nullptr ||
+            event.Payload->Type != "Raven/UITreeNode" || event.Source != this)
+        {
+            return false;
+        }
+        // Dataを数値変換せず既存IDと照合し、不正なPayloadでも例外を発生させません。
+        UITreeNode* source = nullptr;
+        for (const auto& entry : VisibleNodes())
+        {
+            if (std::to_string(entry.first->Id) == event.Payload->Data)
+            {
+                source = entry.first;
+                break;
+            }
+        }
+        UITreeNode* target = NodeAt(event.ScreenPosition);
+        if (source == nullptr || target == nullptr || source == target)
+        {
+            return false;
+        }
+        // 自身の子孫への移動は循環参照になるため禁止します。
+        for (UITreeNode* parent = target; parent != nullptr; parent = parent->Parent)
+        {
+            if (parent == source)
+            {
+                return false;
+            }
+        }
+        if (event.Type == UIDragDropEventType::Over)
+        {
+            event.Accepted = true;
+            return true;
+        }
+        if (event.Type == UIDragDropEventType::Drop)
+        {
+            auto& siblings = source->Parent != nullptr ? source->Parent->Children : m_Roots;
+            auto it = std::find_if(siblings.begin(), siblings.end(),
+                [source](const auto& item) { return item.get() == source; });
+            if (it == siblings.end())
+            {
+                return false;
+            }
+            std::unique_ptr<UITreeNode> moved = std::move(*it);
+            siblings.erase(it);
+            moved->Parent = target;
+            target->Children.push_back(std::move(moved));
+            target->Expanded = true;
+            InvalidateMeasure();
+            EnsureSelectedVisible();
+            if (m_OnNodeDropped)
+            {
+                m_OnNodeDropped(source->Id, target->Id);
+            }
+            return true;
+        }
+        if (event.Type == UIDragDropEventType::End || event.Type == UIDragDropEventType::Cancel)
+        {
+            m_PendingNodeId = 0u;
+        }
+        return false;
     }
 
     void OnKeyEvent(UIKeyEvent& event) override
@@ -414,6 +507,21 @@ protected:
     }
 
 private:
+    UITreeNode* NodeAt(const math::Vec2& screenPosition) const
+    {
+        math::Vec2 local;
+        if (TryScreenToLocalPosition(screenPosition, local) == false ||
+            local.x < 0.0f || local.y < 0.0f || local.x >= GetSize().x ||
+            local.y >= GetSize().y ||
+            (IsScrollBarVisible() == true && local.x >= GetSize().x - m_ScrollBarThickness))
+        {
+            return nullptr;
+        }
+        const auto visible = VisibleNodes();
+        const std::size_t index = static_cast<std::size_t>((local.y + GetScrollOffset()) / m_RowHeight);
+        return index < visible.size() ? visible[index].first : nullptr;
+    }
+
     UIScrollBarMetrics ScrollMetrics() const
     {
         return UIScrollBarMetrics{ GetSize().y,
@@ -483,6 +591,10 @@ private:
     Ref<UIFontAtlas> m_Font;
     SelectionHandler m_OnSelectionChanged;
     ExpansionHandler m_OnExpansionChanged;
+    NodeDroppedHandler m_OnNodeDropped;
+    std::uint64_t m_PendingNodeId = 0u;
+    math::Vec2 m_NodeDragStart{};
+    bool m_NodeDragDropEnabled = false;
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
     float m_Baseline = 17.0f;
