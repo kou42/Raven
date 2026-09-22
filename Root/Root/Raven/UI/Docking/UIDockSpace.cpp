@@ -292,6 +292,45 @@ void UIDockSpace::ApplyLayout()
     }
 }
 
+bool UIDockSpace::CloseEmptyPane(std::uint64_t leafId)
+{
+    const UIDockNode* leaf = m_Layout.FindNode(leafId);
+    if (leaf == nullptr || leaf->GetTabs() == nullptr ||
+        leaf->GetTabs()->GetTabCount() != 0u || leaf->GetParent() == nullptr)
+    {
+        return false;
+    }
+    UITabView* view = GetTabView(leafId);
+    if (view != nullptr && view->GetModel().GetTabCount() != 0u)
+    {
+        return false;
+    }
+    if (m_Layout.RemoveEmptyLeaf(leafId) == false)
+    {
+        return false;
+    }
+    // Widgetを破棄する前にraw pointerの登録を外します。RemoveChildはContextの
+    // Capture/Focusを解除するため、Drag中のPane削除でも入力参照を残しません。
+    m_TabViews.erase(leafId);
+    const auto pane = m_Panes.find(leafId);
+    if (pane != m_Panes.end())
+    {
+        UIElement* raw = pane->second;
+        m_Panes.erase(pane);
+        RemoveChild(raw);
+    }
+    if (m_PreviewLeaf == leafId)
+    {
+        m_PreviewLeaf = 0u;
+        if (m_Preview != nullptr)
+        {
+            m_Preview->SetVisible(false);
+        }
+    }
+    RefreshLayout();
+    return true;
+}
+
 void UIDockSpace::RefreshLayout()
 {
     SyncWidgets();
