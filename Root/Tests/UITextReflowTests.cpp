@@ -1,6 +1,8 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/Renderer/Texture/Texture.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Text/UITextLayout.h"
@@ -102,6 +104,27 @@ void TestDPIFontBuildFailureDetails()
 }
 
 // Font解析とGlyph配置で失敗する場合はTexture::Createまで進まないため、GPUなしで診断を検証できます。
+// RHI未初期化の検証はnative OpenGL呼び出し前に終了するためGPU Context不要です。
+void TestTextureDeviceUnavailableDiagnostic()
+{
+    if (Raven::RenderCommand::GetDevice() != nullptr)
+    {
+        std::cout << "[SKIP] Texture Device diagnostic: RHI device already initialized\n";
+        return;
+    }
+    Raven::TextureSpecification specification{};
+    specification.Width = 1u;
+    specification.Height = 1u;
+    specification.Format = Raven::TextureFormat::RGBA8;
+    specification.GenerateMips = false;
+    const std::uint8_t pixels[4] = { 255u, 255u, 255u, 255u };
+    Raven::TextureCreationFailure failure = Raven::TextureCreationFailure::None;
+    Check(Raven::Texture::Create(specification, pixels, sizeof(pixels), &failure) == nullptr,
+        "uninitialized RHI rejects diagnostic texture creation");
+    Check(failure == Raven::TextureCreationFailure::DeviceUnavailable,
+        "uninitialized RHI device diagnostic");
+}
+
 void TestDPIFontDataAndCapacityFailure()
 {
     namespace fs = std::filesystem;
@@ -2081,6 +2104,7 @@ int main()
     TestDPIFontBatchRefresh();
     TestDPIFontBuildFailureDetails();
     TestDPIFontDataAndCapacityFailure();
+    TestTextureDeviceUnavailableDiagnostic();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
