@@ -453,6 +453,12 @@ protected:
 
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position) const override
     {
+        // 行とHeaderの描画時にThemeを解決し、DataSourceには影響を与えません。
+        const UIContext* themeContext = GetContext();
+        const UITableStyle defaultStyle;
+        const UIScrollBarStyle defaultScrollStyle;
+        const UITableStyle& style = themeContext != nullptr ? themeContext->GetTheme().Table : defaultStyle;
+        const UIScrollBarStyle& scrollStyle = themeContext != nullptr ? themeContext->GetTheme().ScrollBar : defaultScrollStyle;
         const float width = GetSize().x;
         const float height = GetSize().y;
         if (width <= 0.0f || height <= 0.0f)
@@ -471,7 +477,7 @@ protected:
             {
                 drawList.AddRect(math::Vec2(position.x, std::max(y, position.y + m_HeaderHeight)),
                     math::Vec2(position.x + ContentWidth(), std::min(y + m_RowHeight, position.y + m_HeaderHeight + BodyHeight())),
-                    ApplyVisualColor(math::Vec4(0.22f, 0.38f, 0.64f, 1.0f)));
+                    ApplyVisualColor(style.SelectedColor));
             }
             x = position.x - GetHorizontalOffset();
             for (std::size_t col = 0u; col < m_Columns.size(); ++col)
@@ -505,30 +511,30 @@ protected:
             const float top = position.y + height - m_ScrollBarThickness;
             drawList.AddRect(math::Vec2(position.x, top),
                 math::Vec2(position.x + ContentWidth(), position.y + height),
-                ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
+                ApplyVisualColor(scrollStyle.TrackColor));
             const float left = position.x + HorizontalMetrics().ThumbStart();
             drawList.AddRect(math::Vec2(left, top),
                 math::Vec2(left + HorizontalMetrics().ThumbLength(), position.y + height),
                 ApplyVisualColor(m_DraggingHorizontal == true
                     ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
-                    : math::Vec4(0.42f, 0.45f, 0.52f, 0.95f)));
+                    : scrollStyle.ThumbColor));
         }
         if (IsScrollBarVisible() == true)
         {
             const float left = position.x + width - m_ScrollBarThickness;
             drawList.AddRect(math::Vec2(left, position.y + m_HeaderHeight),
                 math::Vec2(position.x + width, position.y + m_HeaderHeight + BodyHeight()),
-                ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
+                ApplyVisualColor(scrollStyle.TrackColor));
             const float top = position.y + ThumbStart();
             drawList.AddRect(math::Vec2(left, top),
                 math::Vec2(position.x + width, top + ThumbLength()),
                 ApplyVisualColor(m_DraggingScrollBar == true
                     ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
-                    : math::Vec4(0.42f, 0.45f, 0.52f, 0.95f)));
+                    : scrollStyle.ThumbColor));
         }
         // BodyがHeaderへ重ならないようHeaderを最後に重ねて描画します。
         drawList.AddRect(position, math::Vec2(position.x + width, position.y + m_HeaderHeight),
-            ApplyVisualColor(math::Vec4(0.17f, 0.19f, 0.23f, 1.0f)));
+            ApplyVisualColor(style.HeaderColor));
         x = position.x - GetHorizontalOffset();
         for (const auto& column : m_Columns)
         {
@@ -639,7 +645,7 @@ private:
         options.Wrap = UITextWrapMode::None;
         const std::size_t firstCommand = drawList.GetCommandCount();
         m_Font->AppendText(drawList, text, position, options,
-            ApplyVisualColor(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)));
+            ApplyVisualColor(GetContext() != nullptr ? GetContext()->GetTheme().Table.TextColor : math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)));
         // DrawListのElement Clip適用時にも、このセル固有のClipを交差して保持します。
         drawList.ApplyClip(firstCommand, UIClipRect::FromRect(clip));
     }
