@@ -245,6 +245,34 @@ void TestUIImmediateContext()
         "input change not replayed");
     CheckImmediate(immediate.EndFrame() == true, "input one-shot EndFrame");
 
+    // 中断Frameで作成した親子Widgetは破棄し、前Frame確定済みWidgetは維持します。
+    {
+        Raven::UIContext abortContext;
+        Raven::UIImmediateContext abortImmediate(abortContext);
+        CheckImmediate(abortImmediate.BeginFrame() == true, "abort baseline BeginFrame");
+        auto* persistent = abortImmediate.GetOrCreate<Raven::UIButton>("persistent");
+        CheckImmediate(persistent != nullptr, "abort baseline widget");
+        CheckImmediate(abortImmediate.EndFrame() == true, "abort baseline EndFrame");
+        CheckImmediate(abortImmediate.BeginFrame() == true, "abort new BeginFrame");
+        CheckImmediate(abortImmediate.GetOrCreate<Raven::UIButton>("persistent") == persistent,
+            "abort persistent reused");
+        auto* temporary = abortImmediate.BeginContainer<Raven::UIElement>("temporary");
+        CheckImmediate(temporary != nullptr, "abort temporary parent");
+        CheckImmediate(abortImmediate.GetOrCreate<Raven::UIButton>("child") != nullptr,
+            "abort temporary child");
+        CheckImmediate(abortImmediate.EndFrame() == false, "abort unbalanced frame");
+        abortImmediate.AbortFrame();
+        CheckImmediate(abortImmediate.GetCachedWidgetCount() == 1u,
+            "abort removes new cache entries");
+        const auto& remaining = abortContext.GetRootElement().GetChildren();
+        CheckImmediate(remaining.size() == 1u && remaining.front().get() == persistent,
+            "abort preserves committed tree");
+        CheckImmediate(abortImmediate.BeginFrame() == true, "abort recovery BeginFrame");
+        CheckImmediate(abortImmediate.GetOrCreate<Raven::UIButton>("persistent") == persistent,
+            "abort recovery persistent");
+        CheckImmediate(abortImmediate.EndFrame() == true, "abort recovery EndFrame");
+    }
+
     CheckImmediate(immediate.BeginFrame() == true, "abort BeginFrame");
     CheckImmediate(immediate.PushID("pending") == true, "abort PushID");
     immediate.AbortFrame();
