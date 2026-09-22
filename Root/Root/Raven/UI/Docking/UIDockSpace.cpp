@@ -1,7 +1,12 @@
 #include "Raven/UI/Docking/UIDockSpace.h"
+#include "Raven/Core/JsonParser.h"
+#include "Raven/Core/JsonWriter.h"
 
 #include <charconv>
 #include <cmath>
+#include <fstream>
+#include <iterator>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -23,6 +28,269 @@ protected:
     }
 };
 } // namespace
+
+
+namespace
+{
+bool DockIOError(std::string* error, const std::string& message)
+{
+    if (error != nullptr)
+    {
+        *error = message;
+    }
+    return false;
+}
+
+const Core::JsonValue* DockField(const Core::JsonValue& object,
+    const char* name, Core::JsonValue::Type type)
+{
+    const Core::JsonValue* value = object.Find(name);
+    return value != nullptr && value->GetType() == type ? value : nullptr;
+}
+
+bool DockReadId(const Core::JsonValue& object, const char* name,
+    std::uint64_t& id)
+{
+    const Core::JsonValue* value = DockField(object, name,
+        Core::JsonValue::Type::String);
+    if (value == nullptr || value->GetString().empty() == true)
+    {
+        return false;
+    }
+    const std::string& text = value->GetString();
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), id);
+    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+}
+
+bool DockReadIndex(const Core::JsonValue& object, const char* name,
+    std::uint32_t& index)
+{
+    const Core::JsonValue* value = DockField(object, name,
+        Core::JsonValue::Type::Number);
+    if (value == nullptr)
+    {
+        return false;
+    }
+    const double number = value->GetNumber();
+    if (std::isfinite(number) == false || number < 0.0 ||
+        number > static_cast<double>(UINT32_MAX) ||
+        std::floor(number) != number)
+    {
+        return false;
+    }
+    index = static_cast<std::uint32_t>(number);
+    return true;
+}
+
+bool DockValidate(const UIDockSpaceSnapshot& snapshot)
+{
+    UIDockLayout tree;
+    if (tree.RestoreStructure(snapshot.Structure) == false)
+    {
+        return false;
+    }
+    std::unordered_map<std::uint64_t, UITabModel> models;
+    for (const UIDockLayoutRecord& record : snapshot.Structure)
+    {
+        if (record.Kind == UIDockNodeKind::Tabs)
+        {
+            models.emplace(record.Id, UITabModel{});
+        }
+    }
+    if (snapshot.Selections.size() != models.size())
+    {
+        return false;
+    }
+    for (const UIDockTabRecord& tab : snapshot.Tabs)
+    {
+        auto it = models.find(tab.LeafId);
+        if (it == models.end() ||
+            it->second.AddTab(tab.Tab.Id, tab.Tab.Title, tab.Tab.Closable) == false)
+        {
+            return false;
+        }
+    }
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto& selection : snapshot.Selections)
+    {
+        auto it = models.find(selection.first);
+        if (it == models.end() ||
+            seen.insert(selection.first).second == false ||
+            it->second.SelectTab(selection.second) == false)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
+bool SerializeDockSnapshot(const UIDockSpaceSnapshot& snapshot,
+    std::string& outText, std::string* errorMessage)
+{
+    if (DockValidate(snapshot) == false)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotの構造またはTab状態が不正です");
+    }
+    Core::JsonValue::Array nodes;
+    for (const UIDockLayoutRecord& record : snapshot.Structure)
+    {
+        Core::JsonValue::Object node;
+        node.emplace("id", Core::JsonValue(std::to_string(record.Id)));
+        node.emplace("kind", Core::JsonValue(std::string(
+            record.Kind == UIDockNodeKind::Split ? "split" : "tabs")));
+        node.emplace("axis", Core::JsonValue(std::string(
+            record.Axis == UIDockSplitAxis::Horizontal ? "horizontal" : "vertical")));
+        node.emplace("ratio", Core::JsonValue(static_cast<double>(record.Ratio)));
+        node.emplace("depth", Core::JsonValue(static_cast<double>(record.Depth)));
+        nodes.emplace_back(std::move(node));
+    }
+    Core::JsonValue::Array tabs;
+    for (const UIDockTabRecord& record : snapshot.Tabs)
+    {
+        Core::JsonValue::Object tab;
+        tab.emplace("leafId", Core::JsonValue(std::to_string(record.LeafId)));
+        tab.emplace("id", Core::JsonValue(std::to_string(record.Tab.Id)));
+        tab.emplace("title", Core::JsonValue(record.Tab.Title));
+        tab.emplace("closable", Core::JsonValue(record.Tab.Closable));
+        tabs.emplace_back(std::move(tab));
+    }
+    Core::JsonValue::Array selections;
+    for (const auto& selection : snapshot.Selections)
+    {
+        Core::JsonValue::Object value;
+        value.emplace("leafId", Core::JsonValue(std::to_string(selection.first)));
+        value.emplace("tabId", Core::JsonValue(std::to_string(selection.second)));
+        selections.emplace_back(std::move(value));
+    }
+    Core::JsonValue::Object root;
+    root.emplace("type", Core::JsonValue(std::string("RavenDockSnapshot")));
+    root.emplace("version", Core::JsonValue(1.0));
+    root.emplace("structure", Core::JsonValue(std::move(nodes)));
+    root.emplace("tabs", Core::JsonValue(std::move(tabs)));
+    root.emplace("selections", Core::JsonValue(std::move(selections)));
+    return Core::JsonWriter::Write(Core::JsonValue(std::move(root)),
+        outText, errorMessage);
+}
+
+bool DeserializeDockSnapshot(const std::string& text,
+    UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage)
+{
+    Core::JsonValue root;
+    if (Core::JsonParser::Parse(text, root, errorMessage) == false)
+    {
+        return false;
+    }
+    const auto* type = DockField(root, "type", Core::JsonValue::Type::String);
+    const auto* version = DockField(root, "version", Core::JsonValue::Type::Number);
+    const auto* nodes = DockField(root, "structure", Core::JsonValue::Type::Array);
+    const auto* tabs = DockField(root, "tabs", Core::JsonValue::Type::Array);
+    const auto* selections = DockField(root, "selections", Core::JsonValue::Type::Array);
+    if (type == nullptr || version == nullptr || nodes == nullptr ||
+        tabs == nullptr || selections == nullptr ||
+        type->GetString() != "RavenDockSnapshot" || version->GetNumber() != 1.0 ||
+        nodes->GetArray().size() > 4096u || tabs->GetArray().size() > 65536u)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotのtype/version/配列が不正です");
+    }
+    UIDockSpaceSnapshot parsed;
+    for (const Core::JsonValue& value : nodes->GetArray())
+    {
+        UIDockLayoutRecord record;
+        const auto* kind = DockField(value, "kind", Core::JsonValue::Type::String);
+        const auto* axis = DockField(value, "axis", Core::JsonValue::Type::String);
+        const auto* ratio = DockField(value, "ratio", Core::JsonValue::Type::Number);
+        if (DockReadId(value, "id", record.Id) == false ||
+            DockReadIndex(value, "depth", record.Depth) == false ||
+            kind == nullptr || axis == nullptr || ratio == nullptr ||
+            (kind->GetString() != "split" && kind->GetString() != "tabs") ||
+            (axis->GetString() != "horizontal" && axis->GetString() != "vertical"))
+        {
+            return DockIOError(errorMessage, "Dock SnapshotのNodeが不正です");
+        }
+        record.Kind = kind->GetString() == "split" ?
+            UIDockNodeKind::Split : UIDockNodeKind::Tabs;
+        record.Axis = axis->GetString() == "horizontal" ?
+            UIDockSplitAxis::Horizontal : UIDockSplitAxis::Vertical;
+        const double number = ratio->GetNumber();
+        record.Ratio = static_cast<float>(number);
+        if (std::isfinite(number) == false ||
+            std::isfinite(record.Ratio) == false ||
+            record.Ratio <= 0.0f || record.Ratio >= 1.0f)
+        {
+            return DockIOError(errorMessage, "Dock Snapshotの分割比率が不正です");
+        }
+        parsed.Structure.push_back(record);
+    }
+    for (const Core::JsonValue& value : tabs->GetArray())
+    {
+        UIDockTabRecord record;
+        const auto* title = DockField(value, "title", Core::JsonValue::Type::String);
+        const auto* closable = DockField(value, "closable", Core::JsonValue::Type::Boolean);
+        if (DockReadId(value, "leafId", record.LeafId) == false ||
+            DockReadId(value, "id", record.Tab.Id) == false ||
+            title == nullptr || closable == nullptr)
+        {
+            return DockIOError(errorMessage, "Dock SnapshotのTabが不正です");
+        }
+        record.Tab.Title = title->GetString();
+        record.Tab.Closable = closable->GetBoolean();
+        parsed.Tabs.push_back(std::move(record));
+    }
+    for (const Core::JsonValue& value : selections->GetArray())
+    {
+        std::uint64_t leaf = 0u;
+        std::uint64_t selected = 0u;
+        if (DockReadId(value, "leafId", leaf) == false ||
+            DockReadId(value, "tabId", selected) == false)
+        {
+            return DockIOError(errorMessage, "Dock Snapshotの選択状態が不正です");
+        }
+        parsed.Selections.emplace_back(leaf, selected);
+    }
+    if (DockValidate(parsed) == false)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotの参照関係が不正です");
+    }
+    // 成功時だけ呼び出し元を更新し、破損ファイルで現行設定を失わないようにします。
+    outSnapshot = std::move(parsed);
+    return true;
+}
+
+bool SaveDockSnapshot(const std::string& filePath,
+    const UIDockSpaceSnapshot& snapshot, std::string* errorMessage)
+{
+    std::string text;
+    if (SerializeDockSnapshot(snapshot, text, errorMessage) == false)
+    {
+        return false;
+    }
+    std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
+    if (file.is_open() == false)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotを開けません: " + filePath);
+    }
+    file.write(text.data(), static_cast<std::streamsize>(text.size()));
+    return file.good() == true ? true :
+        DockIOError(errorMessage, "Dock Snapshotを書き込めません: " + filePath);
+}
+
+bool LoadDockSnapshot(const std::string& filePath,
+    UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage)
+{
+    std::ifstream file(filePath, std::ios::binary);
+    if (file.is_open() == false)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotを開けません: " + filePath);
+    }
+    std::string text((std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+    if (file.bad() == true)
+    {
+        return DockIOError(errorMessage, "Dock Snapshotを読み込めません: " + filePath);
+    }
+    return DeserializeDockSnapshot(text, outSnapshot, errorMessage);
+}
 
 UIDockSpace::UIDockSpace()
 {
