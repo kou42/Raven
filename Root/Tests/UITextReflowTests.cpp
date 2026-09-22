@@ -15,7 +15,10 @@
 #include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <cmath>
 #include <memory>
@@ -70,6 +73,55 @@ void Check(bool condition, const char* label)
 
 
 
+
+// 保存失敗で旧版を壊さず、退避中のクラッシュを想定したBackup読み込みを確認します。
+void TestDockSnapshotFileRecovery()
+{
+    namespace fs = std::filesystem;
+    const fs::path directory = fs::temp_directory_path() /
+        ("RavenDockSnapshotTest_" + std::to_string(
+            static_cast<std::uint64_t>(std::chrono::steady_clock::now()
+                .time_since_epoch().count())));
+    Check(fs::create_directory(directory), "dock file test directory");
+    const fs::path path = directory / "layout.json";
+    const fs::path backup = directory / "layout.json.bak";
+    Raven::UIDockSpace dock;
+    const std::uint64_t leaf = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.CreateTabView(leaf) != nullptr, "dock file test view");
+    Check(dock.AddTab(leaf, 901u, "Before",
+        std::make_unique<Raven::UIElement>()), "dock file first tab");
+    const Raven::UIDockSpaceSnapshot before = dock.SaveSnapshot();
+    std::string error;
+    Check(Raven::SaveDockSnapshot(path.string(), before, &error),
+        "dock file first save");
+    Check(dock.AddTab(leaf, 902u, "After",
+        std::make_unique<Raven::UIElement>()), "dock file second tab");
+    const Raven::UIDockSpaceSnapshot after = dock.SaveSnapshot();
+    Check(Raven::SaveDockSnapshot(path.string(), after, &error),
+        "dock file replacement save");
+    Raven::UIDockSpaceSnapshot loaded;
+    Check(Raven::LoadDockSnapshot(path.string(), loaded, &error) &&
+        loaded.Tabs.size() == 2u, "dock file newest snapshot");
+    Check(Raven::LoadDockSnapshot(backup.string(), loaded, &error) &&
+        loaded.Tabs.size() == 1u, "dock file previous snapshot retained");
+    fs::remove(path);
+    Check(Raven::LoadDockSnapshot(path.string(), loaded, &error) &&
+        loaded.Tabs.size() == 1u, "dock file missing primary fallback");
+    Check(Raven::SaveDockSnapshot(path.string(), after, &error),
+        "dock file recovery save");
+    {
+        std::ofstream corrupt(path, std::ios::binary | std::ios::trunc);
+        corrupt << "{";
+    }
+    const auto originalCount = loaded.Tabs.size();
+    Check(Raven::LoadDockSnapshot(path.string(), loaded, &error) == false,
+        "dock file corrupted primary rejected");
+    Check(loaded.Tabs.size() == originalCount,
+        "dock file corrupted primary leaves output unchanged");
+    Check(Raven::SaveDockSnapshot((directory / "missing" / "layout.json").string(),
+        after, &error) == false, "dock file write failure");
+    fs::remove_all(directory);
+}
 
 void TestDockSnapshotJson()
 {
@@ -1569,5 +1621,6 @@ int main()
     TestDockStructureSnapshot();
     TestDockFullSnapshot();
     TestDockSnapshotJson();
+    TestDockSnapshotFileRecovery();
     return 0;
 }
