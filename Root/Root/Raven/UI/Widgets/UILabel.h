@@ -15,6 +15,8 @@ class UILabel final : public UIElement
 {
 public:
     void SetFont(const Ref<UIFontAtlas>& font);
+    // DPI用に再RasterizeしたAtlasを指定し、表示倍率との差分だけQuadを補正します。
+    void SetFontDPI(const Ref<UIFontAtlas>& font, float rasterScale);
     const Ref<UIFontAtlas>& GetFont() const;
 
     void SetText(std::string text);
@@ -62,6 +64,7 @@ private:
     bool m_UseBaselineOffsetDIP = false;
     bool m_UseLineHeightDIP = false;
     bool m_ScaleGlyphsWithDPI = false;
+    float m_FontRasterScale = 1.0f;
     UITextWrapMode m_WrapMode = UITextWrapMode::None;
     UITextHorizontalAlignment m_TextAlignment = UITextHorizontalAlignment::Left;
 };
