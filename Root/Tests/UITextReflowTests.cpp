@@ -581,6 +581,8 @@ public:
     int Ends = 0;
     int Ups = 0;
     bool Accept = false;
+    bool RemoveSourceOnDrop = false;
+    bool RemoveSelfOnOver = false;
     std::string LastData;
 
 protected:
@@ -594,6 +596,11 @@ protected:
 
     bool OnDragDropEvent(Raven::UIDragDropEvent& event) override
     {
+        if (event.Type == Raven::UIDragDropEventType::Over && RemoveSelfOnOver == true)
+        {
+            GetParent()->RemoveChild(this);
+            return false;
+        }
         if (event.Type == Raven::UIDragDropEventType::Begin) { ++Begins; }
         if (event.Type == Raven::UIDragDropEventType::Cancel) { ++Cancels; }
         if (event.Type == Raven::UIDragDropEventType::End) { ++Ends; }
@@ -601,6 +608,10 @@ protected:
         {
             ++Drops;
             LastData = event.Payload->Data;
+            if (RemoveSourceOnDrop == true && event.Source != nullptr)
+            {
+                event.Source->GetParent()->RemoveChild(event.Source);
+            }
         }
         return Accept && event.Type == Raven::UIDragDropEventType::Over;
     }
@@ -636,6 +647,25 @@ void TestDragDropRouting()
     Check(context.RouteKeyEvent(Press(Raven::UIKey::Escape)), "escape consumes drag");
     Check(sourcePtr->Cancels == 1 && context.HasPendingDrag() == false, "escape cancels");
     Check(context.HasMouseCapture() == false, "escape releases capture");
+    // Drop callbackがSourceを削除してもEndで解放済みPointerへアクセスしません。
+    targetPtr->RemoveSourceOnDrop = true;
+    Check(context.BeginDrag(sourcePtr, {"test/item", "remove"}, Raven::math::Vec2(10.0f, 10.0f)), "remove-source drag");
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 10.0f));
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 10.0f), Raven::UIMouseButton::Left);
+    Check(targetPtr->Drops == 2 && context.HasPendingDrag() == false, "drop removes source safely");
+
+    // Over callbackが候補自身を削除しても、削除済み候補のParentを辿りません。
+    auto disposable = std::make_unique<DragProbe>();
+    DragProbe* disposablePtr = disposable.get();
+    disposable->SetPosition(Raven::math::Vec2(0.0f, 50.0f));
+    disposable->SetSize(Raven::math::Vec2(40.0f, 40.0f));
+    disposable->RemoveSelfOnOver = true;
+    context.GetRootElement().AddChild(std::move(disposable));
+    Check(context.BeginDrag(targetPtr, {"test/item", "remove-target"}, Raven::math::Vec2(70.0f, 10.0f)), "remove-target drag");
+    context.RouteMouseMove(Raven::math::Vec2(10.0f, 60.0f));
+    Check(context.GetDropTarget() != disposablePtr, "removed candidate is not drop target");
+    context.CancelDrag();
+    Check(context.HasMouseCapture() == false, "remove-target cancel releases capture");
 }
 
 } // namespace
