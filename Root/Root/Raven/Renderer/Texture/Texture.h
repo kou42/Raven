@@ -63,6 +63,14 @@ struct TextureSpecification
     bool GenerateMips = true;
 };
 
+// Texture生成の診断です。Pixel upload後のDriverエラーは現行void SetDataでは検知できません。
+enum class TextureCreationFailure
+{
+    None,
+    DeviceUnavailable,
+    ResourceUnavailable
+};
+
 // Textureは描画APIに依存しないインターフェースです。
 // OpenGL固有のGLuintやglBindTextureなどは派生クラス側へ閉じ込めます。
 // これにより、Textureを利用する上位層はOpenGL / DirectXなどの違いを意識せずに扱えます。
@@ -92,6 +100,14 @@ public:
         const TextureSpecification& specification,
         const void* data,
         std::size_t dataSize
+    );
+
+    // 既存APIは維持し、診断が必要な呼び出し元だけ失敗理由を取得します。
+    static Ref<Texture> Create(
+        const TextureSpecification& specification,
+        const void* data,
+        std::size_t dataSize,
+        TextureCreationFailure* outFailure
     );
 
     virtual void Bind(unsigned int slot = 0) const = 0;
