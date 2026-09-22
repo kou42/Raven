@@ -1,6 +1,7 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/UI/Core/UIElement.h"
@@ -420,6 +421,119 @@ void TestDPILayoutMetrics()
     context.SetDPIScale(2.0f, 2.0f);
     CheckNear("legacy size after dpi", childPtr->GetPreferredSize().x, 33.0f);
     CheckNear("legacy size after dpi y", childPtr->GetPreferredSize().y, 11.0f);
+}
+
+// GPU不要のRenderer Spyで、DPIとFramebuffer倍率が混同されないことを検証します。
+class FramebufferSizeRenderer final : public Raven::UIRenderer
+{
+public:
+    Raven::math::Vec2 LastViewport{};
+    Raven::math::Vec2 LastFramebuffer{};
+    std::size_t Calls = 0u;
+
+    void Render(const Raven::UIDrawList&,
+        const Raven::math::Vec2& viewportSize,
+        const Raven::math::Vec2& framebufferSize) override
+    {
+        LastViewport = viewportSize;
+        LastFramebuffer = framebufferSize;
+        ++Calls;
+    }
+};
+
+void TestWindowFramebufferMetrics()
+{
+    Raven::UIContext context;
+    auto renderer = std::make_unique<FramebufferSizeRenderer>();
+    FramebufferSizeRenderer* spy = renderer.get();
+    context.SetRenderer(std::move(renderer));
+
+    // Content ScaleとFramebuffer比率はOS/Monitorにより一致するとは限りません。
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f),
+        Raven::math::Vec2(1200.0f, 900.0f), 2.0f, 1.5f);
+    CheckNear("window dpi x", context.GetDPIScaleX(), 2.0f);
+    CheckNear("window dpi y", context.GetDPIScaleY(), 1.5f);
+    CheckNear("window layout width", context.GetLayoutViewportSize().x, 400.0f);
+    CheckNear("window layout height", context.GetLayoutViewportSize().y, 400.0f);
+    context.EndFrame();
+    Check(spy->Calls == 1u, "window renderer called");
+    CheckNear("window logical width", spy->LastViewport.x, 800.0f);
+    CheckNear("window framebuffer width", spy->LastFramebuffer.x, 1200.0f);
+
+    // 最小化中の0 PixelをWindow論理サイズで代替しないことを確認します。
+    context.BeginFrame(Raven::math::Vec2(800.0f, 600.0f),
+        Raven::math::Vec2(0.0f, 0.0f), 1.0f, 1.0f);
+    context.EndFrame();
+    CheckNear("minimized framebuffer width", spy->LastFramebuffer.x, 0.0f);
+    CheckNear("minimized framebuffer height", spy->LastFramebuffer.y, 0.0f);
+
+    // 復帰後は以前のDPI/Framebuffer値を持ち越しません。
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f),
+        Raven::math::Vec2(640.0f, 480.0f), 1.0f, 1.0f);
+    context.EndFrame();
+    CheckNear("restored dpi", context.GetDPIScaleX(), 1.0f);
+    CheckNear("restored framebuffer", spy->LastFramebuffer.x, 640.0f);
+
+    // 補助Windowが別UIContextを所有する場合、DPI/Viewport/FramebufferがMainへ漏れません。
+    Raven::UIContext auxiliary;
+    auto auxiliaryRenderer = std::make_unique<FramebufferSizeRenderer>();
+    FramebufferSizeRenderer* auxiliarySpy = auxiliaryRenderer.get();
+    auxiliary.SetRenderer(std::move(auxiliaryRenderer));
+    auxiliary.BeginFrame(Raven::math::Vec2(480.0f, 320.0f),
+        Raven::math::Vec2(720.0f, 480.0f), 1.5f, 1.5f);
+    auxiliary.EndFrame();
+    CheckNear("auxiliary dpi", auxiliary.GetDPIScaleX(), 1.5f);
+    CheckNear("auxiliary framebuffer", auxiliarySpy->LastFramebuffer.x, 720.0f);
+    CheckNear("main dpi isolated", context.GetDPIScaleX(), 1.0f);
+    CheckNear("main viewport isolated", context.GetViewportSize().x, 640.0f);
+    CheckNear("main framebuffer isolated", spy->LastFramebuffer.x, 640.0f);
+
+    // Root直下Widgetの所有権を補助Windowへ移し、同一ObjectをMainへ戻せます。
+    auto movable = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* widget = movable.get();
+    Check(context.GetRootElement().AddChild(std::move(movable)) == widget,
+        "transfer source child added");
+    Check(context.TransferRootChildTo(auxiliary, widget),
+        "transfer to auxiliary");
+    Check(widget->GetContext() == &auxiliary, "transfer updates context");
+    Check(widget->GetParent() == &auxiliary.GetRootElement(),
+        "transfer updates parent");
+    Check(auxiliary.GetRootElement().GetChildren().back().get() != widget,
+        "transfer keeps popup layer in front");
+    Check(auxiliary.TransferRootChildTo(context, widget),
+        "transfer back to main");
+    Check(widget->GetContext() == &context, "transfer restores context");
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    Check(context.DetachRootChild(widget) == nullptr,
+        "close child extraction rejects active frame");
+    context.EndFrame();
+    Raven::Scope<Raven::UIElement> saved = context.DetachRootChild(widget);
+    Check(saved.get() == widget && widget->GetContext() == nullptr,
+        "close child extraction preserves ownership");
+    Check(context.AddRootChild(std::move(saved)) == widget,
+        "close child extraction restores main root");
+    Check(context.GetRootElement().GetChildren().back().get() != widget,
+        "close child extraction retains popup front order");
+    Check(context.TransferRootChildTo(context, widget) == false,
+        "transfer rejects same context");
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    Check(context.TransferRootChildTo(auxiliary, widget) == false,
+        "transfer rejects active frame");
+    context.EndFrame();
+
+    auxiliary.BeginFrame(Raven::math::Vec2(480.0f, 320.0f));
+    Check(context.TransferRootChildTo(auxiliary, widget) == false,
+        "transfer rejects destination active frame");
+    auxiliary.EndFrame();
+
+    Raven::UIContext unrelated;
+    auto foreign = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* foreignWidget = foreign.get();
+    unrelated.GetRootElement().AddChild(std::move(foreign));
+    Check(context.TransferRootChildTo(auxiliary, foreignWidget) == false,
+        "transfer rejects child of another context");
+    Check(foreignWidget->GetContext() == &unrelated,
+        "rejected transfer preserves ownership");
 }
 
 void TestDPIContextCoordinates()
@@ -899,6 +1013,137 @@ void TestDockSpace()
     CheckNear("dockspace splitter x", dock.GetSplitter(splitId)->GetPosition().x, 197.5f);
     Check(dock.SetPane(splitId, std::make_unique<Raven::UIElement>()) == false,
         "dockspace split cannot host pane");
+}
+
+void TestDockTabWindowExtraction()
+{
+    Raven::UIContext context;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    context.GetRootElement().AddChild(std::move(dock));
+    const std::uint64_t leafId = dockPtr->GetLayout().GetRoot()->GetId();
+    Check(dockPtr->CreateTabView(leafId) != nullptr,
+        "window extraction creates dock tab view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = page.get();
+    Check(dockPtr->AddTab(leafId, 1001u, "Inspector", std::move(page), false),
+        "window extraction adds nonclosable tab");
+
+    Raven::UITabItem metadata;
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    Check(dockPtr->ExtractTabForWindow(leafId, 1001u, metadata) == nullptr,
+        "window extraction rejects active frame");
+    context.EndFrame();
+    Check(dockPtr->ExtractTabForWindow(leafId, 9999u, metadata) == nullptr,
+        "window extraction rejects unknown tab");
+    Raven::Scope<Raven::UIElement> extracted =
+        dockPtr->ExtractTabForWindow(leafId, 1001u, metadata);
+    Check(extracted.get() == original, "window extraction retains page identity");
+    Check(extracted->GetContext() == nullptr && extracted->GetParent() == nullptr,
+        "window extraction detaches page from source context");
+    Check(metadata.Id == 1001u && metadata.Title == "Inspector" &&
+        metadata.Closable == false, "window extraction retains tab metadata");
+    Check(dockPtr->GetTabView(leafId)->GetModel().FindTab(1001u) == nullptr &&
+        dockPtr->GetLayout().FindNode(leafId)->GetTabs()->FindTab(1001u) == nullptr,
+        "window extraction synchronizes view and logical model");
+    Check(dockPtr->AddTab(leafId, metadata.Id, metadata.Title,
+        std::move(extracted), metadata.Closable), "window extraction can restore tab");
+    Check(dockPtr->GetTabView(leafId)->GetTabContent(1001u) == original,
+        "window extraction restore retains page identity");
+}
+
+// WindowManagerを起動しないCPU側の復帰シミュレーション。
+// 複数補助WindowのClose順が変わってもContentの所有権とTabメタデータを保持します。
+void TestDockTabMultipleWindowRestore()
+{
+    Raven::UIContext main;
+    Raven::UIContext firstWindow;
+    Raven::UIContext secondWindow;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    main.GetRootElement().AddChild(std::move(dock));
+    const std::uint64_t leaf = dockPtr->GetLayout().GetRoot()->GetId();
+    Check(dockPtr->CreateTabView(leaf) != nullptr, "multiwindow creates tab view");
+
+    auto firstPage = std::make_unique<Raven::UIElement>();
+    auto secondPage = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* firstRaw = firstPage.get();
+    Raven::UIElement* secondRaw = secondPage.get();
+    Check(dockPtr->AddTab(leaf, 2001u, "First", std::move(firstPage), false),
+        "multiwindow adds first tab");
+    Check(dockPtr->AddTab(leaf, 2002u, "Second", std::move(secondPage), true),
+        "multiwindow adds second tab");
+
+    Raven::UITabItem firstTab;
+    Raven::UITabItem secondTab;
+    Raven::Scope<Raven::UIElement> first =
+        dockPtr->ExtractTabForWindow(leaf, 2001u, firstTab);
+    Raven::Scope<Raven::UIElement> second =
+        dockPtr->ExtractTabForWindow(leaf, 2002u, secondTab);
+    Check(first.get() == firstRaw && second.get() == secondRaw,
+        "multiwindow extracts both original pages");
+    Check(firstWindow.AddRootChild(std::move(first)) == firstRaw,
+        "multiwindow attaches first page");
+    Check(secondWindow.AddRootChild(std::move(second)) == secondRaw,
+        "multiwindow attaches second page");
+
+    // 先に2番目のWindowを閉じ、続いて1番目を閉じる順序を模擬します。
+    Raven::Scope<Raven::UIElement> returnedSecond =
+        secondWindow.DetachRootChild(secondRaw);
+    Raven::Scope<Raven::UIElement> returnedFirst =
+        firstWindow.DetachRootChild(firstRaw);
+    Check(returnedSecond.get() == secondRaw && returnedFirst.get() == firstRaw,
+        "multiwindow close keeps both contents alive");
+    Check(dockPtr->AddTab(leaf, secondTab.Id, secondTab.Title,
+        std::move(returnedSecond), secondTab.Closable),
+        "multiwindow restores second tab");
+    Check(dockPtr->AddTab(leaf, firstTab.Id, firstTab.Title,
+        std::move(returnedFirst), firstTab.Closable),
+        "multiwindow restores first tab");
+    Check(dockPtr->GetTabView(leaf)->GetTabContent(2001u) == firstRaw &&
+        dockPtr->GetTabView(leaf)->GetTabContent(2002u) == secondRaw,
+        "multiwindow restore preserves both identities");
+    const Raven::UITabItem* restoredFirst =
+        dockPtr->GetTabView(leaf)->GetModel().FindTab(2001u);
+    const Raven::UITabItem* restoredSecond =
+        dockPtr->GetTabView(leaf)->GetModel().FindTab(2002u);
+    Check(restoredFirst != nullptr && restoredSecond != nullptr &&
+        restoredFirst->Title == "First" && restoredFirst->Closable == false &&
+        restoredSecond->Title == "Second" && restoredSecond->Closable == true,
+        "multiwindow restore preserves metadata");
+}
+
+// 元DockSpaceがWindow Close前に削除された場合はMain Rootへ退避します。
+void TestDockTabMissingSourceFallback()
+{
+    Raven::UIContext main;
+    Raven::UIContext auxiliary;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    main.GetRootElement().AddChild(std::move(dock));
+    const std::uint64_t leaf = dockPtr->GetLayout().GetRoot()->GetId();
+    Check(dockPtr->CreateTabView(leaf) != nullptr,
+        "missing source creates tab view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* raw = page.get();
+    Check(dockPtr->AddTab(leaf, 3001u, "Detached", std::move(page)),
+        "missing source adds tab");
+    Raven::UITabItem tab;
+    Raven::Scope<Raven::UIElement> content =
+        dockPtr->ExtractTabForWindow(leaf, 3001u, tab);
+    Check(auxiliary.AddRootChild(std::move(content)) == raw,
+        "missing source attaches auxiliary page");
+    Check(main.GetRootElement().RemoveChild(dockPtr),
+        "missing source removes original dock");
+    Raven::Scope<Raven::UIElement> returned = auxiliary.DetachRootChild(raw);
+    Check(returned.get() == raw && returned->GetContext() == nullptr,
+        "missing source close retains detached content");
+    returned->SetVisible(true);
+    Check(main.AddRootChild(std::move(returned)) == raw,
+        "missing source returns content to main root");
+    Check(raw->GetContext() == &main &&
+        main.GetRootElement().GetChildren().back().get() != raw,
+        "missing source fallback preserves context and popup order");
 }
 
 // Phase 9-1: Docking論理Treeの所有権・安定ID・不正Split拒否を検証します。
@@ -1969,6 +2214,7 @@ void TestTabSystem()
 
 int main()
 {
+    TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();
     TestTreeViewDragDrop();
@@ -2107,6 +2353,9 @@ int main()
     TestTextureDeviceUnavailableDiagnostic();
     TestDockLayout();
     TestDockSpace();
+    TestDockTabMultipleWindowRestore();
+    TestDockTabMissingSourceFallback();
+    TestDockTabWindowExtraction();
     TestDockTabView();
     TestDockTabTransfer();
     TestDockCollapse();

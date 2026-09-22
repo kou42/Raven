@@ -8,6 +8,7 @@
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UISplitter.h"
 #include "Raven/UI/Widgets/UIInputText.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -314,7 +315,458 @@ Application::~Application()
     // 外部参照が残る場合はShutdownOwnedWindowsがfalseを返すため、
     // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
     const bool auxiliaryWindowsClosed = m_WindowManager.ShutdownOwnedWindows();
+    m_AuxiliaryUIContexts.clear();
+    FlushPendingClosedUIChildren();
     assert(auxiliaryWindowsClosed == true);
+}
+
+WindowID Application::CreateUIWindow(const WindowSpecification& specification)
+{
+    if (m_RavenUIEnabled == false || specification.Backend != RHIBackend::OpenGL ||
+        m_Window->GetBackend() != RHIBackend::OpenGL)
+    {
+        // 他BackendのMulti-Viewportは描画Target接続後に有効化します。
+        return 0;
+    }
+    auto callbackID = std::make_shared<WindowID>(0);
+    const WindowID id = m_WindowManager.CreateManagedWindow(specification,
+        [this, callbackID](Event& event)
+        {
+            if (*callbackID != 0)
+            {
+                OnAuxiliaryUIEvent(*callbackID, event);
+            }
+        });
+    *callbackID = id;
+    if (id == 0)
+    {
+        return 0;
+    }
+    Window* window = m_WindowManager.GetWindow(id);
+    if (window == nullptr || window->MakeContextCurrent() == false)
+    {
+        m_WindowManager.UnregisterWindow(id);
+        m_Window->MakeContextCurrent();
+        return 0;
+    }
+    auto context = CreateScope<UIContext>();
+    // UIの見た目とユーザー指定倍率はOS Windowごとに初期化される値ではないため、
+    // Main Windowの設定を引き継ぎます。OS由来のDPIだけは各WindowのBeginFrameで同期します。
+    context->SetTheme(m_UIContext.GetTheme());
+    context->SetUserScale(m_UIContext.GetUserScale());
+    // VAOはContext間で共有されないため、補助WindowをCurrentにしてRendererを生成します。
+    context->SetRenderer(UIRenderer::Create(window->GetBackend()));
+    m_AuxiliaryUIContexts.emplace(id, std::move(context));
+    // UIContextはWindowManagerのCloseCleanupで破棄し、GL資産の寿命をOS Windowより短くします。
+    const bool restored = m_Window->MakeContextCurrent();
+    // CleanupをLifecycleより先に登録し、途中失敗でもWindow破棄前にRendererを解放します。
+    const bool cleanupRegistered = m_WindowManager.SetWindowCloseCleanup(id,
+        [this, id](Window&)
+        {
+            const auto it = m_AuxiliaryUIContexts.find(id);
+            if (it == m_AuxiliaryUIContexts.end())
+            {
+                return;
+            }
+
+            // OS補助Windowを閉じても通常Widgetの所有権を失わないようMainへ戻します。
+            // DetachChildが旧WindowのCapture/Focus/IMEを解除します。
+            // Rootの内部Popup/TooltipはContext固有なので移動せずContextと共に破棄します。
+            UIContext& source = *it->second;
+            // MainのFrame中でもWindow Closeは発生し得ます。Widgetは破棄せず一時退避し、
+            // 元Dockへの復帰やMain Root追加はMain EndFrame後にまとめて実行します。
+            DetachedDockTab dockRecord;
+            bool hasDockRecord = false;
+            const auto detached = m_DetachedDockTabs.find(id);
+            if (detached != m_DetachedDockTabs.end())
+            {
+                dockRecord = detached->second;
+                hasDockRecord = true;
+                m_DetachedDockTabs.erase(detached);
+            }
+            std::vector<UIElement*> children;
+            for (const auto& child : source.GetRootElement().GetChildren())
+            {
+                if (child != nullptr)
+                {
+                    children.push_back(child.get());
+                }
+            }
+            for (UIElement* child : children)
+            {
+                Scope<UIElement> content = source.DetachRootChild(child);
+                if (content != nullptr)
+                {
+                    const bool isDockContent =
+                        hasDockRecord == true && child == dockRecord.Content;
+                    m_PendingClosedUIChildren.push_back(PendingClosedUIChild{
+                        std::move(content), isDockContent ? dockRecord : DetachedDockTab{},
+                        isDockContent });
+                }
+            }
+
+            // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
+            m_AuxiliaryUIContexts.erase(it);
+        });
+    if (restored == false || cleanupRegistered == false ||
+        m_WindowManager.AttachFrameLifecycle(id) == false)
+    {
+        // 登録失敗時も補助WindowのContextでRendererを破棄します。
+        window->MakeContextCurrent();
+        m_AuxiliaryUIContexts.erase(id);
+        m_WindowManager.UnregisterWindow(id);
+        m_Window->MakeContextCurrent();
+        return 0;
+    }
+    // 補助Window側にもMain Windowと同じIME取消/Caret通知を結びます。
+    // CallbackはWindow破棄と同時に消えるため、WindowIDでContextの生存を確認します。
+    UIContext* auxiliaryUI = GetWindowUIContext(id);
+    auxiliaryUI->SetIMECancelCallback([this, id]()
+        {
+            Window* target = m_WindowManager.GetWindow(id);
+            if (target != nullptr)
+            {
+                target->CancelIMEComposition();
+            }
+        });
+    window->SetIMECaretPositionCallback([this, id](float& x, float& y)
+        {
+            UIContext* target = GetWindowUIContext(id);
+            if (target == nullptr)
+            {
+                return false;
+            }
+            UIInputText* input = dynamic_cast<UIInputText*>(target->GetFocusedElement());
+            if (input == nullptr)
+            {
+                return false;
+            }
+            const math::Vec2 caret = input->GetIMECaretScreenPosition();
+            x = caret.x;
+            y = caret.y;
+            return true;
+        });
+    return id;
+}
+
+WindowID Application::DetachDockTabToNewWindow(
+    WindowID sourceID, UIDockSpace& dock, std::uint64_t leafId,
+    std::uint64_t tabId, const WindowSpecification& specification)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (m_RavenUIEnabled == false || source == nullptr ||
+        dock.GetContext() != source || source->IsFrameActive() == true ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return 0;
+    }
+    UITabView* view = dock.GetTabView(leafId);
+    if (view == nullptr || view->GetModel().FindTab(tabId) == nullptr ||
+        view->GetTabContent(tabId) == nullptr)
+    {
+        return 0;
+    }
+
+    // Dock Modelを変更する前にWindow生成を完了させます。
+    // OS Window生成失敗時はTab Contentと選択状態を元のPaneに残します。
+    const WindowID destinationID = CreateUIWindow(specification);
+    if (destinationID == 0)
+    {
+        return 0;
+    }
+    UIContext* destination = GetWindowUIContext(destinationID);
+    if (destination == nullptr)
+    {
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    destination->SetTheme(source->GetTheme());
+    destination->SetUserScale(source->GetUserScale());
+
+    UITabItem tab;
+    Scope<UIElement> content = dock.ExtractTabForWindow(leafId, tabId, tab);
+    if (content == nullptr)
+    {
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    // 非選択TabはContentが非表示なので、新Windowへ渡す前に表示状態を戻します。
+    content->SetVisible(true);
+    UIElement* raw = content.get();
+    if (destination->AddRootChild(std::move(content)) != raw)
+    {
+        // 通常は到達しません。Root追加失敗でも空Windowは残しません。
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    // Rootへの追加が完了してから登録し、失敗した生成経路を復帰対象にしません。
+    m_DetachedDockTabs[destinationID] = DetachedDockTab{
+        sourceID, &dock, raw, leafId, tab.Id, tab.Title, tab.Closable };
+    return destinationID;
+}
+
+WindowID Application::DetachUIRootChildToNewWindow(
+    WindowID sourceID, UIElement* child, const WindowSpecification& specification)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (source == nullptr || child == nullptr ||
+        child->GetParent() != &source->GetRootElement() ||
+        source->IsFrameActive() == true ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return 0;
+    }
+
+    // OS Windowを先に確保し、成功した場合だけ既存Widgetの所有権を移します。
+    // 失敗時は空の補助Windowだけを破棄し、元のUI Treeを変更しません。
+    const WindowID destinationID = CreateUIWindow(specification);
+    if (destinationID == 0)
+    {
+        return 0;
+    }
+    // Main以外の補助Windowから切り離す場合も移動元のTheme/ユーザー倍率を継承します。
+    // 新Windowはまだ空なので、Widgetを追加する前に設定を確定させます。
+    UIContext* destination = GetWindowUIContext(destinationID);
+    if (destination != nullptr)
+    {
+        destination->SetTheme(source->GetTheme());
+        destination->SetUserScale(source->GetUserScale());
+    }
+    if (TransferUIRootChild(sourceID, destinationID, child) == false)
+    {
+        m_WindowManager.UnregisterWindow(destinationID);
+        return 0;
+    }
+    return destinationID;
+}
+
+bool Application::RequestDetachDockTabToNewWindow(
+    WindowID sourceID, UIDockSpace& dock, std::uint64_t leafId,
+    std::uint64_t tabId, const WindowSpecification& specification,
+    UIDetachCompleted onCompleted)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (m_RavenUIEnabled == false || source == nullptr ||
+        dock.GetContext() != source ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return false;
+    }
+    UITabView* view = dock.GetTabView(leafId);
+    if (view == nullptr || view->GetModel().FindTab(tabId) == nullptr ||
+        view->GetTabContent(tabId) == nullptr)
+    {
+        return false;
+    }
+    for (const PendingDockTabDetach& pending : m_PendingDockTabDetaches)
+    {
+        if (pending.SourceID == sourceID && pending.Dock == &dock &&
+            pending.LeafID == leafId && pending.TabID == tabId)
+        {
+            return false;
+        }
+    }
+    m_PendingDockTabDetaches.push_back(PendingDockTabDetach{
+        sourceID, &dock, leafId, tabId, specification, std::move(onCompleted) });
+    return true;
+}
+
+bool Application::RequestDetachUIRootChildToNewWindow(
+    WindowID sourceID, UIElement* child, const WindowSpecification& specification,
+    UIDetachCompleted onCompleted)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (m_RavenUIEnabled == false || source == nullptr || child == nullptr ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return false;
+    }
+
+    // Pointerを直接逆参照せず、所有Rootの生存Childと同一性を照合します。
+    // Frame中のWidget削除や二重予約はFlush時にも再検証します。
+    bool found = false;
+    for (const auto& item : source->GetRootElement().GetChildren())
+    {
+        if (item.get() == child)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (found == false)
+    {
+        return false;
+    }
+    for (const PendingUIDetach& pending : m_PendingUIDetaches)
+    {
+        if (pending.SourceID == sourceID && pending.Child == child)
+        {
+            return false;
+        }
+    }
+    m_PendingUIDetaches.push_back(
+        PendingUIDetach{ sourceID, child, specification, std::move(onCompleted) });
+    return true;
+}
+
+void Application::FlushPendingClosedUIChildren()
+{
+    if (m_UIContext.IsFrameActive() == true)
+    {
+        return;
+    }
+    // 復帰先のDockが削除済みでも生ポインタを逆参照せず、元Contextの生存Treeで確認します。
+    // Close済みの別Windowへは戻さずMain Rootへ退避させます。
+    std::vector<PendingClosedUIChild> pending;
+    pending.swap(m_PendingClosedUIChildren);
+    for (PendingClosedUIChild& entry : pending)
+    {
+        bool restored = false;
+        if (entry.HasDockTab == true)
+        {
+            const DetachedDockTab& record = entry.DockTab;
+            UIContext* original = GetWindowUIContext(record.SourceID);
+            if (original != nullptr && original->IsFrameActive() == false &&
+                m_WindowManager.IsWindowClosePending(record.SourceID) == false)
+            {
+                const auto isAlive = [&](const auto& self, const UIElement& parent) -> bool
+                {
+                    for (const auto& child : parent.GetChildren())
+                    {
+                        if (child.get() == record.Dock)
+                        {
+                            return true;
+                        }
+                        if (self(self, *child) == true)
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                if (isAlive(isAlive, original->GetRootElement()) == true)
+                {
+                    UITabView* view = record.Dock->GetTabView(record.LeafID);
+                    const UIDockNode* leaf =
+                        record.Dock->GetLayout().FindNode(record.LeafID);
+                    if (view != nullptr && leaf != nullptr &&
+                        leaf->GetTabs() != nullptr &&
+                        view->GetModel().FindTab(record.TabID) == nullptr &&
+                        leaf->GetTabs()->FindTab(record.TabID) == nullptr &&
+                        entry.Content != nullptr &&
+                        entry.Content->GetParent() == nullptr &&
+                        entry.Content->GetContext() == nullptr)
+                    {
+                        // AddTabはScopeを受け取るため、事前に移動先Modelを検証します。
+                        // 正常系ではContentを破棄せず元のDock Tabとして復元します。
+                        restored = record.Dock->AddTab(record.LeafID, record.TabID,
+                            record.Title, std::move(entry.Content), record.Closable);
+                    }
+                }
+            }
+        }
+        if (restored == false && entry.Content != nullptr)
+        {
+            entry.Content->SetVisible(true);
+            m_UIContext.AddRootChild(std::move(entry.Content));
+        }
+    }
+}
+
+void Application::FlushPendingUIDetaches()
+{
+    FlushPendingClosedUIChildren();
+    // Callbackから次の予約が追加されても反復中のvectorを変更しないよう入れ替えます。
+    std::vector<PendingUIDetach> pending;
+    pending.swap(m_PendingUIDetaches);
+    // Dock自体が予約後に破棄される可能性があるため、ポインタを逆参照する前に
+    // Source Rootの生存Treeを探索します。Callbackから追加された予約は次Frameへ送ります。
+    std::vector<PendingDockTabDetach> dockPending;
+    dockPending.swap(m_PendingDockTabDetaches);
+    for (PendingDockTabDetach& request : dockPending)
+    {
+        WindowID result = 0;
+        UIContext* source = GetWindowUIContext(request.SourceID);
+        if (source != nullptr && source->IsFrameActive() == false &&
+            m_WindowManager.IsWindowClosePending(request.SourceID) == false)
+        {
+            const auto isAlive = [&](const auto& self, const UIElement& parent) -> bool
+            {
+                for (const auto& child : parent.GetChildren())
+                {
+                    if (child.get() == request.Dock)
+                    {
+                        return true;
+                    }
+                    if (self(self, *child) == true)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (isAlive(isAlive, source->GetRootElement()) == true)
+            {
+                result = DetachDockTabToNewWindow(request.SourceID, *request.Dock,
+                    request.LeafID, request.TabID, request.Specification);
+            }
+        }
+        if (request.OnCompleted)
+        {
+            request.OnCompleted(result);
+        }
+    }
+    for (PendingUIDetach& request : pending)
+    {
+        WindowID result = 0;
+        UIContext* source = GetWindowUIContext(request.SourceID);
+        if (source != nullptr && source->IsFrameActive() == false &&
+            m_WindowManager.IsWindowClosePending(request.SourceID) == false)
+        {
+            // 予約から実行までにWidgetが削除されていてもdangling pointerを逆参照しません。
+            for (const auto& item : source->GetRootElement().GetChildren())
+            {
+                if (item.get() == request.Child)
+                {
+                    result = DetachUIRootChildToNewWindow(
+                        request.SourceID, request.Child, request.Specification);
+                    break;
+                }
+            }
+        }
+        if (request.OnCompleted)
+        {
+            request.OnCompleted(result);
+        }
+    }
+}
+
+UIContext* Application::GetWindowUIContext(WindowID id)
+{
+    if (id == m_MainWindowID)
+    {
+        return &m_UIContext;
+    }
+    const auto it = m_AuxiliaryUIContexts.find(id);
+    return it != m_AuxiliaryUIContexts.end() ? it->second.get() : nullptr;
+}
+
+bool Application::TransferUIRootChild(
+    WindowID sourceID, WindowID destinationID, UIElement* child)
+{
+    if (m_RavenUIEnabled == false || sourceID == destinationID || child == nullptr ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true ||
+        m_WindowManager.IsWindowClosePending(destinationID) == true)
+    {
+        return false;
+    }
+    UIContext* source = GetWindowUIContext(sourceID);
+    UIContext* destination = GetWindowUIContext(destinationID);
+    if (source == nullptr || destination == nullptr)
+    {
+        return false;
+    }
+    return source->TransferRootChildTo(*destination, child);
 }
 
 void Application::PushLayer(Layer* layer)
@@ -422,10 +874,14 @@ void Application::Run()
         {
             // GLFWのContent ScaleはWindowごとに変化します。毎frame同期することで
             // Resizeを伴わないMonitor移動も取りこぼさず、既存の論理座標は維持します。
-            m_UIContext.SetDPIScale(m_Window->GetContentScaleX(), m_Window->GetContentScaleY());
+            // Monitor移動時はDPI・Window論理サイズ・Framebuffer実Pixel数を同じFrameで同期します。
+            // GLFWのMouse座標は論理座標のままUIContextへ配送します。
             m_UIContext.BeginFrame(math::Vec2(
                 static_cast<float>(m_Window->GetWidth()),
-                static_cast<float>(m_Window->GetHeight())));
+                static_cast<float>(m_Window->GetHeight())),
+                math::Vec2(static_cast<float>(m_Window->GetFramebufferWidth()),
+                    static_cast<float>(m_Window->GetFramebufferHeight())),
+                m_Window->GetContentScaleX(), m_Window->GetContentScaleY());
         }
 
         // ====================================================================
@@ -493,6 +949,39 @@ void Application::Run()
             m_UIContext.EndFrame();
         }
 
+        // Layer更新中はMain UI FrameがActiveなのでTree移譲を行わず、ここで予約を処理します。
+        // 補助Windowの描画反復前に生成を完了させ、unordered_mapの反復子無効化を防ぎます。
+        FlushPendingUIDetaches();
+
+        // 補助WindowのUIは専用GL Context/VAOとWindow別DPI・Framebufferで描画します。
+        if (m_RavenUIEnabled == true)
+        {
+            for (const auto& item : m_AuxiliaryUIContexts)
+            {
+                UIContext* ui = item.second.get();
+                m_WindowManager.RenderWindow(item.first, m_MainWindowID,
+                    [ui](Window& window)
+                    {
+                        // 補助WindowはSceneのClearを通らないため、前Frameの残像を消します。
+                        // UI Rendererが前Frameに残したScissorがClear範囲を狭めないよう無効化します。
+                        glDisable(GL_SCISSOR_TEST);
+                        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                        glClear(GL_COLOR_BUFFER_BIT);
+                        ui->BeginFrame(
+                            math::Vec2(static_cast<float>(window.GetWidth()),
+                                static_cast<float>(window.GetHeight())),
+                            math::Vec2(static_cast<float>(window.GetFramebufferWidth()),
+                                static_cast<float>(window.GetFramebufferHeight())),
+                            window.GetContentScaleX(), window.GetContentScaleY());
+                        if (ui->GetPendingDPIFontCount() > 0u)
+                        {
+                            ui->RefreshPendingDPIFonts();
+                        }
+                        ui->EndFrame();
+                    });
+            }
+        }
+
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
         // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
@@ -508,6 +997,119 @@ void Application::Run()
         {
             m_Running = false;
             break;
+        }
+    }
+}
+
+void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
+{
+    UIContext* ui = GetWindowUIContext(id);
+    if (ui == nullptr)
+    {
+        return;
+    }
+    // Main Windowと同じく、Focus移動前のIME所有者を記録してOSの未確定変換を同期します。
+    UIInputText* imeOwner = dynamic_cast<UIInputText*>(ui->GetFocusedElement());
+    const bool imeWasActive = imeOwner != nullptr &&
+        imeOwner->GetIMEComposition().IsActive() == true;
+    // 補助Windowの入力はMain WindowのLayer/UIContextへ転送しません。
+    if (event.GetEventType() == EventType::WindowFocusLost)
+    {
+        ui->CancelMouseCapture();
+        ui->ClearFocus();
+    }
+    else if (event.GetEventType() == EventType::IMEComposition)
+    {
+        IMECompositionEvent& ime = static_cast<IMECompositionEvent&>(event);
+        UIIMEEvent input;
+        switch (ime.GetCompositionType())
+        {
+        case IMECompositionEventType::Begin: input.Type = UIIMEEventType::Begin; break;
+        case IMECompositionEventType::Update: input.Type = UIIMEEventType::Update; break;
+        case IMECompositionEventType::Commit: input.Type = UIIMEEventType::Commit; break;
+        case IMECompositionEventType::End: input.Type = UIIMEEventType::End; break;
+        case IMECompositionEventType::Cancel: input.Type = UIIMEEventType::Cancel; break;
+        default: return;
+        }
+        input.Text = ime.GetText();
+        input.Cursor = ime.GetCursor();
+        input.SelectionStart = ime.GetSelectionStart();
+        input.SelectionEnd = ime.GetSelectionEnd();
+        event.Handled = ui->RouteIMEEvent(input);
+    }
+    else if (event.GetEventType() == EventType::KeyPressed ||
+        event.GetEventType() == EventType::KeyReleased)
+    {
+        KeyEvent& key = static_cast<KeyEvent&>(event);
+        UIKeyEvent input;
+        input.Key = ToUIKey(key.GetKeyCode());
+        input.Pressed = event.GetEventType() == EventType::KeyPressed;
+        input.Shift = (key.GetModifiers() & GLFW_MOD_SHIFT) != 0;
+        input.Control = (key.GetModifiers() & GLFW_MOD_CONTROL) != 0;
+        input.Super = (key.GetModifiers() & GLFW_MOD_SUPER) != 0;
+        input.Repeat = input.Pressed == true &&
+            static_cast<KeyPressedEvent&>(event).IsRepeat();
+        input.Context = ui;
+        event.Handled = ui->RouteKeyEvent(input);
+    }
+    else if (event.GetEventType() == EventType::CharacterTyped)
+    {
+        event.Handled = ui->RouteCharacterEvent(
+            static_cast<CharacterTypedEvent&>(event).GetCodepoint());
+    }
+    else if (event.GetEventType() == EventType::MouseMoved)
+    {
+        MouseMovedEvent& mouse = static_cast<MouseMovedEvent&>(event);
+        event.Handled = ui->RouteMouseMove(math::Vec2(mouse.GetX(), mouse.GetY()));
+    }
+    else if (event.GetEventType() == EventType::MouseScrolled)
+    {
+        MouseScrolledEvent& mouse = static_cast<MouseScrolledEvent&>(event);
+        event.Handled = ui->RouteMouseScroll(
+            math::Vec2(mouse.GetX(), mouse.GetY()),
+            math::Vec2(mouse.GetOffsetX(), mouse.GetOffsetY()));
+    }
+    else if (event.GetEventType() == EventType::MouseButtonPressed ||
+        event.GetEventType() == EventType::MouseButtonReleased)
+    {
+        MouseButtonEvent& mouse = static_cast<MouseButtonEvent&>(event);
+        UIMouseButton button = UIMouseButton::None;
+        if (mouse.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
+        {
+            button = UIMouseButton::Left;
+        }
+        else if (mouse.GetMouseButton() == GLFW_MOUSE_BUTTON_RIGHT)
+        {
+            button = UIMouseButton::Right;
+        }
+        else if (mouse.GetMouseButton() == GLFW_MOUSE_BUTTON_MIDDLE)
+        {
+            button = UIMouseButton::Middle;
+        }
+        if (button != UIMouseButton::None)
+        {
+            const math::Vec2 position(mouse.GetX(), mouse.GetY());
+            event.Handled = event.GetEventType() == EventType::MouseButtonPressed
+                ? ui->RouteMouseDown(position, button)
+                : ui->RouteMouseUp(position, button);
+        }
+    }
+
+    const bool imeEditingBoundary =
+        event.GetEventType() == EventType::MouseButtonPressed ||
+        (event.GetEventType() == EventType::KeyPressed &&
+            static_cast<KeyPressedEvent&>(event).GetKeyCode() == GLFW_KEY_TAB);
+    const UIInputText* currentIMEOwner =
+        dynamic_cast<UIInputText*>(ui->GetFocusedElement());
+    if (imeWasActive == true && imeEditingBoundary == true &&
+        (currentIMEOwner != imeOwner ||
+            (currentIMEOwner != nullptr &&
+                currentIMEOwner->GetIMEComposition().IsActive() == false)))
+    {
+        Window* window = m_WindowManager.GetWindow(id);
+        if (window != nullptr)
+        {
+            window->CancelIMEComposition();
         }
     }
 }

@@ -20,7 +20,8 @@ public:
 
     virtual void Render(
         const UIDrawList& drawList,
-        const math::Vec2& viewportSize) override;
+        const math::Vec2& viewportSize,
+        const math::Vec2& framebufferSize) override;
 
 private:
     void EnsureBuffers(

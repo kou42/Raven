@@ -157,6 +157,65 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize)
     UpdateTooltip();
 }
 
+void UIContext::BeginFrame(const math::Vec2& viewportSize,
+    const math::Vec2& framebufferSize, float dpiScaleX, float dpiScaleY)
+{
+    // FontのDPI Metrics更新をLayout確定前に行い、Framebuffer倍率は混ぜません。
+    SetDPIScale(dpiScaleX, dpiScaleY);
+    SetFramebufferSize(framebufferSize);
+    BeginFrame(viewportSize);
+}
+
+UIElement* UIContext::AddRootChild(Scope<UIElement> child)
+{
+    if (m_FrameActive == true || m_RootElement == nullptr ||
+        child == nullptr || child->GetParent() != nullptr ||
+        child->GetContext() != nullptr)
+    {
+        return nullptr;
+    }
+    UIElement* added = m_RootElement->AddChild(std::move(child));
+    if (added != nullptr)
+    {
+        // 通常Widgetの追加によってPopupの描画順が後ろへ下がらないようにします。
+        m_RootElement->BringChildToFront(m_PopupLayer);
+    }
+    return added;
+}
+
+Scope<UIElement> UIContext::DetachRootChild(UIElement* child)
+{
+    if (m_FrameActive == true || m_RootElement == nullptr ||
+        child == nullptr || child == m_PopupLayer || child == m_Tooltip ||
+        child->GetParent() != m_RootElement.get())
+    {
+        return nullptr;
+    }
+    return m_RootElement->DetachChild(child);
+}
+
+bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
+{
+    if (&destination == this || child == nullptr ||
+        m_FrameActive == true || destination.m_FrameActive == true ||
+        m_RootElement == nullptr || destination.m_RootElement == nullptr ||
+        child == m_PopupLayer || child == m_Tooltip ||
+        child->GetParent() != m_RootElement.get())
+    {
+        return false;
+    }
+
+    // Popup/Tooltipを含む内部OverlayはContext固有の所有物として移譲しません。
+    // 一般Widgetの移譲時は旧ContextのInteraction Stateを先に安全に終了します。
+    Scope<UIElement> detached = DetachRootChild(child);
+    if (detached == nullptr)
+    {
+        return false;
+    }
+    UIElement* transferred = destination.AddRootChild(std::move(detached));
+    return transferred == child;
+}
+
 void UIContext::EndFrame()
 {
     if (m_FrameActive == false)
@@ -227,7 +286,8 @@ void UIContext::EndFrame()
     // SetRenderer()して、この同じframe境界から実描画へ接続します。
     if (m_Renderer != nullptr)
     {
-        m_Renderer->Render(m_DrawList, m_ViewportSize);
+        m_Renderer->Render(m_DrawList, m_ViewportSize,
+            m_HasFramebufferSize == true ? m_FramebufferSize : m_ViewportSize);
     }
 
     m_FrameActive = false;

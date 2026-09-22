@@ -24,7 +24,8 @@ public:
 
     virtual void Render(
         const UIDrawList& drawList,
-        const math::Vec2& viewportSize) = 0;
+        const math::Vec2& viewportSize,
+        const math::Vec2& framebufferSize) = 0;
 
     // 現在有効なRendererAPIに対応するUIRenderer実装を生成します。
     // Application側へOpenGL具体型を漏らさないため、生成責務をこのFactoryへ集約します。

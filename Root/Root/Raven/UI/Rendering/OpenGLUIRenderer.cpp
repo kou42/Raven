@@ -171,9 +171,11 @@ OpenGLUIRenderer::OpenGLUIRenderer()
 
 void OpenGLUIRenderer::Render(
     const UIDrawList& drawList,
-    const math::Vec2& viewportSize)
+    const math::Vec2& viewportSize,
+    const math::Vec2& framebufferSize)
 {
-    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f ||
+        framebufferSize.x <= 0.0f || framebufferSize.y <= 0.0f)
     {
         return;
     }
@@ -414,8 +416,8 @@ void OpenGLUIRenderer::Render(
     glViewport(
         0,
         0,
-        static_cast<GLsizei>(viewportSize.x),
-        static_cast<GLsizei>(viewportSize.y));
+        static_cast<GLsizei>(framebufferSize.x),
+        static_cast<GLsizei>(framebufferSize.y));
 
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
@@ -430,6 +432,10 @@ void OpenGLUIRenderer::Render(
     m_Shader->SetVec2("u_ViewportSize", viewportSize);
     m_Shader->SetInt("u_Texture", 0);
     m_VertexArray->Bind();
+
+    // Window論理座標から実Framebuffer Pixelへの倍率。Content Scaleとは独立です。
+    const float pixelScaleX = framebufferSize.x / viewportSize.x;
+    const float pixelScaleY = framebufferSize.y / viewportSize.y;
 
     // ========================================================================
     // UI専用Draw Call
@@ -454,11 +460,17 @@ void OpenGLUIRenderer::Render(
             const float clippedRight = std::clamp(command.Clip.Rect.Max.x, 0.0f, viewportSize.x);
             const float clippedBottom = std::clamp(command.Clip.Rect.Max.y, 0.0f, viewportSize.y);
 
-            const int leftPixel = static_cast<int>(std::floor(clippedLeft));
-            const int topPixel = static_cast<int>(std::floor(clippedTop));
-            const int rightPixel = static_cast<int>(std::ceil(clippedRight));
-            const int bottomPixel = static_cast<int>(std::ceil(clippedBottom));
-            const int viewportHeight = static_cast<int>(viewportSize.y);
+            // 非整数のFramebuffer倍率でceilが末端Pixelを越えないよう、実Pixel境界で再Clampします。
+            const int viewportWidth = static_cast<int>(framebufferSize.x);
+            const int viewportHeight = static_cast<int>(framebufferSize.y);
+            const int leftPixel = std::clamp(static_cast<int>(std::floor(clippedLeft * pixelScaleX)),
+                0, viewportWidth);
+            const int topPixel = std::clamp(static_cast<int>(std::floor(clippedTop * pixelScaleY)),
+                0, viewportHeight);
+            const int rightPixel = std::clamp(static_cast<int>(std::ceil(clippedRight * pixelScaleX)),
+                0, viewportWidth);
+            const int bottomPixel = std::clamp(static_cast<int>(std::ceil(clippedBottom * pixelScaleY)),
+                0, viewportHeight);
             const int scissorWidth = std::max(0, rightPixel - leftPixel);
             const int scissorHeight = std::max(0, bottomPixel - topPixel);
             const int scissorY = viewportHeight - bottomPixel;

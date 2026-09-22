@@ -46,6 +46,16 @@ public:
     UIContext();
 
     void BeginFrame(const math::Vec2& viewportSize);
+    // Window単位でDPI・論理サイズ・実Pixelサイズを同じFrame境界に同期します。
+    // 補助Windowもそれぞれ独立したUIContextに対してこの入口を使用します。
+    void BeginFrame(const math::Vec2& viewportSize,
+        const math::Vec2& framebufferSize, float dpiScaleX, float dpiScaleY);
+    // Window論理サイズとは独立した実Pixel数を描画境界へ渡します。
+    void SetFramebufferSize(const math::Vec2& framebufferSize)
+    {
+        m_FramebufferSize = framebufferSize;
+        m_HasFramebufferSize = true;
+    }
     void EndFrame();
 
     // GPU Contextが有効な描画準備段階で呼び、Tree内の未生成DPI Fontをまとめて解決します。
@@ -158,6 +168,16 @@ public:
 
     void SetRenderer(Scope<UIRenderer> renderer);
 
+    // Root直下の通常Widgetを別UIContextへ移譲します。Popup/Tooltipなどの内部Layerは対象外です。
+    // DetachChildが旧ContextのCapture/Focus/IMEを解除し、AddChildが新DPIを適用します。
+    // 描画中のTree変更を避けるため、両ContextのFrame外で呼び出してください。
+    bool TransferRootChildTo(UIContext& destination, UIElement* child);
+    // Rootへ通常Widgetを追加し、内部Popup Layerの前面描画順を維持します。
+    // 描画中のTree変更を避けるためFrame外で呼び出してください。
+    UIElement* AddRootChild(Scope<UIElement> child);
+    // Window Close時に通常Root Childの所有権を一時退避します。内部Overlayは除外します。
+    Scope<UIElement> DetachRootChild(UIElement* child);
+
     UIElement& GetRootElement();
     const UIElement& GetRootElement() const;
 
@@ -192,6 +212,8 @@ private:
 
 private:
     UITheme m_Theme = UITheme::CreateDefaultDark();
+    math::Vec2 m_FramebufferSize = math::Vec2(0.0f, 0.0f);
+    bool m_HasFramebufferSize = false;
     float m_DPIScaleX = 1.0f;
     float m_DPIScaleY = 1.0f;
     float m_UserScale = 1.0f;
