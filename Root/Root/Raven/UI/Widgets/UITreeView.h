@@ -727,6 +727,12 @@ protected:
 
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override
     {
+        // Header-only WidgetでもContextの最新Themeを毎Frame参照します。
+        const UIContext* themeContext = GetContext();
+        const UITreeViewStyle defaultStyle;
+        const UIScrollBarStyle defaultScrollStyle;
+        const UITreeViewStyle& style = themeContext != nullptr ? themeContext->GetTheme().TreeView : defaultStyle;
+        const UIScrollBarStyle& scrollStyle = themeContext != nullptr ? themeContext->GetTheme().ScrollBar : defaultScrollStyle;
         const auto visible = VisibleNodes();
         for (std::size_t i = 0u; i < visible.size(); ++i)
         {
@@ -745,7 +751,7 @@ protected:
             {
                 drawList.AddRect(math::Vec2(absolutePosition.x, y),
                     math::Vec2(absolutePosition.x + GetSize().x - (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
-                    ApplyVisualColor(math::Vec4(0.22f, 0.38f, 0.64f, 1.0f)));
+                    ApplyVisualColor(style.SelectedColor));
             }
             const UIContext* context = GetContext();
             if (context != nullptr && context->IsDragging() == true &&
@@ -757,7 +763,7 @@ protected:
                 {
                     drawList.AddRect(math::Vec2(absolutePosition.x, y),
                         math::Vec2(right, y + m_RowHeight),
-                        ApplyVisualColor(math::Vec4(0.18f, 0.56f, 0.32f, 0.55f)));
+                        ApplyVisualColor(style.DropChildColor));
                 }
                 else
                 {
@@ -769,7 +775,7 @@ protected:
                         absolutePosition.y + std::max(1.5f, GetSize().y - 1.5f));
                     drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
                         math::Vec2(right, indicatorY + 1.5f),
-                        ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
+                        ApplyVisualColor(style.DropIndicatorColor));
                 }
             }
             if (m_Font != nullptr && m_Font->GetTexture() != nullptr)
@@ -779,7 +785,7 @@ protected:
                 UITextLayoutOptions options{};
                 options.Wrap = UITextWrapMode::None;
                 m_Font->AppendText(drawList, label, math::Vec2(x, y + m_Baseline), options,
-                    ApplyVisualColor(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)));
+                    ApplyVisualColor(style.TextColor));
             }
         }
         const UIContext* context = GetContext();
@@ -797,20 +803,20 @@ protected:
                 (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
             drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
                 math::Vec2(right, indicatorY + 1.5f),
-                ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
+                ApplyVisualColor(style.DropIndicatorColor));
         }
         if (IsScrollBarVisible() == true)
         {
             const float left = absolutePosition.x + GetSize().x - m_ScrollBarThickness;
             drawList.AddRect(math::Vec2(left, absolutePosition.y),
                 math::Vec2(absolutePosition.x + GetSize().x, absolutePosition.y + GetSize().y),
-                ApplyVisualColor(math::Vec4(0.06f, 0.07f, 0.09f, 0.75f)));
+                ApplyVisualColor(scrollStyle.TrackColor));
             const float top = absolutePosition.y + GetThumbStart();
             drawList.AddRect(math::Vec2(left, top),
                 math::Vec2(absolutePosition.x + GetSize().x, top + GetThumbLength()),
                 ApplyVisualColor(m_DraggingScrollBar == true
                     ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
-                    : math::Vec4(0.42f, 0.45f, 0.52f, 0.95f)));
+                    : scrollStyle.ThumbColor));
         }
     }
 
