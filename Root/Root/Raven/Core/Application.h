@@ -109,6 +109,17 @@ private:
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
+    struct DetachedDockTab
+    {
+        WindowID SourceID = 0;
+        UIDockSpace* Dock = nullptr; // 復帰時は生存Treeと照合するまで参照しません。
+        UIElement* Content = nullptr;
+        std::uint64_t LeafID = 0u;
+        std::uint64_t TabID = 0u;
+        std::string Title;
+        bool Closable = true;
+    };
+    std::unordered_map<WindowID, DetachedDockTab> m_DetachedDockTabs;
     struct PendingUIDetach
     {
         WindowID SourceID = 0;
