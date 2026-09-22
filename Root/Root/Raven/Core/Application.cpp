@@ -760,7 +760,9 @@ void Application::FlushPendingUIDetaches()
                 BindUIWindowViewportTransfer(m_MainWindowID, *request.Child);
                 // 他のRoot Childが残る補助Windowは閉じず、残ったUIの所有権を維持します。
                 // CloseCleanupが残りのChildをMainへ移動してしまう副作用も避けます。
-                if (source->GetRootElement().GetChildren().empty() == true)
+                // UIContextのRootには内部Popup Layerが常に1つ存在します。
+                // 通常Childが残らず内部Layerだけになった場合に限りCloseします。
+                if (source->GetRootElement().GetChildren().size() == 1u)
                 {
                     m_WindowManager.RequestWindowClose(request.SourceID);
                 }
