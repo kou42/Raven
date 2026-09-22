@@ -38,7 +38,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 9 | Docking System | 実装・ユーザー動作確認済み（PR #251。Split / Pane間Tab移動 / Dock Preview / Layout保存復元）。RavenUITest単体実行・GitHub Actions結果は未確認 | Split / Tab / Dock preview / Layout保存復元 |
 | 10 | Theme / Style | 共通Style・状態別外観とDPI基盤・DIPレイアウト・DPI Font Atlas更新・失敗診断を実装、ユーザー動作確認済み（PR #252〜#269）。Window別の実DPI移動検証は継続 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
-| 12 | Multi-Viewport | OS Window / OpenGL Context・補助Window描画の基盤は実装・動作確認済み（PR #247）。UI接続は未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
+| 12 | Multi-Viewport | OS Window別UIContext・入力/IME配送・DPI/Framebuffer描画・Dock Tab切り離し/Close復帰を実装、ユーザー動作確認済み（PR #270、OpenGL限定）。論理Windowの自動ドラッグ分離・再統合、他Backendは未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
 | 14 | UI Debugger / Profiler | 未着手 | Tree / Focus / Draw Command / CPU・GPU指標表示 |
 
@@ -46,8 +46,9 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 
 - **実装・動作確認済み（PR #247）**: OS Windowの生成・状態・Event、WindowManagerによる複数Window管理、OpenGL共有Context、Window単位のFrame Lifecycle、補助Windowのdefault framebuffer描画とFramebuffer実Pixelサイズ対応、Context固有VAOの再構築・キャッシュ、Close CleanupとApplication終了時の補助Window解放。
 - **Phase 6で未着手**: Raven UI Tree内の論理Window Widget、ドラッグ移動・Resize、Focus・Z順、UI側のWindow間入力制御。OS Window APIの完成をもってPhase 6全体の完了とはしない。
-- **Phase 12で未着手**: 論理UI WindowをOS Windowへ分離・再統合する仕組み、OS WindowごとのUIContext / UIDrawList / UIRendererと入力配送、DPI・Focus・Clip・描画Targetの統合検証。OpenGL以外のBackendでのMulti-Viewport描画も未実装。
-- **次の接続作業**: まずPhase 6の論理Windowを構築し、Phase 12で既存WindowManagerを利用してUI描画・入力・終了処理を接続する。既存Dear ImGui Editorは移行検証まで維持する。
+- **Phase 12で実装・ユーザー動作確認済み（PR #270）**: OpenGL補助WindowごとのUIContext / UIRenderer、Window別DPI・Framebuffer実Pixel Viewport/Scissor、独立入力/IME配送、Root Widget移譲、Dock Tabの明示的・Frame境界予約切り離し、Close時の元Dock Pane復帰と復帰先消失時Main Root退避。CPU側回帰テストには複数Window逆順CloseとDock削除時の復帰シミュレーションを追加。
+- **Phase 12の残課題**: タイトルバードラッグ等からの自動分離・再統合、別DPIモニター間移動の個別検証、Vulkan/DX12描画Target対応、Window Close経路そのものの自動統合テスト。
+- **次の接続作業**: Phase 6の論理Window Widget（移動・Resize・Focus・Z順）を構築し、Phase 12の既存Window別UIContextへ自動分離・再統合を接続する。既存Dear ImGui Editorは移行検証まで維持する。
 
 ## Phase 7: Drag & Drop 実装・検証記録（PR #249）
 
@@ -147,6 +148,16 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - PR #264〜#268: Font Atlas失敗の分類、再試行抑制、Font容量・不正データ回帰テスト、RHI Device / Resource / Texture upload診断。
 - PR #269: GPU Contextを使う独立統合テスト、GPU readbackと異常転送、任意Font Atlas生成。ユーザーによるGPU統合テスト・UI回帰テスト・通常Raven起動の動作確認で問題なし。
 - 残課題: 別DPI Monitor移動、OS Window別ContextとMulti-Viewportの入力・描画統合、異常系の自動CI環境整備。
+
+## Phase 12: Window別UI接続・Dock Tab分離（PR #270）
+
+- [x] Window論理座標とFramebuffer実Pixelを分離し、OpenGL Viewport/Scissorと最小化時0 Pixelを扱う。
+- [x] 補助WindowごとのUIContext / OpenGLUIRenderer、入力・Focus・IME、DPI Font更新、Window Close時のRenderer解放を接続する。
+- [x] Root Widgetの所有権移譲、Dock Tabの新Window切り離しとFrame境界予約、Close時の元Dock Pane復帰とMain Rootへのフォールバックを追加する。
+- [x] CPU側のDPI/Context分離/所有権移譲/複数Window逆順Close/Dock消失時の回帰テストを追加。ユーザーから実環境で動作問題なしとの報告を受ける。
+- [ ] 自動ドラッグ分離・再統合、異DPIモニター移動、Vulkan/DX12のUI描画Target、Window Close統合テスト、CI結果の個別確認。
+
+| 2026-09-23 | feature/ui-window-framebuffer-dpi / PR #270 | Window別UIContext・Framebuffer実Pixel描画、入力/IME、Dock Tab切り離し/Close復帰、複数Window・復帰先消失のCPU回帰テスト | ユーザーから各段階の動作チェックで問題なしとの報告。CIログ・異DPIモニター移動・他Backendは未確認 | Phase 6の論理Window Widgetと自動分離・再統合、Phase 12の他Backend接続 |
 
 ## 更新ルール
 
