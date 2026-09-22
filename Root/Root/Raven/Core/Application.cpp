@@ -58,6 +58,7 @@ Application::Application()
 Application::Application(const ApplicationSpecification& specification)
     : m_RavenUIEnabled(specification.EnableRavenUI)
     , m_PhysicsDebugImmediatePanelEnabled(specification.EnablePhysicsDebugImmediatePanel)
+    , m_PhysicsDebugImmediateFont(specification.PhysicsDebugImmediateFont)
 {
     // WindowはRenderer / ImGuiより先に生成します。
     // 選択BackendのGraphics ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
@@ -1097,7 +1098,7 @@ void Application::Run()
                 if (m_PhysicsDebugImmediatePanelEnabled == true && game != nullptr)
                 {
                     ph::DrawPhysicsDebugImmediatePanel(m_ImmediateUI,
-                        game->GetPhysicsDebugSettings(), nullptr,
+                        game->GetPhysicsDebugSettings(), m_PhysicsDebugImmediateFont,
                         math::Vec2(24.0f, 300.0f));
                 }
                 if (m_ImmediateUI.EndFrame() == false)
