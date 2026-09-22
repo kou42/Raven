@@ -69,6 +69,65 @@ void Check(bool condition, const char* label)
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
 
+
+void TestDockFullSnapshot()
+{
+    Raven::UIDockSpace source;
+    const std::uint64_t first = source.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = source.Split(first,
+        Raven::UIDockSplitAxis::Horizontal, 0.4f);
+    Check(second != nullptr, "dock full snapshot split");
+    const std::uint64_t secondId = second->GetId();
+    Check(source.CreateTabView(first) != nullptr, "dock full snapshot first view");
+    Check(source.CreateTabView(secondId) != nullptr, "dock full snapshot second view");
+    Check(source.AddTab(first, 91u, "Scene", std::make_unique<Raven::UIElement>(), false),
+        "dock full snapshot scene");
+    Check(source.AddTab(first, 92u, "Game", std::make_unique<Raven::UIElement>()),
+        "dock full snapshot game");
+    Check(source.AddTab(secondId, 93u, "Inspector",
+        std::make_unique<Raven::UIElement>()), "dock full snapshot inspector");
+    Check(source.SelectTab(first, 92u), "dock full snapshot select game");
+    const Raven::UIDockSpaceSnapshot saved = source.SaveSnapshot();
+    Raven::UIDockSpace restored;
+    int created = 0;
+    const auto factory = [&created](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        ++created;
+        return std::make_unique<Raven::UIElement>();
+    };
+    Check(restored.RestoreSnapshot(saved, factory), "dock full snapshot restore");
+    Check(created == 3, "dock full snapshot factory count");
+    Check(restored.GetTabView(first)->GetModel().GetTabs()[0u].Id == 91u &&
+        restored.GetTabView(first)->GetModel().GetTabs()[1u].Id == 92u,
+        "dock full snapshot order");
+    Check(restored.GetTabView(first)->GetModel().GetSelectedTabId() == 92u,
+        "dock full snapshot selection");
+    Check(restored.CloseTab(first, 91u) == false,
+        "dock full snapshot fixed tab");
+    Check(restored.GetTabView(secondId)->GetTabContent(93u) != nullptr,
+        "dock full snapshot recreated content");
+    Raven::UIDockSpace rejected;
+    const auto invalidFactory = [](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        return nullptr;
+    };
+    Check(rejected.RestoreSnapshot(saved, invalidFactory) == false,
+        "dock full snapshot factory failure");
+    Check(rejected.GetLayout().GetRoot()->GetId() == 1u &&
+        rejected.GetTabView(first) == nullptr,
+        "dock full snapshot failure leaves empty space");
+    auto duplicate = saved;
+    duplicate.Tabs.push_back(duplicate.Tabs[0u]);
+    Check(rejected.RestoreSnapshot(duplicate, factory) == false,
+        "dock full snapshot duplicate tab rejected");
+    Check(rejected.RestoreSnapshot(saved, factory),
+        "dock full snapshot retry after failure");
+    Check(rejected.RestoreSnapshot(saved, factory) == false,
+        "dock full snapshot refuses live pane");
+}
+
 void TestDockStructureSnapshot()
 {
     Raven::UIDockSpace source;
@@ -1466,5 +1525,6 @@ int main()
     TestDockTabTransfer();
     TestDockCollapse();
     TestDockStructureSnapshot();
+    TestDockFullSnapshot();
     return 0;
 }
