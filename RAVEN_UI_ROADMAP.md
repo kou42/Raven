@@ -35,7 +35,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 6 | Window System | OS Window基盤は実装・動作確認済み（PR #247）。独自UIの論理Windowは未着手 | 論理UI Windowの移動・Resize・Focus・Z順 |
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
-| 9 | Docking System | 実装中（DockSpace・TabView同期、ビルド未検証） | Split / Tab / Dock preview / Layout保存復元 |
+| 9 | Docking System | 実装中（DockSpace・TabView同期・Text Demo接続、ビルド未検証） | Split / Tab / Dock preview / Layout保存復元 |
 | 10 | Theme / Style | 未着手 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
 | 12 | Multi-Viewport | OS Window / OpenGL Context・補助Window描画の基盤は実装・動作確認済み（PR #247）。UI接続は未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
@@ -74,7 +74,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] UIElementから独立したUIDockLayout / UIDockNodeを追加。Tabs Leaf / 二分Split、安定ID、親参照、分割比率、既存Leafの所有権移動を実装。
 - [x] RavenUITestに入れ子Split、Tab選択維持、不正比率・非Leaf・未知ID拒否の回帰テストを追加。
 - [ ] Windowsビルド・RavenUITest実行（現時点ではGitHub上のコード確認のみ）。
-- [x] UIDockGeometryで入れ子Splitの矩形配置、Splitter矩形、最小Pane幅、Drag差分からの比率更新を実装。狭いViewportでは負寸法を防ぐ。回帰テストを追加。\n- [x] UIDockSpaceでLeafにPaneを対応付け、SplitにUISplitterを生成。マウスDrag差分をUIDockGeometry::Resizeへ接続し、配置を更新。回帰テスト追加。\n- [x] UIDockSpaceにUITabView生成・Tab追加/選択/Close/並び替えの同期経路を追加。回帰テスト追加。\n- [ ] 実際のEditor/Demoでの操作確認、Dock Preview、別PaneへのTab移動、Dock Tree再構築、Layout保存復元。
+- [x] UIDockGeometryで入れ子Splitの矩形配置、Splitter矩形、最小Pane幅、Drag差分からの比率更新を実装。狭いViewportでは負寸法を防ぐ。回帰テストを追加。\n- [x] UIDockSpaceでLeafにPaneを対応付け、SplitにUISplitterを生成。マウスDrag差分をUIDockGeometry::Resizeへ接続し、配置を更新。回帰テスト追加。\n- [x] UIDockSpaceにUITabView生成・Tab追加/選択/Close/並び替えの同期経路を追加。回帰テスト追加。\n- [x] UITextDemoLayerに左右・上下Split、3 Pane、Tab切替を確認するDocking Demoを追加。OnDetachでRootから安全に削除。\n- [ ] Windowsビルド・RavenUITest実行、DemoでSplitter Drag/Tab操作の実動作確認、Dock Preview、別PaneへのTab移動、Dock Tree再構築、Layout保存復元。
 
 ## Phase 1: 実装分割
 
