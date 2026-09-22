@@ -2,18 +2,29 @@
 
 #include "Raven/UI/Widgets/UITabModel.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace Raven
 {
 
 enum class UIDockNodeKind { Tabs, Split };
 enum class UIDockSplitAxis { Horizontal, Vertical };
+
+struct UIDockLayoutRecord
+{
+    std::uint64_t Id = 0u;
+    UIDockNodeKind Kind = UIDockNodeKind::Tabs;
+    UIDockSplitAxis Axis = UIDockSplitAxis::Horizontal;
+    float Ratio = 0.5f;
+    std::uint32_t Depth = 0u;
+};
 
 // 描画Widgetとは独立したDockingの論理Treeです。
 // UIElementの所有権を変更せず、後続PhaseでUITabViewをLeafへ対応付けます。
@@ -73,6 +84,36 @@ public:
     const UIDockNode* FindNode(std::uint64_t id) const { return FindRecursive(m_Root.get(), id); }
 
     // 戻り値は新しい空Tab Leafです。失敗時はTreeとID発行状態を変更しません。
+
+    // Preorder幾何Snapshot。TabのContentは保存しません。
+    std::vector<UIDockLayoutRecord> SaveStructure() const
+    {
+        std::vector<UIDockLayoutRecord> records;
+        SaveRecursive(m_Root.get(), 0u, records);
+        return records;
+    }
+
+    // 全Recordを検証してから置換。Tabを持つTreeはContent孤立防止のため拒否します。
+    bool RestoreStructure(const std::vector<UIDockLayoutRecord>& records)
+    {
+        if (records.empty() || records.size() > 4096u ||
+            HasTabsRecursive(m_Root.get()) == true)
+        {
+            return false;
+        }
+        std::unordered_set<std::uint64_t> ids;
+        std::size_t cursor = 0u;
+        std::uint64_t maximumId = 0u;
+        UIDockNode::Ptr root = LoadRecursive(records, cursor, 0u, nullptr, ids, maximumId);
+        if (root == nullptr || cursor != records.size() || maximumId == UINT64_MAX)
+        {
+            return false;
+        }
+        m_Root = std::move(root);
+        m_NextId = maximumId + 1u;
+        return true;
+    }
+
     // 空Leafとその親Splitを畳み、Siblingを同じ位置へ昇格します。
     // Rootは最後のPaneとして残し、IDを再利用しません。
     bool RemoveEmptyLeaf(std::uint64_t leafId)
@@ -135,6 +176,68 @@ public:
     }
 
 private:
+
+    static bool HasTabsRecursive(const UIDockNode* node)
+    {
+        return node != nullptr && (node->m_Tabs.GetTabCount() != 0u ||
+            HasTabsRecursive(node->m_First.get()) ||
+            HasTabsRecursive(node->m_Second.get()));
+    }
+
+    static void SaveRecursive(const UIDockNode* node, std::uint32_t depth,
+        std::vector<UIDockLayoutRecord>& records)
+    {
+        if (node == nullptr)
+        {
+            return;
+        }
+        records.push_back({ node->m_Id, node->m_Kind, node->m_Axis, node->m_Ratio, depth });
+        SaveRecursive(node->m_First.get(), depth + 1u, records);
+        SaveRecursive(node->m_Second.get(), depth + 1u, records);
+    }
+
+    static UIDockNode::Ptr LoadRecursive(const std::vector<UIDockLayoutRecord>& records,
+        std::size_t& cursor, std::uint32_t depth, UIDockNode* parent,
+        std::unordered_set<std::uint64_t>& ids, std::uint64_t& maximumId)
+    {
+        if (cursor >= records.size() || depth >= 4096u)
+        {
+            return nullptr;
+        }
+        const UIDockLayoutRecord& record = records[cursor];
+        if (record.Depth != depth || record.Id == 0u ||
+            ids.insert(record.Id).second == false ||
+            (record.Kind != UIDockNodeKind::Tabs && record.Kind != UIDockNodeKind::Split) ||
+            (record.Axis != UIDockSplitAxis::Horizontal &&
+                record.Axis != UIDockSplitAxis::Vertical) ||
+            std::isfinite(record.Ratio) == false ||
+            record.Ratio <= 0.0f || record.Ratio >= 1.0f)
+        {
+            return nullptr;
+        }
+        ++cursor;
+        UIDockNode::Ptr node(new UIDockNode(record.Id, record.Kind, parent));
+        node->m_Axis = record.Axis;
+        node->m_Ratio = record.Ratio;
+        maximumId = std::max(maximumId, record.Id);
+        if (record.Kind == UIDockNodeKind::Split)
+        {
+            node->m_First = LoadRecursive(records, cursor, depth + 1u,
+                node.get(), ids, maximumId);
+            if (node->m_First == nullptr)
+            {
+                return nullptr;
+            }
+            node->m_Second = LoadRecursive(records, cursor, depth + 1u,
+                node.get(), ids, maximumId);
+            if (node->m_Second == nullptr)
+            {
+                return nullptr;
+            }
+        }
+        return node;
+    }
+
     std::uint64_t NextId() { return m_NextId++; }
 
     static UIDockNode* FindRecursive(UIDockNode* node, std::uint64_t id)
