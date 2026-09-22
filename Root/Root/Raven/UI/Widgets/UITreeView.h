@@ -205,7 +205,7 @@ public:
     // 別TreeView間の所有権移動は明示的に許可した受入側でのみ有効にします。
     void SetExternalNodeDropEnabled(bool value) { m_ExternalNodeDropEnabled = value; }
     bool IsExternalNodeDropEnabled() const { return m_ExternalNodeDropEnabled; }
-    // Drag中のPointer Moveごとに端付近でスクロールします（時間駆動は別段階）。
+    // Drag中のPointer Moveとフレーム更新の両方で端付近をスクロールします。
     void SetDragAutoScrollEnabled(bool value) { m_DragAutoScrollEnabled = value; }
     bool IsDragAutoScrollEnabled() const { return m_DragAutoScrollEnabled; }
     void SetDragAutoScrollEdge(float value)
@@ -213,6 +213,13 @@ public:
         if (std::isfinite(value) && value > 0.0f)
         {
             m_DragAutoScrollEdge = value;
+        }
+    }
+    void SetDragAutoScrollSpeed(float value)
+    {
+        if (std::isfinite(value) && value > 0.0f)
+        {
+            m_DragAutoScrollSpeed = value;
         }
     }
     void SetDragAutoScrollStep(float value)
@@ -440,11 +447,13 @@ protected:
             const float previous = GetScrollOffset();
             if (local.y < edge)
             {
-                SetScrollOffset(previous - m_DragAutoScrollStep);
+                SetScrollOffset(previous - (event.DeltaSeconds > 0.0f
+                    ? m_DragAutoScrollSpeed * event.DeltaSeconds : m_DragAutoScrollStep));
             }
             else if (local.y >= GetSize().y - edge)
             {
-                SetScrollOffset(previous + m_DragAutoScrollStep);
+                SetScrollOffset(previous + (event.DeltaSeconds > 0.0f
+                    ? m_DragAutoScrollSpeed * event.DeltaSeconds : m_DragAutoScrollStep));
             }
         }
         UITreeNode* target = NodeAt(event.ScreenPosition);
@@ -803,6 +812,7 @@ private:
     bool m_DragAutoScrollEnabled = true;
     float m_DragAutoScrollEdge = 24.0f;
     float m_DragAutoScrollStep = 12.0f;
+    float m_DragAutoScrollSpeed = 240.0f;
     math::Vec2 m_DropPointerPosition{};
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
