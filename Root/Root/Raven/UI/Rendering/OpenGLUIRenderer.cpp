@@ -460,11 +460,17 @@ void OpenGLUIRenderer::Render(
             const float clippedRight = std::clamp(command.Clip.Rect.Max.x, 0.0f, viewportSize.x);
             const float clippedBottom = std::clamp(command.Clip.Rect.Max.y, 0.0f, viewportSize.y);
 
-            const int leftPixel = static_cast<int>(std::floor(clippedLeft * pixelScaleX));
-            const int topPixel = static_cast<int>(std::floor(clippedTop * pixelScaleY));
-            const int rightPixel = static_cast<int>(std::ceil(clippedRight * pixelScaleX));
-            const int bottomPixel = static_cast<int>(std::ceil(clippedBottom * pixelScaleY));
+            // 非整数のFramebuffer倍率でceilが末端Pixelを越えないよう、実Pixel境界で再Clampします。
+            const int viewportWidth = static_cast<int>(framebufferSize.x);
             const int viewportHeight = static_cast<int>(framebufferSize.y);
+            const int leftPixel = std::clamp(static_cast<int>(std::floor(clippedLeft * pixelScaleX)),
+                0, viewportWidth);
+            const int topPixel = std::clamp(static_cast<int>(std::floor(clippedTop * pixelScaleY)),
+                0, viewportHeight);
+            const int rightPixel = std::clamp(static_cast<int>(std::ceil(clippedRight * pixelScaleX)),
+                0, viewportWidth);
+            const int bottomPixel = std::clamp(static_cast<int>(std::ceil(clippedBottom * pixelScaleY)),
+                0, viewportHeight);
             const int scissorWidth = std::max(0, rightPixel - leftPixel);
             const int scissorHeight = std::max(0, bottomPixel - topPixel);
             const int scissorY = viewportHeight - bottomPixel;
