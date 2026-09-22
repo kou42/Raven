@@ -647,10 +647,10 @@ void TestTreeViewDragDrop()
     Check(context.HasMouseCapture() == false, "tree drop releases capture");
     Check(context.GetDragPreviewText().empty(), "tree drop clears preview");
     // 親を子へDropしても循環を作らないことを検証します。
-    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
-    context.RouteMouseMove(Raven::math::Vec2(70.0f, 104.0f));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
     Check(context.GetDropTarget() == nullptr, "tree rejects descendant target");
-    context.RouteMouseUp(Raven::math::Vec2(70.0f, 104.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
     Check(destination->Parent == nullptr, "tree cycle guard keeps root");
 
     // ChildをDestinationの前へ移すとRoot直下へ戻ります。
@@ -659,10 +659,10 @@ void TestTreeViewDragDrop()
     {
         placement = value;
     });
-    context.RouteMouseDown(Raven::math::Vec2(70.0f, 104.0f), Raven::UIMouseButton::Left);
-    context.RouteMouseMove(Raven::math::Vec2(70.0f, 69.0f));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 45.0f));
     Check(context.GetDropTarget() == view, "tree accepts before insertion");
-    context.RouteMouseUp(Raven::math::Vec2(70.0f, 69.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 45.0f), Raven::UIMouseButton::Left);
     Check(child->Parent == nullptr && placement == Raven::UITreeView::DropPlacement::Before,
         "tree inserts before root");
     Check(view->FindNode(2u) == child, "tree preserves moved node identity");
