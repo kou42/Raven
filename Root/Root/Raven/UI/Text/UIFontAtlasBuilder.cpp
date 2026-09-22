@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <filesystem>
 #include <iterator>
 #include <limits>
 #include <unordered_set>
@@ -93,13 +94,22 @@ Ref<UIFontAtlas> UIFontAtlasDPICache::GetOrBuild(
     const std::vector<std::uint32_t>& codepoints,
     const UIFontAtlasBuildOptions& baseOptions,
     float effectiveScale,
-    float& outRasterScale)
+    float& outRasterScale,
+    UIFontAtlasBuildFailure* outFailure)
 {
+    if (outFailure != nullptr)
+    {
+        *outFailure = UIFontAtlasBuildFailure::None;
+    }
     UIFontAtlasBuildOptions resolved{};
     float rasterScale = 1.0f;
     if (UIFontAtlasBuilder::ResolveDPIOptions(baseOptions, effectiveScale,
         resolved, rasterScale) == false)
     {
+        if (outFailure != nullptr)
+        {
+            *outFailure = UIFontAtlasBuildFailure::InvalidDPIOptions;
+        }
         return nullptr;
     }
     // 文字集合は順序に依存しないため正規化し、同一内容の重複Atlasを避けます。
@@ -115,10 +125,25 @@ Ref<UIFontAtlas> UIFontAtlasDPICache::GetOrBuild(
         outRasterScale = rasterScale;
         return found->second;
     }
+    // ファイル未発見とRasterize/GPU生成失敗を分離して診断します。
+    // filesystemの例外を避け、無効Pathでも従来どおり失敗として返します。
+    std::error_code fileError;
+    if (std::filesystem::is_regular_file(fontPath, fileError) == false)
+    {
+        if (outFailure != nullptr)
+        {
+            *outFailure = UIFontAtlasBuildFailure::FontFileUnavailable;
+        }
+        return nullptr;
+    }
     Ref<UIFontAtlas> built = CreateRef<UIFontAtlas>();
     if (UIFontAtlasBuilder::BuildFromFile(fontPath, normalized, resolved, *built) == false)
     {
         // GPU生成失敗時に空のAtlasをCacheへ登録しません。
+        if (outFailure != nullptr)
+        {
+            *outFailure = UIFontAtlasBuildFailure::AtlasBuildFailed;
+        }
         return nullptr;
     }
     m_Entries.emplace(key, built);
