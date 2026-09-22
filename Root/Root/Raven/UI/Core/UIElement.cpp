@@ -306,6 +306,7 @@ void UIElement::RefreshDPIMetrics()
 void UIElement::RefreshDPIMetricsRecursive()
 {
     RefreshDPIMetrics();
+    OnDPIScaleChanged();
     for (auto& child : m_Children)
     {
         if (child != nullptr)
