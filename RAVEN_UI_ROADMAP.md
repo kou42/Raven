@@ -2,7 +2,7 @@
 
 最終更新: 2026-09-23  
 対象: `Root/Root/Raven/UI` / Raven Editor  
-状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。Phase 10のDPI対応・Font Atlas診断はPR #253〜#269で実装し、ユーザーの実環境でGPU統合テスト・UI回帰テスト・通常起動の問題なしを確認済み。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window / Multi-Viewportは未完了
+状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。Phase 10のDPI対応・Font Atlas診断はPR #253〜#269で実装し、ユーザーの実環境でGPU統合テスト・UI回帰テスト・通常起動の問題なしを確認済み。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window移動・Resize・OpenGL Multi-Viewportドラッグ分離/復帰はPR #271で実装し、ユーザーの実環境で動作問題なしを確認済み。異DPI・他Backend等は継続課題
 
 ## 目的と原則
 
@@ -32,23 +32,24 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 3 | InputText / InputNumber | 実装中（InputText / InputNumberの基本操作・横スクロール確認済み、IME未対応） | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
 | 4 | ComboBox / Popup / Tooltip | 未着手 | Focus、閉じる条件、重なり順、入力伝播の検証 |
 | 5 | TreeView / Table | 実装中（TreeView基礎・Demo・縦Scroll/Scrollbar・Drag & Drop・回帰テスト追加。Drag & Dropはユーザー動作確認済み／Table基礎・Demo・回帰テスト追加） | Hierarchy相当の選択・展開、表の列・Scroll・基本操作 |
-| 6 | Window System | OS Window基盤は実装・動作確認済み（PR #247）。独自UIの論理Windowは未着手 | 論理UI Windowの移動・Resize・Focus・Z順 |
+| 6 | Window System | OS Window基盤（PR #247）と論理UIWindowの移動・Resize・前面化・Viewport移譲（PR #271）を実装し、ユーザー動作確認済み。Keyboard Focus等の拡張は継続 | 論理UI Windowの移動・Resize・Focus・Z順 |
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
 | 9 | Docking System | 実装・ユーザー動作確認済み（PR #251。Split / Pane間Tab移動 / Dock Preview / Layout保存復元）。RavenUITest単体実行・GitHub Actions結果は未確認 | Split / Tab / Dock preview / Layout保存復元 |
 | 10 | Theme / Style | 共通Style・状態別外観とDPI基盤・DIPレイアウト・DPI Font Atlas更新・失敗診断を実装、ユーザー動作確認済み（PR #252〜#269）。Window別の実DPI移動検証は継続 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
-| 12 | Multi-Viewport | OS Window別UIContext・入力/IME配送・DPI/Framebuffer描画・Dock Tab切り離し/Close復帰を実装、ユーザー動作確認済み（PR #270、OpenGL限定）。論理Windowの自動ドラッグ分離・再統合、他Backendは未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
+| 12 | Multi-Viewport | OS Window別UIContext・入力/IME配送・DPI/Framebuffer描画・Dock Tab切り離し/Close復帰を実装、ユーザー動作確認済み（PR #270、OpenGL限定）。論理Windowの自動ドラッグ分離・Mainへの再統合はPR #271で実装・ユーザー動作確認済み。異DPI・他Backendは継続課題 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
 | 14 | UI Debugger / Profiler | 未着手 | Tree / Focus / Draw Command / CPU・GPU指標表示 |
 
 ## Window System / Multi-Viewportへの接続状況
 
 - **実装・動作確認済み（PR #247）**: OS Windowの生成・状態・Event、WindowManagerによる複数Window管理、OpenGL共有Context、Window単位のFrame Lifecycle、補助Windowのdefault framebuffer描画とFramebuffer実Pixelサイズ対応、Context固有VAOの再構築・キャッシュ、Close CleanupとApplication終了時の補助Window解放。
-- **Phase 6で未着手**: Raven UI Tree内の論理Window Widget、ドラッグ移動・Resize、Focus・Z順、UI側のWindow間入力制御。OS Window APIの完成をもってPhase 6全体の完了とはしない。
+- **Phase 6で実装・ユーザー動作確認済み（PR #271）**: UIContext内の論理UIWindow、タイトルバー移動・右下Resize・前面化、Mouse Capture/Cancel。Keyboard Focus等の拡張は継続課題。
 - **Phase 12で実装・ユーザー動作確認済み（PR #270）**: OpenGL補助WindowごとのUIContext / UIRenderer、Window別DPI・Framebuffer実Pixel Viewport/Scissor、独立入力/IME配送、Root Widget移譲、Dock Tabの明示的・Frame境界予約切り離し、Close時の元Dock Pane復帰と復帰先消失時Main Root退避。CPU側回帰テストには複数Window逆順CloseとDock削除時の復帰シミュレーションを追加。
-- **Phase 12の残課題**: タイトルバードラッグ等からの自動分離・再統合、別DPIモニター間移動の個別検証、Vulkan/DX12描画Target対応、Window Close経路そのものの自動統合テスト。
-- **次の接続作業**: Phase 6の論理Window Widget（移動・Resize・Focus・Z順）を構築し、Phase 12の既存Window別UIContextへ自動分離・再統合を接続する。既存Dear ImGui Editorは移行検証まで維持する。
+- **Phase 12のPR #271実装・ユーザー動作確認済み**: Mainの論理Windowをドラッグで補助OS Windowへ分離、Main領域へのドロップで再統合、Focus喪失とMouse Up取りこぼし補完、空補助Windowの遅延Close。
+- **Phase 12の残課題**: 別DPIモニター間移動の個別検証、Vulkan/DX12描画Target対応、Window Close経路そのものの自動統合テスト。
+- **次の接続作業**: 異DPIモニター間移動と自動Window Closeの統合テスト、論理WindowのKeyboard Focus/タイトル描画等を段階的に拡張する。既存Dear ImGui Editorは移行検証まで維持する。
 
 ## Phase 7: Drag & Drop 実装・検証記録（PR #249）
 
@@ -155,9 +156,12 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] 補助WindowごとのUIContext / OpenGLUIRenderer、入力・Focus・IME、DPI Font更新、Window Close時のRenderer解放を接続する。
 - [x] Root Widgetの所有権移譲、Dock Tabの新Window切り離しとFrame境界予約、Close時の元Dock Pane復帰とMain Rootへのフォールバックを追加する。
 - [x] CPU側のDPI/Context分離/所有権移譲/複数Window逆順Close/Dock消失時の回帰テストを追加。ユーザーから実環境で動作問題なしとの報告を受ける。
-- [ ] 自動ドラッグ分離・再統合、異DPIモニター移動、Vulkan/DX12のUI描画Target、Window Close統合テスト、CI結果の個別確認。
+- [x] PR #271で論理UIWindowの自動ドラッグ分離・Main領域への再統合、Mouse Up取りこぼし補完を実装。ユーザーから実環境で動作問題なしとの報告を受ける。
+- [ ] 異DPIモニター移動、Vulkan/DX12のUI描画Target、Window Close統合テスト、CI結果の個別確認。
 
 | 2026-09-23 | feature/ui-window-framebuffer-dpi / PR #270 | Window別UIContext・Framebuffer実Pixel描画、入力/IME、Dock Tab切り離し/Close復帰、複数Window・復帰先消失のCPU回帰テスト | ユーザーから各段階の動作チェックで問題なしとの報告。CIログ・異DPIモニター移動・他Backendは未確認 | Phase 6の論理Window Widgetと自動分離・再統合、Phase 12の他Backend接続 |
+
+| 2026-09-23 | feature/ui-logical-window-viewport / PR #271 | 論理UIWindowの移動・Resize・前面化、Mainと補助OS Window間のドラッグ分離/復帰、Focus喪失・Mouse Up取りこぼし補完、空補助WindowのClose条件を実装 | ユーザーから実環境で動作チェック問題なしとの報告。GitHub差分レビュー済み。RavenUITest単体ログ・CI結果は未取得 | 異DPIモニター移動、Keyboard Focus/タイトル描画、Window Close統合テスト、他Backend |
 
 ## 更新ルール
 

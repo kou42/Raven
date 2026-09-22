@@ -8,6 +8,7 @@
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UISplitter.h"
 #include "Raven/UI/Widgets/UIInputText.h"
+#include "Raven/UI/Widgets/UIWindow.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <glad/glad.h>
@@ -228,6 +229,18 @@ Application::Application(const ApplicationSpecification& specification)
     validationPanel->AddChild(std::move(footerSlider));
 
     m_UIContext.GetRootElement().AddChild(std::move(validationPanel));
+
+    // Phase 6 / 12 接続検証用の論理Windowです。既存Editorは変更せず、
+    // タイトルバー移動・右下Resize・画面外Releaseによる補助Window生成を確認できます。
+    auto logicalWindow = CreateScope<UIWindow>();
+    logicalWindow->SetTitle("Raven UI Floating Window");
+    logicalWindow->SetPosition(math::Vec2(420.0f, 48.0f));
+    logicalWindow->SetSize(math::Vec2(320.0f, 240.0f));
+    UIWindow* logicalWindowHandle = logicalWindow.get();
+    if (m_UIContext.AddRootChild(std::move(logicalWindow)) != nullptr)
+    {
+        BindUIWindowViewportTransfer(m_MainWindowID, *logicalWindowHandle);
+    }
     }
 #endif
 
@@ -716,6 +729,47 @@ void Application::FlushPendingUIDetaches()
             request.OnCompleted(result);
         }
     }
+    // 補助Windowの入力Callbackから予約された復帰も、UI Frame終了後にだけ移譲します。
+    std::vector<PendingUIAttach> attaches;
+    attaches.swap(m_PendingUIAttaches);
+    for (const PendingUIAttach& request : attaches)
+    {
+        UIContext* source = GetWindowUIContext(request.SourceID);
+        if (source == nullptr || source->IsFrameActive() == true ||
+            m_WindowManager.IsWindowClosePending(request.SourceID) == true)
+        {
+            continue;
+        }
+        for (const auto& child : source->GetRootElement().GetChildren())
+        {
+            if (child.get() != request.Child)
+            {
+                continue;
+            }
+            if (TransferUIRootChild(request.SourceID, m_MainWindowID, request.Child) == true)
+            {
+                // 新しいRootに所有権が移った後だけPointerを使用します。
+                const math::Vec2 size = request.Child->GetSize();
+                const math::Vec2 viewport = m_UIContext.GetViewportSize();
+                // Main側でタイトルバーが掴める範囲を確保しつつ、Drop位置を維持します。
+                request.Child->SetPosition(math::Vec2(
+                    std::clamp(request.MainLocalDropPosition.x - size.x * 0.5f,
+                        0.0f, std::max(0.0f, viewport.x - 48.0f)),
+                    std::clamp(request.MainLocalDropPosition.y - 14.0f,
+                        0.0f, std::max(0.0f, viewport.y - 28.0f))));
+                BindUIWindowViewportTransfer(m_MainWindowID, *request.Child);
+                // 他のRoot Childが残る補助Windowは閉じず、残ったUIの所有権を維持します。
+                // CloseCleanupが残りのChildをMainへ移動してしまう副作用も避けます。
+                // UIContextのRootには内部Popup Layerが常に1つ存在します。
+                // 通常Childが残らず内部Layerだけになった場合に限りCloseします。
+                if (source->GetRootElement().GetChildren().size() == 1u)
+                {
+                    m_WindowManager.RequestWindowClose(request.SourceID);
+                }
+            }
+            break;
+        }
+    }
     for (PendingUIDetach& request : pending)
     {
         WindowID result = 0;
@@ -739,6 +793,166 @@ void Application::FlushPendingUIDetaches()
             request.OnCompleted(result);
         }
     }
+}
+
+void Application::CompleteReleasedUIWindowDrags()
+{
+    if (m_RavenUIEnabled == false)
+    {
+        return;
+    }
+    // GLFWではWindow外でMouse Upが配送されない環境があります。
+    // 通常EventでCaptureが解除されていれば何もせず、残留したUIWindow操作だけを補完します。
+    const auto complete = [this](WindowID id, UIContext& ui)
+    {
+        UIWindow* logicalWindow = dynamic_cast<UIWindow*>(ui.GetMouseCaptureElement());
+        if (logicalWindow == nullptr ||
+            (logicalWindow->IsMoving() == false && logicalWindow->IsResizing() == false))
+        {
+            return;
+        }
+        Window* window = m_WindowManager.GetWindow(id);
+        if (window == nullptr || m_WindowManager.IsWindowClosePending(id) == true)
+        {
+            return;
+        }
+        GLFWwindow* native = static_cast<GLFWwindow*>(window->GetNativeWindow());
+        if (native == nullptr || glfwGetMouseButton(native, GLFW_MOUSE_BUTTON_LEFT) != GLFW_RELEASE)
+        {
+            return;
+        }
+        double x = 0.0;
+        double y = 0.0;
+        glfwGetCursorPos(native, &x, &y);
+        // Widgetへ通常のUpを配送し、Capture解除と移譲要求を一つの経路に統一します。
+        ui.RouteMouseUp(math::Vec2(static_cast<float>(x), static_cast<float>(y)),
+            UIMouseButton::Left);
+    };
+    complete(m_MainWindowID, m_UIContext);
+    for (const auto& entry : m_AuxiliaryUIContexts)
+    {
+        complete(entry.first, *entry.second);
+    }
+}
+
+bool Application::BindUIWindowViewportTransfer(WindowID sourceID, UIWindow& window)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (source == nullptr || window.GetParent() != &source->GetRootElement())
+    {
+        return false;
+    }
+
+    // CallbackはUIWindowの入力配送中に呼ばれるため、Treeの所有権をその場で変更しません。
+    // 既存のRequestDetachUIRootChildToNewWindowが重複予約と生存確認を担当します。
+    window.SetOnViewportTransferRequested([this, sourceID](
+        UIWindow* logicalWindow, const math::Vec2& releasePosition)
+        {
+            if (logicalWindow == nullptr)
+            {
+                return;
+            }
+            Window* sourceWindow = m_WindowManager.GetWindow(sourceID);
+            if (sourceWindow == nullptr)
+            {
+                return;
+            }
+            const math::Vec2 size = logicalWindow->GetSize();
+            WindowSpecification specification(
+                logicalWindow->GetTitle().empty() == true
+                    ? "Raven UI Window" : logicalWindow->GetTitle(),
+                static_cast<unsigned int>(std::max(320.0f, size.x)),
+                static_cast<unsigned int>(std::max(240.0f, size.y)),
+                sourceWindow->GetBackend());
+            // 新しいOS Window内では論理Windowの座標原点を戻し、
+            // 元Viewportの画面座標を補助Windowへ持ち越さないようにします。
+            if (sourceID != m_MainWindowID)
+            {
+                // GLFWのWindow座標はClient Area左上のScreen座標です。
+                // 補助Windowの外なら無条件に戻すのではなく、MainのClient Areaへ
+                // ドロップされた場合だけMain Rootへの移譲を予約します。
+                GLFWwindow* sourceNative =
+                    static_cast<GLFWwindow*>(sourceWindow->GetNativeWindow());
+                GLFWwindow* mainNative =
+                    static_cast<GLFWwindow*>(m_Window->GetNativeWindow());
+                if (sourceNative == nullptr || mainNative == nullptr)
+                {
+                    return;
+                }
+                int sourceX = 0;
+                int sourceY = 0;
+                int mainX = 0;
+                int mainY = 0;
+                glfwGetWindowPos(sourceNative, &sourceX, &sourceY);
+                glfwGetWindowPos(mainNative, &mainX, &mainY);
+                const math::Vec2 mainLocalDrop(
+                    static_cast<float>(sourceX - mainX) + releasePosition.x,
+                    static_cast<float>(sourceY - mainY) + releasePosition.y);
+                if (mainLocalDrop.x >= 0.0f && mainLocalDrop.y >= 0.0f &&
+                    mainLocalDrop.x < static_cast<float>(m_Window->GetWidth()) &&
+                    mainLocalDrop.y < static_cast<float>(m_Window->GetHeight()))
+                {
+                    RequestAttachUIWindowToMain(sourceID, logicalWindow, mainLocalDrop);
+                }
+                return;
+            }
+            RequestDetachUIRootChildToNewWindow(
+                sourceID, logicalWindow, specification,
+                [this, logicalWindow](WindowID destinationID)
+                {
+                    // 失敗時には予約後にWidgetが削除されている可能性があるため、
+                    // Pointerを逆参照しません。成功時だけ移譲先Rootの生存確認を行います。
+                    UIContext* destination = GetWindowUIContext(destinationID);
+                    if (destination == nullptr)
+                    {
+                        return;
+                    }
+                    for (const auto& child : destination->GetRootElement().GetChildren())
+                    {
+                        if (child.get() == logicalWindow)
+                        {
+                            logicalWindow->SetPosition(math::Vec2(0.0f, 0.0f));
+                            // 移譲後は補助Window IDで再Bindし、Mainへの復帰要求を受け付けます。
+                            BindUIWindowViewportTransfer(destinationID, *logicalWindow);
+                            break;
+                        }
+                    }
+                });
+        });
+    return true;
+}
+
+bool Application::RequestAttachUIWindowToMain(WindowID sourceID, UIWindow* window,
+    const math::Vec2& mainLocalDropPosition)
+{
+    UIContext* source = GetWindowUIContext(sourceID);
+    if (sourceID == m_MainWindowID || source == nullptr || window == nullptr ||
+        m_WindowManager.IsWindowClosePending(sourceID) == true)
+    {
+        return false;
+    }
+    bool found = false;
+    for (const auto& child : source->GetRootElement().GetChildren())
+    {
+        if (child.get() == window)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (found == false)
+    {
+        return false;
+    }
+    for (const PendingUIAttach& pending : m_PendingUIAttaches)
+    {
+        if (pending.SourceID == sourceID && pending.Child == window)
+        {
+            return false;
+        }
+    }
+    m_PendingUIAttaches.push_back(PendingUIAttach{ sourceID, window, mainLocalDropPosition });
+    return true;
 }
 
 UIContext* Application::GetWindowUIContext(WindowID id)
@@ -993,6 +1207,8 @@ void Application::Run()
 
         // GLFWのProcess共通Event Queueを一度処理し、補助WindowのCloseも安全に確定します。
         m_WindowManager.PollEvents();
+        // Window外でMouse Upを取りこぼしても、次FrameへDrag/Captureを残しません。
+        CompleteReleasedUIWindowDrags();
         if (sceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
@@ -1015,7 +1231,21 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
     // 補助Windowの入力はMain WindowのLayer/UIContextへ転送しません。
     if (event.GetEventType() == EventType::WindowFocusLost)
     {
-        ui->CancelMouseCapture();
+        // 補助Window間のドラッグでは、Focus喪失がMouse Upより先に届く場合があります。
+        // 左ボタンが押されている論理Window操作だけCaptureを保持し、
+        // ボタン解放はCompleteReleasedUIWindowDragsで補完します。
+        UIWindow* capturedWindow = dynamic_cast<UIWindow*>(ui->GetMouseCaptureElement());
+        Window* sourceWindow = m_WindowManager.GetWindow(id);
+        GLFWwindow* native = sourceWindow != nullptr
+            ? static_cast<GLFWwindow*>(sourceWindow->GetNativeWindow()) : nullptr;
+        const bool keepWindowDrag = capturedWindow != nullptr &&
+            (capturedWindow->IsMoving() == true || capturedWindow->IsResizing() == true) &&
+            native != nullptr &&
+            glfwGetMouseButton(native, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (keepWindowDrag == false)
+        {
+            ui->CancelMouseCapture();
+        }
         ui->ClearFocus();
     }
     else if (event.GetEventType() == EventType::IMEComposition)
