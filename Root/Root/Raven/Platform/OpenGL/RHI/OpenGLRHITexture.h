@@ -15,6 +15,7 @@ public:
     ~OpenGLRHITexture() override;
 
     void SetData(const void* data, std::size_t dataSize) override;
+    bool TrySetData(const void* data, std::size_t dataSize) override;
     const RHITextureSpecification& GetSpecification() const override;
 
     // Legacy OpenGL Texture / FramebufferとのBridgeでのみ利用するnative handleです。
