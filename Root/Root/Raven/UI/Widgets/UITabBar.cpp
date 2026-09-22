@@ -138,8 +138,13 @@ void UITabBar::OnMouseEvent(UIMouseEvent& event)
 
 bool UITabBar::OnDragDropEvent(UIDragDropEvent& event)
 {
-    if (event.Type == UIDragDropEventType::Leave ||
-        event.Type == UIDragDropEventType::Cancel ||
+    if (event.Type == UIDragDropEventType::Leave)
+    {
+        // 一時的にBar外へ出てもSourceのIDは維持し、戻ったときのDropを許可します。
+        m_DropIndicatorVisible = false;
+        return false;
+    }
+    if (event.Type == UIDragDropEventType::Cancel ||
         event.Type == UIDragDropEventType::End)
     {
         m_DropIndicatorVisible = false;
