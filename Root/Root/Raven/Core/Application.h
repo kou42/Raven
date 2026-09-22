@@ -69,6 +69,10 @@ public:
 
     // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
     WindowID CreateUIWindow(const WindowSpecification& specification);
+    // Root直下Widgetを新しいOS補助Windowへ移す一括入口。
+    // Window生成または移譲に失敗した場合、Widgetの元の所有権を維持します。
+    WindowID DetachUIRootChildToNewWindow(WindowID sourceID, UIElement* child,
+        const WindowSpecification& specification);
     UIContext* GetWindowUIContext(WindowID id);
     // Main/補助WindowのRoot直下Widgetを同じObjectのまま移譲します。
     // Windowを閉じる前にMainへ戻す場合は明示的に呼び出してください。
