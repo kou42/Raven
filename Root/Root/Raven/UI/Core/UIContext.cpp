@@ -157,6 +157,15 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize)
     UpdateTooltip();
 }
 
+void UIContext::BeginFrame(const math::Vec2& viewportSize,
+    const math::Vec2& framebufferSize, float dpiScaleX, float dpiScaleY)
+{
+    // FontのDPI Metrics更新をLayout確定前に行い、Framebuffer倍率は混ぜません。
+    SetDPIScale(dpiScaleX, dpiScaleY);
+    SetFramebufferSize(framebufferSize);
+    BeginFrame(viewportSize);
+}
+
 void UIContext::EndFrame()
 {
     if (m_FrameActive == false)
