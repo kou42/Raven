@@ -26,6 +26,7 @@
 #include <iostream>
 #include <cmath>
 #include <memory>
+#include <limits>
 #include <string>
 
 namespace
@@ -73,6 +74,36 @@ void Check(bool condition, const char* label)
         std::cerr << label << ": failed\n";
         std::exit(EXIT_FAILURE);
     }
+}
+
+void TestDPIContextCoordinates()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(1200.0f, 800.0f));
+    CheckNear("default layout viewport x", context.GetLayoutViewportSize().x, 1200.0f);
+    CheckNear("default layout viewport y", context.GetLayoutViewportSize().y, 800.0f);
+
+    // X/Y別DPIとユーザー倍率を合成しても、Window座標との往復変換が成立します。
+    context.SetDPIScale(1.5f, 2.0f);
+    context.SetUserScale(1.25f);
+    CheckNear("effective dpi x", context.GetEffectiveScaleX(), 1.875f);
+    CheckNear("effective dpi y", context.GetEffectiveScaleY(), 2.5f);
+    CheckNear("layout viewport x", context.GetLayoutViewportSize().x, 640.0f);
+    CheckNear("layout viewport y", context.GetLayoutViewportSize().y, 320.0f);
+    const Raven::math::Vec2 window(375.0f, 250.0f);
+    const Raven::math::Vec2 layout = context.WindowToLayoutPosition(window);
+    CheckNear("window to layout x", layout.x, 200.0f);
+    CheckNear("window to layout y", layout.y, 100.0f);
+    const Raven::math::Vec2 restored = context.LayoutToWindowPosition(layout);
+    CheckNear("layout to window x", restored.x, window.x);
+    CheckNear("layout to window y", restored.y, window.y);
+    // 既存APIの座標系を勝手に変えないことを保証します。
+    CheckNear("window viewport unchanged", context.GetViewportSize().x, 1200.0f);
+    context.SetDPIScale(0.0f, std::numeric_limits<float>::infinity());
+    context.SetUserScale(-1.0f);
+    CheckNear("invalid dpi x", context.GetEffectiveScaleX(), 1.0f);
+    CheckNear("invalid dpi y", context.GetEffectiveScaleY(), 1.0f);
+    context.EndFrame();
 }
 
 void TestUITheme()
@@ -1716,6 +1747,7 @@ int main()
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     TestUITheme();
+    TestDPIContextCoordinates();
     TestDockLayout();
     TestDockSpace();
     TestDockTabView();
