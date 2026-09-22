@@ -1,5 +1,6 @@
 #include "Raven/UI/Docking/UIDockSpace.h"
 
+#include <charconv>
 #include <cmath>
 #include <string>
 #include <unordered_set>
@@ -7,11 +8,30 @@
 
 namespace Raven
 {
+namespace
+{
+// 最前面の装飾専用Element。Hit Testを無効にしてDrop先の探索を妨げません。
+class UIDockPreview final : public UIElement
+{
+protected:
+    void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& position) const override
+    {
+        drawList.AddRect(position,
+            math::Vec2(position.x + GetSize().x, position.y + GetSize().y),
+            ApplyVisualColor(math::Vec4(0.30f, 0.58f, 0.95f, 0.26f)));
+    }
+};
+} // namespace
 
 UIDockSpace::UIDockSpace()
 {
     SetLayoutMode(UILayoutMode::Absolute);
     SetClipChildren(true);
+    auto preview = std::make_unique<UIDockPreview>();
+    preview->SetHitTestVisible(false);
+    preview->SetAffectsParentMeasure(false);
+    preview->SetVisible(false);
+    m_Preview = AddChild(std::move(preview));
 }
 
 bool UIDockSpace::SetPane(std::uint64_t leafId, Scope<UIElement> pane)
@@ -30,6 +50,7 @@ bool UIDockSpace::SetPane(std::uint64_t leafId, Scope<UIElement> pane)
         return false;
     }
     m_Panes.emplace(leafId, raw);
+    BringChildToFront(m_Preview);
     RefreshLayout();
     return true;
 }
@@ -215,6 +236,7 @@ void UIDockSpace::SyncWidgets()
             ++it;
         }
     }
+    BringChildToFront(m_Preview);
 }
 
 void UIDockSpace::ApplyRect(UIElement& element, const UIDockRect& rect)
@@ -257,6 +279,17 @@ void UIDockSpace::ApplyLayout()
             }
         }
     }
+    if (m_PreviewLeaf != 0u && m_Preview != nullptr)
+    {
+        for (const UIDockPlacement& placement : placements)
+        {
+            if (placement.NodeId == m_PreviewLeaf && placement.IsSplit == false)
+            {
+                ApplyRect(*m_Preview, placement.Bounds);
+                break;
+            }
+        }
+    }
 }
 
 void UIDockSpace::RefreshLayout()
@@ -287,6 +320,143 @@ void UIDockSpace::OnSplitterDrag(std::uint64_t splitId, float delta)
             return;
         }
     }
+}
+
+bool UIDockSpace::MoveTabToPane(std::uint64_t sourceLeafId,
+    std::uint64_t targetLeafId, std::uint64_t tabId)
+{
+    if (sourceLeafId == targetLeafId)
+    {
+        return false;
+    }
+    UITabView* source = GetTabView(sourceLeafId);
+    UITabView* target = GetTabView(targetLeafId);
+    UIDockNode* sourceNode = m_Layout.FindNode(sourceLeafId);
+    UIDockNode* targetNode = m_Layout.FindNode(targetLeafId);
+    if (source == nullptr || target == nullptr || sourceNode == nullptr ||
+        targetNode == nullptr || sourceNode->GetTabs() == nullptr ||
+        targetNode->GetTabs() == nullptr ||
+        target->GetModel().FindTab(tabId) != nullptr ||
+        targetNode->GetTabs()->FindTab(tabId) != nullptr)
+    {
+        return false;
+    }
+    const UITabItem* item = source->GetModel().FindTab(tabId);
+    if (item == nullptr || sourceNode->GetTabs()->FindTab(tabId) == nullptr)
+    {
+        return false;
+    }
+    const std::string title = item->Title;
+    const bool closable = item->Closable;
+    Scope<UIElement> content = source->ExtractTab(tabId);
+    if (content == nullptr)
+    {
+        return false;
+    }
+    // AddTabの事前条件を検査済み。移動先追加失敗時は元のPaneへ所有権を戻す必要があるため、
+    // 現状は通常の整合状態でのみ呼び出す内部移動経路とします。
+    return AddTab(targetLeafId, tabId, title, std::move(content), closable);
+}
+
+std::uint64_t UIDockSpace::FindSourceLeaf(const UIElement* source) const
+{
+    for (const auto& entry : m_TabViews)
+    {
+        if (entry.second != nullptr && entry.second->GetTabBar() == source)
+        {
+            return entry.first;
+        }
+    }
+    return 0u;
+}
+
+std::uint64_t UIDockSpace::FindLeafAt(const math::Vec2& local) const
+{
+    const auto placements = UIDockGeometry::Calculate(m_Layout,
+        UIDockRect{ 0.0f, 0.0f, GetSize().x, GetSize().y },
+        m_SplitterThickness, m_MinimumPaneExtent);
+    for (const UIDockPlacement& placement : placements)
+    {
+        const UIDockRect& r = placement.Bounds;
+        if (placement.IsSplit == false && local.x >= r.X && local.y >= r.Y &&
+            local.x < r.X + r.Width && local.y < r.Y + r.Height &&
+            GetTabView(placement.NodeId) != nullptr)
+        {
+            return placement.NodeId;
+        }
+    }
+    return 0u;
+}
+
+bool UIDockSpace::OnDragDropEvent(UIDragDropEvent& event)
+{
+    if (event.Type == UIDragDropEventType::Leave ||
+        event.Type == UIDragDropEventType::Cancel ||
+        event.Type == UIDragDropEventType::End)
+    {
+        m_PreviewLeaf = 0u;
+        if (m_Preview != nullptr)
+        {
+            m_Preview->SetVisible(false);
+        }
+        return false;
+    }
+    if (event.Payload == nullptr || event.Payload->Type != "Raven/UITab")
+    {
+        return false;
+    }
+    const std::uint64_t sourceLeaf = FindSourceLeaf(event.Source);
+    if (sourceLeaf == 0u)
+    {
+        return false;
+    }
+    std::uint64_t tabId = 0u;
+    const std::string& data = event.Payload->Data;
+    const auto parsed = std::from_chars(data.data(), data.data() + data.size(), tabId);
+    if (parsed.ec != std::errc{} || parsed.ptr != data.data() + data.size() ||
+        tabId == 0u)
+    {
+        return false;
+    }
+    math::Vec2 local;
+    if (TryScreenToLocalPosition(event.ScreenPosition, local) == false)
+    {
+        return false;
+    }
+    const std::uint64_t targetLeaf = FindLeafAt(local);
+    if (targetLeaf == 0u || targetLeaf == sourceLeaf ||
+        GetTabView(sourceLeaf)->GetModel().FindTab(tabId) == nullptr ||
+        GetTabView(targetLeaf)->GetModel().FindTab(tabId) != nullptr)
+    {
+        m_PreviewLeaf = 0u;
+        if (m_Preview != nullptr)
+        {
+            m_Preview->SetVisible(false);
+        }
+        return false;
+    }
+    if (event.Type == UIDragDropEventType::Over ||
+        event.Type == UIDragDropEventType::Enter)
+    {
+        m_PreviewLeaf = targetLeaf;
+        ApplyLayout();
+        if (m_Preview != nullptr)
+        {
+            m_Preview->SetVisible(true);
+        }
+        event.Accepted = true;
+        return true;
+    }
+    if (event.Type == UIDragDropEventType::Drop)
+    {
+        m_PreviewLeaf = 0u;
+        if (m_Preview != nullptr)
+        {
+            m_Preview->SetVisible(false);
+        }
+        return MoveTabToPane(sourceLeaf, targetLeaf, tabId);
+    }
+    return false;
 }
 
 void UIDockSpace::OnBuildDrawList(UIDrawList& drawList,
