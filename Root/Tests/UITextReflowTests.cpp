@@ -788,11 +788,15 @@ void TestTreeViewDragAutoScroll()
     Check(view->GetScrollOffset() == 24.0f, "drag bottom edge scrolls down");
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
     Check(view->GetScrollOffset() == 48.0f, "drag edge scrolls on subsequent move");
+    context.TickDrag(0.1f);
+    Check(view->GetScrollOffset() == 72.0f, "stationary drag scrolls by elapsed time");
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 24.0f));
-    Check(view->GetScrollOffset() == 24.0f, "drag top edge scrolls up");
+    Check(view->GetScrollOffset() == 48.0f, "drag top edge scrolls up");
     view->SetDragAutoScrollEnabled(false);
     context.RouteMouseMove(Raven::math::Vec2(70.0f, 106.0f));
-    Check(view->GetScrollOffset() == 24.0f, "disabled drag auto scroll keeps offset");
+    Check(view->GetScrollOffset() == 48.0f, "disabled drag auto scroll keeps offset");
+    context.TickDrag(0.1f);
+    Check(view->GetScrollOffset() == 48.0f, "disabled stationary drag keeps offset");
     context.CancelDrag();
 }
 
