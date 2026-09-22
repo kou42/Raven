@@ -853,6 +853,43 @@ void TestTreeViewNoOpDrop()
         "no-op drops preserve identity without callbacks");
 }
 
+void TestTreeViewLastChildNoOpDrop()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto tree = std::make_unique<Raven::UITreeView>();
+    Raven::UITreeView* view = tree.get();
+    tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 150.0f));
+    tree->SetNodeDragDropEnabled(true);
+    Raven::UITreeNode* parent = tree->AddRoot(1u, "Parent");
+    Raven::UITreeNode* first = tree->AddNode(parent, 2u, "First");
+    Raven::UITreeNode* last = tree->AddNode(parent, 3u, "Last");
+    int drops = 0;
+    tree->SetOnNodePlaced([&](std::uint64_t, std::uint64_t, Raven::UITreeView::DropPlacement)
+    {
+        ++drops;
+    });
+    context.GetRootElement().AddChild(std::move(tree));
+
+    // 末尾Childを親の中央へDropしても、子リスト末尾のままです。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 32.0f));
+    Check(context.GetDropTarget() == nullptr, "last child to parent child position is no-op");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(drops == 0 && view->FindNode(2u) == first && view->FindNode(3u) == last &&
+        parent->Children.size() == 2u && parent->Children.back().get() == last,
+        "last child no-op preserves child order and skips callbacks");
+
+    // 先頭Childを親へDropする場合は実際に末尾へ移動するため受け入れます。
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 32.0f));
+    Check(context.GetDropTarget() == view, "first child to parent is actual reorder");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 32.0f), Raven::UIMouseButton::Left);
+    Check(drops == 1 && parent->Children.back().get() == first,
+        "first child moves to end and invokes callback");
+}
+
 void TestTreeViewDragAutoExpand()
 {
     Raven::UIContext context;
@@ -968,6 +1005,7 @@ int main()
     TestTreeViewEmptyAreaDrop();
     TestTreeViewDragAutoScroll();
     TestTreeViewNoOpDrop();
+    TestTreeViewLastChildNoOpDrop();
     TestTreeViewDragAutoExpand();
     TestTextEditBuffer();
     TestInputNumber();
