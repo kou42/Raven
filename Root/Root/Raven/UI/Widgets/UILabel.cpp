@@ -114,7 +114,7 @@ void UILabel::OnContextChanged(UIContext* previous, UIContext* current)
     {
         m_LineHeight = m_LineHeightDIP * scaleY;
     }
-    if (m_UseBaselineOffsetDIP == true || m_UseLineHeightDIP == true)
+    if (m_UseBaselineOffsetDIP == true || m_UseLineHeightDIP == true || m_ScaleGlyphsWithDPI == true)
     {
         InvalidateMeasure();
     }
@@ -123,6 +123,10 @@ void UILabel::OnContextChanged(UIContext* previous, UIContext* current)
 void UILabel::OnDPIScaleChanged()
 {
     RefreshDIPTypography();
+    if (m_ScaleGlyphsWithDPI == true)
+    {
+        InvalidateMeasure();
+    }
 }
 
 void UILabel::SetScaleGlyphsWithDPI(bool enabled)
@@ -202,6 +206,10 @@ void UILabel::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePo
     const math::Vec2 baseline(absolutePosition.x, absolutePosition.y + m_BaselineOffset);
     UITextLayoutOptions options{};
     options.LineHeight = m_LineHeight;
+    if (m_ScaleGlyphsWithDPI == true && GetContext() != nullptr)
+    {
+        options.GlyphScale = math::Vec2(GetContext()->GetEffectiveScaleX(), GetContext()->GetEffectiveScaleY());
+    }
     options.MaxWidth = GetSize().x;
     options.Wrap = m_WrapMode;
     options.Alignment = m_TextAlignment;
