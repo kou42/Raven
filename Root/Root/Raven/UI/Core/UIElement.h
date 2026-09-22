@@ -139,6 +139,8 @@ public:
     // DIP指定はOpt-inです。従来のSet*はWindow論理座標のまま維持します。
     // Monitor移動やUserScale変更時に、元のDIP値から再計算して丸め誤差の蓄積を防ぎます。
     void SetPreferredSizeDIP(const math::Vec2& value);
+    void SetMinSizeDIP(const math::Vec2& value);
+    void SetMaxSizeDIP(const math::Vec2& value);
     void SetPaddingDIP(const UIThickness& value);
     void SetMarginDIP(const UIThickness& value);
     void SetSpacingDIP(float value);
@@ -383,10 +385,14 @@ private:
     UIAlignment m_VerticalAlignment = UIAlignment::Start;
     float m_Spacing = 0.0f;
     math::Vec2 m_PreferredSizeDIP{};
+    math::Vec2 m_MinSizeDIP{};
+    math::Vec2 m_MaxSizeDIP{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
     UIThickness m_PaddingDIP{};
     UIThickness m_MarginDIP{};
     float m_SpacingDIP = 0.0f;
     bool m_UsePreferredSizeDIP = false;
+    bool m_UseMinSizeDIP = false;
+    bool m_UseMaxSizeDIP = false;
     bool m_UsePaddingDIP = false;
     bool m_UseMarginDIP = false;
     bool m_UseSpacingDIP = false;
