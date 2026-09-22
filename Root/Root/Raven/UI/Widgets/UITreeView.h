@@ -37,6 +37,8 @@ public:
     using SelectionHandler = std::function<void(std::uint64_t)>;
     using ExpansionHandler = std::function<void(std::uint64_t, bool)>;
     using NodeDroppedHandler = std::function<void(std::uint64_t, std::uint64_t)>;
+    enum class DropPlacement { Child, Before, After };
+    using NodePlacedHandler = std::function<void(std::uint64_t, std::uint64_t, DropPlacement)>;
 
     UITreeView()
     {
@@ -192,6 +194,7 @@ public:
     void SetNodeDragDropEnabled(bool value) { m_NodeDragDropEnabled = value; }
     bool IsNodeDragDropEnabled() const { return m_NodeDragDropEnabled; }
     void SetOnNodeDropped(NodeDroppedHandler handler) { m_OnNodeDropped = std::move(handler); }
+    void SetOnNodePlaced(NodePlacedHandler handler) { m_OnNodePlaced = std::move(handler); }
     void SetFont(const Ref<UIFontAtlas>& font) { m_Font = font; }
     void SetRowHeight(float value)
     {
@@ -363,43 +366,82 @@ protected:
             }
         }
         UITreeNode* target = NodeAt(event.ScreenPosition);
-        if (source == nullptr || target == nullptr || source == target)
+        if (source == nullptr || target == nullptr)
         {
             return false;
         }
-        // 自身の子孫への移動は循環参照になるため禁止します。
-        for (UITreeNode* parent = target; parent != nullptr; parent = parent->Parent)
+        math::Vec2 local;
+        if (TryScreenToLocalPosition(event.ScreenPosition, local) == false)
         {
-            if (parent == source)
+            return false;
+        }
+        const float rowPosition = std::fmod(local.y + GetScrollOffset(), m_RowHeight);
+        const DropPlacement placement = rowPosition < m_RowHeight * 0.25f
+            ? DropPlacement::Before
+            : (rowPosition >= m_RowHeight * 0.75f ? DropPlacement::After : DropPlacement::Child);
+        UITreeNode* newParent = placement == DropPlacement::Child ? target : target->Parent;
+        // 移動先の親がSource自身または子孫なら循環するため拒否します。
+        for (UITreeNode* ancestor = newParent; ancestor != nullptr; ancestor = ancestor->Parent)
+        {
+            if (ancestor == source)
             {
                 return false;
             }
         }
+        if (source == target)
+        {
+            return false;
+        }
         if (event.Type == UIDragDropEventType::Over)
         {
             m_DropPointerPosition = event.ScreenPosition;
+            m_DropPlacement = placement;
             event.Accepted = true;
             return true;
         }
         if (event.Type == UIDragDropEventType::Drop)
         {
-            auto& siblings = source->Parent != nullptr ? source->Parent->Children : m_Roots;
-            auto it = std::find_if(siblings.begin(), siblings.end(),
+            auto& oldSiblings = source->Parent != nullptr ? source->Parent->Children : m_Roots;
+            auto oldIt = std::find_if(oldSiblings.begin(), oldSiblings.end(),
                 [source](const auto& item) { return item.get() == source; });
-            if (it == siblings.end())
+            if (oldIt == oldSiblings.end())
             {
                 return false;
             }
-            std::unique_ptr<UITreeNode> moved = std::move(*it);
-            siblings.erase(it);
-            moved->Parent = target;
-            target->Children.push_back(std::move(moved));
-            target->Expanded = true;
+            // 同じ兄弟配列内で移動する場合も、先に抜いてから挿入位置を探します。
+            std::unique_ptr<UITreeNode> moved = std::move(*oldIt);
+            oldSiblings.erase(oldIt);
+            auto& newSiblings = newParent != nullptr ? newParent->Children : m_Roots;
+            moved->Parent = newParent;
+            if (placement == DropPlacement::Child)
+            {
+                newSiblings.push_back(std::move(moved));
+                target->Expanded = true;
+            }
+            else
+            {
+                auto targetIt = std::find_if(newSiblings.begin(), newSiblings.end(),
+                    [target](const auto& item) { return item.get() == target; });
+                if (targetIt == newSiblings.end())
+                {
+                    // Tree内で不整合が起きた場合も所有権を失わないよう末尾へ退避します。
+                    newSiblings.push_back(std::move(moved));
+                    return false;
+                }
+                newSiblings.insert(placement == DropPlacement::After ? targetIt + 1 : targetIt,
+                    std::move(moved));
+            }
+            const std::uint64_t sourceId = source->Id;
+            const std::uint64_t targetId = target->Id;
             InvalidateMeasure();
             EnsureSelectedVisible();
             if (m_OnNodeDropped)
             {
-                m_OnNodeDropped(source->Id, target->Id);
+                m_OnNodeDropped(sourceId, targetId);
+            }
+            if (m_OnNodePlaced)
+            {
+                m_OnNodePlaced(sourceId, targetId, placement);
             }
             return true;
         }
@@ -475,11 +517,22 @@ protected:
             if (context != nullptr && context->IsDragging() == true &&
                 context->GetDropTarget() == this && NodeAt(m_DropPointerPosition) == node)
             {
-                // 有効なDrop先の行だけを薄く強調し、通常の選択状態と区別します。
-                drawList.AddRect(math::Vec2(absolutePosition.x, y),
-                    math::Vec2(absolutePosition.x + GetSize().x -
-                        (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
-                    ApplyVisualColor(math::Vec4(0.18f, 0.56f, 0.32f, 0.55f)));
+                const float right = absolutePosition.x + GetSize().x -
+                    (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
+                if (m_DropPlacement == DropPlacement::Child)
+                {
+                    drawList.AddRect(math::Vec2(absolutePosition.x, y),
+                        math::Vec2(right, y + m_RowHeight),
+                        ApplyVisualColor(math::Vec4(0.18f, 0.56f, 0.32f, 0.55f)));
+                }
+                else
+                {
+                    // Before/Afterは行全体ではなく境界線で挿入位置を示します。
+                    const float lineY = m_DropPlacement == DropPlacement::Before ? y : y + m_RowHeight;
+                    drawList.AddRect(math::Vec2(absolutePosition.x, lineY - 1.5f),
+                        math::Vec2(right, lineY + 1.5f),
+                        ApplyVisualColor(math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)));
+                }
             }
             if (node == m_Selected)
             {
@@ -598,6 +651,8 @@ private:
     SelectionHandler m_OnSelectionChanged;
     ExpansionHandler m_OnExpansionChanged;
     NodeDroppedHandler m_OnNodeDropped;
+    NodePlacedHandler m_OnNodePlaced;
+    DropPlacement m_DropPlacement = DropPlacement::Child;
     std::uint64_t m_PendingNodeId = 0u;
     bool m_NodeDragDropEnabled = false;
     math::Vec2 m_DropPointerPosition{};
