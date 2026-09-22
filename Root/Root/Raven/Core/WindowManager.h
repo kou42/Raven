@@ -99,7 +99,8 @@ public:
     bool AttachFrameLifecycle(WindowID id)
     {
         const auto it = m_Windows.find(id);
-        if (it == m_Windows.end() || it->second.FrameLifecycle != nullptr)
+        if (it == m_Windows.end() || it->second.FrameLifecycle != nullptr ||
+            it->second.CloseRequested == true)
         {
             return false;
         }
@@ -319,7 +320,14 @@ public:
         {
             return false;
         }
+        // LifecycleがContext固有リソースを持つ場合に備え、対象Contextで解放します。
+        if (it->second.Handle->GetBackend() == RHIBackend::OpenGL &&
+            it->second.Handle->MakeContextCurrent() == false)
+        {
+            return false;
+        }
         it->second.FrameLifecycle.reset();
+        RestoreSurvivingContext();
         return true;
     }
 
@@ -507,6 +515,8 @@ private:
         // 外部参照を解放した後、VAO cacheのuse_countを確認します。
         entry.CloseCleanupDone = true;
         entry.CloseCleanup(*entry.Handle);
+        // CallbackのcaptureにもGPU参照があり得るため、対象ContextがCurrentの間に破棄します。
+        entry.CloseCleanup = nullptr;
         return true;
     }
 
