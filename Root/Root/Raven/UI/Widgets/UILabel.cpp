@@ -45,6 +45,7 @@ const math::Vec4& UILabel::GetTextColor() const
 
 void UILabel::SetBaselineOffset(float offset)
 {
+    m_UseBaselineOffsetDIP = false;
     m_BaselineOffset = offset;
     InvalidateMeasure();
 }
@@ -53,9 +54,75 @@ void UILabel::SetLineHeight(float height)
 {
     if (std::isfinite(height) && height > 0.0f)
     {
+        m_UseLineHeightDIP = false;
         m_LineHeight = height;
         InvalidateMeasure();
     }
+}
+
+void UILabel::SetBaselineOffsetDIP(float offset)
+{
+    if (std::isfinite(offset) == false)
+    {
+        return;
+    }
+    m_BaselineOffsetDIP = offset;
+    m_UseBaselineOffsetDIP = true;
+    RefreshDIPTypography();
+}
+
+void UILabel::SetLineHeightDIP(float height)
+{
+    if (std::isfinite(height) == false || height <= 0.0f)
+    {
+        return;
+    }
+    m_LineHeightDIP = height;
+    m_UseLineHeightDIP = true;
+    RefreshDIPTypography();
+}
+
+void UILabel::RefreshDIPTypography()
+{
+    const UIContext* context = GetContext();
+    const float scaleY = context != nullptr ? context->GetEffectiveScaleY() : 1.0f;
+    if (m_UseBaselineOffsetDIP == true)
+    {
+        m_BaselineOffset = m_BaselineOffsetDIP * scaleY;
+    }
+    if (m_UseLineHeightDIP == true)
+    {
+        m_LineHeight = m_LineHeightDIP * scaleY;
+    }
+    if (m_UseBaselineOffsetDIP == true || m_UseLineHeightDIP == true)
+    {
+        InvalidateMeasure();
+    }
+}
+
+void UILabel::OnContextChanged(UIContext* previous, UIContext* current)
+{
+    static_cast<void>(previous);
+    static_cast<void>(current);
+    // SetContextRecursiveはこの通知後にContextを差し替えるため、倍率は新Contextから直接取得します。
+    const float scaleY = current != nullptr ? current->GetEffectiveScaleY() : 1.0f;
+    if (m_UseBaselineOffsetDIP == true)
+    {
+        m_BaselineOffset = m_BaselineOffsetDIP * scaleY;
+    }
+    if (m_UseLineHeightDIP == true)
+    {
+        m_LineHeight = m_LineHeightDIP * scaleY;
+    }
+    if (m_UseBaselineOffsetDIP == true || m_UseLineHeightDIP == true)
+    {
+        InvalidateMeasure();
+    }
+}
+
+void UILabel::OnDPIScaleChanged()
+{
+    RefreshDIPTypography();
 }
 
 void UILabel::SetWrapMode(UITextWrapMode mode)
