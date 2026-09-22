@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 
 #include <algorithm>
@@ -151,6 +152,61 @@ public:
         const bool clicked = state->Clicked;
         state->Clicked = false;
         return clicked;
+    }
+
+    // 表示ラベルはButtonの子として保持します。Hit Testを無効化して
+    // Mouse Targetが子Labelに移り、親ButtonのClick判定が失敗するのを防ぎます。
+    bool Button(const std::string& id, const std::string& caption,
+        const Ref<UIFontAtlas>& font,
+        const math::Vec2& size = math::Vec2(120.0f, 28.0f))
+    {
+        const bool clicked = Button(id, size);
+        const auto found = m_Widgets.find(MakeKey(id));
+        if (found == m_Widgets.end() || m_Used.find(found->first) == m_Used.end() ||
+            found->second.Type != std::type_index(typeid(UIButton)))
+        {
+            return false;
+        }
+
+        UIButton* button = static_cast<UIButton*>(found->second.Element);
+        UILabel* label = nullptr;
+        if (button->GetChildren().empty() == true)
+        {
+            auto child = CreateScope<UILabel>();
+            child->SetHitTestVisible(false);
+            label = static_cast<UILabel*>(button->AddChild(std::move(child)));
+        }
+        else
+        {
+            label = dynamic_cast<UILabel*>(button->GetChildren().front().get());
+        }
+        if (label != nullptr)
+        {
+            label->SetText(caption);
+            if (font != nullptr)
+            {
+                label->SetFont(font);
+            }
+            label->SetPosition(math::Vec2(8.0f, 4.0f));
+            label->SetPreferredSize(math::Vec2(
+                std::max(0.0f, size.x - 16.0f), std::max(0.0f, size.y - 8.0f)));
+        }
+        return clicked;
+    }
+
+    // PanelのTreeとID Scopeをまとめて開きます。EndContainer()で閉じてください。
+    UIPanel* BeginPanel(const std::string& id, const math::Vec2& position,
+        const math::Vec2& size, float padding = 8.0f)
+    {
+        UIPanel* panel = BeginContainer<UIPanel>(id);
+        if (panel != nullptr)
+        {
+            panel->SetPosition(position);
+            panel->SetPreferredSize(size);
+            panel->SetLayoutMode(UILayoutMode::Vertical);
+            panel->SetPadding(std::max(0.0f, padding));
+        }
+        return panel;
     }
 
     // valueは呼び出し側の所有物です。CallbackにそのPointerを保存せず、
