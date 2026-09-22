@@ -22,6 +22,7 @@ namespace Raven
 {
 
 class ImGuiLayer;
+class UIDockSpace;
 
 struct ApplicationSpecification
 {
@@ -72,6 +73,12 @@ public:
     // Root直下Widgetを新しいOS補助Windowへ移す一括入口。
     // Window生成または移譲に失敗した場合、Widgetの元の所有権を維持します。
     WindowID DetachUIRootChildToNewWindow(WindowID sourceID, UIElement* child,
+        const WindowSpecification& specification);
+    // Dock TabのContentを新しいOS WindowのRootへ移譲します。
+    // Window生成が失敗した場合はDockのTab/Contentを変更しません。
+    // Close時の復帰先は現段階ではMain Rootであり、元Dock Paneへの復元は未対応です。
+    WindowID DetachDockTabToNewWindow(WindowID sourceID, UIDockSpace& dock,
+        std::uint64_t leafId, std::uint64_t tabId,
         const WindowSpecification& specification);
     // Layer更新や入力Callbackなど、Main UI Frame中から安全に切り離しを予約します。
     // 実際のWindow生成とTree移譲はMain EndFrame後に実行し、成功時にCallbackへIDを返します。
