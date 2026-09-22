@@ -326,7 +326,16 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
         // 他BackendのMulti-Viewportは描画Target接続後に有効化します。
         return 0;
     }
-    const WindowID id = m_WindowManager.CreateManagedWindow(specification);
+    auto callbackID = std::make_shared<WindowID>(0);
+    const WindowID id = m_WindowManager.CreateManagedWindow(specification,
+        [this, callbackID](Event& event)
+        {
+            if (*callbackID != 0)
+            {
+                OnAuxiliaryUIEvent(*callbackID, event);
+            }
+        });
+    *callbackID = id;
     if (id == 0)
     {
         return 0;
@@ -589,6 +598,78 @@ void Application::Run()
         {
             m_Running = false;
             break;
+        }
+    }
+}
+
+void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
+{
+    UIContext* ui = GetWindowUIContext(id);
+    if (ui == nullptr)
+    {
+        return;
+    }
+    // 補助Windowの入力はMain WindowのLayer/UIContextへ転送しません。
+    if (event.GetEventType() == EventType::WindowFocusLost)
+    {
+        ui->CancelMouseCapture();
+        ui->ClearFocus();
+    }
+    else if (event.GetEventType() == EventType::KeyPressed ||
+        event.GetEventType() == EventType::KeyReleased)
+    {
+        KeyEvent& key = static_cast<KeyEvent&>(event);
+        UIKeyEvent input;
+        input.Key = ToUIKey(key.GetKeyCode());
+        input.Pressed = event.GetEventType() == EventType::KeyPressed;
+        input.Shift = (key.GetModifiers() & GLFW_MOD_SHIFT) != 0;
+        input.Control = (key.GetModifiers() & GLFW_MOD_CONTROL) != 0;
+        input.Super = (key.GetModifiers() & GLFW_MOD_SUPER) != 0;
+        input.Repeat = input.Pressed == true &&
+            static_cast<KeyPressedEvent&>(event).IsRepeat();
+        input.Context = ui;
+        event.Handled = ui->RouteKeyEvent(input);
+    }
+    else if (event.GetEventType() == EventType::CharacterTyped)
+    {
+        event.Handled = ui->RouteCharacterEvent(
+            static_cast<CharacterTypedEvent&>(event).GetCodepoint());
+    }
+    else if (event.GetEventType() == EventType::MouseMoved)
+    {
+        MouseMovedEvent& mouse = static_cast<MouseMovedEvent&>(event);
+        event.Handled = ui->RouteMouseMove(math::Vec2(mouse.GetX(), mouse.GetY()));
+    }
+    else if (event.GetEventType() == EventType::MouseScrolled)
+    {
+        MouseScrolledEvent& mouse = static_cast<MouseScrolledEvent&>(event);
+        event.Handled = ui->RouteMouseScroll(
+            math::Vec2(mouse.GetX(), mouse.GetY()),
+            math::Vec2(mouse.GetOffsetX(), mouse.GetOffsetY()));
+    }
+    else if (event.GetEventType() == EventType::MouseButtonPressed ||
+        event.GetEventType() == EventType::MouseButtonReleased)
+    {
+        MouseButtonEvent& mouse = static_cast<MouseButtonEvent&>(event);
+        UIMouseButton button = UIMouseButton::None;
+        if (mouse.GetMouseButton() == GLFW_MOUSE_BUTTON_LEFT)
+        {
+            button = UIMouseButton::Left;
+        }
+        else if (mouse.GetMouseButton() == GLFW_MOUSE_BUTTON_RIGHT)
+        {
+            button = UIMouseButton::Right;
+        }
+        else if (mouse.GetMouseButton() == GLFW_MOUSE_BUTTON_MIDDLE)
+        {
+            button = UIMouseButton::Middle;
+        }
+        if (button != UIMouseButton::None)
+        {
+            const math::Vec2 position(mouse.GetX(), mouse.GetY());
+            event.Handled = event.GetEventType() == EventType::MouseButtonPressed
+                ? ui->RouteMouseDown(position, button)
+                : ui->RouteMouseUp(position, button);
         }
     }
 }
