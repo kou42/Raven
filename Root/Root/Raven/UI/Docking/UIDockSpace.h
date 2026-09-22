@@ -64,6 +64,11 @@ public:
     bool MoveTab(std::uint64_t leafId, std::uint64_t tabId, std::size_t index);
     bool MoveTabToPane(std::uint64_t sourceLeafId, std::uint64_t targetLeafId,
         std::uint64_t tabId);
+    // OS Windowへの切り離し準備。Tab Contentの所有権と復帰用メタデータを返します。
+    // TabBar/ContentHostの所有権はUITabViewに残し、論理Dock Modelも同時に更新します。
+    // UIContextのFrame外で呼び、返されたContentは必ず別の所有者へ渡してください。
+    Scope<UIElement> ExtractTabForWindow(
+        std::uint64_t leafId, std::uint64_t tabId, UITabItem& outTab);
 
     // Tree変更後は本API経由でWidgetを生成・再配置します。
     UIDockNode* Split(std::uint64_t leafId, UIDockSplitAxis axis,
