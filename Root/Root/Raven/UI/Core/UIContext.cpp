@@ -1,6 +1,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIHitTest.h"
 #include "Raven/UI/Widgets/UITooltip.h"
+#include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Text/UIUtf8.h"
 
 #include <utility>
@@ -19,6 +20,61 @@ UIContext::UIContext()
     auto layer = CreateScope<UIElement>();
     layer->SetAffectsParentMeasure(false);
     m_PopupLayer = m_RootElement->AddChild(std::move(layer));
+}
+
+std::size_t UIContext::GetPendingDPIFontCount() const
+{
+    if (m_RootElement == nullptr)
+    {
+        return 0u;
+    }
+    std::size_t count = 0u;
+    const auto visit = [&count](const auto& self, const UIElement& element) -> void
+    {
+        const UILabel* label = dynamic_cast<const UILabel*>(&element);
+        if (label != nullptr && label->IsDPIFontPending() == true)
+        {
+            ++count;
+        }
+        for (const auto& child : element.GetChildren())
+        {
+            if (child != nullptr)
+            {
+                self(self, *child);
+            }
+        }
+    };
+    visit(visit, *m_RootElement);
+    return count;
+}
+
+std::size_t UIContext::RefreshPendingDPIFonts()
+{
+    if (m_RootElement == nullptr)
+    {
+        return 0u;
+    }
+    std::size_t refreshed = 0u;
+    // Layoutの前にFontを確定させ、Glyph幅変更によるMeasure/Arrangeを同Frameへ反映します。
+    // Renderer/RHI Contextの有効性は呼び出し側が保証します。
+    const auto visit = [&refreshed](const auto& self, UIElement& element) -> void
+    {
+        UILabel* label = dynamic_cast<UILabel*>(&element);
+        if (label != nullptr && label->IsDPIFontPending() == true &&
+            label->RefreshDPIFont() == true)
+        {
+            ++refreshed;
+        }
+        for (const auto& child : element.GetChildren())
+        {
+            if (child != nullptr)
+            {
+                self(self, *child);
+            }
+        }
+    };
+    visit(visit, *m_RootElement);
+    return refreshed;
 }
 
 void UIContext::CancelIMEComposition(UIElement* element)
