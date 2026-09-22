@@ -79,8 +79,14 @@ Ref<Texture> Texture::Create(const TextureSpecification& specification, const vo
 
     if (data != nullptr)
     {
-        // RHITexture::SetDataはvoidのため、uploadの成否はここでは断定しません。
-        texture->SetData(data, dataSize);
+        if (texture->TrySetData(data, dataSize) == false)
+        {
+            if (outFailure != nullptr)
+            {
+                *outFailure = TextureCreationFailure::UploadFailed;
+            }
+            return nullptr;
+        }
     }
     return texture;
 }
