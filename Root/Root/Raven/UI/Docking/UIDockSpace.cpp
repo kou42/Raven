@@ -292,6 +292,29 @@ void UIDockSpace::ApplyLayout()
     }
 }
 
+bool UIDockSpace::RestoreStructure(const std::vector<UIDockLayoutRecord>& records)
+{
+    if (m_Panes.empty() == false || m_TabViews.empty() == false)
+    {
+        return false;
+    }
+    UIDockLayout restored;
+    if (restored.RestoreStructure(records) == false)
+    {
+        return false;
+    }
+    // 検証済みTreeだけを採用。RefreshLayoutが古いSplitterをRemoveChildし、
+    // 新しいNode IDへ対応するSplitterを生成します。
+    m_Layout = std::move(restored);
+    m_PreviewLeaf = 0u;
+    if (m_Preview != nullptr)
+    {
+        m_Preview->SetVisible(false);
+    }
+    RefreshLayout();
+    return true;
+}
+
 bool UIDockSpace::CloseEmptyPane(std::uint64_t leafId)
 {
     const UIDockNode* leaf = m_Layout.FindNode(leafId);
