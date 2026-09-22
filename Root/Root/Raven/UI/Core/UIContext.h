@@ -48,6 +48,12 @@ public:
     void BeginFrame(const math::Vec2& viewportSize);
     void EndFrame();
 
+    // GPU Contextが有効な描画準備段階で呼び、Tree内の未生成DPI Fontをまとめて解決します。
+    // DPI通知やBeginFrameではGPU Contextが保証されないため自動生成しません。
+    // 成功したLabel数を返します。失敗したLabelはPendingのまま次回再試行できます。
+    std::size_t RefreshPendingDPIFonts();
+    std::size_t GetPendingDPIFontCount() const;
+
     // OS由来のDPI倍率とユーザー設定倍率を分離して保持します。
     // 現段階では既存のWindow座標/Layout/Hit Test/描画を変更せず、後続Phaseの基盤とします。
     void SetDPIScale(float x, float y);
