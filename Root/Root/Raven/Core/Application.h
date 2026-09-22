@@ -9,6 +9,7 @@
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Core/Event.h"
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Immediate/UIImmediateContext.h"
 
 #if defined(_DEBUG)
 #include "Raven/UI/Debug/UITreeMutationValidation.h"
@@ -30,6 +31,10 @@ struct ApplicationSpecification
     WindowProps WindowProperties{};
     bool EnableRavenUI = true;
     bool EnableDearImGui = true;
+    // 既存Editor UIへ重ねるため、Physics Debug Panelは明示的に有効化します。
+    bool EnablePhysicsDebugImmediatePanel = false;
+    // 文字表示用Atlasは呼び出し側がGPU Context有効時に生成・共有します。
+    Ref<UIFontAtlas> PhysicsDebugImmediateFont;
 };
 
 class Application
@@ -115,6 +120,10 @@ private:
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+    // UIContextより先に破棄し、Immediate Widgetの参照寿命を保ちます。
+    UIImmediateContext m_ImmediateUI{ m_UIContext };
+    bool m_PhysicsDebugImmediatePanelEnabled = false;
+    Ref<UIFontAtlas> m_PhysicsDebugImmediateFont;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
     struct DetachedDockTab
     {

@@ -2,7 +2,7 @@
 
 最終更新: 2026-09-23  
 対象: `Root/Root/Raven/UI` / Raven Editor  
-状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。Phase 10のDPI対応・Font Atlas診断はPR #253〜#269で実装し、ユーザーの実環境でGPU統合テスト・UI回帰テスト・通常起動の問題なしを確認済み。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window移動・Resize・OpenGL Multi-Viewportドラッグ分離/復帰はPR #271で実装し、ユーザーの実環境で動作問題なしを確認済み。異DPI・他Backend等は継続課題
+状態: Phase 1 実装中（InputText / InputNumberの操作確認済み、Font/IME全項目は未完了）。Phase 10のDPI対応・Font Atlas診断はPR #253〜#269で実装し、ユーザーの実環境でGPU統合テスト・UI回帰テスト・通常起動の問題なしを確認済み。OS Window基盤はPR #247で実装・動作確認済み。Phase 7 Drag & DropはPR #249で実装・ユーザー動作確認済み。Phase 8 Tab SystemはPR #250で実装・ユーザー動作確認済み。独自UIの論理Window移動・Resize・OpenGL Multi-Viewportドラッグ分離/復帰はPR #271で実装し、ユーザーの実環境で動作問題なしを確認済み。Phase 11 Immediate Mode基盤・Physics DebugパネルはPR #272で実装し、ユーザー動作確認済み。異DPI・他Backend等は継続課題
 
 ## 目的と原則
 
@@ -37,7 +37,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
 | 9 | Docking System | 実装・ユーザー動作確認済み（PR #251。Split / Pane間Tab移動 / Dock Preview / Layout保存復元）。RavenUITest単体実行・GitHub Actions結果は未確認 | Split / Tab / Dock preview / Layout保存復元 |
 | 10 | Theme / Style | 共通Style・状態別外観とDPI基盤・DIPレイアウト・DPI Font Atlas更新・失敗診断を実装、ユーザー動作確認済み（PR #252〜#269）。Window別の実DPI移動検証は継続 | 共通Style、状態別外観、DPI |
-| 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
+| 11 | Immediate Mode風API | 安定ID・Retained Widget再利用、基本Widget、Physics Debugパネルを実装・ユーザー動作確認済み（PR #272）。API拡張・Editor本格移行は継続 | 安定IDとRetained Element再利用、Debug UI検証 |
 | 12 | Multi-Viewport | OS Window別UIContext・入力/IME配送・DPI/Framebuffer描画・Dock Tab切り離し/Close復帰を実装、ユーザー動作確認済み（PR #270、OpenGL限定）。論理Windowの自動ドラッグ分離・Mainへの再統合はPR #271で実装・ユーザー動作確認済み。異DPI・他Backendは継続課題 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
 | 14 | UI Debugger / Profiler | 未着手 | Tree / Focus / Draw Command / CPU・GPU指標表示 |
@@ -150,6 +150,16 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - PR #269: GPU Contextを使う独立統合テスト、GPU readbackと異常転送、任意Font Atlas生成。ユーザーによるGPU統合テスト・UI回帰テスト・通常Raven起動の動作確認で問題なし。
 - 残課題: 別DPI Monitor移動、OS Window別ContextとMulti-Viewportの入力・描画統合、異常系の自動CI環境整備。
 
+## Phase 11: Immediate Mode風API 実装・検証記録（PR #272）
+
+- [x] UIContext / UIElementのRetained Treeを維持したUIImmediateContextを追加。安定ID、ID/Container Stack、型・親チェック、同一Frame重複検出、宣言順反映を実装。
+- [x] 未宣言Widgetを深い順に削除し、Focus / Capture / IMEの解除を既存UIContextへ委譲。AbortFrameでは当該Frameで新規生成したWidgetのみを取り消す。
+- [x] Text / Button / SliderFloat / InputText / 専用UICheckbox / BeginPanelを追加。入力結果を次のImmediate宣言で一度だけ消費し、呼び出し側の値と同期する。
+- [x] ApplicationSpecificationで明示的に有効化するPhysics DebugパネルをSceneGameへ接続。既存PhysicsDebugSettingsを共有し、8個のCheckbox、2個のSliderと数値ラベルを表示する。
+- [x] 既存UI回帰テストへ安定ID・Frame中断・入力・Panel非表示時のFocus解除・再生成・数値同期を追加。ユーザーから各段階の実環境動作チェックで問題なしとの報告を受ける。
+- [ ] RavenUITest単体の実行ログ・GitHub Actions結果の個別確認、Popup/ComboBox等へのAPI拡張、正式Editorへの段階的移行は継続課題。
+- **契約**: ImmediateのBeginFrame/EndFrameはUIContextの描画Frame前に実行する。Cache内Widgetの外部削除・移譲は行わない。AbortFrameは再利用Widgetの値・順序までは巻き戻さない。
+
 ## Phase 12: Window別UI接続・Dock Tab分離（PR #270）
 
 - [x] Window論理座標とFramebuffer実Pixelを分離し、OpenGL Viewport/Scissorと最小化時0 Pixelを扱う。
@@ -162,6 +172,8 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 2026-09-23 | feature/ui-window-framebuffer-dpi / PR #270 | Window別UIContext・Framebuffer実Pixel描画、入力/IME、Dock Tab切り離し/Close復帰、複数Window・復帰先消失のCPU回帰テスト | ユーザーから各段階の動作チェックで問題なしとの報告。CIログ・異DPIモニター移動・他Backendは未確認 | Phase 6の論理Window Widgetと自動分離・再統合、Phase 12の他Backend接続 |
 
 | 2026-09-23 | feature/ui-logical-window-viewport / PR #271 | 論理UIWindowの移動・Resize・前面化、Mainと補助OS Window間のドラッグ分離/復帰、Focus喪失・Mouse Up取りこぼし補完、空補助WindowのClose条件を実装 | ユーザーから実環境で動作チェック問題なしとの報告。GitHub差分レビュー済み。RavenUITest単体ログ・CI結果は未取得 | 異DPIモニター移動、Keyboard Focus/タイトル描画、Window Close統合テスト、他Backend |
+
+| 2026-09-23 | feature/ui-immediate-mode / PR #272 | UIImmediateContextの安定ID・Widget再利用、Text/Button/SliderFloat/InputText/専用Checkbox、Physics Debugパネル、Frame中断・Focus解除・Panel再生成の回帰テストを追加 | ユーザーから各段階の動作チェックで問題なしとの報告。GitHub差分・PR説明文を最終確認。RavenUITest単体ログ・Actions結果は未取得 | Immediate API拡張、正式Editor移行、UIContextとのFrame境界整理 |
 
 ## 更新ルール
 

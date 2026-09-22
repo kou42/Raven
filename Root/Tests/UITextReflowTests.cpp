@@ -1,6 +1,7 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "UIImmediateTests.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RenderCommand.h"
@@ -2338,6 +2339,7 @@ int main()
     root.BuildDrawList(drawList);
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
+    TestUIImmediateContext();
     TestUITheme();
     TestDPIContextCoordinates();
     TestDPILayoutMetrics();
