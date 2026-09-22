@@ -10,8 +10,8 @@ namespace Raven
 {
 
 // UITabModelの表示・入力担当。モデルの所有権は呼び出し側が持ちます。
-// 初期段階では固定幅のTabを横一列に描画し、領域外はClipします。
-// OverflowスクロールとDrag並び替えは後続段階で追加します。
+// 固定幅Tabを横一列に描画し、Overflow時は横スクロールとClipで表示範囲を制御します。
+// Drag並び替えは既存UIContextのDrag & Drop経路を使用します。
 class UITabBar final : public UIElement
 {
 public:
