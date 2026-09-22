@@ -623,7 +623,7 @@ void TestTreeViewDragDrop()
     context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
     auto tree = std::make_unique<Raven::UITreeView>();
     tree->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
-    tree->SetSize(Raven::math::Vec2(200.0f, 96.0f));
+    tree->SetSize(Raven::math::Vec2(200.0f, 120.0f));
     tree->SetNodeDragDropEnabled(true);
     Raven::UITreeView* view = tree.get();
     Raven::UITreeNode* root = tree->AddRoot(1u, "Root");
@@ -645,11 +645,25 @@ void TestTreeViewDragDrop()
     Check(child->Parent == destination && moved == 2u && parent == 3u, "tree reparents node on drop");
     Check(context.HasMouseCapture() == false, "tree drop releases capture");
     // 親を子へDropしても循環を作らないことを検証します。
-    context.RouteMouseDown(Raven::math::Vec2(70.0f, 56.0f), Raven::UIMouseButton::Left);
-    context.RouteMouseMove(Raven::math::Vec2(70.0f, 80.0f));
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 104.0f));
     Check(context.GetDropTarget() == nullptr, "tree rejects descendant target");
-    context.RouteMouseUp(Raven::math::Vec2(70.0f, 80.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 104.0f), Raven::UIMouseButton::Left);
     Check(destination->Parent == nullptr, "tree cycle guard keeps root");
+
+    // ChildをDestinationの前へ移すとRoot直下へ戻ります。
+    Raven::UITreeView::DropPlacement placement = Raven::UITreeView::DropPlacement::Child;
+    view->SetOnNodePlaced([&](std::uint64_t, std::uint64_t, Raven::UITreeView::DropPlacement value)
+    {
+        placement = value;
+    });
+    context.RouteMouseDown(Raven::math::Vec2(70.0f, 104.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(70.0f, 69.0f));
+    Check(context.GetDropTarget() == view, "tree accepts before insertion");
+    context.RouteMouseUp(Raven::math::Vec2(70.0f, 69.0f), Raven::UIMouseButton::Left);
+    Check(child->Parent == nullptr && placement == Raven::UITreeView::DropPlacement::Before,
+        "tree inserts before root");
+    Check(view->FindNode(2u) == child, "tree preserves moved node identity");
 }
 
 void TestDragDropRouting()
