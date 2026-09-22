@@ -35,7 +35,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 6 | Window System | OS Window基盤は実装・動作確認済み（PR #247）。独自UIの論理Windowは未着手 | 論理UI Windowの移動・Resize・Focus・Z順 |
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
 | 8 | Tab System | 実装・ユーザー動作確認済み（PR #250。選択・追加・削除・移動、Content切替、Overflow・省略表示、Demo・回帰テスト追加） | Tab選択・追加・削除・移動 |
-| 9 | Docking System | 未着手 | Split / Tab / Dock preview / Layout保存復元 |
+| 9 | Docking System | 実装・ユーザー動作確認済み（PR #251。Split / Pane間Tab移動 / Dock Preview / Layout保存復元）。RavenUITest単体実行・GitHub Actions結果は未確認 | Split / Tab / Dock preview / Layout保存復元 |
 | 10 | Theme / Style | 未着手 | 共通Style、状態別外観、DPI |
 | 11 | Immediate Mode風API | 未着手 | 安定IDとRetained Element再利用、Debug UI検証 |
 | 12 | Multi-Viewport | OS Window / OpenGL Context・補助Window描画の基盤は実装・動作確認済み（PR #247）。UI接続は未着手 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
@@ -67,7 +67,27 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 - [x] Headerの横スクロール、選択Tabの自動表示、UTF-8境界とFont Metricsを考慮したタイトル省略を実装する。
 - [x] UITextDemoLayerへ5 Tabの操作パネル、RavenUITestへModel/View/Scroll/Dragの回帰テストを追加する。
 - [x] ユーザーから実環境で動作問題なしとの報告を受ける。
-- [ ] Dockingとの接続、Tabの別Barへの移動、Layout保存復元、負荷・再入テストはPhase 9以降で検討する。
+- [x] Dockingとの接続、Tabの別Paneへの移動、Layout保存復元はPhase 9 / PR #251で実装しユーザー動作確認済み。負荷・再入テストは継続課題。
+
+## Phase 9: Docking System 実装記録
+
+- [x] UIElementから独立したUIDockLayout / UIDockNodeを追加。Tabs Leaf / 二分Split、安定ID、親参照、分割比率、既存Leafの所有権移動を実装。
+- [x] RavenUITestに入れ子Split、Tab選択維持、不正比率・非Leaf・未知ID拒否の回帰テストを追加。
+- [x] ユーザーからPhase 9の動作チェックで問題なしとの報告を受ける。Windowsビルドのログ・RavenUITest単体実行結果・GitHub Actions結果はこのチャットでは未取得。
+- [x] UIDockGeometryで入れ子Splitの矩形配置、Splitter矩形、最小Pane幅、Drag差分からの比率更新を実装。狭いViewportでは負寸法を防ぐ。回帰テストを追加。
+- [x] UIDockSpaceでLeafにPaneを対応付け、SplitにUISplitterを生成。マウスDrag差分をUIDockGeometry::Resizeへ接続し、配置を更新。回帰テスト追加。
+- [x] UIDockSpaceにUITabView生成・Tab追加/選択/Close/並び替えの同期経路を追加。回帰テスト追加。
+- [x] UITextDemoLayerに左右・上下Split、3 Pane、Tab切替を確認するDocking Demoを追加。OnDetachでRootから安全に削除。
+- [x] ユーザーからDocking Demoの実環境動作問題なしとの報告を受ける。
+- [x] UITabView::ExtractTabでContentを破棄せず移動、UIDockSpaceで別Paneへ移動しDrop Previewを表示。Content同一性の回帰テスト追加。
+- [x] 空Tab Leafの削除、親Splitの解消、Siblingの昇格、不要Widgetの解放を追加。入れ子Treeの回帰テスト追加。
+- [x] Dock TreeのPreorder幾何Snapshotを保存・検証付き復元。空DockSpaceへの復元とSplitter再生成、回帰テストを追加。
+- [x] DockSpace SnapshotにTab順序・タイトル・Closable・選択状態を追加。FactoryでContentを再生成し、事前検証失敗時は元Treeを保持。
+- [x] Raven CoreのJsonParser/Writerを再利用したSnapshot JSON/ファイル入出力、version検証、64bit ID文字列保存、破損JSONの無変更保証。
+- [x] Text Demoで起動時にJSON復元、終了時にJSON保存。RAVEN_UI_DOCK_LAYOUT環境変数で保存先指定、初回/不正ファイルは3 Pane構成にフォールバック。
+- [x] 一時ファイルへ全量書込後に旧版を.bakへ退避し置換。置換失敗時の旧版復帰、主ファイル欠落時のBackup読込、8 MiB読込上限とファイル回帰テスト。
+- [x] RestoreSnapshotのWidget生成・Tab追加・選択失敗時に追加Paneを破棄し旧Treeをmove復帰。ID発行状態も保持。Factory失敗時の既存Split不変テスト。
+- [ ] RavenUITest単体実行結果とGitHub Actionsの確認、再起動後のSplit/Tab状態の個別検証記録、正式Editorへの導入、異常なUIElement追加失敗の注入テスト、負荷・再入テスト。
 
 ## Phase 1: 実装分割
 
@@ -102,6 +122,8 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 2026-09-22 | feature/ui-drag-drop / PR #249 | UIContextのDrag & Drop基盤、Payload/Preview/Cancel/時間駆動Tick、TreeView同一・別View移動、Root末尾Drop、自動Scroll・Hover展開、挿入線補正、無変更Drop抑制、回帰テストを実装 | ユーザーから各段階のビルド・動作チェックで問題なしとの報告。GitHub Actionsの実行状況は別途確認 | Phase 7の基本機能を区切り、Scene Hierarchy/Undo連携は別PRで検討 |
 
 | 2026-09-22 | feature/ui-tab-system / PR #250 | UITabModel・UITabBar・UITabView、Close/Drag並び替え、Overflow横スクロール、UTF-8タイトル省略、Text Demo、RavenUITest回帰テストを追加 | ユーザーから実環境で動作問題なしとの報告。追加テスト単体の実行結果やGitHub Actionsは別途確認 | Phase 9 Docking SystemのSplit/Tab構造・Dock Preview・Layout保存復元を段階的に設計 |
+
+| 2026-09-22 | feature/ui-docking-system / PR #251 | UIDockLayout / Geometry / Space、入れ子Split、Pane間Tab移動、Dock Preview、空Pane Collapse、JSON Snapshot保存・起動時復元、Backup保護、復元失敗時巻戻し、Demoと回帰テストを追加 | ユーザーからPhase 9の動作チェック問題なしとの報告。GitHub上でmasterとの差分・レビュー未解決0件を確認。RavenUITest単体実行ログとActions実行結果は未取得 | 正式Editorへの組込み、負荷・再入/例外注入テスト、UIElement内部状態の永続化は別課題 |
 
 ## 更新ルール
 

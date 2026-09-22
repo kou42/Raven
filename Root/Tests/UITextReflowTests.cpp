@@ -10,9 +10,15 @@
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
+#include "Raven/UI/Docking/UIDockLayout.h"
+#include "Raven/UI/Docking/UIDockGeometry.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <cmath>
 #include <memory>
@@ -36,6 +42,8 @@ protected:
         return Raven::math::Vec2(std::min(100.0f, width), lineCount * 10.0f);
     }
 };
+
+void TestDockLayout();
 
 bool Near(float actual, float expected)
 {
@@ -62,6 +70,456 @@ void Check(bool condition, const char* label)
 }
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
+
+
+
+
+// 保存失敗で旧版を壊さず、退避中のクラッシュを想定したBackup読み込みを確認します。
+void TestDockSnapshotFileRecovery()
+{
+    namespace fs = std::filesystem;
+    const fs::path directory = fs::temp_directory_path() /
+        ("RavenDockSnapshotTest_" + std::to_string(
+            static_cast<std::uint64_t>(std::chrono::steady_clock::now()
+                .time_since_epoch().count())));
+    Check(fs::create_directory(directory), "dock file test directory");
+    const fs::path path = directory / "layout.json";
+    const fs::path backup = directory / "layout.json.bak";
+    Raven::UIDockSpace dock;
+    const std::uint64_t leaf = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.CreateTabView(leaf) != nullptr, "dock file test view");
+    Check(dock.AddTab(leaf, 901u, "Before",
+        std::make_unique<Raven::UIElement>()), "dock file first tab");
+    const Raven::UIDockSpaceSnapshot before = dock.SaveSnapshot();
+    std::string error;
+    Check(Raven::SaveDockSnapshot(path.string(), before, &error),
+        "dock file first save");
+    Check(dock.AddTab(leaf, 902u, "After",
+        std::make_unique<Raven::UIElement>()), "dock file second tab");
+    const Raven::UIDockSpaceSnapshot after = dock.SaveSnapshot();
+    Check(Raven::SaveDockSnapshot(path.string(), after, &error),
+        "dock file replacement save");
+    Raven::UIDockSpaceSnapshot loaded;
+    Check(Raven::LoadDockSnapshot(path.string(), loaded, &error) &&
+        loaded.Tabs.size() == 2u, "dock file newest snapshot");
+    Check(Raven::LoadDockSnapshot(backup.string(), loaded, &error) &&
+        loaded.Tabs.size() == 1u, "dock file previous snapshot retained");
+    fs::remove(path);
+    Check(Raven::LoadDockSnapshot(path.string(), loaded, &error) &&
+        loaded.Tabs.size() == 1u, "dock file missing primary fallback");
+    Check(Raven::SaveDockSnapshot(path.string(), after, &error),
+        "dock file recovery save");
+    {
+        std::ofstream corrupt(path, std::ios::binary | std::ios::trunc);
+        corrupt << "{";
+    }
+    const auto originalCount = loaded.Tabs.size();
+    Check(Raven::LoadDockSnapshot(path.string(), loaded, &error) == false,
+        "dock file corrupted primary rejected");
+    Check(loaded.Tabs.size() == originalCount,
+        "dock file corrupted primary leaves output unchanged");
+    Check(Raven::SaveDockSnapshot((directory / "missing" / "layout.json").string(),
+        after, &error) == false, "dock file write failure");
+    fs::remove_all(directory);
+}
+
+// Factory失敗時は復元先の既存Split比率とIDを変更しません。
+void TestDockRestoreFailurePreservesStructure()
+{
+    Raven::UIDockSpace source;
+    const std::uint64_t leaf = source.GetLayout().GetRoot()->GetId();
+    Check(source.CreateTabView(leaf) != nullptr, "dock rollback source view");
+    Check(source.AddTab(leaf, 702u, "Scene",
+        std::make_unique<Raven::UIElement>()), "dock rollback source tab");
+    const Raven::UIDockSpaceSnapshot saved = source.SaveSnapshot();
+
+    Raven::UIDockSpace target;
+    Raven::UIDockNode* newLeaf = target.Split(
+        target.GetLayout().GetRoot()->GetId(),
+        Raven::UIDockSplitAxis::Vertical, 0.37f);
+    Check(newLeaf != nullptr, "dock rollback initial split");
+    const auto before = target.GetLayout().SaveStructure();
+    const auto failFactory = [](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        return nullptr;
+    };
+    Check(target.RestoreSnapshot(saved, failFactory) == false,
+        "dock rollback factory rejected");
+    const auto after = target.GetLayout().SaveStructure();
+    Check(after.size() == before.size(), "dock rollback node count");
+    for (std::size_t i = 0u; i < before.size(); ++i)
+    {
+        Check(after[i].Id == before[i].Id &&
+            after[i].Ratio == before[i].Ratio &&
+            after[i].Depth == before[i].Depth,
+            "dock rollback structure unchanged");
+    }
+    Check(target.GetSplitter(before[0u].Id) != nullptr,
+        "dock rollback existing splitter preserved");
+}
+
+void TestDockSnapshotJson()
+{
+    Raven::UIDockSpace dock;
+    const std::uint64_t first = dock.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = dock.Split(first, Raven::UIDockSplitAxis::Vertical, 0.3f);
+    Check(second != nullptr, "dock json split");
+    Check(dock.CreateTabView(first) != nullptr, "dock json first view");
+    Check(dock.CreateTabView(second->GetId()) != nullptr, "dock json second view");
+    const std::uint64_t largeId = UINT64_MAX - 10u;
+    Check(dock.AddTab(first, largeId, "Scene 日本語",
+        std::make_unique<Raven::UIElement>(), false), "dock json large id");
+    const Raven::UIDockSpaceSnapshot original = dock.SaveSnapshot();
+    std::string json;
+    std::string error;
+    Check(Raven::SerializeDockSnapshot(original, json, &error), "dock json serialize");
+    Raven::UIDockSpaceSnapshot decoded;
+    Check(Raven::DeserializeDockSnapshot(json, decoded, &error), "dock json parse");
+    Check(decoded.Tabs.size() == 1u && decoded.Tabs[0u].Tab.Id == largeId &&
+        decoded.Tabs[0u].Tab.Title == "Scene 日本語" &&
+        decoded.Tabs[0u].Tab.Closable == false, "dock json exact tab data");
+    Raven::UIDockSpace restored;
+    const auto factory = [](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        return std::make_unique<Raven::UIElement>();
+    };
+    Check(restored.RestoreSnapshot(decoded, factory), "dock json restore");
+    Check(restored.GetTabView(first)->GetTabContent(largeId) != nullptr,
+        "dock json content factory");
+    const auto before = decoded;
+    Check(Raven::DeserializeDockSnapshot("{", decoded, &error) == false,
+        "dock json malformed rejected");
+    Check(decoded.Tabs.size() == before.Tabs.size() &&
+        decoded.Tabs[0u].Tab.Id == before.Tabs[0u].Tab.Id,
+        "dock json parse failure atomic");
+    Check(Raven::DeserializeDockSnapshot(
+        "{\"type\":\"RavenDockSnapshot\",\"version\":2,"
+        "\"structure\":[],\"tabs\":[],\"selections\":[]}",
+        decoded, &error) == false, "dock json version rejected");
+}
+
+void TestDockFullSnapshot()
+{
+    Raven::UIDockSpace source;
+    const std::uint64_t first = source.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = source.Split(first,
+        Raven::UIDockSplitAxis::Horizontal, 0.4f);
+    Check(second != nullptr, "dock full snapshot split");
+    const std::uint64_t secondId = second->GetId();
+    Check(source.CreateTabView(first) != nullptr, "dock full snapshot first view");
+    Check(source.CreateTabView(secondId) != nullptr, "dock full snapshot second view");
+    Check(source.AddTab(first, 91u, "Scene", std::make_unique<Raven::UIElement>(), false),
+        "dock full snapshot scene");
+    Check(source.AddTab(first, 92u, "Game", std::make_unique<Raven::UIElement>()),
+        "dock full snapshot game");
+    Check(source.AddTab(secondId, 93u, "Inspector",
+        std::make_unique<Raven::UIElement>()), "dock full snapshot inspector");
+    Check(source.SelectTab(first, 92u), "dock full snapshot select game");
+    const Raven::UIDockSpaceSnapshot saved = source.SaveSnapshot();
+    Raven::UIDockSpace restored;
+    int created = 0;
+    const auto factory = [&created](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        ++created;
+        return std::make_unique<Raven::UIElement>();
+    };
+    Check(restored.RestoreSnapshot(saved, factory), "dock full snapshot restore");
+    Check(created == 3, "dock full snapshot factory count");
+    Check(restored.GetTabView(first)->GetModel().GetTabs()[0u].Id == 91u &&
+        restored.GetTabView(first)->GetModel().GetTabs()[1u].Id == 92u,
+        "dock full snapshot order");
+    Check(restored.GetTabView(first)->GetModel().GetSelectedTabId() == 92u,
+        "dock full snapshot selection");
+    Check(restored.CloseTab(first, 91u) == false,
+        "dock full snapshot fixed tab");
+    Check(restored.GetTabView(secondId)->GetTabContent(93u) != nullptr,
+        "dock full snapshot recreated content");
+    Raven::UIDockSpace rejected;
+    const auto invalidFactory = [](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        return nullptr;
+    };
+    Check(rejected.RestoreSnapshot(saved, invalidFactory) == false,
+        "dock full snapshot factory failure");
+    Check(rejected.GetLayout().GetRoot()->GetId() == 1u &&
+        rejected.GetTabView(first) == nullptr,
+        "dock full snapshot failure leaves empty space");
+    auto duplicate = saved;
+    duplicate.Tabs.push_back(duplicate.Tabs[0u]);
+    Check(rejected.RestoreSnapshot(duplicate, factory) == false,
+        "dock full snapshot duplicate tab rejected");
+    Check(rejected.RestoreSnapshot(saved, factory),
+        "dock full snapshot retry after failure");
+    Check(rejected.RestoreSnapshot(saved, factory) == false,
+        "dock full snapshot refuses live pane");
+}
+
+void TestDockStructureSnapshot()
+{
+    Raven::UIDockSpace source;
+    source.SetSize(Raven::math::Vec2(500.0f, 300.0f));
+    const std::uint64_t originalId = source.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = source.Split(originalId,
+        Raven::UIDockSplitAxis::Horizontal, 0.35f);
+    Check(second != nullptr, "dock snapshot split");
+    const std::uint64_t secondId = second->GetId();
+    Raven::UIDockNode* third = source.Split(secondId,
+        Raven::UIDockSplitAxis::Vertical, 0.7f);
+    Check(third != nullptr, "dock snapshot nested split");
+    const auto records = source.GetLayout().SaveStructure();
+    Raven::UIDockSpace restored;
+    restored.SetSize(Raven::math::Vec2(500.0f, 300.0f));
+    Check(restored.RestoreStructure(records), "dock snapshot restore");
+    const auto roundtrip = restored.GetLayout().SaveStructure();
+    Check(roundtrip.size() == records.size(), "dock snapshot count");
+    for (std::size_t i = 0u; i < records.size(); ++i)
+    {
+        Check(roundtrip[i].Id == records[i].Id &&
+            roundtrip[i].Kind == records[i].Kind &&
+            roundtrip[i].Axis == records[i].Axis &&
+            roundtrip[i].Ratio == records[i].Ratio &&
+            roundtrip[i].Depth == records[i].Depth, "dock snapshot preorder identity");
+    }
+    Check(restored.GetSplitter(records[0u].Id) != nullptr,
+        "dock snapshot splitter rebuilt");
+    Check(restored.CreateTabView(originalId) != nullptr,
+        "dock snapshot original pane binding");
+    Check(restored.CreateTabView(secondId) != nullptr,
+        "dock snapshot second pane binding");
+    Check(restored.CreateTabView(third->GetId()) != nullptr,
+        "dock snapshot third pane binding");
+    Check(restored.RestoreStructure(records) == false,
+        "dock snapshot refuses live panes");
+    Raven::UIDockLayout layout;
+    auto invalid = records;
+    invalid[1u].Id = invalid[0u].Id;
+    const auto before = layout.SaveStructure();
+    Check(layout.RestoreStructure(invalid) == false, "dock snapshot duplicate rejected");
+    Check(layout.SaveStructure()[0u].Id == before[0u].Id,
+        "dock snapshot failure atomic");
+    invalid = records;
+    invalid[0u].Ratio = 0.0f;
+    Check(layout.RestoreStructure(invalid) == false, "dock snapshot ratio rejected");
+    Check(layout.RestoreStructure(records), "dock snapshot layout restored");
+    Check(layout.FindNode(third->GetId()) != nullptr,
+        "dock snapshot leaf ids preserved");
+    Check(layout.Split(third->GetId(), Raven::UIDockSplitAxis::Horizontal) != nullptr,
+        "dock snapshot next id valid");
+}
+
+// 空Paneを畳んだときSiblingのID/Contentと祖先の配置を保持します。
+void TestDockCollapse()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(600.0f, 400.0f));
+    const std::uint64_t leftId = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.CloseEmptyPane(leftId) == false, "dock root cannot collapse");
+    Raven::UIDockNode* right = dock.Split(leftId, Raven::UIDockSplitAxis::Horizontal);
+    Check(right != nullptr, "dock collapse first split");
+    const std::uint64_t rightId = right->GetId();
+    const std::uint64_t splitId = dock.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* bottom = dock.Split(rightId, Raven::UIDockSplitAxis::Vertical);
+    Check(bottom != nullptr, "dock collapse nested split");
+    const std::uint64_t bottomId = bottom->GetId();
+    const std::uint64_t nestedId = dock.GetLayout().FindNode(rightId)->GetParent()->GetId();
+    Check(dock.CreateTabView(rightId) != nullptr, "dock collapse right view");
+    Check(dock.CreateTabView(bottomId) != nullptr, "dock collapse bottom view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = page.get();
+    Check(dock.AddTab(rightId, 81u, "Keep", std::move(page)), "dock collapse keep tab");
+    Check(dock.CloseEmptyPane(rightId) == false, "dock nonempty cannot collapse");
+    Check(dock.CloseEmptyPane(bottomId), "dock collapse empty bottom");
+    Check(dock.GetLayout().FindNode(bottomId) == nullptr, "dock removed leaf id");
+    Check(dock.GetLayout().FindNode(nestedId) == nullptr, "dock removed split id");
+    Check(dock.GetSplitter(nestedId) == nullptr, "dock removed splitter widget");
+    Check(dock.GetLayout().FindNode(rightId)->GetParent()->GetId() == splitId,
+        "dock promoted sibling parent");
+    Check(dock.GetTabView(rightId)->GetTabContent(81u) == original,
+        "dock promoted content preserved");
+    Check(dock.CloseEmptyPane(leftId), "dock collapse other empty pane");
+    Check(dock.GetLayout().GetRoot()->GetId() == rightId, "dock promoted root id");
+    Check(dock.GetSplitter(splitId) == nullptr, "dock old root splitter removed");
+    Check(dock.CloseEmptyPane(rightId) == false, "dock last leaf retained");
+}
+
+// Pane間移動ではTabのContentインスタンスとClosable設定を保持します。
+void TestDockTabTransfer()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(400.0f, 300.0f));
+    const std::uint64_t firstId = dock.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* second = dock.Split(firstId, Raven::UIDockSplitAxis::Horizontal);
+    Check(second != nullptr, "dock transfer split");
+    const std::uint64_t secondId = second->GetId();
+    Raven::UITabView* firstView = dock.CreateTabView(firstId);
+    Raven::UITabView* secondView = dock.CreateTabView(secondId);
+    Check(firstView != nullptr && secondView != nullptr, "dock transfer views");
+    auto content = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = content.get();
+    Check(dock.AddTab(firstId, 71u, "Persistent", std::move(content), false),
+        "dock transfer add");
+    Check(dock.MoveTabToPane(firstId, firstId, 71u) == false,
+        "dock transfer same pane rejected");
+    Check(dock.MoveTabToPane(firstId, secondId, 71u), "dock transfer to second");
+    Check(firstView->GetTabContent(71u) == nullptr, "dock transfer source removed");
+    Check(secondView->GetTabContent(71u) == original,
+        "dock transfer content address stable");
+    Check(dock.GetLayout().FindNode(firstId)->GetTabs()->GetTabCount() == 0u,
+        "dock transfer source model");
+    Check(dock.GetLayout().FindNode(secondId)->GetTabs()->GetSelectedTabId() == 71u,
+        "dock transfer destination selection");
+    Check(dock.CloseTab(secondId, 71u) == false,
+        "dock transfer closable retained");
+    Check(dock.MoveTabToPane(secondId, firstId, 71u),
+        "dock transfer back");
+    Check(firstView->GetTabContent(71u) == original,
+        "dock transfer round trip");
+    Raven::UIDrawList drawList;
+    dock.BuildDrawList(drawList);
+    Raven::UIDragDropPayload payload{ "Raven/UITab", "71" };
+    Raven::UIDragDropEvent over;
+    over.Type = Raven::UIDragDropEventType::Over;
+    over.Payload = &payload;
+    over.Source = firstView->GetTabBar();
+    over.ScreenPosition = Raven::math::Vec2(300.0f, 100.0f);
+    Check(dock.HandleDragDropEvent(over), "dock preview over accepted");
+    Check(over.Accepted, "dock preview event accepted");
+    over.Type = Raven::UIDragDropEventType::Drop;
+    Check(dock.HandleDragDropEvent(over), "dock drop transfer");
+    Check(secondView->GetTabContent(71u) == original,
+        "dock drop content preserved");
+}
+
+// DockSpace経由とView上の操作の両方で論理Tab状態を同期します。
+void TestDockTabView()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(500.0f, 300.0f));
+    const std::uint64_t leafId = dock.GetLayout().GetRoot()->GetId();
+    Raven::UITabView* view = dock.CreateTabView(leafId);
+    Check(view != nullptr, "dock tabview create");
+    Check(dock.GetPane(leafId) == view, "dock tabview pane");
+    Check(dock.CreateTabView(leafId) == nullptr, "dock duplicate tabview");
+    Check(dock.AddTab(leafId, 11u, "Scene", std::make_unique<Raven::UIElement>()),
+        "dock add scene");
+    Check(dock.AddTab(leafId, 12u, "Console", std::make_unique<Raven::UIElement>()),
+        "dock add console");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetTabCount() == 2u,
+        "dock model tab count");
+    Check(dock.SelectTab(leafId, 12u), "dock select console");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetSelectedTabId() == 12u,
+        "dock model selection synced");
+    Check(dock.MoveTab(leafId, 12u, 0u), "dock reorder");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetTabs()[0u].Id == 12u,
+        "dock model order synced");
+    Check(view->CloseTab(12u), "dock view close callback");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetTabCount() == 1u,
+        "dock model close synced");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetSelectedTabId() == 11u,
+        "dock model fallback selection");
+    Check(dock.CloseTab(leafId, 11u), "dock close last");
+    Check(dock.GetLayout().GetRoot()->GetTabs()->GetSelectedTabId() == 0u,
+        "dock empty selection");
+    Check(dock.AddTab(leafId, 13u, "Inspector",
+        std::make_unique<Raven::UIElement>(), false), "dock nonclosable tab");
+    Check(dock.CloseTab(leafId, 13u) == false, "dock nonclosable respected");
+}
+
+// Phase 9-3: Dockingの配置をUIElement/UISplitterへ反映する経路を検証します。
+void TestDockSpace()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(400.0f, 300.0f));
+    const std::uint64_t leftId = dock.GetLayout().GetRoot()->GetId();
+    auto left = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* leftRaw = left.get();
+    Check(dock.SetPane(leftId, std::move(left)), "dockspace first pane");
+    Check(dock.SetPane(leftId, std::make_unique<Raven::UIElement>()) == false,
+        "dockspace duplicate pane");
+    Raven::UIDockNode* right = dock.Split(leftId, Raven::UIDockSplitAxis::Horizontal, 0.5f);
+    Check(right != nullptr, "dockspace split");
+    const std::uint64_t splitId = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.GetSplitter(splitId) != nullptr, "dockspace splitter created");
+    Check(dock.GetSplitter(splitId)->GetOrientation() == Raven::UISplitterOrientation::Vertical,
+        "dockspace splitter orientation");
+    Check(dock.SetPane(right->GetId(), std::make_unique<Raven::UIElement>()),
+        "dockspace second pane");
+    Raven::UIDrawList drawList;
+    dock.BuildDrawList(drawList);
+    dock.BuildDrawList(drawList);
+    CheckNear("dockspace first width", leftRaw->GetSize().x, 197.5f);
+    CheckNear("dockspace second x", dock.GetPane(right->GetId())->GetPosition().x, 202.5f);
+    CheckNear("dockspace splitter x", dock.GetSplitter(splitId)->GetPosition().x, 197.5f);
+    Check(dock.SetPane(splitId, std::make_unique<Raven::UIElement>()) == false,
+        "dockspace split cannot host pane");
+}
+
+// Phase 9-1: Docking論理Treeの所有権・安定ID・不正Split拒否を検証します。
+void TestDockLayout()
+{
+    Raven::UIDockLayout layout;
+    Raven::UIDockNode* original = layout.GetRoot();
+    const std::uint64_t originalId = original->GetId();
+    Check(original->GetTabs() != nullptr, "dock root tabs");
+    Check(original->GetTabs()->AddTab(101u, "Scene"), "dock tab add");
+    Raven::UIDockNode* right = layout.Split(originalId, Raven::UIDockSplitAxis::Horizontal, 0.35f);
+    Check(right != nullptr, "dock split");
+    Check(layout.GetRoot()->GetKind() == Raven::UIDockNodeKind::Split, "dock split kind");
+    Check(layout.GetRoot()->GetFirst() == original, "dock leaf address stable");
+    Check(layout.GetRoot()->GetSecond() == right, "dock second leaf");
+    Check(original->GetParent() == layout.GetRoot(), "dock parent");
+    Check(original->GetTabs()->GetSelectedTabId() == 101u, "dock selection preserved");
+    CheckNear("dock split ratio", layout.GetRoot()->GetSplitRatio(), 0.35f);
+    Check(layout.GetRoot()->SetSplitRatio(0.0f) == false, "dock zero ratio rejected");
+    Check(layout.GetRoot()->SetSplitRatio(0.7f), "dock ratio update");
+    Check(layout.Split(originalId, Raven::UIDockSplitAxis::Vertical, 0.5f, true) != nullptr,
+        "dock nested split");
+    Check(layout.FindNode(originalId) == original, "dock nested stable ID");
+    Check(layout.FindNode(right->GetId()) == right, "dock sibling stable ID");
+    Check(layout.Split(layout.GetRoot()->GetId(), Raven::UIDockSplitAxis::Horizontal) == nullptr,
+        "dock split nonleaf rejected");
+    Check(layout.Split(0u, Raven::UIDockSplitAxis::Horizontal) == nullptr,
+        "dock unknown ID rejected");
+    Check(layout.Split(right->GetId(), Raven::UIDockSplitAxis::Horizontal, 1.0f) == nullptr,
+        "dock endpoint rejected");
+    Check(layout.FindNode(999999u) == nullptr, "dock missing node");
+    // 既存Leafは入れ子SplitのSecond側にあり、再配置してもIDは変わりません。
+    const Raven::UIDockRect viewport{ 10.0f, 20.0f, 400.0f, 300.0f };
+    auto placements = Raven::UIDockGeometry::Calculate(layout, viewport);
+    Check(placements.size() == 5u, "dock nested placement count");
+    Check(placements[0u].NodeId == layout.GetRoot()->GetId(), "dock root placement");
+    CheckNear("dock root splitter x", placements[0u].Splitter.X, 10.0f + 395.0f * 0.7f);
+    CheckNear("dock root splitter width", placements[0u].Splitter.Width, 5.0f);
+    CheckNear("dock right pane x", placements[4u].Bounds.X, 10.0f + 395.0f * 0.7f + 5.0f);
+    CheckNear("dock right pane width", placements[4u].Bounds.Width, 395.0f * 0.3f);
+    Check(Raven::UIDockGeometry::Resize(*layout.GetRoot(), viewport, 39.5f),
+        "dock resize horizontal");
+    CheckNear("dock resize ratio", layout.GetRoot()->GetSplitRatio(), 0.8f);
+    Check(Raven::UIDockGeometry::Resize(*layout.GetRoot(), viewport, 10000.0f),
+        "dock resize clamp");
+    CheckNear("dock resize minimum pane", layout.GetRoot()->GetSplitRatio(),
+        1.0f - 32.0f / 395.0f);
+    Check(Raven::UIDockGeometry::Resize(*layout.GetRoot(),
+        Raven::UIDockRect{ 0.0f, 0.0f, 30.0f, 20.0f }, 1.0f) == false,
+        "dock resize insufficient extent");
+    Check(Raven::UIDockGeometry::Calculate(layout,
+        Raven::UIDockRect{ 0.0f, 0.0f, -1.0f, 20.0f }).empty(),
+        "dock negative viewport rejected");
+    const auto tiny = Raven::UIDockGeometry::Calculate(layout,
+        Raven::UIDockRect{ 0.0f, 0.0f, 2.0f, 2.0f });
+    Check(tiny.size() == 5u, "dock tiny viewport traversal");
+    for (const auto& placement : tiny)
+    {
+        Check(placement.Bounds.Width >= 0.0f && placement.Bounds.Height >= 0.0f,
+            "dock tiny viewport nonnegative");
+    }
+
+}
+
 void TestTextEditBuffer()
 {
     Raven::UITextEditBuffer buffer;
@@ -1191,5 +1649,15 @@ int main()
     root.BuildDrawList(drawList);
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
+    TestDockLayout();
+    TestDockSpace();
+    TestDockTabView();
+    TestDockTabTransfer();
+    TestDockCollapse();
+    TestDockStructureSnapshot();
+    TestDockFullSnapshot();
+    TestDockSnapshotJson();
+    TestDockSnapshotFileRecovery();
+    TestDockRestoreFailurePreservesStructure();
     return 0;
 }

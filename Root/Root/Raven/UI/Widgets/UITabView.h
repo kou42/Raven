@@ -26,6 +26,8 @@ public:
 
     bool AddTab(std::uint64_t id, std::string title, Scope<UIElement> content,
         bool closable = true);
+    // Dock間移動用。Contentを破棄せず取り外し、Tab Modelからも削除します。
+    Scope<UIElement> ExtractTab(std::uint64_t id);
     bool SelectTab(std::uint64_t id) { return m_Model.SelectTab(id); }
     bool CloseTab(std::uint64_t id) { return m_Model.CloseTab(id); }
     bool RemoveTab(std::uint64_t id) { return m_Model.RemoveTab(id); }

@@ -12,6 +12,7 @@
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
 
 #include <GLFW/glfw3.h>
 
@@ -82,6 +83,33 @@ std::string FindDemoFont()
         }
     }
     return {};
+}
+
+// Demoの保存先は環境変数で切替可能。指定がなければ作業ディレクトリに保存します。
+std::string FindDockLayoutPath()
+{
+#if defined(_MSC_VER)
+    char* configured = nullptr;
+    size_t length = 0u;
+    if (_dupenv_s(&configured, &length, "RAVEN_UI_DOCK_LAYOUT") == 0 &&
+        configured != nullptr)
+    {
+        const std::string path(configured);
+        std::free(configured);
+        if (path.empty() == false)
+        {
+            return path;
+        }
+    }
+    std::free(configured);
+#else
+    const char* configured = std::getenv("RAVEN_UI_DOCK_LAYOUT");
+    if (configured != nullptr && configured[0] != 0)
+    {
+        return configured;
+    }
+#endif
+    return "RavenUIDockDemo.layout.json";
 }
 
 std::vector<std::uint32_t> CollectDemoCodepoints()
@@ -353,6 +381,94 @@ void UITextDemoLayer::OnAttach()
     }
     std::cout << "[Raven UI Tab] Panel at (860, 490): wheel / drag / close.\n";
 
+    // Phase 9 Docking Demo: 保存済みレイアウトを優先し、初回起動は3 Paneを構築します。
+    // Content Factoryは既知のDemo Tabだけを再生成し、未知のIDは拒否します。
+    const auto createDockPage = [&atlas](std::uint64_t, const UITabItem& tab)
+        -> Scope<UIElement>
+    {
+        if (tab.Id < 201u || tab.Id > 204u)
+        {
+            return nullptr;
+        }
+        auto page = CreateScope<UILabel>();
+        page->SetFont(atlas);
+        page->SetText(tab.Title + ": drag splitters / select or close tabs.");
+        page->SetBaselineOffset(25.0f);
+        page->SetPreferredSize(math::Vec2(150.0f, 55.0f));
+        return page;
+    };
+    auto dock = CreateScope<UIDockSpace>();
+    dock->SetPosition(math::Vec2(24.0f, 490.0f));
+    dock->SetSize(math::Vec2(800.0f, 220.0f));
+    const std::string dockLayoutPath = FindDockLayoutPath();
+    UIDockSpaceSnapshot saved;
+    std::string dockError;
+    const bool loaded = LoadDockSnapshot(dockLayoutPath, saved, &dockError) == true &&
+        dock->RestoreSnapshot(saved, createDockPage) == true;
+    if (loaded == true)
+    {
+        // RestoreSnapshotはPaneごとにTabViewを作るため、復元後にFontを再設定します。
+        for (const UIDockLayoutRecord& record : saved.Structure)
+        {
+            if (record.Kind == UIDockNodeKind::Tabs)
+            {
+                UITabView* view = dock->GetTabView(record.Id);
+                if (view != nullptr)
+                {
+                    view->GetTabBar()->SetFont(atlas);
+                }
+            }
+        }
+        std::cout << "[Raven UI Dock] Layout restored: " << dockLayoutPath << '\n';
+    }
+    else
+    {
+        // 不正なファイルやFactory失敗時には破損したTreeを使わず初期構成を作り直します。
+        dock = CreateScope<UIDockSpace>();
+        dock->SetPosition(math::Vec2(24.0f, 490.0f));
+        dock->SetSize(math::Vec2(800.0f, 220.0f));
+        const std::uint64_t sceneLeaf = dock->GetLayout().GetRoot()->GetId();
+        UIDockNode* inspectorLeaf = dock->Split(sceneLeaf,
+            UIDockSplitAxis::Horizontal, 0.55f);
+        UIDockNode* consoleLeaf = inspectorLeaf != nullptr ?
+            dock->Split(inspectorLeaf->GetId(), UIDockSplitAxis::Vertical, 0.5f) : nullptr;
+        if (inspectorLeaf != nullptr && consoleLeaf != nullptr)
+        {
+            UITabView* sceneView = dock->CreateTabView(sceneLeaf);
+            UITabView* inspectorView = dock->CreateTabView(inspectorLeaf->GetId());
+            UITabView* consoleView = dock->CreateTabView(consoleLeaf->GetId());
+            if (sceneView != nullptr && inspectorView != nullptr && consoleView != nullptr)
+            {
+                sceneView->GetTabBar()->SetFont(atlas);
+                inspectorView->GetTabBar()->SetFont(atlas);
+                consoleView->GetTabBar()->SetFont(atlas);
+                const auto addDemoDockTab = [&dock, &createDockPage](
+                    std::uint64_t leaf, std::uint64_t id, const std::string& title,
+                    bool closable)
+                {
+                    const UITabItem tab{ id, title, closable };
+                    return dock->AddTab(leaf, id, title,
+                        createDockPage(leaf, tab), closable);
+                };
+                if (addDemoDockTab(sceneLeaf, 201u, "Scene", false) == false ||
+                    addDemoDockTab(sceneLeaf, 202u, "Game", true) == false ||
+                    addDemoDockTab(inspectorLeaf->GetId(), 203u, "Inspector", false) == false ||
+                    addDemoDockTab(consoleLeaf->GetId(), 204u, "Console", false) == false)
+                {
+                    std::cout << "[Raven UI Dock] Failed to initialize demo tabs.\n";
+                }
+            }
+        }
+        if (std::filesystem::exists(dockLayoutPath) == true)
+        {
+            std::cout << "[Raven UI Dock] Layout ignored: " << dockError << '\n';
+        }
+    }
+    m_DockSpace = static_cast<UIDockSpace*>(
+        m_Application.GetUIContext().GetRootElement().AddChild(std::move(dock)));
+    std::cout << "[Raven UI Dock] Panel at (24, 490): drag splitters/tabs; "
+        << "layout path: " << dockLayoutPath << '\n';
+
     // Tooltipは通常のHover入力を遮らず、Popup表示中は自動的に隠れます。
     UIContext& tooltipContext = m_Application.GetUIContext();
     tooltipContext.SetTooltip(m_PopupTrigger, "Open Popup", atlas);
@@ -365,6 +481,18 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_DockSpace != nullptr)
+    {
+        // UI Tree破棄前にTree/Tab状態を保存します。失敗しても終了処理は継続します。
+        std::string error;
+        if (SaveDockSnapshot(FindDockLayoutPath(), m_DockSpace->SaveSnapshot(),
+            &error) == false)
+        {
+            std::cout << "[Raven UI Dock] Layout save failed: " << error << '\n';
+        }
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_DockSpace);
+        m_DockSpace = nullptr;
+    }
     if (m_TabView != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_TabView);
