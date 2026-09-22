@@ -322,6 +322,8 @@ protected:
     virtual void OnCharacterEvent(UICharacterEvent& event) { (void)event; }
     virtual void OnIMEEvent(UIIMEEvent& event) { (void)event; }
     virtual void OnFocusChanged(bool focused) { (void)focused; }
+    // Contextの倍率変更時にWidget固有のDIP寸法を更新する拡張点です。
+    virtual void OnDPIScaleChanged() {}
     virtual void OnContextChanged(UIContext* previous, UIContext* current)
     {
         (void)previous;
