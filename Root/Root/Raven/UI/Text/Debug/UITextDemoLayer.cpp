@@ -483,6 +483,13 @@ void UITextDemoLayer::OnDetach()
 {
     if (m_DockSpace != nullptr)
     {
+        // UI Tree破棄前にTree/Tab状態を保存します。失敗しても終了処理は継続します。
+        std::string error;
+        if (SaveDockSnapshot(FindDockLayoutPath(), m_DockSpace->SaveSnapshot(),
+            &error) == false)
+        {
+            std::cout << "[Raven UI Dock] Layout save failed: " << error << '\n';
+        }
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_DockSpace);
         m_DockSpace = nullptr;
     }
