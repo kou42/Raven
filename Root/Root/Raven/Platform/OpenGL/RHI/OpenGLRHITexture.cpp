@@ -74,13 +74,13 @@ bool OpenGLRHITexture::TrySetData(const void* data, std::size_t dataSize)
         * bytesPerPixel;
     if (bytesPerPixel == 0 || dataSize != requiredSize)
     {
-        return;
+        return false;
     }
 
     const OpenGLTextureFormatInfo format = ToOpenGLTextureFormat(m_Specification.Format);
     if (format.DataFormat == GL_NONE)
     {
-        return;
+        return false;
     }
 
     if (glGetError() != GL_NO_ERROR)
