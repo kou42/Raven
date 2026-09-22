@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
 
@@ -87,6 +88,7 @@ public:
             }
             m_ButtonStates.erase(item.second);
             m_SliderStates.erase(item.second);
+            m_TextStates.erase(item.second);
             m_Widgets.erase(found);
         }
 
@@ -263,6 +265,60 @@ public:
         return changed;
     }
 
+    // UIInputTextの編集通知は一時的なstd::string*へ直接書き戻しません。
+    // 次回宣言時に変更を反映し、外部値の更新時のみWidgetへ同期します。
+    bool InputText(const std::string& id, std::string* value,
+        const Ref<UIFontAtlas>& font = nullptr,
+        const math::Vec2& size = math::Vec2(180.0f, 30.0f))
+    {
+        if (value == nullptr)
+        {
+            return false;
+        }
+        const std::string key = MakeKey(id);
+        UIInputText* input = GetOrCreate<UIInputText>(id);
+        if (input == nullptr)
+        {
+            return false;
+        }
+        auto& state = m_TextStates[key];
+        if (state == nullptr)
+        {
+            state = std::make_shared<TextState>();
+            const std::weak_ptr<TextState> weak = state;
+            input->SetOnChange([weak](const std::string& next)
+            {
+                if (const auto current = weak.lock())
+                {
+                    if (current->Synchronizing == false)
+                    {
+                        current->Value = next;
+                        current->Changed = true;
+                    }
+                }
+            });
+        }
+        input->SetPreferredSize(size);
+        if (font != nullptr && input->GetContext() != nullptr)
+        {
+            input->SetFont(font);
+        }
+
+        const bool changed = state->Changed;
+        if (changed == true)
+        {
+            *value = state->Value;
+            state->Changed = false;
+        }
+        if (input->GetText() != *value)
+        {
+            state->Synchronizing = true;
+            input->SetText(*value);
+            state->Synchronizing = false;
+        }
+        return changed;
+    }
+
     // ID Stackは長さ付きで符号化し、例えば ("ab","c") と ("a","bc") を区別します。
     bool PushID(const std::string& id)
     {
@@ -369,6 +425,13 @@ private:
         bool Synchronizing = false;
     };
 
+    struct TextState
+    {
+        std::string Value;
+        bool Changed = false;
+        bool Synchronizing = false;
+    };
+
     struct Entry
     {
         UIElement* Element;
@@ -400,6 +463,7 @@ private:
     std::unordered_set<std::string> m_Used;
     std::unordered_map<std::string, std::shared_ptr<ButtonState>> m_ButtonStates;
     std::unordered_map<std::string, std::shared_ptr<SliderState>> m_SliderStates;
+    std::unordered_map<std::string, std::shared_ptr<TextState>> m_TextStates;
     std::vector<std::string> m_IDStack;
     // PushIDとContainerのPop順序を混同させないためのScope種別です。
     std::vector<bool> m_IDKinds;
