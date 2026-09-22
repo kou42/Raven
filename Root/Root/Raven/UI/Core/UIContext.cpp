@@ -70,6 +70,24 @@ void UIContext::EndFrame()
         m_RootElement->BuildDrawList(m_DrawList);
     }
 
+    // Drag Previewは通常のTree描画後に追加し、WidgetのClip/Transformを継承しません。
+    // Hit Test対象となるUIElementは生成せず、Capture中のDrop先探索を妨げません。
+    if (m_DragActive == true)
+    {
+        const math::Vec2 min(m_LastPointerPosition.x + 12.0f,
+            m_LastPointerPosition.y + 12.0f);
+        const math::Vec2 max(min.x + 112.0f, min.y + 28.0f);
+        m_DrawList.AddRect(min, max,
+            m_DropTarget != nullptr
+                ? math::Vec4(0.22f, 0.52f, 0.34f, 0.82f)
+                : math::Vec4(0.34f, 0.37f, 0.44f, 0.76f));
+        // 左端のAccentで「受入可能 / 不可」を区別します。
+        m_DrawList.AddRect(min, math::Vec2(min.x + 4.0f, max.y),
+            m_DropTarget != nullptr
+                ? math::Vec4(0.42f, 0.90f, 0.57f, 0.95f)
+                : math::Vec4(0.85f, 0.67f, 0.36f, 0.95f));
+    }
+
     // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
     // nullptrは正常な状態として扱います。OpenGLUIRenderer追加後はApplication初期化時に
     // SetRenderer()して、この同じframe境界から実描画へ接続します。
