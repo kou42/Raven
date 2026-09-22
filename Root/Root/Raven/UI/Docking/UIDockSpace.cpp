@@ -771,7 +771,8 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
     }
     // Widget追加後の予期しない失敗でも部分復元を残さないよう、
     // 元TreeのSnapshotを保持して作成済みPaneとSplitterを巻き戻します。
-    const auto rollback = [this, &previous]()
+    UIDockLayout previousLayout = std::move(m_Layout);
+    const auto rollback = [this, &previousLayout]()
     {
         for (const auto& pane : m_Panes)
         {
@@ -780,8 +781,7 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
         m_TabViews.clear();
         m_Panes.clear();
         // TabView破棄後なら、論理Modelは外部Contentを参照しません。
-        m_Layout = UIDockLayout{};
-        m_Layout.RestoreStructure(previous.Structure);
+        m_Layout = std::move(previousLayout);
         m_PreviewLeaf = 0u;
         if (m_Preview != nullptr)
         {
@@ -789,10 +789,14 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
         }
         RefreshLayout();
     };
-    if (RestoreStructure(snapshot.Structure) == false)
+    // 検証済みTreeへ切り替えます。元Treeをmove保持してID発行状態まで復元可能にします。
+    m_Layout = std::move(candidate);
+    m_PreviewLeaf = 0u;
+    if (m_Preview != nullptr)
     {
-        return false;
+        m_Preview->SetVisible(false);
     }
+    RefreshLayout();
     for (const UIDockLayoutRecord& record : snapshot.Structure)
     {
         if (record.Kind == UIDockNodeKind::Tabs)
