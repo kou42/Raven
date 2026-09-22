@@ -335,9 +335,15 @@ bool UIFontAtlasBuilder::BuildFromFile(
     if (texture == nullptr || texture->GetID() == 0u)
     {
         // RHI Deviceが未準備なら再試行すべき原因をLabel側まで伝えます。
-        return fail(textureFailure == TextureCreationFailure::DeviceUnavailable
-            ? UIFontAtlasBuildFailure::TextureDeviceUnavailable
-            : UIFontAtlasBuildFailure::TextureCreationFailed);
+        if (textureFailure == TextureCreationFailure::DeviceUnavailable)
+        {
+            return fail(UIFontAtlasBuildFailure::TextureDeviceUnavailable);
+        }
+        if (textureFailure == TextureCreationFailure::UploadFailed)
+        {
+            return fail(UIFontAtlasBuildFailure::TextureUploadFailed);
+        }
+        return fail(UIFontAtlasBuildFailure::TextureCreationFailed);
     }
 
     // Fontバイト列はRasterize終了後に解放できます。AtlasはGPU Textureだけを所有します。
