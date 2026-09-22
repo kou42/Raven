@@ -473,13 +473,12 @@ WindowID Application::DetachDockTabToNewWindow(
     // 非選択TabはContentが非表示なので、新Windowへ渡す前に表示状態を戻します。
     content->SetVisible(true);
     UIElement* raw = content.get();
-    if (destination->GetRootElement().AddChild(std::move(content)) != raw)
+    if (destination->AddRootChild(std::move(content)) != raw)
     {
         // 通常は到達しません。Root追加失敗でも空Windowは残しません。
         m_WindowManager.UnregisterWindow(destinationID);
         return 0;
     }
-    destination->GetRootElement().BringChildToFront(destination->GetPopupLayer());
     return destinationID;
 }
 
