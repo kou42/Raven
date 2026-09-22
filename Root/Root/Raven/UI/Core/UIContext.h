@@ -101,6 +101,9 @@ public:
     // Payloadは値で保持し、Drag中に呼び出し元の一時データが破棄されても安全です。
     bool BeginDrag(UIElement* source, UIDragDropPayload payload, const math::Vec2& startPosition);
     void CancelDrag();
+    // Drag元が任意で設定するPreview文字列。Font未設定時は従来の矩形表示です。
+    void SetDragPreview(std::string text, const Ref<UIFontAtlas>& font);
+    const std::string& GetDragPreviewText() const { return m_DragPreviewText; }
     bool IsDragging() const { return m_DragActive; }
     bool HasPendingDrag() const { return m_DragSource != nullptr; }
     UIElement* GetDragSource() const { return m_DragSource; }
@@ -186,6 +189,8 @@ private:
     math::Vec2 m_DragStart{};
     float m_DragThreshold = 5.0f;
     bool m_DragActive = false;
+    std::string m_DragPreviewText;
+    Ref<UIFontAtlas> m_DragPreviewFont;
     bool m_FrameActive = false;
     std::function<void()> m_IMECancelCallback;
 };
