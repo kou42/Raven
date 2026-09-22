@@ -357,8 +357,31 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
     const bool cleanupRegistered = m_WindowManager.SetWindowCloseCleanup(id,
         [this, id](Window&)
         {
+            const auto it = m_AuxiliaryUIContexts.find(id);
+            if (it == m_AuxiliaryUIContexts.end())
+            {
+                return;
+            }
+
+            // OS補助Windowを閉じても通常Widgetの所有権を失わないようMainへ戻します。
+            // DetachChildが旧WindowのCapture/Focus/IMEを解除します。
+            // Rootの内部Popup/TooltipはContext固有なので移動せずContextと共に破棄します。
+            UIContext& source = *it->second;
+            std::vector<UIElement*> children;
+            for (const auto& child : source.GetRootElement().GetChildren())
+            {
+                if (child != nullptr)
+                {
+                    children.push_back(child.get());
+                }
+            }
+            for (UIElement* child : children)
+            {
+                source.TransferRootChildTo(m_UIContext, child);
+            }
+
             // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
-            m_AuxiliaryUIContexts.erase(id);
+            m_AuxiliaryUIContexts.erase(it);
         });
     if (restored == false || cleanupRegistered == false ||
         m_WindowManager.AttachFrameLifecycle(id) == false)
