@@ -2,6 +2,7 @@
 
 #include "Raven/UI/Text/UIFontAtlas.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <tuple>
@@ -42,6 +43,14 @@ public:
 
 // GPU Contextを持つ呼び出し側が所有する明示Cacheです。
 // Fontパス・文字集合・Atlas設定・量子化したDPI倍率が一致するAtlasだけを再利用します。
+enum class UIFontAtlasBuildFailure
+{
+    None,
+    InvalidDPIOptions,
+    FontFileUnavailable,
+    AtlasBuildFailed
+};
+
 class UIFontAtlasDPICache
 {
 public:
@@ -58,7 +67,8 @@ public:
         const std::vector<std::uint32_t>& codepoints,
         const UIFontAtlasBuildOptions& baseOptions,
         float effectiveScale,
-        float& outRasterScale);
+        float& outRasterScale,
+        UIFontAtlasBuildFailure* outFailure = nullptr);
     void Clear() { m_Entries.clear(); }
     std::size_t GetEntryCount() const { return m_Entries.size(); }
 
