@@ -66,6 +66,15 @@ void UIContext::EndFrame()
     // UIElement Treeはframeを跨いで保持し、描画直前にAbsolute / Vertical / Horizontal Layoutを解決して
     // 今frame用DrawCommandへ展開します。将来Measure / Arrangeを分離してもUIContextのframe境界は維持します。
     UpdateTooltip();
+    if (m_DragActive == true)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        // 停止・デバッグ復帰後の巨大なDeltaで一気にスクロールしないよう上限を設けます。
+        const float deltaSeconds = std::min(
+            std::chrono::duration<float>(now - m_LastDragTick).count(), 0.05f);
+        m_LastDragTick = now;
+        TickDrag(std::max(0.0f, deltaSeconds));
+    }
     if (m_RootElement != nullptr)
     {
         m_RootElement->BuildDrawList(m_DrawList);
@@ -313,6 +322,7 @@ bool UIContext::BeginDrag(UIElement* source, UIDragDropPayload payload, const ma
     m_DragStart = startPosition;
     m_DragActive = false;
     m_DropTarget = nullptr;
+    m_LastDragTick = std::chrono::steady_clock::now();
     return true;
 }
 
@@ -365,7 +375,7 @@ void UIContext::SendDragEvent(UIElement* element, UIDragDropEventType type, cons
     element->HandleDragDropEvent(event);
 }
 
-void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
+void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget, float deltaSeconds)
 {
     if (m_DragSource == nullptr)
     {
@@ -380,6 +390,7 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
             return;
         }
         m_DragActive = true;
+        m_LastDragTick = std::chrono::steady_clock::now();
         HideTooltip();
         SendDragEvent(m_DragSource, UIDragDropEventType::Begin, position);
         if (m_DragSource == nullptr)
@@ -403,6 +414,7 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
         }
         UIDragDropEvent event;
         event.Type = UIDragDropEventType::Over;
+        event.DeltaSeconds = deltaSeconds;
         event.Payload = &m_DragPayload;
         event.Source = m_DragSource;
         event.ScreenPosition = position;
@@ -434,6 +446,18 @@ void UIContext::UpdateDrag(const math::Vec2& position, UIElement* hitTarget)
             SendDragEvent(accepted, UIDragDropEventType::Enter, position);
         }
     }
+}
+
+void UIContext::TickDrag(float deltaSeconds)
+{
+    if (m_DragActive == false || m_RootElement == nullptr ||
+        std::isfinite(deltaSeconds) == false || deltaSeconds <= 0.0f)
+    {
+        return;
+    }
+    // 自動スクロールによって表示行が変わるため、毎TickでDrop先を再判定します。
+    UIElement* hitTarget = UIHitTest::FindTopmost(*m_RootElement, m_LastPointerPosition);
+    UpdateDrag(m_LastPointerPosition, hitTarget, deltaSeconds);
 }
 
 void UIContext::FinishDrag(const math::Vec2& position, UIElement* hitTarget)
