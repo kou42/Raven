@@ -49,7 +49,12 @@ public:
 
     virtual void SetData(const void* data, std::size_t dataSize) = 0;
     // 明示診断経路です。既存のvoid SetData呼び出しは維持します。
-    virtual bool TrySetData(const void* data, std::size_t dataSize) = 0;
+    virtual bool TrySetData(const void* data, std::size_t dataSize)
+    {
+        (void)data;
+        (void)dataSize;
+        return false;
+    }
     virtual const RHITextureSpecification& GetSpecification() const = 0;
 };
 
