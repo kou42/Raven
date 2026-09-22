@@ -6,11 +6,28 @@
 #include "Raven/UI/Widgets/UITabView.h"
 
 #include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
 #include <memory>
 #include <unordered_map>
 
 namespace Raven
 {
+
+// UIElementは永続化できないため、復元時はTab IDからContentを再生成します。
+struct UIDockTabRecord
+{
+    std::uint64_t LeafId = 0u;
+    UITabItem Tab;
+};
+
+struct UIDockSpaceSnapshot
+{
+    std::vector<UIDockLayoutRecord> Structure;
+    std::vector<UIDockTabRecord> Tabs;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> Selections;
+};
 
 // Docking論理Treeの配置結果をRetained UI Treeへ反映するHostです。
 // PaneのUIElement所有権はDockSpaceが持ち、論理NodeはIDだけで対応付けます。
@@ -45,6 +62,10 @@ public:
     bool CloseEmptyPane(std::uint64_t leafId);
     // UI Pane未生成のDockSpaceへ幾何Snapshotを復元します。
     bool RestoreStructure(const std::vector<UIDockLayoutRecord>& records);
+    UIDockSpaceSnapshot SaveSnapshot() const;
+    // 空DockSpace専用。Factoryが全Contentを生成できた場合のみ復元を開始します。
+    using ContentFactory = std::function<Scope<UIElement>(std::uint64_t, const UITabItem&)>;
+    bool RestoreSnapshot(const UIDockSpaceSnapshot& snapshot, const ContentFactory& factory);
     void RefreshLayout();
     void SetSplitterThickness(float value);
     void SetMinimumPaneExtent(float value);
