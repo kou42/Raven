@@ -569,6 +569,8 @@ void TestTable()
 }
 } // namespace
 
+namespace
+{
 // Drag & DropのCapture・閾値・Drop先・CancelをGPUなしで検証します。
 class DragProbe final : public Raven::UIElement
 {
@@ -635,6 +637,8 @@ void TestDragDropRouting()
     Check(sourcePtr->Cancels == 1 && context.HasPendingDrag() == false, "escape cancels");
     Check(context.HasMouseCapture() == false, "escape releases capture");
 }
+
+} // namespace
 
 int main()
 {
