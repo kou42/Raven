@@ -65,6 +65,41 @@ void TestUIImmediateContext()
     CheckImmediate(immediate.BeginFrame() == false, "UIContext active rejects BeginFrame");
     context.EndFrame();
 
+    // 入力通知はRetained Widgetに届き、次のImmediate宣言で一度だけ消費します。
+    CheckImmediate(immediate.BeginFrame() == true, "widget API BeginFrame");
+    auto* label = immediate.Text("caption", "Physics Debug");
+    CheckImmediate(label != nullptr && label->GetText() == "Physics Debug",
+        "Text creates label");
+    CheckImmediate(immediate.Button("reset") == false, "button initially false");
+    float gravity = 9.8f;
+    CheckImmediate(immediate.SliderFloat("gravity", &gravity, 0.0f, 20.0f) == false,
+        "slider initially unchanged");
+    CheckImmediate(immediate.EndFrame() == true, "widget API EndFrame");
+
+    auto* reset = dynamic_cast<Raven::UIButton*>(
+        context.GetRootElement().GetChildren()[context.GetRootElement().GetChildren().size() - 2u].get());
+    CheckImmediate(reset != nullptr && context.SetFocus(reset) == true,
+        "focus immediate button");
+    Raven::UIKeyEvent enter{};
+    enter.Key = Raven::UIKey::Enter;
+    enter.Pressed = true;
+    CheckImmediate(context.RouteKeyEvent(enter) == true, "activate button");
+
+    CheckImmediate(immediate.BeginFrame() == true, "consume input BeginFrame");
+    CheckImmediate(immediate.Text("caption", "Updated") == label &&
+        label->GetText() == "Updated", "label reused and updated");
+    CheckImmediate(immediate.Button("reset") == true, "button click consumed");
+    CheckImmediate(immediate.SliderFloat("gravity", &gravity, 0.0f, 20.0f) == false,
+        "slider still unchanged");
+    CheckImmediate(immediate.EndFrame() == true, "consume input EndFrame");
+
+    CheckImmediate(immediate.BeginFrame() == true, "one-shot BeginFrame");
+    CheckImmediate(immediate.Text("caption", "Updated") == label, "label remains stable");
+    CheckImmediate(immediate.Button("reset") == false, "click not replayed");
+    CheckImmediate(immediate.SliderFloat("gravity", &gravity, 0.0f, 20.0f) == false,
+        "slider no replay");
+    CheckImmediate(immediate.EndFrame() == true, "one-shot EndFrame");
+
     CheckImmediate(immediate.BeginFrame() == true, "abort BeginFrame");
     CheckImmediate(immediate.PushID("pending") == true, "abort PushID");
     immediate.AbortFrame();
