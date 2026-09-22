@@ -330,7 +330,6 @@ protected:
             if (m_NodeDragDropEnabled == true && event.Context != nullptr && node->Id != 0u)
             {
                 m_PendingNodeId = node->Id;
-                m_NodeDragStart = event.ScreenPosition;
                 // Down時点でCaptureし、PointerがTree外へ出てもMoveを受け取ります。
                 // 閾値未満のUpはUIContextが通常Clickとして扱います。
                 event.Context->BeginDrag(this,
@@ -589,7 +588,6 @@ private:
     ExpansionHandler m_OnExpansionChanged;
     NodeDroppedHandler m_OnNodeDropped;
     std::uint64_t m_PendingNodeId = 0u;
-    math::Vec2 m_NodeDragStart{};
     bool m_NodeDragDropEnabled = false;
     float m_RowHeight = 24.0f;
     float m_Indent = 18.0f;
