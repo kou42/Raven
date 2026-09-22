@@ -639,6 +639,13 @@ void WindowsWindow::Shutdown()
 
     if (m_Window != nullptr)
     {
+        // 最後のOpenGL Windowも含め、破棄対象をCurrentにしたまま残しません。
+        // 他WindowのContextがCurrentなら変更せず、Manager側の復元結果を維持します。
+        if (m_Data.Backend == RHIBackend::OpenGL &&
+            glfwGetCurrentContext() == m_Window)
+        {
+            glfwMakeContextCurrent(nullptr);
+        }
         glfwDestroyWindow(m_Window);
         m_Window = nullptr;
     }
