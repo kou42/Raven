@@ -68,6 +68,41 @@ void Check(bool condition, const char* label)
 
 // UTF-8のCursor/SelectionとUndo/Redoを描画・GPUなしで検証します。
 
+// 空Paneを畳んだときSiblingのID/Contentと祖先の配置を保持します。
+void TestDockCollapse()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(600.0f, 400.0f));
+    const std::uint64_t leftId = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.CloseEmptyPane(leftId) == false, "dock root cannot collapse");
+    Raven::UIDockNode* right = dock.Split(leftId, Raven::UIDockSplitAxis::Horizontal);
+    Check(right != nullptr, "dock collapse first split");
+    const std::uint64_t rightId = right->GetId();
+    const std::uint64_t splitId = dock.GetLayout().GetRoot()->GetId();
+    Raven::UIDockNode* bottom = dock.Split(rightId, Raven::UIDockSplitAxis::Vertical);
+    Check(bottom != nullptr, "dock collapse nested split");
+    const std::uint64_t bottomId = bottom->GetId();
+    const std::uint64_t nestedId = dock.GetLayout().FindNode(rightId)->GetParent()->GetId();
+    Check(dock.CreateTabView(rightId) != nullptr, "dock collapse right view");
+    Check(dock.CreateTabView(bottomId) != nullptr, "dock collapse bottom view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = page.get();
+    Check(dock.AddTab(rightId, 81u, "Keep", std::move(page)), "dock collapse keep tab");
+    Check(dock.CloseEmptyPane(rightId) == false, "dock nonempty cannot collapse");
+    Check(dock.CloseEmptyPane(bottomId), "dock collapse empty bottom");
+    Check(dock.GetLayout().FindNode(bottomId) == nullptr, "dock removed leaf id");
+    Check(dock.GetLayout().FindNode(nestedId) == nullptr, "dock removed split id");
+    Check(dock.GetSplitter(nestedId) == nullptr, "dock removed splitter widget");
+    Check(dock.GetLayout().FindNode(rightId)->GetParent()->GetId() == splitId,
+        "dock promoted sibling parent");
+    Check(dock.GetTabView(rightId)->GetTabContent(81u) == original,
+        "dock promoted content preserved");
+    Check(dock.CloseEmptyPane(leftId), "dock collapse other empty pane");
+    Check(dock.GetLayout().GetRoot()->GetId() == rightId, "dock promoted root id");
+    Check(dock.GetSplitter(splitId) == nullptr, "dock old root splitter removed");
+    Check(dock.CloseEmptyPane(rightId) == false, "dock last leaf retained");
+}
+
 // Pane間移動ではTabのContentインスタンスとClosable設定を保持します。
 void TestDockTabTransfer()
 {
@@ -1375,5 +1410,6 @@ int main()
     TestDockSpace();
     TestDockTabView();
     TestDockTabTransfer();
+    TestDockCollapse();
     return 0;
 }
