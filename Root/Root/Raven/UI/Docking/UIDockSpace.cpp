@@ -710,6 +710,12 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
     {
         return false;
     }
+    // 既存の論理Tabを持つ空Paneも復元対象にしません。失敗時の元状態を保持します。
+    const UIDockSpaceSnapshot previous = SaveSnapshot();
+    if (previous.Tabs.empty() == false)
+    {
+        return false;
+    }
     UIDockLayout candidate;
     if (candidate.RestoreStructure(snapshot.Structure) == false)
     {
@@ -735,6 +741,7 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
         if (it == models.end() ||
             it->second.AddTab(record.Tab.Id, record.Tab.Title, record.Tab.Closable) == false)
         {
+            rollback();
             return false;
         }
     }
@@ -763,6 +770,26 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
         }
         contents.push_back(std::move(content));
     }
+    // Widget追加後の予期しない失敗でも部分復元を残さないよう、
+    // 元TreeのSnapshotを保持して作成済みPaneとSplitterを巻き戻します。
+    const auto rollback = [this, &previous]()
+    {
+        for (const auto& pane : m_Panes)
+        {
+            RemoveChild(pane.second);
+        }
+        m_TabViews.clear();
+        m_Panes.clear();
+        // TabView破棄後なら、論理Modelは外部Contentを参照しません。
+        m_Layout = UIDockLayout{};
+        m_Layout.RestoreStructure(previous.Structure);
+        m_PreviewLeaf = 0u;
+        if (m_Preview != nullptr)
+        {
+            m_Preview->SetVisible(false);
+        }
+        RefreshLayout();
+    };
     if (RestoreStructure(snapshot.Structure) == false)
     {
         return false;
@@ -771,7 +798,11 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
     {
         if (record.Kind == UIDockNodeKind::Tabs)
         {
-            CreateTabView(record.Id);
+            if (CreateTabView(record.Id) == nullptr)
+            {
+                rollback();
+                return false;
+            }
         }
     }
     for (std::size_t index = 0u; index < snapshot.Tabs.size(); ++index)
@@ -787,7 +818,11 @@ bool UIDockSpace::RestoreSnapshot(const UIDockSpaceSnapshot& snapshot,
     {
         if (selection.second != 0u)
         {
-            SelectTab(selection.first, selection.second);
+            if (SelectTab(selection.first, selection.second) == false)
+            {
+                rollback();
+                return false;
+            }
         }
     }
     return true;
