@@ -31,6 +31,9 @@ public:
     void SetLineHeightDIP(float height);
     float GetBaselineOffset() const { return m_BaselineOffset; }
     float GetLineHeight() const { return m_LineHeight; }
+    // 既存の等倍描画は維持し、明示的に有効化したLabelだけGlyphをDPI倍率で拡大します。
+    void SetScaleGlyphsWithDPI(bool enabled);
+    bool GetScaleGlyphsWithDPI() const { return m_ScaleGlyphsWithDPI; }
 
     void SetWrapMode(UITextWrapMode mode);
     void SetTextAlignment(UITextHorizontalAlignment alignment);
@@ -58,6 +61,7 @@ private:
     float m_LineHeightDIP = 20.0f;
     bool m_UseBaselineOffsetDIP = false;
     bool m_UseLineHeightDIP = false;
+    bool m_ScaleGlyphsWithDPI = false;
     UITextWrapMode m_WrapMode = UITextWrapMode::None;
     UITextHorizontalAlignment m_TextAlignment = UITextHorizontalAlignment::Left;
 };
