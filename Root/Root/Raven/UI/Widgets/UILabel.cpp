@@ -192,10 +192,13 @@ math::Vec2 UILabel::MeasureText(float maxWidth) const
 
     UITextLayoutOptions options{};
     options.LineHeight = m_LineHeight;
-    if (m_ScaleGlyphsWithDPI == true && GetContext() != nullptr)
+    if (m_ScaleGlyphsWithDPI == true)
     {
-        options.GlyphScale = math::Vec2(GetContext()->GetEffectiveScaleX() / m_FontRasterScale,
-            GetContext()->GetEffectiveScaleY() / m_FontRasterScale);
+        const UIContext* context = GetContext();
+        const float scaleX = context != nullptr ? context->GetEffectiveScaleX() : 1.0f;
+        const float scaleY = context != nullptr ? context->GetEffectiveScaleY() : 1.0f;
+        // AtlasのRasterize倍率と現在のDPI倍率の差分だけ拡大し、二重Scaleを防ぎます。
+        options.GlyphScale = math::Vec2(scaleX / m_FontRasterScale, scaleY / m_FontRasterScale);
     }
     // 初回MeasureはPreferred幅、Stretch時の再Measureは親から確定した幅を使います。
     options.MaxWidth = maxWidth;
