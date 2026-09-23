@@ -122,10 +122,7 @@ RHIFrameResult VulkanSceneRuntime::DrawPreparedFrame()
         m_Context, commands, *m_PreparedFrame);
     // GPUが参照するBufferはContext側がFence完了まで保持します。
     m_PreparedFrame.reset();
-    if (result == RHIFrameResult::FatalError)
-    {
-        Shutdown();
-    }
+    // FatalErrorでもRuntimeを破棄せず、所有元Applicationの終了処理へ委譲します。
     return result;
 }
 
@@ -133,17 +130,12 @@ RHIFrameResult VulkanSceneRuntime::DrawFrame()
 {
     if (PrepareFrame() == false)
     {
-        Shutdown();
         return RHIFrameResult::FatalError;
     }
     const RHIFrameResult begin = m_Context.BeginFrame();
     if (begin != RHIFrameResult::Success)
     {
         m_PreparedFrame.reset();
-        if (begin == RHIFrameResult::FatalError)
-        {
-            Shutdown();
-        }
         return begin;
     }
     return DrawPreparedFrame();
