@@ -15,6 +15,7 @@
 #include "Raven/UI/Debug/UITreeMutationValidation.h"
 #endif
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <iostream>
