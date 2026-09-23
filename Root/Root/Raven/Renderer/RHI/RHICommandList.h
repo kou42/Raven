@@ -13,6 +13,15 @@ class Pipeline;
 class Texture;
 class VertexArray;
 
+struct RHIScissor
+{
+    bool Enabled = false;
+    uint32_t X = 0;
+    uint32_t Y = 0;
+    uint32_t Width = 0;
+    uint32_t Height = 0;
+};
+
 struct RHIViewport
 {
     uint32_t X = 0;
@@ -51,6 +60,8 @@ public:
 
     // ScissorはFramebufferの左下原点Pixel座標。UIの左上原点からの変換は呼び出し側が行います。
     virtual void SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+    // Enabledがfalseの場合も矩形を保持し、Overlay終了時に元のstateを復元できます。
+    virtual RHIScissor GetScissor() const = 0;
 
     virtual void SetClearColor(float r, float g, float b, float a) = 0;
     virtual void Clear() = 0;
