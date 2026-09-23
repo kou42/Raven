@@ -373,20 +373,13 @@ void OpenGLUIRenderer::Render(
     // さらに、直前の3D PipelineがPolygonMode / ColorMask / DepthMaskなどを変更していても
     // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
     // Image描画ではTexture Unit 0も変更するため、Active TextureとBindingも同じ方針で保存・復元します。
-    GLint previousDrawFramebuffer = 0;
-    GLint previousReadFramebuffer = 0;
-    GLint previousDrawBuffer = GL_BACK;
-    GLint previousReadBuffer = GL_BACK;
+    const RHIRenderTargetState previousRenderTarget = RenderCommand::CaptureRenderTargetState();
     GLint previousViewport[4] = { 0, 0, 0, 0 };
     const RHIScissor previousScissor = RenderCommand::GetScissor();
     GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
 
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFramebuffer);
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
-    glGetIntegerv(GL_DRAW_BUFFER, &previousDrawBuffer);
-    glGetIntegerv(GL_READ_BUFFER, &previousReadBuffer);
     glGetIntegerv(GL_VIEWPORT, previousViewport);
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
@@ -399,18 +392,10 @@ void OpenGLUIRenderer::Render(
 
     GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
     GLboolean previousDepthMask = GL_TRUE;
-    GLboolean doubleBuffered = GL_FALSE;
     glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
     glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
-    glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
 
     RenderCommand::BindDefaultRenderTarget();
-
-    // Default framebufferがDouble Bufferの場合、画面へ提示されるのは通常Back Bufferです。
-    // 直前のoffscreen描画や外部stateでDrawBufferが別値になっていてもUIを正しいBufferへ書くため、
-    // Main Window用Contextでは描画先を明示します。
-    const GLenum defaultColorBuffer = doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT;
-    glDrawBuffer(defaultColorBuffer);
 
     // Overlayの描画先をdefault framebufferへ切り替えた後、RHI経由でviewportを設定します。
     RenderCommand::SetViewport(0u, 0u,
@@ -531,10 +516,7 @@ void OpenGLUIRenderer::Render(
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
     glActiveTexture(static_cast<GLenum>(previousActiveTexture));
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
-    glDrawBuffer(static_cast<GLenum>(previousDrawBuffer));
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
-    glReadBuffer(static_cast<GLenum>(previousReadBuffer));
+    RenderCommand::RestoreRenderTargetState(previousRenderTarget);
     // 以前のviewportも共通命令で復元します。負の座標はOpenGL側の既存stateとして直接復元します。
     if (previousViewport[0] >= 0 && previousViewport[1] >= 0 &&
         previousViewport[2] >= 0 && previousViewport[3] >= 0)
