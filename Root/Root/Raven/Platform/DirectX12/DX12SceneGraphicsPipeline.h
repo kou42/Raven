@@ -12,7 +12,7 @@
 namespace Raven
 {
 
-// 最初のDX12 Scene PSO。Texture/Depth Attachmentは後続実装で接続します。
+// DX12 Scene PSO。Depth Attachmentは後続実装で接続します。
 // b0のclip-space行列とb1のTintをRoot Constantsで渡します。
 class DX12SceneGraphicsPipeline final : public RHIGraphicsPipeline
 {
@@ -94,8 +94,14 @@ public:
         // PSO生成に失敗します。未対応Bindingを暗黙に成功扱いしません。
         D3D12_ROOT_SIGNATURE_DESC rootDescription{};
         // b0: clip-space行列(16 DWORD)、b1: Material Tint(4 DWORD)。
-        // Texture SRVは後続実装でDescriptor Tableを追加します。
-        D3D12_ROOT_PARAMETER parameters[2]{};
+        // t0: RGBA8 Texture SRV。Samplerはs0のStatic Samplerです。
+        D3D12_DESCRIPTOR_RANGE textureRange{};
+        textureRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        textureRange.NumDescriptors = 1;
+        textureRange.BaseShaderRegister = 0;
+        textureRange.RegisterSpace = 0;
+        textureRange.OffsetInDescriptorsFromTableStart = 0;
+        D3D12_ROOT_PARAMETER parameters[3]{};
         parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         parameters[0].Constants.ShaderRegister = 0;
         parameters[0].Constants.RegisterSpace = 0;
@@ -106,8 +112,23 @@ public:
         parameters[1].Constants.RegisterSpace = 0;
         parameters[1].Constants.Num32BitValues = 4;
         parameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        rootDescription.NumParameters = 2;
+        parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        parameters[2].DescriptorTable.NumDescriptorRanges = 1;
+        parameters[2].DescriptorTable.pDescriptorRanges = &textureRange;
+        parameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        rootDescription.NumParameters = 3;
         rootDescription.pParameters = parameters;
+        D3D12_STATIC_SAMPLER_DESC sampler{};
+        sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        sampler.MaxLOD = D3D12_FLOAT32_MAX;
+        sampler.ShaderRegister = 0;
+        sampler.RegisterSpace = 0;
+        sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        rootDescription.NumStaticSamplers = 1;
+        rootDescription.pStaticSamplers = &sampler;
         rootDescription.Flags =
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         Microsoft::WRL::ComPtr<ID3DBlob> serialized;
