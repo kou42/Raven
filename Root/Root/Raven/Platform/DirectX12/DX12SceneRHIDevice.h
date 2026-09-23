@@ -3,6 +3,7 @@
 #include "DX12SceneContext.h"
 #include "DX12SceneGraphicsPipeline.h"
 #include "DX12SceneRHIBuffer.h"
+#include "DX12SceneRHITexture.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Scene/Scene.h"
 
@@ -10,7 +11,7 @@ namespace Raven
 {
 
 // DX12SceneContextが所有するDeviceを借用し、Entity MeshのGPU Bufferを生成します。
-// Texture/Pipelineは未接続なので、未対応操作を成功扱いしません。
+// Textureは初期RGBA8転送のみ対応し、SRV Bindingは後続実装で接続します。
 class DX12SceneRHIDevice final : public RHIDevice
 {
 public:
@@ -92,10 +93,18 @@ public:
         const void* initialData = nullptr,
         std::size_t initialDataSize = 0) override
     {
-        (void)specification;
-        (void)initialData;
-        (void)initialDataSize;
-        return nullptr;
+        if (m_Context.GetNativeDevice() == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr)
+        {
+            return nullptr;
+        }
+        auto texture = CreateRef<DX12SceneRHITexture>();
+        if (texture->Init(m_Context.GetNativeDevice(),
+            specification, initialData, initialDataSize) == false)
+        {
+            return nullptr;
+        }
+        return texture;
     }
 
 private:
