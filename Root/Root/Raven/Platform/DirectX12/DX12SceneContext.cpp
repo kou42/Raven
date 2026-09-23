@@ -103,6 +103,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
     m_FrameSubmitted = false;
+    m_GraphicsPipelineBound = false;
     if (m_FrameRenderer.BeginRenderTarget(m_SwapChain, *frame.CommandList) == false ||
         m_FrameRenderer.ClearRenderTarget(*frame.CommandList, m_ClearColor) == false)
     {
@@ -162,6 +163,7 @@ RHIFrameResult DX12SceneContext::Present()
 
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_GraphicsPipelineBound = false;
     m_CurrentFrame = (m_CurrentFrame + 1) % static_cast<uint32_t>(m_Frames.size());
     return RHIFrameResult::Success;
 }
@@ -258,14 +260,32 @@ bool DX12SceneContext::RetainDrawBuffers(
     return true;
 }
 
+bool DX12SceneContext::BindGraphicsPipeline(
+    ID3D12PipelineState* pipelineState, ID3D12RootSignature* rootSignature)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || pipelineState == nullptr ||
+        rootSignature == nullptr)
+    {
+        return false;
+    }
+
+    // CommandListのResetでPSO/Root Signatureは引き継がれません。
+    // 毎Frame明示的にBindしてからIndexed Drawを許可します。
+    commandList->SetGraphicsRootSignature(rootSignature);
+    commandList->SetPipelineState(pipelineState);
+    m_GraphicsPipelineBound = true;
+    return true;
+}
+
 bool DX12SceneContext::DrawIndexed(
     const Ref<RHIBuffer>& vertexBuffer,
     const Ref<RHIBuffer>& indexBuffer,
     uint32_t stride, uint32_t indexCount)
 {
     ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
-    if (commandList == nullptr || vertexBuffer == nullptr ||
-        indexBuffer == nullptr || stride == 0 ||
+    if (commandList == nullptr || m_GraphicsPipelineBound == false ||
+        vertexBuffer == nullptr || indexBuffer == nullptr || stride == 0 ||
         vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
         indexBuffer->GetSpecification().Usage != RHIBufferUsage::Index)
     {
