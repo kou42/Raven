@@ -30,7 +30,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 1 | Font Atlas / Text Rendering | 実装中 | Font読込、Glyph Atlas、DrawList経由の文字表示、日本語fallback、基本描画検証 |
 | 2 | Text Layout / Text Measurement | 基盤実装済み・回帰テスト棚卸し済み（数値テスト・実描画検証は継続） | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
 | 3 | InputText / InputNumber | 実装中（InputText / InputNumberの基本操作・横スクロール確認済み、IME未対応） | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
-| 4 | ComboBox / Popup / Tooltip | 基本実装・Demo・CPU回帰テスト追加済み（コード確認）。実行ログ・実描画・Docking/Multi-Viewport統合検証は継続 | Focus、閉じる条件、重なり順、入力伝播の検証 |
+| 4 | ComboBox / Popup / Tooltip | **基本完了（ユーザー動作確認済み・PR #275）**。Docking/Multi-Viewport・異DPIの個別統合検証は継続 | Focus、閉じる条件、重なり順、入力伝播の検証 |
 | 5 | TreeView / Table | 実装中（TreeView基礎・Demo・縦Scroll/Scrollbar・Drag & Drop・回帰テスト追加。Drag & Dropはユーザー動作確認済み／Table基礎・Demo・回帰テスト追加） | Hierarchy相当の選択・展開、表の列・Scroll・基本操作 |
 | 6 | Window System | OS Window基盤（PR #247）と論理UIWindowの移動・Resize・前面化・Viewport移譲（PR #271）を実装し、ユーザー動作確認済み。Keyboard Focus等の拡張は継続 | 論理UI Windowの移動・Resize・Focus・Z順 |
 | 7 | Drag & Drop | 実装・ユーザー動作確認済み（PR #249。TreeView同一/別View移動、Root末尾Drop、自動Scroll/展開、無変更Drop抑制を含む） | Payload、Capture、Drop target、Cancel |
@@ -45,8 +45,9 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 ## Phase 4: ComboBox / Popup / Tooltip 棚卸し（2026-09-23）
 
 - [x] Popup Layer、ComboBox、Tooltip、Text Demoおよび既存CPU回帰テストの実装をコード確認。
-- [ ] RavenUITestの実行ログ、Windows Debugビルド、Text Demoの実描画・操作結果を記録。
-- [ ] Focus・閉じる条件・Z順・入力伝播の不足ケースを追加し、Docking / Multi-Viewportとの統合を確認。
+- [x] Popup外側Click、ComboBox Keyboard境界、Tooltip Delay/再登録のCPU回帰テストを追加（PR #275）。ユーザーから動作チェック問題なしとの報告を受け、Phase 4の基本完了条件を確認。
+- [ ] RavenUITestの個別実行ログ、Windows Debugビルドログ、Text Demoの実描画・操作の項目別結果を取得する（ユーザー動作確認の報告とログ取得は区別）。
+- [ ] Docking / Multi-Viewport・異DPIとの統合、Popup内Focus遷移、親Panel Clipの個別検証を継続。
 - 詳細は [`RAVEN_UI_PHASE4_TEST_AUDIT.md`](RAVEN_UI_PHASE4_TEST_AUDIT.md) を参照。コード確認と実行検証は区別する。
 
 ## Phase 2: Text Layout / Text Measurement 検証状況（2026-09-23）
@@ -192,6 +193,9 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 2026-09-23 | feature/ui-logical-window-viewport / PR #271 | 論理UIWindowの移動・Resize・前面化、Mainと補助OS Window間のドラッグ分離/復帰、Focus喪失・Mouse Up取りこぼし補完、空補助WindowのClose条件を実装 | ユーザーから実環境で動作チェック問題なしとの報告。GitHub差分レビュー済み。RavenUITest単体ログ・CI結果は未取得 | 異DPIモニター移動、Keyboard Focus/タイトル描画、Window Close統合テスト、他Backend |
 
 | 2026-09-23 | feature/ui-immediate-mode / PR #272 | UIImmediateContextの安定ID・Widget再利用、Text/Button/SliderFloat/InputText/専用Checkbox、Physics Debugパネル、Frame中断・Focus解除・Panel再生成の回帰テストを追加 | ユーザーから各段階の動作チェックで問題なしとの報告。GitHub差分・PR説明文を最終確認。RavenUITest単体ログ・Actions結果は未取得 | Immediate API拡張、正式Editor移行、UIContextとのFrame境界整理 |
+
+
+| 2026-09-23 | docs/ui-phase4-audit / PR #275 | Phase 4既存実装の棚卸しとPopup外側Click・ComboBox Keyboard境界・Tooltip DelayのCPU回帰テストを追加 | ユーザーから動作チェック問題なしとの報告。個別実行ログ・Docking/Multi-Viewport統合結果は未取得 | Phase 4基本完了。統合検証は継続課題として管理 |
 
 ## 更新ルール
 
