@@ -80,6 +80,13 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [ ] Overlayが現在のFramebuffer / Viewportサイズに追従する。
 - [ ] Debug line が Triangle として統計計上されないことを確認する。
 
+## UI RHI化の段階実装
+
+- [x] `RHICommandList::DrawIndexed` / `RenderCommand::DrawIndexed` にIndexBuffer要素単位の `firstIndex` を追加し、OpenGL Backendでbyte offsetへ変換する（コードレビュー済み・ビルド未検証）。
+- [ ] UI用RenderTarget / Scissorと描画stateの保存・復元契約を設計する。
+- [ ] UI Shader / PipelineのRHI経路を構築し、CommandごとのDrawを `RenderCommand` へ移行する。
+- [ ] UI / SVG / Imageの描画と既存3D state復元を実機確認する。
+
 ## 次の実装単位
 
 1. masterとの差分を最終レビューし、Legacy RendererAPI削除とOpenGL具体実装移動に取りこぼしがないことを確認する。
