@@ -88,6 +88,12 @@ bool VulkanSceneRuntime::PrepareScene(Scene& scene)
     return scene.PrepareRHIMeshes(*m_Device);
 }
 
+void VulkanSceneRuntime::DiscardPreparedFrame()
+{
+    // Acquire失敗時に残った参照をSwapChain再生成やDevice破棄前に解放します。
+    m_PreparedFrame.reset();
+}
+
 bool VulkanSceneRuntime::PrepareFrame()
 {
     m_PreparedFrame.reset();
