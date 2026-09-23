@@ -23,6 +23,7 @@ namespace Raven
 {
 
 class ImGuiLayer;
+class RHISceneFrameLifecycle;
 class UIDockSpace;
 class UIWindow;
 
@@ -110,6 +111,8 @@ public:
 private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
+    // Main Windowに紐づくFrame境界をApplicationが所有し、Windowより先に破棄します。
+    Scope<RHISceneFrameLifecycle> m_SceneFrame;
     // ManagerはMain Windowを借用登録します。宣言順によりManagerが先に破棄されます。
     WindowManager m_WindowManager;
     WindowID m_MainWindowID = 0;
