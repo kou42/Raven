@@ -2266,6 +2266,84 @@ Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
     return atlas;
 }
 
+
+void TestUILabelTextReflow()
+{
+    const auto font = CreateTextLayoutFixture();
+    Raven::UIElement root;
+    root.SetLayoutMode(Raven::UILayoutMode::Vertical);
+    root.SetPreferredSize(Raven::math::Vec2(60.0f, 0.0f));
+    root.SetPadding(5.0f);
+    root.SetSpacing(3.0f);
+
+    auto label = std::make_unique<Raven::UILabel>();
+    label->SetFont(font);
+    label->SetText("ABCD");
+    label->SetLineHeight(12.0f);
+    label->SetBaselineOffset(0.0f);
+    label->SetWrapMode(Raven::UITextWrapMode::Character);
+    label->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    Raven::UILabel* labelPtr = label.get();
+    root.AddChild(std::move(label));
+
+    auto sibling = std::make_unique<Raven::UIElement>();
+    sibling->SetPreferredSize(Raven::math::Vec2(10.0f, 7.0f));
+    Raven::UIElement* siblingPtr = sibling.get();
+    root.AddChild(std::move(sibling));
+
+    Raven::UIDrawList drawList;
+    root.BuildDrawList(drawList);
+    CheckNear("label wide height", labelPtr->GetDesiredSize().y, 12.0f);
+    CheckNear("label wide arranged width", labelPtr->GetSize().x, 50.0f);
+    CheckNear("label wide sibling y", siblingPtr->GetPosition().y, 20.0f);
+    CheckNear("label wide root height", root.GetDesiredSize().y, 32.0f);
+    Check(drawList.GetCommandCount() == 4u, "label wide glyph command count");
+
+    // 同じUILabelを再利用し、親幅の変更が文字数ではなく行数と兄弟位置へ伝播することを確認します。
+    root.SetPreferredSize(Raven::math::Vec2(35.0f, 0.0f));
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    CheckNear("label narrow height", labelPtr->GetDesiredSize().y, 24.0f);
+    CheckNear("label narrow arranged width", labelPtr->GetSize().x, 25.0f);
+    CheckNear("label narrow sibling y", siblingPtr->GetPosition().y, 32.0f);
+    CheckNear("label narrow root height", root.GetDesiredSize().y, 44.0f);
+    Check(drawList.GetCommandCount() == 4u, "label narrow glyph command count");
+    CheckNear("label narrow wrapped glyph x", drawList.GetCommands()[2u].Rect.Min.x, 5.0f);
+    CheckNear("label narrow wrapped glyph y", drawList.GetCommands()[2u].Rect.Min.y, 17.0f);
+
+    root.SetPreferredSize(Raven::math::Vec2(25.0f, 0.0f));
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    CheckNear("label smallest height", labelPtr->GetDesiredSize().y, 48.0f);
+    CheckNear("label smallest sibling y", siblingPtr->GetPosition().y, 56.0f);
+    CheckNear("label smallest root height", root.GetDesiredSize().y, 68.0f);
+
+    labelPtr->SetText("AB");
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    CheckNear("label text change height", labelPtr->GetDesiredSize().y, 24.0f);
+    CheckNear("label text change sibling y", siblingPtr->GetPosition().y, 32.0f);
+    Check(drawList.GetCommandCount() == 2u, "label text change glyph count");
+
+    root.SetPreferredSize(Raven::math::Vec2(60.0f, 0.0f));
+    root.SetClipChildren(true);
+    labelPtr->SetText("ABCD");
+    labelPtr->SetTextAlignment(Raven::UITextHorizontalAlignment::Right);
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    CheckNear("right aligned label glyph x", drawList.GetCommands()[0u].Rect.Min.x, 15.0f);
+    Check(drawList.GetCommands()[0u].Clip.Enabled, "label glyph inherits parent clip");
+    CheckNear("label glyph clip min x", drawList.GetCommands()[0u].Clip.Rect.Min.x, 0.0f);
+    CheckNear("label glyph clip max x", drawList.GetCommands()[0u].Clip.Rect.Max.x, 60.0f);
+    CheckNear("label glyph clip max y", drawList.GetCommands()[0u].Clip.Rect.Max.y, 32.0f);
+
+    labelPtr->SetVisible(false);
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    Check(drawList.GetCommandCount() == 0u, "hidden label emits no glyph commands");
+    CheckNear("hidden label sibling y", siblingPtr->GetPosition().y, 5.0f);
+}
+
 void TestTextLayoutMeasurement()
 {
     const auto font = CreateTextLayoutFixture();
@@ -2343,6 +2421,7 @@ void TestTextLayoutMeasurement()
 int main()
 {
     TestTextLayoutMeasurement();
+    TestUILabelTextReflow();
     TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();
