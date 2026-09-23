@@ -35,6 +35,8 @@ public:
     // Scene DrawのRasterizer領域とScissorを同時に設定します。
     bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
+    // 描画途中のClearを現在のRTVへ記録します（次FrameのClear色は変更しません）。
+    bool ClearColorAttachment(const float color[4]);
     ID3D12GraphicsCommandList* GetActiveCommandList() const;
 
     // Scene用Buffer/PipelineはClear DemoとDeviceを共有せず、このContextから生成します。
