@@ -23,8 +23,7 @@ public:
         if (device == nullptr ||
             specification.IsValidForBackend(RHIBackend::DirectX12) == false ||
             specification.Topology != PrimitiveTopology::Triangles ||
-            specification.DepthTest == true || specification.DepthWrite == true ||
-            specification.DepthFormat != RHIDepthFormat::None ||
+            specification.DepthFormat != RHIDepthFormat::D32Float ||
             specification.SampleCount != 1 ||
             specification.VertexBindings.size() != 1 ||
             specification.VertexBindings[0].Binding != 0)
@@ -159,7 +158,22 @@ public:
         description.NumRenderTargets = 1;
         description.RTVFormats[0] = colorFormat;
         description.SampleDesc.Count = 1;
-        description.DSVFormat = DXGI_FORMAT_UNKNOWN;
+        description.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+        description.DepthStencilState.DepthEnable =
+            specification.DepthTest == true ? TRUE : FALSE;
+        description.DepthStencilState.DepthWriteMask =
+            specification.DepthWrite == true ? D3D12_DEPTH_WRITE_MASK_ALL :
+            D3D12_DEPTH_WRITE_MASK_ZERO;
+        description.DepthStencilState.DepthFunc =
+            specification.DepthCompare == DepthCompareOperator::Less ? D3D12_COMPARISON_FUNC_LESS :
+            specification.DepthCompare == DepthCompareOperator::LessEqual ? D3D12_COMPARISON_FUNC_LESS_EQUAL :
+            specification.DepthCompare == DepthCompareOperator::Greater ? D3D12_COMPARISON_FUNC_GREATER :
+            specification.DepthCompare == DepthCompareOperator::GreaterEqual ? D3D12_COMPARISON_FUNC_GREATER_EQUAL :
+            specification.DepthCompare == DepthCompareOperator::Equal ? D3D12_COMPARISON_FUNC_EQUAL :
+            specification.DepthCompare == DepthCompareOperator::NotEqual ? D3D12_COMPARISON_FUNC_NOT_EQUAL :
+            specification.DepthCompare == DepthCompareOperator::Always ? D3D12_COMPARISON_FUNC_ALWAYS :
+            D3D12_COMPARISON_FUNC_LESS;
+        description.DepthStencilState.StencilEnable = FALSE;
 
         description.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         description.RasterizerState.CullMode =
