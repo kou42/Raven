@@ -91,6 +91,17 @@ RHIViewport RenderCommand::GetViewport()
     return s_CommandList->GetViewport();
 }
 
+void RenderCommand::SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->SetScissor(enabled, x, y, width, height);
+}
+
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
     if (s_CommandList == nullptr)
