@@ -9,6 +9,20 @@ $shader = Join-Path $PSScriptRoot "SceneMesh.hlsl"
 $vertex = Join-Path $PSScriptRoot "SceneMesh.vs.dxil"
 $pixel = Join-Path $PSScriptRoot "SceneMesh.ps.dxil"
 
+# PATHを優先し、Windows SDKが環境変数を設定している場合はそのDXCも探索します。
+# 見つからない場合はMSBuildを失敗させ、古いDXILで起動しないようにします。
+$compiler = Get-Command $Dxc -ErrorAction SilentlyContinue
+if ($null -eq $compiler -and $env:WindowsSdkVerBinPath) {
+    $sdkDxc = Join-Path $env:WindowsSdkVerBinPath "x64/dxc.exe"
+    if (Test-Path -LiteralPath $sdkDxc) {
+        $Dxc = $sdkDxc
+        $compiler = Get-Command $Dxc -ErrorAction SilentlyContinue
+    }
+}
+if ($null -eq $compiler) {
+    throw "dxc.exeが見つかりません。DXCをインストールしてPATHへ追加してください。"
+}
+
 if ((Test-Path -LiteralPath $shader) -eq $false) {
     throw "Shaderが見つかりません: $shader"
 }
