@@ -88,30 +88,65 @@ bool VulkanSceneRuntime::PrepareScene(Scene& scene)
     return scene.PrepareRHIMeshes(*m_Device);
 }
 
-RHIFrameResult VulkanSceneRuntime::DrawFrame()
+bool VulkanSceneRuntime::PrepareFrame()
 {
+    m_PreparedFrame.reset();
     if (m_Initialized == false || m_Device == nullptr ||
         m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
-        m_DefaultTexture == nullptr)
+        m_DefaultTexture == nullptr ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
+    if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
+        m_TransparentPipeline, m_DefaultTexture,
+        RHISceneDrawItemBuilder::VulkanClipCorrection(), *prepared) == false)
+    {
+        return false;
+    }
+    m_PreparedFrame = std::move(prepared);
+    return true;
+}
+
+RHIFrameResult VulkanSceneRuntime::DrawPreparedFrame()
+{
+    if (m_Initialized == false || m_PreparedFrame == nullptr ||
+        m_Context.GetActiveCommandBuffer() == VK_NULL_HANDLE)
     {
         return RHIFrameResult::FatalError;
     }
-
     VulkanSceneCommandList commands(m_Context);
-    const RHIFrameResult result = Renderer::DrawRHISceneFrame(
-        *m_Device,
-        m_Context,
-        commands,
-        m_OpaquePipeline,
-        m_TransparentPipeline,
-        m_DefaultTexture,
-        RHISceneDrawItemBuilder::VulkanClipCorrection());
+    const RHIFrameResult result = Renderer::DrawPreparedRHISceneFrame(
+        m_Context, commands, *m_PreparedFrame);
+    // GPUが参照するBufferはContext側がFence完了まで保持します。
+    m_PreparedFrame.reset();
     if (result == RHIFrameResult::FatalError)
     {
-        // Acquire後の記録失敗を含むFatal状態ではContextを再利用しません。
         Shutdown();
     }
     return result;
+}
+
+RHIFrameResult VulkanSceneRuntime::DrawFrame()
+{
+    if (PrepareFrame() == false)
+    {
+        Shutdown();
+        return RHIFrameResult::FatalError;
+    }
+    const RHIFrameResult begin = m_Context.BeginFrame();
+    if (begin != RHIFrameResult::Success)
+    {
+        m_PreparedFrame.reset();
+        if (begin == RHIFrameResult::FatalError)
+        {
+            Shutdown();
+        }
+        return begin;
+    }
+    return DrawPreparedFrame();
 }
 
 bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
@@ -126,6 +161,7 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
         return false;
     }
 
+    m_PreparedFrame.reset();
     // Context::Resize()が旧RenderPass用native Pipelineを無効化しています。
     // 外部Refも破棄し、新しいRender Target情報から両Pipelineを再生成します。
     m_OpaquePipeline.reset();
@@ -145,6 +181,8 @@ void VulkanSceneRuntime::Shutdown()
         m_Context.GetDevice().WaitIdle();
     }
 
+    // 準備済みFrameが保持する旧DeviceのBuffer参照を最初に解放します。
+    m_PreparedFrame.reset();
     // Contextより先に上位Resource参照を解放します。
     // Context自身も外部Refが残ったResourceをDevice破棄前に無効化します。
     m_OpaquePipeline.reset();
