@@ -167,7 +167,7 @@ int RunDX12SceneRuntimeDemo()
         if (firstFrame == true)
         {
             std::cout << "[DX12 Scene Demo] First frame result: "
-                << static_cast<int>(result) << "\\n" << std::flush;
+                << static_cast<int>(result) << "\n" << std::flush;
             firstFrame = false;
         }
         if (result == RHIFrameResult::ResizeRequired)
