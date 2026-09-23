@@ -59,11 +59,10 @@ public:
 
     bool BindMaterial(const RHIMaterialProperties& material) override
     {
-        // Texture用SRVは未実装です。未対応Materialを描画済みと扱いません。
-        if (material.Texture != nullptr ||
-            material.SurfaceType == MaterialSurfaceType::Masked ||
-            m_Pipeline == nullptr ||
-            m_Context.IsGraphicsPipelineBound() == false)
+        if (material.SurfaceType == MaterialSurfaceType::Masked ||
+            material.Texture == nullptr || m_Pipeline == nullptr ||
+            m_Context.IsGraphicsPipelineBound() == false ||
+            m_Context.BindTexture(material.Texture) == false)
         {
             return false;
         }
