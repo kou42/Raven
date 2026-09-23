@@ -181,6 +181,24 @@ void RenderCommand::BindPipeline(const Ref<Pipeline>& pipeline)
     s_CurrentPipeline = pipeline;
 }
 
+Ref<Pipeline> RenderCommand::GetBoundPipeline()
+{
+    return s_CurrentPipeline;
+}
+
+void RenderCommand::RestorePipelineBinding(const Ref<Pipeline>& pipeline)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    // nullptrの場合も直前のUI Pipelineを残さず、次のDrawのTopology誤認を防ぎます。
+    s_CommandList->RestorePipelineBinding(pipeline);
+    s_CurrentPipeline = pipeline;
+}
+
 void RenderCommand::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
 {
     if (s_CommandList == nullptr || texture == nullptr)
