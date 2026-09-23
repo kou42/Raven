@@ -107,90 +107,44 @@ int RunDX12SceneRuntimeDemo()
         static_cast<float>(runtime.GetWidth()),
         static_cast<float>(runtime.GetHeight()));
 
-    // Window寸法はResize後に更新されるため、実際のSwapChain寸法を別に追跡します。
     uint32_t swapChainWidth = runtime.GetWidth();
     uint32_t swapChainHeight = runtime.GetHeight();
-    GLFWwindow* nativeWindow = static_cast<GLFWwindow*>(window->GetNativeWindow());
-    int exitCode = 0;
-    bool firstFrame = true;
-    while (glfwWindowShouldClose(nativeWindow) == GLFW_FALSE)
+    RHISceneFrameLifecycle* frame = runtime.GetFrameLifecycle();
+    if (frame == nullptr)
     {
-        window->PollEvents();
-
-        int width = 0;
-        int height = 0;
-        glfwGetFramebufferSize(nativeWindow, &width, &height);
-        if (width <= 0 || height <= 0)
-        {
-            // 最小化中は0サイズのSwapChainを生成せず、入力待ちでCPU消費も抑えます。
-            glfwWaitEvents();
-            continue;
-        }
-
-        if (swapChainWidth != static_cast<uint32_t>(width) ||
-            swapChainHeight != static_cast<uint32_t>(height))
-        {
-            if (runtime.Resize(
-                static_cast<uint32_t>(width),
-                static_cast<uint32_t>(height)) == false)
-            {
-                exitCode = 1;
-                break;
-            }
-            swapChainWidth = static_cast<uint32_t>(width);
-            swapChainHeight = static_cast<uint32_t>(height);
-            camera.SetViewportSize(
-                static_cast<float>(width),
-                static_cast<float>(height));
-        }
-
-        Renderer::BeginFrame();
+        runtime.Shutdown();
+        return 1;
+    }
+    Application::ExplicitSceneCallbacks callbacks;
+    callbacks.OnScene = [&]()
+    {
         Renderer::BeginScene(camera);
         const float time = static_cast<float>(glfwGetTime());
-        // EntityのTransformを毎Frame更新し、ECSの描画入口から通常Queueへ送ります。
+        // SceneのEntityを更新し、Renderer Queueへの登録は既存ECS経路を使用します。
         center.GetComponent<TransformComponent>().Rotation.y = time * 0.6f;
         left.GetComponent<TransformComponent>().Rotation.x = -time * 0.35f;
         right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
         scene.RenderEntities();
-
-        RHISceneFrameLifecycle* frame = runtime.GetFrameLifecycle();
-        if (frame == nullptr)
+    };
+    callbacks.Resize = [&](uint32_t width, uint32_t height)
+    {
+        // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
+        if (swapChainWidth != width || swapChainHeight != height)
         {
-            exitCode = 1;
-            break;
-        }
-        // Applicationの共通進行を使用し、Descriptor準備→Acquire→描画の順序を保証します。
-        const RHIFrameResult result = Application::ExecuteExplicitSceneFrame(
-            *frame,
-            [&runtime]() { return runtime.PrepareFrame(); },
-            [&runtime]() { return runtime.DrawPreparedFrame(); });
-        if (firstFrame == true)
-        {
-            std::cout << "[DX12 Scene Demo] First frame result: "
-                << static_cast<int>(result) << "\n" << std::flush;
-            firstFrame = false;
-        }
-        if (result == RHIFrameResult::ResizeRequired)
-        {
-            if (runtime.Resize(
-                static_cast<uint32_t>(width),
-                static_cast<uint32_t>(height)) == false)
+            if (runtime.Resize(width, height) == false)
             {
-                exitCode = 1;
-                break;
+                return false;
             }
-            swapChainWidth = static_cast<uint32_t>(width);
-            swapChainHeight = static_cast<uint32_t>(height);
-            camera.SetViewportSize(
-                static_cast<float>(width),
+            swapChainWidth = width;
+            swapChainHeight = height;
+            camera.SetViewportSize(static_cast<float>(width),
                 static_cast<float>(height));
         }
-        else if (result != RHIFrameResult::Success)
-        {
-            exitCode = 1;
-            break;
-        }
-    }
+        return true;
+    };
+    callbacks.Prepare = [&runtime]() { return runtime.PrepareFrame(); };
+    callbacks.DrawPrepared = [&runtime]() { return runtime.DrawPreparedFrame(); };
+    const int exitCode = Application::RunExplicitScene(*window, *frame, callbacks);
 
     Renderer::Shutdown();
     runtime.Shutdown();
