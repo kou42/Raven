@@ -90,7 +90,8 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [x] UI OverlayのDraw/Read FramebufferとBuffer選択をRHIで保存・復元する（OpenGL互換state、コードレビュー済み・ビルド未検証）。
 - [x] UIが変更するShader / VAO bindingとBlend係数・演算を復元し、後続描画へのstate漏れを防ぐ（コードレビュー済み・ビルド未検証）。
 - [x] 既存FramebufferをRHICommandList / RenderCommandからbindできる互換経路を追加する（コードレビュー済み・ビルド未検証）。
-- [ ] MRT全Draw Bufferと残りの描画stateの保存・復元契約を設計する。
+- [x] MRT全Draw Buffer（GL_NONEを含む）とRead Bufferを保存・復元するOpenGL互換stateを追加する（コードレビュー済み・ビルド未検証）。
+- [ ] 残りの描画stateの保存・復元契約を設計する。
 - [x] UI専用Triangle PipelineとUniform・Commandごとのoffset付きDrawIndexedを `RenderCommand` へ移行し、以前のPipeline追跡を復元する（コードレビュー済み・ビルド未検証）。
 - [ ] UI / SVG / Imageの描画と既存3D state復元を実機確認する。
 
