@@ -1064,6 +1064,63 @@ RHIFrameResult Application::ExecuteExplicitSceneFrame(
     return drawPrepared();
 }
 
+int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
+    const ExplicitSceneCallbacks& callbacks)
+{
+    GLFWwindow* native = static_cast<GLFWwindow*>(window.GetNativeWindow());
+    if (native == nullptr || callbacks.OnScene == nullptr ||
+        callbacks.Resize == nullptr || callbacks.Prepare == nullptr ||
+        callbacks.DrawPrepared == nullptr)
+    {
+        return 1;
+    }
+
+    // OpenGL EditorのLayer/UI/Legacy CommandはExplicit Contextへ流さず、
+    // Scene Queueと共通Frame境界だけを使用します。
+    uint32_t previousWidth = 0;
+    uint32_t previousHeight = 0;
+    while (glfwWindowShouldClose(native) == GLFW_FALSE)
+    {
+        window.PollEvents();
+        int width = 0;
+        int height = 0;
+        glfwGetFramebufferSize(native, &width, &height);
+        if (width <= 0 || height <= 0)
+        {
+            glfwWaitEvents();
+            continue;
+        }
+        const uint32_t targetWidth = static_cast<uint32_t>(width);
+        const uint32_t targetHeight = static_cast<uint32_t>(height);
+        if (previousWidth != targetWidth || previousHeight != targetHeight)
+        {
+            if (callbacks.Resize(targetWidth, targetHeight) == false)
+            {
+                return 1;
+            }
+            previousWidth = targetWidth;
+            previousHeight = targetHeight;
+        }
+
+        Renderer::BeginFrame();
+        callbacks.OnScene();
+        const RHIFrameResult result = ExecuteExplicitSceneFrame(
+            frame, callbacks.Prepare, callbacks.DrawPrepared);
+        if (result == RHIFrameResult::ResizeRequired)
+        {
+            if (callbacks.Resize(targetWidth, targetHeight) == false)
+            {
+                return 1;
+            }
+        }
+        else if (result != RHIFrameResult::Success)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void Application::Run()
 {
     // Frame境界はConstructorでWindowと共に確定済みです。
