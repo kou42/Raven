@@ -11,6 +11,7 @@ public:
     ~OpenGLRHICommandList() override = default;
 
     void Init() override;
+    void BindDefaultRenderTarget() override;
     void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
     RHIViewport GetViewport() const override;
     void SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
