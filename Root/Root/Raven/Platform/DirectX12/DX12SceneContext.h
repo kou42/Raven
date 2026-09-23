@@ -54,6 +54,8 @@ public:
     // PSOが未設定のDrawIndexedInstancedを発行しないための入口です。
     bool BindGraphicsPipeline(ID3D12PipelineState* pipelineState,
         ID3D12RootSignature* rootSignature);
+    bool RetainGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
+    bool IsGraphicsPipelineBound() const;
 
 private:
     struct FrameResource
@@ -61,6 +63,7 @@ private:
         std::unique_ptr<DX12CommandList> CommandList;
         uint64_t FenceValue = 0;
         std::vector<Ref<RHIBuffer>> RetainedBuffers;
+        std::vector<Ref<RHIGraphicsPipeline>> RetainedPipelines;
     };
 
     DX12Factory m_Factory;
