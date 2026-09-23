@@ -165,6 +165,7 @@ int RunDX12SceneRuntimeDemo()
         mesh.reset();
         material.reset();
     };
+    callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
     callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
     callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
     const int exitCode = Application::RunOwnedExplicitScene(
