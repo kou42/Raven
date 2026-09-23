@@ -67,6 +67,8 @@ public:
         std::function<bool(uint32_t, uint32_t, bool)> Resize;
         std::function<bool()> Prepare;
         std::function<RHIFrameResult()> DrawPrepared;
+        // Acquire失敗時など、準備済みFrameの参照をResize/Shutdown前に解放します。
+        std::function<void()> DiscardPrepared;
     };
     static int RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const ExplicitSceneCallbacks& callbacks);
@@ -85,11 +87,21 @@ public:
         RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
         if (frame == nullptr)
         {
+            if (callbacks.OnBeforeShutdown != nullptr)
+            {
+                callbacks.OnBeforeShutdown();
+            }
+            Renderer::Shutdown();
             runtime->Shutdown();
             return 1;
         }
         const int exitCode = RunExplicitScene(*window, *frame, callbacks);
-        // SceneとRendererが保持するGPU ResourceをRuntimeのDevice破棄前に解放します。
+        // Frameの保持参照を最初に解放し、SceneとRendererのGPU Resourceを
+        // RuntimeのDevice破棄前に解放します。
+        if (callbacks.DiscardPrepared != nullptr)
+        {
+            callbacks.DiscardPrepared();
+        }
         if (callbacks.OnBeforeShutdown != nullptr)
         {
             callbacks.OnBeforeShutdown();
