@@ -1070,7 +1070,7 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
     GLFWwindow* native = static_cast<GLFWwindow*>(window.GetNativeWindow());
     if (native == nullptr || callbacks.OnScene == nullptr ||
         callbacks.Resize == nullptr || callbacks.Prepare == nullptr ||
-        callbacks.DrawPrepared == nullptr)
+        callbacks.DrawPrepared == nullptr || callbacks.DiscardPrepared == nullptr)
     {
         return 1;
     }
@@ -1108,6 +1108,8 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
             frame, callbacks.Prepare, callbacks.DrawPrepared);
         if (result == RHIFrameResult::ResizeRequired)
         {
+            // Acquire失敗時はDrawPreparedが呼ばれないため準備済み参照を先に解放します。
+            callbacks.DiscardPrepared();
             // Surface変更は寸法不変でも発生するため、再生成を強制します。
             if (callbacks.Resize(targetWidth, targetHeight, true) == false)
             {
