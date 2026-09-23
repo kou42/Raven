@@ -30,10 +30,7 @@ public:
 
     bool ClearColor(const float color[4]) override
     {
-        (void)color;
-        // BeginFrameのClearと描画途中のClearは異なります。
-        // 現行Contextに描画途中のRTV Clear入口がないため成功扱いしません。
-        return false;
+        return m_Context.ClearColorAttachment(color);
     }
 
     bool BindPipeline(const Ref<RHIGraphicsPipeline>& pipeline) override
