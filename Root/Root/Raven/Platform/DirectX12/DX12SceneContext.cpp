@@ -99,6 +99,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     // BeginFrameのFence待機後は前回このFrameが参照したBufferを解放できます。
     // GPUがまだ読むBufferをEntity側のRef破棄だけで解放しないための保持です。
     frame.RetainedBuffers.clear();
+    frame.RetainedPipelines.clear();
 
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
@@ -276,6 +277,24 @@ bool DX12SceneContext::BindGraphicsPipeline(
     commandList->SetPipelineState(pipelineState);
     m_GraphicsPipelineBound = true;
     return true;
+}
+
+bool DX12SceneContext::RetainGraphicsPipeline(
+    const Ref<RHIGraphicsPipeline>& pipeline)
+{
+    if (GetActiveCommandList() == nullptr || pipeline == nullptr ||
+        m_GraphicsPipelineBound == false)
+    {
+        return false;
+    }
+    // PSO/Root Signatureも記録済みGPU命令が参照するためFence完了まで保持します。
+    m_Frames[m_CurrentFrame].RetainedPipelines.push_back(pipeline);
+    return true;
+}
+
+bool DX12SceneContext::IsGraphicsPipelineBound() const
+{
+    return GetActiveCommandList() != nullptr && m_GraphicsPipelineBound == true;
 }
 
 bool DX12SceneContext::DrawIndexed(
