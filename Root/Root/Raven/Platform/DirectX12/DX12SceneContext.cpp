@@ -297,6 +297,34 @@ bool DX12SceneContext::IsGraphicsPipelineBound() const
     return GetActiveCommandList() != nullptr && m_GraphicsPipelineBound == true;
 }
 
+bool DX12SceneContext::SetClipTransform(
+    const std::array<float, 16>& transform)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || m_GraphicsPipelineBound == false)
+    {
+        return false;
+    }
+    // Root Signatureのb0へcolumn-major行列を16 DWORDで記録します。
+    commandList->SetGraphicsRoot32BitConstants(
+        0, static_cast<UINT>(transform.size()), transform.data(), 0);
+    return true;
+}
+
+bool DX12SceneContext::SetMaterialTint(
+    const std::array<float, 4>& tint)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || m_GraphicsPipelineBound == false)
+    {
+        return false;
+    }
+    // Root Signatureのb1へRGBAを4 DWORDで記録します。
+    commandList->SetGraphicsRoot32BitConstants(
+        1, static_cast<UINT>(tint.size()), tint.data(), 0);
+    return true;
+}
+
 bool DX12SceneContext::DrawIndexed(
     const Ref<RHIBuffer>& vertexBuffer,
     const Ref<RHIBuffer>& indexBuffer,
