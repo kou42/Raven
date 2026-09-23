@@ -378,7 +378,7 @@ void OpenGLUIRenderer::Render(
     GLint previousDrawBuffer = GL_BACK;
     GLint previousReadBuffer = GL_BACK;
     GLint previousViewport[4] = { 0, 0, 0, 0 };
-    GLint previousScissorBox[4] = { 0, 0, 0, 0 };
+    const RHIScissor previousScissor = RenderCommand::GetScissor();
     GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
@@ -388,7 +388,6 @@ void OpenGLUIRenderer::Render(
     glGetIntegerv(GL_DRAW_BUFFER, &previousDrawBuffer);
     glGetIntegerv(GL_READ_BUFFER, &previousReadBuffer);
     glGetIntegerv(GL_VIEWPORT, previousViewport);
-    glGetIntegerv(GL_SCISSOR_BOX, previousScissorBox);
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
     glActiveTexture(GL_TEXTURE0);
@@ -397,7 +396,6 @@ void OpenGLUIRenderer::Render(
     const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
     const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
-    const GLboolean scissorTestEnabled = glIsEnabled(GL_SCISSOR_TEST);
 
     GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
     GLboolean previousDepthMask = GL_TRUE;
@@ -552,11 +550,14 @@ void OpenGLUIRenderer::Render(
         glViewport(previousViewport[0], previousViewport[1],
             previousViewport[2], previousViewport[3]);
     }
-    glScissor(
-        previousScissorBox[0],
-        previousScissorBox[1],
-        previousScissorBox[2],
-        previousScissorBox[3]);
+    // 無効時も以前のScissor Boxを復元し、次の描画passが同じstateから開始できるようにします。
+    RenderCommand::SetScissor(true,
+        previousScissor.X, previousScissor.Y,
+        previousScissor.Width, previousScissor.Height);
+    if (previousScissor.Enabled == false)
+    {
+        RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
+    }
     glPolygonMode(GL_FRONT, previousPolygonMode[0]);
     glPolygonMode(GL_BACK, previousPolygonMode[1]);
     glColorMask(
@@ -593,14 +594,6 @@ void OpenGLUIRenderer::Render(
         glDisable(GL_CULL_FACE);
     }
 
-    if (scissorTestEnabled == GL_TRUE)
-    {
-        glEnable(GL_SCISSOR_TEST);
-    }
-    else
-    {
-        glDisable(GL_SCISSOR_TEST);
-    }
 }
 
 void OpenGLUIRenderer::EnsureBuffers(
