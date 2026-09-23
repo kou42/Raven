@@ -29,8 +29,9 @@ struct RHIRenderTargetState
 struct RHIScissor
 {
     bool Enabled = false;
-    uint32_t X = 0;
-    uint32_t Y = 0;
+    // OpenGLのScissor原点は負値も有効です。保存・復元時に0へ丸めません。
+    int32_t X = 0;
+    int32_t Y = 0;
     uint32_t Width = 0;
     uint32_t Height = 0;
 };
@@ -76,7 +77,7 @@ public:
     virtual RHIViewport GetViewport() const = 0;
 
     // ScissorはFramebufferの左下原点Pixel座標。UIの左上原点からの変換は呼び出し側が行います。
-    virtual void SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+    virtual void SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height) = 0;
     // Enabledがfalseの場合も矩形を保持し、Overlay終了時に元のstateを復元できます。
     virtual RHIScissor GetScissor() const = 0;
 
