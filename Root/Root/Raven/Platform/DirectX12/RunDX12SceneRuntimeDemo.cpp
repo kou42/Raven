@@ -11,6 +11,7 @@
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Scene/SceneCamera.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/ExplicitCubeSceneDemo.h"
 
 #include <GLFW/glfw3.h>
 
@@ -62,60 +63,23 @@ int RunDX12SceneRuntimeDemo()
 
     std::cout << "[DX12 Scene Demo] Runtime initialized.\n" << std::flush;
 
-    // 通常Sceneと同じECS経路で複数Entityを登録します。
-    // Explicit-only起動なのでOpenGL VAO/VBOは生成せず、CPU Geometryだけを持ちます。
-    auto scene = CreateScope<Scene>();
-    Ref<Mesh> mesh = PrimitiveMeshFactory::CreateCube(
-        LegacyMeshResourceCreation::Deferred);
-    Ref<Material> material = CreateRef<Material>();
-    if (mesh == nullptr || mesh->GetVertexArray() != nullptr || material == nullptr ||
-        material->HasLegacyPipeline() == true)
+    // Backend非依存の検証Sceneを共有し、GPU Buffer準備だけRuntimeに任せます。
+    ExplicitCubeSceneDemo demo;
+    if (demo.Init("DX12", runtime->GetWidth(), runtime->GetHeight()) == false)
     {
-        std::cerr << "DX12 Entity Scene creation failed.\n";
-        scene.reset();
-        mesh.reset();
-        material.reset();
+        std::cerr << "DX12 Entity Scene creation failed.\\n";
         Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
-    material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
-    material->SetSurfaceType(MaterialSurfaceType::Opaque);
-
-    Entity left = scene->CreateEntity("DX12LeftCube");
-    left.GetComponent<TransformComponent>().Position = {-1.2f, 0.0f, 0.0f};
-    left.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
-
-    Entity center = scene->CreateEntity("DX12CenterCube");
-    center.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
-
-    Entity right = scene->CreateEntity("DX12RightCube");
-    right.GetComponent<TransformComponent>().Position = {1.2f, 0.0f, 0.0f};
-    right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
-
-    // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
-    std::cout << "[DX12 Scene Demo] Preparing 3 Cube entities...\n" << std::flush;
-    if (runtime->PrepareScene(*scene) == false)
+    if (runtime->PrepareScene(demo.GetScene()) == false)
     {
-        std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
-        scene.reset();
-        mesh.reset();
-        material.reset();
+        std::cerr << "DX12 Entity Scene mesh preparation failed.\\n";
+        demo.Shutdown();
         Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
-
-    std::cout << "[DX12 Scene Demo] Mesh preparation succeeded.\n" << std::flush;
-
-    SceneCamera camera;
-    camera.SetViewMatrix(math::Mat4::LookAt(
-        {0.0f, 0.0f, 5.0f},
-        {0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f}));
-    camera.SetViewportSize(
-        static_cast<float>(runtime->GetWidth()),
-        static_cast<float>(runtime->GetHeight()));
 
     uint32_t swapChainWidth = runtime->GetWidth();
     uint32_t swapChainHeight = runtime->GetHeight();
@@ -133,16 +97,7 @@ int RunDX12SceneRuntimeDemo()
     // Callbackは移譲元Scopeではなく、実体を借用するPointerを捕捉します。
     DX12SceneRuntime* runtimeHandle = runtime.get();
     Application::ExplicitSceneCallbacks callbacks;
-    callbacks.OnScene = [&]()
-    {
-        Renderer::BeginScene(camera);
-        const float time = static_cast<float>(glfwGetTime());
-        // SceneのEntityを更新し、Renderer Queueへの登録は既存ECS経路を使用します。
-        center.GetComponent<TransformComponent>().Rotation.y = time * 0.6f;
-        left.GetComponent<TransformComponent>().Rotation.x = -time * 0.35f;
-        right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
-        scene->RenderEntities();
-    };
+    callbacks.OnScene = [&demo]() { demo.Render(); };
     callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
     {
         // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
@@ -154,19 +109,11 @@ int RunDX12SceneRuntimeDemo()
             }
             swapChainWidth = width;
             swapChainHeight = height;
-            camera.SetViewportSize(static_cast<float>(width),
-                static_cast<float>(height));
+            demo.ResizeCamera(width, height);
         }
         return true;
     };
-    callbacks.OnBeforeShutdown = [&]()
-    {
-        // Entityが所有するMesh/MaterialをDeviceのShutdownより先に解放します。
-        // Runtimeへ移譲した後もSceneの寿命を明示的に短く保ちます。
-        scene.reset();
-        mesh.reset();
-        material.reset();
-    };
+    callbacks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
     callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
     callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
     callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
