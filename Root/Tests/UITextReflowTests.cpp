@@ -2267,6 +2267,72 @@ Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
 }
 
 
+
+void TestUILabelGlyphClipTransform()
+{
+    const auto font = CreateTextLayoutFixture();
+    Raven::UIElement root;
+    root.SetLayoutMode(Raven::UILayoutMode::Vertical);
+    root.SetPreferredSize(Raven::math::Vec2(60.0f, 30.0f));
+    root.SetPadding(5.0f);
+    root.SetClipChildren(true);
+    root.SetTransformPivot(Raven::math::Vec2(0.0f, 0.0f));
+
+    auto label = std::make_unique<Raven::UILabel>();
+    label->SetFont(font);
+    label->SetText("A");
+    label->SetLineHeight(12.0f);
+    label->SetBaselineOffset(0.0f);
+    label->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    label->SetClipChildren(true);
+    label->SetClipSelf(true);
+    label->SetTransformPivot(Raven::math::Vec2(0.0f, 0.0f));
+    Raven::UILabel* labelPtr = label.get();
+    root.AddChild(std::move(label));
+
+    Raven::UIDrawList drawList;
+    root.BuildDrawList(drawList);
+    Check(drawList.GetCommandCount() == 1u, "clip fixture glyph command");
+    const Raven::UIDrawCommand& initial = drawList.GetCommands()[0u];
+    Check(initial.Type == Raven::UIDrawCommandType::Image, "glyph uses image command");
+    Check(initial.Texture == font->GetTexture(), "glyph retains atlas texture asset");
+    CheckNear("glyph uv max x", initial.UVMax.x, 0.125f);
+    CheckNear("glyph uv max y", initial.UVMax.y, 0.15625f);
+    CheckNear("label self clip min x", initial.Clip.Rect.Min.x, 5.0f);
+    CheckNear("label self clip min y", initial.Clip.Rect.Min.y, 5.0f);
+    CheckNear("label self clip max x", initial.Clip.Rect.Max.x, 55.0f);
+    CheckNear("label self clip max y", initial.Clip.Rect.Max.y, 17.0f);
+
+    // GlyphのRectはLayout座標のまま保持し、World Transformとscreen-space Clipは別に伝播します。
+    // 親の非一様Scaleと子のScaleを合成し、子Clipが親Clipの外へ出る部分を交差で除外します。
+    root.SetScale(Raven::math::Vec2(2.0f, 2.0f));
+    labelPtr->SetScale(Raven::math::Vec2(1.5f, 1.5f));
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    Check(drawList.GetCommandCount() == 1u, "transformed glyph command count");
+    const Raven::UIDrawCommand& transformed = drawList.GetCommands()[0u];
+    CheckNear("glyph local rect x unchanged", transformed.Rect.Min.x, 5.0f);
+    CheckNear("glyph local rect y unchanged", transformed.Rect.Min.y, 5.0f);
+    CheckNear("glyph combined transform x", transformed.Transform.M00, 3.0f);
+    CheckNear("glyph combined transform y", transformed.Transform.M11, 3.0f);
+    CheckNear("glyph transformed x", transformed.Transform.TransformPoint(transformed.Rect.Min).x, 10.0f);
+    CheckNear("glyph transformed y", transformed.Transform.TransformPoint(transformed.Rect.Min).y, 10.0f);
+    Check(transformed.Clip.Enabled, "transformed glyph clip enabled");
+    CheckNear("transformed glyph clip min x", transformed.Clip.Rect.Min.x, 10.0f);
+    CheckNear("transformed glyph clip min y", transformed.Clip.Rect.Min.y, 10.0f);
+    CheckNear("transformed glyph clip max x intersected", transformed.Clip.Rect.Max.x, 120.0f);
+    CheckNear("transformed glyph clip max y", transformed.Clip.Rect.Max.y, 46.0f);
+
+    // ClipSelfだけを無効化すると、子ElementのClipではなく親のClipがGlyphへ適用されます。
+    labelPtr->SetClipSelf(false);
+    drawList.Clear();
+    root.BuildDrawList(drawList);
+    CheckNear("ancestor only clip min x", drawList.GetCommands()[0u].Clip.Rect.Min.x, 0.0f);
+    CheckNear("ancestor only clip min y", drawList.GetCommands()[0u].Clip.Rect.Min.y, 0.0f);
+    CheckNear("ancestor only clip max x", drawList.GetCommands()[0u].Clip.Rect.Max.x, 120.0f);
+    CheckNear("ancestor only clip max y", drawList.GetCommands()[0u].Clip.Rect.Max.y, 60.0f);
+}
+
 void TestUILabelTextReflow()
 {
     const auto font = CreateTextLayoutFixture();
@@ -2422,6 +2488,7 @@ int main()
 {
     TestTextLayoutMeasurement();
     TestUILabelTextReflow();
+    TestUILabelGlyphClipTransform();
     TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();
