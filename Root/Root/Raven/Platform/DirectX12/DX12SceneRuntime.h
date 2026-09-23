@@ -164,18 +164,22 @@ public:
 
     bool Resize(uint32_t width, uint32_t height)
     {
-        if (m_Initialized == false || width == 0 || height == 0 ||
-            m_Context.Resize(width, height) == false)
+        if (m_Initialized == false || width == 0 || height == 0)
         {
             return false;
         }
+        // 旧Frame参照を外してからContext/SwapChainを再生成します。
         m_PreparedFrame.reset();
+        if (m_Context.Resize(width, height) == false)
+        {
+            return false;
+        }
         // Depth/RTV再生成後、Attachment形式に合うPSOを作り直します。
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
         if (CreatePipelines() == false)
         {
-            Shutdown();
+            // 所有元ApplicationがScene→Renderer→Runtimeの順に終了します。
             return false;
         }
         return true;
