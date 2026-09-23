@@ -45,6 +45,7 @@ int RunDX12SceneRuntimeDemo()
     pipelineSpecification.Blend = false;
     pipelineSpecification.DebugName = "DX12 Normal Mesh Scene";
 
+    std::cout << "[DX12 Scene Demo] Initializing runtime...\n" << std::flush;
     DX12SceneRuntime runtime;
     if (runtime.Init(
         *window,
@@ -55,6 +56,8 @@ int RunDX12SceneRuntimeDemo()
         std::cerr << "DX12 Scene Runtime initialization failed.\n";
         return 1;
     }
+
+    std::cout << "[DX12 Scene Demo] Runtime initialized.\n" << std::flush;
 
     // 通常Sceneと同じECS経路で複数Entityを登録します。
     // Explicit-only起動なのでOpenGL VAO/VBOは生成せず、CPU Geometryだけを持ちます。
@@ -84,12 +87,15 @@ int RunDX12SceneRuntimeDemo()
     right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
+    std::cout << "[DX12 Scene Demo] Preparing 3 Cube entities...\n" << std::flush;
     if (runtime.PrepareScene(scene) == false)
     {
         std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
         runtime.Shutdown();
         return 1;
     }
+
+    std::cout << "[DX12 Scene Demo] Mesh preparation succeeded.\n" << std::flush;
 
     SceneCamera camera;
     camera.SetViewMatrix(math::Mat4::LookAt(
@@ -105,6 +111,7 @@ int RunDX12SceneRuntimeDemo()
     uint32_t swapChainHeight = runtime.GetHeight();
     GLFWwindow* nativeWindow = static_cast<GLFWwindow*>(window->GetNativeWindow());
     int exitCode = 0;
+    bool firstFrame = true;
     while (glfwWindowShouldClose(nativeWindow) == GLFW_FALSE)
     {
         window->PollEvents();
@@ -146,6 +153,12 @@ int RunDX12SceneRuntimeDemo()
         scene.RenderEntities();
 
         const RHIFrameResult result = runtime.DrawFrame();
+        if (firstFrame == true)
+        {
+            std::cout << "[DX12 Scene Demo] First frame result: "
+                << static_cast<int>(result) << "\n" << std::flush;
+            firstFrame = false;
+        }
         if (result == RHIFrameResult::ResizeRequired)
         {
             if (runtime.Resize(
