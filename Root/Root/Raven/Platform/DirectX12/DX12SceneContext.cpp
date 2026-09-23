@@ -279,7 +279,9 @@ bool DX12SceneContext::DrawIndexed(
         vertex->GetSceneBuffer().IsValid() == false ||
         index->GetSceneBuffer().IsValid() == false ||
         vertex->GetSceneBuffer().IsIndexBuffer() == true ||
-        index->GetSceneBuffer().IsIndexBuffer() == false)
+        index->GetSceneBuffer().IsIndexBuffer() == false ||
+        vertex->GetOwnerDevice() != GetNativeDevice() ||
+        index->GetOwnerDevice() != GetNativeDevice())
     {
         return false;
     }
