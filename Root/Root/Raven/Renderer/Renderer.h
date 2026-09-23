@@ -123,9 +123,7 @@ public:
         const Ref<RHIGraphicsPipeline>& opaquePipeline,
         const Ref<RHIGraphicsPipeline>& transparentPipeline,
         const Ref<RHITexture>& defaultTexture,
-        const math::Mat4& clipCorrection,
-        // true: 呼び出し元がBeginFrame済み。Rendererは二重AcquireせずEnd/Presentだけ行います。
-        bool frameAlreadyActive = false);
+        const math::Mat4& clipCorrection);
 
     static const RendererStatistics& GetStatistics();
     static void RecordIndexedDraw(uint32_t indexCount, PrimitiveTopology topology);
