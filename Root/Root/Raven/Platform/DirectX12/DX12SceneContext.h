@@ -50,6 +50,11 @@ public:
         const Ref<RHIBuffer>& indexBuffer, uint32_t stride,
         uint32_t indexCount = 0);
 
+    // 現在のFrameで設定済みのPipelineを検証してから描画します。
+    // PSOが未設定のDrawIndexedInstancedを発行しないための入口です。
+    bool BindGraphicsPipeline(ID3D12PipelineState* pipelineState,
+        ID3D12RootSignature* rootSignature);
+
 private:
     struct FrameResource
     {
@@ -71,5 +76,6 @@ private:
     bool m_VSync = true;
     bool m_FrameActive = false;
     bool m_FrameSubmitted = false;
+    bool m_GraphicsPipelineBound = false;
 };
 } // namespace Raven
