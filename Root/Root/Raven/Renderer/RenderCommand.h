@@ -33,7 +33,7 @@ public:
     static void BindRenderTarget(const Framebuffer& framebuffer);
     static RHIRenderTargetState CaptureRenderTargetState();
     static void RestoreRenderTargetState(const RHIRenderTargetState& state);
-    static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    static void SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height);
     static RHIViewport GetViewport();
 
     // Scissor矩形はFramebuffer左下原点のPixel座標です。
