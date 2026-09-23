@@ -103,6 +103,12 @@ public:
     }
 
     // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
+    void DiscardPreparedFrame()
+    {
+        // Acquire失敗時の準備済みResourceを再生成・終了前に解放します。
+        m_PreparedFrame.reset();
+    }
+
     bool PrepareFrame()
     {
         m_PreparedFrame.reset();
