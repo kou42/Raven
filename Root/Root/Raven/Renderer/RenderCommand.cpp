@@ -67,6 +67,17 @@ bool RenderCommand::TryInit(RHIBackend backend)
     return true;
 }
 
+void RenderCommand::BindDefaultRenderTarget()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->BindDefaultRenderTarget();
+}
+
 void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     if (s_CommandList == nullptr)
