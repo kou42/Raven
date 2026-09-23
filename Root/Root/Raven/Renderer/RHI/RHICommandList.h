@@ -38,8 +38,9 @@ struct RHIScissor
 
 struct RHIViewport
 {
-    uint32_t X = 0;
-    uint32_t Y = 0;
+    // Viewportの原点は負座標も有効なので、Overlay前後のstateを符号付きで保持します。
+    int32_t X = 0;
+    int32_t Y = 0;
     uint32_t Width = 0;
     uint32_t Height = 0;
 };
@@ -70,7 +71,7 @@ public:
     virtual RHIRenderTargetState CaptureRenderTargetState() const = 0;
     virtual void RestoreRenderTargetState(const RHIRenderTargetState& state) = 0;
 
-    virtual void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+    virtual void SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height) = 0;
 
     // Debug Overlay等の上位層がGraphics API固有のstate queryを直接行わないための参照APIです。
     // OpenGLでは現在のGL viewportを取得し、Explicit APIではCommandListが保持するstateを返す想定です。
