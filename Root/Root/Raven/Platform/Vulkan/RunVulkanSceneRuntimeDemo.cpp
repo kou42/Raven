@@ -67,6 +67,10 @@ int RunVulkanSceneRuntimeDemo()
         material->HasLegacyPipeline() == true)
     {
         std::cerr << "Vulkan Entity Scene creation failed.\n";
+        scene.reset();
+        mesh.reset();
+        material.reset();
+        Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
@@ -88,6 +92,10 @@ int RunVulkanSceneRuntimeDemo()
     if (runtime->PrepareScene(*scene) == false)
     {
         std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
+        scene.reset();
+        mesh.reset();
+        material.reset();
+        Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
@@ -104,6 +112,10 @@ int RunVulkanSceneRuntimeDemo()
     RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
     if (frame == nullptr)
     {
+        scene.reset();
+        mesh.reset();
+        material.reset();
+        Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
