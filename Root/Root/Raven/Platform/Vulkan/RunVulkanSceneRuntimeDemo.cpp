@@ -54,6 +54,8 @@ int RunVulkanSceneRuntimeDemo()
         fragmentShader) == false)
     {
         std::cerr << "Vulkan Scene Runtime initialization failed.\n";
+        // Initが部分初期化状態を解放する設計ですが、終了入口でも明示します。
+        runtime->Shutdown();
         return 1;
     }
 
