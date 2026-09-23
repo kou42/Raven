@@ -79,6 +79,8 @@ public:
     virtual void Clear() = 0;
 
     virtual void BindPipeline(const Ref<Pipeline>& pipeline) = 0;
+    // 一時Overlay終了時に以前のPipeline追跡を復元します。nullptrは追跡解除です。
+    virtual void RestorePipelineBinding(const Ref<Pipeline>& pipeline) = 0;
     virtual void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot) = 0;
     virtual void UploadUniform(const std::string& name, const UniformValue& value) = 0;
 
