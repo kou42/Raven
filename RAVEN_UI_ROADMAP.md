@@ -28,7 +28,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | Phase | テーマ | 状態 | 完了条件 |
 | --- | --- | --- | --- |
 | 1 | Font Atlas / Text Rendering | 実装中 | Font読込、Glyph Atlas、DrawList経由の文字表示、日本語fallback、基本描画検証 |
-| 2 | Text Layout / Text Measurement | 未着手 | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
+| 2 | Text Layout / Text Measurement | 基盤実装済み・回帰テスト棚卸し済み（数値テスト・実描画検証は継続） | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
 | 3 | InputText / InputNumber | 実装中（InputText / InputNumberの基本操作・横スクロール確認済み、IME未対応） | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
 | 4 | ComboBox / Popup / Tooltip | 未着手 | Focus、閉じる条件、重なり順、入力伝播の検証 |
 | 5 | TreeView / Table | 実装中（TreeView基礎・Demo・縦Scroll/Scrollbar・Drag & Drop・回帰テスト追加。Drag & Dropはユーザー動作確認済み／Table基礎・Demo・回帰テスト追加） | Hierarchy相当の選択・展開、表の列・Scroll・基本操作 |
@@ -41,6 +41,17 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 12 | Multi-Viewport | OS Window別UIContext・入力/IME配送・DPI/Framebuffer描画・Dock Tab切り離し/Close復帰を実装、ユーザー動作確認済み（PR #270、OpenGL限定）。論理Windowの自動ドラッグ分離・Mainへの再統合はPR #271で実装・ユーザー動作確認済み。異DPI・他Backendは継続課題 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
 | 14 | UI Debugger / Profiler | 未着手 | Tree / Focus / Draw Command / CPU・GPU指標表示 |
+
+## Phase 2: Text Layout / Text Measurement 検証状況（2026-09-23）
+
+- [x] `UITextLayout` の改行・Character/ASCII Word Wrap・左右中央配置、`UITextMeasurement` の共通Layout利用、`UILabel` の幅依存Measure / Draw接続をコード確認。
+- [x] `Root/Tests/UITextReflowTests.cpp` の既存テストを棚卸し（PR #273）。仮想`WrappingElement` のテストも維持。
+- [x] 固定Glyph Metrics / GPU不要Texture FixtureによるLayout・Measurement数値回帰テストを追加（PR #274）。改行・折り返し・配置・GlyphScale・UTF-8/Fallbackを検証。
+- [x] 実`UILabel` / `UIElement` の親Resize・高さ再集約・兄弟位置・テキスト変更・非表示・Glyph DrawListを検証（PR #274）。
+- [x] GlyphのAtlas UV / Texture保持、親子Clip・ClipSelf・Transform合成のCPU回帰テストを追加（PR #274）。ユーザーより「動作チェック問題ありませんでした」と報告あり。実行ログや個別テスト環境の詳細は未記録。
+- [ ] Text DemoのASCII・日本語・Resize・改行・配置・Clip・DPIの**実描画**を項目別に確認し、結果を記録する。CPUテストの動作確認とGPU実描画確認は区別する。
+- [ ] 異DPIモニター間移動と未網羅の境界条件（不正UTF-8・連続空白等）を追加検証する。Phase 2基本完了条件と後続拡張を分けて判断する。
+- 詳細な確認範囲と残課題は [`RAVEN_UI_PHASE2_TEST_AUDIT.md`](RAVEN_UI_PHASE2_TEST_AUDIT.md) を参照。
 
 ## Window System / Multi-Viewportへの接続状況
 
