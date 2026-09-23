@@ -185,6 +185,12 @@ void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint
         return;
     }
 
+    // 明示Index数がBuffer容量を超えるDrawはOpenGLへ送らないようにします。
+    if (resolvedIndexCount > indexBuffer->GetCount())
+    {
+        return;
+    }
+
     PrimitiveTopology topology = PrimitiveTopology::Triangles;
     if (m_CurrentPipeline != nullptr)
     {
