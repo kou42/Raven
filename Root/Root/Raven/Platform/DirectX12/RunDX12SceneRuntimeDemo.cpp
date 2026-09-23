@@ -67,14 +67,14 @@ int RunDX12SceneRuntimeDemo()
     ExplicitCubeSceneDemo demo;
     if (demo.Init("DX12", runtime->GetWidth(), runtime->GetHeight()) == false)
     {
-        std::cerr << "DX12 Entity Scene creation failed.\\n";
+        std::cerr << "DX12 Entity Scene creation failed.\n";
         Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
     if (runtime->PrepareScene(demo.GetScene()) == false)
     {
-        std::cerr << "DX12 Entity Scene mesh preparation failed.\\n";
+        std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
         demo.Shutdown();
         Renderer::Shutdown();
         runtime->Shutdown();
@@ -86,9 +86,7 @@ int RunDX12SceneRuntimeDemo()
     RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
     if (frame == nullptr)
     {
-        scene.reset();
-        mesh.reset();
-        material.reset();
+        demo.Shutdown();
         Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
