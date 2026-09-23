@@ -116,6 +116,15 @@ Application::Application(const ApplicationSpecification& specification)
         return;
     }
 
+    // Window / Renderer初期化後にFrame境界を確定します。未対応Backendを成功扱いせず、
+    // SceneやUIの生成前に失敗を検出します。Windowの所有権は移譲しません。
+    m_SceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
+    if (m_SceneFrame == nullptr)
+    {
+        m_Running = false;
+        return;
+    }
+
     // ========================================================================
     // Raven UI renderer lifecycle
     // ========================================================================
@@ -335,6 +344,9 @@ Application::~Application()
     m_AuxiliaryUIContexts.clear();
     FlushPendingClosedUIChildren();
     assert(auxiliaryWindowsClosed == true);
+
+    // Frame境界が借用するMain Windowより先にBackend側のFrame状態を解放します。
+    m_SceneFrame.reset();
 }
 
 WindowID Application::CreateUIWindow(const WindowSpecification& specification)
@@ -1035,11 +1047,9 @@ void Application::SetScene(Scope<Scene> scene)
 
 void Application::Run()
 {
-    // Scene用Frame境界はBackendに応じて生成し、Applicationは共通契約だけを扱います。
-    // Windowの所有権はApplicationに残し、Clear DemoのContextは流用しません。
-    // Vulkan / DX12の通常Sceneが未実装の間は、OpenGLへ暗黙fallbackせず起動を中止します。
-    Scope<RHISceneFrameLifecycle> sceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
-    if (sceneFrame == nullptr)
+    // Frame境界はConstructorでWindowと共に確定済みです。
+    // 初期化失敗時にはScene / Layerを実行しません。
+    if (m_Running == false || m_SceneFrame == nullptr)
     {
         m_Running = false;
         return;
@@ -1073,7 +1083,7 @@ void Application::Run()
         // CPUProfilerもRenderer::BeginFrame()と同じ境界で、次frame開始時に直前frameを確定します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
-        if (sceneFrame->BeginFrame() != RHIFrameResult::Success)
+        if (m_SceneFrame->BeginFrame() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
@@ -1223,7 +1233,7 @@ void Application::Run()
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
         // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
-        if (sceneFrame->EndFrame() != RHIFrameResult::Success)
+        if (m_SceneFrame->EndFrame() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
@@ -1233,7 +1243,7 @@ void Application::Run()
         m_WindowManager.PollEvents();
         // Window外でMouse Upを取りこぼしても、次FrameへDrag/Captureを残しません。
         CompleteReleasedUIWindowDrags();
-        if (sceneFrame->Present() != RHIFrameResult::Success)
+        if (m_SceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
