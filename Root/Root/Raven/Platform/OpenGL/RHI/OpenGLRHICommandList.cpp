@@ -161,7 +161,7 @@ void OpenGLRHICommandList::UploadUniform(const std::string& name, const UniformV
     }, value);
 }
 
-void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
+void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount, uint32_t firstIndex)
 {
     if (vertexArray == nullptr)
     {
@@ -174,13 +174,15 @@ void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint
         return;
     }
 
-    uint32_t resolvedIndexCount = indexCount;
-    if (resolvedIndexCount == 0)
+    // UIのCommand別描画に備え、IndexBufferの部分範囲を安全に扱います。
+    if (firstIndex > indexBuffer->GetCount())
     {
-        resolvedIndexCount = indexBuffer->GetCount();
+        return;
     }
 
-    if (resolvedIndexCount == 0)
+    const uint32_t remainingCount = indexBuffer->GetCount() - firstIndex;
+    const uint32_t resolvedIndexCount = indexCount == 0 ? remainingCount : indexCount;
+    if (resolvedIndexCount == 0 || resolvedIndexCount > remainingCount)
     {
         return;
     }
@@ -202,7 +204,7 @@ void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint
         primitive,
         static_cast<GLsizei>(resolvedIndexCount),
         GL_UNSIGNED_INT,
-        nullptr);
+        reinterpret_cast<const void*>(static_cast<std::size_t>(firstIndex) * sizeof(uint32_t)));
 }
 
 } // namespace Raven
