@@ -64,14 +64,14 @@ int RunVulkanSceneRuntimeDemo()
     ExplicitCubeSceneDemo demo;
     if (demo.Init("Vulkan", runtime->GetWidth(), runtime->GetHeight()) == false)
     {
-        std::cerr << "Vulkan Entity Scene creation failed.\\n";
+        std::cerr << "Vulkan Entity Scene creation failed.\n";
         Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
     if (runtime->PrepareScene(demo.GetScene()) == false)
     {
-        std::cerr << "Vulkan Entity Scene mesh preparation failed.\\n";
+        std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
         demo.Shutdown();
         Renderer::Shutdown();
         runtime->Shutdown();
@@ -81,9 +81,7 @@ int RunVulkanSceneRuntimeDemo()
     RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
     if (frame == nullptr)
     {
-        scene.reset();
-        mesh.reset();
-        material.reset();
+        demo.Shutdown();
         Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
