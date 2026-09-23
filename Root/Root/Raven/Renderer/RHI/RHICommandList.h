@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/Shader/ShaderTypes.h"
@@ -20,7 +21,8 @@ struct RHIRenderTargetState
 {
     uint32_t DrawTarget = 0;
     uint32_t ReadTarget = 0;
-    uint32_t DrawBuffer = 0;
+    // MRTではDraw Buffer 0だけでなく全slotを保存し、復元時にglDrawBuffers相当を再適用します。
+    std::vector<uint32_t> DrawBuffers;
     uint32_t ReadBuffer = 0;
 };
 
