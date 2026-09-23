@@ -61,7 +61,7 @@ public:
     struct ExplicitSceneCallbacks
     {
         std::function<void()> OnScene;
-        std::function<bool(uint32_t, uint32_t)> Resize;
+        std::function<bool(uint32_t, uint32_t, bool)> Resize;
         std::function<bool()> Prepare;
         std::function<RHIFrameResult()> DrawPrepared;
     };
