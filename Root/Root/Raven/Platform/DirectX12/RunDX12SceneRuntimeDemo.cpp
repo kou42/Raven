@@ -126,10 +126,10 @@ int RunDX12SceneRuntimeDemo()
         right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
         scene.RenderEntities();
     };
-    callbacks.Resize = [&](uint32_t width, uint32_t height)
+    callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
     {
         // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
-        if (swapChainWidth != width || swapChainHeight != height)
+        if (force == true || swapChainWidth != width || swapChainHeight != height)
         {
             if (runtime.Resize(width, height) == false)
             {
