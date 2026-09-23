@@ -1045,6 +1045,25 @@ void Application::SetScene(Scope<Scene> scene)
     }
 }
 
+RHIFrameResult Application::ExecuteExplicitSceneFrame(
+    RHISceneFrameLifecycle& frame,
+    const std::function<bool()>& prepare,
+    const std::function<RHIFrameResult()>& drawPrepared)
+{
+    // Descriptorの更新はGPU Frame中に行わず、Acquire前に必ず完了させます。
+    if (prepare == nullptr || drawPrepared == nullptr || prepare() == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const RHIFrameResult begin = frame.BeginFrame();
+    if (begin != RHIFrameResult::Success)
+    {
+        // ResizeRequired時は描画せず、呼び出し元がSwapChainとPipelineを再生成します。
+        return begin;
+    }
+    return drawPrepared();
+}
+
 void Application::Run()
 {
     // Frame境界はConstructorでWindowと共に確定済みです。
