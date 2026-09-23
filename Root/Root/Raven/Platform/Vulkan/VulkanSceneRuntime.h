@@ -7,6 +7,7 @@ namespace Raven
 {
 
 class Mesh;
+class Scene;
 class RHIDevice;
 class VulkanSceneRHIDevice;
 
@@ -30,6 +31,9 @@ public:
     // Frame開始前に通常MeshのExplicit RHI BufferをこのRuntimeのDeviceで構築し直します。
     // Context再生成後も古いDeviceのBufferを再利用しないため、呼び出し側は登録時に一度実行します。
     bool PrepareMesh(const Ref<Mesh>& mesh);
+
+    // SceneのEntityが共有するMeshをFrame開始前に一括準備します。
+    bool PrepareScene(Scene& scene);
 
     // Renderer::BeginScene()以降に蓄積された通常Queueを消費し、
     // Texture準備からPresentまでを一つのExplicit Frameとして実行します。
