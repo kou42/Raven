@@ -154,19 +154,20 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
         return false;
     }
 
+    // 再生成前に旧Frameの保持参照を外します。失敗時も所有元がShutdownします。
+    m_PreparedFrame.reset();
     if (m_Context.Resize(width, height) == false)
     {
         return false;
     }
 
-    m_PreparedFrame.reset();
     // Context::Resize()が旧RenderPass用native Pipelineを無効化しています。
     // 外部Refも破棄し、新しいRender Target情報から両Pipelineを再生成します。
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
     if (CreatePipelines() == false)
     {
-        Shutdown();
+        // Context/Deviceは維持し、Applicationに失敗を返して終了順序を守ります。
         return false;
     }
     return true;
