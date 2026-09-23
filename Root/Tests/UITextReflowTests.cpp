@@ -155,12 +155,25 @@ void TestDPIFontDataAndCapacityFailure()
     // CI/開発機のFontを使用し、存在しない環境では明示的にスキップします。
     // 1x1 AtlasにASCII 'A'を収められないため、GPU Texture生成前に容量不足が確定します。
     std::string fontPath;
+#if defined(_MSC_VER)
+    // MSVCではgetenvが非推奨のため、呼び出し側所有のコピーを取得して使用後に解放します。
+    char* configured = nullptr;
+    size_t configuredLength = 0u;
+    const errno_t environmentResult = _dupenv_s(
+        &configured, &configuredLength, "RAVEN_UI_TEST_FONT");
+    if (environmentResult == 0 && configured != nullptr && configured[0] != '\0')
+    {
+        fontPath = configured;
+    }
+    std::free(configured);
+#else
     const char* configured = std::getenv("RAVEN_UI_TEST_FONT");
     if (configured != nullptr && configured[0] != '\0')
     {
         fontPath = configured;
     }
-    else
+#endif
+    if (fontPath.empty() == true)
     {
         constexpr const char* candidates[] =
         {

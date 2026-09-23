@@ -406,7 +406,7 @@ bool LoadDockSnapshot(const std::string& filePath,
     // 旧版退避後に異常終了した場合のみBackupを復旧候補として読み込みます。
     std::filesystem::path backup = destination;
     backup += ".bak";
-    if (std::filesystem::exists(backup, error) == true && error == false)
+    if (std::filesystem::exists(backup, error) == true && error.value() == 0)
     {
         return ReadDockSnapshotFile(backup, outSnapshot, errorMessage);
     }
