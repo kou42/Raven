@@ -485,7 +485,8 @@ RHIFrameResult Renderer::DrawRHISceneFrame(
     const Ref<RHIGraphicsPipeline>& opaquePipeline,
     const Ref<RHIGraphicsPipeline>& transparentPipeline,
     const Ref<RHITexture>& defaultTexture,
-    const math::Mat4& clipCorrection)
+    const math::Mat4& clipCorrection,
+    bool frameAlreadyActive)
 {
     std::vector<RHISceneDrawItem> items;
     const bool built = BuildRHISceneDrawItems(
@@ -527,12 +528,13 @@ RHIFrameResult Renderer::DrawRHISceneFrame(
         return RHIFrameResult::FatalError;
     }
 
-    const RHIFrameResult result = RHISceneMeshRenderer::DrawFrame(
-        frame,
-        commands,
-        opaquePipeline,
-        transparentPipeline,
-        items);
+    // ApplicationがFrameを開始済みならAcquireを繰り返さず、描画からPresentまでを実行します。
+    // Descriptorの準備は従来どおりFrame開始前に行う必要があります。
+    const RHIFrameResult result = frameAlreadyActive == true ?
+        RHISceneMeshRenderer::DrawActiveFrame(frame, commands,
+            opaquePipeline, transparentPipeline, items) :
+        RHISceneMeshRenderer::DrawFrame(frame, commands,
+            opaquePipeline, transparentPipeline, items);
     if (result == RHIFrameResult::Success)
     {
         const PrimitiveTopology topology =
