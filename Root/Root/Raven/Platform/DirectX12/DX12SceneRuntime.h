@@ -160,6 +160,11 @@ public:
     }
 
     bool IsInitialized() const { return m_Initialized; }
+    // Runtimeが所有するContextのFrame境界を公開します。Shutdown後は参照しないでください。
+    RHISceneFrameLifecycle* GetFrameLifecycle()
+    {
+        return m_Initialized == true ? &m_Context : nullptr;
+    }
     RHIDevice* GetDevice()
     {
         return m_Initialized == true ? m_Device.get() : nullptr;
