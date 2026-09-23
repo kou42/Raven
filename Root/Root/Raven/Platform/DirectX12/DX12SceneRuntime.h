@@ -35,11 +35,17 @@ public:
     {
         Shutdown();
         if (window.GetBackend() != RHIBackend::DirectX12 ||
-            pipelineSpecification.Topology != PrimitiveTopology::Triangles ||
-            m_Context.Init(window) == false)
+            pipelineSpecification.Topology != PrimitiveTopology::Triangles)
         {
             return false;
         }
+        if (m_Context.Init(window) == false)
+        {
+            // 部分初期化されたDevice/SwapChainを次回Initへ持ち越しません。
+            Shutdown();
+            return false;
+        }
+        m_Window = &window;
 
         m_Device = CreateScope<DX12SceneRHIDevice>(m_Context);
         m_PipelineDebugName = pipelineSpecification.DebugName != nullptr ?
@@ -131,6 +137,7 @@ public:
         m_Context.Shutdown();
         m_PipelineSpecification = {};
         m_PipelineDebugName.clear();
+        m_Window = nullptr;
         m_Initialized = false;
     }
 
@@ -140,6 +147,14 @@ public:
         return m_Initialized == true ? m_Device.get() : nullptr;
     }
     const Ref<RHITexture>& GetDefaultTexture() const { return m_DefaultTexture; }
+    uint32_t GetWidth() const
+    {
+        return m_Window != nullptr ? m_Window->GetFramebufferWidth() : 0;
+    }
+    uint32_t GetHeight() const
+    {
+        return m_Window != nullptr ? m_Window->GetFramebufferHeight() : 0;
+    }
 
 private:
     static math::Mat4 DX12ClipCorrection()
@@ -194,6 +209,7 @@ private:
         return m_DefaultTexture != nullptr;
     }
 
+    Window* m_Window = nullptr;
     DX12SceneContext m_Context;
     Scope<DX12SceneRHIDevice> m_Device;
     RHIShaderAssetManager m_ShaderAssets;
