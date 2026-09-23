@@ -140,7 +140,22 @@ int RunVulkanSceneRuntimeDemo()
         right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
         scene.RenderEntities();
 
-        const RHIFrameResult result = runtime.DrawFrame();
+        // Applicationへ移す予定のFrame順序をDemoでも実行し、二重Acquireを避けます。
+        // Descriptor準備を必ずBeginFrameより先に行います。
+        if (runtime.PrepareFrame() == false)
+        {
+            exitCode = 1;
+            break;
+        }
+        RHISceneFrameLifecycle* frame = runtime.GetFrameLifecycle();
+        if (frame == nullptr)
+        {
+            exitCode = 1;
+            break;
+        }
+        const RHIFrameResult begin = frame->BeginFrame();
+        const RHIFrameResult result = begin == RHIFrameResult::Success ?
+            runtime.DrawPreparedFrame() : begin;
         if (result == RHIFrameResult::ResizeRequired)
         {
             if (runtime.Resize(
