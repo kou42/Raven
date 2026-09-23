@@ -11,8 +11,6 @@
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
-#include <glad/glad.h>
-
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -347,12 +345,9 @@ void OpenGLUIRenderer::Render(
         return;
     }
 
-    // UI用VAOの初回構築ではAddVertexBuffer/SetIndexBufferがVAOをbindします。
-    // 描画直前ではなくGPU Buffer更新より前のbindingを保存し、Scene側VAOを正しく復元します。
-    GLint previousVertexArray = 0;
-    GLint previousArrayBuffer = 0;
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
+    // VAO/VBOは初回EnsureBuffersで変更されるため、GPU Buffer更新前に退避します。
+    // ShaderとTexture Unit 0も同じsnapshotで保持し、失敗経路でも復元できます。
+    const RHIOverlayBindingState previousBinding = RenderCommand::CaptureOverlayBindingState();
 
     EnsureBuffers(
         vertices.data(),
@@ -363,8 +358,7 @@ void OpenGLUIRenderer::Render(
     if (m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
     {
         // 初回Buffer作成に失敗した場合も、作成途中で変更したbindingを残しません。
-        glBindVertexArray(static_cast<GLuint>(previousVertexArray));
-        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
+        RenderCommand::RestoreOverlayBindingState(previousBinding);
 #ifdef _DEBUG
         static bool missingBufferLogged = false;
         if (missingBufferLogged == false)
@@ -400,39 +394,8 @@ void OpenGLUIRenderer::Render(
     const RHIRenderTargetState previousRenderTarget = RenderCommand::CaptureRenderTargetState();
     const RHIViewport previousViewport = RenderCommand::GetViewport();
     const RHIScissor previousScissor = RenderCommand::GetScissor();
-    GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
-    GLint previousActiveTexture = GL_TEXTURE0;
-    GLint previousTextureBinding = 0;
-    GLint previousProgram = 0;
-    GLint previousBlendSrcRGB = GL_ONE;
-    GLint previousBlendDstRGB = GL_ZERO;
-    GLint previousBlendSrcAlpha = GL_ONE;
-    GLint previousBlendDstAlpha = GL_ZERO;
-    GLint previousBlendEquationRGB = GL_FUNC_ADD;
-    GLint previousBlendEquationAlpha = GL_FUNC_ADD;
-
-    glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
-    // Shader/VAOとBlend式もUIが上書きするstateなので、後続Scene描画へ漏らさず復元します。
-    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
-    glGetIntegerv(GL_BLEND_SRC_RGB, &previousBlendSrcRGB);
-    glGetIntegerv(GL_BLEND_DST_RGB, &previousBlendDstRGB);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &previousBlendSrcAlpha);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &previousBlendDstAlpha);
-    glGetIntegerv(GL_BLEND_EQUATION_RGB, &previousBlendEquationRGB);
-    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &previousBlendEquationAlpha);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-    glActiveTexture(GL_TEXTURE0);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
-
-    const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-    const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
-
-    GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
-    GLboolean previousDepthMask = GL_TRUE;
-    glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
-
+    // 固定機能stateのsnapshotはRHI Backendが所有し、UIはOpenGL enumを解釈しません。
+    const RHIOverlayRasterState previousRasterState = RenderCommand::CaptureOverlayRasterState();
     RenderCommand::BindDefaultRenderTarget();
 
     // Overlayの描画先をdefault framebufferへ切り替えた後、RHI経由でviewportを設定します。
@@ -440,14 +403,8 @@ void OpenGLUIRenderer::Render(
         static_cast<uint32_t>(framebufferSize.x),
         static_cast<uint32_t>(framebufferSize.y));
 
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glDisable(GL_CULL_FACE);
     RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    RenderCommand::SetOverlayRasterState();
 
     // UI専用Triangle PipelineをBindし、直前のScene Line/Point topologyを引き継ぎません。
     RenderCommand::BindPipeline(m_Pipeline);
@@ -536,23 +493,15 @@ void OpenGLUIRenderer::Render(
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
     // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
 
-    // UI Pipelineの追跡を元へ戻してから、native Shader/VAOと描画stateを復元します。
+    // UI Pipeline追跡を元へ戻し、native bindingはBackendのsnapshotから復元します。
     RenderCommand::RestorePipelineBinding(previousPipeline);
-    // Unbind()は呼び出し前のShader/VAOへ戻す操作ではないため、元のbindingを明示復元します。
-    glBindVertexArray(static_cast<GLuint>(previousVertexArray));
-    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
-    glUseProgram(static_cast<GLuint>(previousProgram));
+    RenderCommand::RestoreOverlayBindingState(previousBinding);
 
     // ========================================================================
     // State restore
     // ========================================================================
     // Raven UIをRenderer pipelineの途中から呼んでも後続描画へ影響を残さないよう、
-    // Framebuffer / viewport / scissorに加えて、今回UI側で上書きしたPolygonMode / ColorMask /
-    // DepthMask / Texture Bindingも呼び出し前の値へ戻します。UI backendが外部Renderer stateを
-    // 漏らさないための処理です。
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
-    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+    // RenderTarget / Viewport / Scissorと固定機能stateも呼び出し前の値へ戻します。
     RenderCommand::RestoreRenderTargetState(previousRenderTarget);
     // UIの描画前に取得したViewportをRHI経由で復元します。
     RenderCommand::SetViewport(
@@ -566,50 +515,7 @@ void OpenGLUIRenderer::Render(
     {
         RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
     }
-    glPolygonMode(GL_FRONT, previousPolygonMode[0]);
-    glPolygonMode(GL_BACK, previousPolygonMode[1]);
-    glColorMask(
-        previousColorMask[0],
-        previousColorMask[1],
-        previousColorMask[2],
-        previousColorMask[3]);
-    glDepthMask(previousDepthMask);
-    // UIはBlendFuncを変更するため、Blend enableだけでなくRGB/Alphaの係数と演算も復元します。
-    glBlendFuncSeparate(
-        static_cast<GLenum>(previousBlendSrcRGB),
-        static_cast<GLenum>(previousBlendDstRGB),
-        static_cast<GLenum>(previousBlendSrcAlpha),
-        static_cast<GLenum>(previousBlendDstAlpha));
-    glBlendEquationSeparate(
-        static_cast<GLenum>(previousBlendEquationRGB),
-        static_cast<GLenum>(previousBlendEquationAlpha));
-
-    if (depthTestEnabled == GL_TRUE)
-    {
-        glEnable(GL_DEPTH_TEST);
-    }
-    else
-    {
-        glDisable(GL_DEPTH_TEST);
-    }
-
-    if (blendEnabled == GL_TRUE)
-    {
-        glEnable(GL_BLEND);
-    }
-    else
-    {
-        glDisable(GL_BLEND);
-    }
-
-    if (cullFaceEnabled == GL_TRUE)
-    {
-        glEnable(GL_CULL_FACE);
-    }
-    else
-    {
-        glDisable(GL_CULL_FACE);
-    }
+    RenderCommand::RestoreOverlayRasterState(previousRasterState);
 
 }
 

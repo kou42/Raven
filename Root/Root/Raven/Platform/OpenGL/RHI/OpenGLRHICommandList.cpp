@@ -170,6 +170,122 @@ RHIScissor OpenGLRHICommandList::GetScissor() const
     return result;
 }
 
+RHIOverlayRasterState OpenGLRHICommandList::CaptureOverlayRasterState() const
+{
+    RHIOverlayRasterState state{};
+    state.DepthTest = glIsEnabled(GL_DEPTH_TEST) == GL_TRUE;
+    state.Blend = glIsEnabled(GL_BLEND) == GL_TRUE;
+    state.CullFace = glIsEnabled(GL_CULL_FACE) == GL_TRUE;
+
+    GLboolean depthWrite = GL_TRUE;
+    GLboolean colorWrite[4] = {};
+    GLint polygonMode[2] = {};
+    GLint blendSrcRGB = 0;
+    GLint blendDstRGB = 0;
+    GLint blendSrcAlpha = 0;
+    GLint blendDstAlpha = 0;
+    GLint blendEquationRGB = 0;
+    GLint blendEquationAlpha = 0;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWrite);
+    glGetBooleanv(GL_COLOR_WRITEMASK, colorWrite);
+    glGetIntegerv(GL_POLYGON_MODE, polygonMode);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRGB);
+    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRGB);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
+    glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEquationRGB);
+    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEquationAlpha);
+
+    state.DepthWrite = depthWrite == GL_TRUE;
+    for (int index = 0; index < 4; ++index)
+    {
+        state.ColorWrite[index] = colorWrite[index] == GL_TRUE;
+    }
+    state.PolygonMode[0] = polygonMode[0];
+    state.PolygonMode[1] = polygonMode[1];
+    state.BlendSrcRGB = blendSrcRGB;
+    state.BlendDstRGB = blendDstRGB;
+    state.BlendSrcAlpha = blendSrcAlpha;
+    state.BlendDstAlpha = blendDstAlpha;
+    state.BlendEquationRGB = blendEquationRGB;
+    state.BlendEquationAlpha = blendEquationAlpha;
+    return state;
+}
+
+void OpenGLRHICommandList::SetOverlayRasterState()
+{
+    // 直前の3D Pipelineに依存せずUIを塗りつぶし・Alpha合成で描画します。
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+void OpenGLRHICommandList::RestoreOverlayRasterState(const RHIOverlayRasterState& state)
+{
+    // Pipeline::Bind()が上書きするstateもUI開始時の実際のGL値へ戻します。
+    glPolygonMode(GL_FRONT, static_cast<GLenum>(state.PolygonMode[0]));
+    glPolygonMode(GL_BACK, static_cast<GLenum>(state.PolygonMode[1]));
+    glColorMask(state.ColorWrite[0] ? GL_TRUE : GL_FALSE,
+        state.ColorWrite[1] ? GL_TRUE : GL_FALSE,
+        state.ColorWrite[2] ? GL_TRUE : GL_FALSE,
+        state.ColorWrite[3] ? GL_TRUE : GL_FALSE);
+    glDepthMask(state.DepthWrite ? GL_TRUE : GL_FALSE);
+    glBlendFuncSeparate(static_cast<GLenum>(state.BlendSrcRGB),
+        static_cast<GLenum>(state.BlendDstRGB),
+        static_cast<GLenum>(state.BlendSrcAlpha),
+        static_cast<GLenum>(state.BlendDstAlpha));
+    glBlendEquationSeparate(static_cast<GLenum>(state.BlendEquationRGB),
+        static_cast<GLenum>(state.BlendEquationAlpha));
+    if (state.DepthTest == true) { glEnable(GL_DEPTH_TEST); }
+    else { glDisable(GL_DEPTH_TEST); }
+    if (state.Blend == true) { glEnable(GL_BLEND); }
+    else { glDisable(GL_BLEND); }
+    if (state.CullFace == true) { glEnable(GL_CULL_FACE); }
+    else { glDisable(GL_CULL_FACE); }
+}
+
+RHIOverlayBindingState OpenGLRHICommandList::CaptureOverlayBindingState() const
+{
+    RHIOverlayBindingState state{};
+    GLint vertexArray = 0;
+    GLint arrayBuffer = 0;
+    GLint program = 0;
+    GLint activeTexture = GL_TEXTURE0;
+    GLint texture2DUnit0 = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
+
+    // Unit 0のbindingはactive unitとは独立です。問い合わせ後に元のunitへ戻します。
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture2DUnit0);
+    glActiveTexture(static_cast<GLenum>(activeTexture));
+
+    state.VertexArray = static_cast<uint32_t>(vertexArray);
+    state.ArrayBuffer = static_cast<uint32_t>(arrayBuffer);
+    state.Program = static_cast<uint32_t>(program);
+    state.ActiveTexture = static_cast<uint32_t>(activeTexture);
+    state.Texture2DUnit0 = static_cast<uint32_t>(texture2DUnit0);
+    return state;
+}
+
+void OpenGLRHICommandList::RestoreOverlayBindingState(const RHIOverlayBindingState& state)
+{
+    // VAOを先に戻すことで、VAOごとに異なるElement Buffer bindingも元に戻ります。
+    // GL_ARRAY_BUFFERはVAOに属さないため別途復元します。
+    glBindVertexArray(static_cast<GLuint>(state.VertexArray));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.ArrayBuffer));
+    glUseProgram(static_cast<GLuint>(state.Program));
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.Texture2DUnit0));
+    glActiveTexture(static_cast<GLenum>(state.ActiveTexture));
+}
+
 void OpenGLRHICommandList::SetClearColor(float r, float g, float b, float a)
 {
     glClearColor(r, g, b, a);
