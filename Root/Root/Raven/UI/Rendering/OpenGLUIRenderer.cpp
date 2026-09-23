@@ -11,8 +11,6 @@
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
-#include <glad/glad.h>
-
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -347,12 +345,9 @@ void OpenGLUIRenderer::Render(
         return;
     }
 
-    // UI用VAOの初回構築ではAddVertexBuffer/SetIndexBufferがVAOをbindします。
-    // 描画直前ではなくGPU Buffer更新より前のbindingを保存し、Scene側VAOを正しく復元します。
-    GLint previousVertexArray = 0;
-    GLint previousArrayBuffer = 0;
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
+    // VAO/VBOは初回EnsureBuffersで変更されるため、GPU Buffer更新前に退避します。
+    // ShaderとTexture Unit 0も同じsnapshotで保持し、失敗経路でも復元できます。
+    const RHIOverlayBindingState previousBinding = RenderCommand::CaptureOverlayBindingState();
 
     EnsureBuffers(
         vertices.data(),
@@ -363,8 +358,7 @@ void OpenGLUIRenderer::Render(
     if (m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
     {
         // 初回Buffer作成に失敗した場合も、作成途中で変更したbindingを残しません。
-        glBindVertexArray(static_cast<GLuint>(previousVertexArray));
-        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
+        RenderCommand::RestoreOverlayBindingState(previousBinding);
 #ifdef _DEBUG
         static bool missingBufferLogged = false;
         if (missingBufferLogged == false)
@@ -402,14 +396,6 @@ void OpenGLUIRenderer::Render(
     const RHIScissor previousScissor = RenderCommand::GetScissor();
     // 固定機能stateのsnapshotはRHI Backendが所有し、UIはOpenGL enumを解釈しません。
     const RHIOverlayRasterState previousRasterState = RenderCommand::CaptureOverlayRasterState();
-    GLint previousActiveTexture = GL_TEXTURE0;
-    GLint previousTextureBinding = 0;
-    GLint previousProgram = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-    glActiveTexture(GL_TEXTURE0);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
-
     RenderCommand::BindDefaultRenderTarget();
 
     // Overlayの描画先をdefault framebufferへ切り替えた後、RHI経由でviewportを設定します。
@@ -507,23 +493,15 @@ void OpenGLUIRenderer::Render(
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
     // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
 
-    // UI Pipelineの追跡を元へ戻してから、native Shader/VAOと描画stateを復元します。
+    // UI Pipeline追跡を元へ戻し、native bindingはBackendのsnapshotから復元します。
     RenderCommand::RestorePipelineBinding(previousPipeline);
-    // Unbind()は呼び出し前のShader/VAOへ戻す操作ではないため、元のbindingを明示復元します。
-    glBindVertexArray(static_cast<GLuint>(previousVertexArray));
-    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
-    glUseProgram(static_cast<GLuint>(previousProgram));
+    RenderCommand::RestoreOverlayBindingState(previousBinding);
 
     // ========================================================================
     // State restore
     // ========================================================================
     // Raven UIをRenderer pipelineの途中から呼んでも後続描画へ影響を残さないよう、
-    // Framebuffer / viewport / scissorに加えて、今回UI側で上書きしたPolygonMode / ColorMask /
-    // DepthMask / Texture Bindingも呼び出し前の値へ戻します。UI backendが外部Renderer stateを
-    // 漏らさないための処理です。
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
-    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
+    // RenderTarget / Viewport / Scissorと固定機能stateも呼び出し前の値へ戻します。
     RenderCommand::RestoreRenderTargetState(previousRenderTarget);
     // UIの描画前に取得したViewportをRHI経由で復元します。
     RenderCommand::SetViewport(
