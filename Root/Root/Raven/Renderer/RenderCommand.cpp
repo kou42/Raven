@@ -149,7 +149,7 @@ void RenderCommand::UploadUniform(const std::string& name, const UniformValue& v
     s_CommandList->UploadUniform(name, value);
 }
 
-void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
+void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount, uint32_t firstIndex)
 {
     if (s_CommandList == nullptr || vertexArray == nullptr)
     {
@@ -160,19 +160,16 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
     // indexCount == 0 は「VAOのIndexBuffer全体を描画する」意味です。
     // 実際に発行されるIndex数へ解決してから統計へ記録することで、呼び出し経路によらず
     // StatisticsPanelの値を実Draw Callと一致させます。
-    uint32_t resolvedIndexCount = indexCount;
-    if (resolvedIndexCount == 0)
+    const Ref<IndexBuffer>& indexBuffer = vertexArray->GetIndexBuffer();
+    if (indexBuffer == nullptr || firstIndex > indexBuffer->GetCount())
     {
-        const Ref<IndexBuffer>& indexBuffer = vertexArray->GetIndexBuffer();
-        if (indexBuffer != nullptr)
-        {
-            resolvedIndexCount = indexBuffer->GetCount();
-        }
+        return;
     }
 
-    // IndexBufferが存在しない、または空の場合は実Draw Callも発行しません。
-    // 統計だけを増加させる状態を避け、Renderer StatisticsとGPU命令の対応を維持します。
-    if (resolvedIndexCount == 0)
+    // 減算で残り要素数を求め、offset + countの整数overflowを避けます。
+    const uint32_t remainingCount = indexBuffer->GetCount() - firstIndex;
+    const uint32_t resolvedIndexCount = indexCount == 0 ? remainingCount : indexCount;
+    if (resolvedIndexCount == 0 || resolvedIndexCount > remainingCount)
     {
         return;
     }
@@ -188,8 +185,13 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
 
     // Renderer側にはAPI非依存の統計だけを記録し、実際のDraw命令とTopology変換は
     // RHICommandList -> Graphics Backendへ委譲します。
+    if (topology == PrimitiveTopology::None)
+    {
+        return;
+    }
+
     Renderer::RecordIndexedDraw(resolvedIndexCount, topology);
-    s_CommandList->DrawIndexed(vertexArray, indexCount);
+    s_CommandList->DrawIndexed(vertexArray, resolvedIndexCount, firstIndex);
 }
 
 RHIDevice* RenderCommand::GetDevice()
