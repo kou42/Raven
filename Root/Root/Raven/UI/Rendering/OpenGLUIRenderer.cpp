@@ -400,38 +400,15 @@ void OpenGLUIRenderer::Render(
     const RHIRenderTargetState previousRenderTarget = RenderCommand::CaptureRenderTargetState();
     const RHIViewport previousViewport = RenderCommand::GetViewport();
     const RHIScissor previousScissor = RenderCommand::GetScissor();
-    GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
+    // 固定機能stateのsnapshotはRHI Backendが所有し、UIはOpenGL enumを解釈しません。
+    const RHIOverlayRasterState previousRasterState = RenderCommand::CaptureOverlayRasterState();
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
     GLint previousProgram = 0;
-    GLint previousBlendSrcRGB = GL_ONE;
-    GLint previousBlendDstRGB = GL_ZERO;
-    GLint previousBlendSrcAlpha = GL_ONE;
-    GLint previousBlendDstAlpha = GL_ZERO;
-    GLint previousBlendEquationRGB = GL_FUNC_ADD;
-    GLint previousBlendEquationAlpha = GL_FUNC_ADD;
-
-    glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
-    // Shader/VAOとBlend式もUIが上書きするstateなので、後続Scene描画へ漏らさず復元します。
     glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
-    glGetIntegerv(GL_BLEND_SRC_RGB, &previousBlendSrcRGB);
-    glGetIntegerv(GL_BLEND_DST_RGB, &previousBlendDstRGB);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &previousBlendSrcAlpha);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &previousBlendDstAlpha);
-    glGetIntegerv(GL_BLEND_EQUATION_RGB, &previousBlendEquationRGB);
-    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &previousBlendEquationAlpha);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
-
-    const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
-    const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-    const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
-
-    GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
-    GLboolean previousDepthMask = GL_TRUE;
-    glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
 
     RenderCommand::BindDefaultRenderTarget();
 
@@ -440,14 +417,8 @@ void OpenGLUIRenderer::Render(
         static_cast<uint32_t>(framebufferSize.x),
         static_cast<uint32_t>(framebufferSize.y));
 
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glDisable(GL_CULL_FACE);
     RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    RenderCommand::SetOverlayRasterState();
 
     // UI専用Triangle PipelineをBindし、直前のScene Line/Point topologyを引き継ぎません。
     RenderCommand::BindPipeline(m_Pipeline);
@@ -566,50 +537,7 @@ void OpenGLUIRenderer::Render(
     {
         RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
     }
-    glPolygonMode(GL_FRONT, previousPolygonMode[0]);
-    glPolygonMode(GL_BACK, previousPolygonMode[1]);
-    glColorMask(
-        previousColorMask[0],
-        previousColorMask[1],
-        previousColorMask[2],
-        previousColorMask[3]);
-    glDepthMask(previousDepthMask);
-    // UIはBlendFuncを変更するため、Blend enableだけでなくRGB/Alphaの係数と演算も復元します。
-    glBlendFuncSeparate(
-        static_cast<GLenum>(previousBlendSrcRGB),
-        static_cast<GLenum>(previousBlendDstRGB),
-        static_cast<GLenum>(previousBlendSrcAlpha),
-        static_cast<GLenum>(previousBlendDstAlpha));
-    glBlendEquationSeparate(
-        static_cast<GLenum>(previousBlendEquationRGB),
-        static_cast<GLenum>(previousBlendEquationAlpha));
-
-    if (depthTestEnabled == GL_TRUE)
-    {
-        glEnable(GL_DEPTH_TEST);
-    }
-    else
-    {
-        glDisable(GL_DEPTH_TEST);
-    }
-
-    if (blendEnabled == GL_TRUE)
-    {
-        glEnable(GL_BLEND);
-    }
-    else
-    {
-        glDisable(GL_BLEND);
-    }
-
-    if (cullFaceEnabled == GL_TRUE)
-    {
-        glEnable(GL_CULL_FACE);
-    }
-    else
-    {
-        glDisable(GL_CULL_FACE);
-    }
+    RenderCommand::RestoreOverlayRasterState(previousRasterState);
 
 }
 
