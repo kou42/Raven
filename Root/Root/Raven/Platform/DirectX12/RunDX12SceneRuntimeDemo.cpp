@@ -46,7 +46,7 @@ int RunDX12SceneRuntimeDemo()
     pipelineSpecification.Blend = false;
     pipelineSpecification.DebugName = "DX12 Normal Mesh Scene";
 
-    std::cout << "[DX12 Scene Demo] Initializing runtime->..\n" << std::flush;
+    std::cout << "[DX12 Scene Demo] Initializing runtime...\n" << std::flush;
     auto runtime = CreateScope<DX12SceneRuntime>();
     if (runtime->Init(
         *window,
@@ -62,7 +62,7 @@ int RunDX12SceneRuntimeDemo()
 
     // 通常Sceneと同じECS経路で複数Entityを登録します。
     // Explicit-only起動なのでOpenGL VAO/VBOは生成せず、CPU Geometryだけを持ちます。
-    Scene scene;
+    auto scene = CreateScope<Scene>();
     Ref<Mesh> mesh = PrimitiveMeshFactory::CreateCube(
         LegacyMeshResourceCreation::Deferred);
     Ref<Material> material = CreateRef<Material>();
@@ -76,20 +76,20 @@ int RunDX12SceneRuntimeDemo()
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
     material->SetSurfaceType(MaterialSurfaceType::Opaque);
 
-    Entity left = scene.CreateEntity("DX12LeftCube");
+    Entity left = scene->CreateEntity("DX12LeftCube");
     left.GetComponent<TransformComponent>().Position = {-1.2f, 0.0f, 0.0f};
     left.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
-    Entity center = scene.CreateEntity("DX12CenterCube");
+    Entity center = scene->CreateEntity("DX12CenterCube");
     center.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
-    Entity right = scene.CreateEntity("DX12RightCube");
+    Entity right = scene->CreateEntity("DX12RightCube");
     right.GetComponent<TransformComponent>().Position = {1.2f, 0.0f, 0.0f};
     right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
     std::cout << "[DX12 Scene Demo] Preparing 3 Cube entities...\n" << std::flush;
-    if (runtime->PrepareScene(scene) == false)
+    if (runtime->PrepareScene(*scene) == false)
     {
         std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
         runtime->Shutdown();
@@ -127,7 +127,7 @@ int RunDX12SceneRuntimeDemo()
         center.GetComponent<TransformComponent>().Rotation.y = time * 0.6f;
         left.GetComponent<TransformComponent>().Rotation.x = -time * 0.35f;
         right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
-        scene.RenderEntities();
+        scene->RenderEntities();
     };
     callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
     {
@@ -144,6 +144,14 @@ int RunDX12SceneRuntimeDemo()
                 static_cast<float>(height));
         }
         return true;
+    };
+    callbacks.OnBeforeShutdown = [&]()
+    {
+        // Entityが所有するMesh/MaterialをDeviceのShutdownより先に解放します。
+        // Runtimeへ移譲した後もSceneの寿命を明示的に短く保ちます。
+        scene.reset();
+        mesh.reset();
+        material.reset();
     };
     callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
     callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
