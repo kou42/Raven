@@ -46,6 +46,13 @@ void OpenGLRHICommandList::Init()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+void OpenGLRHICommandList::BindDefaultRenderTarget()
+{
+    // UI OverlayはEditorのScene/Game offscreen targetではなくWindowへ描画します。
+    // Draw/Readの両方を切り替え、外部stateの復元は呼び出し側の既存契約に従います。
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     glViewport(
