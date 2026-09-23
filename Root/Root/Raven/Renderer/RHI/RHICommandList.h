@@ -63,6 +63,17 @@ struct RHIOverlayRasterState
     uint32_t BlendEquationAlpha = 0;
 };
 
+// UIの動的Buffer更新・Pipeline bind・Image描画で変わるnative bindingを退避します。
+// 値はBackend内部でのみ解釈し、UI側にはOpenGLのhandle/enumを公開しません。
+struct RHIOverlayBindingState
+{
+    uint32_t VertexArray = 0;
+    uint32_t ArrayBuffer = 0;
+    uint32_t Program = 0;
+    uint32_t ActiveTexture = 0;
+    uint32_t Texture2DUnit0 = 0;
+};
+
 // ============================================================================
 // RHICommandList
 // ============================================================================
@@ -105,6 +116,11 @@ public:
     virtual RHIOverlayRasterState CaptureOverlayRasterState() const = 0;
     virtual void SetOverlayRasterState() = 0;
     virtual void RestoreOverlayRasterState(const RHIOverlayRasterState& state) = 0;
+
+    // Buffer生成より前に取得し、失敗経路でも元のVAO/VBOを復元します。
+    // Texture Unit 0はImageが利用するため、呼び出し前のactive unitと別に保存します。
+    virtual RHIOverlayBindingState CaptureOverlayBindingState() const = 0;
+    virtual void RestoreOverlayBindingState(const RHIOverlayBindingState& state) = 0;
 
     virtual void SetClearColor(float r, float g, float b, float a) = 0;
     virtual void Clear() = 0;
