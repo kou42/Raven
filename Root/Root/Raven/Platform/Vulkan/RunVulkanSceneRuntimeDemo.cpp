@@ -59,7 +59,7 @@ int RunVulkanSceneRuntimeDemo()
 
     // 通常Sceneと同じECS経路で複数Entityを登録します。
     // Explicit-only起動なのでOpenGL VAO/VBOは生成せず、CPU Geometryだけを持ちます。
-    Scene scene;
+    auto scene = CreateScope<Scene>();
     Ref<Mesh> mesh = PrimitiveMeshFactory::CreateCube(
         LegacyMeshResourceCreation::Deferred);
     Ref<Material> material = CreateRef<Material>();
@@ -73,19 +73,19 @@ int RunVulkanSceneRuntimeDemo()
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
     material->SetSurfaceType(MaterialSurfaceType::Opaque);
 
-    Entity left = scene.CreateEntity("VulkanLeftCube");
+    Entity left = scene->CreateEntity("VulkanLeftCube");
     left.GetComponent<TransformComponent>().Position = {-1.2f, 0.0f, 0.0f};
     left.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
-    Entity center = scene.CreateEntity("VulkanCenterCube");
+    Entity center = scene->CreateEntity("VulkanCenterCube");
     center.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
-    Entity right = scene.CreateEntity("VulkanRightCube");
+    Entity right = scene->CreateEntity("VulkanRightCube");
     right.GetComponent<TransformComponent>().Position = {1.2f, 0.0f, 0.0f};
     right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
-    if (runtime->PrepareScene(scene) == false)
+    if (runtime->PrepareScene(*scene) == false)
     {
         std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
         runtime->Shutdown();
@@ -119,7 +119,7 @@ int RunVulkanSceneRuntimeDemo()
         center.GetComponent<TransformComponent>().Rotation.y = time * 0.6f;
         left.GetComponent<TransformComponent>().Rotation.x = -time * 0.35f;
         right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
-        scene.RenderEntities();
+        scene->RenderEntities();
     };
     callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
     {
@@ -134,6 +134,14 @@ int RunVulkanSceneRuntimeDemo()
                 static_cast<float>(height));
         }
         return true;
+    };
+    callbacks.OnBeforeShutdown = [&]()
+    {
+        // Entityが所有するMesh/MaterialをDeviceのShutdownより先に解放します。
+        // Runtimeへ移譲した後もSceneの寿命を明示的に短く保ちます。
+        scene.reset();
+        mesh.reset();
+        material.reset();
     };
     callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
     callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
