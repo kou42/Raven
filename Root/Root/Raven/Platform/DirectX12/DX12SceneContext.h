@@ -44,6 +44,12 @@ public:
     bool RetainDrawBuffers(const Ref<RHIBuffer>& vertexBuffer,
         const Ref<RHIBuffer>& indexBuffer);
 
+    // Pipeline/Root Signature設定後にのみ呼ぶnative Indexed Drawの記録入口です。
+    // strideはPipelineのVertex Binding 0と一致させてください。
+    bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
+        const Ref<RHIBuffer>& indexBuffer, uint32_t stride,
+        uint32_t indexCount = 0);
+
 private:
     struct FrameResource
     {
