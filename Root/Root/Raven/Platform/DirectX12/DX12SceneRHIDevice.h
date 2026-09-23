@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DX12SceneContext.h"
+#include "DX12SceneGraphicsPipeline.h"
 #include "DX12SceneRHIBuffer.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Scene/Scene.h"
@@ -53,6 +54,37 @@ public:
             return nullptr;
         }
         return buffer;
+    }
+
+    Ref<RHIGraphicsPipeline> CreateGraphicsPipeline(
+        const RHIGraphicsPipelineSpecification& specification) override
+    {
+        if (m_Context.GetNativeDevice() == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr)
+        {
+            return nullptr;
+        }
+        auto pipeline = CreateRef<DX12SceneGraphicsPipeline>();
+        if (pipeline->Init(m_Context.GetNativeDevice(), specification) == false)
+        {
+            return nullptr;
+        }
+        return pipeline;
+    }
+
+    bool GetGraphicsPipelineTarget(
+        RHIGraphicsPipelineTarget& target) const override
+    {
+        target = {};
+        if (m_Context.GetNativeDevice() == nullptr)
+        {
+            return false;
+        }
+        // DX12SwapChainの現行RTVはRGBA8 UNORM、Depthは未実装です。
+        target.ColorFormat = RHIColorFormat::RGBA8Unorm;
+        target.DepthFormat = RHIDepthFormat::None;
+        target.SampleCount = 1;
+        return true;
     }
 
     Ref<RHITexture> CreateTexture(
