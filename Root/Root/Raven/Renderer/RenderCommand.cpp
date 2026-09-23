@@ -113,6 +113,17 @@ void RenderCommand::SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t wi
     s_CommandList->SetScissor(enabled, x, y, width, height);
 }
 
+RHIScissor RenderCommand::GetScissor()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return {};
+    }
+
+    return s_CommandList->GetScissor();
+}
+
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
     if (s_CommandList == nullptr)
