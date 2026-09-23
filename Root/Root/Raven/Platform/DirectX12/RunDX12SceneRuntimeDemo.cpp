@@ -164,6 +164,12 @@ int RunDX12SceneRuntimeDemo()
             *frame,
             [&runtime]() { return runtime.PrepareFrame(); },
             [&runtime]() { return runtime.DrawPreparedFrame(); });
+        if (firstFrame == true)
+        {
+            std::cout << "[DX12 Scene Demo] First frame result: "
+                << static_cast<int>(result) << "\\n" << std::flush;
+            firstFrame = false;
+        }
         if (result == RHIFrameResult::ResizeRequired)
         {
             if (runtime.Resize(
