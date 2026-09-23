@@ -36,6 +36,10 @@ public:
     void SetClearColor(const float color[4]);
     ID3D12GraphicsCommandList* GetActiveCommandList() const;
 
+    // Scene用Buffer/PipelineはClear DemoとDeviceを共有せず、このContextから生成します。
+    // Context終了後に取得したnative pointerを保持しないでください。
+    ID3D12Device* GetNativeDevice() const;
+
 private:
     struct FrameResource
     {
