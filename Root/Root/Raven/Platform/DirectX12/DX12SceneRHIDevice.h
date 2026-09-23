@@ -88,6 +88,37 @@ public:
         return true;
     }
 
+    bool PrepareSceneTextures(
+        const std::vector<Ref<RHITexture>>& textures,
+        const Ref<RHIGraphicsPipeline>& pipeline) override
+    {
+        // DX12はTexture生成時にSRV Heapを作成済みです。
+        // BeginFrame前に全Textureが同一DeviceのShader-visible SRVを持つことを検証します。
+        // RHIDeviceの既定実装はfalseを返すため、これを省くと初回Drawが必ず失敗します。
+        auto nativePipeline =
+            std::dynamic_pointer_cast<DX12SceneGraphicsPipeline>(pipeline);
+        if (m_Context.GetNativeDevice() == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr ||
+            nativePipeline == nullptr ||
+            nativePipeline->GetOwnerDevice() != m_Context.GetNativeDevice())
+        {
+            return false;
+        }
+        for (const Ref<RHITexture>& texture : textures)
+        {
+            auto nativeTexture =
+                std::dynamic_pointer_cast<DX12SceneRHITexture>(texture);
+            if (nativeTexture == nullptr ||
+                nativeTexture->GetOwnerDevice() != m_Context.GetNativeDevice() ||
+                nativeTexture->GetNativeTexture() == nullptr ||
+                nativeTexture->GetSrvHeap() == nullptr)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     Ref<RHITexture> CreateTexture(
         const RHITextureSpecification& specification,
         const void* initialData = nullptr,
