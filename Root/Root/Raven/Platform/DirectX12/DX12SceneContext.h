@@ -61,6 +61,7 @@ public:
     bool IsGraphicsPipelineBound() const;
     bool SetClipTransform(const std::array<float, 16>& transform);
     bool SetMaterialTint(const std::array<float, 4>& tint);
+    bool BindTexture(const Ref<RHITexture>& texture);
 
 private:
     struct FrameResource
@@ -69,6 +70,7 @@ private:
         uint64_t FenceValue = 0;
         std::vector<Ref<RHIBuffer>> RetainedBuffers;
         std::vector<Ref<RHIGraphicsPipeline>> RetainedPipelines;
+        std::vector<Ref<RHITexture>> RetainedTextures;
     };
 
     DX12Factory m_Factory;
