@@ -67,6 +67,17 @@ bool RenderCommand::TryInit(RHIBackend backend)
     return true;
 }
 
+void RenderCommand::BindRenderTarget(const Framebuffer& framebuffer)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->BindRenderTarget(framebuffer);
+}
+
 void RenderCommand::BindDefaultRenderTarget()
 {
     if (s_CommandList == nullptr)
