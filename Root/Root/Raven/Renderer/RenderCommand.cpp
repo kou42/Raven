@@ -67,7 +67,51 @@ bool RenderCommand::TryInit(RHIBackend backend)
     return true;
 }
 
-void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+void RenderCommand::BindRenderTarget(const Framebuffer& framebuffer)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->BindRenderTarget(framebuffer);
+}
+
+void RenderCommand::BindDefaultRenderTarget()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->BindDefaultRenderTarget();
+}
+
+RHIRenderTargetState RenderCommand::CaptureRenderTargetState()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return {};
+    }
+
+    return s_CommandList->CaptureRenderTargetState();
+}
+
+void RenderCommand::RestoreRenderTargetState(const RHIRenderTargetState& state)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->RestoreRenderTargetState(state);
+}
+
+void RenderCommand::SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
     if (s_CommandList == nullptr)
     {
@@ -89,6 +133,28 @@ RHIViewport RenderCommand::GetViewport()
 
     // Physics Debug Overlay等が現在の描画領域を取得する際も、GL_VIEWPORTへ直接依存させません。
     return s_CommandList->GetViewport();
+}
+
+void RenderCommand::SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->SetScissor(enabled, x, y, width, height);
+}
+
+RHIScissor RenderCommand::GetScissor()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return {};
+    }
+
+    return s_CommandList->GetScissor();
 }
 
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
@@ -126,6 +192,24 @@ void RenderCommand::BindPipeline(const Ref<Pipeline>& pipeline)
     s_CurrentPipeline = pipeline;
 }
 
+Ref<Pipeline> RenderCommand::GetBoundPipeline()
+{
+    return s_CurrentPipeline;
+}
+
+void RenderCommand::RestorePipelineBinding(const Ref<Pipeline>& pipeline)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    // nullptrの場合も直前のUI Pipelineを残さず、次のDrawのTopology誤認を防ぎます。
+    s_CommandList->RestorePipelineBinding(pipeline);
+    s_CurrentPipeline = pipeline;
+}
+
 void RenderCommand::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
 {
     if (s_CommandList == nullptr || texture == nullptr)
@@ -149,7 +233,7 @@ void RenderCommand::UploadUniform(const std::string& name, const UniformValue& v
     s_CommandList->UploadUniform(name, value);
 }
 
-void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
+void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount, uint32_t firstIndex)
 {
     if (s_CommandList == nullptr || vertexArray == nullptr)
     {
@@ -160,19 +244,16 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
     // indexCount == 0 は「VAOのIndexBuffer全体を描画する」意味です。
     // 実際に発行されるIndex数へ解決してから統計へ記録することで、呼び出し経路によらず
     // StatisticsPanelの値を実Draw Callと一致させます。
-    uint32_t resolvedIndexCount = indexCount;
-    if (resolvedIndexCount == 0)
+    const Ref<IndexBuffer>& indexBuffer = vertexArray->GetIndexBuffer();
+    if (indexBuffer == nullptr || firstIndex > indexBuffer->GetCount())
     {
-        const Ref<IndexBuffer>& indexBuffer = vertexArray->GetIndexBuffer();
-        if (indexBuffer != nullptr)
-        {
-            resolvedIndexCount = indexBuffer->GetCount();
-        }
+        return;
     }
 
-    // IndexBufferが存在しない、または空の場合は実Draw Callも発行しません。
-    // 統計だけを増加させる状態を避け、Renderer StatisticsとGPU命令の対応を維持します。
-    if (resolvedIndexCount == 0)
+    // 減算で残り要素数を求め、offset + countの整数overflowを避けます。
+    const uint32_t remainingCount = indexBuffer->GetCount() - firstIndex;
+    const uint32_t resolvedIndexCount = indexCount == 0 ? remainingCount : indexCount;
+    if (resolvedIndexCount == 0 || resolvedIndexCount > remainingCount)
     {
         return;
     }
@@ -201,8 +282,13 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
 
     // Renderer側にはAPI非依存の統計だけを記録し、実際のDraw命令とTopology変換は
     // RHICommandList -> Graphics Backendへ委譲します。
+    if (topology == PrimitiveTopology::None)
+    {
+        return;
+    }
+
     Renderer::RecordIndexedDraw(resolvedIndexCount, topology);
-    s_CommandList->DrawIndexed(vertexArray, indexCount);
+    s_CommandList->DrawIndexed(vertexArray, resolvedIndexCount, firstIndex);
 }
 
 RHIDevice* RenderCommand::GetDevice()

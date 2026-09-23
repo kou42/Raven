@@ -80,6 +80,21 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [ ] Overlayが現在のFramebuffer / Viewportサイズに追従する。
 - [ ] Debug line が Triangle として統計計上されないことを確認する。
 
+## UI RHI化の段階実装
+
+- [x] `RHICommandList::DrawIndexed` / `RenderCommand::DrawIndexed` にIndexBuffer要素単位の `firstIndex` を追加し、OpenGL Backendでbyte offsetへ変換する（コードレビュー済み・ビルド未検証）。
+- [x] ScissorのFramebuffer左下原点Pixel矩形と有効/無効をRHICommandList / RenderCommandに追加する（コードレビュー済み・ビルド未検証）。
+- [x] `OpenGLUIRenderer` のviewport設定・取得・復元（負の原点座標を含む）とCommandごとのClip ScissorをRenderCommand経由へ移す（コードレビュー済み・ビルド未検証）。
+- [x] Window Overlay用default RenderTargetのbindingをRenderCommand / RHICommandListへ移す（コードレビュー済み・ビルド未検証）。
+- [x] Scissorの現在値（無効時の矩形・負の原点座標を含む）をRHI経由で取得し、UI終了時に復元する（コードレビュー済み・ビルド未検証）。
+- [x] UI OverlayのDraw/Read FramebufferとBuffer選択をRHIで保存・復元する（OpenGL互換state、コードレビュー済み・ビルド未検証）。
+- [x] UIが変更するShader / VAO bindingとBlend係数・演算を復元し、後続描画へのstate漏れを防ぐ（コードレビュー済み・ビルド未検証）。
+- [x] 既存FramebufferをRHICommandList / RenderCommandからbindできる互換経路を追加する（コードレビュー済み・ビルド未検証）。
+- [x] MRT全Draw Buffer（GL_NONEを含む）とRead Bufferを保存・復元するOpenGL互換stateを追加する（コードレビュー済み・ビルド未検証）。
+- [ ] 残りの描画stateの保存・復元契約を設計する。
+- [x] UI専用Triangle PipelineとUniform・Commandごとのoffset付きDrawIndexedを `RenderCommand` へ移行し、以前のPipeline追跡を復元する（コードレビュー済み・ビルド未検証）。
+- [ ] UI / SVG / Imageの描画と既存3D state復元を実機確認する。
+
 ## 次の実装単位
 
 1. masterとの差分を最終レビューし、Legacy RendererAPI削除とOpenGL具体実装移動に取りこぼしがないことを確認する。

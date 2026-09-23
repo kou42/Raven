@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/Shader/ShaderTypes.h"
@@ -9,14 +10,37 @@
 namespace Raven
 {
 
+class Framebuffer;
 class Pipeline;
 class Texture;
 class VertexArray;
 
+// 現行OpenGL互換経路の描画先を一時退避する不透明なstateです。
+// 値はBackendだけが解釈し、上位UIはnative handleやbuffer enumを参照しません。
+struct RHIRenderTargetState
+{
+    uint32_t DrawTarget = 0;
+    uint32_t ReadTarget = 0;
+    // MRTではDraw Buffer 0だけでなく全slotを保存し、復元時にglDrawBuffers相当を再適用します。
+    std::vector<uint32_t> DrawBuffers;
+    uint32_t ReadBuffer = 0;
+};
+
+struct RHIScissor
+{
+    bool Enabled = false;
+    // OpenGLのScissor原点は負値も有効です。保存・復元時に0へ丸めません。
+    int32_t X = 0;
+    int32_t Y = 0;
+    uint32_t Width = 0;
+    uint32_t Height = 0;
+};
+
 struct RHIViewport
 {
-    uint32_t X = 0;
-    uint32_t Y = 0;
+    // Viewportの原点は負座標も有効なので、Overlay前後のstateを符号付きで保持します。
+    int32_t X = 0;
+    int32_t Y = 0;
     uint32_t Width = 0;
     uint32_t Height = 0;
 };
@@ -40,22 +64,38 @@ public:
     // Context生成そのものはPlatform層の責務とし、CommandListは有効なContext上で描画stateだけを初期化します。
     virtual void Init() = 0;
 
-    virtual void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+    // Window overlayの描画先を選びます。offscreen targetの所有権やattachment構成はFramebuffer側に残します。
+    virtual void BindDefaultRenderTarget() = 0;
+    // 既存Framebufferの所有権・Attachment設定を維持し、描画先の選択だけを共通命令化します。
+    virtual void BindRenderTarget(const Framebuffer& framebuffer) = 0;
+    virtual RHIRenderTargetState CaptureRenderTargetState() const = 0;
+    virtual void RestoreRenderTargetState(const RHIRenderTargetState& state) = 0;
+
+    virtual void SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height) = 0;
 
     // Debug Overlay等の上位層がGraphics API固有のstate queryを直接行わないための参照APIです。
     // OpenGLでは現在のGL viewportを取得し、Explicit APIではCommandListが保持するstateを返す想定です。
     virtual RHIViewport GetViewport() const = 0;
 
+    // ScissorはFramebufferの左下原点Pixel座標。UIの左上原点からの変換は呼び出し側が行います。
+    virtual void SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height) = 0;
+    // Enabledがfalseの場合も矩形を保持し、Overlay終了時に元のstateを復元できます。
+    virtual RHIScissor GetScissor() const = 0;
+
     virtual void SetClearColor(float r, float g, float b, float a) = 0;
     virtual void Clear() = 0;
 
     virtual void BindPipeline(const Ref<Pipeline>& pipeline) = 0;
+    // 一時Overlay終了時に以前のPipeline追跡を復元します。nullptrは追跡解除です。
+    virtual void RestorePipelineBinding(const Ref<Pipeline>& pipeline) = 0;
     virtual void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot) = 0;
     virtual void UploadUniform(const std::string& name, const UniformValue& value) = 0;
 
     // indexCount == 0 は既存RenderCommandとの互換規約として、
     // VertexArrayに設定されたIndexBuffer全体を描画します。
-    virtual void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0) = 0;
+    // firstIndexはIndexBuffer内の要素単位offsetです（byte offsetではありません）。
+    // indexCount == 0 はfirstIndexから末尾までを描画します。
+    virtual void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0, uint32_t firstIndex = 0) = 0;
 };
 
 } // namespace Raven

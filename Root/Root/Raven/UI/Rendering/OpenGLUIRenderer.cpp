@@ -6,6 +6,8 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
 #include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
@@ -167,6 +169,18 @@ OpenGLUIRenderer::OpenGLUIRenderer()
 {
     m_VertexArray = VertexArray::Create();
     m_Shader = Shader::Create("Raven/Assets/Shaders/Glsl/UI.glsl");
+    if (m_Shader != nullptr)
+    {
+        PipelineSpecification specification{};
+        specification.Shader = m_Shader;
+        specification.Topology = PrimitiveTopology::Triangles;
+        specification.Cull = CullMode::None;
+        specification.DepthTest = false;
+        specification.DepthWrite = false;
+        specification.Blend = true;
+        specification.DebugName = "Raven UI Overlay";
+        m_Pipeline = Pipeline::Create(specification);
+    }
 }
 
 void OpenGLUIRenderer::Render(
@@ -185,7 +199,7 @@ void OpenGLUIRenderer::Render(
         return;
     }
 
-    if (m_VertexArray == nullptr || m_Shader == nullptr)
+    if (m_VertexArray == nullptr || m_Shader == nullptr || m_Pipeline == nullptr)
     {
 #ifdef _DEBUG
         static bool missingResourceLogged = false;
@@ -333,6 +347,13 @@ void OpenGLUIRenderer::Render(
         return;
     }
 
+    // UI用VAOの初回構築ではAddVertexBuffer/SetIndexBufferがVAOをbindします。
+    // 描画直前ではなくGPU Buffer更新より前のbindingを保存し、Scene側VAOを正しく復元します。
+    GLint previousVertexArray = 0;
+    GLint previousArrayBuffer = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
+
     EnsureBuffers(
         vertices.data(),
         static_cast<uint32_t>(vertices.size() * sizeof(float)),
@@ -341,6 +362,9 @@ void OpenGLUIRenderer::Render(
 
     if (m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
     {
+        // 初回Buffer作成に失敗した場合も、作成途中で変更したbindingを残しません。
+        glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
 #ifdef _DEBUG
         static bool missingBufferLogged = false;
         if (missingBufferLogged == false)
@@ -372,23 +396,30 @@ void OpenGLUIRenderer::Render(
     // さらに、直前の3D PipelineがPolygonMode / ColorMask / DepthMaskなどを変更していても
     // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
     // Image描画ではTexture Unit 0も変更するため、Active TextureとBindingも同じ方針で保存・復元します。
-    GLint previousDrawFramebuffer = 0;
-    GLint previousReadFramebuffer = 0;
-    GLint previousDrawBuffer = GL_BACK;
-    GLint previousReadBuffer = GL_BACK;
-    GLint previousViewport[4] = { 0, 0, 0, 0 };
-    GLint previousScissorBox[4] = { 0, 0, 0, 0 };
+    const Ref<Pipeline> previousPipeline = RenderCommand::GetBoundPipeline();
+    const RHIRenderTargetState previousRenderTarget = RenderCommand::CaptureRenderTargetState();
+    const RHIViewport previousViewport = RenderCommand::GetViewport();
+    const RHIScissor previousScissor = RenderCommand::GetScissor();
     GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
+    GLint previousProgram = 0;
+    GLint previousBlendSrcRGB = GL_ONE;
+    GLint previousBlendDstRGB = GL_ZERO;
+    GLint previousBlendSrcAlpha = GL_ONE;
+    GLint previousBlendDstAlpha = GL_ZERO;
+    GLint previousBlendEquationRGB = GL_FUNC_ADD;
+    GLint previousBlendEquationAlpha = GL_FUNC_ADD;
 
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFramebuffer);
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
-    glGetIntegerv(GL_DRAW_BUFFER, &previousDrawBuffer);
-    glGetIntegerv(GL_READ_BUFFER, &previousReadBuffer);
-    glGetIntegerv(GL_VIEWPORT, previousViewport);
-    glGetIntegerv(GL_SCISSOR_BOX, previousScissorBox);
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
+    // Shader/VAOとBlend式もUIが上書きするstateなので、後続Scene描画へ漏らさず復元します。
+    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &previousBlendSrcRGB);
+    glGetIntegerv(GL_BLEND_DST_RGB, &previousBlendDstRGB);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &previousBlendSrcAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &previousBlendDstAlpha);
+    glGetIntegerv(GL_BLEND_EQUATION_RGB, &previousBlendEquationRGB);
+    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &previousBlendEquationAlpha);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
@@ -396,41 +427,32 @@ void OpenGLUIRenderer::Render(
     const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
     const GLboolean cullFaceEnabled = glIsEnabled(GL_CULL_FACE);
-    const GLboolean scissorTestEnabled = glIsEnabled(GL_SCISSOR_TEST);
 
     GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
     GLboolean previousDepthMask = GL_TRUE;
-    GLboolean doubleBuffered = GL_FALSE;
     glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
     glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
-    glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    RenderCommand::BindDefaultRenderTarget();
 
-    // Default framebufferがDouble Bufferの場合、画面へ提示されるのは通常Back Bufferです。
-    // 直前のoffscreen描画や外部stateでDrawBufferが別値になっていてもUIを正しいBufferへ書くため、
-    // Main Window用Contextでは描画先を明示します。
-    const GLenum defaultColorBuffer = doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT;
-    glDrawBuffer(defaultColorBuffer);
-
-    glViewport(
-        0,
-        0,
-        static_cast<GLsizei>(framebufferSize.x),
-        static_cast<GLsizei>(framebufferSize.y));
+    // Overlayの描画先をdefault framebufferへ切り替えた後、RHI経由でviewportを設定します。
+    RenderCommand::SetViewport(0u, 0u,
+        static_cast<uint32_t>(framebufferSize.x),
+        static_cast<uint32_t>(framebufferSize.y));
 
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_CULL_FACE);
-    glDisable(GL_SCISSOR_TEST);
+    RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-    m_Shader->Bind();
-    m_Shader->SetVec2("u_ViewportSize", viewportSize);
-    m_Shader->SetInt("u_Texture", 0);
+    // UI専用Triangle PipelineをBindし、直前のScene Line/Point topologyを引き継ぎません。
+    RenderCommand::BindPipeline(m_Pipeline);
+    RenderCommand::UploadUniform("u_ViewportSize", viewportSize);
+    RenderCommand::UploadUniform("u_Texture", 0);
     m_VertexArray->Bind();
 
     // Window論理座標から実Framebuffer Pixelへの倍率。Content Scaleとは独立です。
@@ -440,9 +462,8 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // UI専用Draw Call
     // ========================================================================
-    // Renderer::DrawIndexed()は現在の3D PipelineのPrimitiveTopologyを参照します。
-    // UIは常にTriangle Listなので、直前SceneのLine/Point Pipeline状態を継承しないよう、
-    // OpenGL backend内でGL_TRIANGLESを明示して直接Drawします。
+    // UI専用Triangle PipelineをRenderCommandへbind済みなので、
+    // 直前SceneのLine/Point topologyを継承せず、RHIのDrawIndexedを利用します。
     //
     // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
     // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
@@ -475,16 +496,16 @@ void OpenGLUIRenderer::Render(
             const int scissorHeight = std::max(0, bottomPixel - topPixel);
             const int scissorY = viewportHeight - bottomPixel;
 
-            glEnable(GL_SCISSOR_TEST);
-            glScissor(
+            // 左上原点からPixelへ変換した矩形だけを共通RHI命令へ渡します。
+            RenderCommand::SetScissor(true,
                 leftPixel,
                 scissorY,
-                scissorWidth,
-                scissorHeight);
+                static_cast<uint32_t>(scissorWidth),
+                static_cast<uint32_t>(scissorHeight));
         }
         else
         {
-            glDisable(GL_SCISSOR_TEST);
+            RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
         }
 
         bool useTexture = false;
@@ -500,18 +521,13 @@ void OpenGLUIRenderer::Render(
             }
         }
 
-        m_Shader->SetInt("u_UseTexture", useTexture ? 1 : 0);
+        RenderCommand::UploadUniform("u_UseTexture", useTexture ? 1 : 0);
 
         const uint32_t indexCount = commandIndexCounts[commandIndex];
         if (indexCount > 0u)
         {
-            const void* indexOffset = reinterpret_cast<const void*>(
-                static_cast<std::size_t>(indexOffsetCount) * sizeof(uint32_t));
-            glDrawElements(
-                GL_TRIANGLES,
-                static_cast<GLsizei>(indexCount),
-                GL_UNSIGNED_INT,
-                indexOffset);
+            // IndexBufferの要素offsetをそのまま渡し、byte offsetへの変換はRHI Backendへ任せます。
+            RenderCommand::DrawIndexed(m_VertexArray, indexCount, indexOffsetCount);
             indexOffsetCount += indexCount;
         }
         ++commandIndex;
@@ -520,8 +536,12 @@ void OpenGLUIRenderer::Render(
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
     // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
 
-    m_VertexArray->Unbind();
-    m_Shader->Unbind();
+    // UI Pipelineの追跡を元へ戻してから、native Shader/VAOと描画stateを復元します。
+    RenderCommand::RestorePipelineBinding(previousPipeline);
+    // Unbind()は呼び出し前のShader/VAOへ戻す操作ではないため、元のbindingを明示復元します。
+    glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
+    glUseProgram(static_cast<GLuint>(previousProgram));
 
     // ========================================================================
     // State restore
@@ -533,20 +553,19 @@ void OpenGLUIRenderer::Render(
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
     glActiveTexture(static_cast<GLenum>(previousActiveTexture));
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFramebuffer));
-    glDrawBuffer(static_cast<GLenum>(previousDrawBuffer));
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
-    glReadBuffer(static_cast<GLenum>(previousReadBuffer));
-    glViewport(
-        previousViewport[0],
-        previousViewport[1],
-        previousViewport[2],
-        previousViewport[3]);
-    glScissor(
-        previousScissorBox[0],
-        previousScissorBox[1],
-        previousScissorBox[2],
-        previousScissorBox[3]);
+    RenderCommand::RestoreRenderTargetState(previousRenderTarget);
+    // UIの描画前に取得したViewportをRHI経由で復元します。
+    RenderCommand::SetViewport(
+        previousViewport.X, previousViewport.Y,
+        previousViewport.Width, previousViewport.Height);
+    // 無効時も以前のScissor Boxを復元し、次の描画passが同じstateから開始できるようにします。
+    RenderCommand::SetScissor(true,
+        previousScissor.X, previousScissor.Y,
+        previousScissor.Width, previousScissor.Height);
+    if (previousScissor.Enabled == false)
+    {
+        RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
+    }
     glPolygonMode(GL_FRONT, previousPolygonMode[0]);
     glPolygonMode(GL_BACK, previousPolygonMode[1]);
     glColorMask(
@@ -555,6 +574,15 @@ void OpenGLUIRenderer::Render(
         previousColorMask[2],
         previousColorMask[3]);
     glDepthMask(previousDepthMask);
+    // UIはBlendFuncを変更するため、Blend enableだけでなくRGB/Alphaの係数と演算も復元します。
+    glBlendFuncSeparate(
+        static_cast<GLenum>(previousBlendSrcRGB),
+        static_cast<GLenum>(previousBlendDstRGB),
+        static_cast<GLenum>(previousBlendSrcAlpha),
+        static_cast<GLenum>(previousBlendDstAlpha));
+    glBlendEquationSeparate(
+        static_cast<GLenum>(previousBlendEquationRGB),
+        static_cast<GLenum>(previousBlendEquationAlpha));
 
     if (depthTestEnabled == GL_TRUE)
     {
@@ -583,14 +611,6 @@ void OpenGLUIRenderer::Render(
         glDisable(GL_CULL_FACE);
     }
 
-    if (scissorTestEnabled == GL_TRUE)
-    {
-        glEnable(GL_SCISSOR_TEST);
-    }
-    else
-    {
-        glDisable(GL_SCISSOR_TEST);
-    }
 }
 
 void OpenGLUIRenderer::EnsureBuffers(

@@ -5,6 +5,7 @@
 #include <glad/glad.h>
 
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
+#include "Raven/Renderer/Framebuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Shader/Shader.h"
@@ -46,7 +47,80 @@ void OpenGLRHICommandList::Init()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
-void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+void OpenGLRHICommandList::BindRenderTarget(const Framebuffer& framebuffer)
+{
+    // 既存Framebuffer::BindがFBO選択とAttachmentサイズへのViewport同期を担当します。
+    // RHI側でnative IDを再取得せず、既存のMRT/Picking構成をそのまま利用します。
+    framebuffer.Bind();
+}
+
+void OpenGLRHICommandList::BindDefaultRenderTarget()
+{
+    // UI OverlayはEditorのScene/Game offscreen targetではなくWindowへ描画します。
+    // Draw/Readの両方を切り替え、外部stateの復元は呼び出し側の既存契約に従います。
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Windowの表示先を明示します。Single Buffer contextではFrontへ描画します。
+    GLboolean doubleBuffered = GL_FALSE;
+    glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
+    glDrawBuffer(doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT);
+}
+
+RHIRenderTargetState OpenGLRHICommandList::CaptureRenderTargetState() const
+{
+    GLint drawTarget = 0;
+    GLint readTarget = 0;
+    GLint readBuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawTarget);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readTarget);
+    glGetIntegerv(GL_READ_BUFFER, &readBuffer);
+
+    RHIRenderTargetState state{};
+    state.DrawTarget = static_cast<uint32_t>(drawTarget);
+    state.ReadTarget = static_cast<uint32_t>(readTarget);
+    state.ReadBuffer = static_cast<uint32_t>(readBuffer);
+
+    // MRTの複数color attachmentへの出力先はGL_DRAW_BUFFERだけでは復元できません。
+    // FBOごとに保持される全slotを退避し、未使用slotのGL_NONEも含めて保存します。
+    GLint maxDrawBuffers = 0;
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+    for (GLint index = 0; index < maxDrawBuffers; ++index)
+    {
+        GLint buffer = GL_NONE;
+        glGetIntegerv(GL_DRAW_BUFFER0 + index, &buffer);
+        state.DrawBuffers.push_back(static_cast<uint32_t>(buffer));
+    }
+    return state;
+}
+
+void OpenGLRHICommandList::RestoreRenderTargetState(const RHIRenderTargetState& state)
+{
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(state.DrawTarget));
+    if (state.DrawBuffers.empty() == false)
+    {
+        if (state.DrawTarget == 0u)
+        {
+            // Default framebufferはglDrawBuffersへ複数のbufferを指定できません。
+            glDrawBuffer(static_cast<GLenum>(state.DrawBuffers.front()));
+        }
+        else
+        {
+            std::vector<GLenum> buffers;
+            buffers.reserve(state.DrawBuffers.size());
+            for (uint32_t buffer : state.DrawBuffers)
+            {
+                buffers.push_back(static_cast<GLenum>(buffer));
+            }
+            glDrawBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
+        }
+    }
+
+    // Read targetとRead bufferはDraw側と独立して復元します。
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(state.ReadTarget));
+    glReadBuffer(static_cast<GLenum>(state.ReadBuffer));
+}
+
+void OpenGLRHICommandList::SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
     glViewport(
         static_cast<GLint>(x),
@@ -61,10 +135,38 @@ RHIViewport OpenGLRHICommandList::GetViewport() const
     glGetIntegerv(GL_VIEWPORT, viewport);
 
     RHIViewport result{};
-    result.X = viewport[0] > 0 ? static_cast<uint32_t>(viewport[0]) : 0u;
-    result.Y = viewport[1] > 0 ? static_cast<uint32_t>(viewport[1]) : 0u;
+    result.X = viewport[0];
+    result.Y = viewport[1];
     result.Width = viewport[2] > 0 ? static_cast<uint32_t>(viewport[2]) : 0u;
     result.Height = viewport[3] > 0 ? static_cast<uint32_t>(viewport[3]) : 0u;
+    return result;
+}
+
+void OpenGLRHICommandList::SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height)
+{
+    if (enabled == false)
+    {
+        glDisable(GL_SCISSOR_TEST);
+        return;
+    }
+
+    // glScissorは左下原点のPixel矩形を受け取ります。座標変換は上位UI層の責務です。
+    glScissor(static_cast<GLint>(x), static_cast<GLint>(y),
+        static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+    glEnable(GL_SCISSOR_TEST);
+}
+
+RHIScissor OpenGLRHICommandList::GetScissor() const
+{
+    GLint box[4] = {};
+    glGetIntegerv(GL_SCISSOR_BOX, box);
+
+    RHIScissor result{};
+    result.Enabled = glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE;
+    result.X = box[0];
+    result.Y = box[1];
+    result.Width = box[2] > 0 ? static_cast<uint32_t>(box[2]) : 0u;
+    result.Height = box[3] > 0 ? static_cast<uint32_t>(box[3]) : 0u;
     return result;
 }
 
@@ -92,6 +194,13 @@ void OpenGLRHICommandList::BindPipeline(const Ref<Pipeline>& pipeline)
     // CommandList側で現在Pipelineを保持することで、DrawIndexed / Texture / Uniformは
     // RendererAPIへ戻らず同じPipeline stateを基準に処理できます。
     pipeline->Bind();
+    m_CurrentPipeline = pipeline;
+}
+
+void OpenGLRHICommandList::RestorePipelineBinding(const Ref<Pipeline>& pipeline)
+{
+    // Pipelineのnative stateはOverlay側が別途復元します。ここではDraw topologyとUniform解決の
+    // 追跡だけ戻し、復元済みのBlend/Depth/Shaderを再度上書きしません。
     m_CurrentPipeline = pipeline;
 }
 
@@ -161,7 +270,7 @@ void OpenGLRHICommandList::UploadUniform(const std::string& name, const UniformV
     }, value);
 }
 
-void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount)
+void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount, uint32_t firstIndex)
 {
     if (vertexArray == nullptr)
     {
@@ -174,13 +283,15 @@ void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint
         return;
     }
 
-    uint32_t resolvedIndexCount = indexCount;
-    if (resolvedIndexCount == 0)
+    // UIのCommand別描画に備え、IndexBufferの部分範囲を安全に扱います。
+    if (firstIndex > indexBuffer->GetCount())
     {
-        resolvedIndexCount = indexBuffer->GetCount();
+        return;
     }
 
-    if (resolvedIndexCount == 0)
+    const uint32_t remainingCount = indexBuffer->GetCount() - firstIndex;
+    const uint32_t resolvedIndexCount = indexCount == 0 ? remainingCount : indexCount;
+    if (resolvedIndexCount == 0 || resolvedIndexCount > remainingCount)
     {
         return;
     }
@@ -208,7 +319,7 @@ void OpenGLRHICommandList::DrawIndexed(const Ref<VertexArray>& vertexArray, uint
         primitive,
         static_cast<GLsizei>(resolvedIndexCount),
         GL_UNSIGNED_INT,
-        nullptr);
+        reinterpret_cast<const void*>(static_cast<std::size_t>(firstIndex) * sizeof(uint32_t)));
 }
 
 } // namespace Raven

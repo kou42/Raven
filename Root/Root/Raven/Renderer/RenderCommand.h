@@ -12,6 +12,7 @@
 namespace Raven
 {
 
+class Framebuffer;
 class Pipeline;
 class RHIDevice;
 class Texture;
@@ -27,18 +28,30 @@ public:
     // 引数なし版は既存互換用としてGetRHIBackend()を使用します。
     static bool TryInit(RHIBackend backend);
 
-    static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    // Windowのdefault render targetを選択します。UI Overlay等で使用します。
+    static void BindDefaultRenderTarget();
+    static void BindRenderTarget(const Framebuffer& framebuffer);
+    static RHIRenderTargetState CaptureRenderTargetState();
+    static void RestoreRenderTargetState(const RHIRenderTargetState& state);
+    static void SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height);
     static RHIViewport GetViewport();
+
+    // Scissor矩形はFramebuffer左下原点のPixel座標です。
+    static void SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height);
+    static RHIScissor GetScissor();
 
     static void SetClearColor(float r, float g, float b, float a);
 
     static void Clear();
 
     static void BindPipeline(const Ref<Pipeline>& pipeline);
+    static Ref<Pipeline> GetBoundPipeline();
+    static void RestorePipelineBinding(const Ref<Pipeline>& pipeline);
     static void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot);
     static void UploadUniform(const std::string& name, const UniformValue& value);
 
-    static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0);
+    // firstIndexはIndexBufferの要素単位offset。0 countは指定位置から末尾までです。
+    static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0, uint32_t firstIndex = 0);
 
     // GPU Resource生成はCommandListとは責務が異なるためDeviceを経由します。
     // Legacy Renderer/Texture層がBackend実装を直接生成しないための段階移行用窓口です。
