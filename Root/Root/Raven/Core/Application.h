@@ -6,6 +6,7 @@
 
 #include "Raven/Scene/Scene.h"
 #include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Core/Event.h"
 #include "Raven/UI/Core/UIContext.h"
@@ -67,6 +68,32 @@ public:
     };
     static int RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const ExplicitSceneCallbacks& callbacks);
+
+    // Explicit SceneのWindow/RuntimeをApplicationの実行境界へ移譲します。
+    // Callbackは移譲後も有効なRuntime実体を参照する必要があります（Scope変数は参照しません）。
+    // GPU ResourceをWindowより先に破棄し、終了順序をBackend間で統一します。
+    template<typename TRuntime>
+    static int RunOwnedExplicitScene(Scope<Window> window,
+        Scope<TRuntime> runtime, const ExplicitSceneCallbacks& callbacks)
+    {
+        if (window == nullptr || runtime == nullptr)
+        {
+            return 1;
+        }
+        RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
+        if (frame == nullptr)
+        {
+            runtime->Shutdown();
+            return 1;
+        }
+        const int exitCode = RunExplicitScene(*window, *frame, callbacks);
+        // Renderer Queueの参照を破棄してからRuntimeのDevice/Contextを解放します。
+        Renderer::Shutdown();
+        runtime->Shutdown();
+        runtime.reset();
+        window.reset();
+        return exitCode;
+    }
 
     void OnEvent(Event& event);
 
