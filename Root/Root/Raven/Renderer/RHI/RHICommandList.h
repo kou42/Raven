@@ -55,7 +55,9 @@ public:
 
     // indexCount == 0 は既存RenderCommandとの互換規約として、
     // VertexArrayに設定されたIndexBuffer全体を描画します。
-    virtual void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0) = 0;
+    // firstIndexはIndexBuffer内の要素単位offsetです（byte offsetではありません）。
+    // indexCount == 0 はfirstIndexから末尾までを描画します。
+    virtual void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0, uint32_t firstIndex = 0) = 0;
 };
 
 } // namespace Raven
