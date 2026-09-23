@@ -68,6 +68,20 @@ RHIViewport OpenGLRHICommandList::GetViewport() const
     return result;
 }
 
+void OpenGLRHICommandList::SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    if (enabled == false)
+    {
+        glDisable(GL_SCISSOR_TEST);
+        return;
+    }
+
+    // glScissorは左下原点のPixel矩形を受け取ります。座標変換は上位UI層の責務です。
+    glScissor(static_cast<GLint>(x), static_cast<GLint>(y),
+        static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+    glEnable(GL_SCISSOR_TEST);
+}
+
 void OpenGLRHICommandList::SetClearColor(float r, float g, float b, float a)
 {
     glClearColor(r, g, b, a);
