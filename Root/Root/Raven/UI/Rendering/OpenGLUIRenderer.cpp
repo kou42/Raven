@@ -6,6 +6,7 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
 #include "Raven/Renderer/Shader/Shader.h"
+#include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
@@ -413,16 +414,15 @@ void OpenGLUIRenderer::Render(
     const GLenum defaultColorBuffer = doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT;
     glDrawBuffer(defaultColorBuffer);
 
-    glViewport(
-        0,
-        0,
-        static_cast<GLsizei>(framebufferSize.x),
-        static_cast<GLsizei>(framebufferSize.y));
+    // Overlayの描画先をdefault framebufferへ切り替えた後、RHI経由でviewportを設定します。
+    RenderCommand::SetViewport(0u, 0u,
+        static_cast<uint32_t>(framebufferSize.x),
+        static_cast<uint32_t>(framebufferSize.y));
 
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_CULL_FACE);
-    glDisable(GL_SCISSOR_TEST);
+    RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -475,16 +475,16 @@ void OpenGLUIRenderer::Render(
             const int scissorHeight = std::max(0, bottomPixel - topPixel);
             const int scissorY = viewportHeight - bottomPixel;
 
-            glEnable(GL_SCISSOR_TEST);
-            glScissor(
-                leftPixel,
-                scissorY,
-                scissorWidth,
-                scissorHeight);
+            // 左上原点からPixelへ変換した矩形だけを共通RHI命令へ渡します。
+            RenderCommand::SetScissor(true,
+                static_cast<uint32_t>(leftPixel),
+                static_cast<uint32_t>(scissorY),
+                static_cast<uint32_t>(scissorWidth),
+                static_cast<uint32_t>(scissorHeight));
         }
         else
         {
-            glDisable(GL_SCISSOR_TEST);
+            RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
         }
 
         bool useTexture = false;
@@ -537,11 +537,21 @@ void OpenGLUIRenderer::Render(
     glDrawBuffer(static_cast<GLenum>(previousDrawBuffer));
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFramebuffer));
     glReadBuffer(static_cast<GLenum>(previousReadBuffer));
-    glViewport(
-        previousViewport[0],
-        previousViewport[1],
-        previousViewport[2],
-        previousViewport[3]);
+    // 以前のviewportも共通命令で復元します。負の座標はOpenGL側の既存stateとして直接復元します。
+    if (previousViewport[0] >= 0 && previousViewport[1] >= 0 &&
+        previousViewport[2] >= 0 && previousViewport[3] >= 0)
+    {
+        RenderCommand::SetViewport(
+            static_cast<uint32_t>(previousViewport[0]),
+            static_cast<uint32_t>(previousViewport[1]),
+            static_cast<uint32_t>(previousViewport[2]),
+            static_cast<uint32_t>(previousViewport[3]));
+    }
+    else
+    {
+        glViewport(previousViewport[0], previousViewport[1],
+            previousViewport[2], previousViewport[3]);
+    }
     glScissor(
         previousScissorBox[0],
         previousScissorBox[1],
