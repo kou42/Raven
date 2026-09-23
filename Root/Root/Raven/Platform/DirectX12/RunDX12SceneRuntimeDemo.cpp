@@ -3,6 +3,7 @@
 #include "DX12SceneRuntime.h"
 
 #include "Raven/Core/Window.h"
+#include "Raven/Core/Application.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -152,28 +153,17 @@ int RunDX12SceneRuntimeDemo()
         right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
         scene.RenderEntities();
 
-        // Applicationへ移す予定のFrame順序をDemoでも実行し、二重Acquireを避けます。
-        // Descriptor準備を必ずBeginFrameより先に行います。
-        if (runtime.PrepareFrame() == false)
-        {
-            exitCode = 1;
-            break;
-        }
         RHISceneFrameLifecycle* frame = runtime.GetFrameLifecycle();
         if (frame == nullptr)
         {
             exitCode = 1;
             break;
         }
-        const RHIFrameResult begin = frame->BeginFrame();
-        const RHIFrameResult result = begin == RHIFrameResult::Success ?
-            runtime.DrawPreparedFrame() : begin;
-        if (firstFrame == true)
-        {
-            std::cout << "[DX12 Scene Demo] First frame result: "
-                << static_cast<int>(result) << "\n" << std::flush;
-            firstFrame = false;
-        }
+        // Applicationの共通進行を使用し、Descriptor準備→Acquire→描画の順序を保証します。
+        const RHIFrameResult result = Application::ExecuteExplicitSceneFrame(
+            *frame,
+            [&runtime]() { return runtime.PrepareFrame(); },
+            [&runtime]() { return runtime.DrawPreparedFrame(); });
         if (result == RHIFrameResult::ResizeRequired)
         {
             if (runtime.Resize(
