@@ -11,6 +11,7 @@
 #include "DX12FrameRenderer.h"
 #include "DX12SwapChain.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -56,6 +57,8 @@ public:
         ID3D12RootSignature* rootSignature);
     bool RetainGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pipeline);
     bool IsGraphicsPipelineBound() const;
+    bool SetClipTransform(const std::array<float, 16>& transform);
+    bool SetMaterialTint(const std::array<float, 4>& tint);
 
 private:
     struct FrameResource
