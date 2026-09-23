@@ -248,6 +248,44 @@ void OpenGLRHICommandList::RestoreOverlayRasterState(const RHIOverlayRasterState
     else { glDisable(GL_CULL_FACE); }
 }
 
+RHIOverlayBindingState OpenGLRHICommandList::CaptureOverlayBindingState() const
+{
+    RHIOverlayBindingState state{};
+    GLint vertexArray = 0;
+    GLint arrayBuffer = 0;
+    GLint program = 0;
+    GLint activeTexture = GL_TEXTURE0;
+    GLint texture2DUnit0 = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
+
+    // Unit 0のbindingはactive unitとは独立です。問い合わせ後に元のunitへ戻します。
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture2DUnit0);
+    glActiveTexture(static_cast<GLenum>(activeTexture));
+
+    state.VertexArray = static_cast<uint32_t>(vertexArray);
+    state.ArrayBuffer = static_cast<uint32_t>(arrayBuffer);
+    state.Program = static_cast<uint32_t>(program);
+    state.ActiveTexture = static_cast<uint32_t>(activeTexture);
+    state.Texture2DUnit0 = static_cast<uint32_t>(texture2DUnit0);
+    return state;
+}
+
+void OpenGLRHICommandList::RestoreOverlayBindingState(const RHIOverlayBindingState& state)
+{
+    // VAOを先に戻すことで、VAOごとに異なるElement Buffer bindingも元に戻ります。
+    // GL_ARRAY_BUFFERはVAOに属さないため別途復元します。
+    glBindVertexArray(static_cast<GLuint>(state.VertexArray));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.ArrayBuffer));
+    glUseProgram(static_cast<GLuint>(state.Program));
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.Texture2DUnit0));
+    glActiveTexture(static_cast<GLenum>(state.ActiveTexture));
+}
+
 void OpenGLRHICommandList::SetClearColor(float r, float g, float b, float a)
 {
     glClearColor(r, g, b, a);
