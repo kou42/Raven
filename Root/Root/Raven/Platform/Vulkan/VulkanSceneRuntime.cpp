@@ -7,6 +7,7 @@
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
+#include "Raven/Scene/Scene.h"
 
 #include <array>
 #include <utility>
@@ -72,6 +73,19 @@ bool VulkanSceneRuntime::PrepareMesh(const Ref<Mesh>& mesh)
 
     // Meshが別ContextのBufferを保持している可能性があるため、このDeviceで必ず再構築します。
     return mesh->BuildRHIResources(*m_Device);
+}
+
+bool VulkanSceneRuntime::PrepareScene(Scene& scene)
+{
+    if (m_Initialized == false || m_Device == nullptr ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    // Deviceの所有者はRuntimeです。SceneはBackendに依存せず、
+    // 同じMeshを参照するEntityのGPU BufferをFrame前にまとめて構築します。
+    return scene.PrepareRHIMeshes(*m_Device);
 }
 
 RHIFrameResult VulkanSceneRuntime::DrawFrame()
