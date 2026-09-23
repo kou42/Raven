@@ -55,6 +55,7 @@ public:
         }
 
         m_Specification = specification;
+        m_OwnerDevice = device;
         return true;
     }
 
@@ -80,6 +81,12 @@ public:
         return m_Specification;
     }
 
+    // 同じBackendでも別DeviceのGPU仮想Addressは混在させられません。
+    ID3D12Device* GetOwnerDevice() const
+    {
+        return m_OwnerDevice;
+    }
+
     const DX12SceneBuffer& GetSceneBuffer() const
     {
         return m_Buffer;
@@ -87,6 +94,7 @@ public:
 
 private:
     RHIBufferSpecification m_Specification{};
+    ID3D12Device* m_OwnerDevice = nullptr;
     DX12SceneBuffer m_Buffer;
 };
 
