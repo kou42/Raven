@@ -22,6 +22,8 @@ public:
     RHIOverlayRasterState CaptureOverlayRasterState() const override;
     void SetOverlayRasterState() override;
     void RestoreOverlayRasterState(const RHIOverlayRasterState& state) override;
+    RHIOverlayBindingState CaptureOverlayBindingState() const override;
+    void RestoreOverlayBindingState(const RHIOverlayBindingState& state) override;
     void SetClearColor(float r, float g, float b, float a) override;
     void Clear() override;
 
