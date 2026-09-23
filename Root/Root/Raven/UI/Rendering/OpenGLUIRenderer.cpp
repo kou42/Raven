@@ -379,9 +379,26 @@ void OpenGLUIRenderer::Render(
     GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
+    GLint previousProgram = 0;
+    GLint previousVertexArray = 0;
+    GLint previousBlendSrcRGB = GL_ONE;
+    GLint previousBlendDstRGB = GL_ZERO;
+    GLint previousBlendSrcAlpha = GL_ONE;
+    GLint previousBlendDstAlpha = GL_ZERO;
+    GLint previousBlendEquationRGB = GL_FUNC_ADD;
+    GLint previousBlendEquationAlpha = GL_FUNC_ADD;
 
     glGetIntegerv(GL_VIEWPORT, previousViewport);
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
+    // Shader/VAOとBlend式もUIが上書きするstateなので、後続Scene描画へ漏らさず復元します。
+    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &previousBlendSrcRGB);
+    glGetIntegerv(GL_BLEND_DST_RGB, &previousBlendDstRGB);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &previousBlendSrcAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &previousBlendDstAlpha);
+    glGetIntegerv(GL_BLEND_EQUATION_RGB, &previousBlendEquationRGB);
+    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &previousBlendEquationAlpha);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
@@ -503,8 +520,9 @@ void OpenGLUIRenderer::Render(
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
     // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
 
-    m_VertexArray->Unbind();
-    m_Shader->Unbind();
+    // Unbind()は呼び出し前のShader/VAOへ戻す操作ではないため、元のbindingを明示復元します。
+    glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+    glUseProgram(static_cast<GLuint>(previousProgram));
 
     // ========================================================================
     // State restore
@@ -548,6 +566,15 @@ void OpenGLUIRenderer::Render(
         previousColorMask[2],
         previousColorMask[3]);
     glDepthMask(previousDepthMask);
+    // UIはBlendFuncを変更するため、Blend enableだけでなくRGB/Alphaの係数と演算も復元します。
+    glBlendFuncSeparate(
+        static_cast<GLenum>(previousBlendSrcRGB),
+        static_cast<GLenum>(previousBlendDstRGB),
+        static_cast<GLenum>(previousBlendSrcAlpha),
+        static_cast<GLenum>(previousBlendDstAlpha));
+    glBlendEquationSeparate(
+        static_cast<GLenum>(previousBlendEquationRGB),
+        static_cast<GLenum>(previousBlendEquationAlpha));
 
     if (depthTestEnabled == GL_TRUE)
     {
