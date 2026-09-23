@@ -219,6 +219,21 @@ bool DX12SceneContext::SetViewport(
     return true;
 }
 
+bool DX12SceneContext::ClearColorAttachment(const float color[4])
+{
+    if (color == nullptr || GetActiveCommandList() == nullptr ||
+        m_CurrentFrame >= m_Frames.size() ||
+        m_Frames[m_CurrentFrame].CommandList == nullptr)
+    {
+        return false;
+    }
+
+    // BeginFrameのClear色設定とは異なり、現在のCommandListに即時記録します。
+    // FrameRenderer側でRenderTargetActiveかどうかも検証します。
+    return m_FrameRenderer.ClearRenderTarget(
+        *m_Frames[m_CurrentFrame].CommandList, color);
+}
+
 void DX12SceneContext::SetClearColor(const float color[4])
 {
     if (color == nullptr)
