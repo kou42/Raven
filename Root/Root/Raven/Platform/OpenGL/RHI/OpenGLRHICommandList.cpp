@@ -5,6 +5,7 @@
 #include <glad/glad.h>
 
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
+#include "Raven/Renderer/Framebuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Shader/Shader.h"
@@ -44,6 +45,13 @@ void OpenGLRHICommandList::Init()
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
+void OpenGLRHICommandList::BindRenderTarget(const Framebuffer& framebuffer)
+{
+    // 既存Framebuffer::BindがFBO選択とAttachmentサイズへのViewport同期を担当します。
+    // RHI側でnative IDを再取得せず、既存のMRT/Picking構成をそのまま利用します。
+    framebuffer.Bind();
 }
 
 void OpenGLRHICommandList::BindDefaultRenderTarget()
