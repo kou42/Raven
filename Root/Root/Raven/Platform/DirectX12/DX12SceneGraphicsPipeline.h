@@ -170,8 +170,8 @@ public:
             specification.DepthCompare == DepthCompareOperator::Greater ? D3D12_COMPARISON_FUNC_GREATER :
             specification.DepthCompare == DepthCompareOperator::GreaterEqual ? D3D12_COMPARISON_FUNC_GREATER_EQUAL :
             specification.DepthCompare == DepthCompareOperator::Equal ? D3D12_COMPARISON_FUNC_EQUAL :
-            specification.DepthCompare == DepthCompareOperator::NotEqual ? D3D12_COMPARISON_FUNC_NOT_EQUAL :
             specification.DepthCompare == DepthCompareOperator::Always ? D3D12_COMPARISON_FUNC_ALWAYS :
+            specification.DepthCompare == DepthCompareOperator::Never ? D3D12_COMPARISON_FUNC_NEVER :
             D3D12_COMPARISON_FUNC_LESS;
         description.DepthStencilState.StencilEnable = FALSE;
 
