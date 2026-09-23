@@ -7,6 +7,7 @@
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
@@ -168,6 +169,18 @@ OpenGLUIRenderer::OpenGLUIRenderer()
 {
     m_VertexArray = VertexArray::Create();
     m_Shader = Shader::Create("Raven/Assets/Shaders/Glsl/UI.glsl");
+    if (m_Shader != nullptr)
+    {
+        PipelineSpecification specification{};
+        specification.Shader = m_Shader;
+        specification.Topology = PrimitiveTopology::Triangles;
+        specification.Cull = CullMode::None;
+        specification.DepthTest = false;
+        specification.DepthWrite = false;
+        specification.Blend = true;
+        specification.DebugName = "Raven UI Overlay";
+        m_Pipeline = Pipeline::Create(specification);
+    }
 }
 
 void OpenGLUIRenderer::Render(
@@ -186,7 +199,7 @@ void OpenGLUIRenderer::Render(
         return;
     }
 
-    if (m_VertexArray == nullptr || m_Shader == nullptr)
+    if (m_VertexArray == nullptr || m_Shader == nullptr || m_Pipeline == nullptr)
     {
 #ifdef _DEBUG
         static bool missingResourceLogged = false;
@@ -373,6 +386,7 @@ void OpenGLUIRenderer::Render(
     // さらに、直前の3D PipelineがPolygonMode / ColorMask / DepthMaskなどを変更していても
     // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
     // Image描画ではTexture Unit 0も変更するため、Active TextureとBindingも同じ方針で保存・復元します。
+    const Ref<Pipeline> previousPipeline = RenderCommand::GetBoundPipeline();
     const RHIRenderTargetState previousRenderTarget = RenderCommand::CaptureRenderTargetState();
     const RHIViewport previousViewport = RenderCommand::GetViewport();
     const RHIScissor previousScissor = RenderCommand::GetScissor();
@@ -427,9 +441,10 @@ void OpenGLUIRenderer::Render(
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-    m_Shader->Bind();
-    m_Shader->SetVec2("u_ViewportSize", viewportSize);
-    m_Shader->SetInt("u_Texture", 0);
+    // UI専用Triangle PipelineをBindし、直前のScene Line/Point topologyを引き継ぎません。
+    RenderCommand::BindPipeline(m_Pipeline);
+    RenderCommand::UploadUniform("u_ViewportSize", viewportSize);
+    RenderCommand::UploadUniform("u_Texture", 0);
     m_VertexArray->Bind();
 
     // Window論理座標から実Framebuffer Pixelへの倍率。Content Scaleとは独立です。
@@ -499,18 +514,13 @@ void OpenGLUIRenderer::Render(
             }
         }
 
-        m_Shader->SetInt("u_UseTexture", useTexture ? 1 : 0);
+        RenderCommand::UploadUniform("u_UseTexture", useTexture ? 1 : 0);
 
         const uint32_t indexCount = commandIndexCounts[commandIndex];
         if (indexCount > 0u)
         {
-            const void* indexOffset = reinterpret_cast<const void*>(
-                static_cast<std::size_t>(indexOffsetCount) * sizeof(uint32_t));
-            glDrawElements(
-                GL_TRIANGLES,
-                static_cast<GLsizei>(indexCount),
-                GL_UNSIGNED_INT,
-                indexOffset);
+            // IndexBufferの要素offsetをそのまま渡し、byte offsetへの変換はRHI Backendへ任せます。
+            RenderCommand::DrawIndexed(m_VertexArray, indexCount, indexOffsetCount);
             indexOffsetCount += indexCount;
         }
         ++commandIndex;
@@ -519,6 +529,8 @@ void OpenGLUIRenderer::Render(
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。
     // 描画経路が正常であることを確認できたため、通常実行時にGPU同期を発生させないようReadback診断は終了しています。
 
+    // UI Pipelineの追跡を元へ戻してから、native Shader/VAOと描画stateを復元します。
+    RenderCommand::RestorePipelineBinding(previousPipeline);
     // Unbind()は呼び出し前のShader/VAOへ戻す操作ではないため、元のbindingを明示復元します。
     glBindVertexArray(static_cast<GLuint>(previousVertexArray));
     glUseProgram(static_cast<GLuint>(previousProgram));
