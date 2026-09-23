@@ -44,6 +44,9 @@ public:
     static void SetOverlayRasterState();
     static void RestoreOverlayRasterState(const RHIOverlayRasterState& state);
 
+    static RHIOverlayBindingState CaptureOverlayBindingState();
+    static void RestoreOverlayBindingState(const RHIOverlayBindingState& state);
+
     static void SetClearColor(float r, float g, float b, float a);
 
     static void Clear();
