@@ -20,6 +20,12 @@
 - ComboBox: 未選択・選択変更通知・同値再設定・不正Index、Enter/Downによる決定、Popup行Mouse選択、Escape、選択肢入替、Widget削除。
 - Tooltip: Hover表示、右下Viewport Clamp、Mouse入力透過、Clickで非表示、再Hover、Popup表示時の抑制、対象削除時の登録解除。
 
+## 追加したCPU回帰テスト（未実行）
+
+- `TestPopupOutsideClickConsumption`: Popup外側Down/Upが背後のButtonを押さず、次の通常Clickは動作すること。
+- `TestComboBoxKeyboardBoundaries`: 空選択肢、Space、Up/Downの循環、Home/End、Popup表示中の選択肢更新。
+- `TestTooltipDelayAndReset`: 待機中の非表示、再登録後の即時表示、Hover離脱・登録解除。実時計のSleepは使用しない。
+
 ## 追加検証が必要な項目
 
 | 優先 | 項目 | 期待する結果 |
@@ -41,4 +47,4 @@
 3. PopupのFocus・閉じる条件・Z順・入力伝播について、上表の基本ケースを満たした時点でPhase 4の基本完了とする。
 4. 異DPIモニター・他Backend・正式Editor移行などは、基本完了条件と分けて継続課題として扱う。
 
-次の実装単位: 既存テストの不足ケースを追加し、挙動不一致が再現した箇所だけを修正する。
+次の実装単位: 上記CPU回帰テストを実行し、挙動不一致が再現した箇所だけを修正する。
