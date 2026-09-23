@@ -70,6 +70,10 @@ int RunDX12SceneRuntimeDemo()
         material->HasLegacyPipeline() == true)
     {
         std::cerr << "DX12 Entity Scene creation failed.\n";
+        scene.reset();
+        mesh.reset();
+        material.reset();
+        Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
@@ -92,6 +96,10 @@ int RunDX12SceneRuntimeDemo()
     if (runtime->PrepareScene(*scene) == false)
     {
         std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
+        scene.reset();
+        mesh.reset();
+        material.reset();
+        Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
@@ -112,6 +120,10 @@ int RunDX12SceneRuntimeDemo()
     RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
     if (frame == nullptr)
     {
+        scene.reset();
+        mesh.reset();
+        material.reset();
+        Renderer::Shutdown();
         runtime->Shutdown();
         return 1;
     }
