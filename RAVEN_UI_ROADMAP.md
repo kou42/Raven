@@ -45,10 +45,13 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 ## Phase 2: Text Layout / Text Measurement 検証状況（2026-09-23）
 
 - [x] `UITextLayout` の改行・Character/ASCII Word Wrap・左右中央配置、`UITextMeasurement` の共通Layout利用、`UILabel` の幅依存Measure / Draw接続をコード確認。
-- [x] `Root/Tests/UITextReflowTests.cpp` の既存テストを棚卸し。`WrappingElement` の幅依存再MeasureとDPI関連テストは存在するが、実`UILabel`と固定Glyph MetricsによるLayout数値期待値テストは未確認。
-- [ ] Layout / Measurementの数値回帰テスト、実UILabel / UIElement統合テスト、Glyph Clip / Alignment / Wrapの組合せテストを追加・実行する。
-- [ ] Text DemoのResize・改行・配置・Clip・DPIを実描画確認し、結果を記録する。今回の棚卸しではビルド・テスト実行・GPU描画は未実施。
-- 詳細な確認範囲、テストマトリクス、完了条件は [`RAVEN_UI_PHASE2_TEST_AUDIT.md`](RAVEN_UI_PHASE2_TEST_AUDIT.md) を参照。
+- [x] `Root/Tests/UITextReflowTests.cpp` の既存テストを棚卸し（PR #273）。仮想`WrappingElement` のテストも維持。
+- [x] 固定Glyph Metrics / GPU不要Texture FixtureによるLayout・Measurement数値回帰テストを追加（PR #274）。改行・折り返し・配置・GlyphScale・UTF-8/Fallbackを検証。
+- [x] 実`UILabel` / `UIElement` の親Resize・高さ再集約・兄弟位置・テキスト変更・非表示・Glyph DrawListを検証（PR #274）。
+- [x] GlyphのAtlas UV / Texture保持、親子Clip・ClipSelf・Transform合成のCPU回帰テストを追加（PR #274）。ユーザーより「動作チェック問題ありませんでした」と報告あり。実行ログや個別テスト環境の詳細は未記録。
+- [ ] Text DemoのASCII・日本語・Resize・改行・配置・Clip・DPIの**実描画**を項目別に確認し、結果を記録する。CPUテストの動作確認とGPU実描画確認は区別する。
+- [ ] 異DPIモニター間移動と未網羅の境界条件（不正UTF-8・連続空白等）を追加検証する。Phase 2基本完了条件と後続拡張を分けて判断する。
+- 詳細な確認範囲と残課題は [`RAVEN_UI_PHASE2_TEST_AUDIT.md`](RAVEN_UI_PHASE2_TEST_AUDIT.md) を参照。
 
 ## Window System / Multi-Viewportへの接続状況
 
