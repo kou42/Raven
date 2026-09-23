@@ -27,6 +27,8 @@ public:
     // 引数なし版は既存互換用としてGetRHIBackend()を使用します。
     static bool TryInit(RHIBackend backend);
 
+    // Windowのdefault render targetを選択します。UI Overlay等で使用します。
+    static void BindDefaultRenderTarget();
     static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     static RHIViewport GetViewport();
 
