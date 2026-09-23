@@ -102,25 +102,66 @@ public:
         return m_Device->PrepareScene(scene);
     }
 
-    RHIFrameResult DrawFrame()
+    // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
+    bool PrepareFrame()
     {
+        m_PreparedFrame.reset();
         if (m_Initialized == false || m_Device == nullptr ||
             m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
-            m_DefaultTexture == nullptr)
+            m_DefaultTexture == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr)
+        {
+            return false;
+        }
+        auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
+        if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
+            m_TransparentPipeline, m_DefaultTexture,
+            DX12ClipCorrection(), *prepared) == false)
+        {
+            return false;
+        }
+        m_PreparedFrame = std::move(prepared);
+        return true;
+    }
+
+    // Application等がBeginFrameを呼び出した後に使用します。二重Acquireは行いません。
+    RHIFrameResult DrawPreparedFrame()
+    {
+        if (m_Initialized == false || m_PreparedFrame == nullptr ||
+            m_Context.GetActiveCommandList() == nullptr)
         {
             return RHIFrameResult::FatalError;
         }
         DX12SceneCommandList commands(m_Context);
-        const RHIFrameResult result = Renderer::DrawRHISceneFrame(
-            *m_Device, m_Context, commands, m_OpaquePipeline,
-            m_TransparentPipeline, m_DefaultTexture,
-            DX12ClipCorrection());
+        const RHIFrameResult result = Renderer::DrawPreparedRHISceneFrame(
+            m_Context, commands, *m_PreparedFrame);
+        // GPU使用中のResourceはContext側のFrameResourceがFence完了まで保持します。
+        m_PreparedFrame.reset();
         if (result == RHIFrameResult::FatalError)
         {
-            // Execute後の失敗を含むため、Contextを再利用せず終了します。
             Shutdown();
         }
         return result;
+    }
+
+    RHIFrameResult DrawFrame()
+    {
+        if (PrepareFrame() == false)
+        {
+            Shutdown();
+            return RHIFrameResult::FatalError;
+        }
+        const RHIFrameResult begin = m_Context.BeginFrame();
+        if (begin != RHIFrameResult::Success)
+        {
+            m_PreparedFrame.reset();
+            if (begin == RHIFrameResult::FatalError)
+            {
+                Shutdown();
+            }
+            return begin;
+        }
+        return DrawPreparedFrame();
     }
 
     bool Resize(uint32_t width, uint32_t height)
@@ -130,6 +171,7 @@ public:
         {
             return false;
         }
+        m_PreparedFrame.reset();
         // Depth/RTV再生成後、Attachment形式に合うPSOを作り直します。
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
@@ -143,6 +185,7 @@ public:
 
     void Shutdown()
     {
+        m_PreparedFrame.reset();
         // ContextのShutdownはQueueのFenceを待つため、参照を先に解放しても
         // FrameResourceが保持するGPU使用中Resourceは完了まで生存します。
         m_OpaquePipeline.reset();
@@ -243,6 +286,7 @@ private:
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHITexture> m_DefaultTexture;
+    Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
     bool m_Initialized = false;
 };
 
