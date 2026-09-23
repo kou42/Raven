@@ -1,6 +1,6 @@
-#include "RunVulkanSceneRuntimeDemo.h"
+#include "RunDX12SceneRuntimeDemo.h"
 
-#include "VulkanSceneRuntime.h"
+#include "DX12SceneRuntime.h"
 
 #include "Raven/Core/Window.h"
 #include "Raven/Renderer/Material/Material.h"
@@ -19,10 +19,10 @@
 namespace Raven
 {
 
-int RunVulkanSceneRuntimeDemo()
+int RunDX12SceneRuntimeDemo()
 {
     auto window = Window::Create(WindowProps(
-        "Raven Vulkan Scene Runtime", 1280, 720, RHIBackend::Vulkan));
+        "Raven DX12 Scene Runtime", 1280, 720, RHIBackend::DirectX12));
     if (window == nullptr || window->GetNativeWindow() == nullptr)
     {
         return 1;
@@ -31,11 +31,11 @@ int RunVulkanSceneRuntimeDemo()
     const std::filesystem::path shaderDirectory =
         std::filesystem::path("Raven") / "Assets" / "Shaders";
     RHIShaderAssetSpecification vertexShader{};
-    vertexShader.VulkanPath =
-        (shaderDirectory / "Vulkan" / "SceneTriangle.vert.spv").generic_string();
+    vertexShader.DirectX12Path =
+        (shaderDirectory / "DirectX12" / "SceneMesh.vs.dxil").generic_string();
     RHIShaderAssetSpecification fragmentShader{};
-    fragmentShader.VulkanPath =
-        (shaderDirectory / "Vulkan" / "SceneTriangle.frag.spv").generic_string();
+    fragmentShader.DirectX12Path =
+        (shaderDirectory / "DirectX12" / "SceneMesh.ps.dxil").generic_string();
 
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.Topology = PrimitiveTopology::Triangles;
@@ -43,16 +43,16 @@ int RunVulkanSceneRuntimeDemo()
     pipelineSpecification.DepthTest = true;
     pipelineSpecification.DepthWrite = true;
     pipelineSpecification.Blend = false;
-    pipelineSpecification.DebugName = "Vulkan Normal Mesh Scene";
+    pipelineSpecification.DebugName = "DX12 Normal Mesh Scene";
 
-    VulkanSceneRuntime runtime;
+    DX12SceneRuntime runtime;
     if (runtime.Init(
         *window,
         pipelineSpecification,
         vertexShader,
         fragmentShader) == false)
     {
-        std::cerr << "Vulkan Scene Runtime initialization failed.\n";
+        std::cerr << "DX12 Scene Runtime initialization failed.\n";
         return 1;
     }
 
@@ -65,28 +65,28 @@ int RunVulkanSceneRuntimeDemo()
     if (mesh == nullptr || mesh->GetVertexArray() != nullptr || material == nullptr ||
         material->HasLegacyPipeline() == true)
     {
-        std::cerr << "Vulkan Entity Scene creation failed.\n";
+        std::cerr << "DX12 Entity Scene creation failed.\n";
         runtime.Shutdown();
         return 1;
     }
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
     material->SetSurfaceType(MaterialSurfaceType::Opaque);
 
-    Entity left = scene.CreateEntity("VulkanLeftCube");
+    Entity left = scene.CreateEntity("DX12LeftCube");
     left.GetComponent<TransformComponent>().Position = {-1.2f, 0.0f, 0.0f};
     left.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
-    Entity center = scene.CreateEntity("VulkanCenterCube");
+    Entity center = scene.CreateEntity("DX12CenterCube");
     center.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
-    Entity right = scene.CreateEntity("VulkanRightCube");
+    Entity right = scene.CreateEntity("DX12RightCube");
     right.GetComponent<TransformComponent>().Position = {1.2f, 0.0f, 0.0f};
     right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
     if (runtime.PrepareScene(scene) == false)
     {
-        std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
+        std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
         runtime.Shutdown();
         return 1;
     }
@@ -100,6 +100,9 @@ int RunVulkanSceneRuntimeDemo()
         static_cast<float>(runtime.GetWidth()),
         static_cast<float>(runtime.GetHeight()));
 
+    // Window寸法はResize後に更新されるため、実際のSwapChain寸法を別に追跡します。
+    uint32_t swapChainWidth = runtime.GetWidth();
+    uint32_t swapChainHeight = runtime.GetHeight();
     GLFWwindow* nativeWindow = static_cast<GLFWwindow*>(window->GetNativeWindow());
     int exitCode = 0;
     while (glfwWindowShouldClose(nativeWindow) == GLFW_FALSE)
@@ -116,8 +119,8 @@ int RunVulkanSceneRuntimeDemo()
             continue;
         }
 
-        if (runtime.GetWidth() != static_cast<uint32_t>(width) ||
-            runtime.GetHeight() != static_cast<uint32_t>(height))
+        if (swapChainWidth != static_cast<uint32_t>(width) ||
+            swapChainHeight != static_cast<uint32_t>(height))
         {
             if (runtime.Resize(
                 static_cast<uint32_t>(width),
@@ -126,6 +129,8 @@ int RunVulkanSceneRuntimeDemo()
                 exitCode = 1;
                 break;
             }
+            swapChainWidth = static_cast<uint32_t>(width);
+            swapChainHeight = static_cast<uint32_t>(height);
             camera.SetViewportSize(
                 static_cast<float>(width),
                 static_cast<float>(height));
@@ -150,6 +155,8 @@ int RunVulkanSceneRuntimeDemo()
                 exitCode = 1;
                 break;
             }
+            swapChainWidth = static_cast<uint32_t>(width);
+            swapChainHeight = static_cast<uint32_t>(height);
             camera.SetViewportSize(
                 static_cast<float>(width),
                 static_cast<float>(height));

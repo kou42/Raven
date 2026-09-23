@@ -7,6 +7,7 @@
 #include <iostream>
 #include "Raven/Renderer/RHI/ClearBackendDemo.h"
 #include "Raven/Platform/Vulkan/RunVulkanSceneRuntimeDemo.h"
+#include "Raven/Platform/DirectX12/RunDX12SceneRuntimeDemo.h"
 #include "Raven/Platform/Vulkan/RunVulkanSceneTriangleDemo.h"
 #include <utility>
 
@@ -56,6 +57,10 @@ int main(int argc, char* argv[])
     if (argc > 1)
     {
         const std::string backendArgument = argv[1];
+        if (backendArgument == "--scene-dx12")
+        {
+            return Raven::RunDX12SceneRuntimeDemo();
+        }
         if (backendArgument == "--scene-vulkan")
         {
             return Raven::RunVulkanSceneRuntimeDemo();
@@ -76,7 +81,7 @@ int main(int argc, char* argv[])
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
         }
-        std::cerr << "Unknown argument. Use --scene-vulkan, --scene-triangle-vulkan, "
+        std::cerr << "Unknown argument. Use --scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
             "--clear-opengl, --clear-vulkan or --clear-dx12.\n";
         return 1;
     }

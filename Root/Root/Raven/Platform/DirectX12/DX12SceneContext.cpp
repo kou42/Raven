@@ -1,4 +1,6 @@
 #include "DX12SceneContext.h"
+#include "DX12SceneRHIBuffer.h"
+#include "DX12SceneRHITexture.h"
 
 #include "Raven/Core/Window.h"
 
@@ -95,9 +97,16 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         return RHIFrameResult::FatalError;
     }
 
+    // BeginFrameのFence待機後は前回このFrameが参照したBufferを解放できます。
+    // GPUがまだ読むBufferをEntity側のRef破棄だけで解放しないための保持です。
+    frame.RetainedBuffers.clear();
+    frame.RetainedPipelines.clear();
+    frame.RetainedTextures.clear();
+
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
     m_FrameSubmitted = false;
+    m_GraphicsPipelineBound = false;
     if (m_FrameRenderer.BeginRenderTarget(m_SwapChain, *frame.CommandList) == false ||
         m_FrameRenderer.ClearRenderTarget(*frame.CommandList, m_ClearColor) == false)
     {
@@ -157,6 +166,7 @@ RHIFrameResult DX12SceneContext::Present()
 
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_GraphicsPipelineBound = false;
     m_CurrentFrame = (m_CurrentFrame + 1) % static_cast<uint32_t>(m_Frames.size());
     return RHIFrameResult::Success;
 }
@@ -211,6 +221,21 @@ bool DX12SceneContext::SetViewport(
     return true;
 }
 
+bool DX12SceneContext::ClearColorAttachment(const float color[4])
+{
+    if (color == nullptr || GetActiveCommandList() == nullptr ||
+        m_CurrentFrame >= m_Frames.size() ||
+        m_Frames[m_CurrentFrame].CommandList == nullptr)
+    {
+        return false;
+    }
+
+    // BeginFrameのClear色設定とは異なり、現在のCommandListに即時記録します。
+    // FrameRenderer側でRenderTargetActiveかどうかも検証します。
+    return m_FrameRenderer.ClearRenderTarget(
+        *m_Frames[m_CurrentFrame].CommandList, color);
+}
+
 void DX12SceneContext::SetClearColor(const float color[4])
 {
     if (color == nullptr)
@@ -232,6 +257,169 @@ ID3D12GraphicsCommandList* DX12SceneContext::GetActiveCommandList() const
         return nullptr;
     }
     return m_Frames[m_CurrentFrame].CommandList->GetHandle();
+}
+
+ID3D12Device* DX12SceneContext::GetNativeDevice() const
+{
+    return m_Device.GetHandle();
+}
+
+bool DX12SceneContext::RetainDrawBuffers(
+    const Ref<RHIBuffer>& vertexBuffer, const Ref<RHIBuffer>& indexBuffer)
+{
+    if (GetActiveCommandList() == nullptr ||
+        vertexBuffer == nullptr || indexBuffer == nullptr)
+    {
+        return false;
+    }
+    FrameResource& frame = m_Frames[m_CurrentFrame];
+    frame.RetainedBuffers.push_back(vertexBuffer);
+    frame.RetainedBuffers.push_back(indexBuffer);
+    return true;
+}
+
+bool DX12SceneContext::BindGraphicsPipeline(
+    ID3D12PipelineState* pipelineState, ID3D12RootSignature* rootSignature)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || pipelineState == nullptr ||
+        rootSignature == nullptr)
+    {
+        return false;
+    }
+
+    // CommandListのResetでPSO/Root Signatureは引き継がれません。
+    // 毎Frame明示的にBindしてからIndexed Drawを許可します。
+    commandList->SetGraphicsRootSignature(rootSignature);
+    commandList->SetPipelineState(pipelineState);
+    m_GraphicsPipelineBound = true;
+    return true;
+}
+
+bool DX12SceneContext::RetainGraphicsPipeline(
+    const Ref<RHIGraphicsPipeline>& pipeline)
+{
+    if (GetActiveCommandList() == nullptr || pipeline == nullptr ||
+        m_GraphicsPipelineBound == false)
+    {
+        return false;
+    }
+    // PSO/Root Signatureも記録済みGPU命令が参照するためFence完了まで保持します。
+    m_Frames[m_CurrentFrame].RetainedPipelines.push_back(pipeline);
+    return true;
+}
+
+bool DX12SceneContext::IsGraphicsPipelineBound() const
+{
+    return GetActiveCommandList() != nullptr && m_GraphicsPipelineBound == true;
+}
+
+bool DX12SceneContext::SetClipTransform(
+    const std::array<float, 16>& transform)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || m_GraphicsPipelineBound == false)
+    {
+        return false;
+    }
+    // Root Signatureのb0へcolumn-major行列を16 DWORDで記録します。
+    commandList->SetGraphicsRoot32BitConstants(
+        0, static_cast<UINT>(transform.size()), transform.data(), 0);
+    return true;
+}
+
+bool DX12SceneContext::SetMaterialTint(
+    const std::array<float, 4>& tint)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || m_GraphicsPipelineBound == false)
+    {
+        return false;
+    }
+    // Root Signatureのb1へRGBAを4 DWORDで記録します。
+    commandList->SetGraphicsRoot32BitConstants(
+        1, static_cast<UINT>(tint.size()), tint.data(), 0);
+    return true;
+}
+
+bool DX12SceneContext::BindTexture(const Ref<RHITexture>& texture)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    auto native = std::dynamic_pointer_cast<DX12SceneRHITexture>(texture);
+    if (commandList == nullptr || m_GraphicsPipelineBound == false ||
+        native == nullptr || native->GetOwnerDevice() != GetNativeDevice() ||
+        native->GetNativeTexture() == nullptr || native->GetSrvHeap() == nullptr)
+    {
+        return false;
+    }
+
+    // Shader-visible Heapは同時に1つだけBindできます。
+    // 描画ごとにTexture固有Heapへ切り替え、t0のDescriptor Tableを再設定します。
+    ID3D12DescriptorHeap* heaps[] = { native->GetSrvHeap() };
+    commandList->SetDescriptorHeaps(1, heaps);
+    commandList->SetGraphicsRootDescriptorTable(2, native->GetSrvGpuHandle());
+    // Texture本体とDescriptor HeapをGPUのFence完了まで保持します。
+    m_Frames[m_CurrentFrame].RetainedTextures.push_back(texture);
+    return true;
+}
+
+bool DX12SceneContext::DrawIndexed(
+    const Ref<RHIBuffer>& vertexBuffer,
+    const Ref<RHIBuffer>& indexBuffer,
+    uint32_t stride, uint32_t indexCount)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || m_GraphicsPipelineBound == false ||
+        vertexBuffer == nullptr || indexBuffer == nullptr || stride == 0 ||
+        vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
+        indexBuffer->GetSpecification().Usage != RHIBufferUsage::Index)
+    {
+        return false;
+    }
+
+    // 別BackendのRHIBufferや別種Resourceをnative APIへ渡さないようにします。
+    auto vertex = std::dynamic_pointer_cast<DX12SceneRHIBuffer>(vertexBuffer);
+    auto index = std::dynamic_pointer_cast<DX12SceneRHIBuffer>(indexBuffer);
+    if (vertex == nullptr || index == nullptr ||
+        vertex->GetSceneBuffer().IsValid() == false ||
+        index->GetSceneBuffer().IsValid() == false ||
+        vertex->GetSceneBuffer().IsIndexBuffer() == true ||
+        index->GetSceneBuffer().IsIndexBuffer() == false ||
+        vertex->GetOwnerDevice() != GetNativeDevice() ||
+        index->GetOwnerDevice() != GetNativeDevice())
+    {
+        return false;
+    }
+
+    const D3D12_VERTEX_BUFFER_VIEW& originalVertexView =
+        vertex->GetSceneBuffer().GetVertexView();
+    const D3D12_INDEX_BUFFER_VIEW& indexView =
+        index->GetSceneBuffer().GetIndexView();
+    const uint32_t availableIndices = index->GetSceneBuffer().GetIndexCount();
+    const uint32_t drawCount = indexCount == 0 ? availableIndices : indexCount;
+    if (drawCount == 0 || drawCount > availableIndices ||
+        originalVertexView.SizeInBytes < stride ||
+        originalVertexView.SizeInBytes % stride != 0 ||
+        drawCount > indexView.SizeInBytes / sizeof(uint32_t))
+    {
+        return false;
+    }
+
+    // IASetVertexBuffersはViewの値を記録するため、Pipeline指定のstrideを反映した
+    // ローカルViewを使用します。Buffer生成時のbyte単位strideは描画に流用しません。
+    D3D12_VERTEX_BUFFER_VIEW vertexView = originalVertexView;
+    vertexView.StrideInBytes = stride;
+
+    // GPUが描画命令を消費するまで両Bufferを保持してから記録します。
+    if (RetainDrawBuffers(vertexBuffer, indexBuffer) == false)
+    {
+        return false;
+    }
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->IASetVertexBuffers(0, 1, &vertexView);
+    commandList->IASetIndexBuffer(&indexView);
+    commandList->DrawIndexedInstanced(drawCount, 1, 0, 0, 0);
+    return true;
 }
 
 void DX12SceneContext::Shutdown()

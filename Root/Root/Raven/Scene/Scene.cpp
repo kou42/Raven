@@ -2,10 +2,13 @@
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Event.h"
 #include "Raven/Renderer/Renderer.h"
+#include "Raven/Renderer/Mesh/Mesh.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/AnimationSystem.h"
 
 #include <cmath>
+#include <unordered_set>
 
 namespace Raven
 {
@@ -329,6 +332,37 @@ void Scene::OnRender()
     for (auto& layer : m_layers) {
         layer->OnRender();
     }
+}
+
+bool Scene::PrepareRHIMeshes(RHIDevice& device)
+{
+    // 同一Meshを複数Entityが共有しても、GPU Bufferの生成は1回だけにします。
+    // MeshRendererComponentのMeshはshared_ptrなので、同じ実体のポインタで識別できます。
+    // GPU Resourceの生成・更新はFrame記録中に行わず、呼び出し側が事前に実行してください。
+    std::unordered_set<const Mesh*> preparedMeshes;
+    for (auto [entity, transform, meshRenderer] : View<TransformComponent, MeshRendererComponent>())
+    {
+        (void)entity;
+        (void)transform;
+        if (meshRenderer.IsValid() == false)
+        {
+            continue;
+        }
+
+        const Ref<Mesh>& mesh = meshRenderer.Mesh;
+        if (preparedMeshes.insert(mesh.get()).second == false)
+        {
+            continue;
+        }
+
+        // 同じDeviceで繰り返し準備するときも、Backend切替時に古いBufferを
+        // 誤利用しないよう、呼び出し元がContextごとに一度実行する契約です。
+        if (mesh->BuildRHIResources(device) == false)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 void Scene::RenderEntities()

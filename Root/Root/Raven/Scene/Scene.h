@@ -26,6 +26,8 @@
 
 namespace Raven
 {
+class RHIDevice;
+
 class Scene
 {
 
@@ -59,6 +61,12 @@ public:
     //+---------------------------------------------------------------------
     void PushLayer(Scope<Layer> layer);
     void RenderEntities();
+
+    // Explicit RHI描画のFrame開始前に、Entityが共有するMeshのGPU Bufferを準備します。
+    // SceneはBackendを知らず、呼び出し側がScene Contextと同じDeviceを渡します。
+    // Backend/Context切替時は新しいDeviceで再実行してください。
+    // falseは一部Meshの準備失敗を示し、描画Frameを開始してはいけません。
+    bool PrepareRHIMeshes(RHIDevice& device);
 
     Entity CreateEntity(const std::string& name = "Entity");
     void DestroyEntity(Entity entity);

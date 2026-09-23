@@ -20,6 +20,16 @@ bool DX12FrameRenderer::Init(ID3D12Device* device, DX12SwapChain& swapChain)
     if (FAILED(device->CreateDescriptorHeap(
         &description, IID_PPV_ARGS(m_RtvHeap.ReleaseAndGetAddressOf())))) { return false; }
 
+    D3D12_DESCRIPTOR_HEAP_DESC dsvDescription{};
+    dsvDescription.NumDescriptors = 1;
+    dsvDescription.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    if (FAILED(device->CreateDescriptorHeap(&dsvDescription,
+        IID_PPV_ARGS(m_DsvHeap.ReleaseAndGetAddressOf()))))
+    {
+        Shutdown();
+        return false;
+    }
+
     m_RtvDescriptorSize =
         device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     return RebuildRenderTargets(device, swapChain);
@@ -36,6 +46,35 @@ bool DX12FrameRenderer::RebuildRenderTargets(ID3D12Device* device, DX12SwapChain
         device->CreateRenderTargetView(backBuffers[index].Get(), nullptr, handle);
         handle.ptr += m_RtvDescriptorSize;
     }
+    // Resize時は旧Depth ResourceをGPU完了後に差し替えます。
+    // SceneとClear Demoで同じDSVを使い、BackBufferのサイズに一致させます。
+    const D3D12_RESOURCE_DESC backBufferDesc = backBuffers[0]->GetDesc();
+    D3D12_RESOURCE_DESC depthDesc{};
+    depthDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    depthDesc.Width = backBufferDesc.Width;
+    depthDesc.Height = backBufferDesc.Height;
+    depthDesc.DepthOrArraySize = 1;
+    depthDesc.MipLevels = 1;
+    depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    depthDesc.SampleDesc.Count = 1;
+    depthDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    depthDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    D3D12_HEAP_PROPERTIES heap{};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_CLEAR_VALUE clearValue{};
+    clearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    clearValue.DepthStencil.Depth = 1.0f;
+    Microsoft::WRL::ComPtr<ID3D12Resource> depth;
+    if (FAILED(device->CreateCommittedResource(&heap,
+        D3D12_HEAP_FLAG_NONE, &depthDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearValue,
+        IID_PPV_ARGS(depth.GetAddressOf()))))
+    {
+        return false;
+    }
+    device->CreateDepthStencilView(depth.Get(), nullptr,
+        m_DsvHeap->GetCPUDescriptorHandleForHeapStart());
+    m_DepthBuffer = std::move(depth);
     return true;
 }
 
@@ -98,7 +137,16 @@ bool DX12FrameRenderer::BeginRenderTarget(
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
     rtv.ptr += static_cast<SIZE_T>(m_BackBufferIndex) * m_RtvDescriptorSize;
-    commandList.GetHandle()->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+    if (m_DsvHeap.Get() == nullptr || m_DepthBuffer.Get() == nullptr)
+    {
+        return false;
+    }
+    const D3D12_CPU_DESCRIPTOR_HANDLE dsv =
+        m_DsvHeap->GetCPUDescriptorHandleForHeapStart();
+    commandList.GetHandle()->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+    // Depthは毎Frame初期化し、前Frameの深度値を持ち越しません。
+    commandList.GetHandle()->ClearDepthStencilView(
+        dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_RenderTargetActive = true;
     return true;
 }
@@ -239,6 +287,8 @@ void DX12FrameRenderer::Shutdown()
     m_RenderTargetActive = false;
     m_RenderTargetFinished = false;
     m_Submitted = false;
+    m_DepthBuffer.Reset();
+    m_DsvHeap.Reset();
     m_RtvHeap.Reset();
 }
 

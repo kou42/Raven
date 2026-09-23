@@ -36,6 +36,8 @@ public:
 
 private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_RtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_DsvHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_DepthBuffer;
     UINT m_RtvDescriptorSize = 0;
     UINT m_BackBufferIndex = 0;
     bool m_FrameActive = false;
