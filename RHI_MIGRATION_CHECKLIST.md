@@ -86,7 +86,7 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [x] ScissorのFramebuffer左下原点Pixel矩形と有効/無効をRHICommandList / RenderCommandに追加する（コードレビュー済み・ビルド未検証）。
 - [x] `OpenGLUIRenderer` のviewport設定・取得・復元とCommandごとのClip ScissorをRenderCommand経由へ移す（コードレビュー済み・ビルド未検証）。
 - [x] Window Overlay用default RenderTargetのbindingをRenderCommand / RHICommandListへ移す（コードレビュー済み・ビルド未検証）。
-- [x] Scissorの現在値（無効時の矩形を含む）をRHI経由で取得し、UI終了時に復元する（コードレビュー済み・ビルド未検証）。
+- [x] Scissorの現在値（無効時の矩形・負の原点座標を含む）をRHI経由で取得し、UI終了時に復元する（コードレビュー済み・ビルド未検証）。
 - [x] UI OverlayのDraw/Read FramebufferとBuffer選択をRHIで保存・復元する（OpenGL互換state、コードレビュー済み・ビルド未検証）。
 - [x] UIが変更するShader / VAO bindingとBlend係数・演算を復元し、後続描画へのstate漏れを防ぐ（コードレビュー済み・ビルド未検証）。
 - [x] 既存FramebufferをRHICommandList / RenderCommandからbindできる互換経路を追加する（コードレビュー済み・ビルド未検証）。
