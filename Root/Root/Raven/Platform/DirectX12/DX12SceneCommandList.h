@@ -62,17 +62,25 @@ public:
 
     bool BindMaterial(const RHIMaterialProperties& material) override
     {
-        (void)material;
-        // 現行PSOはTexture/Tint用Root Parameterを持ちません。
-        // Scene RendererからのMaterial Bindは未対応として明示的に拒否します。
-        return false;
+        // Texture用SRVは未実装です。未対応Materialを描画済みと扱いません。
+        if (material.Texture != nullptr ||
+            material.SurfaceType == MaterialSurfaceType::Masked ||
+            m_Pipeline == nullptr ||
+            m_Context.IsGraphicsPipelineBound() == false)
+        {
+            return false;
+        }
+        return m_Context.SetMaterialTint(material.Tint);
     }
 
     bool SetClipTransform(const std::array<float, 16>& transform) override
     {
-        (void)transform;
-        // Model行列用Root Constant/CBVを導入するまで受け付けません。
-        return false;
+        if (m_Pipeline == nullptr ||
+            m_Context.IsGraphicsPipelineBound() == false)
+        {
+            return false;
+        }
+        return m_Context.SetClipTransform(transform);
     }
 
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
