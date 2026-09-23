@@ -184,6 +184,27 @@ public:
             }
         }
 
+        // TextureごとにShader-visible SRVを1個所有します。
+        // Descriptor TableのGPU HandleをFrame中に参照するためHeapもTextureと同寿命です。
+        D3D12_DESCRIPTOR_HEAP_DESC heapDescription{};
+        heapDescription.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDescription.NumDescriptors = 1;
+        heapDescription.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
+        if (FAILED(device->CreateDescriptorHeap(&heapDescription,
+            IID_PPV_ARGS(srvHeap.GetAddressOf()))))
+        {
+            return false;
+        }
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+        srv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Texture2D.MipLevels = 1;
+        device->CreateShaderResourceView(texture.Get(), &srv,
+            srvHeap->GetCPUDescriptorHandleForHeapStart());
+
+        m_SrvHeap = std::move(srvHeap);
         m_Texture = std::move(texture);
         m_Specification = specification;
         m_OwnerDevice = device;
@@ -203,11 +224,19 @@ public:
     }
 
     ID3D12Resource* GetNativeTexture() const { return m_Texture.Get(); }
+    ID3D12DescriptorHeap* GetSrvHeap() const { return m_SrvHeap.Get(); }
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpuHandle() const
+    {
+        return m_SrvHeap != nullptr ?
+            m_SrvHeap->GetGPUDescriptorHandleForHeapStart() :
+            D3D12_GPU_DESCRIPTOR_HANDLE{};
+    }
     ID3D12Device* GetOwnerDevice() const { return m_OwnerDevice; }
 
 private:
     RHITextureSpecification m_Specification{};
     Microsoft::WRL::ComPtr<ID3D12Resource> m_Texture;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_SrvHeap;
     ID3D12Device* m_OwnerDevice = nullptr;
 };
 
