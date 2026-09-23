@@ -24,6 +24,7 @@ namespace Raven
 
 class ImGuiLayer;
 class RHISceneFrameLifecycle;
+enum class RHIFrameResult;
 class UIDockSpace;
 class UIWindow;
 
@@ -46,6 +47,14 @@ public:
     ~Application();
 
     void Run();
+
+    // Explicit Sceneの準備→Acquire→描画をApplication側の共通Frame進行へ集約します。
+    // Context/Runtimeは呼び出し元が所有し、ResizeRequiredは呼び出し元が処理します。
+    static RHIFrameResult ExecuteExplicitSceneFrame(
+        RHISceneFrameLifecycle& frame,
+        const std::function<bool()>& prepare,
+        const std::function<RHIFrameResult()>& drawPrepared);
+
     void OnEvent(Event& event);
 
     void PushLayer(Layer* layer);
