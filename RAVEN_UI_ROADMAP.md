@@ -28,7 +28,7 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | Phase | テーマ | 状態 | 完了条件 |
 | --- | --- | --- | --- |
 | 1 | Font Atlas / Text Rendering | 実装中 | Font読込、Glyph Atlas、DrawList経由の文字表示、日本語fallback、基本描画検証 |
-| 2 | Text Layout / Text Measurement | 未着手 | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
+| 2 | Text Layout / Text Measurement | 基盤実装済み・回帰テスト棚卸し済み（数値テスト・実描画検証は継続） | Measure/Arrangeと文字サイズ連携、改行・配置・Clip検証 |
 | 3 | InputText / InputNumber | 実装中（InputText / InputNumberの基本操作・横スクロール確認済み、IME未対応） | Cursor、選択、編集、Clipboard、Undo/Redo、IME方針と検証 |
 | 4 | ComboBox / Popup / Tooltip | 未着手 | Focus、閉じる条件、重なり順、入力伝播の検証 |
 | 5 | TreeView / Table | 実装中（TreeView基礎・Demo・縦Scroll/Scrollbar・Drag & Drop・回帰テスト追加。Drag & Dropはユーザー動作確認済み／Table基礎・Demo・回帰テスト追加） | Hierarchy相当の選択・展開、表の列・Scroll・基本操作 |
@@ -41,6 +41,14 @@ Raven独自のRetained Mode UI Treeを維持し、Dear ImGui相当のEditor操�
 | 12 | Multi-Viewport | OS Window別UIContext・入力/IME配送・DPI/Framebuffer描画・Dock Tab切り離し/Close復帰を実装、ユーザー動作確認済み（PR #270、OpenGL限定）。論理Windowの自動ドラッグ分離・Mainへの再統合はPR #271で実装・ユーザー動作確認済み。異DPI・他Backendは継続課題 | OS WindowごとのUIContext / 入力配送、UI描画Target、生成・破棄・DPI・Focusの検証 |
 | 13 | RHI Batching最適化 | 未着手 | Draw順・Clipを維持したBatchingと計測 |
 | 14 | UI Debugger / Profiler | 未着手 | Tree / Focus / Draw Command / CPU・GPU指標表示 |
+
+## Phase 2: Text Layout / Text Measurement 検証状況（2026-09-23）
+
+- [x] `UITextLayout` の改行・Character/ASCII Word Wrap・左右中央配置、`UITextMeasurement` の共通Layout利用、`UILabel` の幅依存Measure / Draw接続をコード確認。
+- [x] `Root/Tests/UITextReflowTests.cpp` の既存テストを棚卸し。`WrappingElement` の幅依存再MeasureとDPI関連テストは存在するが、実`UILabel`と固定Glyph MetricsによるLayout数値期待値テストは未確認。
+- [ ] Layout / Measurementの数値回帰テスト、実UILabel / UIElement統合テスト、Glyph Clip / Alignment / Wrapの組合せテストを追加・実行する。
+- [ ] Text DemoのResize・改行・配置・Clip・DPIを実描画確認し、結果を記録する。今回の棚卸しではビルド・テスト実行・GPU描画は未実施。
+- 詳細な確認範囲、テストマトリクス、完了条件は [`RAVEN_UI_PHASE2_TEST_AUDIT.md`](RAVEN_UI_PHASE2_TEST_AUDIT.md) を参照。
 
 ## Window System / Multi-Viewportへの接続状況
 
