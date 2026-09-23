@@ -9,6 +9,7 @@
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Scene/SceneCamera.h"
+#include "Raven/Scene/Scene.h"
 
 #include <GLFW/glfw3.h>
 
@@ -55,28 +56,40 @@ int RunVulkanSceneRuntimeDemo()
         return 1;
     }
 
-    // Explicit-only起動ではMesh生成時にOpenGL VAO/VBOへ触れません。
-    // Runtimeへ登録した時点で、このVulkan Deviceに属するRHI Bufferだけを構築します。
+    // 通常Sceneと同じECS経路で複数Entityを登録します。
+    // Explicit-only起動なのでOpenGL VAO/VBOは生成せず、CPU Geometryだけを持ちます。
+    Scene scene;
     Ref<Mesh> mesh = PrimitiveMeshFactory::CreateCube(
         LegacyMeshResourceCreation::Deferred);
-    if (mesh == nullptr || mesh->GetVertexArray() != nullptr ||
-        runtime.PrepareMesh(mesh) == false)
-    {
-        std::cerr << "Vulkan Scene Runtime mesh preparation failed.\n";
-        runtime.Shutdown();
-        return 1;
-    }
-
-    // Explicit Scene QueueはMaterialのRHI値だけを参照するため、Legacy Pipelineは不要です。
     Ref<Material> material = CreateRef<Material>();
-    if (material == nullptr || material->HasLegacyPipeline() == true)
+    if (mesh == nullptr || mesh->GetVertexArray() != nullptr || material == nullptr ||
+        material->HasLegacyPipeline() == true)
     {
-        std::cerr << "Vulkan Scene Runtime material creation failed.\n";
+        std::cerr << "Vulkan Entity Scene creation failed.\\n";
         runtime.Shutdown();
         return 1;
     }
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
     material->SetSurfaceType(MaterialSurfaceType::Opaque);
+
+    Entity left = scene.CreateEntity("VulkanLeftCube");
+    left.GetComponent<TransformComponent>().Position = {-1.2f, 0.0f, 0.0f};
+    left.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
+
+    Entity center = scene.CreateEntity("VulkanCenterCube");
+    center.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
+
+    Entity right = scene.CreateEntity("VulkanRightCube");
+    right.GetComponent<TransformComponent>().Position = {1.2f, 0.0f, 0.0f};
+    right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
+
+    // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
+    if (runtime.PrepareScene(scene) == false)
+    {
+        std::cerr << "Vulkan Entity Scene mesh preparation failed.\\n";
+        runtime.Shutdown();
+        return 1;
+    }
 
     SceneCamera camera;
     camera.SetViewMatrix(math::Mat4::LookAt(
@@ -121,10 +134,11 @@ int RunVulkanSceneRuntimeDemo()
         Renderer::BeginFrame();
         Renderer::BeginScene(camera);
         const float time = static_cast<float>(glfwGetTime());
-        const math::Mat4 model =
-            math::Mat4::RotationY(time * 0.6f) *
-            math::Mat4::RotationX(-0.35f);
-        Renderer::Draw(mesh, material, model);
+        // EntityのTransformを毎Frame更新し、ECSの描画入口から通常Queueへ送ります。
+        center.GetComponent<TransformComponent>().Rotation.y = time * 0.6f;
+        left.GetComponent<TransformComponent>().Rotation.x = -time * 0.35f;
+        right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
+        scene.RenderEntities();
 
         const RHIFrameResult result = runtime.DrawFrame();
         if (result == RHIFrameResult::ResizeRequired)
