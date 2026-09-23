@@ -95,6 +95,10 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         return RHIFrameResult::FatalError;
     }
 
+    // BeginFrameのFence待機後は前回このFrameが参照したBufferを解放できます。
+    // GPUがまだ読むBufferをEntity側のRef破棄だけで解放しないための保持です。
+    frame.RetainedBuffers.clear();
+
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
     m_FrameSubmitted = false;
@@ -237,6 +241,20 @@ ID3D12GraphicsCommandList* DX12SceneContext::GetActiveCommandList() const
 ID3D12Device* DX12SceneContext::GetNativeDevice() const
 {
     return m_Device.GetHandle();
+}
+
+bool DX12SceneContext::RetainDrawBuffers(
+    const Ref<RHIBuffer>& vertexBuffer, const Ref<RHIBuffer>& indexBuffer)
+{
+    if (GetActiveCommandList() == nullptr ||
+        vertexBuffer == nullptr || indexBuffer == nullptr)
+    {
+        return false;
+    }
+    FrameResource& frame = m_Frames[m_CurrentFrame];
+    frame.RetainedBuffers.push_back(vertexBuffer);
+    frame.RetainedBuffers.push_back(indexBuffer);
+    return true;
 }
 
 void DX12SceneContext::Shutdown()
