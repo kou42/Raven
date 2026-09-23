@@ -1,4 +1,5 @@
 #include "DX12SceneContext.h"
+#include "DX12SceneRHIBuffer.h"
 
 #include "Raven/Core/Window.h"
 
@@ -254,6 +255,63 @@ bool DX12SceneContext::RetainDrawBuffers(
     FrameResource& frame = m_Frames[m_CurrentFrame];
     frame.RetainedBuffers.push_back(vertexBuffer);
     frame.RetainedBuffers.push_back(indexBuffer);
+    return true;
+}
+
+bool DX12SceneContext::DrawIndexed(
+    const Ref<RHIBuffer>& vertexBuffer,
+    const Ref<RHIBuffer>& indexBuffer,
+    uint32_t stride, uint32_t indexCount)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || vertexBuffer == nullptr ||
+        indexBuffer == nullptr || stride == 0 ||
+        vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
+        indexBuffer->GetSpecification().Usage != RHIBufferUsage::Index)
+    {
+        return false;
+    }
+
+    // 別BackendのRHIBufferや別種Resourceをnative APIへ渡さないようにします。
+    auto vertex = std::dynamic_pointer_cast<DX12SceneRHIBuffer>(vertexBuffer);
+    auto index = std::dynamic_pointer_cast<DX12SceneRHIBuffer>(indexBuffer);
+    if (vertex == nullptr || index == nullptr ||
+        vertex->GetSceneBuffer().IsValid() == false ||
+        index->GetSceneBuffer().IsValid() == false ||
+        vertex->GetSceneBuffer().IsIndexBuffer() == true ||
+        index->GetSceneBuffer().IsIndexBuffer() == false)
+    {
+        return false;
+    }
+
+    const D3D12_VERTEX_BUFFER_VIEW& originalVertexView =
+        vertex->GetSceneBuffer().GetVertexView();
+    const D3D12_INDEX_BUFFER_VIEW& indexView =
+        index->GetSceneBuffer().GetIndexView();
+    const uint32_t availableIndices = index->GetSceneBuffer().GetIndexCount();
+    const uint32_t drawCount = indexCount == 0 ? availableIndices : indexCount;
+    if (drawCount == 0 || drawCount > availableIndices ||
+        originalVertexView.SizeInBytes < stride ||
+        originalVertexView.SizeInBytes % stride != 0 ||
+        indexView.SizeInBytes < drawCount * sizeof(uint32_t))
+    {
+        return false;
+    }
+
+    // IASetVertexBuffersはViewの値を記録するため、Pipeline指定のstrideを反映した
+    // ローカルViewを使用します。Buffer生成時のbyte単位strideは描画に流用しません。
+    D3D12_VERTEX_BUFFER_VIEW vertexView = originalVertexView;
+    vertexView.StrideInBytes = stride;
+
+    // GPUが描画命令を消費するまで両Bufferを保持してから記録します。
+    if (RetainDrawBuffers(vertexBuffer, indexBuffer) == false)
+    {
+        return false;
+    }
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->IASetVertexBuffers(0, 1, &vertexView);
+    commandList->IASetIndexBuffer(&indexView);
+    commandList->DrawIndexedInstanced(drawCount, 1, 0, 0, 0);
     return true;
 }
 
