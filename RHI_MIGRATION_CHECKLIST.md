@@ -92,7 +92,7 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 - [x] 既存FramebufferをRHICommandList / RenderCommandからbindできる互換経路を追加する（コードレビュー済み・ビルド未検証）。
 - [x] MRT全Draw Buffer（GL_NONEを含む）とRead Bufferを保存・復元するOpenGL互換stateを追加する（コードレビュー済み・ビルド未検証）。
 - [x] UIのBlend / Depth / Cull / ColorMask / PolygonModeの保存・設定・復元をRHI Backendへ移す（コードレビュー済み・ビルド未検証）。
-- [ ] Shader / VAO / Texture Bindingの保存・復元責務をRHI Backendへ移す。
+- [x] Shader / VAO / Array Buffer / Texture Unit 0 BindingとActive Textureの保存・復元をRHI Backendへ移す（コードレビュー済み・ビルド未検証）。
 - [x] UI専用Triangle PipelineとUniform・Commandごとのoffset付きDrawIndexedを `RenderCommand` へ移行し、以前のPipeline追跡を復元する（コードレビュー済み・ビルド未検証）。
 - [ ] UI / SVG / Imageの描画と既存3D state復元を実機確認する。
 
@@ -101,4 +101,4 @@ Draw統計は `RenderCommand` が現在のPipeline topologyを追跡し、`Primi
 1. masterとの差分を最終レビューし、Legacy RendererAPI削除とOpenGL具体実装移動に取りこぼしがないことを確認する。
 2. Debug / Release x64のcompile / linkを確認する。
 3. Scene / Sandbox / Physics Debugの実動作を確認する。
-4. UI描画の残るShader / VAO / Texture Bindingの保存・復元をRHI Backendへ移し、UI / SVG / Imageと3D stateの実機確認を行う。
+4. UI / SVG / Imageと3D stateの実機確認を行い、必要に応じてUI用snapshotの適用範囲を見直す。
