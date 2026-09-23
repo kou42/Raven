@@ -4,6 +4,7 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 
 #include <cstdint>
 #include <vector>
@@ -116,6 +117,28 @@ public:
 
     // Queueを閉じ、Texture Binding準備後にExplicit RHIのBegin/Draw/End/Presentを実行します。
     // Debug OverlayはまだLegacy専用のため、この経路には含めません。
+    // BeginFrame前に構築・Descriptor準備を済ませる描画Snapshotです。
+    struct PreparedRHISceneFrame
+    {
+        std::vector<RHISceneDrawItem> Items;
+        Ref<RHIGraphicsPipeline> OpaquePipeline;
+        Ref<RHIGraphicsPipeline> TransparentPipeline;
+    };
+
+    static bool PrepareRHISceneFrame(
+        RHIDevice& device,
+        const Ref<RHIGraphicsPipeline>& opaquePipeline,
+        const Ref<RHIGraphicsPipeline>& transparentPipeline,
+        const Ref<RHITexture>& defaultTexture,
+        const math::Mat4& clipCorrection,
+        PreparedRHISceneFrame& outFrame);
+
+    // 呼び出し側がBeginFrameを実行済みのときに使用します。
+    static RHIFrameResult DrawPreparedRHISceneFrame(
+        RHISceneFrameLifecycle& frame,
+        RHISceneCommandList& commands,
+        const PreparedRHISceneFrame& preparedFrame);
+
     static RHIFrameResult DrawRHISceneFrame(
         RHIDevice& device,
         RHISceneFrameLifecycle& frame,
