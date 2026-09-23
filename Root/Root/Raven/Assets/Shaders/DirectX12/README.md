@@ -3,8 +3,14 @@
 `SceneMesh.hlsl` は `DX12SceneGraphicsPipeline` の固定Binding契約に合わせた
 Entity Mesh描画用のVertex / Pixel Shaderです。
 
-Windows上でDXC（DirectX Shader Compiler）の `dxc.exe` をPATHへ追加し、
-リポジトリの `Root/Root` を作業ディレクトリとして以下を実行してください。
+Visual Studioの通常x64ビルド時に、MSBuildの `CompileDX12SceneShaders` が
+HLSLから2つのDXILを自動生成します。HLSLの更新時・DXILが存在しない場合のみ
+再生成します。DXC（DirectX Shader Compiler）の `dxc.exe` をPATHへ追加してください
+（Windows SDKの `WindowsSdkVerBinPath/x64/dxc.exe` も探索します）。
+DXCがない場合はビルドをエラー終了させます。
+
+手動で再生成したい場合は、リポジトリの `Root/Root` を作業ディレクトリとして
+以下を実行してください。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File Raven/Assets/Shaders/DirectX12/BuildSceneMesh.ps1
