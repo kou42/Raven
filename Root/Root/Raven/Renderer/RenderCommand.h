@@ -38,7 +38,8 @@ public:
     static void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot);
     static void UploadUniform(const std::string& name, const UniformValue& value);
 
-    static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0);
+    // firstIndexはIndexBufferの要素単位offset。0 countは指定位置から末尾までです。
+    static void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0, uint32_t firstIndex = 0);
 
     // GPU Resource生成はCommandListとは責務が異なるためDeviceを経由します。
     // Legacy Renderer/Texture層がBackend実装を直接生成しないための段階移行用窓口です。
