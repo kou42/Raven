@@ -12,6 +12,7 @@ public:
 
     void Init() override;
     void BindDefaultRenderTarget() override;
+    void BindRenderTarget(const Framebuffer& framebuffer) override;
     RHIRenderTargetState CaptureRenderTargetState() const override;
     void RestoreRenderTargetState(const RHIRenderTargetState& state) override;
     void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
