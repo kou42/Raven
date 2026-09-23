@@ -70,26 +70,52 @@ RHIRenderTargetState OpenGLRHICommandList::CaptureRenderTargetState() const
 {
     GLint drawTarget = 0;
     GLint readTarget = 0;
-    GLint drawBuffer = 0;
     GLint readBuffer = 0;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawTarget);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readTarget);
-    glGetIntegerv(GL_DRAW_BUFFER, &drawBuffer);
     glGetIntegerv(GL_READ_BUFFER, &readBuffer);
 
     RHIRenderTargetState state{};
     state.DrawTarget = static_cast<uint32_t>(drawTarget);
     state.ReadTarget = static_cast<uint32_t>(readTarget);
-    state.DrawBuffer = static_cast<uint32_t>(drawBuffer);
     state.ReadBuffer = static_cast<uint32_t>(readBuffer);
+
+    // MRTの複数color attachmentへの出力先はGL_DRAW_BUFFERだけでは復元できません。
+    // FBOごとに保持される全slotを退避し、未使用slotのGL_NONEも含めて保存します。
+    GLint maxDrawBuffers = 0;
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+    for (GLint index = 0; index < maxDrawBuffers; ++index)
+    {
+        GLint buffer = GL_NONE;
+        glGetIntegerv(GL_DRAW_BUFFER0 + index, &buffer);
+        state.DrawBuffers.push_back(static_cast<uint32_t>(buffer));
+    }
     return state;
 }
 
 void OpenGLRHICommandList::RestoreRenderTargetState(const RHIRenderTargetState& state)
 {
-    // Draw/Read FBOは別々にbindされ得るため、それぞれのBuffer選択も対で復元します。
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(state.DrawTarget));
-    glDrawBuffer(static_cast<GLenum>(state.DrawBuffer));
+    if (state.DrawBuffers.empty() == false)
+    {
+        if (state.DrawTarget == 0u)
+        {
+            // Default framebufferはglDrawBuffersへ複数のbufferを指定できません。
+            glDrawBuffer(static_cast<GLenum>(state.DrawBuffers.front()));
+        }
+        else
+        {
+            std::vector<GLenum> buffers;
+            buffers.reserve(state.DrawBuffers.size());
+            for (uint32_t buffer : state.DrawBuffers)
+            {
+                buffers.push_back(static_cast<GLenum>(buffer));
+            }
+            glDrawBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
+        }
+    }
+
+    // Read targetとRead bufferはDraw側と独立して復元します。
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(state.ReadTarget));
     glReadBuffer(static_cast<GLenum>(state.ReadBuffer));
 }
