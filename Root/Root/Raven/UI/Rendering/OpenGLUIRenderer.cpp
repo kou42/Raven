@@ -406,7 +406,7 @@ void OpenGLUIRenderer::Render(
     glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
     glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    RenderCommand::BindDefaultRenderTarget();
 
     // Default framebufferがDouble Bufferの場合、画面へ提示されるのは通常Back Bufferです。
     // 直前のoffscreen描画や外部stateでDrawBufferが別値になっていてもUIを正しいBufferへ書くため、
