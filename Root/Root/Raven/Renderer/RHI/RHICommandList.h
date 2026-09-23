@@ -45,6 +45,24 @@ struct RHIViewport
     uint32_t Height = 0;
 };
 
+// UI Overlayが一時的に上書きする固定機能stateの不透明なsnapshotです。
+// OpenGL enumを公開せず、Backendが値を解釈して完全に復元します。
+struct RHIOverlayRasterState
+{
+    bool DepthTest = false;
+    bool DepthWrite = true;
+    bool Blend = false;
+    bool CullFace = false;
+    bool ColorWrite[4] = { true, true, true, true };
+    int32_t PolygonMode[2] = {};
+    uint32_t BlendSrcRGB = 0;
+    uint32_t BlendDstRGB = 0;
+    uint32_t BlendSrcAlpha = 0;
+    uint32_t BlendDstAlpha = 0;
+    uint32_t BlendEquationRGB = 0;
+    uint32_t BlendEquationAlpha = 0;
+};
+
 // ============================================================================
 // RHICommandList
 // ============================================================================
@@ -81,6 +99,12 @@ public:
     virtual void SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height) = 0;
     // Enabledがfalseの場合も矩形を保持し、Overlay終了時に元のstateを復元できます。
     virtual RHIScissor GetScissor() const = 0;
+
+    // UI描画の前後でPipelineの固定機能stateを退避・設定・復元します。
+    // Shader / VAO / Texture / RenderTargetは既存の別契約で扱います。
+    virtual RHIOverlayRasterState CaptureOverlayRasterState() const = 0;
+    virtual void SetOverlayRasterState() = 0;
+    virtual void RestoreOverlayRasterState(const RHIOverlayRasterState& state) = 0;
 
     virtual void SetClearColor(float r, float g, float b, float a) = 0;
     virtual void Clear() = 0;
