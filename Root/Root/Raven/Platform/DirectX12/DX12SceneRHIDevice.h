@@ -81,9 +81,9 @@ public:
         {
             return false;
         }
-        // DX12SwapChainの現行RTVはRGBA8 UNORM、Depthは未実装です。
+        // DX12SwapChainのRTVはRGBA8 UNORM、Scene DepthはD32_FLOATです。
         target.ColorFormat = RHIColorFormat::RGBA8Unorm;
-        target.DepthFormat = RHIDepthFormat::None;
+        target.DepthFormat = RHIDepthFormat::D32Float;
         target.SampleCount = 1;
         return true;
     }
