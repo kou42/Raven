@@ -7,6 +7,8 @@
 #include <wrl/client.h>
 
 #include <array>
+#include <iostream>
+#include <string>
 #include <vector>
 
 namespace Raven
@@ -123,6 +125,8 @@ public:
         sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         sampler.MaxLOD = D3D12_FLOAT32_MAX;
+        sampler.MaxAnisotropy = 1;
+        sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
         sampler.ShaderRegister = 0;
         sampler.RegisterSpace = 0;
         sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -132,16 +136,27 @@ public:
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         Microsoft::WRL::ComPtr<ID3DBlob> serialized;
         Microsoft::WRL::ComPtr<ID3DBlob> errors;
-        if (FAILED(D3D12SerializeRootSignature(&rootDescription,
+        const HRESULT serializeResult = D3D12SerializeRootSignature(&rootDescription,
             D3D_ROOT_SIGNATURE_VERSION_1,
-            serialized.GetAddressOf(), errors.GetAddressOf())))
+            serialized.GetAddressOf(), errors.GetAddressOf());
+        if (FAILED(serializeResult))
         {
+            std::cerr << "[DX12 Scene] Root Signature serialization failed: HRESULT 0x"
+                << std::hex << static_cast<unsigned long>(serializeResult) << std::dec << "\n";
+            if (errors != nullptr)
+            {
+                std::cerr << static_cast<const char*>(errors->GetBufferPointer()) << "\n";
+            }
             return false;
         }
         Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
-        if (FAILED(device->CreateRootSignature(0, serialized->GetBufferPointer(),
-            serialized->GetBufferSize(), IID_PPV_ARGS(rootSignature.GetAddressOf()))))
+        const HRESULT rootResult = device->CreateRootSignature(
+            0, serialized->GetBufferPointer(), serialized->GetBufferSize(),
+            IID_PPV_ARGS(rootSignature.GetAddressOf()));
+        if (FAILED(rootResult))
         {
+            std::cerr << "[DX12 Scene] CreateRootSignature failed: HRESULT 0x"
+                << std::hex << static_cast<unsigned long>(rootResult) << std::dec << "\n";
             return false;
         }
 
@@ -196,9 +211,12 @@ public:
         blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
 
         Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
-        if (FAILED(device->CreateGraphicsPipelineState(
-            &description, IID_PPV_ARGS(pipeline.GetAddressOf()))))
+        const HRESULT pipelineResult = device->CreateGraphicsPipelineState(
+            &description, IID_PPV_ARGS(pipeline.GetAddressOf()));
+        if (FAILED(pipelineResult))
         {
+            std::cerr << "[DX12 Scene] CreateGraphicsPipelineState failed: HRESULT 0x"
+                << std::hex << static_cast<unsigned long>(pipelineResult) << std::dec << "\n";
             return false;
         }
         m_RootSignature = std::move(rootSignature);
