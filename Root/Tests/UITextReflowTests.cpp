@@ -2249,8 +2249,8 @@ Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
     atlas->SetVerticalMetrics(8.0f, -2.0f, 0.0f);
 
     Raven::UIGlyphMetrics glyph{};
-    glyph.AtlasRect = Raven::UIRect::FromMinMax(
-        Raven::math::Vec2(0.0f, 0.0f), Raven::math::Vec2(8.0f, 10.0f));
+    glyph.AtlasRect.Min = Raven::math::Vec2(0.0f, 0.0f);
+    glyph.AtlasRect.Max = Raven::math::Vec2(8.0f, 10.0f);
     glyph.Advance = 10.0f;
     for (std::uint32_t codepoint : { static_cast<std::uint32_t>('A'),
         static_cast<std::uint32_t>('B'), static_cast<std::uint32_t>('C'),
@@ -2259,8 +2259,7 @@ Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
     {
         Check(atlas->AddGlyph(codepoint, glyph), "layout fixture glyph added");
     }
-    glyph.AtlasRect = Raven::UIRect::FromMinMax(
-        Raven::math::Vec2(0.0f, 0.0f), Raven::math::Vec2(0.0f, 0.0f));
+    glyph.AtlasRect.Max = Raven::math::Vec2(0.0f, 0.0f);
     glyph.Advance = 5.0f;
     Check(atlas->AddGlyph(static_cast<std::uint32_t>(' '), glyph),
         "layout fixture space added");
@@ -2274,7 +2273,7 @@ void TestTextLayoutMeasurement()
     Check(empty.Metrics.LineCount == 0u, "empty text has no lines");
     Check(empty.Glyphs.empty(), "empty text has no glyphs");
 
-    const Raven::UITextLayoutResult lines = Raven::UITextLayout::Build(*font, "AB\\r\\nC\\n", 12.0f);
+    const Raven::UITextLayoutResult lines = Raven::UITextLayout::Build(*font, "AB\r\nC\n", 12.0f);
     Check(lines.Metrics.LineCount == 3u, "CRLF and trailing newline line count");
     CheckNear("multiline width", lines.Metrics.Width, 20.0f);
     CheckNear("multiline height", lines.Metrics.Height, 36.0f);
@@ -2284,7 +2283,7 @@ void TestTextLayoutMeasurement()
     CheckNear("trailing empty line pen x", lines.FinalPen.x, 0.0f);
     CheckNear("trailing empty line pen y", lines.FinalPen.y, 24.0f);
 
-    const Raven::UITextMetrics measured = Raven::UITextMeasurement::Measure(*font, "AB\\r\\nC\\n", 12.0f);
+    const Raven::UITextMetrics measured = Raven::UITextMeasurement::Measure(*font, "AB\r\nC\n", 12.0f);
     CheckNear("measurement width matches layout", measured.Width, lines.Metrics.Width);
     CheckNear("measurement height matches layout", measured.Height, lines.Metrics.Height);
     Check(measured.LineCount == lines.Metrics.LineCount, "measurement line count matches layout");
@@ -2315,12 +2314,12 @@ void TestTextLayoutMeasurement()
     options.MaxWidth = 40.0f;
     options.Wrap = Raven::UITextWrapMode::None;
     options.Alignment = Raven::UITextHorizontalAlignment::Center;
-    const Raven::UITextLayoutResult centered = Raven::UITextLayout::Build(*font, "AB\\nC", options);
+    const Raven::UITextLayoutResult centered = Raven::UITextLayout::Build(*font, "AB\nC", options);
     CheckNear("center first line x", centered.Glyphs[0u].Pen.x, 10.0f);
     CheckNear("center second line x", centered.Glyphs[2u].Pen.x, 15.0f);
     CheckNear("center final pen x", centered.FinalPen.x, 25.0f);
     options.Alignment = Raven::UITextHorizontalAlignment::Right;
-    const Raven::UITextLayoutResult right = Raven::UITextLayout::Build(*font, "AB\\nC", options);
+    const Raven::UITextLayoutResult right = Raven::UITextLayout::Build(*font, "AB\nC", options);
     CheckNear("right first line x", right.Glyphs[0u].Pen.x, 20.0f);
     CheckNear("right second line x", right.Glyphs[2u].Pen.x, 30.0f);
 
@@ -2333,7 +2332,7 @@ void TestTextLayoutMeasurement()
     CheckNear("scaled descent", scaled.Metrics.Descent, -3.0f);
 
     options.GlyphScale = Raven::math::Vec2(1.0f, 1.0f);
-    const Raven::UITextLayoutResult fallback = Raven::UITextLayout::Build(*font, "A\\xE3\\x81\\x82" "Z", options);
+    const Raven::UITextLayoutResult fallback = Raven::UITextLayout::Build(*font, "A\xE3\x81\x82" "Z", options);
     Check(fallback.Glyphs.size() == 3u, "utf8 and fallback glyph count");
     Check(fallback.Glyphs[1u].Codepoint == 0x3042u, "utf8 Japanese codepoint decoded");
     Check(fallback.Glyphs[2u].Codepoint == 0xFFFDu, "missing glyph uses replacement");
