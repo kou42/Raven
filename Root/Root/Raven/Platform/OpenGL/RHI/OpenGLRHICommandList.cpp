@@ -89,6 +89,20 @@ void OpenGLRHICommandList::SetScissor(bool enabled, uint32_t x, uint32_t y, uint
     glEnable(GL_SCISSOR_TEST);
 }
 
+RHIScissor OpenGLRHICommandList::GetScissor() const
+{
+    GLint box[4] = {};
+    glGetIntegerv(GL_SCISSOR_BOX, box);
+
+    RHIScissor result{};
+    result.Enabled = glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE;
+    result.X = box[0] > 0 ? static_cast<uint32_t>(box[0]) : 0u;
+    result.Y = box[1] > 0 ? static_cast<uint32_t>(box[1]) : 0u;
+    result.Width = box[2] > 0 ? static_cast<uint32_t>(box[2]) : 0u;
+    result.Height = box[3] > 0 ? static_cast<uint32_t>(box[3]) : 0u;
+    return result;
+}
+
 void OpenGLRHICommandList::SetClearColor(float r, float g, float b, float a)
 {
     glClearColor(r, g, b, a);
