@@ -46,8 +46,8 @@ int RunVulkanSceneRuntimeDemo()
     pipelineSpecification.Blend = false;
     pipelineSpecification.DebugName = "Vulkan Normal Mesh Scene";
 
-    VulkanSceneRuntime runtime;
-    if (runtime.Init(
+    auto runtime = CreateScope<VulkanSceneRuntime>();
+    if (runtime->Init(
         *window,
         pipelineSpecification,
         vertexShader,
@@ -67,7 +67,7 @@ int RunVulkanSceneRuntimeDemo()
         material->HasLegacyPipeline() == true)
     {
         std::cerr << "Vulkan Entity Scene creation failed.\n";
-        runtime.Shutdown();
+        runtime->Shutdown();
         return 1;
     }
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
@@ -85,10 +85,10 @@ int RunVulkanSceneRuntimeDemo()
     right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
 
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
-    if (runtime.PrepareScene(scene) == false)
+    if (runtime->PrepareScene(scene) == false)
     {
         std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
-        runtime.Shutdown();
+        runtime->Shutdown();
         return 1;
     }
 
@@ -98,15 +98,18 @@ int RunVulkanSceneRuntimeDemo()
         {0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f}));
     camera.SetViewportSize(
-        static_cast<float>(runtime.GetWidth()),
-        static_cast<float>(runtime.GetHeight()));
+        static_cast<float>(runtime->GetWidth()),
+        static_cast<float>(runtime->GetHeight()));
 
-    RHISceneFrameLifecycle* frame = runtime.GetFrameLifecycle();
+    RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
     if (frame == nullptr)
     {
-        runtime.Shutdown();
+        runtime->Shutdown();
         return 1;
     }
+    // ScopeをApplicationへ移譲してもRuntime実体のアドレスは変わりません。
+    // Callbackは移譲元Scopeではなく、実体を借用するPointerを捕捉します。
+    VulkanSceneRuntime* runtimeHandle = runtime.get();
     Application::ExplicitSceneCallbacks callbacks;
     callbacks.OnScene = [&]()
     {
@@ -121,9 +124,9 @@ int RunVulkanSceneRuntimeDemo()
     callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
     {
         // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
-        if (force == true || runtime.GetWidth() != width || runtime.GetHeight() != height)
+        if (force == true || runtimeHandle->GetWidth() != width || runtimeHandle->GetHeight() != height)
         {
-            if (runtime.Resize(width, height) == false)
+            if (runtimeHandle->Resize(width, height) == false)
             {
                 return false;
             }
@@ -132,12 +135,10 @@ int RunVulkanSceneRuntimeDemo()
         }
         return true;
     };
-    callbacks.Prepare = [&runtime]() { return runtime.PrepareFrame(); };
-    callbacks.DrawPrepared = [&runtime]() { return runtime.DrawPreparedFrame(); };
-    const int exitCode = Application::RunExplicitScene(*window, *frame, callbacks);
-
-    Renderer::Shutdown();
-    runtime.Shutdown();
+    callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
+    callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
+    const int exitCode = Application::RunOwnedExplicitScene(
+        std::move(window), std::move(runtime), callbacks);
     return exitCode;
 }
 
