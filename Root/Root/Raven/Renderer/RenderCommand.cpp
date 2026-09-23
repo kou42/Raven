@@ -78,6 +78,28 @@ void RenderCommand::BindDefaultRenderTarget()
     s_CommandList->BindDefaultRenderTarget();
 }
 
+RHIRenderTargetState RenderCommand::CaptureRenderTargetState()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return {};
+    }
+
+    return s_CommandList->CaptureRenderTargetState();
+}
+
+void RenderCommand::RestoreRenderTargetState(const RHIRenderTargetState& state)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+
+    s_CommandList->RestoreRenderTargetState(state);
+}
+
 void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     if (s_CommandList == nullptr)
