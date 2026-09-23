@@ -65,7 +65,7 @@ int RunVulkanSceneRuntimeDemo()
     if (mesh == nullptr || mesh->GetVertexArray() != nullptr || material == nullptr ||
         material->HasLegacyPipeline() == true)
     {
-        std::cerr << "Vulkan Entity Scene creation failed.\\n";
+        std::cerr << "Vulkan Entity Scene creation failed.\n";
         runtime.Shutdown();
         return 1;
     }
@@ -86,14 +86,14 @@ int RunVulkanSceneRuntimeDemo()
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
     if (runtime.PrepareScene(scene) == false)
     {
-        std::cerr << "Vulkan Entity Scene mesh preparation failed.\\n";
+        std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
         runtime.Shutdown();
         return 1;
     }
 
     SceneCamera camera;
     camera.SetViewMatrix(math::Mat4::LookAt(
-        {0.0f, 0.0f, 2.0f},
+        {0.0f, 0.0f, 5.0f},
         {0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f}));
     camera.SetViewportSize(
