@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Assets/RHIShaderAsset.h"
+#include "Raven/Renderer/Renderer.h"
 #include "Raven/Platform/Vulkan/VulkanSceneContext.h"
 
 namespace Raven
@@ -37,6 +38,10 @@ public:
 
     // Renderer::BeginScene()以降に蓄積された通常Queueを消費し、
     // Texture準備からPresentまでを一つのExplicit Frameとして実行します。
+    // Descriptor準備はBeginFrameより前に行い、準備済みSnapshotをRuntime外へ渡しません。
+    bool PrepareFrame();
+    // Application等がBeginFrame済みの場合にのみ呼び出します。End/Presentまで担当します。
+    RHIFrameResult DrawPreparedFrame();
     RHIFrameResult DrawFrame();
 
     // SwapChain再生成後にRender Target依存Pipelineも作り直します。
@@ -69,6 +74,7 @@ private:
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHITexture> m_DefaultTexture;
+    Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
     bool m_Initialized = false;
 };
 
