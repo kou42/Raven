@@ -491,8 +491,8 @@ void OpenGLUIRenderer::Render(
 
             // 左上原点からPixelへ変換した矩形だけを共通RHI命令へ渡します。
             RenderCommand::SetScissor(true,
-                static_cast<uint32_t>(leftPixel),
-                static_cast<uint32_t>(scissorY),
+                leftPixel,
+                scissorY,
                 static_cast<uint32_t>(scissorWidth),
                 static_cast<uint32_t>(scissorHeight));
         }
