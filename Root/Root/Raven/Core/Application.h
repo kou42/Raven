@@ -56,6 +56,18 @@ public:
         const std::function<bool()>& prepare,
         const std::function<RHIFrameResult()>& drawPrepared);
 
+    // Explicit Backendの独立Scene用Loopです。WindowとRuntimeは呼び出し元が所有します。
+    // onSceneはRenderer Queueへ描画要求を積み、resizeはSwapChainとCameraを同期します。
+    struct ExplicitSceneCallbacks
+    {
+        std::function<void()> OnScene;
+        std::function<bool(uint32_t, uint32_t)> Resize;
+        std::function<bool()> Prepare;
+        std::function<RHIFrameResult()> DrawPrepared;
+    };
+    static int RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
+        const ExplicitSceneCallbacks& callbacks);
+
     void OnEvent(Event& event);
 
     void PushLayer(Layer* layer);
