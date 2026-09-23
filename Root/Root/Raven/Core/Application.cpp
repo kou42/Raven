@@ -1094,7 +1094,7 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const uint32_t targetHeight = static_cast<uint32_t>(height);
         if (previousWidth != targetWidth || previousHeight != targetHeight)
         {
-            if (callbacks.Resize(targetWidth, targetHeight) == false)
+            if (callbacks.Resize(targetWidth, targetHeight, false) == false)
             {
                 return 1;
             }
