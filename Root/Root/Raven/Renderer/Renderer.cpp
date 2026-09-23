@@ -478,26 +478,26 @@ bool Renderer::CreateRHIScenePipelines(
     return true;
 }
 
-RHIFrameResult Renderer::DrawRHISceneFrame(
+bool Renderer::PrepareRHISceneFrame(
     RHIDevice& device,
-    RHISceneFrameLifecycle& frame,
-    RHISceneCommandList& commands,
     const Ref<RHIGraphicsPipeline>& opaquePipeline,
     const Ref<RHIGraphicsPipeline>& transparentPipeline,
     const Ref<RHITexture>& defaultTexture,
-    const math::Mat4& clipCorrection)
+    const math::Mat4& clipCorrection,
+    PreparedRHISceneFrame& outFrame)
 {
+    // 前Frameの参照を先に解放し、失敗時に部分構築されたSnapshotを公開しません。
+    outFrame = {};
     std::vector<RHISceneDrawItem> items;
-    const bool built = BuildRHISceneDrawItems(
-        defaultTexture, clipCorrection, items);
+    const bool built = BuildRHISceneDrawItems(defaultTexture, clipCorrection, items);
 
-    // 成否にかかわらずQueue受付を閉じ、次Sceneへ古い参照を持ち越しません。
+    // 失敗時もQueueを閉じ、次Frameに旧Sceneの描画を持ち越しません。
     s_SceneQueueActive = false;
     s_OpaqueQueue.clear();
     s_TransparentQueue.clear();
-    if (built == false)
+    if (built == false || opaquePipeline == nullptr || transparentPipeline == nullptr)
     {
-        return RHIFrameResult::FatalError;
+        return false;
     }
 
     std::vector<Ref<RHITexture>> textures;
@@ -520,29 +520,60 @@ RHIFrameResult Renderer::DrawRHISceneFrame(
         }
     }
 
-    // Descriptor等のResource BindingはBeginFrameより前に準備します。
+    // VulkanのDescriptor再構築など、Frame中に実行できないGPU準備をここで完了します。
     if (textures.empty() == false &&
         device.PrepareSceneTextures(textures, opaquePipeline) == false)
     {
-        return RHIFrameResult::FatalError;
+        return false;
     }
+    outFrame.Items = std::move(items);
+    outFrame.OpaquePipeline = opaquePipeline;
+    outFrame.TransparentPipeline = transparentPipeline;
+    return true;
+}
 
-    const RHIFrameResult result = RHISceneMeshRenderer::DrawFrame(
-        frame,
-        commands,
-        opaquePipeline,
-        transparentPipeline,
-        items);
+RHIFrameResult Renderer::DrawPreparedRHISceneFrame(
+    RHISceneFrameLifecycle& frame,
+    RHISceneCommandList& commands,
+    const PreparedRHISceneFrame& preparedFrame)
+{
+    // Applicationが開始したFrameを再Acquireせず、描画・Submit・Presentへ進めます。
+    const RHIFrameResult result = RHISceneMeshRenderer::DrawActiveFrame(
+        frame, commands, preparedFrame.OpaquePipeline,
+        preparedFrame.TransparentPipeline, preparedFrame.Items);
     if (result == RHIFrameResult::Success)
     {
         const PrimitiveTopology topology =
-            opaquePipeline->GetSpecification().Topology;
-        for (const RHISceneDrawItem& item : items)
+            preparedFrame.OpaquePipeline->GetSpecification().Topology;
+        for (const RHISceneDrawItem& item : preparedFrame.Items)
         {
             RecordIndexedDraw(item.IndexCount, topology);
         }
     }
     return result;
+}
+
+RHIFrameResult Renderer::DrawRHISceneFrame(
+    RHIDevice& device,
+    RHISceneFrameLifecycle& frame,
+    RHISceneCommandList& commands,
+    const Ref<RHIGraphicsPipeline>& opaquePipeline,
+    const Ref<RHIGraphicsPipeline>& transparentPipeline,
+    const Ref<RHITexture>& defaultTexture,
+    const math::Mat4& clipCorrection)
+{
+    PreparedRHISceneFrame preparedFrame;
+    if (PrepareRHISceneFrame(device, opaquePipeline, transparentPipeline,
+        defaultTexture, clipCorrection, preparedFrame) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const RHIFrameResult begin = frame.BeginFrame();
+    if (begin != RHIFrameResult::Success)
+    {
+        return begin;
+    }
+    return DrawPreparedRHISceneFrame(frame, commands, preparedFrame);
 }
 
 void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
