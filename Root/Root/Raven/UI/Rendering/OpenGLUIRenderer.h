@@ -8,6 +8,7 @@ namespace Raven
 {
 
 class IndexBuffer;
+class Pipeline;
 class Shader;
 class VertexArray;
 class VertexBuffer;
@@ -35,6 +36,7 @@ private:
     Ref<VertexBuffer> m_VertexBuffer;
     Ref<IndexBuffer> m_IndexBuffer;
     Ref<Shader> m_Shader;
+    Ref<Pipeline> m_Pipeline;
 };
 
 } // namespace Raven
