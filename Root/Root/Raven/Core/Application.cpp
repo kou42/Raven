@@ -1108,7 +1108,8 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
             frame, callbacks.Prepare, callbacks.DrawPrepared);
         if (result == RHIFrameResult::ResizeRequired)
         {
-            if (callbacks.Resize(targetWidth, targetHeight) == false)
+            // Surface変更は寸法不変でも発生するため、再生成を強制します。
+            if (callbacks.Resize(targetWidth, targetHeight, true) == false)
             {
                 return 1;
             }
