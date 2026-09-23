@@ -51,6 +51,39 @@ void OpenGLRHICommandList::BindDefaultRenderTarget()
     // UI OverlayはEditorのScene/Game offscreen targetではなくWindowへ描画します。
     // Draw/Readの両方を切り替え、外部stateの復元は呼び出し側の既存契約に従います。
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Windowの表示先を明示します。Single Buffer contextではFrontへ描画します。
+    GLboolean doubleBuffered = GL_FALSE;
+    glGetBooleanv(GL_DOUBLEBUFFER, &doubleBuffered);
+    glDrawBuffer(doubleBuffered == GL_TRUE ? GL_BACK : GL_FRONT);
+}
+
+RHIRenderTargetState OpenGLRHICommandList::CaptureRenderTargetState() const
+{
+    GLint drawTarget = 0;
+    GLint readTarget = 0;
+    GLint drawBuffer = 0;
+    GLint readBuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawTarget);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readTarget);
+    glGetIntegerv(GL_DRAW_BUFFER, &drawBuffer);
+    glGetIntegerv(GL_READ_BUFFER, &readBuffer);
+
+    RHIRenderTargetState state{};
+    state.DrawTarget = static_cast<uint32_t>(drawTarget);
+    state.ReadTarget = static_cast<uint32_t>(readTarget);
+    state.DrawBuffer = static_cast<uint32_t>(drawBuffer);
+    state.ReadBuffer = static_cast<uint32_t>(readBuffer);
+    return state;
+}
+
+void OpenGLRHICommandList::RestoreRenderTargetState(const RHIRenderTargetState& state)
+{
+    // Draw/Read FBOは別々にbindされ得るため、それぞれのBuffer選択も対で復元します。
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(state.DrawTarget));
+    glDrawBuffer(static_cast<GLenum>(state.DrawBuffer));
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(state.ReadTarget));
+    glReadBuffer(static_cast<GLenum>(state.ReadBuffer));
 }
 
 void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
