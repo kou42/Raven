@@ -120,7 +120,7 @@ void OpenGLRHICommandList::RestoreRenderTargetState(const RHIRenderTargetState& 
     glReadBuffer(static_cast<GLenum>(state.ReadBuffer));
 }
 
-void OpenGLRHICommandList::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+void OpenGLRHICommandList::SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
     glViewport(
         static_cast<GLint>(x),
@@ -135,8 +135,8 @@ RHIViewport OpenGLRHICommandList::GetViewport() const
     glGetIntegerv(GL_VIEWPORT, viewport);
 
     RHIViewport result{};
-    result.X = viewport[0] > 0 ? static_cast<uint32_t>(viewport[0]) : 0u;
-    result.Y = viewport[1] > 0 ? static_cast<uint32_t>(viewport[1]) : 0u;
+    result.X = viewport[0];
+    result.Y = viewport[1];
     result.Width = viewport[2] > 0 ? static_cast<uint32_t>(viewport[2]) : 0u;
     result.Height = viewport[3] > 0 ? static_cast<uint32_t>(viewport[3]) : 0u;
     return result;
