@@ -40,6 +40,7 @@ public:
     // Texture準備からPresentまでを一つのExplicit Frameとして実行します。
     // Descriptor準備はBeginFrameより前に行い、準備済みSnapshotをRuntime外へ渡しません。
     bool PrepareFrame();
+    void DiscardPreparedFrame();
     // Application等がBeginFrame済みの場合にのみ呼び出します。End/Presentまで担当します。
     RHIFrameResult DrawPreparedFrame();
     RHIFrameResult DrawFrame();
