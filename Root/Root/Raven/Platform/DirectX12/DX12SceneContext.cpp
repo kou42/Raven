@@ -1,5 +1,6 @@
 #include "DX12SceneContext.h"
 #include "DX12SceneRHIBuffer.h"
+#include "DX12SceneRHITexture.h"
 
 #include "Raven/Core/Window.h"
 
@@ -100,6 +101,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     // GPUがまだ読むBufferをEntity側のRef破棄だけで解放しないための保持です。
     frame.RetainedBuffers.clear();
     frame.RetainedPipelines.clear();
+    frame.RetainedTextures.clear();
 
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
@@ -337,6 +339,27 @@ bool DX12SceneContext::SetMaterialTint(
     // Root Signatureのb1へRGBAを4 DWORDで記録します。
     commandList->SetGraphicsRoot32BitConstants(
         1, static_cast<UINT>(tint.size()), tint.data(), 0);
+    return true;
+}
+
+bool DX12SceneContext::BindTexture(const Ref<RHITexture>& texture)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    auto native = std::dynamic_pointer_cast<DX12SceneRHITexture>(texture);
+    if (commandList == nullptr || m_GraphicsPipelineBound == false ||
+        native == nullptr || native->GetOwnerDevice() != GetNativeDevice() ||
+        native->GetNativeTexture() == nullptr || native->GetSrvHeap() == nullptr)
+    {
+        return false;
+    }
+
+    // Shader-visible Heapは同時に1つだけBindできます。
+    // 描画ごとにTexture固有Heapへ切り替え、t0のDescriptor Tableを再設定します。
+    ID3D12DescriptorHeap* heaps[] = { native->GetSrvHeap() };
+    commandList->SetDescriptorHeaps(1, heaps);
+    commandList->SetGraphicsRootDescriptorTable(2, native->GetSrvGpuHandle());
+    // Texture本体とDescriptor HeapをGPUのFence完了まで保持します。
+    m_Frames[m_CurrentFrame].RetainedTextures.push_back(texture);
     return true;
 }
 
