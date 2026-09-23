@@ -347,6 +347,13 @@ void OpenGLUIRenderer::Render(
         return;
     }
 
+    // UI用VAOの初回構築ではAddVertexBuffer/SetIndexBufferがVAOをbindします。
+    // 描画直前ではなくGPU Buffer更新より前のbindingを保存し、Scene側VAOを正しく復元します。
+    GLint previousVertexArray = 0;
+    GLint previousArrayBuffer = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
+
     EnsureBuffers(
         vertices.data(),
         static_cast<uint32_t>(vertices.size() * sizeof(float)),
@@ -355,6 +362,9 @@ void OpenGLUIRenderer::Render(
 
     if (m_VertexBuffer == nullptr || m_IndexBuffer == nullptr)
     {
+        // 初回Buffer作成に失敗した場合も、作成途中で変更したbindingを残しません。
+        glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
 #ifdef _DEBUG
         static bool missingBufferLogged = false;
         if (missingBufferLogged == false)
@@ -394,7 +404,6 @@ void OpenGLUIRenderer::Render(
     GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTextureBinding = 0;
     GLint previousProgram = 0;
-    GLint previousVertexArray = 0;
     GLint previousBlendSrcRGB = GL_ONE;
     GLint previousBlendDstRGB = GL_ZERO;
     GLint previousBlendSrcAlpha = GL_ONE;
@@ -405,7 +414,6 @@ void OpenGLUIRenderer::Render(
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
     // Shader/VAOとBlend式もUIが上書きするstateなので、後続Scene描画へ漏らさず復元します。
     glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVertexArray);
     glGetIntegerv(GL_BLEND_SRC_RGB, &previousBlendSrcRGB);
     glGetIntegerv(GL_BLEND_DST_RGB, &previousBlendDstRGB);
     glGetIntegerv(GL_BLEND_SRC_ALPHA, &previousBlendSrcAlpha);
@@ -454,9 +462,8 @@ void OpenGLUIRenderer::Render(
     // ========================================================================
     // UI専用Draw Call
     // ========================================================================
-    // Renderer::DrawIndexed()は現在の3D PipelineのPrimitiveTopologyを参照します。
-    // UIは常にTriangle Listなので、直前SceneのLine/Point Pipeline状態を継承しないよう、
-    // OpenGL backend内でGL_TRIANGLESを明示して直接Drawします。
+    // UI専用Triangle PipelineをRenderCommandへbind済みなので、
+    // 直前SceneのLine/Point topologyを継承せず、RHIのDrawIndexedを利用します。
     //
     // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
     // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
@@ -533,6 +540,7 @@ void OpenGLUIRenderer::Render(
     RenderCommand::RestorePipelineBinding(previousPipeline);
     // Unbind()は呼び出し前のShader/VAOへ戻す操作ではないため、元のbindingを明示復元します。
     glBindVertexArray(static_cast<GLuint>(previousVertexArray));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
     glUseProgram(static_cast<GLuint>(previousProgram));
 
     // ========================================================================
