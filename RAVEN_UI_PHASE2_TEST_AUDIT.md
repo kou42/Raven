@@ -37,14 +37,22 @@
 3. **DrawList / ClipのCPUテスト**: Glyph QuadとClip矩形の交差、Transform、AlignmentとWrapの組合せを確認する。
 4. **実行・実描画**: RavenUITestの実行結果を記録し、Text DemoでASCII/日本語/Resize/Clip/DPIを確認する。異DPIモニター間移動はPhase 10/12とも共有する検証項目。
 
+## 追加実装と動作確認（PR #274、2026-09-23）
+
+- `Root/Tests/UITextReflowTests.cpp` に固定Glyph Metrics / GPU不要Texture Fixtureを追加し、Layout・Measurementの数値期待値を検証。
+- 実`UILabel` を`UIElement`の縦Layoutに組み込み、親幅・テキスト・Visibility変更時の再Measure、兄弟配置、Glyphコマンドを検証。
+- GlyphのAtlas UV・TextureAsset保持、親子Clip・ClipSelf・親子Transform合成のCPUテストを追加。
+- ユーザーから「動作チェック問題ありませんでした」との報告あり。実行ログ・ビルド環境の詳細、およびText DemoのGPU実描画を個別に確認した記録はないため、実描画完了とは扱わない。
+- 不正UTF-8、連続空白、異DPIモニター間移動等は追加の境界・環境検証として継続。
+
 ## Phase 2完了判定
 
 - [x] Layout / Measurement / UILabel / UIElementの既存コードの接続を確認
 - [x] 既存テストと未検証領域を棚卸し
-- [ ] Layout / Measurementの数値回帰テストを追加・実行
-- [ ] UILabel / UIElementの幅依存統合テストを追加・実行
-- [ ] Text GlyphのClip / Alignment / Wrapの回帰テストを追加・実行
+- [x] Layout / Measurementの数値回帰テストを追加・動作確認（PR #274、ユーザー報告）
+- [x] UILabel / UIElementの幅依存統合テストを追加・動作確認（PR #274、ユーザー報告）
+- [x] Text GlyphのClip / Alignment / Wrapの回帰テストを追加・動作確認（PR #274、ユーザー報告）
 - [ ] Text DemoでResize・改行・配置・Clipを実描画確認
-- [ ] テスト結果と残課題をロードマップに記録しPhase 2完了を判断
+- [x] CPU回帰テストの動作確認報告と残課題をロードマップに記録（Phase 2の実描画完了判定は保留）
 
 Kerning、複雑な文字組み、Grapheme Clusterは現行Phase 2の基本完了条件に混ぜず、後続の拡張課題として扱う。
