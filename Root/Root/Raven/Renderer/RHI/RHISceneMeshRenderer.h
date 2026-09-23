@@ -44,7 +44,20 @@ public:
         {
             return begin;
         }
-        if (Draw(commands, opaquePipeline, transparentPipeline, items) == false)
+        return DrawActiveFrame(frame, commands, opaquePipeline, transparentPipeline, items);
+    }
+
+    // ApplicationがBeginFrameを所有する経路では、二重Acquireを避けてこちらを呼びます。
+    // このメソッドはActive Frameへの描画とEnd/Presentを担当し、Frame開始は行いません。
+    // Texture Descriptor等の準備はBeginFrameより前に完了させてください。
+    static RHIFrameResult DrawActiveFrame(RHISceneFrameLifecycle& frame,
+        RHISceneCommandList& commands,
+        const Ref<RHIGraphicsPipeline>& opaquePipeline,
+        const Ref<RHIGraphicsPipeline>& transparentPipeline,
+        const std::vector<RHISceneDrawItem>& items)
+    {
+        if (opaquePipeline == nullptr || transparentPipeline == nullptr ||
+            Draw(commands, opaquePipeline, transparentPipeline, items) == false)
         {
             return RHIFrameResult::FatalError;
         }
