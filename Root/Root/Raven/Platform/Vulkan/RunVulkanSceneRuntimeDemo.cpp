@@ -3,6 +3,7 @@
 #include "VulkanSceneRuntime.h"
 
 #include "Raven/Core/Window.h"
+#include "Raven/Core/Application.h"
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
@@ -10,6 +11,7 @@
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Scene/SceneCamera.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/ExplicitCubeSceneDemo.h"
 
 #include <GLFW/glfw3.h>
 
@@ -45,124 +47,69 @@ int RunVulkanSceneRuntimeDemo()
     pipelineSpecification.Blend = false;
     pipelineSpecification.DebugName = "Vulkan Normal Mesh Scene";
 
-    VulkanSceneRuntime runtime;
-    if (runtime.Init(
+    auto runtime = CreateScope<VulkanSceneRuntime>();
+    if (runtime->Init(
         *window,
         pipelineSpecification,
         vertexShader,
         fragmentShader) == false)
     {
         std::cerr << "Vulkan Scene Runtime initialization failed.\n";
+        // Initが部分初期化状態を解放する設計ですが、終了入口でも明示します。
+        runtime->Shutdown();
         return 1;
     }
 
-    // 通常Sceneと同じECS経路で複数Entityを登録します。
-    // Explicit-only起動なのでOpenGL VAO/VBOは生成せず、CPU Geometryだけを持ちます。
-    Scene scene;
-    Ref<Mesh> mesh = PrimitiveMeshFactory::CreateCube(
-        LegacyMeshResourceCreation::Deferred);
-    Ref<Material> material = CreateRef<Material>();
-    if (mesh == nullptr || mesh->GetVertexArray() != nullptr || material == nullptr ||
-        material->HasLegacyPipeline() == true)
+    // Backend非依存の検証Sceneを共有し、GPU Buffer準備だけRuntimeに任せます。
+    ExplicitCubeSceneDemo demo;
+    if (demo.Init("Vulkan", runtime->GetWidth(), runtime->GetHeight()) == false)
     {
         std::cerr << "Vulkan Entity Scene creation failed.\n";
-        runtime.Shutdown();
+        Renderer::Shutdown();
+        runtime->Shutdown();
         return 1;
     }
-    material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
-    material->SetSurfaceType(MaterialSurfaceType::Opaque);
-
-    Entity left = scene.CreateEntity("VulkanLeftCube");
-    left.GetComponent<TransformComponent>().Position = {-1.2f, 0.0f, 0.0f};
-    left.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
-
-    Entity center = scene.CreateEntity("VulkanCenterCube");
-    center.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
-
-    Entity right = scene.CreateEntity("VulkanRightCube");
-    right.GetComponent<TransformComponent>().Position = {1.2f, 0.0f, 0.0f};
-    right.AddComponent<MeshRendererComponent>(MeshRendererComponent{mesh, material});
-
-    // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
-    if (runtime.PrepareScene(scene) == false)
+    if (runtime->PrepareScene(demo.GetScene()) == false)
     {
         std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
-        runtime.Shutdown();
+        demo.Shutdown();
+        Renderer::Shutdown();
+        runtime->Shutdown();
         return 1;
     }
 
-    SceneCamera camera;
-    camera.SetViewMatrix(math::Mat4::LookAt(
-        {0.0f, 0.0f, 5.0f},
-        {0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f}));
-    camera.SetViewportSize(
-        static_cast<float>(runtime.GetWidth()),
-        static_cast<float>(runtime.GetHeight()));
-
-    GLFWwindow* nativeWindow = static_cast<GLFWwindow*>(window->GetNativeWindow());
-    int exitCode = 0;
-    while (glfwWindowShouldClose(nativeWindow) == GLFW_FALSE)
+    RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
+    if (frame == nullptr)
     {
-        window->PollEvents();
-
-        int width = 0;
-        int height = 0;
-        glfwGetFramebufferSize(nativeWindow, &width, &height);
-        if (width <= 0 || height <= 0)
-        {
-            // 最小化中は0サイズのSwapChainを生成せず、入力待ちでCPU消費も抑えます。
-            glfwWaitEvents();
-            continue;
-        }
-
-        if (runtime.GetWidth() != static_cast<uint32_t>(width) ||
-            runtime.GetHeight() != static_cast<uint32_t>(height))
-        {
-            if (runtime.Resize(
-                static_cast<uint32_t>(width),
-                static_cast<uint32_t>(height)) == false)
-            {
-                exitCode = 1;
-                break;
-            }
-            camera.SetViewportSize(
-                static_cast<float>(width),
-                static_cast<float>(height));
-        }
-
-        Renderer::BeginFrame();
-        Renderer::BeginScene(camera);
-        const float time = static_cast<float>(glfwGetTime());
-        // EntityのTransformを毎Frame更新し、ECSの描画入口から通常Queueへ送ります。
-        center.GetComponent<TransformComponent>().Rotation.y = time * 0.6f;
-        left.GetComponent<TransformComponent>().Rotation.x = -time * 0.35f;
-        right.GetComponent<TransformComponent>().Rotation.y = -time * 0.4f;
-        scene.RenderEntities();
-
-        const RHIFrameResult result = runtime.DrawFrame();
-        if (result == RHIFrameResult::ResizeRequired)
-        {
-            if (runtime.Resize(
-                static_cast<uint32_t>(width),
-                static_cast<uint32_t>(height)) == false)
-            {
-                exitCode = 1;
-                break;
-            }
-            camera.SetViewportSize(
-                static_cast<float>(width),
-                static_cast<float>(height));
-        }
-        else if (result != RHIFrameResult::Success)
-        {
-            exitCode = 1;
-            break;
-        }
+        demo.Shutdown();
+        Renderer::Shutdown();
+        runtime->Shutdown();
+        return 1;
     }
-
-    Renderer::Shutdown();
-    runtime.Shutdown();
+    // ScopeをApplicationへ移譲してもRuntime実体のアドレスは変わりません。
+    // Callbackは移譲元Scopeではなく、実体を借用するPointerを捕捉します。
+    VulkanSceneRuntime* runtimeHandle = runtime.get();
+    Application::ExplicitSceneCallbacks callbacks;
+    callbacks.OnScene = [&demo]() { demo.Render(); };
+    callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
+    {
+        // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
+        if (force == true || runtimeHandle->GetWidth() != width || runtimeHandle->GetHeight() != height)
+        {
+            if (runtimeHandle->Resize(width, height) == false)
+            {
+                return false;
+            }
+            demo.ResizeCamera(width, height);
+        }
+        return true;
+    };
+    callbacks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
+    callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
+    callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
+    callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
+    const int exitCode = Application::RunOwnedExplicitScene(
+        std::move(window), std::move(runtime), callbacks);
     return exitCode;
 }
 

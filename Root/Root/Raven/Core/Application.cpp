@@ -116,6 +116,15 @@ Application::Application(const ApplicationSpecification& specification)
         return;
     }
 
+    // Window / Renderer初期化後にFrame境界を確定します。未対応Backendを成功扱いせず、
+    // SceneやUIの生成前に失敗を検出します。Windowの所有権は移譲しません。
+    m_SceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
+    if (m_SceneFrame == nullptr)
+    {
+        m_Running = false;
+        return;
+    }
+
     // ========================================================================
     // Raven UI renderer lifecycle
     // ========================================================================
@@ -335,6 +344,9 @@ Application::~Application()
     m_AuxiliaryUIContexts.clear();
     FlushPendingClosedUIChildren();
     assert(auxiliaryWindowsClosed == true);
+
+    // Frame境界が借用するMain Windowより先にBackend側のFrame状態を解放します。
+    m_SceneFrame.reset();
 }
 
 WindowID Application::CreateUIWindow(const WindowSpecification& specification)
@@ -1033,13 +1045,90 @@ void Application::SetScene(Scope<Scene> scene)
     }
 }
 
+RHIFrameResult Application::ExecuteExplicitSceneFrame(
+    RHISceneFrameLifecycle& frame,
+    const std::function<bool()>& prepare,
+    const std::function<RHIFrameResult()>& drawPrepared)
+{
+    // Descriptorの更新はGPU Frame中に行わず、Acquire前に必ず完了させます。
+    if (prepare == nullptr || drawPrepared == nullptr || prepare() == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const RHIFrameResult begin = frame.BeginFrame();
+    if (begin != RHIFrameResult::Success)
+    {
+        // ResizeRequired時は描画せず、呼び出し元がSwapChainとPipelineを再生成します。
+        return begin;
+    }
+    return drawPrepared();
+}
+
+int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
+    const ExplicitSceneCallbacks& callbacks)
+{
+    GLFWwindow* native = static_cast<GLFWwindow*>(window.GetNativeWindow());
+    if (native == nullptr || callbacks.OnScene == nullptr ||
+        callbacks.Resize == nullptr || callbacks.Prepare == nullptr ||
+        callbacks.DrawPrepared == nullptr || callbacks.DiscardPrepared == nullptr)
+    {
+        return 1;
+    }
+
+    // OpenGL EditorのLayer/UI/Legacy CommandはExplicit Contextへ流さず、
+    // Scene Queueと共通Frame境界だけを使用します。
+    uint32_t previousWidth = 0;
+    uint32_t previousHeight = 0;
+    while (glfwWindowShouldClose(native) == GLFW_FALSE)
+    {
+        window.PollEvents();
+        int width = 0;
+        int height = 0;
+        glfwGetFramebufferSize(native, &width, &height);
+        if (width <= 0 || height <= 0)
+        {
+            glfwWaitEvents();
+            continue;
+        }
+        const uint32_t targetWidth = static_cast<uint32_t>(width);
+        const uint32_t targetHeight = static_cast<uint32_t>(height);
+        if (previousWidth != targetWidth || previousHeight != targetHeight)
+        {
+            if (callbacks.Resize(targetWidth, targetHeight, false) == false)
+            {
+                return 1;
+            }
+            previousWidth = targetWidth;
+            previousHeight = targetHeight;
+        }
+
+        Renderer::BeginFrame();
+        callbacks.OnScene();
+        const RHIFrameResult result = ExecuteExplicitSceneFrame(
+            frame, callbacks.Prepare, callbacks.DrawPrepared);
+        if (result == RHIFrameResult::ResizeRequired)
+        {
+            // Acquire失敗時はDrawPreparedが呼ばれないため準備済み参照を先に解放します。
+            callbacks.DiscardPrepared();
+            // Surface変更は寸法不変でも発生するため、再生成を強制します。
+            if (callbacks.Resize(targetWidth, targetHeight, true) == false)
+            {
+                return 1;
+            }
+        }
+        else if (result != RHIFrameResult::Success)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void Application::Run()
 {
-    // Scene用Frame境界はBackendに応じて生成し、Applicationは共通契約だけを扱います。
-    // Windowの所有権はApplicationに残し、Clear DemoのContextは流用しません。
-    // Vulkan / DX12の通常Sceneが未実装の間は、OpenGLへ暗黙fallbackせず起動を中止します。
-    Scope<RHISceneFrameLifecycle> sceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
-    if (sceneFrame == nullptr)
+    // Frame境界はConstructorでWindowと共に確定済みです。
+    // 初期化失敗時にはScene / Layerを実行しません。
+    if (m_Running == false || m_SceneFrame == nullptr)
     {
         m_Running = false;
         return;
@@ -1073,7 +1162,7 @@ void Application::Run()
         // CPUProfilerもRenderer::BeginFrame()と同じ境界で、次frame開始時に直前frameを確定します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
-        if (sceneFrame->BeginFrame() != RHIFrameResult::Success)
+        if (m_SceneFrame->BeginFrame() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
@@ -1223,7 +1312,7 @@ void Application::Run()
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
         // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
-        if (sceneFrame->EndFrame() != RHIFrameResult::Success)
+        if (m_SceneFrame->EndFrame() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
@@ -1233,7 +1322,7 @@ void Application::Run()
         m_WindowManager.PollEvents();
         // Window外でMouse Upを取りこぼしても、次FrameへDrag/Captureを残しません。
         CompleteReleasedUIWindowDrags();
-        if (sceneFrame->Present() != RHIFrameResult::Success)
+        if (m_SceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;

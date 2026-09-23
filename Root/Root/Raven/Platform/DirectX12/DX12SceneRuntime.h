@@ -102,31 +102,75 @@ public:
         return m_Device->PrepareScene(scene);
     }
 
-    RHIFrameResult DrawFrame()
+    // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
+    void DiscardPreparedFrame()
     {
+        // Acquire失敗時の準備済みResourceを再生成・終了前に解放します。
+        m_PreparedFrame.reset();
+    }
+
+    bool PrepareFrame()
+    {
+        m_PreparedFrame.reset();
         if (m_Initialized == false || m_Device == nullptr ||
             m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
-            m_DefaultTexture == nullptr)
+            m_DefaultTexture == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr)
+        {
+            return false;
+        }
+        auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
+        if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
+            m_TransparentPipeline, m_DefaultTexture,
+            DX12ClipCorrection(), *prepared) == false)
+        {
+            return false;
+        }
+        m_PreparedFrame = std::move(prepared);
+        return true;
+    }
+
+    // Application等がBeginFrameを呼び出した後に使用します。二重Acquireは行いません。
+    RHIFrameResult DrawPreparedFrame()
+    {
+        if (m_Initialized == false || m_PreparedFrame == nullptr ||
+            m_Context.GetActiveCommandList() == nullptr)
         {
             return RHIFrameResult::FatalError;
         }
         DX12SceneCommandList commands(m_Context);
-        const RHIFrameResult result = Renderer::DrawRHISceneFrame(
-            *m_Device, m_Context, commands, m_OpaquePipeline,
-            m_TransparentPipeline, m_DefaultTexture,
-            DX12ClipCorrection());
-        if (result == RHIFrameResult::FatalError)
-        {
-            // Execute後の失敗を含むため、Contextを再利用せず終了します。
-            Shutdown();
-        }
+        const RHIFrameResult result = Renderer::DrawPreparedRHISceneFrame(
+            m_Context, commands, *m_PreparedFrame);
+        // GPU使用中のResourceはContext側のFrameResourceがFence完了まで保持します。
+        m_PreparedFrame.reset();
+        // FatalErrorでもDevice破棄は所有元Applicationの終了処理に委譲します。
         return result;
+    }
+
+    RHIFrameResult DrawFrame()
+    {
+        if (PrepareFrame() == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
+        const RHIFrameResult begin = m_Context.BeginFrame();
+        if (begin != RHIFrameResult::Success)
+        {
+            m_PreparedFrame.reset();
+            return begin;
+        }
+        return DrawPreparedFrame();
     }
 
     bool Resize(uint32_t width, uint32_t height)
     {
-        if (m_Initialized == false || width == 0 || height == 0 ||
-            m_Context.Resize(width, height) == false)
+        if (m_Initialized == false || width == 0 || height == 0)
+        {
+            return false;
+        }
+        // 旧Frame参照を外してからContext/SwapChainを再生成します。
+        m_PreparedFrame.reset();
+        if (m_Context.Resize(width, height) == false)
         {
             return false;
         }
@@ -135,7 +179,7 @@ public:
         m_TransparentPipeline.reset();
         if (CreatePipelines() == false)
         {
-            Shutdown();
+            // 所有元ApplicationがScene→Renderer→Runtimeの順に終了します。
             return false;
         }
         return true;
@@ -143,6 +187,7 @@ public:
 
     void Shutdown()
     {
+        m_PreparedFrame.reset();
         // ContextのShutdownはQueueのFenceを待つため、参照を先に解放しても
         // FrameResourceが保持するGPU使用中Resourceは完了まで生存します。
         m_OpaquePipeline.reset();
@@ -160,6 +205,11 @@ public:
     }
 
     bool IsInitialized() const { return m_Initialized; }
+    // Runtimeが所有するContextのFrame境界を公開します。Shutdown後は参照しないでください。
+    RHISceneFrameLifecycle* GetFrameLifecycle()
+    {
+        return m_Initialized == true ? &m_Context : nullptr;
+    }
     RHIDevice* GetDevice()
     {
         return m_Initialized == true ? m_Device.get() : nullptr;
@@ -238,6 +288,7 @@ private:
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHITexture> m_DefaultTexture;
+    Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
     bool m_Initialized = false;
 };
 

@@ -52,18 +52,19 @@ int main(int argc, char* argv[])
     SetConsoleCP(CP_UTF8);
 #endif
 
-    // 引数指定時のみ独立したClear検証Windowを起動します。
-    // 通常起動では従来のOpenGL Application / Editorをそのまま維持します。
+    // Backend指定を通常の起動引数へ追加します。Explicit Sceneはまだ独立Runtimeへ接続し、
+    // 未対応のApplication/Editor描画をOpenGLへ暗黙fallbackさせません。
+    // 従来の --scene-* / --clear-* 検証入口は移行中も維持します。
     if (argc > 1)
     {
         const std::string backendArgument = argv[1];
-        if (backendArgument == "--scene-dx12")
-        {
-            return Raven::RunDX12SceneRuntimeDemo();
-        }
-        if (backendArgument == "--scene-vulkan")
+        if (backendArgument == "--backend=vulkan" || backendArgument == "--scene-vulkan")
         {
             return Raven::RunVulkanSceneRuntimeDemo();
+        }
+        if (backendArgument == "--backend=dx12" || backendArgument == "--scene-dx12")
+        {
+            return Raven::RunDX12SceneRuntimeDemo();
         }
         if (backendArgument == "--scene-triangle-vulkan")
         {
@@ -81,9 +82,13 @@ int main(int argc, char* argv[])
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
         }
-        std::cerr << "Unknown argument. Use --scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
-            "--clear-opengl, --clear-vulkan or --clear-dx12.\n";
-        return 1;
+        if (backendArgument != "--backend=opengl")
+        {
+            std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
+                "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
+                "--clear-opengl, --clear-vulkan or --clear-dx12.\\n";
+            return 1;
+        }
     }
 
 #ifdef _DEBUG
