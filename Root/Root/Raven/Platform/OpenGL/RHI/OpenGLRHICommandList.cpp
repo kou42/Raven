@@ -163,6 +163,13 @@ void OpenGLRHICommandList::BindPipeline(const Ref<Pipeline>& pipeline)
     m_CurrentPipeline = pipeline;
 }
 
+void OpenGLRHICommandList::RestorePipelineBinding(const Ref<Pipeline>& pipeline)
+{
+    // Pipelineのnative stateはOverlay側が別途復元します。ここではDraw topologyとUniform解決の
+    // 追跡だけ戻し、復元済みのBlend/Depth/Shaderを再度上書きしません。
+    m_CurrentPipeline = pipeline;
+}
+
 void OpenGLRHICommandList::BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot)
 {
     if (texture == nullptr || m_CurrentPipeline == nullptr)
