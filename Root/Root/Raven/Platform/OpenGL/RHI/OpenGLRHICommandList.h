@@ -22,6 +22,7 @@ public:
     void Clear() override;
 
     void BindPipeline(const Ref<Pipeline>& pipeline) override;
+    void RestorePipelineBinding(const Ref<Pipeline>& pipeline) override;
     void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot) override;
     void UploadUniform(const std::string& name, const UniformValue& value) override;
     void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0, uint32_t firstIndex = 0) override;
