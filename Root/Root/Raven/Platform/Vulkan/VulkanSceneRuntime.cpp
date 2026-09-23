@@ -166,6 +166,11 @@ bool VulkanSceneRuntime::IsInitialized() const
     return m_Initialized;
 }
 
+RHISceneFrameLifecycle* VulkanSceneRuntime::GetFrameLifecycle()
+{
+    return m_Initialized == true ? &m_Context : nullptr;
+}
+
 RHIDevice* VulkanSceneRuntime::GetDevice()
 {
     return m_Initialized == true ? m_Device.get() : nullptr;
