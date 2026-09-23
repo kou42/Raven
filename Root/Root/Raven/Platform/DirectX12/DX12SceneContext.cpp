@@ -293,7 +293,7 @@ bool DX12SceneContext::DrawIndexed(
     if (drawCount == 0 || drawCount > availableIndices ||
         originalVertexView.SizeInBytes < stride ||
         originalVertexView.SizeInBytes % stride != 0 ||
-        indexView.SizeInBytes < drawCount * sizeof(uint32_t))
+        drawCount > indexView.SizeInBytes / sizeof(uint32_t))
     {
         return false;
     }
