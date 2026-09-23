@@ -374,7 +374,7 @@ void OpenGLUIRenderer::Render(
     // UI描画結果が影響を受けないよう、UI backendが必要なstateを明示し、描画後にすべて復元します。
     // Image描画ではTexture Unit 0も変更するため、Active TextureとBindingも同じ方針で保存・復元します。
     const RHIRenderTargetState previousRenderTarget = RenderCommand::CaptureRenderTargetState();
-    GLint previousViewport[4] = { 0, 0, 0, 0 };
+    const RHIViewport previousViewport = RenderCommand::GetViewport();
     const RHIScissor previousScissor = RenderCommand::GetScissor();
     GLint previousPolygonMode[2] = { GL_FILL, GL_FILL };
     GLint previousActiveTexture = GL_TEXTURE0;
@@ -388,7 +388,6 @@ void OpenGLUIRenderer::Render(
     GLint previousBlendEquationRGB = GL_FUNC_ADD;
     GLint previousBlendEquationAlpha = GL_FUNC_ADD;
 
-    glGetIntegerv(GL_VIEWPORT, previousViewport);
     glGetIntegerv(GL_POLYGON_MODE, previousPolygonMode);
     // Shader/VAOとBlend式もUIが上書きするstateなので、後続Scene描画へ漏らさず復元します。
     glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
@@ -535,21 +534,10 @@ void OpenGLUIRenderer::Render(
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
     glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     RenderCommand::RestoreRenderTargetState(previousRenderTarget);
-    // 以前のviewportも共通命令で復元します。負の座標はOpenGL側の既存stateとして直接復元します。
-    if (previousViewport[0] >= 0 && previousViewport[1] >= 0 &&
-        previousViewport[2] >= 0 && previousViewport[3] >= 0)
-    {
-        RenderCommand::SetViewport(
-            static_cast<uint32_t>(previousViewport[0]),
-            static_cast<uint32_t>(previousViewport[1]),
-            static_cast<uint32_t>(previousViewport[2]),
-            static_cast<uint32_t>(previousViewport[3]));
-    }
-    else
-    {
-        glViewport(previousViewport[0], previousViewport[1],
-            previousViewport[2], previousViewport[3]);
-    }
+    // UIの描画前に取得したViewportをRHI経由で復元します。
+    RenderCommand::SetViewport(
+        previousViewport.X, previousViewport.Y,
+        previousViewport.Width, previousViewport.Height);
     // 無効時も以前のScissor Boxを復元し、次の描画passが同じstateから開始できるようにします。
     RenderCommand::SetScissor(true,
         previousScissor.X, previousScissor.Y,
