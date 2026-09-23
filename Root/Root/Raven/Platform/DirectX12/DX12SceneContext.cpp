@@ -234,6 +234,11 @@ ID3D12GraphicsCommandList* DX12SceneContext::GetActiveCommandList() const
     return m_Frames[m_CurrentFrame].CommandList->GetHandle();
 }
 
+ID3D12Device* DX12SceneContext::GetNativeDevice() const
+{
+    return m_Device.GetHandle();
+}
+
 void DX12SceneContext::Shutdown()
 {
     if (m_Fence.IsValid() == true && m_Queue.IsValid() == true)
