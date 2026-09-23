@@ -45,6 +45,9 @@ public:
     void Shutdown();
 
     bool IsInitialized() const;
+    // Runtimeが所有するScene Frame境界を借用します。Window/Contextの所有権は移しません。
+    // ApplicationへFrame管理を統合する際の共通入口です。Init成功後だけ使用してください。
+    RHISceneFrameLifecycle* GetFrameLifecycle();
     RHIDevice* GetDevice();
     const Ref<RHITexture>& GetDefaultTexture() const;
     uint32_t GetWidth() const;
