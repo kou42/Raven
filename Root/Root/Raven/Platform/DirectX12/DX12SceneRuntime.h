@@ -137,10 +137,7 @@ public:
             m_Context, commands, *m_PreparedFrame);
         // GPU使用中のResourceはContext側のFrameResourceがFence完了まで保持します。
         m_PreparedFrame.reset();
-        if (result == RHIFrameResult::FatalError)
-        {
-            Shutdown();
-        }
+        // FatalErrorでもDevice破棄は所有元Applicationの終了処理に委譲します。
         return result;
     }
 
@@ -148,17 +145,12 @@ public:
     {
         if (PrepareFrame() == false)
         {
-            Shutdown();
             return RHIFrameResult::FatalError;
         }
         const RHIFrameResult begin = m_Context.BeginFrame();
         if (begin != RHIFrameResult::Success)
         {
             m_PreparedFrame.reset();
-            if (begin == RHIFrameResult::FatalError)
-            {
-                Shutdown();
-            }
             return begin;
         }
         return DrawPreparedFrame();
