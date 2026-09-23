@@ -62,6 +62,8 @@ public:
     struct ExplicitSceneCallbacks
     {
         std::function<void()> OnScene;
+        // Scene/Material/Meshの所有参照をDevice破棄前に解放します。
+        std::function<void()> OnBeforeShutdown;
         std::function<bool(uint32_t, uint32_t, bool)> Resize;
         std::function<bool()> Prepare;
         std::function<RHIFrameResult()> DrawPrepared;
@@ -87,7 +89,11 @@ public:
             return 1;
         }
         const int exitCode = RunExplicitScene(*window, *frame, callbacks);
-        // Renderer Queueの参照を破棄してからRuntimeのDevice/Contextを解放します。
+        // SceneとRendererが保持するGPU ResourceをRuntimeのDevice破棄前に解放します。
+        if (callbacks.OnBeforeShutdown != nullptr)
+        {
+            callbacks.OnBeforeShutdown();
+        }
         Renderer::Shutdown();
         runtime->Shutdown();
         runtime.reset();
