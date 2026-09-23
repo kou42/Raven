@@ -46,9 +46,9 @@ int RunDX12SceneRuntimeDemo()
     pipelineSpecification.Blend = false;
     pipelineSpecification.DebugName = "DX12 Normal Mesh Scene";
 
-    std::cout << "[DX12 Scene Demo] Initializing runtime...\n" << std::flush;
-    DX12SceneRuntime runtime;
-    if (runtime.Init(
+    std::cout << "[DX12 Scene Demo] Initializing runtime->..\n" << std::flush;
+    auto runtime = CreateScope<DX12SceneRuntime>();
+    if (runtime->Init(
         *window,
         pipelineSpecification,
         vertexShader,
@@ -70,7 +70,7 @@ int RunDX12SceneRuntimeDemo()
         material->HasLegacyPipeline() == true)
     {
         std::cerr << "DX12 Entity Scene creation failed.\n";
-        runtime.Shutdown();
+        runtime->Shutdown();
         return 1;
     }
     material->SetRHITint({0.35f, 0.75f, 1.0f, 1.0f});
@@ -89,10 +89,10 @@ int RunDX12SceneRuntimeDemo()
 
     // 3 Entityは同じMeshを共有します。Bufferの生成は1回だけです。
     std::cout << "[DX12 Scene Demo] Preparing 3 Cube entities...\n" << std::flush;
-    if (runtime.PrepareScene(scene) == false)
+    if (runtime->PrepareScene(scene) == false)
     {
         std::cerr << "DX12 Entity Scene mesh preparation failed.\n";
-        runtime.Shutdown();
+        runtime->Shutdown();
         return 1;
     }
 
@@ -104,17 +104,20 @@ int RunDX12SceneRuntimeDemo()
         {0.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f}));
     camera.SetViewportSize(
-        static_cast<float>(runtime.GetWidth()),
-        static_cast<float>(runtime.GetHeight()));
+        static_cast<float>(runtime->GetWidth()),
+        static_cast<float>(runtime->GetHeight()));
 
-    uint32_t swapChainWidth = runtime.GetWidth();
-    uint32_t swapChainHeight = runtime.GetHeight();
-    RHISceneFrameLifecycle* frame = runtime.GetFrameLifecycle();
+    uint32_t swapChainWidth = runtime->GetWidth();
+    uint32_t swapChainHeight = runtime->GetHeight();
+    RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
     if (frame == nullptr)
     {
-        runtime.Shutdown();
+        runtime->Shutdown();
         return 1;
     }
+    // ScopeをApplicationへ移譲してもRuntime実体のアドレスは変わりません。
+    // Callbackは移譲元Scopeではなく、実体を借用するPointerを捕捉します。
+    DX12SceneRuntime* runtimeHandle = runtime.get();
     Application::ExplicitSceneCallbacks callbacks;
     callbacks.OnScene = [&]()
     {
@@ -131,7 +134,7 @@ int RunDX12SceneRuntimeDemo()
         // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
         if (force == true || swapChainWidth != width || swapChainHeight != height)
         {
-            if (runtime.Resize(width, height) == false)
+            if (runtimeHandle->Resize(width, height) == false)
             {
                 return false;
             }
@@ -142,12 +145,10 @@ int RunDX12SceneRuntimeDemo()
         }
         return true;
     };
-    callbacks.Prepare = [&runtime]() { return runtime.PrepareFrame(); };
-    callbacks.DrawPrepared = [&runtime]() { return runtime.DrawPreparedFrame(); };
-    const int exitCode = Application::RunExplicitScene(*window, *frame, callbacks);
-
-    Renderer::Shutdown();
-    runtime.Shutdown();
+    callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
+    callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
+    const int exitCode = Application::RunOwnedExplicitScene(
+        std::move(window), std::move(runtime), callbacks);
     return exitCode;
 }
 
