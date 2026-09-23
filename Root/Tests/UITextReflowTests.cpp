@@ -1501,6 +1501,102 @@ void TestTooltip()
     Check(context.GetRootElement().RemoveChild(target), "tooltip target removed");
     Check(context.ClearTooltip(target) == false, "tooltip registration cleaned on removal");
 }
+// Phase 4: Popupを閉じる外側Clickが背後のButtonへ伝播しないことを検証します。
+void TestPopupOutsideClickConsumption()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto behind = std::make_unique<Raven::UIButton>();
+    behind->SetPosition(Raven::math::Vec2(150.0f, 10.0f));
+    behind->SetSize(Raven::math::Vec2(80.0f, 40.0f));
+    int clicks = 0;
+    behind->SetOnClick([&clicks]() { ++clicks; });
+    context.GetRootElement().AddChild(std::move(behind));
+
+    auto popup = std::make_unique<Raven::UIElement>();
+    popup->SetPosition(Raven::math::Vec2(10.0f, 10.0f));
+    popup->SetSize(Raven::math::Vec2(100.0f, 60.0f));
+    Raven::UIElement* popupPtr = context.AddPopup(std::move(popup));
+    Check(context.OpenPopup(popupPtr), "outside click popup opens");
+    Check(context.RouteMouseDown(Raven::math::Vec2(160.0f, 20.0f),
+        Raven::UIMouseButton::Left), "outside click Down consumed");
+    Check(context.GetOpenPopup() == nullptr, "outside click closes popup");
+    context.RouteMouseUp(Raven::math::Vec2(160.0f, 20.0f), Raven::UIMouseButton::Left);
+    Check(clicks == 0, "outside click does not activate underlying button");
+
+    // Popupが閉じた後の通常Clickは妨げず、入力抑制が次の操作に残らないことも確認します。
+    context.RouteMouseDown(Raven::math::Vec2(160.0f, 20.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseUp(Raven::math::Vec2(160.0f, 20.0f), Raven::UIMouseButton::Left);
+    Check(clicks == 1, "normal click works after popup closes");
+}
+
+// Phase 4: ComboBoxの空状態、Keyboard端、選択肢更新時のPopup解放を検証します。
+void TestComboBoxKeyboardBoundaries()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(400.0f, 300.0f));
+    auto combo = std::make_unique<Raven::UIComboBox>();
+    Raven::UIComboBox* comboPtr = combo.get();
+    context.GetRootElement().AddChild(std::move(combo));
+    Check(context.SetFocus(comboPtr), "empty combo focus");
+    Check(comboPtr->Open() == false, "empty combo cannot open");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Space)) == false,
+        "empty combo does not consume Space");
+
+    comboPtr->SetOptions({ "Idle", "Walk", "Run" });
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Space)), "combo Space opens");
+    Check(comboPtr->IsOpen(), "combo Space opened popup");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::End)), "combo End");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Space)), "combo Space selects End");
+    Check(comboPtr->GetSelectedIndex() == 2u, "combo End selects last");
+
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Up)), "combo Up opens");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "combo Down wraps");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "combo Enter selects wrapped");
+    Check(comboPtr->GetSelectedIndex() == 0u, "combo Down wraps last to first");
+
+    Check(comboPtr->Open(), "combo opens for Home");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::End)), "combo End again");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Home)), "combo Home");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "combo Home selection");
+    Check(comboPtr->GetSelectedIndex() == 0u, "combo Home selects first");
+
+    Check(comboPtr->Open(), "combo opens before options update");
+    comboPtr->SetOptions({ "Only" });
+    Check(comboPtr->IsOpen() == false, "combo options update closes popup");
+    Check(context.GetOpenPopup() == nullptr, "combo options update releases open popup");
+    Check(comboPtr->GetSelectedIndex() == Raven::UIComboBox::NoSelection,
+        "combo options update clears selection");
+}
+
+// Phase 4: Tooltipの待機中・再登録・Hover離脱を実時計Sleepなしで検証します。
+void TestTooltipDelayAndReset()
+{
+    Raven::UIContext context;
+    auto button = std::make_unique<Raven::UIButton>();
+    button->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    button->SetSize(Raven::math::Vec2(80.0f, 30.0f));
+    Raven::UIElement* target = context.GetRootElement().AddChild(std::move(button));
+    Check(context.SetTooltip(target, "Delayed", nullptr, 3600.0f),
+        "delayed tooltip registration");
+    context.BeginFrame(Raven::math::Vec2(300.0f, 200.0f));
+    context.RouteMouseMove(Raven::math::Vec2(30.0f, 30.0f));
+    context.EndFrame();
+    Check(context.GetVisibleTooltip() == nullptr, "tooltip hidden before delay");
+
+    // Delay経過をSleepで待たず、同じHover対象を即時表示設定で再登録します。
+    Check(context.SetTooltip(target, "Immediate", nullptr, 0.0f),
+        "tooltip delay reset registration");
+    context.BeginFrame(Raven::math::Vec2(300.0f, 200.0f));
+    context.EndFrame();
+    const Raven::UITooltip* tooltip = context.GetVisibleTooltip();
+    Check(tooltip != nullptr && tooltip->GetText() == "Immediate",
+        "tooltip re-registration shows updated text");
+    context.RouteMouseMove(Raven::math::Vec2(200.0f, 150.0f));
+    Check(context.GetVisibleTooltip() == nullptr, "tooltip hides after leaving target");
+    Check(context.ClearTooltip(target), "tooltip registration cleared");
+}
+
 // TreeViewの所有権・展開・Scroll・Keyboard/Mouse経路をFont/GPUなしで検証します。
 void TestTreeView()
 {
@@ -2505,6 +2601,9 @@ int main()
     TestPopupRouting();
     TestComboBox();
     TestTooltip();
+    TestPopupOutsideClickConsumption();
+    TestComboBoxKeyboardBoundaries();
+    TestTooltipDelayAndReset();
     TestTreeView();
     TestTable();
     // 共通Scrollbar幾何: HeaderなしTreeとHeaderありTableでTrack原点だけが異なります。
