@@ -13,6 +13,16 @@ class Pipeline;
 class Texture;
 class VertexArray;
 
+// 現行OpenGL互換経路の描画先を一時退避する不透明なstateです。
+// 値はBackendだけが解釈し、上位UIはnative handleやbuffer enumを参照しません。
+struct RHIRenderTargetState
+{
+    uint32_t DrawTarget = 0;
+    uint32_t ReadTarget = 0;
+    uint32_t DrawBuffer = 0;
+    uint32_t ReadBuffer = 0;
+};
+
 struct RHIScissor
 {
     bool Enabled = false;
@@ -51,6 +61,8 @@ public:
 
     // Window overlayの描画先を選びます。offscreen targetの所有権やattachment構成はFramebuffer側に残します。
     virtual void BindDefaultRenderTarget() = 0;
+    virtual RHIRenderTargetState CaptureRenderTargetState() const = 0;
+    virtual void RestoreRenderTargetState(const RHIRenderTargetState& state) = 0;
 
     virtual void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
 
