@@ -11,6 +11,8 @@
 #include "Raven/Scene/Scene.h"
 
 #include <array>
+#include <filesystem>
+#include <iostream>
 #include <string>
 #include <utility>
 
@@ -54,9 +56,25 @@ public:
         m_PipelineSpecification.DebugName = m_PipelineDebugName.c_str();
         m_VertexShader = m_ShaderAssets.Load(vertexShader, RHIBackend::DirectX12);
         m_FragmentShader = m_ShaderAssets.Load(fragmentShader, RHIBackend::DirectX12);
-        if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
-            CreatePipelines() == false || CreateDefaultTexture() == false)
+        if (m_VertexShader == nullptr || m_FragmentShader == nullptr)
         {
+            // Shader Assetは相対Pathで開くため、Visual Studioの作業Directoryも表示します。
+            std::cerr << "[DX12 Scene] Shader load failed. Working directory: "
+                << std::filesystem::current_path().string() << "\n"
+                << "  VS: " << vertexShader.DirectX12Path << "\n"
+                << "  PS: " << fragmentShader.DirectX12Path << "\n";
+            Shutdown();
+            return false;
+        }
+        if (CreatePipelines() == false)
+        {
+            std::cerr << "[DX12 Scene] Graphics Pipeline creation failed.\n";
+            Shutdown();
+            return false;
+        }
+        if (CreateDefaultTexture() == false)
+        {
+            std::cerr << "[DX12 Scene] Default white texture creation failed.\n";
             Shutdown();
             return false;
         }
