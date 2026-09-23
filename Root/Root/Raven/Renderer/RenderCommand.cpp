@@ -111,7 +111,7 @@ void RenderCommand::RestoreRenderTargetState(const RHIRenderTargetState& state)
     s_CommandList->RestoreRenderTargetState(state);
 }
 
-void RenderCommand::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+void RenderCommand::SetViewport(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
     if (s_CommandList == nullptr)
     {
