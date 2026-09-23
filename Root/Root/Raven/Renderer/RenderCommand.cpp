@@ -177,6 +177,13 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
         return;
     }
 
+    // 明示Index数がBuffer容量を超える場合はGPUへ不正なDrawを送らず、統計も増やしません。
+    const Ref<IndexBuffer>& boundIndexBuffer = vertexArray->GetIndexBuffer();
+    if (boundIndexBuffer == nullptr || resolvedIndexCount > boundIndexBuffer->GetCount())
+    {
+        return;
+    }
+
     // Pipeline未指定の旧描画経路は従来どおりTriangle Listとして扱います。
     // Material / Physics Debug等のPipeline経路では実Topologyを使うため、Lines/Pointsを
     // TriangleCountへ誤計上せずDrawCallsとIndexCountだけへ反映できます。
@@ -184,6 +191,12 @@ void RenderCommand::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t in
     if (s_CurrentPipeline != nullptr)
     {
         topology = s_CurrentPipeline->GetSpecification().Topology;
+    }
+
+    // None topologyではBackendがDrawを発行しないため、統計も記録しません。
+    if (topology == PrimitiveTopology::None)
+    {
+        return;
     }
 
     // Renderer側にはAPI非依存の統計だけを記録し、実際のDraw命令とTopology変換は
