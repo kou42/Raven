@@ -142,7 +142,7 @@ RHIViewport OpenGLRHICommandList::GetViewport() const
     return result;
 }
 
-void OpenGLRHICommandList::SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+void OpenGLRHICommandList::SetScissor(bool enabled, int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
     if (enabled == false)
     {
@@ -163,8 +163,8 @@ RHIScissor OpenGLRHICommandList::GetScissor() const
 
     RHIScissor result{};
     result.Enabled = glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE;
-    result.X = box[0] > 0 ? static_cast<uint32_t>(box[0]) : 0u;
-    result.Y = box[1] > 0 ? static_cast<uint32_t>(box[1]) : 0u;
+    result.X = box[0];
+    result.Y = box[1];
     result.Width = box[2] > 0 ? static_cast<uint32_t>(box[2]) : 0u;
     result.Height = box[3] > 0 ? static_cast<uint32_t>(box[3]) : 0u;
     return result;
