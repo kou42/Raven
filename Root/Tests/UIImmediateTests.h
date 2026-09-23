@@ -135,8 +135,12 @@ void TestUIImmediateContext()
             "debug panel widget count stable");
         auto* debugPanel = dynamic_cast<Raven::UIPanel*>(
             debugContext.GetRootElement().GetChildren().front().get());
-        CheckImmediate(debugPanel != nullptr && debugPanel->GetChildren().size() == 13u,
-            "debug panel child count");
+        if (debugPanel == nullptr)
+        {
+            CheckImmediate(false, "debug panel child count");
+            return;
+        }
+        CheckImmediate(debugPanel->GetChildren().size() == 13u, "debug panel child count");
         settings.ContactNormalLength = 1.25f;
         settings.ContactPointRadius = 0.075f;
         CheckImmediate(debugImmediate.BeginFrame() == true, "debug external values BeginFrame");
@@ -192,8 +196,12 @@ void TestUIImmediateContext()
             break;
         }
     }
-    CheckImmediate(reset != nullptr && reset->GetChildren().size() == 1u,
-        "button caption created");
+    if (reset == nullptr)
+    {
+        CheckImmediate(false, "button caption created");
+        return;
+    }
+    CheckImmediate(reset->GetChildren().size() == 1u, "button caption created");
     auto* caption = dynamic_cast<Raven::UILabel*>(reset->GetChildren().front().get());
     CheckImmediate(caption != nullptr && caption->GetText() == "Reset",
         "button caption text");
@@ -252,6 +260,11 @@ void TestUIImmediateContext()
         "panel button");
     CheckImmediate(immediate.EndContainer() == true, "panel EndContainer");
     CheckImmediate(immediate.EndFrame() == true, "panel EndFrame");
+    if (panel == nullptr)
+    {
+        CheckImmediate(false, "panel created");
+        return;
+    }
     CheckImmediate(panel->GetChildren().size() == 2u, "panel child count");
 
     std::string editText = "abc";
@@ -268,8 +281,12 @@ void TestUIImmediateContext()
             break;
         }
     }
-    CheckImmediate(input != nullptr && input->GetText() == "abc",
-        "input initial text");
+    if (input == nullptr)
+    {
+        CheckImmediate(false, "input initial text");
+        return;
+    }
+    CheckImmediate(input->GetText() == "abc", "input initial text");
     CheckImmediate(context.SetFocus(input) == true, "focus input");
     CheckImmediate(context.RouteCharacterEvent(static_cast<std::uint32_t>('d')) == true,
         "type input character");

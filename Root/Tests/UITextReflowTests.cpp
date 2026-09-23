@@ -736,7 +736,11 @@ void TestDockSnapshotJson()
     Raven::UIDockSpace dock;
     const std::uint64_t first = dock.GetLayout().GetRoot()->GetId();
     Raven::UIDockNode* second = dock.Split(first, Raven::UIDockSplitAxis::Vertical, 0.3f);
-    Check(second != nullptr, "dock json split");
+    if (second == nullptr)
+    {
+        Check(false, "dock json split");
+        return;
+    }
     Check(dock.CreateTabView(first) != nullptr, "dock json first view");
     Check(dock.CreateTabView(second->GetId()) != nullptr, "dock json second view");
     const std::uint64_t largeId = UINT64_MAX - 10u;
@@ -778,7 +782,11 @@ void TestDockFullSnapshot()
     const std::uint64_t first = source.GetLayout().GetRoot()->GetId();
     Raven::UIDockNode* second = source.Split(first,
         Raven::UIDockSplitAxis::Horizontal, 0.4f);
-    Check(second != nullptr, "dock full snapshot split");
+    if (second == nullptr)
+    {
+        Check(false, "dock full snapshot split");
+        return;
+    }
     const std::uint64_t secondId = second->GetId();
     Check(source.CreateTabView(first) != nullptr, "dock full snapshot first view");
     Check(source.CreateTabView(secondId) != nullptr, "dock full snapshot second view");
@@ -837,11 +845,19 @@ void TestDockStructureSnapshot()
     const std::uint64_t originalId = source.GetLayout().GetRoot()->GetId();
     Raven::UIDockNode* second = source.Split(originalId,
         Raven::UIDockSplitAxis::Horizontal, 0.35f);
-    Check(second != nullptr, "dock snapshot split");
+    if (second == nullptr)
+    {
+        Check(false, "dock snapshot split");
+        return;
+    }
     const std::uint64_t secondId = second->GetId();
     Raven::UIDockNode* third = source.Split(secondId,
         Raven::UIDockSplitAxis::Vertical, 0.7f);
-    Check(third != nullptr, "dock snapshot nested split");
+    if (third == nullptr)
+    {
+        Check(false, "dock snapshot nested split");
+        return;
+    }
     const auto records = source.GetLayout().SaveStructure();
     Raven::UIDockSpace restored;
     restored.SetSize(Raven::math::Vec2(500.0f, 300.0f));
@@ -891,11 +907,19 @@ void TestDockCollapse()
     const std::uint64_t leftId = dock.GetLayout().GetRoot()->GetId();
     Check(dock.CloseEmptyPane(leftId) == false, "dock root cannot collapse");
     Raven::UIDockNode* right = dock.Split(leftId, Raven::UIDockSplitAxis::Horizontal);
-    Check(right != nullptr, "dock collapse first split");
+    if (right == nullptr)
+    {
+        Check(false, "dock collapse first split");
+        return;
+    }
     const std::uint64_t rightId = right->GetId();
     const std::uint64_t splitId = dock.GetLayout().GetRoot()->GetId();
     Raven::UIDockNode* bottom = dock.Split(rightId, Raven::UIDockSplitAxis::Vertical);
-    Check(bottom != nullptr, "dock collapse nested split");
+    if (bottom == nullptr)
+    {
+        Check(false, "dock collapse nested split");
+        return;
+    }
     const std::uint64_t bottomId = bottom->GetId();
     const std::uint64_t nestedId = dock.GetLayout().FindNode(rightId)->GetParent()->GetId();
     Check(dock.CreateTabView(rightId) != nullptr, "dock collapse right view");
@@ -925,7 +949,11 @@ void TestDockTabTransfer()
     dock.SetSize(Raven::math::Vec2(400.0f, 300.0f));
     const std::uint64_t firstId = dock.GetLayout().GetRoot()->GetId();
     Raven::UIDockNode* second = dock.Split(firstId, Raven::UIDockSplitAxis::Horizontal);
-    Check(second != nullptr, "dock transfer split");
+    if (second == nullptr)
+    {
+        Check(false, "dock transfer split");
+        return;
+    }
     const std::uint64_t secondId = second->GetId();
     Raven::UITabView* firstView = dock.CreateTabView(firstId);
     Raven::UITabView* secondView = dock.CreateTabView(secondId);
@@ -1013,7 +1041,11 @@ void TestDockSpace()
     Check(dock.SetPane(leftId, std::make_unique<Raven::UIElement>()) == false,
         "dockspace duplicate pane");
     Raven::UIDockNode* right = dock.Split(leftId, Raven::UIDockSplitAxis::Horizontal, 0.5f);
-    Check(right != nullptr, "dockspace split");
+    if (right == nullptr)
+    {
+        Check(false, "dockspace split");
+        return;
+    }
     const std::uint64_t splitId = dock.GetLayout().GetRoot()->GetId();
     Check(dock.GetSplitter(splitId) != nullptr, "dockspace splitter created");
     Check(dock.GetSplitter(splitId)->GetOrientation() == Raven::UISplitterOrientation::Vertical,
@@ -1170,7 +1202,11 @@ void TestDockLayout()
     Check(original->GetTabs() != nullptr, "dock root tabs");
     Check(original->GetTabs()->AddTab(101u, "Scene"), "dock tab add");
     Raven::UIDockNode* right = layout.Split(originalId, Raven::UIDockSplitAxis::Horizontal, 0.35f);
-    Check(right != nullptr, "dock split");
+    if (right == nullptr)
+    {
+        Check(false, "dock split");
+        return;
+    }
     Check(layout.GetRoot()->GetKind() == Raven::UIDockNodeKind::Split, "dock split kind");
     Check(layout.GetRoot()->GetFirst() == original, "dock leaf address stable");
     Check(layout.GetRoot()->GetSecond() == right, "dock second leaf");
@@ -1392,7 +1428,11 @@ void TestPopupRouting()
     Raven::UIButton* itemPtr = item.get();
     popup->AddChild(std::move(item));
     Raven::UIElement* popupPtr = context.AddPopup(std::move(popup));
-    Check(popupPtr != nullptr, "popup registered");
+    if (popupPtr == nullptr)
+    {
+        Check(false, "popup registered");
+        return;
+    }
     Check(context.OpenPopup(behindPtr) == false, "reject non-popup element");
     Check(context.OpenPopup(popupPtr), "open popup");
     Check(context.GetOpenPopup() == popupPtr, "open popup identity");
@@ -1492,7 +1532,12 @@ void TestTooltip()
     context.RouteMouseMove(Raven::math::Vec2(180.0f, 150.0f));
     context.EndFrame();
     const Raven::UITooltip* tip = context.GetVisibleTooltip();
-    Check(tip != nullptr && tip->GetText() == "Tooltip", "tooltip visible on hover");
+    if (tip == nullptr)
+    {
+        Check(false, "tooltip visible on hover");
+        return;
+    }
+    Check(tip->GetText() == "Tooltip", "tooltip visible on hover");
     Check(tip->GetPosition().x + tip->GetSize().x <= 200.0f,
         "tooltip right viewport clamp");
     Check(tip->GetPosition().y + tip->GetSize().y <= 170.0f,
