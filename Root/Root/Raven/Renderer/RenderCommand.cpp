@@ -187,6 +187,26 @@ void RenderCommand::RestoreOverlayRasterState(const RHIOverlayRasterState& state
     s_CommandList->RestoreOverlayRasterState(state);
 }
 
+RHIOverlayBindingState RenderCommand::CaptureOverlayBindingState()
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return {};
+    }
+    return s_CommandList->CaptureOverlayBindingState();
+}
+
+void RenderCommand::RestoreOverlayBindingState(const RHIOverlayBindingState& state)
+{
+    if (s_CommandList == nullptr)
+    {
+        assert(s_CommandList);
+        return;
+    }
+    s_CommandList->RestoreOverlayBindingState(state);
+}
+
 void RenderCommand::SetClearColor(float r, float g, float b, float a)
 {
     if (s_CommandList == nullptr)
