@@ -46,6 +46,9 @@ public:
     // OpenGLでは現在のGL viewportを取得し、Explicit APIではCommandListが保持するstateを返す想定です。
     virtual RHIViewport GetViewport() const = 0;
 
+    // ScissorはFramebufferの左下原点Pixel座標。UIの左上原点からの変換は呼び出し側が行います。
+    virtual void SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+
     virtual void SetClearColor(float r, float g, float b, float a) = 0;
     virtual void Clear() = 0;
 
