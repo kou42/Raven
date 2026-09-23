@@ -34,6 +34,7 @@ public:
 
     // Scissor矩形はFramebuffer左下原点のPixel座標です。
     static void SetScissor(bool enabled, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    static RHIScissor GetScissor();
 
     static void SetClearColor(float r, float g, float b, float a);
 
