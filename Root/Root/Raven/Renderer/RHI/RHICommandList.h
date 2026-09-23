@@ -9,6 +9,7 @@
 namespace Raven
 {
 
+class Framebuffer;
 class Pipeline;
 class Texture;
 class VertexArray;
@@ -61,6 +62,8 @@ public:
 
     // Window overlayの描画先を選びます。offscreen targetの所有権やattachment構成はFramebuffer側に残します。
     virtual void BindDefaultRenderTarget() = 0;
+    // 既存Framebufferの所有権・Attachment設定を維持し、描画先の選択だけを共通命令化します。
+    virtual void BindRenderTarget(const Framebuffer& framebuffer) = 0;
     virtual RHIRenderTargetState CaptureRenderTargetState() const = 0;
     virtual void RestoreRenderTargetState(const RHIRenderTargetState& state) = 0;
 
