@@ -40,11 +40,16 @@ public:
     // Context終了後に取得したnative pointerを保持しないでください。
     ID3D12Device* GetNativeDevice() const;
 
+    // Draw命令が参照するBufferを対応FrameのFence完了まで保持します。
+    bool RetainDrawBuffers(const Ref<RHIBuffer>& vertexBuffer,
+        const Ref<RHIBuffer>& indexBuffer);
+
 private:
     struct FrameResource
     {
         std::unique_ptr<DX12CommandList> CommandList;
         uint64_t FenceValue = 0;
+        std::vector<Ref<RHIBuffer>> RetainedBuffers;
     };
 
     DX12Factory m_Factory;
