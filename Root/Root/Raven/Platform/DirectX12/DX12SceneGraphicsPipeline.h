@@ -12,8 +12,8 @@
 namespace Raven
 {
 
-// 最初のDX12 Scene PSO。Texture/定数Buffer/Depth Attachmentは後続実装で接続します。
-// 現段階ではResource Bindingを要求しないDXIL Shaderのみが描画可能です。
+// 最初のDX12 Scene PSO。Texture/Depth Attachmentは後続実装で接続します。
+// b0のclip-space行列とb1のTintをRoot Constantsで渡します。
 class DX12SceneGraphicsPipeline final : public RHIGraphicsPipeline
 {
 public:
@@ -93,6 +93,21 @@ public:
         // ShaderにDescriptor/Root Constantが必要な場合、空Root Signatureでは
         // PSO生成に失敗します。未対応Bindingを暗黙に成功扱いしません。
         D3D12_ROOT_SIGNATURE_DESC rootDescription{};
+        // b0: clip-space行列(16 DWORD)、b1: Material Tint(4 DWORD)。
+        // Texture SRVは後続実装でDescriptor Tableを追加します。
+        D3D12_ROOT_PARAMETER parameters[2]{};
+        parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        parameters[0].Constants.ShaderRegister = 0;
+        parameters[0].Constants.RegisterSpace = 0;
+        parameters[0].Constants.Num32BitValues = 16;
+        parameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+        parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        parameters[1].Constants.ShaderRegister = 1;
+        parameters[1].Constants.RegisterSpace = 0;
+        parameters[1].Constants.Num32BitValues = 4;
+        parameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        rootDescription.NumParameters = 2;
+        rootDescription.pParameters = parameters;
         rootDescription.Flags =
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         Microsoft::WRL::ComPtr<ID3DBlob> serialized;
