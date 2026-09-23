@@ -43,6 +43,8 @@ public:
     static void Clear();
 
     static void BindPipeline(const Ref<Pipeline>& pipeline);
+    static Ref<Pipeline> GetBoundPipeline();
+    static void RestorePipelineBinding(const Ref<Pipeline>& pipeline);
     static void BindTexture(const std::string& name, const Ref<Texture>& texture, uint32_t slot);
     static void UploadUniform(const std::string& name, const UniformValue& value);
 
