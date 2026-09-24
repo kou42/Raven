@@ -5,6 +5,7 @@
 #include "Raven/Core/KeyCodes.h"
 
 #include "Raven/Scene/Scene.h"
+#include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -76,9 +77,8 @@ public:
     // Explicit SceneのWindow/RuntimeをApplicationの実行境界へ移譲します。
     // Callbackは移譲後も有効なRuntime実体を参照する必要があります（Scope変数は参照しません）。
     // GPU ResourceをWindowより先に破棄し、終了順序をBackend間で統一します。
-    template<typename TRuntime>
     static int RunOwnedExplicitScene(Scope<Window> window,
-        Scope<TRuntime> runtime, const ExplicitSceneCallbacks& callbacks)
+        Scope<IExplicitSceneRuntime> runtime, const ExplicitSceneCallbacks& callbacks)
     {
         if (window == nullptr || runtime == nullptr)
         {
