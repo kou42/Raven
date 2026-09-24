@@ -23,6 +23,16 @@ namespace Raven
 
 namespace
 {
+// 通常ApplicationとExplicit Sceneで同じFrame時間の規則を使用します。
+// 時計の巻き戻りは0秒に丸め、Debugger停止やWindow移動による長時間停止は
+// 0.25秒に制限してPhysics/Animationへ過大なdtを渡しません。
+float CalculateFrameDeltaTime(double currentTime, double& previousTime)
+{
+    const double elapsed = currentTime - previousTime;
+    previousTime = currentTime;
+    return static_cast<float>(std::clamp(elapsed, 0.0, 0.25));
+}
+
 UIKey ToUIKey(int keyCode)
 {
     switch (keyCode)
@@ -1136,9 +1146,7 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const double currentTime = glfwGetTime();
         // 通常Applicationと同じ上限を適用し、Debugger停止やWindow移動後の
         // 大きなdtがAnimation/Physicsへ一度に流れ込むことを防ぎます。
-        const float frameDeltaTime = static_cast<float>(
-            std::min(currentTime - previousTime, 0.25));
-        previousTime = currentTime;
+        const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
         Renderer::BeginFrame();
         if (callbacks.OnUpdate != nullptr)
@@ -1193,12 +1201,8 @@ void Application::Run()
         // Frame timing
         // ====================================================================
         const double currentTime = glfwGetTime();
-        float frameDeltaTime = static_cast<float>(currentTime - previousTime);
-        previousTime = currentTime;
-
-        // Debugger停止やWindow移動などで極端に大きなdtが入ると、AnimationやEditor更新が
-        // 一気に進むため上限を設けます。Physics側はScene内部でfixed step処理します。
-        frameDeltaTime = std::min(frameDeltaTime, 0.25f);
+        // 通常/Explicitの両経路で同じdt上限と巻き戻り保護を適用します。
+        const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
         // ====================================================================
         // Renderer statistics frame boundary
