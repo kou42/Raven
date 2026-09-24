@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/RHI/RHIClearContext.h"
+#include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 #include <cassert>
 #include <vector>
@@ -14,6 +15,36 @@ enum class Call
 {
     Discard,
     Resize
+};
+
+// 実GPUを使わずAcquireの成否とDrawの呼び出し順を制御します。
+class MockSceneFrameLifecycle final : public RHISceneFrameLifecycle
+{
+public:
+    RHIFrameResult BeginResult = RHIFrameResult::Success;
+    int BeginCount = 0;
+    int EndCount = 0;
+    int PresentCount = 0;
+
+    RHIFrameResult BeginFrame() override
+    {
+        ++BeginCount;
+        return BeginResult;
+    }
+    RHIFrameResult EndFrame() override
+    {
+        ++EndCount;
+        return RHIFrameResult::Success;
+    }
+    RHIFrameResult Present() override
+    {
+        ++PresentCount;
+        return RHIFrameResult::Success;
+    }
+    bool Resize(uint32_t, uint32_t) override
+    {
+        return true;
+    }
 };
 } // namespace
 
@@ -88,5 +119,71 @@ void RunExplicitSceneFrameSelfTests()
     assert(Application::HandleExplicitSceneFrameResult(
         RHIFrameResult::FatalError, 1920u, 1080u, callbacks) == false);
     assert(calls.empty() == true);
+
+    // PrepareはBeginFrameより前に実行し、Acquire失敗時はDrawへ進めません。
+    MockSceneFrameLifecycle frame;
+    std::vector<int> frameCalls;
+    const auto prepare = [&frameCalls]()
+    {
+        frameCalls.push_back(1);
+        return true;
+    };
+    const auto draw = [&frameCalls]()
+    {
+        frameCalls.push_back(3);
+        return RHIFrameResult::Success;
+    };
+    assert(Application::ExecuteExplicitSceneFrame(frame, prepare, draw) ==
+        RHIFrameResult::Success);
+    assert(frame.BeginCount == 1);
+    assert(frameCalls.size() == 2u);
+    assert(frameCalls[0] == 1 && frameCalls[1] == 3);
+    // Drawの内部でEndFrame/Presentを行うため、MockのDrawはそれらを呼びません。
+    assert(frame.EndCount == 0 && frame.PresentCount == 0);
+
+    frameCalls.clear();
+    frame.BeginResult = RHIFrameResult::ResizeRequired;
+    assert(Application::ExecuteExplicitSceneFrame(frame, prepare, draw) ==
+        RHIFrameResult::ResizeRequired);
+    assert(frame.BeginCount == 2);
+    assert(frameCalls.size() == 1u && frameCalls[0] == 1);
+
+    frameCalls.clear();
+    frame.BeginResult = RHIFrameResult::FatalError;
+    assert(Application::ExecuteExplicitSceneFrame(frame, prepare, draw) ==
+        RHIFrameResult::FatalError);
+    assert(frame.BeginCount == 3);
+    assert(frameCalls.size() == 1u && frameCalls[0] == 1);
+
+    // Prepare失敗ではAcquire自体を開始しません。
+    frameCalls.clear();
+    const auto failedPrepare = [&frameCalls]()
+    {
+        frameCalls.push_back(1);
+        return false;
+    };
+    assert(Application::ExecuteExplicitSceneFrame(frame, failedPrepare, draw) ==
+        RHIFrameResult::FatalError);
+    assert(frame.BeginCount == 3);
+    assert(frameCalls.size() == 1u && frameCalls[0] == 1);
+
+    // DrawのResizeRequired/FatalErrorは加工せずRunnerの後始末へ伝えます。
+    frame.BeginResult = RHIFrameResult::Success;
+    const auto resizeDraw = []() { return RHIFrameResult::ResizeRequired; };
+    const auto failedDraw = []() { return RHIFrameResult::FatalError; };
+    assert(Application::ExecuteExplicitSceneFrame(frame, prepare, resizeDraw) ==
+        RHIFrameResult::ResizeRequired);
+    assert(Application::ExecuteExplicitSceneFrame(frame, prepare, failedDraw) ==
+        RHIFrameResult::FatalError);
+    assert(frame.BeginCount == 5);
+
+    // 必須Callback未設定はGPU Frameを開始せず失敗します。
+    const std::function<bool()> missingPrepare;
+    const std::function<RHIFrameResult()> missingDraw;
+    assert(Application::ExecuteExplicitSceneFrame(frame, missingPrepare, draw) ==
+        RHIFrameResult::FatalError);
+    assert(Application::ExecuteExplicitSceneFrame(frame, prepare, missingDraw) ==
+        RHIFrameResult::FatalError);
+    assert(frame.BeginCount == 5);
 }
 } // namespace Raven::tests
