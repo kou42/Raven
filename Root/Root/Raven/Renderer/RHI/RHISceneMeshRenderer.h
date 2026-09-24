@@ -61,6 +61,13 @@ public:
         {
             return RHIFrameResult::FatalError;
         }
+        return FinishActiveFrame(frame);
+    }
+
+    // 描画命令の記録後だけ呼びます。Submitに失敗したFrameはPresentしません。
+    // Applicationが受け取るResizeRequired/FatalErrorを変更せず伝えます。
+    static RHIFrameResult FinishActiveFrame(RHISceneFrameLifecycle& frame)
+    {
         const RHIFrameResult end = frame.EndFrame();
         if (end != RHIFrameResult::Success)
         {
