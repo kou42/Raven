@@ -1,13 +1,13 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
-#include "Raven/Assets/RHIShaderAsset.h"
-#include "Raven/Renderer/Renderer.h"
 
 namespace Raven
 {
 
 class Scene;
+struct PipelineSpecification;
+struct RHIShaderAssetSpecification;
 
 // Explicit Scene実行のBackend非依存境界です。
 // WindowとSceneは呼び出し側が所有し、RuntimeはGPU ResourceとFrame準備状態を所有します。
