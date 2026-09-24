@@ -3,6 +3,7 @@
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/RHI/RHIClearContext.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 
 #include <cassert>
 #include <vector>
@@ -22,6 +23,9 @@ class MockSceneFrameLifecycle final : public RHISceneFrameLifecycle
 {
 public:
     RHIFrameResult BeginResult = RHIFrameResult::Success;
+    RHIFrameResult EndResult = RHIFrameResult::Success;
+    RHIFrameResult PresentResult = RHIFrameResult::Success;
+    std::vector<int> FinishCalls;
     int BeginCount = 0;
     int EndCount = 0;
     int PresentCount = 0;
@@ -34,12 +38,14 @@ public:
     RHIFrameResult EndFrame() override
     {
         ++EndCount;
-        return RHIFrameResult::Success;
+        FinishCalls.push_back(1);
+        return EndResult;
     }
     RHIFrameResult Present() override
     {
         ++PresentCount;
-        return RHIFrameResult::Success;
+        FinishCalls.push_back(2);
+        return PresentResult;
     }
     bool Resize(uint32_t, uint32_t) override
     {
@@ -185,5 +191,44 @@ void RunExplicitSceneFrameSelfTests()
     assert(Application::ExecuteExplicitSceneFrame(frame, prepare, missingDraw) ==
         RHIFrameResult::FatalError);
     assert(frame.BeginCount == 5);
+
+    // Submit成功時だけPresentへ進み、両結果を加工せず返します。
+    frame.FinishCalls.clear();
+    assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
+        RHIFrameResult::Success);
+    assert(frame.FinishCalls.size() == 2u);
+    assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
+    assert(frame.EndCount == 1 && frame.PresentCount == 1);
+
+    // Submit失敗・ResizeRequiredではPresentせず、Context終了/Resize判断へ渡します。
+    frame.FinishCalls.clear();
+    frame.EndResult = RHIFrameResult::FatalError;
+    assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
+        RHIFrameResult::FatalError);
+    assert(frame.FinishCalls.size() == 1u && frame.FinishCalls[0] == 1);
+    assert(frame.PresentCount == 1);
+
+    frame.FinishCalls.clear();
+    frame.EndResult = RHIFrameResult::ResizeRequired;
+    assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
+        RHIFrameResult::ResizeRequired);
+    assert(frame.FinishCalls.size() == 1u && frame.FinishCalls[0] == 1);
+    assert(frame.PresentCount == 1);
+
+    // Present失敗・ResizeRequiredはSubmit済みFrameの結果としてRunnerへ伝えます。
+    frame.EndResult = RHIFrameResult::Success;
+    frame.FinishCalls.clear();
+    frame.PresentResult = RHIFrameResult::FatalError;
+    assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
+        RHIFrameResult::FatalError);
+    assert(frame.FinishCalls.size() == 2u);
+    assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
+
+    frame.FinishCalls.clear();
+    frame.PresentResult = RHIFrameResult::ResizeRequired;
+    assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
+        RHIFrameResult::ResizeRequired);
+    assert(frame.FinishCalls.size() == 2u);
+    assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
 }
 } // namespace Raven::tests
