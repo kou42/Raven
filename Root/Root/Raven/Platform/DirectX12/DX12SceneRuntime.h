@@ -35,7 +35,7 @@ public:
     bool Init(Window& window,
         const PipelineSpecification& pipelineSpecification,
         const RHIShaderAssetSpecification& vertexShader,
-        const RHIShaderAssetSpecification& fragmentShader)
+        const RHIShaderAssetSpecification& fragmentShader) override
     {
         Shutdown();
         if (window.GetBackend() != RHIBackend::DirectX12 ||
