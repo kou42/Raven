@@ -1074,6 +1074,29 @@ RHIFrameResult Application::ExecuteExplicitSceneFrame(
     return drawPrepared();
 }
 
+bool Application::HandleExplicitSceneFrameResult(RHIFrameResult result,
+    uint32_t width, uint32_t height, const ExplicitSceneCallbacks& callbacks)
+{
+    if (result == RHIFrameResult::Success)
+    {
+        return true;
+    }
+
+    // Prepare/Acquire/Drawが失敗した時点で、GPU Frameが参照する
+    // Scene Snapshotを解放します。Resizeでも同じ順序を必須とします。
+    if (callbacks.DiscardPrepared != nullptr)
+    {
+        callbacks.DiscardPrepared();
+    }
+    if (result == RHIFrameResult::ResizeRequired)
+    {
+        // Surfaceの変更は寸法が同じでも発生するため、強制再生成します。
+        return callbacks.Resize != nullptr &&
+            callbacks.Resize(width, height, true);
+    }
+    return false;
+}
+
 int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
     const ExplicitSceneCallbacks& callbacks)
 {
@@ -1156,21 +1179,9 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         callbacks.OnScene();
         const RHIFrameResult result = ExecuteExplicitSceneFrame(
             frame, callbacks.Prepare, callbacks.DrawPrepared);
-        if (result == RHIFrameResult::ResizeRequired)
+        if (HandleExplicitSceneFrameResult(
+            result, targetWidth, targetHeight, callbacks) == false)
         {
-            // Acquire失敗時はDrawPreparedが呼ばれないため準備済み参照を先に解放します。
-            callbacks.DiscardPrepared();
-            // Surface変更は寸法不変でも発生するため、再生成を強制します。
-            if (callbacks.Resize(targetWidth, targetHeight, true) == false)
-            {
-                return 1;
-            }
-        }
-        else if (result != RHIFrameResult::Success)
-        {
-            // Prepare/Acquire/Drawのどの段階で失敗しても、Runtimeが保持する
-            // SnapshotをDeviceの終了処理より前に必ず解放します。
-            callbacks.DiscardPrepared();
             return 1;
         }
     }
