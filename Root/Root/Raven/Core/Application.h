@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <unordered_map>
 #include <iostream>
 
@@ -87,6 +88,7 @@ public:
         RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
         if (frame == nullptr)
         {
+            runtime->DiscardPreparedFrame();
             if (callbacks.OnBeforeShutdown != nullptr)
             {
                 callbacks.OnBeforeShutdown();
@@ -125,9 +127,20 @@ public:
     static int RunOwnedExplicitScene(Scope<Window> window,
         Scope<IExplicitSceneRuntime> runtime, const ExplicitSceneHooks& hooks)
     {
-        if (window == nullptr || runtime == nullptr || runtime->IsInitialized() == false ||
-            hooks.OnScene == nullptr)
+        if (window == nullptr || runtime == nullptr)
         {
+            return 1;
+        }
+        if (runtime->IsInitialized() == false || hooks.OnScene == nullptr)
+        {
+            // 所有権を受け取った後の検証失敗でもSceneとGPU Resourceを残しません。
+            runtime->DiscardPreparedFrame();
+            if (hooks.OnBeforeShutdown != nullptr)
+            {
+                hooks.OnBeforeShutdown();
+            }
+            Renderer::Shutdown();
+            runtime->Shutdown();
             return 1;
         }
 
