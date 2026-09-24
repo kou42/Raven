@@ -29,7 +29,7 @@ public:
         Window& window,
         const PipelineSpecification& pipelineSpecification,
         const RHIShaderAssetSpecification& vertexShader,
-        const RHIShaderAssetSpecification& fragmentShader);
+        const RHIShaderAssetSpecification& fragmentShader) override;
 
     // Frame開始前に通常MeshのExplicit RHI BufferをこのRuntimeのDeviceで構築し直します。
     // Context再生成後も古いDeviceのBufferを再利用しないため、呼び出し側は登録時に一度実行します。
