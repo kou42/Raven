@@ -1104,12 +1104,19 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
     while (glfwWindowShouldClose(native) == GLFW_FALSE)
     {
         window.PollEvents();
+        // Close通知を受けたFrameではScene更新やGPU Frame開始を行いません。
+        // WindowClose Eventの配送はPollEvents中に完了しています。
+        if (glfwWindowShouldClose(native) == GLFW_TRUE)
+        {
+            break;
+        }
         int width = 0;
         int height = 0;
         glfwGetFramebufferSize(native, &width, &height);
         if (width <= 0 || height <= 0)
         {
             glfwWaitEvents();
+            // 待機中にCloseされても次のLoopで描画せず終了します。
             // 最小化・復帰中の待機時間をSceneの更新dtへ加算しません。
             previousTime = glfwGetTime();
             continue;
