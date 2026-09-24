@@ -1075,6 +1075,27 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         return 1;
     }
 
+    // Explicit Sceneが所有するWindowからScene/LayerへEventを配送します。
+    // 通常ApplicationのUI/Editor Event経路はこの独立Runnerへ持ち込みません。
+    // WindowがRunnerより長生きする借用呼び出しでも、終了時にHookの参照を残しません。
+    struct EventCallbackReset
+    {
+        Window& Target;
+        ~EventCallbackReset()
+        {
+            Target.SetEventCallback([](Event&) {});
+        }
+    };
+    const EventCallbackReset resetEventCallback{window};
+    const auto onEvent = callbacks.OnEvent;
+    window.SetEventCallback([onEvent](Event& event)
+    {
+        if (onEvent != nullptr)
+        {
+            onEvent(event);
+        }
+    });
+
     // OpenGL EditorのLayer/UI/Legacy CommandはExplicit Contextへ流さず、
     // Scene Queueと共通Frame境界だけを使用します。
     uint32_t previousWidth = 0;
