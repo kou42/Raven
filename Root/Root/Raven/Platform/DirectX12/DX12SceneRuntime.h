@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
+
 #include "DX12SceneCommandList.h"
 #include "DX12SceneRHIDevice.h"
 
@@ -21,11 +23,11 @@ namespace Raven
 
 // VulkanSceneRuntimeと同じ共通Renderer QueueをDX12 Sceneへ流すRuntimeです。
 // native Resourceの生成・破棄はContext/Deviceに閉じ込めます。
-class DX12SceneRuntime final
+class DX12SceneRuntime final : public IExplicitSceneRuntime
 {
 public:
     DX12SceneRuntime() = default;
-    ~DX12SceneRuntime() { Shutdown(); }
+    ~DX12SceneRuntime() { Shutdown() override; }
 
     DX12SceneRuntime(const DX12SceneRuntime&) = delete;
     DX12SceneRuntime& operator=(const DX12SceneRuntime&) = delete;
@@ -35,7 +37,7 @@ public:
         const RHIShaderAssetSpecification& vertexShader,
         const RHIShaderAssetSpecification& fragmentShader)
     {
-        Shutdown();
+        Shutdown() override;
         if (window.GetBackend() != RHIBackend::DirectX12 ||
             pipelineSpecification.Topology != PrimitiveTopology::Triangles)
         {
@@ -44,7 +46,7 @@ public:
         if (m_Context.Init(window) == false)
         {
             // 部分初期化されたDevice/SwapChainを次回Initへ持ち越しません。
-            Shutdown();
+            Shutdown() override;
             return false;
         }
         m_Window = &window;
@@ -63,19 +65,19 @@ public:
                 << std::filesystem::current_path().string() << "\n"
                 << "  VS: " << vertexShader.DirectX12Path << "\n"
                 << "  PS: " << fragmentShader.DirectX12Path << "\n";
-            Shutdown();
+            Shutdown() override;
             return false;
         }
         if (CreatePipelines() == false)
         {
             std::cerr << "[DX12 Scene] Graphics Pipeline creation failed.\n";
-            Shutdown();
+            Shutdown() override;
             return false;
         }
         if (CreateDefaultTexture() == false)
         {
             std::cerr << "[DX12 Scene] Default white texture creation failed.\n";
-            Shutdown();
+            Shutdown() override;
             return false;
         }
         m_Initialized = true;
@@ -93,23 +95,23 @@ public:
         return mesh->BuildRHIResources(*m_Device);
     }
 
-    bool PrepareScene(Scene& scene)
+    bool PrepareScene(Scene& scene) override
     {
         if (m_Initialized == false || m_Device == nullptr)
         {
             return false;
         }
-        return m_Device->PrepareScene(scene);
+        return m_Device->PrepareScene(scene) override;
     }
 
     // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
-    void DiscardPreparedFrame()
+    void DiscardPreparedFrame() override
     {
         // Acquire失敗時の準備済みResourceを再生成・終了前に解放します。
         m_PreparedFrame.reset();
     }
 
-    bool PrepareFrame()
+    bool PrepareFrame() override
     {
         m_PreparedFrame.reset();
         if (m_Initialized == false || m_Device == nullptr ||
@@ -131,7 +133,7 @@ public:
     }
 
     // Application等がBeginFrameを呼び出した後に使用します。二重Acquireは行いません。
-    RHIFrameResult DrawPreparedFrame()
+    RHIFrameResult DrawPreparedFrame() override
     {
         if (m_Initialized == false || m_PreparedFrame == nullptr ||
             m_Context.GetActiveCommandList() == nullptr)
@@ -149,7 +151,7 @@ public:
 
     RHIFrameResult DrawFrame()
     {
-        if (PrepareFrame() == false)
+        if (PrepareFrame() == false) override
         {
             return RHIFrameResult::FatalError;
         }
@@ -159,10 +161,10 @@ public:
             m_PreparedFrame.reset();
             return begin;
         }
-        return DrawPreparedFrame();
+        return DrawPreparedFrame() override;
     }
 
-    bool Resize(uint32_t width, uint32_t height)
+    bool Resize(uint32_t width, uint32_t height) override
     {
         if (m_Initialized == false || width == 0 || height == 0)
         {
@@ -170,7 +172,7 @@ public:
         }
         // 旧Frame参照を外してからContext/SwapChainを再生成します。
         m_PreparedFrame.reset();
-        if (m_Context.Resize(width, height) == false)
+        if (m_Context.Resize(width, height) == false) override
         {
             return false;
         }
@@ -185,7 +187,7 @@ public:
         return true;
     }
 
-    void Shutdown()
+    void Shutdown() override
     {
         m_PreparedFrame.reset();
         // ContextのShutdownはQueueのFenceを待つため、参照を先に解放しても
@@ -197,16 +199,16 @@ public:
         m_FragmentShader.reset();
         m_ShaderAssets.Clear();
         m_Device.reset();
-        m_Context.Shutdown();
+        m_Context.Shutdown() override;
         m_PipelineSpecification = {};
         m_PipelineDebugName.clear();
         m_Window = nullptr;
         m_Initialized = false;
     }
 
-    bool IsInitialized() const { return m_Initialized; }
+    bool IsInitialized() const override { return m_Initialized; }
     // Runtimeが所有するContextのFrame境界を公開します。Shutdown後は参照しないでください。
-    RHISceneFrameLifecycle* GetFrameLifecycle()
+    RHISceneFrameLifecycle* GetFrameLifecycle() override
     {
         return m_Initialized == true ? &m_Context : nullptr;
     }
@@ -215,11 +217,11 @@ public:
         return m_Initialized == true ? m_Device.get() : nullptr;
     }
     const Ref<RHITexture>& GetDefaultTexture() const { return m_DefaultTexture; }
-    uint32_t GetWidth() const
+    uint32_t GetWidth() const override
     {
         return m_Window != nullptr ? m_Window->GetFramebufferWidth() : 0;
     }
-    uint32_t GetHeight() const
+    uint32_t GetHeight() const override
     {
         return m_Window != nullptr ? m_Window->GetFramebufferHeight() : 0;
     }
