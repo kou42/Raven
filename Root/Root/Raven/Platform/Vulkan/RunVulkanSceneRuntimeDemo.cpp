@@ -48,37 +48,9 @@ int RunVulkanSceneRuntimeDemo()
     pipelineSpecification.DebugName = "Vulkan Normal Mesh Scene";
 
     auto runtime = CreateScope<VulkanSceneRuntime>();
-    if (runtime->Init(
-        *window,
-        pipelineSpecification,
-        vertexShader,
-        fragmentShader) == false)
-    {
-        std::cerr << "Vulkan Scene Runtime initialization failed.\n";
-        // Initが部分初期化状態を解放する設計ですが、終了入口でも明示します。
-        runtime->Shutdown();
-        return 1;
-    }
-
-    // Backend非依存の検証Sceneを共有し、GPU Buffer準備だけRuntimeに任せます。
     ExplicitCubeSceneDemo demo;
-    if (demo.Init("Vulkan", runtime->GetWidth(), runtime->GetHeight()) == false)
-    {
-        std::cerr << "Vulkan Entity Scene creation failed.\n";
-        Renderer::Shutdown();
-        runtime->Shutdown();
-        return 1;
-    }
-    if (runtime->PrepareScene(demo.GetScene()) == false)
-    {
-        std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
-        demo.Shutdown();
-        Renderer::Shutdown();
-        runtime->Shutdown();
-        return 1;
-    }
 
-    // Scene固有Hookだけを渡し、Prepare/Acquire/Draw/Resize/終了順序は共通Runnerへ委譲します。
+    // Shader/Pipeline設定はBackendごとに保持し、初期化・失敗時の解放順序は共通化します。
     Application::ExplicitSceneHooks hooks;
     hooks.OnScene = [&demo]() { demo.Render(); };
     hooks.OnResizeCamera = [&demo](uint32_t width, uint32_t height)
@@ -86,9 +58,26 @@ int RunVulkanSceneRuntimeDemo()
         demo.ResizeCamera(width, height);
     };
     hooks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
-    const int exitCode = Application::RunOwnedExplicitScene(
-        std::move(window), std::move(runtime), hooks);
-    return exitCode;
+
+    const auto initializeScene = [&demo](IExplicitSceneRuntime& sceneRuntime)
+    {
+        if (demo.Init("Vulkan", sceneRuntime.GetWidth(), sceneRuntime.GetHeight()) == false)
+        {
+            std::cerr << "Vulkan Entity Scene creation failed.\n";
+            return false;
+        }
+        if (sceneRuntime.PrepareScene(demo.GetScene()) == false)
+        {
+            std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
+            return false;
+        }
+        return true;
+    };
+
+    return Application::RunInitializedExplicitScene(
+        std::move(window), std::move(runtime),
+        pipelineSpecification, vertexShader, fragmentShader,
+        hooks, initializeScene);
 }
 
 } // namespace Raven
