@@ -55,6 +55,7 @@ int RunDX12SceneRuntimeDemo()
     Application::ExplicitSceneHooks hooks;
     // 通常Applicationと同じScene更新順序でAnimation/Physics/Layerを進めます。
     hooks.OnUpdate = [&demo](float dt) { demo.GetScene().OnUpdate(dt); };
+    hooks.OnEvent = [&demo](Event& event) { demo.GetScene().OnEvent(event); };
     hooks.OnScene = [&demo]() { demo.Render(); };
     hooks.OnResizeCamera = [&demo](uint32_t width, uint32_t height)
     {
