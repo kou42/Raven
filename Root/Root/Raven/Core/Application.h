@@ -113,6 +113,57 @@ public:
         return exitCode;
     }
 
+    // Scene固有の処理だけを呼び出し側から受け取り、Runtime操作のCallback配線を共通化します。
+    // Hookはこの呼び出しが返るまで有効である必要があります。
+    struct ExplicitSceneHooks
+    {
+        std::function<void()> OnScene;
+        std::function<void()> OnBeforeShutdown;
+        std::function<void(uint32_t, uint32_t)> OnResizeCamera;
+    };
+
+    static int RunOwnedExplicitScene(Scope<Window> window,
+        Scope<IExplicitSceneRuntime> runtime, const ExplicitSceneHooks& hooks)
+    {
+        if (window == nullptr || runtime == nullptr || runtime->IsInitialized() == false ||
+            hooks.OnScene == nullptr)
+        {
+            return 1;
+        }
+
+        IExplicitSceneRuntime* runtimeHandle = runtime.get();
+        uint32_t resizedWidth = runtimeHandle->GetWidth();
+        uint32_t resizedHeight = runtimeHandle->GetHeight();
+        ExplicitSceneCallbacks callbacks;
+        callbacks.OnScene = hooks.OnScene;
+        callbacks.OnBeforeShutdown = hooks.OnBeforeShutdown;
+        callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
+        callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
+        callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
+        callbacks.Resize = [runtimeHandle, resizedWidth, resizedHeight,
+            onResizeCamera = hooks.OnResizeCamera](uint32_t width, uint32_t height, bool force) mutable
+        {
+            // DX12のGetWidth/GetHeightはWindowの現在値を返すため、最後に成功した
+            // SwapChainサイズを別途保持し、Window通知による先行更新を見逃しません。
+            if (force == false && resizedWidth == width && resizedHeight == height)
+            {
+                return true;
+            }
+            if (runtimeHandle->Resize(width, height) == false)
+            {
+                return false;
+            }
+            resizedWidth = width;
+            resizedHeight = height;
+            if (onResizeCamera != nullptr)
+            {
+                onResizeCamera(width, height);
+            }
+            return true;
+        };
+        return RunOwnedExplicitScene(std::move(window), std::move(runtime), callbacks);
+    }
+
     void OnEvent(Event& event);
 
     void PushLayer(Layer* layer);
