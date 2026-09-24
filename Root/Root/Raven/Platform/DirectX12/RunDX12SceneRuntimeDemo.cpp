@@ -53,6 +53,8 @@ int RunDX12SceneRuntimeDemo()
 
     // Shader/Pipeline設定はBackendごとに保持し、初期化・失敗時の解放順序は共通化します。
     Application::ExplicitSceneHooks hooks;
+    // 通常Applicationと同じScene更新順序でAnimation/Physics/Layerを進めます。
+    hooks.OnUpdate = [&demo](float dt) { demo.GetScene().OnUpdate(dt); };
     hooks.OnScene = [&demo]() { demo.Render(); };
     hooks.OnResizeCamera = [&demo](uint32_t width, uint32_t height)
     {
