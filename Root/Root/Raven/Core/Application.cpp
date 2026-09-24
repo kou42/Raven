@@ -1118,6 +1118,9 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         }
         else if (result != RHIFrameResult::Success)
         {
+            // Prepare/Acquire/Drawのどの段階で失敗しても、Runtimeが保持する
+            // SnapshotをDeviceの終了処理より前に必ず解放します。
+            callbacks.DiscardPrepared();
             return 1;
         }
     }
