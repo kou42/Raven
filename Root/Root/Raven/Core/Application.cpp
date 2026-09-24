@@ -1079,6 +1079,7 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
     // Scene Queueと共通Frame境界だけを使用します。
     uint32_t previousWidth = 0;
     uint32_t previousHeight = 0;
+    double previousTime = glfwGetTime();
     while (glfwWindowShouldClose(native) == GLFW_FALSE)
     {
         window.PollEvents();
@@ -1088,6 +1089,8 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         if (width <= 0 || height <= 0)
         {
             glfwWaitEvents();
+            // 最小化・復帰中の待機時間をSceneの更新dtへ加算しません。
+            previousTime = glfwGetTime();
             continue;
         }
         const uint32_t targetWidth = static_cast<uint32_t>(width);
@@ -1102,7 +1105,18 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
             previousHeight = targetHeight;
         }
 
+        const double currentTime = glfwGetTime();
+        // 通常Applicationと同じ上限を適用し、Debugger停止やWindow移動後の
+        // 大きなdtがAnimation/Physicsへ一度に流れ込むことを防ぎます。
+        const float frameDeltaTime = static_cast<float>(
+            std::min(currentTime - previousTime, 0.25));
+        previousTime = currentTime;
+
         Renderer::BeginFrame();
+        if (callbacks.OnUpdate != nullptr)
+        {
+            callbacks.OnUpdate(frameDeltaTime);
+        }
         callbacks.OnScene();
         const RHIFrameResult result = ExecuteExplicitSceneFrame(
             frame, callbacks.Prepare, callbacks.DrawPrepared);
