@@ -81,42 +81,16 @@ int RunDX12SceneRuntimeDemo()
         return 1;
     }
 
-    uint32_t swapChainWidth = runtime->GetWidth();
-    uint32_t swapChainHeight = runtime->GetHeight();
-    RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
-    if (frame == nullptr)
+    // Scene固有Hookだけを渡し、Prepare/Acquire/Draw/Resize/終了順序は共通Runnerへ委譲します。
+    Application::ExplicitSceneHooks hooks;
+    hooks.OnScene = [&demo]() { demo.Render(); };
+    hooks.OnResizeCamera = [&demo](uint32_t width, uint32_t height)
     {
-        demo.Shutdown();
-        Renderer::Shutdown();
-        runtime->Shutdown();
-        return 1;
-    }
-    // ScopeをApplicationへ移譲してもRuntime実体のアドレスは変わりません。
-    // Callbackは移譲元Scopeではなく、実体を借用するPointerを捕捉します。
-    DX12SceneRuntime* runtimeHandle = runtime.get();
-    Application::ExplicitSceneCallbacks callbacks;
-    callbacks.OnScene = [&demo]() { demo.Render(); };
-    callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
-    {
-        // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
-        if (force == true || swapChainWidth != width || swapChainHeight != height)
-        {
-            if (runtimeHandle->Resize(width, height) == false)
-            {
-                return false;
-            }
-            swapChainWidth = width;
-            swapChainHeight = height;
-            demo.ResizeCamera(width, height);
-        }
-        return true;
+        demo.ResizeCamera(width, height);
     };
-    callbacks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
-    callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
-    callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
-    callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
+    hooks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
     const int exitCode = Application::RunOwnedExplicitScene(
-        std::move(window), std::move(runtime), callbacks);
+        std::move(window), std::move(runtime), hooks);
     return exitCode;
 }
 
