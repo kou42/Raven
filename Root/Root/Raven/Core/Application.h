@@ -64,6 +64,8 @@ public:
     struct ExplicitSceneCallbacks
     {
         std::function<void()> OnScene;
+        // Scene/Layer等のCPU更新。Renderer Queue構築前に呼び、dtは最大0.25秒に制限します。
+        std::function<void(float)> OnUpdate;
         // Scene/Material/Meshの所有参照をDevice破棄前に解放します。
         std::function<void()> OnBeforeShutdown;
         std::function<bool(uint32_t, uint32_t, bool)> Resize;
@@ -120,6 +122,7 @@ public:
     struct ExplicitSceneHooks
     {
         std::function<void()> OnScene;
+        std::function<void(float)> OnUpdate;
         std::function<void()> OnBeforeShutdown;
         std::function<void(uint32_t, uint32_t)> OnResizeCamera;
     };
@@ -149,6 +152,7 @@ public:
         uint32_t resizedHeight = runtimeHandle->GetHeight();
         ExplicitSceneCallbacks callbacks;
         callbacks.OnScene = hooks.OnScene;
+        callbacks.OnUpdate = hooks.OnUpdate;
         callbacks.OnBeforeShutdown = hooks.OnBeforeShutdown;
         callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
         callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
