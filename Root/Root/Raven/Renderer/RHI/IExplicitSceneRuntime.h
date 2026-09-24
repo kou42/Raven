@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Assets/RHIShaderAsset.h"
+#include "Raven/Renderer/Renderer.h"
 
 namespace Raven
 {
@@ -14,6 +16,13 @@ class IExplicitSceneRuntime
 {
 public:
     virtual ~IExplicitSceneRuntime() = default;
+
+    // Shader Assetは選択Backend用のPathを指定します。Windowの所有権は移しません。
+    // 初期化失敗時は各Runtimeが部分生成Resourceを解放します。
+    virtual bool Init(Window& window,
+        const PipelineSpecification& pipelineSpecification,
+        const RHIShaderAssetSpecification& vertexShader,
+        const RHIShaderAssetSpecification& fragmentShader) = 0;
 
     // Init成功後にのみFrame境界を借用できます。Shutdown後の参照は無効です。
     virtual RHISceneFrameLifecycle* GetFrameLifecycle() = 0;
