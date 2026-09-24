@@ -164,6 +164,53 @@ public:
         return RunOwnedExplicitScene(std::move(window), std::move(runtime), callbacks);
     }
 
+    // Window/Runtime生成後の初期化とScene GPU準備も共通入口で実行します。
+    // onInitializeSceneはScene構築とPrepareSceneを担当し、成功・失敗を問わず
+    // Scene参照はRuntimeのDevice破棄より前にOnBeforeShutdownで解放します。
+    static int RunInitializedExplicitScene(Scope<Window> window,
+        Scope<IExplicitSceneRuntime> runtime,
+        const PipelineSpecification& pipelineSpecification,
+        const RHIShaderAssetSpecification& vertexShader,
+        const RHIShaderAssetSpecification& fragmentShader,
+        const ExplicitSceneHooks& hooks,
+        const std::function<bool(IExplicitSceneRuntime&)>& onInitializeScene)
+    {
+        if (window == nullptr || runtime == nullptr)
+        {
+            return 1;
+        }
+
+        const auto shutdown = [&]()
+        {
+            runtime->DiscardPreparedFrame();
+            if (hooks.OnBeforeShutdown != nullptr)
+            {
+                hooks.OnBeforeShutdown();
+            }
+            Renderer::Shutdown();
+            runtime->Shutdown();
+        };
+
+        if (window->GetNativeWindow() == nullptr ||
+            hooks.OnScene == nullptr || onInitializeScene == nullptr)
+        {
+            shutdown();
+            return 1;
+        }
+        if (runtime->Init(*window, pipelineSpecification, vertexShader, fragmentShader) == false)
+        {
+            shutdown();
+            return 1;
+        }
+        if (onInitializeScene(*runtime) == false)
+        {
+            shutdown();
+            return 1;
+        }
+        // 成功時の終了処理は既存Runnerに移譲し、二重Shutdownを避けます。
+        return RunOwnedExplicitScene(std::move(window), std::move(runtime), hooks);
+    }
+
     void OnEvent(Event& event);
 
     void PushLayer(Layer* layer);
