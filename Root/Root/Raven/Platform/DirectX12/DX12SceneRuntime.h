@@ -27,7 +27,7 @@ class DX12SceneRuntime final : public IExplicitSceneRuntime
 {
 public:
     DX12SceneRuntime() = default;
-    ~DX12SceneRuntime() { Shutdown() override; }
+    ~DX12SceneRuntime() { Shutdown(); }
 
     DX12SceneRuntime(const DX12SceneRuntime&) = delete;
     DX12SceneRuntime& operator=(const DX12SceneRuntime&) = delete;
@@ -37,7 +37,7 @@ public:
         const RHIShaderAssetSpecification& vertexShader,
         const RHIShaderAssetSpecification& fragmentShader)
     {
-        Shutdown() override;
+        Shutdown();
         if (window.GetBackend() != RHIBackend::DirectX12 ||
             pipelineSpecification.Topology != PrimitiveTopology::Triangles)
         {
@@ -46,7 +46,7 @@ public:
         if (m_Context.Init(window) == false)
         {
             // 部分初期化されたDevice/SwapChainを次回Initへ持ち越しません。
-            Shutdown() override;
+            Shutdown();
             return false;
         }
         m_Window = &window;
@@ -65,19 +65,19 @@ public:
                 << std::filesystem::current_path().string() << "\n"
                 << "  VS: " << vertexShader.DirectX12Path << "\n"
                 << "  PS: " << fragmentShader.DirectX12Path << "\n";
-            Shutdown() override;
+            Shutdown();
             return false;
         }
         if (CreatePipelines() == false)
         {
             std::cerr << "[DX12 Scene] Graphics Pipeline creation failed.\n";
-            Shutdown() override;
+            Shutdown();
             return false;
         }
         if (CreateDefaultTexture() == false)
         {
             std::cerr << "[DX12 Scene] Default white texture creation failed.\n";
-            Shutdown() override;
+            Shutdown();
             return false;
         }
         m_Initialized = true;
@@ -101,7 +101,7 @@ public:
         {
             return false;
         }
-        return m_Device->PrepareScene(scene) override;
+        return m_Device->PrepareScene(scene);
     }
 
     // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
@@ -151,7 +151,7 @@ public:
 
     RHIFrameResult DrawFrame()
     {
-        if (PrepareFrame() == false) override
+        if (PrepareFrame() == false)
         {
             return RHIFrameResult::FatalError;
         }
@@ -161,7 +161,7 @@ public:
             m_PreparedFrame.reset();
             return begin;
         }
-        return DrawPreparedFrame() override;
+        return DrawPreparedFrame();
     }
 
     bool Resize(uint32_t width, uint32_t height) override
@@ -172,7 +172,7 @@ public:
         }
         // 旧Frame参照を外してからContext/SwapChainを再生成します。
         m_PreparedFrame.reset();
-        if (m_Context.Resize(width, height) == false) override
+        if (m_Context.Resize(width, height) == false)
         {
             return false;
         }
@@ -199,7 +199,7 @@ public:
         m_FragmentShader.reset();
         m_ShaderAssets.Clear();
         m_Device.reset();
-        m_Context.Shutdown() override;
+        m_Context.Shutdown();
         m_PipelineSpecification = {};
         m_PipelineDebugName.clear();
         m_Window = nullptr;
