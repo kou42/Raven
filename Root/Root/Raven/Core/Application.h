@@ -76,6 +76,12 @@ public:
         // Acquire失敗時など、準備済みFrameの参照をResize/Shutdown前に解放します。
         std::function<void()> DiscardPrepared;
     };
+    // Frame結果の後処理をWindow/GLFW Loopから分離します。
+    // 戻り値は継続可能かどうか。ResizeRequiredでは必ず破棄→強制Resizeの順に実行します。
+    // 単体テストではGPU Deviceを作らずCallbackの呼び出し順を検証できます。
+    static bool HandleExplicitSceneFrameResult(RHIFrameResult result,
+        uint32_t width, uint32_t height, const ExplicitSceneCallbacks& callbacks);
+
     static int RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const ExplicitSceneCallbacks& callbacks);
 
