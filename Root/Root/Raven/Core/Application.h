@@ -66,6 +66,8 @@ public:
         std::function<void()> OnScene;
         // Scene/Layer等のCPU更新。Renderer Queue構築前に呼び、dtは最大0.25秒に制限します。
         std::function<void(float)> OnUpdate;
+        // Window EventをScene等へ渡します。WindowCloseの終了判定はGLFW側が担当します。
+        std::function<void(Event&)> OnEvent;
         // Scene/Material/Meshの所有参照をDevice破棄前に解放します。
         std::function<void()> OnBeforeShutdown;
         std::function<bool(uint32_t, uint32_t, bool)> Resize;
@@ -123,6 +125,7 @@ public:
     {
         std::function<void()> OnScene;
         std::function<void(float)> OnUpdate;
+        std::function<void(Event&)> OnEvent;
         std::function<void()> OnBeforeShutdown;
         std::function<void(uint32_t, uint32_t)> OnResizeCamera;
     };
@@ -153,6 +156,7 @@ public:
         ExplicitSceneCallbacks callbacks;
         callbacks.OnScene = hooks.OnScene;
         callbacks.OnUpdate = hooks.OnUpdate;
+        callbacks.OnEvent = hooks.OnEvent;
         callbacks.OnBeforeShutdown = hooks.OnBeforeShutdown;
         callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
         callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
