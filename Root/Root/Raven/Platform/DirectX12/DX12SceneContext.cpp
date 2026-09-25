@@ -84,9 +84,10 @@ bool DX12SceneContext::Init(Window& window)
 
 RHIFrameResult DX12SceneContext::BeginFrame()
 {
-    if (m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||
+    if (m_FatalError == true || m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||
         m_Frames[m_CurrentFrame].CommandList == nullptr)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -95,6 +96,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         m_Fence, frame.FenceValue) == false)
     {
         m_Device.DrainDebugMessages();
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -112,6 +114,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         m_FrameRenderer.ClearRenderTarget(*frame.CommandList, m_ClearColor) == false)
     {
         m_Device.DrainDebugMessages();
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     // CommandList Reset後はRasterizer stateを毎Frame記録します。
@@ -119,11 +122,13 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     const UINT backBufferIndex = m_SwapChain.GetCurrentBackBufferIndex();
     if (backBufferIndex >= backBuffers.size() || backBuffers[backBufferIndex] == nullptr)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     const D3D12_RESOURCE_DESC description = backBuffers[backBufferIndex]->GetDesc();
     if (SetViewport(0, 0, static_cast<uint32_t>(description.Width), description.Height) == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     return RHIFrameResult::Success;
@@ -134,6 +139,7 @@ RHIFrameResult DX12SceneContext::EndFrame()
     if (m_FrameActive == false || m_FrameSubmitted == true ||
         m_CurrentFrame >= m_Frames.size())
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -142,6 +148,7 @@ RHIFrameResult DX12SceneContext::EndFrame()
         m_FrameRenderer.EndFrame(m_Queue, commandList) == false)
     {
         m_Device.DrainDebugMessages();
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     m_FrameSubmitted = true;
@@ -152,6 +159,7 @@ RHIFrameResult DX12SceneContext::Present()
 {
     if (m_FrameActive == false || m_FrameSubmitted == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -162,6 +170,7 @@ RHIFrameResult DX12SceneContext::Present()
     if (presented == false)
     {
         // Execute後のPresent/Signal失敗はFatalとして扱い、Contextを再生成します。
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -174,7 +183,7 @@ RHIFrameResult DX12SceneContext::Present()
 
 bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
 {
-    if (width == 0 || height == 0 || m_FrameActive == true ||
+    if (m_FatalError == true || width == 0 || height == 0 || m_FrameActive == true ||
         m_SwapChain.IsValid() == false || m_Queue.IsValid() == false)
     {
         return false;
@@ -438,6 +447,7 @@ void DX12SceneContext::Shutdown()
     }
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_FatalError = false;
     m_GraphicsPipelineBound = false;
     m_CurrentFrame = 0;
     // Fence待機を試みた後にFrame保持Buffer/PSO/Texture参照を先に解放します。
