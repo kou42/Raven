@@ -116,5 +116,7 @@ private:
     bool m_VSync = true;
     bool m_FrameActive = false;
     bool m_FrameSubmitted = false;
+    // FatalError後は部分的なCommand記録/同期状態を再利用せずShutdownします。
+    bool m_FatalError = false;
 };
 } // namespace Raven

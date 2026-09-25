@@ -5,6 +5,7 @@
 #include "Raven/Core/KeyCodes.h"
 
 #include "Raven/Scene/Scene.h"
+#include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -18,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <unordered_map>
 #include <iostream>
 
@@ -62,6 +64,10 @@ public:
     struct ExplicitSceneCallbacks
     {
         std::function<void()> OnScene;
+        // Scene/Layer等のCPU更新。Renderer Queue構築前に呼び、dtは最大0.25秒に制限します。
+        std::function<void(float)> OnUpdate;
+        // Window EventをScene等へ渡します。WindowCloseの終了判定はGLFW側が担当します。
+        std::function<void(Event&)> OnEvent;
         // Scene/Material/Meshの所有参照をDevice破棄前に解放します。
         std::function<void()> OnBeforeShutdown;
         std::function<bool(uint32_t, uint32_t, bool)> Resize;
@@ -70,15 +76,25 @@ public:
         // Acquire失敗時など、準備済みFrameの参照をResize/Shutdown前に解放します。
         std::function<void()> DiscardPrepared;
     };
+    // Frame結果の後処理をWindow/GLFW Loopから分離します。
+    // 戻り値は継続可能かどうか。ResizeRequiredでは必ず破棄→強制Resizeの順に実行します。
+    // 単体テストではGPU Deviceを作らずCallbackの呼び出し順を検証できます。
+    static bool HandleExplicitSceneFrameResult(RHIFrameResult result,
+        uint32_t width, uint32_t height, const ExplicitSceneCallbacks& callbacks);
+
+    // Window寸法変更時のResize失敗を共通Frame失敗と同じ後始末へ接続します。
+    // 失敗したContextを再使用せず、呼び出し元の所有権境界でShutdownします。
+    static bool HandleExplicitSceneResizeResult(bool resized,
+        const ExplicitSceneCallbacks& callbacks);
+
     static int RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const ExplicitSceneCallbacks& callbacks);
 
     // Explicit SceneのWindow/RuntimeをApplicationの実行境界へ移譲します。
     // Callbackは移譲後も有効なRuntime実体を参照する必要があります（Scope変数は参照しません）。
     // GPU ResourceをWindowより先に破棄し、終了順序をBackend間で統一します。
-    template<typename TRuntime>
     static int RunOwnedExplicitScene(Scope<Window> window,
-        Scope<TRuntime> runtime, const ExplicitSceneCallbacks& callbacks)
+        Scope<IExplicitSceneRuntime> runtime, const ExplicitSceneCallbacks& callbacks)
     {
         if (window == nullptr || runtime == nullptr)
         {
@@ -87,6 +103,7 @@ public:
         RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
         if (frame == nullptr)
         {
+            runtime->DiscardPreparedFrame();
             if (callbacks.OnBeforeShutdown != nullptr)
             {
                 callbacks.OnBeforeShutdown();
@@ -111,6 +128,119 @@ public:
         runtime.reset();
         window.reset();
         return exitCode;
+    }
+
+    // Scene固有の処理だけを呼び出し側から受け取り、Runtime操作のCallback配線を共通化します。
+    // Hookはこの呼び出しが返るまで有効である必要があります。
+    struct ExplicitSceneHooks
+    {
+        std::function<void()> OnScene;
+        std::function<void(float)> OnUpdate;
+        std::function<void(Event&)> OnEvent;
+        std::function<void()> OnBeforeShutdown;
+        std::function<void(uint32_t, uint32_t)> OnResizeCamera;
+    };
+
+    static int RunOwnedExplicitScene(Scope<Window> window,
+        Scope<IExplicitSceneRuntime> runtime, const ExplicitSceneHooks& hooks)
+    {
+        if (window == nullptr || runtime == nullptr)
+        {
+            return 1;
+        }
+        if (runtime->IsInitialized() == false || hooks.OnScene == nullptr)
+        {
+            // 所有権を受け取った後の検証失敗でもSceneとGPU Resourceを残しません。
+            runtime->DiscardPreparedFrame();
+            if (hooks.OnBeforeShutdown != nullptr)
+            {
+                hooks.OnBeforeShutdown();
+            }
+            Renderer::Shutdown();
+            runtime->Shutdown();
+            return 1;
+        }
+
+        IExplicitSceneRuntime* runtimeHandle = runtime.get();
+        uint32_t resizedWidth = runtimeHandle->GetWidth();
+        uint32_t resizedHeight = runtimeHandle->GetHeight();
+        ExplicitSceneCallbacks callbacks;
+        callbacks.OnScene = hooks.OnScene;
+        callbacks.OnUpdate = hooks.OnUpdate;
+        callbacks.OnEvent = hooks.OnEvent;
+        callbacks.OnBeforeShutdown = hooks.OnBeforeShutdown;
+        callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
+        callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
+        callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
+        callbacks.Resize = [runtimeHandle, resizedWidth, resizedHeight,
+            onResizeCamera = hooks.OnResizeCamera](uint32_t width, uint32_t height, bool force) mutable
+        {
+            // DX12のGetWidth/GetHeightはWindowの現在値を返すため、最後に成功した
+            // SwapChainサイズを別途保持し、Window通知による先行更新を見逃しません。
+            if (force == false && resizedWidth == width && resizedHeight == height)
+            {
+                return true;
+            }
+            if (runtimeHandle->Resize(width, height) == false)
+            {
+                return false;
+            }
+            resizedWidth = width;
+            resizedHeight = height;
+            if (onResizeCamera != nullptr)
+            {
+                onResizeCamera(width, height);
+            }
+            return true;
+        };
+        return RunOwnedExplicitScene(std::move(window), std::move(runtime), callbacks);
+    }
+
+    // Window/Runtime生成後の初期化とScene GPU準備も共通入口で実行します。
+    // onInitializeSceneはScene構築とPrepareSceneを担当し、成功・失敗を問わず
+    // Scene参照はRuntimeのDevice破棄より前にOnBeforeShutdownで解放します。
+    static int RunInitializedExplicitScene(Scope<Window> window,
+        Scope<IExplicitSceneRuntime> runtime,
+        const PipelineSpecification& pipelineSpecification,
+        const RHIShaderAssetSpecification& vertexShader,
+        const RHIShaderAssetSpecification& fragmentShader,
+        const ExplicitSceneHooks& hooks,
+        const std::function<bool(IExplicitSceneRuntime&)>& onInitializeScene)
+    {
+        if (window == nullptr || runtime == nullptr)
+        {
+            return 1;
+        }
+
+        const auto shutdown = [&]()
+        {
+            runtime->DiscardPreparedFrame();
+            if (hooks.OnBeforeShutdown != nullptr)
+            {
+                hooks.OnBeforeShutdown();
+            }
+            Renderer::Shutdown();
+            runtime->Shutdown();
+        };
+
+        if (window->GetNativeWindow() == nullptr ||
+            hooks.OnScene == nullptr || onInitializeScene == nullptr)
+        {
+            shutdown();
+            return 1;
+        }
+        if (runtime->Init(*window, pipelineSpecification, vertexShader, fragmentShader) == false)
+        {
+            shutdown();
+            return 1;
+        }
+        if (onInitializeScene(*runtime) == false)
+        {
+            shutdown();
+            return 1;
+        }
+        // 成功時の終了処理は既存Runnerに移譲し、二重Shutdownを避けます。
+        return RunOwnedExplicitScene(std::move(window), std::move(runtime), hooks);
     }
 
     void OnEvent(Event& event);

@@ -29,6 +29,7 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
 #ifdef _DEBUG
+#include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 #include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
@@ -58,6 +59,15 @@ int main(int argc, char* argv[])
     if (argc > 1)
     {
         const std::string backendArgument = argv[1];
+#ifdef _DEBUG
+        // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
+        if (backendArgument == "--test-explicit-frame")
+        {
+            Raven::tests::RunExplicitSceneFrameSelfTests();
+            std::cout << "Explicit Scene Frame self-tests passed.\n";
+            return 0;
+        }
+#endif
         if (backendArgument == "--backend=vulkan" || backendArgument == "--scene-vulkan")
         {
             return Raven::RunVulkanSceneRuntimeDemo();
@@ -97,6 +107,7 @@ int main(int argc, char* argv[])
     // ========================================================================
     // Character locomotionの速度選択とBlendTree/Animation Profileの回帰テストに加えて、
     // Motion Matching切替時のPose/速度連続性も実際のDebug起動時に必ず検証します。
+    Raven::tests::RunExplicitSceneFrameSelfTests();
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();

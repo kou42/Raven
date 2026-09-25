@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
+
 #include "DX12SceneCommandList.h"
 #include "DX12SceneRHIDevice.h"
 
@@ -21,7 +23,7 @@ namespace Raven
 
 // VulkanSceneRuntimeと同じ共通Renderer QueueをDX12 Sceneへ流すRuntimeです。
 // native Resourceの生成・破棄はContext/Deviceに閉じ込めます。
-class DX12SceneRuntime final
+class DX12SceneRuntime final : public IExplicitSceneRuntime
 {
 public:
     DX12SceneRuntime() = default;
@@ -33,7 +35,7 @@ public:
     bool Init(Window& window,
         const PipelineSpecification& pipelineSpecification,
         const RHIShaderAssetSpecification& vertexShader,
-        const RHIShaderAssetSpecification& fragmentShader)
+        const RHIShaderAssetSpecification& fragmentShader) override
     {
         Shutdown();
         if (window.GetBackend() != RHIBackend::DirectX12 ||
@@ -93,7 +95,7 @@ public:
         return mesh->BuildRHIResources(*m_Device);
     }
 
-    bool PrepareScene(Scene& scene)
+    bool PrepareScene(Scene& scene) override
     {
         if (m_Initialized == false || m_Device == nullptr)
         {
@@ -103,13 +105,13 @@ public:
     }
 
     // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
-    void DiscardPreparedFrame()
+    void DiscardPreparedFrame() override
     {
         // Acquire失敗時の準備済みResourceを再生成・終了前に解放します。
         m_PreparedFrame.reset();
     }
 
-    bool PrepareFrame()
+    bool PrepareFrame() override
     {
         m_PreparedFrame.reset();
         if (m_Initialized == false || m_Device == nullptr ||
@@ -131,7 +133,7 @@ public:
     }
 
     // Application等がBeginFrameを呼び出した後に使用します。二重Acquireは行いません。
-    RHIFrameResult DrawPreparedFrame()
+    RHIFrameResult DrawPreparedFrame() override
     {
         if (m_Initialized == false || m_PreparedFrame == nullptr ||
             m_Context.GetActiveCommandList() == nullptr)
@@ -162,7 +164,7 @@ public:
         return DrawPreparedFrame();
     }
 
-    bool Resize(uint32_t width, uint32_t height)
+    bool Resize(uint32_t width, uint32_t height) override
     {
         if (m_Initialized == false || width == 0 || height == 0)
         {
@@ -185,7 +187,7 @@ public:
         return true;
     }
 
-    void Shutdown()
+    void Shutdown() override
     {
         m_PreparedFrame.reset();
         // ContextのShutdownはQueueのFenceを待つため、参照を先に解放しても
@@ -204,9 +206,9 @@ public:
         m_Initialized = false;
     }
 
-    bool IsInitialized() const { return m_Initialized; }
+    bool IsInitialized() const override { return m_Initialized; }
     // Runtimeが所有するContextのFrame境界を公開します。Shutdown後は参照しないでください。
-    RHISceneFrameLifecycle* GetFrameLifecycle()
+    RHISceneFrameLifecycle* GetFrameLifecycle() override
     {
         return m_Initialized == true ? &m_Context : nullptr;
     }
@@ -215,11 +217,11 @@ public:
         return m_Initialized == true ? m_Device.get() : nullptr;
     }
     const Ref<RHITexture>& GetDefaultTexture() const { return m_DefaultTexture; }
-    uint32_t GetWidth() const
+    uint32_t GetWidth() const override
     {
         return m_Window != nullptr ? m_Window->GetFramebufferWidth() : 0;
     }
-    uint32_t GetHeight() const
+    uint32_t GetHeight() const override
     {
         return m_Window != nullptr ? m_Window->GetFramebufferHeight() : 0;
     }

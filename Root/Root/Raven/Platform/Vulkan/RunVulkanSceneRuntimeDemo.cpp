@@ -48,69 +48,39 @@ int RunVulkanSceneRuntimeDemo()
     pipelineSpecification.DebugName = "Vulkan Normal Mesh Scene";
 
     auto runtime = CreateScope<VulkanSceneRuntime>();
-    if (runtime->Init(
-        *window,
-        pipelineSpecification,
-        vertexShader,
-        fragmentShader) == false)
-    {
-        std::cerr << "Vulkan Scene Runtime initialization failed.\n";
-        // Initが部分初期化状態を解放する設計ですが、終了入口でも明示します。
-        runtime->Shutdown();
-        return 1;
-    }
-
-    // Backend非依存の検証Sceneを共有し、GPU Buffer準備だけRuntimeに任せます。
     ExplicitCubeSceneDemo demo;
-    if (demo.Init("Vulkan", runtime->GetWidth(), runtime->GetHeight()) == false)
-    {
-        std::cerr << "Vulkan Entity Scene creation failed.\n";
-        Renderer::Shutdown();
-        runtime->Shutdown();
-        return 1;
-    }
-    if (runtime->PrepareScene(demo.GetScene()) == false)
-    {
-        std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
-        demo.Shutdown();
-        Renderer::Shutdown();
-        runtime->Shutdown();
-        return 1;
-    }
 
-    RHISceneFrameLifecycle* frame = runtime->GetFrameLifecycle();
-    if (frame == nullptr)
+    // Shader/Pipeline設定はBackendごとに保持し、初期化・失敗時の解放順序は共通化します。
+    Application::ExplicitSceneHooks hooks;
+    // 通常Applicationと同じScene更新順序でAnimation/Physics/Layerを進めます。
+    hooks.OnUpdate = [&demo](float dt) { demo.GetScene().OnUpdate(dt); };
+    hooks.OnEvent = [&demo](Event& event) { demo.GetScene().OnEvent(event); };
+    hooks.OnScene = [&demo]() { demo.Render(); };
+    hooks.OnResizeCamera = [&demo](uint32_t width, uint32_t height)
     {
-        demo.Shutdown();
-        Renderer::Shutdown();
-        runtime->Shutdown();
-        return 1;
-    }
-    // ScopeをApplicationへ移譲してもRuntime実体のアドレスは変わりません。
-    // Callbackは移譲元Scopeではなく、実体を借用するPointerを捕捉します。
-    VulkanSceneRuntime* runtimeHandle = runtime.get();
-    Application::ExplicitSceneCallbacks callbacks;
-    callbacks.OnScene = [&demo]() { demo.Render(); };
-    callbacks.Resize = [&](uint32_t width, uint32_t height, bool force)
+        demo.ResizeCamera(width, height);
+    };
+    hooks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
+
+    const auto initializeScene = [&demo](IExplicitSceneRuntime& sceneRuntime)
     {
-        // Windowの通知サイズと実SwapChainサイズを分け、再生成後にCameraを同期します。
-        if (force == true || runtimeHandle->GetWidth() != width || runtimeHandle->GetHeight() != height)
+        if (demo.Init("Vulkan", sceneRuntime.GetWidth(), sceneRuntime.GetHeight()) == false)
         {
-            if (runtimeHandle->Resize(width, height) == false)
-            {
-                return false;
-            }
-            demo.ResizeCamera(width, height);
+            std::cerr << "Vulkan Entity Scene creation failed.\n";
+            return false;
+        }
+        if (sceneRuntime.PrepareScene(demo.GetScene()) == false)
+        {
+            std::cerr << "Vulkan Entity Scene mesh preparation failed.\n";
+            return false;
         }
         return true;
     };
-    callbacks.OnBeforeShutdown = [&demo]() { demo.Shutdown(); };
-    callbacks.DiscardPrepared = [runtimeHandle]() { runtimeHandle->DiscardPreparedFrame(); };
-    callbacks.Prepare = [runtimeHandle]() { return runtimeHandle->PrepareFrame(); };
-    callbacks.DrawPrepared = [runtimeHandle]() { return runtimeHandle->DrawPreparedFrame(); };
-    const int exitCode = Application::RunOwnedExplicitScene(
-        std::move(window), std::move(runtime), callbacks);
-    return exitCode;
+
+    return Application::RunInitializedExplicitScene(
+        std::move(window), std::move(runtime),
+        pipelineSpecification, vertexShader, fragmentShader,
+        hooks, initializeScene);
 }
 
 } // namespace Raven

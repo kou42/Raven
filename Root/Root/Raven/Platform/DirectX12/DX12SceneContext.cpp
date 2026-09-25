@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 
 #include <climits>
+#include <iostream>
 
 namespace Raven
 {
@@ -83,9 +84,10 @@ bool DX12SceneContext::Init(Window& window)
 
 RHIFrameResult DX12SceneContext::BeginFrame()
 {
-    if (m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||
+    if (m_FatalError == true || m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||
         m_Frames[m_CurrentFrame].CommandList == nullptr)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -94,6 +96,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         m_Fence, frame.FenceValue) == false)
     {
         m_Device.DrainDebugMessages();
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -111,6 +114,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
         m_FrameRenderer.ClearRenderTarget(*frame.CommandList, m_ClearColor) == false)
     {
         m_Device.DrainDebugMessages();
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     // CommandList Reset後はRasterizer stateを毎Frame記録します。
@@ -118,11 +122,13 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     const UINT backBufferIndex = m_SwapChain.GetCurrentBackBufferIndex();
     if (backBufferIndex >= backBuffers.size() || backBuffers[backBufferIndex] == nullptr)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     const D3D12_RESOURCE_DESC description = backBuffers[backBufferIndex]->GetDesc();
     if (SetViewport(0, 0, static_cast<uint32_t>(description.Width), description.Height) == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     return RHIFrameResult::Success;
@@ -130,9 +136,10 @@ RHIFrameResult DX12SceneContext::BeginFrame()
 
 RHIFrameResult DX12SceneContext::EndFrame()
 {
-    if (m_FrameActive == false || m_FrameSubmitted == true ||
+    if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == true ||
         m_CurrentFrame >= m_Frames.size())
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -141,6 +148,7 @@ RHIFrameResult DX12SceneContext::EndFrame()
         m_FrameRenderer.EndFrame(m_Queue, commandList) == false)
     {
         m_Device.DrainDebugMessages();
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     m_FrameSubmitted = true;
@@ -149,8 +157,10 @@ RHIFrameResult DX12SceneContext::EndFrame()
 
 RHIFrameResult DX12SceneContext::Present()
 {
-    if (m_FrameActive == false || m_FrameSubmitted == false)
+    if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == false ||
+        m_CurrentFrame >= m_Frames.size())
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -161,6 +171,7 @@ RHIFrameResult DX12SceneContext::Present()
     if (presented == false)
     {
         // Execute後のPresent/Signal失敗はFatalとして扱い、Contextを再生成します。
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -173,7 +184,7 @@ RHIFrameResult DX12SceneContext::Present()
 
 bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
 {
-    if (width == 0 || height == 0 || m_FrameActive == true ||
+    if (m_FatalError == true || width == 0 || height == 0 || m_FrameActive == true ||
         m_SwapChain.IsValid() == false || m_Queue.IsValid() == false)
     {
         return false;
@@ -185,6 +196,8 @@ bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
         m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain) == false)
     {
         m_Device.DrainDebugMessages();
+        // Fence待機またはSwapChain/RTVの部分再生成失敗後は再利用しません。
+        m_FatalError = true;
         return false;
     }
     m_CurrentFrame = 0;
@@ -426,15 +439,26 @@ void DX12SceneContext::Shutdown()
 {
     if (m_Fence.IsValid() == true && m_Queue.IsValid() == true)
     {
-        m_Fence.SignalAndWait(m_Queue.GetHandle());
+        if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false)
+        {
+            // Device Removed等ではGPU完了を保証できません。終了処理は継続し、
+            // native Resourceの解放失敗をDebug Layerで追跡できるようにします。
+            std::cerr << "DX12 Scene Shutdown: GPU Fence wait failed; "
+                "resource completion is not guaranteed.\n";
+            m_Device.DrainDebugMessages();
+        }
     }
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_FatalError = false;
+    m_GraphicsPipelineBound = false;
     m_CurrentFrame = 0;
-    m_FrameRenderer.Shutdown();
-    m_Fence.Shutdown();
+    // Fence待機を試みた後にFrame保持Buffer/PSO/Texture参照を先に解放します。
+    // FrameRenderer・SwapChain・Deviceの破棄後まで旧Resourceを保持しません。
     m_Frames.clear();
+    m_FrameRenderer.Shutdown();
     m_SwapChain.Shutdown();
+    m_Fence.Shutdown();
     m_Queue.Shutdown();
     m_Device.Shutdown();
     m_Adapters.Clear();
