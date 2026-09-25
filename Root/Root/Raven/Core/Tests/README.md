@@ -40,3 +40,15 @@ Submit/Present失敗後の終了をそれぞれ確認してください。
 Device Removal等の実機エラーについてはDebug Layerと終了時ログを別途確認してください。
 DX12 ContextのShutdownではFence待機失敗を標準エラーへ出力し、Debug Layerの蓄積メッセージも取得します。
 これは失敗を検知するための診断であり、GPU完了を保証したりDeviceを復旧したりするものではありません。
+
+## FatalError後のContext再利用禁止
+
+Vulkan・DX12のScene Contextは、BeginFrame / EndFrame / PresentがFatalErrorを返した後、
+同じContextでのBeginFrame・EndFrame・Present・Resizeを拒否します。
+Resize内部のGPU待機・SwapChain/RenderTarget再生成失敗も同様です。
+Acquire/PresentのResizeRequiredはFatalErrorとは区別し、通常のResize経路を維持します。
+Shutdownで状態をリセットし、次のInitは新しいContext Resourceを作成します。
+
+この終端状態は実GPUを使うBackend側のため、上記CPU Mockテストでは直接検証できません。
+Debug実機では通常描画、Resize、最小化復帰、通常終了を確認してください。
+Device RemovedやSubmit失敗の強制再現は今回の通常動作確認の対象外です。
