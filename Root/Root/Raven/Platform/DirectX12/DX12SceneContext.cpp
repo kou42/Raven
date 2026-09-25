@@ -136,7 +136,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
 
 RHIFrameResult DX12SceneContext::EndFrame()
 {
-    if (m_FrameActive == false || m_FrameSubmitted == true ||
+    if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == true ||
         m_CurrentFrame >= m_Frames.size())
     {
         m_FatalError = true;
@@ -157,7 +157,8 @@ RHIFrameResult DX12SceneContext::EndFrame()
 
 RHIFrameResult DX12SceneContext::Present()
 {
-    if (m_FrameActive == false || m_FrameSubmitted == false)
+    if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == false ||
+        m_CurrentFrame >= m_Frames.size())
     {
         m_FatalError = true;
         return RHIFrameResult::FatalError;
