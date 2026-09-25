@@ -432,7 +432,7 @@ void DX12SceneContext::Shutdown()
     m_FrameSubmitted = false;
     m_GraphicsPipelineBound = false;
     m_CurrentFrame = 0;
-    // GPU完了後にFrameが保持するBuffer/PSO/Texture参照を先に解放します。
+    // Fence待機後にFrameが保持するBuffer/PSO/Texture参照を先に解放します。
     // FrameRenderer・SwapChain・Deviceの破棄後まで旧Resourceを保持しません。
     m_Frames.clear();
     m_FrameRenderer.Shutdown();
