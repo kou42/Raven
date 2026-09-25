@@ -212,6 +212,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     // Framebuffer/ImageViewは旧SwapChain Imageを参照するため、必ず先に破棄します。
     if (m_Instance.GetDevice().WaitIdle() == false)
     {
+        m_FatalError = true;
         return false;
     }
     m_BoundGraphicsPipeline.reset();
@@ -235,6 +236,8 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
         m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(),
             m_Instance.GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
     {
+        // SwapChain/FrameSync/RenderTargetの部分再生成失敗後は再利用しません。
+        m_FatalError = true;
         return false;
     }
     m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
