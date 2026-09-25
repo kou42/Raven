@@ -52,3 +52,19 @@ Shutdownで状態をリセットし、次のInitは新しいContext Resourceを�
 この終端状態は実GPUを使うBackend側のため、上記CPU Mockテストでは直接検証できません。
 Debug実機では通常描画、Resize、最小化復帰、通常終了を確認してください。
 Device RemovedやSubmit失敗の強制再現は今回の通常動作確認の対象外です。
+
+## PR #286 初期化失敗・終了経路の確認
+
+- Window生成に失敗した場合、Scene/Runtimeを初期化せず終了します。
+- Runtime::Init失敗では、各Backendの部分初期化済みContextをShutdownします。共通入口も
+  DiscardPreparedFrame → SceneのOnBeforeShutdown → Renderer::Shutdown → Runtime::Shutdown
+  の順で終了します。Backend内Shutdownの重複呼び出しは冪等であることが前提です。
+- Scene構築またはPrepareScene失敗時も同じ順で解放し、Windowより先にRuntimeを破棄します。
+- 通常終了・Frame FatalError・Window Resize失敗時はRunnerが終了し、
+  Prepared Snapshot → Scene → Renderer → Runtime → Windowの順で所有権を解放します。
+- VulkanはRuntimeとContextでWaitIdleを試み、Contextが外部Refのnative Resourceを無効化します。
+  DX12はContextのFence待機後にFrame保持参照を解放します。待機失敗時のGPU完了は保証しません。
+
+確認対象の変更ファイルはApplication、Vulkan/DX12 Scene Runtime・Context、
+共通RHIインターフェース、Scene Renderer、両Demo、CPU Mockテスト、mainです。
+GitHub上でのソース確認はMSBuild・GPU検証や失敗注入の代わりにはなりません。
