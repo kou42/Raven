@@ -82,6 +82,11 @@ public:
     static bool HandleExplicitSceneFrameResult(RHIFrameResult result,
         uint32_t width, uint32_t height, const ExplicitSceneCallbacks& callbacks);
 
+    // Window寸法変更時のResize失敗を共通Frame失敗と同じ後始末へ接続します。
+    // 失敗したContextを再使用せず、呼び出し元の所有権境界でShutdownします。
+    static bool HandleExplicitSceneResizeResult(bool resized,
+        const ExplicitSceneCallbacks& callbacks);
+
     static int RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const ExplicitSceneCallbacks& callbacks);
 
