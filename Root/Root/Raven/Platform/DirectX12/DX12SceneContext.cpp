@@ -430,11 +430,14 @@ void DX12SceneContext::Shutdown()
     }
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_GraphicsPipelineBound = false;
     m_CurrentFrame = 0;
-    m_FrameRenderer.Shutdown();
-    m_Fence.Shutdown();
+    // GPU完了後にFrameが保持するBuffer/PSO/Texture参照を先に解放します。
+    // FrameRenderer・SwapChain・Deviceの破棄後まで旧Resourceを保持しません。
     m_Frames.clear();
+    m_FrameRenderer.Shutdown();
     m_SwapChain.Shutdown();
+    m_Fence.Shutdown();
     m_Queue.Shutdown();
     m_Device.Shutdown();
     m_Adapters.Clear();
