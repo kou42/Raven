@@ -126,6 +126,23 @@ void RunExplicitSceneFrameSelfTests()
         RHIFrameResult::FatalError, 1920u, 1080u, callbacks) == false);
     assert(calls.empty() == true);
 
+    // Window寸法変更時のResize失敗でも、Frameを開始せずSnapshotを破棄します。
+    calls.clear();
+    callbacks.DiscardPrepared = [&calls]()
+    {
+        calls.push_back(Call::Discard);
+    };
+    assert(Application::HandleExplicitSceneResizeResult(true, callbacks) == true);
+    assert(calls.empty() == true);
+    assert(Application::HandleExplicitSceneResizeResult(false, callbacks) == false);
+    assert(calls.size() == 1u && calls[0] == Call::Discard);
+
+    // Callback未設定でもResize失敗は成功扱いにしません。
+    calls.clear();
+    callbacks.DiscardPrepared = nullptr;
+    assert(Application::HandleExplicitSceneResizeResult(false, callbacks) == false);
+    assert(calls.empty() == true);
+
     // PrepareはBeginFrameより前に実行し、Acquire失敗時はDrawへ進めません。
     MockSceneFrameLifecycle frame;
     std::vector<int> frameCalls;
