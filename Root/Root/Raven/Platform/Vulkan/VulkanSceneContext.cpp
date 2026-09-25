@@ -149,7 +149,7 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
 
 RHIFrameResult VulkanSceneContext::EndFrame()
 {
-    if (m_FrameActive == false || m_FrameSubmitted == true ||
+    if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == true ||
         m_ActiveFrame >= m_CommandBuffers.size())
     {
         m_FatalError = true;
@@ -182,7 +182,7 @@ RHIFrameResult VulkanSceneContext::EndFrame()
 
 RHIFrameResult VulkanSceneContext::Present()
 {
-    if (m_FrameActive == false || m_FrameSubmitted == false)
+    if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == false)
     {
         m_FatalError = true;
         return RHIFrameResult::FatalError;
