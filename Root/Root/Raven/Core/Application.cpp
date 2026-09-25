@@ -1097,6 +1097,23 @@ bool Application::HandleExplicitSceneFrameResult(RHIFrameResult result,
     return false;
 }
 
+bool Application::HandleExplicitSceneResizeResult(bool resized,
+    const ExplicitSceneCallbacks& callbacks)
+{
+    if (resized == true)
+    {
+        return true;
+    }
+
+    // Window通知によるResizeもAcquire失敗と同様にSnapshotを残しません。
+    // Runtimeの部分的なSwapChain再生成失敗後は再描画せず所有元が終了します。
+    if (callbacks.DiscardPrepared != nullptr)
+    {
+        callbacks.DiscardPrepared();
+    }
+    return false;
+}
+
 int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
     const ExplicitSceneCallbacks& callbacks)
 {
@@ -1158,7 +1175,8 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const uint32_t targetHeight = static_cast<uint32_t>(height);
         if (previousWidth != targetWidth || previousHeight != targetHeight)
         {
-            if (callbacks.Resize(targetWidth, targetHeight, false) == false)
+            if (HandleExplicitSceneResizeResult(
+                callbacks.Resize(targetWidth, targetHeight, false), callbacks) == false)
             {
                 return 1;
             }
