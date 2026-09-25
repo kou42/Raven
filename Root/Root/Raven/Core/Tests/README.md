@@ -5,7 +5,8 @@
 Mockの`RHISceneFrameLifecycle`を使って`ExecuteExplicitSceneFrame`の
 Prepare → BeginFrame(Acquire) → Drawの順序と各失敗経路、
 さらに`RHISceneMeshRenderer::FinishActiveFrame`のSubmit → Present順序、
-Submit失敗時のPresent抑止、両段階のResizeRequired/FatalError伝播を検証します。
+Submit失敗時のPresent抑止、両段階のResizeRequired/FatalError伝播、
+Window寸法変更時のResize失敗によるSnapshot破棄を検証します。
 
 Visual Studio Developer PowerShell / Developer Command Promptで、リポジトリのルートから実行してください。
 
