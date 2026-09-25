@@ -38,3 +38,5 @@ Submit/Present失敗後の終了をそれぞれ確認してください。
 
 特にDX12のFence待機失敗時は、この順序だけでGPU完了を保証できません。
 Device Removal等の実機エラーについてはDebug Layerと終了時ログを別途確認してください。
+DX12 ContextのShutdownではFence待機失敗を標準エラーへ出力し、Debug Layerの蓄積メッセージも取得します。
+これは失敗を検知するための診断であり、GPU完了を保証したりDeviceを復旧したりするものではありません。
