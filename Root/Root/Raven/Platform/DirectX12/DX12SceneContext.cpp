@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 
 #include <climits>
+#include <iostream>
 
 namespace Raven
 {
@@ -426,7 +427,14 @@ void DX12SceneContext::Shutdown()
 {
     if (m_Fence.IsValid() == true && m_Queue.IsValid() == true)
     {
-        m_Fence.SignalAndWait(m_Queue.GetHandle());
+        if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false)
+        {
+            // Device Removed等ではGPU完了を保証できません。終了処理は継続し、
+            // native Resourceの解放失敗をDebug Layerで追跡できるようにします。
+            std::cerr << "DX12 Scene Shutdown: GPU Fence wait failed; "
+                "resource completion is not guaranteed.\n";
+            m_Device.DrainDebugMessages();
+        }
     }
     m_FrameActive = false;
     m_FrameSubmitted = false;
