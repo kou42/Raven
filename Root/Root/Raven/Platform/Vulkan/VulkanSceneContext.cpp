@@ -82,15 +82,17 @@ bool VulkanSceneContext::Init(Window& window)
 
 RHIFrameResult VulkanSceneContext::BeginFrame()
 {
-    if (m_FrameActive == true || m_Instance.IsValid() == false ||
+    if (m_FatalError == true || m_FrameActive == true || m_Instance.IsValid() == false ||
         m_RenderTarget.IsValid() == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
     const uint32_t frame = m_FrameSync.GetCurrentFrameIndex();
     if (frame >= m_CommandBuffers.size() || m_CommandBuffers[frame] == nullptr)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -99,6 +101,10 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
         m_Instance.GetDevice(), m_SwapChain, commandBuffer, m_FrameSync);
     if (acquire != VulkanFrameResult::Success)
     {
+        if (acquire == VulkanFrameResult::FatalError)
+        {
+            m_FatalError = true;
+        }
         return ToSceneFrameResult(acquire);
     }
 
@@ -107,6 +113,7 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
     if (frame >= m_RecordedBuffers.size() ||
         frame >= m_SubmittedBufferFrames.size())
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     m_RecordedBuffers[frame].clear();
@@ -119,11 +126,13 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
     if (m_FrameRenderer.BeginSceneColorTarget(m_SwapChain, commandBuffer) !=
         VulkanFrameResult::Success)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     if (m_RenderTarget.Begin(commandBuffer.GetHandle(),
         m_FrameRenderer.GetAcquiredImageIndex(), m_ClearColor) == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     m_FrameSubmitted = false;
@@ -132,6 +141,7 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
     // Resize直後も初回Draw前に有効なViewport/Scissorを記録します。
     if (SetViewport(0, 0, extent.width, extent.height) == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     return RHIFrameResult::Success;
@@ -142,6 +152,7 @@ RHIFrameResult VulkanSceneContext::EndFrame()
     if (m_FrameActive == false || m_FrameSubmitted == true ||
         m_ActiveFrame >= m_CommandBuffers.size())
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -151,6 +162,7 @@ RHIFrameResult VulkanSceneContext::EndFrame()
     if (m_FrameRenderer.EndSceneColorTarget(m_SwapChain, commandBuffer) !=
         VulkanFrameResult::Success)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     const VulkanFrameResult result = m_FrameRenderer.EndFrame(
@@ -161,6 +173,10 @@ RHIFrameResult VulkanSceneContext::EndFrame()
         // Submit成功時だけFenceを待機対象にします。
         m_SubmittedBufferFrames[m_ActiveFrame] = true;
     }
+    if (result == VulkanFrameResult::FatalError)
+    {
+        m_FatalError = true;
+    }
     return ToSceneFrameResult(result);
 }
 
@@ -168,6 +184,7 @@ RHIFrameResult VulkanSceneContext::Present()
 {
     if (m_FrameActive == false || m_FrameSubmitted == false)
     {
+        m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
 
@@ -177,12 +194,16 @@ RHIFrameResult VulkanSceneContext::Present()
     // FatalError後はContextを再利用せずShutdownします。
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    if (result == VulkanFrameResult::FatalError)
+    {
+        m_FatalError = true;
+    }
     return ToSceneFrameResult(result);
 }
 
 bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
 {
-    if (width == 0 || height == 0 || m_FrameActive == true ||
+    if (m_FatalError == true || width == 0 || height == 0 || m_FrameActive == true ||
         m_Instance.IsValid() == false)
     {
         return false;
@@ -734,6 +755,7 @@ void VulkanSceneContext::Shutdown()
     m_SubmittedBufferFrames.clear();
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_FatalError = false;
     m_ActiveFrame = 0;
     m_BoundGraphicsPipeline.reset();
     // 外部Refが残っていてもVkDevice破棄後のDestructorでVulkanを呼ばせません。
