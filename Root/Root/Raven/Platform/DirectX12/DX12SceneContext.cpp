@@ -196,6 +196,8 @@ bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
         m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain) == false)
     {
         m_Device.DrainDebugMessages();
+        // Fence待機またはSwapChain/RTVの部分再生成失敗後は再利用しません。
+        m_FatalError = true;
         return false;
     }
     m_CurrentFrame = 0;
