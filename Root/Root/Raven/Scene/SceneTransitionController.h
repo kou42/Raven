@@ -3,8 +3,10 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/Scene.h"
 
+#include <atomic>
 #include <functional>
 #include <future>
+#include <memory>
 
 namespace Raven
 {
@@ -24,7 +26,17 @@ struct SceneTransitionSpecification
     float FadeInDuration = 0.25f;
 };
 
-using SceneAsyncPreparation = std::function<bool()>;
+class SceneLoadingProgress
+{
+public:
+    void Set(float progress);
+    float Get() const;
+
+private:
+    std::atomic<float> m_Progress{ 0.0f };
+};
+
+using SceneAsyncPreparation = std::function<bool(SceneLoadingProgress&)>;
 using SceneCreationFunction = std::function<Scope<Scene>()>;
 
 // Sceneの切り替えタイミングと画面Transitionの進行状態を管理します。
@@ -51,6 +63,7 @@ public:
     bool IsTransitioning() const;
     bool IsLoading() const;
     bool DidLastAsyncLoadSucceed() const { return m_LastAsyncLoadSucceeded; }
+    float GetLoadingProgress() const;
 
     // Transition中はGame/UI操作を受け付けません。Window lifecycle EventはApplication側で別扱いします。
     bool BlocksInput() const { return IsTransitioning(); }
@@ -84,6 +97,7 @@ private:
     std::future<bool> m_AsyncPreparationFuture;
     bool m_AsyncRequested = false;
     bool m_LastAsyncLoadSucceeded = true;
+    std::shared_ptr<SceneLoadingProgress> m_LoadingProgress;
 };
 
 } // namespace Raven
