@@ -1077,6 +1077,27 @@ bool Application::RequestSceneTransition(
     return RequestSceneTransition(std::move(scene), specification);
 }
 
+bool Application::RequestAsyncSceneTransition(
+    const std::string& sceneID,
+    SceneAsyncPreparation preparation,
+    const SceneTransitionSpecification& specification)
+{
+    if (m_SceneFactory.Contains(sceneID) == false || preparation == nullptr)
+    {
+        return false;
+    }
+
+    // SceneFactory::Create()はWorkerへ渡しません。
+    // Renderer / Physics / ECSを触る可能性があるScene constructorをApplication Threadに固定します。
+    SceneCreationFunction sceneCreation = [this, sceneID]()
+        {
+            return m_SceneFactory.Create(sceneID);
+        };
+
+    return m_SceneTransitionController.RequestAsyncTransition(
+        std::move(preparation), std::move(sceneCreation), specification);
+}
+
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
     RHISceneFrameLifecycle& frame,
     const std::function<bool()>& prepare,
