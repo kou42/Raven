@@ -37,6 +37,7 @@ namespace Key
         Enter = 257,
         Tab = 258,
         Backspace = 259,
+        F10 = 299,
 
         Right = 262,
         Left = 263,
