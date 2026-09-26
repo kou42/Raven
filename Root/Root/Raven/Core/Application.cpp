@@ -331,12 +331,8 @@ Application::~Application()
     //
     // 派生Scene側に「必ずScene::OnDestroy()を呼ぶ」という規約を要求しないことが重要です。
     // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の最終終了処理を保証します。
-    if (m_scene != nullptr)
-    {
-        m_scene->OnDestroy();
-        m_scene->Scene::OnDestroy();
-        m_scene.reset();
-    }
+    // Sceneの二段階CleanupはSceneManagerへ集約します。
+    m_SceneManager.Shutdown();
 
     // ImGui OpenGL backendは有効なOpenGL Contextを必要とします。
     // そのためWindowが破棄される前に明示的にDetachし、backendとImGui Contextを終了します。
@@ -1035,24 +1031,15 @@ void Application::PushLayer(Scope<Layer> layer)
 
 void Application::SetScene(Scope<Scene> scene)
 {
-    // ========================================================================
-    // Scene replacement shutdown
-    // ========================================================================
-    // Scene差し替え時もApplication終了時と同じ二段階終了処理を使います。
-    // 派生Scene固有Cleanupの後に、基底Sceneが内部LayerのDetachと残存Entity最終Sweepを実行してから
-    // 所有権を入れ替えるため、古いSceneのEntity / Component参照を新しいSceneへ持ち越しません。
-    if (m_scene != nullptr)
-    {
-        m_scene->OnDestroy();
-        m_scene->Scene::OnDestroy();
-    }
+    // 起動時などFrame処理外の即時切り替えはSceneManagerへ委譲します。
+    m_SceneManager.SetScene(std::move(scene));
+}
 
-    m_scene = std::move(scene);
-
-    if (m_scene != nullptr)
-    {
-        m_scene->OnCreate();
-    }
+void Application::RequestSceneChange(Scope<Scene> scene)
+{
+    // Update / Event / UI callbackから現在Sceneを直接破棄しないよう、
+    // 所有権だけを予約し、Present完了後の安全なFrame境界で反映します。
+    m_SceneManager.RequestSceneChange(std::move(scene));
 }
 
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
@@ -1261,7 +1248,7 @@ void Application::Run()
             // SceneGame以外へ切り替わったFrameは空宣言で旧Panelを掃除します。
             if (m_ImmediateUI.BeginFrame() == true)
             {
-                SceneGame* game = dynamic_cast<SceneGame*>(m_scene.get());
+                SceneGame* game = dynamic_cast<SceneGame*>(m_SceneManager.GetActiveScene());
                 if (m_PhysicsDebugImmediatePanelEnabled == true && game != nullptr)
                 {
                     ph::DrawPhysicsDebugImmediatePanel(m_ImmediateUI,
@@ -1294,10 +1281,11 @@ void Application::Run()
         // ====================================================================
         // Sceneはゲーム側のUpdate / Renderを担当します。
         // Editor処理はここへ混ぜず、後続のLayer更新へ分離します。
-        if (m_scene != nullptr)
+        Scene* activeScene = m_SceneManager.GetActiveScene();
+        if (activeScene != nullptr)
         {
-            m_scene->OnUpdate(frameDeltaTime);
-            m_scene->OnRender();
+            activeScene->OnUpdate(frameDeltaTime);
+            activeScene->OnRender();
         }
 
         // ====================================================================
@@ -1405,6 +1393,12 @@ void Application::Run()
             m_Running = false;
             break;
         }
+
+        // Scene / Layer / UIの更新・描画とPresentがすべて完了した後だけ、
+        // Callback中に予約されたScene切り替えを反映します。
+        // 旧Sceneを参照する一時的なFrame処理が完了してから破棄することで、
+        // Update/Event/UI callback自身の実行中に所有元が消えることを防ぎます。
+        m_SceneManager.FlushPendingSceneChange();
     }
 }
 
