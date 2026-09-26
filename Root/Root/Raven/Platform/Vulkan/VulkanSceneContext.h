@@ -48,6 +48,7 @@ public:
 
     // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
     bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    bool SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
     // RenderPass中にColor Attachment全体を消去します。Frame外・Submit後は失敗します。
     // BeginFrame時のLoadOp Clearとは別に、Scene描画命令としてClearを発行する入口です。
@@ -77,7 +78,7 @@ public:
     bool SetClipTransform(const std::array<float, 16>& model);
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0,
-        bool usePipelineVertexStride = false);
+        bool usePipelineVertexStride = false, uint32_t firstIndex = 0);
     // Scene Buffer生成と検証用。DeviceはContextが所有し、Shutdown後は使用不可です。
     const VulkanDevice& GetDevice() const { return m_Instance.GetDevice(); }
     VkFormat GetColorFormat() const { return m_SwapChain.GetImageFormat(); }

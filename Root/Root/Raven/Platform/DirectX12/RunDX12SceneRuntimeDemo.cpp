@@ -1,7 +1,5 @@
 #include "RunDX12SceneRuntimeDemo.h"
 
-#include "DX12SceneRuntime.h"
-
 #include "Raven/Core/Window.h"
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Material/Material.h"
@@ -9,6 +7,8 @@
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/RHI/RHIExplicitSceneRuntimeFactory.h"
+#include "Raven/Renderer/RHI/RHIExplicitSceneSpecification.h"
 #include "Raven/Scene/SceneCamera.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/ExplicitCubeSceneDemo.h"
@@ -32,14 +32,15 @@ int RunDX12SceneRuntimeDemo()
 
     const std::filesystem::path shaderDirectory =
         std::filesystem::path("Raven") / "Assets" / "Shaders";
-    RHIShaderAssetSpecification vertexShader{};
+    RHIExplicitSceneSpecification sceneSpecification{};
+    RHIShaderAssetSpecification& vertexShader = sceneSpecification.VertexShader;
     vertexShader.DirectX12Path =
         (shaderDirectory / "DirectX12" / "SceneMesh.vs.dxil").generic_string();
-    RHIShaderAssetSpecification fragmentShader{};
+    RHIShaderAssetSpecification& fragmentShader = sceneSpecification.FragmentShader;
     fragmentShader.DirectX12Path =
         (shaderDirectory / "DirectX12" / "SceneMesh.ps.dxil").generic_string();
 
-    PipelineSpecification pipelineSpecification{};
+    PipelineSpecification& pipelineSpecification = sceneSpecification.Pipeline;
     pipelineSpecification.Topology = PrimitiveTopology::Triangles;
     pipelineSpecification.Cull = CullMode::None;
     pipelineSpecification.DepthTest = true;
@@ -48,7 +49,7 @@ int RunDX12SceneRuntimeDemo()
     pipelineSpecification.DebugName = "DX12 Normal Mesh Scene";
 
     std::cout << "[DX12 Scene Demo] Initializing runtime...\n" << std::flush;
-    auto runtime = CreateScope<DX12SceneRuntime>();
+    Scope<IExplicitSceneRuntime> runtime = RHIExplicitSceneRuntimeFactory::Create(RHIBackend::DirectX12);
     ExplicitCubeSceneDemo demo;
 
     // Shader/Pipeline設定はBackendごとに保持し、初期化・失敗時の解放順序は共通化します。
@@ -80,8 +81,7 @@ int RunDX12SceneRuntimeDemo()
 
     return Application::RunInitializedExplicitScene(
         std::move(window), std::move(runtime),
-        pipelineSpecification, vertexShader, fragmentShader,
-        hooks, initializeScene);
+        sceneSpecification, hooks, initializeScene);
 }
 
 } // namespace Raven

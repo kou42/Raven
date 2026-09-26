@@ -67,6 +67,12 @@ public:
     // 補助Windowの画面へ直接描画する場合に既定Framebufferを選択します。
     // Renderer管理のFBOを使う場合は描画側で明示的にBindし直します。
     virtual bool BindDefaultFramebuffer() { return false; }
+    // 補助Windowの既定Framebufferを透明色でClearします。OpenGL固有処理はPlatform Window内へ閉じ込めます。
+    virtual bool ClearDefaultFramebuffer(float r, float g, float b, float a)
+    {
+        (void)r; (void)g; (void)b; (void)a;
+        return false;
+    }
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;

@@ -12,6 +12,12 @@ SandboxLayer::SandboxLayer()
 
 void SandboxLayer::OnAttach()
 {
+    // SandboxLayerはLegacy OpenGL Resource/RenderCommandを直接検証する互換Layerです。
+    // Explicit BackendではScene/Debug/UIのRHI経路を使用し、このLayerはGPU Resourceを生成しません。
+    if (GetRHIBackend() != RHIBackend::OpenGL)
+    {
+        return;
+    }
 #if 0
     float vertices[] =
     {
@@ -97,6 +103,12 @@ void SandboxLayer::OnAttach()
 
 void SandboxLayer::OnUpdate(float dt)
 {
+    (void)dt;
+    if (GetRHIBackend() != RHIBackend::OpenGL)
+    {
+        return;
+    }
+
     RenderCommand::Clear();
 
     Renderer::BeginScene();

@@ -3,6 +3,7 @@
 #include "Raven/Physics/Debug/PhysicsDebugImmediatePanel.h"
 #include "../Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/RHI/RHIExplicitSceneRuntimeFactory.h"
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Widgets/UIButton.h"
@@ -13,7 +14,6 @@
 #include "Raven/UI/Widgets/UIWindow.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
@@ -118,21 +118,60 @@ Application::Application(const ApplicationSpecification& specification)
             return true;
         });
 
-    // RendererはWindowと同じBackendを明示的に受け取ります。
-    // Legacy CommandList未対応BackendをOpenGLへ暗黙fallbackせず、安全に起動を中止します。
-    if (Renderer::TryInit(m_Window->GetBackend()) == false)
-    {
-        m_Running = false;
-        return;
-    }
+    // Renderer/RuntimeはWindowと同じBackendを明示的に受け取ります。
+    // OpenGLはLegacy CommandList、DX12/VulkanはExplicit Runtimeを選択し、
+    // 未対応BackendをOpenGLへ暗黙fallbackせず初期化段階で失敗させます。
+    // Window初期化後、Scene/UI生成前にFrame境界の所有者を確定します。
+    const RHIBackend backend = m_Window->GetBackend();
+    const bool explicitBackend =
+        backend == RHIBackend::DirectX12 || backend == RHIBackend::Vulkan;
 
-    // Window / Renderer初期化後にFrame境界を確定します。未対応Backendを成功扱いせず、
-    // SceneやUIの生成前に失敗を検出します。Windowの所有権は移譲しません。
-    m_SceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
-    if (m_SceneFrame == nullptr)
+    if (explicitBackend == true)
     {
-        m_Running = false;
-        return;
+        // DX12/VulkanはLegacy RenderCommandを生成せず、Scene Runtimeが
+        // Context / Device / Frame Lifecycleを一つの所有境界で管理します。
+        m_ExplicitSceneRuntime = RHIExplicitSceneRuntimeFactory::Create(backend);
+        if (m_ExplicitSceneRuntime == nullptr ||
+            m_ExplicitSceneRuntime->Init(*m_Window,
+                specification.ExplicitScene.Pipeline,
+                specification.ExplicitScene.VertexShader,
+                specification.ExplicitScene.FragmentShader) == false)
+        {
+            m_Running = false;
+            return;
+        }
+
+        m_SceneFrame = m_ExplicitSceneRuntime->GetFrameLifecycle();
+        if (m_SceneFrame == nullptr)
+        {
+            m_ExplicitSceneRuntime->Shutdown();
+            m_ExplicitSceneRuntime.reset();
+            m_Running = false;
+            return;
+        }
+
+        Renderer::SetExplicitSceneMode(true);
+
+        // Raven UIはCPU DrawListを構築し、Explicit Runtimeが同一Frameへ記録します。
+        // Dear ImGuiはBackend固有統合が未完了のため従来どおりExplicitでは生成しません。
+    }
+    else
+    {
+        // OpenGLは既存Legacy CommandListとApplication所有Lifecycleを維持します。
+        if (Renderer::TryInit(backend) == false)
+        {
+            m_Running = false;
+            return;
+        }
+
+        m_OwnedSceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
+        m_SceneFrame = m_OwnedSceneFrame.get();
+        if (m_SceneFrame == nullptr)
+        {
+            m_Running = false;
+            return;
+        }
+        Renderer::SetExplicitSceneMode(false);
     }
 
     // ========================================================================
@@ -285,7 +324,7 @@ Application::Application(const ApplicationSpecification& specification)
     // Applicationが知るのはImGuiのframe境界までです。
     // Statistics / Hierarchy / Inspector等のEditor固有UIはEditorLayer以下へ分離し、
     // ApplicationへEditor固有分岐を増やさない方針とします。
-    if (specification.EnableDearImGui == true)
+    if (specification.EnableDearImGui == true && explicitBackend == false)
     {
         Scope<ImGuiLayer> imguiLayer = CreateScope<ImGuiLayer>(*m_Window);
         imguiLayer->OnAttach();
@@ -352,7 +391,15 @@ Application::~Application()
     assert(auxiliaryWindowsClosed == true);
 
     // Frame境界が借用するMain Windowより先にBackend側のFrame状態を解放します。
-    m_SceneFrame.reset();
+    m_SceneFrame = nullptr;
+    m_OwnedSceneFrame.reset();
+    if (m_ExplicitSceneRuntime != nullptr)
+    {
+        m_ExplicitSceneRuntime->DiscardPreparedFrame();
+        m_ExplicitSceneRuntime->Shutdown();
+        m_ExplicitSceneRuntime.reset();
+    }
+    Renderer::SetExplicitSceneMode(false);
 }
 
 WindowID Application::CreateUIWindow(const WindowSpecification& specification)
@@ -1021,6 +1068,13 @@ void Application::PushLayer(Scope<Layer> layer)
     {
         return;
     }
+    if (m_Window == nullptr ||
+        layer->SupportsBackend(m_Window->GetBackend()) == false)
+    {
+        // Backend固有Legacy Layerを未対応BackendでAttachすると、
+        // OnAttach中にOpenGL Resourceを生成してしまうため登録前に除外します。
+        return;
+    }
 
     // Layerは登録された時点で利用可能な状態にします。
     // OnAttach()後に所有権をm_Layersへ移すことで、以降のUpdate/Render/Eventを
@@ -1033,6 +1087,16 @@ void Application::SetScene(Scope<Scene> scene)
 {
     // 起動時などFrame処理外の即時切り替えはSceneManagerへ委譲します。
     m_SceneManager.SetScene(std::move(scene));
+
+    if (m_ExplicitSceneRuntime != nullptr)
+    {
+        Scene* activeScene = m_SceneManager.GetActiveScene();
+        if (activeScene == nullptr || m_ExplicitSceneRuntime->PrepareScene(*activeScene) == false)
+        {
+            // Explicit Device用Mesh構築に失敗したSceneでFrameを開始しません。
+            m_Running = false;
+        }
+    }
 }
 
 void Application::RequestSceneChange(Scope<Scene> scene)
@@ -1233,6 +1297,8 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
         Renderer::BeginFrame();
+        Renderer::SetFrameViewport(
+            m_Window->GetFramebufferWidth(), m_Window->GetFramebufferHeight());
         if (callbacks.OnUpdate != nullptr)
         {
             callbacks.OnUpdate(frameDeltaTime);
@@ -1287,10 +1353,13 @@ void Application::Run()
         // CPUProfilerもRenderer::BeginFrame()と同じ境界で、次frame開始時に直前frameを確定します。
         // Scene描画より前にResetすることで、Scene本体だけでなくPhysics / Animation Debug Overlayや
         // 後続Layerが発行した描画命令も同じframeのStatisticsとして集計できます。
-        if (m_SceneFrame->BeginFrame() != RHIFrameResult::Success)
+        if (m_ExplicitSceneRuntime == nullptr)
         {
-            m_Running = false;
-            break;
+            if (m_SceneFrame->BeginFrame() != RHIFrameResult::Success)
+            {
+                m_Running = false;
+                break;
+            }
         }
         Renderer::BeginFrame();
 
@@ -1447,12 +1516,42 @@ void Application::Run()
             m_UIContext.EndFrame();
         }
 
+        if (m_ExplicitSceneRuntime != nullptr)
+        {
+            // UIContext::EndFrameでRetained Tree -> DrawList変換が完了した後にSnapshotを渡します。
+            // PrepareFrameはAcquire前にUI Buffer/Texture/Descriptorを準備し、
+            // DrawPreparedFrameがScene -> Debug -> Raven UI -> End/Presentを一度だけ実行します。
+            m_ExplicitSceneRuntime->SubmitUIFrame(
+                m_UIContext.GetDrawList(),
+                m_Window->GetFramebufferWidth(),
+                m_Window->GetFramebufferHeight());
+
+            const RHIFrameResult explicitResult = ExecuteExplicitSceneFrame(
+                *m_SceneFrame,
+                [this]() { return m_ExplicitSceneRuntime->PrepareFrame(); },
+                [this]() { return m_ExplicitSceneRuntime->DrawPreparedFrame(); });
+
+            if (explicitResult != RHIFrameResult::Success)
+            {
+                m_ExplicitSceneRuntime->DiscardPreparedFrame();
+                if (explicitResult != RHIFrameResult::ResizeRequired ||
+                    m_ExplicitSceneRuntime->Resize(
+                        m_Window->GetFramebufferWidth(),
+                        m_Window->GetFramebufferHeight()) == false)
+                {
+                    m_Running = false;
+                    break;
+                }
+            }
+        }
+
         // Layer更新中はMain UI FrameがActiveなのでTree移譲を行わず、ここで予約を処理します。
         // 補助Windowの描画反復前に生成を完了させ、unordered_mapの反復子無効化を防ぎます。
         FlushPendingUIDetaches();
 
         // 補助WindowのUIは専用GL Context/VAOとWindow別DPI・Framebufferで描画します。
-        if (m_RavenUIEnabled == true)
+        if (m_RavenUIEnabled == true &&
+            m_Window->GetBackend() == RHIBackend::OpenGL)
         {
             for (const auto& item : m_AuxiliaryUIContexts)
             {
@@ -1460,11 +1559,13 @@ void Application::Run()
                 m_WindowManager.RenderWindow(item.first, m_MainWindowID,
                     [ui](Window& window)
                     {
-                        // 補助WindowはSceneのClearを通らないため、前Frameの残像を消します。
-                        // UI Rendererが前Frameに残したScissorがClear範囲を狭めないよう無効化します。
-                        glDisable(GL_SCISSOR_TEST);
-                        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-                        glClear(GL_COLOR_BUFFER_BIT);
+                        // 補助WindowのClearはWindow/Platform境界へ委譲し、
+                        // ApplicationからOpenGL APIを直接呼びません。
+                        if (window.ClearDefaultFramebuffer(
+                            0.0f, 0.0f, 0.0f, 0.0f) == false)
+                        {
+                            return;
+                        }
                         ui->BeginFrame(
                             math::Vec2(static_cast<float>(window.GetWidth()),
                                 static_cast<float>(window.GetHeight())),
@@ -1481,19 +1582,24 @@ void Application::Run()
         }
 
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
-        // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
-        // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
-        if (m_SceneFrame->EndFrame() != RHIFrameResult::Success)
+        // イベント処理とPresentを分離し、OpenGLはApplication所有Lifecycle、
+        // DX12/VulkanはExplicit Runtime内でEnd/Presentを一度だけ実行します。
+        if (m_ExplicitSceneRuntime == nullptr)
         {
-            m_Running = false;
-            break;
+            if (m_SceneFrame->EndFrame() != RHIFrameResult::Success)
+            {
+                m_Running = false;
+                break;
+            }
         }
 
         // GLFWのProcess共通Event Queueを一度処理し、補助WindowのCloseも安全に確定します。
         m_WindowManager.PollEvents();
         // Window外でMouse Upを取りこぼしても、次FrameへDrag/Captureを残しません。
         CompleteReleasedUIWindowDrags();
-        if (m_SceneFrame->Present() != RHIFrameResult::Success)
+
+        if (m_ExplicitSceneRuntime == nullptr &&
+            m_SceneFrame->Present() != RHIFrameResult::Success)
         {
             m_Running = false;
             break;
@@ -1519,6 +1625,13 @@ void Application::Run()
         if (m_SceneManager.FlushPendingSceneChange() == true)
         {
             Scene* changedScene = m_SceneManager.GetActiveScene();
+            if (m_ExplicitSceneRuntime != nullptr &&
+                (changedScene == nullptr ||
+                    m_ExplicitSceneRuntime->PrepareScene(*changedScene) == false))
+            {
+                m_Running = false;
+                break;
+            }
             // Scene交換完了後にApplication-owned Layerへ通知します。
             // 旧Sceneは既に破棄済みなので渡さず、新Active Sceneだけを公開してdangling参照を作りません。
             for (const Scope<Layer>& layer : m_Layers)

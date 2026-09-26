@@ -277,6 +277,21 @@ bool VulkanSceneContext::SetViewport(
     return true;
 }
 
+bool VulkanSceneContext::SetScissor(
+    uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || width == 0 || height == 0)
+    {
+        return false;
+    }
+    VkRect2D scissor{};
+    scissor.offset = { static_cast<int32_t>(x), static_cast<int32_t>(y) };
+    scissor.extent = { width, height };
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    return true;
+}
+
 void VulkanSceneContext::SetClearColor(const float color[4])
 {
     if (color == nullptr)
@@ -567,7 +582,7 @@ bool VulkanSceneContext::SetClipTransform(const std::array<float, 16>& model)
 
 bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     const VulkanSceneBuffer& indexBuffer, uint32_t indexCount,
-    bool usePipelineVertexStride)
+    bool usePipelineVertexStride, uint32_t firstIndex)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE || m_BoundGraphicsPipeline == nullptr ||
@@ -580,7 +595,8 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         return false;
     }
     const uint32_t drawCount = indexCount == 0 ? indexBuffer.GetIndexCount() : indexCount;
-    if (drawCount == 0 || drawCount > indexBuffer.GetIndexCount())
+    if (drawCount == 0 || firstIndex > indexBuffer.GetIndexCount() ||
+        drawCount > indexBuffer.GetIndexCount() - firstIndex)
     {
         return false;
     }
@@ -608,7 +624,7 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
     const VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertex, &offset);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.GetHandle(), 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(commandBuffer, drawCount, 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, drawCount, 1, firstIndex, 0, 0);
     return true;
 }
 

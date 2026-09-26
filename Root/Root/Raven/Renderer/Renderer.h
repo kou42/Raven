@@ -77,7 +77,39 @@ public:
     static void BeginScene();
     static void EndScene();
 
+    // Explicit RuntimeではEndScene時にLegacy描画せず、QueueをPrepareFrameまで保持します。
+    static void SetExplicitSceneMode(bool enabled);
+    static bool IsExplicitSceneMode();
+    static void SetFrameViewport(uint32_t width, uint32_t height);
+    static RHIViewport GetFrameViewport();
+
     static const RendererCameraContext& GetCameraContext();
+
+    struct DebugLineVertex
+    {
+        math::Vec3 Position{};
+        math::Vec3 Color{ 1.0f, 1.0f, 1.0f };
+        math::Vec2 Texcoord{};
+    };
+
+    // Explicit Backend向けDebug LineをCPU Queueへ登録します。
+    // GPU Buffer生成はBeginFrame前のPrepareRHIDebugLines()へ遅延します。
+    static void SubmitDebugLines(
+        const std::vector<DebugLineVertex>& vertices,
+        const std::vector<uint32_t>& indices,
+        const math::Mat4& view,
+        const math::Mat4& projection);
+    static bool CreateRHIDebugLinePipeline(
+        RHIDevice& device,
+        const RHIShaderBinary& vertexShader,
+        const RHIShaderBinary& fragmentShader,
+        Ref<RHIGraphicsPipeline>& outPipeline);
+    static bool PrepareRHIDebugLines(
+        RHIDevice& device,
+        const Ref<RHITexture>& defaultTexture,
+        const Ref<RHIGraphicsPipeline>& pipeline,
+        const math::Mat4& clipCorrection,
+        std::vector<RHISceneDrawItem>& outItems);
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
     static void Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform);
@@ -123,6 +155,8 @@ public:
         std::vector<RHISceneDrawItem> Items;
         Ref<RHIGraphicsPipeline> OpaquePipeline;
         Ref<RHIGraphicsPipeline> TransparentPipeline;
+        Ref<RHIGraphicsPipeline> DebugLinePipeline;
+        std::vector<RHISceneDrawItem> DebugLineItems;
     };
 
     static bool PrepareRHISceneFrame(
@@ -137,7 +171,8 @@ public:
     static RHIFrameResult DrawPreparedRHISceneFrame(
         RHISceneFrameLifecycle& frame,
         RHISceneCommandList& commands,
-        const PreparedRHISceneFrame& preparedFrame);
+        const PreparedRHISceneFrame& preparedFrame,
+        const std::function<bool(RHISceneCommandList&)>& beforeFinish = {});
 
     static RHIFrameResult DrawRHISceneFrame(
         RHIDevice& device,

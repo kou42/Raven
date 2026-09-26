@@ -31,6 +31,17 @@ struct SceneRenderItem
 std::vector<SceneRenderItem> s_OpaqueQueue;
 std::vector<SceneRenderItem> s_TransparentQueue;
 bool s_SceneQueueActive = false;
+bool s_ExplicitSceneMode = false;
+
+struct DebugLineBatch
+{
+    std::vector<Renderer::DebugLineVertex> Vertices;
+    std::vector<uint32_t> Indices;
+    math::Mat4 View = math::Mat4::Identity();
+    math::Mat4 Projection = math::Mat4::Identity();
+};
+std::vector<DebugLineBatch> s_DebugLineQueue;
+RHIViewport s_FrameViewport{};
 
 float ComputeFallbackSortDepth(const math::Mat4& transform, const math::Mat4& view)
 {
@@ -266,6 +277,15 @@ void Renderer::BeginScene()
 
 void Renderer::EndScene()
 {
+    if (s_ExplicitSceneMode == true)
+    {
+        // Surface QueueはRuntimeのPrepareFrame()まで保持します。
+        // Debug RendererはLegacy Drawを行わず、同じPrepareFrameでRHI Buffer化するCPU Line Queueへ登録します。
+        ph::PhysicsDebugRenderer::RenderRegistered();
+        AnimationDebugOverlayRenderer::RenderRegistered();
+        return;
+    }
+
     // Flush中のDrawが再びQueueへ入らないよう、先に受付を閉じます。
     s_SceneQueueActive = false;
 
@@ -288,6 +308,149 @@ void Renderer::EndScene()
     }
 }
 
+void Renderer::SetExplicitSceneMode(bool enabled)
+{
+    s_ExplicitSceneMode = enabled;
+}
+
+bool Renderer::IsExplicitSceneMode()
+{
+    return s_ExplicitSceneMode;
+}
+
+void Renderer::SetFrameViewport(uint32_t width, uint32_t height)
+{
+    s_FrameViewport = { 0u, 0u, width, height };
+}
+
+RHIViewport Renderer::GetFrameViewport()
+{
+    return s_FrameViewport;
+}
+
+void Renderer::SubmitDebugLines(
+    const std::vector<DebugLineVertex>& vertices,
+    const std::vector<uint32_t>& indices,
+    const math::Mat4& view,
+    const math::Mat4& projection)
+{
+    if (s_ExplicitSceneMode == false || vertices.empty() == true || indices.empty() == true)
+    {
+        return;
+    }
+
+    DebugLineBatch batch{};
+    batch.Vertices = vertices;
+    batch.Indices = indices;
+    batch.View = view;
+    batch.Projection = projection;
+    s_DebugLineQueue.push_back(std::move(batch));
+}
+
+bool Renderer::CreateRHIDebugLinePipeline(
+    RHIDevice& device,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outPipeline)
+{
+    outPipeline.reset();
+
+    RHIGraphicsPipelineTarget target{};
+    if (device.GetGraphicsPipelineTarget(target) == false)
+    {
+        return false;
+    }
+
+    RHIGraphicsPipelineSpecification specification{};
+    specification.VertexShader = vertexShader;
+    specification.FragmentShader = fragmentShader;
+    specification.VertexBindings = { { 0u, static_cast<uint32_t>(sizeof(DebugLineVertex)) } };
+    specification.VertexAttributes = {
+        { 0u, 0u, ShaderDataType::Float3, static_cast<uint32_t>(offsetof(DebugLineVertex, Position)) },
+        { 1u, 0u, ShaderDataType::Float3, static_cast<uint32_t>(offsetof(DebugLineVertex, Color)) },
+        { 2u, 0u, ShaderDataType::Float2, static_cast<uint32_t>(offsetof(DebugLineVertex, Texcoord)) }
+    };
+    specification.Topology = PrimitiveTopology::Lines;
+    specification.Cull = CullMode::None;
+    specification.DepthTest = false;
+    specification.DepthWrite = false;
+    specification.DepthCompare = DepthCompareOperator::LessEqual;
+    specification.Blend = true;
+    specification.ColorFormat = target.ColorFormat;
+    specification.DepthFormat = target.DepthFormat;
+    specification.SampleCount = target.SampleCount;
+    specification.DebugName = "Explicit Debug Line Pipeline";
+
+    outPipeline = device.CreateGraphicsPipeline(specification);
+    return outPipeline != nullptr;
+}
+
+bool Renderer::PrepareRHIDebugLines(
+    RHIDevice& device,
+    const Ref<RHITexture>& defaultTexture,
+    const Ref<RHIGraphicsPipeline>& pipeline,
+    const math::Mat4& clipCorrection,
+    std::vector<RHISceneDrawItem>& outItems)
+{
+    outItems.clear();
+    if (s_DebugLineQueue.empty() == true)
+    {
+        return true;
+    }
+    if (defaultTexture == nullptr || pipeline == nullptr)
+    {
+        s_DebugLineQueue.clear();
+        return false;
+    }
+
+    std::vector<RHISceneDrawItem> items;
+    items.reserve(s_DebugLineQueue.size());
+    for (const DebugLineBatch& batch : s_DebugLineQueue)
+    {
+        RHIBufferSpecification vertexSpec{};
+        vertexSpec.Size = batch.Vertices.size() * sizeof(DebugLineVertex);
+        vertexSpec.Usage = RHIBufferUsage::Vertex;
+        vertexSpec.MemoryUsage = RHIMemoryUsage::Static;
+        vertexSpec.DebugName = "Explicit Debug Line Vertex Buffer";
+
+        RHIBufferSpecification indexSpec{};
+        indexSpec.Size = batch.Indices.size() * sizeof(uint32_t);
+        indexSpec.Usage = RHIBufferUsage::Index;
+        indexSpec.MemoryUsage = RHIMemoryUsage::Static;
+        indexSpec.DebugName = "Explicit Debug Line Index Buffer";
+
+        Ref<RHIBuffer> vertexBuffer = device.CreateBuffer(vertexSpec, batch.Vertices.data());
+        Ref<RHIBuffer> indexBuffer = device.CreateBuffer(indexSpec, batch.Indices.data());
+        if (vertexBuffer == nullptr || indexBuffer == nullptr)
+        {
+            s_DebugLineQueue.clear();
+            return false;
+        }
+
+        RHISceneDrawItem item{};
+        item.VertexBuffer = vertexBuffer;
+        item.IndexBuffer = indexBuffer;
+        item.IndexCount = static_cast<uint32_t>(batch.Indices.size());
+        item.Material.Texture = defaultTexture;
+        item.Material.Tint = { 1.0f, 1.0f, 1.0f, 1.0f };
+        item.Material.SurfaceType = MaterialSurfaceType::Transparent;
+        item.ClipTransform = RHISceneDrawItemBuilder::ToColumnMajor(
+            clipCorrection * batch.Projection * batch.View);
+        items.push_back(std::move(item));
+    }
+
+    const std::vector<Ref<RHITexture>> textures{ defaultTexture };
+    if (device.PrepareSceneTextures(textures, pipeline) == false)
+    {
+        s_DebugLineQueue.clear();
+        return false;
+    }
+
+    s_DebugLineQueue.clear();
+    outItems = std::move(items);
+    return true;
+}
+
 const RendererCameraContext& Renderer::GetCameraContext()
 {
     return s_CameraContext;
@@ -298,6 +461,7 @@ void Renderer::Shutdown()
     s_OpaqueQueue.clear();
     s_TransparentQueue.clear();
     s_SceneQueueActive = false;
+    s_DebugLineQueue.clear();
 }
 
 const RendererStatistics& Renderer::GetStatistics()
@@ -535,12 +699,36 @@ bool Renderer::PrepareRHISceneFrame(
 RHIFrameResult Renderer::DrawPreparedRHISceneFrame(
     RHISceneFrameLifecycle& frame,
     RHISceneCommandList& commands,
-    const PreparedRHISceneFrame& preparedFrame)
+    const PreparedRHISceneFrame& preparedFrame,
+    const std::function<bool(RHISceneCommandList&)>& beforeFinish)
 {
-    // Applicationが開始したFrameを再Acquireせず、描画・Submit・Presentへ進めます。
-    const RHIFrameResult result = RHISceneMeshRenderer::DrawActiveFrame(
-        frame, commands, preparedFrame.OpaquePipeline,
-        preparedFrame.TransparentPipeline, preparedFrame.Items);
+    // SurfaceとDebug Lineを同じActive Frameへ記録してから一度だけEnd/Presentします。
+    if (RHISceneMeshRenderer::Draw(
+        commands, preparedFrame.OpaquePipeline,
+        preparedFrame.TransparentPipeline, preparedFrame.Items) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    if (preparedFrame.DebugLineItems.empty() == false)
+    {
+        if (preparedFrame.DebugLinePipeline == nullptr ||
+            RHISceneMeshRenderer::Draw(
+                commands, preparedFrame.DebugLinePipeline,
+                preparedFrame.DebugLinePipeline,
+                preparedFrame.DebugLineItems) == false)
+        {
+            return RHIFrameResult::FatalError;
+        }
+    }
+
+    // Raven UI等の追加Passも同じCommandBufferへ記録し、End/Presentは最後に一度だけ行います。
+    if (beforeFinish != nullptr && beforeFinish(commands) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+
+    const RHIFrameResult result = RHISceneMeshRenderer::FinishActiveFrame(frame);
     if (result == RHIFrameResult::Success)
     {
         const PrimitiveTopology topology =
@@ -548,6 +736,10 @@ RHIFrameResult Renderer::DrawPreparedRHISceneFrame(
         for (const RHISceneDrawItem& item : preparedFrame.Items)
         {
             RecordIndexedDraw(item.IndexCount, topology);
+        }
+        for (const RHISceneDrawItem& item : preparedFrame.DebugLineItems)
+        {
+            RecordIndexedDraw(item.IndexCount, PrimitiveTopology::Lines);
         }
     }
     return result;

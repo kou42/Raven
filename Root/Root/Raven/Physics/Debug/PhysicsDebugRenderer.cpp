@@ -154,10 +154,13 @@ void PhysicsDebugRenderer::Render()
         return;
     }
 
-    EnsureInitialized();
-    if (m_Material == nullptr)
+    if (Renderer::IsExplicitSceneMode() == false)
     {
-        return;
+        EnsureInitialized();
+        if (m_Material == nullptr)
+        {
+            return;
+        }
     }
 
     if (showWorld)
@@ -311,7 +314,8 @@ void PhysicsDebugRenderer::RenderOverlay()
 
     // Viewport取得もRenderCommand経由に統一し、Physics Debug層からOpenGL state参照を排除します。
     // 実際の取得方法はRHI Backend側が担当するため、Debug RendererはGraphics APIに依存しません。
-    const RHIViewport viewport = RenderCommand::GetViewport();
+    const RHIViewport viewport = Renderer::IsExplicitSceneMode() == true ?
+        Renderer::GetFrameViewport() : RenderCommand::GetViewport();
     if (viewport.Width == 0 || viewport.Height == 0)
     {
         return;
@@ -382,6 +386,18 @@ void PhysicsDebugRenderer::SubmitLines(
 {
     if (vertices.empty() || indices.empty())
     {
+        return;
+    }
+
+    if (Renderer::IsExplicitSceneMode() == true)
+    {
+        std::vector<Renderer::DebugLineVertex> debugVertices;
+        debugVertices.reserve(vertices.size());
+        for (const DebugVertex& vertex : vertices)
+        {
+            debugVertices.push_back({ vertex.Position, vertex.Color, vertex.Texcoord });
+        }
+        Renderer::SubmitDebugLines(debugVertices, indices, view, projection);
         return;
     }
 

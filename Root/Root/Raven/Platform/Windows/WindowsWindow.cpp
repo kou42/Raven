@@ -714,6 +714,21 @@ bool WindowsWindow::BindDefaultFramebuffer()
     return true;
 }
 
+bool WindowsWindow::ClearDefaultFramebuffer(float r, float g, float b, float a)
+{
+    if (BindDefaultFramebuffer() == false)
+    {
+        return false;
+    }
+
+    // UI Rendererが前Frameに残したScissorでClear範囲が狭まらないよう、
+    // 補助Windowの全面Clear時だけPlatform層でScissorを解除します。
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(r, g, b, a);
+    glClear(GL_COLOR_BUFFER_BIT);
+    return true;
+}
+
 void WindowsWindow::Present()
 {
     // Vulkan/DX12のPresentは各SwapChain側が所有します。

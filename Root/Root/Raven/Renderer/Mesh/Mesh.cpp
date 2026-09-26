@@ -7,6 +7,7 @@
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/RenderCommand.h"
 
 namespace Raven
@@ -59,7 +60,8 @@ Mesh::Mesh(
         m_IndexCount = static_cast<uint32_t>(m_Geometry->GetIndices().size());
     }
 
-    if (legacyResourceCreation == LegacyMeshResourceCreation::Immediate)
+    if (legacyResourceCreation == LegacyMeshResourceCreation::Immediate &&
+        GetRHIBackend() == RHIBackend::OpenGL)
     {
         BuildLegacyResources();
     }

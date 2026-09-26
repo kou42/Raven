@@ -11,6 +11,8 @@
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/UI/Rendering/ExplicitUIRenderer.h"
+#include "Raven/UI/Core/UIDrawList.h"
 
 #include <array>
 #include <filesystem>
@@ -58,7 +60,16 @@ public:
         m_PipelineSpecification.DebugName = m_PipelineDebugName.c_str();
         m_VertexShader = m_ShaderAssets.Load(vertexShader, RHIBackend::DirectX12);
         m_FragmentShader = m_ShaderAssets.Load(fragmentShader, RHIBackend::DirectX12);
-        if (m_VertexShader == nullptr || m_FragmentShader == nullptr)
+        RHIShaderAssetSpecification uiVertex{};
+        uiVertex.DirectX12Path = "Raven/Assets/Shaders/DirectX12/UI.vs.dxil";
+        uiVertex.EntryPoint = "VSMain";
+        RHIShaderAssetSpecification uiFragment{};
+        uiFragment.DirectX12Path = "Raven/Assets/Shaders/DirectX12/UI.ps.dxil";
+        uiFragment.EntryPoint = "PSMain";
+        m_UIVertexShader = m_ShaderAssets.Load(uiVertex, RHIBackend::DirectX12);
+        m_UIFragmentShader = m_ShaderAssets.Load(uiFragment, RHIBackend::DirectX12);
+        if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
+            m_UIVertexShader == nullptr || m_UIFragmentShader == nullptr)
         {
             // Shader Assetは相対Pathで開くため、Visual Studioの作業Directoryも表示します。
             std::cerr << "[DX12 Scene] Shader load failed. Working directory: "
@@ -104,18 +115,29 @@ public:
         return m_Device->PrepareScene(scene);
     }
 
+    void SubmitUIFrame(const UIDrawList& drawList,
+        uint32_t viewportWidth, uint32_t viewportHeight) override
+    {
+        m_PendingUIDrawList = drawList;
+        m_PendingUIWidth = viewportWidth;
+        m_PendingUIHeight = viewportHeight;
+    }
+
     // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
     void DiscardPreparedFrame() override
     {
         // Acquire失敗時の準備済みResourceを再生成・終了前に解放します。
         m_PreparedFrame.reset();
+        m_PreparedUI = {};
     }
 
     bool PrepareFrame() override
     {
         m_PreparedFrame.reset();
+        m_PreparedUI = {};
         if (m_Initialized == false || m_Device == nullptr ||
             m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
+            m_DebugLinePipeline == nullptr || m_UIPipeline == nullptr ||
             m_DefaultTexture == nullptr ||
             m_Context.GetActiveCommandList() != nullptr)
         {
@@ -124,7 +146,17 @@ public:
         auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
         if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
             m_TransparentPipeline, m_DefaultTexture,
-            DX12ClipCorrection(), *prepared) == false)
+            DX12ClipCorrection(), *prepared) == false ||
+            Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
+                m_DebugLinePipeline, DX12ClipCorrection(),
+                prepared->DebugLineItems) == false)
+        {
+            return false;
+        }
+        prepared->DebugLinePipeline = m_DebugLinePipeline;
+        if (m_UIRenderer.Prepare(*m_Device, m_PendingUIDrawList,
+            m_PendingUIWidth, m_PendingUIHeight,
+            m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
         {
             return false;
         }
@@ -142,7 +174,11 @@ public:
         }
         DX12SceneCommandList commands(m_Context);
         const RHIFrameResult result = Renderer::DrawPreparedRHISceneFrame(
-            m_Context, commands, *m_PreparedFrame);
+            m_Context, commands, *m_PreparedFrame,
+            [this](RHISceneCommandList& uiCommands)
+            {
+                return m_UIRenderer.Draw(uiCommands, m_UIPipeline, m_PreparedUI);
+            });
         // GPU使用中のResourceはContext側のFrameResourceがFence完了まで保持します。
         m_PreparedFrame.reset();
         // FatalErrorでもDevice破棄は所有元Applicationの終了処理に委譲します。
@@ -179,6 +215,8 @@ public:
         // Depth/RTV再生成後、Attachment形式に合うPSOを作り直します。
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
+        m_DebugLinePipeline.reset();
+        m_UIPipeline.reset();
         if (CreatePipelines() == false)
         {
             // 所有元ApplicationがScene→Renderer→Runtimeの順に終了します。
@@ -194,6 +232,11 @@ public:
         // FrameResourceが保持するGPU使用中Resourceは完了まで生存します。
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
+        m_DebugLinePipeline.reset();
+        m_UIPipeline.reset();
+        m_UIRenderer.ClearTextureCache();
+        m_UIVertexShader.reset();
+        m_UIFragmentShader.reset();
         m_DefaultTexture.reset();
         m_VertexShader.reset();
         m_FragmentShader.reset();
@@ -255,8 +298,24 @@ private:
         {
             return false;
         }
+        Ref<RHIGraphicsPipeline> debugLine;
+        if (Renderer::CreateRHIDebugLinePipeline(*m_Device,
+            m_VertexShader->GetBinary(), m_FragmentShader->GetBinary(),
+            debugLine) == false)
+        {
+            return false;
+        }
+        Ref<RHIGraphicsPipeline> uiPipeline;
+        if (ExplicitUIRenderer::CreatePipeline(
+            *m_Device, m_UIVertexShader->GetBinary(),
+            m_UIFragmentShader->GetBinary(), uiPipeline) == false)
+        {
+            return false;
+        }
         m_OpaquePipeline = std::move(opaque);
         m_TransparentPipeline = std::move(transparent);
+        m_DebugLinePipeline = std::move(debugLine);
+        m_UIPipeline = std::move(uiPipeline);
         return true;
     }
 
@@ -289,6 +348,15 @@ private:
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
+    Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
+    Ref<RHIShaderAsset> m_UIVertexShader;
+    Ref<RHIShaderAsset> m_UIFragmentShader;
+    Ref<RHIGraphicsPipeline> m_UIPipeline;
+    ExplicitUIRenderer m_UIRenderer;
+    UIDrawList m_PendingUIDrawList;
+    PreparedExplicitUI m_PreparedUI;
+    uint32_t m_PendingUIWidth = 0u;
+    uint32_t m_PendingUIHeight = 0u;
     Ref<RHITexture> m_DefaultTexture;
     Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
     bool m_Initialized = false;

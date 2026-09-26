@@ -48,6 +48,15 @@ enum class RHIMemoryUsage
     Dynamic
 };
 
+struct RHIViewport
+{
+    // Backend非依存のFrame/Overlay Viewportです。原点は負座標も許容します。
+    int32_t X = 0;
+    int32_t Y = 0;
+    uint32_t Width = 0;
+    uint32_t Height = 0;
+};
+
 struct RHIBufferSpecification
 {
     std::size_t Size = 0;

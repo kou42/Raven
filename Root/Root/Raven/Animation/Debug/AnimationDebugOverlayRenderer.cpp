@@ -182,17 +182,30 @@ void AnimationDebugOverlayRenderer::Render()
         return;
     }
 
+    const RHIViewport frameViewport = Renderer::IsExplicitSceneMode() == true ?
+        Renderer::GetFrameViewport() : RHIViewport{};
     GLint viewport[4] = {};
-    glGetIntegerv(GL_VIEWPORT, viewport);
+    if (Renderer::IsExplicitSceneMode() == true)
+    {
+        viewport[2] = static_cast<GLint>(frameViewport.Width);
+        viewport[3] = static_cast<GLint>(frameViewport.Height);
+    }
+    else
+    {
+        glGetIntegerv(GL_VIEWPORT, viewport);
+    }
     if (viewport[2] <= 0 || viewport[3] <= 0)
     {
         return;
     }
 
-    EnsureInitialized();
-    if (m_Material == nullptr)
+    if (Renderer::IsExplicitSceneMode() == false)
     {
-        return;
+        EnsureInitialized();
+        if (m_Material == nullptr)
+        {
+            return;
+        }
     }
 
     std::vector<DebugVertex> vertices;
@@ -509,7 +522,25 @@ void AnimationDebugOverlayRenderer::SubmitLines(
     std::vector<DebugVertex>& vertices,
     std::vector<uint32_t>& indices)
 {
-    if (vertices.empty() || indices.empty() || m_Material == nullptr)
+    if (vertices.empty() || indices.empty())
+    {
+        return;
+    }
+
+    if (Renderer::IsExplicitSceneMode() == true)
+    {
+        std::vector<Renderer::DebugLineVertex> debugVertices;
+        debugVertices.reserve(vertices.size());
+        for (const DebugVertex& vertex : vertices)
+        {
+            debugVertices.push_back({ vertex.Position, vertex.Color, vertex.Texcoord });
+        }
+        Renderer::SubmitDebugLines(
+            debugVertices, indices, math::Mat4::Identity(), math::Mat4::Identity());
+        return;
+    }
+
+    if (m_Material == nullptr)
     {
         return;
     }

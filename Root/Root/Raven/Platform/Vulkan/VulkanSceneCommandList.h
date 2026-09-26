@@ -26,6 +26,11 @@ public:
         return m_Context.SetViewport(x, y, width, height);
     }
 
+    bool SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override
+    {
+        return m_Context.SetScissor(x, y, width, height);
+    }
+
     // OpenGLのRenderCommand::Clearに対応するScene描画途中のClearです。
     // BeginFrameのLoadOp Clearとは異なり、呼び出した位置でGPU命令を記録します。
     bool ClearColor(const float color[4]) override
@@ -72,7 +77,8 @@ public:
     // 共通RHIDeviceから生成したBufferをSceneの描画へ接続します。
     // Strideは現在Bind中のPipelineのBinding 0から取得します。
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
-        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0) override
+        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0,
+        uint32_t firstIndex = 0) override
     {
         if (vertexBuffer == nullptr || indexBuffer == nullptr ||
             vertexBuffer->GetSpecification().Usage != RHIBufferUsage::Vertex ||
@@ -87,7 +93,7 @@ public:
             return false;
         }
         if (m_Context.DrawIndexed(vertex->GetSceneBuffer(),
-            index->GetSceneBuffer(), indexCount, true) == false)
+            index->GetSceneBuffer(), indexCount, true, firstIndex) == false)
         {
             return false;
         }

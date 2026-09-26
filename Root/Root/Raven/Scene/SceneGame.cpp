@@ -9,6 +9,7 @@
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationSystem.h"
 #include "Raven/Renderer/Mesh/Deformation/WaveMeshDeformer.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
+#include "Raven/Renderer/Mesh/MeshGeometry.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
@@ -17,6 +18,8 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <iterator>
+#include <vector>
 
 namespace Raven
 {
@@ -387,14 +390,16 @@ void SceneGame::UpdateMouseDragImpulse()
 
 void SceneGame::OnCreate()
 {
-    m_Shader = m_ShaderLibrary.Load(
-        "Test",
-        "Raven/Assets/Shaders/Vertex/test.vert",
-        "Raven/Assets/Shaders/Fragment/test.frag");
-
-    m_Texture = m_TextureLibrary.Load(
-        "Mountain",
-        "Raven/Assets/Images/test/mountain1.png");
+    if (Renderer::IsExplicitSceneMode() == false)
+    {
+        m_Shader = m_ShaderLibrary.Load(
+            "Test",
+            "Raven/Assets/Shaders/Vertex/test.vert",
+            "Raven/Assets/Shaders/Fragment/test.frag");
+        m_Texture = m_TextureLibrary.Load(
+            "Mountain",
+            "Raven/Assets/Images/test/mountain1.png");
+    }
 
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.DebugName = "SceneGame Geometry Pipeline";
@@ -442,29 +447,31 @@ void SceneGame::OnCreate()
     };
     const uint32_t floorIndices[] = { 0,1,2, 2,3,0 };
 
-    m_VertexArray = VertexArray::Create();
-    auto floorVB = VertexBuffer::Create(floorVertices, sizeof(floorVertices));
-    floorVB->SetLayout({
-        { ShaderDataType::Float3, "a_Position" },
-        { ShaderDataType::Float3, "a_Color" },
-        { ShaderDataType::Float2, "a_Texcord" }
-    });
-    auto floorIB = IndexBuffer::Create(floorIndices, 6);
-    m_VertexArray->AddVertexBuffer(floorVB);
-    m_VertexArray->SetIndexBuffer(floorIB);
-    m_Mesh = CreateRef<Mesh>(m_VertexArray, 6);
-
-    m_ShadowVertexArray = VertexArray::Create();
-    auto shadowVB = VertexBuffer::Create(floorVertices, sizeof(floorVertices));
-    shadowVB->SetLayout({
-        { ShaderDataType::Float3, "a_Position" },
-        { ShaderDataType::Float3, "a_Color" },
-        { ShaderDataType::Float2, "a_Texcord" }
-    });
-    auto shadowIB = IndexBuffer::Create(floorIndices, 6);
-    m_ShadowVertexArray->AddVertexBuffer(shadowVB);
-    m_ShadowVertexArray->SetIndexBuffer(shadowIB);
-    m_ShadowMesh = CreateRef<Mesh>(m_ShadowVertexArray, 6);
+    // Floor/ShadowもCPU Geometryを正規データにし、OpenGL VAO生成へ依存しないMeshへ統一します。
+    // Explicit BackendではPrepareRHIMeshes()がこのGeometryからRHI Bufferを構築し、
+    // OpenGLではMesh constructorが従来どおりLegacy Resourceを生成します。
+    std::vector<MeshVertex> floorGeometryVertices;
+    floorGeometryVertices.reserve(4u);
+    for (uint32_t vertexIndex = 0u; vertexIndex < 4u; ++vertexIndex)
+    {
+        const uint32_t offset = vertexIndex * 8u;
+        MeshVertex vertex{};
+        vertex.Position = { floorVertices[offset], floorVertices[offset + 1u], floorVertices[offset + 2u] };
+        vertex.Color = { floorVertices[offset + 3u], floorVertices[offset + 4u], floorVertices[offset + 5u] };
+        vertex.TexCoord = { floorVertices[offset + 6u], floorVertices[offset + 7u] };
+        vertex.Normal = { 0.0f, 1.0f, 0.0f };
+        floorGeometryVertices.push_back(vertex);
+    }
+    std::vector<uint32_t> floorGeometryIndices(std::begin(floorIndices), std::end(floorIndices));
+    Ref<MeshGeometry> floorGeometry = CreateRef<MeshGeometry>(
+        floorGeometryVertices, floorGeometryIndices);
+    const LegacyMeshResourceCreation legacyCreation =
+        Renderer::IsExplicitSceneMode() == true ?
+        LegacyMeshResourceCreation::Deferred :
+        LegacyMeshResourceCreation::Immediate;
+    m_Mesh = CreateRef<Mesh>(floorGeometry, legacyCreation);
+    m_ShadowMesh = CreateRef<Mesh>(CreateRef<MeshGeometry>(
+        floorGeometryVertices, floorGeometryIndices), legacyCreation);
 
     PipelineSpecification shadowPipelineSpecification = pipelineSpecification;
     shadowPipelineSpecification.DebugName = "SceneGame Shadow Pipeline";
@@ -664,8 +671,13 @@ void SceneGame::OnRender()
 
 void SceneGame::RenderScene(const Camera& camera)
 {
-    RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
-    RenderCommand::Clear();
+    if (Renderer::IsExplicitSceneMode() == false)
+    {
+        // Legacy OpenGLでは従来どおりScene開始前にBackBufferをClearします。
+        // DX12/VulkanはRuntime側のRenderPass/Frame開始処理がClearを担当します。
+        RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
+        RenderCommand::Clear();
+    }
 
     // ここがScene描画におけるCameraの単一入口です。
     // Renderer::Draw()とRenderer::EndScene()内のDebug Passは、このContextを共通利用します。
@@ -749,7 +761,10 @@ void SceneGame::OnEvent(Event& e)
     if (e.GetEventType() == EventType::WindowResize)
     {
         auto& resizeEvent = static_cast<WindowResizeEvent&>(e);
-        RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
+        if (Renderer::IsExplicitSceneMode() == false)
+        {
+            RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
+        }
 
         m_ViewportWidth = static_cast<float>(resizeEvent.GetWidth());
         m_ViewportHeight = static_cast<float>(resizeEvent.GetHeight());

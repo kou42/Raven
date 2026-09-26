@@ -189,17 +189,26 @@
   <ItemGroup>
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.vert" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.frag" />
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\UI.vert" />
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\UI.frag" />
   </ItemGroup>
   <!-- DX12 Scene用DXILは実行時に必要です。HLSL変更時・DXIL未生成時に自動再生成します。
        UI専用Test構成はScene Runtimeを起動しないためDXCを要求しません。 -->
   <ItemGroup Condition="'$(Platform)'=='x64' and '$(RavenUITest)'!='true' and '$(RavenUIGPUTest)'!='true'">
     <DX12SceneShaderSource Include="$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.hlsl" />
+    <DX12UIShaderSource Include="$(ProjectDir)Raven\Assets\Shaders\DirectX12\UI.hlsl" />
   </ItemGroup>
   <Target Name="CompileDX12SceneShaders" BeforeTargets="ClCompile"
           Condition="'@(DX12SceneShaderSource)'!=''"
           Inputs="@(DX12SceneShaderSource)"
           Outputs="$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.vs.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.ps.dxil">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Raven\Assets\Shaders\DirectX12\BuildSceneMesh.ps1&quot;" />
+  </Target>
+  <Target Name="CompileDX12UIShaders" BeforeTargets="ClCompile"
+          Condition="'@(DX12UIShaderSource)'!=''"
+          Inputs="@(DX12UIShaderSource)"
+          Outputs="$(ProjectDir)Raven\Assets\Shaders\DirectX12\UI.vs.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\UI.ps.dxil">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Raven\Assets\Shaders\DirectX12\BuildUI.ps1&quot;" />
   </Target>
   <Target Name="CompileVulkanSceneShaders" BeforeTargets="ClCompile" Inputs="@(VulkanSceneShader)" Outputs="@(VulkanSceneShader->'%(FullPath).spv')">
     <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')" Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />

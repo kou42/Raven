@@ -28,6 +28,11 @@ public:
         return m_Context.SetViewport(x, y, width, height);
     }
 
+    bool SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override
+    {
+        return m_Context.SetScissor(x, y, width, height);
+    }
+
     bool ClearColor(const float color[4]) override
     {
         return m_Context.ClearColorAttachment(color);
@@ -80,7 +85,8 @@ public:
     }
 
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
-        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0) override
+        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0,
+        uint32_t firstIndex = 0) override
     {
         if (m_Pipeline == nullptr ||
             m_Context.IsGraphicsPipelineBound() == false ||
@@ -89,7 +95,8 @@ public:
             return false;
         }
         return m_Context.DrawIndexed(vertexBuffer, indexBuffer,
-            m_Pipeline->GetSpecification().VertexBindings[0].Stride, indexCount);
+            m_Pipeline->GetSpecification().VertexBindings[0].Stride, indexCount,
+            firstIndex, m_Pipeline->GetSpecification().Topology);
     }
 
 private:

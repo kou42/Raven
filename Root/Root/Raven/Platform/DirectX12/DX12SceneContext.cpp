@@ -234,6 +234,23 @@ bool DX12SceneContext::SetViewport(
     return true;
 }
 
+bool DX12SceneContext::SetScissor(
+    uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || width == 0 || height == 0)
+    {
+        return false;
+    }
+    D3D12_RECT scissor{};
+    scissor.left = static_cast<LONG>(x);
+    scissor.top = static_cast<LONG>(y);
+    scissor.right = static_cast<LONG>(x + width);
+    scissor.bottom = static_cast<LONG>(y + height);
+    commandList->RSSetScissorRects(1, &scissor);
+    return true;
+}
+
 bool DX12SceneContext::ClearColorAttachment(const float color[4])
 {
     if (color == nullptr || GetActiveCommandList() == nullptr ||
@@ -379,7 +396,8 @@ bool DX12SceneContext::BindTexture(const Ref<RHITexture>& texture)
 bool DX12SceneContext::DrawIndexed(
     const Ref<RHIBuffer>& vertexBuffer,
     const Ref<RHIBuffer>& indexBuffer,
-    uint32_t stride, uint32_t indexCount)
+    uint32_t stride, uint32_t indexCount, uint32_t firstIndex,
+    PrimitiveTopology topology)
 {
     ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
     if (commandList == nullptr || m_GraphicsPipelineBound == false ||
@@ -410,7 +428,8 @@ bool DX12SceneContext::DrawIndexed(
         index->GetSceneBuffer().GetIndexView();
     const uint32_t availableIndices = index->GetSceneBuffer().GetIndexCount();
     const uint32_t drawCount = indexCount == 0 ? availableIndices : indexCount;
-    if (drawCount == 0 || drawCount > availableIndices ||
+    if (drawCount == 0 || firstIndex > availableIndices ||
+        drawCount > availableIndices - firstIndex ||
         originalVertexView.SizeInBytes < stride ||
         originalVertexView.SizeInBytes % stride != 0 ||
         drawCount > indexView.SizeInBytes / sizeof(uint32_t))
@@ -428,10 +447,12 @@ bool DX12SceneContext::DrawIndexed(
     {
         return false;
     }
-    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    const D3D12_PRIMITIVE_TOPOLOGY nativeTopology = topology == PrimitiveTopology::Lines ?
+        D3D_PRIMITIVE_TOPOLOGY_LINELIST : D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    commandList->IASetPrimitiveTopology(nativeTopology);
     commandList->IASetVertexBuffers(0, 1, &vertexView);
     commandList->IASetIndexBuffer(&indexView);
-    commandList->DrawIndexedInstanced(drawCount, 1, 0, 0, 0);
+    commandList->DrawIndexedInstanced(drawCount, 1, firstIndex, 0, 0);
     return true;
 }
 

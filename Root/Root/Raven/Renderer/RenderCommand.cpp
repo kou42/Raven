@@ -1,7 +1,6 @@
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
-#include "Raven/Platform/OpenGL/RHI/OpenGLRHICommandList.h"
-#include "Raven/Platform/OpenGL/RHI/OpenGLRHIDevice.h"
+#include "Raven/Renderer/RHI/RHILegacyBackendFactory.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
@@ -34,24 +33,11 @@ bool RenderCommand::TryInit(RHIBackend backend)
     s_CommandList.reset();
     s_Device.reset();
 
-    // Backend選択と実際の描画object生成をRHI層の識別子へ統一します。
-    // 現段階のLegacy CommandListはOpenGLのみです。未対応BackendをOpenGLへ暗黙fallbackせず、
-    // 呼び出し側がExplicit Runtimeへ切り替えられるよう失敗を返します。
-    switch (backend)
-    {
-    case RHIBackend::OpenGL:
-    {
-        s_Device = CreateScope<OpenGLRHIDevice>();
-        s_CommandList = CreateScope<OpenGLRHICommandList>();
-        break;
-    }
-    case RHIBackend::DirectX11:
-    case RHIBackend::DirectX12:
-    case RHIBackend::Vulkan:
-    case RHIBackend::None:
-    default:
-        break;
-    }
+    // Backend具体型の生成はFactoryへ閉じ込め、Renderer層からPlatform依存を除去します。
+    // DX12/VulkanはLegacy RHICommandListではなくExplicit Scene Runtimeを使用するため、
+    // Factoryがnullptrを返し、ここでは従来どおり未対応として扱います。
+    s_Device = RHILegacyBackendFactory::CreateDevice(backend);
+    s_CommandList = RHILegacyBackendFactory::CreateCommandList(backend);
 
     if (s_Device == nullptr || s_CommandList == nullptr)
     {

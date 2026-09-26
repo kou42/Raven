@@ -17,6 +17,11 @@ public:
 
     SandboxLayer();
 
+    bool SupportsBackend(RHIBackend backend) const override
+    {
+        return backend == RHIBackend::OpenGL;
+    }
+
     virtual void OnAttach() override;
 
     virtual void OnUpdate(float dt) override;

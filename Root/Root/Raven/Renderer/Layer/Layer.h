@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Core/Event.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 
 namespace Raven
 {
@@ -11,6 +12,14 @@ class Layer
 {
 public:
     virtual ~Layer() = default;
+
+    // Backend固有Resourceを直接扱う互換Layerは対応Backendを明示します。
+    // 通常LayerはBackend非依存として全Backendで有効です。
+    virtual bool SupportsBackend(RHIBackend backend) const
+    {
+        (void)backend;
+        return true;
+    }
 
     virtual void OnAttach() {}
     virtual void OnDetach() {}
