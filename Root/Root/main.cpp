@@ -18,6 +18,7 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
+#include "Raven/Scene/SceneTitle.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
 #include "Raven/Debug/BrowserDebugServer.h"
@@ -175,10 +176,16 @@ int main(int argc, char* argv[])
         {
             return Raven::CreateScope<Raven::SceneGame>();
         });
+    const bool titleSceneRegistered = app.RegisterScene(
+        "Title",
+        [&app]()
+        {
+            return Raven::CreateScope<Raven::SceneTitle>(app);
+        });
 
-    if (gameSceneRegistered == false)
+    if (gameSceneRegistered == false || titleSceneRegistered == false)
     {
-        std::cerr << "Failed to register the startup Game scene.\n";
+        std::cerr << "Failed to register runtime scenes.\n";
         return 1;
     }
 
