@@ -8,6 +8,16 @@
 namespace Raven
 {
 
+void SceneLoadingProgress::Set(float progress)
+{
+    m_Progress.store(std::clamp(progress, 0.0f, 1.0f), std::memory_order_relaxed);
+}
+
+float SceneLoadingProgress::Get() const
+{
+    return m_Progress.load(std::memory_order_relaxed);
+}
+
 SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
     : m_SceneManager(sceneManager)
 {
@@ -72,6 +82,7 @@ bool SceneTransitionController::RequestAsyncTransition(
     m_AsyncSceneCreation = std::move(sceneCreation);
     m_AsyncRequested = true;
     m_LastAsyncLoadSucceeded = true;
+    m_LoadingProgress = std::make_shared<SceneLoadingProgress>();
 
     const float fadeOutDuration = NormalizeDuration(m_Specification.FadeOutDuration);
     if (m_Specification.Type == SceneTransitionType::Instant || fadeOutDuration <= 0.0f)
@@ -200,6 +211,7 @@ void SceneTransitionController::Update(float deltaTime)
             m_OverlayAlpha = 0.0f;
             m_State = State::Idle;
             m_AsyncRequested = false;
+            m_LoadingProgress.reset();
         }
     }
 }
@@ -214,6 +226,16 @@ bool SceneTransitionController::IsLoading() const
     return m_State == State::Loading;
 }
 
+float SceneTransitionController::GetLoadingProgress() const
+{
+    if (m_LoadingProgress == nullptr)
+    {
+        return 0.0f;
+    }
+
+    return m_LoadingProgress->Get();
+}
+
 void SceneTransitionController::BeginAsyncLoading()
 {
     m_ElapsedTime = 0.0f;
@@ -221,10 +243,16 @@ void SceneTransitionController::BeginAsyncLoading()
     m_State = State::Loading;
 
     SceneAsyncPreparation preparation = std::move(m_AsyncPreparation);
+    const std::shared_ptr<SceneLoadingProgress> progress = m_LoadingProgress;
     m_AsyncPreparationFuture = std::async(std::launch::async,
-        [preparation = std::move(preparation)]() mutable
+        [preparation = std::move(preparation), progress]() mutable
         {
-            return preparation();
+            const bool succeeded = preparation(*progress);
+            if (succeeded == true)
+            {
+                progress->Set(1.0f);
+            }
+            return succeeded;
         });
 }
 
@@ -233,6 +261,7 @@ void SceneTransitionController::FinishWithoutSceneChange()
     m_AsyncPreparation = {};
     m_AsyncSceneCreation = {};
     m_AsyncRequested = false;
+    m_LoadingProgress.reset();
     m_ElapsedTime = 0.0f;
 
     const float duration = NormalizeDuration(m_Specification.FadeInDuration);
