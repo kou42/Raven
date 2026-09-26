@@ -149,9 +149,8 @@ Application::Application(const ApplicationSpecification& specification)
 
         Renderer::SetExplicitSceneMode(true);
 
-        // Raven UI / Dear ImGuiは現時点ではOpenGL描画Backendのみです。
-        // CPU側UIを誤ってExplicit Contextへ描画しないよう、本流接続中は明示的に無効化します。
-        m_RavenUIEnabled = false;
+        // Raven UIはCPU DrawListを構築し、Explicit Runtimeが同一Frameへ記録します。
+        // Dear ImGuiはBackend固有統合が未完了のため従来どおりExplicitでは生成しません。
     }
     else
     {
@@ -1423,27 +1422,6 @@ void Application::Run()
             }
         }
 
-        if (m_ExplicitSceneRuntime != nullptr)
-        {
-            const RHIFrameResult explicitResult = ExecuteExplicitSceneFrame(
-                *m_SceneFrame,
-                [this]() { return m_ExplicitSceneRuntime->PrepareFrame(); },
-                [this]() { return m_ExplicitSceneRuntime->DrawPreparedFrame(); });
-
-            if (explicitResult != RHIFrameResult::Success)
-            {
-                m_ExplicitSceneRuntime->DiscardPreparedFrame();
-                if (explicitResult != RHIFrameResult::ResizeRequired ||
-                    m_ExplicitSceneRuntime->Resize(
-                        m_Window->GetFramebufferWidth(),
-                        m_Window->GetFramebufferHeight()) == false)
-                {
-                    m_Running = false;
-                    break;
-                }
-            }
-        }
-
         // ====================================================================
         // Dear ImGui frame
         // ====================================================================
@@ -1528,12 +1506,42 @@ void Application::Run()
             m_UIContext.EndFrame();
         }
 
+        if (m_ExplicitSceneRuntime != nullptr)
+        {
+            // UIContext::EndFrameでRetained Tree -> DrawList変換が完了した後にSnapshotを渡します。
+            // PrepareFrameはAcquire前にUI Buffer/Texture/Descriptorを準備し、
+            // DrawPreparedFrameがScene -> Debug -> Raven UI -> End/Presentを一度だけ実行します。
+            m_ExplicitSceneRuntime->SubmitUIFrame(
+                m_UIContext.GetDrawList(),
+                m_Window->GetFramebufferWidth(),
+                m_Window->GetFramebufferHeight());
+
+            const RHIFrameResult explicitResult = ExecuteExplicitSceneFrame(
+                *m_SceneFrame,
+                [this]() { return m_ExplicitSceneRuntime->PrepareFrame(); },
+                [this]() { return m_ExplicitSceneRuntime->DrawPreparedFrame(); });
+
+            if (explicitResult != RHIFrameResult::Success)
+            {
+                m_ExplicitSceneRuntime->DiscardPreparedFrame();
+                if (explicitResult != RHIFrameResult::ResizeRequired ||
+                    m_ExplicitSceneRuntime->Resize(
+                        m_Window->GetFramebufferWidth(),
+                        m_Window->GetFramebufferHeight()) == false)
+                {
+                    m_Running = false;
+                    break;
+                }
+            }
+        }
+
         // Layer更新中はMain UI FrameがActiveなのでTree移譲を行わず、ここで予約を処理します。
         // 補助Windowの描画反復前に生成を完了させ、unordered_mapの反復子無効化を防ぎます。
         FlushPendingUIDetaches();
 
         // 補助WindowのUIは専用GL Context/VAOとWindow別DPI・Framebufferで描画します。
-        if (m_RavenUIEnabled == true)
+        if (m_RavenUIEnabled == true &&
+            m_Window->GetBackend() == RHIBackend::OpenGL)
         {
             for (const auto& item : m_AuxiliaryUIContexts)
             {

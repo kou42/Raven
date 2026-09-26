@@ -6,6 +6,7 @@ namespace Raven
 {
 
 class Scene;
+class UIDrawList;
 struct PipelineSpecification;
 struct RHIShaderAssetSpecification;
 
@@ -27,6 +28,10 @@ public:
     // Init成功後にのみFrame境界を借用できます。Shutdown後の参照は無効です。
     virtual RHISceneFrameLifecycle* GetFrameLifecycle() = 0;
     virtual bool PrepareScene(Scene& scene) = 0;
+    // UIContext::EndFrame後のCPU DrawListを次のPrepareFrameへ渡します。
+    // GPU Resource生成はAcquire前のPrepareFrame内で行います。
+    virtual void SubmitUIFrame(const UIDrawList& drawList,
+        uint32_t viewportWidth, uint32_t viewportHeight) = 0;
     // PrepareはAcquireより前、DrawPreparedはBeginFrame成功後に呼びます。
     virtual bool PrepareFrame() = 0;
     virtual RHIFrameResult DrawPreparedFrame() = 0;

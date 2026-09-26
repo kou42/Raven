@@ -5,6 +5,8 @@
 #include "Raven/Assets/RHIShaderAsset.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Platform/Vulkan/VulkanSceneContext.h"
+#include "Raven/UI/Rendering/ExplicitUIRenderer.h"
+#include "Raven/UI/Core/UIDrawList.h"
 
 namespace Raven
 {
@@ -37,6 +39,8 @@ public:
 
     // SceneのEntityが共有するMeshをFrame開始前に一括準備します。
     bool PrepareScene(Scene& scene) override;
+    void SubmitUIFrame(const UIDrawList& drawList,
+        uint32_t viewportWidth, uint32_t viewportHeight) override;
 
     // Renderer::BeginScene()以降に蓄積された通常Queueを消費し、
     // Texture準備からPresentまでを一つのExplicit Frameとして実行します。
@@ -77,8 +81,16 @@ private:
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
+    Ref<RHIShaderAsset> m_UIVertexShader;
+    Ref<RHIShaderAsset> m_UIFragmentShader;
+    Ref<RHIGraphicsPipeline> m_UIPipeline;
+    ExplicitUIRenderer m_UIRenderer;
+    UIDrawList m_PendingUIDrawList;
+    uint32_t m_PendingUIWidth = 0u;
+    uint32_t m_PendingUIHeight = 0u;
     Ref<RHITexture> m_DefaultTexture;
     Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
+    PreparedExplicitUI m_PreparedUI;
     bool m_Initialized = false;
 };
 

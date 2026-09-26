@@ -5,24 +5,68 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 
 namespace Raven
 {
 namespace
 {
-std::array<float, 16> BuildUIClipTransform(uint32_t width, uint32_t height)
+std::array<float, 16> BuildUIClipTransform(
+    uint32_t width, uint32_t height, RHIBackend backend)
 {
     const float sx = 2.0f / static_cast<float>(width);
-    const float sy = -2.0f / static_cast<float>(height);
-    // Raven UIの左上pixel原点をExplicit API共通NDCへ変換します。
+    // Vulkanは正のViewport heightを使うためNDC -YがFramebuffer上端です。
+    // DX12はNDC +Yが上端なので、pixel Yの係数とoffsetをBackendごとに切り替えます。
+    const bool vulkan = backend == RHIBackend::Vulkan;
+    const float sy = (vulkan == true ? 2.0f : -2.0f) /
+        static_cast<float>(height);
+    const float ty = vulkan == true ? -1.0f : 1.0f;
     return {
         sx, 0.0f, 0.0f, 0.0f,
         0.0f, sy, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
-        -1.0f, 1.0f, 0.0f, 1.0f
+        -1.0f, ty, 0.0f, 1.0f
     };
 }
 } // namespace
+
+bool ExplicitUIRenderer::CreatePipeline(
+    RHIDevice& device,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outPipeline)
+{
+    outPipeline.reset();
+    RHIGraphicsPipelineTarget target{};
+    if (device.GetGraphicsPipelineTarget(target) == false ||
+        target.IsValid() == false)
+    {
+        return false;
+    }
+
+    RHIGraphicsPipelineSpecification specification{};
+    specification.VertexShader = vertexShader;
+    specification.FragmentShader = fragmentShader;
+    specification.VertexBindings.push_back({ 0u, sizeof(UIVertex) });
+    specification.VertexAttributes.push_back(
+        { 0u, 0u, ShaderDataType::Float2, offsetof(UIVertex, Position) });
+    specification.VertexAttributes.push_back(
+        { 1u, 0u, ShaderDataType::Float4, offsetof(UIVertex, Color) });
+    specification.VertexAttributes.push_back(
+        { 2u, 0u, ShaderDataType::Float2, offsetof(UIVertex, Texcoord) });
+    specification.Topology = PrimitiveTopology::Triangles;
+    specification.Cull = CullMode::None;
+    specification.DepthTest = false;
+    specification.DepthWrite = false;
+    specification.Blend = true;
+    specification.ColorFormat = target.ColorFormat;
+    specification.DepthFormat = target.DepthFormat;
+    specification.SampleCount = target.SampleCount;
+    specification.DebugName = "Explicit Raven UI Pipeline";
+
+    outPipeline = device.CreateGraphicsPipeline(specification);
+    return outPipeline != nullptr;
+}
 
 bool ExplicitUIRenderer::Prepare(
     RHIDevice& device,
@@ -30,6 +74,7 @@ bool ExplicitUIRenderer::Prepare(
     uint32_t viewportWidth,
     uint32_t viewportHeight,
     const Ref<RHITexture>& defaultTexture,
+    const Ref<RHIGraphicsPipeline>& pipeline,
     PreparedExplicitUI& outUI)
 {
     outUI = {};
@@ -44,6 +89,7 @@ bool ExplicitUIRenderer::Prepare(
         // UIが空のFrameは失敗ではありません。
         outUI.ViewportWidth = viewportWidth;
         outUI.ViewportHeight = viewportHeight;
+        outUI.Backend = device.GetBackend();
         return true;
     }
 
@@ -85,6 +131,11 @@ bool ExplicitUIRenderer::Prepare(
     }
     outUI.ViewportWidth = viewportWidth;
     outUI.ViewportHeight = viewportHeight;
+    outUI.Backend = device.GetBackend();
+    if (device.PrepareSceneTextures(outUI.Textures, pipeline) == false)
+    {
+        return false;
+    }
     return true;
 }
 
@@ -108,7 +159,8 @@ bool ExplicitUIRenderer::Draw(
         commands.SetViewport(0u, 0u, preparedUI.ViewportWidth,
             preparedUI.ViewportHeight) == false ||
         commands.SetClipTransform(BuildUIClipTransform(
-            preparedUI.ViewportWidth, preparedUI.ViewportHeight)) == false)
+            preparedUI.ViewportWidth, preparedUI.ViewportHeight,
+            preparedUI.Backend)) == false)
     {
         return false;
     }
@@ -193,11 +245,13 @@ Ref<RHITexture> ExplicitUIRenderer::ResolveTexture(
         return nullptr;
     }
     m_TextureCache.emplace(asset.get(), texture);
+    m_CachedAssets.push_back(asset);
     return texture;
 }
 
 void ExplicitUIRenderer::ClearTextureCache()
 {
     m_TextureCache.clear();
+    m_CachedAssets.clear();
 }
 } // namespace Raven

@@ -699,7 +699,8 @@ bool Renderer::PrepareRHISceneFrame(
 RHIFrameResult Renderer::DrawPreparedRHISceneFrame(
     RHISceneFrameLifecycle& frame,
     RHISceneCommandList& commands,
-    const PreparedRHISceneFrame& preparedFrame)
+    const PreparedRHISceneFrame& preparedFrame,
+    const std::function<bool(RHISceneCommandList&)>& beforeFinish)
 {
     // SurfaceとDebug Lineを同じActive Frameへ記録してから一度だけEnd/Presentします。
     if (RHISceneMeshRenderer::Draw(
@@ -719,6 +720,12 @@ RHIFrameResult Renderer::DrawPreparedRHISceneFrame(
         {
             return RHIFrameResult::FatalError;
         }
+    }
+
+    // Raven UI等の追加Passも同じCommandBufferへ記録し、End/Presentは最後に一度だけ行います。
+    if (beforeFinish != nullptr && beforeFinish(commands) == false)
+    {
+        return RHIFrameResult::FatalError;
     }
 
     const RHIFrameResult result = RHISceneMeshRenderer::FinishActiveFrame(frame);

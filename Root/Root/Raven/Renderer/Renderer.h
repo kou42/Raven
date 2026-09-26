@@ -171,7 +171,8 @@ public:
     static RHIFrameResult DrawPreparedRHISceneFrame(
         RHISceneFrameLifecycle& frame,
         RHISceneCommandList& commands,
-        const PreparedRHISceneFrame& preparedFrame);
+        const PreparedRHISceneFrame& preparedFrame,
+        const std::function<bool(RHISceneCommandList&)>& beforeFinish = {});
 
     static RHIFrameResult DrawRHISceneFrame(
         RHIDevice& device,

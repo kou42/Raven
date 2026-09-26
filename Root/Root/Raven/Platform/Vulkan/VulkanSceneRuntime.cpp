@@ -51,7 +51,14 @@ bool VulkanSceneRuntime::Init(
     m_PipelineSpecification.DebugName = m_PipelineDebugName.c_str();
     m_VertexShader = m_ShaderAssets.Load(vertexShader, RHIBackend::Vulkan);
     m_FragmentShader = m_ShaderAssets.Load(fragmentShader, RHIBackend::Vulkan);
+    RHIShaderAssetSpecification uiVertex{};
+    uiVertex.VulkanPath = "Raven/Assets/Shaders/Vulkan/UI.vert.spv";
+    RHIShaderAssetSpecification uiFragment{};
+    uiFragment.VulkanPath = "Raven/Assets/Shaders/Vulkan/UI.frag.spv";
+    m_UIVertexShader = m_ShaderAssets.Load(uiVertex, RHIBackend::Vulkan);
+    m_UIFragmentShader = m_ShaderAssets.Load(uiFragment, RHIBackend::Vulkan);
     if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
+        m_UIVertexShader == nullptr || m_UIFragmentShader == nullptr ||
         CreatePipelines() == false ||
         CreateDefaultTexture() == false)
     {
@@ -88,18 +95,29 @@ bool VulkanSceneRuntime::PrepareScene(Scene& scene)
     return scene.PrepareRHIMeshes(*m_Device);
 }
 
+void VulkanSceneRuntime::SubmitUIFrame(
+    const UIDrawList& drawList, uint32_t viewportWidth, uint32_t viewportHeight)
+{
+    m_PendingUIDrawList = drawList;
+    m_PendingUIWidth = viewportWidth;
+    m_PendingUIHeight = viewportHeight;
+}
+
 void VulkanSceneRuntime::DiscardPreparedFrame()
 {
     // Acquire失敗時に残った参照をSwapChain再生成やDevice破棄前に解放します。
     m_PreparedFrame.reset();
+    m_PreparedUI = {};
 }
 
 bool VulkanSceneRuntime::PrepareFrame()
 {
     m_PreparedFrame.reset();
+    m_PreparedUI = {};
     if (m_Initialized == false || m_Device == nullptr ||
         m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
-        m_DebugLinePipeline == nullptr || m_DefaultTexture == nullptr ||
+        m_DebugLinePipeline == nullptr || m_UIPipeline == nullptr ||
+        m_DefaultTexture == nullptr ||
         m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
     {
         return false;
@@ -116,6 +134,12 @@ bool VulkanSceneRuntime::PrepareFrame()
         return false;
     }
     prepared->DebugLinePipeline = m_DebugLinePipeline;
+    if (m_UIRenderer.Prepare(*m_Device, m_PendingUIDrawList,
+        m_PendingUIWidth, m_PendingUIHeight,
+        m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
+    {
+        return false;
+    }
     m_PreparedFrame = std::move(prepared);
     return true;
 }
@@ -129,7 +153,11 @@ RHIFrameResult VulkanSceneRuntime::DrawPreparedFrame()
     }
     VulkanSceneCommandList commands(m_Context);
     const RHIFrameResult result = Renderer::DrawPreparedRHISceneFrame(
-        m_Context, commands, *m_PreparedFrame);
+        m_Context, commands, *m_PreparedFrame,
+        [this](RHISceneCommandList& uiCommands)
+        {
+            return m_UIRenderer.Draw(uiCommands, m_UIPipeline, m_PreparedUI);
+        });
     // GPUが参照するBufferはContext側がFence完了まで保持します。
     m_PreparedFrame.reset();
     // FatalErrorでもRuntimeを破棄せず、所有元Applicationの終了処理へ委譲します。
@@ -170,6 +198,7 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
     m_DebugLinePipeline.reset();
+    m_UIPipeline.reset();
     if (CreatePipelines() == false)
     {
         // Context/Deviceは維持し、Applicationに失敗を返して終了順序を守ります。
@@ -192,6 +221,10 @@ void VulkanSceneRuntime::Shutdown()
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
     m_DebugLinePipeline.reset();
+    m_UIPipeline.reset();
+    m_UIRenderer.ClearTextureCache();
+    m_UIVertexShader.reset();
+    m_UIFragmentShader.reset();
     m_DefaultTexture.reset();
     m_PipelineSpecification = {};
     m_PipelineDebugName.clear();
@@ -265,10 +298,19 @@ bool VulkanSceneRuntime::CreatePipelines()
         return false;
     }
 
+    Ref<RHIGraphicsPipeline> uiPipeline;
+    if (ExplicitUIRenderer::CreatePipeline(
+        *m_Device, m_UIVertexShader->GetBinary(),
+        m_UIFragmentShader->GetBinary(), uiPipeline) == false)
+    {
+        return false;
+    }
+
     // Surface/Debugの全Pipelineが揃ってから差し替え、Resize途中の部分状態を公開しません。
     m_OpaquePipeline = std::move(opaque);
     m_TransparentPipeline = std::move(transparent);
     m_DebugLinePipeline = std::move(debugLine);
+    m_UIPipeline = std::move(uiPipeline);
     return true;
 }
 
