@@ -259,7 +259,7 @@ public:
     void RequestSceneChange(Scope<Scene> scene);
 
     // Fade等の演出を伴うScene切り替え入口です。
-    void RequestSceneTransition(Scope<Scene> scene,
+    bool RequestSceneTransition(Scope<Scene> scene,
         const SceneTransitionSpecification& specification = {});
 
     // Scene IDを登録し、呼び出し側が具体Scene型を知らずに遷移できるようにします。
