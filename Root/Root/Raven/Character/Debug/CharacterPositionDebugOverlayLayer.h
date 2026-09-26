@@ -4,7 +4,9 @@
 #include <imgui.h>
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
+#include "Raven/Core/Application.h"
 #include "Raven/Core/Input.h"
+#include "Raven/Scene/Scene.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -25,23 +27,24 @@ class CharacterPositionDebugOverlayLayer final : public Layer
 {
 public:
     CharacterPositionDebugOverlayLayer(
-        CharacterControllerDemoLayer& characterLayer,
+        Application& application,
         const math::Vec3& debugTeleportTarget)
-        : m_CharacterLayer(&characterLayer)
+        : m_Application(&application)
         , m_DebugTeleportTarget(debugTeleportTarget)
     {
     }
 
     void OnDetach() override
     {
-        m_CharacterLayer = nullptr;
+        m_Application = nullptr;
     }
 
     void OnImGuiRender(float deltaTime) override
     {
         static_cast<void>(deltaTime);
 
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
@@ -55,7 +58,7 @@ public:
 
         if (teleportRequested == true)
         {
-            m_CharacterLayer->TeleportCharacterForDebug(m_DebugTeleportTarget);
+            characterLayer->TeleportCharacterForDebug(m_DebugTeleportTarget);
         }
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -91,7 +94,7 @@ public:
 
         if (ImGui::Begin("Character Position Debug", nullptr, windowFlags) == true)
         {
-            const math::Vec3& position = m_CharacterLayer->GetCharacterWorldPosition();
+            const math::Vec3& position = characterLayer->GetCharacterWorldPosition();
             const math::Vec3 offset = m_DebugTeleportTarget - position;
             const float distance = offset.Length();
 
@@ -111,14 +114,30 @@ public:
 
             if (ImGui::Button("Teleport to Debug Target") == true)
             {
-                m_CharacterLayer->TeleportCharacterForDebug(m_DebugTeleportTarget);
+                characterLayer->TeleportCharacterForDebug(m_DebugTeleportTarget);
             }
         }
         ImGui::End();
     }
 
 private:
-    CharacterControllerDemoLayer* m_CharacterLayer = nullptr;
+    CharacterControllerDemoLayer* ResolveCharacterLayer() const
+    {
+        if (m_Application == nullptr)
+        {
+            return nullptr;
+        }
+
+        Scene* scene = m_Application->GetScene();
+        if (scene == nullptr)
+        {
+            return nullptr;
+        }
+
+        return scene->FindLayer<CharacterControllerDemoLayer>();
+    }
+
+    Application* m_Application = nullptr;
     math::Vec3 m_DebugTeleportTarget{};
     bool m_WasTeleportKeyPressed = false;
 };
