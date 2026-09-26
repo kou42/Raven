@@ -1503,7 +1503,19 @@ void Application::Run()
         // Callback中に予約されたScene切り替えを反映します。
         // 旧Sceneを参照する一時的なFrame処理が完了してから破棄することで、
         // Update/Event/UI callback自身の実行中に所有元が消えることを防ぎます。
-        m_SceneManager.FlushPendingSceneChange();
+        if (m_SceneManager.FlushPendingSceneChange() == true)
+        {
+            Scene* changedScene = m_SceneManager.GetActiveScene();
+            // Scene交換完了後にApplication-owned Layerへ通知します。
+            // 旧Sceneは既に破棄済みなので渡さず、新Active Sceneだけを公開してdangling参照を作りません。
+            for (const Scope<Layer>& layer : m_Layers)
+            {
+                if (layer != nullptr)
+                {
+                    layer->OnActiveSceneChanged(changedScene);
+                }
+            }
+        }
     }
 }
 
