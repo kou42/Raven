@@ -23,6 +23,7 @@ public:
     bool MakeContextCurrent() override;
     bool SetFramebufferViewport() override;
     bool BindDefaultFramebuffer() override;
+    bool ClearDefaultFramebuffer(float r, float g, float b, float a) override;
 
     unsigned int GetWidth() const override { return m_Data.Width; }
     unsigned int GetHeight() const override { return m_Data.Height; }

@@ -68,14 +68,20 @@ void ShaderLibrary::Add(const std::string& name, const Ref<Shader>& shader)
 Ref<Shader> ShaderLibrary::Load(const std::string& name, const std::string& filepath)
 {
     Ref<Shader> shader = Shader::Create(filepath);
-    Add(name, shader);
+    if (shader != nullptr)
+    {
+        Add(name, shader);
+    }
     return shader;
 }
 
 Ref<Shader> ShaderLibrary::Load(const std::string& name, const std::string& vertexFilePath, const std::string& fragmentFilePath)
 {
     Ref<Shader> shader = Shader::Create(vertexFilePath, fragmentFilePath);
-    Add(name, shader);
+    if (shader != nullptr)
+    {
+        Add(name, shader);
+    }
     return shader;
 }
 

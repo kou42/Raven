@@ -14,7 +14,6 @@
 #include "Raven/UI/Widgets/UIWindow.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
@@ -1065,6 +1064,13 @@ void Application::PushLayer(Scope<Layer> layer)
     {
         return;
     }
+    if (m_Window == nullptr ||
+        layer->SupportsBackend(m_Window->GetBackend()) == false)
+    {
+        // Backend固有Legacy Layerを未対応BackendでAttachすると、
+        // OnAttach中にOpenGL Resourceを生成してしまうため登録前に除外します。
+        return;
+    }
 
     // Layerは登録された時点で利用可能な状態にします。
     // OnAttach()後に所有権をm_Layersへ移すことで、以降のUpdate/Render/Eventを
@@ -1549,11 +1555,13 @@ void Application::Run()
                 m_WindowManager.RenderWindow(item.first, m_MainWindowID,
                     [ui](Window& window)
                     {
-                        // 補助WindowはSceneのClearを通らないため、前Frameの残像を消します。
-                        // UI Rendererが前Frameに残したScissorがClear範囲を狭めないよう無効化します。
-                        glDisable(GL_SCISSOR_TEST);
-                        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-                        glClear(GL_COLOR_BUFFER_BIT);
+                        // 補助WindowのClearはWindow/Platform境界へ委譲し、
+                        // ApplicationからOpenGL APIを直接呼びません。
+                        if (window.ClearDefaultFramebuffer(
+                            0.0f, 0.0f, 0.0f, 0.0f) == false)
+                        {
+                            return;
+                        }
                         ui->BeginFrame(
                             math::Vec2(static_cast<float>(window.GetWidth()),
                                 static_cast<float>(window.GetHeight())),

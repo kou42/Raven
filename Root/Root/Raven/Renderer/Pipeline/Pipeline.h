@@ -14,6 +14,25 @@ enum class PrimitiveTopology
     Triangles,
     Lines,
     Points
+// Explicit Backendではnative PipelineをRuntime/RHIDeviceが所有します。
+// Materialが既存APIのままPipeline stateを保持できるよう、GPU操作を行わない値holderを使用します。
+class SpecificationPipeline final : public Pipeline
+{
+public:
+    explicit SpecificationPipeline(const PipelineSpecification& specification)
+        : m_Specification(specification)
+    {
+    }
+
+    void Bind() const override {}
+    void Unbind() const override {}
+    const PipelineSpecification& GetSpecification() const override { return m_Specification; }
+    Ref<Shader> GetShader() const override { return m_Specification.Shader; }
+
+private:
+    PipelineSpecification m_Specification;
+};
+
 };
 
 enum class CullMode

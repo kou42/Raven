@@ -49,6 +49,7 @@
 
 int main(int argc, char* argv[])
 {
+    Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -69,31 +70,43 @@ int main(int argc, char* argv[])
             return 0;
         }
 #endif
-        if (backendArgument == "--backend=vulkan" || backendArgument == "--scene-vulkan")
+        if (backendArgument == "--backend=vulkan")
+        {
+            applicationBackend = Raven::RHIBackend::Vulkan;
+        }
+        else if (backendArgument == "--backend=dx12")
+        {
+            applicationBackend = Raven::RHIBackend::DirectX12;
+        }
+        else if (backendArgument == "--backend=opengl")
+        {
+            applicationBackend = Raven::RHIBackend::OpenGL;
+        }
+        else if (backendArgument == "--scene-vulkan")
         {
             return Raven::RunVulkanSceneRuntimeDemo();
         }
-        if (backendArgument == "--backend=dx12" || backendArgument == "--scene-dx12")
+        else if (backendArgument == "--scene-dx12")
         {
             return Raven::RunDX12SceneRuntimeDemo();
         }
-        if (backendArgument == "--scene-triangle-vulkan")
+        else if (backendArgument == "--scene-triangle-vulkan")
         {
             return Raven::RunVulkanSceneTriangleDemo();
         }
-        if (backendArgument == "--clear-opengl")
+        else if (backendArgument == "--clear-opengl")
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::OpenGL);
         }
-        if (backendArgument == "--clear-vulkan")
+        else if (backendArgument == "--clear-vulkan")
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::Vulkan);
         }
-        if (backendArgument == "--clear-dx12")
+        else if (backendArgument == "--clear-dx12")
         {
             return Raven::RunClearBackendDemo(Raven::RHIBackend::DirectX12);
         }
-        if (backendArgument != "--backend=opengl")
+        else if (backendArgument != "--backend=opengl")
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
@@ -163,7 +176,36 @@ int main(int argc, char* argv[])
     }
 #endif
 
-    Raven::Application app;
+    Raven::ApplicationSpecification applicationSpecification{};
+    applicationSpecification.WindowProperties.Backend = applicationBackend;
+
+    // 通常ApplicationのExplicit Backendも、独立Runtime Demoと同じShader/Pipeline契約を使用します。
+    // Backend選択だけで別Demoへ分岐せず、Scene/Layer/Raven UIを含む本流を検証できる入口にします。
+    if (applicationBackend == Raven::RHIBackend::Vulkan)
+    {
+        applicationSpecification.ExplicitScene.VertexShader.VulkanPath =
+            "Raven/Assets/Shaders/Vulkan/SceneTriangle.vert.spv";
+        applicationSpecification.ExplicitScene.FragmentShader.VulkanPath =
+            "Raven/Assets/Shaders/Vulkan/SceneTriangle.frag.spv";
+    }
+    else if (applicationBackend == Raven::RHIBackend::DirectX12)
+    {
+        applicationSpecification.ExplicitScene.VertexShader.DirectX12Path =
+            "Raven/Assets/Shaders/DirectX12/SceneMesh.vs.dxil";
+        applicationSpecification.ExplicitScene.FragmentShader.DirectX12Path =
+            "Raven/Assets/Shaders/DirectX12/SceneMesh.ps.dxil";
+    }
+
+    Raven::PipelineSpecification& applicationPipeline =
+        applicationSpecification.ExplicitScene.Pipeline;
+    applicationPipeline.Topology = Raven::PrimitiveTopology::Triangles;
+    applicationPipeline.Cull = Raven::CullMode::None;
+    applicationPipeline.DepthTest = true;
+    applicationPipeline.DepthWrite = true;
+    applicationPipeline.Blend = false;
+    applicationPipeline.DebugName = "Raven Application Scene";
+
+    Raven::Application app(applicationSpecification);
 
     // Runtime SceneはScene ID Registryへ登録し、起動時も同じFactory経路から生成します。
     // これにより今後Title / Stage等が増えても呼び出し側が具体Scene型を知る必要がありません。

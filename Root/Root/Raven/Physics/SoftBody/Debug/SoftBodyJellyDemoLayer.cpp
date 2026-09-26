@@ -92,7 +92,7 @@ void SoftBodyJellyDemoLayer::OnAttach()
         "Raven/Assets/Shaders/Vertex/test.vert",
         "Raven/Assets/Shaders/Fragment/test.frag");
 
-    if (shader == nullptr)
+    if (shader == nullptr && Renderer::IsExplicitSceneMode() == false)
     {
         m_JellyMesh.reset();
         return;
