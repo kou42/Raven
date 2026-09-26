@@ -1042,10 +1042,10 @@ void Application::RequestSceneChange(Scope<Scene> scene)
     m_SceneManager.RequestSceneChange(std::move(scene));
 }
 
-void Application::RequestSceneTransition(
+bool Application::RequestSceneTransition(
     Scope<Scene> scene, const SceneTransitionSpecification& specification)
 {
-    m_SceneTransitionController.RequestTransition(std::move(scene), specification);
+    return m_SceneTransitionController.RequestTransition(std::move(scene), specification);
 }
 
 bool Application::RegisterScene(const std::string& sceneID, SceneFactoryFunction factory)
@@ -1074,8 +1074,7 @@ bool Application::RequestSceneTransition(
         return false;
     }
 
-    RequestSceneTransition(std::move(scene), specification);
-    return true;
+    return RequestSceneTransition(std::move(scene), specification);
 }
 
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
