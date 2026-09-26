@@ -1419,10 +1419,13 @@ void Application::Run()
                     // Font Assetに依存しないLoading Indicatorです。
                     // 外周Circleと進捗Barだけで構成し、Scene/Font未初期化中でも描画可能にします。
                     const float spinnerRadius = 18.0f;
+                    const float pulse = 0.5f + 0.5f * std::sin(
+                        m_SceneTransitionController.GetLoadingAnimationTime() * 4.0f);
+                    const float spinnerAlpha = 0.20f + pulse * 0.55f;
                     m_UIContext.AddFrameOverlayCircle(
                         math::Vec2(center.x - spinnerRadius, center.y - 42.0f - spinnerRadius),
                         math::Vec2(center.x + spinnerRadius, center.y - 42.0f + spinnerRadius),
-                        math::Vec4(1.0f, 1.0f, 1.0f, 0.28f));
+                        math::Vec4(1.0f, 1.0f, 1.0f, spinnerAlpha));
 
                     const float barWidth = std::min(320.0f, std::max(120.0f, viewportSize.x * 0.35f));
                     const float barHeight = 8.0f;
