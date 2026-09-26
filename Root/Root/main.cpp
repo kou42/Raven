@@ -176,15 +176,21 @@ int main(int argc, char* argv[])
             return Raven::CreateScope<Raven::SceneGame>();
         });
 
-    if (gameSceneRegistered == false || app.RequestSceneChange("Game") == false)
+    if (gameSceneRegistered == false)
     {
-        std::cerr << "Failed to register or create the startup Game scene.\n";
+        std::cerr << "Failed to register the startup Game scene.\n";
         return 1;
     }
 
-    // main()はまだApplication::Run()開始前なので、Deferred requestを待つ必要はありません。
-    // Registryの生成経路を利用したSceneを起動時だけ即時activateします。
-    app.GetSceneManager().FlushPendingSceneChange();
+    // main()はまだApplication::Run()開始前なので、起動Sceneだけは即時activateします。
+    // Runtime中の切り替えはRequestSceneChange / RequestSceneTransitionを使いFrame境界へ遅延します。
+    Raven::Scope<Raven::Scene> startupScene = app.GetSceneFactory().Create("Game");
+    if (startupScene == nullptr)
+    {
+        std::cerr << "Failed to create the startup Game scene.\n";
+        return 1;
+    }
+    app.SetScene(std::move(startupScene));
 
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
