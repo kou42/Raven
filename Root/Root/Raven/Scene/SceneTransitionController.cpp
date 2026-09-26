@@ -119,7 +119,17 @@ void SceneTransitionController::Update(float deltaTime)
         if (m_AsyncPreparationFuture.valid() == true &&
             m_AsyncPreparationFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         {
-            const bool prepared = m_AsyncPreparationFuture.get();
+            bool prepared = false;
+            try
+            {
+                prepared = m_AsyncPreparationFuture.get();
+            }
+            catch (...)
+            {
+                // Worker例外をApplication loop外へ伝播させません。
+                // 失敗として扱い、現在Sceneを維持して暗転だけ解除します。
+                prepared = false;
+            }
             if (prepared == false)
             {
                 m_LastAsyncLoadSucceeded = false;
