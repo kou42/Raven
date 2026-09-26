@@ -1,5 +1,6 @@
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
 
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Assets/TextureAsset.h"
 
@@ -326,29 +327,7 @@ bool UIFontAtlasBuilder::BuildFromFile(
         pending.push_back({ codepoint, metrics });
     }
 
-    TextureSpecification specification{};
-    specification.Width = options.AtlasWidth;
-    specification.Height = options.AtlasHeight;
-    specification.Format = TextureFormat::RGBA8;
-    specification.Usage = TextureUsage::Sampled;
-    specification.GenerateMips = false;
-    TextureCreationFailure textureFailure = TextureCreationFailure::None;
-    Ref<Texture> texture = Texture::Create(specification, pixels.data(), pixels.size(), &textureFailure);
-    if (texture == nullptr || texture->GetID() == 0u)
-    {
-        // RHI Deviceが未準備なら再試行すべき原因をLabel側まで伝えます。
-        if (textureFailure == TextureCreationFailure::DeviceUnavailable)
-        {
-            return fail(UIFontAtlasBuildFailure::TextureDeviceUnavailable);
-        }
-        if (textureFailure == TextureCreationFailure::UploadFailed)
-        {
-            return fail(UIFontAtlasBuildFailure::TextureUploadFailed);
-        }
-        return fail(UIFontAtlasBuildFailure::TextureCreationFailed);
-    }
-
-    // Fontバイト列はRasterize終了後に解放できます。AtlasはGPU Textureだけを所有します。
+    // Fontバイト列はRasterize終了後に解放できます。Atlasは再Upload可能なPixel Assetを所有します。
     // 全処理が成功するまでoutAtlasへ触れず、失敗時に既存のAtlasを失わないようにします。
     TextureAssetPixelData pixelData{};
     pixelData.Width = options.AtlasWidth;
@@ -358,8 +337,42 @@ bool UIFontAtlasBuilder::BuildFromFile(
     pixelData.Pixels.resize(pixels.size());
     std::memcpy(pixelData.Pixels.data(), pixels.data(), pixels.size());
 
+    Ref<Texture> texture;
+    const RHIBackend backend = GetRHIBackend();
+    if (backend == RHIBackend::OpenGL)
+    {
+        TextureSpecification specification{};
+        specification.Width = options.AtlasWidth;
+        specification.Height = options.AtlasHeight;
+        specification.Format = TextureFormat::RGBA8;
+        specification.Usage = TextureUsage::Sampled;
+        specification.GenerateMips = false;
+        TextureCreationFailure textureFailure = TextureCreationFailure::None;
+        texture = Texture::Create(
+            specification, pixels.data(), pixels.size(), &textureFailure);
+        if (texture == nullptr || texture->GetID() == 0u)
+        {
+            // Legacy OpenGLではAtlas構築時にnative Textureが必要です。
+            // Device未準備と転送失敗を分離し、Label側の再試行判断へ伝えます。
+            if (textureFailure == TextureCreationFailure::DeviceUnavailable)
+            {
+                return fail(UIFontAtlasBuildFailure::TextureDeviceUnavailable);
+            }
+            if (textureFailure == TextureCreationFailure::UploadFailed)
+            {
+                return fail(UIFontAtlasBuildFailure::TextureUploadFailed);
+            }
+            return fail(UIFontAtlasBuildFailure::TextureCreationFailed);
+        }
+    }
+    else if (backend != RHIBackend::Vulkan && backend != RHIBackend::DirectX12)
+    {
+        return fail(UIFontAtlasBuildFailure::TextureCreationFailed);
+    }
+
     // Glyph AtlasもSource画像と同じTextureAsset境界へ載せ、Explicit Backendが
     // Legacy Textureのreadbackなしで同じAtlasをRHITextureとして再生成できるようにします。
+    // Explicit BackendではここでGPU APIを呼ばず、描画準備時にDeviceがPixelをUploadします。
     Ref<TextureAsset> asset =
         CreateRef<TextureAsset>(fontPath, texture, std::move(pixelData));
     UIFontAtlas built;

@@ -414,6 +414,14 @@ bool Renderer::CreateRHIDebugLinePipeline(
         { 1u, 0u, ShaderDataType::Float3, static_cast<uint32_t>(offsetof(DebugLineVertex, Color)) },
         { 2u, 0u, ShaderDataType::Float2, static_cast<uint32_t>(offsetof(DebugLineVertex, Texcoord)) }
     };
+    if (device.GetBackend() == RHIBackend::DirectX12)
+    {
+        // Scene用DXILは未使用のNORMALも入力Signatureへ残すため、Debug LineでもSemanticを満たします。
+        // Shader内では参照されないので、Strideを増やさず既存Position領域をDummy入力として共有します。
+        specification.VertexAttributes.push_back(
+            { 3u, 0u, ShaderDataType::Float3,
+                static_cast<uint32_t>(offsetof(DebugLineVertex, Position)) });
+    }
     specification.Topology = PrimitiveTopology::Lines;
     specification.Cull = CullMode::None;
     specification.DepthTest = false;
@@ -642,9 +650,15 @@ bool Renderer::CreateRHIScenePipelines(
     specification.VertexAttributes = {
         { 0, 0, ShaderDataType::Float3, 0 },
         { 1, 0, ShaderDataType::Float3, 3u * floatSize },
-        { 2, 0, ShaderDataType::Float2, 6u * floatSize },
-        { 3, 0, ShaderDataType::Float3, 8u * floatSize }
+        { 2, 0, ShaderDataType::Float2, 6u * floatSize }
     };
+    if (device.GetBackend() == RHIBackend::DirectX12)
+    {
+        // 現行DXILは未使用でもNORMAL Semanticを入力Signatureへ保持します。
+        // Vulkan GLSLにはlocation 3が存在しないため、BackendごとのShader契約に合わせて分離します。
+        specification.VertexAttributes.push_back(
+            { 3, 0, ShaderDataType::Float3, 8u * floatSize });
+    }
 
     specification.Topology = source.Topology;
     specification.Cull = source.Cull;

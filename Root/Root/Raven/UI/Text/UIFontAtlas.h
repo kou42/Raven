@@ -37,9 +37,13 @@ public:
         }
 
         const Ref<Texture>& runtimeTexture = texture->GetTexture();
-        if (runtimeTexture == nullptr ||
-            runtimeTexture->GetWidth() != static_cast<int>(width) ||
-            runtimeTexture->GetHeight() != static_cast<int>(height))
+        const TextureAssetPixelData& pixelData = texture->GetPixelData();
+        const bool legacyDimensionsMatch = runtimeTexture != nullptr &&
+            runtimeTexture->GetWidth() == static_cast<int>(width) &&
+            runtimeTexture->GetHeight() == static_cast<int>(height);
+        const bool explicitDimensionsMatch = texture->HasPixelData() == true &&
+            pixelData.Width == width && pixelData.Height == height;
+        if (legacyDimensionsMatch == false && explicitDimensionsMatch == false)
         {
             return false;
         }

@@ -55,7 +55,10 @@ const Ref<Texture>& TextureAsset::GetTexture() const
 
 bool TextureAsset::IsValid() const
 {
-    return m_Texture != nullptr && m_Texture->GetID() != 0;
+    // Explicit BackendではLegacy Textureを生成せず、decode済みPixelから
+    // 各RHI Deviceがnative Textureを生成します。どちらか一方が有効ならAssetとして扱います。
+    return (m_Texture != nullptr && m_Texture->GetID() != 0) ||
+        m_PixelData.IsValid();
 }
 
 bool TextureAsset::HasPixelData() const
