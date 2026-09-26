@@ -60,6 +60,37 @@ public:
     // メンバ関数
     //+---------------------------------------------------------------------
     void PushLayer(Scope<Layer> layer);
+
+    // Scene-owned Layerを型で検索します。返却pointerはScene lifetime中だけ有効です。
+    // Application Overlayは毎Frame Active Sceneから再取得し、Scene交換を跨いで保持しないでください。
+    template <class T>
+    T* FindLayer()
+    {
+        for (const Scope<Layer>& layer : m_layers)
+        {
+            T* typedLayer = dynamic_cast<T*>(layer.get());
+            if (typedLayer != nullptr)
+            {
+                return typedLayer;
+            }
+        }
+        return nullptr;
+    }
+
+    template <class T>
+    const T* FindLayer() const
+    {
+        for (const Scope<Layer>& layer : m_layers)
+        {
+            const T* typedLayer = dynamic_cast<const T*>(layer.get());
+            if (typedLayer != nullptr)
+            {
+                return typedLayer;
+            }
+        }
+        return nullptr;
+    }
+
     void RenderEntities();
 
     // Explicit RHI描画のFrame開始前に、Entityが共有するMeshのGPU Bufferを準備します。
