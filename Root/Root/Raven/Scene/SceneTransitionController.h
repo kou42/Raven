@@ -64,6 +64,7 @@ public:
     bool IsLoading() const;
     bool DidLastAsyncLoadSucceed() const { return m_LastAsyncLoadSucceeded; }
     float GetLoadingProgress() const;
+    float GetLoadingAnimationTime() const { return m_LoadingAnimationTime; }
 
     // Transition中はGame/UI操作を受け付けません。Window lifecycle EventはApplication側で別扱いします。
     bool BlocksInput() const { return IsTransitioning(); }
@@ -91,6 +92,7 @@ private:
     State m_State = State::Idle;
     float m_ElapsedTime = 0.0f;
     float m_OverlayAlpha = 0.0f;
+    float m_LoadingAnimationTime = 0.0f;
 
     SceneAsyncPreparation m_AsyncPreparation;
     SceneCreationFunction m_AsyncSceneCreation;
