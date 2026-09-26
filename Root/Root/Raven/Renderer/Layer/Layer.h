@@ -5,6 +5,8 @@
 namespace Raven
 {
 
+class Scene;
+
 class Layer
 {
 public:
@@ -13,6 +15,10 @@ public:
     virtual void OnAttach() {}
     virtual void OnDetach() {}
     virtual void OnUpdate(float dt) {}
+
+    // Application-owned LayerがActive Scene交換後にScene依存状態を再構築するための通知です。
+    // sceneは新しいActive Sceneで、nullptrはActive Sceneが無い状態を表します。
+    virtual void OnActiveSceneChanged(Scene* scene) { static_cast<void>(scene); }
     //virtual void OnUpdate() {}
     virtual void OnRender() {}
 
