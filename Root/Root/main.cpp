@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
     // Cloth / Jelly / Fluid LayerはApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
     const bool gameSceneRegistered = app.RegisterScene(
         "Game",
-        []()
+        [&app]()
         {
             return Raven::CreateScope<Raven::SceneGame>(&app);
         });
