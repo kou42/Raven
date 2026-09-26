@@ -126,6 +126,8 @@ void SceneTransitionController::Update(float deltaTime)
 
     if (m_State == State::Loading)
     {
+        m_LoadingAnimationTime += safeDeltaTime;
+
         // wait_for(0)だけで完了確認し、Application ThreadをLoading待ちで停止させません。
         if (m_AsyncPreparationFuture.valid() == true &&
             m_AsyncPreparationFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
@@ -245,6 +247,7 @@ void SceneTransitionController::BeginAsyncLoading()
     m_ElapsedTime = 0.0f;
     m_OverlayAlpha = 1.0f;
     m_State = State::Loading;
+    m_LoadingAnimationTime = 0.0f;
 
     SceneAsyncPreparation preparation = std::move(m_AsyncPreparation);
     const std::shared_ptr<SceneLoadingProgress> progress = m_LoadingProgress;
