@@ -29,7 +29,7 @@ public:
     explicit SceneTransitionController(SceneManager& sceneManager);
 
     // 遷移要求を開始します。進行中の再要求は状態競合を避けるため無視します。
-    void RequestTransition(Scope<Scene> scene,
+    bool RequestTransition(Scope<Scene> scene,
         const SceneTransitionSpecification& specification = {});
 
     // Application frameごとに呼び、Fadeの時間を進めます。
