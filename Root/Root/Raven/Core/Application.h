@@ -268,6 +268,11 @@ public:
     bool RequestSceneTransition(const std::string& sceneID,
         const SceneTransitionSpecification& specification = {});
 
+    // Worker ThreadではCPU側Preparationのみを行い、Scene生成はMain Threadへ戻して実行します。
+    bool RequestAsyncSceneTransition(const std::string& sceneID,
+        SceneAsyncPreparation preparation,
+        const SceneTransitionSpecification& specification = {});
+
     // EditorはApplicationの所有物を借用して表示・操作します。
     // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
     Scene* GetScene() { return m_SceneManager.GetActiveScene(); }
