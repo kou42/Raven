@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <cstring>
 
 namespace Raven
 {
@@ -94,7 +95,7 @@ std::size_t GetTextureDataSize(const TextureSpecification& specification)
 }
 
 Ref<Texture> CreateRuntimeTextureFromDecodedPixels(
-    unsigned char* data,
+    const unsigned char* data,
     int width,
     int height,
     int channels,
@@ -139,6 +140,38 @@ Ref<Texture> CreateRuntimeTextureFromDecodedPixels(
 
     // RendererにはSource pathやPNG/JPEG等の形式を渡さず、decode済みpixelと共通Specificationだけを渡します。
     return Texture::Create(specification, data, dataSize);
+}
+
+TextureAssetPixelData CreateAssetPixelData(
+    const unsigned char* data,
+    int width,
+    int height,
+    int channels)
+{
+    TextureAssetPixelData result{};
+    if (data == nullptr || width <= 0 || height <= 0)
+    {
+        return result;
+    }
+
+    result.Width = static_cast<uint32_t>(width);
+    result.Height = static_cast<uint32_t>(height);
+    result.Format = TextureFormatFromChannels(channels);
+    result.GenerateMips = true;
+
+    TextureSpecification specification{};
+    specification.Width = result.Width;
+    specification.Height = result.Height;
+    specification.Format = result.Format;
+    const std::size_t dataSize = GetTextureDataSize(specification);
+    if (dataSize == 0u)
+    {
+        return {};
+    }
+
+    result.Pixels.resize(dataSize);
+    std::memcpy(result.Pixels.data(), data, dataSize);
+    return result;
 }
 
 } // namespace
@@ -236,15 +269,32 @@ Ref<Texture> TextureAssetImporter::ImportTextureMemory(
 
 Ref<TextureAsset> TextureAssetImporter::Import(const std::string& sourcePath)
 {
-    Ref<Texture> texture = ImportTexture(sourcePath);
-    if (texture == nullptr || texture->GetID() == 0)
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* data = stbi_load(sourcePath.c_str(), &width, &height, &channels, 0);
+    if (data == nullptr)
+    {
+        std::cerr << "TextureAssetImporter::Import failed. Source decode failed: "
+                  << sourcePath << std::endl;
+        return nullptr;
+    }
+
+    Ref<Texture> texture = CreateRuntimeTextureFromDecodedPixels(
+        data, width, height, channels, sourcePath);
+    TextureAssetPixelData pixelData =
+        CreateAssetPixelData(data, width, height, channels);
+    stbi_image_free(data);
+
+    if (texture == nullptr || texture->GetID() == 0 || pixelData.IsValid() == false)
     {
         std::cerr << "TextureAssetImporter::Import failed. Runtime texture creation failed: "
                   << sourcePath << std::endl;
         return nullptr;
     }
 
-    return CreateRef<TextureAsset>(sourcePath, texture);
+    return CreateRef<TextureAsset>(
+        sourcePath, texture, std::move(pixelData));
 }
 
 Ref<TextureAsset> TextureAssetImporter::ImportMemory(
@@ -252,18 +302,38 @@ Ref<TextureAsset> TextureAssetImporter::ImportMemory(
     std::size_t encodedSize,
     const std::string& sourceIdentifier)
 {
-    Ref<Texture> texture = ImportTextureMemory(encodedData, encodedSize, sourceIdentifier);
-    if (texture == nullptr || texture->GetID() == 0)
+    if (encodedData == nullptr || encodedSize == 0u ||
+        encodedSize > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+    {
+        return nullptr;
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    const stbi_uc* bytes = static_cast<const stbi_uc*>(encodedData);
+    unsigned char* data = stbi_load_from_memory(
+        bytes, static_cast<int>(encodedSize), &width, &height, &channels, 0);
+    if (data == nullptr)
+    {
+        return nullptr;
+    }
+
+    Ref<Texture> texture = CreateRuntimeTextureFromDecodedPixels(
+        data, width, height, channels, sourceIdentifier);
+    TextureAssetPixelData pixelData =
+        CreateAssetPixelData(data, width, height, channels);
+    stbi_image_free(data);
+
+    if (texture == nullptr || texture->GetID() == 0 || pixelData.IsValid() == false)
     {
         std::cerr << "TextureAssetImporter::ImportMemory failed. Runtime texture creation failed. source: "
                   << sourceIdentifier << std::endl;
         return nullptr;
     }
 
-    // TextureAssetの既存SourcePath fieldは現段階では「Sourceを識別する文字列」としても利用します。
-    // AssetHandle/Registry導入時にPathとEmbedded Asset IDを型として分離できるよう、
-    // glTF側では実在しないPathへ変換せず論理Identifierをそのまま保持します。
-    return CreateRef<TextureAsset>(sourceIdentifier, texture);
+    return CreateRef<TextureAsset>(
+        sourceIdentifier, texture, std::move(pixelData));
 }
 
 bool TextureAssetImporter::SupportsExtension(const std::string& extension)

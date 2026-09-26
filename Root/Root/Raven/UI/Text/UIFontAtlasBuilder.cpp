@@ -1,11 +1,13 @@
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
 
 #include "Raven/Renderer/Texture/Texture.h"
+#include "Raven/Assets/TextureAsset.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <iterator>
@@ -348,7 +350,18 @@ bool UIFontAtlasBuilder::BuildFromFile(
 
     // Fontバイト列はRasterize終了後に解放できます。AtlasはGPU Textureだけを所有します。
     // 全処理が成功するまでoutAtlasへ触れず、失敗時に既存のAtlasを失わないようにします。
-    Ref<TextureAsset> asset = CreateRef<TextureAsset>(fontPath, texture);
+    TextureAssetPixelData pixelData{};
+    pixelData.Width = options.AtlasWidth;
+    pixelData.Height = options.AtlasHeight;
+    pixelData.Format = TextureFormat::RGBA8;
+    pixelData.GenerateMips = false;
+    pixelData.Pixels.resize(pixels.size());
+    std::memcpy(pixelData.Pixels.data(), pixels.data(), pixels.size());
+
+    // Glyph AtlasもSource画像と同じTextureAsset境界へ載せ、Explicit Backendが
+    // Legacy Textureのreadbackなしで同じAtlasをRHITextureとして再生成できるようにします。
+    Ref<TextureAsset> asset =
+        CreateRef<TextureAsset>(fontPath, texture, std::move(pixelData));
     UIFontAtlas built;
     if (built.Initialize(asset, options.AtlasWidth, options.AtlasHeight) == false)
     {
