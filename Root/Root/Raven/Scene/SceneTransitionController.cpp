@@ -15,6 +15,11 @@ SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
 void SceneTransitionController::RequestTransition(
     Scope<Scene> scene, const SceneTransitionSpecification& specification)
 {
+    if (m_State != State::Idle)
+    {
+        return;
+    }
+
     m_TargetScene = std::move(scene);
     m_Specification = specification;
     m_ElapsedTime = 0.0f;
