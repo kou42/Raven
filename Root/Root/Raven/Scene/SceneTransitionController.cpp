@@ -65,6 +65,13 @@ void SceneTransitionController::Update(float deltaTime)
         if (m_SceneManager.HasPendingSceneChange() == false)
         {
             m_ElapsedTime = 0.0f;
+            if (m_Specification.Type == SceneTransitionType::Instant)
+            {
+                m_OverlayAlpha = 0.0f;
+                m_State = State::Idle;
+                return;
+            }
+
             const float duration = NormalizeDuration(m_Specification.FadeInDuration);
             if (duration <= 0.0f)
             {
