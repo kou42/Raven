@@ -10,6 +10,7 @@
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneGame.h"
 
 namespace Raven
 {
@@ -177,6 +178,13 @@ void SoftBodyJellyDemoLayer::OnActiveSceneChanging(Scene* scene)
 void SoftBodyJellyDemoLayer::OnActiveSceneChanged(Scene* scene)
 {
     if (scene == nullptr || scene != m_Application.GetScene())
+    {
+        return;
+    }
+
+    // これらはSceneGame専用のPhysics検証Layerです。
+    // Title等の非Game SceneへDemo Entityを注入しないよう、対応Sceneだけで再構築します。
+    if (dynamic_cast<SceneGame*>(scene) == nullptr)
     {
         return;
     }
