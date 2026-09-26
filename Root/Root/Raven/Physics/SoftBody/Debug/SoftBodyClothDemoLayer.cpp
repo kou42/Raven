@@ -414,6 +414,27 @@ void SoftBodyClothDemoLayer::OnUpdate(float deltaTime)
 #endif
 }
 
+void SoftBodyClothDemoLayer::OnActiveSceneChanging(Scene* scene)
+{
+    // 通知時点では旧Sceneがまだ生存しています。既存OnDetach経路を再利用し、
+    // Entity / Physics Registry / GPU参照をScene破棄より先に解放します。
+    if (scene == m_Application.GetScene())
+    {
+        OnDetach();
+    }
+}
+
+void SoftBodyClothDemoLayer::OnActiveSceneChanged(Scene* scene)
+{
+    if (scene == nullptr || scene != m_Application.GetScene())
+    {
+        return;
+    }
+
+    // 新Active Sceneが確定した後に既存OnAttach経路でDemo状態を再構築します。
+    OnAttach();
+}
+
 void SoftBodyClothDemoLayer::OnRender()
 {
     // ========================================================================
