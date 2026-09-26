@@ -1,5 +1,20 @@
 # RHI Frame Lifecycle 設計・移行計画
 
+## 2026-09-27 RHI本流合流後の現在地
+
+PR #288 の統合により、通常 `Application` は OpenGL では Legacy `RenderCommand / RHICommandList`、
+DirectX 12 / Vulkan では `IExplicitSceneRuntime / RHISceneCommandList` を使用します。
+DX12/Vulkan は Clear Demo 専用ではなく、通常 Scene / Physics・Animation Debug / Main Window Raven UI を
+同一 Explicit Frame に記録する経路へ接続済みです。
+
+`RHISceneFrameLifecycle::Create()` と Legacy `RenderCommand` が OpenGL のみを生成する点は意図的です。
+Explicit Backend を Legacy `RHICommandList` へ追加せず、Runtime が Native Context / Device / Pipeline /
+Frame Lifecycle を所有します。Dear ImGui と Auxiliary Window は引き続き意図的な OpenGL 専用境界です。
+
+> 以下には移行過程の履歴説明も残しています。「Vulkan/DX12 Scene未接続」「通常Application未接続」などの
+> 記述は当時の実装段階を説明する履歴であり、現在の本流状態はこの節と
+> `RHI_MAINLINE_ROADMAP.md` を正とします。
+
 ## 現状（master の実装に基づく）
 
 - `RHIDevice` は Buffer / Texture 生成を担当し、Frame開始・Presentは持たない。

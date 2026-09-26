@@ -6,13 +6,13 @@ Raven の OpenGL / DirectX 12 / Vulkan を、独立 Demo ではなく通常の `
 
 この文書は 2026-09-27 時点の作業区切りを記録し、次回の実装再開時に「何が完了していて、何を次に直すべきか」を判断できる正本として使用します。
 
-対象作業ブランチ:
+基盤統合済み Pull Request:
 
-`refactor/rhi-backend-factory`
+`#288 RHI本流合流に向けてBackend生成境界を整理`（masterへマージ済み）
 
-対象 Pull Request:
+Phase 1 継続作業ブランチ:
 
-`#288 RHI本流合流に向けてBackend生成境界を整理`
+`refactor/rhi-legacy-boundary-audit`
 
 ---
 
@@ -202,11 +202,11 @@ SoftBody / Cloth / Wave 等の Dynamic Geometry が Explicit RHI Buffer へ正�
 
 ### Phase 1: 残存 Legacy 到達経路の最終監査
 
-- [ ] 通常 Application から到達可能な `RenderCommand` 直接利用を再検索。
-- [ ] `Scene` / `Layer` / `Renderer` 上位層の `gl*` 直呼びを再検索。
-- [ ] OpenGL 専用コードは明示的な Backend guard 内にあることを確認。
-- [ ] Dear ImGui / Auxiliary Window を「意図的 OpenGL 境界」としてコメント・文書上で確定。
-- [ ] `RHILegacyBackendFactory` 実装配置を必要なら専用 cpp へ整理。
+- [x] 通常 Application から到達可能な `RenderCommand` 直接利用を再検索。
+- [x] `Scene` / `Layer` / `Renderer` 上位層の `gl*` 直呼びを再検索。
+- [x] OpenGL 専用コードは明示的な Backend guard 内にあることを確認。
+- [x] Dear ImGui / Auxiliary Window を「意図的 OpenGL 境界」としてコメント・文書上で確定。
+- [x] `RHILegacyBackendFactory` 実装配置を必要なら専用 cpp へ整理。
 
 完了条件:
 
@@ -214,12 +214,12 @@ SoftBody / Cloth / Wave 等の Dynamic Geometry が Explicit RHI Buffer へ正�
 
 ### Phase 2: 静的整合性レビュー
 
-- [ ] DX12 Graphics Pipeline の input layout と Debug/UI shader を確認。
-- [ ] Vulkan vertex attribute / descriptor / dynamic viewport/scissor を確認。
-- [ ] Debug/UI texture binding の Resource lifetime を確認。
-- [ ] `offsetof` 等の必要 standard header を確認。
-- [ ] Scene 切替後の `PrepareScene()` と GPU Resource 再構築を確認。
-- [ ] Fatal / ResizeRequired 時の Prepared Frame 破棄経路を確認。
+- [x] DX12 Graphics Pipeline の input layout と Debug/UI shader を確認。
+- [x] Vulkan vertex attribute / descriptor / dynamic viewport/scissor を確認。
+- [x] Debug/UI texture binding の Resource lifetime を確認。
+- [x] `offsetof` 等の必要 standard header を確認。
+- [x] Scene 切替後の `PrepareScene()` と GPU Resource 再構築を確認。
+- [x] Fatal / ResizeRequired 時の Prepared Frame 破棄経路を確認。
 
 完了条件:
 
@@ -368,8 +368,8 @@ Dear ImGui の DX12/Vulkan Backend と Explicit Multi Window は、この完了�
 
 次回作業を開始するときは、最初に以下を確認します。
 
-1. `master` と `refactor/rhi-backend-factory` の差分。
-2. PR #288 の HEAD / merge conflict / CI 状態。
+1. `master` と現在のRHI作業ブランチの差分。
+2. 直近RHI Pull Requestの HEAD / merge conflict / CI 状態。
 3. この文書の Phase 1 未完了項目。
 4. `RHI_MIGRATION_CHECKLIST.md` と本ロードマップの内容に矛盾がないか。
 5. `docs/RHI-frame-lifecycle.md` の古い「DX12/Vulkan Scene未接続」記述が現実装と食い違っていないか。
@@ -390,7 +390,7 @@ Correctness修正
         ↓
 Release x64 build
         ↓
-PR #288 最終レビュー
+作業PR 最終レビュー
         ↓
 master merge
 ```

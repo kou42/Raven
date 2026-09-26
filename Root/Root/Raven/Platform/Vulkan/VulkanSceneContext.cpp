@@ -432,20 +432,41 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         return false;
     }
 
-    bool sameTextures = textures.size() == m_DescriptorTextures.size();
-    if (sameTextures == true)
+    // Surface / Debug / UIはPrepareFrame中に順番にTextureを準備します。
+    // 後段のPipelineが先に準備したTexture集合を置換すると、Draw時のBindTextureが
+    // Surface Textureを解決できなくなるため、現在のDescriptor集合へ不足分だけ統合します。
+    std::vector<Ref<RHITexture>> mergedTextures = m_DescriptorTextures;
+    bool requiresRebuild = m_TextureDescriptorPool == VK_NULL_HANDLE;
+    for (const Ref<RHITexture>& texture : textures)
     {
-        for (std::size_t index = 0; index < textures.size(); ++index)
+        if (texture == nullptr)
         {
-            if (textures[index] != m_DescriptorTextures[index])
+            return false;
+        }
+        bool found = false;
+        for (const Ref<RHITexture>& prepared : mergedTextures)
+        {
+            if (prepared == texture)
             {
-                sameTextures = false;
+                found = true;
                 break;
             }
         }
+        if (found == false)
+        {
+            mergedTextures.push_back(texture);
+            requiresRebuild = true;
+        }
     }
-    if (m_TextureDescriptorPool != VK_NULL_HANDLE &&
-        m_TextureDescriptorPipeline == native && sameTextures == true)
+
+    if (mergedTextures.size() > std::numeric_limits<uint32_t>::max())
+    {
+        return false;
+    }
+
+    // 各Explicit Pipelineのset=0/binding=0は同じCombined Image Sampler契約です。
+    // Texture集合が既に揃っていれば、互換なPipelineごとにPoolを作り直す必要はありません。
+    if (requiresRebuild == false)
     {
         return true;
     }
@@ -461,10 +482,10 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     VkDescriptorPool newPool = VK_NULL_HANDLE;
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = static_cast<uint32_t>(textures.size());
+    poolSize.descriptorCount = static_cast<uint32_t>(mergedTextures.size());
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = static_cast<uint32_t>(textures.size());
+    poolInfo.maxSets = static_cast<uint32_t>(mergedTextures.size());
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &newPool) != VK_SUCCESS)
@@ -472,8 +493,8 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         return false;
     }
     const VkDescriptorSetLayout layout = native->GetTextureSetLayout();
-    std::vector<VkDescriptorSetLayout> layouts(textures.size(), layout);
-    std::vector<VkDescriptorSet> descriptors(textures.size(), VK_NULL_HANDLE);
+    std::vector<VkDescriptorSetLayout> layouts(mergedTextures.size(), layout);
+    std::vector<VkDescriptorSet> descriptors(mergedTextures.size(), VK_NULL_HANDLE);
     VkDescriptorSetAllocateInfo allocation{};
     allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocation.descriptorPool = newPool;
@@ -484,10 +505,10 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         vkDestroyDescriptorPool(device, newPool, nullptr);
         return false;
     }
-    for (std::size_t index = 0; index < textures.size(); ++index)
+    for (std::size_t index = 0; index < mergedTextures.size(); ++index)
     {
         const auto nativeTexture =
-            std::dynamic_pointer_cast<VulkanSceneRHITexture>(textures[index]);
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(mergedTextures[index]);
         if (nativeTexture == nullptr ||
             nativeTexture->GetNativeTexture().IsValid() == false)
         {
@@ -512,8 +533,8 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     m_TextureDescriptorPool = newPool;
     m_TextureDescriptorPipeline = native;
     m_TextureDescriptors.resize(descriptors.size());
-    m_DescriptorTextures = textures;
-    for (std::size_t index = 0; index < textures.size(); ++index)
+    m_DescriptorTextures = mergedTextures;
+    for (std::size_t index = 0; index < mergedTextures.size(); ++index)
     {
         m_TextureDescriptors[index] = descriptors[index];
     }
