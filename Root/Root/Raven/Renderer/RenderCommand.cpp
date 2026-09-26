@@ -1,4 +1,5 @@
 #include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/RHI/RHILegacyBackendFactory.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"

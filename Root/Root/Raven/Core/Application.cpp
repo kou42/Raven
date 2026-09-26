@@ -1298,7 +1298,7 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
 
         Renderer::BeginFrame();
         Renderer::SetFrameViewport(
-            m_Window->GetFramebufferWidth(), m_Window->GetFramebufferHeight());
+            window.GetFramebufferWidth(), window.GetFramebufferHeight());
         if (callbacks.OnUpdate != nullptr)
         {
             callbacks.OnUpdate(frameDeltaTime);
