@@ -1405,10 +1405,41 @@ void Application::Run()
             const float transitionAlpha = m_SceneTransitionController.GetOverlayAlpha();
             if (transitionAlpha > 0.0f)
             {
+                const math::Vec2 viewportSize = m_UIContext.GetViewportSize();
                 m_UIContext.AddFrameOverlayRect(
                     math::Vec2(0.0f, 0.0f),
-                    m_UIContext.GetViewportSize(),
+                    viewportSize,
                     math::Vec4(0.0f, 0.0f, 0.0f, transitionAlpha));
+
+                if (m_SceneTransitionController.IsLoading() == true)
+                {
+                    const float progress = m_SceneTransitionController.GetLoadingProgress();
+                    const math::Vec2 center(viewportSize.x * 0.5f, viewportSize.y * 0.5f);
+
+                    // Font Assetに依存しないLoading Indicatorです。
+                    // 外周Circleと進捗Barだけで構成し、Scene/Font未初期化中でも描画可能にします。
+                    const float spinnerRadius = 18.0f;
+                    m_UIContext.AddFrameOverlayCircle(
+                        math::Vec2(center.x - spinnerRadius, center.y - 42.0f - spinnerRadius),
+                        math::Vec2(center.x + spinnerRadius, center.y - 42.0f + spinnerRadius),
+                        math::Vec4(1.0f, 1.0f, 1.0f, 0.28f));
+
+                    const float barWidth = std::min(320.0f, std::max(120.0f, viewportSize.x * 0.35f));
+                    const float barHeight = 8.0f;
+                    const math::Vec2 barMin(center.x - barWidth * 0.5f, center.y);
+                    const math::Vec2 barMax(center.x + barWidth * 0.5f, center.y + barHeight);
+                    m_UIContext.AddFrameOverlayRect(
+                        barMin, barMax, math::Vec4(1.0f, 1.0f, 1.0f, 0.20f));
+
+                    const float filledWidth = barWidth * std::clamp(progress, 0.0f, 1.0f);
+                    if (filledWidth > 0.0f)
+                    {
+                        m_UIContext.AddFrameOverlayRect(
+                            barMin,
+                            math::Vec2(barMin.x + filledWidth, barMax.y),
+                            math::Vec4(1.0f, 1.0f, 1.0f, 0.90f));
+                    }
+                }
             }
             m_UIContext.EndFrame();
         }
