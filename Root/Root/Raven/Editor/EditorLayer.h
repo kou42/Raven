@@ -55,7 +55,8 @@ public:
 
     // Editor専用リソースやPanelの初期化入口です。
     // ImGui Contextの生成はImGuiLayerの責務なので、ここでは行いません。
-    // 現在はScene View / Game View用Framebufferもここで生成します。
+    // OpenGLではScene View / Game View用Framebufferもここで生成します。
+    // Explicit BackendではBackend非依存状態だけを初期化し、未対応GPU Resourceは生成しません。
     void OnAttach() override;
 
     // Editor専用リソースやPanelの終了処理入口です。
@@ -232,6 +233,10 @@ private:
     // BeginDockSpace()でHost Windowに対してImGui::Begin()を呼んだ場合は、
     // 必ず対応するImGui::End()が必要です。Begin/Endの対応関係を明確に保つため状態を保持します。
     bool m_DockSpaceBegun = false;
+
+    // Scene/Game Viewのoff-screen FramebufferとDear ImGui表示が利用できる場合だけ有効です。
+    // Editorの選択・Command履歴等はこの値と分離し、Explicit BackendでもLayerを登録できます。
+    bool m_ViewportRenderingEnabled = false;
 };
 
 } // namespace Raven

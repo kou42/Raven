@@ -1,11 +1,17 @@
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Assets/TextureAsset.h"
 #include "Raven/Renderer/RHI/RHIClearContext.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
+#include "Raven/Renderer/Renderer.h"
+#include "Raven/UI/Text/UIFontAtlas.h"
 
 #include <cassert>
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace Raven::tests
@@ -52,10 +58,125 @@ public:
         return true;
     }
 };
+
+class MockGraphicsPipeline final : public RHIGraphicsPipeline
+{
+public:
+    explicit MockGraphicsPipeline(RHIGraphicsPipelineSpecification specification)
+        : m_Specification(std::move(specification))
+    {
+    }
+
+    const RHIGraphicsPipelineSpecification& GetSpecification() const override
+    {
+        return m_Specification;
+    }
+
+private:
+    RHIGraphicsPipelineSpecification m_Specification;
+};
+
+// native Deviceを生成せず、RendererがBackend別に構築したPipeline入力契約だけを記録します。
+class MockPipelineDevice final : public RHIDevice
+{
+public:
+    explicit MockPipelineDevice(RHIBackend backend)
+        : m_Backend(backend)
+    {
+    }
+
+    RHIBackend GetBackend() const override
+    {
+        return m_Backend;
+    }
+
+    Ref<RHIBuffer> CreateBuffer(const RHIBufferSpecification&, const void*) override
+    {
+        return nullptr;
+    }
+
+    Ref<RHIGraphicsPipeline> CreateGraphicsPipeline(
+        const RHIGraphicsPipelineSpecification& specification) override
+    {
+        Specifications.push_back(specification);
+        return CreateRef<MockGraphicsPipeline>(specification);
+    }
+
+    bool GetGraphicsPipelineTarget(RHIGraphicsPipelineTarget& target) const override
+    {
+        target.ColorFormat = RHIColorFormat::BGRA8Unorm;
+        target.DepthFormat = RHIDepthFormat::D32Float;
+        target.SampleCount = 1u;
+        return true;
+    }
+
+    Ref<RHITexture> CreateTexture(
+        const RHITextureSpecification&, const void*, std::size_t) override
+    {
+        return nullptr;
+    }
+
+    std::vector<RHIGraphicsPipelineSpecification> Specifications;
+
+private:
+    RHIBackend m_Backend = RHIBackend::None;
+};
+
+RHIShaderBinary MakeShaderBinary(RHIShaderBinaryFormat format)
+{
+    RHIShaderBinary binary{};
+    binary.Format = format;
+    binary.Code = { 1u };
+    return binary;
+}
 } // namespace
 
 void RunExplicitSceneFrameSelfTests()
 {
+    // Vulkan GLSLはPosition/Color/UVの3属性、現行DXILは未使用NORMALを含む4属性です。
+    // 共通Mesh strideは維持しつつ、Pipeline入力だけをShader Signatureへ一致させます。
+    PipelineSpecification sourcePipeline{};
+    MockPipelineDevice vulkanDevice(RHIBackend::Vulkan);
+    Ref<RHIGraphicsPipeline> opaque;
+    Ref<RHIGraphicsPipeline> transparent;
+    const RHIShaderBinary spirv = MakeShaderBinary(RHIShaderBinaryFormat::SPIRV);
+    assert(Renderer::CreateRHIScenePipelines(vulkanDevice, sourcePipeline,
+        spirv, spirv, opaque, transparent) == true);
+    assert(vulkanDevice.Specifications.size() == 2u);
+    assert(vulkanDevice.Specifications[0].VertexAttributes.size() == 3u);
+    assert(vulkanDevice.Specifications[1].VertexAttributes.size() == 3u);
+
+    MockPipelineDevice dx12Device(RHIBackend::DirectX12);
+    const RHIShaderBinary dxil = MakeShaderBinary(RHIShaderBinaryFormat::DXIL);
+    assert(Renderer::CreateRHIScenePipelines(dx12Device, sourcePipeline,
+        dxil, dxil, opaque, transparent) == true);
+    assert(dx12Device.Specifications.size() == 2u);
+    assert(dx12Device.Specifications[0].VertexAttributes.size() == 4u);
+    assert(dx12Device.Specifications[0].VertexAttributes[3].Location == 3u);
+
+    Ref<RHIGraphicsPipeline> debugLine;
+    assert(Renderer::CreateRHIDebugLinePipeline(
+        dx12Device, dxil, dxil, debugLine) == true);
+    assert(dx12Device.Specifications.size() == 3u);
+    assert(dx12Device.Specifications[2].VertexAttributes.size() == 4u);
+    assert(dx12Device.Specifications[2].VertexAttributes[3].Location == 3u);
+
+    // Explicit BackendのFont AtlasはLegacy Textureを作らず、Pixel Assetを描画準備時にUploadします。
+    TextureAssetPixelData atlasPixels{};
+    atlasPixels.Width = 2u;
+    atlasPixels.Height = 2u;
+    atlasPixels.Format = TextureFormat::RGBA8;
+    atlasPixels.GenerateMips = false;
+    atlasPixels.Pixels.resize(16u, std::byte{ 0xff });
+    Ref<TextureAsset> pixelOnlyAsset = CreateRef<TextureAsset>(
+        "explicit-font-atlas-test", Ref<Texture>{}, std::move(atlasPixels));
+    assert(pixelOnlyAsset->IsValid() == true);
+    assert(pixelOnlyAsset->GetTexture() == nullptr);
+    assert(pixelOnlyAsset->HasPixelData() == true);
+    UIFontAtlas fontAtlas;
+    assert(fontAtlas.Initialize(pixelOnlyAsset, 2u, 2u) == true);
+    assert(fontAtlas.GetTexture() == pixelOnlyAsset);
+
     using CallLog = std::vector<Call>;
     CallLog calls;
     uint32_t resizedWidth = 0u;

@@ -22,6 +22,15 @@ EditorLayer::EditorLayer(Application& application)
 
 void EditorLayer::OnAttach()
 {
+    m_ViewportRenderingEnabled = m_Application != nullptr &&
+        m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL;
+    if (m_ViewportRenderingEnabled == false)
+    {
+        // Explicit BackendではMain SceneとRaven UIをRuntimeが直接描画します。
+        // off-screen FramebufferとDear ImGui backendが揃うまではGPU Resourceを生成しません。
+        return;
+    }
+
     // ========================================================================
     // Editor Viewport GPU resources
     // ========================================================================
@@ -82,10 +91,26 @@ void EditorLayer::OnDetach()
     m_SelectionOutlineMaterial.reset();
     m_SceneFramebuffer.reset();
     m_GameFramebuffer.reset();
+    m_ViewportRenderingEnabled = false;
 }
 
 void EditorLayer::OnUpdate(float dt)
 {
+    if (m_Application == nullptr)
+    {
+        return;
+    }
+
+    // Scene差し替えとEntity破棄に関するEditor状態はGraphics Backendに依存しません。
+    // Dear ImGui frameが存在しないExplicit Backendでも毎frame同じLifetime規約を適用します。
+    SetEditorCommandHistoryScene(m_Application->GetScene());
+    ValidateSelectedEntity();
+
+    if (m_ViewportRenderingEnabled == false)
+    {
+        return;
+    }
+
     // ========================================================================
     // Editor-only update
     // ========================================================================
@@ -109,7 +134,8 @@ void EditorLayer::OnUpdate(float dt)
 
 void EditorLayer::OnRender()
 {
-    if (m_Application == nullptr || m_Application->GetScene() == nullptr)
+    if (m_ViewportRenderingEnabled == false ||
+        m_Application == nullptr || m_Application->GetScene() == nullptr)
     {
         return;
     }
@@ -226,21 +252,10 @@ void EditorLayer::RenderSceneToFramebuffer(
 
 void EditorLayer::OnImGuiRender(float dt)
 {
-    if (m_Application == nullptr)
+    if (m_ViewportRenderingEnabled == false || m_Application == nullptr)
     {
         return;
     }
-
-    // ApplicationのScene所有権が差し替わったframeで履歴も同期します。
-    // Pointerが変化した場合、SetEditorCommandHistorySceneが旧Scene用Undo / Redoを破棄します。
-    SetEditorCommandHistoryScene(m_Application->GetScene());
-
-    // ========================================================================
-    // Editor selection validation
-    // ========================================================================
-    // Hierarchyが非表示でもRuntime側ではEntityが破棄されたりSceneが差し替わる可能性があります。
-    // 選択状態はEditor全体で共有するため、Panel描画前に毎frame検証して無効参照を残しません。
-    ValidateSelectedEntity();
 
     // ========================================================================
     // Editor root window / DockSpace
