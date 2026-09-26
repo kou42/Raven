@@ -152,7 +152,7 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize)
     // UI TreeはRetained Modeとして保持しますが、DrawListはViewport/Layout結果から
     // 毎frame再構築することでResizeやStyle変更を即座に反映できるようにします。
     m_DrawList.Clear();
-    m_FrameOverlayRects.clear();
+    m_FrameOverlayShapes.clear();
     m_ViewportSize = viewportSize;
     m_FrameActive = true;
     UpdateTooltip();
@@ -225,7 +225,20 @@ void UIContext::AddFrameOverlayRect(
         return;
     }
 
-    m_FrameOverlayRects.push_back(FrameOverlayRect{ min, max, color });
+    m_FrameOverlayShapes.push_back(
+        FrameOverlayShape{ FrameOverlayShape::Type::Rect, min, max, color });
+}
+
+void UIContext::AddFrameOverlayCircle(
+    const math::Vec2& min, const math::Vec2& max, const math::Vec4& color)
+{
+    if (m_FrameActive == false)
+    {
+        return;
+    }
+
+    m_FrameOverlayShapes.push_back(
+        FrameOverlayShape{ FrameOverlayShape::Type::Circle, min, max, color });
 }
 
 void UIContext::EndFrame()
@@ -295,9 +308,16 @@ void UIContext::EndFrame()
 
     // Frame限定OverlayはTree / Popup / Tooltip / Drag Previewより後へ積みます。
     // 入力Elementを生成しないためHit Test順序には影響しません。
-    for (const FrameOverlayRect& overlay : m_FrameOverlayRects)
+    for (const FrameOverlayShape& overlay : m_FrameOverlayShapes)
     {
-        m_DrawList.AddRect(overlay.Min, overlay.Max, overlay.Color);
+        if (overlay.ShapeType == FrameOverlayShape::Type::Circle)
+        {
+            m_DrawList.AddCircle(overlay.Min, overlay.Max, overlay.Color);
+        }
+        else
+        {
+            m_DrawList.AddRect(overlay.Min, overlay.Max, overlay.Color);
+        }
     }
 
     // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
