@@ -27,18 +27,24 @@ namespace Raven
 // Application LayerのOnImGuiRender()を呼ぶため、Runtime Characterの診断値を画面へ安全に表示できます。
 //
 // Lifetimeについて:
-// Application終了時はApplication LayerがSceneより先にDetach/破棄されるため、借用している
-// CharacterControllerDemoLayerへのpointerはOverlayのLifetime中は有効です。
+// CharacterControllerDemoLayerはScene-ownedであり、Runtime中のScene交換によって破棄・再生成されます。
+// そのためOverlayはCharacter Layerへのpointerを保持せず、Applicationだけを非所有で借用します。
+// 診断値の表示やRuntime調整を行うたびにActive SceneからCharacterControllerDemoLayerを再解決することで、
+// Scene交換後に旧SceneのLayerを参照するdangling pointerを残しません。
 class CharacterLocomotionDebugOverlayLayer final : public Layer
 {
 public:
     explicit CharacterLocomotionDebugOverlayLayer(Application& application)
         : m_Application(&application)
     {
+        // ApplicationはこのOverlayを所有し、Overlayより長く生存します。
+        // CharacterControllerDemoLayerそのものはScene交換で差し替わるため、ここでは保持しません。
     }
 
     void OnDetach() override
     {
+        // Applicationへの借用pointerであり所有権は持ちません。
+        // Detach後にResolveCharacterLayer()からApplicationへアクセスしないよう明示的に切ります。
         m_Application = nullptr;
     }
 
@@ -426,6 +432,8 @@ private:
 private:
     CharacterControllerDemoLayer* ResolveCharacterLayer() const
     {
+        // CharacterControllerDemoLayerのLifetimeはSceneが所有します。
+        // pointerをmemberへ保存せず、その操作中だけActive Sceneから借用することが重要です。
         if (m_Application == nullptr)
         {
             return nullptr;
@@ -439,7 +447,6 @@ private:
 
         return scene->FindLayer<CharacterControllerDemoLayer>();
     }
-
 
     // CharacterControllerDemoLayerはScene所有なので保持せず、Applicationだけを借用します。
     // 各操作時にActive Sceneから再解決することでScene交換後のdangling pointerを防ぎます。
