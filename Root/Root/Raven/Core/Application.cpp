@@ -331,12 +331,8 @@ Application::~Application()
     //
     // 派生Scene側に「必ずScene::OnDestroy()を呼ぶ」という規約を要求しないことが重要です。
     // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の最終終了処理を保証します。
-    if (m_scene != nullptr)
-    {
-        m_scene->OnDestroy();
-        m_scene->Scene::OnDestroy();
-        m_scene.reset();
-    }
+    // Sceneの二段階CleanupはSceneManagerへ集約します。
+    m_SceneManager.Shutdown();
 
     // ImGui OpenGL backendは有効なOpenGL Contextを必要とします。
     // そのためWindowが破棄される前に明示的にDetachし、backendとImGui Contextを終了します。
@@ -1035,24 +1031,71 @@ void Application::PushLayer(Scope<Layer> layer)
 
 void Application::SetScene(Scope<Scene> scene)
 {
-    // ========================================================================
-    // Scene replacement shutdown
-    // ========================================================================
-    // Scene差し替え時もApplication終了時と同じ二段階終了処理を使います。
-    // 派生Scene固有Cleanupの後に、基底Sceneが内部LayerのDetachと残存Entity最終Sweepを実行してから
-    // 所有権を入れ替えるため、古いSceneのEntity / Component参照を新しいSceneへ持ち越しません。
-    if (m_scene != nullptr)
+    // 起動時などFrame処理外の即時切り替えはSceneManagerへ委譲します。
+    m_SceneManager.SetScene(std::move(scene));
+}
+
+void Application::RequestSceneChange(Scope<Scene> scene)
+{
+    // Update / Event / UI callbackから現在Sceneを直接破棄しないよう、
+    // 所有権だけを予約し、Present完了後の安全なFrame境界で反映します。
+    m_SceneManager.RequestSceneChange(std::move(scene));
+}
+
+bool Application::RequestSceneTransition(
+    Scope<Scene> scene, const SceneTransitionSpecification& specification)
+{
+    return m_SceneTransitionController.RequestTransition(std::move(scene), specification);
+}
+
+bool Application::RegisterScene(const std::string& sceneID, SceneFactoryFunction factory)
+{
+    return m_SceneFactory.Register(sceneID, std::move(factory));
+}
+
+bool Application::RequestSceneChange(const std::string& sceneID)
+{
+    Scope<Scene> scene = m_SceneFactory.Create(sceneID);
+    if (scene == nullptr)
     {
-        m_scene->OnDestroy();
-        m_scene->Scene::OnDestroy();
+        return false;
     }
 
-    m_scene = std::move(scene);
+    RequestSceneChange(std::move(scene));
+    return true;
+}
 
-    if (m_scene != nullptr)
+bool Application::RequestSceneTransition(
+    const std::string& sceneID, const SceneTransitionSpecification& specification)
+{
+    Scope<Scene> scene = m_SceneFactory.Create(sceneID);
+    if (scene == nullptr)
     {
-        m_scene->OnCreate();
+        return false;
     }
+
+    return RequestSceneTransition(std::move(scene), specification);
+}
+
+bool Application::RequestAsyncSceneTransition(
+    const std::string& sceneID,
+    SceneAsyncPreparation preparation,
+    const SceneTransitionSpecification& specification)
+{
+    if (m_SceneFactory.Contains(sceneID) == false || preparation == nullptr)
+    {
+        return false;
+    }
+
+    // SceneFactory::Create()はWorkerへ渡しません。
+    // Renderer / Physics / ECSを触る可能性があるScene constructorをApplication Threadに固定します。
+    SceneCreationFunction sceneCreation = [this, sceneID]()
+        {
+            return m_SceneFactory.Create(sceneID);
+        };
+
+    return m_SceneTransitionController.RequestAsyncTransition(
+        std::move(preparation), std::move(sceneCreation), specification);
 }
 
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
@@ -1233,6 +1276,10 @@ void Application::Run()
         // 通常/Explicitの両経路で同じdt上限と巻き戻り保護を適用します。
         const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
+        // Scene Transitionの時間はScene Updateより前に進めます。
+        // FadeOut完了時もSceneManagerへ予約するだけなので、現在FrameのScene寿命は維持されます。
+        m_SceneTransitionController.Update(frameDeltaTime);
+
         // ====================================================================
         // Renderer statistics frame boundary
         // ====================================================================
@@ -1261,7 +1308,7 @@ void Application::Run()
             // SceneGame以外へ切り替わったFrameは空宣言で旧Panelを掃除します。
             if (m_ImmediateUI.BeginFrame() == true)
             {
-                SceneGame* game = dynamic_cast<SceneGame*>(m_scene.get());
+                SceneGame* game = dynamic_cast<SceneGame*>(m_SceneManager.GetActiveScene());
                 if (m_PhysicsDebugImmediatePanelEnabled == true && game != nullptr)
                 {
                     ph::DrawPhysicsDebugImmediatePanel(m_ImmediateUI,
@@ -1294,10 +1341,11 @@ void Application::Run()
         // ====================================================================
         // Sceneはゲーム側のUpdate / Renderを担当します。
         // Editor処理はここへ混ぜず、後続のLayer更新へ分離します。
-        if (m_scene != nullptr)
+        Scene* activeScene = m_SceneManager.GetActiveScene();
+        if (activeScene != nullptr)
         {
-            m_scene->OnUpdate(frameDeltaTime);
-            m_scene->OnRender();
+            activeScene->OnUpdate(frameDeltaTime);
+            activeScene->OnRender();
         }
 
         // ====================================================================
@@ -1350,6 +1398,51 @@ void Application::Run()
             if (m_UIContext.GetPendingDPIFontCount() > 0u)
             {
                 m_UIContext.RefreshPendingDPIFonts();
+            }
+
+            // Transition OverlayはUIContextのFrame Overlay Queueへ追加し、EndFrame内で
+            // Retained Tree / Popup / Drag Previewより後へ合成します。GPU API固有処理はUIRendererへ委譲します。
+            const float transitionAlpha = m_SceneTransitionController.GetOverlayAlpha();
+            if (transitionAlpha > 0.0f)
+            {
+                const math::Vec2 viewportSize = m_UIContext.GetViewportSize();
+                m_UIContext.AddFrameOverlayRect(
+                    math::Vec2(0.0f, 0.0f),
+                    viewportSize,
+                    math::Vec4(0.0f, 0.0f, 0.0f, transitionAlpha));
+
+                if (m_SceneTransitionController.IsLoading() == true)
+                {
+                    const float progress = m_SceneTransitionController.GetLoadingProgress();
+                    const math::Vec2 center(viewportSize.x * 0.5f, viewportSize.y * 0.5f);
+
+                    // Font Assetに依存しないLoading Indicatorです。
+                    // 外周Circleと進捗Barだけで構成し、Scene/Font未初期化中でも描画可能にします。
+                    const float spinnerRadius = 18.0f;
+                    const float pulse = 0.5f + 0.5f * std::sin(
+                        m_SceneTransitionController.GetLoadingAnimationTime() * 4.0f);
+                    const float spinnerAlpha = 0.20f + pulse * 0.55f;
+                    m_UIContext.AddFrameOverlayCircle(
+                        math::Vec2(center.x - spinnerRadius, center.y - 42.0f - spinnerRadius),
+                        math::Vec2(center.x + spinnerRadius, center.y - 42.0f + spinnerRadius),
+                        math::Vec4(1.0f, 1.0f, 1.0f, spinnerAlpha));
+
+                    const float barWidth = std::min(320.0f, std::max(120.0f, viewportSize.x * 0.35f));
+                    const float barHeight = 8.0f;
+                    const math::Vec2 barMin(center.x - barWidth * 0.5f, center.y);
+                    const math::Vec2 barMax(center.x + barWidth * 0.5f, center.y + barHeight);
+                    m_UIContext.AddFrameOverlayRect(
+                        barMin, barMax, math::Vec4(1.0f, 1.0f, 1.0f, 0.20f));
+
+                    const float filledWidth = barWidth * std::clamp(progress, 0.0f, 1.0f);
+                    if (filledWidth > 0.0f)
+                    {
+                        m_UIContext.AddFrameOverlayRect(
+                            barMin,
+                            math::Vec2(barMin.x + filledWidth, barMax.y),
+                            math::Vec4(1.0f, 1.0f, 1.0f, 0.90f));
+                    }
+                }
             }
             m_UIContext.EndFrame();
         }
@@ -1404,6 +1497,37 @@ void Application::Run()
         {
             m_Running = false;
             break;
+        }
+
+        // Scene / Layer / UIの更新・描画とPresentがすべて完了した後だけ、
+        // Callback中に予約されたScene切り替えを反映します。
+        // 旧Sceneを参照する一時的なFrame処理が完了してから破棄することで、
+        // Update/Event/UI callback自身の実行中に所有元が消えることを防ぎます。
+        if (m_SceneManager.HasPendingSceneChange() == true)
+        {
+            Scene* oldScene = m_SceneManager.GetActiveScene();
+            // 旧Sceneが生存している最後の安全境界で通知し、LayerがEntity/Registryを解除できるようにします。
+            for (const Scope<Layer>& layer : m_Layers)
+            {
+                if (layer != nullptr)
+                {
+                    layer->OnActiveSceneChanging(oldScene);
+                }
+            }
+        }
+
+        if (m_SceneManager.FlushPendingSceneChange() == true)
+        {
+            Scene* changedScene = m_SceneManager.GetActiveScene();
+            // Scene交換完了後にApplication-owned Layerへ通知します。
+            // 旧Sceneは既に破棄済みなので渡さず、新Active Sceneだけを公開してdangling参照を作りません。
+            for (const Scope<Layer>& layer : m_Layers)
+            {
+                if (layer != nullptr)
+                {
+                    layer->OnActiveSceneChanged(changedScene);
+                }
+            }
         }
     }
 }
@@ -1565,6 +1689,34 @@ void Application::OnEvent(Event& event)
         m_UIContext.CancelMouseCapture();
         // OSのFocus喪失でも編集中の数値を確定し、再Focus時に途中入力を残しません。
         m_UIContext.ClearFocus();
+    }
+
+    // Fade / Scene交換待ち / FadeIn中は操作Eventをここで消費します。
+    // Window lifecycle EventはResize・Close・Focus後処理に必要なためブロックしません。
+    // Transition開始前から残っているCapture/Focusも解除し、Fade完了後にPressed状態等を持ち越しません。
+    if (m_SceneTransitionController.BlocksInput() == true && event.Handled == false)
+    {
+        const EventType type = event.GetEventType();
+        const bool inputEvent =
+            type == EventType::KeyPressed ||
+            type == EventType::KeyReleased ||
+            type == EventType::CharacterTyped ||
+            type == EventType::IMEComposition ||
+            type == EventType::MouseMoved ||
+            type == EventType::MouseButtonPressed ||
+            type == EventType::MouseButtonReleased ||
+            type == EventType::MouseScrolled;
+
+        if (inputEvent == true)
+        {
+            if (m_RavenUIEnabled == true)
+            {
+                m_UIContext.CancelMouseCapture();
+                m_UIContext.ClearFocus();
+            }
+            event.Handled = true;
+            return;
+        }
     }
 
     // ========================================================================

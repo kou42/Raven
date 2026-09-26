@@ -9,6 +9,8 @@
 #include <imgui.h>
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
+#include "Raven/Core/Application.h"
+#include "Raven/Scene/Scene.h"
 #include "Raven/Renderer/Layer/Layer.h"
 
 namespace Raven
@@ -25,35 +27,39 @@ namespace Raven
 // Application LayerのOnImGuiRender()を呼ぶため、Runtime Characterの診断値を画面へ安全に表示できます。
 //
 // Lifetimeについて:
-// Application終了時はApplication LayerがSceneより先にDetach/破棄されるため、借用している
-// CharacterControllerDemoLayerへのpointerはOverlayのLifetime中は有効です。
+// CharacterControllerDemoLayerはScene-ownedであり、Runtime中のScene交換によって破棄・再生成されます。
+// そのためOverlayはCharacter Layerへのpointerを保持せず、Applicationだけを非所有で借用します。
+// 診断値の表示やRuntime調整を行うたびにActive SceneからCharacterControllerDemoLayerを再解決することで、
+// Scene交換後に旧SceneのLayerを参照するdangling pointerを残しません。
 class CharacterLocomotionDebugOverlayLayer final : public Layer
 {
 public:
-    explicit CharacterLocomotionDebugOverlayLayer(
-        CharacterControllerDemoLayer& characterLayer)
-        : m_CharacterLayer(&characterLayer)
+    explicit CharacterLocomotionDebugOverlayLayer(Application& application)
+        : m_Application(&application)
     {
+        // ApplicationはこのOverlayを所有し、Overlayより長く生存します。
+        // CharacterControllerDemoLayerそのものはScene交換で差し替わるため、ここでは保持しません。
     }
 
     void OnDetach() override
     {
-        // 借用pointerであり所有権は持ちません。
-        // Application LayerはSceneより先に破棄されますが、Detach後に誤利用しないよう明示的に切ります。
-        m_CharacterLayer = nullptr;
+        // Applicationへの借用pointerであり所有権は持ちません。
+        // Detach後にResolveCharacterLayer()からApplicationへアクセスしないよう明示的に切ります。
+        m_Application = nullptr;
     }
 
     void OnImGuiRender(float deltaTime) override
     {
         static_cast<void>(deltaTime);
 
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
 
         const CharacterLocomotionDebugSnapshot snapshot =
-            m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+            characterLayer->GetHumanoidLocomotionDebugSnapshot();
 
         // ====================================================================
         // Runtime Locomotion overlay
@@ -306,7 +312,7 @@ public:
             if (ImGui::Button("Copy Config") == true)
             {
                 const CharacterLocomotionDebugSnapshot latestSnapshot =
-                    m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+                    characterLayer->GetHumanoidLocomotionDebugSnapshot();
                 const std::string tuningConfigText = BuildTuningConfigText(latestSnapshot);
                 ImGui::SetClipboardText(tuningConfigText.c_str());
             }
@@ -315,7 +321,7 @@ public:
             if (ImGui::Button("Print Config") == true)
             {
                 const CharacterLocomotionDebugSnapshot latestSnapshot =
-                    m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+                    characterLayer->GetHumanoidLocomotionDebugSnapshot();
                 const std::string tuningConfigText = BuildTuningConfigText(latestSnapshot);
                 std::cout
                     << "[CharacterController] Locomotion Foot Sliding tuning: "
@@ -326,7 +332,7 @@ public:
             if (ImGui::Button("Save Profile") == true)
             {
                 std::string saveError;
-                if (m_CharacterLayer->SaveHumanoidLocomotionProfileTuning(&saveError) == false)
+                if (characterLayer->SaveHumanoidLocomotionProfileTuning(&saveError) == false)
                 {
                     m_LastTuningError = saveError;
                 }
@@ -350,13 +356,14 @@ private:
         float runAuthoredSpeed,
         float sprintAuthoredSpeed)
     {
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
 
         std::string tuningError;
-        if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
+        if (characterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
                 walkAuthoredSpeed,
                 runAuthoredSpeed,
                 sprintAuthoredSpeed,
@@ -376,13 +383,14 @@ private:
         float runThreshold,
         float sprintThreshold)
     {
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
 
         std::string tuningError;
-        if (m_CharacterLayer->SetHumanoidLocomotionThresholds(
+        if (characterLayer->SetHumanoidLocomotionThresholds(
                 idleThreshold,
                 walkThreshold,
                 runThreshold,
@@ -422,9 +430,27 @@ private:
     }
 
 private:
-    // CharacterControllerDemoLayerのLifetimeはSceneが所有します。
-    // OverlayはRuntime調整APIを呼ぶため非constの非所有pointerとして保持します。
-    CharacterControllerDemoLayer* m_CharacterLayer = nullptr;
+    CharacterControllerDemoLayer* ResolveCharacterLayer() const
+    {
+        // CharacterControllerDemoLayerのLifetimeはSceneが所有します。
+        // pointerをmemberへ保存せず、その操作中だけActive Sceneから借用することが重要です。
+        if (m_Application == nullptr)
+        {
+            return nullptr;
+        }
+
+        Scene* scene = m_Application->GetScene();
+        if (scene == nullptr)
+        {
+            return nullptr;
+        }
+
+        return scene->FindLayer<CharacterControllerDemoLayer>();
+    }
+
+    // CharacterControllerDemoLayerはScene所有なので保持せず、Applicationだけを借用します。
+    // 各操作時にActive Sceneから再解決することでScene交換後のdangling pointerを防ぎます。
+    Application* m_Application = nullptr;
     std::string m_LastTuningError;
 };
 

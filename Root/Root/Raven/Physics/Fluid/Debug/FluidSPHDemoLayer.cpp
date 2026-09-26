@@ -15,6 +15,7 @@
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneGame.h"
 
 namespace Raven
 {
@@ -215,6 +216,34 @@ void FluidSPHDemoLayer::OnUpdate(float deltaTime)
     // Layerの可変frame dtを使うとRigid/Soft/Thermalとの時間順序がframe rate依存になるため、
     // OnUpdateではSimulationやRender同期を行いません。
     (void)deltaTime;
+}
+
+void FluidSPHDemoLayer::OnActiveSceneChanging(Scene* scene)
+{
+    // 通知時点では旧Sceneがまだ生存しています。既存OnDetach経路を再利用し、
+    // Entity / Physics Registry / GPU参照をScene破棄より先に解放します。
+    if (scene == m_Application.GetScene())
+    {
+        OnDetach();
+    }
+}
+
+void FluidSPHDemoLayer::OnActiveSceneChanged(Scene* scene)
+{
+    if (scene == nullptr || scene != m_Application.GetScene())
+    {
+        return;
+    }
+
+    // これらはSceneGame専用のPhysics検証Layerです。
+    // Title等の非Game SceneへDemo Entityを注入しないよう、対応Sceneだけで再構築します。
+    if (dynamic_cast<SceneGame*>(scene) == nullptr)
+    {
+        return;
+    }
+
+    // 新Active Sceneが確定した後に既存OnAttach経路でDemo状態を再構築します。
+    OnAttach();
 }
 
 void FluidSPHDemoLayer::SimulateFluid(float fixedDeltaTime)

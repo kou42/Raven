@@ -17,6 +17,8 @@
 namespace Raven
 {
 
+class Application;
+
 // ============================================================================
 // SceneGame
 // ============================================================================
@@ -34,8 +36,9 @@ class SceneGame : public Scene, public SceneViewportRenderer
     friend class Gltf::HumanSkinningDebugLayer;
 
 public:
-    SceneGame()
-        : m_PhysicsDebugRenderer(*this)
+    explicit SceneGame(Application* application = nullptr)
+        : m_Application(application)
+        , m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
         // Human.glbが未配置でもLayer側が安全にskipします。
@@ -115,7 +118,11 @@ private:
     // Mouse PickingはPrimary SceneCameraのViewを直接参照します。
     // SceneGameにCamera行列を複製しないことで、描画Cameraとの状態二重化を防ぎます。
     void UpdateMouseDragImpulse();
+    void UpdateSceneTransitionShortcut();
     bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
+
+    Application* m_Application = nullptr;
+    bool m_WasTitleTransitionKeyPressed = false;
 
     ShaderLibrary m_ShaderLibrary;
     Ref<Shader> m_Shader;

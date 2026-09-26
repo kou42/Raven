@@ -18,6 +18,7 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
+#include "Raven/Scene/SceneTitle.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
 #include "Raven/Debug/BrowserDebugServer.h"
@@ -164,11 +165,39 @@ int main(int argc, char* argv[])
 
     Raven::Application app;
 
-    // Runtime Sceneを先に生成した後、Character / SoftBody検証LayerとEditorLayerを登録します。
+    // Runtime SceneはScene ID Registryへ登録し、起動時も同じFactory経路から生成します。
+    // これにより今後Title / Stage等が増えても呼び出し側が具体Scene型を知る必要がありません。
     // Character ControllerはPhysics Query後のTransformを同じFrameのScene Renderへ反映したいため、
     // Application LayerではなくScene-owned Layerとして登録します。
     // Cloth / Jelly / Fluid LayerはApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
-    app.SetScene(Raven::CreateScope<Raven::SceneGame>());
+    const bool gameSceneRegistered = app.RegisterScene(
+        "Game",
+        [&app]()
+        {
+            return Raven::CreateScope<Raven::SceneGame>(&app);
+        });
+    const bool titleSceneRegistered = app.RegisterScene(
+        "Title",
+        [&app]()
+        {
+            return Raven::CreateScope<Raven::SceneTitle>(app);
+        });
+
+    if (gameSceneRegistered == false || titleSceneRegistered == false)
+    {
+        std::cerr << "Failed to register runtime scenes.\n";
+        return 1;
+    }
+
+    // main()はまだApplication::Run()開始前なので、起動Sceneだけは即時activateします。
+    // Runtime中の切り替えはRequestSceneChange / RequestSceneTransitionを使いFrame境界へ遅延します。
+    Raven::Scope<Raven::Scene> startupScene = app.GetSceneFactory().Create("Game");
+    if (startupScene == nullptr)
+    {
+        std::cerr << "Failed to create the startup Game scene.\n";
+        return 1;
+    }
+    app.SetScene(std::move(startupScene));
 
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
@@ -192,12 +221,11 @@ int main(int argc, char* argv[])
             const Raven::math::Vec3 fluidDemoCharacterDebugPosition{ 50.0f, 0.0f, 58.0f };
 
             app.PushLayer(
-                Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
-                    *characterLayerPointer));
+                Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(app));
 
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterPositionDebugOverlayLayer>(
-                    *characterLayerPointer,
+                    app,
                     fluidDemoCharacterDebugPosition));
         }
     }

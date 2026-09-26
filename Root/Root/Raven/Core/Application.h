@@ -5,6 +5,9 @@
 #include "Raven/Core/KeyCodes.h"
 
 #include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneManager.h"
+#include "Raven/Scene/SceneFactory.h"
+#include "Raven/Scene/SceneTransitionController.h"
 #include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
@@ -248,12 +251,38 @@ public:
     void PushLayer(Layer* layer);
     void PushLayer(Scope<Layer> layer);
 
+    // 起動時など安全な境界で即時にSceneを差し替える互換APIです。
     void SetScene(Scope<Scene> scene);
+
+    // Update / Event / UI callback中からScene切り替えを予約します。
+    // 実際の破棄・OnCreateはPresent完了後のFrame境界で行います。
+    void RequestSceneChange(Scope<Scene> scene);
+
+    // Fade等の演出を伴うScene切り替え入口です。
+    bool RequestSceneTransition(Scope<Scene> scene,
+        const SceneTransitionSpecification& specification = {});
+
+    // Scene IDを登録し、呼び出し側が具体Scene型を知らずに遷移できるようにします。
+    bool RegisterScene(const std::string& sceneID, SceneFactoryFunction factory);
+    bool RequestSceneChange(const std::string& sceneID);
+    bool RequestSceneTransition(const std::string& sceneID,
+        const SceneTransitionSpecification& specification = {});
+
+    // Worker ThreadではCPU側Preparationのみを行い、Scene生成はMain Threadへ戻して実行します。
+    bool RequestAsyncSceneTransition(const std::string& sceneID,
+        SceneAsyncPreparation preparation,
+        const SceneTransitionSpecification& specification = {});
 
     // EditorはApplicationの所有物を借用して表示・操作します。
     // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
-    Scene* GetScene() { return m_scene.get(); }
-    const Scene* GetScene() const { return m_scene.get(); }
+    Scene* GetScene() { return m_SceneManager.GetActiveScene(); }
+    const Scene* GetScene() const { return m_SceneManager.GetActiveScene(); }
+    SceneFactory& GetSceneFactory() { return m_SceneFactory; }
+    const SceneFactory& GetSceneFactory() const { return m_SceneFactory; }
+    SceneManager& GetSceneManager() { return m_SceneManager; }
+    const SceneManager& GetSceneManager() const { return m_SceneManager; }
+    SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
+    const SceneTransitionController& GetSceneTransitionController() const { return m_SceneTransitionController; }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
     WindowManager& GetWindowManager() { return m_WindowManager; }
@@ -314,7 +343,11 @@ private:
     WindowManager m_WindowManager;
     WindowID m_MainWindowID = 0;
     std::vector<Scope<Layer>> m_Layers;
-    Scope<Scene> m_scene;
+    // Sceneの所有権とDeferred切り替えはSceneManagerへ集約します。
+    SceneFactory m_SceneFactory;
+    SceneManager m_SceneManager;
+    // SceneManagerより先に破棄される宣言順とし、Controllerが借用する参照寿命を保証します。
+    SceneTransitionController m_SceneTransitionController{ m_SceneManager };
 
     // Main Window用のRaven UI frame状態です。
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から

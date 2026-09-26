@@ -11,6 +11,7 @@ class Application;
 class Material;
 class Mesh;
 class MeshDeformationInstance;
+class Scene;
 
 // ============================================================================
 // SoftBodyClothDemoLayer
@@ -40,6 +41,8 @@ public:
 
     void OnAttach() override;
     void OnDetach() override;
+    void OnActiveSceneChanging(Scene* scene) override;
+    void OnActiveSceneChanged(Scene* scene) override;
     void OnUpdate(float deltaTime) override;
     void OnRender() override;
 

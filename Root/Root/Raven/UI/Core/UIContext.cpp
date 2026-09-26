@@ -152,6 +152,7 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize)
     // UI TreeはRetained Modeとして保持しますが、DrawListはViewport/Layout結果から
     // 毎frame再構築することでResizeやStyle変更を即座に反映できるようにします。
     m_DrawList.Clear();
+    m_FrameOverlayShapes.clear();
     m_ViewportSize = viewportSize;
     m_FrameActive = true;
     UpdateTooltip();
@@ -216,6 +217,30 @@ bool UIContext::TransferRootChildTo(UIContext& destination, UIElement* child)
     return transferred == child;
 }
 
+void UIContext::AddFrameOverlayRect(
+    const math::Vec2& min, const math::Vec2& max, const math::Vec4& color)
+{
+    if (m_FrameActive == false)
+    {
+        return;
+    }
+
+    m_FrameOverlayShapes.push_back(
+        FrameOverlayShape{ FrameOverlayShape::Type::Rect, min, max, color });
+}
+
+void UIContext::AddFrameOverlayCircle(
+    const math::Vec2& min, const math::Vec2& max, const math::Vec4& color)
+{
+    if (m_FrameActive == false)
+    {
+        return;
+    }
+
+    m_FrameOverlayShapes.push_back(
+        FrameOverlayShape{ FrameOverlayShape::Type::Circle, min, max, color });
+}
+
 void UIContext::EndFrame()
 {
     if (m_FrameActive == false)
@@ -278,6 +303,20 @@ void UIContext::EndFrame()
             m_DragPreviewFont->AppendText(m_DrawList, m_DragPreviewText,
                 math::Vec2(min.x + 12.0f, min.y + 20.0f), 28.0f,
                 math::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        }
+    }
+
+    // Frame限定OverlayはTree / Popup / Tooltip / Drag Previewより後へ積みます。
+    // 入力Elementを生成しないためHit Test順序には影響しません。
+    for (const FrameOverlayShape& overlay : m_FrameOverlayShapes)
+    {
+        if (overlay.ShapeType == FrameOverlayShape::Type::Circle)
+        {
+            m_DrawList.AddCircle(overlay.Min, overlay.Max, overlay.Color);
+        }
+        else
+        {
+            m_DrawList.AddRect(overlay.Min, overlay.Max, overlay.Color);
         }
     }
 

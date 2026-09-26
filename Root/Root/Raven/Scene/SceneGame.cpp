@@ -598,6 +598,7 @@ void SceneGame::OnUpdateGame(float dt)
 
     // StateMachine検証用ParameterをAnimationSystem実行前に更新する。
     UpdateAnimationStateMachineTest(safeDt);
+    UpdateSceneTransitionShortcut();
 
     const bool spacePressed = Input::IsKeyPressed(Key::Space);
     if (spacePressed && m_WasSpacePressed == false)
@@ -619,6 +620,32 @@ void SceneGame::OnUpdateGame(float dt)
     // MeshDeformationComponentを持つ全EntityをSystemが走査するため、将来Skeletal/Morphを
     // 追加しても、この更新箇所は変更せず同じ入口を共有できます。
     MeshDeformationSystem::Update(*this, safeDt);
+}
+
+
+void SceneGame::UpdateSceneTransitionShortcut()
+{
+    if (m_Application == nullptr)
+    {
+        return;
+    }
+
+    // EscapeはApplication終了に使用されているため競合させず、F10をScene遷移検証専用キーにします。
+    const bool titleTransitionKeyPressed = Input::IsKeyPressed(Key::F10);
+    const bool transitionRequested =
+        titleTransitionKeyPressed == true && m_WasTitleTransitionKeyPressed == false;
+    m_WasTitleTransitionKeyPressed = titleTransitionKeyPressed;
+
+    if (transitionRequested == false)
+    {
+        return;
+    }
+
+    SceneTransitionSpecification specification{};
+    specification.Type = SceneTransitionType::Fade;
+    specification.FadeOutDuration = 0.25f;
+    specification.FadeInDuration = 0.25f;
+    m_Application->RequestSceneTransition("Title", specification);
 }
 
 void SceneGame::OnRender()

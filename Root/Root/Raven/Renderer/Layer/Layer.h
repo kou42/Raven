@@ -5,6 +5,8 @@
 namespace Raven
 {
 
+class Scene;
+
 class Layer
 {
 public:
@@ -13,6 +15,11 @@ public:
     virtual void OnAttach() {}
     virtual void OnDetach() {}
     virtual void OnUpdate(float dt) {}
+
+    // Scene破棄前後の通知です。Application-owned LayerがScene Entity / Physics Registryを
+    // 安全に解除してから、新Scene向け状態を再構築するために使用します。
+    virtual void OnActiveSceneChanging(Scene* scene) { static_cast<void>(scene); }
+    virtual void OnActiveSceneChanged(Scene* scene) { static_cast<void>(scene); }
     //virtual void OnUpdate() {}
     virtual void OnRender() {}
 

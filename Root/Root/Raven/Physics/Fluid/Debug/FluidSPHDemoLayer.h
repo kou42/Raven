@@ -18,6 +18,7 @@ class Application;
 class Material;
 class Mesh;
 class Pipeline;
+class Scene;
 
 // ============================================================================
 // Fluid SPH Demo Layer
@@ -39,6 +40,8 @@ public:
 
     void OnAttach() override;
     void OnDetach() override;
+    void OnActiveSceneChanging(Scene* scene) override;
+    void OnActiveSceneChanged(Scene* scene) override;
     void OnUpdate(float deltaTime) override;
     void OnRender() override;
 
