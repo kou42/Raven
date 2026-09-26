@@ -277,6 +277,8 @@ public:
     // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
     Scene* GetScene() { return m_SceneManager.GetActiveScene(); }
     const Scene* GetScene() const { return m_SceneManager.GetActiveScene(); }
+    SceneFactory& GetSceneFactory() { return m_SceneFactory; }
+    const SceneFactory& GetSceneFactory() const { return m_SceneFactory; }
     SceneManager& GetSceneManager() { return m_SceneManager; }
     const SceneManager& GetSceneManager() const { return m_SceneManager; }
     SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
