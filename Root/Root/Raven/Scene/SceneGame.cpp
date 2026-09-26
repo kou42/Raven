@@ -664,8 +664,13 @@ void SceneGame::OnRender()
 
 void SceneGame::RenderScene(const Camera& camera)
 {
-    RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
-    RenderCommand::Clear();
+    if (Renderer::IsExplicitSceneMode() == false)
+    {
+        // Legacy OpenGLでは従来どおりScene開始前にBackBufferをClearします。
+        // DX12/VulkanはRuntime側のRenderPass/Frame開始処理がClearを担当します。
+        RenderCommand::SetClearColor(0.1f, 0.1f, 0.3f, 1.0f);
+        RenderCommand::Clear();
+    }
 
     // ここがScene描画におけるCameraの単一入口です。
     // Renderer::Draw()とRenderer::EndScene()内のDebug Passは、このContextを共通利用します。
@@ -749,7 +754,10 @@ void SceneGame::OnEvent(Event& e)
     if (e.GetEventType() == EventType::WindowResize)
     {
         auto& resizeEvent = static_cast<WindowResizeEvent&>(e);
-        RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
+        if (Renderer::IsExplicitSceneMode() == false)
+        {
+            RenderCommand::SetViewport(0, 0, resizeEvent.GetWidth(), resizeEvent.GetHeight());
+        }
 
         m_ViewportWidth = static_cast<float>(resizeEvent.GetWidth());
         m_ViewportHeight = static_cast<float>(resizeEvent.GetHeight());

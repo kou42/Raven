@@ -41,6 +41,9 @@ struct ApplicationSpecification
     WindowProps WindowProperties{};
     bool EnableRavenUI = true;
     bool EnableDearImGui = true;
+    // DX12/Vulkan通常Applicationで使用するScene Pipeline/Shader設定です。
+    // OpenGL Legacy経路では参照しません。
+    RHIExplicitSceneSpecification ExplicitScene{};
     // 既存Editor UIへ重ねるため、Physics Debug Panelは明示的に有効化します。
     bool EnablePhysicsDebugImmediatePanel = false;
     // 文字表示用Atlasは呼び出し側がGPU Context有効時に生成・共有します。
@@ -341,6 +344,7 @@ private:
     // OpenGLではApplicationがLifecycleを所有し、Explicit RuntimeではRuntime所有物を借用します。
     // 所有Scopeと利用Pointerを分け、DX12/Vulkan RuntimeのFrame境界を二重解放しない構造にします。
     Scope<RHISceneFrameLifecycle> m_OwnedSceneFrame;
+    Scope<IExplicitSceneRuntime> m_ExplicitSceneRuntime;
     RHISceneFrameLifecycle* m_SceneFrame = nullptr;
     // ManagerはMain Windowを借用登録します。宣言順によりManagerが先に破棄されます。
     WindowManager m_WindowManager;

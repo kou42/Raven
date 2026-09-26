@@ -31,6 +31,7 @@ struct SceneRenderItem
 std::vector<SceneRenderItem> s_OpaqueQueue;
 std::vector<SceneRenderItem> s_TransparentQueue;
 bool s_SceneQueueActive = false;
+bool s_ExplicitSceneMode = false;
 
 float ComputeFallbackSortDepth(const math::Mat4& transform, const math::Mat4& view)
 {
@@ -266,6 +267,13 @@ void Renderer::BeginScene()
 
 void Renderer::EndScene()
 {
+    if (s_ExplicitSceneMode == true)
+    {
+        // Explicit Runtimeはこの後PrepareFrame()でQueueをSnapshot化します。
+        // Legacy Flush/Debug Overlayを実行するとRenderCommandへ到達するため、ここではQueueを保持します。
+        return;
+    }
+
     // Flush中のDrawが再びQueueへ入らないよう、先に受付を閉じます。
     s_SceneQueueActive = false;
 
@@ -286,6 +294,16 @@ void Renderer::EndScene()
         ph::PhysicsDebugRenderer::RenderRegistered();
         AnimationDebugOverlayRenderer::RenderRegistered();
     }
+}
+
+void Renderer::SetExplicitSceneMode(bool enabled)
+{
+    s_ExplicitSceneMode = enabled;
+}
+
+bool Renderer::IsExplicitSceneMode()
+{
+    return s_ExplicitSceneMode;
 }
 
 const RendererCameraContext& Renderer::GetCameraContext()

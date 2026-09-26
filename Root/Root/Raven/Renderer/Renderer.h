@@ -77,6 +77,10 @@ public:
     static void BeginScene();
     static void EndScene();
 
+    // Explicit RuntimeではEndScene時にLegacy描画せず、QueueをPrepareFrameまで保持します。
+    static void SetExplicitSceneMode(bool enabled);
+    static bool IsExplicitSceneMode();
+
     static const RendererCameraContext& GetCameraContext();
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
