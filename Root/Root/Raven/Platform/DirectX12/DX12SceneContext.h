@@ -34,6 +34,7 @@ public:
 
     // Scene DrawのRasterizer領域とScissorを同時に設定します。
     bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    bool SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     void SetClearColor(const float color[4]);
     // 描画途中のClearを現在のRTVへ記録します（次FrameのClear色は変更しません）。
     bool ClearColorAttachment(const float color[4]);
@@ -51,7 +52,8 @@ public:
     // strideはPipelineのVertex Binding 0と一致させてください。
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
         const Ref<RHIBuffer>& indexBuffer, uint32_t stride,
-        uint32_t indexCount = 0);
+        uint32_t indexCount = 0, uint32_t firstIndex = 0,
+        PrimitiveTopology topology = PrimitiveTopology::Triangles);
 
     // 現在のFrameで設定済みのPipelineを検証してから描画します。
     // PSOが未設定のDrawIndexedInstancedを発行しないための入口です。

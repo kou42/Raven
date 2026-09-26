@@ -21,13 +21,15 @@ public:
     virtual ~RHISceneCommandList() = default;
 
     virtual bool SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
+    virtual bool SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
     virtual bool ClearColor(const float color[4]) = 0;
     virtual bool BindPipeline(const Ref<RHIGraphicsPipeline>& pipeline) = 0;
     virtual bool BindMaterial(const RHIMaterialProperties& material) = 0;
     // column-majorのclip-space変換行列を設定します。
     virtual bool SetClipTransform(const std::array<float, 16>& transform) = 0;
     virtual bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
-        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0) = 0;
+        const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0,
+        uint32_t firstIndex = 0) = 0;
 };
 
 // Scene / Layer / ImGui / Raven UIを含むApplication Frameの境界です。
