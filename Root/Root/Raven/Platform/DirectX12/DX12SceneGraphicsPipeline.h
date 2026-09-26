@@ -24,7 +24,8 @@ public:
     {
         if (device == nullptr ||
             specification.IsValidForBackend(RHIBackend::DirectX12) == false ||
-            specification.Topology != PrimitiveTopology::Triangles ||
+            (specification.Topology != PrimitiveTopology::Triangles &&
+                specification.Topology != PrimitiveTopology::Lines) ||
             specification.DepthFormat != RHIDepthFormat::D32Float ||
             specification.SampleCount != 1 ||
             specification.VertexBindings.size() != 1 ||
@@ -33,6 +34,9 @@ public:
             return false;
         }
 
+        // Scene SurfaceだけでなくPhysics/Animation Debug Lineも同じExplicit RHI Pipelineを通ります。
+        // PSO側のPrimitiveTopologyTypeとDraw時のIA topologyを一致させるため、
+        // 現在サポートするTriangles/Linesだけを入口で明示的に許可します。
         DXGI_FORMAT colorFormat = DXGI_FORMAT_UNKNOWN;
         switch (specification.ColorFormat)
         {
