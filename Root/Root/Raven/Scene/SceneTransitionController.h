@@ -36,6 +36,8 @@ public:
     void Update(float deltaTime);
 
     bool IsTransitioning() const;
+    // Transition中はGame/UI操作を受け付けません。Window lifecycle EventはApplication側で別扱いします。
+    bool BlocksInput() const { return IsTransitioning(); }
     float GetOverlayAlpha() const { return m_OverlayAlpha; }
 
 private:
