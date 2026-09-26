@@ -1048,6 +1048,36 @@ void Application::RequestSceneTransition(
     m_SceneTransitionController.RequestTransition(std::move(scene), specification);
 }
 
+bool Application::RegisterScene(const std::string& sceneID, SceneFactoryFunction factory)
+{
+    return m_SceneFactory.Register(sceneID, std::move(factory));
+}
+
+bool Application::RequestSceneChange(const std::string& sceneID)
+{
+    Scope<Scene> scene = m_SceneFactory.Create(sceneID);
+    if (scene == nullptr)
+    {
+        return false;
+    }
+
+    RequestSceneChange(std::move(scene));
+    return true;
+}
+
+bool Application::RequestSceneTransition(
+    const std::string& sceneID, const SceneTransitionSpecification& specification)
+{
+    Scope<Scene> scene = m_SceneFactory.Create(sceneID);
+    if (scene == nullptr)
+    {
+        return false;
+    }
+
+    RequestSceneTransition(std::move(scene), specification);
+    return true;
+}
+
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
     RHISceneFrameLifecycle& frame,
     const std::function<bool()>& prepare,
@@ -1580,6 +1610,34 @@ void Application::OnEvent(Event& event)
         m_UIContext.CancelMouseCapture();
         // OSのFocus喪失でも編集中の数値を確定し、再Focus時に途中入力を残しません。
         m_UIContext.ClearFocus();
+    }
+
+    // Fade / Scene交換待ち / FadeIn中は操作Eventをここで消費します。
+    // Window lifecycle EventはResize・Close・Focus後処理に必要なためブロックしません。
+    // Transition開始前から残っているCapture/Focusも解除し、Fade完了後にPressed状態等を持ち越しません。
+    if (m_SceneTransitionController.BlocksInput() == true && event.Handled == false)
+    {
+        const EventType type = event.GetEventType();
+        const bool inputEvent =
+            type == EventType::KeyPressed ||
+            type == EventType::KeyReleased ||
+            type == EventType::CharacterTyped ||
+            type == EventType::IMEComposition ||
+            type == EventType::MouseMoved ||
+            type == EventType::MouseButtonPressed ||
+            type == EventType::MouseButtonReleased ||
+            type == EventType::MouseScrolled;
+
+        if (inputEvent == true)
+        {
+            if (m_RavenUIEnabled == true)
+            {
+                m_UIContext.CancelMouseCapture();
+                m_UIContext.ClearFocus();
+            }
+            event.Handled = true;
+            return;
+        }
     }
 
     // ========================================================================
