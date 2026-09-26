@@ -12,12 +12,12 @@ SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
 {
 }
 
-void SceneTransitionController::RequestTransition(
+bool SceneTransitionController::RequestTransition(
     Scope<Scene> scene, const SceneTransitionSpecification& specification)
 {
     if (m_State != State::Idle)
     {
-        return;
+        return false;
     }
 
     m_TargetScene = std::move(scene);
@@ -28,7 +28,7 @@ void SceneTransitionController::RequestTransition(
     {
         m_OverlayAlpha = 0.0f;
         RequestPendingSceneChange();
-        return;
+        return true;
     }
 
     const float fadeOutDuration = NormalizeDuration(m_Specification.FadeOutDuration);
@@ -37,11 +37,12 @@ void SceneTransitionController::RequestTransition(
         // FadeOutが0秒でもScene交換はApplicationの安全なFrame境界まで遅延します。
         m_OverlayAlpha = 1.0f;
         RequestPendingSceneChange();
-        return;
+        return true;
     }
 
     m_OverlayAlpha = 0.0f;
     m_State = State::FadeOut;
+    return true;
 }
 
 void SceneTransitionController::Update(float deltaTime)
