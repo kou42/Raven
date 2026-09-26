@@ -3,6 +3,7 @@
 #include "Raven/Scene/SceneManager.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace Raven
 {
@@ -10,6 +11,15 @@ namespace Raven
 SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
     : m_SceneManager(sceneManager)
 {
+}
+
+SceneTransitionController::~SceneTransitionController()
+{
+    // std::asyncのWorkerがController内Callbackを参照したまま破棄されないよう完了を待ちます。
+    if (m_AsyncPreparationFuture.valid() == true)
+    {
+        m_AsyncPreparationFuture.wait();
+    }
 }
 
 bool SceneTransitionController::RequestTransition(
@@ -23,6 +33,7 @@ bool SceneTransitionController::RequestTransition(
     m_TargetScene = std::move(scene);
     m_Specification = specification;
     m_ElapsedTime = 0.0f;
+    m_LastAsyncLoadSucceeded = true;
 
     if (m_Specification.Type == SceneTransitionType::Instant)
     {
@@ -34,7 +45,6 @@ bool SceneTransitionController::RequestTransition(
     const float fadeOutDuration = NormalizeDuration(m_Specification.FadeOutDuration);
     if (fadeOutDuration <= 0.0f)
     {
-        // FadeOutが0秒でもScene交換はApplicationの安全なFrame境界まで遅延します。
         m_OverlayAlpha = 1.0f;
         RequestPendingSceneChange();
         return true;
@@ -42,6 +52,39 @@ bool SceneTransitionController::RequestTransition(
 
     m_OverlayAlpha = 0.0f;
     m_State = State::FadeOut;
+    return true;
+}
+
+bool SceneTransitionController::RequestAsyncTransition(
+    SceneAsyncPreparation preparation,
+    SceneCreationFunction sceneCreation,
+    const SceneTransitionSpecification& specification)
+{
+    if (m_State != State::Idle || preparation == nullptr || sceneCreation == nullptr)
+    {
+        return false;
+    }
+
+    m_Specification = specification;
+    m_ElapsedTime = 0.0f;
+    m_OverlayAlpha = specification.Type == SceneTransitionType::Instant ? 1.0f : 0.0f;
+    m_AsyncPreparation = std::move(preparation);
+    m_AsyncSceneCreation = std::move(sceneCreation);
+    m_AsyncRequested = true;
+    m_LastAsyncLoadSucceeded = true;
+
+    const float fadeOutDuration = NormalizeDuration(m_Specification.FadeOutDuration);
+    if (m_Specification.Type == SceneTransitionType::Instant || fadeOutDuration <= 0.0f)
+    {
+        // Async遷移ではInstantでもLoading中の未完成Sceneを見せないため暗転します。
+        m_OverlayAlpha = 1.0f;
+        BeginAsyncLoading();
+    }
+    else
+    {
+        m_State = State::FadeOut;
+    }
+
     return true;
 }
 
@@ -58,8 +101,43 @@ void SceneTransitionController::Update(float deltaTime)
 
         if (m_OverlayAlpha >= 1.0f)
         {
-            // 完全に暗転したFrameを描画してからSceneを交換します。
-            // SceneManagerのDeferred Queueへ渡すため、この時点では旧Sceneは破棄されません。
+            if (m_AsyncRequested == true)
+            {
+                BeginAsyncLoading();
+            }
+            else
+            {
+                RequestPendingSceneChange();
+            }
+        }
+        return;
+    }
+
+    if (m_State == State::Loading)
+    {
+        // wait_for(0)だけで完了確認し、Application ThreadをLoading待ちで停止させません。
+        if (m_AsyncPreparationFuture.valid() == true &&
+            m_AsyncPreparationFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+        {
+            const bool prepared = m_AsyncPreparationFuture.get();
+            if (prepared == false)
+            {
+                m_LastAsyncLoadSucceeded = false;
+                FinishWithoutSceneChange();
+                return;
+            }
+
+            // Scene / Renderer / ECS初期化にはMain Thread制約を持つ処理が含まれ得ます。
+            // WorkerではCPU側Preparationだけを行い、Scene生成は必ずこのUpdate()内で実行します。
+            m_TargetScene = m_AsyncSceneCreation();
+            if (m_TargetScene == nullptr)
+            {
+                m_LastAsyncLoadSucceeded = false;
+                FinishWithoutSceneChange();
+                return;
+            }
+
+            m_LastAsyncLoadSucceeded = true;
             RequestPendingSceneChange();
         }
         return;
@@ -67,11 +145,10 @@ void SceneTransitionController::Update(float deltaTime)
 
     if (m_State == State::WaitingForSceneChange)
     {
-        // Application末尾でSceneManagerのQueueがFlushされた次FrameからFadeInへ進みます。
         if (m_SceneManager.HasPendingSceneChange() == false)
         {
             m_ElapsedTime = 0.0f;
-            if (m_Specification.Type == SceneTransitionType::Instant)
+            if (m_Specification.Type == SceneTransitionType::Instant && m_AsyncRequested == false)
             {
                 m_OverlayAlpha = 0.0f;
                 m_State = State::Idle;
@@ -83,6 +160,7 @@ void SceneTransitionController::Update(float deltaTime)
             {
                 m_OverlayAlpha = 0.0f;
                 m_State = State::Idle;
+                m_AsyncRequested = false;
             }
             else
             {
@@ -104,6 +182,7 @@ void SceneTransitionController::Update(float deltaTime)
         {
             m_OverlayAlpha = 0.0f;
             m_State = State::Idle;
+            m_AsyncRequested = false;
         }
     }
 }
@@ -113,9 +192,50 @@ bool SceneTransitionController::IsTransitioning() const
     return m_State != State::Idle;
 }
 
+bool SceneTransitionController::IsLoading() const
+{
+    return m_State == State::Loading;
+}
+
+void SceneTransitionController::BeginAsyncLoading()
+{
+    m_ElapsedTime = 0.0f;
+    m_OverlayAlpha = 1.0f;
+    m_State = State::Loading;
+
+    SceneAsyncPreparation preparation = std::move(m_AsyncPreparation);
+    m_AsyncPreparationFuture = std::async(std::launch::async,
+        [preparation = std::move(preparation)]() mutable
+        {
+            return preparation();
+        });
+}
+
+void SceneTransitionController::FinishWithoutSceneChange()
+{
+    m_AsyncPreparation = {};
+    m_AsyncSceneCreation = {};
+    m_AsyncRequested = false;
+    m_ElapsedTime = 0.0f;
+
+    const float duration = NormalizeDuration(m_Specification.FadeInDuration);
+    if (duration <= 0.0f)
+    {
+        m_OverlayAlpha = 0.0f;
+        m_State = State::Idle;
+    }
+    else
+    {
+        // Load失敗時は旧Sceneを維持したまま暗転を解除します。
+        m_State = State::FadeIn;
+    }
+}
+
 void SceneTransitionController::RequestPendingSceneChange()
 {
     m_SceneManager.RequestSceneChange(std::move(m_TargetScene));
+    m_AsyncPreparation = {};
+    m_AsyncSceneCreation = {};
     m_State = State::WaitingForSceneChange;
     m_ElapsedTime = 0.0f;
 }
