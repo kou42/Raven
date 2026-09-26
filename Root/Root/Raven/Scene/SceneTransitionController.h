@@ -28,7 +28,7 @@ class SceneTransitionController
 public:
     explicit SceneTransitionController(SceneManager& sceneManager);
 
-    // 遷移要求を開始します。同一遷移中の再要求は最後の要求で置き換えます。
+    // 遷移要求を開始します。進行中の再要求は状態競合を避けるため無視します。
     void RequestTransition(Scope<Scene> scene,
         const SceneTransitionSpecification& specification = {});
 
