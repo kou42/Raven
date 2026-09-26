@@ -1350,7 +1350,8 @@ void Application::Run()
                 m_UIContext.RefreshPendingDPIFonts();
             }
 
-            // Transition OverlayはUIContextのFrame Overlay Queueへ追加し、EndFrame内で\n            // Retained Tree / Popup / Drag Previewより後へ合成します。GPU API固有処理はUIRendererへ委譲します。
+            // Transition OverlayはUIContextのFrame Overlay Queueへ追加し、EndFrame内で
+            // Retained Tree / Popup / Drag Previewより後へ合成します。GPU API固有処理はUIRendererへ委譲します。
             const float transitionAlpha = m_SceneTransitionController.GetOverlayAlpha();
             if (transitionAlpha > 0.0f)
             {
