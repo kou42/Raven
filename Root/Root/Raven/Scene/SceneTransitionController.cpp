@@ -139,7 +139,14 @@ void SceneTransitionController::Update(float deltaTime)
 
             // Scene / Renderer / ECS初期化にはMain Thread制約を持つ処理が含まれ得ます。
             // WorkerではCPU側Preparationだけを行い、Scene生成は必ずこのUpdate()内で実行します。
-            m_TargetScene = m_AsyncSceneCreation();
+            try
+            {
+                m_TargetScene = m_AsyncSceneCreation();
+            }
+            catch (...)
+            {
+                m_TargetScene.reset();
+            }
             if (m_TargetScene == nullptr)
             {
                 m_LastAsyncLoadSucceeded = false;
