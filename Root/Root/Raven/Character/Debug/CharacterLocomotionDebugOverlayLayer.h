@@ -350,7 +350,8 @@ private:
         float runAuthoredSpeed,
         float sprintAuthoredSpeed)
     {
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
@@ -376,7 +377,8 @@ private:
         float runThreshold,
         float sprintThreshold)
     {
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
