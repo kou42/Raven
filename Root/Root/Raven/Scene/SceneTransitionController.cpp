@@ -166,6 +166,10 @@ void SceneTransitionController::Update(float deltaTime)
             }
 
             m_LastAsyncLoadSucceeded = true;
+            if (m_LoadingProgress != nullptr)
+            {
+                m_LoadingProgress->Set(1.0f);
+            }
             RequestPendingSceneChange();
         }
         return;
