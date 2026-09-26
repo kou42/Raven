@@ -63,6 +63,10 @@ public:
     void AddFrameOverlayRect(const math::Vec2& min,
         const math::Vec2& max, const math::Vec4& color);
 
+    // Loading等の最前面表示向け。円も入力Elementを作らずFrame限定で描画します。
+    void AddFrameOverlayCircle(const math::Vec2& min,
+        const math::Vec2& max, const math::Vec4& color);
+
     // GPU Contextが有効な描画準備段階で呼び、Tree内の未生成DPI Fontをまとめて解決します。
     // DPI通知やBeginFrameではGPU Contextが保証されないため自動生成しません。
     // 成功したLabel数を返します。失敗したLabelはPending状態を保持しつつ自動再試行を停止します。
@@ -224,13 +228,20 @@ private:
     float m_UserScale = 1.0f;
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
-    struct FrameOverlayRect
+    struct FrameOverlayShape
     {
+        enum class Type
+        {
+            Rect,
+            Circle
+        };
+
+        Type ShapeType = Type::Rect;
         math::Vec2 Min{};
         math::Vec2 Max{};
         math::Vec4 Color{};
     };
-    std::vector<FrameOverlayRect> m_FrameOverlayRects;
+    std::vector<FrameOverlayShape> m_FrameOverlayShapes;
     Scope<UIElement> m_RootElement;
     UIElement* m_PopupLayer = nullptr;
     UITooltip* m_Tooltip = nullptr;
