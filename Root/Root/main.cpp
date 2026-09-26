@@ -164,11 +164,27 @@ int main(int argc, char* argv[])
 
     Raven::Application app;
 
-    // Runtime Sceneを先に生成した後、Character / SoftBody検証LayerとEditorLayerを登録します。
+    // Runtime SceneはScene ID Registryへ登録し、起動時も同じFactory経路から生成します。
+    // これにより今後Title / Stage等が増えても呼び出し側が具体Scene型を知る必要がありません。
     // Character ControllerはPhysics Query後のTransformを同じFrameのScene Renderへ反映したいため、
     // Application LayerではなくScene-owned Layerとして登録します。
     // Cloth / Jelly / Fluid LayerはApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
-    app.SetScene(Raven::CreateScope<Raven::SceneGame>());
+    const bool gameSceneRegistered = app.RegisterScene(
+        "Game",
+        []()
+        {
+            return Raven::CreateScope<Raven::SceneGame>();
+        });
+
+    if (gameSceneRegistered == false || app.RequestSceneChange("Game") == false)
+    {
+        std::cerr << "Failed to register or create the startup Game scene.\n";
+        return 1;
+    }
+
+    // main()はまだApplication::Run()開始前なので、Deferred requestを待つ必要はありません。
+    // Registryの生成経路を利用したSceneを起動時だけ即時activateします。
+    app.GetSceneManager().FlushPendingSceneChange();
 
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
