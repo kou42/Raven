@@ -9,6 +9,8 @@
 #include <imgui.h>
 
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
+#include "Raven/Core/Application.h"
+#include "Raven/Scene/Scene.h"
 #include "Raven/Renderer/Layer/Layer.h"
 
 namespace Raven
@@ -30,30 +32,28 @@ namespace Raven
 class CharacterLocomotionDebugOverlayLayer final : public Layer
 {
 public:
-    explicit CharacterLocomotionDebugOverlayLayer(
-        CharacterControllerDemoLayer& characterLayer)
-        : m_CharacterLayer(&characterLayer)
+    explicit CharacterLocomotionDebugOverlayLayer(Application& application)
+        : m_Application(&application)
     {
     }
 
     void OnDetach() override
     {
-        // 借用pointerであり所有権は持ちません。
-        // Application LayerはSceneより先に破棄されますが、Detach後に誤利用しないよう明示的に切ります。
-        m_CharacterLayer = nullptr;
+        m_Application = nullptr;
     }
 
     void OnImGuiRender(float deltaTime) override
     {
         static_cast<void>(deltaTime);
 
-        if (m_CharacterLayer == nullptr)
+        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
+        if (characterLayer == nullptr)
         {
             return;
         }
 
         const CharacterLocomotionDebugSnapshot snapshot =
-            m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+            characterLayer->GetHumanoidLocomotionDebugSnapshot();
 
         // ====================================================================
         // Runtime Locomotion overlay
@@ -306,7 +306,7 @@ public:
             if (ImGui::Button("Copy Config") == true)
             {
                 const CharacterLocomotionDebugSnapshot latestSnapshot =
-                    m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+                    characterLayer->GetHumanoidLocomotionDebugSnapshot();
                 const std::string tuningConfigText = BuildTuningConfigText(latestSnapshot);
                 ImGui::SetClipboardText(tuningConfigText.c_str());
             }
@@ -315,7 +315,7 @@ public:
             if (ImGui::Button("Print Config") == true)
             {
                 const CharacterLocomotionDebugSnapshot latestSnapshot =
-                    m_CharacterLayer->GetHumanoidLocomotionDebugSnapshot();
+                    characterLayer->GetHumanoidLocomotionDebugSnapshot();
                 const std::string tuningConfigText = BuildTuningConfigText(latestSnapshot);
                 std::cout
                     << "[CharacterController] Locomotion Foot Sliding tuning: "
@@ -326,7 +326,7 @@ public:
             if (ImGui::Button("Save Profile") == true)
             {
                 std::string saveError;
-                if (m_CharacterLayer->SaveHumanoidLocomotionProfileTuning(&saveError) == false)
+                if (characterLayer->SaveHumanoidLocomotionProfileTuning(&saveError) == false)
                 {
                     m_LastTuningError = saveError;
                 }
@@ -356,7 +356,7 @@ private:
         }
 
         std::string tuningError;
-        if (m_CharacterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
+        if (characterLayer->SetHumanoidLocomotionAuthoredMotionSpeeds(
                 walkAuthoredSpeed,
                 runAuthoredSpeed,
                 sprintAuthoredSpeed,
@@ -382,7 +382,7 @@ private:
         }
 
         std::string tuningError;
-        if (m_CharacterLayer->SetHumanoidLocomotionThresholds(
+        if (characterLayer->SetHumanoidLocomotionThresholds(
                 idleThreshold,
                 walkThreshold,
                 runThreshold,
@@ -422,9 +422,26 @@ private:
     }
 
 private:
+    CharacterControllerDemoLayer* ResolveCharacterLayer() const
+    {
+        if (m_Application == nullptr)
+        {
+            return nullptr;
+        }
+
+        Scene* scene = m_Application->GetScene();
+        if (scene == nullptr)
+        {
+            return nullptr;
+        }
+
+        return scene->FindLayer<CharacterControllerDemoLayer>();
+    }
+
+
     // CharacterControllerDemoLayerのLifetimeはSceneが所有します。
     // OverlayはRuntime調整APIを呼ぶため非constの非所有pointerとして保持します。
-    CharacterControllerDemoLayer* m_CharacterLayer = nullptr;
+    Application* m_Application = nullptr;
     std::string m_LastTuningError;
 };
 
