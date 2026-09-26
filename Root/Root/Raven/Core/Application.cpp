@@ -1350,12 +1350,11 @@ void Application::Run()
                 m_UIContext.RefreshPendingDPIFonts();
             }
 
-            // Transition OverlayはRetained UI Treeの展開後に追加し、Main Window上の
-            // Scene / Editor UIより常に手前へ描画します。GPU API固有処理はUIRendererへ委譲します。
+            // Transition OverlayはUIContextのFrame Overlay Queueへ追加し、EndFrame内で\n            // Retained Tree / Popup / Drag Previewより後へ合成します。GPU API固有処理はUIRendererへ委譲します。
             const float transitionAlpha = m_SceneTransitionController.GetOverlayAlpha();
             if (transitionAlpha > 0.0f)
             {
-                m_UIContext.GetDrawList().AddRect(
+                m_UIContext.AddFrameOverlayRect(
                     math::Vec2(0.0f, 0.0f),
                     m_UIContext.GetViewportSize(),
                     math::Vec4(0.0f, 0.0f, 0.0f, transitionAlpha));
