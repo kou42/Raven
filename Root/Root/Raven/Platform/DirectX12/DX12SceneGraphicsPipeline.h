@@ -168,7 +168,13 @@ public:
             specification.FragmentShader.Code.size() };
         description.InputLayout = { elements.data(),
             static_cast<UINT>(elements.size()) };
-        description.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        // PSOのTopology TypeとDraw時のIA topologyを一致させます。
+        // Debug Line PipelineをTRIANGLEのまま生成すると、LINELISTを設定しても
+        // D3D12のPipeline契約に反するためLinesを明示的に分岐します。
+        description.PrimitiveTopologyType =
+            specification.Topology == PrimitiveTopology::Lines ?
+            D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE :
+            D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         description.SampleMask = UINT_MAX;
         description.NumRenderTargets = 1;
         description.RTVFormats[0] = colorFormat;

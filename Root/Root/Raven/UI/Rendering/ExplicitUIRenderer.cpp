@@ -94,15 +94,13 @@ bool ExplicitUIRenderer::Prepare(
     }
 
     RHIBufferSpecification vertexSpecification{};
-    vertexSpecification.Type = RHIBufferType::Vertex;
+    vertexSpecification.Usage = RHIBufferUsage::Vertex;
     vertexSpecification.Size = tessellated.Vertices.size() * sizeof(UIVertex);
-    vertexSpecification.Stride = sizeof(UIVertex);
     vertexSpecification.DebugName = "Raven UI Vertex Buffer";
 
     RHIBufferSpecification indexSpecification{};
-    indexSpecification.Type = RHIBufferType::Index;
+    indexSpecification.Usage = RHIBufferUsage::Index;
     indexSpecification.Size = tessellated.Indices.size() * sizeof(uint32_t);
-    indexSpecification.Stride = sizeof(uint32_t);
     indexSpecification.DebugName = "Raven UI Index Buffer";
 
     Ref<RHIBuffer> vertexBuffer = device.CreateBuffer(

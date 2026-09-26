@@ -93,7 +93,7 @@ public:
             return false;
         }
         if (m_Context.DrawIndexed(vertex->GetSceneBuffer(),
-            index->GetSceneBuffer(), indexCount, true) == false)
+            index->GetSceneBuffer(), indexCount, true, firstIndex) == false)
         {
             return false;
         }
