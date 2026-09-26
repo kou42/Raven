@@ -118,6 +118,10 @@ Application::Application(const ApplicationSpecification& specification)
             return true;
         });
 
+    // Renderer/RuntimeはWindowと同じBackendを明示的に受け取ります。
+    // OpenGLはLegacy CommandList、DX12/VulkanはExplicit Runtimeを選択し、
+    // 未対応BackendをOpenGLへ暗黙fallbackせず初期化段階で失敗させます。
+    // Window初期化後、Scene/UI生成前にFrame境界の所有者を確定します。
     const RHIBackend backend = m_Window->GetBackend();
     const bool explicitBackend =
         backend == RHIBackend::DirectX12 || backend == RHIBackend::Vulkan;
@@ -1578,8 +1582,8 @@ void Application::Run()
         }
 
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
-        // イベント処理とPresentを分離し、Clear DemoのFrame APIと同じ責務境界に揃えます。
-        // 現時点のScene描画はOpenGLのみ。Vulkan/DX12のSwapChain Presentをここへ仮接続しません。
+        // イベント処理とPresentを分離し、OpenGLはApplication所有Lifecycle、
+        // DX12/VulkanはExplicit Runtime内でEnd/Presentを一度だけ実行します。
         if (m_ExplicitSceneRuntime == nullptr)
         {
             if (m_SceneFrame->EndFrame() != RHIFrameResult::Success)

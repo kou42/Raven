@@ -332,6 +332,9 @@ Ref<TextureAsset> TextureAssetImporter::ImportMemory(
         return nullptr;
     }
 
+    // TextureAssetの既存SourcePath fieldは現段階では「Sourceを識別する文字列」としても利用します。
+    // AssetHandle/Registry導入時にPathとEmbedded Asset IDを型として分離できるよう、
+    // glTF側では実在しないPathへ変換せず論理Identifierをそのまま保持します。
     return CreateRef<TextureAsset>(
         sourceIdentifier, texture, std::move(pixelData));
 }
