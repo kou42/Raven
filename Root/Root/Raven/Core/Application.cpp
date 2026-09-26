@@ -128,7 +128,7 @@ Application::Application(const ApplicationSpecification& specification)
 
     // Window / Renderer初期化後にFrame境界を確定します。未対応Backendを成功扱いせず、
     // SceneやUIの生成前に失敗を検出します。Windowの所有権は移譲しません。
-    m_SceneFrame = RHISceneFrameLifecycle::Create(*m_Window);
+    m_OwnedSceneFrame = RHISceneFrameLifecycle::Create(*m_Window);\n    m_SceneFrame = m_OwnedSceneFrame.get();
     if (m_SceneFrame == nullptr)
     {
         m_Running = false;
@@ -352,7 +352,7 @@ Application::~Application()
     assert(auxiliaryWindowsClosed == true);
 
     // Frame境界が借用するMain Windowより先にBackend側のFrame状態を解放します。
-    m_SceneFrame.reset();
+    m_SceneFrame = nullptr;\n    m_OwnedSceneFrame.reset();
 }
 
 WindowID Application::CreateUIWindow(const WindowSpecification& specification)

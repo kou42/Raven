@@ -9,6 +9,7 @@
 #include "Raven/Scene/SceneFactory.h"
 #include "Raven/Scene/SceneTransitionController.h"
 #include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
+#include "Raven/Renderer/RHI/RHIExplicitSceneSpecification.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -204,9 +205,7 @@ public:
     // Scene参照はRuntimeのDevice破棄より前にOnBeforeShutdownで解放します。
     static int RunInitializedExplicitScene(Scope<Window> window,
         Scope<IExplicitSceneRuntime> runtime,
-        const PipelineSpecification& pipelineSpecification,
-        const RHIShaderAssetSpecification& vertexShader,
-        const RHIShaderAssetSpecification& fragmentShader,
+        const RHIExplicitSceneSpecification& sceneSpecification,
         const ExplicitSceneHooks& hooks,
         const std::function<bool(IExplicitSceneRuntime&)>& onInitializeScene)
     {
@@ -232,7 +231,8 @@ public:
             shutdown();
             return 1;
         }
-        if (runtime->Init(*window, pipelineSpecification, vertexShader, fragmentShader) == false)
+        if (runtime->Init(*window, sceneSpecification.Pipeline, sceneSpecification.VertexShader,
+            sceneSpecification.FragmentShader) == false)
         {
             shutdown();
             return 1;
@@ -338,7 +338,10 @@ private:
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
     // Main Windowに紐づくFrame境界をApplicationが所有し、Windowより先に破棄します。
-    Scope<RHISceneFrameLifecycle> m_SceneFrame;
+    // OpenGLではApplicationがLifecycleを所有し、Explicit RuntimeではRuntime所有物を借用します。
+    // 所有Scopeと利用Pointerを分け、DX12/Vulkan RuntimeのFrame境界を二重解放しない構造にします。
+    Scope<RHISceneFrameLifecycle> m_OwnedSceneFrame;
+    RHISceneFrameLifecycle* m_SceneFrame = nullptr;
     // ManagerはMain Windowを借用登録します。宣言順によりManagerが先に破棄されます。
     WindowManager m_WindowManager;
     WindowID m_MainWindowID = 0;
