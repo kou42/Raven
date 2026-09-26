@@ -217,7 +217,7 @@ SoftBody / Cloth / Wave 等の Dynamic Geometry が Explicit RHI Buffer へ正�
 - [ ] DX12 Graphics Pipeline の input layout と Debug/UI shader を確認。
 - [ ] Vulkan vertex attribute / descriptor / dynamic viewport/scissor を確認。
 - [ ] Debug/UI texture binding の Resource lifetime を確認。
-- [ ] `offsetof` 等の必要 standard header を確認。
+- [x] `offsetof` 等の必要 standard header を確認。
 - [ ] Scene 切替後の `PrepareScene()` と GPU Resource 再構築を確認。
 - [ ] Fatal / ResizeRequired 時の Prepared Frame 破棄経路を確認。
 
