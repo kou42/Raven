@@ -174,7 +174,7 @@ int main(int argc, char* argv[])
         "Game",
         []()
         {
-            return Raven::CreateScope<Raven::SceneGame>();
+            return Raven::CreateScope<Raven::SceneGame>(&app);
         });
     const bool titleSceneRegistered = app.RegisterScene(
         "Title",
