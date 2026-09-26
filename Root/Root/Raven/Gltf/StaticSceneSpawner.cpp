@@ -303,7 +303,9 @@ bool SpawnImportedInstances(Scene& scene, const std::vector<ImportedStaticMeshIn
         }
 
         Ref<Mesh> mesh = CreateRef<Mesh>(imported.Geometry);
-        if (mesh == nullptr || mesh->GetVertexArray() == nullptr)
+        const bool legacyResourcesRequired = GetRHIBackend() == RHIBackend::OpenGL;
+        if (mesh == nullptr ||
+            (legacyResourcesRequired == true && mesh->GetVertexArray() == nullptr))
         {
             StaticSceneSpawner::Destroy(scene, spawnedInstance);
             return SetError(errorMessage, "Imported GeometryからStatic Meshの生成に失敗しました");

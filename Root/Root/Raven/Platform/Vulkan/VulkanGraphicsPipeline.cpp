@@ -213,16 +213,13 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
     dynamic.dynamicStateCount = 2;
     dynamic.pDynamicStates = dynamicStates;
 
-    // Model/View/Projection合成行列とMaterial色をPush ConstantでDraw直前に更新します。
-    VkPushConstantRange modelRange{};
-    modelRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    modelRange.offset = 0;
-    modelRange.size = sizeof(float) * 16;
-    VkPushConstantRange materialRange{};
-    materialRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    materialRange.offset = sizeof(float) * 16;
-    materialRange.size = sizeof(float) * 4;
-    const VkPushConstantRange ranges[] = {modelRange, materialRange};
+    // UI Shaderを含むSPIR-V側では、各Stageが参照するMemberだけでなくBlock全体が
+    // 80byteのPush Constant範囲として宣言されます。PipelineLayoutも両Stageから
+    // Block全体を参照可能にし、実際の更新は従来どおりVertex 64byte / Fragment 16byteへ分けます。
+    VkPushConstantRange constantsRange{};
+    constantsRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    constantsRange.offset = 0;
+    constantsRange.size = sizeof(float) * 20;
     // Opaque/Transparentで同じDescriptor定義を使い、Setの互換性を維持します。
     VkDescriptorSetLayoutBinding textureBinding{};
     textureBinding.binding = 0;
@@ -245,8 +242,8 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
     layoutInfo.pSetLayouts = &m_TextureSetLayout;
-    layoutInfo.pushConstantRangeCount = 2;
-    layoutInfo.pPushConstantRanges = ranges;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &constantsRange;
     const VkResult layoutResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Layout);
     if (layoutResult == VK_SUCCESS)
     {

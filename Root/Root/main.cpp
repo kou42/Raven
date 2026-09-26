@@ -288,7 +288,13 @@ int main(int argc, char* argv[])
     app.PushLayer(Raven::CreateScope<Raven::UITextDemoLayer>(app));
 #endif
 
-    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
+    // EditorはDear ImGuiとScene/Game View用Framebufferを必要とします。
+    // 現在これらの実装はOpenGL専用なので、Explicit Backendへ登録して未対応の
+    // Framebuffer生成を行わず、SceneとRaven UIの共通描画経路だけを実行します。
+    if (applicationBackend == Raven::RHIBackend::OpenGL)
+    {
+        app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
+    }
 
     app.Run();
     return 0;

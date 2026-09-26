@@ -8,6 +8,7 @@
 #include "Raven/Animation/AnimationSystem.h"
 
 #include <cmath>
+#include <iostream>
 #include <unordered_set>
 
 namespace Raven
@@ -355,10 +356,28 @@ bool Scene::PrepareRHIMeshes(RHIDevice& device)
             continue;
         }
 
-        // 同じDeviceで繰り返し準備するときも、Backend切替時に古いBufferを
-        // 誤利用しないよう、呼び出し元がContextごとに一度実行する契約です。
+        if (mesh->AreRHIResourcesSynchronized() == true)
+        {
+            continue;
+        }
+
+        // Dynamic Fixed Topologyは既存Bufferへ頂点だけを同期します。
+        // 新規Mesh、Topology変更、別Device用の再構築では同期できないため、
+        // CPU Geometryから両Bufferを作り直して部分状態を残しません。
+        if (mesh->SyncRHIResources() == true)
+        {
+            continue;
+        }
         if (mesh->BuildRHIResources(device) == false)
         {
+            const Ref<MeshGeometry>& geometry = mesh->GetGeometry();
+            std::cerr << "[Scene] Explicit Mesh resource creation failed. Entity="
+                << entity.GetIndex()
+                << ", Vertices="
+                << (geometry != nullptr ? geometry->GetVertices().size() : 0u)
+                << ", Indices="
+                << (geometry != nullptr ? geometry->GetIndices().size() : 0u)
+                << '\n';
             return false;
         }
     }

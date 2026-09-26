@@ -579,9 +579,10 @@ bool VulkanSceneContext::SetMaterialTint(const std::array<float, 4>& tint)
     {
         return false;
     }
-    // Vertex用64byteと重ならないFragment専用領域へ書き込みます。
+    // PipelineLayoutでは80byte Blockを両Stageへ公開しているため、部分更新でも
+    // Rangeと同じStage maskを指定します。書き込み先はMaterial用16byteだけです。
     vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
-        VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(float) * 16,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(float) * 16,
         static_cast<uint32_t>(sizeof(float) * tint.size()), tint.data());
     return true;
 }
@@ -595,8 +596,10 @@ bool VulkanSceneContext::SetClipTransform(const std::array<float, 16>& model)
         return false;
     }
     // Model/View/Projectionを合成した行列をCommand Bufferへコピーします。
+    // Push Constant Range全体のStage maskと一致させつつ、先頭64byteだけを更新します。
     vkCmdPushConstants(commandBuffer, m_BoundGraphicsPipeline->GetLayout(),
-        VK_SHADER_STAGE_VERTEX_BIT, 0, static_cast<uint32_t>(sizeof(float) * model.size()),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        static_cast<uint32_t>(sizeof(float) * model.size()),
         model.data());
     return true;
 }

@@ -307,6 +307,10 @@ static bool s_GLFWInitialized = false;
 
 std::unique_ptr<Window> Window::Create(const WindowProps& props)
 {
+    // Windowが選択したBackendをGPU Resource factoryの正規設定へ反映します。
+    // Explicit BackendでOpenGL Resourceを誤生成すると、有効なGL Contextがないまま
+    // native objectへ触れるため、Window構築より前にBackend境界を確定します。
+    SetRHIBackend(props.Backend);
     return std::make_unique<WindowsWindow>(props);
 }
 

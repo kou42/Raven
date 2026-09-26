@@ -10,6 +10,7 @@
 #include "Raven/Scene/Scene.h"
 
 #include <array>
+#include <iostream>
 #include <utility>
 
 namespace Raven
@@ -126,11 +127,16 @@ bool VulkanSceneRuntime::PrepareFrame()
     auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
     if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
         m_TransparentPipeline, m_DefaultTexture,
-        RHISceneDrawItemBuilder::VulkanClipCorrection(), *prepared) == false ||
-        Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
-            m_DebugLinePipeline, RHISceneDrawItemBuilder::VulkanClipCorrection(),
-            prepared->DebugLineItems) == false)
+        RHISceneDrawItemBuilder::VulkanClipCorrection(), *prepared) == false)
     {
+        std::cerr << "Vulkan Scene frame preparation failed.\n";
+        return false;
+    }
+    if (Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
+        m_DebugLinePipeline, RHISceneDrawItemBuilder::VulkanClipCorrection(),
+        prepared->DebugLineItems) == false)
+    {
+        std::cerr << "Vulkan Debug Line preparation failed.\n";
         return false;
     }
     prepared->DebugLinePipeline = m_DebugLinePipeline;
@@ -138,6 +144,7 @@ bool VulkanSceneRuntime::PrepareFrame()
         m_PendingUIWidth, m_PendingUIHeight,
         m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
     {
+        std::cerr << "Vulkan UI frame preparation failed.\n";
         return false;
     }
     m_PreparedFrame = std::move(prepared);

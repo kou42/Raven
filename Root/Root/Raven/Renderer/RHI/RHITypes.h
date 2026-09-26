@@ -22,11 +22,22 @@ enum class RHIBackend
 };
 
 // 現在利用するGraphics BackendをRHI層で一元管理します。
-// 現段階ではOpenGL固定ですが、将来Application設定や起動引数から選択する場合も
-// RendererAPIを復活させず、このRHI側の選択点だけを差し替えます。
-inline constexpr RHIBackend GetRHIBackend()
+// Window生成時に選択したBackendを、後続のShader/Pipeline/Buffer等のFactoryが参照します。
+// ApplicationのMain Windowと異なるBackendへ実行中に切り替える用途ではありません。
+inline RHIBackend& GetRHIBackendStorage()
 {
-    return RHIBackend::OpenGL;
+    static RHIBackend backend = RHIBackend::OpenGL;
+    return backend;
+}
+
+inline RHIBackend GetRHIBackend()
+{
+    return GetRHIBackendStorage();
+}
+
+inline void SetRHIBackend(RHIBackend backend)
+{
+    GetRHIBackendStorage() = backend;
 }
 
 // GPU Bufferがどの用途で利用されるかをAPI非依存で表します。

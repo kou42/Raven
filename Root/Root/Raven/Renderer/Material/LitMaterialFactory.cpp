@@ -3,6 +3,7 @@
 
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/Shader/Shader.h"
 #include "Raven/Renderer/Texture/Texture.h"
 
@@ -20,10 +21,16 @@ Ref<Material> CreateLitMaterial(
     Ref<Shader> shader = Shader::Create(
         "Raven/Assets/Shaders/Vertex/lit.vert",
         "Raven/Assets/Shaders/Fragment/lit.frag");
-    if (shader == nullptr)
+    if (shader == nullptr &&
+        GetRHIBackend() != RHIBackend::DirectX12 &&
+        GetRHIBackend() != RHIBackend::Vulkan)
     {
         return nullptr;
     }
+
+    // Explicit BackendではShader binaryとnative PipelineをScene Runtimeが所有します。
+    // Material側は描画分類とPipeline stateだけを保持するため、Legacy Shaderがなくても
+    // SpecificationPipelineを生成し、OpenGL Shaderの生成失敗とは区別します。
 
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.DebugName = "Directional Lit Geometry Pipeline";

@@ -14,7 +14,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <iostream>
 #include <limits>
+#include <unordered_set>
 #include <vector>
 
 namespace Raven
@@ -119,6 +121,7 @@ bool BuildRHISceneMeshSnapshot(
         item.Mesh->AreRHIResourcesSynchronized() == false ||
         item.Mesh->GetIndexCount() == 0)
     {
+        std::cerr << "[Renderer] Explicit Scene snapshot rejected an invalid or unsynchronized Mesh.\n";
         return false;
     }
 
@@ -126,6 +129,7 @@ bool BuildRHISceneMeshSnapshot(
     if (material.SurfaceType == MaterialSurfaceType::Masked)
     {
         // Masked描画はalpha cutoff対応Shaderが揃うまでExplicit Scene RHI側で未対応です。
+        std::cerr << "[Renderer] Explicit Scene does not support Masked Material yet.\n";
         return false;
     }
     if (material.Texture == nullptr)
@@ -134,6 +138,7 @@ bool BuildRHISceneMeshSnapshot(
     }
     if (material.Texture == nullptr)
     {
+        std::cerr << "[Renderer] Explicit Scene has no fallback Texture.\n";
         return false;
     }
 
@@ -161,6 +166,44 @@ bool BuildRHISceneMeshSnapshot(
 
     outMesh = std::move(snapshot);
     return true;
+}
+
+bool PrepareQueuedMeshResources(
+    RHIDevice& device,
+    const std::vector<SceneRenderItem>& opaqueQueue,
+    const std::vector<SceneRenderItem>& transparentQueue)
+{
+    // Scene ECSだけでなくApplication Layerが直接SubmitしたMeshも同じFrame Queueへ入ります。
+    // Queueを正規の描画対象として一意Meshを同期し、Snapshot作成後に未同期Resourceを検出して
+    // Frame全体を失敗させる状態を防ぎます。
+    std::unordered_set<const Mesh*> preparedMeshes;
+    const auto prepareQueue = [&device, &preparedMeshes](const std::vector<SceneRenderItem>& queue)
+    {
+        for (const SceneRenderItem& item : queue)
+        {
+            if (item.Mesh == nullptr || item.Material == nullptr)
+            {
+                return false;
+            }
+            if (preparedMeshes.insert(item.Mesh.get()).second == false ||
+                item.Mesh->AreRHIResourcesSynchronized() == true)
+            {
+                continue;
+            }
+            if (item.Mesh->SyncRHIResources() == true)
+            {
+                continue;
+            }
+            if (item.Mesh->BuildRHIResources(device) == false)
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    return prepareQueue(opaqueQueue) == true &&
+        prepareQueue(transparentQueue) == true;
 }
 
 void DrawSceneItem(const SceneRenderItem& item, const RendererCameraContext& cameraContext)
@@ -654,7 +697,10 @@ bool Renderer::PrepareRHISceneFrame(
     // 前Frameの参照を先に解放し、失敗時に部分構築されたSnapshotを公開しません。
     outFrame = {};
     std::vector<RHISceneDrawItem> items;
-    const bool built = BuildRHISceneDrawItems(defaultTexture, clipCorrection, items);
+    const bool resourcesPrepared = PrepareQueuedMeshResources(
+        device, s_OpaqueQueue, s_TransparentQueue);
+    const bool built = resourcesPrepared == true &&
+        BuildRHISceneDrawItems(defaultTexture, clipCorrection, items);
 
     // 失敗時もQueueを閉じ、次Frameに旧Sceneの描画を持ち越しません。
     s_SceneQueueActive = false;
