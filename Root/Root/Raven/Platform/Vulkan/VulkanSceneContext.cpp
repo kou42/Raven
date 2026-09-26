@@ -459,6 +459,11 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         }
     }
 
+    if (mergedTextures.size() > std::numeric_limits<uint32_t>::max())
+    {
+        return false;
+    }
+
     // 各Explicit Pipelineのset=0/binding=0は同じCombined Image Sampler契約です。
     // Texture集合が既に揃っていれば、互換なPipelineごとにPoolを作り直す必要はありません。
     if (requiresRebuild == false)
