@@ -441,8 +441,8 @@ private:
     }
 
 
-    // CharacterControllerDemoLayerのLifetimeはSceneが所有します。
-    // OverlayはRuntime調整APIを呼ぶため非constの非所有pointerとして保持します。
+    // CharacterControllerDemoLayerはScene所有なので保持せず、Applicationだけを借用します。
+    // 各操作時にActive Sceneから再解決することでScene交換後のdangling pointerを防ぎます。
     Application* m_Application = nullptr;
     std::string m_LastTuningError;
 };
