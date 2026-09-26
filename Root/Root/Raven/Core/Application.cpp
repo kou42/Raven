@@ -1042,6 +1042,12 @@ void Application::RequestSceneChange(Scope<Scene> scene)
     m_SceneManager.RequestSceneChange(std::move(scene));
 }
 
+void Application::RequestSceneTransition(
+    Scope<Scene> scene, const SceneTransitionSpecification& specification)
+{
+    m_SceneTransitionController.RequestTransition(std::move(scene), specification);
+}
+
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
     RHISceneFrameLifecycle& frame,
     const std::function<bool()>& prepare,
@@ -1220,6 +1226,10 @@ void Application::Run()
         // 通常/Explicitの両経路で同じdt上限と巻き戻り保護を適用します。
         const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
+        // Scene Transitionの時間はScene Updateより前に進めます。
+        // FadeOut完了時もSceneManagerへ予約するだけなので、現在FrameのScene寿命は維持されます。
+        m_SceneTransitionController.Update(frameDeltaTime);
+
         // ====================================================================
         // Renderer statistics frame boundary
         // ====================================================================
@@ -1338,6 +1348,17 @@ void Application::Run()
             if (m_UIContext.GetPendingDPIFontCount() > 0u)
             {
                 m_UIContext.RefreshPendingDPIFonts();
+            }
+
+            // Transition OverlayはRetained UI Treeの展開後に追加し、Main Window上の
+            // Scene / Editor UIより常に手前へ描画します。GPU API固有処理はUIRendererへ委譲します。
+            const float transitionAlpha = m_SceneTransitionController.GetOverlayAlpha();
+            if (transitionAlpha > 0.0f)
+            {
+                m_UIContext.GetDrawList().AddRect(
+                    math::Vec2(0.0f, 0.0f),
+                    m_UIContext.GetViewportSize(),
+                    math::Vec4(0.0f, 0.0f, 0.0f, transitionAlpha));
             }
             m_UIContext.EndFrame();
         }
