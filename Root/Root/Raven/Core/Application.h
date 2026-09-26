@@ -6,6 +6,7 @@
 
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneManager.h"
+#include "Raven/Scene/SceneTransitionController.h"
 #include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
@@ -256,12 +257,18 @@ public:
     // 実際の破棄・OnCreateはPresent完了後のFrame境界で行います。
     void RequestSceneChange(Scope<Scene> scene);
 
+    // Fade等の演出を伴うScene切り替え入口です。
+    void RequestSceneTransition(Scope<Scene> scene,
+        const SceneTransitionSpecification& specification = {});
+
     // EditorはApplicationの所有物を借用して表示・操作します。
     // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
     Scene* GetScene() { return m_SceneManager.GetActiveScene(); }
     const Scene* GetScene() const { return m_SceneManager.GetActiveScene(); }
     SceneManager& GetSceneManager() { return m_SceneManager; }
     const SceneManager& GetSceneManager() const { return m_SceneManager; }
+    SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
+    const SceneTransitionController& GetSceneTransitionController() const { return m_SceneTransitionController; }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
     WindowManager& GetWindowManager() { return m_WindowManager; }
@@ -324,6 +331,8 @@ private:
     std::vector<Scope<Layer>> m_Layers;
     // Sceneの所有権とDeferred切り替えはSceneManagerへ集約します。
     SceneManager m_SceneManager;
+    // SceneManagerより先に破棄される宣言順とし、Controllerが借用する参照寿命を保証します。
+    SceneTransitionController m_SceneTransitionController{ m_SceneManager };
 
     // Main Window用のRaven UI frame状態です。
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
