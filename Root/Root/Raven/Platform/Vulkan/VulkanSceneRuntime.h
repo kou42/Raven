@@ -76,6 +76,7 @@ private:
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
+    Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
     Ref<RHITexture> m_DefaultTexture;
     Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
     bool m_Initialized = false;

@@ -99,7 +99,7 @@ bool VulkanSceneRuntime::PrepareFrame()
     m_PreparedFrame.reset();
     if (m_Initialized == false || m_Device == nullptr ||
         m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
-        m_DefaultTexture == nullptr ||
+        m_DebugLinePipeline == nullptr || m_DefaultTexture == nullptr ||
         m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
     {
         return false;
@@ -108,10 +108,14 @@ bool VulkanSceneRuntime::PrepareFrame()
     auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
     if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
         m_TransparentPipeline, m_DefaultTexture,
-        RHISceneDrawItemBuilder::VulkanClipCorrection(), *prepared) == false)
+        RHISceneDrawItemBuilder::VulkanClipCorrection(), *prepared) == false ||
+        Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
+            m_DebugLinePipeline, RHISceneDrawItemBuilder::VulkanClipCorrection(),
+            prepared->DebugLineItems) == false)
     {
         return false;
     }
+    prepared->DebugLinePipeline = m_DebugLinePipeline;
     m_PreparedFrame = std::move(prepared);
     return true;
 }
@@ -165,6 +169,7 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
     // 外部Refも破棄し、新しいRender Target情報から両Pipelineを再生成します。
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
+    m_DebugLinePipeline.reset();
     if (CreatePipelines() == false)
     {
         // Context/Deviceは維持し、Applicationに失敗を返して終了順序を守ります。
@@ -186,6 +191,7 @@ void VulkanSceneRuntime::Shutdown()
     // Context自身も外部Refが残ったResourceをDevice破棄前に無効化します。
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
+    m_DebugLinePipeline.reset();
     m_DefaultTexture.reset();
     m_PipelineSpecification = {};
     m_PipelineDebugName.clear();
@@ -251,9 +257,18 @@ bool VulkanSceneRuntime::CreatePipelines()
         return false;
     }
 
-    // 両方揃ってから差し替え、Resize途中で片方だけを公開しません。
+    Ref<RHIGraphicsPipeline> debugLine;
+    if (Renderer::CreateRHIDebugLinePipeline(
+        *m_Device, m_VertexShader->GetBinary(),
+        m_FragmentShader->GetBinary(), debugLine) == false)
+    {
+        return false;
+    }
+
+    // Surface/Debugの全Pipelineが揃ってから差し替え、Resize途中の部分状態を公開しません。
     m_OpaquePipeline = std::move(opaque);
     m_TransparentPipeline = std::move(transparent);
+    m_DebugLinePipeline = std::move(debugLine);
     return true;
 }
 

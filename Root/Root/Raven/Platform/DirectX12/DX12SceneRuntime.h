@@ -116,7 +116,7 @@ public:
         m_PreparedFrame.reset();
         if (m_Initialized == false || m_Device == nullptr ||
             m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
-            m_DefaultTexture == nullptr ||
+            m_DebugLinePipeline == nullptr || m_DefaultTexture == nullptr ||
             m_Context.GetActiveCommandList() != nullptr)
         {
             return false;
@@ -124,10 +124,14 @@ public:
         auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
         if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
             m_TransparentPipeline, m_DefaultTexture,
-            DX12ClipCorrection(), *prepared) == false)
+            DX12ClipCorrection(), *prepared) == false ||
+            Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
+                m_DebugLinePipeline, DX12ClipCorrection(),
+                prepared->DebugLineItems) == false)
         {
             return false;
         }
+        prepared->DebugLinePipeline = m_DebugLinePipeline;
         m_PreparedFrame = std::move(prepared);
         return true;
     }
@@ -179,6 +183,7 @@ public:
         // Depth/RTV再生成後、Attachment形式に合うPSOを作り直します。
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
+        m_DebugLinePipeline.reset();
         if (CreatePipelines() == false)
         {
             // 所有元ApplicationがScene→Renderer→Runtimeの順に終了します。
@@ -194,6 +199,7 @@ public:
         // FrameResourceが保持するGPU使用中Resourceは完了まで生存します。
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
+        m_DebugLinePipeline.reset();
         m_DefaultTexture.reset();
         m_VertexShader.reset();
         m_FragmentShader.reset();
@@ -255,8 +261,16 @@ private:
         {
             return false;
         }
+        Ref<RHIGraphicsPipeline> debugLine;
+        if (Renderer::CreateRHIDebugLinePipeline(*m_Device,
+            m_VertexShader->GetBinary(), m_FragmentShader->GetBinary(),
+            debugLine) == false)
+        {
+            return false;
+        }
         m_OpaquePipeline = std::move(opaque);
         m_TransparentPipeline = std::move(transparent);
+        m_DebugLinePipeline = std::move(debugLine);
         return true;
     }
 
@@ -289,6 +303,7 @@ private:
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
+    Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
     Ref<RHITexture> m_DefaultTexture;
     Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
     bool m_Initialized = false;

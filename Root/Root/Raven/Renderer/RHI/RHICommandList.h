@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "Raven/Core/Base.h"
+#include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Renderer/Shader/ShaderTypes.h"
 
 namespace Raven
@@ -30,15 +31,6 @@ struct RHIScissor
 {
     bool Enabled = false;
     // OpenGLのScissor原点は負値も有効です。保存・復元時に0へ丸めません。
-    int32_t X = 0;
-    int32_t Y = 0;
-    uint32_t Width = 0;
-    uint32_t Height = 0;
-};
-
-struct RHIViewport
-{
-    // Viewportの原点は負座標も有効なので、Overlay前後のstateを符号付きで保持します。
     int32_t X = 0;
     int32_t Y = 0;
     uint32_t Width = 0;
