@@ -214,12 +214,11 @@ int main(int argc, char* argv[])
             const Raven::math::Vec3 fluidDemoCharacterDebugPosition{ 50.0f, 0.0f, 58.0f };
 
             app.PushLayer(
-                Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(
-                    *characterLayerPointer));
+                Raven::CreateScope<Raven::CharacterLocomotionDebugOverlayLayer>(app));
 
             app.PushLayer(
                 Raven::CreateScope<Raven::CharacterPositionDebugOverlayLayer>(
-                    *characterLayerPointer,
+                    app,
                     fluidDemoCharacterDebugPosition));
         }
     }
