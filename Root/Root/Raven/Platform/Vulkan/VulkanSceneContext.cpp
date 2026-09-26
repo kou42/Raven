@@ -418,7 +418,7 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
 {
     if (textures.empty() == true || pipeline == nullptr ||
         GetDevice().IsValid() == false ||
-        mergedTextures.size() > std::numeric_limits<uint32_t>::max())
+        textures.size() > std::numeric_limits<uint32_t>::max())
     {
         return false;
     }
