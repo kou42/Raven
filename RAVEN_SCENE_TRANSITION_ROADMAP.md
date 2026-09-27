@@ -91,7 +91,7 @@ SceneとUI Screenの責務を分離します。
 - Pause中はGame Logic後のAnimation / Physics / Scene Layer更新を停止
 - UI callback中のScreen破棄を避けるDeferred Navigation
 
-## Phase 10: Loading Screen — 実装中
+## Phase 10: Loading Screen — 完了
 
 - LoadingScreenをUIScreen化 ✓
 - Progress表示 ✓
@@ -99,10 +99,12 @@ SceneとUI Screenの責務を分離します。
 - Load Error状態 ✓
 - SceneTransition Overlayとの統合 ✓
 - Immediate spinner / progress barを廃止し、Loading内容をRetained UIへ一本化 ✓
-- Font Asset利用可能時のテキスト表示 ← 次回ここから
+- Application共通Runtime UI Fontの共有 ✓
+- Font Asset利用可能時のLoading / Errorテキスト表示 ✓
+- Title / Pause / Settings Button文字表示 ✓
 
-※ Application共通Font Assetはまだ存在しないため、Loading/Error Message文字列はLoadingScreenが保持し、
-現段階ではStatus Indicatorの状態として可視化します。Phase 10後半で共通Fontを導入しUILabelへ接続します。
+※ Font AtlasのGPU生成責務は既存方針を維持し、`ApplicationSpecification::RuntimeUIFont` から共有Atlasを注入します。
+Font未指定時も各Screenは従来どおり動作し、Font利用可能時だけUILabelを追加します。
 
 ## Phase 11: Async Loading強化
 
