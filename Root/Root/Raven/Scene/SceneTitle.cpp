@@ -1,6 +1,11 @@
 #include "Raven/Scene/SceneTitle.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Assets/TextureAssetBatch.h"
+#include "Raven/Renderer/Renderer.h"
+
+#include <memory>
+#include <vector>
 #include "Raven/UI/Screens/TitleScreen.h"
 #include "Raven/UI/Screens/SettingsScreen.h"
 
@@ -22,8 +27,35 @@ void SceneTitle::OnCreate()
             specification.FadeOutDuration = 0.25f;
             specification.FadeInDuration = 0.25f;
 
-            // UI ActionはSceneを直接生成せず、従来どおりScene IDで遷移を要求します。
-            m_Application.RequestSceneTransition("Game", specification);
+            // Game Sceneで使用するSource TextureはFade暗転後にWorkerでCPU decodeします。
+            // Batch自体はPreparation/Finalizeの両方から参照するためshared ownershipにします。
+            auto textureBatch = std::make_shared<TextureAssetBatch>(
+                std::vector<std::string>{ "Raven/Assets/Images/test/mountain1.png" });
+
+            m_Application.RequestAsyncSceneTransition(
+                "Game",
+                [textureBatch](SceneLoadingContext& context)
+                {
+                    return textureBatch->DecodeAll(
+                        [&context](float progress)
+                        {
+                            context.SetProgress(progress * 0.8f);
+                        },
+                        [&context]()
+                        {
+                            return context.IsCancellationRequested();
+                        });
+                },
+                [this, textureBatch]()
+                {
+                    // Legacy OpenGLではここでGPU Textureを生成します。
+                    // Explicit Backendはdecode済みPixelを後段RHI Texture生成へ渡します。
+                    const bool createRuntimeTextures = Renderer::IsExplicitSceneMode() == false;
+                    const bool finalized = textureBatch->Finalize(
+                        m_Application.GetTextureAssetManager(), createRuntimeTextures);
+                    return finalized;
+                },
+                specification);
         },
         [this]()
         {
