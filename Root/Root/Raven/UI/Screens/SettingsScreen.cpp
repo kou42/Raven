@@ -2,13 +2,14 @@
 
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UILabel.h"
 
 #include <utility>
 
 namespace Raven
 {
 
-SettingsScreen::SettingsScreen(Action onBack)
+SettingsScreen::SettingsScreen(const Ref<UIFontAtlas>& font, Action onBack)
 {
     UIElement& root = GetRootElement();
     root.SetLayoutMode(UILayoutMode::Absolute);
@@ -28,6 +29,19 @@ SettingsScreen::SettingsScreen(Action onBack)
     backButton->SetPressedColor(math::Vec4(0.15f, 0.12f, 0.22f, 1.0f));
     backButton->SetFocusedColor(math::Vec4(0.48f, 0.38f, 0.64f, 1.0f));
     backButton->SetOnClick(std::move(onBack));
+    if (font != nullptr)
+    {
+        backButton->SetLayoutMode(UILayoutMode::Absolute);
+        auto label = CreateScope<UILabel>();
+        label->SetFont(font);
+        label->SetText("Back");
+        label->SetPositionDIP(math::Vec2(16.0f, 16.0f));
+        label->SetPreferredSizeDIP(math::Vec2(256.0f, 24.0f));
+        label->SetLineHeightDIP(24.0f);
+        label->SetBaselineOffsetDIP(18.0f);
+        label->SetHitTestVisible(false);
+        backButton->AddChild(std::move(label));
+    }
     panel->AddChild(std::move(backButton));
 
     AddChild(std::move(panel));
