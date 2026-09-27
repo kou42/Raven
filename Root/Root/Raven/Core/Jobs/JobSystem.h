@@ -51,6 +51,7 @@ public:
     }
 
     std::size_t GetWorkerCount() const { return m_Workers.size(); }
+    bool IsStopping() const;
 
 private:
     void WorkerLoop();
