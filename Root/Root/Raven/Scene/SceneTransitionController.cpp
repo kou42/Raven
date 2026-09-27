@@ -218,6 +218,12 @@ void SceneTransitionController::Update(float deltaTime)
                 }
             }
 
+            if (m_LoadingContext != nullptr)
+            {
+                // Preparationだけで100%にせず、Main Thread Finalize完了を90%として可視化します。
+                m_LoadingContext->SetProgress(0.9f);
+            }
+
             // Scene / Renderer / ECS初期化にはMain Thread制約を持つ処理が含まれ得ます。
             // WorkerではCPU側Preparationだけを行い、Scene生成は必ずこのUpdate()内で実行します。
             try
@@ -346,9 +352,11 @@ void SceneTransitionController::BeginAsyncLoading()
             }
 
             const bool succeeded = preparation(*context);
+            // 100%はMain Thread FinalizeとScene生成完了後にController側で設定します。
+            // Preparation callbackが独自に1.0を設定していても後段処理の完了を意味しません。
             if (succeeded == true && context->IsCancellationRequested() == false)
             {
-                context->SetProgress(1.0f);
+                context->SetProgress(std::min(context->GetProgress(), 0.8f));
             }
             return succeeded;
         });
