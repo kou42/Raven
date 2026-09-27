@@ -70,6 +70,7 @@ Application::Application(const ApplicationSpecification& specification)
     : m_RavenUIEnabled(specification.EnableRavenUI)
     , m_PhysicsDebugImmediatePanelEnabled(specification.EnablePhysicsDebugImmediatePanel)
     , m_PhysicsDebugImmediateFont(specification.PhysicsDebugImmediateFont)
+    , m_RuntimeUIFont(specification.RuntimeUIFont)
 {
     // WindowはRenderer / ImGuiより先に生成します。
     // 選択BackendのGraphics ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
@@ -1062,7 +1063,7 @@ void Application::UpdateLoadingScreen()
     {
         if (loadingScreen == nullptr)
         {
-            auto screen = CreateScope<LoadingScreen>();
+            auto screen = CreateScope<LoadingScreen>(m_RuntimeUIFont);
             loadingScreen = screen.get();
             if (m_UINavigationManager.PushScreen(std::move(screen)) == false)
             {
