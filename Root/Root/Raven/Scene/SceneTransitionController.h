@@ -52,6 +52,7 @@ private:
 };
 
 using SceneAsyncPreparation = std::function<bool(SceneLoadingContext&)>;
+using SceneMainThreadFinalize = std::function<bool()>;
 using SceneCreationFunction = std::function<Scope<Scene>()>;
 
 // Sceneの切り替えタイミングと画面Transitionの進行状態を管理します。
@@ -69,6 +70,12 @@ public:
     // FadeOut後の暗転中にCPU側の準備処理をWorker Threadで実行します。
     // Scene生成自体はPreparation完了後、必ずApplication ThreadのUpdate()内で実行します。
     bool RequestAsyncTransition(SceneAsyncPreparation preparation,
+        SceneCreationFunction sceneCreation,
+        const SceneTransitionSpecification& specification = {});
+
+    // Worker Preparation後、Scene生成前にMain Thread専用のAsset登録/GPU finalizeを実行します。
+    bool RequestAsyncTransition(SceneAsyncPreparation preparation,
+        SceneMainThreadFinalize finalize,
         SceneCreationFunction sceneCreation,
         const SceneTransitionSpecification& specification = {});
 
@@ -116,6 +123,7 @@ private:
     float m_LoadingAnimationTime = 0.0f;
 
     SceneAsyncPreparation m_AsyncPreparation;
+    SceneMainThreadFinalize m_MainThreadFinalize;
     SceneCreationFunction m_AsyncSceneCreation;
     std::future<bool> m_AsyncPreparationFuture;
     bool m_AsyncRequested = false;
