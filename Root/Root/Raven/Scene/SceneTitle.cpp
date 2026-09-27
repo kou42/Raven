@@ -1,50 +1,56 @@
 #include "Raven/Scene/SceneTitle.h"
 
 #include "Raven/Core/Application.h"
-#include "Raven/Core/Input.h"
-#include "Raven/Core/KeyCodes.h"
+#include "Raven/UI/Screens/TitleScreen.h"
 
 namespace Raven
 {
 
 void SceneTitle::OnCreate()
 {
-    // Title SceneはTransition経路の検証に必要な最小状態だけを持ちます。
-    // Game用Asset/Physicsをここへ持ち込まず、Scene交換時の責務境界を明確にします。
-    m_WasEnterPressed = Input::IsKeyPressed(Key::Enter);
+    // Scene切り替え時に前Scene由来のScreenを残さず、Title Scene専用Stackを構築します。
+    UINavigationManager& navigation = m_Application.GetUINavigationManager();
+    navigation.Clear();
+
+    auto titleScreen = CreateScope<TitleScreen>(
+        [this]()
+        {
+            SceneTransitionSpecification specification{};
+            specification.Type = SceneTransitionType::Fade;
+            specification.FadeOutDuration = 0.25f;
+            specification.FadeInDuration = 0.25f;
+
+            // UI ActionはSceneを直接生成せず、従来どおりScene IDで遷移を要求します。
+            m_Application.RequestSceneTransition("Game", specification);
+        },
+        []()
+        {
+            // SettingsScreen本体はPhase 9で追加します。
+            // Action境界だけ先に確定し、TitleScreenへApplication/Scene依存を持ち込みません。
+        },
+        [this]()
+        {
+            m_Application.RequestExit();
+        });
+
+    navigation.PushScreen(std::move(titleScreen));
 }
 
 void SceneTitle::OnDestroy()
 {
-    m_WasEnterPressed = false;
+    // Title Scene固有UIをScene Lifetimeと同じ境界で破棄します。
+    m_Application.GetUINavigationManager().Clear();
 }
 
 void SceneTitle::OnUpdateGame(float deltaTime)
 {
     static_cast<void>(deltaTime);
-
-    const bool enterPressed = Input::IsKeyPressed(Key::Enter);
-    const bool transitionRequested = enterPressed == true && m_WasEnterPressed == false;
-    m_WasEnterPressed = enterPressed;
-
-    if (transitionRequested == false)
-    {
-        return;
-    }
-
-    SceneTransitionSpecification specification{};
-    specification.Type = SceneTransitionType::Fade;
-    specification.FadeOutDuration = 0.25f;
-    specification.FadeInDuration = 0.25f;
-
-    // Sceneを直接生成せずIDで要求し、Title側がSceneGame型へ依存しないようにします。
-    m_Application.RequestSceneTransition("Game", specification);
+    // Enter pollingによる直接遷移は廃止し、ButtonのMouse/Keyboard Actionへ統一しました。
 }
 
 void SceneTitle::OnRender()
 {
-    // 現段階ではTransition/lifetime検証用の空Sceneです。
-    // Title UIはUIScreen / UINavigationManager導入時にRaven UI側へ追加します。
+    // Title UIはUIContext / UINavigationManager側で描画されます。
 }
 
 } // namespace Raven
