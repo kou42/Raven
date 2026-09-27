@@ -73,7 +73,7 @@ void SceneTitle::OnCreate()
 
                     // FloorはStatic Grid、WaveはDynamic GridとしてCPU Geometryだけを先行生成します。
                     preparedResources->FloorGeometry =
-                        PrimitiveMeshFactory::CreateDynamicGridGeometry(1, 1);
+                        PrimitiveMeshFactory::CreateFloorGeometry();
                     context.SetProgress(0.75f);
                     if (context.IsCancellationRequested() == true)
                     {
