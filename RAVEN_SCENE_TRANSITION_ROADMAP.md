@@ -51,16 +51,15 @@ Scene Transition基盤とTitle / Game間の実Scene遷移まで実装済みで�
 
 ---
 
-## Phase 7: UI Navigation
+## Phase 7: UI Navigation — 完了
 
-次回はここから開始します。
-
-1. `UIScreen` 基底クラス
-2. `UINavigationManager`
-3. `PushScreen()`
-4. `PopScreen()`
-5. `ReplaceScreen()`
-6. `Clear()`
+- `UIScreen` 基底クラス
+- `UINavigationManager`
+- `PushScreen()`
+- `PopScreen()`
+- `ReplaceScreen()`
+- `Clear()`
+- `Application::GetUINavigationManager()` からMain UIContext用Navigationへアクセス
 
 SceneとUI Screenの責務を分離します。
 
@@ -69,6 +68,8 @@ SceneとUI Screenの責務を分離します。
 - SceneTransitionController: Fade / LoadingなどScene交換演出
 
 ## Phase 8: Title UI
+
+次回はここから開始します。
 
 - TitleScreen
 - Start Game Button
