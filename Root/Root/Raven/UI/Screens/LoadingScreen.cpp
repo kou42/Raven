@@ -1,6 +1,7 @@
 #include "Raven/UI/Screens/LoadingScreen.h"
 
 #include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UILabel.h"
 
 #include <algorithm>
 #include <utility>
@@ -13,7 +14,7 @@ constexpr float kProgressWidth = 320.0f;
 constexpr float kProgressHeight = 10.0f;
 }
 
-LoadingScreen::LoadingScreen()
+LoadingScreen::LoadingScreen(const Ref<UIFontAtlas>& font)
 {
     UIElement& root = GetRootElement();
     root.SetName("LoadingScreen");
@@ -34,6 +35,22 @@ LoadingScreen::LoadingScreen()
     status->SetPreferredSizeDIP(math::Vec2(kProgressWidth, 18.0f));
     status->SetBackgroundColor(math::Vec4(0.32f, 0.48f, 0.82f, 0.85f));
     m_StatusIndicator = status.get();
+
+    if (font != nullptr)
+    {
+        status->SetLayoutMode(UILayoutMode::Absolute);
+        auto label = CreateScope<UILabel>();
+        label->SetName("LoadingMessageLabel");
+        label->SetFont(font);
+        label->SetText(m_Message);
+        label->SetPositionDIP(math::Vec2(8.0f, 0.0f));
+        label->SetPreferredSizeDIP(math::Vec2(kProgressWidth - 16.0f, 18.0f));
+        label->SetLineHeightDIP(18.0f);
+        label->SetBaselineOffsetDIP(14.0f);
+        label->SetHitTestVisible(false);
+        m_MessageLabel = label.get();
+        status->AddChild(std::move(label));
+    }
     panel->AddChild(std::move(status));
 
     auto track = CreateScope<UIPanel>();
@@ -80,6 +97,11 @@ void LoadingScreen::RefreshVisualState()
     {
         m_ProgressFill->SetPreferredSizeDIP(
             math::Vec2(kProgressWidth * m_Progress, kProgressHeight));
+    }
+
+    if (m_MessageLabel != nullptr)
+    {
+        m_MessageLabel->SetText(m_Message);
     }
 
     if (m_StatusIndicator != nullptr)
