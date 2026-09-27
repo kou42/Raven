@@ -631,7 +631,7 @@ void SceneGame::OnUpdateGame(float dt)
     UpdatePauseNavigation();
 
     // Pause中もUI Navigationだけは更新し、Gameplay固有処理を停止します。
-    // Scene基底のAnimation/Physics更新停止は別途Scene全体のPause契約を導入する段階で統合します。
+    // Scene::ShouldUpdateSimulation()もfalseになるため、後段のAnimation/Physics/Layer更新も停止します。
     if (m_IsPaused == true)
     {
         return;
