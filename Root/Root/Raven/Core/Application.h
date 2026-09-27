@@ -282,6 +282,10 @@ public:
     bool RequestAsyncSceneTransition(const std::string& sceneID,
         SceneAsyncPreparation preparation,
         const SceneTransitionSpecification& specification = {});
+    bool CancelAsyncSceneTransition()
+    {
+        return m_SceneTransitionController.CancelAsyncTransition();
+    }
 
     // EditorはApplicationの所有物を借用して表示・操作します。
     // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
