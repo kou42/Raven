@@ -49,6 +49,8 @@ struct ApplicationSpecification
     bool EnablePhysicsDebugImmediatePanel = false;
     // 文字表示用Atlasは呼び出し側がGPU Context有効時に生成・共有します。
     Ref<UIFontAtlas> PhysicsDebugImmediateFont;
+    // Runtime UI全体で共有するFont Atlasです。GPU Context有効後に生成したAtlasを注入します。
+    Ref<UIFontAtlas> RuntimeUIFont;
 };
 
 class Application
@@ -308,6 +310,7 @@ public:
     // 壊さず並行運用できます。
     UIContext& GetUIContext() { return m_UIContext; }
     const UIContext& GetUIContext() const { return m_UIContext; }
+    const Ref<UIFontAtlas>& GetRuntimeUIFont() const { return m_RuntimeUIFont; }
     UINavigationManager& GetUINavigationManager() { return m_UINavigationManager; }
     const UINavigationManager& GetUINavigationManager() const { return m_UINavigationManager; }
 
@@ -374,6 +377,7 @@ private:
     UIImmediateContext m_ImmediateUI{ m_UIContext };
     bool m_PhysicsDebugImmediatePanelEnabled = false;
     Ref<UIFontAtlas> m_PhysicsDebugImmediateFont;
+    Ref<UIFontAtlas> m_RuntimeUIFont;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
     struct DetachedDockTab
     {
