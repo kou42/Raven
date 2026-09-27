@@ -26,6 +26,8 @@ bool UINavigationManager::PushScreen(Scope<UIScreen> screen)
     UIScreen* previous = GetTopScreen();
     if (previous != nullptr)
     {
+        // 下層Screenは描画を残しても入力対象にはしません。
+        previous->GetRootElement().SetHitTestVisible(false);
         previous->OnPause();
     }
 
@@ -33,6 +35,7 @@ bool UINavigationManager::PushScreen(Scope<UIScreen> screen)
     {
         if (previous != nullptr)
         {
+            previous->GetRootElement().SetHitTestVisible(true);
             previous->OnResume();
         }
         return false;
@@ -59,6 +62,7 @@ Scope<UIScreen> UINavigationManager::PopScreen()
     UIScreen* resumed = GetTopScreen();
     if (resumed != nullptr)
     {
+        resumed->GetRootElement().SetHitTestVisible(true);
         resumed->OnResume();
     }
 
