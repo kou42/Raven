@@ -106,14 +106,21 @@ SceneとUI Screenの責務を分離します。
 ※ Font AtlasのGPU生成責務は既存方針を維持し、`ApplicationSpecification::RuntimeUIFont` から共有Atlasを注入します。
 Font未指定時も各Screenは従来どおり動作し、Font利用可能時だけUILabelを追加します。
 
-## Phase 11: Async Loading強化
+## Phase 11: Async Loading強化 — 実装中
 
-- Cancellation
-- Load Error型
-- Job Systemとの統合
+- Cancellation ✓
+  - cooperative cancellation token
+  - callbackがCancel確認を忘れてもScene生成へ進まないController境界の保証
+- Load Error型 ✓
+  - Cancelled / PreparationFailed / PreparationException / SceneCreationFailed / SceneCreationException
+  - LoadingScreenへError種別を反映
+- Job Systemとの統合 ← 次回ここから
 - Asset Loadingとの統合
 - Scene生成時のMain Thread stall削減
 - PreparationとScene生成を含めたProgress semantics整理
+
+※ 現在Ravenには汎用Job Systemが存在せず、Texture / RHI Shader Asset Managerも同期Loadです。
+`std::async` を直接Job System風APIで包むだけにはせず、Scene Loading以外でも再利用できるJob実行境界を先に設計します。
 
 ## Phase 12: Persistent Scene
 
