@@ -43,6 +43,13 @@ JobSystem::~JobSystem()
     }
 }
 
+bool JobSystem::IsStopping() const
+{
+    // 停止状態はSubmitと同じMutexで保護します。
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_Mutex));
+    return m_Stopping;
+}
+
 void JobSystem::WorkerLoop()
 {
     for (;;)
