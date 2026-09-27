@@ -203,7 +203,7 @@ void SceneTransitionController::Update(float deltaTime)
                 }
                 catch (...)
                 {
-                    m_LastLoadError = SceneLoadError::PreparationException;
+                    m_LastLoadError = SceneLoadError::FinalizeException;
                     finalized = false;
                 }
                 if (finalized == false)
@@ -211,7 +211,7 @@ void SceneTransitionController::Update(float deltaTime)
                     m_LastAsyncLoadSucceeded = false;
                     if (m_LastLoadError == SceneLoadError::None)
                     {
-                        m_LastLoadError = SceneLoadError::PreparationFailed;
+                        m_LastLoadError = SceneLoadError::FinalizeFailed;
                     }
                     FinishWithoutSceneChange();
                     return;
