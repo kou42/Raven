@@ -67,17 +67,21 @@ SceneとUI Screenの責務を分離します。
 - UINavigationManager: HUD / Pause / Settings / DialogなどScene上のUI
 - SceneTransitionController: Fade / LoadingなどScene交換演出
 
-## Phase 8: Title UI
-
-次回はここから開始します。
+## Phase 8: Title UI — 完了
 
 - TitleScreen
-- Start Game Button
-- Settings Button
-- Exit Button
-- Enter / F10による検証操作からUI Actionへ移行
+- Start Game Button → Fade付き `Game` Scene遷移
+- Settings Button → SettingsScreen Push
+- Exit Button → Application終了要求
+- SettingsScreen Back → Screen Stack Pop
+- UI callback中のScreen破棄を避けるDeferred Navigation
+- EnterによるTitle→Game検証操作をUI Actionへ移行
+
+※ 現在のUIButtonはTextを所有せず、UILabelはFont Atlasの明示指定が必要なため、Button文字表示はPhase 10のFont Asset / LoadingScreen統合と合わせて追加します。
 
 ## Phase 9: In-Game UI Navigation
+
+次回はここから開始します。
 
 - HUD
 - PauseScreen
@@ -125,13 +129,13 @@ SceneとUI Screenの責務を分離します。
 ## 次回の推奨実装順
 
 ```text
-UIScreen
+UIScreen ✓
   ↓
-UINavigationManager
+UINavigationManager ✓
   ↓
-TitleScreen
+TitleScreen ✓
   ↓
-Title UI Action → SceneTransitionController
+Title UI Action → SceneTransitionController ✓
   ↓
 Pause / Settings
   ↓
