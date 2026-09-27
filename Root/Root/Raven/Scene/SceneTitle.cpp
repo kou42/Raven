@@ -2,6 +2,9 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Assets/TextureAssetBatch.h"
+#include "Raven/Scene/SceneGame.h"
+#include "Raven/Scene/SceneGamePreparation.h"
+#include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Renderer.h"
 
 #include <memory>
@@ -31,20 +34,39 @@ void SceneTitle::OnCreate()
             // Batch自体はPreparation/Finalizeの両方から参照するためshared ownershipにします。
             auto textureBatch = std::make_shared<TextureAssetBatch>(
                 std::vector<std::string>{ "Raven/Assets/Images/test/mountain1.png" });
+            auto preparedResources = CreateRef<SceneGamePreparedResources>();
 
             m_Application.RequestAsyncSceneTransition(
-                "Game",
-                [textureBatch](SceneLoadingContext& context)
+                [textureBatch, preparedResources](SceneLoadingContext& context)
                 {
-                    return textureBatch->DecodeAll(
+                    const bool decoded = textureBatch->DecodeAll(
                         [&context](float progress)
                         {
-                            context.SetProgress(progress * 0.8f);
+                            // Texture decodeをPreparation全体の60%として扱います。
+                            context.SetProgress(progress * 0.6f);
                         },
                         [&context]()
                         {
                             return context.IsCancellationRequested();
                         });
+                    if (decoded == false || context.IsCancellationRequested() == true)
+                    {
+                        return false;
+                    }
+
+                    // Primitive頂点/Index生成はCPU処理だけなのでWorkerへ移します。
+                    preparedResources->SphereGeometry =
+                        PrimitiveMeshFactory::CreateSphereGeometry();
+                    context.SetProgress(0.7f);
+                    if (context.IsCancellationRequested() == true)
+                    {
+                        return false;
+                    }
+
+                    preparedResources->BoxGeometry =
+                        PrimitiveMeshFactory::CreateCubeGeometry();
+                    context.SetProgress(0.8f);
+                    return preparedResources->IsValid();
                 },
                 [this, textureBatch]()
                 {
@@ -54,6 +76,11 @@ void SceneTitle::OnCreate()
                     const bool finalized = textureBatch->Finalize(
                         m_Application.GetTextureAssetManager(), createRuntimeTextures);
                     return finalized;
+                },
+                [this, preparedResources]()
+                {
+                    // Scene objectの生成とLayer構築はMain Threadで行います。
+                    return CreateScope<SceneGame>(&m_Application, preparedResources);
                 },
                 specification);
         },
