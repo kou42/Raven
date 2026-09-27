@@ -1,6 +1,7 @@
 #include "Raven/Scene/SceneTransitionController.h"
 
 #include "Raven/Scene/SceneManager.h"
+#include "Raven/Core/Jobs/JobSystem.h"
 
 #include <algorithm>
 #include <chrono>
@@ -28,8 +29,9 @@ void SceneLoadingContext::RequestCancellation()
     m_CancellationRequested.store(true, std::memory_order_release);
 }
 
-SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
+SceneTransitionController::SceneTransitionController(SceneManager& sceneManager, JobSystem& jobSystem)
     : m_SceneManager(sceneManager)
+    , m_JobSystem(jobSystem)
 {
 }
 
@@ -298,7 +300,7 @@ void SceneTransitionController::BeginAsyncLoading()
 
     SceneAsyncPreparation preparation = std::move(m_AsyncPreparation);
     const std::shared_ptr<SceneLoadingContext> context = m_LoadingContext;
-    m_AsyncPreparationFuture = std::async(std::launch::async,
+    m_AsyncPreparationFuture = m_JobSystem.Submit(
         [preparation = std::move(preparation), context]() mutable
         {
             if (context->IsCancellationRequested() == true)
