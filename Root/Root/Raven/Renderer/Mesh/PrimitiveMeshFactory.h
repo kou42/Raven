@@ -26,6 +26,7 @@ public:
     // VertexArray/Buffer等のGPU Resourceは生成しません。
     static Ref<MeshGeometry> CreateCubeGeometry();
     static Ref<MeshGeometry> CreateSphereGeometry(int stacks = 24, int slices = 48);
+    static Ref<MeshGeometry> CreateDynamicGridGeometry(int rows = 20, int columns = 20);
 
     static Ref<Mesh> CreateCube(
         LegacyMeshResourceCreation legacyResourceCreation =
