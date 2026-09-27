@@ -14,6 +14,7 @@ void SceneTitle::OnCreate()
     navigation.Clear();
 
     auto titleScreen = CreateScope<TitleScreen>(
+        m_Application.GetRuntimeUIFont(),
         [this]()
         {
             SceneTransitionSpecification specification{};
@@ -64,6 +65,7 @@ void SceneTitle::OnUpdateGame(float deltaTime)
         m_SettingsRequested = false;
 
         auto settingsScreen = CreateScope<SettingsScreen>(
+            m_Application.GetRuntimeUIFont(),
             [this]()
             {
                 m_SettingsBackRequested = true;
