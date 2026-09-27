@@ -59,7 +59,7 @@ private:
 private:
     std::vector<std::thread> m_Workers;
     std::queue<std::function<void()>> m_Jobs;
-    std::mutex m_Mutex;
+    mutable std::mutex m_Mutex;
     std::condition_variable m_Condition;
     bool m_Stopping = false;
 };
