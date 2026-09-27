@@ -8,14 +8,24 @@
 namespace Raven
 {
 
-void SceneLoadingProgress::Set(float progress)
+void SceneLoadingContext::SetProgress(float progress)
 {
     m_Progress.store(std::clamp(progress, 0.0f, 1.0f), std::memory_order_relaxed);
 }
 
-float SceneLoadingProgress::Get() const
+float SceneLoadingContext::GetProgress() const
 {
     return m_Progress.load(std::memory_order_relaxed);
+}
+
+bool SceneLoadingContext::IsCancellationRequested() const
+{
+    return m_CancellationRequested.load(std::memory_order_acquire);
+}
+
+void SceneLoadingContext::RequestCancellation()
+{
+    m_CancellationRequested.store(true, std::memory_order_release);
 }
 
 SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
@@ -44,6 +54,7 @@ bool SceneTransitionController::RequestTransition(
     m_Specification = specification;
     m_ElapsedTime = 0.0f;
     m_LastAsyncLoadSucceeded = true;
+    m_LastLoadError = SceneLoadError::None;
 
     if (m_Specification.Type == SceneTransitionType::Instant)
     {
@@ -82,7 +93,8 @@ bool SceneTransitionController::RequestAsyncTransition(
     m_AsyncSceneCreation = std::move(sceneCreation);
     m_AsyncRequested = true;
     m_LastAsyncLoadSucceeded = true;
-    m_LoadingProgress = std::make_shared<SceneLoadingProgress>();
+    m_LastLoadError = SceneLoadError::None;
+    m_LoadingContext = std::make_shared<SceneLoadingContext>();
 
     const float fadeOutDuration = NormalizeDuration(m_Specification.FadeOutDuration);
     if (m_Specification.Type == SceneTransitionType::Instant || fadeOutDuration <= 0.0f)
@@ -141,11 +153,19 @@ void SceneTransitionController::Update(float deltaTime)
             {
                 // Worker例外をApplication loop外へ伝播させません。
                 // 失敗として扱い、現在Sceneを維持して暗転だけ解除します。
+                m_LastLoadError = SceneLoadError::PreparationException;
                 prepared = false;
             }
             if (prepared == false)
             {
                 m_LastAsyncLoadSucceeded = false;
+                if (m_LastLoadError == SceneLoadError::None)
+                {
+                    m_LastLoadError = m_LoadingContext != nullptr
+                        && m_LoadingContext->IsCancellationRequested() == true
+                        ? SceneLoadError::Cancelled
+                        : SceneLoadError::PreparationFailed;
+                }
                 FinishWithoutSceneChange();
                 return;
             }
@@ -158,19 +178,24 @@ void SceneTransitionController::Update(float deltaTime)
             }
             catch (...)
             {
+                m_LastLoadError = SceneLoadError::SceneCreationException;
                 m_TargetScene.reset();
             }
             if (m_TargetScene == nullptr)
             {
                 m_LastAsyncLoadSucceeded = false;
+                if (m_LastLoadError == SceneLoadError::None)
+                {
+                    m_LastLoadError = SceneLoadError::SceneCreationFailed;
+                }
                 FinishWithoutSceneChange();
                 return;
             }
 
             m_LastAsyncLoadSucceeded = true;
-            if (m_LoadingProgress != nullptr)
+            if (m_LoadingContext != nullptr)
             {
-                m_LoadingProgress->Set(1.0f);
+                m_LoadingContext->SetProgress(1.0f);
             }
             RequestPendingSceneChange();
         }
@@ -217,7 +242,7 @@ void SceneTransitionController::Update(float deltaTime)
             m_OverlayAlpha = 0.0f;
             m_State = State::Idle;
             m_AsyncRequested = false;
-            m_LoadingProgress.reset();
+            m_LoadingContext.reset();
         }
     }
 }
@@ -232,14 +257,27 @@ bool SceneTransitionController::IsLoading() const
     return m_State == State::Loading;
 }
 
+bool SceneTransitionController::CancelAsyncTransition()
+{
+    if (m_AsyncRequested == false || m_LoadingContext == nullptr)
+    {
+        return false;
+    }
+
+    // std::async workerを強制終了するとPreparation側Resourceの整合性を壊すため、
+    // cooperative cancellationのみを通知します。
+    m_LoadingContext->RequestCancellation();
+    return true;
+}
+
 float SceneTransitionController::GetLoadingProgress() const
 {
-    if (m_LoadingProgress == nullptr)
+    if (m_LoadingContext == nullptr)
     {
         return 0.0f;
     }
 
-    return m_LoadingProgress->Get();
+    return m_LoadingContext->GetProgress();
 }
 
 void SceneTransitionController::BeginAsyncLoading()
@@ -250,14 +288,14 @@ void SceneTransitionController::BeginAsyncLoading()
     m_LoadingAnimationTime = 0.0f;
 
     SceneAsyncPreparation preparation = std::move(m_AsyncPreparation);
-    const std::shared_ptr<SceneLoadingProgress> progress = m_LoadingProgress;
+    const std::shared_ptr<SceneLoadingContext> context = m_LoadingContext;
     m_AsyncPreparationFuture = std::async(std::launch::async,
-        [preparation = std::move(preparation), progress]() mutable
+        [preparation = std::move(preparation), context]() mutable
         {
-            const bool succeeded = preparation(*progress);
+            const bool succeeded = preparation(*context);
             if (succeeded == true)
             {
-                progress->Set(1.0f);
+                context->SetProgress(1.0f);
             }
             return succeeded;
         });
@@ -268,7 +306,7 @@ void SceneTransitionController::FinishWithoutSceneChange()
     m_AsyncPreparation = {};
     m_AsyncSceneCreation = {};
     m_AsyncRequested = false;
-    m_LoadingProgress.reset();
+    m_LoadingContext.reset();
     m_ElapsedTime = 0.0f;
 
     const float duration = NormalizeDuration(m_Specification.FadeInDuration);
