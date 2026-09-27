@@ -1,5 +1,6 @@
 #pragma once
 #include "Raven/Core/Jobs/JobSystem.h"
+#include "Raven/Assets/TextureAsset.h"
 #include "Raven/Core/Window.h"
 #include "Raven/Core/WindowManager.h"
 #include "Raven/Core/Input.h"
@@ -283,6 +284,12 @@ public:
     bool RequestAsyncSceneTransition(const std::string& sceneID,
         SceneAsyncPreparation preparation,
         const SceneTransitionSpecification& specification = {});
+
+    // Worker Preparation後にMain Thread専用Asset finalizeを挟むAsync遷移入口です。
+    bool RequestAsyncSceneTransition(const std::string& sceneID,
+        SceneAsyncPreparation preparation,
+        SceneMainThreadFinalize finalize,
+        const SceneTransitionSpecification& specification = {});
     bool CancelAsyncSceneTransition()
     {
         return m_SceneTransitionController.CancelAsyncTransition();
@@ -298,6 +305,8 @@ public:
     const SceneManager& GetSceneManager() const { return m_SceneManager; }
     SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
     const SceneTransitionController& GetSceneTransitionController() const { return m_SceneTransitionController; }
+    TextureAssetManager& GetTextureAssetManager() { return m_TextureAssetManager; }
+    const TextureAssetManager& GetTextureAssetManager() const { return m_TextureAssetManager; }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
     WindowManager& GetWindowManager() { return m_WindowManager; }
@@ -373,6 +382,8 @@ private:
     JobSystem m_JobSystem;
     // SceneManager / JobSystemより先に破棄される宣言順とし、借用参照寿命を保証します。
     SceneTransitionController m_SceneTransitionController{ m_SceneManager, m_JobSystem };
+    // Main ThreadでfinalizeされたRuntime Texture AssetをApplication Lifetimeで共有します。
+    TextureAssetManager m_TextureAssetManager;
 
     // Main Window用のRaven UI frame状態です。
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
