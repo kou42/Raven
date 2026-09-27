@@ -1,4 +1,5 @@
 #pragma once
+#include "Raven/Core/Jobs/JobSystem.h"
 #include "Raven/Core/Window.h"
 #include "Raven/Core/WindowManager.h"
 #include "Raven/Core/Input.h"
@@ -367,8 +368,11 @@ private:
     // Sceneの所有権とDeferred切り替えはSceneManagerへ集約します。
     SceneFactory m_SceneFactory;
     SceneManager m_SceneManager;
-    // SceneManagerより先に破棄される宣言順とし、Controllerが借用する参照寿命を保証します。
-    SceneTransitionController m_SceneTransitionController{ m_SceneManager };
+    // JobSystemはControllerより後に破棄される宣言順とし、Controller Destructorが
+    // Preparation完了を待つ間もWorker Poolの寿命を保証します。
+    JobSystem m_JobSystem;
+    // SceneManager / JobSystemより先に破棄される宣言順とし、借用参照寿命を保証します。
+    SceneTransitionController m_SceneTransitionController{ m_SceneManager, m_JobSystem };
 
     // Main Window用のRaven UI frame状態です。
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
