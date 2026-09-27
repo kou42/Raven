@@ -79,18 +79,21 @@ SceneとUI Screenの責務を分離します。
 
 ※ 現在のUIButtonはTextを所有せず、UILabelはFont Atlasの明示指定が必要なため、Button文字表示はPhase 10のFont Asset / LoadingScreen統合と合わせて追加します。
 
-## Phase 9: In-Game UI Navigation
+## Phase 9: In-Game UI Navigation — 完了
 
-次回はここから開始します。
-
-- HUD
+- HUDScreenをGame SceneのStack底面へ常駐
 - PauseScreen
-- SettingsScreen
+- SettingsScreen再利用
 - Resume
-- Titleへ戻る操作
+- Fade付きTitle復帰
 - Screen Stackを利用したPause → Settings → Back
+- F10直接Title遷移をPause Menu入口へ移行
+- Pause中はGame Logic後のAnimation / Physics / Scene Layer更新を停止
+- UI callback中のScreen破棄を避けるDeferred Navigation
 
 ## Phase 10: Loading Screen
+
+次回はここから開始します。
 
 - LoadingScreenをUIScreen化
 - Progress表示
