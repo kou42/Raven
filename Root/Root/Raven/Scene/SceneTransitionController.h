@@ -12,6 +12,7 @@ namespace Raven
 {
 
 class SceneManager;
+class JobSystem;
 
 enum class SceneTransitionType
 {
@@ -58,7 +59,7 @@ using SceneCreationFunction = std::function<Scope<Scene>()>;
 class SceneTransitionController
 {
 public:
-    explicit SceneTransitionController(SceneManager& sceneManager);
+    SceneTransitionController(SceneManager& sceneManager, JobSystem& jobSystem);
     ~SceneTransitionController();
 
     // 遷移要求を開始します。進行中の再要求は状態競合を避けるため無視します。
@@ -106,6 +107,7 @@ private:
 
 private:
     SceneManager& m_SceneManager;
+    JobSystem& m_JobSystem;
     Scope<Scene> m_TargetScene;
     SceneTransitionSpecification m_Specification{};
     State m_State = State::Idle;
