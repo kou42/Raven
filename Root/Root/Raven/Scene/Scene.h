@@ -158,6 +158,9 @@ protected:
 protected:
 
     virtual void OnUpdateGame(float dt) {}
+    // Game Logic後にSimulation更新を継続するかを派生Sceneが決定します。
+    // Pause Menu等はUI入力を処理した後、Animation/Physics/Layerだけを停止できます。
+    virtual bool ShouldUpdateSimulation() const { return true; }
 
 private:
 
