@@ -14,6 +14,9 @@
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Scene/SceneCameraSystem.h"
+#include "Raven/UI/Screens/HUDScreen.h"
+#include "Raven/UI/Screens/PauseScreen.h"
+#include "Raven/UI/Screens/SettingsScreen.h"
 
 #include <algorithm>
 #include <cmath>
@@ -390,6 +393,21 @@ void SceneGame::UpdateMouseDragImpulse()
 
 void SceneGame::OnCreate()
 {
+    if (m_Application != nullptr)
+    {
+        UINavigationManager& navigation = m_Application->GetUINavigationManager();
+        navigation.Clear();
+        navigation.PushScreen(CreateScope<HUDScreen>());
+    }
+
+    m_WasPauseKeyPressed = Input::IsKeyPressed(Key::F10);
+    m_IsPaused = false;
+    m_PauseRequested = false;
+    m_ResumeRequested = false;
+    m_SettingsRequested = false;
+    m_SettingsBackRequested = false;
+    m_ReturnToTitleRequested = false;
+
     if (Renderer::IsExplicitSceneMode() == false)
     {
         m_Shader = m_ShaderLibrary.Load(
@@ -544,6 +562,18 @@ void SceneGame::OnCreate()
 
 void SceneGame::OnDestroy()
 {
+    if (m_Application != nullptr)
+    {
+        m_Application->GetUINavigationManager().Clear();
+    }
+
+    m_IsPaused = false;
+    m_PauseRequested = false;
+    m_ResumeRequested = false;
+    m_SettingsRequested = false;
+    m_SettingsBackRequested = false;
+    m_ReturnToTitleRequested = false;
+
     m_DraggedEntity = {};
     m_DragHitPoint = {};
 
@@ -598,6 +628,15 @@ void SceneGame::OnDestroy()
 
 void SceneGame::OnUpdateGame(float dt)
 {
+    UpdatePauseNavigation();
+
+    // Pause中もUI Navigationだけは更新し、Gameplay固有処理を停止します。
+    // Scene基底のAnimation/Physics更新停止は別途Scene全体のPause契約を導入する段階で統合します。
+    if (m_IsPaused == true)
+    {
+        return;
+    }
+
     const float safeDt = std::clamp(dt, 0.0f, 0.05f);
 
     // InspectorやGame LogicがCamera EntityのTransform/FOVを変更した場合、
@@ -606,7 +645,6 @@ void SceneGame::OnUpdateGame(float dt)
 
     // StateMachine検証用ParameterをAnimationSystem実行前に更新する。
     UpdateAnimationStateMachineTest(safeDt);
-    UpdateSceneTransitionShortcut();
 
     const bool spacePressed = Input::IsKeyPressed(Key::Space);
     if (spacePressed && m_WasSpacePressed == false)
@@ -631,29 +669,96 @@ void SceneGame::OnUpdateGame(float dt)
 }
 
 
-void SceneGame::UpdateSceneTransitionShortcut()
+void SceneGame::PushPauseScreen()
 {
     if (m_Application == nullptr)
     {
         return;
     }
 
-    // EscapeはApplication終了に使用されているため競合させず、F10をScene遷移検証専用キーにします。
-    const bool titleTransitionKeyPressed = Input::IsKeyPressed(Key::F10);
-    const bool transitionRequested =
-        titleTransitionKeyPressed == true && m_WasTitleTransitionKeyPressed == false;
-    m_WasTitleTransitionKeyPressed = titleTransitionKeyPressed;
+    auto pauseScreen = CreateScope<PauseScreen>(
+        [this]()
+        {
+            m_ResumeRequested = true;
+        },
+        [this]()
+        {
+            m_SettingsRequested = true;
+        },
+        [this]()
+        {
+            m_ReturnToTitleRequested = true;
+        });
 
-    if (transitionRequested == false)
+    if (m_Application->GetUINavigationManager().PushScreen(std::move(pauseScreen)) == true)
+    {
+        m_IsPaused = true;
+    }
+}
+
+void SceneGame::UpdatePauseNavigation()
+{
+    if (m_Application == nullptr)
     {
         return;
     }
 
-    SceneTransitionSpecification specification{};
-    specification.Type = SceneTransitionType::Fade;
-    specification.FadeOutDuration = 0.25f;
-    specification.FadeInDuration = 0.25f;
-    m_Application->RequestSceneTransition("Title", specification);
+    // F10は従来の直接Title遷移検証からPause Menu入口へ移行します。
+    const bool pauseKeyPressed = Input::IsKeyPressed(Key::F10);
+    if (pauseKeyPressed == true && m_WasPauseKeyPressed == false && m_IsPaused == false)
+    {
+        m_PauseRequested = true;
+    }
+    m_WasPauseKeyPressed = pauseKeyPressed;
+
+    UINavigationManager& navigation = m_Application->GetUINavigationManager();
+
+    // UI callback自身を所有するScreenをcallback実行中に破棄しないよう、
+    // 全Navigation変更をScene Update境界で処理します。
+    if (m_ReturnToTitleRequested == true)
+    {
+        m_ReturnToTitleRequested = false;
+
+        SceneTransitionSpecification specification{};
+        specification.Type = SceneTransitionType::Fade;
+        specification.FadeOutDuration = 0.25f;
+        specification.FadeInDuration = 0.25f;
+        m_Application->RequestSceneTransition("Title", specification);
+        return;
+    }
+
+    if (m_SettingsBackRequested == true)
+    {
+        m_SettingsBackRequested = false;
+        navigation.PopScreen();
+        return;
+    }
+
+    if (m_SettingsRequested == true)
+    {
+        m_SettingsRequested = false;
+        auto settingsScreen = CreateScope<SettingsScreen>(
+            [this]()
+            {
+                m_SettingsBackRequested = true;
+            });
+        navigation.PushScreen(std::move(settingsScreen));
+        return;
+    }
+
+    if (m_ResumeRequested == true)
+    {
+        m_ResumeRequested = false;
+        navigation.PopScreen();
+        m_IsPaused = false;
+        return;
+    }
+
+    if (m_PauseRequested == true)
+    {
+        m_PauseRequested = false;
+        PushPauseScreen();
+    }
 }
 
 void SceneGame::OnRender()
