@@ -484,7 +484,7 @@ void SceneGame::OnCreate()
     else
     {
         // 直接起動時はUnit Dynamic Gridと同じXZ平面Geometryを同期生成します。
-        floorGeometry = PrimitiveMeshFactory::CreateDynamicGridGeometry(1, 1);
+        floorGeometry = PrimitiveMeshFactory::CreateFloorGeometry();
     }
 
     m_Mesh = CreateRef<Mesh>(floorGeometry, legacyCreation);
