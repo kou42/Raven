@@ -18,7 +18,7 @@ public:
     TitleScreen(Action onStartGame, Action onSettings, Action onExit);
 
 private:
-    static Scope<UIElement> CreateMenuButton(Action action);
+    static Scope<UIElement> CreateMenuButton(const char* name, Action action);
 };
 
 } // namespace Raven
