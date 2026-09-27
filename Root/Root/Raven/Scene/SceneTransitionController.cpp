@@ -156,6 +156,15 @@ void SceneTransitionController::Update(float deltaTime)
                 m_LastLoadError = SceneLoadError::PreparationException;
                 prepared = false;
             }
+            // PreparationがCancellation確認を忘れてtrueを返しても、Controller境界で
+            // Scene生成へ進ませないことでCancellation契約を保証します。
+            if (m_LoadingContext != nullptr
+                && m_LoadingContext->IsCancellationRequested() == true)
+            {
+                m_LastLoadError = SceneLoadError::Cancelled;
+                prepared = false;
+            }
+
             if (prepared == false)
             {
                 m_LastAsyncLoadSucceeded = false;
@@ -292,8 +301,13 @@ void SceneTransitionController::BeginAsyncLoading()
     m_AsyncPreparationFuture = std::async(std::launch::async,
         [preparation = std::move(preparation), context]() mutable
         {
+            if (context->IsCancellationRequested() == true)
+            {
+                return false;
+            }
+
             const bool succeeded = preparation(*context);
-            if (succeeded == true)
+            if (succeeded == true && context->IsCancellationRequested() == false)
             {
                 context->SetProgress(1.0f);
             }
