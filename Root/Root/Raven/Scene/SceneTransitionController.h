@@ -33,6 +33,8 @@ enum class SceneLoadError
     Cancelled,
     PreparationFailed,
     PreparationException,
+    FinalizeFailed,
+    FinalizeException,
     SceneCreationFailed,
     SceneCreationException
 };
