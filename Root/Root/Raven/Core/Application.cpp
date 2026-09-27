@@ -1230,6 +1230,23 @@ bool Application::RequestAsyncSceneTransition(
         std::move(preparation), std::move(finalize), std::move(sceneCreation), specification);
 }
 
+
+bool Application::RequestAsyncSceneTransition(
+    SceneAsyncPreparation preparation,
+    SceneMainThreadFinalize finalize,
+    SceneCreationFunction sceneCreation,
+    const SceneTransitionSpecification& specification)
+{
+    if (preparation == nullptr || sceneCreation == nullptr)
+    {
+        return false;
+    }
+
+    // Preparation結果をcaptureしたFactoryでもScene生成自体はApplication Threadで実行します。
+    return m_SceneTransitionController.RequestAsyncTransition(
+        std::move(preparation), std::move(finalize), std::move(sceneCreation), specification);
+}
+
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
     RHISceneFrameLifecycle& frame,
     const std::function<bool()>& prepare,
