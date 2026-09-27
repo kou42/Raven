@@ -37,6 +37,10 @@ public:
 
     const std::string& GetSourcePath() const;
     const Ref<Texture>& GetTexture() const;
+
+    // CPU decode済みPixelからLegacy Runtime TextureをMain Threadで生成します。
+    // Explicit BackendはCreateRHITexture()を使用するため、この処理を要求しません。
+    bool FinalizeRuntimeTexture();
     bool IsValid() const;
     bool HasPixelData() const;
     const TextureAssetPixelData& GetPixelData() const;
