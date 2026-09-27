@@ -114,6 +114,27 @@ Ref<TextureAsset> TextureAssetManager::Load(const std::string& sourcePath)
     return asset;
 }
 
+Ref<TextureAsset> TextureAssetManager::RegisterDecoded(
+    const std::string& sourcePath, TextureAssetPixelData pixelData)
+{
+    auto it = m_Assets.find(sourcePath);
+    if (it != m_Assets.end())
+    {
+        return it->second;
+    }
+
+    if (sourcePath.empty() == true || pixelData.IsValid() == false)
+    {
+        return nullptr;
+    }
+
+    // WorkerでdecodeしたPixelだけを受け取り、Manager自身はGPU Resourceを生成しません。
+    Ref<TextureAsset> asset = CreateRef<TextureAsset>(
+        sourcePath, Ref<Texture>{}, std::move(pixelData));
+    m_Assets[sourcePath] = asset;
+    return asset;
+}
+
 Ref<TextureAsset> TextureAssetManager::Get(const std::string& sourcePath) const
 {
     auto it = m_Assets.find(sourcePath);
