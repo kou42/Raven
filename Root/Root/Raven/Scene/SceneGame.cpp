@@ -677,6 +677,7 @@ void SceneGame::PushPauseScreen()
     }
 
     auto pauseScreen = CreateScope<PauseScreen>(
+        m_Application->GetRuntimeUIFont(),
         [this]()
         {
             m_ResumeRequested = true;
@@ -738,6 +739,7 @@ void SceneGame::UpdatePauseNavigation()
     {
         m_SettingsRequested = false;
         auto settingsScreen = CreateScope<SettingsScreen>(
+            m_Application->GetRuntimeUIFont(),
             [this]()
             {
                 m_SettingsBackRequested = true;
