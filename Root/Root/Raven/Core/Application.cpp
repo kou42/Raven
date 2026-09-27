@@ -5,6 +5,7 @@
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Renderer/RHI/RHIExplicitSceneRuntimeFactory.h"
 #include "Raven/ImGui/ImGuiLayer.h"
+#include "Raven/UI/Screens/LoadingScreen.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
@@ -1052,6 +1053,44 @@ bool Application::TransferUIRootChild(
     return source->TransferRootChildTo(*destination, child);
 }
 
+void Application::UpdateLoadingScreen()
+{
+    UIScreen* top = m_UINavigationManager.GetTopScreen();
+    LoadingScreen* loadingScreen = dynamic_cast<LoadingScreen*>(top);
+
+    if (m_SceneTransitionController.IsLoading() == true)
+    {
+        if (loadingScreen == nullptr)
+        {
+            auto screen = CreateScope<LoadingScreen>();
+            loadingScreen = screen.get();
+            if (m_UINavigationManager.PushScreen(std::move(screen)) == false)
+            {
+                return;
+            }
+        }
+
+        loadingScreen->SetMessage("Loading...");
+        loadingScreen->SetProgress(m_SceneTransitionController.GetLoadingProgress());
+        return;
+    }
+
+    // Async Preparation失敗時はFadeInが終わるまでError状態を残し、
+    // 旧Sceneへ戻ったことが視覚的に分かるようにします。
+    if (loadingScreen != nullptr
+        && m_SceneTransitionController.IsTransitioning() == true
+        && m_SceneTransitionController.DidLastAsyncLoadSucceed() == false)
+    {
+        loadingScreen->SetLoadError("Scene loading failed.");
+        return;
+    }
+
+    if (loadingScreen != nullptr)
+    {
+        m_UINavigationManager.PopScreen();
+    }
+}
+
 void Application::PushLayer(Layer* layer)
 {
 #if 0
@@ -1345,6 +1384,7 @@ void Application::Run()
         // Scene Transitionの時間はScene Updateより前に進めます。
         // FadeOut完了時もSceneManagerへ予約するだけなので、現在FrameのScene寿命は維持されます。
         m_SceneTransitionController.Update(frameDeltaTime);
+        UpdateLoadingScreen();
 
         // ====================================================================
         // Renderer statistics frame boundary
