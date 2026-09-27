@@ -18,6 +18,7 @@ namespace Raven
 {
 
 class Application;
+struct SceneGamePreparedResources;
 
 // ============================================================================
 // SceneGame
@@ -36,8 +37,11 @@ class SceneGame : public Scene, public SceneViewportRenderer
     friend class Gltf::HumanSkinningDebugLayer;
 
 public:
-    explicit SceneGame(Application* application = nullptr)
+    explicit SceneGame(
+        Application* application = nullptr,
+        Ref<SceneGamePreparedResources> preparedResources = nullptr)
         : m_Application(application)
+        , m_PreparedResources(std::move(preparedResources))
         , m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
@@ -126,6 +130,7 @@ private:
     bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
 
     Application* m_Application = nullptr;
+    Ref<SceneGamePreparedResources> m_PreparedResources;
     bool m_WasPauseKeyPressed = false;
     bool m_IsPaused = false;
     bool m_PauseRequested = false;
