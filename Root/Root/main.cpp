@@ -31,6 +31,7 @@
 
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
+#include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
 #include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
@@ -122,6 +123,7 @@ int main(int argc, char* argv[])
     // Character locomotionの速度選択とBlendTree/Animation Profileの回帰テストに加えて、
     // Motion Matching切替時のPose/速度連続性も実際のDebug起動時に必ず検証します。
     Raven::tests::RunExplicitSceneFrameSelfTests();
+    Raven::tests::RunJobSystemSelfTests();
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();
