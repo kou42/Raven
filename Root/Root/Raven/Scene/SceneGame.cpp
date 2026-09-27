@@ -471,39 +471,24 @@ void SceneGame::OnCreate()
 
     UpdateRuntimeCamera();
 
-    const float floorVertices[] = {
-        -0.5f,0.0f,-0.5f,  0.4f,0.7f,0.4f,  0.0f,0.0f,
-         0.5f,0.0f,-0.5f,  0.3f,0.6f,0.3f,  1.0f,0.0f,
-         0.5f,0.0f, 0.5f,  0.4f,0.7f,0.4f,  1.0f,1.0f,
-        -0.5f,0.0f, 0.5f,  0.3f,0.6f,0.3f,  0.0f,1.0f
-    };
-    const uint32_t floorIndices[] = { 0,1,2, 2,3,0 };
-
-    // Floor/ShadowもCPU Geometryを正規データにし、OpenGL VAO生成へ依存しないMeshへ統一します。
-    // Explicit BackendではPrepareRHIMeshes()がこのGeometryからRHI Bufferを構築し、
-    // OpenGLではMesh constructorが従来どおりLegacy Resourceを生成します。
-    std::vector<MeshVertex> floorGeometryVertices;
-    floorGeometryVertices.reserve(4u);
-    for (uint32_t vertexIndex = 0u; vertexIndex < 4u; ++vertexIndex)
-    {
-        const uint32_t offset = vertexIndex * 8u;
-        MeshVertex vertex{};
-        vertex.Position = { floorVertices[offset], floorVertices[offset + 1u], floorVertices[offset + 2u] };
-        vertex.Color = { floorVertices[offset + 3u], floorVertices[offset + 4u], floorVertices[offset + 5u] };
-        vertex.TexCoord = { floorVertices[offset + 6u], floorVertices[offset + 7u] };
-        vertex.Normal = { 0.0f, 1.0f, 0.0f };
-        floorGeometryVertices.push_back(vertex);
-    }
-    std::vector<uint32_t> floorGeometryIndices(std::begin(floorIndices), std::end(floorIndices));
-    Ref<MeshGeometry> floorGeometry = CreateRef<MeshGeometry>(
-        floorGeometryVertices, floorGeometryIndices);
     const LegacyMeshResourceCreation legacyCreation =
         Renderer::IsExplicitSceneMode() == true ?
         LegacyMeshResourceCreation::Deferred :
         LegacyMeshResourceCreation::Immediate;
+
+    Ref<MeshGeometry> floorGeometry;
+    if (m_PreparedResources != nullptr && m_PreparedResources->FloorGeometry != nullptr)
+    {
+        floorGeometry = m_PreparedResources->FloorGeometry;
+    }
+    else
+    {
+        // 直接起動時はUnit Dynamic Gridと同じXZ平面Geometryを同期生成します。
+        floorGeometry = PrimitiveMeshFactory::CreateDynamicGridGeometry(1, 1);
+    }
+
     m_Mesh = CreateRef<Mesh>(floorGeometry, legacyCreation);
-    m_ShadowMesh = CreateRef<Mesh>(CreateRef<MeshGeometry>(
-        floorGeometryVertices, floorGeometryIndices), legacyCreation);
+    m_ShadowMesh = CreateRef<Mesh>(floorGeometry, legacyCreation);
 
     PipelineSpecification shadowPipelineSpecification = pipelineSpecification;
     shadowPipelineSpecification.DebugName = "SceneGame Shadow Pipeline";
@@ -523,7 +508,7 @@ void SceneGame::OnCreate()
             m_PreparedResources->SphereGeometry, legacyCreation);
         m_BoxMesh = CreateRef<Mesh>(
             m_PreparedResources->BoxGeometry, legacyCreation);
-        m_PreparedResources.reset();
+        // Floor/WaveもこのOnCreate内で利用するため、全Prepared Resource消費後に解放します。
     }
     else
     {
@@ -566,7 +551,15 @@ void SceneGame::OnCreate()
     //
     // 実際の毎フレーム更新はMeshDeformationSystemが担当し、SceneGameは
     // どのMeshとDeformerを組み合わせるかという初期構成だけを担当します。
-    Ref<Mesh> waveMesh = PrimitiveMeshFactory::CreateDynamicGrid(32, 32);
+    Ref<Mesh> waveMesh;
+    if (m_PreparedResources != nullptr && m_PreparedResources->WaveGeometry != nullptr)
+    {
+        waveMesh = CreateRef<Mesh>(m_PreparedResources->WaveGeometry, legacyCreation);
+    }
+    else
+    {
+        waveMesh = PrimitiveMeshFactory::CreateDynamicGrid(32, 32, legacyCreation);
+    }
     Entity waveEntity = CreateEntity("WaveDeformationGrid");
     auto& waveTransform = waveEntity.GetComponent<TransformComponent>();
     waveTransform.Position = { 0.0f, 3.0f, -22.0f };
@@ -582,6 +575,8 @@ void SceneGame::OnCreate()
         MeshDeformationComponent{ std::move(waveInstance), true });
 
     m_WaveEntity = waveEntity;
+
+    m_PreparedResources.reset();
 
     SpawnSphereBatch(ComputeOptimizedSpawnCount());
     SpawnBoxTestBody();
