@@ -8,13 +8,15 @@ namespace Raven
 {
 
 class UIPanel;
+class UILabel;
+class UIFontAtlas;
 
 // Async Scene Preparation中に表示するRuntime Loading UIです。
 // Transition Controllerから進捗/結果だけを受け取り、Scene生成や遷移状態そのものは所有しません。
 class LoadingScreen final : public UIScreen
 {
 public:
-    LoadingScreen();
+    explicit LoadingScreen(const Ref<UIFontAtlas>& font = nullptr);
 
     void SetProgress(float progress);
     float GetProgress() const { return m_Progress; }
@@ -31,6 +33,7 @@ private:
 private:
     UIPanel* m_ProgressFill = nullptr;
     UIPanel* m_StatusIndicator = nullptr;
+    UILabel* m_MessageLabel = nullptr;
     float m_Progress = 0.0f;
     std::string m_Message = "Loading...";
     bool m_HasLoadError = false;
