@@ -246,6 +246,15 @@ void Scene::OnUpdate(float dt)
         OnUpdateGame(dt);
     }
 
+    // Game Logic内でPause状態が変化した場合は、このFrameからSimulationを停止します。
+    // Destroy Queueは停止中もflushし、Game Logicから予約済みの破棄を滞留させません。
+    if (ShouldUpdateSimulation() == false)
+    {
+        RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
+        FlushDestroyedEntities();
+        return;
+    }
+
     // Game LogicがPlay/Pause/Clip切り替えなどを行った後にAnimationを評価します。
     // AnimationSystemがTransformへPoseを反映してからPhysicsへ進むことで、
     // Kinematic Bodyなどは更新済みTransformをPhysics側から参照できます。
