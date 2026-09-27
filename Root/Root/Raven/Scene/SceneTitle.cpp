@@ -26,13 +26,8 @@ void SceneTitle::OnCreate()
         },
         [this]()
         {
-            // SettingsはSceneを交換せずScreen Stackへ積み、BackでTitleへ戻します。
-            auto settingsScreen = CreateScope<SettingsScreen>(
-                [this]()
-                {
-                    m_Application.GetUINavigationManager().PopScreen();
-                });
-            m_Application.GetUINavigationManager().PushScreen(std::move(settingsScreen));
+            // Click処理中のTree Mutationを避け、Scene Update境界でPushします。
+            m_SettingsRequested = true;
         },
         [this]()
         {
@@ -44,6 +39,9 @@ void SceneTitle::OnCreate()
 
 void SceneTitle::OnDestroy()
 {
+    m_SettingsRequested = false;
+    m_SettingsBackRequested = false;
+
     // Title Scene固有UIをScene Lifetimeと同じ境界で破棄します。
     m_Application.GetUINavigationManager().Clear();
 }
@@ -51,6 +49,28 @@ void SceneTitle::OnDestroy()
 void SceneTitle::OnUpdateGame(float deltaTime)
 {
     static_cast<void>(deltaTime);
+
+    // UI callback実行中に、そのcallbackを所有するButton/Screenを破棄しないよう、
+    // Navigation Treeの変更はScene Updateの安全な境界へ遅延します。
+    if (m_SettingsBackRequested == true)
+    {
+        m_SettingsBackRequested = false;
+        m_Application.GetUINavigationManager().PopScreen();
+        return;
+    }
+
+    if (m_SettingsRequested == true)
+    {
+        m_SettingsRequested = false;
+
+        auto settingsScreen = CreateScope<SettingsScreen>(
+            [this]()
+            {
+                m_SettingsBackRequested = true;
+            });
+        m_Application.GetUINavigationManager().PushScreen(std::move(settingsScreen));
+    }
+
     // Enter pollingによる直接遷移は廃止し、ButtonのMouse/Keyboard Actionへ統一しました。
 }
 
