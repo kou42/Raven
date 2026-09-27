@@ -12,10 +12,15 @@ struct SceneGamePreparedResources
 {
     Ref<MeshGeometry> SphereGeometry;
     Ref<MeshGeometry> BoxGeometry;
+    Ref<MeshGeometry> FloorGeometry;
+    Ref<MeshGeometry> WaveGeometry;
 
     bool IsValid() const
     {
-        return SphereGeometry != nullptr && BoxGeometry != nullptr;
+        return SphereGeometry != nullptr
+            && BoxGeometry != nullptr
+            && FloorGeometry != nullptr
+            && WaveGeometry != nullptr;
     }
 };
 
