@@ -1199,6 +1199,16 @@ bool Application::RequestAsyncSceneTransition(
     SceneAsyncPreparation preparation,
     const SceneTransitionSpecification& specification)
 {
+    return RequestAsyncSceneTransition(
+        sceneID, std::move(preparation), SceneMainThreadFinalize{}, specification);
+}
+
+bool Application::RequestAsyncSceneTransition(
+    const std::string& sceneID,
+    SceneAsyncPreparation preparation,
+    SceneMainThreadFinalize finalize,
+    const SceneTransitionSpecification& specification)
+{
     if (m_SceneFactory.Contains(sceneID) == false || preparation == nullptr)
     {
         return false;
@@ -1212,7 +1222,7 @@ bool Application::RequestAsyncSceneTransition(
         };
 
     return m_SceneTransitionController.RequestAsyncTransition(
-        std::move(preparation), std::move(sceneCreation), specification);
+        std::move(preparation), std::move(finalize), std::move(sceneCreation), specification);
 }
 
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
