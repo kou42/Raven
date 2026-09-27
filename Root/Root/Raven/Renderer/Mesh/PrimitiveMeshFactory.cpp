@@ -176,10 +176,9 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
         CreateSphereGeometry(stacks, slices), legacyResourceCreation);
 }
 
-Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateDynamicGridGeometry(
     int rows,
-    int columns,
-    LegacyMeshResourceCreation legacyResourceCreation)
+    int columns)
 {
     rows = rows < 1 ? 1 : rows;
     columns = columns < 1 ? 1 : columns;
@@ -228,8 +227,18 @@ Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
         }
     }
 
-    return CreateDynamicIndexedMesh(
-        std::move(vertices), std::move(indices), legacyResourceCreation);
+    return CreateRef<MeshGeometry>(
+        std::move(vertices), std::move(indices),
+        GeometryUsage::Dynamic, TopologyUsage::Fixed);
+}
+
+Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
+    int rows,
+    int columns,
+    LegacyMeshResourceCreation legacyResourceCreation)
+{
+    return CreateRef<Mesh>(
+        CreateDynamicGridGeometry(rows, columns), legacyResourceCreation);
 }
 
 } // namespace Raven
