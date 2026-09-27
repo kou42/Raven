@@ -131,9 +131,13 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - Asset単位Progress / cooperative cancellation ✓
   - Worker Preparation → Main Thread Finalize → Scene Creation ✓
   - Application所有Texture Asset Cacheへfinalize ✓
-  - 実Scene遷移でのAsset Batch利用 / GPU finalize ← 次回ここから
-- Scene生成時のMain Thread stall削減
-- PreparationとScene生成を含めたProgress semantics整理
+  - Title → Game実Scene遷移でTexture Asset Batch利用 ✓
+  - Legacy OpenGL TextureのMain Thread GPU finalize ✓
+  - Game SceneでAsync Load済みAssetを再利用 ✓
+  - Direct Scene起動時の同期Load fallback ✓
+- Scene生成時のMain Thread stall削減 ← 次回ここから
+- PreparationとScene生成を含めたProgress semantics整理 — 実装中
+  - Preparation完了 80% / Main Thread Finalize完了 90% / Scene生成完了 100% ✓
 
 ※ 現在Ravenには汎用Job Systemが存在せず、Texture / RHI Shader Asset Managerも同期Loadです。
 `std::async` を直接Job System風APIで包むだけにはせず、Scene Loading以外でも再利用できるJob実行境界を先に設計します。
