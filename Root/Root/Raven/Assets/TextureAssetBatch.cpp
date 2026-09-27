@@ -55,7 +55,7 @@ bool TextureAssetBatch::DecodeAll(
     return true;
 }
 
-bool TextureAssetBatch::Finalize(TextureAssetManager& manager)
+bool TextureAssetBatch::Finalize(TextureAssetManager& manager, bool createRuntimeTextures)
 {
     // 共有Asset Cacheの更新はApplication/Main Thread側からだけ呼びます。
     // Decode済みPixelはmoveし、同じ画像byte列を余分に複製しません。
@@ -69,6 +69,10 @@ bool TextureAssetBatch::Finalize(TextureAssetManager& manager)
         Ref<TextureAsset> asset =
             manager.RegisterDecoded(entry.SourcePath, std::move(entry.PixelData));
         if (asset == nullptr)
+        {
+            return false;
+        }
+        if (createRuntimeTextures == true && asset->FinalizeRuntimeTexture() == false)
         {
             return false;
         }
