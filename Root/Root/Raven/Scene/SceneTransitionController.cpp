@@ -83,6 +83,16 @@ bool SceneTransitionController::RequestAsyncTransition(
     SceneCreationFunction sceneCreation,
     const SceneTransitionSpecification& specification)
 {
+    return RequestAsyncTransition(
+        std::move(preparation), SceneMainThreadFinalize{}, std::move(sceneCreation), specification);
+}
+
+bool SceneTransitionController::RequestAsyncTransition(
+    SceneAsyncPreparation preparation,
+    SceneMainThreadFinalize finalize,
+    SceneCreationFunction sceneCreation,
+    const SceneTransitionSpecification& specification)
+{
     if (m_State != State::Idle || preparation == nullptr || sceneCreation == nullptr)
     {
         return false;
@@ -92,6 +102,7 @@ bool SceneTransitionController::RequestAsyncTransition(
     m_ElapsedTime = 0.0f;
     m_OverlayAlpha = specification.Type == SceneTransitionType::Instant ? 1.0f : 0.0f;
     m_AsyncPreparation = std::move(preparation);
+    m_MainThreadFinalize = std::move(finalize);
     m_AsyncSceneCreation = std::move(sceneCreation);
     m_AsyncRequested = true;
     m_LastAsyncLoadSucceeded = true;
@@ -179,6 +190,32 @@ void SceneTransitionController::Update(float deltaTime)
                 }
                 FinishWithoutSceneChange();
                 return;
+            }
+
+            // Workerで生成したCPU AssetをApplication Threadへ引き渡します。
+            // GPU Resourceや共有Asset Cacheの更新はWorkerから行わず、この境界へ集約します。
+            if (m_MainThreadFinalize != nullptr)
+            {
+                bool finalized = false;
+                try
+                {
+                    finalized = m_MainThreadFinalize();
+                }
+                catch (...)
+                {
+                    m_LastLoadError = SceneLoadError::PreparationException;
+                    finalized = false;
+                }
+                if (finalized == false)
+                {
+                    m_LastAsyncLoadSucceeded = false;
+                    if (m_LastLoadError == SceneLoadError::None)
+                    {
+                        m_LastLoadError = SceneLoadError::PreparationFailed;
+                    }
+                    FinishWithoutSceneChange();
+                    return;
+                }
             }
 
             // Scene / Renderer / ECS初期化にはMain Thread制約を持つ処理が含まれ得ます。
@@ -320,6 +357,7 @@ void SceneTransitionController::BeginAsyncLoading()
 void SceneTransitionController::FinishWithoutSceneChange()
 {
     m_AsyncPreparation = {};
+    m_MainThreadFinalize = {};
     m_AsyncSceneCreation = {};
     m_AsyncRequested = false;
     m_LoadingContext.reset();
@@ -342,6 +380,7 @@ void SceneTransitionController::RequestPendingSceneChange()
 {
     m_SceneManager.RequestSceneChange(std::move(m_TargetScene));
     m_AsyncPreparation = {};
+    m_MainThreadFinalize = {};
     m_AsyncSceneCreation = {};
     m_State = State::WaitingForSceneChange;
     m_ElapsedTime = 0.0f;
