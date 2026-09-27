@@ -114,7 +114,11 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
 - Load Error型 ✓
   - Cancelled / PreparationFailed / PreparationException / SceneCreationFailed / SceneCreationException
   - LoadingScreenへError種別を反映
-- Job Systemとの統合 ← 次回ここから
+- Job Systemとの統合 ✓
+  - Application所有の汎用Worker Pool
+  - Scene Preparationをstd::asyncからJobSystem::Submitへ移行
+  - Controller → JobSystemのshutdown寿命順を保証
+- Job System単体テスト / 実ビルド確認 ← 次回ここから
 - Asset Loadingとの統合
 - Scene生成時のMain Thread stall削減
 - PreparationとScene生成を含めたProgress semantics整理
