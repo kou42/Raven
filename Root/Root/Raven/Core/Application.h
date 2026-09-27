@@ -16,6 +16,7 @@
 #include "Raven/Core/Event.h"
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Immediate/UIImmediateContext.h"
+#include "Raven/UI/Navigation/UINavigationManager.h"
 
 #if defined(_DEBUG)
 #include "Raven/UI/Debug/UITreeMutationValidation.h"
@@ -303,6 +304,8 @@ public:
     // 壊さず並行運用できます。
     UIContext& GetUIContext() { return m_UIContext; }
     const UIContext& GetUIContext() const { return m_UIContext; }
+    UINavigationManager& GetUINavigationManager() { return m_UINavigationManager; }
+    const UINavigationManager& GetUINavigationManager() const { return m_UINavigationManager; }
 
     // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
     WindowID CreateUIWindow(const WindowSpecification& specification);
@@ -360,6 +363,9 @@ private:
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+    // Scene上のScreen StackはMain UIContextのRootへ接続し、SceneManagerとは独立して管理します。
+    // 宣言順によりNavigationManagerがUIContextより先に破棄され、Screenを安全にTreeから外します。
+    UINavigationManager m_UINavigationManager{ m_UIContext };
     // UIContextより先に破棄し、Immediate Widgetの参照寿命を保ちます。
     UIImmediateContext m_ImmediateUI{ m_UIContext };
     bool m_PhysicsDebugImmediatePanelEnabled = false;
