@@ -26,6 +26,30 @@ struct SceneTransitionSpecification
     float FadeInDuration = 0.25f;
 };
 
+enum class SceneLoadError
+{
+    None,
+    Cancelled,
+    PreparationFailed,
+    PreparationException,
+    SceneCreationFailed,
+    SceneCreationException
+};
+
+class SceneLoadingContext
+{
+public:
+    void SetProgress(float progress);
+    float GetProgress() const;
+
+    bool IsCancellationRequested() const;
+    void RequestCancellation();
+
+private:
+    std::atomic<float> m_Progress{ 0.0f };
+    std::atomic<bool> m_CancellationRequested{ false };
+};
+
 class SceneLoadingProgress
 {
 public:
@@ -36,7 +60,7 @@ private:
     std::atomic<float> m_Progress{ 0.0f };
 };
 
-using SceneAsyncPreparation = std::function<bool(SceneLoadingProgress&)>;
+using SceneAsyncPreparation = std::function<bool(SceneLoadingContext&)>;
 using SceneCreationFunction = std::function<Scope<Scene>()>;
 
 // Sceneの切り替えタイミングと画面Transitionの進行状態を管理します。
@@ -64,6 +88,11 @@ public:
     bool IsLoading() const;
     bool DidLastAsyncLoadSucceed() const { return m_LastAsyncLoadSucceeded; }
     float GetLoadingProgress() const;
+    SceneLoadError GetLastLoadError() const { return m_LastLoadError; }
+
+    // Workerを強制停止せずCancellation Tokenを通知します。
+    // Preparation側はIsCancellationRequested()を適切な粒度で確認して終了します。
+    bool CancelAsyncTransition();
     float GetLoadingAnimationTime() const { return m_LoadingAnimationTime; }
 
     // Transition中はGame/UI操作を受け付けません。Window lifecycle EventはApplication側で別扱いします。
@@ -99,7 +128,8 @@ private:
     std::future<bool> m_AsyncPreparationFuture;
     bool m_AsyncRequested = false;
     bool m_LastAsyncLoadSucceeded = true;
-    std::shared_ptr<SceneLoadingProgress> m_LoadingProgress;
+    SceneLoadError m_LastLoadError = SceneLoadError::None;
+    std::shared_ptr<SceneLoadingContext> m_LoadingContext;
 };
 
 } // namespace Raven
