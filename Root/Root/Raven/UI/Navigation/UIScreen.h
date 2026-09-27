@@ -22,16 +22,14 @@ public:
     UIScreen(UIScreen&&) = delete;
     UIScreen& operator=(UIScreen&&) = delete;
 
-    UIElement& GetRootElement() { return *m_RootElement; }
-    const UIElement& GetRootElement() const { return *m_RootElement; }
+    UIElement& GetRootElement();
+    const UIElement& GetRootElement() const;
 
 protected:
     // 派生ScreenはRoot以下へWidgetを構築します。
-    // Root自体の所有権はNavigationManagerとの着脱時もUIScreenへ戻るため、
-    // ScreenのLifetimeとRetained UI TreeのLifetimeを一致させられます。
     UIElement* AddChild(Scope<UIElement> child)
     {
-        return m_RootElement->AddChild(std::move(child));
+        return GetRootElement().AddChild(std::move(child));
     }
 
     virtual void OnEnter() {}
@@ -43,10 +41,15 @@ private:
     friend class UINavigationManager;
 
     Scope<UIElement> ReleaseRootElement();
+    void SetAttachedRoot(UIElement* root) { m_AttachedRoot = root; }
+    UIElement* GetAttachedRoot() const { return m_AttachedRoot; }
     void RestoreRootElement(Scope<UIElement> root);
 
 private:
+    // Treeへ接続していない間はScreenがRootを所有します。
     Scope<UIElement> m_RootElement;
+    // 接続中はUIContextのRoot Treeが所有するため、同一Elementを非所有で追跡します。
+    UIElement* m_AttachedRoot = nullptr;
 };
 
 } // namespace Raven
