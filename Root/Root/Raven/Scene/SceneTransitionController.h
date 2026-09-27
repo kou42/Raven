@@ -50,16 +50,6 @@ private:
     std::atomic<bool> m_CancellationRequested{ false };
 };
 
-class SceneLoadingProgress
-{
-public:
-    void Set(float progress);
-    float Get() const;
-
-private:
-    std::atomic<float> m_Progress{ 0.0f };
-};
-
 using SceneAsyncPreparation = std::function<bool(SceneLoadingContext&)>;
 using SceneCreationFunction = std::function<Scope<Scene>()>;
 
