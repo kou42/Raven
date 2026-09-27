@@ -1082,7 +1082,20 @@ void Application::UpdateLoadingScreen()
         && m_SceneTransitionController.IsTransitioning() == true
         && m_SceneTransitionController.DidLastAsyncLoadSucceed() == false)
     {
-        loadingScreen->SetLoadError("Scene loading failed.");
+        const SceneLoadError error = m_SceneTransitionController.GetLastLoadError();
+        if (error == SceneLoadError::Cancelled)
+        {
+            loadingScreen->SetLoadError("Scene loading cancelled.");
+        }
+        else if (error == SceneLoadError::SceneCreationFailed
+            || error == SceneLoadError::SceneCreationException)
+        {
+            loadingScreen->SetLoadError("Scene creation failed.");
+        }
+        else
+        {
+            loadingScreen->SetLoadError("Scene preparation failed.");
+        }
         return;
     }
 
