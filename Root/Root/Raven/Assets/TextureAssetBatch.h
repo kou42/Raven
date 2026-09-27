@@ -22,7 +22,7 @@ public:
     bool DecodeAll(
         const ProgressCallback& onProgress = {},
         const CancellationCallback& isCancellationRequested = {});
-    bool Finalize(TextureAssetManager& manager);
+    bool Finalize(TextureAssetManager& manager, bool createRuntimeTextures = false);
 
     std::size_t GetAssetCount() const { return m_Entries.size(); }
     std::size_t GetDecodedCount() const;
