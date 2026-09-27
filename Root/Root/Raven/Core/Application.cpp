@@ -1087,6 +1087,11 @@ void Application::UpdateLoadingScreen()
         {
             loadingScreen->SetLoadError("Scene loading cancelled.");
         }
+        else if (error == SceneLoadError::FinalizeFailed
+            || error == SceneLoadError::FinalizeException)
+        {
+            loadingScreen->SetLoadError("Asset finalize failed.");
+        }
         else if (error == SceneLoadError::SceneCreationFailed
             || error == SceneLoadError::SceneCreationException)
         {
