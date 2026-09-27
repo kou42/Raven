@@ -290,6 +290,12 @@ public:
         SceneAsyncPreparation preparation,
         SceneMainThreadFinalize finalize,
         const SceneTransitionSpecification& specification = {});
+
+    // Scene ID Registryを介さず、Preparation結果をcaptureしたScene生成関数を利用する入口です。
+    bool RequestAsyncSceneTransition(SceneAsyncPreparation preparation,
+        SceneMainThreadFinalize finalize,
+        SceneCreationFunction sceneCreation,
+        const SceneTransitionSpecification& specification = {});
     bool CancelAsyncSceneTransition()
     {
         return m_SceneTransitionController.CancelAsyncTransition();
