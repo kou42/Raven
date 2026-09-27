@@ -515,8 +515,22 @@ void SceneGame::OnCreate()
     m_ShadowMaterial->SetUniform("u_Tint", math::Vec3{ 0.0f, 0.0f, 0.0f });
     m_ShadowMaterial->SetUniform("u_Alpha", 0.35f);
 
-    m_SphereMesh = PrimitiveMeshFactory::CreateSphere();
-    m_BoxMesh = PrimitiveMeshFactory::CreateCube();
+    if (m_PreparedResources != nullptr && m_PreparedResources->IsValid() == true)
+    {
+        // Sphere/Cubeの頂点・Index生成はWorker Preparationで完了済みです。
+        // Mesh化だけをMain Threadで行い、Legacy BackendのGPU Resource生成境界を守ります。
+        m_SphereMesh = CreateRef<Mesh>(
+            m_PreparedResources->SphereGeometry, legacyCreation);
+        m_BoxMesh = CreateRef<Mesh>(
+            m_PreparedResources->BoxGeometry, legacyCreation);
+        m_PreparedResources.reset();
+    }
+    else
+    {
+        // 直接SceneGameを生成するSelf Test/検証経路は従来どおり同期生成へfallbackします。
+        m_SphereMesh = PrimitiveMeshFactory::CreateSphere(24, 48, legacyCreation);
+        m_BoxMesh = PrimitiveMeshFactory::CreateCube(legacyCreation);
+    }
 
     // Scene再初期化時にSphere Batchと入力状態を明示的に初期化します。
     // 単体EntityのLifetimeは各Handleへ保持するため、汎用所有Listの初期化はありません。
