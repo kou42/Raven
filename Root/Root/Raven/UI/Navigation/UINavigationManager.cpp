@@ -72,8 +72,7 @@ bool UINavigationManager::ReplaceScreen(Scope<UIScreen> screen)
         return false;
     }
 
-    // Replaceは一つ下のScreenを一時的にResumeさせません。
-    // Topだけを直接交換し、Pause/Resumeの不要な副作用を避けます。
+    // Replaceは一つ下のScreenを一時的にResumeさせず、Topだけを直接交換します。
     Scope<UIScreen> previous;
     if (m_Screens.empty() == false)
     {
@@ -101,7 +100,7 @@ bool UINavigationManager::ReplaceScreen(Scope<UIScreen> screen)
 
 void UINavigationManager::Clear()
 {
-    // Topから順に外すことでPainter's OrderとNavigation Stackの順序を一致させます。
+    // Topから順に外し、各ScreenへExitを一度だけ通知します。
     while (m_Screens.empty() == false)
     {
         Scope<UIScreen> screen = std::move(m_Screens.back());
@@ -135,20 +134,14 @@ bool UINavigationManager::AttachScreen(UIScreen& screen)
         return false;
     }
 
+    // Main RootにはEditor/Debug UIも共存するため、追加順ではなくScreen自身のRootを追跡します。
+    screen.SetAttachedRoot(attached);
     return true;
 }
 
 bool UINavigationManager::DetachScreen(UIScreen& screen)
 {
-    UIElement* root = nullptr;
-    for (const auto& child : m_Context.GetRootElement().GetChildren())
-    {
-        // UIScreenのRootはAttach中だけManager側Treeが所有するため、
-        // Screen自身のRoot参照ではなく、Stack順に対応するRootを復元する必要があります。
-        // RootへScreen固有の名前を強制しないため、現在は最後に追加されたChildを対象にします。
-        root = child.get();
-    }
-
+    UIElement* root = screen.GetAttachedRoot();
     if (root == nullptr)
     {
         return false;
