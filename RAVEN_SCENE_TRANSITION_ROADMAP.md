@@ -139,7 +139,10 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - Primitive Sphere/CubeのCPU Geometry生成をWorker Preparationへ移行 ✓
   - SceneGamePreparedResourcesでWorker結果をScene生成へ受け渡し ✓
   - Mesh/GPU Resource生成はMain Threadへ維持 ✓
-  - Floor/Dynamic Grid等のCPU Geometry分離 ← 次回ここから
+  - Floor/Wave Dynamic GridのCPU Geometry生成をWorker Preparationへ移行 ✓
+  - 旧Floor頂点色を専用CreateFloorGeometry()で維持 ✓
+  - SceneGame::OnCreate Total / Assets / RenderResources / Entities計測Scope ✓
+  - 計測結果を基にShader/Pipeline/ECSの次分割対象を決定 ← 次回ここから
 - PreparationとScene生成を含めたProgress semantics整理 — 実装中
   - Preparation完了 80% / Main Thread Finalize完了 90% / Scene生成完了 100% ✓
 
