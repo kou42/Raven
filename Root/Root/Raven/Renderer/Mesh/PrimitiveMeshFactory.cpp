@@ -43,8 +43,7 @@ Ref<Mesh> CreateDynamicIndexedMesh(
 }
 } // namespace
 
-Ref<Mesh> PrimitiveMeshFactory::CreateCube(
-    LegacyMeshResourceCreation legacyResourceCreation)
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateCubeGeometry()
 {
     constexpr float h = 0.5f;
 
@@ -91,14 +90,19 @@ Ref<Mesh> PrimitiveMeshFactory::CreateCube(
         indices.push_back(base + 0);
     }
 
-    return CreateIndexedMesh(
-        vertices, std::move(indices), legacyResourceCreation);
+    return CreateRef<MeshGeometry>(
+        vertices, std::move(indices), GeometryUsage::Static, TopologyUsage::Fixed);
 }
 
-Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
-    int stacks,
-    int slices,
+Ref<Mesh> PrimitiveMeshFactory::CreateCube(
     LegacyMeshResourceCreation legacyResourceCreation)
+{
+    return CreateRef<Mesh>(CreateCubeGeometry(), legacyResourceCreation);
+}
+
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateSphereGeometry(
+    int stacks,
+    int slices)
 {
     if (stacks < 2)
     {
@@ -159,14 +163,36 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
         }
     }
 
-    return CreateIndexedMesh(
-        std::move(vertices), std::move(indices), legacyResourceCreation);
+    return CreateRef<MeshGeometry>(
+        std::move(vertices), std::move(indices), GeometryUsage::Static, TopologyUsage::Fixed);
 }
 
-Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
-    int rows,
-    int columns,
+Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
+    int stacks,
+    int slices,
     LegacyMeshResourceCreation legacyResourceCreation)
+{
+    return CreateRef<Mesh>(
+        CreateSphereGeometry(stacks, slices), legacyResourceCreation);
+}
+
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateFloorGeometry()
+{
+    std::vector<MeshVertex> vertices = {
+        { {-0.5f, 0.0f, -0.5f}, {0.4f, 0.7f, 0.4f}, {0.0f, 0.0f}, {0.0f, 1.0f, 0.0f} },
+        { { 0.5f, 0.0f, -0.5f}, {0.3f, 0.6f, 0.3f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f} },
+        { { 0.5f, 0.0f,  0.5f}, {0.4f, 0.7f, 0.4f}, {1.0f, 1.0f}, {0.0f, 1.0f, 0.0f} },
+        { {-0.5f, 0.0f,  0.5f}, {0.3f, 0.6f, 0.3f}, {0.0f, 1.0f}, {0.0f, 1.0f, 0.0f} }
+    };
+    std::vector<uint32_t> indices = { 0u, 1u, 2u, 2u, 3u, 0u };
+    return CreateRef<MeshGeometry>(
+        std::move(vertices), std::move(indices),
+        GeometryUsage::Static, TopologyUsage::Fixed);
+}
+
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateDynamicGridGeometry(
+    int rows,
+    int columns)
 {
     rows = rows < 1 ? 1 : rows;
     columns = columns < 1 ? 1 : columns;
@@ -215,8 +241,18 @@ Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
         }
     }
 
-    return CreateDynamicIndexedMesh(
-        std::move(vertices), std::move(indices), legacyResourceCreation);
+    return CreateRef<MeshGeometry>(
+        std::move(vertices), std::move(indices),
+        GeometryUsage::Dynamic, TopologyUsage::Fixed);
+}
+
+Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
+    int rows,
+    int columns,
+    LegacyMeshResourceCreation legacyResourceCreation)
+{
+    return CreateRef<Mesh>(
+        CreateDynamicGridGeometry(rows, columns), legacyResourceCreation);
 }
 
 } // namespace Raven

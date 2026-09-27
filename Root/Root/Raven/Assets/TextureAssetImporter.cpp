@@ -267,6 +267,34 @@ Ref<Texture> TextureAssetImporter::ImportTextureMemory(
     return texture;
 }
 
+TextureAssetPixelData TextureAssetImporter::DecodePixelData(const std::string& sourcePath)
+{
+    TextureAssetPixelData result{};
+    if (sourcePath.empty() == true)
+    {
+        return result;
+    }
+
+    const std::string extension = std::filesystem::path(sourcePath).extension().string();
+    if (SupportsExtension(extension) == false)
+    {
+        return result;
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* data = stbi_load(sourcePath.c_str(), &width, &height, &channels, 0);
+    if (data == nullptr)
+    {
+        return result;
+    }
+
+    result = CreateAssetPixelData(data, width, height, channels);
+    stbi_image_free(data);
+    return result;
+}
+
 Ref<TextureAsset> TextureAssetImporter::Import(const std::string& sourcePath)
 {
     int width = 0;

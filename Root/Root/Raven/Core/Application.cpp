@@ -5,6 +5,7 @@
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Renderer/RHI/RHIExplicitSceneRuntimeFactory.h"
 #include "Raven/ImGui/ImGuiLayer.h"
+#include "Raven/UI/Screens/LoadingScreen.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
@@ -69,6 +70,7 @@ Application::Application(const ApplicationSpecification& specification)
     : m_RavenUIEnabled(specification.EnableRavenUI)
     , m_PhysicsDebugImmediatePanelEnabled(specification.EnablePhysicsDebugImmediatePanel)
     , m_PhysicsDebugImmediateFont(specification.PhysicsDebugImmediateFont)
+    , m_RuntimeUIFont(specification.RuntimeUIFont)
 {
     // WindowはRenderer / ImGuiより先に生成します。
     // 選択BackendのGraphics ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
@@ -1052,6 +1054,62 @@ bool Application::TransferUIRootChild(
     return source->TransferRootChildTo(*destination, child);
 }
 
+void Application::UpdateLoadingScreen()
+{
+    UIScreen* top = m_UINavigationManager.GetTopScreen();
+    LoadingScreen* loadingScreen = dynamic_cast<LoadingScreen*>(top);
+
+    if (m_SceneTransitionController.IsLoading() == true)
+    {
+        if (loadingScreen == nullptr)
+        {
+            auto screen = CreateScope<LoadingScreen>(m_RuntimeUIFont);
+            loadingScreen = screen.get();
+            if (m_UINavigationManager.PushScreen(std::move(screen)) == false)
+            {
+                return;
+            }
+        }
+
+        loadingScreen->SetMessage("Loading...");
+        loadingScreen->SetProgress(m_SceneTransitionController.GetLoadingProgress());
+        return;
+    }
+
+    // Async Preparation失敗時はFadeInが終わるまでError状態を残し、
+    // 旧Sceneへ戻ったことが視覚的に分かるようにします。
+    if (loadingScreen != nullptr
+        && m_SceneTransitionController.IsTransitioning() == true
+        && m_SceneTransitionController.DidLastAsyncLoadSucceed() == false)
+    {
+        const SceneLoadError error = m_SceneTransitionController.GetLastLoadError();
+        if (error == SceneLoadError::Cancelled)
+        {
+            loadingScreen->SetLoadError("Scene loading cancelled.");
+        }
+        else if (error == SceneLoadError::FinalizeFailed
+            || error == SceneLoadError::FinalizeException)
+        {
+            loadingScreen->SetLoadError("Asset finalize failed.");
+        }
+        else if (error == SceneLoadError::SceneCreationFailed
+            || error == SceneLoadError::SceneCreationException)
+        {
+            loadingScreen->SetLoadError("Scene creation failed.");
+        }
+        else
+        {
+            loadingScreen->SetLoadError("Scene preparation failed.");
+        }
+        return;
+    }
+
+    if (loadingScreen != nullptr)
+    {
+        m_UINavigationManager.PopScreen();
+    }
+}
+
 void Application::PushLayer(Layer* layer)
 {
 #if 0
@@ -1146,6 +1204,16 @@ bool Application::RequestAsyncSceneTransition(
     SceneAsyncPreparation preparation,
     const SceneTransitionSpecification& specification)
 {
+    return RequestAsyncSceneTransition(
+        sceneID, std::move(preparation), SceneMainThreadFinalize{}, specification);
+}
+
+bool Application::RequestAsyncSceneTransition(
+    const std::string& sceneID,
+    SceneAsyncPreparation preparation,
+    SceneMainThreadFinalize finalize,
+    const SceneTransitionSpecification& specification)
+{
     if (m_SceneFactory.Contains(sceneID) == false || preparation == nullptr)
     {
         return false;
@@ -1159,7 +1227,24 @@ bool Application::RequestAsyncSceneTransition(
         };
 
     return m_SceneTransitionController.RequestAsyncTransition(
-        std::move(preparation), std::move(sceneCreation), specification);
+        std::move(preparation), std::move(finalize), std::move(sceneCreation), specification);
+}
+
+
+bool Application::RequestAsyncSceneTransition(
+    SceneAsyncPreparation preparation,
+    SceneMainThreadFinalize finalize,
+    SceneCreationFunction sceneCreation,
+    const SceneTransitionSpecification& specification)
+{
+    if (preparation == nullptr || sceneCreation == nullptr)
+    {
+        return false;
+    }
+
+    // Preparation結果をcaptureしたFactoryでもScene生成自体はApplication Threadで実行します。
+    return m_SceneTransitionController.RequestAsyncTransition(
+        std::move(preparation), std::move(finalize), std::move(sceneCreation), specification);
 }
 
 RHIFrameResult Application::ExecuteExplicitSceneFrame(
@@ -1345,6 +1430,7 @@ void Application::Run()
         // Scene Transitionの時間はScene Updateより前に進めます。
         // FadeOut完了時もSceneManagerへ予約するだけなので、現在FrameのScene寿命は維持されます。
         m_SceneTransitionController.Update(frameDeltaTime);
+        UpdateLoadingScreen();
 
         // ====================================================================
         // Renderer statistics frame boundary
@@ -1480,38 +1566,8 @@ void Application::Run()
                     viewportSize,
                     math::Vec4(0.0f, 0.0f, 0.0f, transitionAlpha));
 
-                if (m_SceneTransitionController.IsLoading() == true)
-                {
-                    const float progress = m_SceneTransitionController.GetLoadingProgress();
-                    const math::Vec2 center(viewportSize.x * 0.5f, viewportSize.y * 0.5f);
-
-                    // Font Assetに依存しないLoading Indicatorです。
-                    // 外周Circleと進捗Barだけで構成し、Scene/Font未初期化中でも描画可能にします。
-                    const float spinnerRadius = 18.0f;
-                    const float pulse = 0.5f + 0.5f * std::sin(
-                        m_SceneTransitionController.GetLoadingAnimationTime() * 4.0f);
-                    const float spinnerAlpha = 0.20f + pulse * 0.55f;
-                    m_UIContext.AddFrameOverlayCircle(
-                        math::Vec2(center.x - spinnerRadius, center.y - 42.0f - spinnerRadius),
-                        math::Vec2(center.x + spinnerRadius, center.y - 42.0f + spinnerRadius),
-                        math::Vec4(1.0f, 1.0f, 1.0f, spinnerAlpha));
-
-                    const float barWidth = std::min(320.0f, std::max(120.0f, viewportSize.x * 0.35f));
-                    const float barHeight = 8.0f;
-                    const math::Vec2 barMin(center.x - barWidth * 0.5f, center.y);
-                    const math::Vec2 barMax(center.x + barWidth * 0.5f, center.y + barHeight);
-                    m_UIContext.AddFrameOverlayRect(
-                        barMin, barMax, math::Vec4(1.0f, 1.0f, 1.0f, 0.20f));
-
-                    const float filledWidth = barWidth * std::clamp(progress, 0.0f, 1.0f);
-                    if (filledWidth > 0.0f)
-                    {
-                        m_UIContext.AddFrameOverlayRect(
-                            barMin,
-                            math::Vec2(barMin.x + filledWidth, barMax.y),
-                            math::Vec4(1.0f, 1.0f, 1.0f, 0.90f));
-                    }
-                }
+                // Loading内容はRetained UIのLoadingScreenが担当します。
+                // Transition OverlayはSceneを隠す暗幕だけに責務を限定します.
             }
             m_UIContext.EndFrame();
         }

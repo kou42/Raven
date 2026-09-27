@@ -1,6 +1,7 @@
 #include "Raven/Scene/SceneTransitionController.h"
 
 #include "Raven/Scene/SceneManager.h"
+#include "Raven/Core/Jobs/JobSystem.h"
 
 #include <algorithm>
 #include <chrono>
@@ -8,24 +9,35 @@
 namespace Raven
 {
 
-void SceneLoadingProgress::Set(float progress)
+void SceneLoadingContext::SetProgress(float progress)
 {
     m_Progress.store(std::clamp(progress, 0.0f, 1.0f), std::memory_order_relaxed);
 }
 
-float SceneLoadingProgress::Get() const
+float SceneLoadingContext::GetProgress() const
 {
     return m_Progress.load(std::memory_order_relaxed);
 }
 
-SceneTransitionController::SceneTransitionController(SceneManager& sceneManager)
+bool SceneLoadingContext::IsCancellationRequested() const
+{
+    return m_CancellationRequested.load(std::memory_order_acquire);
+}
+
+void SceneLoadingContext::RequestCancellation()
+{
+    m_CancellationRequested.store(true, std::memory_order_release);
+}
+
+SceneTransitionController::SceneTransitionController(SceneManager& sceneManager, JobSystem& jobSystem)
     : m_SceneManager(sceneManager)
+    , m_JobSystem(jobSystem)
 {
 }
 
 SceneTransitionController::~SceneTransitionController()
 {
-    // std::asyncのWorkerがController内Callbackを参照したまま破棄されないよう完了を待ちます。
+    // JobSystem WorkerがController由来のPreparationを実行中のまま破棄されないよう完了を待ちます。
     if (m_AsyncPreparationFuture.valid() == true)
     {
         m_AsyncPreparationFuture.wait();
@@ -44,6 +56,7 @@ bool SceneTransitionController::RequestTransition(
     m_Specification = specification;
     m_ElapsedTime = 0.0f;
     m_LastAsyncLoadSucceeded = true;
+    m_LastLoadError = SceneLoadError::None;
 
     if (m_Specification.Type == SceneTransitionType::Instant)
     {
@@ -70,6 +83,16 @@ bool SceneTransitionController::RequestAsyncTransition(
     SceneCreationFunction sceneCreation,
     const SceneTransitionSpecification& specification)
 {
+    return RequestAsyncTransition(
+        std::move(preparation), SceneMainThreadFinalize{}, std::move(sceneCreation), specification);
+}
+
+bool SceneTransitionController::RequestAsyncTransition(
+    SceneAsyncPreparation preparation,
+    SceneMainThreadFinalize finalize,
+    SceneCreationFunction sceneCreation,
+    const SceneTransitionSpecification& specification)
+{
     if (m_State != State::Idle || preparation == nullptr || sceneCreation == nullptr)
     {
         return false;
@@ -79,10 +102,12 @@ bool SceneTransitionController::RequestAsyncTransition(
     m_ElapsedTime = 0.0f;
     m_OverlayAlpha = specification.Type == SceneTransitionType::Instant ? 1.0f : 0.0f;
     m_AsyncPreparation = std::move(preparation);
+    m_MainThreadFinalize = std::move(finalize);
     m_AsyncSceneCreation = std::move(sceneCreation);
     m_AsyncRequested = true;
     m_LastAsyncLoadSucceeded = true;
-    m_LoadingProgress = std::make_shared<SceneLoadingProgress>();
+    m_LastLoadError = SceneLoadError::None;
+    m_LoadingContext = std::make_shared<SceneLoadingContext>();
 
     const float fadeOutDuration = NormalizeDuration(m_Specification.FadeOutDuration);
     if (m_Specification.Type == SceneTransitionType::Instant || fadeOutDuration <= 0.0f)
@@ -141,13 +166,62 @@ void SceneTransitionController::Update(float deltaTime)
             {
                 // Worker例外をApplication loop外へ伝播させません。
                 // 失敗として扱い、現在Sceneを維持して暗転だけ解除します。
+                m_LastLoadError = SceneLoadError::PreparationException;
                 prepared = false;
             }
+            // PreparationがCancellation確認を忘れてtrueを返しても、Controller境界で
+            // Scene生成へ進ませないことでCancellation契約を保証します。
+            if (m_LoadingContext != nullptr
+                && m_LoadingContext->IsCancellationRequested() == true)
+            {
+                m_LastLoadError = SceneLoadError::Cancelled;
+                prepared = false;
+            }
+
             if (prepared == false)
             {
                 m_LastAsyncLoadSucceeded = false;
+                if (m_LastLoadError == SceneLoadError::None)
+                {
+                    m_LastLoadError = m_LoadingContext != nullptr
+                        && m_LoadingContext->IsCancellationRequested() == true
+                        ? SceneLoadError::Cancelled
+                        : SceneLoadError::PreparationFailed;
+                }
                 FinishWithoutSceneChange();
                 return;
+            }
+
+            // Workerで生成したCPU AssetをApplication Threadへ引き渡します。
+            // GPU Resourceや共有Asset Cacheの更新はWorkerから行わず、この境界へ集約します。
+            if (m_MainThreadFinalize != nullptr)
+            {
+                bool finalized = false;
+                try
+                {
+                    finalized = m_MainThreadFinalize();
+                }
+                catch (...)
+                {
+                    m_LastLoadError = SceneLoadError::FinalizeException;
+                    finalized = false;
+                }
+                if (finalized == false)
+                {
+                    m_LastAsyncLoadSucceeded = false;
+                    if (m_LastLoadError == SceneLoadError::None)
+                    {
+                        m_LastLoadError = SceneLoadError::FinalizeFailed;
+                    }
+                    FinishWithoutSceneChange();
+                    return;
+                }
+            }
+
+            if (m_LoadingContext != nullptr)
+            {
+                // Preparationだけで100%にせず、Main Thread Finalize完了を90%として可視化します。
+                m_LoadingContext->SetProgress(0.9f);
             }
 
             // Scene / Renderer / ECS初期化にはMain Thread制約を持つ処理が含まれ得ます。
@@ -158,19 +232,24 @@ void SceneTransitionController::Update(float deltaTime)
             }
             catch (...)
             {
+                m_LastLoadError = SceneLoadError::SceneCreationException;
                 m_TargetScene.reset();
             }
             if (m_TargetScene == nullptr)
             {
                 m_LastAsyncLoadSucceeded = false;
+                if (m_LastLoadError == SceneLoadError::None)
+                {
+                    m_LastLoadError = SceneLoadError::SceneCreationFailed;
+                }
                 FinishWithoutSceneChange();
                 return;
             }
 
             m_LastAsyncLoadSucceeded = true;
-            if (m_LoadingProgress != nullptr)
+            if (m_LoadingContext != nullptr)
             {
-                m_LoadingProgress->Set(1.0f);
+                m_LoadingContext->SetProgress(1.0f);
             }
             RequestPendingSceneChange();
         }
@@ -217,7 +296,7 @@ void SceneTransitionController::Update(float deltaTime)
             m_OverlayAlpha = 0.0f;
             m_State = State::Idle;
             m_AsyncRequested = false;
-            m_LoadingProgress.reset();
+            m_LoadingContext.reset();
         }
     }
 }
@@ -232,14 +311,27 @@ bool SceneTransitionController::IsLoading() const
     return m_State == State::Loading;
 }
 
+bool SceneTransitionController::CancelAsyncTransition()
+{
+    if (m_AsyncRequested == false || m_LoadingContext == nullptr)
+    {
+        return false;
+    }
+
+    // Worker Jobを強制終了するとPreparation側Resourceの整合性を壊すため、
+    // cooperative cancellationのみを通知します。
+    m_LoadingContext->RequestCancellation();
+    return true;
+}
+
 float SceneTransitionController::GetLoadingProgress() const
 {
-    if (m_LoadingProgress == nullptr)
+    if (m_LoadingContext == nullptr)
     {
         return 0.0f;
     }
 
-    return m_LoadingProgress->Get();
+    return m_LoadingContext->GetProgress();
 }
 
 void SceneTransitionController::BeginAsyncLoading()
@@ -250,14 +342,21 @@ void SceneTransitionController::BeginAsyncLoading()
     m_LoadingAnimationTime = 0.0f;
 
     SceneAsyncPreparation preparation = std::move(m_AsyncPreparation);
-    const std::shared_ptr<SceneLoadingProgress> progress = m_LoadingProgress;
-    m_AsyncPreparationFuture = std::async(std::launch::async,
-        [preparation = std::move(preparation), progress]() mutable
+    const std::shared_ptr<SceneLoadingContext> context = m_LoadingContext;
+    m_AsyncPreparationFuture = m_JobSystem.Submit(
+        [preparation = std::move(preparation), context]() mutable
         {
-            const bool succeeded = preparation(*progress);
-            if (succeeded == true)
+            if (context->IsCancellationRequested() == true)
             {
-                progress->Set(1.0f);
+                return false;
+            }
+
+            const bool succeeded = preparation(*context);
+            // 100%はMain Thread FinalizeとScene生成完了後にController側で設定します。
+            // Preparation callbackが独自に1.0を設定していても後段処理の完了を意味しません。
+            if (succeeded == true && context->IsCancellationRequested() == false)
+            {
+                context->SetProgress(std::min(context->GetProgress(), 0.8f));
             }
             return succeeded;
         });
@@ -266,9 +365,10 @@ void SceneTransitionController::BeginAsyncLoading()
 void SceneTransitionController::FinishWithoutSceneChange()
 {
     m_AsyncPreparation = {};
+    m_MainThreadFinalize = {};
     m_AsyncSceneCreation = {};
     m_AsyncRequested = false;
-    m_LoadingProgress.reset();
+    m_LoadingContext.reset();
     m_ElapsedTime = 0.0f;
 
     const float duration = NormalizeDuration(m_Specification.FadeInDuration);
@@ -288,6 +388,7 @@ void SceneTransitionController::RequestPendingSceneChange()
 {
     m_SceneManager.RequestSceneChange(std::move(m_TargetScene));
     m_AsyncPreparation = {};
+    m_MainThreadFinalize = {};
     m_AsyncSceneCreation = {};
     m_State = State::WaitingForSceneChange;
     m_ElapsedTime = 0.0f;

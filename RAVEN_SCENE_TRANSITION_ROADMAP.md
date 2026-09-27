@@ -51,16 +51,15 @@ Scene Transition基盤とTitle / Game間の実Scene遷移まで実装済みで�
 
 ---
 
-## Phase 7: UI Navigation
+## Phase 7: UI Navigation — 完了
 
-次回はここから開始します。
-
-1. `UIScreen` 基底クラス
-2. `UINavigationManager`
-3. `PushScreen()`
-4. `PopScreen()`
-5. `ReplaceScreen()`
-6. `Clear()`
+- `UIScreen` 基底クラス
+- `UINavigationManager`
+- `PushScreen()`
+- `PopScreen()`
+- `ReplaceScreen()`
+- `Clear()`
+- `Application::GetUINavigationManager()` からMain UIContext用Navigationへアクセス
 
 SceneとUI Screenの責務を分離します。
 
@@ -68,40 +67,87 @@ SceneとUI Screenの責務を分離します。
 - UINavigationManager: HUD / Pause / Settings / DialogなどScene上のUI
 - SceneTransitionController: Fade / LoadingなどScene交換演出
 
-## Phase 8: Title UI
+## Phase 8: Title UI — 完了
 
 - TitleScreen
-- Start Game Button
-- Settings Button
-- Exit Button
-- Enter / F10による検証操作からUI Actionへ移行
+- Start Game Button → Fade付き `Game` Scene遷移
+- Settings Button → SettingsScreen Push
+- Exit Button → Application終了要求
+- SettingsScreen Back → Screen Stack Pop
+- UI callback中のScreen破棄を避けるDeferred Navigation
+- EnterによるTitle→Game検証操作をUI Actionへ移行
 
-## Phase 9: In-Game UI Navigation
+※ 現在のUIButtonはTextを所有せず、UILabelはFont Atlasの明示指定が必要なため、Button文字表示はPhase 10のFont Asset / LoadingScreen統合と合わせて追加します。
 
-- HUD
+## Phase 9: In-Game UI Navigation — 完了
+
+- HUDScreenをGame SceneのStack底面へ常駐
 - PauseScreen
-- SettingsScreen
+- SettingsScreen再利用
 - Resume
-- Titleへ戻る操作
+- Fade付きTitle復帰
 - Screen Stackを利用したPause → Settings → Back
+- F10直接Title遷移をPause Menu入口へ移行
+- Pause中はGame Logic後のAnimation / Physics / Scene Layer更新を停止
+- UI callback中のScreen破棄を避けるDeferred Navigation
 
-## Phase 10: Loading Screen
+## Phase 10: Loading Screen — 完了
 
-- LoadingScreenをUIScreen化
-- Progress表示
-- Loading Message
-- Load Error表示
-- SceneTransition Overlayとの統合
-- Font Asset利用可能時のテキスト表示
+- LoadingScreenをUIScreen化 ✓
+- Progress表示 ✓
+- Loading Message状態 ✓
+- Load Error状態 ✓
+- SceneTransition Overlayとの統合 ✓
+- Immediate spinner / progress barを廃止し、Loading内容をRetained UIへ一本化 ✓
+- Application共通Runtime UI Fontの共有 ✓
+- Font Asset利用可能時のLoading / Errorテキスト表示 ✓
+- Title / Pause / Settings Button文字表示 ✓
 
-## Phase 11: Async Loading強化
+※ Font AtlasのGPU生成責務は既存方針を維持し、`ApplicationSpecification::RuntimeUIFont` から共有Atlasを注入します。
+Font未指定時も各Screenは従来どおり動作し、Font利用可能時だけUILabelを追加します。
 
-- Cancellation
-- Load Error型
-- Job Systemとの統合
-- Asset Loadingとの統合
-- Scene生成時のMain Thread stall削減
-- PreparationとScene生成を含めたProgress semantics整理
+## Phase 11: Async Loading強化 — 実装中
+
+- Cancellation ✓
+  - cooperative cancellation token
+  - callbackがCancel確認を忘れてもScene生成へ進まないController境界の保証
+- Load Error型 ✓
+  - Cancelled / PreparationFailed / PreparationException / SceneCreationFailed / SceneCreationException
+  - LoadingScreenへError種別を反映
+- Job Systemとの統合 ✓
+  - Application所有の汎用Worker Pool
+  - Scene Preparationをstd::asyncからJobSystem::Submitへ移行
+  - Controller → JobSystemのshutdown寿命順を保証
+- Job System Self Test ✓
+  - 戻り値Future
+  - 複数Job完了
+  - Debug Startupへ接続
+- 実ビルド確認
+- Asset Loadingとの統合 — 実装中
+  - Texture CPU decode専用API ✓
+  - decode済みPixelのAsset Manager登録 ✓
+  - WorkerではGPU Resourceを生成しない境界 ✓
+  - Scene Preparation向けTexture Asset Batch ✓
+  - Asset単位Progress / cooperative cancellation ✓
+  - Worker Preparation → Main Thread Finalize → Scene Creation ✓
+  - Application所有Texture Asset Cacheへfinalize ✓
+  - Title → Game実Scene遷移でTexture Asset Batch利用 ✓
+  - Legacy OpenGL TextureのMain Thread GPU finalize ✓
+  - Game SceneでAsync Load済みAssetを再利用 ✓
+  - Direct Scene起動時の同期Load fallback ✓
+- Scene生成時のMain Thread stall削減 — 実装中
+  - Primitive Sphere/CubeのCPU Geometry生成をWorker Preparationへ移行 ✓
+  - SceneGamePreparedResourcesでWorker結果をScene生成へ受け渡し ✓
+  - Mesh/GPU Resource生成はMain Threadへ維持 ✓
+  - Floor/Wave Dynamic GridのCPU Geometry生成をWorker Preparationへ移行 ✓
+  - 旧Floor頂点色を専用CreateFloorGeometry()で維持 ✓
+  - SceneGame::OnCreate Total / Assets / RenderResources / Entities計測Scope ✓
+  - 計測結果を基にShader/Pipeline/ECSの次分割対象を決定 ← 次回ここから
+- PreparationとScene生成を含めたProgress semantics整理 — 実装中
+  - Preparation完了 80% / Main Thread Finalize完了 90% / Scene生成完了 100% ✓
+
+※ 現在Ravenには汎用Job Systemが存在せず、Texture / RHI Shader Asset Managerも同期Loadです。
+`std::async` を直接Job System風APIで包むだけにはせず、Scene Loading以外でも再利用できるJob実行境界を先に設計します。
 
 ## Phase 12: Persistent Scene
 
@@ -124,13 +170,13 @@ SceneとUI Screenの責務を分離します。
 ## 次回の推奨実装順
 
 ```text
-UIScreen
+UIScreen ✓
   ↓
-UINavigationManager
+UINavigationManager ✓
   ↓
-TitleScreen
+TitleScreen ✓
   ↓
-Title UI Action → SceneTransitionController
+Title UI Action → SceneTransitionController ✓
   ↓
 Pause / Settings
   ↓

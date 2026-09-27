@@ -1,4 +1,6 @@
 #pragma once
+#include "Raven/Core/Jobs/JobSystem.h"
+#include "Raven/Assets/TextureAsset.h"
 #include "Raven/Core/Window.h"
 #include "Raven/Core/WindowManager.h"
 #include "Raven/Core/Input.h"
@@ -16,6 +18,7 @@
 #include "Raven/Core/Event.h"
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Immediate/UIImmediateContext.h"
+#include "Raven/UI/Navigation/UINavigationManager.h"
 
 #if defined(_DEBUG)
 #include "Raven/UI/Debug/UITreeMutationValidation.h"
@@ -48,6 +51,8 @@ struct ApplicationSpecification
     bool EnablePhysicsDebugImmediatePanel = false;
     // 文字表示用Atlasは呼び出し側がGPU Context有効時に生成・共有します。
     Ref<UIFontAtlas> PhysicsDebugImmediateFont;
+    // Runtime UI全体で共有するFont Atlasです。GPU Context有効後に生成したAtlasを注入します。
+    Ref<UIFontAtlas> RuntimeUIFont;
 };
 
 class Application
@@ -250,6 +255,10 @@ public:
     }
 
     void OnEvent(Event& event);
+    void UpdateLoadingScreen();
+
+    // UI Action等から通常のWindow Closeと同じRun Loop終了を要求します。
+    void RequestExit() { m_Running = false; }
 
     void PushLayer(Layer* layer);
     void PushLayer(Scope<Layer> layer);
@@ -276,6 +285,22 @@ public:
         SceneAsyncPreparation preparation,
         const SceneTransitionSpecification& specification = {});
 
+    // Worker Preparation後にMain Thread専用Asset finalizeを挟むAsync遷移入口です。
+    bool RequestAsyncSceneTransition(const std::string& sceneID,
+        SceneAsyncPreparation preparation,
+        SceneMainThreadFinalize finalize,
+        const SceneTransitionSpecification& specification = {});
+
+    // Scene ID Registryを介さず、Preparation結果をcaptureしたScene生成関数を利用する入口です。
+    bool RequestAsyncSceneTransition(SceneAsyncPreparation preparation,
+        SceneMainThreadFinalize finalize,
+        SceneCreationFunction sceneCreation,
+        const SceneTransitionSpecification& specification = {});
+    bool CancelAsyncSceneTransition()
+    {
+        return m_SceneTransitionController.CancelAsyncTransition();
+    }
+
     // EditorはApplicationの所有物を借用して表示・操作します。
     // 所有権を渡さず参照だけ公開することで、Scene/Windowの寿命管理は引き続きApplicationへ集約します。
     Scene* GetScene() { return m_SceneManager.GetActiveScene(); }
@@ -286,6 +311,8 @@ public:
     const SceneManager& GetSceneManager() const { return m_SceneManager; }
     SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
     const SceneTransitionController& GetSceneTransitionController() const { return m_SceneTransitionController; }
+    TextureAssetManager& GetTextureAssetManager() { return m_TextureAssetManager; }
+    const TextureAssetManager& GetTextureAssetManager() const { return m_TextureAssetManager; }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
     WindowManager& GetWindowManager() { return m_WindowManager; }
@@ -303,6 +330,9 @@ public:
     // 壊さず並行運用できます。
     UIContext& GetUIContext() { return m_UIContext; }
     const UIContext& GetUIContext() const { return m_UIContext; }
+    const Ref<UIFontAtlas>& GetRuntimeUIFont() const { return m_RuntimeUIFont; }
+    UINavigationManager& GetUINavigationManager() { return m_UINavigationManager; }
+    const UINavigationManager& GetUINavigationManager() const { return m_UINavigationManager; }
 
     // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
     WindowID CreateUIWindow(const WindowSpecification& specification);
@@ -353,17 +383,26 @@ private:
     // Sceneの所有権とDeferred切り替えはSceneManagerへ集約します。
     SceneFactory m_SceneFactory;
     SceneManager m_SceneManager;
-    // SceneManagerより先に破棄される宣言順とし、Controllerが借用する参照寿命を保証します。
-    SceneTransitionController m_SceneTransitionController{ m_SceneManager };
+    // JobSystemはControllerより後に破棄される宣言順とし、Controller Destructorが
+    // Preparation完了を待つ間もWorker Poolの寿命を保証します。
+    JobSystem m_JobSystem;
+    // SceneManager / JobSystemより先に破棄される宣言順とし、借用参照寿命を保証します。
+    SceneTransitionController m_SceneTransitionController{ m_SceneManager, m_JobSystem };
+    // Main ThreadでfinalizeされたRuntime Texture AssetをApplication Lifetimeで共有します。
+    TextureAssetManager m_TextureAssetManager;
 
     // Main Window用のRaven UI frame状態です。
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+    // Scene上のScreen StackはMain UIContextのRootへ接続し、SceneManagerとは独立して管理します。
+    // 宣言順によりNavigationManagerがUIContextより先に破棄され、Screenを安全にTreeから外します。
+    UINavigationManager m_UINavigationManager{ m_UIContext };
     // UIContextより先に破棄し、Immediate Widgetの参照寿命を保ちます。
     UIImmediateContext m_ImmediateUI{ m_UIContext };
     bool m_PhysicsDebugImmediatePanelEnabled = false;
     Ref<UIFontAtlas> m_PhysicsDebugImmediateFont;
+    Ref<UIFontAtlas> m_RuntimeUIFont;
     std::unordered_map<WindowID, Scope<UIContext>> m_AuxiliaryUIContexts;
     struct DetachedDockTab
     {

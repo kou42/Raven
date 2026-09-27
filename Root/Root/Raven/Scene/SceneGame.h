@@ -18,6 +18,7 @@ namespace Raven
 {
 
 class Application;
+struct SceneGamePreparedResources;
 
 // ============================================================================
 // SceneGame
@@ -36,8 +37,11 @@ class SceneGame : public Scene, public SceneViewportRenderer
     friend class Gltf::HumanSkinningDebugLayer;
 
 public:
-    explicit SceneGame(Application* application = nullptr)
+    explicit SceneGame(
+        Application* application = nullptr,
+        Ref<SceneGamePreparedResources> preparedResources = nullptr)
         : m_Application(application)
+        , m_PreparedResources(std::move(preparedResources))
         , m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
@@ -68,6 +72,9 @@ public:
     {
         RenderScene(camera);
     }
+
+protected:
+    bool ShouldUpdateSimulation() const override { return m_IsPaused == false; }
 
 private:
     struct SphereBody
@@ -118,11 +125,19 @@ private:
     // Mouse PickingはPrimary SceneCameraのViewを直接参照します。
     // SceneGameにCamera行列を複製しないことで、描画Cameraとの状態二重化を防ぎます。
     void UpdateMouseDragImpulse();
-    void UpdateSceneTransitionShortcut();
+    void UpdatePauseNavigation();
+    void PushPauseScreen();
     bool BuildMouseRay(const math::Vec2& screenPoint, math::Vec3& outOrigin, math::Vec3& outDirection) const;
 
     Application* m_Application = nullptr;
-    bool m_WasTitleTransitionKeyPressed = false;
+    Ref<SceneGamePreparedResources> m_PreparedResources;
+    bool m_WasPauseKeyPressed = false;
+    bool m_IsPaused = false;
+    bool m_PauseRequested = false;
+    bool m_ResumeRequested = false;
+    bool m_SettingsRequested = false;
+    bool m_SettingsBackRequested = false;
+    bool m_ReturnToTitleRequested = false;
 
     ShaderLibrary m_ShaderLibrary;
     Ref<Shader> m_Shader;

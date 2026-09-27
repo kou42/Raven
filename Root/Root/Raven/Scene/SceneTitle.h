@@ -10,8 +10,7 @@ class Application;
 // ============================================================================
 // SceneTitle
 // ============================================================================
-// Scene Transitionの実利用確認用となる最小Runtime Sceneです。
-// Game固有のPhysics/Assetを持たず、Enter入力から"Game" SceneへのFade遷移だけを要求します。
+// Title Sceneはゲーム世界側のLifetimeだけを担当し、操作UIはTitleScreenへ委譲します。
 class SceneTitle final : public Scene
 {
 public:
@@ -27,7 +26,8 @@ public:
 
 private:
     Application& m_Application;
-    bool m_WasEnterPressed = false;
+    bool m_SettingsRequested = false;
+    bool m_SettingsBackRequested = false;
 };
 
 } // namespace Raven

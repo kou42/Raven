@@ -37,6 +37,10 @@ public:
 
     const std::string& GetSourcePath() const;
     const Ref<Texture>& GetTexture() const;
+
+    // CPU decode済みPixelからLegacy Runtime TextureをMain Threadで生成します。
+    // Explicit BackendはCreateRHITexture()を使用するため、この処理を要求しません。
+    bool FinalizeRuntimeTexture();
     bool IsValid() const;
     bool HasPixelData() const;
     const TextureAssetPixelData& GetPixelData() const;
@@ -57,6 +61,11 @@ class TextureAssetManager
 {
 public:
     Ref<TextureAsset> Load(const std::string& sourcePath);
+
+    // Async Preparation等でdecode済みのCPU PixelをMain Thread側Cacheへ登録します。
+    // GPU Texture生成は必要なRenderer境界で別途行い、WorkerからGraphics APIへ触れません。
+    Ref<TextureAsset> RegisterDecoded(
+        const std::string& sourcePath, TextureAssetPixelData pixelData);
     Ref<TextureAsset> Get(const std::string& sourcePath) const;
     bool Exists(const std::string& sourcePath) const;
     void Clear();
