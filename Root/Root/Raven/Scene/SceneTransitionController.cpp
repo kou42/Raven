@@ -37,7 +37,7 @@ SceneTransitionController::SceneTransitionController(SceneManager& sceneManager,
 
 SceneTransitionController::~SceneTransitionController()
 {
-    // std::asyncのWorkerがController内Callbackを参照したまま破棄されないよう完了を待ちます。
+    // JobSystem WorkerがController由来のPreparationを実行中のまま破棄されないよう完了を待ちます。
     if (m_AsyncPreparationFuture.valid() == true)
     {
         m_AsyncPreparationFuture.wait();
@@ -312,7 +312,7 @@ bool SceneTransitionController::CancelAsyncTransition()
         return false;
     }
 
-    // std::async workerを強制終了するとPreparation側Resourceの整合性を壊すため、
+    // Worker Jobを強制終了するとPreparation側Resourceの整合性を壊すため、
     // cooperative cancellationのみを通知します。
     m_LoadingContext->RequestCancellation();
     return true;
