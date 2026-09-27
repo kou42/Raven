@@ -127,7 +127,11 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - Texture CPU decode専用API ✓
   - decode済みPixelのAsset Manager登録 ✓
   - WorkerではGPU Resourceを生成しない境界 ✓
-  - Scene PreparationからのAsset Batch/Progress統合 ← 次回ここから
+  - Scene Preparation向けTexture Asset Batch ✓
+  - Asset単位Progress / cooperative cancellation ✓
+  - Worker Preparation → Main Thread Finalize → Scene Creation ✓
+  - Application所有Texture Asset Cacheへfinalize ✓
+  - 実Scene遷移でのAsset Batch利用 / GPU finalize ← 次回ここから
 - Scene生成時のMain Thread stall削減
 - PreparationとScene生成を含めたProgress semantics整理
 
