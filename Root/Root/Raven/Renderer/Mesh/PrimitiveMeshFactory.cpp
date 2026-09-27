@@ -176,6 +176,20 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
         CreateSphereGeometry(stacks, slices), legacyResourceCreation);
 }
 
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateFloorGeometry()
+{
+    std::vector<MeshVertex> vertices = {
+        { {-0.5f, 0.0f, -0.5f}, {0.4f, 0.7f, 0.4f}, {0.0f, 0.0f}, {0.0f, 1.0f, 0.0f} },
+        { { 0.5f, 0.0f, -0.5f}, {0.3f, 0.6f, 0.3f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f} },
+        { { 0.5f, 0.0f,  0.5f}, {0.4f, 0.7f, 0.4f}, {1.0f, 1.0f}, {0.0f, 1.0f, 0.0f} },
+        { {-0.5f, 0.0f,  0.5f}, {0.3f, 0.6f, 0.3f}, {0.0f, 1.0f}, {0.0f, 1.0f, 0.0f} }
+    };
+    std::vector<uint32_t> indices = { 0u, 1u, 2u, 2u, 3u, 0u };
+    return CreateRef<MeshGeometry>(
+        std::move(vertices), std::move(indices),
+        GeometryUsage::Static, TopologyUsage::Fixed);
+}
+
 Ref<MeshGeometry> PrimitiveMeshFactory::CreateDynamicGridGeometry(
     int rows,
     int columns)
