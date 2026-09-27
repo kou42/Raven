@@ -251,6 +251,7 @@ public:
     }
 
     void OnEvent(Event& event);
+    void UpdateLoadingScreen();
 
     // UI Action等から通常のWindow Closeと同じRun Loop終了を要求します。
     void RequestExit() { m_Running = false; }
