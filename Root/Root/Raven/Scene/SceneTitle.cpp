@@ -65,6 +65,23 @@ void SceneTitle::OnCreate()
 
                     preparedResources->BoxGeometry =
                         PrimitiveMeshFactory::CreateCubeGeometry();
+                    context.SetProgress(0.72f);
+                    if (context.IsCancellationRequested() == true)
+                    {
+                        return false;
+                    }
+
+                    // FloorはStatic Grid、WaveはDynamic GridとしてCPU Geometryだけを先行生成します。
+                    preparedResources->FloorGeometry =
+                        PrimitiveMeshFactory::CreateDynamicGridGeometry(1, 1);
+                    context.SetProgress(0.75f);
+                    if (context.IsCancellationRequested() == true)
+                    {
+                        return false;
+                    }
+
+                    preparedResources->WaveGeometry =
+                        PrimitiveMeshFactory::CreateDynamicGridGeometry(32, 32);
                     context.SetProgress(0.8f);
                     return preparedResources->IsValid();
                 },
