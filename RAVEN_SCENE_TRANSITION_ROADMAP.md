@@ -135,7 +135,11 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - Legacy OpenGL TextureのMain Thread GPU finalize ✓
   - Game SceneでAsync Load済みAssetを再利用 ✓
   - Direct Scene起動時の同期Load fallback ✓
-- Scene生成時のMain Thread stall削減 ← 次回ここから
+- Scene生成時のMain Thread stall削減 — 実装中
+  - Primitive Sphere/CubeのCPU Geometry生成をWorker Preparationへ移行 ✓
+  - SceneGamePreparedResourcesでWorker結果をScene生成へ受け渡し ✓
+  - Mesh/GPU Resource生成はMain Threadへ維持 ✓
+  - Floor/Dynamic Grid等のCPU Geometry分離 ← 次回ここから
 - PreparationとScene生成を含めたProgress semantics整理 — 実装中
   - Preparation完了 80% / Main Thread Finalize完了 90% / Scene生成完了 100% ✓
 
