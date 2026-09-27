@@ -43,8 +43,7 @@ Ref<Mesh> CreateDynamicIndexedMesh(
 }
 } // namespace
 
-Ref<Mesh> PrimitiveMeshFactory::CreateCube(
-    LegacyMeshResourceCreation legacyResourceCreation)
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateCubeGeometry()
 {
     constexpr float h = 0.5f;
 
@@ -91,11 +90,20 @@ Ref<Mesh> PrimitiveMeshFactory::CreateCube(
         indices.push_back(base + 0);
     }
 
-    return CreateIndexedMesh(
-        vertices, std::move(indices), legacyResourceCreation);
+    return CreateRef<MeshGeometry>(
+        vertices, std::move(indices), GeometryUsage::Static, TopologyUsage::Fixed);
 }
 
-Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
+Ref<Mesh> PrimitiveMeshFactory::CreateCube(
+    LegacyMeshResourceCreation legacyResourceCreation)
+{
+    return CreateRef<Mesh>(CreateCubeGeometry(), legacyResourceCreation);
+}
+
+Ref<MeshGeometry> PrimitiveMeshFactory::CreateSphereGeometry(
+    int stacks,
+    int slices)
+{
     int stacks,
     int slices,
     LegacyMeshResourceCreation legacyResourceCreation)
@@ -159,8 +167,17 @@ Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
         }
     }
 
-    return CreateIndexedMesh(
-        std::move(vertices), std::move(indices), legacyResourceCreation);
+    return CreateRef<MeshGeometry>(
+        std::move(vertices), std::move(indices), GeometryUsage::Static, TopologyUsage::Fixed);
+}
+
+Ref<Mesh> PrimitiveMeshFactory::CreateSphere(
+    int stacks,
+    int slices,
+    LegacyMeshResourceCreation legacyResourceCreation)
+{
+    return CreateRef<Mesh>(
+        CreateSphereGeometry(stacks, slices), legacyResourceCreation);
 }
 
 Ref<Mesh> PrimitiveMeshFactory::CreateDynamicGrid(
