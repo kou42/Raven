@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/UI/Screens/TitleScreen.h"
+#include "Raven/UI/Screens/SettingsScreen.h"
 
 namespace Raven
 {
@@ -23,10 +24,15 @@ void SceneTitle::OnCreate()
             // UI ActionはSceneを直接生成せず、従来どおりScene IDで遷移を要求します。
             m_Application.RequestSceneTransition("Game", specification);
         },
-        []()
+        [this]()
         {
-            // SettingsScreen本体はPhase 9で追加します。
-            // Action境界だけ先に確定し、TitleScreenへApplication/Scene依存を持ち込みません。
+            // SettingsはSceneを交換せずScreen Stackへ積み、BackでTitleへ戻します。
+            auto settingsScreen = CreateScope<SettingsScreen>(
+                [this]()
+                {
+                    m_Application.GetUINavigationManager().PopScreen();
+                });
+            m_Application.GetUINavigationManager().PushScreen(std::move(settingsScreen));
         },
         [this]()
         {
