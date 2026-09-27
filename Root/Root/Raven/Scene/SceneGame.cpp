@@ -413,7 +413,7 @@ void SceneGame::OnCreate()
 
     {
         RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.Assets");
-    if (Renderer::IsExplicitSceneMode() == false)
+        if (Renderer::IsExplicitSceneMode() == false)
     {
         m_Shader = m_ShaderLibrary.Load(
             "Test",
@@ -435,11 +435,11 @@ void SceneGame::OnCreate()
         {
             m_Texture = m_TextureLibrary.Load("Mountain", kMountainTexturePath);
         }
+        }
     }
 
-    }
-
-    RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.RenderResources");
+    {
+        RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.RenderResources");
 
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.DebugName = "SceneGame Geometry Pipeline";
@@ -585,6 +585,7 @@ void SceneGame::OnCreate()
     m_WaveEntity = waveEntity;
 
     m_PreparedResources.reset();
+    }
 
     {
         RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.Entities");
