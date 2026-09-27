@@ -4,6 +4,7 @@
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Core/MouseCodes.h"
+#include "Raven/Assets/TextureAsset.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationSystem.h"
@@ -414,9 +415,22 @@ void SceneGame::OnCreate()
             "Test",
             "Raven/Assets/Shaders/Vertex/test.vert",
             "Raven/Assets/Shaders/Fragment/test.frag");
-        m_Texture = m_TextureLibrary.Load(
-            "Mountain",
-            "Raven/Assets/Images/test/mountain1.png");
+        // Title→Game Async遷移でdecode/finalize済みなら同期File I/Oを行わず共有Assetを再利用します。
+        // 直接SceneGameを起動する検証経路では従来の同期Loadへfallbackします。
+        constexpr const char* kMountainTexturePath =
+            "Raven/Assets/Images/test/mountain1.png";
+        Ref<TextureAsset> textureAsset = m_Application != nullptr
+            ? m_Application->GetTextureAssetManager().Get(kMountainTexturePath)
+            : nullptr;
+        if (textureAsset != nullptr && textureAsset->GetTexture() != nullptr)
+        {
+            m_Texture = textureAsset->GetTexture();
+            m_TextureLibrary.Add("Mountain", m_Texture);
+        }
+        else
+        {
+            m_Texture = m_TextureLibrary.Load("Mountain", kMountainTexturePath);
+        }
     }
 
     PipelineSpecification pipelineSpecification{};
