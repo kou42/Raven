@@ -53,6 +53,30 @@ const Ref<Texture>& TextureAsset::GetTexture() const
     return m_Texture;
 }
 
+bool TextureAsset::FinalizeRuntimeTexture()
+{
+    if (m_Texture != nullptr && m_Texture->GetID() != 0u)
+    {
+        return true;
+    }
+    if (m_PixelData.IsValid() == false)
+    {
+        return false;
+    }
+
+    TextureSpecification specification{};
+    specification.Width = m_PixelData.Width;
+    specification.Height = m_PixelData.Height;
+    specification.Format = m_PixelData.Format;
+    specification.Usage = TextureUsage::Sampled;
+    specification.GenerateMips = m_PixelData.GenerateMips;
+
+    // Texture::CreateはGraphics Device/Contextを使用するため、この関数はMain Thread専用です。
+    m_Texture = Texture::Create(
+        specification, m_PixelData.Pixels.data(), m_PixelData.Pixels.size());
+    return m_Texture != nullptr && m_Texture->GetID() != 0u;
+}
+
 bool TextureAsset::IsValid() const
 {
     // Explicit BackendではLegacy Textureを生成せず、decode済みPixelから
