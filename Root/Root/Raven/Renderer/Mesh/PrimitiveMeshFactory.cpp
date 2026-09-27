@@ -104,10 +104,6 @@ Ref<MeshGeometry> PrimitiveMeshFactory::CreateSphereGeometry(
     int stacks,
     int slices)
 {
-    int stacks,
-    int slices,
-    LegacyMeshResourceCreation legacyResourceCreation)
-{
     if (stacks < 2)
     {
         stacks = 2;
