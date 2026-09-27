@@ -62,11 +62,6 @@ public:
     virtual void OnRender() override;
     virtual void OnEvent(Event& e) override;
 
-protected:
-    bool ShouldUpdateSimulation() const override { return m_IsPaused == false; }
-
-private:
-
     // Scene ViewはEditor Cameraをそのまま描画入口へ渡します。
     // Runtime Cameraの状態を書き換えないため、Game ViewとScene ViewのCameraが完全に分離されます。
     void RenderWithCamera(const Camera& camera) override
@@ -74,6 +69,10 @@ private:
         RenderScene(camera);
     }
 
+protected:
+    bool ShouldUpdateSimulation() const override { return m_IsPaused == false; }
+
+private:
     struct SphereBody
     {
         Entity EntityHandle;
