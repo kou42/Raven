@@ -26,6 +26,8 @@ public:
 
 private:
     Application& m_Application;
+    bool m_SettingsRequested = false;
+    bool m_SettingsBackRequested = false;
 };
 
 } // namespace Raven
