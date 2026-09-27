@@ -252,6 +252,9 @@ public:
 
     void OnEvent(Event& event);
 
+    // UI Action等から通常のWindow Closeと同じRun Loop終了を要求します。
+    void RequestExit() { m_Running = false; }
+
     void PushLayer(Layer* layer);
     void PushLayer(Scope<Layer> layer);
 
