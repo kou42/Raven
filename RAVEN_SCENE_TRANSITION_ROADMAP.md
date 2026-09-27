@@ -118,8 +118,16 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - Application所有の汎用Worker Pool
   - Scene Preparationをstd::asyncからJobSystem::Submitへ移行
   - Controller → JobSystemのshutdown寿命順を保証
-- Job System単体テスト / 実ビルド確認 ← 次回ここから
-- Asset Loadingとの統合
+- Job System Self Test ✓
+  - 戻り値Future
+  - 複数Job完了
+  - Debug Startupへ接続
+- 実ビルド確認
+- Asset Loadingとの統合 — 実装中
+  - Texture CPU decode専用API ✓
+  - decode済みPixelのAsset Manager登録 ✓
+  - WorkerではGPU Resourceを生成しない境界 ✓
+  - Scene PreparationからのAsset Batch/Progress統合 ← 次回ここから
 - Scene生成時のMain Thread stall削減
 - PreparationとScene生成を含めたProgress semantics整理
 
