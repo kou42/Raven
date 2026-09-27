@@ -1,6 +1,7 @@
 ﻿#include "SceneGame.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Core/MouseCodes.h"
@@ -394,6 +395,7 @@ void SceneGame::UpdateMouseDragImpulse()
 
 void SceneGame::OnCreate()
 {
+    RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.Total");
     if (m_Application != nullptr)
     {
         UINavigationManager& navigation = m_Application->GetUINavigationManager();
@@ -409,6 +411,8 @@ void SceneGame::OnCreate()
     m_SettingsBackRequested = false;
     m_ReturnToTitleRequested = false;
 
+    {
+        RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.Assets");
     if (Renderer::IsExplicitSceneMode() == false)
     {
         m_Shader = m_ShaderLibrary.Load(
@@ -432,6 +436,10 @@ void SceneGame::OnCreate()
             m_Texture = m_TextureLibrary.Load("Mountain", kMountainTexturePath);
         }
     }
+
+    }
+
+    RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.RenderResources");
 
     PipelineSpecification pipelineSpecification{};
     pipelineSpecification.DebugName = "SceneGame Geometry Pipeline";
@@ -578,9 +586,12 @@ void SceneGame::OnCreate()
 
     m_PreparedResources.reset();
 
-    SpawnSphereBatch(ComputeOptimizedSpawnCount());
-    SpawnBoxTestBody();
-    SpawnAnimationTestCube();
+    {
+        RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.Entities");
+        SpawnSphereBatch(ComputeOptimizedSpawnCount());
+        SpawnBoxTestBody();
+        SpawnAnimationTestCube();
+    }
 }
 
 void SceneGame::OnDestroy()
