@@ -10,6 +10,7 @@ namespace Raven
 
 class Texture;
 class TextureAsset;
+struct TextureAssetPixelData;
 
 // Texture向けSource Asset Importerです。
 // Source Formatの判定・decodeをAssets層へ閉じ込め、Rendererにはdecode済みpixelだけを渡します。
@@ -21,6 +22,10 @@ class TextureAssetImporter
 {
 public:
     static Ref<TextureAsset> Import(const std::string& sourcePath);
+
+    // Worker Threadで利用できるCPU decode専用入口です。
+    // Texture::Create等のRenderer/GPU Resource生成は行いません。
+    static TextureAssetPixelData DecodePixelData(const std::string& sourcePath);
     static Ref<Texture> ImportTexture(const std::string& sourcePath);
 
     // encodedDataはPNG/JPEG等の圧縮済みSource bytesです。
