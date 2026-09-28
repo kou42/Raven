@@ -60,10 +60,13 @@ void RunAstroWorldSelfTests()
     bodies[1].Mass = 3.0;
 
     std::vector<AstroVector3> forces;
-    solver.ComputeForces(bodies, settings, forces);
+    AstroStatistics directStatistics{};
+    solver.ComputeForces(bodies, settings, forces, &directStatistics);
 
     // G=1, m1=2, m2=3, r=2 なので |F|=1.5。両Bodyへ同じ大きさを逆向きに加えます。
     assert(forces.size() == 2u);
+    assert(directStatistics.GravityPairCandidateCount == 1u);
+    assert(directStatistics.GravityForceEvaluationCount == 1u);
     assert(NearlyEqual(forces[0].x, 1.5f));
     assert(NearlyEqual(forces[1].x, -1.5f));
     assert(NearlyEqual(forces[0].x + forces[1].x, 0.0f));
@@ -152,6 +155,36 @@ void RunAstroWorldSelfTests()
     assert((finalDiagnostics.TotalAngularMomentum - initialDiagnostics.TotalAngularMomentum).Length()
         < 1.0e-10);
 
+    // Direct SolverのO(N^2)候補数が N*(N-1)/2 と一致することを複数規模で確認します。
+    // 10,000 bodiesは約5千万pairになるためDebug起動時には回さず、実機benchmarkで明示実行します。
+    for (const std::size_t bodyCount : { 10u, 100u, 1000u })
+    {
+        std::vector<AstroBodyState> benchmarkBodies(bodyCount);
+        for (std::size_t i = 0u; i < bodyCount; ++i)
+        {
+            benchmarkBodies[i].Mass = 1.0;
+            benchmarkBodies[i].Position = {
+                static_cast<double>(i) + 1.0,
+                static_cast<double>(i % 7u) * 0.25,
+                0.0
+            };
+        }
+
+        AstroStatistics benchmarkStatistics{};
+        std::vector<AstroVector3> benchmarkForces;
+        solver.ComputeForces(
+            benchmarkBodies,
+            orbitSettings,
+            benchmarkForces,
+            &benchmarkStatistics);
+
+        const std::uint64_t expectedPairCount =
+            static_cast<std::uint64_t>(bodyCount)
+            * static_cast<std::uint64_t>(bodyCount - 1u) / 2u;
+        assert(benchmarkStatistics.GravityPairCandidateCount == expectedPairCount);
+        assert(benchmarkStatistics.GravityForceEvaluationCount == expectedPairCount);
+    }
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
@@ -175,6 +208,13 @@ void RunAstroWorldSelfTests()
     const OrbitalDiagnostics& worldDiagnostics = simulationWorld.GetAstroWorld().GetLastDiagnostics();
     assert(std::isfinite(worldDiagnostics.TotalEnergy));
     assert(NearlyEqual(static_cast<float>(worldDiagnostics.TotalLinearMomentum.Length()), 0.0f));
+    const AstroStatistics& worldStatistics = simulationWorld.GetAstroWorld().GetStatistics();
+    assert(worldStatistics.ActiveBodyCount == 2u);
+    assert(worldStatistics.GravityPairCandidateCount == 1u);
+    assert(worldStatistics.GravityForceEvaluationCount == 1u);
+    assert(worldStatistics.StateCollectionTimeMs >= 0.0);
+    assert(worldStatistics.GravitySolveTimeMs >= 0.0);
+    assert(worldStatistics.ForceFeedbackTimeMs >= 0.0);
 
     // Static sourceは積分対象外でもMassを保持して重力源になり、Dynamic probeだけを加速します。
     Scene staticSourceScene;
