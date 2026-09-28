@@ -111,30 +111,33 @@ void BarnesHutGravitySolver::ComputeForces(
 
             if (node.IsLeaf() == true)
             {
-                if (node.BodyIndex < 0
-                    || static_cast<std::size_t>(node.BodyIndex) == targetIndex)
+                for (const std::int32_t sourceIndex : node.BodyIndices)
                 {
-                    continue;
-                }
+                    if (static_cast<std::size_t>(sourceIndex) == targetIndex)
+                    {
+                        continue;
+                    }
 
-                if (statistics != nullptr)
-                {
-                    ++statistics->GravityPairCandidateCount;
-                }
-                const AstroBodyState& source = bodies[static_cast<std::size_t>(node.BodyIndex)];
-                if (source.GenerateGravity == false)
-                {
-                    continue;
-                }
-
-                const AstroVector3 force =
-                    ComputeAggregateForce(target, source.Position, source.Mass, settings);
-                if (force.LengthSq() > 0.0)
-                {
-                    outForces[targetIndex] += force;
                     if (statistics != nullptr)
                     {
-                        ++statistics->GravityForceEvaluationCount;
+                        ++statistics->GravityPairCandidateCount;
+                    }
+                    const AstroBodyState& source =
+                        bodies[static_cast<std::size_t>(sourceIndex)];
+                    if (source.GenerateGravity == false)
+                    {
+                        continue;
+                    }
+
+                    const AstroVector3 force =
+                        ComputeAggregateForce(target, source.Position, source.Mass, settings);
+                    if (force.LengthSq() > 0.0)
+                    {
+                        outForces[targetIndex] += force;
+                        if (statistics != nullptr)
+                        {
+                            ++statistics->GravityForceEvaluationCount;
+                        }
                     }
                 }
                 continue;
