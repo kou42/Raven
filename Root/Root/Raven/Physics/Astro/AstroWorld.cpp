@@ -1,5 +1,6 @@
 #include "Raven/Physics/Astro/AstroWorld.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cmath>
 
@@ -29,6 +30,10 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
 
     m_Bodies.clear();
     m_Forces.clear();
+    m_Statistics.Clear();
+
+    using Clock = std::chrono::steady_clock;
+    const auto collectionBegin = Clock::now();
 
     if (m_GravitySolver == nullptr)
     {
@@ -53,15 +58,26 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         m_Bodies.push_back(state);
     }
 
+    const auto collectionEnd = Clock::now();
+    m_Statistics.ActiveBodyCount = static_cast<std::uint64_t>(m_Bodies.size());
+    m_Statistics.StateCollectionTimeMs =
+        std::chrono::duration<double, std::milli>(collectionEnd - collectionBegin).count();
+
     // 診断値はSolver実行前の同一snapshotから計算し、Force計算との時刻ずれを避けます。
+    // 診断計算はGravity Solverの性能値へ混ぜず、Solver単体の増加傾向を追えるようにします。
     m_LastDiagnostics = OrbitalDiagnosticsCalculator::Compute(m_Bodies, m_Settings);
-    m_GravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces);
+    const auto solveBegin = Clock::now();
+    m_GravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
+    const auto solveEnd = Clock::now();
+    m_Statistics.GravitySolveTimeMs =
+        std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
     if (m_Forces.size() != m_Bodies.size())
     {
         // Solver境界違反時に部分的なForceだけをSceneへ反映しないよう、step全体を破棄します。
         return;
     }
 
+    const auto feedbackBegin = Clock::now();
     for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
     {
         const AstroBodyState& state = m_Bodies[i];
@@ -93,6 +109,9 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
             WakeRigidBody(*rigidBody);
         }
     }
+    const auto feedbackEnd = Clock::now();
+    m_Statistics.ForceFeedbackTimeMs =
+        std::chrono::duration<double, std::milli>(feedbackEnd - feedbackBegin).count();
 }
 
 void AstroWorld::Clear()
@@ -100,6 +119,7 @@ void AstroWorld::Clear()
     m_Bodies.clear();
     m_Forces.clear();
     m_LastDiagnostics = OrbitalDiagnostics{};
+    m_Statistics.Clear();
 }
 
 void AstroWorld::SetGravitySolver(GravitySolver* solver)
