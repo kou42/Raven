@@ -325,7 +325,10 @@ D:.
     |   |   |   +---Astro
     |   |   |   |   |   AstroWorld.cpp
     |   |   |   |   |   AstroWorld.h
+    |   |   |   |   |   AstroVector.h
     |   |   |   |   |   CelestialBody.h
+    |   |   |   |   |   OrbitalDiagnostics.cpp
+    |   |   |   |   |   OrbitalDiagnostics.h
     |   |   |   |   |
     |   |   |   |   +---Gravity
     |   |   |   |   |       DirectGravitySolver.cpp
