@@ -44,13 +44,16 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
 
         AstroBodyState state{};
         state.Entity = entity;
-        state.Position = transform.Position;
+        state.Position = AstroVector3(transform.Position);
+        state.Velocity = AstroVector3(rigidBody.LinearVelocity);
         state.Mass = static_cast<double>(rigidBody.Mass);
         state.GenerateGravity = celestialBody.GenerateGravity;
         state.ReceiveGravity = celestialBody.ReceiveGravity;
         m_Bodies.push_back(state);
     }
 
+    // 診断値はSolver実行前の同一snapshotから計算し、Force計算との時刻ずれを避けます。
+    m_LastDiagnostics = OrbitalDiagnosticsCalculator::Compute(m_Bodies, m_Settings);
     m_GravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces);
     if (m_Forces.size() != m_Bodies.size())
     {
@@ -73,9 +76,10 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
             continue;
         }
 
-        const math::Vec3& force = m_Forces[i];
+        const AstroVector3& astroForce = m_Forces[i];
+        const math::Vec3 force = astroForce.ToSceneVector();
         rigidBody->Force += force;
-        if (force.LengthSq() > 0.0f)
+        if (astroForce.LengthSq() > 0.0)
         {
             WakeRigidBody(*rigidBody);
         }
@@ -86,6 +90,7 @@ void AstroWorld::Clear()
 {
     m_Bodies.clear();
     m_Forces.clear();
+    m_LastDiagnostics = OrbitalDiagnostics{};
 }
 
 void AstroWorld::SetGravitySolver(GravitySolver* solver)
