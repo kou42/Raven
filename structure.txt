@@ -325,6 +325,7 @@ D:.
     |   |   |   +---Astro
     |   |   |   |   |   AstroWorld.cpp
     |   |   |   |   |   AstroWorld.h
+    |   |   |   |   |   AstroStatistics.h
     |   |   |   |   |   AstroVector.h
     |   |   |   |   |   CelestialBody.h
     |   |   |   |   |   OrbitalDiagnostics.cpp
