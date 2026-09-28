@@ -1,6 +1,7 @@
 #include "Raven/Physics/Astro/AstroWorld.h"
 
 #include <cstddef>
+#include <cmath>
 
 #include "Raven/Physics/Astro/CelestialBody.h"
 #include "Raven/Scene/Components.h"
@@ -78,6 +79,14 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
 
         const AstroVector3& astroForce = m_Forces[i];
         const math::Vec3 force = astroForce.ToSceneVector();
+        if (std::isfinite(force.x) == false
+            || std::isfinite(force.y) == false
+            || std::isfinite(force.z) == false)
+        {
+            // double側で有限でもfloat Scene境界への縮小変換でoverflowする可能性があります。
+            // 非有限値を既存Rigid Force accumulatorへ流さないことを境界で保証します。
+            continue;
+        }
         rigidBody->Force += force;
         if (astroForce.LengthSq() > 0.0)
         {
