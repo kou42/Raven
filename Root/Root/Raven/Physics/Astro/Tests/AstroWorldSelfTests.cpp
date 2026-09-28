@@ -1,5 +1,6 @@
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <vector>
