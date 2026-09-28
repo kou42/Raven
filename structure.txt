@@ -322,6 +322,20 @@ D:.
     |   |   |   |   PhysicsWorldGroundQuery.cpp
     |   |   |   |   RigidBodyDynamics.h
     |   |   |   |
+    |   |   |   +---Astro
+    |   |   |   |   |   AstroWorld.cpp
+    |   |   |   |   |   AstroWorld.h
+    |   |   |   |   |   CelestialBody.h
+    |   |   |   |   |
+    |   |   |   |   +---Gravity
+    |   |   |   |   |       DirectGravitySolver.cpp
+    |   |   |   |   |       DirectGravitySolver.h
+    |   |   |   |   |       GravitySolver.h
+    |   |   |   |   |
+    |   |   |   |   \---Tests
+    |   |   |   |           AstroWorldSelfTests.cpp
+    |   |   |   |           AstroWorldSelfTests.h
+    |   |   |   |
     |   |   |   +---Collision
     |   |   |   |       AABB.cpp
     |   |   |   |       AABB.h
