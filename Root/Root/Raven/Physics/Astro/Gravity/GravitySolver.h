@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "Raven/Physics/Astro/AstroStatistics.h"
 #include "Raven/Physics/Astro/AstroVector.h"
 #include "Raven/Scene/Entity.h"
 
@@ -34,7 +35,8 @@ public:
     virtual void ComputeForces(
         const std::vector<AstroBodyState>& bodies,
         const GravitySolverSettings& settings,
-        std::vector<AstroVector3>& outForces) const = 0;
+        std::vector<AstroVector3>& outForces,
+        AstroStatistics* statistics = nullptr) const = 0;
 };
 
 } // namespace Raven::ph
