@@ -172,6 +172,17 @@ void RunAstroWorldSelfTests()
     assert(std::abs(root.TotalMass - 10.0) < 1.0e-12);
     assert(std::abs(root.CenterOfMass.x - 1.0) < 1.0e-12);
 
+    // 完全同一点でもOctreeが無限分割せず、全Bodyの質量を保持することを確認します。
+    std::vector<AstroBodyState> coincidentBodies(2u);
+    coincidentBodies[0].Mass = 2.0;
+    coincidentBodies[0].Position = { 5.0, 5.0, 5.0 };
+    coincidentBodies[1].Mass = 3.0;
+    coincidentBodies[1].Position = { 5.0, 5.0, 5.0 };
+    octree.Build(coincidentBodies);
+    const AstroOctreeNode& coincidentRoot =
+        octree.GetNodes()[static_cast<std::size_t>(octree.GetRootIndex())];
+    assert(std::abs(coincidentRoot.TotalMass - 5.0) < 1.0e-12);
+
     // Barnes-HutをDirect Solverと比較します。thetaを小さくするとleafまで展開され、
     // Reference Solverに十分近いForceが得られることを最初の採用条件にします。
     std::vector<AstroBodyState> comparisonBodies(32u);
