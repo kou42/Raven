@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "Raven/Physics/Astro/Gravity/DirectGravitySolver.h"
+#include "Raven/Physics/Astro/OrbitalDiagnostics.h"
 
 namespace Raven
 {
@@ -25,13 +26,15 @@ public:
 
     void SetGravitySolverSettings(const GravitySolverSettings& settings) { m_Settings = settings; }
     const GravitySolverSettings& GetGravitySolverSettings() const { return m_Settings; }
+    const OrbitalDiagnostics& GetLastDiagnostics() const { return m_LastDiagnostics; }
 
 private:
     DirectGravitySolver m_DirectGravitySolver{};
     GravitySolver* m_GravitySolver = &m_DirectGravitySolver;
     GravitySolverSettings m_Settings{};
     std::vector<AstroBodyState> m_Bodies;
-    std::vector<math::Vec3> m_Forces;
+    std::vector<AstroVector3> m_Forces;
+    OrbitalDiagnostics m_LastDiagnostics{};
 };
 
 } // namespace ph
