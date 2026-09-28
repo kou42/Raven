@@ -7,6 +7,7 @@
 #include "Raven/Physics/Astro/AstroWorld.h"
 #include "Raven/Physics/Astro/CelestialBody.h"
 #include "Raven/Physics/Astro/Gravity/DirectGravitySolver.h"
+#include "Raven/Physics/Astro/OrbitalDiagnostics.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Entity.h"
@@ -57,7 +58,7 @@ void RunAstroWorldSelfTests()
     bodies[1].Position = { 2.0f, 0.0f, 0.0f };
     bodies[1].Mass = 3.0;
 
-    std::vector<math::Vec3> forces;
+    std::vector<AstroVector3> forces;
     solver.ComputeForces(bodies, settings, forces);
 
     // G=1, m1=2, m2=3, r=2 なので |F|=1.5。両Bodyへ同じ大きさを逆向きに加えます。
@@ -100,6 +101,56 @@ void RunAstroWorldSelfTests()
     assert(NearlyEqual(forces[0].LengthSq(), 0.0f));
     assert(NearlyEqual(forces[1].x, -2.5f));
 
+    // double precision stateがfloat Scene座標では保持できない微小差を維持できることを確認します。
+    AstroBodyState precisionBody{};
+    precisionBody.Position = { 1000000000000.0, 0.0, 0.0 };
+    const AstroVector3 preciseOffset = precisionBody.Position + AstroVector3{ 0.001, 0.0, 0.0 };
+    assert(std::abs((preciseOffset.x - precisionBody.Position.x) - 0.001) < 1.0e-4);
+
+    // 等質量2体の円軌道を重心系で積分し、1周期後の半径・Energy・Momentum driftを確認します。
+    // v = sqrt(G*m/(4*r))。ここでは各Bodyの重心からの半径r=1、相互距離2です。
+    std::vector<AstroBodyState> orbitBodies(2u);
+    orbitBodies[0].Mass = 1.0;
+    orbitBodies[0].Position = { -1.0, 0.0, 0.0 };
+    orbitBodies[0].Velocity = { 0.0, -0.5, 0.0 };
+    orbitBodies[1].Mass = 1.0;
+    orbitBodies[1].Position = { 1.0, 0.0, 0.0 };
+    orbitBodies[1].Velocity = { 0.0, 0.5, 0.0 };
+
+    GravitySolverSettings orbitSettings{};
+    orbitSettings.GravitationalConstant = 1.0;
+    orbitSettings.MinimumDistance = 1.0e-9;
+    const OrbitalDiagnostics initialDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(orbitBodies, orbitSettings);
+    const double orbitalPeriod = 4.0 * std::acos(-1.0);
+    constexpr int orbitStepCount = 4000;
+    const double orbitDt = orbitalPeriod / static_cast<double>(orbitStepCount);
+    std::vector<AstroVector3> orbitForces;
+
+    for (int step = 0; step < orbitStepCount; ++step)
+    {
+        solver.ComputeForces(orbitBodies, orbitSettings, orbitForces);
+        for (std::size_t i = 0u; i < orbitBodies.size(); ++i)
+        {
+            // 現行Rigid Bodyと同じsemi-implicit Eulerをdouble state上で再現し、
+            // Astro専用積分器が必要かを比較するためのReferenceにします。
+            orbitBodies[i].Velocity += orbitForces[i] * (orbitDt / orbitBodies[i].Mass);
+            orbitBodies[i].Position += orbitBodies[i].Velocity * orbitDt;
+        }
+    }
+
+    const OrbitalDiagnostics finalDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(orbitBodies, orbitSettings);
+    const double radiusError = std::abs(orbitBodies[0].Position.Length() - 1.0);
+    const double energyScale = std::max(std::abs(initialDiagnostics.TotalEnergy), 1.0e-12);
+    const double energyRelativeDrift =
+        std::abs(finalDiagnostics.TotalEnergy - initialDiagnostics.TotalEnergy) / energyScale;
+    assert(radiusError < 2.0e-3);
+    assert(energyRelativeDrift < 1.0e-5);
+    assert(finalDiagnostics.TotalLinearMomentum.Length() < 1.0e-10);
+    assert((finalDiagnostics.TotalAngularMomentum - initialDiagnostics.TotalAngularMomentum).Length()
+        < 1.0e-10);
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
@@ -120,6 +171,9 @@ void RunAstroWorldSelfTests()
     assert(NearlyEqual(rigidBodyB.LinearVelocity.x, -0.05f));
     assert(rigidBodyA.Force.LengthSq() <= 1.0e-12f);
     assert(rigidBodyB.Force.LengthSq() <= 1.0e-12f);
+    const OrbitalDiagnostics& worldDiagnostics = simulationWorld.GetAstroWorld().GetLastDiagnostics();
+    assert(std::isfinite(worldDiagnostics.TotalEnergy));
+    assert(NearlyEqual(static_cast<float>(worldDiagnostics.TotalLinearMomentum.Length()), 0.0f));
 
     // Static sourceは積分対象外でもMassを保持して重力源になり、Dynamic probeだけを加速します。
     Scene staticSourceScene;
