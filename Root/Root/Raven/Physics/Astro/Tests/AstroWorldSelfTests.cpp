@@ -74,6 +74,13 @@ void RunAstroWorldSelfTests()
     solver.ComputeForces(bodies, settings, forces);
     assert(NearlyEqual(forces[0].x, 0.75f));
 
+    // MinimumDistance内では逆二乗の分母だけをClampし、方向は実際の相対位置から維持します。
+    bodies[0].Mass = 2.0;
+    bodies[1].Mass = 3.0;
+    bodies[1].Position = { 0.001f, 0.0f, 0.0f };
+    solver.ComputeForces(bodies, settings, forces);
+    assert(NearlyEqual(forces[0].x, 60000.0f, 1.0f));
+
     bodies[1].Position = bodies[0].Position;
     solver.ComputeForces(bodies, settings, forces);
     assert(std::isfinite(forces[0].x));
@@ -113,6 +120,21 @@ void RunAstroWorldSelfTests()
     assert(NearlyEqual(rigidBodyB.LinearVelocity.x, -0.05f));
     assert(rigidBodyA.Force.LengthSq() <= 1.0e-12f);
     assert(rigidBodyB.Force.LengthSq() <= 1.0e-12f);
+
+    // Static sourceは積分対象外でもMassを保持して重力源になり、Dynamic probeだけを加速します。
+    Scene staticSourceScene;
+    PhysicsSimulationWorld& staticSourceWorld = staticSourceScene.GetPhysicsSimulationWorld();
+    staticSourceWorld.GetAstroWorld().SetGravitySolverSettings(worldSettings);
+    Entity source = CreateCelestialBody(
+        staticSourceScene, "Static Gravity Source", { 0.0f, 0.0f, 0.0f }, 10.0f, BodyType::Static);
+    Entity probe = CreateCelestialBody(
+        staticSourceScene, "Gravity Probe", { 2.0f, 0.0f, 0.0f }, 1.0f);
+    source.GetComponent<CelestialBodyComponent>().ReceiveGravity = false;
+    probe.GetComponent<CelestialBodyComponent>().GenerateGravity = false;
+
+    staticSourceWorld.StepSimulation(staticSourceScene, fixedDeltaTime);
+    assert(NearlyEqual(probe.GetComponent<RigidBodyComponent>().LinearVelocity.x, -0.25f));
+    assert(NearlyEqual(source.GetComponent<TransformComponent>().Position.x, 0.0f));
 }
 
 } // namespace Raven::ph::tests
