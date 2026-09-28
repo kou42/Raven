@@ -1,6 +1,7 @@
 #include "Raven/Physics/Astro/Gravity/BarnesHutGravitySolver.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -64,6 +65,7 @@ void BarnesHutGravitySolver::ComputeForces(
         statistics->GravityForceEvaluationCount = 0u;
         statistics->GravityVisitedNodeCount = 0u;
         statistics->GravityAcceptedAggregateNodeCount = 0u;
+        statistics->GravityTreeBuildTimeMs = 0.0;
     }
 
     if (std::isfinite(settings.GravitationalConstant) == false
@@ -74,8 +76,16 @@ void BarnesHutGravitySolver::ComputeForces(
         return;
     }
 
+    using Clock = std::chrono::steady_clock;
     AstroOctree tree;
+    const auto treeBuildBegin = Clock::now();
     tree.Build(bodies);
+    const auto treeBuildEnd = Clock::now();
+    if (statistics != nullptr)
+    {
+        statistics->GravityTreeBuildTimeMs =
+            std::chrono::duration<double, std::milli>(treeBuildEnd - treeBuildBegin).count();
+    }
     if (tree.GetRootIndex() < 0)
     {
         return;
