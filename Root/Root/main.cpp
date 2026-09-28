@@ -36,6 +36,7 @@
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
+#include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
 #include "Raven/Physics/Tests/FluidWorldSelfTests.h"
@@ -129,6 +130,7 @@ int main(int argc, char* argv[])
     Raven::tests::RunBlendTreeRuntimeSelfTests();
     Raven::tests::RunPoseInertializerSelfTests();
     Raven::ph::tests::RunPhysicsSimulationWorldSelfTests();
+    Raven::ph::tests::RunAstroWorldSelfTests();
     Raven::ph::tests::RunElectromagnetismSelfTests();
     // ScalarField派生の回帰テストは集約入口から実行し、今後Field型が増えてもmain.cppを肥大化させません。
     Raven::ph::tests::RunPhysicsFieldSelfTests();
