@@ -14,6 +14,7 @@ struct AstroStatistics
     std::uint64_t GravityAcceptedAggregateNodeCount = 0u;
 
     double StateCollectionTimeMs = 0.0;
+    double GravityTreeBuildTimeMs = 0.0;
     double GravitySolveTimeMs = 0.0;
     double ForceFeedbackTimeMs = 0.0;
 
@@ -25,6 +26,7 @@ struct AstroStatistics
         GravityVisitedNodeCount = 0u;
         GravityAcceptedAggregateNodeCount = 0u;
         StateCollectionTimeMs = 0.0;
+        GravityTreeBuildTimeMs = 0.0;
         GravitySolveTimeMs = 0.0;
         ForceFeedbackTimeMs = 0.0;
     }
