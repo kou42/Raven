@@ -17,7 +17,7 @@ struct AstroOctreeNode
     double TotalMass = 0.0;
     AstroVector3 CenterOfMass{};
     std::array<std::int32_t, 8> Children{ -1, -1, -1, -1, -1, -1, -1, -1 };
-    std::int32_t BodyIndex = -1;
+    std::vector<std::int32_t> BodyIndices;
 
     bool IsLeaf() const;
 };
