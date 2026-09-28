@@ -10,9 +10,9 @@ namespace Raven::ph
 void DirectGravitySolver::ComputeForces(
     const std::vector<AstroBodyState>& bodies,
     const GravitySolverSettings& settings,
-    std::vector<math::Vec3>& outForces) const
+    std::vector<AstroVector3>& outForces) const
 {
-    outForces.assign(bodies.size(), math::Vec3{});
+    outForces.assign(bodies.size(), AstroVector3{});
 
     const double gravitationalConstant = settings.GravitationalConstant;
     const double minimumDistance = std::max(settings.MinimumDistance, 0.0);
@@ -36,9 +36,9 @@ void DirectGravitySolver::ComputeForces(
                 continue;
             }
 
-            const double dx = static_cast<double>(b.Position.x) - static_cast<double>(a.Position.x);
-            const double dy = static_cast<double>(b.Position.y) - static_cast<double>(a.Position.y);
-            const double dz = static_cast<double>(b.Position.z) - static_cast<double>(a.Position.z);
+            const double dx = b.Position.x - a.Position.x;
+            const double dy = b.Position.y - a.Position.y;
+            const double dz = b.Position.z - a.Position.z;
             const double distanceSquared = dx * dx + dy * dy + dz * dz;
             if (std::isfinite(distanceSquared) == false || distanceSquared <= 0.0)
             {
@@ -62,10 +62,10 @@ void DirectGravitySolver::ComputeForces(
             }
 
             const double inverseDistance = 1.0 / distance;
-            const math::Vec3 forceOnA{
-                static_cast<float>(dx * inverseDistance * forceMagnitude),
-                static_cast<float>(dy * inverseDistance * forceMagnitude),
-                static_cast<float>(dz * inverseDistance * forceMagnitude)
+            const AstroVector3 forceOnA{
+                dx * inverseDistance * forceMagnitude,
+                dy * inverseDistance * forceMagnitude,
+                dz * inverseDistance * forceMagnitude
             };
 
             if (std::isfinite(forceOnA.x) == false
