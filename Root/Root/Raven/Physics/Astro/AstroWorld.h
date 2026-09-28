@@ -27,6 +27,7 @@ public:
     void SetGravitySolverSettings(const GravitySolverSettings& settings) { m_Settings = settings; }
     const GravitySolverSettings& GetGravitySolverSettings() const { return m_Settings; }
     const OrbitalDiagnostics& GetLastDiagnostics() const { return m_LastDiagnostics; }
+    const AstroStatistics& GetStatistics() const { return m_Statistics; }
 
 private:
     DirectGravitySolver m_DirectGravitySolver{};
@@ -35,6 +36,7 @@ private:
     std::vector<AstroBodyState> m_Bodies;
     std::vector<AstroVector3> m_Forces;
     OrbitalDiagnostics m_LastDiagnostics{};
+    AstroStatistics m_Statistics{};
 };
 
 } // namespace ph
