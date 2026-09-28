@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "Raven/Math/MathVector.h"
+#include "Raven/Physics/Astro/AstroVector.h"
 #include "Raven/Scene/Entity.h"
 
 namespace Raven::ph
@@ -11,7 +11,8 @@ namespace Raven::ph
 struct AstroBodyState
 {
     EntityHandle Entity{};
-    math::Vec3 Position{};
+    AstroVector3 Position{};
+    AstroVector3 Velocity{};
     double Mass = 0.0;
     bool GenerateGravity = true;
     bool ReceiveGravity = true;
@@ -33,7 +34,7 @@ public:
     virtual void ComputeForces(
         const std::vector<AstroBodyState>& bodies,
         const GravitySolverSettings& settings,
-        std::vector<math::Vec3>& outForces) const = 0;
+        std::vector<AstroVector3>& outForces) const = 0;
 };
 
 } // namespace Raven::ph
