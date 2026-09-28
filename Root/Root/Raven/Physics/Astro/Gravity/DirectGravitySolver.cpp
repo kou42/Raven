@@ -10,9 +10,16 @@ namespace Raven::ph
 void DirectGravitySolver::ComputeForces(
     const std::vector<AstroBodyState>& bodies,
     const GravitySolverSettings& settings,
-    std::vector<AstroVector3>& outForces) const
+    std::vector<AstroVector3>& outForces,
+    AstroStatistics* statistics) const
 {
     outForces.assign(bodies.size(), AstroVector3{});
+
+    if (statistics != nullptr)
+    {
+        statistics->GravityPairCandidateCount = 0u;
+        statistics->GravityForceEvaluationCount = 0u;
+    }
 
     const double gravitationalConstant = settings.GravitationalConstant;
     const double minimumDistance = std::max(settings.MinimumDistance, 0.0);
@@ -25,6 +32,10 @@ void DirectGravitySolver::ComputeForces(
     {
         for (std::size_t j = i + 1u; j < bodies.size(); ++j)
         {
+            if (statistics != nullptr)
+            {
+                ++statistics->GravityPairCandidateCount;
+            }
             const AstroBodyState& a = bodies[i];
             const AstroBodyState& b = bodies[j];
 
@@ -73,6 +84,11 @@ void DirectGravitySolver::ComputeForces(
                 || std::isfinite(forceOnA.z) == false)
             {
                 continue;
+            }
+
+            if (statistics != nullptr)
+            {
+                ++statistics->GravityForceEvaluationCount;
             }
 
             // Generate / Receiveを独立させることで、Static sourceやprobe bodyを表現できます。
