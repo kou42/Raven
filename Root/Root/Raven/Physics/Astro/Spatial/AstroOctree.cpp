@@ -140,29 +140,32 @@ void AstroOctree::InsertBody(
     std::uint32_t depth)
 {
     AstroOctreeNode& node = m_Nodes[static_cast<std::size_t>(nodeIndex)];
-    if (node.IsLeaf() == true && node.BodyIndex < 0)
+    if (node.IsLeaf() == true && node.BodyIndices.empty() == true)
     {
-        node.BodyIndex = bodyIndex;
+        node.BodyIndices.push_back(bodyIndex);
         return;
     }
 
     if (depth >= MaxOctreeDepth || node.HalfSize <= MinimumNodeHalfSize)
     {
-        // 完全重複位置は1 leafへ代表Bodyを保持します。aggregate massは後段で全Bodyを
-        // 再集約するため、無限再帰を避けることを優先します。
+        // 完全重複位置は同じleafへ複数Bodyを保持し、質量を失わず無限再帰だけを防ぎます。
+        node.BodyIndices.push_back(bodyIndex);
         return;
     }
 
     if (node.IsLeaf() == true)
     {
-        const std::int32_t previousBodyIndex = node.BodyIndex;
-        node.BodyIndex = -1;
+        const std::vector<std::int32_t> previousBodyIndices = node.BodyIndices;
+        node.BodyIndices.clear();
         Subdivide(nodeIndex);
 
-        const std::int32_t previousChild =
-            SelectChild(m_Nodes[static_cast<std::size_t>(nodeIndex)],
-                bodies[static_cast<std::size_t>(previousBodyIndex)].Position);
-        InsertBody(previousChild, previousBodyIndex, bodies, depth + 1u);
+        for (const std::int32_t previousBodyIndex : previousBodyIndices)
+        {
+            const std::int32_t previousChild =
+                SelectChild(m_Nodes[static_cast<std::size_t>(nodeIndex)],
+                    bodies[static_cast<std::size_t>(previousBodyIndex)].Position);
+            InsertBody(previousChild, previousBodyIndex, bodies, depth + 1u);
+        }
     }
 
     const std::int32_t child =
@@ -181,11 +184,16 @@ void AstroOctree::AccumulateMass(
 
     if (node.IsLeaf() == true)
     {
-        if (node.BodyIndex >= 0)
+        AstroVector3 weightedCenter{};
+        for (const std::int32_t bodyIndex : node.BodyIndices)
         {
-            const AstroBodyState& body = bodies[static_cast<std::size_t>(node.BodyIndex)];
-            node.TotalMass = body.Mass;
-            node.CenterOfMass = body.Position;
+            const AstroBodyState& body = bodies[static_cast<std::size_t>(bodyIndex)];
+            node.TotalMass += body.Mass;
+            weightedCenter += body.Position * body.Mass;
+        }
+        if (node.TotalMass > 0.0)
+        {
+            node.CenterOfMass = weightedCenter / node.TotalMass;
         }
         return;
     }
