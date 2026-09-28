@@ -7,7 +7,9 @@
 
 #include "Raven/Physics/Astro/AstroWorld.h"
 #include "Raven/Physics/Astro/CelestialBody.h"
+#include "Raven/Physics/Astro/Gravity/BarnesHutGravitySolver.h"
 #include "Raven/Physics/Astro/Gravity/DirectGravitySolver.h"
+#include "Raven/Physics/Astro/Spatial/AstroOctree.h"
 #include "Raven/Physics/Astro/OrbitalDiagnostics.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -154,6 +156,63 @@ void RunAstroWorldSelfTests()
     assert(finalDiagnostics.TotalLinearMomentum.Length() < 1.0e-10);
     assert((finalDiagnostics.TotalAngularMomentum - initialDiagnostics.TotalAngularMomentum).Length()
         < 1.0e-10);
+
+    // Octreeのroot集約値が入力Bodyの総質量・重心と一致することを確認します。
+    std::vector<AstroBodyState> octreeBodies(4u);
+    octreeBodies[0].Mass = 1.0; octreeBodies[0].Position = { -3.0, 0.0, 0.0 };
+    octreeBodies[1].Mass = 2.0; octreeBodies[1].Position = { -1.0, 0.0, 0.0 };
+    octreeBodies[2].Mass = 3.0; octreeBodies[2].Position = { 1.0, 0.0, 0.0 };
+    octreeBodies[3].Mass = 4.0; octreeBodies[3].Position = { 3.0, 0.0, 0.0 };
+
+    AstroOctree octree;
+    octree.Build(octreeBodies);
+    assert(octree.GetRootIndex() >= 0);
+    const AstroOctreeNode& root =
+        octree.GetNodes()[static_cast<std::size_t>(octree.GetRootIndex())];
+    assert(std::abs(root.TotalMass - 10.0) < 1.0e-12);
+    assert(std::abs(root.CenterOfMass.x - 1.0) < 1.0e-12);
+
+    // Barnes-HutをDirect Solverと比較します。thetaを小さくするとleafまで展開され、
+    // Reference Solverに十分近いForceが得られることを最初の採用条件にします。
+    std::vector<AstroBodyState> comparisonBodies(32u);
+    for (std::size_t i = 0u; i < comparisonBodies.size(); ++i)
+    {
+        comparisonBodies[i].Mass = 1.0 + static_cast<double>(i % 5u) * 0.1;
+        comparisonBodies[i].Position = {
+            static_cast<double>(i % 8u) * 1.25,
+            static_cast<double>((i / 8u) % 4u) * 1.5,
+            static_cast<double>(i) * 0.03125
+        };
+    }
+
+    std::vector<AstroVector3> directForces;
+    std::vector<AstroVector3> barnesHutForces;
+    AstroStatistics barnesHutStatistics{};
+    solver.ComputeForces(comparisonBodies, orbitSettings, directForces);
+
+    BarnesHutGravitySolver barnesHutSolver;
+    barnesHutSolver.SetTheta(0.25);
+    barnesHutSolver.ComputeForces(
+        comparisonBodies,
+        orbitSettings,
+        barnesHutForces,
+        &barnesHutStatistics);
+
+    double maximumRelativeError = 0.0;
+    for (std::size_t i = 0u; i < comparisonBodies.size(); ++i)
+    {
+        const double referenceMagnitude = directForces[i].Length();
+        if (referenceMagnitude <= 1.0e-12)
+        {
+            continue;
+        }
+        const double relativeError =
+            (barnesHutForces[i] - directForces[i]).Length() / referenceMagnitude;
+        maximumRelativeError = std::max(maximumRelativeError, relativeError);
+    }
+    assert(maximumRelativeError < 0.02);
+    assert(barnesHutStatistics.GravityVisitedNodeCount > 0u);
+    assert(barnesHutStatistics.GravityAcceptedAggregateNodeCount > 0u);
 
     // Direct SolverのO(N^2)候補数が N*(N-1)/2 と一致することを複数規模で確認します。
     // 10,000 bodiesは約5千万pairになるためDebug起動時には回さず、実機benchmarkで明示実行します。
