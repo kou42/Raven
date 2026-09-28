@@ -183,17 +183,6 @@ void RunAstroWorldSelfTests()
         octree.GetNodes()[static_cast<std::size_t>(octree.GetRootIndex())];
     assert(std::abs(coincidentRoot.TotalMass - 5.0) < 1.0e-12);
 
-    // 完全同一点でもOctreeが無限分割せず、全Bodyの質量を保持することを確認します。
-    std::vector<AstroBodyState> coincidentBodies(2u);
-    coincidentBodies[0].Mass = 2.0;
-    coincidentBodies[0].Position = { 5.0, 5.0, 5.0 };
-    coincidentBodies[1].Mass = 3.0;
-    coincidentBodies[1].Position = { 5.0, 5.0, 5.0 };
-    octree.Build(coincidentBodies);
-    const AstroOctreeNode& coincidentRoot =
-        octree.GetNodes()[static_cast<std::size_t>(octree.GetRootIndex())];
-    assert(std::abs(coincidentRoot.TotalMass - 5.0) < 1.0e-12);
-
     // Barnes-HutをDirect Solverと比較します。thetaを小さくするとleafまで展開され、
     // Reference Solverに十分近いForceが得られることを最初の採用条件にします。
     std::vector<AstroBodyState> comparisonBodies(32u);
@@ -213,28 +202,54 @@ void RunAstroWorldSelfTests()
     solver.ComputeForces(comparisonBodies, orbitSettings, directForces);
 
     BarnesHutGravitySolver barnesHutSolver;
-    barnesHutSolver.SetTheta(0.25);
-    barnesHutSolver.ComputeForces(
-        comparisonBodies,
-        orbitSettings,
-        barnesHutForces,
-        &barnesHutStatistics);
+    double previousMaximumRelativeError = 0.0;
+    std::uint64_t previousForceEvaluationCount = 0u;
+    bool hasPreviousTheta = false;
 
-    double maximumRelativeError = 0.0;
-    for (std::size_t i = 0u; i < comparisonBodies.size(); ++i)
+    // thetaを大きくするほどaggregate採用が増えて評価数が減る一方、Directとの差は増えます。
+    // 絶対時間は実行環境依存なのでSelf Testでは単調なwork量と誤差傾向を検証します。
+    for (const double theta : { 0.25, 0.5, 0.75 })
     {
-        const double referenceMagnitude = directForces[i].Length();
-        if (referenceMagnitude <= 1.0e-12)
+        barnesHutStatistics.Clear();
+        barnesHutSolver.SetTheta(theta);
+        barnesHutSolver.ComputeForces(
+            comparisonBodies,
+            orbitSettings,
+            barnesHutForces,
+            &barnesHutStatistics);
+
+        double maximumRelativeError = 0.0;
+        for (std::size_t i = 0u; i < comparisonBodies.size(); ++i)
         {
-            continue;
+            const double referenceMagnitude = directForces[i].Length();
+            if (referenceMagnitude <= 1.0e-12)
+            {
+                continue;
+            }
+            const double relativeError =
+                (barnesHutForces[i] - directForces[i]).Length() / referenceMagnitude;
+            maximumRelativeError = std::max(maximumRelativeError, relativeError);
         }
-        const double relativeError =
-            (barnesHutForces[i] - directForces[i]).Length() / referenceMagnitude;
-        maximumRelativeError = std::max(maximumRelativeError, relativeError);
+
+        assert(barnesHutStatistics.GravityVisitedNodeCount > 0u);
+        assert(barnesHutStatistics.GravityAcceptedAggregateNodeCount > 0u);
+        assert(barnesHutStatistics.GravityTreeBuildTimeMs >= 0.0);
+        if (theta == 0.25)
+        {
+            assert(maximumRelativeError < 0.02);
+        }
+
+        if (hasPreviousTheta == true)
+        {
+            assert(barnesHutStatistics.GravityForceEvaluationCount
+                <= previousForceEvaluationCount);
+            assert(maximumRelativeError + 1.0e-12 >= previousMaximumRelativeError);
+        }
+
+        previousMaximumRelativeError = maximumRelativeError;
+        previousForceEvaluationCount = barnesHutStatistics.GravityForceEvaluationCount;
+        hasPreviousTheta = true;
     }
-    assert(maximumRelativeError < 0.02);
-    assert(barnesHutStatistics.GravityVisitedNodeCount > 0u);
-    assert(barnesHutStatistics.GravityAcceptedAggregateNodeCount > 0u);
 
     // Direct SolverのO(N^2)候補数が N*(N-1)/2 と一致することを複数規模で確認します。
     // 10,000 bodiesは約5千万pairになるためDebug起動時には回さず、実機benchmarkで明示実行します。
