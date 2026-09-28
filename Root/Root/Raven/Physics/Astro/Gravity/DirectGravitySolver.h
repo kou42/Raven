@@ -13,7 +13,8 @@ public:
     void ComputeForces(
         const std::vector<AstroBodyState>& bodies,
         const GravitySolverSettings& settings,
-        std::vector<AstroVector3>& outForces) const override;
+        std::vector<AstroVector3>& outForces,
+        AstroStatistics* statistics = nullptr) const override;
 };
 
 } // namespace Raven::ph
