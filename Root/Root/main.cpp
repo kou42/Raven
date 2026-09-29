@@ -36,6 +36,7 @@
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
+#include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
@@ -70,6 +71,10 @@ int main(int argc, char* argv[])
             Raven::tests::RunExplicitSceneFrameSelfTests();
             std::cout << "Explicit Scene Frame self-tests passed.\n";
             return 0;
+        }
+        if (backendArgument == "--benchmark-astro-gravity")
+        {
+            return Raven::ph::tests::RunAstroGravityBenchmark();
         }
 #endif
         if (backendArgument == "--backend=vulkan")
@@ -112,7 +117,7 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
-                "--clear-opengl, --clear-vulkan or --clear-dx12.\\n";
+                "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
         }
     }
