@@ -8,6 +8,7 @@
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
+#include "Raven/Physics/Electromagnetism/Spatial/CoulombOctree.h"
 #include "Raven/Physics/Field/GravityField.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -162,6 +163,36 @@ void RunElectromagnetismSelfTests()
     const math::Vec3 electricFieldAtTwoMeters = pointField.Evaluate({ 2.0f, 0.0f, 0.0f });
     assert(electricFieldAtOneMeter.x > 0.0f);
     assert(NearlyEqual(electricFieldAtTwoMeters.x / electricFieldAtOneMeter.x, 0.25f, 1.0e-3f));
+
+    // Coulomb Octreeは正負電荷を相殺せず別々に集約します。
+    // 総電荷が0になるdipoleでも両極性の電荷量と中心を保持し、将来の近似評価で情報を失いません。
+    std::vector<CoulombOctreeBody> coulombTreeBodies{
+        { { -2.0, 0.0, 0.0 }, 2.0 },
+        { { 2.0, 0.0, 0.0 }, -2.0 },
+        { { 4.0, 0.0, 0.0 }, 1.0 }
+    };
+    CoulombOctree coulombOctree;
+    coulombOctree.Build(coulombTreeBodies);
+    assert(coulombOctree.GetRootIndex() >= 0);
+    const CoulombOctreeNode& coulombRoot =
+        coulombOctree.GetNodes()[static_cast<std::size_t>(coulombOctree.GetRootIndex())];
+    assert(std::abs(coulombRoot.PositiveCharge - 3.0) < 1.0e-12);
+    assert(std::abs(coulombRoot.NegativeChargeMagnitude - 2.0) < 1.0e-12);
+    assert(std::abs(coulombRoot.PositiveCenter[0]) < 1.0e-12);
+    assert(std::abs(coulombRoot.NegativeCenter[0] - 2.0) < 1.0e-12);
+
+    // 完全な正負相殺でも各極性のaggregateは消えません。
+    std::vector<CoulombOctreeBody> neutralTreeBodies{
+        { { -1.0, 0.0, 0.0 }, 1.0 },
+        { { 1.0, 0.0, 0.0 }, -1.0 }
+    };
+    coulombOctree.Build(neutralTreeBodies);
+    const CoulombOctreeNode& neutralRoot =
+        coulombOctree.GetNodes()[static_cast<std::size_t>(coulombOctree.GetRootIndex())];
+    assert(std::abs(neutralRoot.PositiveCharge - 1.0) < 1.0e-12);
+    assert(std::abs(neutralRoot.NegativeChargeMagnitude - 1.0) < 1.0e-12);
+    assert(std::abs(neutralRoot.PositiveCenter[0] + 1.0) < 1.0e-12);
+    assert(std::abs(neutralRoot.NegativeCenter[0] - 1.0) < 1.0e-12);
 
     const math::Vec3 repulsiveForce = ComputeCoulombForce(
         { 0.0f, 0.0f, 0.0f }, microCoulomb,
