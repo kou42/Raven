@@ -484,6 +484,53 @@ void RunAstroWorldSelfTests()
     multiRateWorld.SetMultiRateSettings(multiRateSettings);
     assert(multiRateWorld.GetMultiRateSettings().GravityUpdateIntervalSteps == 1u);
 
+    // Near/Far分離ではNear相互作用を毎step再評価し、Far成分だけを低頻度更新します。
+    // G=1、A(m=2)-B(m=3)を2->1へ近づけるとNear Forceは1.5->6.0へ即時変化し、
+    // C(m=1, x=10)由来のFar Force 0.02は同じstepではcacheから再利用されます。
+    Scene nearFarScene;
+    AstroWorld nearFarWorld;
+    nearFarWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings nearFarSolverSettings{};
+    nearFarSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    nearFarWorld.SetGravitySolverSelectionSettings(nearFarSolverSettings);
+
+    AstroMultiRateSettings nearFarSettings{};
+    nearFarSettings.NearGravityDistance = 3.0;
+    nearFarSettings.FarGravityUpdateIntervalSteps = 2u;
+    nearFarWorld.SetMultiRateSettings(nearFarSettings);
+
+    Entity nearFarA = CreateCelestialBody(
+        nearFarScene, "Near/Far A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity nearFarB = CreateCelestialBody(
+        nearFarScene, "Near/Far B", { 2.0f, 0.0f, 0.0f }, 3.0f);
+    Entity nearFarC = CreateCelestialBody(
+        nearFarScene, "Near/Far C", { 10.0f, 0.0f, 0.0f }, 1.0f);
+
+    nearFarWorld.AccumulateGravityForces(nearFarScene, 0.1f);
+    assert(nearFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == false);
+    assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
+    assert(NearlyEqual(nearFarA.GetComponent<RigidBodyComponent>().Force.x, 1.52f));
+
+    nearFarA.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarC.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<TransformComponent>().Position.x = 1.0f;
+
+    nearFarWorld.AccumulateGravityForces(nearFarScene, 0.1f);
+    assert(nearFarWorld.GetStatistics().FarGravitySolveExecuted == false);
+    assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == true);
+    assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
+    assert(NearlyEqual(nearFarA.GetComponent<RigidBodyComponent>().Force.x, 6.02f));
+
+    nearFarSettings.FarGravityUpdateIntervalSteps = 0u;
+    nearFarSettings.NearGravityDistance = -1.0;
+    nearFarWorld.SetMultiRateSettings(nearFarSettings);
+    assert(nearFarWorld.GetMultiRateSettings().FarGravityUpdateIntervalSteps == 1u);
+    assert(NearlyEqual(
+        static_cast<float>(nearFarWorld.GetMultiRateSettings().NearGravityDistance),
+        0.0f));
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
