@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cmath>
+#include <limits>
 
 #include "Raven/Physics/Astro/CelestialBody.h"
 #include "Raven/Scene/Components.h"
@@ -456,48 +457,77 @@ void AstroWorld::ComputeNearGravityForces(std::vector<AstroVector3>& outForces)
     outForces.assign(m_Bodies.size(), AstroVector3{});
     const double nearDistanceSquared =
         m_MultiRateSettings.NearGravityDistance * m_MultiRateSettings.NearGravityDistance;
+    const double gravitationalConstant = m_Settings.GravitationalConstant;
+    const double minimumDistance = std::max(m_Settings.MinimumDistance, 0.0);
+    if (std::isfinite(gravitationalConstant) == false || gravitationalConstant <= 0.0)
+    {
+        return;
+    }
 
     for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
     {
         for (std::size_t j = i + 1u; j < m_Bodies.size(); ++j)
         {
-            const AstroVector3 delta = m_Bodies[j].Position - m_Bodies[i].Position;
-            const double distanceSquared = delta.LengthSq();
-            if (distanceSquared > nearDistanceSquared)
+            const AstroBodyState& a = m_Bodies[i];
+            const AstroBodyState& b = m_Bodies[j];
+            const double dx = b.Position.x - a.Position.x;
+            const double dy = b.Position.y - a.Position.y;
+            const double dz = b.Position.z - a.Position.z;
+            const double distanceSquared = dx * dx + dy * dy + dz * dz;
+            if (std::isfinite(distanceSquared) == false
+                || distanceSquared > nearDistanceSquared)
             {
                 continue;
             }
 
-            // Near領域だけをDirectで評価します。Far側のBarnes-Hut空間近似とは別カウンタにし、
-            // Phase 8の時間LODコストを独立して観測できるようにします。
+            // Near候補数は従来どおり幾何判定を通過したpairを数えます。
+            // Solver呼び出し用vectorをpairごとに生成せず、この場でDirectと同じ式を評価します。
             ++m_Statistics.NearGravityPairEvaluationCount;
-            if (m_Bodies[i].GenerateGravity == true && m_Bodies[j].ReceiveGravity == true)
+            if (std::isfinite(a.Mass) == false
+                || std::isfinite(b.Mass) == false
+                || a.Mass <= 0.0
+                || b.Mass <= 0.0
+                || distanceSquared <= 0.0)
             {
-                std::vector<AstroBodyState> pair{ m_Bodies[j], m_Bodies[i] };
-                pair[0].ReceiveGravity = true;
-                pair[0].GenerateGravity = false;
-                pair[1].ReceiveGravity = false;
-                pair[1].GenerateGravity = true;
-                std::vector<AstroVector3> pairForces;
-                m_DirectGravitySolver.ComputeForces(pair, m_Settings, pairForces);
-                if (pairForces.size() == 2u)
-                {
-                    outForces[j] += pairForces[0];
-                }
+                continue;
             }
-            if (m_Bodies[j].GenerateGravity == true && m_Bodies[i].ReceiveGravity == true)
+
+            const double distance = std::sqrt(distanceSquared);
+            const double effectiveDistance = std::max(distance, minimumDistance);
+            if (effectiveDistance <= std::numeric_limits<double>::epsilon())
             {
-                std::vector<AstroBodyState> pair{ m_Bodies[i], m_Bodies[j] };
-                pair[0].ReceiveGravity = true;
-                pair[0].GenerateGravity = false;
-                pair[1].ReceiveGravity = false;
-                pair[1].GenerateGravity = true;
-                std::vector<AstroVector3> pairForces;
-                m_DirectGravitySolver.ComputeForces(pair, m_Settings, pairForces);
-                if (pairForces.size() == 2u)
-                {
-                    outForces[i] += pairForces[0];
-                }
+                continue;
+            }
+
+            const double forceMagnitude =
+                gravitationalConstant * a.Mass * b.Mass / (effectiveDistance * effectiveDistance);
+            if (std::isfinite(forceMagnitude) == false)
+            {
+                continue;
+            }
+
+            const double inverseDistance = 1.0 / distance;
+            const AstroVector3 forceOnA{
+                dx * inverseDistance * forceMagnitude,
+                dy * inverseDistance * forceMagnitude,
+                dz * inverseDistance * forceMagnitude
+            };
+            if (std::isfinite(forceOnA.x) == false
+                || std::isfinite(forceOnA.y) == false
+                || std::isfinite(forceOnA.z) == false)
+            {
+                continue;
+            }
+
+            // DirectGravitySolverと同じGenerate / Receive契約を維持します。
+            // 通常の双方向pairでは1回のForce計算結果を±で共有できるため、計算量とallocationを削減できます。
+            if (a.ReceiveGravity == true && b.GenerateGravity == true)
+            {
+                outForces[i] += forceOnA;
+            }
+            if (b.ReceiveGravity == true && a.GenerateGravity == true)
+            {
+                outForces[j] -= forceOnA;
             }
         }
     }
