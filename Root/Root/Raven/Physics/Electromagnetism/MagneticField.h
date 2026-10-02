@@ -43,6 +43,41 @@ private:
     math::Vec3 m_MagneticFluxDensity{};
 };
 
+// 点磁気双極子が作る磁束密度を評価します。
+// DipoleMomentは磁気双極子モーメント [A*m^2]、Centerはworld-space位置です。
+// 中心近傍の1/r^3特異点をSimulationへ流さないためMinimumDistanceで評価距離を下限Clampします。
+class DipoleMagneticField final : public MagneticField
+{
+public:
+    DipoleMagneticField() = default;
+
+    DipoleMagneticField(
+        const math::Vec3& center,
+        const math::Vec3& dipoleMoment,
+        float minimumDistance = 1.0e-4f)
+        : m_Center(center)
+        , m_DipoleMoment(dipoleMoment)
+        , m_MinimumDistance(minimumDistance)
+    {
+    }
+
+    math::Vec3 Evaluate(const math::Vec3& worldPosition) const override;
+
+    void SetCenter(const math::Vec3& center) { m_Center = center; }
+    const math::Vec3& GetCenter() const { return m_Center; }
+
+    void SetDipoleMoment(const math::Vec3& dipoleMoment) { m_DipoleMoment = dipoleMoment; }
+    const math::Vec3& GetDipoleMoment() const { return m_DipoleMoment; }
+
+    void SetMinimumDistance(float minimumDistance) { m_MinimumDistance = minimumDistance; }
+    float GetMinimumDistance() const { return m_MinimumDistance; }
+
+private:
+    math::Vec3 m_Center{};
+    math::Vec3 m_DipoleMoment{};
+    float m_MinimumDistance = 1.0e-4f;
+};
+
 // 磁気ローレンツ力 F = q(v x B) [N]をworld-spaceで返します。
 // velocityは電荷を持つRigidBodyの重心LinearVelocity [m/s]として扱います。
 math::Vec3 ComputeMagneticForce(
