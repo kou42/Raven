@@ -40,6 +40,16 @@ struct AstroMultiRateSettings
     // Debug/検証用です。有効時は現在snapshotをDirect Solverでも評価し、
     // 実際に適用するMulti-rate Forceとの差をPhysics LOD誤差として記録します。
     bool MeasureDirectReferenceError = false;
+
+    // Direct Reference誤差を使ってFar更新周期を自動調整します。
+    // Low以下が続けば周期を伸ばし、High以上なら即座に短くすることで、
+    // 誤差増大への応答を速くしつつ閾値付近の頻繁な往復を抑えます。
+    bool AdaptiveFarGravityUpdate = false;
+    std::uint32_t MinimumFarGravityUpdateIntervalSteps = 1u;
+    std::uint32_t MaximumFarGravityUpdateIntervalSteps = 8u;
+    double AdaptiveFarGravityLowRelativeError = 0.01;
+    double AdaptiveFarGravityHighRelativeError = 0.05;
+    std::uint32_t AdaptiveFarGravityStableStepCount = 4u;
 };
 
 struct AstroGravitySolverSelectionSettings
@@ -80,6 +90,7 @@ private:
     bool IsNearFarMultiRateEnabled() const;
     void ComputeNearGravityForces(std::vector<AstroVector3>& outForces);
     void MeasureDirectReferenceError();
+    void UpdateAdaptiveFarGravityInterval();
     void CacheGravityForces();
     void InvalidateGravityForceCache();
 
@@ -93,6 +104,8 @@ private:
     GravitySolverSettings m_Settings{};
     AstroMultiRateSettings m_MultiRateSettings{};
     std::uint32_t m_StepsSinceGravitySolve = 0u;
+    std::uint32_t m_CurrentFarGravityUpdateIntervalSteps = 4u;
+    std::uint32_t m_AdaptiveFarGravityStableSteps = 0u;
     std::vector<AstroBodyState> m_Bodies;
     std::vector<AstroVector3> m_Forces;
     std::vector<AstroBodyState> m_CachedGravityBodies;
