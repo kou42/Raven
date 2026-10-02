@@ -3,7 +3,9 @@
 #include <cstddef>
 #include <vector>
 
+#include "Raven/Physics/Electromagnetism/BarnesHutCoulombSolver.h"
 #include "Raven/Physics/Electromagnetism/CoulombForce.h"
+#include "Raven/Physics/Electromagnetism/ElectromagneticStatistics.h"
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
 
@@ -14,6 +16,21 @@ class Scene;
 
 namespace Raven::ph
 {
+
+enum class CoulombSolverMode
+{
+    Automatic,
+    Direct,
+    BarnesHut
+};
+
+struct CoulombSolverSelectionSettings
+{
+    CoulombSolverMode Mode = CoulombSolverMode::Automatic;
+    std::size_t BarnesHutBodyThreshold = 1000u;
+    std::size_t DirectBodyThreshold = 800u;
+    double BarnesHutTheta = 0.5;
+};
 
 class ElectromagneticSystem
 {
@@ -48,9 +65,17 @@ public:
     // 現段階では重心のLinearVelocityを点電荷速度として扱い、角速度や有限電荷分布は考慮しません。
     void ApplyMagneticFieldForces(Scene& scene) const;
 
-    // Scene内の点電荷ペアを直接法 O(n^2) で評価し、RigidBodyComponent::Forceへ蓄積します。
-    // 現段階では基礎実装の正しさを優先し、Barnes-Hut等の近似高速化は導入しません。
-    void ApplyCoulombForces(Scene& scene) const;
+    // Scene内の点電荷相互作用を選択中のCoulomb Solverで評価し、RigidBodyComponent::Forceへ蓄積します。
+    // Automaticではbody数にhysteresisを持たせ、閾値付近でDirect/Barnes-Hutが毎step反転することを防ぎます。
+    void ApplyCoulombForces(Scene& scene);
+
+    void SetCoulombSolverSelectionSettings(const CoulombSolverSelectionSettings& settings);
+    const CoulombSolverSelectionSettings& GetCoulombSolverSelectionSettings() const
+    {
+        return m_CoulombSolverSelectionSettings;
+    }
+
+    const ElectromagneticStatistics& GetStatistics() const { return m_Statistics; }
 
     void SetCoulombForceSettings(const CoulombForceSettings& settings)
     {
@@ -63,9 +88,15 @@ public:
     }
 
 private:
+    bool ShouldUseBarnesHut(std::size_t bodyCount);
+
     std::vector<const ElectricField*> m_ElectricFields;
     std::vector<const MagneticField*> m_MagneticFields;
     CoulombForceSettings m_CoulombForceSettings{};
+    CoulombSolverSelectionSettings m_CoulombSolverSelectionSettings{};
+    BarnesHutCoulombSolver m_BarnesHutCoulombSolver{};
+    bool m_AutomaticUsingBarnesHut = false;
+    ElectromagneticStatistics m_Statistics{};
 };
 
 } // namespace Raven::ph
