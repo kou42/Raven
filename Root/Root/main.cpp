@@ -26,6 +26,7 @@
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Fluid/Debug/FluidBuoyancyDebugOverlayLayer.h"
 #include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
+#include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -36,7 +37,6 @@
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
-#include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
@@ -64,19 +64,21 @@ int main(int argc, char* argv[])
     if (argc > 1)
     {
         const std::string backendArgument = argv[1];
-#ifdef _DEBUG
         // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
+#ifdef _DEBUG
         if (backendArgument == "--test-explicit-frame")
         {
             Raven::tests::RunExplicitSceneFrameSelfTests();
             std::cout << "Explicit Scene Frame self-tests passed.\n";
             return 0;
         }
+#endif
+        // 性能値を最適化構成でも比較できるよう、Astro benchmarkはDebug限定にしません。
+        // ApplicationやGPUを初期化せず、決定的なCPU入力だけを測定して終了します。
         if (backendArgument == "--benchmark-astro-gravity")
         {
             return Raven::ph::tests::RunAstroGravityBenchmark();
         }
-#endif
         if (backendArgument == "--backend=vulkan")
         {
             applicationBackend = Raven::RHIBackend::Vulkan;

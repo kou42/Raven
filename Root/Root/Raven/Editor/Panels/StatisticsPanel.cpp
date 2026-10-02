@@ -2,6 +2,8 @@
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Window.h"
+#include "Raven/Physics/Astro/AstroWorld.h"
+#include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Scene/Components.h"
@@ -49,6 +51,36 @@ struct CPUCounterAggregate
     double Max = 0.0;
     uint32_t SampleCount = 0u;
 };
+
+const char* GetAstroSolverKindName(ph::AstroGravitySolverKind kind)
+{
+    switch (kind)
+    {
+    case ph::AstroGravitySolverKind::Direct:
+        return "Direct";
+    case ph::AstroGravitySolverKind::BarnesHut:
+        return "Barnes-Hut";
+    case ph::AstroGravitySolverKind::Custom:
+        return "Custom";
+    default:
+        return "Unknown";
+    }
+}
+
+const char* GetAstroSolverModeName(ph::AstroGravitySolverMode mode)
+{
+    switch (mode)
+    {
+    case ph::AstroGravitySolverMode::Automatic:
+        return "Automatic";
+    case ph::AstroGravitySolverMode::Direct:
+        return "Direct";
+    case ph::AstroGravitySolverMode::BarnesHut:
+        return "Barnes-Hut";
+    default:
+        return "Unknown";
+    }
+}
 
 void BuildCPUProfileAggregates(
     const CPUProfileFrame& frame,
@@ -701,6 +733,38 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
             ImGui::Text("Warm Started Constraints: %u", solverStatistics.WarmStartedConstraintCount);
             ImGui::Text("Velocity Iterations: %u", solverStatistics.VelocityIterations);
             ImGui::Text("Max Penetration: %.5f", solverStatistics.MaxPenetration);
+
+            if (ImGui::TreeNodeEx("Astro Gravity", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                const ph::AstroWorld& astroWorld =
+                    scene->GetPhysicsSimulationWorld().GetAstroWorld();
+                const ph::AstroStatistics& astroStatistics = astroWorld.GetStatistics();
+                const ph::AstroGravitySolverSelectionSettings& selectionSettings =
+                    astroWorld.GetGravitySolverSelectionSettings();
+
+                // SolverKindは直近fixed-stepで実際に使われた値です。
+                // Modeと並べることでAutomaticがどちらへ解決されたかを直接確認できます。
+                ImGui::Text("Mode: %s", GetAstroSolverModeName(selectionSettings.Mode));
+                ImGui::Text("Active Solver: %s", GetAstroSolverKindName(astroStatistics.SolverKind));
+                ImGui::Text("Active Bodies: %llu",
+                    static_cast<unsigned long long>(astroStatistics.ActiveBodyCount));
+                ImGui::Text("Switch Up / Down: %llu / %llu",
+                    static_cast<unsigned long long>(selectionSettings.BarnesHutBodyThreshold),
+                    static_cast<unsigned long long>(selectionSettings.DirectBodyThreshold));
+                ImGui::Text("Barnes-Hut Theta: %.3f", selectionSettings.BarnesHutTheta);
+                ImGui::Text("State Collection: %.3f ms", astroStatistics.StateCollectionTimeMs);
+                ImGui::Text("Gravity Solve: %.3f ms", astroStatistics.GravitySolveTimeMs);
+                ImGui::Text("Octree Build: %.3f ms", astroStatistics.GravityTreeBuildTimeMs);
+                ImGui::Text("Force Feedback: %.3f ms", astroStatistics.ForceFeedbackTimeMs);
+                ImGui::Text("Force Evaluations: %llu",
+                    static_cast<unsigned long long>(astroStatistics.GravityForceEvaluationCount));
+                ImGui::Text("Node Visits: %llu",
+                    static_cast<unsigned long long>(astroStatistics.GravityVisitedNodeCount));
+                ImGui::Text("Aggregate Nodes: %llu",
+                    static_cast<unsigned long long>(
+                        astroStatistics.GravityAcceptedAggregateNodeCount));
+                ImGui::TreePop();
+            }
         }
     }
 

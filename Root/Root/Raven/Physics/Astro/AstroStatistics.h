@@ -5,8 +5,16 @@
 namespace Raven::ph
 {
 
+enum class AstroGravitySolverKind
+{
+    Direct,
+    BarnesHut,
+    Custom
+};
+
 struct AstroStatistics
 {
+    AstroGravitySolverKind SolverKind = AstroGravitySolverKind::Direct;
     std::uint64_t ActiveBodyCount = 0u;
     std::uint64_t GravityPairCandidateCount = 0u;
     std::uint64_t GravityForceEvaluationCount = 0u;
@@ -20,6 +28,7 @@ struct AstroStatistics
 
     void Clear()
     {
+        SolverKind = AstroGravitySolverKind::Direct;
         ActiveBodyCount = 0u;
         GravityPairCandidateCount = 0u;
         GravityForceEvaluationCount = 0u;

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #include "Raven/Physics/Astro/Gravity/BarnesHutGravitySolver.h"
@@ -15,6 +16,9 @@ namespace Raven::ph::tests
 {
 namespace
 {
+constexpr std::uint32_t kWarmupCount = 1u;
+constexpr std::uint32_t kMeasurementCount = 3u;
+
 struct BenchmarkResult
 {
     std::size_t BodyCount = 0u;
@@ -28,6 +32,14 @@ struct BenchmarkResult
     std::uint64_t AcceptedAggregateNodeCount = 0u;
     double MaximumRelativeForceError = 0.0;
     double AverageRelativeForceError = 0.0;
+};
+
+struct SolverMeasurement
+{
+    double SolveTimeMs = 0.0;
+    double TreeBuildTimeMs = 0.0;
+    std::vector<AstroVector3> Forces;
+    AstroStatistics Statistics{};
 };
 
 std::vector<AstroBodyState> CreateBenchmarkBodies(std::size_t bodyCount)
@@ -47,66 +59,95 @@ std::vector<AstroBodyState> CreateBenchmarkBodies(std::size_t bodyCount)
     return bodies;
 }
 
-BenchmarkResult RunCase(
-    std::size_t bodyCount,
-    double theta,
+double ComputeMedian(std::vector<double> samples)
+{
+    if (samples.empty() == true)
+    {
+        return 0.0;
+    }
+
+    std::sort(samples.begin(), samples.end());
+    return samples[samples.size() / 2u];
+}
+
+SolverMeasurement MeasureSolver(
+    const GravitySolver& solver,
+    const std::vector<AstroBodyState>& bodies,
     const GravitySolverSettings& settings)
 {
     using Clock = std::chrono::steady_clock;
 
-    const std::vector<AstroBodyState> bodies = CreateBenchmarkBodies(bodyCount);
-    DirectGravitySolver directSolver;
-    BarnesHutGravitySolver barnesHutSolver;
-    barnesHutSolver.SetTheta(theta);
+    std::vector<AstroVector3> forces;
+    for (std::uint32_t warmupIndex = 0u; warmupIndex < kWarmupCount; ++warmupIndex)
+    {
+        // 出力vector容量、Octree内部allocation、命令cacheの初回差を計測値から分離します。
+        solver.ComputeForces(bodies, settings, forces, nullptr);
+    }
 
-    std::vector<AstroVector3> directForces;
-    std::vector<AstroVector3> barnesHutForces;
-    AstroStatistics directStatistics{};
-    AstroStatistics barnesHutStatistics{};
+    std::vector<double> solveTimes;
+    std::vector<double> treeBuildTimes;
+    solveTimes.reserve(kMeasurementCount);
+    treeBuildTimes.reserve(kMeasurementCount);
 
-    const auto directBegin = Clock::now();
-    directSolver.ComputeForces(bodies, settings, directForces, &directStatistics);
-    const auto directEnd = Clock::now();
+    AstroStatistics statistics{};
+    for (std::uint32_t sampleIndex = 0u; sampleIndex < kMeasurementCount; ++sampleIndex)
+    {
+        statistics.Clear();
+        const auto begin = Clock::now();
+        solver.ComputeForces(bodies, settings, forces, &statistics);
+        const auto end = Clock::now();
 
-    const auto barnesHutBegin = Clock::now();
-    barnesHutSolver.ComputeForces(
-        bodies,
-        settings,
-        barnesHutForces,
-        &barnesHutStatistics);
-    const auto barnesHutEnd = Clock::now();
+        solveTimes.push_back(
+            std::chrono::duration<double, std::milli>(end - begin).count());
+        treeBuildTimes.push_back(statistics.GravityTreeBuildTimeMs);
+    }
 
+    SolverMeasurement measurement{};
+    measurement.SolveTimeMs = ComputeMedian(std::move(solveTimes));
+    measurement.TreeBuildTimeMs = ComputeMedian(std::move(treeBuildTimes));
+    measurement.Forces = std::move(forces);
+    measurement.Statistics = statistics;
+    return measurement;
+}
+
+BenchmarkResult BuildResult(
+    const std::vector<AstroBodyState>& bodies,
+    double theta,
+    const SolverMeasurement& directMeasurement,
+    const SolverMeasurement& barnesHutMeasurement)
+{
     double maximumRelativeError = 0.0;
     double relativeErrorSum = 0.0;
     std::uint64_t errorSampleCount = 0u;
     for (std::size_t i = 0u; i < bodies.size(); ++i)
     {
-        const double referenceMagnitude = directForces[i].Length();
+        const double referenceMagnitude = directMeasurement.Forces[i].Length();
         if (referenceMagnitude <= 1.0e-12)
         {
             continue;
         }
 
         const double relativeError =
-            (barnesHutForces[i] - directForces[i]).Length() / referenceMagnitude;
+            (barnesHutMeasurement.Forces[i] - directMeasurement.Forces[i]).Length()
+            / referenceMagnitude;
         maximumRelativeError = std::max(maximumRelativeError, relativeError);
         relativeErrorSum += relativeError;
         ++errorSampleCount;
     }
 
     BenchmarkResult result{};
-    result.BodyCount = bodyCount;
+    result.BodyCount = bodies.size();
     result.Theta = theta;
-    result.DirectSolveTimeMs =
-        std::chrono::duration<double, std::milli>(directEnd - directBegin).count();
-    result.BarnesHutSolveTimeMs =
-        std::chrono::duration<double, std::milli>(barnesHutEnd - barnesHutBegin).count();
-    result.TreeBuildTimeMs = barnesHutStatistics.GravityTreeBuildTimeMs;
-    result.DirectForceEvaluationCount = directStatistics.GravityForceEvaluationCount;
-    result.BarnesHutForceEvaluationCount = barnesHutStatistics.GravityForceEvaluationCount;
-    result.VisitedNodeCount = barnesHutStatistics.GravityVisitedNodeCount;
+    result.DirectSolveTimeMs = directMeasurement.SolveTimeMs;
+    result.BarnesHutSolveTimeMs = barnesHutMeasurement.SolveTimeMs;
+    result.TreeBuildTimeMs = barnesHutMeasurement.TreeBuildTimeMs;
+    result.DirectForceEvaluationCount =
+        directMeasurement.Statistics.GravityForceEvaluationCount;
+    result.BarnesHutForceEvaluationCount =
+        barnesHutMeasurement.Statistics.GravityForceEvaluationCount;
+    result.VisitedNodeCount = barnesHutMeasurement.Statistics.GravityVisitedNodeCount;
     result.AcceptedAggregateNodeCount =
-        barnesHutStatistics.GravityAcceptedAggregateNodeCount;
+        barnesHutMeasurement.Statistics.GravityAcceptedAggregateNodeCount;
     result.MaximumRelativeForceError = maximumRelativeError;
     if (errorSampleCount > 0u)
     {
@@ -141,13 +182,37 @@ int RunAstroGravityBenchmark()
     settings.GravitationalConstant = 1.0;
     settings.MinimumDistance = 1.0e-6;
 
+    std::cout
+        << "[Astro Benchmark] warmup=" << kWarmupCount
+        << " samples=" << kMeasurementCount
+        << " timing=median\n";
+
     // 10,000 bodyのDirectは約5千万pairです。通常Self Testには含めず、
     // --benchmark-astro-gravity を明示した場合だけ実行します。
-    for (const std::size_t bodyCount : { 100u, 1000u, 10000u })
+    // 基本規模にcrossover探索用の中間点を加え、DirectからBarnes-Hutへ
+    // 切り替えるbody数を同じ決定的配置のまま判断できるようにします。
+    for (const std::size_t bodyCount : { 100u, 1000u, 2000u, 3000u, 5000u, 10000u })
     {
+        const std::vector<AstroBodyState> bodies = CreateBenchmarkBodies(bodyCount);
+        DirectGravitySolver directSolver;
+        const SolverMeasurement directMeasurement = MeasureSolver(
+            directSolver,
+            bodies,
+            settings);
+
         for (const double theta : { 0.25, 0.5, 0.75 })
         {
-            PrintResult(RunCase(bodyCount, theta, settings));
+            BarnesHutGravitySolver barnesHutSolver;
+            barnesHutSolver.SetTheta(theta);
+            const SolverMeasurement barnesHutMeasurement = MeasureSolver(
+                barnesHutSolver,
+                bodies,
+                settings);
+            PrintResult(BuildResult(
+                bodies,
+                theta,
+                directMeasurement,
+                barnesHutMeasurement));
         }
     }
     return 0;

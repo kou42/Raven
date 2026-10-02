@@ -35,11 +35,6 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
     using Clock = std::chrono::steady_clock;
     const auto collectionBegin = Clock::now();
 
-    if (m_GravitySolver == nullptr)
-    {
-        return;
-    }
-
     for (auto [entity, transform, rigidBody, celestialBody]
         : scene.View<TransformComponent, RigidBodyComponent, CelestialBodyComponent>())
     {
@@ -49,7 +44,7 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         }
 
         AstroBodyState state{};
-        state.Entity = entity;
+        state.Entity = entity.GetHandle();
         state.Position = AstroVector3(transform.Position);
         state.Velocity = AstroVector3(rigidBody.LinearVelocity);
         state.Mass = static_cast<double>(rigidBody.Mass);
@@ -63,12 +58,32 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
     m_Statistics.StateCollectionTimeMs =
         std::chrono::duration<double, std::milli>(collectionEnd - collectionBegin).count();
 
+    GravitySolver* gravitySolver = ResolveGravitySolver(m_Bodies.size());
+    if (gravitySolver == nullptr)
+    {
+        return;
+    }
+
     // 診断値はSolver実行前の同一snapshotから計算し、Force計算との時刻ずれを避けます。
     // 診断計算はGravity Solverの性能値へ混ぜず、Solver単体の増加傾向を追えるようにします。
     m_LastDiagnostics = OrbitalDiagnosticsCalculator::Compute(m_Bodies, m_Settings);
     const auto solveBegin = Clock::now();
-    m_GravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
+    gravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
     const auto solveEnd = Clock::now();
+    // Custom Solverが受け取ったStatisticsを初期化しても、実際に選択した種別は
+    // AstroWorld境界の診断値として必ず復元します。
+    if (gravitySolver == &m_BarnesHutGravitySolver)
+    {
+        m_Statistics.SolverKind = AstroGravitySolverKind::BarnesHut;
+    }
+    else if (gravitySolver == &m_DirectGravitySolver)
+    {
+        m_Statistics.SolverKind = AstroGravitySolverKind::Direct;
+    }
+    else
+    {
+        m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
+    }
     m_Statistics.GravitySolveTimeMs =
         std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
     if (m_Forces.size() != m_Bodies.size())
@@ -124,8 +139,92 @@ void AstroWorld::Clear()
 
 void AstroWorld::SetGravitySolver(GravitySolver* solver)
 {
-    // nullptrは「Direct Solverへ戻す」と解釈し、Worldを無効状態へ残しません。
-    m_GravitySolver = solver != nullptr ? solver : &m_DirectGravitySolver;
+    // 外部Solverは非所有です。呼び出し側はAstroWorldより長いLifetimeを保証する必要があります。
+    // nullptrは従来どおり「Direct Solverへ戻す」と解釈し、自動選択には暗黙で戻しません。
+    m_CustomGravitySolver = solver;
+    if (solver != nullptr)
+    {
+        m_GravitySolver = solver;
+        return;
+    }
+
+    m_SolverSelectionSettings.Mode = AstroGravitySolverMode::Direct;
+    m_GravitySolver = &m_DirectGravitySolver;
+}
+
+void AstroWorld::SetGravitySolverSelectionSettings(
+    const AstroGravitySolverSelectionSettings& settings)
+{
+    m_SolverSelectionSettings = settings;
+    if (std::isfinite(m_SolverSelectionSettings.BarnesHutTheta) == false
+        || m_SolverSelectionSettings.BarnesHutTheta <= 0.0)
+    {
+        // 不正なthetaで全Forceがゼロになることを防ぎ、検証済みの標準値へ戻します。
+        m_SolverSelectionSettings.BarnesHutTheta = 0.5;
+    }
+    if (m_SolverSelectionSettings.DirectBodyThreshold
+        > m_SolverSelectionSettings.BarnesHutBodyThreshold)
+    {
+        // 下側閾値が上側を超えると同じbody数で選択が反転し得るため、上側へClampします。
+        m_SolverSelectionSettings.DirectBodyThreshold =
+            m_SolverSelectionSettings.BarnesHutBodyThreshold;
+    }
+
+    // 明示設定を適用した時点で、非所有Custom Solverのoverrideを解除します。
+    m_CustomGravitySolver = nullptr;
+    m_AutomaticUsingBarnesHut = false;
+    if (m_SolverSelectionSettings.Mode == AstroGravitySolverMode::BarnesHut)
+    {
+        m_BarnesHutGravitySolver.SetTheta(m_SolverSelectionSettings.BarnesHutTheta);
+        m_GravitySolver = &m_BarnesHutGravitySolver;
+    }
+    else
+    {
+        // Automaticは次の状態収集までbody数が未確定なので、Directを安全な初期状態にします。
+        m_GravitySolver = &m_DirectGravitySolver;
+    }
+}
+
+const AstroGravitySolverSelectionSettings& AstroWorld::GetGravitySolverSelectionSettings() const
+{
+    return m_SolverSelectionSettings;
+}
+
+GravitySolver* AstroWorld::ResolveGravitySolver(std::size_t bodyCount)
+{
+    if (m_CustomGravitySolver != nullptr)
+    {
+        m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
+        m_GravitySolver = m_CustomGravitySolver;
+        return m_GravitySolver;
+    }
+
+    bool useBarnesHut = m_SolverSelectionSettings.Mode == AstroGravitySolverMode::BarnesHut;
+    if (m_SolverSelectionSettings.Mode == AstroGravitySolverMode::Automatic)
+    {
+        if (m_AutomaticUsingBarnesHut == true)
+        {
+            // 一度Barnes-Hutへ切り替えた後は下側閾値未満まで維持し、
+            // spawn/despawnで上側閾値付近を往復しても毎step反転しないようにします。
+            useBarnesHut = bodyCount >= m_SolverSelectionSettings.DirectBodyThreshold;
+        }
+        else
+        {
+            useBarnesHut = bodyCount >= m_SolverSelectionSettings.BarnesHutBodyThreshold;
+        }
+        m_AutomaticUsingBarnesHut = useBarnesHut;
+    }
+    if (useBarnesHut == true)
+    {
+        m_BarnesHutGravitySolver.SetTheta(m_SolverSelectionSettings.BarnesHutTheta);
+        m_Statistics.SolverKind = AstroGravitySolverKind::BarnesHut;
+        m_GravitySolver = &m_BarnesHutGravitySolver;
+        return m_GravitySolver;
+    }
+
+    m_Statistics.SolverKind = AstroGravitySolverKind::Direct;
+    m_GravitySolver = &m_DirectGravitySolver;
+    return m_GravitySolver;
 }
 
 } // namespace Raven::ph

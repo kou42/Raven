@@ -43,6 +43,14 @@ Entity CreateCelestialBody(
     rigidBody.LinearDamping = 0.0f;
     rigidBody.AngularDamping = 0.0f;
     entity.AddComponent<RigidBodyComponent>(rigidBody);
+
+    // AstroWorldはForceの生成までを担当し、速度積分は通常のRigid経路へ委譲します。
+    // PhysicsWorldの積分対象となる完全なRigid Entityにするため、衝突しない十分小さい球を付与します。
+    ColliderComponent collider{};
+    collider.Type = ColliderType::Sphere;
+    collider.Radius = 0.1f;
+    entity.AddComponent<ColliderComponent>(collider);
+
     entity.AddComponent<CelestialBodyComponent>(CelestialBodyComponent{});
     return entity;
 }
@@ -280,6 +288,67 @@ void RunAstroWorldSelfTests()
         assert(benchmarkStatistics.GravityPairCandidateCount == expectedPairCount);
         assert(benchmarkStatistics.GravityForceEvaluationCount == expectedPairCount);
     }
+
+    // Automaticは収集後の有効Astro body数でSolverを選択します。
+    // 小さい閾値を使い、上側境界でBarnes-Hutへ切り替わった後は下側境界まで維持する
+    // hysteresis契約を確認します。
+    Scene solverSelectionScene;
+    AstroWorld solverSelectionWorld;
+    AstroGravitySolverSelectionSettings selectionSettings{};
+    selectionSettings.BarnesHutBodyThreshold = 3u;
+    selectionSettings.DirectBodyThreshold = 2u;
+    selectionSettings.BarnesHutTheta = 0.5;
+    solverSelectionWorld.SetGravitySolverSelectionSettings(selectionSettings);
+
+    Entity selectionBodyA = CreateCelestialBody(
+        solverSelectionScene, "Solver Selection A", { 0.0f, 0.0f, 0.0f }, 1.0f);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::Direct);
+
+    Entity selectionBodyB = CreateCelestialBody(
+        solverSelectionScene, "Solver Selection B", { 2.0f, 0.0f, 0.0f }, 1.0f);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::Direct);
+
+    Entity selectionBodyC = CreateCelestialBody(
+        solverSelectionScene, "Solver Selection C", { 4.0f, 0.0f, 0.0f }, 1.0f);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::BarnesHut);
+
+    solverSelectionScene.DestroyEntity(selectionBodyC);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::BarnesHut);
+
+    solverSelectionScene.DestroyEntity(selectionBodyB);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::Direct);
+
+    // 強制Modeと既存Custom Solver APIはAutomaticとは独立して選択できます。
+    selectionSettings.Mode = AstroGravitySolverMode::Direct;
+    solverSelectionWorld.SetGravitySolverSelectionSettings(selectionSettings);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::Direct);
+
+    DirectGravitySolver customSolver;
+    solverSelectionWorld.SetGravitySolver(&customSolver);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::Custom);
+    solverSelectionWorld.SetGravitySolver(nullptr);
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::Direct);
+
+    selectionSettings.Mode = AstroGravitySolverMode::BarnesHut;
+    selectionSettings.DirectBodyThreshold = selectionSettings.BarnesHutBodyThreshold + 1u;
+    selectionSettings.BarnesHutTheta = 0.0;
+    solverSelectionWorld.SetGravitySolverSelectionSettings(selectionSettings);
+    assert(solverSelectionWorld.GetGravitySolverSelectionSettings().DirectBodyThreshold
+        == selectionSettings.BarnesHutBodyThreshold);
+    assert(NearlyEqual(
+        static_cast<float>(solverSelectionWorld.GetGravitySolverSelectionSettings().BarnesHutTheta),
+        0.5f));
+    solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
+    assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::BarnesHut);
+    static_cast<void>(selectionBodyA);
 
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;

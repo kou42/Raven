@@ -16,6 +16,7 @@
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Scene/SceneCameraSystem.h"
+#include "Raven/Scene/SceneGamePreparation.h"
 #include "Raven/UI/Screens/HUDScreen.h"
 #include "Raven/UI/Screens/PauseScreen.h"
 #include "Raven/UI/Screens/SettingsScreen.h"
