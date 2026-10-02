@@ -10,6 +10,7 @@
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
 #include "Raven/Physics/Electromagnetism/Spatial/CoulombOctree.h"
+#include "Raven/Physics/Astro/CelestialBody.h"
 #include "Raven/Physics/Field/GravityField.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -314,6 +315,31 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(magneticFieldFarAway.y, magneticFieldAtOrigin.y));
     assert(NearlyEqual(magneticFieldFarAway.z, magneticFieldAtOrigin.z));
 
+    // z軸向きの磁気双極子は、軸上では+z、赤道面では-zの磁場を作ります。
+    // 軸上の磁場強度は赤道面の2倍になり、距離を2倍にすると1/8へ減衰します。
+    const DipoleMagneticField dipoleMagneticField(
+        { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
+    const math::Vec3 dipoleAxisField =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 1.0f });
+    const math::Vec3 dipoleEquatorField =
+        dipoleMagneticField.Evaluate({ 1.0f, 0.0f, 0.0f });
+    const math::Vec3 dipoleAxisFieldAtTwoMeters =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 2.0f });
+    assert(dipoleAxisField.z > 0.0f);
+    assert(dipoleEquatorField.z < 0.0f);
+    assert(NearlyEqual(dipoleAxisField.z / -dipoleEquatorField.z, 2.0f, 1.0e-3f));
+    assert(NearlyEqual(dipoleAxisFieldAtTwoMeters.z / dipoleAxisField.z, 0.125f, 1.0e-3f));
+
+    // 双極子中心は方向が定義できないためゼロを返し、MinimumDistance内では有限値を維持します。
+    const math::Vec3 dipoleCenterField =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 0.0f });
+    const math::Vec3 dipoleSoftenedField =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 0.05f });
+    assert(dipoleCenterField.LengthSq() <= 1.0e-12f);
+    assert(std::isfinite(dipoleSoftenedField.x));
+    assert(std::isfinite(dipoleSoftenedField.y));
+    assert(std::isfinite(dipoleSoftenedField.z));
+
     const math::Vec3 positiveMagneticForce = ComputeMagneticForce(
         2.0, { 3.0f, 0.0f, 0.0f }, magneticFieldAtOrigin);
     const math::Vec3 negativeMagneticForce = ComputeMagneticForce(
@@ -430,6 +456,161 @@ void RunElectromagnetismSelfTests()
     assert(magneticSystem.ContainsMagneticField(integratedMagneticField) == true);
     magneticSystem.ClearMagneticFields();
     assert(magneticSystem.GetRegisteredMagneticFieldCount() == 0u);
+
+    // DipoleMagneticFieldも既存の非所有Registryからfixed-stepへ入り、Lorentz力として積分されます。
+    DipoleMagneticField integratedDipoleField(
+        { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
+    Scene dipoleScene;
+    ElectromagneticSystem& dipoleSystem =
+        dipoleScene.GetPhysicsSimulationWorld().GetElectromagneticSystem();
+    assert(dipoleSystem.RegisterMagneticField(integratedDipoleField) == true);
+    Entity dipoleCharge = CreateChargedSphere(
+        dipoleScene, "Dipole Magnetic Field Charge", { 1.0f, 0.0f, 0.0f }, 2.0);
+    RigidBodyComponent& dipoleBody = dipoleCharge.GetComponent<RigidBodyComponent>();
+    dipoleBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
+    dipoleBody.LinearDamping = 0.0f;
+    dipoleBody.AngularDamping = 0.0f;
+
+    const math::Vec3 dipoleFieldAtBody = integratedDipoleField.Evaluate({ 1.0f, 0.0f, 0.0f });
+    const math::Vec3 expectedDipoleForce =
+        ComputeMagneticForce(2.0, dipoleBody.LinearVelocity, dipoleFieldAtBody);
+    dipoleScene.GetPhysicsSimulationWorld().StepSimulation(dipoleScene, fixedDeltaTime);
+    assert(NearlyEqual(
+        dipoleBody.LinearVelocity.x,
+        expectedDipoleForce.x * fixedDeltaTime,
+        1.0e-4f));
+    assert(NearlyEqual(dipoleBody.LinearVelocity.y, 1.0f, 1.0e-4f));
+    assert(dipoleBody.Force.LengthSq() <= 1.0e-12f);
+    assert(dipoleSystem.UnregisterMagneticField(integratedDipoleField) == true);
+
+    // Phase 7の外力合成契約を検証します。Astro重力・Electric・Magnetic・Coulombは
+    // いずれもRigid積分前の同じForce accumulatorへ加算され、優先順位を持ちません。
+    Scene combinedForceScene;
+    PhysicsSimulationWorld& combinedSimulationWorld =
+        combinedForceScene.GetPhysicsSimulationWorld();
+    AstroGravitySolverSelectionSettings combinedGravitySelection{};
+    combinedGravitySelection.Mode = AstroGravitySolverMode::Direct;
+    combinedSimulationWorld.GetAstroWorld().SetGravitySolverSelectionSettings(combinedGravitySelection);
+    GravitySolverSettings combinedGravitySettings{};
+    combinedGravitySettings.GravitationalConstant = 1.0;
+    combinedGravitySettings.MinimumDistance = 0.01;
+    combinedSimulationWorld.GetAstroWorld().SetGravitySolverSettings(combinedGravitySettings);
+
+    UniformElectricField combinedElectricField({ 0.0f, 2.0f, 0.0f });
+    UniformMagneticField combinedMagneticField({ 0.0f, 0.0f, 1.0f });
+    ElectromagneticSystem& combinedElectromagneticSystem =
+        combinedSimulationWorld.GetElectromagneticSystem();
+    assert(combinedElectromagneticSystem.RegisterElectricField(combinedElectricField) == true);
+    assert(combinedElectromagneticSystem.RegisterMagneticField(combinedMagneticField) == true);
+    CoulombForceSettings combinedCoulombSettings{};
+    combinedCoulombSettings.CoulombConstant = 1.0;
+    combinedCoulombSettings.MinimumDistance = 0.01f;
+    combinedElectromagneticSystem.SetCoulombForceSettings(combinedCoulombSettings);
+
+    Entity combinedA = CreateChargedSphere(
+        combinedForceScene, "Combined Force A", { 0.0f, 0.0f, 0.0f }, 1.0);
+    Entity combinedB = CreateChargedSphere(
+        combinedForceScene, "Combined Force B", { 2.0f, 0.0f, 0.0f }, 1.0);
+    RigidBodyComponent& combinedBodyA = combinedA.GetComponent<RigidBodyComponent>();
+    RigidBodyComponent& combinedBodyB = combinedB.GetComponent<RigidBodyComponent>();
+    combinedBodyA.LinearVelocity = { 1.0f, 0.0f, 0.0f };
+    combinedBodyB.LinearVelocity = { 1.0f, 0.0f, 0.0f };
+    combinedBodyA.LinearDamping = 0.0f;
+    combinedBodyB.LinearDamping = 0.0f;
+    combinedBodyA.AngularDamping = 0.0f;
+    combinedBodyB.AngularDamping = 0.0f;
+    combinedA.AddComponent<CelestialBodyComponent>(CelestialBodyComponent{});
+    combinedB.AddComponent<CelestialBodyComponent>(CelestialBodyComponent{});
+
+    // mass=1, G=1, r=2なのでGravityはAへ+xに0.25、Coulombは同符号なので-xに0.25で相殺します。
+    // Electricは+yに2、v=(1,0,0), B=(0,0,1)のLorentz力は-yに1なので、合成加速度は+yに1です。
+    combinedSimulationWorld.StepSimulation(combinedForceScene, fixedDeltaTime);
+    assert(NearlyEqual(combinedBodyA.LinearVelocity.x, 1.0f, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyA.LinearVelocity.y, fixedDeltaTime, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyA.LinearVelocity.z, 0.0f, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyB.LinearVelocity.x, 1.0f, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyB.LinearVelocity.y, fixedDeltaTime, 1.0e-4f));
+    assert(combinedBodyA.Force.LengthSq() <= 1.0e-12f);
+    assert(combinedBodyB.Force.LengthSq() <= 1.0e-12f);
+
+    // 天体Dipole BindingはEntityのworld位置とlocal-space磁気モーメントの回転を
+    // Magnetic Force評価直前にFieldへ同期します。表示Scaleは磁気モーメントへ影響させません。
+    Scene movingDipoleScene;
+    PhysicsSimulationWorld& movingDipoleWorld = movingDipoleScene.GetPhysicsSimulationWorld();
+    Entity dipoleSource = movingDipoleScene.CreateEntity("Moving Dipole Source");
+    TransformComponent& dipoleSourceTransform = dipoleSource.GetComponent<TransformComponent>();
+    dipoleSourceTransform.Position = { 3.0f, 4.0f, 5.0f };
+    dipoleSourceTransform.Rotation = { 0.0f, 0.0f, 1.57079632679f };
+    dipoleSourceTransform.Scale = { 10.0f, 20.0f, 30.0f };
+
+    DipoleMagneticField movingDipoleField;
+    CelestialDipoleMagneticFieldBinding movingDipoleBinding{};
+    movingDipoleBinding.SourceEntity = dipoleSource.GetHandle();
+    movingDipoleBinding.TargetField = &movingDipoleField;
+    movingDipoleBinding.LocalDipoleMoment = { 2.0f, 0.0f, 0.0f };
+    assert(movingDipoleWorld.RegisterCelestialDipoleMagneticFieldBinding(movingDipoleBinding) == true);
+    assert(movingDipoleWorld.RegisterCelestialDipoleMagneticFieldBinding(movingDipoleBinding) == false);
+    assert(movingDipoleWorld.GetCelestialDipoleMagneticFieldBindingCount() == 1u);
+    assert(movingDipoleWorld.GetElectromagneticSystem().RegisterMagneticField(movingDipoleField) == true);
+
+    movingDipoleWorld.StepSimulation(movingDipoleScene, fixedDeltaTime);
+    assert(NearlyEqual(movingDipoleField.GetCenter().x, 3.0f));
+    assert(NearlyEqual(movingDipoleField.GetCenter().y, 4.0f));
+    assert(NearlyEqual(movingDipoleField.GetCenter().z, 5.0f));
+    assert(NearlyEqual(movingDipoleField.GetDipoleMoment().x, 0.0f, 1.0e-4f));
+    assert(NearlyEqual(movingDipoleField.GetDipoleMoment().y, 2.0f, 1.0e-4f));
+    assert(NearlyEqual(movingDipoleField.GetDipoleMoment().z, 0.0f, 1.0e-4f));
+    movingDipoleScene.DestroyEntity(dipoleSource);
+    movingDipoleWorld.StepSimulation(movingDipoleScene, fixedDeltaTime);
+    assert(movingDipoleField.GetDipoleMoment().LengthSq() <= 1.0e-12f);
+    assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == true);
+    assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == false);
+    assert(movingDipoleWorld.GetElectromagneticSystem().UnregisterMagneticField(movingDipoleField) == true);
+
+    // 天体姿勢の変更が次fixed-stepのLorentz力へ反映されることまで統合検証します。
+    // local +Z momentを初回はworld +Z、X軸90度回転後はworld -Yへ向けます。
+    Scene orbitingChargeScene;
+    PhysicsSimulationWorld& orbitingChargeWorld = orbitingChargeScene.GetPhysicsSimulationWorld();
+    Entity rotatingMagneticBody = orbitingChargeScene.CreateEntity("Rotating Magnetic Body");
+    TransformComponent& rotatingMagneticTransform =
+        rotatingMagneticBody.GetComponent<TransformComponent>();
+    rotatingMagneticTransform.Position = { 0.0f, 0.0f, 0.0f };
+
+    DipoleMagneticField rotatingDipoleField(
+        { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
+    CelestialDipoleMagneticFieldBinding rotatingDipoleBinding{};
+    rotatingDipoleBinding.SourceEntity = rotatingMagneticBody.GetHandle();
+    rotatingDipoleBinding.TargetField = &rotatingDipoleField;
+    rotatingDipoleBinding.LocalDipoleMoment = { 0.0f, 0.0f, 1.0e7f };
+    assert(orbitingChargeWorld.RegisterCelestialDipoleMagneticFieldBinding(rotatingDipoleBinding) == true);
+    assert(orbitingChargeWorld.GetElectromagneticSystem().RegisterMagneticField(rotatingDipoleField) == true);
+
+    Entity orbitingCharge = CreateChargedSphere(
+        orbitingChargeScene, "Orbiting Test Charge", { 1.0f, 0.0f, 0.0f }, 1.0);
+    RigidBodyComponent& orbitingBody = orbitingCharge.GetComponent<RigidBodyComponent>();
+    orbitingBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
+    orbitingBody.LinearDamping = 0.0f;
+    orbitingBody.AngularDamping = 0.0f;
+
+    orbitingChargeWorld.StepSimulation(orbitingChargeScene, fixedDeltaTime);
+    const float firstStepVelocityX = orbitingBody.LinearVelocity.x;
+    assert(firstStepVelocityX < 0.0f);
+
+    // Rigid積分でCharge位置も変化するため、Field方向だけを比較できるよう初期状態へ戻します。
+    orbitingCharge.GetComponent<TransformComponent>().Position = { 1.0f, 0.0f, 0.0f };
+    orbitingBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
+    rotatingMagneticTransform.Rotation = { 1.57079632679f, 0.0f, 0.0f };
+    orbitingChargeWorld.StepSimulation(orbitingChargeScene, fixedDeltaTime);
+
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().x, 0.0f, 1.0e-3f));
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().y, -1.0e7f, 1.0f));
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().z, 0.0f, 1.0f));
+    assert(NearlyEqual(orbitingBody.LinearVelocity.x, 0.0f, 1.0e-4f));
+    assert(NearlyEqual(orbitingBody.LinearVelocity.y, 1.0f, 1.0e-4f));
+    assert(orbitingBody.LinearVelocity.z < 0.0f);
+
+    assert(orbitingChargeWorld.GetElectromagneticSystem().UnregisterMagneticField(rotatingDipoleField) == true);
+    assert(orbitingChargeWorld.UnregisterCelestialDipoleMagneticFieldBinding(rotatingDipoleField) == true);
 
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
