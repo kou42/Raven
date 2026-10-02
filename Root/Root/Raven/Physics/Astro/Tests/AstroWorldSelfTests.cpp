@@ -680,6 +680,14 @@ void RunAstroWorldSelfTests()
     assert(std::abs(smoothFarWorld.GetStatistics().FarGravityTransitionAlpha - 1.0) < 1.0e-12);
     assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 1.5f));
 
+    // Near/Far境界を跨ぐ強制solveでは旧Far成分を補間せず、分類変更を即時反映します。
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<TransformComponent>().Position.x = 0.5f;
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(smoothFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == false);
+
     smoothFarSettings.FarGravityTransitionSteps = 0u;
     smoothFarWorld.SetMultiRateSettings(smoothFarSettings);
     assert(smoothFarWorld.GetMultiRateSettings().FarGravityTransitionSteps == 1u);
