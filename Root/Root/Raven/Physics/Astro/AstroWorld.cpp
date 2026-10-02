@@ -271,7 +271,7 @@ void AstroWorld::SetMultiRateSettings(const AstroMultiRateSettings& settings)
 bool AstroWorld::CanReuseCachedGravityForces() const
 {
     if (m_CachedGravityForces.size() != m_Bodies.size()
-        || m_CachedGravityBodyEntities.size() != m_Bodies.size())
+        || m_CachedGravityBodies.size() != m_Bodies.size())
     {
         return false;
     }
@@ -280,8 +280,15 @@ bool AstroWorld::CanReuseCachedGravityForces() const
     // IndexだけでなくGenerationを含むEntityHandleでsnapshot対応を検証します。
     for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
     {
-        if (m_CachedGravityBodyEntities[i] != m_Bodies[i].Entity)
+        const AstroBodyState& cachedBody = m_CachedGravityBodies[i];
+        const AstroBodyState& currentBody = m_Bodies[i];
+        if (cachedBody.Entity != currentBody.Entity
+            || cachedBody.Mass != currentBody.Mass
+            || cachedBody.GenerateGravity != currentBody.GenerateGravity
+            || cachedBody.ReceiveGravity != currentBody.ReceiveGravity)
         {
+            // Position/Velocityは意図的に比較しません。そこを固定して再利用すること自体が
+            // Multi-rate近似であり、質量や参加flagの変更だけは即時solveを要求します。
             return false;
         }
     }
@@ -291,16 +298,12 @@ bool AstroWorld::CanReuseCachedGravityForces() const
 void AstroWorld::CacheGravityForces()
 {
     m_CachedGravityForces = m_Forces;
-    m_CachedGravityBodyEntities.resize(m_Bodies.size());
-    for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
-    {
-        m_CachedGravityBodyEntities[i] = m_Bodies[i].Entity;
-    }
+    m_CachedGravityBodies = m_Bodies;
 }
 
 void AstroWorld::InvalidateGravityForceCache()
 {
-    m_CachedGravityBodyEntities.clear();
+    m_CachedGravityBodies.clear();
     m_CachedGravityForces.clear();
     m_StepsSinceGravitySolve = 0u;
 }
