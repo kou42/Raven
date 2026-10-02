@@ -29,6 +29,8 @@ struct AstroStatistics
     double MaximumGravityForceRelativeError = 0.0;
     double MeanGravityForceRelativeError = 0.0;
     double MaximumGravityAccelerationError = 0.0;
+    bool AdaptiveFarGravityIntervalChanged = false;
+    std::uint32_t CurrentFarGravityUpdateIntervalSteps = 1u;
 
     double StateCollectionTimeMs = 0.0;
     double GravityTreeBuildTimeMs = 0.0;
@@ -52,6 +54,8 @@ struct AstroStatistics
         MaximumGravityForceRelativeError = 0.0;
         MeanGravityForceRelativeError = 0.0;
         MaximumGravityAccelerationError = 0.0;
+        AdaptiveFarGravityIntervalChanged = false;
+        CurrentFarGravityUpdateIntervalSteps = 1u;
         StateCollectionTimeMs = 0.0;
         GravityTreeBuildTimeMs = 0.0;
         GravitySolveTimeMs = 0.0;
