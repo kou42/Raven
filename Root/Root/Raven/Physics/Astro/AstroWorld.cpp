@@ -128,21 +128,21 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
     }
     else
     {
-    const std::uint32_t interval = m_MultiRateSettings.GravityUpdateIntervalSteps;
-    const bool intervalElapsed =
-        interval <= 1u || m_StepsSinceGravitySolve >= (interval - 1u);
-    const bool reuseCachedForces =
-        intervalElapsed == false && CanReuseCachedGravityForces();
+        const std::uint32_t interval = m_MultiRateSettings.GravityUpdateIntervalSteps;
+        const bool intervalElapsed =
+            interval <= 1u || m_StepsSinceGravitySolve >= (interval - 1u);
+        const bool reuseCachedForces =
+            intervalElapsed == false && CanReuseCachedGravityForces();
 
-    if (reuseCachedForces == true)
-    {
-        m_Forces = m_CachedGravityForces;
-        ++m_StepsSinceGravitySolve;
-        m_Statistics.CachedGravityForceUsed = true;
-    }
-    else
-    {
-        const auto solveBegin = Clock::now();
+        if (reuseCachedForces == true)
+        {
+            m_Forces = m_CachedGravityForces;
+            ++m_StepsSinceGravitySolve;
+            m_Statistics.CachedGravityForceUsed = true;
+        }
+        else
+        {
+            const auto solveBegin = Clock::now();
         gravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
         const auto solveEnd = Clock::now();
 
@@ -164,8 +164,8 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
             std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
         m_Statistics.GravitySolveExecuted = true;
         m_StepsSinceGravitySolve = 0u;
-        CacheGravityForces();
-    }
+            CacheGravityForces();
+        }
     }
     if (m_Forces.size() != m_Bodies.size())
     {
@@ -357,9 +357,33 @@ bool AstroWorld::CanReuseCachedGravityForces() const
             || cachedBody.GenerateGravity != currentBody.GenerateGravity
             || cachedBody.ReceiveGravity != currentBody.ReceiveGravity)
         {
-            // Position/Velocityは意図的に比較しません。そこを固定して再利用すること自体が
-            // Multi-rate近似であり、質量や参加flagの変更だけは即時solveを要求します。
+            // Position/Velocityは通常のMulti-rateでは意図的に比較しません。質量や参加flagの
+            // 変更だけはForceの意味自体が変わるため即時solveを要求します。
             return false;
+        }
+    }
+
+    if (IsNearFarMultiRateEnabled() == true)
+    {
+        const double nearDistanceSquared =
+            m_MultiRateSettings.NearGravityDistance * m_MultiRateSettings.NearGravityDistance;
+        for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+        {
+            for (std::size_t j = i + 1u; j < m_Bodies.size(); ++j)
+            {
+                const bool cachedNear =
+                    (m_CachedGravityBodies[j].Position - m_CachedGravityBodies[i].Position)
+                        .LengthSq() <= nearDistanceSquared;
+                const bool currentNear =
+                    (m_Bodies[j].Position - m_Bodies[i].Position).LengthSq()
+                        <= nearDistanceSquared;
+                if (cachedNear != currentNear)
+                {
+                    // Far cacheに含まれていたpairがNearへ入る（または逆）stepで古い成分を
+                    // 足し引きすると二重加算/欠落になるため、LOD境界横断時だけ即時更新します。
+                    return false;
+                }
+            }
         }
     }
     return true;
