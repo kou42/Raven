@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "Raven/Physics/Astro/Gravity/BarnesHutGravitySolver.h"
@@ -24,6 +25,14 @@ enum class AstroGravitySolverMode
 // 重力定数などの物理法則とは独立した、RuntimeのSolver選択設定です。
 // Automaticの既定値はRelease benchmarkの実測結果に基づき、1,000 bodyから
 // theta=0.5のBarnes-Hutへ切り替え、800 body未満へ減るまで維持します。
+struct AstroMultiRateSettings
+{
+    // 1なら従来どおり毎fixed-stepでGravity Solverを実行します。
+    // N (> 1)ならsolve間のstepでは前回Forceを再利用し、Barnes-Hut近似誤差とは独立に
+    // 更新頻度低下の影響を測定できるようにします。
+    std::uint32_t GravityUpdateIntervalSteps = 1u;
+};
+
 struct AstroGravitySolverSelectionSettings
 {
     AstroGravitySolverMode Mode = AstroGravitySolverMode::Automatic;
@@ -48,13 +57,19 @@ public:
         const AstroGravitySolverSelectionSettings& settings);
     const AstroGravitySolverSelectionSettings& GetGravitySolverSelectionSettings() const;
 
-    void SetGravitySolverSettings(const GravitySolverSettings& settings) { m_Settings = settings; }
+    void SetGravitySolverSettings(const GravitySolverSettings& settings);
     const GravitySolverSettings& GetGravitySolverSettings() const { return m_Settings; }
+
+    void SetMultiRateSettings(const AstroMultiRateSettings& settings);
+    const AstroMultiRateSettings& GetMultiRateSettings() const { return m_MultiRateSettings; }
     const OrbitalDiagnostics& GetLastDiagnostics() const { return m_LastDiagnostics; }
     const AstroStatistics& GetStatistics() const { return m_Statistics; }
 
 private:
     GravitySolver* ResolveGravitySolver(std::size_t bodyCount);
+    bool CanReuseCachedGravityForces() const;
+    void CacheGravityForces();
+    void InvalidateGravityForceCache();
 
     DirectGravitySolver m_DirectGravitySolver{};
     BarnesHutGravitySolver m_BarnesHutGravitySolver{};
@@ -64,8 +79,12 @@ private:
     AstroGravitySolverSelectionSettings m_SolverSelectionSettings{};
     bool m_AutomaticUsingBarnesHut = false;
     GravitySolverSettings m_Settings{};
+    AstroMultiRateSettings m_MultiRateSettings{};
+    std::uint32_t m_StepsSinceGravitySolve = 0u;
     std::vector<AstroBodyState> m_Bodies;
     std::vector<AstroVector3> m_Forces;
+    std::vector<EntityHandle> m_CachedGravityBodyEntities;
+    std::vector<AstroVector3> m_CachedGravityForces;
     OrbitalDiagnostics m_LastDiagnostics{};
     AstroStatistics m_Statistics{};
 };
