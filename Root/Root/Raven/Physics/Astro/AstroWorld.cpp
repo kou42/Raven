@@ -121,14 +121,43 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
                 m_FarGravityTransitionStep = 0u;
             }
 
+            const std::vector<AstroVector3> previousFarGravityForces =
+                m_CachedFarGravityForces;
             m_CachedFarGravityForces.resize(m_Bodies.size());
+            double maximumFarForceRelativeChange = 0.0;
+            bool farForceRelativeChangeMeasured =
+                previousFarGravityForces.size() == m_Bodies.size();
             for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
             {
                 // Full - Near をFar成分として保存することで、既存Solver契約を変更せず
                 // 時間方向のLODだけをAstroWorld境界へ追加します。
                 m_CachedFarGravityForces[i] = m_Forces[i] - nearForces[i];
+
+                if (farForceRelativeChangeMeasured == true)
+                {
+                    const double absoluteChange =
+                        (m_CachedFarGravityForces[i] - previousFarGravityForces[i]).Length();
+                    const double currentMagnitude = m_CachedFarGravityForces[i].Length();
+                    const double previousMagnitude = previousFarGravityForces[i].Length();
+                    const double scale =
+                        std::max(std::max(currentMagnitude, previousMagnitude), 1.0e-12);
+                    maximumFarForceRelativeChange =
+                        std::max(maximumFarForceRelativeChange, absoluteChange / scale);
+                }
+            }
+            if (farForceRelativeChangeMeasured == true)
+            {
+                m_Statistics.FarGravityRelativeChangeMeasured = true;
+                m_Statistics.MaximumFarGravityForceRelativeChange =
+                    maximumFarForceRelativeChange;
             }
             ApplyFarGravityTransition(nearForces, true);
+
+            if (m_MultiRateSettings.AdaptiveFarGravityUpdate == true
+                && farForceRelativeChangeMeasured == true)
+            {
+                UpdateAdaptiveFarGravityInterval(maximumFarForceRelativeChange);
+            }
 
             m_Statistics.GravitySolveTimeMs =
                 std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
@@ -185,15 +214,9 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         return;
     }
 
-    if (m_MultiRateSettings.MeasureDirectReferenceError == true
-        || m_MultiRateSettings.AdaptiveFarGravityUpdate == true)
+    if (m_MultiRateSettings.MeasureDirectReferenceError == true)
     {
         MeasureDirectReferenceError();
-    }
-    if (m_MultiRateSettings.AdaptiveFarGravityUpdate == true
-        && IsNearFarMultiRateEnabled() == true)
-    {
-        UpdateAdaptiveFarGravityInterval();
     }
 
     const auto feedbackBegin = Clock::now();
@@ -588,14 +611,9 @@ void AstroWorld::MeasureDirectReferenceError()
     m_Statistics.DirectReferenceErrorMeasured = true;
 }
 
-void AstroWorld::UpdateAdaptiveFarGravityInterval()
+void AstroWorld::UpdateAdaptiveFarGravityInterval(double maximumFarForceRelativeChange)
 {
-    if (m_Statistics.DirectReferenceErrorMeasured == false)
-    {
-        return;
-    }
-
-    const double error = m_Statistics.MaximumGravityForceRelativeError;
+    const double error = maximumFarForceRelativeChange;
     if (error >= m_MultiRateSettings.AdaptiveFarGravityHighRelativeError)
     {
         m_AdaptiveFarGravityStableSteps = 0u;
