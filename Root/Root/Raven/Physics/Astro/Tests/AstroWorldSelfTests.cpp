@@ -306,10 +306,13 @@ void RunAstroWorldSelfTests()
     // Phase 8の時間LODを同一初期条件で長時間比較します。
     // Direct毎stepをReferenceとし、固定Multi-rate / Adaptive / Adaptive+Smoothingについて
     // Position・Velocity差とEnergy / Angular Momentum driftを同じ尺度で測定します。
-    const std::vector<AstroBodyState> multiRateInitialBodies{
-        { {}, { -1.0, 0.0, 0.0 }, { 0.0, -0.5, 0.0 }, 1.0, true, true },
-        { {}, { 1.0, 0.0, 0.0 }, { 0.0, 0.5, 0.0 }, 1.0, true, true }
-    };
+    std::vector<AstroBodyState> multiRateInitialBodies(2u);
+    multiRateInitialBodies[0].Mass = 1.0;
+    multiRateInitialBodies[0].Position = { -1.0, 0.0, 0.0 };
+    multiRateInitialBodies[0].Velocity = { 0.0, -0.5, 0.0 };
+    multiRateInitialBodies[1].Mass = 1.0;
+    multiRateInitialBodies[1].Position = { 1.0, 0.0, 0.0 };
+    multiRateInitialBodies[1].Velocity = { 0.0, 0.5, 0.0 };
     const MultiRateOrbitResult directReferenceOrbit = SimulateMultiRateOrbit(
         multiRateInitialBodies, orbitSettings, 1u, false, false, orbitStepCount, orbitDt);
     const MultiRateOrbitResult fixedMultiRateOrbit = SimulateMultiRateOrbit(
