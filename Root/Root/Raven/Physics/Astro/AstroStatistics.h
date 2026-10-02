@@ -20,6 +20,8 @@ struct AstroStatistics
     std::uint64_t GravityForceEvaluationCount = 0u;
     std::uint64_t GravityVisitedNodeCount = 0u;
     std::uint64_t GravityAcceptedAggregateNodeCount = 0u;
+    bool GravitySolveExecuted = false;
+    bool CachedGravityForceUsed = false;
 
     double StateCollectionTimeMs = 0.0;
     double GravityTreeBuildTimeMs = 0.0;
@@ -34,6 +36,8 @@ struct AstroStatistics
         GravityForceEvaluationCount = 0u;
         GravityVisitedNodeCount = 0u;
         GravityAcceptedAggregateNodeCount = 0u;
+        GravitySolveExecuted = false;
+        CachedGravityForceUsed = false;
         StateCollectionTimeMs = 0.0;
         GravityTreeBuildTimeMs = 0.0;
         GravitySolveTimeMs = 0.0;
