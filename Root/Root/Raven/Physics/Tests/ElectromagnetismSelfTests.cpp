@@ -284,7 +284,7 @@ void RunElectromagnetismSelfTests()
     const CoulombSolverSelectionSettings& normalizedCoulombSelection =
         coulombSelectionSystem.GetCoulombSolverSelectionSettings();
     assert(normalizedCoulombSelection.DirectBodyThreshold == 100u);
-    assert(std::abs(normalizedCoulombSelection.BarnesHutTheta - 0.5) < 1.0e-12);
+    assert(std::abs(normalizedCoulombSelection.BarnesHutTheta - 0.25) < 1.0e-12);
 
     const math::Vec3 repulsiveForce = ComputeCoulombForce(
         { 0.0f, 0.0f, 0.0f }, microCoulomb,

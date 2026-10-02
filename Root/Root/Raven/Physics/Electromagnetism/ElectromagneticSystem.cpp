@@ -320,7 +320,7 @@ void ElectromagneticSystem::SetCoulombSolverSelectionSettings(
     if (std::isfinite(m_CoulombSolverSelectionSettings.BarnesHutTheta) == false
         || m_CoulombSolverSelectionSettings.BarnesHutTheta <= 0.0)
     {
-        m_CoulombSolverSelectionSettings.BarnesHutTheta = 0.5;
+        m_CoulombSolverSelectionSettings.BarnesHutTheta = 0.25;
     }
     if (m_CoulombSolverSelectionSettings.DirectBodyThreshold
         > m_CoulombSolverSelectionSettings.BarnesHutBodyThreshold)

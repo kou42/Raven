@@ -27,9 +27,9 @@ enum class CoulombSolverMode
 struct CoulombSolverSelectionSettings
 {
     CoulombSolverMode Mode = CoulombSolverMode::Automatic;
-    std::size_t BarnesHutBodyThreshold = 1000u;
-    std::size_t DirectBodyThreshold = 800u;
-    double BarnesHutTheta = 0.5;
+    std::size_t BarnesHutBodyThreshold = 15000u;
+    std::size_t DirectBodyThreshold = 12500u;
+    double BarnesHutTheta = 0.25;
 };
 
 class ElectromagneticSystem

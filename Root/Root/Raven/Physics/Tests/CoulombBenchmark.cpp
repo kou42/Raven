@@ -50,11 +50,12 @@ double Median(std::vector<double> samples)
     return samples.empty() == true ? 0.0 : samples[samples.size() / 2u];
 }
 
-std::vector<math::Vec3> ComputeDirect(
+void ComputeDirect(
     const std::vector<CoulombOctreeBody>& bodies,
-    const CoulombForceSettings& settings)
+    const CoulombForceSettings& settings,
+    std::vector<math::Vec3>& outForces)
 {
-    std::vector<math::Vec3> forces(bodies.size(), math::Vec3{});
+    outForces.assign(bodies.size(), math::Vec3{});
     for (std::size_t i = 0u; i < bodies.size(); ++i)
     {
         const math::Vec3 a{
@@ -73,11 +74,38 @@ std::vector<math::Vec3> ComputeDirect(
                 a, bodies[i].ChargeCoulombs,
                 b, bodies[j].ChargeCoulombs,
                 settings);
-            forces[i] -= forceOnB;
-            forces[j] += forceOnB;
+            outForces[i] -= forceOnB;
+            outForces[j] += forceOnB;
         }
     }
-    return forces;
+}
+
+SolverMeasurement MeasureDirect(
+    const std::vector<CoulombOctreeBody>& bodies,
+    const CoulombForceSettings& settings)
+{
+    using Clock = std::chrono::steady_clock;
+    std::vector<math::Vec3> forces;
+    // RuntimeのSolve計時では出力配列を事前確保しているため、warm-up後の容量を再利用し、
+    // Directだけに毎sampleの動的確保コストが混ざることを防ぎます。
+    for (std::uint32_t i = 0u; i < kWarmupCount; ++i)
+    {
+        ComputeDirect(bodies, settings, forces);
+    }
+
+    std::vector<double> solveTimes;
+    for (std::uint32_t i = 0u; i < kMeasurementCount; ++i)
+    {
+        const auto begin = Clock::now();
+        ComputeDirect(bodies, settings, forces);
+        const auto end = Clock::now();
+        solveTimes.push_back(std::chrono::duration<double, std::milli>(end - begin).count());
+    }
+
+    SolverMeasurement result{};
+    result.SolveTimeMs = Median(std::move(solveTimes));
+    result.Forces = std::move(forces);
+    return result;
 }
 
 SolverMeasurement MeasureBarnesHut(
@@ -117,19 +145,16 @@ SolverMeasurement MeasureBarnesHut(
 
 int RunCoulombBenchmark()
 {
-    using Clock = std::chrono::steady_clock;
     CoulombForceSettings settings{};
     std::cout << "[Coulomb Benchmark] warmup=" << kWarmupCount
               << " samples=" << kMeasurementCount << " timing=median\n";
 
-    for (const std::size_t bodyCount : { 100u, 1000u, 2000u, 3000u, 5000u, 10000u })
+    for (const std::size_t bodyCount : {
+        100u, 500u, 750u, 1000u, 1250u, 1500u, 1750u, 2000u,
+        2500u, 3000u, 5000u, 7500u, 10000u, 12500u, 13500u, 14000u, 15000u })
     {
         const std::vector<CoulombOctreeBody> bodies = CreateBodies(bodyCount);
-        const auto directBegin = Clock::now();
-        const std::vector<math::Vec3> directForces = ComputeDirect(bodies, settings);
-        const auto directEnd = Clock::now();
-        const double directMs =
-            std::chrono::duration<double, std::milli>(directEnd - directBegin).count();
+        const SolverMeasurement direct = MeasureDirect(bodies, settings);
 
         for (const double theta : { 0.25, 0.5, 0.75 })
         {
@@ -139,13 +164,13 @@ int RunCoulombBenchmark()
             std::uint64_t errorCount = 0u;
             for (std::size_t i = 0u; i < bodies.size(); ++i)
             {
-                const double reference = static_cast<double>(directForces[i].Length());
+                const double reference = static_cast<double>(direct.Forces[i].Length());
                 if (reference <= 1.0e-12)
                 {
                     continue;
                 }
                 const double error =
-                    static_cast<double>((bh.Forces[i] - directForces[i]).Length()) / reference;
+                    static_cast<double>((bh.Forces[i] - direct.Forces[i]).Length()) / reference;
                 maxError = std::max(maxError, error);
                 errorSum += error;
                 ++errorCount;
@@ -154,7 +179,7 @@ int RunCoulombBenchmark()
             std::cout << std::fixed << std::setprecision(4)
                 << "[Coulomb Benchmark] bodies=" << bodyCount
                 << " theta=" << theta
-                << " direct_ms=" << directMs
+                << " direct_ms=" << direct.SolveTimeMs
                 << " barnes_hut_ms=" << bh.SolveTimeMs
                 << " tree_ms=" << bh.TreeBuildTimeMs
                 << " bh_eval=" << bh.Statistics.ForceEvaluationCount
