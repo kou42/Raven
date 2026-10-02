@@ -533,6 +533,37 @@ void RunElectromagnetismSelfTests()
     assert(combinedBodyA.Force.LengthSq() <= 1.0e-12f);
     assert(combinedBodyB.Force.LengthSq() <= 1.0e-12f);
 
+    // 天体Dipole BindingはEntityのworld位置とlocal-space磁気モーメントの回転を
+    // Magnetic Force評価直前にFieldへ同期します。表示Scaleは磁気モーメントへ影響させません。
+    Scene movingDipoleScene;
+    PhysicsSimulationWorld& movingDipoleWorld = movingDipoleScene.GetPhysicsSimulationWorld();
+    Entity dipoleSource = movingDipoleScene.CreateEntity("Moving Dipole Source");
+    TransformComponent& dipoleSourceTransform = dipoleSource.GetComponent<TransformComponent>();
+    dipoleSourceTransform.Position = { 3.0f, 4.0f, 5.0f };
+    dipoleSourceTransform.Rotation = { 0.0f, 0.0f, 1.57079632679f };
+    dipoleSourceTransform.Scale = { 10.0f, 20.0f, 30.0f };
+
+    DipoleMagneticField movingDipoleField;
+    CelestialDipoleMagneticFieldBinding movingDipoleBinding{};
+    movingDipoleBinding.SourceEntity = dipoleSource.GetHandle();
+    movingDipoleBinding.TargetField = &movingDipoleField;
+    movingDipoleBinding.LocalDipoleMoment = { 2.0f, 0.0f, 0.0f };
+    assert(movingDipoleWorld.RegisterCelestialDipoleMagneticFieldBinding(movingDipoleBinding) == true);
+    assert(movingDipoleWorld.RegisterCelestialDipoleMagneticFieldBinding(movingDipoleBinding) == false);
+    assert(movingDipoleWorld.GetCelestialDipoleMagneticFieldBindingCount() == 1u);
+    assert(movingDipoleWorld.GetElectromagneticSystem().RegisterMagneticField(movingDipoleField) == true);
+
+    movingDipoleWorld.StepSimulation(movingDipoleScene, fixedDeltaTime);
+    assert(NearlyEqual(movingDipoleField.GetCenter().x, 3.0f));
+    assert(NearlyEqual(movingDipoleField.GetCenter().y, 4.0f));
+    assert(NearlyEqual(movingDipoleField.GetCenter().z, 5.0f));
+    assert(NearlyEqual(movingDipoleField.GetDipoleMoment().x, 0.0f, 1.0e-4f));
+    assert(NearlyEqual(movingDipoleField.GetDipoleMoment().y, 2.0f, 1.0e-4f));
+    assert(NearlyEqual(movingDipoleField.GetDipoleMoment().z, 0.0f, 1.0e-4f));
+    assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == true);
+    assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == false);
+    assert(movingDipoleWorld.GetElectromagneticSystem().UnregisterMagneticField(movingDipoleField) == true);
+
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
         integratedScene, "Integrated Charge A", { -0.5f, 0.0f, 0.0f }, microCoulomb);
