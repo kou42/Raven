@@ -17,6 +17,7 @@ struct CoulombBarnesHutStatistics
     std::uint64_t ForceEvaluationCount = 0u;
     std::uint64_t VisitedNodeCount = 0u;
     std::uint64_t AcceptedAggregateNodeCount = 0u;
+    double TreeBuildTimeMs = 0.0;
 };
 
 class BarnesHutCoulombSolver
