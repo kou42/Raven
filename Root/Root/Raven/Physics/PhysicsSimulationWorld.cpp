@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Physics/Electromagnetism/MagneticField.h"
 #include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -452,6 +453,8 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // System自体は永続所有するため、外部Field RegistryとCoulomb設定だけがstep間で維持されます。
     // GravityとElectromagnetismは優先順位を持たず、Rigid積分前に同じForceへ揃えます。
     m_AstroWorld.AccumulateGravityForces(scene, fixedDeltaTime);
+    // Magnetic Field評価より先に天体Transformを同期し、このfixed-stepの最新Scene姿勢を使用します。
+    SynchronizeCelestialDipoleMagneticFields(scene);
     m_ElectromagneticSystem.ApplyElectricFieldForces(scene);
     m_ElectromagneticSystem.ApplyMagneticFieldForces(scene);
     m_ElectromagneticSystem.ApplyCoulombForces(scene);
@@ -522,6 +525,83 @@ void PhysicsSimulationWorld::ClearRigidSoftSphereColliderBindings()
 {
     // BindingはEntity/Solverを所有しません。SceneやDeformer破棄前に参照だけを解除します。
     m_RigidSoftSphereColliderBindings.clear();
+}
+
+bool PhysicsSimulationWorld::RegisterCelestialDipoleMagneticFieldBinding(
+    const CelestialDipoleMagneticFieldBinding& binding)
+{
+    if (binding.TargetField == nullptr)
+    {
+        return false;
+    }
+
+    const auto iterator = std::find_if(
+        m_CelestialDipoleMagneticFieldBindings.begin(),
+        m_CelestialDipoleMagneticFieldBindings.end(),
+        [&binding](const CelestialDipoleMagneticFieldBinding& registeredBinding)
+        {
+            return registeredBinding.TargetField == binding.TargetField;
+        });
+    if (iterator != m_CelestialDipoleMagneticFieldBindings.end())
+    {
+        return false;
+    }
+
+    m_CelestialDipoleMagneticFieldBindings.push_back(binding);
+    return true;
+}
+
+bool PhysicsSimulationWorld::UnregisterCelestialDipoleMagneticFieldBinding(
+    DipoleMagneticField& targetField)
+{
+    const auto iterator = std::find_if(
+        m_CelestialDipoleMagneticFieldBindings.begin(),
+        m_CelestialDipoleMagneticFieldBindings.end(),
+        [&targetField](const CelestialDipoleMagneticFieldBinding& binding)
+        {
+            return binding.TargetField == &targetField;
+        });
+    if (iterator == m_CelestialDipoleMagneticFieldBindings.end())
+    {
+        return false;
+    }
+
+    m_CelestialDipoleMagneticFieldBindings.erase(iterator);
+    return true;
+}
+
+void PhysicsSimulationWorld::ClearCelestialDipoleMagneticFieldBindings()
+{
+    // Field/Entityはいずれも所有せず、同期関係だけを解除します。
+    m_CelestialDipoleMagneticFieldBindings.clear();
+}
+
+void PhysicsSimulationWorld::SynchronizeCelestialDipoleMagneticFields(Scene& scene)
+{
+    for (const CelestialDipoleMagneticFieldBinding& binding : m_CelestialDipoleMagneticFieldBindings)
+    {
+        if (binding.TargetField == nullptr || scene.IsEntityAlive(binding.SourceEntity) == false)
+        {
+            continue;
+        }
+
+        const TransformComponent* transform =
+            scene.TryGetComponent<TransformComponent>(binding.SourceEntity.m_Index);
+        if (transform == nullptr)
+        {
+            continue;
+        }
+
+        // Transform::GetTransform()にはScaleも含まれるため、磁気モーメントの大きさを
+        // Entity表示Scaleで変化させないよう回転行列だけを明示的に適用します。
+        const math::Mat4 rotation =
+            math::Mat4::RotationX(transform->Rotation.x)
+            * math::Mat4::RotationY(transform->Rotation.y)
+            * math::Mat4::RotationZ(transform->Rotation.z);
+        const math::Vec4 worldMoment4 = rotation * math::Vec4{ binding.LocalDipoleMoment, 0.0f };
+        binding.TargetField->SetCenter(transform->Position);
+        binding.TargetField->SetDipoleMoment({ worldMoment4.x, worldMoment4.y, worldMoment4.z });
+    }
 }
 
 void PhysicsSimulationWorld::SynchronizeRigidBodyCollidersToSoftBody(Scene& scene)
