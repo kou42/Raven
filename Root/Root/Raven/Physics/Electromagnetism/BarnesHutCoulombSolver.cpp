@@ -1,5 +1,6 @@
 #include "Raven/Physics/Electromagnetism/BarnesHutCoulombSolver.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -99,8 +100,16 @@ void BarnesHutCoulombSolver::ComputeForces(
         return;
     }
 
+    using Clock = std::chrono::steady_clock;
     CoulombOctree tree;
+    const auto treeBuildBegin = Clock::now();
     tree.Build(bodies);
+    const auto treeBuildEnd = Clock::now();
+    if (statistics != nullptr)
+    {
+        statistics->TreeBuildTimeMs =
+            std::chrono::duration<double, std::milli>(treeBuildEnd - treeBuildBegin).count();
+    }
     if (tree.GetRootIndex() < 0)
     {
         return;
