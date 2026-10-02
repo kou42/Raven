@@ -434,21 +434,24 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // ========================================================================
     // Electromagnetism / Rigid / Fluid / Soft / Thermal fixed-step ordering
     // ========================================================================
-    // 1. 永続Registryの外部Electric FieldからF=qEをRigidBodyのForce accumulatorへ蓄積
-    // 2. 永続Registryの外部Magnetic FieldからF=q(v x B)を同じAccumulatorへ蓄積
-    // 3. Scene内の点電荷ペアからCoulomb Forceを同じAccumulatorへ蓄積
-    // 4. Rigid Bodyを進め、蓄積済み外力とCollision Detection / Contact Solverを解決
-    // 5. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了
-    // 6. 最新Rigid ColliderをSoftBody local-spaceへ同期
-    // 7. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
-    // 8. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
-    // 9. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
-    // 10. Thermal Domainの熱伝導を同じFixed Step幅で進める
+    // 1. AstroWorldでN-body重力をRigidBodyのForce accumulatorへ蓄積
+    // 2. 永続Registryの外部Electric FieldからF=qEをRigidBodyのForce accumulatorへ蓄積
+    // 3. 永続Registryの外部Magnetic FieldからF=q(v x B)を同じAccumulatorへ蓄積
+    // 4. Scene内の点電荷ペアからCoulomb Forceを同じAccumulatorへ蓄積
+    // 5. Rigid Bodyを進め、蓄積済み外力とCollision Detection / Contact Solverを解決
+    // 6. Fluid数値計算とRigid/Collider Couplingを同じFixed Step内で完了
+    // 7. 最新Rigid ColliderをSoftBody local-spaceへ同期
+    // 8. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
+    // 9. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
+    // 10. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 11. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
     // ElectromagneticSystemは位置や速度を直接変更せず、RigidBodyComponent::Forceだけへ書き込みます。
     // PhysicsWorld::Step()が同じfixed-step内でそのForceを積分し、末尾でClearForces()するため、
     // Electric / Magnetic FieldとCoulomb Forceは毎step現在状態から再計算され、古い値を持ち越しません。
     // System自体は永続所有するため、外部Field RegistryとCoulomb設定だけがstep間で維持されます。
+    // GravityとElectromagnetismは優先順位を持たず、Rigid積分前に同じForceへ揃えます。
+    m_AstroWorld.AccumulateGravityForces(scene, fixedDeltaTime);
     m_ElectromagneticSystem.ApplyElectricFieldForces(scene);
     m_ElectromagneticSystem.ApplyMagneticFieldForces(scene);
     m_ElectromagneticSystem.ApplyCoulombForces(scene);
@@ -662,6 +665,16 @@ void PhysicsSimulationWorld::SynchronizeOutputs()
 {
     m_FluidWorld.SynchronizeOutputs();
     m_SoftBodyWorld.SynchronizeOutputs();
+}
+
+AstroWorld& PhysicsSimulationWorld::GetAstroWorld()
+{
+    return m_AstroWorld;
+}
+
+const AstroWorld& PhysicsSimulationWorld::GetAstroWorld() const
+{
+    return m_AstroWorld;
 }
 
 PhysicsWorld& PhysicsSimulationWorld::GetRigidBodyWorld()

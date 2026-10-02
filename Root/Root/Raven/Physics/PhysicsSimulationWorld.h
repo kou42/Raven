@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "Raven/Physics/Astro/AstroWorld.h"
 #include "Raven/Physics/Coupling/FluidRigidBodyCoupling.h"
 #include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
@@ -413,6 +414,9 @@ public:
         return m_RigidSoftSphereColliderBindings.size();
     }
 
+    AstroWorld& GetAstroWorld();
+    const AstroWorld& GetAstroWorld() const;
+
     PhysicsWorld& GetRigidBodyWorld();
     const PhysicsWorld& GetRigidBodyWorld() const;
 
@@ -439,8 +443,9 @@ private:
     void ApplySoftBodyReactionsToRigidBodies(Scene& scene);
 
 private:
-    // 外部Electric Field RegistryとCoulomb設定をfixed-step間で保持します。
+    // Astro Solver設定と外部Electric Field Registry / Coulomb設定をfixed-step間で保持します。
     // 登録Fieldは非所有参照のため、所有側はField破棄前に登録解除する必要があります。
+    AstroWorld m_AstroWorld;
     ElectromagneticSystem m_ElectromagneticSystem;
     PhysicsWorld m_RigidBodyWorld;
     FluidWorld m_FluidWorld;
