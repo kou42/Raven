@@ -240,6 +240,27 @@ void RunAstroWorldSelfTests()
     assert(std::isfinite(forces[1].x));
     assert(NearlyEqual(forces[0].LengthSq(), 0.0f));
 
+    // Near/Far経路のDirect pair評価もDirectGravitySolverと同じMinimumDistance契約を維持します。
+    Scene nearPairScene;
+    AstroWorld nearPairWorld;
+    nearPairWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings nearPairSolverSettings{};
+    nearPairSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    nearPairWorld.SetGravitySolverSelectionSettings(nearPairSolverSettings);
+    AstroMultiRateSettings nearPairMultiRateSettings{};
+    nearPairMultiRateSettings.NearGravityDistance = 1.0;
+    nearPairMultiRateSettings.FarGravityUpdateIntervalSteps = 4u;
+    nearPairWorld.SetMultiRateSettings(nearPairMultiRateSettings);
+
+    Entity nearPairA = CreateCelestialBody(
+        nearPairScene, "Near Pair A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity nearPairB = CreateCelestialBody(
+        nearPairScene, "Near Pair B", { 0.001f, 0.0f, 0.0f }, 3.0f);
+    nearPairWorld.AccumulateGravityForces(nearPairScene, 0.1f);
+    assert(nearPairWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
+    assert(NearlyEqual(nearPairA.GetComponent<RigidBodyComponent>().Force.x, 60000.0f, 1.0f));
+    assert(NearlyEqual(nearPairB.GetComponent<RigidBodyComponent>().Force.x, -60000.0f, 1.0f));
+
     // Generate/Receiveを分離したStatic sourceでは、source自身を動かさずprobeだけへ引力を加えられます。
     bodies[0].Position = { 0.0f, 0.0f, 0.0f };
     bodies[0].Mass = 10.0;
