@@ -580,8 +580,14 @@ void PhysicsSimulationWorld::SynchronizeCelestialDipoleMagneticFields(Scene& sce
 {
     for (const CelestialDipoleMagneticFieldBinding& binding : m_CelestialDipoleMagneticFieldBindings)
     {
-        if (binding.TargetField == nullptr || scene.IsEntityAlive(binding.SourceEntity) == false)
+        if (binding.TargetField == nullptr)
         {
+            continue;
+        }
+        if (scene.IsEntityAlive(binding.SourceEntity) == false)
+        {
+            // Source消滅後に最後の磁場だけが残って作用し続けないよう、Bindingは保持したまま無効化します。
+            binding.TargetField->SetDipoleMoment({});
             continue;
         }
 
@@ -589,6 +595,7 @@ void PhysicsSimulationWorld::SynchronizeCelestialDipoleMagneticFields(Scene& sce
             scene.TryGetComponent<TransformComponent>(binding.SourceEntity.m_Index);
         if (transform == nullptr)
         {
+            binding.TargetField->SetDipoleMoment({});
             continue;
         }
 
