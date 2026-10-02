@@ -818,19 +818,41 @@ void RunAstroWorldSelfTests()
 
     adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
     assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 2u);
-    assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == false);
+    assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == false);
+    assert(adaptiveLodWorld.GetStatistics().DirectReferenceErrorMeasured == false);
 
+    // 初回solveには比較元cacheがないためAdaptive判定を行いません。
+    // 次のcached stepを挟み、2回目のFar solveで変化量0を初めて観測します。
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == true);
+    assert(adaptiveLodWorld.GetStatistics().MaximumFarGravityForceRelativeChange < 1.0e-12);
+    assert(adaptiveLodWorld.GetStatistics().DirectReferenceErrorMeasured == false);
+
+    // もう1回の低変化Far solveでstable countが2になり、intervalを2->3へ伸ばします。
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
     adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
     adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
     adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
     assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == true);
     assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 3u);
 
+    // 次のFar solveまで待ってから位置を変え、新旧Far Forceの変化量で3->2へ戻ることを確認します。
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
     adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
     adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
     adaptiveB.GetComponent<TransformComponent>().Position.x = 8.0f;
     adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
-    assert(adaptiveLodWorld.GetStatistics().MaximumGravityForceRelativeError
+    assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == true);
+    assert(adaptiveLodWorld.GetStatistics().MaximumFarGravityForceRelativeChange
         > adaptiveSettings.AdaptiveFarGravityHighRelativeError);
     assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == true);
     assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 2u);
