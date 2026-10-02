@@ -496,7 +496,7 @@ void RunAstroWorldSelfTests()
 
     AstroMultiRateSettings nearFarSettings{};
     nearFarSettings.NearGravityDistance = 3.0;
-    nearFarSettings.FarGravityUpdateIntervalSteps = 2u;
+    nearFarSettings.FarGravityUpdateIntervalSteps = 4u;
     nearFarWorld.SetMultiRateSettings(nearFarSettings);
 
     Entity nearFarA = CreateCelestialBody(
@@ -522,6 +522,16 @@ void RunAstroWorldSelfTests()
     assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == true);
     assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
     assert(NearlyEqual(nearFarA.GetComponent<RigidBodyComponent>().Force.x, 6.02f));
+
+    // 更新周期4の途中でもBがNear境界を跨いだ場合は、旧Far成分との二重加算を避けるため即時solveします。
+    nearFarA.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarC.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<TransformComponent>().Position.x = 4.0f;
+    nearFarWorld.AccumulateGravityForces(nearFarScene, 0.1f);
+    assert(nearFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == false);
+    assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 0u);
 
     nearFarSettings.FarGravityUpdateIntervalSteps = 0u;
     nearFarSettings.NearGravityDistance = -1.0;
