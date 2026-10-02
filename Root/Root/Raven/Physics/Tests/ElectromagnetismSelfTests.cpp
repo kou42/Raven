@@ -564,6 +564,51 @@ void RunElectromagnetismSelfTests()
     assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == false);
     assert(movingDipoleWorld.GetElectromagneticSystem().UnregisterMagneticField(movingDipoleField) == true);
 
+    // 天体姿勢の変更が次fixed-stepのLorentz力へ反映されることまで統合検証します。
+    // local +Z momentを初回はworld +Z、X軸90度回転後はworld -Yへ向けます。
+    Scene orbitingChargeScene;
+    PhysicsSimulationWorld& orbitingChargeWorld = orbitingChargeScene.GetPhysicsSimulationWorld();
+    Entity rotatingMagneticBody = orbitingChargeScene.CreateEntity("Rotating Magnetic Body");
+    TransformComponent& rotatingMagneticTransform =
+        rotatingMagneticBody.GetComponent<TransformComponent>();
+    rotatingMagneticTransform.Position = { 0.0f, 0.0f, 0.0f };
+
+    DipoleMagneticField rotatingDipoleField(
+        { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
+    CelestialDipoleMagneticFieldBinding rotatingDipoleBinding{};
+    rotatingDipoleBinding.SourceEntity = rotatingMagneticBody.GetHandle();
+    rotatingDipoleBinding.TargetField = &rotatingDipoleField;
+    rotatingDipoleBinding.LocalDipoleMoment = { 0.0f, 0.0f, 1.0e7f };
+    assert(orbitingChargeWorld.RegisterCelestialDipoleMagneticFieldBinding(rotatingDipoleBinding) == true);
+    assert(orbitingChargeWorld.GetElectromagneticSystem().RegisterMagneticField(rotatingDipoleField) == true);
+
+    Entity orbitingCharge = CreateChargedSphere(
+        orbitingChargeScene, "Orbiting Test Charge", { 1.0f, 0.0f, 0.0f }, 1.0);
+    RigidBodyComponent& orbitingBody = orbitingCharge.GetComponent<RigidBodyComponent>();
+    orbitingBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
+    orbitingBody.LinearDamping = 0.0f;
+    orbitingBody.AngularDamping = 0.0f;
+
+    orbitingChargeWorld.StepSimulation(orbitingChargeScene, fixedDeltaTime);
+    const float firstStepVelocityX = orbitingBody.LinearVelocity.x;
+    assert(firstStepVelocityX < 0.0f);
+
+    // Rigid積分でCharge位置も変化するため、Field方向だけを比較できるよう初期状態へ戻します。
+    orbitingCharge.GetComponent<TransformComponent>().Position = { 1.0f, 0.0f, 0.0f };
+    orbitingBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
+    rotatingMagneticTransform.Rotation = { 1.57079632679f, 0.0f, 0.0f };
+    orbitingChargeWorld.StepSimulation(orbitingChargeScene, fixedDeltaTime);
+
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().x, 0.0f, 1.0e-3f));
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().y, -1.0e7f, 1.0f));
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().z, 0.0f, 1.0f));
+    assert(NearlyEqual(orbitingBody.LinearVelocity.x, 0.0f, 1.0e-4f));
+    assert(NearlyEqual(orbitingBody.LinearVelocity.y, 1.0f, 1.0e-4f));
+    assert(orbitingBody.LinearVelocity.z < 0.0f);
+
+    assert(orbitingChargeWorld.GetElectromagneticSystem().UnregisterMagneticField(rotatingDipoleField) == true);
+    assert(orbitingChargeWorld.UnregisterCelestialDipoleMagneticFieldBinding(rotatingDipoleField) == true);
+
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
         integratedScene, "Integrated Charge A", { -0.5f, 0.0f, 0.0f }, microCoulomb);
