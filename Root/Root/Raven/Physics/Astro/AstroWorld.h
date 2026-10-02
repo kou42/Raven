@@ -36,6 +36,10 @@ struct AstroMultiRateSettings
     // それより遠い寄与だけをFarGravityUpdateIntervalStepsの周期で更新します。
     double NearGravityDistance = 0.0;
     std::uint32_t FarGravityUpdateIntervalSteps = 4u;
+
+    // Debug/検証用です。有効時は現在snapshotをDirect Solverでも評価し、
+    // 実際に適用するMulti-rate Forceとの差をPhysics LOD誤差として記録します。
+    bool MeasureDirectReferenceError = false;
 };
 
 struct AstroGravitySolverSelectionSettings
@@ -75,6 +79,7 @@ private:
     bool CanReuseCachedGravityForces() const;
     bool IsNearFarMultiRateEnabled() const;
     void ComputeNearGravityForces(std::vector<AstroVector3>& outForces);
+    void MeasureDirectReferenceError();
     void CacheGravityForces();
     void InvalidateGravityForceCache();
 
