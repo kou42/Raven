@@ -25,6 +25,10 @@ struct AstroStatistics
     bool FarGravitySolveExecuted = false;
     bool CachedFarGravityForceUsed = false;
     std::uint64_t NearGravityPairEvaluationCount = 0u;
+    bool DirectReferenceErrorMeasured = false;
+    double MaximumGravityForceRelativeError = 0.0;
+    double MeanGravityForceRelativeError = 0.0;
+    double MaximumGravityAccelerationError = 0.0;
 
     double StateCollectionTimeMs = 0.0;
     double GravityTreeBuildTimeMs = 0.0;
@@ -44,6 +48,10 @@ struct AstroStatistics
         FarGravitySolveExecuted = false;
         CachedFarGravityForceUsed = false;
         NearGravityPairEvaluationCount = 0u;
+        DirectReferenceErrorMeasured = false;
+        MaximumGravityForceRelativeError = 0.0;
+        MeanGravityForceRelativeError = 0.0;
+        MaximumGravityAccelerationError = 0.0;
         StateCollectionTimeMs = 0.0;
         GravityTreeBuildTimeMs = 0.0;
         GravitySolveTimeMs = 0.0;
