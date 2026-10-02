@@ -634,6 +634,56 @@ void RunAstroWorldSelfTests()
     assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityLowRelativeError == 0.01);
     assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityHighRelativeError == 0.05);
 
+    // Far Force smoothingは新しいFar solve結果へ即座にjumpせず、直前の適用値から段階遷移します。
+    // r=4のForce=0.375からr=2のForce=1.5へ更新し、2step遷移なら最初は中間値0.9375です。
+    Scene smoothFarScene;
+    AstroWorld smoothFarWorld;
+    smoothFarWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings smoothFarSolverSettings{};
+    smoothFarSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    smoothFarWorld.SetGravitySolverSelectionSettings(smoothFarSolverSettings);
+
+    AstroMultiRateSettings smoothFarSettings{};
+    smoothFarSettings.NearGravityDistance = 1.0;
+    smoothFarSettings.FarGravityUpdateIntervalSteps = 2u;
+    smoothFarSettings.SmoothFarGravityTransitions = true;
+    smoothFarSettings.FarGravityTransitionSteps = 2u;
+    smoothFarWorld.SetMultiRateSettings(smoothFarSettings);
+
+    Entity smoothFarA = CreateCelestialBody(
+        smoothFarScene, "Smooth Far A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity smoothFarB = CreateCelestialBody(
+        smoothFarScene, "Smooth Far B", { 4.0f, 0.0f, 0.0f }, 3.0f);
+
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 0.375f));
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == false);
+
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<TransformComponent>().Position.x = 2.0f;
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(smoothFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == true);
+    assert(std::abs(smoothFarWorld.GetStatistics().FarGravityTransitionAlpha - 0.5) < 1.0e-12);
+    assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 0.9375f));
+
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(smoothFarWorld.GetStatistics().CachedFarGravityForceUsed == true);
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == false);
+    assert(std::abs(smoothFarWorld.GetStatistics().FarGravityTransitionAlpha - 1.0) < 1.0e-12);
+    assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 1.5f));
+
+    smoothFarSettings.FarGravityTransitionSteps = 0u;
+    smoothFarWorld.SetMultiRateSettings(smoothFarSettings);
+    assert(smoothFarWorld.GetMultiRateSettings().FarGravityTransitionSteps == 1u);
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
