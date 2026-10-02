@@ -4,10 +4,12 @@
 #include <cmath>
 
 #include "Raven/Physics/Electromagnetism/CoulombForce.h"
+#include "Raven/Physics/Electromagnetism/BarnesHutCoulombSolver.h"
 #include "Raven/Physics/Electromagnetism/ElectricCharge.h"
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
+#include "Raven/Physics/Electromagnetism/Spatial/CoulombOctree.h"
 #include "Raven/Physics/Field/GravityField.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -162,6 +164,127 @@ void RunElectromagnetismSelfTests()
     const math::Vec3 electricFieldAtTwoMeters = pointField.Evaluate({ 2.0f, 0.0f, 0.0f });
     assert(electricFieldAtOneMeter.x > 0.0f);
     assert(NearlyEqual(electricFieldAtTwoMeters.x / electricFieldAtOneMeter.x, 0.25f, 1.0e-3f));
+
+    // Coulomb Octreeは正負電荷を相殺せず別々に集約します。
+    // 総電荷が0になるdipoleでも両極性の電荷量と中心を保持し、将来の近似評価で情報を失いません。
+    std::vector<CoulombOctreeBody> coulombTreeBodies{
+        { { -2.0, 0.0, 0.0 }, 2.0 },
+        { { 2.0, 0.0, 0.0 }, -2.0 },
+        { { 4.0, 0.0, 0.0 }, 1.0 }
+    };
+    CoulombOctree coulombOctree;
+    coulombOctree.Build(coulombTreeBodies);
+    assert(coulombOctree.GetRootIndex() >= 0);
+    const CoulombOctreeNode& coulombRoot =
+        coulombOctree.GetNodes()[static_cast<std::size_t>(coulombOctree.GetRootIndex())];
+    assert(std::abs(coulombRoot.PositiveCharge - 3.0) < 1.0e-12);
+    assert(std::abs(coulombRoot.NegativeChargeMagnitude - 2.0) < 1.0e-12);
+    assert(std::abs(coulombRoot.PositiveCenter[0]) < 1.0e-12);
+    assert(std::abs(coulombRoot.NegativeCenter[0] - 2.0) < 1.0e-12);
+
+    // 完全な正負相殺でも各極性のaggregateは消えません。
+    std::vector<CoulombOctreeBody> neutralTreeBodies{
+        { { -1.0, 0.0, 0.0 }, 1.0 },
+        { { 1.0, 0.0, 0.0 }, -1.0 }
+    };
+    coulombOctree.Build(neutralTreeBodies);
+    const CoulombOctreeNode& neutralRoot =
+        coulombOctree.GetNodes()[static_cast<std::size_t>(coulombOctree.GetRootIndex())];
+    assert(std::abs(neutralRoot.PositiveCharge - 1.0) < 1.0e-12);
+    assert(std::abs(neutralRoot.NegativeChargeMagnitude - 1.0) < 1.0e-12);
+    assert(std::abs(neutralRoot.PositiveCenter[0] + 1.0) < 1.0e-12);
+    assert(std::abs(neutralRoot.NegativeCenter[0] - 1.0) < 1.0e-12);
+
+    // Barnes-Hut CoulombをDirect法と比較します。小さいthetaでは誤差を抑え、
+    // thetaを緩めるとaggregate受理によってpair candidateが減ることを確認します。
+    std::vector<CoulombOctreeBody> coulombSolverBodies;
+    for (int z = 0; z < 3; ++z)
+    {
+        for (int y = 0; y < 3; ++y)
+        {
+            for (int x = 0; x < 4; ++x)
+            {
+                CoulombOctreeBody body{};
+                body.Position = {
+                    static_cast<double>(x) * 1.7 - 2.5,
+                    static_cast<double>(y) * 1.3 - 1.2,
+                    static_cast<double>(z) * 1.9 - 1.8
+                };
+                body.ChargeCoulombs = ((x + y + z) % 2 == 0) ? 1.0e-6 : -0.75e-6;
+                coulombSolverBodies.push_back(body);
+            }
+        }
+    }
+
+    std::vector<math::Vec3> directCoulombForces(coulombSolverBodies.size(), math::Vec3{});
+    for (std::size_t targetIndex = 0u; targetIndex < coulombSolverBodies.size(); ++targetIndex)
+    {
+        for (std::size_t sourceIndex = 0u; sourceIndex < coulombSolverBodies.size(); ++sourceIndex)
+        {
+            if (sourceIndex == targetIndex)
+            {
+                continue;
+            }
+            directCoulombForces[targetIndex] += ComputeCoulombForce(
+                math::Vec3(
+                    static_cast<float>(coulombSolverBodies[sourceIndex].Position[0]),
+                    static_cast<float>(coulombSolverBodies[sourceIndex].Position[1]),
+                    static_cast<float>(coulombSolverBodies[sourceIndex].Position[2])),
+                coulombSolverBodies[sourceIndex].ChargeCoulombs,
+                math::Vec3(
+                    static_cast<float>(coulombSolverBodies[targetIndex].Position[0]),
+                    static_cast<float>(coulombSolverBodies[targetIndex].Position[1]),
+                    static_cast<float>(coulombSolverBodies[targetIndex].Position[2])),
+                coulombSolverBodies[targetIndex].ChargeCoulombs);
+        }
+    }
+
+    BarnesHutCoulombSolver coulombBarnesHutSolver;
+    coulombBarnesHutSolver.SetTheta(0.25);
+    CoulombBarnesHutStatistics tightCoulombStatistics{};
+    std::vector<math::Vec3> tightCoulombForces;
+    coulombBarnesHutSolver.ComputeForces(
+        coulombSolverBodies,
+        CoulombForceSettings{},
+        tightCoulombForces,
+        &tightCoulombStatistics);
+
+    double maximumCoulombRelativeError = 0.0;
+    for (std::size_t i = 0u; i < directCoulombForces.size(); ++i)
+    {
+        const double directLength = static_cast<double>(directCoulombForces[i].Length());
+        if (directLength <= 1.0e-12)
+        {
+            continue;
+        }
+        const double error = static_cast<double>((tightCoulombForces[i] - directCoulombForces[i]).Length());
+        maximumCoulombRelativeError = std::max(maximumCoulombRelativeError, error / directLength);
+    }
+    assert(maximumCoulombRelativeError < 0.1);
+
+    coulombBarnesHutSolver.SetTheta(0.9);
+    CoulombBarnesHutStatistics looseCoulombStatistics{};
+    std::vector<math::Vec3> looseCoulombForces;
+    coulombBarnesHutSolver.ComputeForces(
+        coulombSolverBodies,
+        CoulombForceSettings{},
+        looseCoulombForces,
+        &looseCoulombStatistics);
+    assert(looseCoulombStatistics.AcceptedAggregateNodeCount > 0u);
+    assert(looseCoulombStatistics.PairCandidateCount < tightCoulombStatistics.PairCandidateCount);
+
+    // Coulomb Solver選択設定は不正thetaとhysteresis閾値を正規化します。
+    ElectromagneticSystem coulombSelectionSystem;
+    CoulombSolverSelectionSettings coulombSelectionSettings{};
+    coulombSelectionSettings.Mode = CoulombSolverMode::Automatic;
+    coulombSelectionSettings.BarnesHutBodyThreshold = 100u;
+    coulombSelectionSettings.DirectBodyThreshold = 120u;
+    coulombSelectionSettings.BarnesHutTheta = 0.0;
+    coulombSelectionSystem.SetCoulombSolverSelectionSettings(coulombSelectionSettings);
+    const CoulombSolverSelectionSettings& normalizedCoulombSelection =
+        coulombSelectionSystem.GetCoulombSolverSelectionSettings();
+    assert(normalizedCoulombSelection.DirectBodyThreshold == 100u);
+    assert(std::abs(normalizedCoulombSelection.BarnesHutTheta - 0.25) < 1.0e-12);
 
     const math::Vec3 repulsiveForce = ComputeCoulombForce(
         { 0.0f, 0.0f, 0.0f }, microCoulomb,
