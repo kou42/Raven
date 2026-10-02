@@ -68,6 +68,66 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
     // Energy/Momentum診断まで古いsnapshotへ固定しないことで誤差を追跡できます。
     m_LastDiagnostics = OrbitalDiagnosticsCalculator::Compute(m_Bodies, m_Settings);
 
+    if (IsNearFarMultiRateEnabled() == true)
+    {
+        std::vector<AstroVector3> nearForces;
+        ComputeNearGravityForces(nearForces);
+
+        const std::uint32_t farInterval = m_MultiRateSettings.FarGravityUpdateIntervalSteps;
+        const bool farIntervalElapsed =
+            farInterval <= 1u || m_StepsSinceGravitySolve >= (farInterval - 1u);
+        const bool reuseCachedFarForces =
+            farIntervalElapsed == false && CanReuseCachedGravityForces()
+            && m_CachedFarGravityForces.size() == m_Bodies.size();
+
+        if (reuseCachedFarForces == true)
+        {
+            m_Forces.resize(m_Bodies.size());
+            for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+            {
+                m_Forces[i] = nearForces[i] + m_CachedFarGravityForces[i];
+            }
+            ++m_StepsSinceGravitySolve;
+            m_Statistics.CachedFarGravityForceUsed = true;
+        }
+        else
+        {
+            const auto solveBegin = Clock::now();
+            gravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
+            const auto solveEnd = Clock::now();
+
+            if (gravitySolver == &m_BarnesHutGravitySolver)
+            {
+                m_Statistics.SolverKind = AstroGravitySolverKind::BarnesHut;
+            }
+            else if (gravitySolver == &m_DirectGravitySolver)
+            {
+                m_Statistics.SolverKind = AstroGravitySolverKind::Direct;
+            }
+            else
+            {
+                m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
+            }
+
+            m_CachedFarGravityForces.resize(m_Bodies.size());
+            for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+            {
+                // Full - Near をFar成分として保存することで、既存Solver契約を変更せず
+                // 時間方向のLODだけをAstroWorld境界へ追加します。
+                m_CachedFarGravityForces[i] = m_Forces[i] - nearForces[i];
+                m_Forces[i] = nearForces[i] + m_CachedFarGravityForces[i];
+            }
+
+            m_Statistics.GravitySolveTimeMs =
+                std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
+            m_Statistics.GravitySolveExecuted = true;
+            m_Statistics.FarGravitySolveExecuted = true;
+            m_StepsSinceGravitySolve = 0u;
+            CacheGravityForces();
+        }
+    }
+    else
+    {
     const std::uint32_t interval = m_MultiRateSettings.GravityUpdateIntervalSteps;
     const bool intervalElapsed =
         interval <= 1u || m_StepsSinceGravitySolve >= (interval - 1u);
@@ -105,6 +165,7 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         m_Statistics.GravitySolveExecuted = true;
         m_StepsSinceGravitySolve = 0u;
         CacheGravityForces();
+    }
     }
     if (m_Forces.size() != m_Bodies.size())
     {
@@ -265,6 +326,15 @@ void AstroWorld::SetMultiRateSettings(const AstroMultiRateSettings& settings)
         // 0 step間隔は意味を持たないため、従来互換の毎step更新へClampします。
         m_MultiRateSettings.GravityUpdateIntervalSteps = 1u;
     }
+    if (m_MultiRateSettings.FarGravityUpdateIntervalSteps == 0u)
+    {
+        m_MultiRateSettings.FarGravityUpdateIntervalSteps = 1u;
+    }
+    if (std::isfinite(m_MultiRateSettings.NearGravityDistance) == false
+        || m_MultiRateSettings.NearGravityDistance < 0.0)
+    {
+        m_MultiRateSettings.NearGravityDistance = 0.0;
+    }
     InvalidateGravityForceCache();
 }
 
@@ -295,6 +365,63 @@ bool AstroWorld::CanReuseCachedGravityForces() const
     return true;
 }
 
+bool AstroWorld::IsNearFarMultiRateEnabled() const
+{
+    return m_MultiRateSettings.NearGravityDistance > 0.0;
+}
+
+void AstroWorld::ComputeNearGravityForces(std::vector<AstroVector3>& outForces)
+{
+    outForces.assign(m_Bodies.size(), AstroVector3{});
+    const double nearDistanceSquared =
+        m_MultiRateSettings.NearGravityDistance * m_MultiRateSettings.NearGravityDistance;
+
+    for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+    {
+        for (std::size_t j = i + 1u; j < m_Bodies.size(); ++j)
+        {
+            const AstroVector3 delta = m_Bodies[j].Position - m_Bodies[i].Position;
+            const double distanceSquared = delta.LengthSq();
+            if (distanceSquared > nearDistanceSquared)
+            {
+                continue;
+            }
+
+            // Near領域だけをDirectで評価します。Far側のBarnes-Hut空間近似とは別カウンタにし、
+            // Phase 8の時間LODコストを独立して観測できるようにします。
+            ++m_Statistics.NearGravityPairEvaluationCount;
+            if (m_Bodies[i].GenerateGravity == true && m_Bodies[j].ReceiveGravity == true)
+            {
+                std::vector<AstroBodyState> pair{ m_Bodies[j], m_Bodies[i] };
+                pair[0].ReceiveGravity = true;
+                pair[0].GenerateGravity = false;
+                pair[1].ReceiveGravity = false;
+                pair[1].GenerateGravity = true;
+                std::vector<AstroVector3> pairForces;
+                m_DirectGravitySolver.ComputeForces(pair, m_Settings, pairForces);
+                if (pairForces.size() == 2u)
+                {
+                    outForces[j] += pairForces[0];
+                }
+            }
+            if (m_Bodies[j].GenerateGravity == true && m_Bodies[i].ReceiveGravity == true)
+            {
+                std::vector<AstroBodyState> pair{ m_Bodies[i], m_Bodies[j] };
+                pair[0].ReceiveGravity = true;
+                pair[0].GenerateGravity = false;
+                pair[1].ReceiveGravity = false;
+                pair[1].GenerateGravity = true;
+                std::vector<AstroVector3> pairForces;
+                m_DirectGravitySolver.ComputeForces(pair, m_Settings, pairForces);
+                if (pairForces.size() == 2u)
+                {
+                    outForces[i] += pairForces[0];
+                }
+            }
+        }
+    }
+}
+
 void AstroWorld::CacheGravityForces()
 {
     m_CachedGravityForces = m_Forces;
@@ -305,6 +432,7 @@ void AstroWorld::InvalidateGravityForceCache()
 {
     m_CachedGravityBodies.clear();
     m_CachedGravityForces.clear();
+    m_CachedFarGravityForces.clear();
     m_StepsSinceGravitySolve = 0u;
 }
 
