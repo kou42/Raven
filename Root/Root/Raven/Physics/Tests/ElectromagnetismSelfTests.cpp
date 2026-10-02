@@ -560,6 +560,9 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(movingDipoleField.GetDipoleMoment().x, 0.0f, 1.0e-4f));
     assert(NearlyEqual(movingDipoleField.GetDipoleMoment().y, 2.0f, 1.0e-4f));
     assert(NearlyEqual(movingDipoleField.GetDipoleMoment().z, 0.0f, 1.0e-4f));
+    movingDipoleScene.DestroyEntity(dipoleSource);
+    movingDipoleWorld.StepSimulation(movingDipoleScene, fixedDeltaTime);
+    assert(movingDipoleField.GetDipoleMoment().LengthSq() <= 1.0e-12f);
     assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == true);
     assert(movingDipoleWorld.UnregisterCelestialDipoleMagneticFieldBinding(movingDipoleField) == false);
     assert(movingDipoleWorld.GetElectromagneticSystem().UnregisterMagneticField(movingDipoleField) == true);
