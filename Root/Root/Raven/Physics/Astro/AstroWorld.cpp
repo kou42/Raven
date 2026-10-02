@@ -87,13 +87,9 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
 
         if (reuseCachedFarForces == true)
         {
-            m_Forces.resize(m_Bodies.size());
-            for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
-            {
-                m_Forces[i] = nearForces[i] + m_CachedFarGravityForces[i];
-            }
             ++m_StepsSinceGravitySolve;
             m_Statistics.CachedFarGravityForceUsed = true;
+            ApplyFarGravityTransition(nearForces, false);
         }
         else
         {
@@ -120,8 +116,8 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
                 // Full - Near をFar成分として保存することで、既存Solver契約を変更せず
                 // 時間方向のLODだけをAstroWorld境界へ追加します。
                 m_CachedFarGravityForces[i] = m_Forces[i] - nearForces[i];
-                m_Forces[i] = nearForces[i] + m_CachedFarGravityForces[i];
             }
+            ApplyFarGravityTransition(nearForces, true);
 
             m_Statistics.GravitySolveTimeMs =
                 std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
@@ -377,6 +373,10 @@ void AstroWorld::SetMultiRateSettings(const AstroMultiRateSettings& settings)
     {
         m_MultiRateSettings.AdaptiveFarGravityStableStepCount = 1u;
     }
+    if (m_MultiRateSettings.FarGravityTransitionSteps == 0u)
+    {
+        m_MultiRateSettings.FarGravityTransitionSteps = 1u;
+    }
     m_CurrentFarGravityUpdateIntervalSteps = std::clamp(
         m_MultiRateSettings.FarGravityUpdateIntervalSteps,
         m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps,
@@ -591,6 +591,75 @@ void AstroWorld::UpdateAdaptiveFarGravityInterval()
         m_CurrentFarGravityUpdateIntervalSteps;
 }
 
+void AstroWorld::ApplyFarGravityTransition(
+    const std::vector<AstroVector3>& nearForces,
+    bool farSolveExecuted)
+{
+    if (m_MultiRateSettings.SmoothFarGravityTransitions == false)
+    {
+        m_AppliedFarGravityForces = m_CachedFarGravityForces;
+        m_FarGravityTransitionStartForces.clear();
+        m_FarGravityTransitionStep = 0u;
+        m_Forces.resize(m_Bodies.size());
+        for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+        {
+            m_Forces[i] = nearForces[i] + m_CachedFarGravityForces[i];
+        }
+        return;
+    }
+
+    if (farSolveExecuted == true)
+    {
+        if (m_AppliedFarGravityForces.size() == m_Bodies.size())
+        {
+            m_FarGravityTransitionStartForces = m_AppliedFarGravityForces;
+            m_FarGravityTransitionStep = 0u;
+        }
+        else
+        {
+            // 初回solveには遷移元がないため、正しいFar Forceをそのまま採用します。
+            m_AppliedFarGravityForces = m_CachedFarGravityForces;
+            m_FarGravityTransitionStartForces.clear();
+            m_FarGravityTransitionStep = 0u;
+        }
+    }
+
+    const bool transitionActive =
+        m_FarGravityTransitionStartForces.size() == m_Bodies.size()
+        && m_FarGravityTransitionStep < m_MultiRateSettings.FarGravityTransitionSteps;
+    if (transitionActive == true)
+    {
+        ++m_FarGravityTransitionStep;
+        const double alpha = std::min(
+            1.0,
+            static_cast<double>(m_FarGravityTransitionStep)
+                / static_cast<double>(m_MultiRateSettings.FarGravityTransitionSteps));
+        m_AppliedFarGravityForces.resize(m_Bodies.size());
+        for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+        {
+            m_AppliedFarGravityForces[i] =
+                m_FarGravityTransitionStartForces[i] * (1.0 - alpha)
+                + m_CachedFarGravityForces[i] * alpha;
+        }
+        m_Statistics.FarGravityTransitionActive = alpha < 1.0;
+        m_Statistics.FarGravityTransitionAlpha = alpha;
+        if (alpha >= 1.0)
+        {
+            m_FarGravityTransitionStartForces.clear();
+        }
+    }
+    else
+    {
+        m_AppliedFarGravityForces = m_CachedFarGravityForces;
+    }
+
+    m_Forces.resize(m_Bodies.size());
+    for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+    {
+        m_Forces[i] = nearForces[i] + m_AppliedFarGravityForces[i];
+    }
+}
+
 void AstroWorld::CacheGravityForces()
 {
     m_CachedGravityForces = m_Forces;
@@ -602,6 +671,9 @@ void AstroWorld::InvalidateGravityForceCache()
     m_CachedGravityBodies.clear();
     m_CachedGravityForces.clear();
     m_CachedFarGravityForces.clear();
+    m_AppliedFarGravityForces.clear();
+    m_FarGravityTransitionStartForces.clear();
+    m_FarGravityTransitionStep = 0u;
     m_StepsSinceGravitySolve = 0u;
     m_AdaptiveFarGravityStableSteps = 0u;
 }
