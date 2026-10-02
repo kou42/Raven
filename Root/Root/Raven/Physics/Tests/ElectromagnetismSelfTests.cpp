@@ -314,6 +314,31 @@ void RunElectromagnetismSelfTests()
     assert(NearlyEqual(magneticFieldFarAway.y, magneticFieldAtOrigin.y));
     assert(NearlyEqual(magneticFieldFarAway.z, magneticFieldAtOrigin.z));
 
+    // z軸向きの磁気双極子は、軸上では+z、赤道面では-zの磁場を作ります。
+    // 軸上の磁場強度は赤道面の2倍になり、距離を2倍にすると1/8へ減衰します。
+    const DipoleMagneticField dipoleMagneticField(
+        { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
+    const math::Vec3 dipoleAxisField =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 1.0f });
+    const math::Vec3 dipoleEquatorField =
+        dipoleMagneticField.Evaluate({ 1.0f, 0.0f, 0.0f });
+    const math::Vec3 dipoleAxisFieldAtTwoMeters =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 2.0f });
+    assert(dipoleAxisField.z > 0.0f);
+    assert(dipoleEquatorField.z < 0.0f);
+    assert(NearlyEqual(dipoleAxisField.z / -dipoleEquatorField.z, 2.0f, 1.0e-3f));
+    assert(NearlyEqual(dipoleAxisFieldAtTwoMeters.z / dipoleAxisField.z, 0.125f, 1.0e-3f));
+
+    // 双極子中心は方向が定義できないためゼロを返し、MinimumDistance内では有限値を維持します。
+    const math::Vec3 dipoleCenterField =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 0.0f });
+    const math::Vec3 dipoleSoftenedField =
+        dipoleMagneticField.Evaluate({ 0.0f, 0.0f, 0.05f });
+    assert(dipoleCenterField.LengthSq() <= 1.0e-12f);
+    assert(std::isfinite(dipoleSoftenedField.x));
+    assert(std::isfinite(dipoleSoftenedField.y));
+    assert(std::isfinite(dipoleSoftenedField.z));
+
     const math::Vec3 positiveMagneticForce = ComputeMagneticForce(
         2.0, { 3.0f, 0.0f, 0.0f }, magneticFieldAtOrigin);
     const math::Vec3 negativeMagneticForce = ComputeMagneticForce(
