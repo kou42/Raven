@@ -259,6 +259,60 @@ void RunAstroWorldSelfTests()
         hasPreviousTheta = true;
     }
 
+    // Barnes-Hutの瞬間Force誤差だけでなく、同じ初期状態を複数step積分したときの
+    // 軌道・Energy driftもDirect Solverと比較します。近似誤差が時間積分で増幅しても
+    // Referenceから大きく逸脱しないことをPhase 5の採用条件として固定します。
+    std::vector<AstroBodyState> directOrbitBodies(2u);
+    directOrbitBodies[0].Mass = 1.0;
+    directOrbitBodies[0].Position = { -1.0, 0.0, 0.0 };
+    directOrbitBodies[0].Velocity = { 0.0, -0.5, 0.0 };
+    directOrbitBodies[1].Mass = 1.0;
+    directOrbitBodies[1].Position = { 1.0, 0.0, 0.0 };
+    directOrbitBodies[1].Velocity = { 0.0, 0.5, 0.0 };
+    std::vector<AstroBodyState> barnesHutOrbitBodies = directOrbitBodies;
+
+    const OrbitalDiagnostics barnesHutInitialDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(barnesHutOrbitBodies, orbitSettings);
+    BarnesHutGravitySolver orbitBarnesHutSolver;
+    orbitBarnesHutSolver.SetTheta(0.5);
+    std::vector<AstroVector3> directOrbitForces;
+    std::vector<AstroVector3> barnesHutOrbitForces;
+
+    for (int step = 0; step < orbitStepCount; ++step)
+    {
+        solver.ComputeForces(directOrbitBodies, orbitSettings, directOrbitForces);
+        orbitBarnesHutSolver.ComputeForces(
+            barnesHutOrbitBodies,
+            orbitSettings,
+            barnesHutOrbitForces);
+
+        for (std::size_t i = 0u; i < directOrbitBodies.size(); ++i)
+        {
+            directOrbitBodies[i].Velocity +=
+                directOrbitForces[i] * (orbitDt / directOrbitBodies[i].Mass);
+            directOrbitBodies[i].Position += directOrbitBodies[i].Velocity * orbitDt;
+
+            barnesHutOrbitBodies[i].Velocity +=
+                barnesHutOrbitForces[i] * (orbitDt / barnesHutOrbitBodies[i].Mass);
+            barnesHutOrbitBodies[i].Position += barnesHutOrbitBodies[i].Velocity * orbitDt;
+        }
+    }
+
+    const OrbitalDiagnostics barnesHutFinalDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(barnesHutOrbitBodies, orbitSettings);
+    const double barnesHutEnergyScale =
+        std::max(std::abs(barnesHutInitialDiagnostics.TotalEnergy), 1.0e-12);
+    const double barnesHutEnergyRelativeDrift =
+        std::abs(barnesHutFinalDiagnostics.TotalEnergy
+            - barnesHutInitialDiagnostics.TotalEnergy) / barnesHutEnergyScale;
+    const double directBarnesHutPositionError =
+        (barnesHutOrbitBodies[0].Position - directOrbitBodies[0].Position).Length();
+
+    // 2-bodyではtargetを含むnodeを必ず展開するため、Barnes-HutはDirectと同じpairを評価します。
+    // ここでは長時間積分経路がReferenceと一致し、Energy driftを悪化させないことを確認します。
+    assert(directBarnesHutPositionError < 1.0e-10);
+    assert(barnesHutEnergyRelativeDrift < 1.0e-5);
+
     // Direct SolverのO(N^2)候補数が N*(N-1)/2 と一致することを複数規模で確認します。
     // 10,000 bodiesは約5千万pairになるためDebug起動時には回さず、実機benchmarkで明示実行します。
     for (const std::size_t bodyCount : { 10u, 100u, 1000u })
