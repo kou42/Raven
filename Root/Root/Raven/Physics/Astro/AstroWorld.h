@@ -31,6 +31,11 @@ struct AstroMultiRateSettings
     // N (> 1)ならsolve間のstepでは前回Forceを再利用し、Barnes-Hut近似誤差とは独立に
     // 更新頻度低下の影響を測定できるようにします。
     std::uint32_t GravityUpdateIntervalSteps = 1u;
+
+    // 0以下ならNear/Far分離を無効化します。有効時はこの距離以内の相互作用を毎step再評価し、
+    // それより遠い寄与だけをFarGravityUpdateIntervalStepsの周期で更新します。
+    double NearGravityDistance = 0.0;
+    std::uint32_t FarGravityUpdateIntervalSteps = 4u;
 };
 
 struct AstroGravitySolverSelectionSettings
@@ -68,6 +73,8 @@ public:
 private:
     GravitySolver* ResolveGravitySolver(std::size_t bodyCount);
     bool CanReuseCachedGravityForces() const;
+    bool IsNearFarMultiRateEnabled() const;
+    void ComputeNearGravityForces(std::vector<AstroVector3>& outForces);
     void CacheGravityForces();
     void InvalidateGravityForceCache();
 
@@ -85,6 +92,7 @@ private:
     std::vector<AstroVector3> m_Forces;
     std::vector<AstroBodyState> m_CachedGravityBodies;
     std::vector<AstroVector3> m_CachedGravityForces;
+    std::vector<AstroVector3> m_CachedFarGravityForces;
     OrbitalDiagnostics m_LastDiagnostics{};
     AstroStatistics m_Statistics{};
 };
