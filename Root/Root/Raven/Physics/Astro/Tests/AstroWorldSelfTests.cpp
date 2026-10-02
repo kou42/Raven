@@ -577,6 +577,63 @@ void RunAstroWorldSelfTests()
         < 1.0e-12);
     assert(lodErrorWorld.GetStatistics().MaximumGravityAccelerationError > 0.0);
 
+    // Adaptive LODは誤差がLow以下で安定した場合だけFar周期を伸ばし、
+    // High超過時は即座に周期を短くします。ここでは2step安定で2->3、誤差増大で3->2を確認します。
+    Scene adaptiveLodScene;
+    AstroWorld adaptiveLodWorld;
+    adaptiveLodWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings adaptiveSolverSettings{};
+    adaptiveSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    adaptiveLodWorld.SetGravitySolverSelectionSettings(adaptiveSolverSettings);
+
+    AstroMultiRateSettings adaptiveSettings{};
+    adaptiveSettings.NearGravityDistance = 1.0;
+    adaptiveSettings.FarGravityUpdateIntervalSteps = 2u;
+    adaptiveSettings.AdaptiveFarGravityUpdate = true;
+    adaptiveSettings.MinimumFarGravityUpdateIntervalSteps = 1u;
+    adaptiveSettings.MaximumFarGravityUpdateIntervalSteps = 4u;
+    adaptiveSettings.AdaptiveFarGravityLowRelativeError = 0.01;
+    adaptiveSettings.AdaptiveFarGravityHighRelativeError = 0.10;
+    adaptiveSettings.AdaptiveFarGravityStableStepCount = 2u;
+    adaptiveLodWorld.SetMultiRateSettings(adaptiveSettings);
+
+    Entity adaptiveA = CreateCelestialBody(
+        adaptiveLodScene, "Adaptive LOD A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity adaptiveB = CreateCelestialBody(
+        adaptiveLodScene, "Adaptive LOD B", { 4.0f, 0.0f, 0.0f }, 3.0f);
+
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 2u);
+    assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == false);
+
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == true);
+    assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 3u);
+
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<TransformComponent>().Position.x = 8.0f;
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().MaximumGravityForceRelativeError
+        > adaptiveSettings.AdaptiveFarGravityHighRelativeError);
+    assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == true);
+    assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 2u);
+
+    // 不正なAdaptive設定は安全な範囲へClampします。
+    adaptiveSettings.MinimumFarGravityUpdateIntervalSteps = 0u;
+    adaptiveSettings.MaximumFarGravityUpdateIntervalSteps = 0u;
+    adaptiveSettings.AdaptiveFarGravityStableStepCount = 0u;
+    adaptiveSettings.AdaptiveFarGravityLowRelativeError = -1.0;
+    adaptiveSettings.AdaptiveFarGravityHighRelativeError = -1.0;
+    adaptiveLodWorld.SetMultiRateSettings(adaptiveSettings);
+    assert(adaptiveLodWorld.GetMultiRateSettings().MinimumFarGravityUpdateIntervalSteps == 1u);
+    assert(adaptiveLodWorld.GetMultiRateSettings().MaximumFarGravityUpdateIntervalSteps == 1u);
+    assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityStableStepCount == 1u);
+    assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityLowRelativeError == 0.01);
+    assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityHighRelativeError == 0.05);
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
