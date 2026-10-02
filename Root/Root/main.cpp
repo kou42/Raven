@@ -27,6 +27,7 @@
 #include "Raven/Physics/Fluid/Debug/FluidBuoyancyDebugOverlayLayer.h"
 #include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 #include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
+#include "Raven/Physics/Tests/CoulombBenchmark.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -78,6 +79,10 @@ int main(int argc, char* argv[])
         if (backendArgument == "--benchmark-astro-gravity")
         {
             return Raven::ph::tests::RunAstroGravityBenchmark();
+        }
+        if (backendArgument == "--benchmark-coulomb")
+        {
+            return Raven::ph::tests::RunCoulombBenchmark();
         }
         if (backendArgument == "--backend=vulkan")
         {
