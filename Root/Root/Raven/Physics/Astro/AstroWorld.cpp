@@ -143,27 +143,27 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         else
         {
             const auto solveBegin = Clock::now();
-        gravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
-        const auto solveEnd = Clock::now();
+            gravitySolver->ComputeForces(m_Bodies, m_Settings, m_Forces, &m_Statistics);
+            const auto solveEnd = Clock::now();
 
-        // Custom Solverが受け取ったStatisticsを初期化しても、実際に選択した種別は
-        // AstroWorld境界の診断値として必ず復元します。
-        if (gravitySolver == &m_BarnesHutGravitySolver)
-        {
-            m_Statistics.SolverKind = AstroGravitySolverKind::BarnesHut;
-        }
-        else if (gravitySolver == &m_DirectGravitySolver)
-        {
-            m_Statistics.SolverKind = AstroGravitySolverKind::Direct;
-        }
-        else
-        {
-            m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
-        }
-        m_Statistics.GravitySolveTimeMs =
-            std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
-        m_Statistics.GravitySolveExecuted = true;
-        m_StepsSinceGravitySolve = 0u;
+            // Custom Solverが受け取ったStatisticsを初期化しても、実際に選択した種別は
+            // AstroWorld境界の診断値として必ず復元します。
+            if (gravitySolver == &m_BarnesHutGravitySolver)
+            {
+                m_Statistics.SolverKind = AstroGravitySolverKind::BarnesHut;
+            }
+            else if (gravitySolver == &m_DirectGravitySolver)
+            {
+                m_Statistics.SolverKind = AstroGravitySolverKind::Direct;
+            }
+            else
+            {
+                m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
+            }
+            m_Statistics.GravitySolveTimeMs =
+                std::chrono::duration<double, std::milli>(solveEnd - solveBegin).count();
+            m_Statistics.GravitySolveExecuted = true;
+            m_StepsSinceGravitySolve = 0u;
             CacheGravityForces();
         }
     }
