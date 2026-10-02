@@ -1,5 +1,6 @@
 #include "Raven/Physics/Astro/AstroWorld.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cmath>
@@ -73,7 +74,11 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         std::vector<AstroVector3> nearForces;
         ComputeNearGravityForces(nearForces);
 
-        const std::uint32_t farInterval = m_MultiRateSettings.FarGravityUpdateIntervalSteps;
+        const std::uint32_t farInterval =
+            m_MultiRateSettings.AdaptiveFarGravityUpdate == true
+                ? m_CurrentFarGravityUpdateIntervalSteps
+                : m_MultiRateSettings.FarGravityUpdateIntervalSteps;
+        m_Statistics.CurrentFarGravityUpdateIntervalSteps = farInterval;
         const bool farIntervalElapsed =
             farInterval <= 1u || m_StepsSinceGravitySolve >= (farInterval - 1u);
         const bool reuseCachedFarForces =
@@ -173,9 +178,15 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         return;
     }
 
-    if (m_MultiRateSettings.MeasureDirectReferenceError == true)
+    if (m_MultiRateSettings.MeasureDirectReferenceError == true
+        || m_MultiRateSettings.AdaptiveFarGravityUpdate == true)
     {
         MeasureDirectReferenceError();
+    }
+    if (m_MultiRateSettings.AdaptiveFarGravityUpdate == true
+        && IsNearFarMultiRateEnabled() == true)
+    {
+        UpdateAdaptiveFarGravityInterval();
     }
 
     const auto feedbackBegin = Clock::now();
@@ -340,6 +351,37 @@ void AstroWorld::SetMultiRateSettings(const AstroMultiRateSettings& settings)
     {
         m_MultiRateSettings.NearGravityDistance = 0.0;
     }
+    if (m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps == 0u)
+    {
+        m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps = 1u;
+    }
+    if (m_MultiRateSettings.MaximumFarGravityUpdateIntervalSteps
+        < m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps)
+    {
+        m_MultiRateSettings.MaximumFarGravityUpdateIntervalSteps =
+            m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps;
+    }
+    if (std::isfinite(m_MultiRateSettings.AdaptiveFarGravityLowRelativeError) == false
+        || m_MultiRateSettings.AdaptiveFarGravityLowRelativeError < 0.0)
+    {
+        m_MultiRateSettings.AdaptiveFarGravityLowRelativeError = 0.01;
+    }
+    if (std::isfinite(m_MultiRateSettings.AdaptiveFarGravityHighRelativeError) == false
+        || m_MultiRateSettings.AdaptiveFarGravityHighRelativeError
+            <= m_MultiRateSettings.AdaptiveFarGravityLowRelativeError)
+    {
+        m_MultiRateSettings.AdaptiveFarGravityHighRelativeError =
+            std::max(0.05, m_MultiRateSettings.AdaptiveFarGravityLowRelativeError * 2.0);
+    }
+    if (m_MultiRateSettings.AdaptiveFarGravityStableStepCount == 0u)
+    {
+        m_MultiRateSettings.AdaptiveFarGravityStableStepCount = 1u;
+    }
+    m_CurrentFarGravityUpdateIntervalSteps = std::clamp(
+        m_MultiRateSettings.FarGravityUpdateIntervalSteps,
+        m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps,
+        m_MultiRateSettings.MaximumFarGravityUpdateIntervalSteps);
+    m_AdaptiveFarGravityStableSteps = 0u;
     InvalidateGravityForceCache();
 }
 
@@ -506,6 +548,49 @@ void AstroWorld::MeasureDirectReferenceError()
     m_Statistics.DirectReferenceErrorMeasured = true;
 }
 
+void AstroWorld::UpdateAdaptiveFarGravityInterval()
+{
+    if (m_Statistics.DirectReferenceErrorMeasured == false)
+    {
+        return;
+    }
+
+    const double error = m_Statistics.MaximumGravityForceRelativeError;
+    if (error >= m_MultiRateSettings.AdaptiveFarGravityHighRelativeError)
+    {
+        m_AdaptiveFarGravityStableSteps = 0u;
+        if (m_CurrentFarGravityUpdateIntervalSteps
+            > m_MultiRateSettings.MinimumFarGravityUpdateIntervalSteps)
+        {
+            // 誤差超過時は次stepから1段階だけ更新頻度を上げます。
+            // 一気にminimumへ落とさず、必要な精度と計算量の均衡点を探索します。
+            --m_CurrentFarGravityUpdateIntervalSteps;
+            m_Statistics.AdaptiveFarGravityIntervalChanged = true;
+        }
+    }
+    else if (error <= m_MultiRateSettings.AdaptiveFarGravityLowRelativeError)
+    {
+        ++m_AdaptiveFarGravityStableSteps;
+        if (m_AdaptiveFarGravityStableSteps
+                >= m_MultiRateSettings.AdaptiveFarGravityStableStepCount
+            && m_CurrentFarGravityUpdateIntervalSteps
+                < m_MultiRateSettings.MaximumFarGravityUpdateIntervalSteps)
+        {
+            ++m_CurrentFarGravityUpdateIntervalSteps;
+            m_AdaptiveFarGravityStableSteps = 0u;
+            m_Statistics.AdaptiveFarGravityIntervalChanged = true;
+        }
+    }
+    else
+    {
+        // Low/High間をdead bandとして扱い、閾値付近でLODが毎step反転しないようにします。
+        m_AdaptiveFarGravityStableSteps = 0u;
+    }
+
+    m_Statistics.CurrentFarGravityUpdateIntervalSteps =
+        m_CurrentFarGravityUpdateIntervalSteps;
+}
+
 void AstroWorld::CacheGravityForces()
 {
     m_CachedGravityForces = m_Forces;
@@ -518,6 +603,7 @@ void AstroWorld::InvalidateGravityForceCache()
     m_CachedGravityForces.clear();
     m_CachedFarGravityForces.clear();
     m_StepsSinceGravitySolve = 0u;
+    m_AdaptiveFarGravityStableSteps = 0u;
 }
 
 } // namespace Raven::ph
