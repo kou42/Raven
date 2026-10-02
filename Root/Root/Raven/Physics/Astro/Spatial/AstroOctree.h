@@ -32,14 +32,6 @@ public:
     std::int32_t GetRootIndex() const { return m_RootIndex; }
 
 private:
-    std::int32_t CreateNode(const AstroVector3& center, double halfSize);
-    void InsertBody(
-        std::int32_t nodeIndex,
-        std::int32_t bodyIndex,
-        const std::vector<AstroBodyState>& bodies,
-        std::uint32_t depth);
-    void Subdivide(std::int32_t nodeIndex);
-    std::int32_t SelectChild(const AstroOctreeNode& node, const AstroVector3& position) const;
     void AccumulateMass(std::int32_t nodeIndex, const std::vector<AstroBodyState>& bodies);
 
 private:
