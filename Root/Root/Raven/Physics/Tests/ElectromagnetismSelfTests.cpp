@@ -10,6 +10,7 @@
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
 #include "Raven/Physics/Electromagnetism/Spatial/CoulombOctree.h"
+#include "Raven/Physics/Astro/CelestialBody.h"
 #include "Raven/Physics/Field/GravityField.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -455,6 +456,32 @@ void RunElectromagnetismSelfTests()
     assert(magneticSystem.ContainsMagneticField(integratedMagneticField) == true);
     magneticSystem.ClearMagneticFields();
     assert(magneticSystem.GetRegisteredMagneticFieldCount() == 0u);
+
+    // DipoleMagneticFieldも既存の非所有Registryからfixed-stepへ入り、Lorentz力として積分されます。
+    DipoleMagneticField integratedDipoleField(
+        { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
+    Scene dipoleScene;
+    ElectromagneticSystem& dipoleSystem =
+        dipoleScene.GetPhysicsSimulationWorld().GetElectromagneticSystem();
+    assert(dipoleSystem.RegisterMagneticField(integratedDipoleField) == true);
+    Entity dipoleCharge = CreateChargedSphere(
+        dipoleScene, "Dipole Magnetic Field Charge", { 1.0f, 0.0f, 0.0f }, 2.0);
+    RigidBodyComponent& dipoleBody = dipoleCharge.GetComponent<RigidBodyComponent>();
+    dipoleBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
+    dipoleBody.LinearDamping = 0.0f;
+    dipoleBody.AngularDamping = 0.0f;
+
+    const math::Vec3 dipoleFieldAtBody = integratedDipoleField.Evaluate({ 1.0f, 0.0f, 0.0f });
+    const math::Vec3 expectedDipoleForce =
+        ComputeMagneticForce(2.0, dipoleBody.LinearVelocity, dipoleFieldAtBody);
+    dipoleScene.GetPhysicsSimulationWorld().StepSimulation(dipoleScene, fixedDeltaTime);
+    assert(NearlyEqual(
+        dipoleBody.LinearVelocity.x,
+        expectedDipoleForce.x * fixedDeltaTime,
+        1.0e-4f));
+    assert(NearlyEqual(dipoleBody.LinearVelocity.y, 1.0f, 1.0e-4f));
+    assert(dipoleBody.Force.LengthSq() <= 1.0e-12f);
+    assert(dipoleSystem.UnregisterMagneticField(integratedDipoleField) == true);
 
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
