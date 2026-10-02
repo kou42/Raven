@@ -41,7 +41,8 @@ struct AstroMultiRateSettings
     // 実際に適用するMulti-rate Forceとの差をPhysics LOD誤差として記録します。
     bool MeasureDirectReferenceError = false;
 
-    // Direct Reference誤差を使ってFar更新周期を自動調整します。
+    // Far solve時に「前回cacheと今回solve結果」の変化量を観測して更新周期を自動調整します。
+    // Direct Referenceを必須にしないため、Barnes-Hut利用時にもO(N^2)診断を追加せず使えます。
     // Low以下が続けば周期を伸ばし、High以上なら即座に短くすることで、
     // 誤差増大への応答を速くしつつ閾値付近の頻繁な往復を抑えます。
     bool AdaptiveFarGravityUpdate = false;
@@ -95,7 +96,7 @@ private:
     bool IsNearFarMultiRateEnabled() const;
     void ComputeNearGravityForces(std::vector<AstroVector3>& outForces);
     void MeasureDirectReferenceError();
-    void UpdateAdaptiveFarGravityInterval();
+    void UpdateAdaptiveFarGravityInterval(double maximumFarForceRelativeChange);
     void ApplyFarGravityTransition(
         const std::vector<AstroVector3>& nearForces,
         bool farSolveExecuted);
