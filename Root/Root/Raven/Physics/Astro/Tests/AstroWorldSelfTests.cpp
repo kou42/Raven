@@ -851,6 +851,11 @@ void RunAstroWorldSelfTests()
     adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
     adaptiveB.GetComponent<TransformComponent>().Position.x = 8.0f;
     adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().CachedFarGravityForceUsed == true);
+
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
     assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == true);
     assert(adaptiveLodWorld.GetStatistics().MaximumFarGravityForceRelativeChange
         > adaptiveSettings.AdaptiveFarGravityHighRelativeError);
