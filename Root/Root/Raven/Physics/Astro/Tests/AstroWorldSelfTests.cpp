@@ -27,6 +27,142 @@ bool NearlyEqual(float left, float right, float epsilon = 1.0e-5f)
     return std::abs(left - right) <= epsilon;
 }
 
+struct MultiRateOrbitResult
+{
+    std::vector<AstroBodyState> Bodies;
+    OrbitalDiagnostics InitialDiagnostics{};
+    OrbitalDiagnostics FinalDiagnostics{};
+};
+
+MultiRateOrbitResult SimulateMultiRateOrbit(
+    const std::vector<AstroBodyState>& initialBodies,
+    const GravitySolverSettings& settings,
+    std::uint32_t farInterval,
+    bool adaptive,
+    bool smoothing,
+    int stepCount,
+    double dt)
+{
+    DirectGravitySolver referenceSolver;
+    MultiRateOrbitResult result{};
+    result.Bodies = initialBodies;
+    result.InitialDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(result.Bodies, settings);
+
+    std::vector<AstroVector3> cachedForces;
+    std::vector<AstroVector3> appliedForces;
+    std::vector<AstroVector3> transitionStartForces;
+    std::uint32_t stepsSinceSolve = 0u;
+    std::uint32_t currentInterval = farInterval;
+    std::uint32_t stableSteps = 0u;
+    std::uint32_t transitionStep = 0u;
+
+    for (int step = 0; step < stepCount; ++step)
+    {
+        const bool solve =
+            cachedForces.size() != result.Bodies.size()
+            || currentInterval <= 1u
+            || stepsSinceSolve >= (currentInterval - 1u);
+
+        if (solve == true)
+        {
+            std::vector<AstroVector3> newForces;
+            referenceSolver.ComputeForces(result.Bodies, settings, newForces);
+
+            if (smoothing == true && appliedForces.size() == newForces.size())
+            {
+                transitionStartForces = appliedForces;
+                transitionStep = 0u;
+            }
+            else
+            {
+                appliedForces = newForces;
+                transitionStartForces.clear();
+                transitionStep = 0u;
+            }
+            cachedForces = newForces;
+            stepsSinceSolve = 0u;
+        }
+        else
+        {
+            ++stepsSinceSolve;
+        }
+
+        if (smoothing == true
+            && transitionStartForces.size() == cachedForces.size()
+            && transitionStep < 2u)
+        {
+            ++transitionStep;
+            const double alpha = static_cast<double>(transitionStep) / 2.0;
+            appliedForces.resize(cachedForces.size());
+            for (std::size_t i = 0u; i < cachedForces.size(); ++i)
+            {
+                appliedForces[i] =
+                    transitionStartForces[i] * (1.0 - alpha) + cachedForces[i] * alpha;
+            }
+            if (transitionStep >= 2u)
+            {
+                transitionStartForces.clear();
+            }
+        }
+        else if (transitionStartForces.empty() == true)
+        {
+            appliedForces = cachedForces;
+        }
+
+        if (adaptive == true)
+        {
+            std::vector<AstroVector3> directReferenceForces;
+            referenceSolver.ComputeForces(result.Bodies, settings, directReferenceForces);
+            double maximumRelativeError = 0.0;
+            for (std::size_t i = 0u; i < appliedForces.size(); ++i)
+            {
+                const double referenceMagnitude = directReferenceForces[i].Length();
+                if (referenceMagnitude <= 1.0e-12)
+                {
+                    continue;
+                }
+                maximumRelativeError = std::max(
+                    maximumRelativeError,
+                    (appliedForces[i] - directReferenceForces[i]).Length()
+                        / referenceMagnitude);
+            }
+
+            if (maximumRelativeError >= 0.05)
+            {
+                stableSteps = 0u;
+                if (currentInterval > 1u)
+                {
+                    --currentInterval;
+                }
+            }
+            else if (maximumRelativeError <= 0.01)
+            {
+                ++stableSteps;
+                if (stableSteps >= 4u && currentInterval < 8u)
+                {
+                    ++currentInterval;
+                    stableSteps = 0u;
+                }
+            }
+            else
+            {
+                stableSteps = 0u;
+            }
+        }
+
+        for (std::size_t i = 0u; i < result.Bodies.size(); ++i)
+        {
+            result.Bodies[i].Velocity += appliedForces[i] * (dt / result.Bodies[i].Mass);
+            result.Bodies[i].Position += result.Bodies[i].Velocity * dt;
+        }
+    }
+
+    result.FinalDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(result.Bodies, settings);
+    return result;
+}
+
 Entity CreateCelestialBody(
     Scene& scene,
     const char* name,
@@ -104,6 +240,27 @@ void RunAstroWorldSelfTests()
     assert(std::isfinite(forces[1].x));
     assert(NearlyEqual(forces[0].LengthSq(), 0.0f));
 
+    // Near/Far経路のDirect pair評価もDirectGravitySolverと同じMinimumDistance契約を維持します。
+    Scene nearPairScene;
+    AstroWorld nearPairWorld;
+    nearPairWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings nearPairSolverSettings{};
+    nearPairSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    nearPairWorld.SetGravitySolverSelectionSettings(nearPairSolverSettings);
+    AstroMultiRateSettings nearPairMultiRateSettings{};
+    nearPairMultiRateSettings.NearGravityDistance = 1.0;
+    nearPairMultiRateSettings.FarGravityUpdateIntervalSteps = 4u;
+    nearPairWorld.SetMultiRateSettings(nearPairMultiRateSettings);
+
+    Entity nearPairA = CreateCelestialBody(
+        nearPairScene, "Near Pair A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity nearPairB = CreateCelestialBody(
+        nearPairScene, "Near Pair B", { 0.001f, 0.0f, 0.0f }, 3.0f);
+    nearPairWorld.AccumulateGravityForces(nearPairScene, 0.1f);
+    assert(nearPairWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
+    assert(NearlyEqual(nearPairA.GetComponent<RigidBodyComponent>().Force.x, 60000.0f, 1.0f));
+    assert(NearlyEqual(nearPairB.GetComponent<RigidBodyComponent>().Force.x, -60000.0f, 1.0f));
+
     // Generate/Receiveを分離したStatic sourceでは、source自身を動かさずprobeだけへ引力を加えられます。
     bodies[0].Position = { 0.0f, 0.0f, 0.0f };
     bodies[0].Mass = 10.0;
@@ -166,6 +323,63 @@ void RunAstroWorldSelfTests()
     assert(finalDiagnostics.TotalLinearMomentum.Length() < 1.0e-10);
     assert((finalDiagnostics.TotalAngularMomentum - initialDiagnostics.TotalAngularMomentum).Length()
         < 1.0e-10);
+
+    // Phase 8の時間LODを同一初期条件で長時間比較します。
+    // Direct毎stepをReferenceとし、固定Multi-rate / Adaptive / Adaptive+Smoothingについて
+    // Position・Velocity差とEnergy / Angular Momentum driftを同じ尺度で測定します。
+    std::vector<AstroBodyState> multiRateInitialBodies(2u);
+    multiRateInitialBodies[0].Mass = 1.0;
+    multiRateInitialBodies[0].Position = { -1.0, 0.0, 0.0 };
+    multiRateInitialBodies[0].Velocity = { 0.0, -0.5, 0.0 };
+    multiRateInitialBodies[1].Mass = 1.0;
+    multiRateInitialBodies[1].Position = { 1.0, 0.0, 0.0 };
+    multiRateInitialBodies[1].Velocity = { 0.0, 0.5, 0.0 };
+    const MultiRateOrbitResult directReferenceOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 1u, false, false, orbitStepCount, orbitDt);
+    const MultiRateOrbitResult fixedMultiRateOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 4u, false, false, orbitStepCount, orbitDt);
+    const MultiRateOrbitResult adaptiveMultiRateOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 4u, true, false, orbitStepCount, orbitDt);
+    const MultiRateOrbitResult smoothedAdaptiveOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 4u, true, true, orbitStepCount, orbitDt);
+
+    const auto validateMultiRateOrbit =
+        [&](const MultiRateOrbitResult& candidate, double maximumPositionError)
+        {
+            double positionError = 0.0;
+            double velocityError = 0.0;
+            for (std::size_t i = 0u; i < candidate.Bodies.size(); ++i)
+            {
+                positionError = std::max(
+                    positionError,
+                    (candidate.Bodies[i].Position - directReferenceOrbit.Bodies[i].Position)
+                        .Length());
+                velocityError = std::max(
+                    velocityError,
+                    (candidate.Bodies[i].Velocity - directReferenceOrbit.Bodies[i].Velocity)
+                        .Length());
+            }
+
+            const double energyScale =
+                std::max(std::abs(candidate.InitialDiagnostics.TotalEnergy), 1.0e-12);
+            const double energyDrift =
+                std::abs(candidate.FinalDiagnostics.TotalEnergy
+                    - candidate.InitialDiagnostics.TotalEnergy) / energyScale;
+            const double angularMomentumDrift =
+                (candidate.FinalDiagnostics.TotalAngularMomentum
+                    - candidate.InitialDiagnostics.TotalAngularMomentum).Length();
+
+            assert(positionError < maximumPositionError);
+            assert(velocityError < maximumPositionError);
+            assert(energyDrift < 5.0e-3);
+            assert(angularMomentumDrift < 1.0e-10);
+        };
+
+    // 固定4step更新は時間近似誤差を許容し、Adaptive系は誤差feedbackで周期を戻せるため
+    // 同じ緩い上限内でReference軌道から発散しないことを回帰条件にします。
+    validateMultiRateOrbit(fixedMultiRateOrbit, 5.0e-2);
+    validateMultiRateOrbit(adaptiveMultiRateOrbit, 5.0e-2);
+    validateMultiRateOrbit(smoothedAdaptiveOrbit, 5.0e-2);
 
     // Gravity/Coulomb共有topologyはDomain固有値を持たず、double位置とPayloadIndexだけを分割します。
     // 非有限位置を除外し、leafから元Domainのindexへ戻せることを確認します。
@@ -435,6 +649,289 @@ void RunAstroWorldSelfTests()
     solverSelectionWorld.AccumulateGravityForces(solverSelectionScene, 0.1f);
     assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::BarnesHut);
     static_cast<void>(selectionBodyA);
+
+    // Phase 8の第一段階として、Gravity Solverの更新周期を落としても毎step同じForceを
+    // Rigid accumulatorへ供給できることを確認します。interval=2では solve -> cache -> solve です。
+    Scene multiRateScene;
+    AstroWorld multiRateWorld;
+    multiRateWorld.SetGravitySolverSettings(settings);
+    AstroMultiRateSettings multiRateSettings{};
+    multiRateSettings.GravityUpdateIntervalSteps = 2u;
+    multiRateWorld.SetMultiRateSettings(multiRateSettings);
+    Entity multiRateA = CreateCelestialBody(
+        multiRateScene, "Multi-rate A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity multiRateB = CreateCelestialBody(
+        multiRateScene, "Multi-rate B", { 2.0f, 0.0f, 0.0f }, 3.0f);
+
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == true);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == false);
+    const float firstMultiRateForce =
+        multiRateA.GetComponent<RigidBodyComponent>().Force.x;
+
+    multiRateA.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateB.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == false);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == true);
+    assert(NearlyEqual(
+        multiRateA.GetComponent<RigidBodyComponent>().Force.x,
+        firstMultiRateForce));
+
+    multiRateA.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateB.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == true);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == false);
+
+    // body集合が変わった場合は更新周期の途中でもcacheを破棄し、Entity対応の誤適用を防ぎます。
+    multiRateA.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateB.GetComponent<RigidBodyComponent>().Force = {};
+    Entity multiRateC = CreateCelestialBody(
+        multiRateScene, "Multi-rate C", { 4.0f, 0.0f, 0.0f }, 1.0f);
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == true);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == false);
+    static_cast<void>(multiRateC);
+
+    multiRateSettings.GravityUpdateIntervalSteps = 0u;
+    multiRateWorld.SetMultiRateSettings(multiRateSettings);
+    assert(multiRateWorld.GetMultiRateSettings().GravityUpdateIntervalSteps == 1u);
+
+    // Near/Far分離ではNear相互作用を毎step再評価し、Far成分だけを低頻度更新します。
+    // G=1、A(m=2)-B(m=3)を2->1へ近づけるとNear Forceは1.5->6.0へ即時変化し、
+    // C(m=1, x=10)由来のFar Force 0.02は同じstepではcacheから再利用されます。
+    Scene nearFarScene;
+    AstroWorld nearFarWorld;
+    nearFarWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings nearFarSolverSettings{};
+    nearFarSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    nearFarWorld.SetGravitySolverSelectionSettings(nearFarSolverSettings);
+
+    AstroMultiRateSettings nearFarSettings{};
+    nearFarSettings.NearGravityDistance = 3.0;
+    nearFarSettings.FarGravityUpdateIntervalSteps = 4u;
+    nearFarWorld.SetMultiRateSettings(nearFarSettings);
+
+    Entity nearFarA = CreateCelestialBody(
+        nearFarScene, "Near/Far A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity nearFarB = CreateCelestialBody(
+        nearFarScene, "Near/Far B", { 2.0f, 0.0f, 0.0f }, 3.0f);
+    Entity nearFarC = CreateCelestialBody(
+        nearFarScene, "Near/Far C", { 10.0f, 0.0f, 0.0f }, 1.0f);
+
+    nearFarWorld.AccumulateGravityForces(nearFarScene, 0.1f);
+    assert(nearFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == false);
+    assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
+    assert(NearlyEqual(nearFarA.GetComponent<RigidBodyComponent>().Force.x, 1.52f));
+
+    nearFarA.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarC.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<TransformComponent>().Position.x = 1.0f;
+
+    nearFarWorld.AccumulateGravityForces(nearFarScene, 0.1f);
+    assert(nearFarWorld.GetStatistics().FarGravitySolveExecuted == false);
+    assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == true);
+    assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 1u);
+    assert(NearlyEqual(nearFarA.GetComponent<RigidBodyComponent>().Force.x, 6.02f));
+
+    // 更新周期4の途中でもBがNear境界を跨いだ場合は、旧Far成分との二重加算を避けるため即時solveします。
+    nearFarA.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarC.GetComponent<RigidBodyComponent>().Force = {};
+    nearFarB.GetComponent<TransformComponent>().Position.x = 4.0f;
+    nearFarWorld.AccumulateGravityForces(nearFarScene, 0.1f);
+    assert(nearFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(nearFarWorld.GetStatistics().CachedFarGravityForceUsed == false);
+    assert(nearFarWorld.GetStatistics().NearGravityPairEvaluationCount == 0u);
+
+    nearFarSettings.FarGravityUpdateIntervalSteps = 0u;
+    nearFarSettings.NearGravityDistance = -1.0;
+    nearFarWorld.SetMultiRateSettings(nearFarSettings);
+    assert(nearFarWorld.GetMultiRateSettings().FarGravityUpdateIntervalSteps == 1u);
+    assert(NearlyEqual(
+        static_cast<float>(nearFarWorld.GetMultiRateSettings().NearGravityDistance),
+        0.0f));
+
+    // Direct Reference診断はRuntime Solverとは別に現在snapshotの正解Forceを求め、
+    // Multi-rateで古いForceを使ったstepだけ時間近似誤差が観測できることを確認します。
+    Scene lodErrorScene;
+    AstroWorld lodErrorWorld;
+    lodErrorWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings lodErrorSolverSettings{};
+    lodErrorSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    lodErrorWorld.SetGravitySolverSelectionSettings(lodErrorSolverSettings);
+
+    AstroMultiRateSettings lodErrorSettings{};
+    lodErrorSettings.GravityUpdateIntervalSteps = 4u;
+    lodErrorSettings.MeasureDirectReferenceError = true;
+    lodErrorWorld.SetMultiRateSettings(lodErrorSettings);
+
+    Entity lodErrorA = CreateCelestialBody(
+        lodErrorScene, "LOD Error A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity lodErrorB = CreateCelestialBody(
+        lodErrorScene, "LOD Error B", { 2.0f, 0.0f, 0.0f }, 3.0f);
+
+    lodErrorWorld.AccumulateGravityForces(lodErrorScene, 0.1f);
+    assert(lodErrorWorld.GetStatistics().DirectReferenceErrorMeasured == true);
+    assert(lodErrorWorld.GetStatistics().MaximumGravityForceRelativeError < 1.0e-12);
+    assert(lodErrorWorld.GetStatistics().MeanGravityForceRelativeError < 1.0e-12);
+    assert(lodErrorWorld.GetStatistics().MaximumGravityAccelerationError < 1.0e-12);
+
+    lodErrorA.GetComponent<RigidBodyComponent>().Force = {};
+    lodErrorB.GetComponent<RigidBodyComponent>().Force = {};
+    lodErrorB.GetComponent<TransformComponent>().Position.x = 4.0f;
+    lodErrorWorld.AccumulateGravityForces(lodErrorScene, 0.1f);
+    assert(lodErrorWorld.GetStatistics().CachedGravityForceUsed == true);
+    assert(lodErrorWorld.GetStatistics().DirectReferenceErrorMeasured == true);
+    // r=2のcache Force=1.5に対し、現在r=4のReference Force=0.375なので相対誤差は3.0です。
+    assert(std::abs(lodErrorWorld.GetStatistics().MaximumGravityForceRelativeError - 3.0)
+        < 1.0e-12);
+    assert(lodErrorWorld.GetStatistics().MaximumGravityAccelerationError > 0.0);
+
+    // Adaptive LODは誤差がLow以下で安定した場合だけFar周期を伸ばし、
+    // High超過時は即座に周期を短くします。ここでは2step安定で2->3、誤差増大で3->2を確認します。
+    Scene adaptiveLodScene;
+    AstroWorld adaptiveLodWorld;
+    adaptiveLodWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings adaptiveSolverSettings{};
+    adaptiveSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    adaptiveLodWorld.SetGravitySolverSelectionSettings(adaptiveSolverSettings);
+
+    AstroMultiRateSettings adaptiveSettings{};
+    adaptiveSettings.NearGravityDistance = 1.0;
+    adaptiveSettings.FarGravityUpdateIntervalSteps = 2u;
+    adaptiveSettings.AdaptiveFarGravityUpdate = true;
+    adaptiveSettings.MinimumFarGravityUpdateIntervalSteps = 1u;
+    adaptiveSettings.MaximumFarGravityUpdateIntervalSteps = 4u;
+    adaptiveSettings.AdaptiveFarGravityLowRelativeError = 0.01;
+    adaptiveSettings.AdaptiveFarGravityHighRelativeError = 0.10;
+    adaptiveSettings.AdaptiveFarGravityStableStepCount = 2u;
+    adaptiveLodWorld.SetMultiRateSettings(adaptiveSettings);
+
+    Entity adaptiveA = CreateCelestialBody(
+        adaptiveLodScene, "Adaptive LOD A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity adaptiveB = CreateCelestialBody(
+        adaptiveLodScene, "Adaptive LOD B", { 4.0f, 0.0f, 0.0f }, 3.0f);
+
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 2u);
+    assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == false);
+    assert(adaptiveLodWorld.GetStatistics().DirectReferenceErrorMeasured == false);
+
+    // 初回solveには比較元cacheがないためAdaptive判定を行いません。
+    // 次のcached stepを挟み、2回目のFar solveで変化量0を初めて観測します。
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == true);
+    assert(adaptiveLodWorld.GetStatistics().MaximumFarGravityForceRelativeChange < 1.0e-12);
+    assert(adaptiveLodWorld.GetStatistics().DirectReferenceErrorMeasured == false);
+
+    // もう1回の低変化Far solveでstable countが2になり、intervalを2->3へ伸ばします。
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == true);
+    assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 3u);
+
+    // 次のFar solveまで待ってから位置を変え、新旧Far Forceの変化量で3->2へ戻ることを確認します。
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<TransformComponent>().Position.x = 8.0f;
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().CachedFarGravityForceUsed == true);
+
+    adaptiveA.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveB.GetComponent<RigidBodyComponent>().Force = {};
+    adaptiveLodWorld.AccumulateGravityForces(adaptiveLodScene, 0.1f);
+    assert(adaptiveLodWorld.GetStatistics().FarGravityRelativeChangeMeasured == true);
+    assert(adaptiveLodWorld.GetStatistics().MaximumFarGravityForceRelativeChange
+        > adaptiveSettings.AdaptiveFarGravityHighRelativeError);
+    assert(adaptiveLodWorld.GetStatistics().AdaptiveFarGravityIntervalChanged == true);
+    assert(adaptiveLodWorld.GetStatistics().CurrentFarGravityUpdateIntervalSteps == 2u);
+
+    // 不正なAdaptive設定は安全な範囲へClampします。
+    adaptiveSettings.MinimumFarGravityUpdateIntervalSteps = 0u;
+    adaptiveSettings.MaximumFarGravityUpdateIntervalSteps = 0u;
+    adaptiveSettings.AdaptiveFarGravityStableStepCount = 0u;
+    adaptiveSettings.AdaptiveFarGravityLowRelativeError = -1.0;
+    adaptiveSettings.AdaptiveFarGravityHighRelativeError = -1.0;
+    adaptiveLodWorld.SetMultiRateSettings(adaptiveSettings);
+    assert(adaptiveLodWorld.GetMultiRateSettings().MinimumFarGravityUpdateIntervalSteps == 1u);
+    assert(adaptiveLodWorld.GetMultiRateSettings().MaximumFarGravityUpdateIntervalSteps == 1u);
+    assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityStableStepCount == 1u);
+    assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityLowRelativeError == 0.01);
+    assert(adaptiveLodWorld.GetMultiRateSettings().AdaptiveFarGravityHighRelativeError == 0.05);
+
+    // Far Force smoothingは新しいFar solve結果へ即座にjumpせず、直前の適用値から段階遷移します。
+    // r=4のForce=0.375からr=2のForce=1.5へ更新し、2step遷移なら最初は中間値0.9375です。
+    Scene smoothFarScene;
+    AstroWorld smoothFarWorld;
+    smoothFarWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings smoothFarSolverSettings{};
+    smoothFarSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    smoothFarWorld.SetGravitySolverSelectionSettings(smoothFarSolverSettings);
+
+    AstroMultiRateSettings smoothFarSettings{};
+    smoothFarSettings.NearGravityDistance = 1.0;
+    smoothFarSettings.FarGravityUpdateIntervalSteps = 2u;
+    smoothFarSettings.SmoothFarGravityTransitions = true;
+    smoothFarSettings.FarGravityTransitionSteps = 2u;
+    smoothFarWorld.SetMultiRateSettings(smoothFarSettings);
+
+    Entity smoothFarA = CreateCelestialBody(
+        smoothFarScene, "Smooth Far A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity smoothFarB = CreateCelestialBody(
+        smoothFarScene, "Smooth Far B", { 4.0f, 0.0f, 0.0f }, 3.0f);
+
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 0.375f));
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == false);
+
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<TransformComponent>().Position.x = 2.0f;
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(smoothFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == true);
+    assert(std::abs(smoothFarWorld.GetStatistics().FarGravityTransitionAlpha - 0.5) < 1.0e-12);
+    assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 0.9375f));
+
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(smoothFarWorld.GetStatistics().CachedFarGravityForceUsed == true);
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == false);
+    assert(std::abs(smoothFarWorld.GetStatistics().FarGravityTransitionAlpha - 1.0) < 1.0e-12);
+    assert(NearlyEqual(smoothFarA.GetComponent<RigidBodyComponent>().Force.x, 1.5f));
+
+    // Near/Far境界を跨ぐ強制solveでは旧Far成分を補間せず、分類変更を即時反映します。
+    smoothFarA.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<RigidBodyComponent>().Force = {};
+    smoothFarB.GetComponent<TransformComponent>().Position.x = 0.5f;
+    smoothFarWorld.AccumulateGravityForces(smoothFarScene, 0.1f);
+    assert(smoothFarWorld.GetStatistics().FarGravitySolveExecuted == true);
+    assert(smoothFarWorld.GetStatistics().FarGravityTransitionActive == false);
+
+    smoothFarSettings.FarGravityTransitionSteps = 0u;
+    smoothFarWorld.SetMultiRateSettings(smoothFarSettings);
+    assert(smoothFarWorld.GetMultiRateSettings().FarGravityTransitionSteps == 1u);
 
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;

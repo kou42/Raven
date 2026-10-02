@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "Raven/Physics/Astro/Gravity/BarnesHutGravitySolver.h"
@@ -24,6 +25,41 @@ enum class AstroGravitySolverMode
 // 重力定数などの物理法則とは独立した、RuntimeのSolver選択設定です。
 // Automaticの既定値はRelease benchmarkの実測結果に基づき、1,000 bodyから
 // theta=0.5のBarnes-Hutへ切り替え、800 body未満へ減るまで維持します。
+struct AstroMultiRateSettings
+{
+    // 1なら従来どおり毎fixed-stepでGravity Solverを実行します。
+    // N (> 1)ならsolve間のstepでは前回Forceを再利用し、Barnes-Hut近似誤差とは独立に
+    // 更新頻度低下の影響を測定できるようにします。
+    std::uint32_t GravityUpdateIntervalSteps = 1u;
+
+    // 0以下ならNear/Far分離を無効化します。有効時はこの距離以内の相互作用を毎step再評価し、
+    // それより遠い寄与だけをFarGravityUpdateIntervalStepsの周期で更新します。
+    double NearGravityDistance = 0.0;
+    std::uint32_t FarGravityUpdateIntervalSteps = 4u;
+
+    // Debug/検証用です。有効時は現在snapshotをDirect Solverでも評価し、
+    // 実際に適用するMulti-rate Forceとの差をPhysics LOD誤差として記録します。
+    bool MeasureDirectReferenceError = false;
+
+    // Far solve時に「前回cacheと今回solve結果」の変化量を観測して更新周期を自動調整します。
+    // Direct Referenceを必須にしないため、Barnes-Hut利用時にもO(N^2)診断を追加せず使えます。
+    // Low以下が続けば周期を伸ばし、High以上なら即座に短くすることで、
+    // 誤差増大への応答を速くしつつ閾値付近の頻繁な往復を抑えます。
+    bool AdaptiveFarGravityUpdate = false;
+    std::uint32_t MinimumFarGravityUpdateIntervalSteps = 1u;
+    std::uint32_t MaximumFarGravityUpdateIntervalSteps = 8u;
+    double AdaptiveFarGravityLowRelativeError = 0.01;
+    double AdaptiveFarGravityHighRelativeError = 0.05;
+    // Far solveでLow以下の変化量がこの回数連続した場合に周期を1段階伸ばします。
+    // 名前は既存API互換のためStableStepCountですが、cache stepではなくsolve観測回数を数えます。
+    std::uint32_t AdaptiveFarGravityStableStepCount = 4u;
+
+    // Far solveで新しいForceが得られた瞬間の段差を、旧適用値から数stepかけて遷移させます。
+    // 未来Forceの予測ではなく確定済みForce間のsmoothingなので、外挿による発散を避けます。
+    bool SmoothFarGravityTransitions = false;
+    std::uint32_t FarGravityTransitionSteps = 2u;
+};
+
 struct AstroGravitySolverSelectionSettings
 {
     AstroGravitySolverMode Mode = AstroGravitySolverMode::Automatic;
@@ -48,13 +84,26 @@ public:
         const AstroGravitySolverSelectionSettings& settings);
     const AstroGravitySolverSelectionSettings& GetGravitySolverSelectionSettings() const;
 
-    void SetGravitySolverSettings(const GravitySolverSettings& settings) { m_Settings = settings; }
+    void SetGravitySolverSettings(const GravitySolverSettings& settings);
     const GravitySolverSettings& GetGravitySolverSettings() const { return m_Settings; }
+
+    void SetMultiRateSettings(const AstroMultiRateSettings& settings);
+    const AstroMultiRateSettings& GetMultiRateSettings() const { return m_MultiRateSettings; }
     const OrbitalDiagnostics& GetLastDiagnostics() const { return m_LastDiagnostics; }
     const AstroStatistics& GetStatistics() const { return m_Statistics; }
 
 private:
     GravitySolver* ResolveGravitySolver(std::size_t bodyCount);
+    bool CanReuseCachedGravityForces() const;
+    bool IsNearFarMultiRateEnabled() const;
+    void ComputeNearGravityForces(std::vector<AstroVector3>& outForces);
+    void MeasureDirectReferenceError();
+    void UpdateAdaptiveFarGravityInterval(double maximumFarForceRelativeChange);
+    void ApplyFarGravityTransition(
+        const std::vector<AstroVector3>& nearForces,
+        bool farSolveExecuted);
+    void CacheGravityForces();
+    void InvalidateGravityForceCache();
 
     DirectGravitySolver m_DirectGravitySolver{};
     BarnesHutGravitySolver m_BarnesHutGravitySolver{};
@@ -64,8 +113,18 @@ private:
     AstroGravitySolverSelectionSettings m_SolverSelectionSettings{};
     bool m_AutomaticUsingBarnesHut = false;
     GravitySolverSettings m_Settings{};
+    AstroMultiRateSettings m_MultiRateSettings{};
+    std::uint32_t m_StepsSinceGravitySolve = 0u;
+    std::uint32_t m_CurrentFarGravityUpdateIntervalSteps = 4u;
+    std::uint32_t m_AdaptiveFarGravityStableSteps = 0u;
     std::vector<AstroBodyState> m_Bodies;
     std::vector<AstroVector3> m_Forces;
+    std::vector<AstroBodyState> m_CachedGravityBodies;
+    std::vector<AstroVector3> m_CachedGravityForces;
+    std::vector<AstroVector3> m_CachedFarGravityForces;
+    std::vector<AstroVector3> m_AppliedFarGravityForces;
+    std::vector<AstroVector3> m_FarGravityTransitionStartForces;
+    std::uint32_t m_FarGravityTransitionStep = 0u;
     OrbitalDiagnostics m_LastDiagnostics{};
     AstroStatistics m_Statistics{};
 };
