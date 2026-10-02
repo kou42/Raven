@@ -81,8 +81,9 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         m_Statistics.CurrentFarGravityUpdateIntervalSteps = farInterval;
         const bool farIntervalElapsed =
             farInterval <= 1u || m_StepsSinceGravitySolve >= (farInterval - 1u);
+        const bool cacheCompatible = CanReuseCachedGravityForces();
         const bool reuseCachedFarForces =
-            farIntervalElapsed == false && CanReuseCachedGravityForces()
+            farIntervalElapsed == false && cacheCompatible == true
             && m_CachedFarGravityForces.size() == m_Bodies.size();
 
         if (reuseCachedFarForces == true)
@@ -108,6 +109,15 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
             else
             {
                 m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
+            }
+
+            if (farIntervalElapsed == false && cacheCompatible == false)
+            {
+                // Body属性変更やNear/Far境界横断で強制solveされた場合、旧Far成分は現在の
+                // 分類と互換ではありません。補間すると二重加算/欠落を再導入するため破棄します。
+                m_AppliedFarGravityForces.clear();
+                m_FarGravityTransitionStartForces.clear();
+                m_FarGravityTransitionStep = 0u;
             }
 
             m_CachedFarGravityForces.resize(m_Bodies.size());
