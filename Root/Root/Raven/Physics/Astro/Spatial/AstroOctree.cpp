@@ -1,16 +1,13 @@
 #include "Raven/Physics/Astro/Spatial/AstroOctree.h"
 
-#include <algorithm>
 #include <cmath>
-#include <limits>
+
+#include "Raven/Physics/Spatial/LongRangeOctree.h"
 
 namespace Raven::ph
 {
 namespace
 {
-constexpr std::uint32_t MaxOctreeDepth = 64u;
-constexpr double MinimumNodeHalfSize = 1.0e-12;
-
 bool IsValidSourceBody(const AstroBodyState& body)
 {
     return body.GenerateGravity == true
@@ -38,52 +35,51 @@ void AstroOctree::Build(const std::vector<AstroBodyState>& bodies)
 {
     Clear();
 
-    bool hasBody = false;
-    AstroVector3 minimum{};
-    AstroVector3 maximum{};
-    for (const AstroBodyState& body : bodies)
+    std::vector<LongRangeSpatialPoint> spatialPoints;
+    spatialPoints.reserve(bodies.size());
+    for (std::size_t i = 0u; i < bodies.size(); ++i)
     {
+        const AstroBodyState& body = bodies[i];
         if (IsValidSourceBody(body) == false)
         {
             continue;
         }
 
-        if (hasBody == false)
-        {
-            minimum = body.Position;
-            maximum = body.Position;
-            hasBody = true;
-            continue;
-        }
-
-        minimum.x = std::min(minimum.x, body.Position.x);
-        minimum.y = std::min(minimum.y, body.Position.y);
-        minimum.z = std::min(minimum.z, body.Position.z);
-        maximum.x = std::max(maximum.x, body.Position.x);
-        maximum.y = std::max(maximum.y, body.Position.y);
-        maximum.z = std::max(maximum.z, body.Position.z);
+        LongRangeSpatialPoint point{};
+        point.Position = { body.Position.x, body.Position.y, body.Position.z };
+        point.PayloadIndex = static_cast<std::int32_t>(i);
+        spatialPoints.push_back(point);
     }
 
-    if (hasBody == false)
+    LongRangeOctree topology;
+    topology.Build(spatialPoints);
+    m_RootIndex = topology.GetRootIndex();
+    if (m_RootIndex < 0)
     {
         return;
     }
 
-    const AstroVector3 center = (minimum + maximum) * 0.5;
-    const double extent = std::max({
-        maximum.x - minimum.x,
-        maximum.y - minimum.y,
-        maximum.z - minimum.z
-    });
-    // 全点が同一点でもroot volumeを持たせます。重複点はdepth上限で打ち切ります。
-    const double halfSize = std::max(extent * 0.5, MinimumNodeHalfSize);
-    m_RootIndex = CreateNode(center, halfSize * 1.000001);
-
-    for (std::size_t i = 0u; i < bodies.size(); ++i)
+    // Octreeの分割規則はGravity/Coulomb共通層へ委譲し、Astro側では質量集約だけを保持します。
+    // これによりCoulombをBarnes-Hut化しても、Domain固有のMass/Chargeを同じNode型へ混在させません。
+    const std::vector<LongRangeOctreeNode>& topologyNodes = topology.GetNodes();
+    m_Nodes.resize(topologyNodes.size());
+    for (std::size_t nodeIndex = 0u; nodeIndex < topologyNodes.size(); ++nodeIndex)
     {
-        if (IsValidSourceBody(bodies[i]) == true)
+        const LongRangeOctreeNode& topologyNode = topologyNodes[nodeIndex];
+        AstroOctreeNode& astroNode = m_Nodes[nodeIndex];
+        astroNode.Center = {
+            topologyNode.Center[0],
+            topologyNode.Center[1],
+            topologyNode.Center[2]
+        };
+        astroNode.HalfSize = topologyNode.HalfSize;
+        astroNode.Children = topologyNode.Children;
+        astroNode.BodyIndices.reserve(topologyNode.PointIndices.size());
+
+        for (const std::int32_t pointIndex : topologyNode.PointIndices)
         {
-            InsertBody(m_RootIndex, static_cast<std::int32_t>(i), bodies, 0u);
+            astroNode.BodyIndices.push_back(
+                spatialPoints[static_cast<std::size_t>(pointIndex)].PayloadIndex);
         }
     }
 
@@ -94,84 +90,6 @@ void AstroOctree::Clear()
 {
     m_Nodes.clear();
     m_RootIndex = -1;
-}
-
-std::int32_t AstroOctree::CreateNode(const AstroVector3& center, double halfSize)
-{
-    AstroOctreeNode node{};
-    node.Center = center;
-    node.HalfSize = halfSize;
-    m_Nodes.push_back(node);
-    return static_cast<std::int32_t>(m_Nodes.size() - 1u);
-}
-
-void AstroOctree::Subdivide(std::int32_t nodeIndex)
-{
-    const AstroOctreeNode parent = m_Nodes[static_cast<std::size_t>(nodeIndex)];
-    const double childHalfSize = parent.HalfSize * 0.5;
-
-    for (std::int32_t childIndex = 0; childIndex < 8; ++childIndex)
-    {
-        const AstroVector3 offset{
-            (childIndex & 1) != 0 ? childHalfSize : -childHalfSize,
-            (childIndex & 2) != 0 ? childHalfSize : -childHalfSize,
-            (childIndex & 4) != 0 ? childHalfSize : -childHalfSize
-        };
-        m_Nodes[static_cast<std::size_t>(nodeIndex)].Children[static_cast<std::size_t>(childIndex)] =
-            CreateNode(parent.Center + offset, childHalfSize);
-    }
-}
-
-std::int32_t AstroOctree::SelectChild(
-    const AstroOctreeNode& node,
-    const AstroVector3& position) const
-{
-    std::int32_t index = 0;
-    if (position.x >= node.Center.x) { index |= 1; }
-    if (position.y >= node.Center.y) { index |= 2; }
-    if (position.z >= node.Center.z) { index |= 4; }
-    return node.Children[static_cast<std::size_t>(index)];
-}
-
-void AstroOctree::InsertBody(
-    std::int32_t nodeIndex,
-    std::int32_t bodyIndex,
-    const std::vector<AstroBodyState>& bodies,
-    std::uint32_t depth)
-{
-    AstroOctreeNode& node = m_Nodes[static_cast<std::size_t>(nodeIndex)];
-    if (node.IsLeaf() == true && node.BodyIndices.empty() == true)
-    {
-        node.BodyIndices.push_back(bodyIndex);
-        return;
-    }
-
-    if (depth >= MaxOctreeDepth || node.HalfSize <= MinimumNodeHalfSize)
-    {
-        // 完全重複位置は同じleafへ複数Bodyを保持し、質量を失わず無限再帰だけを防ぎます。
-        node.BodyIndices.push_back(bodyIndex);
-        return;
-    }
-
-    if (node.IsLeaf() == true)
-    {
-        const std::vector<std::int32_t> previousBodyIndices = node.BodyIndices;
-        node.BodyIndices.clear();
-        Subdivide(nodeIndex);
-
-        for (const std::int32_t previousBodyIndex : previousBodyIndices)
-        {
-            const std::int32_t previousChild =
-                SelectChild(m_Nodes[static_cast<std::size_t>(nodeIndex)],
-                    bodies[static_cast<std::size_t>(previousBodyIndex)].Position);
-            InsertBody(previousChild, previousBodyIndex, bodies, depth + 1u);
-        }
-    }
-
-    const std::int32_t child =
-        SelectChild(m_Nodes[static_cast<std::size_t>(nodeIndex)],
-            bodies[static_cast<std::size_t>(bodyIndex)].Position);
-    InsertBody(child, bodyIndex, bodies, depth + 1u);
 }
 
 void AstroOctree::AccumulateMass(
