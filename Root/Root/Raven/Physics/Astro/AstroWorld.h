@@ -50,6 +50,11 @@ struct AstroMultiRateSettings
     double AdaptiveFarGravityLowRelativeError = 0.01;
     double AdaptiveFarGravityHighRelativeError = 0.05;
     std::uint32_t AdaptiveFarGravityStableStepCount = 4u;
+
+    // Far solveで新しいForceが得られた瞬間の段差を、旧適用値から数stepかけて遷移させます。
+    // 未来Forceの予測ではなく確定済みForce間のsmoothingなので、外挿による発散を避けます。
+    bool SmoothFarGravityTransitions = false;
+    std::uint32_t FarGravityTransitionSteps = 2u;
 };
 
 struct AstroGravitySolverSelectionSettings
@@ -91,6 +96,9 @@ private:
     void ComputeNearGravityForces(std::vector<AstroVector3>& outForces);
     void MeasureDirectReferenceError();
     void UpdateAdaptiveFarGravityInterval();
+    void ApplyFarGravityTransition(
+        const std::vector<AstroVector3>& nearForces,
+        bool farSolveExecuted);
     void CacheGravityForces();
     void InvalidateGravityForceCache();
 
@@ -111,6 +119,9 @@ private:
     std::vector<AstroBodyState> m_CachedGravityBodies;
     std::vector<AstroVector3> m_CachedGravityForces;
     std::vector<AstroVector3> m_CachedFarGravityForces;
+    std::vector<AstroVector3> m_AppliedFarGravityForces;
+    std::vector<AstroVector3> m_FarGravityTransitionStartForces;
+    std::uint32_t m_FarGravityTransitionStep = 0u;
     OrbitalDiagnostics m_LastDiagnostics{};
     AstroStatistics m_Statistics{};
 };
