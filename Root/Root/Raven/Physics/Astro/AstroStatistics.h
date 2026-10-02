@@ -31,6 +31,8 @@ struct AstroStatistics
     double MaximumGravityAccelerationError = 0.0;
     bool AdaptiveFarGravityIntervalChanged = false;
     std::uint32_t CurrentFarGravityUpdateIntervalSteps = 1u;
+    bool FarGravityRelativeChangeMeasured = false;
+    double MaximumFarGravityForceRelativeChange = 0.0;
     bool FarGravityTransitionActive = false;
     double FarGravityTransitionAlpha = 1.0;
 
@@ -58,6 +60,8 @@ struct AstroStatistics
         MaximumGravityAccelerationError = 0.0;
         AdaptiveFarGravityIntervalChanged = false;
         CurrentFarGravityUpdateIntervalSteps = 1u;
+        FarGravityRelativeChangeMeasured = false;
+        MaximumFarGravityForceRelativeChange = 0.0;
         FarGravityTransitionActive = false;
         FarGravityTransitionAlpha = 1.0;
         StateCollectionTimeMs = 0.0;
