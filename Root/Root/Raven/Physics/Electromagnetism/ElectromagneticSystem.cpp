@@ -251,6 +251,7 @@ void ElectromagneticSystem::ApplyCoulombForces(Scene& scene)
         m_Statistics.CoulombVisitedNodeCount = solverStatistics.VisitedNodeCount;
         m_Statistics.CoulombAcceptedAggregateNodeCount =
             solverStatistics.AcceptedAggregateNodeCount;
+        m_Statistics.CoulombTreeBuildTimeMs = solverStatistics.TreeBuildTimeMs;
     }
     else
     {
