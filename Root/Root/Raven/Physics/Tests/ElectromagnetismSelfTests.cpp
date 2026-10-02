@@ -273,6 +273,19 @@ void RunElectromagnetismSelfTests()
     assert(looseCoulombStatistics.AcceptedAggregateNodeCount > 0u);
     assert(looseCoulombStatistics.PairCandidateCount < tightCoulombStatistics.PairCandidateCount);
 
+    // Coulomb Solver選択設定は不正thetaとhysteresis閾値を正規化します。
+    ElectromagneticSystem coulombSelectionSystem;
+    CoulombSolverSelectionSettings coulombSelectionSettings{};
+    coulombSelectionSettings.Mode = CoulombSolverMode::Automatic;
+    coulombSelectionSettings.BarnesHutBodyThreshold = 100u;
+    coulombSelectionSettings.DirectBodyThreshold = 120u;
+    coulombSelectionSettings.BarnesHutTheta = 0.0;
+    coulombSelectionSystem.SetCoulombSolverSelectionSettings(coulombSelectionSettings);
+    const CoulombSolverSelectionSettings& normalizedCoulombSelection =
+        coulombSelectionSystem.GetCoulombSolverSelectionSettings();
+    assert(normalizedCoulombSelection.DirectBodyThreshold == 100u);
+    assert(std::abs(normalizedCoulombSelection.BarnesHutTheta - 0.5) < 1.0e-12);
+
     const math::Vec3 repulsiveForce = ComputeCoulombForce(
         { 0.0f, 0.0f, 0.0f }, microCoulomb,
         { 1.0f, 0.0f, 0.0f }, microCoulomb);
