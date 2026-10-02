@@ -483,6 +483,56 @@ void RunElectromagnetismSelfTests()
     assert(dipoleBody.Force.LengthSq() <= 1.0e-12f);
     assert(dipoleSystem.UnregisterMagneticField(integratedDipoleField) == true);
 
+    // Phase 7の外力合成契約を検証します。Astro重力・Electric・Magnetic・Coulombは
+    // いずれもRigid積分前の同じForce accumulatorへ加算され、優先順位を持ちません。
+    Scene combinedForceScene;
+    PhysicsSimulationWorld& combinedSimulationWorld =
+        combinedForceScene.GetPhysicsSimulationWorld();
+    AstroGravitySolverSelectionSettings combinedGravitySelection{};
+    combinedGravitySelection.Mode = AstroGravitySolverMode::Direct;
+    combinedSimulationWorld.GetAstroWorld().SetGravitySolverSelectionSettings(combinedGravitySelection);
+    GravitySolverSettings combinedGravitySettings{};
+    combinedGravitySettings.GravitationalConstant = 1.0;
+    combinedGravitySettings.MinimumDistance = 0.01;
+    combinedSimulationWorld.GetAstroWorld().SetGravitySolverSettings(combinedGravitySettings);
+
+    UniformElectricField combinedElectricField({ 0.0f, 2.0f, 0.0f });
+    UniformMagneticField combinedMagneticField({ 0.0f, 0.0f, 1.0f });
+    ElectromagneticSystem& combinedElectromagneticSystem =
+        combinedSimulationWorld.GetElectromagneticSystem();
+    assert(combinedElectromagneticSystem.RegisterElectricField(combinedElectricField) == true);
+    assert(combinedElectromagneticSystem.RegisterMagneticField(combinedMagneticField) == true);
+    CoulombForceSettings combinedCoulombSettings{};
+    combinedCoulombSettings.CoulombConstant = 1.0;
+    combinedCoulombSettings.MinimumDistance = 0.01f;
+    combinedElectromagneticSystem.SetCoulombForceSettings(combinedCoulombSettings);
+
+    Entity combinedA = CreateChargedSphere(
+        combinedForceScene, "Combined Force A", { 0.0f, 0.0f, 0.0f }, 1.0);
+    Entity combinedB = CreateChargedSphere(
+        combinedForceScene, "Combined Force B", { 2.0f, 0.0f, 0.0f }, 1.0);
+    RigidBodyComponent& combinedBodyA = combinedA.GetComponent<RigidBodyComponent>();
+    RigidBodyComponent& combinedBodyB = combinedB.GetComponent<RigidBodyComponent>();
+    combinedBodyA.LinearVelocity = { 1.0f, 0.0f, 0.0f };
+    combinedBodyB.LinearVelocity = { 1.0f, 0.0f, 0.0f };
+    combinedBodyA.LinearDamping = 0.0f;
+    combinedBodyB.LinearDamping = 0.0f;
+    combinedBodyA.AngularDamping = 0.0f;
+    combinedBodyB.AngularDamping = 0.0f;
+    combinedA.AddComponent<CelestialBodyComponent>(CelestialBodyComponent{});
+    combinedB.AddComponent<CelestialBodyComponent>(CelestialBodyComponent{});
+
+    // mass=1, G=1, r=2なのでGravityはAへ+xに0.25、Coulombは同符号なので-xに0.25で相殺します。
+    // Electricは+yに2、v=(1,0,0), B=(0,0,1)のLorentz力は-yに1なので、合成加速度は+yに1です。
+    combinedSimulationWorld.StepSimulation(combinedForceScene, fixedDeltaTime);
+    assert(NearlyEqual(combinedBodyA.LinearVelocity.x, 1.0f, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyA.LinearVelocity.y, fixedDeltaTime, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyA.LinearVelocity.z, 0.0f, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyB.LinearVelocity.x, 1.0f, 1.0e-4f));
+    assert(NearlyEqual(combinedBodyB.LinearVelocity.y, fixedDeltaTime, 1.0e-4f));
+    assert(combinedBodyA.Force.LengthSq() <= 1.0e-12f);
+    assert(combinedBodyB.Force.LengthSq() <= 1.0e-12f);
+
     Scene integratedScene;
     Entity integratedA = CreateChargedSphere(
         integratedScene, "Integrated Charge A", { -0.5f, 0.0f, 0.0f }, microCoulomb);
