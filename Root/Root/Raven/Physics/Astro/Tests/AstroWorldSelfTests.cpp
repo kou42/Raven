@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "Raven/Physics/Astro/AstroWorld.h"
@@ -10,6 +11,7 @@
 #include "Raven/Physics/Astro/Gravity/BarnesHutGravitySolver.h"
 #include "Raven/Physics/Astro/Gravity/DirectGravitySolver.h"
 #include "Raven/Physics/Astro/Spatial/AstroOctree.h"
+#include "Raven/Physics/Spatial/LongRangeOctree.h"
 #include "Raven/Physics/Astro/OrbitalDiagnostics.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Scene/Components.h"
@@ -164,6 +166,36 @@ void RunAstroWorldSelfTests()
     assert(finalDiagnostics.TotalLinearMomentum.Length() < 1.0e-10);
     assert((finalDiagnostics.TotalAngularMomentum - initialDiagnostics.TotalAngularMomentum).Length()
         < 1.0e-10);
+
+    // Gravity/Coulomb共有topologyはDomain固有値を持たず、double位置とPayloadIndexだけを分割します。
+    // 非有限位置を除外し、leafから元Domainのindexへ戻せることを確認します。
+    std::vector<LongRangeSpatialPoint> sharedSpatialPoints{
+        { { -2.0, 0.0, 0.0 }, 10 },
+        { { 2.0, 0.0, 0.0 }, 20 },
+        { { std::numeric_limits<double>::infinity(), 0.0, 0.0 }, 30 }
+    };
+    LongRangeOctree sharedOctree;
+    sharedOctree.Build(sharedSpatialPoints);
+    assert(sharedOctree.GetRootIndex() >= 0);
+
+    std::vector<std::int32_t> sharedPayloadIndices;
+    for (const LongRangeOctreeNode& node : sharedOctree.GetNodes())
+    {
+        if (node.IsLeaf() == false)
+        {
+            continue;
+        }
+
+        for (const std::int32_t pointIndex : node.PointIndices)
+        {
+            sharedPayloadIndices.push_back(
+                sharedSpatialPoints[static_cast<std::size_t>(pointIndex)].PayloadIndex);
+        }
+    }
+    std::sort(sharedPayloadIndices.begin(), sharedPayloadIndices.end());
+    assert(sharedPayloadIndices.size() == 2u);
+    assert(sharedPayloadIndices[0] == 10);
+    assert(sharedPayloadIndices[1] == 20);
 
     // Octreeのroot集約値が入力Bodyの総質量・重心と一致することを確認します。
     std::vector<AstroBodyState> octreeBodies(4u);
