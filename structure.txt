@@ -332,11 +332,19 @@ D:.
     |   |   |   |   |   OrbitalDiagnostics.h
     |   |   |   |   |
     |   |   |   |   +---Gravity
+    |   |   |   |   |       BarnesHutGravitySolver.cpp
+    |   |   |   |   |       BarnesHutGravitySolver.h
     |   |   |   |   |       DirectGravitySolver.cpp
     |   |   |   |   |       DirectGravitySolver.h
     |   |   |   |   |       GravitySolver.h
     |   |   |   |   |
+    |   |   |   |   +---Spatial
+    |   |   |   |   |       AstroOctree.cpp
+    |   |   |   |   |       AstroOctree.h
+    |   |   |   |   |
     |   |   |   |   \---Tests
+    |   |   |   |           AstroGravityBenchmark.cpp
+    |   |   |   |           AstroGravityBenchmark.h
     |   |   |   |           AstroWorldSelfTests.cpp
     |   |   |   |           AstroWorldSelfTests.h
     |   |   |   |
@@ -368,15 +376,22 @@ D:.
     |   |   |   |       PhysicsDebugSettings.h
     |   |   |   |
     |   |   |   +---Electromagnetism
-    |   |   |   |       CoulombForce.cpp
-    |   |   |   |       CoulombForce.h
-    |   |   |   |       ElectricCharge.h
-    |   |   |   |       ElectricField.cpp
-    |   |   |   |       ElectricField.h
-    |   |   |   |       ElectromagneticSystem.cpp
-    |   |   |   |       ElectromagneticSystem.h
-    |   |   |   |       MagneticField.cpp
-    |   |   |   |       MagneticField.h
+    |   |   |   |   |   BarnesHutCoulombSolver.cpp
+    |   |   |   |   |   BarnesHutCoulombSolver.h
+    |   |   |   |   |   CoulombForce.cpp
+    |   |   |   |   |   CoulombForce.h
+    |   |   |   |   |   ElectricCharge.h
+    |   |   |   |   |   ElectricField.cpp
+    |   |   |   |   |   ElectricField.h
+    |   |   |   |   |   ElectromagneticStatistics.h
+    |   |   |   |   |   ElectromagneticSystem.cpp
+    |   |   |   |   |   ElectromagneticSystem.h
+    |   |   |   |   |   MagneticField.cpp
+    |   |   |   |   |   MagneticField.h
+    |   |   |   |   |
+    |   |   |   |   \---Spatial
+    |   |   |   |           CoulombOctree.cpp
+    |   |   |   |           CoulombOctree.h
     |   |   |   |
     |   |   |   +---Field
     |   |   |   |       GravityField.h
@@ -438,8 +453,15 @@ D:.
     |   |   |   |       ContactSolver.h
     |   |   |   |       SolverTemporaryAllocationCounter.h
     |   |   |   |
+    |   |   |   +---Spatial
+    |   |   |   |       LongRangeOctree.cpp
+    |   |   |   |       LongRangeOctree.h
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           CapsuleCollisionSelfTests.cpp
+    |   |   |           CoulombBenchmark.cpp
+    |   |   |           CoulombBenchmark.h
+    |   |   |           ElectromagnetismSelfTests.cpp
     |   |   |           PhysicsCollisionSelfTests.cpp
     |   |   |           PhysicsFrameAllocatorSelfTests.cpp
     |   |   |           RagdollAnimationVelocitySelfTests.cpp

@@ -21,6 +21,7 @@ struct ElectromagneticStatistics
     std::uint64_t CoulombAcceptedAggregateNodeCount = 0u;
 
     double CoulombStateCollectionTimeMs = 0.0;
+    double CoulombTreeBuildTimeMs = 0.0;
     double CoulombSolveTimeMs = 0.0;
     double CoulombForceFeedbackTimeMs = 0.0;
 
@@ -33,6 +34,7 @@ struct ElectromagneticStatistics
         CoulombVisitedNodeCount = 0u;
         CoulombAcceptedAggregateNodeCount = 0u;
         CoulombStateCollectionTimeMs = 0.0;
+        CoulombTreeBuildTimeMs = 0.0;
         CoulombSolveTimeMs = 0.0;
         CoulombForceFeedbackTimeMs = 0.0;
     }

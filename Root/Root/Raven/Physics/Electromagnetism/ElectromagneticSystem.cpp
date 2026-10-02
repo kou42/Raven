@@ -251,6 +251,7 @@ void ElectromagneticSystem::ApplyCoulombForces(Scene& scene)
         m_Statistics.CoulombVisitedNodeCount = solverStatistics.VisitedNodeCount;
         m_Statistics.CoulombAcceptedAggregateNodeCount =
             solverStatistics.AcceptedAggregateNodeCount;
+        m_Statistics.CoulombTreeBuildTimeMs = solverStatistics.TreeBuildTimeMs;
     }
     else
     {
@@ -319,7 +320,7 @@ void ElectromagneticSystem::SetCoulombSolverSelectionSettings(
     if (std::isfinite(m_CoulombSolverSelectionSettings.BarnesHutTheta) == false
         || m_CoulombSolverSelectionSettings.BarnesHutTheta <= 0.0)
     {
-        m_CoulombSolverSelectionSettings.BarnesHutTheta = 0.5;
+        m_CoulombSolverSelectionSettings.BarnesHutTheta = 0.25;
     }
     if (m_CoulombSolverSelectionSettings.DirectBodyThreshold
         > m_CoulombSolverSelectionSettings.BarnesHutBodyThreshold)
