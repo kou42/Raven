@@ -50,6 +50,8 @@ struct AstroMultiRateSettings
     std::uint32_t MaximumFarGravityUpdateIntervalSteps = 8u;
     double AdaptiveFarGravityLowRelativeError = 0.01;
     double AdaptiveFarGravityHighRelativeError = 0.05;
+    // Far solveでLow以下の変化量がこの回数連続した場合に周期を1段階伸ばします。
+    // 名前は既存API互換のためStableStepCountですが、cache stepではなくsolve観測回数を数えます。
     std::uint32_t AdaptiveFarGravityStableStepCount = 4u;
 
     // Far solveで新しいForceが得られた瞬間の段差を、旧適用値から数stepかけて遷移させます。
