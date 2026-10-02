@@ -22,6 +22,7 @@ class Scene;
 namespace ph
 {
 class SoftBodySolver;
+class DipoleMagneticField;
 
 // ============================================================================
 // SoftBodyWorld
@@ -385,6 +386,19 @@ struct RigidSoftSphereColliderBinding
 };
 
 // ============================================================================
+// CelestialDipoleMagneticFieldBinding
+// ============================================================================
+// Scene EntityのTransformを外部所有DipoleMagneticFieldへfixed-stepごとに同期するBindingです。
+// LocalDipoleMomentはEntity local-spaceの磁気双極子モーメントで、Scaleは物理量へ適用しません。
+// FieldはElectromagneticSystemと同様に非所有であり、破棄前にBinding登録解除が必要です。
+struct CelestialDipoleMagneticFieldBinding
+{
+    EntityHandle SourceEntity{};
+    DipoleMagneticField* TargetField = nullptr;
+    math::Vec3 LocalDipoleMoment{};
+};
+
+// ============================================================================
 // PhysicsSimulationWorld
 // ============================================================================
 // Raven全体のPhysics Domainを統括する上位Worldです。
@@ -408,6 +422,18 @@ public:
         SoftBodySolver& targetSolver,
         uint32_t targetColliderIndex);
     void ClearRigidSoftSphereColliderBindings();
+
+    // 天体Entityの位置・姿勢をDipole Magnetic Fieldへ同期する非所有Bindingです。
+    // 1つのFieldへ複数Entityから書き込む曖昧さを避けるためTargetFieldを一意キーにします。
+    bool RegisterCelestialDipoleMagneticFieldBinding(
+        const CelestialDipoleMagneticFieldBinding& binding);
+    bool UnregisterCelestialDipoleMagneticFieldBinding(DipoleMagneticField& targetField);
+    void ClearCelestialDipoleMagneticFieldBindings();
+
+    std::size_t GetCelestialDipoleMagneticFieldBindingCount() const
+    {
+        return m_CelestialDipoleMagneticFieldBindings.size();
+    }
 
     std::size_t GetRigidSoftSphereColliderBindingCount() const
     {
@@ -435,6 +461,9 @@ public:
 private:
     // Rigid Body Stepで確定した最新Transform/ColliderをSoftBody local-spaceへ変換します。
     // SoftBody Step直前に呼ぶことで、同じFixed Step内で最新Rigid状態をCollision Constraintへ渡します。
+    // Electromagnetic force評価前にEntity TransformをDipole Fieldへ反映します。
+    void SynchronizeCelestialDipoleMagneticFields(Scene& scene);
+
     void SynchronizeRigidBodyCollidersToSoftBody(Scene& scene);
 
     // SoftBody Stepで生成されたTransientなSphere反作用をworld-spaceへ変換し、
@@ -452,6 +481,7 @@ private:
     SoftBodyWorld m_SoftBodyWorld;
     ThermalWorld m_ThermalWorld;
     std::vector<RigidSoftSphereColliderBinding> m_RigidSoftSphereColliderBindings;
+    std::vector<CelestialDipoleMagneticFieldBinding> m_CelestialDipoleMagneticFieldBindings;
 };
 
 } // namespace ph
