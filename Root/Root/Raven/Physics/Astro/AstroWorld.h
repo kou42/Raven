@@ -83,7 +83,7 @@ private:
     std::uint32_t m_StepsSinceGravitySolve = 0u;
     std::vector<AstroBodyState> m_Bodies;
     std::vector<AstroVector3> m_Forces;
-    std::vector<EntityHandle> m_CachedGravityBodyEntities;
+    std::vector<AstroBodyState> m_CachedGravityBodies;
     std::vector<AstroVector3> m_CachedGravityForces;
     OrbitalDiagnostics m_LastDiagnostics{};
     AstroStatistics m_Statistics{};
