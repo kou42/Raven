@@ -541,6 +541,42 @@ void RunAstroWorldSelfTests()
         static_cast<float>(nearFarWorld.GetMultiRateSettings().NearGravityDistance),
         0.0f));
 
+    // Direct Reference診断はRuntime Solverとは別に現在snapshotの正解Forceを求め、
+    // Multi-rateで古いForceを使ったstepだけ時間近似誤差が観測できることを確認します。
+    Scene lodErrorScene;
+    AstroWorld lodErrorWorld;
+    lodErrorWorld.SetGravitySolverSettings(settings);
+    AstroGravitySolverSelectionSettings lodErrorSolverSettings{};
+    lodErrorSolverSettings.Mode = AstroGravitySolverMode::Direct;
+    lodErrorWorld.SetGravitySolverSelectionSettings(lodErrorSolverSettings);
+
+    AstroMultiRateSettings lodErrorSettings{};
+    lodErrorSettings.GravityUpdateIntervalSteps = 4u;
+    lodErrorSettings.MeasureDirectReferenceError = true;
+    lodErrorWorld.SetMultiRateSettings(lodErrorSettings);
+
+    Entity lodErrorA = CreateCelestialBody(
+        lodErrorScene, "LOD Error A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity lodErrorB = CreateCelestialBody(
+        lodErrorScene, "LOD Error B", { 2.0f, 0.0f, 0.0f }, 3.0f);
+
+    lodErrorWorld.AccumulateGravityForces(lodErrorScene, 0.1f);
+    assert(lodErrorWorld.GetStatistics().DirectReferenceErrorMeasured == true);
+    assert(lodErrorWorld.GetStatistics().MaximumGravityForceRelativeError < 1.0e-12);
+    assert(lodErrorWorld.GetStatistics().MeanGravityForceRelativeError < 1.0e-12);
+    assert(lodErrorWorld.GetStatistics().MaximumGravityAccelerationError < 1.0e-12);
+
+    lodErrorA.GetComponent<RigidBodyComponent>().Force = {};
+    lodErrorB.GetComponent<RigidBodyComponent>().Force = {};
+    lodErrorB.GetComponent<TransformComponent>().Position.x = 4.0f;
+    lodErrorWorld.AccumulateGravityForces(lodErrorScene, 0.1f);
+    assert(lodErrorWorld.GetStatistics().CachedGravityForceUsed == true);
+    assert(lodErrorWorld.GetStatistics().DirectReferenceErrorMeasured == true);
+    // r=2のcache Force=1.5に対し、現在r=4のReference Force=0.375なので相対誤差は3.0です。
+    assert(std::abs(lodErrorWorld.GetStatistics().MaximumGravityForceRelativeError - 3.0)
+        < 1.0e-12);
+    assert(lodErrorWorld.GetStatistics().MaximumGravityAccelerationError > 0.0);
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
