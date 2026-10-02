@@ -436,6 +436,54 @@ void RunAstroWorldSelfTests()
     assert(solverSelectionWorld.GetStatistics().SolverKind == AstroGravitySolverKind::BarnesHut);
     static_cast<void>(selectionBodyA);
 
+    // Phase 8の第一段階として、Gravity Solverの更新周期を落としても毎step同じForceを
+    // Rigid accumulatorへ供給できることを確認します。interval=2では solve -> cache -> solve です。
+    Scene multiRateScene;
+    AstroWorld multiRateWorld;
+    multiRateWorld.SetGravitySolverSettings(settings);
+    AstroMultiRateSettings multiRateSettings{};
+    multiRateSettings.GravityUpdateIntervalSteps = 2u;
+    multiRateWorld.SetMultiRateSettings(multiRateSettings);
+    Entity multiRateA = CreateCelestialBody(
+        multiRateScene, "Multi-rate A", { 0.0f, 0.0f, 0.0f }, 2.0f);
+    Entity multiRateB = CreateCelestialBody(
+        multiRateScene, "Multi-rate B", { 2.0f, 0.0f, 0.0f }, 3.0f);
+
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == true);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == false);
+    const float firstMultiRateForce =
+        multiRateA.GetComponent<RigidBodyComponent>().Force.x;
+
+    multiRateA.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateB.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == false);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == true);
+    assert(NearlyEqual(
+        multiRateA.GetComponent<RigidBodyComponent>().Force.x,
+        firstMultiRateForce));
+
+    multiRateA.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateB.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == true);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == false);
+
+    // body集合が変わった場合は更新周期の途中でもcacheを破棄し、Entity対応の誤適用を防ぎます。
+    multiRateA.GetComponent<RigidBodyComponent>().Force = {};
+    multiRateB.GetComponent<RigidBodyComponent>().Force = {};
+    Entity multiRateC = CreateCelestialBody(
+        multiRateScene, "Multi-rate C", { 4.0f, 0.0f, 0.0f }, 1.0f);
+    multiRateWorld.AccumulateGravityForces(multiRateScene, 0.1f);
+    assert(multiRateWorld.GetStatistics().GravitySolveExecuted == true);
+    assert(multiRateWorld.GetStatistics().CachedGravityForceUsed == false);
+    static_cast<void>(multiRateC);
+
+    multiRateSettings.GravityUpdateIntervalSteps = 0u;
+    multiRateWorld.SetMultiRateSettings(multiRateSettings);
+    assert(multiRateWorld.GetMultiRateSettings().GravityUpdateIntervalSteps == 1u);
+
     // PhysicsSimulationWorldではAstro重力をElectromagnetismと同様にRigid積分前のForceへ蓄積します。
     Scene scene;
     PhysicsSimulationWorld& simulationWorld = scene.GetPhysicsSimulationWorld();
