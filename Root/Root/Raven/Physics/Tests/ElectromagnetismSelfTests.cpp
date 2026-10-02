@@ -568,13 +568,11 @@ void RunElectromagnetismSelfTests()
     assert(movingDipoleWorld.GetElectromagneticSystem().UnregisterMagneticField(movingDipoleField) == true);
 
     // 天体姿勢の変更が次fixed-stepのLorentz力へ反映されることまで統合検証します。
-    // local +Z momentを初回はworld +Z、X軸90度回転後はworld -Yへ向けます。
+    // local +Z momentを初回はworld +Z、Y軸90度回転後はworld +Xへ向けます。
     Scene orbitingChargeScene;
     PhysicsSimulationWorld& orbitingChargeWorld = orbitingChargeScene.GetPhysicsSimulationWorld();
     Entity rotatingMagneticBody = orbitingChargeScene.CreateEntity("Rotating Magnetic Body");
-    TransformComponent& rotatingMagneticTransform =
-        rotatingMagneticBody.GetComponent<TransformComponent>();
-    rotatingMagneticTransform.Position = { 0.0f, 0.0f, 0.0f };
+    rotatingMagneticBody.GetComponent<TransformComponent>().Position = { 0.0f, 0.0f, 0.0f };
 
     DipoleMagneticField rotatingDipoleField(
         { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0e7f }, 0.1f);
@@ -599,11 +597,14 @@ void RunElectromagnetismSelfTests()
     // Rigid積分でCharge位置も変化するため、Field方向だけを比較できるよう初期状態へ戻します。
     orbitingCharge.GetComponent<TransformComponent>().Position = { 1.0f, 0.0f, 0.0f };
     orbitingBody.LinearVelocity = { 0.0f, 1.0f, 0.0f };
-    rotatingMagneticTransform.Rotation = { 1.57079632679f, 0.0f, 0.0f };
+    // orbitingCharge生成時にTransform格納vectorが再確保される可能性があるため、
+    // 生成前の参照を保持せず、回転を書き込む時点でComponentを再取得します。
+    rotatingMagneticBody.GetComponent<TransformComponent>().Rotation =
+        { 0.0f, 1.57079632679f, 0.0f };
     orbitingChargeWorld.StepSimulation(orbitingChargeScene, fixedDeltaTime);
 
-    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().x, 0.0f, 1.0e-3f));
-    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().y, -1.0e7f, 1.0f));
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().x, 1.0e7f, 1.0f));
+    assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().y, 0.0f, 1.0e-3f));
     assert(NearlyEqual(rotatingDipoleField.GetDipoleMoment().z, 0.0f, 1.0f));
     assert(NearlyEqual(orbitingBody.LinearVelocity.x, 0.0f, 1.0e-4f));
     assert(NearlyEqual(orbitingBody.LinearVelocity.y, 1.0f, 1.0e-4f));
