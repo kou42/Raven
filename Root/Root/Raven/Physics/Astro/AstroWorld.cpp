@@ -173,6 +173,11 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
         return;
     }
 
+    if (m_MultiRateSettings.MeasureDirectReferenceError == true)
+    {
+        MeasureDirectReferenceError();
+    }
+
     const auto feedbackBegin = Clock::now();
     for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
     {
@@ -444,6 +449,61 @@ void AstroWorld::ComputeNearGravityForces(std::vector<AstroVector3>& outForces)
             }
         }
     }
+}
+
+void AstroWorld::MeasureDirectReferenceError()
+{
+    std::vector<AstroVector3> referenceForces;
+    // Reference計算にはstatisticsを渡しません。検証用Direct評価のO(N^2)コストを
+    // 実際に選択されたRuntime Solverのwork counterへ混ぜないためです。
+    m_DirectGravitySolver.ComputeForces(m_Bodies, m_Settings, referenceForces);
+    if (referenceForces.size() != m_Forces.size())
+    {
+        return;
+    }
+
+    double relativeErrorSum = 0.0;
+    std::uint64_t measuredBodyCount = 0u;
+    for (std::size_t i = 0u; i < m_Bodies.size(); ++i)
+    {
+        if (m_Bodies[i].ReceiveGravity == false)
+        {
+            continue;
+        }
+
+        const double absoluteForceError = (m_Forces[i] - referenceForces[i]).Length();
+        const double referenceMagnitude = referenceForces[i].Length();
+        double relativeError = 0.0;
+        if (referenceMagnitude > 1.0e-12)
+        {
+            relativeError = absoluteForceError / referenceMagnitude;
+        }
+        else if (absoluteForceError > 1.0e-12)
+        {
+            // Referenceが実質ゼロなのに近似側だけForceを持つ場合は相対誤差を有限値へ
+            // 正規化できないため、絶対誤差をそのまま異常度として扱います。
+            relativeError = absoluteForceError;
+        }
+
+        m_Statistics.MaximumGravityForceRelativeError =
+            std::max(m_Statistics.MaximumGravityForceRelativeError, relativeError);
+        relativeErrorSum += relativeError;
+        ++measuredBodyCount;
+
+        if (m_Bodies[i].Mass > 0.0 && std::isfinite(m_Bodies[i].Mass) == true)
+        {
+            const double accelerationError = absoluteForceError / m_Bodies[i].Mass;
+            m_Statistics.MaximumGravityAccelerationError =
+                std::max(m_Statistics.MaximumGravityAccelerationError, accelerationError);
+        }
+    }
+
+    if (measuredBodyCount > 0u)
+    {
+        m_Statistics.MeanGravityForceRelativeError =
+            relativeErrorSum / static_cast<double>(measuredBodyCount);
+    }
+    m_Statistics.DirectReferenceErrorMeasured = true;
 }
 
 void AstroWorld::CacheGravityForces()
