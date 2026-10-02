@@ -27,6 +27,142 @@ bool NearlyEqual(float left, float right, float epsilon = 1.0e-5f)
     return std::abs(left - right) <= epsilon;
 }
 
+struct MultiRateOrbitResult
+{
+    std::vector<AstroBodyState> Bodies;
+    OrbitalDiagnostics InitialDiagnostics{};
+    OrbitalDiagnostics FinalDiagnostics{};
+};
+
+MultiRateOrbitResult SimulateMultiRateOrbit(
+    const std::vector<AstroBodyState>& initialBodies,
+    const GravitySolverSettings& settings,
+    std::uint32_t farInterval,
+    bool adaptive,
+    bool smoothing,
+    int stepCount,
+    double dt)
+{
+    DirectGravitySolver referenceSolver;
+    MultiRateOrbitResult result{};
+    result.Bodies = initialBodies;
+    result.InitialDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(result.Bodies, settings);
+
+    std::vector<AstroVector3> cachedForces;
+    std::vector<AstroVector3> appliedForces;
+    std::vector<AstroVector3> transitionStartForces;
+    std::uint32_t stepsSinceSolve = 0u;
+    std::uint32_t currentInterval = farInterval;
+    std::uint32_t stableSteps = 0u;
+    std::uint32_t transitionStep = 0u;
+
+    for (int step = 0; step < stepCount; ++step)
+    {
+        const bool solve =
+            cachedForces.size() != result.Bodies.size()
+            || currentInterval <= 1u
+            || stepsSinceSolve >= (currentInterval - 1u);
+
+        if (solve == true)
+        {
+            std::vector<AstroVector3> newForces;
+            referenceSolver.ComputeForces(result.Bodies, settings, newForces);
+
+            if (smoothing == true && appliedForces.size() == newForces.size())
+            {
+                transitionStartForces = appliedForces;
+                transitionStep = 0u;
+            }
+            else
+            {
+                appliedForces = newForces;
+                transitionStartForces.clear();
+                transitionStep = 0u;
+            }
+            cachedForces = newForces;
+            stepsSinceSolve = 0u;
+        }
+        else
+        {
+            ++stepsSinceSolve;
+        }
+
+        if (smoothing == true
+            && transitionStartForces.size() == cachedForces.size()
+            && transitionStep < 2u)
+        {
+            ++transitionStep;
+            const double alpha = static_cast<double>(transitionStep) / 2.0;
+            appliedForces.resize(cachedForces.size());
+            for (std::size_t i = 0u; i < cachedForces.size(); ++i)
+            {
+                appliedForces[i] =
+                    transitionStartForces[i] * (1.0 - alpha) + cachedForces[i] * alpha;
+            }
+            if (transitionStep >= 2u)
+            {
+                transitionStartForces.clear();
+            }
+        }
+        else if (transitionStartForces.empty() == true)
+        {
+            appliedForces = cachedForces;
+        }
+
+        if (adaptive == true)
+        {
+            std::vector<AstroVector3> directReferenceForces;
+            referenceSolver.ComputeForces(result.Bodies, settings, directReferenceForces);
+            double maximumRelativeError = 0.0;
+            for (std::size_t i = 0u; i < appliedForces.size(); ++i)
+            {
+                const double referenceMagnitude = directReferenceForces[i].Length();
+                if (referenceMagnitude <= 1.0e-12)
+                {
+                    continue;
+                }
+                maximumRelativeError = std::max(
+                    maximumRelativeError,
+                    (appliedForces[i] - directReferenceForces[i]).Length()
+                        / referenceMagnitude);
+            }
+
+            if (maximumRelativeError >= 0.05)
+            {
+                stableSteps = 0u;
+                if (currentInterval > 1u)
+                {
+                    --currentInterval;
+                }
+            }
+            else if (maximumRelativeError <= 0.01)
+            {
+                ++stableSteps;
+                if (stableSteps >= 4u && currentInterval < 8u)
+                {
+                    ++currentInterval;
+                    stableSteps = 0u;
+                }
+            }
+            else
+            {
+                stableSteps = 0u;
+            }
+        }
+
+        for (std::size_t i = 0u; i < result.Bodies.size(); ++i)
+        {
+            result.Bodies[i].Velocity += appliedForces[i] * (dt / result.Bodies[i].Mass);
+            result.Bodies[i].Position += result.Bodies[i].Velocity * dt;
+        }
+    }
+
+    result.FinalDiagnostics =
+        OrbitalDiagnosticsCalculator::Compute(result.Bodies, settings);
+    return result;
+}
+
 Entity CreateCelestialBody(
     Scene& scene,
     const char* name,
