@@ -303,6 +303,60 @@ void RunAstroWorldSelfTests()
     assert((finalDiagnostics.TotalAngularMomentum - initialDiagnostics.TotalAngularMomentum).Length()
         < 1.0e-10);
 
+    // Phase 8の時間LODを同一初期条件で長時間比較します。
+    // Direct毎stepをReferenceとし、固定Multi-rate / Adaptive / Adaptive+Smoothingについて
+    // Position・Velocity差とEnergy / Angular Momentum driftを同じ尺度で測定します。
+    const std::vector<AstroBodyState> multiRateInitialBodies{
+        { {}, { -1.0, 0.0, 0.0 }, { 0.0, -0.5, 0.0 }, 1.0, true, true },
+        { {}, { 1.0, 0.0, 0.0 }, { 0.0, 0.5, 0.0 }, 1.0, true, true }
+    };
+    const MultiRateOrbitResult directReferenceOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 1u, false, false, orbitStepCount, orbitDt);
+    const MultiRateOrbitResult fixedMultiRateOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 4u, false, false, orbitStepCount, orbitDt);
+    const MultiRateOrbitResult adaptiveMultiRateOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 4u, true, false, orbitStepCount, orbitDt);
+    const MultiRateOrbitResult smoothedAdaptiveOrbit = SimulateMultiRateOrbit(
+        multiRateInitialBodies, orbitSettings, 4u, true, true, orbitStepCount, orbitDt);
+
+    const auto validateMultiRateOrbit =
+        [&](const MultiRateOrbitResult& candidate, double maximumPositionError)
+        {
+            double positionError = 0.0;
+            double velocityError = 0.0;
+            for (std::size_t i = 0u; i < candidate.Bodies.size(); ++i)
+            {
+                positionError = std::max(
+                    positionError,
+                    (candidate.Bodies[i].Position - directReferenceOrbit.Bodies[i].Position)
+                        .Length());
+                velocityError = std::max(
+                    velocityError,
+                    (candidate.Bodies[i].Velocity - directReferenceOrbit.Bodies[i].Velocity)
+                        .Length());
+            }
+
+            const double energyScale =
+                std::max(std::abs(candidate.InitialDiagnostics.TotalEnergy), 1.0e-12);
+            const double energyDrift =
+                std::abs(candidate.FinalDiagnostics.TotalEnergy
+                    - candidate.InitialDiagnostics.TotalEnergy) / energyScale;
+            const double angularMomentumDrift =
+                (candidate.FinalDiagnostics.TotalAngularMomentum
+                    - candidate.InitialDiagnostics.TotalAngularMomentum).Length();
+
+            assert(positionError < maximumPositionError);
+            assert(velocityError < maximumPositionError);
+            assert(energyDrift < 5.0e-3);
+            assert(angularMomentumDrift < 1.0e-10);
+        };
+
+    // 固定4step更新は時間近似誤差を許容し、Adaptive系は誤差feedbackで周期を戻せるため
+    // 同じ緩い上限内でReference軌道から発散しないことを回帰条件にします。
+    validateMultiRateOrbit(fixedMultiRateOrbit, 5.0e-2);
+    validateMultiRateOrbit(adaptiveMultiRateOrbit, 5.0e-2);
+    validateMultiRateOrbit(smoothedAdaptiveOrbit, 5.0e-2);
+
     // Gravity/Coulomb共有topologyはDomain固有値を持たず、double位置とPayloadIndexだけを分割します。
     // 非有限位置を除外し、leafから元Domainのindexへ戻せることを確認します。
     std::vector<LongRangeSpatialPoint> sharedSpatialPoints{
