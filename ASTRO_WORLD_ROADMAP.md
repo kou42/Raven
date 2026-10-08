@@ -550,13 +550,27 @@ Far electromagnetic      15 Hz
 Visualization            render rate
 ```
 
-### 候補
+### 実装状況
 
-- Near / Far interaction の更新頻度分離。
-- 遠距離 aggregate force のキャッシュ。
-- 前回 force からの補間。
-- Sleeping / inactive Astro body。
-- Camera distance ではなく物理誤差を基準にした Physics LOD。
+- [x] Near / Far interaction の更新頻度分離。
+- [x] 遠距離 aggregate force のキャッシュ。
+- [x] 確定済み Far force 間の transition smoothing。
+- [x] Far force の新旧変化量を基準にした Adaptive Physics LOD。
+- [x] Direct Reference による任意の誤差診断。
+- [x] Direct / 固定 Multi-rate / Adaptive / Adaptive + Smoothing の長時間軌道回帰。
+- [x] Near Direct hot path の pair 単位一時 allocation 除去。
+- [ ] Sleeping / inactive Astro body。
+
+Sleeping / inactive は既存 Rigid Body の sleep 契約との責務整理が必要なため、
+Multi-rate / Physics LOD の必須完了条件から切り離し、後続最適化候補として残します。
+
+### 完了条件
+
+- [x] Near は毎 fixed-step、Far は低頻度で更新できる。
+- [x] Near / Far 境界横断時に古い Far cache を誤適用しない。
+- [x] Far 更新周期を物理量の変化に応じて自動調整できる。
+- [x] Barnes-Hut の空間近似とは独立して時間 LOD の長時間誤差を回帰できる。
+- [x] Direct Reference 診断を通常 Runtime の必須 O(N^2) コストにしない。
 
 ### 原則
 
