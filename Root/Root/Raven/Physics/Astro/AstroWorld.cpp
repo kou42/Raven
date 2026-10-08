@@ -112,10 +112,11 @@ void AstroWorld::AccumulateGravityForces(Scene& scene, float fixedDeltaTime)
                 m_Statistics.SolverKind = AstroGravitySolverKind::Custom;
             }
 
-            if (farIntervalElapsed == false && cacheCompatible == false)
+            if (cacheCompatible == false)
             {
-                // Body属性変更やNear/Far境界横断で強制solveされた場合、旧Far成分は現在の
-                // 分類と互換ではありません。補間すると二重加算/欠落を再導入するため破棄します。
+                // Body属性変更やNear/Far境界横断後の旧Far成分は、更新予定stepかどうかに
+                // 関係なく現在の分類と互換ではありません。補間すると二重加算/欠落を
+                // 再導入するため、遷移元として使用せず破棄します。
                 m_AppliedFarGravityForces.clear();
                 m_FarGravityTransitionStartForces.clear();
                 m_FarGravityTransitionStep = 0u;
