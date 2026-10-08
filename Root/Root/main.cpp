@@ -34,6 +34,7 @@
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
+#include "Raven/Scene/Tests/SceneLifecycleSelfTests.h"
 #include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
@@ -71,6 +72,12 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunExplicitSceneFrameSelfTests();
             std::cout << "Explicit Scene Frame self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-scene-lifecycle")
+        {
+            Raven::tests::RunSceneLifecycleSelfTests();
+            std::cout << "Scene lifecycle self-tests passed.\n";
             return 0;
         }
 #endif
@@ -137,6 +144,7 @@ int main(int argc, char* argv[])
     // Motion Matching切替時のPose/速度連続性も実際のDebug起動時に必ず検証します。
     Raven::tests::RunExplicitSceneFrameSelfTests();
     Raven::tests::RunJobSystemSelfTests();
+    Raven::tests::RunSceneLifecycleSelfTests();
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();

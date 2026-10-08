@@ -374,6 +374,8 @@ Application::~Application()
     // 新しいScene実装でbase呼び出しを忘れても、Applicationが共通の最終終了処理を保証します。
     // Sceneの二段階CleanupはSceneManagerへ集約します。
     m_SceneManager.Shutdown();
+    // Audio backendはSceneが停止した後、Window/Platform resourceが有効な間に終了します。
+    m_AudioService.Shutdown();
 
     // ImGui OpenGL backendは有効なOpenGL Contextを必要とします。
     // そのためWindowが破棄される前に明示的にDetachし、backendとImGui Contextを終了します。
@@ -1146,14 +1148,10 @@ void Application::SetScene(Scope<Scene> scene)
     // 起動時などFrame処理外の即時切り替えはSceneManagerへ委譲します。
     m_SceneManager.SetScene(std::move(scene));
 
-    if (m_ExplicitSceneRuntime != nullptr)
+    if (m_ExplicitSceneRuntime != nullptr && PrepareAllScenesForExplicitRuntime() == false)
     {
-        Scene* activeScene = m_SceneManager.GetActiveScene();
-        if (activeScene == nullptr || m_ExplicitSceneRuntime->PrepareScene(*activeScene) == false)
-        {
-            // Explicit Device用Mesh構築に失敗したSceneでFrameを開始しません。
-            m_Running = false;
-        }
+        // Explicit Device用Mesh構築に失敗したSceneでFrameを開始しません。
+        m_Running = false;
     }
 }
 
@@ -1162,6 +1160,59 @@ void Application::RequestSceneChange(Scope<Scene> scene)
     // Update / Event / UI callbackから現在Sceneを直接破棄しないよう、
     // 所有権だけを予約し、Present完了後の安全なFrame境界で反映します。
     m_SceneManager.RequestSceneChange(std::move(scene));
+}
+
+void Application::SetPersistentScene(Scope<Scene> scene)
+{
+    m_SceneManager.SetPersistentScene(std::move(scene));
+    if (m_ExplicitSceneRuntime != nullptr && PrepareAllScenesForExplicitRuntime() == false)
+    {
+        m_Running = false;
+    }
+}
+
+void Application::RequestPersistentSceneChange(Scope<Scene> scene)
+{
+    m_SceneManager.RequestPersistentSceneChange(std::move(scene));
+}
+
+SceneInstanceID Application::LoadSceneAdditive(Scope<Scene> scene)
+{
+    return m_SceneManager.LoadSceneAdditive(std::move(scene));
+}
+
+SceneInstanceID Application::LoadSceneAdditive(const std::string& sceneID)
+{
+    Scope<Scene> scene = m_SceneFactory.Create(sceneID);
+    if (scene == nullptr)
+    {
+        return InvalidSceneInstanceID;
+    }
+    return LoadSceneAdditive(std::move(scene));
+}
+
+bool Application::UnloadScene(SceneInstanceID sceneID)
+{
+    return m_SceneManager.UnloadScene(sceneID);
+}
+
+bool Application::PrepareAllScenesForExplicitRuntime()
+{
+    if (m_ExplicitSceneRuntime == nullptr)
+    {
+        return true;
+    }
+
+    bool prepared = true;
+    m_SceneManager.ForEachScene(
+        [this, &prepared](const SceneInstanceView& instance)
+        {
+            if (prepared == true && instance.ScenePointer != nullptr)
+            {
+                prepared = m_ExplicitSceneRuntime->PrepareScene(*instance.ScenePointer);
+            }
+        });
+    return prepared;
 }
 
 bool Application::RequestSceneTransition(
@@ -1427,6 +1478,9 @@ void Application::Run()
         // 通常/Explicitの両経路で同じdt上限と巻き戻り保護を適用します。
         const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
+        // AudioはPrimary Scene交換から独立したApplication Lifetimeで進めます。
+        m_AudioService.Update(frameDeltaTime);
+
         // Scene Transitionの時間はScene Updateより前に進めます。
         // FadeOut完了時もSceneManagerへ予約するだけなので、現在FrameのScene寿命は維持されます。
         m_SceneTransitionController.Update(frameDeltaTime);
@@ -1496,12 +1550,17 @@ void Application::Run()
         // ====================================================================
         // Sceneはゲーム側のUpdate / Renderを担当します。
         // Editor処理はここへ混ぜず、後続のLayer更新へ分離します。
-        Scene* activeScene = m_SceneManager.GetActiveScene();
-        if (activeScene != nullptr)
-        {
-            activeScene->OnUpdate(frameDeltaTime);
-            activeScene->OnRender();
-        }
+        // Persistentは共有状態を先に更新し、AdditiveはPrimaryより後に重ねます。
+        // Scene変更要求はFrame末尾まで予約状態なので、この走査中のPointerは安定しています。
+        m_SceneManager.ForEachScene(
+            [frameDeltaTime](const SceneInstanceView& instance)
+            {
+                if (instance.ScenePointer != nullptr)
+                {
+                    instance.ScenePointer->OnUpdate(frameDeltaTime);
+                    instance.ScenePointer->OnRender();
+                }
+            });
 
         // ====================================================================
         // Application Layers
@@ -1665,7 +1724,8 @@ void Application::Run()
         // Callback中に予約されたScene切り替えを反映します。
         // 旧Sceneを参照する一時的なFrame処理が完了してから破棄することで、
         // Update/Event/UI callback自身の実行中に所有元が消えることを防ぎます。
-        if (m_SceneManager.HasPendingSceneChange() == true)
+        const bool primarySceneChanging = m_SceneManager.HasPendingSceneChange();
+        if (primarySceneChanging == true)
         {
             Scene* oldScene = m_SceneManager.GetActiveScene();
             // 旧Sceneが生存している最後の安全境界で通知し、LayerがEntity/Registryを解除できるようにします。
@@ -1678,12 +1738,11 @@ void Application::Run()
             }
         }
 
-        if (m_SceneManager.FlushPendingSceneChange() == true)
+        if (m_SceneManager.FlushPendingSceneOperations() == true)
         {
             Scene* changedScene = m_SceneManager.GetActiveScene();
             if (m_ExplicitSceneRuntime != nullptr &&
-                (changedScene == nullptr ||
-                    m_ExplicitSceneRuntime->PrepareScene(*changedScene) == false))
+                PrepareAllScenesForExplicitRuntime() == false)
             {
                 m_Running = false;
                 break;
@@ -1692,7 +1751,7 @@ void Application::Run()
             // 旧Sceneは既に破棄済みなので渡さず、新Active Sceneだけを公開してdangling参照を作りません。
             for (const Scope<Layer>& layer : m_Layers)
             {
-                if (layer != nullptr)
+                if (primarySceneChanging == true && layer != nullptr)
                 {
                     layer->OnActiveSceneChanged(changedScene);
                 }
@@ -2057,6 +2116,17 @@ void Application::OnEvent(Event& event)
             (*it)->OnEvent(event);
         }
     }
+
+    // Scene内部LayerはAdditiveを前面として逆順に入力を受け取ります。
+    // Event処理中のUnload/Scene交換は予約だけなので、この走査中にSceneは破棄されません。
+    m_SceneManager.ForEachSceneReverse(
+        [&event](const SceneInstanceView& instance)
+        {
+            if (event.Handled == false && instance.ScenePointer != nullptr)
+            {
+                instance.ScenePointer->OnEvent(event);
+            }
+        });
 }
 
 } // namespace Raven

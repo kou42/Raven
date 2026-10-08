@@ -2,7 +2,8 @@
 
 ## 現在地点
 
-Scene Transition基盤とTitle / Game間の実Scene遷移まで実装済みです。
+Phase 13までのRuntime基盤を実装済みです。Primary Scene遷移に加えて、Persistent Scene、
+Application Lifetime State / Audio / Global UI、Additive Scene、Stage集合Streamingを利用できます。
 
 ## Phase 1: Scene Lifetime基盤 — 完了
 
@@ -106,7 +107,7 @@ SceneとUI Screenの責務を分離します。
 ※ Font AtlasのGPU生成責務は既存方針を維持し、`ApplicationSpecification::RuntimeUIFont` から共有Atlasを注入します。
 Font未指定時も各Screenは従来どおり動作し、Font利用可能時だけUILabelを追加します。
 
-## Phase 11: Async Loading強化 — 実装中
+## Phase 11: Async Loading強化 — 基盤完成
 
 - Cancellation ✓
   - cooperative cancellation token
@@ -122,7 +123,10 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - 戻り値Future
   - 複数Job完了
   - Debug Startupへ接続
-- 実ビルド確認
+- 実ビルド確認 ✓
+  - Debug x64 compile / link成功
+  - ローカルMSPDB DLL不整合を回避するPDBなし診断build optionを追加
+  - Scene Lifetime専用Self Test実行成功
 - Asset Loadingとの統合 — 実装中
   - Texture CPU decode専用API ✓
   - decode済みPixelのAsset Manager登録 ✓
@@ -135,52 +139,59 @@ Font未指定時も各Screenは従来どおり動作し、Font利用可能時だ
   - Legacy OpenGL TextureのMain Thread GPU finalize ✓
   - Game SceneでAsync Load済みAssetを再利用 ✓
   - Direct Scene起動時の同期Load fallback ✓
-- Scene生成時のMain Thread stall削減 — 実装中
+- Scene生成時のMain Thread stall削減 — 基盤完成
   - Primitive Sphere/CubeのCPU Geometry生成をWorker Preparationへ移行 ✓
   - SceneGamePreparedResourcesでWorker結果をScene生成へ受け渡し ✓
   - Mesh/GPU Resource生成はMain Threadへ維持 ✓
   - Floor/Wave Dynamic GridのCPU Geometry生成をWorker Preparationへ移行 ✓
   - 旧Floor頂点色を専用CreateFloorGeometry()で維持 ✓
   - SceneGame::OnCreate Total / Assets / RenderResources / Entities計測Scope ✓
-  - 計測結果を基にShader/Pipeline/ECSの次分割対象を決定 ← 次回ここから
-- PreparationとScene生成を含めたProgress semantics整理 — 実装中
+  - Shader/PipelineはGPU/Backend境界、ECS登録はScene所有境界としてMain Threadに維持 ✓
+  - CPU Asset decode / Geometry生成をWorker側へ分割し、次の最適化はRuntime計測値で判断
+- PreparationとScene生成を含めたProgress semantics整理 — 完了
   - Preparation完了 80% / Main Thread Finalize完了 90% / Scene生成完了 100% ✓
 
 ※ 現在Ravenには汎用Job Systemが存在せず、Texture / RHI Shader Asset Managerも同期Loadです。
 `std::async` を直接Job System風APIで包むだけにはせず、Scene Loading以外でも再利用できるJob実行境界を先に設計します。
 
-## Phase 12: Persistent Scene
+## Phase 12: Persistent Scene — 基盤完成
 
-- Persistent Scene
-- Sceneを跨ぐEntity
-- Audio
-- Global UI
-- Game / Application State
+- Persistent Scene ✓
+- Sceneを跨ぐEntity ✓
+  - Entity移送ではなくPersistent Scene所属でScene-local Handle/Storageの所有権を維持
+- Audio ✓
+  - Application所有の差し替え可能な`IAudioService`境界
+- Global UI ✓
+  - Scene固有Navigationとは別のApplication Lifetime Stack
+- Game / Application State ✓
+  - Entity/GPU Resourceを持ち込まない型付き`ApplicationState`
 
-## Phase 13: Additive Scene Loading
+## Phase 13: Additive Scene Loading — 基盤完成
 
-- 複数Scene同時ロード
-- `LoadSceneAdditive()`
-- `UnloadScene()`
-- Stage Streaming
-- World Streamingへの発展
+- 複数Scene同時ロード ✓
+  - `Persistent -> Primary -> Additive`のUpdate/Render順
+  - `Additive -> Primary -> Persistent`のEvent順
+  - Explicit RHIでも全SceneのMeshをFrame前にprepare
+- `LoadSceneAdditive()` ✓
+- `UnloadScene()` ✓
+- Scene Instance ID / Deferred Operation Queue ✓
+- Stage Streaming ✓
+  - Desired Stage ID集合との差分をAdditive Load/Unloadへ変換
+- World Streamingへの発展 ✓
+  - 距離、Portal、メモリBudget等のPolicyはGame側、Lifetime差分適用はRuntime側へ分離
 
 ---
 
 ## 次回の推奨実装順
 
 ```text
-UIScreen ✓
+Runtime Profile Capture
   ↓
-UINavigationManager ✓
+Stage Streaming Policy（距離 / Portal / Budget）
   ↓
-TitleScreen ✓
+Concrete Audio Backend
   ↓
-Title UI Action → SceneTransitionController ✓
-  ↓
-Pause / Settings
-  ↓
-LoadingScreen
+Async Additive Preparation / Asset Batch統合
 ```
 
 UI Navigationへ進む前に、現在のScene Transition変更についてVisual Studio / MSBuildで一度ビルド・実行確認を行うことを推奨します。
@@ -188,6 +199,10 @@ UI Navigationへ進む前に、現在のScene Transition変更についてVisual
 ## 現在の注意点
 
 - GitHub Actions workflowによる自動ビルド確認は現時点ではありません。
-- Scene Transition変更は静的確認済みですが、ローカルVisual Studio / MSBuildによるビルド・実行確認は未実施です。
+- Debug x64のcompile/linkとScene Lifetime Self Testは確認済みです。
+- この環境の通常PDB付きlinkは`MSPDB140.DLL`のversion不整合で失敗するため、診断buildでは`RavenGenerateLinkDebugInformation=false`を指定しています。
 - Application-owned LayerがScene固有状態を持つ場合は、`OnActiveSceneChanging()` / `OnActiveSceneChanged()`を利用してScene lifetimeを跨いだ参照を保持しないようにします。
 - Worker ThreadではScene constructor / Renderer / Physics / ECS初期化を行わず、CPU側Preparationだけを実行します。
+- Persistent SceneはPrimary交換では破棄されませんが、Application終了時にはAdditive / Primaryより後に破棄されます。
+- Additive Sceneの描画順はLoad順です。透明合成やCamera選択などのWorld固有PolicyはScene側で明示してください。
+- AudioはLifetime/Backend境界までで、実際に音声を出すConcrete Backendは未実装です。

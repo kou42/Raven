@@ -76,6 +76,8 @@
     <!-- 通常アプリとUI回帰テストの中間生成物を分離し、mainの重複定義を防ぎます。 -->
     <RavenUITest Condition="'$(RavenUITest)'==''">false</RavenUITest>
     <RavenUIGPUTest Condition="'$(RavenUIGPUTest)'==''">false</RavenUIGPUTest>
+    <!-- 壊れた/不一致のMSPDB環境でもコードとリンクを検証できるよう、診断用にPDB生成だけを無効化できます。 -->
+    <RavenGenerateLinkDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'==''">true</RavenGenerateLinkDebugInformation>
     <TargetName Condition="'$(RavenUITest)'=='true'">RavenUITests</TargetName>
     <TargetName Condition="'$(RavenUIGPUTest)'=='true'">RavenUIGPUTests</TargetName>
     <IntDir Condition="'$(RavenUITest)'=='true'">$(Platform)\$(Configuration)\UITests\</IntDir>
@@ -86,12 +88,17 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir);$(ProjectDir)vendor\imgui;$(ProjectDir)vendor\imgui\backends;$(VULKAN_SDK)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir);$(ProjectDir)vendor\imgui;$(ProjectDir)vendor\imgui\backends;$(ProjectDir)vendor\imgui\examples\libs\glfw\include;$(VULKAN_SDK)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <!-- Windows.h の min/max マクロが std::min/std::max と numeric_limits::max に干渉しないよう、全構成で無効化します。 -->
       <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <Link>
+      <!-- GLFWはrepository同梱のheader/static libraryを同じversionで使用します。 -->
+      <AdditionalLibraryDirectories>$(ProjectDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -99,7 +106,8 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='true'">true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='false'">false</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -112,7 +120,8 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='true'">true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='false'">false</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -121,8 +130,9 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)include;$(VULKAN_SDK)\Lib</AdditionalLibraryDirectories>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='true'">true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='false'">false</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(ProjectDir)lib;$(ProjectDir)include;$(VULKAN_SDK)\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;d3d12.lib;dxgi.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -136,8 +146,9 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>;$(VULKAN_SDK)\Lib</AdditionalLibraryDirectories>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='true'">true</GenerateDebugInformation>
+      <GenerateDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'=='false'">false</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(ProjectDir)lib;$(VULKAN_SDK)\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;d3d12.lib;dxgi.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>

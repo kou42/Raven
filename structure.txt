@@ -133,6 +133,10 @@ D:.
     |   |   |   \---Svg
     |   |   |           AnimatedRect.svg
     |   |   |
+    |   |   +---Audio
+    |   |   |       AudioService.cpp
+    |   |   |       AudioService.h
+    |   |   |
     |   |   +---Character
     |   |   |   |   CharacterController.cpp
     |   |   |   |   CharacterController.h
@@ -159,6 +163,8 @@ D:.
     |   |   +---Core
     |   |   |   |   Application.cpp
     |   |   |   |   Application.h
+    |   |   |   |   ApplicationState.cpp
+    |   |   |   |   ApplicationState.h
     |   |   |   |   Base.cpp
     |   |   |   |   Base.h
     |   |   |   |   CPUProfiler.cpp
@@ -573,15 +579,27 @@ D:.
     |   |   |   |   ComponentView.h
     |   |   |   |   Entity.cpp
     |   |   |   |   Entity.h
+    |   |   |   |   ExplicitCubeSceneDemo.h
     |   |   |   |   Scene.cpp
     |   |   |   |   Scene.h
     |   |   |   |   SceneCamera.cpp
     |   |   |   |   SceneCamera.h
     |   |   |   |   SceneCameraSystem.cpp
     |   |   |   |   SceneCameraSystem.h
+    |   |   |   |   SceneFactory.cpp
+    |   |   |   |   SceneFactory.h
     |   |   |   |   SceneGame.cpp
     |   |   |   |   SceneGame.h
     |   |   |   |   SceneGameAnimation.cpp
+    |   |   |   |   SceneGamePreparation.h
+    |   |   |   |   SceneManager.cpp
+    |   |   |   |   SceneManager.h
+    |   |   |   |   SceneStreamingController.cpp
+    |   |   |   |   SceneStreamingController.h
+    |   |   |   |   SceneTitle.cpp
+    |   |   |   |   SceneTitle.h
+    |   |   |   |   SceneTransitionController.cpp
+    |   |   |   |   SceneTransitionController.h
     |   |   |   |   SceneViewportRenderer.h
     |   |   |   |
     |   |   |   \---Tests

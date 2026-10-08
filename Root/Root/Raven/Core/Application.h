@@ -1,5 +1,7 @@
 #pragma once
 #include "Raven/Core/Jobs/JobSystem.h"
+#include "Raven/Core/ApplicationState.h"
+#include "Raven/Audio/AudioService.h"
 #include "Raven/Assets/TextureAsset.h"
 #include "Raven/Core/Window.h"
 #include "Raven/Core/WindowManager.h"
@@ -10,6 +12,7 @@
 #include "Raven/Scene/SceneManager.h"
 #include "Raven/Scene/SceneFactory.h"
 #include "Raven/Scene/SceneTransitionController.h"
+#include "Raven/Scene/SceneStreamingController.h"
 #include "Raven/Renderer/RHI/IExplicitSceneRuntime.h"
 #include "Raven/Renderer/RHI/RHIExplicitSceneSpecification.h"
 #include "Raven/Renderer/RenderCommand.h"
@@ -270,6 +273,17 @@ public:
     // 実際の破棄・OnCreateはPresent完了後のFrame境界で行います。
     void RequestSceneChange(Scope<Scene> scene);
 
+    // Primary交換の影響を受けないApplication Lifetime Sceneです。
+    // 起動時の即時設定と、Frame callback用の遅延設定を分けます。
+    void SetPersistentScene(Scope<Scene> scene);
+    void RequestPersistentSceneChange(Scope<Scene> scene);
+
+    // Primaryへ重ねるSceneを安全なFrame境界でLoad/Unloadします。
+    // Load時に返すIDは予約直後からUnload要求へ利用できます。
+    SceneInstanceID LoadSceneAdditive(Scope<Scene> scene);
+    SceneInstanceID LoadSceneAdditive(const std::string& sceneID);
+    bool UnloadScene(SceneInstanceID sceneID);
+
     // Fade等の演出を伴うScene切り替え入口です。
     bool RequestSceneTransition(Scope<Scene> scene,
         const SceneTransitionSpecification& specification = {});
@@ -311,6 +325,12 @@ public:
     const SceneManager& GetSceneManager() const { return m_SceneManager; }
     SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
     const SceneTransitionController& GetSceneTransitionController() const { return m_SceneTransitionController; }
+    SceneStreamingController& GetSceneStreamingController() { return m_SceneStreamingController; }
+    const SceneStreamingController& GetSceneStreamingController() const { return m_SceneStreamingController; }
+    ApplicationState& GetApplicationState() { return m_ApplicationState; }
+    const ApplicationState& GetApplicationState() const { return m_ApplicationState; }
+    AudioService& GetAudioService() { return m_AudioService; }
+    const AudioService& GetAudioService() const { return m_AudioService; }
     TextureAssetManager& GetTextureAssetManager() { return m_TextureAssetManager; }
     const TextureAssetManager& GetTextureAssetManager() const { return m_TextureAssetManager; }
     Window& GetWindow() { return *m_Window; }
@@ -333,6 +353,9 @@ public:
     const Ref<UIFontAtlas>& GetRuntimeUIFont() const { return m_RuntimeUIFont; }
     UINavigationManager& GetUINavigationManager() { return m_UINavigationManager; }
     const UINavigationManager& GetUINavigationManager() const { return m_UINavigationManager; }
+    // Scene固有Stackから独立し、Scene::OnDestroy()のClear対象にならないGlobal UI Stackです。
+    UINavigationManager& GetGlobalUINavigationManager() { return m_GlobalUINavigationManager; }
+    const UINavigationManager& GetGlobalUINavigationManager() const { return m_GlobalUINavigationManager; }
 
     // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
     WindowID CreateUIWindow(const WindowSpecification& specification);
@@ -368,6 +391,7 @@ public:
     bool TransferUIRootChild(WindowID sourceID, WindowID destinationID, UIElement* child);
 
 private:
+    bool PrepareAllScenesForExplicitRuntime();
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
     // Main Windowに紐づくFrame境界をApplicationが所有し、Windowより先に破棄します。
@@ -383,6 +407,8 @@ private:
     // Sceneの所有権とDeferred切り替えはSceneManagerへ集約します。
     SceneFactory m_SceneFactory;
     SceneManager m_SceneManager;
+    // Factory/Managerを借用し、World側が求めるStage集合をAdditive Scene差分へ変換します。
+    SceneStreamingController m_SceneStreamingController{ m_SceneManager, m_SceneFactory };
     // JobSystemはControllerより後に破棄される宣言順とし、Controller Destructorが
     // Preparation完了を待つ間もWorker Poolの寿命を保証します。
     JobSystem m_JobSystem;
@@ -390,6 +416,9 @@ private:
     SceneTransitionController m_SceneTransitionController{ m_SceneManager, m_JobSystem };
     // Main ThreadでfinalizeされたRuntime Texture AssetをApplication Lifetimeで共有します。
     TextureAssetManager m_TextureAssetManager;
+    // Scene交換に依存しないGame/Application状態とAudio backendをApplicationが所有します。
+    ApplicationState m_ApplicationState;
+    AudioService m_AudioService;
 
     // Main Window用のRaven UI frame状態です。
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
@@ -398,6 +427,8 @@ private:
     // Scene上のScreen StackはMain UIContextのRootへ接続し、SceneManagerとは独立して管理します。
     // 宣言順によりNavigationManagerがUIContextより先に破棄され、Screenを安全にTreeから外します。
     UINavigationManager m_UINavigationManager{ m_UIContext };
+    // Global StackはScene固有Stackと別所有にし、Title/GameのClearで破棄されません。
+    UINavigationManager m_GlobalUINavigationManager{ m_UIContext };
     // UIContextより先に破棄し、Immediate Widgetの参照寿命を保ちます。
     UIImmediateContext m_ImmediateUI{ m_UIContext };
     bool m_PhysicsDebugImmediatePanelEnabled = false;

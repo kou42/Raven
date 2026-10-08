@@ -661,6 +661,37 @@
     <ClInclude Include="Raven\**\*.h" />
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="Raven\Audio">
+      <UniqueIdentifier>{c2f34c4a-20a2-45af-b394-0f6bc977b46e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raven\Core">
+      <UniqueIdentifier>{7fc5bb8b-f7bd-443a-93c6-73ce73ddba52}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raven\Scene">
+      <UniqueIdentifier>{c79974aa-eb31-49d1-a1fc-68b88d787951}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Audio\AudioService.cpp">
+      <Filter>Raven\Audio</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Core\ApplicationState.cpp">
+      <Filter>Raven\Core</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Scene\SceneStreamingController.cpp">
+      <Filter>Raven\Scene</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Audio\AudioService.h">
+      <Filter>Raven\Audio</Filter>
+    </ClInclude>
+    <ClInclude Update="Raven\Core\ApplicationState.h">
+      <Filter>Raven\Core</Filter>
+    </ClInclude>
+    <ClInclude Update="Raven\Scene\SceneStreamingController.h">
+      <Filter>Raven\Scene</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
     <None Include="Raven\Assets\Images\test\mountain1.png" />
     <None Include="Raven\Assets\Images\test\sample1.png" />
     <None Include="Raven\Assets\Images\test\sample2.png" />
