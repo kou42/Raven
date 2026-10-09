@@ -6,6 +6,10 @@
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UISeparator.h"
+#include "Raven/UI/Widgets/UICollapsibleSection.h"
+#include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UIMenuBar.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
@@ -183,6 +187,49 @@ void UITextDemoLayer::OnAttach()
         std::cout << "[Raven UI Text] Failed to attach UILabel.\n";
         return;
     }
+    // 汎用MenuBarを利用し、Demo固有のPopup構築・破棄処理を排除します。
+    auto menuBar = CreateScope<UIMenuBar>();
+    menuBar->SetFont(atlas);
+    menuBar->SetPosition(math::Vec2(24.0f, 20.0f));
+    menuBar->SetSize(math::Vec2(100.0f, 34.0f));
+    const std::size_t fileMenu = menuBar->AddMenu("File");
+    menuBar->AddItem(fileMenu, "New", []()
+        {
+            std::cout << "[Raven UI Menu] File / New activated\\n";
+        });
+    menuBar->AddItem(fileMenu, "Save", []()
+        {
+            std::cout << "[Raven UI Menu] File / Save activated\\n";
+        });
+    m_MenuBar = m_Application.GetUIContext().GetRootElement().AddChild(std::move(menuBar));
+
+    // Inspector風Sectionの開閉を検証します。Headerだけが操作対象で、
+    // 折りたたんだContentはUIElementのVisibility契約に従います。
+    auto section = CreateScope<UICollapsibleSection>();
+    section->SetPosition(math::Vec2(540.0f, 200.0f));
+    section->SetSize(math::Vec2(260.0f, 110.0f));
+    auto sectionTitle = CreateScope<UILabel>();
+    sectionTitle->SetFont(atlas);
+    sectionTitle->SetText("Properties");
+    sectionTitle->SetHitTestVisible(false);
+    sectionTitle->SetPosition(math::Vec2(10.0f, 3.0f));
+    sectionTitle->SetSize(math::Vec2(230.0f, 26.0f));
+    section->GetHeader()->AddChild(std::move(sectionTitle));
+
+    auto sectionContent = CreateScope<UILabel>();
+    sectionContent->SetFont(atlas);
+    sectionContent->SetText("Raven UI Inspector");
+    sectionContent->SetPreferredSize(math::Vec2(250.0f, 32.0f));
+    sectionContent->SetHitTestVisible(false);
+    section->GetContent()->AddChild(std::move(sectionContent));
+    m_CollapsibleSection = m_Application.GetUIContext().GetRootElement().AddChild(std::move(section));
+
+    // Editor風の区切り線を検証します。装飾要素なので入力を奪いません。
+    auto separator = CreateScope<UISeparator>();
+    separator->SetPosition(math::Vec2(24.0f, 187.0f));
+    separator->SetSize(math::Vec2(500.0f, 1.0f));
+    m_Separator = m_Application.GetUIContext().GetRootElement().AddChild(std::move(separator));
+
     // Font AtlasはUILabelとInputTextで共有し、入力後もGlyph Textureを保持します。
     auto input = CreateScope<UIInputText>();
     input->SetPosition(math::Vec2(24.0f, 200.0f));
@@ -485,6 +532,22 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_CollapsibleSection != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_CollapsibleSection);
+        m_CollapsibleSection = nullptr;
+    }
+    if (m_MenuBar != nullptr)
+    {
+        // PopupはContext離脱時にUIMenuBarが回収します。
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_MenuBar);
+        m_MenuBar = nullptr;
+    }
+    if (m_Separator != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_Separator);
+        m_Separator = nullptr;
+    }
     if (m_DockSpace != nullptr)
     {
         // UI Tree破棄前にTree/Tab状態を保存します。失敗しても終了処理は継続します。
