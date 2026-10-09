@@ -19,6 +19,14 @@
 namespace Raven
 {
 
+// ============================================================================
+// CharacterPositionDebugOverlayLayer
+// ============================================================================
+// CharacterControllerDemoLayerが保持する足元Root座標を常時表示する軽量Debug HUDです。
+// Locomotion調整HUDとは責務を分離し、Fluidなど原点から離れた検証エリアへ移動するときでも
+// 現在のWorld座標とDebug移動先を一目で比較できるようにします。
+// Debug Teleport先は外部から注入し、このOverlay自身はFluid等の個別Domainを知りません。
+// これによりCharacter -> Fluidの依存を作らず、別の遠隔検証エリアにも同じ仕組みを再利用できます.
 // CharacterControllerDemoLayerの足元Root座標とDebug移動先を表示するRaven UI HUDです。
 // Scene/Character LayerをWidgetへ保持せず、操作時と更新時にActive Sceneから再解決します。
 class CharacterPositionDebugOverlayLayer final : public Layer
@@ -40,6 +48,8 @@ public:
 
         auto window = CreateScope<UIWindow>();
         window->SetTitle("Character Position Debug");
+        // 旧ImGui HUDの右上寄りの初期配置を維持します。
+        // UIWindowはタイトルバーのDragとResizeに対応し、表示位置をユーザーが調整できます。
         window->SetPosition(math::Vec2(780.0f, 10.0f));
         window->SetSize(math::Vec2(340.0f, 294.0f));
         window->SetPreferredSize(math::Vec2(340.0f, 294.0f));
@@ -67,6 +77,7 @@ public:
         button->SetPosition(math::Vec2(12.0f, 246.0f));
         button->SetSize(math::Vec2(310.0f, 32.0f));
         button->SetFocusable(true);
+        // Button操作もFキーと同じTeleport APIを通し、状態初期化の経路を統一します。
         button->SetOnClick([this]() { TeleportToDebugTarget(); });
         auto caption = CreateScope<UILabel>();
         caption->SetFont(m_Application->GetRuntimeUIFont());
@@ -103,6 +114,7 @@ public:
             return;
         }
 
+        // Fは押しっぱなしで毎Frame Teleportしないよう立ち上がりEdgeだけを採用します。
         // 描画フックから入力を切り離し、ImGuiが無効でもFキーの立ち上がりを処理します。
         const bool pressed = Input::IsKeyPressed(Key::F);
         const bool requested = pressed == true && m_WasTeleportKeyPressed == false;
