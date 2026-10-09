@@ -22,7 +22,7 @@
 
 ### B. Phase 1: Editor shell検証
 
-- [ ] Menu / Collapsible Section / Separatorを棚卸しし、不足分だけ実装する（Separator、UICollapsibleSection、検証用Fileメニューを追加済み。汎用UIMenuBarとAddItem APIは実装済み（高度なKeyboard Navigationは未実装））。
+- [ ] Menu / Collapsible Section / Separatorを棚卸しし、不足分だけ実装する（Separator、UICollapsibleSection、検証用Fileメニューを追加済み。汎用UIMenuBarとAddItem APIは実装済み（方向キーNavigationを追加済み（自動テスト未実施）））。
 - [ ] Dock PaneへTree、Table、Input、診断値を配置する。
 - [ ] Viewport用RenderTarget Imageをnative handle非依存の契約で表示する。
 - [ ] Focus / Capture / Shortcut優先順位のCPUテストを追加する。
@@ -49,7 +49,7 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 
 `UISeparator` は独立したヘッダーのみで描画でき、`UITextDemoLayer` のラベルと入力欄の間に配置される。入力イベントを受け付けないため、隣接Widgetの操作を妨げないことを確認する。
 
-検証用Fileメニューは左上の「File」をクリックすると「New」「Save」を表示する。項目選択でログ出力とPopup Closeを行う。Tab/Enter/Space、Escape、Popup外クリックも確認する。現在は汎用UIMenuBarのAddMenu/AddItem APIを利用し、内部でUIButton/UILabel/UIPanelを再利用する。左右矢印でのMenu切替やMenu専用の上下矢印Navigationは今後の課題。
+検証用Fileメニューは左上の「File」をクリックすると「New」「Save」を表示する。項目選択でログ出力とPopup Closeを行う。Tab/Enter/Space、Escape、Popup外クリックも確認する。現在は汎用UIMenuBarのAddMenu/AddItem APIを利用し、内部でUIButton/UILabel/UIPanelを再利用する。方向キーでMenu切替と項目移動、Home/Endで先頭/末尾移動を行う。実機でのFocus/Popup回帰テストは未実施。
 
 `UICollapsibleSection` はHeaderのButtonとContentを所有するRetained Widget。右側の「Properties」をクリック、またはFocusしてEnter/Spaceで開閉し、閉じたContentがHit Test対象外になることを確認する。
 
