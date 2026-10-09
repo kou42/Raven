@@ -28,6 +28,7 @@ public:
 private:
     Application& m_Application;
     Ref<UIFontAtlas> m_Atlas;
+    UIElement* m_Separator = nullptr; // Root Treeが所有する装飾要素です。
     UILabel* m_Label = nullptr; // 所有者はUIContextのRoot Treeです。
     UIInputNumber* m_InputNumber = nullptr; // 所有権はRoot Treeです。
     UIComboBox* m_ComboBox = nullptr;
