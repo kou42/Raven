@@ -537,16 +537,11 @@ void UITextDemoLayer::OnDetach()
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_CollapsibleSection);
         m_CollapsibleSection = nullptr;
     }
-    // Triggerより先にPopupを閉じて破棄し、Focus/Captureの参照を残しません。
-    if (m_MenuPopup != nullptr)
+    if (m_MenuBar != nullptr)
     {
-        m_Application.GetUIContext().RemovePopup(m_MenuPopup);
-        m_MenuPopup = nullptr;
-    }
-    if (m_MenuTrigger != nullptr)
-    {
-        m_Application.GetUIContext().GetRootElement().RemoveChild(m_MenuTrigger);
-        m_MenuTrigger = nullptr;
+        // PopupはContext離脱時にUIMenuBarが回収します。
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_MenuBar);
+        m_MenuBar = nullptr;
     }
     if (m_Separator != nullptr)
     {
