@@ -55,6 +55,7 @@
 int main(int argc, char* argv[])
 {
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
+    bool uiMigrationTest = false;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -91,7 +92,13 @@ int main(int argc, char* argv[])
         {
             return Raven::ph::tests::RunCoulombBenchmark();
         }
-        if (backendArgument == "--backend=vulkan")
+        // 脱ImGui検証は既存Raven UI Demoのみを起動し、Editor/Scene依存を隔離します。
+        // 現段階ではOpenGLでのみ独立検証し、Explicit Backendは別途GPU検証します。
+        if (backendArgument == "--ui-migration-test")
+        {
+            uiMigrationTest = true;
+        }
+        else if (backendArgument == "--backend=vulkan")
         {
             applicationBackend = Raven::RHIBackend::Vulkan;
         }
@@ -202,6 +209,12 @@ int main(int argc, char* argv[])
 
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
+    if (uiMigrationTest == true)
+    {
+        // ImGuiLayerを構築しないことが検証の前提です。
+        applicationSpecification.EnableDearImGui = false;
+        applicationSpecification.EnableRavenUI = true;
+    }
 
     // 通常ApplicationのExplicit Backendも、独立Runtime Demoと同じShader/Pipeline契約を使用します。
     // Backend選択だけで別Demoへ分岐せず、Scene/Layer/Raven UIを含む本流を検証できる入口にします。
@@ -230,6 +243,24 @@ int main(int argc, char* argv[])
     applicationPipeline.DebugName = "Raven Application Scene";
 
     Raven::Application app(applicationSpecification);
+
+#ifdef _DEBUG
+    if (uiMigrationTest == true)
+    {
+        // ApplicationのUIContext/Frame Lifecycleを共有し、検証用の別Loopは作りません。
+        // EditorLayerとScene-owned Layerは登録しないため、ImGui非依存でWidgetを確認できます。
+        app.PushLayer(Raven::CreateScope<Raven::UITextDemoLayer>(app));
+        app.PushLayer(Raven::CreateScope<Raven::UISvgDemoLayer>(app));
+        app.Run();
+        return 0;
+    }
+#else
+    if (uiMigrationTest == true)
+    {
+        std::cerr << "--ui-migration-test requires a Debug build.\\n";
+        return 1;
+    }
+#endif
 
     // Runtime SceneはScene ID Registryへ登録し、起動時も同じFactory経路から生成します。
     // これにより今後Title / Stage等が増えても呼び出し側が具体Scene型を知る必要がありません。
