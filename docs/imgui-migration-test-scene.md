@@ -15,8 +15,8 @@
 
 ### A. Phase 0: 隔離した起動とBaseline
 
-- [ ] `--ui-migration-test` のような明示的な起動モードを設け、既存Runtime Scene / EditorLayer / Dear ImGuiを起動しない。
-- [ ] Raven UIのDemo Widgetを既存Layerから再利用する。独立Window/Frame Loopを重複実装しない。
+- [x] `--ui-migration-test` 起動モードを追加。DebugのOpenGL経路で既存Runtime Scene / EditorLayer / Dear ImGuiを登録・生成しない。
+- [x] `UITextDemoLayer` / `UISvgDemoLayer` を再利用し、`Application::Run()` を共有する。
 - [ ] ImGui依存ファイル・呼び出し・project参照を再計測し、結果と計測コマンドを記録する。
 - [ ] Mouse / Keyboard / Clipboard / IME / Focus / Captureの手動Baselineを記録する。
 
@@ -36,6 +36,16 @@
 | RenderTarget Image / UV / Aspect | 未検証 | 未検証 | 未検証 |
 | Input / Focus / Capture | 未検証 | 未検証 | 未検証 |
 | Docking / Multi-Viewport | 未検証 | 未検証 | 未検証 |
+
+## 起動方法
+
+Debug構成で通常のRaven実行ファイルをビルドし、作業ディレクトリを既存の実行環境と同じにして次を実行する。
+
+```powershell
+& "./Root/Root/x64/Debug/Root.exe" --ui-migration-test
+```
+
+実行ファイル名・配置先はVisual Studioの出力設定に合わせて調整する。現段階ではDebug限定であり、実際のビルドと起動は未確認。Debug起動時の既存Self Testsは引き続き実行される。
 
 ## 手動Smoke Test
 
