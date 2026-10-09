@@ -7,6 +7,7 @@
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UISeparator.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
@@ -184,6 +185,75 @@ void UITextDemoLayer::OnAttach()
         std::cout << "[Raven UI Text] Failed to attach UILabel.\n";
         return;
     }
+    // Phase 1: 既存Popup/Focus機構でEditor Menuの最小操作を検証します。
+    // TriggerとMenu ItemはUIButtonを再利用し、独立した入力ルーティングを作りません。
+    auto menuPopup = CreateScope<UIPanel>();
+    menuPopup->SetSize(math::Vec2(220.0f, 84.0f));
+    menuPopup->SetBackgroundColor(math::Vec4(0.16f, 0.17f, 0.21f, 1.0f));
+
+    auto menuItem = CreateScope<UIButton>();
+    menuItem->SetPosition(math::Vec2(6.0f, 6.0f));
+    menuItem->SetSize(math::Vec2(208.0f, 32.0f));
+    menuItem->SetFocusable(true);
+    menuItem->SetOnClick([this]()
+        {
+            std::cout << "[Raven UI Menu] File / New activated\\n";
+            m_Application.GetUIContext().ClosePopup();
+        });
+    auto menuItemLabel = CreateScope<UILabel>();
+    menuItemLabel->SetFont(atlas);
+    menuItemLabel->SetText("New");
+    menuItemLabel->SetPosition(math::Vec2(10.0f, 3.0f));
+    menuItemLabel->SetSize(math::Vec2(170.0f, 25.0f));
+    menuItemLabel->SetHitTestVisible(false);
+    menuItem->AddChild(std::move(menuItemLabel));
+    menuPopup->AddChild(std::move(menuItem));
+
+    auto secondItem = CreateScope<UIButton>();
+    secondItem->SetPosition(math::Vec2(6.0f, 44.0f));
+    secondItem->SetSize(math::Vec2(208.0f, 32.0f));
+    secondItem->SetFocusable(true);
+    secondItem->SetOnClick([this]()
+        {
+            std::cout << "[Raven UI Menu] File / Save activated\\n";
+            m_Application.GetUIContext().ClosePopup();
+        });
+    auto secondLabel = CreateScope<UILabel>();
+    secondLabel->SetFont(atlas);
+    secondLabel->SetText("Save");
+    secondLabel->SetPosition(math::Vec2(10.0f, 3.0f));
+    secondLabel->SetSize(math::Vec2(170.0f, 25.0f));
+    secondLabel->SetHitTestVisible(false);
+    secondItem->AddChild(std::move(secondLabel));
+    menuPopup->AddChild(std::move(secondItem));
+
+    m_MenuPopup = m_Application.GetUIContext().AddPopup(std::move(menuPopup));
+
+    auto menuTrigger = CreateScope<UIButton>();
+    menuTrigger->SetPosition(math::Vec2(24.0f, 20.0f));
+    menuTrigger->SetSize(math::Vec2(100.0f, 34.0f));
+    menuTrigger->SetFocusable(true);
+    menuTrigger->SetOnClick([this]()
+        {
+            UIContext& context = m_Application.GetUIContext();
+            if (context.GetOpenPopup() == m_MenuPopup)
+            {
+                context.ClosePopup();
+            }
+            else if (m_MenuPopup != nullptr)
+            {
+                context.OpenPopupAt(m_MenuPopup, m_MenuTrigger);
+            }
+        });
+    auto menuTriggerLabel = CreateScope<UILabel>();
+    menuTriggerLabel->SetFont(atlas);
+    menuTriggerLabel->SetText("File");
+    menuTriggerLabel->SetPosition(math::Vec2(12.0f, 3.0f));
+    menuTriggerLabel->SetSize(math::Vec2(80.0f, 25.0f));
+    menuTriggerLabel->SetHitTestVisible(false);
+    menuTrigger->AddChild(std::move(menuTriggerLabel));
+    m_MenuTrigger = m_Application.GetUIContext().GetRootElement().AddChild(std::move(menuTrigger));
+
     // Editor風の区切り線を検証します。装飾要素なので入力を奪いません。
     auto separator = CreateScope<UISeparator>();
     separator->SetPosition(math::Vec2(24.0f, 187.0f));
