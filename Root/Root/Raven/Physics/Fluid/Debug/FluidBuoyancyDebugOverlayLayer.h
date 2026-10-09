@@ -10,6 +10,8 @@
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UISlider.h"
+#include "Raven/UI/Widgets/UIScrollView.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 
 #include "Raven/Core/Application.h"
 #include "Raven/Core/Input.h"
@@ -59,6 +61,7 @@ public:
         m_Labels.clear();
         m_Sliders.clear();
         m_SliderLabels.clear();
+        m_ScrollView = nullptr;
         m_SelectedBindingIndex = 0u;
     }
 
@@ -75,6 +78,13 @@ public:
             ResetMeasurement();
         }
         UpdateRavenUI();
+        // UI Windowを縮小した場合でも、ScrollViewのViewportを追従させます。
+        if (m_Window != nullptr && m_ScrollView != nullptr)
+        {
+            const math::Vec2 size = m_Window->GetSize();
+            m_ScrollView->SetSize(math::Vec2(std::max(120.0f, size.x - 20.0f),
+                std::max(48.0f, size.y - 42.0f)));
+        }
     }
 
     // Retained UIの構築はApplication UIContextのTreeに統合します。
@@ -83,9 +93,20 @@ public:
         auto window = CreateScope<UIWindow>();
         window->SetTitle("Fluid Buoyancy Debug");
         window->SetPosition(math::Vec2(540.0f, 10.0f));
-        window->SetSize(math::Vec2(550.0f, 990.0f));
-        window->SetPreferredSize(math::Vec2(550.0f, 990.0f));
+        window->SetSize(math::Vec2(550.0f, 650.0f));
+        window->SetPreferredSize(math::Vec2(550.0f, 650.0f));
 
+        // Window直下にScrollViewを置き、固定高さのContentへ既存操作群を配置します。
+        // UIWindowのResizeはViewportだけを変更し、Contentの座標系は維持します。
+        auto scroll = CreateScope<UIScrollView>();
+        scroll->SetPosition(math::Vec2(10.0f, 32.0f));
+        scroll->SetSize(math::Vec2(530.0f, 608.0f));
+        scroll->SetHorizontalScrollBarEnabled(false);
+        auto content = CreateScope<UIPanel>();
+        content->SetPosition(math::Vec2(0.0f, 0.0f));
+        content->SetSize(math::Vec2(530.0f, 960.0f));
+        content->SetPreferredSize(math::Vec2(530.0f, 960.0f));
+        UIPanel& contentPanel = *content;
         const char* lines[] = {
             "Fluid Buoyancy Debug", "Box : not found", "Sphere : not found",
             "Coupling : not registered", "Static Coupling : --", "Rigid Coupling : --",
@@ -98,27 +119,27 @@ public:
         };
         for (std::size_t i = 0u; i < 22u; ++i)
         {
-            m_Labels.push_back(AddLabel(*window, 32.0f + static_cast<float>(i) * 25.0f, lines[i]));
+            m_Labels.push_back(AddLabel(contentPanel, 32.0f + static_cast<float>(i) * 25.0f, lines[i]));
         }
-        AddButton(*window, 592.0f, 10.0f, 100.0f, "Water",
+        AddButton(contentPanel, 592.0f, 10.0f, 100.0f, "Water",
             [this]() { ApplyPreset(ph::FluidCouplingPreset::Water); });
-        AddButton(*window, 592.0f, 120.0f, 110.0f, "Heavy Fluid",
+        AddButton(contentPanel, 592.0f, 120.0f, 110.0f, "Heavy Fluid",
             [this]() { ApplyPreset(ph::FluidCouplingPreset::HeavyFluid); });
-        AddButton(*window, 592.0f, 240.0f, 100.0f, "High Drag",
+        AddButton(contentPanel, 592.0f, 240.0f, 100.0f, "High Drag",
             [this]() { ApplyPreset(ph::FluidCouplingPreset::HighDrag); });
-        AddButton(*window, 592.0f, 350.0f, 100.0f, "Off",
+        AddButton(contentPanel, 592.0f, 350.0f, 100.0f, "Off",
             [this]() { ApplyPreset(ph::FluidCouplingPreset::CouplingOff); });
-        AddButton(*window, 630.0f, 10.0f, 155.0f, "Static On/Off",
+        AddButton(contentPanel, 630.0f, 10.0f, 155.0f, "Static On/Off",
             [this]() { ToggleStatic(); });
-        AddButton(*window, 630.0f, 175.0f, 155.0f, "Rigid On/Off",
+        AddButton(contentPanel, 630.0f, 175.0f, 155.0f, "Rigid On/Off",
             [this]() { ToggleRigid(); });
-        AddButton(*window, 630.0f, 340.0f, 155.0f, "Pause/Start",
+        AddButton(contentPanel, 630.0f, 340.0f, 155.0f, "Pause/Start",
             [this]() { ToggleMeasurement(); });
-        AddButton(*window, 674.0f, 10.0f, 155.0f, "Reset Bodies",
+        AddButton(contentPanel, 674.0f, 10.0f, 155.0f, "Reset Bodies",
             [this]() { ResetTestBodies(); ResetMeasurement(); });
-        AddButton(*window, 674.0f, 175.0f, 155.0f, "Reset Measure",
+        AddButton(contentPanel, 674.0f, 175.0f, 155.0f, "Reset Measure",
             [this]() { ResetMeasurement(); });
-        AddButton(*window, 674.0f, 340.0f, 155.0f, "Next Binding",
+        AddButton(contentPanel, 674.0f, 340.0f, 155.0f, "Next Binding",
             [this]() { SelectNextBinding(); });
         // 既存ImGuiの5係数調整をUISliderで復元します。
         // Binding自体はScene交換で破棄されるためCallbackにpointerをCaptureしません。
@@ -130,7 +151,7 @@ public:
         for (std::size_t i = 0u; i < 5u; ++i)
         {
             const float y = 726.0f + static_cast<float>(i) * 43.0f;
-            m_SliderLabels.push_back(AddLabel(*window, y, coefficientNames[i]));
+            m_SliderLabels.push_back(AddLabel(contentPanel, y, coefficientNames[i]));
             auto slider = CreateScope<UISlider>();
             slider->SetPosition(math::Vec2(280.0f, y + 2.0f));
             slider->SetSize(math::Vec2(240.0f, 22.0f));
@@ -138,12 +159,14 @@ public:
             slider->SetKeyboardStep(i == 0u ? 0.005f : 0.01f);
             slider->SetFocusable(true);
             slider->SetOnValueChanged([this, i](float value) { SetCoefficient(i, value); });
-            m_Sliders.push_back(static_cast<UISlider*>(window->AddChild(std::move(slider))));
+            m_Sliders.push_back(static_cast<UISlider*>(contentPanel.AddChild(std::move(slider))));
         }
+        scroll->SetContent(std::move(content));
+        m_ScrollView = static_cast<UIScrollView*>(window->AddChild(std::move(scroll)));
         m_Window = m_Application.GetUIContext().GetRootElement().AddChild(std::move(window));
     }
 
-    UILabel* AddLabel(UIWindow& window, float y, const std::string& text)
+    UILabel* AddLabel(UIElement& window, float y, const std::string& text)
     {
         auto label = CreateScope<UILabel>();
         label->SetFont(m_Application.GetRuntimeUIFont());
@@ -154,7 +177,7 @@ public:
         return static_cast<UILabel*>(window.AddChild(std::move(label)));
     }
 
-    void AddButton(UIWindow& window, float y, float x, float width,
+    void AddButton(UIElement& window, float y, float x, float width,
         const std::string& caption, std::function<void()> action)
     {
         auto button = CreateScope<UIButton>();
@@ -445,6 +468,7 @@ private:
     Application& m_Application;
     bool m_WasResetKeyPressed = false;
     UIElement* m_Window = nullptr;
+    UIScrollView* m_ScrollView = nullptr;
     std::vector<UILabel*> m_Labels;
     std::vector<UILabel*> m_SliderLabels;
     std::vector<UISlider*> m_Sliders;
