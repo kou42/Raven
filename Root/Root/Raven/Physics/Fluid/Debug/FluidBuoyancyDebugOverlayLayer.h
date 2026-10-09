@@ -251,7 +251,7 @@ public:
 
     void ApplyPreset(ph::FluidCouplingPreset preset)
     {
-        ph::FluidCouplingBinding* binding = GetFirstBinding();
+        ph::FluidCouplingBinding* binding = GetSelectedBinding();
         if (binding == nullptr) { return; }
         // WaterはDemoの基準値です。手動調整後もPresetで比較条件へ戻せます。
         ph::ApplyFluidCouplingPreset(*binding, preset);
@@ -264,7 +264,7 @@ public:
 
     void ToggleStatic()
     {
-        ph::FluidCouplingBinding* binding = GetFirstBinding();
+        ph::FluidCouplingBinding* binding = GetSelectedBinding();
         if (binding != nullptr)
         {
             binding->StaticColliderCouplingEnabled = binding->StaticColliderCouplingEnabled == false;
@@ -273,7 +273,7 @@ public:
 
     void ToggleRigid()
     {
-        ph::FluidCouplingBinding* binding = GetFirstBinding();
+        ph::FluidCouplingBinding* binding = GetSelectedBinding();
         if (binding != nullptr)
         {
             binding->RigidBodyCouplingEnabled = binding->RigidBodyCouplingEnabled == false;
@@ -331,7 +331,7 @@ public:
         SetLine(3u, "Coupling Bindings : %llu / Selected : %llu",
             static_cast<unsigned long long>(bindings.size()),
             static_cast<unsigned long long>(m_SelectedBindingIndex));
-        ph::FluidCouplingBinding* binding = GetFirstBinding();
+        ph::FluidCouplingBinding* binding = GetSelectedBinding();
         if (binding != nullptr)
         {
             SetLine(4u, "Static Coupling : %s", binding->StaticColliderCouplingEnabled == true ? "On" : "Off");
