@@ -73,3 +73,11 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 ### CPU回帰テスト（追加）
 
 `Root/Tests/UITextReflowTests.cpp` に `TestMenuBarKeyboardAndLifetime` と `TestCollapsibleSectionVisibility` を追加しました。MenuBarのDown/Enter、RightによるMenu切替、PopupのDetach時回収、Sectionの開閉時Visibilityを確認します。`RavenUITest=true` のテスト実行入口へ登録済みですが、MSBuildおよび実行結果は未確認です。
+
+### 動作確認の記録（2026-10-10）
+
+ユーザーから検証画面の動作チェックに問題がなかった旨の報告あり。実行ログ・ビルド構成・Backend別の確認結果は未提出のため、自動テスト実行ログの取得や全BackendでのExit Gate達成とは区別する。
+
+### ImGui依存の継続計測
+
+リポジトリのルートで `python scripts/count_imgui_dependencies.py --output imgui-baseline.json` を実行すると、製品コードとVisual Studioプロジェクト内のImGui参照ファイル数・文字列参照数・`ImGui::`関数呼び出し数をJSON化できる。コメント・文字列内の参照も含む概数であり、AST解析ではない。計測結果は生成した環境のログとして保持し、PRごとの減少量を比較する。スクリプトはファイルを変更しない。
