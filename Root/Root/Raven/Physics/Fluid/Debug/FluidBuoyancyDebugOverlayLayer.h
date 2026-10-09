@@ -115,9 +115,10 @@ public:
             "Static Statistics : --", "Rigid Statistics : --", "Impulse : --",
             "Applied : --", "Displaced Mass : --", "Measurement : --",
             "Fixed Time : --", "Contacts : --", "Impulse Total : --",
-            "Applied Count : --", "Displaced Mass Total : --"
+            "Applied Count : --", "Displaced Mass Total : --",
+            "Impulse / Fixed Step : --"
         };
-        for (std::size_t i = 0u; i < 22u; ++i)
+        for (std::size_t i = 0u; i < 23u; ++i)
         {
             m_Labels.push_back(AddLabel(contentPanel, 32.0f + static_cast<float>(i) * 25.0f, lines[i]));
         }
@@ -391,6 +392,20 @@ public:
             static_cast<unsigned long long>(measurement.AppliedPressureImpulseCount),
             static_cast<unsigned long long>(measurement.AppliedBuoyancyImpulseCount));
         SetLine(21u, "Displaced Mass Total : %.4f", measurement.TotalDisplacedFluidMass);
+        // 計測値はFixed Step境界で蓄積されるため、描画FPSではなくFixedStepCountで正規化します。
+        if (measurement.FixedStepCount > 0u)
+        {
+            const float inverse = 1.0f / static_cast<float>(measurement.FixedStepCount);
+            SetLine(22u, "Impulse / Step : N=%.4f D=%.4f P=%.4f B=%.4f",
+                measurement.TotalNormalImpulse * inverse,
+                measurement.TotalDragImpulse * inverse,
+                measurement.TotalPressureImpulse * inverse,
+                measurement.TotalBuoyancyImpulse * inverse);
+        }
+        else
+        {
+            m_Labels[22u]->SetText("Impulse / Step : -- (no fixed steps)");
+        }
     }
 
     void ResetMeasurement()
