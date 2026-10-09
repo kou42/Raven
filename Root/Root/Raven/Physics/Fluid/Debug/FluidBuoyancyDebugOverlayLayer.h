@@ -41,10 +41,10 @@ public:
         ResetMeasurement();
     }
 
-    void OnImGuiRender(float deltaTime) override
+    // Resetの入力は描画フックに依存させず、ImGui無効時にも1押下1回で処理します。
+    void OnUpdate(float deltaTime) override
     {
         static_cast<void>(deltaTime);
-
         const bool resetKeyPressed = Input::IsKeyPressed(Key::R);
         const bool resetRequested = resetKeyPressed == true && m_WasResetKeyPressed == false;
         m_WasResetKeyPressed = resetKeyPressed;
@@ -53,6 +53,12 @@ public:
             ResetTestBodies();
             ResetMeasurement();
         }
+
+    }
+
+    void OnImGuiRender(float deltaTime) override
+    {
+        static_cast<void>(deltaTime);
 
         ImGui::SetNextWindowBgAlpha(0.82f);
         if (ImGui::Begin("Fluid Buoyancy Debug") == true)
