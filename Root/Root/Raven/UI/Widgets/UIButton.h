@@ -14,7 +14,7 @@ namespace Raven
 // UIElementのHover / Pressed / Focus状態をVisual Stateへ変換する最小Button Widgetです。
 // Clickは左ButtonでこのElement上から押下を開始し、同じElement上で離した場合だけ成立します。
 // Keyboard Focus中はEnter / Spaceでも同じClick Handlerを呼び、入力手段によるActionの差を作りません。
-class UIButton final : public UIElement
+class UIButton : public UIElement
 {
 public:
     using ClickHandler = std::function<void()>;
