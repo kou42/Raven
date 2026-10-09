@@ -69,3 +69,7 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 ## 実装上の注意
 
 `Application`にEditor固有Panelを直接追加しない。既存`UIContext`の所有権・Frame境界を守り、UIからRuntime Sceneへの書き込みは将来のEditor Command経由に限定する。
+
+### CPU回帰テスト（追加）
+
+`Root/Tests/UITextReflowTests.cpp` に `TestMenuBarKeyboardAndLifetime` と `TestCollapsibleSectionVisibility` を追加しました。MenuBarのDown/Enter、RightによるMenu切替、PopupのDetach時回収、Sectionの開閉時Visibilityを確認します。`RavenUITest=true` のテスト実行入口へ登録済みですが、MSBuildおよび実行結果は未確認です。
