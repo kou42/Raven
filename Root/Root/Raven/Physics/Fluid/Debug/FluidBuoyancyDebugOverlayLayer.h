@@ -140,6 +140,7 @@ public:
             [this]() { ResetTestBodies(); ResetMeasurement(); });
         AddButton(contentPanel, 674.0f, 175.0f, 155.0f, "Reset Measure",
             [this]() { ResetMeasurement(); });
+        // Bindingが複数ある場合も、選択中の1つだけを操作して意図しない一括変更を防ぎます。
         AddButton(contentPanel, 674.0f, 340.0f, 155.0f, "Next Binding",
             [this]() { SelectNextBinding(); });
         // 既存ImGuiの5係数調整をUISliderで復元します。
@@ -226,7 +227,11 @@ public:
         if (m_SynchronizingSliders == true) { return; }
         ph::FluidCouplingBinding* binding = GetSelectedBinding();
         if (binding == nullptr) { return; }
-        // StaticとRigidの粒子半径・反発係数は同じ表面を扱うため同期します。
+        // Debug HUDは登録済みBindingの実体を直接編集します。
+        // FluidWorldはBindingをコピーせず非所有参照しているため、変更値は再登録なしで
+        // 次のfixed-stepのResolveCouplings()から利用されます。
+        // DemoではStatic/Dynamic Couplingが同じParticle表面を扱うため、半径を同期します。
+        // 反発係数も同じ接触条件として両方へ反映します。
         switch (index)
         {
         case 0u:
@@ -248,7 +253,10 @@ public:
     {
         ph::FluidCouplingBinding* binding = GetFirstBinding();
         if (binding == nullptr) { return; }
+        // WaterはDemoの基準値です。手動調整後もPresetで比較条件へ戻せます。
         ph::ApplyFluidCouplingPreset(*binding, preset);
+        // Preset比較ではBodyの位置・速度・回転状態を同一にすることが重要です。
+        // 選択BindingへのPreset適用後に一度だけResetし、重複Teleportを避けます。
         // 比較条件を揃えるためPreset変更後はBodyと計測値を同時にResetします。
         ResetTestBodies();
         ResetMeasurement();
@@ -359,6 +367,8 @@ public:
             }
             m_SynchronizingSliders = false;
         }
+        // FluidWorldが保持する直近Fixed Stepの診断値を表示します。
+        // HUD側はCoupling実装へ直接依存せず、Domain境界として公開されたStatisticsだけを参照します。
         const auto& stat = fluid.GetLastStaticColliderCouplingStatistics();
         const auto& rigid = fluid.GetLastRigidBodyCouplingStatistics();
         SetLine(11u, "Static : collider=%llu candidate=%llu resolved=%llu",
@@ -378,6 +388,8 @@ public:
             static_cast<unsigned long long>(rigid.AppliedPressureImpulseCount),
             static_cast<unsigned long long>(rigid.AppliedBuoyancyImpulseCount));
         SetLine(15u, "Displaced Mass : %.4f", rigid.TotalDisplacedFluidMass);
+        // MeasurementはFluidWorldのfixed-step終了時に更新されるため、
+        // 描画FPSやcatch-up回数に依存しない累積値として扱います。
         const auto& measurement = fluid.GetCouplingMeasurement();
         SetLine(16u, "Measurement : %s", fluid.IsCouplingMeasurementEnabled() == true ? "Running" : "Paused");
         SetLine(17u, "Fixed Time : %.2f / Steps : %llu", measurement.ElapsedFixedTime,
