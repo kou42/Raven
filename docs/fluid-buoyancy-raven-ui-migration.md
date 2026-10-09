@@ -11,6 +11,8 @@
 - 複数BindingをNext Bindingで巡回選択し、選択BindingへPreset・Toggle・Sliderを適用
 - SliderのSnapshot同期中はCallbackを抑止し、不要な書き戻しを防止
 - Scene交換時はBindingのポインタを保持せず再取得
+- UIScrollViewを利用し、Window Resizeに追従するViewport内で全操作をスクロール可能にする
+- MeasurementのFixed Step平均ImpulseをNormal/Drag/Pressure/Buoyancy別に表示し、0 Step時は除算しない
 - OnDetachでHUD Treeを破棄
 
 ## 動作確認
@@ -23,11 +25,12 @@
 6. 複数Binding時にNext Bindingで選択先が変わり、選択したBindingだけを変更できる
 7. Pause/Start、Reset Measure、Reset Bodiesが動作する
 8. Scene切替後も旧Sceneへの参照を使わず表示が復帰する
-9. Dear ImGuiを無効にしてもHUDを操作できる
+9. Windowを縮小してスクロールし、下部Slider・ボタンが操作できる
+10. Fixed Step平均Impulseが累積値/FixedStepCountと一致し、0 Step時に未計測表示となる
+11. Dear ImGuiを無効にしてもHUDを操作できる
 
 ## 注意点
 
-- UIは550x990 DIP固定。低解像度向けスクロールは未対応
-- 固定Stepあたりの平均Impulse表示は未移植
+- 初期Windowは550x650 DIP。画面外に配置された場合の自動クランプは未対応
 - 複数Bindingは同時表示ではなく選択方式
 - RuntimeUIFont設定とWindows Debugビルド・実機動作確認は未実施
