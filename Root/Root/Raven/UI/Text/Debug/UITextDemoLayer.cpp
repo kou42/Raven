@@ -7,6 +7,7 @@
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UISeparator.h"
+#include "Raven/UI/Widgets/UICollapsibleSection.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
@@ -253,6 +254,27 @@ void UITextDemoLayer::OnAttach()
     menuTriggerLabel->SetHitTestVisible(false);
     menuTrigger->AddChild(std::move(menuTriggerLabel));
     m_MenuTrigger = m_Application.GetUIContext().GetRootElement().AddChild(std::move(menuTrigger));
+
+    // Inspector風Sectionの開閉を検証します。Headerだけが操作対象で、
+    // 折りたたんだContentはUIElementのVisibility契約に従います。
+    auto section = CreateScope<UICollapsibleSection>();
+    section->SetPosition(math::Vec2(540.0f, 200.0f));
+    section->SetSize(math::Vec2(260.0f, 110.0f));
+    auto sectionTitle = CreateScope<UILabel>();
+    sectionTitle->SetFont(atlas);
+    sectionTitle->SetText("Properties");
+    sectionTitle->SetHitTestVisible(false);
+    sectionTitle->SetPosition(math::Vec2(10.0f, 3.0f));
+    sectionTitle->SetSize(math::Vec2(230.0f, 26.0f));
+    section->GetHeader()->AddChild(std::move(sectionTitle));
+
+    auto sectionContent = CreateScope<UILabel>();
+    sectionContent->SetFont(atlas);
+    sectionContent->SetText("Raven UI Inspector");
+    sectionContent->SetPreferredSize(math::Vec2(250.0f, 32.0f));
+    sectionContent->SetHitTestVisible(false);
+    section->GetContent()->AddChild(std::move(sectionContent));
+    m_CollapsibleSection = m_Application.GetUIContext().GetRootElement().AddChild(std::move(section));
 
     // Editor風の区切り線を検証します。装飾要素なので入力を奪いません。
     auto separator = CreateScope<UISeparator>();
@@ -562,6 +584,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_CollapsibleSection != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_CollapsibleSection);
+        m_CollapsibleSection = nullptr;
+    }
     // Triggerより先にPopupを閉じて破棄し、Focus/Captureの参照を残しません。
     if (m_MenuPopup != nullptr)
     {
