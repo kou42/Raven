@@ -670,6 +670,9 @@
     <Filter Include="Raven\Scene">
       <UniqueIdentifier>{c79974aa-eb31-49d1-a1fc-68b88d787951}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\UI\Core">
+      <UniqueIdentifier>{8d24178a-1cb8-4fef-97c8-4c20bf3d5f75}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -689,6 +692,12 @@
     </ClInclude>
     <ClInclude Update="Raven\Scene\SceneStreamingController.h">
       <Filter>Raven\Scene</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\UI\Core\UITextureView.cpp">
+      <Filter>Raven\UI\Core</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\UI\Core\UITextureView.h">
+      <Filter>Raven\UI\Core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

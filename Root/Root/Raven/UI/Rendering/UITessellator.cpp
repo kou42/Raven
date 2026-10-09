@@ -1,7 +1,5 @@
 #include "Raven/UI/Rendering/UITessellator.h"
 
-#include "Raven/Assets/TextureAsset.h"
-
 #include <cmath>
 #include <numeric>
 
@@ -150,11 +148,10 @@ bool UITessellator::Tessellate(
         UITessellatedCommand batch{};
         batch.FirstIndex = static_cast<uint32_t>(outDrawList.Indices.size());
         batch.Clip = command.Clip;
-        batch.Texture = command.Texture;
+        batch.TextureView = command.TextureView;
         batch.UseTexture =
             command.Type == UIDrawCommandType::Image &&
-            command.Texture != nullptr &&
-            command.Texture->IsValid() == true;
+            command.TextureView.IsValid() == true;
 
         const auto pushVertex = [&outDrawList, &command](
             float x, float y, float u, float v)
@@ -217,6 +214,26 @@ bool UITessellator::Tessellate(
                 }
             }
             vertexBase += static_cast<uint32_t>(command.Points.size());
+        }
+        else if (command.Type == UIDrawCommandType::Image)
+        {
+            const math::Vec2 topLeft = command.TextureView.ResolveResourceUV(
+                math::Vec2(command.UVMin.x, command.UVMin.y));
+            const math::Vec2 topRight = command.TextureView.ResolveResourceUV(
+                math::Vec2(command.UVMax.x, command.UVMin.y));
+            const math::Vec2 bottomRight = command.TextureView.ResolveResourceUV(
+                math::Vec2(command.UVMax.x, command.UVMax.y));
+            const math::Vec2 bottomLeft = command.TextureView.ResolveResourceUV(
+                math::Vec2(command.UVMin.x, command.UVMax.y));
+            pushVertex(left, top, topLeft.x, topLeft.y);
+            pushVertex(right, top, topRight.x, topRight.y);
+            pushVertex(right, bottom, bottomRight.x, bottomRight.y);
+            pushVertex(left, bottom, bottomLeft.x, bottomLeft.y);
+            outDrawList.Indices.insert(outDrawList.Indices.end(), {
+                vertexBase + 0u, vertexBase + 1u, vertexBase + 2u,
+                vertexBase + 2u, vertexBase + 3u, vertexBase + 0u
+            });
+            vertexBase += 4u;
         }
         else
         {

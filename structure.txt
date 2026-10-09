@@ -622,6 +622,8 @@ D:.
     |   |       |       UIFocusNavigation.inl
     |   |       |       UIHitTest.cpp
     |   |       |       UIHitTest.h
+    |   |       |       UITextureView.cpp
+    |   |       |       UITextureView.h
     |   |       |
     |   |       +---Debug
     |   |       |       UITreeMutationValidation.h

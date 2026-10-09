@@ -159,7 +159,7 @@ void OpenGLUIRenderer::Render(
     // UI専用Triangle PipelineをRenderCommandへbind済みなので、
     // 直前SceneのLine/Point topologyを継承せず、RHIのDrawIndexedを利用します。
     //
-    // Image CommandではTextureAsset -> Runtime Textureへの解決もbackend内だけで行います。
+    // Image CommandではUITextureView -> OpenGLで利用可能なTextureへの解決もbackend内だけで行います。
     // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
     // Polygonを含めCommandごとにIndex数が異なるため、生成時に記録したCountで累積offsetを進めます。
     std::size_t commandIndex = 0u;
@@ -203,10 +203,13 @@ void OpenGLUIRenderer::Render(
 
         bool useTexture = false;
         if (command.Type == UIDrawCommandType::Image &&
-            command.Texture != nullptr &&
-            command.Texture->IsValid())
+            command.TextureView.IsValid() == true)
         {
-            const Ref<Texture>& texture = command.Texture->GetTexture();
+            Ref<Texture> texture = command.TextureView.GetLegacyTexture();
+            if (texture == nullptr && command.TextureView.GetAsset() != nullptr)
+            {
+                texture = command.TextureView.GetAsset()->GetTexture();
+            }
             if (texture != nullptr)
             {
                 texture->Bind(0);

@@ -3,6 +3,7 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "UIImmediateTests.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
+#include "Raven/UI/Rendering/UITessellator.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/UI/Core/UIElement.h"
@@ -23,6 +24,7 @@
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
+#include "Raven/UI/Widgets/UIImage.h"
 #include "Raven/UI/Docking/UIDockLayout.h"
 #include "Raven/UI/Docking/UIDockGeometry.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
@@ -2453,6 +2455,95 @@ private:
     }();
 };
 
+class ImageFixtureTexture final : public Raven::Texture
+{
+public:
+    ImageFixtureTexture(std::uint32_t width, std::uint32_t height)
+    {
+        m_Specification.Width = width;
+        m_Specification.Height = height;
+        m_Specification.Usage = Raven::TextureUsage::RenderTarget;
+        m_Specification.GenerateMips = false;
+    }
+
+    void Bind(unsigned int slot = 0u) const override { static_cast<void>(slot); }
+    void Unbind() const override {}
+    void SetData(const void* data, std::size_t dataSize) override
+    {
+        static_cast<void>(data);
+        static_cast<void>(dataSize);
+    }
+    unsigned int GetID() const override { return 1u; }
+    int GetWidth() const override { return static_cast<int>(m_Specification.Width); }
+    int GetHeight() const override { return static_cast<int>(m_Specification.Height); }
+    const Raven::TextureSpecification& GetSpecification() const override
+    {
+        return m_Specification;
+    }
+
+private:
+    Raven::TextureSpecification m_Specification{};
+};
+
+void TestUIImageRenderTargetContract()
+{
+    const auto texture = Raven::CreateRef<ImageFixtureTexture>(200u, 100u);
+    Raven::UIImage image;
+    image.SetSize(Raven::math::Vec2(300.0f, 300.0f));
+    image.SetScaleMode(Raven::UIImageScaleMode::AspectFit);
+    image.SetRenderTargetTexture(texture, Raven::UITextureOrigin::BottomLeft);
+
+    const Raven::UIRect imageRect = image.GetImageRect();
+    CheckNear("image aspect fit left", imageRect.Min.x, 0.0f);
+    CheckNear("image aspect fit top", imageRect.Min.y, 75.0f);
+    CheckNear("image aspect fit right", imageRect.Max.x, 300.0f);
+    CheckNear("image aspect fit bottom", imageRect.Max.y, 225.0f);
+
+    std::uint32_t pixelX = 0u;
+    std::uint32_t pixelY = 0u;
+    Check(image.TryMapLocalPositionToTexturePixel(
+        Raven::math::Vec2(0.0f, 75.0f), pixelX, pixelY),
+        "image maps top-left content pixel");
+    Check(pixelX == 0u && pixelY == 99u,
+        "bottom-left render target flips top pixel");
+    Check(image.TryMapLocalPositionToTexturePixel(
+        Raven::math::Vec2(299.0f, 224.0f), pixelX, pixelY),
+        "image maps bottom-right content pixel");
+    Check(pixelX == 199u && pixelY == 0u,
+        "bottom-left render target maps bottom pixel");
+    Check(image.TryMapLocalPositionToTexturePixel(
+        Raven::math::Vec2(150.0f, 20.0f), pixelX, pixelY) == false,
+        "image rejects letterbox picking");
+
+    image.SetPosition(Raven::math::Vec2(20.0f, 30.0f));
+    Check(image.TryMapScreenPositionToTexturePixel(
+        Raven::math::Vec2(20.0f, 105.0f), pixelX, pixelY),
+        "image maps window logical position");
+    Check(pixelX == 0u && pixelY == 99u,
+        "window logical mapping avoids duplicate dpi scale");
+    image.SetPosition(Raven::math::Vec2(0.0f, 0.0f));
+
+    Raven::UIDrawList drawList;
+    image.BuildDrawList(drawList);
+    Check(drawList.GetCommandCount() == 1u,
+        "render target image emits one command");
+    const Raven::UIDrawCommand& command = drawList.GetCommands().front();
+    Check(command.TextureView.GetLegacyTexture() == texture,
+        "render target image retains texture lifetime");
+    CheckNear("render target image draw top", command.Rect.Min.y, 75.0f);
+    CheckNear("render target image draw bottom", command.Rect.Max.y, 225.0f);
+    Check(command.Clip.Enabled == true,
+        "render target image clips to widget bounds");
+
+    Raven::UITessellatedDrawList tessellated;
+    Check(Raven::UITessellator::Tessellate(drawList, tessellated),
+        "render target image tessellates");
+    Check(tessellated.Vertices.size() == 4u,
+        "render target image emits quad vertices");
+    CheckNear("bottom-left texture top uv", tessellated.Vertices[0u].Texcoord.y, 1.0f);
+    CheckNear("bottom-left texture bottom uv", tessellated.Vertices[2u].Texcoord.y, 0.0f);
+}
+
 Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
 {
     // 実GPU Textureを生成せず、Atlasの寸法・Advanceだけを固定してLayoutを検証します。
@@ -2704,6 +2795,7 @@ int main()
     TestTextLayoutMeasurement();
     TestUILabelTextReflow();
     TestUILabelGlyphClipTransform();
+    TestUIImageRenderTargetContract();
     TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();

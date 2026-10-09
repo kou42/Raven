@@ -120,7 +120,7 @@ bool ExplicitUIRenderer::Prepare(
     {
         outUI.Textures.push_back(
             command.UseTexture == true ?
-            ResolveTexture(device, command.Texture, defaultTexture) :
+            ResolveTexture(device, command.TextureView, defaultTexture) :
             defaultTexture);
         if (outUI.Textures.back() == nullptr)
         {
@@ -223,9 +223,15 @@ bool ExplicitUIRenderer::Draw(
 
 Ref<RHITexture> ExplicitUIRenderer::ResolveTexture(
     RHIDevice& device,
-    const Ref<TextureAsset>& asset,
+    const UITextureView& textureView,
     const Ref<RHITexture>& defaultTexture)
 {
+    if (textureView.GetRHITexture() != nullptr)
+    {
+        return textureView.GetRHITexture();
+    }
+
+    const Ref<TextureAsset>& asset = textureView.GetAsset();
     if (asset == nullptr || asset->HasPixelData() == false)
     {
         return defaultTexture;

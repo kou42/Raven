@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathVector.h"
+#include "Raven/UI/Core/UITextureView.h"
 
 #include <cstddef>
 #include <vector>
@@ -18,7 +19,7 @@ class TextureAsset;
 //
 // Widget側へGPU実装を漏らさず、Rect / Circle / Polygon / Imageの幾何生成はRenderer backendへ集約します。
 // Text / Border / Path等も今後このコマンド列へ追加していきます。
-// ImageもGPU Texture IDではなくTextureAssetを参照し、UI層からRenderer API固有値を排除します。
+// ImageもGPU Texture IDではなくUITextureViewを参照し、UI層からRenderer API固有値を排除します。
 enum class UIDrawCommandType
 {
     SolidRect,
@@ -106,8 +107,8 @@ struct UITransform2D
 // Editor UIとGame UIのどちらから利用してもPlatform Rendererへ依存しない境界を保ちます。
 // Circleも中心/radiusではなくLayout済みBoundsを保持し、Transformの適用責務を既存Commandと統一します。
 // Polygonは任意頂点列だけを保持し、三角形化アルゴリズムはRenderer backendへ閉じ込めます。
-// ImageではEngine側のTextureAssetを保持し、OpenGL固有値への解決はUIRenderer実装でのみ行います。
-// TextureAssetのRefをframe中保持することで、DrawListが参照しているRuntime Textureの寿命も保証します。
+// ImageではEngine側のUITextureViewを保持し、OpenGL固有値への解決はUIRenderer実装でのみ行います。
+// View内のRefをframe中保持することで、DrawListが参照しているRuntime Textureの寿命も保証します。
 //
 // Raven UIのnormalized UVは左上原点です。
 // UV=(0, 0)を画像左上、UV=(1, 1)を画像右下とし、Vは下方向へ増加します。
@@ -122,7 +123,9 @@ struct UIDrawCommand
     math::Vec2 UVMin{ 0.0f, 0.0f };
     math::Vec2 UVMax{ 1.0f, 1.0f };
     std::vector<math::Vec2> Points;
+    // Textureは既存Asset利用側の互換参照です。RenderTargetを含む正式な描画参照はTextureViewです。
     Ref<TextureAsset> Texture;
+    UITextureView TextureView;
 };
 
 // ============================================================================
@@ -162,6 +165,15 @@ public:
         const math::Vec2& min,
         const math::Vec2& max,
         const Ref<TextureAsset>& texture,
+        const math::Vec4& tintColor = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f },
+        const math::Vec2& uvMin = math::Vec2{ 0.0f, 0.0f },
+        const math::Vec2& uvMax = math::Vec2{ 1.0f, 1.0f });
+
+    // Asset / Legacy Framebuffer Attachment / Explicit RHI Textureをnative handleなしで受け取ります。
+    void AddImage(
+        const math::Vec2& min,
+        const math::Vec2& max,
+        const UITextureView& textureView,
         const math::Vec4& tintColor = math::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f },
         const math::Vec2& uvMin = math::Vec2{ 0.0f, 0.0f },
         const math::Vec2& uvMax = math::Vec2{ 1.0f, 1.0f });

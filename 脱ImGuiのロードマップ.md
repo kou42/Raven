@@ -156,7 +156,7 @@ Exit Gate:
 
 - [ ] Menu Bar / Menu / Menu Item、Collapsible Section、Separator等、Editor shellとInspectorに必要な最小Widgetを棚卸しする。
 - [ ] `UIImmediateContext`に追加するものとRetained Widgetとして追加するものを分類する。
-- [ ] Scene/Game View用ImageにRenderTarget参照、UV向き、Aspect Fit、Clip、DPI変換を定義する。
+- [x] Scene/Game View用Imageに`UITextureView`を追加し、RenderTarget参照、UV向き、Aspect Fit、Clip、DPI/Texture Pixel変換を定義する（契約は`docs/raven-ui-render-target-image-contract.md`）。
 - [ ] Editor向けShortcut routingを定義し、Text入力中、Popup表示中、Gizmo操作中の優先順位を決める。
 - [ ] Hover / Focus / Active / CaptureをPanelまたはViewport単位で問い合わせるAPIを確定する。
 - [ ] Dock layoutのversion、既定配置、破損時fallback、旧`imgui.ini`から移行しない場合の初期化方針を決める。

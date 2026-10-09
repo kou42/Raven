@@ -10,8 +10,6 @@
 namespace Raven
 {
 
-class TextureAsset;
-
 // Backendへ渡すRaven UI共通頂点です。
 // OpenGL / DX12 / Vulkanで同じCPU tessellation結果を使用し、形状生成の差をなくします。
 struct UIVertex
@@ -26,7 +24,7 @@ struct UITessellatedCommand
     uint32_t FirstIndex = 0;
     uint32_t IndexCount = 0;
     UIClipRect Clip{};
-    Ref<TextureAsset> Texture;
+    UITextureView TextureView;
     bool UseTexture = false;
 };
 

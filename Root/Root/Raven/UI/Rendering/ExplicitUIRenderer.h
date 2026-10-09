@@ -47,7 +47,7 @@ public:
 
 private:
     Ref<RHITexture> ResolveTexture(
-        RHIDevice& device, const Ref<TextureAsset>& asset,
+        RHIDevice& device, const UITextureView& textureView,
         const Ref<RHITexture>& defaultTexture);
 
     std::unordered_map<const TextureAsset*, Ref<RHITexture>> m_TextureCache;

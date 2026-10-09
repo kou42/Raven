@@ -235,6 +235,17 @@ void UIDrawList::AddImage(
     const math::Vec2& uvMin,
     const math::Vec2& uvMax)
 {
+    AddImage(min, max, UITextureView::FromAsset(texture), tintColor, uvMin, uvMax);
+}
+
+void UIDrawList::AddImage(
+    const math::Vec2& min,
+    const math::Vec2& max,
+    const UITextureView& textureView,
+    const math::Vec4& tintColor,
+    const math::Vec2& uvMin,
+    const math::Vec2& uvMax)
+{
     // SolidRectと同様、面積0以下のImage CommandはRendererへ流しません。
     // Layout中の0 sizeやWindow最小化時にも不要なDraw Callを生成しないためです。
     if (max.x <= min.x || max.y <= min.y)
@@ -244,7 +255,7 @@ void UIDrawList::AddImage(
 
     // WidgetからRenderer IDを直接渡さず、Runtime Assetの有効性だけをUI Coreで確認します。
     // GPU Resourceの解決とBindはUIRenderer backendの責務です。
-    if (texture == nullptr || texture->IsValid() == false)
+    if (textureView.IsValid() == false)
     {
         return;
     }
@@ -256,7 +267,8 @@ void UIDrawList::AddImage(
     command.Color = tintColor;
     command.UVMin = uvMin;
     command.UVMax = uvMax;
-    command.Texture = texture;
+    command.Texture = textureView.GetAsset();
+    command.TextureView = textureView;
     m_Commands.push_back(command);
 }
 
