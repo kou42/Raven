@@ -9,6 +9,7 @@
 #include "Raven/UI/Widgets/UIWindow.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UISlider.h"
 
 #include "Raven/Core/Application.h"
 #include "Raven/Core/Input.h"
@@ -56,6 +57,8 @@ public:
         }
         m_Window = nullptr;
         m_Labels.clear();
+        m_Sliders.clear();
+        m_SliderLabels.clear();
     }
 
     // Resetの入力は描画フックに依存させず、ImGui無効時にも1押下1回で処理します。
@@ -70,7 +73,7 @@ public:
             ResetTestBodies();
             ResetMeasurement();
         }
-
+        UpdateRavenUI();
     }
 
     // Retained UIの構築はApplication UIContextのTreeに統合します。
@@ -79,8 +82,8 @@ public:
         auto window = CreateScope<UIWindow>();
         window->SetTitle("Fluid Buoyancy Debug");
         window->SetPosition(math::Vec2(540.0f, 10.0f));
-        window->SetSize(math::Vec2(550.0f, 750.0f));
-        window->SetPreferredSize(math::Vec2(550.0f, 750.0f));
+        window->SetSize(math::Vec2(550.0f, 990.0f));
+        window->SetPreferredSize(math::Vec2(550.0f, 990.0f));
 
         const char* lines[] = {
             "Fluid Buoyancy Debug", "Box : not found", "Sphere : not found",
@@ -116,6 +119,26 @@ public:
             [this]() { ResetMeasurement(); });
         AddButton(*window, 674.0f, 340.0f, 155.0f, "Reset Water",
             [this]() { ApplyPreset(ph::FluidCouplingPreset::Water); });
+        // 既存ImGuiの5係数調整をUISliderで復元します。
+        // Binding自体はScene交換で破棄されるためCallbackにpointerをCaptureしません。
+        const char* coefficientNames[] = {
+            "Particle Radius", "Restitution", "Drag", "Pressure Reaction", "Buoyancy"
+        };
+        const float minimum[] = { 0.001f, 0.0f, 0.0f, 0.0f, 0.0f };
+        const float maximum[] = { 2.0f, 1.0f, 5.0f, 10.0f, 10.0f };
+        for (std::size_t i = 0u; i < 5u; ++i)
+        {
+            const float y = 726.0f + static_cast<float>(i) * 43.0f;
+            m_SliderLabels.push_back(AddLabel(*window, y, coefficientNames[i]));
+            auto slider = CreateScope<UISlider>();
+            slider->SetPosition(math::Vec2(280.0f, y + 2.0f));
+            slider->SetSize(math::Vec2(240.0f, 22.0f));
+            slider->SetRange(minimum[i], maximum[i]);
+            slider->SetKeyboardStep(i == 0u ? 0.005f : 0.01f);
+            slider->SetFocusable(true);
+            slider->SetOnValueChanged([this, i](float value) { SetCoefficient(i, value); });
+            m_Sliders.push_back(static_cast<UISlider*>(window->AddChild(std::move(slider))));
+        }
         m_Window = m_Application.GetUIContext().GetRootElement().AddChild(std::move(window));
     }
 
@@ -162,6 +185,29 @@ public:
         const auto& bindings = fluid->GetCouplingBindings();
         if (bindings.empty() == true) { return nullptr; }
         return bindings.front();
+    }
+
+    void SetCoefficient(std::size_t index, float value)
+    {
+        if (m_SynchronizingSliders == true) { return; }
+        ph::FluidCouplingBinding* binding = GetFirstBinding();
+        if (binding == nullptr) { return; }
+        // StaticとRigidの粒子半径・反発係数は同じ表面を扱うため同期します。
+        switch (index)
+        {
+        case 0u:
+            binding->StaticColliderSettings.ParticleRadius = std::max(value, 0.001f);
+            binding->RigidBodySettings.ParticleRadius = std::max(value, 0.001f);
+            break;
+        case 1u:
+            binding->StaticColliderSettings.Restitution = value;
+            binding->RigidBodySettings.Restitution = value;
+            break;
+        case 2u: binding->RigidBodySettings.DragCoefficient = std::max(value, 0.0f); break;
+        case 3u: binding->RigidBodySettings.PressureReactionCoefficient = std::max(value, 0.0f); break;
+        case 4u: binding->RigidBodySettings.BuoyancyCoefficient = std::max(value, 0.0f); break;
+        default: break;
+        }
     }
 
     void ApplyPreset(ph::FluidCouplingPreset preset)
@@ -254,6 +300,27 @@ public:
         else
         {
             for (std::size_t i = 4u; i <= 10u; ++i) { m_Labels[i]->SetText("Coupling : unavailable"); }
+        }
+        if (binding != nullptr)
+        {
+            const float values[] = {
+                binding->RigidBodySettings.ParticleRadius,
+                binding->RigidBodySettings.Restitution,
+                binding->RigidBodySettings.DragCoefficient,
+                binding->RigidBodySettings.PressureReactionCoefficient,
+                binding->RigidBodySettings.BuoyancyCoefficient
+            };
+            m_SynchronizingSliders = true;
+            for (std::size_t i = 0u; i < m_Sliders.size(); ++i)
+            {
+                m_Sliders[i]->SetValue(values[i]);
+                char buffer[96];
+                std::snprintf(buffer, sizeof(buffer), "%s : %.3f",
+                    i == 0u ? "Radius" : i == 1u ? "Restitution" :
+                    i == 2u ? "Drag" : i == 3u ? "Pressure" : "Buoyancy", values[i]);
+                m_SliderLabels[i]->SetText(buffer);
+            }
+            m_SynchronizingSliders = false;
         }
         const auto& stat = fluid.GetLastStaticColliderCouplingStatistics();
         const auto& rigid = fluid.GetLastRigidBodyCouplingStatistics();
@@ -366,6 +433,9 @@ private:
     bool m_WasResetKeyPressed = false;
     UIElement* m_Window = nullptr;
     std::vector<UILabel*> m_Labels;
+    std::vector<UILabel*> m_SliderLabels;
+    std::vector<UISlider*> m_Sliders;
+    bool m_SynchronizingSliders = false;
 };
 
 } // namespace Raven
