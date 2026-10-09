@@ -257,7 +257,7 @@ int main(int argc, char* argv[])
 #else
     if (uiMigrationTest == true)
     {
-        std::cerr << "--ui-migration-test requires a Debug build.\\n";
+        std::cerr << "--ui-migration-test requires a Debug build.\n";
         return 1;
     }
 #endif
