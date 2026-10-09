@@ -562,6 +562,17 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    // Triggerより先にPopupを閉じて破棄し、Focus/Captureの参照を残しません。
+    if (m_MenuPopup != nullptr)
+    {
+        m_Application.GetUIContext().RemovePopup(m_MenuPopup);
+        m_MenuPopup = nullptr;
+    }
+    if (m_MenuTrigger != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_MenuTrigger);
+        m_MenuTrigger = nullptr;
+    }
     if (m_Separator != nullptr)
     {
         m_Application.GetUIContext().GetRootElement().RemoveChild(m_Separator);
