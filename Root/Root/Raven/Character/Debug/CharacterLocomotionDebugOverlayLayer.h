@@ -19,6 +19,18 @@
 
 namespace Raven
 {
+// ============================================================================
+// CharacterLocomotionDebugOverlayLayer
+// ============================================================================
+// CharacterControllerDemoLayerが公開するLocomotion Debug Snapshotを表示する
+// Application-owned Overlay Layerです。
+// CharacterControllerDemoLayer本体はPhysics更新順を守るためScene-owned Layerのまま維持し、
+// このOverlayだけをApplication Layerへ分離します。
+// Lifetimeについて:
+// CharacterControllerDemoLayerはScene-ownedであり、Runtime中のScene交換によって破棄・再生成されます。
+// そのためOverlayはCharacter Layerへのpointerを保持せず、Applicationだけを非所有で借用します。
+// 診断値の表示やRuntime調整を行うたびにActive SceneからCharacterControllerDemoLayerを再解決することで、
+// Scene交換後に旧SceneのLayerを参照するdangling pointerを残しません。
 // Scene-owned Characterへの参照は保存せず、調整イベントごとに再取得します。
 // ImGuiの描画フックを使わず、Application-owned Raven UI Treeとして診断値を更新します。
 class CharacterLocomotionDebugOverlayLayer final : public Layer
@@ -30,6 +42,8 @@ public:
     void OnAttach() override
     {
         if (m_Application == nullptr) { return; }
+        // Foot Sliding調整をその場で行えるよう、診断専用HUDをInteractive Tuning HUDへ拡張します。
+        // 旧ImGuiの固定位置HUDに代わり、Raven UIWindowのDrag/Resizeを利用します。
         auto window = CreateScope<UIWindow>();
         window->SetTitle("Character Locomotion Debug");
         window->SetPosition(math::Vec2(10.0f, 10.0f));
@@ -104,8 +118,12 @@ public:
         SetDiagnostic(0, "Animation : %s", s.AnimationActive == true ? "Active" : "Inactive");
         SetDiagnostic(1, "Actual Speed : %.2f", s.ActualHorizontalSpeed);
         SetDiagnostic(2, "Parameter : %.2f", s.ParameterValue);
+        // Reference SpeedはBlend Weightで補間されたClip側の想定速度です。
+        // Playback SpeedはActual / Referenceを安全ClampしたRuntime値で、UIでは再計算しません。
         SetDiagnostic(3, "Reference : %.2f", s.ReferenceMotionSpeed);
         SetDiagnostic(4, "Playback : %.2fx", s.PlaybackSpeed);
+        // 現在のLocomotionBlendTreeConfigのClamp範囲に基づく診断です。
+        // Playbackが端へ張り付く場合は、Authored Motion SpeedやGameplay速度との乖離が考えられます。
         const char* clamp = "Free";
         if (s.AnimationActive == true && s.ReferenceMotionSpeed > 0.0f)
         {
@@ -116,6 +134,8 @@ public:
         SetDiagnostic(6, "Blend : %s -> %s",
             s.LeftAnimationName.empty() ? "<none>" : s.LeftAnimationName.c_str(),
             s.RightAnimationName.empty() ? "<none>" : s.RightAnimationName.c_str());
+        // BlendTree1DではLeftWeight + RightWeight = 1.0です。
+        // 旧ImGuiのProgressBarは数値表示へ置換しています。
         SetDiagnostic(7, "Weight : %.2f / %.2f", s.LeftWeight, s.RightWeight);
         SetDiagnostic(8, "Threshold : %.2f -> %.2f", s.LeftThreshold, s.RightThreshold);
         SetDiagnostic(9, "Gameplay Goal : Walk %.2f / Run %.2f / Sprint %.2f",
@@ -190,6 +210,8 @@ private:
         CharacterControllerDemoLayer* character = ResolveCharacterLayer();
         if (character == nullptr) { return; }
         const CharacterLocomotionDebugSnapshot s = character->GetHumanoidLocomotionDebugSnapshot();
+        // Threshold変更は既存BlendTreeに反映され、再生位相を維持したまま再評価されます。
+        // Authored Motion Speed変更もRuntime APIを通すためBlendTreeの位相はリスタートしません。
         if (index < 4u)
         {
             float values[] = { s.IdleThreshold, s.WalkThreshold, s.RunThreshold, s.SprintThreshold };
@@ -218,6 +240,7 @@ private:
         CharacterControllerDemoLayer* character = ResolveCharacterLayer();
         if (character == nullptr) { return; }
         const auto s = character->GetHumanoidLocomotionDebugSnapshot();
+        // ResetはGameplay速度ではなく、現在AssetのProfile初期値をSnapshot経由で取得します。
         ApplyThresholds(s.ProfileIdleThreshold, s.ProfileWalkThreshold,
             s.ProfileRunThreshold, s.ProfileSprintThreshold);
     }
@@ -248,6 +271,8 @@ private:
         GLFWwindow* native = static_cast<GLFWwindow*>(m_Application->GetWindow().GetNativeWindow());
         if (native == nullptr) { return; }
         // ClipboardはOS Windowに紐付くため、ImGuiのClipboard APIではなくGLFWを利用します。
+        // 調整結果はHumanoidAnimationProfileへ転記できるC++形式にします。
+        // Drag/Reset直後も最新Snapshotから生成し、古い設定のCopyを避けます。
         const std::string config = BuildTuningConfigText(character->GetHumanoidLocomotionDebugSnapshot());
         glfwSetClipboardString(native, config.c_str());
     }
@@ -256,6 +281,7 @@ private:
     {
         CharacterControllerDemoLayer* character = ResolveCharacterLayer();
         if (character == nullptr) { return; }
+        // 調整結果はAsset固有設定の正規保存先であるProfileへ保存します。
         std::string error;
         if (character->SaveHumanoidLocomotionProfileTuning(&error) == false)
         {
