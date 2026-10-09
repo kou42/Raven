@@ -492,6 +492,11 @@ void UITextDemoLayer::OnAttach()
 
 void UITextDemoLayer::OnDetach()
 {
+    if (m_Separator != nullptr)
+    {
+        m_Application.GetUIContext().GetRootElement().RemoveChild(m_Separator);
+        m_Separator = nullptr;
+    }
     if (m_DockSpace != nullptr)
     {
         // UI Tree破棄前にTree/Tab状態を保存します。失敗しても終了処理は継続します。
