@@ -1053,6 +1053,29 @@ const UIElement* UIContext::GetHoveredElement() const { return m_HoveredElement;
 UIElement* UIContext::GetPressedElement() { return m_PressedElement; }
 const UIElement* UIContext::GetPressedElement() const { return m_PressedElement; }
 
+UIInteractionState UIContext::GetInteractionState(const UIElement* scope) const
+{
+    UIInteractionState state;
+    if (scope == nullptr || scope->GetContext() != this)
+    {
+        return state;
+    }
+
+    state.Hovered = IsElementInSubtree(m_HoveredElement, scope);
+    state.Focused = IsElementInSubtree(GetFocusedElement(), scope);
+    state.Captured = IsElementInSubtree(m_MouseCaptureElement, scope);
+    state.Active = state.Captured == true ||
+        IsElementInSubtree(m_PressedElement, scope) == true ||
+        IsElementInSubtree(m_DragSource, scope) == true;
+    return state;
+}
+
+bool UIContext::IsTextInputFocused() const
+{
+    const UIElement* focused = GetFocusedElement();
+    return focused != nullptr && focused->AcceptsTextInput() == true;
+}
+
 UIDrawList& UIContext::GetDrawList() { return m_DrawList; }
 const UIDrawList& UIContext::GetDrawList() const { return m_DrawList; }
 

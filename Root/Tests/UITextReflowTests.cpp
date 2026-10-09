@@ -2,6 +2,7 @@
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
 #include "UIImmediateTests.h"
+#include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Rendering/UITessellator.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -1475,6 +1476,80 @@ void TestPopupRouting()
     context.ClosePopup();
     context.ClosePopup();
 }
+
+// Editor Shortcutの所有者とPanel/Viewport単位のInteraction StateをGPUなしで検証します。
+void TestEditorShortcutRouting()
+{
+    Raven::UIContext context;
+    auto panel = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* panelPtr = panel.get();
+    panel->SetPosition(Raven::math::Vec2(10.0f, 10.0f));
+    panel->SetSize(Raven::math::Vec2(300.0f, 220.0f));
+    panel->SetFocusable(true);
+
+    auto viewport = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* viewportPtr = viewport.get();
+    viewport->SetSize(Raven::math::Vec2(200.0f, 80.0f));
+    viewport->SetFocusable(true);
+    panel->AddChild(std::move(viewport));
+
+    auto input = std::make_unique<Raven::UIInputText>();
+    Raven::UIInputText* inputPtr = input.get();
+    input->SetPosition(Raven::math::Vec2(0.0f, 100.0f));
+    input->SetSize(Raven::math::Vec2(180.0f, 30.0f));
+    panel->AddChild(std::move(input));
+    context.GetRootElement().AddChild(std::move(panel));
+
+    Raven::EditorShortcutRoutingContext routing;
+    routing.Panel = panelPtr;
+    routing.Viewport = viewportPtr;
+    Check(Raven::ResolveEditorShortcutTarget(context, routing) ==
+        Raven::EditorShortcutTarget::Global, "shortcut defaults to global");
+
+    context.RouteMouseMove(Raven::math::Vec2(20.0f, 20.0f));
+    Raven::UIInteractionState viewportState = context.GetInteractionState(viewportPtr);
+    Check(viewportState.Hovered == true, "viewport subtree reports hover");
+    Check(context.SetFocus(viewportPtr), "shortcut viewport focus");
+    Check(context.CaptureMouse(viewportPtr), "shortcut viewport capture");
+    viewportState = context.GetInteractionState(viewportPtr);
+    Check(viewportState.Focused == true && viewportState.Captured == true &&
+        viewportState.Active == true, "viewport reports focus active capture");
+    const Raven::UIInteractionState panelState = context.GetInteractionState(panelPtr);
+    Check(panelState.Focused == true && panelState.Captured == true,
+        "panel aggregates descendant interaction");
+    Check(Raven::ResolveEditorShortcutTarget(context, routing) ==
+        Raven::EditorShortcutTarget::Viewport, "viewport owns focused shortcut");
+    context.ReleaseMouseCapture(viewportPtr);
+
+    Check(context.SetFocus(inputPtr), "shortcut text input focus");
+    Check(context.IsTextInputFocused() == true, "text input intent exposed by core");
+    Check(Raven::ResolveEditorShortcutTarget(context, routing) ==
+        Raven::EditorShortcutTarget::TextInput, "text input precedes viewport and panel");
+
+    auto popup = std::make_unique<Raven::UIElement>();
+    popup->SetSize(Raven::math::Vec2(120.0f, 80.0f));
+    Raven::UIElement* popupPtr = context.AddPopup(std::move(popup));
+    Check(context.OpenPopup(popupPtr), "shortcut popup opens");
+    Check(Raven::ResolveEditorShortcutTarget(context, routing) ==
+        Raven::EditorShortcutTarget::Popup, "popup precedes text input");
+    context.ClosePopup();
+
+    context.ClearFocus();
+    routing.GizmoActive = true;
+    Check(Raven::ResolveEditorShortcutTarget(context, routing) ==
+        Raven::EditorShortcutTarget::Gizmo, "gizmo precedes viewport panel global");
+    routing.GizmoActive = false;
+    Check(context.SetFocus(panelPtr), "shortcut panel focus");
+    Check(Raven::ResolveEditorShortcutTarget(context, routing) ==
+        Raven::EditorShortcutTarget::Panel, "focused panel owns shortcut");
+    context.ClearFocus();
+
+    Raven::UIElement detached;
+    const Raven::UIInteractionState detachedState = context.GetInteractionState(&detached);
+    Check(detachedState.Hovered == false && detachedState.Focused == false &&
+        detachedState.Active == false && detachedState.Captured == false,
+        "detached element has no interaction state");
+}
 // ComboBoxの選択変更、Keyboard操作、Popup経由のMouse選択を検証します。
 void TestComboBox()
 {
@@ -2810,6 +2885,7 @@ int main()
     TestInputNumber();
     TestInputEventRouting();
     TestPopupRouting();
+    TestEditorShortcutRouting();
     TestComboBox();
     TestTooltip();
     TestPopupOutsideClickConsumption();

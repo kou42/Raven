@@ -40,6 +40,16 @@ namespace Raven
 class UIFontAtlas;
 class UITooltip;
 
+// PanelやViewport単位で問い合わせる入力状態です。
+// ActiveはPressed、Mouse Capture、Drag SourceのいずれかがSubtree内にある状態を表します。
+struct UIInteractionState
+{
+    bool Hovered = false;
+    bool Focused = false;
+    bool Active = false;
+    bool Captured = false;
+};
+
 class UIContext
 {
 public:
@@ -194,6 +204,11 @@ public:
     const UIElement* GetHoveredElement() const;
     UIElement* GetPressedElement();
     const UIElement* GetPressedElement() const;
+
+    // scope自身とDescendantをまとめて評価します。別Contextまたは未接続Elementは空状態を返します。
+    UIInteractionState GetInteractionState(const UIElement* scope) const;
+    // Focus中Widgetの具体型をEditorへ公開せず、文字入力Shortcutが優先されるかを返します。
+    bool IsTextInputFocused() const;
 
     UIDrawList& GetDrawList();
     const UIDrawList& GetDrawList() const;

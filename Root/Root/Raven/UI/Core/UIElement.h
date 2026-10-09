@@ -159,6 +159,8 @@ public:
     void SetFocusable(bool value) { m_Focusable = value; }
     bool IsFocusable() const { return m_Focusable; }
     bool IsFocused() const { return m_Focused; }
+    // Editor Shortcut等がWidgetの具体型へ依存せず、文字入力中かを判定するための拡張点です。
+    virtual bool AcceptsTextInput() const;
     // UIContextがWidget型へ依存せずIME所有者を検出するための拡張点です。
     virtual bool HasActiveIMEComposition() const { return false; }
 

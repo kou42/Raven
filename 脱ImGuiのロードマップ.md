@@ -154,11 +154,11 @@ Exit Gate:
 
 目的: Panel移植中に場当たり的なWidgetやBackend依存を増やさない。
 
-- [ ] Menu Bar / Menu / Menu Item、Collapsible Section、Separator等、Editor shellとInspectorに必要な最小Widgetを棚卸しする。
-- [ ] `UIImmediateContext`に追加するものとRetained Widgetとして追加するものを分類する。
+- [x] Menu Bar / Menu / Menu Item、Collapsible Section、Separator等、Editor shellとInspectorに必要な最小Widgetを棚卸しする（`docs/raven-editor-ui-common-parts.md`）。
+- [x] `UIImmediateContext`に追加するものとRetained Widgetとして追加するものを分類する（`docs/raven-editor-ui-common-parts.md`）。
 - [x] Scene/Game View用Imageに`UITextureView`を追加し、RenderTarget参照、UV向き、Aspect Fit、Clip、DPI/Texture Pixel変換を定義する（契約は`docs/raven-ui-render-target-image-contract.md`）。
-- [ ] Editor向けShortcut routingを定義し、Text入力中、Popup表示中、Gizmo操作中の優先順位を決める。
-- [ ] Hover / Focus / Active / CaptureをPanelまたはViewport単位で問い合わせるAPIを確定する。
+- [x] Editor向けShortcut routingを定義し、Popup、Text入力、Gizmo、Viewport、Panel、Globalの優先順位を`EditorShortcutRouter`へ集約する。
+- [x] `UIContext::GetInteractionState()`でHover / Focus / Active / CaptureをPanelまたはViewport単位で問い合わせられるようにする。
 - [ ] Dock layoutのversion、既定配置、破損時fallback、旧`imgui.ini`から移行しない場合の初期化方針を決める。
 - [ ] Editor共通Styleを`UITheme`へ追加し、個別PanelへMagic Numberを散らさない。
 

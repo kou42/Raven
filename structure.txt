@@ -225,6 +225,8 @@ D:.
     |   |   |   |   EditorScaleGizmo.cpp
     |   |   |   |   EditorScaleGizmo.h
     |   |   |   |   EditorSelectionOutline.cpp
+    |   |   |   |   EditorShortcutRouter.cpp
+    |   |   |   |   EditorShortcutRouter.h
     |   |   |   |   EditorTranslateGizmo.cpp
     |   |   |   |   EditorTranslateGizmo.h
     |   |   |   |

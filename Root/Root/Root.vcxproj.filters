@@ -673,6 +673,9 @@
     <Filter Include="Raven\UI\Core">
       <UniqueIdentifier>{8d24178a-1cb8-4fef-97c8-4c20bf3d5f75}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Editor">
+      <UniqueIdentifier>{8c22e424-a9e3-437c-8122-8920d557b0a0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -698,6 +701,12 @@
     </ClCompile>
     <ClInclude Update="Raven\UI\Core\UITextureView.h">
       <Filter>Raven\UI\Core</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\EditorShortcutRouter.cpp">
+      <Filter>Raven\Editor</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\EditorShortcutRouter.h">
+      <Filter>Raven\Editor</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

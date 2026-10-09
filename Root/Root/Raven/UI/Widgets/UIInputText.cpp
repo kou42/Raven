@@ -9,6 +9,11 @@
 namespace Raven
 {
 
+bool UIInputText::AcceptsTextInput() const
+{
+    return true;
+}
+
 void UIInputText::SetText(std::string_view text)
 {
     // 外部Bindingから本文を更新する場合、古い置換範囲をOSへ残さないよう先に変換を取消します。

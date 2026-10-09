@@ -342,6 +342,7 @@ bool UIElement::IsHovered() const { return m_Hovered; }
 bool UIElement::IsPressed() const { return m_Pressed; }
 bool UIElement::IsMeasureDirty() const { return m_MeasureDirty; }
 bool UIElement::IsArrangeDirty() const { return m_ArrangeDirty; }
+bool UIElement::AcceptsTextInput() const { return false; }
 UIElement* UIElement::GetParent() { return m_Parent; }
 const UIElement* UIElement::GetParent() const { return m_Parent; }
 const std::vector<Scope<UIElement>>& UIElement::GetChildren() const { return m_Children; }
