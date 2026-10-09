@@ -37,7 +37,8 @@ public:
     std::size_t AddMenu(std::string title)
     {
         const std::size_t index = m_Menus.size();
-        auto trigger = CreateScope<UIButton>();
+        auto trigger = CreateScope<MenuButton>();
+        trigger->SetOnNavigate([this, index](UIKey key) { NavigateMenu(index, key); });
         trigger->SetFocusable(true);
         trigger->SetPreferredSize(math::Vec2(100.0f, 34.0f));
         trigger->SetSize(math::Vec2(100.0f, 34.0f));
@@ -90,7 +91,8 @@ public:
             popup->SetSize(math::Vec2(220.0f, height));
             for (std::size_t i = 0u; i < menu.Items.size(); ++i)
             {
-                auto button = CreateScope<UIButton>();
+                auto button = CreateScope<MenuButton>();
+                button->SetOnNavigate([this, menuIndex, i](UIKey key) { NavigateItem(menuIndex, i, key); });
                 button->SetFocusable(true);
                 button->SetPosition(math::Vec2(6.0f, 6.0f + static_cast<float>(i) * 38.0f));
                 button->SetSize(math::Vec2(208.0f, 32.0f));
@@ -119,7 +121,12 @@ public:
             }
             menu.Popup = context->AddPopup(std::move(popup));
         }
-        return menu.Popup != nullptr && context->OpenPopupAt(menu.Popup, menu.Trigger);
+        if (menu.Popup == nullptr || context->OpenPopupAt(menu.Popup, menu.Trigger) == false)
+        {
+            return false;
+        }
+        // Popupを開いた直後は最初のItemへFocusを移し、Tabを使わず操作できます。
+        return FocusItem(menuIndex, 0u);
     }
 
 protected:
@@ -132,6 +139,105 @@ protected:
     }
 
 private:
+    // UIButtonの標準Clickを維持したまま、Menu固有の方向キーだけを追加します。
+    class MenuButton final : public UIButton
+    {
+    public:
+        using NavigateHandler = std::function<void(UIKey)>;
+        void SetOnNavigate(NavigateHandler handler) { m_OnNavigate = std::move(handler); }
+    protected:
+        void OnKeyEvent(UIKeyEvent& event) override
+        {
+            UIButton::OnKeyEvent(event);
+            if (event.Handled == true || IsFocused() == false || event.Pressed == false)
+            {
+                return;
+            }
+            if (event.Key == UIKey::Left || event.Key == UIKey::Right ||
+                event.Key == UIKey::Up || event.Key == UIKey::Down ||
+                event.Key == UIKey::Home || event.Key == UIKey::End)
+            {
+                if (m_OnNavigate != nullptr)
+                {
+                    m_OnNavigate(event.Key);
+                    event.Handled = true;
+                }
+            }
+        }
+    private:
+        NavigateHandler m_OnNavigate;
+    };
+
+    bool FocusItem(std::size_t menuIndex, std::size_t itemIndex)
+    {
+        UIContext* context = GetContext();
+        if (context == nullptr || menuIndex >= m_Menus.size())
+        {
+            return false;
+        }
+        const Menu& menu = m_Menus[menuIndex];
+        if (menu.Popup == nullptr || itemIndex >= menu.Popup->GetChildren().size())
+        {
+            return false;
+        }
+        return context->SetFocus(menu.Popup->GetChildren()[itemIndex].get());
+    }
+
+    void NavigateMenu(std::size_t index, UIKey key)
+    {
+        if (m_Menus.empty())
+        {
+            return;
+        }
+        if (key == UIKey::Down || key == UIKey::Up)
+        {
+            ToggleMenu(index);
+        }
+        else if (key == UIKey::Left || key == UIKey::Right)
+        {
+            const std::size_t next = key == UIKey::Right
+                ? (index + 1u) % m_Menus.size()
+                : (index + m_Menus.size() - 1u) % m_Menus.size();
+            if (m_Menus[next].Items.empty() == false)
+            {
+                ToggleMenu(next);
+            }
+        }
+    }
+
+    void NavigateItem(std::size_t menuIndex, std::size_t itemIndex, UIKey key)
+    {
+        if (menuIndex >= m_Menus.size())
+        {
+            return;
+        }
+        const std::size_t count = m_Menus[menuIndex].Items.size();
+        if (count == 0u)
+        {
+            return;
+        }
+        if (key == UIKey::Down)
+        {
+            FocusItem(menuIndex, (itemIndex + 1u) % count);
+        }
+        else if (key == UIKey::Up)
+        {
+            FocusItem(menuIndex, (itemIndex + count - 1u) % count);
+        }
+        else if (key == UIKey::Home)
+        {
+            FocusItem(menuIndex, 0u);
+        }
+        else if (key == UIKey::End)
+        {
+            FocusItem(menuIndex, count - 1u);
+        }
+        else if (key == UIKey::Left || key == UIKey::Right)
+        {
+            NavigateMenu(menuIndex, key);
+        }
+    }
+
     struct Item
     {
         std::string Title;
