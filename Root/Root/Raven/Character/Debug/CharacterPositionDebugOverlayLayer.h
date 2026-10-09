@@ -1,15 +1,20 @@
 // Raven/Character/Debug/CharacterPositionDebugOverlayLayer.h
 #pragma once
 
-#include <imgui.h>
-
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
 #include "Raven/Core/Application.h"
 #include "Raven/Core/Input.h"
-#include "Raven/Scene/Scene.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Renderer/Layer/Layer.h"
+#include "Raven/Scene/Scene.h"
+#include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UILabel.h"
+#include "Raven/UI/Widgets/UIWindow.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <string>
 
 namespace Raven
 {
@@ -20,126 +25,166 @@ namespace Raven
 // CharacterControllerDemoLayerが保持する足元Root座標を常時表示する軽量Debug HUDです。
 // Locomotion調整HUDとは責務を分離し、Fluidなど原点から離れた検証エリアへ移動するときでも
 // 現在のWorld座標とDebug移動先を一目で比較できるようにします。
-//
 // Debug Teleport先は外部から注入し、このOverlay自身はFluid等の個別Domainを知りません。
-// これによりCharacter -> Fluidの依存を作らず、別の遠隔検証エリアにも同じ仕組みを再利用できます。
+// これによりCharacter -> Fluidの依存を作らず、別の遠隔検証エリアにも同じ仕組みを再利用できます.
+// CharacterControllerDemoLayerの足元Root座標とDebug移動先を表示するRaven UI HUDです。
+// Scene/Character LayerをWidgetへ保持せず、操作時と更新時にActive Sceneから再解決します。
 class CharacterPositionDebugOverlayLayer final : public Layer
 {
 public:
     CharacterPositionDebugOverlayLayer(
-        Application& application,
-        const math::Vec3& debugTeleportTarget)
+        Application& application, const math::Vec3& debugTeleportTarget)
         : m_Application(&application)
         , m_DebugTeleportTarget(debugTeleportTarget)
     {
     }
 
+    void OnAttach() override
+    {
+        if (m_Application == nullptr)
+        {
+            return;
+        }
+
+        auto window = CreateScope<UIWindow>();
+        window->SetTitle("Character Position Debug");
+        // 旧ImGui HUDの右上寄りの初期配置を維持します。
+        // UIWindowはタイトルバーのDragとResizeに対応し、表示位置をユーザーが調整できます。
+        window->SetPosition(math::Vec2(780.0f, 10.0f));
+        window->SetSize(math::Vec2(340.0f, 294.0f));
+        window->SetPreferredSize(math::Vec2(340.0f, 294.0f));
+
+        auto addLabel = [this, &window](float y, const std::string& text) -> UILabel*
+        {
+            auto label = CreateScope<UILabel>();
+            label->SetFont(m_Application->GetRuntimeUIFont());
+            label->SetText(text);
+            label->SetPosition(math::Vec2(12.0f, y));
+            label->SetSize(math::Vec2(310.0f, 28.0f));
+            label->SetHitTestVisible(false);
+            return static_cast<UILabel*>(window->AddChild(std::move(label)));
+        };
+
+        addLabel(34.0f, "Character World Position");
+        m_PositionX = addLabel(68.0f, "X : --");
+        m_PositionY = addLabel(96.0f, "Y : --");
+        m_PositionZ = addLabel(124.0f, "Z : --");
+        m_Target = addLabel(158.0f, "Debug Target : --");
+        m_Distance = addLabel(186.0f, "Distance : --");
+        addLabel(214.0f, "F : Teleport to debug target");
+
+        auto button = CreateScope<UIButton>();
+        button->SetPosition(math::Vec2(12.0f, 246.0f));
+        button->SetSize(math::Vec2(310.0f, 32.0f));
+        button->SetFocusable(true);
+        // Button操作もFキーと同じTeleport APIを通し、状態初期化の経路を統一します。
+        button->SetOnClick([this]() { TeleportToDebugTarget(); });
+        auto caption = CreateScope<UILabel>();
+        caption->SetFont(m_Application->GetRuntimeUIFont());
+        caption->SetText("Teleport to Debug Target");
+        caption->SetPosition(math::Vec2(8.0f, 3.0f));
+        caption->SetSize(math::Vec2(290.0f, 26.0f));
+        caption->SetHitTestVisible(false);
+        button->AddChild(std::move(caption));
+        window->AddChild(std::move(button));
+
+        m_Window = m_Application->GetUIContext().GetRootElement().AddChild(std::move(window));
+    }
+
     void OnDetach() override
     {
+        if (m_Application != nullptr && m_Window != nullptr)
+        {
+            m_Application->GetUIContext().GetRootElement().RemoveChild(m_Window);
+        }
+        m_Window = nullptr;
+        m_PositionX = nullptr;
+        m_PositionY = nullptr;
+        m_PositionZ = nullptr;
+        m_Target = nullptr;
+        m_Distance = nullptr;
         m_Application = nullptr;
     }
 
-    void OnImGuiRender(float deltaTime) override
+    void OnUpdate(float deltaTime) override
     {
         static_cast<void>(deltaTime);
-
-        CharacterControllerDemoLayer* characterLayer = ResolveCharacterLayer();
-        if (characterLayer == nullptr)
+        if (m_Application == nullptr)
         {
             return;
         }
 
         // Fは押しっぱなしで毎Frame Teleportしないよう立ち上がりEdgeだけを採用します。
-        // Button操作でも同じTeleport APIを通し、入力経路ごとに状態初期化処理が分岐しないようにします。
-        const bool teleportKeyPressed = Input::IsKeyPressed(Key::F);
-        const bool teleportRequested =
-            teleportKeyPressed == true && m_WasTeleportKeyPressed == false;
-        m_WasTeleportKeyPressed = teleportKeyPressed;
-
-        if (teleportRequested == true)
+        // 描画フックから入力を切り離し、ImGuiが無効でもFキーの立ち上がりを処理します。
+        const bool pressed = Input::IsKeyPressed(Key::F);
+        const bool requested = pressed == true && m_WasTeleportKeyPressed == false;
+        m_WasTeleportKeyPressed = pressed;
+        if (requested == true)
         {
-            characterLayer->TeleportCharacterForDebug(m_DebugTeleportTarget);
+            TeleportToDebugTarget();
         }
 
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        if (viewport == nullptr)
+        CharacterControllerDemoLayer* character = ResolveCharacterLayer();
+        if (m_Window == nullptr)
+        {
+            return;
+        }
+        m_Window->SetVisible(character != nullptr);
+        if (character == nullptr)
         {
             return;
         }
 
-        // 初回表示時だけ右上へ配置します。
-        // 以降はImGuiのWindow位置を固定しないことで、タイトルバーをドラッグして
-        // Fluid HUDなど他のDebug UIと重ならない位置へ自由に移動できます。
-        constexpr float Margin = 10.0f;
-        const ImVec2 initialWindowPosition{
-            viewport->WorkPos.x + viewport->WorkSize.x - Margin,
-            viewport->WorkPos.y + Margin
-        };
-
-        ImGui::SetNextWindowPos(
-            initialWindowPosition,
-            ImGuiCond_FirstUseEver,
-            ImVec2{ 1.0f, 0.0f });
-        ImGui::SetNextWindowBgAlpha(0.78f);
-
-        // ドラッグ用タイトルバーを残しつつResize/Collapse等は不要なので個別に無効化します。
-        // NoDecoration / NoMoveを使うとWindow全体がドラッグ不能になるため使用しません。
-        const ImGuiWindowFlags windowFlags =
-            ImGuiWindowFlags_AlwaysAutoResize
-            | ImGuiWindowFlags_NoResize
-            | ImGuiWindowFlags_NoCollapse
-            | ImGuiWindowFlags_NoSavedSettings
-            | ImGuiWindowFlags_NoFocusOnAppearing
-            | ImGuiWindowFlags_NoNav;
-
-        if (ImGui::Begin("Character Position Debug", nullptr, windowFlags) == true)
-        {
-            const math::Vec3& position = characterLayer->GetCharacterWorldPosition();
-            const math::Vec3 offset = m_DebugTeleportTarget - position;
-            const float distance = offset.Length();
-
-            ImGui::TextUnformatted("Character World Position");
-            ImGui::Separator();
-            ImGui::Text("X : %.2f", position.x);
-            ImGui::Text("Y : %.2f", position.y);
-            ImGui::Text("Z : %.2f", position.z);
-            ImGui::Separator();
-            ImGui::Text(
-                "Debug Target : (%.1f, %.1f, %.1f)",
-                m_DebugTeleportTarget.x,
-                m_DebugTeleportTarget.y,
-                m_DebugTeleportTarget.z);
-            ImGui::Text("Distance     : %.2f m", distance);
-            ImGui::TextUnformatted("F : Teleport to debug target");
-
-            if (ImGui::Button("Teleport to Debug Target") == true)
-            {
-                characterLayer->TeleportCharacterForDebug(m_DebugTeleportTarget);
-            }
-        }
-        ImGui::End();
+        const math::Vec3 position = character->GetCharacterWorldPosition();
+        const float distance = (m_DebugTeleportTarget - position).Length();
+        char buffer[160];
+        std::snprintf(buffer, sizeof(buffer), "X : %.2f", position.x);
+        m_PositionX->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Y : %.2f", position.y);
+        m_PositionY->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Z : %.2f", position.z);
+        m_PositionZ->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Debug Target : (%.1f, %.1f, %.1f)",
+            m_DebugTeleportTarget.x, m_DebugTeleportTarget.y, m_DebugTeleportTarget.z);
+        m_Target->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Distance : %.2f m", distance);
+        m_Distance->SetText(buffer);
     }
 
 private:
+    void TeleportToDebugTarget()
+    {
+        // UI callback時にも再解決し、Scene交換後の古いCharacterを操作しません。
+        CharacterControllerDemoLayer* character = ResolveCharacterLayer();
+        if (character != nullptr)
+        {
+            character->TeleportCharacterForDebug(m_DebugTeleportTarget);
+        }
+    }
+
     CharacterControllerDemoLayer* ResolveCharacterLayer() const
     {
         if (m_Application == nullptr)
         {
             return nullptr;
         }
-
         Scene* scene = m_Application->GetScene();
         if (scene == nullptr)
         {
             return nullptr;
         }
-
         return scene->FindLayer<CharacterControllerDemoLayer>();
     }
 
     Application* m_Application = nullptr;
     math::Vec3 m_DebugTeleportTarget{};
     bool m_WasTeleportKeyPressed = false;
+    UIElement* m_Window = nullptr;
+    UILabel* m_PositionX = nullptr;
+    UILabel* m_PositionY = nullptr;
+    UILabel* m_PositionZ = nullptr;
+    UILabel* m_Target = nullptr;
+    UILabel* m_Distance = nullptr;
 };
 
 } // namespace Raven
