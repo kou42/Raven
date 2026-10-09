@@ -6,6 +6,7 @@
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UISeparator.h"
 #include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputText.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
@@ -183,6 +184,12 @@ void UITextDemoLayer::OnAttach()
         std::cout << "[Raven UI Text] Failed to attach UILabel.\n";
         return;
     }
+    // Editor風の区切り線を検証します。装飾要素なので入力を奪いません。
+    auto separator = CreateScope<UISeparator>();
+    separator->SetPosition(math::Vec2(24.0f, 187.0f));
+    separator->SetSize(math::Vec2(500.0f, 1.0f));
+    m_Separator = m_Application.GetUIContext().GetRootElement().AddChild(std::move(separator));
+
     // Font AtlasはUILabelとInputTextで共有し、入力後もGlyph Textureを保持します。
     auto input = CreateScope<UIInputText>();
     input->SetPosition(math::Vec2(24.0f, 200.0f));
