@@ -11,6 +11,8 @@
 #include "Raven/UI/Text/UITextMeasurement.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UIButton.h"
+#include "Raven/UI/Widgets/UIMenuBar.h"
+#include "Raven/UI/Widgets/UICollapsibleSection.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
@@ -54,6 +56,65 @@ protected:
         return Raven::math::Vec2(std::min(100.0f, width), lineCount * 10.0f);
     }
 };
+
+void TestMenuBarKeyboardAndLifetime()
+{
+    Raven::UIContext context;
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    auto bar = std::make_unique<Raven::UIMenuBar>();
+    bar->SetPosition(Raven::math::Vec2(20.0f, 20.0f));
+    bar->SetSize(Raven::math::Vec2(200.0f, 34.0f));
+    const std::size_t file = bar->AddMenu("File");
+    const std::size_t edit = bar->AddMenu("Edit");
+    int newCount = 0;
+    int saveCount = 0;
+    int undoCount = 0;
+    Check(bar->AddItem(file, "New", [&newCount]() { ++newCount; }), "menu add new");
+    Check(bar->AddItem(file, "Save", [&saveCount]() { ++saveCount; }), "menu add save");
+    Check(bar->AddItem(edit, "Undo", [&undoCount]() { ++undoCount; }), "menu add undo");
+    Raven::UIMenuBar* ptr = bar.get();
+    context.GetRootElement().AddChild(std::move(bar));
+
+    Check(ptr->ToggleMenu(file), "menu opens");
+    Raven::UIElement* firstPopup = context.GetOpenPopup();
+    Check(firstPopup != nullptr, "menu popup registered");
+    Check(context.GetFocusedElement() == firstPopup->GetChildren()[0].get(),
+        "menu first item focused");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Down)), "menu down");
+    Check(context.GetFocusedElement() == firstPopup->GetChildren()[1].get(),
+        "menu down focuses second");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "menu enter");
+    Check(saveCount == 1 && context.GetOpenPopup() == nullptr,
+        "menu enter invokes callback and closes");
+
+    Check(ptr->ToggleMenu(file), "menu reopen");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Right)), "menu right");
+    Raven::UIElement* editPopup = context.GetOpenPopup();
+    Check(editPopup != nullptr && editPopup != firstPopup, "menu switched to edit");
+    Check(context.RouteKeyEvent(Press(Raven::UIKey::Enter)), "menu edit enter");
+    Check(undoCount == 1, "menu edit callback");
+
+    Check(ptr->ToggleMenu(file), "menu open before detach");
+    Check(context.GetOpenPopup() != nullptr, "menu popup active before detach");
+    Check(context.GetRootElement().RemoveChild(ptr), "menu detach");
+    Check(context.GetOpenPopup() == nullptr, "menu popup removed on detach");
+    context.EndFrame();
+}
+
+void TestCollapsibleSectionVisibility()
+{
+    Raven::UIContext context;
+    auto section = std::make_unique<Raven::UICollapsibleSection>();
+    Raven::UICollapsibleSection* ptr = section.get();
+    context.GetRootElement().AddChild(std::move(section));
+    Check(ptr->IsExpanded(), "section initially expanded");
+    Check(ptr->GetContent()->IsVisible(), "section content visible");
+    ptr->SetExpanded(false);
+    Check(ptr->IsExpanded() == false, "section collapsed");
+    Check(ptr->GetContent()->IsVisible() == false, "section content hidden");
+    ptr->SetExpanded(true);
+    Check(ptr->GetContent()->IsVisible(), "section content restored");
+}
 
 void TestDockLayout();
 
@@ -2770,6 +2831,8 @@ int main()
     root.BuildDrawList(drawList);
     CheckNear("hidden container height", containerPtr->GetDesiredSize().y, 18.0f);
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
+    TestMenuBarKeyboardAndLifetime();
+    TestCollapsibleSectionVisibility();
     TestUIImmediateContext();
     TestUITheme();
     TestDPIContextCoordinates();
