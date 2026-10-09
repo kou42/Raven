@@ -1,27 +1,33 @@
-# Fluid Buoyancy Debug HUD Raven UI移行（第1段階）
+# Fluid Buoyancy Debug HUD Raven UI移行
 
-## 変更
-- `OnUpdate`へRキーEdge Resetを移動
-- ImGui描画を削除し、UIWindow/UILabel/UIButtonで診断値を表示
-- Preset（Water/Heavy Fluid/High Drag/Off）切り替え
-- Static/Rigid Coupling切り替え、計測Pause/Start、Body/Measurement Reset
-- Scene交換時は毎回Active SceneからFluidWorldを再取得
-- OnDetachでHUDのTreeを解放
+## 実装済み
 
-## 残る機能差分
-- 旧HUDのParticle Radius、Restitution、Drag、Pressure Reaction、Buoyancyの直接編集UIは未移植
-- 複数Coupling Bindingは先頭Bindingの操作のみ。統計はFluidWorld全体を表示
-- Fixed Stepあたりの平均Impulse表示は未移植
-- 画面は550x750 DIP固定、スクロール未対応
-- RuntimeUIFontの設定とWindows Debugビルド・動作確認が必要
+- ImGui表示をUIWindow/UILabel/UIButton/UISliderへ移行
+- RキーのEdge Resetと診断表示更新をOnUpdateで実行
+- Water/Heavy Fluid/High Drag/OffのPreset
+- Static/Rigid Couplingの切り替え、計測Pause/Start、Body/Measurement Reset
+- 5係数Slider: Particle Radius、Restitution、Drag、Pressure Reaction、Buoyancy
+- Particle RadiusとRestitutionはStatic/Rigidの両方に同期
+- 複数BindingをNext Bindingで巡回選択し、選択BindingへPreset・Toggle・Sliderを適用
+- SliderのSnapshot同期中はCallbackを抑止し、不要な書き戻しを防止
+- Scene交換時はBindingのポインタを保持せず再取得
+- OnDetachでHUD Treeを破棄
 
-## 確認項目
+## 動作確認
+
 1. Fluid SceneでBox/Sphereの位置・速度、統計、計測値が更新される
 2. Rキー押しっぱなしでResetが連続しない
-3. Water/Heavy Fluid/High Drag/Offを押すとPreset適用後にBodyとMeasurementがResetされる
+3. Preset適用後にBodyとMeasurementがResetされる
 4. Static/Rigid Coupling切り替えが反映される
-5. Pause/Start、Reset Measure、Reset Bodiesが動作する
-6. Scene切替中はHUDが非表示になり、復帰後に再表示される
-7. Dear ImGuiを無効にしてもHUDを操作できる
+5. 5係数Sliderが正しい値を更新し、Particle RadiusとRestitutionはStatic/Rigidで同期する
+6. 複数Binding時にNext Bindingで選択先が変わり、選択したBindingだけを変更できる
+7. Pause/Start、Reset Measure、Reset Bodiesが動作する
+8. Scene切替後も旧Sceneへの参照を使わず表示が復帰する
+9. Dear ImGuiを無効にしてもHUDを操作できる
 
-注意: この段階では旧ImGui HUDとの機能同等性は未達成です。係数Sliderと複数Binding UIを追加してから完全移行と判定してください。
+## 注意点
+
+- UIは550x990 DIP固定。低解像度向けスクロールは未対応
+- 固定Stepあたりの平均Impulse表示は未移植
+- 複数Bindingは同時表示ではなく選択方式
+- RuntimeUIFont設定とWindows Debugビルド・実機動作確認は未実施
