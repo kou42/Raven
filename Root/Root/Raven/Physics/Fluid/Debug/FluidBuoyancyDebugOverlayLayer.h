@@ -59,6 +59,7 @@ public:
         m_Labels.clear();
         m_Sliders.clear();
         m_SliderLabels.clear();
+        m_SelectedBindingIndex = 0u;
     }
 
     // Resetの入力は描画フックに依存させず、ImGui無効時にも1押下1回で処理します。
@@ -117,8 +118,8 @@ public:
             [this]() { ResetTestBodies(); ResetMeasurement(); });
         AddButton(*window, 674.0f, 175.0f, 155.0f, "Reset Measure",
             [this]() { ResetMeasurement(); });
-        AddButton(*window, 674.0f, 340.0f, 155.0f, "Reset Water",
-            [this]() { ApplyPreset(ph::FluidCouplingPreset::Water); });
+        AddButton(*window, 674.0f, 340.0f, 155.0f, "Next Binding",
+            [this]() { SelectNextBinding(); });
         // 既存ImGuiの5係数調整をUISliderで復元します。
         // Binding自体はScene交換で破棄されるためCallbackにpointerをCaptureしません。
         const char* coefficientNames[] = {
@@ -178,19 +179,28 @@ public:
         return &scene->GetPhysicsSimulationWorld().GetFluidWorld();
     }
 
-    ph::FluidCouplingBinding* GetFirstBinding()
+    ph::FluidCouplingBinding* GetSelectedBinding()
     {
         ph::FluidWorld* fluid = GetFluidWorld();
         if (fluid == nullptr) { return nullptr; }
         const auto& bindings = fluid->GetCouplingBindings();
-        if (bindings.empty() == true) { return nullptr; }
-        return bindings.front();
+        if (bindings.empty() == true || m_SelectedBindingIndex >= bindings.size()) { return nullptr; }
+        return bindings[m_SelectedBindingIndex];
+    }
+
+    void SelectNextBinding()
+    {
+        ph::FluidWorld* fluid = GetFluidWorld();
+        if (fluid == nullptr) { return; }
+        const std::size_t count = fluid->GetCouplingBindings().size();
+        if (count == 0u) { return; }
+        m_SelectedBindingIndex = (m_SelectedBindingIndex + 1u) % count;
     }
 
     void SetCoefficient(std::size_t index, float value)
     {
         if (m_SynchronizingSliders == true) { return; }
-        ph::FluidCouplingBinding* binding = GetFirstBinding();
+        ph::FluidCouplingBinding* binding = GetSelectedBinding();
         if (binding == nullptr) { return; }
         // StaticとRigidの粒子半径・反発係数は同じ表面を扱うため同期します。
         switch (index)
@@ -285,7 +295,10 @@ public:
         if (sphereFound == false) { m_Labels[2]->SetText("Sphere : not found"); }
         ph::FluidWorld& fluid = scene->GetPhysicsSimulationWorld().GetFluidWorld();
         const auto& bindings = fluid.GetCouplingBindings();
-        SetLine(3u, "Coupling Bindings : %llu", static_cast<unsigned long long>(bindings.size()));
+        if (m_SelectedBindingIndex >= bindings.size()) { m_SelectedBindingIndex = 0u; }
+        SetLine(3u, "Coupling Bindings : %llu / Selected : %llu",
+            static_cast<unsigned long long>(bindings.size()),
+            static_cast<unsigned long long>(m_SelectedBindingIndex));
         ph::FluidCouplingBinding* binding = GetFirstBinding();
         if (binding != nullptr)
         {
@@ -436,6 +449,7 @@ private:
     std::vector<UILabel*> m_SliderLabels;
     std::vector<UISlider*> m_Sliders;
     bool m_SynchronizingSliders = false;
+    std::size_t m_SelectedBindingIndex = 0u;
 };
 
 } // namespace Raven
