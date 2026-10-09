@@ -29,8 +29,7 @@ private:
     Application& m_Application;
     Ref<UIFontAtlas> m_Atlas;
     UIElement* m_CollapsibleSection = nullptr; // Root Treeが所有します。
-    UIElement* m_MenuPopup = nullptr; // Popup Layerが所有します。
-    UIElement* m_MenuTrigger = nullptr; // Root Treeが所有します。
+    UIElement* m_MenuBar = nullptr; // Root Treeが所有します。
     UIElement* m_Separator = nullptr; // Root Treeが所有する装飾要素です。
     UILabel* m_Label = nullptr; // 所有者はUIContextのRoot Treeです。
     UIInputNumber* m_InputNumber = nullptr; // 所有権はRoot Treeです。
