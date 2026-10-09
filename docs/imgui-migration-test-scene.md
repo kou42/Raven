@@ -22,7 +22,7 @@
 
 ### B. Phase 1: Editor shell検証
 
-- [ ] Menu / Collapsible Section / Separatorを棚卸しし、不足分だけ実装する。
+- [ ] Menu / Collapsible Section / Separatorを棚卸しし、不足分だけ実装する（Separatorのみ追加済み）。
 - [ ] Dock PaneへTree、Table、Input、診断値を配置する。
 - [ ] Viewport用RenderTarget Imageをnative handle非依存の契約で表示する。
 - [ ] Focus / Capture / Shortcut優先順位のCPUテストを追加する。
@@ -46,6 +46,8 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 ```
 
 実行ファイル名・配置先はVisual Studioの出力設定に合わせて調整する。現段階ではDebug限定であり、実際のビルドと起動は未確認。Debug起動時の既存Self Testsは引き続き実行される。
+
+`UISeparator` は独立したヘッダーのみで描画でき、`UITextDemoLayer` のラベルと入力欄の間に配置される。入力イベントを受け付けないため、隣接Widgetの操作を妨げないことを確認する。
 
 ## 手動Smoke Test
 
