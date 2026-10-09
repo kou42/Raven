@@ -6,6 +6,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <functional>
+#include <GLFW/glfw3.h>
 #include "Raven/Character/Debug/CharacterControllerDemoLayer.h"
 #include "Raven/Core/Application.h"
 #include "Raven/Scene/Scene.h"
@@ -71,6 +73,8 @@ public:
             [this]() { ResetSpeeds(); });
         AddButton(*window, 756.0f, 330.0f, 150.0f, "Print Config",
             [this]() { PrintConfig(); });
+        AddButton(*window, 796.0f, 170.0f, 150.0f, "Copy Config",
+            [this]() { CopyConfig(); });
         AddButton(*window, 796.0f, 10.0f, 150.0f, "Save Profile",
             [this]() { SaveProfile(); });
         m_Window = m_Application->GetUIContext().GetRootElement().AddChild(std::move(window));
@@ -235,6 +239,17 @@ private:
             std::cout << "[CharacterController] Locomotion tuning: "
                 << BuildTuningConfigText(character->GetHumanoidLocomotionDebugSnapshot()) << '\n';
         }
+    }
+
+    void CopyConfig()
+    {
+        CharacterControllerDemoLayer* character = ResolveCharacterLayer();
+        if (character == nullptr || m_Application == nullptr) { return; }
+        GLFWwindow* native = static_cast<GLFWwindow*>(m_Application->GetWindow().GetNativeWindow());
+        if (native == nullptr) { return; }
+        // ClipboardはOS Windowに紐付くため、ImGuiのClipboard APIではなくGLFWを利用します。
+        const std::string config = BuildTuningConfigText(character->GetHumanoidLocomotionDebugSnapshot());
+        glfwSetClipboardString(native, config.c_str());
     }
 
     void SaveProfile()
