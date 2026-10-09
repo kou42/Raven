@@ -16,6 +16,16 @@ namespace Raven
 class Application;
 class Material;
 
+// Editor UIの移行状態を起動設定へ集約します。
+// DualはPanelごとに所有Backendを切り替える比較期間専用であり、同一Panelを
+// Dear ImGuiとRaven UIの両方から同時に編集するためのModeではありません。
+enum class EditorUIBackend
+{
+    DearImGui = 0,
+    RavenUI,
+    Dual
+};
+
 // ============================================================================
 // EditorLayer
 // ============================================================================
@@ -50,7 +60,9 @@ public:
     // Applicationそのものを所有するのではなく参照だけ受け取ります。
     // EditorはApplicationが管理するWindow / Active Scene等を参照する必要がありますが、
     // それらのLifetime管理は引き続きApplication側の責務です。
-    explicit EditorLayer(Application& application);
+    explicit EditorLayer(
+        Application& application,
+        EditorUIBackend uiBackend = EditorUIBackend::DearImGui);
     ~EditorLayer() override = default;
 
     // Editor専用リソースやPanelの初期化入口です。
@@ -83,6 +95,27 @@ public:
     void OnEvent(Event& event) override;
 
 private:
+    enum class PanelUIOwner
+    {
+        DearImGui = 0,
+        RavenUI
+    };
+
+    // Dual中も各Panelの書き込み経路を1つに限定します。
+    // Raven UI版へ移行したPanelだけを個別にRavenUIへ変更し、比較期間の二重操作を防ぎます。
+    struct PanelUIOwnership
+    {
+        PanelUIOwner Statistics = PanelUIOwner::DearImGui;
+        PanelUIOwner AnimationDebug = PanelUIOwner::DearImGui;
+        PanelUIOwner SceneHierarchy = PanelUIOwner::DearImGui;
+        PanelUIOwner Inspector = PanelUIOwner::DearImGui;
+        PanelUIOwner SceneView = PanelUIOwner::DearImGui;
+        PanelUIOwner GameView = PanelUIOwner::DearImGui;
+    };
+
+    bool UsesDearImGui() const;
+    bool IsPanelOwnedByDearImGui(PanelUIOwner owner) const;
+
     // ========================================================================
     // Editor Root UI
     // ========================================================================
@@ -152,6 +185,10 @@ private:
     // EditorLayer側でApplicationを所有しないことが重要です。
     // 所有関係は Application -> EditorLayer の一方向に保ち、循環所有を作りません。
     Application* m_Application = nullptr;
+
+    // UI移行設定はRuntime SceneやAssetへ保存せず、Editor Layerの起動時設定として保持します。
+    EditorUIBackend m_UIBackend = EditorUIBackend::DearImGui;
+    PanelUIOwnership m_PanelUIOwnership{};
 
     // ========================================================================
     // Editor Selection

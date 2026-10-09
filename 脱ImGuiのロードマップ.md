@@ -138,11 +138,11 @@ Raven UI
 
 目的: 移行中の比較、切り戻し、依存数の計測を可能にする。
 
-- [ ] ImGui依存ファイル数、API呼び出し数、project参照、実行時生成条件を再計測するScriptまたは手順を残す。
-- [ ] Editor UI Backendを`DearImGui` / `RavenUI` / 必要なら比較用`Dual`から選べる設定へ集約する。
-- [ ] `Dual`では同一Panelを両方から編集可能にせず、Panel単位の所有Backendを明示する。
-- [ ] Scene選択、Component編集、Dock layout、Viewport操作の現行Smoke Testを記録する。
-- [ ] CPU/GPU UIテストと通常DebugビルドのBaseline結果を保存する。
+- [x] ImGui依存ファイル数、API呼び出し数、project参照、実行時生成条件を`scripts/measure-imgui-dependencies.ps1`で再計測できるようにする。
+- [x] Editor UI Backendを`DearImGui` / `RavenUI` / 比較用`Dual`から選べる`EditorUIBackend`へ集約する。
+- [x] `Dual`では`EditorLayer::PanelUIOwnership`によりPanel単位の所有Backendを明示し、同一Panelを両方から編集可能にしない。
+- [x] Scene選択、Component編集、Dock layout、Viewport操作の現行Smoke Test手順を`docs/imgui-migration-test-scene.md`へ記録する（2026-10-10時点の実環境実施結果は未取得）。
+- [x] CPU/GPU UIテストと通常DebugビルドのBaseline結果を`docs/imgui-migration-test-scene.md`へ保存する（通常Debug成功、CPU実行失敗、GPUコンパイル失敗。失敗内容は継続課題として明記）。
 
 Exit Gate:
 

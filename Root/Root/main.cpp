@@ -55,6 +55,7 @@
 int main(int argc, char* argv[])
 {
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
+    Raven::EditorUIBackend editorUIBackend = Raven::EditorUIBackend::DearImGui;
     bool uiMigrationTest = false;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -98,6 +99,18 @@ int main(int argc, char* argv[])
         {
             uiMigrationTest = true;
         }
+        else if (backendArgument == "--editor-ui=imgui")
+        {
+            editorUIBackend = Raven::EditorUIBackend::DearImGui;
+        }
+        else if (backendArgument == "--editor-ui=raven")
+        {
+            editorUIBackend = Raven::EditorUIBackend::RavenUI;
+        }
+        else if (backendArgument == "--editor-ui=dual")
+        {
+            editorUIBackend = Raven::EditorUIBackend::Dual;
+        }
         else if (backendArgument == "--backend=vulkan")
         {
             applicationBackend = Raven::RHIBackend::Vulkan;
@@ -137,6 +150,7 @@ int main(int argc, char* argv[])
         else if (backendArgument != "--backend=opengl")
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
+                "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
@@ -209,6 +223,10 @@ int main(int argc, char* argv[])
 
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
+    // Dear ImGui Contextの生成条件とEditor側の描画分岐を同じ設定から決定します。
+    // RavenUI Modeでは移行済みPanelだけを表示し、未移行Panelを暗黙にDear ImGuiへ戻しません。
+    applicationSpecification.EnableDearImGui =
+        editorUIBackend != Raven::EditorUIBackend::RavenUI;
     if (uiMigrationTest == true)
     {
         // ImGuiLayerを構築しないことが検証の前提です。
@@ -346,7 +364,7 @@ int main(int argc, char* argv[])
     // Editorの選択・Command履歴等のRuntime状態はBackend非依存なので常に登録します。
     // Dear ImGuiとoff-screen ViewportはEditorLayer内部でCapabilityを判定し、
     // Explicit Backendでは未対応Framebufferを生成せず安全に段階移行します。
-    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
+    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app, editorUIBackend));
 
     app.Run();
     return 0;

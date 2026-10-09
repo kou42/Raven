@@ -15,15 +15,36 @@
 namespace Raven
 {
 
-EditorLayer::EditorLayer(Application& application)
+EditorLayer::EditorLayer(Application& application, EditorUIBackend uiBackend)
     : m_Application(&application)
+    , m_UIBackend(uiBackend)
 {
+}
+
+bool EditorLayer::UsesDearImGui() const
+{
+    return m_UIBackend == EditorUIBackend::DearImGui ||
+        m_UIBackend == EditorUIBackend::Dual;
+}
+
+bool EditorLayer::IsPanelOwnedByDearImGui(PanelUIOwner owner) const
+{
+    if (m_UIBackend == EditorUIBackend::DearImGui)
+    {
+        return true;
+    }
+    if (m_UIBackend == EditorUIBackend::RavenUI)
+    {
+        return false;
+    }
+    return owner == PanelUIOwner::DearImGui;
 }
 
 void EditorLayer::OnAttach()
 {
     m_ViewportRenderingEnabled = m_Application != nullptr &&
-        m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL;
+        m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL &&
+        UsesDearImGui() == true;
     if (m_ViewportRenderingEnabled == false)
     {
         // Explicit BackendではMain SceneとRaven UIをRuntimeが直接描画します。
@@ -269,7 +290,8 @@ void EditorLayer::OnImGuiRender(float dt)
     // ========================================================================
     // OnRender()で作ったColor Attachment Textureを、独立したImGui Windowとして表示します。
     // WindowのContentRegionサイズは次frameのFramebuffer Resizeにも利用します。
-    if (m_ShowSceneView)
+    if (m_ShowSceneView &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.SceneView) == true)
     {
         RenderSceneView();
     }
@@ -280,7 +302,8 @@ void EditorLayer::OnImGuiRender(float dt)
         m_SceneViewportFocused = false;
     }
 
-    if (m_ShowGameView)
+    if (m_ShowGameView &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.GameView) == true)
     {
         RenderGameView();
     }
@@ -290,7 +313,8 @@ void EditorLayer::OnImGuiRender(float dt)
     // ========================================================================
     // EditorLayerはPanelとApplicationの橋渡しだけを行います。
     // SceneをPanel内へ永続保持しないため、SetScene()後もそのframeのActive Sceneへ追従します。
-    if (m_ShowStatisticsPanel)
+    if (m_ShowStatisticsPanel &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.Statistics) == true)
     {
         m_StatisticsPanel.OnImGuiRender(
             dt,
@@ -303,7 +327,8 @@ void EditorLayer::OnImGuiRender(float dt)
     // ========================================================================
     // AnimationDebugPanelもSceneを所有せず、毎frame現在のActive Sceneを受け取ります。
     // これによりScene差し替え時に古いSceneへの参照を保持しません。
-    if (m_ShowAnimationDebugPanel)
+    if (m_ShowAnimationDebugPanel &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.AnimationDebug) == true)
     {
         m_AnimationDebugPanel.OnImGuiRender(m_Application->GetScene());
     }
@@ -313,7 +338,8 @@ void EditorLayer::OnImGuiRender(float dt)
     // ========================================================================
     // HierarchyはActive SceneのEntity一覧を表示し、EditorLayerが所有する選択Entityだけを更新します。
     // 選択状態をPanelの外へ置くことで、Inspector / Scene View / Gizmoが同じEntityを利用できます。
-    if (m_ShowSceneHierarchyPanel)
+    if (m_ShowSceneHierarchyPanel &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.SceneHierarchy) == true)
     {
         m_SceneHierarchyPanel.OnImGuiRender(
             m_Application->GetScene(),
@@ -326,7 +352,8 @@ void EditorLayer::OnImGuiRender(float dt)
     // Hierarchyが更新したm_SelectedEntityをそのまま渡します。
     // Inspector側に別の選択状態を作らないため、Hierarchyで選択した同じframeから
     // Component内容が表示され、将来のScene View / Gizmoとも選択対象が一致します。
-    if (m_ShowInspectorPanel)
+    if (m_ShowInspectorPanel &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.Inspector) == true)
     {
         m_InspectorPanel.OnImGuiRender(m_SelectedEntity);
     }

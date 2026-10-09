@@ -17,7 +17,7 @@
 
 - [x] `--ui-migration-test` 起動モードを追加。DebugのOpenGL経路で既存Runtime Scene / EditorLayer / Dear ImGuiを登録・生成しない。
 - [x] `UITextDemoLayer` / `UISvgDemoLayer` を再利用し、`Application::Run()` を共有する。
-- [ ] ImGui依存ファイル・呼び出し・project参照を再計測し、結果と計測コマンドを記録する。
+- [x] `scripts/measure-imgui-dependencies.ps1` でImGui依存ファイル・API呼び出し・project参照・実行時生成条件を再計測できる。
 - [ ] Mouse / Keyboard / Clipboard / IME / Focus / Captureの手動Baselineを記録する。
 
 ### B. Phase 1: Editor shell検証
@@ -45,6 +45,27 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 & "./Root/Root/x64/Debug/Root.exe" --ui-migration-test
 ```
 
+Editor UI Backendは通常のOpenGL起動時に次の引数で選択する。`Dual`はPanel単位の移行比較用であり、各Panelの所有Backendは`EditorLayer::PanelUIOwnership`で一意にする。現時点では未移行のEditor PanelはDear ImGui所有である。
+
+```powershell
+& "./Root/Root/x64/Debug/Root.exe" --editor-ui=imgui
+& "./Root/Root/x64/Debug/Root.exe" --editor-ui=raven
+& "./Root/Root/x64/Debug/Root.exe" --editor-ui=dual
+```
+
+依存数は次のコマンドで再計測する。JSONを残す場合だけ`-OutputJson`を指定し、通常は作業Treeへ生成物を残さない。
+
+```powershell
+& "./scripts/measure-imgui-dependencies.ps1"
+& "./scripts/measure-imgui-dependencies.ps1" -OutputJson ".tmp-imgui-baseline.json"
+```
+
+`--editor-ui=raven`はDear ImGui Contextを生成せず、Raven UI所有へ移行済みのEditor Panelだけを有効にする。未移行Panelを暗黙にDear ImGuiへfallbackしないため、移行途中ではEditor全機能が揃わないことを正常な診断状態として扱う。
+
+2026-10-10のBaselineは、依存ファイル41、`ImGui::*`呼び出し411、project参照行14、実行時生成条件行14。依存ファイル数はコメント内の`ImGui`表記も含む保守的な値であり、Phase 8の0件判定と同じ除外条件（Markdown、vendor、生成物を除外）を使用する。
+
+同日の通常Debug x64インクリメンタルビルドは、ローカルのMSPDB不整合を避ける既存診断設定`/p:RavenGenerateLinkDebugInformation=false`で成功した。既存の`LNK4098`（MSVCRT競合）Warningが1件残る。`RavenUITest=true`も同条件でビルド成功したが、実行は既存の`UIImmediateContext`宣言順テスト（`declaration order applied`）で終了コード1となったため、CPU回帰Baselineの成功扱いにはしない。`RavenUIGPUTest=true`は`Root/Tests/UIFontTextureGPUIntegrationTests.cpp:107`の既存`getenv`に対するC4996でコンパイル失敗した。手動Editor Smoke Testは未実施。
+
 実行ファイル名・配置先はVisual Studioの出力設定に合わせて調整する。現段階ではDebug限定であり、実際のビルドと起動は未確認。Debug起動時の既存Self Testsは引き続き実行される。
 
 `UISeparator` は独立したヘッダーのみで描画でき、`UITextDemoLayer` のラベルと入力欄の間に配置される。入力イベントを受け付けないため、隣接Widgetの操作を妨げないことを確認する。
@@ -54,6 +75,23 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 `UICollapsibleSection` はHeaderのButtonとContentを所有するRetained Widget。右側の「Properties」をクリック、またはFocusしてEnter/Spaceで開閉し、閉じたContentがHit Test対象外になることを確認する。
 
 ## 手動Smoke Test
+
+### 現行Dear ImGui Editorの比較Baseline
+
+移行したPanelは同じ項目をこの順序で再確認する。結果は「未実施」「成功」「失敗」を区別し、操作できることだけでなくEditor状態とRuntime状態が一致することを確認する。
+
+1. Scene HierarchyでEntityを選択し、Inspector、Scene ViewのOutline、Gizmoが同じEntityを指すことを確認する。
+2. InspectorでTransformを変更し、値とScene描画が同一frameで追従すること、Undo/Redoで変更前後へ戻ることを確認する。
+3. Entity名を変更し、Hierarchy表示とUndo/Redoが一致することを確認する。
+4. Scene Viewの映像内をクリックしてEntity Picking位置が一致し、映像外では選択が変わらないことを確認する。
+5. Translate / Rotate / Scale Gizmoを操作し、Drag完了が1つのUndo Commandになることを確認する。
+6. Scene View / Game ViewをResizeし、Framebuffer表示の向き、Aspect、Clip、Picking位置を確認する。
+7. 各PanelをDock移動・Tab切替・表示切替し、再起動後に`imgui.ini`から配置が復元されることを確認する。
+8. Text入力中、Gizmo Drag中、Scene View Camera操作中にShortcutやRuntime入力が競合しないことを確認する。
+
+2026-10-10時点では上記手順を記録した段階で、実環境でのDear ImGui比較Baselineは未実施。
+
+### Raven UI単独経路
 
 1. 単独起動でImGui Contextが生成されないことを確認。
 2. Button、Checkbox、Slider、InputText、Tree、Table、Tabを操作。
