@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Widgets/UIButton.h"
 
@@ -19,7 +20,7 @@ public:
         SetLayoutMode(UILayoutMode::Vertical);
         auto header = CreateScope<UIButton>();
         header->SetFocusable(true);
-        header->SetPreferredSize(math::Vec2(260.0f, 32.0f));
+        header->SetPreferredSize(UIEditorStyle{}.CollapsibleHeaderSize);
         header->SetOnClick([this]() { SetExpanded(m_Expanded == false); });
         m_Header = static_cast<UIButton*>(AddChild(std::move(header)));
 
@@ -49,6 +50,16 @@ public:
 
     UIElement* GetContent() { return m_Content; }
     const UIElement* GetContent() const { return m_Content; }
+
+protected:
+    void OnContextChanged(UIContext* previous, UIContext* current) override
+    {
+        (void)previous;
+        if (current != nullptr && m_Header != nullptr)
+        {
+            m_Header->SetPreferredSize(current->GetTheme().Editor.CollapsibleHeaderSize);
+        }
+    }
 
 private:
     bool m_Expanded = true;

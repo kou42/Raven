@@ -77,6 +77,25 @@ struct UIPanelStyle
     math::Vec4 BackgroundColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
+// Editor shellとInspectorで共有する配置・装飾値です。
+// 個別Panelはこの値を参照し、同じ役割の余白や高さをPanelごとに再定義しません。
+struct UIEditorStyle
+{
+    math::Vec2 MenuTriggerSize{ 100.0f, 34.0f };
+    math::Vec2 MenuTriggerLabelOffset{ 12.0f, 3.0f };
+    math::Vec2 MenuTriggerLabelSize{ 84.0f, 26.0f };
+    float MenuPopupWidth = 220.0f;
+    float MenuPopupPadding = 6.0f;
+    float MenuItemSpacing = 6.0f;
+    math::Vec2 MenuItemSize{ 208.0f, 32.0f };
+    math::Vec2 MenuItemLabelOffset{ 10.0f, 3.0f };
+    math::Vec2 MenuItemLabelSize{ 188.0f, 26.0f };
+    math::Vec4 MenuPopupBackgroundColor{ 0.16f, 0.17f, 0.21f, 1.0f };
+    math::Vec2 CollapsibleHeaderSize{ 260.0f, 32.0f };
+    math::Vec2 SeparatorSize{ 160.0f, 1.0f };
+    math::Vec4 SeparatorColor{ 0.40f, 0.42f, 0.48f, 1.0f };
+};
+
 // UIContextごとに値として保持します。異なるWindow/描画Target間でTheme変更が漏れません。
 // 初期値は既存Widgetの外観と同じにして、未設定のUIの描画を変更しません。
 struct UITheme
@@ -90,6 +109,7 @@ struct UITheme
     UITabBarStyle TabBar;
     UITreeViewStyle TreeView;
     UITableStyle Table;
+    UIEditorStyle Editor;
 
     static UITheme CreateDefaultDark()
     {
@@ -134,6 +154,8 @@ struct UITheme
         theme.Table.HeaderColor = math::Vec4(0.81f, 0.84f, 0.89f, 1.0f);
         theme.Table.TextColor = math::Vec4(0.10f, 0.13f, 0.18f, 1.0f);
         theme.Panel.BackgroundColor = math::Vec4(0.96f, 0.96f, 0.97f, 1.0f);
+        theme.Editor.MenuPopupBackgroundColor = math::Vec4(0.93f, 0.94f, 0.96f, 1.0f);
+        theme.Editor.SeparatorColor = math::Vec4(0.65f, 0.68f, 0.74f, 1.0f);
         return theme;
     }
 };

@@ -37,21 +37,23 @@ public:
     std::size_t AddMenu(std::string title)
     {
         const std::size_t index = m_Menus.size();
+        const UIEditorStyle& style = ResolveEditorStyle();
         auto trigger = CreateScope<MenuButton>();
         trigger->SetOnNavigate([this, index](UIKey key) { NavigateMenu(index, key); });
         trigger->SetFocusable(true);
-        trigger->SetPreferredSize(math::Vec2(100.0f, 34.0f));
-        trigger->SetSize(math::Vec2(100.0f, 34.0f));
+        trigger->SetPreferredSize(style.MenuTriggerSize);
+        trigger->SetSize(style.MenuTriggerSize);
         trigger->SetOnClick([this, index]() { ToggleMenu(index); });
         auto label = CreateScope<UILabel>();
+        UILabel* labelPointer = label.get();
         label->SetFont(m_Font);
         label->SetText(std::move(title));
-        label->SetPosition(math::Vec2(12.0f, 3.0f));
-        label->SetSize(math::Vec2(84.0f, 26.0f));
+        label->SetPosition(style.MenuTriggerLabelOffset);
+        label->SetSize(style.MenuTriggerLabelSize);
         label->SetHitTestVisible(false);
         trigger->AddChild(std::move(label));
         UIElement* attached = AddChild(std::move(trigger));
-        m_Menus.push_back(Menu{ attached, nullptr, {} });
+        m_Menus.push_back(Menu{ attached, labelPointer, nullptr, {} });
         return index;
     }
 
@@ -73,6 +75,7 @@ public:
             return false;
         }
         Menu& menu = m_Menus[menuIndex];
+        ApplyStyle(menu, context->GetTheme().Editor);
         if (context->GetOpenPopup() == menu.Popup && menu.Popup != nullptr)
         {
             context->ClosePopup();
@@ -84,18 +87,22 @@ public:
         }
         if (menu.Popup == nullptr)
         {
+            const UIEditorStyle& style = context->GetTheme().Editor;
             auto popup = CreateScope<UIPanel>();
-            popup->SetBackgroundColor(math::Vec4(0.16f, 0.17f, 0.21f, 1.0f));
-            const float height = 12.0f + static_cast<float>(menu.Items.size()) * 38.0f;
-            popup->SetPreferredSize(math::Vec2(220.0f, height));
-            popup->SetSize(math::Vec2(220.0f, height));
+            popup->SetBackgroundColor(style.MenuPopupBackgroundColor);
+            const float itemStride = style.MenuItemSize.y + style.MenuItemSpacing;
+            const float height = style.MenuPopupPadding * 2.0f +
+                static_cast<float>(menu.Items.size()) * itemStride;
+            popup->SetPreferredSize(math::Vec2(style.MenuPopupWidth, height));
+            popup->SetSize(math::Vec2(style.MenuPopupWidth, height));
             for (std::size_t i = 0u; i < menu.Items.size(); ++i)
             {
                 auto button = CreateScope<MenuButton>();
                 button->SetOnNavigate([this, menuIndex, i](UIKey key) { NavigateItem(menuIndex, i, key); });
                 button->SetFocusable(true);
-                button->SetPosition(math::Vec2(6.0f, 6.0f + static_cast<float>(i) * 38.0f));
-                button->SetSize(math::Vec2(208.0f, 32.0f));
+                button->SetPosition(math::Vec2(style.MenuPopupPadding,
+                    style.MenuPopupPadding + static_cast<float>(i) * itemStride));
+                button->SetSize(style.MenuItemSize);
                 button->SetOnClick([this, menuIndex, i]()
                     {
                         // ClosePopupがFocusを解除するため、Action実行前に閉じます。
@@ -113,8 +120,8 @@ public:
                 auto label = CreateScope<UILabel>();
                 label->SetFont(m_Font);
                 label->SetText(menu.Items[i].Title);
-                label->SetPosition(math::Vec2(10.0f, 3.0f));
-                label->SetSize(math::Vec2(188.0f, 26.0f));
+                label->SetPosition(style.MenuItemLabelOffset);
+                label->SetSize(style.MenuItemLabelSize);
                 label->SetHitTestVisible(false);
                 button->AddChild(std::move(label));
                 popup->AddChild(std::move(button));
@@ -135,6 +142,14 @@ protected:
         if (previous != nullptr && previous != current)
         {
             DestroyPopups(previous);
+        }
+        if (current != nullptr)
+        {
+            const UIEditorStyle& style = current->GetTheme().Editor;
+            for (Menu& menu : m_Menus)
+            {
+                ApplyStyle(menu, style);
+            }
         }
     }
 
@@ -246,9 +261,64 @@ private:
     struct Menu
     {
         UIElement* Trigger = nullptr;
+        UILabel* TriggerLabel = nullptr;
         UIElement* Popup = nullptr;
         std::vector<Item> Items;
     };
+
+    const UIEditorStyle& ResolveEditorStyle() const
+    {
+        const UIContext* context = GetContext();
+        if (context != nullptr)
+        {
+            return context->GetTheme().Editor;
+        }
+        static const UIEditorStyle defaultStyle;
+        return defaultStyle;
+    }
+
+    static void ApplyStyle(Menu& menu, const UIEditorStyle& style)
+    {
+        if (menu.Trigger != nullptr)
+        {
+            menu.Trigger->SetPreferredSize(style.MenuTriggerSize);
+            menu.Trigger->SetSize(style.MenuTriggerSize);
+        }
+        if (menu.TriggerLabel != nullptr)
+        {
+            menu.TriggerLabel->SetPosition(style.MenuTriggerLabelOffset);
+            menu.TriggerLabel->SetSize(style.MenuTriggerLabelSize);
+        }
+        if (menu.Popup == nullptr)
+        {
+            return;
+        }
+
+        const float itemStride = style.MenuItemSize.y + style.MenuItemSpacing;
+        const float popupHeight = style.MenuPopupPadding * 2.0f +
+            static_cast<float>(menu.Items.size()) * itemStride;
+        menu.Popup->SetPreferredSize(math::Vec2(style.MenuPopupWidth, popupHeight));
+        menu.Popup->SetSize(math::Vec2(style.MenuPopupWidth, popupHeight));
+        static_cast<UIPanel*>(menu.Popup)->SetBackgroundColor(style.MenuPopupBackgroundColor);
+        const auto& buttons = menu.Popup->GetChildren();
+        for (std::size_t index = 0u; index < buttons.size(); ++index)
+        {
+            UIElement* button = buttons[index].get();
+            if (button == nullptr)
+            {
+                continue;
+            }
+            button->SetPosition(math::Vec2(style.MenuPopupPadding,
+                style.MenuPopupPadding + static_cast<float>(index) * itemStride));
+            button->SetSize(style.MenuItemSize);
+            const auto& labels = button->GetChildren();
+            if (labels.empty() == false && labels[0u] != nullptr)
+            {
+                labels[0u]->SetPosition(style.MenuItemLabelOffset);
+                labels[0u]->SetSize(style.MenuItemLabelSize);
+            }
+        }
+    }
 
     void DestroyPopups(UIContext* context)
     {

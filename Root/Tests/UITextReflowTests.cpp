@@ -16,6 +16,7 @@
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIMenuBar.h"
 #include "Raven/UI/Widgets/UICollapsibleSection.h"
+#include "Raven/UI/Widgets/UISeparator.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
@@ -643,6 +644,67 @@ void TestUITheme()
     context.EndFrame();
     CheckNear("theme button draw override",
         context.GetDrawList().GetCommands()[0u].Color.x, 0.11f);
+
+    // Editor shell共通寸法はContext接続時に適用し、Panelごとの数値複製を防ぎます。
+    Raven::UIContext editorContext;
+    Raven::UITheme editorTheme = Raven::UITheme::CreateDefaultDark();
+    editorTheme.Editor.MenuTriggerSize = Raven::math::Vec2(112.0f, 36.0f);
+    editorTheme.Editor.MenuTriggerLabelOffset = Raven::math::Vec2(14.0f, 4.0f);
+    editorTheme.Editor.MenuPopupWidth = 236.0f;
+    editorTheme.Editor.MenuPopupPadding = 8.0f;
+    editorTheme.Editor.MenuItemSpacing = 4.0f;
+    editorTheme.Editor.MenuItemSize = Raven::math::Vec2(220.0f, 30.0f);
+    editorTheme.Editor.CollapsibleHeaderSize = Raven::math::Vec2(280.0f, 38.0f);
+    editorTheme.Editor.SeparatorSize = Raven::math::Vec2(180.0f, 2.0f);
+    editorTheme.Editor.SeparatorColor = Raven::math::Vec4(0.21f, 0.31f, 0.41f, 1.0f);
+    editorContext.SetTheme(editorTheme);
+    editorContext.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+
+    auto menuBar = std::make_unique<Raven::UIMenuBar>();
+    const std::size_t menuIndex = menuBar->AddMenu("File");
+    Check(menuBar->AddItem(menuIndex, "Open", []() {}), "editor style menu item");
+    Raven::UIMenuBar* menuBarPointer = menuBar.get();
+    editorContext.GetRootElement().AddChild(std::move(menuBar));
+    CheckNear("editor style menu width",
+        menuBarPointer->GetChildren()[0u]->GetPreferredSize().x, 112.0f);
+    CheckNear("editor style menu label x",
+        menuBarPointer->GetChildren()[0u]->GetChildren()[0u]->GetPosition().x, 14.0f);
+    Check(menuBarPointer->ToggleMenu(menuIndex), "editor style menu opens");
+    CheckNear("editor style popup width",
+        editorContext.GetOpenPopup()->GetPreferredSize().x, 236.0f);
+    CheckNear("editor style popup item x",
+        editorContext.GetOpenPopup()->GetChildren()[0u]->GetPosition().x, 8.0f);
+    editorTheme.Editor.MenuPopupWidth = 248.0f;
+    editorTheme.Editor.MenuPopupBackgroundColor =
+        Raven::math::Vec4(0.27f, 0.37f, 0.47f, 1.0f);
+    editorContext.SetTheme(editorTheme);
+    Check(menuBarPointer->ToggleMenu(menuIndex), "editor style menu closes after theme update");
+    Check(menuBarPointer->ToggleMenu(menuIndex), "editor style menu reopens after theme update");
+    CheckNear("editor style existing popup width",
+        editorContext.GetOpenPopup()->GetPreferredSize().x, 248.0f);
+    const auto* styledPopup = static_cast<const Raven::UIPanel*>(editorContext.GetOpenPopup());
+    CheckNear("editor style existing popup color",
+        styledPopup->GetBackgroundColor().x, 0.27f);
+
+    auto section = std::make_unique<Raven::UICollapsibleSection>();
+    Raven::UICollapsibleSection* sectionPointer = section.get();
+    editorContext.GetRootElement().AddChild(std::move(section));
+    CheckNear("editor style section width",
+        sectionPointer->GetHeader()->GetPreferredSize().x, 280.0f);
+    CheckNear("editor style section height",
+        sectionPointer->GetHeader()->GetPreferredSize().y, 38.0f);
+
+    auto separator = std::make_unique<Raven::UISeparator>();
+    Raven::UISeparator* separatorPointer = separator.get();
+    editorContext.GetRootElement().AddChild(std::move(separator));
+    CheckNear("editor style separator height", separatorPointer->GetPreferredSize().y, 2.0f);
+    CheckNear("editor style separator color", separatorPointer->GetColor().x, 0.21f);
+    editorTheme.Editor.SeparatorColor = Raven::math::Vec4(0.71f, 0.61f, 0.51f, 1.0f);
+    editorContext.SetTheme(editorTheme);
+    CheckNear("editor style separator theme update", separatorPointer->GetColor().x, 0.71f);
+    separatorPointer->SetColor(Raven::math::Vec4(0.12f, 0.22f, 0.32f, 1.0f));
+    CheckNear("editor style separator override", separatorPointer->GetColor().x, 0.12f);
+    editorContext.EndFrame();
 }
 
 

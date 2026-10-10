@@ -160,7 +160,7 @@ Exit Gate:
 - [x] Editor向けShortcut routingを定義し、Popup、Text入力、Gizmo、Viewport、Panel、Globalの優先順位を`EditorShortcutRouter`へ集約する。
 - [x] `UIContext::GetInteractionState()`でHover / Focus / Active / CaptureをPanelまたはViewport単位で問い合わせられるようにする。
 - [x] Dock layoutのversion、既定配置、Primary→Backup→既定配置のfallback、旧`imgui.ini`から移行しない初期化方針を定義する（`docs/raven-editor-dock-layout.md`）。
-- [ ] Editor共通Styleを`UITheme`へ追加し、個別PanelへMagic Numberを散らさない。
+- [x] Editor共通Styleを`UITheme::Editor`へ追加し、Menu / Collapsible Section / Separatorの共通寸法・装飾色を集約する。
 
 Exit Gate:
 
