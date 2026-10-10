@@ -4,6 +4,7 @@
 #include "UIImmediateTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
+#include "Raven/Editor/Panels/StatisticsSnapshot.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Rendering/UITessellator.h"
 #include "Raven/Renderer/Texture/Texture.h"
@@ -705,6 +706,73 @@ void TestUITheme()
     separatorPointer->SetColor(Raven::math::Vec4(0.12f, 0.22f, 0.32f, 1.0f));
     CheckNear("editor style separator override", separatorPointer->GetColor().x, 0.12f);
     editorContext.EndFrame();
+}
+
+void TestStatisticsSnapshot()
+{
+    Raven::CPUProfileFrame profile{};
+    profile.FrameIndex = 42u;
+    profile.FrameTimeMilliseconds = 7.5;
+    profile.Results.push_back(Raven::CPUProfileResult{ "Physics", 2.0, {}, 0u });
+    profile.Results.push_back(Raven::CPUProfileResult{ "Render", 4.0, {}, 0u });
+    profile.Results.push_back(Raven::CPUProfileResult{ "Physics", 3.0, {}, 1u });
+    profile.Counters.push_back(Raven::CPUProfileCounter{ "Z.Counter", 1.0 });
+    profile.Counters.push_back(Raven::CPUProfileCounter{ "A.Counter", 2.0 });
+    profile.Counters.push_back(Raven::CPUProfileCounter{ "Z.Counter", 3.0 });
+
+    Raven::StatisticsSnapshotInput input{};
+    input.DeltaTime = 0.02f;
+    input.WindowWidth = 1280u;
+    input.WindowHeight = 720u;
+    input.Renderer.DrawCalls = 12u;
+    input.Renderer.IndexCount = 120u;
+    input.Renderer.TriangleCount = 40u;
+    input.CPUProfilerEnabled = true;
+    input.CPUProfile = &profile;
+    const Raven::StatisticsSnapshot snapshot = Raven::BuildStatisticsSnapshot(input);
+
+    CheckNear("statistics snapshot fps", snapshot.Runtime.FramesPerSecond, 50.0f);
+    CheckNear("statistics snapshot frame ms", snapshot.Runtime.FrameTimeMilliseconds, 20.0f);
+    Check(snapshot.Runtime.WindowWidth == 1280u && snapshot.Runtime.WindowHeight == 720u,
+        "statistics snapshot window");
+    Check(snapshot.Renderer.DrawCalls == 12u && snapshot.Renderer.TriangleCount == 40u,
+        "statistics snapshot renderer");
+    Check(snapshot.Physics.Available == false, "statistics snapshot no scene");
+    Check(snapshot.CPUProfiler.FrameIndex == 42u, "statistics snapshot profile frame");
+    Check(snapshot.CPUProfiler.ProfileAggregates.size() == 2u,
+        "statistics snapshot profile aggregate count");
+    Check(snapshot.CPUProfiler.ProfileAggregates[0u].Name == "Physics",
+        "statistics snapshot profile sorted");
+    CheckNear("statistics snapshot profile total",
+        static_cast<float>(snapshot.CPUProfiler.ProfileAggregates[0u].TotalMilliseconds), 5.0f);
+    CheckNear("statistics snapshot profile max",
+        static_cast<float>(snapshot.CPUProfiler.ProfileAggregates[0u].MaxMilliseconds), 3.0f);
+    Check(snapshot.CPUProfiler.ProfileAggregates[0u].CallCount == 2u,
+        "statistics snapshot profile calls");
+    Check(snapshot.CPUProfiler.CounterAggregates.size() == 2u,
+        "statistics snapshot counter aggregate count");
+    Check(snapshot.CPUProfiler.CounterAggregates[0u].Name == "A.Counter" &&
+        snapshot.CPUProfiler.CounterAggregates[1u].Name == "Z.Counter",
+        "statistics snapshot counters sorted");
+    CheckNear("statistics snapshot counter total",
+        static_cast<float>(snapshot.CPUProfiler.CounterAggregates[1u].Total), 4.0f);
+    Check(snapshot.CPUProfiler.CounterAggregates[1u].SampleCount == 2u,
+        "statistics snapshot counter samples");
+
+    // Snapshotは元frameから値をコピーし、次frame開始時のbuffer更新に影響されません。
+    profile.Results[0u].DurationMilliseconds = 99.0;
+    CheckNear("statistics snapshot stable raw result",
+        static_cast<float>(snapshot.CPUProfiler.RawResults[0u].DurationMilliseconds), 2.0f);
+
+    input.DeltaTime = std::numeric_limits<float>::infinity();
+    input.CPUProfilerEnabled = false;
+    const Raven::StatisticsSnapshot disabled = Raven::BuildStatisticsSnapshot(input);
+    CheckNear("statistics snapshot invalid delta fps", disabled.Runtime.FramesPerSecond, 0.0f);
+    CheckNear("statistics snapshot invalid delta ms", disabled.Runtime.FrameTimeMilliseconds, 0.0f);
+    Check(disabled.CPUProfiler.ProfileAggregates.empty(),
+        "statistics snapshot disabled profiler skips aggregation");
+    Check(disabled.CPUProfiler.RawResults.empty(),
+        "statistics snapshot disabled profiler skips copy");
 }
 
 
@@ -3143,6 +3211,7 @@ int main()
     TestEditorDockLayoutPolicy();
     TestUIImmediateContext();
     TestUITheme();
+    TestStatisticsSnapshot();
     TestDPIContextCoordinates();
     TestDPILayoutMetrics();
     TestDPISizeConstraints();

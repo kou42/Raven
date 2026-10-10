@@ -11,10 +11,9 @@ class Window;
 // Editor上でRuntime / Renderer / Physicsの状態を確認するためのPanelです。
 //
 // 重要:
-// Panel自身はSceneやWindowを所有しません。Applicationが所有しているRuntime状態を
-// EditorLayerから参照として受け取り、「表示する」ことだけを責務にします。
-// これにより統計取得のためにEditor専用のコピー状態を増やさず、Engine本体の状態を
-// そのまま観測できます。
+// Panel自身はSceneやWindowを所有しません。EditorLayerから現在frameの参照を受け取り、
+// StatisticsSnapshotへ値をコピーしてから表示します。計測中bufferやSceneへの参照を
+// 表示処理へ残さないため、Raven UI版も同じSnapshotを安全に再利用できます。
 class StatisticsPanel
 {
 public:

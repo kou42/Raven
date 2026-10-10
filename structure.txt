@@ -251,6 +251,8 @@ D:.
     |   |   |           SceneHierarchyPanel.h
     |   |   |           StatisticsPanel.cpp
     |   |   |           StatisticsPanel.h
+    |   |   |           StatisticsSnapshot.cpp
+    |   |   |           StatisticsSnapshot.h
     |   |   |
     |   |   +---Gltf
     |   |   |   |   AccessorReader.cpp

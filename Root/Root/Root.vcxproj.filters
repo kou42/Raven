@@ -676,6 +676,9 @@
     <Filter Include="Raven\Editor">
       <UniqueIdentifier>{8c22e424-a9e3-437c-8122-8920d557b0a0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Editor\Panels">
+      <UniqueIdentifier>{a36ea2fb-b913-42ea-a29f-5d0e7669155b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -713,6 +716,12 @@
     </ClCompile>
     <ClInclude Update="Raven\Editor\EditorDockLayout.h">
       <Filter>Raven\Editor</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\StatisticsSnapshot.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\StatisticsSnapshot.h">
+      <Filter>Raven\Editor\Panels</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

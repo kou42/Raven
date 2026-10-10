@@ -1,177 +1,23 @@
 #include "Raven/Editor/Panels/StatisticsPanel.h"
+#include "Raven/Editor/Panels/StatisticsSnapshot.h"
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Window.h"
-#include "Raven/Physics/Astro/AstroWorld.h"
-#include "Raven/Physics/PhysicsSimulationWorld.h"
-#include "Raven/Physics/PhysicsWorld.h"
-#include "Raven/Renderer/Renderer.h"
-#include "Raven/Scene/Components.h"
-#include "Raven/Scene/Scene.h"
 
 #include <imgui.h>
 
-#include <algorithm>
 #include <cstdint>
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace Raven
 {
 namespace
 {
-template<class Component>
-uint32_t CountComponents(Scene& scene)
-{
-    uint32_t count = 0;
-    for (auto&& entry : scene.View<Component>())
-    {
-        (void)entry;
-        ++count;
-    }
-    return count;
-}
-
-struct CPUProfileAggregate
-{
-    std::string Name;
-    double TotalMilliseconds = 0.0;
-    double MaxMilliseconds = 0.0;
-    uint32_t CallCount = 0u;
-};
-
-// Timerとは別に記録した軽量Counterを同名ごとに集計します。
-// CellRegistrationのようなHot loopではTimerを細かく置かず、処理中は整数加算だけを行い、
-// Build終了時にまとめてCounterを登録することでProfiler自身による計測誤差を抑えます。
-struct CPUCounterAggregate
-{
-    std::string Name;
-    double Total = 0.0;
-    double Max = 0.0;
-    uint32_t SampleCount = 0u;
-};
-
-const char* GetAstroSolverKindName(ph::AstroGravitySolverKind kind)
-{
-    switch (kind)
-    {
-    case ph::AstroGravitySolverKind::Direct:
-        return "Direct";
-    case ph::AstroGravitySolverKind::BarnesHut:
-        return "Barnes-Hut";
-    case ph::AstroGravitySolverKind::Custom:
-        return "Custom";
-    default:
-        return "Unknown";
-    }
-}
-
-const char* GetAstroSolverModeName(ph::AstroGravitySolverMode mode)
-{
-    switch (mode)
-    {
-    case ph::AstroGravitySolverMode::Automatic:
-        return "Automatic";
-    case ph::AstroGravitySolverMode::Direct:
-        return "Direct";
-    case ph::AstroGravitySolverMode::BarnesHut:
-        return "Barnes-Hut";
-    default:
-        return "Unknown";
-    }
-}
-
-void BuildCPUProfileAggregates(
-    const CPUProfileFrame& frame,
-    std::vector<CPUProfileAggregate>& outAggregates)
-{
-    outAggregates.clear();
-
-    std::unordered_map<std::string, std::size_t> aggregateIndices;
-    aggregateIndices.reserve(frame.Results.size());
-
-    for (const CPUProfileResult& result : frame.Results)
-    {
-        const auto iterator = aggregateIndices.find(result.Name);
-        if (iterator == aggregateIndices.end())
-        {
-            CPUProfileAggregate aggregate{};
-            aggregate.Name = result.Name;
-            aggregate.TotalMilliseconds = result.DurationMilliseconds;
-            aggregate.MaxMilliseconds = result.DurationMilliseconds;
-            aggregate.CallCount = 1u;
-
-            aggregateIndices.emplace(aggregate.Name, outAggregates.size());
-            outAggregates.push_back(std::move(aggregate));
-            continue;
-        }
-
-        CPUProfileAggregate& aggregate = outAggregates[iterator->second];
-        aggregate.TotalMilliseconds += result.DurationMilliseconds;
-        aggregate.MaxMilliseconds = std::max(
-            aggregate.MaxMilliseconds,
-            result.DurationMilliseconds);
-        ++aggregate.CallCount;
-    }
-
-    // まず「そのframeでCPU時間を最も消費したScope」を見つけたいので、
-    // 合計時間の降順で表示します。Fixed Stepが複数回走った場合もTotalへ加算されます。
-    std::sort(
-        outAggregates.begin(),
-        outAggregates.end(),
-        [](const CPUProfileAggregate& a, const CPUProfileAggregate& b)
-        {
-            return a.TotalMilliseconds > b.TotalMilliseconds;
-        });
-}
-
-void BuildCPUCounterAggregates(
-    const CPUProfileFrame& frame,
-    std::vector<CPUCounterAggregate>& outAggregates)
-{
-    outAggregates.clear();
-
-    std::unordered_map<std::string, std::size_t> aggregateIndices;
-    aggregateIndices.reserve(frame.Counters.size());
-
-    for (const CPUProfileCounter& counter : frame.Counters)
-    {
-        const auto iterator = aggregateIndices.find(counter.Name);
-        if (iterator == aggregateIndices.end())
-        {
-            CPUCounterAggregate aggregate{};
-            aggregate.Name = counter.Name;
-            aggregate.Total = counter.Value;
-            aggregate.Max = counter.Value;
-            aggregate.SampleCount = 1u;
-
-            aggregateIndices.emplace(aggregate.Name, outAggregates.size());
-            outAggregates.push_back(std::move(aggregate));
-            continue;
-        }
-
-        CPUCounterAggregate& aggregate = outAggregates[iterator->second];
-        aggregate.Total += counter.Value;
-        aggregate.Max = std::max(aggregate.Max, counter.Value);
-        ++aggregate.SampleCount;
-    }
-
-    // Counterは時間順ではなく名前順に固定しておくと、frameごとの値比較がしやすくなります。
-    std::sort(
-        outAggregates.begin(),
-        outAggregates.end(),
-        [](const CPUCounterAggregate& a, const CPUCounterAggregate& b)
-        {
-            return a.Name < b.Name;
-        });
-}
-
-const CPUProfileAggregate* FindCPUProfileAggregate(
-    const std::vector<CPUProfileAggregate>& aggregates,
+const StatisticsProfileAggregate* FindCPUProfileAggregate(
+    const std::vector<StatisticsProfileAggregate>& aggregates,
     const char* name)
 {
-    for (const CPUProfileAggregate& aggregate : aggregates)
+    for (const StatisticsProfileAggregate& aggregate : aggregates)
     {
         if (aggregate.Name == name)
         {
@@ -182,11 +28,11 @@ const CPUProfileAggregate* FindCPUProfileAggregate(
     return nullptr;
 }
 
-const CPUCounterAggregate* FindCPUCounterAggregate(
-    const std::vector<CPUCounterAggregate>& aggregates,
+const StatisticsCounterAggregate* FindCPUCounterAggregate(
+    const std::vector<StatisticsCounterAggregate>& aggregates,
     const char* name)
 {
-    for (const CPUCounterAggregate& aggregate : aggregates)
+    for (const StatisticsCounterAggregate& aggregate : aggregates)
     {
         if (aggregate.Name == name)
         {
@@ -198,8 +44,8 @@ const CPUCounterAggregate* FindCPUCounterAggregate(
 }
 
 void DrawSoftBodyCellSizeComparison(
-    const std::vector<CPUProfileAggregate>& profileAggregates,
-    const std::vector<CPUCounterAggregate>& counterAggregates)
+    const std::vector<StatisticsProfileAggregate>& profileAggregates,
+    const std::vector<StatisticsCounterAggregate>& counterAggregates)
 {
     // ========================================================================
     // SoftBody Cell Size Comparison
@@ -207,26 +53,26 @@ void DrawSoftBodyCellSizeComparison(
     // Spatial Hash Cell Sizeを0.04 / 0.05 / 0.06で比較するときに必要な値だけを抜き出します。
     // 通常のProfiler一覧は詳細調査用として残し、この表は「最適Cell Sizeを決める」ことだけに
     // 目的を絞ります。これにより大量のScope / Counterから毎回対象項目を探す必要がありません。
-    const CPUProfileAggregate* particleTriangle = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* particleTriangle = FindCPUProfileAggregate(
         profileAggregates,
         "SoftBody.Solver.ParticleTriangleSelfCollision");
-    const CPUProfileAggregate* hashBuild = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* hashBuild = FindCPUProfileAggregate(
         profileAggregates,
         "SoftBody.Solver.ParticleTriangleSelfCollision.HashBuild");
-    const CPUProfileAggregate* candidateGeneration = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* candidateGeneration = FindCPUProfileAggregate(
         profileAggregates,
         "SoftBody.Solver.ParticleTriangleSelfCollision.CandidateGeneration");
-    const CPUProfileAggregate* narrowPhase = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* narrowPhase = FindCPUProfileAggregate(
         profileAggregates,
         "SoftBody.Solver.ParticleTriangleSelfCollision.NarrowPhase");
 
-    const CPUCounterAggregate* cellSize = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* cellSize = FindCPUCounterAggregate(
         counterAggregates,
         "SoftBody.TriangleHash.CellSize");
-    const CPUCounterAggregate* registrationCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* registrationCount = FindCPUCounterAggregate(
         counterAggregates,
         "SoftBody.TriangleHash.RegistrationCount");
-    const CPUCounterAggregate* cellCandidateCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* cellCandidateCount = FindCPUCounterAggregate(
         counterAggregates,
         "SoftBody.TriangleHash.CellCandidateCount");
 
@@ -254,7 +100,7 @@ void DrawSoftBodyCellSizeComparison(
         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 130.0f);
         ImGui::TableHeadersRow();
 
-        const auto drawMilliseconds = [](const char* label, const CPUProfileAggregate* aggregate)
+        const auto drawMilliseconds = [](const char* label, const StatisticsProfileAggregate* aggregate)
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -270,7 +116,7 @@ void DrawSoftBodyCellSizeComparison(
             }
         };
 
-        const auto drawCounter = [](const char* label, const CPUCounterAggregate* aggregate)
+        const auto drawCounter = [](const char* label, const StatisticsCounterAggregate* aggregate)
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -314,8 +160,8 @@ void DrawSoftBodyCellSizeComparison(
 }
 
 void DrawFluidSpatialHashComparison(
-    const std::vector<CPUProfileAggregate>& profileAggregates,
-    const std::vector<CPUCounterAggregate>& counterAggregates)
+    const std::vector<StatisticsProfileAggregate>& profileAggregates,
+    const std::vector<StatisticsCounterAggregate>& counterAggregates)
 {
     // ========================================================================
     // Fluid SPH Spatial Hash Comparison
@@ -323,44 +169,44 @@ void DrawFluidSpatialHashComparison(
     // SmoothingRadiusは物理条件として固定し、SpatialHashCellSizeScaleだけを変えて比較します。
     // CellSizeを小さくすると走査Cell数が増え、大きくすると1 Cell内の候補Particleが増えるため、
     // Hash Build時間・候補数・Acceptance Ratioを同時に見て最適値を判断します。
-    const CPUProfileAggregate* step = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* step = FindCPUProfileAggregate(
         profileAggregates,
         "Physics.Fluid.SPH.Step");
-    const CPUProfileAggregate* spatialHashBuild = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* spatialHashBuild = FindCPUProfileAggregate(
         profileAggregates,
         "Physics.Fluid.SPH.SpatialHashBuild");
-    const CPUProfileAggregate* density = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* density = FindCPUProfileAggregate(
         profileAggregates,
         "Physics.Fluid.SPH.Density");
-    const CPUProfileAggregate* force = FindCPUProfileAggregate(
+    const StatisticsProfileAggregate* force = FindCPUProfileAggregate(
         profileAggregates,
         "Physics.Fluid.SPH.Force");
 
-    const CPUCounterAggregate* cellSize = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* cellSize = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.SpatialHashCellSize");
-    const CPUCounterAggregate* occupiedCellCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* occupiedCellCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.SpatialHashOccupiedCellCount");
-    const CPUCounterAggregate* particleCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* particleCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.ParticleCount");
-    const CPUCounterAggregate* substepCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* substepCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.SubstepCount");
-    const CPUCounterAggregate* substepLimitReached = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* substepLimitReached = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.SubstepLimitReached");
-    const CPUCounterAggregate* densityCandidateCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* densityCandidateCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.DensityNeighborCandidateCount");
-    const CPUCounterAggregate* densityAcceptedCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* densityAcceptedCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.DensityNeighborAcceptedCount");
-    const CPUCounterAggregate* forceCandidateCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* forceCandidateCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.ForceNeighborCandidateCount");
-    const CPUCounterAggregate* forceAcceptedCount = FindCPUCounterAggregate(
+    const StatisticsCounterAggregate* forceAcceptedCount = FindCPUCounterAggregate(
         counterAggregates,
         "Physics.Fluid.SPH.ForceNeighborAcceptedCount");
 
@@ -387,7 +233,7 @@ void DrawFluidSpatialHashComparison(
         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 150.0f);
         ImGui::TableHeadersRow();
 
-        const auto drawMilliseconds = [](const char* label, const CPUProfileAggregate* aggregate)
+        const auto drawMilliseconds = [](const char* label, const StatisticsProfileAggregate* aggregate)
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -403,7 +249,7 @@ void DrawFluidSpatialHashComparison(
             }
         };
 
-        const auto drawTotalCounter = [](const char* label, const CPUCounterAggregate* aggregate)
+        const auto drawTotalCounter = [](const char* label, const StatisticsCounterAggregate* aggregate)
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -419,7 +265,7 @@ void DrawFluidSpatialHashComparison(
             }
         };
 
-        const auto drawAverageCounter = [](const char* label, const CPUCounterAggregate* aggregate)
+        const auto drawAverageCounter = [](const char* label, const StatisticsCounterAggregate* aggregate)
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -515,17 +361,17 @@ void DrawFluidSpatialHashComparison(
 
 void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const Scene* scene)
 {
-    const float frameTimeMs = deltaTime * 1000.0f;
-    const float fps = deltaTime > 0.0f ? 1.0f / deltaTime : 0.0f;
-    const RendererStatistics& rendererStatistics = Renderer::GetStatistics();
+    const StatisticsSnapshot snapshot =
+        CaptureStatisticsSnapshot(deltaTime, window, scene);
 
     ImGui::Begin("Raven Debug / Statistics");
 
     if (ImGui::CollapsingHeader("Runtime", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Text("FPS: %.1f", fps);
-        ImGui::Text("Frame Time: %.3f ms", frameTimeMs);
-        ImGui::Text("Window: %u x %u", window.GetWidth(), window.GetHeight());
+        ImGui::Text("FPS: %.1f", snapshot.Runtime.FramesPerSecond);
+        ImGui::Text("Frame Time: %.3f ms", snapshot.Runtime.FrameTimeMilliseconds);
+        ImGui::Text("Window: %u x %u",
+            snapshot.Runtime.WindowWidth, snapshot.Runtime.WindowHeight);
     }
 
     // CPU Profilerは直前に完了したApplication frameを表示します。
@@ -534,7 +380,7 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
     if (ImGui::CollapsingHeader("CPU Profiler", ImGuiTreeNodeFlags_DefaultOpen))
     {
         CPUProfiler& profiler = CPUProfiler::Get();
-        bool profilerEnabled = profiler.IsEnabled();
+        bool profilerEnabled = snapshot.CPUProfiler.Enabled;
         if (ImGui::Checkbox("Enabled##CPUProfiler", &profilerEnabled))
         {
             profiler.SetEnabled(profilerEnabled);
@@ -542,24 +388,18 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
 
         if (profilerEnabled)
         {
-            const CPUProfileFrame& profileFrame = profiler.GetLastFrame();
+            const StatisticsCPUProfilerSnapshot& profile = snapshot.CPUProfiler;
             ImGui::Text("Profile Frame: %llu",
-                static_cast<unsigned long long>(profileFrame.FrameIndex));
-            ImGui::Text("CPU Frame: %.3f ms", profileFrame.FrameTimeMilliseconds);
-            ImGui::Text("Recorded Scopes: %u", static_cast<uint32_t>(profileFrame.Results.size()));
-            ImGui::Text("Recorded Counters: %u", static_cast<uint32_t>(profileFrame.Counters.size()));
+                static_cast<unsigned long long>(profile.FrameIndex));
+            ImGui::Text("CPU Frame: %.3f ms", profile.FrameTimeMilliseconds);
+            ImGui::Text("Recorded Scopes: %u",
+                static_cast<uint32_t>(profile.RawResults.size()));
+            ImGui::Text("Recorded Counters: %u", profile.RecordedCounterCount);
             ImGui::Separator();
 
-            // 同名Scopeをframe内で集計します。
-            // Physics.FixedStepのように1frame中に複数回呼ばれる処理は、Total / Max / Callsを見ることで
-            // 「1回が重い」のか「catch-upで呼び出し回数が増えた」のかを区別できます。
-            std::vector<CPUProfileAggregate> aggregates;
-            BuildCPUProfileAggregates(profileFrame, aggregates);
-
-            // Counterも一度だけ集計し、Cell Size比較表と通常Counter一覧の両方で共有します。
-            // 同じframeを二重走査しないことで、Editor側Profiler表示の余計な処理を避けます。
-            std::vector<CPUCounterAggregate> counterAggregates;
-            BuildCPUCounterAggregates(profileFrame, counterAggregates);
+            // Snapshot生成時に一度だけ集計し、ImGui版とRaven UI版が同じ値と順序を利用します。
+            const auto& aggregates = profile.ProfileAggregates;
+            const auto& counterAggregates = profile.CounterAggregates;
 
             // ====================================================================
             // SoftBody Cell Size Comparison Focus
@@ -594,7 +434,7 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableHeadersRow();
 
-                for (const CPUProfileAggregate& aggregate : aggregates)
+                for (const StatisticsProfileAggregate& aggregate : aggregates)
                 {
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
@@ -632,7 +472,7 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                     ImGui::TableSetupColumn("Samples", ImGuiTableColumnFlags_WidthFixed, 70.0f);
                     ImGui::TableHeadersRow();
 
-                    for (const CPUCounterAggregate& aggregate : counterAggregates)
+                    for (const StatisticsCounterAggregate& aggregate : counterAggregates)
                     {
                         const double average = aggregate.SampleCount > 0u
                             ? aggregate.Total / static_cast<double>(aggregate.SampleCount)
@@ -673,7 +513,7 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                     ImGui::TableSetupColumn("Time (ms)", ImGuiTableColumnFlags_WidthFixed, 100.0f);
                     ImGui::TableHeadersRow();
 
-                    for (const CPUProfileResult& result : profileFrame.Results)
+                    for (const CPUProfileResult& result : profile.RawResults)
                     {
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
@@ -701,68 +541,53 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
     // 「実際に発行した描画命令」を確認できます。
     if (ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Text("Draw Calls: %u", rendererStatistics.DrawCalls);
-        ImGui::Text("Index Count: %u", rendererStatistics.IndexCount);
-        ImGui::Text("Triangles: %u", rendererStatistics.TriangleCount);
+        ImGui::Text("Draw Calls: %u", snapshot.Renderer.DrawCalls);
+        ImGui::Text("Index Count: %u", snapshot.Renderer.IndexCount);
+        ImGui::Text("Triangles: %u", snapshot.Renderer.TriangleCount);
     }
 
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        if (scene == nullptr)
+        if (snapshot.Physics.Available == false)
         {
             ImGui::TextDisabled("No active scene.");
         }
         else
         {
-            // 現在のScene::View()は非const APIのみなので、読み取り専用のComponent数集計に限って
-            // 一時的にnon-const参照へ戻します。PanelからComponent内容は変更しません。
-            // const View()を追加した段階で、このconst_castは削除できます。
-            Scene& mutableScene = const_cast<Scene&>(*scene);
-            const uint32_t rigidBodyCount = CountComponents<RigidBodyComponent>(mutableScene);
-            const uint32_t colliderCount = CountComponents<ColliderComponent>(mutableScene);
-
-            const ph::PhysicsWorld& physicsWorld = scene->GetPhysicsWorld();
-            const ph::PhysicsSolverDebugStatistics& solverStatistics = physicsWorld.GetSolverDebugStatistics();
-
-            ImGui::Text("Rigid Bodies: %u", rigidBodyCount);
-            ImGui::Text("Colliders: %u", colliderCount);
-            ImGui::Text("Broad Phase Pairs: %u",
-                static_cast<uint32_t>(physicsWorld.GetBroadPhasePairs().size()));
-            ImGui::Text("Contact Manifolds: %u", solverStatistics.ManifoldCount);
-            ImGui::Text("Contact Points: %u", solverStatistics.ContactPointCount);
-            ImGui::Text("Warm Started Constraints: %u", solverStatistics.WarmStartedConstraintCount);
-            ImGui::Text("Velocity Iterations: %u", solverStatistics.VelocityIterations);
-            ImGui::Text("Max Penetration: %.5f", solverStatistics.MaxPenetration);
+            const StatisticsPhysicsSnapshot& physics = snapshot.Physics;
+            ImGui::Text("Rigid Bodies: %u", physics.RigidBodyCount);
+            ImGui::Text("Colliders: %u", physics.ColliderCount);
+            ImGui::Text("Broad Phase Pairs: %u", physics.BroadPhasePairCount);
+            ImGui::Text("Contact Manifolds: %u", physics.ManifoldCount);
+            ImGui::Text("Contact Points: %u", physics.ContactPointCount);
+            ImGui::Text("Warm Started Constraints: %u", physics.WarmStartedConstraintCount);
+            ImGui::Text("Velocity Iterations: %u", physics.VelocityIterations);
+            ImGui::Text("Max Penetration: %.5f", physics.MaxPenetration);
 
             if (ImGui::TreeNodeEx("Astro Gravity", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                const ph::AstroWorld& astroWorld =
-                    scene->GetPhysicsSimulationWorld().GetAstroWorld();
-                const ph::AstroStatistics& astroStatistics = astroWorld.GetStatistics();
-                const ph::AstroGravitySolverSelectionSettings& selectionSettings =
-                    astroWorld.GetGravitySolverSelectionSettings();
+                const StatisticsAstroSnapshot& astro = physics.Astro;
 
                 // SolverKindは直近fixed-stepで実際に使われた値です。
                 // Modeと並べることでAutomaticがどちらへ解決されたかを直接確認できます。
-                ImGui::Text("Mode: %s", GetAstroSolverModeName(selectionSettings.Mode));
-                ImGui::Text("Active Solver: %s", GetAstroSolverKindName(astroStatistics.SolverKind));
+                ImGui::Text("Mode: %s", astro.SolverMode.c_str());
+                ImGui::Text("Active Solver: %s", astro.ActiveSolver.c_str());
                 ImGui::Text("Active Bodies: %llu",
-                    static_cast<unsigned long long>(astroStatistics.ActiveBodyCount));
+                    static_cast<unsigned long long>(astro.ActiveBodyCount));
                 ImGui::Text("Switch Up / Down: %llu / %llu",
-                    static_cast<unsigned long long>(selectionSettings.BarnesHutBodyThreshold),
-                    static_cast<unsigned long long>(selectionSettings.DirectBodyThreshold));
-                ImGui::Text("Barnes-Hut Theta: %.3f", selectionSettings.BarnesHutTheta);
-                ImGui::Text("State Collection: %.3f ms", astroStatistics.StateCollectionTimeMs);
-                ImGui::Text("Gravity Solve: %.3f ms", astroStatistics.GravitySolveTimeMs);
-                ImGui::Text("Octree Build: %.3f ms", astroStatistics.GravityTreeBuildTimeMs);
-                ImGui::Text("Force Feedback: %.3f ms", astroStatistics.ForceFeedbackTimeMs);
+                    static_cast<unsigned long long>(astro.BarnesHutBodyThreshold),
+                    static_cast<unsigned long long>(astro.DirectBodyThreshold));
+                ImGui::Text("Barnes-Hut Theta: %.3f", astro.BarnesHutTheta);
+                ImGui::Text("State Collection: %.3f ms", astro.StateCollectionTimeMilliseconds);
+                ImGui::Text("Gravity Solve: %.3f ms", astro.GravitySolveTimeMilliseconds);
+                ImGui::Text("Octree Build: %.3f ms", astro.GravityTreeBuildTimeMilliseconds);
+                ImGui::Text("Force Feedback: %.3f ms", astro.ForceFeedbackTimeMilliseconds);
                 ImGui::Text("Force Evaluations: %llu",
-                    static_cast<unsigned long long>(astroStatistics.GravityForceEvaluationCount));
+                    static_cast<unsigned long long>(astro.GravityForceEvaluationCount));
                 ImGui::Text("Node Visits: %llu",
-                    static_cast<unsigned long long>(astroStatistics.GravityVisitedNodeCount));
+                    static_cast<unsigned long long>(astro.GravityVisitedNodeCount));
                 ImGui::Text("Aggregate Nodes: %llu",
-                    static_cast<unsigned long long>(
-                        astroStatistics.GravityAcceptedAggregateNodeCount));
+                    static_cast<unsigned long long>(astro.GravityAcceptedAggregateNodeCount));
                 ImGui::TreePop();
             }
         }

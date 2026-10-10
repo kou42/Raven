@@ -172,14 +172,14 @@ Exit Gate:
 
 対象候補:
 
-- `CharacterPositionDebugOverlayLayer`
-- `CharacterLocomotionDebugOverlayLayer`
-- `FluidBuoyancyDebugOverlayLayer`
+- [x] `CharacterPositionDebugOverlayLayer`
+- [x] `CharacterLocomotionDebugOverlayLayer`
+- [x] `FluidBuoyancyDebugOverlayLayer`
 - その他、値表示・Checkbox・Slider中心のDebug UI
 
 方針:
 
-- `UIImmediateContext`を使い、毎Frameの診断値表示と調整値操作を移す。
+- 毎Frameの診断値だけで完結するOverlayは`UIImmediateContext`を第一候補にする。移動・Resize・Scrollや複数の連続操作状態を持つ既存3 HUDは、LifetimeをWidget Treeへ集約するRetained UIとして移行済み。
 - Runtime設定と一時的な表示状態を分離する。
 - Overlay LayerはSceneを所有せず、Active Scene変更時に参照を再解決する。
 - 移行済みLayerから`OnImGuiRender()`と`imgui.h`依存を削除する。
@@ -200,7 +200,8 @@ Exit Gate:
 
 方針:
 
-- Profiler、Renderer、Physics、Animationのデータを表示用Snapshotへまとめる。
+- [x] StatisticsのRuntime、Profiler、Renderer、Physics、Astroデータを`StatisticsSnapshot`へまとめる。
+- [ ] Animationのデータを表示用Snapshotへまとめる。
 - Table/Treeの仮想化または表示行数制限を用意し、大量データでWidgetを無制限生成しない。
 - 「値なし」「無効」「前Frameの値」を区別して表示する。
 - CPU ProfilerのEnabled切替等、書き込み操作は明示的Actionへ分離する。
