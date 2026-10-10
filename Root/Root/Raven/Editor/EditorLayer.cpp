@@ -42,6 +42,13 @@ bool EditorLayer::IsPanelOwnedByDearImGui(PanelUIOwner owner) const
 
 void EditorLayer::OnAttach()
 {
+    if (m_Application != nullptr &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.Statistics) == false)
+    {
+        m_StatisticsRavenPanel.Attach(
+            m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
+    }
+
     m_ViewportRenderingEnabled = m_Application != nullptr &&
         m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL &&
         UsesDearImGui() == true;
@@ -99,6 +106,9 @@ void EditorLayer::OnAttach()
 
 void EditorLayer::OnDetach()
 {
+    // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
+    m_StatisticsRavenPanel.Detach();
+
     // Editor終了後にSceneへの非所有参照を履歴側へ残しません。
     SetEditorCommandHistoryScene(nullptr);
 
@@ -359,6 +369,24 @@ void EditorLayer::OnImGuiRender(float dt)
     }
 
     EndDockSpace();
+}
+
+void EditorLayer::OnRavenUIRender(float dt)
+{
+    if (m_Application == nullptr || m_StatisticsRavenPanel.IsAttached() == false)
+    {
+        return;
+    }
+
+    m_StatisticsRavenPanel.SetVisible(m_ShowStatisticsPanel);
+    if (m_ShowStatisticsPanel == false)
+    {
+        // 非表示PanelのSnapshotコピーとTable更新を省き、Draw Commandも発行しません。
+        return;
+    }
+
+    m_StatisticsRavenPanel.Update(CaptureStatisticsSnapshot(
+        dt, m_Application->GetWindow(), m_Application->GetScene()));
 }
 
 void EditorLayer::RenderSceneView()

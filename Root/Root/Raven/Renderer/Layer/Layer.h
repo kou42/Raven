@@ -37,6 +37,10 @@ public:
     // EditorLayer等の必要なLayerだけがこの関数をoverrideできる構成にします。
     virtual void OnImGuiRender(float dt) {}
 
+    // 全LayerのUpdate / RenderとDear ImGui構築が終わった後、Raven UIのEndFrame直前に呼ばれます。
+    // 診断Panelはこの時点のRuntime SnapshotでRetained Widgetを更新し、計測途中の値を表示しません。
+    virtual void OnRavenUIRender(float dt) { static_cast<void>(dt); }
+
     //virtual void OnEvent() {}
     virtual void OnEvent(Event& e) {}
 };

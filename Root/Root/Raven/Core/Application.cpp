@@ -1606,6 +1606,17 @@ void Application::Run()
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
         if (m_RavenUIEnabled == true)
         {
+            // 全Runtime/Layer描画後の値をRetained UIへ反映します。
+            // OnUpdate中にStatisticsを取得すると後続LayerのDraw Callが欠落するため、
+            // Snapshot更新専用HookはUIContext::EndFrame直前へ固定します。
+            for (auto& layer : m_Layers)
+            {
+                if (layer != nullptr)
+                {
+                    layer->OnRavenUIRender(frameDeltaTime);
+                }
+            }
+
             // Scene Frame開始後かつUI Layout前の描画準備段階でFont Atlasをまとめて生成します。
             // DPI通知から直接GPU Textureを生成せず、同FrameのMeasure/Arrangeへ新Metricsを反映します。
             // UIが無効な場合はGPU生成・Tree走査とも実施しません。

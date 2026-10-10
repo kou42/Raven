@@ -5,6 +5,7 @@
 #include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 #include "Raven/Editor/Panels/StatisticsPanel.h"
+#include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Renderer/Framebuffer.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
@@ -88,6 +89,7 @@ public:
     // Dear ImGuiのBegin/End間でApplicationから呼ばれるEditor UI描画入口です。
     // DockSpace、Scene/Game View、各Panelの描画を最終的にここから統括します。
     void OnImGuiRender(float dt) override;
+    void OnRavenUIRender(float dt) override;
 
     // Editor Camera / Gizmo / Shortcut等の入力処理入口です。
     // EditorがEventを消費した場合はevent.Handledを設定し、Runtime側への伝播を止めます。
@@ -105,7 +107,7 @@ private:
     // Raven UI版へ移行したPanelだけを個別にRavenUIへ変更し、比較期間の二重操作を防ぎます。
     struct PanelUIOwnership
     {
-        PanelUIOwner Statistics = PanelUIOwner::DearImGui;
+        PanelUIOwner Statistics = PanelUIOwner::RavenUI;
         PanelUIOwner AnimationDebug = PanelUIOwner::DearImGui;
         PanelUIOwner SceneHierarchy = PanelUIOwner::DearImGui;
         PanelUIOwner Inspector = PanelUIOwner::DearImGui;
@@ -206,8 +208,9 @@ private:
     // Editor Panels
     // ========================================================================
     // PanelはEditorLayerが所有しますが、Active Scene等のRuntimeオブジェクトは所有しません。
-    // 必要なRuntime参照をOnImGuiRender()時に渡すことでScene差し替えにも追従します。
+    // 必要なRuntime参照は各UI Render HookでSnapshot化し、Scene差し替えにも追従します。
     StatisticsPanel m_StatisticsPanel;
+    StatisticsRavenPanel m_StatisticsRavenPanel;
     AnimationDebugPanel m_AnimationDebugPanel;
     SceneHierarchyPanel m_SceneHierarchyPanel;
     InspectorPanel m_InspectorPanel;

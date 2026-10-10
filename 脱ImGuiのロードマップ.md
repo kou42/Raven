@@ -201,6 +201,7 @@ Exit Gate:
 方針:
 
 - [x] StatisticsのRuntime、Profiler、Renderer、Physics、Astroデータを`StatisticsSnapshot`へまとめる。
+- [x] StatisticsをRaven UI Panelへ接続し、Dual / Raven UIモードの表示所有権をRaven UIへ移す。
 - [ ] Animationのデータを表示用Snapshotへまとめる。
 - Table/Treeの仮想化または表示行数制限を用意し、大量データでWidgetを無制限生成しない。
 - 「値なし」「無効」「前Frameの値」を区別して表示する。

@@ -723,6 +723,12 @@
     <ClInclude Update="Raven\Editor\Panels\StatisticsSnapshot.h">
       <Filter>Raven\Editor\Panels</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\StatisticsRavenPanel.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\StatisticsRavenPanel.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Assets\Images\test\mountain1.png" />

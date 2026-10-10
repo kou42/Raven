@@ -251,6 +251,8 @@ D:.
     |   |   |           SceneHierarchyPanel.h
     |   |   |           StatisticsPanel.cpp
     |   |   |           StatisticsPanel.h
+    |   |   |           StatisticsRavenPanel.cpp
+    |   |   |           StatisticsRavenPanel.h
     |   |   |           StatisticsSnapshot.cpp
     |   |   |           StatisticsSnapshot.h
     |   |   |

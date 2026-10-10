@@ -4,6 +4,7 @@
 #include "UIImmediateTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
+#include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Rendering/UITessellator.h"
@@ -773,6 +774,40 @@ void TestStatisticsSnapshot()
         "statistics snapshot disabled profiler skips aggregation");
     Check(disabled.CPUProfiler.RawResults.empty(),
         "statistics snapshot disabled profiler skips copy");
+}
+
+void TestStatisticsRavenPanel()
+{
+    Raven::UIContext context;
+    const std::size_t initialRootChildCount = context.GetRootElement().GetChildren().size();
+    Raven::StatisticsRavenPanel panel;
+
+    Check(panel.Attach(context, nullptr) == true, "statistics Raven panel attach");
+    Check(panel.IsAttached() == true, "statistics Raven panel attached state");
+    Check(context.GetRootElement().GetChildren().size() == initialRootChildCount + 1u,
+        "statistics Raven panel root ownership");
+
+    Raven::CPUProfileFrame profile{};
+    profile.Results.push_back(Raven::CPUProfileResult{ "Physics", 2.0, {}, 0u });
+    profile.Results.push_back(Raven::CPUProfileResult{ "Render", 4.0, {}, 0u });
+    profile.Counters.push_back(Raven::CPUProfileCounter{ "Draw Calls", 12.0 });
+
+    Raven::StatisticsSnapshotInput input{};
+    input.CPUProfilerEnabled = true;
+    input.CPUProfile = &profile;
+    panel.Update(Raven::BuildStatisticsSnapshot(input));
+    Check(panel.GetProfileRowCount() == 2u, "statistics Raven panel profile rows");
+    Check(panel.GetCounterRowCount() == 1u, "statistics Raven panel counter rows");
+
+    panel.SetVisible(false);
+    Check(panel.IsVisible() == false, "statistics Raven panel hidden state");
+    panel.SetVisible(true);
+    Check(panel.IsVisible() == true, "statistics Raven panel visible state");
+
+    panel.Detach();
+    Check(panel.IsAttached() == false, "statistics Raven panel detached state");
+    Check(context.GetRootElement().GetChildren().size() == initialRootChildCount,
+        "statistics Raven panel releases root ownership");
 }
 
 
@@ -3209,9 +3244,10 @@ int main()
     TestMenuBarKeyboardAndLifetime();
     TestCollapsibleSectionVisibility();
     TestEditorDockLayoutPolicy();
+    TestStatisticsSnapshot();
+    TestStatisticsRavenPanel();
     TestUIImmediateContext();
     TestUITheme();
-    TestStatisticsSnapshot();
     TestDPIContextCoordinates();
     TestDPILayoutMetrics();
     TestDPISizeConstraints();
