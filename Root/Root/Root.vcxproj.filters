@@ -708,6 +708,12 @@
     <ClInclude Update="Raven\Editor\EditorShortcutRouter.h">
       <Filter>Raven\Editor</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Editor\EditorDockLayout.cpp">
+      <Filter>Raven\Editor</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\EditorDockLayout.h">
+      <Filter>Raven\Editor</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Assets\Images\test\mountain1.png" />

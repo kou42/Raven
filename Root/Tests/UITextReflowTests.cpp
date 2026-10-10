@@ -2,6 +2,7 @@
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
 #include "UIImmediateTests.h"
+#include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Rendering/UITessellator.h"
@@ -650,6 +651,82 @@ void TestUITheme()
 
 
 
+
+// Editor既定配置とPrimary / Backup / Defaultの復旧順を検証します。
+void TestEditorDockLayoutPolicy()
+{
+    namespace fs = std::filesystem;
+    const Raven::UIDockSpaceSnapshot defaults = Raven::CreateDefaultEditorDockLayout();
+    Check(Raven::kUIDockSnapshotVersion == 1u, "editor dock snapshot version");
+    Check(defaults.Structure.size() == 7u && defaults.Tabs.size() == 6u &&
+        defaults.Selections.size() == 4u, "editor dock default shape");
+
+    Raven::UIDockSpace restored;
+    int created = 0;
+    const auto factory = [&created](std::uint64_t, const Raven::UITabItem&)
+        -> Raven::Scope<Raven::UIElement>
+    {
+        ++created;
+        return std::make_unique<Raven::UIElement>();
+    };
+    Check(restored.RestoreSnapshot(defaults, factory), "editor dock default restores");
+    Check(created == 6, "editor dock creates every panel");
+
+    // CI/Sandboxでも原子的renameが許可されるWorkspace配下に一時Directoryを作ります。
+    const fs::path directory = fs::current_path() /
+        ("RavenEditorDockPolicyTest_" + std::to_string(
+            static_cast<std::uint64_t>(std::chrono::steady_clock::now()
+                .time_since_epoch().count())));
+    Check(fs::create_directory(directory), "editor dock policy directory");
+    const fs::path path = directory / std::string(Raven::kEditorDockLayoutFileName);
+
+    Raven::UIDockSpaceSnapshot loaded;
+    Raven::EditorDockLayoutLoadResult result =
+        Raven::LoadEditorDockLayoutOrDefault(path.string(), loaded);
+    Check(result.Source == Raven::EditorDockLayoutSource::DefaultFirstRun &&
+        loaded.Tabs.size() == defaults.Tabs.size(), "editor dock first run default");
+
+    std::string error;
+    const bool savedDefault = Raven::SaveDockSnapshot(path.string(), defaults, &error);
+    if (savedDefault == false)
+    {
+        std::cerr << "editor dock save diagnostic: " << error << '\n';
+    }
+    Check(savedDefault, "editor dock save default");
+    result = Raven::LoadEditorDockLayoutOrDefault(path.string(), loaded);
+    Check(result.Source == Raven::EditorDockLayoutSource::SavedSnapshot,
+        "editor dock saved snapshot preferred");
+
+    Raven::UIDockSpaceSnapshot changed = defaults;
+    for (auto& selection : changed.Selections)
+    {
+        if (selection.second == static_cast<std::uint64_t>(Raven::EditorDockTabId::SceneView))
+        {
+            selection.second = static_cast<std::uint64_t>(Raven::EditorDockTabId::GameView);
+        }
+    }
+    Check(Raven::SaveDockSnapshot(path.string(), changed, &error),
+        "editor dock save changed layout");
+    {
+        std::ofstream corrupt(path, std::ios::binary | std::ios::trunc);
+        corrupt << "{";
+    }
+    result = Raven::LoadEditorDockLayoutOrDefault(path.string(), loaded);
+    Check(result.Source == Raven::EditorDockLayoutSource::BackupSnapshot &&
+        result.Diagnostic.empty() == false, "editor dock corrupt primary uses backup");
+    Check(loaded.Selections == defaults.Selections,
+        "editor dock backup preserves previous valid layout");
+
+    {
+        std::ofstream corrupt(path.string() + ".bak", std::ios::binary | std::ios::trunc);
+        corrupt << "{";
+    }
+    result = Raven::LoadEditorDockLayoutOrDefault(path.string(), loaded);
+    Check(result.Source == Raven::EditorDockLayoutSource::DefaultRecovery &&
+        loaded.Selections == defaults.Selections,
+        "editor dock corrupt snapshots use default");
+    fs::remove_all(directory);
+}
 
 // 保存失敗で旧版を壊さず、退避中のクラッシュを想定したBackup読み込みを確認します。
 void TestDockSnapshotFileRecovery()
@@ -3001,6 +3078,7 @@ int main()
     CheckNear("hidden root height", root.GetDesiredSize().y, 28.0f);
     TestMenuBarKeyboardAndLifetime();
     TestCollapsibleSectionVisibility();
+    TestEditorDockLayoutPolicy();
     TestUIImmediateContext();
     TestUITheme();
     TestDPIContextCoordinates();

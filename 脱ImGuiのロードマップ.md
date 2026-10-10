@@ -159,7 +159,7 @@ Exit Gate:
 - [x] Scene/Game View用Imageに`UITextureView`を追加し、RenderTarget参照、UV向き、Aspect Fit、Clip、DPI/Texture Pixel変換を定義する（契約は`docs/raven-ui-render-target-image-contract.md`）。
 - [x] Editor向けShortcut routingを定義し、Popup、Text入力、Gizmo、Viewport、Panel、Globalの優先順位を`EditorShortcutRouter`へ集約する。
 - [x] `UIContext::GetInteractionState()`でHover / Focus / Active / CaptureをPanelまたはViewport単位で問い合わせられるようにする。
-- [ ] Dock layoutのversion、既定配置、破損時fallback、旧`imgui.ini`から移行しない場合の初期化方針を決める。
+- [x] Dock layoutのversion、既定配置、Primary→Backup→既定配置のfallback、旧`imgui.ini`から移行しない初期化方針を定義する（`docs/raven-editor-dock-layout.md`）。
 - [ ] Editor共通Styleを`UITheme`へ追加し、個別PanelへMagic Numberを散らさない。
 
 Exit Gate:

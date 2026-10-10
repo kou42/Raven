@@ -15,6 +15,9 @@
 namespace Raven
 {
 
+// JSON Snapshot形式の互換Versionです。互換性を壊す変更時だけ増加させます。
+inline constexpr std::uint32_t kUIDockSnapshotVersion = 1u;
+
 // UIElementは永続化できないため、復元時はTab IDからContentを再生成します。
 struct UIDockTabRecord
 {

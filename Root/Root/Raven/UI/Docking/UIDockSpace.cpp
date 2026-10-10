@@ -169,7 +169,8 @@ bool SerializeDockSnapshot(const UIDockSpaceSnapshot& snapshot,
     }
     Core::JsonValue::Object root;
     root.emplace("type", Core::JsonValue(std::string("RavenDockSnapshot")));
-    root.emplace("version", Core::JsonValue(1.0));
+    root.emplace("version", Core::JsonValue(
+        static_cast<double>(kUIDockSnapshotVersion)));
     root.emplace("structure", Core::JsonValue(std::move(nodes)));
     root.emplace("tabs", Core::JsonValue(std::move(tabs)));
     root.emplace("selections", Core::JsonValue(std::move(selections)));
@@ -192,7 +193,8 @@ bool DeserializeDockSnapshot(const std::string& text,
     const auto* selections = DockField(root, "selections", Core::JsonValue::Type::Array);
     if (type == nullptr || version == nullptr || nodes == nullptr ||
         tabs == nullptr || selections == nullptr ||
-        type->GetString() != "RavenDockSnapshot" || version->GetNumber() != 1.0 ||
+        type->GetString() != "RavenDockSnapshot" ||
+        version->GetNumber() != static_cast<double>(kUIDockSnapshotVersion) ||
         nodes->GetArray().size() > 4096u || tabs->GetArray().size() > 65536u)
     {
         return DockIOError(errorMessage, "Dock Snapshotのtype/version/配列が不正です");

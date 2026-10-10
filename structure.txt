@@ -215,6 +215,8 @@ D:.
     |   |   |   |   EditorCamera.h
     |   |   |   |   EditorCommandHistory.cpp
     |   |   |   |   EditorCommandHistory.h
+    |   |   |   |   EditorDockLayout.cpp
+    |   |   |   |   EditorDockLayout.h
     |   |   |   |   EditorEntityPicking.cpp
     |   |   |   |   EditorGizmo.cpp
     |   |   |   |   EditorGizmo.h
