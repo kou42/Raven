@@ -2,6 +2,7 @@
 
 #include "Raven/Editor/EditorCamera.h"
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
+#include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 #include "Raven/Editor/Panels/StatisticsPanel.h"
@@ -212,6 +213,7 @@ private:
     StatisticsPanel m_StatisticsPanel;
     StatisticsRavenPanel m_StatisticsRavenPanel;
     AnimationDebugPanel m_AnimationDebugPanel;
+    AnimationDebugRavenPanel m_AnimationDebugRavenPanel;
     SceneHierarchyPanel m_SceneHierarchyPanel;
     InspectorPanel m_InspectorPanel;
 

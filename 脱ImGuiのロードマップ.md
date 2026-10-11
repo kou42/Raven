@@ -202,7 +202,9 @@ Exit Gate:
 
 - [x] StatisticsのRuntime、Profiler、Renderer、Physics、Astroデータを`StatisticsSnapshot`へまとめる。
 - [x] StatisticsをRaven UI Panelへ接続し、Dual / Raven UIモードの表示所有権をRaven UIへ移す。
-- [ ] Animationのデータを表示用Snapshotへまとめる。
+- [x] AnimationのState Machine、Locomotion、Trajectory、Bone診断データを`AnimationDebugSnapshot`へまとめる。
+- [x] Animation Debugの読み取り専用Raven UI Panelを追加し、Raven UIモードへ接続する。
+- [ ] Animation DebugのMode切替ActionをRaven UIへ移し、Dualモードの所有権をRaven UIへ切り替える。
 - Table/Treeの仮想化または表示行数制限を用意し、大量データでWidgetを無制限生成しない。
 - 「値なし」「無効」「前Frameの値」を区別して表示する。
 - CPU ProfilerのEnabled切替等、書き込み操作は明示的Actionへ分離する。

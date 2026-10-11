@@ -1,13 +1,9 @@
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
 
-#include "Raven/Animation/AnimationRuntimeDebug.h"
 #include "Raven/Character/Debug/CharacterControllerDemoLocomotionRuntime.h"
-#include "Raven/Scene/Components.h"
-#include "Raven/Scene/Scene.h"
+#include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
 
 #include <imgui.h>
-
-#include <vector>
 
 namespace Raven
 {
@@ -56,7 +52,12 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
 {
     ImGui::Begin("Animation Debug");
 
-    if (scene == nullptr)
+    const std::size_t selectedBoneIndex = m_SelectedInertializationBoneIndex >= 0
+        ? static_cast<std::size_t>(m_SelectedInertializationBoneIndex)
+        : 0u;
+    const AnimationDebugSnapshot snapshot =
+        CaptureAnimationDebugSnapshot(scene, selectedBoneIndex);
+    if (snapshot.SceneAvailable == false)
     {
         ImGui::TextDisabled("No active scene.");
         ImGui::End();
@@ -68,20 +69,18 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
     // ========================================================================
     // Character DemoのLocomotionはECS AnimatorComponentを経由しないため、StateMachine探索より先に
     // 専用Runtime Snapshotを表示します。Panel側では検索やInertialization計算を再実装しません。
-    CharacterControllerDemoLocomotionRuntime* locomotionRuntime =
-        CharacterControllerDemoLocomotionRuntime::GetActiveDebugRuntime();
+    const AnimationLocomotionDebugSnapshot& locomotion = snapshot.Locomotion;
 
     if (ImGui::CollapsingHeader("Character Locomotion", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        if (locomotionRuntime == nullptr)
+        if (locomotion.RuntimeAvailable == false)
         {
             ImGui::TextDisabled("No active Character Locomotion Runtime.");
         }
         else
         {
-            CharacterLocomotionRuntimeDebugInfo locomotionDebug{};
-            const bool hasRuntimeDebug = locomotionRuntime->GetRuntimeDebugInfo(locomotionDebug);
-            const CharacterLocomotionRuntimeMode currentMode = locomotionRuntime->GetMode();
+            const CharacterLocomotionRuntimeDebugInfo& locomotionDebug = locomotion.RuntimeDebug;
+            const CharacterLocomotionRuntimeMode currentMode = locomotion.Mode;
 
             int selectedMode = currentMode == CharacterLocomotionRuntimeMode::MotionMatching ? 1 : 0;
             const char* modeItems[] = { "Blend Tree", "Motion Matching" };
@@ -91,22 +90,33 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                     ? CharacterLocomotionRuntimeMode::MotionMatching
                     : CharacterLocomotionRuntimeMode::BlendTree;
 
-                if (locomotionRuntime->SetMode(requestedMode, &m_LocomotionRuntimeError) == true)
+                // 書き込み操作だけは明示的に現在のDebug Runtimeへ送り、表示Snapshotとは分離します。
+                // Snapshot内へRuntime pointerを保持しないため、Runtime破棄後に参照が残りません。
+                CharacterControllerDemoLocomotionRuntime* actionTarget =
+                    CharacterControllerDemoLocomotionRuntime::GetActiveDebugRuntime();
+                if (actionTarget != nullptr &&
+                    actionTarget->SetMode(requestedMode, &m_LocomotionRuntimeError) == true)
                 {
                     m_LocomotionRuntimeError.clear();
                 }
             }
 
             ImGui::Text("Mode: %s", LocomotionModeText(currentMode));
-            ImGui::Text("Runtime: %s",
-                hasRuntimeDebug == true && locomotionDebug.Active == true ? "Active" : "Inactive");
+            if (locomotion.RuntimeDebugAvailable == false)
+            {
+                ImGui::TextDisabled("Runtime diagnostics are unavailable.");
+            }
+            else
+            {
+                ImGui::Text("Runtime: %s", locomotionDebug.Active == true ? "Active" : "Inactive");
+            }
 
             if (m_LocomotionRuntimeError.empty() == false)
             {
                 ImGui::TextWrapped("Runtime Error: %s", m_LocomotionRuntimeError.c_str());
             }
 
-            if (hasRuntimeDebug == true
+            if (locomotion.RuntimeDebugAvailable == true
                 && currentMode == CharacterLocomotionRuntimeMode::MotionMatching)
             {
                 const CharacterMotionMatchingRuntimeDebugInfo& motionMatching =
@@ -133,9 +143,8 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                 // Driverが実際にMotionMatcherへ渡した直近Queryを表示します。
                 // Editor側でTrajectoryPredictorを再実行しないため、検索入力との不一致が発生しません。
                 ImGui::SeparatorText("Predicted Trajectory");
-                std::vector<MotionTrajectoryPoint> trajectory;
-                const bool hasTrajectory =
-                    locomotionRuntime->GetMotionMatchingTrajectoryDebugInfo(trajectory);
+                const std::vector<MotionTrajectoryPoint>& trajectory = locomotion.Trajectory;
+                const bool hasTrajectory = locomotion.TrajectoryAvailable;
                 if (hasTrajectory == true)
                 {
                     for (std::size_t trajectoryIndex = 0u;
@@ -259,29 +268,24 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                 // 数値IndexだけでなくRuntime SkeletonのBone名から選べるようにします。
                 // 同名Boneが存在してもPushID(Index)によりImGui ID衝突を避けます。
                 ImGui::SeparatorText("Bone Inertialization");
-                const Skeleton* skeleton = locomotionRuntime->GetMotionMatchingSkeleton();
-                if (skeleton != nullptr && skeleton->GetBoneCount() > 0u)
+                if (locomotion.BoneNames.empty() == false)
                 {
-                    if (m_SelectedInertializationBoneIndex < 0
-                        || static_cast<std::size_t>(m_SelectedInertializationBoneIndex) >= skeleton->GetBoneCount())
-                    {
-                        m_SelectedInertializationBoneIndex = 0;
-                    }
+                    m_SelectedInertializationBoneIndex =
+                        static_cast<int>(locomotion.SelectedBoneIndex);
+                    const std::string& selectedBoneName =
+                        locomotion.BoneNames[locomotion.SelectedBoneIndex];
 
-                    const BoneIndex selectedBoneIndex =
-                        static_cast<BoneIndex>(m_SelectedInertializationBoneIndex);
-                    const Bone& selectedBone = skeleton->GetBone(selectedBoneIndex);
-
-                    if (ImGui::BeginCombo("Bone", selectedBone.Name.c_str()))
+                    if (ImGui::BeginCombo("Bone", selectedBoneName.c_str()))
                     {
-                        for (std::size_t boneIndex = 0u; boneIndex < skeleton->GetBoneCount(); ++boneIndex)
+                        for (std::size_t boneIndex = 0u;
+                            boneIndex < locomotion.BoneNames.size();
+                            ++boneIndex)
                         {
                             const bool selected =
                                 boneIndex == static_cast<std::size_t>(m_SelectedInertializationBoneIndex);
-                            const Bone& bone = skeleton->GetBone(static_cast<BoneIndex>(boneIndex));
 
                             ImGui::PushID(static_cast<int>(boneIndex));
-                            if (ImGui::Selectable(bone.Name.c_str(), selected))
+                            if (ImGui::Selectable(locomotion.BoneNames[boneIndex].c_str(), selected))
                             {
                                 m_SelectedInertializationBoneIndex = static_cast<int>(boneIndex);
                             }
@@ -296,11 +300,10 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
 
                     ImGui::Text("Bone Index: %d", m_SelectedInertializationBoneIndex);
 
-                    PoseInertializerBoneDebugInfo boneDebug{};
-                    if (locomotionRuntime->GetInertializationBoneDebugInfo(
-                            selectedBoneIndex,
-                            boneDebug) == true)
+                    if (locomotion.SelectedBoneDebugAvailable == true)
                     {
+                        const PoseInertializerBoneDebugInfo& boneDebug =
+                            locomotion.SelectedBoneDebug;
                         DrawVec3("Translation Offset", boneDebug.InitialTranslationOffset);
                         DrawVec3("Rotation Offset", boneDebug.InitialRotationOffset);
                         DrawVec3("Linear Velocity Error", boneDebug.InitialLinearVelocityError);
@@ -328,22 +331,8 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
     // ========================================================================
     // Target Animator
     // ========================================================================
-    // 現段階ではScene内で最初に見つかった有効なStateMachine付きAnimatorを表示対象にします。
-    // bootstrap Overlayと同じ選択規則に揃えることで、移行途中でも両者が同じRuntimeを示します。
-    // Scene Hierarchy / Inspector実装後は「選択EntityのAnimator」を優先する形へ拡張します。
-    const AnimatorStateMachine* stateMachine = nullptr;
-    for (auto [entity, animatorComponent] : scene->View<AnimatorComponent>())
-    {
-        static_cast<void>(entity);
-
-        if (animatorComponent.Enabled == true && animatorComponent.StateMachine != nullptr)
-        {
-            stateMachine = animatorComponent.StateMachine.get();
-            break;
-        }
-    }
-
-    if (stateMachine == nullptr)
+    // Scene探索とRuntime Snapshot構築はCapture側へ集約し、Panelは値の表示だけを担当します。
+    if (snapshot.Animator.AnimatorAvailable == false)
     {
         ImGui::Separator();
         ImGui::TextDisabled("No enabled Animator StateMachine found.");
@@ -351,15 +340,16 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
         return;
     }
 
-    // Runtime側が公開しているSnapshotを一度構築し、以降のUIはこの値だけを参照します。
-    // Transition条件やBlend Tree WeightをPanel側で再計算しないことが重要です。
-    AnimatorStateMachineRuntimeDebugInfo runtime{};
-    if (BuildAnimatorStateMachineRuntimeDebugInfo(*stateMachine, runtime) == false)
+    if (snapshot.Animator.RuntimeDebugAvailable == false)
     {
         ImGui::TextDisabled("Failed to build animation runtime debug snapshot.");
         ImGui::End();
         return;
     }
+
+    // Runtime側が公開しているSnapshotはCaptureAnimationDebugSnapshot()で一度だけ構築済みです。
+    // 以降のUIはこの値だけを参照し、Transition条件やBlend Tree WeightをPanel側で再計算しません。
+    const AnimatorStateMachineRuntimeDebugInfo& runtime = snapshot.Animator.RuntimeDebug;
 
     // ========================================================================
     // Runtime State

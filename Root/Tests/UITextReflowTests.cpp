@@ -4,6 +4,8 @@
 #include "UIImmediateTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
+#include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
+#include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
@@ -774,6 +776,140 @@ void TestStatisticsSnapshot()
         "statistics snapshot disabled profiler skips aggregation");
     Check(disabled.CPUProfiler.RawResults.empty(),
         "statistics snapshot disabled profiler skips copy");
+}
+
+void TestAnimationDebugSnapshot()
+{
+    const Raven::AnimationDebugSnapshot noScene =
+        Raven::CaptureAnimationDebugSnapshot(nullptr, 3u);
+    Check(noScene.SceneAvailable == false, "animation snapshot no scene");
+    Check(noScene.Locomotion.RuntimeAvailable == false,
+        "animation snapshot no locomotion without scene");
+    Check(noScene.Animator.AnimatorAvailable == false,
+        "animation snapshot no animator without scene");
+
+    Raven::AnimationDebugSnapshotInput emptySceneInput{};
+    emptySceneInput.SceneAvailable = true;
+    const Raven::AnimationDebugSnapshot emptyScene =
+        Raven::BuildAnimationDebugSnapshot(emptySceneInput);
+    Check(emptyScene.SceneAvailable == true &&
+        emptyScene.Locomotion.RuntimeAvailable == false &&
+        emptyScene.Animator.AnimatorAvailable == false,
+        "animation snapshot scene without animation");
+
+    Raven::CharacterLocomotionRuntimeDebugInfo locomotion{};
+    locomotion.Active = true;
+    locomotion.Mode = Raven::CharacterLocomotionRuntimeMode::MotionMatching;
+    locomotion.MotionMatching.HasSelection = true;
+    locomotion.MotionMatching.SelectedFrameIndex = 42u;
+
+    std::vector<Raven::MotionTrajectoryPoint> trajectory(1u);
+    trajectory[0u].TimeOffset = 0.25f;
+    trajectory[0u].Position = Raven::math::Vec3(1.0f, 2.0f, 3.0f);
+    std::vector<std::string> boneNames{ "Root", "Hip" };
+
+    Raven::PoseInertializerBoneDebugInfo boneDebug{};
+    boneDebug.Bone = 1u;
+    boneDebug.InitialTranslationOffset = Raven::math::Vec3(4.0f, 5.0f, 6.0f);
+
+    Raven::AnimatorStateMachineRuntimeDebugInfo animator{};
+    animator.Current.HasState = true;
+    animator.Current.StateName = "Run";
+    animator.Nodes.push_back(Raven::AnimatorStateMachineNodeRuntimeDebugInfo{ "Run" });
+
+    Raven::AnimationDebugSnapshotInput input{};
+    input.SceneAvailable = true;
+    input.LocomotionRuntimeAvailable = true;
+    input.LocomotionMode = Raven::CharacterLocomotionRuntimeMode::MotionMatching;
+    input.LocomotionRuntimeDebug = &locomotion;
+    input.Trajectory = &trajectory;
+    input.BoneNames = &boneNames;
+    input.SelectedBoneIndex = 99u;
+    input.SelectedBoneDebug = &boneDebug;
+    input.AnimatorAvailable = true;
+    input.AnimatorRuntimeDebug = &animator;
+    const Raven::AnimationDebugSnapshot snapshot =
+        Raven::BuildAnimationDebugSnapshot(input);
+
+    Check(snapshot.SceneAvailable == true, "animation snapshot scene");
+    Check(snapshot.Locomotion.RuntimeAvailable == true &&
+        snapshot.Locomotion.RuntimeDebugAvailable == true,
+        "animation snapshot locomotion availability");
+    Check(snapshot.Locomotion.RuntimeDebug.MotionMatching.SelectedFrameIndex == 42u,
+        "animation snapshot locomotion values");
+    Check(snapshot.Locomotion.TrajectoryAvailable == true &&
+        snapshot.Locomotion.Trajectory.size() == 1u,
+        "animation snapshot trajectory");
+    Check(snapshot.Locomotion.SelectedBoneIndex == 1u &&
+        snapshot.Locomotion.BoneNames[1u] == "Hip",
+        "animation snapshot clamps bone selection");
+    Check(snapshot.Locomotion.SelectedBoneDebugAvailable == true &&
+        snapshot.Locomotion.SelectedBoneDebug.Bone == 1u,
+        "animation snapshot bone diagnostics");
+    Check(snapshot.Animator.AnimatorAvailable == true &&
+        snapshot.Animator.RuntimeDebugAvailable == true &&
+        snapshot.Animator.RuntimeDebug.Current.StateName == "Run",
+        "animation snapshot animator values");
+
+    // 入力元が次Frameで更新されても、表示中Snapshotは同一Frameの値を維持します。
+    locomotion.MotionMatching.SelectedFrameIndex = 99u;
+    trajectory[0u].TimeOffset = 1.0f;
+    boneNames[1u] = "Changed";
+    animator.Current.StateName = "Idle";
+    Check(snapshot.Locomotion.RuntimeDebug.MotionMatching.SelectedFrameIndex == 42u,
+        "animation snapshot stable locomotion copy");
+    CheckNear("animation snapshot stable trajectory copy",
+        snapshot.Locomotion.Trajectory[0u].TimeOffset, 0.25f);
+    Check(snapshot.Locomotion.BoneNames[1u] == "Hip",
+        "animation snapshot stable bone copy");
+    Check(snapshot.Animator.RuntimeDebug.Current.StateName == "Run",
+        "animation snapshot stable animator copy");
+}
+
+void TestAnimationDebugRavenPanel()
+{
+    Raven::UIContext context;
+    const std::size_t initialRootChildCount = context.GetRootElement().GetChildren().size();
+    Raven::AnimationDebugRavenPanel panel;
+
+    Check(panel.Attach(context, nullptr) == true, "animation Raven panel attach");
+    Check(panel.IsAttached() == true, "animation Raven panel attached state");
+    Check(context.GetRootElement().GetChildren().size() == initialRootChildCount + 1u,
+        "animation Raven panel root ownership");
+
+    Raven::AnimationDebugSnapshot noScene{};
+    panel.Update(noScene);
+    Check(panel.GetDisplayRowCount() == 1u, "animation Raven panel no scene row");
+
+    Raven::AnimationDebugSnapshot snapshot{};
+    snapshot.SceneAvailable = true;
+    snapshot.Locomotion.RuntimeAvailable = true;
+    snapshot.Locomotion.Mode = Raven::CharacterLocomotionRuntimeMode::MotionMatching;
+    snapshot.Locomotion.RuntimeDebugAvailable = true;
+    snapshot.Locomotion.RuntimeDebug.Active = true;
+    snapshot.Locomotion.RuntimeDebug.MotionMatching.HasSelection = true;
+    snapshot.Locomotion.RuntimeDebug.MotionMatching.SelectedFrameIndex = 12u;
+    snapshot.Locomotion.BoneNames = { "Root", "Hip" };
+    snapshot.Locomotion.SelectedBoneIndex = 1u;
+    snapshot.Animator.AnimatorAvailable = true;
+    snapshot.Animator.RuntimeDebugAvailable = true;
+    snapshot.Animator.RuntimeDebug.Current.HasState = true;
+    snapshot.Animator.RuntimeDebug.Current.StateName = "Run";
+    snapshot.Animator.RuntimeDebug.Nodes.push_back(
+        Raven::AnimatorStateMachineNodeRuntimeDebugInfo{ "Run" });
+    panel.Update(snapshot);
+    Check(panel.GetDisplayRowCount() > 8u, "animation Raven panel diagnostic rows");
+    Check(panel.GetSelectedBoneIndex() == 1u, "animation Raven panel selected bone");
+
+    panel.SetVisible(false);
+    Check(panel.IsVisible() == false, "animation Raven panel hidden state");
+    panel.SetVisible(true);
+    Check(panel.IsVisible() == true, "animation Raven panel visible state");
+
+    panel.Detach();
+    Check(panel.IsAttached() == false, "animation Raven panel detached state");
+    Check(context.GetRootElement().GetChildren().size() == initialRootChildCount,
+        "animation Raven panel releases root ownership");
 }
 
 void TestStatisticsRavenPanel()
@@ -3244,6 +3380,8 @@ int main()
     TestMenuBarKeyboardAndLifetime();
     TestCollapsibleSectionVisibility();
     TestEditorDockLayoutPolicy();
+    TestAnimationDebugSnapshot();
+    TestAnimationDebugRavenPanel();
     TestStatisticsSnapshot();
     TestStatisticsRavenPanel();
     TestUIImmediateContext();

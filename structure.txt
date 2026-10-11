@@ -245,6 +245,10 @@ D:.
     |   |   |   \---Panels
     |   |   |           AnimationDebugPanel.cpp
     |   |   |           AnimationDebugPanel.h
+    |   |   |           AnimationDebugRavenPanel.cpp
+    |   |   |           AnimationDebugRavenPanel.h
+    |   |   |           AnimationDebugSnapshot.cpp
+    |   |   |           AnimationDebugSnapshot.h
     |   |   |           InspectorPanel.cpp
     |   |   |           InspectorPanel.h
     |   |   |           SceneHierarchyPanel.cpp
