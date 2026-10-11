@@ -243,6 +243,8 @@ D:.
     |   |   |   |       TransformCommand.h
     |   |   |   |
     |   |   |   \---Panels
+    |   |   |           AnimationDebugActions.cpp
+    |   |   |           AnimationDebugActions.h
     |   |   |           AnimationDebugPanel.cpp
     |   |   |           AnimationDebugPanel.h
     |   |   |           AnimationDebugRavenPanel.cpp
@@ -253,6 +255,8 @@ D:.
     |   |   |           InspectorPanel.h
     |   |   |           SceneHierarchyPanel.cpp
     |   |   |           SceneHierarchyPanel.h
+    |   |   |           StatisticsActions.cpp
+    |   |   |           StatisticsActions.h
     |   |   |           StatisticsPanel.cpp
     |   |   |           StatisticsPanel.h
     |   |   |           StatisticsRavenPanel.cpp

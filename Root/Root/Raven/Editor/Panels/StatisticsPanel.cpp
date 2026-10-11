@@ -1,7 +1,7 @@
 #include "Raven/Editor/Panels/StatisticsPanel.h"
+#include "Raven/Editor/Panels/StatisticsActions.h"
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
 
-#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Window.h"
 
 #include <imgui.h>
@@ -368,8 +368,16 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
 
     if (ImGui::CollapsingHeader("Runtime", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Text("FPS: %.1f", snapshot.Runtime.FramesPerSecond);
-        ImGui::Text("Frame Time: %.3f ms", snapshot.Runtime.FrameTimeMilliseconds);
+        if (snapshot.Runtime.FrameTimingAvailable == true)
+        {
+            ImGui::Text("FPS: %.1f", snapshot.Runtime.FramesPerSecond);
+            ImGui::Text("Frame Time: %.3f ms", snapshot.Runtime.FrameTimeMilliseconds);
+        }
+        else
+        {
+            ImGui::TextDisabled("FPS: N/A (No frame timing)");
+            ImGui::TextDisabled("Frame Time: N/A (No frame timing)");
+        }
         ImGui::Text("Window: %u x %u",
             snapshot.Runtime.WindowWidth, snapshot.Runtime.WindowHeight);
     }
@@ -379,17 +387,16 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
     // Editor UIは完成済みの安定したsnapshotだけを読み取れます。
     if (ImGui::CollapsingHeader("CPU Profiler", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        CPUProfiler& profiler = CPUProfiler::Get();
         bool profilerEnabled = snapshot.CPUProfiler.Enabled;
         if (ImGui::Checkbox("Enabled##CPUProfiler", &profilerEnabled))
         {
-            profiler.SetEnabled(profilerEnabled);
+            SetCPUProfilerEnabledAction(profilerEnabled);
         }
 
-        if (profilerEnabled)
+        if (profilerEnabled == true && snapshot.CPUProfiler.FrameAvailable == true)
         {
             const StatisticsCPUProfilerSnapshot& profile = snapshot.CPUProfiler;
-            ImGui::Text("Profile Frame: %llu",
+            ImGui::Text("Previous Frame: %llu",
                 static_cast<unsigned long long>(profile.FrameIndex));
             ImGui::Text("CPU Frame: %.3f ms", profile.FrameTimeMilliseconds);
             ImGui::Text("Recorded Scopes: %u",
@@ -531,9 +538,13 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
                 ImGui::TreePop();
             }
         }
-        else
+        else if (profilerEnabled == false)
         {
             ImGui::TextDisabled("CPU profiling is disabled.");
+        }
+        else
+        {
+            ImGui::TextDisabled("No completed CPU profile frame is available yet.");
         }
     }
 

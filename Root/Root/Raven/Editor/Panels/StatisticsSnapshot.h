@@ -34,6 +34,8 @@ struct StatisticsCounterAggregate
 
 struct StatisticsRuntimeSnapshot
 {
+    // Delta Timeが未確定または不正なframeでは、0msとして誤表示せず値なしを明示します。
+    bool FrameTimingAvailable = false;
     float FramesPerSecond = 0.0f;
     float FrameTimeMilliseconds = 0.0f;
     std::uint32_t WindowWidth = 0u;
@@ -43,6 +45,9 @@ struct StatisticsRuntimeSnapshot
 struct StatisticsCPUProfilerSnapshot
 {
     bool Enabled = false;
+    // CPU Profilerは書き込み中frameではなく、直前に完了したframeだけを公開します。
+    // Enabledと分離し、有効化直後の「まだ値なし」をDisabledや0msと区別します。
+    bool FrameAvailable = false;
     std::uint64_t FrameIndex = 0u;
     double FrameTimeMilliseconds = 0.0;
     std::vector<StatisticsProfileAggregate> ProfileAggregates;

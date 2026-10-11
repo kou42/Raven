@@ -12,11 +12,13 @@ namespace Raven
 {
 
 class UIContext;
+class UIComboBox;
 class UIElement;
 class UIFontAtlas;
+class UILabel;
 class UITable;
 
-// AnimationDebugSnapshotだけを表示する読み取り専用Raven UI Panelです。
+// AnimationDebugSnapshot表示と、明示的なLocomotion Mode Actionを提供するRaven UI Panelです。
 // 可変長診断値は単一UITableのDataSourceへ平坦化し、行数に比例したWidget生成を避けます。
 class AnimationDebugRavenPanel
 {
@@ -45,13 +47,20 @@ private:
     void AddBoneRow(std::size_t boneIndex, std::string name, bool selected);
     std::string GetCellText(std::size_t row, std::size_t column) const;
     void OnRowSelected(std::size_t row);
+    void OnModeSelected(std::size_t optionIndex);
+    void SynchronizeModeControl();
 
     UIContext* m_Context = nullptr;
     UIElement* m_Root = nullptr;
+    UIElement* m_ModeControls = nullptr;
+    UIComboBox* m_ModeCombo = nullptr;
+    UILabel* m_ActionStatusLabel = nullptr;
     UITable* m_Table = nullptr;
     AnimationDebugSnapshot m_Snapshot;
     std::vector<DisplayRow> m_Rows;
+    std::string m_ActionMessage;
     std::size_t m_SelectedBoneIndex = 0u;
+    bool m_SynchronizingModeSelection = false;
 };
 
 } // namespace Raven

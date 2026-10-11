@@ -1,6 +1,8 @@
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 
+#include "Raven/Editor/Panels/StatisticsActions.h"
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Widgets/UICheckbox.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
 #include "Raven/UI/Widgets/UITable.h"
@@ -87,6 +89,26 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
             *content, 8.0f + static_cast<float>(index) * 25.0f, font));
     }
 
+    auto profilerEnabled = CreateScope<UICheckbox>();
+    profilerEnabled->SetPosition(math::Vec2(150.0f, 654.0f));
+    profilerEnabled->SetSize(math::Vec2(170.0f, 28.0f));
+    profilerEnabled->SetPreferredSize(math::Vec2(170.0f, 28.0f));
+    profilerEnabled->SetCaption("Enabled", font);
+    profilerEnabled->SetOnToggle(
+        [this](bool enabled)
+        {
+            OnProfilerEnabledToggled(enabled);
+        });
+    m_ProfilerEnabledCheckbox = static_cast<UICheckbox*>(
+        content->AddChild(std::move(profilerEnabled)));
+
+    auto actionStatus = CreateScope<UILabel>();
+    actionStatus->SetFont(font);
+    actionStatus->SetPosition(math::Vec2(334.0f, 658.0f));
+    actionStatus->SetSize(math::Vec2(380.0f, 23.0f));
+    actionStatus->SetHitTestVisible(false);
+    m_ActionStatusLabel = static_cast<UILabel*>(content->AddChild(std::move(actionStatus)));
+
     auto profileTable = CreateScope<UITable>();
     profileTable->SetFont(font);
     profileTable->SetPosition(math::Vec2(8.0f, 752.0f));
@@ -128,6 +150,8 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     {
         m_Context = nullptr;
         m_SummaryLabels.clear();
+        m_ProfilerEnabledCheckbox = nullptr;
+        m_ActionStatusLabel = nullptr;
         m_ProfileTable = nullptr;
         m_CounterTable = nullptr;
         return false;
@@ -146,6 +170,8 @@ void StatisticsRavenPanel::Detach()
     m_Context = nullptr;
     m_Root = nullptr;
     m_SummaryLabels.clear();
+    m_ProfilerEnabledCheckbox = nullptr;
+    m_ActionStatusLabel = nullptr;
     m_ProfileTable = nullptr;
     m_CounterTable = nullptr;
     m_Snapshot = StatisticsSnapshot{};
@@ -154,6 +180,10 @@ void StatisticsRavenPanel::Detach()
 void StatisticsRavenPanel::Update(const StatisticsSnapshot& snapshot)
 {
     m_Snapshot = snapshot;
+    if (m_ProfilerEnabledCheckbox != nullptr)
+    {
+        m_ProfilerEnabledCheckbox->SetChecked(snapshot.CPUProfiler.Enabled);
+    }
     UpdateSummaryLabels();
     if (m_ProfileTable != nullptr)
     {
@@ -204,6 +234,19 @@ UILabel* StatisticsRavenPanel::AddLabel(
     return static_cast<UILabel*>(parent.AddChild(std::move(label)));
 }
 
+void StatisticsRavenPanel::OnProfilerEnabledToggled(bool enabled)
+{
+    const StatisticsActionResult result = SetCPUProfilerEnabledAction(enabled);
+    if (m_ProfilerEnabledCheckbox != nullptr)
+    {
+        m_ProfilerEnabledCheckbox->SetChecked(result.Enabled);
+    }
+    if (m_ActionStatusLabel != nullptr)
+    {
+        m_ActionStatusLabel->SetText(result.Message);
+    }
+}
+
 void StatisticsRavenPanel::UpdateSummaryLabels()
 {
     if (m_SummaryLabels.size() != SummaryLabelCount)
@@ -213,11 +256,19 @@ void StatisticsRavenPanel::UpdateSummaryLabels()
 
     char buffer[256];
     m_SummaryLabels[RuntimeHeader]->SetText("Runtime");
-    std::snprintf(buffer, sizeof(buffer), "FPS: %.1f", m_Snapshot.Runtime.FramesPerSecond);
-    m_SummaryLabels[RuntimeFPS]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Frame Time: %.3f ms",
-        m_Snapshot.Runtime.FrameTimeMilliseconds);
-    m_SummaryLabels[RuntimeFrameTime]->SetText(buffer);
+    if (m_Snapshot.Runtime.FrameTimingAvailable == true)
+    {
+        std::snprintf(buffer, sizeof(buffer), "FPS: %.1f", m_Snapshot.Runtime.FramesPerSecond);
+        m_SummaryLabels[RuntimeFPS]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Frame Time: %.3f ms",
+            m_Snapshot.Runtime.FrameTimeMilliseconds);
+        m_SummaryLabels[RuntimeFrameTime]->SetText(buffer);
+    }
+    else
+    {
+        m_SummaryLabels[RuntimeFPS]->SetText("FPS: N/A (No frame timing)");
+        m_SummaryLabels[RuntimeFrameTime]->SetText("Frame Time: N/A (No frame timing)");
+    }
     std::snprintf(buffer, sizeof(buffer), "Window: %u x %u",
         m_Snapshot.Runtime.WindowWidth, m_Snapshot.Runtime.WindowHeight);
     m_SummaryLabels[RuntimeWindow]->SetText(buffer);
@@ -234,58 +285,76 @@ void StatisticsRavenPanel::UpdateSummaryLabels()
     m_SummaryLabels[PhysicsHeader]->SetText("Physics");
     m_SummaryLabels[PhysicsStatus]->SetText(
         physics.Available == true ? "Status: Active Scene" : "Status: No active scene");
-    std::snprintf(buffer, sizeof(buffer), "Rigid Bodies: %u", physics.RigidBodyCount);
-    m_SummaryLabels[PhysicsRigidBodies]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Colliders: %u", physics.ColliderCount);
-    m_SummaryLabels[PhysicsColliders]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Broad Phase Pairs: %u", physics.BroadPhasePairCount);
-    m_SummaryLabels[PhysicsBroadPhasePairs]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Contact Manifolds: %u", physics.ManifoldCount);
-    m_SummaryLabels[PhysicsManifolds]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Contact Points: %u", physics.ContactPointCount);
-    m_SummaryLabels[PhysicsContactPoints]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Warm Started Constraints: %u",
-        physics.WarmStartedConstraintCount);
-    m_SummaryLabels[PhysicsWarmStarted]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Velocity Iterations: %u", physics.VelocityIterations);
-    m_SummaryLabels[PhysicsVelocityIterations]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Max Penetration: %.5f", physics.MaxPenetration);
-    m_SummaryLabels[PhysicsMaxPenetration]->SetText(buffer);
+    if (physics.Available == false)
+    {
+        // Sceneなしの既定値0は実測値ではないため、Physics/Astro全項目を値なしとして表示します。
+        for (std::size_t index = PhysicsRigidBodies; index <= AstroWork; ++index)
+        {
+            m_SummaryLabels[index]->SetText("N/A (No active scene)");
+        }
+    }
+    else
+    {
+        std::snprintf(buffer, sizeof(buffer), "Rigid Bodies: %u", physics.RigidBodyCount);
+        m_SummaryLabels[PhysicsRigidBodies]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Colliders: %u", physics.ColliderCount);
+        m_SummaryLabels[PhysicsColliders]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Broad Phase Pairs: %u", physics.BroadPhasePairCount);
+        m_SummaryLabels[PhysicsBroadPhasePairs]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Contact Manifolds: %u", physics.ManifoldCount);
+        m_SummaryLabels[PhysicsManifolds]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Contact Points: %u", physics.ContactPointCount);
+        m_SummaryLabels[PhysicsContactPoints]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Warm Started Constraints: %u",
+            physics.WarmStartedConstraintCount);
+        m_SummaryLabels[PhysicsWarmStarted]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Velocity Iterations: %u", physics.VelocityIterations);
+        m_SummaryLabels[PhysicsVelocityIterations]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Max Penetration: %.5f", physics.MaxPenetration);
+        m_SummaryLabels[PhysicsMaxPenetration]->SetText(buffer);
 
-    const StatisticsAstroSnapshot& astro = physics.Astro;
-    m_SummaryLabels[AstroHeader]->SetText("Astro Gravity");
-    std::snprintf(buffer, sizeof(buffer), "Mode: %s / Active Solver: %s",
-        astro.SolverMode.c_str(), astro.ActiveSolver.c_str());
-    m_SummaryLabels[AstroSolver]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Active Bodies: %llu",
-        static_cast<unsigned long long>(astro.ActiveBodyCount));
-    m_SummaryLabels[AstroBodies]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Switch Up / Down: %llu / %llu",
-        static_cast<unsigned long long>(astro.BarnesHutBodyThreshold),
-        static_cast<unsigned long long>(astro.DirectBodyThreshold));
-    m_SummaryLabels[AstroThresholds]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Barnes-Hut Theta: %.3f", astro.BarnesHutTheta);
-    m_SummaryLabels[AstroTheta]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "State Collection: %.3f ms / Gravity Solve: %.3f ms",
-        astro.StateCollectionTimeMilliseconds, astro.GravitySolveTimeMilliseconds);
-    m_SummaryLabels[AstroTimingA]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Octree Build: %.3f ms / Force Feedback: %.3f ms",
-        astro.GravityTreeBuildTimeMilliseconds, astro.ForceFeedbackTimeMilliseconds);
-    m_SummaryLabels[AstroTimingB]->SetText(buffer);
-    std::snprintf(buffer, sizeof(buffer), "Force Evaluations: %llu / Node Visits: %llu / Aggregate: %llu",
-        static_cast<unsigned long long>(astro.GravityForceEvaluationCount),
-        static_cast<unsigned long long>(astro.GravityVisitedNodeCount),
-        static_cast<unsigned long long>(astro.GravityAcceptedAggregateNodeCount));
-    m_SummaryLabels[AstroWork]->SetText(buffer);
+        const StatisticsAstroSnapshot& astro = physics.Astro;
+        m_SummaryLabels[AstroHeader]->SetText("Astro Gravity");
+        std::snprintf(buffer, sizeof(buffer), "Mode: %s / Active Solver: %s",
+            astro.SolverMode.c_str(), astro.ActiveSolver.c_str());
+        m_SummaryLabels[AstroSolver]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Active Bodies: %llu",
+            static_cast<unsigned long long>(astro.ActiveBodyCount));
+        m_SummaryLabels[AstroBodies]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Switch Up / Down: %llu / %llu",
+            static_cast<unsigned long long>(astro.BarnesHutBodyThreshold),
+            static_cast<unsigned long long>(astro.DirectBodyThreshold));
+        m_SummaryLabels[AstroThresholds]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Barnes-Hut Theta: %.3f", astro.BarnesHutTheta);
+        m_SummaryLabels[AstroTheta]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "State Collection: %.3f ms / Gravity Solve: %.3f ms",
+            astro.StateCollectionTimeMilliseconds, astro.GravitySolveTimeMilliseconds);
+        m_SummaryLabels[AstroTimingA]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Octree Build: %.3f ms / Force Feedback: %.3f ms",
+            astro.GravityTreeBuildTimeMilliseconds, astro.ForceFeedbackTimeMilliseconds);
+        m_SummaryLabels[AstroTimingB]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer),
+            "Force Evaluations: %llu / Node Visits: %llu / Aggregate: %llu",
+            static_cast<unsigned long long>(astro.GravityForceEvaluationCount),
+            static_cast<unsigned long long>(astro.GravityVisitedNodeCount),
+            static_cast<unsigned long long>(astro.GravityAcceptedAggregateNodeCount));
+        m_SummaryLabels[AstroWork]->SetText(buffer);
+    }
 
     m_SummaryLabels[ProfilerHeader]->SetText("CPU Profiler");
     if (m_Snapshot.CPUProfiler.Enabled == false)
     {
         m_SummaryLabels[ProfilerFrame]->SetText("Status: Disabled");
-        m_SummaryLabels[ProfilerCounts]->SetText("Scopes: 0 / Counters: 0");
+        m_SummaryLabels[ProfilerCounts]->SetText("Scopes: N/A / Counters: N/A (Disabled)");
         return;
     }
-    std::snprintf(buffer, sizeof(buffer), "Profile Frame: %llu / CPU Frame: %.3f ms",
+    if (m_Snapshot.CPUProfiler.FrameAvailable == false)
+    {
+        m_SummaryLabels[ProfilerFrame]->SetText("Status: No completed frame");
+        m_SummaryLabels[ProfilerCounts]->SetText("Scopes: N/A / Counters: N/A");
+        return;
+    }
+    std::snprintf(buffer, sizeof(buffer), "Previous Frame: %llu / CPU Frame: %.3f ms",
         static_cast<unsigned long long>(m_Snapshot.CPUProfiler.FrameIndex),
         m_Snapshot.CPUProfiler.FrameTimeMilliseconds);
     m_SummaryLabels[ProfilerFrame]->SetText(buffer);

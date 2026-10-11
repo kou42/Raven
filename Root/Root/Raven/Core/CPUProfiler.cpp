@@ -101,6 +101,10 @@ void CPUProfiler::SetEnabled(bool enabled)
     m_LastFrame.Results.clear();
     m_WriteFrame.Counters.clear();
     m_LastFrame.Counters.clear();
+    // 再有効化直後に消去済みの旧frameを「直前に完了したframe」と誤認しないよう、
+    // 読み書き両bufferの識別子も無効値へ戻します。通算採番のm_FrameIndexは維持します。
+    m_WriteFrame.FrameIndex = 0u;
+    m_LastFrame.FrameIndex = 0u;
     m_WriteFrame.FrameTimeMilliseconds = 0.0;
     m_LastFrame.FrameTimeMilliseconds = 0.0;
 }

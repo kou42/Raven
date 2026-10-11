@@ -1,6 +1,8 @@
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 
+#include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UIWindow.h"
@@ -79,10 +81,44 @@ bool AnimationDebugRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>
     title->SetHitTestVisible(false);
     window->AddChild(std::move(title));
 
+    auto modeControls = CreateScope<UIElement>();
+    modeControls->SetPosition(math::Vec2(8.0f, 32.0f));
+    modeControls->SetSize(math::Vec2(944.0f, 32.0f));
+
+    auto modeLabel = CreateScope<UILabel>();
+    modeLabel->SetFont(font);
+    modeLabel->SetText("Runtime Mode");
+    modeLabel->SetPosition(math::Vec2(4.0f, 4.0f));
+    modeLabel->SetSize(math::Vec2(126.0f, 24.0f));
+    modeLabel->SetHitTestVisible(false);
+    modeControls->AddChild(std::move(modeLabel));
+
+    auto modeCombo = CreateScope<UIComboBox>();
+    modeCombo->SetFont(font);
+    modeCombo->SetPosition(math::Vec2(132.0f, 0.0f));
+    modeCombo->SetSize(math::Vec2(210.0f, 30.0f));
+    modeCombo->SetOptions({ "Blend Tree", "Motion Matching" });
+    modeCombo->SetSelectedIndex(0u);
+    modeCombo->SetOnSelectionChanged(
+        [this](std::size_t optionIndex, const std::string&)
+        {
+            OnModeSelected(optionIndex);
+        });
+    m_ModeCombo = static_cast<UIComboBox*>(modeControls->AddChild(std::move(modeCombo)));
+
+    auto actionStatus = CreateScope<UILabel>();
+    actionStatus->SetFont(font);
+    actionStatus->SetPosition(math::Vec2(356.0f, 4.0f));
+    actionStatus->SetSize(math::Vec2(580.0f, 24.0f));
+    actionStatus->SetHitTestVisible(false);
+    m_ActionStatusLabel = static_cast<UILabel*>(
+        modeControls->AddChild(std::move(actionStatus)));
+    m_ModeControls = window->AddChild(std::move(modeControls));
+
     auto table = CreateScope<UITable>();
     table->SetFont(font);
-    table->SetPosition(math::Vec2(8.0f, 32.0f));
-    table->SetSize(math::Vec2(944.0f, 680.0f));
+    table->SetPosition(math::Vec2(8.0f, 70.0f));
+    table->SetSize(math::Vec2(944.0f, 642.0f));
     table->AddColumn("Section", 160.0f);
     table->AddColumn("Item", 230.0f);
     table->AddColumn("Value", 530.0f);
@@ -104,10 +140,14 @@ bool AnimationDebugRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>
     if (m_Root == nullptr)
     {
         m_Context = nullptr;
+        m_ModeControls = nullptr;
+        m_ModeCombo = nullptr;
+        m_ActionStatusLabel = nullptr;
         m_Table = nullptr;
         return false;
     }
 
+    SynchronizeModeControl();
     RebuildRows();
     return true;
 }
@@ -120,10 +160,15 @@ void AnimationDebugRavenPanel::Detach()
     }
     m_Context = nullptr;
     m_Root = nullptr;
+    m_ModeControls = nullptr;
+    m_ModeCombo = nullptr;
+    m_ActionStatusLabel = nullptr;
     m_Table = nullptr;
     m_Snapshot = AnimationDebugSnapshot{};
     m_Rows.clear();
+    m_ActionMessage.clear();
     m_SelectedBoneIndex = 0u;
+    m_SynchronizingModeSelection = false;
 }
 
 void AnimationDebugRavenPanel::Update(const AnimationDebugSnapshot& snapshot)
@@ -137,6 +182,7 @@ void AnimationDebugRavenPanel::Update(const AnimationDebugSnapshot& snapshot)
     {
         m_SelectedBoneIndex = 0u;
     }
+    SynchronizeModeControl();
     RebuildRows();
     if (m_Table != nullptr)
     {
@@ -428,6 +474,53 @@ void AnimationDebugRavenPanel::OnRowSelected(std::size_t row)
     {
         m_SelectedBoneIndex = boneIndex;
     }
+}
+
+void AnimationDebugRavenPanel::OnModeSelected(std::size_t optionIndex)
+{
+    if (m_SynchronizingModeSelection == true || optionIndex > 1u)
+    {
+        return;
+    }
+
+    const CharacterLocomotionRuntimeMode requestedMode = optionIndex == 1u
+        ? CharacterLocomotionRuntimeMode::MotionMatching
+        : CharacterLocomotionRuntimeMode::BlendTree;
+    const AnimationDebugActionResult result =
+        SetCharacterLocomotionModeAction(requestedMode);
+    m_ActionMessage = result.Message;
+    if (m_ActionStatusLabel != nullptr)
+    {
+        m_ActionStatusLabel->SetText(m_ActionMessage);
+    }
+
+    if (result.Status != AnimationDebugActionStatus::Succeeded)
+    {
+        // 失敗時は表示選択だけがRuntimeより先行しないよう、同Frame Snapshotの値へ戻します。
+        SynchronizeModeControl();
+    }
+}
+
+void AnimationDebugRavenPanel::SynchronizeModeControl()
+{
+    if (m_ModeControls == nullptr || m_ModeCombo == nullptr)
+    {
+        return;
+    }
+
+    const bool available = m_Snapshot.SceneAvailable == true &&
+        m_Snapshot.Locomotion.RuntimeAvailable == true;
+    m_ModeControls->SetVisible(available);
+    if (available == false)
+    {
+        return;
+    }
+
+    const std::size_t optionIndex =
+        m_Snapshot.Locomotion.Mode == CharacterLocomotionRuntimeMode::MotionMatching ? 1u : 0u;
+    m_SynchronizingModeSelection = true;
+    m_ModeCombo->SetSelectedIndex(optionIndex);
+    m_SynchronizingModeSelection = false;
 }
 
 } // namespace Raven

@@ -109,7 +109,7 @@ private:
     struct PanelUIOwnership
     {
         PanelUIOwner Statistics = PanelUIOwner::RavenUI;
-        PanelUIOwner AnimationDebug = PanelUIOwner::DearImGui;
+        PanelUIOwner AnimationDebug = PanelUIOwner::RavenUI;
         PanelUIOwner SceneHierarchy = PanelUIOwner::DearImGui;
         PanelUIOwner Inspector = PanelUIOwner::DearImGui;
         PanelUIOwner SceneView = PanelUIOwner::DearImGui;

@@ -204,16 +204,17 @@ Exit Gate:
 - [x] StatisticsをRaven UI Panelへ接続し、Dual / Raven UIモードの表示所有権をRaven UIへ移す。
 - [x] AnimationのState Machine、Locomotion、Trajectory、Bone診断データを`AnimationDebugSnapshot`へまとめる。
 - [x] Animation Debugの読み取り専用Raven UI Panelを追加し、Raven UIモードへ接続する。
-- [ ] Animation DebugのMode切替ActionをRaven UIへ移し、Dualモードの所有権をRaven UIへ切り替える。
-- Table/Treeの仮想化または表示行数制限を用意し、大量データでWidgetを無制限生成しない。
-- 「値なし」「無効」「前Frameの値」を区別して表示する。
-- CPU ProfilerのEnabled切替等、書き込み操作は明示的Actionへ分離する。
+- [x] Animation DebugのMode切替ActionをRaven UIへ移し、Dualモードの所有権をRaven UIへ切り替える。
+- [x] `UITable`の外部DataSourceと可視行範囲による仮想化を用意し、100万行でもWidgetや文字列を全件生成しない。
+- [x] StatisticsのFrame Timing、Physics、CPU Profilerで「値なし」「無効」「前Frameの値」を区別して表示する。
+- [x] CPU ProfilerのEnabled切替を明示的Actionへ分離し、ImGui版とRaven UI版で共有する。
 
 Exit Gate:
 
 - ImGui版と同じ診断項目を表示し、数値が同一FrameのRuntime状態と一致する。
 - Profiler無効時、Sceneなし、Animationなしでも安全に表示できる。
 - 大量行でCPU時間とDraw Command数を計測し、許容上限を記録する。
+  - Debug x64の自動テストでは100万行の`UITable`を対象に、1 Frame 50ms以内、セル問い合わせ3回以内、Draw Command 8件以内を回帰上限とする。
 
 ### Phase 4: Scene HierarchyとInspectorの移行
 

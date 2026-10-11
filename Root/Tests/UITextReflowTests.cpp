@@ -4,9 +4,11 @@
 #include "UIImmediateTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
+#include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
+#include "Raven/Editor/Panels/StatisticsActions.h"
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Rendering/UITessellator.h"
@@ -734,6 +736,8 @@ void TestStatisticsSnapshot()
     input.CPUProfile = &profile;
     const Raven::StatisticsSnapshot snapshot = Raven::BuildStatisticsSnapshot(input);
 
+    Check(snapshot.Runtime.FrameTimingAvailable == true,
+        "statistics snapshot frame timing available");
     CheckNear("statistics snapshot fps", snapshot.Runtime.FramesPerSecond, 50.0f);
     CheckNear("statistics snapshot frame ms", snapshot.Runtime.FrameTimeMilliseconds, 20.0f);
     Check(snapshot.Runtime.WindowWidth == 1280u && snapshot.Runtime.WindowHeight == 720u,
@@ -741,6 +745,8 @@ void TestStatisticsSnapshot()
     Check(snapshot.Renderer.DrawCalls == 12u && snapshot.Renderer.TriangleCount == 40u,
         "statistics snapshot renderer");
     Check(snapshot.Physics.Available == false, "statistics snapshot no scene");
+    Check(snapshot.CPUProfiler.FrameAvailable == true,
+        "statistics snapshot previous profiler frame available");
     Check(snapshot.CPUProfiler.FrameIndex == 42u, "statistics snapshot profile frame");
     Check(snapshot.CPUProfiler.ProfileAggregates.size() == 2u,
         "statistics snapshot profile aggregate count");
@@ -772,10 +778,60 @@ void TestStatisticsSnapshot()
     const Raven::StatisticsSnapshot disabled = Raven::BuildStatisticsSnapshot(input);
     CheckNear("statistics snapshot invalid delta fps", disabled.Runtime.FramesPerSecond, 0.0f);
     CheckNear("statistics snapshot invalid delta ms", disabled.Runtime.FrameTimeMilliseconds, 0.0f);
+    Check(disabled.Runtime.FrameTimingAvailable == false,
+        "statistics snapshot invalid delta unavailable");
+    Check(disabled.CPUProfiler.FrameAvailable == false,
+        "statistics snapshot disabled profiler frame unavailable");
     Check(disabled.CPUProfiler.ProfileAggregates.empty(),
         "statistics snapshot disabled profiler skips aggregation");
     Check(disabled.CPUProfiler.RawResults.empty(),
         "statistics snapshot disabled profiler skips copy");
+
+    input.DeltaTime = 0.02f;
+    input.CPUProfilerEnabled = true;
+    input.CPUProfile = nullptr;
+    const Raven::StatisticsSnapshot pending = Raven::BuildStatisticsSnapshot(input);
+    Check(pending.CPUProfiler.Enabled == true && pending.CPUProfiler.FrameAvailable == false,
+        "statistics snapshot enabled profiler without completed frame");
+}
+
+void TestCPUProfilerFrameAvailabilityReset()
+{
+    Raven::CPUProfiler& profiler = Raven::CPUProfiler::Get();
+    const bool restoreEnabled = profiler.IsEnabled();
+    profiler.SetEnabled(true);
+    profiler.BeginFrame();
+    profiler.BeginFrame();
+    Check(profiler.GetLastFrame().FrameIndex > 0u,
+        "CPU profiler publishes completed frame");
+
+    profiler.SetEnabled(false);
+    Check(profiler.GetLastFrame().FrameIndex == 0u,
+        "CPU profiler disable invalidates completed frame");
+    profiler.SetEnabled(true);
+    Check(profiler.GetLastFrame().FrameIndex == 0u,
+        "CPU profiler re-enable starts without completed frame");
+    profiler.SetEnabled(restoreEnabled);
+}
+
+void TestStatisticsActions()
+{
+    Raven::CPUProfiler& profiler = Raven::CPUProfiler::Get();
+    const bool restoreEnabled = profiler.IsEnabled();
+    const Raven::StatisticsActionResult disabled =
+        Raven::SetCPUProfilerEnabledAction(false);
+    Check(disabled.Succeeded == true && disabled.Enabled == false,
+        "statistics action disables CPU profiler");
+    Check(disabled.Message.empty() == false,
+        "statistics disable action message");
+
+    const Raven::StatisticsActionResult enabled =
+        Raven::SetCPUProfilerEnabledAction(true);
+    Check(enabled.Succeeded == true && enabled.Enabled == true,
+        "statistics action enables CPU profiler");
+    Check(enabled.Message.empty() == false,
+        "statistics enable action message");
+    Raven::SetCPUProfilerEnabledAction(restoreEnabled);
 }
 
 void TestAnimationDebugSnapshot()
@@ -866,6 +922,17 @@ void TestAnimationDebugSnapshot()
         "animation snapshot stable animator copy");
 }
 
+void TestAnimationDebugActions()
+{
+    const Raven::AnimationDebugActionResult result =
+        Raven::SetCharacterLocomotionModeAction(
+            Raven::CharacterLocomotionRuntimeMode::MotionMatching);
+    Check(result.Status == Raven::AnimationDebugActionStatus::RuntimeUnavailable,
+        "animation action reports unavailable runtime");
+    Check(result.Message.empty() == false,
+        "animation action unavailable runtime message");
+}
+
 void TestAnimationDebugRavenPanel()
 {
     Raven::UIContext context;
@@ -924,6 +991,7 @@ void TestStatisticsRavenPanel()
         "statistics Raven panel root ownership");
 
     Raven::CPUProfileFrame profile{};
+    profile.FrameIndex = 1u;
     profile.Results.push_back(Raven::CPUProfileResult{ "Physics", 2.0, {}, 0u });
     profile.Results.push_back(Raven::CPUProfileResult{ "Render", 4.0, {}, 0u });
     profile.Counters.push_back(Raven::CPUProfileCounter{ "Draw Calls", 12.0 });
@@ -2318,6 +2386,16 @@ void TestTable()
     Check(externalVisible.second == externalCount, "table external last visible");
     Check(externalVisible.second - externalVisible.first <= 3u, "table external bounded visible");
     Check(cellQueries == 0u, "table external no eager cell requests");
+    // 100万行の論理データでも、Frame構築は可視セルとTable装飾だけに制限します。
+    // Debug/CI環境の揺らぎを許容しつつ、全行走査へ退行した場合は50ms上限で検出します。
+    const auto frameStart = std::chrono::steady_clock::now();
+    context.EndFrame();
+    const auto frameMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - frameStart).count();
+    Check(frameMilliseconds <= 50, "table external frame CPU budget");
+    Check(cellQueries <= 3u, "table external bounded cell requests");
+    Check(context.GetDrawList().GetCommandCount() <= 8u,
+        "table external bounded draw commands");
     Check(view->SelectRow(externalCount - 1u), "table external select last");
     externalCount = 2u;
     view->NotifyDataSourceChanged();
@@ -3380,8 +3458,11 @@ int main()
     TestMenuBarKeyboardAndLifetime();
     TestCollapsibleSectionVisibility();
     TestEditorDockLayoutPolicy();
+    TestAnimationDebugActions();
     TestAnimationDebugSnapshot();
     TestAnimationDebugRavenPanel();
+    TestCPUProfilerFrameAvailabilityReset();
+    TestStatisticsActions();
     TestStatisticsSnapshot();
     TestStatisticsRavenPanel();
     TestUIImmediateContext();

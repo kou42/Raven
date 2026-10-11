@@ -1,6 +1,6 @@
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
 
-#include "Raven/Character/Debug/CharacterControllerDemoLocomotionRuntime.h"
+#include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
 
 #include <imgui.h>
@@ -90,14 +90,18 @@ void AnimationDebugPanel::OnImGuiRender(Scene* scene)
                     ? CharacterLocomotionRuntimeMode::MotionMatching
                     : CharacterLocomotionRuntimeMode::BlendTree;
 
-                // 書き込み操作だけは明示的に現在のDebug Runtimeへ送り、表示Snapshotとは分離します。
-                // Snapshot内へRuntime pointerを保持しないため、Runtime破棄後に参照が残りません。
-                CharacterControllerDemoLocomotionRuntime* actionTarget =
-                    CharacterControllerDemoLocomotionRuntime::GetActiveDebugRuntime();
-                if (actionTarget != nullptr &&
-                    actionTarget->SetMode(requestedMode, &m_LocomotionRuntimeError) == true)
+                // 書き込み操作だけは明示的なActionを通して現在のDebug Runtimeへ送り、
+                // 表示Snapshotとは分離します。SnapshotやPanel内へRuntime pointerを保持しないため、
+                // Runtime破棄後に非所有参照が残りません。
+                const AnimationDebugActionResult result =
+                    SetCharacterLocomotionModeAction(requestedMode);
+                if (result.Status == AnimationDebugActionStatus::Succeeded)
                 {
                     m_LocomotionRuntimeError.clear();
+                }
+                else
+                {
+                    m_LocomotionRuntimeError = result.Message;
                 }
             }
 

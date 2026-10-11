@@ -741,6 +741,18 @@
     <ClInclude Update="Raven\Editor\Panels\AnimationDebugRavenPanel.h">
       <Filter>Raven\Editor\Panels</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\AnimationDebugActions.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\AnimationDebugActions.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\StatisticsActions.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\StatisticsActions.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Assets\Images\test\mountain1.png" />

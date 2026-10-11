@@ -183,6 +183,7 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
     StatisticsSnapshot snapshot{};
     const bool validDeltaTime =
         std::isfinite(input.DeltaTime) == true && input.DeltaTime > 0.0f;
+    snapshot.Runtime.FrameTimingAvailable = validDeltaTime;
     snapshot.Runtime.FrameTimeMilliseconds =
         validDeltaTime == true ? input.DeltaTime * 1000.0f : 0.0f;
     snapshot.Runtime.FramesPerSecond =
@@ -193,7 +194,9 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
 
     StatisticsCPUProfilerSnapshot& profiler = snapshot.CPUProfiler;
     profiler.Enabled = input.CPUProfilerEnabled;
-    if (profiler.Enabled == true && input.CPUProfile != nullptr)
+    profiler.FrameAvailable = profiler.Enabled == true && input.CPUProfile != nullptr &&
+        input.CPUProfile->FrameIndex > 0u;
+    if (profiler.FrameAvailable == true)
     {
         const CPUProfileFrame& frame = *input.CPUProfile;
         profiler.FrameIndex = frame.FrameIndex;
