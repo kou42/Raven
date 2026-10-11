@@ -255,6 +255,10 @@ D:.
     |   |   |           InspectorPanel.h
     |   |   |           SceneHierarchyPanel.cpp
     |   |   |           SceneHierarchyPanel.h
+    |   |   |           SceneHierarchyRavenPanel.cpp
+    |   |   |           SceneHierarchyRavenPanel.h
+    |   |   |           SceneHierarchySnapshot.cpp
+    |   |   |           SceneHierarchySnapshot.h
     |   |   |           StatisticsActions.cpp
     |   |   |           StatisticsActions.h
     |   |   |           StatisticsPanel.cpp

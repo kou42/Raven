@@ -1,6 +1,6 @@
 # Raven 脱ImGuiロードマップ
 
-最終更新: 2026-10-09
+最終更新: 2026-10-11
 
 対象: Raven Editor / Debug UI / Dear ImGui統合
 
@@ -220,9 +220,13 @@ Exit Gate:
 
 目的: Editorの選択・編集フローをRaven UIへ移す。
 
-- [ ] Scene Hierarchy用View Modelを作り、Entity ID / Generation / 親子関係 / 表示名をSnapshot化する。
-- [ ] 選択状態は`EditorLayer`に一元化し、Hierarchy、Inspector、Viewport、Gizmoで共有する。
+- [x] Scene Hierarchy用View Modelを作り、Entity ID / Generation / 親子関係 / 表示名をSnapshot化する。
+- [x] 選択状態は`EditorLayer`に一元化し、Hierarchy、Inspector、Viewport、Gizmoで共有する。
 - [ ] Create / Delete / Rename / Reparentを既存または追加のEditor Commandへ接続する。
+  - [x] Createを既存`CreateEntityCommand`へ接続する。
+  - [x] Renameを既存`RenameEntityCommand`へ接続し、Enter / Focus喪失時に1 Commandとして確定する。
+  - [ ] DeleteのComponent復元SnapshotとCommandを追加する。
+  - [ ] 親子関係の正規Runtimeデータを定義してReparent Commandへ接続する。
 - [ ] InspectorのComponent表示をSection単位へ分け、UIコードとComponent変更処理を分離する。
 - [ ] 連続値編集は「Drag中Preview」と「操作完了時のCommand確定」を分ける。
 - [ ] Entity破棄、Scene交換、Index再利用時に選択と編集中状態を破棄する。

@@ -4,9 +4,13 @@
 #include "UIImmediateTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
+#include "Raven/Editor/EditorCommandHistory.h"
+#include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
+#include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
+#include "Raven/Editor/Panels/SceneHierarchySnapshot.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Editor/Panels/StatisticsActions.h"
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
@@ -14,6 +18,8 @@
 #include "Raven/UI/Rendering/UITessellator.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Scene/Components.h"
+#include "Raven/Scene/Scene.h"
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Text/UITextEditBuffer.h"
 #include "Raven/UI/Text/UITextLayout.h"
@@ -931,6 +937,165 @@ void TestAnimationDebugActions()
         "animation action reports unavailable runtime");
     Check(result.Message.empty() == false,
         "animation action unavailable runtime message");
+}
+
+void TestSceneHierarchySnapshot()
+{
+    const Raven::EntityHandle root{ 1u, 2u };
+    const Raven::EntityHandle child{ 2u, 4u };
+    const Raven::EntityHandle cycleA{ 3u, 1u };
+    const Raven::EntityHandle cycleB{ 4u, 1u };
+
+    Raven::SceneHierarchySnapshotInput input{};
+    input.SceneAvailable = true;
+    input.Selected = child;
+    input.Nodes =
+    {
+        { child, root, "Child" },
+        { root, Raven::InvalidEntityHandle, "Root" },
+        { cycleA, cycleB, "Cycle A" },
+        { cycleB, cycleA, "Cycle B" },
+        { root, Raven::InvalidEntityHandle, "Duplicate" },
+        { Raven::InvalidEntityHandle, Raven::InvalidEntityHandle, "Invalid" }
+    };
+
+    const Raven::SceneHierarchySnapshot snapshot =
+        Raven::BuildSceneHierarchySnapshot(input);
+    Check(snapshot.SceneAvailable == true, "hierarchy snapshot scene state");
+    Check(snapshot.Nodes.size() == 4u, "hierarchy snapshot filters invalid handles");
+    Check(snapshot.Selected == child, "hierarchy snapshot selection");
+    Check(snapshot.Nodes[0u].Parent == root, "hierarchy snapshot parent relation");
+    Check(static_cast<bool>(snapshot.Nodes[2u].Parent) == false &&
+        static_cast<bool>(snapshot.Nodes[3u].Parent) == false,
+        "hierarchy snapshot cycle fallback");
+
+    input.Selected = Raven::EntityHandle{ 99u, 1u };
+    const Raven::SceneHierarchySnapshot missingSelection =
+        Raven::BuildSceneHierarchySnapshot(input);
+    Check(static_cast<bool>(missingSelection.Selected) == false,
+        "hierarchy snapshot rejects missing selection");
+
+    Raven::SceneHierarchySnapshotInput noSceneInput{};
+    noSceneInput.Nodes = input.Nodes;
+    const Raven::SceneHierarchySnapshot noScene =
+        Raven::BuildSceneHierarchySnapshot(noSceneInput);
+    Check(noScene.SceneAvailable == false && noScene.Nodes.empty() == true,
+        "hierarchy snapshot no scene is empty");
+}
+
+void TestSceneHierarchyRenameCommand()
+{
+    Raven::Scene scene;
+    Raven::Entity entity = scene.CreateEntity("Before");
+    Raven::SetEditorCommandHistoryScene(&scene);
+
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::RenameEntityCommand>(
+            entity, "Before", "After")) == true,
+        "hierarchy rename command execute");
+    Check(entity.GetComponent<Raven::TagComponent>().Tag == "After",
+        "hierarchy rename command applies name");
+    Check(Raven::UndoEditorCommand() == true &&
+        entity.GetComponent<Raven::TagComponent>().Tag == "Before",
+        "hierarchy rename command undo");
+    Check(Raven::RedoEditorCommand() == true &&
+        entity.GetComponent<Raven::TagComponent>().Tag == "After",
+        "hierarchy rename command redo");
+
+    const Raven::EntityIndex oldIndex = entity.GetIndex();
+    scene.DestroyEntity(entity);
+    Raven::Entity replacement = scene.CreateEntity("Replacement");
+    Check(replacement.GetIndex() == oldIndex &&
+        replacement.GetGeneration() != entity.GetGeneration(),
+        "hierarchy rename replacement generation");
+    Check(Raven::UndoEditorCommand() == false &&
+        replacement.GetComponent<Raven::TagComponent>().Tag == "Replacement",
+        "hierarchy rename rejects recycled entity");
+
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestSceneHierarchyRavenPanel()
+{
+    Raven::UIContext context;
+    const std::size_t initialRootChildCount = context.GetRootElement().GetChildren().size();
+    Raven::SceneHierarchyRavenPanel panel;
+
+    Check(panel.Attach(context, nullptr) == true, "hierarchy Raven panel attach");
+    Check(panel.IsAttached() == true, "hierarchy Raven panel attached state");
+    Check(context.GetRootElement().GetChildren().size() == initialRootChildCount + 1u,
+        "hierarchy Raven panel root ownership");
+
+    Raven::SceneHierarchySnapshotInput input{};
+    input.SceneAvailable = true;
+    input.Selected = Raven::EntityHandle{ 2u, 1u };
+    input.Nodes =
+    {
+        { Raven::EntityHandle{ 2u, 1u }, Raven::EntityHandle{ 1u, 1u }, "Child" },
+        { Raven::EntityHandle{ 1u, 1u }, Raven::InvalidEntityHandle, "Root" }
+    };
+    panel.Update(Raven::BuildSceneHierarchySnapshot(input));
+    Check(panel.GetNodeCount() == 2u, "hierarchy Raven panel node count");
+    Check(panel.GetSelectedHandle() == input.Selected,
+        "hierarchy Raven panel shared selection synchronization");
+
+    Raven::UIElement* window = context.GetRootElement().GetChildren().back().get();
+    Check(window->GetChildren().size() >= 6u,
+        "hierarchy Raven panel editor controls");
+    auto* renameInput = dynamic_cast<Raven::UIInputText*>(
+        window->GetChildren()[4u].get());
+    Check(renameInput != nullptr && renameInput->GetText() == "Child",
+        "hierarchy Raven panel rename binding");
+
+    Raven::EntityHandle requestedHandle = Raven::InvalidEntityHandle;
+    std::string requestedName;
+    panel.SetRenameRequestedHandler(
+        [&requestedHandle, &requestedName](Raven::EntityHandle handle, const std::string& name)
+        {
+            requestedHandle = handle;
+            requestedName = name;
+            return true;
+        });
+    Check(context.SetFocus(renameInput) == true,
+        "hierarchy Raven panel rename focus");
+    Raven::UIKeyEvent selectAll{};
+    selectAll.Key = Raven::UIKey::A;
+    selectAll.Pressed = true;
+    selectAll.Control = true;
+    Check(context.RouteKeyEvent(selectAll) == true,
+        "hierarchy Raven panel rename select all");
+    for (const char character : std::string("Renamed"))
+    {
+        Check(context.RouteCharacterEvent(
+            static_cast<std::uint32_t>(character)) == true,
+            "hierarchy Raven panel rename character");
+    }
+    Raven::UIKeyEvent submit{};
+    submit.Key = Raven::UIKey::Enter;
+    submit.Pressed = true;
+    Check(context.RouteKeyEvent(submit) == true &&
+        requestedHandle == input.Selected && requestedName == "Renamed",
+        "hierarchy Raven panel rename submit");
+
+    input.Nodes[0u].DisplayName = "Renamed Child";
+    panel.Update(Raven::BuildSceneHierarchySnapshot(input));
+    Check(panel.GetSelectedHandle() == input.Selected,
+        "hierarchy Raven panel keeps selection after rebuild");
+
+    panel.SetVisible(false);
+    Check(panel.IsVisible() == false, "hierarchy Raven panel hidden state");
+    panel.SetVisible(true);
+    Check(panel.IsVisible() == true, "hierarchy Raven panel visible state");
+
+    panel.Update(Raven::SceneHierarchySnapshot{});
+    Check(panel.GetNodeCount() == 0u &&
+        static_cast<bool>(panel.GetSelectedHandle()) == false,
+        "hierarchy Raven panel clears stale selection without scene");
+
+    panel.Detach();
+    Check(panel.IsAttached() == false, "hierarchy Raven panel detached state");
+    Check(context.GetRootElement().GetChildren().size() == initialRootChildCount,
+        "hierarchy Raven panel releases root ownership");
 }
 
 void TestAnimationDebugRavenPanel()
@@ -3461,6 +3626,9 @@ int main()
     TestAnimationDebugActions();
     TestAnimationDebugSnapshot();
     TestAnimationDebugRavenPanel();
+    TestSceneHierarchySnapshot();
+    TestSceneHierarchyRenameCommand();
+    TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
     TestStatisticsActions();
     TestStatisticsSnapshot();

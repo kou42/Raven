@@ -747,6 +747,18 @@
     <ClInclude Update="Raven\Editor\Panels\AnimationDebugActions.h">
       <Filter>Raven\Editor\Panels</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\SceneHierarchySnapshot.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\SceneHierarchySnapshot.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\SceneHierarchyRavenPanel.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\SceneHierarchyRavenPanel.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
     <ClCompile Update="Raven\Editor\Panels\StatisticsActions.cpp">
       <Filter>Raven\Editor\Panels</Filter>
     </ClCompile>

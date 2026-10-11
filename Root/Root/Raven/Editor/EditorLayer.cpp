@@ -1,8 +1,11 @@
 ﻿#include "Raven/Editor/EditorLayer.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Editor/Command/CreateEntityCommand.h"
+#include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
+#include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
 
@@ -52,6 +55,74 @@ void EditorLayer::OnAttach()
         IsPanelOwnedByDearImGui(m_PanelUIOwnership.AnimationDebug) == false)
     {
         m_AnimationDebugRavenPanel.Attach(
+            m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
+    }
+    if (m_Application != nullptr &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.SceneHierarchy) == false)
+    {
+        // CallbackはSceneを保持せず、その時点のActive SceneへHandleを解決します。
+        // Scene交換後に古いScene pointerへ書き込まないための重要なLifetime境界です。
+        m_SceneHierarchyRavenPanel.SetSelectionRequestedHandler(
+            [this](EntityHandle handle)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    m_SelectedEntity = Entity{};
+                    return;
+                }
+
+                Entity candidate(handle, activeScene);
+                m_SelectedEntity = activeScene->IsEntityAlive(candidate) == true
+                    ? candidate
+                    : Entity{};
+            });
+        m_SceneHierarchyRavenPanel.SetCreateRequestedHandler(
+            [this]()
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr)
+                {
+                    return;
+                }
+
+                auto command = std::make_unique<CreateEntityCommand>(activeScene, "Entity");
+                CreateEntityCommand* executedCommand = command.get();
+                if (ExecuteAndRecordEditorCommand(std::move(command)) == true)
+                {
+                    // CommandはHistoryへ移譲済みですが、同期Execute直後なので生成Handleを
+                    // 読み出せます。Panel側にはScene/Entity参照を保持させません。
+                    m_SelectedEntity = executedCommand->GetCreatedEntity();
+                }
+            });
+        m_SceneHierarchyRavenPanel.SetRenameRequestedHandler(
+            [this](EntityHandle handle, const std::string& requestedName)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    return false;
+                }
+
+                Entity entity(handle, activeScene);
+                if (activeScene->IsEntityAlive(entity) == false ||
+                    entity.HasComponent<TagComponent>() == false)
+                {
+                    return false;
+                }
+
+                const std::string before = entity.GetComponent<TagComponent>().Tag;
+                return ExecuteAndRecordEditorCommand(
+                    std::make_unique<RenameEntityCommand>(
+                        entity, before, requestedName));
+            });
+        m_SceneHierarchyRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
     }
 
@@ -113,6 +184,7 @@ void EditorLayer::OnAttach()
 void EditorLayer::OnDetach()
 {
     // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
+    m_SceneHierarchyRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
     m_StatisticsRavenPanel.Detach();
 
@@ -403,6 +475,16 @@ void EditorLayer::OnRavenUIRender(float dt)
             m_AnimationDebugRavenPanel.Update(CaptureAnimationDebugSnapshot(
                 m_Application->GetScene(),
                 m_AnimationDebugRavenPanel.GetSelectedBoneIndex()));
+        }
+    }
+
+    if (m_SceneHierarchyRavenPanel.IsAttached() == true)
+    {
+        m_SceneHierarchyRavenPanel.SetVisible(m_ShowSceneHierarchyPanel);
+        if (m_ShowSceneHierarchyPanel == true)
+        {
+            m_SceneHierarchyRavenPanel.Update(CaptureSceneHierarchySnapshot(
+                m_Application->GetScene(), m_SelectedEntity));
         }
     }
 }

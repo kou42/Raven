@@ -5,6 +5,7 @@
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
+#include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
 #include "Raven/Editor/Panels/StatisticsPanel.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Renderer/Framebuffer.h"
@@ -110,7 +111,7 @@ private:
     {
         PanelUIOwner Statistics = PanelUIOwner::RavenUI;
         PanelUIOwner AnimationDebug = PanelUIOwner::RavenUI;
-        PanelUIOwner SceneHierarchy = PanelUIOwner::DearImGui;
+        PanelUIOwner SceneHierarchy = PanelUIOwner::RavenUI;
         PanelUIOwner Inspector = PanelUIOwner::DearImGui;
         PanelUIOwner SceneView = PanelUIOwner::DearImGui;
         PanelUIOwner GameView = PanelUIOwner::DearImGui;
@@ -215,6 +216,7 @@ private:
     AnimationDebugPanel m_AnimationDebugPanel;
     AnimationDebugRavenPanel m_AnimationDebugRavenPanel;
     SceneHierarchyPanel m_SceneHierarchyPanel;
+    SceneHierarchyRavenPanel m_SceneHierarchyRavenPanel;
     InspectorPanel m_InspectorPanel;
 
     // ========================================================================
