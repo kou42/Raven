@@ -679,6 +679,12 @@
     <Filter Include="Raven\Editor\Panels">
       <UniqueIdentifier>{a36ea2fb-b913-42ea-a29f-5d0e7669155b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Editor\Command">
+      <UniqueIdentifier>{10223a95-9091-41ad-a0c2-ea64e3f7eb2d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raven\Editor\Tests">
+      <UniqueIdentifier>{27020e8e-bf37-42b2-b288-704a2cb50387}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -764,6 +770,33 @@
     </ClCompile>
     <ClInclude Update="Raven\Editor\Panels\StatisticsActions.h">
       <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Update="Raven\Editor\Command\DeleteEntityCommand.h">
+      <Filter>Raven\Editor\Command</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Tests\EditorEntityCommandSelfTests.cpp">
+      <Filter>Raven\Editor\Tests</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Tests\EditorEntityCommandSelfTests.h">
+      <Filter>Raven\Editor\Tests</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\InspectorSnapshot.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\InspectorSnapshot.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\InspectorRavenPanel.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\InspectorRavenPanel.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Tests\InspectorSnapshotSelfTests.cpp">
+      <Filter>Raven\Editor\Tests</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Tests\InspectorSnapshotSelfTests.h">
+      <Filter>Raven\Editor\Tests</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

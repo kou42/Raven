@@ -154,6 +154,12 @@ void EditorLayer::OnAttach()
         m_SceneHierarchyRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
     }
+    if (m_Application != nullptr &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.Inspector) == false)
+    {
+        m_InspectorRavenPanel.Attach(
+            m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
+    }
 
     m_ViewportRenderingEnabled = m_Application != nullptr &&
         m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL &&
@@ -214,6 +220,7 @@ void EditorLayer::OnDetach()
 {
     // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
     m_SceneHierarchyRavenPanel.Detach();
+    m_InspectorRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
     m_StatisticsRavenPanel.Detach();
 
@@ -514,6 +521,15 @@ void EditorLayer::OnRavenUIRender(float dt)
         {
             m_SceneHierarchyRavenPanel.Update(CaptureSceneHierarchySnapshot(
                 m_Application->GetScene(), m_SelectedEntity));
+        }
+    }
+
+    if (m_InspectorRavenPanel.IsAttached() == true)
+    {
+        m_InspectorRavenPanel.SetVisible(m_ShowInspectorPanel);
+        if (m_ShowInspectorPanel == true)
+        {
+            m_InspectorRavenPanel.Update(CaptureInspectorSnapshot(m_SelectedEntity));
         }
     }
 }

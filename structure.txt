@@ -244,31 +244,41 @@ D:.
     |   |   |   |       TransformCommand.cpp
     |   |   |   |       TransformCommand.h
     |   |   |   |
-    |   |   |   \---Panels
-    |   |   |           AnimationDebugActions.cpp
-    |   |   |           AnimationDebugActions.h
-    |   |   |           AnimationDebugPanel.cpp
-    |   |   |           AnimationDebugPanel.h
-    |   |   |           AnimationDebugRavenPanel.cpp
-    |   |   |           AnimationDebugRavenPanel.h
-    |   |   |           AnimationDebugSnapshot.cpp
-    |   |   |           AnimationDebugSnapshot.h
-    |   |   |           InspectorPanel.cpp
-    |   |   |           InspectorPanel.h
-    |   |   |           SceneHierarchyPanel.cpp
-    |   |   |           SceneHierarchyPanel.h
-    |   |   |           SceneHierarchyRavenPanel.cpp
-    |   |   |           SceneHierarchyRavenPanel.h
-    |   |   |           SceneHierarchySnapshot.cpp
-    |   |   |           SceneHierarchySnapshot.h
-    |   |   |           StatisticsActions.cpp
-    |   |   |           StatisticsActions.h
-    |   |   |           StatisticsPanel.cpp
-    |   |   |           StatisticsPanel.h
-    |   |   |           StatisticsRavenPanel.cpp
-    |   |   |           StatisticsRavenPanel.h
-    |   |   |           StatisticsSnapshot.cpp
-    |   |   |           StatisticsSnapshot.h
+    |   |   |   +---Panels
+    |   |   |   |       AnimationDebugActions.cpp
+    |   |   |   |       AnimationDebugActions.h
+    |   |   |   |       AnimationDebugPanel.cpp
+    |   |   |   |       AnimationDebugPanel.h
+    |   |   |   |       AnimationDebugRavenPanel.cpp
+    |   |   |   |       AnimationDebugRavenPanel.h
+    |   |   |   |       AnimationDebugSnapshot.cpp
+    |   |   |   |       AnimationDebugSnapshot.h
+    |   |   |   |       InspectorPanel.cpp
+    |   |   |   |       InspectorPanel.h
+    |   |   |   |       InspectorRavenPanel.cpp
+    |   |   |   |       InspectorRavenPanel.h
+    |   |   |   |       InspectorSnapshot.cpp
+    |   |   |   |       InspectorSnapshot.h
+    |   |   |   |       SceneHierarchyPanel.cpp
+    |   |   |   |       SceneHierarchyPanel.h
+    |   |   |   |       SceneHierarchyRavenPanel.cpp
+    |   |   |   |       SceneHierarchyRavenPanel.h
+    |   |   |   |       SceneHierarchySnapshot.cpp
+    |   |   |   |       SceneHierarchySnapshot.h
+    |   |   |   |       StatisticsActions.cpp
+    |   |   |   |       StatisticsActions.h
+    |   |   |   |       StatisticsPanel.cpp
+    |   |   |   |       StatisticsPanel.h
+    |   |   |   |       StatisticsRavenPanel.cpp
+    |   |   |   |       StatisticsRavenPanel.h
+    |   |   |   |       StatisticsSnapshot.cpp
+    |   |   |   |       StatisticsSnapshot.h
+    |   |   |   |
+    |   |   |   \---Tests
+    |   |   |           EditorEntityCommandSelfTests.cpp
+    |   |   |           EditorEntityCommandSelfTests.h
+    |   |   |           InspectorSnapshotSelfTests.cpp
+    |   |   |           InspectorSnapshotSelfTests.h
     |   |   |
     |   |   +---Gltf
     |   |   |   |   AccessorReader.cpp
