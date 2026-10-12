@@ -225,9 +225,9 @@ Exit Gate:
 - [ ] Create / Delete / Rename / Reparentを既存または追加のEditor Commandへ接続する。
   - [x] Createを既存`CreateEntityCommand`へ接続する。
   - [x] Renameを既存`RenameEntityCommand`へ接続し、Enter / Focus喪失時に1 Commandとして確定する。
-  - [ ] DeleteのComponent復元SnapshotとCommandを追加する。
+  - [x] DeleteのComponent復元SnapshotとCommandを追加する。
   - [ ] 親子関係の正規Runtimeデータを定義してReparent Commandへ接続する。
-- [ ] InspectorのComponent表示をSection単位へ分け、UIコードとComponent変更処理を分離する。
+- [x] InspectorのComponent表示をSection単位へ分け、UIコードとComponent変更処理を分離する（Raven UI読み取り表示をSnapshot境界で追加。編集Actionは次項で移行）。
 - [ ] 連続値編集は「Drag中Preview」と「操作完了時のCommand確定」を分ける。
 - [ ] Entity破棄、Scene交換、Index再利用時に選択と編集中状態を破棄する。
 - [ ] Hierarchy Drag & Dropへ循環防止、同一親内移動、Undo/Redoを接続する。

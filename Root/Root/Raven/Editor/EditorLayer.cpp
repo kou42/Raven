@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Editor/Command/CreateEntityCommand.h"
+#include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
@@ -122,7 +123,37 @@ void EditorLayer::OnAttach()
                     std::make_unique<RenameEntityCommand>(
                         entity, before, requestedName));
             });
+        m_SceneHierarchyRavenPanel.SetDeleteRequestedHandler(
+            [this](EntityHandle handle)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    return;
+                }
+
+                Entity entity(handle, activeScene);
+                if (activeScene->IsEntityAlive(entity) == false)
+                {
+                    return;
+                }
+
+                if (ExecuteAndRecordEditorCommand(
+                    std::make_unique<DeleteEntityCommand>(entity)) == true)
+                {
+                    // 削除済みHandleをInspector / Gizmoへ1frameも公開しません。
+                    m_SelectedEntity = Entity{};
+                }
+            });
         m_SceneHierarchyRavenPanel.Attach(
+            m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
+    }
+    if (m_Application != nullptr &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.Inspector) == false)
+    {
+        m_InspectorRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
     }
 
@@ -185,6 +216,7 @@ void EditorLayer::OnDetach()
 {
     // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
     m_SceneHierarchyRavenPanel.Detach();
+    m_InspectorRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
     m_StatisticsRavenPanel.Detach();
 
@@ -485,6 +517,15 @@ void EditorLayer::OnRavenUIRender(float dt)
         {
             m_SceneHierarchyRavenPanel.Update(CaptureSceneHierarchySnapshot(
                 m_Application->GetScene(), m_SelectedEntity));
+        }
+    }
+
+    if (m_InspectorRavenPanel.IsAttached() == true)
+    {
+        m_InspectorRavenPanel.SetVisible(m_ShowInspectorPanel);
+        if (m_ShowInspectorPanel == true)
+        {
+            m_InspectorRavenPanel.Update(CaptureInspectorSnapshot(m_SelectedEntity));
         }
     }
 }

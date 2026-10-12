@@ -1,6 +1,7 @@
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 
 #include "Raven/Editor/Command/CreateEntityCommand.h"
+#include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -52,6 +53,19 @@ void SceneHierarchyPanel::OnImGuiRender(Scene* scene, Entity& selectedEntity)
             // ExecuteAndRecord後のCommand所有権はHistoryへ移っています。
             // raw pointerはこの同期処理中に生成Handleを読むためだけに使い、Panelへ保持しません。
             selectedEntity = executedCommand->GetCreatedEntity();
+        }
+    }
+
+    if (static_cast<bool>(selectedEntity) == true)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Delete Entity"))
+        {
+            if (ExecuteAndRecordEditorCommand(
+                std::make_unique<DeleteEntityCommand>(selectedEntity)) == true)
+            {
+                selectedEntity = Entity{};
+            }
         }
     }
 

@@ -24,6 +24,7 @@ class SceneHierarchyRavenPanel
 public:
     using SelectionRequestedHandler = std::function<void(EntityHandle)>;
     using CreateRequestedHandler = std::function<void()>;
+    using DeleteRequestedHandler = std::function<void(EntityHandle)>;
     using RenameRequestedHandler =
         std::function<bool(EntityHandle, const std::string&)>;
 
@@ -33,6 +34,7 @@ public:
     void SetVisible(bool visible);
     void SetSelectionRequestedHandler(SelectionRequestedHandler handler);
     void SetCreateRequestedHandler(CreateRequestedHandler handler);
+    void SetDeleteRequestedHandler(DeleteRequestedHandler handler);
     void SetRenameRequestedHandler(RenameRequestedHandler handler);
 
     bool IsAttached() const;
@@ -51,6 +53,7 @@ private:
     UIContext* m_Context = nullptr;
     UIElement* m_Root = nullptr;
     UIElement* m_CreateButton = nullptr;
+    UIElement* m_DeleteButton = nullptr;
     UILabel* m_StatusLabel = nullptr;
     UILabel* m_RenameLabel = nullptr;
     UIInputText* m_RenameInput = nullptr;
@@ -58,6 +61,7 @@ private:
     SceneHierarchySnapshot m_Snapshot;
     SelectionRequestedHandler m_OnSelectionRequested;
     CreateRequestedHandler m_OnCreateRequested;
+    DeleteRequestedHandler m_OnDeleteRequested;
     RenameRequestedHandler m_OnRenameRequested;
     std::unordered_map<std::uint64_t, bool> m_ExpandedStates;
     EntityHandle m_RenameHandle = InvalidEntityHandle;

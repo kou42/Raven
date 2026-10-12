@@ -55,10 +55,31 @@ bool SceneHierarchyRavenPanel::Attach(
     createButton->AddChild(std::move(createCaption));
     m_CreateButton = window->AddChild(std::move(createButton));
 
+    auto deleteButton = CreateScope<UIButton>();
+    deleteButton->SetPosition(math::Vec2(148.0f, 34.0f));
+    deleteButton->SetSize(math::Vec2(96.0f, 30.0f));
+    deleteButton->SetPreferredSize(math::Vec2(96.0f, 30.0f));
+    deleteButton->SetOnClick([this]()
+        {
+            if (m_OnDeleteRequested != nullptr
+                && static_cast<bool>(m_Snapshot.Selected) == true)
+            {
+                m_OnDeleteRequested(m_Snapshot.Selected);
+            }
+        });
+    auto deleteCaption = CreateScope<UILabel>();
+    deleteCaption->SetFont(font);
+    deleteCaption->SetText("Delete");
+    deleteCaption->SetPosition(math::Vec2(18.0f, 4.0f));
+    deleteCaption->SetSize(math::Vec2(60.0f, 22.0f));
+    deleteCaption->SetHitTestVisible(false);
+    deleteButton->AddChild(std::move(deleteCaption));
+    m_DeleteButton = window->AddChild(std::move(deleteButton));
+
     auto status = CreateScope<UILabel>();
     status->SetFont(font);
-    status->SetPosition(math::Vec2(154.0f, 38.0f));
-    status->SetSize(math::Vec2(190.0f, 24.0f));
+    status->SetPosition(math::Vec2(252.0f, 38.0f));
+    status->SetSize(math::Vec2(98.0f, 24.0f));
     status->SetHitTestVisible(false);
     m_StatusLabel = static_cast<UILabel*>(window->AddChild(std::move(status)));
 
@@ -100,6 +121,7 @@ bool SceneHierarchyRavenPanel::Attach(
     {
         m_Context = nullptr;
         m_CreateButton = nullptr;
+        m_DeleteButton = nullptr;
         m_StatusLabel = nullptr;
         m_RenameLabel = nullptr;
         m_RenameInput = nullptr;
@@ -119,6 +141,7 @@ void SceneHierarchyRavenPanel::Detach()
     m_Context = nullptr;
     m_Root = nullptr;
     m_CreateButton = nullptr;
+    m_DeleteButton = nullptr;
     m_StatusLabel = nullptr;
     m_RenameLabel = nullptr;
     m_RenameInput = nullptr;
@@ -142,6 +165,12 @@ void SceneHierarchyRavenPanel::Update(const SceneHierarchySnapshot& snapshot)
     if (m_CreateButton != nullptr)
     {
         m_CreateButton->SetVisible(snapshot.SceneAvailable);
+    }
+    if (m_DeleteButton != nullptr)
+    {
+        m_DeleteButton->SetVisible(
+            snapshot.SceneAvailable == true
+            && static_cast<bool>(snapshot.Selected) == true);
     }
     if (m_Tree != nullptr)
     {
@@ -173,6 +202,12 @@ void SceneHierarchyRavenPanel::SetCreateRequestedHandler(
     CreateRequestedHandler handler)
 {
     m_OnCreateRequested = std::move(handler);
+}
+
+void SceneHierarchyRavenPanel::SetDeleteRequestedHandler(
+    DeleteRequestedHandler handler)
+{
+    m_OnDeleteRequested = std::move(handler);
 }
 
 void SceneHierarchyRavenPanel::SetRenameRequestedHandler(
