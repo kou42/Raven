@@ -235,6 +235,7 @@ D:.
     |   |   |   +---Command
     |   |   |   |       CreateEntityCommand.cpp
     |   |   |   |       CreateEntityCommand.h
+    |   |   |   |       DeleteEntityCommand.h
     |   |   |   |       IEditorCommand.h
     |   |   |   |       InspectorEditCommand.h
     |   |   |   |       RenameEntityCommand.cpp
