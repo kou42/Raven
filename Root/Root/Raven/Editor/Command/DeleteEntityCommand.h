@@ -45,6 +45,7 @@ public:
         m_Animator = Capture<AnimatorComponent>(entity);
         m_Body = Capture<RigidBodyComponent>(entity);
         m_Collider = Capture<ColliderComponent>(entity);
+        m_Relationship = Capture<RelationshipComponent>(entity);
 
         scene.DestroyEntity(entity);
         return scene.IsEntityAlive(m_Handle) == false;
@@ -76,6 +77,7 @@ public:
             Restore(restored, m_Animator);
             Restore(restored, m_Body);
             Restore(restored, m_Collider);
+            Restore(restored, m_Relationship);
             // 元のEntityにTransformが無かった場合はCreateEntityの既定値を残しません。
             if (m_Transform.has_value() == false)
             {
@@ -140,6 +142,7 @@ private:
     std::optional<AnimatorComponent> m_Animator;
     std::optional<RigidBodyComponent> m_Body;
     std::optional<ColliderComponent> m_Collider;
+    std::optional<RelationshipComponent> m_Relationship;
 };
 
 } // namespace Raven
