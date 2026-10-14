@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Raven
 {
@@ -46,6 +47,15 @@ public:
         m_Body = Capture<RigidBodyComponent>(entity);
         m_Collider = Capture<ColliderComponent>(entity);
         m_Relationship = Capture<RelationshipComponent>(entity);
+        // DestroyEntityが子をRootへ切り離す前に、直下の子を記録します。
+        m_Children.clear();
+        for (auto [child, relation] : scene.View<RelationshipComponent>())
+        {
+            if (child.GetHandle() != m_Handle && relation.Parent == m_Handle)
+            {
+                m_Children.push_back(child.GetHandle());
+            }
+        }
 
         scene.DestroyEntity(entity);
         return scene.IsEntityAlive(m_Handle) == false;
@@ -89,6 +99,23 @@ public:
             // Component追加途中の失敗で不完全なEntityをSceneに残さないよう巻き戻します。
             scene.DestroyEntity(restored);
             return false;
+        }
+        // 親が失われていた場合は古いGenerationへの参照を残しません。
+        if (m_Relationship.has_value() == true &&
+            m_Relationship->Parent.IsValid() == true &&
+            scene.CanSetEntityParent(restored.GetHandle(), m_Relationship->Parent) == false)
+        {
+            restored.GetComponent<RelationshipComponent>().Parent = InvalidEntityHandle;
+        }
+        // 復元した親は新しいHandleなので、存続中の子だけを再接続します。
+        for (EntityHandle child : m_Children)
+        {
+            if (scene.IsEntityAlive(child) == true &&
+                scene.GetEntityParent(child).IsValid() == false &&
+                scene.CanSetEntityParent(child, restored.GetHandle()) == true)
+            {
+                scene.SetEntityParent(child, restored.GetHandle());
+            }
         }
         m_Handle = restored.GetHandle();
         return true;
@@ -143,6 +170,7 @@ private:
     std::optional<RigidBodyComponent> m_Body;
     std::optional<ColliderComponent> m_Collider;
     std::optional<RelationshipComponent> m_Relationship;
+    std::vector<EntityHandle> m_Children;
 };
 
 } // namespace Raven
