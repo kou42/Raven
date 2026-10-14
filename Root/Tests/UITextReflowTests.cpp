@@ -8,6 +8,7 @@
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Command/ReparentEntityCommand.h"
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
+#include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
@@ -1013,6 +1014,36 @@ void TestSceneHierarchyRenameCommand()
     Check(Raven::UndoEditorCommand() == false &&
         replacement.GetComponent<Raven::TagComponent>().Tag == "Replacement",
         "hierarchy rename rejects recycled entity");
+
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestSceneHierarchyCreateRedoHistoryRemap()
+{
+    Raven::Scene scene;
+    Raven::SetEditorCommandHistoryScene(&scene);
+
+    auto create = std::make_unique<Raven::CreateEntityCommand>(&scene, "Before");
+    Raven::CreateEntityCommand* createPtr = create.get();
+    Check(Raven::ExecuteAndRecordEditorCommand(std::move(create)) == true,
+        "create remap initial execute");
+    Raven::Entity created = createPtr->GetCreatedEntity();
+    const Raven::EntityHandle original = created.GetHandle();
+
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::RenameEntityCommand>(created, "Before", "After")) == true,
+        "create remap rename execute");
+    Check(Raven::UndoEditorCommand() == true, "create remap rename undo");
+    Check(Raven::UndoEditorCommand() == true, "create remap create undo");
+
+    Check(Raven::RedoEditorCommand() == true, "create remap create redo");
+    Raven::Entity recreated = createPtr->GetCreatedEntity();
+    Check(recreated.GetHandle() != original &&
+        scene.IsEntityAlive(recreated.GetHandle()) == true,
+        "create remap generation changed");
+    Check(Raven::RedoEditorCommand() == true &&
+        recreated.GetComponent<Raven::TagComponent>().Tag == "After",
+        "create remap rename redo");
 
     Raven::SetEditorCommandHistoryScene(nullptr);
 }
@@ -3750,6 +3781,7 @@ int main()
     TestSceneHierarchyReparentCommand();
     TestSceneHierarchyDeleteParentUndo();
     TestSceneHierarchyDeleteHistoryRemap();
+    TestSceneHierarchyCreateRedoHistoryRemap();
     TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
     TestStatisticsActions();
