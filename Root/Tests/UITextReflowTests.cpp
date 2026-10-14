@@ -1017,6 +1017,37 @@ void TestSceneHierarchyRenameCommand()
     Raven::SetEditorCommandHistoryScene(nullptr);
 }
 
+void TestSceneHierarchyDeleteHistoryRemap()
+{
+    Raven::Scene scene;
+    Raven::Entity entity = scene.CreateEntity("Before");
+    const Raven::EntityHandle original = entity.GetHandle();
+    Raven::SetEditorCommandHistoryScene(&scene);
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::RenameEntityCommand>(entity, "Before", "After")) == true,
+        "delete remap rename execute");
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::DeleteEntityCommand>(&scene, entity)) == true,
+        "delete remap delete execute");
+    Check(Raven::UndoEditorCommand() == true,
+        "delete remap delete undo");
+    Raven::Entity restored;
+    for (auto [candidate, tag] : scene.View<Raven::TagComponent>())
+    {
+        if (tag.Tag == "After") { restored = candidate; }
+    }
+    Check(static_cast<bool>(restored) == true &&
+        restored.GetHandle() != original,
+        "delete remap restored entity generation");
+    Check(Raven::UndoEditorCommand() == true &&
+        restored.GetComponent<Raven::TagComponent>().Tag == "Before",
+        "delete remap prior rename undo");
+    Check(Raven::RedoEditorCommand() == true &&
+        restored.GetComponent<Raven::TagComponent>().Tag == "After",
+        "delete remap prior rename redo");
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
 void TestSceneHierarchyDeleteParentUndo()
 {
     Raven::Scene scene;
@@ -3718,6 +3749,7 @@ int main()
     TestSceneHierarchyRenameCommand();
     TestSceneHierarchyReparentCommand();
     TestSceneHierarchyDeleteParentUndo();
+    TestSceneHierarchyDeleteHistoryRemap();
     TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
     TestStatisticsActions();
