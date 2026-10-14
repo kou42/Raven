@@ -68,19 +68,19 @@ public:
         // それ以外は追加します。外部の古いHandleを再利用しないことが重要です。
         try
         {
-        Restore(restored, m_Tag);
-        Restore(restored, m_Transform);
-        Restore(restored, m_Camera);
-        Restore(restored, m_Mesh);
-        Restore(restored, m_Deformation);
-        Restore(restored, m_Animator);
-        Restore(restored, m_Body);
-        Restore(restored, m_Collider);
-        // 元のEntityにTransformが無かった場合はCreateEntityの既定値を残しません。
-        if (m_Transform.has_value() == false)
-        {
-            restored.RemoveComponent<TransformComponent>();
-        }
+            Restore(restored, m_Tag);
+            Restore(restored, m_Transform);
+            Restore(restored, m_Camera);
+            Restore(restored, m_Mesh);
+            Restore(restored, m_Deformation);
+            Restore(restored, m_Animator);
+            Restore(restored, m_Body);
+            Restore(restored, m_Collider);
+            // 元のEntityにTransformが無かった場合はCreateEntityの既定値を残しません。
+            if (m_Transform.has_value() == false)
+            {
+                restored.RemoveComponent<TransformComponent>();
+            }
         }
         catch (...)
         {
