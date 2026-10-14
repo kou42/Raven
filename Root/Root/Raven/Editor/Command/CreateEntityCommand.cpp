@@ -45,6 +45,8 @@ bool CreateEntityCommand::Execute(Scene& scene)
         return false;
     }
 
+    // Redoで別Generationへ再生成した場合、履歴の後続Commandを再接続するため旧Handleを保存します。
+    m_PreviousHandle = m_CreatedHandle;
     m_CreatedHandle = createdEntity.GetHandle();
     return true;
 }
@@ -67,6 +69,18 @@ bool CreateEntityCommand::Redo(Scene& scene)
 {
     // UndoでGenerationが進んだため、Execute()がScene::CreateEntity()から新Handleを取得し直します。
     return Execute(scene);
+}
+
+bool CreateEntityCommand::GetRestoredEntityHandles(
+    EntityHandle& before, EntityHandle& after) const
+{
+    if (m_PreviousHandle.IsValid() == false || m_PreviousHandle == m_CreatedHandle)
+    {
+        return false;
+    }
+    before = m_PreviousHandle;
+    after = m_CreatedHandle;
+    return true;
 }
 
 Entity CreateEntityCommand::GetCreatedEntity() const

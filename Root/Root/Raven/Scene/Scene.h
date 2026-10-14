@@ -102,6 +102,14 @@ public:
     Entity CreateEntity(const std::string& name = "Entity");
     void DestroyEntity(Entity entity);
 
+    // 循環と別Scene/破棄済みHandleを拒否して親子関係を更新します。
+    bool CanSetEntityParent(EntityHandle child, EntityHandle parent) const;
+    bool SetEntityParent(EntityHandle child, EntityHandle parent);
+    EntityHandle GetEntityParent(EntityHandle child) const;
+
+    // Editorが復元できない未知のComponentを持つEntityの削除を防ぎます。
+    bool CanSnapshotEntityComponents(EntityHandle handle) const;
+
     void QueueDestroyEntity(Entity entity);
     void FlushDestroyedEntities();
 
@@ -228,6 +236,33 @@ private:
     EntityIndex m_NextEntityIndex = 1;
     ComponentStorageMap m_ComponentStorages;
 };
+
+inline bool Scene::CanSnapshotEntityComponents(EntityHandle handle) const
+{
+    if (IsEntityAlive(handle) == false)
+    {
+        return false;
+    }
+
+    const std::array<std::type_index, 9> supported{
+        typeid(TagComponent), typeid(TransformComponent), typeid(CameraComponent),
+        typeid(MeshRendererComponent), typeid(MeshDeformationComponent),
+        typeid(AnimatorComponent), typeid(RigidBodyComponent), typeid(ColliderComponent),
+        typeid(RelationshipComponent)
+    };
+    for (const auto& entry : m_ComponentStorages)
+    {
+        if (entry.second->Has(handle.m_Index) == false)
+        {
+            continue;
+        }
+        if (std::find(supported.begin(), supported.end(), entry.first) == supported.end())
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 // ============================================================
 // ComponentStorageの取得

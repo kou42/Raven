@@ -1,6 +1,7 @@
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 
 #include "Raven/Editor/Command/CreateEntityCommand.h"
+#include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -54,6 +55,22 @@ void SceneHierarchyPanel::OnImGuiRender(Scene* scene, Entity& selectedEntity)
             selectedEntity = executedCommand->GetCreatedEntity();
         }
     }
+
+    ImGui::SameLine();
+    const bool canDelete = static_cast<bool>(selectedEntity) == true
+        && scene->IsEntityAlive(selectedEntity) == true
+        && scene->CanSnapshotEntityComponents(selectedEntity.GetHandle()) == true;
+    ImGui::BeginDisabled(canDelete == false);
+    if (ImGui::Button("Delete Selected"))
+    {
+        auto command = std::make_unique<DeleteEntityCommand>(scene, selectedEntity);
+        if (ExecuteAndRecordEditorCommand(std::move(command)) == true)
+        {
+            // 削除後の選択Handleを残すとInspectorが破棄済みEntityを参照します。
+            selectedEntity = Entity{};
+        }
+    }
+    ImGui::EndDisabled();
 
     ImGui::Separator();
 

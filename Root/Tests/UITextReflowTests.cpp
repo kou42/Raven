@@ -6,6 +6,9 @@
 #include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
+#include "Raven/Editor/Command/ReparentEntityCommand.h"
+#include "Raven/Editor/Command/DeleteEntityCommand.h"
+#include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
@@ -1015,6 +1018,153 @@ void TestSceneHierarchyRenameCommand()
     Raven::SetEditorCommandHistoryScene(nullptr);
 }
 
+void TestSceneHierarchyCreateRedoHistoryRemap()
+{
+    Raven::Scene scene;
+    Raven::SetEditorCommandHistoryScene(&scene);
+
+    auto create = std::make_unique<Raven::CreateEntityCommand>(&scene, "Before");
+    Raven::CreateEntityCommand* createPtr = create.get();
+    Check(Raven::ExecuteAndRecordEditorCommand(std::move(create)) == true,
+        "create remap initial execute");
+    Raven::Entity created = createPtr->GetCreatedEntity();
+    const Raven::EntityHandle original = created.GetHandle();
+
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::RenameEntityCommand>(created, "Before", "After")) == true,
+        "create remap rename execute");
+    Check(Raven::UndoEditorCommand() == true, "create remap rename undo");
+    Check(Raven::UndoEditorCommand() == true, "create remap create undo");
+
+    Check(Raven::RedoEditorCommand() == true, "create remap create redo");
+    Raven::Entity recreated = createPtr->GetCreatedEntity();
+    Check(recreated.GetHandle() != original &&
+        scene.IsEntityAlive(recreated.GetHandle()) == true,
+        "create remap generation changed");
+    Check(Raven::RedoEditorCommand() == true &&
+        recreated.GetComponent<Raven::TagComponent>().Tag == "After",
+        "create remap rename redo");
+
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestSceneHierarchyDeleteHistoryRemap()
+{
+    Raven::Scene scene;
+    Raven::Entity entity = scene.CreateEntity("Before");
+    const Raven::EntityHandle original = entity.GetHandle();
+    Raven::SetEditorCommandHistoryScene(&scene);
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::RenameEntityCommand>(entity, "Before", "After")) == true,
+        "delete remap rename execute");
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::DeleteEntityCommand>(&scene, entity)) == true,
+        "delete remap delete execute");
+    Check(Raven::UndoEditorCommand() == true,
+        "delete remap delete undo");
+    Raven::Entity restored;
+    for (auto [candidate, tag] : scene.View<Raven::TagComponent>())
+    {
+        if (tag.Tag == "After") { restored = candidate; }
+    }
+    Check(static_cast<bool>(restored) == true &&
+        restored.GetHandle() != original,
+        "delete remap restored entity generation");
+    Check(Raven::UndoEditorCommand() == true &&
+        restored.GetComponent<Raven::TagComponent>().Tag == "Before",
+        "delete remap prior rename undo");
+    Check(Raven::RedoEditorCommand() == true &&
+        restored.GetComponent<Raven::TagComponent>().Tag == "After",
+        "delete remap prior rename redo");
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestSceneHierarchyDeleteParentUndo()
+{
+    Raven::Scene scene;
+    Raven::Entity parent = scene.CreateEntity("Parent");
+    Raven::Entity child = scene.CreateEntity("Child");
+    Raven::Entity grandchild = scene.CreateEntity("Grandchild");
+    Check(scene.SetEntityParent(child.GetHandle(), parent.GetHandle()) == true,
+        "hierarchy delete parent setup");
+    Check(scene.SetEntityParent(grandchild.GetHandle(), child.GetHandle()) == true,
+        "hierarchy delete grandchild setup");
+
+    Raven::SetEditorCommandHistoryScene(&scene);
+    auto command = std::make_unique<Raven::DeleteEntityCommand>(&scene, parent);
+    Check(Raven::ExecuteAndRecordEditorCommand(std::move(command)) == true,
+        "hierarchy delete parent execute");
+    Check(scene.IsEntityAlive(parent.GetHandle()) == false &&
+        scene.GetEntityParent(child.GetHandle()).IsValid() == false,
+        "hierarchy delete detaches child");
+
+    Check(Raven::UndoEditorCommand() == true,
+        "hierarchy delete parent undo");
+    const Raven::EntityHandle restoredParent = scene.GetEntityParent(child.GetHandle());
+    Check(scene.IsEntityAlive(restoredParent) == true &&
+        restoredParent != parent.GetHandle(),
+        "hierarchy undo remaps parent generation");
+    Check(scene.GetEntityParent(grandchild.GetHandle()) == child.GetHandle(),
+        "hierarchy undo preserves grandchildren");
+    Check(Raven::RedoEditorCommand() == true &&
+        scene.GetEntityParent(child.GetHandle()).IsValid() == false,
+        "hierarchy delete parent redo");
+    Check(Raven::UndoEditorCommand() == true &&
+        scene.IsEntityAlive(scene.GetEntityParent(child.GetHandle())) == true,
+        "hierarchy delete parent second undo");
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestSceneHierarchyReparentCommand()
+{
+    Raven::Scene scene;
+    Raven::Entity root = scene.CreateEntity("Root");
+    Raven::Entity child = scene.CreateEntity("Child");
+    Raven::Entity grandchild = scene.CreateEntity("Grandchild");
+
+    Raven::SetEditorCommandHistoryScene(&scene);
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::ReparentEntityCommand>(
+            &scene, child.GetHandle(), root.GetHandle())) == true,
+        "hierarchy reparent execute");
+    Check(scene.GetEntityParent(child.GetHandle()) == root.GetHandle(),
+        "hierarchy reparent parent stored");
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::ReparentEntityCommand>(
+            &scene, grandchild.GetHandle(), child.GetHandle())) == true,
+        "hierarchy reparent grandchild execute");
+    Check(scene.CanSetEntityParent(root.GetHandle(), grandchild.GetHandle()) == false,
+        "hierarchy reparent cycle rejected");
+    Check(scene.CanSetEntityParent(child.GetHandle(), child.GetHandle()) == false,
+        "hierarchy reparent self rejected");
+
+    const Raven::SceneHierarchySnapshot snapshot =
+        Raven::CaptureSceneHierarchySnapshot(&scene, child);
+    bool found = false;
+    for (const auto& node : snapshot.Nodes)
+    {
+        if (node.Handle == child.GetHandle())
+        {
+            found = node.Parent == root.GetHandle();
+        }
+    }
+    Check(found == true, "hierarchy reparent snapshot parent");
+
+    Check(Raven::UndoEditorCommand() == true &&
+        scene.GetEntityParent(grandchild.GetHandle()).IsValid() == false,
+        "hierarchy reparent undo");
+    Check(Raven::RedoEditorCommand() == true &&
+        scene.GetEntityParent(grandchild.GetHandle()) == child.GetHandle(),
+        "hierarchy reparent redo");
+
+    scene.DestroyEntity(child);
+    Check(scene.GetEntityParent(grandchild.GetHandle()).IsValid() == false,
+        "hierarchy parent deletion detaches child");
+    Check(scene.CanSetEntityParent(grandchild.GetHandle(), child.GetHandle()) == false,
+        "hierarchy reparent stale generation rejected");
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
 void TestSceneHierarchyRavenPanel()
 {
     Raven::UIContext context;
@@ -1040,10 +1190,10 @@ void TestSceneHierarchyRavenPanel()
         "hierarchy Raven panel shared selection synchronization");
 
     Raven::UIElement* window = context.GetRootElement().GetChildren().back().get();
-    Check(window->GetChildren().size() >= 6u,
+    Check(window->GetChildren().size() >= 7u,
         "hierarchy Raven panel editor controls");
     auto* renameInput = dynamic_cast<Raven::UIInputText*>(
-        window->GetChildren()[4u].get());
+        window->GetChildren()[5u].get());
     Check(renameInput != nullptr && renameInput->GetText() == "Child",
         "hierarchy Raven panel rename binding");
 
@@ -3628,6 +3778,10 @@ int main()
     TestAnimationDebugRavenPanel();
     TestSceneHierarchySnapshot();
     TestSceneHierarchyRenameCommand();
+    TestSceneHierarchyReparentCommand();
+    TestSceneHierarchyDeleteParentUndo();
+    TestSceneHierarchyDeleteHistoryRemap();
+    TestSceneHierarchyCreateRedoHistoryRemap();
     TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
     TestStatisticsActions();

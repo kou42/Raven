@@ -55,10 +55,32 @@ bool SceneHierarchyRavenPanel::Attach(
     createButton->AddChild(std::move(createCaption));
     m_CreateButton = window->AddChild(std::move(createButton));
 
+    auto deleteButton = CreateScope<UIButton>();
+    deleteButton->SetPosition(math::Vec2(148.0f, 34.0f));
+    deleteButton->SetSize(math::Vec2(132.0f, 30.0f));
+    deleteButton->SetPreferredSize(math::Vec2(132.0f, 30.0f));
+    deleteButton->SetOnClick([this]()
+        {
+            // Snapshotの選択Handleを渡し、実際のSceneとGenerationの検証はEditorLayerで行います。
+            if (m_OnDeleteRequested != nullptr &&
+                static_cast<bool>(m_Snapshot.Selected) == true)
+            {
+                m_OnDeleteRequested(m_Snapshot.Selected);
+            }
+        });
+    auto deleteCaption = CreateScope<UILabel>();
+    deleteCaption->SetFont(font);
+    deleteCaption->SetText("Delete Selected");
+    deleteCaption->SetPosition(math::Vec2(6.0f, 4.0f));
+    deleteCaption->SetSize(math::Vec2(122.0f, 22.0f));
+    deleteCaption->SetHitTestVisible(false);
+    deleteButton->AddChild(std::move(deleteCaption));
+    m_DeleteButton = window->AddChild(std::move(deleteButton));
+
     auto status = CreateScope<UILabel>();
     status->SetFont(font);
-    status->SetPosition(math::Vec2(154.0f, 38.0f));
-    status->SetSize(math::Vec2(190.0f, 24.0f));
+    status->SetPosition(math::Vec2(284.0f, 38.0f));
+    status->SetSize(math::Vec2(66.0f, 24.0f));
     status->SetHitTestVisible(false);
     m_StatusLabel = static_cast<UILabel*>(window->AddChild(std::move(status)));
 
@@ -84,6 +106,30 @@ bool SceneHierarchyRavenPanel::Attach(
     tree->SetPosition(math::Vec2(10.0f, 108.0f));
     tree->SetSize(math::Vec2(340.0f, 500.0f));
     tree->SetPreferredSize(math::Vec2(340.0f, 500.0f));
+    tree->SetNodeDragDropEnabled(true);
+    tree->SetOnNodePlaced([this](std::uint64_t source, std::uint64_t target, UITreeView::DropPlacement placement)
+        {
+            // Sceneには兄弟順序がないため、Before/Afterは対象の親へ移す操作として扱います。
+            // TreeViewは先に表示ノードを移動するので、失敗時は次のSnapshotで再構築します。
+            EntityHandle parent = InvalidEntityHandle;
+            if (placement == UITreeView::DropPlacement::Child)
+            {
+                parent = EntityHandle::FromValue(target);
+            }
+            else if (placement != UITreeView::DropPlacement::RootEnd)
+            {
+                UITreeNode* targetNode = m_Tree->FindNode(target);
+                if (targetNode != nullptr && targetNode->Parent != nullptr)
+                {
+                    parent = EntityHandle::FromValue(targetNode->Parent->Id);
+                }
+            }
+            if (m_OnReparentRequested != nullptr)
+            {
+                m_OnReparentRequested(EntityHandle::FromValue(source), parent);
+            }
+            m_ForceTreeRebuild = true;
+        });
     tree->SetOnSelectionChanged([this](std::uint64_t id)
         {
             OnSelectionChanged(id);
@@ -100,6 +146,7 @@ bool SceneHierarchyRavenPanel::Attach(
     {
         m_Context = nullptr;
         m_CreateButton = nullptr;
+        m_DeleteButton = nullptr;
         m_StatusLabel = nullptr;
         m_RenameLabel = nullptr;
         m_RenameInput = nullptr;
@@ -119,6 +166,7 @@ void SceneHierarchyRavenPanel::Detach()
     m_Context = nullptr;
     m_Root = nullptr;
     m_CreateButton = nullptr;
+    m_DeleteButton = nullptr;
     m_StatusLabel = nullptr;
     m_RenameLabel = nullptr;
     m_RenameInput = nullptr;
@@ -127,11 +175,12 @@ void SceneHierarchyRavenPanel::Detach()
     m_ExpandedStates.clear();
     m_RenameHandle = InvalidEntityHandle;
     m_SynchronizingSelection = false;
+    m_ForceTreeRebuild = false;
 }
 
 void SceneHierarchyRavenPanel::Update(const SceneHierarchySnapshot& snapshot)
 {
-    const bool rebuild = HasSameNodes(snapshot) == false;
+    const bool rebuild = m_ForceTreeRebuild == true || HasSameNodes(snapshot) == false;
     m_Snapshot = snapshot;
     if (m_StatusLabel != nullptr)
     {
@@ -143,6 +192,10 @@ void SceneHierarchyRavenPanel::Update(const SceneHierarchySnapshot& snapshot)
     {
         m_CreateButton->SetVisible(snapshot.SceneAvailable);
     }
+    if (m_DeleteButton != nullptr)
+    {
+        m_DeleteButton->SetVisible(snapshot.SceneAvailable == true && static_cast<bool>(snapshot.Selected) == true);
+    }
     if (m_Tree != nullptr)
     {
         m_Tree->SetVisible(snapshot.SceneAvailable);
@@ -150,6 +203,7 @@ void SceneHierarchyRavenPanel::Update(const SceneHierarchySnapshot& snapshot)
     if (rebuild == true)
     {
         RebuildTree();
+        m_ForceTreeRebuild = false;
     }
     SynchronizeSelection();
     SynchronizeRenameEditor();
@@ -179,6 +233,17 @@ void SceneHierarchyRavenPanel::SetRenameRequestedHandler(
     RenameRequestedHandler handler)
 {
     m_OnRenameRequested = std::move(handler);
+}
+
+void SceneHierarchyRavenPanel::SetDeleteRequestedHandler(
+    DeleteRequestedHandler handler)
+{
+    m_OnDeleteRequested = std::move(handler);
+}
+
+void SceneHierarchyRavenPanel::SetReparentRequestedHandler(ReparentRequestedHandler handler)
+{
+    m_OnReparentRequested = std::move(handler);
 }
 
 bool SceneHierarchyRavenPanel::IsAttached() const

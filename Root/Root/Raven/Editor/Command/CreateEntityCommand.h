@@ -20,6 +20,11 @@ public:
     bool Execute(Scene& scene) override;
     bool Undo(Scene& scene) override;
     bool Redo(Scene& scene) override;
+    void RemapEntityHandle(const EntityHandle& before, const EntityHandle& after) override
+    {
+        if (m_CreatedHandle == before) { m_CreatedHandle = after; }
+    }
+    bool GetRestoredEntityHandles(EntityHandle& before, EntityHandle& after) const override;
 
     // Execute直後にHierarchyが新規Entityを選択するためのSnapshotです。
     // CommandやSceneの所有権は渡さず、現在Handleから一時的なEntity値を構築します。
@@ -29,6 +34,7 @@ private:
     Scene* m_TargetScene = nullptr;
     std::string m_Name;
     EntityHandle m_CreatedHandle{};
+    EntityHandle m_PreviousHandle{};
 };
 
 } // namespace Raven

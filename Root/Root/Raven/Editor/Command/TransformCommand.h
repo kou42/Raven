@@ -18,6 +18,10 @@ public:
     bool Execute(Scene& scene) override;
     bool Undo(Scene& scene) override;
     bool Redo(Scene& scene) override;
+    void RemapEntityHandle(const EntityHandle& before, const EntityHandle& after) override
+    {
+        if (m_Handle == before) { m_Handle = after; }
+    }
 
 private:
     bool TryApply(Scene& scene, const TransformComponent& transform) const;
