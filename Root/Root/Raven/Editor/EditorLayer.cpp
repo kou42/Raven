@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Application.h"
 #include "Raven/Editor/Command/CreateEntityCommand.h"
+#include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
@@ -121,6 +122,22 @@ void EditorLayer::OnAttach()
                 return ExecuteAndRecordEditorCommand(
                     std::make_unique<RenameEntityCommand>(
                         entity, before, requestedName));
+            });
+        m_SceneHierarchyRavenPanel.SetDeleteRequestedHandler(
+            [this](EntityHandle handle)
+            {
+                Scene* scene = m_Application != nullptr ? m_Application->GetScene() : nullptr;
+                if (scene == nullptr || scene->IsEntityAlive(handle) == false)
+                {
+                    return false;
+                }
+                const bool result = ExecuteAndRecordEditorCommand(
+                    std::make_unique<DeleteEntityCommand>(scene, Entity(handle, scene)));
+                if (result == true && m_SelectedEntity.GetHandle() == handle)
+                {
+                    m_SelectedEntity = Entity{};
+                }
+                return result;
             });
         m_SceneHierarchyRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
