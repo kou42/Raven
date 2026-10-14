@@ -21,6 +21,28 @@ public:
     {
     }
 
+    void RemapEntityHandle(const EntityHandle& before, const EntityHandle& after) override
+    {
+        for (EntityHandle& child : m_Children)
+        {
+            if (child == before) { child = after; }
+        }
+        if (m_Relationship.has_value() == true && m_Relationship->Parent == before)
+        {
+            m_Relationship->Parent = after;
+        }
+    }
+    bool GetRestoredEntityHandles(EntityHandle& before, EntityHandle& after) const override
+    {
+        if (m_PreviousHandle.IsValid() == false || m_PreviousHandle == m_Handle)
+        {
+            return false;
+        }
+        before = m_PreviousHandle;
+        after = m_Handle;
+        return true;
+    }
+
     bool CanExecute(const Scene& scene) const override
     {
         return m_TargetScene == &scene
@@ -117,6 +139,7 @@ public:
                 scene.SetEntityParent(child, restored.GetHandle());
             }
         }
+        m_PreviousHandle = m_Handle;
         m_Handle = restored.GetHandle();
         return true;
     }
@@ -161,6 +184,7 @@ private:
 
     Scene* m_TargetScene = nullptr;
     EntityHandle m_Handle{};
+    EntityHandle m_PreviousHandle{};
     std::optional<TagComponent> m_Tag;
     std::optional<TransformComponent> m_Transform;
     std::optional<CameraComponent> m_Camera;
