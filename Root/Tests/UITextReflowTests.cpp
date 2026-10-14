@@ -6,6 +6,7 @@
 #include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
+#include "Raven/Editor/Command/ReparentEntityCommand.h"
 #include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
@@ -1015,6 +1016,56 @@ void TestSceneHierarchyRenameCommand()
     Raven::SetEditorCommandHistoryScene(nullptr);
 }
 
+void TestSceneHierarchyReparentCommand()
+{
+    Raven::Scene scene;
+    Raven::Entity root = scene.CreateEntity("Root");
+    Raven::Entity child = scene.CreateEntity("Child");
+    Raven::Entity grandchild = scene.CreateEntity("Grandchild");
+
+    Raven::SetEditorCommandHistoryScene(&scene);
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::ReparentEntityCommand>(
+            &scene, child.GetHandle(), root.GetHandle())) == true,
+        "hierarchy reparent execute");
+    Check(scene.GetEntityParent(child.GetHandle()) == root.GetHandle(),
+        "hierarchy reparent parent stored");
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::ReparentEntityCommand>(
+            &scene, grandchild.GetHandle(), child.GetHandle())) == true,
+        "hierarchy reparent grandchild execute");
+    Check(scene.CanSetEntityParent(root.GetHandle(), grandchild.GetHandle()) == false,
+        "hierarchy reparent cycle rejected");
+    Check(scene.CanSetEntityParent(child.GetHandle(), child.GetHandle()) == false,
+        "hierarchy reparent self rejected");
+
+    const Raven::SceneHierarchySnapshot snapshot =
+        Raven::CaptureSceneHierarchySnapshot(&scene, child);
+    bool found = false;
+    for (const auto& node : snapshot.Nodes)
+    {
+        if (node.Handle == child.GetHandle())
+        {
+            found = node.Parent == root.GetHandle();
+        }
+    }
+    Check(found == true, "hierarchy reparent snapshot parent");
+
+    Check(Raven::UndoEditorCommand() == true &&
+        scene.GetEntityParent(grandchild.GetHandle()).IsValid() == false,
+        "hierarchy reparent undo");
+    Check(Raven::RedoEditorCommand() == true &&
+        scene.GetEntityParent(grandchild.GetHandle()) == child.GetHandle(),
+        "hierarchy reparent redo");
+
+    scene.DestroyEntity(child);
+    Check(scene.GetEntityParent(grandchild.GetHandle()).IsValid() == false,
+        "hierarchy parent deletion detaches child");
+    Check(scene.CanSetEntityParent(grandchild.GetHandle(), child.GetHandle()) == false,
+        "hierarchy reparent stale generation rejected");
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
 void TestSceneHierarchyRavenPanel()
 {
     Raven::UIContext context;
@@ -1040,10 +1091,10 @@ void TestSceneHierarchyRavenPanel()
         "hierarchy Raven panel shared selection synchronization");
 
     Raven::UIElement* window = context.GetRootElement().GetChildren().back().get();
-    Check(window->GetChildren().size() >= 6u,
+    Check(window->GetChildren().size() >= 7u,
         "hierarchy Raven panel editor controls");
     auto* renameInput = dynamic_cast<Raven::UIInputText*>(
-        window->GetChildren()[4u].get());
+        window->GetChildren()[5u].get());
     Check(renameInput != nullptr && renameInput->GetText() == "Child",
         "hierarchy Raven panel rename binding");
 
@@ -3628,6 +3679,7 @@ int main()
     TestAnimationDebugRavenPanel();
     TestSceneHierarchySnapshot();
     TestSceneHierarchyRenameCommand();
+    TestSceneHierarchyReparentCommand();
     TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
     TestStatisticsActions();
