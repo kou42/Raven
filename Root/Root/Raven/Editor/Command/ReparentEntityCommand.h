@@ -15,6 +15,13 @@ public:
     {
     }
 
+    void RemapEntityHandle(const EntityHandle& before, const EntityHandle& after) override
+    {
+        if (m_Child == before) { m_Child = after; }
+        if (m_Before == before) { m_Before = after; }
+        if (m_After == before) { m_After = after; }
+    }
+
     bool CanExecute(const Scene& scene) const override
     {
         return m_Scene == &scene
