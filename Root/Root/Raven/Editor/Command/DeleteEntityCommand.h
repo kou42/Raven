@@ -25,7 +25,8 @@ public:
         return m_TargetScene == &scene
             && m_Handle.IsValid() == true
             && scene.IsEntityAlive(m_Handle) == true
-            && scene.CanSnapshotEntityComponents(m_Handle) == true;
+            && scene.CanSnapshotEntityComponents(m_Handle) == true
+            && scene.HasComponent<TagComponent>(m_Handle.m_Index) == true;
     }
 
     bool Execute(Scene& scene) override
@@ -65,6 +66,8 @@ public:
 
         // CreateEntityが標準Tag/Transformを生成する場合は上書きし、
         // それ以外は追加します。外部の古いHandleを再利用しないことが重要です。
+        try
+        {
         Restore(restored, m_Tag);
         Restore(restored, m_Transform);
         Restore(restored, m_Camera);
@@ -73,6 +76,18 @@ public:
         Restore(restored, m_Animator);
         Restore(restored, m_Body);
         Restore(restored, m_Collider);
+        // 元のEntityにTransformが無かった場合はCreateEntityの既定値を残しません。
+        if (m_Transform.has_value() == false)
+        {
+            restored.RemoveComponent<TransformComponent>();
+        }
+        }
+        catch (...)
+        {
+            // Component追加途中の失敗で不完全なEntityをSceneに残さないよう巻き戻します。
+            scene.DestroyEntity(restored);
+            return false;
+        }
         m_Handle = restored.GetHandle();
         return true;
     }
