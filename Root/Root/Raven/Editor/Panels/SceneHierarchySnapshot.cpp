@@ -115,12 +115,11 @@ SceneHierarchySnapshot CaptureSceneHierarchySnapshot(
         input.Selected = selectedEntity.GetHandle();
     }
 
-    // 現在のECSには親子Relationship Componentが無いため、全EntityをRootとして取得します。
-    // 親子関係の正規データが追加された際はParentだけを設定し、Panel/UI契約は維持します。
+    // Sceneに保存された親Handleを読み取り、Snapshotの循環・孤児正規化へ渡します。
     for (auto [entity, tag] : scene->View<TagComponent>())
     {
         input.Nodes.push_back(SceneHierarchyNodeSnapshot{
-            entity.GetHandle(), InvalidEntityHandle, tag.Tag });
+            entity.GetHandle(), scene->GetEntityParent(entity.GetHandle()), tag.Tag });
     }
     return BuildSceneHierarchySnapshot(input);
 }
