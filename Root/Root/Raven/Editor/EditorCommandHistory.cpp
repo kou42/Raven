@@ -108,6 +108,20 @@ bool UndoEditorCommand()
         if (command != nullptr
             && command->Undo(*s_ActiveScene) == true)
         {
+            EntityHandle before;
+            EntityHandle after;
+            if (command->GetRestoredEntityHandles(before, after) == true)
+            {
+                // Undoの残りとRedo側のCommandが古いGenerationを参照しないよう更新します。
+                for (const auto& entry : s_UndoStack)
+                {
+                    entry->RemapEntityHandle(before, after);
+                }
+                for (const auto& entry : s_RedoStack)
+                {
+                    entry->RemapEntityHandle(before, after);
+                }
+            }
             s_RedoStack.push_back(std::move(command));
             return true;
         }
