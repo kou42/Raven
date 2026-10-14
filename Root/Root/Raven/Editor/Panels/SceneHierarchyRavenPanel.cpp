@@ -106,6 +106,30 @@ bool SceneHierarchyRavenPanel::Attach(
     tree->SetPosition(math::Vec2(10.0f, 108.0f));
     tree->SetSize(math::Vec2(340.0f, 500.0f));
     tree->SetPreferredSize(math::Vec2(340.0f, 500.0f));
+    tree->SetNodeDragDropEnabled(true);
+    tree->SetOnNodePlaced([this](std::uint64_t source, std::uint64_t target, UITreeView::DropPlacement placement)
+        {
+            // Sceneには兄弟順序がないため、Before/Afterは対象の親へ移す操作として扱います。
+            // TreeViewは先に表示ノードを移動するので、失敗時は次のSnapshotで再構築します。
+            EntityHandle parent = InvalidEntityHandle;
+            if (placement == UITreeView::DropPlacement::Child)
+            {
+                parent = EntityHandle::FromValue(target);
+            }
+            else if (placement != UITreeView::DropPlacement::RootEnd)
+            {
+                UITreeNode* targetNode = m_Tree->FindNode(target);
+                if (targetNode != nullptr && targetNode->Parent != nullptr)
+                {
+                    parent = EntityHandle::FromValue(targetNode->Parent->Id);
+                }
+            }
+            if (m_OnReparentRequested != nullptr)
+            {
+                m_OnReparentRequested(EntityHandle::FromValue(source), parent);
+            }
+            m_ForceTreeRebuild = true;
+        });
     tree->SetOnSelectionChanged([this](std::uint64_t id)
         {
             OnSelectionChanged(id);
@@ -151,11 +175,12 @@ void SceneHierarchyRavenPanel::Detach()
     m_ExpandedStates.clear();
     m_RenameHandle = InvalidEntityHandle;
     m_SynchronizingSelection = false;
+    m_ForceTreeRebuild = false;
 }
 
 void SceneHierarchyRavenPanel::Update(const SceneHierarchySnapshot& snapshot)
 {
-    const bool rebuild = HasSameNodes(snapshot) == false;
+    const bool rebuild = m_ForceTreeRebuild == true || HasSameNodes(snapshot) == false;
     m_Snapshot = snapshot;
     if (m_StatusLabel != nullptr)
     {
@@ -178,6 +203,7 @@ void SceneHierarchyRavenPanel::Update(const SceneHierarchySnapshot& snapshot)
     if (rebuild == true)
     {
         RebuildTree();
+        m_ForceTreeRebuild = false;
     }
     SynchronizeSelection();
     SynchronizeRenameEditor();
@@ -213,6 +239,11 @@ void SceneHierarchyRavenPanel::SetDeleteRequestedHandler(
     DeleteRequestedHandler handler)
 {
     m_OnDeleteRequested = std::move(handler);
+}
+
+void SceneHierarchyRavenPanel::SetReparentRequestedHandler(ReparentRequestedHandler handler)
+{
+    m_OnReparentRequested = std::move(handler);
 }
 
 bool SceneHierarchyRavenPanel::IsAttached() const
