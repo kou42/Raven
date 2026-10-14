@@ -240,6 +240,7 @@ D:.
     |   |   |   |       InspectorEditCommand.h
     |   |   |   |       RenameEntityCommand.cpp
     |   |   |   |       RenameEntityCommand.h
+    |   |   |   |       ReparentEntityCommand.h
     |   |   |   |       TransformCommand.cpp
     |   |   |   |       TransformCommand.h
     |   |   |   |
