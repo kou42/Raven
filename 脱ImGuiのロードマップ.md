@@ -225,7 +225,7 @@ Exit Gate:
 - [ ] Create / Delete / Rename / Reparentを既存または追加のEditor Commandへ接続する。
   - [x] Createを既存`CreateEntityCommand`へ接続する。
   - [x] Renameを既存`RenameEntityCommand`へ接続し、Enter / Focus喪失時に1 Commandとして確定する。
-  - [ ] DeleteのComponent復元SnapshotとCommandを追加する。
+  - [ ] DeleteのComponent復元SnapshotとCommandを追加する（標準8種のComponentを対象とする暫定実装を追加。未知のComponentは削除を禁止。ビルド・Undo/Redo回帰テスト未実施のため未完了）。
   - [ ] 親子関係の正規Runtimeデータを定義してReparent Commandへ接続する。
 - [ ] InspectorのComponent表示をSection単位へ分け、UIコードとComponent変更処理を分離する。
 - [ ] 連続値編集は「Drag中Preview」と「操作完了時のCommand確定」を分ける。
