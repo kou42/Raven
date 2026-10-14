@@ -9,6 +9,7 @@
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathQuatanion.h"
 #include "Raven/Scene/SceneCamera.h"
+#include "Raven/Scene/Entity.h"
 
 namespace Raven
 {
@@ -23,6 +24,13 @@ class AnimatorStateMachine;
 struct TagComponent
 {
     std::string Tag = "Entity";
+};
+
+// 親HandleはIndexだけでなくGenerationも保持し、Index再利用時の誤接続を防ぎます。
+// Transformは当面world-spaceのまま維持し、階層化による描画・物理挙動の変化を避けます。
+struct RelationshipComponent
+{
+    EntityHandle Parent = InvalidEntityHandle;
 };
 
 struct TransformComponent
