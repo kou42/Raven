@@ -24,6 +24,7 @@ class SceneHierarchyRavenPanel
 public:
     using SelectionRequestedHandler = std::function<void(EntityHandle)>;
     using CreateRequestedHandler = std::function<void()>;
+    using ReparentRequestedHandler = std::function<bool(EntityHandle, EntityHandle)>;
     using DeleteRequestedHandler = std::function<bool(EntityHandle)>;
     using RenameRequestedHandler =
         std::function<bool(EntityHandle, const std::string&)>;
@@ -36,6 +37,7 @@ public:
     void SetCreateRequestedHandler(CreateRequestedHandler handler);
     void SetRenameRequestedHandler(RenameRequestedHandler handler);
     void SetDeleteRequestedHandler(DeleteRequestedHandler handler);
+    void SetReparentRequestedHandler(ReparentRequestedHandler handler);
 
     bool IsAttached() const;
     bool IsVisible() const;
@@ -63,6 +65,8 @@ private:
     CreateRequestedHandler m_OnCreateRequested;
     RenameRequestedHandler m_OnRenameRequested;
     DeleteRequestedHandler m_OnDeleteRequested;
+    ReparentRequestedHandler m_OnReparentRequested;
+    bool m_ForceTreeRebuild = false;
     std::unordered_map<std::uint64_t, bool> m_ExpandedStates;
     EntityHandle m_RenameHandle = InvalidEntityHandle;
     bool m_SynchronizingSelection = false;
