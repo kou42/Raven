@@ -147,6 +147,20 @@ bool RedoEditorCommand()
         if (command != nullptr
             && command->Redo(*s_ActiveScene) == true)
         {
+            EntityHandle before;
+            EntityHandle after;
+            if (command->GetRestoredEntityHandles(before, after) == true)
+            {
+                // CreateのRedoで新Generationへ移った場合、残りのRedoとUndoの参照を更新します。
+                for (const auto& entry : s_UndoStack)
+                {
+                    entry->RemapEntityHandle(before, after);
+                }
+                for (const auto& entry : s_RedoStack)
+                {
+                    entry->RemapEntityHandle(before, after);
+                }
+            }
             s_UndoStack.push_back(std::move(command));
             TrimUndoHistory();
             return true;
