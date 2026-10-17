@@ -139,6 +139,7 @@ private:
     // Runtime側でDestroyされた場合やApplication::SetScene()でSceneが差し替わった場合に、
     // Inspector/Gizmoが古いEntityを参照し続けないためのEditor共通ガードです。
     void ValidateSelectedEntity();
+    void SetSelectedEntity(Entity entity);
 
     // ========================================================================
     // Editor Viewports

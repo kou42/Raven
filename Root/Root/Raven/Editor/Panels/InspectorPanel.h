@@ -27,6 +27,10 @@ class InspectorPanel
 {
 public:
     void OnImGuiRender(Entity selectedEntity);
+
+    // Scene交換・Entity破棄・Editor終了時に、ImGui Widgetが保持していた編集開始値を破棄します。
+    // 次のEntityへ古いBefore Snapshotを持ち越さないためのLifetime境界です。
+    void ResetEditingState();
 };
 
 } // namespace Raven

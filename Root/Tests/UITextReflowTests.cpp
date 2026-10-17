@@ -2055,9 +2055,19 @@ void TestInputNumber()
 {
     Raven::UIInputNumber number;
     int notifications = 0;
+    int commitNotifications = 0;
+    double lastCommitBefore = 0.0;
+    double lastCommitAfter = 0.0;
     number.SetOnValueChanged([&notifications](double)
         {
             ++notifications;
+        });
+    number.SetOnValueCommitted(
+        [&commitNotifications, &lastCommitBefore, &lastCommitAfter](double before, double after)
+        {
+            ++commitNotifications;
+            lastCommitBefore = before;
+            lastCommitAfter = after;
         });
     number.SetRange(-10.0, 10.0);
     number.SetValue(2.0);
@@ -2067,6 +2077,9 @@ void TestInputNumber()
     number.Decrement();
     CheckNear("step down", static_cast<float>(number.GetValue()), 2.0f);
     Check(notifications == 2, "step change notifications");
+    Check(commitNotifications == 2, "step commit notifications");
+    CheckNear("step commit before", static_cast<float>(lastCommitBefore), 2.5f);
+    CheckNear("step commit after", static_cast<float>(lastCommitAfter), 2.0f);
     number.SetValue(100.0);
     CheckNear("SetValue clamp", static_cast<float>(number.GetValue()), 10.0f);
     number.Increment();
@@ -2076,14 +2089,21 @@ void TestInputNumber()
     number.Commit();
     CheckNear("commit valid value", static_cast<float>(number.GetValue()), -4.25f);
     Check(number.GetEditText() == "-4.25", "commit normalizes text");
+    Check(commitNotifications == 3, "text commit notification");
+    CheckNear("text commit before", static_cast<float>(lastCommitBefore), 10.0f);
+    CheckNear("text commit after", static_cast<float>(lastCommitAfter), -4.25f);
     number.GetInputText().SetText("-");
     number.Commit();
     CheckNear("incomplete input retains value", static_cast<float>(number.GetValue()), -4.25f);
     Check(number.GetEditText() == "-4.25", "incomplete input restores text");
+    Check(commitNotifications == 3, "incomplete input does not commit");
     number.GetInputText().SetText("999");
     number.Commit();
     CheckNear("commit clamp", static_cast<float>(number.GetValue()), 10.0f);
     Check(number.GetEditText() == "10", "commit clamp normalizes text");
+    Check(commitNotifications == 4, "clamped input commits once");
+    number.Commit();
+    Check(commitNotifications == 4, "repeated commit is idempotent");
     number.GetInputText().SetText("1e2");
     number.Commit();
     CheckNear("exponent clamp", static_cast<float>(number.GetValue()), 10.0f);

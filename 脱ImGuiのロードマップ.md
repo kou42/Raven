@@ -1,6 +1,6 @@
 # Raven 脱ImGuiロードマップ
 
-最終更新: 2026-10-11
+最終更新: 2026-10-18
 
 対象: Raven Editor / Debug UI / Dear ImGui統合
 
@@ -229,7 +229,10 @@ Exit Gate:
   - [ ] 親子関係の正規Runtimeデータを定義してReparent Commandへ接続する（RelationshipComponent、Scene API、ReparentEntityCommand、Hierarchy Snapshot、Raven UI Drag/Drop接続、回帰テストコードを追加。ビルド・実行検証は未完了）。
 - [x] InspectorのComponent表示をSection単位へ分け、UIコードとComponent変更処理を分離する（Raven UI読み取り表示をSnapshot境界で追加。編集Actionは次項で移行）。
 - [ ] 連続値編集は「Drag中Preview」と「操作完了時のCommand確定」を分ける。
-- [ ] Entity破棄、Scene交換、Index再利用時に選択と編集中状態を破棄する。
+  - [x] Raven UI版Transform数値入力をPreviewとEnter / Focus喪失時の1 Command確定へ分離する。
+  - [x] Raven UI版Camera Projection入力を`SetPerspective()`経由のPreviewと1 Command確定へ分離する。
+  - [ ] Camera Primary、RigidBody、ColliderのRaven UI編集Actionを接続する。
+- [x] Entity破棄、Scene交換、Index再利用時に選択と編集中状態を破棄する。
 - [ ] Hierarchy Drag & Dropへ循環防止、同一親内移動、Undo/Redoを接続する。
 
 Exit Gate:

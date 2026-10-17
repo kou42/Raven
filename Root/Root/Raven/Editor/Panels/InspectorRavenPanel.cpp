@@ -2,10 +2,12 @@
 
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Widgets/UICollapsibleSection.h"
+#include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
 #include "Raven/UI/Widgets/UIWindow.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <utility>
 
@@ -102,9 +104,8 @@ bool InspectorRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fon
     m_StatusLabel = static_cast<UILabel*>(content->AddChild(std::move(status)));
 
     m_TagSection = AddSection(*content, font, "Tag", 1u, m_TagLabels);
-    m_TransformSection = AddSection(
-        *content, font, "Transform", 3u, m_TransformLabels);
-    m_CameraSection = AddSection(*content, font, "Camera", 5u, m_CameraLabels);
+    m_TransformSection = AddTransformSection(*content, font);
+    m_CameraSection = AddCameraSection(*content, font);
     m_RigidBodySection = AddSection(
         *content, font, "Rigid Body", 9u, m_RigidBodyLabels);
     m_ColliderSection = AddSection(
@@ -125,6 +126,10 @@ bool InspectorRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fon
 
 void InspectorRavenPanel::Detach()
 {
+    // Tree切り離しはFocus喪失を発生させるため、終了処理をEditor操作のCommitとして
+    // 誤記録しないよう編集Sessionを先に破棄します。
+    ResetTransformEdit();
+    ResetCameraEdit();
     if (m_Context != nullptr && m_Root != nullptr)
     {
         m_Context->GetRootElement().RemoveChild(m_Root);
@@ -138,7 +143,8 @@ void InspectorRavenPanel::Detach()
     m_RigidBodySection = nullptr;
     m_ColliderSection = nullptr;
     m_TagLabels.clear();
-    m_TransformLabels.clear();
+    m_TransformInputs.clear();
+    m_CameraInputs.clear();
     m_CameraLabels.clear();
     m_RigidBodyLabels.clear();
     m_ColliderLabels.clear();
@@ -147,8 +153,20 @@ void InspectorRavenPanel::Detach()
 
 void InspectorRavenPanel::Update(const InspectorSnapshot& snapshot)
 {
+    const bool targetChanged =
+        m_Snapshot.SelectionValid != snapshot.SelectionValid
+        || m_Snapshot.Handle != snapshot.Handle;
+    if (targetChanged == true)
+    {
+        // Scene交換、Entity破棄、Generation変更、別Entity選択では、古いBefore値を
+        // 新しいEntityのCommitへ持ち越さないよう同期より先に編集Sessionを破棄します。
+        ResetTransformEdit();
+        ResetCameraEdit();
+    }
     m_Snapshot = snapshot;
     UpdateLabels();
+    SynchronizeTransformInputs(targetChanged);
+    SynchronizeCameraInputs(targetChanged);
 }
 
 void InspectorRavenPanel::SetVisible(bool visible)
@@ -157,6 +175,30 @@ void InspectorRavenPanel::SetVisible(bool visible)
     {
         m_Root->SetVisible(visible);
     }
+}
+
+void InspectorRavenPanel::SetTransformPreviewRequestedHandler(
+    TransformPreviewRequestedHandler handler)
+{
+    m_OnTransformPreviewRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetTransformCommitRequestedHandler(
+    TransformCommitRequestedHandler handler)
+{
+    m_OnTransformCommitRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetCameraPreviewRequestedHandler(
+    CameraPreviewRequestedHandler handler)
+{
+    m_OnCameraPreviewRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetCameraCommitRequestedHandler(
+    CameraCommitRequestedHandler handler)
+{
+    m_OnCameraCommitRequested = std::move(handler);
 }
 
 bool InspectorRavenPanel::IsAttached() const
@@ -201,6 +243,386 @@ UICollapsibleSection* InspectorRavenPanel::AddSection(
     return static_cast<UICollapsibleSection*>(parent.AddChild(std::move(section)));
 }
 
+UICollapsibleSection* InspectorRavenPanel::AddTransformSection(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font)
+{
+    auto section = CreateScope<UICollapsibleSection>();
+    section->SetPreferredSize(math::Vec2(314.0f, 0.0f));
+
+    auto headerLabel = CreateScope<UILabel>();
+    headerLabel->SetFont(font);
+    headerLabel->SetText("Transform");
+    headerLabel->SetPosition(math::Vec2(10.0f, 4.0f));
+    headerLabel->SetSize(math::Vec2(286.0f, 24.0f));
+    headerLabel->SetHitTestVisible(false);
+    section->GetHeader()->AddChild(std::move(headerLabel));
+
+    UIElement* content = section->GetContent();
+    content->SetSpacing(2.0f);
+    content->SetPadding(UIThickness(8.0f, 4.0f));
+    AddTransformInput(*content, font, "Position X", 0u, 0.1);
+    AddTransformInput(*content, font, "Position Y", 1u, 0.1);
+    AddTransformInput(*content, font, "Position Z", 2u, 0.1);
+    AddTransformInput(*content, font, "Rotation X", 3u, 0.01);
+    AddTransformInput(*content, font, "Rotation Y", 4u, 0.01);
+    AddTransformInput(*content, font, "Rotation Z", 5u, 0.01);
+    AddTransformInput(*content, font, "Scale X", 6u, 0.1);
+    AddTransformInput(*content, font, "Scale Y", 7u, 0.1);
+    AddTransformInput(*content, font, "Scale Z", 8u, 0.1);
+    return static_cast<UICollapsibleSection*>(parent.AddChild(std::move(section)));
+}
+
+void InspectorRavenPanel::AddTransformInput(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font,
+    const std::string& label,
+    std::size_t valueIndex,
+    double step)
+{
+    auto row = CreateScope<UIElement>();
+    row->SetLayoutMode(UILayoutMode::Horizontal);
+    row->SetSpacing(6.0f);
+    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+
+    auto caption = CreateScope<UILabel>();
+    caption->SetFont(font);
+    caption->SetText(label);
+    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
+    caption->SetHitTestVisible(false);
+    row->AddChild(std::move(caption));
+
+    auto input = CreateScope<UIInputNumber>();
+    input->SetFont(font);
+    input->SetStep(step);
+    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
+    input->SetOnValueChanged(
+        [this, valueIndex](double value)
+        {
+            PreviewTransformValue(valueIndex, value);
+        });
+    input->SetOnValueCommitted(
+        [this](double, double)
+        {
+            CommitTransformEdit();
+        });
+    m_TransformInputs.push_back(
+        static_cast<UIInputNumber*>(row->AddChild(std::move(input))));
+    parent.AddChild(std::move(row));
+}
+
+void InspectorRavenPanel::SynchronizeTransformInputs(bool targetChanged)
+{
+    if (m_TransformInputs.size() != 9u
+        || m_Snapshot.SelectionValid == false
+        || m_Snapshot.Transform.has_value() == false)
+    {
+        return;
+    }
+
+    const InspectorTransformSnapshot& transform = *m_Snapshot.Transform;
+    const double values[9] =
+    {
+        transform.Position.x, transform.Position.y, transform.Position.z,
+        transform.Rotation.x, transform.Rotation.y, transform.Rotation.z,
+        transform.Scale.x, transform.Scale.y, transform.Scale.z
+    };
+
+    UIElement* focused = m_Context != nullptr
+        ? m_Context->GetFocusedElement()
+        : nullptr;
+    m_SynchronizingTransformInputs = true;
+    for (std::size_t index = 0u; index < m_TransformInputs.size(); ++index)
+    {
+        UIInputNumber* input = m_TransformInputs[index];
+        if (input == nullptr)
+        {
+            continue;
+        }
+
+        // 同じEntityの入力中はSnapshot同期でCaretや未確定文字列を壊しません。
+        // 対象が変わった場合だけ、Focus中でも新しいEntity値へ切り替えます。
+        const bool editing = focused == &input->GetInputText();
+        if (targetChanged == true || editing == false)
+        {
+            input->SetValue(values[index]);
+        }
+    }
+    m_SynchronizingTransformInputs = false;
+}
+
+void InspectorRavenPanel::PreviewTransformValue(
+    std::size_t valueIndex,
+    double value)
+{
+    if (m_SynchronizingTransformInputs == true
+        || valueIndex >= m_TransformInputs.size()
+        || m_Snapshot.SelectionValid == false
+        || static_cast<bool>(m_Snapshot.Handle) == false
+        || m_Snapshot.Transform.has_value() == false
+        || m_OnTransformPreviewRequested == nullptr)
+    {
+        return;
+    }
+
+    if (m_TransformEditActive == false)
+    {
+        m_TransformEditHandle = m_Snapshot.Handle;
+        m_TransformEditBefore = *m_Snapshot.Transform;
+        m_TransformEditActive = true;
+    }
+    else if (m_TransformEditHandle != m_Snapshot.Handle)
+    {
+        ResetTransformEdit();
+        return;
+    }
+
+    const InspectorTransformSnapshot original = *m_Snapshot.Transform;
+    InspectorTransformSnapshot requested = original;
+    float* components[9] =
+    {
+        &requested.Position.x, &requested.Position.y, &requested.Position.z,
+        &requested.Rotation.x, &requested.Rotation.y, &requested.Rotation.z,
+        &requested.Scale.x, &requested.Scale.y, &requested.Scale.z
+    };
+    const float originalComponents[9] =
+    {
+        original.Position.x, original.Position.y, original.Position.z,
+        original.Rotation.x, original.Rotation.y, original.Rotation.z,
+        original.Scale.x, original.Scale.y, original.Scale.z
+    };
+    *components[valueIndex] = static_cast<float>(value);
+
+    if (m_OnTransformPreviewRequested(m_Snapshot.Handle, requested) == true)
+    {
+        // 次のCharacter入力を直前Previewから継続できるよう、Panel内Snapshotも同期します。
+        m_Snapshot.Transform = requested;
+        return;
+    }
+
+    // Scene交換やEntity削除でActionが拒否された場合、Widgetへ古い表示値を残しません。
+    const double previous = static_cast<double>(originalComponents[valueIndex]);
+    m_TransformInputs[valueIndex]->SetValue(previous);
+    ResetTransformEdit();
+}
+
+void InspectorRavenPanel::CommitTransformEdit()
+{
+    if (m_SynchronizingTransformInputs == true
+        || m_TransformEditActive == false)
+    {
+        return;
+    }
+
+    if (m_OnTransformCommitRequested != nullptr)
+    {
+        // After値はEditorLayerが現在Componentから取得します。PanelがFrame遅延した
+        // SnapshotをCommandへ確定して、外部更新を巻き戻すことを防ぎます。
+        m_OnTransformCommitRequested(
+            m_TransformEditHandle, m_TransformEditBefore);
+    }
+    ResetTransformEdit();
+}
+
+void InspectorRavenPanel::ResetTransformEdit()
+{
+    m_TransformEditHandle = InvalidEntityHandle;
+    m_TransformEditBefore = InspectorTransformSnapshot{};
+    m_TransformEditActive = false;
+}
+
+UICollapsibleSection* InspectorRavenPanel::AddCameraSection(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font)
+{
+    auto section = CreateScope<UICollapsibleSection>();
+    section->SetPreferredSize(math::Vec2(314.0f, 0.0f));
+
+    auto headerLabel = CreateScope<UILabel>();
+    headerLabel->SetFont(font);
+    headerLabel->SetText("Camera");
+    headerLabel->SetPosition(math::Vec2(10.0f, 4.0f));
+    headerLabel->SetSize(math::Vec2(286.0f, 24.0f));
+    headerLabel->SetHitTestVisible(false);
+    section->GetHeader()->AddChild(std::move(headerLabel));
+
+    UIElement* content = section->GetContent();
+    content->SetSpacing(2.0f);
+    content->SetPadding(UIThickness(8.0f, 4.0f));
+    AddCameraInput(*content, font, "Vertical FOV", 0u, 0.005, 0.01, 3.13);
+    AddCameraInput(*content, font, "Near Clip", 1u, 0.01, 0.001, 100000.0);
+    AddCameraInput(*content, font, "Far Clip", 2u, 0.1, 0.002, 100000.0);
+
+    for (std::size_t index = 0u; index < 2u; ++index)
+    {
+        auto label = CreateScope<UILabel>();
+        label->SetFont(font);
+        label->SetPreferredSize(math::Vec2(294.0f, 22.0f));
+        label->SetHitTestVisible(false);
+        m_CameraLabels.push_back(
+            static_cast<UILabel*>(content->AddChild(std::move(label))));
+    }
+    return static_cast<UICollapsibleSection*>(parent.AddChild(std::move(section)));
+}
+
+void InspectorRavenPanel::AddCameraInput(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font,
+    const std::string& label,
+    std::size_t valueIndex,
+    double step,
+    double minimum,
+    double maximum)
+{
+    auto row = CreateScope<UIElement>();
+    row->SetLayoutMode(UILayoutMode::Horizontal);
+    row->SetSpacing(6.0f);
+    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+
+    auto caption = CreateScope<UILabel>();
+    caption->SetFont(font);
+    caption->SetText(label);
+    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
+    caption->SetHitTestVisible(false);
+    row->AddChild(std::move(caption));
+
+    auto input = CreateScope<UIInputNumber>();
+    input->SetFont(font);
+    input->SetStep(step);
+    input->SetRange(minimum, maximum);
+    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
+    input->SetOnValueChanged(
+        [this, valueIndex](double value)
+        {
+            PreviewCameraValue(valueIndex, value);
+        });
+    input->SetOnValueCommitted(
+        [this](double, double)
+        {
+            CommitCameraEdit();
+        });
+    m_CameraInputs.push_back(
+        static_cast<UIInputNumber*>(row->AddChild(std::move(input))));
+    parent.AddChild(std::move(row));
+}
+
+void InspectorRavenPanel::SynchronizeCameraInputs(bool targetChanged)
+{
+    if (m_CameraInputs.size() != 3u
+        || m_Snapshot.SelectionValid == false
+        || m_Snapshot.Camera.has_value() == false)
+    {
+        return;
+    }
+
+    const InspectorCameraSnapshot& camera = *m_Snapshot.Camera;
+    UIElement* focused = m_Context != nullptr
+        ? m_Context->GetFocusedElement()
+        : nullptr;
+    const bool nearEditing = focused == &m_CameraInputs[1u]->GetInputText();
+    const bool farEditing = focused == &m_CameraInputs[2u]->GetInputText();
+    constexpr double ClipSeparation = 0.0001;
+    m_SynchronizingCameraInputs = true;
+    if (targetChanged == true || nearEditing == false)
+    {
+        m_CameraInputs[1u]->SetRange(
+            0.001,
+            std::max(0.001, static_cast<double>(camera.FarClip) - ClipSeparation));
+    }
+    if (targetChanged == true || farEditing == false)
+    {
+        m_CameraInputs[2u]->SetRange(
+            static_cast<double>(camera.NearClip) + ClipSeparation,
+            100000.0);
+    }
+
+    const double values[3] =
+    {
+        camera.VerticalFov, camera.NearClip, camera.FarClip
+    };
+    for (std::size_t index = 0u; index < m_CameraInputs.size(); ++index)
+    {
+        UIInputNumber* input = m_CameraInputs[index];
+        if (input == nullptr)
+        {
+            continue;
+        }
+        const bool editing = focused == &input->GetInputText();
+        if (targetChanged == true || editing == false)
+        {
+            input->SetValue(values[index]);
+        }
+    }
+    m_SynchronizingCameraInputs = false;
+}
+
+void InspectorRavenPanel::PreviewCameraValue(
+    std::size_t valueIndex,
+    double value)
+{
+    if (m_SynchronizingCameraInputs == true
+        || valueIndex >= m_CameraInputs.size()
+        || m_Snapshot.SelectionValid == false
+        || static_cast<bool>(m_Snapshot.Handle) == false
+        || m_Snapshot.Camera.has_value() == false
+        || m_OnCameraPreviewRequested == nullptr)
+    {
+        return;
+    }
+
+    if (m_CameraEditActive == false)
+    {
+        m_CameraEditHandle = m_Snapshot.Handle;
+        m_CameraEditBefore = *m_Snapshot.Camera;
+        m_CameraEditActive = true;
+    }
+    else if (m_CameraEditHandle != m_Snapshot.Handle)
+    {
+        ResetCameraEdit();
+        return;
+    }
+
+    const InspectorCameraSnapshot original = *m_Snapshot.Camera;
+    InspectorCameraSnapshot requested = original;
+    float* values[3] =
+    {
+        &requested.VerticalFov, &requested.NearClip, &requested.FarClip
+    };
+    const float previous = *values[valueIndex];
+    *values[valueIndex] = static_cast<float>(value);
+
+    if (m_OnCameraPreviewRequested(m_Snapshot.Handle, requested) == true)
+    {
+        m_Snapshot.Camera = requested;
+        return;
+    }
+
+    m_CameraInputs[valueIndex]->SetValue(previous);
+    ResetCameraEdit();
+}
+
+void InspectorRavenPanel::CommitCameraEdit()
+{
+    if (m_SynchronizingCameraInputs == true
+        || m_CameraEditActive == false)
+    {
+        return;
+    }
+
+    if (m_OnCameraCommitRequested != nullptr)
+    {
+        m_OnCameraCommitRequested(m_CameraEditHandle, m_CameraEditBefore);
+    }
+    ResetCameraEdit();
+}
+
+void InspectorRavenPanel::ResetCameraEdit()
+{
+    m_CameraEditHandle = InvalidEntityHandle;
+    m_CameraEditBefore = InspectorCameraSnapshot{};
+    m_CameraEditActive = false;
+}
+
 void InspectorRavenPanel::UpdateLabels()
 {
     if (m_StatusLabel == nullptr)
@@ -234,21 +656,11 @@ void InspectorRavenPanel::UpdateLabels()
     {
         SetLabelText(m_TagLabels, 0u, "Name: " + *m_Snapshot.Tag);
     }
-    if (m_Snapshot.Transform.has_value() == true)
-    {
-        const InspectorTransformSnapshot& value = *m_Snapshot.Transform;
-        SetLabelText(m_TransformLabels, 0u, "Position: " + FormatVec3(value.Position));
-        SetLabelText(m_TransformLabels, 1u, "Rotation: " + FormatVec3(value.Rotation));
-        SetLabelText(m_TransformLabels, 2u, "Scale: " + FormatVec3(value.Scale));
-    }
     if (m_Snapshot.Camera.has_value() == true)
     {
         const InspectorCameraSnapshot& value = *m_Snapshot.Camera;
-        SetLabelText(m_CameraLabels, 0u, "Vertical FOV: " + FormatFloat(value.VerticalFov));
-        SetLabelText(m_CameraLabels, 1u, "Near Clip: " + FormatFloat(value.NearClip));
-        SetLabelText(m_CameraLabels, 2u, "Far Clip: " + FormatFloat(value.FarClip));
-        SetLabelText(m_CameraLabels, 3u, "Aspect Ratio: " + FormatFloat(value.AspectRatio));
-        SetLabelText(m_CameraLabels, 4u, std::string("Primary: ") + (value.Primary ? "Yes" : "No"));
+        SetLabelText(m_CameraLabels, 0u, "Aspect Ratio: " + FormatFloat(value.AspectRatio));
+        SetLabelText(m_CameraLabels, 1u, std::string("Primary: ") + (value.Primary ? "Yes" : "No"));
     }
     if (m_Snapshot.RigidBody.has_value() == true)
     {

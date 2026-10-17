@@ -3,8 +3,10 @@
 #include "Raven/Core/Application.h"
 #include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
+#include "Raven/Editor/Command/InspectorEditCommand.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Command/ReparentEntityCommand.h"
+#include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Scene/Components.h"
@@ -15,10 +17,70 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 namespace Raven
 {
+namespace
+{
+
+constexpr float CameraProjectionCompareEpsilon = 0.000001f;
+
+bool ValidateCameraProjectionTarget(Entity entity)
+{
+    return entity.HasComponent<CameraComponent>();
+}
+
+bool ApplyCameraProjectionSnapshot(
+    Entity entity,
+    const InspectorCameraSnapshot& snapshot)
+{
+    if (ValidateCameraProjectionTarget(entity) == false)
+    {
+        return false;
+    }
+
+    SceneCamera& camera = entity.GetComponent<CameraComponent>().Camera;
+    camera.SetPerspective(
+        snapshot.VerticalFov,
+        snapshot.NearClip,
+        snapshot.FarClip);
+
+    // SetPerspective()は不正なNear/Far/FOVを拒否して現在値を維持します。
+    // Previewを成功扱いにする前に、要求値が実際のCamera状態へ反映されたことを確認します。
+    return std::fabs(camera.GetPerspectiveVerticalFov() - snapshot.VerticalFov)
+            <= CameraProjectionCompareEpsilon
+        && std::fabs(camera.GetPerspectiveNearClip() - snapshot.NearClip)
+            <= CameraProjectionCompareEpsilon
+        && std::fabs(camera.GetPerspectiveFarClip() - snapshot.FarClip)
+            <= CameraProjectionCompareEpsilon;
+}
+
+bool CameraProjectionSnapshotsEqual(
+    const InspectorCameraSnapshot& left,
+    const InspectorCameraSnapshot& right)
+{
+    // Aspect RatioはViewport、PrimaryはSceneCameraSystemが所有するため、このCommandでは比較しません。
+    return std::fabs(left.VerticalFov - right.VerticalFov)
+            <= CameraProjectionCompareEpsilon
+        && std::fabs(left.NearClip - right.NearClip)
+            <= CameraProjectionCompareEpsilon
+        && std::fabs(left.FarClip - right.FarClip)
+            <= CameraProjectionCompareEpsilon;
+}
+
+InspectorCameraSnapshot CaptureCameraSnapshot(const CameraComponent& component)
+{
+    return InspectorCameraSnapshot{
+        component.Camera.GetPerspectiveVerticalFov(),
+        component.Camera.GetPerspectiveNearClip(),
+        component.Camera.GetPerspectiveFarClip(),
+        component.Camera.GetAspectRatio(),
+        component.Primary };
+}
+
+} // namespace
 
 EditorLayer::EditorLayer(Application& application, EditorUIBackend uiBackend)
     : m_Application(&application)
@@ -72,14 +134,14 @@ void EditorLayer::OnAttach()
                     : nullptr;
                 if (activeScene == nullptr || static_cast<bool>(handle) == false)
                 {
-                    m_SelectedEntity = Entity{};
+                    SetSelectedEntity(Entity{});
                     return;
                 }
 
                 Entity candidate(handle, activeScene);
-                m_SelectedEntity = activeScene->IsEntityAlive(candidate) == true
+                SetSelectedEntity(activeScene->IsEntityAlive(candidate) == true
                     ? candidate
-                    : Entity{};
+                    : Entity{});
             });
         m_SceneHierarchyRavenPanel.SetCreateRequestedHandler(
             [this]()
@@ -98,7 +160,7 @@ void EditorLayer::OnAttach()
                 {
                     // CommandはHistoryへ移譲済みですが、同期Execute直後なので生成Handleを
                     // 読み出せます。Panel側にはScene/Entity参照を保持させません。
-                    m_SelectedEntity = executedCommand->GetCreatedEntity();
+                    SetSelectedEntity(executedCommand->GetCreatedEntity());
                 }
             });
         m_SceneHierarchyRavenPanel.SetRenameRequestedHandler(
@@ -136,7 +198,8 @@ void EditorLayer::OnAttach()
                     std::make_unique<DeleteEntityCommand>(scene, Entity(handle, scene)));
                 if (result == true && m_SelectedEntity.GetHandle() == handle)
                 {
-                    m_SelectedEntity = Entity{};
+                    // 削除済みHandleをInspector / Gizmoへ1frameも公開しません。
+                    SetSelectedEntity(Entity{});
                 }
                 return result;
             });
@@ -157,6 +220,108 @@ void EditorLayer::OnAttach()
     if (m_Application != nullptr &&
         IsPanelOwnedByDearImGui(m_PanelUIOwnership.Inspector) == false)
     {
+        m_InspectorRavenPanel.SetTransformPreviewRequestedHandler(
+            [this](EntityHandle handle, const InspectorTransformSnapshot& requested)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    return false;
+                }
+
+                Entity entity(handle, activeScene);
+                if (activeScene->IsEntityAlive(entity) == false
+                    || entity.HasComponent<TransformComponent>() == false)
+                {
+                    return false;
+                }
+
+                // PreviewはUndo履歴へ積まず、Runtime Transformへ即時反映します。
+                // WidgetはScene参照を保持せず、ActionごとにHandleのGenerationを再検証します。
+                TransformComponent& transform = entity.GetComponent<TransformComponent>();
+                transform.Position = requested.Position;
+                transform.Rotation = requested.Rotation;
+                transform.Scale = requested.Scale;
+                return true;
+            });
+        m_InspectorRavenPanel.SetTransformCommitRequestedHandler(
+            [this](EntityHandle handle, const InspectorTransformSnapshot& beforeSnapshot)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    return false;
+                }
+
+                Entity entity(handle, activeScene);
+                if (activeScene->IsEntityAlive(entity) == false
+                    || entity.HasComponent<TransformComponent>() == false)
+                {
+                    return false;
+                }
+
+                TransformComponent before = entity.GetComponent<TransformComponent>();
+                before.Position = beforeSnapshot.Position;
+                before.Rotation = beforeSnapshot.Rotation;
+                before.Scale = beforeSnapshot.Scale;
+
+                // Preview適用済みの現在値をAfterとして取得し、1編集につき1 Commandだけ記録します。
+                // Panelの前Frame SnapshotをAfterへ使わないため、Runtime側の外部更新も巻き戻しません。
+                const TransformComponent after = entity.GetComponent<TransformComponent>();
+                return RecordAlreadyExecutedEditorCommand(
+                    std::make_unique<TransformCommand>(entity, before, after));
+            });
+        m_InspectorRavenPanel.SetCameraPreviewRequestedHandler(
+            [this](EntityHandle handle, const InspectorCameraSnapshot& requested)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    return false;
+                }
+
+                Entity entity(handle, activeScene);
+                if (activeScene->IsEntityAlive(entity) == false)
+                {
+                    return false;
+                }
+                return ApplyCameraProjectionSnapshot(entity, requested);
+            });
+        m_InspectorRavenPanel.SetCameraCommitRequestedHandler(
+            [this](EntityHandle handle, const InspectorCameraSnapshot& before)
+            {
+                Scene* activeScene = m_Application != nullptr
+                    ? m_Application->GetScene()
+                    : nullptr;
+                if (activeScene == nullptr || static_cast<bool>(handle) == false)
+                {
+                    return false;
+                }
+
+                Entity entity(handle, activeScene);
+                if (activeScene->IsEntityAlive(entity) == false
+                    || ValidateCameraProjectionTarget(entity) == false)
+                {
+                    return false;
+                }
+
+                const InspectorCameraSnapshot after = CaptureCameraSnapshot(
+                    entity.GetComponent<CameraComponent>());
+                return RecordAlreadyExecutedEditorCommand(
+                    std::make_unique<InspectorEditCommand<InspectorCameraSnapshot>>(
+                        entity,
+                        before,
+                        after,
+                        &ValidateCameraProjectionTarget,
+                        &ApplyCameraProjectionSnapshot,
+                        &CameraProjectionSnapshotsEqual));
+            });
         m_InspectorRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
     }
@@ -218,6 +383,7 @@ void EditorLayer::OnAttach()
 
 void EditorLayer::OnDetach()
 {
+    m_InspectorPanel.ResetEditingState();
     // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
     m_SceneHierarchyRavenPanel.Detach();
     m_InspectorRavenPanel.Detach();
@@ -674,24 +840,24 @@ void EditorLayer::RenderSceneView()
 
                                         if (activeScene->IsEntityAlive(pickedEntity))
                                         {
-                                            m_SelectedEntity = pickedEntity;
+                                            SetSelectedEntity(pickedEntity);
                                         }
                                         else
                                         {
-                                            m_SelectedEntity = Entity{};
+                                            SetSelectedEntity(Entity{});
                                         }
                                     }
                                     catch (const std::out_of_range&)
                                     {
                                         // GPU Bufferへ古いIndexが残った場合でもEditorを落とさず選択解除します。
                                         // 通常はPicking Pass直後に読むため発生しませんが、安全な境界として扱います。
-                                        m_SelectedEntity = Entity{};
+                                        SetSelectedEntity(Entity{});
                                     }
                                 }
                                 else
                                 {
                                     // Geometryが存在しない背景をクリックした場合は選択解除します。
-                                    m_SelectedEntity = Entity{};
+                                    SetSelectedEntity(Entity{});
                                 }
                             }
                         }
@@ -762,14 +928,14 @@ void EditorLayer::ValidateSelectedEntity()
 {
     if (m_Application == nullptr)
     {
-        m_SelectedEntity = Entity{};
+        SetSelectedEntity(Entity{});
         return;
     }
 
     Scene* activeScene = m_Application->GetScene();
     if (activeScene == nullptr)
     {
-        m_SelectedEntity = Entity{};
+        SetSelectedEntity(Entity{});
         return;
     }
 
@@ -784,7 +950,7 @@ void EditorLayer::ValidateSelectedEntity()
     // Index/Generationが偶然一致しても別SceneのEntityは別物なので、Scene切替時に選択を解除します。
     if (m_SelectedEntity.GetScene() != activeScene)
     {
-        m_SelectedEntity = Entity{};
+        SetSelectedEntity(Entity{});
         return;
     }
 
@@ -792,8 +958,22 @@ void EditorLayer::ValidateSelectedEntity()
     // Destroy後に同じIndexが再利用されても、古いGenerationを持つ選択Entityはここで無効化されます。
     if (activeScene->IsEntityAlive(m_SelectedEntity) == false)
     {
-        m_SelectedEntity = Entity{};
+        SetSelectedEntity(Entity{});
     }
+}
+
+void EditorLayer::SetSelectedEntity(Entity entity)
+{
+    const bool changed =
+        m_SelectedEntity.GetScene() != entity.GetScene()
+        || m_SelectedEntity.GetHandle() != entity.GetHandle();
+    if (changed == true)
+    {
+        // ImGui版は編集開始SnapshotをPanel内部に保持するため、選択境界で明示的に破棄します。
+        // Raven UI版は次のSnapshot更新でHandle差を検出し、同じ境界を適用します。
+        m_InspectorPanel.ResetEditingState();
+    }
+    m_SelectedEntity = entity;
 }
 
 void EditorLayer::BeginDockSpace()

@@ -1080,4 +1080,15 @@ void InspectorPanel::OnImGuiRender(Entity selectedEntity)
     ImGui::End();
 }
 
+void InspectorPanel::ResetEditingState()
+{
+    s_RenameEditState = RenameEditState{};
+    s_TransformEditState = TransformEditState{};
+    s_CameraProjectionEditState = CameraProjectionEditState{};
+    s_RigidBodyMassEditState = RigidBodyMassEditState{};
+    s_RigidBodyVec3EditState = RigidBodyValueEditState<math::Vec3>{};
+    s_RigidBodyFloatEditState = RigidBodyValueEditState<float>{};
+    s_ColliderEditState = ColliderEditState{};
+}
+
 } // namespace Raven

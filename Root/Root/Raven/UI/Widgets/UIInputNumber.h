@@ -19,6 +19,7 @@ class UIInputNumber final : public UIElement
 {
 public:
     using ValueChangedHandler = std::function<void(double)>;
+    using ValueCommittedHandler = std::function<void(double, double)>;
 
     UIInputNumber()
     {
@@ -71,6 +72,12 @@ public:
         m_Input->SetClipboard(std::move(reader), std::move(writer));
     }
     void SetOnValueChanged(ValueChangedHandler handler) { m_OnValueChanged = std::move(handler); }
+    // 連続入力中のValueChangedとは別に、Enter / Focus喪失 / Step操作を
+    // 1回の編集境界として通知します。Editorはこの境界でだけUndo Commandを積めます。
+    void SetOnValueCommitted(ValueCommittedHandler handler)
+    {
+        m_OnValueCommitted = std::move(handler);
+    }
 
     void SetStep(double step)
     {
@@ -101,7 +108,8 @@ public:
                 }
             }
         }
-        SetValue(m_Value);
+        NormalizeDisplayText();
+        CommitCurrentValue();
     }
 
     void Increment() { StepBy(1.0); }
@@ -128,6 +136,18 @@ public:
             return;
         }
         m_Value = std::clamp(value, m_Min, m_Max);
+        m_CommittedValue = m_Value;
+        NormalizeDisplayText();
+    }
+
+    double GetValue() const { return m_Value; }
+    double GetCommittedValue() const { return m_CommittedValue; }
+    const std::string& GetEditText() const { return m_Input->GetText(); }
+    UIInputText& GetInputText() { return *m_Input; }
+
+private:
+    void NormalizeDisplayText()
+    {
         char buffer[64]{};
         const auto result = std::to_chars(buffer, buffer + sizeof(buffer),
             m_Value, std::chars_format::general);
@@ -138,11 +158,21 @@ public:
         }
     }
 
-    double GetValue() const { return m_Value; }
-    const std::string& GetEditText() const { return m_Input->GetText(); }
-    UIInputText& GetInputText() { return *m_Input; }
+    void CommitCurrentValue()
+    {
+        if (m_Value == m_CommittedValue)
+        {
+            return;
+        }
 
-private:
+        const double before = m_CommittedValue;
+        m_CommittedValue = m_Value;
+        if (m_OnValueCommitted != nullptr)
+        {
+            m_OnValueCommitted(before, m_CommittedValue);
+        }
+    }
+
     // 入力途中の文字列ではなく最後に解析できたValueを基準にStepします。
     // 範囲端で値が変わらない場合もCommitして途中入力を確定表示へ戻します。
     void StepBy(double direction)
@@ -159,11 +189,12 @@ private:
             return;
         }
         m_Value = clamped;
-        SetValue(m_Value);
+        NormalizeDisplayText();
         if (m_OnValueChanged != nullptr)
         {
             m_OnValueChanged(m_Value);
         }
+        CommitCurrentValue();
     }
 
     static bool IsNumericPrefix(const std::string& text)
@@ -235,7 +266,9 @@ private:
 
     UIInputText* m_Input = nullptr; // 所有権はUIElementのChild Treeにあります。
     ValueChangedHandler m_OnValueChanged;
+    ValueCommittedHandler m_OnValueCommitted;
     double m_Value = 0.0;
+    double m_CommittedValue = 0.0;
     double m_Step = 1.0;
     double m_Min = -1.0e100;
     double m_Max = 1.0e100;
