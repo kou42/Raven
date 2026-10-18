@@ -20,6 +20,58 @@ namespace Raven
 class DX12SceneRHITexture final : public RHITexture
 {
 public:
+    // off-screen Color AttachmentはRTVとSRVの両用途で同じResourceを共有します。
+    // 初期StateをPIXEL_SHADER_RESOURCEにすることで、描画開始・終了のBarrierを常に対称にします。
+    bool InitRenderTarget(ID3D12Device* device,
+        const RHITextureSpecification& specification)
+    {
+        if (device == nullptr || specification.Width == 0u ||
+            specification.Height == 0u ||
+            specification.Format != RHITextureFormat::RGBA8 ||
+            specification.Usage != RHITextureUsage::RenderTarget ||
+            specification.GenerateMips == true)
+        {
+            return false;
+        }
+
+        D3D12_HEAP_PROPERTIES heap{};
+        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+        D3D12_RESOURCE_DESC description{};
+        description.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        description.Width = specification.Width;
+        description.Height = specification.Height;
+        description.DepthOrArraySize = 1;
+        description.MipLevels = 1;
+        description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        description.SampleDesc.Count = 1;
+        description.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        description.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+        D3D12_CLEAR_VALUE clearValue{};
+        clearValue.Format = description.Format;
+        clearValue.Color[3] = 1.0f;
+
+        Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+        if (FAILED(device->CreateCommittedResource(
+            &heap, D3D12_HEAP_FLAG_NONE, &description,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
+            IID_PPV_ARGS(texture.GetAddressOf()))))
+        {
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap;
+        if (CreateSrvHeap(device, texture.Get(), srvHeap) == false)
+        {
+            return false;
+        }
+
+        m_SrvHeap = std::move(srvHeap);
+        m_Texture = std::move(texture);
+        m_Specification = specification;
+        m_OwnerDevice = device;
+        return true;
+    }
+
     bool Init(ID3D12Device* device,
         const RHITextureSpecification& specification,
         const void* initialData, std::size_t initialDataSize)
@@ -234,6 +286,36 @@ public:
     ID3D12Device* GetOwnerDevice() const { return m_OwnerDevice; }
 
 private:
+    static bool CreateSrvHeap(
+        ID3D12Device* device,
+        ID3D12Resource* texture,
+        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& outHeap)
+    {
+        if (device == nullptr || texture == nullptr)
+        {
+            return false;
+        }
+        D3D12_DESCRIPTOR_HEAP_DESC heapDescription{};
+        heapDescription.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDescription.NumDescriptors = 1;
+        heapDescription.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap;
+        if (FAILED(device->CreateDescriptorHeap(
+            &heapDescription, IID_PPV_ARGS(heap.GetAddressOf()))))
+        {
+            return false;
+        }
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+        srv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Texture2D.MipLevels = 1;
+        device->CreateShaderResourceView(
+            texture, &srv, heap->GetCPUDescriptorHandleForHeapStart());
+        outHeap = std::move(heap);
+        return true;
+    }
+
     RHITextureSpecification m_Specification{};
     Microsoft::WRL::ComPtr<ID3D12Resource> m_Texture;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_SrvHeap;

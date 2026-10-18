@@ -1517,6 +1517,8 @@ Raven RHI implementation additions (Root/Root/Raven relative paths):
     Platform/DirectX12/DX12FrameRenderer.cpp
     Platform/DirectX12/DX12ClearContext.h
     Platform/DirectX12/DX12ClearContext.cpp
+    Platform/DirectX12/DX12OffscreenRenderTarget.h
+    Platform/DirectX12/DX12OffscreenRenderTarget.cpp
     Platform/Vulkan/VulkanInstance.h
     Platform/Vulkan/VulkanInstance.cpp
     Platform/Vulkan/VulkanPhysicalDevice.h

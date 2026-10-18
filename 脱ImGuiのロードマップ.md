@@ -253,6 +253,9 @@ Exit Gate:
     - [x] Backend共通の`RHIOffscreenRenderTarget`契約とDevice / Command Listの拡張口を追加する。
     - [x] Raven UI Viewport PanelがColor Attachmentの`Ref<RHITexture>`を直接保持・表示する。
     - [ ] DX12 / Vulkanのnative RenderTarget生成、状態遷移、Scene描画を接続する。
+      - [x] DX12のRGBA8 Color + D32 Depth、RTV / SRV、描画前後Barrierを実装する。
+      - [ ] DX12 Explicit RuntimeでScene/Game Viewの描画SnapshotをTargetへ記録する。
+      - [ ] VulkanのImage / ImageView / Framebuffer、Layout遷移を実装する。
 - [x] 論理DIP、Framebuffer Pixel、RenderTarget Pixelの3座標系を明記して変換する。
 - [x] OpenGLの上下反転をWidgetへ直書きせず、Texture ViewまたはRenderer側の規約で扱う。
 - [x] Resizeは0サイズ、最小化、DPI変更、1Frame遅延を安全に処理する。
@@ -260,9 +263,12 @@ Exit Gate:
 2026-10-18時点で、OpenGLのRaven UI / Dual経路にScene ViewとGame Viewを接続した。
 `EditorViewportGeometry`がWindow論理座標と実Framebuffer寸法からRenderTarget Pixel数を算出し、
 `EditorViewportRavenPanel`が`UITextureOrigin::BottomLeft`付きの`UITextureView`へColor Attachmentを渡す。
-Explicit Backend向けには`RHIOffscreenRenderTarget`がResizeとSample可能なColor Attachmentの所有境界を定義し、
+Explicit Backend向けには`RHIOffscreenRenderTarget`が寸法不変TargetとSample可能なColor Attachmentの所有境界を定義し、
 `EditorViewportRavenPanel`はTopLeft原点の`Ref<RHITexture>`をnative handleへ変換せず表示できる。
-DirectX 12 / Vulkanのnative RenderTarget生成とScene Command記録は未実装のため、Phase 5.1のExit Gateは未達である。
+DX12は同じColor ResourceへRTVとSRVを作り、同一Command List内でSwapChain Passを一時停止して
+`PIXEL_SHADER_RESOURCE`と`RENDER_TARGET`を往復できる。ResizeではTarget全体を交換し、旧Targetは
+UI DrawListとFrame Fenceの参照が完了するまでContextが保持する。
+DX12 RuntimeのViewport別Scene Snapshot記録とVulkan native RenderTargetは未実装のため、Phase 5.1のExit Gateは未達である。
 
 #### 5.2 PickingとCamera入力
 
@@ -450,6 +456,7 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 2026-10-18 | 作業ツリー | Phase 5.1 OpenGL Viewport表示 | DualのScene/Game View表示所有権をRaven UIへ移行 | Debug x64 build成功（PDB無効）、Viewport座標Self Test成功、Raven UI CPU Testは既存Dock保存権限エラーで失敗 | 未実施 | OpenGL実機Smoke Test、Phase 5.2、DX12/Vulkan off-screen RenderTarget |
 | 2026-10-18 | 作業ツリー | Phase 5.2 Picking / Camera入力 | Raven UI ViewportがMouseとCamera Navigation Keyを所有 | Debug x64 build成功（PDB無効）、Viewport入力・座標Self Test成功 | 未実施 | OpenGL実機Smoke Test、Phase 5.3 Gizmo、DX12/Vulkan off-screen RenderTarget |
 | 2026-10-18 | 作業ツリー | Phase 5.3 Raven UI Gizmo | Translate / Rotate / Scaleの状態・描画・入力をImGuiから分離 | Debug x64 build成功（PDB無効）、3 Modeの操作・Undo、Capture優先度、Capture Cancel、Ray / Drag Plane・軸平行fallback Self Test成功 | 未実施 | OpenGL実機Smoke Test、DX12/Vulkan off-screen RenderTarget |
-| 2026-10-18 | 作業ツリー | Phase 5.1 Explicit off-screen共通境界 | RHI RenderTargetの所有・Resize・Color Attachment公開契約とRaven UI表示経路を追加 | Debug x64 build成功（PDB無効）、RHI Texture表示・TopLeft座標・Specification Self Test成功 | 未実施 | DX12/Vulkan native RenderTarget生成、状態遷移、Scene描画、Picking |
+| 2026-10-18 | 作業ツリー | Phase 5.1 Explicit off-screen共通境界 | RHI RenderTargetの所有・寸法変更時のTarget交換・Color Attachment公開契約とRaven UI表示経路を追加 | Debug x64 build成功（PDB無効）、RHI Texture表示・TopLeft座標・Specification Self Test成功 | 未実施 | DX12/Vulkan native RenderTarget生成、状態遷移、Scene描画、Picking |
+| 2026-10-18 | 作業ツリー | Phase 5.1 DX12 off-screen native target | RGBA8 + D32 Target、RTV / SRV、Barrier、SwapChain Pass復帰、Fence Lifetimeを追加 | Debug x64 build成功（PDB無効）、Viewport・Entity Command Self Test成功 | 未実施 | DX12 Viewport別Scene記録、Vulkan native target、Picking |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。

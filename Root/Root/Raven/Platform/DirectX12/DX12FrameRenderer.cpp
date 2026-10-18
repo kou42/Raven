@@ -111,7 +111,7 @@ bool DX12FrameRenderer::BeginRenderTarget(
     DX12SwapChain& swapChain, DX12CommandList& commandList)
 {
     if (m_FrameActive == false || m_RenderTargetActive == true ||
-        m_RenderTargetFinished == true || m_Submitted == true ||
+        m_Submitted == true ||
         commandList.IsValid() == false || swapChain.IsValid() == false ||
         m_RtvHeap.Get() == nullptr ||
         m_BackBufferIndex >= swapChain.GetBackBuffers().size())
@@ -148,6 +148,7 @@ bool DX12FrameRenderer::BeginRenderTarget(
     commandList.GetHandle()->ClearDepthStencilView(
         dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     m_RenderTargetActive = true;
+    m_RenderTargetFinished = false;
     return true;
 }
 

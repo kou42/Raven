@@ -1,4 +1,5 @@
 #include "DX12SceneContext.h"
+#include "DX12OffscreenRenderTarget.h"
 #include "DX12SceneRHIBuffer.h"
 #include "DX12SceneRHITexture.h"
 
@@ -105,6 +106,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     frame.RetainedBuffers.clear();
     frame.RetainedPipelines.clear();
     frame.RetainedTextures.clear();
+    frame.RetainedRenderTargets.clear();
 
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
@@ -137,7 +139,8 @@ RHIFrameResult DX12SceneContext::BeginFrame()
 RHIFrameResult DX12SceneContext::EndFrame()
 {
     if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == true ||
-        m_CurrentFrame >= m_Frames.size())
+        m_CurrentFrame >= m_Frames.size() ||
+        m_ActiveOffscreenRenderTarget != nullptr)
     {
         m_FatalError = true;
         return RHIFrameResult::FatalError;
@@ -393,6 +396,121 @@ bool DX12SceneContext::BindTexture(const Ref<RHITexture>& texture)
     return true;
 }
 
+bool DX12SceneContext::BeginOffscreenRenderTarget(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget,
+    const float clearColor[4])
+{
+    auto native = std::dynamic_pointer_cast<DX12OffscreenRenderTarget>(renderTarget);
+    ID3D12GraphicsCommandList* commands = GetActiveCommandList();
+    if (commands == nullptr || clearColor == nullptr || native == nullptr ||
+        native->IsValid() == false ||
+        native->GetOwnerDevice() != GetNativeDevice() ||
+        m_ActiveOffscreenRenderTarget != nullptr ||
+        m_CurrentFrame >= m_Frames.size())
+    {
+        return false;
+    }
+
+    // BeginFrame直後から開いているSwapChain Passを先に閉じます。
+    // 同じCommandList上で順序を保つため、Queue SubmitやCPU待機は挟みません。
+    DX12CommandList& commandList = *m_Frames[m_CurrentFrame].CommandList;
+    if (m_FrameRenderer.EndRenderTarget(m_SwapChain, commandList) == false)
+    {
+        return false;
+    }
+
+    ID3D12Resource* color = native->GetColorResource();
+    if (color == nullptr)
+    {
+        return false;
+    }
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = color;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    commands->ResourceBarrier(1, &barrier);
+
+    const D3D12_CPU_DESCRIPTOR_HANDLE rtv = native->GetRTV();
+    if (rtv.ptr == 0)
+    {
+        return false;
+    }
+    if (native->GetSpecification().EnableDepth == true)
+    {
+        const D3D12_CPU_DESCRIPTOR_HANDLE dsv = native->GetDSV();
+        if (dsv.ptr == 0)
+        {
+            return false;
+        }
+        commands->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        commands->ClearDepthStencilView(
+            dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    }
+    else
+    {
+        commands->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+    }
+    commands->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+
+    const RHIOffscreenRenderTargetSpecification& specification =
+        native->GetSpecification();
+    if (SetViewport(0u, 0u, specification.Width, specification.Height) == false)
+    {
+        return false;
+    }
+    m_GraphicsPipelineBound = false;
+    m_ActiveOffscreenRenderTarget = renderTarget;
+    return true;
+}
+
+bool DX12SceneContext::EndOffscreenRenderTarget(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+{
+    auto native = std::dynamic_pointer_cast<DX12OffscreenRenderTarget>(renderTarget);
+    ID3D12GraphicsCommandList* commands = GetActiveCommandList();
+    if (commands == nullptr || native == nullptr ||
+        m_ActiveOffscreenRenderTarget != renderTarget ||
+        m_CurrentFrame >= m_Frames.size())
+    {
+        return false;
+    }
+
+    ID3D12Resource* color = native->GetColorResource();
+    if (color == nullptr)
+    {
+        return false;
+    }
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = color;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    commands->ResourceBarrier(1, &barrier);
+
+    // Descriptor HeapとAttachmentを含むTarget全体をFence完了まで保持します。
+    m_Frames[m_CurrentFrame].RetainedRenderTargets.push_back(renderTarget);
+    m_ActiveOffscreenRenderTarget.reset();
+    m_GraphicsPipelineBound = false;
+
+    DX12CommandList& commandList = *m_Frames[m_CurrentFrame].CommandList;
+    if (m_FrameRenderer.BeginRenderTarget(m_SwapChain, commandList) == false)
+    {
+        return false;
+    }
+    const auto& backBuffers = m_SwapChain.GetBackBuffers();
+    const UINT backBufferIndex = m_SwapChain.GetCurrentBackBufferIndex();
+    if (backBufferIndex >= backBuffers.size() || backBuffers[backBufferIndex] == nullptr)
+    {
+        return false;
+    }
+    const D3D12_RESOURCE_DESC description = backBuffers[backBufferIndex]->GetDesc();
+    return SetViewport(
+        0u, 0u, static_cast<uint32_t>(description.Width), description.Height);
+}
+
 bool DX12SceneContext::DrawIndexed(
     const Ref<RHIBuffer>& vertexBuffer,
     const Ref<RHIBuffer>& indexBuffer,
@@ -473,6 +591,7 @@ void DX12SceneContext::Shutdown()
     m_FrameSubmitted = false;
     m_FatalError = false;
     m_GraphicsPipelineBound = false;
+    m_ActiveOffscreenRenderTarget.reset();
     m_CurrentFrame = 0;
     // Fence待機を試みた後にFrame保持Buffer/PSO/Texture参照を先に解放します。
     // FrameRenderer・SwapChain・Deviceの破棄後まで旧Resourceを保持しません。

@@ -688,6 +688,9 @@
     <Filter Include="Raven\Renderer\RHI">
       <UniqueIdentifier>{d1c77e48-5e63-44e9-9e4b-47b5359fbd93}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Platform\DirectX12">
+      <UniqueIdentifier>{119f1cf8-b4f3-4621-a2be-63a5fb1d8414}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -830,6 +833,12 @@
     </ClCompile>
     <ClInclude Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.h">
       <Filter>Raven\Renderer\RHI</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.cpp">
+      <Filter>Raven\Platform\DirectX12</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.h">
+      <Filter>Raven\Platform\DirectX12</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 
 #include "DX12Adapter.h"
 #include "DX12CommandList.h"
@@ -64,6 +65,13 @@ public:
     bool SetClipTransform(const std::array<float, 16>& transform);
     bool SetMaterialTint(const std::array<float, 4>& tint);
     bool BindTexture(const Ref<RHITexture>& texture);
+    // SwapChain Passを一時的に閉じ、同じCommandList内でEditor用off-screen Targetへ切り替えます。
+    bool BeginOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const float clearColor[4]);
+    // ColorをSRV Sampling可能状態へ戻し、後続UI用にSwapChain Passを再開します。
+    bool EndOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget);
 
 private:
     struct FrameResource
@@ -73,6 +81,7 @@ private:
         std::vector<Ref<RHIBuffer>> RetainedBuffers;
         std::vector<Ref<RHIGraphicsPipeline>> RetainedPipelines;
         std::vector<Ref<RHITexture>> RetainedTextures;
+        std::vector<Ref<RHIOffscreenRenderTarget>> RetainedRenderTargets;
     };
 
     DX12Factory m_Factory;
@@ -91,5 +100,6 @@ private:
     // FatalError後は部分的なCommand記録/同期状態を再利用せずShutdownします。
     bool m_FatalError = false;
     bool m_GraphicsPipelineBound = false;
+    Ref<RHIOffscreenRenderTarget> m_ActiveOffscreenRenderTarget;
 };
 } // namespace Raven

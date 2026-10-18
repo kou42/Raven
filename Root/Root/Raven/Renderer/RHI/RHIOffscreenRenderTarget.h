@@ -18,7 +18,9 @@ struct RHIOffscreenRenderTargetSpecification
     std::uint32_t Width = 1u;
     std::uint32_t Height = 1u;
     RHITextureFormat ColorFormat = RHITextureFormat::RGBA8;
-    RHITextureFormat DepthFormat = RHITextureFormat::Depth24Stencil8;
+    // 具体的なDepth形式はRHIDevice::GetGraphicsPipelineTarget()と一致させます。
+    // EditorはDepth Textureを表示しないため、Backend形式を上位層へ公開しません。
+    bool EnableDepth = true;
     std::string DebugName;
 };
 
@@ -28,16 +30,15 @@ bool IsValidRHIOffscreenRenderTargetSpecification(
 // Explicit Backend共通のoff-screen描画先です。
 //
 // Ownership:
-// - RHIDeviceが生成し、EditorまたはExplicit RuntimeがRefで所有します。
-// - Color AttachmentもRefで公開するため、ResizeでAttachmentが交換されても、そのFrameの
-//   UIDrawListが保持する旧TextureはGPU描画完了まで生存できます。
+// - RHIDeviceが生成し、Explicit RuntimeがRefで所有します。
+// - Targetの寸法は生成後不変です。Resize時はTarget全体を新規生成してRefを交換し、
+//   UIDrawListとFrame Fenceが保持する旧Target／Textureの生存期間を壊しません。
 // - Begin/End時の状態遷移はRHISceneCommandListが担当し、Editor層はnative handleを扱いません。
 class RHIOffscreenRenderTarget : public RHIResource
 {
 public:
     ~RHIOffscreenRenderTarget() override = default;
 
-    virtual bool Resize(std::uint32_t width, std::uint32_t height) = 0;
     virtual const RHIOffscreenRenderTargetSpecification& GetSpecification() const = 0;
     virtual const Ref<RHITexture>& GetColorAttachment() const = 0;
     virtual bool IsValid() const = 0;

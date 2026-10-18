@@ -99,6 +99,21 @@ public:
             firstIndex, m_Pipeline->GetSpecification().Topology);
     }
 
+    bool BeginOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const float clearColor[4]) override
+    {
+        m_Pipeline.reset();
+        return m_Context.BeginOffscreenRenderTarget(renderTarget, clearColor);
+    }
+
+    bool EndOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget) override
+    {
+        m_Pipeline.reset();
+        return m_Context.EndOffscreenRenderTarget(renderTarget);
+    }
+
 private:
     DX12SceneContext& m_Context;
     Ref<DX12SceneGraphicsPipeline> m_Pipeline;

@@ -2,6 +2,7 @@
 
 #include "DX12SceneContext.h"
 #include "DX12SceneGraphicsPipeline.h"
+#include "DX12OffscreenRenderTarget.h"
 #include "DX12SceneRHIBuffer.h"
 #include "DX12SceneRHITexture.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
@@ -11,7 +12,7 @@ namespace Raven
 {
 
 // DX12SceneContextが所有するDeviceを借用し、Entity MeshのGPU Bufferを生成します。
-// Textureは初期RGBA8転送のみ対応し、SRV Bindingは後続実装で接続します。
+// 通常Textureの初期RGBA8転送に加え、Editor Viewport用のRTV / SRV共有Targetも生成します。
 class DX12SceneRHIDevice final : public RHIDevice
 {
 public:
@@ -136,6 +137,23 @@ public:
             return nullptr;
         }
         return texture;
+    }
+
+    Ref<RHIOffscreenRenderTarget> CreateOffscreenRenderTarget(
+        const RHIOffscreenRenderTargetSpecification& specification) override
+    {
+        if (m_Context.GetNativeDevice() == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr)
+        {
+            return nullptr;
+        }
+        auto renderTarget = CreateRef<DX12OffscreenRenderTarget>();
+        if (renderTarget->Init(
+            m_Context.GetNativeDevice(), specification) == false)
+        {
+            return nullptr;
+        }
+        return renderTarget;
     }
 
 private:

@@ -18,9 +18,7 @@ bool IsValidRHIOffscreenRenderTargetSpecification(
         return false;
     }
 
-    // Scene描画用のDepthは既存Backendと同じDepth24Stencil8、またはDepthなしを許可します。
-    return specification.DepthFormat == RHITextureFormat::None ||
-        specification.DepthFormat == RHITextureFormat::Depth24Stencil8;
+    return true;
 }
 
 } // namespace Raven
