@@ -442,7 +442,14 @@ public:
             }
             // 毎Frameの宣言順を描画・Hit Test順へ反映します。
             // 既存の子を末尾へ移動し、後から宣言したWidgetほど前面に配置します。
-            parent->BringChildToFront(found->second.Element);
+            if (parent == &m_Context.GetRootElement())
+            {
+                m_Context.BringRootChildToFront(found->second.Element);
+            }
+            else
+            {
+                parent->BringChildToFront(found->second.Element);
+            }
             m_Used.insert(key);
             return static_cast<T*>(found->second.Element);
         }

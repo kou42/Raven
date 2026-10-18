@@ -20,6 +20,8 @@ class UISlider final : public UIElement
 public:
     using ValueChangedHandler = std::function<void(float)>;
 
+    UISlider();
+
     void SetRange(float minimum, float maximum);
     void SetValue(float value);
     void SetKeyboardStep(float value);

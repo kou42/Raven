@@ -19,6 +19,8 @@ class UIButton : public UIElement
 public:
     using ClickHandler = std::function<void()>;
 
+    UIButton();
+
     void SetNormalColor(const math::Vec4& color);
     void SetHoveredColor(const math::Vec4& color);
     void SetPressedColor(const math::Vec4& color);

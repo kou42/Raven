@@ -184,6 +184,23 @@ UIElement* UIContext::AddRootChild(Scope<UIElement> child)
     return added;
 }
 
+bool UIContext::BringRootChildToFront(UIElement* child)
+{
+    if (m_FrameActive == true || m_RootElement == nullptr
+        || child == nullptr || child == m_PopupLayer
+        || child->GetParent() != m_RootElement.get())
+    {
+        return false;
+    }
+
+    if (m_RootElement->BringChildToFront(child) == false)
+    {
+        return false;
+    }
+    // 通常Widget同士の順序を反映した後、Popupを必ず最後の描画位置へ戻します。
+    return m_RootElement->BringChildToFront(m_PopupLayer);
+}
+
 Scope<UIElement> UIContext::DetachRootChild(UIElement* child)
 {
     if (m_FrameActive == true || m_RootElement == nullptr ||

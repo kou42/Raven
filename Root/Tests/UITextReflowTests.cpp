@@ -1430,8 +1430,12 @@ void TestDockSnapshotFileRecovery()
         std::make_unique<Raven::UIElement>()), "dock file first tab");
     const Raven::UIDockSpaceSnapshot before = dock.SaveSnapshot();
     std::string error;
-    Check(Raven::SaveDockSnapshot(path.string(), before, &error),
-        "dock file first save");
+    const bool savedBefore = Raven::SaveDockSnapshot(path.string(), before, &error);
+    if (savedBefore == false)
+    {
+        std::cerr << "dock file first save diagnostic: " << error << '\n';
+    }
+    Check(savedBefore, "dock file first save");
     Check(dock.AddTab(leaf, 902u, "After",
         std::make_unique<Raven::UIElement>()), "dock file second tab");
     const Raven::UIDockSpaceSnapshot after = dock.SaveSnapshot();

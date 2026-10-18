@@ -6,6 +6,12 @@
 namespace Raven
 {
 
+UIButton::UIButton()
+{
+    // Mouse専用Widgetにせず、Tab移動後のEnter / Space操作をOnKeyEventへ届けます。
+    SetFocusable(true);
+}
+
 void UIButton::SetNormalColor(const math::Vec4& color)
 {
     m_NormalColor = color;

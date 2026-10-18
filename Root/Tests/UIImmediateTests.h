@@ -5,6 +5,7 @@
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UICheckbox.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -78,8 +79,18 @@ void TestUIImmediateContext()
             "back reused");
         CheckImmediate(orderImmediate.EndFrame() == true, "order second EndFrame");
         const auto& ordered = orderContext.GetRootElement().GetChildren();
-        CheckImmediate(ordered.size() == 2u && ordered[0].get() == front &&
-            ordered[1].get() == back, "declaration order applied");
+        // RootにはPopup等の内部Layerも存在します。Immediate Widgetの契約は
+        // Root全体のChild数ではなく、宣言したWidget同士の相対描画順です。
+        const auto frontPosition = std::find_if(
+            ordered.begin(), ordered.end(),
+            [front](const auto& item) { return item.get() == front; });
+        const auto backPosition = std::find_if(
+            ordered.begin(), ordered.end(),
+            [back](const auto& item) { return item.get() == back; });
+        CheckImmediate(frontPosition != ordered.end()
+            && backPosition != ordered.end()
+            && frontPosition < backPosition,
+            "declaration order applied");
     }
 
     // Checkboxは外部boolを所有せず、クリックを次の宣言で一度だけ反映します。
@@ -160,9 +171,18 @@ void TestUIImmediateContext()
             debugContext.SetFocus(debugCheckbox) == true, "debug checkbox focus");
         CheckImmediate(debugImmediate.BeginFrame() == true, "debug hidden BeginFrame");
         CheckImmediate(debugImmediate.EndFrame() == true, "debug hidden EndFrame");
-        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 0u &&
-            debugContext.GetRootElement().GetChildren().empty() == true &&
-            debugContext.GetFocusedElement() == nullptr, "debug panel removal clears focus");
+        const auto& hiddenRootChildren =
+            debugContext.GetRootElement().GetChildren();
+        const bool panelRemoved = std::none_of(
+            hiddenRootChildren.begin(), hiddenRootChildren.end(),
+            [](const auto& item)
+            {
+                return dynamic_cast<Raven::UIPanel*>(item.get()) != nullptr;
+            });
+        CheckImmediate(debugImmediate.GetCachedWidgetCount() == 0u
+            && panelRemoved == true
+            && debugContext.GetFocusedElement() == nullptr,
+            "debug panel removal clears focus");
         CheckImmediate(debugImmediate.BeginFrame() == true, "debug restored BeginFrame");
         CheckImmediate(Raven::ph::DrawPhysicsDebugImmediatePanel(
             debugImmediate, settings, nullptr) == false, "debug panel restored");
@@ -321,7 +341,10 @@ void TestUIImmediateContext()
         CheckImmediate(abortImmediate.GetCachedWidgetCount() == 1u,
             "abort removes new cache entries");
         const auto& remaining = abortContext.GetRootElement().GetChildren();
-        CheckImmediate(remaining.size() == 1u && remaining.front().get() == persistent,
+        const auto persistentPosition = std::find_if(
+            remaining.begin(), remaining.end(),
+            [persistent](const auto& item) { return item.get() == persistent; });
+        CheckImmediate(persistentPosition != remaining.end(),
             "abort preserves committed tree");
         CheckImmediate(abortImmediate.BeginFrame() == true, "abort recovery BeginFrame");
         CheckImmediate(abortImmediate.GetOrCreate<Raven::UIButton>("persistent") == persistent,

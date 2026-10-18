@@ -8,6 +8,12 @@
 namespace Raven
 {
 
+UISlider::UISlider()
+{
+    // Mouse Dragだけでなく、Focus移動後の矢印・Home・End入力を受け取ります。
+    SetFocusable(true);
+}
+
 void UISlider::SetRange(float minimum, float maximum)
 {
     if (maximum < minimum)

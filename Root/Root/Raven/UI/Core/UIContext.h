@@ -194,6 +194,9 @@ public:
     // Rootへ通常Widgetを追加し、内部Popup Layerの前面描画順を維持します。
     // 描画中のTree変更を避けるためFrame外で呼び出してください。
     UIElement* AddRootChild(Scope<UIElement> child);
+    // 既存の通常Root Childを最前面へ移動した後も、内部Popup Layerをその前面に維持します。
+    // Immediate UIが毎Frameの宣言順を反映する際のRoot専用入口です。
+    bool BringRootChildToFront(UIElement* child);
     // Window Close時に通常Root Childの所有権を一時退避します。内部Overlayは除外します。
     Scope<UIElement> DetachRootChild(UIElement* child);
 
