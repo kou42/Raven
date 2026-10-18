@@ -39,6 +39,24 @@ struct InspectorRigidBodySnapshot
     bool IsSleeping = false;
 };
 
+enum class InspectorRigidBodyField
+{
+    Type,
+    Mass,
+    LinearVelocity,
+    AngularVelocity,
+    LinearDamping,
+    AngularDamping,
+    UseGravity,
+    AllowSleep
+};
+
+struct InspectorRigidBodyEditValue
+{
+    InspectorRigidBodyField Field = InspectorRigidBodyField::Mass;
+    InspectorRigidBodySnapshot Snapshot{};
+};
+
 struct InspectorColliderSnapshot
 {
     ColliderType Type = ColliderType::Box;
@@ -52,6 +70,27 @@ struct InspectorColliderSnapshot
     float StaticFriction = 0.0f;
     float DynamicFriction = 0.0f;
     bool IsTrigger = false;
+};
+
+enum class InspectorColliderField
+{
+    Type,
+    Offset,
+    HalfExtents,
+    Radius,
+    HalfLength,
+    PlaneNormal,
+    PlaneOffset,
+    Restitution,
+    StaticFriction,
+    DynamicFriction,
+    IsTrigger
+};
+
+struct InspectorColliderEditValue
+{
+    InspectorColliderField Field = InspectorColliderField::Offset;
+    InspectorColliderSnapshot Snapshot{};
 };
 
 // Inspector Viewが1frameで表示する値だけを保持します。

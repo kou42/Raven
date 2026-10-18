@@ -1,7 +1,9 @@
 #include "Raven/Editor/Panels/InspectorRavenPanel.h"
 
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Widgets/UICheckbox.h"
 #include "Raven/UI/Widgets/UICollapsibleSection.h"
+#include "Raven/UI/Widgets/UIComboBox.h"
 #include "Raven/UI/Widgets/UIInputNumber.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
@@ -21,38 +23,6 @@ std::string FormatFloat(float value)
     char buffer[64];
     std::snprintf(buffer, sizeof(buffer), "%.3f", value);
     return buffer;
-}
-
-std::string FormatVec3(const math::Vec3& value)
-{
-    char buffer[128];
-    std::snprintf(buffer, sizeof(buffer), "(%.3f, %.3f, %.3f)",
-        value.x, value.y, value.z);
-    return buffer;
-}
-
-const char* BodyTypeText(BodyType type)
-{
-    switch (type)
-    {
-    case BodyType::Static: return "Static";
-    case BodyType::Dynamic: return "Dynamic";
-    case BodyType::Kinematic: return "Kinematic";
-    }
-    return "Unknown";
-}
-
-const char* ColliderTypeText(ColliderType type)
-{
-    switch (type)
-    {
-    case ColliderType::Sphere: return "Sphere";
-    case ColliderType::Box: return "Box";
-    case ColliderType::Plane: return "Plane";
-    case ColliderType::Capsule: return "Capsule";
-    case ColliderType::StaticMesh: return "Static Mesh";
-    }
-    return "Unknown";
 }
 
 void SetLabelText(std::vector<UILabel*>& labels, std::size_t index, std::string text)
@@ -106,10 +76,8 @@ bool InspectorRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fon
     m_TagSection = AddSection(*content, font, "Tag", 1u, m_TagLabels);
     m_TransformSection = AddTransformSection(*content, font);
     m_CameraSection = AddCameraSection(*content, font);
-    m_RigidBodySection = AddSection(
-        *content, font, "Rigid Body", 9u, m_RigidBodyLabels);
-    m_ColliderSection = AddSection(
-        *content, font, "Collider", 11u, m_ColliderLabels);
+    m_RigidBodySection = AddRigidBodySection(*content, font);
+    m_ColliderSection = AddColliderSection(*content, font);
 
     scroll->SetContent(std::move(content));
     window->AddChild(std::move(scroll));
@@ -130,6 +98,8 @@ void InspectorRavenPanel::Detach()
     // 誤記録しないよう編集Sessionを先に破棄します。
     ResetTransformEdit();
     ResetCameraEdit();
+    ResetRigidBodyEdit();
+    ResetColliderEdit();
     if (m_Context != nullptr && m_Root != nullptr)
     {
         m_Context->GetRootElement().RemoveChild(m_Root);
@@ -146,8 +116,15 @@ void InspectorRavenPanel::Detach()
     m_TransformInputs.clear();
     m_CameraInputs.clear();
     m_CameraLabels.clear();
-    m_RigidBodyLabels.clear();
-    m_ColliderLabels.clear();
+    m_PrimaryCameraCheckbox = nullptr;
+    m_RigidBodyTypeCombo = nullptr;
+    m_RigidBodyInputs.clear();
+    m_RigidBodyUseGravityCheckbox = nullptr;
+    m_RigidBodyAllowSleepCheckbox = nullptr;
+    m_RigidBodySleepingLabel = nullptr;
+    m_ColliderTypeCombo = nullptr;
+    m_ColliderInputs.clear();
+    m_ColliderTriggerCheckbox = nullptr;
     m_Snapshot = InspectorSnapshot{};
 }
 
@@ -162,11 +139,15 @@ void InspectorRavenPanel::Update(const InspectorSnapshot& snapshot)
         // 新しいEntityのCommitへ持ち越さないよう同期より先に編集Sessionを破棄します。
         ResetTransformEdit();
         ResetCameraEdit();
+        ResetRigidBodyEdit();
+        ResetColliderEdit();
     }
     m_Snapshot = snapshot;
     UpdateLabels();
     SynchronizeTransformInputs(targetChanged);
     SynchronizeCameraInputs(targetChanged);
+    SynchronizeRigidBodyControls(targetChanged);
+    SynchronizeColliderControls(targetChanged);
 }
 
 void InspectorRavenPanel::SetVisible(bool visible)
@@ -199,6 +180,48 @@ void InspectorRavenPanel::SetCameraCommitRequestedHandler(
     CameraCommitRequestedHandler handler)
 {
     m_OnCameraCommitRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetPrimaryCameraRequestedHandler(
+    PrimaryCameraRequestedHandler handler)
+{
+    m_OnPrimaryCameraRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetRigidBodyPreviewRequestedHandler(
+    RigidBodyPreviewRequestedHandler handler)
+{
+    m_OnRigidBodyPreviewRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetRigidBodyCommitRequestedHandler(
+    RigidBodyCommitRequestedHandler handler)
+{
+    m_OnRigidBodyCommitRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetRigidBodyChangeRequestedHandler(
+    RigidBodyChangeRequestedHandler handler)
+{
+    m_OnRigidBodyChangeRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetColliderPreviewRequestedHandler(
+    ColliderPreviewRequestedHandler handler)
+{
+    m_OnColliderPreviewRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetColliderCommitRequestedHandler(
+    ColliderCommitRequestedHandler handler)
+{
+    m_OnColliderCommitRequested = std::move(handler);
+}
+
+void InspectorRavenPanel::SetColliderChangeRequestedHandler(
+    ColliderChangeRequestedHandler handler)
+{
+    m_OnColliderChangeRequested = std::move(handler);
 }
 
 bool InspectorRavenPanel::IsAttached() const
@@ -453,7 +476,41 @@ UICollapsibleSection* InspectorRavenPanel::AddCameraSection(
     AddCameraInput(*content, font, "Near Clip", 1u, 0.01, 0.001, 100000.0);
     AddCameraInput(*content, font, "Far Clip", 2u, 0.1, 0.002, 100000.0);
 
-    for (std::size_t index = 0u; index < 2u; ++index)
+    auto primary = CreateScope<UICheckbox>();
+    primary->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+    primary->SetCaption("Primary Camera", font);
+    primary->SetOnToggle(
+        [this](bool checked)
+        {
+            if (m_SynchronizingCameraInputs == true
+                || m_Snapshot.Camera.has_value() == false)
+            {
+                return;
+            }
+
+            // Primaryは全解除可能なboolではなくScene内の排他的な選択です。
+            // 既にPrimaryのCameraをOFFへする操作は拒否し、表示をSnapshotへ戻します。
+            if (checked == false)
+            {
+                m_SynchronizingCameraInputs = true;
+                m_PrimaryCameraCheckbox->SetChecked(true);
+                m_SynchronizingCameraInputs = false;
+                return;
+            }
+            if (m_OnPrimaryCameraRequested != nullptr
+                && m_OnPrimaryCameraRequested(m_Snapshot.Handle) == true)
+            {
+                m_Snapshot.Camera->Primary = true;
+                return;
+            }
+            m_SynchronizingCameraInputs = true;
+            m_PrimaryCameraCheckbox->SetChecked(false);
+            m_SynchronizingCameraInputs = false;
+        });
+    m_PrimaryCameraCheckbox = static_cast<UICheckbox*>(
+        content->AddChild(std::move(primary)));
+
+    for (std::size_t index = 0u; index < 1u; ++index)
     {
         auto label = CreateScope<UILabel>();
         label->SetFont(font);
@@ -523,6 +580,10 @@ void InspectorRavenPanel::SynchronizeCameraInputs(bool targetChanged)
     const bool farEditing = focused == &m_CameraInputs[2u]->GetInputText();
     constexpr double ClipSeparation = 0.0001;
     m_SynchronizingCameraInputs = true;
+    if (m_PrimaryCameraCheckbox != nullptr)
+    {
+        m_PrimaryCameraCheckbox->SetChecked(camera.Primary);
+    }
     if (targetChanged == true || nearEditing == false)
     {
         m_CameraInputs[1u]->SetRange(
@@ -623,6 +684,549 @@ void InspectorRavenPanel::ResetCameraEdit()
     m_CameraEditActive = false;
 }
 
+UICollapsibleSection* InspectorRavenPanel::AddRigidBodySection(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font)
+{
+    auto section = CreateScope<UICollapsibleSection>();
+    section->SetPreferredSize(math::Vec2(314.0f, 0.0f));
+
+    auto headerLabel = CreateScope<UILabel>();
+    headerLabel->SetFont(font);
+    headerLabel->SetText("Rigid Body");
+    headerLabel->SetPosition(math::Vec2(10.0f, 4.0f));
+    headerLabel->SetSize(math::Vec2(286.0f, 24.0f));
+    headerLabel->SetHitTestVisible(false);
+    section->GetHeader()->AddChild(std::move(headerLabel));
+
+    UIElement* content = section->GetContent();
+    content->SetSpacing(2.0f);
+    content->SetPadding(UIThickness(8.0f, 4.0f));
+
+    auto typeCombo = CreateScope<UIComboBox>();
+    typeCombo->SetFont(font);
+    typeCombo->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+    typeCombo->SetOptions({ "Static", "Dynamic", "Kinematic" });
+    typeCombo->SetOnSelectionChanged(
+        [this](std::size_t index, const std::string&)
+        {
+            if (m_SynchronizingRigidBodyControls == true
+                || m_Snapshot.RigidBody.has_value() == false
+                || index > static_cast<std::size_t>(BodyType::Kinematic))
+            {
+                return;
+            }
+            InspectorRigidBodySnapshot requested = *m_Snapshot.RigidBody;
+            requested.Type = static_cast<BodyType>(index);
+            if (m_OnRigidBodyChangeRequested != nullptr
+                && m_OnRigidBodyChangeRequested(
+                    m_Snapshot.Handle, InspectorRigidBodyField::Type, requested) == true)
+            {
+                m_Snapshot.RigidBody = requested;
+                SynchronizeRigidBodyControls(true);
+                return;
+            }
+            SynchronizeRigidBodyControls(true);
+        });
+    m_RigidBodyTypeCombo = static_cast<UIComboBox*>(
+        content->AddChild(std::move(typeCombo)));
+
+    AddRigidBodyInput(*content, font, "Mass", 0u, 0.05, 0.001, 100000.0);
+    AddRigidBodyInput(*content, font, "Linear Vel X", 1u, 0.1, -100000.0, 100000.0);
+    AddRigidBodyInput(*content, font, "Linear Vel Y", 2u, 0.1, -100000.0, 100000.0);
+    AddRigidBodyInput(*content, font, "Linear Vel Z", 3u, 0.1, -100000.0, 100000.0);
+    AddRigidBodyInput(*content, font, "Angular Vel X", 4u, 0.1, -100000.0, 100000.0);
+    AddRigidBodyInput(*content, font, "Angular Vel Y", 5u, 0.1, -100000.0, 100000.0);
+    AddRigidBodyInput(*content, font, "Angular Vel Z", 6u, 0.1, -100000.0, 100000.0);
+    AddRigidBodyInput(*content, font, "Linear Damping", 7u, 0.001, 0.0, 1.0);
+    AddRigidBodyInput(*content, font, "Angular Damping", 8u, 0.001, 0.0, 1.0);
+
+    auto addCheckbox = [this, &font, content](
+        const std::string& caption,
+        InspectorRigidBodyField field,
+        UICheckbox*& output)
+    {
+        auto checkbox = CreateScope<UICheckbox>();
+        checkbox->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+        checkbox->SetCaption(caption, font);
+        checkbox->SetOnToggle(
+            [this, field](bool checked)
+            {
+                if (m_SynchronizingRigidBodyControls == true
+                    || m_Snapshot.RigidBody.has_value() == false)
+                {
+                    return;
+                }
+                InspectorRigidBodySnapshot requested = *m_Snapshot.RigidBody;
+                if (field == InspectorRigidBodyField::UseGravity)
+                {
+                    requested.UseGravity = checked;
+                }
+                else
+                {
+                    requested.AllowSleep = checked;
+                }
+                if (m_OnRigidBodyChangeRequested != nullptr
+                    && m_OnRigidBodyChangeRequested(
+                        m_Snapshot.Handle, field, requested) == true)
+                {
+                    m_Snapshot.RigidBody = requested;
+                    return;
+                }
+                SynchronizeRigidBodyControls(true);
+            });
+        output = static_cast<UICheckbox*>(content->AddChild(std::move(checkbox)));
+    };
+    addCheckbox(
+        "Use Gravity", InspectorRigidBodyField::UseGravity,
+        m_RigidBodyUseGravityCheckbox);
+    addCheckbox(
+        "Allow Sleep", InspectorRigidBodyField::AllowSleep,
+        m_RigidBodyAllowSleepCheckbox);
+
+    auto sleeping = CreateScope<UILabel>();
+    sleeping->SetFont(font);
+    sleeping->SetPreferredSize(math::Vec2(294.0f, 22.0f));
+    sleeping->SetHitTestVisible(false);
+    m_RigidBodySleepingLabel = static_cast<UILabel*>(
+        content->AddChild(std::move(sleeping)));
+    return static_cast<UICollapsibleSection*>(parent.AddChild(std::move(section)));
+}
+
+void InspectorRavenPanel::AddRigidBodyInput(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font,
+    const std::string& label,
+    std::size_t valueIndex,
+    double step,
+    double minimum,
+    double maximum)
+{
+    auto row = CreateScope<UIElement>();
+    row->SetLayoutMode(UILayoutMode::Horizontal);
+    row->SetSpacing(6.0f);
+    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+
+    auto caption = CreateScope<UILabel>();
+    caption->SetFont(font);
+    caption->SetText(label);
+    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
+    caption->SetHitTestVisible(false);
+    row->AddChild(std::move(caption));
+
+    auto input = CreateScope<UIInputNumber>();
+    input->SetFont(font);
+    input->SetStep(step);
+    input->SetRange(minimum, maximum);
+    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
+    input->SetOnValueChanged(
+        [this, valueIndex](double value)
+        {
+            PreviewRigidBodyValue(valueIndex, value);
+        });
+    input->SetOnValueCommitted(
+        [this](double, double)
+        {
+            CommitRigidBodyEdit();
+        });
+    m_RigidBodyInputs.push_back(
+        static_cast<UIInputNumber*>(row->AddChild(std::move(input))));
+    parent.AddChild(std::move(row));
+}
+
+void InspectorRavenPanel::SynchronizeRigidBodyControls(bool targetChanged)
+{
+    if (m_RigidBodyInputs.size() != 9u
+        || m_Snapshot.RigidBody.has_value() == false)
+    {
+        return;
+    }
+
+    const InspectorRigidBodySnapshot& value = *m_Snapshot.RigidBody;
+    const double values[9] =
+    {
+        value.Mass,
+        value.LinearVelocity.x, value.LinearVelocity.y, value.LinearVelocity.z,
+        value.AngularVelocity.x, value.AngularVelocity.y, value.AngularVelocity.z,
+        value.LinearDamping, value.AngularDamping
+    };
+    UIElement* focused = m_Context != nullptr ? m_Context->GetFocusedElement() : nullptr;
+    m_SynchronizingRigidBodyControls = true;
+    m_RigidBodyTypeCombo->SetSelectedIndex(static_cast<std::size_t>(value.Type));
+    for (std::size_t index = 0u; index < m_RigidBodyInputs.size(); ++index)
+    {
+        UIInputNumber* input = m_RigidBodyInputs[index];
+        const bool editing = focused == &input->GetInputText();
+        if (targetChanged == true || editing == false)
+        {
+            input->SetValue(values[index]);
+        }
+    }
+    m_RigidBodyUseGravityCheckbox->SetChecked(value.UseGravity);
+    m_RigidBodyAllowSleepCheckbox->SetChecked(value.AllowSleep);
+    // Static Body中のSetMass()は保持Massを0へ失うため、編集欄を表示しません。
+    // 将来Disabled visualが共通化された場合は表示を残して無効化へ切り替えます。
+    m_RigidBodyInputs[0u]->GetParent()->SetVisible(value.Type != BodyType::Static);
+    m_SynchronizingRigidBodyControls = false;
+}
+
+void InspectorRavenPanel::PreviewRigidBodyValue(
+    std::size_t valueIndex,
+    double value)
+{
+    if (m_SynchronizingRigidBodyControls == true
+        || valueIndex >= m_RigidBodyInputs.size()
+        || m_Snapshot.SelectionValid == false
+        || m_Snapshot.Handle.IsValid() == false
+        || m_Snapshot.RigidBody.has_value() == false
+        || m_OnRigidBodyPreviewRequested == nullptr)
+    {
+        return;
+    }
+
+    const InspectorRigidBodyField fields[9] =
+    {
+        InspectorRigidBodyField::Mass,
+        InspectorRigidBodyField::LinearVelocity,
+        InspectorRigidBodyField::LinearVelocity,
+        InspectorRigidBodyField::LinearVelocity,
+        InspectorRigidBodyField::AngularVelocity,
+        InspectorRigidBodyField::AngularVelocity,
+        InspectorRigidBodyField::AngularVelocity,
+        InspectorRigidBodyField::LinearDamping,
+        InspectorRigidBodyField::AngularDamping
+    };
+    const InspectorRigidBodyField field = fields[valueIndex];
+    if (m_RigidBodyEditActive == true
+        && m_RigidBodyEditHandle != m_Snapshot.Handle)
+    {
+        ResetRigidBodyEdit();
+        return;
+    }
+    if (m_RigidBodyEditActive == true && m_RigidBodyEditField != field)
+    {
+        CommitRigidBodyEdit();
+    }
+    if (m_RigidBodyEditActive == false)
+    {
+        m_RigidBodyEditHandle = m_Snapshot.Handle;
+        m_RigidBodyEditBefore = *m_Snapshot.RigidBody;
+        m_RigidBodyEditField = field;
+        m_RigidBodyEditActive = true;
+    }
+
+    const InspectorRigidBodySnapshot original = *m_Snapshot.RigidBody;
+    InspectorRigidBodySnapshot requested = original;
+    float* components[9] =
+    {
+        &requested.Mass,
+        &requested.LinearVelocity.x, &requested.LinearVelocity.y, &requested.LinearVelocity.z,
+        &requested.AngularVelocity.x, &requested.AngularVelocity.y, &requested.AngularVelocity.z,
+        &requested.LinearDamping, &requested.AngularDamping
+    };
+    const float previous = *components[valueIndex];
+    *components[valueIndex] = static_cast<float>(value);
+    if (m_OnRigidBodyPreviewRequested(m_Snapshot.Handle, field, requested) == true)
+    {
+        m_Snapshot.RigidBody = requested;
+        return;
+    }
+    m_RigidBodyInputs[valueIndex]->SetValue(previous);
+    ResetRigidBodyEdit();
+}
+
+void InspectorRavenPanel::CommitRigidBodyEdit()
+{
+    if (m_SynchronizingRigidBodyControls == true || m_RigidBodyEditActive == false)
+    {
+        return;
+    }
+    if (m_OnRigidBodyCommitRequested != nullptr)
+    {
+        m_OnRigidBodyCommitRequested(
+            m_RigidBodyEditHandle, m_RigidBodyEditField, m_RigidBodyEditBefore);
+    }
+    ResetRigidBodyEdit();
+}
+
+void InspectorRavenPanel::ResetRigidBodyEdit()
+{
+    m_RigidBodyEditHandle = InvalidEntityHandle;
+    m_RigidBodyEditBefore = InspectorRigidBodySnapshot{};
+    m_RigidBodyEditField = InspectorRigidBodyField::Mass;
+    m_RigidBodyEditActive = false;
+}
+
+UICollapsibleSection* InspectorRavenPanel::AddColliderSection(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font)
+{
+    auto section = CreateScope<UICollapsibleSection>();
+    section->SetPreferredSize(math::Vec2(314.0f, 0.0f));
+
+    auto headerLabel = CreateScope<UILabel>();
+    headerLabel->SetFont(font);
+    headerLabel->SetText("Collider");
+    headerLabel->SetPosition(math::Vec2(10.0f, 4.0f));
+    headerLabel->SetSize(math::Vec2(286.0f, 24.0f));
+    headerLabel->SetHitTestVisible(false);
+    section->GetHeader()->AddChild(std::move(headerLabel));
+
+    UIElement* content = section->GetContent();
+    content->SetSpacing(2.0f);
+    content->SetPadding(UIThickness(8.0f, 4.0f));
+
+    auto typeCombo = CreateScope<UIComboBox>();
+    typeCombo->SetFont(font);
+    typeCombo->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+    typeCombo->SetOptions({ "Sphere", "Box", "Plane", "Capsule", "Static Mesh" });
+    typeCombo->SetOnSelectionChanged(
+        [this](std::size_t index, const std::string&)
+        {
+            if (m_SynchronizingColliderControls == true
+                || m_Snapshot.Collider.has_value() == false
+                || index > static_cast<std::size_t>(ColliderType::StaticMesh))
+            {
+                return;
+            }
+            InspectorColliderSnapshot requested = *m_Snapshot.Collider;
+            requested.Type = static_cast<ColliderType>(index);
+            if (m_OnColliderChangeRequested != nullptr
+                && m_OnColliderChangeRequested(
+                    m_Snapshot.Handle, InspectorColliderField::Type, requested) == true)
+            {
+                m_Snapshot.Collider = requested;
+                SynchronizeColliderControls(true);
+                return;
+            }
+            SynchronizeColliderControls(true);
+        });
+    m_ColliderTypeCombo = static_cast<UIComboBox*>(
+        content->AddChild(std::move(typeCombo)));
+
+    AddColliderInput(*content, font, "Offset X", 0u, 0.1, -100000.0, 100000.0);
+    AddColliderInput(*content, font, "Offset Y", 1u, 0.1, -100000.0, 100000.0);
+    AddColliderInput(*content, font, "Offset Z", 2u, 0.1, -100000.0, 100000.0);
+    AddColliderInput(*content, font, "Half Extents X", 3u, 0.05, 0.001, 100000.0);
+    AddColliderInput(*content, font, "Half Extents Y", 4u, 0.05, 0.001, 100000.0);
+    AddColliderInput(*content, font, "Half Extents Z", 5u, 0.05, 0.001, 100000.0);
+    AddColliderInput(*content, font, "Radius", 6u, 0.01, 0.001, 100000.0);
+    AddColliderInput(*content, font, "Half Length", 7u, 0.01, 0.0, 100000.0);
+    AddColliderInput(*content, font, "Plane Normal X", 8u, 0.1, -1.0, 1.0);
+    AddColliderInput(*content, font, "Plane Normal Y", 9u, 0.1, -1.0, 1.0);
+    AddColliderInput(*content, font, "Plane Normal Z", 10u, 0.1, -1.0, 1.0);
+    AddColliderInput(*content, font, "Plane Offset", 11u, 0.05, -100000.0, 100000.0);
+    AddColliderInput(*content, font, "Restitution", 12u, 0.01, 0.0, 1.0);
+    AddColliderInput(*content, font, "Static Friction", 13u, 0.01, 0.0, 10.0);
+    AddColliderInput(*content, font, "Dynamic Friction", 14u, 0.01, 0.0, 10.0);
+
+    auto trigger = CreateScope<UICheckbox>();
+    trigger->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+    trigger->SetCaption("Is Trigger", font);
+    trigger->SetOnToggle(
+        [this](bool checked)
+        {
+            if (m_SynchronizingColliderControls == true
+                || m_Snapshot.Collider.has_value() == false)
+            {
+                return;
+            }
+            InspectorColliderSnapshot requested = *m_Snapshot.Collider;
+            requested.IsTrigger = checked;
+            if (m_OnColliderChangeRequested != nullptr
+                && m_OnColliderChangeRequested(
+                    m_Snapshot.Handle, InspectorColliderField::IsTrigger, requested) == true)
+            {
+                m_Snapshot.Collider = requested;
+                return;
+            }
+            SynchronizeColliderControls(true);
+        });
+    m_ColliderTriggerCheckbox = static_cast<UICheckbox*>(
+        content->AddChild(std::move(trigger)));
+    return static_cast<UICollapsibleSection*>(parent.AddChild(std::move(section)));
+}
+
+void InspectorRavenPanel::AddColliderInput(
+    UIElement& parent,
+    const Ref<UIFontAtlas>& font,
+    const std::string& label,
+    std::size_t valueIndex,
+    double step,
+    double minimum,
+    double maximum)
+{
+    auto row = CreateScope<UIElement>();
+    row->SetLayoutMode(UILayoutMode::Horizontal);
+    row->SetSpacing(6.0f);
+    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+    auto caption = CreateScope<UILabel>();
+    caption->SetFont(font);
+    caption->SetText(label);
+    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
+    caption->SetHitTestVisible(false);
+    row->AddChild(std::move(caption));
+    auto input = CreateScope<UIInputNumber>();
+    input->SetFont(font);
+    input->SetStep(step);
+    input->SetRange(minimum, maximum);
+    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
+    input->SetOnValueChanged(
+        [this, valueIndex](double value)
+        {
+            PreviewColliderValue(valueIndex, value);
+        });
+    input->SetOnValueCommitted(
+        [this](double, double)
+        {
+            CommitColliderEdit();
+        });
+    m_ColliderInputs.push_back(
+        static_cast<UIInputNumber*>(row->AddChild(std::move(input))));
+    parent.AddChild(std::move(row));
+}
+
+void InspectorRavenPanel::SynchronizeColliderControls(bool targetChanged)
+{
+    if (m_ColliderInputs.size() != 15u || m_Snapshot.Collider.has_value() == false)
+    {
+        return;
+    }
+    const InspectorColliderSnapshot& value = *m_Snapshot.Collider;
+    const double values[15] =
+    {
+        value.Offset.x, value.Offset.y, value.Offset.z,
+        value.HalfExtents.x, value.HalfExtents.y, value.HalfExtents.z,
+        value.Radius, value.HalfLength,
+        value.PlaneNormal.x, value.PlaneNormal.y, value.PlaneNormal.z,
+        value.PlaneOffset, value.Restitution,
+        value.StaticFriction, value.DynamicFriction
+    };
+    UIElement* focused = m_Context != nullptr ? m_Context->GetFocusedElement() : nullptr;
+    m_SynchronizingColliderControls = true;
+    m_ColliderTypeCombo->SetSelectedIndex(static_cast<std::size_t>(value.Type));
+    for (std::size_t index = 0u; index < m_ColliderInputs.size(); ++index)
+    {
+        UIInputNumber* input = m_ColliderInputs[index];
+        const bool editing = focused == &input->GetInputText();
+        if (targetChanged == true || editing == false)
+        {
+            input->SetValue(values[index]);
+        }
+    }
+    m_ColliderTriggerCheckbox->SetChecked(value.IsTrigger);
+    const bool sphere = value.Type == ColliderType::Sphere;
+    const bool box = value.Type == ColliderType::Box;
+    const bool plane = value.Type == ColliderType::Plane;
+    const bool capsule = value.Type == ColliderType::Capsule;
+    for (std::size_t index = 3u; index <= 5u; ++index)
+    {
+        m_ColliderInputs[index]->GetParent()->SetVisible(box);
+    }
+    m_ColliderInputs[6u]->GetParent()->SetVisible(sphere || capsule);
+    m_ColliderInputs[7u]->GetParent()->SetVisible(capsule);
+    for (std::size_t index = 8u; index <= 10u; ++index)
+    {
+        m_ColliderInputs[index]->GetParent()->SetVisible(plane);
+    }
+    m_ColliderInputs[11u]->GetParent()->SetVisible(plane);
+    m_SynchronizingColliderControls = false;
+}
+
+void InspectorRavenPanel::PreviewColliderValue(
+    std::size_t valueIndex,
+    double value)
+{
+    if (m_SynchronizingColliderControls == true
+        || valueIndex >= m_ColliderInputs.size()
+        || m_Snapshot.SelectionValid == false
+        || m_Snapshot.Handle.IsValid() == false
+        || m_Snapshot.Collider.has_value() == false
+        || m_OnColliderPreviewRequested == nullptr)
+    {
+        return;
+    }
+    const InspectorColliderField fields[15] =
+    {
+        InspectorColliderField::Offset,
+        InspectorColliderField::Offset,
+        InspectorColliderField::Offset,
+        InspectorColliderField::HalfExtents,
+        InspectorColliderField::HalfExtents,
+        InspectorColliderField::HalfExtents,
+        InspectorColliderField::Radius,
+        InspectorColliderField::HalfLength,
+        InspectorColliderField::PlaneNormal,
+        InspectorColliderField::PlaneNormal,
+        InspectorColliderField::PlaneNormal,
+        InspectorColliderField::PlaneOffset,
+        InspectorColliderField::Restitution,
+        InspectorColliderField::StaticFriction,
+        InspectorColliderField::DynamicFriction
+    };
+    const InspectorColliderField field = fields[valueIndex];
+    if (m_ColliderEditActive == true
+        && m_ColliderEditHandle != m_Snapshot.Handle)
+    {
+        ResetColliderEdit();
+        return;
+    }
+    if (m_ColliderEditActive == true && m_ColliderEditField != field)
+    {
+        CommitColliderEdit();
+    }
+    if (m_ColliderEditActive == false)
+    {
+        m_ColliderEditHandle = m_Snapshot.Handle;
+        m_ColliderEditBefore = *m_Snapshot.Collider;
+        m_ColliderEditField = field;
+        m_ColliderEditActive = true;
+    }
+
+    const InspectorColliderSnapshot original = *m_Snapshot.Collider;
+    InspectorColliderSnapshot requested = original;
+    float* components[15] =
+    {
+        &requested.Offset.x, &requested.Offset.y, &requested.Offset.z,
+        &requested.HalfExtents.x, &requested.HalfExtents.y, &requested.HalfExtents.z,
+        &requested.Radius, &requested.HalfLength,
+        &requested.PlaneNormal.x, &requested.PlaneNormal.y, &requested.PlaneNormal.z,
+        &requested.PlaneOffset, &requested.Restitution,
+        &requested.StaticFriction, &requested.DynamicFriction
+    };
+    const float previous = *components[valueIndex];
+    *components[valueIndex] = static_cast<float>(value);
+    if (m_OnColliderPreviewRequested(m_Snapshot.Handle, field, requested) == true)
+    {
+        m_Snapshot.Collider = requested;
+        return;
+    }
+    m_ColliderInputs[valueIndex]->SetValue(previous);
+    ResetColliderEdit();
+}
+
+void InspectorRavenPanel::CommitColliderEdit()
+{
+    if (m_SynchronizingColliderControls == true || m_ColliderEditActive == false)
+    {
+        return;
+    }
+    if (m_OnColliderCommitRequested != nullptr)
+    {
+        m_OnColliderCommitRequested(
+            m_ColliderEditHandle, m_ColliderEditField, m_ColliderEditBefore);
+    }
+    ResetColliderEdit();
+}
+
+void InspectorRavenPanel::ResetColliderEdit()
+{
+    m_ColliderEditHandle = InvalidEntityHandle;
+    m_ColliderEditBefore = InspectorColliderSnapshot{};
+    m_ColliderEditField = InspectorColliderField::Offset;
+    m_ColliderEditActive = false;
+}
+
 void InspectorRavenPanel::UpdateLabels()
 {
     if (m_StatusLabel == nullptr)
@@ -660,35 +1264,13 @@ void InspectorRavenPanel::UpdateLabels()
     {
         const InspectorCameraSnapshot& value = *m_Snapshot.Camera;
         SetLabelText(m_CameraLabels, 0u, "Aspect Ratio: " + FormatFloat(value.AspectRatio));
-        SetLabelText(m_CameraLabels, 1u, std::string("Primary: ") + (value.Primary ? "Yes" : "No"));
     }
-    if (m_Snapshot.RigidBody.has_value() == true)
+    if (m_Snapshot.RigidBody.has_value() == true
+        && m_RigidBodySleepingLabel != nullptr)
     {
         const InspectorRigidBodySnapshot& value = *m_Snapshot.RigidBody;
-        SetLabelText(m_RigidBodyLabels, 0u, std::string("Type: ") + BodyTypeText(value.Type));
-        SetLabelText(m_RigidBodyLabels, 1u, "Mass: " + FormatFloat(value.Mass));
-        SetLabelText(m_RigidBodyLabels, 2u, "Linear Velocity: " + FormatVec3(value.LinearVelocity));
-        SetLabelText(m_RigidBodyLabels, 3u, "Angular Velocity: " + FormatVec3(value.AngularVelocity));
-        SetLabelText(m_RigidBodyLabels, 4u, "Linear Damping: " + FormatFloat(value.LinearDamping));
-        SetLabelText(m_RigidBodyLabels, 5u, "Angular Damping: " + FormatFloat(value.AngularDamping));
-        SetLabelText(m_RigidBodyLabels, 6u, std::string("Use Gravity: ") + (value.UseGravity ? "Yes" : "No"));
-        SetLabelText(m_RigidBodyLabels, 7u, std::string("Allow Sleep: ") + (value.AllowSleep ? "Yes" : "No"));
-        SetLabelText(m_RigidBodyLabels, 8u, std::string("Sleeping: ") + (value.IsSleeping ? "Yes" : "No"));
-    }
-    if (m_Snapshot.Collider.has_value() == true)
-    {
-        const InspectorColliderSnapshot& value = *m_Snapshot.Collider;
-        SetLabelText(m_ColliderLabels, 0u, std::string("Type: ") + ColliderTypeText(value.Type));
-        SetLabelText(m_ColliderLabels, 1u, "Offset: " + FormatVec3(value.Offset));
-        SetLabelText(m_ColliderLabels, 2u, "Half Extents: " + FormatVec3(value.HalfExtents));
-        SetLabelText(m_ColliderLabels, 3u, "Radius: " + FormatFloat(value.Radius));
-        SetLabelText(m_ColliderLabels, 4u, "Half Length: " + FormatFloat(value.HalfLength));
-        SetLabelText(m_ColliderLabels, 5u, "Plane Normal: " + FormatVec3(value.PlaneNormal));
-        SetLabelText(m_ColliderLabels, 6u, "Plane Offset: " + FormatFloat(value.PlaneOffset));
-        SetLabelText(m_ColliderLabels, 7u, "Restitution: " + FormatFloat(value.Restitution));
-        SetLabelText(m_ColliderLabels, 8u, "Static Friction: " + FormatFloat(value.StaticFriction));
-        SetLabelText(m_ColliderLabels, 9u, "Dynamic Friction: " + FormatFloat(value.DynamicFriction));
-        SetLabelText(m_ColliderLabels, 10u, std::string("Trigger: ") + (value.IsTrigger ? "Yes" : "No"));
+        m_RigidBodySleepingLabel->SetText(
+            std::string("Sleeping: ") + (value.IsSleeping ? "Yes" : "No"));
     }
 }
 

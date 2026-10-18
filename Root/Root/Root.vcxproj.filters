@@ -774,6 +774,12 @@
     <ClInclude Update="Raven\Editor\Command\DeleteEntityCommand.h">
       <Filter>Raven\Editor\Command</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Editor\Command\SetPrimaryCameraCommand.cpp">
+      <Filter>Raven\Editor\Command</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Command\SetPrimaryCameraCommand.h">
+      <Filter>Raven\Editor\Command</Filter>
+    </ClInclude>
     <ClCompile Update="Raven\Editor\Tests\EditorEntityCommandSelfTests.cpp">
       <Filter>Raven\Editor\Tests</Filter>
     </ClCompile>

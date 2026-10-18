@@ -2,6 +2,7 @@
 
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/Command/InspectorEditCommand.h"
+#include "Raven/Editor/Command/SetPrimaryCameraCommand.h"
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/Panels/InspectorSnapshot.h"
@@ -167,6 +168,28 @@ void RunEditorEntityCommandSelfTests()
     assert(UndoEditorCommand() == false);
 
     // Sceneはstack上の一時Objectなので、終了前に非所有参照とCommand Snapshotを破棄します。
+    SetEditorCommandHistoryScene(nullptr);
+
+    Scene cameraScene;
+    Entity firstCamera = cameraScene.CreateEntity("First Camera");
+    firstCamera.AddComponent<CameraComponent>();
+    Entity secondCamera = cameraScene.CreateEntity("Second Camera");
+    secondCamera.AddComponent<CameraComponent>();
+    firstCamera.GetComponent<CameraComponent>().Primary = true;
+    secondCamera.GetComponent<CameraComponent>().Primary = false;
+
+    SetEditorCommandHistoryScene(&cameraScene);
+    assert(ExecuteAndRecordEditorCommand(
+        std::make_unique<SetPrimaryCameraCommand>(
+            &cameraScene, secondCamera.GetHandle())) == true);
+    assert(firstCamera.GetComponent<CameraComponent>().Primary == false);
+    assert(secondCamera.GetComponent<CameraComponent>().Primary == true);
+    assert(UndoEditorCommand() == true);
+    assert(firstCamera.GetComponent<CameraComponent>().Primary == true);
+    assert(secondCamera.GetComponent<CameraComponent>().Primary == false);
+    assert(RedoEditorCommand() == true);
+    assert(firstCamera.GetComponent<CameraComponent>().Primary == false);
+    assert(secondCamera.GetComponent<CameraComponent>().Primary == true);
     SetEditorCommandHistoryScene(nullptr);
 }
 

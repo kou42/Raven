@@ -222,18 +222,18 @@ Exit Gate:
 
 - [x] Scene Hierarchy用View Modelを作り、Entity ID / Generation / 親子関係 / 表示名をSnapshot化する。
 - [x] 選択状態は`EditorLayer`に一元化し、Hierarchy、Inspector、Viewport、Gizmoで共有する。
-- [ ] Create / Delete / Rename / Reparentを既存または追加のEditor Commandへ接続する。
+- [x] Create / Delete / Rename / Reparentを既存または追加のEditor Commandへ接続する。
   - [x] Createを既存`CreateEntityCommand`へ接続する。
   - [x] Renameを既存`RenameEntityCommand`へ接続し、Enter / Focus喪失時に1 Commandとして確定する。
-  - [ ] DeleteのComponent復元SnapshotとCommandを追加する（標準8種のComponentを対象とする暫定実装を追加。未知のComponentは削除を禁止。ビルド・Undo/Redo回帰テスト未実施のため未完了）。
-  - [ ] 親子関係の正規Runtimeデータを定義してReparent Commandへ接続する（RelationshipComponent、Scene API、ReparentEntityCommand、Hierarchy Snapshot、Raven UI Drag/Drop接続、回帰テストコードを追加。ビルド・実行検証は未完了）。
+  - [x] DeleteのComponent復元SnapshotとCommandを追加する（標準8種のComponentを対象とし、未知のComponentは削除を禁止。Undo時の新Generation割当と履歴Handle再割当を回帰テストで確認）。
+  - [x] 親子関係の正規Runtimeデータを定義してReparent Commandへ接続する（RelationshipComponent、Scene API、ReparentEntityCommand、Hierarchy Snapshot、Raven UI Drag/Drop、循環防止、Undo/Redoを回帰テストで確認）。
 - [x] InspectorのComponent表示をSection単位へ分け、UIコードとComponent変更処理を分離する（Raven UI読み取り表示をSnapshot境界で追加。編集Actionは次項で移行）。
-- [ ] 連続値編集は「Drag中Preview」と「操作完了時のCommand確定」を分ける。
+- [x] 連続値編集は「Drag中Preview」と「操作完了時のCommand確定」を分ける。
   - [x] Raven UI版Transform数値入力をPreviewとEnter / Focus喪失時の1 Command確定へ分離する。
   - [x] Raven UI版Camera Projection入力を`SetPerspective()`経由のPreviewと1 Command確定へ分離する。
-  - [ ] Camera Primary、RigidBody、ColliderのRaven UI編集Actionを接続する。
+  - [x] Camera Primary、RigidBody、ColliderのRaven UI編集Actionを接続する（PrimaryはScene全Camera状態を復元する専用Command、連続値はPreviewと1 Command確定、型・boolは即時Commandとして実装）。
 - [x] Entity破棄、Scene交換、Index再利用時に選択と編集中状態を破棄する。
-- [ ] Hierarchy Drag & Dropへ循環防止、同一親内移動、Undo/Redoを接続する。
+- [x] Hierarchy Drag & Dropへ循環防止、同一親内移動、Undo/Redoを接続する。
 
 Exit Gate:
 
@@ -401,16 +401,16 @@ Exit Gate:
 
 ## 10. 直近の推奨作業
 
-次の着手点はPhase 0とPhase 1である。
+次の着手点はPhase 5.1のViewport表示である。
 
-1. 現在のImGui依存一覧と主要Editor操作のBaselineを固定する。
-2. Panel単位のBackend選択を導入し、二重入力を防ぐ。
-3. Scene/Game View用RenderTarget ImageのBackend非依存契約を設計・テストする。
-4. Menu / Collapsible Section等の不足Widgetを最小限だけ追加する。
-5. 最初の移行対象としてCharacterまたはFluidの小規模Debug Overlayを選ぶ。
-6. その移行で得たLifecycle・入力・Styleの知見をStatistics Panelへ展開する。
+1. 既存Scene View / Game ViewのFramebuffer生成・Resize・描画順を整理する。
+2. `UITextureView`契約に沿って、Raven UI ImageへRenderTargetを接続する。
+3. 論理DIP、Framebuffer Pixel、RenderTarget Pixelの変換を独立した計算として実装し、数値テストを追加する。
+4. Aspect Fit、Letterbox、OpenGL上下反転、ClipをBackend非依存の設定へ集約する。
+5. 0サイズ、最小化、DPI変更、RenderTarget再生成の境界を自動テストと実機Smoke Testで確認する。
+6. Viewport表示を安定させてからPicking / Camera入力へ進み、その後にGizmoを移行する。
 
-最初から`EditorLayer`全体を書き換えない。小規模Overlayで移行規約を確定し、読み取り中心Panel、編集Panel、Viewport、Docking shellの順にリスクを上げるのが安全である。
+Phase 4のInspector編集は自動テストまで完了しているが、Raven UIを使った実機操作は未確認である。Phase 5へ進む際も、Viewport表示、入力、Gizmoを同時に置き換えず、座標系と入力所有権を段階ごとに固定する。
 
 ## 11. 進捗記録テンプレート
 

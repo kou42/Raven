@@ -241,6 +241,8 @@ D:.
     |   |   |   |       RenameEntityCommand.cpp
     |   |   |   |       RenameEntityCommand.h
     |   |   |   |       ReparentEntityCommand.h
+    |   |   |   |       SetPrimaryCameraCommand.cpp
+    |   |   |   |       SetPrimaryCameraCommand.h
     |   |   |   |       TransformCommand.cpp
     |   |   |   |       TransformCommand.h
     |   |   |   |
