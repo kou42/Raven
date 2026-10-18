@@ -133,6 +133,34 @@ void EditorCamera::SetViewportSize(float width, float height)
     RecalculateProjection();
 }
 
+bool EditorCamera::TryBuildWorldRay(
+    float normalizedX,
+    float normalizedY,
+    math::Vec3& outOrigin,
+    math::Vec3& outDirection) const
+{
+    if (std::isfinite(normalizedX) == false ||
+        std::isfinite(normalizedY) == false ||
+        m_ViewportWidth <= 0.0f || m_ViewportHeight <= 0.0f)
+    {
+        return false;
+    }
+
+    const float ndcX = normalizedX * 2.0f - 1.0f;
+    const float ndcY = 1.0f - normalizedY * 2.0f;
+    const float tanHalfFov = std::tan(m_FieldOfViewY * 0.5f);
+    const float aspectRatio = m_ViewportWidth / m_ViewportHeight;
+
+    // View spaceではForwardが画面中央、Rightが+X、Upが+Yです。
+    // Projectionと同じFOV/Aspectを使うため、描画されたGizmoとRayの方向が一致します。
+    outOrigin = m_Position;
+    outDirection = (
+        m_ForwardDirection +
+        m_RightDirection * (ndcX * aspectRatio * tanHalfFov) +
+        m_UpDirection * (ndcY * tanHalfFov)).Normalized();
+    return outDirection.LengthSq() > math::Epsilon * math::Epsilon;
+}
+
 void EditorCamera::RecalculateView()
 {
     // Yaw=0 / Pitch=0でForward=(0,0,-1)になるよう定義します。

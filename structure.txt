@@ -231,6 +231,8 @@ D:.
     |   |   |   |   EditorShortcutRouter.h
     |   |   |   |   EditorTranslateGizmo.cpp
     |   |   |   |   EditorTranslateGizmo.h
+    |   |   |   |   EditorViewportGeometry.cpp
+    |   |   |   |   EditorViewportGeometry.h
     |   |   |   |
     |   |   |   +---Command
     |   |   |   |       CreateEntityCommand.cpp
@@ -255,6 +257,8 @@ D:.
     |   |   |   |       AnimationDebugRavenPanel.h
     |   |   |   |       AnimationDebugSnapshot.cpp
     |   |   |   |       AnimationDebugSnapshot.h
+    |   |   |   |       EditorViewportRavenPanel.cpp
+    |   |   |   |       EditorViewportRavenPanel.h
     |   |   |   |       InspectorPanel.cpp
     |   |   |   |       InspectorPanel.h
     |   |   |   |       InspectorRavenPanel.cpp
@@ -279,6 +283,8 @@ D:.
     |   |   |   \---Tests
     |   |   |           EditorEntityCommandSelfTests.cpp
     |   |   |           EditorEntityCommandSelfTests.h
+    |   |   |           EditorViewportGeometrySelfTests.cpp
+    |   |   |           EditorViewportGeometrySelfTests.h
     |   |   |           InspectorSnapshotSelfTests.cpp
     |   |   |           InspectorSnapshotSelfTests.h
     |   |   |
@@ -1531,3 +1537,5 @@ Raven RHI implementation additions (Root/Root/Raven relative paths):
     Platform/Vulkan/VulkanClearContext.cpp
     Renderer/RHI/ClearBackendDemo.h
     Renderer/RHI/ClearBackendDemo.cpp
+    Renderer/RHI/RHIOffscreenRenderTarget.h
+    Renderer/RHI/RHIOffscreenRenderTarget.cpp

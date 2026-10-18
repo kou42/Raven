@@ -1,7 +1,11 @@
 #pragma once
 
+#include "Raven/Math/MathMatrix.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Scene/Entity.h"
+
+#include <cstdint>
+#include <vector>
 
 namespace Raven
 {
@@ -51,6 +55,61 @@ struct EditorGizmoSnapSettings
     float ScaleStep = 0.1f;
 };
 
+enum class EditorGizmoAxis
+{
+    None = 0,
+    X,
+    Y,
+    Z
+};
+
+// Raven UIへ渡すGizmo描画命令です。GPU handleやWidget参照を持たず、Viewport local座標だけを保持します。
+enum class EditorGizmoPrimitiveType
+{
+    Line = 0,
+    Circle,
+    Square
+};
+
+struct EditorGizmoPrimitive
+{
+    EditorGizmoPrimitiveType Type = EditorGizmoPrimitiveType::Line;
+    math::Vec2 Start{};
+    math::Vec2 End{};
+    math::Vec4 Color{ 1.0f, 1.0f, 1.0f, 1.0f };
+    float Thickness = 1.0f;
+    float Radius = 0.0f;
+};
+
+struct EditorGizmoViewportRect
+{
+    math::Vec2 Min{};
+    math::Vec2 Max{};
+};
+
+enum class EditorGizmoPointerEventType
+{
+    Down = 0,
+    Move,
+    Up,
+    Cancel
+};
+
+struct EditorGizmoPointerEvent
+{
+    EditorGizmoPointerEventType Type = EditorGizmoPointerEventType::Move;
+    math::Vec2 Position{};
+    EditorGizmoViewportRect Viewport{};
+    bool Snap = false;
+};
+
+struct EditorGizmoDrawData
+{
+    std::vector<EditorGizmoPrimitive> Primitives;
+    EditorGizmoAxis HoveredAxis = EditorGizmoAxis::None;
+    EditorGizmoAxis ActiveAxis = EditorGizmoAxis::None;
+};
+
 EditorGizmoOperation GetEditorGizmoOperation();
 void SetEditorGizmoOperation(EditorGizmoOperation operation);
 
@@ -62,7 +121,7 @@ const EditorGizmoSnapSettings& GetEditorGizmoSnapSettings();
 void SetEditorGizmoSnapSettings(const EditorGizmoSnapSettings& settings);
 
 // Ctrlを押している間だけSnapを有効にします。
-// Dear ImGuiの入力判定自体は各Gizmo側で行い、この関数は量子化処理だけを共通化します。
+// 入力判定は各UI Backend側で行い、この関数は量子化処理だけを共通化します。
 float ApplyEditorGizmoSnap(float delta, float step);
 
 // World / Local設定を考慮したGizmo軸方向を取得します。
@@ -70,6 +129,72 @@ float ApplyEditorGizmoSnap(float delta, float step);
 math::Vec3 GetEditorGizmoAxisDirection(
     const math::Vec3& rotation,
     int axisIndex);
+
+// Gizmoの座標計算をUI Backendから分離した数値関数です。
+bool ProjectEditorGizmoWorldToViewport(
+    const math::Vec3& worldPosition,
+    const math::Mat4& viewProjection,
+    const EditorGizmoViewportRect& viewport,
+    math::Vec2& outPosition);
+float DistancePointToEditorGizmoSegment(
+    const math::Vec2& point,
+    const math::Vec2& start,
+    const math::Vec2& end);
+bool TryBuildEditorGizmoDragPlaneNormal(
+    const math::Vec3& axisDirection,
+    const math::Vec3& viewDirection,
+    math::Vec3& outPlaneNormal);
+bool TryIntersectEditorGizmoRayPlane(
+    const math::Vec3& rayOrigin,
+    const math::Vec3& rayDirection,
+    const math::Vec3& planePoint,
+    const math::Vec3& planeNormal,
+    math::Vec3& outIntersection);
+math::Vec3 ApplyEditorGizmoRotationDelta(
+    const math::Vec3& startRotation,
+    EditorGizmoAxis axis,
+    EditorGizmoSpace space,
+    float deltaRadians);
+float ApplyEditorGizmoMinimumScale(float value, float originalValue);
+
+// Raven UI用のBackend非依存Gizmo状態機械です。
+// Entityは各呼び出し中だけ参照し、SceneやUIElementの非所有PointerをFrame間に保持しません。
+class EditorTransformGizmoController
+{
+public:
+    EditorGizmoDrawData BuildDrawData(
+        Entity selectedEntity,
+        const EditorCamera& camera,
+        const EditorGizmoViewportRect& viewport,
+        const math::Vec2& pointerPosition);
+
+    bool HandlePointerEvent(
+        Entity selectedEntity,
+        const EditorCamera& camera,
+        const EditorGizmoPointerEvent& event);
+
+    bool IsActive() const;
+    void Reset();
+
+private:
+    EditorGizmoAxis m_ActiveAxis = EditorGizmoAxis::None;
+    EditorGizmoOperation m_ActiveOperation = EditorGizmoOperation::Translate;
+    EditorGizmoSpace m_ActiveSpace = EditorGizmoSpace::World;
+    std::uint64_t m_EntityValue = 0u;
+    math::Vec2 m_DragStartMouse{};
+    math::Vec2 m_DragStartDirection{};
+    math::Vec2 m_ScreenAxisDirection{};
+    math::Vec2 m_OriginScreen{};
+    math::Vec3 m_DragStartPosition{};
+    math::Vec3 m_DragStartRotation{};
+    math::Vec3 m_DragStartScale{ 1.0f, 1.0f, 1.0f };
+    math::Vec3 m_WorldAxisDirection{};
+    math::Vec3 m_DragPlanePoint{};
+    math::Vec3 m_DragPlaneNormal{};
+    math::Vec3 m_DragStartIntersection{};
+    float m_PixelsPerUnit = 0.0f;
+    bool m_UseTranslateDragPlane = false;
+};
 
 // ============================================================================
 // RenderEditorTransformGizmo

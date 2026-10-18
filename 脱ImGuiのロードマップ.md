@@ -248,24 +248,53 @@ Exit Gate:
 #### 5.1 Viewport表示
 
 - [ ] Scene ViewとGame ViewのFramebufferをRaven UI Imageへ表示する。
-- [ ] 論理DIP、Framebuffer Pixel、RenderTarget Pixelの3座標系を明記して変換する。
-- [ ] OpenGLの上下反転をWidgetへ直書きせず、Texture ViewまたはRenderer側の規約で扱う。
-- [ ] Resizeは0サイズ、最小化、DPI変更、1Frame遅延を安全に処理する。
+  - [x] OpenGL FramebufferのColor Attachmentを`Ref<Texture>`でRaven UIへ接続する。
+  - [ ] DirectX 12 / VulkanのEditor用off-screen RenderTargetを`RHITexture`で接続する。
+    - [x] Backend共通の`RHIOffscreenRenderTarget`契約とDevice / Command Listの拡張口を追加する。
+    - [x] Raven UI Viewport PanelがColor Attachmentの`Ref<RHITexture>`を直接保持・表示する。
+    - [ ] DX12 / Vulkanのnative RenderTarget生成、状態遷移、Scene描画を接続する。
+- [x] 論理DIP、Framebuffer Pixel、RenderTarget Pixelの3座標系を明記して変換する。
+- [x] OpenGLの上下反転をWidgetへ直書きせず、Texture ViewまたはRenderer側の規約で扱う。
+- [x] Resizeは0サイズ、最小化、DPI変更、1Frame遅延を安全に処理する。
+
+2026-10-18時点で、OpenGLのRaven UI / Dual経路にScene ViewとGame Viewを接続した。
+`EditorViewportGeometry`がWindow論理座標と実Framebuffer寸法からRenderTarget Pixel数を算出し、
+`EditorViewportRavenPanel`が`UITextureOrigin::BottomLeft`付きの`UITextureView`へColor Attachmentを渡す。
+Explicit Backend向けには`RHIOffscreenRenderTarget`がResizeとSample可能なColor Attachmentの所有境界を定義し、
+`EditorViewportRavenPanel`はTopLeft原点の`Ref<RHITexture>`をnative handleへ変換せず表示できる。
+DirectX 12 / Vulkanのnative RenderTarget生成とScene Command記録は未実装のため、Phase 5.1のExit Gateは未達である。
 
 #### 5.2 PickingとCamera入力
 
-- [ ] Imageの実表示矩形からPicking Attachment座標へ正規化変換する。
-- [ ] LetterboxやPaddingがある場合は映像外Clickを除外する。
-- [ ] Scene ViewのHover / Focus中だけEditor Camera入力を許可する。
-- [ ] Raven UIが消費した入力をRuntime Sceneへ伝播しない。
+- [x] Imageの実表示矩形からPicking Attachment座標へ正規化変換する。
+- [x] LetterboxやPaddingがある場合は映像外Clickを除外する。
+- [x] Scene ViewのHover / Focus中だけEditor Camera入力を許可する。
+- [x] Raven UIが消費した入力をRuntime Sceneへ伝播しない。
+
+2026-10-18時点で、`EditorViewportInputRegion`が`UIImage`のAspectFit実表示矩形を使い、
+OpenGL Color Attachmentと同寸のPicking Attachment Pixelへ左上UI座標を変換する。
+Letterbox ClickはEditor UI内で消費しつつPicking対象外とし、実映像上の操作だけがFocusと
+Mouse Captureを取得する。Editor CameraのInput pollingはScene ViewのHoverとFocusが両方成立する
+場合だけ有効化し、Navigation KeyのCore EventとViewport Mouse EventはRuntimeへ伝播させない。
 
 #### 5.3 Gizmo
 
-- [ ] Translate / Rotate / Scaleの状態機械と描画生成をImGui DrawListから分離する。
-- [ ] Gizmo primitiveはRaven UI DrawListまたはEditor debug primitive rendererへ出力する。
-- [ ] 軸Hit Test、Drag plane、World/Local座標、Transform積順をテスト可能な計算へ分ける。
-- [ ] Drag開始時のTransformを保持し、Drag完了時に1つのUndo Commandとして確定する。
-- [ ] GizmoがMouseをCaptureしたFrameはEntity PickingとCamera操作を抑止する。
+- [x] Translate / Rotate / Scaleの状態機械と描画生成をImGui DrawListから分離する。
+- [x] Gizmo primitiveはRaven UI DrawListまたはEditor debug primitive rendererへ出力する。
+- [x] 軸Hit Test、Drag plane、World/Local座標、Transform積順をテスト可能な計算へ分ける。
+  - [x] 軸Hit Test、World/Local座標、RotationのQuaternion積順をUI非依存関数へ分離する。
+  - [x] TranslateをScreen投影軸方式からCamera RayとDrag Planeの交点方式へ移行する。
+- [x] Drag開始時のTransformを保持し、Drag完了時に1つのUndo Commandとして確定する。
+- [x] GizmoがMouseをCaptureしたFrameはEntity PickingとCamera操作を抑止する。
+
+2026-10-18時点で、Raven UI経路は`EditorTransformGizmoController`がTranslate / Rotate / Scaleの
+状態、Hit Test、Snap、World / Local空間、Preview、Commit / Cancelを所有する。
+ControllerはGPUやWidgetを参照せずViewport local座標のPrimitive Snapshotを生成し、
+`EditorGizmoOverlay`がRaven UIのPolygon / Circle / Rectへ変換する。Viewport入力領域はGizmoを
+Pickingより先に判定し、Drag中はMouse Captureを保持してEditor CameraとRuntimeへの伝播を止める。
+既存Dear ImGui経路は比較・fallback用として維持している。Translateの操作量はCamera Rayと、選択軸を
+含みCamera視線に正対するDrag Planeとの交点差から求める。Camera視線と選択軸がほぼ平行で安定した
+Drag Planeを構成できない退化ケースのみ、従来のScreen投影軸方式へfallbackする。
 
 Exit Gate:
 
@@ -401,14 +430,13 @@ Exit Gate:
 
 ## 10. 直近の推奨作業
 
-次の着手点はPhase 5.1のViewport表示である。
+次の着手点はPhase 5.1～5.3 OpenGL経路の実機Smoke Testと、残るBackend対応である。
 
-1. 既存Scene View / Game ViewのFramebuffer生成・Resize・描画順を整理する。
-2. `UITextureView`契約に沿って、Raven UI ImageへRenderTargetを接続する。
-3. 論理DIP、Framebuffer Pixel、RenderTarget Pixelの変換を独立した計算として実装し、数値テストを追加する。
-4. Aspect Fit、Letterbox、OpenGL上下反転、ClipをBackend非依存の設定へ集約する。
-5. 0サイズ、最小化、DPI変更、RenderTarget再生成の境界を自動テストと実機Smoke Testで確認する。
-6. Viewport表示を安定させてからPicking / Camera入力へ進み、その後にGizmoを移行する。
+1. `--editor-ui=raven`と`--editor-ui=dual`でScene/Game Viewの向き、Aspect、Clip、Resizeを実機確認する。
+2. 100% / 高DPIと最小化復帰でRenderTarget再生成後の表示を確認する。
+3. Scene ViewでPicking、Letterbox除外、右Mouse Camera、Runtime入力遮断を実機確認する。
+4. DirectX 12 / VulkanのEditor用off-screen RenderTarget所有境界をRHI側へ追加する。
+5. DirectX 12 / Vulkan対応後、3 Backend共通のViewport座標・Picking・Gizmo回帰テストを追加する。
 
 Phase 4のInspector編集は自動テストまで完了しているが、Raven UIを使った実機操作は未確認である。Phase 5へ進む際も、Viewport表示、入力、Gizmoを同時に置き換えず、座標系と入力所有権を段階ごとに固定する。
 
@@ -419,5 +447,9 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 日付 | PR / Commit | 対象 | 削除したImGui依存 | ビルド・テスト | 手動確認 | 残課題 |
 | --- | --- | --- | --- | --- | --- | --- |
 | YYYY-MM-DD | `feature/...` | Panel名 | file / call数 | 構成と結果 | 操作項目 | 次Phaseへ持ち越す内容 |
+| 2026-10-18 | 作業ツリー | Phase 5.1 OpenGL Viewport表示 | DualのScene/Game View表示所有権をRaven UIへ移行 | Debug x64 build成功（PDB無効）、Viewport座標Self Test成功、Raven UI CPU Testは既存Dock保存権限エラーで失敗 | 未実施 | OpenGL実機Smoke Test、Phase 5.2、DX12/Vulkan off-screen RenderTarget |
+| 2026-10-18 | 作業ツリー | Phase 5.2 Picking / Camera入力 | Raven UI ViewportがMouseとCamera Navigation Keyを所有 | Debug x64 build成功（PDB無効）、Viewport入力・座標Self Test成功 | 未実施 | OpenGL実機Smoke Test、Phase 5.3 Gizmo、DX12/Vulkan off-screen RenderTarget |
+| 2026-10-18 | 作業ツリー | Phase 5.3 Raven UI Gizmo | Translate / Rotate / Scaleの状態・描画・入力をImGuiから分離 | Debug x64 build成功（PDB無効）、3 Modeの操作・Undo、Capture優先度、Capture Cancel、Ray / Drag Plane・軸平行fallback Self Test成功 | 未実施 | OpenGL実機Smoke Test、DX12/Vulkan off-screen RenderTarget |
+| 2026-10-18 | 作業ツリー | Phase 5.1 Explicit off-screen共通境界 | RHI RenderTargetの所有・Resize・Color Attachment公開契約とRaven UI表示経路を追加 | Debug x64 build成功（PDB無効）、RHI Texture表示・TopLeft座標・Specification Self Test成功 | 未実施 | DX12/Vulkan native RenderTarget生成、状態遷移、Scene描画、Picking |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。

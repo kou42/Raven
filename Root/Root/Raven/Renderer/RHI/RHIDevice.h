@@ -12,6 +12,9 @@
 namespace Raven
 {
 
+class RHIOffscreenRenderTarget;
+struct RHIOffscreenRenderTargetSpecification;
+
 // ============================================================================
 // RHIDevice
 // ============================================================================
@@ -63,6 +66,15 @@ public:
         const RHITextureSpecification& specification,
         const void* initialData = nullptr,
         std::size_t initialDataSize = 0) = 0;
+
+    // SwapChainとは独立したScene/Game View用描画先を生成します。
+    // Backend実装が揃うまではnullptrを返し、OpenGL等へ暗黙fallbackしません。
+    virtual Ref<RHIOffscreenRenderTarget> CreateOffscreenRenderTarget(
+        const RHIOffscreenRenderTargetSpecification& specification)
+    {
+        (void)specification;
+        return nullptr;
+    }
 };
 
 } // namespace Raven

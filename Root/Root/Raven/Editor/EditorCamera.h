@@ -47,6 +47,14 @@ public:
     const math::Vec3& GetPosition() const { return m_Position; }
     const math::Vec3& GetForwardDirection() const { return m_ForwardDirection; }
 
+    // 左上(0,0)、右下(1,1)のViewport正規座標からPerspective CameraのWorld Rayを生成します。
+    // Pointer Capture中はViewport外座標も必要なため、有限値であれば[0,1]外への外挿も許可します。
+    bool TryBuildWorldRay(
+        float normalizedX,
+        float normalizedY,
+        math::Vec3& outOrigin,
+        math::Vec3& outDirection) const;
+
 private:
     // Yaw/PitchからCameraのForward / Right / Up基底とView行列を再構築します。
     void RecalculateView();

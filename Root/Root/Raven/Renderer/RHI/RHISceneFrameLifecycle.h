@@ -12,6 +12,8 @@
 namespace Raven
 {
 
+class RHIOffscreenRenderTarget;
+
 // API非依存のExplicit Scene描画命令です。Frameの開始・終了はLifecycleが管理し、
 // CommandListはそのFrame内でだけ描画命令を発行します。
 // Legacy RHICommandListのOpenGL VertexArray/Shader APIとは独立させます。
@@ -30,6 +32,23 @@ public:
     virtual bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
         const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0,
         uint32_t firstIndex = 0) = 0;
+
+    // off-screen描画先の選択とSample可能状態への復帰をBackendへ委譲します。
+    // 未対応Backendはfalseを返し、SwapChainへ誤描画しないようにします。
+    virtual bool BeginOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const float clearColor[4])
+    {
+        (void)renderTarget;
+        (void)clearColor;
+        return false;
+    }
+    virtual bool EndOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget)
+    {
+        (void)renderTarget;
+        return false;
+    }
 };
 
 // Scene / Layer / ImGui / Raven UIを含むApplication Frameの境界です。

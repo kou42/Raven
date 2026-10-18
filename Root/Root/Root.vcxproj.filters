@@ -685,6 +685,9 @@
     <Filter Include="Raven\Editor\Tests">
       <UniqueIdentifier>{27020e8e-bf37-42b2-b288-704a2cb50387}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Renderer\RHI">
+      <UniqueIdentifier>{d1c77e48-5e63-44e9-9e4b-47b5359fbd93}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -803,6 +806,30 @@
     </ClCompile>
     <ClInclude Update="Raven\Editor\Tests\InspectorSnapshotSelfTests.h">
       <Filter>Raven\Editor\Tests</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\EditorViewportGeometry.cpp">
+      <Filter>Raven\Editor</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\EditorViewportGeometry.h">
+      <Filter>Raven\Editor</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\EditorViewportRavenPanel.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\EditorViewportRavenPanel.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Editor\Tests\EditorViewportGeometrySelfTests.cpp">
+      <Filter>Raven\Editor\Tests</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Tests\EditorViewportGeometrySelfTests.h">
+      <Filter>Raven\Editor\Tests</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.cpp">
+      <Filter>Raven\Renderer\RHI</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.h">
+      <Filter>Raven\Renderer\RHI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -35,6 +35,7 @@
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
 #include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
+#include "Raven/Editor/Tests/EditorViewportGeometrySelfTests.h"
 #include "Raven/Editor/Tests/InspectorSnapshotSelfTests.h"
 #include "Raven/Scene/Tests/SceneLifecycleSelfTests.h"
 #include "Raven/Animation/Tests/BlendTreeRuntimeSelfTests.h"
@@ -89,6 +90,12 @@ int main(int argc, char* argv[])
             Raven::tests::RunEditorEntityCommandSelfTests();
             Raven::tests::RunInspectorSnapshotSelfTests();
             std::cout << "Editor entity command self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-editor-viewport")
+        {
+            Raven::tests::RunEditorViewportGeometrySelfTests();
+            std::cout << "Editor viewport geometry self-tests passed.\n";
             return 0;
         }
 #endif
@@ -159,7 +166,7 @@ int main(int argc, char* argv[])
         else if (backendArgument != "--backend=opengl")
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
-                "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, "
+                "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
@@ -175,6 +182,7 @@ int main(int argc, char* argv[])
     Raven::tests::RunExplicitSceneFrameSelfTests();
     Raven::tests::RunJobSystemSelfTests();
     Raven::tests::RunEditorEntityCommandSelfTests();
+    Raven::tests::RunEditorViewportGeometrySelfTests();
     Raven::tests::RunInspectorSnapshotSelfTests();
     Raven::tests::RunSceneLifecycleSelfTests();
     Raven::tests::RunCharacterCeilingCollisionSelfTests();

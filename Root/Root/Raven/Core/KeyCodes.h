@@ -39,6 +39,11 @@ namespace Key
         Backspace = 259,
         F10 = 299,
 
+        LeftShift = 340,
+        LeftControl = 341,
+        RightShift = 344,
+        RightControl = 345,
+
         Right = 262,
         Left = 263,
         Down = 264,

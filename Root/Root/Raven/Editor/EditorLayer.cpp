@@ -1,6 +1,9 @@
 ﻿#include "Raven/Editor/EditorLayer.h"
 
 #include "Raven/Core/Application.h"
+#include "Raven/Core/Input.h"
+#include "Raven/Core/KeyCodes.h"
+#include "Raven/Core/MouseCodes.h"
 #include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/Command/InspectorEditCommand.h"
@@ -10,6 +13,7 @@
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
+#include "Raven/Editor/EditorViewportGeometry.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
@@ -27,6 +31,43 @@ namespace
 {
 
 constexpr float CameraProjectionCompareEpsilon = 0.000001f;
+
+bool IsEditorCameraNavigationKey(int keyCode)
+{
+    return keyCode == Key::W || keyCode == Key::A ||
+        keyCode == Key::S || keyCode == Key::D ||
+        keyCode == Key::Q || keyCode == Key::E;
+}
+
+bool IsEditorViewportOwnedCharacter(unsigned int codepoint)
+{
+    return codepoint == static_cast<unsigned int>('w') ||
+        codepoint == static_cast<unsigned int>('W') ||
+        codepoint == static_cast<unsigned int>('a') ||
+        codepoint == static_cast<unsigned int>('A') ||
+        codepoint == static_cast<unsigned int>('s') ||
+        codepoint == static_cast<unsigned int>('S') ||
+        codepoint == static_cast<unsigned int>('d') ||
+        codepoint == static_cast<unsigned int>('D') ||
+        codepoint == static_cast<unsigned int>('q') ||
+        codepoint == static_cast<unsigned int>('Q') ||
+        codepoint == static_cast<unsigned int>('e') ||
+        codepoint == static_cast<unsigned int>('E') ||
+        codepoint == static_cast<unsigned int>('r') ||
+        codepoint == static_cast<unsigned int>('R');
+}
+
+bool IsControlKey(int keyCode)
+{
+    return keyCode == Key::LeftControl || keyCode == Key::RightControl;
+}
+
+bool IsEditorGizmoShortcutKey(int keyCode)
+{
+    return keyCode == Key::W || keyCode == Key::E ||
+        keyCode == Key::R || keyCode == Key::Q ||
+        keyCode == Key::Z || keyCode == Key::Y;
+}
 
 bool ValidateCameraProjectionTarget(Entity entity)
 {
@@ -307,12 +348,6 @@ EditorLayer::EditorLayer(Application& application, EditorUIBackend uiBackend)
 {
 }
 
-bool EditorLayer::UsesDearImGui() const
-{
-    return m_UIBackend == EditorUIBackend::DearImGui ||
-        m_UIBackend == EditorUIBackend::Dual;
-}
-
 bool EditorLayer::IsPanelOwnedByDearImGui(PanelUIOwner owner) const
 {
     if (m_UIBackend == EditorUIBackend::DearImGui)
@@ -328,6 +363,9 @@ bool EditorLayer::IsPanelOwnedByDearImGui(PanelUIOwner owner) const
 
 void EditorLayer::OnAttach()
 {
+    m_ViewportRenderingEnabled = m_Application != nullptr &&
+        m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL;
+
     if (m_Application != nullptr &&
         IsPanelOwnedByDearImGui(m_PanelUIOwnership.Statistics) == false)
     {
@@ -709,13 +747,44 @@ void EditorLayer::OnAttach()
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
     }
 
-    m_ViewportRenderingEnabled = m_Application != nullptr &&
-        m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL &&
-        UsesDearImGui() == true;
+    if (m_ViewportRenderingEnabled == true && m_Application != nullptr &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.SceneView) == false)
+    {
+        // PanelはSceneやFramebufferを所有せず、入力時点のPixel座標だけをEditorLayerへ返します。
+        // CallbackのLifetimeはEditorLayer所有Panelの範囲内であり、Detach時に外部へ残りません。
+        m_SceneViewportRavenPanel.SetPickingRequestedHandler(
+            [this](std::uint32_t pixelX, std::uint32_t pixelY)
+            {
+                PickSceneEntityAt(pixelX, pixelY);
+            });
+        m_SceneViewportRavenPanel.SetGizmoPointerHandler(
+            [this](const EditorGizmoPointerEvent& event)
+            {
+                return m_RavenViewportGizmo.HandlePointerEvent(
+                    m_SelectedEntity, m_EditorCamera, event);
+            });
+        m_SceneViewportRavenPanel.Attach(
+            m_Application->GetUIContext(),
+            m_Application->GetRuntimeUIFont(),
+            "Scene View",
+            math::Vec2(360.0f, 24.0f),
+            math::Vec2(800.0f, 480.0f));
+    }
+    if (m_ViewportRenderingEnabled == true && m_Application != nullptr &&
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.GameView) == false)
+    {
+        m_GameViewportRavenPanel.Attach(
+            m_Application->GetUIContext(),
+            m_Application->GetRuntimeUIFont(),
+            "Game View",
+            math::Vec2(400.0f, 530.0f),
+            math::Vec2(720.0f, 420.0f));
+    }
+
     if (m_ViewportRenderingEnabled == false)
     {
         // Explicit BackendではMain SceneとRaven UIをRuntimeが直接描画します。
-        // off-screen FramebufferとDear ImGui backendが揃うまではGPU Resourceを生成しません。
+        // Editor用off-screen Framebufferが未実装のため、空Panelや未対応Resourceを生成しません。
         return;
     }
 
@@ -724,7 +793,7 @@ void EditorLayer::OnAttach()
     // ========================================================================
     // Scene View / Game ViewはMain framebufferを直接見せるのではなく、
     // それぞれ専用FramebufferへSceneを描画し、そのColor Attachment Textureを
-    // Dear ImGuiのWindow内へ表示します。
+    // 所有Backendに応じてDear ImGuiまたはRaven UIのWindow内へ表示します。
     //
     // 重要:
     // EditorLayerはOpenGLFramebuffer等の具体的なPlatform実装を直接生成しません。
@@ -732,8 +801,8 @@ void EditorLayer::OnAttach()
     // Editor側からOpenGL / DirectX / Vulkan等の違いを隠蔽します。
     //
     // 初期サイズはDock Layout確定前なので仮値です。
-    // 実際の表示サイズはRenderSceneView()/RenderGameView()でContentRegionから取得し、
-    // 次frameのOnRender()でFramebuffer::Resize()へ反映します。
+    // 実際の表示サイズはDear ImGuiのContentRegion、またはRaven UI Panelの論理領域から取得し、
+    // 次FrameのOnRender()でFramebuffer::Resize()へ反映します。
     //
     // SceneとGameを最初から別Framebufferにしている理由は、Scene Viewだけへ
     // Editor Camera / Grid / Selection Outline / Gizmo等を追加しても、Game Viewの
@@ -768,6 +837,9 @@ void EditorLayer::OnDetach()
 {
     m_InspectorPanel.ResetEditingState();
     // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
+    m_GameViewportRavenPanel.Detach();
+    m_SceneViewportRavenPanel.Detach();
+    m_RavenViewportGizmo.Reset();
     m_SceneHierarchyRavenPanel.Detach();
     m_InspectorRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
@@ -813,13 +885,22 @@ void EditorLayer::OnUpdate(float dt)
     // Editor Camera / Gizmo等はゲームロジックとは独立したEditor状態なので、
     // Runtime更新へ混ぜずEditorLayerから更新します。
     //
-    // ImGuiのhover/focus判定は前frameのRenderSceneView()で保存した値です。
-    // OnUpdate()はImGui frame構築より先に呼ばれるため1frame遅れになりますが、
-    // Scene View外でWASD/Mouse操作した時にEditor Cameraが動くことを防げます。
+    if (m_SceneViewportRavenPanel.IsAttached() == true)
+    {
+        const std::pair<float, float> mousePosition = Input::GetMousePosition();
+        m_SceneViewportHovered = m_SceneViewportRavenPanel.IsPointerOverViewport(
+            math::Vec2(mousePosition.first, mousePosition.second));
+        m_SceneViewportFocused = m_SceneViewportRavenPanel.HasKeyboardFocus();
+    }
+
+    // Dear ImGui経路は前Frameの状態、Raven UI経路は現在のPointerとFocus状態を使います。
+    // Hoverだけでは別Panel編集中のWASDを拾い、FocusだけではPointerが外へ出た後もCameraが
+    // 動き続けるため、両方が成立した場合だけInput pollingを許可します。
     const bool editorCameraInputEnabled =
         m_ShowSceneView
         && m_SceneViewportHovered
-        && m_SceneViewportFocused;
+        && m_SceneViewportFocused
+        && m_RavenViewportGizmo.IsActive() == false;
 
     m_EditorCamera.Update(dt, editorCameraInputEnabled);
 
@@ -849,8 +930,8 @@ void EditorLayer::OnRender()
     // Scene View用に二重実行しないことが重要です。
     if (m_ShowSceneView && m_SceneFramebuffer != nullptr)
     {
-        // ImGui Windowが極端に小さくなった場合でも0x0 Textureを作らないよう、
-        // GPUへ渡すFramebufferサイズは最低1 pixelに丸めます。
+        // UI側は0サイズ・最小化中に新しいResize要求を作らず、最後の有効な寸法を保持します。
+        // GPUへ渡す値も防御的に最低1 pixelへ丸めます。
         const std::uint32_t width = static_cast<std::uint32_t>(std::max(m_SceneViewportWidth, 1.0f));
         const std::uint32_t height = static_cast<std::uint32_t>(std::max(m_SceneViewportHeight, 1.0f));
 
@@ -1081,6 +1162,83 @@ void EditorLayer::OnRavenUIRender(float dt)
             m_InspectorRavenPanel.Update(CaptureInspectorSnapshot(m_SelectedEntity));
         }
     }
+
+    const Window& window = m_Application->GetWindow();
+    const math::Vec2 windowLogicalSize(
+        static_cast<float>(window.GetWidth()),
+        static_cast<float>(window.GetHeight()));
+    const math::Vec2 windowFramebufferSize(
+        static_cast<float>(window.GetFramebufferWidth()),
+        static_cast<float>(window.GetFramebufferHeight()));
+
+    if (m_SceneViewportRavenPanel.IsAttached() == true)
+    {
+        m_SceneViewportRavenPanel.SetVisible(m_ShowSceneView);
+        if (m_ShowSceneView == true && m_SceneFramebuffer != nullptr)
+        {
+            m_SceneViewportRavenPanel.Update(
+                m_SceneFramebuffer->GetColorAttachment());
+            EditorViewportRenderTargetExtent extent;
+            if (TryCalculateEditorViewportRenderTargetExtent(
+                m_SceneViewportRavenPanel.GetViewportLogicalSize(),
+                windowLogicalSize,
+                windowFramebufferSize,
+                extent) == true)
+            {
+                // Raven UI構築はScene描画後に行われるため、Resizeは次FrameのOnRender()で適用します。
+                // Attachment交換前のFrameはUITextureViewのRefが旧TextureのLifetimeを維持します。
+                m_SceneViewportWidth = static_cast<float>(extent.Width);
+                m_SceneViewportHeight = static_cast<float>(extent.Height);
+                m_EditorCamera.SetViewportSize(
+                    m_SceneViewportWidth, m_SceneViewportHeight);
+            }
+
+            EditorGizmoViewportRect gizmoViewport;
+            math::Vec2 gizmoPointerPosition{};
+            const std::pair<float, float> mousePosition =
+                Input::GetMousePosition();
+            if (m_SceneViewportRavenPanel.TryGetGizmoViewportRect(
+                    gizmoViewport) == true &&
+                m_SceneViewportRavenPanel.TryMapScreenPositionToViewportLocal(
+                    math::Vec2(mousePosition.first, mousePosition.second),
+                    gizmoPointerPosition) == true)
+            {
+                // Gizmo計算はViewport local座標で行い、Panelには描画Snapshotだけを渡します。
+                // Entity/Scene参照をRetained UI Treeへ保持させないことがLifetime上の境界です。
+                m_SceneViewportRavenPanel.SetGizmoDrawData(
+                    m_RavenViewportGizmo.BuildDrawData(
+                        m_SelectedEntity,
+                        m_EditorCamera,
+                        gizmoViewport,
+                        gizmoPointerPosition));
+            }
+            else
+            {
+                m_SceneViewportRavenPanel.SetGizmoDrawData(
+                    EditorGizmoDrawData{});
+            }
+        }
+    }
+
+    if (m_GameViewportRavenPanel.IsAttached() == true)
+    {
+        m_GameViewportRavenPanel.SetVisible(m_ShowGameView);
+        if (m_ShowGameView == true && m_GameFramebuffer != nullptr)
+        {
+            m_GameViewportRavenPanel.Update(
+                m_GameFramebuffer->GetColorAttachment());
+            EditorViewportRenderTargetExtent extent;
+            if (TryCalculateEditorViewportRenderTargetExtent(
+                m_GameViewportRavenPanel.GetViewportLogicalSize(),
+                windowLogicalSize,
+                windowFramebufferSize,
+                extent) == true)
+            {
+                m_GameViewportWidth = static_cast<float>(extent.Width);
+                m_GameViewportHeight = static_cast<float>(extent.Height);
+            }
+        }
+    }
 }
 
 void EditorLayer::RenderSceneView()
@@ -1201,47 +1359,9 @@ void EditorLayer::RenderSceneView()
                                 pixelX = std::clamp(pixelX, 0, framebufferWidth - 1);
                                 pixelY = std::clamp(pixelY, 0, framebufferHeight - 1);
 
-                                const int entityID =
-                                    m_SceneFramebuffer->ReadPixel(1, pixelX, pixelY);
-
-                                if (entityID > 0)
-                                {
-                                    // Picking AttachmentへはEntityIndexだけを書き込みます。
-                                    // GenerationはScene側の正規データから現在値を取得してEntityを再構築し、
-                                    // Destroy/Index再利用後の古いHandleをEditor選択へ持ち込まないようにします。
-                                    const EntityIndex entityIndex =
-                                        static_cast<EntityIndex>(entityID);
-
-                                    try
-                                    {
-                                        const EntityGeneration generation =
-                                            activeScene->GetEntityGeneration(entityIndex);
-                                        Entity pickedEntity(
-                                            entityIndex,
-                                            generation,
-                                            activeScene);
-
-                                        if (activeScene->IsEntityAlive(pickedEntity))
-                                        {
-                                            SetSelectedEntity(pickedEntity);
-                                        }
-                                        else
-                                        {
-                                            SetSelectedEntity(Entity{});
-                                        }
-                                    }
-                                    catch (const std::out_of_range&)
-                                    {
-                                        // GPU Bufferへ古いIndexが残った場合でもEditorを落とさず選択解除します。
-                                        // 通常はPicking Pass直後に読むため発生しませんが、安全な境界として扱います。
-                                        SetSelectedEntity(Entity{});
-                                    }
-                                }
-                                else
-                                {
-                                    // Geometryが存在しない背景をクリックした場合は選択解除します。
-                                    SetSelectedEntity(Entity{});
-                                }
+                                PickSceneEntityAt(
+                                    static_cast<std::uint32_t>(pixelX),
+                                    static_cast<std::uint32_t>(pixelY));
                             }
                         }
                     }
@@ -1296,15 +1416,143 @@ void EditorLayer::RenderGameView()
 
 void EditorLayer::OnEvent(Event& event)
 {
-    (void)event;
-
     // ========================================================================
     // Editor input routing
     // ========================================================================
-    // 現在のEditorCameraはInput pollingで操作しています。
-    // 将来Scroll Zoom / Gizmo / ShortcutなどEventベースの入力を追加する際には、
-    // m_SceneViewportHovered / m_SceneViewportFocusedを確認し、Editor側で消費したEventへ
-    // event.Handled = trueを設定してRuntime Layerへの伝播を止めます。
+    // EditorCamera自体はInput pollingですが、Scene ViewがFocusを所有する間のNavigation Keyは
+    // Core Event側でも消費します。Inputの物理状態は維持されるためCameraは操作でき、同じKey Eventや
+    // Character Eventだけが背後のRuntime Layer / Sceneへ二重配送されることを防ぎます。
+    if (m_SceneViewportRavenPanel.IsAttached() == false ||
+        m_SceneViewportRavenPanel.HasKeyboardFocus() == false)
+    {
+        return;
+    }
+
+    if (event.GetEventType() == EventType::KeyPressed)
+    {
+        const KeyPressedEvent& keyEvent = static_cast<const KeyPressedEvent&>(event);
+        const int keyCode = keyEvent.GetKeyCode();
+        const bool rightMouseDown =
+            Input::IsMouseButtonPressed(Mouse::Right) == true;
+        const bool controlDown =
+            Input::IsKeyPressed(Key::LeftControl) == true ||
+            Input::IsKeyPressed(Key::RightControl) == true;
+
+        // Camera Fly中はW/E/Qを移動へ予約します。通常時だけGizmo ModeとSpaceを切り替えます。
+        if (keyEvent.IsRepeat() == false && rightMouseDown == false &&
+            m_RavenViewportGizmo.IsActive() == false)
+        {
+            if (keyCode == Key::W)
+            {
+                SetEditorGizmoOperation(EditorGizmoOperation::Translate);
+                event.Handled = true;
+            }
+            else if (keyCode == Key::E)
+            {
+                SetEditorGizmoOperation(EditorGizmoOperation::Rotate);
+                event.Handled = true;
+            }
+            else if (keyCode == Key::R)
+            {
+                SetEditorGizmoOperation(EditorGizmoOperation::Scale);
+                event.Handled = true;
+            }
+            else if (keyCode == Key::Q)
+            {
+                ToggleEditorGizmoSpace();
+                event.Handled = true;
+            }
+            else if (controlDown == true && keyCode == Key::Z)
+            {
+                const bool shiftDown =
+                    Input::IsKeyPressed(Key::LeftShift) == true ||
+                    Input::IsKeyPressed(Key::RightShift) == true;
+                if (shiftDown == true)
+                {
+                    RedoEditorCommand();
+                }
+                else
+                {
+                    UndoEditorCommand();
+                }
+                event.Handled = true;
+            }
+            else if (controlDown == true && keyCode == Key::Y)
+            {
+                RedoEditorCommand();
+                event.Handled = true;
+            }
+        }
+
+        if (event.Handled == false)
+        {
+            event.Handled = IsEditorCameraNavigationKey(keyCode) ||
+                (m_RavenViewportGizmo.IsActive() == true &&
+                    (IsControlKey(keyCode) == true ||
+                        IsEditorGizmoShortcutKey(keyCode) == true));
+        }
+    }
+    else if (event.GetEventType() == EventType::KeyReleased)
+    {
+        const KeyReleasedEvent& keyEvent = static_cast<const KeyReleasedEvent&>(event);
+        event.Handled = IsEditorCameraNavigationKey(keyEvent.GetKeyCode()) ||
+            (m_RavenViewportGizmo.IsActive() == true &&
+                (IsControlKey(keyEvent.GetKeyCode()) == true ||
+                    IsEditorGizmoShortcutKey(keyEvent.GetKeyCode()) == true));
+    }
+    else if (event.GetEventType() == EventType::CharacterTyped)
+    {
+        const CharacterTypedEvent& characterEvent =
+            static_cast<const CharacterTypedEvent&>(event);
+        event.Handled = IsEditorViewportOwnedCharacter(
+            characterEvent.GetCodepoint());
+    }
+}
+
+void EditorLayer::PickSceneEntityAt(
+    std::uint32_t pixelX,
+    std::uint32_t pixelY)
+{
+    Scene* activeScene =
+        m_Application != nullptr ? m_Application->GetScene() : nullptr;
+    if (activeScene == nullptr || m_SceneFramebuffer == nullptr ||
+        m_SceneFramebuffer->GetColorAttachmentCount() <= 1 ||
+        pixelX >= m_SceneFramebuffer->GetWidth() ||
+        pixelY >= m_SceneFramebuffer->GetHeight())
+    {
+        return;
+    }
+
+    const int entityID = m_SceneFramebuffer->ReadPixel(
+        1,
+        static_cast<int>(pixelX),
+        static_cast<int>(pixelY));
+    if (entityID <= 0)
+    {
+        // Geometryが存在しない背景をクリックした場合は選択解除します。
+        SetSelectedEntity(Entity{});
+        return;
+    }
+
+    // Picking AttachmentへはEntityIndexだけを書き込みます。
+    // GenerationはScene側の正規データから現在値を取得してEntityを再構築し、
+    // Destroy/Index再利用後の古いHandleをEditor選択へ持ち込まないようにします。
+    const EntityIndex entityIndex = static_cast<EntityIndex>(entityID);
+    try
+    {
+        const EntityGeneration generation =
+            activeScene->GetEntityGeneration(entityIndex);
+        Entity pickedEntity(entityIndex, generation, activeScene);
+        SetSelectedEntity(activeScene->IsEntityAlive(pickedEntity) == true
+            ? pickedEntity
+            : Entity{});
+    }
+    catch (const std::out_of_range&)
+    {
+        // GPU Bufferへ古いIndexが残った場合でもEditorを落とさず選択解除します。
+        // 通常はPicking Pass直後に読むため発生しませんが、安全な境界として扱います。
+        SetSelectedEntity(Entity{});
+    }
 }
 
 void EditorLayer::ValidateSelectedEntity()

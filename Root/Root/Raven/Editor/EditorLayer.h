@@ -1,8 +1,10 @@
 ﻿#pragma once
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
+#include "Raven/Editor/Panels/EditorViewportRavenPanel.h"
 #include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/InspectorRavenPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyPanel.h"
@@ -114,11 +116,10 @@ private:
         PanelUIOwner AnimationDebug = PanelUIOwner::RavenUI;
         PanelUIOwner SceneHierarchy = PanelUIOwner::RavenUI;
         PanelUIOwner Inspector = PanelUIOwner::DearImGui;
-        PanelUIOwner SceneView = PanelUIOwner::DearImGui;
-        PanelUIOwner GameView = PanelUIOwner::DearImGui;
+        PanelUIOwner SceneView = PanelUIOwner::RavenUI;
+        PanelUIOwner GameView = PanelUIOwner::RavenUI;
     };
 
-    bool UsesDearImGui() const;
     bool IsPanelOwnedByDearImGui(PanelUIOwner owner) const;
 
     // ========================================================================
@@ -172,6 +173,10 @@ private:
         Framebuffer& framebuffer,
         const Camera& camera);
 
+    // UI側で実表示矩形から変換済みのPicking Attachment Pixelを受け取り、
+    // GPU上のEntityIndexを現在のActive SceneのGenerationと組み合わせて安全に選択へ反映します。
+    void PickSceneEntityAt(std::uint32_t pixelX, std::uint32_t pixelY);
+
     // Scene View専用のSelection Outline Passです。
     // 選択EntityのMeshを少し拡大した「Inverted Hull」として再描画し、Front FaceをCullすることで
     // 元Geometryの外側へはみ出したBack Faceだけを単色表示します。
@@ -221,6 +226,8 @@ private:
     SceneHierarchyRavenPanel m_SceneHierarchyRavenPanel;
     InspectorPanel m_InspectorPanel;
     InspectorRavenPanel m_InspectorRavenPanel;
+    EditorViewportRavenPanel m_SceneViewportRavenPanel;
+    EditorViewportRavenPanel m_GameViewportRavenPanel;
 
     // ========================================================================
     // Editor Camera
@@ -229,10 +236,11 @@ private:
     // 移動・回転してもGame Viewやゲームロジック側のCameraには影響しません。
     // Scene描画時にはCamera基底参照としてSceneViewportRendererへ渡します。
     EditorCamera m_EditorCamera;
+    EditorTransformGizmoController m_RavenViewportGizmo;
 
-    // RenderSceneView()で得たImGuiのhover/focus状態です。
-    // OnUpdate()はImGui frame構築より先に呼ばれるため、前frameの状態をCamera入力判定に使います。
-    // 1frame遅延はありますが、Window境界で入力を誤ってRuntime側へ渡すより安全な構成です。
+    // Scene Viewを所有するUI Backendから得たhover/focus状態です。
+    // Dear ImGui経路は前Frame、Raven UI経路は保持中のHit Test状態と現在Pointer位置を使います。
+    // 両方が成立した場合だけEditor CameraのInput pollingを許可します。
     bool m_SceneViewportHovered = false;
     bool m_SceneViewportFocused = false;
 
@@ -256,9 +264,10 @@ private:
     // 選択Entityを通常Materialとは別Pipelineで拡大描画し、ゲーム用Material/Shaderの状態を変更しません。
     Ref<Material> m_SelectionOutlineMaterial;
 
-    // ImGui::GetContentRegionAvail()で取得した各Viewport Windowの表示領域です。
-    // floatのままUI側の最新サイズを保持し、OnRender()でGPUへ渡す際にuint32_tへ変換します。
-    // 初回Dock Layout確定前は1280x720を仮サイズとして使用します。
+    // 各Viewport Panelから取得した次Frame用RenderTarget Pixel数です。
+    // ImGui経路では従来どおりContentRegionの数値、Raven UI経路では論理DIPへ
+    // Window framebuffer倍率を適用した実Pixel数を保存します。
+    // UI構築後に更新し次のOnRender()でResizeするため、1Frame遅延を前提にします。
     float m_SceneViewportWidth = 1280.0f;
     float m_SceneViewportHeight = 720.0f;
     float m_GameViewportWidth = 1280.0f;
