@@ -389,8 +389,8 @@ int main(int argc, char* argv[])
 #endif
 
     // Editorの選択・Command履歴等のRuntime状態はBackend非依存なので常に登録します。
-    // OpenGLはFramebuffer、DX12はRHI off-screen Targetを使用し、
-    // VulkanはViewport描画Capabilityが実装されるまでPanel生成を安全に抑止します。
+    // OpenGLはFramebuffer、DX12 / VulkanはRHI off-screen Targetを使用します。
+    // 将来の未対応Explicit BackendではCapability判定によりPanel生成を安全に抑止します。
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app, editorUIBackend));
 
     app.Run();

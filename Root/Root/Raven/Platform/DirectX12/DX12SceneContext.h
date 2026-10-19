@@ -20,7 +20,7 @@
 namespace Raven
 {
 // Clear DemoとGPU Resourceを共有しないDX12 Scene専用Frame Contextです。
-// Scene用RHICommandList/Pipelineが揃うまでApplication Factoryへは接続しません。
+// DX12SceneRuntimeが所有し、ApplicationのExplicit Scene経路からFrame境界を借用します。
 class DX12SceneContext final : public RHISceneFrameLifecycle
 {
 public:

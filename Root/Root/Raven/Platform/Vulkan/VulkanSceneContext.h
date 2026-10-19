@@ -27,7 +27,7 @@ class VulkanSceneRHITexture;
 class VulkanOffscreenRenderTarget;
 
 // Scene専用のVulkan Frame Contextです。Clear DemoとはGPU Resourceを共有しません。
-// ApplicationへのFactory接続はScene用RHICommandList完成後に行います。
+// VulkanSceneRuntimeが所有し、ApplicationのExplicit Scene経路からFrame境界を借用します。
 class VulkanSceneContext final : public RHISceneFrameLifecycle
 {
 public:
@@ -95,8 +95,6 @@ public:
 
 private:
     VkExtent2D GetActiveRenderExtent() const;
-
-private:
     VulkanInstance m_Instance;
     VulkanSurface m_Surface;
     VulkanSwapChain m_SwapChain;

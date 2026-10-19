@@ -821,7 +821,7 @@ void EditorLayer::OnAttach()
     //
     // Explicit Backendでは同じRHITextureをRenderTarget書き込みとRaven UI Samplingで共有します。
     // Picking用ID AttachmentはまだOpenGL Framebuffer経路だけに存在するため、この段階では
-    // DX12のScene/Game View表示に責務を限定します。
+    // DX12 / VulkanのScene/Game View表示に責務を限定します。
     if (m_ExplicitViewportRenderingEnabled == true)
     {
         RHIOffscreenRenderTargetSpecification sceneSpecification{};
@@ -831,14 +831,14 @@ void EditorLayer::OnAttach()
             static_cast<std::uint32_t>(m_SceneViewportHeight);
         sceneSpecification.ColorFormat = RHITextureFormat::RGBA8;
         sceneSpecification.EnableDepth = true;
-        sceneSpecification.DebugName = "DX12 Editor Scene View";
+        sceneSpecification.DebugName = "Explicit Editor Scene View";
 
         RHIOffscreenRenderTargetSpecification gameSpecification = sceneSpecification;
         gameSpecification.Width =
             static_cast<std::uint32_t>(m_GameViewportWidth);
         gameSpecification.Height =
             static_cast<std::uint32_t>(m_GameViewportHeight);
-        gameSpecification.DebugName = "DX12 Editor Game View";
+        gameSpecification.DebugName = "Explicit Editor Game View";
 
         m_SceneRHIRenderTarget =
             m_Application->CreateExplicitEditorViewportRenderTarget(
@@ -1064,8 +1064,11 @@ void EditorLayer::OnRender()
                 "Explicit Editor Game View") == true)
             {
                 activeScene->OnRender();
-                m_Application->CaptureExplicitEditorViewportFrame(
-                    m_GameRHIRenderTarget);
+                if (m_Application->CaptureExplicitEditorViewportFrame(
+                    m_GameRHIRenderTarget) == false)
+                {
+                    return;
+                }
             }
         }
         return;
@@ -1456,9 +1459,8 @@ void EditorLayer::RenderSceneView()
 
             if (m_SceneFramebuffer != nullptr)
             {
-                // 現在のRendererAPIはOpenGLなのでRendererIDはOpenGL Texture IDとして扱えます。
-                // この部分はFramebuffer抽象化の中でもまだbackend依存が残っている境界です。
-                // DirectX/Vulkan対応時にはTexture/ImGui backendの抽象化と合わせて置き換えます。
+                // Dear ImGui経路はOpenGL専用のため、RendererIDをOpenGL Texture IDとして扱います。
+                // Explicit BackendはRaven UIへRHITextureを渡し、このbackend依存境界を通りません。
                 //
                 // OpenGL Textureは左下原点ですがDear ImGuiのImageは通常左上から表示するため、
                 // UV0=(0,1), UV1=(1,0)としてY方向を反転し、画面を正立させます。
