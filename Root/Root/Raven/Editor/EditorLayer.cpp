@@ -790,8 +790,8 @@ void EditorLayer::OnAttach()
 
     if (m_ViewportRenderingEnabled == false)
     {
-        // Explicit BackendではMain SceneとRaven UIをRuntimeが直接描画します。
-        // Editor用off-screen Framebufferが未実装のため、空Panelや未対応Resourceを生成しません。
+        // 未対応Explicit BackendでもMain SceneとRaven UI本体はRuntimeが描画します。
+        // Viewport CapabilityがないBackendでは空Panelや未対応Resourceを生成しません。
         return;
     }
 

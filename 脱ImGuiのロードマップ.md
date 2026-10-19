@@ -1,6 +1,6 @@
 # Raven 脱ImGuiロードマップ
 
-最終更新: 2026-10-18
+最終更新: 2026-10-19
 
 対象: Raven Editor / Debug UI / Dear ImGui統合
 
@@ -254,7 +254,7 @@ Exit Gate:
     - [x] Raven UI Viewport PanelがColor Attachmentの`Ref<RHITexture>`を直接保持・表示する。
     - [ ] DX12 / Vulkanのnative RenderTarget生成、状態遷移、Scene描画を接続する。
       - [x] DX12のRGBA8 Color + D32 Depth、RTV / SRV、描画前後Barrierを実装する。
-      - [ ] DX12 Explicit RuntimeでScene/Game Viewの描画SnapshotをTargetへ記録する。
+      - [x] DX12 Explicit RuntimeでScene/Game Viewの描画SnapshotをTargetへ記録する。
       - [ ] VulkanのImage / ImageView / Framebuffer、Layout遷移を実装する。
 - [x] 論理DIP、Framebuffer Pixel、RenderTarget Pixelの3座標系を明記して変換する。
 - [x] OpenGLの上下反転をWidgetへ直書きせず、Texture ViewまたはRenderer側の規約で扱う。
@@ -268,7 +268,10 @@ Explicit Backend向けには`RHIOffscreenRenderTarget`が寸法不変TargetとSa
 DX12は同じColor ResourceへRTVとSRVを作り、同一Command List内でSwapChain Passを一時停止して
 `PIXEL_SHADER_RESOURCE`と`RENDER_TARGET`を往復できる。ResizeではTarget全体を交換し、旧Targetは
 UI DrawListとFrame Fenceの参照が完了するまでContextが保持する。
-DX12 RuntimeのViewport別Scene Snapshot記録とVulkan native RenderTargetは未実装のため、Phase 5.1のExit Gateは未達である。
+DX12 RuntimeはMain SceneのQueueをEditor再描画前にSnapshot化し、Scene View / Game Viewを別Snapshotとして保持する。
+同一Command List内でSwapChain Passを一時停止して各off-screen Targetへ描画し、TargetをSampling可能状態へ戻した後に
+Raven UIをSwapChainへ描画する。Target ResizeはRef全体の交換とFrame Fence保持を維持する。
+DX12実機Smoke TestとVulkan native RenderTargetは未完了のため、Phase 5.1のExit Gateは未達である。
 
 #### 5.2 PickingとCamera入力
 
@@ -441,8 +444,9 @@ Exit Gate:
 1. `--editor-ui=raven`と`--editor-ui=dual`でScene/Game Viewの向き、Aspect、Clip、Resizeを実機確認する。
 2. 100% / 高DPIと最小化復帰でRenderTarget再生成後の表示を確認する。
 3. Scene ViewでPicking、Letterbox除外、右Mouse Camera、Runtime入力遮断を実機確認する。
-4. DirectX 12 / VulkanのEditor用off-screen RenderTarget所有境界をRHI側へ追加する。
-5. DirectX 12 / Vulkan対応後、3 Backend共通のViewport座標・Picking・Gizmo回帰テストを追加する。
+4. `--backend=dx12`でScene/Game Viewの向き、Aspect、Dock Resize、最小化復帰とMain Scene表示を実機確認する。
+5. Vulkanのnative off-screen RenderTarget、Layout遷移、Viewport別Scene Snapshot記録を実装する。
+6. Vulkan対応後、3 Backend共通のViewport座標・Picking・Gizmo回帰テストを追加する。
 
 Phase 4のInspector編集は自動テストまで完了しているが、Raven UIを使った実機操作は未確認である。Phase 5へ進む際も、Viewport表示、入力、Gizmoを同時に置き換えず、座標系と入力所有権を段階ごとに固定する。
 
@@ -458,5 +462,6 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 2026-10-18 | 作業ツリー | Phase 5.3 Raven UI Gizmo | Translate / Rotate / Scaleの状態・描画・入力をImGuiから分離 | Debug x64 build成功（PDB無効）、3 Modeの操作・Undo、Capture優先度、Capture Cancel、Ray / Drag Plane・軸平行fallback Self Test成功 | 未実施 | OpenGL実機Smoke Test、DX12/Vulkan off-screen RenderTarget |
 | 2026-10-18 | 作業ツリー | Phase 5.1 Explicit off-screen共通境界 | RHI RenderTargetの所有・寸法変更時のTarget交換・Color Attachment公開契約とRaven UI表示経路を追加 | Debug x64 build成功（PDB無効）、RHI Texture表示・TopLeft座標・Specification Self Test成功 | 未実施 | DX12/Vulkan native RenderTarget生成、状態遷移、Scene描画、Picking |
 | 2026-10-18 | 作業ツリー | Phase 5.1 DX12 off-screen native target | RGBA8 + D32 Target、RTV / SRV、Barrier、SwapChain Pass復帰、Fence Lifetimeを追加 | Debug x64 build成功（PDB無効）、Viewport・Entity Command Self Test成功 | 未実施 | DX12 Viewport別Scene記録、Vulkan native target、Picking |
+| 2026-10-19 | `feature/dx12-editor-viewport-snapshots` | Phase 5.1 DX12 Viewport Snapshot | Main / Scene View / Game Viewの描画Snapshotを分離し、RHI TargetとRaven UI Imageへ接続 | 未実施（GitHubコネクタ環境ではMSBuild不可） | 未実施 | DX12実機Smoke Test、Vulkan native target、DX12 Picking |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。

@@ -74,8 +74,8 @@ public:
 
     // Editor専用リソースやPanelの初期化入口です。
     // ImGui Contextの生成はImGuiLayerの責務なので、ここでは行いません。
-    // OpenGLではScene View / Game View用Framebufferもここで生成します。
-    // Explicit BackendではBackend非依存状態だけを初期化し、未対応GPU Resourceは生成しません。
+    // OpenGLではScene View / Game View用Framebuffer、DX12ではRHI off-screen Targetを生成します。
+    // 未対応Explicit BackendではBackend非依存状態だけを初期化し、GPU Resourceは生成しません。
     void OnAttach() override;
 
     // Editor専用リソースやPanelの終了処理入口です。
