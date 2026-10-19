@@ -367,8 +367,12 @@ void EditorLayer::OnAttach()
     const bool openGLViewportRendering =
         m_Application != nullptr &&
         m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL;
+    const bool ravenViewportRequested =
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.SceneView) == false ||
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.GameView) == false;
     m_ExplicitViewportRenderingEnabled =
         m_Application != nullptr &&
+        ravenViewportRequested == true &&
         m_Application->SupportsExplicitEditorViewportRendering() == true;
     m_ViewportRenderingEnabled =
         openGLViewportRendering || m_ExplicitViewportRenderingEnabled;
