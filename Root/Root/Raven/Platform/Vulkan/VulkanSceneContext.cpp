@@ -539,11 +539,30 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     // Surface / Debug / UIはPrepareFrame中に順番にTextureを準備します。
     // 後段のPipelineが先に準備したTexture集合を置換すると、Draw時のBindTextureが
     // Surface Textureを解決できなくなるため、現在のDescriptor集合へ不足分だけ統合します。
-    std::vector<Ref<RHITexture>> mergedTextures = m_DescriptorTextures;
+    // Resizeで交換されたoff-screen TargetはFence完了後にColor Imageを無効化します。
+    // Descriptor Cacheの強参照だけが残ったTextureはここで除外し、破棄済みImageViewを
+    // 次のDescriptor Setへ書き戻さないようにします。
+    std::vector<Ref<RHITexture>> mergedTextures;
+    mergedTextures.reserve(m_DescriptorTextures.size() + textures.size());
     bool requiresRebuild = m_TextureDescriptorPool == VK_NULL_HANDLE;
+    for (const Ref<RHITexture>& texture : m_DescriptorTextures)
+    {
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
+        if (nativeTexture == nullptr ||
+            nativeTexture->GetNativeTexture().IsValid() == false)
+        {
+            requiresRebuild = true;
+            continue;
+        }
+        mergedTextures.push_back(texture);
+    }
     for (const Ref<RHITexture>& texture : textures)
     {
-        if (texture == nullptr)
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
+        if (nativeTexture == nullptr ||
+            nativeTexture->GetNativeTexture().IsValid() == false)
         {
             return false;
         }
