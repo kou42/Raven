@@ -1519,6 +1519,7 @@ Raven RHI implementation additions (Root/Root/Raven relative paths):
     Platform/DirectX12/DX12ClearContext.cpp
     Platform/DirectX12/DX12OffscreenRenderTarget.h
     Platform/DirectX12/DX12OffscreenRenderTarget.cpp
+    Platform/DirectX12/DX12SceneRuntime.cpp
     Platform/Vulkan/VulkanInstance.h
     Platform/Vulkan/VulkanInstance.cpp
     Platform/Vulkan/VulkanPhysicalDevice.h
@@ -1541,3 +1542,4 @@ Raven RHI implementation additions (Root/Root/Raven relative paths):
     Renderer/RHI/ClearBackendDemo.cpp
     Renderer/RHI/RHIOffscreenRenderTarget.h
     Renderer/RHI/RHIOffscreenRenderTarget.cpp
+    Renderer/RHI/IExplicitSceneRuntime.cpp

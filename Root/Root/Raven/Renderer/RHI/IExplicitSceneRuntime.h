@@ -33,28 +33,14 @@ public:
 
     // Editor Viewport用off-screen描画はBackendごとに段階導入します。
     // 未対応Backendはfalse/nullptrを返し、SwapChain描画や別Backendへ暗黙fallbackしません。
-    virtual bool SupportsOffscreenSceneRendering() const
-    {
-        return false;
-    }
+    virtual bool SupportsOffscreenSceneRendering() const;
     virtual Ref<RHIOffscreenRenderTarget> CreateOffscreenRenderTarget(
-        const RHIOffscreenRenderTargetSpecification& specification)
-    {
-        (void)specification;
-        return nullptr;
-    }
+        const RHIOffscreenRenderTargetSpecification& specification);
     // Applicationが積んだMain Scene QueueをEditor Layerが上書きする前にSnapshot化します。
-    virtual bool CaptureMainSceneFrame()
-    {
-        return false;
-    }
+    virtual bool CaptureMainSceneFrame();
     // 直前のScene描画Queueを指定Target用SnapshotとしてFrame終了まで保持します。
     virtual bool CaptureOffscreenSceneFrame(
-        const Ref<RHIOffscreenRenderTarget>& renderTarget)
-    {
-        (void)renderTarget;
-        return false;
-    }
+        const Ref<RHIOffscreenRenderTarget>& renderTarget);
 
     // UIContext::EndFrame後のCPU DrawListを次のPrepareFrameへ渡します。
     // GPU Resource生成はAcquire前のPrepareFrame内で行います。

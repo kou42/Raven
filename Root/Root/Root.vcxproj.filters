@@ -831,10 +831,16 @@
     <ClCompile Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.cpp">
       <Filter>Raven\Renderer\RHI</Filter>
     </ClCompile>
+    <ClCompile Update="Raven\Renderer\RHI\IExplicitSceneRuntime.cpp">
+      <Filter>Raven\Renderer\RHI</Filter>
+    </ClCompile>
     <ClInclude Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.h">
       <Filter>Raven\Renderer\RHI</Filter>
     </ClInclude>
     <ClCompile Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.cpp">
+      <Filter>Raven\Platform\DirectX12</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Platform\DirectX12\DX12SceneRuntime.cpp">
       <Filter>Raven\Platform\DirectX12</Filter>
     </ClCompile>
     <ClInclude Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.h">
