@@ -1196,6 +1196,37 @@ bool Application::UnloadScene(SceneInstanceID sceneID)
     return m_SceneManager.UnloadScene(sceneID);
 }
 
+bool Application::SupportsExplicitEditorViewportRendering() const
+{
+    return m_ExplicitSceneRuntime != nullptr &&
+        m_ExplicitSceneRuntime->SupportsOffscreenSceneRendering() == true;
+}
+
+Ref<RHIOffscreenRenderTarget>
+Application::CreateExplicitEditorViewportRenderTarget(
+    const RHIOffscreenRenderTargetSpecification& specification)
+{
+    if (SupportsExplicitEditorViewportRendering() == false)
+    {
+        return nullptr;
+    }
+    return m_ExplicitSceneRuntime->CreateOffscreenRenderTarget(specification);
+}
+
+bool Application::CaptureExplicitMainSceneFrame()
+{
+    return SupportsExplicitEditorViewportRendering() == true &&
+        m_ExplicitSceneRuntime->CaptureMainSceneFrame() == true;
+}
+
+bool Application::CaptureExplicitEditorViewportFrame(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+{
+    return SupportsExplicitEditorViewportRendering() == true &&
+        renderTarget != nullptr &&
+        m_ExplicitSceneRuntime->CaptureOffscreenSceneFrame(renderTarget) == true;
+}
+
 bool Application::PrepareAllScenesForExplicitRuntime()
 {
     if (m_ExplicitSceneRuntime == nullptr)
