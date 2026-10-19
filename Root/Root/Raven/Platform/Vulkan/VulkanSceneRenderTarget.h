@@ -22,7 +22,7 @@ public:
 
     bool Init(VkDevice device, VkPhysicalDevice physicalDevice, const VulkanSwapChain& swapChain);
     bool Begin(VkCommandBuffer commandBuffer, uint32_t imageIndex,
-        const VkClearColorValue& clearColor) const;
+        const VkClearColorValue& clearColor, bool preserveContents = false) const;
     void End(VkCommandBuffer commandBuffer) const;
     void Shutdown();
 
@@ -31,7 +31,9 @@ public:
     bool IsValid() const
     {
         return m_Device != VK_NULL_HANDLE &&
-            m_RenderPass != VK_NULL_HANDLE && m_Framebuffers.empty() == false;
+            m_RenderPass != VK_NULL_HANDLE &&
+            m_ResumeRenderPass != VK_NULL_HANDLE &&
+            m_Framebuffers.empty() == false;
     }
 
 private:
@@ -41,6 +43,9 @@ private:
     std::vector<VkDeviceMemory> m_DepthMemories;
     std::vector<VkImageView> m_DepthViews;
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
+    // off-screen描画後はSwapChainのScene色を維持してUI描画へ戻るため、
+    // AttachmentをLOADする互換RenderPassを分けて所有します。
+    VkRenderPass m_ResumeRenderPass = VK_NULL_HANDLE;
     VkExtent2D m_Extent{};
     std::vector<VkImageView> m_ImageViews;
     std::vector<VkFramebuffer> m_Framebuffers;

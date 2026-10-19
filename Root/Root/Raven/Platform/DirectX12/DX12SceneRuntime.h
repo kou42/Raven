@@ -19,6 +19,7 @@
 #include <iostream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace Raven
 {
@@ -115,6 +116,13 @@ public:
         return m_Device->PrepareScene(scene);
     }
 
+    bool SupportsOffscreenSceneRendering() const override;
+    Ref<RHIOffscreenRenderTarget> CreateOffscreenRenderTarget(
+        const RHIOffscreenRenderTargetSpecification& specification) override;
+    bool CaptureMainSceneFrame() override;
+    bool CaptureOffscreenSceneFrame(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
+
     void SubmitUIFrame(const UIDrawList& drawList,
         uint32_t viewportWidth, uint32_t viewportHeight) override
     {
@@ -128,12 +136,12 @@ public:
     {
         // Acquire失敗時の準備済みResourceを再生成・終了前に解放します。
         m_PreparedFrame.reset();
+        m_PreparedOffscreenFrames.clear();
         m_PreparedUI = {};
     }
 
     bool PrepareFrame() override
     {
-        m_PreparedFrame.reset();
         m_PreparedUI = {};
         if (m_Initialized == false || m_Device == nullptr ||
             m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
@@ -143,24 +151,21 @@ public:
         {
             return false;
         }
-        auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
-        if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
-            m_TransparentPipeline, m_DefaultTexture,
-            DX12ClipCorrection(), *prepared) == false ||
-            Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
-                m_DebugLinePipeline, DX12ClipCorrection(),
-                prepared->DebugLineItems) == false)
+        if (m_PreparedFrame == nullptr)
         {
-            return false;
+            auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
+            if (PrepareCurrentSceneFrame(*prepared) == false)
+            {
+                return false;
+            }
+            m_PreparedFrame = std::move(prepared);
         }
-        prepared->DebugLinePipeline = m_DebugLinePipeline;
         if (m_UIRenderer.Prepare(*m_Device, m_PendingUIDrawList,
             m_PendingUIWidth, m_PendingUIHeight,
             m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
         {
             return false;
         }
-        m_PreparedFrame = std::move(prepared);
         return true;
     }
 
@@ -177,10 +182,21 @@ public:
             m_Context, commands, *m_PreparedFrame,
             [this](RHISceneCommandList& uiCommands)
             {
+                for (const PreparedOffscreenSceneFrame& prepared :
+                    m_PreparedOffscreenFrames)
+                {
+                    if (DrawPreparedOffscreenSceneFrame(
+                        uiCommands, prepared) == false)
+                    {
+                        return false;
+                    }
+                }
                 return m_UIRenderer.Draw(uiCommands, m_UIPipeline, m_PreparedUI);
             });
         // GPU使用中のResourceはContext側のFrameResourceがFence完了まで保持します。
         m_PreparedFrame.reset();
+        m_PreparedOffscreenFrames.clear();
+        m_PreparedUI = {};
         // FatalErrorでもDevice破棄は所有元Applicationの終了処理に委譲します。
         return result;
     }
@@ -208,6 +224,8 @@ public:
         }
         // 旧Frame参照を外してからContext/SwapChainを再生成します。
         m_PreparedFrame.reset();
+        m_PreparedOffscreenFrames.clear();
+        m_PreparedUI = {};
         if (m_Context.Resize(width, height) == false)
         {
             return false;
@@ -228,6 +246,8 @@ public:
     void Shutdown() override
     {
         m_PreparedFrame.reset();
+        m_PreparedOffscreenFrames.clear();
+        m_PreparedUI = {};
         // ContextのShutdownはQueueのFenceを待つため、参照を先に解放しても
         // FrameResourceが保持するGPU使用中Resourceは完了まで生存します。
         m_OpaquePipeline.reset();
@@ -270,6 +290,17 @@ public:
     }
 
 private:
+    struct PreparedOffscreenSceneFrame
+    {
+        Ref<RHIOffscreenRenderTarget> RenderTarget;
+        Renderer::PreparedRHISceneFrame SceneFrame;
+    };
+
+    bool PrepareCurrentSceneFrame(Renderer::PreparedRHISceneFrame& outFrame);
+    bool DrawPreparedOffscreenSceneFrame(
+        RHISceneCommandList& commands,
+        const PreparedOffscreenSceneFrame& prepared);
+
     static math::Mat4 DX12ClipCorrection()
     {
         // RavenのNDC Z[-1,1]をDX12の[0,1]へ変換します。
@@ -359,6 +390,7 @@ private:
     uint32_t m_PendingUIHeight = 0u;
     Ref<RHITexture> m_DefaultTexture;
     Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
+    std::vector<PreparedOffscreenSceneFrame> m_PreparedOffscreenFrames;
     bool m_Initialized = false;
 };
 

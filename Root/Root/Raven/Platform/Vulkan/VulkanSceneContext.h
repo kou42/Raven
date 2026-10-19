@@ -24,9 +24,10 @@ namespace Raven
 {
 class VulkanSceneRHIBuffer;
 class VulkanSceneRHITexture;
+class VulkanOffscreenRenderTarget;
 
 // Scene専用のVulkan Frame Contextです。Clear DemoとはGPU Resourceを共有しません。
-// ApplicationへのFactory接続はScene用RHICommandList完成後に行います。
+// VulkanSceneRuntimeが所有し、ApplicationのExplicit Scene経路からFrame境界を借用します。
 class VulkanSceneContext final : public RHISceneFrameLifecycle
 {
 public:
@@ -44,6 +45,8 @@ public:
     bool SynchronizeBufferAccess(const VulkanSceneRHIBuffer& buffer);
     void RegisterBuffer(const Ref<VulkanSceneRHIBuffer>& buffer);
     void RegisterTexture(const Ref<VulkanSceneRHITexture>& texture);
+    void RegisterOffscreenRenderTarget(
+        const Ref<VulkanOffscreenRenderTarget>& renderTarget);
     void RetainDrawBuffers(const Ref<RHIBuffer>& vertex, const Ref<RHIBuffer>& index);
 
     // RenderPass内のDynamic Viewport/Scissorを記録します。Pipeline側でDynamic Stateが必要です。
@@ -53,6 +56,11 @@ public:
     // RenderPass中にColor Attachment全体を消去します。Frame外・Submit後は失敗します。
     // BeginFrame時のLoadOp Clearとは別に、Scene描画命令としてClearを発行する入口です。
     bool ClearColorAttachment(const float color[4]);
+    bool BeginOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const float clearColor[4]);
+    bool EndOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget);
     VkCommandBuffer GetActiveCommandBuffer() const;
 
     // Scene RenderPassと同じDevice/Color FormatでPipelineを生成します。
@@ -86,6 +94,7 @@ public:
     VkExtent2D GetExtent() const { return m_SwapChain.GetExtent(); }
 
 private:
+    VkExtent2D GetActiveRenderExtent() const;
     VulkanInstance m_Instance;
     VulkanSurface m_Surface;
     VulkanSwapChain m_SwapChain;
@@ -105,6 +114,13 @@ private:
     std::vector<RecordedBufferSet> m_RecordedBuffers;
     // Reset前の初期Signal FenceはSubmit済みとして扱わないよう区別します。
     std::vector<bool> m_SubmittedBufferFrames;
+    // Framebuffer/DepthをColor Textureと同じFence完了まで保持します。
+    std::vector<std::vector<Ref<RHIOffscreenRenderTarget>>>
+        m_RecordedOffscreenRenderTargets;
+    // Resize/Shutdownで借用RenderPassより先にnative Framebufferを無効化します。
+    std::vector<std::weak_ptr<VulkanOffscreenRenderTarget>>
+        m_OffscreenRenderTargets;
+    Ref<RHIOffscreenRenderTarget> m_ActiveOffscreenRenderTarget;
     Ref<VulkanGraphicsPipeline> m_BoundGraphicsPipeline;
     VkDescriptorPool m_TextureDescriptorPool = VK_NULL_HANDLE;
     // 同じPipelineとTexture列ならDescriptor再生成とWaitIdleを省略します。
@@ -117,6 +133,7 @@ private:
     bool m_VSync = true;
     bool m_FrameActive = false;
     bool m_FrameSubmitted = false;
+    bool m_SwapChainRenderPassActive = false;
     // FatalError後は部分的なCommand記録/同期状態を再利用せずShutdownします。
     bool m_FatalError = false;
 };

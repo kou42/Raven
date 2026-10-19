@@ -21,6 +21,7 @@ namespace Raven
 {
 class Application;
 class Material;
+class RHIOffscreenRenderTarget;
 
 // Editor UIの移行状態を起動設定へ集約します。
 // DualはPanelごとに所有Backendを切り替える比較期間専用であり、同一Panelを
@@ -73,8 +74,8 @@ public:
 
     // Editor専用リソースやPanelの初期化入口です。
     // ImGui Contextの生成はImGuiLayerの責務なので、ここでは行いません。
-    // OpenGLではScene View / Game View用Framebufferもここで生成します。
-    // Explicit BackendではBackend非依存状態だけを初期化し、未対応GPU Resourceは生成しません。
+    // OpenGLではScene View / Game View用Framebuffer、DX12 / VulkanではRHI off-screen Targetを生成します。
+    // 未対応Explicit BackendではBackend非依存状態だけを初期化し、GPU Resourceは生成しません。
     void OnAttach() override;
 
     // Editor専用リソースやPanelの終了処理入口です。
@@ -256,6 +257,11 @@ private:
     std::unique_ptr<Framebuffer> m_SceneFramebuffer;
     std::unique_ptr<Framebuffer> m_GameFramebuffer;
 
+    // Explicit BackendではFramebuffer互換層を経由せず、RHI TargetをRuntimeとRaven UIへ共有します。
+    // Targetは寸法不変とし、Resize時はRef全体を交換して旧ResourceのFence Lifetimeを保ちます。
+    Ref<RHIOffscreenRenderTarget> m_SceneRHIRenderTarget;
+    Ref<RHIOffscreenRenderTarget> m_GameRHIRenderTarget;
+
     // Picking Pass専用Materialです。
     // ゲーム内Materialを変更せず、EditorだけがR32I AttachmentへEntityIndexを書き込むために使用します。
     Ref<Material> m_EntityPickingMaterial;
@@ -290,9 +296,10 @@ private:
     // 必ず対応するImGui::End()が必要です。Begin/Endの対応関係を明確に保つため状態を保持します。
     bool m_DockSpaceBegun = false;
 
-    // Scene/Game Viewのoff-screen FramebufferとDear ImGui表示が利用できる場合だけ有効です。
-    // Editorの選択・Command履歴等はこの値と分離し、Explicit BackendでもLayerを登録できます。
+    // Scene/Game Viewのoff-screen描画先を利用できる場合だけ有効です。
+    // Editorの選択・Command履歴等はこの値と分離し、描画未対応BackendでもLayerを登録できます。
     bool m_ViewportRenderingEnabled = false;
+    bool m_ExplicitViewportRenderingEnabled = false;
 };
 
 } // namespace Raven

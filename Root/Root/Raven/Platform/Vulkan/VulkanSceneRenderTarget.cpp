@@ -57,7 +57,8 @@ bool VulkanSceneRenderTarget::Init(VkDevice device, VkPhysicalDevice physicalDev
     depthAttachment.format = m_DepthFormat;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // off-screen描画後のResume RenderPassでLOADするため、最初のPass終了時に保持します。
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -74,7 +75,7 @@ bool VulkanSceneRenderTarget::Init(VkDevice device, VkPhysicalDevice physicalDev
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    const std::array<VkAttachmentDescription, 2> attachments = {
+    std::array<VkAttachmentDescription, 2> attachments = {
         colorAttachment, depthAttachment
     };
     renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
@@ -99,6 +100,18 @@ bool VulkanSceneRenderTarget::Init(VkDevice device, VkPhysicalDevice physicalDev
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     if (vkCreateRenderPass(m_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS)
+    {
+        Shutdown();
+        return false;
+    }
+
+    // Graphics Pipeline互換性を維持したまま、off-screen Pass中断前の
+    // SwapChain Color/DepthをLOADしてRaven UI描画へ復帰します。
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    if (vkCreateRenderPass(m_Device, &renderPassInfo, nullptr,
+        &m_ResumeRenderPass) != VK_SUCCESS)
     {
         Shutdown();
         return false;
@@ -218,7 +231,7 @@ bool VulkanSceneRenderTarget::Init(VkDevice device, VkPhysicalDevice physicalDev
 
 bool VulkanSceneRenderTarget::Begin(
     VkCommandBuffer commandBuffer, uint32_t imageIndex,
-    const VkClearColorValue& clearColor) const
+    const VkClearColorValue& clearColor, bool preserveContents) const
 {
     if (IsValid() == false || commandBuffer == VK_NULL_HANDLE ||
         imageIndex >= m_Framebuffers.size())
@@ -231,11 +244,13 @@ bool VulkanSceneRenderTarget::Begin(
     clears[1].depthStencil = {1.0f, 0};
     VkRenderPassBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    beginInfo.renderPass = m_RenderPass;
+    beginInfo.renderPass = preserveContents == true ?
+        m_ResumeRenderPass : m_RenderPass;
     beginInfo.framebuffer = m_Framebuffers[imageIndex];
     beginInfo.renderArea.extent = m_Extent;
-    beginInfo.clearValueCount = static_cast<uint32_t>(clears.size());
-    beginInfo.pClearValues = clears.data();
+    beginInfo.clearValueCount = preserveContents == true ?
+        0u : static_cast<uint32_t>(clears.size());
+    beginInfo.pClearValues = preserveContents == true ? nullptr : clears.data();
     vkCmdBeginRenderPass(commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
     return true;
 }
@@ -277,6 +292,10 @@ void VulkanSceneRenderTarget::Shutdown()
         {
             vkDestroyRenderPass(m_Device, m_RenderPass, nullptr);
         }
+        if (m_ResumeRenderPass != VK_NULL_HANDLE)
+        {
+            vkDestroyRenderPass(m_Device, m_ResumeRenderPass, nullptr);
+        }
     }
     m_DepthViews.clear();
     m_DepthImages.clear();
@@ -285,6 +304,7 @@ void VulkanSceneRenderTarget::Shutdown()
     m_Framebuffers.clear();
     m_ImageViews.clear();
     m_RenderPass = VK_NULL_HANDLE;
+    m_ResumeRenderPass = VK_NULL_HANDLE;
     m_Device = VK_NULL_HANDLE;
     m_Extent = {};
 }

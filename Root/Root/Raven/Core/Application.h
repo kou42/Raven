@@ -335,6 +335,16 @@ public:
     const TextureAssetManager& GetTextureAssetManager() const { return m_TextureAssetManager; }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
+
+    // EditorLayerはRuntime本体を借用せず、Backend非依存のViewport操作だけをApplicationへ依頼します。
+    // 未対応Backendではfalse/nullptrを返し、OpenGL Framebufferへ暗黙fallbackしません。
+    bool SupportsExplicitEditorViewportRendering() const;
+    Ref<RHIOffscreenRenderTarget> CreateExplicitEditorViewportRenderTarget(
+        const RHIOffscreenRenderTargetSpecification& specification);
+    bool CaptureExplicitMainSceneFrame();
+    bool CaptureExplicitEditorViewportFrame(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget);
+
     WindowManager& GetWindowManager() { return m_WindowManager; }
     const WindowManager& GetWindowManager() const { return m_WindowManager; }
     WindowID GetMainWindowID() const { return m_MainWindowID; }

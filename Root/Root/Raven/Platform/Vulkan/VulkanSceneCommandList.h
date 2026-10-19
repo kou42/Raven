@@ -103,6 +103,12 @@ public:
         return true;
     }
 
+    bool BeginOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const float clearColor[4]) override;
+    bool EndOffscreenRenderTarget(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
+
 private:
     VulkanSceneContext& m_Context;
 };

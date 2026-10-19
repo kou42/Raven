@@ -11,8 +11,8 @@
 namespace Raven
 {
 
-// Scene用のRGBA8 Texture。InitはFrame外で呼び、転送完了を待ってから返します。
-// Descriptor Setの所有・Bindは次段階で実装します。Device破棄前にShutdownしてください。
+// Scene用のSampled / off-screen Color Textureです。通常InitはRGBA8転送完了まで待ち、
+// RenderTarget InitはSwapChain互換形式を使用します。Device破棄前にShutdownしてください。
 class VulkanSceneTexture final
 {
 public:
@@ -260,6 +260,11 @@ public:
         return success;
     }
 
+    // off-screen Color Attachment用Imageを生成します。初期LayoutはUNDEFINEDのままにし、
+    // 実際の描画順序に合わせたBarrierはVulkanOffscreenRenderTargetへ委譲します。
+    bool InitRenderTarget(const VulkanDevice& device,
+        uint32_t width, uint32_t height, VkFormat format);
+
     void Shutdown()
     {
         if (m_Device != VK_NULL_HANDLE)
@@ -294,6 +299,7 @@ public:
             m_Sampler != VK_NULL_HANDLE;
     }
     VkDevice GetDeviceHandle() const { return m_Device; }
+    VkImage GetImage() const { return m_Image; }
     VkImageView GetView() const { return m_View; }
     VkSampler GetSampler() const { return m_Sampler; }
 

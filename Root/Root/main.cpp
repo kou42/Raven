@@ -173,6 +173,14 @@ int main(int argc, char* argv[])
         }
     }
 
+    // Explicit BackendはDear ImGuiのBackend Contextを生成しないため、通常起動では
+    // 移行済みPanelを表示できるRaven UIを選択します。OpenGLの既定値は従来どおり維持します。
+    if (applicationBackend == Raven::RHIBackend::DirectX12 ||
+        applicationBackend == Raven::RHIBackend::Vulkan)
+    {
+        editorUIBackend = Raven::EditorUIBackend::RavenUI;
+    }
+
 #ifdef _DEBUG
     // ========================================================================
     // Debug Startup Self Tests
@@ -381,8 +389,8 @@ int main(int argc, char* argv[])
 #endif
 
     // Editorの選択・Command履歴等のRuntime状態はBackend非依存なので常に登録します。
-    // Dear ImGuiとoff-screen ViewportはEditorLayer内部でCapabilityを判定し、
-    // Explicit Backendでは未対応Framebufferを生成せず安全に段階移行します。
+    // OpenGLはFramebuffer、DX12 / VulkanはRHI off-screen Targetを使用します。
+    // 将来の未対応Explicit BackendではCapability判定によりPanel生成を安全に抑止します。
     app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app, editorUIBackend));
 
     app.Run();

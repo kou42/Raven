@@ -8,6 +8,8 @@
 #include "Raven/UI/Rendering/ExplicitUIRenderer.h"
 #include "Raven/UI/Core/UIDrawList.h"
 
+#include <vector>
+
 namespace Raven
 {
 
@@ -39,6 +41,12 @@ public:
 
     // SceneのEntityが共有するMeshをFrame開始前に一括準備します。
     bool PrepareScene(Scene& scene) override;
+    bool SupportsOffscreenSceneRendering() const override;
+    Ref<RHIOffscreenRenderTarget> CreateOffscreenRenderTarget(
+        const RHIOffscreenRenderTargetSpecification& specification) override;
+    bool CaptureMainSceneFrame() override;
+    bool CaptureOffscreenSceneFrame(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
     void SubmitUIFrame(const UIDrawList& drawList,
         uint32_t viewportWidth, uint32_t viewportHeight) override;
 
@@ -66,6 +74,16 @@ public:
     uint32_t GetHeight() const override;
 
 private:
+    struct PreparedOffscreenSceneFrame
+    {
+        Ref<RHIOffscreenRenderTarget> RenderTarget;
+        Renderer::PreparedRHISceneFrame SceneFrame;
+    };
+
+    bool PrepareCurrentSceneFrame(Renderer::PreparedRHISceneFrame& outFrame);
+    bool DrawPreparedOffscreenSceneFrame(
+        RHISceneCommandList& commands,
+        const PreparedOffscreenSceneFrame& prepared);
     bool CreatePipelines();
     bool CreateDefaultTexture();
 
@@ -90,6 +108,7 @@ private:
     uint32_t m_PendingUIHeight = 0u;
     Ref<RHITexture> m_DefaultTexture;
     Scope<Renderer::PreparedRHISceneFrame> m_PreparedFrame;
+    std::vector<PreparedOffscreenSceneFrame> m_PreparedOffscreenFrames;
     PreparedExplicitUI m_PreparedUI;
     bool m_Initialized = false;
 };

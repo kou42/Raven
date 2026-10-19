@@ -6,7 +6,9 @@
 #include "Raven/Core/Window.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/Renderer.h"
+#include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
+#include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 #include "Raven/Scene/Scene.h"
 
 #include <array>
@@ -96,6 +98,61 @@ bool VulkanSceneRuntime::PrepareScene(Scene& scene)
     return scene.PrepareRHIMeshes(*m_Device);
 }
 
+bool VulkanSceneRuntime::SupportsOffscreenSceneRendering() const
+{
+    return m_Initialized == true && m_Device != nullptr;
+}
+
+Ref<RHIOffscreenRenderTarget>
+VulkanSceneRuntime::CreateOffscreenRenderTarget(
+    const RHIOffscreenRenderTargetSpecification& specification)
+{
+    if (SupportsOffscreenSceneRendering() == false)
+    {
+        return nullptr;
+    }
+    return m_Device->CreateOffscreenRenderTarget(specification);
+}
+
+bool VulkanSceneRuntime::CaptureMainSceneFrame()
+{
+    if (SupportsOffscreenSceneRendering() == false ||
+        m_PreparedFrame != nullptr ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
+    if (PrepareCurrentSceneFrame(*prepared) == false)
+    {
+        return false;
+    }
+    m_PreparedFrame = std::move(prepared);
+    return true;
+}
+
+bool VulkanSceneRuntime::CaptureOffscreenSceneFrame(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+{
+    if (SupportsOffscreenSceneRendering() == false ||
+        renderTarget == nullptr || renderTarget->IsValid() == false ||
+        m_PreparedFrame == nullptr ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    PreparedOffscreenSceneFrame prepared;
+    prepared.RenderTarget = renderTarget;
+    if (PrepareCurrentSceneFrame(prepared.SceneFrame) == false)
+    {
+        return false;
+    }
+    m_PreparedOffscreenFrames.push_back(std::move(prepared));
+    return true;
+}
+
 void VulkanSceneRuntime::SubmitUIFrame(
     const UIDrawList& drawList, uint32_t viewportWidth, uint32_t viewportHeight)
 {
@@ -108,12 +165,12 @@ void VulkanSceneRuntime::DiscardPreparedFrame()
 {
     // Acquire失敗時に残った参照をSwapChain再生成やDevice破棄前に解放します。
     m_PreparedFrame.reset();
+    m_PreparedOffscreenFrames.clear();
     m_PreparedUI = {};
 }
 
 bool VulkanSceneRuntime::PrepareFrame()
 {
-    m_PreparedFrame.reset();
     m_PreparedUI = {};
     if (m_Initialized == false || m_Device == nullptr ||
         m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
@@ -124,22 +181,15 @@ bool VulkanSceneRuntime::PrepareFrame()
         return false;
     }
 
-    auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
-    if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
-        m_TransparentPipeline, m_DefaultTexture,
-        RHISceneDrawItemBuilder::VulkanClipCorrection(), *prepared) == false)
+    if (m_PreparedFrame == nullptr)
     {
-        std::cerr << "Vulkan Scene frame preparation failed.\n";
-        return false;
+        auto prepared = CreateScope<Renderer::PreparedRHISceneFrame>();
+        if (PrepareCurrentSceneFrame(*prepared) == false)
+        {
+            return false;
+        }
+        m_PreparedFrame = std::move(prepared);
     }
-    if (Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
-        m_DebugLinePipeline, RHISceneDrawItemBuilder::VulkanClipCorrection(),
-        prepared->DebugLineItems) == false)
-    {
-        std::cerr << "Vulkan Debug Line preparation failed.\n";
-        return false;
-    }
-    prepared->DebugLinePipeline = m_DebugLinePipeline;
     if (m_UIRenderer.Prepare(*m_Device, m_PendingUIDrawList,
         m_PendingUIWidth, m_PendingUIHeight,
         m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
@@ -147,7 +197,6 @@ bool VulkanSceneRuntime::PrepareFrame()
         std::cerr << "Vulkan UI frame preparation failed.\n";
         return false;
     }
-    m_PreparedFrame = std::move(prepared);
     return true;
 }
 
@@ -163,10 +212,21 @@ RHIFrameResult VulkanSceneRuntime::DrawPreparedFrame()
         m_Context, commands, *m_PreparedFrame,
         [this](RHISceneCommandList& uiCommands)
         {
+            for (const PreparedOffscreenSceneFrame& prepared :
+                m_PreparedOffscreenFrames)
+            {
+                if (DrawPreparedOffscreenSceneFrame(
+                    uiCommands, prepared) == false)
+                {
+                    return false;
+                }
+            }
             return m_UIRenderer.Draw(uiCommands, m_UIPipeline, m_PreparedUI);
         });
     // GPUが参照するBufferはContext側がFence完了まで保持します。
     m_PreparedFrame.reset();
+    m_PreparedOffscreenFrames.clear();
+    m_PreparedUI = {};
     // FatalErrorでもRuntimeを破棄せず、所有元Applicationの終了処理へ委譲します。
     return result;
 }
@@ -180,7 +240,7 @@ RHIFrameResult VulkanSceneRuntime::DrawFrame()
     const RHIFrameResult begin = m_Context.BeginFrame();
     if (begin != RHIFrameResult::Success)
     {
-        m_PreparedFrame.reset();
+        DiscardPreparedFrame();
         return begin;
     }
     return DrawPreparedFrame();
@@ -195,6 +255,8 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
 
     // 再生成前に旧Frameの保持参照を外します。失敗時も所有元がShutdownします。
     m_PreparedFrame.reset();
+    m_PreparedOffscreenFrames.clear();
+    m_PreparedUI = {};
     if (m_Context.Resize(width, height) == false)
     {
         return false;
@@ -223,6 +285,8 @@ void VulkanSceneRuntime::Shutdown()
 
     // 準備済みFrameが保持する旧DeviceのBuffer参照を最初に解放します。
     m_PreparedFrame.reset();
+    m_PreparedOffscreenFrames.clear();
+    m_PreparedUI = {};
     // Contextより先に上位Resource参照を解放します。
     // Context自身も外部Refが残ったResourceをDevice破棄前に無効化します。
     m_OpaquePipeline.reset();
@@ -272,6 +336,58 @@ uint32_t VulkanSceneRuntime::GetWidth() const
 uint32_t VulkanSceneRuntime::GetHeight() const
 {
     return m_Context.GetExtent().height;
+}
+
+bool VulkanSceneRuntime::PrepareCurrentSceneFrame(
+    Renderer::PreparedRHISceneFrame& outFrame)
+{
+    if (Renderer::PrepareRHISceneFrame(*m_Device, m_OpaquePipeline,
+        m_TransparentPipeline, m_DefaultTexture,
+        RHISceneDrawItemBuilder::VulkanClipCorrection(), outFrame) == false)
+    {
+        std::cerr << "Vulkan Scene frame preparation failed.\n";
+        return false;
+    }
+    if (Renderer::PrepareRHIDebugLines(*m_Device, m_DefaultTexture,
+        m_DebugLinePipeline, RHISceneDrawItemBuilder::VulkanClipCorrection(),
+        outFrame.DebugLineItems) == false)
+    {
+        std::cerr << "Vulkan Debug Line preparation failed.\n";
+        return false;
+    }
+    outFrame.DebugLinePipeline = m_DebugLinePipeline;
+    return true;
+}
+
+bool VulkanSceneRuntime::DrawPreparedOffscreenSceneFrame(
+    RHISceneCommandList& commands,
+    const PreparedOffscreenSceneFrame& prepared)
+{
+    constexpr float clearColor[4] = {0.1f, 0.1f, 0.3f, 1.0f};
+    if (commands.BeginOffscreenRenderTarget(
+        prepared.RenderTarget, clearColor) == false)
+    {
+        return false;
+    }
+
+    // 描画途中で失敗してもEndを試み、SwapChain RenderPassへ復帰させます。
+    bool drawn = RHISceneMeshRenderer::Draw(
+        commands, prepared.SceneFrame.OpaquePipeline,
+        prepared.SceneFrame.TransparentPipeline,
+        prepared.SceneFrame.Items);
+    if (drawn == true &&
+        prepared.SceneFrame.DebugLineItems.empty() == false)
+    {
+        drawn = prepared.SceneFrame.DebugLinePipeline != nullptr &&
+            RHISceneMeshRenderer::Draw(
+                commands, prepared.SceneFrame.DebugLinePipeline,
+                prepared.SceneFrame.DebugLinePipeline,
+                prepared.SceneFrame.DebugLineItems);
+    }
+
+    const bool ended =
+        commands.EndOffscreenRenderTarget(prepared.RenderTarget);
+    return drawn == true && ended == true;
 }
 
 bool VulkanSceneRuntime::CreatePipelines()

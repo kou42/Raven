@@ -1,4 +1,5 @@
 #include "VulkanSceneContext.h"
+#include "VulkanOffscreenRenderTarget.h"
 #include "VulkanSceneRHIBuffer.h"
 #include "VulkanSceneRHITexture.h"
 
@@ -76,6 +77,7 @@ bool VulkanSceneContext::Init(Window& window)
     }
     m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
     m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
+    m_RecordedOffscreenRenderTargets.resize(m_FrameSync.GetFrameCount());
     m_ClearColor.float32[3] = 1.0f;
     return true;
 }
@@ -111,12 +113,14 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
     // BeginFrame内部でこのSlotのFence待機が完了しています。
     // 前回SubmitのBufferを解放してから、新しいDrawを記録します。
     if (frame >= m_RecordedBuffers.size() ||
-        frame >= m_SubmittedBufferFrames.size())
+        frame >= m_SubmittedBufferFrames.size() ||
+        frame >= m_RecordedOffscreenRenderTargets.size())
     {
         m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
     m_RecordedBuffers[frame].clear();
+    m_RecordedOffscreenRenderTargets[frame].clear();
     m_SubmittedBufferFrames[frame] = false;
 
     // Acquire成功後に記録が失敗した場合はSemaphoreが未消費になり得ます。
@@ -135,6 +139,7 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
         m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
+    m_SwapChainRenderPassActive = true;
     m_FrameSubmitted = false;
     m_BoundGraphicsPipeline.reset();
     const VkExtent2D extent = m_SwapChain.GetExtent();
@@ -150,7 +155,9 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
 RHIFrameResult VulkanSceneContext::EndFrame()
 {
     if (m_FatalError == true || m_FrameActive == false || m_FrameSubmitted == true ||
-        m_ActiveFrame >= m_CommandBuffers.size())
+        m_ActiveFrame >= m_CommandBuffers.size() ||
+        m_ActiveOffscreenRenderTarget != nullptr ||
+        m_SwapChainRenderPassActive == false)
     {
         m_FatalError = true;
         return RHIFrameResult::FatalError;
@@ -159,6 +166,7 @@ RHIFrameResult VulkanSceneContext::EndFrame()
     VulkanCommandBuffer& commandBuffer = *m_CommandBuffers[m_ActiveFrame];
     m_BoundGraphicsPipeline.reset();
     m_RenderTarget.End(commandBuffer.GetHandle());
+    m_SwapChainRenderPassActive = false;
     if (m_FrameRenderer.EndSceneColorTarget(m_SwapChain, commandBuffer) !=
         VulkanFrameResult::Success)
     {
@@ -218,6 +226,18 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     m_BoundGraphicsPipeline.reset();
     // Descriptor Setは旧Pipeline Layoutに対応するため、Pipeline無効化より先に破棄します。
     DestroyTextureDescriptors();
+    // off-screen FramebufferはScene RenderPassを借用するため、RenderPassより先に破棄します。
+    for (const auto& weakTarget : m_OffscreenRenderTargets)
+    {
+        auto target = weakTarget.lock();
+        if (target != nullptr)
+        {
+            target->Shutdown();
+        }
+    }
+    m_OffscreenRenderTargets.clear();
+    m_RecordedOffscreenRenderTargets.clear();
+    m_ActiveOffscreenRenderTarget.reset();
     m_RecordedBuffers.clear();
     m_SubmittedBufferFrames.clear();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
@@ -242,13 +262,14 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     }
     m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
     m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
+    m_RecordedOffscreenRenderTargets.resize(m_FrameSync.GetFrameCount());
     return true;
 }
 
 bool VulkanSceneContext::SetViewport(
     uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
-    const VkExtent2D extent = m_SwapChain.GetExtent();
+    const VkExtent2D extent = GetActiveRenderExtent();
     if (width == 0 || height == 0 || x >= extent.width || y >= extent.height ||
         width > extent.width - x || height > extent.height - y)
     {
@@ -281,7 +302,10 @@ bool VulkanSceneContext::SetScissor(
     uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
-    if (commandBuffer == VK_NULL_HANDLE || width == 0 || height == 0)
+    const VkExtent2D extent = GetActiveRenderExtent();
+    if (commandBuffer == VK_NULL_HANDLE || width == 0 || height == 0 ||
+        x >= extent.width || y >= extent.height ||
+        width > extent.width - x || height > extent.height - y)
     {
         return false;
     }
@@ -309,7 +333,7 @@ bool VulkanSceneContext::ClearColorAttachment(const float color[4])
     // vkCmdClearAttachmentsはRenderPass内でのみ有効です。
     // Frame開始時のLoadOp Clearと異なり、Scene描画途中のClearを明示的に記録します。
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
-    const VkExtent2D extent = m_SwapChain.GetExtent();
+    const VkExtent2D extent = GetActiveRenderExtent();
     if (color == nullptr || commandBuffer == VK_NULL_HANDLE ||
         m_RenderTarget.IsValid() == false || extent.width == 0 || extent.height == 0)
     {
@@ -324,7 +348,7 @@ bool VulkanSceneContext::ClearColorAttachment(const float color[4])
         attachment.clearValue.color.float32[component] = color[component];
     }
 
-    // Viewport/ScissorはClear範囲を制限しません。SwapChain全体を消去します。
+    // Viewport/ScissorはClear範囲を制限しません。現在の描画先全体を消去します。
     VkClearRect rectangle{};
     rectangle.rect.offset = { 0, 0 };
     rectangle.rect.extent = extent;
@@ -332,6 +356,86 @@ bool VulkanSceneContext::ClearColorAttachment(const float color[4])
     rectangle.layerCount = 1;
     vkCmdClearAttachments(commandBuffer, 1, &attachment, 1, &rectangle);
     return true;
+}
+
+bool VulkanSceneContext::BeginOffscreenRenderTarget(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget,
+    const float clearColor[4])
+{
+    const auto native =
+        std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(renderTarget);
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || clearColor == nullptr ||
+        native == nullptr || native->IsValid() == false ||
+        native->GetOwnerDevice() != GetDevice().GetHandle() ||
+        m_ActiveOffscreenRenderTarget != nullptr ||
+        m_SwapChainRenderPassActive == false ||
+        m_ActiveFrame >= m_RecordedOffscreenRenderTargets.size())
+    {
+        return false;
+    }
+
+    // SwapChainのRenderPassだけを一時終了します。Present用Layout遷移は行わず、
+    // off-screen描画後にLOAD RenderPassで同じColor/Depth内容へ復帰します。
+    m_BoundGraphicsPipeline.reset();
+    m_RenderTarget.End(commandBuffer);
+    m_SwapChainRenderPassActive = false;
+    if (native->Begin(commandBuffer, clearColor) == false)
+    {
+        return false;
+    }
+
+    m_ActiveOffscreenRenderTarget = renderTarget;
+    const RHIOffscreenRenderTargetSpecification& specification =
+        native->GetSpecification();
+    return SetViewport(
+        0u, 0u, specification.Width, specification.Height);
+}
+
+bool VulkanSceneContext::EndOffscreenRenderTarget(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+{
+    const auto native =
+        std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(renderTarget);
+    VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE || native == nullptr ||
+        m_ActiveOffscreenRenderTarget != renderTarget ||
+        m_SwapChainRenderPassActive == true ||
+        m_ActiveFrame >= m_RecordedOffscreenRenderTargets.size())
+    {
+        return false;
+    }
+
+    m_BoundGraphicsPipeline.reset();
+    if (native->End(commandBuffer) == false)
+    {
+        return false;
+    }
+    // Framebuffer/Depth/ImageViewをSubmit後のFence完了まで保持します。
+    m_RecordedOffscreenRenderTargets[m_ActiveFrame].push_back(renderTarget);
+    m_ActiveOffscreenRenderTarget.reset();
+
+    if (m_RenderTarget.Begin(commandBuffer,
+        m_FrameRenderer.GetAcquiredImageIndex(), m_ClearColor, true) == false)
+    {
+        return false;
+    }
+    m_SwapChainRenderPassActive = true;
+    const VkExtent2D extent = m_SwapChain.GetExtent();
+    return SetViewport(0u, 0u, extent.width, extent.height);
+}
+
+VkExtent2D VulkanSceneContext::GetActiveRenderExtent() const
+{
+    const auto native = std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(
+        m_ActiveOffscreenRenderTarget);
+    if (native != nullptr)
+    {
+        const RHIOffscreenRenderTargetSpecification& specification =
+            native->GetSpecification();
+        return {specification.Width, specification.Height};
+    }
+    return m_SwapChain.GetExtent();
 }
 
 VkCommandBuffer VulkanSceneContext::GetActiveCommandBuffer() const
@@ -435,11 +539,30 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
     // Surface / Debug / UIはPrepareFrame中に順番にTextureを準備します。
     // 後段のPipelineが先に準備したTexture集合を置換すると、Draw時のBindTextureが
     // Surface Textureを解決できなくなるため、現在のDescriptor集合へ不足分だけ統合します。
-    std::vector<Ref<RHITexture>> mergedTextures = m_DescriptorTextures;
+    // Resizeで交換されたoff-screen TargetはFence完了後にColor Imageを無効化します。
+    // Descriptor Cacheの強参照だけが残ったTextureはここで除外し、破棄済みImageViewを
+    // 次のDescriptor Setへ書き戻さないようにします。
+    std::vector<Ref<RHITexture>> mergedTextures;
+    mergedTextures.reserve(m_DescriptorTextures.size() + textures.size());
     bool requiresRebuild = m_TextureDescriptorPool == VK_NULL_HANDLE;
+    for (const Ref<RHITexture>& texture : m_DescriptorTextures)
+    {
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
+        if (nativeTexture == nullptr ||
+            nativeTexture->GetNativeTexture().IsValid() == false)
+        {
+            requiresRebuild = true;
+            continue;
+        }
+        mergedTextures.push_back(texture);
+    }
     for (const Ref<RHITexture>& texture : textures)
     {
-        if (texture == nullptr)
+        const auto nativeTexture =
+            std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
+        if (nativeTexture == nullptr ||
+            nativeTexture->GetNativeTexture().IsValid() == false)
         {
             return false;
         }
@@ -765,6 +888,28 @@ void VulkanSceneContext::RegisterTexture(
     m_Textures.push_back(texture);
 }
 
+void VulkanSceneContext::RegisterOffscreenRenderTarget(
+    const Ref<VulkanOffscreenRenderTarget>& renderTarget)
+{
+    if (renderTarget == nullptr)
+    {
+        return;
+    }
+    for (auto iterator = m_OffscreenRenderTargets.begin();
+        iterator != m_OffscreenRenderTargets.end();)
+    {
+        if (iterator->expired() == true)
+        {
+            iterator = m_OffscreenRenderTargets.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
+    m_OffscreenRenderTargets.push_back(renderTarget);
+}
+
 void VulkanSceneContext::Shutdown()
 {
     if (m_Instance.IsValid() == true)
@@ -784,6 +929,18 @@ void VulkanSceneContext::Shutdown()
     m_Buffers.clear();
     // Descriptorが参照するImageView/Samplerより先にPoolを解放します。
     DestroyTextureDescriptors();
+    // off-screen FramebufferはScene RenderPassを借用するため、RenderPassより先に破棄します。
+    for (const auto& weakTarget : m_OffscreenRenderTargets)
+    {
+        auto target = weakTarget.lock();
+        if (target != nullptr)
+        {
+            target->Shutdown();
+        }
+    }
+    m_OffscreenRenderTargets.clear();
+    m_RecordedOffscreenRenderTargets.clear();
+    m_ActiveOffscreenRenderTarget.reset();
     // VkDeviceを破棄する前に外部RefのVkImage/ImageView/Samplerを解放します。
     for (const auto& weakTexture : m_Textures)
     {
@@ -798,6 +955,7 @@ void VulkanSceneContext::Shutdown()
     m_SubmittedBufferFrames.clear();
     m_FrameActive = false;
     m_FrameSubmitted = false;
+    m_SwapChainRenderPassActive = false;
     m_FatalError = false;
     m_ActiveFrame = 0;
     m_BoundGraphicsPipeline.reset();

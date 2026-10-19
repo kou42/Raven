@@ -17,6 +17,7 @@
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
+#include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -363,8 +364,18 @@ bool EditorLayer::IsPanelOwnedByDearImGui(PanelUIOwner owner) const
 
 void EditorLayer::OnAttach()
 {
-    m_ViewportRenderingEnabled = m_Application != nullptr &&
+    const bool openGLViewportRendering =
+        m_Application != nullptr &&
         m_Application->GetWindow().GetBackend() == RHIBackend::OpenGL;
+    const bool ravenViewportRequested =
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.SceneView) == false ||
+        IsPanelOwnedByDearImGui(m_PanelUIOwnership.GameView) == false;
+    m_ExplicitViewportRenderingEnabled =
+        m_Application != nullptr &&
+        ravenViewportRequested == true &&
+        m_Application->SupportsExplicitEditorViewportRendering() == true;
+    m_ViewportRenderingEnabled =
+        openGLViewportRendering || m_ExplicitViewportRenderingEnabled;
 
     if (m_Application != nullptr &&
         IsPanelOwnedByDearImGui(m_PanelUIOwnership.Statistics) == false)
@@ -783,8 +794,8 @@ void EditorLayer::OnAttach()
 
     if (m_ViewportRenderingEnabled == false)
     {
-        // Explicit BackendではMain SceneとRaven UIをRuntimeが直接描画します。
-        // Editor用off-screen Framebufferが未実装のため、空Panelや未対応Resourceを生成しません。
+        // 未対応Explicit BackendでもMain SceneとRaven UI本体はRuntimeが描画します。
+        // Viewport CapabilityがないBackendでは空Panelや未対応Resourceを生成しません。
         return;
     }
 
@@ -808,6 +819,52 @@ void EditorLayer::OnAttach()
     // Editor Camera / Grid / Selection Outline / Gizmo等を追加しても、Game Viewの
     // Runtime表示へEditor専用描画が混入しない構造を保つためです。
     //
+    // Explicit Backendでは同じRHITextureをRenderTarget書き込みとRaven UI Samplingで共有します。
+    // Picking用ID AttachmentはまだOpenGL Framebuffer経路だけに存在するため、この段階では
+    // DX12 / VulkanのScene/Game View表示に責務を限定します。
+    if (m_ExplicitViewportRenderingEnabled == true)
+    {
+        RHIOffscreenRenderTargetSpecification sceneSpecification{};
+        sceneSpecification.Width =
+            static_cast<std::uint32_t>(m_SceneViewportWidth);
+        sceneSpecification.Height =
+            static_cast<std::uint32_t>(m_SceneViewportHeight);
+        sceneSpecification.ColorFormat = RHITextureFormat::RGBA8;
+        sceneSpecification.EnableDepth = true;
+        sceneSpecification.DebugName = "Explicit Editor Scene View";
+
+        RHIOffscreenRenderTargetSpecification gameSpecification = sceneSpecification;
+        gameSpecification.Width =
+            static_cast<std::uint32_t>(m_GameViewportWidth);
+        gameSpecification.Height =
+            static_cast<std::uint32_t>(m_GameViewportHeight);
+        gameSpecification.DebugName = "Explicit Editor Game View";
+
+        m_SceneRHIRenderTarget =
+            m_Application->CreateExplicitEditorViewportRenderTarget(
+                sceneSpecification);
+        m_GameRHIRenderTarget =
+            m_Application->CreateExplicitEditorViewportRenderTarget(
+                gameSpecification);
+        if (m_SceneRHIRenderTarget == nullptr ||
+            m_GameRHIRenderTarget == nullptr)
+        {
+            // 片方だけのViewportを公開するとUI表示とSnapshot数が不一致になるため、
+            // 両Targetを破棄してExplicit Viewport全体を無効化します。
+            m_SceneRHIRenderTarget.reset();
+            m_GameRHIRenderTarget.reset();
+            m_SceneViewportRavenPanel.Detach();
+            m_GameViewportRavenPanel.Detach();
+            m_ExplicitViewportRenderingEnabled = false;
+            m_ViewportRenderingEnabled = false;
+            return;
+        }
+
+        m_EditorCamera.SetViewportSize(
+            m_SceneViewportWidth, m_SceneViewportHeight);
+        return;
+    }
+
     // Scene ViewだけはEntity Picking用R32I Attachmentを追加します。
     // Game ViewはEditor選択情報を必要としないため、従来のRGBA8 + Depth構成を維持します。
     FramebufferSpecification sceneFramebufferSpecification;
@@ -858,6 +915,9 @@ void EditorLayer::OnDetach()
     m_SelectionOutlineMaterial.reset();
     m_SceneFramebuffer.reset();
     m_GameFramebuffer.reset();
+    m_SceneRHIRenderTarget.reset();
+    m_GameRHIRenderTarget.reset();
+    m_ExplicitViewportRenderingEnabled = false;
     m_ViewportRenderingEnabled = false;
 }
 
@@ -916,8 +976,106 @@ void EditorLayer::OnRender()
         return;
     }
 
+    Scene* activeScene = m_Application->GetScene();
+
+    if (m_ExplicitViewportRenderingEnabled == true)
+    {
+        // Applicationが通常Cameraで積んだMain Scene Queueを先に確定します。
+        // これより前にScene Viewを再描画するとRendererの単一Queueを上書きし、
+        // SwapChainへEditor Cameraの結果が出るため順序を変えてはいけません。
+        if (m_Application->CaptureExplicitMainSceneFrame() == false)
+        {
+            return;
+        }
+
+        const auto ensureRenderTarget =
+            [this](Ref<RHIOffscreenRenderTarget>& target,
+                std::uint32_t width, std::uint32_t height,
+                const char* debugName)
+            {
+                if (target != nullptr && target->IsValid() == true)
+                {
+                    const RHIOffscreenRenderTargetSpecification& current =
+                        target->GetSpecification();
+                    if (current.Width == width && current.Height == height)
+                    {
+                        return true;
+                    }
+                }
+
+                RHIOffscreenRenderTargetSpecification specification{};
+                specification.Width = width;
+                specification.Height = height;
+                specification.ColorFormat = RHITextureFormat::RGBA8;
+                specification.EnableDepth = true;
+                specification.DebugName = debugName;
+
+                Ref<RHIOffscreenRenderTarget> replacement =
+                    m_Application->CreateExplicitEditorViewportRenderTarget(
+                        specification);
+                if (replacement == nullptr)
+                {
+                    return false;
+                }
+
+                // UI DrawListまたはGPU Frameが旧Targetを参照中でも、Ref交換により
+                // それぞれの所有境界が完了するまで旧Resourceを生存させます。
+                target = std::move(replacement);
+                return true;
+            };
+
+        if (m_ShowSceneView == true)
+        {
+            const std::uint32_t width = static_cast<std::uint32_t>(
+                std::max(m_SceneViewportWidth, 1.0f));
+            const std::uint32_t height = static_cast<std::uint32_t>(
+                std::max(m_SceneViewportHeight, 1.0f));
+            if (ensureRenderTarget(
+                m_SceneRHIRenderTarget, width, height,
+                "Explicit Editor Scene View") == true)
+            {
+                SceneViewportRenderer* viewportRenderer =
+                    dynamic_cast<SceneViewportRenderer*>(activeScene);
+                if (viewportRenderer != nullptr)
+                {
+                    viewportRenderer->RenderWithCamera(m_EditorCamera);
+                }
+                else
+                {
+                    activeScene->OnRender();
+                }
+
+                if (m_Application->CaptureExplicitEditorViewportFrame(
+                    m_SceneRHIRenderTarget) == false)
+                {
+                    return;
+                }
+            }
+        }
+
+        if (m_ShowGameView == true)
+        {
+            const std::uint32_t width = static_cast<std::uint32_t>(
+                std::max(m_GameViewportWidth, 1.0f));
+            const std::uint32_t height = static_cast<std::uint32_t>(
+                std::max(m_GameViewportHeight, 1.0f));
+            if (ensureRenderTarget(
+                m_GameRHIRenderTarget, width, height,
+                "Explicit Editor Game View") == true)
+            {
+                activeScene->OnRender();
+                if (m_Application->CaptureExplicitEditorViewportFrame(
+                    m_GameRHIRenderTarget) == false)
+                {
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
     // ========================================================================
-    // Off-screen Scene / Game rendering
+    // OpenGL off-screen Scene / Game rendering
     // ========================================================================
     // Applicationは現在、互換性維持のためRuntime SceneをMain framebufferへ一度描画します。
     // その後EditorLayerからScene View / Game View専用Framebufferへ再描画しています。
@@ -1174,10 +1332,20 @@ void EditorLayer::OnRavenUIRender(float dt)
     if (m_SceneViewportRavenPanel.IsAttached() == true)
     {
         m_SceneViewportRavenPanel.SetVisible(m_ShowSceneView);
-        if (m_ShowSceneView == true && m_SceneFramebuffer != nullptr)
+        if (m_ShowSceneView == true &&
+            (m_SceneFramebuffer != nullptr ||
+                m_SceneRHIRenderTarget != nullptr))
         {
-            m_SceneViewportRavenPanel.Update(
-                m_SceneFramebuffer->GetColorAttachment());
+            if (m_SceneFramebuffer != nullptr)
+            {
+                m_SceneViewportRavenPanel.Update(
+                    m_SceneFramebuffer->GetColorAttachment());
+            }
+            else
+            {
+                m_SceneViewportRavenPanel.Update(
+                    m_SceneRHIRenderTarget->GetColorAttachment());
+            }
             EditorViewportRenderTargetExtent extent;
             if (TryCalculateEditorViewportRenderTargetExtent(
                 m_SceneViewportRavenPanel.GetViewportLogicalSize(),
@@ -1223,10 +1391,20 @@ void EditorLayer::OnRavenUIRender(float dt)
     if (m_GameViewportRavenPanel.IsAttached() == true)
     {
         m_GameViewportRavenPanel.SetVisible(m_ShowGameView);
-        if (m_ShowGameView == true && m_GameFramebuffer != nullptr)
+        if (m_ShowGameView == true &&
+            (m_GameFramebuffer != nullptr ||
+                m_GameRHIRenderTarget != nullptr))
         {
-            m_GameViewportRavenPanel.Update(
-                m_GameFramebuffer->GetColorAttachment());
+            if (m_GameFramebuffer != nullptr)
+            {
+                m_GameViewportRavenPanel.Update(
+                    m_GameFramebuffer->GetColorAttachment());
+            }
+            else
+            {
+                m_GameViewportRavenPanel.Update(
+                    m_GameRHIRenderTarget->GetColorAttachment());
+            }
             EditorViewportRenderTargetExtent extent;
             if (TryCalculateEditorViewportRenderTargetExtent(
                 m_GameViewportRavenPanel.GetViewportLogicalSize(),
@@ -1281,9 +1459,8 @@ void EditorLayer::RenderSceneView()
 
             if (m_SceneFramebuffer != nullptr)
             {
-                // 現在のRendererAPIはOpenGLなのでRendererIDはOpenGL Texture IDとして扱えます。
-                // この部分はFramebuffer抽象化の中でもまだbackend依存が残っている境界です。
-                // DirectX/Vulkan対応時にはTexture/ImGui backendの抽象化と合わせて置き換えます。
+                // Dear ImGui経路はOpenGL専用のため、RendererIDをOpenGL Texture IDとして扱います。
+                // Explicit BackendはRaven UIへRHITextureを渡し、このbackend依存境界を通りません。
                 //
                 // OpenGL Textureは左下原点ですがDear ImGuiのImageは通常左上から表示するため、
                 // UV0=(0,1), UV1=(1,0)としてY方向を反転し、画面を正立させます。
