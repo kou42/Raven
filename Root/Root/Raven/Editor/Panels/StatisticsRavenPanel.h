@@ -29,6 +29,7 @@ public:
 
     bool IsAttached() const;
     bool IsVisible() const;
+    UIElement* GetRootElement() const { return m_Root; }
     std::size_t GetProfileRowCount() const;
     std::size_t GetCounterRowCount() const;
 

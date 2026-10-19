@@ -30,6 +30,7 @@ public:
 
     bool IsAttached() const;
     bool IsVisible() const;
+    UIElement* GetRootElement() const { return m_Root; }
     std::size_t GetDisplayRowCount() const;
     std::size_t GetSelectedBoneIndex() const;
 

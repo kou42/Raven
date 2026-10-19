@@ -41,6 +41,7 @@ public:
 
     bool IsAttached() const;
     bool IsVisible() const;
+    UIElement* GetRootElement() const { return m_Root; }
     std::size_t GetNodeCount() const;
     EntityHandle GetSelectedHandle() const;
 

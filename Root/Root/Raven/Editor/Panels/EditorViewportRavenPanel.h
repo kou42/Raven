@@ -45,6 +45,7 @@ public:
 
     bool IsAttached() const;
     bool IsVisible() const;
+    UIElement* GetRootElement() const { return m_Root; }
     math::Vec2 GetViewportLogicalSize() const;
     bool IsPointerOverViewport(const math::Vec2& screenPosition) const;
     bool TryGetGizmoViewportRect(EditorGizmoViewportRect& outRect) const;

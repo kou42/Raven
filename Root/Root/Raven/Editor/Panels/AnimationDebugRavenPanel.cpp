@@ -154,9 +154,9 @@ bool AnimationDebugRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>
 
 void AnimationDebugRavenPanel::Detach()
 {
-    if (m_Context != nullptr && m_Root != nullptr)
+    if (m_Root != nullptr && m_Root->GetParent() != nullptr)
     {
-        m_Context->GetRootElement().RemoveChild(m_Root);
+        m_Root->GetParent()->RemoveChild(m_Root);
     }
     m_Context = nullptr;
     m_Root = nullptr;

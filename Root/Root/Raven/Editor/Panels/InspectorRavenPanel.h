@@ -65,6 +65,7 @@ public:
 
     bool IsAttached() const;
     bool IsVisible() const;
+    UIElement* GetRootElement() const { return m_Root; }
 
 private:
     UICollapsibleSection* AddSection(

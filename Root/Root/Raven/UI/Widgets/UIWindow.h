@@ -33,12 +33,20 @@ public:
         m_OnViewportTransferRequested = std::move(handler);
     }
     void SetTitleBarHeight(float height) { m_TitleBarHeight = std::max(0.0f, height); }
+    // Dock Tab内では親DockSpaceが移動・Resizeを管理します。Window固有のDragを止め、
+    // Panel内部のWidgetだけへ入力を渡すことで二重の操作状態を作りません。
+    void SetDocked(bool docked) { m_Docked = docked; }
+    bool IsDocked() const { return m_Docked; }
     bool IsMoving() const { return m_Operation == Operation::Move; }
     bool IsResizing() const { return m_Operation == Operation::Resize; }
 
 protected:
     void OnMouseEvent(UIMouseEvent& event) override
     {
+        if (m_Docked == true)
+        {
+            return;
+        }
         if (event.Type == UIMouseEventType::Cancel)
         {
             m_Operation = Operation::None;
@@ -135,14 +143,17 @@ protected:
         }
         drawList.AddRect(absolutePosition, absolutePosition + size,
             ApplyVisualColor(math::Vec4(0.12f, 0.14f, 0.18f, 1.0f)));
-        drawList.AddRect(absolutePosition,
-            absolutePosition + math::Vec2(size.x, std::min(size.y, m_TitleBarHeight)),
-            ApplyVisualColor(math::Vec4(0.20f, 0.24f, 0.32f, 1.0f)));
-        drawList.AddRect(
-            absolutePosition + math::Vec2(std::max(0.0f, size.x - m_ResizeHandleSize),
-                std::max(0.0f, size.y - m_ResizeHandleSize)),
-            absolutePosition + size,
-            ApplyVisualColor(math::Vec4(0.38f, 0.44f, 0.55f, 1.0f)));
+        if (m_Docked == false)
+        {
+            drawList.AddRect(absolutePosition,
+                absolutePosition + math::Vec2(size.x, std::min(size.y, m_TitleBarHeight)),
+                ApplyVisualColor(math::Vec4(0.20f, 0.24f, 0.32f, 1.0f)));
+            drawList.AddRect(
+                absolutePosition + math::Vec2(std::max(0.0f, size.x - m_ResizeHandleSize),
+                    std::max(0.0f, size.y - m_ResizeHandleSize)),
+                absolutePosition + size,
+                ApplyVisualColor(math::Vec4(0.38f, 0.44f, 0.55f, 1.0f)));
+        }
     }
 
 private:
@@ -152,6 +163,7 @@ private:
     math::Vec2 m_LastPointer{};
     float m_TitleBarHeight = 28.0f;
     float m_ResizeHandleSize = 16.0f;
+    bool m_Docked = false;
     Operation m_Operation = Operation::None;
 };
 

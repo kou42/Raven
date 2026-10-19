@@ -39,12 +39,12 @@ UIDockSpaceSnapshot CreateDefaultEditorDockLayout()
     };
     snapshot.Tabs =
     {
-        { kHierarchyLeafId, { DockTabId(EditorDockTabId::SceneHierarchy), "Scene Hierarchy", true } },
-        { kViewportLeafId, { DockTabId(EditorDockTabId::SceneView), "Scene View", true } },
-        { kViewportLeafId, { DockTabId(EditorDockTabId::GameView), "Game View", true } },
-        { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::Statistics), "Statistics", true } },
-        { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::AnimationDebug), "Animation Debug", true } },
-        { kInspectorLeafId, { DockTabId(EditorDockTabId::Inspector), "Inspector", true } }
+        { kHierarchyLeafId, { DockTabId(EditorDockTabId::SceneHierarchy), "Scene Hierarchy", false } },
+        { kViewportLeafId, { DockTabId(EditorDockTabId::SceneView), "Scene View", false } },
+        { kViewportLeafId, { DockTabId(EditorDockTabId::GameView), "Game View", false } },
+        { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::Statistics), "Statistics", false } },
+        { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::AnimationDebug), "Animation Debug", false } },
+        { kInspectorLeafId, { DockTabId(EditorDockTabId::Inspector), "Inspector", false } }
     };
     snapshot.Selections =
     {

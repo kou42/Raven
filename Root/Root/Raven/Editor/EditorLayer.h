@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Raven/Editor/EditorCamera.h"
+#include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorGizmo.h"
 #include "Raven/Editor/Panels/AnimationDebugPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
@@ -16,12 +17,17 @@
 #include "Raven/Scene/Entity.h"
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace Raven
 {
 class Application;
 class Material;
 class RHIOffscreenRenderTarget;
+class UIElement;
+class UIDockSpace;
+class UIMenuBar;
 
 // Editor UIの移行状態を起動設定へ集約します。
 // DualはPanelごとに所有Backendを切り替える比較期間専用であり、同一Panelを
@@ -136,6 +142,18 @@ private:
     // Viewメニューから各Editor PanelおよびScene/Game Viewの表示/非表示を切り替えます。
     // Window数が増えても表示状態の管理はここへ集約し、Panel自身には他Panelの存在を知らせません。
     void RenderMenuBar();
+
+    // Raven UI Editor shellはEditorLayerだけが所有し、Applicationには具体的なPanelを知らせません。
+    // Panel WidgetはDock TabのContentへ移しますが、Panel classのRuntime Snapshot/編集中状態は
+    // EditorLayer所有のまま維持し、Tabの表示切替やLayout再構築で破棄しません。
+    bool AttachRavenEditorShell();
+    void SaveRavenEditorDockLayout();
+    void DetachRavenEditorShell();
+    void UpdateRavenEditorShellGeometry();
+    void SetRavenDockPanelVisible(EditorDockTabId tabId, bool visible);
+    void ToggleRavenDockPanel(EditorDockTabId tabId);
+    bool IsRavenDockPanelVisible(EditorDockTabId tabId) const;
+    UIElement* GetRavenPanelRoot(EditorDockTabId tabId) const;
 
     // 選択Entityが現在のActive Sceneに属し、かつGenerationまで含めて生存しているかを検証します。
     // Runtime側でDestroyされた場合やApplication::SetScene()でSceneが差し替わった場合に、
@@ -291,6 +309,22 @@ private:
     bool m_ShowInspectorPanel = true;
     bool m_ShowSceneView = true;
     bool m_ShowGameView = true;
+
+    // Raven UI版Editor shellのRoot/Menu/Dockです。Root以下の所有権はUIContextが持ち、
+    // EditorLayerはFrame更新と安全なDetachのための非所有参照だけを保持します。
+    UIElement* m_RavenEditorRoot = nullptr;
+    UIMenuBar* m_RavenEditorMenuBar = nullptr;
+    UIDockSpace* m_RavenEditorDockSpace = nullptr;
+    UIElement* m_RavenHiddenPanelHost = nullptr;
+    std::string m_RavenDockLayoutPath;
+
+    struct HiddenDockPanel
+    {
+        UIElement* Content = nullptr;
+        std::uint64_t ReturnLeafId = 0u;
+        std::string Title;
+    };
+    std::unordered_map<std::uint64_t, HiddenDockPanel> m_HiddenDockPanels;
 
     // BeginDockSpace()でHost Windowに対してImGui::Begin()を呼んだ場合は、
     // 必ず対応するImGui::End()が必要です。Begin/Endの対応関係を明確に保つため状態を保持します。

@@ -18,6 +18,11 @@
 #include "Raven/Scene/Scene.h"
 #include "Raven/Scene/SceneViewportRenderer.h"
 #include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
+#include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Core/UIElement.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
+#include "Raven/UI/Widgets/UIMenuBar.h"
+#include "Raven/UI/Widgets/UIWindow.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -25,6 +30,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace Raven
 {
@@ -32,6 +39,46 @@ namespace
 {
 
 constexpr float CameraProjectionCompareEpsilon = 0.000001f;
+constexpr float EditorMenuBarHeight = 32.0f;
+
+std::uint64_t EditorTabValue(EditorDockTabId id)
+{
+    return static_cast<std::uint64_t>(id);
+}
+
+bool IsKnownEditorTab(std::uint64_t id)
+{
+    return id >= EditorTabValue(EditorDockTabId::SceneView) &&
+        id <= EditorTabValue(EditorDockTabId::AnimationDebug);
+}
+
+const char* GetEditorTabTitle(EditorDockTabId id)
+{
+    switch (id)
+    {
+    case EditorDockTabId::SceneView: return "Scene View";
+    case EditorDockTabId::GameView: return "Game View";
+    case EditorDockTabId::SceneHierarchy: return "Scene Hierarchy";
+    case EditorDockTabId::Inspector: return "Inspector";
+    case EditorDockTabId::Statistics: return "Statistics";
+    case EditorDockTabId::AnimationDebug: return "Animation Debug";
+    }
+    return "Editor Panel";
+}
+
+std::uint64_t GetDefaultEditorTabLeaf(EditorDockTabId id)
+{
+    const UIDockSpaceSnapshot defaults = CreateDefaultEditorDockLayout();
+    const std::uint64_t value = EditorTabValue(id);
+    for (const UIDockTabRecord& record : defaults.Tabs)
+    {
+        if (record.Tab.Id == value)
+        {
+            return record.LeafId;
+        }
+    }
+    return 0u;
+}
 
 bool IsEditorCameraNavigationKey(int keyCode)
 {
@@ -360,6 +407,318 @@ bool EditorLayer::IsPanelOwnedByDearImGui(PanelUIOwner owner) const
         return false;
     }
     return owner == PanelUIOwner::DearImGui;
+}
+
+UIElement* EditorLayer::GetRavenPanelRoot(EditorDockTabId tabId) const
+{
+    switch (tabId)
+    {
+    case EditorDockTabId::SceneView:
+        return m_SceneViewportRavenPanel.GetRootElement();
+    case EditorDockTabId::GameView:
+        return m_GameViewportRavenPanel.GetRootElement();
+    case EditorDockTabId::SceneHierarchy:
+        return m_SceneHierarchyRavenPanel.GetRootElement();
+    case EditorDockTabId::Inspector:
+        return m_InspectorRavenPanel.GetRootElement();
+    case EditorDockTabId::Statistics:
+        return m_StatisticsRavenPanel.GetRootElement();
+    case EditorDockTabId::AnimationDebug:
+        return m_AnimationDebugRavenPanel.GetRootElement();
+    }
+    return nullptr;
+}
+
+bool EditorLayer::AttachRavenEditorShell()
+{
+    if (m_Application == nullptr || m_UIBackend != EditorUIBackend::RavenUI ||
+        m_RavenEditorRoot != nullptr)
+    {
+        return false;
+    }
+
+    auto root = CreateScope<UIElement>();
+    root->SetLayoutMode(UILayoutMode::Absolute);
+    root->SetClipChildren(true);
+    root->SetPosition(math::Vec2(0.0f, 0.0f));
+
+    auto menu = CreateScope<UIMenuBar>();
+    menu->SetFont(m_Application->GetRuntimeUIFont());
+    menu->SetPosition(math::Vec2(0.0f, 0.0f));
+    menu->SetSize(math::Vec2(1280.0f, EditorMenuBarHeight));
+    const std::size_t viewMenu = menu->AddMenu("View");
+    const EditorDockTabId tabIds[] =
+    {
+        EditorDockTabId::SceneView,
+        EditorDockTabId::GameView,
+        EditorDockTabId::SceneHierarchy,
+        EditorDockTabId::Inspector,
+        EditorDockTabId::Statistics,
+        EditorDockTabId::AnimationDebug
+    };
+    for (EditorDockTabId tabId : tabIds)
+    {
+        menu->AddItem(viewMenu, GetEditorTabTitle(tabId),
+            [this, tabId]() { ToggleRavenDockPanel(tabId); });
+    }
+    m_RavenEditorMenuBar = static_cast<UIMenuBar*>(root->AddChild(std::move(menu)));
+
+    auto dock = CreateScope<UIDockSpace>();
+    m_RavenEditorDockSpace = dock.get();
+    dock->SetPosition(math::Vec2(0.0f, EditorMenuBarHeight));
+    dock->SetSize(math::Vec2(1280.0f, 688.0f));
+
+    auto hiddenHost = CreateScope<UIElement>();
+    hiddenHost->SetVisible(false);
+    hiddenHost->SetAffectsParentMeasure(false);
+    m_RavenHiddenPanelHost = hiddenHost.get();
+
+    m_RavenDockLayoutPath = std::string(kEditorDockLayoutFileName);
+    UIDockSpaceSnapshot snapshot;
+    const EditorDockLayoutLoadResult loadResult =
+        LoadEditorDockLayoutOrDefault(m_RavenDockLayoutPath, snapshot);
+    (void)loadResult;
+
+    // Editor shellは既知のPanelだけを復元します。未知IDや重複IDを含む保存状態は、
+    // Widget所有権を動かす前に既定配置へ戻して部分復元を残しません。
+    std::unordered_set<std::uint64_t> restoredIds;
+    bool snapshotUsable = true;
+    for (UIDockTabRecord& record : snapshot.Tabs)
+    {
+        if (IsKnownEditorTab(record.Tab.Id) == false ||
+            restoredIds.insert(record.Tab.Id).second == false)
+        {
+            snapshotUsable = false;
+            break;
+        }
+        // Close ButtonはContentを破棄するため、Editor Panelの表示切替はView Menuへ一元化します。
+        record.Tab.Closable = false;
+    }
+    if (snapshotUsable == false)
+    {
+        snapshot = CreateDefaultEditorDockLayout();
+        restoredIds.clear();
+        for (const UIDockTabRecord& record : snapshot.Tabs)
+        {
+            restoredIds.insert(record.Tab.Id);
+        }
+    }
+
+    std::unordered_map<std::uint64_t, UIElement*> contents;
+    const bool restored = dock->RestoreSnapshot(snapshot,
+        [&contents](std::uint64_t, const UITabItem& tab)
+        {
+            auto content = CreateScope<UIElement>();
+            content->SetLayoutMode(UILayoutMode::Absolute);
+            content->SetClipChildren(true);
+            content->SetHorizontalAlignment(UIAlignment::Stretch);
+            content->SetVerticalAlignment(UIAlignment::Stretch);
+            contents.emplace(tab.Id, content.get());
+            return content;
+        });
+    if (restored == false)
+    {
+        m_RavenEditorMenuBar = nullptr;
+        m_RavenEditorDockSpace = nullptr;
+        m_RavenHiddenPanelHost = nullptr;
+        return false;
+    }
+
+    root->AddChild(std::move(dock));
+    root->AddChild(std::move(hiddenHost));
+
+    // 保存状態に存在しないPanelは非表示Hostで所有し、View Menuから再表示できるようにします。
+    for (EditorDockTabId tabId : tabIds)
+    {
+        const std::uint64_t id = EditorTabValue(tabId);
+        UIElement* content = nullptr;
+        const auto visibleIt = contents.find(id);
+        if (visibleIt != contents.end())
+        {
+            content = visibleIt->second;
+        }
+        else
+        {
+            auto hiddenContent = CreateScope<UIElement>();
+            hiddenContent->SetLayoutMode(UILayoutMode::Absolute);
+            hiddenContent->SetClipChildren(true);
+            content = hiddenContent.get();
+            m_RavenHiddenPanelHost->AddChild(std::move(hiddenContent));
+            m_HiddenDockPanels.emplace(id, HiddenDockPanel{
+                content, GetDefaultEditorTabLeaf(tabId), GetEditorTabTitle(tabId) });
+        }
+
+        UIElement* panelRoot = GetRavenPanelRoot(tabId);
+        if (panelRoot != nullptr && panelRoot->GetParent() != nullptr)
+        {
+            Scope<UIElement> detached = panelRoot->GetParent()->DetachChild(panelRoot);
+            if (detached != nullptr)
+            {
+                panelRoot->SetPosition(math::Vec2(0.0f, 0.0f));
+                UIWindow* panelWindow = dynamic_cast<UIWindow*>(panelRoot);
+                if (panelWindow != nullptr)
+                {
+                    panelWindow->SetDocked(true);
+                }
+                content->AddChild(std::move(detached));
+            }
+        }
+    }
+
+    UIContext& context = m_Application->GetUIContext();
+    m_RavenEditorRoot = context.AddRootChild(std::move(root));
+    if (m_RavenEditorRoot == nullptr)
+    {
+        m_RavenEditorMenuBar = nullptr;
+        m_RavenEditorDockSpace = nullptr;
+        m_RavenHiddenPanelHost = nullptr;
+        m_HiddenDockPanels.clear();
+        return false;
+    }
+
+    m_ShowSceneView = IsRavenDockPanelVisible(EditorDockTabId::SceneView);
+    m_ShowGameView = IsRavenDockPanelVisible(EditorDockTabId::GameView);
+    m_ShowSceneHierarchyPanel = IsRavenDockPanelVisible(EditorDockTabId::SceneHierarchy);
+    m_ShowInspectorPanel = IsRavenDockPanelVisible(EditorDockTabId::Inspector);
+    m_ShowStatisticsPanel = IsRavenDockPanelVisible(EditorDockTabId::Statistics);
+    m_ShowAnimationDebugPanel = IsRavenDockPanelVisible(EditorDockTabId::AnimationDebug);
+    UpdateRavenEditorShellGeometry();
+    return true;
+}
+
+void EditorLayer::SaveRavenEditorDockLayout()
+{
+    if (m_RavenEditorDockSpace == nullptr || m_RavenDockLayoutPath.empty() == true)
+    {
+        return;
+    }
+    std::string diagnostic;
+    SaveDockSnapshot(m_RavenDockLayoutPath,
+        m_RavenEditorDockSpace->SaveSnapshot(), &diagnostic);
+}
+
+void EditorLayer::DetachRavenEditorShell()
+{
+    if (m_RavenEditorRoot != nullptr && m_RavenEditorRoot->GetParent() != nullptr)
+    {
+        m_RavenEditorRoot->GetParent()->RemoveChild(m_RavenEditorRoot);
+    }
+    m_RavenEditorRoot = nullptr;
+    m_RavenEditorMenuBar = nullptr;
+    m_RavenEditorDockSpace = nullptr;
+    m_RavenHiddenPanelHost = nullptr;
+    m_HiddenDockPanels.clear();
+}
+
+bool EditorLayer::IsRavenDockPanelVisible(EditorDockTabId tabId) const
+{
+    if (m_RavenEditorDockSpace == nullptr)
+    {
+        return false;
+    }
+    const std::uint64_t id = EditorTabValue(tabId);
+    const UIDockSpaceSnapshot snapshot = m_RavenEditorDockSpace->SaveSnapshot();
+    return std::any_of(snapshot.Tabs.begin(), snapshot.Tabs.end(),
+        [id](const UIDockTabRecord& record) { return record.Tab.Id == id; });
+}
+
+void EditorLayer::SetRavenDockPanelVisible(EditorDockTabId tabId, bool visible)
+{
+    if (m_RavenEditorDockSpace == nullptr || m_RavenHiddenPanelHost == nullptr ||
+        IsRavenDockPanelVisible(tabId) == visible)
+    {
+        return;
+    }
+    const std::uint64_t id = EditorTabValue(tabId);
+    if (visible == false)
+    {
+        const UIDockSpaceSnapshot snapshot = m_RavenEditorDockSpace->SaveSnapshot();
+        const auto record = std::find_if(snapshot.Tabs.begin(), snapshot.Tabs.end(),
+            [id](const UIDockTabRecord& candidate) { return candidate.Tab.Id == id; });
+        if (record == snapshot.Tabs.end())
+        {
+            return;
+        }
+        UITabItem metadata;
+        Scope<UIElement> content = m_RavenEditorDockSpace->ExtractTabForWindow(
+            record->LeafId, id, metadata);
+        if (content == nullptr)
+        {
+            return;
+        }
+        content->SetVisible(false);
+        UIElement* raw = content.get();
+        if (m_RavenHiddenPanelHost->AddChild(std::move(content)) == raw)
+        {
+            m_HiddenDockPanels[id] = HiddenDockPanel{
+                raw, record->LeafId, metadata.Title };
+        }
+    }
+    else
+    {
+        const auto hidden = m_HiddenDockPanels.find(id);
+        if (hidden == m_HiddenDockPanels.end() || hidden->second.Content == nullptr)
+        {
+            return;
+        }
+        const HiddenDockPanel metadata = hidden->second;
+        Scope<UIElement> content = m_RavenHiddenPanelHost->DetachChild(metadata.Content);
+        if (content == nullptr)
+        {
+            return;
+        }
+        content->SetVisible(true);
+        if (m_RavenEditorDockSpace->AddTab(metadata.ReturnLeafId, id,
+            metadata.Title, std::move(content), false) == true)
+        {
+            m_HiddenDockPanels.erase(hidden);
+            m_RavenEditorDockSpace->SelectTab(metadata.ReturnLeafId, id);
+        }
+    }
+
+    m_ShowSceneView = IsRavenDockPanelVisible(EditorDockTabId::SceneView);
+    m_ShowGameView = IsRavenDockPanelVisible(EditorDockTabId::GameView);
+    m_ShowSceneHierarchyPanel = IsRavenDockPanelVisible(EditorDockTabId::SceneHierarchy);
+    m_ShowInspectorPanel = IsRavenDockPanelVisible(EditorDockTabId::Inspector);
+    m_ShowStatisticsPanel = IsRavenDockPanelVisible(EditorDockTabId::Statistics);
+    m_ShowAnimationDebugPanel = IsRavenDockPanelVisible(EditorDockTabId::AnimationDebug);
+}
+
+void EditorLayer::ToggleRavenDockPanel(EditorDockTabId tabId)
+{
+    SetRavenDockPanelVisible(tabId, IsRavenDockPanelVisible(tabId) == false);
+}
+
+void EditorLayer::UpdateRavenEditorShellGeometry()
+{
+    if (m_Application == nullptr || m_RavenEditorRoot == nullptr ||
+        m_RavenEditorMenuBar == nullptr || m_RavenEditorDockSpace == nullptr)
+    {
+        return;
+    }
+    const math::Vec2 size(
+        static_cast<float>(m_Application->GetWindow().GetWidth()),
+        static_cast<float>(m_Application->GetWindow().GetHeight()));
+    m_RavenEditorRoot->SetSize(size);
+    m_RavenEditorMenuBar->SetSize(math::Vec2(size.x, EditorMenuBarHeight));
+    m_RavenEditorDockSpace->SetSize(math::Vec2(
+        size.x, std::max(0.0f, size.y - EditorMenuBarHeight)));
+
+    const EditorDockTabId tabIds[] =
+    {
+        EditorDockTabId::SceneView, EditorDockTabId::GameView,
+        EditorDockTabId::SceneHierarchy, EditorDockTabId::Inspector,
+        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug
+    };
+    for (EditorDockTabId tabId : tabIds)
+    {
+        UIElement* panel = GetRavenPanelRoot(tabId);
+        if (panel != nullptr && panel->GetParent() != nullptr)
+        {
+            panel->SetPosition(math::Vec2(0.0f, 0.0f));
+            panel->SetSize(panel->GetParent()->GetSize());
+        }
+    }
 }
 
 void EditorLayer::OnAttach()
@@ -792,6 +1151,10 @@ void EditorLayer::OnAttach()
             math::Vec2(720.0f, 420.0f));
     }
 
+    // 全PanelのWidget Treeを生成してからEditor shellへ移します。Panelは引き続き
+    // EditorLayerが状態を管理し、UIDockSpaceは表示Contentの所有権だけを担当します。
+    AttachRavenEditorShell();
+
     if (m_ViewportRenderingEnabled == false)
     {
         // 未対応Explicit BackendでもMain SceneとRaven UI本体はRuntimeが描画します。
@@ -893,6 +1256,8 @@ void EditorLayer::OnAttach()
 void EditorLayer::OnDetach()
 {
     m_InspectorPanel.ResetEditingState();
+    // PanelをTreeから外す前に、現在のTab配置と非表示状態を原子的に保存します。
+    SaveRavenEditorDockLayout();
     // UIContextはApplicationが所有しEditorLayerより長生きするため、終了時にTreeから明示的に外します。
     m_GameViewportRavenPanel.Detach();
     m_SceneViewportRavenPanel.Detach();
@@ -901,6 +1266,7 @@ void EditorLayer::OnDetach()
     m_InspectorRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
     m_StatisticsRavenPanel.Detach();
+    DetachRavenEditorShell();
 
     // Editor終了後にSceneへの非所有参照を履歴側へ残しません。
     SetEditorCommandHistoryScene(nullptr);
@@ -1280,6 +1646,8 @@ void EditorLayer::OnRavenUIRender(float dt)
     {
         return;
     }
+
+    UpdateRavenEditorShellGeometry();
 
     if (m_StatisticsRavenPanel.IsAttached() == true)
     {

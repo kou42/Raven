@@ -320,13 +320,21 @@ Exit Gate:
 
 目的: ImGui DockSpace、Menu Bar、Window visibility管理をRaven UIへ置き換える。
 
-- [ ] `EditorLayer`所有のEditor UI Rootと`UIDockSpace`を正式経路にする。
-- [ ] Scene View / Game View / Hierarchy / Inspector / Statistics / Animation DebugをDock Tabとして登録する。
-- [ ] View MenuからPanel表示状態を一元管理する。
-- [ ] 既定レイアウトをコードまたはversion付き設定として定義する。
-- [ ] Layout保存は一時ファイル、置換、backup、破損時fallbackを利用する。
+- [x] `EditorLayer`所有のEditor UI Rootと`UIDockSpace`を正式経路にする。
+- [x] Scene View / Game View / Hierarchy / Inspector / Statistics / Animation DebugをDock Tabとして登録する。
+- [x] View MenuからPanel表示状態を一元管理する。
+- [x] 既定レイアウトをコードまたはversion付き設定として定義する。
+- [x] Layout保存は一時ファイル、置換、backup、破損時fallbackを利用する。
 - [ ] Tab切り離し、補助OS Window、Close時の元Pane復帰をEditor実データで検証する。
-- [ ] Panelの表示状態とPanel内部状態を分け、Layout再構築でRuntime編集状態を意図せず失わない。
+- [x] Panelの表示状態とPanel内部状態を分け、Layout再構築でRuntime編集状態を意図せず失わない。
+
+2026-10-20時点で、Raven UIモードの`EditorLayer`がMain Window全体のEditor Root、View Menu、
+`UIDockSpace`を所有し、6つの既存Raven Panelをversion付きLayoutのTab Contentへ移す経路を追加した。
+View Menuで非表示にしたPanel Contentは非表示Hostへ所有権を退避し、Inspectorの編集中値や
+Panel内部選択を破棄せず同じInstanceを元Paneへ戻す。終了時は現在の表示状態を含むSnapshotを、
+一時ファイル、Primary置換、Backupの既存保存契約で`RavenEditorDock.layout.json`へ保存する。
+Tabの外側Dragから`Application::RequestDetachDockTabToNewWindow()`を呼ぶ接続と、Editor実データを
+使った補助Windowの実機検証は未完了である。
 
 Exit Gate:
 
@@ -469,5 +477,6 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 2026-10-18 | 作業ツリー | Phase 5.1 DX12 off-screen native target | RGBA8 + D32 Target、RTV / SRV、Barrier、SwapChain Pass復帰、Fence Lifetimeを追加 | Debug x64 build成功（PDB無効）、Viewport・Entity Command Self Test成功 | 未実施 | DX12 Viewport別Scene記録、Vulkan native target、Picking |
 | 2026-10-19 | `feature/dx12-editor-viewport-snapshots` | Phase 5.1 DX12 Viewport Snapshot | Main / Scene View / Game Viewの描画Snapshotを分離し、RHI TargetとRaven UI Imageへ接続 | 未実施（GitHubコネクタ環境ではMSBuild不可） | 未実施 | DX12実機Smoke Test、Vulkan native target、DX12 Picking |
 | 2026-10-19 | PR #309 | Phase 5.1 Vulkan Viewport Snapshot | VkImage / ImageView / Sampler / D32 / Framebuffer、Layout遷移、SwapChain Pass復帰、Fence Lifetime、Resize後Descriptor整理を追加 | Vulkan変更cppのGCC C++17構文コンパイル成功、`git diff --check`成功 | 未実施 | DX12 / Vulkan実機Smoke Test、Explicit Picking ID Attachment |
+| 2026-10-20 | 作業ツリー | Phase 6 Editor shell / Docking | Raven UI Editor Root、6 PanelのDock Tab、View Menu表示管理、Layout保存を接続 | Debug x64 build成功（PDB無効）、Raven UI CPU Test成功 | 未実施 | Tab外側Dragから補助Window切り離し、Editor実データでClose復帰を実機確認 |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。

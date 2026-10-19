@@ -1344,6 +1344,11 @@ void TestEditorDockLayoutPolicy()
     Check(Raven::kUIDockSnapshotVersion == 1u, "editor dock snapshot version");
     Check(defaults.Structure.size() == 7u && defaults.Tabs.size() == 6u &&
         defaults.Selections.size() == 4u, "editor dock default shape");
+    Check(std::all_of(defaults.Tabs.begin(), defaults.Tabs.end(),
+        [](const Raven::UIDockTabRecord& record)
+        {
+            return record.Tab.Closable == false;
+        }), "editor dock panels use view menu visibility");
 
     Raven::UIDockSpace restored;
     int created = 0;
