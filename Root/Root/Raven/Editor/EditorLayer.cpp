@@ -1032,7 +1032,7 @@ void EditorLayer::OnRender()
                 std::max(m_SceneViewportHeight, 1.0f));
             if (ensureRenderTarget(
                 m_SceneRHIRenderTarget, width, height,
-                "DX12 Editor Scene View") == true)
+                "Explicit Editor Scene View") == true)
             {
                 SceneViewportRenderer* viewportRenderer =
                     dynamic_cast<SceneViewportRenderer*>(activeScene);
@@ -1061,7 +1061,7 @@ void EditorLayer::OnRender()
                 std::max(m_GameViewportHeight, 1.0f));
             if (ensureRenderTarget(
                 m_GameRHIRenderTarget, width, height,
-                "DX12 Editor Game View") == true)
+                "Explicit Editor Game View") == true)
             {
                 activeScene->OnRender();
                 m_Application->CaptureExplicitEditorViewportFrame(

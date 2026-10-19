@@ -10,7 +10,7 @@
 namespace Raven
 {
 
-// RHITextureからScene用VkImageへのBridgeです。
+// RHITextureからScene用Sampled / RenderTarget VkImageへのBridgeです。
 // DescriptorはScene側で管理し、Texture本体の所有権だけをRHIに統一します。
 class VulkanSceneRHITexture final : public RHITexture
 {
@@ -42,6 +42,9 @@ public:
         m_Specification = specification;
         return true;
     }
+
+    bool InitRenderTarget(const VulkanDevice& device,
+        const RHITextureSpecification& specification, VkFormat nativeFormat);
 
     void SetData(const void* data, std::size_t dataSize) override
     {

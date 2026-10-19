@@ -10,7 +10,7 @@ namespace Raven
 
 // Scene Contextが所有するVkDevice/RenderPassを借用するRHIDevice Adapterです。
 // Contextより長く保持しないこと。Resize後は新しいRenderPassでPipelineを再生成します。
-// Vertex/Index BufferとRGBA8 Sampled Textureを共通RHI経由で生成します。
+// Vertex/Index Buffer、Sampled Texture、Editor用off-screen Targetを共通RHI経由で生成します。
 // Buffer更新はContextでGPU同期し、Shutdown時は外部Refのnative Bufferも無効化します。
 class VulkanSceneRHIDevice final : public RHIDevice
 {
@@ -100,6 +100,9 @@ public:
         m_Context.RegisterTexture(texture);
         return texture;
     }
+
+    Ref<RHIOffscreenRenderTarget> CreateOffscreenRenderTarget(
+        const RHIOffscreenRenderTargetSpecification& specification) override;
 
 private:
     VulkanSceneContext& m_Context;

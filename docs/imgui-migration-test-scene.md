@@ -33,7 +33,7 @@
 | 対象 | OpenGL | DirectX 12 | Vulkan |
 | --- | --- | --- | --- |
 | UI Widget / Font / Clip | 未検証 | 未検証 | 未検証 |
-| RenderTarget Image / UV / Aspect | 未検証 | 実装済み・未検証 | 未検証 |
+| RenderTarget Image / UV / Aspect | 未検証 | 実装済み・未検証 | 実装済み・未検証 |
 | Input / Focus / Capture | 未検証 | 未検証 | 未検証 |
 | Docking / Multi-Viewport | 未検証 | 未検証 | 未検証 |
 
@@ -57,6 +57,7 @@ DX12通常起動ではDear ImGui Contextを生成せず、Editor UI BackendをRa
 
 ```powershell
 & "./Root/Root/x64/Debug/Root.exe" --backend=dx12
+& "./Root/Root/x64/Debug/Root.exe" --backend=vulkan
 ```
 
 依存数は次のコマンドで再計測する。JSONを残す場合だけ`-OutputJson`を指定し、通常は作業Treeへ生成物を残さない。
@@ -104,6 +105,14 @@ DX12通常起動ではDear ImGui Contextを生成せず、Editor UI BackendをRa
 3. Dock Resize、Window Resize、最小化復帰後に新しいTarget寸法へ追従し、旧画像や黒画面が残らないことを確認する。
 4. Scene/Game View描画後もRaven UIが表示され、DX12 Debug LayerにResource State / Descriptor / Lifetime Errorが出ないことを確認する。
 5. 現段階のDX12 ViewportはPicking ID Attachment未接続のため、Click Pickingは完了判定へ含めない。
+
+### Vulkan Phase 5.1 Viewport表示
+
+1. `--backend=vulkan`で起動し、Main SceneとScene View / Game Viewの3描画結果が同時に更新されることを確認する。
+2. Scene ViewがEditor Camera、Game ViewがRuntime Cameraを使用し、片方のCamera操作が他方へ混入しないことを確認する。
+3. Dock Resize、SwapChain Resize、最小化復帰後に無効化された旧Targetが次Frameで再生成され、旧画像や黒画面が残らないことを確認する。
+4. Scene/Game View描画後もMain SceneとRaven UIが保持され、Vulkan Validation LayerにRenderPass互換性、Image Layout、Framebuffer LifetimeのErrorが出ないことを確認する。
+5. 現段階のVulkan ViewportはPicking ID Attachment未接続のため、Click Pickingは完了判定へ含めない。
 
 ### Raven UI単独経路
 

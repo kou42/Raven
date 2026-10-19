@@ -249,13 +249,13 @@ Exit Gate:
 
 - [ ] Scene ViewとGame ViewのFramebufferをRaven UI Imageへ表示する。
   - [x] OpenGL FramebufferのColor Attachmentを`Ref<Texture>`でRaven UIへ接続する。
-  - [ ] DirectX 12 / VulkanのEditor用off-screen RenderTargetを`RHITexture`で接続する。
+  - [x] DirectX 12 / VulkanのEditor用off-screen RenderTargetを`RHITexture`で接続する。
     - [x] Backend共通の`RHIOffscreenRenderTarget`契約とDevice / Command Listの拡張口を追加する。
     - [x] Raven UI Viewport PanelがColor Attachmentの`Ref<RHITexture>`を直接保持・表示する。
-    - [ ] DX12 / Vulkanのnative RenderTarget生成、状態遷移、Scene描画を接続する。
+    - [x] DX12 / Vulkanのnative RenderTarget生成、状態遷移、Scene描画を接続する。
       - [x] DX12のRGBA8 Color + D32 Depth、RTV / SRV、描画前後Barrierを実装する。
       - [x] DX12 Explicit RuntimeでScene/Game Viewの描画SnapshotをTargetへ記録する。
-      - [ ] VulkanのImage / ImageView / Framebuffer、Layout遷移を実装する。
+      - [x] VulkanのImage / ImageView / Framebuffer、Layout遷移を実装する。
 - [x] 論理DIP、Framebuffer Pixel、RenderTarget Pixelの3座標系を明記して変換する。
 - [x] OpenGLの上下反転をWidgetへ直書きせず、Texture ViewまたはRenderer側の規約で扱う。
 - [x] Resizeは0サイズ、最小化、DPI変更、1Frame遅延を安全に処理する。
@@ -271,7 +271,12 @@ UI DrawListとFrame Fenceの参照が完了するまでContextが保持する。
 DX12 RuntimeはMain SceneのQueueをEditor再描画前にSnapshot化し、Scene View / Game Viewを別Snapshotとして保持する。
 同一Command List内でSwapChain Passを一時停止して各off-screen Targetへ描画し、TargetをSampling可能状態へ戻した後に
 Raven UIをSwapChainへ描画する。Target ResizeはRef全体の交換とFrame Fence保持を維持する。
-DX12実機Smoke TestとVulkan native RenderTargetは未完了のため、Phase 5.1のExit Gateは未達である。
+VulkanはSwapChainと互換なColor形式のImage / ImageView / SamplerとD32 Depth、Framebufferを生成し、
+同一Command Buffer上で`SHADER_READ_ONLY_OPTIMAL`と`COLOR_ATTACHMENT_OPTIMAL`を往復する。
+off-screen描画中だけSwapChain RenderPassを中断し、LOAD互換RenderPassでMain SceneのColor / Depthを保持したまま
+Raven UI描画へ復帰する。TargetはFrame FenceまでContextが保持し、SwapChain Resize時は借用RenderPassより先に
+native FramebufferとColor Textureを無効化して、Editor側が次Frameに新Targetへ交換する。
+DX12 / Vulkan実機Smoke Testが未完了のため、Phase 5.1のExit Gateは未達である。
 
 #### 5.2 PickingとCamera入力
 

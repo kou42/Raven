@@ -691,6 +691,9 @@
     <Filter Include="Raven\Platform\DirectX12">
       <UniqueIdentifier>{119f1cf8-b4f3-4621-a2be-63a5fb1d8414}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Platform\Vulkan">
+      <UniqueIdentifier>{5f9a620d-5413-47b6-9df3-4e4794968f65}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Update="Raven\Audio\AudioService.cpp">
@@ -846,6 +849,24 @@
     <ClInclude Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.h">
       <Filter>Raven\Platform\DirectX12</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Platform\Vulkan\VulkanOffscreenRenderTarget.cpp">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Platform\Vulkan\VulkanOffscreenRenderTarget.h">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneCommandList.cpp">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneRHIDevice.cpp">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneRHITexture.cpp">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneTexture.cpp">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Assets\Images\test\mountain1.png" />

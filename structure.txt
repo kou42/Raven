@@ -1538,6 +1538,12 @@ Raven RHI implementation additions (Root/Root/Raven relative paths):
     Platform/Vulkan/VulkanFrameRenderer.cpp
     Platform/Vulkan/VulkanClearContext.h
     Platform/Vulkan/VulkanClearContext.cpp
+    Platform/Vulkan/VulkanOffscreenRenderTarget.h
+    Platform/Vulkan/VulkanOffscreenRenderTarget.cpp
+    Platform/Vulkan/VulkanSceneCommandList.cpp
+    Platform/Vulkan/VulkanSceneRHIDevice.cpp
+    Platform/Vulkan/VulkanSceneRHITexture.cpp
+    Platform/Vulkan/VulkanSceneTexture.cpp
     Renderer/RHI/ClearBackendDemo.h
     Renderer/RHI/ClearBackendDemo.cpp
     Renderer/RHI/RHIOffscreenRenderTarget.h
