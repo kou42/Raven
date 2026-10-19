@@ -166,7 +166,6 @@ public:
         {
             return false;
         }
-        m_PreparedFrame = std::move(prepared);
         return true;
     }
 
