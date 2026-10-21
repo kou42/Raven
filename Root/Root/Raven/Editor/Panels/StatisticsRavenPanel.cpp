@@ -8,6 +8,7 @@
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UIWindow.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -23,28 +24,33 @@ constexpr std::size_t RendererHeader = 4u;
 constexpr std::size_t RendererDrawCalls = 5u;
 constexpr std::size_t RendererIndexCount = 6u;
 constexpr std::size_t RendererTriangleCount = 7u;
-constexpr std::size_t PhysicsHeader = 8u;
-constexpr std::size_t PhysicsStatus = 9u;
-constexpr std::size_t PhysicsRigidBodies = 10u;
-constexpr std::size_t PhysicsColliders = 11u;
-constexpr std::size_t PhysicsBroadPhasePairs = 12u;
-constexpr std::size_t PhysicsManifolds = 13u;
-constexpr std::size_t PhysicsContactPoints = 14u;
-constexpr std::size_t PhysicsWarmStarted = 15u;
-constexpr std::size_t PhysicsVelocityIterations = 16u;
-constexpr std::size_t PhysicsMaxPenetration = 17u;
-constexpr std::size_t AstroHeader = 18u;
-constexpr std::size_t AstroSolver = 19u;
-constexpr std::size_t AstroBodies = 20u;
-constexpr std::size_t AstroThresholds = 21u;
-constexpr std::size_t AstroTheta = 22u;
-constexpr std::size_t AstroTimingA = 23u;
-constexpr std::size_t AstroTimingB = 24u;
-constexpr std::size_t AstroWork = 25u;
-constexpr std::size_t ProfilerHeader = 26u;
-constexpr std::size_t ProfilerFrame = 27u;
-constexpr std::size_t ProfilerCounts = 28u;
-constexpr std::size_t SummaryLabelCount = 29u;
+constexpr std::size_t UIHeader = 8u;
+constexpr std::size_t UIBuildAndCommands = 9u;
+constexpr std::size_t UIGeometry = 10u;
+constexpr std::size_t UIResources = 11u;
+constexpr std::size_t UIElements = 12u;
+constexpr std::size_t PhysicsHeader = 13u;
+constexpr std::size_t PhysicsStatus = 14u;
+constexpr std::size_t PhysicsRigidBodies = 15u;
+constexpr std::size_t PhysicsColliders = 16u;
+constexpr std::size_t PhysicsBroadPhasePairs = 17u;
+constexpr std::size_t PhysicsManifolds = 18u;
+constexpr std::size_t PhysicsContactPoints = 19u;
+constexpr std::size_t PhysicsWarmStarted = 20u;
+constexpr std::size_t PhysicsVelocityIterations = 21u;
+constexpr std::size_t PhysicsMaxPenetration = 22u;
+constexpr std::size_t AstroHeader = 23u;
+constexpr std::size_t AstroSolver = 24u;
+constexpr std::size_t AstroBodies = 25u;
+constexpr std::size_t AstroThresholds = 26u;
+constexpr std::size_t AstroTheta = 27u;
+constexpr std::size_t AstroTimingA = 28u;
+constexpr std::size_t AstroTimingB = 29u;
+constexpr std::size_t AstroWork = 30u;
+constexpr std::size_t ProfilerHeader = 31u;
+constexpr std::size_t ProfilerFrame = 32u;
+constexpr std::size_t ProfilerCounts = 33u;
+constexpr std::size_t SummaryLabelCount = 34u;
 
 std::string FormatDouble(double value)
 {
@@ -81,8 +87,8 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     scroll->SetPreferredSize(math::Vec2(764.0f, 680.0f));
 
     auto content = CreateScope<UIElement>();
-    content->SetSize(math::Vec2(738.0f, 1370.0f));
-    content->SetPreferredSize(math::Vec2(738.0f, 1370.0f));
+    content->SetSize(math::Vec2(738.0f, 1805.0f));
+    content->SetPreferredSize(math::Vec2(738.0f, 1805.0f));
     for (std::size_t index = 0u; index < SummaryLabelCount; ++index)
     {
         m_SummaryLabels.push_back(AddLabel(
@@ -90,7 +96,7 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     }
 
     auto profilerEnabled = CreateScope<UICheckbox>();
-    profilerEnabled->SetPosition(math::Vec2(150.0f, 654.0f));
+    profilerEnabled->SetPosition(math::Vec2(150.0f, 779.0f));
     profilerEnabled->SetSize(math::Vec2(170.0f, 28.0f));
     profilerEnabled->SetPreferredSize(math::Vec2(170.0f, 28.0f));
     profilerEnabled->SetCaption("Enabled", font);
@@ -104,14 +110,14 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
 
     auto actionStatus = CreateScope<UILabel>();
     actionStatus->SetFont(font);
-    actionStatus->SetPosition(math::Vec2(334.0f, 658.0f));
+    actionStatus->SetPosition(math::Vec2(334.0f, 783.0f));
     actionStatus->SetSize(math::Vec2(380.0f, 23.0f));
     actionStatus->SetHitTestVisible(false);
     m_ActionStatusLabel = static_cast<UILabel*>(content->AddChild(std::move(actionStatus)));
 
     auto profileTable = CreateScope<UITable>();
     profileTable->SetFont(font);
-    profileTable->SetPosition(math::Vec2(8.0f, 752.0f));
+    profileTable->SetPosition(math::Vec2(8.0f, 877.0f));
     profileTable->SetSize(math::Vec2(712.0f, 270.0f));
     profileTable->AddColumn("Scope", 360.0f);
     profileTable->AddColumn("Total ms", 110.0f);
@@ -127,7 +133,7 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
 
     auto counterTable = CreateScope<UITable>();
     counterTable->SetFont(font);
-    counterTable->SetPosition(math::Vec2(8.0f, 1040.0f));
+    counterTable->SetPosition(math::Vec2(8.0f, 1165.0f));
     counterTable->SetSize(math::Vec2(712.0f, 300.0f));
     counterTable->AddColumn("Counter", 300.0f);
     counterTable->AddColumn("Total", 100.0f);
@@ -142,6 +148,21 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
         });
     m_CounterTable = static_cast<UITable*>(content->AddChild(std::move(counterTable)));
 
+    auto rawProfileTable = CreateScope<UITable>();
+    rawProfileTable->SetFont(font);
+    rawProfileTable->SetPosition(math::Vec2(8.0f, 1483.0f));
+    rawProfileTable->SetSize(math::Vec2(712.0f, 300.0f));
+    rawProfileTable->AddColumn("Raw Scope", 560.0f);
+    rawProfileTable->AddColumn("Time ms", 130.0f);
+    rawProfileTable->SetDataSource(
+        [this]() { return GetRawProfileRowCount(); },
+        [this](std::size_t row, std::size_t column)
+        {
+            return GetRawProfileCellText(row, column);
+        });
+    m_RawProfileTable = static_cast<UITable*>(
+        content->AddChild(std::move(rawProfileTable)));
+
     scroll->SetContent(std::move(content));
     window->AddChild(std::move(scroll));
     m_Context = &context;
@@ -154,6 +175,7 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
         m_ActionStatusLabel = nullptr;
         m_ProfileTable = nullptr;
         m_CounterTable = nullptr;
+        m_RawProfileTable = nullptr;
         return false;
     }
 
@@ -174,6 +196,7 @@ void StatisticsRavenPanel::Detach()
     m_ActionStatusLabel = nullptr;
     m_ProfileTable = nullptr;
     m_CounterTable = nullptr;
+    m_RawProfileTable = nullptr;
     m_Snapshot = StatisticsSnapshot{};
 }
 
@@ -192,6 +215,10 @@ void StatisticsRavenPanel::Update(const StatisticsSnapshot& snapshot)
     if (m_CounterTable != nullptr)
     {
         m_CounterTable->NotifyDataSourceChanged();
+    }
+    if (m_RawProfileTable != nullptr)
+    {
+        m_RawProfileTable->NotifyDataSourceChanged();
     }
 }
 
@@ -221,6 +248,11 @@ std::size_t StatisticsRavenPanel::GetProfileRowCount() const
 std::size_t StatisticsRavenPanel::GetCounterRowCount() const
 {
     return m_Snapshot.CPUProfiler.CounterAggregates.size();
+}
+
+std::size_t StatisticsRavenPanel::GetRawProfileRowCount() const
+{
+    return m_Snapshot.CPUProfiler.RawResults.size();
 }
 
 UILabel* StatisticsRavenPanel::AddLabel(
@@ -280,6 +312,38 @@ void StatisticsRavenPanel::UpdateSummaryLabels()
     m_SummaryLabels[RendererIndexCount]->SetText(buffer);
     std::snprintf(buffer, sizeof(buffer), "Triangles: %u", m_Snapshot.Renderer.TriangleCount);
     m_SummaryLabels[RendererTriangleCount]->SetText(buffer);
+
+    m_SummaryLabels[UIHeader]->SetText("Raven UI (Previous Frame)");
+    if (m_Snapshot.UI.Available == true)
+    {
+        std::snprintf(buffer, sizeof(buffer), "Build: %.3f ms / Draw Commands: %llu",
+            m_Snapshot.UI.BuildMilliseconds,
+            static_cast<unsigned long long>(m_Snapshot.UI.DrawCommandCount));
+        m_SummaryLabels[UIBuildAndCommands]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer), "Vertices: %llu / Indices: %llu",
+            static_cast<unsigned long long>(m_Snapshot.UI.VertexCount),
+            static_cast<unsigned long long>(m_Snapshot.UI.IndexCount));
+        m_SummaryLabels[UIGeometry]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer),
+            "Texture Switches: %llu / Draw Allocations: %llu (%.1f KiB)",
+            static_cast<unsigned long long>(m_Snapshot.UI.TextureSwitchCount),
+            static_cast<unsigned long long>(m_Snapshot.UI.FrameAllocationCount),
+            static_cast<double>(m_Snapshot.UI.FrameAllocatedBytes) / 1024.0);
+        m_SummaryLabels[UIResources]->SetText(buffer);
+        std::snprintf(buffer, sizeof(buffer),
+            "DrawList Retained: %.1f KiB / Elements: %llu (Peak %llu)",
+            static_cast<double>(m_Snapshot.UI.RetainedAllocationBytes) / 1024.0,
+            static_cast<unsigned long long>(m_Snapshot.UI.ElementCount),
+            static_cast<unsigned long long>(m_Snapshot.UI.PeakElementCount));
+        m_SummaryLabels[UIElements]->SetText(buffer);
+    }
+    else
+    {
+        m_SummaryLabels[UIBuildAndCommands]->SetText("Build: N/A (No completed frame)");
+        m_SummaryLabels[UIGeometry]->SetText("Vertices / Indices: N/A");
+        m_SummaryLabels[UIResources]->SetText("Texture Switches / Draw Allocations: N/A");
+        m_SummaryLabels[UIElements]->SetText("DrawList Retained / Elements: N/A");
+    }
 
     const StatisticsPhysicsSnapshot& physics = m_Snapshot.Physics;
     m_SummaryLabels[PhysicsHeader]->SetText("Physics");
@@ -402,6 +466,28 @@ std::string StatisticsRavenPanel::GetCounterCellText(
     case 2u: return FormatDouble(average);
     case 3u: return FormatDouble(aggregate.Max);
     case 4u: return std::to_string(aggregate.SampleCount);
+    default: return {};
+    }
+}
+
+std::string StatisticsRavenPanel::GetRawProfileCellText(
+    std::size_t row, std::size_t column) const
+{
+    if (row >= m_Snapshot.CPUProfiler.RawResults.size())
+    {
+        return {};
+    }
+
+    const CPUProfileResult& result = m_Snapshot.CPUProfiler.RawResults[row];
+    switch (column)
+    {
+    case 0u:
+    {
+        // 異常なDepth値で巨大文字列を作らないよう表示上のindentだけに上限を設けます。
+        const std::size_t depth = std::min<std::size_t>(result.Depth, 32u);
+        return std::string(depth * 2u, ' ') + result.Name;
+    }
+    case 1u: return FormatDouble(result.DurationMilliseconds);
     default: return {};
     }
 }

@@ -1,5 +1,6 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Core/UIHitTest.h"
+#include "Raven/UI/Rendering/UITessellator.h"
 #include "Raven/UI/Widgets/UITooltip.h"
 #include "Raven/UI/Text/UIUtf8.h"
 
@@ -9,6 +10,21 @@
 
 namespace Raven
 {
+namespace
+{
+std::size_t CountUIElements(const UIElement& element)
+{
+    std::size_t count = 1u;
+    for (const auto& child : element.GetChildren())
+    {
+        if (child != nullptr)
+        {
+            count += CountUIElements(*child);
+        }
+    }
+    return count;
+}
+} // namespace
 
 UIContext::UIContext()
     : m_RootElement(CreateScope<UIElement>())
@@ -265,6 +281,8 @@ void UIContext::EndFrame()
         return;
     }
 
+    const auto buildStarted = std::chrono::steady_clock::now();
+
     // ====================================================================
     // Retained UI Tree -> Layout -> UIDrawList
     // ====================================================================
@@ -336,6 +354,25 @@ void UIContext::EndFrame()
             m_DrawList.AddRect(overlay.Min, overlay.Max, overlay.Color);
         }
     }
+
+    const UITessellationMetrics tessellationMetrics =
+        UITessellator::Measure(m_DrawList);
+    const auto buildFinished = std::chrono::steady_clock::now();
+    m_LastFrameMetrics.Available = true;
+    m_LastFrameMetrics.BuildMilliseconds =
+        std::chrono::duration<double, std::milli>(buildFinished - buildStarted).count();
+    m_LastFrameMetrics.DrawCommandCount = tessellationMetrics.DrawCommandCount;
+    m_LastFrameMetrics.VertexCount = tessellationMetrics.VertexCount;
+    m_LastFrameMetrics.IndexCount = tessellationMetrics.IndexCount;
+    m_LastFrameMetrics.TextureSwitchCount = tessellationMetrics.TextureSwitchCount;
+    m_LastFrameMetrics.FrameAllocationCount = m_DrawList.GetFrameAllocationCount();
+    m_LastFrameMetrics.FrameAllocatedBytes = m_DrawList.GetFrameAllocatedBytes();
+    m_LastFrameMetrics.RetainedAllocationBytes =
+        m_DrawList.GetRetainedAllocationBytes();
+    m_LastFrameMetrics.ElementCount = m_RootElement != nullptr
+        ? CountUIElements(*m_RootElement) : 0u;
+    m_LastFrameMetrics.PeakElementCount = std::max(
+        m_LastFrameMetrics.PeakElementCount, m_LastFrameMetrics.ElementCount);
 
     // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
     // nullptrは正常な状態として扱います。OpenGLUIRenderer追加後はApplication初期化時に

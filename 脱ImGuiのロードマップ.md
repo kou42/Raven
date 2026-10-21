@@ -333,8 +333,14 @@ Exit Gate:
 View Menuで非表示にしたPanel Contentは非表示Hostへ所有権を退避し、Inspectorの編集中値や
 Panel内部選択を破棄せず同じInstanceを元Paneへ戻す。終了時は現在の表示状態を含むSnapshotを、
 一時ファイル、Primary置換、Backupの既存保存契約で`RavenEditorDock.layout.json`へ保存する。
-Tabの外側Dragから`Application::RequestDetachDockTabToNewWindow()`を呼ぶ接続と、Editor実データを
-使った補助Windowの実機検証は未完了である。
+2026-10-20時点では、Tabの外側Dragから`Application::RequestDetachDockTabToNewWindow()`を呼ぶ接続と、
+Editor実データを使った補助Windowの実機検証が未完了だった。
+
+2026-10-22時点で、Tab HeaderのDock外Releaseを`UIDockSpace`の切り離し要求へ変換し、
+`EditorLayer`から既存のFrame境界予約APIへ接続した。Window生成に成功した場合だけ同じPanel Contentを
+補助Windowへ移譲し、Close時は既存の復帰経路で元Paneへ戻す。Dock内Releaseでは切り離さず、
+Window生成前は元Contentを保持するCPU回帰テストを追加した。Editor実データを使った補助Windowの
+切り離し・Close復帰の手動Smoke Testは未完了のため、チェック項目とExit Gateは継続する。
 
 Exit Gate:
 
@@ -344,12 +350,23 @@ Exit Gate:
 
 ### Phase 7: Raven UIを既定経路にして安定化
 
-- [ ] 通常Editor起動をRaven UI既定にする。
-- [ ] Dear ImGui経路は明示的な緊急fallbackだけに限定し、新機能追加を停止する。
+- [x] 通常Editor起動をRaven UI既定にする。
+- [x] Dear ImGui経路は明示的な緊急fallbackだけに限定し、新機能追加を停止する。
 - [ ] 少なくとも複数の通常開発セッションで、Editor操作、Scene切替、長時間実行、Multi-Viewportを確認する。
 - [ ] CPU Frame時間、UI Draw Command、Vertex/Index、Texture切替、Allocationを計測する。
 - [ ] Debug/Release、OpenGL/DirectX 12/Vulkan、100%/高DPIで回帰確認する。
 - [ ] ImGui版との機能差を一覧化し、削除を妨げる差分だけを解消する。
+
+機能差棚卸し（2026-10-22）:
+
+| 領域 | Raven UIの状態 | ImGui削除への影響 | 対応 |
+| --- | --- | --- | --- |
+| Editor shell / View Menu / Dock保存 | 移植済み | なし | Raven UIを既定経路として継続検証 |
+| Scene / Game View、Picking、Camera、Gizmo | 実装済み、3 Backend実機確認待ち | 実機検証完了まで削除不可 | Backend / DPI別Smoke Testを継続 |
+| Statisticsの集計Scope / Counter / Raw Scope | 移植済み | なし | Raw Scopeを仮想化Tableへ追加 |
+| StatisticsのSoftBody / Fluid専用比較表示 | 汎用Scope / Counterから値は確認可能、専用表示は未移植 | 診断の利便性差。機能欠落ではない | fallback利用実績を見て移植要否を判断 |
+| Animation Debug / Hierarchy / Inspector | 移植済み | なし | Snapshot / Command共通経路を維持 |
+| Tab切り離し / 補助Window復帰 | 実装済み、Editor実データ確認待ち | 実機検証完了まで削除不可 | Phase 6 Smoke Testへ持ち越し |
 
 Exit Gate:
 
@@ -478,5 +495,9 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 2026-10-19 | `feature/dx12-editor-viewport-snapshots` | Phase 5.1 DX12 Viewport Snapshot | Main / Scene View / Game Viewの描画Snapshotを分離し、RHI TargetとRaven UI Imageへ接続 | 未実施（GitHubコネクタ環境ではMSBuild不可） | 未実施 | DX12実機Smoke Test、Vulkan native target、DX12 Picking |
 | 2026-10-19 | PR #309 | Phase 5.1 Vulkan Viewport Snapshot | VkImage / ImageView / Sampler / D32 / Framebuffer、Layout遷移、SwapChain Pass復帰、Fence Lifetime、Resize後Descriptor整理を追加 | Vulkan変更cppのGCC C++17構文コンパイル成功、`git diff --check`成功 | 未実施 | DX12 / Vulkan実機Smoke Test、Explicit Picking ID Attachment |
 | 2026-10-20 | 作業ツリー | Phase 6 Editor shell / Docking | Raven UI Editor Root、6 PanelのDock Tab、View Menu表示管理、Layout保存を接続 | Debug x64 build成功（PDB無効）、Raven UI CPU Test成功 | 未実施 | Tab外側Dragから補助Window切り離し、Editor実データでClose復帰を実機確認 |
+| 2026-10-22 | 作業ツリー | Phase 6 Tab切り離し接続 | Dock外Releaseを補助Window生成予約へ接続し、同じPanel ContentをClose時に元Paneへ戻す既存経路を利用 | Debug x64通常ビルド成功、Raven UI CPU Test成功 | 未実施 | Editor実データで切り離し・補助Window Close・元Pane復帰を実機確認 |
+| 2026-10-22 | 作業ツリー | Phase 7 Raven UI既定化 | 引数なしの通常Editor起動をRaven UIへ変更し、Dear ImGui / Dualを明示引数だけのfallbackへ限定 | Debug x64通常ビルド成功、Raven UI CPU Test成功 | 未実施 | 複数開発セッション、3 Backend、高DPI、性能計測 |
+| 2026-10-22 | 作業ツリー | Phase 7 Raven UI性能計測基盤 | 前FrameのUI Build CPU時間、Draw Command、Vertex / Index、Texture切替、DrawListのframe確保回数・確保量・保持容量、現在/最大Element数をStatistics Panelへ追加 | Debug x64通常ビルド成功、Allocation/Elementを含む計測値整合性のRaven UI CPU Test成功 | 未実施 | 実EditorでBaseline採取、DrawList外の一時Allocation、長時間・3 Backend・高DPI確認 |
+| 2026-10-22 | 作業ツリー | Phase 7 ImGui機能差棚卸し / Raw Scope | Editor主要機能の差を分類し、Statisticsの呼び出し順・Depth・時間をRaven UI仮想化Tableへ追加 | Debug x64通常ビルド成功、Raw Scope行数を含むRaven UI CPU Test成功 | 未実施 | 3 Backend / DPI、補助Window、専用比較表示の移植要否判断 |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。

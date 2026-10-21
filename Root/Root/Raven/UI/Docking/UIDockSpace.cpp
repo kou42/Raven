@@ -491,6 +491,33 @@ UITabView* UIDockSpace::CreateTabView(std::uint64_t leafId)
             current->GetTabs()->MoveTab(id, to);
         }
     });
+    raw->GetTabBar()->SetOnDragEnded(
+        [this, leafId](std::uint64_t tabId, const math::Vec2& screenPosition)
+        {
+            if (m_OnTabDetachRequested == nullptr)
+            {
+                return;
+            }
+            math::Vec2 local;
+            if (TryScreenToLocalPosition(screenPosition, local) == false)
+            {
+                return;
+            }
+            // 同じPane内の並べ替えや別PaneへのDockは既存Drag & Drop経路に任せます。
+            // DockSpaceの矩形を外れてReleaseされた操作だけをOS Window候補にします。
+            if (local.x >= 0.0f && local.y >= 0.0f &&
+                local.x < GetSize().x && local.y < GetSize().y)
+            {
+                return;
+            }
+            UITabView* source = GetTabView(leafId);
+            if (source == nullptr || source->GetModel().FindTab(tabId) == nullptr ||
+                source->GetTabContent(tabId) == nullptr)
+            {
+                return;
+            }
+            m_OnTabDetachRequested(leafId, tabId, screenPosition);
+        });
     if (SetPane(leafId, std::move(view)) == false)
     {
         return nullptr;

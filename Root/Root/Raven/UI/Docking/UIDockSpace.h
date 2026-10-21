@@ -47,6 +47,9 @@ bool LoadDockSnapshot(const std::string& filePath,
 class UIDockSpace final : public UIElement
 {
 public:
+    using TabDetachRequestedHandler = std::function<void(
+        std::uint64_t, std::uint64_t, const math::Vec2&)>;
+
     UIDockSpace();
 
     UIDockLayout& GetLayout() { return m_Layout; }
@@ -67,6 +70,12 @@ public:
     bool MoveTab(std::uint64_t leafId, std::uint64_t tabId, std::size_t index);
     bool MoveTabToPane(std::uint64_t sourceLeafId, std::uint64_t targetLeafId,
         std::uint64_t tabId);
+    // Tab HeaderがDockSpace外でReleaseされたときだけ通知します。
+    // OS Windowの生成はApplication/Editor側の責務とし、Docking Coreへ持ち込みません。
+    void SetOnTabDetachRequested(TabDetachRequestedHandler handler)
+    {
+        m_OnTabDetachRequested = std::move(handler);
+    }
     // OS Windowへの切り離し準備。Tab Contentの所有権と復帰用メタデータを返します。
     // TabBar/ContentHostの所有権はUITabViewに残し、論理Dock Modelも同時に更新します。
     // UIContextのFrame外で呼び、返されたContentは必ず別の所有者へ渡してください。
@@ -108,6 +117,7 @@ private:
     std::uint64_t m_PreviewLeaf = 0u;
     float m_SplitterThickness = 5.0f;
     float m_MinimumPaneExtent = 32.0f;
+    TabDetachRequestedHandler m_OnTabDetachRequested;
 };
 
 } // namespace Raven

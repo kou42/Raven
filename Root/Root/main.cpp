@@ -58,7 +58,9 @@
 int main(int argc, char* argv[])
 {
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
-    Raven::EditorUIBackend editorUIBackend = Raven::EditorUIBackend::DearImGui;
+    // Phase 7以降の通常EditorはRaven UIを正式経路とします。
+    // Dear ImGui / Dualは回帰調査時に明示引数でだけ選択するfallbackです。
+    Raven::EditorUIBackend editorUIBackend = Raven::kDefaultEditorUIBackend;
     bool uiMigrationTest = false;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -173,8 +175,8 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Explicit BackendはDear ImGuiのBackend Contextを生成しないため、通常起動では
-    // 移行済みPanelを表示できるRaven UIを選択します。OpenGLの既定値は従来どおり維持します。
+    // Explicit BackendはDear ImGuiのBackend Contextを生成できません。
+    // 明示的なfallback指定があってもRaven UIへ固定し、未対応Contextを生成しません。
     if (applicationBackend == Raven::RHIBackend::DirectX12 ||
         applicationBackend == Raven::RHIBackend::Vulkan)
     {

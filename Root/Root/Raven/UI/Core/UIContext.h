@@ -50,6 +50,21 @@ struct UIInteractionState
     bool Captured = false;
 };
 
+struct UIFrameMetrics
+{
+    bool Available = false;
+    double BuildMilliseconds = 0.0;
+    std::size_t DrawCommandCount = 0u;
+    std::size_t VertexCount = 0u;
+    std::size_t IndexCount = 0u;
+    std::size_t TextureSwitchCount = 0u;
+    std::size_t FrameAllocationCount = 0u;
+    std::size_t FrameAllocatedBytes = 0u;
+    std::size_t RetainedAllocationBytes = 0u;
+    std::size_t ElementCount = 0u;
+    std::size_t PeakElementCount = 0u;
+};
+
 class UIContext
 {
 public:
@@ -215,6 +230,7 @@ public:
 
     UIDrawList& GetDrawList();
     const UIDrawList& GetDrawList() const;
+    const UIFrameMetrics& GetLastFrameMetrics() const { return m_LastFrameMetrics; }
 
     const math::Vec2& GetViewportSize() const;
     bool IsFrameActive() const;
@@ -246,6 +262,7 @@ private:
     float m_UserScale = 1.0f;
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
+    UIFrameMetrics m_LastFrameMetrics;
     struct FrameOverlayShape
     {
         enum class Type

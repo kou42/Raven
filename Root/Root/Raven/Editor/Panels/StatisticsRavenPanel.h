@@ -32,6 +32,7 @@ public:
     UIElement* GetRootElement() const { return m_Root; }
     std::size_t GetProfileRowCount() const;
     std::size_t GetCounterRowCount() const;
+    std::size_t GetRawProfileRowCount() const;
 
 private:
     UILabel* AddLabel(UIElement& parent, float y, const Ref<UIFontAtlas>& font);
@@ -39,6 +40,7 @@ private:
     void UpdateSummaryLabels();
     std::string GetProfileCellText(std::size_t row, std::size_t column) const;
     std::string GetCounterCellText(std::size_t row, std::size_t column) const;
+    std::string GetRawProfileCellText(std::size_t row, std::size_t column) const;
 
     UIContext* m_Context = nullptr;
     UIElement* m_Root = nullptr;
@@ -47,6 +49,7 @@ private:
     UILabel* m_ActionStatusLabel = nullptr;
     UITable* m_ProfileTable = nullptr;
     UITable* m_CounterTable = nullptr;
+    UITable* m_RawProfileTable = nullptr;
     StatisticsSnapshot m_Snapshot;
 };
 

@@ -10,6 +10,7 @@ namespace Raven
 {
 
 class Scene;
+struct UIFrameMetrics;
 class Window;
 
 struct StatisticsProfileAggregate
@@ -63,6 +64,21 @@ struct StatisticsRendererSnapshot
     std::uint32_t TriangleCount = 0u;
 };
 
+struct StatisticsUISnapshot
+{
+    bool Available = false;
+    double BuildMilliseconds = 0.0;
+    std::uint64_t DrawCommandCount = 0u;
+    std::uint64_t VertexCount = 0u;
+    std::uint64_t IndexCount = 0u;
+    std::uint64_t TextureSwitchCount = 0u;
+    std::uint64_t FrameAllocationCount = 0u;
+    std::uint64_t FrameAllocatedBytes = 0u;
+    std::uint64_t RetainedAllocationBytes = 0u;
+    std::uint64_t ElementCount = 0u;
+    std::uint64_t PeakElementCount = 0u;
+};
+
 struct StatisticsAstroSnapshot
 {
     std::string SolverMode;
@@ -99,6 +115,7 @@ struct StatisticsSnapshot
     StatisticsRuntimeSnapshot Runtime;
     StatisticsCPUProfilerSnapshot CPUProfiler;
     StatisticsRendererSnapshot Renderer;
+    StatisticsUISnapshot UI;
     StatisticsPhysicsSnapshot Physics;
 };
 
@@ -110,6 +127,7 @@ struct StatisticsSnapshotInput
     std::uint32_t WindowWidth = 0u;
     std::uint32_t WindowHeight = 0u;
     StatisticsRendererSnapshot Renderer;
+    StatisticsUISnapshot UI;
     bool CPUProfilerEnabled = false;
     const CPUProfileFrame* CPUProfile = nullptr;
     const Scene* ActiveScene = nullptr;
@@ -117,6 +135,7 @@ struct StatisticsSnapshotInput
 
 StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input);
 StatisticsSnapshot CaptureStatisticsSnapshot(
-    float deltaTime, const Window& window, const Scene* scene);
+    float deltaTime, const Window& window, const Scene* scene,
+    const UIFrameMetrics* uiMetrics = nullptr);
 
 } // namespace Raven

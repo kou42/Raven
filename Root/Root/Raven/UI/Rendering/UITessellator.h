@@ -40,6 +40,14 @@ struct UITessellatedDrawList
     }
 };
 
+struct UITessellationMetrics
+{
+    std::size_t DrawCommandCount = 0u;
+    std::size_t VertexCount = 0u;
+    std::size_t IndexCount = 0u;
+    std::size_t TextureSwitchCount = 0u;
+};
+
 // UIDrawListのRect/Circle/Polygon/ImageをBackend非依存のTriangle Listへ変換します。
 // GPU Resource生成・Scissor座標変換・Texture Bindingは各Rendererが担当します。
 class UITessellator
@@ -48,6 +56,10 @@ public:
     static bool Tessellate(
         const UIDrawList& drawList,
         UITessellatedDrawList& outDrawList);
+
+    // GPU Bufferを生成せず、実際のTessellation規約と同じ頂点・Index数を集計します。
+    // Texture切替は描画可能Command間で参照Resourceが変わった回数です。
+    static UITessellationMetrics Measure(const UIDrawList& drawList);
 };
 
 } // namespace Raven

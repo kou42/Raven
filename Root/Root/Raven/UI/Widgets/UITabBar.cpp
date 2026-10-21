@@ -241,11 +241,23 @@ bool UITabBar::OnDragDropEvent(UIDragDropEvent& event)
         m_DropIndicatorVisible = false;
         return false;
     }
-    if (event.Type == UIDragDropEventType::Cancel ||
-        event.Type == UIDragDropEventType::End)
+    if (event.Type == UIDragDropEventType::Cancel)
     {
         m_DropIndicatorVisible = false;
         m_PendingDragId = 0u;
+        return false;
+    }
+    if (event.Type == UIDragDropEventType::End)
+    {
+        // UIContextはDrop処理の後にSourceへEndを通知します。IDを消す前に位置を
+        // DockSpaceへ返し、Dock外で終わった操作だけを補助Window要求へ変換します。
+        const std::uint64_t endedId = m_PendingDragId;
+        m_DropIndicatorVisible = false;
+        m_PendingDragId = 0u;
+        if (endedId != 0u && m_OnDragEnded)
+        {
+            m_OnDragEnded(endedId, event.ScreenPosition);
+        }
         return false;
     }
     if (m_DragReorderEnabled == false || event.Source != this ||

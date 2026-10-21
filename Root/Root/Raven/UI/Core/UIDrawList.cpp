@@ -155,6 +155,29 @@ bool UITransform2D::TryInverseTransformPoint(
 void UIDrawList::Clear()
 {
     m_Commands.clear();
+    m_FrameAllocationCount = 0u;
+    m_FrameAllocatedBytes = 0u;
+}
+
+void UIDrawList::RecordFrameAllocation(std::size_t byteCount)
+{
+    if (byteCount == 0u)
+    {
+        return;
+    }
+    ++m_FrameAllocationCount;
+    m_FrameAllocatedBytes += byteCount;
+}
+
+void UIDrawList::AppendCommand(UIDrawCommand command)
+{
+    const std::size_t previousCapacity = m_Commands.capacity();
+    m_Commands.push_back(std::move(command));
+    if (m_Commands.capacity() != previousCapacity)
+    {
+        // vector拡張時に新しく要求した領域を数えます。旧領域の解放量は差し引きません。
+        RecordFrameAllocation(m_Commands.capacity() * sizeof(UIDrawCommand));
+    }
 }
 
 void UIDrawList::AddRect(
@@ -175,7 +198,7 @@ void UIDrawList::AddRect(
     command.Rect.Min = min;
     command.Rect.Max = max;
     command.Color = color;
-    m_Commands.push_back(command);
+    AppendCommand(std::move(command));
 }
 
 void UIDrawList::AddCircle(
@@ -195,7 +218,7 @@ void UIDrawList::AddCircle(
     command.Rect.Min = min;
     command.Rect.Max = max;
     command.Color = color;
-    m_Commands.push_back(command);
+    AppendCommand(std::move(command));
 }
 
 void UIDrawList::AddPolygon(
@@ -211,6 +234,7 @@ void UIDrawList::AddPolygon(
     command.Type = UIDrawCommandType::SolidPolygon;
     command.Color = color;
     command.Points = points;
+    RecordFrameAllocation(command.Points.capacity() * sizeof(math::Vec2));
 
     // Polygonは任意頂点列を持つため、Clip/診断に使える保守的BoundsをCPU側で同時に保持します。
     // 三角形化そのものはRenderer backendへ残し、DrawListはGPU APIにもtessellation方式にも依存しません。
@@ -224,7 +248,7 @@ void UIDrawList::AddPolygon(
         command.Rect.Max.y = std::max(command.Rect.Max.y, point.y);
     }
 
-    m_Commands.push_back(std::move(command));
+    AppendCommand(std::move(command));
 }
 
 void UIDrawList::AddImage(
@@ -269,7 +293,7 @@ void UIDrawList::AddImage(
     command.UVMax = uvMax;
     command.Texture = textureView.GetAsset();
     command.TextureView = textureView;
-    m_Commands.push_back(command);
+    AppendCommand(std::move(command));
 }
 
 void UIDrawList::AddGlyph(
@@ -329,6 +353,16 @@ const std::vector<UIDrawCommand>& UIDrawList::GetCommands() const
 std::size_t UIDrawList::GetCommandCount() const
 {
     return m_Commands.size();
+}
+
+std::size_t UIDrawList::GetRetainedAllocationBytes() const
+{
+    std::size_t byteCount = m_Commands.capacity() * sizeof(UIDrawCommand);
+    for (const UIDrawCommand& command : m_Commands)
+    {
+        byteCount += command.Points.capacity() * sizeof(math::Vec2);
+    }
+    return byteCount;
 }
 
 bool UIDrawList::IsEmpty() const

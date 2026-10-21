@@ -45,7 +45,7 @@ Debug構成で通常のRaven実行ファイルをビルドし、作業ディレ�
 & "./Root/Root/x64/Debug/Root.exe" --ui-migration-test
 ```
 
-Editor UI Backendは通常のOpenGL起動時に次の引数で選択する。`Dual`はPanel単位の移行比較用であり、各Panelの所有Backendは`EditorLayer::PanelUIOwnership`で一意にする。現時点では未移行のEditor PanelはDear ImGui所有である。
+通常のEditor起動はOpenGLを含めRaven UIを既定とする。Dear ImGuiは緊急fallback、`Dual`はPanel単位の移行比較用であり、必要な場合だけ次の引数で明示的に選択する。`Dual`でも各Panelの所有Backendは`EditorLayer::PanelUIOwnership`で一意にする。
 
 ```powershell
 & "./Root/Root/x64/Debug/Root.exe" --editor-ui=imgui
@@ -67,13 +67,13 @@ DX12通常起動ではDear ImGui Contextを生成せず、Editor UI BackendをRa
 & "./scripts/measure-imgui-dependencies.ps1" -OutputJson ".tmp-imgui-baseline.json"
 ```
 
-`--editor-ui=raven`はDear ImGui Contextを生成せず、Raven UI所有へ移行済みのEditor Panelだけを有効にする。未移行Panelを暗黙にDear ImGuiへfallbackしないため、移行途中ではEditor全機能が揃わないことを正常な診断状態として扱う。
+引数なしの通常起動と`--editor-ui=raven`はDear ImGui Contextを生成せず、Raven UI所有のEditor Panelだけを有効にする。未対応機能をDear ImGuiへ暗黙fallbackせず、必要な回帰調査時だけ`--editor-ui=imgui`または`--editor-ui=dual`を指定する。
 
 2026-10-10のBaselineは、依存ファイル41、`ImGui::*`呼び出し411、project参照行14、実行時生成条件行14。依存ファイル数はコメント内の`ImGui`表記も含む保守的な値であり、Phase 8の0件判定と同じ除外条件（Markdown、vendor、生成物を除外）を使用する。
 
 同日の通常Debug x64インクリメンタルビルドは、ローカルのMSPDB不整合を避ける既存診断設定`/p:RavenGenerateLinkDebugInformation=false`で成功した。既存の`LNK4098`（MSVCRT競合）Warningが1件残る。`RavenUITest=true`も同条件でビルド成功したが、実行は既存の`UIImmediateContext`宣言順テスト（`declaration order applied`）で終了コード1となったため、CPU回帰Baselineの成功扱いにはしない。`RavenUIGPUTest=true`は`Root/Tests/UIFontTextureGPUIntegrationTests.cpp:107`の既存`getenv`に対するC4996でコンパイル失敗した。手動Editor Smoke Testは未実施。
 
-実行ファイル名・配置先はVisual Studioの出力設定に合わせて調整する。現段階ではDebug限定であり、実際のビルドと起動は未確認。Debug起動時の既存Self Testsは引き続き実行される。
+実行ファイル名・配置先はVisual Studioの出力設定に合わせて調整する。Debug起動時の既存Self Testsは引き続き実行される。
 
 `UISeparator` は独立したヘッダーのみで描画でき、`UITextDemoLayer` のラベルと入力欄の間に配置される。入力イベントを受け付けないため、隣接Widgetの操作を妨げないことを確認する。
 

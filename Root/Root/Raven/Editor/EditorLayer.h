@@ -39,6 +39,10 @@ enum class EditorUIBackend
     Dual
 };
 
+// 通常Editorの既定経路は一箇所で定義し、Application起動側とLayer単体生成側の
+// 初期値が将来ずれないようにします。旧経路は明示指定時だけ使用します。
+inline constexpr EditorUIBackend kDefaultEditorUIBackend = EditorUIBackend::RavenUI;
+
 // ============================================================================
 // EditorLayer
 // ============================================================================
@@ -75,7 +79,7 @@ public:
     // それらのLifetime管理は引き続きApplication側の責務です。
     explicit EditorLayer(
         Application& application,
-        EditorUIBackend uiBackend = EditorUIBackend::DearImGui);
+        EditorUIBackend uiBackend = kDefaultEditorUIBackend);
     ~EditorLayer() override = default;
 
     // Editor専用リソースやPanelの初期化入口です。

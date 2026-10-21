@@ -199,10 +199,20 @@ public:
 
     const std::vector<UIDrawCommand>& GetCommands() const;
     std::size_t GetCommandCount() const;
+    // DrawListが保持しているvector capacityを概算し、frame間で再利用されるCPUメモリ量を返します。
+    // Allocator固有の管理領域は含めず、Command本体とPolygon頂点列だけを対象にします。
+    std::size_t GetRetainedAllocationBytes() const;
+    std::size_t GetFrameAllocationCount() const { return m_FrameAllocationCount; }
+    std::size_t GetFrameAllocatedBytes() const { return m_FrameAllocatedBytes; }
     bool IsEmpty() const;
 
 private:
+    void AppendCommand(UIDrawCommand command);
+    void RecordFrameAllocation(std::size_t byteCount);
+
     std::vector<UIDrawCommand> m_Commands;
+    std::size_t m_FrameAllocationCount = 0u;
+    std::size_t m_FrameAllocatedBytes = 0u;
 };
 
 } // namespace Raven

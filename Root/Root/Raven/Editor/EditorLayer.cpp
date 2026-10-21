@@ -465,6 +465,40 @@ bool EditorLayer::AttachRavenEditorShell()
 
     auto dock = CreateScope<UIDockSpace>();
     m_RavenEditorDockSpace = dock.get();
+    UIDockSpace* dockHandle = dock.get();
+    dock->SetOnTabDetachRequested(
+        [this, dockHandle](std::uint64_t leafId, std::uint64_t tabId,
+            const math::Vec2& releasePosition)
+        {
+            (void)releasePosition;
+            if (m_Application == nullptr || m_RavenEditorDockSpace != dockHandle)
+            {
+                return;
+            }
+            UITabView* view = dockHandle->GetTabView(leafId);
+            const UITabItem* tab = view != nullptr
+                ? view->GetModel().FindTab(tabId) : nullptr;
+            UIElement* content = view != nullptr
+                ? view->GetTabContent(tabId) : nullptr;
+            if (tab == nullptr || content == nullptr)
+            {
+                return;
+            }
+
+            // Contentの現在寸法を補助Window初期寸法へ使います。0寸法や極端なDock寸法は
+            // 操作不能なWindowを作るため、Editor Panelとして扱える範囲へ制限します。
+            const math::Vec2 contentSize = content->GetSize();
+            const unsigned int width = static_cast<unsigned int>(std::clamp(
+                contentSize.x, 480.0f, 1280.0f));
+            const unsigned int height = static_cast<unsigned int>(std::clamp(
+                contentSize.y, 320.0f, 960.0f));
+            WindowSpecification specification(
+                std::string("Raven - ") + tab->Title,
+                width, height, m_Application->GetWindow().GetBackend());
+            m_Application->RequestDetachDockTabToNewWindow(
+                m_Application->GetMainWindowID(), *dockHandle,
+                leafId, tabId, specification);
+        });
     dock->SetPosition(math::Vec2(0.0f, EditorMenuBarHeight));
     dock->SetSize(math::Vec2(1280.0f, 688.0f));
 
@@ -1655,7 +1689,8 @@ void EditorLayer::OnRavenUIRender(float dt)
         if (m_ShowStatisticsPanel == true)
         {
             m_StatisticsRavenPanel.Update(CaptureStatisticsSnapshot(
-                dt, m_Application->GetWindow(), m_Application->GetScene()));
+                dt, m_Application->GetWindow(), m_Application->GetScene(),
+                &m_Application->GetUIContext().GetLastFrameMetrics()));
         }
     }
 

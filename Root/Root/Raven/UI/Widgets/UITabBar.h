@@ -5,6 +5,7 @@
 #include "Raven/UI/Widgets/UITabModel.h"
 
 #include <cstdint>
+#include <functional>
 
 namespace Raven
 {
@@ -15,6 +16,9 @@ namespace Raven
 class UITabBar final : public UIElement
 {
 public:
+    using DragEndedHandler = std::function<void(
+        std::uint64_t, const math::Vec2&)>;
+
     explicit UITabBar(UITabModel& model);
 
     void SetDragReorderEnabled(bool enabled) { m_DragReorderEnabled = enabled; }
@@ -30,6 +34,9 @@ public:
     void SetTabHeight(float height);
     float GetTabWidth() const { return m_TabWidth; }
     float GetTabHeight() const { return m_TabHeight; }
+    // DockSpaceはDrag終了位置を使い、Pane外DropだけをOS Window切り離し要求へ変換します。
+    // TabBar自身はWindow/Applicationを知らず、並べ替えと切り離しの責務を分離します。
+    void SetOnDragEnded(DragEndedHandler handler) { m_OnDragEnded = std::move(handler); }
 
 protected:
     math::Vec2 OnMeasureContent() const override;
@@ -50,6 +57,7 @@ private:
     std::uint64_t m_HoveredId = 0u;
     std::uint64_t m_PendingDragId = 0u;
     std::size_t m_DropIndex = 0u;
+    DragEndedHandler m_OnDragEnded;
     bool m_DropIndicatorVisible = false;
     bool m_DragReorderEnabled = true;
     bool m_HoveredClose = false;

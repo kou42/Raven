@@ -7,6 +7,7 @@
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
 #include <cmath>
@@ -191,6 +192,7 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
     snapshot.Runtime.WindowWidth = input.WindowWidth;
     snapshot.Runtime.WindowHeight = input.WindowHeight;
     snapshot.Renderer = input.Renderer;
+    snapshot.UI = input.UI;
 
     StatisticsCPUProfilerSnapshot& profiler = snapshot.CPUProfiler;
     profiler.Enabled = input.CPUProfilerEnabled;
@@ -212,7 +214,8 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
 }
 
 StatisticsSnapshot CaptureStatisticsSnapshot(
-    float deltaTime, const Window& window, const Scene* scene)
+    float deltaTime, const Window& window, const Scene* scene,
+    const UIFrameMetrics* uiMetrics)
 {
     const RendererStatistics& renderer = Renderer::GetStatistics();
     CPUProfiler& profiler = CPUProfiler::Get();
@@ -223,6 +226,20 @@ StatisticsSnapshot CaptureStatisticsSnapshot(
     input.Renderer.DrawCalls = renderer.DrawCalls;
     input.Renderer.IndexCount = renderer.IndexCount;
     input.Renderer.TriangleCount = renderer.TriangleCount;
+    if (uiMetrics != nullptr)
+    {
+        input.UI.Available = uiMetrics->Available;
+        input.UI.BuildMilliseconds = uiMetrics->BuildMilliseconds;
+        input.UI.DrawCommandCount = uiMetrics->DrawCommandCount;
+        input.UI.VertexCount = uiMetrics->VertexCount;
+        input.UI.IndexCount = uiMetrics->IndexCount;
+        input.UI.TextureSwitchCount = uiMetrics->TextureSwitchCount;
+        input.UI.FrameAllocationCount = uiMetrics->FrameAllocationCount;
+        input.UI.FrameAllocatedBytes = uiMetrics->FrameAllocatedBytes;
+        input.UI.RetainedAllocationBytes = uiMetrics->RetainedAllocationBytes;
+        input.UI.ElementCount = uiMetrics->ElementCount;
+        input.UI.PeakElementCount = uiMetrics->PeakElementCount;
+    }
     input.CPUProfilerEnabled = profiler.IsEnabled();
     input.CPUProfile = &profiler.GetLastFrame();
     input.ActiveScene = scene;

@@ -728,7 +728,7 @@ void TestStatisticsSnapshot()
     profile.FrameIndex = 42u;
     profile.FrameTimeMilliseconds = 7.5;
     profile.Results.push_back(Raven::CPUProfileResult{ "Physics", 2.0, {}, 0u });
-    profile.Results.push_back(Raven::CPUProfileResult{ "Render", 4.0, {}, 0u });
+    profile.Results.push_back(Raven::CPUProfileResult{ "Render", 4.0, {}, 1u });
     profile.Results.push_back(Raven::CPUProfileResult{ "Physics", 3.0, {}, 1u });
     profile.Counters.push_back(Raven::CPUProfileCounter{ "Z.Counter", 1.0 });
     profile.Counters.push_back(Raven::CPUProfileCounter{ "A.Counter", 2.0 });
@@ -741,6 +741,17 @@ void TestStatisticsSnapshot()
     input.Renderer.DrawCalls = 12u;
     input.Renderer.IndexCount = 120u;
     input.Renderer.TriangleCount = 40u;
+    input.UI.Available = true;
+    input.UI.BuildMilliseconds = 1.25;
+    input.UI.DrawCommandCount = 30u;
+    input.UI.VertexCount = 120u;
+    input.UI.IndexCount = 180u;
+    input.UI.TextureSwitchCount = 4u;
+    input.UI.FrameAllocationCount = 2u;
+    input.UI.FrameAllocatedBytes = 2048u;
+    input.UI.RetainedAllocationBytes = 4096u;
+    input.UI.ElementCount = 80u;
+    input.UI.PeakElementCount = 96u;
     input.CPUProfilerEnabled = true;
     input.CPUProfile = &profile;
     const Raven::StatisticsSnapshot snapshot = Raven::BuildStatisticsSnapshot(input);
@@ -753,6 +764,16 @@ void TestStatisticsSnapshot()
         "statistics snapshot window");
     Check(snapshot.Renderer.DrawCalls == 12u && snapshot.Renderer.TriangleCount == 40u,
         "statistics snapshot renderer");
+    Check(snapshot.UI.Available == true && snapshot.UI.DrawCommandCount == 30u &&
+        snapshot.UI.VertexCount == 120u && snapshot.UI.IndexCount == 180u &&
+        snapshot.UI.TextureSwitchCount == 4u &&
+        snapshot.UI.FrameAllocationCount == 2u &&
+        snapshot.UI.FrameAllocatedBytes == 2048u &&
+        snapshot.UI.RetainedAllocationBytes == 4096u &&
+        snapshot.UI.ElementCount == 80u && snapshot.UI.PeakElementCount == 96u,
+        "statistics snapshot Raven UI metrics");
+    CheckNear("statistics snapshot Raven UI build ms",
+        static_cast<float>(snapshot.UI.BuildMilliseconds), 1.25f);
     Check(snapshot.Physics.Available == false, "statistics snapshot no scene");
     Check(snapshot.CPUProfiler.FrameAvailable == true,
         "statistics snapshot previous profiler frame available");
@@ -1317,6 +1338,8 @@ void TestStatisticsRavenPanel()
     panel.Update(Raven::BuildStatisticsSnapshot(input));
     Check(panel.GetProfileRowCount() == 2u, "statistics Raven panel profile rows");
     Check(panel.GetCounterRowCount() == 1u, "statistics Raven panel counter rows");
+    Check(panel.GetRawProfileRowCount() == 2u,
+        "statistics Raven panel raw profile rows");
 
     panel.SetVisible(false);
     Check(panel.IsVisible() == false, "statistics Raven panel hidden state");
@@ -1872,6 +1895,57 @@ void TestDockTabWindowExtraction()
         std::move(extracted), metadata.Closable), "window extraction can restore tab");
     Check(dockPtr->GetTabView(leafId)->GetTabContent(1001u) == original,
         "window extraction restore retains page identity");
+}
+
+// TabをDockSpace外でReleaseした場合だけ、Editor/Applicationへ切り離し要求を通知します。
+// Request callbackの段階ではContentを移動せず、Window生成失敗時に元Paneを維持できる契約です。
+void TestDockTabOutsideDetachRequest()
+{
+    Raven::UIContext context;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    Raven::UIDockSpace* dockPtr = dock.get();
+    dock->SetPosition(Raven::math::Vec2(40.0f, 30.0f));
+    dock->SetSize(Raven::math::Vec2(300.0f, 220.0f));
+    const std::uint64_t leafId = dock->GetLayout().GetRoot()->GetId();
+    Check(dock->CreateTabView(leafId) != nullptr,
+        "outside detach creates tab view");
+    auto page = std::make_unique<Raven::UIElement>();
+    Raven::UIElement* original = page.get();
+    Check(dock->AddTab(leafId, 1101u, "Scene View", std::move(page), false),
+        "outside detach adds tab");
+
+    std::size_t requestCount = 0u;
+    std::uint64_t requestedLeaf = 0u;
+    std::uint64_t requestedTab = 0u;
+    Raven::math::Vec2 requestedPosition{};
+    dock->SetOnTabDetachRequested(
+        [&](std::uint64_t candidateLeaf, std::uint64_t candidateTab,
+            const Raven::math::Vec2& position)
+        {
+            ++requestCount;
+            requestedLeaf = candidateLeaf;
+            requestedTab = candidateTab;
+            requestedPosition = position;
+        });
+    context.GetRootElement().AddChild(std::move(dock));
+    context.BeginFrame(Raven::math::Vec2(640.0f, 480.0f));
+    context.EndFrame();
+
+    // 同じDock内のReleaseは通常のTab並べ替え/Dock操作として扱います。
+    context.RouteMouseDown(Raven::math::Vec2(60.0f, 45.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(180.0f, 45.0f));
+    context.RouteMouseUp(Raven::math::Vec2(180.0f, 45.0f), Raven::UIMouseButton::Left);
+    Check(requestCount == 0u, "inside dock does not request detach");
+
+    context.RouteMouseDown(Raven::math::Vec2(60.0f, 45.0f), Raven::UIMouseButton::Left);
+    context.RouteMouseMove(Raven::math::Vec2(420.0f, 280.0f));
+    context.RouteMouseUp(Raven::math::Vec2(420.0f, 280.0f), Raven::UIMouseButton::Left);
+    Check(requestCount == 1u && requestedLeaf == leafId && requestedTab == 1101u,
+        "outside dock requests tab detach once");
+    CheckNear("outside detach request x", requestedPosition.x, 420.0f);
+    CheckNear("outside detach request y", requestedPosition.y, 280.0f);
+    Check(dockPtr->GetTabView(leafId)->GetTabContent(1101u) == original,
+        "outside detach request preserves content until transfer");
 }
 
 // WindowManagerを起動しないCPU側の復帰シミュレーション。
@@ -3419,6 +3493,60 @@ void TestUIImageRenderTargetContract()
     CheckNear("bottom-left texture bottom uv", tessellated.Vertices[2u].Texcoord.y, 0.0f);
 }
 
+void TestUIFrameMetrics()
+{
+    const auto textureA = Raven::CreateRef<ImageFixtureTexture>(16u, 16u);
+    const auto textureB = Raven::CreateRef<ImageFixtureTexture>(32u, 32u);
+    Raven::UIDrawList drawList;
+    drawList.AddRect({ 0.0f, 0.0f }, { 8.0f, 8.0f }, { 1.0f, 1.0f, 1.0f, 1.0f });
+    drawList.AddImage({ 8.0f, 0.0f }, { 16.0f, 8.0f },
+        Raven::UITextureView::FromTexture(textureA));
+    drawList.AddImage({ 16.0f, 0.0f }, { 24.0f, 8.0f },
+        Raven::UITextureView::FromTexture(textureA));
+    drawList.AddImage({ 24.0f, 0.0f }, { 32.0f, 8.0f },
+        Raven::UITextureView::FromTexture(textureB));
+    drawList.AddCircle({ 32.0f, 0.0f }, { 40.0f, 8.0f },
+        { 1.0f, 1.0f, 1.0f, 1.0f });
+    drawList.AddPolygon({ { 40.0f, 0.0f }, { 48.0f, 0.0f },
+        { 48.0f, 8.0f }, { 40.0f, 8.0f } }, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+    Raven::UITessellatedDrawList tessellated;
+    Check(Raven::UITessellator::Tessellate(drawList, tessellated),
+        "metrics fixture tessellates");
+    const Raven::UITessellationMetrics metrics =
+        Raven::UITessellator::Measure(drawList);
+    Check(metrics.DrawCommandCount == drawList.GetCommandCount(),
+        "metrics command count");
+    Check(metrics.VertexCount == tessellated.Vertices.size(),
+        "metrics vertex count matches tessellation");
+    Check(metrics.IndexCount == tessellated.Indices.size(),
+        "metrics index count matches tessellation");
+    Check(metrics.TextureSwitchCount == 3u,
+        "metrics texture switches collapse adjacent resources");
+    Check(drawList.GetRetainedAllocationBytes() >=
+        drawList.GetCommandCount() * sizeof(Raven::UIDrawCommand),
+        "metrics retained allocation covers commands");
+    Check(drawList.GetFrameAllocationCount() >= 2u &&
+        drawList.GetFrameAllocatedBytes() > 0u,
+        "metrics tracks command and polygon frame allocations");
+
+    Raven::UIContext context;
+    context.BeginFrame({ 64.0f, 64.0f });
+    context.GetDrawList().AddRect({ 0.0f, 0.0f }, { 8.0f, 8.0f },
+        { 1.0f, 1.0f, 1.0f, 1.0f });
+    context.EndFrame();
+    const Raven::UIFrameMetrics& frame = context.GetLastFrameMetrics();
+    Check(frame.Available == true && frame.DrawCommandCount == 1u &&
+        frame.VertexCount == 4u && frame.IndexCount == 6u,
+        "context publishes completed frame metrics");
+    Check(frame.FrameAllocationCount == 1u && frame.FrameAllocatedBytes > 0u,
+        "context publishes draw-list frame allocations");
+    Check(frame.ElementCount == 2u && frame.PeakElementCount == 2u,
+        "context publishes retained element count");
+    Check(frame.BuildMilliseconds >= 0.0,
+        "context publishes non-negative build duration");
+}
+
 Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
 {
     // 実GPU Textureを生成せず、Atlasの寸法・Advanceだけを固定してLayoutを検証します。
@@ -3671,6 +3799,7 @@ int main()
     TestUILabelTextReflow();
     TestUILabelGlyphClipTransform();
     TestUIImageRenderTargetContract();
+    TestUIFrameMetrics();
     TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();
@@ -3835,6 +3964,7 @@ int main()
     TestDockTabMultipleWindowRestore();
     TestDockTabMissingSourceFallback();
     TestDockTabWindowExtraction();
+    TestDockTabOutsideDetachRequest();
     TestDockTabView();
     TestDockTabTransfer();
     TestDockCollapse();

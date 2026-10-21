@@ -256,4 +256,75 @@ bool UITessellator::Tessellate(
     return outDrawList.IsEmpty() == false;
 }
 
+UITessellationMetrics UITessellator::Measure(const UIDrawList& drawList)
+{
+    UITessellationMetrics metrics{};
+    metrics.DrawCommandCount = drawList.GetCommandCount();
+
+    UITextureSourceType previousTextureType = UITextureSourceType::None;
+    const void* previousTexture = nullptr;
+    bool hasPreviousTexture = false;
+    std::vector<uint32_t> polygonIndices;
+
+    for (const UIDrawCommand& command : drawList.GetCommands())
+    {
+        std::size_t commandIndexCount = 0u;
+        if (command.Type == UIDrawCommandType::SolidCircle)
+        {
+            metrics.VertexCount += 1u + kCircleSegmentCount;
+            commandIndexCount = kCircleSegmentCount * 3u;
+        }
+        else if (command.Type == UIDrawCommandType::SolidPolygon)
+        {
+            metrics.VertexCount += command.Points.size();
+            if (TriangulatePolygon(command.Points, polygonIndices) == true)
+            {
+                commandIndexCount = polygonIndices.size();
+            }
+        }
+        else
+        {
+            metrics.VertexCount += 4u;
+            commandIndexCount = 6u;
+        }
+        metrics.IndexCount += commandIndexCount;
+
+        // Indexを持たない退化PolygonはRendererでもDrawされないため、切替対象から除外します。
+        if (commandIndexCount == 0u)
+        {
+            continue;
+        }
+
+        UITextureSourceType textureType = UITextureSourceType::None;
+        const void* texture = nullptr;
+        if (command.Type == UIDrawCommandType::Image &&
+            command.TextureView.IsValid() == true)
+        {
+            textureType = command.TextureView.GetSourceType();
+            if (textureType == UITextureSourceType::Asset)
+            {
+                texture = command.TextureView.GetAsset().get();
+            }
+            else if (textureType == UITextureSourceType::LegacyTexture)
+            {
+                texture = command.TextureView.GetLegacyTexture().get();
+            }
+            else if (textureType == UITextureSourceType::RHITexture)
+            {
+                texture = command.TextureView.GetRHITexture().get();
+            }
+        }
+
+        if (hasPreviousTexture == true &&
+            (textureType != previousTextureType || texture != previousTexture))
+        {
+            ++metrics.TextureSwitchCount;
+        }
+        previousTextureType = textureType;
+        previousTexture = texture;
+        hasPreviousTexture = true;
+    }
+    return metrics;
+}
+
 } // namespace Raven
