@@ -11,6 +11,11 @@ cbuffer MaterialConstants : register(b1)
     float4 u_Tint;
 };
 
+cbuffer EntityPickingConstants : register(b2)
+{
+    int u_EntityID;
+};
+
 Texture2D u_Texture : register(t0);
 SamplerState u_Sampler : register(s0);
 
@@ -44,6 +49,13 @@ float4 PSMain(VSOutput input) : SV_TARGET
         u_Texture.Sample(u_Sampler, input.TexCoord) * u_Tint;
 }
 
+int PickingPSMain(VSOutput input) : SV_TARGET
+{
+    // RasterizerとDepth Testだけを共有し、Material TextureやTintは参照しません。
+    return u_EntityID;
+}
+
 // DXCによるコンパイル例（実行環境で生成してください）:
 // dxc -T vs_6_0 -E VSMain -Fo SceneMesh.vs.dxil SceneMesh.hlsl
 // dxc -T ps_6_0 -E PSMain -Fo SceneMesh.ps.dxil SceneMesh.hlsl
+// dxc -T ps_6_0 -E PickingPSMain -Fo SceneMesh.picking.ps.dxil SceneMesh.hlsl

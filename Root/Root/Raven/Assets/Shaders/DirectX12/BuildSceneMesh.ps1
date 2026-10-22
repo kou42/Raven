@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 $shader = Join-Path $PSScriptRoot "SceneMesh.hlsl"
 $vertex = Join-Path $PSScriptRoot "SceneMesh.vs.dxil"
 $pixel = Join-Path $PSScriptRoot "SceneMesh.ps.dxil"
+$pickingPixel = Join-Path $PSScriptRoot "SceneMesh.picking.ps.dxil"
 
 # Prefer PATH, then the Windows SDK directory when it is configured.
 $compiler = Get-Command $Dxc -ErrorAction SilentlyContinue
@@ -36,7 +37,12 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "Pixel Shader DXIL compilation failed (exit: $LASTEXITCODE)"
 }
+& $Dxc -T ps_6_0 -E PickingPSMain -Fo $pickingPixel $shader
+if ($LASTEXITCODE -ne 0) {
+    throw "Picking Pixel Shader DXIL compilation failed (exit: $LASTEXITCODE)"
+}
 
 Write-Host "DX12 Scene Shader compilation completed:"
 Write-Host "  VS: $vertex"
 Write-Host "  PS: $pixel"
+Write-Host "  Picking PS: $pickingPixel"

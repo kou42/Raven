@@ -84,6 +84,11 @@ public:
         return m_Context.SetClipTransform(transform);
     }
 
+    bool SetEntityID(std::int32_t entityID) override
+    {
+        return m_Context.SetEntityID(entityID);
+    }
+
     bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
         const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0,
         uint32_t firstIndex = 0) override
@@ -112,6 +117,22 @@ public:
     {
         m_Pipeline.reset();
         return m_Context.EndOffscreenRenderTarget(renderTarget);
+    }
+
+    bool BeginEntityPickingPass(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request) override
+    {
+        m_Pipeline.reset();
+        return m_Context.BeginEntityPickingPass(renderTarget, request);
+    }
+
+    bool EndEntityPickingPass(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request) override
+    {
+        m_Pipeline.reset();
+        return m_Context.EndEntityPickingPass(renderTarget, request);
     }
 
 private:

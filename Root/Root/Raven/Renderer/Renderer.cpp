@@ -28,6 +28,7 @@ struct SceneRenderItem
     Ref<Mesh> Mesh;
     Ref<Material> Material;
     math::Mat4 Transform = math::Mat4::Identity();
+    uint32_t EntityID = 0u;
     float SortDepth = 0.0f;
 };
 
@@ -146,6 +147,7 @@ bool BuildRHISceneMeshSnapshot(
     snapshot.VertexBuffer = item.Mesh->GetRHIVertexBuffer();
     snapshot.IndexBuffer = item.Mesh->GetRHIIndexBuffer();
     snapshot.IndexCount = item.Mesh->GetIndexCount();
+    snapshot.EntityID = item.EntityID;
     snapshot.Material = std::move(material);
     snapshot.Model = RHISceneDrawItemBuilder::ToColumnMajor(item.Transform);
 
@@ -700,6 +702,62 @@ bool Renderer::CreateRHIScenePipelines(
     return true;
 }
 
+bool Renderer::CreateRHIEntityPickingPipeline(
+    RHIDevice& device,
+    const PipelineSpecification& source,
+    const RHIShaderBinary& vertexShader,
+    const RHIShaderBinary& fragmentShader,
+    Ref<RHIGraphicsPipeline>& outPipeline)
+{
+    outPipeline.reset();
+    RHIGraphicsPipelineTarget target{};
+    if (device.GetGraphicsPipelineTarget(target) == false ||
+        target.IsValid() == false || source.Topology != PrimitiveTopology::Triangles)
+    {
+        return false;
+    }
+
+    RHIGraphicsPipelineSpecification specification{};
+    specification.VertexShader = vertexShader;
+    specification.FragmentShader = fragmentShader;
+    constexpr uint32_t floatSize = sizeof(float);
+    specification.VertexBindings = {{ 0, 11u * floatSize }};
+    specification.VertexAttributes = {
+        { 0, 0, ShaderDataType::Float3, 0 },
+        { 1, 0, ShaderDataType::Float3, 3u * floatSize },
+        { 2, 0, ShaderDataType::Float2, 6u * floatSize }
+    };
+    if (device.GetBackend() == RHIBackend::DirectX12)
+    {
+        specification.VertexAttributes.push_back(
+            { 3, 0, ShaderDataType::Float3, 8u * floatSize });
+    }
+
+    specification.Topology = PrimitiveTopology::Triangles;
+    // 通常MaterialのCull設定に関係なく、画面に見えている両面Geometryを選択可能にします。
+    specification.Cull = CullMode::None;
+    specification.FrontFaceMode = source.FrontFaceMode;
+    // Color Passで確定したDepthと同じGeometryを再描画するためLessEqualを使います。
+    // Picking Pass内ではDepthを書き、透明Geometryが複数重なる場合も最前面IDを残します。
+    specification.DepthCompare = DepthCompareOperator::LessEqual;
+    specification.DepthTest = true;
+    specification.DepthWrite = true;
+    specification.Blend = false;
+    specification.ColorFormat = RHIColorFormat::R32Sint;
+    specification.DepthFormat = target.DepthFormat;
+    specification.SampleCount = target.SampleCount;
+    specification.DebugName = "Editor Entity Picking RHI Pipeline";
+
+    Ref<RHIGraphicsPipeline> pipeline =
+        device.CreateGraphicsPipeline(specification);
+    if (pipeline == nullptr)
+    {
+        return false;
+    }
+    outPipeline = std::move(pipeline);
+    return true;
+}
+
 bool Renderer::PrepareRHISceneFrame(
     RHIDevice& device,
     const Ref<RHIGraphicsPipeline>& opaquePipeline,
@@ -829,7 +887,8 @@ RHIFrameResult Renderer::DrawRHISceneFrame(
     return DrawPreparedRHISceneFrame(frame, commands, preparedFrame);
 }
 
-void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform)
+void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material,
+    const math::Mat4& transform, uint32_t entityID)
 {
     if (mesh == nullptr || material == nullptr)
     {
@@ -842,6 +901,7 @@ void Renderer::Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const 
         item.Mesh = mesh;
         item.Material = material;
         item.Transform = transform;
+        item.EntityID = entityID;
 
         if (material->GetSurfaceType() == MaterialSurfaceType::Transparent)
         {

@@ -17,6 +17,8 @@ struct RHISceneMesh
     Ref<RHIBuffer> VertexBuffer;
     Ref<RHIBuffer> IndexBuffer;
     uint32_t IndexCount = 0;
+    // 0はScene Entityに属さない補助描画です。Picking Attachmentでは背景扱いにします。
+    uint32_t EntityID = 0u;
     RHIMaterialProperties Material;
     std::array<float, 3> LocalCenter = {0.0f, 0.0f, 0.0f};
     std::array<float, 16> Model = {
@@ -85,6 +87,7 @@ public:
             item.VertexBuffer = mesh.VertexBuffer;
             item.IndexBuffer = mesh.IndexBuffer;
             item.IndexCount = mesh.IndexCount;
+            item.EntityID = mesh.EntityID;
             item.Material = mesh.Material;
             const math::Mat4 model = FromColumnMajor(mesh.Model);
             item.ClipTransform = ToColumnMajor(viewProjection * model);

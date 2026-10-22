@@ -5,6 +5,7 @@
 #include "Raven/Renderer/RHI/RHIClearContext.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
@@ -133,6 +134,17 @@ RHIShaderBinary MakeShaderBinary(RHIShaderBinaryFormat format)
 
 void RunExplicitSceneFrameSelfTests()
 {
+    // Picking用EntityIndexはScene QueueからCamera別Snapshotへ値でコピーします。
+    // GenerationはReadback後にSceneの正規データから再取得するためGPU Snapshotへ含めません。
+    RHISceneMesh pickingMesh{};
+    pickingMesh.EntityID = 42u;
+    const std::vector<RHISceneDrawItem> pickingItems =
+        RHISceneDrawItemBuilder::Build(
+            math::Mat4::Identity(), math::Mat4::Identity(),
+            std::vector<RHISceneMesh>{ pickingMesh }, math::Mat4::Identity());
+    assert(pickingItems.size() == 1u);
+    assert(pickingItems[0].EntityID == 42u);
+
     // Vulkan GLSLはPosition/Color/UVの3属性、現行DXILは未使用NORMALを含む4属性です。
     // 共通Mesh strideは維持しつつ、Pipeline入力だけをShader Signatureへ一致させます。
     PipelineSpecification sourcePipeline{};
@@ -160,6 +172,19 @@ void RunExplicitSceneFrameSelfTests()
     assert(dx12Device.Specifications.size() == 3u);
     assert(dx12Device.Specifications[2].VertexAttributes.size() == 4u);
     assert(dx12Device.Specifications[2].VertexAttributes[3].Location == 3u);
+
+    Ref<RHIGraphicsPipeline> pickingPipeline;
+    assert(Renderer::CreateRHIEntityPickingPipeline(
+        dx12Device, sourcePipeline, dxil, dxil, pickingPipeline) == true);
+    assert(dx12Device.Specifications.size() == 4u);
+    const RHIGraphicsPipelineSpecification& pickingSpecification =
+        dx12Device.Specifications[3];
+    assert(pickingSpecification.ColorFormat == RHIColorFormat::R32Sint);
+    assert(pickingSpecification.Cull == CullMode::None);
+    assert(pickingSpecification.DepthCompare == DepthCompareOperator::LessEqual);
+    assert(pickingSpecification.DepthTest == true);
+    assert(pickingSpecification.DepthWrite == true);
+    assert(pickingSpecification.Blend == false);
 
     // Explicit BackendのFont AtlasはLegacy Textureを作らず、Pixel Assetを描画準備時にUploadします。
     TextureAssetPixelData atlasPixels{};

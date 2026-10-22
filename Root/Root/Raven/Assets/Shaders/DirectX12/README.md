@@ -4,7 +4,7 @@
 Entity Mesh描画用のVertex / Pixel Shaderです。
 
 Visual Studioの通常x64ビルド時に、MSBuildの `CompileDX12SceneShaders` が
-HLSLから2つのDXILを自動生成します。HLSLの更新時・DXILが存在しない場合のみ
+HLSLから3つのDXILを自動生成します。HLSLの更新時・DXILが存在しない場合のみ
 再生成します。DXC（DirectX Shader Compiler）の `dxc.exe` をPATHへ追加してください
 （Windows SDKの `WindowsSdkVerBinPath/x64/dxc.exe` も探索します）。
 DXCがない場合はビルドをエラー終了させます。
@@ -20,6 +20,7 @@ powershell -ExecutionPolicy Bypass -File Raven/Assets/Shaders/DirectX12/BuildSce
 
 - `Raven/Assets/Shaders/DirectX12/SceneMesh.vs.dxil`（`VSMain`, `vs_6_0`）
 - `Raven/Assets/Shaders/DirectX12/SceneMesh.ps.dxil`（`PSMain`, `ps_6_0`）
+- `Raven/Assets/Shaders/DirectX12/SceneMesh.picking.ps.dxil`（`PickingPSMain`, `ps_6_0`）
 
 生成後、Visual StudioでRavenをビルドし、実行時の作業ディレクトリを
 `Root/Root` にして `--scene-dx12` を渡します。

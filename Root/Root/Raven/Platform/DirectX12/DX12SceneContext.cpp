@@ -12,6 +12,9 @@
 
 namespace Raven
 {
+static_assert(DX12SwapChain::BufferCount ==
+    DX12OffscreenRenderTarget::PickingReadbackSlotCount);
+
 DX12SceneContext::~DX12SceneContext()
 {
     Shutdown();
@@ -103,6 +106,17 @@ RHIFrameResult DX12SceneContext::BeginFrame()
 
     // BeginFrameのFence待機後は前回このFrameが参照したBufferを解放できます。
     // GPUがまだ読むBufferをEntity側のRef破棄だけで解放しないための保持です。
+    for (const PendingEntityPickingReadback& readback :
+        frame.PendingPickingReadbacks)
+    {
+        if (readback.Target != nullptr)
+        {
+            // 新しいClickでSequenceが更新済みの場合、Target側が古い結果を安全に破棄します。
+            readback.Target->ResolveEntityPickingReadback(
+                readback.Slot, readback.Sequence);
+        }
+    }
+    frame.PendingPickingReadbacks.clear();
     frame.RetainedBuffers.clear();
     frame.RetainedPipelines.clear();
     frame.RetainedTextures.clear();
@@ -375,6 +389,18 @@ bool DX12SceneContext::SetMaterialTint(
     return true;
 }
 
+bool DX12SceneContext::SetEntityID(std::int32_t entityID)
+{
+    ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
+    if (commandList == nullptr || m_GraphicsPipelineBound == false || entityID <= 0)
+    {
+        return false;
+    }
+    // Root Signatureのb2へ符号付きR32 EntityIndexを1 DWORDで記録します。
+    commandList->SetGraphicsRoot32BitConstants(3, 1u, &entityID, 0u);
+    return true;
+}
+
 bool DX12SceneContext::BindTexture(const Ref<RHITexture>& texture)
 {
     ID3D12GraphicsCommandList* commandList = GetActiveCommandList();
@@ -509,6 +535,96 @@ bool DX12SceneContext::EndOffscreenRenderTarget(
     const D3D12_RESOURCE_DESC description = backBuffers[backBufferIndex]->GetDesc();
     return SetViewport(
         0u, 0u, static_cast<uint32_t>(description.Width), description.Height);
+}
+
+bool DX12SceneContext::BeginEntityPickingPass(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget,
+    const RHIEntityPickingRequest& request)
+{
+    auto native = std::dynamic_pointer_cast<DX12OffscreenRenderTarget>(renderTarget);
+    ID3D12GraphicsCommandList* commands = GetActiveCommandList();
+    if (commands == nullptr || native == nullptr ||
+        native->SupportsEntityPicking() == false ||
+        m_ActiveOffscreenRenderTarget != renderTarget ||
+        request.Sequence == 0u ||
+        request.X >= native->GetSpecification().Width ||
+        request.Y >= native->GetSpecification().Height)
+    {
+        return false;
+    }
+
+    const D3D12_CPU_DESCRIPTOR_HANDLE rtv = native->GetPickingRTV();
+    const D3D12_CPU_DESCRIPTOR_HANDLE dsv = native->GetDSV();
+    if (rtv.ptr == 0u || dsv.ptr == 0u)
+    {
+        return false;
+    }
+    commands->OMSetRenderTargets(1u, &rtv, FALSE, &dsv);
+    constexpr float clearEntity[4] = { -1.0f, 0.0f, 0.0f, 0.0f };
+    commands->ClearRenderTargetView(rtv, clearEntity, 0u, nullptr);
+    m_GraphicsPipelineBound = false;
+    return true;
+}
+
+bool DX12SceneContext::EndEntityPickingPass(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget,
+    const RHIEntityPickingRequest& request)
+{
+    auto native = std::dynamic_pointer_cast<DX12OffscreenRenderTarget>(renderTarget);
+    ID3D12GraphicsCommandList* commands = GetActiveCommandList();
+    if (commands == nullptr || native == nullptr ||
+        m_ActiveOffscreenRenderTarget != renderTarget ||
+        m_CurrentFrame >= m_Frames.size() ||
+        m_CurrentFrame >= DX12OffscreenRenderTarget::PickingReadbackSlotCount)
+    {
+        return false;
+    }
+    ID3D12Resource* picking = native->GetPickingResource();
+    ID3D12Resource* readback = native->GetPickingReadback(m_CurrentFrame);
+    if (picking == nullptr || readback == nullptr)
+    {
+        return false;
+    }
+
+    D3D12_RESOURCE_BARRIER toCopy{};
+    toCopy.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toCopy.Transition.pResource = picking;
+    toCopy.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    toCopy.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toCopy.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    commands->ResourceBarrier(1u, &toCopy);
+
+    D3D12_TEXTURE_COPY_LOCATION destination{};
+    destination.pResource = readback;
+    destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    destination.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R32_SINT;
+    destination.PlacedFootprint.Footprint.Width = 1u;
+    destination.PlacedFootprint.Footprint.Height = 1u;
+    destination.PlacedFootprint.Footprint.Depth = 1u;
+    destination.PlacedFootprint.Footprint.RowPitch =
+        D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
+    D3D12_TEXTURE_COPY_LOCATION source{};
+    source.pResource = picking;
+    source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    source.SubresourceIndex = 0u;
+    const D3D12_BOX sourceBox{
+        request.X, request.Y, 0u,
+        request.X + 1u, request.Y + 1u, 1u
+    };
+    commands->CopyTextureRegion(
+        &destination, 0u, 0u, 0u, &source, &sourceBox);
+
+    D3D12_RESOURCE_BARRIER toRenderTarget = toCopy;
+    toRenderTarget.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    toRenderTarget.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    commands->ResourceBarrier(1u, &toRenderTarget);
+
+    FrameResource& frame = m_Frames[m_CurrentFrame];
+    frame.PendingPickingReadbacks.push_back(
+        { native, request.Sequence, m_CurrentFrame });
+    frame.RetainedRenderTargets.push_back(renderTarget);
+    m_GraphicsPipelineBound = false;
+    return true;
 }
 
 bool DX12SceneContext::DrawIndexed(

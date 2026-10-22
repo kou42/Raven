@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 namespace Raven
@@ -16,6 +17,8 @@ struct RHISceneDrawItem
     Ref<RHIBuffer> VertexBuffer;
     Ref<RHIBuffer> IndexBuffer;
     uint32_t IndexCount = 0;
+    // SceneのEntityIndexです。GenerationはGPUへ送らず、Readback後にSceneから再取得します。
+    uint32_t EntityID = 0u;
     RHIMaterialProperties Material;
     std::array<float, 16> ClipTransform{};
     // View空間Z。右手系で-Zを見るCameraでは小さい値ほど遠方です。
@@ -137,6 +140,38 @@ public:
                 {
                     return false;
                 }
+            }
+        }
+        return true;
+    }
+
+    // 通常Scene描画済みDepthを再利用し、EntityIndexだけを整数Attachmentへ出力します。
+    // Texture/Materialは参照せず、Scene Entityに属さない補助描画(EntityID=0)を除外します。
+    static bool DrawEntityPicking(
+        RHISceneCommandList& commands,
+        const Ref<RHIGraphicsPipeline>& pipeline,
+        const std::vector<RHISceneDrawItem>& items)
+    {
+        if (pipeline == nullptr || commands.BindPipeline(pipeline) == false)
+        {
+            return false;
+        }
+
+        for (const RHISceneDrawItem& item : items)
+        {
+            if (item.EntityID == 0u)
+            {
+                continue;
+            }
+            if (item.VertexBuffer == nullptr || item.IndexBuffer == nullptr ||
+                item.EntityID > static_cast<uint32_t>(
+                    std::numeric_limits<std::int32_t>::max()) ||
+                commands.SetClipTransform(item.ClipTransform) == false ||
+                commands.SetEntityID(static_cast<std::int32_t>(item.EntityID)) == false ||
+                commands.DrawIndexed(item.VertexBuffer, item.IndexBuffer,
+                    item.IndexCount) == false)
+            {
+                return false;
             }
         }
         return true;

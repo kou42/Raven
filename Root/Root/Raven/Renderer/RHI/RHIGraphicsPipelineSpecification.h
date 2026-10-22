@@ -49,7 +49,9 @@ enum class RHIColorFormat
     RGBA8Unorm,
     BGRA8Unorm,
     RGBA8Srgb,
-    BGRA8Srgb
+    BGRA8Srgb,
+    // Entity Picking用の符号付き整数Attachmentです。通常ColorやUI Textureには使用しません。
+    R32Sint
 };
 
 enum class RHIDepthFormat

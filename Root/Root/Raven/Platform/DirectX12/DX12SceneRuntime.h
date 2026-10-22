@@ -61,6 +61,12 @@ public:
         m_PipelineSpecification.DebugName = m_PipelineDebugName.c_str();
         m_VertexShader = m_ShaderAssets.Load(vertexShader, RHIBackend::DirectX12);
         m_FragmentShader = m_ShaderAssets.Load(fragmentShader, RHIBackend::DirectX12);
+        RHIShaderAssetSpecification pickingFragment{};
+        pickingFragment.DirectX12Path =
+            "Raven/Assets/Shaders/DirectX12/SceneMesh.picking.ps.dxil";
+        pickingFragment.EntryPoint = "PickingPSMain";
+        m_PickingFragmentShader =
+            m_ShaderAssets.Load(pickingFragment, RHIBackend::DirectX12);
         RHIShaderAssetSpecification uiVertex{};
         uiVertex.DirectX12Path = "Raven/Assets/Shaders/DirectX12/UI.vs.dxil";
         uiVertex.EntryPoint = "VSMain";
@@ -70,6 +76,7 @@ public:
         m_UIVertexShader = m_ShaderAssets.Load(uiVertex, RHIBackend::DirectX12);
         m_UIFragmentShader = m_ShaderAssets.Load(uiFragment, RHIBackend::DirectX12);
         if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
+            m_PickingFragmentShader == nullptr ||
             m_UIVertexShader == nullptr || m_UIFragmentShader == nullptr)
         {
             // Shader Assetは相対Pathで開くため、Visual Studioの作業Directoryも表示します。
@@ -146,6 +153,7 @@ public:
         if (m_Initialized == false || m_Device == nullptr ||
             m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
             m_DebugLinePipeline == nullptr || m_UIPipeline == nullptr ||
+            m_PickingPipeline == nullptr ||
             m_DefaultTexture == nullptr ||
             m_Context.GetActiveCommandList() != nullptr)
         {
@@ -234,6 +242,7 @@ public:
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
         m_DebugLinePipeline.reset();
+        m_PickingPipeline.reset();
         m_UIPipeline.reset();
         if (CreatePipelines() == false)
         {
@@ -253,6 +262,7 @@ public:
         m_OpaquePipeline.reset();
         m_TransparentPipeline.reset();
         m_DebugLinePipeline.reset();
+        m_PickingPipeline.reset();
         m_UIPipeline.reset();
         m_UIRenderer.ClearTextureCache();
         m_UIVertexShader.reset();
@@ -260,6 +270,7 @@ public:
         m_DefaultTexture.reset();
         m_VertexShader.reset();
         m_FragmentShader.reset();
+        m_PickingFragmentShader.reset();
         m_ShaderAssets.Clear();
         m_Device.reset();
         m_Context.Shutdown();
@@ -336,6 +347,17 @@ private:
         {
             return false;
         }
+        Ref<RHIGraphicsPipeline> pickingPipeline;
+        if (m_PickingFragmentShader == nullptr ||
+            m_PickingFragmentShader->IsValid() == false ||
+            Renderer::CreateRHIEntityPickingPipeline(
+                *m_Device, m_PipelineSpecification,
+                m_VertexShader->GetBinary(),
+                m_PickingFragmentShader->GetBinary(),
+                pickingPipeline) == false)
+        {
+            return false;
+        }
         Ref<RHIGraphicsPipeline> uiPipeline;
         if (ExplicitUIRenderer::CreatePipeline(
             *m_Device, m_UIVertexShader->GetBinary(),
@@ -346,6 +368,7 @@ private:
         m_OpaquePipeline = std::move(opaque);
         m_TransparentPipeline = std::move(transparent);
         m_DebugLinePipeline = std::move(debugLine);
+        m_PickingPipeline = std::move(pickingPipeline);
         m_UIPipeline = std::move(uiPipeline);
         return true;
     }
@@ -375,11 +398,13 @@ private:
     RHIShaderAssetManager m_ShaderAssets;
     Ref<RHIShaderAsset> m_VertexShader;
     Ref<RHIShaderAsset> m_FragmentShader;
+    Ref<RHIShaderAsset> m_PickingFragmentShader;
     PipelineSpecification m_PipelineSpecification{};
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
+    Ref<RHIGraphicsPipeline> m_PickingPipeline;
     Ref<RHIShaderAsset> m_UIVertexShader;
     Ref<RHIShaderAsset> m_UIFragmentShader;
     Ref<RHIGraphicsPipeline> m_UIPipeline;

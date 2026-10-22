@@ -199,6 +199,7 @@ private:
     // UI側で実表示矩形から変換済みのPicking Attachment Pixelを受け取り、
     // GPU上のEntityIndexを現在のActive SceneのGenerationと組み合わせて安全に選択へ反映します。
     void PickSceneEntityAt(std::uint32_t pixelX, std::uint32_t pixelY);
+    void ApplyPickedEntityID(std::int32_t entityID);
 
     // Scene View専用のSelection Outline Passです。
     // 選択EntityのMeshを少し拡大した「Inverted Hull」として再描画し、Front FaceをCullすることで
@@ -283,6 +284,11 @@ private:
     // Targetは寸法不変とし、Resize時はRef全体を交換して旧ResourceのFence Lifetimeを保ちます。
     Ref<RHIOffscreenRenderTarget> m_SceneRHIRenderTarget;
     Ref<RHIOffscreenRenderTarget> m_GameRHIRenderTarget;
+
+    // Explicit BackendのReadbackは数Frame遅延できます。要求時のSceneとSequenceを保持し、
+    // Scene交換後または新しいClickより古い結果を現在の選択へ適用しません。
+    Scene* m_ExplicitPickingScene = nullptr;
+    std::uint64_t m_ExplicitPickingSequence = 0u;
 
     // Picking Pass専用Materialです。
     // ゲーム内Materialを変更せず、EditorだけがR32I AttachmentへEntityIndexを書き込むために使用します。

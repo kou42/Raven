@@ -363,9 +363,10 @@ bool VulkanSceneRuntime::DrawPreparedOffscreenSceneFrame(
     RHISceneCommandList& commands,
     const PreparedOffscreenSceneFrame& prepared)
 {
-    constexpr float clearColor[4] = {0.1f, 0.1f, 0.3f, 1.0f};
+    const std::array<float, 4>& clearColor =
+        prepared.RenderTarget->GetSpecification().ClearColor;
     if (commands.BeginOffscreenRenderTarget(
-        prepared.RenderTarget, clearColor) == false)
+        prepared.RenderTarget, clearColor.data()) == false)
     {
         return false;
     }

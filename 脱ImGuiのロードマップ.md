@@ -291,6 +291,20 @@ Letterbox ClickはEditor UI内で消費しつつPicking対象外とし、実映�
 Mouse Captureを取得する。Editor CameraのInput pollingはScene ViewのHoverとFocusが両方成立する
 場合だけ有効化し、Navigation KeyのCore EventとViewport Mouse EventはRuntimeへ伝播させない。
 
+2026-10-22時点で、DX12 / Vulkanの非同期Readback実装に先立ち、通常Renderer Queueから
+Camera別のExplicit描画SnapshotまでEntityIndexを値で保持する経路を追加した。GenerationはGPUへ
+固定せず、Readback完了時にActive Sceneの正規データから再取得する。共通off-screen Targetには
+Scene ViewだけがPicking Resourceを要求する設定と、連続Click・Resize・Scene交換で古い結果を
+適用しないSequence付き非同期Mailbox契約を追加した。この共通境界追加時点ではDX12 / Vulkanの
+整数Attachment、描画出力、Fence完了後Readbackは未実装であり、次の変更へ分割した。
+
+同日、DX12 Scene ViewへR32_SINT Picking Attachment、EntityIndex専用Pixel Shader、通常Color描画済み
+Depthを再利用するPicking Passを追加した。要求PixelだけをSwapChain frame slot別Readback Bufferへ
+コピーし、そのslotのFence待機後にCPUへ公開するため、Click時のGPU同期停止を発生させない。
+Resizeや新しいClickより古いSequenceは共通Mailboxで破棄する。Debug x64ビルドとCPU Self Test、
+DX12 Editorの短時間起動は成功したが、実際のScene View Clickによる選択一致、Resize中の連続Click、
+Debug Layer上でPicking Passが発行された場合の実機確認は未完了である。Vulkan実装も継続する。
+
 #### 5.3 Gizmo
 
 - [x] Translate / Rotate / Scaleの状態機械と描画生成をImGui DrawListから分離する。
@@ -476,6 +490,9 @@ Exit Gate:
 3. DX12 Debug LayerとVulkan Validation LayerでState / Layout / RenderPass / Descriptor / Lifetime Errorがないことを確認する。
 4. OpenGL Scene ViewでPicking、Letterbox除外、右Mouse Camera、Runtime入力遮断、Gizmoを実機確認する。
 5. DX12 / VulkanのScene ViewへPicking ID Attachmentと非同期Readbackを追加する。
+   - [x] EntityIndexをExplicit描画Snapshotへ保持し、Sequence付き非同期要求／結果契約をEditorへ接続する。
+   - [x] DX12でR32_SINT AttachmentへEntityIndexを出力し、Frame Fence完了後に1 pixelをReadbackする。
+   - [ ] VulkanでR32_SINT AttachmentへEntityIndexを出力し、Frame Fence完了後に1 pixelをReadbackする。
 6. 3 Backend共通のViewport座標・Picking・Gizmo回帰を確認してPhase 5のExit Gateを閉じる。
 
 Phase 4のInspector編集は自動テストまで完了しているが、Raven UIを使った実機操作は未確認である。Phase 5へ進む際も、Viewport表示、入力、Gizmoを同時に置き換えず、座標系と入力所有権を段階ごとに固定する。
@@ -499,5 +516,7 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 2026-10-22 | 作業ツリー | Phase 7 Raven UI既定化 | 引数なしの通常Editor起動をRaven UIへ変更し、Dear ImGui / Dualを明示引数だけのfallbackへ限定 | Debug x64通常ビルド成功、Raven UI CPU Test成功 | 未実施 | 複数開発セッション、3 Backend、高DPI、性能計測 |
 | 2026-10-22 | 作業ツリー | Phase 7 Raven UI性能計測基盤 | 前FrameのUI Build CPU時間、Draw Command、Vertex / Index、Texture切替、DrawListのframe確保回数・確保量・保持容量、現在/最大Element数をStatistics Panelへ追加 | Debug x64通常ビルド成功、Allocation/Elementを含む計測値整合性のRaven UI CPU Test成功 | 未実施 | 実EditorでBaseline採取、DrawList外の一時Allocation、長時間・3 Backend・高DPI確認 |
 | 2026-10-22 | 作業ツリー | Phase 7 ImGui機能差棚卸し / Raw Scope | Editor主要機能の差を分類し、Statisticsの呼び出し順・Depth・時間をRaven UI仮想化Tableへ追加 | Debug x64通常ビルド成功、Raw Scope行数を含むRaven UI CPU Test成功 | 未実施 | 3 Backend / DPI、補助Window、専用比較表示の移植要否判断 |
+| 2026-10-22 | 作業ツリー | Phase 5.2 Explicit Picking共通境界 | Scene QueueからExplicit SnapshotまでEntityIndexを保持し、Scene View専用設定、Sequence付き非同期Mailbox、EditorのScene/Sequence検証を追加 | Debug x64ビルド成功（Link PDB無効、既存Warningのみ）、Explicit Scene Frame / Editor Viewport Self Test成功 | 未実施 | DX12 / Vulkan整数Attachment、Shader出力、Fence完了後Readback |
+| 2026-10-22 | 作業ツリー | Phase 5.2 DX12非同期Picking | R32_SINT Attachment、専用PSO、frame slot別Readback Buffer、Fence後結果公開を追加 | Debug x64ビルド成功（Link PDB無効）、DXIL生成成功、Explicit Scene Frame / Editor Viewport Self Test成功 | DX12 Editor短時間起動成功。Click選択は未確認。Color Clear値をTarget生成契約へ統合 | Vulkan Picking、DX12 Click / Resize / 高DPI実機確認 |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。

@@ -1,5 +1,7 @@
 #include "DX12SceneRuntime.h"
 
+#include "DX12OffscreenRenderTarget.h"
+
 #include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 #include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 
@@ -81,9 +83,10 @@ bool DX12SceneRuntime::DrawPreparedOffscreenSceneFrame(
     RHISceneCommandList& commands,
     const PreparedOffscreenSceneFrame& prepared)
 {
-    constexpr float clearColor[4] = { 0.1f, 0.1f, 0.3f, 1.0f };
+    const std::array<float, 4>& clearColor =
+        prepared.RenderTarget->GetSpecification().ClearColor;
     if (commands.BeginOffscreenRenderTarget(
-        prepared.RenderTarget, clearColor) == false)
+        prepared.RenderTarget, clearColor.data()) == false)
     {
         return false;
     }
@@ -101,6 +104,28 @@ bool DX12SceneRuntime::DrawPreparedOffscreenSceneFrame(
                 commands, prepared.SceneFrame.DebugLinePipeline,
                 prepared.SceneFrame.DebugLinePipeline,
                 prepared.SceneFrame.DebugLineItems);
+    }
+
+    auto nativeTarget =
+        std::dynamic_pointer_cast<DX12OffscreenRenderTarget>(
+            prepared.RenderTarget);
+    RHIEntityPickingRequest pickingRequest{};
+    if (drawn == true && nativeTarget != nullptr &&
+        nativeTarget->TakePendingEntityPickingRequest(pickingRequest) == true)
+    {
+        const bool beganPicking = commands.BeginEntityPickingPass(
+            prepared.RenderTarget, pickingRequest);
+        bool picked = false;
+        bool endedPicking = false;
+        if (beganPicking == true)
+        {
+            picked = RHISceneMeshRenderer::DrawEntityPicking(
+                commands, m_PickingPipeline, prepared.SceneFrame.Items);
+            // Draw失敗時もAttachmentをCOPY_SOURCEから戻すためEndを必ず試みます。
+            endedPicking = commands.EndEntityPickingPass(
+                prepared.RenderTarget, pickingRequest);
+        }
+        drawn = beganPicking == true && picked == true && endedPicking == true;
     }
 
     const bool ended =

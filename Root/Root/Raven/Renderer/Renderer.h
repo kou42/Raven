@@ -104,6 +104,15 @@ public:
         const RHIShaderBinary& vertexShader,
         const RHIShaderBinary& fragmentShader,
         Ref<RHIGraphicsPipeline>& outPipeline);
+
+    // Explicit Scene ViewのEntity Picking専用Pipelineを生成します。
+    // 通常Color PipelineとShader/Attachment形式を分離し、R32Sintだけへ書き込みます。
+    static bool CreateRHIEntityPickingPipeline(
+        RHIDevice& device,
+        const PipelineSpecification& source,
+        const RHIShaderBinary& vertexShader,
+        const RHIShaderBinary& fragmentShader,
+        Ref<RHIGraphicsPipeline>& outPipeline);
     static bool PrepareRHIDebugLines(
         RHIDevice& device,
         const Ref<RHITexture>& defaultTexture,
@@ -112,7 +121,10 @@ public:
         std::vector<RHISceneDrawItem>& outItems);
 
     static void DrawIndexed(const Ref<VertexArray>& vertexArray);
-    static void Draw(const Ref<Mesh>& mesh, const Ref<Material>& material, const math::Mat4& transform);
+    // entityIDはExplicit BackendのPicking Snapshotへだけ伝播します。
+    // 0はShadow等の補助描画またはScene外の描画を表します。
+    static void Draw(const Ref<Mesh>& mesh, const Ref<Material>& material,
+        const math::Mat4& transform, uint32_t entityID = 0u);
 
     // 現在の通常Scene QueueをExplicit RHI用の値Snapshotへ変換します。
     // Buffer生成・更新はFrame開始前に完了している必要があり、ここではGPU操作を行いません。

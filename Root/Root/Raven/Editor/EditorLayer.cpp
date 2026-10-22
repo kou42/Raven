@@ -1228,6 +1228,7 @@ void EditorLayer::OnAttach()
             static_cast<std::uint32_t>(m_SceneViewportHeight);
         sceneSpecification.ColorFormat = RHITextureFormat::RGBA8;
         sceneSpecification.EnableDepth = true;
+        sceneSpecification.EnableEntityPicking = true;
         sceneSpecification.DebugName = "Explicit Editor Scene View";
 
         RHIOffscreenRenderTargetSpecification gameSpecification = sceneSpecification;
@@ -1235,6 +1236,7 @@ void EditorLayer::OnAttach()
             static_cast<std::uint32_t>(m_GameViewportWidth);
         gameSpecification.Height =
             static_cast<std::uint32_t>(m_GameViewportHeight);
+        gameSpecification.EnableEntityPicking = false;
         gameSpecification.DebugName = "Explicit Editor Game View";
 
         m_SceneRHIRenderTarget =
@@ -1317,6 +1319,8 @@ void EditorLayer::OnDetach()
     m_GameFramebuffer.reset();
     m_SceneRHIRenderTarget.reset();
     m_GameRHIRenderTarget.reset();
+    m_ExplicitPickingScene = nullptr;
+    m_ExplicitPickingSequence = 0u;
     m_ExplicitViewportRenderingEnabled = false;
     m_ViewportRenderingEnabled = false;
 }
@@ -1332,6 +1336,25 @@ void EditorLayer::OnUpdate(float dt)
     // Dear ImGui frameが存在しないExplicit Backendでも毎frame同じLifetime規約を適用します。
     SetEditorCommandHistoryScene(m_Application->GetScene());
     ValidateSelectedEntity();
+
+    if (m_ExplicitViewportRenderingEnabled == true &&
+        m_SceneRHIRenderTarget != nullptr)
+    {
+        std::uint64_t completedSequence = 0u;
+        std::int32_t entityID = -1;
+        if (m_SceneRHIRenderTarget->ConsumeEntityPickingResult(
+                completedSequence, entityID) == true)
+        {
+            Scene* activeScene = m_Application->GetScene();
+            if (completedSequence == m_ExplicitPickingSequence &&
+                activeScene != nullptr && activeScene == m_ExplicitPickingScene)
+            {
+                ApplyPickedEntityID(entityID);
+            }
+            m_ExplicitPickingScene = nullptr;
+            m_ExplicitPickingSequence = 0u;
+        }
+    }
 
     if (m_ViewportRenderingEnabled == false)
     {
@@ -1391,13 +1414,15 @@ void EditorLayer::OnRender()
         const auto ensureRenderTarget =
             [this](Ref<RHIOffscreenRenderTarget>& target,
                 std::uint32_t width, std::uint32_t height,
+                bool enableEntityPicking,
                 const char* debugName)
             {
                 if (target != nullptr && target->IsValid() == true)
                 {
                     const RHIOffscreenRenderTargetSpecification& current =
                         target->GetSpecification();
-                    if (current.Width == width && current.Height == height)
+                    if (current.Width == width && current.Height == height &&
+                        current.EnableEntityPicking == enableEntityPicking)
                     {
                         return true;
                     }
@@ -1408,6 +1433,7 @@ void EditorLayer::OnRender()
                 specification.Height = height;
                 specification.ColorFormat = RHITextureFormat::RGBA8;
                 specification.EnableDepth = true;
+                specification.EnableEntityPicking = enableEntityPicking;
                 specification.DebugName = debugName;
 
                 Ref<RHIOffscreenRenderTarget> replacement =
@@ -1421,6 +1447,12 @@ void EditorLayer::OnRender()
                 // UI DrawListまたはGPU Frameが旧Targetを参照中でも、Ref交換により
                 // それぞれの所有境界が完了するまで旧Resourceを生存させます。
                 target = std::move(replacement);
+                if (enableEntityPicking == true)
+                {
+                    // 旧Targetへ記録済みのReadback結果は、新寸法の座標系へ適用しません。
+                    m_ExplicitPickingScene = nullptr;
+                    m_ExplicitPickingSequence = 0u;
+                }
                 return true;
             };
 
@@ -1431,7 +1463,7 @@ void EditorLayer::OnRender()
             const std::uint32_t height = static_cast<std::uint32_t>(
                 std::max(m_SceneViewportHeight, 1.0f));
             if (ensureRenderTarget(
-                m_SceneRHIRenderTarget, width, height,
+                m_SceneRHIRenderTarget, width, height, true,
                 "Explicit Editor Scene View") == true)
             {
                 SceneViewportRenderer* viewportRenderer =
@@ -1460,7 +1492,7 @@ void EditorLayer::OnRender()
             const std::uint32_t height = static_cast<std::uint32_t>(
                 std::max(m_GameViewportHeight, 1.0f));
             if (ensureRenderTarget(
-                m_GameRHIRenderTarget, width, height,
+                m_GameRHIRenderTarget, width, height, false,
                 "Explicit Editor Game View") == true)
             {
                 activeScene->OnRender();
@@ -2095,7 +2127,30 @@ void EditorLayer::PickSceneEntityAt(
 {
     Scene* activeScene =
         m_Application != nullptr ? m_Application->GetScene() : nullptr;
-    if (activeScene == nullptr || m_SceneFramebuffer == nullptr ||
+    if (activeScene == nullptr)
+    {
+        return;
+    }
+
+    if (m_ExplicitViewportRenderingEnabled == true)
+    {
+        if (m_SceneRHIRenderTarget == nullptr ||
+            m_SceneRHIRenderTarget->SupportsEntityPicking() == false)
+        {
+            return;
+        }
+
+        std::uint64_t sequence = 0u;
+        if (m_SceneRHIRenderTarget->RequestEntityPicking(
+                pixelX, pixelY, sequence) == true)
+        {
+            m_ExplicitPickingScene = activeScene;
+            m_ExplicitPickingSequence = sequence;
+        }
+        return;
+    }
+
+    if (m_SceneFramebuffer == nullptr ||
         m_SceneFramebuffer->GetColorAttachmentCount() <= 1 ||
         pixelX >= m_SceneFramebuffer->GetWidth() ||
         pixelY >= m_SceneFramebuffer->GetHeight())
@@ -2107,6 +2162,18 @@ void EditorLayer::PickSceneEntityAt(
         1,
         static_cast<int>(pixelX),
         static_cast<int>(pixelY));
+    ApplyPickedEntityID(entityID);
+}
+
+void EditorLayer::ApplyPickedEntityID(std::int32_t entityID)
+{
+    Scene* activeScene =
+        m_Application != nullptr ? m_Application->GetScene() : nullptr;
+    if (activeScene == nullptr)
+    {
+        return;
+    }
+
     if (entityID <= 0)
     {
         // Geometryが存在しない背景をクリックした場合は選択解除します。

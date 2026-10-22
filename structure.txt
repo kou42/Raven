@@ -113,6 +113,18 @@ D:.
     |   |   |   |       Raven_human_test.json
     |   |   |   |
     |   |   |   +---Shaders
+    |   |   |   |   +---DirectX12
+    |   |   |   |   |       BuildSceneMesh.ps1
+    |   |   |   |   |       BuildUI.ps1
+    |   |   |   |   |       README.md
+    |   |   |   |   |       SceneMesh.hlsl
+    |   |   |   |   |       SceneMesh.picking.ps.dxil
+    |   |   |   |   |       SceneMesh.ps.dxil
+    |   |   |   |   |       SceneMesh.vs.dxil
+    |   |   |   |   |       UI.hlsl
+    |   |   |   |   |       UI.ps.dxil
+    |   |   |   |   |       UI.vs.dxil
+    |   |   |   |   |
     |   |   |   |   +---Fragment
     |   |   |   |   |       test.frag
     |   |   |   |   |       texture_test.frag
@@ -126,9 +138,20 @@ D:.
     |   |   |   |   +---ShaderToy
     |   |   |   |   |       test.frag
     |   |   |   |   |
-    |   |   |   |   \---Vertex
-    |   |   |   |           test.vert
-    |   |   |   |           texture_test.vert
+    |   |   |   |   +---Vertex
+    |   |   |   |   |       test.vert
+    |   |   |   |   |       texture_test.vert
+    |   |   |   |   |
+    |   |   |   |   \---Vulkan
+    |   |   |   |           README.md
+    |   |   |   |           SceneTriangle.frag
+    |   |   |   |           SceneTriangle.frag.spv
+    |   |   |   |           SceneTriangle.vert
+    |   |   |   |           SceneTriangle.vert.spv
+    |   |   |   |           UI.frag
+    |   |   |   |           UI.frag.spv
+    |   |   |   |           UI.vert
+    |   |   |   |           UI.vert.spv
     |   |   |   |
     |   |   |   \---Svg
     |   |   |           AnimatedRect.svg

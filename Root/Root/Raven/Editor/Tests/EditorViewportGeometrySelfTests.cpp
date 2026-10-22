@@ -378,6 +378,11 @@ void RunEditorViewportGeometrySelfTests()
     renderTargetSpecification.ColorFormat = RHITextureFormat::R32I;
     assert(IsValidRHIOffscreenRenderTargetSpecification(
         renderTargetSpecification) == false);
+    renderTargetSpecification.ColorFormat = RHITextureFormat::RGBA8;
+    renderTargetSpecification.EnableEntityPicking = true;
+    renderTargetSpecification.EnableDepth = false;
+    assert(IsValidRHIOffscreenRenderTargetSpecification(
+        renderTargetSpecification) == false);
 
     // UI論理座標へ150%のWindow framebuffer倍率を一度だけ適用します。
     assert(TryCalculateEditorViewportRenderTargetExtent(
@@ -418,6 +423,34 @@ void RunEditorViewportGeometrySelfTests()
         math::Vec2(std::numeric_limits<float>::quiet_NaN(), 360.0f),
         math::Vec2(1280.0f, 720.0f),
         math::Vec2(1280.0f, 720.0f), extent) == false);
+
+    // Explicit PickingはGPU Fenceを待たず要求し、後続Frameで最新Clickの結果だけを受け取ります。
+    RHIEntityPickingReadbackState pickingState;
+    std::uint64_t firstSequence = 0u;
+    assert(pickingState.Request(640u, 360u, 12u, 34u, firstSequence) == true);
+    assert(firstSequence != 0u);
+    RHIEntityPickingRequest request{};
+    assert(pickingState.TakePendingRequest(request) == true);
+    assert(request.Sequence == firstSequence);
+    assert(request.X == 12u && request.Y == 34u);
+    assert(pickingState.TakePendingRequest(request) == false);
+
+    std::uint64_t secondSequence = 0u;
+    assert(pickingState.Request(640u, 360u, 56u, 78u, secondSequence) == true);
+    assert(secondSequence != firstSequence);
+    // 先行ClickのReadbackが遅れて完了しても、現在の選択を巻き戻しません。
+    assert(pickingState.PublishResult(firstSequence, 7) == false);
+    assert(pickingState.TakePendingRequest(request) == true);
+    assert(request.Sequence == secondSequence);
+    assert(pickingState.PublishResult(secondSequence, 9) == true);
+    std::uint64_t completedSequence = 0u;
+    std::int32_t entityID = -1;
+    assert(pickingState.ConsumeResult(completedSequence, entityID) == true);
+    assert(completedSequence == secondSequence && entityID == 9);
+    assert(pickingState.ConsumeResult(completedSequence, entityID) == false);
+    assert(pickingState.Request(640u, 360u, 640u, 0u, secondSequence) == false);
+    pickingState.Reset();
+    assert(pickingState.TakePendingRequest(request) == false);
 
     RunEditorViewportInputRegionSelfTests();
     RunEditorGizmoGeometrySelfTests();

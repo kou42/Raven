@@ -23,7 +23,8 @@ public:
     // off-screen Color AttachmentはRTVとSRVの両用途で同じResourceを共有します。
     // 初期StateをPIXEL_SHADER_RESOURCEにすることで、描画開始・終了のBarrierを常に対称にします。
     bool InitRenderTarget(ID3D12Device* device,
-        const RHITextureSpecification& specification)
+        const RHITextureSpecification& specification,
+        const std::array<float, 4>& clearColor)
     {
         if (device == nullptr || specification.Width == 0u ||
             specification.Height == 0u ||
@@ -46,11 +47,13 @@ public:
         description.SampleDesc.Count = 1;
         description.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         description.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+        Microsoft::WRL::ComPtr<ID3D12Resource> texture;
         D3D12_CLEAR_VALUE clearValue{};
         clearValue.Format = description.Format;
-        clearValue.Color[3] = 1.0f;
-
-        Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+        for (std::size_t component = 0u; component < clearColor.size(); ++component)
+        {
+            clearValue.Color[component] = clearColor[component];
+        }
         if (FAILED(device->CreateCommittedResource(
             &heap, D3D12_HEAP_FLAG_NONE, &description,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,

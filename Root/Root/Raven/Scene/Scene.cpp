@@ -461,7 +461,8 @@ void Scene::RenderEntities()
             continue;
         }
 
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material,
+            transform.GetTransform(), entity.GetIndex());
     }
 
 #if 0

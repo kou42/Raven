@@ -879,7 +879,8 @@ void SceneGame::RenderScene(const Camera& camera)
         }
 
         // u_View/u_ProjectionはRenderer::Draw()がCamera Contextから設定します。
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform.GetTransform());
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material,
+            transform.GetTransform(), entity.GetIndex());
     }
 
     Renderer::EndScene();

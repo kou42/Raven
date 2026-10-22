@@ -13,6 +13,7 @@ namespace Raven
 {
 
 class RHIOffscreenRenderTarget;
+struct RHIEntityPickingRequest;
 
 // API非依存のExplicit Scene描画命令です。Frameの開始・終了はLifecycleが管理し、
 // CommandListはそのFrame内でだけ描画命令を発行します。
@@ -29,6 +30,12 @@ public:
     virtual bool BindMaterial(const RHIMaterialProperties& material) = 0;
     // column-majorのclip-space変換行列を設定します。
     virtual bool SetClipTransform(const std::array<float, 16>& transform) = 0;
+    // Entity Picking専用の整数値です。通常Surface Pipelineでは設定不要です。
+    virtual bool SetEntityID(std::int32_t entityID)
+    {
+        (void)entityID;
+        return false;
+    }
     virtual bool DrawIndexed(const Ref<RHIBuffer>& vertexBuffer,
         const Ref<RHIBuffer>& indexBuffer, uint32_t indexCount = 0,
         uint32_t firstIndex = 0) = 0;
@@ -47,6 +54,25 @@ public:
         const Ref<RHIOffscreenRenderTarget>& renderTarget)
     {
         (void)renderTarget;
+        return false;
+    }
+
+    // 通常Color描画済みDepthを再利用して整数AttachmentだけへEntityIndexを書き込みます。
+    // Begin/End間ではColor Attachmentを変更せず、Endで要求Pixelの非同期Readbackを記録します。
+    virtual bool BeginEntityPickingPass(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request)
+    {
+        (void)renderTarget;
+        (void)request;
+        return false;
+    }
+    virtual bool EndEntityPickingPass(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request)
+    {
+        (void)renderTarget;
+        (void)request;
         return false;
     }
 };

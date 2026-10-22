@@ -19,6 +19,7 @@
 
 namespace Raven
 {
+class DX12OffscreenRenderTarget;
 // Clear DemoとGPU Resourceを共有しないDX12 Scene専用Frame Contextです。
 // DX12SceneRuntimeが所有し、ApplicationのExplicit Scene経路からFrame境界を借用します。
 class DX12SceneContext final : public RHISceneFrameLifecycle
@@ -64,6 +65,7 @@ public:
     bool IsGraphicsPipelineBound() const;
     bool SetClipTransform(const std::array<float, 16>& transform);
     bool SetMaterialTint(const std::array<float, 4>& tint);
+    bool SetEntityID(std::int32_t entityID);
     bool BindTexture(const Ref<RHITexture>& texture);
     // SwapChain Passを一時的に閉じ、同じCommandList内でEditor用off-screen Targetへ切り替えます。
     bool BeginOffscreenRenderTarget(
@@ -72,8 +74,21 @@ public:
     // ColorをSRV Sampling可能状態へ戻し、後続UI用にSwapChain Passを再開します。
     bool EndOffscreenRenderTarget(
         const Ref<RHIOffscreenRenderTarget>& renderTarget);
+    bool BeginEntityPickingPass(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request);
+    bool EndEntityPickingPass(
+        const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request);
 
 private:
+    struct PendingEntityPickingReadback
+    {
+        Ref<DX12OffscreenRenderTarget> Target;
+        std::uint64_t Sequence = 0u;
+        std::uint32_t Slot = 0u;
+    };
+
     struct FrameResource
     {
         std::unique_ptr<DX12CommandList> CommandList;
@@ -82,6 +97,7 @@ private:
         std::vector<Ref<RHIGraphicsPipeline>> RetainedPipelines;
         std::vector<Ref<RHITexture>> RetainedTextures;
         std::vector<Ref<RHIOffscreenRenderTarget>> RetainedRenderTargets;
+        std::vector<PendingEntityPickingReadback> PendingPickingReadbacks;
     };
 
     DX12Factory m_Factory;

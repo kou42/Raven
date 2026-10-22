@@ -52,6 +52,9 @@ public:
         case RHIColorFormat::BGRA8Srgb:
             colorFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
             break;
+        case RHIColorFormat::R32Sint:
+            colorFormat = DXGI_FORMAT_R32_SINT;
+            break;
         default:
             return false;
         }
@@ -98,7 +101,8 @@ public:
         // ShaderにDescriptor/Root Constantが必要な場合、空Root Signatureでは
         // PSO生成に失敗します。未対応Bindingを暗黙に成功扱いしません。
         D3D12_ROOT_SIGNATURE_DESC rootDescription{};
-        // b0: clip-space行列(16 DWORD)、b1: Material Tint(4 DWORD)。
+        // b0: clip-space行列(16 DWORD)、b1: Material Tint(4 DWORD)、
+        // b2: Editor Picking Entity ID(1 DWORD)。通常Surface Shaderはb2を参照しません。
         // t0: RGBA8 Texture SRV。Samplerはs0のStatic Samplerです。
         D3D12_DESCRIPTOR_RANGE textureRange{};
         textureRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -106,7 +110,7 @@ public:
         textureRange.BaseShaderRegister = 0;
         textureRange.RegisterSpace = 0;
         textureRange.OffsetInDescriptorsFromTableStart = 0;
-        D3D12_ROOT_PARAMETER parameters[3]{};
+        D3D12_ROOT_PARAMETER parameters[4]{};
         parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         parameters[0].Constants.ShaderRegister = 0;
         parameters[0].Constants.RegisterSpace = 0;
@@ -121,7 +125,12 @@ public:
         parameters[2].DescriptorTable.NumDescriptorRanges = 1;
         parameters[2].DescriptorTable.pDescriptorRanges = &textureRange;
         parameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        rootDescription.NumParameters = 3;
+        parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        parameters[3].Constants.ShaderRegister = 2;
+        parameters[3].Constants.RegisterSpace = 0;
+        parameters[3].Constants.Num32BitValues = 1;
+        parameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        rootDescription.NumParameters = 4;
         rootDescription.pParameters = parameters;
         D3D12_STATIC_SAMPLER_DESC sampler{};
         sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
