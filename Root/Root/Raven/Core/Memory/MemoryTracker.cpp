@@ -127,9 +127,18 @@ void* TrackedAllocator::AllocateAt(std::size_t size, std::size_t alignment, cons
         return nullptr;
     }
 
+    // 追跡登録が失敗した場合も、元Allocatorの確保を取り残さないようにします。
     try
     {
         m_LivePointers.push_back(memory);
+    }
+    catch (...)
+    {
+        m_Backing.Deallocate(memory);
+        throw;
+    }
+    try
+    {
         MemoryTracker::Get().RecordAllocation({ memory, size, alignment, m_Tag, m_AllocatorType, file, line });
     }
     catch (...)
