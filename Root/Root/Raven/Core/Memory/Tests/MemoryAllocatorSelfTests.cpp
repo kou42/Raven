@@ -4,6 +4,7 @@
 #include "Raven/Core/Memory/FreeListAllocator.h"
 #include "Raven/Core/Memory/HeapAllocator.h"
 #include "Raven/Core/Memory/LinearAllocator.h"
+#include "Raven/Core/Memory/MemoryTracker.h"
 #include "Raven/Core/Memory/PoolAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
 
@@ -176,7 +177,27 @@ void RunMemoryAllocatorSelfTests()
     assert(invalidPool.Allocate(8, 8) == nullptr);
 
     // ========================================================================
-    // 7. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 7. MemoryTracker: Tag別集計、個別解放、Reset、リーク一覧
+    // ========================================================================
+    MemoryTracker& tracker = MemoryTracker::Get();
+    const std::size_t initialLeaks = tracker.GetLeakCount();
+    {
+        HeapAllocator trackedHeap;
+        TrackedAllocator tracked(trackedHeap, MemoryTag::Physics, "HeapAllocator");
+        void* trackedA = tracked.AllocateAt(48, 16, __FILE__, __LINE__);
+        void* trackedB = tracked.Allocate(64, 32);
+        assert(trackedA != nullptr);
+        assert(trackedB != nullptr);
+        assert(tracker.GetStatistics(MemoryTag::Physics).currentBytes >= 112);
+        assert(tracker.GetLeakCount() == initialLeaks + 2);
+        tracked.Deallocate(trackedA);
+        assert(tracker.GetLeakCount() == initialLeaks + 1);
+        tracked.Reset();
+        assert(tracker.GetLeakCount() == initialLeaks);
+    }
+
+    // ========================================================================
+    // 8. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
