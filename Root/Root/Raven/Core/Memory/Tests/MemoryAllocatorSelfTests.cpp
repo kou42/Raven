@@ -317,7 +317,6 @@ void RunMemoryAllocatorSelfTests()
     assert(vectorHeap.GetAllocationCount() == 0);
 
     // ========================================================================
-    // ========================================================================
     // 9. Raven::Vector: non-trivial lifetime / growth / allocation failure
     // ========================================================================
     static_assert(std::is_move_constructible_v<Vector<std::unique_ptr<int>>>);
