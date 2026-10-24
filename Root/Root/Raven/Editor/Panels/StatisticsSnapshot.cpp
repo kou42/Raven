@@ -193,6 +193,10 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
     snapshot.Runtime.WindowHeight = input.WindowHeight;
     snapshot.Renderer = input.Renderer;
     snapshot.UI = input.UI;
+    if (input.Memory != nullptr)
+    {
+        snapshot.Memory = *input.Memory;
+    }
 
     StatisticsCPUProfilerSnapshot& profiler = snapshot.CPUProfiler;
     profiler.Enabled = input.CPUProfilerEnabled;
@@ -243,6 +247,16 @@ StatisticsSnapshot CaptureStatisticsSnapshot(
     input.CPUProfilerEnabled = profiler.IsEnabled();
     input.CPUProfile = &profiler.GetLastFrame();
     input.ActiveScene = scene;
+    // 一度取得したSnapshotをUIへ渡し、描画中に統計値が変化しないようにします。
+    StatisticsMemorySnapshot memory{};
+    MemoryTracker& tracker = MemoryTracker::Get();
+    memory.Total = tracker.GetTotalStatistics();
+    memory.LeakCount = tracker.GetLeakCount();
+    for (std::size_t index = 0; index < memory.ByTag.size(); ++index)
+    {
+        memory.ByTag[index] = tracker.GetStatistics(static_cast<MemoryTag>(index));
+    }
+    input.Memory = &memory;
     return BuildStatisticsSnapshot(input);
 }
 
