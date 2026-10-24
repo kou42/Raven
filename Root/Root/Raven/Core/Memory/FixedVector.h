@@ -33,9 +33,19 @@ public:
     {
         // Inline Storageのアドレスは移譲できないため、要素を個別に移動します。
         // 途中で例外が発生した場合も構築済み要素はこのオブジェクトのDestructorで破棄します。
-        for (T& value : other)
+        try
         {
-            emplace_back(std::move(value));
+            for (T& value : other)
+            {
+                emplace_back(std::move(value));
+            }
+        }
+        catch (...)
+        {
+            // コンストラクタが例外終了するとFixedVectorのDestructorは呼ばれません。
+            // ここで構築済み要素を破棄してリソースリークを防ぎます。
+            clear();
+            throw;
         }
         other.clear();
     }
