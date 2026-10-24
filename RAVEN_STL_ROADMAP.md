@@ -361,6 +361,10 @@ Heap allocation を禁止した固定最大容量 Container。
 
 既存 `FrameVector` を維持しつつ、`Raven::Vector` 完成後に位置付けを再評価します。
 
+**Phase 4-3の現時点の判断:** `FrameVector<T>` は `std::vector<T, STLAllocatorAdapter<T>>` の互換エイリアスとして継続します。`BroadPhase::ComputePairs()` が `get_allocator()` からBacking Allocatorを検出し、一時Setを同じFrameAllocatorへ割り当てるためです。`Raven::Vector` の現行Public APIには `get_allocator()` がなく、置換するとこの連携を失います。
+
+**移行条件:** (1) BroadPhaseがコンテナ非依存にAllocatorを取得できること、(2) Physics/SoftBodyの既存テストとフレームReset境界を維持すること、(3) FrameAllocatorのno-op Deallocateによる成長時のArena消費量をBenchmarkで比較すること。条件を満たすまでは既存型を変更しません。
+
 選択肢:
 
 - STL-backed FrameVector を継続。
