@@ -32,51 +32,51 @@ FixedVector<T, N>::~FixedVector() noexcept
 }
 
 template<typename T, std::size_t N>
-[[nodiscard]] constexpr size_type FixedVector<T, N>::capacity() const noexcept
+constexpr typename FixedVector<T, N>::size_type FixedVector<T, N>::capacity() const noexcept
 { return N; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] size_type FixedVector<T, N>::size() const noexcept
+typename FixedVector<T, N>::size_type FixedVector<T, N>::size() const noexcept
 { return m_Size; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] bool FixedVector<T, N>::empty() const noexcept
+bool FixedVector<T, N>::empty() const noexcept
 { return m_Size == 0; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] bool FixedVector<T, N>::full() const noexcept
+bool FixedVector<T, N>::full() const noexcept
 { return m_Size == N; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] T* FixedVector<T, N>::data() noexcept
+T* FixedVector<T, N>::data() noexcept
 { return reinterpret_cast<T*>(m_Storage); }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const T* FixedVector<T, N>::data() const noexcept
+const T* FixedVector<T, N>::data() const noexcept
 { return reinterpret_cast<const T*>(m_Storage); }
 
 template<typename T, std::size_t N>
-[[nodiscard]] iterator FixedVector<T, N>::begin() noexcept
+typename FixedVector<T, N>::iterator FixedVector<T, N>::begin() noexcept
 { return data(); }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const_iterator FixedVector<T, N>::begin() const noexcept
+typename FixedVector<T, N>::const_iterator FixedVector<T, N>::begin() const noexcept
 { return data(); }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const_iterator FixedVector<T, N>::cbegin() const noexcept
+typename FixedVector<T, N>::const_iterator FixedVector<T, N>::cbegin() const noexcept
 { return data(); }
 
 template<typename T, std::size_t N>
-[[nodiscard]] iterator FixedVector<T, N>::end() noexcept
+typename FixedVector<T, N>::iterator FixedVector<T, N>::end() noexcept
 { return data() + m_Size; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const_iterator FixedVector<T, N>::end() const noexcept
+typename FixedVector<T, N>::const_iterator FixedVector<T, N>::end() const noexcept
 { return data() + m_Size; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const_iterator FixedVector<T, N>::cend() const noexcept
+typename FixedVector<T, N>::const_iterator FixedVector<T, N>::cend() const noexcept
 { return data() + m_Size; }
 
 template<typename T, std::size_t N>
