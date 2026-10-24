@@ -53,43 +53,43 @@ SmallVector<T, N>::SmallVector(SmallVector&& other)
 }
 
 template<typename T, std::size_t N>
-[[nodiscard]] size_type SmallVector<T, N>::size() const noexcept
+typename SmallVector<T, N>::size_type SmallVector<T, N>::size() const noexcept
 { return m_Size; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] size_type SmallVector<T, N>::capacity() const noexcept
+typename SmallVector<T, N>::size_type SmallVector<T, N>::capacity() const noexcept
 { return m_Capacity; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] bool SmallVector<T, N>::empty() const noexcept
+bool SmallVector<T, N>::empty() const noexcept
 { return m_Size == 0; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] bool SmallVector<T, N>::UsingInlineStorage() const noexcept
+bool SmallVector<T, N>::UsingInlineStorage() const noexcept
 { return UsingInline(); }
 
 template<typename T, std::size_t N>
-[[nodiscard]] T* SmallVector<T, N>::data() noexcept
+T* SmallVector<T, N>::data() noexcept
 { return m_Data; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const T* SmallVector<T, N>::data() const noexcept
+const T* SmallVector<T, N>::data() const noexcept
 { return m_Data; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] iterator SmallVector<T, N>::begin() noexcept
+typename SmallVector<T, N>::iterator SmallVector<T, N>::begin() noexcept
 { return m_Data; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const_iterator SmallVector<T, N>::begin() const noexcept
+typename SmallVector<T, N>::const_iterator SmallVector<T, N>::begin() const noexcept
 { return m_Data; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] iterator SmallVector<T, N>::end() noexcept
+typename SmallVector<T, N>::iterator SmallVector<T, N>::end() noexcept
 { return m_Data + m_Size; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] const_iterator SmallVector<T, N>::end() const noexcept
+typename SmallVector<T, N>::const_iterator SmallVector<T, N>::end() const noexcept
 { return m_Data + m_Size; }
 
 template<typename T, std::size_t N>
@@ -174,17 +174,17 @@ void SmallVector<T, N>::reserve(size_type count)
 }
 
 template<typename T, std::size_t N>
-[[nodiscard]] Allocator* SmallVector<T, N>::GetAllocator() const noexcept
+Allocator* SmallVector<T, N>::GetAllocator() const noexcept
 { return m_Allocator; }
 
 template<typename T, std::size_t N>
-[[nodiscard]] T* SmallVector<T, N>::InlineData() noexcept
+T* SmallVector<T, N>::InlineData() noexcept
 {
     return reinterpret_cast<T*>(m_Inline);
 }
 
 template<typename T, std::size_t N>
-[[nodiscard]] bool SmallVector<T, N>::UsingInline() const noexcept
+bool SmallVector<T, N>::UsingInline() const noexcept
 {
     return m_Data == reinterpret_cast<const T*>(m_Inline);
 }
