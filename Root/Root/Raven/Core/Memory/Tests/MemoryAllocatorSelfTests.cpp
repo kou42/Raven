@@ -1,14 +1,25 @@
 #include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 
 #include "Raven/Core/Memory/FrameAllocator.h"
+#include "Raven/Core/Memory/FreeListAllocator.h"
 #include "Raven/Core/Memory/HeapAllocator.h"
 #include "Raven/Core/Memory/LinearAllocator.h"
+#include "Raven/Core/Memory/MemoryTracker.h"
+#include "Raven/Core/Memory/PoolAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
+#include "Raven/Core/Memory/Vector.h"
+#include "Raven/Core/Memory/SmallVector.h"
 
 #include <cassert>
+#include <algorithm>
+#include <iterator>
+#include <type_traits>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace Raven::tests
@@ -27,6 +38,55 @@ bool IsAligned(const void* memory, std::size_t alignment)
     const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(memory);
     return (address % alignment) == 0;
 }
+
+// 非trivial要素の生存数とcopy/moveを観測します。
+struct VectorLifecycleValue
+{
+    static inline int live = 0;
+    static inline int copies = 0;
+    static inline int moves = 0;
+
+    int value = 0;
+    explicit VectorLifecycleValue(int number = 0) : value(number) { ++live; }
+    VectorLifecycleValue(const VectorLifecycleValue& other) : value(other.value)
+    {
+        ++live;
+        ++copies;
+    }
+    VectorLifecycleValue(VectorLifecycleValue&& other) noexcept : value(other.value)
+    {
+        ++live;
+        ++moves;
+    }
+    ~VectorLifecycleValue() { --live; }
+};
+
+// 明示的にallocation失敗させ、Vectorの要素と容量が変化しないことを検証します。
+class FailingVectorAllocator final : public Allocator
+{
+public:
+    explicit FailingVectorAllocator(Allocator& backing) : m_Backing(backing) {}
+
+    void* Allocate(std::size_t size, std::size_t alignment) override
+    {
+        if (m_Reject)
+        {
+            return nullptr;
+        }
+        return m_Backing.Allocate(size, alignment);
+    }
+    void Deallocate(void* memory) override { m_Backing.Deallocate(memory); }
+    void Reset() override { m_Backing.Reset(); }
+    std::size_t GetCapacity() const override { return m_Backing.GetCapacity(); }
+    std::size_t GetUsedMemory() const override { return m_Backing.GetUsedMemory(); }
+    std::size_t GetPeakUsedMemory() const override { return m_Backing.GetPeakUsedMemory(); }
+    std::size_t GetAllocationCount() const override { return m_Backing.GetAllocationCount(); }
+    void SetReject(bool reject) { m_Reject = reject; }
+
+private:
+    Allocator& m_Backing;
+    bool m_Reject = false;
+};
 
 } // namespace
 
@@ -112,7 +172,281 @@ void RunMemoryAllocatorSelfTests()
     assert(heapAllocator.GetPeakUsedMemory() == 77);
 
     // ========================================================================
-    // 5. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 5. FreeListAllocator: split / coalescing / alignment / exhaustion
+    // ========================================================================
+    FreeListAllocator freeList(1024);
+    assert(freeList.GetCapacity() == 1024);
+    assert(freeList.GetFreeBlockCount() == 1);
+    void* freeA = freeList.Allocate(80, 16);
+    void* freeB = freeList.Allocate(96, 64);
+    void* freeC = freeList.Allocate(64, 32);
+    assert(freeA != nullptr);
+    assert(freeB != nullptr);
+    assert(freeC != nullptr);
+    assert(IsAligned(freeB, 64));
+    assert(IsAligned(freeC, 32));
+    assert(freeList.GetAllocationCount() == 3);
+    assert(freeList.Allocate(0, 8) == nullptr);
+    assert(freeList.Allocate(8, 3) == nullptr);
+    assert(freeList.Allocate(2048, 8) == nullptr);
+
+    freeList.Deallocate(freeB);
+    freeList.Deallocate(freeA);
+    freeList.Deallocate(freeC);
+    assert(freeList.GetAllocationCount() == 0);
+    assert(freeList.GetUsedMemory() == 0);
+    assert(freeList.GetFreeBlockCount() == 1);
+    assert(freeList.GetLargestFreeBlock() == freeList.GetCapacity());
+    const std::size_t freeListPeak = freeList.GetPeakUsedMemory();
+    freeList.Reset();
+    assert(freeList.GetPeakUsedMemory() == freeListPeak);
+
+    // ========================================================================
+    // 6. PoolAllocator: alignment / exhaustion / reuse / statistics
+    // ========================================================================
+    PoolAllocator pool(24, 64, 3);
+    assert(pool.GetSlotCount() == 3);
+    assert(pool.GetAvailableSlotCount() == 3);
+    void* poolA = pool.Allocate(24, 64);
+    void* poolB = pool.Allocate(16, 32);
+    void* poolC = pool.Allocate(24, 64);
+    assert(poolA != nullptr);
+    assert(poolB != nullptr);
+    assert(poolC != nullptr);
+    assert(IsAligned(poolA, 64));
+    assert(IsAligned(poolB, 32));
+    assert(pool.GetAllocationCount() == 3);
+    assert(pool.GetUsedMemory() == pool.GetCapacity());
+    assert(pool.Allocate(8, 8) == nullptr);
+    assert(pool.Allocate(25, 8) == nullptr);
+    assert(pool.Allocate(8, 3) == nullptr);
+    pool.Deallocate(poolB);
+    assert(pool.GetAvailableSlotCount() == 1);
+    void* poolReused = pool.Allocate(16, 16);
+    assert(poolReused == poolB);
+    const std::size_t poolPeak = pool.GetPeakUsedMemory();
+    pool.Reset();
+    assert(pool.GetAllocationCount() == 0);
+    assert(pool.GetAvailableSlotCount() == 3);
+    assert(pool.GetPeakUsedMemory() == poolPeak);
+    PoolAllocator invalidPool(32, 3, 4);
+    assert(invalidPool.GetCapacity() == 0);
+    assert(invalidPool.Allocate(8, 8) == nullptr);
+
+    // ========================================================================
+    // 7. MemoryTracker: Tag別集計、個別解放、Reset、リーク一覧
+    // ========================================================================
+    MemoryTracker& tracker = MemoryTracker::Get();
+    const std::size_t initialLeaks = tracker.GetLeakCount();
+    {
+        HeapAllocator trackedHeap;
+        TrackedAllocator tracked(trackedHeap, MemoryTag::Physics, "HeapAllocator");
+        void* trackedA = tracked.AllocateAt(48, 16, __FILE__, __LINE__);
+        void* trackedB = tracked.Allocate(64, 32);
+        assert(trackedA != nullptr);
+        assert(trackedB != nullptr);
+        assert(tracker.GetStatistics(MemoryTag::Physics).currentBytes >= 112);
+        assert(tracker.GetLeakCount() == initialLeaks + 2);
+        tracked.Deallocate(trackedA);
+        assert(tracker.GetLeakCount() == initialLeaks + 1);
+        tracked.Reset();
+        assert(tracker.GetLeakCount() == initialLeaks);
+    }
+
+    // ========================================================================
+    // 8. Raven::Vector: Allocator連携 / growth / copy / move / Iterator
+    // ========================================================================
+    HeapAllocator vectorHeap;
+    {
+        Vector<int> numbers(vectorHeap);
+        assert(numbers.empty());
+        assert(numbers.size() == 0);
+        assert(numbers.GetAllocator() == &vectorHeap);
+        numbers.reserve(2);
+        numbers.push_back(3);
+        numbers.emplace_back(7);
+        numbers.push_back(11);
+        assert(numbers.size() == 3);
+        assert(numbers.capacity() >= 3);
+        assert(numbers.front() == 3);
+        assert(numbers.back() == 11);
+        int sum = 0;
+        for (int value : numbers)
+        {
+            sum += value;
+        }
+        assert(sum == 21);
+        Vector<int> copied(numbers);
+        assert(copied.size() == 3);
+        Vector<int> moved(std::move(copied));
+        assert(moved.size() == 3);
+        moved.pop_back();
+        moved.resize(4, 42);
+        assert(moved[2] == 42);
+        assert(moved[3] == 42);
+        moved.clear();
+        assert(moved.empty());
+
+        Vector<std::unique_ptr<int>> owned(vectorHeap);
+        owned.emplace_back(std::make_unique<int>(99));
+        owned.push_back(std::make_unique<int>(100));
+        assert(*owned[0] == 99);
+        assert(*owned[1] == 100);
+
+        struct alignas(64) AlignedValue { int value = 0; };
+        Vector<AlignedValue> aligned(vectorHeap);
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+
+        Vector<int> emptyCopy(numbers);
+        assert(emptyCopy.size() == numbers.size());
+        bool overflowCaught = false;
+        try
+        {
+            numbers.reserve((std::numeric_limits<std::size_t>::max)());
+        }
+        catch (const std::length_error&)
+        {
+            overflowCaught = true;
+        }
+        catch (const std::bad_alloc&)
+        {
+            overflowCaught = true;
+        }
+        assert(overflowCaught);
+    }
+    assert(vectorHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 9. Raven::Vector: non-trivial lifetime / growth / allocation failure
+    // ========================================================================
+    static_assert(std::is_move_constructible_v<Vector<std::unique_ptr<int>>>);
+    VectorLifecycleValue::live = 0;
+    VectorLifecycleValue::copies = 0;
+    VectorLifecycleValue::moves = 0;
+    {
+        Vector<VectorLifecycleValue> lifecycle(vectorHeap);
+        lifecycle.reserve(2);
+        lifecycle.emplace_back(1);
+        lifecycle.emplace_back(2);
+        assert(VectorLifecycleValue::live == 2);
+        const std::size_t originalCapacity = lifecycle.capacity();
+        lifecycle.emplace_back(3);
+        assert(lifecycle.capacity() > originalCapacity);
+        assert(VectorLifecycleValue::live == 3);
+        assert(lifecycle[0].value == 1 && lifecycle[2].value == 3);
+        assert(VectorLifecycleValue::moves >= 2);
+        {
+            Vector<VectorLifecycleValue> copy(lifecycle);
+            assert(VectorLifecycleValue::live == 6);
+            assert(VectorLifecycleValue::copies >= 3);
+        }
+        assert(VectorLifecycleValue::live == 3);
+        lifecycle.pop_back();
+        assert(VectorLifecycleValue::live == 2);
+        lifecycle.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    assert(VectorLifecycleValue::live == 0);
+    {
+        FailingVectorAllocator failing(vectorHeap);
+        Vector<int> checked(failing);
+        checked.reserve(2);
+        checked.push_back(5);
+        checked.push_back(9);
+        const std::size_t beforeCapacity = checked.capacity();
+        const int* beforeData = checked.data();
+        failing.SetReject(true);
+        bool allocationFailed = false;
+        try
+        {
+            checked.reserve(beforeCapacity + 1);
+        }
+        catch (const std::bad_alloc&)
+        {
+            allocationFailed = true;
+        }
+        assert(allocationFailed);
+        assert(checked.size() == 2);
+        assert(checked.capacity() == beforeCapacity);
+        assert(checked.data() == beforeData);
+        assert(checked[0] == 5 && checked[1] == 9);
+        assert(std::distance(checked.cbegin(), checked.cend()) == 2);
+        failing.SetReject(false);
+        checked.emplace_back(13);
+        assert(checked.back() == 13);
+    }
+    assert(vectorHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 10. SmallVector: inline / overflow / move / destruction / alignment
+    // ========================================================================
+    HeapAllocator smallHeap;
+    {
+        SmallVector<int, 2> small(smallHeap);
+        assert(small.capacity() == 2);
+        assert(small.UsingInlineStorage());
+        assert(smallHeap.GetAllocationCount() == 0);
+        small.emplace_back(10);
+        small.push_back(20);
+        assert(smallHeap.GetAllocationCount() == 0);
+        small.push_back(30);
+        assert(small.UsingInlineStorage() == false);
+        assert(smallHeap.GetAllocationCount() == 1);
+        assert(small[0] == 10 && small[1] == 20 && small[2] == 30);
+        SmallVector<int, 2> moved(std::move(small));
+        assert(moved.size() == 3);
+        assert(moved.back() == 30);
+        assert(small.empty());
+        assert(small.UsingInlineStorage());
+        moved.pop_back();
+        assert(moved.size() == 2);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        SmallVector<std::unique_ptr<int>, 2> owned(smallHeap);
+        owned.emplace_back(std::make_unique<int>(1));
+        owned.emplace_back(std::make_unique<int>(2));
+        SmallVector<std::unique_ptr<int>, 2> inlineMoved(std::move(owned));
+        assert(inlineMoved.size() == 2);
+        assert(*inlineMoved[0] == 1);
+        inlineMoved.emplace_back(std::make_unique<int>(3));
+        assert(*inlineMoved[2] == 3);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        struct alignas(64) AlignedSmall { int value = 0; };
+        SmallVector<AlignedSmall, 1> aligned(smallHeap);
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        FailingVectorAllocator failing(smallHeap);
+        SmallVector<int, 2> checked(failing);
+        checked.push_back(4);
+        checked.push_back(8);
+        failing.SetReject(true);
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(12);
+        }
+        catch (const std::bad_alloc&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        assert(checked.size() == 2);
+        assert(checked.UsingInlineStorage());
+        assert(checked[0] == 4 && checked[1] == 8);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 11. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
