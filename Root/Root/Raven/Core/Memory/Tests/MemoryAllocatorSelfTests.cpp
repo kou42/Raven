@@ -8,6 +8,7 @@
 #include "Raven/Core/Memory/PoolAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
 #include "Raven/Core/Memory/Vector.h"
+#include "Raven/Core/Memory/SmallVector.h"
 
 #include <cassert>
 #include <algorithm>
@@ -378,7 +379,74 @@ void RunMemoryAllocatorSelfTests()
     assert(vectorHeap.GetAllocationCount() == 0);
 
     // ========================================================================
-    // 10. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 10. SmallVector: inline / overflow / move / destruction / alignment
+    // ========================================================================
+    HeapAllocator smallHeap;
+    {
+        SmallVector<int, 2> small(smallHeap);
+        assert(small.capacity() == 2);
+        assert(small.UsingInlineStorage());
+        assert(smallHeap.GetAllocationCount() == 0);
+        small.emplace_back(10);
+        small.push_back(20);
+        assert(smallHeap.GetAllocationCount() == 0);
+        small.push_back(30);
+        assert(small.UsingInlineStorage() == false);
+        assert(smallHeap.GetAllocationCount() == 1);
+        assert(small[0] == 10 && small[1] == 20 && small[2] == 30);
+        SmallVector<int, 2> moved(std::move(small));
+        assert(moved.size() == 3);
+        assert(moved.back() == 30);
+        assert(small.empty());
+        assert(small.UsingInlineStorage());
+        moved.pop_back();
+        assert(moved.size() == 2);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        SmallVector<std::unique_ptr<int>, 2> owned(smallHeap);
+        owned.emplace_back(std::make_unique<int>(1));
+        owned.emplace_back(std::make_unique<int>(2));
+        SmallVector<std::unique_ptr<int>, 2> inlineMoved(std::move(owned));
+        assert(inlineMoved.size() == 2);
+        assert(*inlineMoved[0] == 1);
+        inlineMoved.emplace_back(std::make_unique<int>(3));
+        assert(*inlineMoved[2] == 3);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        struct alignas(64) AlignedSmall { int value = 0; };
+        SmallVector<AlignedSmall, 1> aligned(smallHeap);
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        FailingVectorAllocator failing(smallHeap);
+        SmallVector<int, 2> checked(failing);
+        checked.push_back(4);
+        checked.push_back(8);
+        failing.SetReject(true);
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(12);
+        }
+        catch (const std::bad_alloc&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        assert(checked.size() == 2);
+        assert(checked.UsingInlineStorage());
+        assert(checked[0] == 4 && checked[1] == 8);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 11. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
