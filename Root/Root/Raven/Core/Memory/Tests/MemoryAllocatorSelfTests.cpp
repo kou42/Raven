@@ -1,12 +1,14 @@
 #include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 
 #include "Raven/Core/Memory/FrameAllocator.h"
+#include "Raven/Core/Memory/HeapAllocator.h"
 #include "Raven/Core/Memory/LinearAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace Raven::tests
@@ -82,7 +84,35 @@ void RunMemoryAllocatorSelfTests()
     assert(frameAllocator.GetPeakUsedMemory() == framePeak);
 
     // ========================================================================
-    // 4. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 4. HeapAllocator: 個別解放、alignment、統計、異常入力
+    // ========================================================================
+    HeapAllocator heapAllocator;
+    void* heapFirst = heapAllocator.Allocate(13, 8);
+    void* heapSecond = heapAllocator.Allocate(64, 64);
+    assert(heapFirst != nullptr);
+    assert(heapSecond != nullptr);
+    assert(IsAligned(heapFirst, 8));
+    assert(IsAligned(heapSecond, 64));
+    assert(heapAllocator.GetUsedMemory() == 77);
+    assert(heapAllocator.GetAllocationCount() == 2);
+    assert(heapAllocator.GetPeakUsedMemory() == 77);
+
+    heapAllocator.Deallocate(heapFirst);
+    assert(heapAllocator.GetUsedMemory() == 64);
+    assert(heapAllocator.GetAllocationCount() == 1);
+    heapAllocator.Deallocate(nullptr);
+    assert(heapAllocator.Allocate(0, 8) == nullptr);
+    assert(heapAllocator.Allocate(8, 3) == nullptr);
+    assert(heapAllocator.Allocate(8, 0) == nullptr);
+    assert(heapAllocator.Allocate((std::numeric_limits<std::size_t>::max)(), 16) == nullptr);
+    assert(heapAllocator.GetAllocationCount() == 1);
+    heapAllocator.Reset();
+    assert(heapAllocator.GetUsedMemory() == 0);
+    assert(heapAllocator.GetAllocationCount() == 0);
+    assert(heapAllocator.GetPeakUsedMemory() == 77);
+
+    // ========================================================================
+    // 5. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
