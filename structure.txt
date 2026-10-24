@@ -207,7 +207,14 @@ D:.
     |   |   |   |   Window.h
     |   |   |   |
     |   |   |   +---Containers
+    |   |   |   |   |   FixedVector.h
+    |   |   |   |   |   FixedVector.inl
     |   |   |   |   |   FlatHashSet.h
+    |   |   |   |   |   FrameVector.h
+    |   |   |   |   |   SmallVector.h
+    |   |   |   |   |   SmallVector.inl
+    |   |   |   |   |   Vector.h
+    |   |   |   |   |   Vector.inl
     |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           FlatHashSetSelfTests.cpp
@@ -217,7 +224,6 @@ D:.
     |   |   |       |   Allocator.h
     |   |   |       |   FrameAllocator.cpp
     |   |   |       |   FrameAllocator.h
-    |   |   |       |   FrameVector.h
     |   |   |       |   LinearAllocator.cpp
     |   |   |       |   LinearAllocator.h
     |   |   |       |   STLAllocatorAdapter.h
