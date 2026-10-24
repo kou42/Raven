@@ -10,6 +10,9 @@
 #include "Raven/Core/Memory/Vector.h"
 
 #include <cassert>
+#include <algorithm>
+#include <iterator>
+#include <type_traits>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -34,6 +37,55 @@ bool IsAligned(const void* memory, std::size_t alignment)
     const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(memory);
     return (address % alignment) == 0;
 }
+
+// 非trivial要素の生存数とcopy/moveを観測します。
+struct VectorLifecycleValue
+{
+    static inline int live = 0;
+    static inline int copies = 0;
+    static inline int moves = 0;
+
+    int value = 0;
+    explicit VectorLifecycleValue(int number = 0) : value(number) { ++live; }
+    VectorLifecycleValue(const VectorLifecycleValue& other) : value(other.value)
+    {
+        ++live;
+        ++copies;
+    }
+    VectorLifecycleValue(VectorLifecycleValue&& other) noexcept : value(other.value)
+    {
+        ++live;
+        ++moves;
+    }
+    ~VectorLifecycleValue() { --live; }
+};
+
+// 明示的にallocation失敗させ、Vectorの要素と容量が変化しないことを検証します。
+class FailingVectorAllocator final : public Allocator
+{
+public:
+    explicit FailingVectorAllocator(Allocator& backing) : m_Backing(backing) {}
+
+    void* Allocate(std::size_t size, std::size_t alignment) override
+    {
+        if (m_Reject)
+        {
+            return nullptr;
+        }
+        return m_Backing.Allocate(size, alignment);
+    }
+    void Deallocate(void* memory) override { m_Backing.Deallocate(memory); }
+    void Reset() override { m_Backing.Reset(); }
+    std::size_t GetCapacity() const override { return m_Backing.GetCapacity(); }
+    std::size_t GetUsedMemory() const override { return m_Backing.GetUsedMemory(); }
+    std::size_t GetPeakUsedMemory() const override { return m_Backing.GetPeakUsedMemory(); }
+    std::size_t GetAllocationCount() const override { return m_Backing.GetAllocationCount(); }
+    void SetReject(bool reject) { m_Reject = reject; }
+
+private:
+    Allocator& m_Backing;
+    bool m_Reject = false;
+};
 
 } // namespace
 
@@ -265,7 +317,69 @@ void RunMemoryAllocatorSelfTests()
     assert(vectorHeap.GetAllocationCount() == 0);
 
     // ========================================================================
-    // 9. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // ========================================================================
+    // 9. Raven::Vector: non-trivial lifetime / growth / allocation failure
+    // ========================================================================
+    static_assert(std::is_move_constructible_v<Vector<std::unique_ptr<int>>>);
+    VectorLifecycleValue::live = 0;
+    VectorLifecycleValue::copies = 0;
+    VectorLifecycleValue::moves = 0;
+    {
+        Vector<VectorLifecycleValue> lifecycle(vectorHeap);
+        lifecycle.reserve(2);
+        lifecycle.emplace_back(1);
+        lifecycle.emplace_back(2);
+        assert(VectorLifecycleValue::live == 2);
+        const std::size_t originalCapacity = lifecycle.capacity();
+        lifecycle.emplace_back(3);
+        assert(lifecycle.capacity() > originalCapacity);
+        assert(VectorLifecycleValue::live == 3);
+        assert(lifecycle[0].value == 1 && lifecycle[2].value == 3);
+        assert(VectorLifecycleValue::moves >= 2);
+        {
+            Vector<VectorLifecycleValue> copy(lifecycle);
+            assert(VectorLifecycleValue::live == 6);
+            assert(VectorLifecycleValue::copies >= 3);
+        }
+        assert(VectorLifecycleValue::live == 3);
+        lifecycle.pop_back();
+        assert(VectorLifecycleValue::live == 2);
+        lifecycle.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    assert(VectorLifecycleValue::live == 0);
+    {
+        FailingVectorAllocator failing(vectorHeap);
+        Vector<int> checked(failing);
+        checked.reserve(2);
+        checked.push_back(5);
+        checked.push_back(9);
+        const std::size_t beforeCapacity = checked.capacity();
+        const int* beforeData = checked.data();
+        failing.SetReject(true);
+        bool allocationFailed = false;
+        try
+        {
+            checked.reserve(beforeCapacity + 1);
+        }
+        catch (const std::bad_alloc&)
+        {
+            allocationFailed = true;
+        }
+        assert(allocationFailed);
+        assert(checked.size() == 2);
+        assert(checked.capacity() == beforeCapacity);
+        assert(checked.data() == beforeData);
+        assert(checked[0] == 5 && checked[1] == 9);
+        assert(std::distance(checked.cbegin(), checked.cend()) == 2);
+        failing.SetReject(false);
+        checked.emplace_back(13);
+        assert(checked.back() == 13);
+    }
+    assert(vectorHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 10. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
