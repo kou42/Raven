@@ -115,7 +115,7 @@ public:
             // move-onlyでthrowする型はstatic_assertで除外しています。
             T pending(std::forward<Args>(args)...);
             Grow(m_Size + 1);
-            ::new (static_cast<void*>(m_Data + m_Size)) T(std::move(pending));
+            ::new (static_cast<void*>(m_Data + m_Size)) T(std::move_if_noexcept(pending));
         }
         else
         {
