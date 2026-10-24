@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Core/Memory/MemoryTracker.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -110,8 +112,16 @@ struct StatisticsPhysicsSnapshot
     StatisticsAstroSnapshot Astro;
 };
 
+struct StatisticsMemorySnapshot
+{
+    MemoryStatistics Total;
+    std::array<MemoryStatistics, static_cast<std::size_t>(MemoryTag::Count)> ByTag{};
+    std::size_t LeakCount = 0;
+};
+
 struct StatisticsSnapshot
 {
+    StatisticsMemorySnapshot Memory;
     StatisticsRuntimeSnapshot Runtime;
     StatisticsCPUProfilerSnapshot CPUProfiler;
     StatisticsRendererSnapshot Renderer;
@@ -131,6 +141,7 @@ struct StatisticsSnapshotInput
     bool CPUProfilerEnabled = false;
     const CPUProfileFrame* CPUProfile = nullptr;
     const Scene* ActiveScene = nullptr;
+    const StatisticsMemorySnapshot* Memory = nullptr;
 };
 
 StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input);
