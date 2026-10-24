@@ -30,6 +30,7 @@ PoolAllocator::PoolAllocator(std::size_t objectSize, std::size_t objectAlignment
 
     // aligned newを用い、全スロットが要求alignmentを満たすようにします。
     const std::size_t capacity = m_Stride * slotCount;
+    m_Storage.get_deleter().alignment = m_Alignment;
     m_Storage.reset(static_cast<std::byte*>(::operator new(capacity, std::align_val_t(m_Alignment))));
     m_Next = std::make_unique<std::size_t[]>(slotCount);
     m_InUse = std::make_unique<bool[]>(slotCount);
