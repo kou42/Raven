@@ -9,6 +9,7 @@
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
 #include "Raven/Core/Memory/Vector.h"
 #include "Raven/Core/Memory/SmallVector.h"
+#include "Raven/Core/Memory/FixedVector.h"
 
 #include <cassert>
 #include <algorithm>
@@ -446,7 +447,61 @@ void RunMemoryAllocatorSelfTests()
     assert(smallHeap.GetAllocationCount() == 0);
 
     // ========================================================================
-    // 11. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 11. FixedVector: no allocation / overflow / lifetime / alignment
+    // ========================================================================
+    const std::size_t heapAllocationsBeforeFixed = smallHeap.GetAllocationCount();
+    {
+        FixedVector<int, 2> fixed;
+        assert(fixed.empty());
+        assert(fixed.capacity() == 2);
+        assert(fixed.try_push_back(3));
+        assert(fixed.try_emplace_back(7) != nullptr);
+        assert(fixed.full());
+        assert(fixed.try_push_back(11) == false);
+        assert(fixed.size() == 2);
+        bool overflowRejected = false;
+        try
+        {
+            fixed.emplace_back(11);
+        }
+        catch (const std::length_error&)
+        {
+            overflowRejected = true;
+        }
+        assert(overflowRejected);
+        assert(fixed.front() == 3 && fixed.back() == 7);
+        FixedVector<int, 2> moved(std::move(fixed));
+        assert(moved.size() == 2);
+        assert(fixed.empty());
+        moved.pop_back();
+        assert(moved.size() == 1);
+        moved.clear();
+        assert(moved.empty());
+    }
+    assert(smallHeap.GetAllocationCount() == heapAllocationsBeforeFixed);
+    {
+        FixedVector<VectorLifecycleValue, 3> lifecycle;
+        lifecycle.emplace_back(1);
+        lifecycle.emplace_back(2);
+        assert(VectorLifecycleValue::live == 2);
+        lifecycle.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    {
+        struct alignas(64) AlignedFixed { int value = 0; };
+        FixedVector<AlignedFixed, 2> aligned;
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+    }
+    {
+        FixedVector<std::unique_ptr<int>, 2> owned;
+        owned.emplace_back(std::make_unique<int>(4));
+        owned.emplace_back(std::make_unique<int>(8));
+        assert(*owned[1] == 8);
+    }
+
+    // ========================================================================
+    // 12. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
