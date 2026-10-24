@@ -11,11 +11,14 @@ namespace Raven
 // FrameVector
 // ============================================================================
 // FrameAllocatorなどRaven独自Allocatorをstd::vectorから使うための簡易エイリアスです。
+// Phase 4-3では既存Physicsとの互換性を優先し、このエイリアスを維持します。
 //
 // 重要:
 // - コンテナ自身はAllocatorを所有しません。
 // - backing AllocatorはFrameVectorより長生きする必要があります。
 // - FrameAllocatorを使う場合、ResetFrame()後に要素やdata()を参照してはいけません。
+// - BroadPhase::ComputePairs()はget_allocator()でBacking Allocatorを取得します。
+//   現行Raven::Vectorはget_allocator()を公開していないため単純置換はできません。
 // - Linear/FrameAllocatorではdeallocate()がno-opなので、vectorの容量変更で古い領域は
 //   個別回収されません。フレーム終端の一括Resetを前提とします。
 //
