@@ -4,6 +4,7 @@
 #include "Raven/Core/Memory/FreeListAllocator.h"
 #include "Raven/Core/Memory/HeapAllocator.h"
 #include "Raven/Core/Memory/LinearAllocator.h"
+#include "Raven/Core/Memory/PoolAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
 
 #include <cassert>
@@ -143,7 +144,39 @@ void RunMemoryAllocatorSelfTests()
     assert(freeList.GetPeakUsedMemory() == freeListPeak);
 
     // ========================================================================
-    // 6. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 6. PoolAllocator: alignment / exhaustion / reuse / statistics
+    // ========================================================================
+    PoolAllocator pool(24, 64, 3);
+    assert(pool.GetSlotCount() == 3);
+    assert(pool.GetAvailableSlotCount() == 3);
+    void* poolA = pool.Allocate(24, 64);
+    void* poolB = pool.Allocate(16, 32);
+    void* poolC = pool.Allocate(24, 64);
+    assert(poolA != nullptr);
+    assert(poolB != nullptr);
+    assert(poolC != nullptr);
+    assert(IsAligned(poolA, 64));
+    assert(IsAligned(poolB, 32));
+    assert(pool.GetAllocationCount() == 3);
+    assert(pool.GetUsedMemory() == pool.GetCapacity());
+    assert(pool.Allocate(8, 8) == nullptr);
+    assert(pool.Allocate(25, 8) == nullptr);
+    assert(pool.Allocate(8, 3) == nullptr);
+    pool.Deallocate(poolB);
+    assert(pool.GetAvailableSlotCount() == 1);
+    void* poolReused = pool.Allocate(16, 16);
+    assert(poolReused == poolB);
+    const std::size_t poolPeak = pool.GetPeakUsedMemory();
+    pool.Reset();
+    assert(pool.GetAllocationCount() == 0);
+    assert(pool.GetAvailableSlotCount() == 3);
+    assert(pool.GetPeakUsedMemory() == poolPeak);
+    PoolAllocator invalidPool(32, 3, 4);
+    assert(invalidPool.GetCapacity() == 0);
+    assert(invalidPool.Allocate(8, 8) == nullptr);
+
+    // ========================================================================
+    // 7. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
