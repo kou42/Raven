@@ -16,23 +16,23 @@ Vector<T>::Vector(Allocator& allocator, std::initializer_list<T> values)
 }
 
 template<typename T>
-[[nodiscard]] size_type Vector<T>::size() const noexcept
+typename Vector<T>::size_type Vector<T>::size() const noexcept
 { return m_Values.size(); }
 
 template<typename T>
-[[nodiscard]] size_type Vector<T>::capacity() const noexcept
+typename Vector<T>::size_type Vector<T>::capacity() const noexcept
 { return m_Values.capacity(); }
 
 template<typename T>
-[[nodiscard]] bool Vector<T>::empty() const noexcept
+bool Vector<T>::empty() const noexcept
 { return m_Values.empty(); }
 
 template<typename T>
-[[nodiscard]] T* Vector<T>::data() noexcept
+T* Vector<T>::data() noexcept
 { return m_Values.data(); }
 
 template<typename T>
-[[nodiscard]] const T* Vector<T>::data() const noexcept
+const T* Vector<T>::data() const noexcept
 { return m_Values.data(); }
 
 template<typename T>
@@ -66,27 +66,27 @@ const T& Vector<T>::back() const noexcept
 { return m_Values.back(); }
 
 template<typename T>
-iterator Vector<T>::begin() noexcept
+typename Vector<T>::iterator Vector<T>::begin() noexcept
 { return m_Values.begin(); }
 
 template<typename T>
-const_iterator Vector<T>::begin() const noexcept
+typename Vector<T>::const_iterator Vector<T>::begin() const noexcept
 { return m_Values.begin(); }
 
 template<typename T>
-const_iterator Vector<T>::cbegin() const noexcept
+typename Vector<T>::const_iterator Vector<T>::cbegin() const noexcept
 { return m_Values.cbegin(); }
 
 template<typename T>
-iterator Vector<T>::end() noexcept
+typename Vector<T>::iterator Vector<T>::end() noexcept
 { return m_Values.end(); }
 
 template<typename T>
-const_iterator Vector<T>::end() const noexcept
+typename Vector<T>::const_iterator Vector<T>::end() const noexcept
 { return m_Values.end(); }
 
 template<typename T>
-const_iterator Vector<T>::cend() const noexcept
+typename Vector<T>::const_iterator Vector<T>::cend() const noexcept
 { return m_Values.cend(); }
 
 template<typename T>
@@ -128,7 +128,7 @@ void Vector<T>::pop_back()
 }
 
 template<typename T>
-[[nodiscard]] Allocator* Vector<T>::GetAllocator() const noexcept
+Allocator* Vector<T>::GetAllocator() const noexcept
 {
     return m_Values.get_allocator().GetAllocator();
 }
