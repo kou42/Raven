@@ -1,6 +1,7 @@
 #include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 
 #include "Raven/Core/Memory/FrameAllocator.h"
+#include "Raven/Core/Memory/FreeListAllocator.h"
 #include "Raven/Core/Memory/HeapAllocator.h"
 #include "Raven/Core/Memory/LinearAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
@@ -112,7 +113,37 @@ void RunMemoryAllocatorSelfTests()
     assert(heapAllocator.GetPeakUsedMemory() == 77);
 
     // ========================================================================
-    // 5. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 5. FreeListAllocator: split / coalescing / alignment / exhaustion
+    // ========================================================================
+    FreeListAllocator freeList(1024);
+    assert(freeList.GetCapacity() == 1024);
+    assert(freeList.GetFreeBlockCount() == 1);
+    void* freeA = freeList.Allocate(80, 16);
+    void* freeB = freeList.Allocate(96, 64);
+    void* freeC = freeList.Allocate(64, 32);
+    assert(freeA != nullptr);
+    assert(freeB != nullptr);
+    assert(freeC != nullptr);
+    assert(IsAligned(freeB, 64));
+    assert(IsAligned(freeC, 32));
+    assert(freeList.GetAllocationCount() == 3);
+    assert(freeList.Allocate(0, 8) == nullptr);
+    assert(freeList.Allocate(8, 3) == nullptr);
+    assert(freeList.Allocate(2048, 8) == nullptr);
+
+    freeList.Deallocate(freeB);
+    freeList.Deallocate(freeA);
+    freeList.Deallocate(freeC);
+    assert(freeList.GetAllocationCount() == 0);
+    assert(freeList.GetUsedMemory() == 0);
+    assert(freeList.GetFreeBlockCount() == 1);
+    assert(freeList.GetLargestFreeBlock() == freeList.GetCapacity());
+    const std::size_t freeListPeak = freeList.GetPeakUsedMemory();
+    freeList.Reset();
+    assert(freeList.GetPeakUsedMemory() == freeListPeak);
+
+    // ========================================================================
+    // 6. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
