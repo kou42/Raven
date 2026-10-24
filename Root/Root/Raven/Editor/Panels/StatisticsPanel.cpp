@@ -548,6 +548,48 @@ void StatisticsPanel::OnImGuiRender(float deltaTime, const Window& window, const
         }
     }
 
+    // 追跡を明示的に有効化したAllocatorのみの統計です。
+    // 未追跡のheapやGPU memoryを含むエンジン全体の消費量ではありません。
+    if (ImGui::CollapsingHeader("Memory Tracking", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        const StatisticsMemorySnapshot& memory = snapshot.Memory;
+        ImGui::Text("Tracked Current: %llu bytes",
+            static_cast<unsigned long long>(memory.Total.currentBytes));
+        ImGui::Text("Tracked Peak: %llu bytes",
+            static_cast<unsigned long long>(memory.Total.peakBytes));
+        ImGui::Text("Live Allocations: %llu",
+            static_cast<unsigned long long>(memory.Total.allocationCount));
+        ImGui::Text("Leak Candidates: %llu",
+            static_cast<unsigned long long>(memory.LeakCount));
+        static constexpr const char* TagNames[] = {
+            "Core", "Renderer", "RHI", "Physics", "Animation",
+            "Audio", "Resource", "Scene", "UI", "Temporary"
+        };
+        if (ImGui::BeginTable("MemoryTagStatistics", 4,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+        {
+            ImGui::TableSetupColumn("Tag");
+            ImGui::TableSetupColumn("Current bytes");
+            ImGui::TableSetupColumn("Peak bytes");
+            ImGui::TableSetupColumn("Live");
+            ImGui::TableHeadersRow();
+            for (std::size_t index = 0; index < memory.ByTag.size(); ++index)
+            {
+                const MemoryStatistics& statistics = memory.ByTag[index];
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(TagNames[index]);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%llu", static_cast<unsigned long long>(statistics.currentBytes));
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%llu", static_cast<unsigned long long>(statistics.peakBytes));
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%llu", static_cast<unsigned long long>(statistics.allocationCount));
+            }
+            ImGui::EndTable();
+        }
+    }
+
     // RenderCommand直前で記録するため、Scene本体だけでなくDebug Overlay等を含む
     // 「実際に発行した描画命令」を確認できます。
     if (ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
