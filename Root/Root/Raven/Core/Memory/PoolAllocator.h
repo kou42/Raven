@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <new>
 
 namespace Raven
 {
@@ -37,7 +38,19 @@ public:
 private:
     static constexpr std::size_t InvalidIndex = static_cast<std::size_t>(-1);
 
-    std::unique_ptr<std::byte[]> m_Storage;
+    struct AlignedDeleter
+    {
+        std::size_t alignment = alignof(std::max_align_t);
+        void operator()(std::byte* memory) const noexcept
+        {
+            if (memory != nullptr)
+            {
+                ::operator delete(memory, std::align_val_t(alignment));
+            }
+        }
+    };
+
+    std::unique_ptr<std::byte, AlignedDeleter> m_Storage;
     std::unique_ptr<std::size_t[]> m_Next;
     std::unique_ptr<bool[]> m_InUse;
     std::byte* m_Begin = nullptr;
