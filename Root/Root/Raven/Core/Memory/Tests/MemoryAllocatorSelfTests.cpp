@@ -7,11 +7,15 @@
 #include "Raven/Core/Memory/MemoryTracker.h"
 #include "Raven/Core/Memory/PoolAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
+#include "Raven/Core/Memory/Vector.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace Raven::tests
@@ -197,7 +201,71 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 8. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 8. Raven::Vector: Allocator連携 / growth / copy / move / Iterator
+    // ========================================================================
+    HeapAllocator vectorHeap;
+    {
+        Vector<int> numbers(vectorHeap);
+        assert(numbers.empty());
+        assert(numbers.size() == 0);
+        assert(numbers.GetAllocator() == &vectorHeap);
+        numbers.reserve(2);
+        numbers.push_back(3);
+        numbers.emplace_back(7);
+        numbers.push_back(11);
+        assert(numbers.size() == 3);
+        assert(numbers.capacity() >= 3);
+        assert(numbers.front() == 3);
+        assert(numbers.back() == 11);
+        int sum = 0;
+        for (int value : numbers)
+        {
+            sum += value;
+        }
+        assert(sum == 21);
+        Vector<int> copied(numbers);
+        assert(copied.size() == 3);
+        Vector<int> moved(std::move(copied));
+        assert(moved.size() == 3);
+        moved.pop_back();
+        moved.resize(4, 42);
+        assert(moved[2] == 42);
+        assert(moved[3] == 42);
+        moved.clear();
+        assert(moved.empty());
+
+        Vector<std::unique_ptr<int>> owned(vectorHeap);
+        owned.emplace_back(std::make_unique<int>(99));
+        owned.push_back(std::make_unique<int>(100));
+        assert(*owned[0] == 99);
+        assert(*owned[1] == 100);
+
+        struct alignas(64) AlignedValue { int value = 0; };
+        Vector<AlignedValue> aligned(vectorHeap);
+        aligned.emplace_back();
+        assert(IsAligned(aligned.data(), 64));
+
+        Vector<int> emptyCopy(numbers);
+        assert(emptyCopy.size() == numbers.size());
+        bool overflowCaught = false;
+        try
+        {
+            numbers.reserve((std::numeric_limits<std::size_t>::max)());
+        }
+        catch (const std::length_error&)
+        {
+            overflowCaught = true;
+        }
+        catch (const std::bad_alloc&)
+        {
+            overflowCaught = true;
+        }
+        assert(overflowCaught);
+    }
+    assert(vectorHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 9. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
