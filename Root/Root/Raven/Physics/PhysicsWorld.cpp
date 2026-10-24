@@ -3,7 +3,7 @@
 #include <limits>
 
 #include "Raven/Core/CPUProfiler.h"
-#include "Raven/Core/Memory/FrameVector.h"
+#include "Raven/Core/Containers/FrameVector.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsWorld.h"

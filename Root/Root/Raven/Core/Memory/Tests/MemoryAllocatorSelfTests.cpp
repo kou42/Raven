@@ -7,9 +7,9 @@
 #include "Raven/Core/Memory/MemoryTracker.h"
 #include "Raven/Core/Memory/PoolAllocator.h"
 #include "Raven/Core/Memory/STLAllocatorAdapter.h"
-#include "Raven/Core/Memory/Vector.h"
-#include "Raven/Core/Memory/SmallVector.h"
-#include "Raven/Core/Memory/FixedVector.h"
+#include "Raven/Core/Containers/Vector.h"
+#include "Raven/Core/Containers/SmallVector.h"
+#include "Raven/Core/Containers/FixedVector.h"
 
 #include <cassert>
 #include <algorithm>

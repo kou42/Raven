@@ -878,6 +878,9 @@
     <None Include="Raven\Assets\Shaders\ShaderToy\test.frag" />
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
+    <None Include="Raven\Core\Containers\Vector.inl" />
+    <None Include="Raven\Core\Containers\SmallVector.inl" />
+    <None Include="Raven\Core\Containers\FixedVector.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
 </Project>
