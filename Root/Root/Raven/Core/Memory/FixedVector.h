@@ -29,103 +29,45 @@ public:
     FixedVector& operator=(const FixedVector&) = delete;
     FixedVector& operator=(FixedVector&&) = delete;
 
-    FixedVector(FixedVector&& other) noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        // Inline Storageのアドレスは移譲できないため、要素を個別に移動します。
-        // 途中で例外が発生した場合も構築済み要素はこのオブジェクトのDestructorで破棄します。
-        try
-        {
-            for (T& value : other)
-            {
-                emplace_back(std::move(value));
-            }
-        }
-        catch (...)
-        {
-            // コンストラクタが例外終了するとFixedVectorのDestructorは呼ばれません。
-            // ここで構築済み要素を破棄してリソースリークを防ぎます。
-            clear();
-            throw;
-        }
-        other.clear();
-    }
+    FixedVector(FixedVector&& other) noexcept(std::is_nothrow_move_constructible_v<T>);
 
-    ~FixedVector() noexcept
-    {
-        clear();
-    }
+    ~FixedVector() noexcept;
 
-    [[nodiscard]] constexpr size_type capacity() const noexcept { return N; }
-    [[nodiscard]] size_type size() const noexcept { return m_Size; }
-    [[nodiscard]] bool empty() const noexcept { return m_Size == 0; }
-    [[nodiscard]] bool full() const noexcept { return m_Size == N; }
-    [[nodiscard]] T* data() noexcept { return reinterpret_cast<T*>(m_Storage); }
-    [[nodiscard]] const T* data() const noexcept { return reinterpret_cast<const T*>(m_Storage); }
+    [[nodiscard]] constexpr size_type capacity() const noexcept;
+    [[nodiscard]] size_type size() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] bool full() const noexcept;
+    [[nodiscard]] T* data() noexcept;
+    [[nodiscard]] const T* data() const noexcept;
 
-    [[nodiscard]] iterator begin() noexcept { return data(); }
-    [[nodiscard]] const_iterator begin() const noexcept { return data(); }
-    [[nodiscard]] const_iterator cbegin() const noexcept { return data(); }
-    [[nodiscard]] iterator end() noexcept { return data() + m_Size; }
-    [[nodiscard]] const_iterator end() const noexcept { return data() + m_Size; }
-    [[nodiscard]] const_iterator cend() const noexcept { return data() + m_Size; }
+    [[nodiscard]] iterator begin() noexcept;
+    [[nodiscard]] const_iterator begin() const noexcept;
+    [[nodiscard]] const_iterator cbegin() const noexcept;
+    [[nodiscard]] iterator end() noexcept;
+    [[nodiscard]] const_iterator end() const noexcept;
+    [[nodiscard]] const_iterator cend() const noexcept;
 
-    T& operator[](size_type index) noexcept
-    {
-        assert(index < m_Size);
-        return data()[index];
-    }
-    const T& operator[](size_type index) const noexcept
-    {
-        assert(index < m_Size);
-        return data()[index];
-    }
-    T& front() noexcept { assert(empty() == false); return data()[0]; }
-    const T& front() const noexcept { assert(empty() == false); return data()[0]; }
-    T& back() noexcept { assert(empty() == false); return data()[m_Size - 1]; }
-    const T& back() const noexcept { assert(empty() == false); return data()[m_Size - 1]; }
+    T& operator[](size_type index) noexcept;
+    const T& operator[](size_type index) const noexcept;
+    T& front() noexcept;
+    const T& front() const noexcept;
+    T& back() noexcept;
+    const T& back() const noexcept;
 
     template<typename... Args>
-    T* try_emplace_back(Args&&... args)
-    {
-        if (full())
-        {
-            return nullptr;
-        }
-        T* location = data() + m_Size;
-        ::new (static_cast<void*>(location)) T(std::forward<Args>(args)...);
-        ++m_Size;
-        return location;
-    }
+    T* try_emplace_back(Args&&... args);
 
     template<typename... Args>
-    T& emplace_back(Args&&... args)
-    {
-        if (full())
-        {
-            throw std::length_error("FixedVector capacity exceeded");
-        }
-        return *try_emplace_back(std::forward<Args>(args)...);
-    }
+    T& emplace_back(Args&&... args);
 
-    bool try_push_back(const T& value) { return try_emplace_back(value) != nullptr; }
-    bool try_push_back(T&& value) { return try_emplace_back(std::move(value)) != nullptr; }
-    void push_back(const T& value) { emplace_back(value); }
-    void push_back(T&& value) { emplace_back(std::move(value)); }
+    bool try_push_back(const T& value);
+    bool try_push_back(T&& value);
+    void push_back(const T& value);
+    void push_back(T&& value);
 
-    void pop_back() noexcept
-    {
-        assert(empty() == false);
-        --m_Size;
-        data()[m_Size].~T();
-    }
+    void pop_back() noexcept;
 
-    void clear() noexcept
-    {
-        while (empty() == false)
-        {
-            pop_back();
-        }
-    }
+    void clear() noexcept;
 
 private:
     using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
@@ -134,3 +76,5 @@ private:
 };
 
 } // namespace Raven
+
+#include "Raven/Core/Memory/FixedVector.inl"
