@@ -233,6 +233,7 @@
   </Target>
   <ItemGroup>
     <ClInclude Include="Raven\Core\Containers\FlatHashMap.h" />
+    <ClInclude Include="Raven\Core\Containers\Benchmarks\FlatHashMapBenchmark.h" />
     <ClInclude Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.h" />
     <ClCompile Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.cpp" />
   </ItemGroup>
