@@ -200,6 +200,7 @@
     <None Include="Raven\Core\Containers\FlatHashSet.inl" />
     <None Include="Raven\Core\Containers\FlatHashMap.inl" />
     <None Include="Raven\Core\Containers\Span.inl" />
+    <None Include="Raven\Core\Containers\Array.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
