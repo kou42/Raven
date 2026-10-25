@@ -207,6 +207,10 @@ D:.
     |   |   |   |   Window.h
     |   |   |   |
     |   |   |   +---Containers
+    |   |   |   |   |   Array.h
+    |   |   |   |   |   Array.inl
+    |   |   |   |   |   BitSet.h
+    |   |   |   |   |   BitSet.inl
     |   |   |   |   |   FixedVector.h
     |   |   |   |   |   FixedVector.inl
     |   |   |   |   |   FlatHashMap.h
@@ -214,8 +218,16 @@ D:.
     |   |   |   |   |   FlatHashSet.h
     |   |   |   |   |   FlatHashSet.inl
     |   |   |   |   |   FrameVector.h
+    |   |   |   |   |   HandlePool.h
+    |   |   |   |   |   HandlePool.inl
+    |   |   |   |   |   RingBuffer.h
+    |   |   |   |   |   RingBuffer.inl
     |   |   |   |   |   SmallVector.h
     |   |   |   |   |   SmallVector.inl
+    |   |   |   |   |   Span.h
+    |   |   |   |   |   Span.inl
+    |   |   |   |   |   SparseSet.h
+    |   |   |   |   |   SparseSet.inl
     |   |   |   |   |   Vector.h
     |   |   |   |   |   Vector.inl
     |   |   |   |   |

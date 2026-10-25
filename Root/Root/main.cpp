@@ -36,6 +36,7 @@
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
+#include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 #include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
 #include "Raven/Editor/Tests/EditorViewportGeometrySelfTests.h"
 #include "Raven/Editor/Tests/InspectorSnapshotSelfTests.h"
@@ -116,6 +117,12 @@ int main(int argc, char* argv[])
             std::cout << "FlatHashSet self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
+        if (backendArgument == "--test-memory-containers")
+        {
+            Raven::tests::RunMemoryAllocatorSelfTests();
+            std::cout << "Memory and container self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
 #endif
         // 性能値を最適化構成でも比較できるよう、Astro benchmarkはDebug限定にしません。
         // ApplicationやGPUを初期化せず、決定的なCPU入力だけを測定して終了します。
@@ -193,7 +200,7 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
                 "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
-                "--test-flat-hash-set, "
+                "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;

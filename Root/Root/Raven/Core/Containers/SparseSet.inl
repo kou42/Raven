@@ -3,14 +3,55 @@
 namespace Raven
 {
 
+inline SparseSet::size_type SparseSet::FindPagePosition(key_type pageIndex) const noexcept
+{
+    size_type first = 0;
+    size_type last = m_SparsePages.size();
+    while (first < last)
+    {
+        const size_type middle = first + (last - first) / 2;
+        if (m_SparsePages[middle]->pageIndex < pageIndex)
+        {
+            first = middle + 1;
+        }
+        else
+        {
+            last = middle;
+        }
+    }
+    return first;
+}
+
+inline SparseSet::SparsePage* SparseSet::FindPage(key_type pageIndex) noexcept
+{
+    const size_type position = FindPagePosition(pageIndex);
+    if (position >= m_SparsePages.size() || m_SparsePages[position]->pageIndex != pageIndex)
+    {
+        return nullptr;
+    }
+    return m_SparsePages[position].get();
+}
+
+inline const SparseSet::SparsePage* SparseSet::FindPage(key_type pageIndex) const noexcept
+{
+    const size_type position = FindPagePosition(pageIndex);
+    if (position >= m_SparsePages.size() || m_SparsePages[position]->pageIndex != pageIndex)
+    {
+        return nullptr;
+    }
+    return m_SparsePages[position].get();
+}
+
 inline bool SparseSet::contains(key_type key) const noexcept
 {
-    const size_type sparseIndex = static_cast<size_type>(key);
-    if (sparseIndex >= m_Sparse.size())
+    const key_type pageIndex = static_cast<key_type>(key / SparsePageSize);
+    const SparsePage* page = FindPage(pageIndex);
+    if (page == nullptr)
     {
         return false;
     }
-    const size_type denseIndex = m_Sparse[sparseIndex];
+    const size_type pageOffset = static_cast<size_type>(key % SparsePageSize);
+    const size_type denseIndex = page->denseIndices[pageOffset];
     return denseIndex < m_Dense.size() && m_Dense[denseIndex] == key;
 }
 
@@ -21,17 +62,26 @@ inline bool SparseSet::insert(key_type key)
         return false;
     }
 
-    const size_type sparseIndex = static_cast<size_type>(key);
-    if (sparseIndex >= m_Sparse.size())
+    const key_type pageIndex = static_cast<key_type>(key / SparsePageSize);
+    SparsePage* page = FindPage(pageIndex);
+    if (page == nullptr)
     {
-        // resizeが失敗した場合、既存のSetの内容は変更されません。
-        // 巨大IDは巨大なSparse配列を要求するため、呼び出し側でID上限を管理してください。
-        m_Sparse.resize(sparseIndex + 1, InvalidIndex);
+        auto newPage = std::make_unique<SparsePage>();
+        newPage->pageIndex = pageIndex;
+        newPage->denseIndices.fill(InvalidIndex);
+
+        const size_type position = FindPagePosition(pageIndex);
+        // vector拡張やPage確保が失敗してもDense側へはまだ追加していないため、
+        // Setの論理状態は変化しません。unique_ptrの移動はnoexceptです。
+        const auto inserted = m_SparsePages.insert(
+            m_SparsePages.begin() + static_cast<std::ptrdiff_t>(position), std::move(newPage));
+        page = inserted->get();
     }
 
-    // push_back失敗時にSparse側の対応を更新しないことで整合性を維持します。
+    // push_back失敗時には空Pageが残る場合がありますが、対応Indexは更新しないため
+    // contains/sizeなどの論理状態と既存要素の対応は維持されます。
     m_Dense.push_back(key);
-    m_Sparse[sparseIndex] = m_Dense.size() - 1;
+    page->denseIndices[static_cast<size_type>(key % SparsePageSize)] = m_Dense.size() - 1;
     return true;
 }
 
@@ -41,24 +91,30 @@ inline bool SparseSet::erase(key_type key) noexcept
     {
         return false;
     }
-    const size_type sparseIndex = static_cast<size_type>(key);
-    const size_type denseIndex = m_Sparse[sparseIndex];
+    SparsePage* page = FindPage(static_cast<key_type>(key / SparsePageSize));
+    assert(page != nullptr);
+    const size_type pageOffset = static_cast<size_type>(key % SparsePageSize);
+    const size_type denseIndex = page->denseIndices[pageOffset];
     const key_type lastKey = m_Dense.back();
 
     // 密な配列の穴を末尾要素で埋め、移動したIDの逆引きも更新します。
     m_Dense[denseIndex] = lastKey;
-    m_Sparse[static_cast<size_type>(lastKey)] = denseIndex;
+    SparsePage* lastPage = FindPage(static_cast<key_type>(lastKey / SparsePageSize));
+    assert(lastPage != nullptr);
+    lastPage->denseIndices[static_cast<size_type>(lastKey % SparsePageSize)] = denseIndex;
     m_Dense.pop_back();
-    m_Sparse[sparseIndex] = InvalidIndex;
+    page->denseIndices[pageOffset] = InvalidIndex;
     return true;
 }
 
 inline void SparseSet::clear() noexcept
 {
-    // 以前のSparse配列を保持しつつ、登録済みIDの対応だけを無効化します。
+    // 確保済みPageを再利用できるよう保持しつつ、登録済みIDの対応だけを無効化します。
     for (key_type key : m_Dense)
     {
-        m_Sparse[static_cast<size_type>(key)] = InvalidIndex;
+        SparsePage* page = FindPage(static_cast<key_type>(key / SparsePageSize));
+        assert(page != nullptr);
+        page->denseIndices[static_cast<size_type>(key % SparsePageSize)] = InvalidIndex;
     }
     m_Dense.clear();
 }
@@ -66,7 +122,11 @@ inline void SparseSet::clear() noexcept
 inline void SparseSet::reserve(size_type denseCapacity, size_type sparseCapacity)
 {
     m_Dense.reserve(denseCapacity);
-    m_Sparse.reserve(sparseCapacity);
+    // sparseCapacityは従来どおり想定するID範囲の要素数として扱い、
+    // ページ化後はその範囲を覆うPageポインタ数へ換算して予約します。
+    const size_type pageCapacity = sparseCapacity / SparsePageSize +
+        (sparseCapacity % SparsePageSize != 0 ? 1 : 0);
+    m_SparsePages.reserve(pageCapacity);
 }
 
 inline SparseSet::size_type SparseSet::size() const noexcept

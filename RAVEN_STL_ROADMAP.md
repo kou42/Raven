@@ -436,12 +436,17 @@ Probe / Tombstone診断、Collision Heavy、Tombstone cleanup比較、標準Map�
 
 候補:
 
-- [ ] `Raven::Array<T, N>`。
-- [ ] `Raven::Span<T>`。
-- [ ] `Raven::RingBuffer<T>`。
-- [ ] `Raven::BitSet` / DynamicBitSet。
-- [ ] `Raven::HandlePool<T>`。
-- [ ] `Raven::SparseSet`。
+- [x] `Raven::Array<T, N>`。
+- [x] `Raven::Span<T>`。
+- [x] `Raven::RingBuffer<T>`。
+- [x] `Raven::BitSet<N>`（固定長。DynamicBitSetは未実装）。
+- [x] `Raven::HandlePool<T>`。
+- [x] `Raven::SparseSet`。
+
+Phase 6の固定長・非所有ContainerはC++17向けに実装済みです。`SparseSet`の疎配列は
+256 ID単位のPageへ分割し、離れた大きなID 1件でID値に比例した巨大な連続確保が
+発生しない構成にしています。`HandlePool`のHandleはPool識別子を持たないため、異なる
+Pool間でHandleを混用しない所有境界は引き続き呼び出し側が管理します。
 
 特に ECS / Physics / Rendering の要求が明確になった場合は `HandlePool` / `SparseSet` を優先します。
 
@@ -589,6 +594,9 @@ Raven/Core/
     +-- Array.h
     +-- Span.h
     +-- RingBuffer.h
+    +-- BitSet.h
+    +-- HandlePool.h
+    +-- SparseSet.h
     |
     +-- Tests/
     +-- Benchmarks/

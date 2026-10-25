@@ -19,6 +19,7 @@
 
 #include <cassert>
 #include <algorithm>
+#include <deque>
 #include <iterator>
 #include <type_traits>
 #include <cstddef>
@@ -27,6 +28,7 @@
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include <unordered_set>
 #include <vector>
 
 namespace Raven::tests
@@ -66,6 +68,53 @@ struct VectorLifecycleValue
         ++moves;
     }
     ~VectorLifecycleValue() { --live; }
+};
+
+// 構築失敗時にContainer側のsizeとFree Listが更新されないことを確認します。
+struct ThrowingConstructionValue
+{
+    static inline int live = 0;
+    static inline bool throwNext = false;
+
+    int value = 0;
+
+    explicit ThrowingConstructionValue(int number = 0) : value(number)
+    {
+        if (throwNext)
+        {
+            throwNext = false;
+            throw std::runtime_error("requested construction failure");
+        }
+        ++live;
+    }
+
+    ThrowingConstructionValue(const ThrowingConstructionValue&) = delete;
+    ThrowingConstructionValue& operator=(const ThrowingConstructionValue&) = delete;
+    ~ThrowingConstructionValue() noexcept { --live; }
+};
+
+// RingBufferのmove構築途中で例外を発生させ、構築済みの移動先だけが破棄されることを確認します。
+struct ThrowingMoveValue
+{
+    static inline int live = 0;
+    static inline int movesBeforeThrow = (std::numeric_limits<int>::max)();
+
+    int value = 0;
+
+    explicit ThrowingMoveValue(int number = 0) : value(number) { ++live; }
+    ThrowingMoveValue(const ThrowingMoveValue&) = delete;
+    ThrowingMoveValue& operator=(const ThrowingMoveValue&) = delete;
+    ThrowingMoveValue(ThrowingMoveValue&& other) : value(other.value)
+    {
+        if (movesBeforeThrow == 0)
+        {
+            throw std::runtime_error("requested move failure");
+        }
+        --movesBeforeThrow;
+        other.value = -1;
+        ++live;
+    }
+    ~ThrowingMoveValue() noexcept { --live; }
 };
 
 // 明示的にallocation失敗させ、Vectorの要素と容量が変化しないことを検証します。
@@ -509,9 +558,16 @@ void RunMemoryAllocatorSelfTests()
     // ========================================================================
     // 12. Span: 非所有View / const / 空領域 / subspan / Vector連携
     // ========================================================================
+    static_assert(std::is_constructible_v<Span<const int>, const std::vector<int>&>);
+    static_assert(std::is_constructible_v<Span<const int>, Span<int>&>);
+    static_assert(std::is_constructible_v<Span<const int>, std::vector<int>&&> == false,
+        "Temporary containers must not bind to Span");
     Span<int> emptySpan;
     assert(emptySpan.empty());
     assert(emptySpan.begin() == emptySpan.end());
+    Span<int> nullSpan(nullptr, 0);
+    assert(nullSpan.data() == nullptr);
+    assert(nullSpan.begin() == nullSpan.end());
     int rawValues[] = { 2, 4, 6, 8 };
     Span<int> rawSpan(rawValues);
     assert(rawSpan.size() == 4);
@@ -550,6 +606,23 @@ void RunMemoryAllocatorSelfTests()
     assert(constArrayView[1] == 7);
     Array<int, 0> zeroArray;
     assert(zeroArray.empty());
+    Array<std::unique_ptr<int>, 2> moveOnlyArray;
+    moveOnlyArray[0] = std::make_unique<int>(11);
+    moveOnlyArray[1] = std::make_unique<int>(22);
+    assert(*moveOnlyArray[0] == 11 && *moveOnlyArray[1] == 22);
+    const Array<std::unique_ptr<int>, 2>& constMoveOnlyArray = moveOnlyArray;
+    assert(*constMoveOnlyArray[1] == 22);
+    bool arrayLengthMismatch = false;
+    try
+    {
+        Array<int, 3> mismatched{ 1, 2 };
+        (void)mismatched;
+    }
+    catch (const std::length_error&)
+    {
+        arrayLengthMismatch = true;
+    }
+    assert(arrayLengthMismatch);
     bool arrayOutOfRange = false;
     try
     {
@@ -620,6 +693,85 @@ void RunMemoryAllocatorSelfTests()
         aligned.emplace_back();
         assert(IsAligned(&aligned.front(), 64));
     }
+    {
+        RingBuffer<int, 1> single;
+        single.push_back(1);
+        assert(single.full() && single.front() == 1 && single.back() == 1);
+        single.pop_front();
+        single.push_back(2);
+        assert(single.size() == 1 && single[0] == 2);
+    }
+    {
+        ThrowingConstructionValue::live = 0;
+        RingBuffer<ThrowingConstructionValue, 2> checked;
+        checked.emplace_back(1);
+        ThrowingConstructionValue::throwNext = true;
+        bool constructionFailed = false;
+        try
+        {
+            checked.emplace_back(2);
+        }
+        catch (const std::runtime_error&)
+        {
+            constructionFailed = true;
+        }
+        assert(constructionFailed);
+        assert(checked.size() == 1 && checked.front().value == 1);
+        assert(ThrowingConstructionValue::live == 1);
+        checked.clear();
+        assert(ThrowingConstructionValue::live == 0);
+    }
+    {
+        ThrowingMoveValue::live = 0;
+        ThrowingMoveValue::movesBeforeThrow = (std::numeric_limits<int>::max)();
+        RingBuffer<ThrowingMoveValue, 3> source;
+        source.emplace_back(1);
+        source.emplace_back(2);
+        source.emplace_back(3);
+        ThrowingMoveValue::movesBeforeThrow = 1;
+        bool moveFailed = false;
+        try
+        {
+            RingBuffer<ThrowingMoveValue, 3> moved(std::move(source));
+            (void)moved;
+        }
+        catch (const std::runtime_error&)
+        {
+            moveFailed = true;
+        }
+        assert(moveFailed);
+        // 移動元の要素は一部がmove済みでも全Slotが生存し、移動先の構築済み要素は破棄されます。
+        assert(source.size() == 3);
+        assert(ThrowingMoveValue::live == 3);
+        source.clear();
+        assert(ThrowingMoveValue::live == 0);
+    }
+    {
+        RingBuffer<int, 17> queue;
+        std::deque<int> reference;
+        std::uint32_t state = 0x8f3a5c17u;
+        for (int operation = 0; operation < 5000; ++operation)
+        {
+            state = state * 1664525u + 1013904223u;
+            if ((state & 1u) != 0u && reference.size() < queue.capacity())
+            {
+                const int value = static_cast<int>(state & 0x7fffu);
+                assert(queue.try_push_back(value));
+                reference.push_back(value);
+            }
+            else if (reference.empty() == false)
+            {
+                assert(queue.front() == reference.front());
+                queue.pop_front();
+                reference.pop_front();
+            }
+            assert(queue.size() == reference.size());
+            for (std::size_t index = 0; index < reference.size(); ++index)
+            {
+                assert(queue[index] == reference[index]);
+            }
+        }
+    }
 
     // ========================================================================
     // 15. BitSet: 境界bit / 全bit操作 / 余剰bit / 0bit
@@ -664,53 +816,136 @@ void RunMemoryAllocatorSelfTests()
         zeroBits.set().flip().reset();
         assert(zeroBits.count() == 0);
     }
+    {
+        BitSet<63> belowWord;
+        BitSet<65> aboveWord;
+        BitSet<128> twoWords;
+        belowWord.set();
+        aboveWord.set();
+        twoWords.set();
+        assert(belowWord.all() && belowWord.count() == 63);
+        assert(aboveWord.all() && aboveWord.count() == 65);
+        assert(twoWords.all() && twoWords.count() == 128);
+        belowWord.flip(62);
+        aboveWord.flip(64);
+        twoWords.flip(127);
+        assert(belowWord.count() == 62 && belowWord.all() == false);
+        assert(aboveWord.count() == 64 && aboveWord.all() == false);
+        assert(twoWords.count() == 127 && twoWords.all() == false);
+        bool invalidMutation = false;
+        try
+        {
+            aboveWord.flip(65);
+        }
+        catch (const std::out_of_range&)
+        {
+            invalidMutation = true;
+        }
+        assert(invalidMutation);
+    }
 
     // ========================================================================
     // 16. HandlePool: 世代管理 / Slot再利用 / アドレス安定性 / move-only
     // ========================================================================
     {
-        HandlePool<std::unique_ptr<int>> pool;
-        const auto first = pool.emplace(std::make_unique<int>(10));
-        auto* firstAddress = pool.get(first);
+        HandlePool<std::unique_ptr<int>> handlePool;
+        const auto firstHandle = handlePool.emplace(std::make_unique<int>(10));
+        auto* firstAddress = handlePool.get(firstHandle);
         assert(firstAddress != nullptr && **firstAddress == 10);
         for (int index = 0; index < 32; ++index)
         {
-            pool.emplace(std::make_unique<int>(index));
+            handlePool.emplace(std::make_unique<int>(index));
         }
-        assert(pool.get(first) == firstAddress);
-        assert(pool.erase(first));
-        assert(pool.get(first) == nullptr);
-        assert(pool.erase(first) == false);
-        const auto reused = pool.emplace(std::make_unique<int>(99));
-        assert(reused.index == first.index);
-        assert(reused.generation != first.generation);
-        assert(pool.get(first) == nullptr && **pool.get(reused) == 99);
-        const HandlePool<std::unique_ptr<int>>& constPool = pool;
+        assert(handlePool.get(firstHandle) == firstAddress);
+        assert(handlePool.erase(firstHandle));
+        assert(handlePool.get(firstHandle) == nullptr);
+        assert(handlePool.erase(firstHandle) == false);
+        const auto reused = handlePool.emplace(std::make_unique<int>(99));
+        assert(reused.index == firstHandle.index);
+        assert(reused.generation != firstHandle.generation);
+        assert(handlePool.get(firstHandle) == nullptr && **handlePool.get(reused) == 99);
+        const HandlePool<std::unique_ptr<int>>& constPool = handlePool;
         assert(constPool.contains(reused));
-        pool.clear();
-        assert(pool.empty() && pool.get(reused) == nullptr);
-        const auto afterClear = pool.emplace(std::make_unique<int>(7));
-        assert(pool.contains(afterClear));
-        assert(pool.get(reused) == nullptr);
+        handlePool.clear();
+        assert(handlePool.empty() && handlePool.get(reused) == nullptr);
+        const auto afterClear = handlePool.emplace(std::make_unique<int>(7));
+        assert(handlePool.contains(afterClear));
+        assert(handlePool.get(reused) == nullptr);
     }
     {
         VectorLifecycleValue::live = 0;
-        HandlePool<VectorLifecycleValue> pool;
-        const auto first = pool.emplace(42);
+        HandlePool<VectorLifecycleValue> lifecyclePool;
+        const auto lifecycleFirst = lifecyclePool.emplace(42);
         assert(VectorLifecycleValue::live == 1);
-        assert(pool.erase(first));
+        assert(lifecyclePool.erase(lifecycleFirst));
         assert(VectorLifecycleValue::live == 0);
-        const auto second = pool.emplace(64);
+        const auto lifecycleSecond = lifecyclePool.emplace(64);
         assert(VectorLifecycleValue::live == 1);
-        assert(pool.get(first) == nullptr && pool.get(second)->value == 64);
-        pool.clear();
+        assert(lifecyclePool.get(lifecycleFirst) == nullptr && lifecyclePool.get(lifecycleSecond)->value == 64);
+        lifecyclePool.clear();
         assert(VectorLifecycleValue::live == 0);
     }
     {
         struct alignas(64) AlignedHandle { int value = 0; };
-        HandlePool<AlignedHandle> pool;
-        const auto handle = pool.emplace();
-        assert(IsAligned(pool.get(handle), 64));
+        HandlePool<AlignedHandle> alignedPool;
+        const auto handle = alignedPool.emplace();
+        assert(IsAligned(alignedPool.get(handle), 64));
+    }
+    {
+        ThrowingConstructionValue::live = 0;
+        HandlePool<ThrowingConstructionValue> throwingPool;
+        ThrowingConstructionValue::throwNext = true;
+        bool firstConstructionFailed = false;
+        try
+        {
+            (void)throwingPool.emplace(1);
+        }
+        catch (const std::runtime_error&)
+        {
+            firstConstructionFailed = true;
+        }
+        assert(firstConstructionFailed && throwingPool.empty() && throwingPool.capacity() == 0);
+
+        const auto throwingFirst = throwingPool.emplace(2);
+        assert(throwingPool.erase(throwingFirst));
+        const std::size_t capacityBeforeFailure = throwingPool.capacity();
+        ThrowingConstructionValue::throwNext = true;
+        bool reusedConstructionFailed = false;
+        try
+        {
+            (void)throwingPool.emplace(3);
+        }
+        catch (const std::runtime_error&)
+        {
+            reusedConstructionFailed = true;
+        }
+        assert(reusedConstructionFailed && throwingPool.empty());
+        assert(throwingPool.capacity() == capacityBeforeFailure);
+        const auto reused = throwingPool.emplace(4);
+        assert(reused.index == throwingFirst.index);
+        assert(throwingPool.get(reused)->value == 4);
+        throwingPool.clear();
+        assert(ThrowingConstructionValue::live == 0);
+    }
+    {
+        HandlePool<int> stablePool;
+        std::vector<HandlePool<int>::Handle> handles;
+        handles.reserve(4096);
+        const auto stable = stablePool.emplace(1234);
+        int* stableAddress = stablePool.get(stable);
+        for (int value = 0; value < 4096; ++value)
+        {
+            handles.push_back(stablePool.emplace(value));
+        }
+        assert(stablePool.get(stable) == stableAddress && *stableAddress == 1234);
+        for (std::size_t index = 0; index < handles.size(); index += 2)
+        {
+            assert(stablePool.erase(handles[index]));
+        }
+        for (std::size_t index = 0; index < handles.size(); ++index)
+        {
+            assert(stablePool.contains(handles[index]) == (index % 2 != 0));
+        }
     }
 
     // ========================================================================
@@ -744,6 +979,42 @@ void RunMemoryAllocatorSelfTests()
         assert(ids.insert(100));
         assert(ids[0] == 100);
     }
+    {
+        SparseSet ids;
+        const std::uint32_t maximumId = (std::numeric_limits<std::uint32_t>::max)();
+        assert(ids.insert(maximumId));
+        assert(ids.contains(maximumId));
+        assert(ids.erase(maximumId));
+        assert(ids.contains(maximumId) == false);
+    }
+    {
+        SparseSet ids;
+        std::unordered_set<std::uint32_t> reference;
+        std::uint32_t state = 0x61c88647u;
+        for (int operation = 0; operation < 20000; ++operation)
+        {
+            state = state * 1664525u + 1013904223u;
+            const std::uint32_t id = (state >> 8u) % 4096u;
+            if ((state & 1u) != 0u)
+            {
+                assert(ids.insert(id) == reference.insert(id).second);
+            }
+            else
+            {
+                assert(ids.erase(id) == (reference.erase(id) != 0));
+            }
+            assert(ids.size() == reference.size());
+            for (std::uint32_t storedId : ids)
+            {
+                assert(reference.count(storedId) == 1);
+                assert(ids.contains(storedId));
+            }
+        }
+        for (std::uint32_t id = 0; id < 4096u; ++id)
+        {
+            assert(ids.contains(id) == (reference.count(id) != 0));
+        }
+    }
 
     // ========================================================================
     // 18. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
@@ -771,3 +1042,13 @@ void RunMemoryAllocatorSelfTests()
 }
 
 } // namespace Raven::tests
+
+#ifdef RAVEN_MEMORY_SELF_TEST_STANDALONE
+// GPU・Window・外部描画依存を起動せず、Allocator/Containerだけを検証する入口です。
+// 通常のVisual Studioプロジェクトではmacroを定義しないため、既存mainとは競合しません。
+int main()
+{
+    Raven::tests::RunMemoryAllocatorSelfTests();
+    return 0;
+}
+#endif
