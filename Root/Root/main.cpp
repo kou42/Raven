@@ -29,6 +29,7 @@
 #include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
 #include "Raven/Physics/Tests/CoulombBenchmark.h"
 #include "Raven/Core/Containers/Benchmarks/FlatHashSetBenchmark.h"
+#include "Raven/Core/Containers/Benchmarks/FlatHashMapBenchmark.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -121,6 +122,10 @@ int main(int argc, char* argv[])
         if (backendArgument == "--benchmark-astro-gravity")
         {
             return Raven::ph::tests::RunAstroGravityBenchmark();
+        }
+        if (backendArgument == "--benchmark-flat-hash-map")
+        {
+            return Raven::benchmarks::RunFlatHashMapBenchmark();
         }
         if (backendArgument == "--benchmark-flat-hash-set")
         {
