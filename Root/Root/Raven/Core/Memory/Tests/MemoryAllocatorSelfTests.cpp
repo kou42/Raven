@@ -12,6 +12,7 @@
 #include "Raven/Core/Containers/FixedVector.h"
 #include "Raven/Core/Containers/Span.h"
 #include "Raven/Core/Containers/Array.h"
+#include "Raven/Core/Containers/RingBuffer.h"
 
 #include <cassert>
 #include <algorithm>
@@ -558,7 +559,67 @@ void RunMemoryAllocatorSelfTests()
     assert(arrayOutOfRange);
 
     // ========================================================================
-    // 14. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 14. RingBuffer: FIFO / wrap / full / move-only / lifetime
+    // ========================================================================
+    {
+        RingBuffer<int, 3> queue;
+        assert(queue.empty());
+        queue.push_back(1);
+        queue.push_back(2);
+        queue.push_back(3);
+        assert(queue.full());
+        assert(queue.try_push_back(4) == false);
+        bool ringOverflow = false;
+        try
+        {
+            queue.emplace_back(4);
+        }
+        catch (const std::length_error&)
+        {
+            ringOverflow = true;
+        }
+        assert(ringOverflow);
+        queue.pop_front();
+        queue.push_back(4);
+        assert(queue[0] == 2 && queue[1] == 3 && queue[2] == 4);
+        assert(queue.front() == 2 && queue.back() == 4);
+        RingBuffer<int, 3> moved(std::move(queue));
+        assert(queue.empty());
+        assert(moved.size() == 3 && moved[2] == 4);
+        moved.clear();
+        assert(moved.empty());
+    }
+    {
+        VectorLifecycleValue::live = 0;
+        RingBuffer<VectorLifecycleValue, 2> lifecycle;
+        lifecycle.emplace_back(10);
+        lifecycle.emplace_back(20);
+        assert(VectorLifecycleValue::live == 2);
+        lifecycle.pop_front();
+        assert(VectorLifecycleValue::live == 1);
+        lifecycle.emplace_back(30);
+        assert(lifecycle[0].value == 20 && lifecycle[1].value == 30);
+        lifecycle.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    {
+        RingBuffer<std::unique_ptr<int>, 2> owned;
+        owned.emplace_back(std::make_unique<int>(7));
+        owned.emplace_back(std::make_unique<int>(9));
+        assert(*owned.front() == 7);
+        owned.pop_front();
+        owned.emplace_back(std::make_unique<int>(11));
+        assert(*owned.back() == 11);
+    }
+    {
+        struct alignas(64) AlignedRing { int value = 0; };
+        RingBuffer<AlignedRing, 2> aligned;
+        aligned.emplace_back();
+        assert(IsAligned(&aligned.front(), 64));
+    }
+
+    // ========================================================================
+    // 15. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
