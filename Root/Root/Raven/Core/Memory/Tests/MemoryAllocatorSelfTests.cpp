@@ -13,6 +13,7 @@
 #include "Raven/Core/Containers/Span.h"
 #include "Raven/Core/Containers/Array.h"
 #include "Raven/Core/Containers/RingBuffer.h"
+#include "Raven/Core/Containers/BitSet.h"
 
 #include <cassert>
 #include <algorithm>
@@ -619,7 +620,51 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 15. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 15. BitSet: 境界bit / 全bit操作 / 余剰bit / 0bit
+    // ========================================================================
+    {
+        BitSet<130> bits;
+        assert(bits.size() == 130 && bits.none());
+        bits.set(0).set(63).set(64).set(129);
+        assert(bits.count() == 4);
+        assert(bits.test(63) && bits.test(64) && bits[129]);
+        bits.reset(63);
+        bits.flip(64);
+        assert(bits.count() == 2);
+        bits.set();
+        assert(bits.all() && bits.count() == 130);
+        bits.flip();
+        assert(bits.none());
+        bits.flip(129);
+        assert(bits.count() == 1);
+        bits.reset();
+        assert(bits.none());
+        bool invalidBit = false;
+        try
+        {
+            (void)bits.test(130);
+        }
+        catch (const std::out_of_range&)
+        {
+            invalidBit = true;
+        }
+        assert(invalidBit);
+    }
+    {
+        BitSet<64> exactWord;
+        exactWord.set();
+        assert(exactWord.all() && exactWord.count() == 64);
+        BitSet<1> oneBit;
+        oneBit.set();
+        assert(oneBit.all() && oneBit.count() == 1);
+        BitSet<0> zeroBits;
+        assert(zeroBits.empty() && zeroBits.none() && zeroBits.all());
+        zeroBits.set().flip().reset();
+        assert(zeroBits.count() == 0);
+    }
+
+    // ========================================================================
+    // 16. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
