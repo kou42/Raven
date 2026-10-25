@@ -397,14 +397,29 @@ Heap allocation を禁止した固定最大容量 Container。
 
 `FlatHashSet` の知見を利用して Map を追加します。
 
-- [ ] Key / Value storage。
-- [ ] find。
-- [ ] contains。
-- [ ] insert / emplace。
-- [ ] erase。
-- [ ] reserve。
-- [ ] Iterator。
+- [x] Key / Value storage。
+- [x] find。
+- [x] contains。
+- [x] insert / emplace。
+- [x] erase。
+- [x] reserve。
+- [x] Iterator。
 - [ ] heterogeneous lookup は必要性を確認後に追加。
+
+**Phase 5-2 検証メモ:** `--test-flat-hash-map` で基本操作、衝突時のLinear Probing、Tombstone、
+Iterator / const Iterator、move-only / over-aligned Value、Move操作、rehashと要素構築の例外安全性、
+容量overflowを確認します。Benchmarkは `--benchmark-flat-hash-map` でreserved / growth / erase-insertを
+128 / 1,024 / 8,192 / 65,536件、ウォームアップ3回・計測9回の中央値として比較します。
+Debug / Releaseの両構成、Self Test、Benchmarkを2026-10-25に検証済みです。
+
+**Phase 5-2 Rehash最適化メモ（2026-10-26）:** Copy可能なKey / Valueは旧テーブルを変更せず
+新Slotへ直接構築できるため、再配置先を保持していた補助`std::vector`と二段階走査を除去しました。
+move-only ValueでHasherが例外を送出し得る経路は、移動前に全Hashを評価するfallbackを維持します。
+初回reserveは後続insertのcache localityを保つ走査を残し、Growth時は既知のsizeを再利用して新Slotの
+全再集計を省きます。同一環境の中央値で1,024件Growthは59.7usから43.1us、65,536件Growthは
+5,145.0usから3,821.3us、65,536件Rehash Onlyは1,919.3usから912.0usへ改善しました。
+Probe / Tombstone診断、Collision Heavy、Tombstone cleanup比較、標準Mapとの決定的ランダム操作テストも
+追加し、Debug / Release buildとSelf Testを再検証済みです。
 
 用途候補:
 

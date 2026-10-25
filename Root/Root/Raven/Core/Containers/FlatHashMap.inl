@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -40,12 +41,28 @@ void FlatHashMap<K,V,H,E>::Release()
 {
     if (m_Slots != nullptr)
     {
-        clear();
-        for (std::size_t i = 0; i < m_Capacity; ++i) { m_Slots[i].~Slot(); }
+        DestroyOccupiedSlots(m_Slots, m_Capacity);
         m_Allocator->Deallocate(m_Slots);
         m_Slots = nullptr;
     }
     m_Capacity = 0;
+    m_Size = 0;
+    m_Tombstones = 0;
+}
+
+template<typename K, typename V, typename H, typename E>
+void FlatHashMap<K,V,H,E>::DestroyOccupiedSlots(Slot* slots, std::size_t capacity) noexcept
+{
+    // Slot自体はtrivialな状態Byteと未型付けStorageだけなので、Occupiedなpairだけを破棄します。
+    // 解放直前にStateをEmptyへ戻す走査やSlot destructorの走査を重ねないことでrehashを軽量化します。
+    static_assert(std::is_trivially_destructible_v<Slot>);
+    for (std::size_t index = 0; index < capacity; ++index)
+    {
+        if (slots[index].State == SlotState::Occupied)
+        {
+            slots[index].Get()->~value_type();
+        }
+    }
 }
 
 template<typename K, typename V, typename H, typename E>
@@ -58,6 +75,45 @@ void FlatHashMap<K,V,H,E>::clear()
     }
     m_Size = 0;
     m_Tombstones = 0;
+}
+
+template<typename K, typename V, typename H, typename E>
+void FlatHashMap<K,V,H,E>::cleanup_tombstones()
+{
+    if (m_Tombstones != 0)
+    {
+        Rehash(m_Capacity);
+    }
+}
+
+template<typename K, typename V, typename H, typename E>
+typename FlatHashMap<K,V,H,E>::ProbeStatistics FlatHashMap<K,V,H,E>::GetProbeStatistics() const
+{
+    ProbeStatistics statistics{};
+    if (m_Capacity == 0)
+    {
+        return statistics;
+    }
+
+    const std::size_t mask = m_Capacity - 1;
+    for (std::size_t index = 0; index < m_Capacity; ++index)
+    {
+        if (m_Slots[index].State != SlotState::Occupied)
+        {
+            continue;
+        }
+
+        const std::size_t ideal = m_Hasher(m_Slots[index].Get()->first) & mask;
+        const std::size_t distance = ((index - ideal) & mask) + 1;
+        statistics.TotalProbeLength += distance;
+        statistics.MaximumProbeLength = (std::max)(statistics.MaximumProbeLength, distance);
+        ++statistics.OccupiedCount;
+        if (distance > 1)
+        {
+            ++statistics.CollidedCount;
+        }
+    }
+    return statistics;
 }
 
 template<typename K, typename V, typename H, typename E>
@@ -107,69 +163,155 @@ void FlatHashMap<K,V,H,E>::reserve(std::size_t count)
 }
 
 template<typename K, typename V, typename H, typename E>
+void FlatHashMap<K,V,H,E>::PrepareForInsert()
+{
+    if (m_Capacity == 0)
+    {
+        Rehash(MinimumCapacity);
+    }
+    else if (m_Size + 1 <=
+        (m_Capacity / 10) * 7 + ((m_Capacity % 10) * 7) / 10)
+    {
+        // Occupied数には余裕がありTombstoneだけが閾値を超えた場合は、同容量で整理します。
+        Rehash(m_Capacity);
+    }
+    else
+    {
+        if (m_Capacity > (std::numeric_limits<std::size_t>::max)() / 2)
+        {
+            throw std::bad_alloc{};
+        }
+        Rehash(m_Capacity * 2);
+    }
+}
+
+template<typename K, typename V, typename H, typename E>
 void FlatHashMap<K,V,H,E>::Rehash(std::size_t capacity)
 {
-    // 移動前に全Hashを評価し、Hasher例外で既存データが失われることを防ぎます。
-    static_assert((std::is_copy_constructible_v<K> && std::is_copy_constructible_v<V>) ||
-        (std::is_copy_constructible_v<K> && std::is_nothrow_move_constructible_v<V>),
-        "FlatHashMap requires copyable entries or noexcept movable values");
+    constexpr bool CanCopyEntry =
+        std::is_copy_constructible_v<K> && std::is_copy_constructible_v<V>;
+    constexpr bool CanSafelyMoveEntry =
+        std::is_nothrow_copy_constructible_v<K> && std::is_nothrow_move_constructible_v<V>;
+    static_assert(CanCopyEntry || CanSafelyMoveEntry,
+        "FlatHashMap requires copyable entries or a nothrow-copyable key and nothrow-movable value");
     if (capacity > (std::numeric_limits<std::size_t>::max)() / sizeof(Slot))
     { throw std::bad_alloc{}; }
     void* memory = m_Allocator->Allocate(capacity * sizeof(Slot), alignof(Slot));
     if (memory == nullptr) { throw std::bad_alloc{}; }
     Slot* next = static_cast<Slot*>(memory);
-    for (std::size_t i = 0; i < capacity; ++i) { new (&next[i]) Slot{}; }
+    for (std::size_t i = 0; i < capacity; ++i)
+    {
+        // 連続したSlot全体の初期化はコンパイラが効率的にまとめられ、Stateだけをstride付きで
+        // 書き込むよりReserved経路が安定して速いため、Storageを含むvalue initializationを維持します。
+        new (&next[i]) Slot{};
+    }
     try
     {
-        // Tombstoneを移動先の予約印として使い、構築完了までOccupiedにしません。
-        // 全Hashを先に評価することで、move-only Valueを移動した後の例外を防ぎます。
-        std::vector<std::pair<std::size_t, std::size_t>> locations;
-        locations.reserve(m_Size);
-        for (std::size_t i = 0; i < m_Capacity; ++i)
+        if constexpr (CanCopyEntry)
         {
-            if (m_Slots[i].State != SlotState::Occupied)
+            // Copy可能なら旧要素を変更しないため、Hasher/Key/Value copyのどこで例外が発生しても
+            // 構築済みの新要素だけを破棄して旧テーブルをそのまま維持できます。
+            // この経路では移動先一覧の補助vectorと予約・再走査が不要です。
+            for (std::size_t sourceIndex = 0; sourceIndex < m_Capacity; ++sourceIndex)
             {
-                continue;
-            }
-            std::size_t index = m_Hasher(m_Slots[i].Get()->first) & (capacity - 1);
-            while (next[index].State != SlotState::Empty)
-            {
-                index = (index + 1) & (capacity - 1);
-            }
-            next[index].State = SlotState::Tombstone;
-            locations.emplace_back(i, index);
-        }
-        for (const auto& location : locations)
-        {
-            Slot& destination = next[location.second];
-            value_type& source = *m_Slots[location.first].Get();
-            if constexpr (std::is_copy_constructible_v<V> && std::is_copy_constructible_v<K>)
-            {
+                if (m_Slots[sourceIndex].State != SlotState::Occupied)
+                {
+                    continue;
+                }
+                value_type& source = *m_Slots[sourceIndex].Get();
+                std::size_t destinationIndex = m_Hasher(source.first) & (capacity - 1);
+                while (next[destinationIndex].State == SlotState::Occupied)
+                {
+                    destinationIndex = (destinationIndex + 1) & (capacity - 1);
+                }
+                Slot& destination = next[destinationIndex];
                 new (destination.Storage) value_type(source);
+                destination.State = SlotState::Occupied;
             }
-            else
+        }
+        else if constexpr (std::is_nothrow_invocable_r_v<std::size_t, const H&, const K&>)
+        {
+            // Hasher・Key copy・Value moveがすべてnoexceptなら、直接移動しても途中失敗しません。
+            for (std::size_t sourceIndex = 0; sourceIndex < m_Capacity; ++sourceIndex)
             {
+                if (m_Slots[sourceIndex].State != SlotState::Occupied)
+                {
+                    continue;
+                }
+                value_type& source = *m_Slots[sourceIndex].Get();
+                std::size_t destinationIndex = m_Hasher(source.first) & (capacity - 1);
+                while (next[destinationIndex].State == SlotState::Occupied)
+                {
+                    destinationIndex = (destinationIndex + 1) & (capacity - 1);
+                }
+                Slot& destination = next[destinationIndex];
                 new (destination.Storage) value_type(source.first, std::move(source.second));
+                destination.State = SlotState::Occupied;
             }
-            destination.State = SlotState::Occupied;
+        }
+        else
+        {
+            // move-only ValueかつHasherが例外を送出し得る場合だけ、全Hashを移動前に評価します。
+            // 補助vector確保やHasherが失敗してもValueはまだ移動していないため旧テーブルを保護できます。
+            std::vector<std::pair<std::size_t, std::size_t>> locations;
+            locations.reserve(m_Size);
+            for (std::size_t sourceIndex = 0; sourceIndex < m_Capacity; ++sourceIndex)
+            {
+                if (m_Slots[sourceIndex].State != SlotState::Occupied)
+                {
+                    continue;
+                }
+                std::size_t destinationIndex =
+                    m_Hasher(m_Slots[sourceIndex].Get()->first) & (capacity - 1);
+                while (next[destinationIndex].State != SlotState::Empty)
+                {
+                    destinationIndex = (destinationIndex + 1) & (capacity - 1);
+                }
+                next[destinationIndex].State = SlotState::Tombstone;
+                locations.emplace_back(sourceIndex, destinationIndex);
+            }
+            for (const auto& location : locations)
+            {
+                Slot& destination = next[location.second];
+                value_type& source = *m_Slots[location.first].Get();
+                new (destination.Storage) value_type(source.first, std::move(source.second));
+                destination.State = SlotState::Occupied;
+            }
         }
     }
     catch (...)
     {
-        for (std::size_t i = 0; i < capacity; ++i)
-        {
-            if (next[i].State == SlotState::Occupied) { next[i].Get()->~value_type(); }
-            next[i].~Slot();
-        }
+        DestroyOccupiedSlots(next, capacity);
         m_Allocator->Deallocate(next);
         throw;
     }
-    Release();
+
+    const std::size_t previousSize = m_Size;
+    if (m_Slots != nullptr)
+    {
+        DestroyOccupiedSlots(m_Slots, m_Capacity);
+        m_Allocator->Deallocate(m_Slots);
+    }
     m_Slots = next;
     m_Capacity = capacity;
-    // Release()でsizeが0になるため、Occupied数を再集計します。
-    for (std::size_t i = 0; i < capacity; ++i)
-    { if (next[i].State == SlotState::Occupied) { ++m_Size; } }
+    if (previousSize == 0)
+    {
+        // 初回reserve直後に続く大量insertでは、State走査で新テーブルをcacheへ載せる方が
+        // 大規模入力で安定して速いことをBenchmarkで確認しています。
+        m_Size = 0;
+        for (std::size_t index = 0; index < capacity; ++index)
+        {
+            if (next[index].State == SlotState::Occupied)
+            {
+                ++m_Size;
+            }
+        }
+    }
+    else
+    {
+        // Growth時は再配置数が既知なので、新テーブル全体の再集計を省きます。
+        m_Size = previousSize;
+    }
     m_Tombstones = 0;
 }
 
@@ -182,14 +324,7 @@ std::pair<V*, bool> FlatHashMap<K,V,H,E>::emplace(KeyArg&& key, ValueArg&& value
     if (existing < m_Capacity) { return { &m_Slots[existing].Get()->second, false }; }
     if (m_Capacity == 0 || m_Size + m_Tombstones + 1 > (m_Capacity / 10) * 7 + ((m_Capacity % 10) * 7) / 10)
     {
-        if (m_Capacity == 0) { Rehash(MinimumCapacity); }
-        else if (m_Size + 1 <= (m_Capacity / 10) * 7 + ((m_Capacity % 10) * 7) / 10) { Rehash(m_Capacity); }
-        else
-        {
-            if (m_Capacity > (std::numeric_limits<std::size_t>::max)() / 2)
-            { throw std::bad_alloc{}; }
-            Rehash(m_Capacity * 2);
-        }
+        PrepareForInsert();
     }
     const std::size_t mask = m_Capacity - 1;
     std::size_t index = m_Hasher(key) & mask;
