@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 
 namespace Raven::tests
 {
@@ -31,6 +32,37 @@ struct alignas(64) AlignedKey
 struct AlignedHasher
 {
     std::size_t operator()(const AlignedKey& key) const noexcept
+    {
+        return static_cast<std::size_t>(key.Value);
+    }
+};
+
+// コピー中に例外を発生させ、Rehashのロールバックを検証します。
+struct ThrowingKey
+{
+    int Value = 0;
+    static inline int CopiesUntilThrow = -1;
+
+    ThrowingKey() = default;
+    explicit ThrowingKey(int value) : Value(value) {}
+    ThrowingKey(const ThrowingKey& other) : Value(other.Value)
+    {
+        if (CopiesUntilThrow == 0)
+        {
+            throw std::runtime_error("intentional copy failure");
+        }
+        if (CopiesUntilThrow > 0)
+        {
+            --CopiesUntilThrow;
+        }
+    }
+    ThrowingKey(ThrowingKey&& other) noexcept(false) : Value(other.Value) {}
+    bool operator==(const ThrowingKey& other) const noexcept { return Value == other.Value; }
+};
+
+struct ThrowingHasher
+{
+    std::size_t operator()(const ThrowingKey& key) const noexcept
     {
         return static_cast<std::size_t>(key.Value);
     }
@@ -182,7 +214,35 @@ void RunFlatHashSetSelfTests()
     assert(aligned.contains(AlignedKey{42}));
 
     // ========================================================================
-    // 7. clear
+    // 7. Rehash例外時の強い保証
+    // ========================================================================
+    FlatHashSet<ThrowingKey, ThrowingHasher> throwing(allocator);
+    throwing.reserve(2);
+    assert(throwing.insert(ThrowingKey{1}).second);
+    assert(throwing.insert(ThrowingKey{2}).second);
+    const std::size_t oldCapacity = throwing.capacity();
+    ThrowingKey::CopiesUntilThrow = 1;
+    bool caught = false;
+    try
+    {
+        throwing.reserve(32);
+    }
+    catch (const std::runtime_error&)
+    {
+        caught = true;
+    }
+    ThrowingKey::CopiesUntilThrow = -1;
+    assert(caught);
+    assert(throwing.capacity() == oldCapacity);
+    assert(throwing.size() == 2);
+    assert(throwing.contains(ThrowingKey{1}));
+    assert(throwing.contains(ThrowingKey{2}));
+    throwing.reserve(32);
+    assert(throwing.contains(ThrowingKey{1}));
+    assert(throwing.contains(ThrowingKey{2}));
+
+    // ========================================================================
+    // 8. clear
     // ========================================================================
     collisions.clear();
     assert(collisions.empty());
