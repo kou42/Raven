@@ -75,7 +75,8 @@ void RunFlatHashSetSelfTests()
     // ========================================================================
     // 1. reserve + insert + duplicate
     // ========================================================================
-    FrameAllocator allocator(4096);
+    // 再配置とover-aligned Keyの追加テスト分を含め、Arena容量に余裕を持たせます。
+    FrameAllocator allocator(65536);
     FlatHashSet<int> values(allocator);
 
     values.reserve(16);
