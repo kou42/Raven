@@ -44,6 +44,7 @@
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
 #include "Raven/Core/Containers/Tests/FlatHashSetSelfTests.h"
+#include "Raven/Core/Containers/Tests/FlatHashMapSelfTests.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
@@ -100,6 +101,12 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunEditorViewportGeometrySelfTests();
             std::cout << "Editor viewport geometry self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-flat-hash-map")
+        {
+            Raven::tests::RunFlatHashMapSelfTests();
+            std::cout << "FlatHashMap self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
         if (backendArgument == "--test-flat-hash-set")
