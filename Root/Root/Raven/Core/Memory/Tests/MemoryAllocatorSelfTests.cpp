@@ -11,6 +11,7 @@
 #include "Raven/Core/Containers/SmallVector.h"
 #include "Raven/Core/Containers/FixedVector.h"
 #include "Raven/Core/Containers/Span.h"
+#include "Raven/Core/Containers/Array.h"
 
 #include <cassert>
 #include <algorithm>
@@ -531,7 +532,33 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 13. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 13. Array: 固定長領域 / Span連携 / 範囲検査
+    // ========================================================================
+    Array<int, 3> array{ 1, 2, 3 };
+    assert(array.size() == 3);
+    array.fill(9);
+    assert(array[0] == 9 && array[2] == 9);
+    Span<int> arrayView(array);
+    arrayView[1] = 7;
+    assert(array[1] == 7);
+    const Array<int, 3>& constArray = array;
+    Span<const int> constArrayView(constArray);
+    assert(constArrayView[1] == 7);
+    Array<int, 0> zeroArray;
+    assert(zeroArray.empty());
+    bool arrayOutOfRange = false;
+    try
+    {
+        (void)array.at(3);
+    }
+    catch (const std::out_of_range&)
+    {
+        arrayOutOfRange = true;
+    }
+    assert(arrayOutOfRange);
+
+    // ========================================================================
+    // 14. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
