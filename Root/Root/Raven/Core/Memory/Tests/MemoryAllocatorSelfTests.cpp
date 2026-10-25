@@ -10,6 +10,7 @@
 #include "Raven/Core/Containers/Vector.h"
 #include "Raven/Core/Containers/SmallVector.h"
 #include "Raven/Core/Containers/FixedVector.h"
+#include "Raven/Core/Containers/Span.h"
 
 #include <cassert>
 #include <algorithm>
@@ -501,7 +502,36 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 12. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 12. Span: 非所有View / const / 空領域 / subspan / Vector連携
+    // ========================================================================
+    Span<int> emptySpan;
+    assert(emptySpan.empty());
+    assert(emptySpan.begin() == emptySpan.end());
+    int rawValues[] = { 2, 4, 6, 8 };
+    Span<int> rawSpan(rawValues);
+    assert(rawSpan.size() == 4);
+    rawSpan[1] = 5;
+    assert(rawValues[1] == 5);
+    Span<const int> readOnlySpan(rawValues);
+    assert(readOnlySpan[1] == 5);
+    const auto middle = rawSpan.subspan(1, 2);
+    assert(middle.size() == 2 && middle[0] == 5 && middle[1] == 6);
+    assert(rawSpan.subspan(rawSpan.size(), 0).empty());
+    {
+        Vector<int> owned(vectorHeap);
+        owned.push_back(12);
+        owned.push_back(24);
+        Span<int> view(owned);
+        assert(view.data() == owned.data());
+        assert(view[1] == 24);
+        const Vector<int>& constOwned = owned;
+        Span<const int> constView(constOwned);
+        assert(constView[0] == 12);
+        // 再確保するとViewは無効になるため、ここでは要素を追加しません。
+    }
+
+    // ========================================================================
+    // 13. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
