@@ -881,6 +881,7 @@
     <None Include="Raven\Core\Containers\Vector.inl" />
     <None Include="Raven\Core\Containers\SmallVector.inl" />
     <None Include="Raven\Core\Containers\FixedVector.inl" />
+    <None Include="Raven\Core\Containers\FlatHashSet.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
 </Project>

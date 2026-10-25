@@ -389,9 +389,11 @@ Heap allocation を禁止した固定最大容量 Container。
 - [x] reserve / rehash Benchmark。
 - [x] adversarial hash test。
 - [x] over-aligned Key test。
-- [ ] exception safety 確認（Rehashのロールバック用Self Test追加済み。実ビルド・実行確認待ち）。
+- [x] exception safety 確認（Hasher / Key copy例外時のロールバックとmove-only KeyをSelf Testで確認）。
 
-**Phase 5-1 検証メモ:** Benchmarkは `--benchmark-flat-hash-set` で起動し、reserved / growth / erase-insert の中央値、Arena allocation回数・peak bytes・capacity・最大Probe距離を出力します。Debug / Releaseの両構成で実行し、測定値とSelf Testの結果を確認してからPhase完了とします。\n\n## 5-2. FlatHashMap
+**Phase 5-1 検証メモ:** Benchmarkは `--benchmark-flat-hash-set` で起動し、reserved / growth / erase-insert の中央値、実行時間比、両Containerのallocation回数・peak bytes・capacity、最大／平均Probe距離、Tombstone数を出力します。診断走査と破棄は計測区間外です。Debug / Releaseの両構成とSelf Testを2026-10-25に実行済みです。
+
+## 5-2. FlatHashMap
 
 `FlatHashSet` の知見を利用して Map を追加します。
 

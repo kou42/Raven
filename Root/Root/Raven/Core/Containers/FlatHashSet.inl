@@ -195,7 +195,14 @@ template<typename Key, typename Hasher, typename KeyEqual>
         const std::size_t numerator = elementCount * MaxLoadDenominator;
         const std::size_t required =
             (numerator + MaxLoadNumerator - 1) / MaxLoadNumerator;
-        return NextPowerOfTwo(required);
+        const std::size_t capacity = NextPowerOfTwo(required);
+        if (capacity == 0)
+        {
+            // 2の累乗へ切り上げられない要求を0として返すと、reserve()が
+            // 「既存容量で十分」と誤判定します。確保不能な要求は明示的に失敗させます。
+            throw std::bad_alloc{};
+        }
+        return capacity;
     }
 
 template<typename Key, typename Hasher, typename KeyEqual>
@@ -228,14 +235,14 @@ std::pair<const Key*, bool> FlatHashSet<Key, Hasher, KeyEqual>::InsertImpl(KeyVa
             }
             else
             {
-            if (m_Capacity > static_cast<std::size_t>(-1) / 2)
-            {
-                throw std::bad_alloc{};
-            }
+                if (m_Capacity > static_cast<std::size_t>(-1) / 2)
+                {
+                    throw std::bad_alloc{};
+                }
 
-            const std::size_t newCapacity =
-                m_Capacity == 0 ? MinimumCapacity : m_Capacity * 2;
-            Rehash(newCapacity);
+                const std::size_t newCapacity =
+                    m_Capacity == 0 ? MinimumCapacity : m_Capacity * 2;
+                Rehash(newCapacity);
             }
         }
 
@@ -328,57 +335,70 @@ void FlatHashSet<Key, Hasher, KeyEqual>::Rehash(std::size_t requestedCapacity)
             new (&newSlots[i]) Slot{};
         }
 
-        // 移動中のHasher例外を避けるため、全Keyの移動先を先に決定します。
-        // Destination配列の確保もKeyを変更する前に済ませます。
+        // Copy可能なKeyは新テーブルへ直接Copyします。例外時も旧テーブルは不変であり、
+        // common pathで一時的なDestination配列を確保する必要がありません。
+        // Move-only KeyだけはHasher例外より先に全移動先を決定してからnoexcept moveします。
         std::size_t* destinations = nullptr;
         try
         {
-            if (m_Size != 0)
+            if constexpr (std::is_copy_constructible_v<Key>)
             {
-                if (m_Size > static_cast<std::size_t>(-1) / sizeof(std::size_t))
+                for (std::size_t i = 0; i < m_Capacity; ++i)
                 {
-                    throw std::bad_alloc{};
-                }
-                destinations = static_cast<std::size_t*>(
-                    ::operator new(m_Size * sizeof(std::size_t)));
-            }
+                    if (m_Slots[i].State != SlotState::Occupied)
+                    {
+                        continue;
+                    }
 
-            std::size_t count = 0;
-            for (std::size_t i = 0; i < m_Capacity; ++i)
-            {
-                if (m_Slots[i].State != SlotState::Occupied)
-                {
-                    continue;
+                    std::size_t index = m_Hasher(*m_Slots[i].GetKey()) & (newCapacity - 1);
+                    while (newSlots[index].State != SlotState::Empty)
+                    {
+                        index = (index + 1) & (newCapacity - 1);
+                    }
+                    new (newSlots[index].Storage) Key(*m_Slots[i].GetKey());
+                    newSlots[index].State = SlotState::Occupied;
                 }
-                std::size_t index = m_Hasher(*m_Slots[i].GetKey()) & (newCapacity - 1);
-                while (newSlots[index].State != SlotState::Empty)
-                {
-                    index = (index + 1) & (newCapacity - 1);
-                }
-                // 予約済みSlotを一時的にTombstoneとしてマークします。
-                newSlots[index].State = SlotState::Tombstone;
-                destinations[count++] = index;
             }
-
-            // Copyを優先することで、Copy中の例外でも旧Keyを保全します。
-            // Copy不可のKeyでは事前計算後にnoexcept moveを使用します。
-            count = 0;
-            for (std::size_t i = 0; i < m_Capacity; ++i)
+            else
             {
-                if (m_Slots[i].State != SlotState::Occupied)
+                if (m_Size != 0)
                 {
-                    continue;
+                    if (m_Size > static_cast<std::size_t>(-1) / sizeof(std::size_t))
+                    {
+                        throw std::bad_alloc{};
+                    }
+                    destinations = static_cast<std::size_t*>(
+                        ::operator new(m_Size * sizeof(std::size_t)));
                 }
-                Slot& destination = newSlots[destinations[count++]];
-                if constexpr (std::is_copy_constructible_v<Key>)
+
+                std::size_t count = 0;
+                for (std::size_t i = 0; i < m_Capacity; ++i)
                 {
-                    new (destination.Storage) Key(*m_Slots[i].GetKey());
+                    if (m_Slots[i].State != SlotState::Occupied)
+                    {
+                        continue;
+                    }
+                    std::size_t index = m_Hasher(*m_Slots[i].GetKey()) & (newCapacity - 1);
+                    while (newSlots[index].State != SlotState::Empty)
+                    {
+                        index = (index + 1) & (newCapacity - 1);
+                    }
+                    // 予約済みSlotを一時的にTombstoneとしてマークします。
+                    newSlots[index].State = SlotState::Tombstone;
+                    destinations[count++] = index;
                 }
-                else
+
+                count = 0;
+                for (std::size_t i = 0; i < m_Capacity; ++i)
                 {
+                    if (m_Slots[i].State != SlotState::Occupied)
+                    {
+                        continue;
+                    }
+                    Slot& destination = newSlots[destinations[count++]];
                     new (destination.Storage) Key(std::move(*m_Slots[i].GetKey()));
+                    destination.State = SlotState::Occupied;
                 }
-                destination.State = SlotState::Occupied;
             }
         }
         catch (...)
