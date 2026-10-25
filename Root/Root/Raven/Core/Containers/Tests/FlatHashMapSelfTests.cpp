@@ -27,6 +27,27 @@ struct ConstantHasher
 {
     std::size_t operator()(int) const { return 0; }
 };
+struct ThrowingValue
+{
+    static inline int CopiesBeforeThrow = -1;
+    int Value = 0;
+
+    explicit ThrowingValue(int value = 0) : Value(value) {}
+    ThrowingValue(const ThrowingValue& other) : Value(other.Value)
+    {
+        if (CopiesBeforeThrow == 0)
+        {
+            throw std::runtime_error("value copy failure");
+        }
+        if (CopiesBeforeThrow > 0)
+        {
+            --CopiesBeforeThrow;
+        }
+    }
+    ThrowingValue(ThrowingValue&&) noexcept = default;
+    ThrowingValue& operator=(const ThrowingValue&) = default;
+    ThrowingValue& operator=(ThrowingValue&&) noexcept = default;
+};
 }
 void RunFlatHashMapSelfTests()
 {
@@ -46,6 +67,9 @@ void RunFlatHashMapSelfTests()
     assert(map.contains(31));
     assert(map.contains(3) == false);
     assert(map.emplace(33, "33").second);
+    FlatHashMap<int, std::string, ConstantHasher>::value_type insertedValue{ 35, "35" };
+    assert(map.insert(insertedValue).second);
+    assert(map.insert({ 37, "37" }).second);
     std::size_t visited = 0;
     for (auto& pair : map)
     {
@@ -55,6 +79,13 @@ void RunFlatHashMapSelfTests()
     assert(visited == map.size());
     const auto& readonly = map;
     assert(*readonly.find(4) == "4!");
+    std::size_t constVisited = 0;
+    for (const auto& pair : readonly)
+    {
+        assert(pair.second.empty() == false);
+        ++constVisited;
+    }
+    assert(constVisited == readonly.size());
     for (auto it = map.begin(); it != map.end();)
     {
         if (it->first % 2 == 0) { it = map.erase(it); }
@@ -66,6 +97,17 @@ void RunFlatHashMapSelfTests()
     map.clear();
     assert(map.empty());
     assert(map.begin() == map.end());
+    assert(map.emplace(41, "41").second);
+
+    FlatHashMap<int, std::string, ConstantHasher> moved(std::move(map));
+    assert(map.empty());
+    assert(moved.contains(41));
+    FlatHashMap<int, std::string, ConstantHasher> moveAssigned(allocator);
+    assert(moveAssigned.emplace(99, "discarded").second);
+    moveAssigned = std::move(moved);
+    assert(moved.empty());
+    assert(moveAssigned.contains(41));
+    assert(moveAssigned.contains(99) == false);
 
     FlatHashMap<int, std::unique_ptr<int>> moveOnly(allocator);
     assert(moveOnly.emplace(1, std::make_unique<int>(42)).second);
@@ -88,6 +130,34 @@ void RunFlatHashMapSelfTests()
     assert(caught);
     assert(throwing.capacity() == previousCapacity);
     assert(*throwing.find(1) == "one");
+
+    // Value copyが途中で例外を送出しても、移動元の要素と容量を維持します。
+    FlatHashMap<int, ThrowingValue> throwingValue(allocator);
+    assert(throwingValue.emplace(1, ThrowingValue{ 10 }).second);
+    assert(throwingValue.emplace(2, ThrowingValue{ 20 }).second);
+    const std::size_t valueCapacity = throwingValue.capacity();
+    ThrowingValue::CopiesBeforeThrow = 1;
+    caught = false;
+    try { throwingValue.reserve(128); }
+    catch (const std::runtime_error&) { caught = true; }
+    ThrowingValue::CopiesBeforeThrow = -1;
+    assert(caught);
+    assert(throwingValue.capacity() == valueCapacity);
+    assert(throwingValue.size() == 2);
+    assert(throwingValue.find(1)->Value == 10);
+    assert(throwingValue.find(2)->Value == 20);
+
+    // 空Slotへの構築失敗ではSizeと検索結果を変化させません。
+    FlatHashMap<int, ThrowingValue> constructionFailure(allocator);
+    ThrowingValue source{ 30 };
+    ThrowingValue::CopiesBeforeThrow = 0;
+    caught = false;
+    try { constructionFailure.emplace(3, source); }
+    catch (const std::runtime_error&) { caught = true; }
+    ThrowingValue::CopiesBeforeThrow = -1;
+    assert(caught);
+    assert(constructionFailure.empty());
+    assert(constructionFailure.find(3) == nullptr);
 
     bool overflowCaught = false;
     try { aligned.reserve((std::numeric_limits<std::size_t>::max)()); }

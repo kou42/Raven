@@ -8,11 +8,82 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
 namespace Raven::benchmarks
 {
+namespace detail
+{
+struct StandardAllocationStatistics
+{
+    std::size_t CurrentBytes = 0;
+    std::size_t PeakBytes = 0;
+    std::size_t AllocationCount = 0;
+};
+
+// std::unordered_mapのnodeとbucket確保を同じ統計へ集約します。
+// allocator自身やCRT内部の管理領域は含まないため、Raven側の一時std::vectorと同様に
+// Container外部の補助allocationは比較対象外です。
+template<typename T>
+class StandardCountingAllocator
+{
+    template<typename>
+    friend class StandardCountingAllocator;
+
+public:
+    using value_type = T;
+
+    StandardCountingAllocator() noexcept = default;
+    explicit StandardCountingAllocator(StandardAllocationStatistics& statistics) noexcept
+        : m_Statistics(&statistics) {}
+
+    template<typename U>
+    StandardCountingAllocator(const StandardCountingAllocator<U>& other) noexcept
+        : m_Statistics(other.m_Statistics) {}
+
+    [[nodiscard]] T* allocate(std::size_t count)
+    {
+        T* memory = std::allocator<T>{}.allocate(count);
+        if (m_Statistics != nullptr)
+        {
+            const std::size_t bytes = count * sizeof(T);
+            m_Statistics->CurrentBytes += bytes;
+            m_Statistics->PeakBytes = (std::max)(
+                m_Statistics->PeakBytes,
+                m_Statistics->CurrentBytes);
+            ++m_Statistics->AllocationCount;
+        }
+        return memory;
+    }
+
+    void deallocate(T* memory, std::size_t count) noexcept
+    {
+        if (m_Statistics != nullptr)
+        {
+            m_Statistics->CurrentBytes -= count * sizeof(T);
+        }
+        std::allocator<T>{}.deallocate(memory, count);
+    }
+
+    template<typename U>
+    bool operator==(const StandardCountingAllocator<U>& other) const noexcept
+    {
+        return m_Statistics == other.m_Statistics;
+    }
+
+    template<typename U>
+    bool operator!=(const StandardCountingAllocator<U>& other) const noexcept
+    {
+        return (*this == other) == false;
+    }
+
+private:
+    StandardAllocationStatistics* m_Statistics = nullptr;
+};
+}
+
 // GPU不要のCPU計測です。入力生成・Allocator構築・破棄を計測から除外します。
 // reserveあり／なし／erase後の再挿入を同じKey/Value列で比較します。
 inline int RunFlatHashMapBenchmark()
@@ -39,6 +110,8 @@ inline int RunFlatHashMapBenchmark()
             std::size_t ravenAllocations = 0;
             std::size_t ravenPeak = 0;
             std::size_t ravenCapacity = 0;
+            std::size_t standardAllocations = 0;
+            std::size_t standardPeak = 0;
             std::size_t standardBuckets = 0;
 
             for (std::size_t sample = 0; sample < Warmups + Samples; ++sample)
@@ -69,7 +142,20 @@ inline int RunFlatHashMapBenchmark()
                 ravenPeak = allocator.GetPeakUsedMemory();
                 ravenCapacity = raven.capacity();
 
-                std::unordered_map<std::uint64_t, std::uint64_t> standard;
+                detail::StandardAllocationStatistics standardStatistics;
+                using StandardValue = std::pair<const std::uint64_t, std::uint64_t>;
+                using StandardAllocator = detail::StandardCountingAllocator<StandardValue>;
+                using StandardMap = std::unordered_map<
+                    std::uint64_t,
+                    std::uint64_t,
+                    std::hash<std::uint64_t>,
+                    std::equal_to<std::uint64_t>,
+                    StandardAllocator>;
+                StandardMap standard(
+                    0,
+                    std::hash<std::uint64_t>{},
+                    std::equal_to<std::uint64_t>{},
+                    StandardAllocator(standardStatistics));
                 const auto standardStart = Clock::now();
                 if (scenario != 1) { standard.reserve(count); }
                 for (std::size_t i = 0; i < count; ++i)
@@ -90,6 +176,8 @@ inline int RunFlatHashMapBenchmark()
                     checksum = checksum + (found == standard.end() ? 0 : found->second);
                 }
                 const auto standardEnd = Clock::now();
+                standardAllocations = standardStatistics.AllocationCount;
+                standardPeak = standardStatistics.PeakBytes;
                 standardBuckets = standard.bucket_count();
 
                 if (sample >= Warmups)
@@ -111,6 +199,8 @@ inline int RunFlatHashMapBenchmark()
                 << " Raven_allocations=" << ravenAllocations
                 << " Raven_peak_bytes=" << ravenPeak
                 << " Raven_capacity=" << ravenCapacity
+                << " std_allocations=" << standardAllocations
+                << " std_peak_bytes=" << standardPeak
                 << " std_buckets=" << standardBuckets << '\n';
         }
     }

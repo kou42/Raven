@@ -397,14 +397,20 @@ Heap allocation を禁止した固定最大容量 Container。
 
 `FlatHashSet` の知見を利用して Map を追加します。
 
-- [ ] Key / Value storage。
-- [ ] find。
-- [ ] contains。
-- [ ] insert / emplace。
-- [ ] erase。
-- [ ] reserve。
-- [ ] Iterator。
+- [x] Key / Value storage。
+- [x] find。
+- [x] contains。
+- [x] insert / emplace。
+- [x] erase。
+- [x] reserve。
+- [x] Iterator。
 - [ ] heterogeneous lookup は必要性を確認後に追加。
+
+**Phase 5-2 検証メモ:** `--test-flat-hash-map` で基本操作、衝突時のLinear Probing、Tombstone、
+Iterator / const Iterator、move-only / over-aligned Value、Move操作、rehashと要素構築の例外安全性、
+容量overflowを確認します。Benchmarkは `--benchmark-flat-hash-map` でreserved / growth / erase-insertを
+128 / 1,024 / 8,192 / 65,536件、ウォームアップ3回・計測9回の中央値として比較します。
+Debug / Releaseの両構成、Self Test、Benchmarkを2026-10-25に検証済みです。
 
 用途候補:
 
