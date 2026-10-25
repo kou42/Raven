@@ -11,6 +11,14 @@
 
 namespace Raven
 {
+#if defined(_MSC_VER)
+#define RAVEN_FLAT_HASH_MAP_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define RAVEN_FLAT_HASH_MAP_NOINLINE __attribute__((noinline))
+#else
+#define RAVEN_FLAT_HASH_MAP_NOINLINE
+#endif
+
 // Keyを変更するとHashテーブルの不変条件が崩れるため、pairのfirstはconstにします。
 // Allocatorは外部所有であり、Mapより長生きする必要があります。
 template<typename Key, typename Value, typename Hasher = std::hash<Key>,
@@ -81,6 +89,7 @@ public:
     std::size_t size() const noexcept { return m_Size; }
     std::size_t capacity() const noexcept { return m_Capacity; }
     bool empty() const noexcept { return m_Size == 0; }
+    std::size_t tombstone_count() const noexcept { return m_Tombstones; }
     iterator begin() noexcept { return iterator(this, 0); }
     iterator end() noexcept { return iterator(this, m_Capacity); }
     const_iterator begin() const noexcept { return const_iterator(this, 0); }
@@ -100,12 +109,28 @@ public:
     bool erase(const Key& key);
     iterator erase(const_iterator position);
     void clear();
+    // Tombstoneを同容量の再配置で除去します。FrameAllocatorでは旧領域がResetまで残ります。
+    void cleanup_tombstones();
     void reserve(std::size_t count);
+
+    // 診断時だけ全Occupied Slotを走査し、通常のinsert/findには計測負荷を加えません。
+    struct ProbeStatistics
+    {
+        std::size_t TotalProbeLength = 0;
+        std::size_t MaximumProbeLength = 0;
+        std::size_t OccupiedCount = 0;
+        std::size_t CollidedCount = 0;
+    };
+
+    ProbeStatistics GetProbeStatistics() const;
 
 private:
     static constexpr std::size_t MinimumCapacity = 8;
     std::size_t FindIndex(const Key& key) const;
+    // Growthの低頻度slow pathをinline展開せず、通常のemplace命令列とI-cacheを小さく保ちます。
+    RAVEN_FLAT_HASH_MAP_NOINLINE void PrepareForInsert();
     void Rehash(std::size_t capacity);
+    static void DestroyOccupiedSlots(Slot* slots, std::size_t capacity) noexcept;
     void Release();
     void MoveFrom(FlatHashMap&& other) noexcept;
     Allocator* m_Allocator = nullptr;
@@ -116,5 +141,6 @@ private:
     Hasher m_Hasher{};
     KeyEqual m_Equal{};
 };
+#undef RAVEN_FLAT_HASH_MAP_NOINLINE
 }
 #include "Raven/Core/Containers/FlatHashMap.inl"
