@@ -8,17 +8,27 @@ RingBuffer<T, N>::RingBuffer(RingBuffer&& other) noexcept(std::is_nothrow_move_c
 {
     // Slot自体は移譲できないためFIFO順で要素を移動します。
     // コンストラクタが途中で例外終了しても構築済み要素を手動破棄します。
-    try
+    if constexpr (std::is_nothrow_move_constructible_v<T>)
     {
         for (size_type index = 0; index < other.size(); ++index)
         {
             emplace_back(std::move(other[index]));
         }
     }
-    catch (...)
+    else
     {
-        clear();
-        throw;
+        try
+        {
+            for (size_type index = 0; index < other.size(); ++index)
+            {
+                emplace_back(std::move(other[index]));
+            }
+        }
+        catch (...)
+        {
+            clear();
+            throw;
+        }
     }
     other.clear();
 }
@@ -81,8 +91,10 @@ T* RingBuffer<T, N>::try_emplace_back(Args&&... args)
     {
         return nullptr;
     }
-    T* location = ElementAt(PhysicalIndex(m_Size));
-    ::new (static_cast<void*>(location)) T(std::forward<Args>(args)...);
+    // std::launderは既に寿命が開始しているTへアクセスするときだけ使用します。
+    // 未構築SlotではStorageのアドレスをplacement newへ直接渡し、Tの寿命をここで開始します。
+    T* location = ::new (static_cast<void*>(&m_Storage[PhysicalIndex(m_Size)]))
+        T(std::forward<Args>(args)...);
     ++m_Size;
     return location;
 }

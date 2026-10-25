@@ -21,9 +21,10 @@ constexpr Span<T>::Span(T (&values)[N]) noexcept
 }
 
 template<typename T>
-template<typename Container, typename Pointer, typename Size,
-    std::enable_if_t<std::is_convertible_v<Pointer, T*> &&
-        std::is_convertible_v<Size, typename Span<T>::size_type>, int>>
+template<typename Container,
+    std::enable_if_t<
+        std::is_convertible_v<decltype(std::declval<Container&>().data()), T*> &&
+        std::is_convertible_v<decltype(std::declval<Container&>().size()), std::size_t>, int>>
 constexpr Span<T>::Span(Container& values) noexcept
     : Span(values.data(), static_cast<size_type>(values.size()))
 {

@@ -146,14 +146,17 @@ bool BitSet<N>::all() const noexcept
     {
         return true;
     }
-    for (size_type index = 0; index + 1 < WordCount; ++index)
+    else
     {
-        if (m_Words[index] != ~word_type{0})
+        for (size_type index = 0; index + 1 < WordCount; ++index)
         {
-            return false;
+            if (m_Words[index] != ~word_type{0})
+            {
+                return false;
+            }
         }
+        return m_Words[WordCount - 1] == LastWordMask();
     }
-    return m_Words[WordCount - 1] == LastWordMask();
 }
 
 template<std::size_t N>

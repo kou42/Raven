@@ -26,10 +26,9 @@ public:
     constexpr Span(T (&values)[N]) noexcept;
 
     template<typename Container,
-        typename Pointer = decltype(std::declval<Container&>().data()),
-        typename Size = decltype(std::declval<Container&>().size()),
-        std::enable_if_t<std::is_convertible_v<Pointer, T*> &&
-            std::is_convertible_v<Size, size_type>, int> = 0>
+        std::enable_if_t<
+            std::is_convertible_v<decltype(std::declval<Container&>().data()), T*> &&
+            std::is_convertible_v<decltype(std::declval<Container&>().size()), std::size_t>, int> = 0>
     constexpr Span(Container& values) noexcept;
 
     [[nodiscard]] constexpr T* data() const noexcept;
