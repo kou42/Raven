@@ -885,6 +885,7 @@
     <None Include="Raven\Core\Containers\FlatHashMap.inl" />
     <None Include="Raven\Core\Containers\Span.inl" />
     <None Include="Raven\Core\Containers\Array.inl" />
+    <None Include="Raven\Core\Containers\RingBuffer.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
   <ItemGroup>
