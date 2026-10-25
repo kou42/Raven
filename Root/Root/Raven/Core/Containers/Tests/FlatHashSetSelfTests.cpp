@@ -6,7 +6,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace Raven::tests
 {
@@ -62,7 +64,50 @@ struct ThrowingKey
 
 struct ThrowingHasher
 {
-    std::size_t operator()(const ThrowingKey& key) const noexcept
+    static inline int HashesUntilThrow = -1;
+
+    std::size_t operator()(const ThrowingKey& key) const
+    {
+        if (HashesUntilThrow == 0)
+        {
+            throw std::runtime_error("intentional hash failure");
+        }
+        if (HashesUntilThrow > 0)
+        {
+            --HashesUntilThrow;
+        }
+        return static_cast<std::size_t>(key.Value);
+    }
+};
+
+// Rehash時にCopyできないKeyでも、noexcept moveなら安全に再配置できることを検証します。
+struct MoveOnlyKey
+{
+    int Value = 0;
+
+    MoveOnlyKey() = default;
+    explicit MoveOnlyKey(int value) : Value(value) {}
+    MoveOnlyKey(const MoveOnlyKey&) = delete;
+    MoveOnlyKey& operator=(const MoveOnlyKey&) = delete;
+    MoveOnlyKey(MoveOnlyKey&& other) noexcept : Value(other.Value)
+    {
+        other.Value = -1;
+    }
+    MoveOnlyKey& operator=(MoveOnlyKey&& other) noexcept
+    {
+        if (this != &other)
+        {
+            Value = other.Value;
+            other.Value = -1;
+        }
+        return *this;
+    }
+    bool operator==(const MoveOnlyKey& other) const noexcept { return Value == other.Value; }
+};
+
+struct MoveOnlyHasher
+{
+    std::size_t operator()(const MoveOnlyKey& key) const noexcept
     {
         return static_cast<std::size_t>(key.Value);
     }
@@ -222,6 +267,26 @@ void RunFlatHashSetSelfTests()
     assert(throwing.insert(ThrowingKey{1}).second);
     assert(throwing.insert(ThrowingKey{2}).second);
     const std::size_t oldCapacity = throwing.capacity();
+
+    // Hasherが移動先計算中に失敗しても、公開中のSlot配列には触れません。
+    ThrowingHasher::HashesUntilThrow = 1;
+    bool hashFailureCaught = false;
+    try
+    {
+        throwing.reserve(32);
+    }
+    catch (const std::runtime_error&)
+    {
+        hashFailureCaught = true;
+    }
+    ThrowingHasher::HashesUntilThrow = -1;
+    assert(hashFailureCaught);
+    assert(throwing.capacity() == oldCapacity);
+    assert(throwing.size() == 2);
+    assert(throwing.contains(ThrowingKey{1}));
+    assert(throwing.contains(ThrowingKey{2}));
+
+    // Copy途中の失敗でも、構築済みの新Keyだけを破棄して旧テーブルを維持します。
     ThrowingKey::CopiesUntilThrow = 1;
     bool caught = false;
     try
@@ -243,7 +308,70 @@ void RunFlatHashSetSelfTests()
     assert(throwing.contains(ThrowingKey{2}));
 
     // ========================================================================
-    // 8. clear
+    // 8. Move-only Key / 大量の削除・再挿入
+    // ========================================================================
+    FrameAllocator moveOnlyAllocator(262144);
+    FlatHashSet<MoveOnlyKey, MoveOnlyHasher> moveOnly(moveOnlyAllocator);
+    for (int key = 0; key < 64; ++key)
+    {
+        assert(moveOnly.insert(MoveOnlyKey{key}).second);
+    }
+    moveOnly.reserve(256);
+    assert(moveOnly.size() == 64);
+    for (int key = 0; key < 64; ++key)
+    {
+        assert(moveOnly.contains(MoveOnlyKey{key}));
+    }
+
+    FrameAllocator stressAllocator(2 * 1024 * 1024);
+    FlatHashSet<int> stress(stressAllocator);
+    stress.reserve(2048);
+    for (int key = 0; key < 2048; ++key)
+    {
+        assert(stress.insert(key).second);
+    }
+    for (int cycle = 0; cycle < 16; ++cycle)
+    {
+        for (int key = 0; key < 2048; key += 2)
+        {
+            assert(stress.erase(key));
+        }
+        for (int key = 0; key < 2048; key += 2)
+        {
+            assert(stress.insert(key).second);
+        }
+        assert(stress.size() == 2048);
+        assert(stress.tombstone_count() == 0);
+    }
+
+    // ========================================================================
+    // 9. 空コンテナ / 容量境界 / reserveオーバーフロー
+    // ========================================================================
+    FrameAllocator boundaryAllocator(4096);
+    FlatHashSet<int> boundary(boundaryAllocator);
+    assert(boundary.empty());
+    assert(boundary.begin() == boundary.end());
+    assert(boundary.cbegin() == boundary.cend());
+    assert(boundary.find(1) == nullptr);
+    assert(boundary.erase(1) == false);
+    boundary.reserve(0);
+    assert(boundary.capacity() >= 8);
+
+    bool overflowCaught = false;
+    try
+    {
+        boundary.reserve((std::numeric_limits<std::size_t>::max)());
+    }
+    catch (const std::bad_alloc&)
+    {
+        overflowCaught = true;
+    }
+    assert(overflowCaught);
+    assert(boundary.empty());
+    assert(boundary.capacity() >= 8);
+
+    // ========================================================================
+    // 10. clear
     // ========================================================================
     collisions.clear();
     assert(collisions.empty());

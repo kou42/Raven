@@ -92,7 +92,8 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <!-- Windows.h の min/max マクロが std::min/std::max と numeric_limits::max に干渉しないよう、全構成で無効化します。 -->
-      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Raven containersはalignas(64)を含むため、MSVCの適合したextended alignment実装を明示的に選択します。 -->
+      <PreprocessorDefinitions>NOMINMAX;_ENABLE_EXTENDED_ALIGNED_STORAGE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <!-- GLFWはrepository同梱のheader/static libraryを同じversionで使用します。 -->
@@ -196,6 +197,7 @@
     <None Include="Raven\Core\Containers\Vector.inl" />
     <None Include="Raven\Core\Containers\SmallVector.inl" />
     <None Include="Raven\Core\Containers\FixedVector.inl" />
+    <None Include="Raven\Core\Containers\FlatHashSet.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。

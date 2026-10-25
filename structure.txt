@@ -210,11 +210,15 @@ D:.
     |   |   |   |   |   FixedVector.h
     |   |   |   |   |   FixedVector.inl
     |   |   |   |   |   FlatHashSet.h
+    |   |   |   |   |   FlatHashSet.inl
     |   |   |   |   |   FrameVector.h
     |   |   |   |   |   SmallVector.h
     |   |   |   |   |   SmallVector.inl
     |   |   |   |   |   Vector.h
     |   |   |   |   |   Vector.inl
+    |   |   |   |   |
+    |   |   |   |   +---Benchmarks
+    |   |   |   |   |       FlatHashSetBenchmark.h
     |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           FlatHashSetSelfTests.cpp

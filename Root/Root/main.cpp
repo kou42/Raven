@@ -43,6 +43,7 @@
 #include "Raven/Animation/Tests/PoseInertializerSelfTests.h"
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
+#include "Raven/Core/Containers/Tests/FlatHashSetSelfTests.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
@@ -99,6 +100,12 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunEditorViewportGeometrySelfTests();
             std::cout << "Editor viewport geometry self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-flat-hash-set")
+        {
+            Raven::tests::RunFlatHashSetSelfTests();
+            std::cout << "FlatHashSet self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
 #endif
@@ -174,6 +181,7 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
                 "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
+                "--test-flat-hash-set, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
