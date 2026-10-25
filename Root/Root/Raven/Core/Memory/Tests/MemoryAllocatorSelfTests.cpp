@@ -14,6 +14,7 @@
 #include "Raven/Core/Containers/Array.h"
 #include "Raven/Core/Containers/RingBuffer.h"
 #include "Raven/Core/Containers/BitSet.h"
+#include "Raven/Core/Containers/HandlePool.h"
 
 #include <cassert>
 #include <algorithm>
@@ -664,7 +665,55 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 16. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 16. HandlePool: 世代管理 / Slot再利用 / アドレス安定性 / move-only
+    // ========================================================================
+    {
+        HandlePool<std::unique_ptr<int>> pool;
+        const auto first = pool.emplace(std::make_unique<int>(10));
+        auto* firstAddress = pool.get(first);
+        assert(firstAddress != nullptr && **firstAddress == 10);
+        for (int index = 0; index < 32; ++index)
+        {
+            pool.emplace(std::make_unique<int>(index));
+        }
+        assert(pool.get(first) == firstAddress);
+        assert(pool.erase(first));
+        assert(pool.get(first) == nullptr);
+        assert(pool.erase(first) == false);
+        const auto reused = pool.emplace(std::make_unique<int>(99));
+        assert(reused.index == first.index);
+        assert(reused.generation != first.generation);
+        assert(pool.get(first) == nullptr && **pool.get(reused) == 99);
+        const HandlePool<std::unique_ptr<int>>& constPool = pool;
+        assert(constPool.contains(reused));
+        pool.clear();
+        assert(pool.empty() && pool.get(reused) == nullptr);
+        const auto afterClear = pool.emplace(std::make_unique<int>(7));
+        assert(pool.contains(afterClear));
+        assert(pool.get(reused) == nullptr);
+    }
+    {
+        VectorLifecycleValue::live = 0;
+        HandlePool<VectorLifecycleValue> pool;
+        const auto first = pool.emplace(42);
+        assert(VectorLifecycleValue::live == 1);
+        assert(pool.erase(first));
+        assert(VectorLifecycleValue::live == 0);
+        const auto second = pool.emplace(64);
+        assert(VectorLifecycleValue::live == 1);
+        assert(pool.get(first) == nullptr && pool.get(second)->value == 64);
+        pool.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    {
+        struct alignas(64) AlignedHandle { int value = 0; };
+        HandlePool<AlignedHandle> pool;
+        const auto handle = pool.emplace();
+        assert(IsAligned(pool.get(handle), 64));
+    }
+
+    // ========================================================================
+    // 17. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
