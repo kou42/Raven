@@ -168,6 +168,50 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return m_Size; }
     [[nodiscard]] std::size_t capacity() const noexcept { return m_Capacity; }
     [[nodiscard]] bool empty() const noexcept { return m_Size == 0; }
+    [[nodiscard]] std::size_t tombstone_count() const noexcept { return m_TombstoneCount; }
+
+    // Hash衝突の診断用。各Occupied Keyの理想BucketからのProbe距離を測定します。
+    // Hasherが例外を投げる場合は本関数も例外を伝播します。
+    struct ProbeStatistics
+    {
+        std::size_t TotalProbeLength = 0;
+        std::size_t MaximumProbeLength = 0;
+        std::size_t OccupiedCount = 0;
+    };
+
+    [[nodiscard]] ProbeStatistics GetProbeStatistics() const
+    {
+        ProbeStatistics stats{};
+        if (m_Capacity == 0)
+        {
+            return stats;
+        }
+        for (std::size_t i = 0; i < m_Capacity; ++i)
+        {
+            if (m_Slots[i].State != SlotState::Occupied)
+            {
+                continue;
+            }
+            const std::size_t ideal = m_Hasher(*m_Slots[i].GetKey()) & (m_Capacity - 1);
+            const std::size_t distance = ((i - ideal) & (m_Capacity - 1)) + 1;
+            stats.TotalProbeLength += distance;
+            if (distance > stats.MaximumProbeLength)
+            {
+                stats.MaximumProbeLength = distance;
+            }
+            ++stats.OccupiedCount;
+        }
+        return stats;
+    }
+
+    // Tombstoneを同容量の再配置で除去します。FrameAllocatorでは旧領域がResetまで残ります。
+    void cleanup_tombstones()
+    {
+        if (m_TombstoneCount != 0)
+        {
+            Rehash(m_Capacity);
+        }
+    }
 
     // elementCount個をLoad Factor上限以内で保持できるSlot数を事前確保します。
     // 既存Capacityで十分な場合は何もしません。
@@ -355,9 +399,9 @@ private:
 
         // TombstoneもProbe距離悪化要因になるため、実Occupied数だけでなく
         // Occupied + TombstoneをLoad Factor判定へ含めます。
-        const std::size_t usedSlots = m_Size + m_TombstoneCount + 1;
-        return usedSlots * MaxLoadDenominator
-            > m_Capacity * MaxLoadNumerator;
+        const std::size_t threshold = (m_Capacity / MaxLoadDenominator) * MaxLoadNumerator
+            + ((m_Capacity % MaxLoadDenominator) * MaxLoadNumerator) / MaxLoadDenominator;
+        return m_Size + m_TombstoneCount >= threshold;
     }
 
     template<typename KeyValue>
@@ -365,6 +409,15 @@ private:
     {
         if (NeedsGrowForInsert())
         {
+            // Tombstoneだけが閾値超過の原因なら、容量を増やさず同容量で再配置します。
+            // 毎回のeraseでは再配置せず、次のinsert時まで遅延させます。
+            if (m_Capacity != 0 && m_TombstoneCount != 0
+                && m_Size < (m_Capacity / MaxLoadDenominator) * MaxLoadNumerator)
+            {
+                Rehash(m_Capacity);
+            }
+            else
+            {
             if (m_Capacity > static_cast<std::size_t>(-1) / 2)
             {
                 throw std::bad_alloc{};
@@ -373,6 +426,7 @@ private:
             const std::size_t newCapacity =
                 m_Capacity == 0 ? MinimumCapacity : m_Capacity * 2;
             Rehash(newCapacity);
+            }
         }
 
         return InsertWithoutGrow(std::forward<KeyValue>(key));
