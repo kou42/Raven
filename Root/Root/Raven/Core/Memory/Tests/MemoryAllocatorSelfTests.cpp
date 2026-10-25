@@ -10,6 +10,12 @@
 #include "Raven/Core/Containers/Vector.h"
 #include "Raven/Core/Containers/SmallVector.h"
 #include "Raven/Core/Containers/FixedVector.h"
+#include "Raven/Core/Containers/Span.h"
+#include "Raven/Core/Containers/Array.h"
+#include "Raven/Core/Containers/RingBuffer.h"
+#include "Raven/Core/Containers/BitSet.h"
+#include "Raven/Core/Containers/HandlePool.h"
+#include "Raven/Core/Containers/SparseSet.h"
 
 #include <cassert>
 #include <algorithm>
@@ -501,7 +507,246 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 12. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 12. Span: 非所有View / const / 空領域 / subspan / Vector連携
+    // ========================================================================
+    Span<int> emptySpan;
+    assert(emptySpan.empty());
+    assert(emptySpan.begin() == emptySpan.end());
+    int rawValues[] = { 2, 4, 6, 8 };
+    Span<int> rawSpan(rawValues);
+    assert(rawSpan.size() == 4);
+    rawSpan[1] = 5;
+    assert(rawValues[1] == 5);
+    Span<const int> readOnlySpan(rawValues);
+    assert(readOnlySpan[1] == 5);
+    const auto middle = rawSpan.subspan(1, 2);
+    assert(middle.size() == 2 && middle[0] == 5 && middle[1] == 6);
+    assert(rawSpan.subspan(rawSpan.size(), 0).empty());
+    {
+        Vector<int> owned(vectorHeap);
+        owned.push_back(12);
+        owned.push_back(24);
+        Span<int> view(owned);
+        assert(view.data() == owned.data());
+        assert(view[1] == 24);
+        const Vector<int>& constOwned = owned;
+        Span<const int> constView(constOwned);
+        assert(constView[0] == 12);
+        // 再確保するとViewは無効になるため、ここでは要素を追加しません。
+    }
+
+    // ========================================================================
+    // 13. Array: 固定長領域 / Span連携 / 範囲検査
+    // ========================================================================
+    Array<int, 3> array{ 1, 2, 3 };
+    assert(array.size() == 3);
+    array.fill(9);
+    assert(array[0] == 9 && array[2] == 9);
+    Span<int> arrayView(array);
+    arrayView[1] = 7;
+    assert(array[1] == 7);
+    const Array<int, 3>& constArray = array;
+    Span<const int> constArrayView(constArray);
+    assert(constArrayView[1] == 7);
+    Array<int, 0> zeroArray;
+    assert(zeroArray.empty());
+    bool arrayOutOfRange = false;
+    try
+    {
+        (void)array.at(3);
+    }
+    catch (const std::out_of_range&)
+    {
+        arrayOutOfRange = true;
+    }
+    assert(arrayOutOfRange);
+
+    // ========================================================================
+    // 14. RingBuffer: FIFO / wrap / full / move-only / lifetime
+    // ========================================================================
+    {
+        RingBuffer<int, 3> queue;
+        assert(queue.empty());
+        queue.push_back(1);
+        queue.push_back(2);
+        queue.push_back(3);
+        assert(queue.full());
+        assert(queue.try_push_back(4) == false);
+        bool ringOverflow = false;
+        try
+        {
+            queue.emplace_back(4);
+        }
+        catch (const std::length_error&)
+        {
+            ringOverflow = true;
+        }
+        assert(ringOverflow);
+        queue.pop_front();
+        queue.push_back(4);
+        assert(queue[0] == 2 && queue[1] == 3 && queue[2] == 4);
+        assert(queue.front() == 2 && queue.back() == 4);
+        RingBuffer<int, 3> moved(std::move(queue));
+        assert(queue.empty());
+        assert(moved.size() == 3 && moved[2] == 4);
+        moved.clear();
+        assert(moved.empty());
+    }
+    {
+        VectorLifecycleValue::live = 0;
+        RingBuffer<VectorLifecycleValue, 2> lifecycle;
+        lifecycle.emplace_back(10);
+        lifecycle.emplace_back(20);
+        assert(VectorLifecycleValue::live == 2);
+        lifecycle.pop_front();
+        assert(VectorLifecycleValue::live == 1);
+        lifecycle.emplace_back(30);
+        assert(lifecycle[0].value == 20 && lifecycle[1].value == 30);
+        lifecycle.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    {
+        RingBuffer<std::unique_ptr<int>, 2> owned;
+        owned.emplace_back(std::make_unique<int>(7));
+        owned.emplace_back(std::make_unique<int>(9));
+        assert(*owned.front() == 7);
+        owned.pop_front();
+        owned.emplace_back(std::make_unique<int>(11));
+        assert(*owned.back() == 11);
+    }
+    {
+        struct alignas(64) AlignedRing { int value = 0; };
+        RingBuffer<AlignedRing, 2> aligned;
+        aligned.emplace_back();
+        assert(IsAligned(&aligned.front(), 64));
+    }
+
+    // ========================================================================
+    // 15. BitSet: 境界bit / 全bit操作 / 余剰bit / 0bit
+    // ========================================================================
+    {
+        BitSet<130> bits;
+        assert(bits.size() == 130 && bits.none());
+        bits.set(0).set(63).set(64).set(129);
+        assert(bits.count() == 4);
+        assert(bits.test(63) && bits.test(64) && bits[129]);
+        bits.reset(63);
+        bits.flip(64);
+        assert(bits.count() == 2);
+        bits.set();
+        assert(bits.all() && bits.count() == 130);
+        bits.flip();
+        assert(bits.none());
+        bits.flip(129);
+        assert(bits.count() == 1);
+        bits.reset();
+        assert(bits.none());
+        bool invalidBit = false;
+        try
+        {
+            (void)bits.test(130);
+        }
+        catch (const std::out_of_range&)
+        {
+            invalidBit = true;
+        }
+        assert(invalidBit);
+    }
+    {
+        BitSet<64> exactWord;
+        exactWord.set();
+        assert(exactWord.all() && exactWord.count() == 64);
+        BitSet<1> oneBit;
+        oneBit.set();
+        assert(oneBit.all() && oneBit.count() == 1);
+        BitSet<0> zeroBits;
+        assert(zeroBits.empty() && zeroBits.none() && zeroBits.all());
+        zeroBits.set().flip().reset();
+        assert(zeroBits.count() == 0);
+    }
+
+    // ========================================================================
+    // 16. HandlePool: 世代管理 / Slot再利用 / アドレス安定性 / move-only
+    // ========================================================================
+    {
+        HandlePool<std::unique_ptr<int>> pool;
+        const auto first = pool.emplace(std::make_unique<int>(10));
+        auto* firstAddress = pool.get(first);
+        assert(firstAddress != nullptr && **firstAddress == 10);
+        for (int index = 0; index < 32; ++index)
+        {
+            pool.emplace(std::make_unique<int>(index));
+        }
+        assert(pool.get(first) == firstAddress);
+        assert(pool.erase(first));
+        assert(pool.get(first) == nullptr);
+        assert(pool.erase(first) == false);
+        const auto reused = pool.emplace(std::make_unique<int>(99));
+        assert(reused.index == first.index);
+        assert(reused.generation != first.generation);
+        assert(pool.get(first) == nullptr && **pool.get(reused) == 99);
+        const HandlePool<std::unique_ptr<int>>& constPool = pool;
+        assert(constPool.contains(reused));
+        pool.clear();
+        assert(pool.empty() && pool.get(reused) == nullptr);
+        const auto afterClear = pool.emplace(std::make_unique<int>(7));
+        assert(pool.contains(afterClear));
+        assert(pool.get(reused) == nullptr);
+    }
+    {
+        VectorLifecycleValue::live = 0;
+        HandlePool<VectorLifecycleValue> pool;
+        const auto first = pool.emplace(42);
+        assert(VectorLifecycleValue::live == 1);
+        assert(pool.erase(first));
+        assert(VectorLifecycleValue::live == 0);
+        const auto second = pool.emplace(64);
+        assert(VectorLifecycleValue::live == 1);
+        assert(pool.get(first) == nullptr && pool.get(second)->value == 64);
+        pool.clear();
+        assert(VectorLifecycleValue::live == 0);
+    }
+    {
+        struct alignas(64) AlignedHandle { int value = 0; };
+        HandlePool<AlignedHandle> pool;
+        const auto handle = pool.emplace();
+        assert(IsAligned(pool.get(handle), 64));
+    }
+
+    // ========================================================================
+    // 17. SparseSet: 重複拒否 / swap-erase / 疎なID / 再挿入
+    // ========================================================================
+    {
+        SparseSet ids;
+        assert(ids.empty());
+        ids.reserve(8, 128);
+        assert(ids.insert(4));
+        assert(ids.insert(100));
+        assert(ids.insert(7));
+        assert(ids.insert(4) == false);
+        assert(ids.size() == 3);
+        assert(ids.contains(100) && ids.contains(7));
+        assert(ids.erase(4));
+        assert(ids.contains(4) == false);
+        assert(ids.contains(7) && ids.contains(100));
+        assert(ids.size() == 2);
+        assert(ids.erase(4) == false);
+        assert(ids.insert(4));
+        std::size_t visited = 0;
+        for (std::uint32_t id : ids)
+        {
+            assert(ids.contains(id));
+            ++visited;
+        }
+        assert(visited == ids.size());
+        ids.clear();
+        assert(ids.empty() && ids.contains(100) == false);
+        assert(ids.insert(100));
+        assert(ids[0] == 100);
+    }
+
+    // ========================================================================
+    // 18. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
