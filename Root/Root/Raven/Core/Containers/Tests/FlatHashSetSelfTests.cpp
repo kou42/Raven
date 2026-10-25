@@ -88,7 +88,47 @@ void RunFlatHashSetSelfTests()
     assert(collisions.contains(30));
 
     // ========================================================================
-    // 4. clear
+    // 4. Iterator / const Iterator / erase(iterator)
+    // ========================================================================
+    // Tombstoneを飛ばし、すべてのOccupied Keyを一度だけ列挙することを確認します。
+    std::size_t visited = 0;
+    int sum = 0;
+    for (const int key : values)
+    {
+        ++visited;
+        sum += key;
+    }
+    assert(visited == values.size());
+    assert(sum == 120);
+
+    const auto& constValues = values;
+    std::size_t constVisited = 0;
+    for (auto it = constValues.cbegin(); it != constValues.cend(); ++it)
+    {
+        ++constVisited;
+    }
+    assert(constVisited == values.size());
+
+    for (auto it = values.begin(); it != values.end();)
+    {
+        if ((*it % 2) == 0)
+        {
+            it = values.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    assert(values.size() == 8);
+    for (int key = 0; key < 16; ++key)
+    {
+        assert(values.contains(key) == ((key % 2) != 0));
+    }
+    assert(values.erase(values.end()) == values.end());
+
+    // ========================================================================
+    // 5. clear
     // ========================================================================
     collisions.clear();
     assert(collisions.empty());
