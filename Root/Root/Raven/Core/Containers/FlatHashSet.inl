@@ -448,6 +448,12 @@ void FlatHashSet<Key, Hasher, KeyEqual>::ReleaseSlots()
     }
 
 template<typename Key, typename Hasher, typename KeyEqual>
+FlatHashSet<Key, Hasher, KeyEqual>::FlatHashSet(FlatHashSet&& other) noexcept
+{
+    MoveFrom(std::move(other));
+}
+
+template<typename Key, typename Hasher, typename KeyEqual>
 void FlatHashSet<Key, Hasher, KeyEqual>::MoveFrom(FlatHashSet&& other) noexcept
 {
         m_Allocator = other.m_Allocator;
