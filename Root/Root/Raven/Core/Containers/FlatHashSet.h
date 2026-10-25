@@ -244,33 +244,7 @@ private:
     void Rehash(std::size_t requestedCapacity);
 
 
-    void ReleaseSlots()
-    {
-        if (m_Slots == nullptr)
-        {
-            return;
-        }
-
-        for (std::size_t i = 0; i < m_Capacity; ++i)
-        {
-            Slot& slot = m_Slots[i];
-            if (slot.State == SlotState::Occupied)
-            {
-                slot.GetKey()->~Key();
-            }
-            slot.~Slot();
-        }
-
-        if (m_Allocator != nullptr)
-        {
-            m_Allocator->Deallocate(m_Slots);
-        }
-
-        m_Slots = nullptr;
-        m_Capacity = 0;
-        m_Size = 0;
-        m_TombstoneCount = 0;
-    }
+    void ReleaseSlots();
 
     void MoveFrom(FlatHashSet&& other) noexcept;
 
