@@ -15,6 +15,7 @@
 #include "Raven/Core/Containers/RingBuffer.h"
 #include "Raven/Core/Containers/BitSet.h"
 #include "Raven/Core/Containers/HandlePool.h"
+#include "Raven/Core/Containers/SparseSet.h"
 
 #include <cassert>
 #include <algorithm>
@@ -713,7 +714,39 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
-    // 17. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
+    // 17. SparseSet: 重複拒否 / swap-erase / 疎なID / 再挿入
+    // ========================================================================
+    {
+        SparseSet ids;
+        assert(ids.empty());
+        ids.reserve(8, 128);
+        assert(ids.insert(4));
+        assert(ids.insert(100));
+        assert(ids.insert(7));
+        assert(ids.insert(4) == false);
+        assert(ids.size() == 3);
+        assert(ids.contains(100) && ids.contains(7));
+        assert(ids.erase(4));
+        assert(ids.contains(4) == false);
+        assert(ids.contains(7) && ids.contains(100));
+        assert(ids.size() == 2);
+        assert(ids.erase(4) == false);
+        assert(ids.insert(4));
+        std::size_t visited = 0;
+        for (std::uint32_t id : ids)
+        {
+            assert(ids.contains(id));
+            ++visited;
+        }
+        assert(visited == ids.size());
+        ids.clear();
+        assert(ids.empty() && ids.contains(100) == false);
+        assert(ids.insert(100));
+        assert(ids[0] == 100);
+    }
+
+    // ========================================================================
+    // 18. STLAllocatorAdapter: std::vectorの確保元をFrameAllocatorへ差し替える
     // ========================================================================
     // vector自身の寿命よりframeAllocatorの寿命が長いことが前提です。
     // vector破棄時のdeallocate()はFrameAllocatorではno-opであり、最終的な再利用は
