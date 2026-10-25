@@ -209,6 +209,8 @@ D:.
     |   |   |   +---Containers
     |   |   |   |   |   FixedVector.h
     |   |   |   |   |   FixedVector.inl
+    |   |   |   |   |   FlatHashMap.h
+    |   |   |   |   |   FlatHashMap.inl
     |   |   |   |   |   FlatHashSet.h
     |   |   |   |   |   FlatHashSet.inl
     |   |   |   |   |   FrameVector.h
@@ -221,6 +223,8 @@ D:.
     |   |   |   |   |       FlatHashSetBenchmark.h
     |   |   |   |   |
     |   |   |   |   \---Tests
+    |   |   |   |           FlatHashMapSelfTests.cpp
+    |   |   |   |           FlatHashMapSelfTests.h
     |   |   |   |           FlatHashSetSelfTests.cpp
     |   |   |   |           FlatHashSetSelfTests.h
     |   |   |   |
