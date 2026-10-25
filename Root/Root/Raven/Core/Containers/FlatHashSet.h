@@ -491,20 +491,20 @@ private:
 
     void Rehash(std::size_t requestedCapacity)
     {
+        // Copy可能なKeyは旧テーブルを変更せず複製します。
+        // Move-only Keyはnoexcept moveを必須とし、Hasherの実行を移動前に完了させます。
+        // これにより例外時にも旧テーブルを保持できます。
+        static_assert(std::is_copy_constructible_v<Key> || std::is_nothrow_move_constructible_v<Key>,
+            "FlatHashSet rehash requires a copyable Key or a noexcept movable Key");
+
         const std::size_t newCapacity = NextPowerOfTwo(requestedCapacity);
-        if (newCapacity == 0 || m_Allocator == nullptr)
+        if (newCapacity == 0 || m_Allocator == nullptr
+            || newCapacity > static_cast<std::size_t>(-1) / sizeof(Slot))
         {
             throw std::bad_alloc{};
         }
 
-        if (newCapacity > static_cast<std::size_t>(-1) / sizeof(Slot))
-        {
-            throw std::bad_alloc{};
-        }
-
-        void* rawMemory = m_Allocator->Allocate(
-            newCapacity * sizeof(Slot),
-            alignof(Slot));
+        void* rawMemory = m_Allocator->Allocate(newCapacity * sizeof(Slot), alignof(Slot));
         if (rawMemory == nullptr)
         {
             throw std::bad_alloc{};
@@ -516,30 +516,92 @@ private:
             new (&newSlots[i]) Slot{};
         }
 
+        // 移動中のHasher例外を避けるため、全Keyの移動先を先に決定します。
+        // Destination配列の確保もKeyを変更する前に済ませます。
+        std::size_t* destinations = nullptr;
+        try
+        {
+            if (m_Size != 0)
+            {
+                if (m_Size > static_cast<std::size_t>(-1) / sizeof(std::size_t))
+                {
+                    throw std::bad_alloc{};
+                }
+                destinations = static_cast<std::size_t*>(
+                    ::operator new(m_Size * sizeof(std::size_t)));
+            }
+
+            std::size_t count = 0;
+            for (std::size_t i = 0; i < m_Capacity; ++i)
+            {
+                if (m_Slots[i].State != SlotState::Occupied)
+                {
+                    continue;
+                }
+                std::size_t index = m_Hasher(*m_Slots[i].GetKey()) & (newCapacity - 1);
+                while (newSlots[index].State != SlotState::Empty)
+                {
+                    index = (index + 1) & (newCapacity - 1);
+                }
+                // 予約済みSlotを一時的にTombstoneとしてマークします。
+                newSlots[index].State = SlotState::Tombstone;
+                destinations[count++] = index;
+            }
+
+            // Copyを優先することで、Copy中の例外でも旧Keyを保全します。
+            // Copy不可のKeyでは事前計算後にnoexcept moveを使用します。
+            count = 0;
+            for (std::size_t i = 0; i < m_Capacity; ++i)
+            {
+                if (m_Slots[i].State != SlotState::Occupied)
+                {
+                    continue;
+                }
+                Slot& destination = newSlots[destinations[count++]];
+                if constexpr (std::is_copy_constructible_v<Key>)
+                {
+                    new (destination.Storage) Key(*m_Slots[i].GetKey());
+                }
+                else
+                {
+                    new (destination.Storage) Key(std::move(*m_Slots[i].GetKey()));
+                }
+                destination.State = SlotState::Occupied;
+            }
+        }
+        catch (...)
+        {
+            for (std::size_t i = 0; i < newCapacity; ++i)
+            {
+                if (newSlots[i].State == SlotState::Occupied)
+                {
+                    newSlots[i].GetKey()->~Key();
+                }
+                newSlots[i].~Slot();
+            }
+            m_Allocator->Deallocate(newSlots);
+            ::operator delete(destinations);
+            throw;
+        }
+        ::operator delete(destinations);
+
+        // ここまで成功した場合のみ新テーブルを公開します。
         Slot* oldSlots = m_Slots;
         const std::size_t oldCapacity = m_Capacity;
-
         m_Slots = newSlots;
         m_Capacity = newCapacity;
-        m_Size = 0;
         m_TombstoneCount = 0;
 
         if (oldSlots != nullptr)
         {
             for (std::size_t i = 0; i < oldCapacity; ++i)
             {
-                Slot& oldSlot = oldSlots[i];
-                if (oldSlot.State == SlotState::Occupied)
+                if (oldSlots[i].State == SlotState::Occupied)
                 {
-                    Key* oldKey = oldSlot.GetKey();
-                    InsertWithoutGrow(std::move(*oldKey));
-                    oldKey->~Key();
+                    oldSlots[i].GetKey()->~Key();
                 }
-                oldSlot.~Slot();
+                oldSlots[i].~Slot();
             }
-
-            // Frame/LinearAllocatorではno-opですが、FreeList系Allocatorへ差し替えた場合は
-            // ここで旧Slot領域を回収できます。
             m_Allocator->Deallocate(oldSlots);
         }
     }
