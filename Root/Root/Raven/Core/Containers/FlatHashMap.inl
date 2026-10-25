@@ -110,7 +110,7 @@ template<typename K, typename V, typename H, typename E>
 void FlatHashMap<K,V,H,E>::Rehash(std::size_t capacity)
 {
     // 移動前に全Hashを評価し、Hasher例外で既存データが失われることを防ぎます。
-    static_assert(std::is_copy_constructible_v<value_type> ||
+    static_assert((std::is_copy_constructible_v<K> && std::is_copy_constructible_v<V>) ||
         (std::is_copy_constructible_v<K> && std::is_nothrow_move_constructible_v<V>),
         "FlatHashMap requires copyable entries or noexcept movable values");
     if (capacity > (std::numeric_limits<std::size_t>::max)() / sizeof(Slot))
@@ -121,16 +121,21 @@ void FlatHashMap<K,V,H,E>::Rehash(std::size_t capacity)
     for (std::size_t i = 0; i < capacity; ++i) { new (&next[i]) Slot{}; }
     try
     {
-        // Copy可能な要素は旧テーブルを変更せず再配置します。
-        // Move-only Valueでは先に全移動先を確定し、noexcept moveで構築します。
+        // Tombstoneを移動先の予約印として使い、構築完了までOccupiedにしません。
+        // 全Hashを先に評価することで、move-only Valueを移動した後の例外を防ぎます。
         std::vector<std::pair<std::size_t, std::size_t>> locations;
         locations.reserve(m_Size);
         for (std::size_t i = 0; i < m_Capacity; ++i)
         {
-            if (m_Slots[i].State != SlotState::Occupied) { continue; }
+            if (m_Slots[i].State != SlotState::Occupied)
+            {
+                continue;
+            }
             std::size_t index = m_Hasher(m_Slots[i].Get()->first) & (capacity - 1);
             while (next[index].State != SlotState::Empty)
-            { index = (index + 1) & (capacity - 1); }
+            {
+                index = (index + 1) & (capacity - 1);
+            }
             next[index].State = SlotState::Tombstone;
             locations.emplace_back(i, index);
         }
@@ -138,10 +143,14 @@ void FlatHashMap<K,V,H,E>::Rehash(std::size_t capacity)
         {
             Slot& destination = next[location.second];
             value_type& source = *m_Slots[location.first].Get();
-            if constexpr (std::is_copy_constructible_v<value_type>)
-            { new (destination.Storage) value_type(source); }
+            if constexpr (std::is_copy_constructible_v<V> && std::is_copy_constructible_v<K>)
+            {
+                new (destination.Storage) value_type(source);
+            }
             else
-            { new (destination.Storage) value_type(source.first, std::move(source.second)); }
+            {
+                new (destination.Storage) value_type(source.first, std::move(source.second));
+            }
             destination.State = SlotState::Occupied;
         }
     }
