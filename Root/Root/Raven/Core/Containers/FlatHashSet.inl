@@ -5,7 +5,7 @@ namespace Raven
 {
 
 template<typename Key, typename Hasher, typename KeyEqual>
-iterator FlatHashSet<Key, Hasher, KeyEqual>::erase(const_iterator position)
+typename FlatHashSet<Key, Hasher, KeyEqual>::iterator FlatHashSet<Key, Hasher, KeyEqual>::erase(const_iterator position)
 {
         if (position.m_Set != this || position.m_Index >= m_Capacity)
         {
@@ -419,15 +419,32 @@ void FlatHashSet<Key, Hasher, KeyEqual>::Rehash(std::size_t requestedCapacity)
     }
 
 template<typename Key, typename Hasher, typename KeyEqual>
-FlatHashSet<Key, Hasher, KeyEqual>::ReleaseSlots();
-    }
+void FlatHashSet<Key, Hasher, KeyEqual>::ReleaseSlots()
+    {
+        if (m_Slots == nullptr)
+        {
+            return;
+        }
 
-    FlatHashSet(const FlatHashSet&) = delete;
-    FlatHashSet& operator=(const FlatHashSet&) = delete;
+        for (std::size_t i = 0; i < m_Capacity; ++i)
+        {
+            Slot& slot = m_Slots[i];
+            if (slot.State == SlotState::Occupied)
+            {
+                slot.GetKey()->~Key();
+            }
+            slot.~Slot();
+        }
 
-    FlatHashSet(FlatHashSet&& other) noexcept
-{
-        MoveFrom(std::move(other));
+        if (m_Allocator != nullptr)
+        {
+            m_Allocator->Deallocate(m_Slots);
+        }
+
+        m_Slots = nullptr;
+        m_Capacity = 0;
+        m_Size = 0;
+        m_TombstoneCount = 0;
     }
 
 template<typename Key, typename Hasher, typename KeyEqual>
