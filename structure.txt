@@ -220,6 +220,7 @@ D:.
     |   |   |   |   |   Vector.inl
     |   |   |   |   |
     |   |   |   |   +---Benchmarks
+    |   |   |   |   |       FlatHashMapBenchmark.h
     |   |   |   |   |       FlatHashSetBenchmark.h
     |   |   |   |   |
     |   |   |   |   \---Tests
