@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 
 namespace Raven::tests
 {
@@ -17,6 +18,21 @@ struct ConstantHasher
     std::size_t operator()(int) const noexcept
     {
         return 1;
+    }
+};
+
+// Slot自体のalignmentに従ってAllocatorが確保することを検証します。
+struct alignas(64) AlignedKey
+{
+    int Value = 0;
+    bool operator==(const AlignedKey& other) const noexcept { return Value == other.Value; }
+};
+
+struct AlignedHasher
+{
+    std::size_t operator()(const AlignedKey& key) const noexcept
+    {
+        return static_cast<std::size_t>(key.Value);
     }
 };
 
@@ -128,7 +144,45 @@ void RunFlatHashSetSelfTests()
     assert(values.erase(values.end()) == values.end());
 
     // ========================================================================
-    // 5. clear
+    // 5. Tombstone整理 / Probe統計 / Adversarial Hash
+    // ========================================================================
+    assert(collisions.tombstone_count() == 1);
+    const auto beforeCleanup = collisions.GetProbeStatistics();
+    assert(beforeCleanup.OccupiedCount == 2);
+    assert(beforeCleanup.MaximumProbeLength >= 3);
+    collisions.cleanup_tombstones();
+    assert(collisions.tombstone_count() == 0);
+    assert(collisions.contains(10));
+    assert(collisions.contains(30));
+    const auto afterCleanup = collisions.GetProbeStatistics();
+    assert(afterCleanup.OccupiedCount == 2);
+    assert(afterCleanup.MaximumProbeLength <= beforeCleanup.MaximumProbeLength);
+
+    // ConstantHasherに多数の異なるKeyを与えて、最悪衝突時の探索を確認します。
+    FlatHashSet<int, ConstantHasher> adversarial(allocator);
+    adversarial.reserve(32);
+    for (int key = 0; key < 32; ++key)
+    {
+        assert(adversarial.insert(key).second);
+    }
+    assert(adversarial.GetProbeStatistics().MaximumProbeLength == 32);
+    for (int key = 0; key < 32; ++key)
+    {
+        assert(adversarial.contains(key));
+    }
+
+    // ========================================================================
+    // 6. Over-aligned Key
+    // ========================================================================
+    FlatHashSet<AlignedKey, AlignedHasher> aligned(allocator);
+    aligned.reserve(2);
+    const auto alignedResult = aligned.insert(AlignedKey{42});
+    assert(alignedResult.second);
+    assert(reinterpret_cast<std::uintptr_t>(alignedResult.first) % alignof(AlignedKey) == 0);
+    assert(aligned.contains(AlignedKey{42}));
+
+    // ========================================================================
+    // 7. clear
     // ========================================================================
     collisions.clear();
     assert(collisions.empty());
