@@ -198,6 +198,7 @@
     <None Include="Raven\Core\Containers\SmallVector.inl" />
     <None Include="Raven\Core\Containers\FixedVector.inl" />
     <None Include="Raven\Core\Containers\FlatHashSet.inl" />
+    <None Include="Raven\Core\Containers\FlatHashMap.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
@@ -230,4 +231,10 @@
     <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')" Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
     <Exec Command="&quot;$(VULKAN_SDK)\Bin\glslc.exe&quot; &quot;%(VulkanSceneShader.FullPath)&quot; -o &quot;%(VulkanSceneShader.FullPath).spv&quot;" />
   </Target>
+  <ItemGroup>
+    <ClInclude Include="Raven\Core\Containers\FlatHashMap.h" />
+    <ClInclude Include="Raven\Core\Containers\Benchmarks\FlatHashMapBenchmark.h" />
+    <ClInclude Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.h" />
+    <ClCompile Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.cpp" />
+  </ItemGroup>
 </Project>

@@ -29,6 +29,7 @@
 #include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
 #include "Raven/Physics/Tests/CoulombBenchmark.h"
 #include "Raven/Core/Containers/Benchmarks/FlatHashSetBenchmark.h"
+#include "Raven/Core/Containers/Benchmarks/FlatHashMapBenchmark.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -44,6 +45,7 @@
 #include "Raven/Character/Tests/CharacterCeilingCollisionSelfTests.h"
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
 #include "Raven/Core/Containers/Tests/FlatHashSetSelfTests.h"
+#include "Raven/Core/Containers/Tests/FlatHashMapSelfTests.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
@@ -102,6 +104,12 @@ int main(int argc, char* argv[])
             std::cout << "Editor viewport geometry self-tests passed.\n";
             return 0;
         }
+        if (backendArgument == "--test-flat-hash-map")
+        {
+            Raven::tests::RunFlatHashMapSelfTests();
+            std::cout << "FlatHashMap self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
         if (backendArgument == "--test-flat-hash-set")
         {
             Raven::tests::RunFlatHashSetSelfTests();
@@ -114,6 +122,10 @@ int main(int argc, char* argv[])
         if (backendArgument == "--benchmark-astro-gravity")
         {
             return Raven::ph::tests::RunAstroGravityBenchmark();
+        }
+        if (backendArgument == "--benchmark-flat-hash-map")
+        {
+            return Raven::benchmarks::RunFlatHashMapBenchmark();
         }
         if (backendArgument == "--benchmark-flat-hash-set")
         {
