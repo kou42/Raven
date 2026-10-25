@@ -3,6 +3,9 @@
 #include "Raven/Core/Memory/FrameAllocator.h"
 #include <cassert>
 #include <memory>
+#include <limits>
+#include <stdexcept>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -10,6 +13,16 @@ namespace Raven::tests
 {
 namespace
 {
+struct alignas(64) AlignedValue { int Value = 0; };
+struct ThrowingHasher
+{
+    static inline bool ShouldThrow = false;
+    std::size_t operator()(int key) const
+    {
+        if (ShouldThrow == true) { throw std::runtime_error("hash failure"); }
+        return std::hash<int>{}(key);
+    }
+};
 struct ConstantHasher
 {
     std::size_t operator()(int) const { return 0; }
@@ -58,5 +71,28 @@ void RunFlatHashMapSelfTests()
     assert(moveOnly.emplace(1, std::make_unique<int>(42)).second);
     moveOnly.reserve(64);
     assert(**moveOnly.find(1) == 42);
+
+    // over-aligned Valueの配置保証と、reserve失敗時の旧データ維持を検証します。
+    FlatHashMap<int, AlignedValue> aligned(allocator);
+    assert(aligned.emplace(7, AlignedValue{19}).second);
+    assert(reinterpret_cast<std::uintptr_t>(aligned.find(7)) % alignof(AlignedValue) == 0);
+
+    FlatHashMap<int, std::string, ThrowingHasher> throwing(allocator);
+    assert(throwing.emplace(1, "one").second);
+    const std::size_t previousCapacity = throwing.capacity();
+    ThrowingHasher::ShouldThrow = true;
+    bool caught = false;
+    try { throwing.reserve(128); }
+    catch (const std::runtime_error&) { caught = true; }
+    ThrowingHasher::ShouldThrow = false;
+    assert(caught);
+    assert(throwing.capacity() == previousCapacity);
+    assert(*throwing.find(1) == "one");
+
+    bool overflowCaught = false;
+    try { aligned.reserve((std::numeric_limits<std::size_t>::max)()); }
+    catch (const std::bad_alloc&) { overflowCaught = true; }
+    assert(overflowCaught);
+    assert(aligned.contains(7));
 }
 }
