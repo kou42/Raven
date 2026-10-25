@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iterator>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -27,13 +28,108 @@ namespace Raven
 // - erase()後はProbe Chainを切らないためTombstoneを残します。
 // - Capacityは2の累乗に揃え、hash & (capacity - 1)でbucket indexを求めます。
 //
-// 現段階ではSet用途に必要な基本APIへ絞り、iteratorはまだ実装していません。
+// IteratorはOccupied Slotだけを走査します。rehash/clear後のIteratorは無効です。
 template<typename Key,
     typename Hasher = std::hash<Key>,
     typename KeyEqual = std::equal_to<Key>>
 class FlatHashSet
 {
 public:
+    // SetのKeyは変更できません。iteratorもconst Key&を返してHash不変条件を守ります。
+    class const_iterator
+    {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = Key;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const Key*;
+        using reference = const Key&;
+
+        const_iterator() = default;
+
+        reference operator*() const { return *m_Set->m_Slots[m_Index].GetKey(); }
+        pointer operator->() const { return &operator*(); }
+
+        const_iterator& operator++()
+        {
+            ++m_Index;
+            SkipEmpty();
+            return *this;
+        }
+
+        const_iterator operator++(int)
+        {
+            const_iterator previous = *this;
+            ++(*this);
+            return previous;
+        }
+
+        friend bool operator==(const const_iterator& left, const const_iterator& right)
+        {
+            return left.m_Set == right.m_Set && left.m_Index == right.m_Index;
+        }
+
+        friend bool operator!=(const const_iterator& left, const const_iterator& right)
+        {
+            return (left == right) == false;
+        }
+
+    private:
+        friend class FlatHashSet;
+
+        const_iterator(const FlatHashSet* set, std::size_t index)
+            : m_Set(set), m_Index(index)
+        {
+            SkipEmpty();
+        }
+
+        void SkipEmpty()
+        {
+            if (m_Set == nullptr)
+            {
+                return;
+            }
+            while (m_Index < m_Set->m_Capacity
+                && m_Set->m_Slots[m_Index].State != SlotState::Occupied)
+            {
+                ++m_Index;
+            }
+        }
+
+        const FlatHashSet* m_Set = nullptr;
+        std::size_t m_Index = 0;
+    };
+
+    using iterator = const_iterator;
+
+    [[nodiscard]] iterator begin() noexcept { return iterator(this, 0); }
+    [[nodiscard]] iterator end() noexcept { return iterator(this, m_Capacity); }
+    [[nodiscard]] const_iterator begin() const noexcept { return const_iterator(this, 0); }
+    [[nodiscard]] const_iterator end() const noexcept { return const_iterator(this, m_Capacity); }
+    [[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
+    [[nodiscard]] const_iterator cend() const noexcept { return end(); }
+
+    // erase後は次のOccupied Slotを返します。rehashを行わないため他のIteratorは維持されます。
+    iterator erase(const_iterator position)
+    {
+        if (position.m_Set != this || position.m_Index >= m_Capacity)
+        {
+            return end();
+        }
+
+        Slot& slot = m_Slots[position.m_Index];
+        if (slot.State != SlotState::Occupied)
+        {
+            return end();
+        }
+
+        slot.GetKey()->~Key();
+        slot.State = SlotState::Tombstone;
+        --m_Size;
+        ++m_TombstoneCount;
+        return iterator(this, position.m_Index + 1);
+    }
+
     explicit FlatHashSet(
         Allocator& allocator,
         const Hasher& hasher = Hasher{},
