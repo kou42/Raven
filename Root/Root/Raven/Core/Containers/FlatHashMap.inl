@@ -95,7 +95,7 @@ void FlatHashMap<K,V,H,E>::reserve(std::size_t count)
 {
     if (count > (std::numeric_limits<std::size_t>::max)() / 10)
     { throw std::bad_alloc{}; }
-    const std::size_t required = (count * 10 + 6) / 7;
+    const std::size_t required = count * 10 / 7 + ((count * 10 % 7) != 0 ? 1 : 0);
     std::size_t target = MinimumCapacity;
     while (target < required)
     {
@@ -111,7 +111,7 @@ void FlatHashMap<K,V,H,E>::Rehash(std::size_t capacity)
 {
     // 移動前に全Hashを評価し、Hasher例外で既存データが失われることを防ぎます。
     static_assert(std::is_copy_constructible_v<value_type> ||
-        std::is_nothrow_constructible_v<value_type, const K&, V&&>,
+        (std::is_copy_constructible_v<K> && std::is_nothrow_move_constructible_v<V>),
         "FlatHashMap requires copyable entries or noexcept movable values");
     if (capacity > (std::numeric_limits<std::size_t>::max)() / sizeof(Slot))
     { throw std::bad_alloc{}; }
@@ -171,10 +171,10 @@ std::pair<V*, bool> FlatHashMap<K,V,H,E>::emplace(KeyArg&& key, ValueArg&& value
     // 重複KeyではValueを移動せず、不要なrehashも実行しません。
     std::size_t existing = FindIndex(key);
     if (existing < m_Capacity) { return { &m_Slots[existing].Get()->second, false }; }
-    if (m_Capacity == 0 || (m_Size + m_Tombstones + 1) * 10 > m_Capacity * 7)
+    if (m_Capacity == 0 || m_Size + m_Tombstones + 1 > (m_Capacity / 10) * 7 + ((m_Capacity % 10) * 7) / 10)
     {
         if (m_Capacity == 0) { Rehash(MinimumCapacity); }
-        else if ((m_Size + 1) * 10 <= m_Capacity * 7) { Rehash(m_Capacity); }
+        else if (m_Size + 1 <= (m_Capacity / 10) * 7 + ((m_Capacity % 10) * 7) / 10) { Rehash(m_Capacity); }
         else
         {
             if (m_Capacity > (std::numeric_limits<std::size_t>::max)() / 2)
