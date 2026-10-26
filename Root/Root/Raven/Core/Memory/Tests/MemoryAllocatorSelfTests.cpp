@@ -604,8 +604,35 @@ void RunMemoryAllocatorSelfTests()
     const Array<int, 3>& constArray = array;
     Span<const int> constArrayView(constArray);
     assert(constArrayView[1] == 7);
+    // Array のゼロ容量・constexpr・イテレータ契約を検証します。
+    constexpr Array<int, 3> constexprArray{ 1, 2, 3 };
+    static_assert(constexprArray.size() == 3);
+    static_assert(constexprArray[1] == 2);
+    static_assert(constexprArray.end() - constexprArray.begin() == 3);
     Array<int, 0> zeroArray;
     assert(zeroArray.empty());
+    assert(zeroArray.size() == 0);
+    assert(zeroArray.data() == nullptr);
+    assert(zeroArray.begin() == zeroArray.end());
+    bool zeroOutOfRange = false;
+    try
+    {
+        (void)zeroArray.at(0);
+    }
+    catch (const std::out_of_range&)
+    {
+        zeroOutOfRange = true;
+    }
+    assert(zeroOutOfRange);
+    struct alignas(64) AlignedArrayValue { int value = 0; };
+    Array<AlignedArrayValue, 2> alignedArray;
+    assert(IsAligned(alignedArray.data(), 64));
+    Array<VectorLifecycleValue, 2> lifecycleArray;
+    assert(VectorLifecycleValue::live == 2);
+    lifecycleArray[0].value = 42;
+    Array<VectorLifecycleValue, 2> copiedLifecycleArray(lifecycleArray);
+    assert(copiedLifecycleArray[0].value == 42);
+    assert(VectorLifecycleValue::live == 4);
     Array<std::unique_ptr<int>, 2> moveOnlyArray;
     moveOnlyArray[0] = std::make_unique<int>(11);
     moveOnlyArray[1] = std::make_unique<int>(22);
