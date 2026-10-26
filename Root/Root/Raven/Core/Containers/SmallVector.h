@@ -48,8 +48,11 @@ public:
     [[nodiscard]] const T* data() const noexcept;
     [[nodiscard]] iterator begin() noexcept;
     [[nodiscard]] const_iterator begin() const noexcept;
+    [[nodiscard]] const_iterator cbegin() const noexcept;
     [[nodiscard]] iterator end() noexcept;
     [[nodiscard]] const_iterator end() const noexcept;
+
+    [[nodiscard]] const_iterator cend() const noexcept;
 
     T& operator[](size_type index) noexcept;
     const T& operator[](size_type index) const noexcept;
