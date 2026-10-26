@@ -940,4 +940,7 @@
     <ClInclude Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.h" />
     <ClCompile Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\\Core\\Containers\\UniquePtr.h" />
+  </ItemGroup>
 </Project>
