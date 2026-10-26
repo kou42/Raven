@@ -551,10 +551,12 @@ AnimatorStateMachine::Update全体の実workload Before / After計測は次の�
 
 - [ ] Allocator-aware UniquePtr。
 - [ ] intrusive reference counting。
-- [ ] Handle / WeakHandle。
+- [x] Handle / WeakHandle（Phase 8-3: HandlePoolのgenerationとPool生存Tokenを照合）。
 - [ ] Object Pool ownership helper。
 
 標準 smart pointer で十分な場所は継続利用します。
+
+**Phase 8-3:** `HandlePool<T>::weak(handle)` が `WeakHandle<T>` を返します。Poolの生存Tokenとindex/generationを確認し、erase・clear・Pool破棄後はnullptrを返します。Poolは従来どおり非thread-safeで、WeakHandle参照中の並行破棄はサポートしません。Pool生成時に生存Tokenのcontrol blockを一度確保します。Self Test追加済み（ビルド未実施）。
 
 ---
 
