@@ -15,6 +15,7 @@
 #include "Raven/Core/Containers/RingBuffer.h"
 #include "Raven/Core/Containers/BitSet.h"
 #include "Raven/Core/Containers/HandlePool.h"
+#include "Raven/Core/Containers/IntrusivePtr.h"
 #include "Raven/Core/Containers/SparseSet.h"
 
 #include <cassert>
@@ -170,10 +171,57 @@ private:
     bool m_Reject = false;
 };
 
+// IntrusivePtrの最終Releaseでデストラクタが一度だけ呼ばれることを検証します。
+struct IntrusiveLifecycleValue final : IntrusiveRefCounted
+{
+    static inline int destroyed = 0;
+    int value = 0;
+
+    explicit IntrusiveLifecycleValue(int initial) : value(initial) {}
+    ~IntrusiveLifecycleValue() override
+    {
+        ++destroyed;
+    }
+};
+
 } // namespace
 
 void RunMemoryAllocatorSelfTests()
 {
+    // Phase 8-2: copy/move/swap/resetの参照数と最終破棄を確認します。
+    {
+        IntrusiveLifecycleValue::destroyed = 0;
+        auto first = MakeIntrusive<IntrusiveLifecycleValue>(42);
+        assert(first->GetRefCount() == 1);
+        assert(first->value == 42);
+
+        IntrusivePtr<IntrusiveLifecycleValue> second(first);
+        assert(first->GetRefCount() == 2);
+        IntrusivePtr<IntrusiveLifecycleValue> third(std::move(second));
+        assert(second.get() == nullptr);
+        assert(third->GetRefCount() == 2);
+
+        IntrusivePtr<IntrusiveLifecycleValue> fourth;
+        fourth = third;
+        assert(first->GetRefCount() == 3);
+        fourth = fourth;
+        assert(first->GetRefCount() == 3);
+
+        IntrusivePtr<IntrusiveLifecycleValue> empty;
+        fourth.swap(empty);
+        assert(fourth.get() == nullptr);
+        assert(empty->GetRefCount() == 3);
+
+        third.reset();
+        assert(first->GetRefCount() == 2);
+        empty.reset();
+        assert(first->GetRefCount() == 1);
+        assert(IntrusiveLifecycleValue::destroyed == 0);
+
+        first.reset();
+        assert(IntrusiveLifecycleValue::destroyed == 1);
+    }
+
     // ========================================================================
     // 1. LinearAllocator: 基本確保 / alignment / Reset
     // ========================================================================
