@@ -54,6 +54,12 @@ constexpr typename Array<T, N>::const_iterator Array<T, N>::begin() const noexce
 }
 
 template<typename T, std::size_t N>
+constexpr typename Array<T, N>::const_iterator Array<T, N>::cbegin() const noexcept
+{
+    return begin();
+}
+
+template<typename T, std::size_t N>
 constexpr typename Array<T, N>::iterator Array<T, N>::end() noexcept
 {
     // 空配列では nullptr + 0 も行わないようにします。
@@ -78,6 +84,47 @@ constexpr typename Array<T, N>::const_iterator Array<T, N>::end() const noexcept
     {
         return data() + N;
     }
+}
+
+template<typename T, std::size_t N>
+constexpr typename Array<T, N>::const_iterator Array<T, N>::cend() const noexcept
+{
+    return end();
+}
+
+template<typename T, std::size_t N>
+constexpr typename Array<T, N>::size_type Array<T, N>::max_size() const noexcept
+{
+    return N;
+}
+
+template<typename T, std::size_t N>
+constexpr T& Array<T, N>::front() noexcept
+{
+    // 空配列でのアクセスは契約違反です。実行時には assert で検出します。
+    static_assert(N > 0, "Array::front requires nonzero capacity");
+    return (*this)[0];
+}
+
+template<typename T, std::size_t N>
+constexpr const T& Array<T, N>::front() const noexcept
+{
+    static_assert(N > 0, "Array::front requires nonzero capacity");
+    return (*this)[0];
+}
+
+template<typename T, std::size_t N>
+constexpr T& Array<T, N>::back() noexcept
+{
+    static_assert(N > 0, "Array::back requires nonzero capacity");
+    return (*this)[N - 1];
+}
+
+template<typename T, std::size_t N>
+constexpr const T& Array<T, N>::back() const noexcept
+{
+    static_assert(N > 0, "Array::back requires nonzero capacity");
+    return (*this)[N - 1];
 }
 
 template<typename T, std::size_t N>
