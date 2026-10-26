@@ -15,6 +15,7 @@
 #include "Raven/Core/Containers/RingBuffer.h"
 #include "Raven/Core/Containers/BitSet.h"
 #include "Raven/Core/Containers/HandlePool.h"
+#include "Raven/Core/Containers/WeakHandle.h"
 #include "Raven/Core/Containers/SparseSet.h"
 
 #include <cassert>
@@ -174,6 +175,36 @@ private:
 
 void RunMemoryAllocatorSelfTests()
 {
+    // Phase 8-3: erase / Slot再利用 / Pool破棄後にWeakHandleが失効することを確認します。
+    {
+        WeakHandle<int> weak;
+        assert(weak.expired());
+
+        {
+            HandlePool<int> pool;
+            auto first = pool.emplace(42);
+            weak = pool.weak(first);
+            assert(weak.expired() == false);
+            assert(*weak.get() == 42);
+
+            assert(pool.erase(first));
+            assert(weak.get() == nullptr);
+
+            auto second = pool.emplace(7);
+            assert(second.index == first.index);
+            assert(second.generation != first.generation);
+            assert(weak.expired());
+            auto current = pool.weak(second);
+            assert(*current.get() == 7);
+
+            pool.clear();
+            assert(current.expired());
+        }
+
+        // Pool本体が解放された後も、WeakHandleの照会は安全に失効を返します。
+        assert(weak.get() == nullptr);
+    }
+
     // ========================================================================
     // 1. LinearAllocator: 基本確保 / alignment / Reset
     // ========================================================================
