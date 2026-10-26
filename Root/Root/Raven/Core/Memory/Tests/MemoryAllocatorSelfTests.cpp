@@ -527,6 +527,67 @@ void RunMemoryAllocatorSelfTests()
     assert(smallHeap.GetAllocationCount() == 0);
 
     // ========================================================================
+    // 10b. SmallVector: move-only / Allocator失敗 / アラインメント回帰
+    // ========================================================================
+    {
+        FailingVectorAllocator failing(smallHeap);
+        SmallVector<std::unique_ptr<int>, 1> checked(failing);
+        checked.emplace_back(std::make_unique<int>(7));
+        const auto* originalData = checked.data();
+        const auto originalCapacity = checked.capacity();
+        failing.SetReject(true);
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(std::make_unique<int>(9));
+        }
+        catch (const std::bad_alloc&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        // pending は破棄され、旧領域の所有要素は移動されていません。
+        assert(checked.UsingInlineStorage());
+        assert(checked.data() == originalData);
+        assert(checked.capacity() == originalCapacity);
+        assert(checked.size() == 1 && *checked.front() == 7);
+        assert(smallHeap.GetAllocationCount() == 0);
+        failing.SetReject(false);
+        checked.emplace_back(std::make_unique<int>(9));
+        assert(checked.size() == 2);
+        assert(*checked[0] == 7 && *checked[1] == 9);
+        assert(checked.UsingInlineStorage() == false);
+        assert(smallHeap.GetAllocationCount() == 1);
+        SmallVector<std::unique_ptr<int>, 1> moved(std::move(checked));
+        assert(checked.empty() && checked.UsingInlineStorage());
+        assert(moved.GetAllocator() == &failing);
+        assert(moved.size() == 2 && *moved.back() == 9);
+        assert(smallHeap.GetAllocationCount() == 1);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        struct alignas(128) OverAlignedValue
+        {
+            int value = 0;
+            explicit OverAlignedValue(int number = 0) : value(number) {}
+        };
+        SmallVector<OverAlignedValue, 1> aligned(smallHeap);
+        aligned.emplace_back(11);
+        assert(IsAligned(aligned.data(), alignof(OverAlignedValue)));
+        aligned.emplace_back(22);
+        assert(aligned.UsingInlineStorage() == false);
+        assert(IsAligned(aligned.data(), alignof(OverAlignedValue)));
+        assert(aligned.front().value == 11 && aligned.back().value == 22);
+        const auto allocationCount = smallHeap.GetAllocationCount();
+        aligned.reserve(8);
+        assert(aligned.capacity() >= 8);
+        assert(IsAligned(aligned.data(), alignof(OverAlignedValue)));
+        assert(aligned[0].value == 11 && aligned[1].value == 22);
+        assert(smallHeap.GetAllocationCount() == allocationCount);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
     // 11. FixedVector: no allocation / overflow / lifetime / alignment
     // ========================================================================
     const std::size_t heapAllocationsBeforeFixed = smallHeap.GetAllocationCount();
