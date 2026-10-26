@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <initializer_list>
@@ -9,6 +8,25 @@
 
 namespace Raven
 {
+
+namespace Detail
+{
+// N == 0 の場合も標準C++で有効なストレージを持ち、要素は構築しません。
+template<typename T, std::size_t N>
+struct ArrayStorage
+{
+    T values[N]{};
+    constexpr T* data() noexcept { return values; }
+    constexpr const T* data() const noexcept { return values; }
+};
+
+template<typename T>
+struct ArrayStorage<T, 0>
+{
+    constexpr T* data() noexcept { return nullptr; }
+    constexpr const T* data() const noexcept { return nullptr; }
+};
+} // namespace Detail
 
 // 固定長の連続領域をオブジェクト内に保持します。
 // 容量はコンパイル時に決定し、動的メモリ確保は行いません。
@@ -39,7 +57,7 @@ public:
     constexpr void fill(const T& value);
 
 private:
-    std::array<T, N> m_Values{};
+    Detail::ArrayStorage<T, N> m_Values{};
 };
 
 } // namespace Raven
