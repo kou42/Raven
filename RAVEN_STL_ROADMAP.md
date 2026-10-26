@@ -552,9 +552,11 @@ AnimatorStateMachine::Update全体の実workload Before / After計測は次の�
 - [ ] Allocator-aware UniquePtr。
 - [ ] intrusive reference counting。
 - [ ] Handle / WeakHandle。
-- [ ] Object Pool ownership helper。
+- [x] Object Pool ownership helper（Phase 8-4: PoolOwnedHandleによるRAII）。
 
 標準 smart pointer で十分な場所は継続利用します。
+
+**Phase 8-4:** `PoolOwnedHandle<T>::Create(shared_ptr<HandlePool<T>>, args...)` が生成したHandleをMove-onlyで所有し、破棄時に世代検証付きeraseを行います。Pool本体の生存期間はshared_ptrで維持します。外部からのerase/clearは許容しますが、同じHandleを複数Ownerで管理しないでください。Poolは非thread-safeです。Self Test追加済み（ビルド未実施）。
 
 ---
 
