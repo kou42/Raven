@@ -220,6 +220,8 @@ D:.
     |   |   |   |   |   FrameVector.h
     |   |   |   |   |   HandlePool.h
     |   |   |   |   |   HandlePool.inl
+    |   |   |   |   |   PoolOwnedHandle.h
+    |   |   |   |   |   PoolOwnedHandle.inl
     |   |   |   |   |   Name.cpp
     |   |   |   |   |   Name.h
     |   |   |   |   |   RingBuffer.h
