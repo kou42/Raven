@@ -4,6 +4,13 @@ namespace Raven
 {
 
 template<typename T>
+WeakHandle<T> HandlePool<T>::weak(Handle handle) noexcept
+{
+    return WeakHandle<T>(*this, handle, m_Lifetime);
+}
+
+
+template<typename T>
 WeakHandle<T>::WeakHandle(HandlePool<T>& pool, PoolHandle handle,
     const std::shared_ptr<void>& lifetime) noexcept
     : m_Pool(&pool),
