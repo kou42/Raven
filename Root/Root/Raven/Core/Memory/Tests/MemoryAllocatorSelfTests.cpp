@@ -581,6 +581,41 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
+    // 10a. SmallVector: 拡張時の追加要素コピー失敗は既存領域を維持
+    // ========================================================================
+    {
+        ThrowingCopyContainerValue::live = 0;
+        ThrowingCopyContainerValue::copiesBeforeThrow = (std::numeric_limits<int>::max)();
+        SmallVector<ThrowingCopyContainerValue, 1> checked(smallHeap);
+        checked.emplace_back(10);
+        const auto* beforeData = checked.data();
+        const auto beforeCapacity = checked.capacity();
+        // pending のコピーで例外を発生させ、Grow がロールバックすることを確認します。
+        ThrowingCopyContainerValue::copiesBeforeThrow = 0;
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(20);
+        }
+        catch (const std::runtime_error&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        assert(checked.size() == 1);
+        assert(checked.capacity() == beforeCapacity);
+        assert(checked.data() == beforeData);
+        assert(checked.front().value == 10);
+        assert(ThrowingCopyContainerValue::live == 1);
+        assert(smallHeap.GetAllocationCount() == 0);
+        ThrowingCopyContainerValue::copiesBeforeThrow = (std::numeric_limits<int>::max)();
+        checked.emplace_back(20);
+        assert(checked.size() == 2 && checked.back().value == 20);
+    }
+    assert(ThrowingCopyContainerValue::live == 0);
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
     // 11a. FixedVector / SmallVector: 構築失敗・再配置失敗時の保証
     // ========================================================================
     static_assert(std::is_copy_constructible_v<FixedVector<int, 2>> == false);
