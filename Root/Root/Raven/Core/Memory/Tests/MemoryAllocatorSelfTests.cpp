@@ -189,6 +189,29 @@ void RunMemoryAllocatorSelfTests()
         moved.reset();
         assert(ownerAllocator.GetAllocationCount() == 0);
 
+        // 空状態・自己move・swap・release後の手動解放を確認します。
+        UniquePtr<int> empty;
+        assert(empty.get() == nullptr);
+        assert(empty.GetAllocator() == nullptr);
+        auto left = MakeUnique<int>(ownerAllocator, 10);
+        auto right = MakeUnique<int>(ownerAllocator, 20);
+        left.swap(right);
+        assert(*left == 20);
+        assert(*right == 10);
+        left = std::move(left);
+        assert(*left == 20);
+
+        Allocator* originalAllocator = left.GetAllocator();
+        int* released = left.release();
+        assert(left.get() == nullptr);
+        assert(left.GetAllocator() == nullptr);
+        assert(*released == 20);
+        // release後は所有権が移るため、元Allocatorを使って明示的に破棄・解放します。
+        released->~int();
+        originalAllocator->Deallocate(released);
+        right.reset();
+        assert(ownerAllocator.GetAllocationCount() == 0);
+
         auto first = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 7);
         assert(ThrowingConstructionValue::live == 1);
         auto second = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 8);
