@@ -15,6 +15,7 @@
 #include "Raven/Core/Containers/RingBuffer.h"
 #include "Raven/Core/Containers/BitSet.h"
 #include "Raven/Core/Containers/HandlePool.h"
+#include "Raven/Core/Containers/UniquePtr.h"
 #include "Raven/Core/Containers/SparseSet.h"
 
 #include <cassert>
@@ -174,6 +175,45 @@ private:
 
 void RunMemoryAllocatorSelfTests()
 {
+    // Phase 8-1: Allocator-aware ownershipと例外時の確保領域回収。
+    {
+        HeapAllocator ownerAllocator;
+        static_assert(std::is_copy_constructible_v<UniquePtr<int>> == false);
+        static_assert(std::is_move_constructible_v<UniquePtr<int>>);
+        auto value = MakeUnique<int>(ownerAllocator, 42);
+        assert(*value == 42);
+        assert(ownerAllocator.GetAllocationCount() == 1);
+        UniquePtr<int> moved(std::move(value));
+        assert(value.get() == nullptr);
+        assert(moved.get() != nullptr);
+        moved.reset();
+        assert(ownerAllocator.GetAllocationCount() == 0);
+
+        auto first = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 7);
+        assert(ThrowingConstructionValue::live == 1);
+        auto second = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 8);
+        first = std::move(second);
+        assert(ThrowingConstructionValue::live == 1);
+        assert(ownerAllocator.GetAllocationCount() == 1);
+        first.reset();
+        assert(ThrowingConstructionValue::live == 0);
+
+        ThrowingConstructionValue::throwNext = true;
+        bool constructionFailed = false;
+        try { auto unused = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 9); }
+        catch (const std::runtime_error&) { constructionFailed = true; }
+        assert(constructionFailed);
+        assert(ownerAllocator.GetAllocationCount() == 0);
+
+        FailingVectorAllocator failing(ownerAllocator);
+        failing.SetReject(true);
+        bool allocationFailed = false;
+        try { auto unused = MakeUnique<int>(failing, 1); }
+        catch (const std::bad_alloc&) { allocationFailed = true; }
+        assert(allocationFailed);
+        assert(ownerAllocator.GetAllocationCount() == 0);
+    }
+
     // ========================================================================
     // 1. LinearAllocator: 基本確保 / alignment / Reset
     // ========================================================================
