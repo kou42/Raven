@@ -48,8 +48,15 @@ public:
     [[nodiscard]] constexpr const T* data() const noexcept;
     [[nodiscard]] constexpr iterator begin() noexcept;
     [[nodiscard]] constexpr const_iterator begin() const noexcept;
+    [[nodiscard]] constexpr const_iterator cbegin() const noexcept;
     [[nodiscard]] constexpr iterator end() noexcept;
     [[nodiscard]] constexpr const_iterator end() const noexcept;
+    [[nodiscard]] constexpr const_iterator cend() const noexcept;
+    [[nodiscard]] constexpr size_type max_size() const noexcept;
+    constexpr T& front() noexcept;
+    constexpr const T& front() const noexcept;
+    constexpr T& back() noexcept;
+    constexpr const T& back() const noexcept;
     constexpr T& operator[](size_type index) noexcept;
     constexpr const T& operator[](size_type index) const noexcept;
     T& at(size_type index);
