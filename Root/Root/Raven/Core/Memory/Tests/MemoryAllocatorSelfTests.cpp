@@ -56,7 +56,8 @@ struct VectorLifecycleValue
     static inline int moves = 0;
 
     int value = 0;
-    explicit VectorLifecycleValue(int number = 0) : value(number) { ++live; }
+    VectorLifecycleValue() { ++live; }
+    explicit VectorLifecycleValue(int number) : value(number) { ++live; }
     VectorLifecycleValue(const VectorLifecycleValue& other) : value(other.value)
     {
         ++live;

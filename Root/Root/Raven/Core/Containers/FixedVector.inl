@@ -7,20 +7,30 @@ template<typename T, std::size_t N>
 FixedVector<T, N>::FixedVector(FixedVector&& other) noexcept(std::is_nothrow_move_constructible_v<T>)
 {
     // Inline Storageのアドレスは移譲できないため、要素を個別に移動します。
-    // 途中で例外が発生した場合も構築済み要素はこのオブジェクトのDestructorで破棄します。
-    try
+    // noexcept move型では再送出経路を生成せず、コンパイラにも契約を明確に伝えます。
+    if constexpr (std::is_nothrow_move_constructible_v<T>)
     {
         for (T& value : other)
         {
             emplace_back(std::move(value));
         }
     }
-    catch (...)
+    else
     {
-        // コンストラクタが例外終了するとFixedVectorのDestructorは呼ばれません。
-        // ここで構築済み要素を破棄してリソースリークを防ぎます。
-        clear();
-        throw;
+        try
+        {
+            for (T& value : other)
+            {
+                emplace_back(std::move(value));
+            }
+        }
+        catch (...)
+        {
+            // コンストラクタが例外終了するとFixedVectorのDestructorは呼ばれません。
+            // ここで構築済み要素を破棄してリソースリークを防ぎます。
+            clear();
+            throw;
+        }
     }
     other.clear();
 }

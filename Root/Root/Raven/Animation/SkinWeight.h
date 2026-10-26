@@ -1,10 +1,10 @@
 // Raven/Animation/SkinWeight.h
 #pragma once
 
-#include <array>
 #include <cstddef>
 
 #include "Raven/Animation/Bone.h"
+#include "Raven/Core/Containers/Array.h"
 #include "Raven/Math/Math.h"
 
 namespace Raven
@@ -20,11 +20,11 @@ inline constexpr std::size_t MaxBoneInfluences = 4;
 // 同じ上限をそのままVertex Attributeへ写せる構成にします。
 struct SkinWeight
 {
-    std::array<BoneIndex, MaxBoneInfluences> BoneIndices{
+    Array<BoneIndex, MaxBoneInfluences> BoneIndices{
         InvalidBoneIndex, InvalidBoneIndex, InvalidBoneIndex, InvalidBoneIndex
     };
 
-    std::array<float, MaxBoneInfluences> Weights{
+    Array<float, MaxBoneInfluences> Weights{
         0.0f, 0.0f, 0.0f, 0.0f
     };
 

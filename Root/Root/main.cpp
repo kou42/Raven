@@ -28,6 +28,7 @@
 #include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 #include "Raven/Physics/Astro/Tests/AstroGravityBenchmark.h"
 #include "Raven/Physics/Tests/CoulombBenchmark.h"
+#include "Raven/Core/Containers/Benchmarks/ContainerBenchmark.h"
 #include "Raven/Core/Containers/Benchmarks/FlatHashSetBenchmark.h"
 #include "Raven/Core/Containers/Benchmarks/FlatHashMapBenchmark.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
@@ -138,6 +139,10 @@ int main(int argc, char* argv[])
         {
             return Raven::benchmarks::RunFlatHashSetBenchmark();
         }
+        if (backendArgument == "--benchmark-containers")
+        {
+            return Raven::benchmarks::RunContainerBenchmark();
+        }
         if (backendArgument == "--benchmark-coulomb")
         {
             return Raven::ph::tests::RunCoulombBenchmark();
@@ -201,6 +206,7 @@ int main(int argc, char* argv[])
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
                 "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
                 "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, "
+                "--benchmark-containers, --benchmark-flat-hash-map, --benchmark-flat-hash-set, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
