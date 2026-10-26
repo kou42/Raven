@@ -86,7 +86,7 @@ private:
 
     void ReleaseOverflow() noexcept;
 
-    void Grow(size_type required);
+    void Grow(size_type required, T* pending = nullptr);
 
     Allocator* m_Allocator;
     Storage m_Inline[N];
