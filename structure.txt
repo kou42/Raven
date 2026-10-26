@@ -234,6 +234,8 @@ D:.
     |   |   |   |   |   String.h
     |   |   |   |   |   StringView.cpp
     |   |   |   |   |   StringView.h
+    |   |   |   |   |   WeakHandle.h
+    |   |   |   |   |   WeakHandle.inl
     |   |   |   |   |   Vector.h
     |   |   |   |   |   Vector.inl
     |   |   |   |   |
