@@ -14,6 +14,9 @@
 namespace Raven
 {
 
+template<typename T>
+class WeakHandle;
+
 // index + generationでオブジェクトを識別するHandleです。
 // 異なるPool間のHandle混用は検出しないため、Poolの所有関係は呼び出し側が管理します。
 struct PoolHandle
@@ -55,6 +58,7 @@ public:
     [[nodiscard]] T* get(Handle handle) noexcept;
     [[nodiscard]] const T* get(Handle handle) const noexcept;
     [[nodiscard]] bool contains(Handle handle) const noexcept;
+    [[nodiscard]] WeakHandle<T> weak(Handle handle) noexcept;
     bool erase(Handle handle) noexcept;
     void clear() noexcept;
 
@@ -63,6 +67,8 @@ public:
     [[nodiscard]] size_type capacity() const noexcept;
 
 private:
+    friend class WeakHandle<T>;
+
     struct Slot
     {
         using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
@@ -80,8 +86,11 @@ private:
     std::vector<std::unique_ptr<Slot>> m_Slots;
     std::uint32_t m_FreeHead = InvalidIndex;
     size_type m_Size = 0;
+    // WeakHandleはPool破棄後のアクセスを避けるため、このTokenを弱参照します。
+    std::shared_ptr<void> m_Lifetime = std::make_shared<int>(0);
 };
 
 } // namespace Raven
 
+#include "Raven/Core/Containers/WeakHandle.h"
 #include "Raven/Core/Containers/HandlePool.inl"
