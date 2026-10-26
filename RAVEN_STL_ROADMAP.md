@@ -550,11 +550,13 @@ AnimatorStateMachine::Update全体の実workload Before / After計測は次の�
 候補:
 
 - [ ] Allocator-aware UniquePtr。
-- [ ] intrusive reference counting。
+- [x] intrusive reference counting（Phase 8-2: IntrusiveRefCounted / IntrusivePtr / MakeIntrusive）。
 - [ ] Handle / WeakHandle。
 - [ ] Object Pool ownership helper。
 
 標準 smart pointer で十分な場所は継続利用します。
+
+**Phase 8-2:** オブジェクト内にatomic参照カウンタを保持し、最後の所有参照が解放された際にdeleteします。別途control blockは不要ですが、循環参照・WeakHandleには未対応です。オブジェクトはnewまたはMakeIntrusiveで生成し、stack上のオブジェクトを所有させないでください。Self Testを追加（ビルド未実施）。
 
 ---
 
