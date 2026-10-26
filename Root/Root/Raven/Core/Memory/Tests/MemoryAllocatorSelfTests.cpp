@@ -594,7 +594,18 @@ void RunMemoryAllocatorSelfTests()
     // ========================================================================
     // 13. Array: 固定長領域 / Span連携 / 範囲検査
     // ========================================================================
+    // Phase 2: Array の共通 API と const iterator の整合を確認します。
+    static_assert(std::is_same_v<decltype(std::declval<Array<int, 3>&>().begin()), int*>);
+    static_assert(std::is_same_v<decltype(std::declval<const Array<int, 3>&>().end()), const int*>);
+    constexpr Array<int, 3> apiArray{ 1, 2, 3 };
+    static_assert(apiArray.max_size() == 3);
+    static_assert(apiArray.front() == 1 && apiArray.back() == 3);
+    static_assert(apiArray.cend() - apiArray.cbegin() == 3);
     Array<int, 3> array{ 1, 2, 3 };
+    assert(array.max_size() == 3);
+    assert(array.front() == 1 && array.back() == 3);
+    assert(array.cbegin() == array.begin());
+    assert(array.cend() == array.end());
     assert(array.size() == 3);
     array.fill(9);
     assert(array[0] == 9 && array[2] == 9);
@@ -612,6 +623,8 @@ void RunMemoryAllocatorSelfTests()
     Array<int, 0> zeroArray;
     assert(zeroArray.empty());
     assert(zeroArray.size() == 0);
+    assert(zeroArray.max_size() == 0);
+    assert(zeroArray.cbegin() == zeroArray.cend());
     assert(zeroArray.data() == nullptr);
     assert(zeroArray.begin() == zeroArray.end());
     bool zeroOutOfRange = false;
