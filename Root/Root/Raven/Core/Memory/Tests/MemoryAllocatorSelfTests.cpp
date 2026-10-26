@@ -627,12 +627,15 @@ void RunMemoryAllocatorSelfTests()
     struct alignas(64) AlignedArrayValue { int value = 0; };
     Array<AlignedArrayValue, 2> alignedArray;
     assert(IsAligned(alignedArray.data(), 64));
-    Array<VectorLifecycleValue, 2> lifecycleArray;
-    assert(VectorLifecycleValue::live == 2);
-    lifecycleArray[0].value = 42;
-    Array<VectorLifecycleValue, 2> copiedLifecycleArray(lifecycleArray);
-    assert(copiedLifecycleArray[0].value == 42);
-    assert(VectorLifecycleValue::live == 4);
+    {
+        Array<VectorLifecycleValue, 2> lifecycleArray;
+        assert(VectorLifecycleValue::live == 2);
+        lifecycleArray[0].value = 42;
+        Array<VectorLifecycleValue, 2> copiedLifecycleArray(lifecycleArray);
+        assert(copiedLifecycleArray[0].value == 42);
+        assert(VectorLifecycleValue::live == 4);
+    }
+    assert(VectorLifecycleValue::live == 0);
     Array<std::unique_ptr<int>, 2> moveOnlyArray;
     moveOnlyArray[0] = std::make_unique<int>(11);
     moveOnlyArray[1] = std::make_unique<int>(22);
