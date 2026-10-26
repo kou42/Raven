@@ -67,6 +67,17 @@
 
 完了条件: 回帰テストが通り、不要なヒープ確保・性能退行がない。
 
+## 作業ブランチでの実装状況（未検証）
+
+対象: `feature/container-array-inline-storage` / PR #335。以下はコード追加・レビュー段階の記録であり、Debug / Release ビルドと自己テストの成功を意味しません。
+
+- Phase 1: `Array` の `std::array` 依存を独立インラインストレージへ変更。ゼロ容量特殊化、境界・constexpr・寿命・アラインメントのテストを追加。
+- Phase 2: `Array` に `max_size/front/back/cbegin/cend`、`SmallVector` に `cbegin/cend` を追加。`FixedVector` の既存 API と整合。
+- Phase 3: `FixedVector` の構築・ムーブ失敗、`SmallVector` の再配置時のコピー失敗、追加要素の構築失敗をテスト。拡張時の追加要素をコミット前に構築するよう修正。
+- Phase 4: move-only 型の拡張・確保失敗・ムーブ所有権、128 バイトアラインメント、Allocator の確保数を検証する回帰テストを追加。
+- 未確認: Visual Studio の Debug / Release ビルド、自己テストの実行、実測性能。チェックボックスは検証完了後に更新する。
+- 契約: `Array<T, 0>` の `front/back` はコンパイル時に禁止。`FixedVector` と `SmallVector` は `N > 0`。Allocator は `SmallVector` より長寿命で、個別解放をサポートする必要がある。
+
 ## 変更対象（予定）
 
 - `Root/Root/Raven/Core/Containers/Array.h`
