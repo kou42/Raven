@@ -206,8 +206,7 @@ void RunMemoryAllocatorSelfTests()
         assert(left.get() == nullptr);
         assert(left.GetAllocator() == nullptr);
         assert(*released == 20);
-        // release後は所有権が移るため、元Allocatorを使って明示的に破棄・解放します。
-        released->~int();
+        // intはtrivial destructorなので、release後は元Allocatorへの解放だけで十分です。
         originalAllocator->Deallocate(released);
         right.reset();
         assert(ownerAllocator.GetAllocationCount() == 0);
