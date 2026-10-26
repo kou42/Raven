@@ -31,6 +31,7 @@
 #include "Raven/Core/Containers/Benchmarks/ContainerBenchmark.h"
 #include "Raven/Core/Containers/Benchmarks/FlatHashSetBenchmark.h"
 #include "Raven/Core/Containers/Benchmarks/FlatHashMapBenchmark.h"
+#include "Raven/Core/Containers/Benchmarks/NameBenchmark.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
@@ -48,6 +49,8 @@
 #include "Raven/Character/Tests/CharacterSprintLocomotionSelfTests.h"
 #include "Raven/Core/Containers/Tests/FlatHashSetSelfTests.h"
 #include "Raven/Core/Containers/Tests/FlatHashMapSelfTests.h"
+#include "Raven/Core/Containers/Tests/StringSelfTests.h"
+#include "Raven/Core/Containers/Tests/NameSelfTests.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
@@ -124,6 +127,30 @@ int main(int argc, char* argv[])
             std::cout << "Memory and container self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
+        if (backendArgument == "--test-string")
+        {
+            Raven::tests::RunStringSelfTests();
+            std::cout << "String and StringView self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-name")
+        {
+            Raven::tests::RunNameSelfTests();
+            std::cout << "Name self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-animation-runtime")
+        {
+            Raven::tests::RunBlendTreeRuntimeSelfTests();
+            std::cout << "Animation runtime self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-character-animation")
+        {
+            Raven::tests::RunCharacterSprintLocomotionSelfTests();
+            std::cout << "Character animation self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
 #endif
         // 性能値を最適化構成でも比較できるよう、Astro benchmarkはDebug限定にしません。
         // ApplicationやGPUを初期化せず、決定的なCPU入力だけを測定して終了します。
@@ -142,6 +169,10 @@ int main(int argc, char* argv[])
         if (backendArgument == "--benchmark-containers")
         {
             return Raven::benchmarks::RunContainerBenchmark();
+        }
+        if (backendArgument == "--benchmark-name")
+        {
+            return Raven::benchmarks::RunNameBenchmark();
         }
         if (backendArgument == "--benchmark-coulomb")
         {
@@ -205,8 +236,10 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
                 "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
-                "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, "
-                "--benchmark-containers, --benchmark-flat-hash-map, --benchmark-flat-hash-set, "
+                "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, --test-string, --test-name, "
+                "--test-animation-runtime, "
+                "--test-character-animation, "
+                "--benchmark-containers, --benchmark-flat-hash-map, --benchmark-flat-hash-set, --benchmark-name, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
@@ -247,6 +280,8 @@ int main(int argc, char* argv[])
     Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
     Raven::ph::tests::RunStaticMeshTriangleBVHSelfTests();
     Raven::ph::tests::RunThermalWorldSelfTests();
+    Raven::tests::RunStringSelfTests();
+    Raven::tests::RunNameSelfTests();
 
     // ========================================================================
     // Browser Debug Viewer

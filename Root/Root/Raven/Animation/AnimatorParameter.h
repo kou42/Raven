@@ -1,6 +1,8 @@
 // Raven/Animation/AnimatorParameter.h
 #pragma once
 
+#include "Raven/Core/Containers/Name.h"
+
 #include <string>
 #include <variant>
 
@@ -29,6 +31,10 @@ struct AnimatorParameter
     std::string Name;
     AnimatorParameterType Type = AnimatorParameterType::Float;
     AnimatorParameterValue Value = 0.0f;
+
+    // 登録時にAnimatorStateMachineのNameTableで一度だけ解決するRuntime検索Keyです。
+    // 既存aggregate初期化との互換性を保つため、設定フィールドより後ろに配置します。
+    Raven::Name RuntimeName;
 };
 
 } // namespace Raven

@@ -220,6 +220,8 @@ D:.
     |   |   |   |   |   FrameVector.h
     |   |   |   |   |   HandlePool.h
     |   |   |   |   |   HandlePool.inl
+    |   |   |   |   |   Name.cpp
+    |   |   |   |   |   Name.h
     |   |   |   |   |   RingBuffer.h
     |   |   |   |   |   RingBuffer.inl
     |   |   |   |   |   SmallVector.h
@@ -228,6 +230,10 @@ D:.
     |   |   |   |   |   Span.inl
     |   |   |   |   |   SparseSet.h
     |   |   |   |   |   SparseSet.inl
+    |   |   |   |   |   String.cpp
+    |   |   |   |   |   String.h
+    |   |   |   |   |   StringView.cpp
+    |   |   |   |   |   StringView.h
     |   |   |   |   |   Vector.h
     |   |   |   |   |   Vector.inl
     |   |   |   |   |
@@ -235,12 +241,17 @@ D:.
     |   |   |   |   |       ContainerBenchmark.h
     |   |   |   |   |       FlatHashMapBenchmark.h
     |   |   |   |   |       FlatHashSetBenchmark.h
+    |   |   |   |   |       NameBenchmark.h
     |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           FlatHashMapSelfTests.cpp
     |   |   |   |           FlatHashMapSelfTests.h
     |   |   |   |           FlatHashSetSelfTests.cpp
     |   |   |   |           FlatHashSetSelfTests.h
+    |   |   |   |           NameSelfTests.cpp
+    |   |   |   |           NameSelfTests.h
+    |   |   |   |           StringSelfTests.cpp
+    |   |   |   |           StringSelfTests.h
     |   |   |   |
     |   |   |   \---Memory
     |   |   |       |   Allocator.h

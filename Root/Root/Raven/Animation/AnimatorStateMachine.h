@@ -4,6 +4,9 @@
 #include "Raven/Animation/Animator.h"
 #include "Raven/Animation/AnimatorParameter.h"
 #include "Raven/Animation/AnimatorTransition.h"
+#include "Raven/Core/Containers/FlatHashMap.h"
+#include "Raven/Core/Containers/Name.h"
+#include "Raven/Core/Memory/HeapAllocator.h"
 
 #include <memory>
 #include <string>
@@ -33,6 +36,11 @@ struct AnimatorStateDefinition
 
     // Stateへ入り直した際にMotion先頭から再生するかを指定します。
     bool RestartOnEnter = true;
+
+    // State名の所有・表示はm_States側のstd::string Keyへ残し、Runtime検索だけNameを使います。
+    // 設定フィールドと既存aggregate初期化を維持するためRuntime cacheは末尾へ配置します。
+    Name RuntimeName;
+    Name RuntimeBlendParameterName;
 
     bool IsBlendTreeState() const
     {
@@ -121,9 +129,17 @@ class AnimatorStateMachine
 {
 public:
     explicit AnimatorStateMachine(Animator& animator)
-        : m_Animator(animator)
+        : m_NameTable(m_NameAllocator),
+          m_StateLookup(m_NameAllocator),
+          m_ParameterLookup(m_NameAllocator),
+          m_Animator(animator)
     {
     }
+
+    AnimatorStateMachine(const AnimatorStateMachine&) = delete;
+    AnimatorStateMachine& operator=(const AnimatorStateMachine&) = delete;
+    AnimatorStateMachine(AnimatorStateMachine&&) = delete;
+    AnimatorStateMachine& operator=(AnimatorStateMachine&&) = delete;
 
     // 名前付きClip Stateを登録します。
     // 同名Stateが既に存在する場合はfalseを返し、意図しない上書きを防ぎます。
@@ -358,6 +374,9 @@ public:
 private:
     const AnimatorParameter* FindParameter(const std::string& name) const;
     AnimatorParameter* FindParameter(const std::string& name);
+    const AnimatorParameter* FindParameter(Name name) const;
+    AnimatorParameter* FindParameter(Name name);
+    const AnimatorStateDefinition* FindState(Name name) const;
 
     // Blend Tree Stateが参照するFloat Parameterの現在値を取得します。
     // Parameter名をState定義へ保持し、Runtime値自体はState Machine側だけが所有します。
@@ -380,14 +399,24 @@ private:
     void ConsumeTransitionTriggers(const AnimatorTransition& transition);
 
 private:
+    // NameTableとlookup backing storageはState Machine単位で所有します。
+    // 公開文字列を登録時に一度だけInternし、毎FrameのTransition評価ではHandleだけを比較します。
+    HeapAllocator m_NameAllocator;
+    NameTable m_NameTable;
+    FlatHashMap<Name, const AnimatorStateDefinition*, NameHasher> m_StateLookup;
+    FlatHashMap<Name, AnimatorParameter*, NameHasher> m_ParameterLookup;
+
     // Animatorは実際のAnimation再生・時間・Pose評価を担当します。
     // State Machineは所有せず参照するため、AnimatorのLifetimeが本クラスより長い必要があります。
     Animator& m_Animator;
 
     // State名から定義へ引くRuntimeテーブルです。
+    // unordered_mapのrehashは要素へのpointer/referenceを無効化しないため、m_StateLookupは
+    // 要素削除までDefinition addressを安全に参照できます。削除時はlookupを先に除去します。
     std::unordered_map<std::string, AnimatorStateDefinition> m_States;
 
     // Parameter値はEntity/Animator Instanceごとに異なるRuntime StateなのでState Machineが保持します。
+    // m_ParameterLookupも同じpointer安定性を利用し、削除時に必ず同期して除去します。
     std::unordered_map<std::string, AnimatorParameter> m_Parameters;
 
     // TransitionはPriorityが同じ場合に登録順もTie Breakとして意味を持つためvectorで保持します。
@@ -397,9 +426,12 @@ private:
     // Fade完了時にPending -> Currentへ昇格します。
     std::string m_CurrentStateName;
     std::string m_PendingStateName;
+    Name m_CurrentStateId;
+    Name m_PendingStateId;
 
     // Fade中にさらに目標が変化した場合の「最新1件」の予約です。
     std::string m_QueuedStateName;
+    Name m_QueuedStateId;
 };
 
 } // namespace Raven

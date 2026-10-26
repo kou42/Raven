@@ -37,6 +37,10 @@ struct AnimatorCondition
     std::string ParameterName;
     AnimatorConditionOperator Operator = AnimatorConditionOperator::Equal;
     AnimatorParameterValue ExpectedValue = false;
+
+    // AddTransition()成功時に登録済みParameterへ解決し、毎Frameの文字列Hashを避けます。
+    // 既存の3要素aggregate初期化を維持するため末尾に配置します。
+    Name RuntimeParameterName;
 };
 
 // ============================================================================
@@ -72,6 +76,11 @@ struct AnimatorTransition
     float ExitTime = 1.0f;
 
     std::vector<AnimatorCondition> Conditions;
+
+    // 公開設定文字列は維持し、Runtime比較だけを事前Intern済みHandleで行います。
+    // 設定として保存される既存フィールド順を変更しないよう末尾に分離します。
+    Name RuntimeFromState;
+    Name RuntimeToState;
 };
 
 } // namespace Raven

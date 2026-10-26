@@ -451,6 +451,35 @@ void RunTransitionSamePriorityTieBreakRuntimeSnapshotTest()
     assert(afterSelection.Transitions[0].IsSelectedCandidate == false);
     assert(afterSelection.Transitions[1].IsSelectedCandidate == false);
 }
+
+void RunNameCachedLookupLifecycleTest()
+{
+    Animator animator;
+    AnimatorStateMachine stateMachine(animator);
+
+    assert(stateMachine.AddBoolParameter("Ready", false));
+    assert(stateMachine.AddState("Source", MakeClip(1.0f), 0.1f));
+    assert(stateMachine.AddState("Target", MakeClip(1.0f), 0.1f));
+
+    // Owning unordered_mapから削除した要素をName lookupが参照し続けないことを確認します。
+    assert(stateMachine.RemoveState("Target"));
+    assert(stateMachine.AddState("Target", MakeClip(1.0f), 0.1f));
+    assert(stateMachine.RemoveParameter("Ready"));
+    assert(stateMachine.AddBoolParameter("Ready", false));
+
+    AnimatorTransition transition{};
+    transition.FromState = "Source";
+    transition.ToState = "Target";
+    transition.Conditions = { { "Ready", AnimatorConditionOperator::Equal, true } };
+    assert(stateMachine.AddTransition(transition));
+    assert(stateMachine.SetInitialState("Source", true));
+    assert(stateMachine.SetBool("Ready", true));
+
+    // 登録時に解決したState / Parameter NameだけでTransitionを評価し、再登録後の実体へ到達します。
+    stateMachine.Update(0.0f);
+    assert(stateMachine.GetCurrentStateName() == "Source");
+    assert(stateMachine.GetPendingStateName() == "Target");
+}
 } // namespace
 
 void RunBlendTreeRuntimeSelfTests()
@@ -465,6 +494,7 @@ void RunBlendTreeRuntimeSelfTests()
     RunTransitionConditionRuntimeSnapshotTest();
     RunTransitionPrioritySelectionRuntimeSnapshotTest();
     RunTransitionSamePriorityTieBreakRuntimeSnapshotTest();
+    RunNameCachedLookupLifecycleTest();
 }
 
 } // namespace Raven::tests

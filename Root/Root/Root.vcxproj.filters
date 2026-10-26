@@ -667,6 +667,15 @@
     <Filter Include="Raven\Core">
       <UniqueIdentifier>{7fc5bb8b-f7bd-443a-93c6-73ce73ddba52}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\Core\Containers">
+      <UniqueIdentifier>{2f862c20-d08e-4d78-8be1-9e195685e321}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raven\Core\Containers\Tests">
+      <UniqueIdentifier>{059c445d-6617-40e8-8d4e-70983500f79d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raven\Core\Containers\Benchmarks">
+      <UniqueIdentifier>{82326720-3848-4804-a8b1-b02ab8dccb8b}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Raven\Scene">
       <UniqueIdentifier>{c79974aa-eb31-49d1-a1fc-68b88d787951}</UniqueIdentifier>
     </Filter>
@@ -710,6 +719,36 @@
     </ClInclude>
     <ClInclude Update="Raven\Core\ApplicationState.h">
       <Filter>Raven\Core</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Core\Containers\String.cpp">
+      <Filter>Raven\Core\Containers</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Core\Containers\Name.cpp">
+      <Filter>Raven\Core\Containers</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Core\Containers\Name.h">
+      <Filter>Raven\Core\Containers</Filter>
+    </ClInclude>
+    <ClInclude Update="Raven\Core\Containers\String.h">
+      <Filter>Raven\Core\Containers</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Core\Containers\StringView.cpp">
+      <Filter>Raven\Core\Containers</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Core\Containers\StringView.h">
+      <Filter>Raven\Core\Containers</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\Core\Containers\Tests\StringSelfTests.cpp">
+      <Filter>Raven\Core\Containers\Tests</Filter>
+    </ClCompile>
+    <ClCompile Update="Raven\Core\Containers\Tests\NameSelfTests.cpp">
+      <Filter>Raven\Core\Containers\Tests</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Core\Containers\Tests\NameSelfTests.h">
+      <Filter>Raven\Core\Containers\Tests</Filter>
+    </ClInclude>
+    <ClInclude Update="Raven\Core\Containers\Tests\StringSelfTests.h">
+      <Filter>Raven\Core\Containers\Tests</Filter>
     </ClInclude>
     <ClInclude Update="Raven\Scene\SceneStreamingController.h">
       <Filter>Raven\Scene</Filter>
@@ -895,6 +934,9 @@
     <ClInclude Include="Raven\Core\Containers\FlatHashMap.h" />
     <ClInclude Include="Raven\Core\Containers\Benchmarks\ContainerBenchmark.h" />
     <ClInclude Include="Raven\Core\Containers\Benchmarks\FlatHashMapBenchmark.h" />
+    <ClInclude Include="Raven\Core\Containers\Benchmarks\NameBenchmark.h">
+      <Filter>Raven\Core\Containers\Benchmarks</Filter>
+    </ClInclude>
     <ClInclude Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.h" />
     <ClCompile Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.cpp" />
   </ItemGroup>

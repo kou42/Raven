@@ -2,6 +2,7 @@
 #include "Raven/Animation/AnimatorStateMachine.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <utility>
 
@@ -28,11 +29,23 @@ bool AnimatorStateMachine::AddState(
     }
 
     AnimatorStateDefinition state{};
+    state.RuntimeName = m_NameTable.Intern(StringView(name));
     state.Clip = std::move(clip);
     state.CrossFadeDuration = std::max(crossFadeDuration, 0.0f);
     state.RestartOnEnter = restartOnEnter;
 
-    m_States.emplace(std::move(name), std::move(state));
+    const Name runtimeName = state.RuntimeName;
+    auto inserted = m_States.emplace(std::move(name), std::move(state));
+    try
+    {
+        const auto lookupInserted = m_StateLookup.emplace(runtimeName, &inserted.first->second);
+        assert(lookupInserted.second == true);
+    }
+    catch (...)
+    {
+        m_States.erase(inserted.first);
+        throw;
+    }
     return true;
 }
 
@@ -52,18 +65,34 @@ bool AnimatorStateMachine::AddBlendTreeState(
     // Blend Treeが参照するParameterはFloatに限定します。
     // Bool/Triggerを暗黙に0/1へ変換するとEditor定義ミスを見逃しやすいため登録時に拒否します。
     float unusedValue = 0.0f;
-    if (!GetFloat(blendParameterName, unusedValue))
+    const AnimatorParameter* blendParameter = FindParameter(blendParameterName);
+    if (blendParameter == nullptr ||
+        blendParameter->Type != AnimatorParameterType::Float ||
+        GetFloat(blendParameterName, unusedValue) == false)
     {
         return false;
     }
 
     AnimatorStateDefinition state{};
+    state.RuntimeName = m_NameTable.Intern(StringView(name));
     state.BlendTree = std::move(blendTree);
     state.BlendParameterName = std::move(blendParameterName);
+    state.RuntimeBlendParameterName = blendParameter->RuntimeName;
     state.CrossFadeDuration = std::max(crossFadeDuration, 0.0f);
     state.RestartOnEnter = restartOnEnter;
 
-    m_States.emplace(std::move(name), std::move(state));
+    const Name runtimeName = state.RuntimeName;
+    auto inserted = m_States.emplace(std::move(name), std::move(state));
+    try
+    {
+        const auto lookupInserted = m_StateLookup.emplace(runtimeName, &inserted.first->second);
+        assert(lookupInserted.second == true);
+    }
+    catch (...)
+    {
+        m_States.erase(inserted.first);
+        throw;
+    }
     return true;
 }
 
@@ -80,16 +109,19 @@ bool AnimatorStateMachine::RemoveState(const std::string& name)
     if (m_CurrentStateName == name)
     {
         m_CurrentStateName.clear();
+        m_CurrentStateId = {};
     }
 
     if (m_PendingStateName == name)
     {
         m_PendingStateName.clear();
+        m_PendingStateId = {};
     }
 
     if (m_QueuedStateName == name)
     {
         m_QueuedStateName.clear();
+        m_QueuedStateId = {};
     }
 
     // このStateを参照するTransitionも無効になるため同時に除去します。
@@ -103,6 +135,7 @@ bool AnimatorStateMachine::RemoveState(const std::string& name)
             }),
         m_Transitions.end());
 
+    m_StateLookup.erase(it->second.RuntimeName);
     m_States.erase(it);
     return true;
 }
@@ -118,6 +151,12 @@ const AnimatorStateDefinition* AnimatorStateMachine::FindState(const std::string
     return (it != m_States.end()) ? &it->second : nullptr;
 }
 
+const AnimatorStateDefinition* AnimatorStateMachine::FindState(Name name) const
+{
+    const AnimatorStateDefinition* const* state = m_StateLookup.find(name);
+    return state != nullptr ? *state : nullptr;
+}
+
 bool AnimatorStateMachine::GetBlendParameterValue(
     const AnimatorStateDefinition& state,
     float& outValue) const
@@ -129,7 +168,18 @@ bool AnimatorStateMachine::GetBlendParameterValue(
 
     // Blend TreeのRuntime値はStateDefinitionへコピーせず、常にParameter Tableから取得します。
     // Entityごとに異なるSpeedなどの値を共有定義へ混ぜないことが重要です。
-    return GetFloat(state.BlendParameterName, outValue);
+    const AnimatorParameter* parameter = FindParameter(state.RuntimeBlendParameterName);
+    if (parameter == nullptr || parameter->Type != AnimatorParameterType::Float)
+    {
+        return false;
+    }
+    const float* value = std::get_if<float>(&parameter->Value);
+    if (value == nullptr)
+    {
+        return false;
+    }
+    outValue = *value;
+    return true;
 }
 
 bool AnimatorStateMachine::SetInitialState(
@@ -145,6 +195,9 @@ bool AnimatorStateMachine::SetInitialState(
     m_CurrentStateName = name;
     m_PendingStateName.clear();
     m_QueuedStateName.clear();
+    m_CurrentStateId = state->RuntimeName;
+    m_PendingStateId = {};
+    m_QueuedStateId = {};
 
     if (startImmediately)
     {
@@ -226,6 +279,8 @@ bool AnimatorStateMachine::TransitionTo(
 
         m_CurrentStateName = name;
         m_PendingStateName.clear();
+        m_CurrentStateId = target->RuntimeName;
+        m_PendingStateId = {};
         return true;
     }
 
@@ -256,6 +311,8 @@ bool AnimatorStateMachine::TransitionTo(
     {
         m_CurrentStateName = name;
         m_PendingStateName.clear();
+        m_CurrentStateId = target->RuntimeName;
+        m_PendingStateId = {};
         return true;
     }
 
@@ -263,6 +320,7 @@ bool AnimatorStateMachine::TransitionTo(
     // 「現在の遷移元」と「遷移先」をCurrent/Pendingとして区別できるため、
     // Editor/Debug表示やTransition Conditionでも状態を解釈しやすくなります。
     m_PendingStateName = name;
+    m_PendingStateId = target->RuntimeName;
     return true;
 }
 
@@ -275,10 +333,22 @@ bool AnimatorStateMachine::AddFloatParameter(std::string name, float defaultValu
 
     AnimatorParameter parameter{};
     parameter.Name = name;
+    parameter.RuntimeName = m_NameTable.Intern(StringView(name));
     parameter.Type = AnimatorParameterType::Float;
     parameter.Value = defaultValue;
 
-    m_Parameters.emplace(std::move(name), std::move(parameter));
+    const Name runtimeName = parameter.RuntimeName;
+    auto inserted = m_Parameters.emplace(std::move(name), std::move(parameter));
+    try
+    {
+        const auto lookupInserted = m_ParameterLookup.emplace(runtimeName, &inserted.first->second);
+        assert(lookupInserted.second == true);
+    }
+    catch (...)
+    {
+        m_Parameters.erase(inserted.first);
+        throw;
+    }
     return true;
 }
 
@@ -291,10 +361,22 @@ bool AnimatorStateMachine::AddBoolParameter(std::string name, bool defaultValue)
 
     AnimatorParameter parameter{};
     parameter.Name = name;
+    parameter.RuntimeName = m_NameTable.Intern(StringView(name));
     parameter.Type = AnimatorParameterType::Bool;
     parameter.Value = defaultValue;
 
-    m_Parameters.emplace(std::move(name), std::move(parameter));
+    const Name runtimeName = parameter.RuntimeName;
+    auto inserted = m_Parameters.emplace(std::move(name), std::move(parameter));
+    try
+    {
+        const auto lookupInserted = m_ParameterLookup.emplace(runtimeName, &inserted.first->second);
+        assert(lookupInserted.second == true);
+    }
+    catch (...)
+    {
+        m_Parameters.erase(inserted.first);
+        throw;
+    }
     return true;
 }
 
@@ -307,10 +389,22 @@ bool AnimatorStateMachine::AddTriggerParameter(std::string name)
 
     AnimatorParameter parameter{};
     parameter.Name = name;
+    parameter.RuntimeName = m_NameTable.Intern(StringView(name));
     parameter.Type = AnimatorParameterType::Trigger;
     parameter.Value = false;
 
-    m_Parameters.emplace(std::move(name), std::move(parameter));
+    const Name runtimeName = parameter.RuntimeName;
+    auto inserted = m_Parameters.emplace(std::move(name), std::move(parameter));
+    try
+    {
+        const auto lookupInserted = m_ParameterLookup.emplace(runtimeName, &inserted.first->second);
+        assert(lookupInserted.second == true);
+    }
+    catch (...)
+    {
+        m_Parameters.erase(inserted.first);
+        throw;
+    }
     return true;
 }
 
@@ -351,6 +445,7 @@ bool AnimatorStateMachine::RemoveParameter(const std::string& name)
             }),
         m_Transitions.end());
 
+    m_ParameterLookup.erase(it->second.RuntimeName);
     m_Parameters.erase(it);
     return true;
 }
@@ -370,6 +465,18 @@ AnimatorParameter* AnimatorStateMachine::FindParameter(const std::string& name)
 {
     const auto it = m_Parameters.find(name);
     return (it != m_Parameters.end()) ? &it->second : nullptr;
+}
+
+const AnimatorParameter* AnimatorStateMachine::FindParameter(Name name) const
+{
+    AnimatorParameter* const* parameter = m_ParameterLookup.find(name);
+    return parameter != nullptr ? *parameter : nullptr;
+}
+
+AnimatorParameter* AnimatorStateMachine::FindParameter(Name name)
+{
+    AnimatorParameter** parameter = m_ParameterLookup.find(name);
+    return parameter != nullptr ? *parameter : nullptr;
 }
 
 bool AnimatorStateMachine::SetFloat(const std::string& name, float value)
@@ -462,8 +569,10 @@ bool AnimatorStateMachine::GetBool(const std::string& name, bool& outValue) cons
 
 bool AnimatorStateMachine::AddTransition(AnimatorTransition transition)
 {
-    if (!HasState(transition.FromState) ||
-        !HasState(transition.ToState) ||
+    const AnimatorStateDefinition* fromState = FindState(transition.FromState);
+    const AnimatorStateDefinition* toState = FindState(transition.ToState);
+    if (fromState == nullptr ||
+        toState == nullptr ||
         transition.FromState == transition.ToState)
     {
         return false;
@@ -481,13 +590,17 @@ bool AnimatorStateMachine::AddTransition(AnimatorTransition transition)
         return false;
     }
 
-    for (const AnimatorCondition& condition : transition.Conditions)
+    transition.RuntimeFromState = fromState->RuntimeName;
+    transition.RuntimeToState = toState->RuntimeName;
+
+    for (AnimatorCondition& condition : transition.Conditions)
     {
         const AnimatorParameter* parameter = FindParameter(condition.ParameterName);
-        if (!parameter)
+        if (parameter == nullptr)
         {
             return false;
         }
+        condition.RuntimeParameterName = parameter->RuntimeName;
 
         // ConditionのExpectedValue型がParameter型と一致していることを登録時に検証します。
         // Runtime評価中にvariant型違いを毎回エラー扱いするより、定義ミスを早期検出します。
@@ -522,10 +635,10 @@ void AnimatorStateMachine::SyncAnimatorBlendTreeParameters()
 {
     // Current StateがBlend Treeなら、同FrameにGameplay側がSetFloatした値をPose評価前に反映します。
     // State Machine側のParameterが正規のRuntime値で、Animator側はそのFrameのSample入力だけを持ちます。
-    if (!m_CurrentStateName.empty())
+    if (m_CurrentStateId.IsNone() == false)
     {
-        const AnimatorStateDefinition* current = FindState(m_CurrentStateName);
-        if (current && current->IsBlendTreeState())
+        const AnimatorStateDefinition* current = FindState(m_CurrentStateId);
+        if (current != nullptr && current->IsBlendTreeState())
         {
             float value = 0.0f;
             if (GetBlendParameterValue(*current, value))
@@ -537,10 +650,10 @@ void AnimatorStateMachine::SyncAnimatorBlendTreeParameters()
 
     // CrossFade先がBlend Treeの場合はNext Stateにも同じFrameのParameter値を反映します。
     // これによりLand -> LocomotionのFade途中でも最新Speedで遷移先Poseを評価できます。
-    if (!m_PendingStateName.empty())
+    if (m_PendingStateId.IsNone() == false)
     {
-        const AnimatorStateDefinition* pending = FindState(m_PendingStateName);
-        if (pending && pending->IsBlendTreeState())
+        const AnimatorStateDefinition* pending = FindState(m_PendingStateId);
+        if (pending != nullptr && pending->IsBlendTreeState())
         {
             float value = 0.0f;
             if (GetBlendParameterValue(*pending, value))
@@ -553,8 +666,8 @@ void AnimatorStateMachine::SyncAnimatorBlendTreeParameters()
 
 bool AnimatorStateMachine::EvaluateCondition(const AnimatorCondition& condition) const
 {
-    const AnimatorParameter* parameter = FindParameter(condition.ParameterName);
-    if (!parameter)
+    const AnimatorParameter* parameter = FindParameter(condition.RuntimeParameterName);
+    if (parameter == nullptr)
     {
         return false;
     }
@@ -610,7 +723,7 @@ bool AnimatorStateMachine::EvaluateTransitions()
 
     for (const AnimatorTransition& transition : m_Transitions)
     {
-        if (transition.FromState != m_CurrentStateName)
+        if (transition.RuntimeFromState != m_CurrentStateId)
         {
             continue;
         }
@@ -647,14 +760,14 @@ bool AnimatorStateMachine::EvaluateTransitions()
         }
     }
 
-    if (!selectedTransition)
+    if (selectedTransition == nullptr)
     {
         return false;
     }
 
     // 最終的に選ばれた1本だけを実行します。
     // Transition開始に失敗した場合はTriggerを消費せず、次Frameに同条件を再評価できます。
-    if (!TransitionTo(selectedTransition->ToState, selectedTransition->CrossFadeDuration))
+    if (TransitionTo(selectedTransition->ToState, selectedTransition->CrossFadeDuration) == false)
     {
         return false;
     }
@@ -667,8 +780,8 @@ void AnimatorStateMachine::ConsumeTransitionTriggers(const AnimatorTransition& t
 {
     for (const AnimatorCondition& condition : transition.Conditions)
     {
-        AnimatorParameter* parameter = FindParameter(condition.ParameterName);
-        if (!parameter || parameter->Type != AnimatorParameterType::Trigger)
+        AnimatorParameter* parameter = FindParameter(condition.RuntimeParameterName);
+        if (parameter == nullptr || parameter->Type != AnimatorParameterType::Trigger)
         {
             continue;
         }
@@ -715,7 +828,12 @@ bool AnimatorStateMachine::UpdateLocomotion(
 
     // Locomotion設定で指定されたStateが未登録なら、名前を暗黙に作らず失敗させます。
     // Asset/Controller設定ミスをAnimation停止ではなく戻り値で検出できるようにします。
-    if (!targetState || targetState->empty() || !HasState(*targetState))
+    if (targetState == nullptr || targetState->empty())
+    {
+        return false;
+    }
+    const AnimatorStateDefinition* targetDefinition = FindState(*targetState);
+    if (targetDefinition == nullptr)
     {
         return false;
     }
@@ -729,12 +847,14 @@ bool AnimatorStateMachine::UpdateLocomotion(
             // 進行中の遷移先と一致しているなら追加予約は不要です。
             // 以前予約した別Stateがあった場合も、最新入力がPendingへ戻ったので取り消します。
             m_QueuedStateName.clear();
+            m_QueuedStateId = {};
         }
         else
         {
             // Locomotionでは入力履歴をすべて再生する必要はありません。
             // 最新速度が要求するStateだけを1件保持し、古い予約は上書きします。
             m_QueuedStateName = *targetState;
+            m_QueuedStateId = targetDefinition->RuntimeName;
         }
 
         return true;
@@ -742,6 +862,7 @@ bool AnimatorStateMachine::UpdateLocomotion(
 
     // Fade外ならQueueは不要なので直接Transition要求へ変換します。
     m_QueuedStateName.clear();
+    m_QueuedStateId = {};
     return TransitionTo(*targetState);
 }
 
@@ -777,6 +898,8 @@ void AnimatorStateMachine::Update(float deltaTime)
     {
         m_CurrentStateName = std::move(m_PendingStateName);
         m_PendingStateName.clear();
+        m_CurrentStateId = m_PendingStateId;
+        m_PendingStateId = {};
     }
 
     // Fade中にLocomotion目標が変化していた場合、完了直後に最新Stateへ次のFadeを開始します。
@@ -786,9 +909,11 @@ void AnimatorStateMachine::Update(float deltaTime)
     {
         std::string queuedState = std::move(m_QueuedStateName);
         m_QueuedStateName.clear();
+        const Name queuedStateId = m_QueuedStateId;
+        m_QueuedStateId = {};
 
         // Fade完了時点で既にそのStateへ到達していれば追加遷移は不要です。
-        if (queuedState != m_CurrentStateName)
+        if (queuedStateId != m_CurrentStateId)
         {
             TransitionTo(queuedState);
         }

@@ -462,18 +462,29 @@ String は Container 群が安定してから着手します。
 
 検討事項:
 
-- UTF-8 を標準内部表現にするか。
-- SSO。
-- Allocator 対応。
-- StringView。
-- formatting。
-- path / asset name との責務分離。
+- [x] UTF-8 を標準内部表現にする。API上のsize / indexはbyte単位とし、暗黙の正規化は行わない。
+- [x] SSO。初期実装では`std::basic_string`のSSOと例外安全性を利用する。
+- [x] Allocator 対応。`STLAllocatorAdapter<char>`を介して外部所有のRaven Allocatorへ接続する。
+- [x] StringView。所有Stringと分離した非所有byte viewとして実装する。
+- [ ] formatting。用途と依存関係を確認して別段階で追加する。
+- [x] path / asset name との責務分離。String自体へpath正規化やAsset固有規則を持ち込まない。
+
+**Phase 7-1 初期実装メモ（2026-10-27）:** `Raven::String`は既存`Vector`と同様に、
+Raven Allocatorと標準Libraryの成熟したStorage実装を接続する段階導入としました。
+AllocatorはStringより長生きし、個別解放をサポートする必要があります。既存の`std::string`は
+一括置換せず、API境界と実測上の価値が明確な箇所から移行します。
+Debug / Release build、`--test-string`、既存`--test-memory-containers`を2026-10-27に検証済みです。
 
 ## 7-2. Raven::StringView
 
 所有しない文字列 View。
 
 標準 Library との相互運用性を重視します。
+
+- [x] `const char*` / pointer + size / `std::string` / `std::string_view`から構築できる。
+- [x] embedded nullを含むbyte列を保持できる。
+- [x] `substr` / prefix・suffix除去 / compare / findを提供する。
+- [x] 終端nullを保証せず、参照元Lifetimeと再確保による無効化を呼び出し側契約とする。
 
 ## 7-3. Raven::Name
 
@@ -487,6 +498,46 @@ String は Container 群が安定してから着手します。
 - Component / property identifier。
 
 String と Name を同一概念にしないことを基本とします。
+
+- [x] `NameTable`がUTF-8文字列をInternし、`Name`はTable + indexの軽量Handleとして保持する。
+- [x] 同一Table内の同一文字列を同じNameへ統合し、異なるTableのNameは明示的に区別する。
+- [x] Hash衝突時は元文字列を比較し、Hash一致だけで同一識別子と判定しない。
+- [x] Intern文字列を個別確保してaddressを安定させ、取得済みViewをTable破棄まで維持する。
+- [x] Table操作を内部mutexで同期し、並行Internを許可する。
+- [x] 最初の実利用としてAnimatorStateMachineのTransition元State比較、Condition Parameter検索、
+  BlendTree Parameter同期を登録時解決済みName cacheへ移行する。
+- [ ] Gameplayから毎Frame呼ばれる公開Set/Get APIなど、文字列境界が残る箇所はHandleを上流から
+  保持できるAPI設計と実workload計測後に個別移行する。
+
+**Phase 7-3 初期実装メモ（2026-10-27）:** `NameTable`は外部所有のRaven Allocatorを使用し、
+そのAllocatorとTableは発行済みNameより長生きする必要があります。`NameHasher`はProcess内検索用で、
+Table addressを含むため永続IDとして保存しません。空文字列は未登録の`Name::None`として扱います。
+同一NameTableの操作は内部で同期しますが、同じ非thread-safe Allocatorを別Tableや別Containerから
+並行利用する場合は、Allocator側または呼び出し側で追加の同期が必要です。
+Debug / Release build、`--test-name`、`--test-string`、`--test-memory-containers`を
+2026-10-27に検証済みです。
+
+**Phase 7-3 Benchmarkメモ（2026-10-27）:** `--benchmark-name`で32 / 256 / 2,048件の
+決定的なlookup-hitを、ウォームアップ3回・計測9回・各1,048,576 queryの中央値として比較します。
+同一環境では事前Intern済みName Handleが2.98～3.73ns、`std::unordered_map<std::string>`が
+17.77～40.18nsで、Name経路は標準文字列経路の約9～17%でした。一方、各lookupで文字列から
+`Intern()`すると47.41～86.40nsとなり、標準文字列経路の約2.2～2.7倍でした。
+
+この結果から、Animation移行は既存の文字列API内部で毎回Internする方式にせず、設定登録時に
+Nameを一度生成してRuntime hot pathまでHandleを伝播できる境界から行います。また現在のNameTableは
+View address安定化のためEntryと長い文字列を個別確保し、2,048件時に4,099個の生存allocationを
+使用しました。大規模Asset registryへ採用する前に、安定addressを維持できるchunk / pool storageとの
+比較計測を行います。
+
+**Animation Runtime初期移行（2026-10-27）:** State / Parameter / Transition設定の`std::string`は
+Asset・Debug・公開APIの正規表現として維持し、AnimatorStateMachine登録時にだけNameを解決します。
+RuntimeではNameから既存owning table要素への非所有pointerを引き、毎FrameのTransition評価と
+BlendTree同期で文字列Hashを繰り返しません。State / Parameter削除時はName lookupを先に除去し、
+同名再登録後も古いpointerを参照しないことをAnimation Runtime Self Testへ追加しました。
+Debug / Release build、`--test-animation-runtime`、`--test-name`、`--test-string`、
+`--test-flat-hash-map`、`--test-character-animation`に成功しています。Name単体lookupの効果は
+上記Microbenchmarkで確認済みですが、
+AnimatorStateMachine::Update全体の実workload Before / After計測は次の課題です。
 
 ---
 
@@ -559,6 +610,7 @@ Raven STL 専用 Benchmark を追加します。
 - Small collection。
 - Physics BroadPhase Pair。
 - SoftBody candidate generation。
+- Name Handle lookup / String-to-Name boundary cost。
 
 Debug / Release を分けて計測します。
 
