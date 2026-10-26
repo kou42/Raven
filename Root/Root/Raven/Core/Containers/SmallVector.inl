@@ -85,12 +85,20 @@ typename SmallVector<T, N>::const_iterator SmallVector<T, N>::begin() const noex
 { return m_Data; }
 
 template<typename T, std::size_t N>
+typename SmallVector<T, N>::const_iterator SmallVector<T, N>::cbegin() const noexcept
+{ return begin(); }
+
+template<typename T, std::size_t N>
 typename SmallVector<T, N>::iterator SmallVector<T, N>::end() noexcept
 { return m_Data + m_Size; }
 
 template<typename T, std::size_t N>
 typename SmallVector<T, N>::const_iterator SmallVector<T, N>::end() const noexcept
 { return m_Data + m_Size; }
+
+template<typename T, std::size_t N>
+typename SmallVector<T, N>::const_iterator SmallVector<T, N>::cend() const noexcept
+{ return end(); }
 
 template<typename T, std::size_t N>
 T& SmallVector<T, N>::operator[](size_type index) noexcept
