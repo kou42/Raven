@@ -85,12 +85,20 @@ typename SmallVector<T, N>::const_iterator SmallVector<T, N>::begin() const noex
 { return m_Data; }
 
 template<typename T, std::size_t N>
+typename SmallVector<T, N>::const_iterator SmallVector<T, N>::cbegin() const noexcept
+{ return begin(); }
+
+template<typename T, std::size_t N>
 typename SmallVector<T, N>::iterator SmallVector<T, N>::end() noexcept
 { return m_Data + m_Size; }
 
 template<typename T, std::size_t N>
 typename SmallVector<T, N>::const_iterator SmallVector<T, N>::end() const noexcept
 { return m_Data + m_Size; }
+
+template<typename T, std::size_t N>
+typename SmallVector<T, N>::const_iterator SmallVector<T, N>::cend() const noexcept
+{ return end(); }
 
 template<typename T, std::size_t N>
 T& SmallVector<T, N>::operator[](size_type index) noexcept
@@ -131,8 +139,9 @@ T& SmallVector<T, N>::emplace_back(Args&&... args)
         // 先に新要素を一時構築し、既存要素の移設中に参照が無効化されるのを防ぎます。
         // move-onlyでthrowする型はstatic_assertで除外しています。
         T pending(std::forward<Args>(args)...);
-        Grow(m_Size + 1);
-        ::new (static_cast<void*>(m_Data + m_Size)) T(std::move_if_noexcept(pending));
+        // 新要素も移設先で構築してから所有権を切り替えます。
+        // コピーが例外を送出しても旧領域・容量・要素数は変わりません。
+        Grow(m_Size + 1, &pending);
     }
     else
     {
@@ -208,7 +217,7 @@ void SmallVector<T, N>::ReleaseOverflow() noexcept
 }
 
 template<typename T, std::size_t N>
-void SmallVector<T, N>::Grow(size_type required)
+void SmallVector<T, N>::Grow(size_type required, T* pending)
 {
     if (required > (std::numeric_limits<size_type>::max)() / sizeof(T))
     {
@@ -235,8 +244,15 @@ void SmallVector<T, N>::Grow(size_type required)
 
     T* destination = static_cast<T*>(raw);
     size_type built = 0;
+    bool appended = false;
     try
     {
+        // 追加要素を先に構築し、後段のコピー失敗でも旧要素を維持します。
+        if (pending != nullptr)
+        {
+            ::new (static_cast<void*>(destination + m_Size)) T(std::move_if_noexcept(*pending));
+            appended = true;
+        }
         for (; built < m_Size; ++built)
         {
             ::new (static_cast<void*>(destination + built))
@@ -246,6 +262,10 @@ void SmallVector<T, N>::Grow(size_type required)
     catch (...)
     {
         DestroyRange(destination, built);
+        if (appended)
+        {
+            destination[m_Size].~T();
+        }
         m_Allocator->Deallocate(destination);
         throw;
     }

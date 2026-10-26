@@ -117,6 +117,31 @@ struct ThrowingMoveValue
     ~ThrowingMoveValue() noexcept { --live; }
 };
 
+// コピー中の例外で SmallVector の再配置が巻き戻されることを検証します。
+// move が noexcept でないため、std::move_if_noexcept はコピーを選びます。
+struct ThrowingCopyContainerValue
+{
+    static inline int live = 0;
+    static inline int copiesBeforeThrow = (std::numeric_limits<int>::max)();
+    int value = 0;
+
+    explicit ThrowingCopyContainerValue(int number = 0) : value(number) { ++live; }
+    ThrowingCopyContainerValue(const ThrowingCopyContainerValue& other) : value(other.value)
+    {
+        if (copiesBeforeThrow == 0)
+        {
+            throw std::runtime_error("requested copy failure");
+        }
+        --copiesBeforeThrow;
+        ++live;
+    }
+    ThrowingCopyContainerValue(ThrowingCopyContainerValue&& other) noexcept(false) : value(other.value)
+    {
+        ++live;
+    }
+    ~ThrowingCopyContainerValue() noexcept { --live; }
+};
+
 // 明示的にallocation失敗させ、Vectorの要素と容量が変化しないことを検証します。
 class FailingVectorAllocator final : public Allocator
 {
@@ -502,6 +527,67 @@ void RunMemoryAllocatorSelfTests()
     assert(smallHeap.GetAllocationCount() == 0);
 
     // ========================================================================
+    // 10b. SmallVector: move-only / Allocator失敗 / アラインメント回帰
+    // ========================================================================
+    {
+        FailingVectorAllocator failing(smallHeap);
+        SmallVector<std::unique_ptr<int>, 1> checked(failing);
+        checked.emplace_back(std::make_unique<int>(7));
+        const auto* originalData = checked.data();
+        const auto originalCapacity = checked.capacity();
+        failing.SetReject(true);
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(std::make_unique<int>(9));
+        }
+        catch (const std::bad_alloc&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        // pending は破棄され、旧領域の所有要素は移動されていません。
+        assert(checked.UsingInlineStorage());
+        assert(checked.data() == originalData);
+        assert(checked.capacity() == originalCapacity);
+        assert(checked.size() == 1 && *checked.front() == 7);
+        assert(smallHeap.GetAllocationCount() == 0);
+        failing.SetReject(false);
+        checked.emplace_back(std::make_unique<int>(9));
+        assert(checked.size() == 2);
+        assert(*checked[0] == 7 && *checked[1] == 9);
+        assert(checked.UsingInlineStorage() == false);
+        assert(smallHeap.GetAllocationCount() == 1);
+        SmallVector<std::unique_ptr<int>, 1> moved(std::move(checked));
+        assert(checked.empty() && checked.UsingInlineStorage());
+        assert(moved.GetAllocator() == &failing);
+        assert(moved.size() == 2 && *moved.back() == 9);
+        assert(smallHeap.GetAllocationCount() == 1);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+    {
+        struct alignas(128) OverAlignedValue
+        {
+            int value = 0;
+            explicit OverAlignedValue(int number = 0) : value(number) {}
+        };
+        SmallVector<OverAlignedValue, 1> aligned(smallHeap);
+        aligned.emplace_back(11);
+        assert(IsAligned(aligned.data(), alignof(OverAlignedValue)));
+        aligned.emplace_back(22);
+        assert(aligned.UsingInlineStorage() == false);
+        assert(IsAligned(aligned.data(), alignof(OverAlignedValue)));
+        assert(aligned.front().value == 11 && aligned.back().value == 22);
+        const auto allocationCount = smallHeap.GetAllocationCount();
+        aligned.reserve(8);
+        assert(aligned.capacity() >= 8);
+        assert(IsAligned(aligned.data(), alignof(OverAlignedValue)));
+        assert(aligned[0].value == 11 && aligned[1].value == 22);
+        assert(smallHeap.GetAllocationCount() == allocationCount);
+    }
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
     // 11. FixedVector: no allocation / overflow / lifetime / alignment
     // ========================================================================
     const std::size_t heapAllocationsBeforeFixed = smallHeap.GetAllocationCount();
@@ -556,6 +642,128 @@ void RunMemoryAllocatorSelfTests()
     }
 
     // ========================================================================
+    // 10a. SmallVector: 拡張時の追加要素コピー失敗は既存領域を維持
+    // ========================================================================
+    {
+        ThrowingCopyContainerValue::live = 0;
+        ThrowingCopyContainerValue::copiesBeforeThrow = (std::numeric_limits<int>::max)();
+        SmallVector<ThrowingCopyContainerValue, 1> checked(smallHeap);
+        checked.emplace_back(10);
+        const auto* beforeData = checked.data();
+        const auto beforeCapacity = checked.capacity();
+        // pending のコピーで例外を発生させ、Grow がロールバックすることを確認します。
+        ThrowingCopyContainerValue::copiesBeforeThrow = 0;
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(20);
+        }
+        catch (const std::runtime_error&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        assert(checked.size() == 1);
+        assert(checked.capacity() == beforeCapacity);
+        assert(checked.data() == beforeData);
+        assert(checked.front().value == 10);
+        assert(ThrowingCopyContainerValue::live == 1);
+        assert(smallHeap.GetAllocationCount() == 0);
+        ThrowingCopyContainerValue::copiesBeforeThrow = (std::numeric_limits<int>::max)();
+        checked.emplace_back(20);
+        assert(checked.size() == 2 && checked.back().value == 20);
+    }
+    assert(ThrowingCopyContainerValue::live == 0);
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
+    // 11a. FixedVector / SmallVector: 構築失敗・再配置失敗時の保証
+    // ========================================================================
+    static_assert(std::is_copy_constructible_v<FixedVector<int, 2>> == false);
+    static_assert(std::is_copy_constructible_v<SmallVector<int, 2>> == false);
+    {
+        ThrowingConstructionValue::live = 0;
+        FixedVector<ThrowingConstructionValue, 2> checked;
+        checked.emplace_back(10);
+        ThrowingConstructionValue::throwNext = true;
+        bool failed = false;
+        try
+        {
+            checked.emplace_back(20);
+        }
+        catch (const std::runtime_error&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        assert(checked.size() == 1 && checked.front().value == 10);
+        assert(ThrowingConstructionValue::live == 1);
+        checked.emplace_back(30);
+        assert(checked.full());
+        assert(checked.try_emplace_back(40) == nullptr);
+        assert(checked.size() == 2);
+    }
+    assert(ThrowingConstructionValue::live == 0);
+    {
+        ThrowingMoveValue::live = 0;
+        ThrowingMoveValue::movesBeforeThrow = (std::numeric_limits<int>::max)();
+        FixedVector<ThrowingMoveValue, 3> source;
+        source.emplace_back(1);
+        source.emplace_back(2);
+        ThrowingMoveValue::movesBeforeThrow = 1;
+        bool failed = false;
+        try
+        {
+            FixedVector<ThrowingMoveValue, 3> moved(std::move(source));
+            (void)moved;
+        }
+        catch (const std::runtime_error&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        // 例外時も移動元の要素は破棄されず、移動先の構築済み要素は解放されます。
+        assert(source.size() == 2);
+        assert(ThrowingMoveValue::live == 2);
+    }
+    assert(ThrowingMoveValue::live == 0);
+    {
+        ThrowingCopyContainerValue::live = 0;
+        ThrowingCopyContainerValue::copiesBeforeThrow = (std::numeric_limits<int>::max)();
+        SmallVector<ThrowingCopyContainerValue, 2> checked(smallHeap);
+        checked.emplace_back(1);
+        checked.emplace_back(2);
+        const auto originalData = checked.data();
+        const auto originalCapacity = checked.capacity();
+        ThrowingCopyContainerValue::copiesBeforeThrow = 1;
+        bool failed = false;
+        try
+        {
+            checked.reserve(3);
+        }
+        catch (const std::runtime_error&)
+        {
+            failed = true;
+        }
+        assert(failed);
+        assert(checked.data() == originalData);
+        assert(checked.capacity() == originalCapacity);
+        assert(checked.size() == 2);
+        assert(checked[0].value == 1 && checked[1].value == 2);
+        assert(ThrowingCopyContainerValue::live == 2);
+        assert(smallHeap.GetAllocationCount() == 0);
+        ThrowingCopyContainerValue::copiesBeforeThrow = (std::numeric_limits<int>::max)();
+        checked.reserve(3);
+        assert(checked.UsingInlineStorage() == false);
+        assert(checked.cend() - checked.cbegin() == 2);
+        const SmallVector<ThrowingCopyContainerValue, 2>& constChecked = checked;
+        assert(constChecked.cbegin() == constChecked.begin());
+        assert(checked.GetAllocator() == &smallHeap);
+    }
+    assert(ThrowingCopyContainerValue::live == 0);
+    assert(smallHeap.GetAllocationCount() == 0);
+
+    // ========================================================================
     // 12. Span: 非所有View / const / 空領域 / subspan / Vector連携
     // ========================================================================
     static_assert(std::is_constructible_v<Span<const int>, const std::vector<int>&>);
@@ -594,7 +802,18 @@ void RunMemoryAllocatorSelfTests()
     // ========================================================================
     // 13. Array: 固定長領域 / Span連携 / 範囲検査
     // ========================================================================
+    // Phase 2: Array の共通 API と const iterator の整合を確認します。
+    static_assert(std::is_same_v<decltype(std::declval<Array<int, 3>&>().begin()), int*>);
+    static_assert(std::is_same_v<decltype(std::declval<const Array<int, 3>&>().end()), const int*>);
+    constexpr Array<int, 3> apiArray{ 1, 2, 3 };
+    static_assert(apiArray.max_size() == 3);
+    static_assert(apiArray.front() == 1 && apiArray.back() == 3);
+    static_assert(apiArray.cend() - apiArray.cbegin() == 3);
     Array<int, 3> array{ 1, 2, 3 };
+    assert(array.max_size() == 3);
+    assert(array.front() == 1 && array.back() == 3);
+    assert(array.cbegin() == array.begin());
+    assert(array.cend() == array.end());
     assert(array.size() == 3);
     array.fill(9);
     assert(array[0] == 9 && array[2] == 9);
@@ -604,8 +823,40 @@ void RunMemoryAllocatorSelfTests()
     const Array<int, 3>& constArray = array;
     Span<const int> constArrayView(constArray);
     assert(constArrayView[1] == 7);
+    // Array のゼロ容量・constexpr・イテレータ契約を検証します。
+    constexpr Array<int, 3> constexprArray{ 1, 2, 3 };
+    static_assert(constexprArray.size() == 3);
+    static_assert(constexprArray[1] == 2);
+    static_assert(constexprArray.end() - constexprArray.begin() == 3);
     Array<int, 0> zeroArray;
     assert(zeroArray.empty());
+    assert(zeroArray.size() == 0);
+    assert(zeroArray.max_size() == 0);
+    assert(zeroArray.cbegin() == zeroArray.cend());
+    assert(zeroArray.data() == nullptr);
+    assert(zeroArray.begin() == zeroArray.end());
+    bool zeroOutOfRange = false;
+    try
+    {
+        (void)zeroArray.at(0);
+    }
+    catch (const std::out_of_range&)
+    {
+        zeroOutOfRange = true;
+    }
+    assert(zeroOutOfRange);
+    struct alignas(64) AlignedArrayValue { int value = 0; };
+    Array<AlignedArrayValue, 2> alignedArray;
+    assert(IsAligned(alignedArray.data(), 64));
+    {
+        Array<VectorLifecycleValue, 2> lifecycleArray;
+        assert(VectorLifecycleValue::live == 2);
+        lifecycleArray[0].value = 42;
+        Array<VectorLifecycleValue, 2> copiedLifecycleArray(lifecycleArray);
+        assert(copiedLifecycleArray[0].value == 42);
+        assert(VectorLifecycleValue::live == 4);
+    }
+    assert(VectorLifecycleValue::live == 0);
     Array<std::unique_ptr<int>, 2> moveOnlyArray;
     moveOnlyArray[0] = std::make_unique<int>(11);
     moveOnlyArray[1] = std::make_unique<int>(22);
