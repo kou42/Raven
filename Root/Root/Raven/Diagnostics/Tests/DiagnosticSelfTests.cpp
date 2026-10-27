@@ -1,9 +1,11 @@
 #include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/EventBuffer.h"
 
 #include <cassert>
 #include <cstdint>
 #include <array>
+#include <atomic>
 #include <iostream>
 #include <set>
 #include <thread>
@@ -111,5 +113,62 @@ void RunDiagnosticSelfTests()
     }
     assert(lineCount == WorkerCount * EventsPerWorker);
     assert(sequences.size() == lineCount);
+    // Overflowでは既存イベントを上書きせず、Drop数が観測可能であることを確認します。
+    EventBuffer overflowBuffer;
+    for (std::size_t index = 0; index < EventBuffer::Capacity; ++index)
+    {
+        DiagnosticEvent item;
+        item.Sequence = index + 1;
+        item.Payload = std::int64_t(index);
+        assert(overflowBuffer.TryPush(std::move(item)) == true);
+    }
+    assert(overflowBuffer.TryPush(DiagnosticEvent{}) == false);
+    assert(overflowBuffer.GetDroppedCount() == 1);
+    DiagnosticEvent popped;
+    for (std::size_t index = 0; index < EventBuffer::Capacity; ++index)
+    {
+        assert(overflowBuffer.TryPop(popped) == true);
+        assert(popped.Sequence == index + 1);
+        assert(std::get<std::int64_t>(popped.Payload) == static_cast<std::int64_t>(index));
+    }
+    assert(overflowBuffer.TryPop(popped) == false);
+
+    // ProducerとConsumerが同時に動作しても、FIFO順とPayload所有権を維持します。
+    EventBuffer concurrentBuffer;
+    constexpr std::uint64_t EventCount = 4096;
+    std::atomic<bool> producerFinished{ false };
+    std::thread producer([&concurrentBuffer, &producerFinished]()
+    {
+        for (std::uint64_t index = 1; index <= EventCount; ++index)
+        {
+            DiagnosticEvent item;
+            item.Sequence = index;
+            item.Payload = std::string("event-") + std::to_string(index);
+            while (concurrentBuffer.TryPush(item) == false)
+            {
+                // 容量超過時はDropを記録する仕様。テストでは同じイベントを再試行します。
+                std::this_thread::yield();
+            }
+        }
+        producerFinished.store(true, std::memory_order_release);
+    });
+    std::uint64_t received = 0;
+    while (received < EventCount)
+    {
+        if (concurrentBuffer.TryPop(popped) == true)
+        {
+            ++received;
+            assert(popped.Sequence == received);
+            assert(std::get<std::string>(popped.Payload) ==
+                std::string("event-") + std::to_string(received));
+        }
+        else
+        {
+            std::this_thread::yield();
+        }
+    }
+    producer.join();
+    assert(producerFinished.load(std::memory_order_acquire) == true);
+
 }
 }
