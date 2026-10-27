@@ -951,6 +951,12 @@
     <Filter Include="Raven\\Diagnostics\\Tests" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Update="Raven\\Diagnostics\\DiagnosticCollector.cpp">
+      <Filter>Raven\\Diagnostics</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\\Diagnostics\\DiagnosticCollector.h">
+      <Filter>Raven\\Diagnostics</Filter>
+    </ClInclude>
     <ClCompile Update="Raven\\Diagnostics\\EventBuffer.cpp">
       <Filter>Raven\\Diagnostics</Filter>
     </ClCompile>
