@@ -431,6 +431,8 @@ D:.
     |   |   +---Diagnostics
     |   |   |       DiagnosticAPI.cpp
     |   |   |       DiagnosticAPI.h
+    |   |   |       DiagnosticCollector.cpp
+    |   |   |       DiagnosticCollector.h
     |   |   |       EventBuffer.cpp
     |   |   |       EventBuffer.h
     |   |   |
