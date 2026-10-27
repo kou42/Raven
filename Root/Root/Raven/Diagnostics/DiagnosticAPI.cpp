@@ -59,6 +59,14 @@ void LimitText(std::string& text)
 }
 }
 
+void NormalizePayload(DiagnosticPayload& payload)
+{
+    if (auto* text = std::get_if<std::string>(&payload); text != nullptr)
+    {
+        LimitText(*text);
+    }
+}
+
 void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
 {
     output << "[Diagnostics][" << SeverityName(event.Severity) << "]["
@@ -72,10 +80,7 @@ void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
 void Emit(DiagnosticEventId id, DiagnosticCategory category,
     DiagnosticSeverity severity, DiagnosticPayload payload)
 {
-    if (auto* text = std::get_if<std::string>(&payload); text != nullptr)
-    {
-        LimitText(*text);
-    }
+    NormalizePayload(payload);
 
     DiagnosticEvent event;
     event.Id = id;
