@@ -946,4 +946,22 @@
     <ClInclude Update="Raven\Core\Containers\UniquePtr.h" />
     <ClInclude Update="Raven\Core\Containers\WeakHandle.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\\Diagnostics" />
+    <Filter Include="Raven\\Diagnostics\\Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\\Diagnostics\\DiagnosticAPI.cpp">
+      <Filter>Raven\\Diagnostics</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\\Diagnostics\\DiagnosticAPI.h">
+      <Filter>Raven\\Diagnostics</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\\Diagnostics\\Tests\\DiagnosticSelfTests.cpp">
+      <Filter>Raven\\Diagnostics\\Tests</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\\Diagnostics\\Tests\\DiagnosticSelfTests.h">
+      <Filter>Raven\\Diagnostics\\Tests</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
