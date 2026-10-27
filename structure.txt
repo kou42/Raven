@@ -428,6 +428,18 @@ D:.
     |   |   |       MathVector.cpp
     |   |   |       MathVector.h
     |   |   |
+    |   |   +---Diagnostics
+    |   |   |       DiagnosticAPI.cpp
+    |   |   |       DiagnosticAPI.h
+    |   |   |       DiagnosticCollector.cpp
+    |   |   |       DiagnosticCollector.h
+    |   |   |       EventBuffer.cpp
+    |   |   |       EventBuffer.h
+    |   |   |
+    |   |   |   +---Tests
+    |   |   |           DiagnosticSelfTests.cpp
+    |   |   |           DiagnosticSelfTests.h
+    |   |   |
     |   |   +---Physics
     |   |   |   |   Contact.h
     |   |   |   |   PhysicsType.h

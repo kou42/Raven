@@ -3,6 +3,7 @@
 #include <limits>
 
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Diagnostics/DiagnosticAPI.h"
 #include "Raven/Core/Containers/FrameVector.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -304,6 +305,9 @@ bool PassesRayCastFilter(
 void PhysicsWorld::SetGravity(const math::Vec3& gravity)
 {
     m_GravityField.SetAcceleration(gravity);
+    // 設定変更時のみ発行し、毎フレームのPhysics Hot Pathを汚染しません。
+    RAVEN_LOG_INFO(Diagnostics::DiagnosticCategory::Physics, Diagnostics::EventIds::PhysicsGravityUpdated,
+        std::string("Physics gravity updated"));
 }
 
 const math::Vec3& PhysicsWorld::GetGravity() const

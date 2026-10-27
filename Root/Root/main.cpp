@@ -37,6 +37,7 @@
 
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
+#include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
 #include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 #include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
@@ -131,6 +132,12 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunStringSelfTests();
             std::cout << "String and StringView self-tests passed: suites=1 failures=0.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-diagnostics")
+        {
+            Raven::tests::RunDiagnosticSelfTests();
+            std::cout << "Diagnostics self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
         if (backendArgument == "--test-name")
