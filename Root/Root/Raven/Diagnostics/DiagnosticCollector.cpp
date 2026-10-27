@@ -18,7 +18,7 @@ DiagnosticCollector::~DiagnosticCollector()
 bool DiagnosticCollector::RegisterBuffer(std::shared_ptr<EventBuffer> buffer)
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
-    if (m_StopRequested == true || buffer == nullptr)
+    if (m_StopRequested == true || m_Stopped == true || buffer == nullptr)
     {
         return false;
     }
@@ -37,7 +37,7 @@ bool DiagnosticCollector::RegisterBuffer(std::shared_ptr<EventBuffer> buffer)
 bool DiagnosticCollector::Start()
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
-    if (m_Running == true || m_Worker.joinable() == true)
+    if (m_Running == true || m_Stopped == true || m_Worker.joinable() == true)
     {
         return false;
     }
@@ -92,6 +92,7 @@ void DiagnosticCollector::Stop()
     }
     std::lock_guard<std::mutex> lock(m_Mutex);
     m_Running = false;
+    m_Stopped = true;
     m_FlushCondition.notify_all();
 }
 
