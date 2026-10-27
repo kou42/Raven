@@ -154,6 +154,36 @@ void Emit(DiagnosticEventId id, DiagnosticCategory category,
     event.Sequence = s_Sequence.fetch_add(1, std::memory_order_relaxed) + 1;
     event.Payload = std::move(payload);
 
+    {
+        std::lock_guard<std::mutex> lock(s_AsyncMutex);
+        if (s_Collector != nullptr)
+        {
+            // 再起動後に旧スレッドのBufferを再利用しないためGenerationを比較します。
+            if (s_ThreadBuffer.Generation != s_Generation)
+            {
+                auto buffer = std::make_shared<EventBuffer>();
+                if (s_Collector->RegisterBuffer(buffer) == true)
+                {
+                    s_ThreadBuffer.Buffer = std::move(buffer);
+                    s_ThreadBuffer.Generation = s_Generation;
+                }
+            }
+            if (s_ThreadBuffer.Generation == s_Generation &&
+                s_ThreadBuffer.Buffer != nullptr)
+            {
+                if (s_ThreadBuffer.Buffer->TryPush(std::move(event)) == false)
+                {
+                    ++s_TotalDropped;
+                }
+                else
+                {
+                    s_Collector->Notify();
+                }
+                return;
+            }
+        }
+    }
+
     // Console Sinkの行単位出力を排他し、複数スレッドの文字列混在を防ぎます。
     // Sequenceの採番順と表示順は一致しない場合があります。
     std::lock_guard<std::mutex> lock(s_ConsoleMutex);
