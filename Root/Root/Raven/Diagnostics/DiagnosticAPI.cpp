@@ -5,10 +5,8 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
-#include <string_view>
 #include <thread>
 #include <utility>
-#include <type_traits>
 
 namespace Raven
 {
@@ -61,6 +59,16 @@ void LimitText(std::string& text)
 }
 }
 
+void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
+{
+    output << "[Diagnostics][" << SeverityName(event.Severity) << "]["
+        << CategoryName(event.Category) << "] id=" << event.Id
+        << " seq=" << event.Sequence << " ts_ns=" << event.TimestampNanoseconds
+        << " thread=" << event.ThreadId << " payload=";
+    std::visit([&output](const auto& value) { output << value; }, event.Payload);
+    output << '\n';
+}
+
 void Emit(DiagnosticEventId id, DiagnosticCategory category,
     DiagnosticSeverity severity, DiagnosticPayload payload)
 {
@@ -84,12 +92,7 @@ void Emit(DiagnosticEventId id, DiagnosticCategory category,
     // Console Sinkの行単位出力を排他し、複数スレッドの文字列混在を防ぎます。
     // Sequenceの採番順と表示順は一致しない場合があります。
     std::lock_guard<std::mutex> lock(s_ConsoleMutex);
-    std::cout << "[Diagnostics][" << SeverityName(event.Severity) << "]["
-        << CategoryName(event.Category) << "] id=" << event.Id
-        << " seq=" << event.Sequence << " ts_ns=" << event.TimestampNanoseconds
-        << " thread=" << event.ThreadId << " payload=";
-    std::visit([](const auto& value) { std::cout << value; }, event.Payload);
-    std::cout << '\n';
+    WriteConsoleEvent(std::cout, event);
 }
 }
 }
