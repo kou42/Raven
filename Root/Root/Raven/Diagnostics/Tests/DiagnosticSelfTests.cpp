@@ -55,7 +55,7 @@ void RunDiagnosticSelfTests()
     output.clear();
     WriteConsoleEvent(output, event);
     assert(output.str().find("payload=1.5\n") != std::string::npos);
-}
+
     // UTF-8の2/3/4バイト文字を1024バイト境界で分断しないことを確認します。
     DiagnosticPayload payload = std::string(MaxDiagnosticTextBytes - 1, 'a') + "\\xC3\\xA9";
     NormalizePayload(payload);
@@ -111,5 +111,5 @@ void RunDiagnosticSelfTests()
     }
     assert(lineCount == WorkerCount * EventsPerWorker);
     assert(sequences.size() == lineCount);
-
+}
 }
