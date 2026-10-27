@@ -48,6 +48,9 @@ constexpr DiagnosticEventId LegacyRHIInitializationFailed = 0x1001u;
 constexpr DiagnosticEventId PhysicsGravityUpdated = 0x2001u;
 }
 
+// 値所有Payloadの文字列サイズを制限します。EmitとSelf Testで同じ規則を使用します。
+void NormalizePayload(DiagnosticPayload& payload);
+
 // 現段階では同期Console出力。後続PhaseでSink/Collectorへ差し替えます。
 // IDは呼び出し側で安定した値を指定し、Sequenceは発行順を表します。
 // Consoleへの書式化はストリームに分離し、GPU不要のSelf Testから検証できます。
