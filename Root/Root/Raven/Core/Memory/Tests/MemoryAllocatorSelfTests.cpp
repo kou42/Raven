@@ -15,6 +15,7 @@
 #include "Raven/Core/Containers/RingBuffer.h"
 #include "Raven/Core/Containers/BitSet.h"
 #include "Raven/Core/Containers/HandlePool.h"
+#include "Raven/Core/Containers/PoolOwnedHandle.h"
 #include "Raven/Core/Containers/WeakHandle.h"
 #include "Raven/Core/Containers/IntrusivePtr.h"
 #include "Raven/Core/Containers/UniquePtr.h"
@@ -190,6 +191,36 @@ struct IntrusiveLifecycleValue final : IntrusiveRefCounted
 
 void RunMemoryAllocatorSelfTests()
 {
+    // Phase 8-4: Pool所有権、Move、Slot再利用、resetのRAII動作を確認します。
+    {
+        auto pool = std::make_shared<HandlePool<int>>();
+        auto owner = PoolOwnedHandle<int>::Create(pool, 12);
+        const PoolHandle firstHandle = owner.handle();
+        assert(pool->size() == 1);
+        assert(*owner == 12);
+
+        auto moved = std::move(owner);
+        assert(owner.get() == nullptr);
+        assert(moved.get() != nullptr);
+
+        // 外部erase後にSlotが再利用されても、古いOwnerは新しい要素を消しません。
+        assert(pool->erase(firstHandle));
+        const PoolHandle reused = pool->emplace(99);
+        assert(reused.index == firstHandle.index);
+        assert(reused.generation != firstHandle.generation);
+        moved.reset();
+        assert(pool->contains(reused));
+        assert(*pool->get(reused) == 99);
+        assert(pool->erase(reused));
+
+        auto another = PoolOwnedHandle<int>::Create(pool, 33);
+        pool.reset();
+        // OwnerがPoolを保持するため、外側のshared_ptr破棄後も安全にアクセスできます。
+        assert(*another == 33);
+        another.reset();
+        assert(another.get() == nullptr);
+    }
+
     // Phase 8-3: erase / Slot再利用 / Pool破棄後にWeakHandleが失効することを確認します。
     {
         WeakHandle<int> weak;
