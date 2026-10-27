@@ -138,12 +138,13 @@ void DiagnosticCollector::Run()
         }
         if (m_FlushRequested > m_FlushCompleted)
         {
+            const std::uint64_t request = m_FlushRequested;
             lock.unlock();
             // Flush時点で既にPush済みのイベントを出力します。
             DrainOnce();
             m_Output.flush();
             lock.lock();
-            m_FlushCompleted = m_FlushRequested;
+            m_FlushCompleted = request;
             m_FlushCondition.notify_all();
         }
         if (drained == false)
