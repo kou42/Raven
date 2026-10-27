@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
         if (backendArgument == "--test-diagnostics")
         {
             Raven::tests::RunDiagnosticSelfTests();
-            std::cout << "Diagnostics self-tests passed: suites=1 failures=0.\\n";
+            std::cout << "Diagnostics self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
         if (backendArgument == "--test-name")
