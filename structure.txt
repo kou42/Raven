@@ -432,6 +432,10 @@ D:.
     |   |   |       DiagnosticAPI.cpp
     |   |   |       DiagnosticAPI.h
     |   |   |
+    |   |   |   +---Tests
+    |   |   |           DiagnosticSelfTests.cpp
+    |   |   |           DiagnosticSelfTests.h
+    |   |   |
     |   |   +---Physics
     |   |   |   |   Contact.h
     |   |   |   |   PhysicsType.h
