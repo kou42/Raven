@@ -428,6 +428,10 @@ D:.
     |   |   |       MathVector.cpp
     |   |   |       MathVector.h
     |   |   |
+    |   |   +---Diagnostics
+    |   |   |       DiagnosticAPI.cpp
+    |   |   |       DiagnosticAPI.h
+    |   |   |
     |   |   +---Physics
     |   |   |   |   Contact.h
     |   |   |   |   PhysicsType.h
