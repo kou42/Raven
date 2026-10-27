@@ -18,7 +18,7 @@ DiagnosticCollector::~DiagnosticCollector()
 bool DiagnosticCollector::RegisterBuffer(std::shared_ptr<EventBuffer> buffer)
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
-    if (m_Running == true || buffer == nullptr)
+    if (m_StopRequested == true || buffer == nullptr)
     {
         return false;
     }
@@ -30,6 +30,7 @@ bool DiagnosticCollector::RegisterBuffer(std::shared_ptr<EventBuffer> buffer)
         }
     }
     m_Buffers.push_back(std::move(buffer));
+    m_Wake.notify_one();
     return true;
 }
 
@@ -59,6 +60,21 @@ void DiagnosticCollector::Notify()
     m_Wake.notify_one();
 }
 
+void DiagnosticCollector::Flush()
+{
+    std::unique_lock<std::mutex> lock(m_Mutex);
+    if (m_Running == false || m_StopRequested == true)
+    {
+        return;
+    }
+    const std::uint64_t request = ++m_FlushRequested;
+    m_Wake.notify_one();
+    m_FlushCondition.wait(lock, [this, request]()
+    {
+        return m_FlushCompleted >= request || m_Running == false;
+    });
+}
+
 void DiagnosticCollector::Stop()
 {
     {
@@ -76,6 +92,7 @@ void DiagnosticCollector::Stop()
     }
     std::lock_guard<std::mutex> lock(m_Mutex);
     m_Running = false;
+    m_FlushCondition.notify_all();
 }
 
 std::uint64_t DiagnosticCollector::GetCollectedCount() const noexcept
@@ -86,7 +103,13 @@ std::uint64_t DiagnosticCollector::GetCollectedCount() const noexcept
 bool DiagnosticCollector::DrainOnce()
 {
     bool drained = false;
-    for (const auto& buffer : m_Buffers)
+    // 登録は実行中にも発生するため、短時間のロックで共有所有権をSnapshotします。
+    std::vector<std::shared_ptr<EventBuffer>> buffers;
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        buffers = m_Buffers;
+    }
+    for (const auto& buffer : buffers)
     {
         DiagnosticEvent event;
         while (buffer->TryPop(event) == true)
@@ -107,15 +130,24 @@ void DiagnosticCollector::Run()
         std::unique_lock<std::mutex> lock(m_Mutex);
         if (m_StopRequested == true)
         {
-            // Stop前にPush済みのイベントを最後にDrainします。
             lock.unlock();
+            // Stop呼出側は全Producerをjoin済みであることが前提です。
             DrainOnce();
             m_Output.flush();
             return;
         }
+        if (m_FlushRequested > m_FlushCompleted)
+        {
+            lock.unlock();
+            // Flush時点で既にPush済みのイベントを出力します。
+            DrainOnce();
+            m_Output.flush();
+            lock.lock();
+            m_FlushCompleted = m_FlushRequested;
+            m_FlushCondition.notify_all();
+        }
         if (drained == false)
         {
-            // Notifyを取りこぼしても10ms以内に再走査します。
             m_Wake.wait_for(lock, std::chrono::milliseconds(10));
         }
     }
