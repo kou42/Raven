@@ -280,7 +280,7 @@ bool Renderer::TryInit(RHIBackend backend)
     const bool initialized = RenderCommand::TryInit(backend);
     if (initialized == false)
     {
-        RAVEN_LOG_ERROR(Diagnostics::DiagnosticCategory::RHI, 0x1001u,
+        RAVEN_LOG_ERROR(Diagnostics::DiagnosticCategory::RHI, Diagnostics::EventIds::LegacyRHIInitializationFailed,
             std::string("Legacy Renderer backend initialization failed"));
     }
     return initialized;
