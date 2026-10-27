@@ -89,6 +89,54 @@ void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
     output << '\n';
 }
 
+bool StartAsyncLogging()
+{
+    std::lock_guard<std::mutex> lock(s_AsyncMutex);
+    if (s_Collector != nullptr)
+    {
+        return false;
+    }
+    auto collector = std::make_shared<DiagnosticCollector>(std::cout);
+    if (collector->Start() == false)
+    {
+        return false;
+    }
+    ++s_Generation;
+    s_Collector = std::move(collector);
+    return true;
+}
+
+void FlushDiagnostics()
+{
+    std::lock_guard<std::mutex> lock(s_AsyncMutex);
+    if (s_Collector != nullptr)
+    {
+        s_Collector->Flush();
+    }
+    else
+    {
+        std::lock_guard<std::mutex> consoleLock(s_ConsoleMutex);
+        std::cout.flush();
+    }
+}
+
+void StopAsyncLogging()
+{
+    std::lock_guard<std::mutex> lock(s_AsyncMutex);
+    if (s_Collector == nullptr)
+    {
+        return;
+    }
+    s_Collector->Stop();
+    s_Collector.reset();
+}
+
+std::uint64_t GetAsyncDroppedCount()
+{
+    std::lock_guard<std::mutex> lock(s_AsyncMutex);
+    return s_TotalDropped;
+}
+
 void Emit(DiagnosticEventId id, DiagnosticCategory category,
     DiagnosticSeverity severity, DiagnosticPayload payload)
 {
