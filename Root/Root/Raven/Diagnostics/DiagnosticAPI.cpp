@@ -1,10 +1,12 @@
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticCollector.h"
 
 #include <atomic>
 #include <chrono>
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <memory>
 #include <thread>
 #include <utility>
 
@@ -16,6 +18,16 @@ namespace
 {
 std::atomic<std::uint64_t> s_Sequence{ 0 };
 std::mutex s_ConsoleMutex;
+std::mutex s_AsyncMutex;
+std::shared_ptr<DiagnosticCollector> s_Collector;
+std::uint64_t s_Generation = 0;
+std::uint64_t s_TotalDropped = 0;
+struct ThreadBufferState
+{
+    std::uint64_t Generation = 0;
+    std::shared_ptr<EventBuffer> Buffer;
+};
+thread_local ThreadBufferState s_ThreadBuffer;
 
 const char* CategoryName(DiagnosticCategory category)
 {
