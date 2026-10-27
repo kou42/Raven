@@ -1,12 +1,14 @@
 #include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
 #include "Raven/Diagnostics/EventBuffer.h"
+#include "Raven/Diagnostics/DiagnosticCollector.h"
 
 #include <cassert>
 #include <cstdint>
 #include <array>
 #include <atomic>
 #include <iostream>
+#include <memory>
 #include <set>
 #include <thread>
 #include <sstream>
@@ -169,6 +171,43 @@ void RunDiagnosticSelfTests()
     }
     producer.join();
     assert(producerFinished.load(std::memory_order_acquire) == true);
+
+    // 登録Bufferを共有所有し、WorkerがDrainしてStopで全件をFlushします。
+    // Producerのjoin後にStopするため、終了境界で未発行イベントは存在しません。
+    std::ostringstream collectorOutput;
+    auto registeredBuffer = std::make_shared<EventBuffer>();
+    DiagnosticCollector collector(collectorOutput);
+    assert(collector.RegisterBuffer(registeredBuffer) == true);
+    assert(collector.RegisterBuffer(registeredBuffer) == false);
+    assert(collector.Start() == true);
+    assert(collector.Start() == false);
+    std::thread collectorProducer([&collector, registeredBuffer]()
+    {
+        for (std::uint64_t index = 1; index <= 64; ++index)
+        {
+            DiagnosticEvent item;
+            item.Id = 0x4001u;
+            item.Sequence = index;
+            item.Payload = std::int64_t(index);
+            while (registeredBuffer->TryPush(item) == false)
+            {
+                std::this_thread::yield();
+            }
+            collector.Notify();
+        }
+    });
+    collectorProducer.join();
+    collector.Stop();
+    assert(collector.GetCollectedCount() == 64);
+    assert(collector.RegisterBuffer(std::make_shared<EventBuffer>()) == true);
+    std::istringstream collectedLines(collectorOutput.str());
+    std::uint64_t collectedSequence = 0;
+    while (std::getline(collectedLines, line))
+    {
+        ++collectedSequence;
+        assert(line.find(" seq=" + std::to_string(collectedSequence) + " ") != std::string::npos);
+    }
+    assert(collectedSequence == 64);
 
 }
 }
