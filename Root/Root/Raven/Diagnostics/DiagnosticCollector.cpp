@@ -113,8 +113,14 @@ bool DiagnosticCollector::DrainOnce()
     for (const auto& buffer : buffers)
     {
         DiagnosticEvent event;
-        while (buffer->TryPop(event) == true)
+        // 一度の走査で無制限に消費すると、高頻度ProducerによりStop/Flushが飢餓します。
+        // Bufferごとの処理量を制限して制御要求の確認機会を確保します。
+        for (std::size_t index = 0; index < EventBuffer::Capacity; ++index)
         {
+            if (buffer->TryPop(event) == false)
+            {
+                break;
+            }
             WriteConsoleEvent(m_Output, event);
             m_Collected.fetch_add(1, std::memory_order_relaxed);
             drained = true;
