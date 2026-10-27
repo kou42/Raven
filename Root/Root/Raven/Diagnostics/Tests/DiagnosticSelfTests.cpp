@@ -210,13 +210,23 @@ void RunDiagnosticSelfTests()
     assert(collectorOutput.str().find("payload=late-registration") != std::string::npos);
     collector.Stop();
     assert(collector.GetCollectedCount() == 65);
-    assert(collector.RegisterBuffer(std::make_shared<EventBuffer>()) == true);
+    // Stop後の新規登録は不可。再起動時の旧Buffer混入を防ぎます。
+    assert(collector.RegisterBuffer(std::make_shared<EventBuffer>()) == false);
     std::istringstream collectedLines(collectorOutput.str());
     std::uint64_t collectedSequence = 0;
     while (std::getline(collectedLines, line))
     {
         ++collectedSequence;
-        assert(line.find(" seq=" + std::to_string(collectedSequence) + " ") != std::string::npos);
+        // BufferごとのFIFOは保証しますが、異なるBuffer間の順序は保証しません。
+        if (collectedSequence <= 64)
+        {
+            assert(line.find("id=16385 ") != std::string::npos);
+            assert(line.find(" seq=" + std::to_string(collectedSequence) + " ") != std::string::npos);
+        }
+        else
+        {
+            assert(line.find("id=16386 ") != std::string::npos);
+        }
     }
     assert(collectedSequence == 65);
 
