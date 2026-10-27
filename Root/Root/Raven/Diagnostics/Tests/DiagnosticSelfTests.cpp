@@ -220,5 +220,15 @@ void RunDiagnosticSelfTests()
     }
     assert(collectedSequence == 65);
 
+    // Emitの非同期経路と停止・再起動を検証します。
+    assert(StartAsyncLogging() == true);
+    RAVEN_LOG_INFO(DiagnosticCategory::Core, 0x5001u, std::int64_t(1));
+    FlushDiagnostics();
+    StopAsyncLogging();
+    assert(StartAsyncLogging() == true);
+    RAVEN_LOG_INFO(DiagnosticCategory::Core, 0x5002u, std::int64_t(2));
+    FlushDiagnostics();
+    StopAsyncLogging();
+
 }
 }
