@@ -549,12 +549,14 @@ AnimatorStateMachine::Update全体の実workload Before / After計測は次の�
 
 候補:
 
-- [ ] Allocator-aware UniquePtr。
+- [x] Allocator-aware UniquePtr（Phase 8-1: 単一Object、move-only、MakeUnique、例外時rollback）。
 - [x] intrusive reference counting（Phase 8-2: IntrusiveRefCounted / IntrusivePtr / MakeIntrusive）。
 - [ ] Handle / WeakHandle。
 - [ ] Object Pool ownership helper。
 
 標準 smart pointer で十分な場所は継続利用します。
+
+**Phase 8-1:** `UniquePtr<T>` / `MakeUnique<T>` を追加。Allocatorの個別解放が必要です。Frame/Linearのno-op Deallocateでは利用しません。AllocatorのResetは所有Object破棄後に実行します。`release()`後は呼び出し側が明示的に破棄と解放を行います。Memory Allocator Self Testsへ基本操作・move・構築失敗・確保失敗の検証を追加（ビルド未実施）。
 
 **Phase 8-2:** オブジェクト内にatomic参照カウンタを保持し、最後の所有参照が解放された際にdeleteします。別途control blockは不要ですが、循環参照・WeakHandleには未対応です。オブジェクトはnewまたはMakeIntrusiveで生成し、stack上のオブジェクトを所有させないでください。Self Testを追加（ビルド未実施）。
 
