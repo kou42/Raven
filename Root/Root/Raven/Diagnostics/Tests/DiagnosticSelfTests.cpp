@@ -240,5 +240,42 @@ void RunDiagnosticSelfTests()
     FlushDiagnostics();
     StopAsyncLogging();
 
+    // 4 Producerの負荷試験: 受信件数とDrop件数の合計が発行数と一致すること。
+    // 標準出力の差替えは他のテストと同時に行わないでください。
+    std::ostringstream loadOutput;
+    std::streambuf* originalOutput = std::cout.rdbuf(loadOutput.rdbuf());
+    const std::uint64_t droppedBefore = GetAsyncDroppedCount();
+    assert(StartAsyncLogging() == true);
+    constexpr std::size_t LoadWorkers = 4;
+    constexpr std::size_t LoadPerWorker = 200;
+    std::array<std::thread, LoadWorkers> loadWorkers;
+    for (std::size_t workerIndex = 0; workerIndex < LoadWorkers; ++workerIndex)
+    {
+        loadWorkers[workerIndex] = std::thread([]()
+        {
+            for (std::size_t index = 0; index < LoadPerWorker; ++index)
+            {
+                RAVEN_LOG_INFO(DiagnosticCategory::Core, 0x6001u, std::int64_t(1));
+            }
+        });
+    }
+    for (std::thread& worker : loadWorkers)
+    {
+        worker.join();
+    }
+    FlushDiagnostics();
+    StopAsyncLogging();
+    const std::uint64_t droppedAfter = GetAsyncDroppedCount();
+    std::cout.rdbuf(originalOutput);
+    std::istringstream loadLines(loadOutput.str());
+    std::size_t delivered = 0;
+    while (std::getline(loadLines, line))
+    {
+        assert(line.find("[Diagnostics][INFO][Core] id=24577 ") == 0);
+        assert(line.find(" payload=1") != std::string::npos);
+        ++delivered;
+    }
+    assert(delivered + (droppedAfter - droppedBefore) == LoadWorkers * LoadPerWorker);
+
 }
 }
