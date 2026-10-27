@@ -16,6 +16,9 @@
 #include "Raven/Core/Containers/BitSet.h"
 #include "Raven/Core/Containers/HandlePool.h"
 #include "Raven/Core/Containers/PoolOwnedHandle.h"
+#include "Raven/Core/Containers/WeakHandle.h"
+#include "Raven/Core/Containers/IntrusivePtr.h"
+#include "Raven/Core/Containers/UniquePtr.h"
 #include "Raven/Core/Containers/SparseSet.h"
 
 #include <cassert>
@@ -171,6 +174,19 @@ private:
     bool m_Reject = false;
 };
 
+// IntrusivePtrの最終Releaseでデストラクタが一度だけ呼ばれることを検証します。
+struct IntrusiveLifecycleValue final : IntrusiveRefCounted
+{
+    static inline int destroyed = 0;
+    int value = 0;
+
+    explicit IntrusiveLifecycleValue(int initial) : value(initial) {}
+    ~IntrusiveLifecycleValue() override
+    {
+        ++destroyed;
+    }
+};
+
 } // namespace
 
 void RunMemoryAllocatorSelfTests()
@@ -203,6 +219,131 @@ void RunMemoryAllocatorSelfTests()
         assert(*another == 33);
         another.reset();
         assert(another.get() == nullptr);
+    }
+
+    // Phase 8-3: erase / Slot再利用 / Pool破棄後にWeakHandleが失効することを確認します。
+    {
+        WeakHandle<int> weak;
+        assert(weak.expired());
+
+        {
+            HandlePool<int> pool;
+            auto first = pool.emplace(42);
+            weak = pool.weak(first);
+            assert(weak.expired() == false);
+            assert(*weak.get() == 42);
+
+            assert(pool.erase(first));
+            assert(weak.get() == nullptr);
+
+            auto second = pool.emplace(7);
+            assert(second.index == first.index);
+            assert(second.generation != first.generation);
+            assert(weak.expired());
+            auto current = pool.weak(second);
+            assert(*current.get() == 7);
+
+            pool.clear();
+            assert(current.expired());
+        }
+
+        // Pool本体が解放された後も、WeakHandleの照会は安全に失効を返します。
+        assert(weak.get() == nullptr);
+    }
+
+    // Phase 8-2: copy/move/swap/resetの参照数と最終破棄を確認します。
+    {
+        IntrusiveLifecycleValue::destroyed = 0;
+        auto first = MakeIntrusive<IntrusiveLifecycleValue>(42);
+        assert(first->GetRefCount() == 1);
+        assert(first->value == 42);
+
+        IntrusivePtr<IntrusiveLifecycleValue> second(first);
+        assert(first->GetRefCount() == 2);
+        IntrusivePtr<IntrusiveLifecycleValue> third(std::move(second));
+        assert(second.get() == nullptr);
+        assert(third->GetRefCount() == 2);
+
+        IntrusivePtr<IntrusiveLifecycleValue> fourth;
+        fourth = third;
+        assert(first->GetRefCount() == 3);
+        fourth = fourth;
+        assert(first->GetRefCount() == 3);
+
+        IntrusivePtr<IntrusiveLifecycleValue> empty;
+        fourth.swap(empty);
+        assert(fourth.get() == nullptr);
+        assert(empty->GetRefCount() == 3);
+
+        third.reset();
+        assert(first->GetRefCount() == 2);
+        empty.reset();
+        assert(first->GetRefCount() == 1);
+        assert(IntrusiveLifecycleValue::destroyed == 0);
+
+        first.reset();
+        assert(IntrusiveLifecycleValue::destroyed == 1);
+    }
+
+    // Phase 8-1: Allocator-aware ownershipと例外時の確保領域回収。
+    {
+        HeapAllocator ownerAllocator;
+        static_assert(std::is_copy_constructible_v<UniquePtr<int>> == false);
+        static_assert(std::is_move_constructible_v<UniquePtr<int>>);
+        auto value = MakeUnique<int>(ownerAllocator, 42);
+        assert(*value == 42);
+        assert(ownerAllocator.GetAllocationCount() == 1);
+        UniquePtr<int> moved(std::move(value));
+        assert(value.get() == nullptr);
+        assert(moved.get() != nullptr);
+        moved.reset();
+        assert(ownerAllocator.GetAllocationCount() == 0);
+
+        // 空状態・自己move・swap・release後の手動解放を確認します。
+        UniquePtr<int> empty;
+        assert(empty.get() == nullptr);
+        assert(empty.GetAllocator() == nullptr);
+        auto left = MakeUnique<int>(ownerAllocator, 10);
+        auto right = MakeUnique<int>(ownerAllocator, 20);
+        left.swap(right);
+        assert(*left == 20);
+        assert(*right == 10);
+        left = std::move(left);
+        assert(*left == 20);
+
+        Allocator* originalAllocator = left.GetAllocator();
+        int* released = left.release();
+        assert(left.get() == nullptr);
+        assert(left.GetAllocator() == nullptr);
+        assert(*released == 20);
+        // intはtrivial destructorなので、release後は元Allocatorへの解放だけで十分です。
+        originalAllocator->Deallocate(released);
+        right.reset();
+        assert(ownerAllocator.GetAllocationCount() == 0);
+
+        auto first = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 7);
+        assert(ThrowingConstructionValue::live == 1);
+        auto second = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 8);
+        first = std::move(second);
+        assert(ThrowingConstructionValue::live == 1);
+        assert(ownerAllocator.GetAllocationCount() == 1);
+        first.reset();
+        assert(ThrowingConstructionValue::live == 0);
+
+        ThrowingConstructionValue::throwNext = true;
+        bool constructionFailed = false;
+        try { auto unused = MakeUnique<ThrowingConstructionValue>(ownerAllocator, 9); }
+        catch (const std::runtime_error&) { constructionFailed = true; }
+        assert(constructionFailed);
+        assert(ownerAllocator.GetAllocationCount() == 0);
+
+        FailingVectorAllocator failing(ownerAllocator);
+        failing.SetReject(true);
+        bool allocationFailed = false;
+        try { auto unused = MakeUnique<int>(failing, 1); }
+        catch (const std::bad_alloc&) { allocationFailed = true; }
+        assert(allocationFailed);
+        assert(ownerAllocator.GetAllocationCount() == 0);
     }
 
     // ========================================================================

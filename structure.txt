@@ -222,6 +222,8 @@ D:.
     |   |   |   |   |   HandlePool.inl
     |   |   |   |   |   PoolOwnedHandle.h
     |   |   |   |   |   PoolOwnedHandle.inl
+    |   |   |   |   |   IntrusivePtr.h
+    |   |   |   |   |   IntrusivePtr.inl
     |   |   |   |   |   Name.cpp
     |   |   |   |   |   Name.h
     |   |   |   |   |   RingBuffer.h
@@ -236,6 +238,10 @@ D:.
     |   |   |   |   |   String.h
     |   |   |   |   |   StringView.cpp
     |   |   |   |   |   StringView.h
+    |   |   |   |   |   UniquePtr.h
+    |   |   |   |   |   UniquePtr.inl
+    |   |   |   |   |   WeakHandle.h
+    |   |   |   |   |   WeakHandle.inl
     |   |   |   |   |   Vector.h
     |   |   |   |   |   Vector.inl
     |   |   |   |   |

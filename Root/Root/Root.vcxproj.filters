@@ -941,6 +941,9 @@
     <ClCompile Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\\Core\\Containers\\PoolOwnedHandle.h" />
+    <ClInclude Update="Raven\Core\Containers\PoolOwnedHandle.h" />
+    <ClInclude Update="Raven\Core\Containers\IntrusivePtr.h" />
+    <ClInclude Update="Raven\Core\Containers\UniquePtr.h" />
+    <ClInclude Update="Raven\Core\Containers\WeakHandle.h" />
   </ItemGroup>
 </Project>

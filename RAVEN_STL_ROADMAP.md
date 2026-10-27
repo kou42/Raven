@@ -549,12 +549,18 @@ AnimatorStateMachine::Update全体の実workload Before / After計測は次の�
 
 候補:
 
-- [ ] Allocator-aware UniquePtr。
-- [ ] intrusive reference counting。
-- [ ] Handle / WeakHandle。
+- [x] Allocator-aware UniquePtr（Phase 8-1: 単一Object、move-only、MakeUnique、例外時rollback）。
+- [x] intrusive reference counting（Phase 8-2: IntrusiveRefCounted / IntrusivePtr / MakeIntrusive）。
+- [x] Handle / WeakHandle（Phase 8-3: HandlePoolのgenerationとPool生存Tokenを照合）。
 - [x] Object Pool ownership helper（Phase 8-4: PoolOwnedHandleによるRAII）。
 
 標準 smart pointer で十分な場所は継続利用します。
+
+**Phase 8-1:** `UniquePtr<T>` / `MakeUnique<T>` を追加。Allocatorの個別解放が必要です。Frame/Linearのno-op Deallocateでは利用しません。AllocatorのResetは所有Object破棄後に実行します。`release()`後は呼び出し側が明示的に破棄と解放を行います。Memory Allocator Self Testsへ基本操作・move・構築失敗・確保失敗の検証を追加（ビルド未実施）。
+
+**Phase 8-2:** オブジェクト内にatomic参照カウンタを保持し、最後の所有参照が解放された際にdeleteします。別途control blockは不要ですが、循環参照・WeakHandleには未対応です。オブジェクトはnewまたはMakeIntrusiveで生成し、stack上のオブジェクトを所有させないでください。Self Testを追加（ビルド未実施）。
+
+**Phase 8-3:** `HandlePool<T>::weak(handle)` が `WeakHandle<T>` を返します。Poolの生存Tokenとindex/generationを確認し、erase・clear・Pool破棄後はnullptrを返します。Poolは従来どおり非thread-safeで、WeakHandle参照中の並行破棄はサポートしません。Pool生成時に生存Tokenのcontrol blockを一度確保します。Self Test追加済み（ビルド未実施）。
 
 **Phase 8-4:** `PoolOwnedHandle<T>::Create(shared_ptr<HandlePool<T>>, args...)` が生成したHandleをMove-onlyで所有し、破棄時に世代検証付きeraseを行います。Pool本体の生存期間はshared_ptrで維持します。外部からのerase/clearは許容しますが、同じHandleを複数Ownerで管理しないでください。Poolは非thread-safeです。Self Test追加済み（ビルド未実施）。
 
