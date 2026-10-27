@@ -44,6 +44,7 @@ private:
     std::thread m_Worker;
     bool m_Running = false;
     bool m_StopRequested = false;
+    bool m_Stopped = false;
     std::uint64_t m_FlushRequested = 0;
     std::uint64_t m_FlushCompleted = 0;
     std::condition_variable m_FlushCondition;
