@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <iosfwd>
 #include <variant>
 
 namespace Raven
@@ -39,8 +40,19 @@ struct DiagnosticEvent
     DiagnosticPayload Payload;
 };
 
+// Event IDはSubsystemごとに領域を分け、同じ事象には同じIDを使用します。
+// 既存イベントのIDは変更せず、将来のDictionary/Binary Traceとの互換性を保ちます。
+namespace EventIds
+{
+constexpr DiagnosticEventId LegacyRHIInitializationFailed = 0x1001u;
+constexpr DiagnosticEventId PhysicsGravityUpdated = 0x2001u;
+}
+
 // 現段階では同期Console出力。後続PhaseでSink/Collectorへ差し替えます。
 // IDは呼び出し側で安定した値を指定し、Sequenceは発行順を表します。
+// Consoleへの書式化はストリームに分離し、GPU不要のSelf Testから検証できます。
+void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event);
+
 void Emit(DiagnosticEventId id, DiagnosticCategory category,
     DiagnosticSeverity severity, DiagnosticPayload payload);
 }
