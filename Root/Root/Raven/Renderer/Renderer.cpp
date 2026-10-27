@@ -3,6 +3,7 @@
 #include "RenderCommand.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Diagnostics/DiagnosticAPI.h"
 #include "Raven/Renderer/Camera/Camera.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -276,7 +277,13 @@ bool Renderer::TryInit(RHIBackend backend)
 {
     // Graphics Backendの生成と初期state設定はRenderCommand/RHI側へ集約します。
     // Windowと同じBackendを明示的に渡し、Legacy未対応Backendでは失敗を上位へ返します。
-    return RenderCommand::TryInit(backend);
+    const bool initialized = RenderCommand::TryInit(backend);
+    if (initialized == false)
+    {
+        RAVEN_LOG_ERROR(Diagnostics::DiagnosticCategory::RHI, 0x1001u,
+            std::string("Legacy Renderer backend initialization failed"));
+    }
+    return initialized;
 }
 
 void Renderer::BeginFrame()
