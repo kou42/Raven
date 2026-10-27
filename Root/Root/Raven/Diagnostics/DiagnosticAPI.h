@@ -51,7 +51,15 @@ constexpr DiagnosticEventId PhysicsGravityUpdated = 0x2001u;
 // 値所有Payloadの文字列サイズを制限します。EmitとSelf Testで同じ規則を使用します。
 void NormalizePayload(DiagnosticPayload& payload);
 
-// 現段階では同期Console出力。後続PhaseでSink/Collectorへ差し替えます。
+// 非同期経路は明示的に開始し、停止時は同期Consoleへ戻します。
+// StopAsyncLoggingはすべてのProducerが終了した後に呼んでください。
+// 既存の同期Console動作を既定値として維持します。
+bool StartAsyncLogging();
+void FlushDiagnostics();
+void StopAsyncLogging();
+std::uint64_t GetAsyncDroppedCount();
+
+// 未開始時は同期Console出力。
 // IDは呼び出し側で安定した値を指定し、Sequenceは発行順を表します。
 // Consoleへの書式化はストリームに分離し、GPU不要のSelf Testから検証できます。
 void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event);
