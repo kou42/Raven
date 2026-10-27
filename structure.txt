@@ -431,6 +431,8 @@ D:.
     |   |   +---Diagnostics
     |   |   |       DiagnosticAPI.cpp
     |   |   |       DiagnosticAPI.h
+    |   |   |       EventBuffer.cpp
+    |   |   |       EventBuffer.h
     |   |   |
     |   |   |   +---Tests
     |   |   |           DiagnosticSelfTests.cpp
