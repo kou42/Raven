@@ -306,7 +306,7 @@ void PhysicsWorld::SetGravity(const math::Vec3& gravity)
 {
     m_GravityField.SetAcceleration(gravity);
     // 設定変更時のみ発行し、毎フレームのPhysics Hot Pathを汚染しません。
-    RAVEN_LOG_INFO(Diagnostics::DiagnosticCategory::Physics, 0x2001u,
+    RAVEN_LOG_INFO(Diagnostics::DiagnosticCategory::Physics, Diagnostics::EventIds::PhysicsGravityUpdated,
         std::string("Physics gravity updated"));
 }
 
