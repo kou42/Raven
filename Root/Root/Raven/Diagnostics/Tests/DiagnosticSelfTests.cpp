@@ -197,8 +197,19 @@ void RunDiagnosticSelfTests()
         }
     });
     collectorProducer.join();
+    // 稼働中の登録と明示Flushを確認します。ProducerはFlush前に停止させます。
+    auto lateBuffer = std::make_shared<EventBuffer>();
+    assert(collector.RegisterBuffer(lateBuffer) == true);
+    DiagnosticEvent lateEvent;
+    lateEvent.Id = 0x4002u;
+    lateEvent.Sequence = 65;
+    lateEvent.Payload = std::string("late-registration");
+    assert(lateBuffer->TryPush(std::move(lateEvent)) == true);
+    collector.Flush();
+    assert(collector.GetCollectedCount() == 65);
+    assert(collectorOutput.str().find("payload=late-registration") != std::string::npos);
     collector.Stop();
-    assert(collector.GetCollectedCount() == 64);
+    assert(collector.GetCollectedCount() == 65);
     assert(collector.RegisterBuffer(std::make_shared<EventBuffer>()) == true);
     std::istringstream collectedLines(collectorOutput.str());
     std::uint64_t collectedSequence = 0;
@@ -207,7 +218,7 @@ void RunDiagnosticSelfTests()
         ++collectedSequence;
         assert(line.find(" seq=" + std::to_string(collectedSequence) + " ") != std::string::npos);
     }
-    assert(collectedSequence == 64);
+    assert(collectedSequence == 65);
 
 }
 }
