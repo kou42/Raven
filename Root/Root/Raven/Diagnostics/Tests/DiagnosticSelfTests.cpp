@@ -57,13 +57,13 @@ void RunDiagnosticSelfTests()
     assert(output.str().find("payload=1.5\n") != std::string::npos);
 
     // UTF-8の2/3/4バイト文字を1024バイト境界で分断しないことを確認します。
-    DiagnosticPayload payload = std::string(MaxDiagnosticTextBytes - 1, 'a') + "\\xC3\\xA9";
+    DiagnosticPayload payload = std::string(MaxDiagnosticTextBytes - 1, 'a') + "\xC3\xA9";
     NormalizePayload(payload);
     assert(std::get<std::string>(payload).size() == MaxDiagnosticTextBytes - 1);
-    payload = std::string(MaxDiagnosticTextBytes - 2, 'a') + "\\xE3\\x81\\x82";
+    payload = std::string(MaxDiagnosticTextBytes - 2, 'a') + "\xE3\x81\x82";
     NormalizePayload(payload);
     assert(std::get<std::string>(payload).size() == MaxDiagnosticTextBytes - 2);
-    payload = std::string(MaxDiagnosticTextBytes - 3, 'a') + "\\xF0\\x9F\\x98\\x80";
+    payload = std::string(MaxDiagnosticTextBytes - 3, 'a') + "\xF0\x9F\x98\x80";
     NormalizePayload(payload);
     assert(std::get<std::string>(payload).size() == MaxDiagnosticTextBytes - 3);
     payload = std::string(MaxDiagnosticTextBytes, 'a');
