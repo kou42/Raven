@@ -43,4 +43,33 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  gpu-test-build-x64:
+    name: GPU integration test build x64
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Bootstrap pinned Windows dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-windows-build.ps1 -InstallVulkanSdk
+
+      - name: Build GPU integration test executable
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Configuration Debug -Platform x64 -RavenUIGPUTest -SkipBootstrap
+
+      - name: Upload GPU test build log on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-gpu-test-build-logs
+          path: artifacts/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+
 
