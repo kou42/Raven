@@ -57,7 +57,27 @@ git submodule update --init --recursive
 
 ブートストラップはGLFW 3.4、Vulkan SDK 1.4.363.0、同版のVulkan Runtime Componentsを公式配布元から取得し、SHA-256を検証します。Vulkan SDKはレジストリを変更しないcopy-only方式で配置し、Runtime Componentsの`vulkan-1.dll`はCI上でCPUテスト実行ファイルをロードするためだけにPATHへ追加します。既存のVulkan SDKとシステムVulkan Runtimeを使う場合は `-InstallVulkanSdk` を外し、`VULKAN_SDK` を設定してください。
 
-GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull RequestとmasterへのpushでDebug x64の通常ビルドに続けてCPU UI回帰テストを実行します。失敗時は `windows-debug-x64-logs` artifactにMSBuildログとテスト出力を7日間保存します。GPU統合テストはM4で追加します。
+GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull RequestとmasterへのpushでDebug x64の通常ビルドとCPU UI回帰テストを実行し、GPU統合テスト実行ファイルも別ジョブでビルドします。失敗時はMSBuildログとテスト出力をartifactへ7日間保存します。
+
+## GPU統合テスト
+
+GPU統合テストはOpenGL 3.3 Core Contextと表示セッションを必要とするため、標準のGitHub hosted runnerでは実行しません。`.github/workflows/windows-gpu-tests.yml` をActions画面から手動実行し、次の条件を満たすWindows self-hosted runnerを使用します。
+
+- runner labels: `self-hosted`, `Windows`, `X64`, `raven-gpu`
+- ベンダー製GPUドライバーとOpenGL 3.3 Core以上
+- ログイン中の対話型Windowsデスクトップ（runnerをWindows Serviceや切断済みRDP Sessionで動かさない）
+- Visual Studio 2022、MSVC v143、Windows 10/11 SDK
+- 公式依存物を取得できるインターネット接続
+
+手動ワークフローはFont Atlasを含むGPU Texture upload/readbackを実行し、終了コード0、`[PASS] GPU Texture upload diagnostics`、Font Atlasの非SKIPを必須とします。ビルドログとテストログは成否にかかわらず `windows-gpu-integration-logs` artifactへ14日間保存します。
+
+同じ環境でローカル確認する場合は次を実行します。
+
+```powershell
+git submodule update --init --recursive
+./scripts/bootstrap-windows-build.ps1 -InstallVulkanSdk
+./scripts/test-windows-gpu.ps1 -Configuration Debug -Platform x64 -RequireFontAtlas -SkipBootstrap
+```
 
 ## 正式コマンド
 
@@ -66,9 +86,7 @@ GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull Requestとmas
 
 ./scripts/test-windows-ui.ps1 -Configuration Debug -Platform x64
 
-msbuild Root/Root.sln /m /p:Configuration=Debug /p:Platform=x64 /p:RavenUIGPUTest=true
-& "./Root/Root/x64/Debug/RavenUIGPUTests.exe"
-if ($LASTEXITCODE -ne 0) { throw "GPU Texture統合テストが失敗しました (exit=$LASTEXITCODE)" }
+./scripts/test-windows-gpu.ps1 -Configuration Debug -Platform x64 -RequireFontAtlas
 ```
 
 Font Atlasも検証する場合は実在するTTF/TTCを `RAVEN_UI_TEST_FONT` に設定します。

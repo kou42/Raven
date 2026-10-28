@@ -8,6 +8,8 @@ param(
 
     [switch]$RavenUITest,
 
+    [switch]$RavenUIGPUTest,
+
     [switch]$SkipBootstrap
 )
 
@@ -15,6 +17,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
+if ($RavenUITest -and $RavenUIGPUTest) {
+    throw "RavenUITest and RavenUIGPUTest cannot be enabled together."
+}
 
 if (-not $SkipBootstrap) {
     & (Join-Path $PSScriptRoot "bootstrap-windows-build.ps1")
@@ -35,7 +41,13 @@ if ($LASTEXITCODE -ne 0 -or -not $installationPath) {
 $msbuild = Join-Path ($installationPath | Select-Object -First 1) "MSBuild\Current\Bin\MSBuild.exe"
 $solution = Join-Path $RepoRoot "Root\Root.sln"
 $logDirectory = Join-Path $RepoRoot "artifacts\logs"
-$buildKind = if ($RavenUITest) { "ui-tests" } else { "application" }
+$buildKind = if ($RavenUITest) {
+    "ui-tests"
+} elseif ($RavenUIGPUTest) {
+    "ui-gpu-tests"
+} else {
+    "application"
+}
 $logPath = Join-Path $logDirectory "windows-$buildKind-$($Configuration.ToLowerInvariant())-$Platform.log"
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
@@ -52,6 +64,9 @@ $arguments = @(
 
 if ($RavenUITest) {
     $arguments += "/p:RavenUITest=true"
+}
+if ($RavenUIGPUTest) {
+    $arguments += "/p:RavenUIGPUTest=true"
 }
 
 Write-Host "Building Root/Root.sln ($Configuration|$Platform, target=$buildKind)"
