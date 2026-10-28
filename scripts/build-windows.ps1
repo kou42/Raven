@@ -6,6 +6,8 @@ param(
     [ValidateSet("x64")]
     [string]$Platform = "x64",
 
+    [switch]$RavenUITest,
+
     [switch]$SkipBootstrap
 )
 
@@ -33,7 +35,8 @@ if ($LASTEXITCODE -ne 0 -or -not $installationPath) {
 $msbuild = Join-Path ($installationPath | Select-Object -First 1) "MSBuild\Current\Bin\MSBuild.exe"
 $solution = Join-Path $RepoRoot "Root\Root.sln"
 $logDirectory = Join-Path $RepoRoot "artifacts\logs"
-$logPath = Join-Path $logDirectory "windows-$($Configuration.ToLowerInvariant())-$Platform.log"
+$buildKind = if ($RavenUITest) { "ui-tests" } else { "application" }
+$logPath = Join-Path $logDirectory "windows-$buildKind-$($Configuration.ToLowerInvariant())-$Platform.log"
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
 $arguments = @(
@@ -47,7 +50,11 @@ $arguments = @(
     "/flp:LogFile=$logPath;Verbosity=normal"
 )
 
-Write-Host "Building Root/Root.sln ($Configuration|$Platform)"
+if ($RavenUITest) {
+    $arguments += "/p:RavenUITest=true"
+}
+
+Write-Host "Building Root/Root.sln ($Configuration|$Platform, target=$buildKind)"
 & $msbuild @arguments
 $exitCode = $LASTEXITCODE
 

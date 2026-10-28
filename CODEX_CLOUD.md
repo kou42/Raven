@@ -55,18 +55,16 @@ git submodule update --init --recursive
 ./scripts/build-windows.ps1 -Configuration Debug -Platform x64 -SkipBootstrap
 ```
 
-ブートストラップはGLFW 3.4とVulkan SDK 1.4.363.0を公式配布元から取得し、SHA-256を検証します。Vulkan SDKはレジストリを変更しないcopy-only方式で配置します。既存のVulkan SDKを使う場合は `-InstallVulkanSdk` を外し、`VULKAN_SDK` を設定してください。
+ブートストラップはGLFW 3.4、Vulkan SDK 1.4.363.0、同版のVulkan Runtime Componentsを公式配布元から取得し、SHA-256を検証します。Vulkan SDKはレジストリを変更しないcopy-only方式で配置し、Runtime Componentsの`vulkan-1.dll`はCI上でCPUテスト実行ファイルをロードするためだけにPATHへ追加します。既存のVulkan SDKとシステムVulkan Runtimeを使う場合は `-InstallVulkanSdk` を外し、`VULKAN_SDK` を設定してください。
 
-GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull Requestとmasterへのpushで同じDebug x64ビルドを実行します。失敗時は `windows-debug-x64-log` artifactにMSBuildログを7日間保存します。このM2ジョブはビルドだけを対象とし、CPU/GPUテスト実行はM3/M4で追加します。
+GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull RequestとmasterへのpushでDebug x64の通常ビルドに続けてCPU UI回帰テストを実行します。失敗時は `windows-debug-x64-logs` artifactにMSBuildログとテスト出力を7日間保存します。GPU統合テストはM4で追加します。
 
 ## 正式コマンド
 
 ```powershell
 ./scripts/build-windows.ps1 -Configuration Debug -Platform x64
 
-msbuild Root/Root.sln /m /p:Configuration=Debug /p:Platform=x64 /p:RavenUITest=true
-& "./Root/Root/x64/Debug/RavenUITests.exe"
-if ($LASTEXITCODE -ne 0) { throw "UI回帰テストが失敗しました (exit=$LASTEXITCODE)" }
+./scripts/test-windows-ui.ps1 -Configuration Debug -Platform x64
 
 msbuild Root/Root.sln /m /p:Configuration=Debug /p:Platform=x64 /p:RavenUIGPUTest=true
 & "./Root/Root/x64/Debug/RavenUIGPUTests.exe"
