@@ -10,6 +10,7 @@ $GlfwVersion = "3.4"
 $GlfwSha256 = "54efa829400f2a0537f742b2b3bdd74e437bb4f2f048e4b7d3c5557d11a611e6"
 $VulkanSdkVersion = "1.4.363.0"
 $VulkanSdkSha256 = "94a82d378f7a5e3e54c9db7d2fb7016af136e14ac0a18dbf0f2f67a36352d141"
+$VulkanRuntimeSha256 = "a25a927aa8b9f0371048f1861cf88ac3b9bc9b1fb332c42d897c8ab32695769a"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $CacheRoot = if ($env:RUNNER_TEMP) {
@@ -168,6 +169,27 @@ function Ensure-VulkanSdk {
     return $sdkRoot
 }
 
+function Ensure-VulkanRuntime {
+    $archive = Join-Path $CacheRoot "VulkanRT-X64-$VulkanSdkVersion-Components.zip"
+    $archiveUri = "https://sdk.lunarg.com/sdk/download/$VulkanSdkVersion/windows/vulkan-runtime-components.zip"
+    Get-VerifiedDownload -Uri $archiveUri -Destination $archive -Sha256 $VulkanRuntimeSha256
+
+    $extractRoot = Join-Path $CacheRoot "VulkanRT-$VulkanSdkVersion"
+    if (Test-Path -LiteralPath $extractRoot) {
+        Remove-Item -LiteralPath $extractRoot -Recurse -Force
+    }
+    Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
+
+    $runtimeDirectory = Join-Path $extractRoot "VulkanRT-X64-$VulkanSdkVersion-Components\x64"
+    $loader = Join-Path $runtimeDirectory "vulkan-1.dll"
+    if (-not (Test-Path -LiteralPath $loader -PathType Leaf)) {
+        throw "The Vulkan Runtime Components archive did not contain x64\vulkan-1.dll"
+    }
+
+    Add-BuildPath -Path $runtimeDirectory
+    return $loader
+}
+
 function Find-Dxc {
     $command = Get-Command dxc.exe -ErrorAction SilentlyContinue
     if ($command) {
@@ -192,11 +214,13 @@ function Find-Dxc {
 $msbuild = Find-MsBuild
 Ensure-GlfwLibrary
 $vulkanRoot = Ensure-VulkanSdk
+$vulkanLoader = if ($InstallVulkanSdk) { Ensure-VulkanRuntime } else { "system Vulkan loader" }
 $dxc = Find-Dxc
 
 Write-Host "Windows build prerequisites are ready."
 Write-Host "  MSBuild: $msbuild"
 Write-Host "  Vulkan SDK: $vulkanRoot"
+Write-Host "  Vulkan loader: $vulkanLoader"
 Write-Host "  DXC: $dxc"
 
 
