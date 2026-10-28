@@ -24,7 +24,7 @@ test -f Root/Root/vendor/imgui/imgui.cpp
 bash scripts/check-codex-cloud-baseline.sh
 ```
 
-Agent実行時のインターネットアクセスは原則無効とし、M1ではSecretや追加環境変数を設定しません。
+Agent実行時のインターネットアクセスは原則無効とし、Secretや追加環境変数を設定しません。
 
 ## 検証境界
 
@@ -45,10 +45,24 @@ Agent実行時のインターネットアクセスは原則無効とし、M1で�
 
 Codex CloudはLinuxコンテナであるため、Windows検証をCloud内で成功したものとして扱いません。
 
+## Windowsビルドの再現
+
+Visual Studio 2022（MSVC v143とWindows 10/11 SDKを含む）が必要です。新しいチェックアウトでは次を実行します。
+
+```powershell
+git submodule update --init --recursive
+./scripts/bootstrap-windows-build.ps1 -InstallVulkanSdk
+./scripts/build-windows.ps1 -Configuration Debug -Platform x64 -SkipBootstrap
+```
+
+ブートストラップはGLFW 3.4とVulkan SDK 1.4.363.0を公式配布元から取得し、SHA-256を検証します。Vulkan SDKはレジストリを変更しないcopy-only方式で配置します。既存のVulkan SDKを使う場合は `-InstallVulkanSdk` を外し、`VULKAN_SDK` を設定してください。
+
+GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull Requestとmasterへのpushで同じDebug x64ビルドを実行します。失敗時は `windows-debug-x64-log` artifactにMSBuildログを7日間保存します。このM2ジョブはビルドだけを対象とし、CPU/GPUテスト実行はM3/M4で追加します。
+
 ## 正式コマンド
 
 ```powershell
-msbuild Root/Root.sln /m /p:Configuration=Debug /p:Platform=x64
+./scripts/build-windows.ps1 -Configuration Debug -Platform x64
 
 msbuild Root/Root.sln /m /p:Configuration=Debug /p:Platform=x64 /p:RavenUITest=true
 & "./Root/Root/x64/Debug/RavenUITests.exe"
