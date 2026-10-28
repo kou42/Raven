@@ -104,13 +104,30 @@ bool TestUpload()
 
 bool TestFontAtlas()
 {
+    std::string fontPath;
+#if defined(_MSC_VER)
+    char* configured = nullptr;
+    size_t configuredLength = 0u;
+    const errno_t environmentResult = _dupenv_s(
+        &configured, &configuredLength, "RAVEN_UI_TEST_FONT");
+    if (environmentResult == 0 && configured != nullptr && configured[0] != '\0')
+    {
+        fontPath = configured;
+    }
+    std::free(configured);
+#else
     const char* configured = std::getenv("RAVEN_UI_TEST_FONT");
-    if (configured == nullptr || configured[0] == '\0')
+    if (configured != nullptr && configured[0] != '\0')
+    {
+        fontPath = configured;
+    }
+#endif
+    if (fontPath.empty())
     {
         std::cout << "[SKIP] GPU Font Atlas: set RAVEN_UI_TEST_FONT to a TTF/TTC path\n";
         return true;
     }
-    if (Check(std::filesystem::is_regular_file(configured), "configured GPU test font exists") == false)
+    if (Check(std::filesystem::is_regular_file(fontPath), "configured GPU test font exists") == false)
     {
         return false;
     }
@@ -120,7 +137,7 @@ bool TestFontAtlas()
     options.AtlasHeight = 128u;
     Raven::UIFontAtlasBuildFailure failure = Raven::UIFontAtlasBuildFailure::TextureUploadFailed;
     return Check(Raven::UIFontAtlasBuilder::BuildFromFile(
-            configured, { 65u }, options, atlas, &failure), "GPU Font Atlas build") &&
+            fontPath, { 65u }, options, atlas, &failure), "GPU Font Atlas build") &&
         Check(failure == Raven::UIFontAtlasBuildFailure::None, "GPU Font Atlas diagnostic");
 }
 } // namespace
