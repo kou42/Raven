@@ -24,10 +24,17 @@ void* FreeListAllocator::Allocate(std::size_t size, std::size_t alignment)
 
     // Headerはユーザーポインタ直前に配置し、解放時に元のブロック先頭を復元します。
     const std::size_t effectiveAlignment = std::max(alignment, alignof(AllocationHeader));
-    FreeBlock* previous = nullptr;
-    FreeBlock* block = m_FreeList;
-    while (block != nullptr)
+    // linkは「現在調べている空きブロックを指すポインタ」の格納場所です。
+    // 最初はリストの先頭ポインタm_FreeList自身を指します。
+    // 次のブロックへ進むときは、現在のブロックのnextメンバのアドレスを指します。
+    // これにより先頭ブロックと途中のブロックを同じ代入(*link = next)で付け替えられ、
+    // 直前のブロックをpreviousとして別途保持する必要がありません。
+    FreeBlock** link = &m_FreeList;
+    while (*link != nullptr)
     {
+        // *linkは現在の空きブロックを指すFreeBlock*です。
+        // link自体はFreeBlock**なので、ブロックを差し替える場合は*linkを書き換えます。
+        FreeBlock* block = *link;
         const std::uintptr_t start = reinterpret_cast<std::uintptr_t>(block);
         if (start > (std::numeric_limits<std::uintptr_t>::max)() - sizeof(AllocationHeader))
         {
@@ -68,14 +75,13 @@ void* FreeListAllocator::Allocate(std::size_t size, std::size_t alignment)
                 next = remaining;
             }
 
-            if (previous != nullptr)
-            {
-                previous->next = next;
-            }
-            else
-            {
-                m_FreeList = next;
-            }
+            // 確保した領域は空きリストから取り除きます。
+            // 分割した場合はnextが残余ブロックを、使い切った場合は元の次ブロックを指します。
+            // linkは先頭なら&m_FreeList、途中なら&previousBlock->nextなので、
+            // どちらの場合も一度の代入でリンクを更新できます。
+            // 注意: この代入後、blockの領域は確保済みとして扱います。
+            // 後続のHeader書き込みでは、退避済みのstartとheaderOffsetを使用します。
+            *link = next;
 
             auto* header = reinterpret_cast<AllocationHeader*>(start + headerOffset - sizeof(AllocationHeader));
             header->size = consumed;
@@ -87,9 +93,12 @@ void* FreeListAllocator::Allocate(std::size_t size, std::size_t alignment)
             return reinterpret_cast<void*>(start + headerOffset);
         }
 
-        previous = block;
-        block = block->next;
+        // このブロックでは必要なサイズとalignmentを満たせませんでした。
+        // 次回の*linkがblock->nextになるよう、リンクの格納場所を一つ進めます。
+        // 空きブロックそのもののアドレスを移すのではない点がダブルポインタ方式の要点です。
+        link = &block->next;
     }
+    // 全空きブロックを調べても確保できなかった場合は失敗を通知します。
     return nullptr;
 }
 
@@ -129,29 +138,42 @@ void FreeListAllocator::Deallocate(void* memory)
     auto* freed = reinterpret_cast<FreeBlock*>(start);
     freed->size = releasedSize;
 
-    // アドレス順に挿入し、隣接する空き領域を統合します。
+    // 空きブロックはアドレスの昇順でつながっています。
+    // 解放領域のstartより前にあるブロックを通過し、挿入先のリンクを探します。
+    //
+    // linkは「次に調べるFreeBlock*が格納されている場所」を指すダブルポインタです。
+    // 先頭なら&m_FreeList、途中なら&previous->nextを指します。
+    // そのため、先頭への挿入と途中への挿入を*link = freedの一行に統一できます。
+    //
+    // previousは左隣の空きブロックとの結合判定に必要なので保持します。
+    // ダブルポインタだけでは左隣のブロックのsizeを参照できないためです。
+    FreeBlock** link = &m_FreeList;
     FreeBlock* previous = nullptr;
-    FreeBlock* current = m_FreeList;
-    while (current != nullptr && reinterpret_cast<std::uintptr_t>(current) < start)
+    while (*link != nullptr && reinterpret_cast<std::uintptr_t>(*link) < start)
     {
-        previous = current;
-        current = current->next;
-    }
-    freed->next = current;
-    if (previous != nullptr)
-    {
-        previous->next = freed;
-    }
-    else
-    {
-        m_FreeList = freed;
+        previous = *link;
+        link = &previous->next;
     }
 
+    // *linkは挿入位置の右隣のブロック（末尾ならnullptr）です。
+    // まず右隣へのリンクを保存し、続いて挿入位置のポインタを書き換えます。
+    // ここでは空き領域を新しく確保せず、解放された領域自身をFreeBlockとして再利用します。
+    FreeBlock* current = *link;
+    freed->next = current;
+    *link = freed;
+
+    // 右隣が物理メモリ上でも連続していれば、一つの大きな空きブロックに統合します。
+    // currentはリンクの更新前に保存しているので、挿入後も右隣を判定できます。
     if (current != nullptr && start + freed->size == reinterpret_cast<std::uintptr_t>(current))
     {
         freed->size += current->size;
         freed->next = current->next;
     }
+
+    // 左隣とも連続していれば、統合済みのfreedをさらにpreviousへ吸収します。
+    // 右隣との統合を先に行うことで、左右両方が隣接する場合も一回の解放で三領域を結合できます。
+    // このとき*linkはprevious->nextを指していましたが、previous->nextを直接更新して
+    // freedをリストから外します。先頭挿入時はprevious == nullptrなのでこの処理は不要です。
     if (previous != nullptr &&
         reinterpret_cast<std::uintptr_t>(previous) + previous->size == start)
     {
