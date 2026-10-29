@@ -24,10 +24,17 @@ void* FreeListAllocator::Allocate(std::size_t size, std::size_t alignment)
 
     // Headerはユーザーポインタ直前に配置し、解放時に元のブロック先頭を復元します。
     const std::size_t effectiveAlignment = std::max(alignment, alignof(AllocationHeader));
-    FreeBlock* previous = nullptr;
-    FreeBlock* block = m_FreeList;
-    while (block != nullptr)
+    // linkは「現在調べている空きブロックを指すポインタ」の格納場所です。
+    // 最初はリストの先頭ポインタm_FreeList自身を指します。
+    // 次のブロックへ進むときは、現在のブロックのnextメンバのアドレスを指します。
+    // これにより先頭ブロックと途中のブロックを同じ代入(*link = next)で付け替えられ、
+    // 直前のブロックをpreviousとして別途保持する必要がありません。
+    FreeBlock** link = &m_FreeList;
+    while (*link != nullptr)
     {
+        // *linkは現在の空きブロックを指すFreeBlock*です。
+        // link自体はFreeBlock**なので、ブロックを差し替える場合は*linkを書き換えます。
+        FreeBlock* block = *link;
         const std::uintptr_t start = reinterpret_cast<std::uintptr_t>(block);
         if (start > (std::numeric_limits<std::uintptr_t>::max)() - sizeof(AllocationHeader))
         {
@@ -68,14 +75,13 @@ void* FreeListAllocator::Allocate(std::size_t size, std::size_t alignment)
                 next = remaining;
             }
 
-            if (previous != nullptr)
-            {
-                previous->next = next;
-            }
-            else
-            {
-                m_FreeList = next;
-            }
+            // 確保した領域は空きリストから取り除きます。
+            // 分割した場合はnextが残余ブロックを、使い切った場合は元の次ブロックを指します。
+            // linkは先頭なら&m_FreeList、途中なら&previousBlock->nextなので、
+            // どちらの場合も一度の代入でリンクを更新できます。
+            // 注意: この代入後、blockの領域は確保済みとして扱います。
+            // 後続のHeader書き込みでは、退避済みのstartとheaderOffsetを使用します。
+            *link = next;
 
             auto* header = reinterpret_cast<AllocationHeader*>(start + headerOffset - sizeof(AllocationHeader));
             header->size = consumed;
@@ -87,9 +93,12 @@ void* FreeListAllocator::Allocate(std::size_t size, std::size_t alignment)
             return reinterpret_cast<void*>(start + headerOffset);
         }
 
-        previous = block;
-        block = block->next;
+        // このブロックでは必要なサイズとalignmentを満たせませんでした。
+        // 次回の*linkがblock->nextになるよう、リンクの格納場所を一つ進めます。
+        // 空きブロックそのもののアドレスを移すのではない点がダブルポインタ方式の要点です。
+        link = &block->next;
     }
+    // 全空きブロックを調べても確保できなかった場合は失敗を通知します。
     return nullptr;
 }
 
