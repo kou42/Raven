@@ -1631,3 +1631,25 @@ Raven RHI implementation additions (Root/Root/Raven relative paths):
     Renderer/RHI/RHIOffscreenRenderTarget.h
     Renderer/RHI/RHIOffscreenRenderTarget.cpp
     Renderer/RHI/IExplicitSceneRuntime.cpp
+
+Raven Structured Data Phase 1 additions (Root/Root/Raven relative paths):
+    Data/DataDocument.cpp
+    Data/DataDocument.h
+    Data/DataElement.cpp
+    Data/DataElement.h
+    Data/DataToken.h
+    Data/Tests/DataDocumentTests.cpp
+    Data/Tests/DataDocumentTests.h
+    Data/Tests/README.md
+
+Raven Structured Data Phase 2 additions (Root/Root/Raven relative paths):
+    Core/JsonLexicalReader.h
+    Core/JsonLexicalReader.cpp
+    Data/Formats/Json/JsonParser.h
+    Data/Formats/Json/JsonParser.cpp
+    Data/Tests/JsonParserTests.h
+    Data/Tests/JsonParserTests.cpp
+
+Raven Structured Data Phase 3 additions (Root/Root/Raven relative paths):
+    Data/Tests/DataElementTests.h
+    Data/Tests/DataElementTests.cpp
