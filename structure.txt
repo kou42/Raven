@@ -1653,3 +1653,13 @@ Raven Structured Data Phase 2 additions (Root/Root/Raven relative paths):
 Raven Structured Data Phase 3 additions (Root/Root/Raven relative paths):
     Data/Tests/DataElementTests.h
     Data/Tests/DataElementTests.cpp
+
+Structured Data Phase 4 additions (Root/Root/Raven relative paths):
+    Data/DataReader.cpp
+    Data/DataReader.h
+    Data/DataWriter.cpp
+    Data/DataWriter.h
+    Data/Formats/Json/JsonWriter.cpp
+    Data/Formats/Json/JsonWriter.h
+    Data/Tests/DataIOTests.cpp
+    Data/Tests/DataIOTests.h
