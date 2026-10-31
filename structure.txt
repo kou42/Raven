@@ -1660,3 +1660,12 @@ Raven UI performance measurement additions (Root/Root/Raven relative paths):
     Core/Memory/AllocationMeasurement.h
     Core/Memory/AllocationMeasurement.cpp
     Editor/Panels/StatisticsUISnapshot.cpp
+Structured Data Phase 4 additions (Root/Root/Raven relative paths):
+    Data/DataReader.cpp
+    Data/DataReader.h
+    Data/DataWriter.cpp
+    Data/DataWriter.h
+    Data/Formats/Json/JsonWriter.cpp
+    Data/Formats/Json/JsonWriter.h
+    Data/Tests/DataIOTests.cpp
+    Data/Tests/DataIOTests.h

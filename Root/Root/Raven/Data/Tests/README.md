@@ -1,4 +1,4 @@
-# Structured Data Phase 1〜3 単体テスト
+# Structured Data Phase 1〜4 単体テスト
 
 GPU・Window・外部ライブラリに依存しないC++17のテストです。通常アプリケーションでは
 `RunDataDocumentTests()`を提供し、`RAVEN_DATA_TEST_MAIN`指定時だけ専用mainを定義します。
@@ -164,3 +164,91 @@ long doubleを使った追加照合をスキップし、固定の数値境界Fix
 サニタイザは`-fsanitize=address,undefined,float-cast-overflow`を使い、整数境界のキャストも検査しました。
 一時Harnessで確保失敗6箇所の出力維持と、Escapeキーを調べない検索・String View取得の無確保経路も確認しました。
 ThreadSanitizerとVisual Studio全体ビルドは未実施です。性能計測は後続Phaseの対象です。
+
+## Phase 4 DataReader / DataWriter / JSON出力
+
+```bash
+g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
+  -DRAVEN_DATA_IO_TEST_MAIN -IRoot/Root \
+  Root/Root/Raven/Core/JsonLexicalReader.cpp \
+  Root/Root/Raven/Core/JsonParser.cpp Root/Root/Raven/Core/JsonWriter.cpp \
+  Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
+  Root/Root/Raven/Data/DataReader.cpp Root/Root/Raven/Data/DataWriter.cpp \
+  Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
+  Root/Root/Raven/Data/Formats/Json/JsonWriter.cpp \
+  Root/Root/Raven/Data/Tests/DataIOTests.cpp -o /tmp/raven-data-io-tests
+/tmp/raven-data-io-tests
+```
+
+`-DRAVEN_DATA_IO_ALLOCATION_TESTS`を追加すると、専用実行ファイル内だけで`operator new`を
+差し替え、Document出力と直接イベント出力の確保失敗箇所を順に注入します。
+通常アプリへこのmacroを指定しないでください。GCCで48箇所の確保失敗を含む4,321チェックが成功しました。
+macroなしでは4,268チェックです。固定Seedの2,000組のUInt64 / double、整数境界、subnormal、
+Escape、Decoded Key順、Binaryと非有限値の拒否、すべてのイベントでのSink失敗、
+出力Byte数の境界、深さ512、10,000要素配列、既存Core Writerとの互換Fixtureを含みます。
+
+サニタイザは`-g -O1 -fsanitize=address,undefined,float-cast-overflow -fno-omit-frame-pointer`を
+追加し、確保失敗macroなしで実行します。この環境では`ASAN_OPTIONS=detect_leaks=0`を指定します。
+Visual Studio全体ビルドとThreadSanitizer、性能・Peak Memory計測は未実施です。
+
+### APIと責務
+
+```cpp
+Raven::Data::DataDocument document;
+Raven::Data::DataError error;
+std::string output;
+if (Raven::Data::JsonParser::Parse(input, document, &error))
+{
+    // 全成功時だけoutputを置換します。既存Core::JsonWriterとは別のAPIです。
+    Raven::Data::JsonWriter::Write(document, output, &error);
+}
+```
+
+`JsonWriter::Write(DataElement, ...)`は部分木にも対応します。Documentは変更しません。
+`DataReader(root).Read(writer, &error)`はフォーマット非依存のイベント変換経路です。
+JSON入力だけでなく、手動Tapeや既存DOM Adapterで作ったDocumentも利用できます。
+キー検索と型別取得は`DataReader::GetRoot()`が返す既存`DataElement`で行います。
+Deserializeの必須値・既定値・Version・フィールド経路はPhase 5の責務です。
+
+型付きデータは`DataWriter&`へ直接イベントを送れます。フォーマット固有のCommitは具象Writerで行います。
+
+```cpp
+Raven::Data::JsonWriter writer;
+if (writer.BeginObject()
+    && writer.WriteKey("version") && writer.WriteUInt64(1)
+    && writer.WriteKey("enabled") && writer.WriteBool(true)
+    && writer.EndObject())
+{
+    writer.Finish(output);
+}
+```
+
+イベントはRoot 1値、Objectでは`WriteKey`→値、Arrayでは値の順とし、Begin / Endを対応させます。
+StringとKeyは展開済みUTF-8、Binaryは任意Byte列です。WriterはViewを呼び出し後に保持しません。
+Readerは非所有で、Documentの破棄・置換・Move前に読み終えてください。
+未Escape文字列はSource Viewを利用し、Escape展開用Bufferは呼び出し内で所有します。
+Readerは再帰を使わず、子・兄弟による線形走査を行います。Writerは単一Threadで利用してください。
+同一Documentを別々のReader / Writerで読むことは可能ですが、Documentの変更・破棄とは競合させません。
+
+### JSON契約と制限
+
+- Compact JSONと末尾改行1 Byteを出力します。ObjectはDecodedキーのByte列を
+  `std::string`比較でソートし、既存Core Writerと同じ決定性を持たせます。重複キーは`EndObject`で拒否します。
+- Int64 / UInt64をdoubleに変換しません。正のInt64は再読込時にUInt64へ分類され得ますが、値・精度は維持します。
+  Float64はlocale非依存の`to_chars` / `max_digits10`で出力し、整数表記なら`.0`を付けて
+  Float分類と負のZeroを保持します。そのため既存Core Writerとすべての数値表記が同一にはなりません。
+- 不正UTF-8、Binary、NaN / Infinityを拒否します。BinaryのBase64化や文字列への暗黙変換は行いません。
+- `DataWriteLimits`の出力上限は改行、括弧、Key、区切り、Escape後のByte数をすべて含みます。
+  深さは開いたコンテナ数、文字列上限はDecoded UTF-8のByte数、要素数はArrayの値数 / Objectの組数です。
+  上限0も有効で、深さ0はScalarだけ、要素数0は空コンテナだけを許可します。
+- ソートのためObject内の符号化済みメンバーを保持し、閉じたコンテナを親へ組み込みます。
+  JsonValue / Token DOMを構築しませんが、Streamへの逐次出力や定数Memory出力ではありません。
+  入れ子の再構成にコピーを伴います。Allocator統合・性能測定は後続の課題です。
+- 失敗はstickyです。最初のエラーを`GetError()`で取得し、失敗したWriterは破棄します。
+  `Finish`は全コンテナが閉じたRoot 1値を1回だけ公開でき、失敗時は呼び出し側の出力を維持します。
+  空入力、未完コンテナ、2つ目のRoot、Finish後のイベントも拒否します。
+- Readerのエラー位置は失敗した値・キーのSource Byte位置です。無効Root / 走査用確保失敗は0です。
+  Sinkがfalseを返して詳細コードを持たない場合は`OutputFailure`とします。失敗したSinkは再利用しません。
+  Writer単体の位置は受理済み符号化Byte数（改行を除く）であり、ソート後の物理位置ではありません。
+
+File I/O・Streamエラーの取扱い、整形出力、型Adapter、Reflection、MessagePack、既存保存経路の移行は追加していません。

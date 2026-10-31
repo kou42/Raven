@@ -1025,5 +1025,13 @@
   <ItemGroup>
     <ClCompile Include="..\Tests\UIPerformanceTests.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
     <ClInclude Include="..\Tests\UIPerformanceTests.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataReader.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataReader.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataWriter.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataWriter.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\Json\JsonWriter.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\Json\JsonWriter.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\DataIOTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\DataIOTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
   </ItemGroup>
 </Project>
