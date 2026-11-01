@@ -68,6 +68,7 @@ struct StatisticsRendererSnapshot
 
 struct StatisticsUISnapshot
 {
+    std::uint64_t FrameIndex = 0u;
     bool Available = false;
     double BuildMilliseconds = 0.0;
     std::uint64_t DrawCommandCount = 0u;

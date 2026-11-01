@@ -3,6 +3,7 @@
 #include "Raven/Editor/Panels/StatisticsActions.h"
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Widgets/UICheckbox.h"
+#include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
 #include "Raven/UI/Widgets/UITable.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <chrono>
 #include <string>
 
 namespace Raven
@@ -87,8 +89,8 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     scroll->SetPreferredSize(math::Vec2(764.0f, 680.0f));
 
     auto content = CreateScope<UIElement>();
-    content->SetSize(math::Vec2(738.0f, 1805.0f));
-    content->SetPreferredSize(math::Vec2(738.0f, 1805.0f));
+    content->SetSize(math::Vec2(738.0f, 2280.0f));
+    content->SetPreferredSize(math::Vec2(738.0f, 2280.0f));
     for (std::size_t index = 0u; index < SummaryLabelCount; ++index)
     {
         m_SummaryLabels.push_back(AddLabel(
@@ -163,6 +165,67 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     m_RawProfileTable = static_cast<UITable*>(
         content->AddChild(std::move(rawProfileTable)));
 
+    // 記録の所有者はPanelです。Dock移動や非表示では維持し、Detach時に破棄します。
+    m_RecordingSummary = AddLabel(*content, 1800.0f, font);
+    m_RecordingStatus = AddLabel(*content, 1860.0f, font);
+    m_RecordingStatus->SetText("Main Window UI only; allocations: DrawList only.");
+    const auto addButton = [&](float x, const char* caption, UIButton::ClickHandler handler)
+    {
+        auto button = CreateScope<UIButton>();
+        button->SetPosition(math::Vec2(x, 1828.0f));
+        button->SetSize(math::Vec2(180.0f, 28.0f));
+        AddLabel(*button, 2.0f, font)->SetText(caption);
+        button->SetOnClick(std::move(handler));
+        content->AddChild(std::move(button));
+    };
+    addButton(8.0f, "Start / Restart", [this]()
+    {
+        m_UIRecording.Start();
+        m_RecordingStatus->SetText("Recording new session (Main Window UI).");
+    });
+    addButton(200.0f, "Stop", [this]()
+    {
+        m_UIRecording.Stop();
+        m_RecordingStatus->SetText("Stopped; results retained until restart.");
+    });
+    addButton(392.0f, "Save CSV", [this]()
+    {
+        // セッションごとに別名を提案し、既存の記録を上書きしません。
+        const auto stamp = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        const std::string path = "RavenUI-recording-" + std::to_string(stamp) + ".csv";
+        std::string message;
+        m_UIRecording.SaveCSV(path, message);
+        m_RecordingStatus->SetText(message);
+    });
+    auto recordingTable = CreateScope<UITable>();
+    recordingTable->SetFont(font);
+    recordingTable->SetPosition(math::Vec2(8.0f, 1895.0f));
+    recordingTable->SetSize(math::Vec2(712.0f, 350.0f));
+    recordingTable->AddColumn("Recorded metric", 340.0f);
+    recordingTable->AddColumn("Average", 180.0f);
+    recordingTable->AddColumn("Max", 180.0f);
+    recordingTable->SetDataSource(
+        []() { return StatisticsUIRecording::MetricCount; },
+        [this](std::size_t row, std::size_t column) -> std::string
+        {
+            if (row >= StatisticsUIRecording::MetricCount)
+            {
+                return {};
+            }
+            if (column == 0u)
+            {
+                return StatisticsUIRecording::GetMetricName(row);
+            }
+            if (m_UIRecording.GetSampleCount() == 0u)
+            {
+                return "N/A";
+            }
+            return FormatDouble(column == 1u ? m_UIRecording.GetAverages()[row]
+                : m_UIRecording.GetMaxima()[row]);
+        });
+    content->AddChild(std::move(recordingTable));
+
     scroll->SetContent(std::move(content));
     window->AddChild(std::move(scroll));
     m_Context = &context;
@@ -170,6 +233,8 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     if (m_Root == nullptr)
     {
         m_Context = nullptr;
+        m_RecordingSummary = nullptr;
+        m_RecordingStatus = nullptr;
         m_SummaryLabels.clear();
         m_ProfilerEnabledCheckbox = nullptr;
         m_ActionStatusLabel = nullptr;
@@ -198,11 +263,21 @@ void StatisticsRavenPanel::Detach()
     m_CounterTable = nullptr;
     m_RawProfileTable = nullptr;
     m_Snapshot = StatisticsSnapshot{};
+    m_UIRecording = StatisticsUIRecording{};
+    m_RecordingSummary = nullptr;
+    m_RecordingStatus = nullptr;
 }
 
 void StatisticsRavenPanel::Update(const StatisticsSnapshot& snapshot)
 {
     m_Snapshot = snapshot;
+    m_UIRecording.AddSample(snapshot.UI);
+    if (m_RecordingSummary != nullptr)
+    {
+        m_RecordingSummary->SetText(
+            std::string(m_UIRecording.IsRecording() == true ? "Recording / Samples: " : "Stopped / Samples: ") +
+            std::to_string(m_UIRecording.GetSampleCount()));
+    }
     if (m_ProfilerEnabledCheckbox != nullptr)
     {
         m_ProfilerEnabledCheckbox->SetChecked(snapshot.CPUProfiler.Enabled);

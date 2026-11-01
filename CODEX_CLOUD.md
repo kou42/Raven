@@ -57,7 +57,7 @@ git submodule update --init --recursive
 
 ブートストラップはGLFW 3.4、Vulkan SDK 1.4.363.0、同版のVulkan Runtime Componentsを公式配布元から取得し、SHA-256を検証します。Vulkan SDKはレジストリを変更しないcopy-only方式で配置し、Runtime Componentsの`vulkan-1.dll`はCI上でCPUテスト実行ファイルをロードするためだけにPATHへ追加します。既存のVulkan SDKとシステムVulkan Runtimeを使う場合は `-InstallVulkanSdk` を外し、`VULKAN_SDK` を設定してください。
 
-GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull RequestとmasterへのpushでDebug x64の通常ビルドとCPU UI回帰テストを実行し、GPU統合テスト実行ファイルも別ジョブでビルドします。失敗時はMSBuildログとテスト出力をartifactへ7日間保存します。
+GitHub Actionsの `.github/workflows/windows-build.yml` は、Pull RequestとmasterへのpushでDebug / Release x64の通常ビルドとCPU UI回帰テストをそれぞれ実行し、GPU統合テスト実行ファイルも別ジョブでビルドします。通常ビルドとCPU UI回帰テストのMSBuildログ・テスト出力は、成否にかかわらず構成別のartifactへ7日間保存します。
 
 ## GPU統合テスト
 
@@ -103,3 +103,29 @@ Font Atlasも検証する場合は実在するTTF/TTCを `RAVEN_UI_TEST_FONT` �
 各マイルストーンは、計画承認、実施、結果報告、停止の順で進めます。
 承認済みマイルストーンの範囲内では、作業ブランチ作成、コミット、Pull Request作成までは追加承認なしで実行します。マージにはユーザーの明示承認が必要です。
 
+
+## Phase 7: UI性能記録の検証
+
+`windows-build.yml`の`Debug x64`と`Release x64`は、それぞれ通常アプリのビルド後に
+`RavenUITests.exe`をビルド・実行します。GPU用ジョブは引き続きビルドのみです。
+Release追加後のCI結果とEditor実操作は、実行結果が得られるまで未確認として扱います。
+
+CPUテストには、Statisticsの実際の記録ボタンへEnterを配送し、以下を確認する回帰テストを含みます。
+
+- 開始、記録中の保存拒否、停止、停止後のCSV内容、再開始。
+- 非表示にしたPanelへのSnapshot供給時も集計を継続すること。
+- 同じPanel Contentを別UIContextへ移しても記録が残り、移動先で停止・保存できること。
+- 元Contextへ戻した後の再開始と、Detach / 再Attach時の初期化。
+
+このCPUテストはOS補助Window生成やEditorLayerからのSnapshot供給を実行しません。
+Windows実機では、同じBackend・構成・DPI・Scene・Panel配置・操作条件に揃え、次を確認します。
+
+1. 通常Editorを起動し、Statistics末尾のStart / Restartから記録する。
+2. View MenuでStatisticsを非表示にしてから再表示し、Samplesが増えていることを確認する。
+3. 記録中にStatistics Tabを補助Windowへ切り離し、Closeして元Paneへ戻す。
+4. Stop後のSamplesが止まり、Save CSVで作業ディレクトリに記録が生成されることを確認する。
+5. CSVの全10項目にsamples / average / maxがあり、Restart後は新しい集計になることを確認する。
+6. Debug / Release、OpenGL / DX12 / Vulkan、100% / 高DPIについて結果とCSVを残す。
+
+CSVのscopeは常にMain Window UIです。Statisticsを補助Windowに移しても補助Window自身の
+描画性能へ切り替わりません。異なる条件のCSVを同一Baselineとして比較しないでください。

@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Base.h"
 #include <functional>
+#include <cstdint>
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -52,6 +53,8 @@ struct UIInteractionState
 
 struct UIFrameMetrics
 {
+    // Contextごとの完了Frame連番。同じ公開値を複数回採取しても重複集計しません。
+    std::uint64_t FrameIndex = 0u;
     bool Available = false;
     double BuildMilliseconds = 0.0;
     std::size_t DrawCommandCount = 0u;

@@ -358,6 +358,7 @@ void UIContext::EndFrame()
     const UITessellationMetrics tessellationMetrics =
         UITessellator::Measure(m_DrawList);
     const auto buildFinished = std::chrono::steady_clock::now();
+    ++m_LastFrameMetrics.FrameIndex;
     m_LastFrameMetrics.Available = true;
     m_LastFrameMetrics.BuildMilliseconds =
         std::chrono::duration<double, std::milli>(buildFinished - buildStarted).count();

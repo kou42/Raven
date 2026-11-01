@@ -233,6 +233,7 @@ StatisticsSnapshot CaptureStatisticsSnapshot(
     if (uiMetrics != nullptr)
     {
         input.UI.Available = uiMetrics->Available;
+        input.UI.FrameIndex = uiMetrics->FrameIndex;
         input.UI.BuildMilliseconds = uiMetrics->BuildMilliseconds;
         input.UI.DrawCommandCount = uiMetrics->DrawCommandCount;
         input.UI.VertexCount = uiMetrics->VertexCount;

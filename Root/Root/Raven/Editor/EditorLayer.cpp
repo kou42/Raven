@@ -1718,7 +1718,7 @@ void EditorLayer::OnRavenUIRender(float dt)
     if (m_StatisticsRavenPanel.IsAttached() == true)
     {
         m_StatisticsRavenPanel.SetVisible(m_ShowStatisticsPanel);
-        if (m_ShowStatisticsPanel == true)
+        if (m_ShowStatisticsPanel == true || m_StatisticsRavenPanel.IsRecording() == true)
         {
             m_StatisticsRavenPanel.Update(CaptureStatisticsSnapshot(
                 dt, m_Application->GetWindow(), m_Application->GetScene(),

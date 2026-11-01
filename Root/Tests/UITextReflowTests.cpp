@@ -844,6 +844,81 @@ void TestCPUProfilerFrameAvailabilityReset()
     profiler.SetEnabled(restoreEnabled);
 }
 
+void TestStatisticsUIRecording()
+{
+    Raven::StatisticsUIRecording recording;
+    Raven::StatisticsUISnapshot sample;
+    sample.Available = true;
+    sample.FrameIndex = 1u;
+    sample.BuildMilliseconds = 2.0;
+    sample.DrawCommandCount = 10u;
+    sample.VertexCount = 20u;
+    sample.IndexCount = 30u;
+    sample.TextureSwitchCount = 4u;
+    sample.FrameAllocationCount = 5u;
+    sample.FrameAllocatedBytes = 60u;
+    sample.RetainedAllocationBytes = 70u;
+    sample.ElementCount = 8u;
+    sample.PeakElementCount = 9u;
+    recording.AddSample(sample);
+    Check(recording.GetSampleCount() == 0u, "recording initially stopped");
+    std::string message;
+    Check(recording.SaveCSV("", message) == false, "recording empty save rejected");
+    recording.Start();
+    sample.Available = false;
+    recording.AddSample(sample);
+    sample.Available = true;
+    sample.BuildMilliseconds = std::numeric_limits<double>::infinity();
+    recording.AddSample(sample);
+    sample.BuildMilliseconds = -1.0;
+    recording.AddSample(sample);
+    Check(recording.GetSampleCount() == 0u, "recording skips unavailable and invalid samples");
+    sample.BuildMilliseconds = 2.0;
+    recording.AddSample(sample);
+    recording.AddSample(sample);
+    sample.FrameIndex = 0u;
+    recording.AddSample(sample);
+    Check(recording.GetSampleCount() == 1u, "recording skips duplicate and old frames");
+    sample.FrameIndex = 2u;
+    sample.BuildMilliseconds = 4.0;
+    sample.DrawCommandCount = 30u;
+    recording.AddSample(sample);
+    CheckNear("recording mean build", recording.GetAverages()[0], 3.0);
+    CheckNear("recording max build", recording.GetMaxima()[0], 4.0);
+    CheckNear("recording mean commands", recording.GetAverages()[1], 20.0);
+    Check(recording.SaveCSV("", message) == false, "recording active save rejected");
+    for (std::size_t index = 2u; index < Raven::StatisticsUIRecording::MetricCount; ++index)
+    {
+        const double expected[] = { 20.0, 30.0, 4.0, 5.0, 60.0, 70.0, 8.0, 9.0 };
+        CheckNear("recording metric mean", recording.GetAverages()[index], expected[index - 2u]);
+        CheckNear("recording metric maximum", recording.GetMaxima()[index], expected[index - 2u]);
+    }
+    recording.Stop();
+    sample.FrameIndex = 3u;
+    recording.AddSample(sample);
+    Check(recording.GetSampleCount() == 2u, "recording stop preserves samples");
+    namespace fs = std::filesystem;
+    const fs::path directory = fs::temp_directory_path() / ("raven-recording-test-" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directory(directory);
+    const fs::path output = directory / "session.csv";
+    Check(recording.SaveCSV(output.string(), message), "recording saves CSV");
+    std::ifstream stream(output);
+    const std::string csv((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    stream.close();
+    Check(csv.find("main_window_ui,build_ms,2,3,4") != std::string::npos,
+        "recording CSV preserves sample count mean and max");
+    Check(std::count(csv.begin(), csv.end(), '\n') == 11, "recording CSV includes all metrics");
+    Check(recording.SaveCSV(output.string(), message) == false, "recording refuses overwrite");
+    Check(recording.SaveCSV((directory / "missing" / "session.csv").string(), message) == false,
+        "recording reports file failure");
+    fs::remove_all(directory);
+    recording.Start();
+    Check(recording.IsRecording() && recording.GetSampleCount() == 0u,
+        "recording restart clears previous session");
+    CheckNear("recording restart resets maximum", recording.GetMaxima()[0], 0.0);
+}
+
 void TestStatisticsActions()
 {
     Raven::CPUProfiler& profiler = Raven::CPUProfiler::Get();
@@ -1350,6 +1425,129 @@ void TestStatisticsRavenPanel()
     Check(panel.IsAttached() == false, "statistics Raven panel detached state");
     Check(context.GetRootElement().GetChildren().size() == initialRootChildCount,
         "statistics Raven panel releases root ownership");
+}
+
+
+Raven::UILabel* FindStatisticsLabel(Raven::UIElement& root, const std::string& text)
+{
+    auto* label = dynamic_cast<Raven::UILabel*>(&root);
+    if (label != nullptr && label->GetText() == text)
+    {
+        return label;
+    }
+    for (const auto& child : root.GetChildren())
+    {
+        auto* found = FindStatisticsLabel(*child, text);
+        if (found != nullptr)
+        {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+// Widgetから実際のKeyboard Actionを通し、Panelが記録状態を所有する契約を検証します。
+// GPU/FontとOS Windowは使わないため、Windows CIのCPUテストでも実行できます。
+void TestStatisticsRecordingPanelLifecycle()
+{
+    namespace fs = std::filesystem;
+    Raven::UIContext context;
+    Raven::UIContext auxiliaryContext;
+    Raven::StatisticsRavenPanel panel;
+    Check(panel.Attach(context, nullptr), "recording panel attaches");
+    auto* root = panel.GetRootElement();
+    if (root == nullptr)
+    {
+        return;
+    }
+    const auto activate = [&](Raven::UIContext& owner, const char* caption)
+    {
+        auto* label = FindStatisticsLabel(*root, caption);
+        auto* button = label != nullptr ? dynamic_cast<Raven::UIButton*>(label->GetParent()) : nullptr;
+        Check(button != nullptr, "recording button exists");
+        if (button != nullptr)
+        {
+            Check(owner.SetFocus(button), "recording button receives focus");
+            Raven::UIKeyEvent event{};
+            event.Key = Raven::UIKey::Enter;
+            event.Pressed = true;
+            Check(owner.RouteKeyEvent(event), "recording button handles Enter");
+        }
+    };
+
+    // Saveボタンは作業ディレクトリへ出力するため、他の記録と混ざらない一時領域を使います。
+    const fs::path directory = fs::temp_directory_path() / ("raven-panel-recording-" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directory(directory);
+    struct WorkingDirectoryGuard
+    {
+        fs::path Original;
+        ~WorkingDirectoryGuard() { fs::current_path(Original); }
+    } guard{ fs::current_path() };
+    fs::current_path(directory);
+
+    activate(context, "Start / Restart");
+    Check(panel.IsRecording(), "recording button starts session");
+    Raven::StatisticsSnapshot snapshot{};
+    snapshot.UI.Available = true;
+    snapshot.UI.FrameIndex = 1u;
+    snapshot.UI.BuildMilliseconds = 2.0;
+    panel.Update(snapshot);
+    Check(FindStatisticsLabel(*root, "Recording / Samples: 1") != nullptr,
+        "recording panel displays sample count");
+    activate(context, "Save CSV");
+    Check(fs::is_empty(directory), "recording save button rejects active session");
+
+    panel.SetVisible(false);
+    snapshot.UI.FrameIndex = 2u;
+    snapshot.UI.BuildMilliseconds = 4.0;
+    panel.Update(snapshot);
+    Check(panel.IsRecording(), "hidden panel keeps recording");
+    Check(FindStatisticsLabel(*root, "Recording / Samples: 2") != nullptr,
+        "hidden panel accepts new frame");
+    panel.SetVisible(true);
+
+    // Dock切り離しと同じ所有権移動。PanelはUIContext参照から記録を取得しません。
+    auto detached = root->GetParent()->DetachChild(root);
+    auxiliaryContext.GetRootElement().AddChild(std::move(detached));
+    snapshot.UI.FrameIndex = 3u;
+    snapshot.UI.BuildMilliseconds = 6.0;
+    panel.Update(snapshot);
+    Check(FindStatisticsLabel(*root, "Recording / Samples: 3") != nullptr,
+        "recording survives transfer to auxiliary context");
+    activate(auxiliaryContext, "Stop");
+    Check(panel.IsRecording() == false, "recording button stops session");
+    snapshot.UI.FrameIndex = 4u;
+    panel.Update(snapshot);
+    Check(FindStatisticsLabel(*root, "Stopped / Samples: 3") != nullptr,
+        "stopped panel retains completed session");
+    activate(auxiliaryContext, "Save CSV");
+    std::size_t fileCount = 0u;
+    for (const auto& entry : fs::directory_iterator(directory))
+    {
+        ++fileCount;
+        Check(entry.path().extension() == ".csv", "recording button writes CSV file");
+        std::ifstream stream(entry.path());
+        const std::string csv((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        Check(csv.find("main_window_ui,build_ms,3,4,6") != std::string::npos,
+            "recording button saves retained session aggregates");
+    }
+    Check(fileCount == 1u, "recording button saves exactly one file");
+
+    detached = root->GetParent()->DetachChild(root);
+    context.GetRootElement().AddChild(std::move(detached));
+    activate(context, "Start / Restart");
+    snapshot.UI.FrameIndex = 5u;
+    panel.Update(snapshot);
+    Check(FindStatisticsLabel(*root, "Recording / Samples: 1") != nullptr,
+        "recording restart resets panel sample count after return");
+    panel.Detach();
+    Check(panel.IsRecording() == false, "recording detach resets session");
+    Check(panel.Attach(context, nullptr), "recording panel reattaches");
+    Check(panel.IsRecording() == false, "recording reattach starts stopped");
+    panel.Detach();
+    fs::current_path(guard.Original);
+    fs::remove_all(directory);
 }
 
 
@@ -3545,6 +3743,13 @@ void TestUIFrameMetrics()
         "context publishes retained element count");
     Check(frame.BuildMilliseconds >= 0.0,
         "context publishes non-negative build duration");
+    const auto previousFrameIndex = frame.FrameIndex;
+    context.BeginFrame({ 64.0f, 64.0f });
+    Check(context.GetLastFrameMetrics().FrameIndex == previousFrameIndex,
+        "context keeps completed frame index during build");
+    context.EndFrame();
+    Check(context.GetLastFrameMetrics().FrameIndex == previousFrameIndex + 1u,
+        "context increments completed frame index");
 }
 
 Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
@@ -3942,9 +4147,11 @@ int main()
     TestSceneHierarchyCreateRedoHistoryRemap();
     TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
+    TestStatisticsUIRecording();
     TestStatisticsActions();
     TestStatisticsSnapshot();
     TestStatisticsRavenPanel();
+    TestStatisticsRecordingPanelLifecycle();
     TestUIImmediateContext();
     TestUITheme();
     TestDPIContextCoordinates();
