@@ -1002,4 +1002,28 @@
     <ClInclude Include="Raven\Data\Tests\DataElementTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\DataElementTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Assets\Shaders\Vulkan" />
+  </ItemGroup>
+  <ItemGroup>
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\EntityPicking.frag">
+      <Filter>Raven\Assets\Shaders\Vulkan</Filter>
+    </VulkanSceneShader>
+    <None Include="..\Tests\VulkanEntityPickingGPUIntegrationTests.cpp">
+      <Filter>Raven\Platform\Vulkan</Filter>
+    </None>
+    <None Include="Raven\Assets\Shaders\Vulkan\EntityPicking.frag.spv">
+      <Filter>Raven\Assets\Shaders\Vulkan</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Core\Memory\AllocationMeasurement.h"><Filter>Raven\Core\Memory</Filter></ClInclude>
+    <ClCompile Update="Raven\Core\Memory\AllocationMeasurement.cpp"><Filter>Raven\Core\Memory</Filter></ClCompile>
+    <ClCompile Update="Raven\Editor\Panels\StatisticsUISnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup><Filter Include="Raven\Core\Memory" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Tests\UIPerformanceTests.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="..\Tests\UIPerformanceTests.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+  </ItemGroup>
 </Project>

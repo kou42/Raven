@@ -1637,6 +1637,7 @@ void Application::Run()
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
         if (m_RavenUIEnabled == true)
         {
+            auto uiAllocations = m_UIContext.MeasureAllocations();
             // 全Runtime/Layer描画後の値をRetained UIへ反映します。
             // OnUpdate中にStatisticsを取得すると後続LayerのDraw Callが欠落するため、
             // Snapshot更新専用HookはUIContext::EndFrame直前へ固定します。
@@ -1671,6 +1672,15 @@ void Application::Run()
                 // Transition OverlayはSceneを隠す暗幕だけに責務を限定します.
             }
             m_UIContext.EndFrame();
+        }
+        // Statistics更新後に前回の値Snapshotを置換します。描画しなかった補助Windowの
+        // 古いFrameは追加せず、次Frameへ同じ値を繰り返し計上しません。
+        m_CompletedUIFrameMetrics.Windows.clear();
+        if (m_RavenUIEnabled == true)
+        {
+            m_CompletedUIFrameMetrics.FrameIndex = m_UIContext.GetLastFrameMetrics().FrameIndex;
+            m_CompletedUIFrameMetrics.Windows.push_back(
+                { m_MainWindowID, true, m_UIContext.GetLastFrameMetrics() });
         }
 
         if (m_ExplicitSceneRuntime != nullptr)
@@ -1714,7 +1724,7 @@ void Application::Run()
             {
                 UIContext* ui = item.second.get();
                 m_WindowManager.RenderWindow(item.first, m_MainWindowID,
-                    [ui](Window& window)
+                    [this, ui, windowID = item.first](Window& window)
                     {
                         // 補助WindowのClearはWindow/Platform境界へ委譲し、
                         // ApplicationからOpenGL APIを直接呼びません。
@@ -1729,14 +1739,25 @@ void Application::Run()
                             math::Vec2(static_cast<float>(window.GetFramebufferWidth()),
                                 static_cast<float>(window.GetFramebufferHeight())),
                             window.GetContentScaleX(), window.GetContentScaleY());
+                        auto uiAllocations = ui->MeasureAllocations();
                         if (ui->GetPendingDPIFontCount() > 0u)
                         {
                             ui->RefreshPendingDPIFonts();
                         }
                         ui->EndFrame();
+                        m_CompletedUIFrameMetrics.Windows.push_back(
+                            { windowID, false, ui->GetLastFrameMetrics() });
                     });
             }
         }
+
+        std::size_t completedElementCount = 0u;
+        for (const auto& completed : m_CompletedUIFrameMetrics.Windows)
+        {
+            completedElementCount += completed.Metrics.ElementCount;
+        }
+        m_CompletedUIFrameMetrics.PeakElementCount = std::max(
+            m_CompletedUIFrameMetrics.PeakElementCount, completedElementCount);
 
         // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、OpenGLはApplication所有Lifecycle、

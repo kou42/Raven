@@ -1,6 +1,7 @@
 #include "VulkanSceneRuntime.h"
 
 #include "VulkanSceneCommandList.h"
+#include "VulkanOffscreenRenderTarget.h"
 #include "VulkanSceneRHIDevice.h"
 
 #include "Raven/Core/Window.h"
@@ -54,6 +55,9 @@ bool VulkanSceneRuntime::Init(
     m_PipelineSpecification.DebugName = m_PipelineDebugName.c_str();
     m_VertexShader = m_ShaderAssets.Load(vertexShader, RHIBackend::Vulkan);
     m_FragmentShader = m_ShaderAssets.Load(fragmentShader, RHIBackend::Vulkan);
+    RHIShaderAssetSpecification pickingFragment{};
+    pickingFragment.VulkanPath = "Raven/Assets/Shaders/Vulkan/EntityPicking.frag.spv";
+    m_PickingFragmentShader = m_ShaderAssets.Load(pickingFragment, RHIBackend::Vulkan);
     RHIShaderAssetSpecification uiVertex{};
     uiVertex.VulkanPath = "Raven/Assets/Shaders/Vulkan/UI.vert.spv";
     RHIShaderAssetSpecification uiFragment{};
@@ -62,6 +66,7 @@ bool VulkanSceneRuntime::Init(
     m_UIFragmentShader = m_ShaderAssets.Load(uiFragment, RHIBackend::Vulkan);
     if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
         m_UIVertexShader == nullptr || m_UIFragmentShader == nullptr ||
+        m_PickingFragmentShader == nullptr ||
         CreatePipelines() == false ||
         CreateDefaultTexture() == false)
     {
@@ -175,6 +180,7 @@ bool VulkanSceneRuntime::PrepareFrame()
     if (m_Initialized == false || m_Device == nullptr ||
         m_OpaquePipeline == nullptr || m_TransparentPipeline == nullptr ||
         m_DebugLinePipeline == nullptr || m_UIPipeline == nullptr ||
+        m_PickingPipeline == nullptr ||
         m_DefaultTexture == nullptr ||
         m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
     {
@@ -267,6 +273,7 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
     m_DebugLinePipeline.reset();
+    m_PickingPipeline.reset();
     m_UIPipeline.reset();
     if (CreatePipelines() == false)
     {
@@ -292,6 +299,7 @@ void VulkanSceneRuntime::Shutdown()
     m_OpaquePipeline.reset();
     m_TransparentPipeline.reset();
     m_DebugLinePipeline.reset();
+    m_PickingPipeline.reset();
     m_UIPipeline.reset();
     m_UIRenderer.ClearTextureCache();
     m_UIVertexShader.reset();
@@ -301,6 +309,7 @@ void VulkanSceneRuntime::Shutdown()
     m_PipelineDebugName.clear();
     m_VertexShader.reset();
     m_FragmentShader.reset();
+    m_PickingFragmentShader.reset();
     m_ShaderAssets.Clear();
     m_Device.reset();
     m_Context.Shutdown();
@@ -386,6 +395,23 @@ bool VulkanSceneRuntime::DrawPreparedOffscreenSceneFrame(
                 prepared.SceneFrame.DebugLineItems);
     }
 
+    const auto nativeTarget = std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(prepared.RenderTarget);
+    RHIEntityPickingRequest pickingRequest{};
+    if (drawn == true && nativeTarget != nullptr &&
+        nativeTarget->TakePendingEntityPickingRequest(pickingRequest) == true)
+    {
+        const bool beganPicking = commands.BeginEntityPickingPass(prepared.RenderTarget, pickingRequest);
+        bool picked = false;
+        bool endedPicking = false;
+        if (beganPicking == true)
+        {
+            picked = RHISceneMeshRenderer::DrawEntityPicking(commands, m_PickingPipeline, prepared.SceneFrame.Items);
+            // Draw失敗時もPassを閉じ、通常ColorをSampled Layoutへ戻す機会を残します。
+            endedPicking = commands.EndEntityPickingPass(prepared.RenderTarget, pickingRequest);
+        }
+        drawn = beganPicking == true && picked == true && endedPicking == true;
+    }
+
     const bool ended =
         commands.EndOffscreenRenderTarget(prepared.RenderTarget);
     return drawn == true && ended == true;
@@ -430,11 +456,20 @@ bool VulkanSceneRuntime::CreatePipelines()
         return false;
     }
 
+    Ref<RHIGraphicsPipeline> pickingPipeline;
+    if (m_PickingFragmentShader == nullptr || m_PickingFragmentShader->IsValid() == false ||
+        Renderer::CreateRHIEntityPickingPipeline(*m_Device, m_PipelineSpecification, m_VertexShader->GetBinary(),
+            m_PickingFragmentShader->GetBinary(), pickingPipeline) == false)
+    {
+        return false;
+    }
+
     // Surface/Debugの全Pipelineが揃ってから差し替え、Resize途中の部分状態を公開しません。
     m_OpaquePipeline = std::move(opaque);
     m_TransparentPipeline = std::move(transparent);
     m_DebugLinePipeline = std::move(debugLine);
     m_UIPipeline = std::move(uiPipeline);
+    m_PickingPipeline = std::move(pickingPipeline);
     return true;
 }
 

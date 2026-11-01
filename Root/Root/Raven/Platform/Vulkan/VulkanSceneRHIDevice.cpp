@@ -17,7 +17,8 @@ VulkanSceneRHIDevice::CreateOffscreenRenderTarget(
 
     auto renderTarget = CreateRef<VulkanOffscreenRenderTarget>();
     if (renderTarget->Init(m_Context.GetDevice(), m_Context.GetRenderPass(),
-        m_Context.GetColorFormat(), specification) == false)
+        m_Context.GetColorFormat(), specification,
+        m_Context.GetPickingRenderPass(), m_Context.GetFrameSlotCount()) == false)
     {
         return nullptr;
     }

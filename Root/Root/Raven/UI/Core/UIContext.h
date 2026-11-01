@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Raven/Core/Base.h"
+#include "Raven/Core/Memory/AllocationMeasurement.h"
 #include <functional>
+#include <cstdint>
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -52,6 +54,8 @@ struct UIInteractionState
 
 struct UIFrameMetrics
 {
+    // Contextごとの完了Frame連番。同じ公開値を複数回採取しても重複集計しません。
+    std::uint64_t FrameIndex = 0u;
     bool Available = false;
     double BuildMilliseconds = 0.0;
     std::size_t DrawCommandCount = 0u;
@@ -63,6 +67,23 @@ struct UIFrameMetrics
     std::size_t RetainedAllocationBytes = 0u;
     std::size_t ElementCount = 0u;
     std::size_t PeakElementCount = 0u;
+    AllocationMeasurement CppAllocations;
+};
+
+// 値Snapshotだけを公開し、Window/Contextの生存期間をStatisticsへ持ち込みません。
+struct UIWindowFrameMetrics
+{
+    std::size_t WindowID = 0u;
+    bool MainWindow = false;
+    UIFrameMetrics Metrics;
+};
+
+struct UICompletedFrameMetrics
+{
+    std::uint64_t FrameIndex = 0u;
+    std::size_t PeakElementCount = 0u;
+    // 同じApplication Frameで実際に描画完了したWindowだけを含みます。
+    std::vector<UIWindowFrameMetrics> Windows;
 };
 
 class UIContext
@@ -231,12 +252,14 @@ public:
     UIDrawList& GetDrawList();
     const UIDrawList& GetDrawList() const;
     const UIFrameMetrics& GetLastFrameMetrics() const { return m_LastFrameMetrics; }
+    AllocationMeasurementScope MeasureAllocations();
 
     const math::Vec2& GetViewportSize() const;
     bool IsFrameActive() const;
 
 private:
     friend class UIElement;
+    void BeginFrameContents(const math::Vec2& viewportSize);
 
     bool IsLiveDragElement(const UIElement* element) const;
     void UpdateDrag(const math::Vec2& position, UIElement* hitTarget, float deltaSeconds = 0.0f);
@@ -263,6 +286,7 @@ private:
     math::Vec2 m_ViewportSize{};
     UIDrawList m_DrawList;
     UIFrameMetrics m_LastFrameMetrics;
+    AllocationMeasurement m_FrameCppAllocations;
     struct FrameOverlayShape
     {
         enum class Type

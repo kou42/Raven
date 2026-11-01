@@ -66,6 +66,23 @@ public:
         return m_Context.SetClipTransform(model);
     }
 
+    bool SetEntityID(std::int32_t entityID) override
+    {
+        return m_Context.SetEntityID(entityID);
+    }
+
+    bool BeginEntityPickingPass(const Ref<RHIOffscreenRenderTarget>& target,
+        const RHIEntityPickingRequest& request) override
+    {
+        return m_Context.BeginEntityPickingPass(target, request);
+    }
+
+    bool EndEntityPickingPass(const Ref<RHIOffscreenRenderTarget>& target,
+        const RHIEntityPickingRequest& request) override
+    {
+        return m_Context.EndEntityPickingPass(target, request);
+    }
+
     // indexCount == 0 はIndexBuffer全体を描画します。
     // BeginFrame/EndFrameの外側ではContextがfalseを返し、GPU命令を記録しません。
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,

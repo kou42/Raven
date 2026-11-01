@@ -2,6 +2,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
+#include "Raven/Editor/Panels/StatisticsActions.h"
 
 #include <cstddef>
 #include <string>
@@ -27,6 +28,7 @@ public:
     void Update(const StatisticsSnapshot& snapshot);
     void SetVisible(bool visible);
 
+    bool IsRecording() const { return m_UIRecording.IsRecording(); }
     bool IsAttached() const;
     bool IsVisible() const;
     UIElement* GetRootElement() const { return m_Root; }
@@ -51,6 +53,11 @@ private:
     UITable* m_CounterTable = nullptr;
     UITable* m_RawProfileTable = nullptr;
     StatisticsSnapshot m_Snapshot;
+    StatisticsUIRecordingSession m_UIRecording;
+    UITable* m_UIWindowTable = nullptr;
+    UILabel* m_UIWindowSummary = nullptr;
+    UILabel* m_RecordingSummary = nullptr;
+    UILabel* m_RecordingStatus = nullptr;
 };
 
 } // namespace Raven

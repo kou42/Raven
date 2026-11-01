@@ -120,6 +120,16 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
         return RHIFrameResult::FatalError;
     }
     m_RecordedBuffers[frame].clear();
+    // このslotを使用したSubmitのFence完了後にだけHost Visible Bufferを読みます。
+    for (const auto& target : m_RecordedOffscreenRenderTargets[frame])
+    {
+        const auto native = std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(target);
+        if (native == nullptr || native->ResolveEntityPickingReadback(frame) == false)
+        {
+            m_FatalError = true;
+            return RHIFrameResult::FatalError;
+        }
+    }
     m_RecordedOffscreenRenderTargets[frame].clear();
     m_SubmittedBufferFrames[frame] = false;
 
@@ -400,6 +410,7 @@ bool VulkanSceneContext::EndOffscreenRenderTarget(
     VkCommandBuffer commandBuffer = GetActiveCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE || native == nullptr ||
         m_ActiveOffscreenRenderTarget != renderTarget ||
+        m_EntityPickingPassActive == true ||
         m_SwapChainRenderPassActive == true ||
         m_ActiveFrame >= m_RecordedOffscreenRenderTargets.size())
     {
@@ -423,6 +434,56 @@ bool VulkanSceneContext::EndOffscreenRenderTarget(
     m_SwapChainRenderPassActive = true;
     const VkExtent2D extent = m_SwapChain.GetExtent();
     return SetViewport(0u, 0u, extent.width, extent.height);
+}
+
+bool VulkanSceneContext::BeginEntityPickingPass(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget, const RHIEntityPickingRequest& request)
+{
+    const auto native = std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(renderTarget);
+    const VkCommandBuffer commands = GetActiveCommandBuffer();
+    if (commands == VK_NULL_HANDLE || native == nullptr ||
+        m_ActiveOffscreenRenderTarget != renderTarget || m_EntityPickingPassActive == true ||
+        native->BeginEntityPickingPass(commands, request) == false)
+    {
+        return false;
+    }
+    m_BoundGraphicsPipeline.reset();
+    m_EntityPickingPassActive = true;
+    const auto& specification = native->GetSpecification();
+    return SetViewport(0u, 0u, specification.Width, specification.Height);
+}
+
+bool VulkanSceneContext::EndEntityPickingPass(
+    const Ref<RHIOffscreenRenderTarget>& renderTarget, const RHIEntityPickingRequest& request)
+{
+    const auto native = std::dynamic_pointer_cast<VulkanOffscreenRenderTarget>(renderTarget);
+    const VkCommandBuffer commands = GetActiveCommandBuffer();
+    if (commands == VK_NULL_HANDLE || native == nullptr ||
+        m_ActiveOffscreenRenderTarget != renderTarget || m_EntityPickingPassActive == false ||
+        native->EndEntityPickingPass(commands, m_ActiveFrame, request) == false)
+    {
+        return false;
+    }
+    m_BoundGraphicsPipeline.reset();
+    m_EntityPickingPassActive = false;
+    return true;
+}
+
+bool VulkanSceneContext::SetEntityID(std::int32_t entityID)
+{
+    const VkCommandBuffer commands = GetActiveCommandBuffer();
+    if (commands == VK_NULL_HANDLE || m_EntityPickingPassActive == false ||
+        m_BoundGraphicsPipeline == nullptr || m_BoundGraphicsPipeline->IsValid() == false ||
+        m_BoundGraphicsPipeline->GetSpecification().ColorFormat != RHIColorFormat::R32Sint)
+    {
+        return false;
+    }
+    // Picking Fragmentは既存Tint領域の先頭4byteをintとして使います。
+    // 全Pipelineで80byteのPush Constant Layoutを共通化し、VertexのMVP領域は維持します。
+    vkCmdPushConstants(commands, m_BoundGraphicsPipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        sizeof(float) * 16u, sizeof(entityID), &entityID);
+    return true;
 }
 
 VkExtent2D VulkanSceneContext::GetActiveRenderExtent() const
@@ -461,7 +522,10 @@ Ref<RHIGraphicsPipeline> VulkanSceneContext::CreateGraphicsPipeline(
 
     auto pipeline = CreateRef<VulkanGraphicsPipeline>();
     if (pipeline->Init(m_Instance.GetDevice().GetHandle(),
-        m_RenderTarget.GetRenderPass(), m_SwapChain.GetImageFormat(), specification) == false)
+        specification.ColorFormat == RHIColorFormat::R32Sint ?
+            m_RenderTarget.GetPickingRenderPass() : m_RenderTarget.GetRenderPass(),
+        specification.ColorFormat == RHIColorFormat::R32Sint ?
+            VK_FORMAT_R32_SINT : m_SwapChain.GetImageFormat(), specification) == false)
     {
         return nullptr;
     }
@@ -478,6 +542,12 @@ bool VulkanSceneContext::BindGraphicsPipeline(const Ref<RHIGraphicsPipeline>& pi
     }
     auto nativePipeline = std::dynamic_pointer_cast<VulkanGraphicsPipeline>(pipeline);
     if (nativePipeline == nullptr || nativePipeline->IsValid() == false)
+    {
+        return false;
+    }
+
+    if ((nativePipeline->GetSpecification().ColorFormat == RHIColorFormat::R32Sint) !=
+        m_EntityPickingPassActive)
     {
         return false;
     }
@@ -956,6 +1026,7 @@ void VulkanSceneContext::Shutdown()
     m_FrameActive = false;
     m_FrameSubmitted = false;
     m_SwapChainRenderPassActive = false;
+    m_EntityPickingPassActive = false;
     m_FatalError = false;
     m_ActiveFrame = 0;
     m_BoundGraphicsPipeline.reset();

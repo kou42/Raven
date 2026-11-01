@@ -21,6 +21,9 @@ public:
     VulkanSceneRenderTarget& operator=(const VulkanSceneRenderTarget&) = delete;
 
     bool Init(VkDevice device, VkPhysicalDevice physicalDevice, const VulkanSwapChain& swapChain);
+    // SwapChainなしのGPU統合テストでも同じAttachment/同期契約を使います。
+    // 返されたRenderPassは呼び出し側がGPU完了後に破棄します。
+    static VkRenderPass CreateEntityPickingRenderPass(VkDevice device);
     bool Begin(VkCommandBuffer commandBuffer, uint32_t imageIndex,
         const VkClearColorValue& clearColor, bool preserveContents = false) const;
     void End(VkCommandBuffer commandBuffer) const;
@@ -28,6 +31,7 @@ public:
 
     VkFormat GetDepthFormat() const { return m_DepthFormat; }
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
+    VkRenderPass GetPickingRenderPass() const { return m_PickingRenderPass; }
     bool IsValid() const
     {
         return m_Device != VK_NULL_HANDLE &&
@@ -46,6 +50,7 @@ private:
     // off-screen描画後はSwapChainのScene色を維持してUI描画へ戻るため、
     // AttachmentをLOADする互換RenderPassを分けて所有します。
     VkRenderPass m_ResumeRenderPass = VK_NULL_HANDLE;
+    VkRenderPass m_PickingRenderPass = VK_NULL_HANDLE;
     VkExtent2D m_Extent{};
     std::vector<VkImageView> m_ImageViews;
     std::vector<VkFramebuffer> m_Framebuffers;
