@@ -102,7 +102,8 @@ if (-not $env:RAVEN_UI_TEST_FONT -and (Test-Path -LiteralPath $windowsFont -Path
 
 $logDirectory = Join-Path $RepoRoot "artifacts\logs"
 $profileSuffix = if ($AllocationProfiling) { "-allocation-profile" } else { "" }
-$testLog = Join-Path $logDirectory "windows-ui-tests-$($Configuration.ToLowerInvariant())-$Platform$profileSuffix.log"
+# ビルドログと実行結果を分け、成功時もコンパイラ診断を上書きせずに残します。
+$testLog = Join-Path $logDirectory "windows-ui-test-results-$($Configuration.ToLowerInvariant())-$Platform$profileSuffix.log"
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
 Write-Host "Running CPU UI regression tests: $testExecutable"
@@ -114,7 +115,9 @@ try {
     Pop-Location
 }
 
-$output | Set-Content -LiteralPath $testLog -Encoding utf8
+# 成功時に標準出力が空でも、実行結果のログを必ず作成します。
+Set-Content -LiteralPath $testLog -Value ($output -join [Environment]::NewLine) -Encoding utf8
+Add-Content -LiteralPath $testLog -Value "CPU UI regression tests exit=$exitCode" -Encoding utf8
 $output | ForEach-Object { Write-Host $_ }
 
 if ($exitCode -ne 0) {

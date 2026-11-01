@@ -5,6 +5,7 @@ namespace Raven
 
 class UIContext;
 class UIElement;
+struct UIKeyEvent;
 
 // Editor Shortcutを処理する所有者です。
 // 値の並びではなくResolveEditorShortcutTarget()の明示的な判定順を優先順位とします。
@@ -32,5 +33,9 @@ struct EditorShortcutRoutingContext
 EditorShortcutTarget ResolveEditorShortcutTarget(
     const UIContext& context,
     const EditorShortcutRoutingContext& routingContext);
+
+// Text/Popup/Gizmoの所有操作を奪わず、Panel/Globalから共有編集履歴を操作します。
+bool TryHandleEditorHistoryShortcut(const UIContext& context,
+    const EditorShortcutRoutingContext& routingContext, const UIKeyEvent& event);
 
 } // namespace Raven

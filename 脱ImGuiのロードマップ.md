@@ -1,5 +1,14 @@
 # Raven 脱ImGuiロードマップ
 
+最新の検証記録: [Phase 7 Windows自動検証（2026-11-02）](RAVEN_IMGUI_PHASE7_VALIDATION.md)。
+通常起動の共有RuntimeUIFont未注入とDock Tabへの未伝播を修正し、OpenGL Releaseで文字表示を確認。
+Tab本文の残り領域への配置とStatistics Scroll追従、Fluid Debugの背景を修正済み。
+OpenGL Releaseで本文表示・選択・記録の開始/停止/非表示継続/CSV保存を確認し、参考性能CSVを採取。
+通常起動のClipboard接続とEditor履歴Shortcutを修正し、Transformの貼り付け・確定・Undo/Redoも実機確認済み。
+補助Window実操作、他Componentの網羅的操作、Backend/DPI別比較は継続検証が必要。
+Debug/Release通常ビルド・CPU UI、Debug Allocation計測CPU、OpenGL GPU統合は成功。
+長時間操作・Multi-Viewport実操作・Backend/DPI別性能Baselineは未検証のため、Phase 7の未完了チェックは維持する。
+
 最終更新: 2026-10-19
 
 対象: Raven Editor / Debug UI / Dear ImGui統合

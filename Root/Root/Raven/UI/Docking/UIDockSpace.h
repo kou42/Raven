@@ -51,6 +51,8 @@ public:
         std::uint64_t, std::uint64_t, const math::Vec2&)>;
 
     UIDockSpace();
+    // 現在のTabと、Split/復元で今後生成するTabへ同じ共有Fontを適用します。
+    void SetFont(const Ref<UIFontAtlas>& font);
 
     UIDockLayout& GetLayout() { return m_Layout; }
     const UIDockLayout& GetLayout() const { return m_Layout; }
@@ -110,6 +112,7 @@ private:
     std::uint64_t FindSourceLeaf(const UIElement* source) const;
 
     UIDockLayout m_Layout;
+    Ref<UIFontAtlas> m_Font;
     std::unordered_map<std::uint64_t, UIElement*> m_Panes;
     std::unordered_map<std::uint64_t, UITabView*> m_TabViews;
     std::unordered_map<std::uint64_t, UISplitter*> m_Splitters;

@@ -370,10 +370,20 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
         }
         else if (event.Key == UIKey::C || event.Key == UIKey::X)
         {
-            if (m_WriteClipboard != nullptr && m_Edit.HasSelection() == true)
+            if (m_Edit.HasSelection() == true)
             {
-                m_WriteClipboard(m_Edit.GetSelectedText());
-                if (event.Key == UIKey::X && m_Edit.DeleteSelection())
+                bool copied = false;
+                if (m_WriteClipboard != nullptr)
+                {
+                    m_WriteClipboard(m_Edit.GetSelectedText());
+                    copied = true;
+                }
+                else if (event.Context != nullptr)
+                {
+                    copied = event.Context->WriteClipboardText(m_Edit.GetSelectedText());
+                }
+                // 接続がない場合はCopy失敗のまま文字を失わないようCutも行いません。
+                if (copied == true && event.Key == UIKey::X && m_Edit.DeleteSelection())
                 {
                     NotifyChanged();
                 }
@@ -381,7 +391,9 @@ void UIInputText::OnKeyEvent(UIKeyEvent& event)
         }
         else if (event.Key == UIKey::V)
         {
-            if (m_ReadClipboard != nullptr && InsertFiltered(m_ReadClipboard()))
+            const std::string text = m_ReadClipboard != nullptr ? m_ReadClipboard() :
+                (event.Context != nullptr ? event.Context->ReadClipboardText() : std::string{});
+            if (InsertFiltered(text))
             {
                 NotifyChanged();
             }

@@ -12,6 +12,7 @@
 #include "Raven/Editor/Command/SetPrimaryCameraCommand.h"
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
+#include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Editor/EditorViewportGeometry.h"
 #include "Raven/Scene/Components.h"
@@ -26,6 +27,7 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cmath>
@@ -464,6 +466,7 @@ bool EditorLayer::AttachRavenEditorShell()
     m_RavenEditorMenuBar = static_cast<UIMenuBar*>(root->AddChild(std::move(menu)));
 
     auto dock = CreateScope<UIDockSpace>();
+    dock->SetFont(m_Application->GetRuntimeUIFont());
     m_RavenEditorDockSpace = dock.get();
     UIDockSpace* dockHandle = dock.get();
     dock->SetOnTabDetachRequested(
@@ -594,6 +597,9 @@ bool EditorLayer::AttachRavenEditorShell()
                 {
                     panelWindow->SetDocked(true);
                 }
+                // Dock本文にPanelの固定PreferredSizeを持ち込まず、確定領域へ追従させます。
+                panelRoot->SetHorizontalAlignment(UIAlignment::Stretch);
+                panelRoot->SetVerticalAlignment(UIAlignment::Stretch);
                 content->AddChild(std::move(detached));
             }
         }
@@ -2029,6 +2035,29 @@ void EditorLayer::RenderGameView()
 
 void EditorLayer::OnEvent(Event& event)
 {
+    if (m_Application != nullptr && m_UIBackend == EditorUIBackend::RavenUI &&
+        event.GetEventType() == EventType::KeyPressed)
+    {
+        const auto& key = static_cast<const KeyPressedEvent&>(event);
+        UIKeyEvent shortcut;
+        shortcut.Key = key.GetKeyCode() == Key::Z ? UIKey::Z :
+            (key.GetKeyCode() == Key::Y ? UIKey::Y : UIKey::Unknown);
+        shortcut.Pressed = true;
+        shortcut.Repeat = key.IsRepeat();
+        // Event時点のModifierを使い、Key Up後のpollingでCtrl/Shiftを取りこぼしません。
+        shortcut.Control = (key.GetModifiers() & GLFW_MOD_CONTROL) != 0;
+        shortcut.Super = (key.GetModifiers() & GLFW_MOD_SUPER) != 0;
+        shortcut.Shift = (key.GetModifiers() & GLFW_MOD_SHIFT) != 0;
+        EditorShortcutRoutingContext routing;
+        routing.Panel = m_InspectorRavenPanel.GetRootElement();
+        routing.Viewport = m_SceneViewportRavenPanel.GetRootElement();
+        routing.GizmoActive = m_RavenViewportGizmo.IsActive();
+        if (TryHandleEditorHistoryShortcut(m_Application->GetUIContext(), routing, shortcut) == true)
+        {
+            event.Handled = true;
+            return;
+        }
+    }
     // ========================================================================
     // Editor input routing
     // ========================================================================
@@ -2075,7 +2104,9 @@ void EditorLayer::OnEvent(Event& event)
                 ToggleEditorGizmoSpace();
                 event.Handled = true;
             }
-            else if (controlDown == true && keyCode == Key::Z)
+            // Raven UIの履歴Shortcutは上のRouterだけで処理します。所有者がPopup等の
+            // 場合に旧Viewport経路へ流れ、優先順位を迂回することを防ぎます。
+            else if (m_UIBackend != EditorUIBackend::RavenUI && controlDown == true && keyCode == Key::Z)
             {
                 const bool shiftDown =
                     Input::IsKeyPressed(Key::LeftShift) == true ||
@@ -2090,7 +2121,7 @@ void EditorLayer::OnEvent(Event& event)
                 }
                 event.Handled = true;
             }
-            else if (controlDown == true && keyCode == Key::Y)
+            else if (m_UIBackend != EditorUIBackend::RavenUI && controlDown == true && keyCode == Key::Y)
             {
                 RedoEditorCommand();
                 event.Handled = true;

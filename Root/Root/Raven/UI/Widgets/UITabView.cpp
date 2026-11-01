@@ -15,12 +15,17 @@ UITabView::UITabView()
 
     auto bar = std::make_unique<UITabBar>(m_Model);
     bar->SetHorizontalAlignment(UIAlignment::Stretch);
+    // Headerの自然幅で小さいDock Paneを押し広げず、Tabは内部でScrollさせます。
+    bar->SetAffectsParentMeasure(false);
     m_TabBar = static_cast<UITabBar*>(AddChild(std::move(bar)));
 
     auto host = std::make_unique<UIElement>();
     host->SetLayoutMode(UILayoutMode::Vertical);
     host->SetHorizontalAlignment(UIAlignment::Stretch);
-    host->SetPreferredSize(math::Vec2(300.0f, 240.0f));
+    host->SetVerticalAlignment(UIAlignment::Stretch);
+    // 本文の自然サイズでTab/Dockを拡張せず、Headerを除いた領域をViewportにします。
+    // Page内のWindowはMeasure対象外でも、この領域へ配置できる必要があります。
+    host->SetAffectsParentMeasure(false);
     host->SetClipChildren(true);
     m_ContentHost = AddChild(std::move(host));
 
@@ -63,6 +68,7 @@ bool UITabView::AddTab(std::uint64_t id, std::string title,
     // 非選択Pageは追加前に非表示とし、初回Measure/Hit Testに参加させません。
     content->SetVisible(false);
     content->SetHorizontalAlignment(UIAlignment::Stretch);
+    content->SetVerticalAlignment(UIAlignment::Stretch);
     UIElement* page = m_ContentHost->AddChild(std::move(content));
     if (page == nullptr)
     {

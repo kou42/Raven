@@ -7,6 +7,7 @@
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Screens/LoadingScreen.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
+#include "Raven/UI/Text/UIFontAtlasBuilder.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
@@ -188,6 +189,41 @@ Application::Application(const ApplicationSpecification& specification)
     if (m_RavenUIEnabled == true)
     {
         m_UIContext.SetRenderer(UIRenderer::Create(m_Window->GetBackend()));
+        ConfigureUIClipboard(m_UIContext, m_MainWindowID);
+        if (m_RuntimeUIFont == nullptr && specification.RuntimeUIFontPath.empty() == false)
+        {
+            // Texture生成にはBackendのDevice/Contextが必要なので、WindowとRendererの
+            // 初期化後、PanelのAttach前に一度だけ構築します。各Panelは同じRefを共有し、
+            // Scene交換でもAtlasのLifetimeをApplication側に維持します。
+            std::vector<std::uint32_t> codepoints;
+            for (std::uint32_t codepoint = 32u; codepoint <= 126u; ++codepoint)
+            {
+                codepoints.push_back(codepoint);
+            }
+            // 通常Editorの英語Captionと省略・展開記号だけを収録し、全文字の
+            // Rasterizeによる起動時間・Atlas容量の増大を避けます。未収録文字は?へ代替します。
+            codepoints.insert(codepoints.end(), { 0x2026u, 0x2190u, 0x2191u,
+                0x2192u, 0x2193u, 0x25B6u, 0x25BCu, 0xFFFDu });
+            UIFontAtlasBuildOptions options;
+            options.PixelHeight = 18.0f;
+            auto font = CreateRef<UIFontAtlas>();
+            UIFontAtlasBuildFailure failure = UIFontAtlasBuildFailure::None;
+            if (UIFontAtlasBuilder::BuildFromFile(specification.RuntimeUIFontPath,
+                codepoints, options, *font, &failure) == true)
+            {
+                m_RuntimeUIFont = std::move(font);
+                std::cout << "[Raven UI] Runtime font loaded: "
+                    << specification.RuntimeUIFontPath << '\n';
+            }
+            else
+            {
+                // Sceneや診断処理は継続しますが、文字を表示できないことを起動ログに
+                // 明示します。null FontをWidgetへ渡す既存の安全な描画省略は維持します。
+                std::cerr << "[Raven UI] Runtime font creation failed: path="
+                    << specification.RuntimeUIFontPath << " stage="
+                    << static_cast<int>(failure) << '\n';
+            }
+        }
     }
 
 #if defined(_DEBUG)
@@ -338,6 +374,31 @@ Application::Application(const ApplicationSpecification& specification)
     }
 }
 
+void Application::ConfigureUIClipboard(UIContext& context, WindowID windowID)
+{
+    // WidgetにGLFW handleを保持させず、毎回Registryから生存中のWindowを解決します。
+    // Tabを別Contextへ移譲した後も、移動先WindowのClipboard接続が使われます。
+    context.SetClipboard(
+        [this, windowID]() -> std::string
+        {
+            Window* window = m_WindowManager.GetWindow(windowID);
+            if (window == nullptr)
+            {
+                return {};
+            }
+            const char* text = glfwGetClipboardString(static_cast<GLFWwindow*>(window->GetNativeWindow()));
+            return text != nullptr ? std::string(text) : std::string{};
+        },
+        [this, windowID](const std::string& text)
+        {
+            Window* window = m_WindowManager.GetWindow(windowID);
+            if (window != nullptr)
+            {
+                glfwSetClipboardString(static_cast<GLFWwindow*>(window->GetNativeWindow()), text.c_str());
+            }
+        });
+}
+
 Application::~Application()
 {
     // ========================================================================
@@ -436,6 +497,7 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
         return 0;
     }
     auto context = CreateScope<UIContext>();
+    ConfigureUIClipboard(*context, id);
     // UIの見た目とユーザー指定倍率はOS Windowごとに初期化される値ではないため、
     // Main Windowの設定を引き継ぎます。OS由来のDPIだけは各WindowのBeginFrameで同期します。
     context->SetTheme(m_UIContext.GetTheme());
