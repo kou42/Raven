@@ -68,6 +68,15 @@ void TestUIAllocationMeasurement()
     Check(inner.Count == (enabled == true ? 1u : 0u) && inner.Bytes == (enabled == true ? 17u : 0u),
         "nested different target is exclusive");
 
+    Raven::AllocationMeasurement fundamental;
+    {
+        Raven::AllocationMeasurementScope scope(fundamental);
+        void* smallAligned = ::operator new(3u, std::align_val_t(1u));
+        Check(smallAligned != nullptr, "fundamental aligned new contract");
+        ::operator delete(smallAligned, std::align_val_t(1u));
+    }
+    Check(fundamental.Count == (enabled == true ? 1u : 0u), "small alignment allocation measured once");
+
     // STLのDebug用Proxy等の実装差があるため、内部Allocation回数の固定値は要求しません。
     Raven::AllocationMeasurement stl;
     std::vector<int> temporary;

@@ -61,10 +61,13 @@ void* AllocateMeasured(std::size_t bytes, std::size_t alignment)
         }
         else
         {
+            // 手動のaligned newにはalign_val_t(1)等も渡せます。native APIが要求する
+            // pointer alignmentまで引き上げても、呼び出し側の整列契約は維持できます。
+            const std::size_t nativeAlignment = alignment < sizeof(void*) ? sizeof(void*) : alignment;
 #if defined(_WIN32)
-            memory = _aligned_malloc(size, alignment);
+            memory = _aligned_malloc(size, nativeAlignment);
 #else
-            if (posix_memalign(&memory, alignment, size) != 0)
+            if (posix_memalign(&memory, nativeAlignment, size) != 0)
             {
                 memory = nullptr;
             }
