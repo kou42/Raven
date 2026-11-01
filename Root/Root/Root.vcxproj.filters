@@ -976,4 +976,30 @@
       <Filter>Raven\\Diagnostics\\Tests</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Data"><UniqueIdentifier>{501e384c-0509-5a4e-b16b-87a18b614c56}</UniqueIdentifier></Filter>
+    <Filter Include="Raven\Data\Tests"><UniqueIdentifier>{603446fc-d10f-5ce6-886f-f6e43ddf3940}</UniqueIdentifier></Filter>
+    <ClCompile Include="Raven\Data\DataDocument.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataDocument.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataElement.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataElement.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClInclude Include="Raven\Data\DataToken.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\DataDocumentTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\DataDocumentTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <None Include="Raven\Data\Tests\README.md"><Filter>Raven\Data\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Data\Formats"><UniqueIdentifier>{eac6a571-e813-5e39-9abe-dd39672eec4d}</UniqueIdentifier></Filter>
+    <Filter Include="Raven\Data\Formats\Json"><UniqueIdentifier>{c5c1567c-2128-5ec5-b4f5-b0b97f2aa483}</UniqueIdentifier></Filter>
+    <ClInclude Include="Raven\Core\JsonLexicalReader.h"><Filter>Raven\Core</Filter></ClInclude>
+    <ClCompile Include="Raven\Core\JsonLexicalReader.cpp"><Filter>Raven\Core</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\Json\JsonParser.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\Json\JsonParser.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\JsonParserTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\JsonParserTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Raven\Data\Tests\DataElementTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\DataElementTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+  </ItemGroup>
 </Project>
