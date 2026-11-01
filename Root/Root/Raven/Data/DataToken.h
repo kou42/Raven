@@ -46,10 +46,12 @@ struct DataLimits
 enum class DataErrorCode
 {
     None, InvalidStructure, InvalidEncoding, DuplicateKey, LimitExceeded,
-    InvalidLimits, NumericRange, OutOfMemory, InvalidSyntax, UnexpectedEnd, TrailingData
+    InvalidLimits, NumericRange, OutOfMemory, InvalidSyntax, UnexpectedEnd, TrailingData,
+    UnsupportedType, OutputFailure
 };
 
-// エラー報告は追加の文字列確保に依存しません。OffsetはBuffer内のByte位置です。
+// エラー報告は追加の文字列確保に依存しません。Offsetは通常Source内のByte位置です。
+// イベントWriterのようにSourceを持たないAPIの位置規約は、そのAPIで定義します。
 struct DataError
 {
     DataErrorCode Code = DataErrorCode::None;
