@@ -1,8 +1,8 @@
 # Raven Structured Data / Serialization Roadmap
 
 作成日: 2026-10-04  
-最終確認日: 2026-10-31\
-状態: Phase 0〜4完了。Phase 5以降の実装は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack、Reflection、Network / RPCは未実装。
+最終確認日: 2026-11-01\
+状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6以降は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack、Reflection、Network / RPCは未実装。
 
 ## 目的
 
@@ -52,7 +52,7 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 
 ## Phase一覧
 
-Phase 0〜4は完了（2026-10-31）。型付きAdapter / Reflection以降は未着手であり、既存JSON基盤の置換は目的に含めない。
+Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6以降は未着手。既存JSON基盤の置換は目的に含めない。
 
 | Phase | 内容 | 状態 | 前提 |
 | --- | --- | --- | --- |
@@ -61,7 +61,7 @@ Phase 0〜4は完了（2026-10-31）。型付きAdapter / Reflection以降は未
 | 2 | JSON Parser・入力検証 | 完了（CPU単体検証） | 1 |
 | 3 | Lazy Decode・走査・寿命管理 | 完了（CPU単体・並列読み取り検証） | 2 |
 | 4 | Reader / Writer・JSON出力 | 完了（CPU単体検証） | 3 |
-| 5 | 型付きSerialization・Reflection接続 | 未着手 | 4 |
+| 5 | 型付きSerialization・Reflection接続 | 明示的Adapter完了、Reflectionは用途待ち | 4 |
 | 6 | MessagePack読み書き | 未着手 | 4、型付き利用には5 |
 | 7 | エンジン機能への試験導入 | 未着手 | 5 |
 | 8 | 計測・並列Deserialize | JobSystemの前提は完了 | 7 |
@@ -270,15 +270,28 @@ JSONのRaw表記・Escape位置の保持、直接Parser、Lazy Decode、型付�
 
 ## Phase 5 — 型付きSerialization / Reflection
 
-- [ ] 明示的AdapterによるSerialize / Deserializeを先に作る。
-- [ ] 既存の個別Deserializeを参考に、必須値、既定値、Version Migration、検証後Commitの共通ヘルパーを導入する。
+- [x] 明示的AdapterによるSerialize / Deserializeを先に作る。
+- [x] 既存の個別Deserializeを参考に、必須値、既定値、Version Migration、検証後Commitの共通ヘルパーを導入する。
 - [ ] Reflectionが必要な用途が明確になった段階で、必要最小限の型・フィールド記述から接続する。
 - [ ] Vector、Quaternion、AssetId、EntityId等のAdapterを必要なものから追加する。
-- [ ] 必須・既定値・未知フィールド・Version Migrationを実装する。
-- [ ] 生Pointerを保存せず、安定IDと読み込み後の参照解決を使う。
-- [ ] 検証済み一時データを作ってから対象へ反映し、途中失敗で既存状態を壊さない。
+- [x] 必須・既定値・未知フィールド・Version Migrationを実装する。
+- [ ] 生Pointerを保存せず、安定IDと読み込み後の参照解決を使う（Pointerの既定Adapterは提供しない。具体的なID・参照解決は実用途導入時）。
+- [x] 検証済み一時データを作ってから対象へ反映し、途中失敗で既存状態を壊さない。
 
 完了条件: 小さな設定型でRound-tripとVersion更新を確認し、エラーにフィールド経路が含まれる。
+
+### Phase 5実装結果（2026-11-01）
+
+- 明示的`DataAdapter<T>`、必須・任意フィールド、type / version検査、固定長JSON Pointer診断を追加した。
+- `Deserialize`は一時値でMigrationと検証を行い、noexcept swapで全成功後だけ反映する。
+- bool・整数・float / double・所有string・vectorを提供する。型付き出力はDOMを介さずDataWriterへ送る。
+- 専用設定テストでv1 samples→v2 values移行、Round-trip、既定値、未知フィールド、Null拒否、
+  数値範囲、入れ子エラー経路、失敗時出力維持を確認する。既存保存経路は変更しない。
+- ReflectionとVector / Quaternion / AssetId / EntityId専用Adapterは用途未確定のため保留する。
+  Pointerの既定Adapterは提供せず、安定IDの定義と参照解決は利用側の責務とする。
+- GCC C++17の警告をエラーにするビルドで新規142チェック（確保失敗注入を含む）、既存6,866チェックが成功。
+  ASan / UBSan / float-cast-overflowでは新規118チェックが成功（LeakSanitizerは環境制約で無効）。
+- 実行手順とAPI制限は`Data/Tests/README.md`へ記載した。Windows正式ビルドは未検証。
 
 ## Phase 6 — MessagePack
 
@@ -371,7 +384,7 @@ MessagePackはデータ表現を担当する。接続、配送、暗号化、認
 
 ## 最初の実装範囲
 
-Phase 0〜4は完了。読み取り・JSON出力基盤が成立したため、次はPhase 5の明示的Adapterによる型付きSerializationを承認対象とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
+Phase 0〜4とPhase 5の明示的Adapterは完了。次はPhase 6のMessagePackを承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
 
 - [x] Asset / Memory / Streamとの接続点と最初の用途を確定した（Phase 0）。
 - [x] 小さいJSONをDataDocumentへ読み込める（Phase 2）。
@@ -381,4 +394,4 @@ Phase 0〜4は完了。読み取り・JSON出力基盤が成立したため、�
 - [x] DocumentとViewの寿命規則が説明・検証されている（Phase 1〜3、Borrowed Bufferは未導入）。
 - [x] 既存`Core::JsonParser`との互換Fixtureが通る（Phase 2、意図した差を含む）。
 
-この段階ではReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信は含めない。Phase 4の基礎を利用し、次はPhase 5〜6で型付きAdapterとMessagePackを追加する。
+この段階ではReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信は含めない。Phase 5の型付きAdapterを利用し、次はPhase 6でMessagePackを追加する。

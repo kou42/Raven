@@ -1669,3 +1669,10 @@ Structured Data Phase 4 additions (Root/Root/Raven relative paths):
     Data/Formats/Json/JsonWriter.h
     Data/Tests/DataIOTests.cpp
     Data/Tests/DataIOTests.h
+
+Structured Data Phase 5 additions (Root/Root/Raven relative paths):
+    Data/Serialization/Serialization.h
+    Data/Serialization/Serialization.inl
+    Data/Serialization/Serialization.cpp
+    Data/Tests/SerializationTests.h
+    Data/Tests/SerializationTests.cpp

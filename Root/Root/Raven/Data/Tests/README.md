@@ -252,3 +252,62 @@ Readerは再帰を使わず、子・兄弟による線形走査を行います�
   Writer単体の位置は受理済み符号化Byte数（改行を除く）であり、ソート後の物理位置ではありません。
 
 File I/O・Streamエラーの取扱い、整形出力、型Adapter、Reflection、MessagePack、既存保存経路の移行は追加していません。
+
+## Phase 5 明示的型Adapter
+
+`Data/Serialization/Serialization.h`はフォーマット非依存の型変換層です。
+`DataAdapter<T>`を明示的に特殊化し、`Read(DataElement, T&, SerializationContext&)`と
+`Write(DataWriter&, const T&, SerializationContext&)`を定義します。通常関数の実装はcpp、
+テンプレートの実装は同名inlに置きます。設定型の実例は`SerializationTests.cpp`を参照してください。
+
+- `Deserialize`は既定構築した一時値へ読み込み、Adapterの検証成功後にだけnoexcept swapします。
+  入力Documentを変更せず、出力が以前保持していた値を既定値として流用しません。
+  Adapterを直接呼ぶ場合は呼び出し側で一時値を用意してください。
+- `ObjectReader::Required / Optional`は必須・省略時の既定値を扱います。Nullは省略と区別し、
+  既知フィールドの型不一致を拒否します。未知フィールドは無視し、再保存時の保持を保証しません。
+  キーはDecoded UTF-8で比較し、検索中の確保失敗を欠落として扱いません。
+- `Header`はtypeと正の整数Tokenのversionを検査し、明示した対応範囲だけ受理します。
+  旧フィールドの読込・Migration・値域などの業務検証は型Adapterの責務です。
+  テストAssetはv1のsamplesをv2のvaluesへ移し、出力はv2に統一します。
+- 標準Adapterはbool、通常の整数、float / double、所有string、vectorです。
+  数値はDataElementの厳密変換と取得先の範囲を検査します。floatへの縮小も正確に
+  表現できる場合だけ許可します（0.1のdouble→floatは拒否）。Boolの数値化は行いません。
+  文字列はDocumentから独立して所有し、vectorは子・兄弟APIで線形走査します。
+- `SerializationError`は最初の失敗と原因DataError、JSON Pointer経路を保持します。
+  Rootは空経路、例は`/values/1`です。`~`と`/`は`~0`と`~1`へEscapeします。
+  経路は終端を含む512 Byteで追加確保せず、超過やNULを含むフィールド名は
+  LimitExceededとして拒否します。超過時のPathは入る範囲の接頭辞です。
+  欠落フィールドは親Object、型変換失敗は対象TokenのSource Byte位置を返します。
+- `Serialize`はDataWriterへ直接イベントを送ります。成功後の公開は具象Writerの責務です。
+  JsonWriterでは`Serialize`と`Finish`の両方が成功した場合だけ結果を利用してください。
+  Adapter失敗時はWriterを破棄します。Adapterの意味検証失敗はWriter自体をstickyに
+  しないため、Serialize失敗後にFinishしてはいけません。
+- Pointerの既定Adapterはありません。安定IDは利用側の明示的Adapterで保存し、
+  読み込み後の参照解決・Engineへの反映は呼び出し側が担当します。
+  Reflection、Math / AssetId / EntityId専用Adapterは実用途が必要になる段階まで保留します。
+
+専用CPUテスト:
+
+```bash
+g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
+  -DRAVEN_SERIALIZATION_TEST_MAIN -IRoot/Root \
+  Root/Root/Raven/Core/JsonLexicalReader.cpp \
+  Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
+  Root/Root/Raven/Data/DataReader.cpp Root/Root/Raven/Data/DataWriter.cpp \
+  Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
+  Root/Root/Raven/Data/Formats/Json/JsonWriter.cpp \
+  Root/Root/Raven/Data/Serialization/Serialization.cpp \
+  Root/Root/Raven/Data/Tests/SerializationTests.cpp -o /tmp/raven-serialization-tests
+/tmp/raven-serialization-tests
+```
+
+`-DRAVEN_SERIALIZATION_ALLOCATION_TESTS`で専用実行ファイルだけoperator newを置換し、
+Deserializeの確保失敗を順次注入します。通常アプリにはこのmacroを指定しません。
+サニタイザはmacroなしで`-g -O1 -fsanitize=address,undefined,float-cast-overflow
+-fno-omit-frame-pointer`を追加します。環境制約によりLeakSanitizerは無効化しています。
+Windows / MSVCの正式ビルドと実運用Assetへの導入は未検証です。
+
+Phase 5は確保失敗注入あり142チェック、なし118チェックがGCC C++17で成功しました。
+ASan / UBSan / float-cast-overflowも118チェック成功し、既存Phase 1〜4の6,866チェックも成功しました。
+Project XML、5つの新規ファイルのFilter / structure登録、静的Cloudベースラインと差分検査を確認しました。
+ベースラインスクリプト末尾の既存CRは一時コピーだけで除去し、元スクリプトは変更していません。
