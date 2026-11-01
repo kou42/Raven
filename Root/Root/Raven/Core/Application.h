@@ -29,6 +29,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 #include <unordered_map>
 #include <iostream>
@@ -56,6 +57,9 @@ struct ApplicationSpecification
     Ref<UIFontAtlas> PhysicsDebugImmediateFont;
     // Runtime UI全体で共有するFont Atlasです。GPU Context有効後に生成したAtlasを注入します。
     Ref<UIFontAtlas> RuntimeUIFont;
+    // Atlasを事前生成できない通常起動用。GPU初期化後にApplicationが生成します。
+    // RuntimeUIFontが指定済みならそちらを優先し、OS固有のパス選択は起動側が担当します。
+    std::string RuntimeUIFontPath;
 };
 
 class Application
@@ -402,6 +406,7 @@ public:
     bool TransferUIRootChild(WindowID sourceID, WindowID destinationID, UIElement* child);
 
 private:
+    void ConfigureUIClipboard(UIContext& context, WindowID windowID);
     bool PrepareAllScenesForExplicitRuntime();
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;

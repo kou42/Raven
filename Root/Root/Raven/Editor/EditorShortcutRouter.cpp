@@ -1,4 +1,5 @@
 #include "Raven/Editor/EditorShortcutRouter.h"
+#include "Raven/Editor/EditorCommandHistory.h"
 
 #include "Raven/UI/Core/UIContext.h"
 
@@ -52,6 +53,40 @@ EditorShortcutTarget ResolveEditorShortcutTarget(
     }
 
     return EditorShortcutTarget::Global;
+}
+
+bool TryHandleEditorHistoryShortcut(const UIContext& context,
+    const EditorShortcutRoutingContext& routingContext, const UIKeyEvent& event)
+{
+    if (event.Pressed == false || event.Repeat == true ||
+        (event.Control == false && event.Super == false))
+    {
+        return false;
+    }
+    const EditorShortcutTarget owner = ResolveEditorShortcutTarget(context, routingContext);
+    if (owner == EditorShortcutTarget::TextInput || owner == EditorShortcutTarget::Popup ||
+        owner == EditorShortcutTarget::Gizmo)
+    {
+        return false;
+    }
+    if (event.Key == UIKey::Z)
+    {
+        if (event.Shift == true)
+        {
+            RedoEditorCommand();
+        }
+        else
+        {
+            UndoEditorCommand();
+        }
+        return true;
+    }
+    if (event.Key == UIKey::Y)
+    {
+        RedoEditorCommand();
+        return true;
+    }
+    return false;
 }
 
 } // namespace Raven

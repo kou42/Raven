@@ -87,6 +87,15 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     scroll->SetPosition(math::Vec2(8.0f, 32.0f));
     scroll->SetSize(math::Vec2(764.0f, 680.0f));
     scroll->SetPreferredSize(math::Vec2(764.0f, 680.0f));
+    // Dock Resize後もScroll範囲の基準を実際の本文Viewportへ一致させます。
+    scroll->SetHorizontalAlignment(UIAlignment::Stretch);
+    scroll->SetVerticalAlignment(UIAlignment::Stretch);
+    UIThickness scrollMargin;
+    scrollMargin.Left = 8.0f;
+    scrollMargin.Right = 8.0f;
+    scrollMargin.Top = 32.0f;
+    scrollMargin.Bottom = 8.0f;
+    scroll->SetMargin(scrollMargin);
 
     auto content = CreateScope<UIElement>();
     content->SetSize(math::Vec2(738.0f, 2650.0f));

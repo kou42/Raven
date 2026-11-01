@@ -508,7 +508,7 @@ void UIElement::ReflowForWidth(float arrangedWidth)
         }
 
         float childWidth = child->m_DesiredSize.x;
-        if (m_LayoutMode == UILayoutMode::Vertical &&
+        if ((m_LayoutMode == UILayoutMode::Vertical || m_LayoutMode == UILayoutMode::Absolute) &&
             child->m_HorizontalAlignment == UIAlignment::Stretch)
         {
             const float available = std::max(0.0f,
@@ -581,6 +581,43 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
     float cursorX = m_Padding.Left;
     float cursorY = m_Padding.Top;
 
+    // Verticalの主軸Stretchは、固定高さの兄弟・Margin・Spacingを除いた残りを
+    // 均等配分します。Tab HeaderとContentのように自然サイズとViewportを分離し、
+    // 本文が空/巨大な場合も親の確定寸法へ収めるために必要です。
+    float verticalStretchHeight = 0.0f;
+    if (m_LayoutMode == UILayoutMode::Vertical)
+    {
+        float fixedHeight = 0.0f;
+        std::size_t visibleCount = 0u;
+        std::size_t stretchCount = 0u;
+        for (const auto& child : m_Children)
+        {
+            if (child == nullptr || child->m_Visible == false)
+            {
+                continue;
+            }
+            ++visibleCount;
+            fixedHeight += child->m_Margin.Top + child->m_Margin.Bottom;
+            if (child->m_VerticalAlignment == UIAlignment::Stretch)
+            {
+                ++stretchCount;
+            }
+            else
+            {
+                fixedHeight += child->m_DesiredSize.y;
+            }
+        }
+        if (visibleCount > 1u)
+        {
+            fixedHeight += m_Spacing * static_cast<float>(visibleCount - 1u);
+        }
+        if (stretchCount > 0u)
+        {
+            verticalStretchHeight = std::max(0.0f, contentHeight - fixedHeight) /
+                static_cast<float>(stretchCount);
+        }
+    }
+
     for (auto& child : m_Children)
     {
         if (child == nullptr || child->m_Visible == false)
@@ -595,6 +632,10 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
 
         if (m_LayoutMode == UILayoutMode::Vertical)
         {
+            if (child->m_VerticalAlignment == UIAlignment::Stretch)
+            {
+                childSize.y = child->ClampSize(math::Vec2(childSize.x, verticalStretchHeight)).y;
+            }
             if (child->m_HorizontalAlignment == UIAlignment::Stretch)
             {
                 childSize.x = child->ClampSize(math::Vec2(availableWidth, childSize.y)).x;
@@ -616,6 +657,21 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
             cursorX += childSize.x + child->m_Margin.Left + child->m_Margin.Right + m_Spacing;
         }
 
+        // Absolute配置でもStretchを明示した子だけは親の確定領域へ追従します。
+        // Dock Page内のPanelは前Frameの親サイズに依存せず同FrameでResizeできます。
+        if (m_LayoutMode == UILayoutMode::Absolute)
+        {
+            if (child->m_HorizontalAlignment == UIAlignment::Stretch)
+            {
+                childSize.x = child->ClampSize(math::Vec2(availableWidth, childSize.y)).x;
+                childPosition.x = m_Padding.Left + child->m_Margin.Left;
+            }
+            if (child->m_VerticalAlignment == UIAlignment::Stretch)
+            {
+                childSize.y = child->ClampSize(math::Vec2(childSize.x, availableHeight)).y;
+                childPosition.y = m_Padding.Top + child->m_Margin.Top;
+            }
+        }
         child->ArrangeRecursive(childPosition, childSize);
     }
     m_ArrangeDirty = false;

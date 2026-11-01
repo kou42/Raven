@@ -37,6 +37,27 @@ UIContext::UIContext()
     m_PopupLayer = m_RootElement->AddChild(std::move(layer));
 }
 
+void UIContext::SetClipboard(ClipboardReader reader, ClipboardWriter writer)
+{
+    m_ReadClipboard = std::move(reader);
+    m_WriteClipboard = std::move(writer);
+}
+
+std::string UIContext::ReadClipboardText() const
+{
+    return m_ReadClipboard != nullptr ? m_ReadClipboard() : std::string{};
+}
+
+bool UIContext::WriteClipboardText(const std::string& text) const
+{
+    if (m_WriteClipboard == nullptr)
+    {
+        return false;
+    }
+    m_WriteClipboard(text);
+    return true;
+}
+
 std::size_t UIContext::GetPendingDPIFontCount() const
 {
     if (m_RootElement == nullptr)

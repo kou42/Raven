@@ -453,6 +453,15 @@ UIElement* UIDockSpace::GetPane(std::uint64_t leafId) const
     return it == m_Panes.end() ? nullptr : it->second;
 }
 
+void UIDockSpace::SetFont(const Ref<UIFontAtlas>& font)
+{
+    m_Font = font;
+    for (const auto& entry : m_TabViews)
+    {
+        entry.second->GetTabBar()->SetFont(font);
+    }
+}
+
 UITabView* UIDockSpace::CreateTabView(std::uint64_t leafId)
 {
     UIDockNode* node = m_Layout.FindNode(leafId);
@@ -464,6 +473,7 @@ UITabView* UIDockSpace::CreateTabView(std::uint64_t leafId)
     }
     auto view = std::make_unique<UITabView>();
     UITabView* raw = view.get();
+    raw->GetTabBar()->SetFont(m_Font);
     // UITabViewが表示とContentの所有権を担当し、Dock Nodeは順序・選択だけを保持します。
     // Close時はViewの内部Content削除が済んでから通知されるため、論理Modelを安全に更新できます。
     raw->SetOnSelectionChanged([this, leafId](std::uint64_t id)

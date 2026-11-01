@@ -332,6 +332,21 @@ int main(int argc, char* argv[])
 
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
+#ifdef _WIN32
+    // 通常Editor/Runtime共通Fontの選択は起動側の責務とし、CoreへWindowsの
+    // 配置知識を持ち込みません。Atlas自体はGPU初期化後にApplicationが生成します。
+    wchar_t windowsDirectory[MAX_PATH]{};
+    const UINT windowsDirectoryLength = GetWindowsDirectoryW(windowsDirectory, MAX_PATH);
+    if (windowsDirectoryLength > 0u && windowsDirectoryLength < MAX_PATH)
+    {
+        applicationSpecification.RuntimeUIFontPath =
+            (std::filesystem::path(windowsDirectory) / "Fonts" / "segoeui.ttf").u8string();
+    }
+    else
+    {
+        std::cerr << "[Raven UI] Windows font directory could not be resolved.\n";
+    }
+#endif
     // Dear ImGui Contextの生成条件とEditor側の描画分岐を同じ設定から決定します。
     // RavenUI Modeでは移行済みPanelだけを表示し、未移行Panelを暗黙にDear ImGuiへ戻しません。
     applicationSpecification.EnableDearImGui =
