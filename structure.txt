@@ -144,6 +144,8 @@ D:.
     |   |   |   |   |
     |   |   |   |   \---Vulkan
     |   |   |   |           README.md
+    |   |   |   |           EntityPicking.frag
+    |   |   |   |           EntityPicking.frag.spv
     |   |   |   |           SceneTriangle.frag
     |   |   |   |           SceneTriangle.frag.spv
     |   |   |   |           SceneTriangle.vert

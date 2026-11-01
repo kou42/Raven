@@ -2,6 +2,7 @@
 
 #include "Raven/Renderer/RHI/RHIBuffer.h"
 #include "Raven/Renderer/RHI/RHITexture.h"
+#include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 #include "VulkanCommandBuffer.h"
@@ -61,6 +62,11 @@ public:
         const float clearColor[4]);
     bool EndOffscreenRenderTarget(
         const Ref<RHIOffscreenRenderTarget>& renderTarget);
+    bool BeginEntityPickingPass(const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request);
+    bool EndEntityPickingPass(const Ref<RHIOffscreenRenderTarget>& renderTarget,
+        const RHIEntityPickingRequest& request);
+    bool SetEntityID(std::int32_t entityID);
     VkCommandBuffer GetActiveCommandBuffer() const;
 
     // Scene RenderPassと同じDevice/Color FormatでPipelineを生成します。
@@ -91,6 +97,8 @@ public:
     const VulkanDevice& GetDevice() const { return m_Instance.GetDevice(); }
     VkFormat GetColorFormat() const { return m_SwapChain.GetImageFormat(); }
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
+    VkRenderPass GetPickingRenderPass() const { return m_RenderTarget.GetPickingRenderPass(); }
+    uint32_t GetFrameSlotCount() const { return m_FrameSync.GetFrameCount(); }
     VkExtent2D GetExtent() const { return m_SwapChain.GetExtent(); }
 
 private:
@@ -134,6 +142,7 @@ private:
     bool m_FrameActive = false;
     bool m_FrameSubmitted = false;
     bool m_SwapChainRenderPassActive = false;
+    bool m_EntityPickingPassActive = false;
     // FatalError後は部分的なCommand記録/同期状態を再利用せずShutdownします。
     bool m_FatalError = false;
 };

@@ -27,6 +27,7 @@ VkFormat ToColorFormat(RHIColorFormat format)
 {
     switch (format)
     {
+    case RHIColorFormat::R32Sint: return VK_FORMAT_R32_SINT;
     case RHIColorFormat::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
     case RHIColorFormat::BGRA8Unorm: return VK_FORMAT_B8G8R8A8_UNORM;
     case RHIColorFormat::RGBA8Srgb: return VK_FORMAT_R8G8B8A8_SRGB;
@@ -95,6 +96,7 @@ bool VulkanGraphicsPipeline::Init(VkDevice device, VkRenderPass renderPass,
         specification.IsValidForBackend(RHIBackend::Vulkan) == false ||
         specification.DepthFormat != RHIDepthFormat::D32Float ||
         specification.SampleCount != 1 ||
+        (specification.ColorFormat == RHIColorFormat::R32Sint && specification.Blend == true) ||
         ToColorFormat(specification.ColorFormat) != colorFormat ||
         ToTopology(specification.Topology) == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM)
     {

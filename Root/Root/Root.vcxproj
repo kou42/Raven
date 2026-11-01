@@ -188,6 +188,8 @@
     <None Include="Raven\Assets\Images\test\mountain1.png" />
     <None Include="Raven\Assets\Images\test\sample1.png" />
     <None Include="Raven\Assets\Images\test\sample2.png" />
+    <None Include="..\Tests\VulkanEntityPickingGPUIntegrationTests.cpp" />
+    <None Include="Raven\Assets\Shaders\Vulkan\EntityPicking.frag.spv" />
     <None Include="Raven\Assets\Shaders\Fragment\test.frag" />
     <None Include="Raven\Assets\Shaders\Fragment\texture_test.frag" />
     <None Include="Raven\Assets\Shaders\Glsl\FlatColor.glsl" />
@@ -213,6 +215,7 @@
   <ItemGroup>
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.vert" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.frag" />
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\EntityPicking.frag" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\UI.vert" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\UI.frag" />
   </ItemGroup>

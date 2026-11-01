@@ -94,11 +94,13 @@ private:
     RHIShaderAssetManager m_ShaderAssets;
     Ref<RHIShaderAsset> m_VertexShader;
     Ref<RHIShaderAsset> m_FragmentShader;
+    Ref<RHIShaderAsset> m_PickingFragmentShader;
     PipelineSpecification m_PipelineSpecification;
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
+    Ref<RHIGraphicsPipeline> m_PickingPipeline;
     Ref<RHIShaderAsset> m_UIVertexShader;
     Ref<RHIShaderAsset> m_UIFragmentShader;
     Ref<RHIGraphicsPipeline> m_UIPipeline;

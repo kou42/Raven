@@ -492,7 +492,7 @@ Exit Gate:
 5. DX12 / VulkanのScene ViewへPicking ID Attachmentと非同期Readbackを追加する。
    - [x] EntityIndexをExplicit描画Snapshotへ保持し、Sequence付き非同期要求／結果契約をEditorへ接続する。
    - [x] DX12でR32_SINT AttachmentへEntityIndexを出力し、Frame Fence完了後に1 pixelをReadbackする。
-   - [ ] VulkanでR32_SINT AttachmentへEntityIndexを出力し、Frame Fence完了後に1 pixelをReadbackする。
+   - [x] VulkanでR32_SINT AttachmentへEntityIndexを出力し、Frame Fence完了後に1 pixelをReadbackする。
 6. 3 Backend共通のViewport座標・Picking・Gizmo回帰を確認してPhase 5のExit Gateを閉じる。
 
 Phase 4のInspector編集は自動テストまで完了しているが、Raven UIを使った実機操作は未確認である。Phase 5へ進む際も、Viewport表示、入力、Gizmoを同時に置き換えず、座標系と入力所有権を段階ごとに固定する。
@@ -520,3 +520,52 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 | 2026-10-22 | 作業ツリー | Phase 5.2 DX12非同期Picking | R32_SINT Attachment、専用PSO、frame slot別Readback Buffer、Fence後結果公開を追加 | Debug x64ビルド成功（Link PDB無効）、DXIL生成成功、Explicit Scene Frame / Editor Viewport Self Test成功 | DX12 Editor短時間起動成功。Click選択は未確認。Color Clear値をTarget生成契約へ統合 | Vulkan Picking、DX12 Click / Resize / 高DPI実機確認 |
 
 完了報告では「実装済み」「自動テスト済み」「実環境で動作確認済み」を区別する。未検証項目を完了扱いにしない。
+
+### 2026-11-01 Phase 7: UI性能セッション記録
+
+- 実装済み: Statistics末尾のStart / Restart、Stop、Save CSVでMain WindowのUI計測を記録する。
+  記録中はStatistics非表示でも採取を継続し、Dock移動でも集計を保持する。Panel Detach時は破棄する。
+- UIContextの完了Frame連番をSnapshotへ渡し、同じFrameと古いFrameは重複集計しない。
+  全Frameの配列を保持せず、10項目のサンプル数・逐次平均・最大値だけを固定容量で保持する。
+- Start / Restartは前回集計を初期化する。Stop後も結果を表示し、CSV保存は停止済み・1サンプル以上に限定する。
+  保存先は作業ディレクトリの`RavenUI-recording-<timestamp>.csv`。既存パスは上書きせず失敗を表示する。
+- 比較時は同じBackend、Debug/Release、DPI、Scene、Panel配置、操作、計測時間に揃えて別セッションを保存する。
+  CSVは`scope,metric,samples,average,max`形式。現状は保存したCSVを外部で比較する。
+- 集計範囲はMain WindowのUI Buildと既存DrawList指標のみ。補助Window、GPU時間、DrawList外Allocationは含めない。
+  `lifetime_peak_elements`はUIContext生存期間のPeakであり、記録開始後だけのPeakではない。
+- 自動検証: 記録の初期状態、開始/停止/再開始、無効値、重複/古いFrame、全10項目の集計、CSV内容、
+  上書き拒否、保存失敗を対象とした回帰テストを追加。Linuxで同じ記録テスト関数を抽出して実行し成功。
+  PanelのGCC構文確認は既存Base.hの`#if 0`内の矢印文字を除いた一時ヘッダーを使用して成功。
+  静的Baselineは既存スクリプト末尾のCRを実行時だけ除去して成功。リポジトリ内の両ファイルは変更しない。
+- 未検証: Windows正式ビルド、Raven UI CPUテスト全体、Editor上の記録操作・非表示継続・Dock移動、
+  Backend/DPI別Baseline採取、長時間実行。Phase 7の実測・実機確認チェックは未完了のまま維持する。
+
+### 2026-11-01 Phase 7: Windows検証経路と記録Panel回帰
+
+- 実装済み: Windows Build CIにRelease x64の通常アプリビルドとCPU UIテスト実行を追加。
+  既存Debug x64ジョブ名・IDは維持し、Debug / Releaseとも成功・失敗時のログを構成別artifactへ保存する。
+- 自動テスト追加: 実際の記録ボタンへのKeyboard入力、非表示PanelへのSnapshot供給、別UIContextへの
+  Content移譲と元Contextへの復帰、停止後の保存CSV、再開始、Detach / 再Attachの初期化。
+- ローカル検証: GCCでCPU UIテスト翻訳単位全体の構文確認成功。
+  既存Base.h / ComponentView.hの`#if 0`内の非C++文字列は一時ヘッダーで除去し、
+  既存Components.hの型名とメンバー名の衝突は`-fpermissive`で警告として扱った。
+  Windows正式ビルド・CPUテスト実行の代替合格とは扱わない。
+- 未検証: 追加したWindows CIジョブの実行結果、Panel操作テストの実行、実OS補助Window、長時間実行、
+  Backend / DPI別Baseline。実機手順と検証範囲は`CODEX_CLOUD.md`と`Root/Tests/README.md`へ追記。
+
+### 2026-11-01 残実装: Vulkan非同期Entity Picking
+
+- 実装済み: R32_SINT Image / View / Framebuffer、DepthをLOADする専用RenderPass、整数出力Pipeline、
+  EntityIndex Push Constant、Frame Slot別のHost Visible + Coherent Buffer、1 pixel Copy、Fence完了後の結果公開。
+- 共通RendererのDrawEntityPickingと既存Sequence Mailboxを使用し、連続Clickの古い結果は採用しない。
+  ColorはPicking後もShader Read Layoutへ戻し、SwapChainのLOAD Passへ復帰する。
+  Frame SlotのTarget強参照はFence後のReadback回収まで維持し、Resize / ShutdownではGPU完了後に破棄する。
+- Game Viewは整数Attachment / Readbackを生成しない。Picking Fragment ShaderはMSBuildで自動生成し、
+  `.vcxproj` / `.vcxproj.filters` / `structure.txt`も更新した。
+- 自動検証済み: 新Shaderのglslcコンパイルとspirv-val、変更したVulkan C++のGCC C++17構文確認。
+  独立GPUテストをMesa llvmpipe（LLVM 19.1.7）で実行し、背景、Depth遮蔽、TopLeft位置、最前面ID、
+  2 Slot、Fence後の公開、古いClick破棄、Target再生成を確認。Khronos Validation Layerと同期検証でError 0件。
+  GCCでは既存Base.hの無効コードを除いた一時ヘッダーと既存同名宣言用の`-fpermissive`を使用した。
+- 未検証: Windows / MSVCの正式ビルド、実GPU Driver、Editor実データのClick選択、Resize・高DPI操作。
+  GPUテストの実行手順は`Root/Tests/README.md`に記載。Phase 5 / 7の実機Exit Gateは未完了のまま維持する。
+- 次の残実装: Phase 7の補助Window計測、およびDrawList外の一時Allocation計測。

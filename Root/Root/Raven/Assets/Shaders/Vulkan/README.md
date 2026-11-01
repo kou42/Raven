@@ -19,3 +19,17 @@ Vulkan SDKをインストールし、`VULKAN_SDK` 環境変数が設定されて
 - Validation Layerを有効にして、初期化、描画、Resize、最小化復帰、終了時の警告を確認してください。
 - GPU完了前にBuffer/Pipelineを破棄しないこと。DemoのShutdownはWaitIdle後にBufferを破棄します。
 - 本変更では実機ビルド・GPU実行を行っていません。
+
+## Editor Entity Picking
+
+`EntityPicking.frag`はScene Viewだけが使用するR32_SINT出力です。
+`SceneTriangle.vert`のMVP（Push Constant offset 0..63）と組み合わせ、offset 64のintでEntityIndexを受け取ります。
+Color/Depth描画後に専用PassでDepthをLOADし、背景を-1へClearします。Picking内ではDepthを書き込むため、
+透明Geometryが重なった場合も最前面IDを採用します。現在の共通Picking契約と同じくTexture Alphaは判定しません。
+
+MSBuildが新しいFragment ShaderもSPIR-Vへ自動生成します。要求したTopLeft PixelだけをFrame Slot別の
+HOST_VISIBLE | HOST_COHERENT Bufferへコピーし、そのSlotのFence完了後に既存Mailboxへ結果を公開します。
+クリック時の追加Fence待機は行いません。Game Viewでは整数AttachmentとReadback Bufferを確保しません。
+
+独立したGPU回帰テストは`Root/Tests/README.md`を参照してください。EditorのClick選択・高DPI・Resize中の
+連続操作は、Windows実機での確認が残っています。
