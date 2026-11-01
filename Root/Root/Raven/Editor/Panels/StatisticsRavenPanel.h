@@ -53,7 +53,9 @@ private:
     UITable* m_CounterTable = nullptr;
     UITable* m_RawProfileTable = nullptr;
     StatisticsSnapshot m_Snapshot;
-    StatisticsUIRecording m_UIRecording;
+    StatisticsUIRecordingSession m_UIRecording;
+    UITable* m_UIWindowTable = nullptr;
+    UILabel* m_UIWindowSummary = nullptr;
     UILabel* m_RecordingSummary = nullptr;
     UILabel* m_RecordingStatus = nullptr;
 };

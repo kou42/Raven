@@ -10,6 +10,8 @@ param(
 
     [switch]$RavenUIGPUTest,
 
+    [switch]$AllocationProfiling,
+
     [switch]$SkipBootstrap
 )
 
@@ -48,6 +50,7 @@ $buildKind = if ($RavenUITest) {
 } else {
     "application"
 }
+if ($AllocationProfiling) { $buildKind += "-allocation-profile" }
 $logPath = Join-Path $logDirectory "windows-$buildKind-$($Configuration.ToLowerInvariant())-$Platform.log"
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
@@ -68,6 +71,8 @@ if ($RavenUITest) {
 if ($RavenUIGPUTest) {
     $arguments += "/p:RavenUIGPUTest=true"
 }
+
+if ($AllocationProfiling) { $arguments += "/p:RavenUIAllocationProfiling=true" }
 
 Write-Host "Building Root/Root.sln ($Configuration|$Platform, target=$buildKind)"
 & $msbuild @arguments

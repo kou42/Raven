@@ -6,6 +6,8 @@ param(
     [ValidateSet("x64")]
     [string]$Platform = "x64",
 
+    [switch]$AllocationProfiling,
+
     [switch]$SkipBootstrap
 )
 
@@ -63,12 +65,19 @@ if (-not $SkipBootstrap) {
     -Configuration $Configuration `
     -Platform $Platform `
     -RavenUITest `
+    -AllocationProfiling:$AllocationProfiling `
     -SkipBootstrap
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
 $expectedTestExecutable = Join-Path $RepoRoot "Root\$Platform\$Configuration\RavenUITests.exe"
+if ($AllocationProfiling) {
+    $expectedTestExecutable = Join-Path $RepoRoot "Root\$Platform\$Configuration\AllocationProfile\RavenUITests.exe"
+    if (-not (Test-Path -LiteralPath $expectedTestExecutable -PathType Leaf)) {
+        throw "The allocation profiling test executable was not produced."
+    }
+}
 if (Test-Path -LiteralPath $expectedTestExecutable -PathType Leaf) {
     $testExecutable = $expectedTestExecutable
 } else {
@@ -92,7 +101,8 @@ if (-not $env:RAVEN_UI_TEST_FONT -and (Test-Path -LiteralPath $windowsFont -Path
 }
 
 $logDirectory = Join-Path $RepoRoot "artifacts\logs"
-$testLog = Join-Path $logDirectory "windows-ui-tests-$($Configuration.ToLowerInvariant())-$Platform.log"
+$profileSuffix = if ($AllocationProfiling) { "-allocation-profile" } else { "" }
+$testLog = Join-Path $logDirectory "windows-ui-tests-$($Configuration.ToLowerInvariant())-$Platform$profileSuffix.log"
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
 Write-Host "Running CPU UI regression tests: $testExecutable"

@@ -360,6 +360,7 @@ public:
     // 壊さず並行運用できます。
     UIContext& GetUIContext() { return m_UIContext; }
     const UIContext& GetUIContext() const { return m_UIContext; }
+    const UICompletedFrameMetrics& GetCompletedUIFrameMetrics() const { return m_CompletedUIFrameMetrics; }
     const Ref<UIFontAtlas>& GetRuntimeUIFont() const { return m_RuntimeUIFont; }
     UINavigationManager& GetUINavigationManager() { return m_UINavigationManager; }
     const UINavigationManager& GetUINavigationManager() const { return m_UINavigationManager; }
@@ -434,6 +435,7 @@ private:
     // Renderer backendは次段階でOpenGLUIRendererを実装した後、UIContext::SetRenderer()から
     // 注入します。それまではCPU側DrawList構築だけを安全に先行できます。
     UIContext m_UIContext;
+    UICompletedFrameMetrics m_CompletedUIFrameMetrics;
     // Scene上のScreen StackはMain UIContextのRootへ接続し、SceneManagerとは独立して管理します。
     // 宣言順によりNavigationManagerがUIContextより先に破棄され、Screenを安全にTreeから外します。
     UINavigationManager m_UINavigationManager{ m_UIContext };

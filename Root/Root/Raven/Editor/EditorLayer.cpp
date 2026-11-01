@@ -1722,7 +1722,8 @@ void EditorLayer::OnRavenUIRender(float dt)
         {
             m_StatisticsRavenPanel.Update(CaptureStatisticsSnapshot(
                 dt, m_Application->GetWindow(), m_Application->GetScene(),
-                &m_Application->GetUIContext().GetLastFrameMetrics()));
+                &m_Application->GetUIContext().GetLastFrameMetrics(),
+                &m_Application->GetCompletedUIFrameMetrics()));
         }
     }
 

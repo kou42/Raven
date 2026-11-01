@@ -1655,3 +1655,8 @@ Raven Structured Data Phase 2 additions (Root/Root/Raven relative paths):
 Raven Structured Data Phase 3 additions (Root/Root/Raven relative paths):
     Data/Tests/DataElementTests.h
     Data/Tests/DataElementTests.cpp
+
+Raven UI performance measurement additions (Root/Root/Raven relative paths):
+    Core/Memory/AllocationMeasurement.h
+    Core/Memory/AllocationMeasurement.cpp
+    Editor/Panels/StatisticsUISnapshot.cpp

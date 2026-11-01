@@ -121,3 +121,29 @@ Linuxでの確認はMesa llvmpipeとKhronos Validation Layer（同期検証有�
 GCCでは既存Base.hの無効コード内の矢印文字を除いた一時ヘッダーと、既存型/メンバー同名宣言用の
 `-fpermissive`を使用しています。Windowsの正式ビルド・Editor実操作は別途必要です。
 この独立テストは既存Windows GPU workflowからは自動実行されません。
+
+## Phase 7: 複数WindowとC++ Allocation計測
+
+`UIPerformanceTests.cpp`をCPU UIテストへ追加しました。完了Windowの集計、独立したContext/Applicationの
+Frame連番、重複排除、最小化/Close後の古い値の除外、CloseしたWindowの履歴保持、Window IDの追加、
+Window別履歴の上限、項目別の未計測値、CSVのScope・サンプル数・N/A、再開始を検証します。
+通常モードとAllocation計測モードの両方で、入れ子・例外・Thread分離、Aligned / Sized / Nothrow / 0 byte、
+new_handler失敗、およびSTL一時領域の確保を検証します。
+
+通常のDebug/Releaseテストは従来どおりです。Allocation計測を有効にする場合:
+
+```powershell
+./scripts/test-windows-ui.ps1 -Configuration Debug -Platform x64 -AllocationProfiling
+./scripts/build-windows.ps1 -Configuration Release -Platform x64 -AllocationProfiling
+```
+
+MSBuildを直接使う場合は`/p:RavenUIAllocationProfiling=true`です。計測用の中間生成物と実行ファイルは
+`AllocationProfile`配下へ分離します。通常ビルドはGlobal new/deleteを置換しません。
+Windows CIの`UI allocation profiling x64`ジョブでも、計測モードのCPU UIテストを実行します。
+このジョブとWindows/MSVCでの実行結果は、結果が得られるまで未確認です。
+
+Linuxで同じテストを独立実行する場合は、`RAVEN_UI_PERFORMANCE_TEST_MAIN`を定義し、
+`UIPerformanceTests.cpp`、`AllocationMeasurement.cpp`、`StatisticsActions.cpp`、`StatisticsUISnapshot.cpp`、
+`CPUProfiler.cpp`をリンクします。計測モードには`RAVEN_ENABLE_ALLOCATION_MEASUREMENT=1`を追加します。
+Threadを使用するため`-pthread`が必要です。既存Base.hの無効コード内の矢印文字はGCC向けの一時ヘッダーで
+除いて確認しており、これをWindows正式ビルドの合格とは扱いません。

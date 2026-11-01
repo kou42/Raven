@@ -2,6 +2,7 @@
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
 #include "UIImmediateTests.h"
+#include "UIPerformanceTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorCommandHistory.h"
@@ -887,7 +888,7 @@ void TestStatisticsUIRecording()
     CheckNear("recording max build", recording.GetMaxima()[0], 4.0);
     CheckNear("recording mean commands", recording.GetAverages()[1], 20.0);
     Check(recording.SaveCSV("", message) == false, "recording active save rejected");
-    for (std::size_t index = 2u; index < Raven::StatisticsUIRecording::MetricCount; ++index)
+    for (std::size_t index = 2u; index < 10u; ++index)
     {
         const double expected[] = { 20.0, 30.0, 4.0, 5.0, 60.0, 70.0, 8.0, 9.0 };
         CheckNear("recording metric mean", recording.GetAverages()[index], expected[index - 2u]);
@@ -908,7 +909,7 @@ void TestStatisticsUIRecording()
     stream.close();
     Check(csv.find("main_window_ui,build_ms,2,3,4") != std::string::npos,
         "recording CSV preserves sample count mean and max");
-    Check(std::count(csv.begin(), csv.end(), '\n') == 11, "recording CSV includes all metrics");
+    Check(std::count(csv.begin(), csv.end(), '\n') == static_cast<std::ptrdiff_t>(Raven::StatisticsUIRecording::MetricCount + 1u), "recording CSV includes all metrics");
     Check(recording.SaveCSV(output.string(), message) == false, "recording refuses overwrite");
     Check(recording.SaveCSV((directory / "missing" / "session.csv").string(), message) == false,
         "recording reports file failure");
@@ -3730,6 +3731,11 @@ void TestUIFrameMetrics()
 
     Raven::UIContext context;
     context.BeginFrame({ 64.0f, 64.0f });
+    {
+        auto allocations = context.MeasureAllocations();
+        std::vector<int> transientUIValues;
+        transientUIValues.reserve(1024u);
+    }
     context.GetDrawList().AddRect({ 0.0f, 0.0f }, { 8.0f, 8.0f },
         { 1.0f, 1.0f, 1.0f, 1.0f });
     context.EndFrame();
@@ -3743,6 +3749,11 @@ void TestUIFrameMetrics()
         "context publishes retained element count");
     Check(frame.BuildMilliseconds >= 0.0,
         "context publishes non-negative build duration");
+    Check(frame.CppAllocations.Available == Raven::IsAllocationMeasurementEnabled(),
+        "context publishes explicit allocation profiling availability");
+    Check(Raven::IsAllocationMeasurementEnabled() == false ||
+        (frame.CppAllocations.Count > 0u && frame.CppAllocations.Bytes >= 1024u * sizeof(int)),
+        "context publishes temporary allocations outside DrawList");
     const auto previousFrameIndex = frame.FrameIndex;
     context.BeginFrame({ 64.0f, 64.0f });
     Check(context.GetLastFrameMetrics().FrameIndex == previousFrameIndex,
@@ -4148,6 +4159,8 @@ int main()
     TestSceneHierarchyRavenPanel();
     TestCPUProfilerFrameAvailabilityReset();
     TestStatisticsUIRecording();
+    TestUIAllocationMeasurement();
+    TestUIWindowRecording();
     TestStatisticsActions();
     TestStatisticsSnapshot();
     TestStatisticsRavenPanel();

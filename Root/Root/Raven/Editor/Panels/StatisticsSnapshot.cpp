@@ -193,6 +193,10 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
     snapshot.Runtime.WindowHeight = input.WindowHeight;
     snapshot.Renderer = input.Renderer;
     snapshot.UI = input.UI;
+    if (input.CompletedUIFrames != nullptr)
+    {
+        BuildStatisticsUIWindowSnapshots(*input.CompletedUIFrames, snapshot);
+    }
     if (input.Memory != nullptr)
     {
         snapshot.Memory = *input.Memory;
@@ -219,11 +223,12 @@ StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input)
 
 StatisticsSnapshot CaptureStatisticsSnapshot(
     float deltaTime, const Window& window, const Scene* scene,
-    const UIFrameMetrics* uiMetrics)
+    const UIFrameMetrics* uiMetrics, const UICompletedFrameMetrics* completedUIFrames)
 {
     const RendererStatistics& renderer = Renderer::GetStatistics();
     CPUProfiler& profiler = CPUProfiler::Get();
     StatisticsSnapshotInput input{};
+    input.CompletedUIFrames = completedUIFrames;
     input.DeltaTime = deltaTime;
     input.WindowWidth = window.GetWidth();
     input.WindowHeight = window.GetHeight();
@@ -232,18 +237,7 @@ StatisticsSnapshot CaptureStatisticsSnapshot(
     input.Renderer.TriangleCount = renderer.TriangleCount;
     if (uiMetrics != nullptr)
     {
-        input.UI.Available = uiMetrics->Available;
-        input.UI.FrameIndex = uiMetrics->FrameIndex;
-        input.UI.BuildMilliseconds = uiMetrics->BuildMilliseconds;
-        input.UI.DrawCommandCount = uiMetrics->DrawCommandCount;
-        input.UI.VertexCount = uiMetrics->VertexCount;
-        input.UI.IndexCount = uiMetrics->IndexCount;
-        input.UI.TextureSwitchCount = uiMetrics->TextureSwitchCount;
-        input.UI.FrameAllocationCount = uiMetrics->FrameAllocationCount;
-        input.UI.FrameAllocatedBytes = uiMetrics->FrameAllocatedBytes;
-        input.UI.RetainedAllocationBytes = uiMetrics->RetainedAllocationBytes;
-        input.UI.ElementCount = uiMetrics->ElementCount;
-        input.UI.PeakElementCount = uiMetrics->PeakElementCount;
+        input.UI = BuildStatisticsUISnapshot(*uiMetrics);
     }
     input.CPUProfilerEnabled = profiler.IsEnabled();
     input.CPUProfile = &profiler.GetLastFrame();

@@ -1016,4 +1016,14 @@
       <Filter>Raven\Assets\Shaders\Vulkan</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Core\Memory\AllocationMeasurement.h"><Filter>Raven\Core\Memory</Filter></ClInclude>
+    <ClCompile Update="Raven\Core\Memory\AllocationMeasurement.cpp"><Filter>Raven\Core\Memory</Filter></ClCompile>
+    <ClCompile Update="Raven\Editor\Panels\StatisticsUISnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup><Filter Include="Raven\Core\Memory" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Tests\UIPerformanceTests.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="..\Tests\UIPerformanceTests.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+  </ItemGroup>
 </Project>

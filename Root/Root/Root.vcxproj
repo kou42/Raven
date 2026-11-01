@@ -76,12 +76,16 @@
     <!-- 通常アプリとUI回帰テストの中間生成物を分離し、mainの重複定義を防ぎます。 -->
     <RavenUITest Condition="'$(RavenUITest)'==''">false</RavenUITest>
     <RavenUIGPUTest Condition="'$(RavenUIGPUTest)'==''">false</RavenUIGPUTest>
+    <!-- 計測用ビルドだけがglobal new/deleteを置換します。通常のCRT確保経路は維持します。 -->
+    <RavenUIAllocationProfiling Condition="'$(RavenUIAllocationProfiling)'==''">false</RavenUIAllocationProfiling>
     <!-- 壊れた/不一致のMSPDB環境でもコードとリンクを検証できるよう、診断用にPDB生成だけを無効化できます。 -->
     <RavenGenerateLinkDebugInformation Condition="'$(RavenGenerateLinkDebugInformation)'==''">true</RavenGenerateLinkDebugInformation>
     <TargetName Condition="'$(RavenUITest)'=='true'">RavenUITests</TargetName>
     <TargetName Condition="'$(RavenUIGPUTest)'=='true'">RavenUIGPUTests</TargetName>
     <IntDir Condition="'$(RavenUITest)'=='true'">$(Platform)\$(Configuration)\UITests\</IntDir>
     <IntDir Condition="'$(RavenUIGPUTest)'=='true'">$(Platform)\$(Configuration)\UIGPUTests\</IntDir>
+    <IntDir Condition="'$(RavenUIAllocationProfiling)'=='true'">$(Platform)\$(Configuration)\AllocationProfile\$(TargetName)\</IntDir>
+    <OutDir Condition="'$(RavenUIAllocationProfiling)'=='true'">$(SolutionDir)$(Platform)\$(Configuration)\AllocationProfile\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -100,6 +104,11 @@
       <AdditionalLibraryDirectories>$(ProjectDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(RavenUIAllocationProfiling)'=='true'">
+    <ClCompile>
+      <PreprocessorDefinitions>RAVEN_ENABLE_ALLOCATION_MEASUREMENT=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -156,6 +165,8 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" Condition="'$(RavenUITest)'!='true' and '$(RavenUIGPUTest)'!='true'" />
     <ClCompile Include="..\Tests\UITextReflowTests.cpp" Condition="'$(RavenUITest)'=='true' and '$(RavenUIGPUTest)'!='true'" />
+    <ClCompile Include="..\Tests\UIPerformanceTests.cpp" Condition="'$(RavenUITest)'=='true' and '$(RavenUIGPUTest)'!='true'" />
+    <ClInclude Include="..\Tests\UIPerformanceTests.h" />
     <ClCompile Include="..\Tests\UIFontTextureGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
     <ClCompile Include="src\glad.c" />
     <ClCompile Include="Raven\**\*.cpp" />

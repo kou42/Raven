@@ -569,3 +569,26 @@ Phase 4のInspector編集は自動テストまで完了しているが、Raven U
 - 未検証: Windows / MSVCの正式ビルド、実GPU Driver、Editor実データのClick選択、Resize・高DPI操作。
   GPUテストの実行手順は`Root/Tests/README.md`に記載。Phase 5 / 7の実機Exit Gateは未完了のまま維持する。
 - 次の残実装: Phase 7の補助Window計測、およびDrawList外の一時Allocation計測。
+
+### 2026-11-01 Phase 7: 残実装のWindow別計測とDrawList外Allocation計測
+
+- 実装済み: Applicationが同じFrameで描画完了したMain/補助Windowの値Snapshotを公開し、Statisticsへ
+  Window ID別表示・全Window合計・CSVのScope別集計を接続。最小化等で描画しなかったContextの古い値は再採取しない。
+- Close済みWindowの履歴はセッション内で保持し、Window別履歴は64件まで。超過分も全Window合計には含め、
+  省略したWindowサンプル数をPanel/CSVへ明記する。全Frame自体の履歴配列は保持しない。
+- 実装済み: 明示的な計測用ビルドだけGlobal new/deleteを置換し、UI処理区間の成功したC++確保件数/bytesを計測。
+  Thread-localなScopeで集計し、Aligned/Sized/Nothrow/0 byte/new_handlerと入れ子・例外時復帰を扱う。
+  通常ビルドは置換せず、未計測を0として記録しない。項目別SampleCountを持ちCSVではN/Aを出力する。
+- 対象区間と除外範囲、Baseline比較条件はCODEX_CLOUD.mdへ記載。DrawList外のSTL一時確保も含むが、
+  malloc/GPU/OS、他Thread、別DLL独自Allocator、入力Callback、起動処理、Explicit Backendの区間外描画準備は含まない。
+  確保要求累計であり、一時領域の生存量・Peak Heapとして扱わない。
+- 検証: 独立CPUテストをLinuxで計測有効/無効、最適化有効、およびUBSan有効で実行。複数Window、集計、履歴上限、
+  未計測値、CSV、C++確保契約を確認。既存UIテストへ同じテストとUIContextの公開値確認を登録。
+  GCC構文確認には既存の無効コードを除いた一時ヘッダーと既存同名宣言用の-fpermissiveを使用する。
+- Windows CIへAllocation計測モードのCPU UIテストジョブを追加。通常と計測ビルドの出力は分離する。
+  Windows正式ビルド・CPUテスト全体・実機の切り離し/Close/高DPI/長時間操作・Baseline実測は未確認。
+  Phase 7の実測・実機Exit Gateは継続する。
+
+- PR #350のWindows CIで、master由来のCore/Data両JsonParser.cppが同じJsonParser.objへ出力され、
+  LNK2019/LNK2001が発生していた。CoreJsonParser.obj / DataJsonParser.objへ分離し、
+  通常・CPU UI・GPUテストおよび計測ビルドで衝突しないようにした。Windows再実行結果で確認する。

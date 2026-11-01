@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Core/Memory/AllocationMeasurement.h"
 #include "Raven/Core/Memory/MemoryTracker.h"
 
 #include <array>
@@ -13,6 +14,7 @@ namespace Raven
 
 class Scene;
 struct UIFrameMetrics;
+struct UICompletedFrameMetrics;
 class Window;
 
 struct StatisticsProfileAggregate
@@ -80,6 +82,14 @@ struct StatisticsUISnapshot
     std::uint64_t RetainedAllocationBytes = 0u;
     std::uint64_t ElementCount = 0u;
     std::uint64_t PeakElementCount = 0u;
+    AllocationMeasurement CppAllocations;
+};
+
+struct StatisticsUIWindowSnapshot
+{
+    std::uint64_t WindowID = 0u;
+    bool MainWindow = false;
+    StatisticsUISnapshot Metrics;
 };
 
 struct StatisticsAstroSnapshot
@@ -127,6 +137,8 @@ struct StatisticsSnapshot
     StatisticsCPUProfilerSnapshot CPUProfiler;
     StatisticsRendererSnapshot Renderer;
     StatisticsUISnapshot UI;
+    StatisticsUISnapshot UIAllWindows;
+    std::vector<StatisticsUIWindowSnapshot> UIWindows;
     StatisticsPhysicsSnapshot Physics;
 };
 
@@ -139,6 +151,7 @@ struct StatisticsSnapshotInput
     std::uint32_t WindowHeight = 0u;
     StatisticsRendererSnapshot Renderer;
     StatisticsUISnapshot UI;
+    const UICompletedFrameMetrics* CompletedUIFrames = nullptr;
     bool CPUProfilerEnabled = false;
     const CPUProfileFrame* CPUProfile = nullptr;
     const Scene* ActiveScene = nullptr;
@@ -148,6 +161,11 @@ struct StatisticsSnapshotInput
 StatisticsSnapshot BuildStatisticsSnapshot(const StatisticsSnapshotInput& input);
 StatisticsSnapshot CaptureStatisticsSnapshot(
     float deltaTime, const Window& window, const Scene* scene,
-    const UIFrameMetrics* uiMetrics = nullptr);
+    const UIFrameMetrics* uiMetrics = nullptr,
+    const UICompletedFrameMetrics* completedUIFrames = nullptr);
+
+StatisticsUISnapshot BuildStatisticsUISnapshot(const UIFrameMetrics& metrics);
+void BuildStatisticsUIWindowSnapshots(const UICompletedFrameMetrics& completed,
+    StatisticsSnapshot& snapshot);
 
 } // namespace Raven

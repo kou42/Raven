@@ -162,7 +162,19 @@ math::Vec2 UIContext::LayoutToWindowPosition(const math::Vec2& layoutPosition) c
         layoutPosition.y * GetEffectiveScaleY());
 }
 
+AllocationMeasurementScope UIContext::MeasureAllocations()
+{
+    return AllocationMeasurementScope(m_FrameCppAllocations);
+}
+
 void UIContext::BeginFrame(const math::Vec2& viewportSize)
+{
+    m_FrameCppAllocations = {};
+    auto allocations = MeasureAllocations();
+    BeginFrameContents(viewportSize);
+}
+
+void UIContext::BeginFrameContents(const math::Vec2& viewportSize)
 {
     // 前frameのDrawCommandを必ず破棄してから新しいframeを開始します。
     // UI TreeはRetained Modeとして保持しますが、DrawListはViewport/Layout結果から
@@ -177,10 +189,12 @@ void UIContext::BeginFrame(const math::Vec2& viewportSize)
 void UIContext::BeginFrame(const math::Vec2& viewportSize,
     const math::Vec2& framebufferSize, float dpiScaleX, float dpiScaleY)
 {
+    m_FrameCppAllocations = {};
+    auto allocations = MeasureAllocations();
     // FontのDPI Metrics更新をLayout確定前に行い、Framebuffer倍率は混ぜません。
     SetDPIScale(dpiScaleX, dpiScaleY);
     SetFramebufferSize(framebufferSize);
-    BeginFrame(viewportSize);
+    BeginFrameContents(viewportSize);
 }
 
 UIElement* UIContext::AddRootChild(Scope<UIElement> child)
@@ -281,6 +295,7 @@ void UIContext::EndFrame()
         return;
     }
 
+    auto allocations = MeasureAllocations();
     const auto buildStarted = std::chrono::steady_clock::now();
 
     // ====================================================================
@@ -383,6 +398,7 @@ void UIContext::EndFrame()
         m_Renderer->Render(m_DrawList, m_ViewportSize,
             m_HasFramebufferSize == true ? m_FramebufferSize : m_ViewportSize);
     }
+    m_LastFrameMetrics.CppAllocations = m_FrameCppAllocations;
 
     m_FrameActive = false;
 }

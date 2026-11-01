@@ -89,8 +89,8 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     scroll->SetPreferredSize(math::Vec2(764.0f, 680.0f));
 
     auto content = CreateScope<UIElement>();
-    content->SetSize(math::Vec2(738.0f, 2280.0f));
-    content->SetPreferredSize(math::Vec2(738.0f, 2280.0f));
+    content->SetSize(math::Vec2(738.0f, 2650.0f));
+    content->SetPreferredSize(math::Vec2(738.0f, 2650.0f));
     for (std::size_t index = 0u; index < SummaryLabelCount; ++index)
     {
         m_SummaryLabels.push_back(AddLabel(
@@ -168,7 +168,7 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     // 記録の所有者はPanelです。Dock移動や非表示では維持し、Detach時に破棄します。
     m_RecordingSummary = AddLabel(*content, 1800.0f, font);
     m_RecordingStatus = AddLabel(*content, 1860.0f, font);
-    m_RecordingStatus->SetText("Main Window UI only; allocations: DrawList only.");
+    m_RecordingStatus->SetText("All rendered Windows / C++ new: profiling build only.");
     const auto addButton = [&](float x, const char* caption, UIButton::ClickHandler handler)
     {
         auto button = CreateScope<UIButton>();
@@ -181,7 +181,7 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     addButton(8.0f, "Start / Restart", [this]()
     {
         m_UIRecording.Start();
-        m_RecordingStatus->SetText("Recording new session (Main Window UI).");
+        m_RecordingStatus->SetText("Recording new session (all rendered Windows).");
     });
     addButton(200.0f, "Stop", [this]()
     {
@@ -217,14 +217,50 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
             {
                 return StatisticsUIRecording::GetMetricName(row);
             }
-            if (m_UIRecording.GetSampleCount() == 0u)
+            if (m_UIRecording.GetTotal().GetMetricSampleCount(row) == 0u)
             {
                 return "N/A";
             }
-            return FormatDouble(column == 1u ? m_UIRecording.GetAverages()[row]
-                : m_UIRecording.GetMaxima()[row]);
+            return FormatDouble(column == 1u ? m_UIRecording.GetTotal().GetAverages()[row]
+                : m_UIRecording.GetTotal().GetMaxima()[row]);
         });
     content->AddChild(std::move(recordingTable));
+
+    m_UIWindowSummary = AddLabel(*content, 2265.0f, font);
+    auto windowTable = CreateScope<UITable>();
+    windowTable->SetFont(font);
+    windowTable->SetPosition(math::Vec2(8.0f, 2300.0f));
+    windowTable->SetSize(math::Vec2(712.0f, 330.0f));
+    windowTable->AddColumn("Window ID", 110.0f);
+    windowTable->AddColumn("Build ms", 100.0f);
+    windowTable->AddColumn("Commands", 100.0f);
+    windowTable->AddColumn("Vertices", 100.0f);
+    windowTable->AddColumn("Indices", 100.0f);
+    windowTable->AddColumn("C++ alloc / bytes", 190.0f);
+    windowTable->SetDataSource(
+        [this]() { return m_Snapshot.UIWindows.size(); },
+        [this](std::size_t row, std::size_t column) -> std::string
+        {
+            if (row >= m_Snapshot.UIWindows.size())
+            {
+                return {};
+            }
+            const auto& window = m_Snapshot.UIWindows[row];
+            const auto& metrics = window.Metrics;
+            switch (column)
+            {
+            case 0u: return std::to_string(window.WindowID) + (window.MainWindow == true ? " Main" : "");
+            case 1u: return FormatDouble(metrics.BuildMilliseconds);
+            case 2u: return std::to_string(metrics.DrawCommandCount);
+            case 3u: return std::to_string(metrics.VertexCount);
+            case 4u: return std::to_string(metrics.IndexCount);
+            case 5u: return metrics.CppAllocations.Available == true
+                ? std::to_string(metrics.CppAllocations.Count) + " / " + std::to_string(metrics.CppAllocations.Bytes)
+                : "N/A (profiling off)";
+            default: return {};
+            }
+        });
+    m_UIWindowTable = static_cast<UITable*>(content->AddChild(std::move(windowTable)));
 
     scroll->SetContent(std::move(content));
     window->AddChild(std::move(scroll));
@@ -233,6 +269,8 @@ bool StatisticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fo
     if (m_Root == nullptr)
     {
         m_Context = nullptr;
+        m_UIWindowTable = nullptr;
+        m_UIWindowSummary = nullptr;
         m_RecordingSummary = nullptr;
         m_RecordingStatus = nullptr;
         m_SummaryLabels.clear();
@@ -263,7 +301,9 @@ void StatisticsRavenPanel::Detach()
     m_CounterTable = nullptr;
     m_RawProfileTable = nullptr;
     m_Snapshot = StatisticsSnapshot{};
-    m_UIRecording = StatisticsUIRecording{};
+    m_UIWindowTable = nullptr;
+    m_UIWindowSummary = nullptr;
+    m_UIRecording = StatisticsUIRecordingSession{};
     m_RecordingSummary = nullptr;
     m_RecordingStatus = nullptr;
 }
@@ -271,7 +311,23 @@ void StatisticsRavenPanel::Detach()
 void StatisticsRavenPanel::Update(const StatisticsSnapshot& snapshot)
 {
     m_Snapshot = snapshot;
-    m_UIRecording.AddSample(snapshot.UI);
+    m_UIRecording.AddSample(snapshot);
+    if (m_UIWindowTable != nullptr)
+    {
+        m_UIWindowTable->NotifyDataSourceChanged();
+    }
+    if (m_UIRecording.IsRecording() == true &&
+        m_UIRecording.GetOmittedWindowSamples() > 0u && m_RecordingStatus != nullptr)
+    {
+        m_RecordingStatus->SetText("Window history limit reached; aggregate still includes all Windows.");
+    }
+    if (m_UIWindowSummary != nullptr)
+    {
+        m_UIWindowSummary->SetText("Rendered Windows: " + std::to_string(snapshot.UIWindows.size()) +
+            " / Build sum: " + FormatDouble(snapshot.UIAllWindows.BuildMilliseconds) +
+            " ms / C++ allocations: " + (snapshot.UIAllWindows.CppAllocations.Available == true
+                ? std::to_string(snapshot.UIAllWindows.CppAllocations.Count) : "N/A (profiling off)"));
+    }
     if (m_RecordingSummary != nullptr)
     {
         m_RecordingSummary->SetText(
