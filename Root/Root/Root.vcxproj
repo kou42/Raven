@@ -239,4 +239,14 @@
     <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')" Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
     <Exec Command="&quot;$(VULKAN_SDK)\Bin\glslc.exe&quot; &quot;%(VulkanSceneShader.FullPath)&quot; -o &quot;%(VulkanSceneShader.FullPath).spv&quot;" />
   </Target>
+  <ItemGroup>
+    <ClCompile Include="Raven\Data\DataUtf8.cpp" />
+    <ClInclude Include="Raven\Data\DataUtf8.h" />
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackParser.cpp" />
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackParser.h" />
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackWriter.cpp" />
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackWriter.h" />
+    <ClCompile Include="Raven\Data\Tests\MessagePackTests.cpp" />
+    <ClInclude Include="Raven\Data\Tests\MessagePackTests.h" />
+  </ItemGroup>
 </Project>

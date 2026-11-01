@@ -1022,4 +1022,15 @@
     <ClInclude Include="Raven\Data\Tests\SerializationTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\SerializationTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Data\Formats\MessagePack"><UniqueIdentifier>{407ff511-0bb5-5c9a-8d04-535f8cf15e34}</UniqueIdentifier></Filter>
+    <ClCompile Include="Raven\Data\DataUtf8.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataUtf8.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackParser.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackParser.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackWriter.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackWriter.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\MessagePackTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\MessagePackTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+  </ItemGroup>
 </Project>
