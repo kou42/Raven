@@ -34,7 +34,8 @@ class VulkanSceneContext final : public RHISceneFrameLifecycle
 public:
     ~VulkanSceneContext() override;
 
-    bool Init(Window& window);
+    // Instance/Device/Queueを共有し、Surface/SwapChain/Frame資源はWindowごとに所有します。
+    bool Init(Window& window, VulkanSceneContext* sharedContext = nullptr);
     RHIFrameResult BeginFrame() override;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
@@ -93,8 +94,9 @@ public:
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0,
         bool usePipelineVertexStride = false, uint32_t firstIndex = 0);
-    // Scene Buffer生成と検証用。DeviceはContextが所有し、Shutdown後は使用不可です。
-    const VulkanDevice& GetDevice() const { return m_Instance.GetDevice(); }
+    // Scene Buffer生成と検証用。Deviceは共有所有しますが、このContextが登録した
+    // Resourceは自身のShutdownで無効化します。借用参照をShutdown後まで保持しないでください。
+    const VulkanDevice& GetDevice() const;
     VkFormat GetColorFormat() const { return m_SwapChain.GetImageFormat(); }
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
     VkRenderPass GetPickingRenderPass() const { return m_RenderTarget.GetPickingRenderPass(); }
@@ -103,7 +105,8 @@ public:
 
 private:
     VkExtent2D GetActiveRenderExtent() const;
-    VulkanInstance m_Instance;
+    // 最後のSurfaceとGPU資源の解放までInstance/Deviceを共有所有します。
+    Ref<VulkanInstance> m_Instance;
     VulkanSurface m_Surface;
     VulkanSwapChain m_SwapChain;
     VulkanFrameSync m_FrameSync;

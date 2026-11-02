@@ -131,7 +131,7 @@ public:
         const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
     bool CreateAuxiliaryUIWindow(Window& window) override;
     void DestroyAuxiliaryUIWindow(Window& window) override;
-    bool RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
+    RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
 
     void SubmitUIFrame(const UIDrawList& drawList,
         uint32_t viewportWidth, uint32_t viewportHeight) override

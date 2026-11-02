@@ -69,6 +69,21 @@ Main Context終了後の共有Device生存、補助SwapChainの描画・Resize�
 DX12のpixel readbackは含みません。実EditorのScene/Game Texture表示と入力操作は別途実機で確認します。
 Debug実行ではログのDX12 Debug Layer Warning/Errorも確認してください。
 
+Vulkanは同じGPUテスト実行ファイルに`--vulkan-auxiliary`を指定します。
+`Root/Root`を作業Directoryにし、Vulkan Loader/対応GPUとScene/UIのSPIR-Vが必要です。
+
+```powershell
+$env:RAVEN_RHI_VALIDATION = "1"
+& "../x64/Debug/RavenUIGPUTests.exe" --vulkan-auxiliary
+```
+
+Main/補助のDevice・Queue同一性、Main Context終了後の共有Instance生存、Mainが書く
+Viewport Textureを補助2 WindowでSamplingする経路、3回のClose、補助Resize、
+Main RenderPass/Texture交換後のDescriptor再準備を検証します。
+GPU pixel readbackは含みません。DebugではValidation Layerが利用可能であることと、
+ログにWarning/Errorがないことも確認してください。
+再生成待ちは`ResizeRequired`として再試行し、完成Frameの件数へ計上せず、Closeしません。
+
 `TestEditorDetachedLayoutSave`は実DockからScene/Game/Inspectorを抽出し、保存用Snapshotの
 順序・選択・非表示Panel・重複防止、元Pane消失時の既定Pane/先頭Paneへの復元を確認します。
 一時ファイルへの保存・読み込みとDock再生成、不正入力時の出力維持も検証します。

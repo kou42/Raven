@@ -33,26 +33,26 @@ void DX12SceneRuntime::DestroyAuxiliaryUIWindow(Window& window)
     m_AuxiliaryWindows.erase(&window);
 }
 
-bool DX12SceneRuntime::RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList)
+RHIFrameResult DX12SceneRuntime::RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList)
 {
     const auto found = m_AuxiliaryWindows.find(&window);
     if (m_Initialized == false || found == m_AuxiliaryWindows.end() ||
         m_Context.GetActiveCommandList() != nullptr)
     {
-        return false;
+        return RHIFrameResult::FatalError;
     }
     const uint32_t width = window.GetFramebufferWidth();
     const uint32_t height = window.GetFramebufferHeight();
     if (window.GetState() == WindowState::Minimized || width == 0 || height == 0)
     {
-        return true; // 最小化は失敗とせず、旧SwapChainを保って次の有効寸法を待ちます。
+        return RHIFrameResult::ResizeRequired; // 最小化は失敗とせず、旧SwapChainを保って次の有効寸法を待ちます。
     }
     AuxiliaryUIWindow& state = *found->second;
     if (state.Width != width || state.Height != height)
     {
         if (state.Context.Resize(width, height) == false)
         {
-            return false;
+            return RHIFrameResult::FatalError;
         }
         state.Width = width;
         state.Height = height;
@@ -64,14 +64,14 @@ bool DX12SceneRuntime::RenderAuxiliaryUIWindow(Window& window, const UIDrawList&
         m_DefaultTexture, m_UIPipeline, prepared) == false ||
         state.Context.BeginFrame() != RHIFrameResult::Success)
     {
-        return false;
+        return RHIFrameResult::FatalError;
     }
     DX12SceneCommandList commands(state.Context);
     const bool drawn = state.Renderer.Draw(commands, m_UIPipeline, prepared);
     // Draw失敗時も記録中Frameを閉じます。失敗したWindowはApplicationがClose予約します。
     const bool ended = state.Context.EndFrame() == RHIFrameResult::Success;
     const bool presented = ended == true && state.Context.Present() == RHIFrameResult::Success;
-    return drawn == true && presented == true;
+    return drawn == true && presented == true ? RHIFrameResult::Success : RHIFrameResult::FatalError;
 }
 
 bool DX12SceneRuntime::SupportsOffscreenSceneRendering() const

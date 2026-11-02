@@ -11,6 +11,7 @@
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/Core/Window.h"
 #include "Raven/Platform/DirectX12/DX12SceneRuntime.h"
+#include "Raven/Platform/Vulkan/VulkanSceneRuntime.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -367,7 +368,7 @@ bool TestDX12AuxiliaryWindows()
             ui.BeginFrame({ static_cast<float>(auxiliary->GetWidth()),
                 static_cast<float>(auxiliary->GetHeight()) });
             ui.EndFrame();
-            if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, ui.GetDrawList()),
+            if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, ui.GetDrawList()) == Raven::RHIFrameResult::Success,
                 "DX12 auxiliary draw/Resize") == false)
             {
                 return false;
@@ -375,7 +376,7 @@ bool TestDX12AuxiliaryWindows()
         }
         runtime.DestroyAuxiliaryUIWindow(*auxiliary);
         runtime.DestroyAuxiliaryUIWindow(*auxiliary); // 再通知でも二重解放しません。
-        if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, ui.GetDrawList()) == false,
+        if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, ui.GetDrawList()) == Raven::RHIFrameResult::FatalError,
             "DX12 closed auxiliary rejected") == false)
         {
             return false;
@@ -391,8 +392,150 @@ bool TestDX12AuxiliaryWindows()
     return true;
 }
 
+bool TestVulkanAuxiliaryWindows()
+{
+    Raven::WindowSpecification specification("Vulkan Auxiliary UI Test", 480, 320,
+        Raven::RHIBackend::Vulkan);
+    auto mainWindow = Raven::Window::Create(specification);
+    auto auxiliary = Raven::Window::Create(specification);
+    auto second = Raven::Window::Create(specification);
+    if (Check(mainWindow != nullptr && auxiliary != nullptr && second != nullptr,
+        "Vulkan test Windows") == false)
+    {
+        return false;
+    }
+    {
+        Raven::VulkanSceneContext main;
+        Raven::VulkanSceneContext child;
+        if (Check(main.Init(*mainWindow), "Vulkan main Context") == false ||
+            Check(child.Init(*auxiliary, &main), "Vulkan shared Context") == false ||
+            Check(main.GetDevice().GetHandle() == child.GetDevice().GetHandle(),
+                "Vulkan same Device") == false ||
+            Check(main.GetDevice().GetGraphicsQueue() == child.GetDevice().GetGraphicsQueue(),
+                "Vulkan same Queue") == false)
+        {
+            return false;
+        }
+        main.Shutdown();
+        if (Check(child.BeginFrame() == Raven::RHIFrameResult::Success &&
+            child.EndFrame() == Raven::RHIFrameResult::Success &&
+            child.Present() != Raven::RHIFrameResult::FatalError,
+            "Vulkan shared Instance survives source Shutdown") == false)
+        {
+            return false;
+        }
+    }
+    Raven::VulkanSceneRuntime runtime;
+    Raven::PipelineSpecification pipeline{};
+    pipeline.Topology = Raven::PrimitiveTopology::Triangles;
+    pipeline.Cull = Raven::CullMode::None;
+    pipeline.DepthTest = true;
+    pipeline.DepthWrite = true;
+    Raven::RHIShaderAssetSpecification vertex{};
+    vertex.VulkanPath = "Raven/Assets/Shaders/Vulkan/SceneTriangle.vert.spv";
+    Raven::RHIShaderAssetSpecification fragment{};
+    fragment.VulkanPath = "Raven/Assets/Shaders/Vulkan/SceneTriangle.frag.spv";
+    if (Check(runtime.Init(*mainWindow, pipeline, vertex, fragment), "Vulkan Runtime Init") == false ||
+        Check(runtime.CreateAuxiliaryUIWindow(*mainWindow) == false, "Vulkan rejects Main registration") == false ||
+        Check(runtime.CreateAuxiliaryUIWindow(*second), "Vulkan second auxiliary") == false)
+    {
+        return false;
+    }
+    // Mainが書いたoff-screen Colorを、二つのSurfaceで共有してSamplingします。
+    Raven::RHIOffscreenRenderTargetSpecification targetSpecification{};
+    targetSpecification.Width = 64;
+    targetSpecification.Height = 64;
+    targetSpecification.ClearColor = { 1.0f, 0.0f, 0.0f, 1.0f };
+    auto target = runtime.CreateOffscreenRenderTarget(targetSpecification);
+    auto* context = static_cast<Raven::VulkanSceneContext*>(runtime.GetFrameLifecycle());
+    if (Check(target != nullptr && context != nullptr, "Vulkan shared Viewport target") == false)
+    {
+        return false;
+    }
+    Raven::UIDrawList drawList;
+    drawList.AddImage({ 0.0f, 0.0f }, { 128.0f, 128.0f },
+        Raven::UITextureView::FromRHITexture(target->GetColorAttachment()));
+    for (int cycle = 0; cycle < 3; ++cycle)
+    {
+        if (cycle > 0)
+        {
+            // 二つ目の補助が旧ColorのDescriptorを持ったまま、Main RenderPass/Targetを交換。
+            // 次のPrepareで無効化済みImageViewを再利用せず、新しいColorへ切り替えます。
+            if (Check(runtime.Resize(mainWindow->GetFramebufferWidth(), mainWindow->GetFramebufferHeight()),
+                "Vulkan Main Resize with live auxiliary") == false)
+            {
+                return false;
+            }
+            target = runtime.CreateOffscreenRenderTarget(targetSpecification);
+            if (Check(target != nullptr, "Vulkan replacement Viewport") == false)
+            {
+                return false;
+            }
+            drawList.Clear();
+            drawList.AddImage({ 0.0f, 0.0f }, { 128.0f, 128.0f },
+                Raven::UITextureView::FromRHITexture(target->GetColorAttachment()));
+        }
+        if (Check(runtime.CreateAuxiliaryUIWindow(*auxiliary), "Vulkan auxiliary registration") == false ||
+            Check(runtime.CreateAuxiliaryUIWindow(*auxiliary) == false,
+                "Vulkan duplicate registration rejected") == false)
+        {
+            return false;
+        }
+        int completed = 0;
+        for (int frame = 0; frame < 10; ++frame)
+        {
+            if (frame == 2)
+            {
+                glfwSetWindowSize(static_cast<GLFWwindow*>(auxiliary->GetNativeWindow()),
+                    640 + cycle * 16, 400 + cycle * 16);
+                auxiliary->PollEvents();
+            }
+            if (Check(context->BeginFrame() == Raven::RHIFrameResult::Success &&
+                context->BeginOffscreenRenderTarget(target, targetSpecification.ClearColor.data()) &&
+                context->EndOffscreenRenderTarget(target) &&
+                context->EndFrame() == Raven::RHIFrameResult::Success &&
+                context->Present() != Raven::RHIFrameResult::FatalError,
+                "Vulkan Main writes shared Viewport") == false)
+            {
+                return false;
+            }
+            const auto firstResult = runtime.RenderAuxiliaryUIWindow(*auxiliary, drawList);
+            const auto secondResult = runtime.RenderAuxiliaryUIWindow(*second, drawList);
+            if (Check(firstResult != Raven::RHIFrameResult::FatalError &&
+                secondResult != Raven::RHIFrameResult::FatalError,
+                "Vulkan shared Viewport Sampling/Resize") == false)
+            {
+                return false;
+            }
+            if (firstResult == Raven::RHIFrameResult::Success &&
+                secondResult == Raven::RHIFrameResult::Success)
+            {
+                ++completed;
+            }
+        }
+        if (Check(completed >= 3, "Vulkan completed auxiliary frames after Resize") == false)
+        {
+            return false;
+        }
+        runtime.DestroyAuxiliaryUIWindow(*auxiliary);
+        runtime.DestroyAuxiliaryUIWindow(*auxiliary);
+        if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, drawList) ==
+            Raven::RHIFrameResult::FatalError, "Vulkan closed auxiliary rejected") == false)
+        {
+            return false;
+        }
+    }
+    runtime.Shutdown(); // 登録済みsecondと共有Texture/RenderPassもNative Windowより先に解放。
+    std::cout << "[PASS] Vulkan auxiliary shared Viewport, Resize and Close (3 cycles)\n";
+    return true;
+}
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--vulkan-auxiliary")
+    {
+        return TestVulkanAuxiliaryWindows() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && std::string(argv[1]) == "--dx12-auxiliary")
     {
         return TestDX12AuxiliaryWindows() ? EXIT_SUCCESS : EXIT_FAILURE;
