@@ -120,18 +120,47 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
 
     VkPhysicalDeviceFeatures enabledFeatures{};
 
-    const char* requiredExtensions[] =
+    std::vector<const char*> enabledExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    uint32_t extensionCount = 0;
+    if (vkEnumerateDeviceExtensionProperties(physicalDevice.Handle, nullptr, &extensionCount, nullptr) == VK_SUCCESS)
     {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice.Handle, nullptr, &extensionCount, extensions.data()) == VK_SUCCESS)
+        {
+            const auto supports = [&extensions](const char* name)
+            {
+                for (const auto& extension : extensions)
+                {
+                    if (std::strcmp(extension.extensionName, name) == 0)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            // InstanceはVulkan 1.0契約です。DriverのAPI版だけで依存拡張を省略せず、
+            // sRGB SurfaceをUNORM Viewで描くfallbackに必要な3拡張をまとめて有効化します。
+            // 色差の原因だったsRGB Attachmentへのencodeを避けるためのView再解釈用です。
+            // UNORM Surfaceを直接使える環境では不要なので、非対応でもDevice生成は継続し、
+            // SwapChain側で実際のSurface形式と合わせてfallback可否を判断します。
+            m_MutableSwapChainFormat = supports(VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME) &&
+                supports(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME) && supports(VK_KHR_MAINTENANCE_2_EXTENSION_NAME);
+            if (m_MutableSwapChainFormat == true)
+            {
+                enabledExtensions.push_back(VK_KHR_MAINTENANCE_2_EXTENSION_NAME);
+                enabledExtensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
+                enabledExtensions.push_back(VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME);
+            }
+        }
+    }
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.pEnabledFeatures = &enabledFeatures;
-    createInfo.enabledExtensionCount = 1;
-    createInfo.ppEnabledExtensionNames = requiredExtensions;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size());
+    createInfo.ppEnabledExtensionNames = enabledExtensions.data();
     createInfo.enabledLayerCount = 0;
     createInfo.ppEnabledLayerNames = nullptr;
 
@@ -167,6 +196,7 @@ bool VulkanDevice::Init(const VulkanPhysicalDevice::DeviceInfo& physicalDevice)
     std::cout << "Vulkan VkDevice created successfully.\n";
     std::cout << "  Graphics Queue Family : " << m_GraphicsQueueFamilyIndex << '\n';
     std::cout << "  VK_KHR_swapchain : enabled\n";
+    std::cout << "  VK_KHR_swapchain_mutable_format : " << (m_MutableSwapChainFormat == true ? "enabled" : "unavailable") << '\n';
     return true;
 }
 
@@ -200,6 +230,7 @@ void VulkanDevice::Shutdown()
     m_GraphicsQueue = VK_NULL_HANDLE;
     m_GraphicsQueueFamilyIndex = VulkanPhysicalDevice::InvalidQueueFamilyIndex;
     m_PhysicalDevice = VK_NULL_HANDLE;
+    m_MutableSwapChainFormat = false;
 }
 
 } // namespace Raven

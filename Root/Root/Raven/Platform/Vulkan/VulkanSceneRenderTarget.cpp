@@ -40,7 +40,10 @@ bool VulkanSceneRenderTarget::Init(VkDevice device, VkPhysicalDevice physicalDev
     // Layout遷移はVulkanFrameRendererが行うため、RenderPass内ではColor Attachmentの
     // Layoutを変えません。初回FrameのUNDEFINEDも外側のBarrierで処理します。
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapChain.GetImageFormat();
+    // Surfaceのnative形式と描画形式は別です。SRGB fallbackでもUNORM Attachmentを使い、
+    // Scene/UIの表示用値に自動encodeが重なる明るさの不具合を防ぎます。
+    // 後で生成するImageViewとPipelineにも同じ形式を渡し、clearとBlendを含めて契約を揃えます。
+    colorAttachment.format = swapChain.GetColorAttachmentFormat();
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -131,7 +134,9 @@ bool VulkanSceneRenderTarget::Init(VkDevice device, VkPhysicalDevice physicalDev
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = swapChain.GetImageFormat();
+        // 実際の書き込み時の色変換を決めるViewです。GetImageFormat()へ戻すとnative SRGBの
+        // 自動encodeが復活するため、上のRenderPassと同じAttachment形式を使います。
+        viewInfo.format = swapChain.GetColorAttachmentFormat();
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.layerCount = 1;

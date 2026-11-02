@@ -39,6 +39,7 @@ public:
     VkDevice GetHandle() const { return m_Device; }
     VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
     uint32_t GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamilyIndex; }
+    bool SupportsMutableSwapChainFormat() const { return m_MutableSwapChainFormat; }
 
 private:
     bool SupportsRequiredExtensions(const VulkanPhysicalDevice::DeviceInfo& physicalDevice) const;
@@ -48,6 +49,7 @@ private:
     VkDevice m_Device = VK_NULL_HANDLE;
     VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
     uint32_t m_GraphicsQueueFamilyIndex = VulkanPhysicalDevice::InvalidQueueFamilyIndex;
+    bool m_MutableSwapChainFormat = false;
 };
 
 } // namespace Raven

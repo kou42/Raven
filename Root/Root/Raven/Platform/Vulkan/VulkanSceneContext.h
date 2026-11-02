@@ -35,7 +35,8 @@ public:
     ~VulkanSceneContext() override;
 
     // Instance/Device/Queueを共有し、Surface/SwapChain/Frame資源はWindowごとに所有します。
-    bool Init(Window& window, VulkanSceneContext* sharedContext = nullptr);
+    bool Init(Window& window, VulkanSceneContext* sharedContext = nullptr,
+        VkFormat preferredSurfaceFormat = VK_FORMAT_UNDEFINED);
     RHIFrameResult BeginFrame() override;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
@@ -58,6 +59,10 @@ public:
     // RenderPass中にColor Attachment全体を消去します。Frame外・Submit後は失敗します。
     // BeginFrame時のLoadOp Clearとは別に、Scene描画命令としてClearを発行する入口です。
     bool ClearColorAttachment(const float color[4]);
+    // GPU Capture/診断用。Main Colorをtightly packed RGBA/BGRA 8bit列としてコピーします。
+    // 呼び出し側はTRANSFER_DST Bufferを同じDeviceで生成し、Submit完了まで保持してください。
+    // CPU読み取りはFrame Submit後のFence/WaitIdle完了後のみ許可します。Frame外・off-screen中は失敗します。
+    bool CopyColorToBuffer(VkBuffer destination, VkDeviceSize destinationSize);
     bool BeginOffscreenRenderTarget(
         const Ref<RHIOffscreenRenderTarget>& renderTarget,
         const float clearColor[4]);
@@ -97,7 +102,8 @@ public:
     // Scene Buffer生成と検証用。Deviceは共有所有しますが、このContextが登録した
     // Resourceは自身のShutdownで無効化します。借用参照をShutdown後まで保持しないでください。
     const VulkanDevice& GetDevice() const;
-    VkFormat GetColorFormat() const { return m_SwapChain.GetImageFormat(); }
+    VkFormat GetColorFormat() const { return m_SwapChain.GetColorAttachmentFormat(); }
+    VkFormat GetSurfaceFormat() const { return m_SwapChain.GetImageFormat(); }
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
     VkRenderPass GetPickingRenderPass() const { return m_RenderTarget.GetPickingRenderPass(); }
     uint32_t GetFrameSlotCount() const { return m_FrameSync.GetFrameCount(); }
