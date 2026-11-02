@@ -378,7 +378,7 @@ public:
     const UINavigationManager& GetGlobalUINavigationManager() const { return m_GlobalUINavigationManager; }
 
     // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
-    // OpenGLは共有Context、DX12は共有Device/QueueとWindow別SwapChainを使用します。
+    // OpenGLは共有Context、DX12/Vulkanは共有Device/QueueとWindow別SwapChainを使用します。
     WindowID CreateUIWindow(const WindowSpecification& specification);
     // Root直下Widgetを新しいOS補助Windowへ移す一括入口。
     // Window生成または移譲に失敗した場合、Widgetの元の所有権を維持します。

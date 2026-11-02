@@ -16,11 +16,11 @@ void IExplicitSceneRuntime::DestroyAuxiliaryUIWindow(Window& window)
     (void)window;
 }
 
-bool IExplicitSceneRuntime::RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList)
+RHIFrameResult IExplicitSceneRuntime::RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList)
 {
     (void)window;
     (void)drawList;
-    return false;
+    return RHIFrameResult::FatalError;
 }
 
 bool IExplicitSceneRuntime::SupportsOffscreenSceneRendering() const

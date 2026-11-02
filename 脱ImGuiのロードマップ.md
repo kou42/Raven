@@ -15,6 +15,9 @@ Debug/Release CPU・通常ビルド、共有Contextのpixel readback GPU回帰�
 DX12補助Windowも共有Device/QueueとWindow別SwapChainへ接続済み。Debug/Release GPU回帰、
 Release実機のInspector編集・Undo/Redo・Close復帰・Resize、Scene/Game同時分離と終了/再起動を確認。
 Mainの寸法変更がSwapChainへ届かない問題も修正し、最大化後の全Panel表示を確認した。
+Vulkan補助Windowも共有Instance/Device/QueueとWindow別Surface/SwapChainへ接続済み。
+Debug/Release GPU回帰とRelease実機の編集・履歴・Close復帰・複数Window・Resize・終了/再起動を確認。
+Main Resize後の無効Viewport参照を避け、再生成待ちFrameを描画完了へ計上しないよう修正した。
 Debug/Release通常ビルド・CPU UI、Debug Allocation計測CPU、OpenGL GPU統合は成功。
 長時間操作・Multi-Viewport実操作・Backend/DPI別性能Baselineは未検証のため、Phase 7の未完了チェックは維持する。
 

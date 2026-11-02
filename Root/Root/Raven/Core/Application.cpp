@@ -446,7 +446,7 @@ Application::~Application()
         m_ImGuiLayer.reset();
     }
 
-    // OpenGL補助WindowはContext間でGPU資産を共有し、DX12はDevice/Queueを共有します。
+    // OpenGL補助WindowはContext間でGPU資産を共有し、DX12/VulkanはDevice/Queueを共有します。
     // Main Windowが破棄される前に補助WindowのCleanup/VAO解放とGPU Fence待機を完了させます。
     // 外部参照が残る場合はShutdownOwnedWindowsがfalseを返すため、
     // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
@@ -470,12 +470,12 @@ Application::~Application()
 WindowID Application::CreateUIWindow(const WindowSpecification& specification)
 {
     const bool openGL = m_Window->GetBackend() == RHIBackend::OpenGL;
-    const bool explicitUI = m_Window->GetBackend() == RHIBackend::DirectX12 &&
-        m_ExplicitSceneRuntime != nullptr;
+    const bool explicitUI = (m_Window->GetBackend() == RHIBackend::DirectX12 ||
+        m_Window->GetBackend() == RHIBackend::Vulkan) && m_ExplicitSceneRuntime != nullptr;
     if (m_RavenUIEnabled == false || specification.Backend != m_Window->GetBackend() ||
         (openGL == false && explicitUI == false))
     {
-        // VulkanのMulti-Viewportは描画Target接続後に有効化します。
+        // 未対応Backendや異なるBackendのWindowへGPU資源を渡しません。
         return 0;
     }
     auto callbackID = std::make_shared<WindowID>(0);
@@ -515,7 +515,7 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
     {
         context->SetRenderer(UIRenderer::Create(window->GetBackend()));
     }
-    // DX12のDrawListは共有DeviceのExplicit Runtimeへ渡し、UIContextはCPU Treeのみ所有します。
+    // Explicit BackendのDrawListは共有DeviceのRuntimeへ渡し、UIContextはCPU Treeのみ所有します。
     m_AuxiliaryUIContexts.emplace(id, std::move(context));
     // CloseCleanupでGPU資産とUIContextを解放し、寿命をOS Windowより短くします。
     const bool restored = openGL == false || m_Window->MakeContextCurrent();
@@ -1642,11 +1642,11 @@ void Application::Run()
     }
     double previousTime = glfwGetTime();
 
-    uint32_t dx12Width = m_Window->GetFramebufferWidth();
-    uint32_t dx12Height = m_Window->GetFramebufferHeight();
+    uint32_t explicitWidth = m_Window->GetFramebufferWidth();
+    uint32_t explicitHeight = m_Window->GetFramebufferHeight();
     while (m_Running)
     {
-        if (m_ExplicitSceneRuntime != nullptr && m_Window->GetBackend() == RHIBackend::DirectX12)
+        if (m_ExplicitSceneRuntime != nullptr)
         {
             const uint32_t width = m_Window->GetFramebufferWidth();
             const uint32_t height = m_Window->GetFramebufferHeight();
@@ -1659,18 +1659,19 @@ void Application::Run()
                 previousTime = glfwGetTime();
                 continue;
             }
-            if (width != dx12Width || height != dx12Height)
+            if (width != explicitWidth || height != explicitHeight)
             {
-                // DX12はAcquireでResizeRequiredを返さないため、Windowの実Pixel寸法を
-                // Frame記録前に比較します。旧BackBufferのGPU完了待機はRuntimeへ委譲します。
+                // DX12のAcquireやVulkanのSuboptimal Acquireは旧寸法でも成功するため、
+                // 新Viewportを旧SwapChainへ記録する前に実Pixel寸法を一致させます。
+                // 旧ImageのGPU完了待機とRenderPass/PSO再生成はRuntimeへ委譲します。
                 m_ExplicitSceneRuntime->DiscardPreparedFrame();
                 if (m_ExplicitSceneRuntime->Resize(width, height) == false)
                 {
                     m_Running = false;
                     break;
                 }
-                dx12Width = width;
-                dx12Height = height;
+                explicitWidth = width;
+                explicitHeight = height;
             }
         }
         // 現段階ではEscapeをApplication終了入力として扱います。
@@ -1861,6 +1862,7 @@ void Application::Run()
                 { m_MainWindowID, true, m_UIContext.GetLastFrameMetrics() });
         }
 
+        bool explicitFrameReady = true;
         if (m_ExplicitSceneRuntime != nullptr)
         {
             // UIContext::EndFrameでRetained Tree -> DrawList変換が完了した後にSnapshotを渡します。
@@ -1878,6 +1880,7 @@ void Application::Run()
 
             if (explicitResult != RHIFrameResult::Success)
             {
+                m_CompletedUIFrameMetrics.Windows.clear();
                 m_ExplicitSceneRuntime->DiscardPreparedFrame();
                 if (explicitResult != RHIFrameResult::ResizeRequired ||
                     m_ExplicitSceneRuntime->Resize(
@@ -1887,6 +1890,9 @@ void Application::Run()
                     m_Running = false;
                     break;
                 }
+                // Present後の再生成は、このFrameでEditorが渡したViewport Textureも無効化します。
+                // 補助DrawListへ旧Textureを渡してFatal/Closeにせず、次FrameのEditor更新を待ちます。
+                explicitFrameReady = false;
             }
         }
 
@@ -1929,9 +1935,9 @@ void Application::Run()
             }
         }
 
-        // DX12はMainのEnd/Present後、同一Queue上へ補助UIを投入します。
+        // Explicit BackendはMainのEnd/Present後、同一Queue上へ補助UIを投入します。
         // GL Contextを要求するWindowManager経路とは分け、最小化中は描画を待ちます。
-        if (m_RavenUIEnabled == true && m_ExplicitSceneRuntime != nullptr)
+        if (m_RavenUIEnabled == true && m_ExplicitSceneRuntime != nullptr && explicitFrameReady == true)
         {
             for (const auto& item : m_AuxiliaryUIContexts)
             {
@@ -1954,13 +1960,16 @@ void Application::Run()
                     ui.RefreshPendingDPIFonts();
                 }
                 ui.EndFrame();
-                if (m_ExplicitSceneRuntime->RenderAuxiliaryUIWindow(*window, ui.GetDrawList()) == true)
+                const RHIFrameResult result = m_ExplicitSceneRuntime->RenderAuxiliaryUIWindow(
+                    *window, ui.GetDrawList());
+                if (result == RHIFrameResult::Success)
                 {
                     m_CompletedUIFrameMetrics.Windows.push_back(
                         { item.first, false, ui.GetLastFrameMetrics() });
                 }
-                else
+                else if (result == RHIFrameResult::FatalError)
                 {
+                    // Resize待ちは完成Frameへ計上せず、次Frameへ回します。
                     // GPU失敗後に同じAllocatorを再利用せず、Close Cleanupで待機・Tab復帰します。
                     std::cerr << "[Raven UI] Auxiliary window rendering failed: " << item.first << '\n';
                     m_WindowManager.RequestWindowClose(item.first);

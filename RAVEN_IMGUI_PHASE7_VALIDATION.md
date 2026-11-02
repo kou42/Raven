@@ -647,3 +647,85 @@ Computer Use skillの実機操作で次を確認した。
 未検証: Debug実Editor、全Component、Main最小化/復帰の実機反復、異DPI Monitor、
 Scene切替、長時間負荷、Device Removed等の障害注入、DX12性能Baseline、Vulkan補助Window。
 次の候補はVulkan補助Windowの対応、またはDPI別回帰を独立マイルストーンとして進めること。
+
+## Vulkan補助Window実装・回帰（2026-11-02）
+
+承認範囲: Vulkan補助Windowの共有Device/Queue、Window別Surface/SwapChain/Frame同期、
+実Editorの表示・編集・履歴・Resize・Close復帰・終了/再起動、および関連CPU/GPU検証。
+今回のマイルストーンは完了。Phase 7全体は未完了のままとする。
+
+### 実装と責務
+
+- `VulkanSceneContext.h/.cpp`: Instance（Device/Graphics Queueを含む）を共有所有する。
+  Surface/SwapChain/RenderPass/CommandBuffer/Fence/Descriptor/登録GPU資源はWindow別に所有する。
+  SurfaceごとのPresent対応は既存SwapChain生成時に検証し、非対応なら移譲前に生成を拒否する。
+  GetDeviceは未初期化/Shutdown後もNeutral参照でIsValid照会が可能。
+  Descriptor準備では別DeviceのTextureを拒否する。
+- `VulkanSceneRuntime.h/.cpp`: 補助ContextごとにRHIDevice AdapterとUI Pipeline/Descriptorを準備。
+  Color FormatやRenderPassの一致を推測せず、各Surface用Pipelineを生成する。
+  MainのViewport Textureを同じQueue上でSamplingし、既存Image Barrierを使用する。
+  ResizeではGPU Idleを待ってWindow固有資源を再生成し、CloseではMain資源を無効化しない。
+- `IExplicitSceneRuntime.h/.cpp`、DX12の同API、`Application.h/.cpp`:
+  補助描画の戻り値をRHIFrameResultへ変更。Successだけを完成Frameに計上し、
+  ResizeRequiredでは再試行、FatalErrorだけをClose予約へ渡す。
+  Mainの0寸法/最小化待機もExplicit両Backendへ適用した（待機中は補助更新も停止）。
+- `UIFontTextureGPUIntegrationTests.cpp`: `--vulkan-auxiliary`を追加。DX12回帰も新しい戻り値へ対応。
+  Tests READMEとロードマップを更新。新規ソースファイルなし、structure/Filter更新対象なし。
+
+### 実機で検出して修正したResize問題
+
+1. Main最大化時、VulkanのAcquireが旧寸法で成功すると、新しいUI ViewportがSwapChainを超え、
+   描画失敗でEditorが終了した。DX12だけにあった寸法変更の事前通知をVulkanにも適用し、
+   Frame開始前にGPU待機・RenderPass/PSO再生成を完了する。
+2. 最大化から復帰する際、MainのPresentがOUT_OF_DATEを返してFrame末尾に再生成すると、
+   そのFrameのEditorが渡したViewport Textureも無効になる。旧Textureを補助へ渡すと
+   Scene/GameがFatal扱いで自動Closeされた。
+   再生成したFrameは完成計測をクリアして補助描画を待ち、次FrameのEditor更新後に再開する。
+
+修正途中の `phase7-vulkan-aux-final-*` は1の失敗、`phase7-vulkan-aux-final2-*` は2の失敗を
+含むため合格証拠にしない。1の終了コードは0だったが、WindowCloseがなく描画失敗で終了しており、
+正常終了とは扱わない。既存Applicationの描画失敗をプロセス終了コードへ伝える改善は別課題。
+
+### 自動検証
+
+- Debug/Release x64通常ビルド成功。最終ログは `phase7-vulkan-aux-build-{Debug,Release}-final3.log`。
+  最終インクリメンタルはWarning 0、途中のDebugには既存LNK4098等が残る。
+- 最終CPU UI回帰はDebug/Releaseとも成功、終了コード0。
+  ログ: `phase7-vulkan-aux-cpu-{Debug,Release}-final3.log`。既存C4244等のWarningは残る。
+- Vulkan Debug/Release GPU回帰成功、終了コード0。
+  Device/Queue同一性、Main Context終了後の共有Instance生存、Mainが書くViewportを補助2 Windowで
+  Sampling、補助Resize、3回のClose、Main RenderPass/Texture交換後のDescriptor更新、
+  重複登録拒否、Close後の描画拒否、Runtime Shutdownを検証した。
+  DebugはRAVEN_RHI_VALIDATION=1、debug_utils/Validation Layerの利用不可診断なし。
+  Warning/Error/FAIL検索は0件。専用GPU同期Validationやpixel readbackは含まない。
+  ログ: `phase7-vulkan-aux-gpu-{Debug,Release}-final.log`。
+- DX12 Debug/Release GPU回帰と、OpenGL Release GPU回帰（Arial Font、Texture診断、共有Contextの
+  pixel readback・3回のClose/復帰）が成功。
+  ログ: `phase7-vulkan-aux-dx12-Debug-regression.log`、`phase7-vulkan-aux-dx12-regression.log`、
+  `phase7-vulkan-aux-opengl-regression.log`。
+
+GPU最終検証後の製品コード変更はApplicationの寸法通知・再生成待機のみ。
+その変更は上記の最終通常ビルド/CPU回帰と下記のRelease実機で確認した。
+
+### Release実Editor
+
+Computer Use skillで通常のVulkan Editorを操作した。
+
+- Floorを選択してInspectorを切り離し、本文・数値入力0→1・Enter確定、Text Focusを外した後の
+  Undo→0、Redo→1、再度Undo→0を確認。補助Inspector最大化後も本文が表示された。
+- Close直後の前面切替が重なった最初の操作は復帰確認として採用せず、独立したClose操作で再検証。
+  Mainのみ生存し、元DockへInspectorと値0が戻ることを確認した。
+- Scene/Game Viewを同時に切り離し、共有Textureの表示を確認した。
+- 最終修正版 `phase7-vulkan-aux-final3-*` でScene/Game/Inspectorの補助3 Windowを保持し、
+  Main最大化と通常サイズへの復帰を確認。その後も全4 Windowが生存し、標準エラー0 bytes。
+  補助を残したままMainをAlt+F4終了し、WindowCloseと終了コード0を確認した。
+- 保存JSONに全6 Tabが重複なく含まれることを確認した
+  （`artifacts/phase7/vulkan-aux-shutdown.layout.json`）。
+- `phase7-vulkan-aux-restart-*` で再起動。Mainだけ生成され、全Dock Tabの復元を目視確認。
+  再度WindowClose、終了コード0、標準エラー0 bytes。
+- 終了後、Primary/Backupを `artifacts/phase7/vulkan-aux-backup/` から復元し、双方のSHA-256一致を確認。
+
+全ログは `artifacts/logs/`。検証中の配置・既存CSVはコミット対象に含めない。
+未検証: Debug実Editor、異DPI Monitor、全Component/IME、長時間負荷、Scene切替、正式性能Baseline、
+GPU/Surface喪失の障害注入、最小化/復帰の実機反復、複数GPU/異なるSurface形式での操作。
+次はDPI別回帰、またはBackend間の表示/性能比較を独立マイルストーンとして進める。

@@ -46,7 +46,9 @@ public:
     // 未対応Backendは生成/描画を拒否し、別DeviceへTextureを暗黙転送しません。
     virtual bool CreateAuxiliaryUIWindow(Window& window);
     virtual void DestroyAuxiliaryUIWindow(Window& window);
-    virtual bool RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList);
+    // Successだけを描画完了へ計上します。ResizeRequiredは再生成/復帰待ちでCloseせず、
+    // FatalErrorだけをClose対象にします。Main/補助は同じThreadから直列に呼びます。
+    virtual RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList);
 
     // UIContext::EndFrame後のCPU DrawListを次のPrepareFrameへ渡します。
     // GPU Resource生成はAcquire前のPrepareFrame内で行います。
