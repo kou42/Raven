@@ -81,7 +81,6 @@ bool InspectorRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& fon
 
     scroll->SetContent(std::move(content));
     window->AddChild(std::move(scroll));
-    m_Context = &context;
     m_Root = context.GetRootElement().AddChild(std::move(window));
     if (m_Root == nullptr)
     {
@@ -104,7 +103,6 @@ void InspectorRavenPanel::Detach()
     {
         m_Root->GetParent()->RemoveChild(m_Root);
     }
-    m_Context = nullptr;
     m_Root = nullptr;
     m_StatusLabel = nullptr;
     m_TagSection = nullptr;
@@ -126,6 +124,15 @@ void InspectorRavenPanel::Detach()
     m_ColliderInputs.clear();
     m_ColliderTriggerCheckbox = nullptr;
     m_Snapshot = InspectorSnapshot{};
+}
+
+UIElement* InspectorRavenPanel::GetFocusedInputElement() const
+{
+    // PanelはDock/補助Window間を同じObjectのまま移動します。生成時のContextを保持すると、
+    // 移動後のText Focusを見落としてSnapshot同期が未確定入力とCommit基準値を上書きします。
+    // 現在のTree所有Contextを都度参照し、移譲中の未接続状態はFocusなしとして扱います。
+    UIContext* context = m_Root != nullptr ? m_Root->GetContext() : nullptr;
+    return context != nullptr ? context->GetFocusedElement() : nullptr;
 }
 
 void InspectorRavenPanel::Update(const InspectorSnapshot& snapshot)
@@ -351,9 +358,7 @@ void InspectorRavenPanel::SynchronizeTransformInputs(bool targetChanged)
         transform.Scale.x, transform.Scale.y, transform.Scale.z
     };
 
-    UIElement* focused = m_Context != nullptr
-        ? m_Context->GetFocusedElement()
-        : nullptr;
+    UIElement* focused = GetFocusedInputElement();
     m_SynchronizingTransformInputs = true;
     for (std::size_t index = 0u; index < m_TransformInputs.size(); ++index)
     {
@@ -573,9 +578,7 @@ void InspectorRavenPanel::SynchronizeCameraInputs(bool targetChanged)
     }
 
     const InspectorCameraSnapshot& camera = *m_Snapshot.Camera;
-    UIElement* focused = m_Context != nullptr
-        ? m_Context->GetFocusedElement()
-        : nullptr;
+    UIElement* focused = GetFocusedInputElement();
     const bool nearEditing = focused == &m_CameraInputs[1u]->GetInputText();
     const bool farEditing = focused == &m_CameraInputs[2u]->GetInputText();
     constexpr double ClipSeparation = 0.0001;
@@ -850,7 +853,7 @@ void InspectorRavenPanel::SynchronizeRigidBodyControls(bool targetChanged)
         value.AngularVelocity.x, value.AngularVelocity.y, value.AngularVelocity.z,
         value.LinearDamping, value.AngularDamping
     };
-    UIElement* focused = m_Context != nullptr ? m_Context->GetFocusedElement() : nullptr;
+    UIElement* focused = GetFocusedInputElement();
     m_SynchronizingRigidBodyControls = true;
     m_RigidBodyTypeCombo->SetSelectedIndex(static_cast<std::size_t>(value.Type));
     for (std::size_t index = 0u; index < m_RigidBodyInputs.size(); ++index)
@@ -1102,7 +1105,7 @@ void InspectorRavenPanel::SynchronizeColliderControls(bool targetChanged)
         value.PlaneOffset, value.Restitution,
         value.StaticFriction, value.DynamicFriction
     };
-    UIElement* focused = m_Context != nullptr ? m_Context->GetFocusedElement() : nullptr;
+    UIElement* focused = GetFocusedInputElement();
     m_SynchronizingColliderControls = true;
     m_ColliderTypeCombo->SetSelectedIndex(static_cast<std::size_t>(value.Type));
     for (std::size_t index = 0u; index < m_ColliderInputs.size(); ++index)

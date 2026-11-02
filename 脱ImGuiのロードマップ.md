@@ -6,10 +6,15 @@ Tab本文の残り領域への配置とStatistics Scroll追従、Fluid Debugの�
 OpenGL Releaseで本文表示・選択・記録の開始/停止/非表示継続/CSV保存を確認し、参考性能CSVを採取。
 通常起動のClipboard接続とEditor履歴Shortcutを修正し、Transformの貼り付け・確定・Undo/Redoも実機確認済み。
 補助Window実操作、他Componentの網羅的操作、Backend/DPI別比較は継続検証が必要。
+Drag開始座標の保持と補助Contextの履歴配送を修正し、Debug/ReleaseのCPU回帰・通常ビルドは成功。
+RootのViewport寸法、入力provider寿命、Inspectorの現在Context参照、OpenGL Coreのstate復元を修正。
+OpenGL Releaseで補助Window本文、編集・Clipboard・Undo/Redo、3回のClose復帰とResize、正常終了を確認。
+Debug/Release CPU・通常ビルド、共有Contextのpixel readback GPU回帰は成功。
+補助Windowを開いたまま終了した場合のInspector配置保持は別途対応が必要。
 Debug/Release通常ビルド・CPU UI、Debug Allocation計測CPU、OpenGL GPU統合は成功。
 長時間操作・Multi-Viewport実操作・Backend/DPI別性能Baselineは未検証のため、Phase 7の未完了チェックは維持する。
 
-最終更新: 2026-10-19
+最終更新: 2026-11-02
 
 対象: Raven Editor / Debug UI / Dear ImGui統合
 

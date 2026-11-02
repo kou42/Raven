@@ -203,6 +203,16 @@ void UIContext::BeginFrameContents(const math::Vec2& viewportSize)
     m_DrawList.Clear();
     m_FrameOverlayShapes.clear();
     m_ViewportSize = viewportSize;
+    // Rootは子の自然サイズではなく描画先の確定領域を表します。
+    // Dockから移譲したStretch/Clip付きPageは、自身の自然サイズが0でもWindow全面を使います。
+    // ここは既存Layout/Hit Testと同じWindow論理座標。Framebuffer倍率を掛けず、
+    // DIP指定のWidget自身が行うDPI変換も二重適用しません。
+    if (m_RootElement != nullptr &&
+        (m_RootElement->GetSize().x != viewportSize.x ||
+            m_RootElement->GetSize().y != viewportSize.y))
+    {
+        m_RootElement->SetSize(viewportSize);
+    }
     m_FrameActive = true;
     UpdateTooltip();
 }

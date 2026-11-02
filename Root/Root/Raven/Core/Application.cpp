@@ -1948,7 +1948,7 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
         input.Repeat = input.Pressed == true &&
             static_cast<KeyPressedEvent&>(event).IsRepeat();
         input.Context = ui;
-        event.Handled = ui->RouteKeyEvent(input);
+        event.Handled = RouteUIKeyEvent(*ui, input, m_Layers);
     }
     else if (event.GetEventType() == EventType::CharacterTyped)
     {
@@ -2010,6 +2010,25 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
             window->CancelIMEComposition();
         }
     }
+}
+
+bool Application::RouteUIKeyEvent(UIContext& context, const UIKeyEvent& event,
+    const std::vector<Scope<Layer>>& layers)
+{
+    UIKeyEvent input = event;
+    input.Context = &context;
+    if (context.RouteKeyEvent(input) == true)
+    {
+        return true;
+    }
+    for (auto it = layers.rbegin(); it != layers.rend(); ++it)
+    {
+        if (*it != nullptr && (*it)->OnUIKeyEvent(input) == true)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Application::OnEvent(Event& event)
@@ -2089,7 +2108,7 @@ void Application::OnEvent(Event& event)
         uiEvent.Control = (keyEvent.GetModifiers() & GLFW_MOD_CONTROL) != 0;
         uiEvent.Super = (keyEvent.GetModifiers() & GLFW_MOD_SUPER) != 0;
         uiEvent.Context = &m_UIContext;
-        event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+        event.Handled = RouteUIKeyEvent(m_UIContext, uiEvent, m_Layers);
     }
     else if (m_RavenUIEnabled == true && event.Handled == false &&
         event.GetEventType() == EventType::KeyReleased)
@@ -2100,7 +2119,7 @@ void Application::OnEvent(Event& event)
         uiEvent.Pressed = false;
         uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
         uiEvent.Context = &m_UIContext;
-        event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+        event.Handled = RouteUIKeyEvent(m_UIContext, uiEvent, m_Layers);
     }
 
     if (m_RavenUIEnabled == true && event.Handled == false &&

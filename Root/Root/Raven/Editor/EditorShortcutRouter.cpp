@@ -59,7 +59,8 @@ bool TryHandleEditorHistoryShortcut(const UIContext& context,
     const EditorShortcutRoutingContext& routingContext, const UIKeyEvent& event)
 {
     if (event.Pressed == false || event.Repeat == true ||
-        (event.Control == false && event.Super == false))
+        (event.Control == false && event.Super == false) ||
+        context.HasMouseCapture() == true || context.HasPendingDrag() == true)
     {
         return false;
     }
