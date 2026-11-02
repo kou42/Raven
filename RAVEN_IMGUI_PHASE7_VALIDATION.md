@@ -1,5 +1,311 @@
 # 脱ImGui Phase 7 Windows自動検証記録
 
+## Vulkan SDR色出力の統一（2026-11-03）
+
+承認された色出力修正を完了。下記の固定Scene検証時点で残っていたVulkanの明るさの差を修正した。
+正式性能Baseline、各Backendの30分操作、DPI別回帰とPhase 7全体は未完了。
+
+### 設計・差分
+
+- `VulkanDevice` は任意のmutable swapchain拡張と、その依存であるmaintenance2/image_format_listを
+  対応時だけ有効化する。Vulkan 1.0起動でも依存拡張を明示する。
+- `VulkanSwapChain` はSDRのBGRA/RGBA 8bit UNORM Surfaceを優先する。SRGBしかない場合は
+  mutable対応を条件として、native SRGB Imageを対応するUNORM Viewで描画する。
+  `VulkanSceneRenderTarget` と `VulkanSceneContext` のRenderPass/View/Pipelineも同じAttachment形式を使う。
+  現行GL/DX12の表示用SDR値とUNORM上のBlendに合わせる設計で、linear lighting/HDRへの移行ではない。
+  対応外のHDR/10bit、mutable非対応のSRGB専用Surfaceは誤った色で継続せず初期化失敗とする。
+- `VulkanFrameRenderer` のraw transfer clearだけはnative SRGB形式に応じてRGBをdecodeする。
+  Attachment clear、Shader、UI Blendには追加変換を入れず、Alphaも変換しない。
+- `VulkanSceneContext::CopyColorToBuffer` は検証要求時だけMainの描画結果を転送し、LOAD Passへ戻す。
+  Bufferは呼び出し側所有で、同一Device・十分な容量・転送完了までの生存が必要。
+  Offscreen Pass中/Frame外/不正Bufferは拒否する。通常描画でreadbackやBuffer確保は行わない。
+- 変更対象は既存Vulkan Device/SwapChain/FrameRenderer/SceneRenderTarget/SceneContextと既存GPUテスト、関連文書。
+  Raven配下のファイル構成変更はなく、今回のstructure.txt/Filter追加は不要。
+
+仕様根拠: [mutable swapchain](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_swapchain_mutable_format.html)、
+[SRGB Imageのclear値](https://docs.vulkan.org/refpages/latest/refpages/source/VkClearColorValue.html)。
+
+### 検証結果
+
+- 最終Debug/Release通常ビルド成功、Warning 0。`artifacts/logs/phase7-color-build-{Debug,Release}-final.log`。
+  Debug/Release CPU UI回帰、Debug Frame Self Testも成功（`phase7-color-cpu-*` / `phase7-color-frame-Debug.log`）。
+- Debug/Release GPUでOpenGL Font/共有Context、Vulkan/DX12補助Window回帰に成功。
+  最終ログは `phase7-color-opengl-gpu-*-final.log` と `phase7-color-{vulkan,dx12}-auxiliary-*-final.log`。
+- `--vulkan-surface-formats` でUNORM優先、SRGB fallback、未対応形式拒否、legacy UNDEFINED、
+  transfer clearの変換式をCPU検証。`--vulkan-color` で実際のUIとViewport画像のGPU readbackを検証。
+  native UNORM(44)/Attachment UNORM(44)、補助Windowの強制native SRGB(50)/Attachment UNORM(44)、
+  補助Window Resize後400×300の全経路がDebug/Releaseで成功した。
+  期待RGBAはclear=(26,51,77,255)、opaque=(64,128,191,255)、alpha=(140,26,38,255)、
+  Viewport=(51,102,153,255)。実測は順に(25,51,76,255)、(64,127,191,255)、
+  (140,26,38,255)、(51,102,153,255)で、全channelが許容差2/255以内。
+  `phase7-color-vulkan-{surface-formats,color}-{Debug,Release}-final.log` に保存。
+- Debug VulkanはValidationを有効化して描画エラーなし。外部EOS Overlayの重複Layer登録警告は残る。
+  初回Debug GPUリンク時の既存LNK4098も記録済み。特別な同期Validationを実施したとは扱わない。
+- Release比較モードで3 BackendのMainを順に再確認し、Cube/Floor/Scene背景とUI背景の大きな色差が解消。
+  VulkanはInspector/Scene/Gameの3補助Windowを分離して色を確認し、そのままMainをCloseして終了。
+  `phase7-color-{opengl,dx12,vulkan}-editor.log` / `.err` に記録。
+  3 Backendとも終了コード0、WindowCloseEvent各1回、stderr 0 byteで終了し、Editor残存なし。
+  Dock primary/backupは操作前へ復元し、両方のSHA256が
+  `282EF39CFEFF9D3655C89A9D9B877A5D0BE5368274254049AED24CB2914866C7` と一致した。
+  GPUの数値色検証はVulkanのみ。GL/DX12の数値readbackや全画面pixel一致を検証したものではない。
+
+### 残課題
+
+高DPI/異DPI、正式な同条件性能Baseline、各30分の反復操作は次のマイルストーン。
+Mainの未使用領域の背景色など既存差も残る。通常GameのEntity構成差には今回触れていない。
+mutable拡張・BGRA SRGB Surface・readback非対応環境のGPU実行は未検証（CPUの拒否分岐は検証済み）。
+
+## Backend比較用固定Sceneと起動モード（2026-11-02～11-03）
+
+承認範囲: 比較用Scene・起動引数・関連Self Test、構成/Filter登録、Debug/Releaseビルド・CPU回帰、
+3 BackendのScene/Game表示・選択・編集・補助Window・CSV採取の確認。
+固定Sceneの実装と操作検証は完了。Vulkanの色出力差を検出したため表示同等性は未合格とし、
+Renderer/Shaderの追加修正前で停止する。正式性能Baseline・各30分操作・Phase 7全体は未完了。
+
+### 実装・責務と差分
+
+- `Scene/Debug/EditorBackendComparisonScene.h/.cpp` を追加。
+  Camera 1、Cube 3、Floor 1の計5 Entity/4描画Meshを既存Primitive Factoryで生成する。
+  CubeのMeshと全EntityのMaterialを共有し、Asset/Demo Layerや時間依存のSimulationを追加しない。
+  GPU生成時期だけをImmediate（OpenGL）/Deferred（Explicit・CPU検証）に分ける。
+  Game Cameraは既存SceneCameraSystem、Scene ViewはSceneViewportRenderer経由のEditorCameraを使う。
+  Scene終了時の既存CleanupでEntityと共有GPU資源を解放し、独立したEntity所有リストを持たない。
+- OpenGL UniformとRHI Tintを両方明示し、Opaque/Cullなし/Depth LessEqual/Depth Writeの同じ設定を使う。
+  最終点検でExplicit側の既定DepthがLessだった差を検出し、`GetPipelineSpecification()` へ設定を集約。
+  OpenGL Materialと比較モードのExplicit起動設定が同じProfileを使う。通常起動の設定は変更しない。
+  ExplicitのTextureは既存の白fallback。共通Renderer・Shaderを変更していない。
+- `main.cpp`: `--editor-backend-comparison` を追加し、複数引数を順序に依存せず解析する。
+  未知の引数は2個目以降も拒否。ImGui/Dual/UI Migration Demoとの併用も拒否する。
+  このモードでは通常GameとDemo Layerを追加せず、既存Application/Editor/補助Window経路へ接続する。
+  起動時に論理構成のManifestをログへ出力する。通常起動のScene構成は維持した。
+- `ExplicitSceneFrameSelfTests.cpp`: Deferred生成時の5 Entity/4 Mesh、Legacy GPU資源未生成、
+  RHI Tint/Surface/Texture契約、二重OnCreate・100秒Update後のManifest不変、Camera設定、
+  OnDestroy後のEntity無効化とMesh/Material解放、再Createを確認。
+- `structure.txt` に追加2ファイルを記載し、`.vcxproj.filters` の `Raven/Scene/Debug` へ登録。
+  `.vcxproj` は既存の `Raven/**/*.cpp` / `Raven/**/*.h` wildcardでビルド対象になるため重複登録しない。
+  既存 `.gitignore` の `Debug/` が新規ソースまで隠すため、この2ファイルだけに限定した例外も追加した。
+- 手順を `docs/phase7-backend-comparison.md`、最新状況を脱ImGuiロードマップへ反映。
+
+### ビルド・CPU確認
+
+- Debug/Release通常ビルド成功。共通Pipeline版の最終ログは `phase7-fixture-build-{Debug,Release}-final2.log`。
+  Debugでは既存LNK4098（スクリプト集計2行）が残り、ReleaseはWarning 0。
+- Debug/Release CPU UI回帰成功、終了コード0。
+  `phase7-fixture-cpu-{Debug,Release}-final2.log`。
+- 通常Debug実行ファイルの `--test-explicit-frame` 成功、終了コード0。
+  `phase7-fixture-selftests-Debug-final2.log`。共通PipelineのTopology/Cull/FrontFace/Depth/Blend契約も確認。
+  Releaseのassert無効化をSelf Test合格には利用しない。
+- Releaseで比較モード＋ImGui、未知の2個目引数の双方を終了コード1で拒否。
+  `phase7-fixture-invalid-{ui,option}.log`。
+- 途中のSelf TestコンパイルでMaterial定義のinclude不足を検出し、明示includeを追加して再ビルドした。
+- 共通Pipeline修正後も3 Backendを一つずつ再起動してMain表示・CSV保存・正常終了を再確認した。
+  最終版のOpenGLは `phase7-fixture-opengl-final2.*`、中断後に再開したDX12/Vulkanは
+  `phase7-fixture-{dx12,vulkan}-resume.*`。GPU専用回帰は今回は再実行していない。
+
+### Release実Editor（3 Backend）
+
+Computer UseでOpenGL → DX12 → Vulkanを一つずつ起動した。
+各Backend開始前に同じPrimary/Backup配置を復元した。
+
+- 3 Backendの起動Manifestは全7行が一致。`static-cubes-v1`、5 Entity/4 Mesh、
+  全Transform・Camera設定・Geometry数・Tintが一致した。
+- Scene Viewの3 CubeとFloor、Hierarchy 5 Entityを確認。
+  Comparison Centerを選択し、補助InspectorでPosition Xを0→1→Enter確定、Text Focus解除後に
+  Undo→0、Redo→1、再Undo→0を各Backendで確認した。
+- Inspector/Scene/Gameを同時に分離し、Main＋補助3 Windowの存在、Scene/GameのTextureとGizmoを確認。
+  補助3 Windowを保持したままMainをAlt+F4終了し、各BackendでWindowClose 1件・終了コード0・stderr 0 bytes。
+- Mainのみ・未選択・Statistics表示で、Start→Stop→Save CSVを各Backendで実行。
+  Scroll位置は記録ボタンとbuild_ms行が同じ位置になるよう合わせた。
+  全CSVでWindow Stream 1、Elements 298、履歴省略0を確認した。
+
+編集・補助3 Windowの一連の操作は共通Pipeline集約前に実施した。
+集約後はUI/Commandの変更なしで、Main表示とCSV採取を3 Backendで再実行した。
+中断中に終了したDX12/Vulkanのfinal2セッションは、最終CSV採取の合格証拠に利用せず、
+11-03のresumeセッションで採取し直した。最終Manifestも全7行が一致した。
+
+参考値（正式Baseline・性能順位には使用しない）:
+
+| Backend | samples | UI Build平均/最大 ms | Draw Commands平均 | Elements |
+| --- | --- | --- | --- | --- |
+| OpenGL | 1117 | 0.45960 / 0.75850 | 2051.94 | 298 |
+| DX12 | 1317 | 0.65132 / 2.19520 | 1823.10 | 298 |
+| Vulkan | 983 | 0.43849 / 0.55610 | 1822.81 | 298 |
+
+上表は共通Pipeline版の `*-main-final2.csv` と `summary-final2.csv` の参考値。
+集約前の `*-main-reference.csv` / `summary.csv` は経過資料として区別する。
+
+採取時間とDPI実値は固定・実測しておらず、manifestのDPIは `unverified`。
+Widget数が同じでもBackend別の診断文字列・Scope表示によりUI Draw Command数は異なる。
+Mainの未使用領域もGLではScene背景色、Explicitでは黒が見える。
+これらの参考値を同一描画量の速度比較、GPU時間、p95/p99や長時間安定性の証拠にしない。
+通常ビルドのC++ AllocationはN/Aのまま集計した。
+
+### 残る表示差と次の追加範囲
+
+VulkanはScene/GameとUI全体がOpenGL/DX12より明るい。補助3 Windowでも同じ差を確認した。
+論理Manifestが同じであるため、Scene/Material入力の差と区別できる状態になった。
+原因候補は `VulkanSwapChain.cpp::ChooseSurfaceFormat` が `B8G8R8A8_SRGB` を優先する一方、
+DX12は `R8G8B8A8_UNORM`、UI Shaderは色変換なしの乗算出力であること。
+出力時のsRGB変換の有無と整合するが、今回はGPU Pixel readbackでの確定・修正を行っていない。
+
+次の候補は色出力契約の統一。Surface形式選択とfallback、UI/Scene/Viewport Textureの変換回数を確認し、
+Backend共通の参照色・半透明BlendをGPU検証してから、3 BackendのMain/補助表示を再比較する。
+Renderer/Shader修正は今回の承認範囲外のため未実施。
+高DPI、Debug実機、各30分操作、通常GameでのEntity差の原因究明も残課題。
+
+全ログは `artifacts/logs/phase7-fixture-*`。
+Manifest原本、参考CSV、集約CSVは `artifacts/phase7/fixture-backup/`。
+最終採取条件は `manifest-final2.csv`。DPI実値・採取時間は正式Baseline条件へ未固定。
+終了後、検証前のPrimary/Backupを復元し、双方のSHA-256は退避時と同じ
+`282EF39CFEFF9D3655C89A9D9B877A5D0BE5368274254049AED24CB2914866C7`。
+生成配置・CSV・ログをコミット対象へ含めない。
+
+## OpenGL Main最小化時の終了修正（2026-11-02）
+
+承認範囲: Main最小化待機のBackend共通化、関連Self Test、Debug/Releaseビルド・CPU回帰、
+Release OpenGLの補助3 Window保持中の最小化/復帰反復と編集・履歴確認。
+この修正マイルストーンは完了。下記の比較マイルストーンとPhase 7全体は未完了のままとする。
+
+### 変更と責務
+
+- `Application.cpp`: MainのFramebuffer 0寸法/最小化の待機をExplicit分岐の外へ移した。
+  Scene/UI/補助Windowを更新する前にEventを待ち、復帰後は次Loopで寸法を読み直す。
+  待機中もCloseを配送し、Close済みなら追加のEvent待機を省く。
+  待機後にFrame時計を合わせるため、最小化時間をPhysics/Animationのdtへ加算しない。
+  UI完成Frameの連番を進めず、待機を描画時間0のサンプルにも数えない。
+- `ExplicitSceneFrameSelfTests.cpp/.h`: OpenGL用Mock Windowを追加。
+  Viewport設定失敗は引き続きFatal、失敗したFrameはEnd/Present不可、成功Frameの二重Beginは拒否、
+  同じLifecycleで失敗→成功を3回反復可能、Context失敗時にViewport設定へ進まないことを確認。
+  ApplicationのOS待機Loop自体はこのCPUテストで自動化せず、下記実Editorで確認した。
+- Window/描画側の0寸法Safety Check、GPU Lifetime、SwapChain再生成処理は維持。
+  Main最小化中は全Backendで補助UIも休止する。補助だけを独立更新する変更は含めない。
+
+新規Engineファイルなし。`structure.txt` / `.vcxproj.filters` は更新対象なし。
+既存の未コミット差分を保持し、製品コードの今回の変更はRunの待機部分だけ。
+
+### 検証結果
+
+| 対象 | 結果 | 証拠（artifacts/logs/以下） |
+| --- | --- | --- |
+| Debug通常ビルド | 成功、Warning 0 | phase7-minimize-build-Debug.log |
+| Release通常ビルド | 成功、Warning 0 | phase7-minimize-build-Release.log |
+| Debug CPU UI | 成功 | phase7-minimize-cpu-Debug.log |
+| Release CPU UI | 成功 | phase7-minimize-cpu-Release.log |
+| Debug追加Frame Self Test | 成功、終了コード0 | phase7-minimize-frame-selftests-Debug.log |
+
+既知のPDB実行制限を避けて通常権限環境で実行。ビルドはインクリメンタル、`CL=/MP4`。
+Frame Self Testは通常Debug実行ファイルを `--test-explicit-frame` で起動した。
+Releaseのassert無効化をSelf Test合格の証拠にしていない。
+
+### Release OpenGL実Editor
+
+Computer Useで次を確認した。
+
+1. Floor選択後、Inspector/Scene View/Game Viewを分離し、Main＋補助3 Windowを生成。
+2. Mainの最小化/復帰を反復。入力試行回数ではなくログで
+   `WindowMinimizedEvent` 3件、Framebuffer 0×0通知3件、`WindowRestoredEvent` 3件を確認。
+   反復後も同じ4 Windowが生存し、WindowCloseは0件。
+3. 復帰後の補助InspectorでPosition Xを0→1、Enter確定、Text Focus解除後に
+   Undo→0、Redo→1、再Undo→0を確認。
+4. 補助Game/Sceneを前面へ出し、それぞれのScene表示とGizmo表示の復帰を確認。
+5. 補助3 Windowを保持したままMainをAlt+F4終了。WindowClose、終了コード0、標準エラー0 bytes。
+   検証用Windowが全て閉じたことを確認。
+
+ログ: `phase7-minimize-editor.log`、`.err`、`phase7-minimize-editor-exit.txt`。
+保存配置を `artifacts/phase7/minimize-backup/shutdown.layout.json` へ保存後、元Primary/Backupを復元。
+双方のSHA-256は退避前と同じ
+`282EF39CFEFF9D3655C89A9D9B877A5D0BE5368274254049AED24CB2914866C7`。
+
+未検証: Debug実Editor、今回修正後のDX12/Vulkan実機反復、異DPI、最小化中のClose実操作、
+待機中のUI計測値の直接採取、各Backend30分操作。GPU回帰は前マイルストーンの記録を維持し、
+今回GPU専用テストは再実行していない。
+次は通常起動時のBackend間Entity数/Material差を整理し、共通比較条件を確定してから性能・長時間検証へ戻る。
+
+## Backend比較・長時間操作の着手と中断（2026-11-02）
+
+承認範囲: 比較手順・集計/監視スクリプト、3 Backendの表示/性能比較、各30分操作と関連回帰。
+OpenGLのMain最小化でプロセス終了を検出したため、製品コード変更前の追加承認ゲートで中断した。
+本マイルストーンおよびPhase 7は未完了。30分操作の合格や正式Baseline取得とは扱わない。
+
+### 追加した検証入口
+
+- `docs/phase7-backend-comparison.md`: 条件、操作周期、CSV採取、元配置の復元、合否の手順。
+- `scripts/compare-ui-recordings.ps1`: manifestから全Windowの12指標を条件付きCSVへ展開。
+  Window Stream数と履歴省略数を保持し、N/Aを0へ変換しない。旧Main限定形式、重複セッション、
+  非有限/負の値、平均が最大値を超える値、既存出力を拒否する。
+- `scripts/watch-ui-process.ps1`: PIDと開始時刻を照合し、Working Set、Private Bytes、
+  Handle/Thread数、累積CPU秒を定期保存。アプリに入力せず、終了も要求しない。
+
+新規Engineソースなし。`structure.txt` と `.vcxproj.filters` の更新対象なし。
+製品コードと既存の未コミット差分は変更していない。
+
+### 回帰結果
+
+| 対象 | 結果 | 証拠（artifacts/logs/以下） |
+| --- | --- | --- |
+| Release通常 | 成功、Warning 0 | phase7-compare-build-Release-escalated.log |
+| Debug通常 | 成功、既存Warning行2 | phase7-compare-build-Debug.log |
+| Debug/Release CPU UI | 成功 | phase7-compare-cpu-{Debug,Release}.log |
+| Release OpenGL GPU、Font Atlas必須 | 成功、共有Contextの3回Close/復帰を含む | phase7-compare-gpu-Release.log |
+| Release DX12補助Window GPU | 成功 | phase7-compare-gpu-dx12-Release.log |
+| Release Vulkan補助Window GPU | 成功、RAVEN_RHI_VALIDATION=1 | phase7-compare-gpu-vulkan-Release.log |
+
+制限内Releaseリンクは既知のLNK1101で失敗し、制限外の再実行で成功した。
+後続ビルドは制限外で実行。今回Debug GPUは再実行していない。
+スクリプトの構文、既存CSVの12指標とN/A保持、上書き拒否、Main限定fixture拒否、NaN拒否、
+短時間プロセス監視を確認。fixtureは実機測定と区別してartifacts内へ保存した。
+
+### 実Editorで確認した内容
+
+Computer UseでRelease OpenGLを操作。69 Entityの通常Scene、Scene/Game表示、Floor選択、
+InspectorのDock内移動と分離、補助側のPosition X 0→1→確定→Undo 0→Redo 1→Undo 0、
+Close後のTab復帰を確認。その後Scene/Game/Inspectorを分離し、補助3 Windowの表示を確認した。
+
+参考CSV（`artifacts/phase7/backend-comparison/`）:
+
+| 条件 | samples | UI Build平均/最大 ms | Draw Commands平均 | Elements |
+| --- | --- | --- | --- | --- |
+| Main、未選択 | 3087 | 1.06233 / 1.75470 | 4779.98 | 408 |
+| Main＋補助3、Floor選択 | 861 | 1.18199 / 1.76730 | 5193.75 | 414 |
+
+後者のWindow Streamは閉じたInspectorの履歴を含まず、記録時の4 Stream。
+両者は選択状態とWindow構成が異なるため、同一条件の前後比較には使わない。
+DrawList確保はMainで0、補助3で平均3回/96 bytes。C++ newは通常ビルドなのでN/A。
+GPU時間やFrame全体の性能、p95/p99を示す値ではない。
+CSVは固定60秒の自動採取ではなくUI操作で開始/停止した参考値。採取区間に他Editorの並走はない。
+DPI実値は未確認のためmanifestは `unverified` とし、100%合格には計上しない。
+
+メモリ監視はUTC 12:21頃に開始し、約861秒で終了を検出した。
+Window数が途中で変わるため、全期間のメモリ増加をリークと断定しない。
+プロセス終了コードはこの監視CSVに記録しておらず不明。
+
+### 検出したBlockerとコード上の経路
+
+OpenGLのMain最小化直後、全Windowが消失した。ログ末尾は `WindowMinimizedEvent`、
+`WindowFramebufferResizeEvent: 0, 0`、`WindowResizeEvent: 0, 0`。
+`WindowCloseEvent` はなく、標準エラーは空。正常終了や30分操作合格にしない。
+
+読み取りで次の経路を確認した（修正は未実施）:
+
+1. `WindowsWindow::SetFramebufferViewport()` はFramebuffer寸法0でfalseを返す。
+2. `OpenGLSceneFrameLifecycle::BeginFrame()` はそのfalseをFatalErrorにする。
+3. `Application::Run()` はOpenGL BeginFrameの非Successでループを終了する。
+4. 0寸法/最小化中の待機処理は `m_ExplicitSceneRuntime != nullptr` の内側にしかない。
+
+次の追加承認候補は、この待機をBackend共通にして、最小化を終了扱いしない修正と回帰。
+Main最小化中の補助独立更新は追加しない。0寸法を許可してSafety Checkを外す修正も行わない。
+
+DX12は起動表示だけ確認し、67 EntityとFloorの白表示を観測した。
+OpenGLは69 EntityとFloorの緑表示だった。Entity差の原因とMaterial/Shaderの同等性は未確定。
+`SceneGame::OnCreate()` にはOpenGLのみShader/Textureを準備する分岐があり、
+表示同等性・共通Fixtureを確認するまで通常起動の性能値でBackend順位を付けない。
+DX12はAlt+F4後のWindowCloseを確認。Vulkan実Editor比較と各30分操作は未実施。
+
+検証用Editorを終了後、元のPrimary/Backup配置を復元し、双方のSHA-256が
+`282EF39CFEFF9D3655C89A9D9B877A5D0BE5368274254049AED24CB2914866C7` と一致した。
+元配置・CSV・ログ・PID等は `artifacts/phase7/backend-comparison/`、操作ログは `artifacts/logs/`。
+生成された配置・参考CSVはコミット対象に含めない。
+
 検証日: 2026-11-01～2026-11-02（JST）
 
 対象コミット: `241a5cd9954caec545aa1601d39dfd3f0144b34f`
