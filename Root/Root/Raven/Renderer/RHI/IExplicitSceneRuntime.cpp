@@ -5,6 +5,24 @@
 namespace Raven
 {
 
+bool IExplicitSceneRuntime::CreateAuxiliaryUIWindow(Window& window)
+{
+    (void)window;
+    return false;
+}
+
+void IExplicitSceneRuntime::DestroyAuxiliaryUIWindow(Window& window)
+{
+    (void)window;
+}
+
+bool IExplicitSceneRuntime::RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList)
+{
+    (void)window;
+    (void)drawList;
+    return false;
+}
+
 bool IExplicitSceneRuntime::SupportsOffscreenSceneRendering() const
 {
     return false;

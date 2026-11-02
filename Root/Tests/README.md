@@ -55,6 +55,25 @@ GPU統合テストの中間生成物は`$(Platform)\\$(Configuration)\\UIGPUTest
 
 ## Phase 7: 性能記録Panelの回帰テスト
 
+DX12補助WindowはGPUテスト実行ファイルを`--dx12-auxiliary`で起動して検証します。
+`Root/Root`を作業Directoryにし、Scene/UIのDXIL ShaderとDX12対応GPUが必要です。
+
+```powershell
+& "../x64/Debug/RavenUIGPUTests.exe" --dx12-auxiliary
+```
+
+ビルドは上記の`RavenUIGPUTest=true`を使用します（実際のOutDirに合わせてPathを調整）。
+このモードはOpenGLを初期化せず、実OS Windowを表示します。共有Deviceの同一性、
+Main Context終了後の共有Device生存、補助SwapChainの描画・Resize・3回の解放、
+重複登録拒否、終了後の描画拒否、Runtime Shutdown時の補助解放を確認します。
+DX12のpixel readbackは含みません。実EditorのScene/Game Texture表示と入力操作は別途実機で確認します。
+Debug実行ではログのDX12 Debug Layer Warning/Errorも確認してください。
+
+`TestEditorDetachedLayoutSave`は実DockからScene/Game/Inspectorを抽出し、保存用Snapshotの
+順序・選択・非表示Panel・重複防止、元Pane消失時の既定Pane/先頭Paneへの復元を確認します。
+一時ファイルへの保存・読み込みとDock再生成、不正入力時の出力維持も検証します。
+実行中のDockと切り離しContentの所有権が変化しないことを確認し、OS補助WindowやGPUは生成しません。
+
 `TestStatisticsRecordingPanelLifecycle`は、開始・停止・保存ボタンを実際のKeyboard入力経路で操作し、
 非表示中のSnapshot集計、別UIContextへのContent移譲・元Contextへの復帰、CSV内容、
 Detach後の記録リセットを確認します。保存先はテストごとの一時ディレクトリへ隔離します。

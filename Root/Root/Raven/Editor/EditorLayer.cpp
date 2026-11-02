@@ -633,8 +633,18 @@ void EditorLayer::SaveRavenEditorDockLayout()
         return;
     }
     std::string diagnostic;
-    SaveDockSnapshot(m_RavenDockLayoutPath,
-        m_RavenEditorDockSpace->SaveSnapshot(), &diagnostic);
+    UIDockSpaceSnapshot snapshot;
+    const auto detached = m_Application != nullptr
+        ? m_Application->GetDetachedDockTabs(m_Application->GetMainWindowID(), *m_RavenEditorDockSpace)
+        : std::vector<UIDockTabRestoreRecord>{};
+    // OnDetach時点では補助Windowが生存しています。保存用データだけを統合し、
+    // GPU資産やWidgetを先に閉じて既存の終了順序を崩すことはしません。
+    if (BuildEditorDockLayoutForSave(m_RavenEditorDockSpace->SaveSnapshot(),
+            detached, snapshot, &diagnostic) == false ||
+        SaveDockSnapshot(m_RavenDockLayoutPath, snapshot, &diagnostic) == false)
+    {
+        std::cerr << "[Raven Editor] Dock layout save failed: " << diagnostic << '\n';
+    }
 }
 
 void EditorLayer::DetachRavenEditorShell()

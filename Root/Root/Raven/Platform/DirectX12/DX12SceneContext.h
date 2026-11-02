@@ -27,7 +27,8 @@ class DX12SceneContext final : public RHISceneFrameLifecycle
 public:
     ~DX12SceneContext() override;
 
-    bool Init(Window& window);
+    // sharedContextのDevice/Queueを共有し、SwapChainとFenceはWindowごとに所有します。
+    bool Init(Window& window, DX12SceneContext* sharedContext = nullptr);
     RHIFrameResult BeginFrame() override;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
@@ -100,10 +101,16 @@ private:
         std::vector<PendingEntityPickingReadback> PendingPickingReadbacks;
     };
 
-    DX12Factory m_Factory;
-    DX12Adapter m_Adapters;
-    DX12Device m_Device;
-    DX12CommandQueue m_Queue;
+    // 最後のWindow ContextのFence待機/Frame解放後にDeviceを破棄します。
+    // 宣言順の逆順でQueue→Device→Factoryが解放されます。
+    struct SharedDeviceState
+    {
+        DX12Factory Factory;
+        DX12Adapter Adapters;
+        DX12Device Device;
+        DX12CommandQueue Queue;
+    };
+    std::shared_ptr<SharedDeviceState> m_Shared;
     DX12SwapChain m_SwapChain;
     DX12Fence m_Fence;
     DX12FrameRenderer m_FrameRenderer;

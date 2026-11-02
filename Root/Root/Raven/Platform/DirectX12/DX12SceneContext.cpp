@@ -20,7 +20,7 @@ DX12SceneContext::~DX12SceneContext()
     Shutdown();
 }
 
-bool DX12SceneContext::Init(Window& window)
+bool DX12SceneContext::Init(Window& window, DX12SceneContext* sharedContext)
 {
     Shutdown();
     if (window.GetBackend() != RHIBackend::DirectX12 ||
@@ -38,30 +38,47 @@ bool DX12SceneContext::Init(Window& window)
         return false;
     }
 
-    if (m_Factory.Init() == false ||
-        m_Adapters.Enumerate(m_Factory.GetHandle()) == false)
+    if (sharedContext != nullptr)
     {
-        Shutdown();
-        return false;
-    }
-
-    // 列挙順ではDevice生成の可否が決まらないため、既存Clear Demoと同じ選択規則を使います。
-    bool deviceCreated = false;
-    for (const auto& adapter : m_Adapters.GetAdapters())
-    {
-        if (m_Device.Init(adapter) == true)
+        if (sharedContext == this || sharedContext->m_Shared == nullptr ||
+            sharedContext->m_FatalError == true ||
+            sharedContext->GetActiveCommandList() != nullptr)
         {
-            deviceCreated = true;
-            break;
+            return false;
+        }
+        m_Shared = sharedContext->m_Shared;
+    }
+    else
+    {
+        m_Shared = std::make_shared<SharedDeviceState>();
+        if (m_Shared->Factory.Init() == false ||
+            m_Shared->Adapters.Enumerate(m_Shared->Factory.GetHandle()) == false)
+        {
+            Shutdown();
+            return false;
+        }
+        // 列挙順ではDevice生成の可否が決まらないため、既存Clear Demoと同じ選択規則を使います。
+        bool deviceCreated = false;
+        for (const auto& adapter : m_Shared->Adapters.GetAdapters())
+        {
+            if (m_Shared->Device.Init(adapter) == true)
+            {
+                deviceCreated = true;
+                break;
+            }
+        }
+        if (deviceCreated == false ||
+            m_Shared->Queue.Init(m_Shared->Device.GetHandle()) == false)
+        {
+            Shutdown();
+            return false;
         }
     }
-    if (deviceCreated == false ||
-        m_Queue.Init(m_Device.GetHandle()) == false ||
-        m_SwapChain.Init(m_Factory.GetHandle(), m_Queue.GetHandle(),
-            m_Device.GetHandle(), window.GetPlatformWindowHandle(),
+    if (m_SwapChain.Init(m_Shared->Factory.GetHandle(), m_Shared->Queue.GetHandle(),
+            m_Shared->Device.GetHandle(), window.GetPlatformWindowHandle(),
             static_cast<uint32_t>(width), static_cast<uint32_t>(height)) == false ||
-        m_Fence.Init(m_Device.GetHandle()) == false ||
-        m_FrameRenderer.Init(m_Device.GetHandle(), m_SwapChain) == false)
+        m_Fence.Init(m_Shared->Device.GetHandle()) == false ||
+        m_FrameRenderer.Init(m_Shared->Device.GetHandle(), m_SwapChain) == false)
     {
         Shutdown();
         return false;
@@ -72,7 +89,7 @@ bool DX12SceneContext::Init(Window& window)
     {
         FrameResource frame;
         frame.CommandList = std::make_unique<DX12CommandList>();
-        if (frame.CommandList->Init(m_Device.GetHandle()) == false)
+        if (frame.CommandList->Init(m_Shared->Device.GetHandle()) == false)
         {
             Shutdown();
             return false;
@@ -82,7 +99,7 @@ bool DX12SceneContext::Init(Window& window)
 
     m_CurrentFrame = 0;
     m_VSync = window.IsVSync();
-    m_Device.DrainDebugMessages();
+    m_Shared->Device.DrainDebugMessages();
     return true;
 }
 
@@ -99,7 +116,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     if (m_FrameRenderer.BeginFrame(m_SwapChain, *frame.CommandList,
         m_Fence, frame.FenceValue) == false)
     {
-        m_Device.DrainDebugMessages();
+        m_Shared->Device.DrainDebugMessages();
         m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
@@ -129,7 +146,7 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     if (m_FrameRenderer.BeginRenderTarget(m_SwapChain, *frame.CommandList) == false ||
         m_FrameRenderer.ClearRenderTarget(*frame.CommandList, m_ClearColor) == false)
     {
-        m_Device.DrainDebugMessages();
+        m_Shared->Device.DrainDebugMessages();
         m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
@@ -162,9 +179,9 @@ RHIFrameResult DX12SceneContext::EndFrame()
 
     DX12CommandList& commandList = *m_Frames[m_CurrentFrame].CommandList;
     if (m_FrameRenderer.EndRenderTarget(m_SwapChain, commandList) == false ||
-        m_FrameRenderer.EndFrame(m_Queue, commandList) == false)
+        m_FrameRenderer.EndFrame(m_Shared->Queue, commandList) == false)
     {
-        m_Device.DrainDebugMessages();
+        m_Shared->Device.DrainDebugMessages();
         m_FatalError = true;
         return RHIFrameResult::FatalError;
     }
@@ -183,8 +200,8 @@ RHIFrameResult DX12SceneContext::Present()
 
     FrameResource& frame = m_Frames[m_CurrentFrame];
     const bool presented = m_FrameRenderer.Present(
-        m_SwapChain, m_Queue, m_Fence, frame.FenceValue, m_VSync);
-    m_Device.DrainDebugMessages();
+        m_SwapChain, m_Shared->Queue, m_Fence, frame.FenceValue, m_VSync);
+    m_Shared->Device.DrainDebugMessages();
     if (presented == false)
     {
         // Execute後のPresent/Signal失敗はFatalとして扱い、Contextを再生成します。
@@ -202,23 +219,23 @@ RHIFrameResult DX12SceneContext::Present()
 bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
 {
     if (m_FatalError == true || width == 0 || height == 0 || m_FrameActive == true ||
-        m_SwapChain.IsValid() == false || m_Queue.IsValid() == false)
+        m_SwapChain.IsValid() == false || m_Shared->Queue.IsValid() == false)
     {
         return false;
     }
 
     // ResizeBuffers前に旧BackBufferを参照するGPU Commandをすべて完了させます。
-    if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false ||
+    if (m_Fence.SignalAndWait(m_Shared->Queue.GetHandle()) == false ||
         m_SwapChain.Resize(width, height) == false ||
-        m_FrameRenderer.RebuildRenderTargets(m_Device.GetHandle(), m_SwapChain) == false)
+        m_FrameRenderer.RebuildRenderTargets(m_Shared->Device.GetHandle(), m_SwapChain) == false)
     {
-        m_Device.DrainDebugMessages();
+        m_Shared->Device.DrainDebugMessages();
         // Fence待機またはSwapChain/RTVの部分再生成失敗後は再利用しません。
         m_FatalError = true;
         return false;
     }
     m_CurrentFrame = 0;
-    m_Device.DrainDebugMessages();
+    m_Shared->Device.DrainDebugMessages();
     return true;
 }
 
@@ -308,7 +325,7 @@ ID3D12GraphicsCommandList* DX12SceneContext::GetActiveCommandList() const
 
 ID3D12Device* DX12SceneContext::GetNativeDevice() const
 {
-    return m_Device.GetHandle();
+    return m_Shared != nullptr ? m_Shared->Device.GetHandle() : nullptr;
 }
 
 bool DX12SceneContext::RetainDrawBuffers(
@@ -692,15 +709,15 @@ bool DX12SceneContext::DrawIndexed(
 
 void DX12SceneContext::Shutdown()
 {
-    if (m_Fence.IsValid() == true && m_Queue.IsValid() == true)
+    if (m_Shared != nullptr && m_Fence.IsValid() == true && m_Shared->Queue.IsValid() == true)
     {
-        if (m_Fence.SignalAndWait(m_Queue.GetHandle()) == false)
+        if (m_Fence.SignalAndWait(m_Shared->Queue.GetHandle()) == false)
         {
             // Device Removed等ではGPU完了を保証できません。終了処理は継続し、
             // native Resourceの解放失敗をDebug Layerで追跡できるようにします。
             std::cerr << "DX12 Scene Shutdown: GPU Fence wait failed; "
                 "resource completion is not guaranteed.\n";
-            m_Device.DrainDebugMessages();
+            m_Shared->Device.DrainDebugMessages();
         }
     }
     m_FrameActive = false;
@@ -715,9 +732,6 @@ void DX12SceneContext::Shutdown()
     m_FrameRenderer.Shutdown();
     m_SwapChain.Shutdown();
     m_Fence.Shutdown();
-    m_Queue.Shutdown();
-    m_Device.Shutdown();
-    m_Adapters.Clear();
-    m_Factory.Shutdown();
+    m_Shared.reset();
 }
 } // namespace Raven

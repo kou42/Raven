@@ -9,6 +9,8 @@
 #include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 #include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/Core/Window.h"
+#include "Raven/Platform/DirectX12/DX12SceneRuntime.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -297,8 +299,104 @@ bool TestDetachedUIRendering(GLFWwindow* mainWindow)
 }
 } // namespace
 
-int main()
+// DX12専用起動ではOpenGLを初期化せず、実SwapChainと共有Deviceの寿命を検証します。
+bool TestDX12AuxiliaryWindows()
 {
+    Raven::WindowSpecification specification("DX12 Main UI Test", 480, 320,
+        Raven::RHIBackend::DirectX12);
+    auto mainWindow = Raven::Window::Create(specification);
+    auto auxiliary = Raven::Window::Create(specification);
+    if (Check(mainWindow != nullptr && auxiliary != nullptr, "DX12 test Windows") == false)
+    {
+        return false;
+    }
+    {
+        Raven::DX12SceneContext main;
+        Raven::DX12SceneContext child;
+        if (Check(main.Init(*mainWindow), "DX12 main Context") == false ||
+            Check(child.Init(*auxiliary, &main), "DX12 shared Context") == false ||
+            Check(main.GetNativeDevice() == child.GetNativeDevice(), "DX12 same Device") == false)
+        {
+            return false;
+        }
+        // Main終了後も共有所有がDevice/Queueを生存させ、補助のFence待機まで保持します。
+        main.Shutdown();
+        if (Check(child.BeginFrame() == Raven::RHIFrameResult::Success &&
+            child.EndFrame() == Raven::RHIFrameResult::Success &&
+            child.Present() == Raven::RHIFrameResult::Success,
+            "DX12 shared Device survives source Shutdown") == false)
+        {
+            return false;
+        }
+    }
+    Raven::DX12SceneRuntime runtime;
+    Raven::PipelineSpecification pipeline{};
+    pipeline.Topology = Raven::PrimitiveTopology::Triangles;
+    pipeline.Cull = Raven::CullMode::None;
+    pipeline.DepthTest = true;
+    pipeline.DepthWrite = true;
+    Raven::RHIShaderAssetSpecification vertex{};
+    vertex.DirectX12Path = "Raven/Assets/Shaders/DirectX12/SceneMesh.vs.dxil";
+    Raven::RHIShaderAssetSpecification fragment{};
+    fragment.DirectX12Path = "Raven/Assets/Shaders/DirectX12/SceneMesh.ps.dxil";
+    if (Check(runtime.Init(*mainWindow, pipeline, vertex, fragment), "DX12 Runtime Init") == false ||
+        Check(runtime.CreateAuxiliaryUIWindow(*mainWindow) == false, "DX12 rejects Main registration") == false)
+    {
+        return false;
+    }
+    Raven::UIContext ui;
+    auto panel = Raven::CreateScope<Raven::UIPanel>();
+    panel->SetSize({ 128.0f, 128.0f });
+    panel->SetBackgroundColor({ 1.0f, 0.0f, 0.0f, 1.0f });
+    ui.AddRootChild(std::move(panel));
+    for (int cycle = 0; cycle < 3; ++cycle)
+    {
+        if (Check(runtime.CreateAuxiliaryUIWindow(*auxiliary), "DX12 auxiliary registration") == false ||
+            Check(runtime.CreateAuxiliaryUIWindow(*auxiliary) == false, "DX12 duplicate registration rejected") == false)
+        {
+            return false;
+        }
+        for (int frame = 0; frame < 5; ++frame)
+        {
+            if (frame == 2)
+            {
+                glfwSetWindowSize(static_cast<GLFWwindow*>(auxiliary->GetNativeWindow()),
+                    640 + cycle * 16, 400 + cycle * 16);
+                auxiliary->PollEvents();
+            }
+            ui.BeginFrame({ static_cast<float>(auxiliary->GetWidth()),
+                static_cast<float>(auxiliary->GetHeight()) });
+            ui.EndFrame();
+            if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, ui.GetDrawList()),
+                "DX12 auxiliary draw/Resize") == false)
+            {
+                return false;
+            }
+        }
+        runtime.DestroyAuxiliaryUIWindow(*auxiliary);
+        runtime.DestroyAuxiliaryUIWindow(*auxiliary); // 再通知でも二重解放しません。
+        if (Check(runtime.RenderAuxiliaryUIWindow(*auxiliary, ui.GetDrawList()) == false,
+            "DX12 closed auxiliary rejected") == false)
+        {
+            return false;
+        }
+    }
+    // Shutdown時にまだ登録された補助がある経路もNative Window破棄前に解放します。
+    if (Check(runtime.CreateAuxiliaryUIWindow(*auxiliary), "DX12 final auxiliary registration") == false)
+    {
+        return false;
+    }
+    runtime.Shutdown();
+    std::cout << "[PASS] DX12 auxiliary shared Device, Resize and Close (3 cycles)\n";
+    return true;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc == 2 && std::string(argv[1]) == "--dx12-auxiliary")
+    {
+        return TestDX12AuxiliaryWindows() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (glfwInit() == GLFW_FALSE)
     {
         std::cerr << "[FAIL] GLFW initialization (OpenGL display required)\n";

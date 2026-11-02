@@ -30,3 +30,13 @@ PrimaryとBackupは、JSON構文、Version、Dock Tree、Tab参照、選択状�
 ## 保存境界
 
 Dock操作中ではなく、Editor shellの安全なFrame境界または終了処理で`SaveDockSnapshot()`を呼ぶ。保存は一時ファイルへ書き込み、既存PrimaryをBackupへ退避してから交換する。Panel Contentの生成・破棄と同じFrame中にSnapshotを差し替えない。
+
+## 補助Windowを開いたままの終了
+
+Editor終了時は`BuildEditorDockLayoutForSave()`でMain DockのSnapshotへ切り離しTabの値情報を合成する。次回起動では元Dockへ戻し、OS補助Windowの位置やサイズは復元しない。JSON形式はVersion 1を維持する。
+
+Applicationは切り離す直前のPane ID、Tab位置、選択ID、切り離し順を保持する。保存時は現在も補助Rootが所有するContentと、Close後に元Dockへの復帰を待つ所有Contentだけを対象とする。WidgetやContextの所有権は移動せず、Window/GPUの終了順も変更しない。
+
+同じPaneからの複数Tabは切り離しの逆順に元位置へ挿入する。現在のDockに残るTabの相対順序と有効な選択を優先し、空Paneでは保存した選択を戻す。既に復帰済みのTab IDは重複登録しない。非表示Panelは切り離し対象に存在しない限り追加しない。
+
+元Paneが存在しない場合は既定配置のPaneが生存していればそこへ、なければ現在のTreeの最初のTab Paneへ戻す。保存のためにSplit構成は作り直さない。不正なID、重複した現在のTab、無効なSnapshotを検出した場合は保存を中止して診断を出し、既存ファイルを維持する。
