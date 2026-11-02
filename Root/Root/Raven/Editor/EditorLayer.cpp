@@ -2033,31 +2033,42 @@ void EditorLayer::RenderGameView()
     ImGui::End();
 }
 
-void EditorLayer::OnEvent(Event& event)
+bool EditorLayer::OnUIKeyEvent(const UIKeyEvent& event)
 {
-    if (m_Application != nullptr && m_UIBackend == EditorUIBackend::RavenUI &&
-        event.GetEventType() == EventType::KeyPressed)
+    if (m_Application == nullptr || m_UIBackend != EditorUIBackend::RavenUI ||
+        event.Context == nullptr)
     {
-        const auto& key = static_cast<const KeyPressedEvent&>(event);
-        UIKeyEvent shortcut;
-        shortcut.Key = key.GetKeyCode() == Key::Z ? UIKey::Z :
-            (key.GetKeyCode() == Key::Y ? UIKey::Y : UIKey::Unknown);
-        shortcut.Pressed = true;
-        shortcut.Repeat = key.IsRepeat();
-        // Event時点のModifierを使い、Key Up後のpollingでCtrl/Shiftを取りこぼしません。
-        shortcut.Control = (key.GetModifiers() & GLFW_MOD_CONTROL) != 0;
-        shortcut.Super = (key.GetModifiers() & GLFW_MOD_SUPER) != 0;
-        shortcut.Shift = (key.GetModifiers() & GLFW_MOD_SHIFT) != 0;
-        EditorShortcutRoutingContext routing;
-        routing.Panel = m_InspectorRavenPanel.GetRootElement();
-        routing.Viewport = m_SceneViewportRavenPanel.GetRootElement();
-        routing.GizmoActive = m_RavenViewportGizmo.IsActive();
-        if (TryHandleEditorHistoryShortcut(m_Application->GetUIContext(), routing, shortcut) == true)
+        return false;
+    }
+    // Main以外ではEditor Panelが実際に移譲されたContextだけを対象にします。
+    // 無関係なRuntime UI Windowへ共有Editor履歴のShortcutを広げません。
+    bool editorContext = event.Context == &m_Application->GetUIContext();
+    const EditorDockTabId tabIds[] = {
+        EditorDockTabId::SceneView, EditorDockTabId::GameView,
+        EditorDockTabId::SceneHierarchy, EditorDockTabId::Inspector,
+        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug };
+    for (EditorDockTabId tabId : tabIds)
+    {
+        const UIElement* panel = GetRavenPanelRoot(tabId);
+        if (panel != nullptr && panel->GetContext() == event.Context)
         {
-            event.Handled = true;
-            return;
+            editorContext = true;
+            break;
         }
     }
+    if (editorContext == false)
+    {
+        return false;
+    }
+    EditorShortcutRoutingContext routing;
+    routing.Panel = m_InspectorRavenPanel.GetRootElement();
+    routing.Viewport = m_SceneViewportRavenPanel.GetRootElement();
+    routing.GizmoActive = m_RavenViewportGizmo.IsActive();
+    return TryHandleEditorHistoryShortcut(*event.Context, routing, event);
+}
+
+void EditorLayer::OnEvent(Event& event)
+{
     // ========================================================================
     // Editor input routing
     // ========================================================================
@@ -2104,7 +2115,7 @@ void EditorLayer::OnEvent(Event& event)
                 ToggleEditorGizmoSpace();
                 event.Handled = true;
             }
-            // Raven UIの履歴Shortcutは上のRouterだけで処理します。所有者がPopup等の
+            // Raven UIの履歴ShortcutはUIキー配送のRouterだけで処理します。所有者がPopup等の
             // 場合に旧Viewport経路へ流れ、優先順位を迂回することを防ぎます。
             else if (m_UIBackend != EditorUIBackend::RavenUI && controlDown == true && keyCode == Key::Z)
             {

@@ -8,6 +8,7 @@
 
 // Win32の呼び出し規約マクロを先に確定し、GL loader側の同名定義との競合を防ぎます。
 #include <windows.h>
+#include <windowsx.h>
 #include <imm.h>
 
 #include <glad/glad.h>
@@ -17,12 +18,14 @@
 
 #include "Raven/Platform/Windows/WindowsWindow.h"
 #include "Raven/Core/Base.h"
+#include "Raven/Math/MathVector.h"
 #include "Raven/Platform/OpenGL/OpenGLContext.h"
 #include "Raven/Platform/Windows/WindowsInput.h"
 
 #include <string>
 #include <string_view>
 #include <vector>
+#include <optional>
 
 #pragma comment(lib, "imm32.lib")
 
@@ -32,6 +35,55 @@ namespace Raven
 namespace
 {
 constexpr wchar_t kIMEBridgeProperty[] = L"Raven.Win32IMEBridge";
+
+// ButtonはClient座標、WheelはScreen座標をmessage自身に保持しています。
+// PollEventsまでにMouseが移動しても、配送時の現在位置で入力位置を上書きしません。
+std::optional<math::Vec2> ReadMouseMessagePosition(
+    HWND window, GLFWwindow* glfwWindow, UINT message, LPARAM lparam)
+{
+    POINT point{ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
+    switch (message)
+    {
+    case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
+        if (ScreenToClient(window, &point) == FALSE)
+        {
+            return {};
+        }
+        break;
+    case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
+    case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
+    case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
+        break;
+    default:
+        return {};
+    }
+    int width = 0;
+    int height = 0;
+    RECT client{};
+    glfwGetWindowSize(glfwWindow, &width, &height);
+    if (GetClientRect(window, &client) == FALSE ||
+        client.right <= client.left || client.bottom <= client.top)
+    {
+        return {};
+    }
+    // UIはGLFW論理Window座標を使用します。Framebuffer倍率やUIのUserScaleは掛けません。
+    return math::Vec2(static_cast<float>(point.x) * static_cast<float>(width) /
+        static_cast<float>(client.right - client.left),
+        static_cast<float>(point.y) * static_cast<float>(height) /
+        static_cast<float>(client.bottom - client.top));
+}
+
+struct MouseMessagePositionScope
+{
+    std::optional<math::Vec2>& Position;
+    std::optional<math::Vec2> Previous;
+    ~MouseMessagePositionScope()
+    {
+        Position = Previous;
+    }
+};
 
 // IMM32が返すUTF-16の位置をUI Coreのcodepoint indexへ変換します。
 // サロゲートペアを一文字と数えるため、補助平面の文字でもCaretがずれません。
@@ -94,6 +146,7 @@ struct Win32IMEBridge
     GLFWwindow* GLFWHandle = nullptr;
     bool OwnedByRavenUI = false;
     std::size_t SuppressIMEChars = 0u;
+    std::optional<math::Vec2> MouseMessagePosition;
 
     bool Send(IMECompositionEventType type, std::string text = {},
         std::size_t cursor = 0u)
@@ -183,6 +236,13 @@ struct Win32IMEBridge
         {
             return DefWindowProcW(window, message, wparam, lparam);
         }
+
+        // GLFW callbackが同期的に呼ばれる間だけmessageの位置を公開します。
+        // 入れ子のSendMessageやFocus喪失による合成Releaseへ、別messageの位置を漏らしません。
+        const MouseMessagePositionScope positionScope{
+            bridge->MouseMessagePosition, bridge->MouseMessagePosition };
+        bridge->MouseMessagePosition = ReadMouseMessagePosition(
+            window, bridge->GLFWHandle, message, lparam);
 
         if (message == WM_IME_STARTCOMPOSITION)
         {
@@ -304,6 +364,24 @@ struct Win32IMEBridge
 };
 
 static bool s_GLFWInitialized = false;
+
+namespace
+{
+void GetMouseEventPosition(GLFWwindow* window, double& x, double& y)
+{
+    const auto* bridge = static_cast<const Win32IMEBridge*>(
+        GetPropW(glfwGetWin32Window(window), kIMEBridgeProperty));
+    if (bridge != nullptr && bridge->MouseMessagePosition.has_value() == true)
+    {
+        x = bridge->MouseMessagePosition->x;
+        y = bridge->MouseMessagePosition->y;
+        return;
+    }
+    // Bridge未導入時やGLFWのFocus喪失合成Eventにはnative位置がありません。
+    // その場合だけ従来の取得を保ち、合成Releaseを省略してCaptureを残さないようにします。
+    glfwGetCursorPos(window, &x, &y);
+}
+} // namespace
 
 std::unique_ptr<Window> Window::Create(const WindowProps& props)
 {
@@ -603,7 +681,7 @@ void WindowsWindow::Init(const WindowProps& props)
 
             double mouseX = 0.0;
             double mouseY = 0.0;
-            glfwGetCursorPos(window, &mouseX, &mouseY);
+            GetMouseEventPosition(window, mouseX, mouseY);
 
             if (action == GLFW_PRESS)
             {
@@ -627,7 +705,7 @@ void WindowsWindow::Init(const WindowProps& props)
 
             double mouseX = 0.0;
             double mouseY = 0.0;
-            glfwGetCursorPos(window, &mouseX, &mouseY);
+            GetMouseEventPosition(window, mouseX, mouseY);
 
             MouseScrolledEvent event(
                 static_cast<float>(offsetX),

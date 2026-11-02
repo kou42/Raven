@@ -227,8 +227,10 @@ void OpenGLRHICommandList::SetOverlayRasterState()
 void OpenGLRHICommandList::RestoreOverlayRasterState(const RHIOverlayRasterState& state)
 {
     // Pipeline::Bind()が上書きするstateもUI開始時の実際のGL値へ戻します。
-    glPolygonMode(GL_FRONT, static_cast<GLenum>(state.PolygonMode[0]));
-    glPolygonMode(GL_BACK, static_cast<GLenum>(state.PolygonMode[1]));
+    // RavenのOpenGL 3.3 Core ContextではfaceはGL_FRONT_AND_BACKだけが有効です。
+    // FRONT/BACK個別指定はGL_INVALID_ENUMになり、後続のGPU診断まで汚染します。
+    // Coreでは両面のmodeは共通なので、取得済みの先頭値で一度だけ復元します。
+    glPolygonMode(GL_FRONT_AND_BACK, static_cast<GLenum>(state.PolygonMode[0]));
     glColorMask(state.ColorWrite[0] ? GL_TRUE : GL_FALSE,
         state.ColorWrite[1] ? GL_TRUE : GL_FALSE,
         state.ColorWrite[2] ? GL_TRUE : GL_FALSE,

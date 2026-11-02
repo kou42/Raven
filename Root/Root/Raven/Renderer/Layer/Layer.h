@@ -7,6 +7,7 @@ namespace Raven
 {
 
 class Scene;
+struct UIKeyEvent;
 
 class Layer
 {
@@ -43,6 +44,11 @@ public:
 
     //virtual void OnEvent() {}
     virtual void OnEvent(Event& e) {}
+
+    // Main/補助WindowのUIが未処理にしたキーだけを受ける、明示的な購読口です。
+    // 通常OnEventへ補助Window入力を転送せず、RuntimeやMain Viewportへの二重配送を防ぎます。
+    // event.Contextは配送中のみ借用でき、Layer側で保持しません。
+    virtual bool OnUIKeyEvent(const UIKeyEvent& event);
 };
 
 }

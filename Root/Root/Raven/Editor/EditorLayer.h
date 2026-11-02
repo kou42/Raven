@@ -111,6 +111,7 @@ public:
     // EditorがEventを消費した場合はevent.Handledを設定し、Runtime側への伝播を止めます。
     // Scene Viewのhover/focus状態と組み合わせた入力ルーティングを今後ここへ追加します。
     void OnEvent(Event& event) override;
+    bool OnUIKeyEvent(const UIKeyEvent& event) override;
 
 private:
     enum class PanelUIOwner

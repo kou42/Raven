@@ -262,6 +262,10 @@ public:
     }
 
     void OnEvent(Event& event);
+    // UI Focus所有者を先に処理し、未処理キーだけを前面Layerから逆順に配送します。
+    // Window/GPUを生成せず、Main/補助Windowで同じ配送契約を利用できます。
+    static bool RouteUIKeyEvent(UIContext& context, const UIKeyEvent& event,
+        const std::vector<Scope<Layer>>& layers);
     void UpdateLoadingScreen();
 
     // UI Action等から通常のWindow Closeと同じRun Loop終了を要求します。

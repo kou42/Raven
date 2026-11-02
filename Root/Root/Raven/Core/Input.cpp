@@ -6,6 +6,43 @@ namespace Raven
 {
 
 Input* Input::s_Instance = nullptr;
+Input* Input::s_LastInstance = nullptr;
+
+Input::Input()
+    : m_Previous(s_LastInstance)
+{
+    if (s_LastInstance != nullptr)
+    {
+        s_LastInstance->m_Next = this;
+    }
+    else
+    {
+        s_Instance = this;
+    }
+    s_LastInstance = this;
+}
+
+Input::~Input()
+{
+    // 非所有の連結を破棄前に外します。任意順のCloseでも破棄済みproviderを残しません。
+    // 戻り先を生ポインタで個別保存する方式では、先に閉じたWindowへ戻る危険があります。
+    if (m_Previous != nullptr)
+    {
+        m_Previous->m_Next = m_Next;
+    }
+    else
+    {
+        s_Instance = m_Next;
+    }
+    if (m_Next != nullptr)
+    {
+        m_Next->m_Previous = m_Previous;
+    }
+    else
+    {
+        s_LastInstance = m_Previous;
+    }
+}
 
 bool Input::IsKeyPressed(int keycode)
 {

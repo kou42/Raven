@@ -1,6 +1,7 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/Core/Application.h"
 #include "UIImmediateTests.h"
 #include "UIPerformanceTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
@@ -62,6 +63,14 @@
 #include <memory>
 #include <limits>
 #include <string>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include "Raven/Platform/Windows/WindowsWindow.h"
+#endif
 
 namespace
 {
@@ -2623,8 +2632,313 @@ void TestInspectorCommitHistoryRouting()
     CheckNear("second Undo preserves prior edit", entity.GetComponent<Raven::TransformComponent>().Position.x, 12.0f);
     Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Y, true));
     CheckNear("Ctrl Y redoes second edit", entity.GetComponent<Raven::TransformComponent>().Position.x, 15.0f);
+    Raven::UIContext auxiliary;
+    auto* panelRoot = panel.GetRootElement();
+    auxiliary.AddRootChild(context.DetachRootChild(panelRoot));
+    auxiliary.SetClipboard([]() { return std::string("1e-"); }, {});
+    auxiliary.SetFocus(&number->GetInputText());
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    Check(number->GetEditText() == "1e-", "moved Inspector preserves incomplete input across snapshot");
+    auxiliary.SetClipboard([]() { return std::string("17"); }, {});
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    auxiliary.ClearFocus();
+    Check(commits == 3, "moved Inspector commits once after snapshot");
+    Check(Raven::TryHandleEditorHistoryShortcut(auxiliary, routing, Press(Raven::UIKey::Z, true)),
+        "moved Inspector Undo");
+    CheckNear("moved Inspector Undo restores before", entity.GetComponent<Raven::TransformComponent>().Position.x, 15.0f);
+    Raven::TryHandleEditorHistoryShortcut(auxiliary, routing, Press(Raven::UIKey::Y, true));
+    CheckNear("moved Inspector Redo", entity.GetComponent<Raven::TransformComponent>().Position.x, 17.0f);
+    context.AddRootChild(auxiliary.DetachRootChild(panelRoot));
+    context.SetClipboard([]() { return std::string("19"); }, {});
+    context.SetFocus(&number->GetInputText());
+    context.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    context.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    context.ClearFocus();
+    Check(commits == 4, "restored Inspector focus-loss commits once");
+    Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true));
+    CheckNear("restored Inspector Undo", entity.GetComponent<Raven::TransformComponent>().Position.x, 17.0f);
+    panel.Detach();
     Raven::SetEditorCommandHistoryScene(nullptr);
 }
+
+void TestInputProviderLifetime()
+{
+    class TestInput final : public Raven::Input
+    {
+    public:
+        explicit TestInput(int id) : Id(id) {}
+    private:
+        int Id;
+        bool IsKeyPressedImpl(int key) override { return key == Id; }
+        bool IsMousePressedImpl(int button) override { return button == Id; }
+        std::pair<float, float> GetMousePositionImpl() override
+        {
+            return { static_cast<float>(Id), 0.0f };
+        }
+        bool IsGamepadConnectedImpl(int index) override { return index == Id; }
+        bool GetGamepadStateImpl(int, Raven::GamepadState& state) override
+        {
+            state.LeftStickX = static_cast<float>(Id);
+            return true;
+        }
+    };
+    Check(Raven::Input::IsKeyPressed(1) == false, "no input provider is neutral");
+    auto main = std::make_unique<TestInput>(1);
+    auto first = std::make_unique<TestInput>(2);
+    auto second = std::make_unique<TestInput>(3);
+    Check(Raven::Input::IsKeyPressed(1), "auxiliary creation preserves main polling");
+    Check(Raven::Input::IsMouseButtonPressed(1), "main owns mouse polling");
+    Check(Raven::Input::IsGamepadConnected(1), "main owns gamepad polling");
+    Raven::GamepadState state;
+    Check(Raven::Input::GetGamepadState(0, state), "main gamepad state available");
+    CheckNear("main gamepad state", state.LeftStickX, 1.0f);
+    first.reset();
+    Check(Raven::Input::IsKeyPressed(1), "closing middle provider preserves main");
+    main.reset();
+    Check(Raven::Input::IsKeyPressed(3), "main close promotes surviving provider");
+    auto third = std::make_unique<TestInput>(4);
+    CheckNear("new provider does not replace survivor", Raven::Input::GetMouseX(), 3.0f);
+    third.reset();
+    Check(Raven::Input::IsKeyPressed(3), "closing newest provider preserves survivor");
+    second.reset();
+    Check(Raven::Input::IsKeyPressed(3) == false, "final provider close leaves neutral polling");
+    CheckNear("final close neutral mouse", Raven::Input::GetMouseX(), 0.0f);
+    Check(Raven::Input::GetGamepadState(0, state) == false, "final close neutral gamepad");
+    CheckNear("final close clears gamepad state", state.LeftStickX, 0.0f);
+    for (int iteration = 0; iteration < 8; ++iteration)
+    {
+        auto primary = std::make_unique<TestInput>(5);
+        auto auxiliary = std::make_unique<TestInput>(6);
+        auxiliary.reset();
+        Check(Raven::Input::IsKeyPressed(5), "repeated auxiliary close keeps live provider");
+    }
+    Check(Raven::Input::IsKeyPressed(5) == false, "repeated session cleanup is neutral");
+}
+
+void TestDetachedInspectorViewport()
+{
+    Raven::Scene scene;
+    auto entity = scene.CreateEntity("Detached Inspector");
+    Raven::UIContext source;
+    Raven::UIContext destination;
+    Raven::InspectorRavenPanel panel;
+    Check(panel.Attach(source, nullptr), "detached Inspector attaches");
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    auto* dockPtr = dock.get();
+    dock->SetSize({ 900.0f, 700.0f });
+    const auto leaf = dock->GetLayout().GetRoot()->GetId();
+    Check(dock->CreateTabView(leaf) != nullptr, "detached Inspector pane exists");
+    auto page = std::make_unique<Raven::UIElement>();
+    auto* pagePtr = page.get();
+    page->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    page->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    page->SetClipChildren(true);
+    auto* root = panel.GetRootElement();
+    root->SetPosition({ 0.0f, 0.0f });
+    root->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    root->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    static_cast<Raven::UIWindow*>(root)->SetDocked(true);
+    page->AddChild(source.DetachRootChild(root));
+    Check(dock->AddTab(leaf, 9001u, "Inspector", std::move(page), false), "Inspector tab added");
+    source.AddRootChild(std::move(dock));
+    source.BeginFrame({ 1280.0f, 800.0f });
+    source.EndFrame();
+    Raven::UITabItem metadata;
+    auto detached = dockPtr->ExtractTabForWindow(leaf, 9001u, metadata);
+    Check(detached != nullptr, "Inspector page extracted");
+    destination.AddRootChild(std::move(detached));
+    for (const auto size : { Raven::math::Vec2(480.0f, 720.0f), Raven::math::Vec2(640.0f, 480.0f) })
+    {
+        destination.BeginFrame(size, size * 2.0f, 1.5f, 1.5f);
+        destination.EndFrame();
+        CheckNear("auxiliary root viewport width", destination.GetRootElement().GetSize().x, size.x);
+        CheckNear("detached page width", pagePtr->GetSize().x, size.x);
+        CheckNear("detached page height", pagePtr->GetSize().y, size.y);
+        CheckNear("detached Inspector width", root->GetSize().x, size.x);
+        CheckNear("detached Inspector height", root->GetSize().y, size.y);
+        bool visibleClip = false;
+        for (const auto& command : destination.GetDrawList().GetCommands())
+        {
+            if (command.Clip.Enabled == true && command.Clip.Rect.Max.x > command.Clip.Rect.Min.x &&
+                command.Clip.Rect.Max.y > command.Clip.Rect.Min.y)
+            {
+                visibleClip = true;
+            }
+        }
+        Check(visibleClip, "detached Inspector has nonempty clip");
+    }
+    auto returned = destination.DetachRootChild(pagePtr);
+    Check(dockPtr->AddTab(leaf, metadata.Id, metadata.Title, std::move(returned), false),
+        "Inspector restores to original pane");
+    source.BeginFrame({ 1280.0f, 800.0f });
+    source.EndFrame();
+    Check(root->GetContext() == &source, "restored Inspector context");
+    panel.Detach();
+}
+
+void TestWindowUIKeyRouting()
+{
+    class HistoryLayer final : public Raven::Layer
+    {
+    public:
+        Raven::EditorShortcutRoutingContext Routing;
+        Raven::UIContext* LastContext = nullptr;
+        int Calls = 0;
+        bool OnUIKeyEvent(const Raven::UIKeyEvent& event) override
+        {
+            ++Calls;
+            LastContext = event.Context;
+            return event.Context != nullptr &&
+                Raven::TryHandleEditorHistoryShortcut(*event.Context, Routing, event);
+        }
+    };
+    Raven::Scene scene;
+    auto entity = scene.CreateEntity("Auxiliary history");
+    Raven::SetEditorCommandHistoryScene(&scene);
+    auto before = entity.GetComponent<Raven::TransformComponent>();
+    auto after = before;
+    after.Position.x = 4.0f;
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::TransformCommand>(entity, before, after)), "record window routing edit");
+    Raven::UIContext main;
+    Raven::UIContext auxiliary;
+    auto input = std::make_unique<Raven::UIInputText>();
+    auto* edit = input.get();
+    main.AddRootChild(std::move(input));
+    main.SetFocus(edit);
+    std::vector<Raven::Scope<Raven::Layer>> layers;
+    auto background = std::make_unique<HistoryLayer>();
+    auto* behind = background.get();
+    layers.push_back(std::move(background));
+    auto foreground = std::make_unique<HistoryLayer>();
+    auto* front = foreground.get();
+    layers.push_back(std::move(foreground));
+    auto undo = Press(Raven::UIKey::Z, true);
+    undo.Context = &main;
+    // MainのText Focusを補助Contextへ持ち込まず、同じ履歴を一度だけ操作します。
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers), "auxiliary Undo routed");
+    Check(front->LastContext == &auxiliary && front->Calls == 1 && behind->Calls == 0,
+        "window routing binds source and stops at first consumer");
+    CheckNear("auxiliary Undo", entity.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, Press(Raven::UIKey::Y, true), layers),
+        "auxiliary Ctrl Y routed");
+    CheckNear("auxiliary Redo", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    auto transferred = main.GetRootElement().DetachChild(edit);
+    auxiliary.AddRootChild(std::move(transferred));
+    auxiliary.SetClipboard([]() { return std::string("moved"); }, {});
+    auxiliary.SetFocus(edit);
+    const int callsBeforePaste = front->Calls;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, Press(Raven::UIKey::V, true), layers),
+        "auxiliary text consumes Paste");
+    Check(edit->GetText() == "moved" && front->Calls == callsBeforePaste,
+        "destination clipboard without layer delivery");
+    Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers);
+    CheckNear("text focus preserves scene", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    auxiliary.ClearFocus();
+    auto popup = std::make_unique<Raven::UIPanel>();
+    auto* popupHandle = auxiliary.AddPopup(std::move(popup));
+    Check(auxiliary.OpenPopup(popupHandle), "auxiliary popup opens");
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false,
+        "auxiliary popup blocks history");
+    auxiliary.ClosePopup();
+    Check(auxiliary.CaptureMouse(edit), "auxiliary capture starts");
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false,
+        "auxiliary capture blocks history");
+    auxiliary.ReleaseMouseCapture(edit);
+    Check(auxiliary.BeginDrag(edit, { "test", "payload" }, { 0.0f, 0.0f }), "pending drag starts");
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false,
+        "pending drag blocks history");
+    auxiliary.CancelDrag();
+    front->Routing.GizmoActive = true;
+    behind->Routing.GizmoActive = true;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false, "gizmo blocks history");
+    front->Routing.GizmoActive = false;
+    behind->Routing.GizmoActive = false;
+    auto repeat = undo;
+    repeat.Repeat = true;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, repeat, layers) == false, "ignore repeat");
+    auto release = undo;
+    release.Pressed = false;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, release, layers) == false, "ignore release");
+    CheckNear("blocked shortcuts preserve scene", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    Check(Raven::Application::RouteUIKeyEvent(main, undo, layers), "main shares same history route");
+    CheckNear("main Undo", entity.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, Press(Raven::UIKey::Z, true, true), layers),
+        "auxiliary Ctrl Shift Z");
+    CheckNear("auxiliary Shift Redo", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+#if defined(_WIN32)
+// No-API WindowのWndProc→GLFW→Core Eventを確認します。Cursorの操作やGPUは不要です。
+// 位置が異なるmessageを先にqueueへ積むため、配送時の現在位置取得では成功しません。
+void TestWindowsMouseMessageCoordinates()
+{
+    Raven::WindowProps props("Raven Mouse message regression", 640u, 480u,
+        Raven::RHIBackend::DirectX12);
+    props.Maximized = false;
+    Raven::WindowsWindow window(props);
+    Check(window.GetNativeWindow() != nullptr, "native mouse no-API window");
+    window.Hide();
+    window.PollEvents();
+    HWND handle = static_cast<HWND>(window.GetPlatformWindowHandle());
+    std::vector<Raven::math::Vec2> downs;
+    std::vector<Raven::math::Vec2> ups;
+    std::vector<Raven::math::Vec2> wheels;
+    window.SetEventCallback([&](Event& event)
+    {
+        if (event.GetEventType() == EventType::MouseButtonPressed)
+        {
+            const auto& mouse = static_cast<const MouseButtonPressedEvent&>(event);
+            downs.emplace_back(mouse.GetX(), mouse.GetY());
+        }
+        else if (event.GetEventType() == EventType::MouseButtonReleased)
+        {
+            const auto& mouse = static_cast<const MouseButtonReleasedEvent&>(event);
+            ups.emplace_back(mouse.GetX(), mouse.GetY());
+        }
+        else if (event.GetEventType() == EventType::MouseScrolled)
+        {
+            const auto& mouse = static_cast<const MouseScrolledEvent&>(event);
+            wheels.emplace_back(mouse.GetX(), mouse.GetY());
+        }
+    });
+    Check(PostMessageW(handle, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(23, 47)) != FALSE, "queue Down");
+    Check(PostMessageW(handle, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(173, 92)) != FALSE, "queue Move");
+    Check(PostMessageW(handle, WM_LBUTTONUP, 0, MAKELPARAM(173, 92)) != FALSE, "queue Up");
+    POINT wheelPoint{ 59, 71 };
+    Check(ClientToScreen(handle, &wheelPoint) != FALSE, "wheel client to screen");
+    Check(PostMessageW(handle, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA),
+        MAKELPARAM(wheelPoint.x, wheelPoint.y)) != FALSE, "queue Wheel");
+    Check(PostMessageW(handle, WM_MOUSEHWHEEL, MAKEWPARAM(0, WHEEL_DELTA),
+        MAKELPARAM(wheelPoint.x, wheelPoint.y)) != FALSE, "queue horizontal Wheel");
+    window.PollEvents();
+    Check(downs.size() == 1u && ups.size() == 1u && wheels.size() == 2u, "native callback counts");
+    CheckNear("queued Down x", downs[0].x, 23.0f);
+    CheckNear("queued Down y", downs[0].y, 47.0f);
+    CheckNear("queued Up x", ups[0].x, 173.0f);
+    CheckNear("queued Up y", ups[0].y, 92.0f);
+    for (const auto& wheel : wheels)
+    {
+        CheckNear("wheel client x", wheel.x, 59.0f);
+        CheckNear("wheel client y", wheel.y, 71.0f);
+    }
+    SendMessageW(handle, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(-11, -19));
+    SendMessageW(handle, WM_LBUTTONUP, 0, MAKELPARAM(-13, -29));
+    CheckNear("negative Down x", downs.back().x, -11.0f);
+    CheckNear("negative Down y", downs.back().y, -19.0f);
+    CheckNear("negative Up x", ups.back().x, -13.0f);
+    CheckNear("negative Up y", ups.back().y, -29.0f);
+    window.SetEventCallback({});
+}
+#endif
 
 // UIContextを通して実際のFocus/Keyboard/Character/Clipboard配送を検証します。
 void TestInputEventRouting()
@@ -4295,6 +4609,9 @@ int main()
     TestInputEventRouting();
     TestContextClipboard();
     TestInspectorCommitHistoryRouting();
+    TestWindowUIKeyRouting();
+    TestInputProviderLifetime();
+    TestDetachedInspectorViewport();
     TestPopupRouting();
     TestEditorShortcutRouting();
     TestComboBox();
@@ -4462,5 +4779,8 @@ int main()
     TestDockSnapshotJson();
     TestDockSnapshotFileRecovery();
     TestDockRestoreFailurePreservesStructure();
+#if defined(_WIN32)
+    TestWindowsMouseMessageCoordinates();
+#endif
     return 0;
 }

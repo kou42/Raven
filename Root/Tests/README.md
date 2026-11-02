@@ -60,6 +60,29 @@ GPU統合テストの中間生成物は`$(Platform)\\$(Configuration)\\UIGPUTest
 Detach後の記録リセットを確認します。保存先はテストごとの一時ディレクトリへ隔離します。
 このテストはGPU・Font・OS補助Windowを生成しません。
 
+`TestWindowUIKeyRouting`はApplicationの共通キー配送をGPU/Window生成なしで通し、
+補助ContextのClipboard、共有履歴、前面Layer優先と処理済み入力の配送停止、
+Text/Popup/Mouse Capture/Drag/Gizmo/Repeat/Key Releaseの拒否を検証します。
+MainのFocusを補助Contextの操作へ流用しないことも確認します。
+
+Windowsでは末尾の`TestWindowsMouseMessageCoordinates`がNo-APIのOS Windowを一つ生成します。
+OpenGL Context・SwapChain・GPUは使用せず、Windowは直ちに非表示にします。
+実際のWndProc/GLFW callbackへqueue済みDown/Move/Upと縦横Wheelを配送し、
+現在のCursor位置に依存しない座標保持、Screen→Client変換、負のClient座標を検証します。
+このWindows固有テストにはOS Windowを生成できる環境が必要です。
+
+`TestInputProviderLifetime`はMain相当の最初の生存providerを保持し、中間/先頭/末尾の
+任意順破棄、補助providerの反復Close、最後の破棄後のNeutral値をGPUなしで確認します。
+`TestDetachedInspectorViewport`は実InspectorのDock抽出・別Context移譲・Resize・復帰と、
+Window論理座標のRoot/Page寸法および空でないClipを確認します。
+`TestInspectorCommitHistoryRouting`には移譲後の不完全入力/PreviewをSnapshot同期で壊さず、
+Enter/Focus喪失が一度だけCommandを確定し、移動先/復帰先でUndo/Redoできる回帰も含みます。
+
+GPU統合の`TestDetachedUIRendering`は共有OpenGL Contextを3回生成・破棄し、
+Stretch/Clip付きDock本文を移譲してpixel readbackで可視描画を確認します。
+補助WindowのResizeと元Dock復帰後も採取し、GL errorなし・Core ProfileのPolygon Mode復元を確認します。
+default framebufferを検証するため小さいテストWindowを表示します。実GPUとOS Displayが必要です。
+
 Windows Build CIではDebugとReleaseそれぞれで通常ビルドとこのCPUテスト全体を実行します。
 ログは`windows-debug-x64-logs` / `windows-release-x64-logs`へ成否にかかわらず保存します。
 実機でのTab切り離し・Close復帰と、Backend/DPI別Baseline採取は`CODEX_CLOUD.md`の手順で別途確認します。

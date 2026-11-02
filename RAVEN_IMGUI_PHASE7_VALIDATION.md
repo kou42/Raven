@@ -278,3 +278,235 @@ Shortcut直後の描画更新が遅れる場合は次Frameを観察し、最終�
 今回のマイルストーンは完了。補助OS Window内のInspector、物理キー/IMEを含む全入力経路、
 他Component全項目、Backend/DPI別回帰は未検証。次は補助Windowの切り離し/Close復帰と、
 移動先Contextでの編集確定/Clipboard/履歴操作を独立したマイルストーンとして検証する。
+
+## 2026-11-02 補助Window検証: Drag開始座標のBlocker
+
+承認範囲: OpenGL ReleaseのTab切り離し、補助WindowでのClipboard・編集確定・履歴操作、
+Close復帰、Window別Statistics/CSVの照合。製品コード修正は追加承認の対象とする。
+
+### ビルドと実操作
+
+- `scripts/build-windows.ps1 -Configuration Release -SkipBootstrap` を実行した。
+  制限内ではリンクで既知の `LNK1101: MSPDB140.DLL` が再発した。
+  承認後の制限外再実行は終了コード0、コンパイラ/リンカ警告0で成功した。
+  PDB設定や製品コードは変更していない。
+- 通常の `Root/x64/Release/Root.exe --backend=opengl` を `Root/Root` から起動し、
+  Raven UIのMenu/Tab/Panel本文とScene描画を確認した。ImGui fallbackは使用していない。
+- Inspector TabとStatistics TabをそれぞれDock外のMenu高さまでDragしたが、
+  OS Window一覧にはMain Windowしか現れなかった。
+- Inspectorのログは `MouseMovedEvent: 1586, 46` の後に
+  `MouseButtonPressedEvent: 0 at 1662, 13`、移動/Releaseも `1662, 13` となった。
+  Statisticsでも開始側の移動 `587, 804` の後にDown/移動/Releaseが `747, 13` となった。
+  Down時点で開始Tabの座標を失っており、Dock切り離し要求の成立を確認できなかった。
+  これらはアプリのWindow client座標で、縮小された観察画像の座標とは区別する。
+- Alt+F4による終了を起動ログの `WindowCloseEvent` で確認した。
+  標準エラーログは空。検証前のDock Primary/Backupを
+  `artifacts/phase7/auxiliary-backup/` へ退避した。
+
+ログ: `artifacts/logs/windows-application-release-x64.log`（成功した再実行）、
+`artifacts/logs/phase7-aux-editor-stdout.log` / `phase7-aux-editor-stderr.log`。
+
+### 実装調査と追加修正候補
+
+- `WindowsWindow.cpp` のMouse Button/Scroll callbackは配送時に `glfwGetCursorPos()` で
+  現在位置を読み直す。開始側のCursor Moveが先に配送されてもDownは後の位置を読む経路があり、
+  今回のログと整合する。低Frame Rateや入力注入時に蓄積したイベントの位置を保持する方針を
+  検討する。発生条件全体や通常の物理Mouseでの再現性は未確定。
+- `Application::OnAuxiliaryUIEvent()` は補助Contextの `RouteKeyEvent()` へ配送して終了する。
+  Mainの `EditorLayer::OnEvent()` にある `TryHandleEditorHistoryShortcut()` への接続はない。
+  補助WindowでのUndo/Redoを妨げる静的な不具合候補として扱い、実機ではまだ再現確認していない。
+  修正する場合は、移動先ContextのText/Popup/Captureを尊重し、Editorの具体的責務をCoreへ
+  持ち込まず共有Historyへ接続する必要がある。
+
+### 判定
+
+Release通常ビルドは合格。Tab切り離し以降の実機検証は入力座標のBlockerにより未完了。
+補助Window内の編集/Clipboard/Undo/Redo、Close復帰、複数WindowのCSVは未検証であり、
+合格やDock実装の不合格に置き換えない。新しい性能Baselineは採取していない。
+製品コードを変更していないためCPU/GPUテストは再実行していない。
+Phase 7の未完了チェックは維持する。
+
+次の追加承認候補は、Mouse入力のイベント位置保持、補助ContextからのEditor履歴接続、
+それらのCPU回帰とDebug/Releaseビルド、および今回中断したOpenGL Release実機検証とする。
+
+## 2026-11-02 Mouseイベント座標と補助Context履歴配送の修正
+
+上記二つの修正、CPU回帰、Debug/Release通常ビルド、OpenGL Release実操作への追加承認を受けて実施した。
+
+### 変更と責務
+
+- `WindowsWindow.cpp`: 既存Win32 bridgeがButton/Wheel messageのlParamから位置を取得する。
+  Buttonは符号付きClient座標、Wheelは符号付きScreen座標をClientへ変換し、
+  GLFW Window論理寸法へ合わせる。Framebuffer倍率やUIのUserScaleは掛けない。
+  前のWndProcがGLFW callbackを呼ぶ間だけ位置を公開し、入れ子messageの終了時に元へ戻す。
+  Bridge未導入時とFocus喪失等による合成Eventでは既存の現在位置取得を維持する。
+- `Layer.h/.cpp`: 未処理UIキーだけを購読する `OnUIKeyEvent` を追加した。
+  既定Layerは何も処理しない。補助Windowの通常 `OnEvent` をMain/Runtimeへ転送しない。
+- `Application.h/.cpp`: `RouteUIKeyEvent` が入力元Contextを設定し、Widgetが処理してから
+  未処理キーを前面Layer優先で一度ずつ配送する。Main/補助Windowの両方から同じ入口を使用する。
+  Contextは配送中の非所有参照で、Callbackを保持しないため購読解除や新たな所有関係は不要。
+- `EditorLayer.h/.cpp` と `EditorShortcutRouter.cpp`: 共有Historyの操作はEditor側に残す。
+  Mainまたは実際にEditor Panelが移譲されたContextだけを対象とし、無関係なUI Windowでは処理しない。
+  Text/Popup/Gizmoに加えMouse Capture/Drag中も履歴操作を拒否し、Repeat/Key Releaseを無視する。
+  Mainの既存OnEvent内の履歴配送は新しい購読口へ移し、二重実行を防いだ。
+- 新規ファイル、移動、削除はない。既存の空 `Layer.cpp` を使用しており、structure/filtersの構成変更はない。
+
+### 自動検証
+
+| 検証 | 終了コード | 結果・スクリプト報告の警告行数 |
+| --- | --- | --- |
+| Release CPU UI | 0 | 成功、64 |
+| Debug CPU UI | 0 | 成功、84 |
+| Release通常ビルド | 0 | 成功、0 |
+| Debug通常ビルド | 0 | 成功、20 |
+
+前回のPDB関連制限を踏まえ、承認を受けて制限外で実行した。プロセス内の `CL=/MP4` を使用。
+既存C4244とDebugのLNK4098を含む警告行数であり、独立した警告件数とは扱わない。
+追加部分のコンパイルで見つかった座標型include不足とテストのEvent namespace指定を修正し、
+上表は修正後の最終コードで確認した結果。GPU統合、Allocation計測モードは今回再実行していない。
+
+新規回帰はApplicationの実キー配送、Context移動後のClipboard/履歴、入力優先順位と単一消費を確認する。
+Windows固有回帰はGPUを作らないNo-API Windowを生成し、実際のWndProc→GLFW→Core Eventで
+queue済みDown/Move/Up、負のClient座標、縦横WheelのScreen→Client変換を確認する。
+Windows固有回帰にはOS Windowが生成できる環境が必要。詳細は `Root/Tests/README.md` へ追記した。
+
+ログ: `artifacts/logs/phase7-aux-fix-cpu-Debug.log` / `phase7-aux-fix-cpu-Release.log`、
+`phase7-aux-fix-build-Debug.log` / `phase7-aux-fix-build-Release.log`。
+
+### OpenGL Release実機とCSV
+
+- 通常Game SceneでFloorを選択し、Inspector TabをDock外へDragした。
+  ログはMove/Downがともに `1586, 46`、次のMove/Upがともに `1662, 13` となり、
+  Downが後の現在位置へ置き換わる問題が解消した。`Raven - Inspector` OS Windowの生成を二回確認。
+- 補助Windowは二回とも本文が黒いままだった。編集対象が見えないため補助Window内の
+  Paste/確定/Undo/Redoの実操作は実施していない。CPU回帰の成功で実機合格に代用しない。
+- Alt+F4で補助WindowだけをCloseすると、二回ともInspector TabとFloorの内容が元のDockへ戻った。
+  二回目の復帰後もPosition X欄へのClick/Focus応答を確認した。
+- Statisticsで開始→二回目の切り離し→補助WindowをClose→停止→Save CSVを実行した。
+  開いている間はRendered Windows=2でMain ID=1と補助ID=3、Close後は1件へ戻った。
+  補助Windowの表示は黒いが、CPU診断では339 commands / 1356 vertices / 2034 indicesを報告した。
+  これはCPU描画要求の数であり、GPU描画成功や可視pixelの証拠にはしない。
+- `artifacts/phase7/opengl-release-auxiliary.csv` へ複製したCSVは、Mainと全Windowが各1225 samples、
+  補助Windowが796 samples、各Scopeに12指標、C++ Allocationは0 samples/N/A。
+  lifetime peakを除く通常9指標で `total平均 × total samples = Σ(Window平均 × Window samples)` を
+  許容誤差1e-6で確認し、不一致0。Close済みWindowの記録保持と省略Window samples=0も確認した。
+  操作とビルド負荷を含む診断CSVであり、正式な性能Baselineではない。
+- Editor終了後、検証前に退避したDock Primaryを復元した。Primary/Backup双方が
+  退避時のSHA-256と一致することを確認した。
+
+### 残るBlockerと未検証
+
+二回目のClose復帰後、Main Inspectorで新しい配送経路の実機確認を始めたところ、
+Position X欄へのClick後、次のキー操作前にEditor Windowが一覧から消えた。
+最後の起動ログにはMouse Down/Upがあり、終了要求の `WindowCloseEvent` と標準エラーはない。
+終了コードや例外情報は採取できておらず、Crashか正常終了条件の誤成立かは未確定。
+Windows障害ログ照会でも、この終了に対応する記録は得られなかった。
+
+関連する静的なLifetime懸念として、`WindowsInput` の生成ごとに `Input::s_Instance` が上書きされる一方、
+補助Window破棄の `m_Input.reset()` 後に生存Windowへ戻す処理が見当たらない。
+Applicationは毎Frameこの参照からEscape等をpollする。今回の終了との因果関係は未確定だが、
+破棄済み入力参照を残さない設計を次の修正候補とする。今回の承認範囲では変更していない。
+
+黒画面はDrawList以降のLayout/Clip/Renderer/Context状態とGPU資産を切り分ける必要がある。
+今回の実装は座標保持とキー配送までとし、描画と入力provider寿命の追加変更は行っていない。
+Phase 7のMulti-Viewport/安定性チェックは未完了を維持する。
+次の追加承認候補は、補助Windowの本文表示と入力provider寿命の修正、Close反復の回帰、
+補助Window内の編集/Clipboard/Undo/Redo実機検証、CPU/GPU検証とDebug/Releaseビルドとする。
+
+## 2026-11-02 補助Window本文・入力provider寿命・移譲後Inspectorの修正
+
+承認範囲: 補助Window描画と入力参照の寿命の修正、CPU/GPU回帰、Debug/Release通常ビルド、
+実機の編集・Clipboard・履歴操作とClose反復。
+
+### 原因と変更
+
+- `UIContext.cpp`: Rootの確定寸法がViewportへ接続されていなかった。
+  自然サイズに寄与しないPanelを持つStretch/Clip付きTab Pageを補助Rootへ移すと、
+  0寸法の領域へ配置され、描画要求が存在しても可視領域を確保できない。
+  BeginFrameでRootをWindow論理Viewportへ合わせ、寸法変更時だけ再設定する。
+  既存Layout/Hit Testと同じWindow論理座標を使い、Framebuffer倍率やDIP倍率を二重に掛けない。
+- `Input.h/.cpp`、`WindowsInput.cpp`: 各Window所有providerを非所有の連結で登録し、
+  生成順で最初の生存providerを互換Global polling先とする（通常はMain）。
+  補助Window生成では入力先を奪わず、任意順の破棄でも連結を外して生存参照へ更新する。
+  最後の破棄後は既存Neutral fallbackへ戻る。追加の動的確保は行わない。
+  コピー/移動を禁止し、Window生成/破棄と同じThreadで使用する契約を明記した。
+  Window別UI Eventは引き続き入力元Contextへ配送し、Global pollingと混同しない。
+- `OpenGLRHICommandList.cpp`: GPU回帰で既存のstate復元がGL_INVALID_ENUM（1280）を出すことを検出。
+  OpenGL Core Profileでは無効なGL_FRONT/GL_BACK個別のPolygon Mode復元を、
+  GL_FRONT_AND_BACKの一回の復元へ変更した。UIが一時的にFillへ変更しても元のLine modeへ戻ることを確認。
+- `InspectorRavenPanel.h/.cpp`: 最初の再検証では本文とPreviewが表示されたがUndoが成立しなかった。
+  生成時のMain Contextを保持してFocusを読むため、移譲後の入力を毎FrameのSnapshot同期が
+  非編集中としてSetValueし、未確定入力とCommit基準値を上書きしていた。
+  保存したContext参照を廃止し、Panel Rootの現在の所有ContextからFocusを取得する。
+  Transform/Camera/RigidBody/Colliderの同期は同じ取得口を使い、Command/Entity寿命検証は維持する。
+- 新規ファイル、移動、削除はない。structure.txt/filtersへ構成項目の追加は不要。
+
+### 最終コードの自動検証
+
+| 検証 | 終了コード | 結果・スクリプト報告の警告行数 |
+| --- | --- | --- |
+| Debug通常ビルド | 0 | 成功、0 |
+| Release通常ビルド | 0 | 成功、0 |
+| Debug CPU UI | 0 | 成功、64 |
+| Release CPU UI | 0 | 成功、64 |
+| Debug OpenGL GPU（Font Atlas必須） | 0 | 成功、0、SKIPなし |
+
+既知のPDB/実行環境制限を避け、承認後の制限外実行を使用した。プロセス内の `CL=/MP4` を指定。
+CPUの警告は既存C4244を含む行数であり、独立した警告件数ではない。
+途中の再コンパイルにはDebugのLNK4098もあり、最終インクリメンタルの警告0は既存警告解消を意味しない。
+Allocation計測モード、Release GPU統合、GitHub Actionsは今回再実行していない。
+
+追加回帰:
+
+- CPU: providerの中間/先頭/末尾破棄、Main終了時の生存provider選択、反復Close、最後の破棄後のNeutral値。
+- CPU: 実InspectorをDockから別Contextへ移し、Resize時のRoot/Page/Panel寸法と非空Clip、元Paneへの復帰。
+- CPU: 移譲後の不完全数値 `1e-` の保持、Snapshot更新を挟むPreview→Enterでの一回のCommand確定、
+  移動先/復帰先のUndo/Redo、復帰後のFocus喪失確定。
+- GPU: 共有OpenGL Contextを3回生成し、移譲したStretch/Clip付きTab本文の赤pixelをreadbackで確認。
+  補助Window Resize後とMain Dockへ戻した後も採取し、Core Polygon Mode復元とGL errorなしを確認。
+  default framebufferの検証なので小さいOS Windowを表示する。Font AtlasとTexture uploadの既存回帰も通過。
+  初期のpixel不一致はWin32装飾付きWindowの実幅が要求64より広く、Window中央が64幅Dockの外だったため。
+  本文内のWindow論理座標を実Framebuffer座標へ変換して採取するようテストを修正した。
+
+ログ: `artifacts/logs/phase7-aux-display-build-Debug-final.log` / `phase7-aux-display-build-Release-final.log`、
+`phase7-aux-display-cpu-Debug-final.log` / `phase7-aux-display-cpu-Release-final.log`、
+`phase7-aux-display-gpu-Debug-final.log`。
+
+### 最終OpenGL Release実機
+
+通常Game Scene、RTX 3080、Raven UI、ImGui fallbackなし。
+最終実機操作に使用したソースの後続変更は、GPUテストの無効寸法ガードと文書だけ。
+
+1. Floorを選択しInspector TabをDock外へDrag。補助Windowで英語Caption、Transform、Collider本文を確認。
+2. Position X=0を選択しASCII `1`を貼り付け、Frameを跨いだ入力保持とEnter確定を確認。
+3. 補助Windowの背景をClickしてText Focusを外し、Ctrl+Zで0、Ctrl+Shift+Zで1へ戻ることを確認。
+4. 補助WindowをAlt+F4でClose。元DockのInspectorが値1で復帰し、MainのCtrl+Zで0へ戻ることを確認。
+5. 二回目の切り離しでは `2` を貼り付け、Enterせず入力中に補助WindowをClose。
+   元Dockで値2が保持され、MainのCtrl+Zで0へ戻った。Close/Focus喪失で確定した編集をUndoできた。
+6. 三回目は補助Inspectorを最大化し、Resize後も本文と値0が表示されることを確認してClose。
+   MainでCtrl+Y→2、Ctrl+Z→0を確認し、三回のClose後も入力/履歴操作が継続することを確認。
+7. 検証前のPosition X=0でMainをAlt+F4終了。監視したプロセス終了コード0、標準エラー0 bytes。
+
+最終実機ログ: `artifacts/logs/phase7-aux-display-editor-final-stdout.log` / `phase7-aux-display-editor-final-stderr.log`、
+`phase7-aux-display-editor-final-exit.log`。
+最初の実機セッションも補助Windowを開いたままMainを閉じ、終了コード0を確認した
+（`phase7-aux-display-editor-exit.log`）。このセッションはInspector Context修正前であり、
+編集/履歴の合格結果は上記最終セッションのみを採用する。
+Editor終了後にDock Primary/Backupを `artifacts/phase7/aux-display-backup/` から復元し、
+両方のSHA-256一致を確認した。既存作業差分と既存CSVは保持した。今回の新規CSV採取は行っていない。
+
+### 判定と残課題
+
+今回のマイルストーンは完了。補助Windowの本文表示、入力参照寿命の回帰、実Inspectorの編集/Clipboard/
+確定/Undo/Redo、3回のClose復帰とResize、正常終了を確認した。
+前回の予期せぬ終了の例外/終了コードは採取できていないため、原因を断定した事後解析とは扱わない。
+破棄済みprovider参照を残す経路を修正し、今回の反復では再発しなかったという範囲の結果とする。
+
+別途、補助Windowを開いたままMain終了した後の起動ではInspector Tabが保存配置に含まれず、
+View Menuで再表示が必要だった。MainのDock保存と補助Tabの復帰順序/保存対象を次の独立課題とする。
+この配置保持は今回の描画/入力寿命修正に追加せず、検証前の配置へ戻している。
+
+全Component全項目、物理キー/IME、複数MonitorのDPI変更、Scene切替、長時間の開発セッション、
+Debug実機、DX12/VulkanのEditor操作と性能Baselineは未完了。
+Phase 7全体のチェックは維持し、次は補助Windowを開いたまま終了する際の配置保存と、
+Backend/DPI別回帰を別マイルストーンとして進める。

@@ -8,7 +8,6 @@ namespace Raven
 WindowsInput::WindowsInput(GLFWwindow* window)
 {
     m_Window = window;
-    s_Instance = this;
 }
 
 bool WindowsInput::IsKeyPressedImpl(int keycode)

@@ -6,6 +6,9 @@
 #include "Raven/Renderer/RHI/RHITypes.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHITexture.h"
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
+#include "Raven/UI/Core/UIContext.h"
+#include "Raven/UI/Docking/UIDockSpace.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -140,6 +143,158 @@ bool TestFontAtlas()
             fontPath, { 65u }, options, atlas, &failure), "GPU Font Atlas build") &&
         Check(failure == Raven::UIFontAtlasBuildFailure::None, "GPU Font Atlas diagnostic");
 }
+
+bool CheckRedFrame(GLFWwindow* window, Raven::UIContext& context)
+{
+    int width = 0;
+    int height = 0;
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetWindowSize(window, &width, &height);
+    glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+    if (Check(width > 0 && height > 0 && framebufferWidth > 0 && framebufferHeight > 0,
+        "UI GPU test drawable dimensions") == false)
+    {
+        return false;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    context.BeginFrame({ static_cast<float>(width), static_cast<float>(height) },
+        { static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight) }, 1.0f, 1.0f);
+    context.EndFrame();
+    std::uint8_t pixel[4]{};
+    glReadBuffer(GL_BACK);
+    // Win32の装飾付きWindowは要求64pxより広い最小幅を持つことがあります。
+    // Window中央ではなく64x64のDock本文内（Headerの下）の論理座標を採取します。
+    const int sampleX = 32 * framebufferWidth / width;
+    const int sampleY = framebufferHeight - 47 * framebufferHeight / height;
+    glReadPixels(sampleX, sampleY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    const GLenum error = glGetError();
+    if (error != GL_NO_ERROR || pixel[0] != 255u)
+    {
+        std::cerr << "UI render GL error=" << error << ", pixel=" << static_cast<int>(pixel[0])
+            << ',' << static_cast<int>(pixel[1]) << ',' << static_cast<int>(pixel[2]) << '\n';
+        for (const auto& command : context.GetDrawList().GetCommands())
+        {
+            if (command.Color.x == 1.0f && command.Color.y == 0.0f)
+            {
+                std::cerr << "red rect=" << command.Rect.Min.x << ',' << command.Rect.Min.y
+                    << '-' << command.Rect.Max.x << ',' << command.Rect.Max.y << " clip="
+                    << command.Clip.Rect.Min.x << ',' << command.Clip.Rect.Min.y << '-'
+                    << command.Clip.Rect.Max.x << ',' << command.Clip.Rect.Max.y
+                    << " alpha=" << command.Color.w << '\n';
+            }
+        }
+    }
+    GLint mode[2]{};
+    glGetIntegerv(GL_POLYGON_MODE, mode);
+    if (pixel[0] != 255u || mode[0] != GL_LINE)
+    {
+        std::cerr << "polygon mode=" << mode[0] << " framebuffer="
+            << framebufferWidth << ',' << framebufferHeight << '\n';
+    }
+    return Check(error == GL_NO_ERROR, "UI shared-context render/readback GL error") &&
+        Check(mode[0] == GL_LINE, "UI restores Core polygon mode") &&
+        Check(pixel[0] == 255u && pixel[1] == 0u && pixel[2] == 0u && pixel[3] == 255u,
+            "detached UI produces visible red pixel");
+}
+
+bool TestDetachedUIRendering(GLFWwindow* mainWindow)
+{
+    // Windowsのdefault framebufferは非表示/遮蔽時のpixelを保証しません。
+    // Texture uploadとは異なり、この回帰は実Window描画を確認するので表示して採取します。
+    glfwShowWindow(mainWindow);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+    glfwPollEvents();
+    // 通常Editorと同じShader相対Pathを使います。テスト実行側の作業Dirは終了時に戻します。
+    struct WorkingDirectoryScope
+    {
+        std::filesystem::path Original = std::filesystem::current_path();
+        ~WorkingDirectoryScope()
+        {
+            std::error_code error;
+            std::filesystem::current_path(Original, error);
+        }
+    } directory;
+    if (std::filesystem::exists("Raven/Assets/Shaders/Glsl/UI.glsl") == false)
+    {
+        std::filesystem::current_path(directory.Original / "Root" / "Root");
+    }
+    Raven::UIContext main;
+    main.SetRenderer(Raven::UIRenderer::Create(Raven::RHIBackend::OpenGL));
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    auto* dockPtr = dock.get();
+    dock->SetSize({ 64.0f, 64.0f });
+    const auto leaf = dock->GetLayout().GetRoot()->GetId();
+    if (Check(dock->CreateTabView(leaf) != nullptr, "GPU detached pane creation") == false)
+    {
+        return false;
+    }
+    auto page = std::make_unique<Raven::UIElement>();
+    auto* pagePtr = page.get();
+    page->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    page->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    page->SetClipChildren(true);
+    auto panel = std::make_unique<Raven::UIPanel>();
+    panel->SetAffectsParentMeasure(false);
+    panel->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    panel->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    panel->SetBackgroundColor({ 1.0f, 0.0f, 0.0f, 1.0f });
+    page->AddChild(std::move(panel));
+    if (Check(dock->AddTab(leaf, 701u, "Detached", std::move(page), false), "GPU detached tab creation") == false)
+    {
+        return false;
+    }
+    main.AddRootChild(std::move(dock));
+    if (CheckRedFrame(mainWindow, main) == false)
+    {
+        return false;
+    }
+    // VAOはContext別、Texture/Shader等は共有する通常補助Windowと同じ条件で反復します。
+    for (int iteration = 0; iteration < 3; ++iteration)
+    {
+        GLFWwindow* window = glfwCreateWindow(64, 64, "Raven Auxiliary UI Test", nullptr, mainWindow);
+        if (Check(window != nullptr, "GPU auxiliary shared Window") == false)
+        {
+            return false;
+        }
+        glfwMakeContextCurrent(window);
+        bool success = false;
+        {
+            // RendererのVAO/VBO/EBOは所属ContextがCurrentな間に破棄します。
+            Raven::UIContext auxiliary;
+            auxiliary.SetRenderer(Raven::UIRenderer::Create(Raven::RHIBackend::OpenGL));
+            Raven::UITabItem metadata;
+            auto content = dockPtr->ExtractTabForWindow(leaf, 701u, metadata);
+            success = Check(content != nullptr, "GPU tab extraction");
+            if (success == true)
+            {
+                auxiliary.AddRootChild(std::move(content));
+                success = CheckRedFrame(window, auxiliary);
+                if (success == true)
+                {
+                    glfwSetWindowSize(window, 96, 96);
+                    glfwPollEvents();
+                    success = CheckRedFrame(window, auxiliary);
+                }
+                auto restored = auxiliary.DetachRootChild(pagePtr);
+                success = Check(dockPtr->AddTab(leaf, metadata.Id, metadata.Title,
+                    std::move(restored), metadata.Closable), "GPU tab restoration") && success;
+            }
+        }
+        glfwMakeContextCurrent(mainWindow);
+        glfwDestroyWindow(window);
+        if (success == false || CheckRedFrame(mainWindow, main) == false)
+        {
+            return false;
+        }
+    }
+    std::cout << "[PASS] GPU detached UI shared-context rendering (3 Close/restore cycles)\n";
+    return true;
+}
 } // namespace
 
 int main()
@@ -169,7 +324,7 @@ int main()
         return EXIT_FAILURE;
     }
     const bool initialized = Raven::RenderCommand::TryInit(Raven::RHIBackend::OpenGL);
-    const bool success = initialized == true && TestUpload() && TestFontAtlas();
+    const bool success = initialized == true && TestUpload() && TestFontAtlas() && TestDetachedUIRendering(window);
     // GPU ResourceはContextが生きている間に解放します。
     glfwDestroyWindow(window);
     glfwTerminate();
