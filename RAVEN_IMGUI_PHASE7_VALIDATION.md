@@ -510,3 +510,140 @@ View Menuで再表示が必要だった。MainのDock保存と補助Tabの復帰
 Debug実機、DX12/VulkanのEditor操作と性能Baselineは未完了。
 Phase 7全体のチェックは維持し、次は補助Windowを開いたまま終了する際の配置保存と、
 Backend/DPI別回帰を別マイルストーンとして進める。
+
+## 補助Windowを開いたまま終了するDock配置保存（2026-11-02）
+
+承認された今回の範囲は、切り離しTabを終了時の保存配置へ含める対応。
+Applicationが切り離し前のPane・Index・選択・順序を値で保持し、Editorの保存用Snapshotへ
+逆順で合成する。生存中の補助RootとClose復帰待ちの所有Contentを対象とし、
+Widget所有権、補助Windowの破棄順、GPU終了順は変更していない。
+JSON Version 1を維持し、再起動時はMain Dockへ戻す。
+
+### 差分とCPU回帰
+
+- `Application.h/.cpp`: 保存可能な切り離しTab情報の収集。raw pointerは逆参照せず所有Rootと照合。
+- `UIDockSpace.h`: Pointerを持たない復元情報の型。
+- `EditorDockLayout.h/.cpp`: 保存用Snapshot合成。現在のTab・選択を優先し、重複登録を防止。
+  元Pane消失時は生存する既定Pane、次にTree先頭Paneへ復元。不正入力時は出力を更新しない。
+- `EditorLayer.cpp`: 合成成功時だけ保存し、失敗時は診断を出して既存ファイルを維持。
+- `UITextReflowTests.cpp`: 同じPaneの複数Tabの順序/選択、非表示維持、重複通知、Fallback、
+  保存/読込/再生成、無効入力、および実行中DockとContent所有権の不変性を検証。
+- Dock契約文書、Tests README、ロードマップを更新。Raven以下のファイル構成変更はない。
+
+Debug/Release x64 CPU回帰はどちらも成功。通常アプリケーションのDebug/Release x64ビルドも成功。
+通常Debugは既存のコンパイラ/リンカWarning 2件、Releaseは0件。CPUビルドの既存Warningも残る。
+ログは `artifacts/logs/phase7-dock-save-cpu-Debug.log`、`phase7-dock-save-cpu-Release-final.log`、
+`phase7-dock-save-build-Debug.log`、`phase7-dock-save-build-Release.log`。
+
+### OpenGL Release実機
+
+1. Animation DebugをView Menuで非表示にし、Game Viewを選択。
+2. Scene View、Game View、Inspectorを順に切り離し、Mainと補助3 Windowの存在を確認。
+3. 補助を閉じずMainをAlt+F4終了。終了コード0、標準エラー0 bytes。
+4. 保存JSONでScene/Gameの順序1001→1002、選択1002、Inspector1004を確認。
+   Tabは1003/1001/1002/1005/1004が各一つで、非表示のAnimation Debug1006は含まれない。
+5. 再起動でMainのみ生成され、Scene/Game、選択中Game、Inspector、Statisticsを目視確認。
+   Animation Debugは非表示のまま。再度終了コード0、標準エラー0 bytes。
+   2回目の保存と最初の保存のSHA-256が一致し、往復後も配置が安定していることを確認。
+
+実機ログは `artifacts/logs/phase7-dock-save-editor-*` と `phase7-dock-save-restart-*`。
+保存結果は `artifacts/phase7/dock-save-shutdown.layout.json`。
+終了後、検証前のPrimary/Backupを `artifacts/phase7/dock-save-backup/` から復元し、
+両方のSHA-256一致を確認した。
+
+今回のマイルストーンは完了。Main/補助Closeが同一PollEventsに届く経路は静的確認のみ。
+Debug実機、DX12/Vulkan、複数Monitor/DPI、Scene切替、長時間操作は未検証で、Phase 7全体は未完了。
+次はBackend/DPI別回帰を独立したマイルストーンとして進める。
+
+## DX12 Editor回帰の初期調査（2026-11-02、未完了）
+
+承認範囲はDX12 Editorの基本操作と補助Window回帰、および発見した不具合の修正。
+既存Release実行ファイルを `--backend=dx12` で起動し、MainのScene View、文字、
+Hierarchy、Inspector、Animation Debugの表示を確認した。
+Floor選択後、Position Xを物理キーで0→1へ変更してEnter確定し、Text Focusを外して
+Ctrl+Zで0、Ctrl+Shift+Zで1、再度Ctrl+Zで0に戻ることを確認した。
+Computer Useの`type_text`では値変更を確認できず、合格結果には含めない。
+
+Inspector TabをDock外へDragしても補助Windowは生成されず、MainのInspectorは保持された。
+静的調査では `Application::CreateUIWindow` がOpenGL以外を拒否し、
+`WindowManager::RenderWindow`もOpenGL専用であることを確認した。
+DX12SceneRuntimeは単一WindowのContextとDeviceを所有し、DX12SceneContextは
+Queue/SwapChainを所有する。DX12補助Window対応には、この責務を整理し、
+MainのViewport Textureを利用できる同一Device上の補助SwapChain、Frame同期、
+Resize/Close時のGPU待機と参照解放を実装する必要がある。
+OpenGL制限だけを解除する変更や、別DeviceのRuntimeを単純複製する変更は行っていない。
+
+Main終了コード0、標準エラー0 bytes。ログは `artifacts/logs/phase7-dx12-editor-*`。
+検証前のDock Primary/Backupを `artifacts/phase7/dx12-backup/` から戻し、双方SHA-256一致。
+今回はC++変更なし、ビルド/CPU回帰の再実行なし。Resize、再起動、Debug実機、
+補助Windowの描画/編集/復帰、DX12性能Baselineは未検証。
+マイルストーンは未完了とし、GPU基盤の設計拡張は範囲の再承認後に着手する。
+
+## DX12補助Window実装・回帰（2026-11-02）
+
+上記の初期調査後、Device/Queue共有と補助SwapChainを含む設計拡張の承認を受けて実装した。
+今回のマイルストーンは完了。Phase 7全体の未完了チェックは維持する。
+
+### 構造と差分
+
+- `DX12SceneContext.h/.cpp`: Factory/Adapter/Device/Queueを共有所有する。
+  SwapChain、CommandList/Allocator、Fence、Frame保持ResourceはWindow別に所有し、
+  各ContextのShutdownでQueueの完了を待ってから解放する。最後のContext解放まで共有Deviceは生存する。
+- `IExplicitSceneRuntime.h/.cpp`: 補助UI Windowの生成・描画・破棄境界を追加。
+  未対応Backendの既定実装は拒否する。
+- `DX12SceneRuntime.h/.cpp`: Mainと同じDeviceで補助UIを準備し、同じQueueへ
+  Main描画後に投入する。MainのViewport TextureとUI Pipelineを共有し、
+  Window別SwapChainのResizeとFence待機、Close時の解放を担う。
+- `Application.h/.cpp`: DX12補助Windowを既存のWindow別UIContext・Clipboard・入力・
+  Tab復帰/保存に接続。描画失敗時は再利用せずCloseを予約する。
+  WindowManagerの既存CloseCleanupを使うため同クラスの変更は不要。
+- `UIFontTextureGPUIntegrationTests.cpp`: `--dx12-auxiliary`でDX12専用のGPU回帰を追加。
+  Tests READMEとロードマップを更新。新規ソースファイルなし、structure/Filter更新対象なし。
+
+実機のMain最大化では、通常ApplicationがDX12のSwapChainへ寸法変更を伝えず、
+旧BackBufferへ新しいViewport寸法で描画してUIが拡大/欠落する既存問題を発見した。
+DX12はAcquireでResizeRequiredを返さないため、ApplicationがFrame開始前に
+Framebuffer実Pixel寸法を比較してRuntime::Resizeへ通知するよう修正した。
+0寸法/最小化中は描画を待ち、復帰待ち時間をSceneのdtへ加算しない。
+この待機中は補助UIも更新を停止する。Main最小化中に補助だけを独立更新する対応は含まない。
+
+### 自動検証
+
+- Debug/Release x64通常ビルド成功。最終Debugは既存Warning 2件、Releaseは0件。
+- Resize修正後のDebug/Release CPU UI回帰成功。
+- Debug/Release DX12 GPU回帰成功。共有Device同一性、Main Context終了後の補助描画、
+  3回の補助登録/描画/Resize/解放、重複拒否、Close後の拒否、Shutdownを検証。
+  Debug GPUログのWarning/Error/Corruption/FAIL検索は0件。
+  DX12のpixel readback検証は含まず、表示の確認は下記実Editorで実施。
+- 既存OpenGL Release GPU回帰（Arial Font Atlas、Texture診断、共有Contextの
+  pixel readbackと3回のClose/復帰）成功。
+
+ログ: `artifacts/logs/phase7-dx12-aux-build-{Debug,Release}-final.log`、
+`phase7-dx12-aux-cpu-{Debug,Release}-final.log`、`phase7-dx12-aux-gpu-{Debug,Release}.log`、
+`phase7-dx12-aux-opengl-regression.log`。GPU回帰後の変更はMain Resize処理とコメント/文書のみ。
+
+### Release実Editor
+
+Computer Use skillの実機操作で次を確認した。
+
+1. Floor選択後にInspectorを切り離し、本文と数値を確認。
+2. 補助WindowでPosition Xを物理キーで0→1、Enter確定、背景Click後に
+   Ctrl+Zで0、Ctrl+Shift+Zで1、再度Ctrl+Zで0を確認。
+3. 補助Inspectorを最大化し本文表示を確認。Close後にMainのInspectorへ値0で復帰。
+4. Scene ViewとGame Viewを切り離し、共有Viewport Textureの表示を確認。
+   Inspectorも再度切り離し、Mainと補助3 Windowの存在を確認。
+5. 補助3 Windowを開いたままMain終了。終了コード0、標準エラー0 bytes。
+   保存JSONに全6 Tabが各一つ含まれることを確認。
+6. 再起動ではMainのみ生成され、Scene/Game/Inspector/診断PanelがDockへ復帰した。
+   このセッションの最大化で旧SwapChain寸法の問題を検出。終了コード0、標準エラー0 bytes。
+7. Main Resize修正後のReleaseで再実行し、最大化後もHierarchy、Scene/Game、Inspector、
+   下部診断Panelが全て正しい領域に配置されることを確認。終了コード0、標準エラー0 bytes。
+   通常サイズへの復帰操作はComputer Useの高解像度Window操作が安定せず、合格結果に含めない。
+
+実機ログ: `phase7-dx12-aux-editor-*`、`phase7-dx12-aux-restart-*`、`phase7-dx12-aux-final-*`。
+保存結果: `artifacts/phase7/dx12-aux-shutdown.layout.json`。
+終了後、検証前のPrimary/Backupを `artifacts/phase7/dx12-aux-backup/` から復元し、両方SHA-256一致。
+
+未検証: Debug実Editor、全Component、Main最小化/復帰の実機反復、異DPI Monitor、
+Scene切替、長時間負荷、Device Removed等の障害注入、DX12性能Baseline、Vulkan補助Window。
+次の候補はVulkan補助Windowの対応、またはDPI別回帰を独立マイルストーンとして進めること。

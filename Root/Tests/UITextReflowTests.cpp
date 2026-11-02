@@ -1652,6 +1652,146 @@ void TestEditorDockLayoutPolicy()
     fs::remove_all(directory);
 }
 
+void TestEditorDetachedLayoutSave()
+{
+    auto initial = Raven::CreateDefaultEditorDockLayout();
+    const auto id = [](Raven::EditorDockTabId tab) { return static_cast<std::uint64_t>(tab); };
+    const auto scene = id(Raven::EditorDockTabId::SceneView);
+    const auto game = id(Raven::EditorDockTabId::GameView);
+    const auto inspector = id(Raven::EditorDockTabId::Inspector);
+    const auto animation = id(Raven::EditorDockTabId::AnimationDebug);
+    // 非表示Panelは保存対象から外れている状態を再現します。統合で再表示しません。
+    initial.Tabs.erase(std::remove_if(initial.Tabs.begin(), initial.Tabs.end(),
+        [animation](const auto& record) { return record.Tab.Id == animation; }), initial.Tabs.end());
+    for (auto& selection : initial.Selections)
+    {
+        if (selection.second == scene)
+        {
+            selection.second = game;
+        }
+    }
+    Raven::UIContext source;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    auto* dockPtr = dock.get();
+    Check(dock->RestoreSnapshot(initial, [](std::uint64_t, const Raven::UITabItem&)
+        { return std::make_unique<Raven::UIElement>(); }), "detached save restores fixture");
+    source.AddRootChild(std::move(dock));
+    std::vector<Raven::UIDockTabRestoreRecord> detached;
+    std::vector<Raven::Scope<Raven::UIElement>> contents;
+    for (const auto tab : { scene, game, inspector })
+    {
+        const auto record = std::find_if(initial.Tabs.begin(), initial.Tabs.end(),
+            [tab](const auto& value) { return value.Tab.Id == tab; });
+        auto* view = dockPtr->GetTabView(record->LeafId);
+        const auto& items = view->GetModel().GetTabs();
+        const auto at = std::find_if(items.begin(), items.end(),
+            [tab](const auto& value) { return value.Id == tab; });
+        Raven::UIDockTabRestoreRecord state;
+        state.Record = *record;
+        state.TabIndex = static_cast<std::size_t>(at - items.begin());
+        state.SelectedTabId = view->GetModel().GetSelectedTabId();
+        state.DetachOrder = detached.size() + 1u;
+        Raven::UITabItem metadata;
+        auto content = dockPtr->ExtractTabForWindow(record->LeafId, tab, metadata);
+        Check(content != nullptr, "detached save extracts actual content");
+        contents.push_back(std::move(content));
+        detached.push_back(state);
+    }
+    const auto current = dockPtr->SaveSnapshot();
+    std::string before;
+    std::string error;
+    Check(Raven::SerializeDockSnapshot(current, before, &error), "detached live snapshot validates");
+    Raven::UIDockSpaceSnapshot saved;
+    // Registryのunordered_map反復順には依存せず、抽出順から元順序を復元します。
+    std::swap(detached[0], detached[2]);
+    Check(Raven::BuildEditorDockLayoutForSave(current, detached, saved, &error), "build detached save");
+    std::string expected;
+    std::string actual;
+    Raven::SerializeDockSnapshot(initial, expected);
+    Raven::SerializeDockSnapshot(saved, actual);
+    Check(actual == expected, "same-pane order/selection and other panes restored without hidden tab");
+    Raven::SerializeDockSnapshot(dockPtr->SaveSnapshot(), actual);
+    Check(actual == before && contents.size() == 3u, "save does not mutate live dock or transfer ownership");
+    for (const auto& content : contents)
+    {
+        Check(content->GetContext() == nullptr && content->GetParent() == nullptr,
+            "save leaves detached ownership unchanged");
+    }
+    // JSON/Fileを経由し、再起動相当のContent Factoryで欠落・重複なく復元します。
+    namespace fs = std::filesystem;
+    const auto directory = fs::temp_directory_path() / ("RavenDetachedSave_" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    Check(fs::create_directory(directory), "detached save test directory");
+    const auto path = directory / "layout.json";
+    Check(Raven::SaveDockSnapshot(path.string(), saved, &error), "write detached layout");
+    Raven::UIDockSpaceSnapshot loaded;
+    Check(Raven::LoadEditorDockLayoutOrDefault(path.string(), loaded).Source ==
+        Raven::EditorDockLayoutSource::SavedSnapshot, "restart reads saved layout without fallback");
+    Raven::UIDockSpace restarted;
+    std::vector<std::uint64_t> created;
+    Check(restarted.RestoreSnapshot(loaded, [&](std::uint64_t, const Raven::UITabItem& tab)
+    {
+        created.push_back(tab.Id);
+        return std::make_unique<Raven::UIElement>();
+    }), "restart reconstructs all visible content");
+    Check(created.size() == initial.Tabs.size() && std::count(created.begin(), created.end(), inspector) == 1 &&
+        std::count(created.begin(), created.end(), animation) == 0, "restart tab identities are exact");
+    auto duplicate = detached;
+    duplicate.push_back(detached.front());
+    Check(Raven::BuildEditorDockLayoutForSave(saved, duplicate, loaded, &error), "already restored/duplicate tabs ignored");
+    Raven::SerializeDockSnapshot(loaded, actual);
+    Check(actual == expected, "duplicate records do not change live selection or order");
+    auto partial = current;
+    // 現在選択されたTabは、古い切り離し情報より優先します。
+    partial.Tabs.push_back({ 5u, { game, "Game View", false } });
+    for (auto& selection : partial.Selections)
+    {
+        if (selection.first == 5u)
+        {
+            selection.second = game;
+        }
+    }
+    Check(Raven::BuildEditorDockLayoutForSave(partial, detached, loaded, &error), "merge into occupied pane");
+    const auto selected = std::find_if(loaded.Selections.begin(), loaded.Selections.end(),
+        [](const auto& value) { return value.first == 5u; });
+    Check(selected->second == game, "live selection takes precedence");
+    Raven::UIDockSpaceSnapshot missing;
+    missing.Structure = { { 900u, Raven::UIDockNodeKind::Tabs, Raven::UIDockSplitAxis::Horizontal, 0.5f, 0u } };
+    missing.Tabs = { { 900u, { id(Raven::EditorDockTabId::SceneHierarchy), "Hierarchy", false } } };
+    missing.Selections = { { 900u, id(Raven::EditorDockTabId::SceneHierarchy) } };
+    const auto inspectorRecord = std::find_if(detached.begin(), detached.end(),
+        [inspector](const auto& value) { return value.Record.Tab.Id == inspector; });
+    Check(Raven::BuildEditorDockLayoutForSave(missing, { *inspectorRecord }, loaded, &error), "missing pane fallback");
+    Check(loaded.Tabs.size() == 2u && loaded.Tabs[0].LeafId == 900u && loaded.Tabs[1].LeafId == 900u &&
+        loaded.Selections == missing.Selections, "missing pane uses first live leaf and preserves selection");
+    auto moved = *inspectorRecord;
+    moved.Record.LeafId = 999u;
+    Check(Raven::BuildEditorDockLayoutForSave(current, { moved }, loaded, &error), "prefer existing default pane fallback");
+    const auto returned = std::find_if(loaded.Tabs.begin(), loaded.Tabs.end(),
+        [inspector](const auto& value) { return value.Tab.Id == inspector; });
+    Check(returned != loaded.Tabs.end() && returned->LeafId == 7u, "default Inspector pane selected");
+    auto invalid = detached;
+    invalid.front().Record.Tab.Id = 999999u;
+    loaded = saved;
+    Check(Raven::BuildEditorDockLayoutForSave(current, invalid, loaded, &error) == false && error.empty() == false,
+        "invalid detached metadata rejected");
+    Raven::SerializeDockSnapshot(loaded, actual);
+    Check(actual == expected, "failed merge leaves output intact");
+    auto bad = current;
+    bad.Selections.clear();
+    Check(Raven::BuildEditorDockLayoutForSave(bad, detached, loaded, &error) == false, "invalid live layout rejected");
+    Raven::SerializeDockSnapshot(loaded, actual);
+    Check(actual == expected, "invalid live layout leaves output intact");
+    bad = initial;
+    auto duplicateId = bad.Tabs.front();
+    duplicateId.LeafId = 7u;
+    bad.Tabs.push_back(duplicateId);
+    Check(Raven::BuildEditorDockLayoutForSave(bad, detached, loaded, &error) == false,
+        "duplicate live Tab ID across panes rejected");
+    fs::remove(path);
+    fs::remove(directory);
+}
+
 // 保存失敗で旧版を壊さず、退避中のクラッシュを想定したBackup読み込みを確認します。
 void TestDockSnapshotFileRecovery()
 {
@@ -4730,6 +4870,7 @@ int main()
     TestMenuBarKeyboardAndLifetime();
     TestCollapsibleSectionVisibility();
     TestEditorDockLayoutPolicy();
+    TestEditorDetachedLayoutSave();
     TestAnimationDebugActions();
     TestAnimationDebugSnapshot();
     TestAnimationDebugRavenPanel();

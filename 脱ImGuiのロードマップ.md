@@ -10,7 +10,11 @@ Drag開始座標の保持と補助Contextの履歴配送を修正し、Debug/Rel
 RootのViewport寸法、入力provider寿命、Inspectorの現在Context参照、OpenGL Coreのstate復元を修正。
 OpenGL Releaseで補助Window本文、編集・Clipboard・Undo/Redo、3回のClose復帰とResize、正常終了を確認。
 Debug/Release CPU・通常ビルド、共有Contextのpixel readback GPU回帰は成功。
-補助Windowを開いたまま終了した場合のInspector配置保持は別途対応が必要。
+補助Windowを開いたまま終了する配置保存も対応済み。OpenGL ReleaseでScene/Game/Inspectorの3 Windowを
+開いたまま終了し、再起動後のTab順序・Game選択・非表示Panel維持と正常終了を確認した。
+DX12補助Windowも共有Device/QueueとWindow別SwapChainへ接続済み。Debug/Release GPU回帰、
+Release実機のInspector編集・Undo/Redo・Close復帰・Resize、Scene/Game同時分離と終了/再起動を確認。
+Mainの寸法変更がSwapChainへ届かない問題も修正し、最大化後の全Panel表示を確認した。
 Debug/Release通常ビルド・CPU UI、Debug Allocation計測CPU、OpenGL GPU統合は成功。
 長時間操作・Multi-Viewport実操作・Backend/DPI別性能Baselineは未検証のため、Phase 7の未完了チェックは維持する。
 

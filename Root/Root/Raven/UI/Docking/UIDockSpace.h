@@ -6,6 +6,7 @@
 #include "Raven/UI/Widgets/UITabView.h"
 
 #include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <string>
 #include <vector>
@@ -23,6 +24,16 @@ struct UIDockTabRecord
 {
     std::uint64_t LeafId = 0u;
     UITabItem Tab;
+};
+
+// 補助Windowへ移す前の復帰情報です。Widget/Windowの非所有pointerは含めず、
+// 保存用Snapshotを補完する側へ寿命に依存しない値だけを渡します。
+struct UIDockTabRestoreRecord
+{
+    UIDockTabRecord Record;
+    std::size_t TabIndex = 0u;
+    std::uint64_t SelectedTabId = 0u;
+    std::uint64_t DetachOrder = 0u;
 };
 
 struct UIDockSpaceSnapshot
