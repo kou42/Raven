@@ -1,8 +1,8 @@
 # Raven Structured Data / Serialization Roadmap
 
 作成日: 2026-10-04  
-最終確認日: 2026-10-30\
-状態: Phase 0〜3完了。Phase 4以降の実装は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索を実装済み。MessagePack、Reflection、Network / RPCは未実装。
+最終確認日: 2026-11-01\
+状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7以降は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflection、Network / RPCは未実装。
 
 ## 目的
 
@@ -12,7 +12,7 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 
 ## 現在の基盤
 
-2026-10-30時点で、Ravenには次の基盤がある。
+2026-10-31時点で、Ravenには次の基盤がある。
 
 | 項目 | 状況 | 利用箇所・意味 |
 | --- | --- | --- |
@@ -24,7 +24,9 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 | Humanoid Animation Profile | 実運用 | type / version検証、必須・任意フィールド、旧データの補完、全検証後の反映を実装済み。 |
 | `JobSystem` | 実装済み | CPU専用のWorker Pool。Renderer / Window / SceneなどのMain Thread専用ObjectへWorkerから触れない契約がある。 |
 | Token DOM / JSON入力 / 読み取りAPI | Phase 1〜3実装済み | 所有Document、手動Tape検証、既存JsonValueからの一方向変換、source-backed直接JSON Parser、Raw / Decoded取得、厳密数値変換、キー検索と走査。 |
-| Reflection / MessagePack | 未実装 | 本ロードマップの対象。 |
+| DataReader / DataWriter / JSON出力 | Phase 4実装済み | Documentの反復走査、型付きイベント出力、整数精度を保つ決定的JSON、出力上限・失敗時の無変更保証。 |
+| MessagePack | Phase 6実装済み | 同一Document / Writer契約、Binary・全整数幅・Float32入力 / Float64出力、入力・出力上限と検証後Commit。 |
+| Reflection | 未実装 | 用途待ち。 |
 
 `Core::JsonValue`は既存ファイルとImporterの安定した基盤である。新しい`DataDocument`はこれを急に置換しない。まずは新規用途で導入し、互換性・計測結果・移行コストを確認した後に、必要な箇所だけ移行する。
 
@@ -51,7 +53,7 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 
 ## Phase一覧
 
-Phase 0〜3は完了（2026-10-30）。Reader / Writer以降は未着手であり、既存JSON基盤の置換は目的に含めない。
+Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7以降は未着手。既存JSON基盤の置換は目的に含めない。
 
 | Phase | 内容 | 状態 | 前提 |
 | --- | --- | --- | --- |
@@ -59,9 +61,9 @@ Phase 0〜3は完了（2026-10-30）。Reader / Writer以降は未着手であ�
 | 1 | Token / Document / Element | 完了（CPU単体検証） | 0 |
 | 2 | JSON Parser・入力検証 | 完了（CPU単体検証） | 1 |
 | 3 | Lazy Decode・走査・寿命管理 | 完了（CPU単体・並列読み取り検証） | 2 |
-| 4 | Reader / Writer・JSON出力 | 未着手 | 3 |
-| 5 | 型付きSerialization・Reflection接続 | 未着手 | 4 |
-| 6 | MessagePack読み書き | 未着手 | 4、型付き利用には5 |
+| 4 | Reader / Writer・JSON出力 | 完了（CPU単体検証） | 3 |
+| 5 | 型付きSerialization・Reflection接続 | 明示的Adapter完了、Reflectionは用途待ち | 4 |
+| 6 | MessagePack読み書き | 完了（CPU単体・独立実装との相互検証） | 4、型付き利用には5 |
 | 7 | エンジン機能への試験導入 | 未着手 | 5 |
 | 8 | 計測・並列Deserialize | JobSystemの前提は完了 | 7 |
 | 9 | Mutable Document・Editor連携 | 未着手 | 7 |
@@ -132,7 +134,7 @@ Core / Assetsに共通の入力Stream抽象は今回の調査では見つから�
 
 既存`JsonValue`からDataDocumentへの一方向Adapterは、既存Numberがdoubleである事実を維持してFloat64へ変換する。既に失われた整数精度を復元したとは扱わない。将来逆方向のAdapterを追加する場合も、Binaryや正確にdoubleへ変換できない整数は拒否する。
 
-MessagePackのMapは文字列キーに限定し、Decodedキー重複を拒否する。非文字列キー、全Extension（Timestampを含む）は未対応型エラーとし、文字列化や読み飛ばしを行わない。Float32はFloat64へ正確に拡張し、NaN / Infinityは拒否する。これらの実装はPhase 6で行う。
+MessagePackのMapは文字列キーに限定し、Decodedキー重複を拒否する。非文字列キー、全Extension（Timestampを含む）は未対応型エラーとし、文字列化や読み飛ばしを行わない。Float32はFloat64へ正確に拡張し、NaN / Infinityは拒否する。これらはPhase 6で実装済み。
 
 #### 所有権・走査・失敗時の契約
 
@@ -249,37 +251,69 @@ JSONのRaw表記・Escape位置の保持、直接Parser、Lazy Decode、型付�
 
 既存の`Core::JsonWriter`は`JsonValue`をJSONへ出力できる。ここでは`DataDocument`または型付きデータから出力する共通Writer契約を追加し、既存Writerとの接続方法を決める。
 
-- [ ] フォーマット非依存のDataReaderと構造化イベントを受け取るDataWriterを設計する。
-- [ ] `DataDocument`からのJsonWriter、または既存`JsonValue`へ変換して既存JsonWriterを利用するAdapterを実装する。
-- [ ] 型付きデータからDOMを介さず出力できる経路を追加する。
-- [ ] Document走査からWriterへ渡す形式変換経路を追加する。
-- [ ] 入れ子、キーと値の対応、出力失敗、最大出力サイズを検証する。
-- [ ] JSONで表現できないBinary、NaN、Infinity等は拒否または明示的Encodingを選び、暗黙変換しない。
+- [x] フォーマット非依存のDataReaderと構造化イベントを受け取るDataWriterを設計する。
+- [x] `DataDocument`からのJsonWriter、または既存`JsonValue`へ変換して既存JsonWriterを利用するAdapterを実装する。
+- [x] 型付きデータからDOMを介さず出力できる経路を追加する。
+- [x] Document走査からWriterへ渡す形式変換経路を追加する。
+- [x] 入れ子、キーと値の対応、出力失敗、最大出力サイズを検証する。
+- [x] JSONで表現できないBinary、NaN、Infinity等は拒否または明示的Encodingを選び、暗黙変換しない。
+
+実装結果（2026-10-31）:
+
+- `DataReader`は不変Document / 部分木を反復走査し、Decoded文字列と型別の値を`DataWriter`へ渡す。キー検索・値取得は既存`DataElement`を入口として維持し、型付きDeserializeの共通ヘルパーはPhase 5へ分離した。
+- `DataWriter`は型別Scalar、Binary、Array / ObjectのBegin / End、Decoded Keyの共通イベント契約。型付き設定からもDOMを介さず出力できる。
+- `Data::JsonWriter`はCompact + 末尾改行、Decodedキー順の決定的出力。既存`Core::JsonWriter`と実運用の経路は変更しない。ソート用に符号化済みメンバーを一時保持するため、ストリーミングI/Oではない。
+- Int64 / UInt64をdouble経由にせず出力する。Float64はlocale非依存で再読込時のbit値・負のZero・Float分類を保持する。正のInt64はJSON再読込時にUInt64となり得るが整数値・精度は保持する。
+- Binary、非有限Float、不正UTF-8、重複キー、イベント順序不正、深さ・要素数・文字列長・出力Byte数超過を拒否する。失敗はsticky、`Finish`成功時だけ呼び出し側の出力を置換する。
+- 実行手順・限界は`Data/Tests/README.md`を参照。Reflection、MessagePack、実運用Assetへの移行、整形出力、Stream接続、性能計測は今回の範囲に含めない。
 
 完了条件: 対応型のJSON → Document → JSONで意味が保持され、既存JsonWriterと必要な決定性・エラー規約が両立する。
 
 ## Phase 5 — 型付きSerialization / Reflection
 
-- [ ] 明示的AdapterによるSerialize / Deserializeを先に作る。
-- [ ] 既存の個別Deserializeを参考に、必須値、既定値、Version Migration、検証後Commitの共通ヘルパーを導入する。
+- [x] 明示的AdapterによるSerialize / Deserializeを先に作る。
+- [x] 既存の個別Deserializeを参考に、必須値、既定値、Version Migration、検証後Commitの共通ヘルパーを導入する。
 - [ ] Reflectionが必要な用途が明確になった段階で、必要最小限の型・フィールド記述から接続する。
 - [ ] Vector、Quaternion、AssetId、EntityId等のAdapterを必要なものから追加する。
-- [ ] 必須・既定値・未知フィールド・Version Migrationを実装する。
-- [ ] 生Pointerを保存せず、安定IDと読み込み後の参照解決を使う。
-- [ ] 検証済み一時データを作ってから対象へ反映し、途中失敗で既存状態を壊さない。
+- [x] 必須・既定値・未知フィールド・Version Migrationを実装する。
+- [ ] 生Pointerを保存せず、安定IDと読み込み後の参照解決を使う（Pointerの既定Adapterは提供しない。具体的なID・参照解決は実用途導入時）。
+- [x] 検証済み一時データを作ってから対象へ反映し、途中失敗で既存状態を壊さない。
 
 完了条件: 小さな設定型でRound-tripとVersion更新を確認し、エラーにフィールド経路が含まれる。
 
+### Phase 5実装結果（2026-11-01）
+
+- 明示的`DataAdapter<T>`、必須・任意フィールド、type / version検査、固定長JSON Pointer診断を追加した。
+- `Deserialize`は一時値でMigrationと検証を行い、noexcept swapで全成功後だけ反映する。
+- bool・整数・float / double・所有string・vectorを提供する。型付き出力はDOMを介さずDataWriterへ送る。
+- 専用設定テストでv1 samples→v2 values移行、Round-trip、既定値、未知フィールド、Null拒否、
+  数値範囲、入れ子エラー経路、失敗時出力維持を確認する。既存保存経路は変更しない。
+- ReflectionとVector / Quaternion / AssetId / EntityId専用Adapterは用途未確定のため保留する。
+  Pointerの既定Adapterは提供せず、安定IDの定義と参照解決は利用側の責務とする。
+- GCC C++17の警告をエラーにするビルドで新規142チェック（確保失敗注入を含む）、既存6,866チェックが成功。
+  ASan / UBSan / float-cast-overflowでは新規118チェックが成功（LeakSanitizerは環境制約で無効）。
+- 実行手順とAPI制限は`Data/Tests/README.md`へ記載した。Windows正式ビルドは未検証。
+
 ## Phase 6 — MessagePack
 
-- [ ] MessagePack Parser / Writerを同じReader / Writer契約へ接続する。
-- [ ] 整数幅、Float32 / Float64、StringとBinary、ArrayとMapを正しく扱う。
-- [ ] 長さPrefix、切断入力、巨大Count、Overflowを検証する。
-- [ ] 非文字列MapキーとExtensionの規約を実装する。初期制限がある場合はエラーとして公開する。
-- [ ] 公式仕様に対応したFixtureと独立した実装との相互読み書きで互換性を確認する。
-- [ ] JSONとの変換は共通に表現できる範囲に限定し、損失がある変換を検出する。
+- [x] MessagePack Parser / Writerを同じReader / Writer契約へ接続する。
+- [x] 整数幅、Float32 / Float64、StringとBinary、ArrayとMapを正しく扱う。
+- [x] 長さPrefix、切断入力、巨大Count、Overflowを検証する。
+- [x] 非文字列MapキーとExtensionの規約を実装する。初期制限がある場合はエラーとして公開する。
+- [x] 公式仕様に対応したFixtureと独立した実装との相互読み書きで互換性を確認する。
+- [x] JSONとの変換は共通に表現できる範囲に限定し、損失がある変換を検出する。
 
 完了条件: 型付きメッセージをバイト列へ変換・復元でき、不正入力による過剰確保を防げる。
+
+### Phase 6実装結果（2026-11-01）
+
+- `MessagePackParser`は全標準スカラー・コンテナをToken Tapeへ読み込み、既存のDataReader / Deserializeへ接続する。反復Stackを用い、長さPrefixやCountから先行確保しない。
+- `MessagePackWriter`は既存のDataWriterイベントを実装し、型付きSerializeとDocument形式変換の両方に接続する。コンテナのCountはEnd時に確定し、符号化済み子データへPrefixを付ける。
+- UTF-8検査は既存Documentの実装を`Data::Detail::IsUtf8`へ移し、Writerと共有する。Mapは文字列キーのみ、重複キー・全Extension / Timestamp・NaN / Infinityを明示的に拒否する。
+- Writerは最短整数表現・Float64出力・キー順ソートを採用する。非負Int64はUInt64として再Parseされ得るが、整数値と型付きAdapterでの復元を維持する。Float32は正確にFloat64へ拡張する。
+- Binaryは任意Byte列として保持し、JSON出力での暗黙文字列化を拒否する。JSON共通範囲ではUInt64 / Int64の最大精度を維持する。
+- CPU単体テスト、確保失敗注入、ASan / UBSan / float-cast-overflow、Python msgpack 1.2.1との相互読み書きを実行した。詳細な実行手順・制限は`Data/Tests/README.md`に記載。
+- Windows / MSVC正式ビルドとLeakSanitizerは未検証。File I/O、通信、実運用設定の移行は追加しない。Phase 7以降は別承認で進める。
 
 ## Phase 7 — Ravenへの試験導入
 
@@ -361,7 +395,7 @@ MessagePackはデータ表現を担当する。接続、配送、暗号化、認
 
 ## 最初の実装範囲
 
-Phase 0〜3は完了。最初の読み取り基盤が成立したため、次はPhase 4のDataReader / DataWriterとJSON出力を承認対象とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
+Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。次はPhase 7の試験導入を承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
 
 - [x] Asset / Memory / Streamとの接続点と最初の用途を確定した（Phase 0）。
 - [x] 小さいJSONをDataDocumentへ読み込める（Phase 2）。
@@ -371,4 +405,4 @@ Phase 0〜3は完了。最初の読み取り基盤が成立したため、次は
 - [x] DocumentとViewの寿命規則が説明・検証されている（Phase 1〜3、Borrowed Bufferは未導入）。
 - [x] 既存`Core::JsonParser`との互換Fixtureが通る（Phase 2、意図した差を含む）。
 
-この段階ではReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信は含めない。基礎が安定したらPhase 4〜6で型付き読み書きとMessagePackを追加する。
+この段階ではReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信は含めない。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、次はPhase 7で試験導入を行う。
