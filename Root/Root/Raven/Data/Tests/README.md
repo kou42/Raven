@@ -1,4 +1,4 @@
-# Structured Data Phase 1〜4 単体テスト
+# Structured Data Phase 1〜3 単体テスト
 
 GPU・Window・外部ライブラリに依存しないC++17のテストです。通常アプリケーションでは
 `RunDataDocumentTests()`を提供し、`RAVEN_DATA_TEST_MAIN`指定時だけ専用mainを定義します。
@@ -9,7 +9,7 @@ Phase 2の直接JSON ParserとPhase 3のDecoded取得・数値変換・キー検
 ```bash
 g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -DRAVEN_DATA_TEST_MAIN \
   -IRoot/Root Root/Root/Raven/Core/JsonLexicalReader.cpp \
-  Root/Root/Raven/Data/DataUtf8.cpp Root/Root/Raven/Data/DataDocument.cpp \
+  Root/Root/Raven/Data/DataDocument.cpp \
   Root/Root/Raven/Data/DataElement.cpp \
   Root/Root/Raven/Data/Tests/DataDocumentTests.cpp -o /tmp/raven-data-tests
 /tmp/raven-data-tests
@@ -19,7 +19,7 @@ Visual Studio Developer Command Promptでの単体ビルド例です（実行未
 出力用ディレクトリを作成してから実行してください。
 
 ```bat
-cl /nologo /std:c++17 /EHsc /W4 /DRAVEN_DATA_TEST_MAIN /IRoot\Root /Fo:build\data-tests\ /Fe:build\data-tests\DataDocumentTests.exe Root\Root\Raven\Core\JsonLexicalReader.cpp Root\Root\Raven\Data\DataUtf8.cpp Root\Root\Raven\Data\DataDocument.cpp Root\Root\Raven\Data\DataElement.cpp Root\Root\Raven\Data\Tests\DataDocumentTests.cpp
+cl /nologo /std:c++17 /EHsc /W4 /DRAVEN_DATA_TEST_MAIN /IRoot\Root /Fo:build\data-tests\ /Fe:build\data-tests\DataDocumentTests.exe Root\Root\Raven\Core\JsonLexicalReader.cpp Root\Root\Raven\Data\DataDocument.cpp Root\Root\Raven\Data\DataElement.cpp Root\Root\Raven\Data\Tests\DataDocumentTests.cpp
 build\data-tests\DataDocumentTests.exe
 ```
 
@@ -47,7 +47,7 @@ Adapter失敗のOffsetはこのBuffer内、または入力位置を持たない�
 g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -DRAVEN_JSON_TEST_MAIN \
   -IRoot/Root Root/Root/Raven/Core/JsonLexicalReader.cpp \
   Root/Root/Raven/Core/JsonParser.cpp \
-  Root/Root/Raven/Data/DataUtf8.cpp Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
+  Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
   Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
   Root/Root/Raven/Data/Tests/JsonParserTests.cpp -o /tmp/raven-json-tests
 /tmp/raven-json-tests
@@ -56,7 +56,7 @@ g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -DRAVEN_JSON_TEST_MAIN \
 Visual Studioの単体ビルド例（実行未検証）です。
 
 ```bat
-cl /nologo /std:c++17 /EHsc /W4 /DRAVEN_JSON_TEST_MAIN /IRoot\Root /Fo:build\data-tests\ /Fe:build\data-tests\JsonParserTests.exe Root\Root\Raven\Core\JsonLexicalReader.cpp Root\Root\Raven\Core\JsonParser.cpp Root\Root\Raven\Data\DataUtf8.cpp Root\Root\Raven\Data\DataDocument.cpp Root\Root\Raven\Data\DataElement.cpp Root\Root\Raven\Data\Formats\Json\JsonParser.cpp Root\Root\Raven\Data\Tests\JsonParserTests.cpp
+cl /nologo /std:c++17 /EHsc /W4 /DRAVEN_JSON_TEST_MAIN /IRoot\Root /Fo:build\data-tests\ /Fe:build\data-tests\JsonParserTests.exe Root\Root\Raven\Core\JsonLexicalReader.cpp Root\Root\Raven\Core\JsonParser.cpp Root\Root\Raven\Data\DataDocument.cpp Root\Root\Raven\Data\DataElement.cpp Root\Root\Raven\Data\Formats\Json\JsonParser.cpp Root\Root\Raven\Data\Tests\JsonParserTests.cpp
 build\data-tests\JsonParserTests.exe
 ```
 
@@ -97,7 +97,7 @@ Phase 1は69チェック、Phase 2は276チェックです。サニタイザを�
 g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -pthread \
   -DRAVEN_DATA_ELEMENT_TEST_MAIN -IRoot/Root \
   Root/Root/Raven/Core/JsonLexicalReader.cpp \
-  Root/Root/Raven/Data/DataUtf8.cpp Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
+  Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
   Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
   Root/Root/Raven/Data/Tests/DataElementTests.cpp -o /tmp/raven-element-tests
 /tmp/raven-element-tests
@@ -106,7 +106,7 @@ g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -pthread \
 Visual Studio Developer Command Promptの例（実行未検証）です。
 
 ```bat
-cl /nologo /std:c++17 /EHsc /W4 /DRAVEN_DATA_ELEMENT_TEST_MAIN /IRoot\Root /Fo:build\data-tests\ /Fe:build\data-tests\DataElementTests.exe Root\Root\Raven\Core\JsonLexicalReader.cpp Root\Root\Raven\Data\DataUtf8.cpp Root\Root\Raven\Data\DataDocument.cpp Root\Root\Raven\Data\DataElement.cpp Root\Root\Raven\Data\Formats\Json\JsonParser.cpp Root\Root\Raven\Data\Tests\DataElementTests.cpp
+cl /nologo /std:c++17 /EHsc /W4 /DRAVEN_DATA_ELEMENT_TEST_MAIN /IRoot\Root /Fo:build\data-tests\ /Fe:build\data-tests\DataElementTests.exe Root\Root\Raven\Core\JsonLexicalReader.cpp Root\Root\Raven\Data\DataDocument.cpp Root\Root\Raven\Data\DataElement.cpp Root\Root\Raven\Data\Formats\Json\JsonParser.cpp Root\Root\Raven\Data\Tests\DataElementTests.cpp
 build\data-tests\DataElementTests.exe
 ```
 
@@ -164,218 +164,3 @@ long doubleを使った追加照合をスキップし、固定の数値境界Fix
 サニタイザは`-fsanitize=address,undefined,float-cast-overflow`を使い、整数境界のキャストも検査しました。
 一時Harnessで確保失敗6箇所の出力維持と、Escapeキーを調べない検索・String View取得の無確保経路も確認しました。
 ThreadSanitizerとVisual Studio全体ビルドは未実施です。性能計測は後続Phaseの対象です。
-
-## Phase 4 DataReader / DataWriter / JSON出力
-
-```bash
-g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
-  -DRAVEN_DATA_IO_TEST_MAIN -IRoot/Root \
-  Root/Root/Raven/Core/JsonLexicalReader.cpp \
-  Root/Root/Raven/Core/JsonParser.cpp Root/Root/Raven/Core/JsonWriter.cpp \
-  Root/Root/Raven/Data/DataUtf8.cpp Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
-  Root/Root/Raven/Data/DataReader.cpp Root/Root/Raven/Data/DataWriter.cpp \
-  Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
-  Root/Root/Raven/Data/Formats/Json/JsonWriter.cpp \
-  Root/Root/Raven/Data/Tests/DataIOTests.cpp -o /tmp/raven-data-io-tests
-/tmp/raven-data-io-tests
-```
-
-`-DRAVEN_DATA_IO_ALLOCATION_TESTS`を追加すると、専用実行ファイル内だけで`operator new`を
-差し替え、Document出力と直接イベント出力の確保失敗箇所を順に注入します。
-通常アプリへこのmacroを指定しないでください。GCCで48箇所の確保失敗を含む4,321チェックが成功しました。
-macroなしでは4,268チェックです。固定Seedの2,000組のUInt64 / double、整数境界、subnormal、
-Escape、Decoded Key順、Binaryと非有限値の拒否、すべてのイベントでのSink失敗、
-出力Byte数の境界、深さ512、10,000要素配列、既存Core Writerとの互換Fixtureを含みます。
-
-サニタイザは`-g -O1 -fsanitize=address,undefined,float-cast-overflow -fno-omit-frame-pointer`を
-追加し、確保失敗macroなしで実行します。この環境では`ASAN_OPTIONS=detect_leaks=0`を指定します。
-Visual Studio全体ビルドとThreadSanitizer、性能・Peak Memory計測は未実施です。
-
-### APIと責務
-
-```cpp
-Raven::Data::DataDocument document;
-Raven::Data::DataError error;
-std::string output;
-if (Raven::Data::JsonParser::Parse(input, document, &error))
-{
-    // 全成功時だけoutputを置換します。既存Core::JsonWriterとは別のAPIです。
-    Raven::Data::JsonWriter::Write(document, output, &error);
-}
-```
-
-`JsonWriter::Write(DataElement, ...)`は部分木にも対応します。Documentは変更しません。
-`DataReader(root).Read(writer, &error)`はフォーマット非依存のイベント変換経路です。
-JSON入力だけでなく、手動Tapeや既存DOM Adapterで作ったDocumentも利用できます。
-キー検索と型別取得は`DataReader::GetRoot()`が返す既存`DataElement`で行います。
-Deserializeの必須値・既定値・Version・フィールド経路はPhase 5の責務です。
-
-型付きデータは`DataWriter&`へ直接イベントを送れます。フォーマット固有のCommitは具象Writerで行います。
-
-```cpp
-Raven::Data::JsonWriter writer;
-if (writer.BeginObject()
-    && writer.WriteKey("version") && writer.WriteUInt64(1)
-    && writer.WriteKey("enabled") && writer.WriteBool(true)
-    && writer.EndObject())
-{
-    writer.Finish(output);
-}
-```
-
-イベントはRoot 1値、Objectでは`WriteKey`→値、Arrayでは値の順とし、Begin / Endを対応させます。
-StringとKeyは展開済みUTF-8、Binaryは任意Byte列です。WriterはViewを呼び出し後に保持しません。
-Readerは非所有で、Documentの破棄・置換・Move前に読み終えてください。
-未Escape文字列はSource Viewを利用し、Escape展開用Bufferは呼び出し内で所有します。
-Readerは再帰を使わず、子・兄弟による線形走査を行います。Writerは単一Threadで利用してください。
-同一Documentを別々のReader / Writerで読むことは可能ですが、Documentの変更・破棄とは競合させません。
-
-### JSON契約と制限
-
-- Compact JSONと末尾改行1 Byteを出力します。ObjectはDecodedキーのByte列を
-  `std::string`比較でソートし、既存Core Writerと同じ決定性を持たせます。重複キーは`EndObject`で拒否します。
-- Int64 / UInt64をdoubleに変換しません。正のInt64は再読込時にUInt64へ分類され得ますが、値・精度は維持します。
-  Float64はlocale非依存の`to_chars` / `max_digits10`で出力し、整数表記なら`.0`を付けて
-  Float分類と負のZeroを保持します。そのため既存Core Writerとすべての数値表記が同一にはなりません。
-- 不正UTF-8、Binary、NaN / Infinityを拒否します。BinaryのBase64化や文字列への暗黙変換は行いません。
-- `DataWriteLimits`の出力上限は改行、括弧、Key、区切り、Escape後のByte数をすべて含みます。
-  深さは開いたコンテナ数、文字列上限はDecoded UTF-8のByte数、要素数はArrayの値数 / Objectの組数です。
-  上限0も有効で、深さ0はScalarだけ、要素数0は空コンテナだけを許可します。
-- ソートのためObject内の符号化済みメンバーを保持し、閉じたコンテナを親へ組み込みます。
-  JsonValue / Token DOMを構築しませんが、Streamへの逐次出力や定数Memory出力ではありません。
-  入れ子の再構成にコピーを伴います。Allocator統合・性能測定は後続の課題です。
-- 失敗はstickyです。最初のエラーを`GetError()`で取得し、失敗したWriterは破棄します。
-  `Finish`は全コンテナが閉じたRoot 1値を1回だけ公開でき、失敗時は呼び出し側の出力を維持します。
-  空入力、未完コンテナ、2つ目のRoot、Finish後のイベントも拒否します。
-- Readerのエラー位置は失敗した値・キーのSource Byte位置です。無効Root / 走査用確保失敗は0です。
-  Sinkがfalseを返して詳細コードを持たない場合は`OutputFailure`とします。失敗したSinkは再利用しません。
-  Writer単体の位置は受理済み符号化Byte数（改行を除く）であり、ソート後の物理位置ではありません。
-
-File I/O・Streamエラーの取扱い、整形出力、型Adapter、Reflection、MessagePack、既存保存経路の移行は追加していません。
-
-## Phase 5 明示的型Adapter
-
-`Data/Serialization/Serialization.h`はフォーマット非依存の型変換層です。
-`DataAdapter<T>`を明示的に特殊化し、`Read(DataElement, T&, SerializationContext&)`と
-`Write(DataWriter&, const T&, SerializationContext&)`を定義します。通常関数の実装はcpp、
-テンプレートの実装は同名inlに置きます。設定型の実例は`SerializationTests.cpp`を参照してください。
-
-- `Deserialize`は既定構築した一時値へ読み込み、Adapterの検証成功後にだけnoexcept swapします。
-  入力Documentを変更せず、出力が以前保持していた値を既定値として流用しません。
-  Adapterを直接呼ぶ場合は呼び出し側で一時値を用意してください。
-- `ObjectReader::Required / Optional`は必須・省略時の既定値を扱います。Nullは省略と区別し、
-  既知フィールドの型不一致を拒否します。未知フィールドは無視し、再保存時の保持を保証しません。
-  キーはDecoded UTF-8で比較し、検索中の確保失敗を欠落として扱いません。
-- `Header`はtypeと正の整数Tokenのversionを検査し、明示した対応範囲だけ受理します。
-  旧フィールドの読込・Migration・値域などの業務検証は型Adapterの責務です。
-  テストAssetはv1のsamplesをv2のvaluesへ移し、出力はv2に統一します。
-- 標準Adapterはbool、通常の整数、float / double、所有string、vectorです。
-  数値はDataElementの厳密変換と取得先の範囲を検査します。floatへの縮小も正確に
-  表現できる場合だけ許可します（0.1のdouble→floatは拒否）。Boolの数値化は行いません。
-  文字列はDocumentから独立して所有し、vectorは子・兄弟APIで線形走査します。
-- `SerializationError`は最初の失敗と原因DataError、JSON Pointer経路を保持します。
-  Rootは空経路、例は`/values/1`です。`~`と`/`は`~0`と`~1`へEscapeします。
-  経路は終端を含む512 Byteで追加確保せず、超過やNULを含むフィールド名は
-  LimitExceededとして拒否します。超過時のPathは入る範囲の接頭辞です。
-  欠落フィールドは親Object、型変換失敗は対象TokenのSource Byte位置を返します。
-- `Serialize`はDataWriterへ直接イベントを送ります。成功後の公開は具象Writerの責務です。
-  JsonWriterでは`Serialize`と`Finish`の両方が成功した場合だけ結果を利用してください。
-  Adapter失敗時はWriterを破棄します。Adapterの意味検証失敗はWriter自体をstickyに
-  しないため、Serialize失敗後にFinishしてはいけません。
-- Pointerの既定Adapterはありません。安定IDは利用側の明示的Adapterで保存し、
-  読み込み後の参照解決・Engineへの反映は呼び出し側が担当します。
-  Reflection、Math / AssetId / EntityId専用Adapterは実用途が必要になる段階まで保留します。
-
-専用CPUテスト:
-
-```bash
-g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
-  -DRAVEN_SERIALIZATION_TEST_MAIN -IRoot/Root \
-  Root/Root/Raven/Core/JsonLexicalReader.cpp \
-  Root/Root/Raven/Data/DataUtf8.cpp Root/Root/Raven/Data/DataDocument.cpp Root/Root/Raven/Data/DataElement.cpp \
-  Root/Root/Raven/Data/DataReader.cpp Root/Root/Raven/Data/DataWriter.cpp \
-  Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
-  Root/Root/Raven/Data/Formats/Json/JsonWriter.cpp \
-  Root/Root/Raven/Data/Serialization/Serialization.cpp \
-  Root/Root/Raven/Data/Tests/SerializationTests.cpp -o /tmp/raven-serialization-tests
-/tmp/raven-serialization-tests
-```
-
-`-DRAVEN_SERIALIZATION_ALLOCATION_TESTS`で専用実行ファイルだけoperator newを置換し、
-Deserializeの確保失敗を順次注入します。通常アプリにはこのmacroを指定しません。
-サニタイザはmacroなしで`-g -O1 -fsanitize=address,undefined,float-cast-overflow
--fno-omit-frame-pointer`を追加します。環境制約によりLeakSanitizerは無効化しています。
-Windows / MSVCの正式ビルドと実運用Assetへの導入は未検証です。
-
-Phase 5は確保失敗注入あり142チェック、なし118チェックがGCC C++17で成功しました。
-ASan / UBSan / float-cast-overflowも118チェック成功し、既存Phase 1〜4の6,866チェックも成功しました。
-Project XML、5つの新規ファイルのFilter / structure登録、静的Cloudベースラインと差分検査を確認しました。
-ベースラインスクリプト末尾の既存CRは一時コピーだけで除去し、元スクリプトは変更していません。
-
-
-## Phase 6 MessagePack
-
-`MessagePackParser::Parse(bytes, document, &error)`は長さ付きメモリ入力を所有Documentへ
-変換します。`MessagePackWriter`は既存の`Serialize(writer, value)`と接続でき、
-`Serialize`と`Finish(bytes)`の両方が成功した場合だけ結果を公開してください。
-`MessagePackWriter::Write(document, bytes, &error)`はDocument全体を変換します。
-バイト列にはNULが含まれるため、File I/Oはbinary modeと明示長を使ってください。
-
-```bash
-g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -DRAVEN_MESSAGEPACK_TEST_MAIN -IRoot/Root \
-  Root/Root/Raven/Core/JsonLexicalReader.cpp \
-  Root/Root/Raven/Data/DataUtf8.cpp \
-  Root/Root/Raven/Data/DataDocument.cpp \
-  Root/Root/Raven/Data/DataElement.cpp \
-  Root/Root/Raven/Data/DataReader.cpp \
-  Root/Root/Raven/Data/DataWriter.cpp \
-  Root/Root/Raven/Data/Serialization/Serialization.cpp \
-  Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
-  Root/Root/Raven/Data/Formats/Json/JsonWriter.cpp \
-  Root/Root/Raven/Data/Formats/MessagePack/MessagePackParser.cpp \
-  Root/Root/Raven/Data/Formats/MessagePack/MessagePackWriter.cpp \
-  Root/Root/Raven/Data/Tests/MessagePackTests.cpp -o /tmp/raven-messagepack-tests
-/tmp/raven-messagepack-tests
-```
-
-確保失敗注入は`-DRAVEN_MESSAGEPACK_ALLOCATION_TESTS`を追加します。
-サニタイザはこのmacroを付けずに`-g -O1 -fsanitize=address,undefined,float-cast-overflow
--fno-omit-frame-pointer`を追加します。環境でLeakSanitizerが実行できない場合は
-`ASAN_OPTIONS=detect_leaks=0`を指定し、Leak未検証として扱ってください。
-
-相互互換性テストは上記コマンドのmain macroを`RAVEN_MESSAGEPACK_INTEROP_MAIN`へ、
-出力名を`/tmp/raven-messagepack-interop`へ変更してビルドした後に実行します。
-Pythonの独立実装`msgpack`（検証時1.2.1）が必要です。
-
-```bash
-python Root/Root/Raven/Data/Tests/MessagePackInterop.py /tmp/raven-messagepack-interop
-```
-
-検証結果: 通常419チェック、確保失敗注入あり446チェック、独立実装との相互検証254ケースが成功。
-既存Phase 1〜4の6,866チェックとPhase 5の142チェック（確保失敗注入あり）も成功しました。
-ASan / UBSan / float-cast-overflowは通常419チェック成功、LeakSanitizerは無効です。
-
-### Encoding・所有権・失敗規則
-
-- [MessagePack公式仕様](https://github.com/msgpack/msgpack/blob/master/spec.md)の
-  nil / Bool、全整数幅、Float32 / Float64、fixstr / str8 / str16 / str32、
-  bin8 / bin16 / bin32、fixarray / array16 / array32、fixmap / map16 / map32を受理します。
-- 整数は入力tagの符号を保持します。正のfixintはUInt64です。Writerは最短整数表現を選ぶため、
-  非負Int64の再ParseはUInt64になる場合があります。値域を検査する既存Adapterで型を復元します。
-- Float32はFloat64へ正確に拡張します。Writerは有限Float64を常にfloat64で出力し、
-  負のZero・subnormalを保持します。NaN / InfinityはNumericRangeです。
-- Stringは妥当なUTF-8（NUL・制御文字を含む）に限定し、Binaryは任意バイト列です。
-  JSONへのBinary出力はUnsupportedTypeです。暗黙Base64化・整数のdouble丸めは行いません。
-- MapキーはStringのみ。非文字列キー、全Extension（Timestamp含む）はUnsupportedType、
-  予約tag 0xc1はInvalidSyntaxです。Decodedキー重複はDuplicateKeyです。
-- Parserは反復Stackを使い、長さPrefix・Countから先行Reserveしません。入力、Token、深さ、
-  値長、要素数は既存DataLimitsを適用します。切断入力・巨大Prefixは確保前に拒否します。
-- UTF-8と重複検査は既存Documentの検証を共用し、全成功後だけCommitします。
-  入力が出力DocumentのSourceを参照する場合も安全です。公開後は既存のView寿命規則に従います。
-- DataWriterはBegin時に要素数を受け取らないため、Writerは符号化済み子データを保持し、
-  End時にCount Prefixを生成します。DOMは構築しません。Objectはキー順にソートします。
-  Payloadと最小Headerは受理時、Header拡大分はEnd時に出力予算へ課金します。
-  一時メモリは最終出力サイズそのものには限定されず、ネスト中のコピーやキー索引を含みます。
-- Error.OffsetはParserでは入力Byte位置（EOFは入力長）、Writerではその時点の課金Byte数です。
-  Documentの検証エラーはPayload位置を指す場合があります。最初のWriter失敗はstickyです。
-- File I/O・通信・Reflection・実運用設定の移行は含みません。Windows / MSVCの正式ビルドは未検証です。
