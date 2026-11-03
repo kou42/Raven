@@ -23,6 +23,7 @@
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 #include "Raven/UI/Widgets/UIMenuBar.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UIWindow.h"
 
 #include <imgui.h>
@@ -439,7 +440,13 @@ bool EditorLayer::AttachRavenEditorShell()
         return false;
     }
 
-    auto root = CreateScope<UIElement>();
+    // Editorの映像はScene/Game ViewのTexture内に表示するため、Shell自身が背景を覆います。
+    // Runtimeは互換性のためMainにも通常Sceneを描いており、背景のないUIElementをRootにすると、
+    // Tabを補助Windowへ分離した後の空きDockからそのGeometryが露出してしまいます。
+    // 既存UIPanelのTheme背景を子Panelより先に描き、空き領域を含むEditor全体の下地にします。
+    // RuntimeのScene Captureや汎用DockSpaceの透過仕様は変えず、Editor Shellの責務で遮蔽します。
+    // Rootの所有権・子の描画順・Resize時の寸法更新は従来どおりUI Treeへ任せます。
+    auto root = CreateScope<UIPanel>();
     root->SetLayoutMode(UILayoutMode::Absolute);
     root->SetClipChildren(true);
     root->SetPosition(math::Vec2(0.0f, 0.0f));
