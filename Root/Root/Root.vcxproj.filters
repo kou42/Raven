@@ -1025,6 +1025,8 @@
   <ItemGroup>
     <ClCompile Include="..\Tests\UIPerformanceTests.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
     <ClInclude Include="..\Tests\UIPerformanceTests.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
     <ClCompile Include="Raven\Data\DataReader.cpp"><Filter>Raven\Data</Filter></ClCompile>
     <ClInclude Include="Raven\Data\DataReader.h"><Filter>Raven\Data</Filter></ClInclude>
     <ClCompile Include="Raven\Data\DataWriter.cpp"><Filter>Raven\Data</Filter></ClCompile>
