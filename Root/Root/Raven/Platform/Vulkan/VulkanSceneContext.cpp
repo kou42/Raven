@@ -39,7 +39,7 @@ const VulkanDevice& VulkanSceneContext::GetDevice() const
     return m_Instance != nullptr ? m_Instance->GetDevice() : empty;
 }
 
-bool VulkanSceneContext::Init(Window& window, VulkanSceneContext* sharedContext)
+bool VulkanSceneContext::Init(Window& window, VulkanSceneContext* sharedContext, VkFormat preferredSurfaceFormat)
 {
     Shutdown();
     if (window.GetBackend() != RHIBackend::Vulkan ||
@@ -81,7 +81,7 @@ bool VulkanSceneContext::Init(Window& window, VulkanSceneContext* sharedContext)
     // 非対応Surfaceを別Deviceへ暗黙fallbackせず、Tabの所有権を元Windowに残します。
     if (m_Surface.Init(m_Instance->GetHandle(), nativeWindow) == false ||
         m_SwapChain.Init(GetDevice(), m_Surface.GetHandle(),
-            static_cast<uint32_t>(width), static_cast<uint32_t>(height), m_VSync) == false ||
+            static_cast<uint32_t>(width), static_cast<uint32_t>(height), m_VSync, preferredSurfaceFormat) == false ||
         m_FrameSync.Init(GetDevice(),
             static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false ||
         m_RenderTarget.Init(GetDevice().GetHandle(),
@@ -365,6 +365,67 @@ void VulkanSceneContext::SetClearColor(const float color[4])
     }
 }
 
+bool VulkanSceneContext::CopyColorToBuffer(VkBuffer destination, VkDeviceSize destinationSize)
+{
+    const VkCommandBuffer commands = GetActiveCommandBuffer();
+    const VkExtent2D extent = m_SwapChain.GetExtent();
+    const VkDeviceSize byteCount = static_cast<VkDeviceSize>(extent.width) * extent.height * 4u;
+    const uint32_t imageIndex = m_FrameRenderer.GetAcquiredImageIndex();
+    if (commands == VK_NULL_HANDLE || destination == VK_NULL_HANDLE || destinationSize < byteCount ||
+        m_SwapChain.SupportsColorReadback() == false || m_SwapChainRenderPassActive == false ||
+        m_ActiveOffscreenRenderTarget != nullptr || imageIndex >= m_SwapChain.GetImages().size())
+    {
+        return false;
+    }
+    m_RenderTarget.End(commands);
+    m_SwapChainRenderPassActive = false;
+    VkImageMemoryBarrier imageBarrier{};
+    imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageBarrier.image = m_SwapChain.GetImages()[imageIndex];
+    imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageBarrier.subresourceRange.levelCount = 1;
+    imageBarrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+    VkBufferImageCopy copy{};
+    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy.imageSubresource.layerCount = 1;
+    copy.imageExtent = {extent.width, extent.height, 1};
+    vkCmdCopyImageToBuffer(commands, imageBarrier.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination, 1, &copy);
+    // Transfer完了だけでなくHostへの可視化も記録します。CPU側は別途Fence/WaitIdleを待ちます。
+    VkBufferMemoryBarrier hostBarrier{};
+    hostBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    hostBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    hostBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    hostBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hostBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hostBarrier.buffer = destination;
+    hostBarrier.size = byteCount;
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+        0, 0, nullptr, 1, &hostBarrier, 0, nullptr);
+    imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    imageBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+    // off-screen復帰と同じLOAD PassでColor/Depthを維持し、通常のEndFrame/Presentへ戻します。
+    if (m_RenderTarget.Begin(commands, imageIndex, m_ClearColor, true) == false)
+    {
+        m_FatalError = true;
+        return false;
+    }
+    m_SwapChainRenderPassActive = true;
+    m_BoundGraphicsPipeline.reset();
+    return true;
+}
+
 bool VulkanSceneContext::ClearColorAttachment(const float color[4])
 {
     // vkCmdClearAttachmentsはRenderPass内でのみ有効です。
@@ -548,11 +609,14 @@ Ref<RHIGraphicsPipeline> VulkanSceneContext::CreateGraphicsPipeline(
     }
 
     auto pipeline = CreateRef<VulkanGraphicsPipeline>();
+    // 色出力はnative SurfaceではなくUNORM ViewのRenderPassと一致させます。
+    // SRGB fallback時もここだけnative形式へ戻さず、SceneとUIで同じ出力契約を維持します。
+    // Pickingは色表示ではなく整数IDなので、従来どおりR32_SINTの別Pass/形式を使います。
     if (pipeline->Init(GetDevice().GetHandle(),
         specification.ColorFormat == RHIColorFormat::R32Sint ?
             m_RenderTarget.GetPickingRenderPass() : m_RenderTarget.GetRenderPass(),
         specification.ColorFormat == RHIColorFormat::R32Sint ?
-            VK_FORMAT_R32_SINT : m_SwapChain.GetImageFormat(), specification) == false)
+            VK_FORMAT_R32_SINT : m_SwapChain.GetColorAttachmentFormat(), specification) == false)
     {
         return nullptr;
     }

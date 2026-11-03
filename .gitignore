@@ -44,3 +44,9 @@ Makefile
 # Temp
 *.tmp
 *.temp
+
+# 比較用SceneのソースだけをDebug/ビルド出力の規則から除外します。
+!Root/Root/Raven/Scene/Debug/
+Root/Root/Raven/Scene/Debug/*
+!Root/Root/Raven/Scene/Debug/EditorBackendComparisonScene.h
+!Root/Root/Raven/Scene/Debug/EditorBackendComparisonScene.cpp

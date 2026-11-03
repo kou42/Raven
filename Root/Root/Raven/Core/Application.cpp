@@ -1646,19 +1646,26 @@ void Application::Run()
     uint32_t explicitHeight = m_Window->GetFramebufferHeight();
     while (m_Running)
     {
+        const uint32_t width = m_Window->GetFramebufferWidth();
+        const uint32_t height = m_Window->GetFramebufferHeight();
+        if (width == 0 || height == 0 || m_Window->GetState() == WindowState::Minimized)
+        {
+            // Mainが描画不能な間はBackend共通でScene/UI/補助Windowの更新を休止します。
+            // 0寸法でSwapChainを作り直さず、復帰/CloseのEventを待ちます。
+            // OpenGLへ0寸法を渡すとFrame開始がFatalになるため、Safety Checkより前で待ちます。
+            // 完成済みUI Frameの連番は進めず、待機を0時間の描画サンプルにも数えません。
+            m_WindowManager.PollEvents();
+            if (m_Running == true)
+            {
+                glfwWaitEventsTimeout(0.05);
+            }
+            // 復帰までの時間がPhysics/Animationへ一度に流れないよう時計を合わせます。
+            // Poll/Wait中のCloseは次のLoop条件で終了し、GPU Frameを開始しません。
+            previousTime = glfwGetTime();
+            continue;
+        }
         if (m_ExplicitSceneRuntime != nullptr)
         {
-            const uint32_t width = m_Window->GetFramebufferWidth();
-            const uint32_t height = m_Window->GetFramebufferHeight();
-            if (width == 0 || height == 0 || m_Window->GetState() == WindowState::Minimized)
-            {
-                // 0寸法でSwapChainを作り直さず、復帰/CloseのEventを待ちます。
-                // 最小化中の時間をSceneのdtへ加算しません。
-                m_WindowManager.PollEvents();
-                glfwWaitEventsTimeout(0.05);
-                previousTime = glfwGetTime();
-                continue;
-            }
             if (width != explicitWidth || height != explicitHeight)
             {
                 // DX12のAcquireやVulkanのSuboptimal Acquireは旧寸法でも成功するため、

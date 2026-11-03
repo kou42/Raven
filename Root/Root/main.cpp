@@ -19,6 +19,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneTitle.h"
+#include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
 #include "Raven/Debug/BrowserDebugServer.h"
@@ -72,6 +73,7 @@ int main(int argc, char* argv[])
     // Dear ImGui / Dualは回帰調査時に明示引数でだけ選択するfallbackです。
     Raven::EditorUIBackend editorUIBackend = Raven::kDefaultEditorUIBackend;
     bool uiMigrationTest = false;
+    bool editorBackendComparison = false;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -80,9 +82,9 @@ int main(int argc, char* argv[])
     // Backend指定を通常の起動引数へ追加します。Explicit Sceneはまだ独立Runtimeへ接続し、
     // 未対応のApplication/Editor描画をOpenGLへ暗黙fallbackさせません。
     // 従来の --scene-* / --clear-* 検証入口は移行中も維持します。
-    if (argc > 1)
+    for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
-        const std::string backendArgument = argv[1];
+        const std::string backendArgument = argv[argumentIndex];
         // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
 #ifdef _DEBUG
         if (backendArgument == "--test-explicit-frame")
@@ -191,6 +193,10 @@ int main(int argc, char* argv[])
         {
             uiMigrationTest = true;
         }
+        else if (backendArgument == "--editor-backend-comparison")
+        {
+            editorBackendComparison = true;
+        }
         else if (backendArgument == "--editor-ui=imgui")
         {
             editorUIBackend = Raven::EditorUIBackend::DearImGui;
@@ -242,7 +248,7 @@ int main(int argc, char* argv[])
         else if (backendArgument != "--backend=opengl")
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
-                "--editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
+                "--editor-backend-comparison, --editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
                 "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, --test-string, --test-name, "
                 "--test-animation-runtime, "
                 "--test-character-animation, "
@@ -251,6 +257,13 @@ int main(int argc, char* argv[])
                 "--clear-opengl, --clear-vulkan, --clear-dx12 or --benchmark-astro-gravity.\\n";
             return 1;
         }
+    }
+
+    if (editorBackendComparison == true &&
+        (uiMigrationTest == true || editorUIBackend != Raven::EditorUIBackend::RavenUI))
+    {
+        std::cerr << "--editor-backend-comparison requires Raven UI and cannot use --ui-migration-test.\n";
+        return 1;
     }
 
     // Explicit BackendはDear ImGuiのBackend Contextを生成できません。
@@ -383,6 +396,10 @@ int main(int argc, char* argv[])
     applicationPipeline.DepthWrite = true;
     applicationPipeline.Blend = false;
     applicationPipeline.DebugName = "Raven Application Scene";
+    if (editorBackendComparison == true)
+    {
+        applicationPipeline = Raven::EditorBackendComparisonScene::GetPipelineSpecification();
+    }
 
     Raven::Application app(applicationSpecification);
 
@@ -403,6 +420,27 @@ int main(int argc, char* argv[])
         return 1;
     }
 #endif
+
+    if (editorBackendComparison == true)
+    {
+        // 固定Sceneだけを生成し、通常GameのAsset読込やDemo Layerの負荷を比較へ混ぜません。
+        // Application/Editor/Viewport/補助WindowのLifecycleは通常起動と同じ経路を使用します。
+        auto comparison = Raven::CreateScope<Raven::EditorBackendComparisonScene>(
+            applicationBackend == Raven::RHIBackend::OpenGL ?
+                Raven::LegacyMeshResourceCreation::Immediate : Raven::LegacyMeshResourceCreation::Deferred);
+        // SetScene後の所有者はApplicationです。初期化結果とManifestの確認中だけ借用します。
+        Raven::EditorBackendComparisonScene* comparisonScene = comparison.get();
+        app.SetScene(std::move(comparison));
+        if (comparisonScene->IsReady() == false)
+        {
+            std::cerr << "Failed to initialize Editor Backend Comparison scene.\n";
+            return 1;
+        }
+        comparisonScene->WriteManifest(std::cout);
+        app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app, editorUIBackend));
+        app.Run();
+        return 0;
+    }
 
     // Runtime SceneはScene ID Registryへ登録し、起動時も同じFactory経路から生成します。
     // これにより今後Title / Stage等が増えても呼び出し側が具体Scene型を知る必要がありません。

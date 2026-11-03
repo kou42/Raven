@@ -12,6 +12,9 @@
 #include "Raven/Core/Window.h"
 #include "Raven/Platform/DirectX12/DX12SceneRuntime.h"
 #include "Raven/Platform/Vulkan/VulkanSceneRuntime.h"
+#include "Raven/Platform/Vulkan/VulkanSceneRHIDevice.h"
+#include "Raven/Platform/Vulkan/VulkanSceneCommandList.h"
+#include "Raven/Assets/RHIShaderAsset.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -22,6 +25,8 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <cmath>
+#include <array>
 
 namespace
 {
@@ -392,6 +397,204 @@ bool TestDX12AuxiliaryWindows()
     return true;
 }
 
+bool TestVulkanSurfaceFormats()
+{
+    VkClearColorValue displayClear{};
+    displayClear.float32[0] = 0.5f;
+    displayClear.float32[1] = 0.01f;
+    displayClear.float32[2] = 1.0f;
+    displayClear.float32[3] = 0.375f;
+    const auto srgbClear = Raven::VulkanSwapChain::PrepareTransferClearValue(VK_FORMAT_B8G8R8A8_SRGB, displayClear);
+    const auto unormClear = Raven::VulkanSwapChain::PrepareTransferClearValue(VK_FORMAT_B8G8R8A8_UNORM, displayClear);
+    if (Check(std::abs(srgbClear.float32[0] - 0.21404114f) < 0.000002f &&
+        std::abs(srgbClear.float32[1] - 0.000773994f) < 0.000002f && srgbClear.float32[2] == 1.0f &&
+        srgbClear.float32[3] == 0.375f && unormClear.float32[0] == 0.5f && unormClear.float32[1] == 0.01f &&
+        unormClear.float32[3] == 0.375f, "Transfer Clear compensates native sRGB only; alpha unchanged") == false)
+    {
+        return false;
+    }
+    VkSurfaceFormatKHR selected{};
+    VkFormat attachment = VK_FORMAT_UNDEFINED;
+    const auto select = [&](const std::vector<VkSurfaceFormatKHR>& formats, bool mutableFormat)
+    {
+        return Raven::VulkanSwapChain::SelectSurfaceFormat(formats, mutableFormat, selected, attachment);
+    };
+    const auto nonlinear = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    if (Check(select({{VK_FORMAT_B8G8R8A8_SRGB, nonlinear}, {VK_FORMAT_R8G8B8A8_UNORM, nonlinear},
+        {VK_FORMAT_B8G8R8A8_UNORM, nonlinear}}, true) && selected.format == VK_FORMAT_B8G8R8A8_UNORM &&
+        attachment == VK_FORMAT_B8G8R8A8_UNORM, "Surface prefers BGRA UNORM regardless of order") == false ||
+        Check(select({{VK_FORMAT_R8G8B8A8_UNORM, nonlinear}}, false) && attachment == VK_FORMAT_R8G8B8A8_UNORM,
+            "Surface RGBA UNORM fallback without extensions") == false ||
+        Check(select({{VK_FORMAT_B8G8R8A8_SRGB, nonlinear}}, true) && selected.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            attachment == VK_FORMAT_B8G8R8A8_UNORM, "sRGB Surface uses mutable UNORM attachment") == false ||
+        Check(select({{VK_FORMAT_R8G8B8A8_SRGB, nonlinear}}, true) && attachment == VK_FORMAT_R8G8B8A8_UNORM,
+            "RGBA sRGB mutable fallback") == false ||
+        Check(select({{VK_FORMAT_B8G8R8A8_SRGB, nonlinear}}, false) == false && attachment == VK_FORMAT_UNDEFINED,
+            "sRGB-only unsupported extension fails explicitly") == false ||
+        Check(select({}, true) == false, "empty Surface list rejected") == false ||
+        Check(select({{VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_HDR10_ST2084_EXT}}, true) == false,
+            "unsupported HDR color space rejected") == false ||
+        Check(select({{VK_FORMAT_A2B10G10R10_UNORM_PACK32, nonlinear}}, true) == false,
+            "unsupported 10bit output rejected") == false ||
+        Check(select({{VK_FORMAT_UNDEFINED, nonlinear}}, false) && attachment == VK_FORMAT_B8G8R8A8_UNORM,
+            "legacy undefined Surface permits UNORM selection") == false)
+    {
+        return false;
+    }
+    std::cout << "[PASS] Vulkan SDR Surface format selection\n";
+    return true;
+}
+
+// 診断BufferはContextより先に破棄します。途中失敗時もGPUの利用完了を待ってから解放します。
+class VulkanColorReadback
+{
+public:
+    explicit VulkanColorReadback(const Raven::VulkanDevice& device) : Device(device.GetHandle()) {}
+    VulkanColorReadback(const VulkanColorReadback&) = delete;
+    VulkanColorReadback& operator=(const VulkanColorReadback&) = delete;
+    ~VulkanColorReadback()
+    {
+        vkDeviceWaitIdle(Device);
+        if (Buffer != VK_NULL_HANDLE) { vkDestroyBuffer(Device, Buffer, nullptr); }
+        if (Memory != VK_NULL_HANDLE) { vkFreeMemory(Device, Memory, nullptr); }
+    }
+    bool Init(VkPhysicalDevice physical, VkDeviceSize size)
+    {
+        Size = size;
+        VkBufferCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        info.size = size;
+        info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(Device, &info, nullptr, &Buffer) != VK_SUCCESS) { return false; }
+        VkMemoryRequirements requirements{};
+        vkGetBufferMemoryRequirements(Device, Buffer, &requirements);
+        VkPhysicalDeviceMemoryProperties properties{};
+        vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+        for (uint32_t index = 0; index < properties.memoryTypeCount; ++index)
+        {
+            const auto flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            if ((requirements.memoryTypeBits & (1u << index)) != 0 &&
+                (properties.memoryTypes[index].propertyFlags & flags) == flags)
+            {
+                VkMemoryAllocateInfo allocation{};
+                allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+                allocation.allocationSize = requirements.size;
+                allocation.memoryTypeIndex = index;
+                return vkAllocateMemory(Device, &allocation, nullptr, &Memory) == VK_SUCCESS &&
+                    vkBindBufferMemory(Device, Buffer, Memory, 0) == VK_SUCCESS;
+            }
+        }
+        return false;
+    }
+    bool CheckPixel(const void* pixels, uint32_t width, uint32_t x, uint32_t y, bool bgra,
+        const std::array<int, 4>& expected, const char* label) const
+    {
+        const auto* pixel = static_cast<const std::uint8_t*>(pixels) + (static_cast<std::size_t>(y) * width + x) * 4u;
+        const std::array<int, 4> actual = {pixel[bgra ? 2 : 0], pixel[1], pixel[bgra ? 0 : 2], pixel[3]};
+        for (std::size_t channel = 0; channel < actual.size(); ++channel)
+        {
+            if (std::abs(actual[channel] - expected[channel]) > 2)
+            {
+                std::cerr << "[FAIL] " << label << " channel=" << channel << " actual=" << actual[channel]
+                    << " expected=" << expected[channel] << '\n';
+                return false;
+            }
+        }
+        std::cout << "[PASS] " << label << " RGBA=" << actual[0] << ',' << actual[1] << ',' << actual[2] << ',' << actual[3] << '\n';
+        return true;
+    }
+    VkDevice Device;
+    VkBuffer Buffer = VK_NULL_HANDLE;
+    VkDeviceMemory Memory = VK_NULL_HANDLE;
+    VkDeviceSize Size = 0;
+};
+
+bool CheckVulkanColorFrame(Raven::VulkanSceneContext& context)
+{
+    Raven::VulkanSceneRHIDevice device(context);
+    Raven::VulkanSceneCommandList commands(context);
+    Raven::RHIShaderAssetManager shaders;
+    auto vertex = shaders.Load("Raven/Assets/Shaders/Vulkan/UI.vert.spv", Raven::RHIBackend::Vulkan);
+    auto fragment = shaders.Load("Raven/Assets/Shaders/Vulkan/UI.frag.spv", Raven::RHIBackend::Vulkan);
+    Raven::Ref<Raven::RHIGraphicsPipeline> pipeline;
+    if (Check(vertex != nullptr && fragment != nullptr &&
+        Raven::ExplicitUIRenderer::CreatePipeline(device, vertex->GetBinary(), fragment->GetBinary(), pipeline),
+        "Vulkan reference color pipeline") == false) { return false; }
+    Raven::RHITextureSpecification whiteSpecification{};
+    whiteSpecification.GenerateMips = false;
+    const std::uint8_t white[] = {255, 255, 255, 255};
+    auto texture = device.CreateTexture(whiteSpecification, white, sizeof(white));
+    Raven::RHIOffscreenRenderTargetSpecification targetSpecification{};
+    targetSpecification.Width = 16;
+    targetSpecification.Height = 16;
+    targetSpecification.ClearColor = {0.2f, 0.4f, 0.6f, 1.0f};
+    auto target = device.CreateOffscreenRenderTarget(targetSpecification);
+    if (Check(texture != nullptr && target != nullptr, "Vulkan reference color textures") == false) { return false; }
+    Raven::UIDrawList list;
+    list.AddRect({16.0f, 16.0f}, {64.0f, 64.0f}, {0.25f, 0.5f, 0.75f, 1.0f});
+    list.AddRect({80.0f, 16.0f}, {128.0f, 64.0f}, {1.0f, 0.0f, 0.0f, 0.5f});
+    list.AddImage({144.0f, 16.0f}, {192.0f, 64.0f}, Raven::UITextureView::FromRHITexture(target->GetColorAttachment()));
+    const auto extent = context.GetExtent();
+    Raven::ExplicitUIRenderer renderer;
+    Raven::PreparedExplicitUI prepared;
+    const float background[] = {0.1f, 0.2f, 0.3f, 1.0f};
+    context.SetClearColor(background);
+    VulkanColorReadback readback(context.GetDevice());
+    if (Check(renderer.Prepare(device, list, extent.width, extent.height, texture, pipeline, prepared) &&
+        readback.Init(context.GetDevice().GetPhysicalDeviceHandle(), static_cast<VkDeviceSize>(extent.width) * extent.height * 4u),
+        "Vulkan reference color preparation") == false ||
+        Check(context.CopyColorToBuffer(readback.Buffer, readback.Size) == false,
+            "Vulkan readback outside Frame rejected") == false ||
+        Check(context.BeginFrame() == Raven::RHIFrameResult::Success &&
+            context.CopyColorToBuffer(VK_NULL_HANDLE, readback.Size) == false &&
+            context.CopyColorToBuffer(readback.Buffer, readback.Size - 1u) == false &&
+            context.BeginOffscreenRenderTarget(target, targetSpecification.ClearColor.data()) &&
+            context.CopyColorToBuffer(readback.Buffer, readback.Size) == false &&
+            context.EndOffscreenRenderTarget(target) && renderer.Draw(commands, pipeline, prepared) &&
+            context.CopyColorToBuffer(readback.Buffer, readback.Size) &&
+            context.EndFrame() == Raven::RHIFrameResult::Success &&
+            context.Present() != Raven::RHIFrameResult::FatalError && context.GetDevice().WaitIdle(),
+            "Vulkan reference draw/copy/Present") == false) { return false; }
+    void* pixels = nullptr;
+    if (Check(vkMapMemory(readback.Device, readback.Memory, 0, readback.Size, 0, &pixels) == VK_SUCCESS,
+        "Vulkan color readback map") == false) { return false; }
+    const bool bgra = context.GetColorFormat() == VK_FORMAT_B8G8R8A8_UNORM;
+    const bool matches = readback.CheckPixel(pixels, extent.width, 8, 8, bgra, {26, 51, 77, 255}, "Scene clear color") &&
+        readback.CheckPixel(pixels, extent.width, 32, 32, bgra, {64, 128, 191, 255}, "UI opaque reference") &&
+        readback.CheckPixel(pixels, extent.width, 96, 32, bgra, {140, 26, 38, 255}, "UI half alpha blend") &&
+        readback.CheckPixel(pixels, extent.width, 160, 32, bgra, {51, 102, 153, 255}, "Viewport texture sampled once");
+    vkUnmapMemory(readback.Device, readback.Memory);
+    return matches;
+}
+
+bool TestVulkanColorOutput()
+{
+    if (TestVulkanSurfaceFormats() == false) { return false; }
+    Raven::WindowSpecification specification("Vulkan Color Output Test", 320, 240, Raven::RHIBackend::Vulkan);
+    auto mainWindow = Raven::Window::Create(specification);
+    auto childWindow = Raven::Window::Create(specification);
+    if (Check(mainWindow != nullptr && childWindow != nullptr, "Vulkan color Windows") == false) { return false; }
+    Raven::VulkanSceneContext main;
+    Raven::VulkanSceneContext child;
+    if (Check(main.Init(*mainWindow), "Vulkan UNORM color Context") == false ||
+        Check(main.GetSurfaceFormat() == main.GetColorFormat(), "Vulkan default native UNORM Surface") == false ||
+        Check(CheckVulkanColorFrame(main), "Vulkan UNORM color bytes") == false) { return false; }
+    if (Check(main.GetDevice().SupportsMutableSwapChainFormat(), "Vulkan mutable fallback capability required for this test") == false ||
+        Check(child.Init(*childWindow, &main, VK_FORMAT_B8G8R8A8_SRGB), "Vulkan forced sRGB Surface fallback") == false ||
+        Check(child.GetSurfaceFormat() == VK_FORMAT_B8G8R8A8_SRGB && child.GetColorFormat() == VK_FORMAT_B8G8R8A8_UNORM,
+            "Vulkan sRGB native/UNORM attachment separation") == false ||
+        Check(CheckVulkanColorFrame(child), "Vulkan sRGB fallback color bytes") == false) { return false; }
+    // 再生成後もSurfaceの選択方針・View/RenderPass/Pipelineの形式が一致することを確認します。
+    childWindow->SetSize(400, 300);
+    childWindow->PollEvents();
+    if (Check(child.Resize(childWindow->GetFramebufferWidth(), childWindow->GetFramebufferHeight()) &&
+        child.GetSurfaceFormat() == VK_FORMAT_B8G8R8A8_SRGB && child.GetColorFormat() == VK_FORMAT_B8G8R8A8_UNORM &&
+        CheckVulkanColorFrame(child), "Vulkan fallback color after Resize") == false) { return false; }
+    std::cout << "[PASS] Vulkan UNORM/sRGB mutable output, clear/opaque/blend/Viewport readback and Resize\n";
+    return true;
+}
+
 bool TestVulkanAuxiliaryWindows()
 {
     Raven::WindowSpecification specification("Vulkan Auxiliary UI Test", 480, 320,
@@ -532,6 +735,14 @@ bool TestVulkanAuxiliaryWindows()
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--vulkan-surface-formats")
+    {
+        return TestVulkanSurfaceFormats() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--vulkan-color")
+    {
+        return TestVulkanColorOutput() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && std::string(argv[1]) == "--vulkan-auxiliary")
     {
         return TestVulkanAuxiliaryWindows() ? EXIT_SUCCESS : EXIT_FAILURE;

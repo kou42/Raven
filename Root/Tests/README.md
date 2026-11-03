@@ -181,6 +181,22 @@ GCCでは既存Base.hの無効コード内の矢印文字を除いた一時ヘ�
 
 ## Phase 7: 複数WindowとC++ Allocation計測
 
+Vulkan SDR出力の追加検証（先に `test-windows-gpu.ps1` で同構成のGPUテストをビルド）:
+
+```powershell
+Push-Location Root/Root
+../x64/Debug/RavenUIGPUTests.exe --vulkan-surface-formats
+../x64/Debug/RavenUIGPUTests.exe --vulkan-color
+Pop-Location
+```
+
+`--vulkan-surface-formats` はWindow不要のCPU形式選択・transfer clear変換検証。
+`--vulkan-color` はCPU検証に加え、Main UNORMと補助Windowの強制SRGB Surface/UNORM View、
+Resize後のclear/opaque/半透明Blend/Viewport画像をGPU readbackし、各channelの誤差2/255以内を確認する。
+同一Deviceのmutable swapchain拡張と依存拡張、BGRA SRGB Surface、TRANSFER_SRC対応が必要で、
+条件不足をskip成功にはしない。通常表示ではUNORMがあればmutableは不要で、readbackも必須ではない。
+Debug/Release双方で実施する。Vulkanの数値色検証であり、DX12/OpenGLの数値色readbackは追加していない。
+
 `UIPerformanceTests.cpp`をCPU UIテストへ追加しました。完了Windowの集計、独立したContext/Applicationの
 Frame連番、重複排除、最小化/Close後の古い値の除外、CloseしたWindowの履歴保持、Window IDの追加、
 Window別履歴の上限、項目別の未計測値、CSVのScope・サンプル数・N/A、再開始を検証します。

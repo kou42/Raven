@@ -1660,3 +1660,7 @@ Raven UI performance measurement additions (Root/Root/Raven relative paths):
     Core/Memory/AllocationMeasurement.h
     Core/Memory/AllocationMeasurement.cpp
     Editor/Panels/StatisticsUISnapshot.cpp
+
+Raven Editor Backend comparison additions (Root/Root/Raven relative paths):
+    Scene/Debug/EditorBackendComparisonScene.h
+    Scene/Debug/EditorBackendComparisonScene.cpp

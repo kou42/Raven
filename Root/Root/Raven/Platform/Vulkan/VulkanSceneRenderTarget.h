@@ -11,6 +11,7 @@ class VulkanSwapChain;
 
 // SwapChainのColor Attachmentを所有しないScene描画用RenderPass/Framebufferです。
 // ImageView/FramebufferはSwapChain再生成前に破棄し、再生成後にInitし直します。
+// Surfaceのnative形式とは分け、SwapChainのUNORM描画View形式でRenderPass/Pipelineを揃えます。
 class VulkanSceneRenderTarget
 {
 public:

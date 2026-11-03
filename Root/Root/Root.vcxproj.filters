@@ -1026,4 +1026,9 @@
     <ClCompile Include="..\Tests\UIPerformanceTests.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
     <ClInclude Include="..\Tests\UIPerformanceTests.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Scene\Debug"><UniqueIdentifier>{b319094e-d120-447a-a646-cb25a5363d8a}</UniqueIdentifier></Filter>
+    <ClInclude Include="Raven\Scene\Debug\EditorBackendComparisonScene.h"><Filter>Raven\Scene\Debug</Filter></ClInclude>
+    <ClCompile Include="Raven\Scene\Debug\EditorBackendComparisonScene.cpp"><Filter>Raven\Scene\Debug</Filter></ClCompile>
+  </ItemGroup>
 </Project>

@@ -177,8 +177,11 @@ VulkanFrameResult VulkanFrameRenderer::ClearFrame(
     clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     clearRange.levelCount = 1;
     clearRange.layerCount = 1;
+    // この経路はAttachment Viewを通らないため、補正の判断にはnative Image形式が必要です。
+    // SRGB Imageへのraw clearだけdecodeし、通常のUNORM RenderPass clearには適用しません。
+    const VkClearColorValue transferClear = VulkanSwapChain::PrepareTransferClearValue(swapChain.GetImageFormat(), clearColor);
     vkCmdClearColorImage(commandBuffer.GetHandle(), image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColor, 1, &clearRange);
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &transferClear, 1, &clearRange);
 
     VkImageMemoryBarrier toPresent{};
     toPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
