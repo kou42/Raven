@@ -1664,3 +1664,31 @@ Raven UI performance measurement additions (Root/Root/Raven relative paths):
 Raven Editor Backend comparison additions (Root/Root/Raven relative paths):
     Scene/Debug/EditorBackendComparisonScene.h
     Scene/Debug/EditorBackendComparisonScene.cpp
+
+Structured Data Phase 4 additions (Root/Root/Raven relative paths):
+    Data/DataReader.cpp
+    Data/DataReader.h
+    Data/DataWriter.cpp
+    Data/DataWriter.h
+    Data/Formats/Json/JsonWriter.cpp
+    Data/Formats/Json/JsonWriter.h
+    Data/Tests/DataIOTests.cpp
+    Data/Tests/DataIOTests.h
+
+Structured Data Phase 5 additions (Root/Root/Raven relative paths):
+    Data/Serialization/Serialization.h
+    Data/Serialization/Serialization.inl
+    Data/Serialization/Serialization.cpp
+    Data/Tests/SerializationTests.h
+    Data/Tests/SerializationTests.cpp
+
+# Structured Data Phase 6（Root/Root/Raven 配下の追加ファイル）
+    Data/DataUtf8.cpp
+    Data/DataUtf8.h
+    Data/Formats/MessagePack/MessagePackParser.cpp
+    Data/Formats/MessagePack/MessagePackParser.h
+    Data/Formats/MessagePack/MessagePackWriter.cpp
+    Data/Formats/MessagePack/MessagePackWriter.h
+    Data/Tests/MessagePackTests.cpp
+    Data/Tests/MessagePackTests.h
+    Data/Tests/MessagePackInterop.py
