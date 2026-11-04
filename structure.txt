@@ -700,12 +700,14 @@ D:.
     |   |   |   |   Components.cpp
     |   |   |   |   Components.h
     |   |   |   |   ComponentStorage.h
+    |   |   |   |   ComponentStorage.inl
     |   |   |   |   ComponentView.h
     |   |   |   |   Entity.cpp
     |   |   |   |   Entity.h
     |   |   |   |   ExplicitCubeSceneDemo.h
     |   |   |   |   Scene.cpp
     |   |   |   |   Scene.h
+    |   |   |   |   Scene.inl
     |   |   |   |   SceneCamera.cpp
     |   |   |   |   SceneCamera.h
     |   |   |   |   SceneCameraSystem.cpp

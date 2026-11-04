@@ -1062,4 +1062,9 @@
     <ClCompile Include="Raven\Data\Tests\MessagePackTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
     <ClInclude Include="Raven\Data\Tests\MessagePackTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Raven\Scene\ComponentStorage.inl"><Filter>Raven\Scene</Filter></None>
+    <None Include="Raven\Scene\Scene.inl"><Filter>Raven\Scene</Filter></None>
+    <None Include="..\Tests\SceneStorageTests.cpp"><Filter>Raven\Scene</Filter></None>
+  </ItemGroup>
 </Project>

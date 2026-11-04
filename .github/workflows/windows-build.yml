@@ -30,6 +30,10 @@ jobs:
         shell: pwsh
         run: ./scripts/build-windows.ps1 -Configuration Debug -Platform x64 -SkipBootstrap
 
+      - name: Build and run Scene SG0 regression tests
+        shell: pwsh
+        run: ./scripts/test-windows-scene.ps1 -SkipBuild -SkipBootstrap
+
       - name: Build and run CPU UI regression tests
         shell: pwsh
         run: ./scripts/test-windows-ui.ps1 -Configuration Debug -Platform x64 -SkipBootstrap

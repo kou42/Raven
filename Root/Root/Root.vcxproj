@@ -236,6 +236,9 @@
     <None Include="Raven\Core\Containers\HandlePool.inl" />
     <None Include="Raven\Core\Containers\SparseSet.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
+    <None Include="Raven\Scene\ComponentStorage.inl" />
+    <None Include="Raven\Scene\Scene.inl" />
+    <None Include="..\Tests\SceneStorageTests.cpp" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
        入出力を対にすることで未生成時・Shader更新時だけglslcを起動します。 -->

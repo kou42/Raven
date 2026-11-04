@@ -43,7 +43,8 @@ bool Scene::IsEntityAlive(EntityHandle handle) const
 
 bool Scene::IsEntityAlive(Entity entity) const
 {
-    return IsEntityAlive(entity.GetIndex(),entity.GetGeneration());
+    // HandleのIndex/GenerationはScene間で重複するため、所有Sceneも照合します。
+    return entity.GetScene() == this && IsEntityAlive(entity.GetHandle());
 }
 
 Entity Scene::CreateEntity(const std::string& name)
@@ -153,7 +154,9 @@ bool Scene::SetEntityParent(EntityHandle child, EntityHandle parent)
 void Scene::DestroyEntity(Entity entity)
 {
     if (IsEntityAlive(entity) == false)
+    {
         return;
+    }
 
     const EntityIndex index = entity.GetIndex();
 

@@ -30,7 +30,7 @@ Scene /
 ├─ Scene.h
 └─ Scene.cpp
 
-ComponentView.hではクラスの宣言だけを行い、Sceneを使う関数本体はScene.hの後半に置きます。
+ComponentView.hではクラスの宣言だけを行い、Sceneを使う関数本体はScene.h末尾からincludeするScene.inlに置きます。
 //+ ---------------------------------------------------
 
 #endif
@@ -46,6 +46,11 @@ class Scene;
 今回はEntity ID一覧を保持するように変更します。
 #endif
 
+// SceneとStorageへの非所有Viewです。Scene破棄後は利用できません。
+// 走査中は対象Storageの追加/削除、Entityの即時破棄、Flushを行わないでください。
+// swap-and-popと終端Indexの変化で走査の取りこぼしや範囲外参照が起こり得ます。
+// Component値の変更とQueueDestroyEntityは可能です。Flushは走査終了後に行います。
+// 構造変更後はView/IteratorとComponent参照を再取得してください。
 template<class... Components>
 class ComponentView
 {
