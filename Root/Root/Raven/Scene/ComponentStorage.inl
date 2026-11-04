@@ -37,28 +37,6 @@ T& ComponentStorage<T>::Emplace(EntityID entityID, Args&&... args)
     m_Sparse[entityID] = denseIndex;
 
     return m_Components.back();
-#if 0
-    auto [iterator, inserted] = m_Components.try_emplace(entityID, std::forward<Args>(args)...);
-
-    if (inserted == false)
-    {
-        throw std::runtime_error("The entity already has this component.");
-    }
-
-    // m_Componentsへの追加後にm_Entities.push_back()が失敗した場合は、追加したComponentを取り消しています。
-    // m_Componentsには存在するけど、m_Entitiesには存在しないという不整合を防ぎます。
-    try
-    {
-        m_Entities.push_back(entityID);
-    }
-    catch (...)
-    {
-        m_Components.erase(iterator);
-        throw;
-    }
-
-    return iterator->second;
-#endif
 }
 
 template<class T>
@@ -80,9 +58,6 @@ bool ComponentStorage<T>::Has(EntityIndex entityIndex) const
     }
 
     return m_Entities[denseIndex] == entityIndex;
-#if 0
-    return m_Components.find(entityID) != m_Components.end();
-#endif
 }
 
 template<class T>
@@ -121,33 +96,6 @@ bool ComponentStorage<T>::Remove(EntityIndex entityIndex)
     return true;
 
     // 旧実装
-#if 0
-    const auto componentIterator = m_Components.find(entityID);
-
-    if (componentIterator == m_Components.end()) {
-        return false;
-    }
-
-    const auto entityIterator = std::find(m_Entities.begin(), m_Entities.end(), entityID);
-
-    if (entityIterator != m_Entities.end())
-    {
-        m_Entities.erase(entityIterator);
-    }
-
-    // Entity IDの並び順を保証しなくてよければ、swap-and-popが使えます。
-#if 0
-    if (entityIterator != m_Entities.end())
-    {
-        *entityIterator = m_Entities.back();
-        m_Entities.pop_back();
-    }
-#endif
-
-    m_Components.erase(componentIterator);
-
-    return true;
-#endif
 }
 
 template<class T>

@@ -6,45 +6,12 @@
 #include "Raven/Scene/ComponentStorage.h"
 #include "Raven/Scene/Entity.h"
 
-#if 0
-//+ ---------------------------------------------------
-
-ComponentView.h内ではSceneを前方宣言しかしていないため、
-
-m_Scene->GetComponent<T>()
-m_Scene->HasComponent<T>()
-
-の呼び出しをコンパイラが正しく解釈できない場合があります。
-
-さらに、依存テンプレート名なのでtemplateキーワードも必要になります。
-
-したがって、実際には循環includeを避けるため、Component Viewの定義位置を少し工夫します。
-//+ ---------------------------------------------------
-
-次の構成にします。
-
-Scene /
-├─ Entity.h
-├─ ComponentStorage.h
-├─ ComponentView.h
-├─ Scene.h
-└─ Scene.cpp
-
-ComponentView.hではクラスの宣言だけを行い、Sceneを使う関数本体はScene.h末尾からincludeするScene.inlに置きます。
-//+ ---------------------------------------------------
-
-#endif
 
 namespace Raven
 {
 
 class Scene;
 
-#if 0
-前回のComponent Viewは、先頭ComponentのStorage Iteratorを保持していました。
-
-今回はEntity ID一覧を保持するように変更します。
-#endif
 
 // SceneとStorageへの非所有Viewです。Scene破棄後は利用できません。
 // 走査中は対象Storageの追加/削除、Entityの即時破棄、Flushを行わないでください。
@@ -108,52 +75,6 @@ private:
 };
 
 // 旧versionのComponentViewは、先頭ComponentのStorage Iteratorを保持していました。
-#if 0
-template<class FirstComponent, class... OtherComponents>
-class ComponentView
-{
-private:
-
-    using BaseStorage = ComponentStorage<FirstComponent>;
-    using BaseIterator = typename BaseStorage::Iterator;
-
-public:
-
-    class Iterator
-    {
-    public:
-
-        Iterator(Scene* scene, BaseIterator current, BaseIterator end);
-
-        Iterator& operator++();
-
-        bool operator==(const Iterator& other) const;
-        bool operator!=(const Iterator& other) const;
-
-        auto operator*() const;
-
-    private:
-        void SkipInvalidEntities();
-
-    private:
-        Scene* m_Scene = nullptr;
-
-        BaseIterator m_Current;
-        BaseIterator m_End;
-    };
-
-public:
-
-    ComponentView(Scene& scene, BaseStorage& baseStorage);
-
-    Iterator begin();
-    Iterator end();
-
-private:
-    Scene* m_Scene = nullptr;
-    BaseStorage* m_BaseStorage = nullptr;
-};
-#endif
 
 
 }

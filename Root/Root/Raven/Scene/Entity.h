@@ -137,12 +137,6 @@ public:
 
     Scene* GetScene() const noexcept;
 
-#if 0
-    explicit operator bool() const
-    {
-        return m_Index != 0 && m_Generation  != 0 && m_Scene != nullptr;
-    }
-#endif
 
     explicit operator bool() const;
 

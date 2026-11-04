@@ -78,32 +78,6 @@ Entity Scene::CreateEntity(const std::string& name)
 
     return entity;
 
-#if 0
-#if USE_STORAGE_VERSION_2
-    const EntityID id = m_NextEntityID++;
-
-    AddComponent<TagComponent>(id, TagComponent{ name });
-
-    AddComponent<TransformComponent>(id);
-
-    return Entity(id, this);
-
-#elif USE_STORAGE_VERSION_1
-    const EntityID id = m_NextEntityID++;
-
-    m_Tags.Emplace(id, TagComponent{ name });
-    m_Transforms.Emplace(id);
-
-    return Entity(id, this);
-#else
-    EntityID id = m_NextEntityID++;
-
-    m_Tags[id] = TagComponent{ name };
-    m_Transforms[id] = TransformComponent{};
-
-    return Entity(id, this);
-#endif
-#endif
 }
 
 EntityHandle Scene::GetEntityParent(EntityHandle child) const
@@ -197,28 +171,6 @@ void Scene::DestroyEntity(Entity entity)
 
     m_FreeEntityIndices.push_back(index);
 
-#if 0
-#if USE_STORAGE_VERSION_2
-    const EntityID id = entity.GetID();
-
-    for (auto& [type, storage] : m_ComponentStorages)
-    {
-        storage->Remove(id);
-    }
-#elif USE_STORAGE_VERSION_1
-    const EntityID id = entity.GetID();
-
-    m_Tags.Remove(id);
-    m_Transforms.Remove(id);
-    m_MeshRenderers.Remove(id);
-#else
-    EntityID id = entity.GetID();
-
-    m_Tags.erase(id);
-    m_Transforms.erase(id);
-    m_MeshRenderers.erase(id);
-#endif
-#endif
 }
 
 const ph::PhysicsWorld& Scene::GetPhysicsWorld() const
@@ -468,28 +420,6 @@ void Scene::RenderEntities()
             transform.GetTransform(), entity.GetIndex());
     }
 
-#if 0
-    const auto* meshStorage = FindStorage<MeshRendererComponent>();
-
-    if (meshStorage == nullptr) {
-        return;
-    }
-
-    for (const auto& [id, meshRenderer] : *meshStorage)
-    {
-        if (meshRenderer.IsValid() == false) {
-            continue;
-        }
-
-        const TransformComponent* transform = TryGetComponent<TransformComponent>(id);
-
-        if (transform == nullptr) {
-            continue;
-        }
-
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform->GetTransform());
-    }
-#endif
 
 #else
     for (const auto& [id, meshRenderer] : m_MeshRenderers)
@@ -535,22 +465,6 @@ void Scene::QueueDestroyEntity(Entity entity)
 
     m_DestroyQueue.push_back(entity);
 
-#if 0
-    // 同じEntityを複数回予約する可能性があるなら
-    if (!entity) {
-        return;
-    }
-
-    const EntityID entityID = entity.GetID();
-
-    const auto iterator = std::find(m_DestroyQueue.begin(), m_DestroyQueue.end(), entityID);
-
-    if (iterator == m_DestroyQueue.end())
-    {
-        m_DestroyQueue.push_back(entityID);
-    }
-}
-#endif
 }
 
 void Scene::FlushDestroyedEntities()
@@ -583,133 +497,5 @@ EntityGeneration Scene::GetEntityGeneration(EntityIndex index) const
     return m_EntitySlots[index].Generation;
 }
 
-#if 0
-
-void TestEntityHandle()
-{
-    const EntityHandle first{10, 3};
-
-    const uint64_t packed = first.Value();
-
-    const EntityHandle restored = EntityHandle::FromValue(packed);
-
-    assert(first == restored);
-    assert(first.Index == 10);
-    assert(first.Generation == 3);
-
-    const EntityHandle second{10, 4};
-
-    assert(first != second);
-
-    std::unordered_set<EntityHandle> handles;
-
-    handles.insert(first);
-    handles.insert(second);
-
-    assert(handles.size() == 2);
-    assert(handles.contains(first));
-    assert(handles.contains(second));
-}
-
-void TestEntityrecycle()
-{
-    Entity oldEntity = scene.CreateEntity("Old");
-
-    const EntityHandle oldHandle = oldEntity.GetHandle();
-
-    scene.DestroyEntity(oldEntity);
-
-    assert(!oldEntity);
-
-    Entity newEntity = scene.CreateEntity("New");
-
-    const EntityHandle newHandle = newEntity.GetHandle();
-
-    assert(oldHandle.Index == newHandle.Index);
-
-    assert(oldHandle.Generation != newHandle.Generation);
-
-    assert(oldHandle != newHandle);
-    assert(oldEntity != newEntity);
-}
-
-void TestEntityGeneration()
-{
-    Entity first = scene.CreateEntity("First");
-
-    const EntityIndex reusedIndex = first.GetIndex();
-
-    const EntityGeneration oldGeneration = first.GetGeneration();
-
-    scene.DestroyEntity(first);
-
-    assert(!first);
-
-    Entity second = scene.CreateEntity("Second");
-
-    const EntityHandle newHandle = second.GetHandle();
-    static_cast<void>(newHandle);
-
-    assert(second.GetIndex() == reusedIndex);
-
-    assert(second.GetGeneration() != oldGeneration);
-
-    assert(first != second);
-    assert(!scene.IsEntityAlive(first));
-    assert(scene.IsEntityAlive(second));
-}
-
-// Sparse Set版の動作確認
-void TestSparseComponentStorage()
-{
-    Raven::ComponentStorage<Raven::TransformComponent> storage;
-
-    auto& first = storage.Emplace(5);
-
-    first.Position.x = 10.0f;
-
-    auto& second = storage.Emplace(2);
-
-    second.Position.x = 20.0f;
-
-    auto& third = storage.Emplace(9);
-
-    third.Position.x = 30.0f;
-
-    assert(storage.Size() == 3);
-
-    assert(storage.Has(5));
-    assert(storage.Has(2));
-    assert(storage.Has(9));
-    assert(!storage.Has(100));
-
-    assert(storage.Get(5).Position.x == 10.0f);
-
-    assert(storage.Get(2).Position.x == 20.0f);
-
-    assert(storage.Get(9).Position.x == 30.0f);
-
-    const bool removed = storage.Remove(2);
-
-    assert(removed);
-    assert(!storage.Has(2));
-    assert(storage.Size() == 2);
-
-    /*
-     * swap-and-pop後も、
-     * 移動したEntity 9を正しく取得できる。
-     */
-    assert(storage.Has(9));
-    assert(storage.Get(9).Position.x == 30.0f);
-
-    assert(!storage.Remove(2));
-
-    storage.Clear();
-
-    assert(storage.Empty());
-    assert(!storage.Has(5));
-    assert(!storage.Has(9));
-}
-#endif
 
 }
