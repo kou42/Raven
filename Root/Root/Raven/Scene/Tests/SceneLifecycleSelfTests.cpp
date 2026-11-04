@@ -1,6 +1,7 @@
 #include "Raven/Scene/Tests/SceneLifecycleSelfTests.h"
 
 #include <cassert>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -133,6 +134,109 @@ private:
 
 void RunSceneLifecycleSelfTests()
 {
+    // SG0: Scene間で同じHandleが生じても、別SceneのEntityを受け付けません。
+    {
+        Scene owner;
+        Scene other;
+        Entity original = owner.CreateEntity("Owner");
+        Entity foreign = other.CreateEntity("Other");
+        assert(original.GetHandle() == foreign.GetHandle());
+        assert(owner.IsEntityAlive(Entity{}) == false);
+        assert(owner.IsEntityAlive(foreign) == false);
+        assert(other.IsEntityAlive(original) == false);
+        owner.DestroyEntity(foreign);
+        owner.QueueDestroyEntity(foreign);
+        owner.FlushDestroyedEntities();
+        assert(owner.IsEntityAlive(original) == true);
+        assert(other.IsEntityAlive(foreign) == true);
+        assert(original.GetComponent<TagComponent>().Tag == "Owner");
+
+        Entity child = owner.CreateEntity("Child");
+        assert(owner.SetEntityParent(child.GetHandle(), original.GetHandle()) == true);
+        // 重複Queueと即時破棄が混在しても、再利用されたSlotを破棄しません。
+        owner.QueueDestroyEntity(original);
+        owner.QueueDestroyEntity(original);
+        owner.DestroyEntity(original);
+        owner.DestroyEntity(original);
+        assert(owner.GetEntityParent(child.GetHandle()) == InvalidEntityHandle);
+        assert(child.GetComponent<RelationshipComponent>().Parent == InvalidEntityHandle);
+        assert(owner.TryGetComponent<TagComponent>(original.GetIndex()) == nullptr);
+        assert(owner.HasComponent<TagComponent>(original.GetIndex()) == false);
+        assert(owner.RemoveComponent<TagComponent>(original.GetIndex()) == false);
+        bool rejectedDeadGet = false;
+        try
+        {
+            static_cast<const Scene&>(owner).GetComponent<TagComponent>(original.GetIndex());
+        }
+        catch (const std::out_of_range&)
+        {
+            rejectedDeadGet = true;
+        }
+        assert(rejectedDeadGet == true);
+        bool rejectedDeadIndex = false;
+        try
+        {
+            owner.AddComponent<TagComponent>(original.GetIndex());
+        }
+        catch (const std::out_of_range&)
+        {
+            rejectedDeadIndex = true;
+        }
+        assert(rejectedDeadIndex == true);
+        Entity replacement = owner.CreateEntity("Replacement");
+        assert(replacement.GetIndex() == original.GetIndex());
+        assert(replacement.GetGeneration() != original.GetGeneration());
+        owner.FlushDestroyedEntities();
+        assert(owner.IsEntityAlive(replacement) == true);
+        assert(owner.IsEntityAlive(original) == false);
+        assert(original.HasComponent<TagComponent>() == false);
+        assert(original.RemoveComponent<TagComponent>() == false);
+        bool rejectedStale = false;
+        try
+        {
+            original.GetComponent<TagComponent>();
+        }
+        catch (const std::runtime_error&)
+        {
+            rejectedStale = true;
+        }
+        assert(rejectedStale == true);
+        rejectedStale = false;
+        try
+        {
+            original.AddComponent<RelationshipComponent>();
+        }
+        catch (const std::runtime_error&)
+        {
+            rejectedStale = true;
+        }
+        assert(rejectedStale == true);
+        assert(replacement.HasComponent<RelationshipComponent>() == false);
+        assert(replacement.GetComponent<TagComponent>().Tag == "Replacement");
+        assert(owner.GetEntityParent(child.GetHandle()) == InvalidEntityHandle);
+        assert(owner.SetEntityParent(child.GetHandle(), original.GetHandle()) == false);
+        assert(owner.TryGetComponent<TagComponent>(InvalidEntityIndex) == nullptr);
+        assert(owner.TryGetComponent<TagComponent>(std::numeric_limits<EntityIndex>::max()) == nullptr);
+        const Scene& constOwner = owner;
+        assert(constOwner.TryGetComponent<TagComponent>(InvalidEntityIndex) == nullptr);
+
+        // Viewは非所有・非Snapshotです。走査中は値の変更と破棄予約だけを行います。
+        std::size_t visited = 0;
+        for (auto [entity, tag] : owner.View<TagComponent>())
+        {
+            tag.Tag = "Queued";
+            owner.QueueDestroyEntity(entity);
+            ++visited;
+        }
+        assert(visited == 2u);
+        assert(owner.IsEntityAlive(child) == true);
+        assert(owner.IsEntityAlive(replacement) == true);
+        owner.FlushDestroyedEntities();
+        assert(owner.View<TagComponent>().Empty() == true);
+        assert(owner.IsEntityAlive(child) == false);
+        assert(owner.IsEntityAlive(replacement) == false);
+    }
+
     Scene scene{};
 
     // ========================================================================

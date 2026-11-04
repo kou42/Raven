@@ -220,3 +220,51 @@ Linuxで同じテストを独立実行する場合は、`RAVEN_UI_PERFORMANCE_TE
 `CPUProfiler.cpp`をリンクします。計測モードには`RAVEN_ENABLE_ALLOCATION_MEASUREMENT=1`を追加します。
 Threadを使用するため`-pthread`が必要です。既存Base.hの無効コード内の矢印文字はGCC向けの一時ヘッダーで
 除いて確認しており、これをWindows正式ビルドの合格とは扱いません。
+
+## Scene Graph SG0のCPU回帰テスト
+
+`SceneStorageTests.cpp` はScene/Window/GPUに依存せず、Sparse Setのswap-and-pop、
+Index再追加、Clear、mutable/const Iterator、move-only所有型、構築失敗と移動代入失敗時の
+索引整合性を検証する独立実行ファイルです。Rootの通常実行ファイルにはリンクしません。
+`assert`を使用するため`NDEBUG`を定義しないでください。
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+  -I Root/Root Root/Tests/SceneStorageTests.cpp -o /tmp/raven-scene-storage-tests
+ASAN_OPTIONS=detect_leaks=0 /tmp/raven-scene-storage-tests
+```
+
+上記のLeakSanitizer無効化はptrace下のクラウド環境用です。Leak検証を実施したとは扱いません。
+Visual Studio Developer Command Promptでは、リポジトリルートから以下で単独実行できます。
+
+```bat
+cl /nologo /std:c++17 /EHsc /W4 /I Root/Root Root/Tests/SceneStorageTests.cpp /Fe:%TEMP%\raven-scene-storage-tests.exe /Fo:%TEMP%\raven-scene-storage-tests.obj
+%TEMP%\raven-scene-storage-tests.exe
+```
+
+`SceneLifecycleSelfTests.cpp` のSG0ケースは別Sceneの同一Handle拒否、二重破棄、古いEntityの
+Component操作拒否、破棄Queue後のIndex再利用、親破棄時のDetach、無効Index、
+View走査中の値変更と遅延破棄を確認します。既存のDebug専用入口から実行します。
+
+```powershell
+./scripts/build-windows.ps1 -Configuration Debug -Platform x64
+& "./Root/x64/Debug/Root.exe" --test-scene-lifecycle
+if ($LASTEXITCODE -ne 0) { throw "Scene lifecycle test failed" }
+./scripts/build-windows.ps1 -Configuration Release -Platform x64
+```
+
+Scene LifecycleテストはEngineのWindowsリンク依存を必要とします。
+LinuxのStorage単体テストやGCC構文確認は、このWindowsビルド・実行の代替合格とはしません。
+Scene所有権と無効化の契約、未検証事項はルートの`RAVEN_SCENE_GRAPH_SG0.md`を参照してください。
+
+SG0のStorage単体テストとDebug Scene Lifecycleをまとめて検証する場合:
+
+```powershell
+./scripts/test-windows-scene.ps1
+```
+
+既にDebugアプリをビルド済みの場合は`-SkipBuild`、依存関係を設定済みの場合は
+`-SkipBootstrap`を指定できます。独立Storageテストは毎回MSVCでコンパイルし、
+`/UNDEBUG`でassertを有効にします。結果とコンパイルログは`artifacts/logs/windows-scene-*.log`へ保存します。
+Windows Build CIのDebugジョブでも両テストを実行し、既存のログArtifactに結果を含めます。
+Releaseジョブは従来のEngineビルドを継続します。Scene Lifecycleの専用入口はDebug限定です。

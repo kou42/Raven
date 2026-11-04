@@ -71,17 +71,6 @@ private:
     Input* m_Previous = nullptr;
     Input* m_Next = nullptr;
 
-#if 0
-public:
-    static bool IsKeyPressed(int keycode);
-
-    static bool IsMouseButtonPressed(int button);
-
-    static std::pair<float, float> GetMousePosition();
-
-    static float GetMouseX();
-    static float GetMouseY();
-#endif
 };
 
 }

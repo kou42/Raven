@@ -1263,12 +1263,6 @@ void Application::UpdateLoadingScreen()
 
 void Application::PushLayer(Layer* layer)
 {
-#if 0
-    // 旧raw pointer APIは所有権が曖昧になるため現在は使用しません。
-    // Scope<Layer>版へ統一することで、ApplicationがLayerのLifetimeを明確に所有します。
-    m_Layers.push_back(layer);
-    layer->OnAttach();
-#endif
 }
 
 void Application::PushLayer(Scope<Layer> layer)
