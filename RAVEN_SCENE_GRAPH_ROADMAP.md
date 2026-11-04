@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG0をmasterへ統合。SG1の責務分離・回帰テスト・走査計測を実装中。詳細は [SG1作業記録](RAVEN_SCENE_GRAPH_SG1.md)。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG0をmasterへ統合。SG1の責務分離・Windows CPU回帰テスト・走査計測を完了（実機描画・シミュレーション回帰は未検証）。詳細は [SG1作業記録](RAVEN_SCENE_GRAPH_SG1.md)。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 
@@ -46,10 +46,10 @@
 
 **対象候補:** `Scene/Scene.h/.cpp`、`Scene/Components.h`、新規 `SceneGraph`（必要な場合のみ）、Editor階層表示・テスト。
 
-- [ ] `RelationshipComponent::Parent` と `SetEntityParent` を正規APIとして維持し、階層管理の責務を抽出。
-- [ ] Reparent、Detach、祖先・子孫走査、循環防止、親破棄時の子の扱いを明文化。
-- [ ] 子一覧を毎回走査する方式と子リンク/キャッシュ方式を計測し、必要な場合だけ高速化。
-- [ ] Editor SceneHierarchy、選択、Undo/Redo、Snapshotとの整合性を検証。
+- [x] `RelationshipComponent::Parent` と `SetEntityParent` を正規APIとして維持し、階層管理の責務を抽出。
+- [x] Reparent、Detach、祖先・子孫走査、循環防止、親破棄時の子の扱いを明文化。
+- [x] 子一覧を毎回走査する方式と子リンク/キャッシュ方式を計測し、必要な場合だけ高速化。
+- [x] Editor SceneHierarchy、選択、Undo/Redo、Snapshotとの整合性を検証。
 
 **完了条件:** 親子構造の変更・破棄・復元が正しく、既存World-space Transformの描画/物理結果が変わらない。
 
