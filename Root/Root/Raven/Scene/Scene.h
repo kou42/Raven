@@ -8,6 +8,7 @@
 #include <utility>
 #include <algorithm>
 #include <array>
+#include <vector>
 
 //#include "Raven/Core/Event.h"
 #include "Raven/Core/Base.h"
@@ -27,6 +28,7 @@
 namespace Raven
 {
 class RHIDevice;
+class SceneGraph;
 
 class Scene
 {
@@ -85,6 +87,10 @@ public:
     bool CanSetEntityParent(EntityHandle child, EntityHandle parent) const;
     bool SetEntityParent(EntityHandle child, EntityHandle parent);
     EntityHandle GetEntityParent(EntityHandle child) const;
+    bool DetachEntity(EntityHandle child);
+    std::vector<EntityHandle> GetEntityChildren(EntityHandle parent) const;
+    std::vector<EntityHandle> GetEntityAncestors(EntityHandle child) const;
+    std::vector<EntityHandle> GetEntityDescendants(EntityHandle root) const;
 
     // Editorが復元できない未知のComponentを持つEntityの削除を防ぎます。
     bool CanSnapshotEntityComponents(EntityHandle handle) const;
@@ -153,6 +159,8 @@ protected:
     virtual bool ShouldUpdateSimulation() const { return true; }
 
 private:
+
+    friend class SceneGraph;
 
     struct EntitySlot
     {

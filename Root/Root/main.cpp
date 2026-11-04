@@ -19,6 +19,7 @@
 #include "Raven/Core/Base.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneTitle.h"
+#include "Raven/Scene/Tests/SceneGraphSelfTests.h"
 #include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
@@ -85,12 +86,23 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument == "--measure-scene-graph")
+        {
+            Raven::tests::RunSceneGraphMeasurements();
+            return 0;
+        }
         // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
 #ifdef _DEBUG
         if (backendArgument == "--test-explicit-frame")
         {
             Raven::tests::RunExplicitSceneFrameSelfTests();
             std::cout << "Explicit Scene Frame self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-scene-graph")
+        {
+            Raven::tests::RunSceneGraphSelfTests();
+            std::cout << "Scene graph self-tests passed.\n";
             return 0;
         }
         if (backendArgument == "--test-scene-lifecycle")
@@ -286,6 +298,7 @@ int main(int argc, char* argv[])
     Raven::tests::RunEditorViewportGeometrySelfTests();
     Raven::tests::RunInspectorSnapshotSelfTests();
     Raven::tests::RunSceneLifecycleSelfTests();
+    Raven::tests::RunSceneGraphSelfTests();
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();

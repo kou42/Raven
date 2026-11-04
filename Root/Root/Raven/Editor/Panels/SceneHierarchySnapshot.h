@@ -27,8 +27,8 @@ struct SceneHierarchySnapshot
     std::vector<SceneHierarchyNodeSnapshot> Nodes;
 };
 
-// Scene依存のない組み立て入力です。将来Relationship Componentが追加された際も、
-// UI側の契約を変えずParent Handleへ写せるよう親子関係を明示します。
+// Scene依存のない組み立て入力です。Runtimeの親子関係はSceneGraphが検証し、
+// UIは外部入力やSnapshotの破損にも備えて循環・孤児を別途正規化します。
 struct SceneHierarchySnapshotInput
 {
     bool SceneAvailable = false;

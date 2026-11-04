@@ -238,6 +238,7 @@
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
     <None Include="Raven\Scene\ComponentStorage.inl" />
     <None Include="Raven\Scene\Scene.inl" />
+    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl" />
     <None Include="..\Tests\SceneStorageTests.cpp" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
