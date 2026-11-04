@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG0の安全性修正・回帰テストを実装中（Windowsビルド・Scene Lifecycle実行は未検証）。詳細は [SG0作業記録](RAVEN_SCENE_GRAPH_SG0.md)。2026-11-04 時点の `master` 上の既存設計を基に作成。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG0の安全性修正とWindows Debug/Releaseビルド・CPU回帰テストを確認済み（Editor/Physics/Animation実機回帰は未検証）。詳細は [SG0作業記録](RAVEN_SCENE_GRAPH_SG0.md)。2026-11-04 時点の `master` 上の既存設計を基に作成。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 
@@ -35,10 +35,10 @@
 **対象候補:** `Scene/Entity.h`、`Scene/Scene.h/.cpp`、`Scene/ComponentStorage.h`、`Scene/ComponentView.h`、関連テスト。
 
 - [x] `structure.txt` と利用箇所を再調査し、Scene所有権・Entity破棄・Component Viewの無効化規則を一覧化。
-- [ ] `Scene::IsEntityAlive(Entity)` 等のScene所属判定を監査。異なるSceneで同じIndex/Generationを持つEntityを拒否する契約をテスト。
+- [x] `Scene::IsEntityAlive(Entity)` 等のScene所属判定を監査。異なるSceneで同じIndex/Generationを持つEntityを拒否する契約をテスト。
 - [x] IndexベースのComponent APIに対する生存確認の境界を決定。内部高速経路と公開安全APIを区別。
 - [x] Sparse Setの追加・削除・移動時の例外安全性、非trivial型、参照無効化を確認し、必要最小限の修正。
-- [ ] Entity再利用、二重破棄、破棄キュー、View走査中の変更、親Handle再利用を回帰テスト。
+- [x] Entity再利用、二重破棄、破棄キュー、View走査中の変更、親Handle再利用を回帰テスト。
 
 **完了条件:** 不正Scene/古いHandleが誤ったEntity/Componentへ到達しないことをテストで確認。既存動作とビルドを維持。
 

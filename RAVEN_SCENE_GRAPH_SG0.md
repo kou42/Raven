@@ -1,7 +1,8 @@
 # Scene Graph SG0 — 安全性のベースライン
 
-2026-11-04。SG0の変更とCPUテストを追加。Windowsビルド・Scene Lifecycleの実行・
-Editor/Physics/AnimationのRuntime回帰確認は未実施のため、マイルストーンの検証完了は保留。
+2026-11-04。SG0の変更とCPUテストを追加し、Windows Debug/Releaseビルドと
+Storage・Scene Lifecycleの回帰テスト成功をCIで確認。Editor/Physics/Animationの
+実機Runtime回帰は未実施のため、この制約は残る。
 SG1以降には進まない。
 
 ## 所有権とアクセス境界
@@ -53,8 +54,8 @@ Sceneの完全型を必要とするEntity/ComponentViewの定義もScene.inlか�
 - LeakSanitizerはptrace下で動作しないため無効化。Leak検証は未実施。
 - プロジェクト/Filter XML、新規Sceneファイルとstructure.txtの整合を確認。既存baselineスクリプトはCR単独行をメモリ上で正規化して確認（ファイル自体は変更しない）。
 - GCC構文確認のWarningは既存の型名とメンバ名の重複による7件。Storage単体テストのコンパイルはWarningなし。
-- Windows Debug/Releaseビルド、--test-scene-lifecycle実行、Editor/Physics/Animation実機確認は未実施。
-- 実行手順はRoot/Tests/README.md。Windowsでの検証が完了するまでSG0完了とは扱わない。
+- Windows Debug/Releaseビルドと--test-scene-lifecycle実行は下記CIで成功。Editor/Physics/Animation実機確認は未実施。
+- 実行手順はRoot/Tests/README.md。SG0のWindows CPU検証は完了。実機Runtime・Leak検証の合格を意味しない。
 - Generationの32bit周回とScene pointerのアドレス再利用は今回の変更で解決しない。EntityをScene lifetime外へ持ち出さない既存契約を維持する。
 
 ## SG0 Windows検証の自動化
@@ -67,4 +68,17 @@ Debugアプリの`--test-scene-lifecycle`を実行する。終了コードと成
 既存Debug/Releaseビルドは継続し、SceneテストはDebugビルド直後に実行する。
 ローカルではWorkflow YAML・Step順序・プロジェクトXML・diff整合を確認。
 Windows PowerShell/MSVCを持たないLinux環境のため、Windowsスクリプトの実行確認はCIで行う。
-結果が得られるまではWindows検証を合格として扱わない。
+初回ローカル確認ではWindows検証を合格として扱わず、以下のCI結果で補完した。
+
+## Windows CI結果
+
+- PR: https://github.com/kou42/Raven/pull/360
+- 実行: https://github.com/kou42/Raven/actions/runs/41873370281
+- 検証対象の実装コミット: `b5528b518186e46aae62551596fa3909e84ef0f8`
+- Debug x64 Engineビルド: 成功。
+- MSVC Storage単体テストのコンパイル・実行、およびScene Lifecycleテスト: 成功。
+- Release x64 EngineビルドとCPU UI回帰テスト: 成功。
+- Allocation計測付きCPU UI回帰テスト: 成功。
+- GPU統合テスト用実行物のビルド: 成功（GPU実機実行は行っていない）。
+
+本結果の追記はロードマップと本記録のみの変更で、検証済みの実装・テスト・CI設定は変更しない。
