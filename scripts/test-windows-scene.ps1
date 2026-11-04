@@ -82,21 +82,30 @@ if (-not (Test-Path -LiteralPath $testExecutable -PathType Leaf)) {
     throw "The Debug application executable was not found: $testExecutable"
 }
 
-# テスト専用引数はWindowを作らず終了します。成功メッセージも照合し、誤った実行物を合格にしません。
+# テスト専用引数はWindowを作らず終了します。成功メッセージも照合します。
+$checks = @(
+    @{ Argument = "--test-scene-lifecycle"; Marker = "Scene lifecycle self-tests passed."; Log = "lifecycle" },
+    @{ Argument = "--test-scene-graph"; Marker = "Scene graph self-tests passed."; Log = "graph" },
+    @{ Argument = "--test-editor-entity-commands"; Marker = "Editor entity command self-tests passed."; Log = "editor" },
+    @{ Argument = "--measure-scene-graph"; Marker = "SceneGraph shape=chain"; Log = "measure-debug" }
+)
 Push-Location $RepoRoot
 try {
     $env:Path = "$($debugCrt.DirectoryName);$($debugUcrt.DirectoryName);$previousPath"
-    $lifecycleOutput = @(& $testExecutable --test-scene-lifecycle 2>&1)
-    $lifecycleExitCode = $LASTEXITCODE
+    foreach ($check in $checks) {
+        $testOutput = @(& $testExecutable $check.Argument 2>&1)
+        $testExitCode = $LASTEXITCODE
+        $testLog = Join-Path $logDirectory "windows-scene-$($check.Log)-results.log"
+        Set-Content -LiteralPath $testLog -Value ($testOutput -join [Environment]::NewLine) -Encoding utf8
+        Add-Content -LiteralPath $testLog -Value "$($check.Argument) exit=$testExitCode" -Encoding utf8
+        if ($testExitCode -ne 0 -or ($testOutput -join "`n").Contains($check.Marker) -eq $false) {
+            $testOutput | ForEach-Object { Write-Host $_ }
+            throw "$($check.Argument) failed (exit=$testExitCode). See $testLog"
+        }
+        Write-Host "$($check.Argument) passed."
+    }
 } finally {
     $env:Path = $previousPath
     Pop-Location
 }
-$lifecycleLog = Join-Path $logDirectory "windows-scene-lifecycle-results.log"
-Set-Content -LiteralPath $lifecycleLog -Value ($lifecycleOutput -join [Environment]::NewLine) -Encoding utf8
-Add-Content -LiteralPath $lifecycleLog -Value "Scene lifecycle tests exit=$lifecycleExitCode" -Encoding utf8
-if ($lifecycleExitCode -ne 0 -or ($lifecycleOutput -join "`n") -notmatch 'Scene lifecycle self-tests passed\.') {
-    $lifecycleOutput | ForEach-Object { Write-Host $_ }
-    throw "Scene lifecycle tests failed (exit=$lifecycleExitCode). See $lifecycleLog"
-}
-Write-Host "Scene lifecycle tests passed. Logs: $logDirectory"
+Write-Host "Scene regression tests passed. Logs: $logDirectory"

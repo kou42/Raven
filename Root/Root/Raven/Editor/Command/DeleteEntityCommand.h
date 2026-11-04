@@ -16,171 +16,25 @@ namespace Raven
 class DeleteEntityCommand final : public IEditorCommand
 {
 public:
-    DeleteEntityCommand(Scene* targetScene, Entity target)
-        : m_TargetScene(targetScene), m_Handle(target.GetHandle())
-    {
-    }
+    DeleteEntityCommand(Scene* targetScene, Entity target);
 
-    void RemapEntityHandle(const EntityHandle& before, const EntityHandle& after) override
-    {
-        for (EntityHandle& child : m_Children)
-        {
-            if (child == before) { child = after; }
-        }
-        if (m_Relationship.has_value() == true && m_Relationship->Parent == before)
-        {
-            m_Relationship->Parent = after;
-        }
-    }
-    bool GetRestoredEntityHandles(EntityHandle& before, EntityHandle& after) const override
-    {
-        if (m_PreviousHandle.IsValid() == false || m_PreviousHandle == m_Handle)
-        {
-            return false;
-        }
-        before = m_PreviousHandle;
-        after = m_Handle;
-        return true;
-    }
+    void RemapEntityHandle(const EntityHandle& before, const EntityHandle& after) override;
+    bool GetRestoredEntityHandles(EntityHandle& before, EntityHandle& after) const override;
 
-    bool CanExecute(const Scene& scene) const override
-    {
-        return m_TargetScene == &scene
-            && m_Handle.IsValid() == true
-            && scene.IsEntityAlive(m_Handle) == true
-            && scene.CanSnapshotEntityComponents(m_Handle) == true
-            && scene.HasComponent<TagComponent>(m_Handle.m_Index) == true;
-    }
+    bool CanExecute(const Scene& scene) const override;
 
-    bool Execute(Scene& scene) override
-    {
-        if (CanExecute(scene) == false)
-        {
-            return false;
-        }
+    bool Execute(Scene& scene) override;
 
-        const Entity entity(m_Handle, &scene);
-        m_Tag = Capture<TagComponent>(entity);
-        m_Transform = Capture<TransformComponent>(entity);
-        m_Camera = Capture<CameraComponent>(entity);
-        m_Mesh = Capture<MeshRendererComponent>(entity);
-        m_Deformation = Capture<MeshDeformationComponent>(entity);
-        m_Animator = Capture<AnimatorComponent>(entity);
-        m_Body = Capture<RigidBodyComponent>(entity);
-        m_Collider = Capture<ColliderComponent>(entity);
-        m_Relationship = Capture<RelationshipComponent>(entity);
-        // DestroyEntityが子をRootへ切り離す前に、直下の子を記録します。
-        m_Children.clear();
-        for (auto [child, relation] : scene.View<RelationshipComponent>())
-        {
-            if (child.GetHandle() != m_Handle && relation.Parent == m_Handle)
-            {
-                m_Children.push_back(child.GetHandle());
-            }
-        }
+    bool Undo(Scene& scene) override;
 
-        scene.DestroyEntity(entity);
-        return scene.IsEntityAlive(m_Handle) == false;
-    }
-
-    bool Undo(Scene& scene) override
-    {
-        if (m_TargetScene != &scene || m_Tag.has_value() == false
-            || scene.IsEntityAlive(m_Handle) == true)
-        {
-            return false;
-        }
-
-        Entity restored = scene.CreateEntity(m_Tag->Tag);
-        if (static_cast<bool>(restored) == false)
-        {
-            return false;
-        }
-
-        // CreateEntityが標準Tag/Transformを生成する場合は上書きし、
-        // それ以外は追加します。外部の古いHandleを再利用しないことが重要です。
-        try
-        {
-            Restore(restored, m_Tag);
-            Restore(restored, m_Transform);
-            Restore(restored, m_Camera);
-            Restore(restored, m_Mesh);
-            Restore(restored, m_Deformation);
-            Restore(restored, m_Animator);
-            Restore(restored, m_Body);
-            Restore(restored, m_Collider);
-            Restore(restored, m_Relationship);
-            // 元のEntityにTransformが無かった場合はCreateEntityの既定値を残しません。
-            if (m_Transform.has_value() == false)
-            {
-                restored.RemoveComponent<TransformComponent>();
-            }
-        }
-        catch (...)
-        {
-            // Component追加途中の失敗で不完全なEntityをSceneに残さないよう巻き戻します。
-            scene.DestroyEntity(restored);
-            return false;
-        }
-        // 親が失われていた場合は古いGenerationへの参照を残しません。
-        if (m_Relationship.has_value() == true &&
-            m_Relationship->Parent.IsValid() == true &&
-            scene.CanSetEntityParent(restored.GetHandle(), m_Relationship->Parent) == false)
-        {
-            restored.GetComponent<RelationshipComponent>().Parent = InvalidEntityHandle;
-        }
-        // 復元した親は新しいHandleなので、存続中の子だけを再接続します。
-        for (EntityHandle child : m_Children)
-        {
-            if (scene.IsEntityAlive(child) == true &&
-                scene.GetEntityParent(child).IsValid() == false &&
-                scene.CanSetEntityParent(child, restored.GetHandle()) == true)
-            {
-                scene.SetEntityParent(child, restored.GetHandle());
-            }
-        }
-        m_PreviousHandle = m_Handle;
-        m_Handle = restored.GetHandle();
-        return true;
-    }
-
-    bool Redo(Scene& scene) override
-    {
-        if (m_TargetScene != &scene || scene.IsEntityAlive(m_Handle) == false)
-        {
-            return false;
-        }
-        scene.DestroyEntity(Entity(m_Handle, &scene));
-        return scene.IsEntityAlive(m_Handle) == false;
-    }
+    bool Redo(Scene& scene) override;
 
 private:
     template<class T>
-    static std::optional<T> Capture(const Entity& entity)
-    {
-        if (entity.HasComponent<T>() == false)
-        {
-            return std::nullopt;
-        }
-        return entity.GetComponent<T>();
-    }
+    static std::optional<T> Capture(const Entity& entity);
 
     template<class T>
-    static void Restore(Entity& entity, const std::optional<T>& value)
-    {
-        if (value.has_value() == false)
-        {
-            return;
-        }
-        if (entity.HasComponent<T>() == true)
-        {
-            entity.GetComponent<T>() = *value;
-        }
-        else
-        {
-            entity.AddComponent<T>(*value);
-        }
-    }
+    static void Restore(Entity& entity, const std::optional<T>& value);
 
     Scene* m_TargetScene = nullptr;
     EntityHandle m_Handle{};
@@ -198,3 +52,5 @@ private:
 };
 
 } // namespace Raven
+
+#include "Raven/Editor/Command/DeleteEntityCommand.inl"

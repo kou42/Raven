@@ -1,4 +1,5 @@
 ﻿#include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneGraph.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Event.h"
 #include "Raven/Renderer/Renderer.h"
@@ -82,47 +83,37 @@ Entity Scene::CreateEntity(const std::string& name)
 
 EntityHandle Scene::GetEntityParent(EntityHandle child) const
 {
-    if (IsEntityAlive(child) == false) { return InvalidEntityHandle; }
-    const auto* relation = TryGetComponent<RelationshipComponent>(child.m_Index);
-    if (relation == nullptr || IsEntityAlive(relation->Parent) == false)
-    {
-        return InvalidEntityHandle;
-    }
-    return relation->Parent;
+    return SceneGraph::GetParent(*this, child);
 }
 
 bool Scene::CanSetEntityParent(EntityHandle child, EntityHandle parent) const
 {
-    if (IsEntityAlive(child) == false || child == parent) { return false; }
-    if (parent.IsValid() == false) { return true; }
-    if (IsEntityAlive(parent) == false) { return false; }
-
-    // 親の祖先を辿って循環を検出します。上限を設け破損データでも停止します。
-    EntityHandle current = parent;
-    for (std::size_t depth = 0; depth < m_EntitySlots.size(); ++depth)
-    {
-        if (current == child) { return false; }
-        const auto* relation = TryGetComponent<RelationshipComponent>(current.m_Index);
-        if (relation == nullptr || relation->Parent.IsValid() == false) { return true; }
-        if (IsEntityAlive(relation->Parent) == false) { return false; }
-        current = relation->Parent;
-    }
-    return false;
+    return SceneGraph::CanReparent(*this, child, parent);
 }
 
 bool Scene::SetEntityParent(EntityHandle child, EntityHandle parent)
 {
-    if (CanSetEntityParent(child, parent) == false) { return false; }
-    auto* relation = TryGetComponent<RelationshipComponent>(child.m_Index);
-    if (relation == nullptr)
-    {
-        AddComponent<RelationshipComponent>(child.m_Index, RelationshipComponent{ parent });
-    }
-    else
-    {
-        relation->Parent = parent;
-    }
-    return true;
+    return SceneGraph::Reparent(*this, child, parent);
+}
+
+bool Scene::DetachEntity(EntityHandle child)
+{
+    return SceneGraph::Detach(*this, child);
+}
+
+std::vector<EntityHandle> Scene::GetEntityChildren(EntityHandle parent) const
+{
+    return SceneGraph::GetChildren(*this, parent);
+}
+
+std::vector<EntityHandle> Scene::GetEntityAncestors(EntityHandle child) const
+{
+    return SceneGraph::GetAncestors(*this, child);
+}
+
+std::vector<EntityHandle> Scene::GetEntityDescendants(EntityHandle root) const
+{
+    return SceneGraph::GetDescendants(*this, root);
 }
 
 void Scene::DestroyEntity(Entity entity)
@@ -135,14 +126,7 @@ void Scene::DestroyEntity(Entity entity)
     const EntityIndex index = entity.GetIndex();
 
     // 親の削除時は子をRootへ戻し、古いGenerationへの参照を残しません。
-    for (auto [child, relation] : View<RelationshipComponent>())
-    {
-        if (child.GetHandle() != entity.GetHandle() &&
-            relation.Parent == entity.GetHandle())
-        {
-            relation.Parent = InvalidEntityHandle;
-        }
-    }
+    SceneGraph::DetachChildren(*this, entity.GetHandle());
 
     for (auto& entry : m_ComponentStorages)
     {

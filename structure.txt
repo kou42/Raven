@@ -309,7 +309,9 @@ D:.
     |   |   |   +---Command
     |   |   |   |       CreateEntityCommand.cpp
     |   |   |   |       CreateEntityCommand.h
+    |   |   |   |       DeleteEntityCommand.cpp
     |   |   |   |       DeleteEntityCommand.h
+    |   |   |   |       DeleteEntityCommand.inl
     |   |   |   |       IEditorCommand.h
     |   |   |   |       InspectorEditCommand.h
     |   |   |   |       RenameEntityCommand.cpp
@@ -718,6 +720,8 @@ D:.
     |   |   |   |   SceneGame.h
     |   |   |   |   SceneGameAnimation.cpp
     |   |   |   |   SceneGamePreparation.h
+    |   |   |   |   SceneGraph.cpp
+    |   |   |   |   SceneGraph.h
     |   |   |   |   SceneManager.cpp
     |   |   |   |   SceneManager.h
     |   |   |   |   SceneStreamingController.cpp
@@ -729,6 +733,8 @@ D:.
     |   |   |   |   SceneViewportRenderer.h
     |   |   |   |
     |   |   |   \---Tests
+    |   |   |           SceneGraphSelfTests.cpp
+    |   |   |           SceneGraphSelfTests.h
     |   |   |           SceneLifecycleSelfTests.cpp
     |   |   |           SceneLifecycleSelfTests.h
     |   |   |

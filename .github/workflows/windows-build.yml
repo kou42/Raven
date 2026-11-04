@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
         run: ./scripts/build-windows.ps1 -Configuration Debug -Platform x64 -SkipBootstrap
 
-      - name: Build and run Scene SG0 regression tests
+      - name: Build and run Scene Graph regression tests
         shell: pwsh
         run: ./scripts/test-windows-scene.ps1 -SkipBuild -SkipBootstrap
 
@@ -65,6 +65,17 @@ jobs:
       - name: Build Release x64
         shell: pwsh
         run: ./scripts/build-windows.ps1 -Configuration Release -Platform x64 -SkipBootstrap
+
+      - name: Measure Scene Graph Release traversal
+        shell: pwsh
+        run: |
+          $output = @(& "./Root/x64/Release/Root.exe" --measure-scene-graph 2>&1)
+          $testExit = $LASTEXITCODE
+          $output | Set-Content -Encoding utf8 artifacts/logs/windows-scene-measure-release-results.log
+          $output | ForEach-Object { Write-Host $_ }
+          if ($testExit -ne 0 -or ($output -join "`n") -notmatch 'SceneGraph shape=chain') {
+            throw "Scene Graph measurement failed (exit=$testExit)"
+          }
 
       - name: Build and run CPU UI regression tests
         shell: pwsh

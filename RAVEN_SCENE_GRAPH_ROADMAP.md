@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG0の安全性修正とWindows Debug/Releaseビルド・CPU回帰テストを確認済み（Editor/Physics/Animation実機回帰は未検証）。詳細は [SG0作業記録](RAVEN_SCENE_GRAPH_SG0.md)。2026-11-04 時点の `master` 上の既存設計を基に作成。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG0をmasterへ統合。SG1の責務分離・回帰テスト・走査計測を実装中。詳細は [SG1作業記録](RAVEN_SCENE_GRAPH_SG1.md)。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 

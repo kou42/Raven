@@ -1067,4 +1067,13 @@
     <None Include="Raven\Scene\Scene.inl"><Filter>Raven\Scene</Filter></None>
     <None Include="..\Tests\SceneStorageTests.cpp"><Filter>Raven\Scene</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Scene\Tests" />
+    <ClCompile Update="Raven\Scene\SceneGraph.cpp"><Filter>Raven\Scene</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\SceneGraph.h"><Filter>Raven\Scene</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\Tests\SceneGraphSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\Tests\SceneGraphSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Editor\Command\DeleteEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl"><Filter>Raven\Editor\Command</Filter></None>
+  </ItemGroup>
 </Project>

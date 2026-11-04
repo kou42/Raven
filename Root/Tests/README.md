@@ -268,3 +268,15 @@ SG0のStorage単体テストとDebug Scene Lifecycleをまとめて検証する�
 `/UNDEBUG`でassertを有効にします。結果とコンパイルログは`artifacts/logs/windows-scene-*.log`へ保存します。
 Windows Build CIのDebugジョブでも両テストを実行し、既存のログArtifactに結果を含めます。
 Releaseジョブは従来のEngineビルドを継続します。Scene Lifecycleの専用入口はDebug限定です。
+
+## Scene Graph SG1
+
+`./scripts/test-windows-scene.ps1`はSG0に加えて`--test-scene-graph`と
+`--test-editor-entity-commands`を実行し、親子走査・破棄・Undo/Redo・Snapshot・World-space互換性を検証します。
+単独で実行する場合はDebugアプリに各引数を指定してください。
+
+`--measure-scene-graph`はDebug/Release双方でGPU/Windowを作らず、
+wide/chain各1024 Entityを3回走査します。各Nodeで全Relationshipを再走査する方式と、
+呼び出し内で子リンクを作る方式の構築込み時間・訪問数を出力します。
+時間閾値は合否に使いません。Windows CIが両構成の計測ログを保存します。
+契約と制約は`RAVEN_SCENE_GRAPH_SG1.md`を参照してください。
