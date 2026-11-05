@@ -903,9 +903,14 @@ bool EditorTransformGizmoController::HandlePointerEvent(
         beforeTransform.Position = m_DragStartPosition;
         beforeTransform.Rotation = m_DragStartRotation;
         beforeTransform.Scale = m_DragStartScale;
-        RecordAlreadyExecutedEditorCommand(
-            std::make_unique<TransformCommand>(
-                selectedEntity, beforeTransform, transform));
+        const TransformComponent requested = transform;
+        transform = beforeTransform;
+        if (selectedEntity.GetScene()->SetWorldTransform(selectedEntity.GetHandle(), requested) == true)
+        {
+            RecordAlreadyExecutedEditorCommand(
+                std::make_unique<TransformCommand>(
+                    selectedEntity, beforeTransform, transform));
+        }
         Reset();
     }
     return true;

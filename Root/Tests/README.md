@@ -280,3 +280,19 @@ wide/chain各1024 Entityを3回走査します。各Nodeで全Relationshipを再
 呼び出し内で子リンクを作る方式の構築込み時間・訪問数を出力します。
 時間閾値は合否に使いません。Windows CIが両構成の計測ログを保存します。
 契約と制約は`RAVEN_SCENE_GRAPH_SG1.md`を参照してください。
+
+## Scene Graph SG2
+
+`./scripts/test-windows-scene.ps1`で独立TRS数値テストと`--test-scene-transforms`を実行し、
+Local/World、Dirty、親変更、Shear拒否、破棄・世代再利用、Camera、Editor履歴を検証します。
+独立数値テストはLinuxでもGPU/Windowなしで実行できます。
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror -g -fsanitize=address,undefined -I Root/Root \
+  Root/Tests/TransformMathTests.cpp Root/Root/Raven/Math/TransformMath.cpp \
+  Root/Root/Raven/Math/MathQuatanion.cpp -o /tmp/raven-transform-math-tests
+ASAN_OPTIONS=detect_leaks=0 /tmp/raven-transform-math-tests
+```
+
+既存EntityはWorld-spaceのままです。Localを使用する場合はSceneのEnable/SetLocal/SetWorld APIを使います。
+規約、失敗時の扱い、SG3まで未対応の組合せは`RAVEN_SCENE_GRAPH_SG2.md`を参照してください。

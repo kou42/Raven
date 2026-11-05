@@ -1076,4 +1076,15 @@
     <ClCompile Update="Raven\Editor\Command\DeleteEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
     <None Include="Raven\Editor\Command\DeleteEntityCommand.inl"><Filter>Raven\Editor\Command</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Math" />
+    <ClInclude Update="Raven\Math\TransformMath.h"><Filter>Raven\Math</Filter></ClInclude>
+    <ClCompile Update="Raven\Math\TransformMath.cpp"><Filter>Raven\Math</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\SceneTransformSystem.h"><Filter>Raven\Scene</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\SceneTransformSystem.cpp"><Filter>Raven\Scene</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\Tests\SceneTransformSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\Tests\SceneTransformSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Editor\Command\ReparentEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <None Include="..\Tests\TransformMathTests.cpp"><Filter>Raven\Math</Filter></None>
+  </ItemGroup>
 </Project>

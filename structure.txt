@@ -316,6 +316,7 @@ D:.
     |   |   |   |       InspectorEditCommand.h
     |   |   |   |       RenameEntityCommand.cpp
     |   |   |   |       RenameEntityCommand.h
+    |   |   |   |       ReparentEntityCommand.cpp
     |   |   |   |       ReparentEntityCommand.h
     |   |   |   |       SetPrimaryCameraCommand.cpp
     |   |   |   |       SetPrimaryCameraCommand.h
@@ -431,6 +432,8 @@ D:.
     |   |   |       MathUtility.h
     |   |   |       MathVector.cpp
     |   |   |       MathVector.h
+    |   |   |       TransformMath.cpp
+    |   |   |       TransformMath.h
     |   |   |
     |   |   +---Diagnostics
     |   |   |       DiagnosticAPI.cpp
@@ -728,6 +731,8 @@ D:.
     |   |   |   |   SceneStreamingController.h
     |   |   |   |   SceneTitle.cpp
     |   |   |   |   SceneTitle.h
+    |   |   |   |   SceneTransformSystem.cpp
+    |   |   |   |   SceneTransformSystem.h
     |   |   |   |   SceneTransitionController.cpp
     |   |   |   |   SceneTransitionController.h
     |   |   |   |   SceneViewportRenderer.h
@@ -737,6 +742,8 @@ D:.
     |   |   |           SceneGraphSelfTests.h
     |   |   |           SceneLifecycleSelfTests.cpp
     |   |   |           SceneLifecycleSelfTests.h
+    |   |   |           SceneTransformSelfTests.cpp
+    |   |   |           SceneTransformSelfTests.h
     |   |   |
     |   |   \---UI
     |   |       +---Animation

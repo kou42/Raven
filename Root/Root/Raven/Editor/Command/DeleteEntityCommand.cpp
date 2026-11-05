@@ -48,9 +48,18 @@ bool DeleteEntityCommand::Execute(Scene& scene)
         return false;
     }
 
+    if (scene.HasComponent<LocalTransformComponent>(m_Handle.m_Index) == true)
+    {
+        math::Mat4 world;
+        if (scene.TryGetEntityWorldMatrix(m_Handle, world) == false)
+        {
+            return false;
+        }
+    }
     const Entity entity(m_Handle, &scene);
     m_Tag = Capture<TagComponent>(entity);
     m_Transform = Capture<TransformComponent>(entity);
+    m_Local = Capture<LocalTransformComponent>(entity);
     m_Camera = Capture<CameraComponent>(entity);
     m_Mesh = Capture<MeshRendererComponent>(entity);
     m_Deformation = Capture<MeshDeformationComponent>(entity);
@@ -60,6 +69,19 @@ bool DeleteEntityCommand::Execute(Scene& scene)
     m_Relationship = Capture<RelationshipComponent>(entity);
     // DestroyEntityが子をRootへ切り離す前に、直下の子を記録します。
     m_Children = scene.GetEntityChildren(m_Handle);
+    m_ChildrenLocal.clear();
+    for (EntityHandle child : m_Children)
+    {
+        if (scene.HasComponent<LocalTransformComponent>(child.m_Index) == true)
+        {
+            math::Mat4 world;
+            if (scene.TryGetEntityWorldMatrix(child, world) == false)
+            {
+                return false;
+            }
+        }
+        m_ChildrenLocal.push_back(Capture<LocalTransformComponent>(Entity(child, &scene)));
+    }
 
     scene.DestroyEntity(entity);
     return scene.IsEntityAlive(m_Handle) == false;
@@ -100,6 +122,19 @@ bool DeleteEntityCommand::Undo(Scene& scene)
                 scene.SetEntityParent(restored.GetHandle(), m_Relationship->Parent);
             }
         }
+        if (m_Local.has_value() == true)
+        {
+            restored.AddComponent<LocalTransformComponent>(*m_Local);
+            // 保存した親が消えていれば、削除前のWorldを新しいRootのLocalに引き継ぎます。
+            const TransformComponent value = m_Relationship.has_value() == true
+                && m_Relationship->Parent.IsValid() == true && scene.GetEntityParent(restored.GetHandle()).IsValid() == false
+                ? *m_Transform : m_Local->Value;
+            if (scene.SetLocalTransform(restored.GetHandle(), value) == false)
+            {
+                scene.DestroyEntity(restored);
+                return false;
+            }
+        }
         // 元のEntityにTransformが無かった場合はCreateEntityの既定値を残しません。
         if (m_Transform.has_value() == false)
         {
@@ -114,13 +149,36 @@ bool DeleteEntityCommand::Undo(Scene& scene)
     }
     // 親が失われていた場合は上の検証で再接続せず、Rootに留めます。
     // 復元した親は新しいHandleなので、存続中の子だけを再接続します。
-    for (EntityHandle child : m_Children)
+    // 全候補の幾何検証を先に終え、1つ目の子だけ復元された状態で失敗しないようにします。
+    for (std::size_t i = 0; i < m_Children.size(); ++i)
     {
-        if (scene.IsEntityAlive(child) == true &&
-            scene.GetEntityParent(child).IsValid() == false &&
-            scene.CanSetEntityParent(child, restored.GetHandle()) == true)
+        const EntityHandle child = m_Children[i];
+        if (scene.IsEntityAlive(child) == true && scene.GetEntityParent(child).IsValid() == false)
         {
-            scene.SetEntityParent(child, restored.GetHandle());
+            const bool local = m_ChildrenLocal[i].has_value() == true && scene.HasComponent<LocalTransformComponent>(child.m_Index) == true;
+            const bool valid = local == true
+                ? scene.CanSetEntityParentAndLocal(child, restored.GetHandle(), m_ChildrenLocal[i]->Value)
+                : scene.CanSetEntityParent(child, restored.GetHandle());
+            if (valid == false)
+            {
+                scene.DestroyEntity(restored);
+                return false;
+            }
+        }
+    }
+    for (std::size_t i = 0; i < m_Children.size(); ++i)
+    {
+        const EntityHandle child = m_Children[i];
+        if (scene.IsEntityAlive(child) == true && scene.GetEntityParent(child).IsValid() == false)
+        {
+            if (m_ChildrenLocal[i].has_value() == true && scene.HasComponent<LocalTransformComponent>(child.m_Index) == true)
+            {
+                scene.SetEntityParentAndLocal(child, restored.GetHandle(), m_ChildrenLocal[i]->Value);
+            }
+            else
+            {
+                scene.SetEntityParent(child, restored.GetHandle());
+            }
         }
     }
     m_PreviousHandle = m_Handle;

@@ -240,6 +240,7 @@
     <None Include="Raven\Scene\Scene.inl" />
     <None Include="Raven\Editor\Command\DeleteEntityCommand.inl" />
     <None Include="..\Tests\SceneStorageTests.cpp" />
+    <None Include="..\Tests\TransformMathTests.cpp" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
        入出力を対にすることで未生成時・Shader更新時だけglslcを起動します。 -->

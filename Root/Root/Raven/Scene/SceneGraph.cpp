@@ -30,7 +30,7 @@ EntityHandle SceneGraph::GetParent(const Scene& scene, EntityHandle child)
     return relation->Parent;
 }
 
-bool SceneGraph::CanReparent(const Scene& scene, EntityHandle child, EntityHandle parent)
+bool SceneGraph::CanLink(const Scene& scene, EntityHandle child, EntityHandle parent)
 {
     if (scene.IsEntityAlive(child) == false || child == parent)
     {
@@ -68,9 +68,18 @@ bool SceneGraph::CanReparent(const Scene& scene, EntityHandle child, EntityHandl
     return false;
 }
 
-bool SceneGraph::Reparent(Scene& scene, EntityHandle child, EntityHandle parent)
+bool SceneGraph::CanReparent(const Scene& scene, EntityHandle child, EntityHandle parent, ReparentTransformMode mode)
 {
-    if (CanReparent(scene, child, parent) == false)
+    SceneTransformSystem::Prepared prepared;
+    return CanLink(scene, child, parent) == true
+        && scene.m_TransformSystem.PrepareReparent(scene, child, parent, mode, prepared) == true;
+}
+
+bool SceneGraph::Reparent(Scene& scene, EntityHandle child, EntityHandle parent, ReparentTransformMode mode)
+{
+    SceneTransformSystem::Prepared prepared;
+    if (CanLink(scene, child, parent) == false
+        || scene.m_TransformSystem.PrepareReparent(scene, child, parent, mode, prepared) == false)
     {
         return false;
     }
@@ -84,6 +93,35 @@ bool SceneGraph::Reparent(Scene& scene, EntityHandle child, EntityHandle parent)
     {
         relation->Parent = parent.IsValid() == true ? parent : InvalidEntityHandle;
     }
+    scene.m_TransformSystem.Commit(scene, prepared);
+    return true;
+}
+
+bool SceneGraph::CanReparentWithLocal(const Scene& scene, EntityHandle child, EntityHandle parent, const TransformComponent& local)
+{
+    SceneTransformSystem::Prepared prepared;
+    return CanLink(scene, child, parent) == true
+        && scene.m_TransformSystem.PrepareReparent(scene, child, parent, ReparentTransformMode::KeepLocal, prepared, &local) == true;
+}
+
+bool SceneGraph::ReparentWithLocal(Scene& scene, EntityHandle child, EntityHandle parent, const TransformComponent& local)
+{
+    SceneTransformSystem::Prepared prepared;
+    if (CanLink(scene, child, parent) == false
+        || scene.m_TransformSystem.PrepareReparent(scene, child, parent, ReparentTransformMode::KeepLocal, prepared, &local) == false)
+    {
+        return false;
+    }
+    auto* relation = scene.TryGetComponent<RelationshipComponent>(child.m_Index);
+    if (relation == nullptr)
+    {
+        scene.AddComponent<RelationshipComponent>(child.m_Index, RelationshipComponent{parent});
+    }
+    else
+    {
+        relation->Parent = parent;
+    }
+    scene.m_TransformSystem.Commit(scene, prepared);
     return true;
 }
 
@@ -199,6 +237,11 @@ void SceneGraph::DetachChildren(Scene& scene, EntityHandle parent)
         auto& relation = storage->GetByIndex(i);
         if (relation.Parent == parent)
         {
+            const EntityHandle child = GetAliveHandle(scene, storage->GetEntityByIndex(i));
+            if (child.IsValid() == true)
+            {
+                scene.m_TransformSystem.PrepareChildDestruction(scene, child);
+            }
             relation.Parent = InvalidEntityHandle;
         }
     }

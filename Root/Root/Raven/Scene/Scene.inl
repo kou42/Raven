@@ -38,11 +38,11 @@ inline bool Scene::CanSnapshotEntityComponents(EntityHandle handle) const
         return false;
     }
 
-    const std::array<std::type_index, 9> supported{
+    const std::array<std::type_index, 10> supported{
         typeid(TagComponent), typeid(TransformComponent), typeid(CameraComponent),
         typeid(MeshRendererComponent), typeid(MeshDeformationComponent),
         typeid(AnimatorComponent), typeid(RigidBodyComponent), typeid(ColliderComponent),
-        typeid(RelationshipComponent)
+        typeid(RelationshipComponent), typeid(LocalTransformComponent)
     };
     for (const auto& entry : m_ComponentStorages)
     {
@@ -159,6 +159,21 @@ T& Scene::AddComponent(EntityIndex index, Args&&... args)
         throw std::out_of_range("Cannot access components of a dead entity index.");
     }
 
+    if constexpr (std::is_same_v<T, LocalTransformComponent>)
+    {
+        if (CanUseLocalTransform(index) == false)
+        {
+            throw std::invalid_argument("Local Transform is not supported for Physics/Animation/Deformation entities in SG2.");
+        }
+    }
+    if constexpr (std::is_same_v<T, RigidBodyComponent> || std::is_same_v<T, ColliderComponent>
+        || std::is_same_v<T, AnimatorComponent> || std::is_same_v<T, MeshDeformationComponent>)
+    {
+        if (HasComponent<LocalTransformComponent>(index) == true)
+        {
+            throw std::invalid_argument("Disable Local Transform before adding a simulation component in SG2.");
+        }
+    }
     return GetOrCreateStorage<T>().Emplace(index, std::forward<Args>(args)...);
 }
 
@@ -226,6 +241,25 @@ bool Scene::RemoveComponent(EntityIndex index)
         return false;
     }
 
+    if constexpr (std::is_same_v<T, LocalTransformComponent>)
+    {
+        return DisableLocalTransform(EntityHandle{index, m_EntitySlots[index].Generation});
+    }
+    if constexpr (std::is_same_v<T, TransformComponent>)
+    {
+        if (CanRemoveTransform(index) == false)
+        {
+            return false;
+        }
+    }
+    if constexpr (std::is_same_v<T, RelationshipComponent>)
+    {
+        if (HasComponent<LocalTransformComponent>(index) == true && HasComponent<RelationshipComponent>(index) == true
+            && DetachEntity(EntityHandle{index, m_EntitySlots[index].Generation}) == false)
+        {
+            return false;
+        }
+    }
     ComponentStorage<T>* storage = FindStorage<T>();
 
     if (storage == nullptr)

@@ -18,6 +18,7 @@
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/ComponentStorage.h"
 #include "Raven/Scene/ComponentView.h"
+#include "Raven/Scene/SceneTransformSystem.h"
 
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 
@@ -85,7 +86,21 @@ public:
     // HandleはこのScene内の識別子です。Scene所属は呼び出し側で確認します。
     // 循環と破棄済みHandleを拒否して親子関係を更新します。
     bool CanSetEntityParent(EntityHandle child, EntityHandle parent) const;
+    bool CanSetEntityParent(EntityHandle child, EntityHandle parent, ReparentTransformMode mode) const;
     bool SetEntityParent(EntityHandle child, EntityHandle parent);
+    bool SetEntityParent(EntityHandle child, EntityHandle parent, ReparentTransformMode mode);
+    // Editorが保存済みLocalと親を同時に復元する、検証付きの原子的な操作です。
+    bool CanSetEntityParentAndLocal(EntityHandle child, EntityHandle parent, const TransformComponent& local) const;
+    bool SetEntityParentAndLocal(EntityHandle child, EntityHandle parent, const TransformComponent& local);
+    bool EnableLocalTransform(EntityHandle handle, ReparentTransformMode mode = ReparentTransformMode::KeepWorld);
+    bool DisableLocalTransform(EntityHandle handle);
+    bool SetLocalTransform(EntityHandle handle, const TransformComponent& local);
+    bool SetWorldTransform(EntityHandle handle, const TransformComponent& world);
+    bool EvaluateWorldTransforms();
+    bool TryGetEntityWorldMatrix(EntityHandle handle, math::Mat4& world);
+    // EvaluateWorldTransforms後、構造/Transform変更のない描画バッチ専用。
+    bool TryGetEvaluatedWorldMatrix(EntityHandle handle, math::Mat4& world) const;
+    uint64_t GetWorldTransformRecomputationCount() const;
     EntityHandle GetEntityParent(EntityHandle child) const;
     bool DetachEntity(EntityHandle child);
     std::vector<EntityHandle> GetEntityChildren(EntityHandle parent) const;
@@ -161,6 +176,10 @@ protected:
 private:
 
     friend class SceneGraph;
+    friend class SceneTransformSystem;
+    bool CanUseLocalTransform(EntityIndex index) const;
+    bool CanRemoveTransform(EntityIndex index) const;
+    SceneTransformSystem m_TransformSystem;
 
     struct EntitySlot
     {

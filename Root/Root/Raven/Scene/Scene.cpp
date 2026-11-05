@@ -88,12 +88,92 @@ EntityHandle Scene::GetEntityParent(EntityHandle child) const
 
 bool Scene::CanSetEntityParent(EntityHandle child, EntityHandle parent) const
 {
-    return SceneGraph::CanReparent(*this, child, parent);
+    return CanSetEntityParent(child, parent, ReparentTransformMode::KeepWorld);
 }
 
 bool Scene::SetEntityParent(EntityHandle child, EntityHandle parent)
 {
-    return SceneGraph::Reparent(*this, child, parent);
+    return SetEntityParent(child, parent, ReparentTransformMode::KeepWorld);
+}
+
+bool Scene::CanSetEntityParent(EntityHandle child, EntityHandle parent, ReparentTransformMode mode) const
+{
+    return SceneGraph::CanReparent(*this, child, parent, mode);
+}
+bool Scene::SetEntityParent(EntityHandle child, EntityHandle parent, ReparentTransformMode mode)
+{
+    return SceneGraph::Reparent(*this, child, parent, mode);
+}
+bool Scene::CanSetEntityParentAndLocal(EntityHandle child, EntityHandle parent, const TransformComponent& local) const
+{
+    return SceneGraph::CanReparentWithLocal(*this, child, parent, local);
+}
+bool Scene::SetEntityParentAndLocal(EntityHandle child, EntityHandle parent, const TransformComponent& local)
+{
+    return SceneGraph::ReparentWithLocal(*this, child, parent, local);
+}
+bool Scene::CanUseLocalTransform(EntityIndex index) const
+{
+    // Physics/Animation/DeformationのWorld書込みとの同期はSG3で導入します。
+    return HasComponent<TransformComponent>(index) == true
+        && HasComponent<RigidBodyComponent>(index) == false && HasComponent<ColliderComponent>(index) == false
+        && HasComponent<AnimatorComponent>(index) == false && HasComponent<MeshDeformationComponent>(index) == false;
+}
+bool Scene::CanRemoveTransform(EntityIndex index) const
+{
+    if (HasComponent<LocalTransformComponent>(index) == true)
+    {
+        return false;
+    }
+    const auto* locals = FindStorage<LocalTransformComponent>();
+    const auto* relations = FindStorage<RelationshipComponent>();
+    if (locals == nullptr || locals->Empty() == true || relations == nullptr)
+    {
+        return true;
+    }
+    const EntityHandle parent{index, m_EntitySlots[index].Generation};
+    for (std::size_t i = 0; i < relations->Size(); ++i)
+    {
+        if (relations->GetByIndex(i).Parent == parent
+            && HasComponent<LocalTransformComponent>(relations->GetEntityByIndex(i)) == true)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+bool Scene::EnableLocalTransform(EntityHandle handle, ReparentTransformMode mode)
+{
+    return m_TransformSystem.EnableLocal(*this, handle, mode);
+}
+bool Scene::DisableLocalTransform(EntityHandle handle)
+{
+    return m_TransformSystem.DisableLocal(*this, handle);
+}
+bool Scene::SetLocalTransform(EntityHandle handle, const TransformComponent& local)
+{
+    return m_TransformSystem.SetLocal(*this, handle, local);
+}
+bool Scene::SetWorldTransform(EntityHandle handle, const TransformComponent& world)
+{
+    return m_TransformSystem.SetWorld(*this, handle, world);
+}
+bool Scene::EvaluateWorldTransforms()
+{
+    RAVEN_PROFILE_SCOPE("Scene.Transforms");
+    return m_TransformSystem.Evaluate(*this);
+}
+bool Scene::TryGetEntityWorldMatrix(EntityHandle handle, math::Mat4& world)
+{
+    return m_TransformSystem.TryGetWorld(*this, handle, world);
+}
+bool Scene::TryGetEvaluatedWorldMatrix(EntityHandle handle, math::Mat4& world) const
+{
+    return m_TransformSystem.TryGetEvaluated(*this, handle, world);
+}
+uint64_t Scene::GetWorldTransformRecomputationCount() const
+{
+    return m_TransformSystem.GetRecomputationCount();
 }
 
 bool Scene::DetachEntity(EntityHandle child)
@@ -133,6 +213,7 @@ void Scene::DestroyEntity(Entity entity)
         entry.second->Remove(index);
     }
 
+    m_TransformSystem.Forget(entity.GetHandle());
     EntitySlot& slot = m_EntitySlots[index];
 
     slot.Alive = false;
@@ -223,6 +304,7 @@ void Scene::OnDestroy()
     // DestroyEntity()ですべてのComponentはRemove済みですが、Storage自体が保持するAllocatorや
     // shared_ptr等の内部容量もScene終了時に解放するためContainerも破棄します。
     m_ComponentStorages.clear();
+    m_TransformSystem.Clear();
 
     // ThermalWorldはECS Componentを所有しないため、Scene終了時には参照を明示的に解除します。
     m_PhysicsWorld.GetThermalWorld().Clear();
@@ -246,6 +328,7 @@ void Scene::OnUpdate(float dt)
     {
         RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
         FlushDestroyedEntities();
+        EvaluateWorldTransforms();
         return;
     }
 
@@ -271,6 +354,7 @@ void Scene::OnUpdate(float dt)
         RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
         FlushDestroyedEntities();
     }
+    EvaluateWorldTransforms();
 }
 
 void Scene::OnUpdatePhysics(float dt)
@@ -389,6 +473,7 @@ bool Scene::PrepareRHIMeshes(RHIDevice& device)
 
 void Scene::RenderEntities()
 {
+    EvaluateWorldTransforms();
 #if USE_STORAGE_VERSION_2
 
 	// TransformComponentとMeshRendererComponentを持つエンティティを取得して描画する
@@ -400,8 +485,12 @@ void Scene::RenderEntities()
             continue;
         }
 
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material,
-            transform.GetTransform(), entity.GetIndex());
+        math::Mat4 world;
+        if (TryGetEvaluatedWorldMatrix(entity.GetHandle(), world) == false)
+        {
+            continue;
+        }
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, world, entity.GetIndex());
     }
 
 

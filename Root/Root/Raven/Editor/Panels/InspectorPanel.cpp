@@ -465,6 +465,14 @@ void DrawTransformVec3Control(
     // GizmoとInspectorが同じTransformCommandを共有でき、Undo時の適用経路も一つに保てます。
     const TransformComponent transformBeforeThisFrame = transform;
     DrawVec3Control(label, value);
+    if (transform.Position != transformBeforeThisFrame.Position || transform.Rotation != transformBeforeThisFrame.Rotation
+        || transform.Scale != transformBeforeThisFrame.Scale)
+    {
+        const TransformComponent requested = transform;
+        transform = transformBeforeThisFrame;
+        entity.GetScene()->SetWorldTransform(entity.GetHandle(), requested);
+    }
+
 
     if (ImGui::IsItemActivated())
     {

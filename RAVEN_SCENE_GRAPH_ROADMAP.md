@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG0をmasterへ統合。SG1の責務分離・Windows CPU回帰テスト・走査計測を完了（実機描画・シミュレーション回帰は未検証）。詳細は [SG1作業記録](RAVEN_SCENE_GRAPH_SG1.md)。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG1をmasterへ統合。SG2の明示Local / World変換・互換経路・回帰テストを実装中。詳細は [SG2作業記録](RAVEN_SCENE_GRAPH_SG2.md)。各マイルストーンの開始前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 

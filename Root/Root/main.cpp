@@ -20,6 +20,7 @@
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneTitle.h"
 #include "Raven/Scene/Tests/SceneGraphSelfTests.h"
+#include "Raven/Scene/Tests/SceneTransformSelfTests.h"
 #include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
@@ -97,6 +98,12 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunExplicitSceneFrameSelfTests();
             std::cout << "Explicit Scene Frame self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-scene-transforms")
+        {
+            Raven::tests::RunSceneTransformSelfTests();
+            std::cout << "Scene transform self-tests passed.\n";
             return 0;
         }
         if (backendArgument == "--test-scene-graph")
@@ -299,6 +306,7 @@ int main(int argc, char* argv[])
     Raven::tests::RunInspectorSnapshotSelfTests();
     Raven::tests::RunSceneLifecycleSelfTests();
     Raven::tests::RunSceneGraphSelfTests();
+    Raven::tests::RunSceneTransformSelfTests();
     Raven::tests::RunCharacterCeilingCollisionSelfTests();
     Raven::tests::RunCharacterSprintLocomotionSelfTests();
     Raven::tests::RunBlendTreeRuntimeSelfTests();
