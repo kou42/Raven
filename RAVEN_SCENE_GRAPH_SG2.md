@@ -1,7 +1,7 @@
 # Scene Graph SG2 — Local / World Transform
 
 基準master: `cc44737927dde7497983d966e929865098030738`（SG1統合済み）。
-SG2の実装と回帰テストを追加。Windows CIの結果は確認後に追記する。SG3には進まない。
+SG2の実装とWindows CPU回帰テストを完了。実機描画の比較は未検証。SG3には進まない。
 
 ## 互換経路と所有権
 
@@ -98,3 +98,17 @@ Local描画子がLegacyの動く親を追うことはできるが、Local Entity
 - Linuxでは独立数値テストをASan/UBSanで実行（ptrace環境のためLeakSanitizer無効）。関連翻訳単位をGCC C++17で構文確認する。
 - Windows Debug/Releaseビルドと既存Storage/Scene Lifecycle/SceneGraph/Editor回帰に、新しい数値・Transformテストを追加する。
 - 実機GPU描画・Physics/Animationシミュレーションの目視回帰とLeak検証は未実施として残す。
+
+### Windows CI結果
+
+実装コミット `10525d4b2a8949768668294933d3183b0beba27a` の
+[Windows Build #51](https://github.com/kou42/Raven/actions/runs/42045612142) は全4ジョブ成功。
+初回はGLFW取得時のHTTP 504で3ジョブが停止したため、失敗ジョブを再実行した。
+
+- Debug/Release x64エンジンビルド、Storage/TransformMath/Scene Lifecycle/SceneGraph/SceneTransform/Editor回帰を実行し成功。
+- 巨大親座標でWorldを保持できない変更の拒否、反射Scale付きCameraの向き保持も回帰テストで確認。
+- 既存Debug/Release CPU UI回帰とUI allocation profilingが成功。
+- GPU integration test実行ファイルのビルドが成功。実機GPU上での実行成功を意味しない。
+
+この結果追記は文書のみの変更であり、上記検証対象の実装・テスト・CI設定は変更していない。
+実機描画とPhysics/Animationシミュレーションの目視回帰、Leak検証は未実施。
