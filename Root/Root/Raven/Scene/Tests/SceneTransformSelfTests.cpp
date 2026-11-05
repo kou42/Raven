@@ -122,6 +122,28 @@ void RunSceneTransformSelfTests()
     assert(shapes.SetWorldTransform(top.GetHandle(), stretched) == false);
     Near(top.GetComponent<TransformComponent>().Scale.x, 1);
 
+    // 有限の逆行列でも、再構成時の丸めでWorld=3が0へ変わるような変更は拒否します。
+    Scene precision;
+    Entity huge = precision.CreateEntity("HugeParent");
+    huge.GetComponent<TransformComponent>().Position.x = 1.0e30f;
+    Entity small = precision.CreateEntity("SmallWorld");
+    small.GetComponent<TransformComponent>().Position.x = 3;
+    assert(precision.SetEntityParent(small.GetHandle(), huge.GetHandle()) == true);
+    assert(precision.EnableLocalTransform(small.GetHandle()) == false);
+    assert(small.HasComponent<LocalTransformComponent>() == false);
+    Near(small.GetComponent<TransformComponent>().Position.x, 3);
+    assert(precision.EnableLocalTransform(small.GetHandle(), ReparentTransformMode::KeepLocal) == true);
+    TransformComponent requested;
+    requested.Position.x = 3;
+    assert(precision.SetWorldTransform(small.GetHandle(), requested) == false);
+    assert(small.GetComponent<TransformComponent>().Position.x == 1.0e30f);
+    Entity independent = precision.CreateEntity("IndependentLocal");
+    independent.GetComponent<TransformComponent>().Position.x = 3;
+    assert(precision.EnableLocalTransform(independent.GetHandle()) == true);
+    assert(precision.SetEntityParent(independent.GetHandle(), huge.GetHandle()) == false);
+    assert(precision.GetEntityParent(independent.GetHandle()) == InvalidEntityHandle);
+    Near(World(precision, independent).m[0][3], 3);
+
     // Dirtyな親のまま破棄しても、子と孫のWorldを保持します。
     Scene lifetime;
     Entity parent = lifetime.CreateEntity("Parent");

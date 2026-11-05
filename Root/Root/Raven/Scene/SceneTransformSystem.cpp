@@ -3,6 +3,7 @@
 #include "Raven/Math/TransformMath.h"
 
 #include <unordered_set>
+#include <cmath>
 
 namespace Raven
 {
@@ -25,6 +26,28 @@ bool SameMatrix(const math::Mat4& a, const math::Mat4& b)
         for (int column = 0; column < 4; ++column)
         {
             if (a.m[row][column] != b.m[row][column])
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+bool PreservesWorld(const math::Mat4& actual, const math::Mat4& expected)
+{
+    // 逆行列が有限でも、巨大な親座標との加減算で小さなWorld位置が失われることがあります。
+    // 操作の要求値と再構成結果を照合し、keep-worldを満たさない候補を確定しません。
+    constexpr float WorldPreservationTolerance = 0.0001f;
+    if (math::IsFiniteAffine(actual) == false || math::IsFiniteAffine(expected) == false)
+    {
+        return false;
+    }
+    for (int row = 0; row < 4; ++row)
+    {
+        for (int column = 0; column < 4; ++column)
+        {
+            const float tolerance = WorldPreservationTolerance * (1.0f + std::fabs(expected.m[row][column]));
+            if (std::fabs(actual.m[row][column] - expected.m[row][column]) > tolerance)
             {
                 return false;
             }
@@ -108,7 +131,8 @@ bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
             : scene.GetComponent<LocalTransformComponent>(node.m_Index).Value;
         const auto cached = m_Worlds.find(node.Value());
         const auto& worldInput = scene.GetComponent<TransformComponent>(node.m_Index);
-        if (overridden == false && cached != m_Worlds.end() && Same(worldInput, cached->second.World) == false)
+        const bool worldEdited = overridden == false && cached != m_Worlds.end() && Same(worldInput, cached->second.World) == false;
+        if (worldEdited == true)
         {
             // 既存Inspector/Gizmo等はWorld TRSへ直接書き込みます。その編集をLocalへ戻します。
             // LocalとWorldを同時に直接変更すると意図を判別できないため、明示APIでの修復を要求します。
@@ -137,6 +161,10 @@ bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
                 return false;
             }
             value.Recomputed = true;
+        }
+        if (worldEdited == true && PreservesWorld(value.Matrix, worldInput.GetTransform()) == false)
+        {
+            return false;
         }
         result.insert_or_assign(node.Value(), value);
     }
@@ -312,6 +340,10 @@ bool SceneTransformSystem::EnableLocal(Scene& scene, EntityHandle handle, Repare
     {
         return false;
     }
+    if (mode == ReparentTransformMode::KeepWorld && PreservesWorld(result.at(handle.Value()).Matrix, value->GetTransform()) == false)
+    {
+        return false;
+    }
     scene.AddComponent<LocalTransformComponent>(handle.m_Index, LocalTransformComponent{change.Value});
     Commit(scene, result);
     return true;
@@ -331,6 +363,10 @@ bool SceneTransformSystem::DisableLocal(Scene& scene, EntityHandle handle)
     Override change{handle, scene.GetEntityParent(handle), false, current.at(handle.Value()).World};
     Prepared result;
     if (ValidateBranch(scene, change, result) == false)
+    {
+        return false;
+    }
+    if (PreservesWorld(result.at(handle.Value()).Matrix, current.at(handle.Value()).Matrix) == false)
     {
         return false;
     }
@@ -387,6 +423,10 @@ bool SceneTransformSystem::SetWorld(Scene& scene, EntityHandle handle, const Tra
     {
         return false;
     }
+    if (PreservesWorld(result.at(handle.Value()).Matrix, value.GetTransform()) == false)
+    {
+        return false;
+    }
     if (change.IsLocal == false)
     {
         scene.GetComponent<TransformComponent>(handle.m_Index) = value;
@@ -403,6 +443,7 @@ bool SceneTransformSystem::PrepareReparent(const Scene& scene, EntityHandle chil
         return restoredLocal == nullptr;
     }
     TransformComponent local;
+    math::Mat4 expectedWorld;
     if (restoredLocal != nullptr)
     {
         local = *restoredLocal;
@@ -415,6 +456,7 @@ bool SceneTransformSystem::PrepareReparent(const Scene& scene, EntityHandle chil
             return false;
         }
         local = current.at(child.Value()).Local;
+        expectedWorld = current.at(child.Value()).Matrix;
         if (mode == ReparentTransformMode::KeepWorld)
         {
             math::Mat4 parentWorld;
@@ -426,7 +468,12 @@ bool SceneTransformSystem::PrepareReparent(const Scene& scene, EntityHandle chil
             }
         }
     }
-    return ValidateBranch(scene, Override{child, parent, true, local}, result);
+    if (ValidateBranch(scene, Override{child, parent, true, local}, result) == false)
+    {
+        return false;
+    }
+    return restoredLocal != nullptr || mode == ReparentTransformMode::KeepLocal
+        || PreservesWorld(result.at(child.Value()).Matrix, expectedWorld) == true;
 }
 
 void SceneTransformSystem::PrepareChildDestruction(Scene& scene, EntityHandle child)

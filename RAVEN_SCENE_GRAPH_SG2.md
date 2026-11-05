@@ -54,7 +54,9 @@ row-major格納、列Vector、Local = T * Rx * Ry * Rz * S、World = ParentWorld
 角度はradian。既存Quaternion::FromEulerXYZ/ToEulerXYZのRz*Ry*Rxと異なるため、TRS分解はSceneの順序で行う。
 アフィン逆行列とTRS分解はchecked APIとし、失敗時に出力を変更しない。
 
-LocalのWorldもTRSで表せる範囲だけをSG2で受け付ける。非一様Scale×回転で生じるShear、
+LocalのWorldもTRSで表せる範囲だけをSG2で受け付ける。
+keep-world/World設定/Local解除では、再構成Matrixが要求Worldに対して各成分1e-4 × (1 + |要求値|)以内かも検証する。
+有限の逆行列でも、巨大な親座標との丸めで要求World位置を保持できなければ変更前に拒否する。非一様Scale×回転で生じるShear、
 ゼロ/極小Scale、非有限値、逆行列不能を拒否する。基底の直交/相対特異性判定の許容値は1e-4、
 TRS各軸Scaleの最小絶対値は1e-6。負の行列式はX軸の負Scaleへ正規化する。
 Euler角・Scale符号の表現が変わっても再構成したMatrixが同じになる契約とする。
