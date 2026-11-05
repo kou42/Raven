@@ -248,5 +248,22 @@ void RunSceneTransformSelfTests()
     assert(legacyCamera != nullptr);
     Equal(legacyCamera->GetViewMatrix(), inversePose);
     Equal(legacyCamera->GetProjectionMatrix(), projection);
+    Scene reflection;
+    Entity reflectedCamera = reflection.CreateEntity("ReflectedCamera");
+    reflectedCamera.AddComponent<CameraComponent>();
+    reflectedCamera.GetComponent<TransformComponent>().Scale = math::Vec3(1, -1, -1);
+    auto* beforeCamera = SceneCameraSystem::UpdatePrimaryCamera(reflection, 1280, 720);
+    assert(beforeCamera != nullptr);
+    const auto beforeView = beforeCamera->GetViewMatrix();
+    assert(reflection.EnableLocalTransform(reflectedCamera.GetHandle()) == false);
+    assert(reflectedCamera.HasComponent<LocalTransformComponent>() == false);
+    Equal(SceneCameraSystem::UpdatePrimaryCamera(reflection, 1280, 720)->GetViewMatrix(), beforeView);
+    reflectedCamera.GetComponent<TransformComponent>().Scale = math::Vec3(1, 1, 1);
+    assert(reflection.EnableLocalTransform(reflectedCamera.GetHandle()) == true);
+    auto reflectedRequest = reflectedCamera.GetComponent<TransformComponent>();
+    reflectedRequest.Scale = math::Vec3(1, -1, -1);
+    assert(reflection.SetWorldTransform(reflectedCamera.GetHandle(), reflectedRequest) == false);
+    Equal(SceneCameraSystem::UpdatePrimaryCamera(reflection, 1280, 720)->GetViewMatrix(), beforeView);
+
 }
 }

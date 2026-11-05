@@ -55,6 +55,20 @@ bool PreservesWorld(const math::Mat4& actual, const math::Mat4& expected)
     }
     return true;
 }
+bool PreservesCameraRotation(const Scene& scene, EntityHandle handle,
+    const TransformComponent& actual, const TransformComponent& expected)
+{
+    if (scene.HasComponent<CameraComponent>(handle.m_Index) == false)
+    {
+        return true;
+    }
+    // CameraはScaleを無視します。反射の符号正規化で同じMatrixでも回転が変わる候補は拒否します。
+    TransformComponent actualRotation;
+    TransformComponent expectedRotation;
+    actualRotation.Rotation = actual.Rotation;
+    expectedRotation.Rotation = expected.Rotation;
+    return PreservesWorld(actualRotation.GetTransform(), expectedRotation.GetTransform());
+}
 bool Decompose(const math::Mat4& matrix, TransformComponent& value)
 {
     return math::TryDecomposeTRS(matrix, value.Position, value.Rotation, value.Scale);
@@ -162,7 +176,8 @@ bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
             }
             value.Recomputed = true;
         }
-        if (worldEdited == true && PreservesWorld(value.Matrix, worldInput.GetTransform()) == false)
+        if (worldEdited == true && (PreservesWorld(value.Matrix, worldInput.GetTransform()) == false
+            || PreservesCameraRotation(scene, node, value.World, worldInput) == false))
         {
             return false;
         }
@@ -340,7 +355,8 @@ bool SceneTransformSystem::EnableLocal(Scene& scene, EntityHandle handle, Repare
     {
         return false;
     }
-    if (mode == ReparentTransformMode::KeepWorld && PreservesWorld(result.at(handle.Value()).Matrix, value->GetTransform()) == false)
+    if (mode == ReparentTransformMode::KeepWorld && (PreservesWorld(result.at(handle.Value()).Matrix, value->GetTransform()) == false
+        || PreservesCameraRotation(scene, handle, result.at(handle.Value()).World, *value) == false))
     {
         return false;
     }
@@ -423,7 +439,8 @@ bool SceneTransformSystem::SetWorld(Scene& scene, EntityHandle handle, const Tra
     {
         return false;
     }
-    if (PreservesWorld(result.at(handle.Value()).Matrix, value.GetTransform()) == false)
+    if (PreservesWorld(result.at(handle.Value()).Matrix, value.GetTransform()) == false
+        || PreservesCameraRotation(scene, handle, result.at(handle.Value()).World, value) == false)
     {
         return false;
     }
@@ -444,6 +461,7 @@ bool SceneTransformSystem::PrepareReparent(const Scene& scene, EntityHandle chil
     }
     TransformComponent local;
     math::Mat4 expectedWorld;
+    TransformComponent expectedPose;
     if (restoredLocal != nullptr)
     {
         local = *restoredLocal;
@@ -457,6 +475,7 @@ bool SceneTransformSystem::PrepareReparent(const Scene& scene, EntityHandle chil
         }
         local = current.at(child.Value()).Local;
         expectedWorld = current.at(child.Value()).Matrix;
+        expectedPose = current.at(child.Value()).World;
         if (mode == ReparentTransformMode::KeepWorld)
         {
             math::Mat4 parentWorld;
@@ -473,7 +492,8 @@ bool SceneTransformSystem::PrepareReparent(const Scene& scene, EntityHandle chil
         return false;
     }
     return restoredLocal != nullptr || mode == ReparentTransformMode::KeepLocal
-        || PreservesWorld(result.at(child.Value()).Matrix, expectedWorld) == true;
+        || (PreservesWorld(result.at(child.Value()).Matrix, expectedWorld) == true
+            && PreservesCameraRotation(scene, child, result.at(child.Value()).World, expectedPose) == true);
 }
 
 void SceneTransformSystem::PrepareChildDestruction(Scene& scene, EntityHandle child)

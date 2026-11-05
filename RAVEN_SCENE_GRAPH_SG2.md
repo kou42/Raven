@@ -61,6 +61,9 @@ keep-world/World設定/Local解除では、再構成Matrixが要求Worldに対�
 TRS各軸Scaleの最小絶対値は1e-6。負の行列式はX軸の負Scaleへ正規化する。
 Euler角・Scale符号の表現が変わっても再構成したMatrixが同じになる契約とする。
 Cameraは従来どおりWorld互換TRSのScaleを無視し、正規化されたWorld回転と位置を使用する。
+同じMatrixでも反射Scaleの符号正規化でCamera回転が変わる場合があるため、keep-worldとWorld編集では
+Scaleを除いた回転Matrixも照合する。Viewの向きを保持できない候補は変更前に拒否する。
+KeepLocal/Local編集は新しいWorld姿勢を指定する操作であり、符号正規化されたWorld回転を使用する。
 
 親変更/Transform変更で子孫にShearが生じる場合も、全候補を検証してから変更する。
 失敗時は親・Local/Worldの正規入力を変更しない（メモリ確保失敗を跨ぐ一般的なECSトランザクションではない）。
