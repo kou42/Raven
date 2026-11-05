@@ -261,6 +261,70 @@ void RunEditorEntityCommandSelfTests()
         assert(hierarchy.GetEntityChildren(reusedGrandparent.GetHandle()).empty() == true);
     }
 
+    // SG2: Local authoringを保存し、親変更とWorld編集の履歴を混同しません。
+    {
+        Scene hierarchy;
+        Entity first = hierarchy.CreateEntity("First");
+        Entity second = hierarchy.CreateEntity("Second");
+        Entity child = hierarchy.CreateEntity("LocalChild");
+        first.GetComponent<TransformComponent>().Position.x = 10;
+        second.GetComponent<TransformComponent>().Position.x = -20;
+        child.GetComponent<TransformComponent>().Position.x = 3;
+        assert(hierarchy.SetEntityParent(child.GetHandle(), first.GetHandle()) == true);
+        assert(hierarchy.EnableLocalTransform(child.GetHandle()) == true);
+        SetEditorCommandHistoryScene(&hierarchy);
+        assert(ExecuteAndRecordEditorCommand(std::make_unique<ReparentEntityCommand>(
+            &hierarchy, child.GetHandle(), second.GetHandle(), ReparentTransformMode::KeepLocal)) == true);
+        assert(std::fabs(child.GetComponent<TransformComponent>().Position.x + 27) < 0.001f);
+        assert(UndoEditorCommand() == true);
+        assert(std::fabs(child.GetComponent<TransformComponent>().Position.x - 3) < 0.001f);
+        assert(RedoEditorCommand() == true);
+        assert(std::fabs(child.GetComponent<LocalTransformComponent>().Value.Position.x + 7) < 0.001f);
+        const auto before = child.GetComponent<TransformComponent>();
+        auto requested = before;
+        requested.Position.x = 7;
+        assert(ExecuteAndRecordEditorCommand(std::make_unique<TransformCommand>(child, before, requested)) == true);
+        assert(std::fabs(child.GetComponent<LocalTransformComponent>().Value.Position.x - 27) < 0.001f);
+        assert(UndoEditorCommand() == true);
+        assert(std::fabs(child.GetComponent<TransformComponent>().Position.x + 27) < 0.001f);
+        assert(RedoEditorCommand() == true);
+        const auto inspector = CaptureInspectorSnapshot(child);
+        assert(inspector.Transform.has_value() == true);
+        assert(std::fabs(inspector.Transform->Position.x - 7) < 0.001f);
+        assert(hierarchy.CanSnapshotEntityComponents(child.GetHandle()) == true);
+        SetEditorCommandHistoryScene(nullptr);
+    }
+    {
+        Scene hierarchy;
+        Entity ancestor = hierarchy.CreateEntity("Ancestor");
+        Entity parent = hierarchy.CreateEntity("LocalParent");
+        Entity child = hierarchy.CreateEntity("LocalChild");
+        ancestor.GetComponent<TransformComponent>().Position.x = 10;
+        parent.GetComponent<TransformComponent>().Position.x = 5;
+        child.GetComponent<TransformComponent>().Position.x = 2;
+        assert(hierarchy.SetEntityParent(parent.GetHandle(), ancestor.GetHandle()) == true);
+        assert(hierarchy.EnableLocalTransform(parent.GetHandle(), ReparentTransformMode::KeepLocal) == true);
+        assert(hierarchy.SetEntityParent(child.GetHandle(), parent.GetHandle()) == true);
+        assert(hierarchy.EnableLocalTransform(child.GetHandle(), ReparentTransformMode::KeepLocal) == true);
+        DeleteEntityCommand deletion(&hierarchy, parent);
+        assert(deletion.Execute(hierarchy) == true);
+        assert(hierarchy.GetEntityParent(child.GetHandle()) == InvalidEntityHandle);
+        assert(std::fabs(child.GetComponent<TransformComponent>().Position.x - 17) < 0.001f);
+        assert(deletion.Undo(hierarchy) == true);
+        EntityHandle oldHandle, restoredHandle;
+        assert(deletion.GetRestoredEntityHandles(oldHandle, restoredHandle) == true);
+        assert(hierarchy.GetEntityParent(child.GetHandle()) == restoredHandle);
+        assert(std::fabs(child.GetComponent<LocalTransformComponent>().Value.Position.x - 2) < 0.001f);
+        assert(deletion.Redo(hierarchy) == true);
+        hierarchy.DestroyEntity(ancestor);
+        hierarchy.CreateEntity("UnrelatedReusedAncestor");
+        assert(deletion.Undo(hierarchy) == true);
+        assert(deletion.GetRestoredEntityHandles(oldHandle, restoredHandle) == true);
+        assert(hierarchy.GetEntityParent(restoredHandle) == InvalidEntityHandle);
+        assert(std::fabs(hierarchy.GetComponent<TransformComponent>(restoredHandle.m_Index).Position.x - 15) < 0.001f);
+        assert(std::fabs(child.GetComponent<TransformComponent>().Position.x - 17) < 0.001f);
+    }
+
     Scene cameraScene;
     Entity firstCamera = cameraScene.CreateEntity("First Camera");
     firstCamera.AddComponent<CameraComponent>();

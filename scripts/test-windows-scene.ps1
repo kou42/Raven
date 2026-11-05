@@ -54,6 +54,30 @@ if ($storageExitCode -ne 0) {
 }
 Write-Host "Scene storage tests passed."
 
+$mathSource = Join-Path $RepoRoot "Root\Tests\TransformMathTests.cpp"
+$mathImplementation = Join-Path $RepoRoot "Root\Root\Raven\Math\TransformMath.cpp"
+$quaternionImplementation = Join-Path $RepoRoot "Root\Root\Raven\Math\MathQuatanion.cpp"
+$mathExecutable = Join-Path $testDirectory "TransformMathTests.exe"
+$mathCommand = "call `"$vcvars`" >nul && cd /d `"$testDirectory`" && cl /nologo /utf-8 /std:c++17 /EHsc /W4 /WX /MT /UNDEBUG /I `"$includeDirectory`" `"$mathSource`" `"$mathImplementation`" `"$quaternionImplementation`" /Fe:`"$mathExecutable`""
+$mathOutput = @(& $env:ComSpec /d /s /c $mathCommand 2>&1)
+$mathExit = $LASTEXITCODE
+$mathLog = Join-Path $logDirectory "windows-scene-transform-math-build.log"
+Set-Content -LiteralPath $mathLog -Value ($mathOutput -join [Environment]::NewLine) -Encoding utf8
+if ($mathExit -ne 0) {
+    $mathOutput | ForEach-Object { Write-Host $_ }
+    throw "Transform math compilation failed (exit=$mathExit). See $mathLog"
+}
+$mathOutput = @(& $mathExecutable 2>&1)
+$mathExit = $LASTEXITCODE
+$mathLog = Join-Path $logDirectory "windows-scene-transform-math-results.log"
+Set-Content -LiteralPath $mathLog -Value ($mathOutput -join [Environment]::NewLine) -Encoding utf8
+Add-Content -LiteralPath $mathLog -Value "Transform math tests exit=$mathExit" -Encoding utf8
+if ($mathExit -ne 0) {
+    $mathOutput | ForEach-Object { Write-Host $_ }
+    throw "Transform math tests failed (exit=$mathExit). See $mathLog"
+}
+Write-Host "Transform math tests passed."
+
 if (-not $SkipBuild) {
     & (Join-Path $PSScriptRoot "build-windows.ps1") -Configuration Debug -Platform x64 -SkipBootstrap
     if ($LASTEXITCODE -ne 0) {
@@ -85,6 +109,7 @@ if (-not (Test-Path -LiteralPath $testExecutable -PathType Leaf)) {
 # テスト専用引数はWindowを作らず終了します。成功メッセージも照合します。
 $checks = @(
     @{ Argument = "--test-scene-lifecycle"; Marker = "Scene lifecycle self-tests passed."; Log = "lifecycle" },
+    @{ Argument = "--test-scene-transforms"; Marker = "Scene transform self-tests passed."; Log = "transforms" },
     @{ Argument = "--test-scene-graph"; Marker = "Scene graph self-tests passed."; Log = "graph" },
     @{ Argument = "--test-editor-entity-commands"; Marker = "Editor entity command self-tests passed."; Log = "editor" },
     @{ Argument = "--measure-scene-graph"; Marker = "SceneGraph shape=chain"; Log = "measure-debug" }

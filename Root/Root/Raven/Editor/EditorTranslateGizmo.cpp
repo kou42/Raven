@@ -535,8 +535,13 @@ bool RenderTranslateGizmo(
 
             // Drag中のTransformは表示へ即時反映済みです。Release時にExecuteを再度呼ばず、
             // 開始値と終了値を持つ実行済みCommandとして1件だけ履歴へ登録します。
-            RecordAlreadyExecutedEditorCommand(
-                std::make_unique<TransformCommand>(editedEntity, beforeTransform, transform));
+            const TransformComponent requested = transform;
+            transform = beforeTransform;
+            if (editedEntity.GetScene()->SetWorldTransform(editedEntity.GetHandle(), requested) == true)
+            {
+                RecordAlreadyExecutedEditorCommand(
+                    std::make_unique<TransformCommand>(editedEntity, beforeTransform, transform));
+            }
 
             ResetGizmoState();
             return true;

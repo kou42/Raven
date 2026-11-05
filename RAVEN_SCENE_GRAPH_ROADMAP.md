@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG0をmasterへ統合。SG1の責務分離・Windows CPU回帰テスト・走査計測を完了（実機描画・シミュレーション回帰は未検証）。詳細は [SG1作業記録](RAVEN_SCENE_GRAPH_SG1.md)。各マイルストーンの実装前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG1をmasterへ統合。SG2の明示Local / World変換・互換経路を実装し、Windows CPU回帰テストが成功。実機描画比較は未検証。詳細は [SG2作業記録](RAVEN_SCENE_GRAPH_SG2.md)。各マイルストーンの開始前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 
@@ -57,11 +57,13 @@
 
 **対象候補:** `Scene/Components.h`、Transform計算、SceneGraph、Camera/Renderer/PhysicsのTransform利用箇所。
 
-- [ ] 既存 `TransformComponent::Position/Rotation/Scale` の意味と全参照箇所を調査。互換APIと移行期間を決定。
-- [ ] Local Transform、World Matrix、Dirty伝播を導入。行列の積順、座標系、Quaternion/Euler変換を明記。
-- [ ] 親変更時のkeep-world/keep-localを明示。非一様スケール×回転によるShearはTRS分解失敗またはMatrix保持の契約を定める。
-- [ ] Transform評価を親→子順に実行し、循環・深い階層・大量子Entityを検証。
+- [x] 既存 `TransformComponent::Position/Rotation/Scale` の意味と全参照箇所を調査。互換APIと移行期間を決定。
+- [x] Local Transform、World Matrix、Dirty伝播を導入。行列の積順、座標系、Quaternion/Euler変換を明記。
+- [x] 親変更時のkeep-world/keep-localを明示。非一様スケール×回転によるShearはTRS分解失敗またはMatrix保持の契約を定める。
+- [x] Transform評価を親→子順に実行し、循環・深い階層・大量子Entityを検証。
 - [ ] World-spaceの既存Entityを段階的に移行し、Camera/Rendererの出力を比較。
+
+CPUテストではCameraのWorld/View/Projectionと描画入力を確認済み。最後の項目の実機GPU出力比較は未実施。検証結果は [SG2作業記録](RAVEN_SCENE_GRAPH_SG2.md) を参照。
 
 **完了条件:** 階層移動/回転/スケールが正しく伝播し、非階層Entityの描画とカメラが回帰しない。
 

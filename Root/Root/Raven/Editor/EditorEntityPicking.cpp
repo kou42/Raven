@@ -108,10 +108,17 @@ void EditorLayer::RenderEntityPickingPass(
     // ========================================================================
     // SceneGame固有の所有ListではなくECS Viewを走査することで、Cloth / Jelly / Human等、
     // Layer側が生成したMeshRenderer Entityも同じPicking経路へ自動的に参加します。
+    activeScene->EvaluateWorldTransforms();
     for (auto [entity, transform, meshRenderer]
         : activeScene->View<TransformComponent, MeshRendererComponent>())
     {
         if (meshRenderer.IsValid() == false)
+        {
+            continue;
+        }
+
+        math::Mat4 world;
+        if (activeScene->TryGetEvaluatedWorldMatrix(entity.GetHandle(), world) == false)
         {
             continue;
         }
@@ -128,7 +135,7 @@ void EditorLayer::RenderEntityPickingPass(
             static_cast<int>(entity.GetIndex()));
         m_EntityPickingMaterial->SetUniform(
             "u_Model",
-            transform.GetTransform());
+            world);
 
         // Editor専用Passも通常Materialと同じRHICommandList経路を利用します。
         // RendererAPI objectを受け渡さないことでPicking描画をBackend非依存のMaterial APIへ揃えます。

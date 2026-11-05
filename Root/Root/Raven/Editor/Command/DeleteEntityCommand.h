@@ -41,6 +41,7 @@ private:
     EntityHandle m_PreviousHandle{};
     std::optional<TagComponent> m_Tag;
     std::optional<TransformComponent> m_Transform;
+    std::optional<LocalTransformComponent> m_Local;
     std::optional<CameraComponent> m_Camera;
     std::optional<MeshRendererComponent> m_Mesh;
     std::optional<MeshDeformationComponent> m_Deformation;
@@ -49,6 +50,7 @@ private:
     std::optional<ColliderComponent> m_Collider;
     std::optional<RelationshipComponent> m_Relationship;
     std::vector<EntityHandle> m_Children;
+    std::vector<std::optional<LocalTransformComponent>> m_ChildrenLocal;
 };
 
 } // namespace Raven

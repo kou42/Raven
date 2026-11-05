@@ -50,8 +50,6 @@ void EditorLayer::RenderSelectionOutlinePass(
         return;
     }
 
-    const TransformComponent& transform =
-        m_SelectedEntity.GetComponent<TransformComponent>();
     const MeshRendererComponent& meshRenderer =
         m_SelectedEntity.GetComponent<MeshRendererComponent>();
 
@@ -114,11 +112,15 @@ void EditorLayer::RenderSelectionOutlinePass(
     // ========================================================================
     // Inverted Hull transform
     // ========================================================================
-    // TransformComponent::GetTransform()でEntity本来のTranslation/Rotation/Scaleを適用した後、
+    // Sceneの評価済みWorld MatrixでEntity本来のTranslation/Rotation/Scaleを適用した後、
     // Local Spaceで少しだけ均一拡大します。
     // World SpaceでScaleするとTranslationまで拡大されてEntity位置がずれるため、Model Matrixへ
     // 後掛けすることが重要です。
-    math::Mat4 outlineTransform = transform.GetTransform();
+    math::Mat4 outlineTransform;
+    if (m_SelectedEntity.GetScene()->TryGetEntityWorldMatrix(m_SelectedEntity.GetHandle(), outlineTransform) == false)
+    {
+        return;
+    }
     outlineTransform = math::Scale(
         outlineTransform,
         math::Vec3{ 1.035f, 1.035f, 1.035f });

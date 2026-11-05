@@ -15,7 +15,8 @@ class SceneCamera;
 // Scene側Systemです。
 //
 // CameraComponentは「Camera設定データ」、TransformComponentは「Entityの姿勢」を保持し、
-// このSystemが両者を結合してSceneCameraのView Matrixを更新します。
+// このSystemが両者を結合してSceneCameraのView Matrixを更新します。Local有効時は
+// SceneからWorld評価を行い、更新されたWorld互換TRSをCamera入力に使用します。
 // CameraComponent自身へScene探索責務を持たせないことで、Componentを純粋なデータとして保ちます。
 class SceneCameraSystem
 {
@@ -45,7 +46,7 @@ public:
 
     // Runtime Cameraを解決し、TransformからView Matrixを更新したSceneCameraを返します。
     // Game Viewのサイズも同時に反映するため、ProjectionのAspect Ratioも最新状態になります。
-    // Camera Entityが1つも存在しない場合はnullptrを返します。
+    // Cameraが無い場合、またはLocalのWorld評価が不成立の場合はnullptrを返します。
     static SceneCamera* UpdatePrimaryCamera(
         Scene& scene,
         float viewportWidth,

@@ -23,6 +23,11 @@ InspectorSnapshot CaptureInspectorSnapshot(Entity selectedEntity)
         return snapshot;
     }
 
+    if (selectedEntity.HasComponent<LocalTransformComponent>() == true)
+    {
+        math::Mat4 world;
+        scene->TryGetEntityWorldMatrix(selectedEntity.GetHandle(), world);
+    }
     snapshot.SelectionValid = true;
     snapshot.Handle = selectedEntity.GetHandle();
 

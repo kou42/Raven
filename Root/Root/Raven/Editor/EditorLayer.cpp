@@ -924,11 +924,11 @@ void EditorLayer::OnAttach()
 
                 // PreviewはUndo履歴へ積まず、Runtime Transformへ即時反映します。
                 // WidgetはScene参照を保持せず、ActionごとにHandleのGenerationを再検証します。
-                TransformComponent& transform = entity.GetComponent<TransformComponent>();
+                TransformComponent transform;
                 transform.Position = requested.Position;
                 transform.Rotation = requested.Rotation;
                 transform.Scale = requested.Scale;
-                return true;
+                return activeScene->SetWorldTransform(handle, transform);
             });
         m_InspectorRavenPanel.SetTransformCommitRequestedHandler(
             [this](EntityHandle handle, const InspectorTransformSnapshot& beforeSnapshot)

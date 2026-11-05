@@ -2,6 +2,7 @@
 
 #include <vector>
 #include "Raven/Scene/Entity.h"
+#include "Raven/Scene/Components.h"
 
 namespace Raven
 {
@@ -14,8 +15,12 @@ class SceneGraph final
 {
 public:
     static EntityHandle GetParent(const Scene& scene, EntityHandle child);
-    static bool CanReparent(const Scene& scene, EntityHandle child, EntityHandle parent);
-    static bool Reparent(Scene& scene, EntityHandle child, EntityHandle parent);
+    static bool CanReparent(const Scene& scene, EntityHandle child, EntityHandle parent,
+        ReparentTransformMode mode = ReparentTransformMode::KeepWorld);
+    static bool Reparent(Scene& scene, EntityHandle child, EntityHandle parent,
+        ReparentTransformMode mode = ReparentTransformMode::KeepWorld);
+    static bool CanReparentWithLocal(const Scene& scene, EntityHandle child, EntityHandle parent, const TransformComponent& local);
+    static bool ReparentWithLocal(Scene& scene, EntityHandle child, EntityHandle parent, const TransformComponent& local);
     static bool Detach(Scene& scene, EntityHandle child);
 
     // 返却値はHandleのSnapshotです。利用時に生存確認し、構造変更後は再取得します。
@@ -27,10 +32,11 @@ public:
     static std::vector<EntityHandle> GetDescendants(const Scene& scene, EntityHandle root);
 
     // Entity破棄前に直下の子だけをRootへ戻します。孫の親子関係は維持します。
-    // TransformはWorld-spaceのため、階層操作では一切書き換えません。
+    // Legacy Worldは変更せず、Local有効な子は最後のWorldをRootのLocalへ引き継ぎます。
     static void DetachChildren(Scene& scene, EntityHandle parent);
 
 private:
+    static bool CanLink(const Scene& scene, EntityHandle child, EntityHandle parent);
     static EntityHandle GetAliveHandle(const Scene& scene, EntityIndex index);
 };
 }

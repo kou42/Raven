@@ -72,9 +72,7 @@ bool TransformCommand::TryApply(Scene& scene, const TransformComponent& transfor
         return false;
     }
 
-    Entity entity(m_Handle, &scene);
-    entity.GetComponent<TransformComponent>() = transform;
-    return true;
+    return scene.SetWorldTransform(m_Handle, transform);
 }
 
 bool TransformCommand::HasTransformChange() const
