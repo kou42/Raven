@@ -1,6 +1,6 @@
 # Raven Codex Cloud 運用ガイド
 
-更新日: 2026-10-29
+更新日: 2026-11-08
 
 ## 目的
 
@@ -38,16 +38,28 @@ Agent実行時のインターネットアクセスは原則無効とし、Secret
 
 ### Windows環境またはWindows CI
 
-- Visual Studio 2022 / MSVC v143 / Windows SDK 10.0による `Root/Root.sln` のビルド
+- Visual Studio 2026 / MSVC v145 / C++23 / Windows SDK 10.0による `Root/Root.sln` のビルド
 - Vulkan SDKの `glslc.exe` と `vulkan-1.lib` を使う検証
 - DirectX 12ライブラリとDXCを使う通常x64ビルド
 - CPU UI回帰テストとGPU統合テストの実行
 
 Codex CloudはLinuxコンテナであるため、Windows検証をCloud内で成功したものとして扱いません。
 
+## 開発環境の基準と移行状況
+
+開発環境の基準はVisual Studio 2026、MSVC v145、C++23です。
+プロジェクトの `PlatformToolset` は `v145`、`LanguageStandard` は `stdcpp23` を基準として確認します。
+ビルド結果を報告するときは、IDEの名称だけでなく、実際に使用したMSVC toolsetとC++言語標準も記録してください。
+
+本更新は運用ガイドのみを対象とします。確認時点の `Root/Root/Root.vcxproj` には `v143` 指定が残り、
+`scripts/check-codex-cloud-baseline.sh` も `v143` を検査しています。
+Windows CIの `.github/workflows/windows-build.yml` は `windows-2022` を使用し、ビルドスクリプトにも旧環境の診断文言が残っています。
+これらの設定・スクリプト・CIは別途移行と検証が必要です。現在のコマンドの実行成功だけで、
+VS2026 / MSVC v145 / C++23の組み合わせを検証できたとは扱わないでください。
+
 ## Windowsビルドの再現
 
-Visual Studio 2022（MSVC v143とWindows 10/11 SDKを含む）が必要です。新しいチェックアウトでは次を実行します。
+Visual Studio 2026（MSVC v145とWindows 10/11 SDKを含む）が必要です。新しいチェックアウトでは次を実行します。
 
 ```powershell
 git submodule update --init --recursive
@@ -66,7 +78,7 @@ GPU統合テストはOpenGL 3.3 Core Contextと表示セッションを必要と
 - runner labels: `self-hosted`, `Windows`, `X64`, `raven-gpu`
 - ベンダー製GPUドライバーとOpenGL 3.3 Core以上
 - ログイン中の対話型Windowsデスクトップ（runnerをWindows Serviceや切断済みRDP Sessionで動かさない）
-- Visual Studio 2022、MSVC v143、Windows 10/11 SDK
+- Visual Studio 2026、MSVC v145、C++23、Windows 10/11 SDK
 - 公式依存物を取得できるインターネット接続
 
 手動ワークフローはFont Atlasを含むGPU Texture upload/readbackを実行し、終了コード0、`[PASS] GPU Texture upload diagnostics`、Font Atlasの非SKIPを必須とします。ビルドログとテストログは成否にかかわらず `windows-gpu-integration-logs` artifactへ14日間保存します。
