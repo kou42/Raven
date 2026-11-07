@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <limits>
@@ -16,7 +16,15 @@ inline constexpr std::uint64_t JsonEscapedString = 1;
 
 enum class DataType : std::uint32_t
 {
-    Null, Bool, Int64, UInt64, Float64, String, Binary, Array, Object
+    Null,
+    Bool,
+    Int64,
+    UInt64,
+    Float64,
+    String,
+    Binary,
+    Array,
+    Object
 };
 
 // Preorder Tape。Objectの直下はStringキー、値の順に並びます。
@@ -45,9 +53,19 @@ struct DataLimits
 
 enum class DataErrorCode
 {
-    None, InvalidStructure, InvalidEncoding, DuplicateKey, LimitExceeded,
-    InvalidLimits, NumericRange, OutOfMemory, InvalidSyntax, UnexpectedEnd, TrailingData,
-    UnsupportedType, OutputFailure
+    None,
+    InvalidStructure,
+    InvalidEncoding,
+    DuplicateKey,
+    LimitExceeded,
+    InvalidLimits,
+    NumericRange,
+    OutOfMemory,
+    InvalidSyntax,
+    UnexpectedEnd,
+    TrailingData,
+    UnsupportedType,
+    OutputFailure
 };
 
 // エラー報告は追加の文字列確保に依存しません。Offsetは通常Source内のByte位置です。
