@@ -44,3 +44,24 @@ Makefile
 # Temp
 *.tmp
 *.temp
+
+# ローカル検証の生成物（CSV、ログ、終了コード、配置バックアップなど）。
+# 再利用する検証スクリプトは scripts/、共有する検証結果は docs/ に保存する。
+/artifacts/
+/.codex-worktrees/
+
+# 個人用のIDE設定と、自動保存される画面配置。
+*.vcxproj.user
+/Root.code-workspace
+/Root/Root/imgui.ini
+RavenEditorDock.layout.json
+RavenEditorDock.layout.json.bak
+RavenUIDockDemo.layout.json
+RavenUIDockDemo.layout.json.bak
+
+# UI計測の生CSVだけを除外し、共有データやテスト入力のCSVは管理できるようにする。
+RavenUI-recording-*.csv
+
+# ローカルのエラー出力とバックアップ。
+*.err
+*.bak
