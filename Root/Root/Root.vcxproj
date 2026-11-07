@@ -93,7 +93,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir);$(ProjectDir)vendor\imgui;$(ProjectDir)vendor\imgui\backends;$(ProjectDir)vendor\imgui\examples\libs\glfw\include;$(VULKAN_SDK)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <!-- Windows.h の min/max マクロが std::min/std::max と numeric_limits::max に干渉しないよう、全構成で無効化します。 -->
       <!-- Raven containersはalignas(64)を含むため、MSVCの適合したextended alignment実装を明示的に選択します。 -->
