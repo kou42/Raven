@@ -373,8 +373,11 @@ int main(int argc, char* argv[])
     const UINT windowsDirectoryLength = GetWindowsDirectoryW(windowsDirectory, MAX_PATH);
     if (windowsDirectoryLength > 0u && windowsDirectoryLength < MAX_PATH)
     {
-        applicationSpecification.RuntimeUIFontPath =
+        const auto fontPathUtf8 =
             (std::filesystem::path(windowsDirectory) / "Fonts" / "segoeui.ttf").u8string();
+        // C++20以降のchar8_tもUTF-8のバイト列として渡し、Windowsのローカル文字コードへの変換を避けます。
+        applicationSpecification.RuntimeUIFontPath.assign(
+            reinterpret_cast<const char*>(fontPathUtf8.data()), fontPathUtf8.size());
     }
     else
     {
