@@ -40,7 +40,8 @@ void RunStringSelfTests()
         assert(empty.c_str()[0] == '\0');
 
         // UTF-8は正規化や文字単位変換を暗黙に行わず、入力byte列を保持します。
-        const std::string utf8 = u8"Raven文字列";
+        // プロジェクトの/utf-8指定により、char文字列でもUTF-8の入力byte列を維持します。
+        const std::string utf8 = "Raven文字列";
         String text(sourceAllocator, std::string_view(utf8));
         assert(text.size() == utf8.size());
         assert(text.ToStdStringView() == std::string_view(utf8));

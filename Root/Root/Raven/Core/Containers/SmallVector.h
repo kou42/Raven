@@ -76,7 +76,11 @@ public:
     [[nodiscard]] Allocator* GetAllocator() const noexcept;
 
 private:
-    using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
+    // Tはplacement newで必要なSlotだけ構築するため、ここではサイズとアラインメントだけを確保します。
+    struct alignas(T) Storage
+    {
+        std::byte bytes[sizeof(T)];
+    };
 
     [[nodiscard]] T* InlineData() noexcept;
 
