@@ -55,10 +55,67 @@ GPU統合テストの中間生成物は`$(Platform)\\$(Configuration)\\UIGPUTest
 
 ## Phase 7: 性能記録Panelの回帰テスト
 
+DX12補助WindowはGPUテスト実行ファイルを`--dx12-auxiliary`で起動して検証します。
+`Root/Root`を作業Directoryにし、Scene/UIのDXIL ShaderとDX12対応GPUが必要です。
+
+```powershell
+& "../x64/Debug/RavenUIGPUTests.exe" --dx12-auxiliary
+```
+
+ビルドは上記の`RavenUIGPUTest=true`を使用します（実際のOutDirに合わせてPathを調整）。
+このモードはOpenGLを初期化せず、実OS Windowを表示します。共有Deviceの同一性、
+Main Context終了後の共有Device生存、補助SwapChainの描画・Resize・3回の解放、
+重複登録拒否、終了後の描画拒否、Runtime Shutdown時の補助解放を確認します。
+DX12のpixel readbackは含みません。実EditorのScene/Game Texture表示と入力操作は別途実機で確認します。
+Debug実行ではログのDX12 Debug Layer Warning/Errorも確認してください。
+
+Vulkanは同じGPUテスト実行ファイルに`--vulkan-auxiliary`を指定します。
+`Root/Root`を作業Directoryにし、Vulkan Loader/対応GPUとScene/UIのSPIR-Vが必要です。
+
+```powershell
+$env:RAVEN_RHI_VALIDATION = "1"
+& "../x64/Debug/RavenUIGPUTests.exe" --vulkan-auxiliary
+```
+
+Main/補助のDevice・Queue同一性、Main Context終了後の共有Instance生存、Mainが書く
+Viewport Textureを補助2 WindowでSamplingする経路、3回のClose、補助Resize、
+Main RenderPass/Texture交換後のDescriptor再準備を検証します。
+GPU pixel readbackは含みません。DebugではValidation Layerが利用可能であることと、
+ログにWarning/Errorがないことも確認してください。
+再生成待ちは`ResizeRequired`として再試行し、完成Frameの件数へ計上せず、Closeしません。
+
+`TestEditorDetachedLayoutSave`は実DockからScene/Game/Inspectorを抽出し、保存用Snapshotの
+順序・選択・非表示Panel・重複防止、元Pane消失時の既定Pane/先頭Paneへの復元を確認します。
+一時ファイルへの保存・読み込みとDock再生成、不正入力時の出力維持も検証します。
+実行中のDockと切り離しContentの所有権が変化しないことを確認し、OS補助WindowやGPUは生成しません。
+
 `TestStatisticsRecordingPanelLifecycle`は、開始・停止・保存ボタンを実際のKeyboard入力経路で操作し、
 非表示中のSnapshot集計、別UIContextへのContent移譲・元Contextへの復帰、CSV内容、
 Detach後の記録リセットを確認します。保存先はテストごとの一時ディレクトリへ隔離します。
 このテストはGPU・Font・OS補助Windowを生成しません。
+
+`TestWindowUIKeyRouting`はApplicationの共通キー配送をGPU/Window生成なしで通し、
+補助ContextのClipboard、共有履歴、前面Layer優先と処理済み入力の配送停止、
+Text/Popup/Mouse Capture/Drag/Gizmo/Repeat/Key Releaseの拒否を検証します。
+MainのFocusを補助Contextの操作へ流用しないことも確認します。
+
+Windowsでは末尾の`TestWindowsMouseMessageCoordinates`がNo-APIのOS Windowを一つ生成します。
+OpenGL Context・SwapChain・GPUは使用せず、Windowは直ちに非表示にします。
+実際のWndProc/GLFW callbackへqueue済みDown/Move/Upと縦横Wheelを配送し、
+現在のCursor位置に依存しない座標保持、Screen→Client変換、負のClient座標を検証します。
+このWindows固有テストにはOS Windowを生成できる環境が必要です。
+
+`TestInputProviderLifetime`はMain相当の最初の生存providerを保持し、中間/先頭/末尾の
+任意順破棄、補助providerの反復Close、最後の破棄後のNeutral値をGPUなしで確認します。
+`TestDetachedInspectorViewport`は実InspectorのDock抽出・別Context移譲・Resize・復帰と、
+Window論理座標のRoot/Page寸法および空でないClipを確認します。
+`TestInspectorCommitHistoryRouting`には移譲後の不完全入力/PreviewをSnapshot同期で壊さず、
+Enter/Focus喪失が一度だけCommandを確定し、移動先/復帰先でUndo/Redoできる回帰も含みます。
+
+GPU統合の`TestDetachedUIRendering`は共有OpenGL Contextを3回生成・破棄し、
+Stretch/Clip付きDock本文を移譲してpixel readbackで可視描画を確認します。
+補助WindowのResizeと元Dock復帰後も採取し、GL errorなし・Core ProfileのPolygon Mode復元を確認します。
+default framebufferを検証するため小さいテストWindowを表示します。実GPUとOS Displayが必要です。
 
 Windows Build CIではDebugとReleaseそれぞれで通常ビルドとこのCPUテスト全体を実行します。
 ログは`windows-debug-x64-logs` / `windows-release-x64-logs`へ成否にかかわらず保存します。
@@ -124,6 +181,22 @@ GCCでは既存Base.hの無効コード内の矢印文字を除いた一時ヘ�
 
 ## Phase 7: 複数WindowとC++ Allocation計測
 
+Vulkan SDR出力の追加検証（先に `test-windows-gpu.ps1` で同構成のGPUテストをビルド）:
+
+```powershell
+Push-Location Root/Root
+../x64/Debug/RavenUIGPUTests.exe --vulkan-surface-formats
+../x64/Debug/RavenUIGPUTests.exe --vulkan-color
+Pop-Location
+```
+
+`--vulkan-surface-formats` はWindow不要のCPU形式選択・transfer clear変換検証。
+`--vulkan-color` はCPU検証に加え、Main UNORMと補助Windowの強制SRGB Surface/UNORM View、
+Resize後のclear/opaque/半透明Blend/Viewport画像をGPU readbackし、各channelの誤差2/255以内を確認する。
+同一Deviceのmutable swapchain拡張と依存拡張、BGRA SRGB Surface、TRANSFER_SRC対応が必要で、
+条件不足をskip成功にはしない。通常表示ではUNORMがあればmutableは不要で、readbackも必須ではない。
+Debug/Release双方で実施する。Vulkanの数値色検証であり、DX12/OpenGLの数値色readbackは追加していない。
+
 `UIPerformanceTests.cpp`をCPU UIテストへ追加しました。完了Windowの集計、独立したContext/Applicationの
 Frame連番、重複排除、最小化/Close後の古い値の除外、CloseしたWindowの履歴保持、Window IDの追加、
 Window別履歴の上限、項目別の未計測値、CSVのScope・サンプル数・N/A、再開始を検証します。
@@ -147,3 +220,79 @@ Linuxで同じテストを独立実行する場合は、`RAVEN_UI_PERFORMANCE_TE
 `CPUProfiler.cpp`をリンクします。計測モードには`RAVEN_ENABLE_ALLOCATION_MEASUREMENT=1`を追加します。
 Threadを使用するため`-pthread`が必要です。既存Base.hの無効コード内の矢印文字はGCC向けの一時ヘッダーで
 除いて確認しており、これをWindows正式ビルドの合格とは扱いません。
+
+## Scene Graph SG0のCPU回帰テスト
+
+`SceneStorageTests.cpp` はScene/Window/GPUに依存せず、Sparse Setのswap-and-pop、
+Index再追加、Clear、mutable/const Iterator、move-only所有型、構築失敗と移動代入失敗時の
+索引整合性を検証する独立実行ファイルです。Rootの通常実行ファイルにはリンクしません。
+`assert`を使用するため`NDEBUG`を定義しないでください。
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+  -I Root/Root Root/Tests/SceneStorageTests.cpp -o /tmp/raven-scene-storage-tests
+ASAN_OPTIONS=detect_leaks=0 /tmp/raven-scene-storage-tests
+```
+
+上記のLeakSanitizer無効化はptrace下のクラウド環境用です。Leak検証を実施したとは扱いません。
+Visual Studio Developer Command Promptでは、リポジトリルートから以下で単独実行できます。
+
+```bat
+cl /nologo /std:c++17 /EHsc /W4 /I Root/Root Root/Tests/SceneStorageTests.cpp /Fe:%TEMP%\raven-scene-storage-tests.exe /Fo:%TEMP%\raven-scene-storage-tests.obj
+%TEMP%\raven-scene-storage-tests.exe
+```
+
+`SceneLifecycleSelfTests.cpp` のSG0ケースは別Sceneの同一Handle拒否、二重破棄、古いEntityの
+Component操作拒否、破棄Queue後のIndex再利用、親破棄時のDetach、無効Index、
+View走査中の値変更と遅延破棄を確認します。既存のDebug専用入口から実行します。
+
+```powershell
+./scripts/build-windows.ps1 -Configuration Debug -Platform x64
+& "./Root/x64/Debug/Root.exe" --test-scene-lifecycle
+if ($LASTEXITCODE -ne 0) { throw "Scene lifecycle test failed" }
+./scripts/build-windows.ps1 -Configuration Release -Platform x64
+```
+
+Scene LifecycleテストはEngineのWindowsリンク依存を必要とします。
+LinuxのStorage単体テストやGCC構文確認は、このWindowsビルド・実行の代替合格とはしません。
+Scene所有権と無効化の契約、未検証事項はルートの`RAVEN_SCENE_GRAPH_SG0.md`を参照してください。
+
+SG0のStorage単体テストとDebug Scene Lifecycleをまとめて検証する場合:
+
+```powershell
+./scripts/test-windows-scene.ps1
+```
+
+既にDebugアプリをビルド済みの場合は`-SkipBuild`、依存関係を設定済みの場合は
+`-SkipBootstrap`を指定できます。独立Storageテストは毎回MSVCでコンパイルし、
+`/UNDEBUG`でassertを有効にします。結果とコンパイルログは`artifacts/logs/windows-scene-*.log`へ保存します。
+Windows Build CIのDebugジョブでも両テストを実行し、既存のログArtifactに結果を含めます。
+Releaseジョブは従来のEngineビルドを継続します。Scene Lifecycleの専用入口はDebug限定です。
+
+## Scene Graph SG1
+
+`./scripts/test-windows-scene.ps1`はSG0に加えて`--test-scene-graph`と
+`--test-editor-entity-commands`を実行し、親子走査・破棄・Undo/Redo・Snapshot・World-space互換性を検証します。
+単独で実行する場合はDebugアプリに各引数を指定してください。
+
+`--measure-scene-graph`はDebug/Release双方でGPU/Windowを作らず、
+wide/chain各1024 Entityを3回走査します。各Nodeで全Relationshipを再走査する方式と、
+呼び出し内で子リンクを作る方式の構築込み時間・訪問数を出力します。
+時間閾値は合否に使いません。Windows CIが両構成の計測ログを保存します。
+契約と制約は`RAVEN_SCENE_GRAPH_SG1.md`を参照してください。
+
+## Scene Graph SG2
+
+`./scripts/test-windows-scene.ps1`で独立TRS数値テストと`--test-scene-transforms`を実行し、
+Local/World、Dirty、親変更、Shear拒否、破棄・世代再利用、Camera、Editor履歴を検証します。
+独立数値テストはLinuxでもGPU/Windowなしで実行できます。
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror -g -fsanitize=address,undefined -I Root/Root \
+  Root/Tests/TransformMathTests.cpp Root/Root/Raven/Math/TransformMath.cpp \
+  Root/Root/Raven/Math/MathQuatanion.cpp -o /tmp/raven-transform-math-tests
+ASAN_OPTIONS=detect_leaks=0 /tmp/raven-transform-math-tests
+```
+
+既存EntityはWorld-spaceのままです。Localを使用する場合はSceneのEnable/SetLocal/SetWorld APIを使います。
+規約、失敗時の扱い、SG3まで未対応の組合せは`RAVEN_SCENE_GRAPH_SG2.md`を参照してください。

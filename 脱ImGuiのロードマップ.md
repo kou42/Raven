@@ -1,6 +1,43 @@
 # Raven 脱ImGuiロードマップ
 
-最終更新: 2026-10-19
+最新の検証記録: [Phase 7 Windows自動検証（2026-11-03）](RAVEN_IMGUI_PHASE7_VALIDATION.md)。
+VulkanのSDR色出力をUNORM Attachmentへ統一し、Scene/UIが明るくなる差を修正。
+通常UNORMとmutable SRGB fallbackのGPU参照色・Resize検証、Debug/Releaseビルド・回帰を確認。
+Releaseの3 Backend MainとVulkan補助3 Windowで表示を再確認。正式性能比較・各30分操作は未完了。
+比較用起動モード `--editor-backend-comparison` と固定5 Entity Sceneを追加。
+PipelineのRaster/Depth/Blend設定も比較用Profileへ共通化し、Debug/Releaseビルド・CPU回帰を再確認。
+2026-11-03の中断再開後、最終版DX12/VulkanのMain表示・CSV採取・正常終了を確認した。
+3 Backendの起動Manifest一致、Scene/Game表示、補助3 Window、数値編集・Undo/Redo、CSV採取・正常終了を確認。
+固定Scene導入時に検出したVulkanの出力色差は、後続の承認済み色出力修正で対応した（上記記録参照）。
+正式性能Baseline・各30分操作・DPI別回帰は引き続き未完了。詳細と参考値は上記検証記録へ保存した。
+Backend比較・長時間操作に着手し、検証用CSV集計/プロセス監視と手順書を追加した。
+OpenGL Main最小化時の終了Blockerは追加承認後に修正。待機をBackend共通化し、
+Debug/Release通常・CPU UI、Debug Frame Self Test、Release OpenGLの補助3 Window保持中の
+最小化/復帰3回と復帰後の編集・履歴・正常終了を確認した。
+通常起動のOpenGL/DX12でEntity数・Scene色にも差があるため正式性能比較は未成立。
+Debug/Release通常・CPU UI、Release 3 Backend GPU回帰は成功。各30分操作とDPI確認は未完了。
+手順: [Phase 7 Backend比較・長時間操作](docs/phase7-backend-comparison.md)。
+通常起動の共有RuntimeUIFont未注入とDock Tabへの未伝播を修正し、OpenGL Releaseで文字表示を確認。
+Tab本文の残り領域への配置とStatistics Scroll追従、Fluid Debugの背景を修正済み。
+OpenGL Releaseで本文表示・選択・記録の開始/停止/非表示継続/CSV保存を確認し、参考性能CSVを採取。
+通常起動のClipboard接続とEditor履歴Shortcutを修正し、Transformの貼り付け・確定・Undo/Redoも実機確認済み。
+補助Window実操作、他Componentの網羅的操作、Backend/DPI別比較は継続検証が必要。
+Drag開始座標の保持と補助Contextの履歴配送を修正し、Debug/ReleaseのCPU回帰・通常ビルドは成功。
+RootのViewport寸法、入力provider寿命、Inspectorの現在Context参照、OpenGL Coreのstate復元を修正。
+OpenGL Releaseで補助Window本文、編集・Clipboard・Undo/Redo、3回のClose復帰とResize、正常終了を確認。
+Debug/Release CPU・通常ビルド、共有Contextのpixel readback GPU回帰は成功。
+補助Windowを開いたまま終了する配置保存も対応済み。OpenGL ReleaseでScene/Game/Inspectorの3 Windowを
+開いたまま終了し、再起動後のTab順序・Game選択・非表示Panel維持と正常終了を確認した。
+DX12補助Windowも共有Device/QueueとWindow別SwapChainへ接続済み。Debug/Release GPU回帰、
+Release実機のInspector編集・Undo/Redo・Close復帰・Resize、Scene/Game同時分離と終了/再起動を確認。
+Mainの寸法変更がSwapChainへ届かない問題も修正し、最大化後の全Panel表示を確認した。
+Vulkan補助Windowも共有Instance/Device/QueueとWindow別Surface/SwapChainへ接続済み。
+Debug/Release GPU回帰とRelease実機の編集・履歴・Close復帰・複数Window・Resize・終了/再起動を確認。
+Main Resize後の無効Viewport参照を避け、再生成待ちFrameを描画完了へ計上しないよう修正した。
+Debug/Release通常ビルド・CPU UI、Debug Allocation計測CPU、OpenGL GPU統合は成功。
+長時間操作・Multi-Viewport実操作・Backend/DPI別性能Baselineは未検証のため、Phase 7の未完了チェックは維持する。
+
+最終更新: 2026-11-03
 
 対象: Raven Editor / Debug UI / Dear ImGui統合
 

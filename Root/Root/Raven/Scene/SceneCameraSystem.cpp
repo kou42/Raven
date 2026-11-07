@@ -146,6 +146,12 @@ SceneCamera* SceneCameraSystem::UpdatePrimaryCamera(
         return nullptr;
     }
 
+    math::Mat4 world;
+    if (scene.TryGetEntityWorldMatrix(cameraEntity.GetHandle(), world) == false)
+    {
+        return nullptr;
+    }
+    // LocalのWorld互換TRSも評価済みです。Camera Scaleを無視する既存規約を維持します。
     TransformComponent& transform = cameraEntity.GetComponent<TransformComponent>();
     CameraComponent& cameraComponent = cameraEntity.GetComponent<CameraComponent>();
 

@@ -7,6 +7,7 @@
 #include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Screens/LoadingScreen.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
+#include "Raven/UI/Text/UIFontAtlasBuilder.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UISlider.h"
@@ -188,6 +189,41 @@ Application::Application(const ApplicationSpecification& specification)
     if (m_RavenUIEnabled == true)
     {
         m_UIContext.SetRenderer(UIRenderer::Create(m_Window->GetBackend()));
+        ConfigureUIClipboard(m_UIContext, m_MainWindowID);
+        if (m_RuntimeUIFont == nullptr && specification.RuntimeUIFontPath.empty() == false)
+        {
+            // Texture生成にはBackendのDevice/Contextが必要なので、WindowとRendererの
+            // 初期化後、PanelのAttach前に一度だけ構築します。各Panelは同じRefを共有し、
+            // Scene交換でもAtlasのLifetimeをApplication側に維持します。
+            std::vector<std::uint32_t> codepoints;
+            for (std::uint32_t codepoint = 32u; codepoint <= 126u; ++codepoint)
+            {
+                codepoints.push_back(codepoint);
+            }
+            // 通常Editorの英語Captionと省略・展開記号だけを収録し、全文字の
+            // Rasterizeによる起動時間・Atlas容量の増大を避けます。未収録文字は?へ代替します。
+            codepoints.insert(codepoints.end(), { 0x2026u, 0x2190u, 0x2191u,
+                0x2192u, 0x2193u, 0x25B6u, 0x25BCu, 0xFFFDu });
+            UIFontAtlasBuildOptions options;
+            options.PixelHeight = 18.0f;
+            auto font = CreateRef<UIFontAtlas>();
+            UIFontAtlasBuildFailure failure = UIFontAtlasBuildFailure::None;
+            if (UIFontAtlasBuilder::BuildFromFile(specification.RuntimeUIFontPath,
+                codepoints, options, *font, &failure) == true)
+            {
+                m_RuntimeUIFont = std::move(font);
+                std::cout << "[Raven UI] Runtime font loaded: "
+                    << specification.RuntimeUIFontPath << '\n';
+            }
+            else
+            {
+                // Sceneや診断処理は継続しますが、文字を表示できないことを起動ログに
+                // 明示します。null FontをWidgetへ渡す既存の安全な描画省略は維持します。
+                std::cerr << "[Raven UI] Runtime font creation failed: path="
+                    << specification.RuntimeUIFontPath << " stage="
+                    << static_cast<int>(failure) << '\n';
+            }
+        }
     }
 
 #if defined(_DEBUG)
@@ -338,6 +374,31 @@ Application::Application(const ApplicationSpecification& specification)
     }
 }
 
+void Application::ConfigureUIClipboard(UIContext& context, WindowID windowID)
+{
+    // WidgetにGLFW handleを保持させず、毎回Registryから生存中のWindowを解決します。
+    // Tabを別Contextへ移譲した後も、移動先WindowのClipboard接続が使われます。
+    context.SetClipboard(
+        [this, windowID]() -> std::string
+        {
+            Window* window = m_WindowManager.GetWindow(windowID);
+            if (window == nullptr)
+            {
+                return {};
+            }
+            const char* text = glfwGetClipboardString(static_cast<GLFWwindow*>(window->GetNativeWindow()));
+            return text != nullptr ? std::string(text) : std::string{};
+        },
+        [this, windowID](const std::string& text)
+        {
+            Window* window = m_WindowManager.GetWindow(windowID);
+            if (window != nullptr)
+            {
+                glfwSetClipboardString(static_cast<GLFWwindow*>(window->GetNativeWindow()), text.c_str());
+            }
+        });
+}
+
 Application::~Application()
 {
     // ========================================================================
@@ -385,8 +446,8 @@ Application::~Application()
         m_ImGuiLayer.reset();
     }
 
-    // 補助WindowはMain WindowのOpenGL ContextとGPU資産を共有します。
-    // Main Windowが破棄される前に補助WindowのCleanup/VAO解放を完了させます。
+    // OpenGL補助WindowはContext間でGPU資産を共有し、DX12/VulkanはDevice/Queueを共有します。
+    // Main Windowが破棄される前に補助WindowのCleanup/VAO解放とGPU Fence待機を完了させます。
     // 外部参照が残る場合はShutdownOwnedWindowsがfalseを返すため、
     // 補助Windowの利用側はOnDetach()で専用VAO/FBO参照を解放してください。
     const bool auxiliaryWindowsClosed = m_WindowManager.ShutdownOwnedWindows();
@@ -408,10 +469,13 @@ Application::~Application()
 
 WindowID Application::CreateUIWindow(const WindowSpecification& specification)
 {
-    if (m_RavenUIEnabled == false || specification.Backend != RHIBackend::OpenGL ||
-        m_Window->GetBackend() != RHIBackend::OpenGL)
+    const bool openGL = m_Window->GetBackend() == RHIBackend::OpenGL;
+    const bool explicitUI = (m_Window->GetBackend() == RHIBackend::DirectX12 ||
+        m_Window->GetBackend() == RHIBackend::Vulkan) && m_ExplicitSceneRuntime != nullptr;
+    if (m_RavenUIEnabled == false || specification.Backend != m_Window->GetBackend() ||
+        (openGL == false && explicitUI == false))
     {
-        // 他BackendのMulti-Viewportは描画Target接続後に有効化します。
+        // 未対応Backendや異なるBackendのWindowへGPU資源を渡しません。
         return 0;
     }
     auto callbackID = std::make_shared<WindowID>(0);
@@ -429,26 +493,40 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
         return 0;
     }
     Window* window = m_WindowManager.GetWindow(id);
-    if (window == nullptr || window->MakeContextCurrent() == false)
+    if (window == nullptr ||
+        (openGL == true && window->MakeContextCurrent() == false) ||
+        (explicitUI == true && m_ExplicitSceneRuntime->CreateAuxiliaryUIWindow(*window) == false))
     {
         m_WindowManager.UnregisterWindow(id);
-        m_Window->MakeContextCurrent();
+        if (openGL == true)
+        {
+            m_Window->MakeContextCurrent();
+        }
         return 0;
     }
     auto context = CreateScope<UIContext>();
+    ConfigureUIClipboard(*context, id);
     // UIの見た目とユーザー指定倍率はOS Windowごとに初期化される値ではないため、
     // Main Windowの設定を引き継ぎます。OS由来のDPIだけは各WindowのBeginFrameで同期します。
     context->SetTheme(m_UIContext.GetTheme());
     context->SetUserScale(m_UIContext.GetUserScale());
     // VAOはContext間で共有されないため、補助WindowをCurrentにしてRendererを生成します。
-    context->SetRenderer(UIRenderer::Create(window->GetBackend()));
+    if (openGL == true)
+    {
+        context->SetRenderer(UIRenderer::Create(window->GetBackend()));
+    }
+    // Explicit BackendのDrawListは共有DeviceのRuntimeへ渡し、UIContextはCPU Treeのみ所有します。
     m_AuxiliaryUIContexts.emplace(id, std::move(context));
-    // UIContextはWindowManagerのCloseCleanupで破棄し、GL資産の寿命をOS Windowより短くします。
-    const bool restored = m_Window->MakeContextCurrent();
+    // CloseCleanupでGPU資産とUIContextを解放し、寿命をOS Windowより短くします。
+    const bool restored = openGL == false || m_Window->MakeContextCurrent();
     // CleanupをLifecycleより先に登録し、途中失敗でもWindow破棄前にRendererを解放します。
     const bool cleanupRegistered = m_WindowManager.SetWindowCloseCleanup(id,
-        [this, id](Window&)
+        [this, id](Window& closingWindow)
         {
+            if (m_ExplicitSceneRuntime != nullptr)
+            {
+                m_ExplicitSceneRuntime->DestroyAuxiliaryUIWindow(closingWindow);
+            }
             const auto it = m_AuxiliaryUIContexts.find(id);
             if (it == m_AuxiliaryUIContexts.end())
             {
@@ -491,17 +569,27 @@ WindowID Application::CreateUIWindow(const WindowSpecification& specification)
                 }
             }
 
-            // Window破棄前、所属OpenGL ContextがCurrentな間にRendererを破棄します。
+            // Window破棄前にRendererを破棄します。OpenGLでは所属ContextがCurrentです。
             m_AuxiliaryUIContexts.erase(it);
         });
     if (restored == false || cleanupRegistered == false ||
-        m_WindowManager.AttachFrameLifecycle(id) == false)
+        (openGL == true && m_WindowManager.AttachFrameLifecycle(id) == false))
     {
         // 登録失敗時も補助WindowのContextでRendererを破棄します。
-        window->MakeContextCurrent();
+        if (openGL == true)
+        {
+            window->MakeContextCurrent();
+        }
+        if (explicitUI == true)
+        {
+            m_ExplicitSceneRuntime->DestroyAuxiliaryUIWindow(*window);
+        }
         m_AuxiliaryUIContexts.erase(id);
         m_WindowManager.UnregisterWindow(id);
-        m_Window->MakeContextCurrent();
+        if (openGL == true)
+        {
+            m_Window->MakeContextCurrent();
+        }
         return 0;
     }
     // 補助Window側にもMain Windowと同じIME取消/Caret通知を結びます。
@@ -569,6 +657,12 @@ WindowID Application::DetachDockTabToNewWindow(
     destination->SetTheme(source->GetTheme());
     destination->SetUserScale(source->GetUserScale());
 
+    // Extract後はTab位置と選択が変わるため、移譲前の状態を値で保持します。
+    const auto& sourceTabs = view->GetModel().GetTabs();
+    const auto position = std::find_if(sourceTabs.begin(), sourceTabs.end(),
+        [tabId](const UITabItem& item) { return item.Id == tabId; });
+    const std::size_t tabIndex = static_cast<std::size_t>(position - sourceTabs.begin());
+    const std::uint64_t selectedTabId = view->GetModel().GetSelectedTabId();
     UITabItem tab;
     Scope<UIElement> content = dock.ExtractTabForWindow(leafId, tabId, tab);
     if (content == nullptr)
@@ -587,8 +681,63 @@ WindowID Application::DetachDockTabToNewWindow(
     }
     // Rootへの追加が完了してから登録し、失敗した生成経路を復帰対象にしません。
     m_DetachedDockTabs[destinationID] = DetachedDockTab{
-        sourceID, &dock, raw, leafId, tab.Id, tab.Title, tab.Closable };
+        sourceID, &dock, raw, leafId, tab.Id, tab.Title, tab.Closable,
+        tabIndex, selectedTabId, static_cast<std::uint64_t>(destinationID) };
     return destinationID;
+}
+
+std::vector<UIDockTabRestoreRecord> Application::GetDetachedDockTabs(
+    WindowID sourceID, const UIDockSpace& dock) const
+{
+    const auto contextFor = [this](WindowID id) -> const UIContext*
+    {
+        if (id == m_MainWindowID)
+        {
+            return &m_UIContext;
+        }
+        const auto found = m_AuxiliaryUIContexts.find(id);
+        return found != m_AuxiliaryUIContexts.end() ? found->second.get() : nullptr;
+    };
+    const UIContext* source = contextFor(sourceID);
+    std::vector<UIDockTabRestoreRecord> records;
+    if (source == nullptr || dock.GetContext() != source)
+    {
+        return records;
+    }
+    const auto append = [&](const DetachedDockTab& record)
+    {
+        if (record.SourceID == sourceID && record.Dock == &dock)
+        {
+            records.push_back({ { record.LeafID, { record.TabID, record.Title, record.Closable } },
+                record.TabIndex, record.SelectedTabId, record.DetachOrder });
+        }
+    };
+    for (const auto& item : m_DetachedDockTabs)
+    {
+        const UIContext* owner = contextFor(item.first);
+        if (owner == nullptr)
+        {
+            continue;
+        }
+        // 登録時のraw pointerを逆参照せず、現在もそのWindowのRootが所有しているか照合します。
+        // 別Treeへ移ったContentや破棄済みContentを保存対象へ復活させません。
+        const auto& children = owner->GetRootElement().GetChildren();
+        if (std::any_of(children.begin(), children.end(),
+            [&](const auto& child) { return child.get() == item.second.Content; }) == true)
+        {
+            append(item.second);
+        }
+    }
+    // Main Closeと補助Closeが同じPollEventsに届く場合は、WindowのCleanupが完了しても
+    // 元Dockへの復帰は次のFrame境界待ちです。Scopeが所有する待機Contentも保存に含めます。
+    for (const PendingClosedUIChild& pending : m_PendingClosedUIChildren)
+    {
+        if (pending.HasDockTab == true && pending.Content != nullptr)
+        {
+            append(pending.DockTab);
+        }
+    }
+    return records;
 }
 
 WindowID Application::DetachUIRootChildToNewWindow(
@@ -1114,12 +1263,6 @@ void Application::UpdateLoadingScreen()
 
 void Application::PushLayer(Layer* layer)
 {
-#if 0
-    // 旧raw pointer APIは所有権が曖昧になるため現在は使用しません。
-    // Scope<Layer>版へ統一することで、ApplicationがLayerのLifetimeを明確に所有します。
-    m_Layers.push_back(layer);
-    layer->OnAttach();
-#endif
 }
 
 void Application::PushLayer(Scope<Layer> layer)
@@ -1493,8 +1636,45 @@ void Application::Run()
     }
     double previousTime = glfwGetTime();
 
+    uint32_t explicitWidth = m_Window->GetFramebufferWidth();
+    uint32_t explicitHeight = m_Window->GetFramebufferHeight();
     while (m_Running)
     {
+        const uint32_t width = m_Window->GetFramebufferWidth();
+        const uint32_t height = m_Window->GetFramebufferHeight();
+        if (width == 0 || height == 0 || m_Window->GetState() == WindowState::Minimized)
+        {
+            // Mainが描画不能な間はBackend共通でScene/UI/補助Windowの更新を休止します。
+            // 0寸法でSwapChainを作り直さず、復帰/CloseのEventを待ちます。
+            // OpenGLへ0寸法を渡すとFrame開始がFatalになるため、Safety Checkより前で待ちます。
+            // 完成済みUI Frameの連番は進めず、待機を0時間の描画サンプルにも数えません。
+            m_WindowManager.PollEvents();
+            if (m_Running == true)
+            {
+                glfwWaitEventsTimeout(0.05);
+            }
+            // 復帰までの時間がPhysics/Animationへ一度に流れないよう時計を合わせます。
+            // Poll/Wait中のCloseは次のLoop条件で終了し、GPU Frameを開始しません。
+            previousTime = glfwGetTime();
+            continue;
+        }
+        if (m_ExplicitSceneRuntime != nullptr)
+        {
+            if (width != explicitWidth || height != explicitHeight)
+            {
+                // DX12のAcquireやVulkanのSuboptimal Acquireは旧寸法でも成功するため、
+                // 新Viewportを旧SwapChainへ記録する前に実Pixel寸法を一致させます。
+                // 旧ImageのGPU完了待機とRenderPass/PSO再生成はRuntimeへ委譲します。
+                m_ExplicitSceneRuntime->DiscardPreparedFrame();
+                if (m_ExplicitSceneRuntime->Resize(width, height) == false)
+                {
+                    m_Running = false;
+                    break;
+                }
+                explicitWidth = width;
+                explicitHeight = height;
+            }
+        }
         // 現段階ではEscapeをApplication終了入力として扱います。
         // EditorのShortcut/Input routingが増えた段階では、入力責務を再整理する余地があります。
         if (Input::IsKeyPressed(Key::Escape))
@@ -1683,6 +1863,7 @@ void Application::Run()
                 { m_MainWindowID, true, m_UIContext.GetLastFrameMetrics() });
         }
 
+        bool explicitFrameReady = true;
         if (m_ExplicitSceneRuntime != nullptr)
         {
             // UIContext::EndFrameでRetained Tree -> DrawList変換が完了した後にSnapshotを渡します。
@@ -1700,6 +1881,7 @@ void Application::Run()
 
             if (explicitResult != RHIFrameResult::Success)
             {
+                m_CompletedUIFrameMetrics.Windows.clear();
                 m_ExplicitSceneRuntime->DiscardPreparedFrame();
                 if (explicitResult != RHIFrameResult::ResizeRequired ||
                     m_ExplicitSceneRuntime->Resize(
@@ -1709,6 +1891,9 @@ void Application::Run()
                     m_Running = false;
                     break;
                 }
+                // Present後の再生成は、このFrameでEditorが渡したViewport Textureも無効化します。
+                // 補助DrawListへ旧Textureを渡してFatal/Closeにせず、次FrameのEditor更新を待ちます。
+                explicitFrameReady = false;
             }
         }
 
@@ -1748,6 +1933,48 @@ void Application::Run()
                         m_CompletedUIFrameMetrics.Windows.push_back(
                             { windowID, false, ui->GetLastFrameMetrics() });
                     });
+            }
+        }
+
+        // Explicit BackendはMainのEnd/Present後、同一Queue上へ補助UIを投入します。
+        // GL Contextを要求するWindowManager経路とは分け、最小化中は描画を待ちます。
+        if (m_RavenUIEnabled == true && m_ExplicitSceneRuntime != nullptr && explicitFrameReady == true)
+        {
+            for (const auto& item : m_AuxiliaryUIContexts)
+            {
+                Window* window = m_WindowManager.GetWindow(item.first);
+                if (window == nullptr || window->GetState() == WindowState::Minimized ||
+                    window->GetFramebufferWidth() == 0 || window->GetFramebufferHeight() == 0 ||
+                    m_WindowManager.IsWindowClosePending(item.first) == true)
+                {
+                    continue;
+                }
+                UIContext& ui = *item.second;
+                ui.BeginFrame(math::Vec2(static_cast<float>(window->GetWidth()),
+                    static_cast<float>(window->GetHeight())),
+                    math::Vec2(static_cast<float>(window->GetFramebufferWidth()),
+                        static_cast<float>(window->GetFramebufferHeight())),
+                    window->GetContentScaleX(), window->GetContentScaleY());
+                auto uiAllocations = ui.MeasureAllocations();
+                if (ui.GetPendingDPIFontCount() > 0u)
+                {
+                    ui.RefreshPendingDPIFonts();
+                }
+                ui.EndFrame();
+                const RHIFrameResult result = m_ExplicitSceneRuntime->RenderAuxiliaryUIWindow(
+                    *window, ui.GetDrawList());
+                if (result == RHIFrameResult::Success)
+                {
+                    m_CompletedUIFrameMetrics.Windows.push_back(
+                        { item.first, false, ui.GetLastFrameMetrics() });
+                }
+                else if (result == RHIFrameResult::FatalError)
+                {
+                    // Resize待ちは完成Frameへ計上せず、次Frameへ回します。
+                    // GPU失敗後に同じAllocatorを再利用せず、Close Cleanupで待機・Tab復帰します。
+                    std::cerr << "[Raven UI] Auxiliary window rendering failed: " << item.first << '\n';
+                    m_WindowManager.RequestWindowClose(item.first);
+                }
             }
         }
 
@@ -1886,7 +2113,7 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
         input.Repeat = input.Pressed == true &&
             static_cast<KeyPressedEvent&>(event).IsRepeat();
         input.Context = ui;
-        event.Handled = ui->RouteKeyEvent(input);
+        event.Handled = RouteUIKeyEvent(*ui, input, m_Layers);
     }
     else if (event.GetEventType() == EventType::CharacterTyped)
     {
@@ -1948,6 +2175,25 @@ void Application::OnAuxiliaryUIEvent(WindowID id, Event& event)
             window->CancelIMEComposition();
         }
     }
+}
+
+bool Application::RouteUIKeyEvent(UIContext& context, const UIKeyEvent& event,
+    const std::vector<Scope<Layer>>& layers)
+{
+    UIKeyEvent input = event;
+    input.Context = &context;
+    if (context.RouteKeyEvent(input) == true)
+    {
+        return true;
+    }
+    for (auto it = layers.rbegin(); it != layers.rend(); ++it)
+    {
+        if (*it != nullptr && (*it)->OnUIKeyEvent(input) == true)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Application::OnEvent(Event& event)
@@ -2027,7 +2273,7 @@ void Application::OnEvent(Event& event)
         uiEvent.Control = (keyEvent.GetModifiers() & GLFW_MOD_CONTROL) != 0;
         uiEvent.Super = (keyEvent.GetModifiers() & GLFW_MOD_SUPER) != 0;
         uiEvent.Context = &m_UIContext;
-        event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+        event.Handled = RouteUIKeyEvent(m_UIContext, uiEvent, m_Layers);
     }
     else if (m_RavenUIEnabled == true && event.Handled == false &&
         event.GetEventType() == EventType::KeyReleased)
@@ -2038,7 +2284,7 @@ void Application::OnEvent(Event& event)
         uiEvent.Pressed = false;
         uiEvent.Shift = (keyEvent.GetModifiers() & GLFW_MOD_SHIFT) != 0;
         uiEvent.Context = &m_UIContext;
-        event.Handled = m_UIContext.RouteKeyEvent(uiEvent);
+        event.Handled = RouteUIKeyEvent(m_UIContext, uiEvent, m_Layers);
     }
 
     if (m_RavenUIEnabled == true && event.Handled == false &&

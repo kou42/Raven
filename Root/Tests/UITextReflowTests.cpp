@@ -1,11 +1,15 @@
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
+#include "Raven/Core/Application.h"
 #include "UIImmediateTests.h"
 #include "UIPerformanceTests.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorCommandHistory.h"
+#include "Raven/Editor/Command/TransformCommand.h"
+#include "Raven/Editor/Panels/InspectorRavenPanel.h"
+#include "Raven/Editor/Panels/InspectorSnapshot.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Command/ReparentEntityCommand.h"
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
@@ -43,6 +47,7 @@
 #include "Raven/UI/Widgets/UITreeView.h"
 #include "Raven/UI/Widgets/UITable.h"
 #include "Raven/UI/Widgets/UITabView.h"
+#include "Raven/UI/Widgets/UIWindow.h"
 #include "Raven/UI/Widgets/UIImage.h"
 #include "Raven/UI/Docking/UIDockLayout.h"
 #include "Raven/UI/Docking/UIDockGeometry.h"
@@ -58,6 +63,14 @@
 #include <memory>
 #include <limits>
 #include <string>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include "Raven/Platform/Windows/WindowsWindow.h"
+#endif
 
 namespace
 {
@@ -1639,6 +1652,146 @@ void TestEditorDockLayoutPolicy()
     fs::remove_all(directory);
 }
 
+void TestEditorDetachedLayoutSave()
+{
+    auto initial = Raven::CreateDefaultEditorDockLayout();
+    const auto id = [](Raven::EditorDockTabId tab) { return static_cast<std::uint64_t>(tab); };
+    const auto scene = id(Raven::EditorDockTabId::SceneView);
+    const auto game = id(Raven::EditorDockTabId::GameView);
+    const auto inspector = id(Raven::EditorDockTabId::Inspector);
+    const auto animation = id(Raven::EditorDockTabId::AnimationDebug);
+    // 非表示Panelは保存対象から外れている状態を再現します。統合で再表示しません。
+    initial.Tabs.erase(std::remove_if(initial.Tabs.begin(), initial.Tabs.end(),
+        [animation](const auto& record) { return record.Tab.Id == animation; }), initial.Tabs.end());
+    for (auto& selection : initial.Selections)
+    {
+        if (selection.second == scene)
+        {
+            selection.second = game;
+        }
+    }
+    Raven::UIContext source;
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    auto* dockPtr = dock.get();
+    Check(dock->RestoreSnapshot(initial, [](std::uint64_t, const Raven::UITabItem&)
+        { return std::make_unique<Raven::UIElement>(); }), "detached save restores fixture");
+    source.AddRootChild(std::move(dock));
+    std::vector<Raven::UIDockTabRestoreRecord> detached;
+    std::vector<Raven::Scope<Raven::UIElement>> contents;
+    for (const auto tab : { scene, game, inspector })
+    {
+        const auto record = std::find_if(initial.Tabs.begin(), initial.Tabs.end(),
+            [tab](const auto& value) { return value.Tab.Id == tab; });
+        auto* view = dockPtr->GetTabView(record->LeafId);
+        const auto& items = view->GetModel().GetTabs();
+        const auto at = std::find_if(items.begin(), items.end(),
+            [tab](const auto& value) { return value.Id == tab; });
+        Raven::UIDockTabRestoreRecord state;
+        state.Record = *record;
+        state.TabIndex = static_cast<std::size_t>(at - items.begin());
+        state.SelectedTabId = view->GetModel().GetSelectedTabId();
+        state.DetachOrder = detached.size() + 1u;
+        Raven::UITabItem metadata;
+        auto content = dockPtr->ExtractTabForWindow(record->LeafId, tab, metadata);
+        Check(content != nullptr, "detached save extracts actual content");
+        contents.push_back(std::move(content));
+        detached.push_back(state);
+    }
+    const auto current = dockPtr->SaveSnapshot();
+    std::string before;
+    std::string error;
+    Check(Raven::SerializeDockSnapshot(current, before, &error), "detached live snapshot validates");
+    Raven::UIDockSpaceSnapshot saved;
+    // Registryのunordered_map反復順には依存せず、抽出順から元順序を復元します。
+    std::swap(detached[0], detached[2]);
+    Check(Raven::BuildEditorDockLayoutForSave(current, detached, saved, &error), "build detached save");
+    std::string expected;
+    std::string actual;
+    Raven::SerializeDockSnapshot(initial, expected);
+    Raven::SerializeDockSnapshot(saved, actual);
+    Check(actual == expected, "same-pane order/selection and other panes restored without hidden tab");
+    Raven::SerializeDockSnapshot(dockPtr->SaveSnapshot(), actual);
+    Check(actual == before && contents.size() == 3u, "save does not mutate live dock or transfer ownership");
+    for (const auto& content : contents)
+    {
+        Check(content->GetContext() == nullptr && content->GetParent() == nullptr,
+            "save leaves detached ownership unchanged");
+    }
+    // JSON/Fileを経由し、再起動相当のContent Factoryで欠落・重複なく復元します。
+    namespace fs = std::filesystem;
+    const auto directory = fs::temp_directory_path() / ("RavenDetachedSave_" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    Check(fs::create_directory(directory), "detached save test directory");
+    const auto path = directory / "layout.json";
+    Check(Raven::SaveDockSnapshot(path.string(), saved, &error), "write detached layout");
+    Raven::UIDockSpaceSnapshot loaded;
+    Check(Raven::LoadEditorDockLayoutOrDefault(path.string(), loaded).Source ==
+        Raven::EditorDockLayoutSource::SavedSnapshot, "restart reads saved layout without fallback");
+    Raven::UIDockSpace restarted;
+    std::vector<std::uint64_t> created;
+    Check(restarted.RestoreSnapshot(loaded, [&](std::uint64_t, const Raven::UITabItem& tab)
+    {
+        created.push_back(tab.Id);
+        return std::make_unique<Raven::UIElement>();
+    }), "restart reconstructs all visible content");
+    Check(created.size() == initial.Tabs.size() && std::count(created.begin(), created.end(), inspector) == 1 &&
+        std::count(created.begin(), created.end(), animation) == 0, "restart tab identities are exact");
+    auto duplicate = detached;
+    duplicate.push_back(detached.front());
+    Check(Raven::BuildEditorDockLayoutForSave(saved, duplicate, loaded, &error), "already restored/duplicate tabs ignored");
+    Raven::SerializeDockSnapshot(loaded, actual);
+    Check(actual == expected, "duplicate records do not change live selection or order");
+    auto partial = current;
+    // 現在選択されたTabは、古い切り離し情報より優先します。
+    partial.Tabs.push_back({ 5u, { game, "Game View", false } });
+    for (auto& selection : partial.Selections)
+    {
+        if (selection.first == 5u)
+        {
+            selection.second = game;
+        }
+    }
+    Check(Raven::BuildEditorDockLayoutForSave(partial, detached, loaded, &error), "merge into occupied pane");
+    const auto selected = std::find_if(loaded.Selections.begin(), loaded.Selections.end(),
+        [](const auto& value) { return value.first == 5u; });
+    Check(selected->second == game, "live selection takes precedence");
+    Raven::UIDockSpaceSnapshot missing;
+    missing.Structure = { { 900u, Raven::UIDockNodeKind::Tabs, Raven::UIDockSplitAxis::Horizontal, 0.5f, 0u } };
+    missing.Tabs = { { 900u, { id(Raven::EditorDockTabId::SceneHierarchy), "Hierarchy", false } } };
+    missing.Selections = { { 900u, id(Raven::EditorDockTabId::SceneHierarchy) } };
+    const auto inspectorRecord = std::find_if(detached.begin(), detached.end(),
+        [inspector](const auto& value) { return value.Record.Tab.Id == inspector; });
+    Check(Raven::BuildEditorDockLayoutForSave(missing, { *inspectorRecord }, loaded, &error), "missing pane fallback");
+    Check(loaded.Tabs.size() == 2u && loaded.Tabs[0].LeafId == 900u && loaded.Tabs[1].LeafId == 900u &&
+        loaded.Selections == missing.Selections, "missing pane uses first live leaf and preserves selection");
+    auto moved = *inspectorRecord;
+    moved.Record.LeafId = 999u;
+    Check(Raven::BuildEditorDockLayoutForSave(current, { moved }, loaded, &error), "prefer existing default pane fallback");
+    const auto returned = std::find_if(loaded.Tabs.begin(), loaded.Tabs.end(),
+        [inspector](const auto& value) { return value.Tab.Id == inspector; });
+    Check(returned != loaded.Tabs.end() && returned->LeafId == 7u, "default Inspector pane selected");
+    auto invalid = detached;
+    invalid.front().Record.Tab.Id = 999999u;
+    loaded = saved;
+    Check(Raven::BuildEditorDockLayoutForSave(current, invalid, loaded, &error) == false && error.empty() == false,
+        "invalid detached metadata rejected");
+    Raven::SerializeDockSnapshot(loaded, actual);
+    Check(actual == expected, "failed merge leaves output intact");
+    auto bad = current;
+    bad.Selections.clear();
+    Check(Raven::BuildEditorDockLayoutForSave(bad, detached, loaded, &error) == false, "invalid live layout rejected");
+    Raven::SerializeDockSnapshot(loaded, actual);
+    Check(actual == expected, "invalid live layout leaves output intact");
+    bad = initial;
+    auto duplicateId = bad.Tabs.front();
+    duplicateId.LeafId = 7u;
+    bad.Tabs.push_back(duplicateId);
+    Check(Raven::BuildEditorDockLayoutForSave(bad, detached, loaded, &error) == false,
+        "duplicate live Tab ID across panes rejected");
+    fs::remove(path);
+    fs::remove(directory);
+}
+
 // 保存失敗で旧版を壊さず、退避中のクラッシュを想定したBackup読み込みを確認します。
 void TestDockSnapshotFileRecovery()
 {
@@ -2059,6 +2212,104 @@ void TestDockSpace()
         "dockspace split cannot host pane");
 }
 
+void TestDockContentLayout()
+{
+    Raven::UIContext context;
+    auto tabs = std::make_unique<Raven::UITabView>();
+    auto* tabView = tabs.get();
+    tabView->SetSize(Raven::math::Vec2(400.0f, 200.0f));
+    auto page = std::make_unique<Raven::UIElement>();
+    auto* pagePtr = page.get();
+    page->SetClipChildren(true);
+    auto button = std::make_unique<Raven::UIButton>();
+    auto* buttonPtr = button.get();
+    button->SetAffectsParentMeasure(false);
+    button->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    button->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    button->SetSize(Raven::math::Vec2(1000.0f, 1000.0f));
+    bool clicked = false;
+    button->SetOnClick([&clicked]() { clicked = true; });
+    page->AddChild(std::move(button));
+    Check(tabView->AddTab(1u, "Content", std::move(page), false), "layout adds first page");
+    Check(tabView->AddTab(2u, "Empty", std::make_unique<Raven::UIElement>(), false),
+        "layout adds empty page");
+    context.GetRootElement().AddChild(std::move(tabs));
+    const auto frame = [&]()
+    {
+        context.BeginFrame(Raven::math::Vec2(600.0f, 400.0f));
+        context.EndFrame();
+    };
+    frame();
+    const float header = tabView->GetTabBar()->GetSize().y;
+    CheckNear("dock content width", pagePtr->GetSize().x, 400.0f);
+    CheckNear("dock content remaining height", pagePtr->GetSize().y, 200.0f - header);
+    CheckNear("dock child fills absolute page", buttonPtr->GetSize().y, pagePtr->GetSize().y);
+    Check(context.RouteMouseDown(Raven::math::Vec2(20.0f, header + 20.0f),
+        Raven::UIMouseButton::Left), "docked content receives mouse down");
+    context.RouteMouseUp(Raven::math::Vec2(20.0f, header + 20.0f), Raven::UIMouseButton::Left);
+    Check(clicked, "docked content click is actionable");
+    tabView->SetSize(Raven::math::Vec2(220.0f, 100.0f));
+    frame();
+    CheckNear("dock resized width same frame", buttonPtr->GetSize().x, 220.0f);
+    CheckNear("dock resized height same frame", buttonPtr->GetSize().y, 100.0f - header);
+    Check(tabView->SelectTab(2u), "layout selects empty page");
+    frame();
+    CheckNear("empty dock page still fills viewport", tabView->GetTabContent(2u)->GetSize().y,
+        100.0f - header);
+    Check(tabView->SelectTab(1u), "layout returns to first page");
+    frame();
+    CheckNear("restored dock page height", pagePtr->GetSize().y, 100.0f - header);
+}
+
+void TestStatisticsDockViewport()
+{
+    Raven::UIContext context;
+    Raven::StatisticsRavenPanel panel;
+    Check(panel.Attach(context, nullptr), "dock statistics attaches");
+    auto* window = panel.GetRootElement();
+    auto content = context.GetRootElement().DetachChild(window);
+    window->SetPosition(Raven::math::Vec2(0.0f, 0.0f));
+    window->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    window->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    auto* dockedWindow = dynamic_cast<Raven::UIWindow*>(window);
+    Check(dockedWindow != nullptr, "dock statistics uses window");
+    dockedWindow->SetDocked(true);
+    auto tabs = std::make_unique<Raven::UITabView>();
+    tabs->SetSize(Raven::math::Vec2(400.0f, 200.0f));
+    auto page = std::make_unique<Raven::UIElement>();
+    page->AddChild(std::move(content));
+    Check(tabs->AddTab(1u, "Statistics", std::move(page), false), "dock statistics adds page");
+    context.GetRootElement().AddChild(std::move(tabs));
+    context.BeginFrame(Raven::math::Vec2(600.0f, 400.0f));
+    context.EndFrame();
+    Raven::UIScrollView* scroll = nullptr;
+    for (const auto& child : window->GetChildren())
+    {
+        auto* candidate = dynamic_cast<Raven::UIScrollView*>(child.get());
+        if (candidate != nullptr)
+        {
+            scroll = candidate;
+        }
+    }
+    Check(scroll != nullptr, "dock statistics has scroll viewport");
+    CheckNear("dock statistics scroll width fits", scroll->GetSize().x, window->GetSize().x - 16.0f);
+    CheckNear("dock statistics scroll height fits", scroll->GetSize().y, window->GetSize().y - 40.0f);
+    auto* label = FindStatisticsLabel(*window, "Start / Restart");
+    Check(label != nullptr, "dock statistics recording control exists");
+    auto* button = label->GetParent();
+    Check(scroll->EnsureVisible(button), "dock statistics can reach recording control");
+    context.BeginFrame(Raven::math::Vec2(600.0f, 400.0f));
+    context.EndFrame();
+    Raven::math::Vec2 point(10.0f, 10.0f);
+    for (auto* current = button; current != nullptr; current = current->GetParent())
+    {
+        point = point + current->GetPosition();
+    }
+    context.RouteMouseDown(point, Raven::UIMouseButton::Left);
+    context.RouteMouseUp(point, Raven::UIMouseButton::Left);
+    Check(panel.IsRecording(), "docked recording button responds to scrolled mouse click");
+}
+
 void TestDockTabWindowExtraction()
 {
     Raven::UIContext context;
@@ -2402,6 +2653,432 @@ Raven::UIKeyEvent Press(Raven::UIKey key, bool control = false, bool shift = fal
     event.Shift = shift;
     return event;
 }
+
+void TestContextClipboard()
+{
+    Raven::UIContext first;
+    Raven::UIContext second;
+    std::string firstText = "first";
+    std::string secondText = "second";
+    first.SetClipboard([&]() { return firstText; }, [&](const std::string& text) { firstText = text; });
+    second.SetClipboard([&]() { return secondText; }, [&](const std::string& text) { secondText = text; });
+    auto input = std::make_unique<Raven::UIInputText>();
+    auto* edit = input.get();
+    first.GetRootElement().AddChild(std::move(input));
+    first.SetFocus(edit);
+    first.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    Check(edit->GetText() == "first", "default paste uses owning context");
+    auto moved = first.GetRootElement().DetachChild(edit);
+    second.GetRootElement().AddChild(std::move(moved));
+    second.SetFocus(edit);
+    second.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    second.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    Check(edit->GetText() == "second", "moved widget uses destination clipboard");
+    second.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    second.RouteKeyEvent(Press(Raven::UIKey::X, true));
+    Check(edit->GetText().empty() && secondText == "second" && firstText == "first",
+        "cut writes only destination clipboard");
+    edit->SetText("keep");
+    second.SetClipboard({}, {});
+    second.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    second.RouteKeyEvent(Press(Raven::UIKey::X, true));
+    Check(edit->GetText() == "keep", "unconnected cut preserves text");
+    edit->SetClipboard([]() { return std::string("override"); }, {});
+    second.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    Check(edit->GetText() == "override", "widget clipboard injection remains preferred");
+}
+
+void TestInspectorCommitHistoryRouting()
+{
+    Raven::Scene scene;
+    auto entity = scene.CreateEntity("Inspector target");
+    Raven::SetEditorCommandHistoryScene(&scene);
+    Raven::UIContext context;
+    context.SetClipboard([]() { return std::string("12"); }, {});
+    Raven::InspectorRavenPanel panel;
+    int commits = 0;
+    panel.SetTransformPreviewRequestedHandler([&](Raven::EntityHandle handle,
+        const Raven::InspectorTransformSnapshot& value)
+    {
+        Check(handle == entity.GetHandle(), "inspector preview uses selected handle");
+        entity.GetComponent<Raven::TransformComponent>().Position = value.Position;
+        return true;
+    });
+    panel.SetTransformCommitRequestedHandler([&](Raven::EntityHandle,
+        const Raven::InspectorTransformSnapshot& original)
+    {
+        ++commits;
+        const auto after = entity.GetComponent<Raven::TransformComponent>();
+        auto before = after;
+        before.Position = original.Position;
+        return Raven::RecordAlreadyExecutedEditorCommand(
+            std::make_unique<Raven::TransformCommand>(entity, before, after));
+    });
+    Check(panel.Attach(context, nullptr), "history inspector attaches");
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    std::function<Raven::UIInputNumber*(Raven::UIElement&)> findNumber;
+    findNumber = [&](Raven::UIElement& element) -> Raven::UIInputNumber*
+    {
+        if (auto* number = dynamic_cast<Raven::UIInputNumber*>(&element); number != nullptr)
+        {
+            return number;
+        }
+        for (const auto& child : element.GetChildren())
+        {
+            auto* found = findNumber(*child);
+            if (found != nullptr)
+            {
+                return found;
+            }
+        }
+        return nullptr;
+    };
+    auto* number = findNumber(*panel.GetRootElement());
+    Check(number != nullptr, "history inspector has transform input");
+    context.SetFocus(&number->GetInputText());
+    context.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    context.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    CheckNear("paste previews runtime transform", entity.GetComponent<Raven::TransformComponent>().Position.x, 12.0f);
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    Check(number->GetEditText() == "12", "snapshot preserves focused edit");
+    Check(Raven::CanUndoEditorCommand() == false, "preview does not record command");
+    context.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    context.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    Check(commits == 1, "Enter records exactly one edit");
+    Raven::EditorShortcutRoutingContext routing;
+    routing.Panel = panel.GetRootElement();
+    Check(Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true)) == false,
+        "focused text owns Undo before editor");
+    context.ClearFocus();
+    Check(commits == 1, "focus loss after Enter does not duplicate command");
+    Check(Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true)),
+        "editor Undo works without viewport focus");
+    CheckNear("editor Undo restores original", entity.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::CanUndoEditorCommand() == false, "single Undo exhausts single edit");
+    Check(Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true, true)),
+        "Ctrl Shift Z redoes edit");
+    CheckNear("editor Redo restores edit", entity.GetComponent<Raven::TransformComponent>().Position.x, 12.0f);
+    routing.GizmoActive = true;
+    Check(Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true)) == false,
+        "gizmo interaction blocks history shortcut");
+    routing.GizmoActive = false;
+    context.SetClipboard([]() { return std::string("15"); }, {});
+    context.SetFocus(&number->GetInputText());
+    context.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    context.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    context.ClearFocus();
+    Check(commits == 2, "focus loss commits second edit once");
+    Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true));
+    CheckNear("second Undo preserves prior edit", entity.GetComponent<Raven::TransformComponent>().Position.x, 12.0f);
+    Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Y, true));
+    CheckNear("Ctrl Y redoes second edit", entity.GetComponent<Raven::TransformComponent>().Position.x, 15.0f);
+    Raven::UIContext auxiliary;
+    auto* panelRoot = panel.GetRootElement();
+    auxiliary.AddRootChild(context.DetachRootChild(panelRoot));
+    auxiliary.SetClipboard([]() { return std::string("1e-"); }, {});
+    auxiliary.SetFocus(&number->GetInputText());
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    Check(number->GetEditText() == "1e-", "moved Inspector preserves incomplete input across snapshot");
+    auxiliary.SetClipboard([]() { return std::string("17"); }, {});
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    auxiliary.ClearFocus();
+    Check(commits == 3, "moved Inspector commits once after snapshot");
+    Check(Raven::TryHandleEditorHistoryShortcut(auxiliary, routing, Press(Raven::UIKey::Z, true)),
+        "moved Inspector Undo");
+    CheckNear("moved Inspector Undo restores before", entity.GetComponent<Raven::TransformComponent>().Position.x, 15.0f);
+    Raven::TryHandleEditorHistoryShortcut(auxiliary, routing, Press(Raven::UIKey::Y, true));
+    CheckNear("moved Inspector Redo", entity.GetComponent<Raven::TransformComponent>().Position.x, 17.0f);
+    context.AddRootChild(auxiliary.DetachRootChild(panelRoot));
+    context.SetClipboard([]() { return std::string("19"); }, {});
+    context.SetFocus(&number->GetInputText());
+    context.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    context.RouteKeyEvent(Press(Raven::UIKey::V, true));
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    context.ClearFocus();
+    Check(commits == 4, "restored Inspector focus-loss commits once");
+    Raven::TryHandleEditorHistoryShortcut(context, routing, Press(Raven::UIKey::Z, true));
+    CheckNear("restored Inspector Undo", entity.GetComponent<Raven::TransformComponent>().Position.x, 17.0f);
+    panel.Detach();
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestInputProviderLifetime()
+{
+    class TestInput final : public Raven::Input
+    {
+    public:
+        explicit TestInput(int id) : Id(id) {}
+    private:
+        int Id;
+        bool IsKeyPressedImpl(int key) override { return key == Id; }
+        bool IsMousePressedImpl(int button) override { return button == Id; }
+        std::pair<float, float> GetMousePositionImpl() override
+        {
+            return { static_cast<float>(Id), 0.0f };
+        }
+        bool IsGamepadConnectedImpl(int index) override { return index == Id; }
+        bool GetGamepadStateImpl(int, Raven::GamepadState& state) override
+        {
+            state.LeftStickX = static_cast<float>(Id);
+            return true;
+        }
+    };
+    Check(Raven::Input::IsKeyPressed(1) == false, "no input provider is neutral");
+    auto main = std::make_unique<TestInput>(1);
+    auto first = std::make_unique<TestInput>(2);
+    auto second = std::make_unique<TestInput>(3);
+    Check(Raven::Input::IsKeyPressed(1), "auxiliary creation preserves main polling");
+    Check(Raven::Input::IsMouseButtonPressed(1), "main owns mouse polling");
+    Check(Raven::Input::IsGamepadConnected(1), "main owns gamepad polling");
+    Raven::GamepadState state;
+    Check(Raven::Input::GetGamepadState(0, state), "main gamepad state available");
+    CheckNear("main gamepad state", state.LeftStickX, 1.0f);
+    first.reset();
+    Check(Raven::Input::IsKeyPressed(1), "closing middle provider preserves main");
+    main.reset();
+    Check(Raven::Input::IsKeyPressed(3), "main close promotes surviving provider");
+    auto third = std::make_unique<TestInput>(4);
+    CheckNear("new provider does not replace survivor", Raven::Input::GetMouseX(), 3.0f);
+    third.reset();
+    Check(Raven::Input::IsKeyPressed(3), "closing newest provider preserves survivor");
+    second.reset();
+    Check(Raven::Input::IsKeyPressed(3) == false, "final provider close leaves neutral polling");
+    CheckNear("final close neutral mouse", Raven::Input::GetMouseX(), 0.0f);
+    Check(Raven::Input::GetGamepadState(0, state) == false, "final close neutral gamepad");
+    CheckNear("final close clears gamepad state", state.LeftStickX, 0.0f);
+    for (int iteration = 0; iteration < 8; ++iteration)
+    {
+        auto primary = std::make_unique<TestInput>(5);
+        auto auxiliary = std::make_unique<TestInput>(6);
+        auxiliary.reset();
+        Check(Raven::Input::IsKeyPressed(5), "repeated auxiliary close keeps live provider");
+    }
+    Check(Raven::Input::IsKeyPressed(5) == false, "repeated session cleanup is neutral");
+}
+
+void TestDetachedInspectorViewport()
+{
+    Raven::Scene scene;
+    auto entity = scene.CreateEntity("Detached Inspector");
+    Raven::UIContext source;
+    Raven::UIContext destination;
+    Raven::InspectorRavenPanel panel;
+    Check(panel.Attach(source, nullptr), "detached Inspector attaches");
+    panel.Update(Raven::CaptureInspectorSnapshot(entity));
+    auto dock = std::make_unique<Raven::UIDockSpace>();
+    auto* dockPtr = dock.get();
+    dock->SetSize({ 900.0f, 700.0f });
+    const auto leaf = dock->GetLayout().GetRoot()->GetId();
+    Check(dock->CreateTabView(leaf) != nullptr, "detached Inspector pane exists");
+    auto page = std::make_unique<Raven::UIElement>();
+    auto* pagePtr = page.get();
+    page->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    page->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    page->SetClipChildren(true);
+    auto* root = panel.GetRootElement();
+    root->SetPosition({ 0.0f, 0.0f });
+    root->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
+    root->SetVerticalAlignment(Raven::UIAlignment::Stretch);
+    static_cast<Raven::UIWindow*>(root)->SetDocked(true);
+    page->AddChild(source.DetachRootChild(root));
+    Check(dock->AddTab(leaf, 9001u, "Inspector", std::move(page), false), "Inspector tab added");
+    source.AddRootChild(std::move(dock));
+    source.BeginFrame({ 1280.0f, 800.0f });
+    source.EndFrame();
+    Raven::UITabItem metadata;
+    auto detached = dockPtr->ExtractTabForWindow(leaf, 9001u, metadata);
+    Check(detached != nullptr, "Inspector page extracted");
+    destination.AddRootChild(std::move(detached));
+    for (const auto size : { Raven::math::Vec2(480.0f, 720.0f), Raven::math::Vec2(640.0f, 480.0f) })
+    {
+        destination.BeginFrame(size, size * 2.0f, 1.5f, 1.5f);
+        destination.EndFrame();
+        CheckNear("auxiliary root viewport width", destination.GetRootElement().GetSize().x, size.x);
+        CheckNear("detached page width", pagePtr->GetSize().x, size.x);
+        CheckNear("detached page height", pagePtr->GetSize().y, size.y);
+        CheckNear("detached Inspector width", root->GetSize().x, size.x);
+        CheckNear("detached Inspector height", root->GetSize().y, size.y);
+        bool visibleClip = false;
+        for (const auto& command : destination.GetDrawList().GetCommands())
+        {
+            if (command.Clip.Enabled == true && command.Clip.Rect.Max.x > command.Clip.Rect.Min.x &&
+                command.Clip.Rect.Max.y > command.Clip.Rect.Min.y)
+            {
+                visibleClip = true;
+            }
+        }
+        Check(visibleClip, "detached Inspector has nonempty clip");
+    }
+    auto returned = destination.DetachRootChild(pagePtr);
+    Check(dockPtr->AddTab(leaf, metadata.Id, metadata.Title, std::move(returned), false),
+        "Inspector restores to original pane");
+    source.BeginFrame({ 1280.0f, 800.0f });
+    source.EndFrame();
+    Check(root->GetContext() == &source, "restored Inspector context");
+    panel.Detach();
+}
+
+void TestWindowUIKeyRouting()
+{
+    class HistoryLayer final : public Raven::Layer
+    {
+    public:
+        Raven::EditorShortcutRoutingContext Routing;
+        Raven::UIContext* LastContext = nullptr;
+        int Calls = 0;
+        bool OnUIKeyEvent(const Raven::UIKeyEvent& event) override
+        {
+            ++Calls;
+            LastContext = event.Context;
+            return event.Context != nullptr &&
+                Raven::TryHandleEditorHistoryShortcut(*event.Context, Routing, event);
+        }
+    };
+    Raven::Scene scene;
+    auto entity = scene.CreateEntity("Auxiliary history");
+    Raven::SetEditorCommandHistoryScene(&scene);
+    auto before = entity.GetComponent<Raven::TransformComponent>();
+    auto after = before;
+    after.Position.x = 4.0f;
+    Check(Raven::ExecuteAndRecordEditorCommand(
+        std::make_unique<Raven::TransformCommand>(entity, before, after)), "record window routing edit");
+    Raven::UIContext main;
+    Raven::UIContext auxiliary;
+    auto input = std::make_unique<Raven::UIInputText>();
+    auto* edit = input.get();
+    main.AddRootChild(std::move(input));
+    main.SetFocus(edit);
+    std::vector<Raven::Scope<Raven::Layer>> layers;
+    auto background = std::make_unique<HistoryLayer>();
+    auto* behind = background.get();
+    layers.push_back(std::move(background));
+    auto foreground = std::make_unique<HistoryLayer>();
+    auto* front = foreground.get();
+    layers.push_back(std::move(foreground));
+    auto undo = Press(Raven::UIKey::Z, true);
+    undo.Context = &main;
+    // MainのText Focusを補助Contextへ持ち込まず、同じ履歴を一度だけ操作します。
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers), "auxiliary Undo routed");
+    Check(front->LastContext == &auxiliary && front->Calls == 1 && behind->Calls == 0,
+        "window routing binds source and stops at first consumer");
+    CheckNear("auxiliary Undo", entity.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, Press(Raven::UIKey::Y, true), layers),
+        "auxiliary Ctrl Y routed");
+    CheckNear("auxiliary Redo", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    auto transferred = main.GetRootElement().DetachChild(edit);
+    auxiliary.AddRootChild(std::move(transferred));
+    auxiliary.SetClipboard([]() { return std::string("moved"); }, {});
+    auxiliary.SetFocus(edit);
+    const int callsBeforePaste = front->Calls;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, Press(Raven::UIKey::V, true), layers),
+        "auxiliary text consumes Paste");
+    Check(edit->GetText() == "moved" && front->Calls == callsBeforePaste,
+        "destination clipboard without layer delivery");
+    Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers);
+    CheckNear("text focus preserves scene", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    auxiliary.ClearFocus();
+    auto popup = std::make_unique<Raven::UIPanel>();
+    auto* popupHandle = auxiliary.AddPopup(std::move(popup));
+    Check(auxiliary.OpenPopup(popupHandle), "auxiliary popup opens");
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false,
+        "auxiliary popup blocks history");
+    auxiliary.ClosePopup();
+    Check(auxiliary.CaptureMouse(edit), "auxiliary capture starts");
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false,
+        "auxiliary capture blocks history");
+    auxiliary.ReleaseMouseCapture(edit);
+    Check(auxiliary.BeginDrag(edit, { "test", "payload" }, { 0.0f, 0.0f }), "pending drag starts");
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false,
+        "pending drag blocks history");
+    auxiliary.CancelDrag();
+    front->Routing.GizmoActive = true;
+    behind->Routing.GizmoActive = true;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, undo, layers) == false, "gizmo blocks history");
+    front->Routing.GizmoActive = false;
+    behind->Routing.GizmoActive = false;
+    auto repeat = undo;
+    repeat.Repeat = true;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, repeat, layers) == false, "ignore repeat");
+    auto release = undo;
+    release.Pressed = false;
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, release, layers) == false, "ignore release");
+    CheckNear("blocked shortcuts preserve scene", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    Check(Raven::Application::RouteUIKeyEvent(main, undo, layers), "main shares same history route");
+    CheckNear("main Undo", entity.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::Application::RouteUIKeyEvent(auxiliary, Press(Raven::UIKey::Z, true, true), layers),
+        "auxiliary Ctrl Shift Z");
+    CheckNear("auxiliary Shift Redo", entity.GetComponent<Raven::TransformComponent>().Position.x, 4.0f);
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+#if defined(_WIN32)
+// No-API WindowのWndProc→GLFW→Core Eventを確認します。Cursorの操作やGPUは不要です。
+// 位置が異なるmessageを先にqueueへ積むため、配送時の現在位置取得では成功しません。
+void TestWindowsMouseMessageCoordinates()
+{
+    Raven::WindowProps props("Raven Mouse message regression", 640u, 480u,
+        Raven::RHIBackend::DirectX12);
+    props.Maximized = false;
+    Raven::WindowsWindow window(props);
+    Check(window.GetNativeWindow() != nullptr, "native mouse no-API window");
+    window.Hide();
+    window.PollEvents();
+    HWND handle = static_cast<HWND>(window.GetPlatformWindowHandle());
+    std::vector<Raven::math::Vec2> downs;
+    std::vector<Raven::math::Vec2> ups;
+    std::vector<Raven::math::Vec2> wheels;
+    window.SetEventCallback([&](Event& event)
+    {
+        if (event.GetEventType() == EventType::MouseButtonPressed)
+        {
+            const auto& mouse = static_cast<const MouseButtonPressedEvent&>(event);
+            downs.emplace_back(mouse.GetX(), mouse.GetY());
+        }
+        else if (event.GetEventType() == EventType::MouseButtonReleased)
+        {
+            const auto& mouse = static_cast<const MouseButtonReleasedEvent&>(event);
+            ups.emplace_back(mouse.GetX(), mouse.GetY());
+        }
+        else if (event.GetEventType() == EventType::MouseScrolled)
+        {
+            const auto& mouse = static_cast<const MouseScrolledEvent&>(event);
+            wheels.emplace_back(mouse.GetX(), mouse.GetY());
+        }
+    });
+    Check(PostMessageW(handle, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(23, 47)) != FALSE, "queue Down");
+    Check(PostMessageW(handle, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(173, 92)) != FALSE, "queue Move");
+    Check(PostMessageW(handle, WM_LBUTTONUP, 0, MAKELPARAM(173, 92)) != FALSE, "queue Up");
+    POINT wheelPoint{ 59, 71 };
+    Check(ClientToScreen(handle, &wheelPoint) != FALSE, "wheel client to screen");
+    Check(PostMessageW(handle, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA),
+        MAKELPARAM(wheelPoint.x, wheelPoint.y)) != FALSE, "queue Wheel");
+    Check(PostMessageW(handle, WM_MOUSEHWHEEL, MAKEWPARAM(0, WHEEL_DELTA),
+        MAKELPARAM(wheelPoint.x, wheelPoint.y)) != FALSE, "queue horizontal Wheel");
+    window.PollEvents();
+    Check(downs.size() == 1u && ups.size() == 1u && wheels.size() == 2u, "native callback counts");
+    CheckNear("queued Down x", downs[0].x, 23.0f);
+    CheckNear("queued Down y", downs[0].y, 47.0f);
+    CheckNear("queued Up x", ups[0].x, 173.0f);
+    CheckNear("queued Up y", ups[0].y, 92.0f);
+    for (const auto& wheel : wheels)
+    {
+        CheckNear("wheel client x", wheel.x, 59.0f);
+        CheckNear("wheel client y", wheel.y, 71.0f);
+    }
+    SendMessageW(handle, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(-11, -19));
+    SendMessageW(handle, WM_LBUTTONUP, 0, MAKELPARAM(-13, -29));
+    CheckNear("negative Down x", downs.back().x, -11.0f);
+    CheckNear("negative Down y", downs.back().y, -19.0f);
+    CheckNear("negative Up x", ups.back().x, -13.0f);
+    CheckNear("negative Up y", ups.back().y, -29.0f);
+    window.SetEventCallback({});
+}
+#endif
 
 // UIContextを通して実際のFocus/Keyboard/Character/Clipboard配送を検証します。
 void TestInputEventRouting()
@@ -3793,6 +4470,47 @@ Raven::Ref<Raven::UIFontAtlas> CreateTextLayoutFixture()
 
 
 
+void TestDockSharedFont()
+{
+    Raven::UIDockSpace dock;
+    dock.SetSize(Raven::math::Vec2(400.0f, 300.0f));
+    const auto firstId = dock.GetLayout().GetRoot()->GetId();
+    Check(dock.CreateTabView(firstId) != nullptr, "font test creates existing tab view");
+    Check(dock.AddTab(firstId, 1u, "A", std::make_unique<Raven::UIElement>(), false),
+        "font test adds first caption");
+    const auto firstFont = CreateTextLayoutFixture();
+    dock.SetFont(firstFont);
+    const auto* second = dock.Split(firstId, Raven::UIDockSplitAxis::Horizontal, 0.5f);
+    Check(second != nullptr, "font test splits pane");
+    Check(dock.CreateTabView(second->GetId()) != nullptr, "font test creates future tab view");
+    Check(dock.AddTab(second->GetId(), 2u, "B", std::make_unique<Raven::UIElement>(), false),
+        "font test adds second caption");
+    const auto checkCaptions = [&dock](const Raven::Ref<Raven::UIFontAtlas>& font)
+    {
+        Raven::UIDrawList drawList;
+        dock.BuildDrawList(drawList);
+        std::size_t glyphCount = 0u;
+        for (const auto& command : drawList.GetCommands())
+        {
+            if (command.Type == Raven::UIDrawCommandType::Image)
+            {
+                Check(font != nullptr && command.Texture == font->GetTexture(),
+                    "dock caption shares supplied atlas");
+                ++glyphCount;
+            }
+        }
+        Check(glyphCount == (font != nullptr ? 2u : 0u),
+            "existing and split pane captions render with shared font");
+    };
+    checkCaptions(firstFont);
+    // 初期注入だけでなくFont交換/解除も既存Paneへ伝わることを確認します。
+    const auto replacement = CreateTextLayoutFixture();
+    dock.SetFont(replacement);
+    checkCaptions(replacement);
+    dock.SetFont(nullptr);
+    checkCaptions(nullptr);
+}
+
 void TestUILabelGlyphClipTransform()
 {
     const auto font = CreateTextLayoutFixture();
@@ -4029,6 +4747,11 @@ int main()
     TestTextEditBuffer();
     TestInputNumber();
     TestInputEventRouting();
+    TestContextClipboard();
+    TestInspectorCommitHistoryRouting();
+    TestWindowUIKeyRouting();
+    TestInputProviderLifetime();
+    TestDetachedInspectorViewport();
     TestPopupRouting();
     TestEditorShortcutRouting();
     TestComboBox();
@@ -4147,6 +4870,7 @@ int main()
     TestMenuBarKeyboardAndLifetime();
     TestCollapsibleSectionVisibility();
     TestEditorDockLayoutPolicy();
+    TestEditorDetachedLayoutSave();
     TestAnimationDebugActions();
     TestAnimationDebugSnapshot();
     TestAnimationDebugRavenPanel();
@@ -4181,6 +4905,9 @@ int main()
     TestTextureDeviceUnavailableDiagnostic();
     TestDockLayout();
     TestDockSpace();
+    TestDockContentLayout();
+    TestStatisticsDockViewport();
+    TestDockSharedFont();
     TestDockTabMultipleWindowRestore();
     TestDockTabMissingSourceFallback();
     TestDockTabWindowExtraction();
@@ -4193,5 +4920,8 @@ int main()
     TestDockSnapshotJson();
     TestDockSnapshotFileRecovery();
     TestDockRestoreFailurePreservesStructure();
+#if defined(_WIN32)
+    TestWindowsMouseMessageCoordinates();
+#endif
     return 0;
 }

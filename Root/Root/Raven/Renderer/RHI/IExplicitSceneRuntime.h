@@ -42,6 +42,14 @@ public:
     virtual bool CaptureOffscreenSceneFrame(
         const Ref<RHIOffscreenRenderTarget>& renderTarget);
 
+    // 補助Windowは借用します。CloseはNative Window破棄前に必ず呼び、GPU完了を待ちます。
+    // 未対応Backendは生成/描画を拒否し、別DeviceへTextureを暗黙転送しません。
+    virtual bool CreateAuxiliaryUIWindow(Window& window);
+    virtual void DestroyAuxiliaryUIWindow(Window& window);
+    // Successだけを描画完了へ計上します。ResizeRequiredは再生成/復帰待ちでCloseせず、
+    // FatalErrorだけをClose対象にします。Main/補助は同じThreadから直列に呼びます。
+    virtual RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList);
+
     // UIContext::EndFrame後のCPU DrawListを次のPrepareFrameへ渡します。
     // GPU Resource生成はAcquire前のPrepareFrame内で行います。
     virtual void SubmitUIFrame(const UIDrawList& drawList,

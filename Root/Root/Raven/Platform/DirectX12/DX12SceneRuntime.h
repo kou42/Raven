@@ -129,6 +129,9 @@ public:
     bool CaptureMainSceneFrame() override;
     bool CaptureOffscreenSceneFrame(
         const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
+    bool CreateAuxiliaryUIWindow(Window& window) override;
+    void DestroyAuxiliaryUIWindow(Window& window) override;
+    RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
 
     void SubmitUIFrame(const UIDrawList& drawList,
         uint32_t viewportWidth, uint32_t viewportHeight) override
@@ -254,6 +257,8 @@ public:
 
     void Shutdown() override
     {
+        // Main Deviceを解放する前に、補助SwapChainのFence待機とFrame参照解放を完了します。
+        m_AuxiliaryWindows.clear();
         m_PreparedFrame.reset();
         m_PreparedOffscreenFrames.clear();
         m_PreparedUI = {};
@@ -394,6 +399,16 @@ private:
 
     Window* m_Window = nullptr;
     DX12SceneContext m_Context;
+    struct AuxiliaryUIWindow
+    {
+        // Renderer CacheはContextより先に破棄され、GPU使用中の参照はContextが保持します。
+        DX12SceneContext Context;
+        ExplicitUIRenderer Renderer;
+        uint32_t Width = 0;
+        uint32_t Height = 0;
+    };
+    // WindowはApplication/WindowManagerが所有し、Close Cleanupから登録解除します。
+    std::unordered_map<Window*, Scope<AuxiliaryUIWindow>> m_AuxiliaryWindows;
     Scope<DX12SceneRHIDevice> m_Device;
     RHIShaderAssetManager m_ShaderAssets;
     Ref<RHIShaderAsset> m_VertexShader;

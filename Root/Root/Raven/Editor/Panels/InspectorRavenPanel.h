@@ -134,7 +134,7 @@ private:
     void ResetColliderEdit();
     void UpdateLabels();
 
-    UIContext* m_Context = nullptr;
+    UIElement* GetFocusedInputElement() const;
     UIElement* m_Root = nullptr;
     UILabel* m_StatusLabel = nullptr;
     UICollapsibleSection* m_TagSection = nullptr;

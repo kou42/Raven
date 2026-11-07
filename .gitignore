@@ -45,6 +45,12 @@ Makefile
 *.tmp
 *.temp
 
+# 比較用SceneのソースだけをDebug/ビルド出力の規則から除外します。
+!Root/Root/Raven/Scene/Debug/
+Root/Root/Raven/Scene/Debug/*
+!Root/Root/Raven/Scene/Debug/EditorBackendComparisonScene.h
+!Root/Root/Raven/Scene/Debug/EditorBackendComparisonScene.cpp
+
 # ローカル検証の生成物（CSV、ログ、終了コード、配置バックアップなど）。
 # 再利用する検証スクリプトは scripts/、共有する検証結果は docs/ に保存する。
 /artifacts/

@@ -90,6 +90,12 @@ class UIContext
 {
 public:
     UIContext();
+    using ClipboardReader = std::function<std::string()>;
+    using ClipboardWriter = std::function<void(const std::string&)>;
+    // Platform接続はWindow所有側が注入し、Widgetは現在所属するContextを使います。
+    void SetClipboard(ClipboardReader reader, ClipboardWriter writer);
+    std::string ReadClipboardText() const;
+    bool WriteClipboardText(const std::string& text) const;
 
     void BeginFrame(const math::Vec2& viewportSize);
     // Window単位でDPI・論理サイズ・実Pixelサイズを同じFrame境界に同期します。
@@ -278,6 +284,8 @@ private:
 
 private:
     UITheme m_Theme = UITheme::CreateDefaultDark();
+    ClipboardReader m_ReadClipboard;
+    ClipboardWriter m_WriteClipboard;
     math::Vec2 m_FramebufferSize = math::Vec2(0.0f, 0.0f);
     bool m_HasFramebufferSize = false;
     float m_DPIScaleX = 1.0f;

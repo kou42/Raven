@@ -103,6 +103,8 @@ public:
         scroll->SetSize(math::Vec2(530.0f, 608.0f));
         scroll->SetHorizontalScrollBarEnabled(false);
         auto content = CreateScope<UIPanel>();
+        // この診断HUDは明るい文字を使うため、汎用Panelの白い既定色を使用しません。
+        content->SetBackgroundColor(math::Vec4(0.13f, 0.14f, 0.17f, 1.0f));
         content->SetPosition(math::Vec2(0.0f, 0.0f));
         content->SetSize(math::Vec2(530.0f, 960.0f));
         content->SetPreferredSize(math::Vec2(530.0f, 960.0f));

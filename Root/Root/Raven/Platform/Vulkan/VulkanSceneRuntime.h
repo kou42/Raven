@@ -9,6 +9,7 @@
 #include "Raven/UI/Core/UIDrawList.h"
 
 #include <vector>
+#include <unordered_map>
 
 namespace Raven
 {
@@ -47,6 +48,9 @@ public:
     bool CaptureMainSceneFrame() override;
     bool CaptureOffscreenSceneFrame(
         const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
+    bool CreateAuxiliaryUIWindow(Window& window) override;
+    void DestroyAuxiliaryUIWindow(Window& window) override;
+    RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
     void SubmitUIFrame(const UIDrawList& drawList,
         uint32_t viewportWidth, uint32_t viewportHeight) override;
 
@@ -74,6 +78,10 @@ public:
     uint32_t GetHeight() const override;
 
 private:
+    struct AuxiliaryUIWindow;
+    bool ResizeAuxiliaryUIWindow(AuxiliaryUIWindow& state, uint32_t width, uint32_t height);
+    // WindowはWindowManager所有。GPU資源はClose CleanupでNative Windowより先に解放します。
+    std::unordered_map<Window*, Scope<AuxiliaryUIWindow>> m_AuxiliaryWindows;
     struct PreparedOffscreenSceneFrame
     {
         Ref<RHIOffscreenRenderTarget> RenderTarget;

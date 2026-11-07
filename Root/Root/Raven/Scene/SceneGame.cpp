@@ -835,9 +835,16 @@ void SceneGame::RenderScene(const Camera& camera)
     // これによりSceneGame自身が生成したSphere/Box/Waveだけでなく、Application Layerから生成された
     // Cloth / Jelly / Soft-Rigid連成Sphereも、MeshRendererComponentを追加するだけでGame Viewと
     // Scene Viewの両方へ自動的に参加します。描画登録用の別リストとの同期は不要です。
+    EvaluateWorldTransforms();
     for (auto [entity, transform, meshRenderer] : View<TransformComponent, MeshRendererComponent>())
     {
         if (meshRenderer.IsValid() == false)
+        {
+            continue;
+        }
+
+        math::Mat4 world;
+        if (TryGetEvaluatedWorldMatrix(entity.GetHandle(), world) == false)
         {
             continue;
         }
@@ -880,7 +887,7 @@ void SceneGame::RenderScene(const Camera& camera)
 
         // u_View/u_ProjectionはRenderer::Draw()がCamera Contextから設定します。
         Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material,
-            transform.GetTransform(), entity.GetIndex());
+            world, entity.GetIndex());
     }
 
     Renderer::EndScene();

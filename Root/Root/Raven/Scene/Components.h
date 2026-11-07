@@ -27,7 +27,7 @@ struct TagComponent
 };
 
 // 親HandleはIndexだけでなくGenerationも保持し、Index再利用時の誤接続を防ぎます。
-// Transformは当面world-spaceのまま維持し、階層化による描画・物理挙動の変化を避けます。
+// LocalTransformComponentが無いEntityは従来のWorld-spaceを維持し、親子伝播を明示的に有効化します。
 struct RelationshipComponent
 {
     EntityHandle Parent = InvalidEntityHandle;
@@ -40,6 +40,19 @@ struct TransformComponent
     math::Vec3 Scale{ 1.0f, 1.0f, 1.0f };
 
     math::Mat4 GetTransform() const;
+};
+
+// 明示的なLocal authoring。TransformComponentは従来どおりWorld-spaceの互換窓口です。
+// Local有効EntityのWorld値はSceneTransformSystemが評価し、直接World編集も次回評価でLocalへ変換します。
+struct LocalTransformComponent
+{
+    TransformComponent Value;
+};
+
+enum class ReparentTransformMode
+{
+    KeepWorld,
+    KeepLocal
 };
 
 // ============================================================================

@@ -8,17 +8,56 @@
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
 #include "Raven/Renderer/RHI/RHISceneMeshRenderer.h"
 #include "Raven/Renderer/Renderer.h"
+#include "Raven/Renderer/Material/Material.h"
 #include "Raven/UI/Text/UIFontAtlas.h"
+#include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
+#include "Raven/Scene/SceneCameraSystem.h"
 
 #include <cassert>
 #include <cstddef>
 #include <utility>
 #include <vector>
+#include <sstream>
 
 namespace Raven::tests
 {
 namespace
 {
+
+// OS Windowを作らず、OpenGL Frame開始の失敗と復帰を再現します。
+// 最小化の待機はApplicationの責務であり、描画側の失敗判定を緩めない契約を確認します。
+class MockOpenGLWindow final : public Window
+{
+public:
+    bool ContextAvailable = true;
+    bool ViewportAvailable = false;
+    int ViewportCalls = 0;
+    int PresentCalls = 0;
+    void OnUpdate() override {}
+    void PollEvents() override {}
+    void Present() override { ++PresentCalls; }
+    bool MakeContextCurrent() override { return ContextAvailable; }
+    bool SetFramebufferViewport() override { ++ViewportCalls; return ViewportAvailable; }
+    unsigned int GetWidth() const override { return 1280u; }
+    unsigned int GetHeight() const override { return 720u; }
+    RHIBackend GetBackend() const override { return RHIBackend::OpenGL; }
+    WindowState GetState() const override { return WindowState::Normal; }
+    void SetTitle(const std::string&) override {}
+    void SetSize(unsigned int, unsigned int) override {}
+    void SetPosition(int, int) override {}
+    void Minimize() override {}
+    void Maximize() override {}
+    void Restore() override {}
+    void SetFullscreen(bool) override {}
+    void Show() override {}
+    void Hide() override {}
+    void Focus() override {}
+    void* GetNativeWindow() const override { return nullptr; }
+    void* GetPlatformWindowHandle() const override { return nullptr; }
+    void SetEventCallback(const EventCallbackFn&) override {}
+    void SetVSync(bool) override {}
+    bool IsVSync() const override { return true; }
+};
 enum class Call
 {
     Discard,
@@ -134,6 +173,86 @@ RHIShaderBinary MakeShaderBinary(RHIShaderBinaryFormat format)
 
 void RunExplicitSceneFrameSelfTests()
 {
+    // 比較SceneのCPU構成はGPUなしでも生成でき、経過時間やBackend専用Demoに依存しません。
+    const PipelineSpecification comparisonPipeline = EditorBackendComparisonScene::GetPipelineSpecification();
+    assert(comparisonPipeline.Topology == PrimitiveTopology::Triangles);
+    assert(comparisonPipeline.Cull == CullMode::None);
+    assert(comparisonPipeline.FrontFaceMode == FrontFace::CounterClockwise);
+    assert(comparisonPipeline.DepthTest == true && comparisonPipeline.DepthWrite == true);
+    assert(comparisonPipeline.DepthCompare == DepthCompareOperator::LessEqual);
+    assert(comparisonPipeline.Blend == false && comparisonPipeline.Shader == nullptr);
+    EditorBackendComparisonScene comparison(LegacyMeshResourceCreation::Deferred);
+    comparison.OnCreate();
+    assert(comparison.IsReady() == true);
+    std::size_t entityCount = 0u;
+    std::size_t meshCount = 0u;
+    std::weak_ptr<Mesh> comparisonMesh;
+    std::weak_ptr<Material> comparisonMaterial;
+    for (auto [entity, tag] : comparison.View<TagComponent>())
+    {
+        ++entityCount;
+        assert(entity.HasComponent<RigidBodyComponent>() == false);
+        if (entity.HasComponent<MeshRendererComponent>() == true)
+        {
+            ++meshCount;
+            const auto& renderer = entity.GetComponent<MeshRendererComponent>();
+            assert(renderer.Mesh != nullptr && renderer.Material != nullptr);
+            assert(renderer.Mesh->GetVertexArray() == nullptr);
+            assert(renderer.Material->HasLegacyPipeline() == false);
+            assert(renderer.Material->GetSurfaceType() == MaterialSurfaceType::Opaque);
+            assert(renderer.Material->GetRHITexture() == nullptr);
+            assert(renderer.Material->GetRHITint() == (std::array<float, 4>{1.0f, 1.0f, 1.0f, 1.0f}));
+            comparisonMesh = renderer.Mesh;
+            comparisonMaterial = renderer.Material;
+        }
+    }
+    assert(entityCount == 5u && meshCount == 4u);
+    Entity comparisonCamera = SceneCameraSystem::FindPrimaryCameraEntity(comparison);
+    assert(static_cast<bool>(comparisonCamera) == true);
+    std::ostringstream initialManifest;
+    comparison.WriteManifest(initialManifest);
+    comparison.OnCreate(); // 二重AttachでEntityを増やしません。
+    comparison.OnUpdate(100.0f);
+    std::ostringstream unchangedManifest;
+    comparison.WriteManifest(unchangedManifest);
+    assert(initialManifest.str() == unchangedManifest.str());
+    WindowResizeEvent comparisonResize(1000u, 1000u);
+    comparison.OnEvent(comparisonResize);
+    SceneCamera* resizedCamera = SceneCameraSystem::UpdatePrimaryCamera(comparison, 1000.0f, 1000.0f);
+    assert(resizedCamera != nullptr && resizedCamera->GetAspectRatio() == 1.0f);
+    comparison.OnDestroy();
+    assert(comparison.IsReady() == false);
+    assert(comparison.IsEntityAlive(comparisonCamera) == false);
+    assert(comparisonMesh.expired() == true && comparisonMaterial.expired() == true);
+    comparison.OnCreate();
+    assert(comparison.IsReady() == true);
+    comparison.OnDestroy();
+
+    // 0寸法等でViewportを設定できない時、描画側は依然Fatalを返します。
+    // 失敗したBeginはActive Frameを残さず、復帰後に同じLifecycleを再利用できます。
+    MockOpenGLWindow glWindow;
+    OpenGLSceneFrameLifecycle glFrame(glWindow);
+    assert(glFrame.BeginFrame() == RHIFrameResult::FatalError);
+    assert(glFrame.EndFrame() == RHIFrameResult::FatalError);
+    assert(glFrame.Present() == RHIFrameResult::FatalError);
+    assert(glWindow.PresentCalls == 0);
+    glWindow.ViewportAvailable = true;
+    for (int cycle = 0; cycle < 3; ++cycle)
+    {
+        assert(glFrame.BeginFrame() == RHIFrameResult::Success);
+        assert(glFrame.BeginFrame() == RHIFrameResult::FatalError);
+        assert(glFrame.EndFrame() == RHIFrameResult::Success);
+        assert(glFrame.Present() == RHIFrameResult::Success);
+        glWindow.ViewportAvailable = false;
+        assert(glFrame.BeginFrame() == RHIFrameResult::FatalError);
+        glWindow.ViewportAvailable = true;
+    }
+    assert(glWindow.PresentCalls == 3);
+    const int viewportCalls = glWindow.ViewportCalls;
+    glWindow.ContextAvailable = false;
+    assert(glFrame.BeginFrame() == RHIFrameResult::FatalError);
+    assert(glWindow.ViewportCalls == viewportCalls);
+
     // Picking用EntityIndexはScene QueueからCamera別Snapshotへ値でコピーします。
     // GenerationはReadback後にSceneの正規データから再取得するためGPU Snapshotへ含めません。
     RHISceneMesh pickingMesh{};

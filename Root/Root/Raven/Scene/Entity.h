@@ -98,6 +98,8 @@ struct EntityHandle
 
 inline constexpr EntityHandle InvalidEntityHandle{InvalidEntityIndex, 0 };
 
+// Sceneへの非所有参照です。Scene破棄後のbool変換やComponent操作も無効です。
+// Indexだけで保存せず、Sceneが生存中はこのラッパーで所属とGenerationを保持します。
 class Entity
 {
 
@@ -135,12 +137,6 @@ public:
 
     Scene* GetScene() const noexcept;
 
-#if 0
-    explicit operator bool() const
-    {
-        return m_Index != 0 && m_Generation  != 0 && m_Scene != nullptr;
-    }
-#endif
 
     explicit operator bool() const;
 

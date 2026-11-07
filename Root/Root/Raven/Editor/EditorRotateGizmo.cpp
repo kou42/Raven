@@ -425,8 +425,13 @@ bool RenderRotateGizmo(
                 s_GizmoState.EntityScene);
 
             // Drag中に適用済みの回転を二重実行せず、1 Dragを1 Commandとして登録します。
-            RecordAlreadyExecutedEditorCommand(
-                std::make_unique<TransformCommand>(editedEntity, beforeTransform, transform));
+            const TransformComponent requested = transform;
+            transform = beforeTransform;
+            if (editedEntity.GetScene()->SetWorldTransform(editedEntity.GetHandle(), requested) == true)
+            {
+                RecordAlreadyExecutedEditorCommand(
+                    std::make_unique<TransformCommand>(editedEntity, beforeTransform, transform));
+            }
 
             ResetGizmoState();
             return true;

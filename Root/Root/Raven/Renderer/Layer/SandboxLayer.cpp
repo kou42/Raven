@@ -18,19 +18,6 @@ void SandboxLayer::OnAttach()
     {
         return;
     }
-#if 0
-    float vertices[] =
-    {
-        -0.5f, -0.5f, 0.0f,
-         0.5f, -0.5f, 0.0f,
-         0.0f,  0.5f, 0.0f
-    };
-
-    uint32_t indices[] =
-    {
-        0, 1, 2
-    };
-#endif
 
     float vertices[] =
     {
@@ -81,15 +68,10 @@ void SandboxLayer::OnAttach()
     m_VertexArray->AddVertexBuffer(vertexBuffer_texure);
     m_VertexArray->SetIndexBuffer(indexBuffer_texture);
 
-#if 0
-    std::string path = "Raven/Assets/Shaders/Glsl/FlatColor.glsl";
-    m_Shader = Shader::Create(path);
-#else
     std::string vertPath = "Raven/Assets/Shaders/Vertex/test.vert";     //"D:/Engine/Root/Root/Raven/Assets/Shaders/Vertex/test.vert";
     std::string fragPath = "Raven/Assets/Shaders/Fragment/test.frag";  //"D:/Engine/Root/Root/Raven/Assets/Shaders/Fragment/test.frag";
     m_Shader = m_ShaderLibrary.Load("Test", vertPath, fragPath);
     //m_Shader = Shader::Create(vertPath, fragPath);
-#endif
 
     // Sandboxも通常のRHI描画経路と同じくPipelineを明示します。
     // Shaderだけを直接Bindすると、直前のPhysics Debug等が設定したLines topologyを

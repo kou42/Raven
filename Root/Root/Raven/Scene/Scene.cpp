@@ -1,4 +1,5 @@
 ﻿#include "Raven/Scene/Scene.h"
+#include "Raven/Scene/SceneGraph.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Event.h"
 #include "Raven/Renderer/Renderer.h"
@@ -43,7 +44,8 @@ bool Scene::IsEntityAlive(EntityHandle handle) const
 
 bool Scene::IsEntityAlive(Entity entity) const
 {
-    return IsEntityAlive(entity.GetIndex(),entity.GetGeneration());
+    // HandleのIndex/GenerationはScene間で重複するため、所有Sceneも照合します。
+    return entity.GetScene() == this && IsEntityAlive(entity.GetHandle());
 }
 
 Entity Scene::CreateEntity(const std::string& name)
@@ -77,101 +79,141 @@ Entity Scene::CreateEntity(const std::string& name)
 
     return entity;
 
-#if 0
-#if USE_STORAGE_VERSION_2
-    const EntityID id = m_NextEntityID++;
-
-    AddComponent<TagComponent>(id, TagComponent{ name });
-
-    AddComponent<TransformComponent>(id);
-
-    return Entity(id, this);
-
-#elif USE_STORAGE_VERSION_1
-    const EntityID id = m_NextEntityID++;
-
-    m_Tags.Emplace(id, TagComponent{ name });
-    m_Transforms.Emplace(id);
-
-    return Entity(id, this);
-#else
-    EntityID id = m_NextEntityID++;
-
-    m_Tags[id] = TagComponent{ name };
-    m_Transforms[id] = TransformComponent{};
-
-    return Entity(id, this);
-#endif
-#endif
 }
 
 EntityHandle Scene::GetEntityParent(EntityHandle child) const
 {
-    if (IsEntityAlive(child) == false) { return InvalidEntityHandle; }
-    const auto* relation = TryGetComponent<RelationshipComponent>(child.m_Index);
-    if (relation == nullptr || IsEntityAlive(relation->Parent) == false)
-    {
-        return InvalidEntityHandle;
-    }
-    return relation->Parent;
+    return SceneGraph::GetParent(*this, child);
 }
 
 bool Scene::CanSetEntityParent(EntityHandle child, EntityHandle parent) const
 {
-    if (IsEntityAlive(child) == false || child == parent) { return false; }
-    if (parent.IsValid() == false) { return true; }
-    if (IsEntityAlive(parent) == false) { return false; }
-
-    // 親の祖先を辿って循環を検出します。上限を設け破損データでも停止します。
-    EntityHandle current = parent;
-    for (std::size_t depth = 0; depth < m_EntitySlots.size(); ++depth)
-    {
-        if (current == child) { return false; }
-        const auto* relation = TryGetComponent<RelationshipComponent>(current.m_Index);
-        if (relation == nullptr || relation->Parent.IsValid() == false) { return true; }
-        if (IsEntityAlive(relation->Parent) == false) { return false; }
-        current = relation->Parent;
-    }
-    return false;
+    return CanSetEntityParent(child, parent, ReparentTransformMode::KeepWorld);
 }
 
 bool Scene::SetEntityParent(EntityHandle child, EntityHandle parent)
 {
-    if (CanSetEntityParent(child, parent) == false) { return false; }
-    auto* relation = TryGetComponent<RelationshipComponent>(child.m_Index);
-    if (relation == nullptr)
+    return SetEntityParent(child, parent, ReparentTransformMode::KeepWorld);
+}
+
+bool Scene::CanSetEntityParent(EntityHandle child, EntityHandle parent, ReparentTransformMode mode) const
+{
+    return SceneGraph::CanReparent(*this, child, parent, mode);
+}
+bool Scene::SetEntityParent(EntityHandle child, EntityHandle parent, ReparentTransformMode mode)
+{
+    return SceneGraph::Reparent(*this, child, parent, mode);
+}
+bool Scene::CanSetEntityParentAndLocal(EntityHandle child, EntityHandle parent, const TransformComponent& local) const
+{
+    return SceneGraph::CanReparentWithLocal(*this, child, parent, local);
+}
+bool Scene::SetEntityParentAndLocal(EntityHandle child, EntityHandle parent, const TransformComponent& local)
+{
+    return SceneGraph::ReparentWithLocal(*this, child, parent, local);
+}
+bool Scene::CanUseLocalTransform(EntityIndex index) const
+{
+    // Physics/Animation/DeformationのWorld書込みとの同期はSG3で導入します。
+    return HasComponent<TransformComponent>(index) == true
+        && HasComponent<RigidBodyComponent>(index) == false && HasComponent<ColliderComponent>(index) == false
+        && HasComponent<AnimatorComponent>(index) == false && HasComponent<MeshDeformationComponent>(index) == false;
+}
+bool Scene::CanRemoveTransform(EntityIndex index) const
+{
+    if (HasComponent<LocalTransformComponent>(index) == true)
     {
-        AddComponent<RelationshipComponent>(child.m_Index, RelationshipComponent{ parent });
+        return false;
     }
-    else
+    const auto* locals = FindStorage<LocalTransformComponent>();
+    const auto* relations = FindStorage<RelationshipComponent>();
+    if (locals == nullptr || locals->Empty() == true || relations == nullptr)
     {
-        relation->Parent = parent;
+        return true;
+    }
+    const EntityHandle parent{index, m_EntitySlots[index].Generation};
+    for (std::size_t i = 0; i < relations->Size(); ++i)
+    {
+        if (relations->GetByIndex(i).Parent == parent
+            && HasComponent<LocalTransformComponent>(relations->GetEntityByIndex(i)) == true)
+        {
+            return false;
+        }
     }
     return true;
+}
+bool Scene::EnableLocalTransform(EntityHandle handle, ReparentTransformMode mode)
+{
+    return m_TransformSystem.EnableLocal(*this, handle, mode);
+}
+bool Scene::DisableLocalTransform(EntityHandle handle)
+{
+    return m_TransformSystem.DisableLocal(*this, handle);
+}
+bool Scene::SetLocalTransform(EntityHandle handle, const TransformComponent& local)
+{
+    return m_TransformSystem.SetLocal(*this, handle, local);
+}
+bool Scene::SetWorldTransform(EntityHandle handle, const TransformComponent& world)
+{
+    return m_TransformSystem.SetWorld(*this, handle, world);
+}
+bool Scene::EvaluateWorldTransforms()
+{
+    RAVEN_PROFILE_SCOPE("Scene.Transforms");
+    return m_TransformSystem.Evaluate(*this);
+}
+bool Scene::TryGetEntityWorldMatrix(EntityHandle handle, math::Mat4& world)
+{
+    return m_TransformSystem.TryGetWorld(*this, handle, world);
+}
+bool Scene::TryGetEvaluatedWorldMatrix(EntityHandle handle, math::Mat4& world) const
+{
+    return m_TransformSystem.TryGetEvaluated(*this, handle, world);
+}
+uint64_t Scene::GetWorldTransformRecomputationCount() const
+{
+    return m_TransformSystem.GetRecomputationCount();
+}
+
+bool Scene::DetachEntity(EntityHandle child)
+{
+    return SceneGraph::Detach(*this, child);
+}
+
+std::vector<EntityHandle> Scene::GetEntityChildren(EntityHandle parent) const
+{
+    return SceneGraph::GetChildren(*this, parent);
+}
+
+std::vector<EntityHandle> Scene::GetEntityAncestors(EntityHandle child) const
+{
+    return SceneGraph::GetAncestors(*this, child);
+}
+
+std::vector<EntityHandle> Scene::GetEntityDescendants(EntityHandle root) const
+{
+    return SceneGraph::GetDescendants(*this, root);
 }
 
 void Scene::DestroyEntity(Entity entity)
 {
     if (IsEntityAlive(entity) == false)
+    {
         return;
+    }
 
     const EntityIndex index = entity.GetIndex();
 
     // 親の削除時は子をRootへ戻し、古いGenerationへの参照を残しません。
-    for (auto [child, relation] : View<RelationshipComponent>())
-    {
-        if (child.GetHandle() != entity.GetHandle() &&
-            relation.Parent == entity.GetHandle())
-        {
-            relation.Parent = InvalidEntityHandle;
-        }
-    }
+    SceneGraph::DetachChildren(*this, entity.GetHandle());
 
     for (auto& entry : m_ComponentStorages)
     {
         entry.second->Remove(index);
     }
 
+    m_TransformSystem.Forget(entity.GetHandle());
     EntitySlot& slot = m_EntitySlots[index];
 
     slot.Alive = false;
@@ -194,28 +236,6 @@ void Scene::DestroyEntity(Entity entity)
 
     m_FreeEntityIndices.push_back(index);
 
-#if 0
-#if USE_STORAGE_VERSION_2
-    const EntityID id = entity.GetID();
-
-    for (auto& [type, storage] : m_ComponentStorages)
-    {
-        storage->Remove(id);
-    }
-#elif USE_STORAGE_VERSION_1
-    const EntityID id = entity.GetID();
-
-    m_Tags.Remove(id);
-    m_Transforms.Remove(id);
-    m_MeshRenderers.Remove(id);
-#else
-    EntityID id = entity.GetID();
-
-    m_Tags.erase(id);
-    m_Transforms.erase(id);
-    m_MeshRenderers.erase(id);
-#endif
-#endif
 }
 
 const ph::PhysicsWorld& Scene::GetPhysicsWorld() const
@@ -284,6 +304,7 @@ void Scene::OnDestroy()
     // DestroyEntity()ですべてのComponentはRemove済みですが、Storage自体が保持するAllocatorや
     // shared_ptr等の内部容量もScene終了時に解放するためContainerも破棄します。
     m_ComponentStorages.clear();
+    m_TransformSystem.Clear();
 
     // ThermalWorldはECS Componentを所有しないため、Scene終了時には参照を明示的に解除します。
     m_PhysicsWorld.GetThermalWorld().Clear();
@@ -307,6 +328,7 @@ void Scene::OnUpdate(float dt)
     {
         RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
         FlushDestroyedEntities();
+        EvaluateWorldTransforms();
         return;
     }
 
@@ -332,6 +354,7 @@ void Scene::OnUpdate(float dt)
         RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
         FlushDestroyedEntities();
     }
+    EvaluateWorldTransforms();
 }
 
 void Scene::OnUpdatePhysics(float dt)
@@ -450,6 +473,7 @@ bool Scene::PrepareRHIMeshes(RHIDevice& device)
 
 void Scene::RenderEntities()
 {
+    EvaluateWorldTransforms();
 #if USE_STORAGE_VERSION_2
 
 	// TransformComponentとMeshRendererComponentを持つエンティティを取得して描画する
@@ -461,32 +485,14 @@ void Scene::RenderEntities()
             continue;
         }
 
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material,
-            transform.GetTransform(), entity.GetIndex());
-    }
-
-#if 0
-    const auto* meshStorage = FindStorage<MeshRendererComponent>();
-
-    if (meshStorage == nullptr) {
-        return;
-    }
-
-    for (const auto& [id, meshRenderer] : *meshStorage)
-    {
-        if (meshRenderer.IsValid() == false) {
+        math::Mat4 world;
+        if (TryGetEvaluatedWorldMatrix(entity.GetHandle(), world) == false)
+        {
             continue;
         }
-
-        const TransformComponent* transform = TryGetComponent<TransformComponent>(id);
-
-        if (transform == nullptr) {
-            continue;
-        }
-
-        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, transform->GetTransform());
+        Renderer::Draw(meshRenderer.Mesh, meshRenderer.Material, world, entity.GetIndex());
     }
-#endif
+
 
 #else
     for (const auto& [id, meshRenderer] : m_MeshRenderers)
@@ -532,22 +538,6 @@ void Scene::QueueDestroyEntity(Entity entity)
 
     m_DestroyQueue.push_back(entity);
 
-#if 0
-    // 同じEntityを複数回予約する可能性があるなら
-    if (!entity) {
-        return;
-    }
-
-    const EntityID entityID = entity.GetID();
-
-    const auto iterator = std::find(m_DestroyQueue.begin(), m_DestroyQueue.end(), entityID);
-
-    if (iterator == m_DestroyQueue.end())
-    {
-        m_DestroyQueue.push_back(entityID);
-    }
-}
-#endif
 }
 
 void Scene::FlushDestroyedEntities()
@@ -580,133 +570,5 @@ EntityGeneration Scene::GetEntityGeneration(EntityIndex index) const
     return m_EntitySlots[index].Generation;
 }
 
-#if 0
-
-void TestEntityHandle()
-{
-    const EntityHandle first{10, 3};
-
-    const uint64_t packed = first.Value();
-
-    const EntityHandle restored = EntityHandle::FromValue(packed);
-
-    assert(first == restored);
-    assert(first.Index == 10);
-    assert(first.Generation == 3);
-
-    const EntityHandle second{10, 4};
-
-    assert(first != second);
-
-    std::unordered_set<EntityHandle> handles;
-
-    handles.insert(first);
-    handles.insert(second);
-
-    assert(handles.size() == 2);
-    assert(handles.contains(first));
-    assert(handles.contains(second));
-}
-
-void TestEntityrecycle()
-{
-    Entity oldEntity = scene.CreateEntity("Old");
-
-    const EntityHandle oldHandle = oldEntity.GetHandle();
-
-    scene.DestroyEntity(oldEntity);
-
-    assert(!oldEntity);
-
-    Entity newEntity = scene.CreateEntity("New");
-
-    const EntityHandle newHandle = newEntity.GetHandle();
-
-    assert(oldHandle.Index == newHandle.Index);
-
-    assert(oldHandle.Generation != newHandle.Generation);
-
-    assert(oldHandle != newHandle);
-    assert(oldEntity != newEntity);
-}
-
-void TestEntityGeneration()
-{
-    Entity first = scene.CreateEntity("First");
-
-    const EntityIndex reusedIndex = first.GetIndex();
-
-    const EntityGeneration oldGeneration = first.GetGeneration();
-
-    scene.DestroyEntity(first);
-
-    assert(!first);
-
-    Entity second = scene.CreateEntity("Second");
-
-    const EntityHandle newHandle = second.GetHandle();
-    static_cast<void>(newHandle);
-
-    assert(second.GetIndex() == reusedIndex);
-
-    assert(second.GetGeneration() != oldGeneration);
-
-    assert(first != second);
-    assert(!scene.IsEntityAlive(first));
-    assert(scene.IsEntityAlive(second));
-}
-
-// Sparse Set版の動作確認
-void TestSparseComponentStorage()
-{
-    Raven::ComponentStorage<Raven::TransformComponent> storage;
-
-    auto& first = storage.Emplace(5);
-
-    first.Position.x = 10.0f;
-
-    auto& second = storage.Emplace(2);
-
-    second.Position.x = 20.0f;
-
-    auto& third = storage.Emplace(9);
-
-    third.Position.x = 30.0f;
-
-    assert(storage.Size() == 3);
-
-    assert(storage.Has(5));
-    assert(storage.Has(2));
-    assert(storage.Has(9));
-    assert(!storage.Has(100));
-
-    assert(storage.Get(5).Position.x == 10.0f);
-
-    assert(storage.Get(2).Position.x == 20.0f);
-
-    assert(storage.Get(9).Position.x == 30.0f);
-
-    const bool removed = storage.Remove(2);
-
-    assert(removed);
-    assert(!storage.Has(2));
-    assert(storage.Size() == 2);
-
-    /*
-     * swap-and-pop後も、
-     * 移動したEntity 9を正しく取得できる。
-     */
-    assert(storage.Has(9));
-    assert(storage.Get(9).Position.x == 30.0f);
-
-    assert(!storage.Remove(2));
-
-    storage.Clear();
-
-    assert(storage.Empty());
-    assert(!storage.Has(5));
-    assert(!storage.Has(9));
-}
-#endif
 
 }

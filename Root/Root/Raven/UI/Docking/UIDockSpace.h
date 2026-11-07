@@ -6,6 +6,7 @@
 #include "Raven/UI/Widgets/UITabView.h"
 
 #include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <string>
 #include <vector>
@@ -23,6 +24,16 @@ struct UIDockTabRecord
 {
     std::uint64_t LeafId = 0u;
     UITabItem Tab;
+};
+
+// 補助Windowへ移す前の復帰情報です。Widget/Windowの非所有pointerは含めず、
+// 保存用Snapshotを補完する側へ寿命に依存しない値だけを渡します。
+struct UIDockTabRestoreRecord
+{
+    UIDockTabRecord Record;
+    std::size_t TabIndex = 0u;
+    std::uint64_t SelectedTabId = 0u;
+    std::uint64_t DetachOrder = 0u;
 };
 
 struct UIDockSpaceSnapshot
@@ -51,6 +62,8 @@ public:
         std::uint64_t, std::uint64_t, const math::Vec2&)>;
 
     UIDockSpace();
+    // 現在のTabと、Split/復元で今後生成するTabへ同じ共有Fontを適用します。
+    void SetFont(const Ref<UIFontAtlas>& font);
 
     UIDockLayout& GetLayout() { return m_Layout; }
     const UIDockLayout& GetLayout() const { return m_Layout; }
@@ -110,6 +123,7 @@ private:
     std::uint64_t FindSourceLeaf(const UIElement* source) const;
 
     UIDockLayout m_Layout;
+    Ref<UIFontAtlas> m_Font;
     std::unordered_map<std::uint64_t, UIElement*> m_Panes;
     std::unordered_map<std::uint64_t, UITabView*> m_TabViews;
     std::unordered_map<std::uint64_t, UISplitter*> m_Splitters;

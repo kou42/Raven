@@ -34,7 +34,9 @@ class VulkanSceneContext final : public RHISceneFrameLifecycle
 public:
     ~VulkanSceneContext() override;
 
-    bool Init(Window& window);
+    // Instance/Device/Queueを共有し、Surface/SwapChain/Frame資源はWindowごとに所有します。
+    bool Init(Window& window, VulkanSceneContext* sharedContext = nullptr,
+        VkFormat preferredSurfaceFormat = VK_FORMAT_UNDEFINED);
     RHIFrameResult BeginFrame() override;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
@@ -57,6 +59,10 @@ public:
     // RenderPass中にColor Attachment全体を消去します。Frame外・Submit後は失敗します。
     // BeginFrame時のLoadOp Clearとは別に、Scene描画命令としてClearを発行する入口です。
     bool ClearColorAttachment(const float color[4]);
+    // GPU Capture/診断用。Main Colorをtightly packed RGBA/BGRA 8bit列としてコピーします。
+    // 呼び出し側はTRANSFER_DST Bufferを同じDeviceで生成し、Submit完了まで保持してください。
+    // CPU読み取りはFrame Submit後のFence/WaitIdle完了後のみ許可します。Frame外・off-screen中は失敗します。
+    bool CopyColorToBuffer(VkBuffer destination, VkDeviceSize destinationSize);
     bool BeginOffscreenRenderTarget(
         const Ref<RHIOffscreenRenderTarget>& renderTarget,
         const float clearColor[4]);
@@ -93,9 +99,11 @@ public:
     bool DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         const VulkanSceneBuffer& indexBuffer, uint32_t indexCount = 0,
         bool usePipelineVertexStride = false, uint32_t firstIndex = 0);
-    // Scene Buffer生成と検証用。DeviceはContextが所有し、Shutdown後は使用不可です。
-    const VulkanDevice& GetDevice() const { return m_Instance.GetDevice(); }
-    VkFormat GetColorFormat() const { return m_SwapChain.GetImageFormat(); }
+    // Scene Buffer生成と検証用。Deviceは共有所有しますが、このContextが登録した
+    // Resourceは自身のShutdownで無効化します。借用参照をShutdown後まで保持しないでください。
+    const VulkanDevice& GetDevice() const;
+    VkFormat GetColorFormat() const { return m_SwapChain.GetColorAttachmentFormat(); }
+    VkFormat GetSurfaceFormat() const { return m_SwapChain.GetImageFormat(); }
     VkRenderPass GetRenderPass() const { return m_RenderTarget.GetRenderPass(); }
     VkRenderPass GetPickingRenderPass() const { return m_RenderTarget.GetPickingRenderPass(); }
     uint32_t GetFrameSlotCount() const { return m_FrameSync.GetFrameCount(); }
@@ -103,7 +111,8 @@ public:
 
 private:
     VkExtent2D GetActiveRenderExtent() const;
-    VulkanInstance m_Instance;
+    // 最後のSurfaceとGPU資源の解放までInstance/Deviceを共有所有します。
+    Ref<VulkanInstance> m_Instance;
     VulkanSurface m_Surface;
     VulkanSwapChain m_SwapChain;
     VulkanFrameSync m_FrameSync;

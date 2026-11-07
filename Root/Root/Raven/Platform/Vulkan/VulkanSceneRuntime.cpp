@@ -19,6 +19,129 @@
 namespace Raven
 {
 
+struct VulkanSceneRuntime::AuxiliaryUIWindow
+{
+    // ContextはDevice/Queueを共有し、Window固有のRenderPass/Descriptor/Frameを所有します。
+    // 依存するAdapter/Renderer/PipelineはContextより先に解放します。
+    VulkanSceneContext Context;
+    Scope<VulkanSceneRHIDevice> Device;
+    ExplicitUIRenderer Renderer;
+    Ref<RHIGraphicsPipeline> Pipeline;
+    uint32_t Width = 0;
+    uint32_t Height = 0;
+};
+
+bool VulkanSceneRuntime::CreateAuxiliaryUIWindow(Window& window)
+{
+    if (m_Initialized == false || &window == m_Window ||
+        m_AuxiliaryWindows.find(&window) != m_AuxiliaryWindows.end())
+    {
+        return false;
+    }
+    auto state = CreateScope<AuxiliaryUIWindow>();
+    if (state->Context.Init(window, &m_Context) == false)
+    {
+        return false;
+    }
+    state->Device = CreateScope<VulkanSceneRHIDevice>(state->Context);
+    // SurfaceのColor FormatがMainと異なっても、そのWindowのRenderPass用PSOを生成します。
+    if (ExplicitUIRenderer::CreatePipeline(*state->Device, m_UIVertexShader->GetBinary(),
+        m_UIFragmentShader->GetBinary(), state->Pipeline) == false)
+    {
+        return false;
+    }
+    state->Width = window.GetFramebufferWidth();
+    state->Height = window.GetFramebufferHeight();
+    m_AuxiliaryWindows.emplace(&window, std::move(state));
+    return true;
+}
+
+void VulkanSceneRuntime::DestroyAuxiliaryUIWindow(Window& window)
+{
+    // Context::Shutdownが共有DeviceのIdleを待ってからDescriptor/Frame/Surfaceを解放します。
+    // MainのResourceはMain Context登録のままとし、補助Closeで無効化しません。
+    m_AuxiliaryWindows.erase(&window);
+}
+
+bool VulkanSceneRuntime::ResizeAuxiliaryUIWindow(
+    AuxiliaryUIWindow& state, uint32_t width, uint32_t height)
+{
+    if (state.Context.Resize(width, height) == false)
+    {
+        return false;
+    }
+    // Resizeが旧RenderPassとPSO/Descriptorを無効化するため、再Acquire前に作り直します。
+    state.Pipeline.reset();
+    if (ExplicitUIRenderer::CreatePipeline(*state.Device, m_UIVertexShader->GetBinary(),
+        m_UIFragmentShader->GetBinary(), state.Pipeline) == false)
+    {
+        return false;
+    }
+    state.Width = width;
+    state.Height = height;
+    return true;
+}
+
+RHIFrameResult VulkanSceneRuntime::RenderAuxiliaryUIWindow(
+    Window& window, const UIDrawList& drawList)
+{
+    const auto found = m_AuxiliaryWindows.find(&window);
+    if (m_Initialized == false || found == m_AuxiliaryWindows.end() ||
+        m_Context.GetActiveCommandBuffer() != VK_NULL_HANDLE)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const uint32_t width = window.GetFramebufferWidth();
+    const uint32_t height = window.GetFramebufferHeight();
+    if (width == 0 || height == 0 || window.GetState() == WindowState::Minimized)
+    {
+        return RHIFrameResult::ResizeRequired;
+    }
+    AuxiliaryUIWindow& state = *found->second;
+    if ((state.Width != width || state.Height != height) &&
+        ResizeAuxiliaryUIWindow(state, width, height) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const VkExtent2D extent = state.Context.GetExtent();
+    PreparedExplicitUI prepared;
+    // DescriptorはWindow固有Contextに準備します。Mainと共有するViewport Textureは同じ
+    // Graphics Queue上の既存Image Barrier（Color Write↔Fragment Read）で同期されます。
+    if (state.Renderer.Prepare(*state.Device, drawList, extent.width, extent.height,
+        m_DefaultTexture, state.Pipeline, prepared) == false)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const RHIFrameResult begin = state.Context.BeginFrame();
+    if (begin == RHIFrameResult::ResizeRequired)
+    {
+        return ResizeAuxiliaryUIWindow(state, width, height) == true
+            ? RHIFrameResult::ResizeRequired : RHIFrameResult::FatalError;
+    }
+    if (begin != RHIFrameResult::Success)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    VulkanSceneCommandList commands(state.Context);
+    const bool drawn = state.Renderer.Draw(commands, state.Pipeline, prepared);
+    const RHIFrameResult ended = state.Context.EndFrame();
+    if (ended != RHIFrameResult::Success)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    const RHIFrameResult presented = state.Context.Present();
+    if (drawn == false || presented == RHIFrameResult::FatalError)
+    {
+        return RHIFrameResult::FatalError;
+    }
+    if (presented == RHIFrameResult::ResizeRequired)
+    {
+        return ResizeAuxiliaryUIWindow(state, width, height) == true
+            ? RHIFrameResult::ResizeRequired : RHIFrameResult::FatalError;
+    }
+    return RHIFrameResult::Success;
+}
+
 // VulkanSceneRHIDeviceの完全型が見える実装側で特殊メンバーを定義し、
 // header利用側がunique_ptrの破棄処理を生成しないようにします。
 VulkanSceneRuntime::VulkanSceneRuntime() = default;
@@ -285,6 +408,8 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
 
 void VulkanSceneRuntime::Shutdown()
 {
+    // 借用中のMain Textureを無効化する前に、補助のDescriptor/Submitを解放します。
+    m_AuxiliaryWindows.clear();
     if (m_Context.GetDevice().IsValid() == true)
     {
         m_Context.GetDevice().WaitIdle();

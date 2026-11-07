@@ -178,6 +178,13 @@
     <ClCompile Update="Raven\Data\Formats\Json\JsonParser.cpp">
       <ObjectFileName>$(IntDir)DataJsonParser.obj</ObjectFileName>
     </ClCompile>
+    <!-- CoreとDataのJSON Writerが同名objを上書きしないよう、出力先を分離します。 -->
+    <ClCompile Update="Raven\Core\JsonWriter.cpp">
+      <ObjectFileName>$(IntDir)CoreJsonWriter.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Update="Raven\Data\Formats\Json\JsonWriter.cpp">
+      <ObjectFileName>$(IntDir)DataJsonWriter.obj</ObjectFileName>
+    </ClCompile>
     <!-- Dear ImGui core + GLFW/OpenGL3 backend縲ゆｾ晏ｭ倥ヰ繝ｼ繧ｸ繝ｧ繝ｳ縺ｯgit submodule縺ｮcommit縺ｧ蝗ｺ螳壹＠縺ｾ縺吶・-->
     <ClCompile Include="vendor\imgui\imgui.cpp" />
     <ClCompile Include="vendor\imgui\imgui_draw.cpp" />
@@ -216,6 +223,7 @@
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
     <None Include="Raven\Data\Tests\README.md" />
+    <None Include="Raven\Data\Serialization\Serialization.inl" />
     <None Include="Raven\Core\Containers\Vector.inl" />
     <None Include="Raven\Core\Containers\SmallVector.inl" />
     <None Include="Raven\Core\Containers\FixedVector.inl" />
@@ -228,6 +236,11 @@
     <None Include="Raven\Core\Containers\HandlePool.inl" />
     <None Include="Raven\Core\Containers\SparseSet.inl" />
     <None Include="Raven\Physics\Collision\BroadPhase.inl" />
+    <None Include="Raven\Scene\ComponentStorage.inl" />
+    <None Include="Raven\Scene\Scene.inl" />
+    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl" />
+    <None Include="..\Tests\SceneStorageTests.cpp" />
+    <None Include="..\Tests\TransformMathTests.cpp" />
   </ItemGroup>
   <!-- Scene TriangleのGLSLをC++コンパイル前にSPIR-Vへ変換します。
        入出力を対にすることで未生成時・Shader更新時だけglslcを起動します。 -->

@@ -29,6 +29,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 #include <unordered_map>
 #include <iostream>
@@ -40,6 +41,7 @@ class ImGuiLayer;
 class RHISceneFrameLifecycle;
 enum class RHIFrameResult;
 class UIDockSpace;
+struct UIDockTabRestoreRecord;
 class UIWindow;
 
 struct ApplicationSpecification
@@ -56,6 +58,9 @@ struct ApplicationSpecification
     Ref<UIFontAtlas> PhysicsDebugImmediateFont;
     // Runtime UI全体で共有するFont Atlasです。GPU Context有効後に生成したAtlasを注入します。
     Ref<UIFontAtlas> RuntimeUIFont;
+    // Atlasを事前生成できない通常起動用。GPU初期化後にApplicationが生成します。
+    // RuntimeUIFontが指定済みならそちらを優先し、OS固有のパス選択は起動側が担当します。
+    std::string RuntimeUIFontPath;
 };
 
 class Application
@@ -258,6 +263,10 @@ public:
     }
 
     void OnEvent(Event& event);
+    // UI Focus所有者を先に処理し、未処理キーだけを前面Layerから逆順に配送します。
+    // Window/GPUを生成せず、Main/補助Windowで同じ配送契約を利用できます。
+    static bool RouteUIKeyEvent(UIContext& context, const UIKeyEvent& event,
+        const std::vector<Scope<Layer>>& layers);
     void UpdateLoadingScreen();
 
     // UI Action等から通常のWindow Closeと同じRun Loop終了を要求します。
@@ -352,7 +361,7 @@ public:
     // ========================================================================
     // Raven UI Context
     // ========================================================================
-    // ApplicationはMain Window用UIContextのLifetimeだけを所有します。
+    // ApplicationはMainと補助Window用UIContextのLifetimeを所有します。
     // Editor固有WidgetをApplicationへ持ち込まず、EditorLayer / Runtime Layerが必要な時だけ
     // Contextを借用してDrawListへ描画要求を積める境界にしています。
     //
@@ -369,6 +378,7 @@ public:
     const UINavigationManager& GetGlobalUINavigationManager() const { return m_GlobalUINavigationManager; }
 
     // OS補助Window別のUIContext。Main Windowは従来のGetUIContext()を使用します。
+    // OpenGLは共有Context、DX12/Vulkanは共有Device/QueueとWindow別SwapChainを使用します。
     WindowID CreateUIWindow(const WindowSpecification& specification);
     // Root直下Widgetを新しいOS補助Windowへ移す一括入口。
     // Window生成または移譲に失敗した場合、Widgetの元の所有権を維持します。
@@ -380,6 +390,10 @@ public:
     WindowID DetachDockTabToNewWindow(WindowID sourceID, UIDockSpace& dock,
         std::uint64_t leafId, std::uint64_t tabId,
         const WindowSpecification& specification);
+    // 生存中の同じSource/Dockに属する切り離しTabを値で返します。
+    // Close後のFrame境界復帰待ちも含め、保存のためにWidget Treeを変更しません。
+    std::vector<UIDockTabRestoreRecord> GetDetachedDockTabs(
+        WindowID sourceID, const UIDockSpace& dock) const;
     // Layer更新や入力Callbackなど、Main UI Frame中から安全に切り離しを予約します。
     // 実際のWindow生成とTree移譲はMain EndFrame後に実行し、成功時にCallbackへIDを返します。
     using UIDetachCompleted = std::function<void(WindowID)>;
@@ -402,6 +416,7 @@ public:
     bool TransferUIRootChild(WindowID sourceID, WindowID destinationID, UIElement* child);
 
 private:
+    void ConfigureUIClipboard(UIContext& context, WindowID windowID);
     bool PrepareAllScenesForExplicitRuntime();
     bool m_Running = true;
     std::unique_ptr<Window> m_Window;
@@ -456,6 +471,9 @@ private:
         std::uint64_t TabID = 0u;
         std::string Title;
         bool Closable = true;
+        std::size_t TabIndex = 0u;
+        std::uint64_t SelectedTabId = 0u;
+        std::uint64_t DetachOrder = 0u;
     };
     std::unordered_map<WindowID, DetachedDockTab> m_DetachedDockTabs;
     struct PendingClosedUIChild

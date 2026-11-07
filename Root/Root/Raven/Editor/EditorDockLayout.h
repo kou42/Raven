@@ -42,6 +42,12 @@ struct EditorDockLayoutLoadResult
 // 左Hierarchy、中央Scene/Gameと診断Panel、右Inspectorの既定配置を返します。
 UIDockSpaceSnapshot CreateDefaultEditorDockLayout();
 
+// 現在のDockへ切り離し中Tabの復帰情報を統合した、保存専用Snapshotを作ります。
+// 生存Widget/Windowは変更せず、失敗時はoutSnapshotを変更しません。
+bool BuildEditorDockLayoutForSave(const UIDockSpaceSnapshot& current,
+    const std::vector<UIDockTabRestoreRecord>& detached,
+    UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage = nullptr);
+
 // 保存済みSnapshot、Backup、既定配置の順で採用します。
 // outSnapshotは必ず検証済みSnapshotへ更新され、旧imgui.iniは読み込みません。
 EditorDockLayoutLoadResult LoadEditorDockLayoutOrDefault(

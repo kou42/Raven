@@ -1026,4 +1026,65 @@
     <ClCompile Include="..\Tests\UIPerformanceTests.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
     <ClInclude Include="..\Tests\UIPerformanceTests.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Scene\Debug"><UniqueIdentifier>{b319094e-d120-447a-a646-cb25a5363d8a}</UniqueIdentifier></Filter>
+    <ClInclude Include="Raven\Scene\Debug\EditorBackendComparisonScene.h"><Filter>Raven\Scene\Debug</Filter></ClInclude>
+    <ClCompile Include="Raven\Scene\Debug\EditorBackendComparisonScene.cpp"><Filter>Raven\Scene\Debug</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Data\DataReader.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataReader.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataWriter.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataWriter.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\Json\JsonWriter.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\Json\JsonWriter.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\DataIOTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\DataIOTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Data\Serialization"><UniqueIdentifier>{d87945b0-6713-4db8-9195-3c4f97dd7f90}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Raven\Data\Serialization\Serialization.h"><Filter>Raven\Data\Serialization</Filter></ClInclude>
+    <None Include="Raven\Data\Serialization\Serialization.inl"><Filter>Raven\Data\Serialization</Filter></None>
+    <ClCompile Include="Raven\Data\Serialization\Serialization.cpp"><Filter>Raven\Data\Serialization</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\SerializationTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\SerializationTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Data\Formats\MessagePack"><UniqueIdentifier>{407ff511-0bb5-5c9a-8d04-535f8cf15e34}</UniqueIdentifier></Filter>
+    <ClCompile Include="Raven\Data\DataUtf8.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataUtf8.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackParser.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackParser.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackWriter.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackWriter.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\MessagePackTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\MessagePackTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Raven\Scene\ComponentStorage.inl"><Filter>Raven\Scene</Filter></None>
+    <None Include="Raven\Scene\Scene.inl"><Filter>Raven\Scene</Filter></None>
+    <None Include="..\Tests\SceneStorageTests.cpp"><Filter>Raven\Scene</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Scene\Tests" />
+    <ClCompile Update="Raven\Scene\SceneGraph.cpp"><Filter>Raven\Scene</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\SceneGraph.h"><Filter>Raven\Scene</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\Tests\SceneGraphSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\Tests\SceneGraphSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Editor\Command\DeleteEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl"><Filter>Raven\Editor\Command</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Math" />
+    <ClInclude Update="Raven\Math\TransformMath.h"><Filter>Raven\Math</Filter></ClInclude>
+    <ClCompile Update="Raven\Math\TransformMath.cpp"><Filter>Raven\Math</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\SceneTransformSystem.h"><Filter>Raven\Scene</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\SceneTransformSystem.cpp"><Filter>Raven\Scene</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\Tests\SceneTransformSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\Tests\SceneTransformSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Editor\Command\ReparentEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <None Include="..\Tests\TransformMathTests.cpp"><Filter>Raven\Math</Filter></None>
+  </ItemGroup>
 </Project>

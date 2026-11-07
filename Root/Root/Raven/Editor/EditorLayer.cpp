@@ -12,6 +12,7 @@
 #include "Raven/Editor/Command/SetPrimaryCameraCommand.h"
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
+#include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Editor/EditorViewportGeometry.h"
 #include "Raven/Scene/Components.h"
@@ -22,10 +23,12 @@
 #include "Raven/UI/Core/UIElement.h"
 #include "Raven/UI/Docking/UIDockSpace.h"
 #include "Raven/UI/Widgets/UIMenuBar.h"
+#include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UIWindow.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cmath>
@@ -437,7 +440,13 @@ bool EditorLayer::AttachRavenEditorShell()
         return false;
     }
 
-    auto root = CreateScope<UIElement>();
+    // Editorの映像はScene/Game ViewのTexture内に表示するため、Shell自身が背景を覆います。
+    // Runtimeは互換性のためMainにも通常Sceneを描いており、背景のないUIElementをRootにすると、
+    // Tabを補助Windowへ分離した後の空きDockからそのGeometryが露出してしまいます。
+    // 既存UIPanelのTheme背景を子Panelより先に描き、空き領域を含むEditor全体の下地にします。
+    // RuntimeのScene Captureや汎用DockSpaceの透過仕様は変えず、Editor Shellの責務で遮蔽します。
+    // Rootの所有権・子の描画順・Resize時の寸法更新は従来どおりUI Treeへ任せます。
+    auto root = CreateScope<UIPanel>();
     root->SetLayoutMode(UILayoutMode::Absolute);
     root->SetClipChildren(true);
     root->SetPosition(math::Vec2(0.0f, 0.0f));
@@ -464,6 +473,7 @@ bool EditorLayer::AttachRavenEditorShell()
     m_RavenEditorMenuBar = static_cast<UIMenuBar*>(root->AddChild(std::move(menu)));
 
     auto dock = CreateScope<UIDockSpace>();
+    dock->SetFont(m_Application->GetRuntimeUIFont());
     m_RavenEditorDockSpace = dock.get();
     UIDockSpace* dockHandle = dock.get();
     dock->SetOnTabDetachRequested(
@@ -594,6 +604,9 @@ bool EditorLayer::AttachRavenEditorShell()
                 {
                     panelWindow->SetDocked(true);
                 }
+                // Dock本文にPanelの固定PreferredSizeを持ち込まず、確定領域へ追従させます。
+                panelRoot->SetHorizontalAlignment(UIAlignment::Stretch);
+                panelRoot->SetVerticalAlignment(UIAlignment::Stretch);
                 content->AddChild(std::move(detached));
             }
         }
@@ -627,8 +640,18 @@ void EditorLayer::SaveRavenEditorDockLayout()
         return;
     }
     std::string diagnostic;
-    SaveDockSnapshot(m_RavenDockLayoutPath,
-        m_RavenEditorDockSpace->SaveSnapshot(), &diagnostic);
+    UIDockSpaceSnapshot snapshot;
+    const auto detached = m_Application != nullptr
+        ? m_Application->GetDetachedDockTabs(m_Application->GetMainWindowID(), *m_RavenEditorDockSpace)
+        : std::vector<UIDockTabRestoreRecord>{};
+    // OnDetach時点では補助Windowが生存しています。保存用データだけを統合し、
+    // GPU資産やWidgetを先に閉じて既存の終了順序を崩すことはしません。
+    if (BuildEditorDockLayoutForSave(m_RavenEditorDockSpace->SaveSnapshot(),
+            detached, snapshot, &diagnostic) == false ||
+        SaveDockSnapshot(m_RavenDockLayoutPath, snapshot, &diagnostic) == false)
+    {
+        std::cerr << "[Raven Editor] Dock layout save failed: " << diagnostic << '\n';
+    }
 }
 
 void EditorLayer::DetachRavenEditorShell()
@@ -901,11 +924,11 @@ void EditorLayer::OnAttach()
 
                 // PreviewはUndo履歴へ積まず、Runtime Transformへ即時反映します。
                 // WidgetはScene参照を保持せず、ActionごとにHandleのGenerationを再検証します。
-                TransformComponent& transform = entity.GetComponent<TransformComponent>();
+                TransformComponent transform;
                 transform.Position = requested.Position;
                 transform.Rotation = requested.Rotation;
                 transform.Scale = requested.Scale;
-                return true;
+                return activeScene->SetWorldTransform(handle, transform);
             });
         m_InspectorRavenPanel.SetTransformCommitRequestedHandler(
             [this](EntityHandle handle, const InspectorTransformSnapshot& beforeSnapshot)
@@ -2027,6 +2050,40 @@ void EditorLayer::RenderGameView()
     ImGui::End();
 }
 
+bool EditorLayer::OnUIKeyEvent(const UIKeyEvent& event)
+{
+    if (m_Application == nullptr || m_UIBackend != EditorUIBackend::RavenUI ||
+        event.Context == nullptr)
+    {
+        return false;
+    }
+    // Main以外ではEditor Panelが実際に移譲されたContextだけを対象にします。
+    // 無関係なRuntime UI Windowへ共有Editor履歴のShortcutを広げません。
+    bool editorContext = event.Context == &m_Application->GetUIContext();
+    const EditorDockTabId tabIds[] = {
+        EditorDockTabId::SceneView, EditorDockTabId::GameView,
+        EditorDockTabId::SceneHierarchy, EditorDockTabId::Inspector,
+        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug };
+    for (EditorDockTabId tabId : tabIds)
+    {
+        const UIElement* panel = GetRavenPanelRoot(tabId);
+        if (panel != nullptr && panel->GetContext() == event.Context)
+        {
+            editorContext = true;
+            break;
+        }
+    }
+    if (editorContext == false)
+    {
+        return false;
+    }
+    EditorShortcutRoutingContext routing;
+    routing.Panel = m_InspectorRavenPanel.GetRootElement();
+    routing.Viewport = m_SceneViewportRavenPanel.GetRootElement();
+    routing.GizmoActive = m_RavenViewportGizmo.IsActive();
+    return TryHandleEditorHistoryShortcut(*event.Context, routing, event);
+}
+
 void EditorLayer::OnEvent(Event& event)
 {
     // ========================================================================
@@ -2075,7 +2132,9 @@ void EditorLayer::OnEvent(Event& event)
                 ToggleEditorGizmoSpace();
                 event.Handled = true;
             }
-            else if (controlDown == true && keyCode == Key::Z)
+            // Raven UIの履歴ShortcutはUIキー配送のRouterだけで処理します。所有者がPopup等の
+            // 場合に旧Viewport経路へ流れ、優先順位を迂回することを防ぎます。
+            else if (m_UIBackend != EditorUIBackend::RavenUI && controlDown == true && keyCode == Key::Z)
             {
                 const bool shiftDown =
                     Input::IsKeyPressed(Key::LeftShift) == true ||
@@ -2090,7 +2149,7 @@ void EditorLayer::OnEvent(Event& event)
                 }
                 event.Handled = true;
             }
-            else if (controlDown == true && keyCode == Key::Y)
+            else if (m_UIBackend != EditorUIBackend::RavenUI && controlDown == true && keyCode == Key::Y)
             {
                 RedoEditorCommand();
                 event.Handled = true;

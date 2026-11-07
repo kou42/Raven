@@ -32,7 +32,14 @@ VulkanSceneContext::~VulkanSceneContext()
     Shutdown();
 }
 
-bool VulkanSceneContext::Init(Window& window)
+const VulkanDevice& VulkanSceneContext::GetDevice() const
+{
+    // 未初期化/Shutdown後も既存のIsValid照会を安全に使えるNeutral Deviceです。
+    static const VulkanDevice empty;
+    return m_Instance != nullptr ? m_Instance->GetDevice() : empty;
+}
+
+bool VulkanSceneContext::Init(Window& window, VulkanSceneContext* sharedContext, VkFormat preferredSurfaceFormat)
 {
     Shutdown();
     if (window.GetBackend() != RHIBackend::Vulkan ||
@@ -51,14 +58,34 @@ bool VulkanSceneContext::Init(Window& window)
     }
 
     m_VSync = window.IsVSync();
-    if (m_Instance.Init() == false ||
-        m_Surface.Init(m_Instance.GetHandle(), nativeWindow) == false ||
-        m_SwapChain.Init(m_Instance.GetDevice(), m_Surface.GetHandle(),
-            static_cast<uint32_t>(width), static_cast<uint32_t>(height), m_VSync) == false ||
-        m_FrameSync.Init(m_Instance.GetDevice(),
+    if (sharedContext != nullptr)
+    {
+        if (sharedContext == this || sharedContext->m_Instance == nullptr ||
+            sharedContext->m_Instance->IsValid() == false || sharedContext->m_FatalError == true ||
+            sharedContext->GetActiveCommandBuffer() != VK_NULL_HANDLE)
+        {
+            return false;
+        }
+        m_Instance = sharedContext->m_Instance;
+    }
+    else
+    {
+        m_Instance = CreateRef<VulkanInstance>();
+        if (m_Instance->Init() == false)
+        {
+            Shutdown();
+            return false;
+        }
+    }
+    // SwapChain::Initが、このSurfaceでも共有Graphics QueueがPresent可能か検証します。
+    // 非対応Surfaceを別Deviceへ暗黙fallbackせず、Tabの所有権を元Windowに残します。
+    if (m_Surface.Init(m_Instance->GetHandle(), nativeWindow) == false ||
+        m_SwapChain.Init(GetDevice(), m_Surface.GetHandle(),
+            static_cast<uint32_t>(width), static_cast<uint32_t>(height), m_VSync, preferredSurfaceFormat) == false ||
+        m_FrameSync.Init(GetDevice(),
             static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false ||
-        m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(),
-            m_Instance.GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
+        m_RenderTarget.Init(GetDevice().GetHandle(),
+            GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
     {
         Shutdown();
         return false;
@@ -68,7 +95,7 @@ bool VulkanSceneContext::Init(Window& window)
     for (uint32_t frame = 0; frame < m_FrameSync.GetFrameCount(); ++frame)
     {
         auto commandBuffer = std::make_unique<VulkanCommandBuffer>();
-        if (commandBuffer->Init(m_Instance.GetDevice()) == false)
+        if (commandBuffer->Init(GetDevice()) == false)
         {
             Shutdown();
             return false;
@@ -84,7 +111,7 @@ bool VulkanSceneContext::Init(Window& window)
 
 RHIFrameResult VulkanSceneContext::BeginFrame()
 {
-    if (m_FatalError == true || m_FrameActive == true || m_Instance.IsValid() == false ||
+    if (m_FatalError == true || m_FrameActive == true || (m_Instance == nullptr || m_Instance->IsValid() == false) ||
         m_RenderTarget.IsValid() == false)
     {
         m_FatalError = true;
@@ -100,7 +127,7 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
 
     VulkanCommandBuffer& commandBuffer = *m_CommandBuffers[frame];
     const VulkanFrameResult acquire = m_FrameRenderer.BeginFrame(
-        m_Instance.GetDevice(), m_SwapChain, commandBuffer, m_FrameSync);
+        GetDevice(), m_SwapChain, commandBuffer, m_FrameSync);
     if (acquire != VulkanFrameResult::Success)
     {
         if (acquire == VulkanFrameResult::FatalError)
@@ -184,7 +211,7 @@ RHIFrameResult VulkanSceneContext::EndFrame()
         return RHIFrameResult::FatalError;
     }
     const VulkanFrameResult result = m_FrameRenderer.EndFrame(
-        m_Instance.GetDevice(), m_SwapChain, commandBuffer, m_FrameSync);
+        GetDevice(), m_SwapChain, commandBuffer, m_FrameSync);
     if (result == VulkanFrameResult::Success)
     {
         m_FrameSubmitted = true;
@@ -207,7 +234,7 @@ RHIFrameResult VulkanSceneContext::Present()
     }
 
     const VulkanFrameResult result = m_FrameRenderer.Present(
-        m_Instance.GetDevice(), m_SwapChain, m_FrameSync);
+        GetDevice(), m_SwapChain, m_FrameSync);
     // Present内部でFrame Slotが進むため、ResizeRequiredでも次Frameを開始できます。
     // FatalError後はContextを再利用せずShutdownします。
     m_FrameActive = false;
@@ -222,13 +249,13 @@ RHIFrameResult VulkanSceneContext::Present()
 bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
 {
     if (m_FatalError == true || width == 0 || height == 0 || m_FrameActive == true ||
-        m_Instance.IsValid() == false)
+        (m_Instance == nullptr || m_Instance->IsValid() == false))
     {
         return false;
     }
 
     // Framebuffer/ImageViewは旧SwapChain Imageを参照するため、必ず先に破棄します。
-    if (m_Instance.GetDevice().WaitIdle() == false)
+    if (GetDevice().WaitIdle() == false)
     {
         m_FatalError = true;
         return false;
@@ -261,10 +288,10 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     m_GraphicsPipelines.clear();
     m_RenderTarget.Shutdown();
     if (m_SwapChain.Recreate(width, height, m_VSync) == false ||
-        m_FrameSync.Init(m_Instance.GetDevice(),
+        m_FrameSync.Init(GetDevice(),
             static_cast<uint32_t>(m_SwapChain.GetImages().size())) == false ||
-        m_RenderTarget.Init(m_Instance.GetDevice().GetHandle(),
-            m_Instance.GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
+        m_RenderTarget.Init(GetDevice().GetHandle(),
+            GetDevice().GetPhysicalDeviceHandle(), m_SwapChain) == false)
     {
         // SwapChain/FrameSync/RenderTargetの部分再生成失敗後は再利用しません。
         m_FatalError = true;
@@ -336,6 +363,67 @@ void VulkanSceneContext::SetClearColor(const float color[4])
     {
         m_ClearColor.float32[component] = color[component];
     }
+}
+
+bool VulkanSceneContext::CopyColorToBuffer(VkBuffer destination, VkDeviceSize destinationSize)
+{
+    const VkCommandBuffer commands = GetActiveCommandBuffer();
+    const VkExtent2D extent = m_SwapChain.GetExtent();
+    const VkDeviceSize byteCount = static_cast<VkDeviceSize>(extent.width) * extent.height * 4u;
+    const uint32_t imageIndex = m_FrameRenderer.GetAcquiredImageIndex();
+    if (commands == VK_NULL_HANDLE || destination == VK_NULL_HANDLE || destinationSize < byteCount ||
+        m_SwapChain.SupportsColorReadback() == false || m_SwapChainRenderPassActive == false ||
+        m_ActiveOffscreenRenderTarget != nullptr || imageIndex >= m_SwapChain.GetImages().size())
+    {
+        return false;
+    }
+    m_RenderTarget.End(commands);
+    m_SwapChainRenderPassActive = false;
+    VkImageMemoryBarrier imageBarrier{};
+    imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageBarrier.image = m_SwapChain.GetImages()[imageIndex];
+    imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageBarrier.subresourceRange.levelCount = 1;
+    imageBarrier.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+    VkBufferImageCopy copy{};
+    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy.imageSubresource.layerCount = 1;
+    copy.imageExtent = {extent.width, extent.height, 1};
+    vkCmdCopyImageToBuffer(commands, imageBarrier.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination, 1, &copy);
+    // Transfer完了だけでなくHostへの可視化も記録します。CPU側は別途Fence/WaitIdleを待ちます。
+    VkBufferMemoryBarrier hostBarrier{};
+    hostBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    hostBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    hostBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    hostBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hostBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hostBarrier.buffer = destination;
+    hostBarrier.size = byteCount;
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+        0, 0, nullptr, 1, &hostBarrier, 0, nullptr);
+    imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    imageBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+    // off-screen復帰と同じLOAD PassでColor/Depthを維持し、通常のEndFrame/Presentへ戻します。
+    if (m_RenderTarget.Begin(commands, imageIndex, m_ClearColor, true) == false)
+    {
+        m_FatalError = true;
+        return false;
+    }
+    m_SwapChainRenderPassActive = true;
+    m_BoundGraphicsPipeline.reset();
+    return true;
 }
 
 bool VulkanSceneContext::ClearColorAttachment(const float color[4])
@@ -513,7 +601,7 @@ VkCommandBuffer VulkanSceneContext::GetActiveCommandBuffer() const
 Ref<RHIGraphicsPipeline> VulkanSceneContext::CreateGraphicsPipeline(
     const RHIGraphicsPipelineSpecification& specification)
 {
-    if (m_FrameActive == true || m_Instance.IsValid() == false ||
+    if (m_FrameActive == true || (m_Instance == nullptr || m_Instance->IsValid() == false) ||
         m_RenderTarget.IsValid() == false ||
         specification.IsValidForBackend(RHIBackend::Vulkan) == false)
     {
@@ -521,11 +609,14 @@ Ref<RHIGraphicsPipeline> VulkanSceneContext::CreateGraphicsPipeline(
     }
 
     auto pipeline = CreateRef<VulkanGraphicsPipeline>();
-    if (pipeline->Init(m_Instance.GetDevice().GetHandle(),
+    // 色出力はnative SurfaceではなくUNORM ViewのRenderPassと一致させます。
+    // SRGB fallback時もここだけnative形式へ戻さず、SceneとUIで同じ出力契約を維持します。
+    // Pickingは色表示ではなく整数IDなので、従来どおりR32_SINTの別Pass/形式を使います。
+    if (pipeline->Init(GetDevice().GetHandle(),
         specification.ColorFormat == RHIColorFormat::R32Sint ?
             m_RenderTarget.GetPickingRenderPass() : m_RenderTarget.GetRenderPass(),
         specification.ColorFormat == RHIColorFormat::R32Sint ?
-            VK_FORMAT_R32_SINT : m_SwapChain.GetImageFormat(), specification) == false)
+            VK_FORMAT_R32_SINT : m_SwapChain.GetColorAttachmentFormat(), specification) == false)
     {
         return nullptr;
     }
@@ -620,7 +711,8 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         const auto nativeTexture =
             std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
         if (nativeTexture == nullptr ||
-            nativeTexture->GetNativeTexture().IsValid() == false)
+            nativeTexture->GetNativeTexture().IsValid() == false ||
+            nativeTexture->GetNativeTexture().GetDeviceHandle() != GetDevice().GetHandle())
         {
             requiresRebuild = true;
             continue;
@@ -632,7 +724,8 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         const auto nativeTexture =
             std::dynamic_pointer_cast<VulkanSceneRHITexture>(texture);
         if (nativeTexture == nullptr ||
-            nativeTexture->GetNativeTexture().IsValid() == false)
+            nativeTexture->GetNativeTexture().IsValid() == false ||
+            nativeTexture->GetNativeTexture().GetDeviceHandle() != GetDevice().GetHandle())
         {
             return false;
         }
@@ -703,7 +796,8 @@ bool VulkanSceneContext::RebuildTextureDescriptors(
         const auto nativeTexture =
             std::dynamic_pointer_cast<VulkanSceneRHITexture>(mergedTextures[index]);
         if (nativeTexture == nullptr ||
-            nativeTexture->GetNativeTexture().IsValid() == false)
+            nativeTexture->GetNativeTexture().IsValid() == false ||
+            nativeTexture->GetNativeTexture().GetDeviceHandle() != GetDevice().GetHandle())
         {
             vkDestroyDescriptorPool(device, newPool, nullptr);
             return false;
@@ -806,8 +900,8 @@ bool VulkanSceneContext::DrawIndexed(const VulkanSceneBuffer& vertexBuffer,
         m_BoundGraphicsPipeline->IsValid() == false ||
         vertexBuffer.IsValid() == false || indexBuffer.IsValid() == false ||
         vertexBuffer.IsIndexBuffer() == true || indexBuffer.IsIndexBuffer() == false ||
-        vertexBuffer.GetDeviceHandle() != m_Instance.GetDevice().GetHandle() ||
-        indexBuffer.GetDeviceHandle() != m_Instance.GetDevice().GetHandle())
+        vertexBuffer.GetDeviceHandle() != GetDevice().GetHandle() ||
+        indexBuffer.GetDeviceHandle() != GetDevice().GetHandle())
     {
         return false;
     }
@@ -850,7 +944,7 @@ bool VulkanSceneContext::SynchronizeBufferAccess(
 {
     // Host CoherentはGPUとの競合を防ぎません。Frame外で、更新対象Bufferを
     // 実際に参照したSubmit済みSlotだけを調べ、対応するFenceを待機します。
-    if (m_Instance.IsValid() == false || m_FrameActive == true ||
+    if ((m_Instance == nullptr || m_Instance->IsValid() == false) || m_FrameActive == true ||
         m_FrameSubmitted == true || m_FrameSync.IsValid() == false ||
         m_RecordedBuffers.size() != m_FrameSync.GetFrameCount() ||
         m_SubmittedBufferFrames.size() != m_FrameSync.GetFrameCount())
@@ -883,7 +977,7 @@ bool VulkanSceneContext::SynchronizeBufferAccess(
     }
 
     if (fences.empty() == false &&
-        vkWaitForFences(m_Instance.GetDevice().GetHandle(),
+        vkWaitForFences(GetDevice().GetHandle(),
             static_cast<uint32_t>(fences.size()), fences.data(), VK_TRUE,
             std::numeric_limits<uint64_t>::max()) != VK_SUCCESS)
     {
@@ -982,9 +1076,9 @@ void VulkanSceneContext::RegisterOffscreenRenderTarget(
 
 void VulkanSceneContext::Shutdown()
 {
-    if (m_Instance.IsValid() == true)
+    if ((m_Instance != nullptr && m_Instance->IsValid() == true))
     {
-        m_Instance.GetDevice().WaitIdle();
+        GetDevice().WaitIdle();
     }
     // Device破棄前に、外部がRefを保持しているBufferもnative handleを解放します。
     // WaitIdle済みであることを前提にするため、Buffer側で再度同期しません。
@@ -1044,6 +1138,6 @@ void VulkanSceneContext::Shutdown()
     m_RenderTarget.Shutdown();
     m_SwapChain.Shutdown();
     m_Surface.Shutdown();
-    m_Instance.Shutdown();
+    m_Instance.reset();
 }
 } // namespace Raven

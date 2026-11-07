@@ -2,16 +2,6 @@
 
 #include <memory>
 
-#if 0
-Core
-↑
-Renderer
-↑
-Scene
-↑
-Game
-みたいな依存方向にすると綺麗
-#endif
 
 namespace Raven
 {

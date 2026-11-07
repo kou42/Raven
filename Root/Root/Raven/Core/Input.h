@@ -34,7 +34,11 @@ struct GamepadState
 class Input
 {
 public:
-    virtual ~Input() = default;
+    virtual ~Input();
+    Input(const Input&) = delete;
+    Input& operator=(const Input&) = delete;
+    Input(Input&&) = delete;
+    Input& operator=(Input&&) = delete;
 
     static bool IsKeyPressed(int keycode);
     static bool IsMouseButtonPressed(int button);
@@ -51,26 +55,22 @@ public:
     static bool GetGamepadState(int gamepadIndex, GamepadState& outState);
 
 protected:
+    // Window生成/破棄と同じThreadで登録します。所有権はWindowが持ち続けます。
+    Input();
     virtual bool IsKeyPressedImpl(int keycode) = 0;
     virtual bool IsMousePressedImpl(int button) = 0;
     virtual std::pair<float, float> GetMousePositionImpl() = 0;
     virtual bool IsGamepadConnectedImpl(int gamepadIndex) = 0;
     virtual bool GetGamepadStateImpl(int gamepadIndex, GamepadState& outState) = 0;
 
-protected:
+private:
+    // 互換Global pollingは生成順で最初の生存providerを使います（通常はMain Window）。
+    // 補助WindowのFocus/Event配送とは独立させ、生成による入力先の暗黙切替を防ぎます。
     static Input* s_Instance;
+    static Input* s_LastInstance;
+    Input* m_Previous = nullptr;
+    Input* m_Next = nullptr;
 
-#if 0
-public:
-    static bool IsKeyPressed(int keycode);
-
-    static bool IsMouseButtonPressed(int button);
-
-    static std::pair<float, float> GetMousePosition();
-
-    static float GetMouseX();
-    static float GetMouseY();
-#endif
 };
 
 }
