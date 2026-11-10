@@ -109,7 +109,7 @@ bool DX12SceneRuntime::CaptureMainSceneFrame()
 }
 
 bool DX12SceneRuntime::CaptureOffscreenSceneFrame(
-    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+    const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID)
 {
     if (SupportsOffscreenSceneRendering() == false ||
         renderTarget == nullptr || renderTarget->IsValid() == false ||
@@ -121,6 +121,7 @@ bool DX12SceneRuntime::CaptureOffscreenSceneFrame(
 
     PreparedOffscreenSceneFrame prepared;
     prepared.RenderTarget = renderTarget;
+    prepared.SelectedEntityID = selectedEntityID;
     if (PrepareCurrentSceneFrame(prepared.SceneFrame) == false)
     {
         return false;
@@ -162,6 +163,12 @@ bool DX12SceneRuntime::DrawPreparedOffscreenSceneFrame(
         commands, prepared.SceneFrame.OpaquePipeline,
         prepared.SceneFrame.TransparentPipeline,
         prepared.SceneFrame.Items);
+    // Scene ViewのColor Pass内で通常描画のDepthを共有し、Picking Passには元のItemだけを渡します。
+    if (drawn == true)
+    {
+        drawn = Renderer::DrawRHISelectionOutline(commands, m_OutlinePipeline,
+            prepared.SceneFrame.Items, prepared.SelectedEntityID);
+    }
     if (drawn == true &&
         prepared.SceneFrame.DebugLineItems.empty() == false)
     {

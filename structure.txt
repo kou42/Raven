@@ -118,6 +118,7 @@ D:.
     |   |   |   |   |       BuildUI.ps1
     |   |   |   |   |       README.md
     |   |   |   |   |       SceneMesh.hlsl
+    |   |   |   |   |       SceneMesh.outline.ps.dxil
     |   |   |   |   |       SceneMesh.picking.ps.dxil
     |   |   |   |   |       SceneMesh.ps.dxil
     |   |   |   |   |       SceneMesh.vs.dxil
@@ -150,6 +151,8 @@ D:.
     |   |   |   |           SceneTriangle.frag.spv
     |   |   |   |           SceneTriangle.vert
     |   |   |   |           SceneTriangle.vert.spv
+    |   |   |   |           SelectionOutline.frag
+    |   |   |   |           SelectionOutline.frag.spv
     |   |   |   |           UI.frag
     |   |   |   |           UI.frag.spv
     |   |   |   |           UI.vert

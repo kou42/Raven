@@ -352,7 +352,7 @@ public:
         const RHIOffscreenRenderTargetSpecification& specification);
     bool CaptureExplicitMainSceneFrame();
     bool CaptureExplicitEditorViewportFrame(
-        const Ref<RHIOffscreenRenderTarget>& renderTarget);
+        const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID = 0u);
 
     WindowManager& GetWindowManager() { return m_WindowManager; }
     const WindowManager& GetWindowManager() const { return m_WindowManager; }

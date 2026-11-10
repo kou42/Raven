@@ -1500,8 +1500,16 @@ void EditorLayer::OnRender()
                     activeScene->OnRender();
                 }
 
+                // SceneとGenerationを検証した時点のIDだけを渡します。
+                // GPU描画時にはSceneを参照せず、同じFrameで取得したMeshだけを強調します。
+                uint32_t selectedEntityID = 0u;
+                if (m_SelectedEntity.GetScene() == activeScene &&
+                    activeScene->IsEntityAlive(m_SelectedEntity) == true)
+                {
+                    selectedEntityID = m_SelectedEntity.GetHandle().m_Index;
+                }
                 if (m_Application->CaptureExplicitEditorViewportFrame(
-                    m_SceneRHIRenderTarget) == false)
+                    m_SceneRHIRenderTarget, selectedEntityID) == false)
                 {
                     return;
                 }

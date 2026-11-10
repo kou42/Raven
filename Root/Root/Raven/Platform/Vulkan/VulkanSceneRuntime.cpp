@@ -181,6 +181,9 @@ bool VulkanSceneRuntime::Init(
     RHIShaderAssetSpecification pickingFragment{};
     pickingFragment.VulkanPath = "Raven/Assets/Shaders/Vulkan/EntityPicking.frag.spv";
     m_PickingFragmentShader = m_ShaderAssets.Load(pickingFragment, RHIBackend::Vulkan);
+    RHIShaderAssetSpecification outlineFragment{};
+    outlineFragment.VulkanPath = "Raven/Assets/Shaders/Vulkan/SelectionOutline.frag.spv";
+    m_OutlineFragmentShader = m_ShaderAssets.Load(outlineFragment, RHIBackend::Vulkan);
     RHIShaderAssetSpecification uiVertex{};
     uiVertex.VulkanPath = "Raven/Assets/Shaders/Vulkan/UI.vert.spv";
     RHIShaderAssetSpecification uiFragment{};
@@ -189,7 +192,7 @@ bool VulkanSceneRuntime::Init(
     m_UIFragmentShader = m_ShaderAssets.Load(uiFragment, RHIBackend::Vulkan);
     if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
         m_UIVertexShader == nullptr || m_UIFragmentShader == nullptr ||
-        m_PickingFragmentShader == nullptr ||
+        m_PickingFragmentShader == nullptr || m_OutlineFragmentShader == nullptr ||
         CreatePipelines() == false ||
         CreateDefaultTexture() == false)
     {
@@ -261,7 +264,7 @@ bool VulkanSceneRuntime::CaptureMainSceneFrame()
 }
 
 bool VulkanSceneRuntime::CaptureOffscreenSceneFrame(
-    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+    const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID)
 {
     if (SupportsOffscreenSceneRendering() == false ||
         renderTarget == nullptr || renderTarget->IsValid() == false ||
@@ -273,6 +276,7 @@ bool VulkanSceneRuntime::CaptureOffscreenSceneFrame(
 
     PreparedOffscreenSceneFrame prepared;
     prepared.RenderTarget = renderTarget;
+    prepared.SelectedEntityID = selectedEntityID;
     if (PrepareCurrentSceneFrame(prepared.SceneFrame) == false)
     {
         return false;
@@ -397,6 +401,7 @@ bool VulkanSceneRuntime::Resize(uint32_t width, uint32_t height)
     m_TransparentPipeline.reset();
     m_DebugLinePipeline.reset();
     m_PickingPipeline.reset();
+    m_OutlinePipeline.reset();
     m_UIPipeline.reset();
     if (CreatePipelines() == false)
     {
@@ -425,6 +430,7 @@ void VulkanSceneRuntime::Shutdown()
     m_TransparentPipeline.reset();
     m_DebugLinePipeline.reset();
     m_PickingPipeline.reset();
+    m_OutlinePipeline.reset();
     m_UIPipeline.reset();
     m_UIRenderer.ClearTextureCache();
     m_UIVertexShader.reset();
@@ -435,6 +441,7 @@ void VulkanSceneRuntime::Shutdown()
     m_VertexShader.reset();
     m_FragmentShader.reset();
     m_PickingFragmentShader.reset();
+    m_OutlineFragmentShader.reset();
     m_ShaderAssets.Clear();
     m_Device.reset();
     m_Context.Shutdown();
@@ -510,6 +517,12 @@ bool VulkanSceneRuntime::DrawPreparedOffscreenSceneFrame(
         commands, prepared.SceneFrame.OpaquePipeline,
         prepared.SceneFrame.TransparentPipeline,
         prepared.SceneFrame.Items);
+    // Scene ViewのColor Pass内で通常描画のDepthを共有し、Picking Passには元のItemだけを渡します。
+    if (drawn == true)
+    {
+        drawn = Renderer::DrawRHISelectionOutline(commands, m_OutlinePipeline,
+            prepared.SceneFrame.Items, prepared.SelectedEntityID);
+    }
     if (drawn == true &&
         prepared.SceneFrame.DebugLineItems.empty() == false)
     {
@@ -589,7 +602,15 @@ bool VulkanSceneRuntime::CreatePipelines()
         return false;
     }
 
+    Ref<RHIGraphicsPipeline> outline;
+    if (m_OutlineFragmentShader == nullptr || m_OutlineFragmentShader->IsValid() == false ||
+        Renderer::CreateRHISelectionOutlinePipeline(*m_Device, *opaque,
+            m_OutlineFragmentShader->GetBinary(), outline) == false)
+    {
+        return false;
+    }
     // Surface/Debugの全Pipelineが揃ってから差し替え、Resize途中の部分状態を公開しません。
+    m_OutlinePipeline = std::move(outline);
     m_OpaquePipeline = std::move(opaque);
     m_TransparentPipeline = std::move(transparent);
     m_DebugLinePipeline = std::move(debugLine);

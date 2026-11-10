@@ -709,6 +709,73 @@ bool Renderer::CreateRHIScenePipelines(
     return true;
 }
 
+bool Renderer::CreateRHISelectionOutlinePipeline(
+    RHIDevice& device, const RHIGraphicsPipeline& opaquePipeline,
+    const RHIShaderBinary& fragmentShader, Ref<RHIGraphicsPipeline>& outPipeline)
+{
+    // Scene ViewのColor/Depth AttachmentとVertex Layoutを通常描画と共有します。
+    RHIGraphicsPipelineSpecification specification = opaquePipeline.GetSpecification();
+    specification.FragmentShader = fragmentShader;
+    specification.Topology = PrimitiveTopology::Triangles;
+    specification.Cull = CullMode::Front;
+    specification.FrontFaceMode = FrontFace::CounterClockwise;
+    specification.DepthCompare = DepthCompareOperator::LessEqual;
+    specification.DepthTest = true;
+    specification.DepthWrite = false;
+    specification.Blend = false;
+    specification.DebugName = "Editor Selection Outline RHI Pipeline";
+    outPipeline = device.CreateGraphicsPipeline(specification);
+    return outPipeline != nullptr;
+}
+
+bool Renderer::DrawRHISelectionOutline(
+    RHISceneCommandList& commands, const Ref<RHIGraphicsPipeline>& pipeline,
+    const std::vector<RHISceneDrawItem>& items, uint32_t selectedEntityID)
+{
+    if (selectedEntityID == 0u)
+    {
+        return true;
+    }
+
+    constexpr float outlineScale = 1.035f;
+    bool pipelineBound = false;
+    for (const RHISceneDrawItem& item : items)
+    {
+        if (item.EntityID != selectedEntityID)
+        {
+            continue;
+        }
+
+        if (pipelineBound == false)
+        {
+            if (pipeline == nullptr || commands.BindPipeline(pipeline) == false)
+            {
+                return false;
+            }
+            pipelineBound = true;
+        }
+
+        // column-majorのClip行列へLocal Scaleを右から掛けるため、
+        // 最初の3列だけを拡大します。Translation列と元のPicking形状は維持します。
+        auto clipTransform = item.ClipTransform;
+        for (std::size_t index = 0; index < 12u; ++index)
+        {
+            clipTransform[index] *= outlineScale;
+        }
+
+        // 通常描画で準備済みのTexture bindingを再利用し、Outline ShaderはTintだけを出力します。
+        auto material = item.Material;
+        material.Tint = { 1.0f, 0.55f, 0.05f, 1.0f };
+        if (commands.BindMaterial(material) == false ||
+            commands.SetClipTransform(clipTransform) == false ||
+            commands.DrawIndexed(item.VertexBuffer, item.IndexBuffer, item.IndexCount) == false)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Renderer::CreateRHIEntityPickingPipeline(
     RHIDevice& device,
     const PipelineSpecification& source,

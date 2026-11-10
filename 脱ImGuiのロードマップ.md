@@ -520,7 +520,12 @@ Exit Gate:
 
 ## 10. 直近の推奨作業
 
-次の着手点はPhase 5.1～5.3の3 Backend実機Smoke Testと、Explicit BackendのPicking対応である。
+2026-11-10にDX12/VulkanのScene Viewへ選択Outlineを接続し、同一Release x64の3 Backendで選択表示、
+Game Viewの通常表示、補助Sceneの分離・復帰を実機確認した。
+100%のDX12開始時CSVと途中の反復操作を記録した。長時間検証はいったん保留とし、正式Baselineと各Backendの30分反復操作は残項目とする。
+詳細は `RAVEN_IMGUI_PHASE7_VALIDATION.md` を参照。
+
+Phase 5.1～5.3の実機Smoke TestとPickingの残項目は以下に示す。
 
 1. OpenGL / DX12 / VulkanでScene/Game Viewの向き、Aspect、Clip、Main Sceneとの同時更新を実機確認する。
 2. 100% / 高DPI、Dock / Window / SwapChain Resize、最小化復帰でTarget再生成後の表示を確認する。

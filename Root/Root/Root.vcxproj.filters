@@ -1004,11 +1004,21 @@
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Assets\Shaders\Vulkan" />
+    <Filter Include="Raven\Assets\Shaders\DirectX12" />
   </ItemGroup>
   <ItemGroup>
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\EntityPicking.frag">
       <Filter>Raven\Assets\Shaders\Vulkan</Filter>
     </VulkanSceneShader>
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SelectionOutline.frag">
+      <Filter>Raven\Assets\Shaders\Vulkan</Filter>
+    </VulkanSceneShader>
+    <None Include="Raven\Assets\Shaders\Vulkan\SelectionOutline.frag.spv">
+      <Filter>Raven\Assets\Shaders\Vulkan</Filter>
+    </None>
+    <None Include="Raven\Assets\Shaders\DirectX12\SceneMesh.outline.ps.dxil">
+      <Filter>Raven\Assets\Shaders\DirectX12</Filter>
+    </None>
     <None Include="..\Tests\VulkanEntityPickingGPUIntegrationTests.cpp">
       <Filter>Raven\Platform\Vulkan</Filter>
     </None>

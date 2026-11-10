@@ -67,6 +67,10 @@ public:
         pickingFragment.EntryPoint = "PickingPSMain";
         m_PickingFragmentShader =
             m_ShaderAssets.Load(pickingFragment, RHIBackend::DirectX12);
+        RHIShaderAssetSpecification outlineFragment{};
+        outlineFragment.DirectX12Path = "Raven/Assets/Shaders/DirectX12/SceneMesh.outline.ps.dxil";
+        outlineFragment.EntryPoint = "OutlinePSMain";
+        m_OutlineFragmentShader = m_ShaderAssets.Load(outlineFragment, RHIBackend::DirectX12);
         RHIShaderAssetSpecification uiVertex{};
         uiVertex.DirectX12Path = "Raven/Assets/Shaders/DirectX12/UI.vs.dxil";
         uiVertex.EntryPoint = "VSMain";
@@ -76,7 +80,7 @@ public:
         m_UIVertexShader = m_ShaderAssets.Load(uiVertex, RHIBackend::DirectX12);
         m_UIFragmentShader = m_ShaderAssets.Load(uiFragment, RHIBackend::DirectX12);
         if (m_VertexShader == nullptr || m_FragmentShader == nullptr ||
-            m_PickingFragmentShader == nullptr ||
+            m_PickingFragmentShader == nullptr || m_OutlineFragmentShader == nullptr ||
             m_UIVertexShader == nullptr || m_UIFragmentShader == nullptr)
         {
             // Shader Assetは相対Pathで開くため、Visual Studioの作業Directoryも表示します。
@@ -128,7 +132,7 @@ public:
         const RHIOffscreenRenderTargetSpecification& specification) override;
     bool CaptureMainSceneFrame() override;
     bool CaptureOffscreenSceneFrame(
-        const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
+        const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID) override;
     bool CreateAuxiliaryUIWindow(Window& window) override;
     void DestroyAuxiliaryUIWindow(Window& window) override;
     RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
@@ -246,6 +250,7 @@ public:
         m_TransparentPipeline.reset();
         m_DebugLinePipeline.reset();
         m_PickingPipeline.reset();
+        m_OutlinePipeline.reset();
         m_UIPipeline.reset();
         if (CreatePipelines() == false)
         {
@@ -268,6 +273,7 @@ public:
         m_TransparentPipeline.reset();
         m_DebugLinePipeline.reset();
         m_PickingPipeline.reset();
+        m_OutlinePipeline.reset();
         m_UIPipeline.reset();
         m_UIRenderer.ClearTextureCache();
         m_UIVertexShader.reset();
@@ -276,6 +282,7 @@ public:
         m_VertexShader.reset();
         m_FragmentShader.reset();
         m_PickingFragmentShader.reset();
+        m_OutlineFragmentShader.reset();
         m_ShaderAssets.Clear();
         m_Device.reset();
         m_Context.Shutdown();
@@ -310,6 +317,7 @@ private:
     {
         Ref<RHIOffscreenRenderTarget> RenderTarget;
         Renderer::PreparedRHISceneFrame SceneFrame;
+        uint32_t SelectedEntityID = 0u;
     };
 
     bool PrepareCurrentSceneFrame(Renderer::PreparedRHISceneFrame& outFrame);
@@ -370,6 +378,14 @@ private:
         {
             return false;
         }
+        Ref<RHIGraphicsPipeline> outline;
+        if (m_OutlineFragmentShader == nullptr || m_OutlineFragmentShader->IsValid() == false ||
+            Renderer::CreateRHISelectionOutlinePipeline(*m_Device, *opaque,
+                m_OutlineFragmentShader->GetBinary(), outline) == false)
+        {
+            return false;
+        }
+        m_OutlinePipeline = std::move(outline);
         m_OpaquePipeline = std::move(opaque);
         m_TransparentPipeline = std::move(transparent);
         m_DebugLinePipeline = std::move(debugLine);
@@ -414,12 +430,14 @@ private:
     Ref<RHIShaderAsset> m_VertexShader;
     Ref<RHIShaderAsset> m_FragmentShader;
     Ref<RHIShaderAsset> m_PickingFragmentShader;
+    Ref<RHIShaderAsset> m_OutlineFragmentShader;
     PipelineSpecification m_PipelineSpecification{};
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
     Ref<RHIGraphicsPipeline> m_PickingPipeline;
+    Ref<RHIGraphicsPipeline> m_OutlinePipeline;
     Ref<RHIShaderAsset> m_UIVertexShader;
     Ref<RHIShaderAsset> m_UIFragmentShader;
     Ref<RHIGraphicsPipeline> m_UIPipeline;

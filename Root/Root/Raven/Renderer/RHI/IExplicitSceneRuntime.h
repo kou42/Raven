@@ -39,8 +39,9 @@ public:
     // Applicationが積んだMain Scene QueueをEditor Layerが上書きする前にSnapshot化します。
     virtual bool CaptureMainSceneFrame();
     // 直前のScene描画Queueを指定Target用SnapshotとしてFrame終了まで保持します。
+    // selectedEntityID=0では選択Outlineを描かず、Game Viewはこの既定値を使います。
     virtual bool CaptureOffscreenSceneFrame(
-        const Ref<RHIOffscreenRenderTarget>& renderTarget);
+        const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID = 0u);
 
     // 補助Windowは借用します。CloseはNative Window破棄前に必ず呼び、GPU完了を待ちます。
     // 未対応Backendは生成/描画を拒否し、別DeviceへTextureを暗黙転送しません。

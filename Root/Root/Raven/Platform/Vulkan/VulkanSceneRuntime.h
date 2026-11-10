@@ -47,7 +47,7 @@ public:
         const RHIOffscreenRenderTargetSpecification& specification) override;
     bool CaptureMainSceneFrame() override;
     bool CaptureOffscreenSceneFrame(
-        const Ref<RHIOffscreenRenderTarget>& renderTarget) override;
+        const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID) override;
     bool CreateAuxiliaryUIWindow(Window& window) override;
     void DestroyAuxiliaryUIWindow(Window& window) override;
     RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
@@ -86,6 +86,7 @@ private:
     {
         Ref<RHIOffscreenRenderTarget> RenderTarget;
         Renderer::PreparedRHISceneFrame SceneFrame;
+        uint32_t SelectedEntityID = 0u;
     };
 
     bool PrepareCurrentSceneFrame(Renderer::PreparedRHISceneFrame& outFrame);
@@ -103,12 +104,14 @@ private:
     Ref<RHIShaderAsset> m_VertexShader;
     Ref<RHIShaderAsset> m_FragmentShader;
     Ref<RHIShaderAsset> m_PickingFragmentShader;
+    Ref<RHIShaderAsset> m_OutlineFragmentShader;
     PipelineSpecification m_PipelineSpecification;
     std::string m_PipelineDebugName;
     Ref<RHIGraphicsPipeline> m_OpaquePipeline;
     Ref<RHIGraphicsPipeline> m_TransparentPipeline;
     Ref<RHIGraphicsPipeline> m_DebugLinePipeline;
     Ref<RHIGraphicsPipeline> m_PickingPipeline;
+    Ref<RHIGraphicsPipeline> m_OutlinePipeline;
     Ref<RHIShaderAsset> m_UIVertexShader;
     Ref<RHIShaderAsset> m_UIFragmentShader;
     Ref<RHIGraphicsPipeline> m_UIPipeline;
