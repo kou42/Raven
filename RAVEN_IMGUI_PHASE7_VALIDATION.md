@@ -1,5 +1,41 @@
 # 脱ImGui Phase 7 Windows自動検証記録
 
+## UI専用Sceneへの遷移修正（2026-11-11）
+
+- Explicit Rendererのフレーム準備で、OpaqueとTransparentの描画要求が空なら、Cameraなしでも空のScene Snapshotを作る。
+  ClearとRaven UIの描画・Presentが継続する。Meshがある場合のCamera・GPU Resource検証と、
+  Pipeline未準備時のエラーは引き続き有効。
+- Debug/Release x64ビルド、Debug Explicit Frame・Scene Lifecycle・Editor Command、
+  Release CPU UI・GPU回帰に成功。Explicit Frame Self TestにCameraなしの空Frame、旧Itemの破棄、
+  Pipeline欠落時の失敗の検証を追加した。DebugはリンクPDB無効・中間出力分離でビルドした。
+- 同一Release x64・150%で、OpenGL・DX12・Vulkanとも手動F10 → Return to Title → Start Gameの往復を確認。
+  DX12・VulkanはTitle表示時にScene Viewの映像がクリアされた。
+  OpenGLではTitle表示中も直前のScene View映像が残ったが、メニュー操作とGame復帰はできた。
+  3 Backendとも終了コード0、WindowCloseEvent 1回、stderr 0 byte。Dockレイアウトを復元した。
+- 実機ログは `artifacts/phase8/title-transition/`、ビルドとテストログは `artifacts/logs/phase8-title-*.log`。
+
+## Phase 8前の通常Sceneスモーク（2026-11-11）
+
+- `master` の `76fcad4d` と同じ作業ツリーでRelease x64通常ビルドとDebug x64通常ビルドを実行した。
+  Releaseは警告0件。DebugはPDBの既知の環境制約を避けるため、中間出力を分け、リンクPDBを無効化した。
+  Release CPU UI、OpenGL GPU、DX12補助Window、Vulkan色・補助Window回帰が成功した。
+  DebugのScene Lifecycle、Scene Graph、Editor Command、Viewport、Explicit FrameのSelf Testも成功した。
+- 通常起動・Raven UI既定・150%で、OpenGL/DX12/VulkanのGame Scene、Floor選択、Gizmo移動、
+  Undo/Redoと元位置への復元、補助Inspectorの分離とClose復帰を確認した。
+- Vulkanでは手動F10でPauseメニューが表示された。Return to Titleをクリックすると
+  stderrに `Vulkan Scene frame preparation failed.` が2行出て、Title表示前にウィンドウが消えた。
+  終了コードは0だが、WindowCloseEventはなく、正常なScene切替としては扱わない。
+- `SceneTitle::OnRender()` はUI専用なのでScene描画Queueを開始しない。
+  `Renderer::BuildRHISceneMeshes()` はQueueとCameraがなければ失敗を返すため、
+  UI専用Sceneを空の描画として扱えず、Explicit Frameの準備に失敗する経路と整合する。
+  DX12も共通Rendererを使う。DX12は短いF10の押下・解放が届いてもPauseを表示できず、実機の切替結果は未確認。
+  OpenGLのScene切替も未確認。
+- ログは `artifacts/logs/phase8-preflight-*.log` と `artifacts/phase8/preflight-76fcad4d/`。
+  Dockレイアウトとバックアップは元のハッシュに復元した。
+
+Phase 8の完全削除に進む前に、Explicit BackendのUI専用SceneでFrameを継続できるようにし、
+通常起動のGame → Title → Gameを3 Backendで再確認する。
+
 ## DX12・Vulkanの選択Outline再接続（2026-11-10）
 
 - Editorで選択EntityのSceneとGenerationを検証し、Scene ViewのオフスクリーンSnapshotへEntity IDを渡す。

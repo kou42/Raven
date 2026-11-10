@@ -427,6 +427,11 @@ Exit Gate:
 
 ### Phase 8: Dear ImGuiの完全削除
 
+2026-11-11の事前スモークで、通常Game Sceneの選択・編集・Undo/Redoと補助Inspectorの復帰を3 Backendで確認した。
+Vulkanで検出したTitle遷移時の描画準備エラーを修正し、3 BackendでGame → Title → Gameを確認した。
+OpenGLでTitle表示中に直前のScene View映像が残る点は表示上の残課題として記録した。
+詳細は `RAVEN_IMGUI_PHASE7_VALIDATION.md` を参照。
+
 削除順は依存の外側から行う。
 
 1. [ ] 各Layerの`OnImGuiRender()` overrideを削除する。
