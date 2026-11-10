@@ -24,7 +24,7 @@ namespace Raven
 //   Q / E            : Down / Up
 //
 // 入力を受け付けるかどうかはEditorLayerがScene Viewのhover状態から決定し、Update()へ渡します。
-// EditorCamera自身がImGui Windowを知らない構造にすることで、Cameraの数学処理とEditor UIを分離します。
+// EditorCamera自身がViewport Widgetを知らない構造にすることで、Cameraの数学処理とEditor UIを分離します。
 class EditorCamera : public Camera
 {
 public:

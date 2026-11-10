@@ -14,7 +14,7 @@ namespace Raven::ph::detail
 //
 // 本格的なUI/Font Systemではありません。Physicsの診断値をエンジン開発初期から
 // 画面上で確認できるようにするためのbootstrap実装です。
-// 将来Dear ImGuiやTextRendererを導入した場合、このファイルだけを捨てられます。
+// 汎用TextRendererへ移行する場合は、このDebug用Glyph定義を置き換えます。
 using Glyph = std::array<uint8_t, 7>;
 
 inline Glyph GetPhysicsDebugGlyph(char c)

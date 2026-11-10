@@ -71,9 +71,6 @@
 int main(int argc, char* argv[])
 {
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
-    // Phase 7以降の通常EditorはRaven UIを正式経路とします。
-    // Dear ImGui / Dualは回帰調査時に明示引数でだけ選択するfallbackです。
-    Raven::EditorUIBackend editorUIBackend = Raven::kDefaultEditorUIBackend;
     bool uiMigrationTest = false;
     bool editorBackendComparison = false;
 #ifdef _WIN32
@@ -206,7 +203,7 @@ int main(int argc, char* argv[])
         {
             return Raven::ph::tests::RunCoulombBenchmark();
         }
-        // 脱ImGui検証は既存Raven UI Demoのみを起動し、Editor/Scene依存を隔離します。
+        // UI単体検証ではRaven UI Demoのみを起動し、Editor/Scene依存を隔離します。
         // 現段階ではOpenGLでのみ独立検証し、Explicit Backendは別途GPU検証します。
         if (backendArgument == "--ui-migration-test")
         {
@@ -215,18 +212,6 @@ int main(int argc, char* argv[])
         else if (backendArgument == "--editor-backend-comparison")
         {
             editorBackendComparison = true;
-        }
-        else if (backendArgument == "--editor-ui=imgui")
-        {
-            editorUIBackend = Raven::EditorUIBackend::DearImGui;
-        }
-        else if (backendArgument == "--editor-ui=raven")
-        {
-            editorUIBackend = Raven::EditorUIBackend::RavenUI;
-        }
-        else if (backendArgument == "--editor-ui=dual")
-        {
-            editorUIBackend = Raven::EditorUIBackend::Dual;
         }
         else if (backendArgument == "--backend=vulkan")
         {
@@ -267,7 +252,7 @@ int main(int argc, char* argv[])
         else if (backendArgument != "--backend=opengl")
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
-                "--editor-backend-comparison, --editor-ui=imgui, --editor-ui=raven, --editor-ui=dual, --test-editor-viewport, "
+                "--editor-backend-comparison, --test-editor-viewport, "
                 "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, --test-string, --test-name, "
                 "--test-animation-runtime, "
                 "--test-character-animation, "
@@ -278,19 +263,10 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (editorBackendComparison == true &&
-        (uiMigrationTest == true || editorUIBackend != Raven::EditorUIBackend::RavenUI))
+    if (editorBackendComparison == true && uiMigrationTest == true)
     {
-        std::cerr << "--editor-backend-comparison requires Raven UI and cannot use --ui-migration-test.\n";
+        std::cerr << "--editor-backend-comparison cannot use --ui-migration-test.\n";
         return 1;
-    }
-
-    // Explicit BackendはDear ImGuiのBackend Contextを生成できません。
-    // 明示的なfallback指定があってもRaven UIへ固定し、未対応Contextを生成しません。
-    if (applicationBackend == Raven::RHIBackend::DirectX12 ||
-        applicationBackend == Raven::RHIBackend::Vulkan)
-    {
-        editorUIBackend = Raven::EditorUIBackend::RavenUI;
     }
 
 #ifdef _DEBUG
@@ -384,17 +360,6 @@ int main(int argc, char* argv[])
         std::cerr << "[Raven UI] Windows font directory could not be resolved.\n";
     }
 #endif
-    // Dear ImGui Contextの生成条件とEditor側の描画分岐を同じ設定から決定します。
-    // RavenUI Modeでは移行済みPanelだけを表示し、未移行Panelを暗黙にDear ImGuiへ戻しません。
-    applicationSpecification.EnableDearImGui =
-        editorUIBackend != Raven::EditorUIBackend::RavenUI;
-    if (uiMigrationTest == true)
-    {
-        // ImGuiLayerを構築しないことが検証の前提です。
-        applicationSpecification.EnableDearImGui = false;
-        applicationSpecification.EnableRavenUI = true;
-    }
-
     // 通常ApplicationのExplicit Backendも、独立Runtime Demoと同じShader/Pipeline契約を使用します。
     // Backend選択だけで別Demoへ分岐せず、Scene/Layer/Raven UIを含む本流を検証できる入口にします。
     if (applicationBackend == Raven::RHIBackend::Vulkan)
@@ -431,7 +396,7 @@ int main(int argc, char* argv[])
     if (uiMigrationTest == true)
     {
         // ApplicationのUIContext/Frame Lifecycleを共有し、検証用の別Loopは作りません。
-        // EditorLayerとScene-owned Layerは登録しないため、ImGui非依存でWidgetを確認できます。
+        // EditorLayerとScene-owned Layerは登録しないため、通常Editorから独立してWidgetを確認できます。
         app.PushLayer(Raven::CreateScope<Raven::UITextDemoLayer>(app));
         app.PushLayer(Raven::CreateScope<Raven::UISvgDemoLayer>(app));
         app.Run();
@@ -461,7 +426,7 @@ int main(int argc, char* argv[])
             return 1;
         }
         comparisonScene->WriteManifest(std::cout);
-        app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app, editorUIBackend));
+        app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
         app.Run();
         return 0;
     }
@@ -503,7 +468,7 @@ int main(int argc, char* argv[])
     Raven::Scene* runtimeScene = app.GetScene();
     if (runtimeScene != nullptr)
     {
-        // Character本体はScene-ownedのまま維持し、ImGui表示だけをApplication-owned Overlayへ分離します。
+        // Character本体はScene-ownedのまま維持し、診断表示だけをApplication-owned Overlayへ分離します。
         // OverlayはCharacter Layerを非所有pointerで参照しますが、ApplicationはApplication LayerをSceneより先に
         // 破棄するため、終了順序上もdangling pointerになりません。
         //
@@ -550,7 +515,7 @@ int main(int argc, char* argv[])
     // Editorの選択・Command履歴等のRuntime状態はBackend非依存なので常に登録します。
     // OpenGLはFramebuffer、DX12 / VulkanはRHI off-screen Targetを使用します。
     // 将来の未対応Explicit BackendではCapability判定によりPanel生成を安全に抑止します。
-    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app, editorUIBackend));
+    app.PushLayer(Raven::CreateScope<Raven::EditorLayer>(app));
 
     app.Run();
     return 0;

@@ -4,7 +4,6 @@
 #include "../Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Renderer/RHI/RHIExplicitSceneRuntimeFactory.h"
-#include "Raven/ImGui/ImGuiLayer.h"
 #include "Raven/UI/Screens/LoadingScreen.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
@@ -73,7 +72,7 @@ Application::Application(const ApplicationSpecification& specification)
     , m_PhysicsDebugImmediateFont(specification.PhysicsDebugImmediateFont)
     , m_RuntimeUIFont(specification.RuntimeUIFont)
 {
-    // WindowはRenderer / ImGuiより先に生成します。
+    // WindowはRendererとUIより先に生成します。
     // 選択BackendのGraphics ContextもWindow側で準備されるため、以降のGPU関連初期化より前である必要があります。
     m_Window = Window::Create(specification.WindowProperties);
     if (m_Window == nullptr)
@@ -103,7 +102,7 @@ Application::Application(const ApplicationSpecification& specification)
         });
 
     // WindowsのIME候補Windowが必要とするCaret座標は、Focus中のUIInputTextだけが提供します。
-    // WindowへUI型を依存させずApplicationで橋渡しし、他Widget/ImGuiではOS既定の位置を維持します。
+    // WindowへUI型を依存させずApplicationで橋渡しし、他WidgetではOS既定の位置を維持します。
     m_Window->SetIMECaretPositionCallback([this](float& x, float& y)
         {
             if (m_RavenUIEnabled == false)
@@ -156,7 +155,6 @@ Application::Application(const ApplicationSpecification& specification)
         Renderer::SetExplicitSceneMode(true);
 
         // Raven UIはCPU DrawListを構築し、Explicit Runtimeが同一Frameへ記録します。
-        // Dear ImGuiはBackend固有統合が未完了のため従来どおりExplicitでは生成しません。
     }
     else
     {
@@ -183,9 +181,6 @@ Application::Application(const ApplicationSpecification& specification)
     // Applicationは具体的なOpenGLUIRendererを直接生成しません。
     // UIRenderer::Create()が現在のRendererAPIに対応するbackendを選択するため、
     // Core層へOpenGL固有型を持ち込まずにMain Window用UIContextへ描画実装を注入できます。
-    //
-    // Dear ImGuiとは別Context / 別DrawListとして並行稼働させるため、既存Editorを維持したまま
-    // 独自UIの描画・Layout・Inputを段階的に追加できます。
     if (m_RavenUIEnabled == true)
     {
         m_UIContext.SetRenderer(UIRenderer::Create(m_Window->GetBackend()));
@@ -344,34 +339,6 @@ Application::Application(const ApplicationSpecification& specification)
     }
 #endif
 
-    // ========================================================================
-    // Dear ImGui lifecycle
-    // ========================================================================
-    // ImGuiLayerもRavenのLayerライフサイクルに近い形で管理しますが、通常Layer配列には積みません。
-    // Dear ImGuiのBegin/Endは「全LayerのOnImGuiRender()を囲むframe境界」だからです。
-    //
-    // ApplicationがImGuiLayerへの専用参照を持つことで、必ず
-    //
-    //   ImGuiLayer::Begin()
-    //       -> EditorLayer等のOnImGuiRender()
-    //   ImGuiLayer::End()
-    //
-    // の順序を保証します。
-    //
-    // 重要:
-    // Applicationが知るのはImGuiのframe境界までです。
-    // Statistics / Hierarchy / Inspector等のEditor固有UIはEditorLayer以下へ分離し、
-    // ApplicationへEditor固有分岐を増やさない方針とします。
-    if (specification.EnableDearImGui == true && explicitBackend == false)
-    {
-        Scope<ImGuiLayer> imguiLayer = CreateScope<ImGuiLayer>(*m_Window);
-        imguiLayer->OnAttach();
-        if (imguiLayer->IsInitialized() == true)
-        {
-            // 初期化済みContextだけをFrame Loopへ公開し、Backend未対応時のUI呼び出しを防ぎます。
-            m_ImGuiLayer = std::move(imguiLayer);
-        }
-    }
 }
 
 void Application::ConfigureUIClipboard(UIContext& context, WindowID windowID)
@@ -419,7 +386,7 @@ Application::~Application()
         }
     }
 
-    // OnDetach()後もScopeを保持し続けるとLayer DestructorがImGui shutdown後まで遅延します。
+    // OnDetach()後もScopeを保持し続けるとLayer DestructorがGraphics Contextの破棄後まで遅延します。
     // Layerが保持するGPU/Editor Resourceを有効なContext中に解放するため、ここで所有権も破棄します。
     m_Layers.clear();
 
@@ -437,14 +404,6 @@ Application::~Application()
     m_SceneManager.Shutdown();
     // Audio backendはSceneが停止した後、Window/Platform resourceが有効な間に終了します。
     m_AudioService.Shutdown();
-
-    // ImGui OpenGL backendは有効なOpenGL Contextを必要とします。
-    // そのためWindowが破棄される前に明示的にDetachし、backendとImGui Contextを終了します。
-    if (m_ImGuiLayer != nullptr)
-    {
-        m_ImGuiLayer->OnDetach();
-        m_ImGuiLayer.reset();
-    }
 
     // OpenGL補助WindowはContext間でGPU資産を共有し、DX12/VulkanはDevice/Queueを共有します。
     // Main Windowが破棄される前に補助WindowのCleanup/VAO解放とGPU Fence待機を完了させます。
@@ -1777,7 +1736,7 @@ void Application::Run()
         // Application Layers
         // ====================================================================
         // EditorLayerを含む通常LayerのRuntime更新・描画です。
-        // Dear ImGui frameとは独立しているため、OnRender()では通常Rendererを利用した
+        // OnRender()では通常Rendererを利用した
         // Editor用debug primitiveや将来のGizmo描画などを扱えます。
         for (auto& layer : m_Layers)
         {
@@ -1789,31 +1748,10 @@ void Application::Run()
         }
 
         // ====================================================================
-        // Dear ImGui frame
-        // ====================================================================
-        // Dear ImGuiは1 Application frameにつきBegin/Endを一度だけ実行します。
-        // その間で各LayerへUI構築を依頼するため、EditorLayer側はImGui::Begin/Endによる
-        // 個々のWindow構築だけに集中でき、backendのframe管理を知る必要がありません。
-        if (m_ImGuiLayer != nullptr)
-        {
-            m_ImGuiLayer->Begin();
-
-            for (auto& layer : m_Layers)
-            {
-                if (layer != nullptr)
-                {
-                    layer->OnImGuiRender(frameDeltaTime);
-                }
-            }
-
-            m_ImGuiLayer->End();
-        }
-
-        // ====================================================================
         // Raven UI frame end / overlay rendering
         // ====================================================================
-        // 移行期間はRaven UIをDear ImGuiの後へ描画し、既存Editor Windowに隠れず結果を確認できる
-        // Overlayとして扱います。将来Game UI用Contextを分離した段階では、Game View用RenderTargetへ
+        // Raven UIはSceneとLayerの描画後に重ねます。
+        // 将来Game UI用Contextを分離した段階では、Game View用RenderTargetへ
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
         if (m_RavenUIEnabled == true)
         {
@@ -1986,7 +1924,7 @@ void Application::Run()
         m_CompletedUIFrameMetrics.PeakElementCount = std::max(
             m_CompletedUIFrameMetrics.PeakElementCount, completedElementCount);
 
-        // Scene / Layer / ImGui / Raven UIの全描画が完了した後にPresentします。
+        // Scene / Layer / Raven UIの全描画が完了した後にPresentします。
         // イベント処理とPresentを分離し、OpenGLはApplication所有Lifecycle、
         // DX12/VulkanはExplicit Runtime内でEnd/Presentを一度だけ実行します。
         if (m_ExplicitSceneRuntime == nullptr)

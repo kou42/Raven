@@ -82,13 +82,13 @@ void OpenGLFramebuffer::Bind() const
 void OpenGLFramebuffer::Unbind() const
 {
     // Renderer ID 0はOpenGLのdefault framebufferです。
-    // Scene/Game Viewへのoff-screen描画後、ImGui等の後続描画がEditor Windowへ戻るよう解除します。
+    // Scene/Game Viewへのoff-screen描画後、UI等の後続描画がEditor Windowへ戻るよう解除します。
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void OpenGLFramebuffer::Resize(std::uint32_t width, std::uint32_t height)
 {
-    // ImGui Windowを最小化した瞬間などはContentRegionが0になる場合があります。
+    // Windowを最小化した瞬間などはViewport領域が0になる場合があります。
     // OpenGLへ0x0 Textureを作らせず、次に有効なサイズが来るまで現在のAttachmentを維持します。
     if (width == 0 || height == 0)
     {

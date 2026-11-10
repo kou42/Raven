@@ -77,7 +77,7 @@ public:
     }
 };
 
-// Scene / Layer / ImGui / Raven UIを含むApplication Frameの境界です。
+// Scene / Layer / Raven UIを含むApplication Frameの境界です。
 // Clear DemoのRHIFrameLifecycleと異なり、ClearFrameを必須としません。
 // Scene描画のClearはRenderCommand / RHICommandList側の責務として維持します。
 class RHISceneFrameLifecycle

@@ -23,7 +23,7 @@ void SceneCamera::SetViewportSize(float width, float height)
     // ========================================================================
     // Viewport validation
     // ========================================================================
-    // Window最小化やImGui Panelの一時的な0サイズによってCamera設定を壊さないよう、
+    // Window最小化やViewport Panelの一時的な0サイズによってCamera設定を壊さないよう、
     // 有効な幅・高さが得られた場合だけAspect Ratioを更新します。
     if (width <= 0.0f || height <= 0.0f)
     {

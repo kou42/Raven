@@ -3,9 +3,6 @@
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCamera.h"
 #include "Raven/Editor/EditorCommandHistory.h"
-#include "Raven/Editor/EditorRotateGizmo.h"
-#include "Raven/Editor/EditorScaleGizmo.h"
-#include "Raven/Editor/EditorTranslateGizmo.h"
 #include "Raven/Math/MathQuatanion.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -940,58 +937,6 @@ void EditorTransformGizmoController::Reset()
     m_DragStartIntersection = math::Vec3{};
     m_PixelsPerUnit = 0.0f;
     m_UseTranslateDragPlane = false;
-}
-
-bool RenderEditorTransformGizmo(
-    Entity selectedEntity,
-    const EditorCamera& camera,
-    float viewportMinX,
-    float viewportMinY,
-    float viewportMaxX,
-    float viewportMaxY)
-{
-    switch (s_Operation)
-    {
-    case EditorGizmoOperation::Translate:
-        // 非アクティブ側へInvalid Entityを渡して内部Drag状態を確実に解除します。
-        RenderRotateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
-        RenderScaleGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
-
-        return RenderTranslateGizmo(
-            selectedEntity,
-            camera,
-            viewportMinX,
-            viewportMinY,
-            viewportMaxX,
-            viewportMaxY);
-
-    case EditorGizmoOperation::Rotate:
-        RenderTranslateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
-        RenderScaleGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
-
-        return RenderRotateGizmo(
-            selectedEntity,
-            camera,
-            viewportMinX,
-            viewportMinY,
-            viewportMaxX,
-            viewportMaxY);
-
-    case EditorGizmoOperation::Scale:
-        RenderTranslateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
-        RenderRotateGizmo(Entity{}, camera, viewportMinX, viewportMinY, viewportMaxX, viewportMaxY);
-
-        return RenderScaleGizmo(
-            selectedEntity,
-            camera,
-            viewportMinX,
-            viewportMinY,
-            viewportMaxX,
-            viewportMaxY);
-
-    default:
-        return false;
-    }
 }
 
 } // namespace Raven

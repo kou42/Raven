@@ -11,8 +11,6 @@ Codex Cloudは調査、編集、静的検査、差分整理を担当し、Window
 
 ```bash
 set -euo pipefail
-git submodule sync --recursive
-git submodule update --init --recursive
 test -f AGENTS.md
 test -f structure.txt
 test -f Root/Root.sln
@@ -20,7 +18,6 @@ test -f Root/Root/Root.vcxproj
 test -f Root/Tests/README.md
 test -f Root/Tests/UITextReflowTests.cpp
 test -f Root/Tests/UIFontTextureGPUIntegrationTests.cpp
-test -f Root/Root/vendor/imgui/imgui.cpp
 bash scripts/check-codex-cloud-baseline.sh
 ```
 
@@ -62,7 +59,6 @@ VS2026 / MSVC v145 / C++23の組み合わせを検証できたとは扱わない
 Visual Studio 2026（MSVC v145とWindows 10/11 SDKを含む）が必要です。新しいチェックアウトでは次を実行します。
 
 ```powershell
-git submodule update --init --recursive
 ./scripts/bootstrap-windows-build.ps1 -InstallVulkanSdk
 ./scripts/build-windows.ps1 -Configuration Debug -Platform x64 -SkipBootstrap
 ```
@@ -86,7 +82,6 @@ GPU統合テストはOpenGL 3.3 Core Contextと表示セッションを必要と
 同じ環境でローカル確認する場合は次を実行します。
 
 ```powershell
-git submodule update --init --recursive
 ./scripts/bootstrap-windows-build.ps1 -InstallVulkanSdk
 ./scripts/test-windows-gpu.ps1 -Configuration Debug -Platform x64 -RequireFontAtlas -SkipBootstrap
 ```

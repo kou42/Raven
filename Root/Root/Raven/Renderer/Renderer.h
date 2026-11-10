@@ -31,7 +31,7 @@ class VertexArray;
 // ============================================================================
 // 1 frame中にRendererが実際に発行した描画量を保持します。
 // EditorのStatisticsPanelだけでなく、将来Profilerや自動テストからも参照できるよう
-// ImGui依存をRendererへ持ち込まず、純粋なEngine統計データとして定義します。
+// 表示処理と分離し、Rendererが集計するEngine統計データとして定義します。
 struct RendererStatistics
 {
     uint32_t DrawCalls = 0;

@@ -131,8 +131,7 @@ public:
     // ------------------------------------------------------------------------
     // Compatibility bridge
     // ------------------------------------------------------------------------
-    // EditorのDear ImGui連携は現状ImTextureIDへOpenGL Texture IDを渡しているため、
-    // 既存コードを一度に壊さないよう互換APIを一時的に残します。
+    // OpenGL Texture IDを直接必要とする既存利用箇所向けの互換APIです。
     // 引数なし版はColor Attachment 0へ委譲します。
     std::uint32_t GetColorAttachmentRendererID() const;
     std::uint32_t GetColorAttachmentRendererID(std::size_t index) const;

@@ -2,7 +2,6 @@ Folder PATH listing for volume Data
 Volume serial number is 0000005D B4F8:E2D0
 D:.
 |   .gitignore
-|   .gitmodules
 |   AGENTS.md
 |   find_structure_command.txt
 |   structure.txt
@@ -12,7 +11,6 @@ D:.
     |
     +---Root
     |   |   .editorconfig
-    |   |   imgui.ini
     |   |   main.cpp
     |   |   Root.code-workspace
     |   |   Root.vcxproj
@@ -297,15 +295,9 @@ D:.
     |   |   |   |   EditorGizmo.h
     |   |   |   |   EditorLayer.cpp
     |   |   |   |   EditorLayer.h
-    |   |   |   |   EditorRotateGizmo.cpp
-    |   |   |   |   EditorRotateGizmo.h
-    |   |   |   |   EditorScaleGizmo.cpp
-    |   |   |   |   EditorScaleGizmo.h
     |   |   |   |   EditorSelectionOutline.cpp
     |   |   |   |   EditorShortcutRouter.cpp
     |   |   |   |   EditorShortcutRouter.h
-    |   |   |   |   EditorTranslateGizmo.cpp
-    |   |   |   |   EditorTranslateGizmo.h
     |   |   |   |   EditorViewportGeometry.cpp
     |   |   |   |   EditorViewportGeometry.h
     |   |   |   |
@@ -329,30 +321,22 @@ D:.
     |   |   |   +---Panels
     |   |   |   |       AnimationDebugActions.cpp
     |   |   |   |       AnimationDebugActions.h
-    |   |   |   |       AnimationDebugPanel.cpp
-    |   |   |   |       AnimationDebugPanel.h
     |   |   |   |       AnimationDebugRavenPanel.cpp
     |   |   |   |       AnimationDebugRavenPanel.h
     |   |   |   |       AnimationDebugSnapshot.cpp
     |   |   |   |       AnimationDebugSnapshot.h
     |   |   |   |       EditorViewportRavenPanel.cpp
     |   |   |   |       EditorViewportRavenPanel.h
-    |   |   |   |       InspectorPanel.cpp
-    |   |   |   |       InspectorPanel.h
     |   |   |   |       InspectorRavenPanel.cpp
     |   |   |   |       InspectorRavenPanel.h
     |   |   |   |       InspectorSnapshot.cpp
     |   |   |   |       InspectorSnapshot.h
-    |   |   |   |       SceneHierarchyPanel.cpp
-    |   |   |   |       SceneHierarchyPanel.h
     |   |   |   |       SceneHierarchyRavenPanel.cpp
     |   |   |   |       SceneHierarchyRavenPanel.h
     |   |   |   |       SceneHierarchySnapshot.cpp
     |   |   |   |       SceneHierarchySnapshot.h
     |   |   |   |       StatisticsActions.cpp
     |   |   |   |       StatisticsActions.h
-    |   |   |   |       StatisticsPanel.cpp
-    |   |   |   |       StatisticsPanel.h
     |   |   |   |       StatisticsRavenPanel.cpp
     |   |   |   |       StatisticsRavenPanel.h
     |   |   |   |       StatisticsSnapshot.cpp
@@ -420,9 +404,6 @@ D:.
     |   |   |           GltfSkinAccessorSelfTests.cpp
     |   |   |           GltfSkinAccessorSelfTests.h
     |   |   |
-    |   |   +---ImGui
-    |   |   |       ImGuiLayer.cpp
-    |   |   |       ImGuiLayer.h
     |   |   |
     |   |   +---Math
     |   |   |       Math.cpp
@@ -901,497 +882,6 @@ D:.
     |   +---src
     |   |       glad.c
     |   |
-    |   +---vendor
-    |   |   \---imgui
-    |   |       |   .editorconfig
-    |   |       |   .gitattributes
-    |   |       |   .gitignore
-    |   |       |   imconfig.h
-    |   |       |   imgui.cpp
-    |   |       |   imgui.h
-    |   |       |   imgui_demo.cpp
-    |   |       |   imgui_draw.cpp
-    |   |       |   imgui_internal.h
-    |   |       |   imgui_tables.cpp
-    |   |       |   imgui_widgets.cpp
-    |   |       |   imstb_rectpack.h
-    |   |       |   imstb_textedit.h
-    |   |       |   imstb_truetype.h
-    |   |       |   LICENSE.txt
-    |   |       |
-    |   |       +---.github
-    |   |       |   |   FUNDING.yml
-    |   |       |   |   pull_request_template.md
-    |   |       |   |
-    |   |       |   +---ISSUE_TEMPLATE
-    |   |       |   |       config.yml
-    |   |       |   |       issue_template.yml
-    |   |       |   |
-    |   |       |   \---workflows
-    |   |       |           build.yml
-    |   |       |           build_windows_vulkan_libs.ps1
-    |   |       |           manual.yml
-    |   |       |           scheduled.yml
-    |   |       |           static-analysis.yml
-    |   |       |
-    |   |       +---backends
-    |   |       |   |   imgui_impl_allegro5.cpp
-    |   |       |   |   imgui_impl_allegro5.h
-    |   |       |   |   imgui_impl_android.cpp
-    |   |       |   |   imgui_impl_android.h
-    |   |       |   |   imgui_impl_dx10.cpp
-    |   |       |   |   imgui_impl_dx10.h
-    |   |       |   |   imgui_impl_dx11.cpp
-    |   |       |   |   imgui_impl_dx11.h
-    |   |       |   |   imgui_impl_dx12.cpp
-    |   |       |   |   imgui_impl_dx12.h
-    |   |       |   |   imgui_impl_dx9.cpp
-    |   |       |   |   imgui_impl_dx9.h
-    |   |       |   |   imgui_impl_glfw.cpp
-    |   |       |   |   imgui_impl_glfw.h
-    |   |       |   |   imgui_impl_glut.cpp
-    |   |       |   |   imgui_impl_glut.h
-    |   |       |   |   imgui_impl_metal.h
-    |   |       |   |   imgui_impl_metal.mm
-    |   |       |   |   imgui_impl_metal4.h
-    |   |       |   |   imgui_impl_metal4.mm
-    |   |       |   |   imgui_impl_null.cpp
-    |   |       |   |   imgui_impl_null.h
-    |   |       |   |   imgui_impl_opengl2.cpp
-    |   |       |   |   imgui_impl_opengl2.h
-    |   |       |   |   imgui_impl_opengl3.cpp
-    |   |       |   |   imgui_impl_opengl3.h
-    |   |       |   |   imgui_impl_opengl3_loader.h
-    |   |       |   |   imgui_impl_osx.h
-    |   |       |   |   imgui_impl_osx.mm
-    |   |       |   |   imgui_impl_sdl2.cpp
-    |   |       |   |   imgui_impl_sdl2.h
-    |   |       |   |   imgui_impl_sdl3.cpp
-    |   |       |   |   imgui_impl_sdl3.h
-    |   |       |   |   imgui_impl_sdlgpu3.cpp
-    |   |       |   |   imgui_impl_sdlgpu3.h
-    |   |       |   |   imgui_impl_sdlgpu3_shaders.h
-    |   |       |   |   imgui_impl_sdlrenderer2.cpp
-    |   |       |   |   imgui_impl_sdlrenderer2.h
-    |   |       |   |   imgui_impl_sdlrenderer3.cpp
-    |   |       |   |   imgui_impl_sdlrenderer3.h
-    |   |       |   |   imgui_impl_vulkan.cpp
-    |   |       |   |   imgui_impl_vulkan.h
-    |   |       |   |   imgui_impl_wgpu.cpp
-    |   |       |   |   imgui_impl_wgpu.h
-    |   |       |   |   imgui_impl_win32.cpp
-    |   |       |   |   imgui_impl_win32.h
-    |   |       |   |
-    |   |       |   +---sdlgpu3
-    |   |       |   |       build_instructions.txt
-    |   |       |   |       shader.frag
-    |   |       |   |       shader.vert
-    |   |       |   |
-    |   |       |   \---vulkan
-    |   |       |           build_instructions.txt
-    |   |       |           generate_spv.sh
-    |   |       |           glsl_shader.frag
-    |   |       |           glsl_shader.vert
-    |   |       |
-    |   |       +---docs
-    |   |       |       BACKENDS.md
-    |   |       |       CHANGELOG.txt
-    |   |       |       CONTRIBUTING.md
-    |   |       |       EXAMPLES.md
-    |   |       |       FAQ.md
-    |   |       |       FONTS.md
-    |   |       |       README.md
-    |   |       |       SECURITY.md
-    |   |       |       TODO.txt
-    |   |       |
-    |   |       +---examples
-    |   |       |   |   imgui_examples.sln
-    |   |       |   |   README.txt
-    |   |       |   |
-    |   |       |   +---example_allegro5
-    |   |       |   |       example_allegro5.vcxproj
-    |   |       |   |       example_allegro5.vcxproj.filters
-    |   |       |   |       imconfig_allegro5.h
-    |   |       |   |       main.cpp
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_android_opengl3
-    |   |       |   |   |   CMakeLists.txt
-    |   |       |   |   |   main.cpp
-    |   |       |   |   |
-    |   |       |   |   \---android
-    |   |       |   |       |   .gitignore
-    |   |       |   |       |   build.gradle
-    |   |       |   |       |   settings.gradle
-    |   |       |   |       |
-    |   |       |   |       +---.gradle
-    |   |       |   |       |   |   file-system.probe
-    |   |       |   |       |   |
-    |   |       |   |       |   +---8.9
-    |   |       |   |       |   |   |   gc.properties
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---checksums
-    |   |       |   |       |   |   |       checksums.lock
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---dependencies-accessors
-    |   |       |   |       |   |   |   |   gc.properties
-    |   |       |   |       |   |   |   |
-    |   |       |   |       |   |   |   \---e1ac273d50f6caa3c4aedae7e636a5f230f549a2
-    |   |       |   |       |   |   |       |   metadata.bin
-    |   |       |   |       |   |   |       |
-    |   |       |   |       |   |   |       +---classes
-    |   |       |   |       |   |   |       |   \---org
-    |   |       |   |       |   |   |       |       \---gradle
-    |   |       |   |       |   |   |       |           \---accessors
-    |   |       |   |       |   |   |       |               \---dm
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$AndroidPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$BundleAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$KotlinPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$PluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$VersionAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$AndroidPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$BundleAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$KotlinPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$PluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$VersionAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock.class
-    |   |       |   |       |   |   |       |
-    |   |       |   |       |   |   |       \---sources
-    |   |       |   |       |   |   |           \---org
-    |   |       |   |       |   |   |               \---gradle
-    |   |       |   |       |   |   |                   \---accessors
-    |   |       |   |       |   |   |                       \---dm
-    |   |       |   |       |   |   |                               LibrariesForLibs.java
-    |   |       |   |       |   |   |                               LibrariesForLibsInPluginsBlock.java
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---expanded
-    |   |       |   |       |   |   +---fileChanges
-    |   |       |   |       |   |   |       last-build.bin
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---fileHashes
-    |   |       |   |       |   |   |       fileHashes.bin
-    |   |       |   |       |   |   |       fileHashes.lock
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   \---vcsMetadata
-    |   |       |   |       |   +---9.2.0
-    |   |       |   |       |   |   |   gc.properties
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---checksums
-    |   |       |   |       |   |   |       checksums.lock
-    |   |       |   |       |   |   |       md5-checksums.bin
-    |   |       |   |       |   |   |       sha1-checksums.bin
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---expanded
-    |   |       |   |       |   |   +---fileChanges
-    |   |       |   |       |   |   |       last-build.bin
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---fileHashes
-    |   |       |   |       |   |   |       fileHashes.bin
-    |   |       |   |       |   |   |       fileHashes.lock
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   \---vcsMetadata
-    |   |       |   |       |   +---buildOutputCleanup
-    |   |       |   |       |   |       buildOutputCleanup.lock
-    |   |       |   |       |   |       cache.properties
-    |   |       |   |       |   |
-    |   |       |   |       |   \---vcs-1
-    |   |       |   |       |           gc.properties
-    |   |       |   |       |
-    |   |       |   |       +---app
-    |   |       |   |       |   |   build.gradle
-    |   |       |   |       |   |
-    |   |       |   |       |   \---src
-    |   |       |   |       |       \---main
-    |   |       |   |       |           |   AndroidManifest.xml
-    |   |       |   |       |           |
-    |   |       |   |       |           \---java
-    |   |       |   |       |                   MainActivity.kt
-    |   |       |   |       |
-    |   |       |   |       \---gradle
-    |   |       |   |               libs.versions.toml
-    |   |       |   |
-    |   |       |   +---example_apple_metal
-    |   |       |   |   |   main.mm
-    |   |       |   |   |   Makefile
-    |   |       |   |   |   README.md
-    |   |       |   |   |
-    |   |       |   |   +---example_apple_metal.xcodeproj
-    |   |       |   |   |       project.pbxproj
-    |   |       |   |   |
-    |   |       |   |   +---iOS
-    |   |       |   |   |       Info-iOS.plist
-    |   |       |   |   |       LaunchScreen.storyboard
-    |   |       |   |   |
-    |   |       |   |   \---macOS
-    |   |       |   |           Info-macOS.plist
-    |   |       |   |           MainMenu.storyboard
-    |   |       |   |
-    |   |       |   +---example_apple_metal4
-    |   |       |   |   |   main.mm
-    |   |       |   |   |   Makefile
-    |   |       |   |   |   README.md
-    |   |       |   |   |
-    |   |       |   |   +---example_apple_metal4.xcodeproj
-    |   |       |   |   |       project.pbxproj
-    |   |       |   |   |
-    |   |       |   |   +---iOS
-    |   |       |   |   |       Info-iOS.plist
-    |   |       |   |   |       LaunchScreen.storyboard
-    |   |       |   |   |
-    |   |       |   |   \---macOS
-    |   |       |   |           Info-macOS.plist
-    |   |       |   |           MainMenu.storyboard
-    |   |       |   |
-    |   |       |   +---example_apple_opengl2
-    |   |       |   |   |   main.mm
-    |   |       |   |   |   Makefile
-    |   |       |   |   |
-    |   |       |   |   \---example_apple_opengl2.xcodeproj
-    |   |       |   |           project.pbxproj
-    |   |       |   |
-    |   |       |   +---example_glfw_metal
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_glfw_opengl2
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_glfw_opengl2.vcxproj
-    |   |       |   |       example_glfw_opengl2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_glfw_opengl3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_glfw_opengl3.vcxproj
-    |   |       |   |       example_glfw_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |
-    |   |       |   +---example_glfw_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       example_glfw_vulkan.vcxproj
-    |   |       |   |       example_glfw_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_glfw_wgpu
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_glut_opengl2
-    |   |       |   |       example_glut_opengl2.vcxproj
-    |   |       |   |       example_glut_opengl2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_null
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_null.vcxproj
-    |   |       |   |       example_null.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl2_directx11
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_directx11.vcxproj
-    |   |       |   |       example_sdl2_directx11.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_sdl2_metal
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl2_opengl2
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_opengl2.vcxproj
-    |   |       |   |       example_sdl2_opengl2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl2_opengl3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_opengl3.vcxproj
-    |   |       |   |       example_sdl2_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl2_sdlrenderer2
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_sdlrenderer2.vcxproj
-    |   |       |   |       example_sdl2_sdlrenderer2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl2_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl2_vulkan.vcxproj
-    |   |       |   |       example_sdl2_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl2_wgpu
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl3_directx11
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl3_directx11.vcxproj
-    |   |       |   |       example_sdl3_directx11.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_sdl3_metal
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_metal4
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_opengl3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl3_opengl3.vcxproj
-    |   |       |   |       example_sdl3_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl3_sdlgpu3
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl3_sdlgpu3.vcxproj
-    |   |       |   |       example_sdl3_sdlgpu3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_sdlrenderer3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl3_sdlrenderer3.vcxproj
-    |   |       |   |       example_sdl3_sdlrenderer3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl3_vulkan.vcxproj
-    |   |       |   |       example_sdl3_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_wgpu
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_win32_directx10
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx10.vcxproj
-    |   |       |   |       example_win32_directx10.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_directx11
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx11.vcxproj
-    |   |       |   |       example_win32_directx11.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_directx12
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx12.vcxproj
-    |   |       |   |       example_win32_directx12.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_directx9
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx9.vcxproj
-    |   |       |   |       example_win32_directx9.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_opengl3
-    |   |       |   |       build_mingw.bat
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_opengl3.vcxproj
-    |   |       |   |       example_win32_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_win32_vulkan.vcxproj
-    |   |       |   |       example_win32_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   \---libs
-    |   |       |       +---emscripten
-    |   |       |       |       emscripten_mainloop_stub.h
-    |   |       |       |       shell_minimal.html
-    |   |       |       |
-    |   |       |       +---glfw
-    |   |       |       |   |   COPYING.txt
-    |   |       |       |   |
-    |   |       |       |   +---include
-    |   |       |       |   |   \---GLFW
-    |   |       |       |   |           glfw3.h
-    |   |       |       |   |           glfw3native.h
-    |   |       |       |   |
-    |   |       |       |   +---lib-vc2010-32
-    |   |       |       |   |       glfw3.lib
-    |   |       |       |   |
-    |   |       |       |   \---lib-vc2010-64
-    |   |       |       |           glfw3.lib
-    |   |       |       |
-    |   |       |       \---usynergy
-    |   |       |               README.txt
-    |   |       |               uSynergy.c
-    |   |       |               uSynergy.h
-    |   |       |
-    |   |       \---misc
-    |   |           |   README.txt
-    |   |           |
-    |   |           +---cpp
-    |   |           |       imgui_stdlib.cpp
-    |   |           |       imgui_stdlib.h
-    |   |           |       README.txt
-    |   |           |
-    |   |           +---debuggers
-    |   |           |       imgui.gdb
-    |   |           |       imgui.natstepfilter
-    |   |           |       imgui.natvis
-    |   |           |       imgui_lldb.py
-    |   |           |       README.txt
-    |   |           |
-    |   |           +---fonts
-    |   |           |       binary_to_compressed_c.cpp
-    |   |           |       Cousine-Regular.ttf
-    |   |           |       DroidSans.ttf
-    |   |           |       Karla-Regular.ttf
-    |   |           |       ProggyClean.ttf
-    |   |           |       ProggyTiny.ttf
-    |   |           |       Roboto-Medium.ttf
-    |   |           |
-    |   |           +---freetype
-    |   |           |       imgui_freetype.cpp
-    |   |           |       imgui_freetype.h
-    |   |           |       README.md
-    |   |           |
-    |   |           \---single_file
-    |   |                   imgui_single_file.h
-    |   |
     |   \---x64
     |       \---Debug
     |           |   AABB.obj
@@ -1399,7 +889,6 @@ D:.
     |           |   AccessorReaderSkin.obj
     |           |   AnimationClip.obj
     |           |   AnimationDebugOverlayRenderer.obj
-    |           |   AnimationDebugPanel.obj
     |           |   AnimationImporter.obj
     |           |   AnimationRuntimeDebug.obj
     |           |   AnimationStateMachineGraphLayout.obj
@@ -1455,16 +944,8 @@ D:.
     |           |   HumanoidSceneNormalization.obj
     |           |   HumanSkinningDebugController.obj
     |           |   HumanSkinningDebugLayer.obj
-    |           |   imgui.obj
-    |           |   ImGuiLayer.obj
-    |           |   imgui_draw.obj
-    |           |   imgui_impl_glfw.obj
-    |           |   imgui_impl_opengl3.obj
-    |           |   imgui_tables.obj
-    |           |   imgui_widgets.obj
     |           |   IndexBuffer.obj
     |           |   Input.obj
-    |           |   InspectorPanel.obj
     |           |   JsonParser.obj
     |           |   Layer.obj
     |           |   LinearAllocator.obj
@@ -1520,7 +1001,6 @@ D:.
     |           |   SceneCameraSystem.obj
     |           |   SceneGame.obj
     |           |   SceneGameAnimation.obj
-    |           |   SceneHierarchyPanel.obj
     |           |   SceneLifecycleSelfTests.obj
     |           |   Shader.obj
     |           |   SkeletalDeformationSelfTests.obj
@@ -1567,7 +1047,6 @@ D:.
     |           |   SphereCollision.obj
     |           |   StaticMeshImporter.obj
     |           |   StaticSceneImporter.obj
-    |           |   StatisticsPanel.obj
     |           |   Texture.obj
     |           |   vc143.idb
     |           |   vc143.pdb
