@@ -1,5 +1,71 @@
 # 脱ImGui Phase 7 Windows自動検証記録
 
+## DX12・Vulkanの選択Outline再接続（2026-11-10）
+
+- Editorで選択EntityのSceneとGenerationを検証し、Scene ViewのオフスクリーンSnapshotへEntity IDを渡す。
+  Rendererは同じFrameの描画Itemから該当するMeshを選び、Clip行列にLocal Scale 1.035を右掛けする。
+  通常描画で準備したMesh/Material bindingを再利用し、Outline Shaderの出力色は橙のTintに固定する。
+  Game ViewではIDを渡さず、Pickingには通常描画のMeshを使う。
+- DX12・VulkanでFront Cull、LessEqual、Depth Write無効のPipelineを使い、通常Sceneが書いたDepthを読む。
+  Pipelineは既存Scene Pipelineと同じタイミングでResize時に再生成し、Shutdown時に解放する。
+  DX12のHLSLと生成スクリプトを更新し、既存Outline資産をVisual Studioプロジェクト、Filter、構成表へ登録した。
+- Release x64通常ビルドは警告0件。Debug x64はリンクPDB無効・中間生成物分離で成功し、
+  Explicit Scene Frame Self TestでOutlineのAttachment・Cull・Depth・Blend契約を確認した。
+  ReleaseのCPU UI回帰は成功（ビルドログにC4244）。Release GPU回帰はOpenGLのFont/Textureと補助Window、
+  DX12補助Window、VulkanのSurface Format・色/Blend/Viewport readback・補助Windowが成功した。
+  Vulkan Outline SPIR-Vは `spirv-val` を通過した。
+- RTX 3080上の同一Release実行ファイル・150%で、3 Backendの床の強調、Cubeの輪郭、手前のCubeによる床の遮蔽、
+  Game Viewの通常表示、Scene View分離、Close後のDock復帰を確認した。
+  DX12・Vulkanでは補助Sceneを最大化しても強調表示が維持された。3 Backendとも終了コード0、stderr 0 byte。
+  Dock primary/backupは元のSHA-256へ復元した。
+  ビルド・テストログは `artifacts/logs/phase7-outline-current-*.log`、
+  実機ログとSHA-256は `artifacts/phase7/outline-current/`。
+  通常描画とPickingのDXILを既存バイナリへ戻した最終差分でも、ReleaseビルドとDX12の床選択を再確認した。
+  最終スモークのログは `artifacts/phase7/outline-current-final/dx12/`。
+
+選択Outlineの修正マイルストーンは完了。100%での正式性能Baseline採取と各Backendの30分反復操作は残っている。
+
+### 100%でのDX12採取途中（2026-11-10）
+
+- 最終Release x64で、DX12の開始時CSVをMainのみ3,687サンプル、補助3 Window 3,581サンプル採取した。
+  静止時の4 Windowはすべて100%のモニター1に配置した。再分離時は補助Windowが150%側に開くため手動で移動した。
+- プロセスを1,800.611秒監視した。操作記録は約25分時点までの5回で、InspectorとGizmoの編集・Undo/Redo、
+  補助WindowのResize・Close復帰・再分離を確認した。30分時点の最終操作と終了時CSVは省略した。
+  ハンドル数は開始時603、最終634で、途中の増加後に減少する区間もあった。
+- 長時間検証はここで切り上げた。DX12のCSVは部分結果として扱い、Vulkan/OpenGLの性能採取と正式な3 Backend比較は未実施。
+  原本は `artifacts/phase7/baseline-outline-20261110/dx12/`。Dockレイアウトのハッシュ一致と、モニター1の150%復元を確認した。
+
+## 現行masterの選択Outline再検証（2026-11-10、正式Baseline中断）
+
+- 対象は `58090ea7` のWindows Release x64、RTX 3080、固定Scene `static-cubes-v1`。
+  3 Backendの実機試行は同じ `Root.exe` を使用した。SHA-256は
+  `EAE020827ABD3875762FA0FB1B4B351DEB48376CC4FF1E03BD0701A3A284A8A4`。
+- Release通常ビルドは警告0件、CPU UI回帰は終了コード0。CPU UIビルドではC4244を検出した。
+  サンドボックス内の両ビルドはLNK1101で失敗し、サンドボックス外で再実行して成功した。
+  Scene StorageとTransform Mathの独立テストも成功した。Scene用DebugビルドはC1902を受け、
+  サンドボックス外で中間生成物を分け、リンクPDBを無効にして再実行した。LNK4098を検出したが、
+  Scene Lifecycle、Transform、Scene Graph、Editor Command/Inspector、Viewport座標、Explicit Frameの6件は成功した。
+- Release GPU回帰はOpenGLのFont/Textureと補助Window、DX12の補助Window、
+  VulkanのSurface Format・色/Blend/Viewport readback・補助Windowが成功した。
+  DX12補助Windowテストの最初の手動起動はShaderの相対パスを解決できず失敗した。
+  `Root/Root` を作業ディレクトリにした再実行が最終結果。今回のGPU回帰に選択Outlineの検査入口はない。
+- OpenGL（150%）では床をPickingすると橙色の強調表示とGizmoが出た。InspectorのPosition Xを
+  0→1と編集し、Undo→0、Redo→1、Undo→0を確認した。Scene/Game/Inspectorを分離してMainの空きDockの
+  背景遮蔽を確認し、補助Inspectorの最大化・復帰・Close後の元Pane復帰も確認した。
+  Mainのみ3,481サンプルと補助3 Window 3,425サンプルのCSVは150%での参考値として保存した。
+- DX12（100%）とVulkan（150%）でScene Viewの床をクリックすると、Hierarchyの選択とInspector、
+  Gizmoは床に切り替わったが、床は緑のままで選択Outlineが出なかった。
+  現行ツリーではOpenGLの `EditorEntityPicking.cpp` から `RenderSelectionOutlinePass` が呼ばれる。
+  DX12/Vulkanのオフスクリーン描画にはScene描画と整数ID Pickingがあるが、選択Outline Passは接続されていない。
+  `3500137f` に含まれるOutline Shader資産と過去の実機記録だけでは、現行HEADの描画経路を保証できない。
+- 3 Backendとも正常終了（コード0、stderr 0 byte、WindowClose 1回）。
+  Dock primary/backupは元のSHA-256 `282EF39CFEFF9D3655C89A9D9B877A5D0BE5368274254049AED24CB2914866C7`
+  に復元した。検証用に変更したモニター1の拡大率も150%へ戻して設定画面で確認した。
+  ログは `artifacts/logs/phase7-58090ea7-*.log`、実機記録と参考CSVは `artifacts/phase7/58090ea7/`。
+
+選択時の描画内容が揃わないため、100%の正式Baselineと各Backendの30分反復操作は未完了。
+現行HEADでのDX12/Vulkan選択Outlineの再接続と回帰確認を先に行い、修正後の同一実行ファイルで再採取する。
+
 ## Editor Shell背景による空きDock遮蔽（2026-11-04、完了）
 
 ユーザーが追加修正と関連検証を承認し、修正箇所のコメントを厚くするよう指示した。

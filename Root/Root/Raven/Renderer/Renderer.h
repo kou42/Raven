@@ -105,6 +105,15 @@ public:
         const RHIShaderBinary& fragmentShader,
         Ref<RHIGraphicsPipeline>& outPipeline);
 
+    // 通常Color PassのDepthを読み、選択Meshの拡大Hullを描画します。
+    static bool CreateRHISelectionOutlinePipeline(
+        RHIDevice& device, const RHIGraphicsPipeline& opaquePipeline,
+        const RHIShaderBinary& fragmentShader, Ref<RHIGraphicsPipeline>& outPipeline);
+
+    static bool DrawRHISelectionOutline(
+        RHISceneCommandList& commands, const Ref<RHIGraphicsPipeline>& pipeline,
+        const std::vector<RHISceneDrawItem>& items, uint32_t selectedEntityID);
+
     // Explicit Scene ViewのEntity Picking専用Pipelineを生成します。
     // 通常Color PipelineとShader/Attachment形式を分離し、R32Sintだけへ書き込みます。
     static bool CreateRHIEntityPickingPipeline(

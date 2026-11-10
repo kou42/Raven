@@ -305,6 +305,18 @@ void RunExplicitSceneFrameSelfTests()
     assert(pickingSpecification.DepthWrite == true);
     assert(pickingSpecification.Blend == false);
 
+    Ref<RHIGraphicsPipeline> outlinePipeline;
+    assert(Renderer::CreateRHISelectionOutlinePipeline(
+        dx12Device, *opaque, dxil, outlinePipeline) == true);
+    const RHIGraphicsPipelineSpecification& outline = outlinePipeline->GetSpecification();
+    assert(outline.ColorFormat == opaque->GetSpecification().ColorFormat);
+    assert(outline.DepthFormat == opaque->GetSpecification().DepthFormat);
+    assert(outline.VertexAttributes.size() == 4u);
+    assert(outline.Cull == CullMode::Front);
+    assert(outline.FrontFaceMode == FrontFace::CounterClockwise);
+    assert(outline.DepthCompare == DepthCompareOperator::LessEqual);
+    assert(outline.DepthTest == true && outline.DepthWrite == false && outline.Blend == false);
+
     // Explicit BackendのFont AtlasはLegacy Textureを作らず、Pixel Assetを描画準備時にUploadします。
     TextureAssetPixelData atlasPixels{};
     atlasPixels.Width = 2u;

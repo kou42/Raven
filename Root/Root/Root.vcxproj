@@ -216,6 +216,8 @@
     <None Include="Raven\Assets\Images\test\sample2.png" />
     <None Include="..\Tests\VulkanEntityPickingGPUIntegrationTests.cpp" />
     <None Include="Raven\Assets\Shaders\Vulkan\EntityPicking.frag.spv" />
+    <None Include="Raven\Assets\Shaders\Vulkan\SelectionOutline.frag.spv" />
+    <None Include="Raven\Assets\Shaders\DirectX12\SceneMesh.outline.ps.dxil" />
     <None Include="Raven\Assets\Shaders\Fragment\test.frag" />
     <None Include="Raven\Assets\Shaders\Fragment\texture_test.frag" />
     <None Include="Raven\Assets\Shaders\Glsl\FlatColor.glsl" />
@@ -248,6 +250,7 @@
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.vert" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SceneTriangle.frag" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\EntityPicking.frag" />
+    <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\SelectionOutline.frag" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\UI.vert" />
     <VulkanSceneShader Include="$(ProjectDir)Raven\Assets\Shaders\Vulkan\UI.frag" />
   </ItemGroup>
@@ -260,7 +263,7 @@
   <Target Name="CompileDX12SceneShaders" BeforeTargets="ClCompile"
           Condition="'@(DX12SceneShaderSource)'!=''"
           Inputs="@(DX12SceneShaderSource)"
-          Outputs="$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.vs.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.ps.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.picking.ps.dxil">
+          Outputs="$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.vs.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.ps.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.picking.ps.dxil;$(ProjectDir)Raven\Assets\Shaders\DirectX12\SceneMesh.outline.ps.dxil">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Raven\Assets\Shaders\DirectX12\BuildSceneMesh.ps1&quot;" />
   </Target>
   <Target Name="CompileDX12UIShaders" BeforeTargets="ClCompile"

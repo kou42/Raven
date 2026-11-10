@@ -1363,11 +1363,11 @@ bool Application::CaptureExplicitMainSceneFrame()
 }
 
 bool Application::CaptureExplicitEditorViewportFrame(
-    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+    const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID)
 {
     return SupportsExplicitEditorViewportRendering() == true &&
         renderTarget != nullptr &&
-        m_ExplicitSceneRuntime->CaptureOffscreenSceneFrame(renderTarget) == true;
+        m_ExplicitSceneRuntime->CaptureOffscreenSceneFrame(renderTarget, selectedEntityID) == true;
 }
 
 bool Application::PrepareAllScenesForExplicitRuntime()

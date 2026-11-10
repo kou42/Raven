@@ -55,7 +55,14 @@ int PickingPSMain(VSOutput input) : SV_TARGET
     return u_EntityID;
 }
 
+float4 OutlinePSMain() : SV_TARGET
+{
+    // 選択色は頂点色やScene Materialから独立させます。
+    return u_Tint;
+}
+
 // DXCによるコンパイル例（実行環境で生成してください）:
 // dxc -T vs_6_0 -E VSMain -Fo SceneMesh.vs.dxil SceneMesh.hlsl
 // dxc -T ps_6_0 -E PSMain -Fo SceneMesh.ps.dxil SceneMesh.hlsl
 // dxc -T ps_6_0 -E PickingPSMain -Fo SceneMesh.picking.ps.dxil SceneMesh.hlsl
+// dxc -T ps_6_0 -E OutlinePSMain -Fo SceneMesh.outline.ps.dxil SceneMesh.hlsl

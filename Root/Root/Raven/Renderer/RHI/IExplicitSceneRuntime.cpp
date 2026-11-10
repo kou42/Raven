@@ -42,9 +42,10 @@ bool IExplicitSceneRuntime::CaptureMainSceneFrame()
 }
 
 bool IExplicitSceneRuntime::CaptureOffscreenSceneFrame(
-    const Ref<RHIOffscreenRenderTarget>& renderTarget)
+    const Ref<RHIOffscreenRenderTarget>& renderTarget, uint32_t selectedEntityID)
 {
     (void)renderTarget;
+    (void)selectedEntityID;
     return false;
 }
 
