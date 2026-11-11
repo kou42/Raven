@@ -4,6 +4,8 @@
 #include "Raven/Animation/AnimatorStateMachine.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Physics/RigidBodyDynamics.h"
+#include "Raven/Core/CPUProfiler.h"
 
 namespace Raven
 {
@@ -19,7 +21,7 @@ void AnimationSystem::Update(Scene& scene, float deltaTime)
     for (auto [entity, animatorComponent, transform]
         : scene.View<AnimatorComponent, TransformComponent>())
     {
-        if (!animatorComponent.Enabled || !animatorComponent.IsValid())
+        if (animatorComponent.Enabled == false || animatorComponent.IsValid() == false)
         {
             continue;
         }
@@ -58,15 +60,29 @@ void AnimationSystem::Update(Scene& scene, float deltaTime)
 
         const TransformPose& pose = animator.GetCurrentPose();
 
-        transform.Position = pose.Position;
+        TransformComponent sampled;
+        sampled.Position = pose.Position;
 
         // Animation内部ではQuaternion + Slerpを正規表現にします。
         // Scene/Renderer側のTransformComponentは現時点でEuler角を保持しているため、
         // ECS境界でのみEuler XYZへ変換します。将来Transform自体をQuaternion化すれば
         // この変換は不要になり、AnimationからRendererまでQuaternionを維持できます。
-        transform.Rotation = pose.Rotation.ToEulerXYZ();
-
-        transform.Scale = pose.Scale;
+        // Local opt-inではSceneと同じRx*Ry*Rzへ変換します。Legacy経路の既存出力は維持します。
+        const bool local = scene.HasComponent<LocalTransformComponent>(entity.GetIndex());
+        sampled.Rotation = local == true ? ph::PhysicsEulerFromOrientation(pose.Rotation) : pose.Rotation.ToEulerXYZ();
+        sampled.Scale = pose.Scale;
+        if (local == true)
+        {
+            // TrackはLocal authoringです。Dynamicへは上の所有権判定により一切書き込みません。
+            if (scene.SetLocalTransform(entity.GetHandle(), sampled) == false)
+            {
+                CPUProfiler::Get().AddCounter("Animation.Transform.RejectedInputs", 1.0);
+            }
+        }
+        else
+        {
+            transform = sampled;
+        }
     }
 }
 

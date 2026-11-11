@@ -331,7 +331,13 @@ void WarmStartConstraint(Scene& scene, ContactManifold& manifold)
         math::Vec3 impulse = normal * std::max(point.AccumulatedNormalImpulse, 0.0f);
         if (point.CachedTangent.LengthSq() > 1.0e-12f)
         {
-            impulse += point.CachedTangent.Normalized() * point.AccumulatedTangentImpulse;
+            // Contact法線が前Stepから傾いた場合も、摩擦を現在の接平面へ戻してから適用します。
+            // 旧接線の法線成分を支持Impulseへ混ぜると、拘束ごとの蓄積値と運動量が一致しません。
+            math::Vec3 friction = point.CachedTangent.Normalized() * point.AccumulatedTangentImpulse;
+            friction -= normal * math::Vec3::Dot(friction, normal);
+            point.AccumulatedTangentImpulse = friction.Length();
+            point.CachedTangent = friction.Normalized();
+            impulse += friction;
         }
 
         ApplyImpulseAtPoint(bodies, point.Position, impulse);
@@ -379,42 +385,35 @@ void SolvePointVelocityConstraint(
         GetVelocityAtPoint(bodies.BodyB, bodies.TransformB, point.Position)
         - GetVelocityAtPoint(bodies.BodyA, bodies.TransformA, point.Position);
 
-    math::Vec3 tangent = relativeVelocity - normal * math::Vec3::Dot(relativeVelocity, normal);
-    if (tangent.LengthSq() <= 1.0e-12f)
+    // 接線が反転/回転しても、すでに適用した摩擦ImpulseのWorld方向は変わりません。
+    // 新しい接線へ古いスカラーをそのまま移すと、保存値と実際の運動量変化が食い違い、
+    // 次StepのWarm Startが架空のImpulseを再適用します。Worldベクトルで蓄積し差分だけを適用します。
+    const math::Vec3 oldTangentImpulse = point.CachedTangent.Normalized() * point.AccumulatedTangentImpulse;
+    math::Vec3 candidateImpulse = oldTangentImpulse;
+    const math::Vec3 tangentVelocity = relativeVelocity - normal * math::Vec3::Dot(relativeVelocity, normal);
+    if (tangentVelocity.LengthSq() > 1.0e-12f)
     {
-        return;
+        const math::Vec3 tangent = tangentVelocity.Normalized();
+        const float tangentDenominator = ComputeEffectiveMassDenominator(bodies, point.Position, tangent);
+        if (tangentDenominator <= 1.0e-12f)
+        {
+            return;
+        }
+        candidateImpulse -= tangent * (math::Vec3::Dot(relativeVelocity, tangent) / tangentDenominator);
     }
-
-    tangent = tangent.Normalized();
-    point.CachedTangent = tangent;
-
-    const float tangentDenominator = ComputeEffectiveMassDenominator(bodies, point.Position, tangent);
-    if (tangentDenominator <= 1.0e-12f)
-    {
-        return;
-    }
-
-    const float deltaTangentImpulse = -math::Vec3::Dot(relativeVelocity, tangent) / tangentDenominator;
-    const float oldTangentImpulse = point.AccumulatedTangentImpulse;
-    const float candidateImpulse = oldTangentImpulse + deltaTangentImpulse;
+    candidateImpulse -= normal * math::Vec3::Dot(candidateImpulse, normal);
     const float staticLimit = point.AccumulatedNormalImpulse * std::max(manifold.StaticFriction, 0.0f);
-
-    float newTangentImpulse = 0.0f;
-    if (std::abs(candidateImpulse) <= staticLimit)
-    {
-        newTangentImpulse = candidateImpulse;
-    }
-    else
+    math::Vec3 newTangentImpulse = candidateImpulse;
+    const float candidateLength = candidateImpulse.Length();
+    if (candidateLength > staticLimit)
     {
         const float dynamicLimit = point.AccumulatedNormalImpulse * std::max(manifold.DynamicFriction, 0.0f);
-        newTangentImpulse = std::clamp(candidateImpulse, -dynamicLimit, dynamicLimit);
+        newTangentImpulse = candidateLength > 1.0e-12f
+            ? candidateImpulse * (std::min(candidateLength, dynamicLimit) / candidateLength) : math::Vec3{};
     }
-
-    point.AccumulatedTangentImpulse = newTangentImpulse;
-    ApplyImpulseAtPoint(
-        bodies,
-        point.Position,
-        tangent * (newTangentImpulse - oldTangentImpulse));
+    point.AccumulatedTangentImpulse = newTangentImpulse.Length();
+    point.CachedTangent = newTangentImpulse.Normalized();
+    ApplyImpulseAtPoint(bodies, point.Position, newTangentImpulse - oldTangentImpulse);
 }
 
 // 速度制約フェーズ: 1マニホールド内の全接触点を反復解法で更新します。

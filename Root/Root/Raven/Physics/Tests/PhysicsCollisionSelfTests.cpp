@@ -2,6 +2,7 @@
 #include <cmath>
 #include <memory>
 #include <vector>
+#include <cstdio>
 
 #include "Raven/Physics/Collision/AABB.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
@@ -197,8 +198,10 @@ void RunOBBRayCastSelfTests()
     assert(ComputeColliderAABB(transform, collider, aabb));
 
     const math::Vec3 start{ aabb.Max.x - 0.02f, -2.0f, 0.0f };
-    assert(aabb.RayCast(start, { 0.0f, 1.0f, 0.0f }, 10.0f, fraction, &normal));
-    assert(box.RayCast(start, { 0.0f, 1.0f, 0.0f }, 10.0f, fraction, &normal) == false);
+    // xが投影AABB内なら長い垂直RayはOBBにも到達します（この入力ではfraction約2.51）。
+    // AABBだけを通過する下側の空白で止め、Broad Phaseのfalse positiveを正しく検証します。
+    assert(aabb.RayCast(start, { 0.0f, 1.0f, 0.0f }, 2.0f, fraction, &normal));
+    assert(box.RayCast(start, { 0.0f, 1.0f, 0.0f }, 2.0f, fraction, &normal) == false);
 }
 
 void RunStaticMeshRayCastSelfTests()
@@ -370,6 +373,30 @@ void RunBoxBoxSelfTests()
 
     transformB.Position = { 3.0f, 0.0f, 0.0f };
     assert(GenerateBoxBoxManifold(Entity{}, transformA, a, Entity{}, transformB, b, manifold) == false);
+
+    // 積み上げ中の微小回転では、面の支持点を数値誤差だけで単一Edgeへ縮めません。
+    a.HalfExtents = math::Vec3(0.5f, 0.5f, 0.5f);
+    b = a;
+    transformB.Position = math::Vec3(0, 0.999f, 0);
+    for (float tilt : {-0.0004f, -0.0002f, 0.0002f, 0.0004f})
+    {
+        transformB.Rotation = math::Vec3(tilt, tilt * 0.75f, tilt * -0.5f);
+        assert(GenerateBoxBoxManifold(Entity{}, transformA, a, Entity{}, transformB, b, manifold) == true);
+        assert(manifold.PointCount >= 2);
+        transformB.Position.y = 1.01f;
+        assert(GenerateBoxBoxManifold(Entity{}, transformA, a, Entity{}, transformB, b, manifold) == false);
+        transformB.Position.y = 0.999f;
+    }
+
+    // 軸選択の優先度を変えても、本来の斜交した辺接触は1点のまま扱います。
+    a.HalfExtents = math::Vec3(1, 0.15f, 0.15f);
+    b = a;
+    transformB.Position = math::Vec3(0, 0.15f, 0);
+    transformB.Rotation = math::Vec3(0.3f, 0.6f, 0.4f);
+    assert(GenerateBoxBoxManifold(Entity{}, transformA, a, Entity{}, transformB, b, manifold) == true);
+    assert(manifold.PointCount == 1);
+    assert(manifold.Points[0].Feature.TypeA == ContactFeatureType::Edge);
+    assert(manifold.Points[0].Feature.TypeB == ContactFeatureType::Edge);
 }
 
 void RunContactFeatureIDSelfTests()
@@ -536,7 +563,20 @@ void RunContactAnchorPositionSelfTests()
         assert(IsFinite(a.GetComponent<TransformComponent>().Position));
         assert(IsFinite(a.GetComponent<RigidBodyComponent>().AngularVelocity));
 
-        return manifolds[0].Points[0].Penetration;
+        // Penetration診断値は最終反復の「補正前」です。1反復では初期値のままなので、
+        // 収束検証では出力姿勢から固定アンカーをWorldへ戻し、補正後の幾何誤差を測ります。
+        const ContactPoint& point = manifolds[0].Points[0];
+        const auto& transformA = a.GetComponent<TransformComponent>();
+        const auto& transformB = b.GetComponent<TransformComponent>();
+        const auto& bodyA = a.GetComponent<RigidBodyComponent>();
+        const auto& bodyB = b.GetComponent<RigidBodyComponent>();
+        const math::Quat rotationA = bodyA.OrientationInitialized == true
+            ? bodyA.Orientation : PhysicsOrientationFromEuler(transformA.Rotation);
+        const math::Quat rotationB = bodyB.OrientationInitialized == true
+            ? bodyB.Orientation : PhysicsOrientationFromEuler(transformB.Rotation);
+        const math::Vec3 anchorA = transformA.Position + rotationA.Normalized().Rotate(point.LocalAnchorA);
+        const math::Vec3 anchorB = transformB.Position + rotationB.Normalized().Rotate(point.LocalAnchorB);
+        return std::max(-(point.InitialSeparation + math::Vec3::Dot(anchorB - anchorA, manifold.Normal)), 0.0f);
     };
 
     const float afterOne = solve(1);
@@ -550,13 +590,54 @@ void RunContactAnchorPositionSelfTests()
 void RunContactPersistenceWarmStartSelfTests()
 {
     // Warm Start有効時に、積み上げ安定性と接触継続が改善することを確認します。
-    const StackResult cold = RunBoxStackScenario(false, 1);
-    const StackResult warm = RunBoxStackScenario(true, 1);
+    // 8段を10秒維持する条件はEngine既定の反復予算で比較します。1反復は8段全体の支持力が
+    // 収束する保証を持たないため、下の単点テストでWarm Startの運動量整合性を別に確認します。
+    const uint32_t iterations = ContactSolverSettings{}.VelocityIterations;
+    const StackResult cold = RunBoxStackScenario(false, iterations);
+    const StackResult warm = RunBoxStackScenario(true, iterations);
+    std::fprintf(stderr, "Stack cold height=%g penetration=%g speed=%g persistent=%zu; warm height=%g penetration=%g speed=%g persistent=%zu\n",
+        cold.TopHeight, cold.MaximumPenetration, cold.MaxSpeed, cold.PersistentImpulseFrames,
+        warm.TopHeight, warm.MaximumPenetration, warm.MaxSpeed, warm.PersistentImpulseFrames);
 
     assert(cold.AllFinite && warm.AllFinite);
     assert(warm.PersistentImpulseFrames > 0);
     assert(warm.TopHeight > 6.5f && warm.TopHeight < 8.5f);
     assert(warm.MaximumPenetration <= cold.MaximumPenetration + 0.05f);
+}
+
+void RunWarmStartFrictionBasisSelfTests()
+{
+    Scene scene;
+    Entity a = CreateBox(scene, {}, BodyType::Static);
+    Entity b = CreateBox(scene, {}, BodyType::Dynamic);
+    auto& body = b.GetComponent<RigidBodyComponent>();
+    ContactManifold contact;
+    contact.A = a;
+    contact.B = b;
+    contact.Normal = math::Vec3(0, 1, 0);
+    contact.StaticFriction = 1;
+    contact.DynamicFriction = 1;
+    contact.PointCount = 1;
+    contact.Points[0].AccumulatedNormalImpulse = 1;
+    contact.Points[0].CachedTangent = math::Vec3(1, 0, 0);
+    contact.Points[0].AccumulatedTangentImpulse = -0.25f;
+    ContactSolverSettings settings;
+    settings.VelocityIterations = 1;
+    settings.PositionCorrectionPercent = 0;
+    std::vector<ContactManifold> contacts{contact};
+    // 前Stepと滑り方向が反転・回転する場合も、保存したWorld摩擦Impulseが実運動量差と一致する必要があります。
+    // 2 Step目はその保存値をWarm Startへ戻し、架空のImpulseが再適用されないことを確認します。
+    for (int step = 0; step < 2; ++step)
+    {
+        body.LinearVelocity = math::Vec3(-0.25f, -1, -0.25f);
+        SolveContactManifolds(scene, contacts, 1.0f / 60.0f, settings);
+        assert(body.LinearVelocity.LengthSq() < 1.0e-10f);
+        const auto& point = contacts[0].Points[0];
+        const math::Vec3 stored = point.CachedTangent * point.AccumulatedTangentImpulse;
+        assert(NearlyEqual(stored.x, 0.25f));
+        assert(NearlyEqual(stored.y, 0));
+        assert(NearlyEqual(stored.z, 0.25f));
+    }
 }
 
 void RunBoxStackStressTest()
@@ -669,6 +750,7 @@ void RunPhysicsCollisionSelfTests()
     RunPointImpulseSelfTests();
     RunAngularPositionSolverSelfTests();
     RunContactAnchorPositionSelfTests();
+    RunWarmStartFrictionBasisSelfTests();
     RunContactPersistenceWarmStartSelfTests();
     RunBoxStackStressTest();
 }

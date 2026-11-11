@@ -67,11 +67,15 @@ Entity CreateBlockingWall(Scene& scene)
 {
     Entity wall = scene.CreateEntity("CharacterDynamicResponseWall");
     TransformComponent& transform = wall.GetComponent<TransformComponent>();
-    transform.Position = math::Vec3{ 0.75f, 1.0f, 0.0f };
+    // 左面を既定CapsuleのRadius+Skinへ合わせ、意図した「逃げ道のない」Crush入力にします。
+    const CharacterControllerConfig characterConfig{};
+    constexpr float WallHalfWidth = 0.25f;
+    transform.Position = math::Vec3{
+        characterConfig.CapsuleRadius + characterConfig.CollisionSkinWidth + WallHalfWidth, 1.0f, 0.0f };
 
     ColliderComponent& collider = wall.AddComponent<ColliderComponent>();
     collider.Type = ColliderType::Box;
-    collider.HalfExtents = math::Vec3{ 0.25f, 1.0f, 1.0f };
+    collider.HalfExtents = math::Vec3{ WallHalfWidth, 1.0f, 1.0f };
     collider.IsTrigger = false;
     return wall;
 }
@@ -88,9 +92,16 @@ void RunCharacterMovingPlatformSelfTests()
     // ========================================================================
     // Horizontal Platform Carry
     // ========================================================================
+    for (bool local : {false, true})
     {
         Scene scene;
+        Entity rig = scene.CreateEntity("PlatformRig");
         Entity platform = CreateMovingPlatform(scene);
+        if (local == true)
+        {
+            assert(scene.SetEntityParent(platform.GetHandle(), rig.GetHandle()) == true);
+            assert(scene.EnableLocalTransform(platform.GetHandle()) == true);
+        }
 
         CharacterController controller{};
         TransformComponent characterTransform{};
@@ -108,7 +119,14 @@ void RunCharacterMovingPlatformSelfTests()
         assert(controller.GetMovingPlatformEntity() == platform);
 
         // Platformを+Xへ0.5m移動すると、次FrameでCharacterも同量搬送されます。
-        platform.GetComponent<TransformComponent>().Position.x += 0.5f;
+        if (local == true)
+        {
+            rig.GetComponent<TransformComponent>().Position.x += 0.5f;
+        }
+        else
+        {
+            platform.GetComponent<TransformComponent>().Position.x += 0.5f;
+        }
 
         assert(controller.UpdateWithMovingPlatforms(
             input,

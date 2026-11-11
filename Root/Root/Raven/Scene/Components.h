@@ -44,6 +44,8 @@ struct TransformComponent
 
 // 明示的なLocal authoring。TransformComponentは従来どおりWorld-spaceの互換窓口です。
 // Local有効EntityのWorld値はSceneTransformSystemが評価し、直接World編集も次回評価でLocalへ変換します。
+// Dynamic BodyではWorldが正規入力です。親移動ではWorldを維持しLocalを逆算します。
+// DynamicのLocal変更はSetLocalTransformで明示し、直接編集は競合として拒否します。
 struct LocalTransformComponent
 {
     TransformComponent Value;
@@ -158,6 +160,10 @@ enum class BodyType
 // Kinematic
 //   ゲームロジック側が位置または速度を指定するBodyです。
 //   外力・衝突Impulseでは動かしません。
+//
+// Local opt-inのRigidBodyは親Worldと自身Worldが正の一様Scaleで表せる場合だけ対応します。
+// 非一様/反射Scaleを暗黙にColliderや慣性へ適用せず、Scene Transform APIで拒否します。
+// Sceneの親子関係はJoint拘束ではなく、DynamicのWorld速度/姿勢を親座標へ変換しません。
 struct RigidBodyComponent
 {
     BodyType Type = BodyType::Dynamic;

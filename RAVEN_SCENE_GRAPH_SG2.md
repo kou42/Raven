@@ -84,6 +84,8 @@ Delete Commandは自身と直下のLocal子をSnapshotし、再生成された�
 
 ## SG3との境界
 
+以下はSG2完了時点の制約。SG3で追加した同期経路と現在の検証状態は [SG3作業記録](RAVEN_SCENE_GRAPH_SG3.md) を参照。
+
 Local Entity自身のRigidBody/Collider/Animator/MeshDeformationとの併用をSG2では拒否する。
 Enableはfalse、相反するComponentの直接追加はinvalid_argumentを返す。既存EntityはLegacyのままなので影響しない。
 Local描画子がLegacyの動く親を追うことはできるが、Local EntityをPhysics Domainの姿勢入力・出力先として

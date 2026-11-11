@@ -1,6 +1,7 @@
 #include "Raven/Scene/SceneTransformSystem.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Math/TransformMath.h"
+#include "Raven/Physics/RigidBodyDynamics.h"
 
 #include <unordered_set>
 #include <cmath>
@@ -58,11 +59,12 @@ bool PreservesWorld(const math::Mat4& actual, const math::Mat4& expected)
 bool PreservesCameraRotation(const Scene& scene, EntityHandle handle,
     const TransformComponent& actual, const TransformComponent& expected)
 {
-    if (scene.HasComponent<CameraComponent>(handle.m_Index) == false)
+    if (scene.HasComponent<CameraComponent>(handle.m_Index) == false
+        && scene.HasComponent<RigidBodyComponent>(handle.m_Index) == false)
     {
         return true;
     }
-    // CameraはScaleを無視します。反射の符号正規化で同じMatrixでも回転が変わる候補は拒否します。
+    // CameraとRigidBody姿勢はScaleを除いて使います。符号正規化で回転が変わる候補は拒否します。
     TransformComponent actualRotation;
     TransformComponent expectedRotation;
     actualRotation.Rotation = actual.Rotation;
@@ -73,6 +75,24 @@ bool Decompose(const math::Mat4& matrix, TransformComponent& value)
 {
     return math::TryDecomposeTRS(matrix, value.Position, value.Rotation, value.Scale);
 }
+bool PositiveUniformScale(const math::Mat4& matrix)
+{
+    TransformComponent pose;
+    if (Decompose(matrix, pose) == false)
+    {
+        return false;
+    }
+    constexpr float ScaleTolerance = 0.0001f;
+    return pose.Scale.x > 0.0f && pose.Scale.y > 0.0f && pose.Scale.z > 0.0f
+        && std::fabs(pose.Scale.x - pose.Scale.y) <= ScaleTolerance * pose.Scale.x
+        && std::fabs(pose.Scale.x - pose.Scale.z) <= ScaleTolerance * pose.Scale.x;
+}
+}
+
+bool SceneTransformSystem::CanResolve(const Scene& scene, EntityHandle handle) const
+{
+    Prepared result;
+    return Resolve(scene, handle, result);
 }
 
 bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
@@ -130,6 +150,7 @@ bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
         Resolved value;
         value.Handle = node;
         value.IsLocal = true;
+        value.Authored = overridden;
         value.Parent = overridden == true ? change->Parent
             : (relation != nullptr ? relation->Parent : InvalidEntityHandle);
         if (value.Parent.IsValid() == true)
@@ -145,7 +166,19 @@ bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
             : scene.GetComponent<LocalTransformComponent>(node.m_Index).Value;
         const auto cached = m_Worlds.find(node.Value());
         const auto& worldInput = scene.GetComponent<TransformComponent>(node.m_Index);
-        const bool worldEdited = overridden == false && cached != m_Worlds.end() && Same(worldInput, cached->second.World) == false;
+        const auto* body = scene.TryGetComponent<RigidBodyComponent>(node.m_Index);
+        const bool physicsOwned = body != nullptr && body->Type == BodyType::Dynamic;
+        // Dynamicは親が動いてもWorld姿勢を維持します。LocalはPhysics出力と現在の親から導く派生値です。
+        // Local直接編集との競合は推測せず拒否し、Teleport/明示SetLocal/SetWorldで意図を指定させます。
+        if (physicsOwned == true && overridden == false && cached != m_Worlds.end()
+            && Same(value.Local, cached->second.Local) == false)
+        {
+            return false;
+        }
+        const bool preservePhysicsWorld = physicsOwned == true && overridden == false && cached != m_Worlds.end()
+            && SameMatrix(value.ParentMatrix, cached->second.ParentMatrix) == false;
+        const bool worldEdited = overridden == false && cached != m_Worlds.end()
+            && (Same(worldInput, cached->second.World) == false || preservePhysicsWorld == true);
         if (worldEdited == true)
         {
             // 既存Inspector/Gizmo等はWorld TRSへ直接書き込みます。その編集をLocalへ戻します。
@@ -180,6 +213,28 @@ bool SceneTransformSystem::Resolve(const Scene& scene, EntityHandle handle,
             || PreservesCameraRotation(scene, node, value.World, worldInput) == false))
         {
             return false;
+        }
+        // Quaternion積分中に任意のWorld回転が発生してもWorld→LocalにShearを作らない範囲に限定します。
+        // 反射/非一様Scaleの剛体対応はColliderや慣性の契約変更を伴うため、暗黙に近似しません。
+        if (body != nullptr)
+        {
+            // 行列が同じなら前回のScale検証結果を再利用します。Body追加直後は必ず検証します。
+            const bool validated = cached != m_Worlds.end() && cached->second.PhysicsScaleValidated == true
+                && SameMatrix(value.ParentMatrix, cached->second.ParentMatrix) == true
+                && SameMatrix(value.Matrix, cached->second.Matrix) == true;
+            if (validated == false && (PositiveUniformScale(value.ParentMatrix) == false
+                || PositiveUniformScale(value.Matrix) == false))
+            {
+                return false;
+            }
+            value.PhysicsScaleValidated = true;
+        }
+        if (physicsOwned == true && worldEdited == true)
+        {
+            // Localの再構成誤差をPhysics正規値へ繰り返し戻すと、静止中にも位置が漂流します。
+            // 上の再構成検証を通ったLocalを保持し、World窓口にはSolverの値をそのまま残します。
+            value.World = worldInput;
+            value.Matrix = worldInput.GetTransform();
         }
         result.insert_or_assign(node.Value(), value);
     }
@@ -228,6 +283,14 @@ void SceneTransformSystem::Commit(Scene& scene, const Prepared& result)
         {
             scene.GetComponent<LocalTransformComponent>(value.Handle.m_Index).Value = value.Local;
             scene.GetComponent<TransformComponent>(value.Handle.m_Index) = value.World;
+            auto* body = scene.TryGetComponent<RigidBodyComponent>(value.Handle.m_Index);
+            if (body != nullptr && (body->Type != BodyType::Dynamic || value.Authored == true))
+            {
+                // Kinematicの親回転と明示TeleportはQuaternionの初回値だけでなく現在値へ反映します。
+                // Dynamicの通常評価ではSolverのQuaternionを再生成せず正規姿勢を保ちます。
+                body->Orientation = ph::PhysicsOrientationFromEuler(value.World.Rotation);
+                body->OrientationInitialized = true;
+            }
             m_Worlds.insert_or_assign(entry.first, value);
             if (value.Recomputed == true)
             {

@@ -28,7 +28,10 @@ const RigidBodyComponent* TryGetAliveRigidBody(const Scene& scene, Entity entity
 // TeleportやImpulse系APIでTransformを安全に取得するための補助です。
 TransformComponent* TryGetAliveTransform(Scene& scene, Entity entity)
 {
-    if (!scene.IsEntityAlive(entity)) return nullptr;
+    if (scene.IsEntityAlive(entity) == false || scene.EvaluateWorldTransforms() == false)
+    {
+        return nullptr;
+    }
     return scene.TryGetComponent<TransformComponent>(entity.GetIndex());
 }
 
@@ -108,8 +111,16 @@ void PhysicsWorld::Teleport(Scene& scene, Entity entity, const math::Vec3& posit
     // 位置を瞬間移動で更新。補間ではなく即時反映なので、
     // リスポーンやワープ用途で使う想定です。
     TransformComponent* transform = TryGetAliveTransform(scene, entity);
-    if (transform == nullptr) return;
-    transform->Position = position;
+    if (transform == nullptr)
+    {
+        return;
+    }
+    TransformComponent target = *transform;
+    target.Position = position;
+    if (scene.SetWorldTransform(entity.GetHandle(), target) == false)
+    {
+        return;
+    }
 
     RigidBodyComponent* rigidBody = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
     if (rigidBody != nullptr && rigidBody->Type == BodyType::Dynamic) WakeRigidBody(*rigidBody);
@@ -120,8 +131,13 @@ void PhysicsWorld::MovePosition(Scene& scene, Entity entity, const math::Vec3& p
     // Kinematic専用: 速度解法に任せずゲーム側が直接位置をドライブします。
     TransformComponent* transform = TryGetAliveTransform(scene, entity);
     RigidBodyComponent* rigidBody = TryGetAliveRigidBody(scene, entity);
-    if (transform == nullptr || rigidBody == nullptr || rigidBody->Type != BodyType::Kinematic) return;
-    transform->Position = position;
+    if (transform == nullptr || rigidBody == nullptr || rigidBody->Type != BodyType::Kinematic)
+    {
+        return;
+    }
+    TransformComponent target = *transform;
+    target.Position = position;
+    scene.SetWorldTransform(entity.GetHandle(), target);
 }
 
 } // namespace ph

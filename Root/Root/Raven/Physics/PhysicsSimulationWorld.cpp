@@ -8,6 +8,7 @@
 #include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
+#include "Raven/Core/CPUProfiler.h"
 
 namespace Raven::ph
 {
@@ -432,6 +433,16 @@ void PhysicsSimulationWorld::Step(Scene& scene, float fixedDeltaTime)
 
 void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
 {
+    // Astro/FieldもWorld姿勢を読むため、Rigid Stepより先に入力を確定します。
+    // 無効な親Scale等がある場合はDomain全体を進めず、混在した時刻のCouplingを防ぎます。
+    if (fixedDeltaTime <= 0.0f || scene.EvaluateWorldTransforms() == false)
+    {
+        if (fixedDeltaTime > 0.0f)
+        {
+            CPUProfiler::Get().AddCounter("Physics.Transform.SynchronizationFailures", 1.0);
+        }
+        return;
+    }
     // ========================================================================
     // Electromagnetism / Rigid / Fluid / Soft / Thermal fixed-step ordering
     // ========================================================================
@@ -465,6 +476,12 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     SynchronizeRigidBodyCollidersToSoftBody(scene);
     m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
     ApplySoftBodyReactionsToRigidBodies(scene);
+
+    // Fluid/Rigid Couplingが補正したWorld位置も次Fixed Stepまで持ち越さずLocalへ反映します。
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        CPUProfiler::Get().AddCounter("Physics.Transform.SynchronizationFailures", 1.0);
+    }
 
     ThermalSystem::SynchronizeWorld(scene);
     ThermalSystem::AppendRigidBodyContacts(scene, m_RigidBodyWorld.GetContactManifolds());

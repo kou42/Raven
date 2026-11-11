@@ -163,16 +163,29 @@ T& Scene::AddComponent(EntityIndex index, Args&&... args)
     {
         if (CanUseLocalTransform(index) == false)
         {
-            throw std::invalid_argument("Local Transform is not supported for Physics/Animation/Deformation entities in SG2.");
+            throw std::invalid_argument("Local Transform requires a Transform component.");
         }
     }
-    if constexpr (std::is_same_v<T, RigidBodyComponent> || std::is_same_v<T, ColliderComponent>
-        || std::is_same_v<T, AnimatorComponent> || std::is_same_v<T, MeshDeformationComponent>)
+    if constexpr (std::is_same_v<T, RigidBodyComponent> || std::is_same_v<T, LocalTransformComponent>)
     {
-        if (HasComponent<LocalTransformComponent>(index) == true)
+        // 追加順序で制約を回避しないよう、候補を構築してから幾何契約を検証します。
+        // 検証はキャッシュや正規入力を書き換えず、失敗時は候補Componentだけを除去します。
+        auto& storage = GetOrCreateStorage<T>();
+        storage.Emplace(index, std::forward<Args>(args)...);
+        try
         {
-            throw std::invalid_argument("Disable Local Transform before adding a simulation component in SG2.");
+            if (HasComponent<LocalTransformComponent>(index) == true
+                && m_TransformSystem.CanResolve(*this, EntityHandle{index, m_EntitySlots[index].Generation}) == false)
+            {
+                throw std::invalid_argument("Local simulation Transform is not representable or has unsupported scale.");
+            }
         }
+        catch (...)
+        {
+            storage.Remove(index);
+            throw;
+        }
+        return storage.Get(index);
     }
     return GetOrCreateStorage<T>().Emplace(index, std::forward<Args>(args)...);
 }

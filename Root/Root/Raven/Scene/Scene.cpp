@@ -114,10 +114,8 @@ bool Scene::SetEntityParentAndLocal(EntityHandle child, EntityHandle parent, con
 }
 bool Scene::CanUseLocalTransform(EntityIndex index) const
 {
-    // Physics/Animation/DeformationのWorld書込みとの同期はSG3で導入します。
-    return HasComponent<TransformComponent>(index) == true
-        && HasComponent<RigidBodyComponent>(index) == false && HasComponent<ColliderComponent>(index) == false
-        && HasComponent<AnimatorComponent>(index) == false && HasComponent<MeshDeformationComponent>(index) == false;
+    // SG3ではSimulationもWorld互換窓口を使い、Transform SystemがLocalへ同期します。
+    return HasComponent<TransformComponent>(index) == true;
 }
 bool Scene::CanRemoveTransform(EntityIndex index) const
 {
@@ -338,6 +336,15 @@ void Scene::OnUpdate(float dt)
     {
         RAVEN_PROFILE_SCOPE("Scene.Animation");
         AnimationSystem::Update(*this, dt);
+    }
+
+    // 0 Fixed Stepのframeでも親変更とAnimation入力を解決します。
+    // 不正な直接編集をPhysicsへ渡さず、入力を修復するまでSimulationを停止します。
+    if (EvaluateWorldTransforms() == false)
+    {
+        CPUProfiler::Get().AddCounter("Scene.Transform.SynchronizationFailures", 1.0);
+        FlushDestroyedEntities();
+        return;
     }
 
     {

@@ -296,6 +296,10 @@ bool PhysicsWorld::CapsuleCast(
     PhysicsCapsuleCastHit& outHit)
 {
     RAVEN_PROFILE_SCOPE("Physics.CapsuleCast");
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        return false;
+    }
     if (std::isfinite(settings.Radius) == false
         || std::isfinite(settings.HalfLength) == false
         || std::isfinite(settings.SkinWidth) == false

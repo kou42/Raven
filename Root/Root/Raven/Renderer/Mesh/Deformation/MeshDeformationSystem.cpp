@@ -28,6 +28,12 @@ void MeshDeformationSystem::Update(Scene& scene, float deltaTime)
     softBodyWorld.Clear();
     physicsSimulationWorld.ClearRigidSoftSphereColliderBindings();
 
+    // Coupling先とDeformerの座標境界はWorldです。無効な階層から非所有Bindingを作りません。
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        return;
+    }
+
     for (auto [entity, deformation] : scene.View<MeshDeformationComponent>())
     {
         // EnabledとInstanceの有効性は責務が異なるため明示的に分けて判定します。

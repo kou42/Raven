@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "Raven/Character/CharacterController.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven::tests
 {
@@ -74,6 +75,23 @@ void RunCharacterRagdollRecoverySelfTests()
     assert(NearlyEqual(controller.GetVelocity().x, airborneVelocity.x));
     assert(NearlyEqual(controller.GetVelocity().y, airborneVelocity.y));
     assert(NearlyEqual(controller.GetVelocity().z, airborneVelocity.z));
+
+    // 復帰APIはWorld姿勢を書きます。Scene親はRagdoll Jointを表さず、復帰後のLocalだけを逆算します。
+    Scene scene;
+    Entity rig = scene.CreateEntity("RecoveryRig");
+    Entity character = scene.CreateEntity("Character");
+    rig.GetComponent<TransformComponent>().Position.x = 100;
+    rig.GetComponent<TransformComponent>().Rotation.y = 0.5f;
+    auto& body = character.AddComponent<RigidBodyComponent>();
+    body.SetBodyType(BodyType::Kinematic);
+    assert(scene.SetEntityParent(character.GetHandle(), rig.GetHandle()) == true);
+    assert(scene.EnableLocalTransform(character.GetHandle()) == true);
+    assert(controller.RestoreAfterRagdoll(airbornePosition, -0.5f, airborneVelocity, false,
+        character.GetComponent<TransformComponent>()) == true);
+    assert(scene.EvaluateWorldTransforms() == true);
+    assert(NearlyEqual(character.GetComponent<TransformComponent>().Position.x, airbornePosition.x));
+    scene.OnUpdate(0);
+    assert(NearlyEqual(character.GetComponent<TransformComponent>().Position.x, airbornePosition.x));
 }
 
 } // namespace Raven::tests
