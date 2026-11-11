@@ -301,6 +301,9 @@ void Scene::OnDestroy()
 
     // DestroyEntity()ですべてのComponentはRemove済みですが、Storage自体が保持するAllocatorや
     // shared_ptr等の内部容量もScene終了時に解放するためContainerも破棄します。
+#ifndef NDEBUG
+    ++m_ViewLifetimeVersion;
+#endif
     m_ComponentStorages.clear();
     m_TransformSystem.Clear();
 

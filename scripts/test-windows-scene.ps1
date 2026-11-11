@@ -110,6 +110,7 @@ if (-not (Test-Path -LiteralPath $testExecutable -PathType Leaf)) {
 $checks = @(
     @{ Argument = "--test-scene-lifecycle"; Marker = "Scene lifecycle self-tests passed."; Log = "lifecycle" },
     @{ Argument = "--test-scene-transforms"; Marker = "Scene transform self-tests passed."; Log = "transforms" },
+    @{ Argument = "--test-scene-view"; Marker = "Scene View self-tests passed."; Log = "view" },
     @{ Argument = "--test-scene-simulation"; Marker = "Scene simulation self-tests passed."; Log = "simulation" },
     @{ Argument = "--test-physics-collision"; Marker = "Physics collision self-tests passed."; Log = "physics-collision" },
     @{ Argument = "--test-scene-graph"; Marker = "Scene graph self-tests passed."; Log = "graph" },

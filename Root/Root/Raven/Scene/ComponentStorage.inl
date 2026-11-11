@@ -12,6 +12,9 @@ T& ComponentStorage<T>::Emplace(EntityID entityID, Args&&... args)
         throw std::runtime_error("The entity already has this component.");
     }
 
+#ifndef NDEBUG
+    ++m_StructuralVersion;
+#endif
     EnsureSparseCapacity(entityID);
 
     const SizeType denseIndex = m_Components.size();
@@ -68,6 +71,9 @@ bool ComponentStorage<T>::Remove(EntityIndex entityIndex)
     }
 
     const SizeType removedIndex = m_Sparse[entityIndex];
+#ifndef NDEBUG
+    ++m_StructuralVersion;
+#endif
 
     const SizeType lastIndex = m_Components.size() - 1;
 
@@ -158,6 +164,9 @@ const T* ComponentStorage<T>::TryGet(EntityIndex entityIndex) const
 template<class T>
 void ComponentStorage<T>::Clear()
 {
+#ifndef NDEBUG
+    ++m_StructuralVersion;
+#endif
     /*
      * Sparse配列の容量を保持したまま、
      * 使用中だったEntityだけを無効化する。
@@ -218,9 +227,23 @@ void ComponentStorage<T>::CollectEntityIDs(std::vector<EntityIndex>& destination
 template<class T>
 void ComponentStorage<T>::Reserve(SizeType componentCapacity)
 {
+#ifndef NDEBUG
+    if (componentCapacity > m_Entities.capacity() || componentCapacity > m_Components.capacity())
+    {
+        ++m_StructuralVersion;
+    }
+#endif
     m_Entities.reserve(componentCapacity);
     m_Components.reserve(componentCapacity);
 }
+
+#ifndef NDEBUG
+template<class T>
+uint64_t ComponentStorage<T>::GetStructuralVersion() const
+{
+    return m_StructuralVersion;
+}
+#endif
 
 template<class T>
 void ComponentStorage<T>::ReserveEntities(EntityID maximumEntityID)

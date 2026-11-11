@@ -32,6 +32,10 @@ jobs:
         shell: pwsh
         run: ./scripts/test-windows-scene.ps1 -SkipBuild -SkipBootstrap
 
+      - name: Measure Component View Debug traversal
+        shell: pwsh
+        run: ./scripts/measure-windows-scene-view.ps1 -Configuration Debug -Label ci -SkipBuild
+
       - name: Build and run CPU UI regression tests
         shell: pwsh
         run: ./scripts/test-windows-ui.ps1 -Configuration Debug -Platform x64 -SkipBootstrap
@@ -72,6 +76,10 @@ jobs:
           if ($testExit -ne 0 -or ($output -join "`n") -notmatch 'SceneGraph shape=chain') {
             throw "Scene Graph measurement failed (exit=$testExit)"
           }
+
+      - name: Measure Component View Release traversal
+        shell: pwsh
+        run: ./scripts/measure-windows-scene-view.ps1 -Configuration Release -Label ci -SkipBuild
 
       - name: Build and run CPU UI regression tests
         shell: pwsh
