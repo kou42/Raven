@@ -9,7 +9,7 @@
 namespace Raven
 {
 
-// imgui.iniとは別のRaven UI専用保存先です。
+// Raven UI EditorのDock配置の保存先です。
 inline constexpr std::string_view kEditorDockLayoutFileName =
     "RavenEditorDock.layout.json";
 
@@ -49,7 +49,7 @@ bool BuildEditorDockLayoutForSave(const UIDockSpaceSnapshot& current,
     UIDockSpaceSnapshot& outSnapshot, std::string* errorMessage = nullptr);
 
 // 保存済みSnapshot、Backup、既定配置の順で採用します。
-// outSnapshotは必ず検証済みSnapshotへ更新され、旧imgui.iniは読み込みません。
+// outSnapshotは必ず検証済みSnapshotへ更新され。
 EditorDockLayoutLoadResult LoadEditorDockLayoutOrDefault(
     const std::string& filePath,
     UIDockSpaceSnapshot& outSnapshot);

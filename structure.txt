@@ -2,7 +2,6 @@ Folder PATH listing for volume Data
 Volume serial number is 0000005D B4F8:E2D0
 D:.
 |   .gitignore
-|   .gitmodules
 |   AGENTS.md
 |   find_structure_command.txt
 |   structure.txt
@@ -12,7 +11,6 @@ D:.
     |
     +---Root
     |   |   .editorconfig
-    |   |   imgui.ini
     |   |   main.cpp
     |   |   Root.code-workspace
     |   |   Root.vcxproj
@@ -66,11 +64,29 @@ D:.
     |   |   |   |   BlendTree1D.cpp
     |   |   |   |   BlendTree1D.h
     |   |   |   |   Bone.h
+    |   |   |   |   CharacterLocomotionRuntime.cpp
+    |   |   |   |   CharacterLocomotionRuntime.h
+    |   |   |   |   CharacterMotionMatchingAdapter.cpp
+    |   |   |   |   CharacterMotionMatchingAdapter.h
+    |   |   |   |   CharacterMotionMatchingRuntimeDriver.cpp
+    |   |   |   |   CharacterMotionMatchingRuntimeDriver.h
+    |   |   |   |   CharacterTrajectoryPredictor.cpp
+    |   |   |   |   CharacterTrajectoryPredictor.h
     |   |   |   |   HumanoidAnimationProfile.h
     |   |   |   |   HumanoidAnimationProfileSerialization.cpp
     |   |   |   |   HumanoidAnimationProfileSerialization.h
+    |   |   |   |   MotionDatabase.cpp
+    |   |   |   |   MotionDatabase.h
+    |   |   |   |   MotionFeatureNormalization.cpp
+    |   |   |   |   MotionMatcher.cpp
+    |   |   |   |   MotionMatcher.h
+    |   |   |   |   MotionMatcherNormalization.cpp
+    |   |   |   |   MotionQueryBuilder.cpp
+    |   |   |   |   MotionQueryBuilder.h
     |   |   |   |   PoseBlending.cpp
     |   |   |   |   PoseBlending.h
+    |   |   |   |   PoseInertializer.cpp
+    |   |   |   |   PoseInertializer.h
     |   |   |   |   SkeletalMeshDeformer.cpp
     |   |   |   |   SkeletalMeshDeformer.h
     |   |   |   |   Skeleton.cpp
@@ -87,16 +103,22 @@ D:.
     |   |   |   |       AnimationDebugOverlayRenderer.h
     |   |   |   |       AnimationStateMachineGraphLayout.cpp
     |   |   |   |       AnimationStateMachineGraphLayout.h
-    |   |   |   |
     |   |   |   \---Tests
     |   |   |           BlendTreeRuntimeSelfTests.cpp
     |   |   |           BlendTreeRuntimeSelfTests.h
+    |   |   |           PoseInertializerSelfTests.cpp
+    |   |   |           PoseInertializerSelfTests.h
     |   |   |           SkeletalDeformationSelfTests.cpp
     |   |   |           SkeletalDeformationSelfTests.h
-    |   |   |
     |   |   +---Assets
+    |   |   |   |   RHIShaderAsset.cpp
+    |   |   |   |   RHIShaderAsset.h
+    |   |   |   |   RHIShaderAssetImporter.cpp
+    |   |   |   |   RHIShaderAssetImporter.h
     |   |   |   |   TextureAsset.cpp
     |   |   |   |   TextureAsset.h
+    |   |   |   |   TextureAssetBatch.cpp
+    |   |   |   |   TextureAssetBatch.h
     |   |   |   |   TextureAssetImporter.cpp
     |   |   |   |   TextureAssetImporter.h
     |   |   |   |
@@ -105,13 +127,18 @@ D:.
     |   |   |   |           mountain1.png
     |   |   |   |           sample1.png
     |   |   |   |           sample2.png
-    |   |   |   |
     |   |   |   +---Models
-    |   |   |   |       Raven_human_test.glb
-    |   |   |   |
+    |   |   |   |   |   Terrain.glb
+    |   |   |   |   |
+    |   |   |   |   +---Human
+    |   |   |   |   |       Raven_human_test.glb
+    |   |   |   |   |       UAL1_Standard.glb
+    |   |   |   |   \---Quaternius
+    |   |   |   |           README.md
+    |   |   |   |           UAL1_Standard.glb
     |   |   |   +---Profiles
+    |   |   |   |       Quaternius_UAL1_Standard.json
     |   |   |   |       Raven_human_test.json
-    |   |   |   |
     |   |   |   +---Shaders
     |   |   |   |   +---DirectX12
     |   |   |   |   |       BuildSceneMesh.ps1
@@ -125,28 +152,25 @@ D:.
     |   |   |   |   |       UI.hlsl
     |   |   |   |   |       UI.ps.dxil
     |   |   |   |   |       UI.vs.dxil
-    |   |   |   |   |
     |   |   |   |   +---Fragment
+    |   |   |   |   |       lit.frag
     |   |   |   |   |       test.frag
     |   |   |   |   |       texture_test.frag
-    |   |   |   |   |
     |   |   |   |   +---Glsl
     |   |   |   |   |       EntityPicking.glsl
     |   |   |   |   |       FlatColor.glsl
     |   |   |   |   |       SelectionOutline.glsl
     |   |   |   |   |       UI.glsl
-    |   |   |   |   |
     |   |   |   |   +---ShaderToy
     |   |   |   |   |       test.frag
-    |   |   |   |   |
     |   |   |   |   +---Vertex
+    |   |   |   |   |       lit.vert
     |   |   |   |   |       test.vert
     |   |   |   |   |       texture_test.vert
-    |   |   |   |   |
     |   |   |   |   \---Vulkan
-    |   |   |   |           README.md
     |   |   |   |           EntityPicking.frag
     |   |   |   |           EntityPicking.frag.spv
+    |   |   |   |           README.md
     |   |   |   |           SceneTriangle.frag
     |   |   |   |           SceneTriangle.frag.spv
     |   |   |   |           SceneTriangle.vert
@@ -157,14 +181,12 @@ D:.
     |   |   |   |           UI.frag.spv
     |   |   |   |           UI.vert
     |   |   |   |           UI.vert.spv
-    |   |   |   |
     |   |   |   \---Svg
     |   |   |           AnimatedRect.svg
-    |   |   |
+    |   |   |           OpenPathStroke.svg
     |   |   +---Audio
     |   |   |       AudioService.cpp
     |   |   |       AudioService.h
-    |   |   |
     |   |   +---Character
     |   |   |   |   CharacterController.cpp
     |   |   |   |   CharacterController.h
@@ -172,22 +194,26 @@ D:.
     |   |   |   |   CharacterControllerMovingPlatform.cpp
     |   |   |   |   CharacterCrushReaction.cpp
     |   |   |   |   CharacterCrushReaction.h
+    |   |   |   |   CharacterDashAction.h
     |   |   |   |   CharacterRagdollRecoveryRuntime.cpp
     |   |   |   |   CharacterRagdollRecoveryRuntime.h
     |   |   |   |
     |   |   |   +---Debug
     |   |   |   |       CharacterControllerDemoLayer.cpp
     |   |   |   |       CharacterControllerDemoLayer.h
+    |   |   |   |       CharacterControllerDemoLocomotionRuntime.cpp
+    |   |   |   |       CharacterControllerDemoLocomotionRuntime.h
     |   |   |   |       CharacterLocomotionDebugOverlayLayer.h
-    |   |   |   |
+    |   |   |   |       CharacterPositionDebugOverlayLayer.h
     |   |   |   \---Tests
     |   |   |           CharacterCapsuleCollisionSelfTests.cpp
     |   |   |           CharacterCeilingCollisionSelfTests.cpp
+    |   |   |           CharacterCeilingCollisionSelfTests.h
     |   |   |           CharacterCrushReactionSelfTests.cpp
     |   |   |           CharacterMovingPlatformSelfTests.cpp
     |   |   |           CharacterPhysicsGroundQuerySelfTests.cpp
     |   |   |           CharacterRagdollRecoverySelfTests.cpp
-    |   |   |
+    |   |   |           CharacterSprintLocomotionSelfTests.h
     |   |   +---Core
     |   |   |   |   Application.cpp
     |   |   |   |   Application.h
@@ -201,6 +227,8 @@ D:.
     |   |   |   |   Event.h
     |   |   |   |   Input.cpp
     |   |   |   |   Input.h
+    |   |   |   |   JsonLexicalReader.cpp
+    |   |   |   |   JsonLexicalReader.h
     |   |   |   |   JsonParser.cpp
     |   |   |   |   JsonParser.h
     |   |   |   |   JsonValue.h
@@ -210,12 +238,14 @@ D:.
     |   |   |   |   MouseCodes.h
     |   |   |   |   Window.cpp
     |   |   |   |   Window.h
+    |   |   |   |   WindowManager.h
     |   |   |   |
     |   |   |   +---Containers
     |   |   |   |   |   Array.h
     |   |   |   |   |   Array.inl
     |   |   |   |   |   BitSet.h
     |   |   |   |   |   BitSet.inl
+    |   |   |   |   |   CONTAINER_ROADMAP.md
     |   |   |   |   |   FixedVector.h
     |   |   |   |   |   FixedVector.inl
     |   |   |   |   |   FlatHashMap.h
@@ -225,12 +255,12 @@ D:.
     |   |   |   |   |   FrameVector.h
     |   |   |   |   |   HandlePool.h
     |   |   |   |   |   HandlePool.inl
-    |   |   |   |   |   PoolOwnedHandle.h
-    |   |   |   |   |   PoolOwnedHandle.inl
     |   |   |   |   |   IntrusivePtr.h
     |   |   |   |   |   IntrusivePtr.inl
     |   |   |   |   |   Name.cpp
     |   |   |   |   |   Name.h
+    |   |   |   |   |   PoolOwnedHandle.h
+    |   |   |   |   |   PoolOwnedHandle.inl
     |   |   |   |   |   RingBuffer.h
     |   |   |   |   |   RingBuffer.inl
     |   |   |   |   |   SmallVector.h
@@ -245,17 +275,16 @@ D:.
     |   |   |   |   |   StringView.h
     |   |   |   |   |   UniquePtr.h
     |   |   |   |   |   UniquePtr.inl
-    |   |   |   |   |   WeakHandle.h
-    |   |   |   |   |   WeakHandle.inl
     |   |   |   |   |   Vector.h
     |   |   |   |   |   Vector.inl
+    |   |   |   |   |   WeakHandle.h
+    |   |   |   |   |   WeakHandle.inl
     |   |   |   |   |
     |   |   |   |   +---Benchmarks
     |   |   |   |   |       ContainerBenchmark.h
     |   |   |   |   |       FlatHashMapBenchmark.h
     |   |   |   |   |       FlatHashSetBenchmark.h
     |   |   |   |   |       NameBenchmark.h
-    |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           FlatHashMapSelfTests.cpp
     |   |   |   |           FlatHashMapSelfTests.h
@@ -265,26 +294,104 @@ D:.
     |   |   |   |           NameSelfTests.h
     |   |   |   |           StringSelfTests.cpp
     |   |   |   |           StringSelfTests.h
+    |   |   |   +---Jobs
+    |   |   |   |   |   JobSystem.cpp
+    |   |   |   |   |   JobSystem.h
+    |   |   |   |   |
+    |   |   |   |   \---Tests
+    |   |   |   |           JobSystemSelfTests.cpp
+    |   |   |   |           JobSystemSelfTests.h
+    |   |   |   +---Memory
+    |   |   |   |   |   AllocationMeasurement.cpp
+    |   |   |   |   |   AllocationMeasurement.h
+    |   |   |   |   |   Allocator.h
+    |   |   |   |   |   FrameAllocator.cpp
+    |   |   |   |   |   FrameAllocator.h
+    |   |   |   |   |   FreeListAllocator.cpp
+    |   |   |   |   |   FreeListAllocator.h
+    |   |   |   |   |   HeapAllocator.cpp
+    |   |   |   |   |   HeapAllocator.h
+    |   |   |   |   |   LinearAllocator.cpp
+    |   |   |   |   |   LinearAllocator.h
+    |   |   |   |   |   MemoryTag.h
+    |   |   |   |   |   MemoryTracker.cpp
+    |   |   |   |   |   MemoryTracker.h
+    |   |   |   |   |   PoolAllocator.cpp
+    |   |   |   |   |   PoolAllocator.h
+    |   |   |   |   |   STLAllocatorAdapter.h
+    |   |   |   |   |
+    |   |   |   |   \---Tests
+    |   |   |   |           MemoryAllocatorSelfTests.cpp
+    |   |   |   |           MemoryAllocatorSelfTests.h
+    |   |   |   \---Tests
+    |   |   |           ExplicitSceneFrameSelfTests.cpp
+    |   |   |           ExplicitSceneFrameSelfTests.h
+    |   |   |           README.md
+    |   |   +---Data
+    |   |   |   |   DataDocument.cpp
+    |   |   |   |   DataDocument.h
+    |   |   |   |   DataElement.cpp
+    |   |   |   |   DataElement.h
+    |   |   |   |   DataReader.cpp
+    |   |   |   |   DataReader.h
+    |   |   |   |   DataToken.h
+    |   |   |   |   DataUtf8.cpp
+    |   |   |   |   DataUtf8.h
+    |   |   |   |   DataWriter.cpp
+    |   |   |   |   DataWriter.h
     |   |   |   |
-    |   |   |   \---Memory
-    |   |   |       |   Allocator.h
-    |   |   |       |   FrameAllocator.cpp
-    |   |   |       |   FrameAllocator.h
-    |   |   |       |   LinearAllocator.cpp
-    |   |   |       |   LinearAllocator.h
-    |   |   |       |   STLAllocatorAdapter.h
-    |   |   |       |
-    |   |   |       \---Tests
-    |   |   |               MemoryAllocatorSelfTests.cpp
-    |   |   |               MemoryAllocatorSelfTests.h
-    |   |   |
+    |   |   |   +---Formats
+    |   |   |   |   +---Json
+    |   |   |   |   |       JsonParser.cpp
+    |   |   |   |   |       JsonParser.h
+    |   |   |   |   |       JsonWriter.cpp
+    |   |   |   |   |       JsonWriter.h
+    |   |   |   |   \---MessagePack
+    |   |   |   |           MessagePackParser.cpp
+    |   |   |   |           MessagePackParser.h
+    |   |   |   |           MessagePackWriter.cpp
+    |   |   |   |           MessagePackWriter.h
+    |   |   |   +---Serialization
+    |   |   |   |       Serialization.cpp
+    |   |   |   |       Serialization.h
+    |   |   |   |       Serialization.inl
+    |   |   |   \---Tests
+    |   |   |           DataDocumentTests.cpp
+    |   |   |           DataDocumentTests.h
+    |   |   |           DataElementTests.cpp
+    |   |   |           DataElementTests.h
+    |   |   |           DataIOTests.cpp
+    |   |   |           DataIOTests.h
+    |   |   |           JsonParserTests.cpp
+    |   |   |           JsonParserTests.h
+    |   |   |           MessagePackInterop.py
+    |   |   |           MessagePackTests.cpp
+    |   |   |           MessagePackTests.h
+    |   |   |           README.md
+    |   |   |           SerializationTests.cpp
+    |   |   |           SerializationTests.h
     |   |   +---Debug
-    |   |   |       BrowserDebugConfig.h
-    |   |   |       BrowserDebugServer.cpp
-    |   |   |       BrowserDebugServer.h
-    |   |   |       BrowserDebugViewer.cpp
-    |   |   |       BrowserDebugViewer.h
-    |   |   |
+    |   |   |   |   BrowserDebugConfig.h
+    |   |   |   |   BrowserDebugServer.cpp
+    |   |   |   |   BrowserDebugServer.h
+    |   |   |   |   BrowserDebugViewer.cpp
+    |   |   |   |   BrowserDebugViewer.h
+    |   |   |   |
+    |   |   |   \---Generated
+    |   |   |           CandidateRejects.svg
+    |   |   |           Startup.svg
+    |   |   |           Viewer.html
+    |   |   +---Diagnostics
+    |   |   |   |   DiagnosticAPI.cpp
+    |   |   |   |   DiagnosticAPI.h
+    |   |   |   |   DiagnosticCollector.cpp
+    |   |   |   |   DiagnosticCollector.h
+    |   |   |   |   EventBuffer.cpp
+    |   |   |   |   EventBuffer.h
+    |   |   |   |
+    |   |   |   \---Tests
+    |   |   |           DiagnosticSelfTests.cpp
+    |   |   |           DiagnosticSelfTests.h
     |   |   +---Editor
     |   |   |   |   EditorCamera.cpp
     |   |   |   |   EditorCamera.h
@@ -297,15 +404,9 @@ D:.
     |   |   |   |   EditorGizmo.h
     |   |   |   |   EditorLayer.cpp
     |   |   |   |   EditorLayer.h
-    |   |   |   |   EditorRotateGizmo.cpp
-    |   |   |   |   EditorRotateGizmo.h
-    |   |   |   |   EditorScaleGizmo.cpp
-    |   |   |   |   EditorScaleGizmo.h
     |   |   |   |   EditorSelectionOutline.cpp
     |   |   |   |   EditorShortcutRouter.cpp
     |   |   |   |   EditorShortcutRouter.h
-    |   |   |   |   EditorTranslateGizmo.cpp
-    |   |   |   |   EditorTranslateGizmo.h
     |   |   |   |   EditorViewportGeometry.cpp
     |   |   |   |   EditorViewportGeometry.h
     |   |   |   |
@@ -325,39 +426,30 @@ D:.
     |   |   |   |       SetPrimaryCameraCommand.h
     |   |   |   |       TransformCommand.cpp
     |   |   |   |       TransformCommand.h
-    |   |   |   |
     |   |   |   +---Panels
     |   |   |   |       AnimationDebugActions.cpp
     |   |   |   |       AnimationDebugActions.h
-    |   |   |   |       AnimationDebugPanel.cpp
-    |   |   |   |       AnimationDebugPanel.h
     |   |   |   |       AnimationDebugRavenPanel.cpp
     |   |   |   |       AnimationDebugRavenPanel.h
     |   |   |   |       AnimationDebugSnapshot.cpp
     |   |   |   |       AnimationDebugSnapshot.h
     |   |   |   |       EditorViewportRavenPanel.cpp
     |   |   |   |       EditorViewportRavenPanel.h
-    |   |   |   |       InspectorPanel.cpp
-    |   |   |   |       InspectorPanel.h
     |   |   |   |       InspectorRavenPanel.cpp
     |   |   |   |       InspectorRavenPanel.h
     |   |   |   |       InspectorSnapshot.cpp
     |   |   |   |       InspectorSnapshot.h
-    |   |   |   |       SceneHierarchyPanel.cpp
-    |   |   |   |       SceneHierarchyPanel.h
     |   |   |   |       SceneHierarchyRavenPanel.cpp
     |   |   |   |       SceneHierarchyRavenPanel.h
     |   |   |   |       SceneHierarchySnapshot.cpp
     |   |   |   |       SceneHierarchySnapshot.h
     |   |   |   |       StatisticsActions.cpp
     |   |   |   |       StatisticsActions.h
-    |   |   |   |       StatisticsPanel.cpp
-    |   |   |   |       StatisticsPanel.h
     |   |   |   |       StatisticsRavenPanel.cpp
     |   |   |   |       StatisticsRavenPanel.h
     |   |   |   |       StatisticsSnapshot.cpp
     |   |   |   |       StatisticsSnapshot.h
-    |   |   |   |
+    |   |   |   |       StatisticsUISnapshot.cpp
     |   |   |   \---Tests
     |   |   |           EditorEntityCommandSelfTests.cpp
     |   |   |           EditorEntityCommandSelfTests.h
@@ -365,7 +457,6 @@ D:.
     |   |   |           EditorViewportGeometrySelfTests.h
     |   |   |           InspectorSnapshotSelfTests.cpp
     |   |   |           InspectorSnapshotSelfTests.h
-    |   |   |
     |   |   +---Gltf
     |   |   |   |   AccessorReader.cpp
     |   |   |   |   AccessorReader.h
@@ -377,6 +468,8 @@ D:.
     |   |   |   |   GltfCoordinateSystem.h
     |   |   |   |   GltfDocument.cpp
     |   |   |   |   GltfDocument.h
+    |   |   |   |   GltfLitMaterialBridge.cpp
+    |   |   |   |   GltfLitMaterialBridge.h
     |   |   |   |   HumanoidSceneNormalization.cpp
     |   |   |   |   HumanoidSceneNormalization.h
     |   |   |   |   JsonParser.h
@@ -399,19 +492,22 @@ D:.
     |   |   |   |   SkinnedMeshRuntime.h
     |   |   |   |   SkinnedMeshSceneSpawner.cpp
     |   |   |   |   SkinnedMeshSceneSpawner.h
+    |   |   |   |   SkinnedMotionMatchingRuntime.cpp
+    |   |   |   |   SkinnedMotionMatchingRuntime.h
     |   |   |   |   SkinnedRagdollRuntime.cpp
     |   |   |   |   SkinnedRagdollRuntime.h
     |   |   |   |   StaticMeshImporter.cpp
     |   |   |   |   StaticMeshImporter.h
     |   |   |   |   StaticSceneImporter.cpp
     |   |   |   |   StaticSceneImporter.h
+    |   |   |   |   StaticSceneSpawner.cpp
+    |   |   |   |   StaticSceneSpawner.h
     |   |   |   |
     |   |   |   +---Debug
     |   |   |   |       HumanSkinningDebugController.cpp
     |   |   |   |       HumanSkinningDebugController.h
     |   |   |   |       HumanSkinningDebugLayer.cpp
     |   |   |   |       HumanSkinningDebugLayer.h
-    |   |   |   |
     |   |   |   \---Tests
     |   |   |           GltfAccessorSelfTests.cpp
     |   |   |           GltfAccessorSelfTests.h
@@ -419,11 +515,6 @@ D:.
     |   |   |           GltfNodeHierarchySelfTests.h
     |   |   |           GltfSkinAccessorSelfTests.cpp
     |   |   |           GltfSkinAccessorSelfTests.h
-    |   |   |
-    |   |   +---ImGui
-    |   |   |       ImGuiLayer.cpp
-    |   |   |       ImGuiLayer.h
-    |   |   |
     |   |   +---Math
     |   |   |       Math.cpp
     |   |   |       Math.h
@@ -437,21 +528,10 @@ D:.
     |   |   |       MathVector.h
     |   |   |       TransformMath.cpp
     |   |   |       TransformMath.h
-    |   |   |
-    |   |   +---Diagnostics
-    |   |   |       DiagnosticAPI.cpp
-    |   |   |       DiagnosticAPI.h
-    |   |   |       DiagnosticCollector.cpp
-    |   |   |       DiagnosticCollector.h
-    |   |   |       EventBuffer.cpp
-    |   |   |       EventBuffer.h
-    |   |   |
-    |   |   |   +---Tests
-    |   |   |           DiagnosticSelfTests.cpp
-    |   |   |           DiagnosticSelfTests.h
-    |   |   |
     |   |   +---Physics
     |   |   |   |   Contact.h
+    |   |   |   |   PhysicsSimulationWorld.cpp
+    |   |   |   |   PhysicsSimulationWorld.h
     |   |   |   |   PhysicsType.h
     |   |   |   |   PhysicsWorld.cpp
     |   |   |   |   PhysicsWorld.h
@@ -459,12 +539,13 @@ D:.
     |   |   |   |   PhysicsWorldControl.cpp
     |   |   |   |   PhysicsWorldGroundQuery.cpp
     |   |   |   |   RigidBodyDynamics.h
+    |   |   |   |   RigidSoftCouplingComponent.h
     |   |   |   |
     |   |   |   +---Astro
-    |   |   |   |   |   AstroWorld.cpp
-    |   |   |   |   |   AstroWorld.h
     |   |   |   |   |   AstroStatistics.h
     |   |   |   |   |   AstroVector.h
+    |   |   |   |   |   AstroWorld.cpp
+    |   |   |   |   |   AstroWorld.h
     |   |   |   |   |   CelestialBody.h
     |   |   |   |   |   OrbitalDiagnostics.cpp
     |   |   |   |   |   OrbitalDiagnostics.h
@@ -475,17 +556,14 @@ D:.
     |   |   |   |   |       DirectGravitySolver.cpp
     |   |   |   |   |       DirectGravitySolver.h
     |   |   |   |   |       GravitySolver.h
-    |   |   |   |   |
     |   |   |   |   +---Spatial
     |   |   |   |   |       AstroOctree.cpp
     |   |   |   |   |       AstroOctree.h
-    |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           AstroGravityBenchmark.cpp
     |   |   |   |           AstroGravityBenchmark.h
     |   |   |   |           AstroWorldSelfTests.cpp
     |   |   |   |           AstroWorldSelfTests.h
-    |   |   |   |
     |   |   |   +---Collision
     |   |   |   |       AABB.cpp
     |   |   |   |       AABB.h
@@ -495,6 +573,7 @@ D:.
     |   |   |   |       BroadPhase.inl
     |   |   |   |       Capsule.h
     |   |   |   |       CapsuleCollision.cpp
+    |   |   |   |       CapsuleStaticMeshBVHCollision.cpp
     |   |   |   |       CollisionDetection.cpp
     |   |   |   |       CollisionDetection.h
     |   |   |   |       DynamicAABBTree.cpp
@@ -505,14 +584,24 @@ D:.
     |   |   |   |       OBB.h
     |   |   |   |       PlaneCollision.cpp
     |   |   |   |       SphereCollision.cpp
-    |   |   |   |
+    |   |   |   |       StaticMeshTriangleBVH.cpp
+    |   |   |   |       StaticMeshTriangleBVH.h
+    |   |   |   |       StaticMeshTriangleBVHQuery.cpp
+    |   |   |   |       StaticMeshTriangleBVHQuery.h
+    |   |   |   +---Coupling
+    |   |   |   |       FluidColliderContact.cpp
+    |   |   |   |       FluidColliderContact.h
+    |   |   |   |       FluidRigidBodyCoupling.cpp
+    |   |   |   |       FluidRigidBodyCoupling.h
+    |   |   |   |       FluidStaticColliderCoupling.cpp
+    |   |   |   |       FluidStaticColliderCoupling.h
     |   |   |   +---Debug
+    |   |   |   |       PhysicsDebugImmediatePanel.h
     |   |   |   |       PhysicsDebugOverlayFont.h
     |   |   |   |       PhysicsDebugRenderer.cpp
     |   |   |   |       PhysicsDebugRenderer.h
     |   |   |   |       PhysicsDebugRendererCameraContext.cpp
     |   |   |   |       PhysicsDebugSettings.h
-    |   |   |   |
     |   |   |   +---Electromagnetism
     |   |   |   |   |   BarnesHutCoulombSolver.cpp
     |   |   |   |   |   BarnesHutCoulombSolver.h
@@ -521,6 +610,8 @@ D:.
     |   |   |   |   |   ElectricCharge.h
     |   |   |   |   |   ElectricField.cpp
     |   |   |   |   |   ElectricField.h
+    |   |   |   |   |   ElectricPotentialField.cpp
+    |   |   |   |   |   ElectricPotentialField.h
     |   |   |   |   |   ElectromagneticStatistics.h
     |   |   |   |   |   ElectromagneticSystem.cpp
     |   |   |   |   |   ElectromagneticSystem.h
@@ -530,11 +621,29 @@ D:.
     |   |   |   |   \---Spatial
     |   |   |   |           CoulombOctree.cpp
     |   |   |   |           CoulombOctree.h
-    |   |   |   |
     |   |   |   +---Field
     |   |   |   |       GravityField.h
     |   |   |   |       PhysicsField.h
-    |   |   |   |
+    |   |   |   +---Fluid
+    |   |   |   |   |   FluidCouplingBinding.h
+    |   |   |   |   |   FluidParticle.h
+    |   |   |   |   |   FluidSimulationParticipant.h
+    |   |   |   |   |   FluidSpatialHashGrid.cpp
+    |   |   |   |   |   FluidSpatialHashGrid.h
+    |   |   |   |   |   SPHKernel.cpp
+    |   |   |   |   |   SPHKernel.h
+    |   |   |   |   |   SPHSettings.h
+    |   |   |   |   |   SPHSolver.cpp
+    |   |   |   |   |   SPHSolver.h
+    |   |   |   |   |
+    |   |   |   |   \---Debug
+    |   |   |   |           FluidBuoyancyDebugOverlayLayer.h
+    |   |   |   |           FluidCouplingPreset.h
+    |   |   |   |           FluidSPHDemoLayer.cpp
+    |   |   |   |           FluidSPHDemoLayer.h
+    |   |   |   +---Particle
+    |   |   |   |       ParticleSpatialHashGrid.cpp
+    |   |   |   |       ParticleSpatialHashGrid.h
     |   |   |   +---Ragdoll
     |   |   |   |       RagdollAnimationVelocity.cpp
     |   |   |   |       RagdollConstraintSolver.cpp
@@ -544,7 +653,6 @@ D:.
     |   |   |   |       RagdollRuntime.cpp
     |   |   |   |       RagdollRuntime.h
     |   |   |   |       RagdollRuntimeLookup.cpp
-    |   |   |   |
     |   |   |   +---SoftBody
     |   |   |   |   |   SoftBodyCloth.cpp
     |   |   |   |   |   SoftBodyCloth.h
@@ -558,6 +666,7 @@ D:.
     |   |   |   |   |   SoftBodyParticleTriangleSelfCollision.h
     |   |   |   |   |   SoftBodySelfCollision.cpp
     |   |   |   |   |   SoftBodySelfCollision.h
+    |   |   |   |   |   SoftBodySimulationParticipant.h
     |   |   |   |   |   SoftBodySolver.cpp
     |   |   |   |   |   SoftBodySolver.h
     |   |   |   |   |   SoftBodySpatialHashGrid.cpp
@@ -585,48 +694,177 @@ D:.
     |   |   |   |           SoftBodyParticleTrianglePairInspector.h
     |   |   |   |           SoftBodyPhysicsDebugSvgWriter.cpp
     |   |   |   |           SoftBodyPhysicsDebugSvgWriter.h
-    |   |   |   |
     |   |   |   +---Solver
     |   |   |   |       ContactSolver.cpp
     |   |   |   |       ContactSolver.h
     |   |   |   |       SolverTemporaryAllocationCounter.h
-    |   |   |   |
     |   |   |   +---Spatial
     |   |   |   |       LongRangeOctree.cpp
     |   |   |   |       LongRangeOctree.h
-    |   |   |   |
-    |   |   |   \---Tests
-    |   |   |           CapsuleCollisionSelfTests.cpp
-    |   |   |           CoulombBenchmark.cpp
-    |   |   |           CoulombBenchmark.h
-    |   |   |           ElectromagnetismSelfTests.cpp
-    |   |   |           PhysicsCollisionSelfTests.cpp
-    |   |   |           PhysicsFrameAllocatorSelfTests.cpp
-    |   |   |           RagdollAnimationVelocitySelfTests.cpp
-    |   |   |           SoftBodyIntegratedStepSelfTests.cpp
-    |   |   |           SoftBodyIntegratedStepSelfTests.h
-    |   |   |           SoftBodyJellySelfTests.cpp
-    |   |   |           SoftBodyJellySurfaceSelfTests.cpp
-    |   |   |           SoftBodyParticleTriangleSelfCollisionSelfTests.cpp
-    |   |   |           SoftBodySelfCollisionSelfTests.cpp
-    |   |   |           SoftBodySpatialHashSelfTests.cpp
-    |   |   |           SoftBodyVolumeConstraintSelfTests.cpp
-    |   |   |
+    |   |   |   +---Tests
+    |   |   |   |       CapsuleCollisionSelfTests.cpp
+    |   |   |   |       CoulombBenchmark.cpp
+    |   |   |   |       CoulombBenchmark.h
+    |   |   |   |       ElectricPotentialFieldSelfTests.cpp
+    |   |   |   |       ElectricPotentialFieldSelfTests.h
+    |   |   |   |       ElectromagnetismSelfTests.cpp
+    |   |   |   |       ElectromagnetismSelfTests.h
+    |   |   |   |       FluidCouplingMeasurementSelfTests.cpp
+    |   |   |   |       FluidCouplingMeasurementSelfTests.h
+    |   |   |   |       FluidRigidBodyCouplingSelfTests.cpp
+    |   |   |   |       FluidSPHSelfTests.cpp
+    |   |   |   |       FluidWorldSelfTests.cpp
+    |   |   |   |       FluidWorldSelfTests.h
+    |   |   |   |       PhysicsCollisionSelfTests.cpp
+    |   |   |   |       PhysicsFieldSelfTests.cpp
+    |   |   |   |       PhysicsFieldSelfTests.h
+    |   |   |   |       PhysicsFrameAllocatorSelfTests.cpp
+    |   |   |   |       PhysicsSimulationWorldSelfTests.cpp
+    |   |   |   |       PhysicsSimulationWorldSelfTests.h
+    |   |   |   |       RagdollAnimationVelocitySelfTests.cpp
+    |   |   |   |       SoftBodyIntegratedStepSelfTests.cpp
+    |   |   |   |       SoftBodyIntegratedStepSelfTests.h
+    |   |   |   |       SoftBodyJellySelfTests.cpp
+    |   |   |   |       SoftBodyJellySurfaceSelfTests.cpp
+    |   |   |   |       SoftBodyParticleTriangleSelfCollisionSelfTests.cpp
+    |   |   |   |       SoftBodySelfCollisionSelfTests.cpp
+    |   |   |   |       SoftBodySpatialHashSelfTests.cpp
+    |   |   |   |       SoftBodyVolumeConstraintSelfTests.cpp
+    |   |   |   |       StaticMeshTriangleBVHSelfTests.cpp
+    |   |   |   |       StaticMeshTriangleBVHSelfTests.h
+    |   |   |   |       TemperatureFieldSelfTests.cpp
+    |   |   |   |       TemperatureFieldSelfTests.h
+    |   |   |   |       ThermalWorldSelfTests.cpp
+    |   |   |   |       ThermalWorldSelfTests.h
+    |   |   |   \---Thermal
+    |   |   |           TemperatureField.cpp
+    |   |   |           TemperatureField.h
+    |   |   |           TemperatureFieldRegistry.cpp
+    |   |   |           TemperatureFieldRegistry.h
+    |   |   |           ThermalBody.h
+    |   |   |           ThermalComponents.h
+    |   |   |           ThermalMaterial.h
+    |   |   |           ThermalSystem.cpp
+    |   |   |           ThermalSystem.h
+    |   |   |           ThermalWorld.cpp
+    |   |   |           ThermalWorld.h
     |   |   +---Platform
-    |   |   |   +---OpenGL
-    |   |   |   |       OpenGLContext.cpp
-    |   |   |   |       OpenGLContext.h
-    |   |   |   |       OpenGLFramebuffer.cpp
-    |   |   |   |       OpenGLFramebuffer.h
-    |   |   |   |       OpenGLRendererAPI.cpp
-    |   |   |   |       OpenGLRendererAPI.h
+    |   |   |   |   RHIDebugConfig.h
     |   |   |   |
+    |   |   |   +---DirectX12
+    |   |   |   |       DX12Adapter.cpp
+    |   |   |   |       DX12Adapter.h
+    |   |   |   |       DX12ClearContext.cpp
+    |   |   |   |       DX12ClearContext.h
+    |   |   |   |       DX12CommandList.cpp
+    |   |   |   |       DX12CommandList.h
+    |   |   |   |       DX12CommandQueue.cpp
+    |   |   |   |       DX12CommandQueue.h
+    |   |   |   |       DX12Device.cpp
+    |   |   |   |       DX12Device.h
+    |   |   |   |       DX12Factory.cpp
+    |   |   |   |       DX12Factory.h
+    |   |   |   |       DX12Fence.cpp
+    |   |   |   |       DX12Fence.h
+    |   |   |   |       DX12FrameRenderer.cpp
+    |   |   |   |       DX12FrameRenderer.h
+    |   |   |   |       DX12OffscreenRenderTarget.cpp
+    |   |   |   |       DX12OffscreenRenderTarget.h
+    |   |   |   |       DX12SceneBuffer.cpp
+    |   |   |   |       DX12SceneBuffer.h
+    |   |   |   |       DX12SceneCommandList.h
+    |   |   |   |       DX12SceneContext.cpp
+    |   |   |   |       DX12SceneContext.h
+    |   |   |   |       DX12SceneGraphicsPipeline.h
+    |   |   |   |       DX12SceneRHIBuffer.h
+    |   |   |   |       DX12SceneRHIDevice.h
+    |   |   |   |       DX12SceneRHITexture.h
+    |   |   |   |       DX12SceneRuntime.cpp
+    |   |   |   |       DX12SceneRuntime.h
+    |   |   |   |       DX12SwapChain.cpp
+    |   |   |   |       DX12SwapChain.h
+    |   |   |   |       RunDX12SceneRuntimeDemo.cpp
+    |   |   |   |       RunDX12SceneRuntimeDemo.h
+    |   |   |   +---OpenGL
+    |   |   |   |   |   OpenGLClearContext.cpp
+    |   |   |   |   |   OpenGLClearContext.h
+    |   |   |   |   |   OpenGLContext.cpp
+    |   |   |   |   |   OpenGLContext.h
+    |   |   |   |   |   OpenGLFramebuffer.cpp
+    |   |   |   |   |   OpenGLFramebuffer.h
+    |   |   |   |   |   OpenGLIndexBuffer.cpp
+    |   |   |   |   |   OpenGLIndexBuffer.h
+    |   |   |   |   |   OpenGLPipeline.cpp
+    |   |   |   |   |   OpenGLPipeline.h
+    |   |   |   |   |   OpenGLShader.cpp
+    |   |   |   |   |   OpenGLShader.h
+    |   |   |   |   |   OpenGLTexture.cpp
+    |   |   |   |   |   OpenGLTexture.h
+    |   |   |   |   |   OpenGLVertexArray.cpp
+    |   |   |   |   |   OpenGLVertexArray.h
+    |   |   |   |   |   OpenGLVertexBuffer.cpp
+    |   |   |   |   |   OpenGLVertexBuffer.h
+    |   |   |   |   |
+    |   |   |   |   \---RHI
+    |   |   |   |           OpenGLRHIBuffer.cpp
+    |   |   |   |           OpenGLRHIBuffer.h
+    |   |   |   |           OpenGLRHICommandList.cpp
+    |   |   |   |           OpenGLRHICommandList.h
+    |   |   |   |           OpenGLRHIDevice.cpp
+    |   |   |   |           OpenGLRHIDevice.h
+    |   |   |   |           OpenGLRHITexture.cpp
+    |   |   |   |           OpenGLRHITexture.h
+    |   |   |   +---Vulkan
+    |   |   |   |       RunVulkanSceneRuntimeDemo.cpp
+    |   |   |   |       RunVulkanSceneRuntimeDemo.h
+    |   |   |   |       RunVulkanSceneTriangleDemo.cpp
+    |   |   |   |       RunVulkanSceneTriangleDemo.h
+    |   |   |   |       VulkanClearContext.cpp
+    |   |   |   |       VulkanClearContext.h
+    |   |   |   |       VulkanCommandBuffer.cpp
+    |   |   |   |       VulkanCommandBuffer.h
+    |   |   |   |       VulkanDevice.cpp
+    |   |   |   |       VulkanDevice.h
+    |   |   |   |       VulkanFrameRenderer.cpp
+    |   |   |   |       VulkanFrameRenderer.h
+    |   |   |   |       VulkanFrameSync.cpp
+    |   |   |   |       VulkanFrameSync.h
+    |   |   |   |       VulkanGraphicsPipeline.cpp
+    |   |   |   |       VulkanGraphicsPipeline.h
+    |   |   |   |       VulkanInstance.cpp
+    |   |   |   |       VulkanInstance.h
+    |   |   |   |       VulkanOffscreenRenderTarget.cpp
+    |   |   |   |       VulkanOffscreenRenderTarget.h
+    |   |   |   |       VulkanPhysicalDevice.cpp
+    |   |   |   |       VulkanPhysicalDevice.h
+    |   |   |   |       VulkanSceneBuffer.cpp
+    |   |   |   |       VulkanSceneBuffer.h
+    |   |   |   |       VulkanSceneCommandList.cpp
+    |   |   |   |       VulkanSceneCommandList.h
+    |   |   |   |       VulkanSceneContext.cpp
+    |   |   |   |       VulkanSceneContext.h
+    |   |   |   |       VulkanSceneRenderTarget.cpp
+    |   |   |   |       VulkanSceneRenderTarget.h
+    |   |   |   |       VulkanSceneRHIBuffer.h
+    |   |   |   |       VulkanSceneRHIDevice.cpp
+    |   |   |   |       VulkanSceneRHIDevice.h
+    |   |   |   |       VulkanSceneRHITexture.cpp
+    |   |   |   |       VulkanSceneRHITexture.h
+    |   |   |   |       VulkanSceneRuntime.cpp
+    |   |   |   |       VulkanSceneRuntime.h
+    |   |   |   |       VulkanSceneTexture.cpp
+    |   |   |   |       VulkanSceneTexture.h
+    |   |   |   |       VulkanSceneTriangleDemo.cpp
+    |   |   |   |       VulkanSceneTriangleDemo.h
+    |   |   |   |       VulkanSurface.cpp
+    |   |   |   |       VulkanSurface.h
+    |   |   |   |       VulkanSwapChain.cpp
+    |   |   |   |       VulkanSwapChain.h
     |   |   |   \---Windows
     |   |   |           WindowsInput.cpp
     |   |   |           WindowsInput.h
     |   |   |           WindowsWindow.cpp
     |   |   |           WindowsWindow.h
-    |   |   |
     |   |   +---Renderer
     |   |   |   |   Framebuffer.cpp
     |   |   |   |   Framebuffer.h
@@ -636,37 +874,27 @@ D:.
     |   |   |   |   RenderCommand.h
     |   |   |   |   Renderer.cpp
     |   |   |   |   Renderer.h
-    |   |   |   |   RendererAPI.cpp
-    |   |   |   |   RendererAPI.h
     |   |   |   |
     |   |   |   +---Buffer
     |   |   |   |       BufferLayout.h
     |   |   |   |       IndexBuffer.cpp
     |   |   |   |       IndexBuffer.h
-    |   |   |   |       OpenGLIndexBuffer.cpp
-    |   |   |   |       OpenGLIndexBuffer.h
-    |   |   |   |       OpenGLVertexArray.cpp
-    |   |   |   |       OpenGLVertexArray.h
-    |   |   |   |       OpenGLVertexBuffer.cpp
-    |   |   |   |       OpenGLVertexBuffer.h
     |   |   |   |       VertexArray.cpp
     |   |   |   |       VertexArray.h
     |   |   |   |       VertexBuffer.cpp
     |   |   |   |       VertexBuffer.h
-    |   |   |   |
     |   |   |   +---Camera
     |   |   |   |       Camera.h
-    |   |   |   |
     |   |   |   +---Layer
     |   |   |   |       Layer.cpp
     |   |   |   |       Layer.h
     |   |   |   |       SandboxLayer.cpp
     |   |   |   |       SandboxLayer.h
-    |   |   |   |
     |   |   |   +---Material
+    |   |   |   |       LitMaterialFactory.cpp
+    |   |   |   |       LitMaterialFactory.h
     |   |   |   |       Material.cpp
     |   |   |   |       Material.h
-    |   |   |   |
     |   |   |   +---Mesh
     |   |   |   |   |   Mesh.cpp
     |   |   |   |   |   Mesh.h
@@ -685,25 +913,46 @@ D:.
     |   |   |   |           SoftBodyJellyMeshDeformer.h
     |   |   |   |           WaveMeshDeformer.cpp
     |   |   |   |           WaveMeshDeformer.h
-    |   |   |   |
     |   |   |   +---Pipeline
-    |   |   |   |       OpenGLPipeline.cpp
-    |   |   |   |       OpenGLPipeline.h
     |   |   |   |       Pipeline.cpp
     |   |   |   |       Pipeline.h
-    |   |   |   |
+    |   |   |   |       SpecificationPipeline.h
+    |   |   |   +---RHI
+    |   |   |   |       ClearBackendDemo.cpp
+    |   |   |   |       ClearBackendDemo.h
+    |   |   |   |       IExplicitSceneRuntime.cpp
+    |   |   |   |       IExplicitSceneRuntime.h
+    |   |   |   |       RHI.h
+    |   |   |   |       RHIBuffer.h
+    |   |   |   |       RHIClearContext.h
+    |   |   |   |       RHICommandList.h
+    |   |   |   |       RHIDevice.h
+    |   |   |   |       RHIExplicitSceneRuntimeFactory.cpp
+    |   |   |   |       RHIExplicitSceneRuntimeFactory.h
+    |   |   |   |       RHIExplicitSceneSpecification.h
+    |   |   |   |       RHIFrameLifecycle.h
+    |   |   |   |       RHIGraphicsPipeline.h
+    |   |   |   |       RHIGraphicsPipelineSpecification.h
+    |   |   |   |       RHILegacyBackendFactory.cpp
+    |   |   |   |       RHILegacyBackendFactory.h
+    |   |   |   |       RHIMaterialProperties.h
+    |   |   |   |       RHIOffscreenRenderTarget.cpp
+    |   |   |   |       RHIOffscreenRenderTarget.h
+    |   |   |   |       RHIResource.h
+    |   |   |   |       RHISceneDrawItemBuilder.h
+    |   |   |   |       RHISceneFrameLifecycle.h
+    |   |   |   |       RHISceneMeshRenderer.h
+    |   |   |   |       RHIShaderBinaryLoader.cpp
+    |   |   |   |       RHIShaderBinaryLoader.h
+    |   |   |   |       RHITexture.h
+    |   |   |   |       RHITypes.h
     |   |   |   +---Shader
-    |   |   |   |       OpenGLShader.cpp
-    |   |   |   |       OpenGLShader.h
     |   |   |   |       Shader.cpp
     |   |   |   |       Shader.h
-    |   |   |   |
+    |   |   |   |       ShaderTypes.h
     |   |   |   \---Texture
-    |   |   |           OpenGLTexture.cpp
-    |   |   |           OpenGLTexture.h
     |   |   |           Texture.cpp
     |   |   |           Texture.h
-    |   |   |
     |   |   +---Scene
     |   |   |   |   Components.cpp
     |   |   |   |   Components.h
@@ -740,6 +989,9 @@ D:.
     |   |   |   |   SceneTransitionController.h
     |   |   |   |   SceneViewportRenderer.h
     |   |   |   |
+    |   |   |   +---Debug
+    |   |   |   |       EditorBackendComparisonScene.cpp
+    |   |   |   |       EditorBackendComparisonScene.h
     |   |   |   \---Tests
     |   |   |           SceneGraphSelfTests.cpp
     |   |   |           SceneGraphSelfTests.h
@@ -747,12 +999,10 @@ D:.
     |   |   |           SceneLifecycleSelfTests.h
     |   |   |           SceneTransformSelfTests.cpp
     |   |   |           SceneTransformSelfTests.h
-    |   |   |
     |   |   \---UI
     |   |       +---Animation
     |   |       |       UIAnimationBinding.cpp
     |   |       |       UIAnimationBinding.h
-    |   |       |
     |   |       +---Core
     |   |       |       UIContext.cpp
     |   |       |       UIContext.h
@@ -766,34 +1016,59 @@ D:.
     |   |       |       UIHitTest.h
     |   |       |       UITextureView.cpp
     |   |       |       UITextureView.h
-    |   |       |
     |   |       +---Debug
     |   |       |       UITreeMutationValidation.h
-    |   |       |
+    |   |       +---Docking
+    |   |       |       UIDockGeometry.h
+    |   |       |       UIDockLayout.h
+    |   |       |       UIDockSpace.cpp
+    |   |       |       UIDockSpace.h
     |   |       +---Document
+    |   |       |       DefaultDocumentImporters.cpp
+    |   |       |       DefaultDocumentImporters.h
+    |   |       |       DocumentImporterRegistry.cpp
+    |   |       |       DocumentImporterRegistry.h
+    |   |       |       DocumentLoader.cpp
+    |   |       |       DocumentLoader.h
+    |   |       |       IDocumentImporter.h
+    |   |       |       UIDocument.h
     |   |       |       UIVectorDocument.cpp
     |   |       |       UIVectorDocument.h
     |   |       |       VectorDocument.h
-    |   |       |
-    |   |       +---Text
-    |   |       |       UIFontAtlas.h
-    |   |       |       UIFontAtlasBuilder.cpp
-    |   |       |       UIFontAtlasBuilder.h
-    |   |       |       UIUtf8.h
-    |   |       |
-    |   |       |   +---Debug
-    |   |       |           UITextDemoLayer.cpp
-    |   |       |           UITextDemoLayer.h
-    |   |       |
+    |   |       +---Immediate
+    |   |       |       UIImmediateContext.h
+    |   |       +---Navigation
+    |   |       |       UINavigationManager.cpp
+    |   |       |       UINavigationManager.h
+    |   |       |       UIScreen.cpp
+    |   |       |       UIScreen.h
     |   |       +---Rendering
+    |   |       |       ExplicitUIRenderer.cpp
+    |   |       |       ExplicitUIRenderer.h
     |   |       |       OpenGLUIRenderer.cpp
     |   |       |       OpenGLUIRenderer.h
     |   |       |       UIRenderer.cpp
     |   |       |       UIRenderer.h
-    |   |       |
+    |   |       |       UITessellator.cpp
+    |   |       |       UITessellator.h
+    |   |       +---Screens
+    |   |       |       HUDScreen.cpp
+    |   |       |       HUDScreen.h
+    |   |       |       LoadingScreen.cpp
+    |   |       |       LoadingScreen.h
+    |   |       |       PauseScreen.cpp
+    |   |       |       PauseScreen.h
+    |   |       |       SettingsScreen.cpp
+    |   |       |       SettingsScreen.h
+    |   |       |       TitleScreen.cpp
+    |   |       |       TitleScreen.h
+    |   |       +---Style
+    |   |       |       UITheme.h
     |   |       +---Svg
+    |   |       |   |   SvgImportContext.h
     |   |       |   |   SvgImporter.cpp
     |   |       |   |   SvgImporter.h
+    |   |       |   |   SvgImporterDocument.cpp
     |   |       |   |   SvgPathImporter.cpp
     |   |       |   |   SvgPathImporter.h
     |   |       |   |   UISvg.cpp
@@ -802,27 +1077,61 @@ D:.
     |   |       |   \---Debug
     |   |       |           UISvgDemoLayer.cpp
     |   |       |           UISvgDemoLayer.h
-    |   |       |
+    |   |       +---Text
+    |   |       |   |   UIFontAtlas.cpp
+    |   |       |   |   UIFontAtlas.h
+    |   |       |   |   UIFontAtlasBuilder.cpp
+    |   |       |   |   UIFontAtlasBuilder.h
+    |   |       |   |   UIIMEComposition.h
+    |   |       |   |   UITextEditBuffer.h
+    |   |       |   |   UITextLayout.cpp
+    |   |       |   |   UITextLayout.h
+    |   |       |   |   UITextMeasurement.cpp
+    |   |       |   |   UITextMeasurement.h
+    |   |       |   |   UITextMetrics.h
+    |   |       |   |   UIUtf8.h
+    |   |       |   |
+    |   |       |   \---Debug
+    |   |       |           UITextDemoLayer.cpp
+    |   |       |           UITextDemoLayer.h
     |   |       \---Widgets
     |   |               UIButton.cpp
     |   |               UIButton.h
+    |   |               UICheckbox.h
     |   |               UICircle.cpp
     |   |               UICircle.h
+    |   |               UICollapsibleSection.h
+    |   |               UIComboBox.h
     |   |               UIImage.cpp
     |   |               UIImage.h
+    |   |               UIInputNumber.h
+    |   |               UIInputText.cpp
+    |   |               UIInputText.h
     |   |               UILabel.cpp
     |   |               UILabel.h
+    |   |               UIMenuBar.h
     |   |               UIPanel.cpp
     |   |               UIPanel.h
     |   |               UIPolygon.cpp
     |   |               UIPolygon.h
+    |   |               UIScrollBarMetrics.h
     |   |               UIScrollView.cpp
     |   |               UIScrollView.h
     |   |               UIScrollViewNavigation.inl
+    |   |               UISeparator.h
     |   |               UISlider.cpp
     |   |               UISlider.h
     |   |               UISplitter.cpp
     |   |               UISplitter.h
+    |   |               UITabBar.cpp
+    |   |               UITabBar.h
+    |   |               UITable.h
+    |   |               UITabModel.h
+    |   |               UITabView.cpp
+    |   |               UITabView.h
+    |   |               UITooltip.h
+    |   |               UITreeView.h
+    |   |               UIWindow.h
     |   |
     |   +---Root
     |   |   \---x64
@@ -901,497 +1210,6 @@ D:.
     |   +---src
     |   |       glad.c
     |   |
-    |   +---vendor
-    |   |   \---imgui
-    |   |       |   .editorconfig
-    |   |       |   .gitattributes
-    |   |       |   .gitignore
-    |   |       |   imconfig.h
-    |   |       |   imgui.cpp
-    |   |       |   imgui.h
-    |   |       |   imgui_demo.cpp
-    |   |       |   imgui_draw.cpp
-    |   |       |   imgui_internal.h
-    |   |       |   imgui_tables.cpp
-    |   |       |   imgui_widgets.cpp
-    |   |       |   imstb_rectpack.h
-    |   |       |   imstb_textedit.h
-    |   |       |   imstb_truetype.h
-    |   |       |   LICENSE.txt
-    |   |       |
-    |   |       +---.github
-    |   |       |   |   FUNDING.yml
-    |   |       |   |   pull_request_template.md
-    |   |       |   |
-    |   |       |   +---ISSUE_TEMPLATE
-    |   |       |   |       config.yml
-    |   |       |   |       issue_template.yml
-    |   |       |   |
-    |   |       |   \---workflows
-    |   |       |           build.yml
-    |   |       |           build_windows_vulkan_libs.ps1
-    |   |       |           manual.yml
-    |   |       |           scheduled.yml
-    |   |       |           static-analysis.yml
-    |   |       |
-    |   |       +---backends
-    |   |       |   |   imgui_impl_allegro5.cpp
-    |   |       |   |   imgui_impl_allegro5.h
-    |   |       |   |   imgui_impl_android.cpp
-    |   |       |   |   imgui_impl_android.h
-    |   |       |   |   imgui_impl_dx10.cpp
-    |   |       |   |   imgui_impl_dx10.h
-    |   |       |   |   imgui_impl_dx11.cpp
-    |   |       |   |   imgui_impl_dx11.h
-    |   |       |   |   imgui_impl_dx12.cpp
-    |   |       |   |   imgui_impl_dx12.h
-    |   |       |   |   imgui_impl_dx9.cpp
-    |   |       |   |   imgui_impl_dx9.h
-    |   |       |   |   imgui_impl_glfw.cpp
-    |   |       |   |   imgui_impl_glfw.h
-    |   |       |   |   imgui_impl_glut.cpp
-    |   |       |   |   imgui_impl_glut.h
-    |   |       |   |   imgui_impl_metal.h
-    |   |       |   |   imgui_impl_metal.mm
-    |   |       |   |   imgui_impl_metal4.h
-    |   |       |   |   imgui_impl_metal4.mm
-    |   |       |   |   imgui_impl_null.cpp
-    |   |       |   |   imgui_impl_null.h
-    |   |       |   |   imgui_impl_opengl2.cpp
-    |   |       |   |   imgui_impl_opengl2.h
-    |   |       |   |   imgui_impl_opengl3.cpp
-    |   |       |   |   imgui_impl_opengl3.h
-    |   |       |   |   imgui_impl_opengl3_loader.h
-    |   |       |   |   imgui_impl_osx.h
-    |   |       |   |   imgui_impl_osx.mm
-    |   |       |   |   imgui_impl_sdl2.cpp
-    |   |       |   |   imgui_impl_sdl2.h
-    |   |       |   |   imgui_impl_sdl3.cpp
-    |   |       |   |   imgui_impl_sdl3.h
-    |   |       |   |   imgui_impl_sdlgpu3.cpp
-    |   |       |   |   imgui_impl_sdlgpu3.h
-    |   |       |   |   imgui_impl_sdlgpu3_shaders.h
-    |   |       |   |   imgui_impl_sdlrenderer2.cpp
-    |   |       |   |   imgui_impl_sdlrenderer2.h
-    |   |       |   |   imgui_impl_sdlrenderer3.cpp
-    |   |       |   |   imgui_impl_sdlrenderer3.h
-    |   |       |   |   imgui_impl_vulkan.cpp
-    |   |       |   |   imgui_impl_vulkan.h
-    |   |       |   |   imgui_impl_wgpu.cpp
-    |   |       |   |   imgui_impl_wgpu.h
-    |   |       |   |   imgui_impl_win32.cpp
-    |   |       |   |   imgui_impl_win32.h
-    |   |       |   |
-    |   |       |   +---sdlgpu3
-    |   |       |   |       build_instructions.txt
-    |   |       |   |       shader.frag
-    |   |       |   |       shader.vert
-    |   |       |   |
-    |   |       |   \---vulkan
-    |   |       |           build_instructions.txt
-    |   |       |           generate_spv.sh
-    |   |       |           glsl_shader.frag
-    |   |       |           glsl_shader.vert
-    |   |       |
-    |   |       +---docs
-    |   |       |       BACKENDS.md
-    |   |       |       CHANGELOG.txt
-    |   |       |       CONTRIBUTING.md
-    |   |       |       EXAMPLES.md
-    |   |       |       FAQ.md
-    |   |       |       FONTS.md
-    |   |       |       README.md
-    |   |       |       SECURITY.md
-    |   |       |       TODO.txt
-    |   |       |
-    |   |       +---examples
-    |   |       |   |   imgui_examples.sln
-    |   |       |   |   README.txt
-    |   |       |   |
-    |   |       |   +---example_allegro5
-    |   |       |   |       example_allegro5.vcxproj
-    |   |       |   |       example_allegro5.vcxproj.filters
-    |   |       |   |       imconfig_allegro5.h
-    |   |       |   |       main.cpp
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_android_opengl3
-    |   |       |   |   |   CMakeLists.txt
-    |   |       |   |   |   main.cpp
-    |   |       |   |   |
-    |   |       |   |   \---android
-    |   |       |   |       |   .gitignore
-    |   |       |   |       |   build.gradle
-    |   |       |   |       |   settings.gradle
-    |   |       |   |       |
-    |   |       |   |       +---.gradle
-    |   |       |   |       |   |   file-system.probe
-    |   |       |   |       |   |
-    |   |       |   |       |   +---8.9
-    |   |       |   |       |   |   |   gc.properties
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---checksums
-    |   |       |   |       |   |   |       checksums.lock
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---dependencies-accessors
-    |   |       |   |       |   |   |   |   gc.properties
-    |   |       |   |       |   |   |   |
-    |   |       |   |       |   |   |   \---e1ac273d50f6caa3c4aedae7e636a5f230f549a2
-    |   |       |   |       |   |   |       |   metadata.bin
-    |   |       |   |       |   |   |       |
-    |   |       |   |       |   |   |       +---classes
-    |   |       |   |       |   |   |       |   \---org
-    |   |       |   |       |   |   |       |       \---gradle
-    |   |       |   |       |   |   |       |           \---accessors
-    |   |       |   |       |   |   |       |               \---dm
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$AndroidPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$BundleAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$KotlinPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$PluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs$VersionAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibs.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$AndroidPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$BundleAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$KotlinPluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$PluginAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock$VersionAccessors.class
-    |   |       |   |       |   |   |       |                       LibrariesForLibsInPluginsBlock.class
-    |   |       |   |       |   |   |       |
-    |   |       |   |       |   |   |       \---sources
-    |   |       |   |       |   |   |           \---org
-    |   |       |   |       |   |   |               \---gradle
-    |   |       |   |       |   |   |                   \---accessors
-    |   |       |   |       |   |   |                       \---dm
-    |   |       |   |       |   |   |                               LibrariesForLibs.java
-    |   |       |   |       |   |   |                               LibrariesForLibsInPluginsBlock.java
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---expanded
-    |   |       |   |       |   |   +---fileChanges
-    |   |       |   |       |   |   |       last-build.bin
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---fileHashes
-    |   |       |   |       |   |   |       fileHashes.bin
-    |   |       |   |       |   |   |       fileHashes.lock
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   \---vcsMetadata
-    |   |       |   |       |   +---9.2.0
-    |   |       |   |       |   |   |   gc.properties
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---checksums
-    |   |       |   |       |   |   |       checksums.lock
-    |   |       |   |       |   |   |       md5-checksums.bin
-    |   |       |   |       |   |   |       sha1-checksums.bin
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---expanded
-    |   |       |   |       |   |   +---fileChanges
-    |   |       |   |       |   |   |       last-build.bin
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   +---fileHashes
-    |   |       |   |       |   |   |       fileHashes.bin
-    |   |       |   |       |   |   |       fileHashes.lock
-    |   |       |   |       |   |   |
-    |   |       |   |       |   |   \---vcsMetadata
-    |   |       |   |       |   +---buildOutputCleanup
-    |   |       |   |       |   |       buildOutputCleanup.lock
-    |   |       |   |       |   |       cache.properties
-    |   |       |   |       |   |
-    |   |       |   |       |   \---vcs-1
-    |   |       |   |       |           gc.properties
-    |   |       |   |       |
-    |   |       |   |       +---app
-    |   |       |   |       |   |   build.gradle
-    |   |       |   |       |   |
-    |   |       |   |       |   \---src
-    |   |       |   |       |       \---main
-    |   |       |   |       |           |   AndroidManifest.xml
-    |   |       |   |       |           |
-    |   |       |   |       |           \---java
-    |   |       |   |       |                   MainActivity.kt
-    |   |       |   |       |
-    |   |       |   |       \---gradle
-    |   |       |   |               libs.versions.toml
-    |   |       |   |
-    |   |       |   +---example_apple_metal
-    |   |       |   |   |   main.mm
-    |   |       |   |   |   Makefile
-    |   |       |   |   |   README.md
-    |   |       |   |   |
-    |   |       |   |   +---example_apple_metal.xcodeproj
-    |   |       |   |   |       project.pbxproj
-    |   |       |   |   |
-    |   |       |   |   +---iOS
-    |   |       |   |   |       Info-iOS.plist
-    |   |       |   |   |       LaunchScreen.storyboard
-    |   |       |   |   |
-    |   |       |   |   \---macOS
-    |   |       |   |           Info-macOS.plist
-    |   |       |   |           MainMenu.storyboard
-    |   |       |   |
-    |   |       |   +---example_apple_metal4
-    |   |       |   |   |   main.mm
-    |   |       |   |   |   Makefile
-    |   |       |   |   |   README.md
-    |   |       |   |   |
-    |   |       |   |   +---example_apple_metal4.xcodeproj
-    |   |       |   |   |       project.pbxproj
-    |   |       |   |   |
-    |   |       |   |   +---iOS
-    |   |       |   |   |       Info-iOS.plist
-    |   |       |   |   |       LaunchScreen.storyboard
-    |   |       |   |   |
-    |   |       |   |   \---macOS
-    |   |       |   |           Info-macOS.plist
-    |   |       |   |           MainMenu.storyboard
-    |   |       |   |
-    |   |       |   +---example_apple_opengl2
-    |   |       |   |   |   main.mm
-    |   |       |   |   |   Makefile
-    |   |       |   |   |
-    |   |       |   |   \---example_apple_opengl2.xcodeproj
-    |   |       |   |           project.pbxproj
-    |   |       |   |
-    |   |       |   +---example_glfw_metal
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_glfw_opengl2
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_glfw_opengl2.vcxproj
-    |   |       |   |       example_glfw_opengl2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_glfw_opengl3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_glfw_opengl3.vcxproj
-    |   |       |   |       example_glfw_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |
-    |   |       |   +---example_glfw_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       example_glfw_vulkan.vcxproj
-    |   |       |   |       example_glfw_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_glfw_wgpu
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_glut_opengl2
-    |   |       |   |       example_glut_opengl2.vcxproj
-    |   |       |   |       example_glut_opengl2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_null
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_null.vcxproj
-    |   |       |   |       example_null.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl2_directx11
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_directx11.vcxproj
-    |   |       |   |       example_sdl2_directx11.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_sdl2_metal
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl2_opengl2
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_opengl2.vcxproj
-    |   |       |   |       example_sdl2_opengl2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl2_opengl3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_opengl3.vcxproj
-    |   |       |   |       example_sdl2_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl2_sdlrenderer2
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl2_sdlrenderer2.vcxproj
-    |   |       |   |       example_sdl2_sdlrenderer2.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl2_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl2_vulkan.vcxproj
-    |   |       |   |       example_sdl2_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl2_wgpu
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl3_directx11
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl3_directx11.vcxproj
-    |   |       |   |       example_sdl3_directx11.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_sdl3_metal
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_metal4
-    |   |       |   |       main.mm
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_opengl3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl3_opengl3.vcxproj
-    |   |       |   |       example_sdl3_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_sdl3_sdlgpu3
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl3_sdlgpu3.vcxproj
-    |   |       |   |       example_sdl3_sdlgpu3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_sdlrenderer3
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_sdl3_sdlrenderer3.vcxproj
-    |   |       |   |       example_sdl3_sdlrenderer3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_sdl3_vulkan.vcxproj
-    |   |       |   |       example_sdl3_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile
-    |   |       |   |
-    |   |       |   +---example_sdl3_wgpu
-    |   |       |   |       CMakeLists.txt
-    |   |       |   |       main.cpp
-    |   |       |   |       Makefile.emscripten
-    |   |       |   |       README.md
-    |   |       |   |
-    |   |       |   +---example_win32_directx10
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx10.vcxproj
-    |   |       |   |       example_win32_directx10.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_directx11
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx11.vcxproj
-    |   |       |   |       example_win32_directx11.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_directx12
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx12.vcxproj
-    |   |       |   |       example_win32_directx12.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_directx9
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_directx9.vcxproj
-    |   |       |   |       example_win32_directx9.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_opengl3
-    |   |       |   |       build_mingw.bat
-    |   |       |   |       build_win32.bat
-    |   |       |   |       example_win32_opengl3.vcxproj
-    |   |       |   |       example_win32_opengl3.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   +---example_win32_vulkan
-    |   |       |   |       build_win32.bat
-    |   |       |   |       build_win64.bat
-    |   |       |   |       example_win32_vulkan.vcxproj
-    |   |       |   |       example_win32_vulkan.vcxproj.filters
-    |   |       |   |       main.cpp
-    |   |       |   |
-    |   |       |   \---libs
-    |   |       |       +---emscripten
-    |   |       |       |       emscripten_mainloop_stub.h
-    |   |       |       |       shell_minimal.html
-    |   |       |       |
-    |   |       |       +---glfw
-    |   |       |       |   |   COPYING.txt
-    |   |       |       |   |
-    |   |       |       |   +---include
-    |   |       |       |   |   \---GLFW
-    |   |       |       |   |           glfw3.h
-    |   |       |       |   |           glfw3native.h
-    |   |       |       |   |
-    |   |       |       |   +---lib-vc2010-32
-    |   |       |       |   |       glfw3.lib
-    |   |       |       |   |
-    |   |       |       |   \---lib-vc2010-64
-    |   |       |       |           glfw3.lib
-    |   |       |       |
-    |   |       |       \---usynergy
-    |   |       |               README.txt
-    |   |       |               uSynergy.c
-    |   |       |               uSynergy.h
-    |   |       |
-    |   |       \---misc
-    |   |           |   README.txt
-    |   |           |
-    |   |           +---cpp
-    |   |           |       imgui_stdlib.cpp
-    |   |           |       imgui_stdlib.h
-    |   |           |       README.txt
-    |   |           |
-    |   |           +---debuggers
-    |   |           |       imgui.gdb
-    |   |           |       imgui.natstepfilter
-    |   |           |       imgui.natvis
-    |   |           |       imgui_lldb.py
-    |   |           |       README.txt
-    |   |           |
-    |   |           +---fonts
-    |   |           |       binary_to_compressed_c.cpp
-    |   |           |       Cousine-Regular.ttf
-    |   |           |       DroidSans.ttf
-    |   |           |       Karla-Regular.ttf
-    |   |           |       ProggyClean.ttf
-    |   |           |       ProggyTiny.ttf
-    |   |           |       Roboto-Medium.ttf
-    |   |           |
-    |   |           +---freetype
-    |   |           |       imgui_freetype.cpp
-    |   |           |       imgui_freetype.h
-    |   |           |       README.md
-    |   |           |
-    |   |           \---single_file
-    |   |                   imgui_single_file.h
-    |   |
     |   \---x64
     |       \---Debug
     |           |   AABB.obj
@@ -1399,7 +1217,6 @@ D:.
     |           |   AccessorReaderSkin.obj
     |           |   AnimationClip.obj
     |           |   AnimationDebugOverlayRenderer.obj
-    |           |   AnimationDebugPanel.obj
     |           |   AnimationImporter.obj
     |           |   AnimationRuntimeDebug.obj
     |           |   AnimationStateMachineGraphLayout.obj
@@ -1455,16 +1272,8 @@ D:.
     |           |   HumanoidSceneNormalization.obj
     |           |   HumanSkinningDebugController.obj
     |           |   HumanSkinningDebugLayer.obj
-    |           |   imgui.obj
-    |           |   ImGuiLayer.obj
-    |           |   imgui_draw.obj
-    |           |   imgui_impl_glfw.obj
-    |           |   imgui_impl_opengl3.obj
-    |           |   imgui_tables.obj
-    |           |   imgui_widgets.obj
     |           |   IndexBuffer.obj
     |           |   Input.obj
-    |           |   InspectorPanel.obj
     |           |   JsonParser.obj
     |           |   Layer.obj
     |           |   LinearAllocator.obj
@@ -1520,7 +1329,6 @@ D:.
     |           |   SceneCameraSystem.obj
     |           |   SceneGame.obj
     |           |   SceneGameAnimation.obj
-    |           |   SceneHierarchyPanel.obj
     |           |   SceneLifecycleSelfTests.obj
     |           |   Shader.obj
     |           |   SkeletalDeformationSelfTests.obj
@@ -1567,7 +1375,6 @@ D:.
     |           |   SphereCollision.obj
     |           |   StaticMeshImporter.obj
     |           |   StaticSceneImporter.obj
-    |           |   StatisticsPanel.obj
     |           |   Texture.obj
     |           |   vc143.idb
     |           |   vc143.pdb

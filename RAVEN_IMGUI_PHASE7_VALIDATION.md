@@ -1,5 +1,41 @@
 # 脱ImGui Phase 7 Windows自動検証記録
 
+## UI専用Sceneへの遷移修正（2026-11-11）
+
+- Explicit Rendererのフレーム準備で、OpaqueとTransparentの描画要求が空なら、Cameraなしでも空のScene Snapshotを作る。
+  ClearとRaven UIの描画・Presentが継続する。Meshがある場合のCamera・GPU Resource検証と、
+  Pipeline未準備時のエラーは引き続き有効。
+- Debug/Release x64ビルド、Debug Explicit Frame・Scene Lifecycle・Editor Command、
+  Release CPU UI・GPU回帰に成功。Explicit Frame Self TestにCameraなしの空Frame、旧Itemの破棄、
+  Pipeline欠落時の失敗の検証を追加した。DebugはリンクPDB無効・中間出力分離でビルドした。
+- 同一Release x64・150%で、OpenGL・DX12・Vulkanとも手動F10 → Return to Title → Start Gameの往復を確認。
+  DX12・VulkanはTitle表示時にScene Viewの映像がクリアされた。
+  OpenGLではTitle表示中も直前のScene View映像が残ったが、メニュー操作とGame復帰はできた。
+  3 Backendとも終了コード0、WindowCloseEvent 1回、stderr 0 byte。Dockレイアウトを復元した。
+- 実機ログは `artifacts/phase8/title-transition/`、ビルドとテストログは `artifacts/logs/phase8-title-*.log`。
+
+## Phase 8前の通常Sceneスモーク（2026-11-11）
+
+- `master` の `76fcad4d` と同じ作業ツリーでRelease x64通常ビルドとDebug x64通常ビルドを実行した。
+  Releaseは警告0件。DebugはPDBの既知の環境制約を避けるため、中間出力を分け、リンクPDBを無効化した。
+  Release CPU UI、OpenGL GPU、DX12補助Window、Vulkan色・補助Window回帰が成功した。
+  DebugのScene Lifecycle、Scene Graph、Editor Command、Viewport、Explicit FrameのSelf Testも成功した。
+- 通常起動・Raven UI既定・150%で、OpenGL/DX12/VulkanのGame Scene、Floor選択、Gizmo移動、
+  Undo/Redoと元位置への復元、補助Inspectorの分離とClose復帰を確認した。
+- Vulkanでは手動F10でPauseメニューが表示された。Return to Titleをクリックすると
+  stderrに `Vulkan Scene frame preparation failed.` が2行出て、Title表示前にウィンドウが消えた。
+  終了コードは0だが、WindowCloseEventはなく、正常なScene切替としては扱わない。
+- `SceneTitle::OnRender()` はUI専用なのでScene描画Queueを開始しない。
+  `Renderer::BuildRHISceneMeshes()` はQueueとCameraがなければ失敗を返すため、
+  UI専用Sceneを空の描画として扱えず、Explicit Frameの準備に失敗する経路と整合する。
+  DX12も共通Rendererを使う。DX12は短いF10の押下・解放が届いてもPauseを表示できず、実機の切替結果は未確認。
+  OpenGLのScene切替も未確認。
+- ログは `artifacts/logs/phase8-preflight-*.log` と `artifacts/phase8/preflight-76fcad4d/`。
+  Dockレイアウトとバックアップは元のハッシュに復元した。
+
+Phase 8の完全削除に進む前に、Explicit BackendのUI専用SceneでFrameを継続できるようにし、
+通常起動のGame → Title → Gameを3 Backendで再確認する。
+
 ## DX12・Vulkanの選択Outline再接続（2026-11-10）
 
 - Editorで選択EntityのSceneとGenerationを検証し、Scene ViewのオフスクリーンSnapshotへEntity IDを渡す。
@@ -1350,3 +1386,41 @@ Computer Use skillで通常のVulkan Editorを操作した。
 未検証: Debug実Editor、異DPI Monitor、全Component/IME、長時間負荷、Scene切替、正式性能Baseline、
 GPU/Surface喪失の障害注入、最小化/復帰の実機反復、複数GPU/異なるSurface形式での操作。
 次はDPI別回帰、またはBackend間の表示/性能比較を独立マイルストーンとして進める。
+
+
+## Phase 8: Dear ImGui依存の撤去（2026-11-12）
+
+承認済みの撤去範囲として、旧Panel/Gizmo描画、Layer callback、Application Frame Loop、
+Editor UI切替設定、プロジェクト参照、submodule、CI/setupの取得手順を削除した。
+Raven UIと既存Editor Commandを通常の唯一の経路とし、Gizmoの計算・編集処理は保持する。
+UIFontAtlasBuilderの隠れたimstb_truetype依存は、既存のstb_truetype.hへ切り替えた。
+ローカルvendor/imguiとimgui.iniはartifacts/phase8/legacy-local-backupへ退避した。
+structure.txtのRaven部分は既存の記載漏れも含め実構成へ同期（1066項目、過不足0）。
+
+### 検証結果
+
+- submoduleなしの分離checkout（b62210c4）からDebug/Release x64ビルド成功。
+  GLFW import libraryは既存の外部依存を配置、Vulkan SDKは1.4.357.0を使用。
+  Release Warning 0、Debugには既存LNK4098あり（集計2件）。DebugのLink PDB生成は無効。
+- Release CPU UI回帰成功。ビルド時の既存Warningは64件。GPU統合回帰成功、Font Atlasも非SKIP。
+  DX12補助Window、Vulkan Color/補助Windowの追加回帰も成功。
+- 撤去後のDebug Explicit Frame、Scene Lifecycle、Editor Entity Commands、Editor Viewportは全4件終了0。
+- 製品ソース・main・vcxproj・filtersのImGui検索0件。依存計測の4指標すべて0。
+  Debug/Releaseのobject名と既知ImGui symbol文字列のバイト検索も0件。
+  この検索は完全なsymbol table解析ではない。
+- OpenGL/DX12/Vulkan通常Editorは各WindowCloseEvent 1件、終了0、stderr 0 bytes。
+  artifacts/phase8/removal-smoke以下に実行ファイルhash、ログ、保存layoutを記録。
+  終了時は検証前layoutへ復元（元ファイルなしの場合は新規生成分を除去）。
+- 撤去後OpenGLは選択、Gizmo編集、Undo/Redo、Inspector分離・復帰、Game→Title→Gameを目視確認。
+  DX12の選択・Gizmo・Undo/Redo・Inspector復帰と、ユーザーによるPause表示確認まで記録あり。
+  中断後に残ったDX12のTitle往復およびVulkanの操作別目視結果は、この記録では未検証として扱う。
+  撤去前のTitle修正時には3 BackendのGame→Title→Gameを確認済み。
+- scripts/check-codex-cloud-baseline.sh成功。最終差分の空白エラーなし。
+
+最終ビルドログはartifacts/logs/phase8-removal-final-{Debug,Release}.log。
+phase8-removal-debug.log / release.logは修正前の失敗記録なので合格根拠に含めない。
+追加自動テストはphase8-removal-*.logを参照。
+
+残課題: Phase 7の正式性能Baseline・長時間検証（ユーザー方針により保留）、
+OpenGL Title中の旧Scene View映像、上記の撤去後操作別目視確認、異DPI/全Component/IME等。
+Phase 8の実装と自動回帰は完了。全実機Exit Gate達成とは扱わず、PRで残検証を明記する。

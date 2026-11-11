@@ -19,10 +19,10 @@
 
 // Ravenが独立管理するinclude/stb_truetype.hを、この翻訳単位だけで実装します。
 // STBTT_STATICでシンボルを内部リンケージにし、外部ライブラリとの衝突を防ぎます。
-// UI公開ヘッダもビルド時のFont処理もImGuiのヘッダを参照しません。
+// Font処理の実装依存はこの翻訳単位へ閉じ込めます。
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "imstb_truetype.h"
+#include "stb_truetype.h"
 
 namespace Raven
 {

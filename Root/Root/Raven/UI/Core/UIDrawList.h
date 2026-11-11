@@ -133,7 +133,7 @@ struct UIDrawCommand
 // ============================================================================
 // 1 UI frame分の描画要求をCPU側へ蓄積します。
 //
-// ImGuiと同様に最終的な描画データはframeごとに再構築しますが、UIElementそのものは
+// 最終的な描画データはframeごとに再構築しますが、UIElementそのものは
 // Retained Modeとして別途保持できるよう、DrawListはUI Treeの所有権を一切持ちません。
 // これにより、将来のLayout / HitTest / Event処理とRenderingを分離できます。
 class UIDrawList

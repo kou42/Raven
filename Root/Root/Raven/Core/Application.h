@@ -37,7 +37,6 @@
 namespace Raven
 {
 
-class ImGuiLayer;
 class RHISceneFrameLifecycle;
 enum class RHIFrameResult;
 class UIDockSpace;
@@ -48,7 +47,6 @@ struct ApplicationSpecification
 {
     WindowProps WindowProperties{};
     bool EnableRavenUI = true;
-    bool EnableDearImGui = true;
     // DX12/Vulkan通常Applicationで使用するScene Pipeline/Shader設定です。
     // OpenGL Legacy経路では参照しません。
     RHIExplicitSceneSpecification ExplicitScene{};
@@ -364,9 +362,6 @@ public:
     // ApplicationはMainと補助Window用UIContextのLifetimeを所有します。
     // Editor固有WidgetをApplicationへ持ち込まず、EditorLayer / Runtime Layerが必要な時だけ
     // Contextを借用してDrawListへ描画要求を積める境界にしています。
-    //
-    // Dear ImGuiは従来どおりm_ImGuiLayerで管理し続けるため、独自UI実装中も既存Editorを
-    // 壊さず並行運用できます。
     UIContext& GetUIContext() { return m_UIContext; }
     const UIContext& GetUIContext() const { return m_UIContext; }
     const UICompletedFrameMetrics& GetCompletedUIFrameMetrics() const { return m_CompletedUIFrameMetrics; }
@@ -521,10 +516,6 @@ private:
     bool m_UITreeMutationValidationAttached = false;
 #endif
 
-    // ImGuiLayerはLayerを継承しますが、Dear ImGuiのBegin/Endは全LayerのOnImGuiRender()を
-    // 囲む特殊なframe境界なので、Applicationが専用参照を保持して順序を保証します。
-    // またOpenGL backendをWindow/Contextより先にShutdownする責務もここで明示します。
-    Scope<ImGuiLayer> m_ImGuiLayer;
 };
 
 } // namespace Raven

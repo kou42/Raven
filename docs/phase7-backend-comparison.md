@@ -19,7 +19,7 @@ Set-Location D:/Engine/Root/Root
 ../x64/Release/Root.exe --backend=vulkan --editor-backend-comparison
 ```
 
-上記は一つずつ起動・終了する。Raven UI専用で、ImGui/DualやUI Migration Demoとは併用しない。
+上記は一つずつ起動・終了する。UI単体検証モードとは併用しない。
 比較用Sceneは通常のApplication/Editor/Viewport/Multi-Viewport経路へ接続する。
 通常起動のGame/Title・Character/Cloth/Jelly/Fluid・Debug専用UI Demoは追加しない。
 Engineを変更して比較する場合は、同じ実行ファイルの3 Backendを使う。

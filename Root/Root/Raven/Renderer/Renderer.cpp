@@ -843,10 +843,15 @@ bool Renderer::PrepareRHISceneFrame(
     // 前Frameの参照を先に解放し、失敗時に部分構築されたSnapshotを公開しません。
     outFrame = {};
     std::vector<RHISceneDrawItem> items;
-    const bool resourcesPrepared = PrepareQueuedMeshResources(
-        device, s_OpaqueQueue, s_TransparentQueue);
-    const bool built = resourcesPrepared == true &&
-        BuildRHISceneDrawItems(defaultTexture, clipCorrection, items);
+    // TitleなどのUI専用SceneはCameraやSurface Queueを開始しません。
+    // 描画要求が空ならClearとUIを続行し、Meshがある場合は従来どおり
+    // CameraとGPU Resourceの準備に失敗した時点でFrameを中断します。
+    bool built = true;
+    if (s_OpaqueQueue.empty() == false || s_TransparentQueue.empty() == false)
+    {
+        built = PrepareQueuedMeshResources(device, s_OpaqueQueue, s_TransparentQueue) == true &&
+            BuildRHISceneDrawItems(defaultTexture, clipCorrection, items) == true;
+    }
 
     // 失敗時もQueueを閉じ、次Frameに旧Sceneの描画を持ち越しません。
     s_SceneQueueActive = false;

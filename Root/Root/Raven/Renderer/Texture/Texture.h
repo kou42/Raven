@@ -127,7 +127,7 @@ public:
     }
 
     // 既存コードとの互換性を維持するためRenderer側のIDを公開しています。
-    // 現在のFramebuffer / ImGui連携整理後に、上位層からのRendererID直接参照を削除予定です。
+    // 現在のFramebufferの互換API整理後に、上位層からのRendererID直接参照を削除予定です。
     virtual unsigned int GetID() const = 0;
 
     virtual int GetWidth() const = 0;

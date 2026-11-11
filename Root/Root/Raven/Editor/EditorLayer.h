@@ -3,14 +3,10 @@
 #include "Raven/Editor/EditorCamera.h"
 #include "Raven/Editor/EditorDockLayout.h"
 #include "Raven/Editor/EditorGizmo.h"
-#include "Raven/Editor/Panels/AnimationDebugPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/EditorViewportRavenPanel.h"
-#include "Raven/Editor/Panels/InspectorPanel.h"
 #include "Raven/Editor/Panels/InspectorRavenPanel.h"
-#include "Raven/Editor/Panels/SceneHierarchyPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
-#include "Raven/Editor/Panels/StatisticsPanel.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Renderer/Framebuffer.h"
 #include "Raven/Renderer/Layer/Layer.h"
@@ -29,26 +25,12 @@ class UIElement;
 class UIDockSpace;
 class UIMenuBar;
 
-// Editor UIの移行状態を起動設定へ集約します。
-// DualはPanelごとに所有Backendを切り替える比較期間専用であり、同一Panelを
-// Dear ImGuiとRaven UIの両方から同時に編集するためのModeではありません。
-enum class EditorUIBackend
-{
-    DearImGui = 0,
-    RavenUI,
-    Dual
-};
-
-// 通常Editorの既定経路は一箇所で定義し、Application起動側とLayer単体生成側の
-// 初期値が将来ずれないようにします。旧経路は明示指定時だけ使用します。
-inline constexpr EditorUIBackend kDefaultEditorUIBackend = EditorUIBackend::RavenUI;
-
 // ============================================================================
 // EditorLayer
 // ============================================================================
 // Raven Editor全体の入口となるLayerです。
 //
-// ApplicationはWindow / Scene / Layer更新 / ImGui frame境界といった
+// ApplicationはWindow / Scene / Layer更新 / Raven UIのフレーム境界といった
 // 「アプリケーションを動かすための基盤処理」だけを担当し、Editor固有のUIや操作は
 // このLayer以下へ分離します。
 //
@@ -64,7 +46,7 @@ inline constexpr EditorUIBackend kDefaultEditorUIBackend = EditorUIBackend::Rave
 //     - Entity選択状態の共有
 //     - Scene View / Game Viewのoff-screen描画管理
 //     - Editor Camera / Gizmo等のEditor専用機能の統括
-//     - 各PanelのOnImGuiRender()呼び出し
+//     - 各Panelの表示とSnapshot更新
 //
 // 一方、FPS表示やHierarchy描画など個々のUI詳細はPanel側へ置きます。
 // Framebufferの具体的なOpenGL処理もPlatform/OpenGL側へ置き、EditorLayerは
@@ -77,13 +59,10 @@ public:
     // Applicationそのものを所有するのではなく参照だけ受け取ります。
     // EditorはApplicationが管理するWindow / Active Scene等を参照する必要がありますが、
     // それらのLifetime管理は引き続きApplication側の責務です。
-    explicit EditorLayer(
-        Application& application,
-        EditorUIBackend uiBackend = kDefaultEditorUIBackend);
+    explicit EditorLayer(Application& application);
     ~EditorLayer() override = default;
 
     // Editor専用リソースやPanelの初期化入口です。
-    // ImGui Contextの生成はImGuiLayerの責務なので、ここでは行いません。
     // OpenGLではScene View / Game View用Framebuffer、DX12 / VulkanではRHI off-screen Targetを生成します。
     // 未対応Explicit BackendではBackend非依存状態だけを初期化し、GPU Resourceは生成しません。
     void OnAttach() override;
@@ -97,14 +76,11 @@ public:
     // 現在はScene Viewがhoverされている間だけEditorCameraへ入力を渡します。
     void OnUpdate(float dt) override;
 
-    // ImGuiそのものではなく、Editorが必要とする3D描画の入口です。
+    // Editorが必要とする3D描画の入口です。
     // 現在はScene/Game View用Framebufferへのoff-screen描画を担当し、将来的には
     // Scene View専用のGrid / Selection Outline / Gizmo等もこの描画経路へ追加します。
     void OnRender() override;
 
-    // Dear ImGuiのBegin/End間でApplicationから呼ばれるEditor UI描画入口です。
-    // DockSpace、Scene/Game View、各Panelの描画を最終的にここから統括します。
-    void OnImGuiRender(float dt) override;
     void OnRavenUIRender(float dt) override;
 
     // Editor Camera / Gizmo / Shortcut等の入力処理入口です。
@@ -114,40 +90,6 @@ public:
     bool OnUIKeyEvent(const UIKeyEvent& event) override;
 
 private:
-    enum class PanelUIOwner
-    {
-        DearImGui = 0,
-        RavenUI
-    };
-
-    // Dual中も各Panelの書き込み経路を1つに限定します。
-    // Raven UI版へ移行したPanelだけを個別にRavenUIへ変更し、比較期間の二重操作を防ぎます。
-    struct PanelUIOwnership
-    {
-        PanelUIOwner Statistics = PanelUIOwner::RavenUI;
-        PanelUIOwner AnimationDebug = PanelUIOwner::RavenUI;
-        PanelUIOwner SceneHierarchy = PanelUIOwner::RavenUI;
-        PanelUIOwner Inspector = PanelUIOwner::DearImGui;
-        PanelUIOwner SceneView = PanelUIOwner::RavenUI;
-        PanelUIOwner GameView = PanelUIOwner::RavenUI;
-    };
-
-    bool IsPanelOwnedByDearImGui(PanelUIOwner owner) const;
-
-    // ========================================================================
-    // Editor Root UI
-    // ========================================================================
-    // Main Viewport全体を覆うHost Windowを作り、その内部にDockSpaceを配置します。
-    // Host Window自身はEditor背景/メニューバー/Docking領域の管理だけを担当し、
-    // StatisticsやScene View等の実際のEditor Windowは独立したWindowとしてDockされます。
-    void BeginDockSpace();
-    void EndDockSpace();
-
-    // Editor全体のMenuBar描画です。
-    // Viewメニューから各Editor PanelおよびScene/Game Viewの表示/非表示を切り替えます。
-    // Window数が増えても表示状態の管理はここへ集約し、Panel自身には他Panelの存在を知らせません。
-    void RenderMenuBar();
-
     // Raven UI Editor shellはEditorLayerだけが所有し、Applicationには具体的なPanelを知らせません。
     // Panel WidgetはDock TabのContentへ移しますが、Panel classのRuntime Snapshot/編集中状態は
     // EditorLayer所有のまま維持し、Tabの表示切替やLayout再構築で破棄しません。
@@ -170,13 +112,10 @@ private:
     // Editor Viewports
     // ========================================================================
     // Scene View / Game ViewはMain framebufferを直接透過表示するのではなく、
-    // それぞれ専用FramebufferのColor Attachment TextureをImGui Window内へ表示します。
+    // それぞれ専用FramebufferのColor Attachment TextureをRaven UI Panel内へ表示します。
     //
     // WindowのContentRegionサイズを保存し、次のOnRender()でFramebufferを同じ大きさへ
     // ResizeすることでDock/Window Resizeへ追従します。
-    void RenderSceneView();
-    void RenderGameView();
-
     // Runtime Cameraをそのまま利用してActive Sceneを指定Framebufferへ描画します。
     // Game Viewではこの経路を使用します。
     void RenderSceneToFramebuffer(Framebuffer& framebuffer);
@@ -222,10 +161,6 @@ private:
     // 所有関係は Application -> EditorLayer の一方向に保ち、循環所有を作りません。
     Application* m_Application = nullptr;
 
-    // UI移行設定はRuntime SceneやAssetへ保存せず、Editor Layerの起動時設定として保持します。
-    EditorUIBackend m_UIBackend = EditorUIBackend::DearImGui;
-    PanelUIOwnership m_PanelUIOwnership{};
-
     // ========================================================================
     // Editor Selection
     // ========================================================================
@@ -243,13 +178,9 @@ private:
     // ========================================================================
     // PanelはEditorLayerが所有しますが、Active Scene等のRuntimeオブジェクトは所有しません。
     // 必要なRuntime参照は各UI Render HookでSnapshot化し、Scene差し替えにも追従します。
-    StatisticsPanel m_StatisticsPanel;
     StatisticsRavenPanel m_StatisticsRavenPanel;
-    AnimationDebugPanel m_AnimationDebugPanel;
     AnimationDebugRavenPanel m_AnimationDebugRavenPanel;
-    SceneHierarchyPanel m_SceneHierarchyPanel;
     SceneHierarchyRavenPanel m_SceneHierarchyRavenPanel;
-    InspectorPanel m_InspectorPanel;
     InspectorRavenPanel m_InspectorRavenPanel;
     EditorViewportRavenPanel m_SceneViewportRavenPanel;
     EditorViewportRavenPanel m_GameViewportRavenPanel;
@@ -264,7 +195,7 @@ private:
     EditorTransformGizmoController m_RavenViewportGizmo;
 
     // Scene Viewを所有するUI Backendから得たhover/focus状態です。
-    // Dear ImGui経路は前Frame、Raven UI経路は保持中のHit Test状態と現在Pointer位置を使います。
+    // 保持中のHit Test状態と現在Pointer位置を使います。
     // 両方が成立した場合だけEditor CameraのInput pollingを許可します。
     bool m_SceneViewportHovered = false;
     bool m_SceneViewportFocused = false;
@@ -300,7 +231,7 @@ private:
     Ref<Material> m_SelectionOutlineMaterial;
 
     // 各Viewport Panelから取得した次Frame用RenderTarget Pixel数です。
-    // ImGui経路では従来どおりContentRegionの数値、Raven UI経路では論理DIPへ
+    // Viewport Panelの論理DIPへ
     // Window framebuffer倍率を適用した実Pixel数を保存します。
     // UI構築後に更新し次のOnRender()でResizeするため、1Frame遅延を前提にします。
     float m_SceneViewportWidth = 1280.0f;
@@ -336,10 +267,6 @@ private:
         std::string Title;
     };
     std::unordered_map<std::uint64_t, HiddenDockPanel> m_HiddenDockPanels;
-
-    // BeginDockSpace()でHost Windowに対してImGui::Begin()を呼んだ場合は、
-    // 必ず対応するImGui::End()が必要です。Begin/Endの対応関係を明確に保つため状態を保持します。
-    bool m_DockSpaceBegun = false;
 
     // Scene/Game Viewのoff-screen描画先を利用できる場合だけ有効です。
     // Editorの選択・Command履歴等はこの値と分離し、描画未対応BackendでもLayerを登録できます。

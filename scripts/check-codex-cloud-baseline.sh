@@ -12,7 +12,6 @@ required_files=(
   "Root/Tests/README.md"
   "Root/Tests/UITextReflowTests.cpp"
   "Root/Tests/UIFontTextureGPUIntegrationTests.cpp"
-  ".gitmodules"
 )
 
 for required_file in "${required_files[@]}"; do
@@ -21,12 +20,6 @@ for required_file in "${required_files[@]}"; do
     exit 1
   fi
 done
-
-if [[ ! -f "Root/Root/vendor/imgui/imgui.cpp" ]]; then
-  echo "[FAIL] Dear ImGui submodule is not initialized." >&2
-  echo "       Run: git submodule update --init --recursive" >&2
-  exit 1
-fi
 
 require_text() {
   local pattern="$1"
@@ -46,7 +39,6 @@ require_text 'UITextReflowTests\.cpp' "Root/Root/Root.vcxproj" "CPU UI test entr
 require_text 'UIFontTextureGPUIntegrationTests\.cpp' "Root/Root/Root.vcxproj" "GPU UI test entry point is missing"
 require_text 'VULKAN_SDK' "Root/Root/Root.vcxproj" "Vulkan SDK dependency is missing"
 require_text 'glfw3\.lib' "Root/Root/Root.vcxproj" "GLFW static library dependency is missing"
-require_text 'path[[:space:]]*=[[:space:]]*Root/Root/vendor/imgui' ".gitmodules" "Dear ImGui submodule path is missing"
 require_text 'マイルストーン承認ゲート' "AGENTS.md" "milestone approval gate is missing"
 
 echo "[PASS] Raven Codex Cloud baseline"

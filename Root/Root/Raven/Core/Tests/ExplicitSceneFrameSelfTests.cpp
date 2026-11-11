@@ -317,6 +317,19 @@ void RunExplicitSceneFrameSelfTests()
     assert(outline.DepthCompare == DepthCompareOperator::LessEqual);
     assert(outline.DepthTest == true && outline.DepthWrite == false && outline.Blend == false);
 
+    // TitleのようにCameraを登録しないFrameでも、古いMeshを捨ててUI描画へ進めます。
+    Renderer::BeginScene();
+    Renderer::PreparedRHISceneFrame uiOnlyFrame;
+    uiOnlyFrame.Items.emplace_back();
+    const auto clipCorrection = RHISceneDrawItemBuilder::VulkanClipCorrection();
+    assert(Renderer::PrepareRHISceneFrame(dx12Device, opaque, transparent,
+        nullptr, clipCorrection, uiOnlyFrame) == true);
+    assert(uiOnlyFrame.Items.empty() == true);
+    assert(uiOnlyFrame.OpaquePipeline == opaque && uiOnlyFrame.TransparentPipeline == transparent);
+    assert(Renderer::PrepareRHISceneFrame(dx12Device, nullptr, transparent,
+        nullptr, clipCorrection, uiOnlyFrame) == false);
+    assert(uiOnlyFrame.OpaquePipeline == nullptr);
+
     // Explicit BackendのFont AtlasはLegacy Textureを作らず、Pixel Assetを描画準備時にUploadします。
     TextureAssetPixelData atlasPixels{};
     atlasPixels.Width = 2u;

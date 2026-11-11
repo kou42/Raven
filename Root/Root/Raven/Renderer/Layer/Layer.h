@@ -33,12 +33,7 @@ public:
     //virtual void OnUpdate() {}
     virtual void OnRender() {}
 
-    // Dear ImGuiの1 frameがBegin/Endされている間に呼ばれるEditor/Debug UI描画フックです。
-    // 通常のRender処理と分離することで、Runtime LayerがImGuiを必要としない場合は依存を持たず、
-    // EditorLayer等の必要なLayerだけがこの関数をoverrideできる構成にします。
-    virtual void OnImGuiRender(float dt) {}
-
-    // 全LayerのUpdate / RenderとDear ImGui構築が終わった後、Raven UIのEndFrame直前に呼ばれます。
+    // 全LayerのUpdate / Renderが終わった後、Raven UIのEndFrame直前に呼ばれます。
     // 診断Panelはこの時点のRuntime SnapshotでRetained Widgetを更新し、計測途中の値を表示しません。
     virtual void OnRavenUIRender(float dt) { static_cast<void>(dt); }
 

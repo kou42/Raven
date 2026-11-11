@@ -59,7 +59,6 @@ Root/Root/Raven/Scene/Debug/*
 # 個人用のIDE設定と、自動保存される画面配置。
 *.vcxproj.user
 /Root.code-workspace
-/Root/Root/imgui.ini
 RavenEditorDock.layout.json
 RavenEditorDock.layout.json.bak
 RavenUIDockDemo.layout.json

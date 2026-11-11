@@ -246,7 +246,7 @@ struct Win32IMEBridge
 
         if (message == WM_IME_STARTCOMPOSITION)
         {
-            // Raven UI以外（Dear ImGui等）が入力を所有する場合はGLFWへ従来どおり渡します。
+            // Raven UIが入力を消費しない場合はGLFWへ従来どおり渡します。
             bridge->OwnedByRavenUI = bridge->Send(IMECompositionEventType::Begin);
             bridge->SuppressIMEChars = 0u;
             bridge->UpdateCandidatePosition();
@@ -714,7 +714,7 @@ void WindowsWindow::Init(const WindowProps& props)
                 static_cast<float>(mouseY));
             data.EventCallback(event);
         });
-    // GLFWのWndProcが完成してからsubclassし、GLFWとDear ImGuiの既存callbackを保持します。
+    // GLFWのWndProcが完成してからsubclassし、GLFWの既存callbackを保持します。
     m_IMEBridge = std::make_unique<Win32IMEBridge>();
     if (m_IMEBridge->Install(glfwGetWin32Window(m_Window), m_Window,
         &m_Data.EventCallback, &m_Data.IMECaretPositionCallback) == false)
