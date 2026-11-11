@@ -22,6 +22,7 @@
 #include "Raven/Scene/SceneTitle.h"
 #include "Raven/Scene/Tests/SceneGraphSelfTests.h"
 #include "Raven/Scene/Tests/SceneTransformSelfTests.h"
+#include "Raven/Scene/Tests/SceneViewSelfTests.h"
 #include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
@@ -86,7 +87,8 @@ int main(int argc, char* argv[])
     {
         const std::string backendArgument = argv[argumentIndex];
 #ifdef _WIN32
-        if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision")
+        if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision"
+            || backendArgument == "--test-scene-view" || backendArgument == "--measure-scene-view")
         {
             // CPU回帰のassertを終了コードへ変換し、エラーダイアログ待ちでCIを停止させません。
             _set_error_mode(_OUT_TO_STDERR);
@@ -94,6 +96,17 @@ int main(int argc, char* argv[])
             SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
         }
 #endif
+        if (backendArgument == "--measure-scene-view")
+        {
+            Raven::tests::RunSceneViewMeasurements();
+            return 0;
+        }
+        if (backendArgument == "--test-scene-view")
+        {
+            Raven::tests::RunSceneViewSelfTests();
+            std::cout << "Scene View self-tests passed.\n";
+            return 0;
+        }
         if (backendArgument == "--measure-scene-graph")
         {
             Raven::tests::RunSceneGraphMeasurements();

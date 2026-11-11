@@ -1091,4 +1091,8 @@
     <ClCompile Update="Raven\Editor\Command\ReparentEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
     <None Include="..\Tests\TransformMathTests.cpp"><Filter>Raven\Math</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Scene\Tests\SceneViewSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\Tests\SceneViewSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+  </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
@@ -29,6 +30,9 @@ public:
     virtual void CollectEntityIDs(std::vector<EntityIndex>& destination) const = 0;
     virtual EntityID GetEntityID(std::size_t index) const = 0;
     virtual EntityIndex GetEntityIndex(std::size_t index) const = 0;
+#ifndef NDEBUG
+    virtual uint64_t GetStructuralVersion() const = 0;
+#endif
 
 };
 
@@ -58,6 +62,10 @@ private:
 	std::vector<T> m_Components;
     std::vector<EntityIndex> m_Entities;
 	std::vector<SizeType> m_Sparse;
+#ifndef NDEBUG
+    // ViewのDebug検証用。失敗した構造変更でも参照が再配置され得るため保守的に無効化します。
+    uint64_t m_StructuralVersion = 0;
+#endif
 
 public:
     ComponentStorage() = default;
@@ -102,6 +110,9 @@ public:
     EntityIndex GetEntityID(std::size_t index) const override;
 
     EntityIndex GetEntityIndex(std::size_t index) const override;
+#ifndef NDEBUG
+    uint64_t GetStructuralVersion() const override;
+#endif
 
     bool Empty() const override;
 

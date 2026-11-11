@@ -161,7 +161,7 @@ public:
     const T* TryGetComponent(EntityIndex index) const;
 
     template<class... Components>
-    ComponentView<Components...> View();
+    ComponentView<Components...> View(ComponentViewStatistics* statistics = nullptr);
 
 protected:
     std::vector<Scope<Layer>> m_layers;
@@ -177,6 +177,11 @@ private:
 
     friend class SceneGraph;
     friend class SceneTransformSystem;
+    template<class...> friend class ComponentView;
+#ifndef NDEBUG
+    // Storageの破棄前に更新し、古いViewが解放済みStorageのVersionを読まないようにします。
+    uint64_t m_ViewLifetimeVersion = 0;
+#endif
     bool CanUseLocalTransform(EntityIndex index) const;
     bool CanRemoveTransform(EntityIndex index) const;
     SceneTransformSystem m_TransformSystem;

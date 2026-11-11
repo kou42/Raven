@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG3のPhysics / Animation同期を実装。ユーザーの追加依頼で移動床Crush・Box積み上げの既存失敗も調査・修正し、全CPU回帰が成功。実機描画比較・Demo目視・長時間性能は未検証であり、SG3の実機確認は残る。詳細は [SG3作業記録](RAVEN_SCENE_GRAPH_SG3.md) と [SG2作業記録](RAVEN_SCENE_GRAPH_SG2.md)。各マイルストーンの開始前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG3はPR #366でmasterへ統合済み。SG4のView計測・型付きStorage cache・Debug無効化検証を実装し、Debug/Release計測と全CPU回帰が成功。詳細は [SG4作業記録](RAVEN_SCENE_GRAPH_SG4.md)。SG2/SG3の実機描画・Demo・長時間性能は未検証として残る。各マイルストーンの開始前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 
@@ -86,10 +86,15 @@ Root Motionの抽出/消費経路は現在未実装であり、新規導入し�
 
 ## Milestone SG4 — Component View / System実行の計測改善
 
-- [ ] `ComponentView` の候補数、走査時間、不要な照合、構造変更時の安全性を計測。
-- [ ] 既存 `Scene::OnUpdate` の順序を基準に、明示フェーズ・同期Barrierが必要か検証。
-- [ ] 必要な場合だけ最小限のScheduler/Command Bufferを導入。汎用並列Schedulerは先行導入しない。
-- [ ] Debug/Releaseで性能・メモリ・破棄コストを比較。
+- [x] `ComponentView` の候補数、走査時間、不要な照合、構造変更時の安全性を計測。
+- [x] 既存 `Scene::OnUpdate` の順序を基準に、明示フェーズ・同期Barrierが必要か検証。
+- [x] 必要性を検証し、既存の同期境界/破棄Queueを維持。Scheduler/汎用Command Bufferは追加しないと判断。
+- [x] Debug/Releaseで性能・メモリ・破棄コストを比較。
+
+型検索をView生成時へ集約し、候補Storageの重複照合を省略。固定CPU・16,384件の全一致3成分でRelease中央値が
+約2.87ms→0.281ms、実型Rigid Joinでは約0.634ms→0.0885msとなった。走査中のC++ new確保は前後とも0件。
+Debugの固定費とView/Iteratorサイズ増加、生成破棄の単回値も含めて [SG4作業記録](RAVEN_SCENE_GRAPH_SG4.md) に記録した。
+これらはsynthetic Queryの結果であり、実Demo全体のFPS改善を意味しない。SG5には自動的に進まない。
 
 **完了条件:** 変更前後の計測値を記録し、改善が実証された最適化だけを採用。
 

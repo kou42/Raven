@@ -1517,3 +1517,7 @@ Structured Data Phase 5 additions (Root/Root/Raven relative paths):
     Data/Tests/MessagePackTests.cpp
     Data/Tests/MessagePackTests.h
     Data/Tests/MessagePackInterop.py
+
+Raven Scene Graph SG4 additions (Root/Root/Raven relative paths):
+    Scene/Tests/SceneViewSelfTests.h
+    Scene/Tests/SceneViewSelfTests.cpp
