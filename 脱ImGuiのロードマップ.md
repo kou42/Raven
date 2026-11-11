@@ -434,15 +434,15 @@ OpenGLでTitle表示中に直前のScene View映像が残る点は表示上の�
 
 削除順は依存の外側から行う。
 
-1. [ ] 各Layerの`OnImGuiRender()` overrideを削除する。
-2. [ ] `Layer::OnImGuiRender()`を削除し、必要ならRaven UI向けの明示的Lifecycle名へ置き換える。
-3. [ ] `Application`のImGui Frame Loop、`m_ImGuiLayer`、`EnableDearImGui`を削除する。
-4. [ ] `Raven/ImGui/ImGuiLayer.h/.cpp`を削除する。
-5. [ ] `.vcxproj` / `.vcxproj.filters`からImGui source、include path、Filterを削除する。
-6. [ ] `vendor/imgui` submoduleと`.gitmodules`の該当設定を削除する。
-7. [ ] `imgui.ini`と移行専用fallback設定を削除する。
-8. [ ] コメント、ドキュメント、テスト名に残る古い前提を更新する。
-9. [ ] `Root/Root/Raven`以下の構成変更に合わせて`structure.txt`を更新する。
+1. [x] 各Layerの`OnImGuiRender()` overrideを削除する。
+2. [x] `Layer::OnImGuiRender()`を削除し、必要ならRaven UI向けの明示的Lifecycle名へ置き換える。
+3. [x] `Application`のImGui Frame Loop、`m_ImGuiLayer`、`EnableDearImGui`を削除する。
+4. [x] `Raven/ImGui/ImGuiLayer.h/.cpp`を削除する。
+5. [x] `.vcxproj` / `.vcxproj.filters`からImGui source、include path、Filterを削除する。
+6. [x] `vendor/imgui` submoduleと`.gitmodules`の該当設定を削除する。
+7. [x] `imgui.ini`と移行専用fallback設定を削除する。
+8. [x] コメント、ドキュメント、テスト名に残る古い前提を更新する。
+9. [x] `Root/Root/Raven`以下の構成変更に合わせて`structure.txt`を更新する。
 
 Exit Gate:
 
@@ -450,6 +450,9 @@ Exit Gate:
 - submoduleを取得しない新規checkoutからConfigure / Buildできる。
 - Raven UI CPUテスト、GPU統合テスト、通常アプリ、Editor Smoke Testが成功する。
 - Debug/Releaseの生成物にImGui objectやsymbolが含まれない。
+
+2026-11-12: 実装・依存削除と自動回帰を確認。検証範囲と未確認事項は検証記録末尾を参照。
+Phase 7の正式性能Baseline・長時間検証はユーザー方針により保留を維持する。
 
 ## 7. 推奨するPR分割
 

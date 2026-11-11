@@ -1386,3 +1386,41 @@ Computer Use skillで通常のVulkan Editorを操作した。
 未検証: Debug実Editor、異DPI Monitor、全Component/IME、長時間負荷、Scene切替、正式性能Baseline、
 GPU/Surface喪失の障害注入、最小化/復帰の実機反復、複数GPU/異なるSurface形式での操作。
 次はDPI別回帰、またはBackend間の表示/性能比較を独立マイルストーンとして進める。
+
+
+## Phase 8: Dear ImGui依存の撤去（2026-11-12）
+
+承認済みの撤去範囲として、旧Panel/Gizmo描画、Layer callback、Application Frame Loop、
+Editor UI切替設定、プロジェクト参照、submodule、CI/setupの取得手順を削除した。
+Raven UIと既存Editor Commandを通常の唯一の経路とし、Gizmoの計算・編集処理は保持する。
+UIFontAtlasBuilderの隠れたimstb_truetype依存は、既存のstb_truetype.hへ切り替えた。
+ローカルvendor/imguiとimgui.iniはartifacts/phase8/legacy-local-backupへ退避した。
+structure.txtのRaven部分は既存の記載漏れも含め実構成へ同期（1066項目、過不足0）。
+
+### 検証結果
+
+- submoduleなしの分離checkout（b62210c4）からDebug/Release x64ビルド成功。
+  GLFW import libraryは既存の外部依存を配置、Vulkan SDKは1.4.357.0を使用。
+  Release Warning 0、Debugには既存LNK4098あり（集計2件）。DebugのLink PDB生成は無効。
+- Release CPU UI回帰成功。ビルド時の既存Warningは64件。GPU統合回帰成功、Font Atlasも非SKIP。
+  DX12補助Window、Vulkan Color/補助Windowの追加回帰も成功。
+- 撤去後のDebug Explicit Frame、Scene Lifecycle、Editor Entity Commands、Editor Viewportは全4件終了0。
+- 製品ソース・main・vcxproj・filtersのImGui検索0件。依存計測の4指標すべて0。
+  Debug/Releaseのobject名と既知ImGui symbol文字列のバイト検索も0件。
+  この検索は完全なsymbol table解析ではない。
+- OpenGL/DX12/Vulkan通常Editorは各WindowCloseEvent 1件、終了0、stderr 0 bytes。
+  artifacts/phase8/removal-smoke以下に実行ファイルhash、ログ、保存layoutを記録。
+  終了時は検証前layoutへ復元（元ファイルなしの場合は新規生成分を除去）。
+- 撤去後OpenGLは選択、Gizmo編集、Undo/Redo、Inspector分離・復帰、Game→Title→Gameを目視確認。
+  DX12の選択・Gizmo・Undo/Redo・Inspector復帰と、ユーザーによるPause表示確認まで記録あり。
+  中断後に残ったDX12のTitle往復およびVulkanの操作別目視結果は、この記録では未検証として扱う。
+  撤去前のTitle修正時には3 BackendのGame→Title→Gameを確認済み。
+- scripts/check-codex-cloud-baseline.sh成功。最終差分の空白エラーなし。
+
+最終ビルドログはartifacts/logs/phase8-removal-final-{Debug,Release}.log。
+phase8-removal-debug.log / release.logは修正前の失敗記録なので合格根拠に含めない。
+追加自動テストはphase8-removal-*.logを参照。
+
+残課題: Phase 7の正式性能Baseline・長時間検証（ユーザー方針により保留）、
+OpenGL Title中の旧Scene View映像、上記の撤去後操作別目視確認、異DPI/全Component/IME等。
+Phase 8の実装と自動回帰は完了。全実機Exit Gate達成とは扱わず、PRで残検証を明記する。
