@@ -1,6 +1,6 @@
 # Raven Scene Graph / ECS 段階的改善ロードマップ
 
-> 状態: SG1をmasterへ統合。SG2の明示Local / World変換・互換経路を実装し、Windows CPU回帰テストが成功。実機描画比較は未検証。詳細は [SG2作業記録](RAVEN_SCENE_GRAPH_SG2.md)。各マイルストーンの開始前に `AGENTS.md` の承認ゲートに従う。
+> 状態: SG3のPhysics / Animation同期を実装。ユーザーの追加依頼で移動床Crush・Box積み上げの既存失敗も調査・修正し、全CPU回帰が成功。実機描画比較・Demo目視・長時間性能は未検証であり、SG3の実機確認は残る。詳細は [SG3作業記録](RAVEN_SCENE_GRAPH_SG3.md) と [SG2作業記録](RAVEN_SCENE_GRAPH_SG2.md)。各マイルストーンの開始前に `AGENTS.md` の承認ゲートに従う。
 
 ## 目的と結論
 
@@ -71,11 +71,16 @@ CPUテストではCameraのWorld/View/Projectionと描画入力を確認済み�
 
 **対象候補:** `Scene/Scene.cpp`、`Physics/PhysicsSimulationWorld`、`Animation/AnimationSystem`、関連Component/System。
 
-- [ ] Static/Kinematic/Dynamic別のTransform書込権限と同期タイミングを定義。
-- [ ] Physics Fixed Step前のKinematic入力とStep後のDynamic World姿勢書戻しを検証。
-- [ ] 親ありDynamic BodyのWorld→Local変換、親の非一様スケール、補間の制約を明記。
+- [x] Static/Kinematic/Dynamic別のTransform書込権限と同期タイミングを定義。
+- [x] Physics Fixed Step前のKinematic入力とStep後のDynamic World姿勢書戻しを検証。
+- [x] 親ありDynamic BodyのWorld→Local変換、親の非一様スケール、補間の制約を明記。
 - [ ] Animation Root Motion、Character Controller、Ragdoll復帰、JointとEntity親子の独立性を検証。
-- [ ] Sphere/Box/Capsule/StaticMesh Collider、SoftBody/Rigid Couplingの既存座標契約を維持。
+- [x] Sphere/Box/Capsule/StaticMesh Collider、SoftBody/Rigid Couplingの既存座標契約を維持。
+
+Local Animation、親付き移動床の搬送、Ragdoll復帰、Dynamic同士の階層独立性はCPUで確認。
+Root Motionの抽出/消費経路は現在未実装であり、新規導入していない。
+ユーザーの追加依頼に基づき既存MovingPlatform / PhysicsCollisionの失敗を修正し、両方をCPU回帰へ常時登録して成功を確認した。
+実機Demo / GPU / 長時間性能の確認も残る。詳細は [SG3作業記録](RAVEN_SCENE_GRAPH_SG3.md)。
 
 **完了条件:** 物理・アニメーション・親子Transformが競合せず、既存デモの挙動とProfiler指標に重大な回帰がない。
 

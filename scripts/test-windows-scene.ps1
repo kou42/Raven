@@ -110,10 +110,13 @@ if (-not (Test-Path -LiteralPath $testExecutable -PathType Leaf)) {
 $checks = @(
     @{ Argument = "--test-scene-lifecycle"; Marker = "Scene lifecycle self-tests passed."; Log = "lifecycle" },
     @{ Argument = "--test-scene-transforms"; Marker = "Scene transform self-tests passed."; Log = "transforms" },
+    @{ Argument = "--test-scene-simulation"; Marker = "Scene simulation self-tests passed."; Log = "simulation" },
+    @{ Argument = "--test-physics-collision"; Marker = "Physics collision self-tests passed."; Log = "physics-collision" },
     @{ Argument = "--test-scene-graph"; Marker = "Scene graph self-tests passed."; Log = "graph" },
     @{ Argument = "--test-editor-entity-commands"; Marker = "Editor entity command self-tests passed."; Log = "editor" },
     @{ Argument = "--measure-scene-graph"; Marker = "SceneGraph shape=chain"; Log = "measure-debug" }
 )
+$failedChecks = @()
 Push-Location $RepoRoot
 try {
     $env:Path = "$($debugCrt.DirectoryName);$($debugUcrt.DirectoryName);$previousPath"
@@ -125,12 +128,17 @@ try {
         Add-Content -LiteralPath $testLog -Value "$($check.Argument) exit=$testExitCode" -Encoding utf8
         if ($testExitCode -ne 0 -or ($testOutput -join "`n").Contains($check.Marker) -eq $false) {
             $testOutput | ForEach-Object { Write-Host $_ }
-            throw "$($check.Argument) failed (exit=$testExitCode). See $testLog"
+            # 失敗したgroupがあってもGraph / Editor回帰を最後まで確認し、全成功にはしません。
+            $failedChecks += "$($check.Argument) failed (exit=$testExitCode). See $testLog"
+            continue
         }
         Write-Host "$($check.Argument) passed."
     }
 } finally {
     $env:Path = $previousPath
     Pop-Location
+}
+if ($failedChecks.Count -gt 0) {
+    throw ($failedChecks -join [Environment]::NewLine)
 }
 Write-Host "Scene regression tests passed. Logs: $logDirectory"

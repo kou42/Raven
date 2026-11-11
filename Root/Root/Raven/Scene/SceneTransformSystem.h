@@ -22,6 +22,7 @@ public:
     bool DisableLocal(Scene& scene, EntityHandle handle);
     bool SetLocal(Scene& scene, EntityHandle handle, const TransformComponent& value);
     bool SetWorld(Scene& scene, EntityHandle handle, const TransformComponent& value);
+    bool CanResolve(const Scene& scene, EntityHandle handle) const;
     void Forget(EntityHandle handle);
     void Clear();
     uint64_t GetRecomputationCount() const;
@@ -34,6 +35,8 @@ private:
         EntityHandle Parent;
         bool IsLocal = false;
         bool Recomputed = false;
+        bool Authored = false;
+        bool PhysicsScaleValidated = false;
         TransformComponent Local;
         TransformComponent World;
         math::Mat4 ParentMatrix = math::Mat4::Identity();

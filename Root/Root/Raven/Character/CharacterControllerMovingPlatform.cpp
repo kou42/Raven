@@ -91,6 +91,11 @@ bool CharacterController::UpdateWithMovingPlatforms(
     {
         errorMessage->clear();
     }
+    // 前Groundの移動量を読む前に階層を評価し、親が動くLocal平台も最新World位置で追跡します。
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        return SetMovingPlatformError(errorMessage, "Moving PlatformのWorld Transformを解決できません");
+    }
 
     if (std::isfinite(deltaTime) == false || deltaTime < 0.0f)
     {

@@ -296,6 +296,13 @@ void RunPhysicsSimulationWorldSelfTests()
     reactionSoftTransform.Position = { 10.0f, 0.0f, 0.0f };
     reactionSoftTransform.Scale = { 2.0f, 2.0f, 2.0f };
 
+    // 親付きLocal SourceとLocal root Targetでも、World Sphere→Soft localの既存単位変換を維持します。
+    Entity reactionRig = reactionScene.CreateEntity("Reaction Rig");
+    reactionRig.GetComponent<TransformComponent>().Position.x = 3;
+    assert(reactionScene.SetEntityParent(reactionRigidEntity.GetHandle(), reactionRig.GetHandle()) == true);
+    assert(reactionScene.EnableLocalTransform(reactionRigidEntity.GetHandle()) == true);
+    assert(reactionScene.EnableLocalTransform(reactionSoftEntity.GetHandle()) == true);
+
     SoftBodySolver reactionSolver;
     reactionSolver.SetGravity({ 0.0f, 0.0f, 0.0f });
     reactionSolver.AddParticle({ 0.5f, 0.0f, 0.0f }, 1.0f);

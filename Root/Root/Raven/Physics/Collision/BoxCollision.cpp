@@ -138,7 +138,15 @@ bool TestAxis(
         return false;
     }
 
-    if (overlap < result.Penetration)
+    // ほぼ同じ分離量の交差軸へ丸め誤差だけで切り替えると、静止した面接触が
+    // 4点から1点のEdge接触へ瞬間的に縮み、支持TorqueとWarm Startが不連続になります。
+    // 分離判定は全軸で維持し、接触生成の軸選択だけは明確に浅いEdgeを採用します。
+    constexpr float EdgeRelativePreference = 0.95f;
+    constexpr float EdgeAbsolutePreference = 0.0001f;
+    const float selectionPenetration = feature == SATFeatureType::EdgeEdge
+        && result.Feature != SATFeatureType::EdgeEdge
+        ? result.Penetration * EdgeRelativePreference - EdgeAbsolutePreference : result.Penetration;
+    if (overlap < selectionPenetration)
     {
         if (math::Vec3::Dot(delta, axis) < 0.0f)
         {

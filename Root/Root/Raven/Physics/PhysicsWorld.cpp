@@ -797,9 +797,9 @@ void PhysicsWorld::RestorePersistentContacts(Scene& scene)
             const ContactPoint& source = previous->Points[best];
             ContactPoint& destination = current.Points[i];
             destination.AccumulatedNormalImpulse = source.AccumulatedNormalImpulse;
-            destination.AccumulatedTangentImpulse = sameOrder
-                ? source.AccumulatedTangentImpulse
-                : -source.AccumulatedTangentImpulse;
+            // A/B交換ではBへ加えるWorld摩擦Impulseを一度だけ反転します。
+            // 接線とスカラーを両方反転すると元の方向へ戻ってしまいます。
+            destination.AccumulatedTangentImpulse = source.AccumulatedTangentImpulse;
             destination.CachedTangent = sameOrder
                 ? source.CachedTangent
                 : -source.CachedTangent;
@@ -841,6 +841,10 @@ bool PhysicsWorld::RayCast(
     const PhysicsRayCastFilter& filter,
     PhysicsRayCastHit& outHit)
 {
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        return false;
+    }
     if (maxFraction < 0.0f || direction.LengthSq() <= 1.0e-12f)
     {
         return false;
@@ -953,6 +957,10 @@ void PhysicsWorld::QueryAABB(
     std::vector<Entity>& outEntities)
 {
     outEntities.clear();
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        return;
+    }
     if (!queryBounds.IsValid())
     {
         return;
@@ -1181,6 +1189,22 @@ void PhysicsWorld::Step(Scene& scene, float dt)
         return;
     }
 
+    // 単独Step入口でも親→子を確定してからCollider/Forceへ渡します。
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        CPUProfiler::Get().AddCounter("Physics.Transform.SynchronizationFailures", 1.0);
+        return;
+    }
+    for (auto [entity, transform, body] : scene.View<TransformComponent, RigidBodyComponent>())
+    {
+        if (body.Type == BodyType::Kinematic)
+        {
+            // Kinematic入力は毎Step Gameplay/Animationが所有します。前StepのQuaternionで上書きしません。
+            body.Orientation = PhysicsOrientationFromEuler(transform.Rotation);
+            body.OrientationInitialized = true;
+        }
+    }
+
     m_SolverDebugStatistics.Reset();
 
     // 1) Force/Torque反映
@@ -1197,6 +1221,12 @@ void PhysicsWorld::Step(Scene& scene, float dt)
     IntegratePositions(scene, dt);
     UpdateSleeping(scene, dt);
     ClearForces(scene);
+
+    // SolverのWorld出力からLocalを更新し、Coupling/Queryが読む子Colliderも同じ姿勢へ揃えます。
+    if (scene.EvaluateWorldTransforms() == false)
+    {
+        CPUProfiler::Get().AddCounter("Physics.Transform.SynchronizationFailures", 1.0);
+    }
 
     // ========================================================================
     // Physics Frame Allocator Statistics / Reset
