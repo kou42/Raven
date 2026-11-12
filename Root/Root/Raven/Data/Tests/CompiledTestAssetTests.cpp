@@ -28,7 +28,7 @@ int RunCompiledTestAssetTests()
     std::string changed = source + " ";
     check(CompiledTestAsset::Compile(changed, compiled, error) && compiled != valid, "source cache invalidation");
     compiled = valid;
-    compiled[4] = 2;
+    compiled[4] = 3;
     settings.Label = "preserved";
     check(CompiledTestAsset::Load(compiled, settings, error) == false
         && settings.Label == "preserved", "reject version without mutation");
