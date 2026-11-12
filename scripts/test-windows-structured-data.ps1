@@ -20,9 +20,10 @@ $main = @(
     '#include "Raven/Data/Tests/StructuredDataTestAsset.h"'
     '#include "Raven/Data/Tests/ParallelDeserializeTests.h"'
     '#include "Raven/Data/Tests/MutableDataDocumentTests.h"'
+    '#include "Raven/Data/Tests/CompiledTestAsset.h"'
     'int main() { int result = 0;'
 )
-foreach ($entry in @('RunDataDocumentTests', 'RunJsonParserTests', 'RunDataElementTests', 'RunDataIOTests', 'RunSerializationTests', 'RunMessagePackTests', 'RunTestAssetTests', 'RunParallelDeserializeTests', 'RunMutableDataDocumentTests')) {
+foreach ($entry in @('RunDataDocumentTests', 'RunJsonParserTests', 'RunDataElementTests', 'RunDataIOTests', 'RunSerializationTests', 'RunMessagePackTests', 'RunTestAssetTests', 'RunParallelDeserializeTests', 'RunMutableDataDocumentTests', 'RunCompiledTestAssetTests')) {
     $main += "result |= Raven::Data::Tests::$entry();"
 }
 $main += 'return result; }'
