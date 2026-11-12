@@ -58,7 +58,7 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
     std::map<std::string, unsigned> states;
     std::function<bool(const std::string&)> visit = [&](const std::string& id)
     {
-        if (id.empty() || id.size() > 1024 || states.size() >= 256 && states.count(id) == 0)
+        if (id.empty() || id.size() > 1024 || (states.size() >= 256 && states.count(id) == 0))
         {
             return false;
         }
@@ -95,6 +95,10 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
         {
             Put(record, static_cast<std::uint32_t>(child.size()));
             record.append(child);
+        }
+        if (record.size() > TestAssetMaxBytes || bytes.size() > TestAssetMaxBytes - record.size())
+        {
+            return false;
         }
         record.append(bytes);
         contents.emplace(id, std::move(record));
