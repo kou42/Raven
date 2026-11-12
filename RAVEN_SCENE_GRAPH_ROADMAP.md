@@ -102,10 +102,15 @@ Debugの固定費とView/Iteratorサイズ増加、生成破棄の単回値も�
 
 `RAVEN_RUNTIME_ROADMAP.md` のArchetype/Chunk構想と統合して判断する。
 
-- [ ] Sceneを編集/Gameplayの正規データとするか、RuntimeWorldを正規データとするか、対象Component単位で所有権を決定。
-- [ ] 代表的な大量Entity負荷でSparse SetとArchetype/Chunkを比較。Query/移動/生成破棄/同期/メモリを測定。
-- [ ] RenderWorld向けSnapshot抽出など、効果が高い経路だけ段階移行。
-- [ ] 二重保持するデータは同期方向・更新タイミング・破棄通知を明示。
+- [x] Sceneを編集/Gameplayの正規データとするか、RuntimeWorldを正規データとするか、対象Component単位で所有権を決定。
+- [x] 代表的な大量Entity負荷でSparse SetとArchetype/Chunkを比較。Query/移動/生成破棄/同期/メモリを測定。
+- [x] 既存Render Snapshot境界を維持し、計測効果のある出力vector再利用APIだけを共通化。RenderWorldの新設は行わない。
+- [x] 二重保持するデータは同期方向・更新タイミング・破棄通知を明示。
+
+4,096 / 32,768 Entityと0 / 1 / 20%の構成変更をCPU比較し、全量同期するChunk mirrorは
+Releaseで現行Sparse Setの約3倍となったため導入しない。Physics Dynamicの姿勢所有権も維持する。
+Snapshotの再利用効果はvectorを継続所有する入口に限り、通常Frame全体の改善とは扱わない。
+測定条件、所有権、未検証事項は [SG5作業記録](RAVEN_SCENE_GRAPH_SG5.md) を参照。
 
 **完了条件:** Archetype採否が計測結果と所有権設計に基づいて決定され、既存Subsystemを一括ECS化しない。
 

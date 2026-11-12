@@ -1521,3 +1521,8 @@ Structured Data Phase 5 additions (Root/Root/Raven relative paths):
 Raven Scene Graph SG4 additions (Root/Root/Raven relative paths):
     Scene/Tests/SceneViewSelfTests.h
     Scene/Tests/SceneViewSelfTests.cpp
+
+Raven Scene Graph SG5 additions (Root/Root/Raven relative paths):
+    Scene/Tests/SceneRuntimeComparisonTests.h
+    Scene/Tests/SceneRuntimeComparisonTests.cpp
+    Renderer/RHI/RHISceneDrawItemBuilder.cpp

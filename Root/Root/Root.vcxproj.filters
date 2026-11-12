@@ -1094,5 +1094,8 @@
   <ItemGroup>
     <ClInclude Update="Raven\Scene\Tests\SceneViewSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
     <ClCompile Update="Raven\Scene\Tests\SceneViewSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Scene\Tests\SceneRuntimeComparisonTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Scene\Tests\SceneRuntimeComparisonTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Renderer\RHI\RHISceneDrawItemBuilder.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
   </ItemGroup>
 </Project>
