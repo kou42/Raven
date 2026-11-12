@@ -1,228 +1,139 @@
 # Raven Runtime 実装ロードマップ
 
-## 目的
+## 目的と現在の判断
 
-RE:Runtimeで紹介されている大量インスタンスの集約・一括処理という考え方を参考に、Ravenのゲーム世界を効率よく管理するData-Oriented Runtimeを段階的に構築する。
+Ravenの既存Scene / Component Storage / Physics / Animation / Rendererを正規データ所有者として維持し、安全性・診断性・処理効率を計測に基づいて改善する。Data-Oriented設計やArchetype / Chunkは将来の選択肢として保持するが、独立RuntimeWorldの構築を現在の実装目標とはしない。
 
-**既存のRenderer、RHI、PhysicsWorld、Animation内部を一度にECS化しない。** RuntimeWorldから各Subsystem向けのデータを抽出し、Subsystem固有の最適化を維持する。
+**SG5の接続判断:** SceneのSparse Setを維持する。固定型Chunk mirrorは単体kernelでは高速だったが、毎FrameのScene全量入力同期・書戻しを含むRelease比較で約3倍の処理時間となった。これは今回のmirror方式に対する判断であり、Archetype一般や独立所有型Runtimeの否定ではない。独立RuntimeWorld、汎用Archetype / Chunk / Query / Schedulerは、新たな要件と実測上の根拠が揃うまで実装を保留する。
 
-> この文書はRaven向けの設計提案・実装計画であり、RE ENGINE内部の正式仕様を再現するものではない。記載機能は未実装の計画項目である。
+SG5の所有権、測定条件、未検証項目は[Scene Graph SG5](../close/RAVEN_SCENE_GRAPH_SG5.md)を参照する。
 
-**SG5での接続判断:** 現在のScene / Physics / Animationの正規データ所有権を維持する。
-固定型ChunkのCPU比較では、Sceneとの全量同期を含めると現行Sparse Setより遅く、独立RuntimeWorldは導入しない。
-既存Render Snapshot抽出には出力vector再利用の共通APIを追加したが、RenderWorldやFrame poolを新設したものではない。
-Phase 01〜07を既存Entity / Storageの重複実装として進めず、新しい独立Runtimeの要件が生じた時に再評価する。
-測定と所有権の詳細は [Scene Graph SG5](RAVEN_SCENE_GRAPH_SG5.md) を参照。
-
-## アーキテクチャ
+## 現行アーキテクチャ（維持）
 
 ```text
 Scene / Editor / Gameplay
-          |
-     RuntimeWorld
- Entity / Component / Archetype / Chunk / Query / System
-          |
-   +------+------+------+
-   |             |      |
-   v             v      v
-PhysicsWorld  RenderWorld Animation
-   |             |
-Physics       Renderer
-                 |
-                RHI
+  ├─ EntityHandle (Index + Generation) / Component Storage / Scene View
+  ├─ SceneTransformSystem / Animation
+  ├─ PhysicsSimulationWorld → PhysicsWorld
+  └─ Render Queue → RHISceneMesh → RHISceneDrawItem Snapshot
+                                     ↓
+                                  Renderer → RHI
 ```
 
-- Entityはindex + generationの軽量Handleとする。
-- Componentは基本的にデータを保持し、Systemが処理を担う。
-- 同じComponent構成のEntityをArchetypeでまとめ、固定容量Chunk内でSoA配置する。
-- Queryは該当Archetype/Chunkを列挙し、Job Systemによる並列処理へ拡張する。
-- Sceneの編集表現とRuntimeの実行表現を混同しない。
-- Physics Solver、RHI、Renderer内部のデータ構造は独立させる。
-- Componentの構築・破棄・移動、アラインメント、例外安全性、Entity Handle無効化を明示的に扱う。
+- Entity Index / Generation、Tag、Relationship、Component所属はSceneが正規所有する。
+- Local Transformと階層評価はScene / SceneTransformSystem、Dynamic姿勢・Solver内部はPhysicsが所有する。
+- Animationは既存Scene更新順を維持する。Root Motionの新規抽出・消費は未実装。
+- Render SnapshotはSceneからFrameへの一方向抽出であり、Scene/Component pointerを保持しない。GPU Resourceは共有参照とする。
+- SG5で追加された`RHISceneDrawItemBuilder::BuildInto`は出力vector再利用用のAPIであり、RenderWorldやFrame poolの導入ではない。
 
-## Phase 01 — Entity Handle / Lifetime
+## 将来構想（採用未決定）
 
-- [ ] 既存Scene/GameObject/Component管理の責務と利用箇所を調査する
-- [ ] `Entity { index, generation }` と無効値を定義する
-- [ ] Entity ID再利用時のgeneration更新を実装する
-- [ ] Create/Destroy/IsAliveを実装する
-- [ ] Handleの寿命・World間混用防止方針を決める
-- [ ] 破棄後Handle、二重破棄、ID再利用をテストする
-
-**完了条件:** stale handleを安全に検出できる。
-
-## Phase 02 — Component Type Registry
-
-- [ ] Component Type IDの生成・安定性を設計する
-- [ ] サイズ、アラインメント、構築・移動・破棄関数のメタデータを保持する
-- [ ] 非trivial Componentの扱いと禁止条件を明示する
-- [ ] Type RegistryとComponent登録APIを実装する
-- [ ] 重複登録と型不一致を検出する
-
-**完了条件:** Componentの型情報を安全に取得できる。
-
-## Phase 03 — Archetype
-
-- [ ] Component Type ID集合を正規化したArchetype Keyを定義する
-- [ ] Archetype Registryと検索を実装する
-- [ ] Entity追加先のArchetypeを決定する
-- [ ] Archetype間遷移の設計を決める
-
-**完了条件:** 同一Component構成のEntityが同じArchetypeに所属する。
-
-## Phase 04 — Chunk / SoA Storage
-
-- [ ] 16KiBを初期候補とし、計測可能なChunk容量を定義する
-- [ ] Component列のOffset、Alignment、Capacityを計算する
-- [ ] SoA StorageとChunkの確保・解放を実装する
-- [ ] Entity → Archetype / Chunk / Row lookupを実装する
-- [ ] 行削除時のswap-removeと移動先lookup更新を実装する
-- [ ] Over-aligned / 大型Componentと空き容量をテストする
-
-**完了条件:** 複数ChunkへEntityを格納し、移動・削除後もlookupが正しい。
-
-## Phase 05 — Structural Changes
-
-- [ ] AddComponent / RemoveComponentを実装する
-- [ ] Archetype移行時に共通Componentを安全に移動する
-- [ ] 移行前後の構築・破棄・失敗時処理を検証する
-- [ ] Query走査中の構造変更を禁止またはCommand Bufferへ遅延する
-- [ ] Deferred Structural Command Bufferを必要に応じて導入する
-
-**完了条件:** Component追加・削除とEntity破棄を繰り返してもデータが破損しない。
-
-## Phase 06 — Query
-
-- [ ] `Query<Transform, Velocity>()` 相当のAPIを設計する
-- [ ] 必須Component集合でArchetypeをフィルタする
-- [ ] Chunk単位で型付きComponent列を列挙する
-- [ ] 読み書きアクセスの契約とIterator無効化条件を明示する
-- [ ] Queryキャッシュの更新条件を設計する
-
-**完了条件:** 一致するEntityだけをChunk単位で処理できる。
-
-## Phase 07 — System / Scheduler
-
-- [ ] System登録・実行順序を定義する
-- [ ] Read/Write Component Accessを宣言できるようにする
-- [ ] 依存関係に従うSystem実行順を検証する
-- [ ] Fixed UpdateとVariable Updateを分離する
-- [ ] Chunk単位Job分割と同期Barrierを導入する
-- [ ] Race、決定性、過小Jobのオーバーヘッドを計測する
-
-**完了条件:** Movement Systemを安全にChunk並列実行できる。
-
-**Milestone R1 — Runtime Core v1（Phase 01〜07）**
-
-## Phase 08 — Diagnostics Integration
-
-- [ ] Entity / Archetype / Chunk数のCounter
-- [ ] Chunk Utilizationと構造変更回数のCounter
-- [ ] System / Query / ExtractionのTrace Scope
-- [ ] Debug/Releaseで計測オーバーヘッドを比較する
-
-**完了条件:** Runtimeの処理時間とメモリ利用状況を追跡できる。
-
-## Phase 09 — RenderWorld Extraction
-
-- [ ] Transform + MeshRenderer Queryを設計する
-- [ ] RenderInstanceなど描画用Snapshotを抽出する
-- [ ] RuntimeWorldとRenderWorldの所有権・更新タイミングを決める
-- [ ] Visibility / Render Queue / RHIとの境界を確認する
-- [ ] Render結果と既存Scene経路の一致を検証する
-
-**完了条件:** RendererがRuntime Componentを直接参照せず描画できる。
-
-## Phase 10 — PhysicsWorld Integration
-
-- [ ] EntityとPhysics Body Handleの対応表を設計する
-- [ ] Collider/RigidBody変更のPhysicsWorldへの反映を定義する
-- [ ] Fixed Step前のExtractとStep後のTransform Writebackを実装する
-- [ ] Transform所有権、Kinematic/Dynamic、補間、親子関係を整理する
-- [ ] BroadPhase / NarrowPhase / Solver / Joint / SoftBodyは既存設計を維持する
-- [ ] 生成・破棄・衝突・Joint・Ragdollの回帰テストを行う
-
-**完了条件:** Runtime EntityとPhysicsWorldを同期して既存Physicsが動作する。
-
-## Phase 11 — Animation Integration
-
-- [ ] Animator/Animation StateのComponent表現を検討する
-- [ ] Clip / BlendTreeのバッチ評価可能性を計測する
-- [ ] Skeleton PoseとTransform更新の所有権を決める
-- [ ] Root Motion、Character Controller、Ragdoll連携を検証する
-
-**完了条件:** Animation更新がRuntimeと同期し、既存キャラクター動作を維持できる。
-
-## Phase 12 — Editor / Asset / Hot Reload
-
-- [ ] Runtime Entity InspectorとArchetype/Chunk可視化
-- [ ] Scene SerializationとRuntime Component変換
-- [ ] Asset変更からRuntime Handle更新への伝播
-- [ ] Followsによる依存関係・Invalidation追跡
-- [ ] Play Mode開始・停止とWorld再生成の寿命管理
-
-**完了条件:** EditorからRuntime状態を調査でき、Asset変更が適切に反映される。
-
-## Phase 13 — Optional Managed Layer
-
-C#、Visual Scripting、Code GenerationはRuntime Core v1の必須条件にしない。
-
-- [ ] C++/C#境界とABI、Handle、例外・GC Lifetimeを検討する
-- [ ] C# Component Metadata / Source Generatorを検討する
-- [ ] Inspector / Serialization / Visual Scriptとの型共有を検討する
-- [ ] Native実行との性能・保守コストを比較して採否を決める
-
-## APIイメージ（未確定）
-
-```cpp
-struct Entity
-{
-    uint32_t index;
-    uint32_t generation;
-};
-
-struct Velocity
-{
-    Vec3 linear;
-    Vec3 angular;
-};
-
-// 概念例。実際のWorld/Query APIは既存Raven規約に合わせる。
-for (auto chunk : world.Query<Transform, Velocity>())
-{
-    auto transforms = chunk.Get<Transform>();
-    auto velocities = chunk.Get<Velocity>();
-    for (size_t i = 0; i < chunk.Size(); ++i)
-    {
-        transforms[i].position += velocities[i].linear * dt;
-    }
-}
+```text
+Scene / Editor / Gameplay
+         ↓  （所有権・変換コストを別途設計）
+独立RuntimeWorld（Archetype / Chunk / Query / Scheduler）
+         ↓
+Subsystem向け抽出 → Physics / Renderer / Animation
 ```
+
+この図は将来の研究対象であり、現在の実装構成や実装承認を表さない。毎Frame全量mirrorはSG5で不採用。独立所有型Runtimeやdirty差分同期は未測定。
+
+## 現在の改善計画
+
+### Phase 01 — Existing Scene Entity Lifetime Audit / Hardening
+
+- [ ] 既存`EntityHandle`、`Entity`、`Scene::CreateEntity` / `DestroyEntity` / `IsEntityAlive`、Free List、Generationの契約を文書化する。
+- [ ] stale handle、二重破棄、Index再利用、別SceneからのEntity破棄拒否について既存テストの範囲を確認し、不足するケースのみ追加する。
+- [ ] `Entity`が非所有の`Scene*`を持つため、Scene破棄後のアクセスを禁止する既存契約と、SceneManager / Editor / 非同期処理側の保持期間を調査する。
+- [ ] Indexのみを受け取るComponent APIとGeneration付きHandle APIの使用箇所・混用リスクを調査する。
+- [ ] GPU PickingがIndexのみを渡し、CPUでGenerationを再取得する既存経路のreadback中のIndex再利用を調査する。
+- [ ] 実際の不足が判明した場合だけ、既存Sceneの最小修正を別途提案・実装する。新しいEntity allocatorやRuntimeWorldは作らない。
+
+**既存実装の確認（2026-11-13）:** `Scene/Entity.h`にはIndex + Generationの`EntityHandle`とScene所属を保持する`Entity`が存在する。`Scene/Scene.cpp`ではFree List再利用、Destroy時のGeneration更新、`IsEntityAlive(Entity)`でのScene照合、終了時のEntity sweepが実装済み。`Scene/Scene.inl`にはIndexを引数とするComponent APIがある。これらを未実装として重複実装しない。
+
+**完了条件:** 既存寿命契約、テストの保証範囲、残存リスクが明文化され、確認された不具合にのみ回帰テストと修正がある。
+
+### Phase 02 — Scene Structural Safety
+
+- [ ] Component追加・削除、Entity破棄、View走査中の構造変更とIterator無効化契約を確認する。
+- [ ] 既存ComponentStorage / Scene ViewのDebug検証とReleaseでの前提を確認する。
+- [ ] 必要性が実証された場合のみ遅延Structural Commandを検討する。
+
+**完了条件:** 既存Sceneの構造変更の安全な利用条件がテスト・文書で確認できる。
+
+### Phase 03 — Scene Diagnostics / Performance
+
+- [ ] 既存CPUProfiler、Scene View統計、SG5比較を再利用して測定対象を定義する。
+- [ ] Entity / Component数、Query / 構造変更時間、メモリ、確保回数を必要に応じて測定する。
+- [ ] Debug / Release差と測定オーバーヘッドを記録する。
+
+**完了条件:** 変更の必要性を実測から判断できる。
+
+### Phase 04 — Existing Render Snapshot Validation / Optimization
+
+- [ ] 既存`BuildInto`の利用範囲とFrame/vector寿命を調査する。
+- [ ] CPU抽出の時間・確保数と実際のFrame準備・GPU描画を区別して測定する。
+- [ ] SG2/SG3/SG5から残る実機GPU、Demo、長時間負荷を優先して検証する。
+- [ ] GPU fence、Backend別寿命、失敗時の出力維持を確認せずFrame poolを導入しない。
+
+**完了条件:** Snapshot経路の正確性と改善効果を実測で説明できる。
+
+### Phase 05 — Existing Physics / Animation Synchronization
+
+- [ ] Scene TransformとPhysics Dynamic / Static / Kinematicの所有権、Fixed Step前後の同期を回帰検証する。
+- [ ] Animation Pose、Character Controller、Ragdollの既存更新順を維持する。
+- [ ] Root Motion抽出・消費は別要件として扱い、RuntimeWorld導入の前提にしない。
+
+**完了条件:** 既存Subsystem間の同期契約と回帰テストが整理される。
+
+### Phase 06 — Runtime Architecture Reassessment（条件付き判断）
+
+- [ ] 大量同型Entityを複数Systemで繰り返し処理する実要件、または既存Sceneの実測ボトルネックを確認する。
+- [ ] Sparse Set、必要なら差分同期、独立所有型Chunkを同等の処理範囲・正規所有権条件で比較する。
+- [ ] 入力同期、書戻し、構造変更、生成破棄、メモリ、非trivial Component、Subsystem連携の総コストを含める。
+- [ ] 結果と移行コストをレビューし、独立Runtimeを別マイルストーンとして承認するか決定する。
+
+**完了条件:** 採用・不採用の判断と測定根拠が記録される。独立RuntimeWorldの実装完了は条件に含まない。
+
+## 保留中の独立Runtime構想（旧Phase 01〜07）
+
+以下は**未承認の将来候補**であり、現在のPhase番号・マイルストーンには含めない。
+
+1. 独立Entity Handle / Lifetime（Sceneとの所有権重複を回避する設計が前提）
+2. Component Type Registry（型ID、alignment、非trivial型の構築・移動・破棄）
+3. Archetype Key / Registry / 遷移
+4. Chunk / SoA Storage（容量は測定で決定し、16KiBを固定仕様としない）
+5. Structural Changes / Deferred Command Buffer
+6. Chunk Query / キャッシュ / Iterator無効化契約
+7. System / Scheduler / Job並列化 / Barrier / Race・決定性検証
+
+旧Phase 08〜13にあったDiagnostics、RenderWorld Extraction、Physics / Animation Integration、Editor / Hot Reload、Optional Managed Layerも、独立Runtimeを前提とした新規実装は保留する。既存Sceneの改善に必要な部分だけ現在のPhase 01〜05で扱う。C# / Visual Scriptingは必須条件ではない。
 
 ## マイルストーンと検証
 
-| Milestone | Phase | 成果物 | 重点検証 |
+| Milestone | 対象 | 成果物 | 重点検証 |
 | --- | --- | --- | --- |
-| R1 | 01〜07 | Runtime Core v1 | Handle・構造変更・Query・並列実行 |
-| R2 | 08 | Runtime Profiling | Counter精度・オーバーヘッド |
-| R3 | 09 | RenderWorld | Scene描画の回帰 |
-| R4 | 10 | PhysicsWorld | Fixed Step・Transform同期 |
-| R5 | 11 | Animation | Root Motion・Character |
-| R6 | 12 | Editor/Hot Reload | Lifetime・再構築 |
-| R7 | 13 | Managed Layer（任意） | ABI・GC・性能 |
+| R1 | Phase 01 | Scene Entity Lifetime調査・不足補完 | stale handle、Scene間混用、破棄後参照、Picking |
+| R2 | Phase 02 | Structural Safety | View無効化、構造変更、Component寿命 |
+| R3 | Phase 03 | Scene Profiling | Counter精度、CPU・メモリ負荷 |
+| R4 | Phase 04 | Render Snapshot検証 | GPU実機、Frame寿命、回帰 |
+| R5 | Phase 05 | Physics / Animation同期検証 | Fixed Step、Transform、Character |
+| R6 | Phase 06 | 独立Runtime再評価の判断記録 | 総コスト、正規所有権、採否 |
+
+各Phaseは調査・検証の結果、不足がなければコード変更なしで完了できる。
 
 ## 推奨実装順
 
-1. 既存Scene/Componentの構造を調査し、RuntimeWorldの責務境界を決める。
-2. Phase 01〜07で独立した小さなRuntime Core v1を完成させる。
-3. Diagnosticsと統合してEntity/Chunk/Systemの性能を可視化する。
-4. RenderWorld Extractionを先行し、既存Rendererを維持したまま接続する。
-5. PhysicsWorld、Animation、Editorへ段階的に展開する。
-6. C#やVisual Scriptingは必要性と計測結果に基づいて判断する。
+1. SG5で残った実機GPU / Demo / 長時間負荷検証を優先する。
+2. Phase 01で既存Scene Entityの寿命契約と不足を調査する。新規Entity実装は行わない。
+3. Phase 02〜03で構造変更の安全性と性能の基準値を確認する。
+4. Phase 04〜05は既存Render / Physics / Animationの経路を維持して必要な改善だけを行う。
+5. Phase 06で新しい実要件・計測結果が揃った場合に限り、独立RuntimeWorldの別計画を承認判断する。
 
 ## 実装時の注意
 
-- `Root/Root/Raven` 配下のファイル構成を変更する際は `structure.txt` を更新する。
-- Visual Studio管理ファイル追加時は対応する `.vcxproj.filters` も更新する。
-- 既存APIと重複する新規実装を避けるため、実装開始時に `AGENTS.md`、`structure.txt`、関連ソースを確認する。
-- 各PhaseでDebug/Releaseのビルドと関連テストを行い、未実施の検証を明記する。
+- `Root/Root/Raven`配下のファイル構成を変更する際は`structure.txt`を更新する。
+- Visual Studio管理ファイル追加時は対応する`.vcxproj.filters`も更新する。
+- 実装開始時に`AGENTS.md`、`structure.txt`、関連ソース・既存テストを確認する。
+- 既存Scene / Physics / Animation / Renderの正規所有権を変更する場合は、個別の設計承認と回帰検証を必要とする。
+- 各PhaseでDebug / Releaseのビルドと関連テストを行い、未実施項目を明記する。
