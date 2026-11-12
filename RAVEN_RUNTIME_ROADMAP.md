@@ -8,6 +8,12 @@ RE:Runtimeで紹介されている大量インスタンスの集約・一括処�
 
 > この文書はRaven向けの設計提案・実装計画であり、RE ENGINE内部の正式仕様を再現するものではない。記載機能は未実装の計画項目である。
 
+**SG5での接続判断:** 現在のScene / Physics / Animationの正規データ所有権を維持する。
+固定型ChunkのCPU比較では、Sceneとの全量同期を含めると現行Sparse Setより遅く、独立RuntimeWorldは導入しない。
+既存Render Snapshot抽出には出力vector再利用の共通APIを追加したが、RenderWorldやFrame poolを新設したものではない。
+Phase 01〜07を既存Entity / Storageの重複実装として進めず、新しい独立Runtimeの要件が生じた時に再評価する。
+測定と所有権の詳細は [Scene Graph SG5](RAVEN_SCENE_GRAPH_SG5.md) を参照。
+
 ## アーキテクチャ
 
 ```text

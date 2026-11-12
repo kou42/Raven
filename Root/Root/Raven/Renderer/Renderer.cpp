@@ -601,12 +601,14 @@ bool Renderer::BuildRHISceneDrawItems(
     }
 
     // Cameraは参照保持せず、BeginScene()で確定した行列値だけを利用します。
-    std::vector<RHISceneDrawItem> items = RHISceneDrawItemBuilder::Build(
+    // Mesh検証が全件成功してから出力を更新するため、false時の出力維持を保ちます。
+    // 呼び出し元がvectorを継続所有する場合だけcapacityを再利用します。
+    RHISceneDrawItemBuilder::BuildInto(
         s_CameraContext.View,
         s_CameraContext.Projection,
         meshes,
-        clipCorrection);
-    outItems = std::move(items);
+        clipCorrection,
+        outItems);
     return true;
 }
 

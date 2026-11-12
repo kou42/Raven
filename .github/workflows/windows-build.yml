@@ -81,6 +81,10 @@ jobs:
         shell: pwsh
         run: ./scripts/measure-windows-scene-view.ps1 -Configuration Release -Label ci -SkipBuild
 
+      - name: Compare Scene and Chunk Release workloads
+        shell: pwsh
+        run: ./scripts/measure-windows-scene-runtime.ps1 -Configuration Release -Label ci -SkipBuild
+
       - name: Build and run CPU UI regression tests
         shell: pwsh
         run: ./scripts/test-windows-ui.ps1 -Configuration Release -Platform x64 -SkipBootstrap
