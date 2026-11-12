@@ -22,8 +22,8 @@ RVCAは専用設定型をv2へMigration・検証した結果のみを保持す�
 
 ## Cache Keyと依存関係
 
-RVCAのSource Hashは入力JSONの**生Byte列**のFNV-1a 32。
-空白の変更もCache Missとなる。Compiler VersionはHeader Versionで区別する。
+RVCAのSource Cache識別子は入力JSONの**生Byte列**のFNV-1a 32とCompiler Versionの積（16777619）とのXOR。
+空白の変更もCache Missとなる。Compiler VersionはHeader Versionにも記録し、識別子にも含める。
 この専用Fixtureに外部Asset参照はなく、依存関係一覧は空。
 汎用Asset Compiler用の依存関係グラフ・参照解決・強いCache Keyは**未実装**。
 FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を扱う共有Cacheの同一性検証には使わない。
