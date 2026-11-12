@@ -1131,4 +1131,12 @@
   <ItemGroup>
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md"><Filter>Raven\Data\Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\\Data\\Formats\\Binary\\BinaryDocument.h"><Filter>Raven\\Data\\Formats\\Binary</Filter></ClInclude>
+    <ClCompile Update="Raven\\Data\\Formats\\Binary\\BinaryDocument.cpp"><Filter>Raven\\Data\\Formats\\Binary</Filter></ClCompile>
+    <ClInclude Update="Raven\\Data\\Tests\\CompiledTestAsset.h"><Filter>Raven\\Data\\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\\Data\\Tests\\CompiledTestAsset.cpp"><Filter>Raven\\Data\\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\\Data\\Tests\\CompiledTestAssetTests.cpp"><Filter>Raven\\Data\\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup><Filter Include="Raven\\Data\\Formats\\Binary" /></ItemGroup>
 </Project>
