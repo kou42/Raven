@@ -30,7 +30,13 @@ Resolverは各IDに対応する現在の依存Asset内容を返し、IDの昇順
 同じIDの重複、解決失敗、256件超、ID長1024 Byte超、依存内容64 KiB超は拒否する。
 `IsCacheCurrent` はソース・Version・依存指紋・Payload Checksumを照合する。
 旧 `Compile` は依存なしのショートカットとして残す。依存指紋の追加によりRVCA Versionを2へ更新し、旧Version 1は拒否する。
-実際の参照先IDの抽出・依存グラフの循環検出・永続Cache I/O・強いCache Keyは**未実装**。
+再帰的な依存は `CompileWithGraph` / `IsGraphCacheCurrent` を利用する。
+呼び出し側が指定したRoot IDから `DependencyEnumerator` で子IDを取得し、DFSで共有依存を一度だけ解決する。
+探索中ノードへの再訪は循環参照として拒否し、同じ親に重複する子IDも拒否する。
+GraphのEdge一覧を依存内容とともに指紋へ含め、子Assetの内容変更とEdge変更をCache Missにする。
+1回の処理で取得した依存内容をSnapshot化してCompilerへ渡すため、同一処理中にResolverを再呼び出ししない。
+最大256ノード・依存記録64 KiB/ノードの上限を持つ。
+依存IDのソースからの自動抽出、永続Cache I/O、強いCache Keyは**未実装**。
 FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を扱う共有Cacheの同一性検証には使わない。
 
 ## 検証
@@ -39,4 +45,4 @@ FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を�
 テストはRound-trip、v1→v2、決定性、ソース変更によるCache変更、
 Header破損、Version不一致、Length破損、Checksum破損、出力不変を対象とする。
 MSVCビルドと実行はGitHubコネクタ経由では実施していない。
-実運用Asset移行、永続Cache I/O、依存関係解決、mmap、正式なVersion Migrationは未対応。
+実運用Asset移行、永続Cache I/O、ソースからの依存ID自動抽出、mmap、正式なVersion Migrationは未対応。
