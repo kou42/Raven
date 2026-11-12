@@ -22,7 +22,15 @@ public:
     // IDは安定したAsset識別子。ResolverはIDから現在の依存Asset内容を取得する。
     // 参照が解決できなければCompileは失敗し、既存outputを維持する。
     using DependencyResolver = std::function<bool(std::string_view, std::string&)>;
+    // 各依存Assetの子IDを列挙する。循環参照と重複はGraph側で検出する。
+    using DependencyEnumerator = std::function<bool(std::string_view, std::vector<std::string>&)>;
     static bool Compile(std::string_view sourceJson, std::string& output, TestAssetError& error);
+    static bool CompileWithGraph(std::string_view sourceJson,
+        const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
+        const DependencyEnumerator& enumerate, std::string& output, TestAssetError& error);
+    static bool IsGraphCacheCurrent(std::string_view compiled, std::string_view sourceJson,
+        const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
+        const DependencyEnumerator& enumerate);
     static bool CompileWithDependencies(std::string_view sourceJson,
         const std::vector<std::string>& dependencyIds, const DependencyResolver& resolver,
         std::string& output, TestAssetError& error);
