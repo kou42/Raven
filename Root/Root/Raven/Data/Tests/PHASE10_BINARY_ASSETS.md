@@ -9,12 +9,13 @@
 | Offset | Binary Document (RVBD) | Compiled Test Asset (RVCA) |
 | --- | --- | --- |
 | 0..3 | Magic `RVBD` | Magic `RVCA` |
-| 4..7 | Version=1 | Version=1 |
+| 4..7 | Version=1 | Version=2 |
 | 8..11 | Endian marker=0x01020304 | Endian marker=0x01020304 |
 | 12..15 | Payload Length | Payload Length |
-| 16..19 | Payload FNV-1a 32 | Source FNV-1a 32 |
+| 16..19 | Payload FNV-1a 32 | Source Cache識別子 |
 | 20..23 | Payload begins | Payload FNV-1a 32 |
-| 24.. | Payload continues | Payload begins |
+| 24..27 | Payload continues | 依存Asset指紋 FNV-1a 32 |
+| 28.. | Payload continues | Payload begins |
 
 Payloadは既存の決定的MessagePack Writerで符号化する。RVBDは汎用DataDocumentを保持し、
 RVCAは専用設定型をv2へMigration・検証した結果のみを保持する。
@@ -24,8 +25,12 @@ RVCAは専用設定型をv2へMigration・検証した結果のみを保持す�
 
 RVCAのSource Cache識別子は入力JSONの**生Byte列**のFNV-1a 32とCompiler Versionの積（16777619）とのXOR。
 空白の変更もCache Missとなる。Compiler VersionはHeader Versionにも記録し、識別子にも含める。
-この専用Fixtureに外部Asset参照はなく、依存関係一覧は空。
-汎用Asset Compiler用の依存関係グラフ・参照解決・強いCache Keyは**未実装**。
+専用Fixtureでは `CompileWithDependencies` に安定した依存IDの一覧とResolverを渡す。
+Resolverは各IDに対応する現在の依存Asset内容を返し、IDの昇順でID長・ID・内容長・内容を連結して指紋を生成する。
+同じIDの重複、解決失敗、256件超、ID長1024 Byte超、依存内容64 KiB超は拒否する。
+`IsCacheCurrent` はソース・Version・依存指紋・Payload Checksumを照合する。
+旧 `Compile` は依存なしのショートカットとして残す。依存指紋の追加によりRVCA Versionを2へ更新し、旧Version 1は拒否する。
+実際の参照先IDの抽出・依存グラフの循環検出・永続Cache I/O・強いCache Keyは**未実装**。
 FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を扱う共有Cacheの同一性検証には使わない。
 
 ## 検証
