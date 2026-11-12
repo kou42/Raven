@@ -83,7 +83,7 @@ bool CompiledTestAsset::Compile(std::string_view sourceJson, std::string& output
         Put(temporary, Version);
         Put(temporary, Marker);
         Put(temporary, static_cast<std::uint32_t>(payload.size()));
-        Put(temporary, Hash(sourceJson)); // Cache Key: 原文変更で再Compile
+        Put(temporary, Hash(sourceJson) ^ (Version * 16777619u)); // Compiler Versionを含むCache識別子
         Put(temporary, Hash(payload));
         temporary.append(payload);
         output.swap(temporary);
