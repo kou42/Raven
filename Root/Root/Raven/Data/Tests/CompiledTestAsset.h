@@ -12,6 +12,7 @@ namespace Tests
 {
 // 専用テストAssetのRuntime形式。汎用BinaryDocumentとは独立したMagic/Version。
 // Cache KeyはソースByte列とCompiler Versionに依存し、依存Assetは現段階では存在しません。
+int RunCompiledTestAssetTests();
 class CompiledTestAsset
 {
 public:
