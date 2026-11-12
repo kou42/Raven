@@ -4,6 +4,7 @@
 #include "Raven/Data/Formats/MessagePack/MessagePackWriter.h"
 #include <limits>
 #include <new>
+#include <stdexcept>
 
 namespace Raven
 {
