@@ -4,6 +4,7 @@
 #include "Raven/Data/Formats/MessagePack/MessagePackWriter.h"
 #include <limits>
 #include <algorithm>
+#include <map>
 #include <exception>
 #include <new>
 #include <stdexcept>
@@ -42,6 +43,79 @@ std::uint32_t Get(std::string_view bytes, std::size_t offset)
         result |= static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset + i])) << (8 * i);
     }
     return result;
+}
+// グラフを一度だけ展開してSnapshot化する。解決結果の揺らぎを避けるため、
+ // 後段のCompilerには同じSnapshotを渡す。
+bool SnapshotGraph(const std::vector<std::string>& roots,
+    const CompiledTestAsset::DependencyResolver& resolver,
+    const CompiledTestAsset::DependencyEnumerator& enumerate,
+    std::vector<std::string>& ids, std::map<std::string, std::string>& contents)
+{
+    if (static_cast<bool>(resolver) == false || static_cast<bool>(enumerate) == false)
+    {
+        return false;
+    }
+    std::map<std::string, unsigned> states;
+    std::function<bool(const std::string&)> visit = [&](const std::string& id)
+    {
+        if (id.empty() || id.size() > 1024 || states.size() >= 256 && states.count(id) == 0)
+        {
+            return false;
+        }
+        const auto found = states.find(id);
+        if (found != states.end())
+        {
+            // 1は探索中のため循環。2は既に解決済みの共有依存。
+            return found->second == 2;
+        }
+        states.emplace(id, 1);
+        std::string bytes;
+        std::vector<std::string> children;
+        if (resolver(id, bytes) == false || bytes.size() > TestAssetMaxBytes
+            || enumerate(id, children) == false || children.size() > 256)
+        {
+            return false;
+        }
+        std::sort(children.begin(), children.end());
+        if (std::adjacent_find(children.begin(), children.end()) != children.end())
+        {
+            return false;
+        }
+        for (const auto& child : children)
+        {
+            if (visit(child) == false)
+            {
+                return false;
+            }
+        }
+        // 依存先のIDも内容の一部として扱い、GraphのEdge変更をCacheへ反映する。
+        std::string record;
+        Put(record, static_cast<std::uint32_t>(children.size()));
+        for (const auto& child : children)
+        {
+            Put(record, static_cast<std::uint32_t>(child.size()));
+            record.append(child);
+        }
+        record.append(bytes);
+        contents.emplace(id, std::move(record));
+        states[id] = 2;
+        ids.push_back(id);
+        return true;
+    };
+    auto sortedRoots = roots;
+    std::sort(sortedRoots.begin(), sortedRoots.end());
+    if (std::adjacent_find(sortedRoots.begin(), sortedRoots.end()) != sortedRoots.end())
+    {
+        return false;
+    }
+    for (const auto& root : sortedRoots)
+    {
+        if (visit(root) == false)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 std::uint32_t ResolveHash(const std::vector<std::string>& ids,
     const CompiledTestAsset::DependencyResolver& resolver, bool& success)
@@ -141,6 +215,61 @@ bool CompiledTestAsset::CompileWithDependencies(std::string_view sourceJson,
     catch (const std::length_error&)
     {
         error.Stage = "size limit";
+        return false;
+    }
+}
+bool CompiledTestAsset::CompileWithGraph(std::string_view sourceJson,
+    const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
+    const DependencyEnumerator& enumerate, std::string& output, TestAssetError& error)
+{
+    error = {};
+    try
+    {
+        std::vector<std::string> ids;
+        std::map<std::string, std::string> contents;
+        if (SnapshotGraph(rootIds, resolver, enumerate, ids, contents) == false)
+        {
+            error.Stage = "dependency graph";
+            return false;
+        }
+        const DependencyResolver snapshot = [&](std::string_view id, std::string& bytes)
+        {
+            const auto found = contents.find(std::string(id));
+            if (found == contents.end()) { return false; }
+            bytes = found->second;
+            return true;
+        };
+        return CompileWithDependencies(sourceJson, ids, snapshot, output, error);
+    }
+    catch (const std::exception&)
+    {
+        error.Stage = "dependency graph exception";
+        return false;
+    }
+}
+bool CompiledTestAsset::IsGraphCacheCurrent(std::string_view compiled, std::string_view sourceJson,
+    const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
+    const DependencyEnumerator& enumerate)
+{
+    try
+    {
+        std::vector<std::string> ids;
+        std::map<std::string, std::string> contents;
+        if (SnapshotGraph(rootIds, resolver, enumerate, ids, contents) == false)
+        {
+            return false;
+        }
+        const DependencyResolver snapshot = [&](std::string_view id, std::string& bytes)
+        {
+            const auto found = contents.find(std::string(id));
+            if (found == contents.end()) { return false; }
+            bytes = found->second;
+            return true;
+        };
+        return IsCacheCurrent(compiled, sourceJson, ids, snapshot);
+    }
+    catch (const std::exception&)
+    {
         return false;
     }
 }
