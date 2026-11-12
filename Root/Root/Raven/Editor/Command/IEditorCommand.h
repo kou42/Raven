@@ -19,6 +19,9 @@ public:
     virtual bool Undo(Scene& scene) = 0;
     virtual bool Redo(Scene& scene) = 0;
 
+    // 対象消失は従来どおり破棄できますが、確保失敗等の一時失敗は履歴に残して再試行します。
+    virtual bool RetainAfterFailure() const { return false; }
+
     // Delete UndoでEntityが新Generationへ復元されたとき、履歴内の参照を更新します。
     virtual void RemapEntityHandle(const EntityHandle&, const EntityHandle&) {}
     virtual bool GetRestoredEntityHandles(EntityHandle&, EntityHandle&) const { return false; }

@@ -218,7 +218,13 @@
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
     <None Include="Raven\Data\Tests\README.md" />
+    <None Include="Raven\Data\Tests\PHASE9_EDITING.md" />
+    <None Include="Raven\Data\Tests\PHASE8_MEASUREMENTS.md" />
+    <None Include="Raven\Data\Tests\Phase8Time.csv" />
+    <None Include="Raven\Data\Tests\Phase8Memory.csv" />
+    <None Include="Raven\Data\Tests\StructuredDataTestAsset.v1.json" />
     <None Include="Raven\Data\Serialization\Serialization.inl" />
+    <None Include="Raven\Data\Serialization\ParallelDeserialize.inl" />
     <None Include="Raven\Core\Containers\Vector.inl" />
     <None Include="Raven\Core\Containers\SmallVector.inl" />
     <None Include="Raven\Core\Containers\FixedVector.inl" />

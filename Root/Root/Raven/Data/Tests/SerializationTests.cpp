@@ -1,4 +1,5 @@
 #include "Raven/Data/Tests/SerializationTests.h"
+#include "Raven/Data/Tests/StructuredDataTestAsset.h"
 #include "Raven/Data/Serialization/Serialization.h"
 #include "Raven/Data/DataDocument.h"
 #include "Raven/Data/Formats/Json/JsonParser.h"
@@ -38,52 +39,6 @@ namespace Raven
 {
 namespace Data
 {
-namespace Tests
-{
-// 専用テストAsset。実運用の設定形式とは独立し、v1のsamplesをv2のvaluesへ移行します。
-struct TestSettings
-{
-    bool Enabled = false;
-    std::string Label;
-    std::vector<int> Values;
-};
-}
-template<> struct DataAdapter<Tests::TestSettings>
-{
-    static bool Read(DataElement input, Tests::TestSettings& output, SerializationContext& context);
-    static bool Write(DataWriter& writer, const Tests::TestSettings& value, SerializationContext& context);
-};
-bool DataAdapter<Tests::TestSettings>::Read(DataElement input, Tests::TestSettings& output, SerializationContext& context)
-{
-    ObjectReader object(input, context);
-    std::uint64_t version = 0;
-    if (object.Header("Raven.StructuredDataTest", 1, 2, version) == false
-        || object.Required("enabled", output.Enabled) == false
-        || object.Optional("label", output.Label) == false
-        || object.Optional(version == 1 ? "samples" : "values", output.Values) == false) { return false; }
-    // Migrationは一時値の中で完了します。型変換後の業務検証もCommit前に行います。
-    if (output.Label.size() > 32)
-    {
-        auto field = context.Field("label");
-        return field.Fail(SerializationErrorCode::ValidationFailed, input);
-    }
-    return true;
-}
-bool DataAdapter<Tests::TestSettings>::Write(DataWriter& writer, const Tests::TestSettings& value, SerializationContext& context)
-{
-    if (value.Label.size() > 32)
-    {
-        auto field = context.Field("label");
-        return field.Fail(SerializationErrorCode::ValidationFailed);
-    }
-    return context.Written(writer.BeginObject(), writer)
-        && WriteField(writer, "type", std::string("Raven.StructuredDataTest"), context)
-        && WriteField(writer, "version", 2u, context)
-        && WriteField(writer, "enabled", value.Enabled, context)
-        && WriteField(writer, "label", value.Label, context)
-        && WriteField(writer, "values", value.Values, context)
-        && context.Written(writer.EndObject(), writer);
-}
 namespace Tests
 {
 namespace

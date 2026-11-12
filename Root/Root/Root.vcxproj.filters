@@ -1098,4 +1098,37 @@
     <ClCompile Update="Raven\Scene\Tests\SceneRuntimeComparisonTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
     <ClCompile Update="Raven\Renderer\RHI\RHISceneDrawItemBuilder.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Data\Tests\StructuredDataTestAsset.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\Tests\StructuredDataTestAsset.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Data\Tests\StructuredDataTestAssetTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <None Include="Raven\Data\Tests\StructuredDataTestAsset.v1.json"><Filter>Raven\Data\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Data\Serialization\ParallelDeserialize.h"><Filter>Raven\Data\Serialization</Filter></ClInclude>
+    <None Include="Raven\Data\Serialization\ParallelDeserialize.inl"><Filter>Raven\Data\Serialization</Filter></None>
+    <ClCompile Update="Raven\Data\Tests\DataBenchmarkMemory.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Data\Tests\DataBenchmarkMemory.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\Tests\ParallelDeserializeTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Data\Tests\ParallelDeserializeTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\Tests\StructuredDataBenchmarks.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Raven\Data\Tests\PHASE8_MEASUREMENTS.md"><Filter>Raven\Data\Tests</Filter></None>
+    <None Include="Raven\Data\Tests\Phase8Time.csv"><Filter>Raven\Data\Tests</Filter></None>
+    <None Include="Raven\Data\Tests\Phase8Memory.csv"><Filter>Raven\Data\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Data\MutableDataDocument.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\MutableDataDocument.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Update="Raven\Data\Tests\MutableDataDocumentTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\Tests\MutableDataDocumentTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Editor\Command\DataDocumentEditCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Update="Raven\Editor\Command\DataDocumentEditCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Update="Raven\Editor\Tests\DataDocumentEditCommandTests.h"><Filter>Raven\Editor\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Editor\Tests\DataDocumentEditCommandTests.cpp"><Filter>Raven\Editor\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Raven\Data\Tests\PHASE9_EDITING.md"><Filter>Raven\Data\Tests</Filter></None>
+  </ItemGroup>
 </Project>

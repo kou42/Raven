@@ -258,7 +258,8 @@ File I/O・Streamエラーの取扱い、整形出力、型Adapter、Reflection�
 `Data/Serialization/Serialization.h`はフォーマット非依存の型変換層です。
 `DataAdapter<T>`を明示的に特殊化し、`Read(DataElement, T&, SerializationContext&)`と
 `Write(DataWriter&, const T&, SerializationContext&)`を定義します。通常関数の実装はcpp、
-テンプレートの実装は同名inlに置きます。設定型の実例は`SerializationTests.cpp`を参照してください。
+テンプレートの実装は同名inlに置きます。設定型とAdapterはPhase 7で共用化した
+`StructuredDataTestAsset.h/.cpp`、型変換の検証例は`SerializationTests.cpp`を参照してください。
 
 - `Deserialize`は既定構築した一時値へ読み込み、Adapterの検証成功後にだけnoexcept swapします。
   入力Documentを変更せず、出力が以前保持していた値を既定値として流用しません。
@@ -297,6 +298,7 @@ g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
   Root/Root/Raven/Data/Formats/Json/JsonParser.cpp \
   Root/Root/Raven/Data/Formats/Json/JsonWriter.cpp \
   Root/Root/Raven/Data/Serialization/Serialization.cpp \
+  Root/Root/Raven/Data/Tests/StructuredDataTestAsset.cpp \
   Root/Root/Raven/Data/Tests/SerializationTests.cpp -o /tmp/raven-serialization-tests
 /tmp/raven-serialization-tests
 ```
@@ -379,3 +381,114 @@ ASan / UBSan / float-cast-overflowは通常419チェック成功、LeakSanitizer
 - Error.OffsetはParserでは入力Byte位置（EOFは入力長）、Writerではその時点の課金Byte数です。
   Documentの検証エラーはPayload位置を指す場合があります。最初のWriter失敗はstickyです。
 - File I/O・通信・Reflection・実運用設定の移行は含みません。Windows / MSVCの正式ビルドは未検証です。
+
+
+## Phase 7 専用設定テストAssetのファイル導入
+
+Phase 0で選定した専用Assetを用い、既存のRuntime設定は変更しません。
+`StructuredDataTestAsset.v1.json`を読み、既存のv1 samples→v2 values移行を適用し、
+v2の決定的JSONとして保存・再読み込みします。Phase 5テストと同じ型・Adapterを共有します。
+未知フィールドは無視し、再保存時に保持しません。既存Core Parser、Dock Snapshot、
+Humanoid Profile、glTFの読み書きは引き続き既存経路です。
+
+Windowsでの一括検証（Visual Studio C++ツールセットが必要）:
+
+```powershell
+./scripts/test-windows-structured-data.ps1
+```
+
+スクリプトはリポジトリルートでCPU専用テストを実行します。Fixtureの相対Pathもルート基準です。
+出力は`artifacts/structured-data/`の`msvc-build.log`と`tests.log`です。
+Phase 5の単独ビルドにも、共用Adapterを定義する`StructuredDataTestAsset.cpp`のリンクが必要です。
+GCCでPhase 7だけを実行する場合、上記Phase 5コマンドの`SerializationTests.cpp`を
+`StructuredDataTestAssetTests.cpp`へ、main macroを`RAVEN_TEST_ASSET_MAIN`へ変更します。
+
+データの流れと契約:
+
+- 読込: File I/Oで64 KiB上限を確保前に検査→所有Buffer→JSON Parser→Document→
+  Adapterの一時値→全検証後Commit。短いRead・追記を拒否します。
+  欠落・破損時は呼び出し側の状態を維持するため、初回起動で既定値を使う場合は
+  呼び出し側が既定構築してから読み込みます。型不一致を既定値で隠しません。
+- `TestAssetError`はI/O段階、構文のDataError / Byte位置、型変換のフィールド経路を保持します。
+  診断の表示先はテスト実行結果です。EngineのUIや汎用Runtimeログへの依存は追加しません。
+- 保存: 型検証・64 KiB出力上限を満たしたJSON→同じ親の排他作成ディレクトリ内の一時File→
+  Write / Flush / Close成功→WindowsのMoveFileExWによる置換（非Windowsはrename）。
+  旧Fileを先に削除せず、置換失敗時は旧Byte列を維持します。一時領域はRAIIで後始末します。
+  File I/OとOS APIは専用Asset側だけに置き、DataのParser / Writerへ持ち込みません。
+- 保存先の親ディレクトリは事前に用意してください。電源断時の耐久性、敵対的なPath変更、
+  複数プロセスの競合制御、保存権限の継承は保証しません。バックアップ復旧は提供しません。
+
+MSVC C++17 / W4: 新規48チェックと既存5,355チェック、合計5,403チェック成功、警告0。
+MSVCではlong doubleとdoubleの精度が同じため、既存DataElementテストの追加精度照合をスキップします。
+新規テストは旧版移行、新規保存・上書き、canonical v2 Byte列、Escape、未知・省略フィールド、
+型・構文・Version・入力上限ちょうど／1超過、出力上限、失敗時の設定維持を確認します。
+WindowsではDelete共有なしのHandleで実際に置換を失敗させ、元Fileと一時領域の後始末も確認します。
+Write / Flush / CloseのOS障害注入、競合中の短いRead、非Windowsの置換経路、
+Phase 7のSanitizerは未検証です。旧PhaseのGCC / Sanitizer実績とは区別してください。
+
+アプリのDebug増分ビルドはコンパイル成功後、通常のPDB生成で既存の環境問題
+`LNK1101: MSPDB140.DLL`不一致によりリンク失敗しました。既存の診断オプション
+`/p:RavenGenerateLinkDebugInformation=false`を指定した増分ビルドではリンク成功しました。
+既存ログにもあるCRT競合警告LNK4098が1件あります。PDBありの正式ビルドとGUI実行は未検証です。
+
+
+## Phase 8 計測・並列Deserialize
+
+`Data/Serialization/ParallelDeserialize.h`の`DeserializeArray<T>`は独立した配列要素を
+既存JobSystemへ連続範囲で投入する明示的APIです。既存`Deserialize`は変更しません。
+APIは既定で逐次。試験設定型で実測した条件は4 Workerに対して
+`EnableParallel=true / MinElements=128 / MinTokens=1409`です。
+他のAdapterや実機へそのまま流用せず、計測して設定してください。
+
+- 入力は検証済みDocumentのArray。Document、Pool、取消Flagを関数終了まで生存させます。
+  同じPoolのWorkerから同期呼び出ししないでください（全Workerが待つとdeadlockします）。
+- 出力は一時vectorを先に確保し、各Workerは重ならない要素だけを変更します。
+  エラーと取消を確認し、投入済みJobを全回収後、全成功時だけ呼び出し側へswapします。
+- `ArrayReadResult`で状態、投入Job数、並列利用有無、失敗件数、最小indexとそのフィールド診断を返します。
+  要素失敗は途中停止せず全件を集計します。取消時は処理済み範囲だけを集計します。
+  取消は要素間の協調方式で、Adapter内の長い処理を強制停止しません。
+- Adapterは並列安全で、入力や共有状態を変更せず、出力を所有値として生成してください。
+  共有Cacheを追加せず、IDの参照解決・Scene/GPU変更は呼び出し側の成功後Commitに分離します。
+  `vector<bool>`は保存領域の共有を避けるため対象外です。
+- 計測は専用実行ファイルのCSVだけに出力し、ゲーム中のログやDiagnostics UIは変更しません。
+  既存AllocationMeasurementは変更せず、Worker合算Peakの追跡は専用macroのビルドに限定します。
+
+```powershell
+./scripts/test-windows-structured-data.ps1
+./scripts/test-windows-structured-data.ps1 -Benchmark
+./scripts/test-windows-structured-data.ps1 -Benchmark -MeasureMemory
+```
+
+通常CPU検証は新規37、既存5,403、合計5,440チェック成功、警告0。
+メモリ専用ビルドでは確保失敗注入を含む新規50チェックと、既知Peak / 世代切替 /
+Aligned確保 / Worker間の確保解放を確認しました。時間とメモリ追跡は別ビルドで測定しています。
+結果、測定定義、生CSV、未検証事項は[Phase 8計測結果](PHASE8_MEASUREMENTS.md)を参照してください。
+MSVC以外・Sanitizer・ThreadSanitizer・GUIは未検証。アプリDebugはPDB生成無効でリンク成功し、
+既存LNK4098が1件あります。既知の通常PDB生成環境問題は未解消です。
+
+
+## Phase 9 編集Document / Editor Command
+
+`MutableDataDocument`へ不変Elementをコピーし、挿入・削除・置換した後にFreezeできます。
+Slot再利用はGeneration、Document再構築はOwner、Compact / Reset / Undo / Redo復元はEpochで
+古いHandleを拒否します。成功した変更はすべての編集String Viewを無効化します。
+編集は単一Threadに限定し、Workerへ渡すDocumentはMain Threadで先にFreezeしてください。
+
+Editor側は`DataDocumentEditCommand`を既存Historyへ登録します。Scene / Sessionの寿命、
+履歴外の変更、Scene交換による履歴世代を検証し、前後SnapshotでUndo / Redoを行います。
+履歴の容量は変更前に確保し、一時的なOutOfMemoryは再試行できるよう履歴に残します。
+Data層へSceneやFile I/Oは追加しません。専用Assetで編集・Undo / Redo・保存・再読み込みを検証します。
+
+```powershell
+./scripts/test-windows-structured-data.ps1
+./scripts/test-windows-structured-data.ps1 -AllocationTests
+# アプリのビルド済み実行ファイルを利用する場合
+./scripts/test-windows-scene.ps1 -SkipBuild -SkipBootstrap
+```
+
+MSVC通常テストは既存5,440＋新規65＝5,505チェック成功、警告0。
+確保注入付きの編集テストは610チェック、Editor Commandは50チェック成功。
+既存Scene / Editor回帰も成功しました。アプリDebugは既存PDB無効オプションでリンク成功しています。
+詳細なAPI契約、対象ファイル、データの流れ、検証制限は[Phase 9編集Document](PHASE9_EDITING.md)を参照してください。
+初期版は編集ごとの全体Copy・検証とSnapshot履歴を使います。大規模Assetの編集性能とByte単位の
+履歴予算は未対応です。GUI、Sanitizer、通常PDB生成の環境問題も未検証・未解消です。
