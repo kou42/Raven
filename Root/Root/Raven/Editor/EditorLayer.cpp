@@ -391,9 +391,12 @@ bool ColliderEditValuesEqual(
 } // namespace
 
 EditorLayer::EditorLayer(Application& application)
-    : m_Application(&application)
+    : EditorLayer()
 {
+    m_Application = &application;
 }
+
+EditorLayer::EditorLayer() = default;
 
 UIElement* EditorLayer::GetRavenPanelRoot(EditorDockTabId tabId) const
 {
@@ -1320,6 +1323,23 @@ void EditorLayer::OnDetach()
     m_ViewportRenderingEnabled = false;
 }
 
+void EditorLayer::OnActiveSceneChanging(Scene* scene)
+{
+    static_cast<void>(scene);
+    // Entityのbool変換もSceneを参照します。旧Sceneが生存する通知境界で値ごと捨て、
+    // allocatorが同じアドレスを再利用した場合も新Sceneへ選択・編集を引き継ぎません。
+    SetEditorCommandHistoryScene(nullptr);
+    m_SelectedEntity = Entity{};
+    m_RavenViewportGizmo.Reset();
+    m_ExplicitPickingScene = nullptr;
+    m_ExplicitPickingSequence = 0u;
+    // Panelは値Snapshotを持ちますが、Handle付き編集Actionを新Sceneへ送らないよう、
+    // 同じHandle値の新Entityが表示される前に編集Sessionと旧Snapshotを解除します。
+    m_InspectorRavenPanel.Update(InspectorSnapshot{});
+    m_SceneHierarchyRavenPanel.Update(SceneHierarchySnapshot{});
+    m_AnimationDebugRavenPanel.Update(AnimationDebugSnapshot{});
+}
+
 void EditorLayer::OnUpdate(float dt)
 {
     if (m_Application == nullptr)
@@ -1956,28 +1976,20 @@ void EditorLayer::ApplyPickedEntityID(std::int32_t entityID)
 
 void EditorLayer::ValidateSelectedEntity()
 {
-    if (m_Application == nullptr)
-    {
-        SetSelectedEntity(Entity{});
-        return;
-    }
+    ValidateSelectedEntity(m_Application != nullptr ? m_Application->GetScene() : nullptr);
+}
 
-    Scene* activeScene = m_Application->GetScene();
+void EditorLayer::ValidateSelectedEntity(Scene* activeScene)
+{
     if (activeScene == nullptr)
     {
         SetSelectedEntity(Entity{});
         return;
     }
 
-    // Entity::operator bool()はexplicitなので明示的にboolへ変換します。
-    // Invalid Entityは「選択なし」として扱い、それ以上のScene/Generation検証は不要です。
-    if (static_cast<bool>(m_SelectedEntity) == false)
-    {
-        return;
-    }
-
     // Entity自身が保持するSceneと現在のActive Sceneを比較します。
     // Index/Generationが偶然一致しても別SceneのEntityは別物なので、Scene切替時に選択を解除します。
+    // bool変換は所属Sceneを逆参照するため、所属確認より前には呼んではいけません。
     if (m_SelectedEntity.GetScene() != activeScene)
     {
         SetSelectedEntity(Entity{});
