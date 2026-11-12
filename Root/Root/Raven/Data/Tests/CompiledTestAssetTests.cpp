@@ -40,6 +40,30 @@ int RunCompiledTestAssetTests()
     check(CompiledTestAsset::Load(compiled, settings, error) == false, "reject checksum");
     check(CompiledTestAsset::Load(std::string_view(valid).substr(0, 3), settings, error) == false,
         "reject truncated header");
+    // 依存Asset更新だけでもCache Missになり、解決失敗時は出力を保持する。
+    std::string dependencyContent = "texture-v1";
+    const CompiledTestAsset::DependencyResolver resolver =
+        [&](std::string_view id, std::string& content)
+        {
+            if (id != "textures/test") { return false; }
+            content = dependencyContent;
+            return true;
+        };
+    std::string dependent;
+    check(CompiledTestAsset::CompileWithDependencies(source, {"textures/test"}, resolver,
+        dependent, error), "compile with dependency");
+    check(CompiledTestAsset::IsCacheCurrent(dependent, source, {"textures/test"}, resolver),
+        "cache hit with matching dependency");
+    check(CompiledTestAsset::IsCacheCurrent(dependent, source + " ", {"textures/test"}, resolver) == false,
+        "source edit invalidates cache");
+    dependencyContent = "texture-v2";
+    check(CompiledTestAsset::IsCacheCurrent(dependent, source, {"textures/test"}, resolver) == false,
+        "dependency edit invalidates cache");
+    compiled = valid;
+    check(CompiledTestAsset::CompileWithDependencies(source, {"missing"}, resolver,
+        compiled, error) == false && compiled == valid, "missing dependency preserves output");
+    check(CompiledTestAsset::CompileWithDependencies(source, {"textures/test", "textures/test"},
+        resolver, compiled, error) == false && compiled == valid, "duplicate dependency rejected");
     DataDocument document;
     DataError dataError;
     check(JsonParser::Parse(source, document, &dataError), "parse source document");
