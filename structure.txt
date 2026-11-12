@@ -339,6 +339,8 @@ D:.
     |   |   |   |   DataUtf8.h
     |   |   |   |   DataWriter.cpp
     |   |   |   |   DataWriter.h
+    |   |   |   |   MutableDataDocument.cpp
+    |   |   |   |   MutableDataDocument.h
     |   |   |   |
     |   |   |   +---Formats
     |   |   |   |   +---Json
@@ -352,10 +354,14 @@ D:.
     |   |   |   |           MessagePackWriter.cpp
     |   |   |   |           MessagePackWriter.h
     |   |   |   +---Serialization
+    |   |   |   |       ParallelDeserialize.h
+    |   |   |   |       ParallelDeserialize.inl
     |   |   |   |       Serialization.cpp
     |   |   |   |       Serialization.h
     |   |   |   |       Serialization.inl
     |   |   |   \---Tests
+    |   |   |           DataBenchmarkMemory.cpp
+    |   |   |           DataBenchmarkMemory.h
     |   |   |           DataDocumentTests.cpp
     |   |   |           DataDocumentTests.h
     |   |   |           DataElementTests.cpp
@@ -367,9 +373,22 @@ D:.
     |   |   |           MessagePackInterop.py
     |   |   |           MessagePackTests.cpp
     |   |   |           MessagePackTests.h
+    |   |   |           MutableDataDocumentTests.cpp
+    |   |   |           MutableDataDocumentTests.h
+    |   |   |           ParallelDeserializeTests.cpp
+    |   |   |           ParallelDeserializeTests.h
+    |   |   |           PHASE8_MEASUREMENTS.md
+    |   |   |           PHASE9_EDITING.md
+    |   |   |           Phase8Time.csv
+    |   |   |           Phase8Memory.csv
     |   |   |           README.md
     |   |   |           SerializationTests.cpp
     |   |   |           SerializationTests.h
+    |   |   |           StructuredDataBenchmarks.cpp
+    |   |   |           StructuredDataTestAsset.cpp
+    |   |   |           StructuredDataTestAsset.h
+    |   |   |           StructuredDataTestAsset.v1.json
+    |   |   |           StructuredDataTestAssetTests.cpp
     |   |   +---Debug
     |   |   |   |   BrowserDebugConfig.h
     |   |   |   |   BrowserDebugServer.cpp
@@ -411,6 +430,8 @@ D:.
     |   |   |   |   EditorViewportGeometry.h
     |   |   |   |
     |   |   |   +---Command
+    |   |   |   |       DataDocumentEditCommand.cpp
+    |   |   |   |       DataDocumentEditCommand.h
     |   |   |   |       CreateEntityCommand.cpp
     |   |   |   |       CreateEntityCommand.h
     |   |   |   |       DeleteEntityCommand.cpp
@@ -451,6 +472,8 @@ D:.
     |   |   |   |       StatisticsSnapshot.h
     |   |   |   |       StatisticsUISnapshot.cpp
     |   |   |   \---Tests
+    |   |   |           DataDocumentEditCommandTests.cpp
+    |   |   |           DataDocumentEditCommandTests.h
     |   |   |           EditorEntityCommandSelfTests.cpp
     |   |   |           EditorEntityCommandSelfTests.h
     |   |   |           EditorViewportGeometrySelfTests.cpp

@@ -6,6 +6,9 @@
 #include <cstddef>
 #include <utility>
 #include <vector>
+#include <limits>
+#include <new>
+#include <stdexcept>
 
 namespace Raven
 {
@@ -22,6 +25,16 @@ std::vector<std::unique_ptr<IEditorCommand>> s_RedoStack;
 // 現在Editorが操作対象としているSceneです。HistoryはSceneを所有しません。
 // Commandの実行時にだけ参照として渡し、Scene切替時には全履歴を破棄します。
 Scene* s_ActiveScene = nullptr;
+std::uint64_t s_HistoryEpoch = 1;
+
+bool ReserveHistorySlot(std::vector<std::unique_ptr<IEditorCommand>>& stack)
+{
+    // Document復元後の履歴pushで確保失敗すると、変更だけが残りUndoできなくなります。
+    // Commandの実行・取り出し前に移動先を確保し、この確保の失敗時は両Stackと対象を維持します。
+    try { stack.reserve(stack.size() + 1); return true; }
+    catch (const std::bad_alloc&) { return false; }
+    catch (const std::length_error&) { return false; }
+}
 
 void TrimUndoHistory()
 {
@@ -69,7 +82,7 @@ bool ExecuteAndRecordEditorCommand(std::unique_ptr<IEditorCommand> command)
         return false;
     }
 
-    if (command->Execute(*s_ActiveScene) == false)
+    if (ReserveHistorySlot(s_UndoStack) == false || command->Execute(*s_ActiveScene) == false)
     {
         return false;
     }
@@ -89,6 +102,7 @@ bool RecordAlreadyExecutedEditorCommand(std::unique_ptr<IEditorCommand> command)
 
     // GizmoはDrag中、画面へ即時反映するためTransformを毎frame直接更新しています。
     // Mouse Release時点でExecuteすると最終値を二重適用するため、ここでは検証と履歴登録だけを行います。
+    if (ReserveHistorySlot(s_UndoStack) == false) { return false; }
     RecordCommand(std::move(command));
     return true;
 }
@@ -99,6 +113,7 @@ bool UndoEditorCommand()
     {
         return false;
     }
+    if (s_UndoStack.empty() == false && ReserveHistorySlot(s_RedoStack) == false) { return false; }
 
     while (s_UndoStack.empty() == false)
     {
@@ -126,6 +141,12 @@ bool UndoEditorCommand()
             return true;
         }
 
+        if (command != nullptr && command->RetainAfterFailure() == true)
+        {
+            // pop前の容量を再利用するため、この復元pushは確保しません。
+            s_UndoStack.push_back(std::move(command));
+            return false;
+        }
         // 対象EntityやComponentが消えたCommandは捨て、さらに古い有効Commandを探します。
     }
 
@@ -138,6 +159,7 @@ bool RedoEditorCommand()
     {
         return false;
     }
+    if (s_RedoStack.empty() == false && ReserveHistorySlot(s_UndoStack) == false) { return false; }
 
     while (s_RedoStack.empty() == false)
     {
@@ -165,6 +187,11 @@ bool RedoEditorCommand()
             TrimUndoHistory();
             return true;
         }
+        if (command != nullptr && command->RetainAfterFailure() == true)
+        {
+            s_RedoStack.push_back(std::move(command));
+            return false;
+        }
     }
 
     return false;
@@ -184,6 +211,14 @@ void ClearEditorCommandHistory()
 {
     s_UndoStack.clear();
     s_RedoStack.clear();
+    // 同じアドレスへ別Sceneが生成されても、破棄前通知で進めた世代は一致しません。
+    // wrapによる旧Command復活を避け、枯渇時は0へ固定します。
+    if (s_HistoryEpoch != 0)
+    {
+        s_HistoryEpoch = s_HistoryEpoch == (std::numeric_limits<std::uint64_t>::max)() ? 0 : s_HistoryEpoch + 1;
+    }
 }
+
+std::uint64_t GetEditorCommandHistoryEpoch() { return s_HistoryEpoch; }
 
 } // namespace Raven

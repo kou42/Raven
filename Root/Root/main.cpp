@@ -25,6 +25,7 @@
 #include "Raven/Scene/Tests/SceneViewSelfTests.h"
 #include "Raven/Scene/Tests/SceneRuntimeComparisonTests.h"
 #include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
+#include "Raven/Editor/Tests/DataDocumentEditCommandTests.h"
 #include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Editor/EditorLayer.h"
 #include "Raven/Debug/BrowserDebugConfig.h"
@@ -88,6 +89,15 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument == "--test-data-document-edit")
+        {
+            try { return Raven::tests::RunDataDocumentEditCommandTests(); }
+            catch (const std::exception& error)
+            {
+                std::cerr << "Data Document edit tests failed: " << error.what() << '\n';
+                return 1;
+            }
+        }
         if (backendArgument == "--test-editor-scene-lifetime")
         {
             try
@@ -317,7 +327,7 @@ int main(int argc, char* argv[])
         else if (backendArgument != "--backend=opengl")
         {
             std::cerr << "Unknown argument. Use --backend=opengl, --backend=vulkan, --backend=dx12, "
-                "--editor-backend-comparison, --test-editor-viewport, "
+                "--editor-backend-comparison, --test-editor-viewport, --test-data-document-edit, "
                 "--test-flat-hash-map, --test-flat-hash-set, --test-memory-containers, --test-string, --test-name, "
                 "--test-animation-runtime, "
                 "--test-character-animation, "

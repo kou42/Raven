@@ -1,8 +1,8 @@
 # Raven Structured Data / Serialization Roadmap
 
 作成日: 2026-10-04  
-最終確認日: 2026-11-01\
-状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7以降は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflection、Network / RPCは未実装。
+最終確認日: 2026-11-13\
+状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10以降は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflection、Network / RPCは未実装。
 
 ## 目的
 
@@ -53,7 +53,7 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 
 ## Phase一覧
 
-Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7以降は未着手。既存JSON基盤の置換は目的に含めない。
+Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10以降は未着手。既存JSON基盤の置換は目的に含めない。
 
 | Phase | 内容 | 状態 | 前提 |
 | --- | --- | --- | --- |
@@ -64,9 +64,9 @@ Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflection�
 | 4 | Reader / Writer・JSON出力 | 完了（CPU単体検証） | 3 |
 | 5 | 型付きSerialization・Reflection接続 | 明示的Adapter完了、Reflectionは用途待ち | 4 |
 | 6 | MessagePack読み書き | 完了（CPU単体・独立実装との相互検証） | 4、型付き利用には5 |
-| 7 | エンジン機能への試験導入 | 未着手 | 5 |
-| 8 | 計測・並列Deserialize | JobSystemの前提は完了 | 7 |
-| 9 | Mutable Document・Editor連携 | 未着手 | 7 |
+| 7 | エンジン機能への試験導入 | 専用テストAssetで完了（実運用への展開は保留） | 5 |
+| 8 | 計測・並列Deserialize | 完了（MSVC CPU検証・実測） | 7 |
+| 9 | Mutable Document・Editor連携 | 完了（CPU編集・Undo/Redo・保存検証） | 7 |
 | 10 | 汎用Documentバイナリ・Compiled Asset | 未着手 | 7 |
 | 11 | Network / RPCへの接続 | 未着手 | 5・6、通信層 |
 
@@ -317,40 +317,103 @@ JSONのRaw表記・Escape位置の保持、直接Parser、Lazy Decode、型付�
 
 ## Phase 7 — Ravenへの試験導入
 
-- [ ] Phase 0で選んだ新規設定または専用テストAssetに導入する。
-- [ ] 既存ファイルとの互換性と移行方法を確認する。
+- [x] Phase 0で選んだ新規設定または専用テストAssetに導入する。
+- [x] 既存ファイルとの互換性と移行方法を確認する（専用Assetのv1→v2。実運用形式は維持）。
 - [ ] UI Dock SnapshotまたはHumanoid Profileへは、読み込み互換性・保存形式・回帰テストを確認してから段階導入する。
 - [ ] Material、Physics設定、Animation設定、Sceneへ必要順に広げる。
 - [ ] glTF等の専用Importerは形式固有処理を維持し、共通化する範囲をMetadataなどに限定して評価する。
-- [ ] 読み込み失敗時の既定値、診断表示、保存失敗時の元ファイル保護を確認する。
+- [x] 読み込み失敗時の既定値、診断表示、保存失敗時の元ファイル保護を確認する（専用AssetのCPUテスト）。
 
 完了条件: 1つの実用途で保存・再読み込みが成立し、既存動作の回帰がない。
+
+### Phase 7実装結果（2026-11-13）
+
+- Phase 0で選定した専用設定Assetに限定してファイル読み書きを追加した。Phase 5の型・Adapterを
+  `StructuredDataTestAsset.h/.cpp`へ移し、既存の型変換テストと共用する。
+- チェックインしたv1 JSONのsamplesをvaluesへ移行し、v2の決定的JSONを保存・再読み込みする。
+  既知の型不一致・Null・対応外Versionは拒否し、省略値と未知フィールドの規約を維持する。
+- File I/Oは専用Asset側に置き、64 KiB上限を確保前に検査する。Parser / Document / Adapterは
+  既存Data基盤を使用し、全成功後だけ設定へCommitする。診断はI/O段階・構文位置・フィールド経路を分離する。
+- 保存は同じ親の一時領域でWrite / Flush / Close後に置換する。Windowsの実ファイルLockで置換失敗を
+  発生させ、旧Byte列維持と一時領域の後始末を確認した。電源断・同時保存・敵対的Path操作は保証外。
+- MSVCのCPU検証で新規48チェック、既存5,355チェック、合計5,403チェック成功、警告0。
+  MSVCではlong double追加精度照合をスキップする。再実行は`scripts/test-windows-structured-data.ps1`。
+- アプリDebugはコンパイル成功、通常リンクは既存のMSPDB140.DLL不一致（LNK1101）で失敗。
+  既存オプションでPDB生成を無効にするとリンク成功。既存のCRT競合警告LNK4098が1件あり、
+  PDBありの正式ビルド・GUI実行・Phase 7のSanitizerは未検証。
+- Dock Snapshot / Humanoid Profile / Material / Physics / Animation / Scene / glTFは変更しない。
+  上記の未チェック項目は後続の実運用展開候補であり、今回の承認範囲には含めない。
+- 詳細なI/O契約・検証制限は`Data/Tests/README.md`に記載。Phase 8や実運用移行へ自動では進まない。
 
 ## Phase 8 — 計測・並列Deserialize
 
 `JobSystem`は利用できる。並列Deserializeは、逐次処理の正しさと計測基盤を完成させてから導入する。
 
-- [ ] 小設定、大配列、深いネスト、Escapeの多い文字列を計測用データにする。
-- [ ] Parse、Decode、型変換、Writeの時間と、Allocation回数・Peak Memory・Token数を分けて計測する。
-- [ ] 必要な場合のみキー索引、Reserve、Token圧縮を導入する。
-- [ ] 独立した配列要素の変換を`JobSystem`へ投入する。
-- [ ] 要素数とToken量を基に閾値を実測する。特定ライブラリの既定値をそのまま採用しない。
-- [ ] 出力領域を事前確保し、順序保持、エラー集約、取消、共有Cache、参照解決を扱う。
-- [ ] SceneやGPU等への変更は変換Jobで直接行わず、必要なThreadでCommitする。
-- [ ] Diagnostics基盤へ計測結果を出す場合は、ゲーム中のログ負荷を増やさない集計単位と出力頻度を定める。
+- [x] 小設定、大配列、深いネスト、Escapeの多い文字列を計測用データにする。
+- [x] Parse、Decode、型変換、Writeの時間と、Allocation回数・Peak Memory・Token数を分けて計測する。
+- [x] 必要な場合のみキー索引、Reserve、Token圧縮を導入する。
+- [x] 独立した配列要素の変換を`JobSystem`へ投入する。
+- [x] 要素数とToken量を基に閾値を実測する。特定ライブラリの既定値をそのまま採用しない。
+- [x] 出力領域を事前確保し、順序保持、エラー集約、取消、共有Cache、参照解決を扱う。
+- [x] SceneやGPU等への変更は変換Jobで直接行わず、必要なThreadでCommitする。
+- [x] Diagnostics基盤へ計測結果を出す場合は、ゲーム中のログ負荷を増やさない集計単位と出力頻度を定める。
 
 完了条件: 逐次処理と結果が一致し、対象負荷で改善を確認できる。小さい入力は逐次経路を維持する。
 
+### Phase 8実装結果（2026-11-13）
+
+- 小設定、大配列、96段ネスト、Escape文字列を用意し、Parse / Decode / 型変換 / Writeの時間、
+  全ThreadのC++確保件数・累積Bytes・区間内Peak・Token数を測定した。時間計測は追跡なしの別ビルド。
+  対象外の既存領域・OS/GPU・Stackや、Decodeに走査・コピーを含む条件を明記した。
+- 既存JobSystemを使う明示的`DeserializeArray<T>`を追加。Worker数分の連続範囲だけを索引し、
+  事前確保した一時出力の独立要素を変換する。順序を保持し、全future回収後に成功時だけswapする。
+- 失敗件数と最小indexのフィールド経路、要素間取消、Adapter例外、Submitを含む確保失敗を扱う。
+  不変Documentに共有Cacheは追加しない。参照解決とScene/GPU反映は呼び出し側へ残す。
+- 1 / 2 / 4 / 8 Worker、32〜8,192要素、要素内整数0 / 64個で測定した。
+  軽い32件の並列化は遅いため、APIは既定逐次。試験設定型のpolicyは128要素・1,409 Token以上を
+  4 Workerで処理する。条件は専用ベンチで評価し、汎用APIへ固定しない。
+- 8,192件・各64整数は既存25.15 ms、新逐次24.68 ms、8 Worker 4.42 ms（既存比約5.7倍）、
+  実測policyの4 Worker 7.19 ms。既存Peak 4,596,742 Byte、8 Worker 3,872,546 Byte。
+  キー索引・Token圧縮は今回不要と判断し、出力vector以外の汎用Reserve変更も行わない。
+- 通常テストは既存5,403＋新規37＝5,440チェック成功、警告0。メモリ専用ビルドは新規50チェック成功。
+  アプリDebug増分ビルドはPDB無効でリンク成功、既存LNK4098が1件。
+- 詳細は`Data/Tests/PHASE8_MEASUREMENTS.md`と同所の生CSV、再実行は
+  `scripts/test-windows-structured-data.ps1`を参照。Diagnostics UIへの常時出力は追加しない。
+- 通常PDB生成の既知DLL不一致、GUI、Sanitizer / ThreadSanitizer、他実機の閾値とゲーム中同時負荷は未検証。
+  実運用Asset移行とPhase 9以降へは自動で進まない。
+
 ## Phase 9 — Mutable Document / Editor
 
-- [ ] 不変Documentから編集用Documentへ移行する境界を設計する。
-- [ ] 変更値用Storage、挿入・削除・置換、Slot再利用を追加する。
-- [ ] HandleのGeneration等で削除・再利用後の古い参照を検出する。
-- [ ] 変更後のView無効化と、読み取りThreadとの関係を明記する。
-- [ ] Editor CommandによるUndo / Redoへ接続する。
-- [ ] 編集後のCompact / Freezeと保存を追加する。
+- [x] 不変Documentから編集用Documentへ移行する境界を設計する。
+- [x] 変更値用Storage、挿入・削除・置換、Slot再利用を追加する。
+- [x] HandleのGeneration等で削除・再利用後の古い参照を検出する。
+- [x] 変更後のView無効化と、読み取りThreadとの関係を明記する。
+- [x] Editor CommandによるUndo / Redoへ接続する。
+- [x] 編集後のCompact / Freezeと保存を追加する。
 
 完了条件: 編集、Undo / Redo、保存・再読み込みが成立し、Slot再利用で古いHandleが別の値を指さない。
+
+### Phase 9実装結果（2026-11-13）
+
+- 不変DataDocumentは維持し、所有する編集Storageを持つ`MutableDataDocument`を追加した。
+  Array / Objectの挿入、部分木の削除・置換、Free ListによるSlot再利用を提供する。
+- 既存PoolHandleのindex / generationと世代上限Slot退役の規約を使い、Document固有Owner IDと
+  Reset / Compact / Undo復元時のEpochを加えた。削除前のHandleはUndoやアドレス再利用でも復活しない。
+- 編集候補をコピーして既存Document検証へ通し、全成功後だけCommitする。失敗時は状態・Handle・View・
+  出力を維持する。キーを含むToken数と合計Bytesを確保前に検査し、編集深さは最大128に制限する。
+- CompactはFreeze→密な編集StorageへのReset。FreezeはDecoded String・Binary・数値の型とbit値を
+  保つ不変Documentを生成する。編集String Viewは成功した全変更で無効、Workerには事前Freezeだけを渡す。
+- Editorに`DataDocumentEditCommand`を追加。weak Session、Scene対応、履歴Epoch、現在内容を検証し、
+  既存履歴で前後SnapshotのUndo/Redoを行う。履歴の容量は変更前に確保し、一時OOMは履歴に残して再試行する。
+- 専用Assetで編集→Undo→Redo→Freeze→既存型付き保存→再読み込みが成立した。
+  Data層へのScene / File I/O依存、汎用編集UI、既存の実運用Assetの移行は追加しない。
+- 通常CPUテストは既存5,440＋新規65＝5,505チェック成功、警告0。編集の確保失敗注入は610チェック成功。
+  Editor Commandは50チェック成功。既存Scene / Editor回帰テスト群も成功した。
+  アプリDebug増分ビルドはPDB無効でリンク成功。初回リンクの既存LNK4098を確認した。
+- 契約・再実行・制限は`Data/Tests/PHASE9_EDITING.md`を参照。全Storage CopyとSnapshotによる
+  編集時間・保持メモリのコストが残る。Byte単位の履歴予算、GUI、Sanitizer / ThreadSanitizer、
+  上限世代の実到達、Editor Command各確保点の注入、通常PDB生成の環境修復は未検証・未対応。
+  次は実用途の編集Sessionへ限定接続し、履歴予算と性能を評価する。Phase 10以降は別承認で進める。
 
 ## Phase 10 — Binary Document / Compiled Asset
 
@@ -395,7 +458,7 @@ MessagePackはデータ表現を担当する。接続、配送、暗号化、認
 
 ## 最初の実装範囲
 
-Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。次はPhase 7の試験導入を承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
+Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phase 7の専用テストAssetへの試験導入も完了。Phase 8の計測・明示的並列Deserializeも完了。Phase 9も編集Document・Editor連携を完了。次は実用途の編集Sessionへの限定導入、またはPhase 10を承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
 
 - [x] Asset / Memory / Streamとの接続点と最初の用途を確定した（Phase 0）。
 - [x] 小さいJSONをDataDocumentへ読み込める（Phase 2）。
@@ -405,4 +468,4 @@ Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。次�
 - [x] DocumentとViewの寿命規則が説明・検証されている（Phase 1〜3、Borrowed Bufferは未導入）。
 - [x] 既存`Core::JsonParser`との互換Fixtureが通る（Phase 2、意図した差を含む）。
 
-この段階ではReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信は含めない。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、次はPhase 7で試験導入を行う。
+初期実装（Phase 0〜4）にはReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信を含めなかった。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、Phase 7は専用テストAssetで完了した。Phase 8も計測・明示的並列Deserializeを完了した。Phase 9も編集Document・Editor連携を完了した。次段階は編集Sessionの限定導入と性能評価、またはPhase 10を別承認で進める。

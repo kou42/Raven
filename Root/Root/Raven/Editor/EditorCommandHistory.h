@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cstdint>
 
 namespace Raven
 {
@@ -42,5 +43,9 @@ bool CanRedoEditorCommand();
 
 // Scene切替やEditor終了時など、過去SceneへのCommandを保持したくない境界で利用します。
 void ClearEditorCommandHistory();
+
+// 履歴外で保持されたDocument Commandも、Scene交換/履歴破棄後に再利用しないための世代です。
+// 0は世代枯渇を表し、新しいDocument Commandを受け付けません。
+std::uint64_t GetEditorCommandHistoryEpoch();
 
 } // namespace Raven
