@@ -7,12 +7,16 @@
 #include "Raven/Editor/Command/SetPrimaryCameraCommand.h"
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
+#include "Raven/Editor/EditorLayer.h"
+#include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Panels/InspectorSnapshot.h"
 #include "Raven/Scene/Scene.h"
 
 #include <cassert>
 #include <cmath>
 #include <memory>
+#include <cstddef>
+#include <stdexcept>
 
 namespace Raven::tests
 {
@@ -46,6 +50,87 @@ bool CameraProjectionEqual(
 }
 
 } // namespace
+
+void RunEditorSceneLifetimeSelfTests()
+{
+    const auto require = [](bool condition, const char* message)
+    {
+        if (condition == false)
+        {
+            throw std::runtime_error(message);
+        }
+    };
+    EditorLayer editor;
+    // 同じアドレスとHandle値を意図的に再利用し、pointer比較だけでは防げないケースを固定します。
+    alignas(Scene) std::byte storage[sizeof(Scene)];
+    Scene* oldScene = std::construct_at(reinterpret_cast<Scene*>(storage));
+    Entity selected = oldScene->CreateEntity("Old");
+    const EntityHandle oldHandle = selected.GetHandle();
+    editor.SetSelectedEntity(selected);
+    editor.m_SceneHierarchyRavenPanel.Update(CaptureSceneHierarchySnapshot(oldScene, selected));
+    require(editor.m_SceneHierarchyRavenPanel.GetNodeCount() == 1u,
+        "old Scene hierarchy snapshot populated");
+    editor.m_ExplicitPickingScene = oldScene;
+    editor.m_ExplicitPickingSequence = 42u;
+    SetEditorCommandHistoryScene(oldScene);
+    require(ExecuteAndRecordEditorCommand(std::make_unique<RenameEntityCommand>(
+        selected, "Old", "Edited")), "record old Scene command");
+    require(CanUndoEditorCommand(), "old Scene has undo history");
+
+    const auto previousOperation = GetEditorGizmoOperation();
+    SetEditorGizmoOperation(EditorGizmoOperation::Translate);
+    EditorGizmoViewportRect viewport{ math::Vec2{}, math::Vec2(400.0f, 400.0f) };
+    editor.m_EditorCamera.SetViewportSize(400.0f, 400.0f);
+    const auto draw = editor.m_RavenViewportGizmo.BuildDrawData(
+        selected, editor.m_EditorCamera, viewport, math::Vec2(-100.0f, -100.0f));
+    require(draw.Primitives.empty() == false, "Gizmo geometry available");
+    EditorGizmoPointerEvent down;
+    down.Type = EditorGizmoPointerEventType::Down;
+    down.Position = draw.Primitives.front().End;
+    down.Viewport = viewport;
+    require(editor.m_RavenViewportGizmo.HandlePointerEvent(selected, editor.m_EditorCamera, down),
+        "begin old Scene drag");
+    require(editor.m_RavenViewportGizmo.IsActive(), "old Scene drag active");
+
+    // Applicationと同じくLayer仮想通知を旧Sceneの破棄前に送ります。Window/GPUは生成しません。
+    Layer& layer = editor;
+    layer.OnActiveSceneChanging(oldScene);
+    require(oldScene->IsEntityAlive(selected), "notification precedes old Scene teardown");
+    require(editor.m_SelectedEntity.GetScene() == nullptr, "clear selected Scene pointer");
+    require(editor.m_RavenViewportGizmo.IsActive() == false, "cancel old Scene drag");
+    require(editor.m_SceneHierarchyRavenPanel.GetSelectedHandle() == InvalidEntityHandle
+        && editor.m_SceneHierarchyRavenPanel.GetNodeCount() == 0u, "clear old hierarchy snapshot");
+    require(editor.m_ExplicitPickingScene == nullptr && editor.m_ExplicitPickingSequence == 0u,
+        "invalidate in-flight old Scene picking");
+    require(CanUndoEditorCommand() == false && CanRedoEditorCommand() == false, "clear history");
+    require(UndoEditorCommand() == false, "old command cannot execute after notification");
+    oldScene->OnDestroy();
+    std::destroy_at(oldScene);
+    Scene* replacement = std::construct_at(reinterpret_cast<Scene*>(storage));
+    Entity newEntity = replacement->CreateEntity("New");
+    require(newEntity.GetHandle() == oldHandle, "same-address replacement reuses Handle value");
+    editor.ValidateSelectedEntity(replacement);
+    require(editor.m_SelectedEntity.GetScene() == nullptr, "do not inherit replacement selection");
+    require(newEntity.GetComponent<TagComponent>().Tag == "New", "do not edit replacement Entity");
+    editor.SetSelectedEntity(newEntity);
+    editor.ValidateSelectedEntity(replacement);
+    require(editor.m_SelectedEntity == newEntity, "valid current selection survives");
+    replacement->DestroyEntity(newEntity);
+    editor.ValidateSelectedEntity(replacement);
+    require(editor.m_SelectedEntity.GetScene() == nullptr, "clear destroyed selection");
+    layer.OnActiveSceneChanging(replacement);
+    layer.OnActiveSceneChanging(replacement);
+    replacement->OnDestroy();
+    std::destroy_at(replacement);
+
+    // 別Scene由来ならEntityのbool変換を呼ばずに解除します。
+    Scene current;
+    editor.SetSelectedEntity(selected);
+    editor.ValidateSelectedEntity(&current);
+    require(editor.m_SelectedEntity.GetScene() == nullptr, "reject expired foreign Scene before dereference");
+    editor.ValidateSelectedEntity(nullptr);
+    SetEditorGizmoOperation(previousOperation);
+}
 
 void RunEditorEntityCommandSelfTests()
 {

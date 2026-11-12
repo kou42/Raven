@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <iostream>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -23,6 +24,16 @@ struct ViewB { uint64_t Value = 0; };
 struct ViewC { uint64_t Value = 0; };
 struct Missing {};
 struct Unrelated {};
+struct FailingConstruction
+{
+    explicit FailingConstruction(bool fail)
+    {
+        if (fail == true)
+        {
+            throw std::runtime_error("Component construction failed.");
+        }
+    }
+};
 using Clock = std::chrono::steady_clock;
 volatile uint64_t MeasurementSink = 0;
 
@@ -123,6 +134,39 @@ void TestInvalidation()
     RequireInvalidated([&] { static_cast<void>(beforeShutdown.end()); });
     Require(scene.View<ViewA>().Empty() == true, "A fresh View after shutdown must be empty.");
 
+    // 候補Storage自体のswap-removeと、空Viewが保持するScene寿命Versionも確認します。
+    Scene removal;
+    Entity target = removal.CreateEntity("Target");
+    target.AddComponent<ViewA>();
+    auto beforeDestroy = removal.View<ViewA>();
+    auto destroyIterator = beforeDestroy.begin();
+    removal.DestroyEntity(target);
+    RequireInvalidated([&] { static_cast<void>(*destroyIterator); });
+    RequireInvalidated([&] { static_cast<void>(beforeDestroy.Size()); });
+    auto emptyBeforeShutdown = removal.View<Missing>();
+    removal.OnDestroy();
+    RequireInvalidated([&] { static_cast<void>(emptyBeforeShutdown.Empty()); });
+
+    Scene failed;
+    Entity existing = failed.CreateEntity("Existing");
+    Entity attempted = failed.CreateEntity("Attempted");
+    existing.AddComponent<FailingConstruction>(false);
+    auto beforeFailure = failed.View<FailingConstruction>();
+    bool failedConstruction = false;
+    try
+    {
+        attempted.AddComponent<FailingConstruction>(true);
+    }
+    catch (const std::runtime_error&)
+    {
+        failedConstruction = true;
+    }
+    Require(failedConstruction, "Fixture must fail during Component construction.");
+    // 失敗でもvectorの再確保が起き得るため、旧Viewは再利用せず取得し直します。
+    RequireInvalidated([&] { static_cast<void>(beforeFailure.begin()); });
+    Require(failed.View<FailingConstruction>().Size() == 1, "Failed construction must not publish membership.");
+    failed.OnDestroy();
+
     ComponentStorage<ViewA> storage;
     storage.Emplace(1);
     const auto initial = storage.GetStructuralVersion();
@@ -138,6 +182,69 @@ void TestInvalidation()
     Require(storage.GetStructuralVersion() != reserved, "Clear must invalidate references.");
 }
 #endif
+
+void TestStructuralContract()
+{
+    Scene scene;
+    Entity first = scene.CreateEntity("First");
+    Entity second = scene.CreateEntity("Second");
+    first.AddComponent<ViewA>(ViewA{10});
+    second.AddComponent<ViewA>(ViewA{20});
+    auto view = scene.View<ViewA>();
+    auto iterator = view.begin();
+    bool duplicateRejected = false;
+    try
+    {
+        first.AddComponent<ViewA>(ViewA{99});
+    }
+    catch (const std::runtime_error&)
+    {
+        duplicateRejected = true;
+    }
+    Require(duplicateRejected, "Duplicate addition must be rejected before mutation.");
+    Require(first.RemoveComponent<ViewB>() == false, "Missing removal must be a no-op.");
+    scene.FlushDestroyedEntities();
+    Require(view.Size() == 2 && std::get<1>(*iterator).Value == 10,
+        "Rejected duplicate, missing removal and empty Flush must preserve the View.");
+
+    // Queueは値編集と併用でき、Flushだけが構造変更となります。
+    scene.QueueDestroyEntity(first);
+    scene.QueueDestroyEntity(first);
+    for (auto [entity, value] : view)
+    {
+        static_cast<void>(entity);
+        ++value.Value;
+    }
+    Require(view.Size() == 2, "Queued destruction must not modify membership during traversal.");
+    scene.FlushDestroyedEntities();
+    // DebugだけでなくReleaseも旧View/Iteratorを触らず、Entityから参照を取り直します。
+    auto reacquired = scene.View<ViewA>();
+    Require(reacquired.Size() == 1 && std::get<0>(*reacquired.begin()) == second
+        && std::get<1>(*reacquired.begin()).Value == 21, "Reacquisition must resolve the moved last row.");
+    Entity reused = scene.CreateEntity("Reused");
+    reused.AddComponent<ViewA>(ViewA{30});
+    Require(scene.View<ViewA>().Size() == 2, "Reacquired View must see the reused Entity.");
+    Require(scene.IsEntityAlive(first) == false, "Structural changes must not revive stale Entity handles.");
+    scene.OnDestroy();
+
+    // 所有Componentの参照は再配置後に再取得します。削除/Clearで所有資源が解放されることも確認します。
+    ComponentStorage<std::shared_ptr<int>> owned;
+    auto firstResource = std::make_shared<int>(10);
+    auto lastResource = std::make_shared<int>(20);
+    const std::weak_ptr<int> firstWeak = firstResource;
+    const std::weak_ptr<int> lastWeak = lastResource;
+    owned.Emplace(1, std::move(firstResource));
+    owned.Emplace(2, std::move(lastResource));
+    owned.Reserve(128);
+    auto* stableReference = &owned.Get(2);
+    owned.Reserve(128);
+    owned.ReserveEntities(1024);
+    Require(&owned.Get(2) == stableReference, "No-op Reserve and sparse growth must preserve dense references.");
+    Require(owned.Remove(1) && firstWeak.expired(), "Swap-remove must release the removed resource.");
+    Require(*owned.Get(2) == 20 && lastWeak.expired() == false, "Moved resource must remain associated with its Entity.");
+    owned.Clear();
+    Require(lastWeak.expired() && owned.Empty(), "Clear must release remaining Component resources.");
+}
 
 // Physics RegistryとLayerは非所有でログを参照します。ログ/ParticipantをSceneより長生きさせます。
 struct PhaseLog { std::vector<int> Events; };
@@ -346,6 +453,64 @@ void MeasureCase(std::size_t count, int shape)
     }
     std::sort(durations.begin(), durations.end());
 
+    // 同じ反復数・sample数で統計とProfilerの負荷を分離します。単発計測との差を
+    // オーバーヘッドと誤認しないよう、Counterの検証/Frame公開は計時区間外へ置きます。
+    std::array<std::array<double, Samples>, 3> instrumented{};
+    auto& profiler = CPUProfiler::Get();
+    const bool wasEnabled = profiler.IsEnabled();
+    for (int sample = 0; sample < Samples; ++sample)
+    {
+        // 常に同じmodeを先に測らず、cache/温度/CPU動作変動の偏りを軽減します。
+        for (int offset = 0; offset < 3; ++offset)
+        {
+            const int mode = (sample + offset) % 3;
+            profiler.SetEnabled(mode == 1);
+            profiler.BeginFrame();
+            ComponentViewStatistics counted;
+            uint64_t sum = 0;
+            const auto first = Clock::now();
+            for (int repeat = 0; repeat < Repetitions; ++repeat)
+            {
+                if (mode == 0)
+                {
+                    sum += ScanWorkload(*scene, shape, &counted).Sum;
+                }
+                else
+                {
+                    CPUProfileScope scope("SceneView.Query");
+                    const auto scan = ScanWorkload(*scene, shape);
+                    sum += scan.Sum;
+                    profiler.AddCounter("SceneView.Matches", static_cast<double>(scan.Count));
+                }
+            }
+            instrumented[mode][sample] = Microseconds(first, Clock::now()) / Repetitions;
+            Require(sum == expectedSum * Repetitions, "Instrumented checksum differs.");
+            if (mode == 0)
+            {
+                Require(counted.Matches == expectedCount * Repetitions, "Repeated match counter differs.");
+            }
+            if (mode == 1)
+            {
+                profiler.BeginFrame();
+                const auto& frame = profiler.GetLastFrame();
+                double matches = 0;
+                for (const auto& counter : frame.Counters)
+                {
+                    Require(counter.Name == "SceneView.Matches", "Unexpected profiler counter.");
+                    matches += counter.Value;
+                }
+                Require(frame.Results.size() == Repetitions && frame.Counters.size() == Repetitions
+                    && matches == static_cast<double>(expectedCount * Repetitions), "Published profiler data differs.");
+            }
+            MeasurementSink = sum;
+        }
+    }
+    profiler.SetEnabled(wasEnabled);
+    for (auto& times : instrumented)
+    {
+        std::sort(times.begin(), times.end());
+    }
+
     // Counter/heapの計測は時間計測と別pass。Counterを有効にした走査時間も別に報告します。
     ComponentViewStatistics statistics;
     AllocationMeasurement scanMemory;
@@ -380,7 +545,10 @@ void MeasureCase(std::size_t count, int shape)
     std::cout << "SceneView case=" << names[shape] << " entities=" << count
         << " candidates=" << measured.Candidates << " matches=" << measured.Count
         << " median_us=" << durations[Samples / 2] << " min_us=" << durations.front() << " max_us=" << durations.back()
-        << " counted_us=" << measuredUs << " lookups=" << statistics.StorageLookups
+        << " counted_us=" << instrumented[0][Samples / 2]
+        << " profiler_on_us=" << instrumented[1][Samples / 2]
+        << " profiler_off_us=" << instrumented[2][Samples / 2]
+        << " diagnostic_pass_us=" << measuredUs << " lookups=" << statistics.StorageLookups
         << " filter_checks=" << statistics.FilterChecks << " read_checks=" << statistics.ReadChecks
         << " alive_checks=" << statistics.AliveChecks << " checksum=" << measured.Sum
         << " structural_checks=" << statistics.StructuralChecks
@@ -393,6 +561,7 @@ void MeasureCase(std::size_t count, int shape)
 
 void RunSceneViewSelfTests()
 {
+    TestStructuralContract();
     TestSystemPhases();
 #ifndef NDEBUG
     TestInvalidation();

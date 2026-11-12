@@ -42,32 +42,38 @@ Subsystem向け抽出 → Physics / Renderer / Animation
 
 ### Phase 01 — Existing Scene Entity Lifetime Audit / Hardening
 
-- [ ] 既存`EntityHandle`、`Entity`、`Scene::CreateEntity` / `DestroyEntity` / `IsEntityAlive`、Free List、Generationの契約を文書化する。
-- [ ] stale handle、二重破棄、Index再利用、別SceneからのEntity破棄拒否について既存テストの範囲を確認し、不足するケースのみ追加する。
-- [ ] `Entity`が非所有の`Scene*`を持つため、Scene破棄後のアクセスを禁止する既存契約と、SceneManager / Editor / 非同期処理側の保持期間を調査する。
-- [ ] Indexのみを受け取るComponent APIとGeneration付きHandle APIの使用箇所・混用リスクを調査する。
-- [ ] GPU PickingがIndexのみを渡し、CPUでGenerationを再取得する既存経路のreadback中のIndex再利用を調査する。
+- [x] 既存`EntityHandle`、`Entity`、`Scene::CreateEntity` / `DestroyEntity` / `IsEntityAlive`、Free List、Generationの契約を文書化する。
+- [ ] stale handle、二重破棄、Index再利用、別SceneからのEntity破棄拒否について既存テストの範囲を確認し、不足するケースのみ追加する。（既存範囲の確認とEditor交換回帰の追加済み。Pickingの同一Scene内Index再利用競合は個別設計待ち。）
+- [x] `Entity`が非所有の`Scene*`を持つため、Scene破棄後のアクセスを禁止する既存契約と、SceneManager / Editor / 非同期処理側の保持期間を調査する。
+- [x] Indexのみを受け取るComponent APIとGeneration付きHandle APIの使用箇所・混用リスクを調査する。
+- [x] GPU PickingがIndexのみを渡し、CPUでGenerationを再取得する既存経路のreadback中のIndex再利用を調査する。
 - [ ] 実際の不足が判明した場合だけ、既存Sceneの最小修正を別途提案・実装する。新しいEntity allocatorやRuntimeWorldは作らない。
 
 **既存実装の確認（2026-11-13）:** `Scene/Entity.h`にはIndex + Generationの`EntityHandle`とScene所属を保持する`Entity`が存在する。`Scene/Scene.cpp`ではFree List再利用、Destroy時のGeneration更新、`IsEntityAlive(Entity)`でのScene照合、終了時のEntity sweepが実装済み。`Scene/Scene.inl`にはIndexを引数とするComponent APIがある。これらを未実装として重複実装しない。
 
 **完了条件:** 既存寿命契約、テストの保証範囲、残存リスクが明文化され、確認された不具合にのみ回帰テストと修正がある。
 
+**調査記録（2026-11-13）:** [Phase 01寿命調査](RAVEN_RUNTIME_PHASE1_LIFETIME_AUDIT.md)。既存テストの保証範囲を整理し、EditorのScene交換後参照を承認済み範囲で修正した。Pickingの同一Scene内Index再利用、Generation上限等の残存リスクは分離し、Phase 01全体は未完了とする。
+
 ### Phase 02 — Scene Structural Safety
 
-- [ ] Component追加・削除、Entity破棄、View走査中の構造変更とIterator無効化契約を確認する。
-- [ ] 既存ComponentStorage / Scene ViewのDebug検証とReleaseでの前提を確認する。
-- [ ] 必要性が実証された場合のみ遅延Structural Commandを検討する。
+- [x] Component追加・削除、Entity破棄、View走査中の構造変更とIterator無効化契約を確認する。
+- [x] 既存ComponentStorage / Scene ViewのDebug検証とReleaseでの前提を確認する。
+- [x] 必要性が実証された場合のみ遅延Structural Commandを検討する。（既存Queueと更新境界を維持し、今回は新設しない。）
 
 **完了条件:** 既存Sceneの構造変更の安全な利用条件がテスト・文書で確認できる。
 
+**完了記録（2026-11-13）:** [Phase 02構造変更の安全性](RAVEN_RUNTIME_PHASE2_STRUCTURAL_SAFETY.md)。既存実装を維持し、構築失敗・即時破棄後のDebug検出、両構成での安全な再取得と所有資源解放の回帰を追加。Debug / Releaseビルドと関連CPUテスト成功。ローカルビルド指定・未検証事項は記録を参照。Phase 03には自動で進まない。
+
 ### Phase 03 — Scene Diagnostics / Performance
 
-- [ ] 既存CPUProfiler、Scene View統計、SG5比較を再利用して測定対象を定義する。
-- [ ] Entity / Component数、Query / 構造変更時間、メモリ、確保回数を必要に応じて測定する。
-- [ ] Debug / Release差と測定オーバーヘッドを記録する。
+- [x] 既存CPUProfiler、Scene View統計、SG5比較を再利用して測定対象を定義する。
+- [x] Entity / Component数、Query / 構造変更時間、メモリ、確保回数を必要に応じて測定する。（fixture件数、累積new要求量、mirror/Snapshot保持容量。Scene総保持量は未測定。）
+- [x] Debug / Release差と測定オーバーヘッドを記録する。
 
 **完了条件:** 変更の必要性を実測から判断できる。
+
+**完了記録（2026-11-13）:** [Phase 03計測結果](RAVEN_RUNTIME_PHASE3_MEASUREMENTS.md)。統計付き走査の反復中央値、Profiler有効/無効と公開件数照合を追加。通常Debug/Releaseと別Release確保計測で基準値を取得し、全量mirror不採用と既存所有権を維持する判断を記録した。実Demo/GPU・長時間負荷は未検証。Phase 04には自動で進まない。
 
 ### Phase 04 — Existing Render Snapshot Validation / Optimization
 

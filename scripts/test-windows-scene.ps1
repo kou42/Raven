@@ -108,6 +108,7 @@ if (-not (Test-Path -LiteralPath $testExecutable -PathType Leaf)) {
 
 # テスト専用引数はWindowを作らず終了します。成功メッセージも照合します。
 $checks = @(
+    @{ Argument = "--test-editor-scene-lifetime"; Marker = "Editor Scene lifetime self-tests passed."; Log = "editor-lifetime" },
     @{ Argument = "--test-scene-lifecycle"; Marker = "Scene lifecycle self-tests passed."; Log = "lifecycle" },
     @{ Argument = "--test-scene-transforms"; Marker = "Scene transform self-tests passed."; Log = "transforms" },
     @{ Argument = "--test-scene-runtime"; Marker = "Scene Runtime comparison tests passed."; Log = "runtime" },

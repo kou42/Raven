@@ -18,6 +18,10 @@
 
 namespace Raven
 {
+namespace tests
+{
+void RunEditorSceneLifetimeSelfTests();
+}
 class Application;
 class Material;
 class RHIOffscreenRenderTarget;
@@ -72,6 +76,9 @@ public:
     // Framebuffer等のGPU Resourceもここで安全に解放します。
     void OnDetach() override;
 
+    // 旧Sceneの破棄前にFrame間の非所有参照と編集Sessionを解除します。
+    void OnActiveSceneChanging(Scene* scene) override;
+
     // Editor Cameraや将来のGizmo状態など、Runtime Sceneとは独立した更新を行います。
     // 現在はScene Viewがhoverされている間だけEditorCameraへ入力を渡します。
     void OnUpdate(float dt) override;
@@ -90,6 +97,11 @@ public:
     bool OnUIKeyEvent(const UIKeyEvent& event) override;
 
 private:
+    friend void tests::RunEditorSceneLifetimeSelfTests();
+    // GPU/UIをAttachしないCPU回帰でも、同じ解除処理を検証できるようにします。
+    EditorLayer();
+    void ValidateSelectedEntity(Scene* activeScene);
+
     // Raven UI Editor shellはEditorLayerだけが所有し、Applicationには具体的なPanelを知らせません。
     // Panel WidgetはDock TabのContentへ移しますが、Panel classのRuntime Snapshot/編集中状態は
     // EditorLayer所有のまま維持し、Tabの表示切替やLayout再構築で破棄しません。
