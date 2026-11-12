@@ -64,6 +64,45 @@ int RunCompiledTestAssetTests()
         compiled, error) == false && compiled == valid, "missing dependency preserves output");
     check(CompiledTestAsset::CompileWithDependencies(source, {"textures/test", "textures/test"},
         resolver, compiled, error) == false && compiled == valid, "duplicate dependency rejected");
+    // ダイヤモンド依存を許容し、循環とEdge変更は検出する。
+    std::string graphLeaf = "leaf-v1";
+    bool cyclic = false;
+    const CompiledTestAsset::DependencyResolver graphResolver =
+        [&](std::string_view id, std::string& bytes)
+        {
+            if (id == "root" || id == "left" || id == "right")
+            {
+                bytes = "node";
+                return true;
+            }
+            if (id == "leaf")
+            {
+                bytes = graphLeaf;
+                return true;
+            }
+            return false;
+        };
+    const CompiledTestAsset::DependencyEnumerator graphEdges =
+        [&](std::string_view id, std::vector<std::string>& children)
+        {
+            if (id == "root") { children = {"left", "right"}; }
+            else if (id == "left" || id == "right") { children = {"leaf"}; }
+            else if (id == "leaf" && cyclic) { children = {"root"}; }
+            else { children.clear(); }
+            return true;
+        };
+    std::string graphCompiled;
+    check(CompiledTestAsset::CompileWithGraph(source, {"root"}, graphResolver, graphEdges,
+        graphCompiled, error), "compile diamond graph");
+    check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root"},
+        graphResolver, graphEdges), "graph cache hit");
+    graphLeaf = "leaf-v2";
+    check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root"},
+        graphResolver, graphEdges) == false, "transitive dependency invalidates cache");
+    cyclic = true;
+    check(CompiledTestAsset::CompileWithGraph(source, {"root"}, graphResolver, graphEdges,
+        compiled, error) == false && compiled == valid, "dependency cycle rejected");
+    cyclic = false;
     DataDocument document;
     DataError dataError;
     check(JsonParser::Parse(source, document, &dataError), "parse source document");
