@@ -444,10 +444,17 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
                 && input.bad() == false
                 && IsGraphCacheCurrent(cached, sourceJson, rootIds, resolver, enumerate))
             {
-                output.swap(cached);
-                cacheHit = true;
-                return true;
+                // 指紋が一致してもPayloadが不正な型付きAssetなら再利用しない。
+                TestSettings verified;
+                TestAssetError validation;
+                if (Load(cached, verified, validation))
+                {
+                    output.swap(cached);
+                    cacheHit = true;
+                    return true;
+                }
             }
+
         }
         std::string rebuilt;
         if (CompileWithGraph(sourceJson, rootIds, resolver, enumerate, rebuilt, error) == false)
