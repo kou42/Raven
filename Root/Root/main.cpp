@@ -18,6 +18,7 @@
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
+#include "Raven/Diagnostics/DiagnosticAPI.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneTitle.h"
 #include "Raven/Scene/Tests/SceneGraphSelfTests.h"
@@ -43,9 +44,9 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
+#include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
-#include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
 #include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 #include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
@@ -89,6 +90,20 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument == "--test-diagnostics")
+        {
+            try
+            {
+                Raven::tests::RunDiagnosticSelfTests();
+                std::cout << "Diagnostics self-tests passed: suites=2 failures=0.\n";
+                return 0;
+            }
+            catch (const std::exception& error)
+            {
+                std::cerr << "Diagnostics self-tests failed: " << error.what() << '\n';
+                return 1;
+            }
+        }
         if (backendArgument == "--test-data-document-edit")
         {
             try { return Raven::tests::RunDataDocumentEditCommandTests(); }
@@ -225,12 +240,6 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunStringSelfTests();
             std::cout << "String and StringView self-tests passed: suites=1 failures=0.\n";
-            return 0;
-        }
-        if (backendArgument == "--test-diagnostics")
-        {
-            Raven::tests::RunDiagnosticSelfTests();
-            std::cout << "Diagnostics self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
         if (backendArgument == "--test-name")
@@ -415,6 +424,9 @@ int main(int argc, char* argv[])
     }
 #endif
 
+    // Application/Scene/Rendererの破棄時にもログが発行されるため、Sessionを先に生成します。
+    // appとそのWorkerが終了した後にSessionがCollectorを停止し、残存イベントをFlushします。
+    Raven::Diagnostics::DiagnosticSession diagnostics;
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
 #ifdef _WIN32

@@ -217,6 +217,7 @@
     <None Include="Raven\Assets\Shaders\ShaderToy\test.frag" />
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
+    <None Include="Raven\Diagnostics\Tests\README.md" />
     <None Include="Raven\Data\Tests\README.md" />
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md" />
     <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md" />

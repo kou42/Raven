@@ -1,12 +1,19 @@
 #include "Raven/Diagnostics/DiagnosticCollector.h"
 
 #include <chrono>
+#include <algorithm>
 #include <utility>
 
 namespace Raven::Diagnostics
 {
 DiagnosticCollector::DiagnosticCollector(std::ostream& output)
-    : m_Output(output)
+{
+    m_Sinks.push_back(std::make_unique<ConsoleSink>(output));
+    m_FailedSinks.resize(m_Sinks.size(), false);
+}
+
+DiagnosticCollector::DiagnosticCollector(std::vector<std::unique_ptr<IDiagnosticSink>> sinks)
+    : m_Sinks(std::move(sinks)), m_FailedSinks(m_Sinks.size(), false)
 {
 }
 
@@ -101,6 +108,69 @@ std::uint64_t DiagnosticCollector::GetCollectedCount() const noexcept
     return m_Collected.load(std::memory_order_relaxed);
 }
 
+std::uint64_t DiagnosticCollector::GetSinkFailureCount() const noexcept
+{
+    return m_SinkFailures.load(std::memory_order_relaxed);
+}
+
+std::size_t DiagnosticCollector::GetRegisteredBufferCount() const
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    return m_Buffers.size();
+}
+
+void DiagnosticCollector::FailSink(std::size_t index) noexcept
+{
+    m_FailedSinks[index] = true;
+    m_SinkFailures.fetch_add(1, std::memory_order_relaxed);
+    // 通常のEmitへ戻すと同じ故障Sinkへ再帰するため、独立した最終出力先を使います。
+    WriteEmergencyDiagnostic("Diagnostics sink failed; remaining sinks continue.");
+}
+
+void DiagnosticCollector::Dispatch(const DiagnosticEvent& event)
+{
+    for (std::size_t index = 0; index < m_Sinks.size(); ++index)
+    {
+        if (m_FailedSinks[index] == true)
+        {
+            continue;
+        }
+        try
+        {
+            if (m_Sinks[index] == nullptr || m_Sinks[index]->Write(event) == false)
+            {
+                FailSink(index);
+            }
+        }
+        catch (...)
+        {
+            FailSink(index);
+        }
+    }
+}
+
+void DiagnosticCollector::FlushSinks()
+{
+    for (std::size_t index = 0; index < m_Sinks.size(); ++index)
+    {
+        if (m_FailedSinks[index] == true)
+        {
+            continue;
+        }
+        try
+        {
+            if (m_Sinks[index] == nullptr || m_Sinks[index]->Flush() == false)
+            {
+                FailSink(index);
+            }
+        }
+        catch (...)
+        {
+            FailSink(index);
+        }
+    }
+}
+
 bool DiagnosticCollector::DrainOnce()
 {
     bool drained = false;
@@ -121,10 +191,19 @@ bool DiagnosticCollector::DrainOnce()
             {
                 break;
             }
-            WriteConsoleEvent(m_Output, event);
+            Dispatch(event);
             m_Collected.fetch_add(1, std::memory_order_relaxed);
             drained = true;
         }
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        // 終了したThreadのBufferは残存イベントをDrainしてから登録を解除します。
+        // SnapshotとTLSが共有所有するため、解除時にProducer参照を無効化しません。
+        std::erase_if(m_Buffers, [](const auto& buffer)
+        {
+            return buffer->IsClosedAndEmpty();
+        });
     }
     return drained;
 }
@@ -140,7 +219,7 @@ void DiagnosticCollector::Run()
             lock.unlock();
             // Stop呼出側は全Producerをjoin済みであることが前提です。
             DrainOnce();
-            m_Output.flush();
+            FlushSinks();
             return;
         }
         if (m_FlushRequested > m_FlushCompleted)
@@ -149,7 +228,7 @@ void DiagnosticCollector::Run()
             lock.unlock();
             // Flush時点で既にPush済みのイベントを出力します。
             DrainOnce();
-            m_Output.flush();
+            FlushSinks();
             lock.lock();
             m_FlushCompleted = request;
             m_FlushCondition.notify_all();
