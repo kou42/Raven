@@ -497,6 +497,27 @@ MessagePackはデータ表現を担当する。接続、配送、暗号化、認
   複数接続Manager・高頻度評価・Sanitizer / ThreadSanitizer・確保失敗注入は未検証・未対応。
   次は実用途の限定導入と送受信量・時間の計測を別マイルストーンとして推奨する。
 
+### Phase 11制御通信の計測基準（2026-11-14）
+
+- Ping / SetReadyの試験Protocolを使い、1 / 16 / 64件BatchでEncode、Decode、受信・Queue投入、
+  投入済みQueueのDispatch、実TCP Echo往復を分離した。Runtime・Wire形式は変更しない。
+- 専用O2ビルドで5 Batch warm-up後の101 Sampleの中央値・p95と全Sampleを保存。
+  別ビルドでPhase 8の全Thread Allocation追跡を再利用し、件数・累積要求Bytes・区間内Peakを記録した。
+  準備済みBuffer・Socket/Kernel領域・プロセス全体のメモリは対象外。各Batchの件数・FIFO・値を検証する。
+- 時間30ケース×101 Sample、メモリ30ケース×1 Sampleは全成功、MSVC警告0。
+  既存6,125チェックも全成功、警告0。アプリDebug x64はPDB生成無効で成功、既存LNK4098が1件。
+  mixed 64件はEncode 70.4 µs、Decode 86.1 µs、受信・Queue投入90.9 µs、Dispatch 2.1 µs、
+  TCP往復293.6 µs（中央値）。Dispatchの確保は0件、Encodeは736件、Decodeは1,152件/Batch。
+- mixedのPrefix込み平均70 Byte/Messageから120 Message/sなら片道8,400 Byte/sと換算した。
+  これは長さからの見積もりで、Rateを変えた実測ではない。TCP/IP Header・ACK・再送等は含まない。
+- 再実行は`scripts/measure-windows-network.ps1`と`-MeasureMemory`。定義・結果・環境・生CSVは
+  `Network/Tests/PHASE11_MEASUREMENTS.md`と同所のPhase11*.csv / Metadata.jsonを参照。
+- 試験制御通信だけを理由に圧縮・Delta等は追加しない。次は実用途のPayload・接続数・Tick頻度と予算を
+  決め、必要ならEncode / Decodeの一時確保を優先調査する。実ゲームの高頻度同期評価は未完のまま維持する。
+  外部回線・実ゲーム同時負荷・長時間負荷・Sanitizer / ThreadSanitizer・確保失敗注入は未検証。
+- 前CommitのCIはStructured Data成功、他4 Jobは`GLFW/glfw3native.h`欠落で失敗。
+  このマイルストーンではGLFW依存を変更せず、CI全体成功とは扱わない。
+
 ## 推奨配置案
 
 既存構造の調査後に確定する。ファイル名はRavenの命名規約に合わせる。

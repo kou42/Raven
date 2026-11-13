@@ -118,5 +118,6 @@ SandboxではConnectがWSAEACCES（10013）で拒否されたため、実Socket�
 
 高頻度同期は未導入。現段階で圧縮・Quantization・Deltaを追加せず、実用途・通信層が決まった段階で
 MessagePackのByte数・Encode/Decode時間・帯域を計測し、必要な場合だけ別Codecを検討する。
+制御通信の計測基準は`PHASE11_MEASUREMENTS.md`と同所のCSVを参照。実ゲームの高頻度同期評価とは区別する。
 UDP / 外部接続 / 他OS、認証・暗号化・再送、複数接続管理、実運用Lobby / RPC、性能閾値、Sanitizer / ThreadSanitizer、
 確保失敗注入は別段階。接続数全体のメモリ予算・Rate Limitも利用側で追加が必要。

@@ -1572,3 +1572,12 @@ Raven Structured Data Phase 11 Windows TCP additions (Root/Root/Raven relative p
     Network/Windows/WindowsTcpSocket.cpp
     Network/Tests/WindowsTcpTests.h
     Network/Tests/WindowsTcpTests.cpp
+
+Raven Structured Data Phase 11 measurement additions (Root/Root/Raven relative paths):
+    Network/Tests/ControlMessageBenchmarks.cpp
+    Network/Tests/PHASE11_MEASUREMENTS.md
+    Network/Tests/Phase11Time.csv
+    Network/Tests/Phase11Memory.csv
+    Network/Tests/Phase11Traffic.csv
+    Network/Tests/Phase11TimeMetadata.json
+    Network/Tests/Phase11MemoryMetadata.json

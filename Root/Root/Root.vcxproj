@@ -221,6 +221,12 @@
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md" />
     <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md" />
     <None Include="Raven\Network\Tests\PHASE11_CONTROL_MESSAGES.md" />
+    <None Include="Raven\Network\Tests\PHASE11_MEASUREMENTS.md" />
+    <None Include="Raven\Network\Tests\Phase11Time.csv" />
+    <None Include="Raven\Network\Tests\Phase11Memory.csv" />
+    <None Include="Raven\Network\Tests\Phase11Traffic.csv" />
+    <None Include="Raven\Network\Tests\Phase11TimeMetadata.json" />
+    <None Include="Raven\Network\Tests\Phase11MemoryMetadata.json" />
     <None Include="Raven\Data\Tests\PHASE8_MEASUREMENTS.md" />
     <None Include="Raven\Data\Tests\Phase8Time.csv" />
     <None Include="Raven\Data\Tests\Phase8Memory.csv" />

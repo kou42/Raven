@@ -1160,4 +1160,13 @@
     <ClInclude Update="Raven\Network\Tests\WindowsTcpTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
     <ClCompile Update="Raven\Network\Tests\WindowsTcpTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Network\Tests\ControlMessageBenchmarks.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <None Include="Raven\Network\Tests\PHASE11_MEASUREMENTS.md"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11Time.csv"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11Memory.csv"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11Traffic.csv"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11TimeMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11MemoryMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
+  </ItemGroup>
 </Project>
