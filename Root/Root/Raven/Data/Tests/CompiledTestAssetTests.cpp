@@ -131,6 +131,20 @@ int RunCompiledTestAssetTests()
     {
         check(false, "create cache test directory");
     }
+    // ソース内の依存IDを自動抽出し、Graph Compilerへ接続する。
+    const std::string withRefs = R"({"type":"Raven.StructuredDataTest","version":1,"enabled":true,"samples":[1,2,3],"dependencies":["root"]})";
+    std::vector<std::string> extracted = {"keep"};
+    check(CompiledTestAsset::ExtractRootDependencies(withRefs, extracted, error)
+        && extracted == std::vector<std::string>({"root"}), "extract source dependencies");
+    std::string autoCompiled;
+    check(CompiledTestAsset::CompileFromSource(withRefs, graphResolver, graphEdges,
+        autoCompiled, error), "compile extracted graph");
+    check(CompiledTestAsset::ExtractRootDependencies(
+        R"({"dependencies":["root","root"]})", extracted, error) == false
+        && extracted == std::vector<std::string>({"root"}), "reject duplicate source dependencies");
+    check(CompiledTestAsset::ExtractRootDependencies(
+        R"({"dependencies":42})", extracted, error) == false
+        && extracted == std::vector<std::string>({"root"}), "reject malformed dependency list");
     DataDocument document;
     DataError dataError;
     check(JsonParser::Parse(source, document, &dataError), "parse source document");
