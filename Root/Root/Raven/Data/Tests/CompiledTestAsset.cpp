@@ -231,6 +231,103 @@ bool CompiledTestAsset::CompileWithDependencies(std::string_view sourceJson,
         return false;
     }
 }
+bool CompiledTestAsset::ExtractRootDependencies(std::string_view sourceJson,
+    std::vector<std::string>& output, TestAssetError& error)
+{
+    error = {};
+    try
+    {
+        if (sourceJson.size() > TestAssetMaxBytes)
+        {
+            error.Stage = "source size";
+            return false;
+        }
+        DataLimits limits;
+        limits.MaxInputBytes = TestAssetMaxBytes;
+        DataDocument document;
+        if (JsonParser::Parse(sourceJson, document, &error.Parse, limits) == false)
+        {
+            error.Stage = "parse";
+            return false;
+        }
+        const auto root = document.GetRoot();
+        if (root.IsType(DataType::Object) == false)
+        {
+            error.Stage = "dependencies root";
+            return false;
+        }
+        DataElement field;
+        if (root.TryFind("dependencies", field) == false)
+        {
+            std::vector<std::string> empty;
+            output.swap(empty);
+            return true;
+        }
+        if (field.IsType(DataType::Array) == false)
+        {
+            error.Stage = "dependencies type";
+            return false;
+        }
+        std::uint32_t count = 0;
+        if (field.TryGetCount(count) == false || count > 256)
+        {
+            error.Stage = "dependencies count";
+            return false;
+        }
+        std::vector<std::string> ids;
+        ids.reserve(count);
+        for (std::uint32_t i = 0; i < count; ++i)
+        {
+            DataElement element;
+            std::string id;
+            if (field.TryGetArrayElement(i, element) == false
+                || element.TryGetDecodedString(id) == false
+                || id.empty() || id.size() > 1024)
+            {
+                error.Stage = "dependencies entry";
+                return false;
+            }
+            ids.push_back(std::move(id));
+        }
+        std::sort(ids.begin(), ids.end());
+        if (std::adjacent_find(ids.begin(), ids.end()) != ids.end())
+        {
+            error.Stage = "dependencies duplicate";
+            return false;
+        }
+        output.swap(ids);
+        return true;
+    }
+    catch (const std::exception&)
+    {
+        error.Stage = "dependencies exception";
+        return false;
+    }
+}
+bool CompiledTestAsset::CompileFromSource(std::string_view sourceJson,
+    const DependencyResolver& resolver, const DependencyEnumerator& enumerate,
+    std::string& output, TestAssetError& error)
+{
+    std::vector<std::string> ids;
+    if (ExtractRootDependencies(sourceJson, ids, error) == false)
+    {
+        return false;
+    }
+    return CompileWithGraph(sourceJson, ids, resolver, enumerate, output, error);
+}
+bool CompiledTestAsset::BuildCachedFromSource(const std::filesystem::path& cachePath,
+    std::string_view sourceJson, const DependencyResolver& resolver,
+    const DependencyEnumerator& enumerate, std::string& output, bool& cacheHit,
+    TestAssetError& error)
+{
+    cacheHit = false;
+    std::vector<std::string> ids;
+    if (ExtractRootDependencies(sourceJson, ids, error) == false)
+    {
+        return false;
+    }
+    return BuildCached(cachePath, sourceJson, ids, resolver, enumerate, output, cacheHit, error);
+}
 bool CompiledTestAsset::CompileWithGraph(std::string_view sourceJson,
     const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
     const DependencyEnumerator& enumerate, std::string& output, TestAssetError& error)
