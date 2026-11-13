@@ -23,6 +23,26 @@ int RunCompiledTestAssetTests()
     };
     check(CompiledTestAsset::Compile(source, compiled, error), "compile v1 migration");
     const auto valid = compiled;
+    // SHA-256既知値とHeader内のSource/空依存Manifest指紋を比較する。
+    // 期待値は独立したSHA-256実装から取得した固定ベクトル。
+    auto hexAt = [](std::string_view bytes, std::size_t offset, std::size_t count)
+    {
+        constexpr char digits[] = "0123456789abcdef";
+        std::string hex;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const auto byte = static_cast<unsigned char>(bytes[offset + i]);
+            hex.push_back(digits[byte >> 4]);
+            hex.push_back(digits[byte & 15u]);
+        }
+        return hex;
+    };
+    check(valid.size() >= 112
+        && hexAt(valid, 16, 32) == "4c3c94f9a018bb5c209020e382f151450e23e0dba10fc9c75e92428a5d8ac78a",
+        "sha256 known source vector");
+    check(valid.size() >= 112
+        && hexAt(valid, 80, 32) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256 empty dependency vector");
     TestSettings settings;
     check(CompiledTestAsset::Load(valid, settings, error) && settings.Enabled
         && settings.Values == std::vector<int>({1, 2, 3}), "runtime round trip");
@@ -151,6 +171,15 @@ int RunCompiledTestAssetTests()
         check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
             graphEdges, cachedOutput, hit, error) && hit == false,
             "persistent cache dependency rebuild");
+        // 存在しない親Directoryへの保存失敗では出力も旧Cacheも変更しない。
+        const auto invalidPath = cacheDir / "missing-parent" / "asset.rvca";
+        const auto preserved = cachedOutput;
+        hit = true;
+        check(CompiledTestAsset::BuildCached(invalidPath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) == false
+            && hit == false && cachedOutput == preserved
+            && std::filesystem::exists(cachePath),
+            "cache write failure preserves output and old cache");
         std::filesystem::remove(cachePath, cacheIo);
         std::filesystem::remove(cacheDir, cacheIo);
     }
