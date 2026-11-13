@@ -5,6 +5,15 @@
 #include <limits>
 #include <algorithm>
 #include <map>
+#include <fstream>
+#include <atomic>
+#include <filesystem>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <exception>
 #include <new>
 #include <stdexcept>
@@ -296,6 +305,99 @@ bool CompiledTestAsset::IsCacheCurrent(std::string_view compiled, std::string_vi
     }
     catch (const std::exception&)
     {
+        return false;
+    }
+}
+bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
+    std::string_view sourceJson, const std::vector<std::string>& rootIds,
+    const DependencyResolver& resolver, const DependencyEnumerator& enumerate,
+    std::string& output, bool& cacheHit, TestAssetError& error)
+{
+    error = {};
+    cacheHit = false;
+    try
+    {
+        // Cacheは信用せず、Header・Checksum・依存Snapshotを毎回照合する。
+        std::error_code io;
+        const auto size = std::filesystem::file_size(cachePath, io);
+        if (io.value() == 0 && size <= TestAssetMaxBytes + HeaderSize)
+        {
+            std::ifstream input(cachePath, std::ios::binary);
+            std::string cached(static_cast<std::size_t>(size), '\0');
+            input.read(cached.data(), static_cast<std::streamsize>(size));
+            if (input.fail() == false && input.peek() == std::char_traits<char>::eof()
+                && input.bad() == false
+                && IsGraphCacheCurrent(cached, sourceJson, rootIds, resolver, enumerate))
+            {
+                output.swap(cached);
+                cacheHit = true;
+                return true;
+            }
+        }
+        std::string rebuilt;
+        if (CompileWithGraph(sourceJson, rootIds, resolver, enumerate, rebuilt, error) == false)
+        {
+            return false;
+        }
+        // 同じ親に排他的な一時Directoryを作り、完成後だけ旧Cacheを置換する。
+        static std::atomic<unsigned long long> sequence{0};
+        std::filesystem::path temporaryDir;
+        for (unsigned attempt = 0; attempt < 128; ++attempt)
+        {
+            auto candidate = cachePath;
+            candidate += ".pending-" + std::to_string(sequence.fetch_add(1));
+            io.clear();
+            if (std::filesystem::create_directory(candidate, io))
+            {
+                temporaryDir = std::move(candidate);
+                break;
+            }
+            if (io && io != std::errc::file_exists) { break; }
+        }
+        if (temporaryDir.empty())
+        {
+            error.Stage = "cache temporary";
+            return false;
+        }
+        struct Cleanup
+        {
+            std::filesystem::path Directory;
+            ~Cleanup()
+            {
+                std::error_code ignored;
+                std::filesystem::remove(Directory / "asset.rvca", ignored);
+                std::filesystem::remove(Directory, ignored);
+            }
+        } cleanup{temporaryDir};
+        const auto temporaryFile = temporaryDir / "asset.rvca";
+        std::ofstream file(temporaryFile, std::ios::binary | std::ios::trunc);
+        file.write(rebuilt.data(), static_cast<std::streamsize>(rebuilt.size()));
+        file.flush();
+        file.close();
+        if (file.fail())
+        {
+            error.Stage = "cache write";
+            return false;
+        }
+#ifdef _WIN32
+        const bool replaced = MoveFileExW(temporaryFile.c_str(), cachePath.c_str(),
+            MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+        io.clear();
+        std::filesystem::rename(temporaryFile, cachePath, io);
+        const bool replaced = io.value() == 0;
+#endif
+        if (replaced == false)
+        {
+            error.Stage = "cache replace";
+            return false;
+        }
+        output.swap(rebuilt);
+        return true;
+    }
+    catch (const std::exception&)
+    {
+        error.Stage = "cache exception";
         return false;
     }
 }
