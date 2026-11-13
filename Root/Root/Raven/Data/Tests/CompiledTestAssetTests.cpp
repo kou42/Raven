@@ -29,10 +29,22 @@ int RunCompiledTestAssetTests()
     std::string changed = source + " ";
     check(CompiledTestAsset::Compile(changed, compiled, error) && compiled != valid, "source cache invalidation");
     compiled = valid;
-    compiled[4] = 3;
+    compiled[4] = 4;
     settings.Label = "preserved";
     check(CompiledTestAsset::Load(compiled, settings, error) == false
         && settings.Label == "preserved", "reject version without mutation");
+    compiled = valid;
+    compiled[16] ^= 1;
+    check(CompiledTestAsset::IsCacheCurrent(compiled, source, {}, {}) == false,
+        "reject damaged source digest");
+    compiled = valid;
+    compiled[48] ^= 1;
+    check(CompiledTestAsset::Load(compiled, settings, error) == false,
+        "reject damaged payload digest");
+    compiled = valid;
+    compiled[80] ^= 1;
+    check(CompiledTestAsset::IsCacheCurrent(compiled, source, {}, {}) == false,
+        "reject damaged dependency digest");
     compiled = valid;
     compiled[12] = static_cast<char>(255);
     check(CompiledTestAsset::Load(compiled, settings, error) == false, "reject invalid length");
