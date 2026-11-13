@@ -2,6 +2,7 @@
 #include "Raven/Data/Formats/Binary/BinaryDocument.h"
 #include "Raven/Data/Formats/Json/JsonParser.h"
 #include <iostream>
+#include <filesystem>
 
 namespace Raven
 {
@@ -103,6 +104,33 @@ int RunCompiledTestAssetTests()
     check(CompiledTestAsset::CompileWithGraph(source, {"root"}, graphResolver, graphEdges,
         compiled, error) == false && compiled == valid, "dependency cycle rejected");
     cyclic = false;
+    // 一時ディレクトリ上でMiss→Hit→依存更新Missを確認する。
+    const auto cacheDir = std::filesystem::temp_directory_path()
+        / ("raven-phase10-cache-" + std::to_string(
+            static_cast<unsigned long long>(std::hash<std::string>{}(source))));
+    std::error_code cacheIo;
+    std::filesystem::create_directories(cacheDir, cacheIo);
+    if (cacheIo.value() == 0)
+    {
+        const auto cachePath = cacheDir / "asset.rvca";
+        std::filesystem::remove(cachePath, cacheIo);
+        std::string cachedOutput;
+        bool hit = false;
+        check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit == false, "persistent cache miss");
+        check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit, "persistent cache hit");
+        graphLeaf = "leaf-v3";
+        check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit == false,
+            "persistent cache dependency rebuild");
+        std::filesystem::remove(cachePath, cacheIo);
+        std::filesystem::remove(cacheDir, cacheIo);
+    }
+    else
+    {
+        check(false, "create cache test directory");
+    }
     DataDocument document;
     DataError dataError;
     check(JsonParser::Parse(source, document, &dataError), "parse source document");
