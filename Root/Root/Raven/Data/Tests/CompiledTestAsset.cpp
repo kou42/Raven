@@ -71,7 +71,8 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
     std::map<std::string, unsigned> states;
     std::function<bool(const std::string&)> visit = [&](const std::string& id)
     {
-        if (id.empty() || id.size() > 1024 || (states.size() >= 256 && states.count(id) == 0))
+        if (id.empty() || id == std::string("\\x01roots") || id.size() > 1024
+            || (states.size() >= 255 && states.count(id) == 0))
         {
             return false;
         }
