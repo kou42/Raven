@@ -102,7 +102,7 @@
     <Link>
       <!-- GLFWはrepository同梱のheader/static libraryを同じversionで使用します。 -->
       <AdditionalLibraryDirectories>$(ProjectDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(RavenUIAllocationProfiling)'=='true'">
@@ -220,6 +220,13 @@
     <None Include="Raven\Data\Tests\README.md" />
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md" />
     <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md" />
+    <None Include="Raven\Network\Tests\PHASE11_CONTROL_MESSAGES.md" />
+    <None Include="Raven\Network\Tests\PHASE11_MEASUREMENTS.md" />
+    <None Include="Raven\Network\Tests\Phase11Time.csv" />
+    <None Include="Raven\Network\Tests\Phase11Memory.csv" />
+    <None Include="Raven\Network\Tests\Phase11Traffic.csv" />
+    <None Include="Raven\Network\Tests\Phase11TimeMetadata.json" />
+    <None Include="Raven\Network\Tests\Phase11MemoryMetadata.json" />
     <None Include="Raven\Data\Tests\PHASE8_MEASUREMENTS.md" />
     <None Include="Raven\Data\Tests\Phase8Time.csv" />
     <None Include="Raven\Data\Tests\Phase8Memory.csv" />

@@ -21,15 +21,21 @@ $main = @(
     '#include "Raven/Data/Tests/ParallelDeserializeTests.h"'
     '#include "Raven/Data/Tests/MutableDataDocumentTests.h"'
     '#include "Raven/Data/Tests/CompiledTestAsset.h"'
+    '#include "Raven/Network/Tests/ControlMessageTests.h"'
+    '#include "Raven/Network/Tests/WindowsTcpTests.h"'
     'int main() { int result = 0;'
 )
 foreach ($entry in @('RunDataDocumentTests', 'RunJsonParserTests', 'RunDataElementTests', 'RunDataIOTests', 'RunSerializationTests', 'RunMessagePackTests', 'RunTestAssetTests', 'RunParallelDeserializeTests', 'RunMutableDataDocumentTests', 'RunCompiledTestAssetTests')) {
     $main += "result |= Raven::Data::Tests::$entry();"
 }
+$main += 'result |= Raven::Network::Tests::RunControlMessageTests();'
+$main += 'result |= Raven::Network::Tests::RunWindowsTcpTests();'
 $main += 'return result; }'
 Set-Content -LiteralPath (Join-Path $output 'main.cpp') -Value $main -Encoding utf8
 $sources = @('Root/Root/Raven/Core/JsonLexicalReader.cpp', 'Root/Root/Raven/Core/Jobs/JobSystem.cpp')
 $sources += Get-ChildItem (Join-Path $repo 'Root/Root/Raven/Data') -Recurse -Filter '*.cpp' |
+    ForEach-Object { '"' + $_.FullName + '"' }
+$sources += Get-ChildItem (Join-Path $repo 'Root/Root/Raven/Network') -Recurse -Filter '*.cpp' |
     ForEach-Object { '"' + $_.FullName + '"' }
 $flags = '/nologo /std:c++17 /utf-8 /EHsc /W4 /IRoot/Root'
 $mainSource = 'artifacts/structured-data/main.cpp'
@@ -47,7 +53,7 @@ $batch = @(
     'if errorlevel 1 exit /b %errorlevel%'
     "cl $flags /c Root/Root/Raven/Core/JsonWriter.cpp /Foartifacts/structured-data/CoreJsonWriter.obj >> artifacts/structured-data/msvc-build.log 2>&1"
     'if errorlevel 1 exit /b %errorlevel%'
-    "cl $flags /Foartifacts/structured-data/ /Feartifacts/structured-data/all-tests.exe $($sources -join ' ') $mainSource artifacts/structured-data/CoreJsonParser.obj artifacts/structured-data/CoreJsonWriter.obj >> artifacts/structured-data/msvc-build.log 2>&1"
+    "cl $flags /Foartifacts/structured-data/ /Feartifacts/structured-data/all-tests.exe $($sources -join ' ') $mainSource artifacts/structured-data/CoreJsonParser.obj artifacts/structured-data/CoreJsonWriter.obj ws2_32.lib >> artifacts/structured-data/msvc-build.log 2>&1"
     'if errorlevel 1 exit /b %errorlevel%'
     'artifacts\structured-data\all-tests.exe > artifacts/structured-data/tests.log 2>&1'
     'exit /b %errorlevel%'

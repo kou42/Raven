@@ -1557,3 +1557,27 @@ Raven Structured Data Phase 10 additions (Root/Root/Raven relative paths):
     Data/Tests/CompiledTestAsset.cpp
     Data/Tests/CompiledTestAssetTests.cpp
     Data/Tests/PHASE10_BINARY_ASSETS.md
+
+Raven Structured Data Phase 11 additions (Root/Root/Raven relative paths):
+    Network/ControlMessageCodec.h
+    Network/ControlMessageCodec.cpp
+    Network/ControlMessageReceiver.h
+    Network/ControlMessageReceiver.cpp
+    Network/Tests/ControlMessageTests.h
+    Network/Tests/ControlMessageTests.cpp
+    Network/Tests/PHASE11_CONTROL_MESSAGES.md
+
+Raven Structured Data Phase 11 Windows TCP additions (Root/Root/Raven relative paths):
+    Network/Windows/WindowsTcpSocket.h
+    Network/Windows/WindowsTcpSocket.cpp
+    Network/Tests/WindowsTcpTests.h
+    Network/Tests/WindowsTcpTests.cpp
+
+Raven Structured Data Phase 11 measurement additions (Root/Root/Raven relative paths):
+    Network/Tests/ControlMessageBenchmarks.cpp
+    Network/Tests/PHASE11_MEASUREMENTS.md
+    Network/Tests/Phase11Time.csv
+    Network/Tests/Phase11Memory.csv
+    Network/Tests/Phase11Traffic.csv
+    Network/Tests/Phase11TimeMetadata.json
+    Network/Tests/Phase11MemoryMetadata.json
