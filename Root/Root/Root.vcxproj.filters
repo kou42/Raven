@@ -1169,4 +1169,12 @@
     <None Include="Raven\Network\Tests\Phase11TimeMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
     <None Include="Raven\Network\Tests\Phase11MemoryMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticSink.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticSink.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\BinaryTrace.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\BinaryTrace.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticSinkSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <None Include="Raven\Diagnostics\Tests\README.md"><Filter>Raven\\Diagnostics\\Tests</Filter></None>
+  </ItemGroup>
 </Project>

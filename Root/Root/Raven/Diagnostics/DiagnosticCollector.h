@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Diagnostics/EventBuffer.h"
+#include "Raven/Diagnostics/DiagnosticSink.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -20,6 +21,7 @@ class DiagnosticCollector final
 {
 public:
     explicit DiagnosticCollector(std::ostream& output);
+    explicit DiagnosticCollector(std::vector<std::unique_ptr<IDiagnosticSink>> sinks);
     ~DiagnosticCollector();
 
     DiagnosticCollector(const DiagnosticCollector&) = delete;
@@ -32,13 +34,20 @@ public:
     void Flush();
     void Stop();
     std::uint64_t GetCollectedCount() const noexcept;
+    std::uint64_t GetSinkFailureCount() const noexcept;
+    std::size_t GetRegisteredBufferCount() const;
 
 private:
     void Run();
     bool DrainOnce();
+    void Dispatch(const DiagnosticEvent& event);
+    void FlushSinks();
+    void FailSink(std::size_t index) noexcept;
 
-    std::ostream& m_Output;
-    std::mutex m_Mutex;
+    // Sinkの参照先はWorker終了後まで保持し、失敗したSinkは再呼出ししません。
+    std::vector<std::unique_ptr<IDiagnosticSink>> m_Sinks;
+    std::vector<bool> m_FailedSinks;
+    mutable std::mutex m_Mutex;
     std::condition_variable m_Wake;
     std::vector<std::shared_ptr<EventBuffer>> m_Buffers;
     std::thread m_Worker;
@@ -49,5 +58,6 @@ private:
     std::uint64_t m_FlushCompleted = 0;
     std::condition_variable m_FlushCondition;
     std::atomic<std::uint64_t> m_Collected{ 0 };
+    std::atomic<std::uint64_t> m_SinkFailures{ 0 };
 };
 }

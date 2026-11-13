@@ -401,6 +401,10 @@ D:.
     |   |   |           Startup.svg
     |   |   |           Viewer.html
     |   |   +---Diagnostics
+    |   |   |   |   BinaryTrace.cpp
+    |   |   |   |   BinaryTrace.h
+    |   |   |   |   DiagnosticSink.cpp
+    |   |   |   |   DiagnosticSink.h
     |   |   |   |   DiagnosticAPI.cpp
     |   |   |   |   DiagnosticAPI.h
     |   |   |   |   DiagnosticCollector.cpp
@@ -411,6 +415,8 @@ D:.
     |   |   |   \---Tests
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
+    |   |   |           DiagnosticSinkSelfTests.cpp
+    |   |   |           README.md
     |   |   +---Editor
     |   |   |   |   EditorCamera.cpp
     |   |   |   |   EditorCamera.h

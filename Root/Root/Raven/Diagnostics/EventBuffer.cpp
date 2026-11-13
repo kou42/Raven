@@ -6,6 +6,10 @@ namespace Raven::Diagnostics
 {
 bool EventBuffer::TryPush(DiagnosticEvent event)
 {
+    if (m_Closed.load(std::memory_order_relaxed) == true)
+    {
+        return false;
+    }
     const std::uint64_t write = m_WriteIndex.load(std::memory_order_relaxed);
     const std::uint64_t read = m_ReadIndex.load(std::memory_order_acquire);
     if (write - read >= Capacity)
@@ -38,5 +42,16 @@ bool EventBuffer::TryPop(DiagnosticEvent& event)
 std::uint64_t EventBuffer::GetDroppedCount() const noexcept
 {
     return m_DroppedCount.load(std::memory_order_relaxed);
+}
+
+void EventBuffer::Close() noexcept
+{
+    m_Closed.store(true, std::memory_order_release);
+}
+
+bool EventBuffer::IsClosedAndEmpty() const noexcept
+{
+    return m_Closed.load(std::memory_order_acquire) == true
+        && m_ReadIndex.load(std::memory_order_relaxed) == m_WriteIndex.load(std::memory_order_acquire);
 }
 }

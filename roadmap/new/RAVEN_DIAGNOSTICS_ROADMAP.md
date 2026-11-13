@@ -6,6 +6,10 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 本書は計画であり、記載機能の実装完了を意味しない。
 
+実装状況（2026-11-14）: M1（Phase 01〜03）は実装・CPU検証完了。
+詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
+M2以降は未着手。CPUProfiler、Backend Validation、既存Assertは維持する。
+
 ## 基本設計
 
 ```text
@@ -34,38 +38,54 @@ Core / RHI / Renderer / Physics / Animation / Asset / Runtime
 
 ## Phase 01 — Diagnostics Core（目安3〜5日）
 
-- [ ] 既存のログ・Assert・Validation経路を調査する
-- [ ] `DiagnosticEventId`、`DiagnosticCategory`、`DiagnosticSeverity` を定義する
-- [ ] Timestamp、Thread ID、Sequence Numberを含むイベントヘッダを設計する
-- [ ] 型付きPayloadとデータ所有権・サイズ上限を定義する
-- [ ] `RAVEN_LOG_INFO/WARN/ERROR` などのAPIを用意する
-- [ ] 最初は同期Console Sinkで動作を検証する
+- [x] 既存のログ・Assert・Validation経路を調査する
+- [x] `DiagnosticEventId`、`DiagnosticCategory`、`DiagnosticSeverity` を定義する
+- [x] Timestamp、Thread ID、Sequence Numberを含むイベントヘッダを設計する
+- [x] 型付きPayloadとデータ所有権・サイズ上限を定義する
+- [x] `RAVEN_LOG_INFO/WARN/ERROR` などのAPIを用意する
+- [x] 最初は同期Console Sinkで動作を検証する
 
 **完了条件:** RHIとPhysicsから同じAPIでログを発行でき、イベントIDとPayloadを保持できる。
 
 ## Phase 02 — Event Buffer / Collector（目安5〜8日）
 
-- [ ] スレッドごとのSPSC Ring Bufferを設計する
-- [ ] Producer/Consumerのメモリ順序とスレッド登録・破棄を定義する
-- [ ] Collector Workerを実装する
-- [ ] Overflow PolicyとDropped Event Counterを設ける
-- [ ] Flush、Shutdown、Crash時のFallbackを検証する
-- [ ] 複数スレッド負荷テストを実施する
+- [x] スレッドごとのSPSC Ring Bufferを設計する
+- [x] Producer/Consumerのメモリ順序とスレッド登録・破棄を定義する
+- [x] Collector Workerを実装する
+- [x] Overflow PolicyとDropped Event Counterを設ける
+- [x] Flush、Shutdown、Crash時のFallbackを検証する（通常終了と独立stderr経路。実Crash CaptureはPhase 08）
+- [x] 複数スレッド負荷テストを実施する
 
 **完了条件:** 並列ログ発行でデータ破損がなく、取りこぼしを検出できる。
 
 ## Phase 03 — Output / Transport（目安3〜5日）
 
-- [ ] `IDiagnosticSink` とSinkの所有権を設計する
-- [ ] ConsoleSink、FileSinkを実装する
-- [ ] バージョン付きBinary Trace Formatを定義する
-- [ ] Event IDとPayloadのシリアライズ・再読込を実装する
-- [ ] Category/Severity Filterを設ける
-- [ ] I/O障害と終了時Flushを検証する
+- [x] `IDiagnosticSink` とSinkの所有権を設計する
+- [x] ConsoleSink、FileSinkを実装する
+- [x] バージョン付きBinary Trace Formatを定義する
+- [x] Event IDとPayloadのシリアライズ・再読込を実装する
+- [x] Category/Severity Filterを設ける
+- [x] I/O障害と終了時Flushを検証する
 
 **完了条件:** ConsoleとFileへ独立出力でき、保存したイベントを再読込できる。
 
 **M1: Diagnostics Logger v1（Phase 01〜03）**
+
+### M1実装結果（2026-11-14）
+
+- 既存のAPI / SPSC / CollectorとRHI・Physics接続を維持し、CollectorからConsole / File / Binary Trace Sinkへ分離した。
+- SinkはCollectorが所有し、Category / Severity Filterと故障時の切り離しを行う。故障数はprocess通算で観測可能。
+- Binary Trace v1.0はlittle endian・固定型タグ・上限付きrecord。全Payload型とHeaderを保存・復元し、不正長・未知Version・途中切断を拒否する。
+- Thread IDのprocess内採番、終了ThreadのBuffer回収、通常ApplicationのRAII開始・終了、ビルド時／実行時のログ無効化を追加した。
+- Debug / Release専用MSVC Runnerは各2 suite成功。Disabled構成は1 suite成功。4 Thread・8192発行の保存再読込で受信数＋Drop数の整合性とProducerごとのFIFOを確認した。
+- Engine全体のDebug / Release（x64）はビルド成功し、それぞれの実行ファイルでもDiagnostics 2 suite成功。DebugのExplicit Frame / Physics Collision回帰も成功した。
+- 通常Debugビルドは環境の`MSPDB140.DLL`版不一致（LNK1101）でリンク失敗した。既存設定`RavenGenerateLinkDebugInformation=false`と`LinkIncremental=false`を指定して再確認した。プロジェクトの既定設定は変更していない。
+- 全体ビルドWarningはDebug 2件（LNK4075 / LNK4098）、Release 0件。専用Runnerの`/W4`では既存の`alignas(64)`構成に伴うC4324がDebug / Release各5件、Disabled 3件発生した。
+- 無効化時の概算測定はReleaseで約1.02 ns/call（単純ループ約0.20 ns）、ビルド時無効化で約0.20 ns/call（単純ループ約0.20 ns）。実行条件に依存する参考値。
+
+未検証: GPU実機での通常起動・終了とValidation故障注入、実Crash時の全件保存。
+制約: Emitは共通制御mutexと値所有stringを使用し、lock-free / allocation-freeではない。
+次の候補はM2（Phase 04）のCounter / Traceと既存CPUProfilerの橋渡し。開始は別承認とする。
 
 ## Phase 04 — Counter / Trace（目安5〜8日）
 
@@ -130,16 +150,23 @@ Core / RHI / Renderer / Physics / Animation / Asset / Runtime
 ## APIイメージ（確定仕様ではない）
 
 ```cpp
-RAVEN_LOG_INFO(DiagnosticCategory::RHI,
-               "Created texture: {}x{}", width, height);
-RAVEN_LOG_ERROR(DiagnosticCategory::Physics,
-                "Invalid contact manifold");
+RAVEN_LOG_ERROR(DiagnosticCategory::RHI,
+               EventIds::LegacyRHIInitializationFailed,
+               std::string("Backend unavailable"));
+RAVEN_LOG_INFO(DiagnosticCategory::Physics,
+               EventIds::PhysicsGravityUpdated,
+               std::string("Physics gravity updated"));
 
 RAVEN_TRACE_SCOPE("PhysicsStep");
 RAVEN_COUNTER("Physics.NarrowPhase.Candidates", candidateCount);
 ```
 
 初期APIで文字列フォーマットを使用する場合も、内部イベントID・型付きPayloadとの対応を明示する。Trace/Counterはビルド設定によって無効化できるようにする。
+
+M1で確定したLog APIは `category, event ID, owned payload` の3引数。
+上記Log部分は実装済みAPIの呼出形式、Trace/Counter部分はM2の未実装イメージ。
+Payloadは単一の `int64 / double / bool / string` とし、文字列は最大1024 byteを保持する。
+複合引数・書式文字列・Message Dictionaryの生成はM5で設計する。
 
 ## 推奨する責務分割（構成案）
 
