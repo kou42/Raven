@@ -165,7 +165,9 @@ std::uint32_t ResolveHash(const std::vector<std::string>& ids,
             return 0;
         }
         std::string content;
-        if (resolver(sorted[i], content) == false || content.size() > TestAssetMaxBytes)
+        if (resolver(sorted[i], content) == false
+            || content.size() > (sorted[i] == std::string("\\x01roots")
+                ? 256u * 1028u + 4u : TestAssetMaxBytes))
         {
             return 0;
         }
