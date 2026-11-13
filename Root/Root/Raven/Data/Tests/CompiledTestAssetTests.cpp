@@ -156,6 +156,25 @@ int RunCompiledTestAssetTests()
             graphEdges, cachedOutput, hit, error) && hit == false, "persistent cache miss");
         check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
             graphEdges, cachedOutput, hit, error) && hit, "persistent cache hit");
+        // 別プロセス相当のLock保持中は読み込みも更新も拒否し、出力を維持する。
+        auto lockPath = cachePath;
+        lockPath += ".lock";
+        cacheIo.clear();
+        const bool locked = std::filesystem::create_directory(lockPath, cacheIo);
+        check(locked, "acquire external cache lock");
+        if (locked)
+        {
+            const auto preserved = cachedOutput;
+            hit = true;
+            check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+                graphEdges, cachedOutput, hit, error) == false
+                && error.Stage == "cache locked" && hit == false
+                && cachedOutput == preserved, "cache lock preserves output");
+            std::filesystem::remove(lockPath, cacheIo);
+        }
+        check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit,
+            "cache lock released after successful build");
         // 破損CacheはHitさせず、再構築して復旧する。
         {
             std::ofstream corrupt(cachePath, std::ios::binary | std::ios::trunc);
