@@ -9,13 +9,15 @@
 | Offset | Binary Document (RVBD) | Compiled Test Asset (RVCA) |
 | --- | --- | --- |
 | 0..3 | Magic `RVBD` | Magic `RVCA` |
-| 4..7 | Version=1 | Version=2 |
-| 8..11 | Endian marker=0x01020304 | Endian marker=0x01020304 |
+| 4..7 | Version=1 | Version=3 |
+| 8..11 | Endian marker | Endian marker |
 | 12..15 | Payload Length | Payload Length |
-| 16..19 | Payload FNV-1a 32 | Source Cache識別子 |
-| 20..23 | Payload begins | Payload FNV-1a 32 |
-| 24..27 | Payload continues | 依存Asset指紋 FNV-1a 32 |
-| 28.. | Payload continues | Payload begins |
+| 16..19 | Payload FNV-1a 32 | Source SHA-256（16..47） |
+| 20..23 | Payload begins | Source SHA-256続き |
+| 24..47 | Payload continues | Source SHA-256続き |
+| 48..79 | Payload continues | Payload SHA-256 |
+| 80..111 | Payload continues | Dependency SHA-256 |
+| 112.. | Payload continues | Payload begins |
 
 Payloadは既存の決定的MessagePack Writerで符号化する。RVBDは汎用DataDocumentを保持し、
 RVCAは専用設定型をv2へMigration・検証した結果のみを保持する。
@@ -23,13 +25,13 @@ RVCAは専用設定型をv2へMigration・検証した結果のみを保持す�
 
 ## Cache Keyと依存関係
 
-RVCAのSource Cache識別子は入力JSONの**生Byte列**のFNV-1a 32とCompiler Versionの積（16777619）とのXOR。
+RVCAのSource Cache識別子は入力JSONの**生Byte列**のSHA-256（32 Byte）。
 空白の変更もCache Missとなる。Compiler VersionはHeader Versionにも記録し、識別子にも含める。
 専用Fixtureでは `CompileWithDependencies` に安定した依存IDの一覧とResolverを渡す。
-Resolverは各IDに対応する現在の依存Asset内容を返し、IDの昇順でID長・ID・内容長・内容を連結して指紋を生成する。
+Resolverは各IDに対応する現在の依存Asset内容を返し、IDの昇順でID長・ID・内容長・内容を連結しSHA-256指紋を生成する。
 同じIDの重複、解決失敗、256件超、ID長1024 Byte超、依存内容64 KiB超は拒否する。
 `IsCacheCurrent` はソース・Version・依存指紋・Payload Checksumを照合する。
-旧 `Compile` は依存なしのショートカットとして残す。依存指紋の追加によりRVCA Versionを2へ更新し、旧Version 1は拒否する。
+旧 `Compile` は依存なしのショートカットとして残す。SHA-256への変更によりRVCA Versionを3へ更新し、旧Version 1/2は拒否する。
 再帰的な依存は `CompileWithGraph` / `IsGraphCacheCurrent` を利用する。
 呼び出し側が指定したRoot IDから `DependencyEnumerator` で子IDを取得し、DFSで共有依存を一度だけ解決する。
 探索中ノードへの再訪は循環参照として拒否し、同じ親に重複する子IDも拒否する。
@@ -48,8 +50,8 @@ Cacheの親ディレクトリは事前に存在する必要がある。電源断
 `CompileFromSource` は抽出したRoot IDをGraph Compilerへ渡す。
 `BuildCachedFromSource` は同じ抽出処理を永続Cache経路へ接続する。
 依存先の子IDは引き続き呼び出し側 `DependencyEnumerator` が提供する。
-この専用Fixture以外のAsset形式からの依存抽出、強いCache Keyは**未実装**。
-FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を扱う共有Cacheの同一性検証には使わない。
+この専用Fixture以外のAsset形式からの依存抽出は**未実装**。
+SHA-256は衝突リスクを大幅に低減するが、署名・認証機構ではない。敵対的なCacheファイルの真正性は保証しない。
 
 ## 検証
 
