@@ -26,6 +26,17 @@ public:
     // 各依存Assetの子IDを列挙する。循環参照と重複はGraph側で検出する。
     using DependencyEnumerator = std::function<bool(std::string_view, std::vector<std::string>&)>;
     static bool Compile(std::string_view sourceJson, std::string& output, TestAssetError& error);
+    // ソースJSONのトップレベル dependencies 配列からRoot IDを取得する。
+    // フィールド省略時は空配列。型不一致・重複・不正IDは拒否する。
+    static bool ExtractRootDependencies(std::string_view sourceJson,
+        std::vector<std::string>& output, TestAssetError& error);
+    static bool CompileFromSource(std::string_view sourceJson,
+        const DependencyResolver& resolver, const DependencyEnumerator& enumerate,
+        std::string& output, TestAssetError& error);
+    static bool BuildCachedFromSource(const std::filesystem::path& cachePath,
+        std::string_view sourceJson, const DependencyResolver& resolver,
+        const DependencyEnumerator& enumerate, std::string& output, bool& cacheHit,
+        TestAssetError& error);
     static bool CompileWithGraph(std::string_view sourceJson,
         const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
         const DependencyEnumerator& enumerate, std::string& output, TestAssetError& error);
