@@ -44,7 +44,7 @@ Graphの実ノードは最大255件（Root Manifestを含めた依存IDは最大
 Miss時は再Compileし、Cacheファイルと同じ親の一時Directory内でWrite / Flush / Close後に置換する。
 置換失敗時は既存Cacheと呼び出し側のoutputを維持し、一時ファイルを片付ける。
 Cacheの親ディレクトリは事前に存在する必要がある。電源断時の永続性、複数Writer間の排他、
-敵対的Pathの差し替え、Hash衝突への耐性は保証しない。
+敵対的Pathの差し替え、複数プロセス間の更新競合の解決は保証しない。
 専用設定AssetのJSONトップレベル `dependencies` は文字列ID配列として扱う。
 `ExtractRootDependencies` はフィールド省略を依存なしとし、重複ID・空ID・不正型・256件超を拒否する。
 `CompileFromSource` は抽出したRoot IDをGraph Compilerへ渡す。
@@ -56,7 +56,7 @@ SHA-256は衝突リスクを大幅に低減するが、署名・認証機構で�
 ## 検証
 
 `scripts/test-windows-structured-data.ps1` にPhase 10テストを統合した。
-テストはRound-trip、v1→v2、決定性、ソース変更によるCache変更、
-Header破損、Version不一致、Length破損、Checksum破損、出力不変を対象とする。
+テストはRound-trip、v1→v2、決定性、SHA-256既知ベクトル（Source・空依存Manifest）、ソース変更によるCache変更、
+Header破損、Version不一致、Length破損、Checksum破損、破損Cache再構築、保存失敗時の出力・既存Cache保持を対象とする。
 MSVCビルドと実行はGitHubコネクタ経由では実施していない。
 実運用Asset移行、他のAsset形式からの依存ID抽出、mmap、正式なVersion Migrationは未対応。
