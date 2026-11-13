@@ -36,7 +36,13 @@ Resolverは各IDに対応する現在の依存Asset内容を返し、IDの昇順
 GraphのEdge一覧を依存内容とともに指紋へ含め、子Assetの内容変更とEdge変更をCache Missにする。
 1回の処理で取得した依存内容をSnapshot化してCompilerへ渡すため、同一処理中にResolverを再呼び出ししない。
 最大256ノード・依存記録64 KiB/ノードの上限を持つ。
-依存IDのソースからの自動抽出、永続Cache I/O、強いCache Keyは**未実装**。
+永続Cache I/Oには `BuildCached(cachePath, source, roots, resolver, enumerate, output, cacheHit, error)` を使用する。
+既存CacheのHeader・Version・Length・Payload Checksum・ソース・依存Graphを検証し、有効なら再Compileせず返す。
+Miss時は再Compileし、Cacheファイルと同じ親の一時Directory内でWrite / Flush / Close後に置換する。
+置換失敗時は既存Cacheと呼び出し側のoutputを維持し、一時ファイルを片付ける。
+Cacheの親ディレクトリは事前に存在する必要がある。電源断時の永続性、複数Writer間の排他、
+敵対的Pathの差し替え、Hash衝突への耐性は保証しない。
+依存IDのソースからの自動抽出、強いCache Keyは**未実装**。
 FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を扱う共有Cacheの同一性検証には使わない。
 
 ## 検証
@@ -45,4 +51,4 @@ FNV-1a 32は衝突耐性を保証しないため、信頼できない入力を�
 テストはRound-trip、v1→v2、決定性、ソース変更によるCache変更、
 Header破損、Version不一致、Length破損、Checksum破損、出力不変を対象とする。
 MSVCビルドと実行はGitHubコネクタ経由では実施していない。
-実運用Asset移行、永続Cache I/O、ソースからの依存ID自動抽出、mmap、正式なVersion Migrationは未対応。
+実運用Asset移行、ソースからの依存ID自動抽出、mmap、正式なVersion Migrationは未対応。
