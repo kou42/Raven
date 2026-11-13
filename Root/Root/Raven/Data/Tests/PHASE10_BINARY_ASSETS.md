@@ -43,8 +43,8 @@ Graphの実ノードは最大255件（Root Manifestを含めた依存IDは最大
 既存CacheのHeader・Version・Length・Payload Checksum・ソース・依存Graphに加え、型付きDeserializeも検証し、有効なら再Compileせず返す。
 Miss時は再Compileし、Cacheファイルと同じ親の一時Directory内でWrite / Flush / Close後に置換する。
 置換失敗時は既存Cacheと呼び出し側のoutputを維持し、一時ファイルを片付ける。
-Cacheの親ディレクトリは事前に存在する必要がある。電源断時の永続性、複数Writer間の排他、
-敵対的Pathの差し替え、複数プロセス間の更新競合の解決は保証しない。
+Cacheの親ディレクトリは事前に存在する必要がある。\n同一Cache PathのReader/Writerは `<cachePath>.lock` Directoryの排他的作成により直列化する。\nLock取得失敗時は `cache locked` を返し、呼び出し側の出力を維持する。\n正常終了・例外時はRAIIでLockを削除する。プロセス強制終了で残ったLockは自動削除せず、\n利用者がプロセス停止を確認してから手動で回復する。異なる表記の同一Pathや非協調アクセスは対象外。\n電源断時の永続性、
+敵対的Pathの差し替え、Lockに従わない外部プロセスとの更新競合の解決は保証しない。
 専用設定AssetのJSONトップレベル `dependencies` は文字列ID配列として扱う。
 `ExtractRootDependencies` はフィールド省略を依存なしとし、重複ID・空ID・不正型・256件超を拒否する。
 `CompileFromSource` は抽出したRoot IDをGraph Compilerへ渡す。
