@@ -154,7 +154,7 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
     std::map<std::string, unsigned> states;
     std::function<bool(const std::string&)> visit = [&](const std::string& id)
     {
-        if (id.empty() || id == std::string("\\x01roots") || id.size() > 1024
+        if (id.empty() || id == std::string("\x01roots") || id.size() > 1024
             || (states.size() >= 255 && states.count(id) == 0))
         {
             return false;
@@ -225,8 +225,8 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
         Put(rootRecord, static_cast<std::uint32_t>(root.size()));
         rootRecord.append(root);
     }
-    contents.emplace(std::string("\\x01roots"), std::move(rootRecord));
-    ids.push_back(std::string("\\x01roots"));
+    contents.emplace(std::string("\x01roots"), std::move(rootRecord));
+    ids.push_back(std::string("\x01roots"));
     return true;
 }
 Digest ResolveHash(const std::vector<std::string>& ids,
@@ -249,7 +249,7 @@ Digest ResolveHash(const std::vector<std::string>& ids,
         }
         std::string content;
         if (resolver(sorted[i], content) == false
-            || content.size() > (sorted[i] == std::string("\\x01roots")
+            || content.size() > (sorted[i] == std::string("\x01roots")
                 ? 256u * 1028u + 4u : TestAssetMaxBytes))
         {
             return {};
@@ -487,7 +487,9 @@ bool CompiledTestAsset::IsGraphCacheCurrent(std::string_view compiled, std::stri
 bool CompiledTestAsset::IsCacheCurrent(std::string_view compiled, std::string_view sourceJson,
     const std::vector<std::string>& dependencyIds, const DependencyResolver& resolver)
 {
-    if (compiled.size() < HeaderSize || compiled.substr(0, 4) != "RVCA"
+    if (sourceJson.size() > TestAssetMaxBytes || compiled.size() < HeaderSize
+        || compiled.size() > HeaderSize + TestAssetMaxBytes
+        || compiled.substr(0, 4) != "RVCA"
         || Get(compiled, 4) != Version || Get(compiled, 8) != Marker
         || Get(compiled, 12) != compiled.size() - HeaderSize
         || MatchesDigest(compiled, 16, Sha256(sourceJson)) == false)
@@ -640,11 +642,14 @@ bool CompiledTestAsset::Load(std::string_view compiled, TestSettings& output, Te
         error.Stage = "parse";
         return false;
     }
-    if (Deserialize(document.GetRoot(), output, &error.Fields) == false)
+    // 失敗時に呼び出し側の設定値を変更しない。
+    TestSettings decoded;
+    if (Deserialize(document.GetRoot(), decoded, &error.Fields) == false)
     {
         error.Stage = "deserialize";
         return false;
     }
+    output = std::move(decoded);
     return true;
 }
 }
