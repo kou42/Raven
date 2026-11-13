@@ -97,6 +97,9 @@ int RunCompiledTestAssetTests()
         graphCompiled, error), "compile diamond graph");
     check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root"},
         graphResolver, graphEdges), "graph cache hit");
+    // 到達ノードが同じでもRoot指定の違いは別のAsset入力として扱う。
+    check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root", "left"},
+        graphResolver, graphEdges) == false, "root set invalidates cache");
     graphLeaf = "leaf-v2";
     check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root"},
         graphResolver, graphEdges) == false, "transitive dependency invalidates cache");
