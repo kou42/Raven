@@ -35,9 +35,10 @@ Resolverは各IDに対応する現在の依存Asset内容を返し、IDの昇順
 探索中ノードへの再訪は循環参照として拒否し、同じ親に重複する子IDも拒否する。
 GraphのEdge一覧を依存内容とともに指紋へ含め、子Assetの内容変更とEdge変更をCache Missにする。
 1回の処理で取得した依存内容をSnapshot化してCompilerへ渡すため、同一処理中にResolverを再呼び出ししない。
-最大256ノード・依存記録64 KiB/ノードの上限を持つ。
+Root集合を予約Manifestとして指紋に含め、到達ノードが同一でもRoot指定の変更をCache Missにする。
+Graphの実ノードは最大255件（Root Manifestを含めた依存IDは最大256件）。通常の依存記録は64 KiB/ノードを上限とする。
 永続Cache I/Oには `BuildCached(cachePath, source, roots, resolver, enumerate, output, cacheHit, error)` を使用する。
-既存CacheのHeader・Version・Length・Payload Checksum・ソース・依存Graphを検証し、有効なら再Compileせず返す。
+既存CacheのHeader・Version・Length・Payload Checksum・ソース・依存Graphに加え、型付きDeserializeも検証し、有効なら再Compileせず返す。
 Miss時は再Compileし、Cacheファイルと同じ親の一時Directory内でWrite / Flush / Close後に置換する。
 置換失敗時は既存Cacheと呼び出し側のoutputを維持し、一時ファイルを片付ける。
 Cacheの親ディレクトリは事前に存在する必要がある。電源断時の永続性、複数Writer間の排他、
