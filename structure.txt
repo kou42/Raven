@@ -1549,3 +1549,11 @@ Raven Scene Graph SG5 additions (Root/Root/Raven relative paths):
     Scene/Tests/SceneRuntimeComparisonTests.h
     Scene/Tests/SceneRuntimeComparisonTests.cpp
     Renderer/RHI/RHISceneDrawItemBuilder.cpp
+
+Raven Structured Data Phase 10 additions (Root/Root/Raven relative paths):
+    Data/Formats/Binary/BinaryDocument.h
+    Data/Formats/Binary/BinaryDocument.cpp
+    Data/Tests/CompiledTestAsset.h
+    Data/Tests/CompiledTestAsset.cpp
+    Data/Tests/CompiledTestAssetTests.cpp
+    Data/Tests/PHASE10_BINARY_ASSETS.md
