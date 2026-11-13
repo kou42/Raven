@@ -21,15 +21,19 @@ $main = @(
     '#include "Raven/Data/Tests/ParallelDeserializeTests.h"'
     '#include "Raven/Data/Tests/MutableDataDocumentTests.h"'
     '#include "Raven/Data/Tests/CompiledTestAsset.h"'
+    '#include "Raven/Network/Tests/ControlMessageTests.h"'
     'int main() { int result = 0;'
 )
 foreach ($entry in @('RunDataDocumentTests', 'RunJsonParserTests', 'RunDataElementTests', 'RunDataIOTests', 'RunSerializationTests', 'RunMessagePackTests', 'RunTestAssetTests', 'RunParallelDeserializeTests', 'RunMutableDataDocumentTests', 'RunCompiledTestAssetTests')) {
     $main += "result |= Raven::Data::Tests::$entry();"
 }
+$main += 'result |= Raven::Network::Tests::RunControlMessageTests();'
 $main += 'return result; }'
 Set-Content -LiteralPath (Join-Path $output 'main.cpp') -Value $main -Encoding utf8
 $sources = @('Root/Root/Raven/Core/JsonLexicalReader.cpp', 'Root/Root/Raven/Core/Jobs/JobSystem.cpp')
 $sources += Get-ChildItem (Join-Path $repo 'Root/Root/Raven/Data') -Recurse -Filter '*.cpp' |
+    ForEach-Object { '"' + $_.FullName + '"' }
+$sources += Get-ChildItem (Join-Path $repo 'Root/Root/Raven/Network') -Recurse -Filter '*.cpp' |
     ForEach-Object { '"' + $_.FullName + '"' }
 $flags = '/nologo /std:c++17 /utf-8 /EHsc /W4 /IRoot/Root'
 $mainSource = 'artifacts/structured-data/main.cpp'

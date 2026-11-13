@@ -1142,4 +1142,15 @@
   <ItemGroup>
     <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md"><Filter>Raven\Data\Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Network" />
+    <Filter Include="Raven\Network\Tests" />
+    <ClInclude Update="Raven\Network\ControlMessageCodec.h"><Filter>Raven\Network</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\ControlMessageCodec.cpp"><Filter>Raven\Network</Filter></ClCompile>
+    <ClInclude Update="Raven\Network\ControlMessageReceiver.h"><Filter>Raven\Network</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\ControlMessageReceiver.cpp"><Filter>Raven\Network</Filter></ClCompile>
+    <ClInclude Update="Raven\Network\Tests\ControlMessageTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\Tests\ControlMessageTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <None Include="Raven\Network\Tests\PHASE11_CONTROL_MESSAGES.md"><Filter>Raven\Network\Tests</Filter></None>
+  </ItemGroup>
 </Project>

@@ -1557,3 +1557,12 @@ Raven Structured Data Phase 10 additions (Root/Root/Raven relative paths):
     Data/Tests/CompiledTestAsset.cpp
     Data/Tests/CompiledTestAssetTests.cpp
     Data/Tests/PHASE10_BINARY_ASSETS.md
+
+Raven Structured Data Phase 11 additions (Root/Root/Raven relative paths):
+    Network/ControlMessageCodec.h
+    Network/ControlMessageCodec.cpp
+    Network/ControlMessageReceiver.h
+    Network/ControlMessageReceiver.cpp
+    Network/Tests/ControlMessageTests.h
+    Network/Tests/ControlMessageTests.cpp
+    Network/Tests/PHASE11_CONTROL_MESSAGES.md

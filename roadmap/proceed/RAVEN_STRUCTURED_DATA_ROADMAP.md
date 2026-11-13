@@ -1,8 +1,8 @@
 # Raven Structured Data / Serialization Roadmap
 
 作成日: 2026-10-04  
-最終確認日: 2026-11-13\
-状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10は専用Assetで実装・CPU検証済み。Phase 11は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflection、Network / RPCは未実装。
+最終確認日: 2026-11-14\
+状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10は専用Assetで実装・CPU検証済み。Phase 11はCodec・所有Queue・CPU Loopbackの初期連携を完了。実通信・高頻度評価は未対応。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflectionと実通信・汎用RPCは未実装。
 
 ## 目的
 
@@ -53,7 +53,7 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 
 ## Phase一覧
 
-Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10は専用Assetで実装・CPU検証済み。Phase 11は未着手。既存JSON基盤の置換は目的に含めない。
+Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10は専用Assetで実装・CPU検証済み。Phase 11はCodec・所有Queue・CPU Loopbackの初期連携を完了。実通信・高頻度評価は未対応。既存JSON基盤の置換は目的に含めない。
 
 | Phase | 内容 | 状態 | 前提 |
 | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflection�
 | 8 | 計測・並列Deserialize | 完了（MSVC CPU検証・実測） | 7 |
 | 9 | Mutable Document・Editor連携 | 完了（CPU編集・Undo/Redo・保存検証） | 7 |
 | 10 | 汎用Documentバイナリ・Compiled Asset | 完了（専用Asset・CPU検証） | 7 |
-| 11 | Network / RPCへの接続 | 未着手 | 5・6、通信層 |
+| 11 | Network / RPCへの接続 | 初期連携完了（CPU Loopback）、実通信・高頻度評価は未対応 | 5・6、通信層 |
 
 Phase 8〜11は独立性が高いため、実際の必要性に応じて順序を調整する。ネットワーク利用のためにMutable DOMやCompiled Assetの完成を待つ必要はない。
 
@@ -447,15 +447,34 @@ JSONのRaw表記・Escape位置の保持、直接Parser、Lazy Decode、型付�
 
 MessagePackはデータ表現を担当する。接続、配送、暗号化、認証、信頼性は通信層の責務とする。
 
-- [ ] 通信層とはCodec境界で接続し、Data層へSocket依存を入れない。
-- [ ] MessageType、ProtocolVersion、RequestId等を持つEnvelopeを定義する。
-- [ ] TCP等のStreamでは長さによるFraming、UDPではDatagramサイズ上限を定める。
-- [ ] Lobby、制御メッセージ、RPC引数等からMessagePackを試験導入する。
-- [ ] 受信した型と値を検証し、許可されたメッセージだけDispatchする。
-- [ ] Buffer所有権、Queue投入、Thread切替、切断時の破棄を定める。
+- [x] 通信層とはCodec境界で接続し、Data層へSocket依存を入れない。
+- [x] MessageType、ProtocolVersion、RequestId等を持つEnvelopeを定義する。
+- [x] TCP等のStreamでは長さによるFraming、UDPではDatagramサイズ上限を定める。
+- [x] Lobby、制御メッセージ、RPC引数等からMessagePackを試験導入する。
+- [x] 受信した型と値を検証し、許可されたメッセージだけDispatchする。
+- [x] Buffer所有権、Queue投入、Thread切替、切断時の破棄を定める。
 - [ ] 高頻度同期はMessagePackを基準として計測し、必要ならQuantization、BitStream、Delta、Snapshot方式を別Codecとして追加する。
 
 完了条件: Loopback等で型付きメッセージの送受信が成立し、切断入力、不正型、Version不一致、上限超過を安全に拒否できる。
+
+### Phase 11初期連携の実装結果（2026-11-14）
+
+- 通信層が未実装のため、`Network/`に制御ProtocolのCodecと受信Queueを追加した。
+  Data層へのSocket / Network依存は追加しない。実Socket・接続・認証・暗号化・配送保証は別段階とする。
+- ProtocolVersion / MessageType / RequestId / payloadのEnvelopeを定義。試験用PingとSetReadyのみを許可し、
+  必須・未知フィールド、整数/Bool型、値域、Version、重複キーを検証後だけ出力へCommitする。
+- Streamは4 byte big-endian長Prefixと4 KiB上限、DatagramはPrefixなし・1,200 Byte上限。
+  分割・結合受信を扱い、Body確保前に長さを検査する。サイズは試験Protocolの選択で、MTU保証ではない。
+- 受信DocumentのViewを残さず所有する型を容量制限付きFIFOへ投入。mutexでWorker受信と利用側TryPopを保護し、
+  Callbackは利用側Threadで明示的にDispatchする。不正入力・容量超過・切断時は未処理値を破棄する。
+  TryPop済み値の取消・再接続のSession対応、破棄前のThread停止/joinは呼び出し側の責務。
+- CPUテストは既存5,643＋新規429＝6,072チェック成功、警告0。全分割位置、途中切断、異常Envelope、
+  Queue上限、所有権、Worker→呼び出し側ThreadのFIFO Dispatchを検証した。
+  アプリDebug x64増分ビルドはPDB生成無効で成功、既存LNK4098が1件。
+- 再実行は`scripts/test-windows-structured-data.ps1`。契約は`Network/Tests/PHASE11_CONTROL_MESSAGES.md`を参照。
+  実通信・実運用Lobby / 汎用RPC、認証、Replay対策、接続数全体の予算、性能評価、高頻度同期、
+  GUI、Sanitizer / ThreadSanitizer、確保失敗注入、通常PDBありのビルドは未検証・未対応。
+  次は通信層の選定と実Socket Loopbackへの限定接続を別マイルストーンとして推奨する。
 
 ## 推奨配置案
 
@@ -475,7 +494,7 @@ MessagePackはデータ表現を担当する。接続、配送、暗号化、認
 
 ## 最初の実装範囲
 
-Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phase 7の専用テストAssetへの試験導入も完了。Phase 8の計測・明示的並列Deserializeも完了。Phase 9も編集Document・Editor連携を完了。Phase 10も専用Assetのコンパイル・依存解決・Cacheを検証した。次は実運用への限定導入、またはPhase 11を承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
+Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phase 7の専用テストAssetへの試験導入も完了。Phase 8の計測・明示的並列Deserializeも完了。Phase 9も編集Document・Editor連携を完了。Phase 10も専用Assetのコンパイル・依存解決・Cacheを検証した。Phase 11は制御CodecとCPU Loopbackの初期連携を完了した。次は実通信または実用途への限定導入を別承認で進める。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
 
 - [x] Asset / Memory / Streamとの接続点と最初の用途を確定した（Phase 0）。
 - [x] 小さいJSONをDataDocumentへ読み込める（Phase 2）。
@@ -485,4 +504,4 @@ Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phas
 - [x] DocumentとViewの寿命規則が説明・検証されている（Phase 1〜3、Borrowed Bufferは未導入）。
 - [x] 既存`Core::JsonParser`との互換Fixtureが通る（Phase 2、意図した差を含む）。
 
-初期実装（Phase 0〜4）にはReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信を含めなかった。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、Phase 7は専用テストAssetで完了した。Phase 8も計測・明示的並列Deserializeを完了した。Phase 9も編集Document・Editor連携を完了した。Phase 10も専用Assetで完了した。次段階は実用途の限定導入と性能評価、またはPhase 11を別承認で進める。
+初期実装（Phase 0〜4）にはReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信を含めなかった。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、Phase 7は専用テストAssetで完了した。Phase 8も計測・明示的並列Deserializeを完了した。Phase 9も編集Document・Editor連携を完了した。Phase 10も専用Assetで完了した。Phase 11の初期連携も完了した。次段階は通信層の選定・実通信、または実用途の限定導入と性能評価を別承認で進める。
