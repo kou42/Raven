@@ -2,7 +2,7 @@
 
 作成日: 2026-10-04  
 最終確認日: 2026-11-13\
-状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10以降は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflection、Network / RPCは未実装。
+状態: Phase 0〜4とPhase 5の明示的Adapterを実装済み。Reflectionは用途待ち。Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10は専用Assetで実装・CPU検証済み。Phase 11は未着手。`Core::JsonValue / JsonParser / JsonWriter` と `JobSystem` は既存資産として利用する。Token DOMの基礎型、手動構築・既存DOM変換、Coreと字句処理を共有する直接JSON Parser、Decoded取得・型変換・キー検索、DataReader / DataWriterと決定的JSON出力を実装済み。MessagePack読み書きは実装済み。Reflection、Network / RPCは未実装。
 
 ## 目的
 
@@ -53,7 +53,7 @@ RE:Doxについての議論を設計の着想とするが、以下はRaven向け
 
 ## Phase一覧
 
-Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10以降は未着手。既存JSON基盤の置換は目的に含めない。
+Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflectionは用途待ち、Phase 6は実装済み、Phase 7は専用テストAssetへの試験導入を完了、Phase 8は計測・明示的並列Deserializeを完了、Phase 9は編集Document・Editor Commandを完了、Phase 10は専用Assetで実装・CPU検証済み。Phase 11は未着手。既存JSON基盤の置換は目的に含めない。
 
 | Phase | 内容 | 状態 | 前提 |
 | --- | --- | --- | --- |
@@ -67,7 +67,7 @@ Phase 0〜4とPhase 5の明示的Adapterは完了（2026-11-01）。Reflection�
 | 7 | エンジン機能への試験導入 | 専用テストAssetで完了（実運用への展開は保留） | 5 |
 | 8 | 計測・並列Deserialize | 完了（MSVC CPU検証・実測） | 7 |
 | 9 | Mutable Document・Editor連携 | 完了（CPU編集・Undo/Redo・保存検証） | 7 |
-| 10 | 汎用Documentバイナリ・Compiled Asset | 未着手 | 7 |
+| 10 | 汎用Documentバイナリ・Compiled Asset | 完了（専用Asset・CPU検証） | 7 |
 | 11 | Network / RPCへの接続 | 未着手 | 5・6、通信層 |
 
 Phase 8〜11は独立性が高いため、実際の必要性に応じて順序を調整する。ネットワーク利用のためにMutable DOMやCompiled Assetの完成を待つ必要はない。
@@ -417,14 +417,31 @@ JSONのRaw表記・Escape位置の保持、直接Parser、Lazy Decode、型付�
 
 ## Phase 10 — Binary Document / Compiled Asset
 
-- [ ] 汎用Document保存形式と、用途別Runtime Asset形式を別々に定義する。
-- [ ] Magic、Version、Endian、Alignment、Offset、Length、互換性規則を定める。
-- [ ] C++ structのMemory Dumpをファイル仕様にせず、各フィールドのEncodingを固定する。
-- [ ] Asset Compilerで検証、参照解決、変換、依存関係とCache Key生成を行う。
-- [ ] memory mapping / zero-copyは形式と寿命が対応する場合にのみ導入する。
-- [ ] 壊れたHeader、Offset範囲外、Version不一致を検証する。
+- [x] 汎用Document保存形式と、用途別Runtime Asset形式を別々に定義する。
+- [x] Magic、Version、Endian、Alignment、Offset、Length、互換性規則を定める。
+- [x] C++ structのMemory Dumpをファイル仕様にせず、各フィールドのEncodingを固定する。
+- [x] Asset Compilerで検証、参照解決、変換、依存関係とCache Key生成を行う。
+- [x] memory mapping / zero-copyは形式と寿命が対応する場合にのみ導入する。
+- [x] 壊れたHeader、Offset範囲外、Version不一致を検証する。
 
 完了条件: 少なくとも1つのAssetでソースからRuntime形式を生成・読み込みでき、再ビルドとVersion変更を扱える。
+
+### Phase 10実装結果（2026-11-14）
+
+- 汎用RVBDと専用Runtime AssetのRVCAを分離し、固定Little Endian・Version・Length・Checksumを定義した。
+  構造体Dumpは使わず、所有BufferへMessagePackをParseする。mmap / zero-copyは寿命契約がないため導入しない。
+- 専用設定Assetのv1→v2検証・変換、ソース内の依存ID抽出、共有依存・循環検出、依存GraphのSnapshot化、
+  ソース・依存内容のSHA-256とVersionによるCache照合、同一PathのLock・一時保存・置換を実装した。
+  File I/Oと依存解決は専用Asset側に置き、汎用Data層へAsset / GPU / Scene依存を追加しない。
+- namespaceの閉じ忘れ、符号付きcharでのDigest比較、Cache Miss時の依存二重取得、VS FilterのPathを修正。
+  旧Version拒否、破損・切断・上限超過、Cache再構築、置換失敗時の旧Byte列・出力保持とLock解放を確認した。
+- MSVC CPUテストは既存5,505＋Phase 10の138＝5,643チェック成功、警告0。
+  再実行は`scripts/test-windows-structured-data.ps1`。形式・制限は`Data/Tests/PHASE10_BINARY_ASSETS.md`を参照。
+- アプリDebug増分ビルドはPDB生成無効で成功、既存LNK4098が1件。通常PDBありはリンク段階で
+  完了せず中断したため未検証。今回のログだけでは環境問題の原因までは確定していない。
+- 汎用Asset Compiler、実運用Asset移行、他形式の依存抽出、旧RVCA形式からのMigration、GUI、Sanitizer、
+  電源断耐性・異なるPath表記をまたぐ排他は対象外。強制終了後のLockは手動回復が必要。
+  次は実用途への限定導入と性能評価を推奨する。Phase 11へ自動では進まない。
 
 ## Phase 11 — Network / RPC連携
 
@@ -458,7 +475,7 @@ MessagePackはデータ表現を担当する。接続、配送、暗号化、認
 
 ## 最初の実装範囲
 
-Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phase 7の専用テストAssetへの試験導入も完了。Phase 8の計測・明示的並列Deserializeも完了。Phase 9も編集Document・Editor連携を完了。次は実用途の編集Sessionへの限定導入、またはPhase 10を承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
+Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phase 7の専用テストAssetへの試験導入も完了。Phase 8の計測・明示的並列Deserializeも完了。Phase 9も編集Document・Editor連携を完了。Phase 10も専用Assetのコンパイル・依存解決・Cacheを検証した。次は実運用への限定導入、またはPhase 11を承認候補とする。各Phaseの開始はAGENTS.mdのマイルストーン承認ゲートに従う。
 
 - [x] Asset / Memory / Streamとの接続点と最初の用途を確定した（Phase 0）。
 - [x] 小さいJSONをDataDocumentへ読み込める（Phase 2）。
@@ -468,4 +485,4 @@ Phase 0〜4、Phase 5の明示的Adapter、Phase 6のMessagePackは完了。Phas
 - [x] DocumentとViewの寿命規則が説明・検証されている（Phase 1〜3、Borrowed Bufferは未導入）。
 - [x] 既存`Core::JsonParser`との互換Fixtureが通る（Phase 2、意図した差を含む）。
 
-初期実装（Phase 0〜4）にはReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信を含めなかった。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、Phase 7は専用テストAssetで完了した。Phase 8も計測・明示的並列Deserializeを完了した。Phase 9も編集Document・Editor連携を完了した。次段階は編集Sessionの限定導入と性能評価、またはPhase 10を別承認で進める。
+初期実装（Phase 0〜4）にはReflectionの新規大規模実装、編集DOM、並列化、ネットワーク通信を含めなかった。Phase 5の型付きAdapterとPhase 6のMessagePackを利用し、Phase 7は専用テストAssetで完了した。Phase 8も計測・明示的並列Deserializeを完了した。Phase 9も編集Document・Editor連携を完了した。Phase 10も専用Assetで完了した。次段階は実用途の限定導入と性能評価、またはPhase 11を別承認で進める。

@@ -50,12 +50,13 @@ public:
     static bool IsCacheCurrent(std::string_view compiled, std::string_view sourceJson,
         const std::vector<std::string>& dependencyIds, const DependencyResolver& resolver);
     // 既存Cacheが有効なら再利用し、無効なら再Compileして安全に置換する。
-    // cachePathは信頼できる呼び出し側が指定し、同時Writerの排他は対象外。
+    // cachePathは信頼できる呼び出し側が指定。同じPathの協調Reader/WriterはLockで排他する。
     static bool BuildCached(const std::filesystem::path& cachePath, std::string_view sourceJson,
         const std::vector<std::string>& rootIds, const DependencyResolver& resolver,
         const DependencyEnumerator& enumerate, std::string& output, bool& cacheHit,
         TestAssetError& error);
     static bool Load(std::string_view compiled, TestSettings& output, TestAssetError& error);
 };
+}
 }
 }

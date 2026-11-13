@@ -118,7 +118,12 @@ void PutDigest(std::string& bytes, const Digest& digest)
 bool MatchesDigest(std::string_view bytes, std::size_t offset, const Digest& digest)
 {
     return bytes.size() >= offset + digest.size()
-        && std::equal(digest.begin(), digest.end(), bytes.begin() + offset);
+        && std::equal(digest.begin(), digest.end(), bytes.begin() + offset,
+            [](unsigned char expected, char actual)
+            {
+                // charが符号付きの環境でも0x80以上のDigestを同じByteとして比較する。
+                return expected == static_cast<unsigned char>(actual);
+            });
 }
 void Put(std::string& bytes, std::uint32_t value)
 {
@@ -143,6 +148,10 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
     const CompiledTestAsset::DependencyEnumerator& enumerate,
     std::vector<std::string>& ids, std::map<std::string, std::string>& contents)
 {
+    if (roots.size() > 255)
+    {
+        return false;
+    }
     if (roots.empty())
     {
         return true;
@@ -436,6 +445,11 @@ bool CompiledTestAsset::CompileWithGraph(std::string_view sourceJson,
     error = {};
     try
     {
+        if (sourceJson.size() > TestAssetMaxBytes)
+        {
+            error.Stage = "source size";
+            return false;
+        }
         std::vector<std::string> ids;
         std::map<std::string, std::string> contents;
         if (SnapshotGraph(rootIds, resolver, enumerate, ids, contents) == false)
@@ -517,6 +531,11 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
     cacheHit = false;
     try
     {
+        if (sourceJson.size() > TestAssetMaxBytes)
+        {
+            error.Stage = "source size";
+            return false;
+        }
         // Cache Pathごとの排他Directoryを原子的に作成する。
         // 同時WriterだけでなくReaderも同じLockを取得し、検証から置換までを直列化する。
         // 待機や古いLockの自動削除はしない（他プロセスのLockを奪わないため）。
@@ -530,13 +549,32 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
         }
         struct LockCleanup
         {
-            std::filesystem::path Path;
+            const std::filesystem::path& Path;
             ~LockCleanup()
             {
                 std::error_code ignored;
                 std::filesystem::remove(Path, ignored);
             }
         } lock{lockPath};
+        // Hit判定とMiss後のCompileで同じSnapshotを使用する。
+        // Resolverを再実行すると、一回のBuild内で異なる依存状態を混在させてしまう。
+        std::vector<std::string> ids;
+        std::map<std::string, std::string> contents;
+        if (SnapshotGraph(rootIds, resolver, enumerate, ids, contents) == false)
+        {
+            error.Stage = "dependency graph";
+            return false;
+        }
+        const DependencyResolver snapshot = [&](std::string_view id, std::string& bytes)
+        {
+            const auto found = contents.find(std::string(id));
+            if (found == contents.end())
+            {
+                return false;
+            }
+            bytes = found->second;
+            return true;
+        };
         // Cacheは信用せず、Header・Checksum・依存Snapshotを毎回照合する。
         const auto size = std::filesystem::file_size(cachePath, io);
         if (io.value() == 0 && size <= TestAssetMaxBytes + HeaderSize)
@@ -546,7 +584,7 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
             input.read(cached.data(), static_cast<std::streamsize>(size));
             if (input.fail() == false && input.peek() == std::char_traits<char>::eof()
                 && input.bad() == false
-                && IsGraphCacheCurrent(cached, sourceJson, rootIds, resolver, enumerate))
+                && IsCacheCurrent(cached, sourceJson, ids, snapshot))
             {
                 // 指紋が一致してもPayloadが不正な型付きAssetなら再利用しない。
                 TestSettings verified;
@@ -561,7 +599,7 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
 
         }
         std::string rebuilt;
-        if (CompileWithGraph(sourceJson, rootIds, resolver, enumerate, rebuilt, error) == false)
+        if (CompileWithDependencies(sourceJson, ids, snapshot, rebuilt, error) == false)
         {
             return false;
         }
@@ -587,7 +625,7 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
         }
         struct Cleanup
         {
-            std::filesystem::path Directory;
+            const std::filesystem::path& Directory;
             ~Cleanup()
             {
                 std::error_code ignored;

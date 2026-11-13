@@ -4,6 +4,12 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace Raven
 {
@@ -14,14 +20,20 @@ namespace Tests
 int RunCompiledTestAssetTests()
 {
     int failures = 0;
+    int checks = 0;
     const std::string source = R"({"type":"Raven.StructuredDataTest","version":1,"enabled":true,"samples":[1,2,3]})";
     TestAssetError error;
     std::string compiled = "unchanged";
     auto check = [&](bool ok, const char* name)
     {
+        ++checks;
         if (ok == false) { ++failures; std::cerr << "FAIL: " << name << '\n'; }
     };
     check(CompiledTestAsset::Compile(source, compiled, error), "compile v1 migration");
+    if (failures != 0)
+    {
+        return 1;
+    }
     const auto valid = compiled;
     // SHA-256既知値とHeader内のSource/空依存Manifest指紋を比較する。
     // 期待値は独立したSHA-256実装から取得した固定ベクトル。
@@ -101,6 +113,7 @@ int RunCompiledTestAssetTests()
     // ダイヤモンド依存を許容し、循環とEdge変更は検出する。
     std::string graphLeaf = "leaf-v1";
     bool cyclic = false;
+    bool changedEdge = false;
     const CompiledTestAsset::DependencyResolver graphResolver =
         [&](std::string_view id, std::string& bytes)
         {
@@ -119,7 +132,9 @@ int RunCompiledTestAssetTests()
     const CompiledTestAsset::DependencyEnumerator graphEdges =
         [&](std::string_view id, std::vector<std::string>& children)
         {
-            if (id == "root") { children = {"left", "right"}; }
+            if (id == "root") { children = changedEdge
+                ? std::vector<std::string>{"left", "right", "leaf"}
+                : std::vector<std::string>{"left", "right"}; }
             else if (id == "left" || id == "right") { children = {"leaf"}; }
             else if (id == "leaf" && cyclic) { children = {"root"}; }
             else { children.clear(); }
@@ -133,6 +148,10 @@ int RunCompiledTestAssetTests()
     // 到達ノードが同じでもRoot指定の違いは別のAsset入力として扱う。
     check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root", "left"},
         graphResolver, graphEdges) == false, "root set invalidates cache");
+    changedEdge = true;
+    check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root"},
+        graphResolver, graphEdges) == false, "edge change invalidates cache with same nodes");
+    changedEdge = false;
     graphLeaf = "leaf-v2";
     check(CompiledTestAsset::IsGraphCacheCurrent(graphCompiled, source, {"root"},
         graphResolver, graphEdges) == false, "transitive dependency invalidates cache");
@@ -175,6 +194,37 @@ int RunCompiledTestAssetTests()
         check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
             graphEdges, cachedOutput, hit, error) && hit,
             "cache lock released after successful build");
+        // Cache Missでも各依存を一度だけ取得し、照合とCompileの入力を固定する。
+        unsigned resolutions = 0;
+        const CompiledTestAsset::DependencyResolver countedResolver =
+            [&](std::string_view id, std::string& bytes)
+            {
+                ++resolutions;
+                return graphResolver(id, bytes);
+            };
+        check(CompiledTestAsset::BuildCached(cachePath, source + " ", {"root"}, countedResolver,
+            graphEdges, cachedOutput, hit, error) && hit == false && resolutions == 4,
+            "cache miss resolves each dependency once");
+#ifdef _WIN32
+        // 実ファイルの共有削除禁止で置換失敗を発生させ、旧Byte列も確認する。
+        const auto oldOutput = cachedOutput;
+        const HANDLE held = CreateFileW(cachePath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        check(held != INVALID_HANDLE_VALUE, "hold old cache against replacement");
+        if (held != INVALID_HANDLE_VALUE)
+        {
+            check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+                graphEdges, cachedOutput, hit, error) == false && error.Stage == "cache replace"
+                && hit == false && cachedOutput == oldOutput,
+                "failed replacement preserves output");
+            CloseHandle(held);
+            std::ifstream old(cachePath, std::ios::binary);
+            const std::string oldBytes((std::istreambuf_iterator<char>(old)), {});
+            check(oldBytes == oldOutput, "failed replacement preserves old file bytes");
+            check(std::filesystem::exists(lockPath) == false,
+                "failed replacement releases cache lock");
+        }
+#endif
         // 破損CacheはHitさせず、再構築して復旧する。
         {
             std::ofstream corrupt(cachePath, std::ios::binary | std::ios::trunc);
@@ -190,6 +240,15 @@ int RunCompiledTestAssetTests()
         check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
             graphEdges, cachedOutput, hit, error) && hit == false,
             "persistent cache dependency rebuild");
+        const std::string referencedSource =
+            R"({"type":"Raven.StructuredDataTest","version":1,"enabled":true,"dependencies":["root"]})";
+        check(CompiledTestAsset::BuildCachedFromSource(cachePath, referencedSource, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit == false
+            && CompiledTestAsset::Load(cachedOutput, settings, error),
+            "source references build loadable persistent cache");
+        check(CompiledTestAsset::BuildCachedFromSource(cachePath, referencedSource, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit,
+            "source references persistent cache hit");
         // 存在しない親Directoryへの保存失敗では出力も旧Cacheも変更しない。
         const auto invalidPath = cacheDir / "missing-parent" / "asset.rvca";
         const auto preserved = cachedOutput;
@@ -234,7 +293,31 @@ int RunCompiledTestAssetTests()
     damaged = binary;
     damaged[12] = static_cast<char>(255);
     check(BinaryDocument::Read(damaged, decoded, &dataError) == false, "binary length rejection");
-    std::cout << "Phase10: " << failures << " failures\n";
+    for (std::size_t length = 0; length < binary.size(); ++length)
+    {
+        check(BinaryDocument::Read(std::string_view(binary).substr(0, length), decoded,
+            &dataError) == false && decoded.GetRoot().IsValid(),
+            "binary truncation preserves document");
+    }
+    for (const std::size_t offset : {0u, 8u, 16u, 20u})
+    {
+        damaged = binary;
+        damaged[offset] ^= 1;
+        check(BinaryDocument::Read(damaged, decoded, &dataError) == false
+            && decoded.GetRoot().IsValid(), "binary corrupted field rejected");
+    }
+    damaged = binary + "x";
+    check(BinaryDocument::Read(damaged, decoded, &dataError) == false,
+        "binary trailing bytes rejected");
+    DataLimits smallLimit;
+    smallLimit.MaxInputBytes = 1;
+    check(BinaryDocument::Read(binary, decoded, &dataError, smallLimit) == false
+        && decoded.GetRoot().IsValid(), "binary input limit preserves document");
+    DataDocument invalid;
+    std::string preservedBinary = binary;
+    check(BinaryDocument::Write(invalid, preservedBinary, &dataError) == false
+        && preservedBinary == binary, "binary invalid write preserves output");
+    std::cout << "Phase10: " << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;
 }
 }
