@@ -19,7 +19,7 @@ int RunCompiledTestAssetTests();
 class CompiledTestAsset
 {
 public:
-    static constexpr std::uint32_t Version = 3;
+    static constexpr std::uint32_t Version = 2;
     // IDは安定したAsset識別子。ResolverはIDから現在の依存Asset内容を取得する。
     // 参照が解決できなければCompileは失敗し、既存outputを維持する。
     using DependencyResolver = std::function<bool(std::string_view, std::string&)>;
