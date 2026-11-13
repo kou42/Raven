@@ -1153,4 +1153,11 @@
     <ClCompile Update="Raven\Network\Tests\ControlMessageTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
     <None Include="Raven\Network\Tests\PHASE11_CONTROL_MESSAGES.md"><Filter>Raven\Network\Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Network\Windows" />
+    <ClInclude Update="Raven\Network\Windows\WindowsTcpSocket.h"><Filter>Raven\Network\Windows</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\Windows\WindowsTcpSocket.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
+    <ClInclude Update="Raven\Network\Tests\WindowsTcpTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\Tests\WindowsTcpTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+  </ItemGroup>
 </Project>

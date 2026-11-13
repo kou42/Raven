@@ -1566,3 +1566,9 @@ Raven Structured Data Phase 11 additions (Root/Root/Raven relative paths):
     Network/Tests/ControlMessageTests.h
     Network/Tests/ControlMessageTests.cpp
     Network/Tests/PHASE11_CONTROL_MESSAGES.md
+
+Raven Structured Data Phase 11 Windows TCP additions (Root/Root/Raven relative paths):
+    Network/Windows/WindowsTcpSocket.h
+    Network/Windows/WindowsTcpSocket.cpp
+    Network/Tests/WindowsTcpTests.h
+    Network/Tests/WindowsTcpTests.cpp
