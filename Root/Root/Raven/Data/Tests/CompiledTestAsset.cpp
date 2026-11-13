@@ -60,6 +60,10 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
     const CompiledTestAsset::DependencyEnumerator& enumerate,
     std::vector<std::string>& ids, std::map<std::string, std::string>& contents)
 {
+    if (roots.empty())
+    {
+        return true;
+    }
     if (static_cast<bool>(resolver) == false || static_cast<bool>(enumerate) == false)
     {
         return false;
