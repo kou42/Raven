@@ -3,6 +3,7 @@
 #include "Raven/Data/Formats/Json/JsonParser.h"
 #include <iostream>
 #include <filesystem>
+#include <fstream>
 
 namespace Raven
 {
@@ -135,6 +136,17 @@ int RunCompiledTestAssetTests()
             graphEdges, cachedOutput, hit, error) && hit == false, "persistent cache miss");
         check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
             graphEdges, cachedOutput, hit, error) && hit, "persistent cache hit");
+        // 破損CacheはHitさせず、再構築して復旧する。
+        {
+            std::ofstream corrupt(cachePath, std::ios::binary | std::ios::trunc);
+            corrupt << "damaged";
+        }
+        check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit == false,
+            "corrupted persistent cache rebuild");
+        check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
+            graphEdges, cachedOutput, hit, error) && hit,
+            "repaired persistent cache hit");
         graphLeaf = "leaf-v3";
         check(CompiledTestAsset::BuildCached(cachePath, source, {"root"}, graphResolver,
             graphEdges, cachedOutput, hit, error) && hit == false,
