@@ -132,6 +132,17 @@ bool SnapshotGraph(const std::vector<std::string>& roots,
             return false;
         }
     }
+    // Root集合も指紋に含める。既存Nodeの共有状態が同じでも
+    // エントリポイントの変更がCache Hitにならないようにする。
+    std::string rootRecord;
+    Put(rootRecord, static_cast<std::uint32_t>(sortedRoots.size()));
+    for (const auto& root : sortedRoots)
+    {
+        Put(rootRecord, static_cast<std::uint32_t>(root.size()));
+        rootRecord.append(root);
+    }
+    contents.emplace(std::string("\\x01roots"), std::move(rootRecord));
+    ids.push_back(std::string("\\x01roots"));
     return true;
 }
 std::uint32_t ResolveHash(const std::vector<std::string>& ids,
