@@ -517,8 +517,27 @@ bool CompiledTestAsset::BuildCached(const std::filesystem::path& cachePath,
     cacheHit = false;
     try
     {
-        // Cacheは信用せず、Header・Checksum・依存Snapshotを毎回照合する。
+        // Cache Pathごとの排他Directoryを原子的に作成する。
+        // 同時WriterだけでなくReaderも同じLockを取得し、検証から置換までを直列化する。
+        // 待機や古いLockの自動削除はしない（他プロセスのLockを奪わないため）。
+        auto lockPath = cachePath;
+        lockPath += ".lock";
         std::error_code io;
+        if (std::filesystem::create_directory(lockPath, io) == false)
+        {
+            error.Stage = "cache locked";
+            return false;
+        }
+        struct LockCleanup
+        {
+            std::filesystem::path Path;
+            ~LockCleanup()
+            {
+                std::error_code ignored;
+                std::filesystem::remove(Path, ignored);
+            }
+        } lock{lockPath};
+        // Cacheは信用せず、Header・Checksum・依存Snapshotを毎回照合する。
         const auto size = std::filesystem::file_size(cachePath, io);
         if (io.value() == 0 && size <= TestAssetMaxBytes + HeaderSize)
         {
