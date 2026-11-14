@@ -21,7 +21,7 @@ int main()
     {
 #if RAVEN_ENABLE_DIAGNOSTICS && RAVEN_ENABLE_DIAGNOSTIC_MEASUREMENTS
         Raven::tests::RunDiagnosticSelfTests();
-        std::cout << "Diagnostics: suites=4 failures=0\n";
+        std::cout << "Diagnostics: suites=5 failures=0\n";
 #else
         using namespace Raven::Diagnostics;
         int evaluated = 0;
@@ -97,6 +97,7 @@ $sources = Get-ChildItem (Join-Path $repo 'Root\Root\Raven\Diagnostics') -Recurs
     Where-Object { $Configuration -in @('Debug', 'Release') -or $_.Directory.Name -ne 'Tests' } |
     ForEach-Object { '"' + $_.FullName + '"' }
 $sources += '"' + (Join-Path $repo 'Root\Root\Raven\Core\CPUProfiler.cpp') + '"'
+$sources += '"' + (Join-Path $repo 'Root\Root\Raven\Editor\Panels\DiagnosticsViewModel.cpp') + '"'
 $sources += '"' + (Join-Path $repo 'Root\Root\Raven\Renderer\RHI\RHIResource.cpp') + '"'
 $flags = '/nologo /std:c++20 /utf-8 /EHsc /W4 /DNOMINMAX /D_ENABLE_EXTENDED_ALIGNED_STORAGE'
 if ($Configuration -eq 'Debug') { $flags += ' /Od /MDd /D_DEBUG' }

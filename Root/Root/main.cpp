@@ -20,6 +20,7 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticEventStore.h"
 #include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Diagnostics/BinaryTrace.h"
 #include "Raven/Scene/SceneGame.h"
@@ -149,7 +150,7 @@ int main(int argc, char* argv[])
             try
             {
                 Raven::tests::RunDiagnosticSelfTests();
-                std::cout << "Diagnostics self-tests passed: suites=4 failures=0.\n";
+                std::cout << "Diagnostics self-tests passed: suites=5 failures=0.\n";
                 return 0;
             }
             catch (const std::exception& error)
@@ -489,8 +490,9 @@ int main(int argc, char* argv[])
     // appとそのWorkerが終了した後にSessionがCollectorを停止し、残存イベントをFlushします。
     std::vector<std::unique_ptr<Raven::Diagnostics::IDiagnosticSink>> diagnosticSinks;
     Raven::Diagnostics::DiagnosticFilter consoleFilter;
-    // 高頻度の計測をConsoleへ重複出力するとFile記録も遅れるため、保存時はLogだけを表示します。
-    consoleFilter.IncludeMeasurements = diagnosticTracePath.empty();
+    // 計測はEditor Store/任意のBinaryへ集約します。UIからCaptureを有効にした際も、
+    // 高頻度のConsole重複出力でCollectorを詰まらせないためLog/Validationだけを表示します。
+    consoleFilter.IncludeMeasurements = false;
     diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::ConsoleSink>(std::cout, consoleFilter));
     if (diagnosticTracePath.empty() == false)
     {
@@ -502,6 +504,7 @@ int main(int argc, char* argv[])
         }
         diagnosticSinks.push_back(std::move(trace));
     }
+    diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::DiagnosticStoreSink>(Raven::Diagnostics::GetEditorDiagnosticEventStore()));
     Raven::Diagnostics::DiagnosticSession diagnostics(std::move(diagnosticSinks));
     for (unsigned category = 0; category < Raven::Diagnostics::DiagnosticCategoryCount; ++category)
     {

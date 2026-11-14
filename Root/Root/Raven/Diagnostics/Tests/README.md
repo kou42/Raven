@@ -229,3 +229,23 @@ GPU実機のValidation故障注入・Frame終了・native Resource解放完了�
 
 2026-11-14のM3検証結果: 専用RunnerのDebug/Release各4 suiteと無効化2構成、Engine Debug/Release x64ビルドと両実行ファイルのDiagnostics各4 suite、Debugの実Subsystem比較・Physics Collision・SoftBody統合、CPU UI Debug回帰が成功した。Subsystem比較では同一入力の有効/無効で結果が一致し、SoftBody詳細未収集を0件扱いしないことも確認した。CLI未知名は終了コード1を確認。
 全体ビルドは従来のPDB無効化とGLFW 3.4 native headerの検証用追加参照を使用した。プロジェクトの依存設定は変更していない。全体Debugの既存リンクWarningは2件、Releaseは0件。UIの初回再ビルドには既存C4244が32件とリンクWarning 2件、最終増分ではリンクWarning 2件。専用/W4はalignas由来のC4324がDebug/Release各6件、無効化構成各3件で、今回の診断コードに新規コンパイラWarningはなかった。
+
+## M4: Editor Diagnostics（2026-11-15）
+
+通常SessionはConsole（Log/Validationのみ）、Editor Store、任意のBinary Traceへ同じイベントを配信する。計測のConsole重複出力は、UIのCaptureを有効にしてCollectorを詰まらせないため抑制する。計測の有効化は既存CLIまたはPanelのCapture measurementsで行う。CategoryのCLI無効化は引き続き尊重する。Store SinkとPanelは共有所有権を持つが、WorkerはWidget/Scene/Panelを参照しない。Panel破棄後もStoreとSessionは生存でき、ApplicationとProducer破棄後にSessionを停止する。
+
+Storeは既定8192 slot、8 MiBの保持予算。固定slot容量と可変長文字列capacityを推定byteに含め、件数/byteのいずれかを超える前にFIFO破棄する。allocator overhead、Snapshot、Model、短命なコピーはこの数値に含まない。設定上限は65536 slot / 64 MiB。本文は既存の1024 byte、Validationは既存の名前128/本文1024 byteまでとし、不正入力はコピー前に拒否する。Snapshotも同じ件数上限内の所有コピーで、Panelは最新1つだけを保持する。Store mutex中にDiagnostics APIを呼ばない。Snapshotはtry_lockで競合時に次回へ延期し、取得後のコピー中はCollectorを短時間待たせる。Lock-freeではない。
+
+Panelは表示中に最大5 Hzで更新し、Freezeは表示のみ止める。仮想化UITableは可視セルだけを書式化する（Search時は保持行を検索）。選択は行番号でなくStore通算IDで保持し、Filterで隠れても維持し、Eviction時は解除理由を表示する。Clear APIも通算IDを再利用しない。Inspector本文は独立Scrollで改行の多いNative本文を読める。Captureは既存measurement有効フラグだけを変更し、高コストのSoftBody詳細収集を自動的に有効にしない。
+
+検索は大文字小文字を区別する本文検索で、入力を256 byteに制限する。Severityは下限。Search/SeverityはLog Tableにだけ適用し、Category/Frame/ThreadはLogとTimelineに共通適用する。Frameは空欄=すべて、`?`=Frame非関連の汎用Log、`0`=起動時の既知Frame。未知Frameを現在Frameに割り当てない。Frame/Threadの不正入力は直前の有効Filterを維持し、注意文を表示する。
+
+Counter Graphは同名の生サンプルをTimestamp順に最大512個表示し、Frame Filterに一致する点を黄色にする。Frame Filter外の履歴は残す。最小/最大値を表示し、Thread混在の加算・平均は推測しない。CPU Timelineはns軸とThreadごとのLaneを持ち、最大2048区間/32 Threadを描画する。Rootと子を分け、より深い階層は同じ子段へ重ねる。時刻範囲とLaneのThread IDを表示する。緑は完全なBegin/End、橙は不完全な点で、未記録時間を補間しない。測定行を表示・選択するとScope/Parent IDと完全な区間のns時間を読める。Zoom/階層展開/区間クリックは未提供。
+
+完全性は別々に表示する: StoreのEvicted/Rejected（Clear以降）、process累積Queue Drop/Native stderr fallback、選択範囲のMissing Begin/End/Parent/Invalid。不明な区間の時間や、未収集の詳細Counterを0と扱わない。両端が欠落したScope、stderrだけへ退避したValidationはViewerへ復元できない。FrameはCPU観測値でGPUの原因Frameを保証しない。
+
+新しい診断5番目のsuiteは、Collector→Store配信、件数/byte制限、所有コピー、破棄後の選択、Clear後ID、不正入力、未知Frame、RHI Error検索と同Frame Physics Trace、Counter表示上限、並行Snapshot、10万イベント負荷を確認する。専用RunnerへUI非依存のDiagnosticsViewModel.cppを追加した。CPU UI回帰は実入力経路のSearchと選択、Detach後のStore寿命、8192イベント/40 Threadでの2種類のChart描画上限を検証する。Dockの7 Panel復元と既存の保存/切り離し回帰も実行する。
+
+検証結果: 専用Debug/Release各5 suite、Disabled/MeasurementsDisabled各1 suite、Engine Debug/Release x64と両Diagnostics 5 suite、DebugのExplicit Frame/Physics Collision/SoftBody統合、CPU UI Debugが終了コード0。10万件投入からSnapshot/Modelまでの単発計測は専用Debug約79.8 ms / Release約7.9 ms、既定Store保持推定1638400 byte（1.56 MiB）。Counter主体の入力であり、全入力に対する上限時間ではない。8192イベント・40 Thread・3072 Trace区間のSnapshot/Model/Chart CPU更新はDebug約59.6 ms。5 HzでもDebugの飽和時にはstutterの可能性があり、必要時はFrame/Thread FilterとFreezeを使う。性能保証/合否時間閾値は設けていない。
+
+全体ビルドは従来のPDB無効化とGLFW 3.4 native headerの検証用追加参照を使用した。既存リンクWarningはDebug/UI各2、Release 0。UIテスト再コンパイルの既存C4244は32件。専用/W4の既存C4324はDebug/Release各6、無効化各3。新規Warningはない。実GPU画面はcomputer-useでRelease実行ファイルの起動を試したがtargetable windowがなく、fresh inventoryにもRavenは存在しなかったため、描画・Dock操作の実画面確認は未検証。Native Validation故障注入はM3同様未検証。M5以降は対象外。

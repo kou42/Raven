@@ -8,4 +8,5 @@ void RunDiagnosticSelfTests();
 void RunDiagnosticSinkSelfTests();
 void RunDiagnosticMeasurementSelfTests();
 void RunDiagnosticSubsystemSelfTests();
+void RunDiagnosticViewerSelfTests();
 }

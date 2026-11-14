@@ -291,6 +291,7 @@ void RunDiagnosticSelfTests()
     RunDiagnosticSinkSelfTests();
     RunDiagnosticMeasurementSelfTests();
     RunDiagnosticSubsystemSelfTests();
+    RunDiagnosticViewerSelfTests();
 
 }
 }
