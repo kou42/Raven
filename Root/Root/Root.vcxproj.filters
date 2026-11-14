@@ -1131,4 +1131,77 @@
   <ItemGroup>
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md"><Filter>Raven\Data\Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Data\Formats\Binary\BinaryDocument.h"><Filter>Raven\Data\Formats\Binary</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\Formats\Binary\BinaryDocument.cpp"><Filter>Raven\Data\Formats\Binary</Filter></ClCompile>
+    <ClInclude Update="Raven\Data\Tests\CompiledTestAsset.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Data\Tests\CompiledTestAsset.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Data\Tests\CompiledTestAssetTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup><Filter Include="Raven\Data\Formats\Binary" /></ItemGroup>
+  <ItemGroup>
+    <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md"><Filter>Raven\Data\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Network" />
+    <Filter Include="Raven\Network\Tests" />
+    <ClInclude Update="Raven\Network\ControlMessageCodec.h"><Filter>Raven\Network</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\ControlMessageCodec.cpp"><Filter>Raven\Network</Filter></ClCompile>
+    <ClInclude Update="Raven\Network\ControlMessageReceiver.h"><Filter>Raven\Network</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\ControlMessageReceiver.cpp"><Filter>Raven\Network</Filter></ClCompile>
+    <ClInclude Update="Raven\Network\Tests\ControlMessageTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\Tests\ControlMessageTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <None Include="Raven\Network\Tests\PHASE11_CONTROL_MESSAGES.md"><Filter>Raven\Network\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Network\Windows" />
+    <ClInclude Update="Raven\Network\Windows\WindowsTcpSocket.h"><Filter>Raven\Network\Windows</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\Windows\WindowsTcpSocket.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
+    <ClInclude Update="Raven\Network\Tests\WindowsTcpTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
+    <ClCompile Update="Raven\Network\Tests\WindowsTcpTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Network\Tests\ControlMessageBenchmarks.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <None Include="Raven\Network\Tests\PHASE11_MEASUREMENTS.md"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11Time.csv"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11Memory.csv"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11Traffic.csv"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11TimeMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
+    <None Include="Raven\Network\Tests\Phase11MemoryMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticSink.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticSink.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\BinaryTrace.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\BinaryTrace.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticSinkSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <None Include="Raven\Diagnostics\Tests\README.md"><Filter>Raven\\Diagnostics\\Tests</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticMetric.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticMetric.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticMeasurement.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticMeasurement.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\MeasurementTimeline.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\MeasurementTimeline.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticMeasurementSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Renderer\RHI\RHISceneMeshRenderer.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticValidation.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticValidation.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticSubsystemSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClInclude Update="Raven\Renderer\RendererFrameDiagnostics.h"><Filter>Raven\Renderer</Filter></ClInclude>
+    <ClCompile Update="Raven\Renderer\RendererFrameDiagnostics.cpp"><Filter>Raven\Renderer</Filter></ClCompile>
+    <ClCompile Update="Raven\Renderer\RHI\RHIResource.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticEventStore.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticEventStore.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticViewerSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Editor\Panels\DiagnosticsViewModel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\DiagnosticsViewModel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\DiagnosticsRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\DiagnosticsRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+  </ItemGroup>
 </Project>

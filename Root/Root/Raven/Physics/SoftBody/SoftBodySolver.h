@@ -388,6 +388,8 @@ public:
 private:
     // Step開始時の位置をPreviousPositionへ保存し、重力とVelocityから予測位置を作ります。
     void PredictPositions(float deltaTime);
+    // Step完了後の集計値だけを発行します。通常Stepで前回の自己衝突値を送らないため区別します。
+    void PublishDiagnosticCounters(bool includeParticleTriangles) const;
 
     // Distance / Dihedral ConstraintのLambdaをStep開始時に0へ戻します。
     void ResetConstraintLambdas();

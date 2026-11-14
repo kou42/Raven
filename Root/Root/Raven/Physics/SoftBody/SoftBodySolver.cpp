@@ -1,4 +1,5 @@
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 
 #include <algorithm>
 #include <cassert>
@@ -409,6 +410,7 @@ void SoftBodySolver::Clear()
 
 void SoftBodySolver::Step(float deltaTime)
 {
+    Diagnostics::ProfiledTraceScope trace("SoftBody.Solver.Step", Diagnostics::DiagnosticCategory::SoftBody);
     // XPBDでは alphaTilde = compliance / dt^2 を使用するため、dt <= 0では計算できません。
     // Pauseや初期化時に0秒更新が来ても安全に終了します。
     if (deltaTime <= 0.0f)
@@ -434,6 +436,35 @@ void SoftBodySolver::Step(float deltaTime)
     }
 
     UpdateVelocities(deltaTime);
+    PublishDiagnosticCounters(false);
+}
+
+void SoftBodySolver::PublishDiagnosticCounters(bool includeParticleTriangles) const
+{
+    using namespace Diagnostics;
+    if (IsMeasurementsEnabled() == false || IsDiagnosticCategoryEnabled(DiagnosticCategory::SoftBody) == false)
+    {
+        return;
+    }
+    RecordCounter("SoftBody.Particles", static_cast<double>(m_Particles.size()), DiagnosticCategory::SoftBody);
+    RecordCounter("SoftBody.DistanceConstraints", static_cast<double>(m_DistanceConstraints.size()), DiagnosticCategory::SoftBody);
+    RecordCounter("SoftBody.DihedralConstraints", static_cast<double>(m_DihedralConstraints.size()), DiagnosticCategory::SoftBody);
+    RecordCounter("SoftBody.SolverIterations", std::max(1u, m_Settings.SolverIterations), DiagnosticCategory::SoftBody);
+    if (includeParticleTriangles == true)
+    {
+        // 統計は全iteration合算済みです。Candidate列のclear後も値はStep単位で保持されます。
+        const auto& statistics = m_ParticleTriangleCollisionStatistics;
+        RecordCounter("SoftBody.ParticleTriangle.Candidates", static_cast<double>(statistics.CandidateCount), DiagnosticCategory::SoftBody);
+        RecordCounter("SoftBody.ParticleTriangle.NarrowPhase", static_cast<double>(statistics.NarrowPhaseCount), DiagnosticCategory::SoftBody);
+        RecordCounter("SoftBody.ParticleTriangle.DetailedCollected",
+            m_Settings.DetailedParticleTriangleProfilingEnabled == true ? 1.0 : 0.0, DiagnosticCategory::SoftBody);
+        // 詳細収集を勝手に有効化せず、未収集を「補正0件」と誤表示することも避けます。
+        if (m_Settings.DetailedParticleTriangleProfilingEnabled == true)
+        {
+            RecordCounter("SoftBody.ParticleTriangle.Constraints", static_cast<double>(statistics.ConstraintCount), DiagnosticCategory::SoftBody);
+            RecordCounter("SoftBody.ParticleTriangle.Corrections", static_cast<double>(statistics.PositionCorrectionCount), DiagnosticCategory::SoftBody);
+        }
+    }
 }
 
 void SoftBodySolver::PredictPositions(float deltaTime)

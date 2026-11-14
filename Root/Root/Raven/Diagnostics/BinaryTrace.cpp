@@ -1,0 +1,364 @@
+#include "Raven/Diagnostics/BinaryTrace.h"
+
+#include <array>
+#include <algorithm>
+#include <bit>
+#include <limits>
+#include <utility>
+
+namespace Raven::Diagnostics
+{
+namespace
+{
+constexpr std::array<unsigned char, 8> Magic{ 'R', 'V', 'N', 'D', 'I', 'A', 'G', 0 };
+constexpr std::size_t FileHeaderBytes = 16;
+constexpr std::size_t EventHeaderBytes = 40;
+constexpr std::size_t MetricHeaderBytes = 36;
+constexpr std::size_t ValidationHeaderBytes = 32;
+constexpr std::size_t MaxValidationPayloadBytes = ValidationHeaderBytes + MaxValidationNameBytes + MaxValidationMessageBytes;
+constexpr std::size_t MaxRecordBytes = EventHeaderBytes + MaxValidationPayloadBytes;
+static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);
+
+void Store(unsigned char* bytes, std::uint64_t value, std::size_t count)
+{
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        bytes[index] = static_cast<unsigned char>(value >> (index * 8));
+    }
+}
+
+std::uint64_t Load(const unsigned char* bytes, std::size_t count)
+{
+    std::uint64_t value = 0;
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        value |= static_cast<std::uint64_t>(bytes[index]) << (index * 8);
+    }
+    return value;
+}
+
+bool WriteBytes(std::ostream& output, const unsigned char* bytes, std::size_t count)
+{
+    output.write(reinterpret_cast<const char*>(bytes), static_cast<std::streamsize>(count));
+    return output.good();
+}
+
+TraceReadResult ReadBytes(std::istream& input, unsigned char* bytes, std::size_t count)
+{
+    try
+    {
+        input.read(reinterpret_cast<char*>(bytes), static_cast<std::streamsize>(count));
+    }
+    catch (const std::ios_base::failure&)
+    {
+        // exceptions()が設定されたstreamでも、通常のEOF/途中切断を結果値へ統一します。
+        return input.bad() == true ? TraceReadResult::IOError : TraceReadResult::InvalidData;
+    }
+    if (input.bad() == true)
+    {
+        return TraceReadResult::IOError;
+    }
+    return input.gcount() == static_cast<std::streamsize>(count)
+        ? TraceReadResult::Event : TraceReadResult::InvalidData;
+}
+}
+
+bool WriteBinaryTraceHeader(std::ostream& output)
+{
+    std::array<unsigned char, FileHeaderBytes> bytes{};
+    std::copy(Magic.begin(), Magic.end(), bytes.begin());
+    Store(bytes.data() + 8, 1, 2);
+    Store(bytes.data() + 10, 2, 2);
+    return WriteBytes(output, bytes.data(), bytes.size());
+}
+
+bool WriteBinaryTraceEvent(std::ostream& output, const DiagnosticEvent& event)
+{
+    if (event.Id == 0 || DiagnosticFilter{}.Accepts(event) == false)
+    {
+        return false;
+    }
+    std::array<unsigned char, 4 + MaxRecordBytes> bytes{};
+    auto* record = bytes.data() + 4;
+    Store(record, event.Id, 8);
+    Store(record + 8, event.TimestampNanoseconds, 8);
+    Store(record + 16, event.ThreadId, 8);
+    Store(record + 24, event.Sequence, 8);
+    record[32] = static_cast<unsigned char>(event.Category);
+    record[33] = static_cast<unsigned char>(event.Severity);
+    std::size_t payloadSize = 8;
+    if (const auto* integer = std::get_if<std::int64_t>(&event.Payload); integer != nullptr)
+    {
+        record[34] = 1;
+        Store(record + EventHeaderBytes, std::bit_cast<std::uint64_t>(*integer), 8);
+    }
+    else if (const auto* real = std::get_if<double>(&event.Payload); real != nullptr)
+    {
+        record[34] = 2;
+        Store(record + EventHeaderBytes, std::bit_cast<std::uint64_t>(*real), 8);
+    }
+    else if (const auto* boolean = std::get_if<bool>(&event.Payload); boolean != nullptr)
+    {
+        record[34] = 3;
+        payloadSize = 1;
+        record[EventHeaderBytes] = *boolean == true ? 1 : 0;
+    }
+    else if (const auto* metric = std::get_if<DiagnosticMetric>(&event.Payload); metric != nullptr)
+    {
+        if (metric->IsValid() == false)
+        {
+            return false;
+        }
+        record[34] = 5;
+        auto* encoded = record + EventHeaderBytes;
+        encoded[0] = static_cast<unsigned char>(metric->Kind);
+        Store(encoded + 2, metric->NameBytes, 2);
+        Store(encoded + 4, metric->FrameId, 8);
+        Store(encoded + 12, metric->ScopeId, 8);
+        Store(encoded + 20, metric->ParentScopeId, 8);
+        Store(encoded + 28, std::bit_cast<std::uint64_t>(metric->Value), 8);
+        std::copy_n(metric->Name.begin(), metric->NameBytes, encoded + MetricHeaderBytes);
+        payloadSize = MetricHeaderBytes + metric->NameBytes;
+    }
+    else if (const auto* validation = std::get_if<DiagnosticValidation>(&event.Payload); validation != nullptr)
+    {
+        if (validation->IsValid() == false)
+        {
+            return false;
+        }
+        record[34] = 6;
+        auto* encoded = record + EventHeaderBytes;
+        encoded[0] = static_cast<unsigned char>(validation->Backend);
+        encoded[1] = static_cast<unsigned char>((validation->NameTruncated ? 1u : 0u)
+            | (validation->MessageTruncated ? 2u : 0u));
+        Store(encoded + 2, validation->Name.size(), 2);
+        Store(encoded + 4, validation->Message.size(), 2);
+        Store(encoded + 8, std::bit_cast<std::uint64_t>(validation->MessageId), 8);
+        Store(encoded + 16, validation->NativeSeverity, 4);
+        Store(encoded + 20, validation->NativeType, 4);
+        Store(encoded + 24, validation->FrameId, 8);
+        auto* text = encoded + ValidationHeaderBytes;
+        std::copy(validation->Name.begin(), validation->Name.end(), text);
+        std::copy(validation->Message.begin(), validation->Message.end(), text + validation->Name.size());
+        payloadSize = ValidationHeaderBytes + validation->Name.size() + validation->Message.size();
+    }
+    else
+    {
+        const auto* text = std::get_if<std::string>(&event.Payload);
+        if (text == nullptr || text->size() > MaxDiagnosticTextBytes)
+        {
+            return false;
+        }
+        record[34] = 4;
+        payloadSize = text->size();
+        std::copy(text->begin(), text->end(), record + EventHeaderBytes);
+    }
+    Store(record + 36, payloadSize, 4);
+    Store(bytes.data(), EventHeaderBytes + payloadSize, 4);
+    return WriteBytes(output, bytes.data(), 4 + EventHeaderBytes + payloadSize);
+}
+
+BinaryTraceReader::BinaryTraceReader(std::istream& input)
+    : m_Input(input)
+{
+}
+
+TraceReadResult BinaryTraceReader::ReadNext(DiagnosticEvent& event)
+{
+    if (m_Result != TraceReadResult::Event)
+    {
+        return m_Result;
+    }
+    if (m_HeaderRead == false)
+    {
+        std::array<unsigned char, FileHeaderBytes> header{};
+        m_Result = ReadBytes(m_Input, header.data(), header.size());
+        if (m_Result != TraceReadResult::Event)
+        {
+            return m_Result;
+        }
+        if (std::equal(Magic.begin(), Magic.end(), header.begin()) == false)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        if (Load(header.data() + 8, 2) != 1 || Load(header.data() + 10, 2) > 2)
+        {
+            return m_Result = TraceReadResult::UnsupportedVersion;
+        }
+        if (Load(header.data() + 12, 4) != 0)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        m_HeaderRead = true;
+        m_MinorVersion = static_cast<std::uint16_t>(Load(header.data() + 10, 2));
+    }
+
+    std::array<unsigned char, 4> length{};
+    m_Result = ReadBytes(m_Input, length.data(), length.size());
+    if (m_Result != TraceReadResult::Event)
+    {
+        // record境界でのEOFだけを正常終了とし、途中切断はInvalidDataにします。
+        if (m_Input.bad() == false && m_Input.eof() == true && m_Input.gcount() == 0)
+        {
+            m_Result = TraceReadResult::EndOfStream;
+        }
+        return m_Result;
+    }
+    const auto size = static_cast<std::size_t>(Load(length.data(), length.size()));
+    const auto limit = m_MinorVersion >= 2 ? MaxRecordBytes : EventHeaderBytes + MaxDiagnosticTextBytes;
+    if (size < EventHeaderBytes || size > limit)
+    {
+        return m_Result = TraceReadResult::InvalidData;
+    }
+    // 外部入力のsizeに応じたHeap確保を行わず、常に上限付きの作業領域で検証します。
+    std::array<unsigned char, MaxRecordBytes> record{};
+    m_Result = ReadBytes(m_Input, record.data(), size);
+    if (m_Result != TraceReadResult::Event)
+    {
+        return m_Result;
+    }
+    const auto payloadSize = static_cast<std::size_t>(Load(record.data() + 36, 4));
+    if (payloadSize != size - EventHeaderBytes || record[35] != 0)
+    {
+        return m_Result = TraceReadResult::InvalidData;
+    }
+    DiagnosticEvent decoded;
+    decoded.Id = Load(record.data(), 8);
+    decoded.TimestampNanoseconds = Load(record.data() + 8, 8);
+    decoded.ThreadId = Load(record.data() + 16, 8);
+    decoded.Sequence = Load(record.data() + 24, 8);
+    decoded.Category = static_cast<DiagnosticCategory>(record[32]);
+    decoded.Severity = static_cast<DiagnosticSeverity>(record[33]);
+    if (decoded.Id == 0 || DiagnosticFilter{}.Accepts(decoded) == false)
+    {
+        return m_Result = TraceReadResult::InvalidData;
+    }
+    if (m_MinorVersion < 2 && decoded.Category == DiagnosticCategory::SoftBody)
+    {
+        return m_Result = TraceReadResult::InvalidData;
+    }
+    const auto* payload = record.data() + EventHeaderBytes;
+    switch (record[34])
+    {
+    case 1:
+    case 2:
+        if (payloadSize != 8)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        if (record[34] == 1)
+        {
+            decoded.Payload = std::bit_cast<std::int64_t>(Load(payload, 8));
+        }
+        else
+        {
+            decoded.Payload = std::bit_cast<double>(Load(payload, 8));
+        }
+        break;
+    case 3:
+        if (payloadSize != 1 || payload[0] > 1)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        decoded.Payload = payload[0] == 1;
+        break;
+    case 4:
+        if (payloadSize > MaxDiagnosticTextBytes)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        decoded.Payload = std::string(reinterpret_cast<const char*>(payload), payloadSize);
+        break;
+    case 5:
+    {
+        if (m_MinorVersion < 1 || payloadSize < MetricHeaderBytes || payload[1] != 0)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        DiagnosticMetric metric;
+        metric.Kind = static_cast<DiagnosticMetricKind>(payload[0]);
+        metric.NameBytes = static_cast<std::uint16_t>(Load(payload + 2, 2));
+        if (metric.NameBytes > MaxDiagnosticMetricNameBytes || payloadSize != MetricHeaderBytes + metric.NameBytes)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        metric.FrameId = Load(payload + 4, 8);
+        metric.ScopeId = Load(payload + 12, 8);
+        metric.ParentScopeId = Load(payload + 20, 8);
+        metric.Value = std::bit_cast<double>(Load(payload + 28, 8));
+        std::copy_n(payload + MetricHeaderBytes, metric.NameBytes, metric.Name.begin());
+        if (metric.IsValid() == false)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        decoded.Payload = metric;
+        break;
+    }
+    case 6:
+    {
+        if (m_MinorVersion < 2 || payloadSize < ValidationHeaderBytes
+            || (payload[1] & ~3u) != 0 || Load(payload + 6, 2) != 0)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        const auto nameBytes = static_cast<std::size_t>(Load(payload + 2, 2));
+        const auto messageBytes = static_cast<std::size_t>(Load(payload + 4, 2));
+        if (nameBytes > MaxValidationNameBytes || messageBytes > MaxValidationMessageBytes
+            || payloadSize != ValidationHeaderBytes + nameBytes + messageBytes)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        DiagnosticValidation validation;
+        validation.Backend = static_cast<DiagnosticValidationBackend>(payload[0]);
+        validation.NameTruncated = (payload[1] & 1u) != 0;
+        validation.MessageTruncated = (payload[1] & 2u) != 0;
+        validation.MessageId = std::bit_cast<std::int64_t>(Load(payload + 8, 8));
+        validation.NativeSeverity = static_cast<std::uint32_t>(Load(payload + 16, 4));
+        validation.NativeType = static_cast<std::uint32_t>(Load(payload + 20, 4));
+        validation.FrameId = Load(payload + 24, 8);
+        validation.Name.assign(reinterpret_cast<const char*>(payload + ValidationHeaderBytes), nameBytes);
+        validation.Message.assign(reinterpret_cast<const char*>(payload + ValidationHeaderBytes + nameBytes), messageBytes);
+        if (validation.IsValid() == false)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        decoded.Payload = std::move(validation);
+        break;
+    }
+    default:
+        return m_Result = TraceReadResult::InvalidData;
+    }
+    // 失敗したrecordでは呼出側のeventを書き換えず、検証済みの所有Payloadだけを公開します。
+    event = std::move(decoded);
+    return TraceReadResult::Event;
+}
+
+BinaryTraceSink::BinaryTraceSink(const std::filesystem::path& path, DiagnosticFilter filter)
+    : m_Output(path, std::ios::out | std::ios::binary | std::ios::trunc), m_Filter(filter)
+{
+    if (WriteBinaryTraceHeader(m_Output) == false)
+    {
+        m_Output.setstate(std::ios::failbit);
+    }
+}
+
+bool BinaryTraceSink::IsOpen() const noexcept
+{
+    return m_Output.is_open() && m_Output.good();
+}
+
+bool BinaryTraceSink::Write(const DiagnosticEvent& event)
+{
+    if (m_Filter.Accepts(event) == true && WriteBinaryTraceEvent(m_Output, event) == false)
+    {
+        return false;
+    }
+    return IsOpen();
+}
+
+bool BinaryTraceSink::Flush()
+{
+    m_Output.flush();
+    return IsOpen();
+}
+}

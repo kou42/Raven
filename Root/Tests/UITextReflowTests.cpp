@@ -16,6 +16,7 @@
 #include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
+#include "Raven/Editor/Panels/DiagnosticsRavenPanel.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
 #include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchySnapshot.h"
@@ -1358,6 +1359,87 @@ void TestSceneHierarchyRavenPanel()
         "hierarchy Raven panel releases root ownership");
 }
 
+void TestDiagnosticsRavenPanel()
+{
+    Raven::UIContext context;
+    const auto roots = context.GetRootElement().GetChildren().size();
+    auto store = std::make_shared<Raven::Diagnostics::DiagnosticEventStore>();
+    Raven::Diagnostics::DiagnosticEvent event;
+    event.Id = 1; event.ThreadId = 77; event.Payload = std::string("RHI test message");
+    store->Append(event);
+    Raven::DiagnosticsRavenPanel panel;
+    Check(panel.Attach(context, nullptr, store), "diagnostics attach");
+    Check(panel.GetModel().GetRows().size() == 1, "diagnostics snapshot ownership");
+    Raven::UITable* table = nullptr;
+    Raven::UIInputText* search = nullptr;
+    std::function<void(Raven::UIElement&)> visit = [&](Raven::UIElement& element)
+    {
+        if (auto* candidate = dynamic_cast<Raven::UITable*>(&element); candidate != nullptr) { table = candidate; }
+        if (search == nullptr) { search = dynamic_cast<Raven::UIInputText*>(&element); }
+        for (const auto& child : element.GetChildren()) { visit(*child); }
+    };
+    visit(*panel.GetRootElement());
+    Check(table != nullptr && search != nullptr, "diagnostics filter and table widgets");
+    table->SelectRow(0);
+    Check(panel.GetModel().GetSelectedEvent() != nullptr, "diagnostics table detail binding");
+    Check(context.SetFocus(search), "diagnostics search focus");
+    context.RouteCharacterEvent('z');
+    Check(panel.GetModel().GetRows().empty() && panel.GetModel().GetSelectedEvent() != nullptr,
+        "diagnostics search hides row without changing event identity");
+    Raven::UIDrawList list;
+    panel.GetRootElement()->BuildDrawList(list);
+    Check(list.GetCommands().empty() == false, "diagnostics CPU draw commands");
+    Raven::Diagnostics::DiagnosticMetric metric;
+    metric.SetName("Counter"); metric.Value = 7;
+    event.Payload = metric; store->Append(event);
+    metric.Kind = Raven::Diagnostics::DiagnosticMetricKind::TraceBegin; metric.ScopeId = 1; metric.Value = 0;
+    event.Payload = metric; event.TimestampNanoseconds = 10; store->Append(event);
+    metric.Kind = Raven::Diagnostics::DiagnosticMetricKind::TraceEnd;
+    event.Payload = metric; event.TimestampNanoseconds = 20; event.Sequence = 1; store->Append(event);
+    panel.Update(1.0f);
+    // 既定Storeを満たし、CPU側のGraph/Timelineが可視上限以上のGeometryを生成しないことを確認します。
+    metric.Kind = Raven::Diagnostics::DiagnosticMetricKind::Counter; metric.ScopeId = 0;
+    for (std::uint64_t i = 0; i < 2048; ++i)
+    {
+        metric.Value = static_cast<double>(i); event.Payload = metric;
+        event.TimestampNanoseconds = i; store->Append(event);
+    }
+    metric.Value = 0;
+    for (std::uint64_t i = 0; i < 3072; ++i)
+    {
+        metric.ScopeId = i + 2; metric.Kind = Raven::Diagnostics::DiagnosticMetricKind::TraceBegin;
+        event.ThreadId = i % 40 + 1; event.TimestampNanoseconds = i * 10; event.Sequence = i * 2 + 2;
+        event.Payload = metric; store->Append(event);
+        metric.Kind = Raven::Diagnostics::DiagnosticMetricKind::TraceEnd;
+        event.TimestampNanoseconds += 5; ++event.Sequence; event.Payload = metric; store->Append(event);
+    }
+    const auto drawBegin = std::chrono::steady_clock::now();
+    panel.Update(1.0f);
+    Check(panel.GetModel().GetSnapshot()->Events.size() == 8192, "diagnostics production history cap");
+    std::size_t charts = 0;
+    std::function<void(Raven::UIElement&)> drawCharts = [&](Raven::UIElement& element)
+    {
+        if (element.GetName() == "DiagnosticsCounterGraph" || element.GetName() == "DiagnosticsTraceTimeline")
+        {
+            Raven::UIDrawList chart;
+            element.BuildDrawList(chart);
+            Check(chart.GetCommands().size() >= 2 && chart.GetCommands().size() <= 2049,
+                "diagnostics chart emits bounded geometry for actual measurements");
+            ++charts;
+        }
+        for (const auto& child : element.GetChildren()) { drawCharts(*child); }
+    };
+    drawCharts(*panel.GetRootElement());
+    Check(charts == 2, "diagnostics counter and CPU timeline rendered");
+    std::cout << "diagnostics_ui_snapshot_model_charts_ms=" <<
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawBegin).count() << '\n';
+    panel.Detach();
+    Check(panel.IsAttached() == false && context.GetRootElement().GetChildren().size() == roots,
+        "diagnostics detaches callbacks before model destruction");
+    store->Append(event);
+    Check(store->TrySnapshot(0)->Events.size() == 8192, "collector store outlives panel");
+}
+
 void TestAnimationDebugRavenPanel()
 {
     Raven::UIContext context;
@@ -1577,7 +1659,7 @@ void TestEditorDockLayoutPolicy()
     namespace fs = std::filesystem;
     const Raven::UIDockSpaceSnapshot defaults = Raven::CreateDefaultEditorDockLayout();
     Check(Raven::kUIDockSnapshotVersion == 1u, "editor dock snapshot version");
-    Check(defaults.Structure.size() == 7u && defaults.Tabs.size() == 6u &&
+    Check(defaults.Structure.size() == 7u && defaults.Tabs.size() == 7u &&
         defaults.Selections.size() == 4u, "editor dock default shape");
     Check(std::all_of(defaults.Tabs.begin(), defaults.Tabs.end(),
         [](const Raven::UIDockTabRecord& record)
@@ -1594,7 +1676,7 @@ void TestEditorDockLayoutPolicy()
         return std::make_unique<Raven::UIElement>();
     };
     Check(restored.RestoreSnapshot(defaults, factory), "editor dock default restores");
-    Check(created == 6, "editor dock creates every panel");
+    Check(created == 7, "editor dock creates every panel");
 
     // CI/Sandboxでも原子的renameが許可されるWorkspace配下に一時Directoryを作ります。
     const fs::path directory = fs::current_path() /
@@ -4874,6 +4956,7 @@ int main()
     TestAnimationDebugActions();
     TestAnimationDebugSnapshot();
     TestAnimationDebugRavenPanel();
+    TestDiagnosticsRavenPanel();
     TestSceneHierarchySnapshot();
     TestSceneHierarchyRenameCommand();
     TestSceneHierarchyReparentCommand();

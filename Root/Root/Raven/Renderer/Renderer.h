@@ -67,6 +67,8 @@ public:
     static void Shutdown();
 
     static void BeginFrame();
+    // 全描画後の既存統計を発行します。状態をResetせず、GPU操作も行いません。
+    static void PublishFrameDiagnostics();
 
     // Cameraを伴う通常の3D Scene描画入口です。
     // BeginSceneからEndSceneまで、このCameraが通常描画とDebug Passの共通Contextになります。

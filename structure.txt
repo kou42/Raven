@@ -401,6 +401,20 @@ D:.
     |   |   |           Startup.svg
     |   |   |           Viewer.html
     |   |   +---Diagnostics
+    |   |   |   |   BinaryTrace.cpp
+    |   |   |   |   BinaryTrace.h
+    |   |   |   |   DiagnosticEventStore.cpp
+    |   |   |   |   DiagnosticEventStore.h
+    |   |   |   |   DiagnosticSink.cpp
+    |   |   |   |   DiagnosticSink.h
+    |   |   |   |   DiagnosticMetric.cpp
+    |   |   |   |   DiagnosticMetric.h
+    |   |   |   |   DiagnosticMeasurement.cpp
+    |   |   |   |   DiagnosticMeasurement.h
+    |   |   |   |   MeasurementTimeline.cpp
+    |   |   |   |   MeasurementTimeline.h
+    |   |   |   |   DiagnosticValidation.cpp
+    |   |   |   |   DiagnosticValidation.h
     |   |   |   |   DiagnosticAPI.cpp
     |   |   |   |   DiagnosticAPI.h
     |   |   |   |   DiagnosticCollector.cpp
@@ -409,8 +423,13 @@ D:.
     |   |   |   |   EventBuffer.h
     |   |   |   |
     |   |   |   \---Tests
+    |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
+    |   |   |           DiagnosticViewerSelfTests.cpp
+    |   |   |           DiagnosticSubsystemSelfTests.cpp
+    |   |   |           DiagnosticSinkSelfTests.cpp
+    |   |   |           README.md
     |   |   +---Editor
     |   |   |   |   EditorCamera.cpp
     |   |   |   |   EditorCamera.h
@@ -454,6 +473,10 @@ D:.
     |   |   |   |       AnimationDebugRavenPanel.h
     |   |   |   |       AnimationDebugSnapshot.cpp
     |   |   |   |       AnimationDebugSnapshot.h
+    |   |   |   |       DiagnosticsRavenPanel.cpp
+    |   |   |   |       DiagnosticsRavenPanel.h
+    |   |   |   |       DiagnosticsViewModel.cpp
+    |   |   |   |       DiagnosticsViewModel.h
     |   |   |   |       EditorViewportRavenPanel.cpp
     |   |   |   |       EditorViewportRavenPanel.h
     |   |   |   |       InspectorRavenPanel.cpp
@@ -895,6 +918,8 @@ D:.
     |   |   |   |   GraphicsContext.h
     |   |   |   |   RenderCommand.cpp
     |   |   |   |   RenderCommand.h
+    |   |   |   |   RendererFrameDiagnostics.cpp
+    |   |   |   |   RendererFrameDiagnostics.h
     |   |   |   |   Renderer.cpp
     |   |   |   |   Renderer.h
     |   |   |   |
@@ -961,9 +986,11 @@ D:.
     |   |   |   |       RHIMaterialProperties.h
     |   |   |   |       RHIOffscreenRenderTarget.cpp
     |   |   |   |       RHIOffscreenRenderTarget.h
+    |   |   |   |       RHIResource.cpp
     |   |   |   |       RHIResource.h
     |   |   |   |       RHISceneDrawItemBuilder.h
     |   |   |   |       RHISceneFrameLifecycle.h
+    |   |   |   |       RHISceneMeshRenderer.cpp
     |   |   |   |       RHISceneMeshRenderer.h
     |   |   |   |       RHIShaderBinaryLoader.cpp
     |   |   |   |       RHIShaderBinaryLoader.h
@@ -1549,3 +1576,35 @@ Raven Scene Graph SG5 additions (Root/Root/Raven relative paths):
     Scene/Tests/SceneRuntimeComparisonTests.h
     Scene/Tests/SceneRuntimeComparisonTests.cpp
     Renderer/RHI/RHISceneDrawItemBuilder.cpp
+
+Raven Structured Data Phase 10 additions (Root/Root/Raven relative paths):
+    Data/Formats/Binary/BinaryDocument.h
+    Data/Formats/Binary/BinaryDocument.cpp
+    Data/Tests/CompiledTestAsset.h
+    Data/Tests/CompiledTestAsset.cpp
+    Data/Tests/CompiledTestAssetTests.cpp
+    Data/Tests/PHASE10_BINARY_ASSETS.md
+
+Raven Structured Data Phase 11 additions (Root/Root/Raven relative paths):
+    Network/ControlMessageCodec.h
+    Network/ControlMessageCodec.cpp
+    Network/ControlMessageReceiver.h
+    Network/ControlMessageReceiver.cpp
+    Network/Tests/ControlMessageTests.h
+    Network/Tests/ControlMessageTests.cpp
+    Network/Tests/PHASE11_CONTROL_MESSAGES.md
+
+Raven Structured Data Phase 11 Windows TCP additions (Root/Root/Raven relative paths):
+    Network/Windows/WindowsTcpSocket.h
+    Network/Windows/WindowsTcpSocket.cpp
+    Network/Tests/WindowsTcpTests.h
+    Network/Tests/WindowsTcpTests.cpp
+
+Raven Structured Data Phase 11 measurement additions (Root/Root/Raven relative paths):
+    Network/Tests/ControlMessageBenchmarks.cpp
+    Network/Tests/PHASE11_MEASUREMENTS.md
+    Network/Tests/Phase11Time.csv
+    Network/Tests/Phase11Memory.csv
+    Network/Tests/Phase11Traffic.csv
+    Network/Tests/Phase11TimeMetadata.json
+    Network/Tests/Phase11MemoryMetadata.json

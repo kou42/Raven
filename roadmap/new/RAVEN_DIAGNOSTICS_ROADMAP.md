@@ -6,6 +6,10 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 本書は計画であり、記載機能の実装完了を意味しない。
 
+実装状況（2026-11-15）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）、M4（Phase 06）は実装・CPU検証完了。
+詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
+M5以降は未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
+
 ## 基本設計
 
 ```text
@@ -34,67 +38,145 @@ Core / RHI / Renderer / Physics / Animation / Asset / Runtime
 
 ## Phase 01 — Diagnostics Core（目安3〜5日）
 
-- [ ] 既存のログ・Assert・Validation経路を調査する
-- [ ] `DiagnosticEventId`、`DiagnosticCategory`、`DiagnosticSeverity` を定義する
-- [ ] Timestamp、Thread ID、Sequence Numberを含むイベントヘッダを設計する
-- [ ] 型付きPayloadとデータ所有権・サイズ上限を定義する
-- [ ] `RAVEN_LOG_INFO/WARN/ERROR` などのAPIを用意する
-- [ ] 最初は同期Console Sinkで動作を検証する
+- [x] 既存のログ・Assert・Validation経路を調査する
+- [x] `DiagnosticEventId`、`DiagnosticCategory`、`DiagnosticSeverity` を定義する
+- [x] Timestamp、Thread ID、Sequence Numberを含むイベントヘッダを設計する
+- [x] 型付きPayloadとデータ所有権・サイズ上限を定義する
+- [x] `RAVEN_LOG_INFO/WARN/ERROR` などのAPIを用意する
+- [x] 最初は同期Console Sinkで動作を検証する
 
 **完了条件:** RHIとPhysicsから同じAPIでログを発行でき、イベントIDとPayloadを保持できる。
 
 ## Phase 02 — Event Buffer / Collector（目安5〜8日）
 
-- [ ] スレッドごとのSPSC Ring Bufferを設計する
-- [ ] Producer/Consumerのメモリ順序とスレッド登録・破棄を定義する
-- [ ] Collector Workerを実装する
-- [ ] Overflow PolicyとDropped Event Counterを設ける
-- [ ] Flush、Shutdown、Crash時のFallbackを検証する
-- [ ] 複数スレッド負荷テストを実施する
+- [x] スレッドごとのSPSC Ring Bufferを設計する
+- [x] Producer/Consumerのメモリ順序とスレッド登録・破棄を定義する
+- [x] Collector Workerを実装する
+- [x] Overflow PolicyとDropped Event Counterを設ける
+- [x] Flush、Shutdown、Crash時のFallbackを検証する（通常終了と独立stderr経路。実Crash CaptureはPhase 08）
+- [x] 複数スレッド負荷テストを実施する
 
 **完了条件:** 並列ログ発行でデータ破損がなく、取りこぼしを検出できる。
 
 ## Phase 03 — Output / Transport（目安3〜5日）
 
-- [ ] `IDiagnosticSink` とSinkの所有権を設計する
-- [ ] ConsoleSink、FileSinkを実装する
-- [ ] バージョン付きBinary Trace Formatを定義する
-- [ ] Event IDとPayloadのシリアライズ・再読込を実装する
-- [ ] Category/Severity Filterを設ける
-- [ ] I/O障害と終了時Flushを検証する
+- [x] `IDiagnosticSink` とSinkの所有権を設計する
+- [x] ConsoleSink、FileSinkを実装する
+- [x] バージョン付きBinary Trace Formatを定義する
+- [x] Event IDとPayloadのシリアライズ・再読込を実装する
+- [x] Category/Severity Filterを設ける
+- [x] I/O障害と終了時Flushを検証する
 
 **完了条件:** ConsoleとFileへ独立出力でき、保存したイベントを再読込できる。
 
 **M1: Diagnostics Logger v1（Phase 01〜03）**
 
+### M1実装結果（2026-11-14）
+
+- 既存のAPI / SPSC / CollectorとRHI・Physics接続を維持し、CollectorからConsole / File / Binary Trace Sinkへ分離した。
+- SinkはCollectorが所有し、Category / Severity Filterと故障時の切り離しを行う。故障数はprocess通算で観測可能。
+- Binary Trace v1.0はlittle endian・固定型タグ・上限付きrecord。全Payload型とHeaderを保存・復元し、不正長・未知Version・途中切断を拒否する。
+- Thread IDのprocess内採番、終了ThreadのBuffer回収、通常ApplicationのRAII開始・終了、ビルド時／実行時のログ無効化を追加した。
+- Debug / Release専用MSVC Runnerは各2 suite成功。Disabled構成は1 suite成功。4 Thread・8192発行の保存再読込で受信数＋Drop数の整合性とProducerごとのFIFOを確認した。
+- Engine全体のDebug / Release（x64）はビルド成功し、それぞれの実行ファイルでもDiagnostics 2 suite成功。DebugのExplicit Frame / Physics Collision回帰も成功した。
+- 通常Debugビルドは環境の`MSPDB140.DLL`版不一致（LNK1101）でリンク失敗した。既存設定`RavenGenerateLinkDebugInformation=false`と`LinkIncremental=false`を指定して再確認した。プロジェクトの既定設定は変更していない。
+- 全体ビルドWarningはDebug 2件（LNK4075 / LNK4098）、Release 0件。専用Runnerの`/W4`では既存の`alignas(64)`構成に伴うC4324がDebug / Release各5件、Disabled 3件発生した。
+- 無効化時の概算測定はReleaseで約1.02 ns/call（単純ループ約0.20 ns）、ビルド時無効化で約0.20 ns/call（単純ループ約0.20 ns）。実行条件に依存する参考値。
+
+未検証: GPU実機での通常起動・終了とValidation故障注入、実Crash時の全件保存。
+制約: Emitは共通制御mutexと値所有stringを使用し、lock-free / allocation-freeではない。
+次の候補はM2（Phase 04）のCounter / Traceと既存CPUProfilerの橋渡し。開始は別承認とする。
+
 ## Phase 04 — Counter / Trace（目安5〜8日）
 
-- [ ] CounterイベントとFrame IDを追加する
-- [ ] `RAVEN_COUNTER` APIを追加する
-- [ ] RAII方式の `RAVEN_TRACE_SCOPE` を追加する
-- [ ] Trace Begin/Endとスレッド別Timelineを再構築する
-- [ ] 無効化時・有効化時のオーバーヘッドを測定する
+- [x] CounterイベントとFrame IDを追加する
+- [x] `RAVEN_COUNTER` APIを追加する
+- [x] RAII方式の `RAVEN_TRACE_SCOPE` を追加する
+- [x] Trace Begin/Endとスレッド別Timelineを再構築する
+- [x] 無効化時・有効化時のオーバーヘッドを測定する
 
 **完了条件:** PhysicsStepやRHI SubmitのCPU時間とCounterをフレーム単位で確認できる。
 
+### M2実装結果（2026-11-14）
+
+- 固定長の計測Payload、Frame ID、Scope/Parent Scope IDを追加した。名前はUTF-8境界を保って96 byteまで保持し、Counterは有限のdoubleとする。
+- 計測は既定で無効。`RAVEN_COUNTER` / `RAVEN_TRACE_SCOPE`を追加し、実行時・ビルド時の無効化で名前・値の式を評価しない。Logを維持して計測だけ無効化する構成も用意した。
+- RendererがFrame IDを採番し、既存CPUProfilerにも渡す。CoreからDiagnosticsへの依存は追加せず、`ProfiledTraceScope` Adapterで試験箇所だけを両方へ記録する。
+- Physics StepとManifold数、RHI SubmitのCPU区間と成功値だけを試験接続した。PresentやGPU完了時間とは分離し、既存の失敗伝播を維持した。
+- Scopeは開始Frameへ帰属させる。開始後の無効化でも同じSession内のEndを閉じ、再起動後には旧SessionのEndや親IDを混入させない。
+- オフラインTimeline再構築は到着順に依存せず、片側欠落・親欠落・重複・metadata不一致・時刻逆転を報告する。上限を超える入力は確保前に拒否する。
+- Binary Trace v1.1はtag 5の計測Payloadを追加し、v1.0のLogも読める。旧Readerは未知minorを拒否する。
+- 通常Applicationの`--diagnostics-measurements`でConsole計測、`--diagnostics-trace=path.rvndiag`でBinary記録を有効化できる。保存時のConsoleはLogだけを表示する。
+- 専用MSVC RunnerとCIはDebug / Release / Disabled / MeasurementsDisabledの4構成を扱う。詳細契約はDiagnosticsのTests/READMEを参照。
+
+検証結果:
+
+- 専用Runner: Debug / Releaseは各3 suite成功、Disabled / MeasurementsDisabledは各1 suite成功。M1の保存・並列性検証も継続して実行した。
+- Engine全体のDebug / Release x64ビルド成功。両実行ファイルのDiagnostics各3 suite、DebugのExplicit Frame / Physics Collision回帰が成功した。
+- Explicit FrameのMockでRHI Submitの区間・成功/失敗値とPresent順序を確認し、空Sceneの実Physics Stepでも区間とManifold数の発行を確認した。
+- CPU UI Debug回帰も終了コード0。CPUProfilerの表示用snapshotを扱う既存検証を維持した。
+- 全体ビルドは既存のPDB問題を避け、`RavenGenerateLinkDebugInformation=false` / `LinkIncremental=false`で確認した。UI回帰はローカルで不足していたGLFW 3.4のnative headerを`artifacts/sg3-deps`のキャッシュから一時propsで追加参照した。いずれもプロジェクトの依存・既定設定は変更していない。
+- Warningは全体Debug 2件（LNK4075 / LNK4098）、Release 0件。専用/W4は既存のalignas構成に伴うC4324がDebug/Release各6件、無効化構成各3件。UI再ビルドは未変更箇所のC4244が32件とリンクWarning 2件で、変更した診断コードの新規コンパイラWarningはなかった。
+- ReleaseのNull Sink測定例はCounter約127 ns/call、Trace Scope約236 ns/区間（2イベント）、実行時無効のCounter+Scope約7.2 ns/組。登録・batch間Flushを測定区間から除外し、Drop=0を確認した。値は環境依存の参考値。
+
+注意: Begin/Endが両方消えたScopeはイベントだけでは検出できないため、取得時のDrop差分を再構築へ渡す。Drop差分はファイルへ自動保存しない。
+初回Thread登録と共通制御mutexは残る。M3の全面接続、M4のEditor Viewer、GPU実機の時間検証は対象外。
+次の候補はM3（Phase 05）のSubsystem Integration。開始は別承認とする。
+
 ## Phase 05 — Subsystem Integration（目安5〜10日）
 
-- [ ] RHI BackendのValidationを共通イベントに変換する
-- [ ] Physics BroadPhase / NarrowPhase / Solver Counterを接続する
-- [ ] SoftBody Candidate / Constraint / Correction Counterを接続する
-- [ ] Renderer DrawCall / Resource Counterを接続する
-- [ ] Subsystem単位の有効・無効設定と回帰テストを整備する
+- [x] RHI BackendのValidationを共通イベントに変換する
+- [x] Physics BroadPhase / NarrowPhase / Solver Counterを接続する
+- [x] SoftBody Candidate / Constraint / Correction Counterを接続する
+- [x] Renderer DrawCall / Resource Counterを接続する
+- [x] Subsystem単位の有効・無効設定と回帰テストを整備する
 
 **完了条件:** RHIとPhysicsの診断情報を共通フォーマットで収集できる。
 
+### M3実装結果（2026-11-14）
+
+- Vulkan callback / DX12 InfoQueueを、Backend・元ID・Native Severity/Type・観測時Frame・所有する名前/本文・切詰めフラグを持つValidation Payloadへ変換した。既存のVerbose条件とcallback戻り値・Queue Clear・Live Objects reportは維持した。
+- Callbackでは診断の制御・登録mutexを待たない。停止中・競合・Queue満杯・再入・確保失敗ではstderrへ退避する。退避回数は独立APIで観測し、Native ABIへC++例外を返さない。
+- PhysicsはBroadPhase候補、有効なNarrowPhase候補、Plane判定仕事量、Solver既存統計をループ外で発行する。既存Profiler名とM2 Manifold Counterを維持し、同じ値を重複発行しない。
+- SoftBodyはPhysicsと独立したcategory値7を追加した。Step末尾でTopologyとParticle-Triangle統計を発行し、詳細未収集はDetailedCollected=0とする。詳細収集設定を自動変更せず、Constraint/Correctionは収集時だけ発行する。
+- RendererはFrame guardで正常・失敗終了時の既存描画統計を発行し、同じSession/Frameでの二重計上を防ぐ。ResourceはRHIResourceの生存C++ラッパー数とし、所有参照やGPU操作を追加しない。
+- Category別のatomicな発行設定と通常Applicationの`--diagnostics-disable=rhi,physics,softbody,renderer`を追加した。設定は共通発行だけに作用し、計算・既存Profiler・Native Debug Layerを変更しない。
+- Binary Trace v1.2はValidation tag 6とSoftBody categoryを追加した。新Readerはv1.0/1.1も読み、旧Headerへの新型混入、長さ・Backend・Flags・Reservedの不正を拒否する。
+- 専用RunnerはDebug/Release各4 suiteと無効化2構成を扱う。CIへ実EngineのDiagnostics・Subsystem Mock・Physics・SoftBody統合回帰も追加した。
+
+検証: 専用4構成、Engine Debug/Release x64とDiagnostics、Debugの実Subsystem比較・Physics Collision・SoftBody統合、CPU UI Debug回帰が成功した。実統計との一致、同一入力の診断有効/無効での結果一致、詳細未収集の区別、Renderer重複発行防止、Native callbackの停止・Flush経路を確認した。
+全体ビルドは従来のPDB無効化とキャッシュ済みGLFW 3.4 native headerの一時参照で確認し、依存設定は変更していない。Debugは既存リンクWarning 2件、Releaseは0件。GPU実機の故障注入は未実施。
+
+検証・未検証事項の詳細は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
+Resource数はGPU handle数・使用byte・Fence完了・リークの証明ではない。ValidationのFrameはCPUで観測した番号で、GPUの原因Frameを保証しない。
+stderrへ退避したValidationはBinaryへ自動保存しない。共通mutex・初回Buffer確保、GPU実機の故障注入・終了確認は残る制約。
+次の候補はM4（Phase 06）のEditor Diagnostics。開始は別承認とする。
+
 ## Phase 06 — Editor Diagnostics（目安7〜12日）
 
-- [ ] Log Table、Search、Severity/Category Filter
-- [ ] Frame/Thread別FilterとEvent詳細Inspector
-- [ ] Counter GraphとCPU Trace Timeline
-- [ ] 大量イベント時の表示性能・メモリ使用量を検証する
+- [x] Log Table、Search、Severity/Category Filter
+- [x] Frame/Thread別FilterとEvent詳細Inspector
+- [x] Counter GraphとCPU Trace Timeline
+- [x] 大量イベント時の表示性能・メモリ使用量を検証する
 
 **完了条件:** 特定フレームのRHIエラーとPhysics処理時間を同じEditorで確認できる。
+
+### M4実装結果（2026-11-15）
+
+Editor Sink → 容量制限付きStore → Main Threadの所有Snapshot → Diagnostics Panelを接続した。
+Log Table、本文検索、Severity/Category/Frame/Thread Filter、詳細Inspector、Counter Graph、Thread別CPU Timelineを提供する。
+既定Dockへ安定ID 1007を追加し、旧保存配置を維持する。旧配置ではView > Diagnosticsで表示する。
+
+Storeは既定8192件・推定8 MiBの保持予算で古いイベントを破棄する。UI Snapshotは最大5 Hz、Freeze中も収集は継続する。
+Frame不明の汎用Logは`?`、Frame 0は既知の起動時として区別し、Search/Severityで同FrameのPhysics Traceを消さない。
+Queue Drop、Store Eviction/Reject、Native stderr fallback、不完全Scope、詳細Counterの未収集を区別する。
+Counterは最大512個の生サンプル、Timelineは最大2048区間/32 Threadの表示とし、深い階層の完全な展開・Zoomは提供しない。
+
+Debug/Releaseの診断5 suite、診断無効化2構成、Engine両構成、実Subsystem比較・Physics Collision・SoftBody統合、CPU UI回帰が成功した。
+既定Storeへの10万件投入・Snapshot・Model更新は専用Releaseで約7.9 ms、保持推定1.56 MiB。8192イベント/40 ThreadのCPU UI更新・Chart構築はDebugで約60 msだった。
+値はローカルの単発測定で、GPU描画時間や60 FPSの保証ではない。GPU画面の起動確認は操作可能なWindowを取得できず未検証。
+既存PDB/GLFW検証用回避を使用し、依存設定の変更は行っていない。Snapshotコピーと再構築の負荷、深いScope階層の視認性は残る制約。
+次の候補はM5（Phase 07）のStructured Message Database。開始は別承認とする。
 
 ## Phase 07 — Structured Message Database（目安5〜8日）
 
@@ -130,16 +212,23 @@ Core / RHI / Renderer / Physics / Animation / Asset / Runtime
 ## APIイメージ（確定仕様ではない）
 
 ```cpp
-RAVEN_LOG_INFO(DiagnosticCategory::RHI,
-               "Created texture: {}x{}", width, height);
-RAVEN_LOG_ERROR(DiagnosticCategory::Physics,
-                "Invalid contact manifold");
+RAVEN_LOG_ERROR(DiagnosticCategory::RHI,
+               EventIds::LegacyRHIInitializationFailed,
+               std::string("Backend unavailable"));
+RAVEN_LOG_INFO(DiagnosticCategory::Physics,
+               EventIds::PhysicsGravityUpdated,
+               std::string("Physics gravity updated"));
 
 RAVEN_TRACE_SCOPE("PhysicsStep");
 RAVEN_COUNTER("Physics.NarrowPhase.Candidates", candidateCount);
 ```
 
 初期APIで文字列フォーマットを使用する場合も、内部イベントID・型付きPayloadとの対応を明示する。Trace/Counterはビルド設定によって無効化できるようにする。
+
+M1で確定したLog APIは `category, event ID, owned payload` の3引数。
+上記Log部分とTrace/Counter部分は実装済みAPIの呼出形式。
+Log Payloadは単一の `int64 / double / bool / string` とし、文字列は最大1024 byteを保持する。M2のCounter/Traceは別の固定長計測Payloadを使用する。
+複合引数・書式文字列・Message Dictionaryの生成はM5で設計する。
 
 ## 推奨する責務分割（構成案）
 

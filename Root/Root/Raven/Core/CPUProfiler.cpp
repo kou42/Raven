@@ -17,7 +17,7 @@ CPUProfiler& CPUProfiler::Get()
     return profiler;
 }
 
-void CPUProfiler::BeginFrame()
+void CPUProfiler::BeginFrame(std::uint64_t frameId)
 {
     if (m_Enabled.load(std::memory_order_relaxed) == false)
     {
@@ -30,7 +30,7 @@ void CPUProfiler::BeginFrame()
     // 2frame目以降は、新frame開始時点を直前frameの終了時点として扱います。
     // ApplicationのRenderer::BeginFrame()と同じ境界を共有できるため、Profiler専用の
     // EndFrame呼び出しをApplicationへ追加せず、frame全体のCPU時間を測定できます。
-    if (m_FrameActive)
+    if (m_FrameActive == true)
     {
         m_WriteFrame.FrameTimeMilliseconds =
             std::chrono::duration<double, std::milli>(now - m_FrameStart).count();
@@ -40,7 +40,14 @@ void CPUProfiler::BeginFrame()
         std::swap(m_WriteFrame, m_LastFrame);
     }
 
-    ++m_FrameIndex;
+    if (frameId == 0)
+    {
+        ++m_FrameIndex;
+    }
+    else
+    {
+        m_FrameIndex = frameId;
+    }
     m_FrameStart = now;
     m_FrameActive = true;
     m_WriteFrame.FrameIndex = m_FrameIndex;

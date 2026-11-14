@@ -49,7 +49,7 @@ std::uint64_t EditorTabValue(EditorDockTabId id)
 bool IsKnownEditorTab(std::uint64_t id)
 {
     return id >= EditorTabValue(EditorDockTabId::SceneView) &&
-        id <= EditorTabValue(EditorDockTabId::AnimationDebug);
+        id <= EditorTabValue(EditorDockTabId::Diagnostics);
 }
 
 const char* GetEditorTabTitle(EditorDockTabId id)
@@ -62,6 +62,7 @@ const char* GetEditorTabTitle(EditorDockTabId id)
     case EditorDockTabId::Inspector: return "Inspector";
     case EditorDockTabId::Statistics: return "Statistics";
     case EditorDockTabId::AnimationDebug: return "Animation Debug";
+    case EditorDockTabId::Diagnostics: return "Diagnostics";
     }
     return "Editor Panel";
 }
@@ -414,6 +415,8 @@ UIElement* EditorLayer::GetRavenPanelRoot(EditorDockTabId tabId) const
         return m_StatisticsRavenPanel.GetRootElement();
     case EditorDockTabId::AnimationDebug:
         return m_AnimationDebugRavenPanel.GetRootElement();
+    case EditorDockTabId::Diagnostics:
+        return m_DiagnosticsRavenPanel.GetRootElement();
     }
     return nullptr;
 }
@@ -449,7 +452,7 @@ bool EditorLayer::AttachRavenEditorShell()
         EditorDockTabId::SceneHierarchy,
         EditorDockTabId::Inspector,
         EditorDockTabId::Statistics,
-        EditorDockTabId::AnimationDebug
+        EditorDockTabId::AnimationDebug, EditorDockTabId::Diagnostics
     };
     for (EditorDockTabId tabId : tabIds)
     {
@@ -615,6 +618,7 @@ bool EditorLayer::AttachRavenEditorShell()
     m_ShowInspectorPanel = IsRavenDockPanelVisible(EditorDockTabId::Inspector);
     m_ShowStatisticsPanel = IsRavenDockPanelVisible(EditorDockTabId::Statistics);
     m_ShowAnimationDebugPanel = IsRavenDockPanelVisible(EditorDockTabId::AnimationDebug);
+    m_ShowDiagnosticsPanel = IsRavenDockPanelVisible(EditorDockTabId::Diagnostics);
     UpdateRavenEditorShellGeometry();
     return true;
 }
@@ -725,6 +729,7 @@ void EditorLayer::SetRavenDockPanelVisible(EditorDockTabId tabId, bool visible)
     m_ShowInspectorPanel = IsRavenDockPanelVisible(EditorDockTabId::Inspector);
     m_ShowStatisticsPanel = IsRavenDockPanelVisible(EditorDockTabId::Statistics);
     m_ShowAnimationDebugPanel = IsRavenDockPanelVisible(EditorDockTabId::AnimationDebug);
+    m_ShowDiagnosticsPanel = IsRavenDockPanelVisible(EditorDockTabId::Diagnostics);
 }
 
 void EditorLayer::ToggleRavenDockPanel(EditorDockTabId tabId)
@@ -751,7 +756,7 @@ void EditorLayer::UpdateRavenEditorShellGeometry()
     {
         EditorDockTabId::SceneView, EditorDockTabId::GameView,
         EditorDockTabId::SceneHierarchy, EditorDockTabId::Inspector,
-        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug
+        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug, EditorDockTabId::Diagnostics
     };
     for (EditorDockTabId tabId : tabIds)
     {
@@ -777,6 +782,7 @@ void EditorLayer::OnAttach()
 
     if (m_Application != nullptr)
     {
+        m_DiagnosticsRavenPanel.Attach(m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
         m_StatisticsRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
     }
@@ -1298,6 +1304,7 @@ void EditorLayer::OnDetach()
     m_RavenViewportGizmo.Reset();
     m_SceneHierarchyRavenPanel.Detach();
     m_InspectorRavenPanel.Detach();
+    m_DiagnosticsRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
     m_StatisticsRavenPanel.Detach();
     DetachRavenEditorShell();
@@ -1640,6 +1647,8 @@ void EditorLayer::RenderSceneToFramebuffer(
 
 void EditorLayer::OnRavenUIRender(float dt)
 {
+    m_DiagnosticsRavenPanel.SetVisible(m_ShowDiagnosticsPanel);
+    if (m_ShowDiagnosticsPanel == true) { m_DiagnosticsRavenPanel.Update(dt); }
     if (m_Application == nullptr)
     {
         return;
@@ -1800,7 +1809,7 @@ bool EditorLayer::OnUIKeyEvent(const UIKeyEvent& event)
     const EditorDockTabId tabIds[] = {
         EditorDockTabId::SceneView, EditorDockTabId::GameView,
         EditorDockTabId::SceneHierarchy, EditorDockTabId::Inspector,
-        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug };
+        EditorDockTabId::Statistics, EditorDockTabId::AnimationDebug, EditorDockTabId::Diagnostics };
     for (EditorDockTabId tabId : tabIds)
     {
         const UIElement* panel = GetRavenPanelRoot(tabId);

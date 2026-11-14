@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace Raven
 {
 
@@ -11,10 +13,12 @@ namespace Raven
 class RHIResource
 {
 public:
-    virtual ~RHIResource() = default;
+    virtual ~RHIResource();
+    // 生存するC++ラッパー数です。native handle数・GPU解放完了数・byte数ではありません。
+    static std::uint64_t GetLiveWrapperCount() noexcept;
 
 protected:
-    RHIResource() = default;
+    RHIResource();
 
     RHIResource(const RHIResource&) = delete;
     RHIResource& operator=(const RHIResource&) = delete;

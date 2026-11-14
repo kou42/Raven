@@ -4,6 +4,7 @@
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Renderer/Camera/Camera.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -291,12 +292,38 @@ void Renderer::BeginFrame()
     // CPU ProfilerもApplication frame単位で集計します。
     // Renderer::BeginFrame()は既にApplication::Run()から毎frame先頭で1回だけ呼ばれるため、
     // Renderer統計とCPU統計のframe境界を同じ場所へ揃えられます。
-    CPUProfiler::Get().BeginFrame();
+    CPUProfiler::Get().BeginFrame(Diagnostics::BeginDiagnosticFrame());
 
     // Statisticsは「直近1 frame」の値として扱います。
     // SceneごとではなくApplication frameの先頭でResetすることで、Scene描画と
     // Debug Overlayを含む、そのframeに発行された全Draw Callを同じ集計へ含めます。
     s_Statistics.Reset();
+}
+
+void Renderer::PublishFrameDiagnostics()
+{
+    if (Diagnostics::IsMeasurementsEnabled() == false
+        || Diagnostics::IsDiagnosticCategoryEnabled(Diagnostics::DiagnosticCategory::Renderer) == false)
+    {
+        return;
+    }
+    const auto frame = Diagnostics::GetDiagnosticFrameId();
+    const auto session = Diagnostics::GetDiagnosticSessionId();
+    // Renderer統計と同じMain Threadで扱います。複数の終了経路から呼ばれても二重計上しません。
+    static std::uint64_t publishedFrame = 0;
+    static std::uint64_t publishedSession = 0;
+    if (session == 0 || (frame == publishedFrame && session == publishedSession))
+    {
+        return;
+    }
+    publishedFrame = frame;
+    publishedSession = session;
+    // 実際に発行した描画命令の既存値を共有します。GPU成功・完了数とは解釈しません。
+    Diagnostics::RecordCounter("Renderer.DrawCalls", s_Statistics.DrawCalls, Diagnostics::DiagnosticCategory::Renderer);
+    Diagnostics::RecordCounter("Renderer.Indices", s_Statistics.IndexCount, Diagnostics::DiagnosticCategory::Renderer);
+    Diagnostics::RecordCounter("Renderer.Triangles", s_Statistics.TriangleCount, Diagnostics::DiagnosticCategory::Renderer);
+    Diagnostics::RecordCounter("Renderer.RHI.LiveWrappers", static_cast<double>(RHIResource::GetLiveWrapperCount()),
+        Diagnostics::DiagnosticCategory::Renderer);
 }
 
 void Renderer::BeginScene(const Camera& camera)

@@ -1,0 +1,14 @@
+{
+  "measured_at": "2026-11-14T02:59:56.6862014+09:00",
+  "mode": "time",
+  "cpu_identifier": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+  "logical_processors": "20",
+  "os_version": "Microsoft Windows NT 10.0.26200.0",
+  "compiler": "compiler_msc_full_ver=195136260; warmups=5; time_samples=101; cplusplus=201703",
+  "flags": "/nologo /std:c++17 /utf-8 /EHsc /W4 /O2 /DNDEBUG /DRAVEN_NETWORK_BENCHMARK_MAIN /I\"D:\\Engine\\Root\\Root\"",
+  "base_commit": "6137da2bf9233126abba597141e6a577ac11d308",
+  "benchmark_sha256": "C98AEF3A8C50F166D811578C74F99D0BFE62265F13F92C5A043C476B725F03EC",
+  "script_sha256": "2C75369FCBB2B32BAEA8DA4C91A0D9849D6ABEE313ADD8B2CE90E163E419EB83",
+  "build_warnings": 0,
+  "validation": "30 rows; every measured batch checks message count, FIFO and values"
+}

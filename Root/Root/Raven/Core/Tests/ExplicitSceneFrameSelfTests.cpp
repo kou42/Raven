@@ -12,8 +12,15 @@
 #include "Raven/UI/Text/UIFontAtlas.h"
 #include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Scene/SceneCameraSystem.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
+#include "Raven/Diagnostics/DiagnosticSink.h"
+#include "Raven/Renderer/RendererFrameDiagnostics.h"
+#include "Raven/Physics/SoftBody/SoftBodyCloth.h"
+#include "Raven/Physics/SoftBody/SoftBodySelfCollision.h"
+#include "Raven/Physics/SoftBody/SoftBodyParticleTriangleSelfCollision.h"
 
 #include <cassert>
+#include <algorithm>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -23,6 +30,15 @@ namespace Raven::tests
 {
 namespace
 {
+class SubsystemCaptureSink final : public Diagnostics::IDiagnosticSink
+{
+public:
+    explicit SubsystemCaptureSink(std::vector<Diagnostics::DiagnosticEvent>& events) : m_Events(events) {}
+    bool Write(const Diagnostics::DiagnosticEvent& event) override { m_Events.push_back(event); return true; }
+    bool Flush() override { return true; }
+private:
+    std::vector<Diagnostics::DiagnosticEvent>& m_Events;
+};
 
 // OS Windowを作らず、OpenGL Frame開始の失敗と復帰を再現します。
 // 最小化の待機はApplicationの責務であり、描画側の失敗判定を緩めない契約を確認します。
@@ -500,11 +516,26 @@ void RunExplicitSceneFrameSelfTests()
     assert(frame.BeginCount == 5);
 
     // Submit成功時だけPresentへ進み、両結果を加工せず返します。
+    std::ostringstream measurementOutput;
+    std::vector<Diagnostics::DiagnosticEvent> subsystemEvents;
+    std::vector<std::unique_ptr<Diagnostics::IDiagnosticSink>> sinks;
+    sinks.push_back(std::make_unique<Diagnostics::ConsoleSink>(measurementOutput));
+    sinks.push_back(std::make_unique<SubsystemCaptureSink>(subsystemEvents));
+    Diagnostics::DiagnosticSession measurementSession(std::move(sinks));
+    const bool measurementsWereEnabled = Diagnostics::IsMeasurementsEnabled();
+    Diagnostics::SetMeasurementsEnabled(true);
     frame.FinishCalls.clear();
     assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
         RHIFrameResult::Success);
     assert(frame.FinishCalls.size() == 2u);
     assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
+    Diagnostics::FlushDiagnostics();
+    // 計測がSubmit/Presentの順序を変えず、成功値とCPU区間を同じSinkへ渡すことを確認します。
+    if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+    {
+        assert(measurementOutput.str().find("name=RHI.Submit ") != std::string::npos);
+        assert(measurementOutput.str().find("name=RHI.Submit.Success value=1") != std::string::npos);
+    }
     assert(frame.EndCount == 1 && frame.PresentCount == 1);
 
     // Submit失敗・ResizeRequiredではPresentせず、Context終了/Resize判断へ渡します。
@@ -521,6 +552,11 @@ void RunExplicitSceneFrameSelfTests()
         RHIFrameResult::ResizeRequired);
     assert(frame.FinishCalls.size() == 1u && frame.FinishCalls[0] == 1);
     assert(frame.PresentCount == 1);
+    Diagnostics::FlushDiagnostics();
+    if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+    {
+        assert(measurementOutput.str().find("name=RHI.Submit.Success value=0") != std::string::npos);
+    }
 
     // Present失敗・ResizeRequiredはSubmit済みFrameの結果としてRunnerへ伝えます。
     frame.EndResult = RHIFrameResult::Success;
@@ -537,5 +573,133 @@ void RunExplicitSceneFrameSelfTests()
         RHIFrameResult::ResizeRequired);
     assert(frame.FinishCalls.size() == 2u);
     assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
+    // 空のSceneでも実Physics Step入口を通し、GPU不要で接続箇所の発行を確認します。
+    {
+        Scene diagnosticScene;
+        ph::PhysicsWorld physics;
+        physics.Step(diagnosticScene, 1.0f / 60.0f);
+    }
+    Diagnostics::FlushDiagnostics();
+    if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+    {
+        assert(measurementOutput.str().find("name=PhysicsStep ") != std::string::npos);
+        assert(measurementOutput.str().find("name=Physics.Collision.Manifolds value=0") != std::string::npos);
+    }
+    // 診断有効/無効で同じ入力を進め、実集計値との一致と物理結果の不変性を確認します。
+    const auto hasCounter = [&subsystemEvents](const char* name, Diagnostics::DiagnosticCategory category, double value)
+    {
+        return std::any_of(subsystemEvents.begin(), subsystemEvents.end(), [&](const auto& event)
+        {
+            const auto* metric = std::get_if<Diagnostics::DiagnosticMetric>(&event.Payload);
+            return metric != nullptr && metric->Kind == Diagnostics::DiagnosticMetricKind::Counter
+                && metric->GetName() == name && event.Category == category && metric->Value == value;
+        });
+    };
+    {
+        const auto makePair = [](Scene& scene)
+        {
+            Entity first = scene.CreateEntity("DiagnosticSphereA");
+            first.AddComponent<ColliderComponent>().Type = ColliderType::Sphere;
+            first.AddComponent<RigidBodyComponent>();
+            Entity second = scene.CreateEntity("DiagnosticSphereB");
+            second.GetComponent<TransformComponent>().Position = { 0.5f, 0.0f, 0.0f };
+            second.AddComponent<ColliderComponent>().Type = ColliderType::Sphere;
+            second.AddComponent<RigidBodyComponent>();
+            return first;
+        };
+        Scene enabledScene, disabledScene;
+        Entity enabledBody = makePair(enabledScene);
+        Entity disabledBody = makePair(disabledScene);
+        ph::PhysicsWorld enabledPhysics, disabledPhysics;
+        Diagnostics::SetDiagnosticCategoryEnabled(Diagnostics::DiagnosticCategory::Physics, false);
+        disabledPhysics.Step(disabledScene, 1.0f / 60.0f);
+        Diagnostics::SetDiagnosticCategoryEnabled(Diagnostics::DiagnosticCategory::Physics, true);
+        enabledPhysics.Step(enabledScene, 1.0f / 60.0f);
+        const auto delta = enabledBody.GetComponent<TransformComponent>().Position
+            - disabledBody.GetComponent<TransformComponent>().Position;
+        assert(delta.Length() < 1.0e-6f);
+        Diagnostics::FlushDiagnostics();
+        if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+        {
+            const auto& statistics = enabledPhysics.GetSolverDebugStatistics();
+            assert(statistics.ManifoldCount > 0 && statistics.ContactPointCount > 0);
+            assert(hasCounter("Physics.Collision.BroadPhasePairs", Diagnostics::DiagnosticCategory::Physics,
+                static_cast<double>(enabledPhysics.GetBroadPhasePairs().size())));
+            assert(hasCounter("Physics.Collision.ContactPoints", Diagnostics::DiagnosticCategory::Physics, statistics.ContactPointCount));
+            assert(hasCounter("Physics.Solver.VelocityIterations", Diagnostics::DiagnosticCategory::Physics, statistics.VelocityIterations));
+        }
+    }
+    {
+        ph::SoftBodySolver enabledSolver;
+        enabledSolver.SetGravity({ 0, 0, 0 });
+        enabledSolver.GetSettings().SolverIterations = 2;
+        enabledSolver.GetSettings().DetailedParticleTriangleProfilingEnabled = true;
+        ph::SoftBodyClothSettings clothSettings;
+        clothSettings.Rows = 1;
+        clothSettings.Columns = 1;
+        clothSettings.PinTopLeft = false;
+        clothSettings.PinTopRight = false;
+        const auto cloth = ph::SoftBodyClothBuilder::Build(enabledSolver, clothSettings);
+        const auto probe = enabledSolver.AddParticle({ 0, 0, 0.001f }, 1.0f);
+        ph::SoftBodySolver disabledSolver(enabledSolver);
+        ph::SoftBodySelfCollisionSettings particles;
+        particles.Enabled = false;
+        ph::SoftBodyParticleTriangleSelfCollisionSettings triangles;
+        triangles.Enabled = true;
+        triangles.Thickness = 0.05f;
+        Diagnostics::SetDiagnosticCategoryEnabled(Diagnostics::DiagnosticCategory::SoftBody, false);
+        disabledSolver.StepWithSelfCollisions(1.0f / 60.0f, cloth, particles, triangles);
+        Diagnostics::SetDiagnosticCategoryEnabled(Diagnostics::DiagnosticCategory::SoftBody, true);
+        enabledSolver.StepWithSelfCollisions(1.0f / 60.0f, cloth, particles, triangles);
+        assert((enabledSolver.GetParticles()[probe].Position - disabledSolver.GetParticles()[probe].Position).Length() < 1.0e-6f);
+        Diagnostics::FlushDiagnostics();
+        if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+        {
+            const auto& statistics = enabledSolver.GetParticleTriangleCollisionStatistics();
+            assert(statistics.CandidateCount > 0 && statistics.PositionCorrectionCount > 0);
+            assert(hasCounter("SoftBody.ParticleTriangle.Candidates", Diagnostics::DiagnosticCategory::SoftBody, static_cast<double>(statistics.CandidateCount)));
+            assert(hasCounter("SoftBody.ParticleTriangle.Constraints", Diagnostics::DiagnosticCategory::SoftBody, static_cast<double>(statistics.ConstraintCount)));
+            assert(hasCounter("SoftBody.ParticleTriangle.Corrections", Diagnostics::DiagnosticCategory::SoftBody, static_cast<double>(statistics.PositionCorrectionCount)));
+        }
+        const auto detailedEnd = subsystemEvents.size();
+        enabledSolver.GetSettings().DetailedParticleTriangleProfilingEnabled = false;
+        enabledSolver.StepWithSelfCollisions(1.0f / 60.0f, cloth, particles, triangles);
+        Diagnostics::FlushDiagnostics();
+        if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+        {
+            assert(hasCounter("SoftBody.ParticleTriangle.DetailedCollected", Diagnostics::DiagnosticCategory::SoftBody, 0));
+            for (std::size_t index = detailedEnd; index < subsystemEvents.size(); ++index)
+            {
+                const auto* metric = std::get_if<Diagnostics::DiagnosticMetric>(&subsystemEvents[index].Payload);
+                if (metric != nullptr)
+                {
+                    assert(metric->GetName() != "SoftBody.ParticleTriangle.Constraints"
+                        && metric->GetName() != "SoftBody.ParticleTriangle.Corrections");
+                }
+            }
+        }
+    }
+    {
+        Renderer::BeginFrame();
+        {
+            RendererFrameDiagnostics frameStatistics;
+            Renderer::RecordIndexedDraw(6, PrimitiveTopology::Triangles);
+            Renderer::RecordIndexedDraw(2, PrimitiveTopology::Lines);
+        }
+        Diagnostics::FlushDiagnostics();
+        assert(Renderer::GetStatistics().DrawCalls == 2 && Renderer::GetStatistics().TriangleCount == 2);
+        if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+        {
+            assert(hasCounter("Renderer.DrawCalls", Diagnostics::DiagnosticCategory::Renderer, 2));
+            assert(hasCounter("Renderer.Indices", Diagnostics::DiagnosticCategory::Renderer, 8));
+            assert(hasCounter("Renderer.RHI.LiveWrappers", Diagnostics::DiagnosticCategory::Renderer,
+                static_cast<double>(RHIResource::GetLiveWrapperCount())));
+        }
+        const auto publishedCount = subsystemEvents.size();
+        Renderer::PublishFrameDiagnostics();
+        Diagnostics::FlushDiagnostics();
+        assert(subsystemEvents.size() == publishedCount);
+    }
+    Diagnostics::SetMeasurementsEnabled(measurementsWereEnabled);
 }
 } // namespace Raven::tests

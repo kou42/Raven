@@ -10,7 +10,7 @@
 namespace Raven::Diagnostics
 {
 // Phase 02: Producer/Consumerを各1スレッドに限定する固定長SPSC Buffer。
-// 所有者は両スレッドの終了後に破棄します。スレッド登録・Collectorは後続実装です。
+// 所有者は両スレッドの終了後に破棄します。CollectorとTLSが共有所有します。
 // 容量は256イベント。満杯の場合は新しいイベントを破棄してDroppedを増やします。
 class EventBuffer final
 {
@@ -24,6 +24,9 @@ public:
     bool TryPush(DiagnosticEvent event);
     bool TryPop(DiagnosticEvent& event);
     std::uint64_t GetDroppedCount() const noexcept;
+    // Producerだけが最終Push後にCloseします。Consumerは残存件数が0になってから解放します。
+    void Close() noexcept;
+    bool IsClosedAndEmpty() const noexcept;
 
 private:
     // 単調増加indexを使い、wrap時も容量差分で満杯を判定します。
@@ -32,5 +35,6 @@ private:
     alignas(64) std::atomic<std::uint64_t> m_ReadIndex{ 0 };
     alignas(64) std::atomic<std::uint64_t> m_WriteIndex{ 0 };
     std::atomic<std::uint64_t> m_DroppedCount{ 0 };
+    std::atomic<bool> m_Closed{ false };
 };
 }
