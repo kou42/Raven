@@ -4,6 +4,7 @@
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Renderer/Camera/Camera.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
@@ -291,7 +292,7 @@ void Renderer::BeginFrame()
     // CPU ProfilerもApplication frame単位で集計します。
     // Renderer::BeginFrame()は既にApplication::Run()から毎frame先頭で1回だけ呼ばれるため、
     // Renderer統計とCPU統計のframe境界を同じ場所へ揃えられます。
-    CPUProfiler::Get().BeginFrame();
+    CPUProfiler::Get().BeginFrame(Diagnostics::BeginDiagnosticFrame());
 
     // Statisticsは「直近1 frame」の値として扱います。
     // SceneごとではなくApplication frameの先頭でResetすることで、Scene描画と

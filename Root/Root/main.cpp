@@ -19,6 +19,8 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
+#include "Raven/Diagnostics/BinaryTrace.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneTitle.h"
 #include "Raven/Scene/Tests/SceneGraphSelfTests.h"
@@ -79,6 +81,8 @@ int main(int argc, char* argv[])
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
     bool uiMigrationTest = false;
     bool editorBackendComparison = false;
+    bool diagnosticMeasurements = false;
+    std::filesystem::path diagnosticTracePath;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -90,12 +94,28 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument == "--diagnostics-measurements")
+        {
+            diagnosticMeasurements = true;
+            continue;
+        }
+        if (backendArgument.starts_with("--diagnostics-trace="))
+        {
+            diagnosticTracePath = backendArgument.substr(std::string("--diagnostics-trace=").size());
+            if (diagnosticTracePath.empty() == true)
+            {
+                std::cerr << "Diagnostics trace path is empty.\n";
+                return 1;
+            }
+            diagnosticMeasurements = true;
+            continue;
+        }
         if (backendArgument == "--test-diagnostics")
         {
             try
             {
                 Raven::tests::RunDiagnosticSelfTests();
-                std::cout << "Diagnostics self-tests passed: suites=2 failures=0.\n";
+                std::cout << "Diagnostics self-tests passed: suites=3 failures=0.\n";
                 return 0;
             }
             catch (const std::exception& error)
@@ -426,7 +446,28 @@ int main(int argc, char* argv[])
 
     // Application/Scene/Rendererの破棄時にもログが発行されるため、Sessionを先に生成します。
     // appとそのWorkerが終了した後にSessionがCollectorを停止し、残存イベントをFlushします。
-    Raven::Diagnostics::DiagnosticSession diagnostics;
+    std::vector<std::unique_ptr<Raven::Diagnostics::IDiagnosticSink>> diagnosticSinks;
+    Raven::Diagnostics::DiagnosticFilter consoleFilter;
+    // 高頻度の計測をConsoleへ重複出力するとFile記録も遅れるため、保存時はLogだけを表示します。
+    consoleFilter.IncludeMeasurements = diagnosticTracePath.empty();
+    diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::ConsoleSink>(std::cout, consoleFilter));
+    if (diagnosticTracePath.empty() == false)
+    {
+        auto trace = std::make_unique<Raven::Diagnostics::BinaryTraceSink>(diagnosticTracePath);
+        if (trace->IsOpen() == false)
+        {
+            std::cerr << "Could not open diagnostics trace file.\n";
+            return 1;
+        }
+        diagnosticSinks.push_back(std::move(trace));
+    }
+    Raven::Diagnostics::DiagnosticSession diagnostics(std::move(diagnosticSinks));
+    if (diagnosticMeasurements == true && diagnostics.IsActive() == false)
+    {
+        std::cerr << "Could not start diagnostics capture.\n";
+        return 1;
+    }
+    Raven::Diagnostics::SetMeasurementsEnabled(diagnosticMeasurements);
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
 #ifdef _WIN32

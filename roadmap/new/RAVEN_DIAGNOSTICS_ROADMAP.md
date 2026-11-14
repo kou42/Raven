@@ -6,9 +6,9 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 本書は計画であり、記載機能の実装完了を意味しない。
 
-実装状況（2026-11-14）: M1（Phase 01〜03）は実装・CPU検証完了。
+実装状況（2026-11-14）: M1（Phase 01〜03）、M2（Phase 04）は実装・CPU検証完了。
 詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
-M2以降は未着手。CPUProfiler、Backend Validation、既存Assertは維持する。
+M3以降は未着手。CPUProfilerのsnapshot、Backend Validation、既存Assertは維持する。
 
 ## 基本設計
 
@@ -89,13 +89,39 @@ Core / RHI / Renderer / Physics / Animation / Asset / Runtime
 
 ## Phase 04 — Counter / Trace（目安5〜8日）
 
-- [ ] CounterイベントとFrame IDを追加する
-- [ ] `RAVEN_COUNTER` APIを追加する
-- [ ] RAII方式の `RAVEN_TRACE_SCOPE` を追加する
-- [ ] Trace Begin/Endとスレッド別Timelineを再構築する
-- [ ] 無効化時・有効化時のオーバーヘッドを測定する
+- [x] CounterイベントとFrame IDを追加する
+- [x] `RAVEN_COUNTER` APIを追加する
+- [x] RAII方式の `RAVEN_TRACE_SCOPE` を追加する
+- [x] Trace Begin/Endとスレッド別Timelineを再構築する
+- [x] 無効化時・有効化時のオーバーヘッドを測定する
 
 **完了条件:** PhysicsStepやRHI SubmitのCPU時間とCounterをフレーム単位で確認できる。
+
+### M2実装結果（2026-11-14）
+
+- 固定長の計測Payload、Frame ID、Scope/Parent Scope IDを追加した。名前はUTF-8境界を保って96 byteまで保持し、Counterは有限のdoubleとする。
+- 計測は既定で無効。`RAVEN_COUNTER` / `RAVEN_TRACE_SCOPE`を追加し、実行時・ビルド時の無効化で名前・値の式を評価しない。Logを維持して計測だけ無効化する構成も用意した。
+- RendererがFrame IDを採番し、既存CPUProfilerにも渡す。CoreからDiagnosticsへの依存は追加せず、`ProfiledTraceScope` Adapterで試験箇所だけを両方へ記録する。
+- Physics StepとManifold数、RHI SubmitのCPU区間と成功値だけを試験接続した。PresentやGPU完了時間とは分離し、既存の失敗伝播を維持した。
+- Scopeは開始Frameへ帰属させる。開始後の無効化でも同じSession内のEndを閉じ、再起動後には旧SessionのEndや親IDを混入させない。
+- オフラインTimeline再構築は到着順に依存せず、片側欠落・親欠落・重複・metadata不一致・時刻逆転を報告する。上限を超える入力は確保前に拒否する。
+- Binary Trace v1.1はtag 5の計測Payloadを追加し、v1.0のLogも読める。旧Readerは未知minorを拒否する。
+- 通常Applicationの`--diagnostics-measurements`でConsole計測、`--diagnostics-trace=path.rvndiag`でBinary記録を有効化できる。保存時のConsoleはLogだけを表示する。
+- 専用MSVC RunnerとCIはDebug / Release / Disabled / MeasurementsDisabledの4構成を扱う。詳細契約はDiagnosticsのTests/READMEを参照。
+
+検証結果:
+
+- 専用Runner: Debug / Releaseは各3 suite成功、Disabled / MeasurementsDisabledは各1 suite成功。M1の保存・並列性検証も継続して実行した。
+- Engine全体のDebug / Release x64ビルド成功。両実行ファイルのDiagnostics各3 suite、DebugのExplicit Frame / Physics Collision回帰が成功した。
+- Explicit FrameのMockでRHI Submitの区間・成功/失敗値とPresent順序を確認し、空Sceneの実Physics Stepでも区間とManifold数の発行を確認した。
+- CPU UI Debug回帰も終了コード0。CPUProfilerの表示用snapshotを扱う既存検証を維持した。
+- 全体ビルドは既存のPDB問題を避け、`RavenGenerateLinkDebugInformation=false` / `LinkIncremental=false`で確認した。UI回帰はローカルで不足していたGLFW 3.4のnative headerを`artifacts/sg3-deps`のキャッシュから一時propsで追加参照した。いずれもプロジェクトの依存・既定設定は変更していない。
+- Warningは全体Debug 2件（LNK4075 / LNK4098）、Release 0件。専用/W4は既存のalignas構成に伴うC4324がDebug/Release各6件、無効化構成各3件。UI再ビルドは未変更箇所のC4244が32件とリンクWarning 2件で、変更した診断コードの新規コンパイラWarningはなかった。
+- ReleaseのNull Sink測定例はCounter約127 ns/call、Trace Scope約236 ns/区間（2イベント）、実行時無効のCounter+Scope約7.2 ns/組。登録・batch間Flushを測定区間から除外し、Drop=0を確認した。値は環境依存の参考値。
+
+注意: Begin/Endが両方消えたScopeはイベントだけでは検出できないため、取得時のDrop差分を再構築へ渡す。Drop差分はファイルへ自動保存しない。
+初回Thread登録と共通制御mutexは残る。M3の全面接続、M4のEditor Viewer、GPU実機の時間検証は対象外。
+次の候補はM3（Phase 05）のSubsystem Integration。開始は別承認とする。
 
 ## Phase 05 — Subsystem Integration（目安5〜10日）
 
@@ -164,8 +190,8 @@ RAVEN_COUNTER("Physics.NarrowPhase.Candidates", candidateCount);
 初期APIで文字列フォーマットを使用する場合も、内部イベントID・型付きPayloadとの対応を明示する。Trace/Counterはビルド設定によって無効化できるようにする。
 
 M1で確定したLog APIは `category, event ID, owned payload` の3引数。
-上記Log部分は実装済みAPIの呼出形式、Trace/Counter部分はM2の未実装イメージ。
-Payloadは単一の `int64 / double / bool / string` とし、文字列は最大1024 byteを保持する。
+上記Log部分とTrace/Counter部分は実装済みAPIの呼出形式。
+Log Payloadは単一の `int64 / double / bool / string` とし、文字列は最大1024 byteを保持する。M2のCounter/Traceは別の固定長計測Payloadを使用する。
 複合引数・書式文字列・Message Dictionaryの生成はM5で設計する。
 
 ## 推奨する責務分割（構成案）

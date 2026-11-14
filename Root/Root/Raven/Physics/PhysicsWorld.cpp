@@ -4,6 +4,7 @@
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Core/Containers/FrameVector.h"
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
@@ -1184,6 +1185,7 @@ void PhysicsWorld::WakeUp(Scene& scene, Entity entity)
 // 元の処理順序を維持し、今回の修正では変更していません。
 void PhysicsWorld::Step(Scene& scene, float dt)
 {
+    Diagnostics::ProfiledTraceScope trace("PhysicsStep", Diagnostics::DiagnosticCategory::Physics);
     if (dt <= 0.0f)
     {
         return;
@@ -1252,6 +1254,9 @@ void PhysicsWorld::Step(Scene& scene, float dt)
 
     CPUProfiler::Get().AddCounter("Physics.Collision.Manifolds",
         static_cast<double>(m_SolverDebugStatistics.ManifoldCount));
+    // M2の試験導入はStep末尾の集計値だけとし、衝突Hot loopへ発行処理を持ち込みません。
+    Diagnostics::RecordCounter("Physics.Collision.Manifolds",
+        static_cast<double>(m_SolverDebugStatistics.ManifoldCount), Diagnostics::DiagnosticCategory::Physics);
     CPUProfiler::Get().AddCounter("Physics.Collision.ContactPoints",
         static_cast<double>(m_SolverDebugStatistics.ContactPointCount));
 

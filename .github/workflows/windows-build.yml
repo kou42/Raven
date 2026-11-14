@@ -149,6 +149,28 @@ jobs:
 
 
 
+  diagnostics-x64:
+    name: Diagnostics CPU tests x64
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and run Diagnostics configurations
+        shell: pwsh
+        run: |
+          foreach ($configuration in @('Debug', 'Release', 'Disabled', 'MeasurementsDisabled')) {
+            ./scripts/test-windows-diagnostics.ps1 -Configuration $configuration
+          }
+      - name: Upload Diagnostics logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-diagnostics-x64-logs
+          path: artifacts/diagnostics/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   structured-data-x64:
     name: Structured Data CPU tests x64
     runs-on: windows-2022

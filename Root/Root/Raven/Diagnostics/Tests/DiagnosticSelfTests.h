@@ -6,4 +6,5 @@ namespace Raven::tests
 // Releaseでもチェックを省略せず、失敗時は例外で専用Runnerへ通知します。
 void RunDiagnosticSelfTests();
 void RunDiagnosticSinkSelfTests();
+void RunDiagnosticMeasurementSelfTests();
 }

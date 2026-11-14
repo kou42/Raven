@@ -13,6 +13,7 @@ struct DiagnosticFilter
 {
     DiagnosticSeverity MinimumSeverity = DiagnosticSeverity::Info;
     std::uint32_t CategoryMask = (1u << DiagnosticCategoryCount) - 1u;
+    bool IncludeMeasurements = true;
 
     bool Accepts(const DiagnosticEvent& event) const noexcept;
 };

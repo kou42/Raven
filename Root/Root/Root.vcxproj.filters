@@ -1177,4 +1177,14 @@
     <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticSinkSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
     <None Include="Raven\Diagnostics\Tests\README.md"><Filter>Raven\\Diagnostics\\Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticMetric.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticMetric.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticMeasurement.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticMeasurement.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\MeasurementTimeline.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\MeasurementTimeline.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticMeasurementSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Renderer\RHI\RHISceneMeshRenderer.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+  </ItemGroup>
 </Project>

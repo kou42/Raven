@@ -13,6 +13,7 @@ namespace
 constexpr std::array<unsigned char, 8> Magic{ 'R', 'V', 'N', 'D', 'I', 'A', 'G', 0 };
 constexpr std::size_t FileHeaderBytes = 16;
 constexpr std::size_t EventHeaderBytes = 40;
+constexpr std::size_t MetricHeaderBytes = 36;
 constexpr std::size_t MaxRecordBytes = EventHeaderBytes + MaxDiagnosticTextBytes;
 static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);
 
@@ -65,6 +66,7 @@ bool WriteBinaryTraceHeader(std::ostream& output)
     std::array<unsigned char, FileHeaderBytes> bytes{};
     std::copy(Magic.begin(), Magic.end(), bytes.begin());
     Store(bytes.data() + 8, 1, 2);
+    Store(bytes.data() + 10, 1, 2);
     return WriteBytes(output, bytes.data(), bytes.size());
 }
 
@@ -98,6 +100,23 @@ bool WriteBinaryTraceEvent(std::ostream& output, const DiagnosticEvent& event)
         record[34] = 3;
         payloadSize = 1;
         record[EventHeaderBytes] = *boolean == true ? 1 : 0;
+    }
+    else if (const auto* metric = std::get_if<DiagnosticMetric>(&event.Payload); metric != nullptr)
+    {
+        if (metric->IsValid() == false)
+        {
+            return false;
+        }
+        record[34] = 5;
+        auto* encoded = record + EventHeaderBytes;
+        encoded[0] = static_cast<unsigned char>(metric->Kind);
+        Store(encoded + 2, metric->NameBytes, 2);
+        Store(encoded + 4, metric->FrameId, 8);
+        Store(encoded + 12, metric->ScopeId, 8);
+        Store(encoded + 20, metric->ParentScopeId, 8);
+        Store(encoded + 28, std::bit_cast<std::uint64_t>(metric->Value), 8);
+        std::copy_n(metric->Name.begin(), metric->NameBytes, encoded + MetricHeaderBytes);
+        payloadSize = MetricHeaderBytes + metric->NameBytes;
     }
     else
     {
@@ -138,7 +157,7 @@ TraceReadResult BinaryTraceReader::ReadNext(DiagnosticEvent& event)
         {
             return m_Result = TraceReadResult::InvalidData;
         }
-        if (Load(header.data() + 8, 2) != 1 || Load(header.data() + 10, 2) != 0)
+        if (Load(header.data() + 8, 2) != 1 || Load(header.data() + 10, 2) > 1)
         {
             return m_Result = TraceReadResult::UnsupportedVersion;
         }
@@ -147,6 +166,7 @@ TraceReadResult BinaryTraceReader::ReadNext(DiagnosticEvent& event)
             return m_Result = TraceReadResult::InvalidData;
         }
         m_HeaderRead = true;
+        m_MinorVersion = static_cast<std::uint16_t>(Load(header.data() + 10, 2));
     }
 
     std::array<unsigned char, 4> length{};
@@ -216,6 +236,31 @@ TraceReadResult BinaryTraceReader::ReadNext(DiagnosticEvent& event)
     case 4:
         decoded.Payload = std::string(reinterpret_cast<const char*>(payload), payloadSize);
         break;
+    case 5:
+    {
+        if (m_MinorVersion < 1 || payloadSize < MetricHeaderBytes || payload[1] != 0)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        DiagnosticMetric metric;
+        metric.Kind = static_cast<DiagnosticMetricKind>(payload[0]);
+        metric.NameBytes = static_cast<std::uint16_t>(Load(payload + 2, 2));
+        if (metric.NameBytes > MaxDiagnosticMetricNameBytes || payloadSize != MetricHeaderBytes + metric.NameBytes)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        metric.FrameId = Load(payload + 4, 8);
+        metric.ScopeId = Load(payload + 12, 8);
+        metric.ParentScopeId = Load(payload + 20, 8);
+        metric.Value = std::bit_cast<double>(Load(payload + 28, 8));
+        std::copy_n(payload + MetricHeaderBytes, metric.NameBytes, metric.Name.begin());
+        if (metric.IsValid() == false)
+        {
+            return m_Result = TraceReadResult::InvalidData;
+        }
+        decoded.Payload = metric;
+        break;
+    }
     default:
         return m_Result = TraceReadResult::InvalidData;
     }

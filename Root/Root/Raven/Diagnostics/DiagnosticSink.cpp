@@ -8,7 +8,8 @@ bool DiagnosticFilter::Accepts(const DiagnosticEvent& event) const noexcept
     const auto severity = static_cast<unsigned>(event.Severity);
     return category < DiagnosticCategoryCount && severity <= static_cast<unsigned>(DiagnosticSeverity::Error)
         && severity >= static_cast<unsigned>(MinimumSeverity)
-        && (CategoryMask & (1u << category)) != 0u;
+        && (CategoryMask & (1u << category)) != 0u
+        && (IncludeMeasurements == true || std::holds_alternative<DiagnosticMetric>(event.Payload) == false);
 }
 
 ConsoleSink::ConsoleSink(std::ostream& output, DiagnosticFilter filter)
