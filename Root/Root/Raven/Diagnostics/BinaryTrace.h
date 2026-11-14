@@ -6,8 +6,8 @@
 
 namespace Raven::Diagnostics
 {
-// v1.1: little endian / IEEE754 binary64。v1.0のLogは同じRecord配置で読めます。
-// 計測Payloadをtag=5として追加します。旧Readerは未知minorを拒否します。
+// v1.2: Validation PayloadとSoftBody categoryを追加。v1.0/1.1も読めます。
+// tag 5は計測、tag 6はValidation。旧Readerは未知minorを拒否します。
 // Header=magic[8], major:u16, minor:u16, reserved:u32。
 // Record=size:u32, id:u64, timestamp:u64, thread:u64, sequence:u64,
 // category:u8, severity:u8, payloadType:u8, reserved:u8, payloadSize:u32, payload。

@@ -214,6 +214,11 @@ void TestLossAndCompatibility()
     std::istringstream oldMetricInput(oldHeaderMetric);
     BinaryTraceReader oldMetricReader(oldMetricInput);
     Require(oldMetricReader.ReadNext(event) == TraceReadResult::InvalidData);
+    auto minorOneMetric = valid;
+    minorOneMetric[10] = 1;
+    std::istringstream minorOneInput(minorOneMetric);
+    BinaryTraceReader minorOneReader(minorOneInput);
+    Require(minorOneReader.ReadNext(event) == TraceReadResult::Event && event.Payload == begin.Payload);
     // v1.0のLogは新Readerでも読み込みます。LogのRecord配置は変更していません。
     begin.Payload = std::int64_t(-7);
     std::ostringstream log;

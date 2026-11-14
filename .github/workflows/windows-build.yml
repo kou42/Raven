@@ -32,6 +32,17 @@ jobs:
         shell: pwsh
         run: ./scripts/test-windows-scene.ps1 -SkipBuild -SkipBootstrap
 
+      - name: Run Diagnostics subsystem regressions
+        shell: pwsh
+        run: |
+          foreach ($argument in @('--test-diagnostics', '--test-explicit-frame', '--test-physics-collision', '--test-softbody-integrated')) {
+            $output = @(& './Root/x64/Debug/Root.exe' $argument 2>&1)
+            $testExit = $LASTEXITCODE
+            $output | Set-Content -Encoding utf8 ("artifacts/logs/windows-" + $argument.TrimStart('-') + '.log')
+            if ($testExit -ne 0) { $output | Select-Object -Last 20; throw "$argument failed: exit=$testExit" }
+            Write-Host "$argument passed"
+          }
+
       - name: Measure Component View Debug traversal
         shell: pwsh
         run: ./scripts/measure-windows-scene-view.ps1 -Configuration Debug -Label ci -SkipBuild

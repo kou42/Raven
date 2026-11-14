@@ -300,6 +300,32 @@ void Renderer::BeginFrame()
     s_Statistics.Reset();
 }
 
+void Renderer::PublishFrameDiagnostics()
+{
+    if (Diagnostics::IsMeasurementsEnabled() == false
+        || Diagnostics::IsDiagnosticCategoryEnabled(Diagnostics::DiagnosticCategory::Renderer) == false)
+    {
+        return;
+    }
+    const auto frame = Diagnostics::GetDiagnosticFrameId();
+    const auto session = Diagnostics::GetDiagnosticSessionId();
+    // Renderer統計と同じMain Threadで扱います。複数の終了経路から呼ばれても二重計上しません。
+    static std::uint64_t publishedFrame = 0;
+    static std::uint64_t publishedSession = 0;
+    if (session == 0 || (frame == publishedFrame && session == publishedSession))
+    {
+        return;
+    }
+    publishedFrame = frame;
+    publishedSession = session;
+    // 実際に発行した描画命令の既存値を共有します。GPU成功・完了数とは解釈しません。
+    Diagnostics::RecordCounter("Renderer.DrawCalls", s_Statistics.DrawCalls, Diagnostics::DiagnosticCategory::Renderer);
+    Diagnostics::RecordCounter("Renderer.Indices", s_Statistics.IndexCount, Diagnostics::DiagnosticCategory::Renderer);
+    Diagnostics::RecordCounter("Renderer.Triangles", s_Statistics.TriangleCount, Diagnostics::DiagnosticCategory::Renderer);
+    Diagnostics::RecordCounter("Renderer.RHI.LiveWrappers", static_cast<double>(RHIResource::GetLiveWrapperCount()),
+        Diagnostics::DiagnosticCategory::Renderer);
+}
+
 void Renderer::BeginScene(const Camera& camera)
 {
     // ========================================================================

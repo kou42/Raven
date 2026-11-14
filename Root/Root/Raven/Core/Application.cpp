@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "Raven/Renderer/RendererFrameDiagnostics.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Physics/Debug/PhysicsDebugImmediatePanel.h"
 #include "../Renderer/Renderer.h"
@@ -1566,6 +1567,7 @@ int Application::RunExplicitScene(Window& window, RHISceneFrameLifecycle& frame,
         const float frameDeltaTime = CalculateFrameDeltaTime(currentTime, previousTime);
 
         Renderer::BeginFrame();
+        RendererFrameDiagnostics frameDiagnostics;
         Renderer::SetFrameViewport(
             window.GetFramebufferWidth(), window.GetFramebufferHeight());
         if (callbacks.OnUpdate != nullptr)
@@ -1672,6 +1674,7 @@ void Application::Run()
             }
         }
         Renderer::BeginFrame();
+        RendererFrameDiagnostics frameDiagnostics;
 
         // ====================================================================
         // Raven UI frame begin

@@ -1,7 +1,9 @@
 #include "DX12Device.h"
 #include "Raven/Platform/RHIDebugConfig.h"
+#include "Raven/Diagnostics/DiagnosticValidation.h"
 
 #include <iostream>
+#include <algorithm>
 #include <vector>
 
 namespace Raven
@@ -93,20 +95,12 @@ void DX12Device::DrainDebugMessages() const
             message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION ||
             verboseMessages == true)
         {
-            // D3D12のSeverity値2はWARNINGです。数値の解釈違いを防ぐため名前で出力します。
-            const char* severityName = "MESSAGE";
-            switch (message->Severity)
-            {
-            case D3D12_MESSAGE_SEVERITY_CORRUPTION: severityName = "CORRUPTION"; break;
-            case D3D12_MESSAGE_SEVERITY_ERROR: severityName = "ERROR"; break;
-            case D3D12_MESSAGE_SEVERITY_WARNING: severityName = "WARNING"; break;
-            case D3D12_MESSAGE_SEVERITY_INFO: severityName = "INFO"; break;
-            default: break;
-            }
-            std::cerr << "[DX12 InfoQueue][" << severityName
-                      << "][ID " << static_cast<int>(message->ID) << "] "
-                      << (message->pDescription != nullptr ? message->pDescription : "");
-            std::cerr << '\n';
+            // D3D12のSeverity値2はWARNINGです。元の数値もPayloadへ保持して解釈違いを防ぎます。
+            static_assert(D3D12_MESSAGE_SEVERITY_CORRUPTION == 0 && D3D12_MESSAGE_SEVERITY_WARNING == 2);
+            Diagnostics::ReportDX12Validation(static_cast<std::uint32_t>(message->Severity),
+                static_cast<std::int32_t>(message->ID),
+                Diagnostics::BoundedValidationString(message->pDescription,
+                    std::min<std::size_t>(message->DescriptionByteLength, Diagnostics::MaxValidationMessageBytes + 4)));
         }
     }
     // 同じメッセージをフレームごとに繰り返し出さないよう、取得後に消去します。

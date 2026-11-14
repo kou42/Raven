@@ -36,7 +36,7 @@ std::uint64_t GetDiagnosticFrameId() noexcept
 
 void RecordCounter(std::string_view name, double value, DiagnosticCategory category) noexcept
 {
-    if (IsMeasurementsEnabled() == false)
+    if (IsMeasurementsEnabled() == false || IsDiagnosticCategoryEnabled(category) == false)
     {
         return;
     }
@@ -50,7 +50,7 @@ void RecordCounter(std::string_view name, double value, DiagnosticCategory categ
 TraceScope::TraceScope(std::string_view name, DiagnosticCategory category) noexcept
     : m_Category(category)
 {
-    if (IsMeasurementsEnabled() == false || name.empty() == true)
+    if (IsMeasurementsEnabled() == false || IsDiagnosticCategoryEnabled(category) == false || name.empty() == true)
     {
         return;
     }

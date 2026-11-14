@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Diagnostics/DiagnosticMetric.h"
+#include "Raven/Diagnostics/DiagnosticValidation.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,9 +22,9 @@ using DiagnosticEventId = std::uint64_t;
 
 enum class DiagnosticCategory : std::uint8_t
 {
-    Core, RHI, Renderer, Physics, Animation, Asset, Runtime
+    Core, RHI, Renderer, Physics, Animation, Asset, Runtime, SoftBody
 };
-constexpr std::uint32_t DiagnosticCategoryCount = static_cast<std::uint32_t>(DiagnosticCategory::Runtime) + 1u;
+constexpr std::uint32_t DiagnosticCategoryCount = static_cast<std::uint32_t>(DiagnosticCategory::SoftBody) + 1u;
 
 enum class DiagnosticSeverity : std::uint8_t
 {
@@ -34,7 +35,7 @@ enum class DiagnosticSeverity : std::uint8_t
 // 単一の数値または文字列を保持します。文字列の最大保持長は1024バイトです。
 // 文字列入力は正しいUTF-8を前提とし、上限での途中切断を避ける処理は実装側です。
 constexpr std::size_t MaxDiagnosticTextBytes = 1024;
-using DiagnosticPayload = std::variant<std::int64_t, double, bool, std::string, DiagnosticMetric>;
+using DiagnosticPayload = std::variant<std::int64_t, double, bool, std::string, DiagnosticMetric, DiagnosticValidation>;
 
 struct DiagnosticEvent
 {
@@ -56,6 +57,8 @@ constexpr DiagnosticEventId PhysicsGravityUpdated = 0x2001u;
 constexpr DiagnosticEventId Counter = 0xd1000001u;
 constexpr DiagnosticEventId TraceBegin = 0xd1000002u;
 constexpr DiagnosticEventId TraceEnd = 0xd1000003u;
+constexpr DiagnosticEventId VulkanValidation = 0x1002u;
+constexpr DiagnosticEventId DX12Validation = 0x1003u;
 }
 
 // 値所有Payloadの文字列サイズを制限します。EmitとSelf Testで同じ規則を使用します。
@@ -96,6 +99,8 @@ private:
 // ビルド時無効化に加え、実行時無効化でもマクロのPayload式を評価しません。
 void SetDiagnosticsEnabled(bool enabled) noexcept;
 bool IsDiagnosticsEnabled() noexcept;
+void SetDiagnosticCategoryEnabled(DiagnosticCategory category, bool enabled) noexcept;
+bool IsDiagnosticCategoryEnabled(DiagnosticCategory category) noexcept;
 
 // 未開始時は同期Console出力。
 // IDは呼び出し側で安定した値を指定し、Sequenceは発行順を表します。
@@ -109,6 +114,8 @@ void Emit(DiagnosticEventId id, DiagnosticCategory category,
 // sessionIdが0以外なら同じSessionに限定し、再起動を跨ぐTraceEndの混入を防ぎます。
 std::uint64_t GetDiagnosticSessionId();
 bool EmitMetric(const DiagnosticMetric& metric, DiagnosticCategory category, std::uint64_t sessionId) noexcept;
+// Native callback専用。診断mutexの待機・同期Consoleへの転送は行いません。
+bool TryEmitValidation(DiagnosticSeverity severity, DiagnosticValidation validation) noexcept;
 }
 }
 
@@ -122,8 +129,9 @@ bool EmitMetric(const DiagnosticMetric& metric, DiagnosticCategory category, std
 
 #if RAVEN_ENABLE_DIAGNOSTICS
 #define RAVEN_DIAGNOSTIC_LOG(category, id, severity, payload) \
-    do { if (::Raven::Diagnostics::IsDiagnosticsEnabled() == true) { \
-        ::Raven::Diagnostics::Emit((id), (category), (severity), (payload)); } } while (false)
+    do { const auto ravenDiagnosticCategory = (category); \
+        if (::Raven::Diagnostics::IsDiagnosticCategoryEnabled(ravenDiagnosticCategory) == true) { \
+        ::Raven::Diagnostics::Emit((id), ravenDiagnosticCategory, (severity), (payload)); } } while (false)
 #else
 #define RAVEN_DIAGNOSTIC_LOG(category, id, severity, payload) do {} while (false)
 #endif

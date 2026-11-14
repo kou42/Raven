@@ -290,6 +290,7 @@ void RunDiagnosticSelfTests()
     Require(delivered + (droppedAfter - droppedBefore) == LoadWorkers * LoadPerWorker);
     RunDiagnosticSinkSelfTests();
     RunDiagnosticMeasurementSelfTests();
+    RunDiagnosticSubsystemSelfTests();
 
 }
 }

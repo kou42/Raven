@@ -20,6 +20,7 @@ namespace
 std::atomic<std::uint64_t> s_Sequence{ 0 };
 std::atomic<std::uint64_t> s_NextThreadId{ 0 };
 std::atomic<bool> s_Enabled{ true };
+std::atomic<std::uint32_t> s_CategoryMask{ (1u << DiagnosticCategoryCount) - 1u };
 std::mutex s_ConsoleMutex;
 std::mutex s_AsyncMutex;
 std::shared_ptr<DiagnosticCollector> s_Collector;
@@ -52,6 +53,7 @@ const char* CategoryName(DiagnosticCategory category)
     case DiagnosticCategory::Animation: return "Animation";
     case DiagnosticCategory::Asset: return "Asset";
     case DiagnosticCategory::Runtime: return "Runtime";
+    case DiagnosticCategory::SoftBody: return "SoftBody";
     }
     return "Unknown";
 }
@@ -103,12 +105,21 @@ void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
             << " scope=" << metric->ScopeId << " parent=" << metric->ParentScopeId
             << " name=" << metric->GetName() << " value=" << metric->Value;
     }
+    else if (const auto* validation = std::get_if<DiagnosticValidation>(&event.Payload); validation != nullptr)
+    {
+        output << "backend=" << static_cast<unsigned>(validation->Backend)
+            << " native_id=" << validation->MessageId << " native_severity=" << validation->NativeSeverity
+            << " native_type=" << validation->NativeType << " frame=" << validation->FrameId
+            << " truncated=" << (validation->NameTruncated || validation->MessageTruncated)
+            << " name=" << validation->Name << " message=" << validation->Message;
+    }
     else
     {
         // 計測型は上で処理し、従来Logの書式は維持します。
         std::visit([&output](const auto& value)
         {
-            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, DiagnosticMetric> == false)
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, DiagnosticMetric> == false
+                && std::is_same_v<std::decay_t<decltype(value)>, DiagnosticValidation> == false)
             {
                 output << value;
             }
@@ -251,10 +262,36 @@ bool IsDiagnosticsEnabled() noexcept
     return RAVEN_ENABLE_DIAGNOSTICS != 0 && s_Enabled.load(std::memory_order_relaxed);
 }
 
+void SetDiagnosticCategoryEnabled(DiagnosticCategory category, bool enabled) noexcept
+{
+    const auto index = static_cast<unsigned>(category);
+    if (index >= DiagnosticCategoryCount)
+    {
+        return;
+    }
+    const auto bit = 1u << index;
+    if (enabled == true)
+    {
+        s_CategoryMask.fetch_or(bit, std::memory_order_relaxed);
+    }
+    else
+    {
+        s_CategoryMask.fetch_and(~bit, std::memory_order_relaxed);
+    }
+}
+
+bool IsDiagnosticCategoryEnabled(DiagnosticCategory category) noexcept
+{
+    const auto index = static_cast<unsigned>(category);
+    return IsDiagnosticsEnabled() && index < DiagnosticCategoryCount
+        && (s_CategoryMask.load(std::memory_order_relaxed) & (1u << index)) != 0;
+}
+
 namespace
 {
 bool Publish(DiagnosticEventId id, DiagnosticCategory category,
-    DiagnosticSeverity severity, DiagnosticPayload payload, bool asyncOnly, std::uint64_t sessionId)
+    DiagnosticSeverity severity, DiagnosticPayload payload, bool asyncOnly, std::uint64_t sessionId,
+    bool nonBlocking = false)
 {
     NormalizePayload(payload);
 
@@ -275,8 +312,19 @@ bool Publish(DiagnosticEventId id, DiagnosticCategory category,
     event.Payload = std::move(payload);
 
     {
-        std::lock_guard<std::mutex> lock(s_AsyncMutex);
-        if (asyncOnly == true && (s_Collector == nullptr || sessionId != s_Generation))
+        std::unique_lock<std::mutex> lock(s_AsyncMutex, std::defer_lock);
+        if (nonBlocking == true)
+        {
+            if (lock.try_lock() == false)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            lock.lock();
+        }
+        if (asyncOnly == true && (s_Collector == nullptr || (sessionId != 0 && sessionId != s_Generation)))
         {
             return false;
         }
@@ -290,7 +338,7 @@ bool Publish(DiagnosticEventId id, DiagnosticCategory category,
                     s_ThreadBuffer.Buffer->Close();
                 }
                 auto buffer = std::make_shared<EventBuffer>();
-                if (s_Collector->RegisterBuffer(buffer) == true)
+                if (s_Collector->RegisterBuffer(buffer, nonBlocking) == true)
                 {
                     s_ThreadBuffer.Buffer = std::move(buffer);
                     s_ThreadBuffer.Generation = s_Generation;
@@ -329,7 +377,7 @@ bool Publish(DiagnosticEventId id, DiagnosticCategory category,
 void Emit(DiagnosticEventId id, DiagnosticCategory category,
     DiagnosticSeverity severity, DiagnosticPayload payload)
 {
-    if (IsDiagnosticsEnabled() == true)
+    if (IsDiagnosticCategoryEnabled(category) == true)
     {
         Publish(id, category, severity, std::move(payload), false, 0);
     }
@@ -348,6 +396,10 @@ bool EmitMetric(const DiagnosticMetric& metric, DiagnosticCategory category, std
     {
         return false;
     }
+    if (metric.Kind != DiagnosticMetricKind::TraceEnd && IsDiagnosticCategoryEnabled(category) == false)
+    {
+        return false;
+    }
     const auto id = metric.Kind == DiagnosticMetricKind::Counter ? EventIds::Counter
         : (metric.Kind == DiagnosticMetricKind::TraceBegin ? EventIds::TraceBegin : EventIds::TraceEnd);
     try
@@ -359,6 +411,24 @@ bool EmitMetric(const DiagnosticMetric& metric, DiagnosticCategory category, std
     {
         // 計測失敗がPhysics/RHIの処理やRAII Destructorへ例外を持ち込まないようにします。
         WriteEmergencyDiagnostic("Diagnostics measurement could not be published.");
+        return false;
+    }
+}
+
+bool TryEmitValidation(DiagnosticSeverity severity, DiagnosticValidation validation) noexcept
+{
+    if (IsDiagnosticCategoryEnabled(DiagnosticCategory::RHI) == false || validation.IsValid() == false)
+    {
+        return false;
+    }
+    const auto id = validation.Backend == DiagnosticValidationBackend::Vulkan
+        ? EventIds::VulkanValidation : EventIds::DX12Validation;
+    try
+    {
+        return Publish(id, DiagnosticCategory::RHI, severity, std::move(validation), true, 0, true);
+    }
+    catch (...)
+    {
         return false;
     }
 }

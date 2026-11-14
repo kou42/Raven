@@ -414,16 +414,18 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
     // 毎step allocationを避けます。Debug表示用m_LastPairsだけはBroadPhase側で永続vectorへコピーします。
     FrameVector<BroadPhasePair> pairs{ STLAllocatorAdapter<BroadPhasePair>(m_FrameAllocator) };
     {
-        RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.BroadPhase");
+        Diagnostics::ProfiledTraceScope trace("Physics.DetectCollisions.BroadPhase", Diagnostics::DiagnosticCategory::Physics);
         m_BroadPhase.ComputePairs(scene, pairs);
     }
     CPUProfiler::Get().AddCounter("Physics.Collision.BroadPhasePairs", static_cast<double>(pairs.size()));
+    Diagnostics::RecordCounter("Physics.Collision.BroadPhasePairs", static_cast<double>(pairs.size()), Diagnostics::DiagnosticCategory::Physics);
+    std::uint64_t validNarrowPhasePairs = 0;
 
     // Broad Phase で抽出された候補ペアだけを調べ、実際に接触が起きるかを判定します。
     // ------------------------------------------------------------------------------
     // Broad Phaseが抽出した有限形状の候補だけをNarrow Phaseへ渡します。
     {
-        RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.FiniteNarrowPhase");
+        Diagnostics::ProfiledTraceScope trace("Physics.DetectCollisions.FiniteNarrowPhase", Diagnostics::DiagnosticCategory::Physics);
         for (const auto& pair : pairs)
         {
             if (!scene.IsEntityAlive(pair.A) || !scene.IsEntityAlive(pair.B))
@@ -443,6 +445,7 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
 
             ContactManifold manifold{};
             bool generated = false;
+            ++validNarrowPhasePairs;
 
             // 形状組み合わせごとに専用Narrow Phaseへ振り分けます。
             if (colliderA->Type == ColliderType::Sphere
@@ -545,12 +548,16 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         }
     }
 
+    // 有効な両Colliderを確認したPair数です。実接触数とは区別し、発行はループ外で行います。
+    Diagnostics::RecordCounter("Physics.Collision.FiniteNarrowPhase.ValidPairs",
+        static_cast<double>(validNarrowPhasePairs), Diagnostics::DiagnosticCategory::Physics);
+
     // Planeは無限形状なので通常のBroad Phase Treeには登録しません。
     // Sphere / Box / Capsuleとの組み合わせをここで別途処理します。
     // -----------------------------------------------------------------------------
     // Plane は通常の Broad Phase では扱わないため、別途有限形状との組み合わせを確認します。
     {
-        RAVEN_PROFILE_SCOPE("Physics.DetectCollisions.PlaneNarrowPhase");
+        Diagnostics::ProfiledTraceScope trace("Physics.DetectCollisions.PlaneNarrowPhase", Diagnostics::DiagnosticCategory::Physics);
 
         // PlaneはTree外ですが、形状ごとに全Colliderを探し直す必要はありません。
         // Step中にECS構造を変更する処理は呼ばないため、Componentへの非所有参照は
@@ -636,6 +643,7 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         profiler.AddCounter("Physics.Collision.ColliderCount", static_cast<double>(colliderCount));
         profiler.AddCounter("Physics.Collision.PlaneCount", static_cast<double>(planes.size()));
         profiler.AddCounter("Physics.Collision.PlanePairTests", static_cast<double>(planePairTests));
+        Diagnostics::RecordCounter("Physics.Collision.PlanePairTests", static_cast<double>(planePairTests), Diagnostics::DiagnosticCategory::Physics);
     }
 
     RestorePersistentContacts(scene);
@@ -996,7 +1004,7 @@ void PhysicsWorld::QueryAABB(
 // 有効なContact Manifoldを解き、Solver統計を更新します。
 void PhysicsWorld::SolveCollisions(Scene& scene, float dt)
 {
-    RAVEN_PROFILE_SCOPE("Physics.SolveCollisions");
+    Diagnostics::ProfiledTraceScope trace("Physics.SolveCollisions", Diagnostics::DiagnosticCategory::Physics);
     if (m_SolverSettings.EnableWarmStart)
     {
         // Warm Start が有効な場合、前フレームのインパルスを持つ接触だけを数えます。
@@ -1259,6 +1267,12 @@ void PhysicsWorld::Step(Scene& scene, float dt)
         static_cast<double>(m_SolverDebugStatistics.ManifoldCount), Diagnostics::DiagnosticCategory::Physics);
     CPUProfiler::Get().AddCounter("Physics.Collision.ContactPoints",
         static_cast<double>(m_SolverDebugStatistics.ContactPointCount));
+    Diagnostics::RecordCounter("Physics.Collision.ContactPoints", m_SolverDebugStatistics.ContactPointCount,
+        Diagnostics::DiagnosticCategory::Physics);
+    Diagnostics::RecordCounter("Physics.Solver.WarmStartedConstraints", m_SolverDebugStatistics.WarmStartedConstraintCount,
+        Diagnostics::DiagnosticCategory::Physics);
+    Diagnostics::RecordCounter("Physics.Solver.VelocityIterations", m_SolverDebugStatistics.VelocityIterations,
+        Diagnostics::DiagnosticCategory::Physics);
 
     m_FrameAllocator.ResetFrame();
 }

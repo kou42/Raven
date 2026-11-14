@@ -6,9 +6,9 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 本書は計画であり、記載機能の実装完了を意味しない。
 
-実装状況（2026-11-14）: M1（Phase 01〜03）、M2（Phase 04）は実装・CPU検証完了。
+実装状況（2026-11-14）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）は実装・CPU検証完了。
 詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
-M3以降は未着手。CPUProfilerのsnapshot、Backend Validation、既存Assertは維持する。
+M4以降は未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
 
 ## 基本設計
 
@@ -125,13 +125,32 @@ Core / RHI / Renderer / Physics / Animation / Asset / Runtime
 
 ## Phase 05 — Subsystem Integration（目安5〜10日）
 
-- [ ] RHI BackendのValidationを共通イベントに変換する
-- [ ] Physics BroadPhase / NarrowPhase / Solver Counterを接続する
-- [ ] SoftBody Candidate / Constraint / Correction Counterを接続する
-- [ ] Renderer DrawCall / Resource Counterを接続する
-- [ ] Subsystem単位の有効・無効設定と回帰テストを整備する
+- [x] RHI BackendのValidationを共通イベントに変換する
+- [x] Physics BroadPhase / NarrowPhase / Solver Counterを接続する
+- [x] SoftBody Candidate / Constraint / Correction Counterを接続する
+- [x] Renderer DrawCall / Resource Counterを接続する
+- [x] Subsystem単位の有効・無効設定と回帰テストを整備する
 
 **完了条件:** RHIとPhysicsの診断情報を共通フォーマットで収集できる。
+
+### M3実装結果（2026-11-14）
+
+- Vulkan callback / DX12 InfoQueueを、Backend・元ID・Native Severity/Type・観測時Frame・所有する名前/本文・切詰めフラグを持つValidation Payloadへ変換した。既存のVerbose条件とcallback戻り値・Queue Clear・Live Objects reportは維持した。
+- Callbackでは診断の制御・登録mutexを待たない。停止中・競合・Queue満杯・再入・確保失敗ではstderrへ退避する。退避回数は独立APIで観測し、Native ABIへC++例外を返さない。
+- PhysicsはBroadPhase候補、有効なNarrowPhase候補、Plane判定仕事量、Solver既存統計をループ外で発行する。既存Profiler名とM2 Manifold Counterを維持し、同じ値を重複発行しない。
+- SoftBodyはPhysicsと独立したcategory値7を追加した。Step末尾でTopologyとParticle-Triangle統計を発行し、詳細未収集はDetailedCollected=0とする。詳細収集設定を自動変更せず、Constraint/Correctionは収集時だけ発行する。
+- RendererはFrame guardで正常・失敗終了時の既存描画統計を発行し、同じSession/Frameでの二重計上を防ぐ。ResourceはRHIResourceの生存C++ラッパー数とし、所有参照やGPU操作を追加しない。
+- Category別のatomicな発行設定と通常Applicationの`--diagnostics-disable=rhi,physics,softbody,renderer`を追加した。設定は共通発行だけに作用し、計算・既存Profiler・Native Debug Layerを変更しない。
+- Binary Trace v1.2はValidation tag 6とSoftBody categoryを追加した。新Readerはv1.0/1.1も読み、旧Headerへの新型混入、長さ・Backend・Flags・Reservedの不正を拒否する。
+- 専用RunnerはDebug/Release各4 suiteと無効化2構成を扱う。CIへ実EngineのDiagnostics・Subsystem Mock・Physics・SoftBody統合回帰も追加した。
+
+検証: 専用4構成、Engine Debug/Release x64とDiagnostics、Debugの実Subsystem比較・Physics Collision・SoftBody統合、CPU UI Debug回帰が成功した。実統計との一致、同一入力の診断有効/無効での結果一致、詳細未収集の区別、Renderer重複発行防止、Native callbackの停止・Flush経路を確認した。
+全体ビルドは従来のPDB無効化とキャッシュ済みGLFW 3.4 native headerの一時参照で確認し、依存設定は変更していない。Debugは既存リンクWarning 2件、Releaseは0件。GPU実機の故障注入は未実施。
+
+検証・未検証事項の詳細は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
+Resource数はGPU handle数・使用byte・Fence完了・リークの証明ではない。ValidationのFrameはCPUで観測した番号で、GPUの原因Frameを保証しない。
+stderrへ退避したValidationはBinaryへ自動保存しない。共通mutex・初回Buffer確保、GPU実機の故障注入・終了確認は残る制約。
+次の候補はM4（Phase 06）のEditor Diagnostics。開始は別承認とする。
 
 ## Phase 06 — Editor Diagnostics（目安7〜12日）
 

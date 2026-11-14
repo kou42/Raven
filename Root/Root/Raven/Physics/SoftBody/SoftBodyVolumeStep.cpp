@@ -1,4 +1,5 @@
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 
 #include <algorithm>
 #include <cassert>
@@ -116,6 +117,7 @@ void SoftBodySolver::StepWithVolumeConstraints(
     float deltaTime,
     std::vector<XPBDVolumeConstraint>& volumeConstraints)
 {
+    Diagnostics::ProfiledTraceScope trace("SoftBody.Solver.StepWithVolumeConstraints", Diagnostics::DiagnosticCategory::SoftBody);
     // XPBDでは alphaTilde = compliance / dt^2 を使うため、0以下のdtでは解けません。
     if (deltaTime <= 0.0f)
     {
@@ -152,6 +154,7 @@ void SoftBodySolver::StepWithVolumeConstraints(
     // Position Constraintをすべて解いた後に一度だけVelocityを再構築します。
     // Volume補正による反発もVelocityへ反映され、次Stepの「ぷるん」と戻る運動へつながります。
     UpdateVelocities(deltaTime);
+    PublishDiagnosticCounters(false);
 }
 
 } // namespace ph
