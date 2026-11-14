@@ -1,5 +1,6 @@
 #include "VulkanInstance.h"
 #include "Raven/Platform/RHIDebugConfig.h"
+#include "Raven/Diagnostics/DiagnosticValidation.h"
 
 #include <iostream>
 #include <cstring>
@@ -20,14 +21,15 @@ VKAPI_ATTR VkBool32 VKAPI_CALL OnVulkanDebugMessage(
     void* userData)
 {
     (void)userData;
-    const char* level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0
-        ? "ERROR" : ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0 ? "WARNING" : "INFO");
-    const char* category = (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) != 0
-        ? "VALIDATION" : ((type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) != 0
-            ? "PERFORMANCE" : "GENERAL");
-    std::cerr << "[Vulkan Validation][" << level << "][" << category << "] "
-              << (callbackData != nullptr && callbackData->pMessage != nullptr ? callbackData->pMessage : "")
-              << '\n';
+    static_assert(VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT == 0x1000u);
+    static_assert(VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT == 0x100u);
+    // callbackDataの借用寿命はこの関数内だけです。上限付きの所有値として共通基盤へ渡します。
+    Diagnostics::ReportVulkanValidation(severity, type,
+        callbackData != nullptr ? callbackData->messageIdNumber : 0,
+        Diagnostics::BoundedValidationString(callbackData != nullptr ? callbackData->pMessageIdName : nullptr,
+            Diagnostics::MaxValidationNameBytes + 4),
+        Diagnostics::BoundedValidationString(callbackData != nullptr ? callbackData->pMessage : nullptr,
+            Diagnostics::MaxValidationMessageBytes + 4));
     return VK_FALSE;
 }
 

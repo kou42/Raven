@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Math/MathVector.h"
 #include "Raven/Physics/Solver/SolverTemporaryAllocationCounter.h"
 #include "Raven/Physics/SoftBody/SoftBodyCloth.h"
@@ -603,7 +604,7 @@ void SoftBodySolver::StepWithSelfCollisions(
     const SoftBodySelfCollisionSettings& particleSettings,
     const SoftBodyParticleTriangleSelfCollisionSettings& particleTriangleSettings)
 {
-    RAVEN_PROFILE_SCOPE("SoftBody.Solver.StepWithSelfCollisions");
+    Diagnostics::ProfiledTraceScope trace("SoftBody.Solver.StepWithSelfCollisions", Diagnostics::DiagnosticCategory::SoftBody);
 
     // Statisticsは「直近1 Step」の値として扱います。
     // deltaTime不正や自己衝突無効時も古い値を残さないよう、Early Returnより前に必ずResetします。
@@ -803,6 +804,7 @@ void SoftBodySolver::StepWithSelfCollisions(
     // 直前frameのPair列を保持し続けないよう論理要素を破棄します。
     m_ParticleCandidatePairs.clear();
     m_ParticleTriangleCandidatePairs.clear();
+    PublishDiagnosticCounters(true);
 }
 
 } // namespace ph

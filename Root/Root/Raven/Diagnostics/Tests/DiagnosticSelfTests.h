@@ -7,4 +7,5 @@ namespace Raven::tests
 void RunDiagnosticSelfTests();
 void RunDiagnosticSinkSelfTests();
 void RunDiagnosticMeasurementSelfTests();
+void RunDiagnosticSubsystemSelfTests();
 }

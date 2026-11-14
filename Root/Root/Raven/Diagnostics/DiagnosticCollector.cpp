@@ -22,9 +22,20 @@ DiagnosticCollector::~DiagnosticCollector()
     Stop();
 }
 
-bool DiagnosticCollector::RegisterBuffer(std::shared_ptr<EventBuffer> buffer)
+bool DiagnosticCollector::RegisterBuffer(std::shared_ptr<EventBuffer> buffer, bool nonBlocking)
 {
-    std::lock_guard<std::mutex> lock(m_Mutex);
+    std::unique_lock<std::mutex> lock(m_Mutex, std::defer_lock);
+    if (nonBlocking == true)
+    {
+        if (lock.try_lock() == false)
+        {
+            return false;
+        }
+    }
+    else
+    {
+        lock.lock();
+    }
     if (m_StopRequested == true || m_Stopped == true || buffer == nullptr)
     {
         return false;

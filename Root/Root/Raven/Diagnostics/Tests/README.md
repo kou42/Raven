@@ -12,8 +12,8 @@ Coreの基礎型・AllocatorからDiagnosticsを呼ばず、循環依存やAlloc
 | --- | --- |
 | `Renderer.cpp`のLegacy RHI初期化失敗 | 既存共通APIを継続。ID=`0x1001` |
 | `PhysicsWorld.cpp`の重力更新 | 既存共通APIを継続。ID=`0x2001` |
-| `VulkanInstance.cpp`のValidation callback | `std::cerr`を維持しM3で移行 |
-| `DX12Device.cpp`のInfoQueue / Live Objects | `std::cerr`を維持しM3で移行 |
+| `VulkanInstance.cpp`のValidation callback | M3で所有する型付きValidationへ変換。Callbackは引き続きVK_FALSEを返す |
+| `DX12Device.cpp`のInfoQueue / Live Objects | M3でInfoQueueを共通化。Live Objectsのnative reportと既存stderrは維持 |
 | `MemoryTracker.cpp`等の`assert` | Safety Checkを維持。Assert停止動作の変更は含めない |
 | `CPUProfiler`とStatisticsPanel、Physics Counter | 現行frame snapshotを維持し、M2で共通Frame IDと試験箇所のAdapterを追加。全面移行はM3以降 |
 | `Debug/BrowserDebug*`のSVG / HTTP表示 | 別用途の既存診断機能として維持 |
@@ -90,11 +90,11 @@ Visual StudioのMSVC C++ toolsetが必要。専用RunnerはGPU / Window / Vulkan
 ./scripts/test-windows-diagnostics.ps1 -Configuration Disabled
 ```
 
-Debug / Releaseとも例外ベースのチェックで同じ2 suiteを実行する。`NDEBUG`でも発行・検証を省略しない。
+Debug / Releaseとも例外ベースのチェックを実行し、`NDEBUG`でも発行・検証を省略しない。M1の2 suiteにM2/M3を加え、現在は4 suiteを実行する。
 Console書式、所有Payload、UTF-8境界、SPSC並行FIFO、Overflow、Collector再起動禁止、API再起動、4 Thread負荷とDrop整合性、終了Buffer回収、複数Sink、Filter、通常終了Flush、I/O失敗・例外、Binary全型のround-trip・固定byte・全位置の途中切断・不正入力を検証する。
 
 Disabled構成はPayloadの副作用が消えることと、APIの無効状態を検証する。各構成で単純ループと無効化ログ付きループの概算ns/callも記録する。microbenchmark値には実行環境や最適化の影響があり、性能保証には使わない。
-ログは`artifacts/diagnostics/<Configuration>/`。故障注入時の4行のstderrは期待されるfallback出力。
+ログは`artifacts/diagnostics/<Configuration>/`。Sink故障注入時の4行のstderrと、M3で追加したNative callbackの`(expected)`付きstderrは期待されるfallback出力。
 
 Engine全体は既存の`./scripts/build-windows.ps1 -Configuration Debug -SkipBootstrap`（Releaseも同様）でビルドし、`Root/x64/<Configuration>/Root.exe --test-diagnostics`で同じCPUテストを実行できる。
 
@@ -166,6 +166,66 @@ Begin/Endが両方消えたScopeはイベントから推測できない。取得
 
 有効時の測定はNull Sinkへ64件ずつ発行し、batch間Flushと初回登録を計測区間から除外する。Counter 1回とTrace Scope 1区間（2イベント）のns/callを別々に出し、Drop=0を検証する。Runtime無効時は名前・値の副作用が0であることも確認する。これはCPU発行コストの参考値で、File I/Oや全Subsystem計測時の性能保証ではない。
 
-残る未検証事項はGPU実機の保存・通常終了、実GPU Submit精度、長時間の大規模Trace。M3の全面接続とM4のEditor Timeline表示は含めない。
+M2で残した未検証事項はGPU実機の保存・通常終了、実GPU Submit精度、長時間の大規模Trace。M2にはM3の全面接続とM4のEditor Timeline表示を含めなかった。
 
 2026-11-14のローカル検証は4構成の専用Runnerと、Engine Debug/ReleaseのDiagnostics、DebugのExplicit Frame/Physics Collision、CPU UI Debug回帰が成功した。全体ビルドは`RavenGenerateLinkDebugInformation=false` / `LinkIncremental=false`を指定した。UI再ビルドは不足するGLFW 3.4 native headerをキャッシュ`artifacts/sg3-deps/GLFW/glfw3native.h`から検証用propsで追加参照した。プロジェクトの依存設定は変更していない。
+
+## M3: Subsystem Integration
+
+### 発行設定
+
+`SetDiagnosticCategoryEnabled(category, enabled)`で共通イベントの発行を切り替える。SoftBodyは新しいcategory値7を使い、Physicsとは独立する。既存のcategory値0〜6は変更していない。
+通常Applicationの`--diagnostics-disable=rhi,physics,softbody,renderer`で指定したSubsystemの共通発行を無効化できる。複数指定・複数引数は加算し、未知名・空名は起動前に拒否する。計測の有効化は従来どおり`--diagnostics-measurements` / `--diagnostics-trace=path`で別に行う。
+
+設定は診断発行だけに作用し、Physicsの計算や既存CPUProfiler・Statistics表示・Native Debug Layerを変更しない。切替はatomicで、既に開始した発行と受理済みScopeのEndは切替後も残り得る。RHIの共通収集を無効化しても、Native Validationのstderr出力は安全用fallbackとして残す。
+名前の接頭辞からcategoryは推測しない。M2の2引数Counterマクロと1引数TraceマクロはRuntime categoryなので、Subsystemへ接続する場合は`RecordCounter(name, value, category)` / `TraceScope(name, category)`等で明示する。
+
+### RHI Validation
+
+`DiagnosticValidation`はBackend、元の符号付きMessage ID、Native Severity/Type、観測時Frame ID、名前、本文、切詰めフラグを所有する。VulkanのERROR/WARNINGは共通Error/Warning、INFO/VERBOSEはInfoへ対応する。DX12はCORRUPTION/ERRORをError、WARNINGをWarning、INFO/MESSAGEをInfoへ対応し、元の数値も保持する。
+Vulkan callbackの戻り値、既存のVerbose条件、DX12 InfoQueueの取得後Clearは維持する。Frame IDはCPUで観測した時点の番号で、GPU上で原因が発生したFrameの特定は保証しない。
+
+本文は最大1024 byte、名前は128 byteを正しいUTF-8の境界で保持し、切り詰めたことを記録する。Native pointerは保持せず、callbackやGetMessageの一時storageが破棄された後も保存・表示できる。
+Callbackの発行は制御mutex・登録mutexのtry_lockを使う。停止中、競合、Queue満杯、再入、確保失敗ではstderrへbest-effortで退避し、Native ABIへC++例外を返さない。`GetValidationFallbackCount()`で退避回数を観測できる。退避内容と退避回数はBinaryへ自動保存しない。
+この専用Validation入口はWorkerのSink処理から発生するNative callbackにも対応するが、Sinkから一般のLog/Flush/Start/Stopへ再入する禁止事項は維持する。stderrはsignal-safeではなく、process破損時やOS I/O停止時の保存保証はない。
+Live Objectsのnative report、Device初期化等の他の既存メッセージを一括置換するものではない。
+
+### Counterの意味と境界
+
+| 発行元 | Counter | 意味 |
+| --- | --- | --- |
+| Physics DetectCollisions | BroadPhasePairs | 有限形状のBroadPhase候補数 |
+| 同上 | FiniteNarrowPhase.ValidPairs | 有効な両Colliderを確認した候補数。形状判定関数の呼出数・接触数ではない |
+| 同上 | PlanePairTests | 無限Planeとの候補判定仕事量 |
+| Physics Step末尾 | Manifolds / ContactPoints / WarmStartedConstraints / VelocityIterations | 既存Solver統計値。M2のManifoldsを重複発行しない |
+| SoftBody Step末尾 | Particles / DistanceConstraints / DihedralConstraints / SolverIterations | 現在のTopology規模と実際の反復設定 |
+| StepWithSelfCollisions末尾 | ParticleTriangle.Candidates / NarrowPhase | 全iterationの仕事量合計 |
+| 同上 | ParticleTriangle.DetailedCollected | 詳細収集あり=1、未収集=0 |
+| 同上（詳細収集時のみ） | ParticleTriangle.Constraints / Corrections | 既存のConstraintCount / PositionCorrectionCount |
+| Renderer Frame終了 | DrawCalls / Indices / Triangles | 既存RendererStatisticsの発行済み描画量 |
+| 同上 | RHI.LiveWrappers | RHIResourceを継承する生存C++ラッパー数 |
+
+接頭辞はそれぞれ`Physics.Collision.*` / `Physics.Solver.*` / `SoftBody.*` / `Renderer.*`。内側ループではログを発行せず、計算済みの値をStep末尾等で渡す。候補・制約仕事量はcatch-upの複数Stepを合算できるが、Topology規模・反復設定・生存数はsnapshot値として扱い、単純合算して実体数と解釈しない。
+
+Constraint/Correctionの詳細統計は既存の`DetailedParticleTriangleProfilingEnabled`に従う。Diagnosticsがこの設定を勝手に有効化しない。未収集値を0件として発行せず、DetailedCollected=0で区別する。通常Step / Volume Stepから前回のParticle-Triangle統計は送らない。
+RendererはMain ThreadのFrame guardで正常終了・break・return時にも発行し、同じSession/Frameの重複発行を防ぐ。途中失敗Frameにも既に発行した描画量は含む。GPU成功・完了した描画数ではない。
+
+Resource数はRHIResourceのbase constructor/destructorでatomicに増減する。Buffer/Texture/Pipeline/Offscreen Target等のC++ラッパーを対象とし、所有参照を増やさない。外部参照が残ればnative handleを無効化した後も数える。Device/Queueやnative allocationの数・使用byte数・Fence完了・リークの有無は表さない。Shared ownerの別名は二重計数しない。
+
+### Binary Trace v1.2
+
+Writerのminorを2へ更新した。新Readerはminor 0/1/2を読み、旧Readerは未知minorを拒否する。Log / Metricの既存配置は変更しない。新しいSoftBody categoryとValidation tag 6はminor 2だけで受け付ける。
+
+Validation Payloadは`backend:u8, flags:u8, nameBytes:u16, messageBytes:u16, reserved:u16=0, nativeId:i64, nativeSeverity:u32, nativeType:u32, frame:u64, name, message`。Headerは32 byte、flagsのbit 0が名前切詰め、bit 1が本文切詰めで、他bitは0。長さとBackend、Reserved、Flagsを検証し、最大Payloadは1184 byte、Event Headerを含むRecord上限は1224 byte。
+上限拡張後も従来Logの文字列は1024 byteまでとする。旧minorの上限は従来どおりで、v1.0/1.1 Headerに新型や新categoryが混入した入力も拒否する。
+
+### M3の検証と制約
+
+専用RunnerのDebug/ReleaseはM1/M2を含む4 suite。追加検証はNative Severity変換・ID/本文の所有・切詰めフラグ、保存再読込、固定byte、全位置での途中切断、不正長・Backend・Flags・Reserved、旧minor互換、Category独立性、受理済みEnd、停止後fallback、Worker Flush中のNative callback、共有参照・複数ThreadのResource寿命。
+`--test-explicit-frame`では衝突する2 SphereとCloth自己衝突を使い、共通Counterと実統計値の一致・診断有効/無効での結果不変性・詳細未収集の区別を確認する。Renderer統計のTopology別計数・Resource値・二重発行防止もGPUなしで検証する。
+`--test-softbody-integrated`で既存のSoftBody統合回帰を単独実行できる。CIにもDiagnostics・Explicit Frame・Physics Collision・SoftBody統合の実行入口を追加した。
+
+GPU実機のValidation故障注入・Frame終了・native Resource解放完了の確認は未検証。共通mutexと初回Buffer確保、stderrだけへ退避したValidationのファイル欠落、GPU側の原因Frame不明は残る制約。M4のEditor Viewerは対象外。
+
+2026-11-14のM3検証結果: 専用RunnerのDebug/Release各4 suiteと無効化2構成、Engine Debug/Release x64ビルドと両実行ファイルのDiagnostics各4 suite、Debugの実Subsystem比較・Physics Collision・SoftBody統合、CPU UI Debug回帰が成功した。Subsystem比較では同一入力の有効/無効で結果が一致し、SoftBody詳細未収集を0件扱いしないことも確認した。CLI未知名は終了コード1を確認。
+全体ビルドは従来のPDB無効化とGLFW 3.4 native headerの検証用追加参照を使用した。プロジェクトの依存設定は変更していない。全体Debugの既存リンクWarningは2件、Releaseは0件。UIの初回再ビルドには既存C4244が32件とリンクWarning 2件、最終増分ではリンクWarning 2件。専用/W4はalignas由来のC4324がDebug/Release各6件、無効化構成各3件で、今回の診断コードに新規コンパイラWarningはなかった。

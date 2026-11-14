@@ -21,7 +21,7 @@ int main()
     {
 #if RAVEN_ENABLE_DIAGNOSTICS && RAVEN_ENABLE_DIAGNOSTIC_MEASUREMENTS
         Raven::tests::RunDiagnosticSelfTests();
-        std::cout << "Diagnostics: suites=3 failures=0\n";
+        std::cout << "Diagnostics: suites=4 failures=0\n";
 #else
         using namespace Raven::Diagnostics;
         int evaluated = 0;
@@ -33,6 +33,12 @@ int main()
         if (IsDiagnosticsEnabled() == true || StartAsyncLogging() == true)
         {
             throw std::runtime_error("disabled logger is active");
+        }
+        const auto fallbackBefore = GetValidationFallbackCount();
+        ReportDX12Validation(1, 1, "disabled logger native fallback (expected)");
+        if (GetValidationFallbackCount() != fallbackBefore + 1)
+        {
+            throw std::runtime_error("disabled logger lost native validation fallback");
         }
 #else
         if (IsDiagnosticsEnabled() == false)
@@ -91,6 +97,7 @@ $sources = Get-ChildItem (Join-Path $repo 'Root\Root\Raven\Diagnostics') -Recurs
     Where-Object { $Configuration -in @('Debug', 'Release') -or $_.Directory.Name -ne 'Tests' } |
     ForEach-Object { '"' + $_.FullName + '"' }
 $sources += '"' + (Join-Path $repo 'Root\Root\Raven\Core\CPUProfiler.cpp') + '"'
+$sources += '"' + (Join-Path $repo 'Root\Root\Raven\Renderer\RHI\RHIResource.cpp') + '"'
 $flags = '/nologo /std:c++20 /utf-8 /EHsc /W4 /DNOMINMAX /D_ENABLE_EXTENDED_ALIGNED_STORAGE'
 if ($Configuration -eq 'Debug') { $flags += ' /Od /MDd /D_DEBUG' }
 else { $flags += ' /O2 /MD /DNDEBUG' }

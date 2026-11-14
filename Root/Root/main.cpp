@@ -3,6 +3,7 @@
 #endif
 
 #include <filesystem>
+#include <array>
 #include <string>
 #include <iostream>
 #include <cstdlib>
@@ -82,6 +83,7 @@ int main(int argc, char* argv[])
     bool uiMigrationTest = false;
     bool editorBackendComparison = false;
     bool diagnosticMeasurements = false;
+    std::uint32_t disabledDiagnosticCategories = 0;
     std::filesystem::path diagnosticTracePath;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -94,6 +96,38 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument.starts_with("--diagnostics-disable="))
+        {
+            std::string_view names = std::string_view(backendArgument).substr(std::string_view("--diagnostics-disable=").size());
+            const std::array<std::pair<std::string_view, Raven::Diagnostics::DiagnosticCategory>, 4> categories{{
+                { "rhi", Raven::Diagnostics::DiagnosticCategory::RHI },
+                { "physics", Raven::Diagnostics::DiagnosticCategory::Physics },
+                { "softbody", Raven::Diagnostics::DiagnosticCategory::SoftBody },
+                { "renderer", Raven::Diagnostics::DiagnosticCategory::Renderer } }};
+            for (;;)
+            {
+                const auto separator = names.find(',');
+                const auto name = names.substr(0, separator);
+                bool found = false;
+                for (const auto& category : categories)
+                {
+                    if (name == category.first)
+                    {
+                        disabledDiagnosticCategories |= 1u << static_cast<unsigned>(category.second);
+                        found = true;
+                        break;
+                    }
+                }
+                if (found == false)
+                {
+                    std::cerr << "Unknown diagnostics subsystem: " << name << '\n';
+                    return 1;
+                }
+                if (separator == std::string_view::npos) { break; }
+                names.remove_prefix(separator + 1);
+            }
+            continue;
+        }
         if (backendArgument == "--diagnostics-measurements")
         {
             diagnosticMeasurements = true;
@@ -115,7 +149,7 @@ int main(int argc, char* argv[])
             try
             {
                 Raven::tests::RunDiagnosticSelfTests();
-                std::cout << "Diagnostics self-tests passed: suites=3 failures=0.\n";
+                std::cout << "Diagnostics self-tests passed: suites=4 failures=0.\n";
                 return 0;
             }
             catch (const std::exception& error)
@@ -149,6 +183,7 @@ int main(int argc, char* argv[])
         }
 #ifdef _WIN32
         if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision"
+            || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
             || backendArgument == "--test-scene-view" || backendArgument == "--measure-scene-view"
             || backendArgument == "--test-scene-runtime" || backendArgument == "--measure-scene-runtime")
         {
@@ -189,6 +224,12 @@ int main(int argc, char* argv[])
         }
         // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
 #ifdef _DEBUG
+        if (backendArgument == "--test-softbody-integrated")
+        {
+            Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
+            std::cout << "SoftBody integrated step self-tests passed.\n";
+            return 0;
+        }
         if (backendArgument == "--test-explicit-frame")
         {
             Raven::tests::RunExplicitSceneFrameSelfTests();
@@ -462,6 +503,13 @@ int main(int argc, char* argv[])
         diagnosticSinks.push_back(std::move(trace));
     }
     Raven::Diagnostics::DiagnosticSession diagnostics(std::move(diagnosticSinks));
+    for (unsigned category = 0; category < Raven::Diagnostics::DiagnosticCategoryCount; ++category)
+    {
+        if ((disabledDiagnosticCategories & (1u << category)) != 0)
+        {
+            Raven::Diagnostics::SetDiagnosticCategoryEnabled(static_cast<Raven::Diagnostics::DiagnosticCategory>(category), false);
+        }
+    }
     if (diagnosticMeasurements == true && diagnostics.IsActive() == false)
     {
         std::cerr << "Could not start diagnostics capture.\n";

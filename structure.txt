@@ -411,6 +411,8 @@ D:.
     |   |   |   |   DiagnosticMeasurement.h
     |   |   |   |   MeasurementTimeline.cpp
     |   |   |   |   MeasurementTimeline.h
+    |   |   |   |   DiagnosticValidation.cpp
+    |   |   |   |   DiagnosticValidation.h
     |   |   |   |   DiagnosticAPI.cpp
     |   |   |   |   DiagnosticAPI.h
     |   |   |   |   DiagnosticCollector.cpp
@@ -422,6 +424,7 @@ D:.
     |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
+    |   |   |           DiagnosticSubsystemSelfTests.cpp
     |   |   |           DiagnosticSinkSelfTests.cpp
     |   |   |           README.md
     |   |   +---Editor
@@ -908,6 +911,8 @@ D:.
     |   |   |   |   GraphicsContext.h
     |   |   |   |   RenderCommand.cpp
     |   |   |   |   RenderCommand.h
+    |   |   |   |   RendererFrameDiagnostics.cpp
+    |   |   |   |   RendererFrameDiagnostics.h
     |   |   |   |   Renderer.cpp
     |   |   |   |   Renderer.h
     |   |   |   |
@@ -974,6 +979,7 @@ D:.
     |   |   |   |       RHIMaterialProperties.h
     |   |   |   |       RHIOffscreenRenderTarget.cpp
     |   |   |   |       RHIOffscreenRenderTarget.h
+    |   |   |   |       RHIResource.cpp
     |   |   |   |       RHIResource.h
     |   |   |   |       RHISceneDrawItemBuilder.h
     |   |   |   |       RHISceneFrameLifecycle.h

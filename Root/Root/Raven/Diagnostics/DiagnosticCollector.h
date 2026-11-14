@@ -27,7 +27,7 @@ public:
     DiagnosticCollector(const DiagnosticCollector&) = delete;
     DiagnosticCollector& operator=(const DiagnosticCollector&) = delete;
 
-    bool RegisterBuffer(std::shared_ptr<EventBuffer> buffer);
+    bool RegisterBuffer(std::shared_ptr<EventBuffer> buffer, bool nonBlocking = false);
     bool Start();
     void Notify();
     // Producerを停止した後に呼び、登録Bufferの残存イベントを排出します。
