@@ -1195,4 +1195,13 @@
     <ClCompile Update="Raven\Renderer\RendererFrameDiagnostics.cpp"><Filter>Raven\Renderer</Filter></ClCompile>
     <ClCompile Update="Raven\Renderer\RHI\RHIResource.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Diagnostics\DiagnosticEventStore.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\DiagnosticEventStore.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticViewerSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Editor\Panels\DiagnosticsViewModel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\DiagnosticsViewModel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\DiagnosticsRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\DiagnosticsRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+  </ItemGroup>
 </Project>

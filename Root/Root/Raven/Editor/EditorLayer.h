@@ -8,6 +8,7 @@
 #include "Raven/Editor/Panels/InspectorRavenPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
+#include "Raven/Editor/Panels/DiagnosticsRavenPanel.h"
 #include "Raven/Renderer/Framebuffer.h"
 #include "Raven/Renderer/Layer/Layer.h"
 #include "Raven/Scene/Entity.h"
@@ -190,6 +191,7 @@ private:
     // ========================================================================
     // PanelはEditorLayerが所有しますが、Active Scene等のRuntimeオブジェクトは所有しません。
     // 必要なRuntime参照は各UI Render HookでSnapshot化し、Scene差し替えにも追従します。
+    DiagnosticsRavenPanel m_DiagnosticsRavenPanel;
     StatisticsRavenPanel m_StatisticsRavenPanel;
     AnimationDebugRavenPanel m_AnimationDebugRavenPanel;
     SceneHierarchyRavenPanel m_SceneHierarchyRavenPanel;
@@ -258,6 +260,7 @@ private:
     // Panel内部にEditor全体のWindow管理状態を持たせないことで、MenuBarや将来の
     // Workspace保存機能から一元的に表示状態を制御できるようにします。
     bool m_ShowStatisticsPanel = true;
+    bool m_ShowDiagnosticsPanel = true;
     bool m_ShowAnimationDebugPanel = true;
     bool m_ShowSceneHierarchyPanel = true;
     bool m_ShowInspectorPanel = true;

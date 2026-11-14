@@ -21,7 +21,8 @@ enum class EditorDockTabId : std::uint64_t
     SceneHierarchy = 1003u,
     Inspector = 1004u,
     Statistics = 1005u,
-    AnimationDebug = 1006u
+    AnimationDebug = 1006u,
+    Diagnostics = 1007u
 };
 
 enum class EditorDockLayoutSource

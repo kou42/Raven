@@ -403,6 +403,8 @@ D:.
     |   |   +---Diagnostics
     |   |   |   |   BinaryTrace.cpp
     |   |   |   |   BinaryTrace.h
+    |   |   |   |   DiagnosticEventStore.cpp
+    |   |   |   |   DiagnosticEventStore.h
     |   |   |   |   DiagnosticSink.cpp
     |   |   |   |   DiagnosticSink.h
     |   |   |   |   DiagnosticMetric.cpp
@@ -424,6 +426,7 @@ D:.
     |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
+    |   |   |           DiagnosticViewerSelfTests.cpp
     |   |   |           DiagnosticSubsystemSelfTests.cpp
     |   |   |           DiagnosticSinkSelfTests.cpp
     |   |   |           README.md
@@ -470,6 +473,10 @@ D:.
     |   |   |   |       AnimationDebugRavenPanel.h
     |   |   |   |       AnimationDebugSnapshot.cpp
     |   |   |   |       AnimationDebugSnapshot.h
+    |   |   |   |       DiagnosticsRavenPanel.cpp
+    |   |   |   |       DiagnosticsRavenPanel.h
+    |   |   |   |       DiagnosticsViewModel.cpp
+    |   |   |   |       DiagnosticsViewModel.h
     |   |   |   |       EditorViewportRavenPanel.cpp
     |   |   |   |       EditorViewportRavenPanel.h
     |   |   |   |       InspectorRavenPanel.cpp

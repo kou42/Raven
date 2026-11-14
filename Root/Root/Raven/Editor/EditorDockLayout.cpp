@@ -47,6 +47,7 @@ UIDockSpaceSnapshot CreateDefaultEditorDockLayout()
         { kViewportLeafId, { DockTabId(EditorDockTabId::GameView), "Game View", false } },
         { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::Statistics), "Statistics", false } },
         { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::AnimationDebug), "Animation Debug", false } },
+        { kDiagnosticsLeafId, { DockTabId(EditorDockTabId::Diagnostics), "Diagnostics", false } },
         { kInspectorLeafId, { DockTabId(EditorDockTabId::Inspector), "Inspector", false } }
     };
     snapshot.Selections =
@@ -93,7 +94,7 @@ bool BuildEditorDockLayoutForSave(const UIDockSpaceSnapshot& current,
     for (const auto& record : current.Tabs)
     {
         if (record.Tab.Id < DockTabId(EditorDockTabId::SceneView) ||
-            record.Tab.Id > DockTabId(EditorDockTabId::AnimationDebug) ||
+            record.Tab.Id > DockTabId(EditorDockTabId::Diagnostics) ||
             existingIds.insert(record.Tab.Id).second == false)
         {
             if (errorMessage != nullptr)
@@ -118,7 +119,7 @@ bool BuildEditorDockLayoutForSave(const UIDockSpaceSnapshot& current,
     {
         const auto& tab = entry.Record.Tab;
         if (tab.Id < DockTabId(EditorDockTabId::SceneView) ||
-            tab.Id > DockTabId(EditorDockTabId::AnimationDebug))
+            tab.Id > DockTabId(EditorDockTabId::Diagnostics))
         {
             if (errorMessage != nullptr)
             {

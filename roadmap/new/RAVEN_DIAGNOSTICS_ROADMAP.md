@@ -6,9 +6,9 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 本書は計画であり、記載機能の実装完了を意味しない。
 
-実装状況（2026-11-14）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）は実装・CPU検証完了。
+実装状況（2026-11-15）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）、M4（Phase 06）は実装・CPU検証完了。
 詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
-M4以降は未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
+M5以降は未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
 
 ## 基本設計
 
@@ -154,12 +154,29 @@ stderrへ退避したValidationはBinaryへ自動保存しない。共通mutex�
 
 ## Phase 06 — Editor Diagnostics（目安7〜12日）
 
-- [ ] Log Table、Search、Severity/Category Filter
-- [ ] Frame/Thread別FilterとEvent詳細Inspector
-- [ ] Counter GraphとCPU Trace Timeline
-- [ ] 大量イベント時の表示性能・メモリ使用量を検証する
+- [x] Log Table、Search、Severity/Category Filter
+- [x] Frame/Thread別FilterとEvent詳細Inspector
+- [x] Counter GraphとCPU Trace Timeline
+- [x] 大量イベント時の表示性能・メモリ使用量を検証する
 
 **完了条件:** 特定フレームのRHIエラーとPhysics処理時間を同じEditorで確認できる。
+
+### M4実装結果（2026-11-15）
+
+Editor Sink → 容量制限付きStore → Main Threadの所有Snapshot → Diagnostics Panelを接続した。
+Log Table、本文検索、Severity/Category/Frame/Thread Filter、詳細Inspector、Counter Graph、Thread別CPU Timelineを提供する。
+既定Dockへ安定ID 1007を追加し、旧保存配置を維持する。旧配置ではView > Diagnosticsで表示する。
+
+Storeは既定8192件・推定8 MiBの保持予算で古いイベントを破棄する。UI Snapshotは最大5 Hz、Freeze中も収集は継続する。
+Frame不明の汎用Logは`?`、Frame 0は既知の起動時として区別し、Search/Severityで同FrameのPhysics Traceを消さない。
+Queue Drop、Store Eviction/Reject、Native stderr fallback、不完全Scope、詳細Counterの未収集を区別する。
+Counterは最大512個の生サンプル、Timelineは最大2048区間/32 Threadの表示とし、深い階層の完全な展開・Zoomは提供しない。
+
+Debug/Releaseの診断5 suite、診断無効化2構成、Engine両構成、実Subsystem比較・Physics Collision・SoftBody統合、CPU UI回帰が成功した。
+既定Storeへの10万件投入・Snapshot・Model更新は専用Releaseで約7.9 ms、保持推定1.56 MiB。8192イベント/40 ThreadのCPU UI更新・Chart構築はDebugで約60 msだった。
+値はローカルの単発測定で、GPU描画時間や60 FPSの保証ではない。GPU画面の起動確認は操作可能なWindowを取得できず未検証。
+既存PDB/GLFW検証用回避を使用し、依存設定の変更は行っていない。Snapshotコピーと再構築の負荷、深いScope階層の視認性は残る制約。
+次の候補はM5（Phase 07）のStructured Message Database。開始は別承認とする。
 
 ## Phase 07 — Structured Message Database（目安5〜8日）
 
