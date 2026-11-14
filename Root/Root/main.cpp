@@ -3,6 +3,7 @@
 #endif
 
 #include <filesystem>
+#include <array>
 #include <string>
 #include <iostream>
 #include <cstdlib>
@@ -18,6 +19,10 @@
 #include "Raven/Core/Application.h"
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
+#include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/DiagnosticEventStore.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
+#include "Raven/Diagnostics/BinaryTrace.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneTitle.h"
 #include "Raven/Scene/Tests/SceneGraphSelfTests.h"
@@ -43,9 +48,9 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyClothDemoLayer.h"
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
+#include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
-#include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
 #include "Raven/Core/Memory/Tests/MemoryAllocatorSelfTests.h"
 #include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
@@ -78,6 +83,9 @@ int main(int argc, char* argv[])
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
     bool uiMigrationTest = false;
     bool editorBackendComparison = false;
+    bool diagnosticMeasurements = false;
+    std::uint32_t disabledDiagnosticCategories = 0;
+    std::filesystem::path diagnosticTracePath;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -89,6 +97,68 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument.starts_with("--diagnostics-disable="))
+        {
+            std::string_view names = std::string_view(backendArgument).substr(std::string_view("--diagnostics-disable=").size());
+            const std::array<std::pair<std::string_view, Raven::Diagnostics::DiagnosticCategory>, 4> categories{{
+                { "rhi", Raven::Diagnostics::DiagnosticCategory::RHI },
+                { "physics", Raven::Diagnostics::DiagnosticCategory::Physics },
+                { "softbody", Raven::Diagnostics::DiagnosticCategory::SoftBody },
+                { "renderer", Raven::Diagnostics::DiagnosticCategory::Renderer } }};
+            for (;;)
+            {
+                const auto separator = names.find(',');
+                const auto name = names.substr(0, separator);
+                bool found = false;
+                for (const auto& category : categories)
+                {
+                    if (name == category.first)
+                    {
+                        disabledDiagnosticCategories |= 1u << static_cast<unsigned>(category.second);
+                        found = true;
+                        break;
+                    }
+                }
+                if (found == false)
+                {
+                    std::cerr << "Unknown diagnostics subsystem: " << name << '\n';
+                    return 1;
+                }
+                if (separator == std::string_view::npos) { break; }
+                names.remove_prefix(separator + 1);
+            }
+            continue;
+        }
+        if (backendArgument == "--diagnostics-measurements")
+        {
+            diagnosticMeasurements = true;
+            continue;
+        }
+        if (backendArgument.starts_with("--diagnostics-trace="))
+        {
+            diagnosticTracePath = backendArgument.substr(std::string("--diagnostics-trace=").size());
+            if (diagnosticTracePath.empty() == true)
+            {
+                std::cerr << "Diagnostics trace path is empty.\n";
+                return 1;
+            }
+            diagnosticMeasurements = true;
+            continue;
+        }
+        if (backendArgument == "--test-diagnostics")
+        {
+            try
+            {
+                Raven::tests::RunDiagnosticSelfTests();
+                std::cout << "Diagnostics self-tests passed: suites=5 failures=0.\n";
+                return 0;
+            }
+            catch (const std::exception& error)
+            {
+                std::cerr << "Diagnostics self-tests failed: " << error.what() << '\n';
+                return 1;
+            }
+        }
         if (backendArgument == "--test-data-document-edit")
         {
             try { return Raven::tests::RunDataDocumentEditCommandTests(); }
@@ -114,6 +184,7 @@ int main(int argc, char* argv[])
         }
 #ifdef _WIN32
         if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision"
+            || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
             || backendArgument == "--test-scene-view" || backendArgument == "--measure-scene-view"
             || backendArgument == "--test-scene-runtime" || backendArgument == "--measure-scene-runtime")
         {
@@ -154,6 +225,12 @@ int main(int argc, char* argv[])
         }
         // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
 #ifdef _DEBUG
+        if (backendArgument == "--test-softbody-integrated")
+        {
+            Raven::ph::tests::RunSoftBodyIntegratedStepSelfTests();
+            std::cout << "SoftBody integrated step self-tests passed.\n";
+            return 0;
+        }
         if (backendArgument == "--test-explicit-frame")
         {
             Raven::tests::RunExplicitSceneFrameSelfTests();
@@ -225,12 +302,6 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunStringSelfTests();
             std::cout << "String and StringView self-tests passed: suites=1 failures=0.\n";
-            return 0;
-        }
-        if (backendArgument == "--test-diagnostics")
-        {
-            Raven::tests::RunDiagnosticSelfTests();
-            std::cout << "Diagnostics self-tests passed: suites=1 failures=0.\n";
             return 0;
         }
         if (backendArgument == "--test-name")
@@ -415,6 +486,39 @@ int main(int argc, char* argv[])
     }
 #endif
 
+    // Application/Scene/Rendererの破棄時にもログが発行されるため、Sessionを先に生成します。
+    // appとそのWorkerが終了した後にSessionがCollectorを停止し、残存イベントをFlushします。
+    std::vector<std::unique_ptr<Raven::Diagnostics::IDiagnosticSink>> diagnosticSinks;
+    Raven::Diagnostics::DiagnosticFilter consoleFilter;
+    // 計測はEditor Store/任意のBinaryへ集約します。UIからCaptureを有効にした際も、
+    // 高頻度のConsole重複出力でCollectorを詰まらせないためLog/Validationだけを表示します。
+    consoleFilter.IncludeMeasurements = false;
+    diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::ConsoleSink>(std::cout, consoleFilter));
+    if (diagnosticTracePath.empty() == false)
+    {
+        auto trace = std::make_unique<Raven::Diagnostics::BinaryTraceSink>(diagnosticTracePath);
+        if (trace->IsOpen() == false)
+        {
+            std::cerr << "Could not open diagnostics trace file.\n";
+            return 1;
+        }
+        diagnosticSinks.push_back(std::move(trace));
+    }
+    diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::DiagnosticStoreSink>(Raven::Diagnostics::GetEditorDiagnosticEventStore()));
+    Raven::Diagnostics::DiagnosticSession diagnostics(std::move(diagnosticSinks));
+    for (unsigned category = 0; category < Raven::Diagnostics::DiagnosticCategoryCount; ++category)
+    {
+        if ((disabledDiagnosticCategories & (1u << category)) != 0)
+        {
+            Raven::Diagnostics::SetDiagnosticCategoryEnabled(static_cast<Raven::Diagnostics::DiagnosticCategory>(category), false);
+        }
+    }
+    if (diagnosticMeasurements == true && diagnostics.IsActive() == false)
+    {
+        std::cerr << "Could not start diagnostics capture.\n";
+        return 1;
+    }
+    Raven::Diagnostics::SetMeasurementsEnabled(diagnosticMeasurements);
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
 #ifdef _WIN32

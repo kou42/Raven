@@ -49,7 +49,8 @@ public:
     // 新しいApplication frameを開始します。
     // 2frame目以降は、この呼び出し時に直前frameを自動的に読み取り用bufferへ公開します。
     // Renderer::BeginFrame()と同じ境界を利用できるため、Application側へEndFrame処理を増やさずに済みます。
-    void BeginFrame();
+    // Rendererから共通Frame IDを渡せます。0なら既存どおりProfiler内で採番します。
+    void BeginFrame(std::uint64_t frameId = 0);
 
     void AddResult(CPUProfileResult result);
 
