@@ -100,7 +100,7 @@ void TestBinaryFormat()
     }
     const auto bytes = saved.str();
     // 独立した期待byteでendianness・version・型tag・signed整数の表現を固定します。
-    const std::array<unsigned char, 16> header{ 'R', 'V', 'N', 'D', 'I', 'A', 'G', 0, 1, 0, 0, 0, 0, 0, 0, 0 };
+    const std::array<unsigned char, 16> header{ 'R', 'V', 'N', 'D', 'I', 'A', 'G', 0, 1, 0, 1, 0, 0, 0, 0, 0 };
     for (std::size_t index = 0; index < header.size(); ++index)
     {
         Require(static_cast<unsigned char>(bytes[index]) == header[index]);
@@ -159,7 +159,7 @@ void TestBinaryFormat()
     };
     reject(0, 'X', TraceReadResult::InvalidData);
     reject(8, 2, TraceReadResult::UnsupportedVersion);
-    reject(10, 1, TraceReadResult::UnsupportedVersion);
+    reject(10, 2, TraceReadResult::UnsupportedVersion);
     reject(12, 1, TraceReadResult::InvalidData);
     reject(16, 0, TraceReadResult::InvalidData);
     reject(19, 0xff, TraceReadResult::InvalidData); // 巨大sizeを確保前に拒否

@@ -12,6 +12,8 @@
 #include "Raven/UI/Text/UIFontAtlas.h"
 #include "Raven/Scene/Debug/EditorBackendComparisonScene.h"
 #include "Raven/Scene/SceneCameraSystem.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
+#include "Raven/Diagnostics/DiagnosticSink.h"
 
 #include <cassert>
 #include <cstddef>
@@ -500,11 +502,24 @@ void RunExplicitSceneFrameSelfTests()
     assert(frame.BeginCount == 5);
 
     // Submit成功時だけPresentへ進み、両結果を加工せず返します。
+    std::ostringstream measurementOutput;
+    std::vector<std::unique_ptr<Diagnostics::IDiagnosticSink>> sinks;
+    sinks.push_back(std::make_unique<Diagnostics::ConsoleSink>(measurementOutput));
+    Diagnostics::DiagnosticSession measurementSession(std::move(sinks));
+    const bool measurementsWereEnabled = Diagnostics::IsMeasurementsEnabled();
+    Diagnostics::SetMeasurementsEnabled(true);
     frame.FinishCalls.clear();
     assert(RHISceneMeshRenderer::FinishActiveFrame(frame) ==
         RHIFrameResult::Success);
     assert(frame.FinishCalls.size() == 2u);
     assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
+    Diagnostics::FlushDiagnostics();
+    // 計測がSubmit/Presentの順序を変えず、成功値とCPU区間を同じSinkへ渡すことを確認します。
+    if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+    {
+        assert(measurementOutput.str().find("name=RHI.Submit ") != std::string::npos);
+        assert(measurementOutput.str().find("name=RHI.Submit.Success value=1") != std::string::npos);
+    }
     assert(frame.EndCount == 1 && frame.PresentCount == 1);
 
     // Submit失敗・ResizeRequiredではPresentせず、Context終了/Resize判断へ渡します。
@@ -521,6 +536,11 @@ void RunExplicitSceneFrameSelfTests()
         RHIFrameResult::ResizeRequired);
     assert(frame.FinishCalls.size() == 1u && frame.FinishCalls[0] == 1);
     assert(frame.PresentCount == 1);
+    Diagnostics::FlushDiagnostics();
+    if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+    {
+        assert(measurementOutput.str().find("name=RHI.Submit.Success value=0") != std::string::npos);
+    }
 
     // Present失敗・ResizeRequiredはSubmit済みFrameの結果としてRunnerへ伝えます。
     frame.EndResult = RHIFrameResult::Success;
@@ -537,5 +557,18 @@ void RunExplicitSceneFrameSelfTests()
         RHIFrameResult::ResizeRequired);
     assert(frame.FinishCalls.size() == 2u);
     assert(frame.FinishCalls[0] == 1 && frame.FinishCalls[1] == 2);
+    // 空のSceneでも実Physics Step入口を通し、GPU不要で接続箇所の発行を確認します。
+    {
+        Scene diagnosticScene;
+        ph::PhysicsWorld physics;
+        physics.Step(diagnosticScene, 1.0f / 60.0f);
+    }
+    Diagnostics::FlushDiagnostics();
+    if (measurementSession.IsActive() == true && Diagnostics::IsMeasurementsEnabled() == true)
+    {
+        assert(measurementOutput.str().find("name=PhysicsStep ") != std::string::npos);
+        assert(measurementOutput.str().find("name=Physics.Collision.Manifolds value=0") != std::string::npos);
+    }
+    Diagnostics::SetMeasurementsEnabled(measurementsWereEnabled);
 }
 } // namespace Raven::tests

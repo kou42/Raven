@@ -405,6 +405,12 @@ D:.
     |   |   |   |   BinaryTrace.h
     |   |   |   |   DiagnosticSink.cpp
     |   |   |   |   DiagnosticSink.h
+    |   |   |   |   DiagnosticMetric.cpp
+    |   |   |   |   DiagnosticMetric.h
+    |   |   |   |   DiagnosticMeasurement.cpp
+    |   |   |   |   DiagnosticMeasurement.h
+    |   |   |   |   MeasurementTimeline.cpp
+    |   |   |   |   MeasurementTimeline.h
     |   |   |   |   DiagnosticAPI.cpp
     |   |   |   |   DiagnosticAPI.h
     |   |   |   |   DiagnosticCollector.cpp
@@ -413,6 +419,7 @@ D:.
     |   |   |   |   EventBuffer.h
     |   |   |   |
     |   |   |   \---Tests
+    |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
     |   |   |           DiagnosticSinkSelfTests.cpp
@@ -970,6 +977,7 @@ D:.
     |   |   |   |       RHIResource.h
     |   |   |   |       RHISceneDrawItemBuilder.h
     |   |   |   |       RHISceneFrameLifecycle.h
+    |   |   |   |       RHISceneMeshRenderer.cpp
     |   |   |   |       RHISceneMeshRenderer.h
     |   |   |   |       RHIShaderBinaryLoader.cpp
     |   |   |   |       RHIShaderBinaryLoader.h

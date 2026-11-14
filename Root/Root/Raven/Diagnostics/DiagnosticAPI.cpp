@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
 namespace Raven
@@ -96,7 +97,23 @@ void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
         << CategoryName(event.Category) << "] id=" << event.Id
         << " seq=" << event.Sequence << " ts_ns=" << event.TimestampNanoseconds
         << " thread=" << event.ThreadId << " payload=";
-    std::visit([&output](const auto& value) { output << value; }, event.Payload);
+    if (const auto* metric = std::get_if<DiagnosticMetric>(&event.Payload); metric != nullptr)
+    {
+        output << "metric=" << static_cast<unsigned>(metric->Kind) << " frame=" << metric->FrameId
+            << " scope=" << metric->ScopeId << " parent=" << metric->ParentScopeId
+            << " name=" << metric->GetName() << " value=" << metric->Value;
+    }
+    else
+    {
+        // 計測型は上で処理し、従来Logの書式は維持します。
+        std::visit([&output](const auto& value)
+        {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, DiagnosticMetric> == false)
+            {
+                output << value;
+            }
+        }, event.Payload);
+    }
     output << '\n';
 }
 
@@ -234,13 +251,11 @@ bool IsDiagnosticsEnabled() noexcept
     return RAVEN_ENABLE_DIAGNOSTICS != 0 && s_Enabled.load(std::memory_order_relaxed);
 }
 
-void Emit(DiagnosticEventId id, DiagnosticCategory category,
-    DiagnosticSeverity severity, DiagnosticPayload payload)
+namespace
 {
-    if (IsDiagnosticsEnabled() == false)
-    {
-        return;
-    }
+bool Publish(DiagnosticEventId id, DiagnosticCategory category,
+    DiagnosticSeverity severity, DiagnosticPayload payload, bool asyncOnly, std::uint64_t sessionId)
+{
     NormalizePayload(payload);
 
     DiagnosticEvent event;
@@ -261,6 +276,10 @@ void Emit(DiagnosticEventId id, DiagnosticCategory category,
 
     {
         std::lock_guard<std::mutex> lock(s_AsyncMutex);
+        if (asyncOnly == true && (s_Collector == nullptr || sessionId != s_Generation))
+        {
+            return false;
+        }
         if (s_Collector != nullptr)
         {
             // 再起動後に旧スレッドのBufferを再利用しないためGenerationを比較します。
@@ -283,20 +302,65 @@ void Emit(DiagnosticEventId id, DiagnosticCategory category,
                 if (s_ThreadBuffer.Buffer->TryPush(std::move(event)) == false)
                 {
                     ++s_TotalDropped;
+                    return false;
                 }
                 else
                 {
                     s_Collector->Notify();
                 }
-                return;
+                return true;
             }
         }
+    }
+
+    if (asyncOnly == true)
+    {
+        return false;
     }
 
     // Console Sinkの行単位出力を排他し、複数スレッドの文字列混在を防ぎます。
     // Sequenceの採番順と表示順は一致しない場合があります。
     std::lock_guard<std::mutex> lock(s_ConsoleMutex);
     WriteConsoleEvent(std::cout, event);
+    return true;
+}
+}
+
+void Emit(DiagnosticEventId id, DiagnosticCategory category,
+    DiagnosticSeverity severity, DiagnosticPayload payload)
+{
+    if (IsDiagnosticsEnabled() == true)
+    {
+        Publish(id, category, severity, std::move(payload), false, 0);
+    }
+}
+
+std::uint64_t GetDiagnosticSessionId()
+{
+    std::lock_guard<std::mutex> lock(s_AsyncMutex);
+    return s_Collector != nullptr ? s_Generation : 0;
+}
+
+bool EmitMetric(const DiagnosticMetric& metric, DiagnosticCategory category, std::uint64_t sessionId) noexcept
+{
+    if (RAVEN_ENABLE_DIAGNOSTICS == 0 || RAVEN_ENABLE_DIAGNOSTIC_MEASUREMENTS == 0
+        || sessionId == 0 || metric.IsValid() == false)
+    {
+        return false;
+    }
+    const auto id = metric.Kind == DiagnosticMetricKind::Counter ? EventIds::Counter
+        : (metric.Kind == DiagnosticMetricKind::TraceBegin ? EventIds::TraceBegin : EventIds::TraceEnd);
+    try
+    {
+        // Scope開始後に無効化されてもEndを閉じます。新規発行の有効判定は計測APIが担当します。
+        return Publish(id, category, DiagnosticSeverity::Info, metric, true, sessionId);
+    }
+    catch (...)
+    {
+        // 計測失敗がPhysics/RHIの処理やRAII Destructorへ例外を持ち込まないようにします。
+        WriteEmergencyDiagnostic("Diagnostics measurement could not be published.");
+        return false;
+    }
 }
 }
 }

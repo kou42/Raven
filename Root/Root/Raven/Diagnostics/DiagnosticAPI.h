@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Diagnostics/DiagnosticMetric.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -32,7 +34,7 @@ enum class DiagnosticSeverity : std::uint8_t
 // 単一の数値または文字列を保持します。文字列の最大保持長は1024バイトです。
 // 文字列入力は正しいUTF-8を前提とし、上限での途中切断を避ける処理は実装側です。
 constexpr std::size_t MaxDiagnosticTextBytes = 1024;
-using DiagnosticPayload = std::variant<std::int64_t, double, bool, std::string>;
+using DiagnosticPayload = std::variant<std::int64_t, double, bool, std::string, DiagnosticMetric>;
 
 struct DiagnosticEvent
 {
@@ -51,6 +53,9 @@ namespace EventIds
 {
 constexpr DiagnosticEventId LegacyRHIInitializationFailed = 0x1001u;
 constexpr DiagnosticEventId PhysicsGravityUpdated = 0x2001u;
+constexpr DiagnosticEventId Counter = 0xd1000001u;
+constexpr DiagnosticEventId TraceBegin = 0xd1000002u;
+constexpr DiagnosticEventId TraceEnd = 0xd1000003u;
 }
 
 // 値所有Payloadの文字列サイズを制限します。EmitとSelf Testで同じ規則を使用します。
@@ -99,11 +104,20 @@ void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event);
 
 void Emit(DiagnosticEventId id, DiagnosticCategory category,
     DiagnosticSeverity severity, DiagnosticPayload payload);
+
+// 計測は稼働中Sessionにだけ送ります。Hot Pathを同期Consoleへfallbackしません。
+// sessionIdが0以外なら同じSessionに限定し、再起動を跨ぐTraceEndの混入を防ぎます。
+std::uint64_t GetDiagnosticSessionId();
+bool EmitMetric(const DiagnosticMetric& metric, DiagnosticCategory category, std::uint64_t sessionId) noexcept;
 }
 }
 
 #ifndef RAVEN_ENABLE_DIAGNOSTICS
 #define RAVEN_ENABLE_DIAGNOSTICS 1
+#endif
+
+#ifndef RAVEN_ENABLE_DIAGNOSTIC_MEASUREMENTS
+#define RAVEN_ENABLE_DIAGNOSTIC_MEASUREMENTS RAVEN_ENABLE_DIAGNOSTICS
 #endif
 
 #if RAVEN_ENABLE_DIAGNOSTICS

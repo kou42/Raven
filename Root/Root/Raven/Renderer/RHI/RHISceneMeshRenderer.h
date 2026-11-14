@@ -69,15 +69,7 @@ public:
 
     // 描画命令の記録後だけ呼びます。Submitに失敗したFrameはPresentしません。
     // Applicationが受け取るResizeRequired/FatalErrorを変更せず伝えます。
-    static RHIFrameResult FinishActiveFrame(RHISceneFrameLifecycle& frame)
-    {
-        const RHIFrameResult end = frame.EndFrame();
-        if (end != RHIFrameResult::Success)
-        {
-            return end;
-        }
-        return frame.Present();
-    }
+    static RHIFrameResult FinishActiveFrame(RHISceneFrameLifecycle& frame);
 
     // Opaqueを登録順、Transparentを遠方から描画します。
     // Maskedはalpha cutoff対応Shaderを導入するまで明示的に拒否します。
