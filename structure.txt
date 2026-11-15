@@ -402,6 +402,10 @@ D:.
     |   |   |           Startup.svg
     |   |   |           Viewer.html
     |   |   +---Diagnostics
+    |   |   |   |   RemoteDiagnostics.cpp
+    |   |   |   |   RemoteDiagnostics.h
+    |   |   |   |   RemoteProtocol.cpp
+    |   |   |   |   RemoteProtocol.h
     |   |   |   |   BinaryTrace.cpp
     |   |   |   |   BinaryTrace.h
     |   |   |   |   DiagnosticMessage.cpp
@@ -433,6 +437,7 @@ D:.
     |   |   |   |       MessageMetadata.generated.cpp
     |   |   |   |       MessageMetadata.generated.h
     |   |   |   \---Tests
+    |   |   |           DiagnosticRemoteSelfTests.cpp
     |   |   |           DiagnosticMessageSelfTests.cpp
     |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
@@ -1608,6 +1613,7 @@ Raven Structured Data Phase 11 additions (Root/Root/Raven relative paths):
 Raven Structured Data Phase 11 Windows TCP additions (Root/Root/Raven relative paths):
     Network/Windows/WindowsTcpSocket.h
     Network/Windows/WindowsTcpSocket.cpp
+    Network/Windows/WindowsControlStream.cpp
     Network/Tests/WindowsTcpTests.h
     Network/Tests/WindowsTcpTests.cpp
 

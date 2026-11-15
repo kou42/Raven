@@ -1,4 +1,4 @@
-﻿#ifdef _WIN32
+#ifdef _WIN32
 #include <Windows.h>
 #endif
 
@@ -20,6 +20,8 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/RemoteDiagnostics.h"
+#include <charconv>
 #include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
 #include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/Diagnostics/DiagnosticEventStore.h"
@@ -86,11 +88,14 @@ int main(int argc, char* argv[])
     bool uiMigrationTest = false;
     bool editorBackendComparison = false;
     bool diagnosticMeasurements = false;
+    std::uint16_t diagnosticRemotePort = 0;
     std::uint32_t disabledDiagnosticCategories = 0;
     std::filesystem::path diagnosticTracePath;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+    int remoteResult = 0;
+    if (Raven::Diagnostics::TryRunRemoteDiagnostics(argc, argv, remoteResult) == true) { return remoteResult; }
 #endif
 
     // Backend指定を通常の起動引数へ追加します。Explicit Sceneはまだ独立Runtimeへ接続し、
@@ -131,6 +136,14 @@ int main(int argc, char* argv[])
             }
             continue;
         }
+        if (backendArgument.starts_with("--diagnostics-connect="))
+        {
+            const auto port = std::string_view(backendArgument).substr(22);
+            unsigned parsed = 0; const auto converted = std::from_chars(port.data(), port.data() + port.size(), parsed);
+            if (converted.ec != std::errc{} || converted.ptr != port.data() + port.size() || parsed == 0 || parsed > 65535)
+            { std::cerr << "Invalid diagnostics port.\n"; return 1; }
+            diagnosticRemotePort = static_cast<std::uint16_t>(parsed); continue;
+        }
         if (backendArgument == "--diagnostics-measurements")
         {
             diagnosticMeasurements = true;
@@ -152,7 +165,7 @@ int main(int argc, char* argv[])
             try
             {
                 Raven::tests::RunDiagnosticSelfTests();
-                std::cout << "Diagnostics self-tests passed: suites=6 failures=0.\n";
+                std::cout << "Diagnostics self-tests passed: suites=7 failures=0.\n";
                 return 0;
             }
             catch (const std::exception& error)
@@ -507,6 +520,13 @@ int main(int argc, char* argv[])
         diagnosticSinks.push_back(std::move(trace));
     }
     diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::DiagnosticStoreSink>(Raven::Diagnostics::GetEditorDiagnosticEventStore()));
+#ifdef _WIN32
+    if (diagnosticRemotePort != 0)
+    {
+        diagnosticSinks.push_back(std::make_unique<Raven::Diagnostics::NetworkDiagnosticSink>(
+            Raven::Diagnostics::RemoteSinkOptions{diagnosticRemotePort}));
+    }
+#endif
     Raven::Diagnostics::DiagnosticSession diagnostics(std::move(diagnosticSinks));
     for (unsigned category = 0; category < Raven::Diagnostics::DiagnosticCategoryCount; ++category)
     {

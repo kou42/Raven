@@ -8,7 +8,7 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 実装状況（2026-11-15）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）、M4（Phase 06）、M5（Phase 07）は実装・CPU検証完了。
 詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
-M6は未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
+M6-A（Windows Loopback Remote Diagnostics）は実装・CPU/別プロセス検証完了。M6の残りは未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
 
 ## 基本設計
 
@@ -203,13 +203,25 @@ Debug/Releaseの診断各6 suite、無効化2構成、通常Engine両構成、�
 
 ## Phase 08 — Advanced Diagnostics（必要時）
 
-- [ ] NetworkSinkとRemote Collector
+- [x] NetworkSinkとRemote Collector（M6-A: Windows Loopback・1 Sessionに限定）
 - [ ] GPU Timestamp QueryとCPU/GPU Timeline相関
 - [ ] Crash Capture / Replay補助
 - [ ] Follows Node IDとの連携
 - [ ] 長期保存・検索
 
 **完了条件:** 別プロセスから診断情報を確認でき、関連イベントを追跡できる。
+
+### M6-A実装結果（2026-11-15）
+
+Network Sink→容量制限付きQueue→専用通信Worker→別プロセスのHeadless受信モードを追加した。
+既存Windows Loopback TCPを再利用し、制御Codec依存のAdapterだけを分離した。ローカルSinkは通信完了を待たない。
+Protocol v1はSession/Connection/OrdinalとDrop値を持ち、Binary v1.3のEventを転送する。切断時に接続を閉じて再試行し、部分イベントを再送しない。
+受信は1 Sessionに固定し、Binaryと`.remote.json`へ保存する。既存ファイルは原子的に上書き拒否し、保存量・Frame受信期限・全体期限を制限する。
+送信OS受付、受信/保存、Queue Drop、process Producer Drop、中断/拒否、正常Closeを区別する。ACKや保存保証は提供しない。
+
+診断Debug/Release各7 suite、無効化2構成、Debug/Release別プロセス各5シナリオ、通常Engine両構成と既存Subsystem/CPU UI回帰が成功。既存制御Message 429項目とWindows TCP 53項目も成功。Loopbackは実行サンドボックスの通信制限外で検証した。既存PDB/GLFWの検証用回避を使用し、新規Warningはない。
+
+M6-Aの範囲は上記Remote Diagnosticsのみ。GPU Timestamp、Crash Capture、Node連携、長期保存/検索、LAN接続、Remote Editor読込は後続の別承認とする。
 
 ## マイルストーン
 

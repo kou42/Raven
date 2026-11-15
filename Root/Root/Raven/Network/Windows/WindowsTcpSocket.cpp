@@ -7,7 +7,6 @@
 #endif
 #include <winsock2.h>
 #include "Raven/Network/Windows/WindowsTcpSocket.h"
-#include "Raven/Network/ControlMessageReceiver.h"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -440,31 +439,6 @@ bool WindowsTcpSocket::ShutdownSend(TcpError& error)
     return true;
 }
 
-bool ReceiveControlStream(WindowsTcpSocket& socket, ControlMessageReceiver& receiver,
-    TcpDeadline deadline, TcpError& error)
-{
-    if (receiver.GetState() != ReceiverState::Open)
-    {
-        socket.Close();
-        return Fail(error, TcpErrorCode::Protocol);
-    }
-    std::array<char, MaxControlMessageBytes> bytes{};
-    std::size_t count = 0;
-    if (socket.Receive(bytes.data(), bytes.size(), count, deadline, error) == false)
-    {
-        socket.Close();
-        receiver.Disconnect();
-        return false;
-    }
-    const bool accepted = count == 0 ? receiver.FinishStream() : receiver.ReceiveStream({bytes.data(), count});
-    if (accepted == false)
-    {
-        socket.Close();
-        receiver.Disconnect();
-        return Fail(error, TcpErrorCode::Protocol);
-    }
-    return true;
-}
 }
 }
 #endif
