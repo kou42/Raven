@@ -26,7 +26,7 @@ std::mutex s_ConsoleMutex;
 std::mutex s_AsyncMutex;
 std::shared_ptr<DiagnosticCollector> s_Collector;
 std::uint64_t s_Generation = 0;
-std::uint64_t s_TotalDropped = 0;
+std::atomic<std::uint64_t> s_TotalDropped{0};
 std::uint64_t s_SinkFailures = 0;
 struct ThreadBufferState
 {
@@ -215,8 +215,8 @@ void StopAsyncLogging()
 
 std::uint64_t GetAsyncDroppedCount()
 {
-    std::lock_guard<std::mutex> lock(s_AsyncMutex);
-    return s_TotalDropped;
+    // Sink Workerの終了joinとSession制御mutexの相互待機を作らず、累積値だけを観測します。
+    return s_TotalDropped.load(std::memory_order_relaxed);
 }
 
 std::uint64_t GetDiagnosticSinkFailureCount()

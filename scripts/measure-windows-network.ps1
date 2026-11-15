@@ -15,7 +15,7 @@ $sources = @(
     'Data/DataUtf8.cpp', 'Data/DataWriter.cpp', 'Data/Serialization/Serialization.cpp',
     'Data/Formats/MessagePack/MessagePackParser.cpp', 'Data/Formats/MessagePack/MessagePackWriter.cpp',
     'Data/Tests/DataBenchmarkMemory.cpp', 'Network/ControlMessageCodec.cpp',
-    'Network/ControlMessageReceiver.cpp', 'Network/Windows/WindowsTcpSocket.cpp',
+    'Network/ControlMessageReceiver.cpp', 'Network/Windows/WindowsTcpSocket.cpp', 'Network/Windows/WindowsControlStream.cpp',
     'Network/Tests/ControlMessageBenchmarks.cpp'
 ) | ForEach-Object { '"' + (Join-Path $repo "Root/Root/Raven/$_") + '"' }
 $flags = '/nologo /std:c++17 /utf-8 /EHsc /W4 /O2 /DNDEBUG /DRAVEN_NETWORK_BENCHMARK_MAIN'

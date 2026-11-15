@@ -11,19 +11,22 @@ $output = Join-Path $repo "artifacts\diagnostics\$Configuration"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $main = @'
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/RemoteDiagnostics.h"
 #include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
 #include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
-int main()
+int main(int argc, char** argv)
 {
     try
     {
+        int remoteResult = 0;
+        if (Raven::Diagnostics::TryRunRemoteDiagnostics(argc, argv, remoteResult)) { return remoteResult; }
 #if RAVEN_ENABLE_DIAGNOSTICS && RAVEN_ENABLE_DIAGNOSTIC_MEASUREMENTS
         Raven::tests::RunDiagnosticSelfTests();
-        std::cout << "Diagnostics: suites=6 failures=0\n";
+        std::cout << "Diagnostics: suites=7 failures=0\n";
 #else
         using namespace Raven::Diagnostics;
         int evaluated = 0;
@@ -100,6 +103,7 @@ $sources = Get-ChildItem (Join-Path $repo 'Root\Root\Raven\Diagnostics') -Recurs
     Where-Object { $Configuration -in @('Debug', 'Release') -or $_.Directory.Name -ne 'Tests' } |
     ForEach-Object { '"' + $_.FullName + '"' }
 $sources += '"' + (Join-Path $repo 'Root\Root\Raven\Core\CPUProfiler.cpp') + '"'
+$sources += '"' + (Join-Path $repo 'Root\Root\Raven\Network\Windows\WindowsTcpSocket.cpp') + '"'
 $sources += '"' + (Join-Path $repo 'Root\Root\Raven\Editor\Panels\DiagnosticsViewModel.cpp') + '"'
 $sources += '"' + (Join-Path $repo 'Root\Root\Raven\Renderer\RHI\RHIResource.cpp') + '"'
 $flags = '/nologo /std:c++20 /utf-8 /EHsc /W4 /DNOMINMAX /D_ENABLE_EXTENDED_ALIGNED_STORAGE'
@@ -113,7 +117,7 @@ $batch = @(
     '@echo off'
     "call `"$vcvars`" >nul"
     'if errorlevel 1 exit /b %errorlevel%'
-    "cl $flags /I`"$repo\Root\Root`" /Fo`"$output\\`" /Fe`"$output\DiagnosticsTests.exe`" $($sources -join ' ') `"$output\main.cpp`" > `"$buildLog`" 2>&1"
+    "cl $flags /I`"$repo\Root\Root`" /Fo`"$output\\`" /Fe`"$output\DiagnosticsTests.exe`" $($sources -join ' ') `"$output\main.cpp`" ws2_32.lib > `"$buildLog`" 2>&1"
     'if errorlevel 1 exit /b %errorlevel%'
     "`"$output\DiagnosticsTests.exe`" > `"$testLog`" 2>&1"
     'exit /b %errorlevel%'

@@ -1216,4 +1216,12 @@
     <None Include="Raven\Diagnostics\Messages.json"><Filter>Raven\\Diagnostics</Filter></None>
     <None Include="Raven\Diagnostics\Messages.lock.json"><Filter>Raven\\Diagnostics</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Diagnostics\RemoteDiagnostics.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\RemoteDiagnostics.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\RemoteProtocol.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
+    <ClInclude Update="Raven\Diagnostics\RemoteProtocol.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
+    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticRemoteSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClCompile Update="Raven\Network\Windows\WindowsControlStream.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
+  </ItemGroup>
 </Project>

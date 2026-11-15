@@ -293,6 +293,7 @@ void RunDiagnosticSelfTests()
     RunDiagnosticSubsystemSelfTests();
     RunDiagnosticViewerSelfTests();
     RunDiagnosticMessageSelfTests();
+    RunDiagnosticRemoteSelfTests();
 
 }
 }
