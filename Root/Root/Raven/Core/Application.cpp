@@ -196,10 +196,12 @@ Application::Application(const ApplicationSpecification& specification)
             {
                 codepoints.push_back(codepoint);
             }
-            // 通常Editorの英語Captionと省略・展開記号だけを収録し、全文字の
+            // 通常Editorの英語Captionと記号に用途側の必要文字を追加し、全文字の
             // Rasterizeによる起動時間・Atlas容量の増大を避けます。未収録文字は?へ代替します。
             codepoints.insert(codepoints.end(), { 0x2026u, 0x2190u, 0x2191u,
                 0x2192u, 0x2193u, 0x25B6u, 0x25BCu, 0xFFFDu });
+            codepoints.insert(codepoints.end(), specification.RuntimeUIFontAdditionalCodepoints.begin(),
+                specification.RuntimeUIFontAdditionalCodepoints.end());
             UIFontAtlasBuildOptions options;
             options.PixelHeight = 18.0f;
             auto font = CreateRef<UIFontAtlas>();

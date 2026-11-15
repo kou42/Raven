@@ -17,6 +17,12 @@
 #include "Raven/Editor/Panels/AnimationDebugActions.h"
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/DiagnosticsRavenPanel.h"
+#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
+#include "Raven/UI/Text/UIUtf8.h"
+// Test専用の内部リンケージ実装で元FontのGlyphを調べます。RuntimeのSTBシンボルは公開しません。
+#define STBTT_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
 #include "Raven/Editor/Panels/AnimationDebugSnapshot.h"
 #include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
 #include "Raven/Editor/Panels/SceneHierarchySnapshot.h"
@@ -1359,6 +1365,28 @@ void TestSceneHierarchyRavenPanel()
         "hierarchy Raven panel releases root ownership");
 }
 
+void TestDiagnosticDictionaryFontCoverage()
+{
+    std::ifstream file("C:/Windows/Fonts/meiryo.ttc", std::ios::binary);
+    if (file.is_open() == false)
+    {
+        std::cout << "[SKIP] Diagnostics Japanese glyph coverage: meiryo.ttc unavailable\n";
+        return;
+    }
+    const std::vector<unsigned char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    stbtt_fontinfo info{};
+    const auto offset = stbtt_GetFontOffsetForIndex(bytes.data(), 0);
+    Check(offset >= 0 && stbtt_InitFont(&info, bytes.data(), offset) != 0, "diagnostics Japanese font valid");
+    for (const auto& definition : Raven::Diagnostics::GetMessageDefinitions())
+    {
+        std::size_t cursor = 0; std::uint32_t codepoint = 0;
+        while (Raven::UIUtf8::DecodeNext(definition.Japanese, cursor, codepoint))
+        {
+            Check(stbtt_FindGlyphIndex(&info, static_cast<int>(codepoint)) != 0, "diagnostics dictionary glyph available");
+        }
+    }
+}
+
 void TestDiagnosticsRavenPanel()
 {
     Raven::UIContext context;
@@ -1433,6 +1461,24 @@ void TestDiagnosticsRavenPanel()
     Check(charts == 2, "diagnostics counter and CPU timeline rendered");
     std::cout << "diagnostics_ui_snapshot_model_charts_ms=" <<
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawBegin).count() << '\n';
+    auto localized = Raven::Diagnostics::Messages::MakePhysicsGravityUpdated(0, -9.5, 0);
+    event.Id = Raven::Diagnostics::Messages::PhysicsGravityUpdated; event.Payload = localized;
+    store->Append(event); panel.Update(1.0f);
+    Raven::UIComboBox* language = nullptr;
+    std::function<void(Raven::UIElement&)> findLanguage = [&](Raven::UIElement& element)
+    {
+        if (element.GetName() == "DiagnosticsLanguage") { language = dynamic_cast<Raven::UIComboBox*>(&element); }
+        for (const auto& child : element.GetChildren()) { findLanguage(*child); }
+    };
+    findLanguage(*panel.GetRootElement());
+    Check(language != nullptr && language->SetSelectedIndex(1), "diagnostics Japanese UI selection");
+    Check(panel.GetModel().GetFilter().Language == Raven::Diagnostics::DiagnosticLanguage::Japanese,
+        "diagnostics language selection updates model");
+    const auto& savedMessage = panel.GetModel().GetSnapshot()->Events.back().Event;
+    Check(std::get<Raven::Diagnostics::DiagnosticMessage>(savedMessage.Payload) == localized &&
+        Raven::DiagnosticsViewModel::EventText(savedMessage, panel.GetModel().GetFilter().Language).find("物理") == 0,
+        "diagnostics UI translation preserves original event");
+
     panel.Detach();
     Check(panel.IsAttached() == false && context.GetRootElement().GetChildren().size() == roots,
         "diagnostics detaches callbacks before model destruction");
@@ -4957,6 +5003,7 @@ int main()
     TestAnimationDebugSnapshot();
     TestAnimationDebugRavenPanel();
     TestDiagnosticsRavenPanel();
+    TestDiagnosticDictionaryFontCoverage();
     TestSceneHierarchySnapshot();
     TestSceneHierarchyRenameCommand();
     TestSceneHierarchyReparentCommand();

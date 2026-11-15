@@ -6,7 +6,7 @@
 
 namespace Raven::Diagnostics
 {
-// v1.2: Validation PayloadとSoftBody categoryを追加。v1.0/1.1も読めます。
+// v1.3: 型付きMessage(tag 7)を追加。v1.0/1.1/1.2も読めます。
 // tag 5は計測、tag 6はValidation。旧Readerは未知minorを拒否します。
 // Header=magic[8], major:u16, minor:u16, reserved:u32。
 // Record=size:u32, id:u64, timestamp:u64, thread:u64, sequence:u64,

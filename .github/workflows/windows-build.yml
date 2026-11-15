@@ -167,12 +167,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate Diagnostics message generator
+        shell: pwsh
+        run: ./scripts/test-diagnostic-message-generator.ps1
       - name: Build and run Diagnostics configurations
         shell: pwsh
         run: |
           foreach ($configuration in @('Debug', 'Release', 'Disabled', 'MeasurementsDisabled')) {
             ./scripts/test-windows-diagnostics.ps1 -Configuration $configuration
           }
+      - name: Run Diagnostics remote process tests
+        shell: pwsh
+        run: |
+          ./scripts/test-diagnostics-remote.ps1 -Executable ./artifacts/diagnostics/Debug/DiagnosticsTests.exe
+          ./scripts/test-diagnostics-remote.ps1 -Executable ./artifacts/diagnostics/Release/DiagnosticsTests.exe
       - name: Upload Diagnostics logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

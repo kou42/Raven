@@ -292,6 +292,8 @@ void RunDiagnosticSelfTests()
     RunDiagnosticMeasurementSelfTests();
     RunDiagnosticSubsystemSelfTests();
     RunDiagnosticViewerSelfTests();
+    RunDiagnosticMessageSelfTests();
+    RunDiagnosticRemoteSelfTests();
 
 }
 }

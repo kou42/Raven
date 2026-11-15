@@ -2,6 +2,7 @@
 
 #include "Raven/Diagnostics/DiagnosticMetric.h"
 #include "Raven/Diagnostics/DiagnosticValidation.h"
+#include "Raven/Diagnostics/DiagnosticMessage.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -35,7 +36,7 @@ enum class DiagnosticSeverity : std::uint8_t
 // 単一の数値または文字列を保持します。文字列の最大保持長は1024バイトです。
 // 文字列入力は正しいUTF-8を前提とし、上限での途中切断を避ける処理は実装側です。
 constexpr std::size_t MaxDiagnosticTextBytes = 1024;
-using DiagnosticPayload = std::variant<std::int64_t, double, bool, std::string, DiagnosticMetric, DiagnosticValidation>;
+using DiagnosticPayload = std::variant<std::int64_t, double, bool, std::string, DiagnosticMetric, DiagnosticValidation, DiagnosticMessage>;
 
 struct DiagnosticEvent
 {

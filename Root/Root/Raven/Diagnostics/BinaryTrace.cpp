@@ -15,8 +15,11 @@ constexpr std::size_t FileHeaderBytes = 16;
 constexpr std::size_t EventHeaderBytes = 40;
 constexpr std::size_t MetricHeaderBytes = 36;
 constexpr std::size_t ValidationHeaderBytes = 32;
+constexpr std::size_t MessageHeaderBytes = 16;
+constexpr std::size_t MessageArgumentHeaderBytes = 4;
 constexpr std::size_t MaxValidationPayloadBytes = ValidationHeaderBytes + MaxValidationNameBytes + MaxValidationMessageBytes;
 constexpr std::size_t MaxRecordBytes = EventHeaderBytes + MaxValidationPayloadBytes;
+static_assert(MessageHeaderBytes + MaxMessageArguments * MessageArgumentHeaderBytes + MaxMessageArgumentBytes <= MaxValidationPayloadBytes);
 static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);
 
 void Store(unsigned char* bytes, std::uint64_t value, std::size_t count)
@@ -68,7 +71,7 @@ bool WriteBinaryTraceHeader(std::ostream& output)
     std::array<unsigned char, FileHeaderBytes> bytes{};
     std::copy(Magic.begin(), Magic.end(), bytes.begin());
     Store(bytes.data() + 8, 1, 2);
-    Store(bytes.data() + 10, 2, 2);
+    Store(bytes.data() + 10, 3, 2);
     return WriteBytes(output, bytes.data(), bytes.size());
 }
 
@@ -142,6 +145,29 @@ bool WriteBinaryTraceEvent(std::ostream& output, const DiagnosticEvent& event)
         std::copy(validation->Message.begin(), validation->Message.end(), text + validation->Name.size());
         payloadSize = ValidationHeaderBytes + validation->Name.size() + validation->Message.size();
     }
+    else if (const auto* message = std::get_if<DiagnosticMessage>(&event.Payload); message != nullptr)
+    {
+        if (message->IsValid() == false) { return false; }
+        record[34] = 7;
+        auto* encoded = record + EventHeaderBytes;
+        Store(encoded, message->DictionaryVersion, 2);
+        Store(encoded + 2, message->SchemaVersion, 2);
+        Store(encoded + 4, message->SchemaHash, 8);
+        encoded[12] = static_cast<unsigned char>(message->Arguments.size());
+        payloadSize = MessageHeaderBytes;
+        for (const auto& argument : message->Arguments)
+        {
+            auto* field = encoded + payloadSize;
+            field[0] = static_cast<unsigned char>(argument.index() + 1);
+            std::size_t length = 8;
+            if (const auto* argumentInteger = std::get_if<std::int64_t>(&argument); argumentInteger != nullptr) { Store(field + 4, std::bit_cast<std::uint64_t>(*argumentInteger), 8); }
+            else if (const auto* argumentReal = std::get_if<double>(&argument); argumentReal != nullptr) { Store(field + 4, std::bit_cast<std::uint64_t>(*argumentReal), 8); }
+            else if (const auto* argumentBoolean = std::get_if<bool>(&argument); argumentBoolean != nullptr) { length = 1; field[4] = *argumentBoolean ? 1 : 0; }
+            else { const auto& text = std::get<std::string>(argument); length = text.size(); std::copy(text.begin(), text.end(), field + 4); }
+            Store(field + 2, length, 2);
+            payloadSize += 4 + length;
+        }
+    }
     else
     {
         const auto* text = std::get_if<std::string>(&event.Payload);
@@ -181,7 +207,7 @@ TraceReadResult BinaryTraceReader::ReadNext(DiagnosticEvent& event)
         {
             return m_Result = TraceReadResult::InvalidData;
         }
-        if (Load(header.data() + 8, 2) != 1 || Load(header.data() + 10, 2) > 2)
+        if (Load(header.data() + 8, 2) != 1 || Load(header.data() + 10, 2) > 3)
         {
             return m_Result = TraceReadResult::UnsupportedVersion;
         }
@@ -323,6 +349,33 @@ TraceReadResult BinaryTraceReader::ReadNext(DiagnosticEvent& event)
             return m_Result = TraceReadResult::InvalidData;
         }
         decoded.Payload = std::move(validation);
+        break;
+    }
+    case 7:
+    {
+        if (m_MinorVersion < 3 || payloadSize < MessageHeaderBytes || payload[12] > MaxMessageArguments || payload[13] != 0 || Load(payload + 14, 2) != 0)
+        { return m_Result = TraceReadResult::InvalidData; }
+        DiagnosticMessage message;
+        message.DictionaryVersion = static_cast<std::uint16_t>(Load(payload, 2));
+        message.SchemaVersion = static_cast<std::uint16_t>(Load(payload + 2, 2));
+        message.SchemaHash = Load(payload + 4, 8);
+        std::size_t cursor = MessageHeaderBytes;
+        for (std::size_t index = 0; index < payload[12]; ++index)
+        {
+            if (payloadSize - cursor < 4) { return m_Result = TraceReadResult::InvalidData; }
+            const auto* field = payload + cursor;
+            const auto fieldLength = static_cast<std::size_t>(Load(field + 2, 2));
+            if (field[1] != 0 || fieldLength > payloadSize - cursor - 4) { return m_Result = TraceReadResult::InvalidData; }
+            if (field[0] == 1 && fieldLength == 8) { message.Arguments.emplace_back(std::bit_cast<std::int64_t>(Load(field + 4, 8))); }
+            else if (field[0] == 2 && fieldLength == 8) { message.Arguments.emplace_back(std::bit_cast<double>(Load(field + 4, 8))); }
+            else if (field[0] == 3 && fieldLength == 1 && field[4] <= 1) { message.Arguments.emplace_back(field[4] == 1); }
+            else if (field[0] == 4 && fieldLength <= MaxMessageArgumentTextBytes) { message.Arguments.emplace_back(std::string(reinterpret_cast<const char*>(field + 4), fieldLength)); }
+            else { return m_Result = TraceReadResult::InvalidData; }
+            cursor += 4 + fieldLength;
+        }
+        // DictionaryはReaderの依存にしません。未知Schemaも構造が正しければ保存し、生値表示へ渡します。
+        if (cursor != payloadSize || message.IsValid() == false) { return m_Result = TraceReadResult::InvalidData; }
+        decoded.Payload = std::move(message);
         break;
     }
     default:

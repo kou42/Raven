@@ -6,9 +6,9 @@ RE:Logの設計思想を参考に、RavenのLog・Counter・Trace・Profiler・V
 
 本書は計画であり、記載機能の実装完了を意味しない。
 
-実装状況（2026-11-15）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）、M4（Phase 06）は実装・CPU検証完了。
+実装状況（2026-11-15）: M1（Phase 01〜03）、M2（Phase 04）、M3（Phase 05）、M4（Phase 06）、M5（Phase 07）は実装・CPU検証完了。
 詳細契約と検証手順は `Root/Root/Raven/Diagnostics/Tests/README.md` を参照。
-M5以降は未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
+M6-A（Windows Loopback Remote Diagnostics）は実装・CPU/別プロセス検証完了。M6の残りは未着手。CPUProfilerのsnapshot、Native Debug Layerと既存Assertは維持する。
 
 ## 基本設計
 
@@ -180,23 +180,48 @@ Debug/Releaseの診断5 suite、診断無効化2構成、Engine両構成、実Su
 
 ## Phase 07 — Structured Message Database（目安5〜8日）
 
-- [ ] 安定したMessage IDと型付き引数Schemaを定義する
-- [ ] ビルド時のMessage Metadata生成を設計する
-- [ ] 実行時の文字列整形とMessage Dictionaryを分離する
-- [ ] 日本語/英語切替とID衝突検査を実装する
-- [ ] DictionaryとBinary Traceのバージョン互換性を検証する
+- [x] 安定したMessage IDと型付き引数Schemaを定義する
+- [x] ビルド時のMessage Metadata生成を設計する
+- [x] 実行時の文字列整形とMessage Dictionaryを分離する
+- [x] 日本語/英語切替とID衝突検査を実装する
+- [x] DictionaryとBinary Traceのバージョン互換性を検証する
 
 **完了条件:** 同一Binary Eventを複数言語で表示できる。
 
+### M5実装結果（2026-11-15）
+
+Message Catalog/ID・Schema履歴から型付きFactoryと日英Metadataを生成し、同じ所有引数を表示時に翻訳する。
+既存IDのPhysics重力/RHI初期化失敗を移行し、旧scalar/string/Native Validation/Metricは維持する。
+Binary v1.3のtag 7にDictionary版・Schema版/hash・型付き引数を保存する。v1.0〜1.2を引き続き読み、未知Dictionary/Schemaは生値へfallbackする。
+EditorのLanguageで表示と本文検索を切り替え、Snapshotは書き換えない。日本語Templateの必要文字だけを起動時Atlasへ渡し、Windowsでは利用可能ならMeiryoを使う。
+
+生成器はPowerShell 5.1/7で再現可能。通常ビルドは生成済みMetadataの陳腐化/衝突を検査し、Schema履歴の変更は明示更新とする。
+文字列・引数数・合計byte・Template置換数を制限する。深いコピーを含めStoreのbyte予算へ反映する。
+未知Schemaの自動移行、過去全版のDictionary配布、任意引数の全Unicode Glyph対応、Editor全体の翻訳は対象外。
+Debug/Releaseの診断各6 suite、無効化2構成、通常Engine両構成、実Subsystem回帰、CPU UIが成功。生成器16項目をPowerShell 5.1/7で確認し、MeiryoのGlyph収録もCPUで確認した。GPU上の日本語描画・Dock操作は未検証。既存PDB/GLFWの検証用回避を使用し、新規Warningはない。
+次の候補はM6（Phase 08）のAdvanced Diagnostics。実需に応じた範囲の整理と別承認を必要とする。
+
 ## Phase 08 — Advanced Diagnostics（必要時）
 
-- [ ] NetworkSinkとRemote Collector
+- [x] NetworkSinkとRemote Collector（M6-A: Windows Loopback・1 Sessionに限定）
 - [ ] GPU Timestamp QueryとCPU/GPU Timeline相関
 - [ ] Crash Capture / Replay補助
 - [ ] Follows Node IDとの連携
 - [ ] 長期保存・検索
 
 **完了条件:** 別プロセスから診断情報を確認でき、関連イベントを追跡できる。
+
+### M6-A実装結果（2026-11-15）
+
+Network Sink→容量制限付きQueue→専用通信Worker→別プロセスのHeadless受信モードを追加した。
+既存Windows Loopback TCPを再利用し、制御Codec依存のAdapterだけを分離した。ローカルSinkは通信完了を待たない。
+Protocol v1はSession/Connection/OrdinalとDrop値を持ち、Binary v1.3のEventを転送する。切断時に接続を閉じて再試行し、部分イベントを再送しない。
+受信は1 Sessionに固定し、Binaryと`.remote.json`へ保存する。既存ファイルは原子的に上書き拒否し、保存量・Frame受信期限・全体期限を制限する。
+送信OS受付、受信/保存、Queue Drop、process Producer Drop、中断/拒否、正常Closeを区別する。ACKや保存保証は提供しない。
+
+診断Debug/Release各7 suite、無効化2構成、Debug/Release別プロセス各5シナリオ、通常Engine両構成と既存Subsystem/CPU UI回帰が成功。既存制御Message 429項目とWindows TCP 53項目も成功。Loopbackは実行サンドボックスの通信制限外で検証した。既存PDB/GLFWの検証用回避を使用し、新規Warningはない。
+
+M6-Aの範囲は上記Remote Diagnosticsのみ。GPU Timestamp、Crash Capture、Node連携、長期保存/検索、LAN接続、Remote Editor読込は後続の別承認とする。
 
 ## マイルストーン
 

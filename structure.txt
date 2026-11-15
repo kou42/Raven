@@ -1,6 +1,7 @@
 Folder PATH listing for volume Data
 Volume serial number is 0000005D B4F8:E2D0
 D:.
+|   .gitattributes
 |   .gitignore
 |   AGENTS.md
 |   find_structure_command.txt
@@ -401,8 +402,18 @@ D:.
     |   |   |           Startup.svg
     |   |   |           Viewer.html
     |   |   +---Diagnostics
+    |   |   |   |   RemoteDiagnostics.cpp
+    |   |   |   |   RemoteDiagnostics.h
+    |   |   |   |   RemoteProtocol.cpp
+    |   |   |   |   RemoteProtocol.h
     |   |   |   |   BinaryTrace.cpp
     |   |   |   |   BinaryTrace.h
+    |   |   |   |   DiagnosticMessage.cpp
+    |   |   |   |   DiagnosticMessage.h
+    |   |   |   |   MessageDictionary.cpp
+    |   |   |   |   MessageDictionary.h
+    |   |   |   |   Messages.json
+    |   |   |   |   Messages.lock.json
     |   |   |   |   DiagnosticEventStore.cpp
     |   |   |   |   DiagnosticEventStore.h
     |   |   |   |   DiagnosticSink.cpp
@@ -422,7 +433,12 @@ D:.
     |   |   |   |   EventBuffer.cpp
     |   |   |   |   EventBuffer.h
     |   |   |   |
+    |   |   |   +---Generated
+    |   |   |   |       MessageMetadata.generated.cpp
+    |   |   |   |       MessageMetadata.generated.h
     |   |   |   \---Tests
+    |   |   |           DiagnosticRemoteSelfTests.cpp
+    |   |   |           DiagnosticMessageSelfTests.cpp
     |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
@@ -1597,6 +1613,7 @@ Raven Structured Data Phase 11 additions (Root/Root/Raven relative paths):
 Raven Structured Data Phase 11 Windows TCP additions (Root/Root/Raven relative paths):
     Network/Windows/WindowsTcpSocket.h
     Network/Windows/WindowsTcpSocket.cpp
+    Network/Windows/WindowsControlStream.cpp
     Network/Tests/WindowsTcpTests.h
     Network/Tests/WindowsTcpTests.cpp
 
