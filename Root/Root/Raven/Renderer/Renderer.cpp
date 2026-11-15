@@ -1,4 +1,5 @@
-﻿#include "Renderer.h"
+﻿#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
+#include "Renderer.h"
 
 #include "RenderCommand.h"
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
@@ -281,8 +282,8 @@ bool Renderer::TryInit(RHIBackend backend)
     const bool initialized = RenderCommand::TryInit(backend);
     if (initialized == false)
     {
-        RAVEN_LOG_ERROR(Diagnostics::DiagnosticCategory::RHI, Diagnostics::EventIds::LegacyRHIInitializationFailed,
-            std::string("Legacy Renderer backend initialization failed"));
+        RAVEN_MESSAGE(Diagnostics::Messages::LegacyRHIInitializationFailed,
+            Diagnostics::Messages::MakeLegacyRHIInitializationFailed("Legacy Renderer backend initialization failed"));
     }
     return initialized;
 }

@@ -218,6 +218,8 @@
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
     <None Include="Raven\Diagnostics\Tests\README.md" />
+    <None Include="Raven\Diagnostics\Messages.json" />
+    <None Include="Raven\Diagnostics\Messages.lock.json" />
     <None Include="Raven\Data\Tests\README.md" />
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md" />
     <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md" />
@@ -283,5 +285,9 @@
   <Target Name="CompileVulkanSceneShaders" BeforeTargets="ClCompile" Inputs="@(VulkanSceneShader)" Outputs="@(VulkanSceneShader->'%(FullPath).spv')">
     <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')" Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
     <Exec Command="&quot;$(VULKAN_SDK)\Bin\glslc.exe&quot; &quot;%(VulkanSceneShader.FullPath)&quot; -o &quot;%(VulkanSceneShader.FullPath).spv&quot;" />
+  </Target>
+  <!-- Metadataはレビュー可能な生成済みファイルを管理し、ビルド時は陳腐化とID/Schemaを検証します。 -->
+  <Target Name="VerifyDiagnosticMessages" BeforeTargets="ClCompile">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\..\scripts\generate-diagnostic-messages.ps1&quot; -Check" />
   </Target>
 </Project>

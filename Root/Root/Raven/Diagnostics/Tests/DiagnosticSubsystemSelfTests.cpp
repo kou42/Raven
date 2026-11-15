@@ -158,7 +158,7 @@ void TestValidationFormat()
     std::ostringstream saved;
     Require(WriteBinaryTraceHeader(saved) && WriteBinaryTraceEvent(saved, event));
     const auto bytes = saved.str();
-    Require(bytes[10] == 2 && bytes[54] == 6 && bytes[60] == 1);
+    Require(bytes[10] == 3 && bytes[54] == 6 && bytes[60] == 1);
     Require(static_cast<unsigned char>(bytes[68]) == 0xd6 && static_cast<unsigned char>(bytes[75]) == 0xff);
     Require(bytes[77] == 0x10 && bytes[80] == 2 && bytes[84] == 9 && bytes[92] == 'N');
     std::istringstream input(bytes);

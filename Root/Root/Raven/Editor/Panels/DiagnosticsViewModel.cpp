@@ -65,8 +65,9 @@ const char* DiagnosticsViewModel::SeverityName(DiagnosticSeverity severity) noex
     }
     return "Unknown";
 }
-std::string DiagnosticsViewModel::EventText(const DiagnosticEvent& event)
+std::string DiagnosticsViewModel::EventText(const DiagnosticEvent& event, DiagnosticLanguage language)
 {
+    if (const auto* message = std::get_if<DiagnosticMessage>(&event.Payload); message != nullptr) { return FormatDiagnosticMessage(event.Id, *message, language).Text; }
     if (const auto* validation = std::get_if<DiagnosticValidation>(&event.Payload); validation != nullptr)
     {
         return std::string(validation->Backend == DiagnosticValidationBackend::Vulkan ? "Vulkan " : "DX12 ")
@@ -122,7 +123,7 @@ void DiagnosticsViewModel::Rebuild()
         if (metric != nullptr && m_Filter.IncludeMeasurements == false) { continue; }
         // Severityと本文検索はLog Tableだけに作用し、同FrameのPhysics Timelineを消しません。
         if (event.Severity < m_Filter.MinimumSeverity) { continue; }
-        if (m_Filter.Search.empty() == false && EventText(event).find(m_Filter.Search) == std::string::npos) { continue; }
+        if (m_Filter.Search.empty() == false && EventText(event, m_Filter.Language).find(m_Filter.Search) == std::string::npos) { continue; }
         m_Rows.push_back(index);
     }
     m_CounterNames.assign(counterNames.begin(), counterNames.end());

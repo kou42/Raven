@@ -2,6 +2,7 @@
 
 #include "Raven/Diagnostics/DiagnosticEventStore.h"
 #include "Raven/Diagnostics/MeasurementTimeline.h"
+#include "Raven/Diagnostics/MessageDictionary.h"
 
 #include <optional>
 
@@ -9,6 +10,7 @@ namespace Raven
 {
 struct DiagnosticsViewFilter
 {
+    Diagnostics::DiagnosticLanguage Language = Diagnostics::DiagnosticLanguage::English;
     std::string Search;
     std::optional<Diagnostics::DiagnosticCategory> Category;
     Diagnostics::DiagnosticSeverity MinimumSeverity = Diagnostics::DiagnosticSeverity::Info;
@@ -40,7 +42,8 @@ public:
     bool WasSelectionEvicted() const noexcept;
     std::uint64_t GetNativeFallbacks() const noexcept;
     static std::optional<std::uint64_t> EventFrame(const Diagnostics::DiagnosticEvent& event);
-    static std::string EventText(const Diagnostics::DiagnosticEvent& event);
+    static std::string EventText(const Diagnostics::DiagnosticEvent& event,
+        Diagnostics::DiagnosticLanguage language = Diagnostics::DiagnosticLanguage::English);
     static const char* CategoryName(Diagnostics::DiagnosticCategory category) noexcept;
     static const char* SeverityName(Diagnostics::DiagnosticSeverity severity) noexcept;
 

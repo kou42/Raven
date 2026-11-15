@@ -1,4 +1,5 @@
-﻿#include <algorithm>
+﻿#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -307,8 +308,8 @@ void PhysicsWorld::SetGravity(const math::Vec3& gravity)
 {
     m_GravityField.SetAcceleration(gravity);
     // 設定変更時のみ発行し、毎フレームのPhysics Hot Pathを汚染しません。
-    RAVEN_LOG_INFO(Diagnostics::DiagnosticCategory::Physics, Diagnostics::EventIds::PhysicsGravityUpdated,
-        std::string("Physics gravity updated"));
+    RAVEN_MESSAGE(Diagnostics::Messages::PhysicsGravityUpdated,
+        Diagnostics::Messages::MakePhysicsGravityUpdated(gravity.x, gravity.y, gravity.z));
 }
 
 const math::Vec3& PhysicsWorld::GetGravity() const

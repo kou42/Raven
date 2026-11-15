@@ -1,4 +1,5 @@
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/MessageDictionary.h"
 #include "Raven/Diagnostics/DiagnosticCollector.h"
 
 #include <atomic>
@@ -113,13 +114,18 @@ void WriteConsoleEvent(std::ostream& output, const DiagnosticEvent& event)
             << " truncated=" << (validation->NameTruncated || validation->MessageTruncated)
             << " name=" << validation->Name << " message=" << validation->Message;
     }
+    else if (const auto* message = std::get_if<DiagnosticMessage>(&event.Payload); message != nullptr)
+    {
+        output << FormatDiagnosticMessage(event.Id, *message).Text;
+    }
     else
     {
         // 計測型は上で処理し、従来Logの書式は維持します。
         std::visit([&output](const auto& value)
         {
             if constexpr (std::is_same_v<std::decay_t<decltype(value)>, DiagnosticMetric> == false
-                && std::is_same_v<std::decay_t<decltype(value)>, DiagnosticValidation> == false)
+                && std::is_same_v<std::decay_t<decltype(value)>, DiagnosticValidation> == false
+                && std::is_same_v<std::decay_t<decltype(value)>, DiagnosticMessage> == false)
             {
                 output << value;
             }
@@ -294,6 +300,7 @@ bool Publish(DiagnosticEventId id, DiagnosticCategory category,
     bool nonBlocking = false)
 {
     NormalizePayload(payload);
+    if (const auto* message = std::get_if<DiagnosticMessage>(&payload); message != nullptr && message->IsValid() == false) { return false; }
 
     DiagnosticEvent event;
     event.Id = id;
@@ -381,6 +388,14 @@ void Emit(DiagnosticEventId id, DiagnosticCategory category,
     {
         Publish(id, category, severity, std::move(payload), false, 0);
     }
+}
+
+bool EmitStructuredMessage(DiagnosticEventId id, DiagnosticMessage message)
+{
+    const auto* definition = FindMessageDefinition(id);
+    if (definition == nullptr || IsDiagnosticCategoryEnabled(definition->Category) == false
+        || MatchesMessageSchema(*definition, message) == false) { return false; }
+    return Publish(id, definition->Category, definition->Severity, std::move(message), false, 0);
 }
 
 std::uint64_t GetDiagnosticSessionId()
