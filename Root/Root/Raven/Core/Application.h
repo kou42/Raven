@@ -59,6 +59,8 @@ struct ApplicationSpecification
     // Atlasを事前生成できない通常起動用。GPU初期化後にApplicationが生成します。
     // RuntimeUIFontが指定済みならそちらを優先し、OS固有のパス選択は起動側が担当します。
     std::string RuntimeUIFontPath;
+    // 用途側で必要な文字だけを指定します。Coreは翻訳文やDictionaryを参照しません。
+    std::vector<std::uint32_t> RuntimeUIFontAdditionalCodepoints;
 };
 
 class Application

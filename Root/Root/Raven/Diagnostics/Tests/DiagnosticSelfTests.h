@@ -9,4 +9,5 @@ void RunDiagnosticSinkSelfTests();
 void RunDiagnosticMeasurementSelfTests();
 void RunDiagnosticSubsystemSelfTests();
 void RunDiagnosticViewerSelfTests();
+void RunDiagnosticMessageSelfTests();
 }

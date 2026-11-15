@@ -249,3 +249,44 @@ Counter Graphは同名の生サンプルをTimestamp順に最大512個表示し�
 検証結果: 専用Debug/Release各5 suite、Disabled/MeasurementsDisabled各1 suite、Engine Debug/Release x64と両Diagnostics 5 suite、DebugのExplicit Frame/Physics Collision/SoftBody統合、CPU UI Debugが終了コード0。10万件投入からSnapshot/Modelまでの単発計測は専用Debug約79.8 ms / Release約7.9 ms、既定Store保持推定1638400 byte（1.56 MiB）。Counter主体の入力であり、全入力に対する上限時間ではない。8192イベント・40 Thread・3072 Trace区間のSnapshot/Model/Chart CPU更新はDebug約59.6 ms。5 HzでもDebugの飽和時にはstutterの可能性があり、必要時はFrame/Thread FilterとFreezeを使う。性能保証/合否時間閾値は設けていない。
 
 全体ビルドは従来のPDB無効化とGLFW 3.4 native headerの検証用追加参照を使用した。既存リンクWarningはDebug/UI各2、Release 0。UIテスト再コンパイルの既存C4244は32件。専用/W4の既存C4324はDebug/Release各6、無効化各3。新規Warningはない。実GPU画面はcomputer-useでRelease実行ファイルの起動を試したがtargetable windowがなく、fresh inventoryにもRavenは存在しなかったため、描画・Dock操作の実画面確認は未検証。Native Validation故障注入はM3同様未検証。M5以降は対象外。
+
+## M5: Structured Message Database（2026-11-15）
+
+`Messages.json`を日英文言・安定ID・引数Schemaの原本とし、`Messages.lock.json`で過去のID/Key/Schema版/hashを予約する。生成器は`Generated/MessageMetadata.generated.h/.cpp`へ型付きFactoryと読み取り専用Metadataを生成する。生成ファイルはレビュー・配布用にコミットする。通常ビルドと専用Runnerは`-Check`で原本・Lock・生成物の一致を検査し、古い生成物のままビルドしない。PowerShell 5.1/7対応で、新しいツール依存は追加しない。生成Metadataだけを.gitattributesでLF固定し、Windowsのautocrlf付きcheckoutでも-Checkのbyte一致を維持する。
+
+```powershell
+./scripts/generate-diagnostic-messages.ps1          # 翻訳変更後の再生成
+./scripts/generate-diagnostic-messages.ps1 -Check   # CI/ビルドの検査
+./scripts/generate-diagnostic-messages.ps1 -UpdateLock # 新ID/新Schemaをレビュー後に履歴へ追加
+./scripts/test-diagnostic-message-generator.ps1
+```
+
+IDは明示指定（Catalog v1では非zero uint32、Event/wireは従来どおりuint64）。重複ID/Key・過去IDの別Keyへの再利用・予約済みNative/Metric IDの種類変更・生成C++名衝突を拒否する。同一Schema版の引数型/順序/名前・Category/Severity変更を許可せず、新しい版を明示してLockへ追記する。翻訳文はSchema hashに含めず、翻訳だけの修正で過去イベントを無効にしない。Schema hashは`dictionary|id|schemaVersion|category|severity|name:type...`（UTF-8）のSHA-256先頭64 bitの数値表現。互換性照合用で、改竄検出や認証の保証ではない。過去Lock行は予約として維持し、現在のDictionaryに過去全版の翻訳文は埋め込まない。
+
+Runtimeは`DiagnosticMessage`にDictionary版・Schema版/hash・所有する引数を保持し、翻訳文はイベントに保存しない。引数型はint64/double/bool/UTF-8 string、最大8個、string単体256 byte、引数値の合計1024 byteまで。doubleは有限値のみ。長すぎる引数を黙って切り詰めず発行/保存を拒否する。Templateは各言語1024 UTF-8 byte、置換は最大8箇所とし、生成器が未定義/不足/壊れたplaceholderを拒否する。名前は`{reason}`などで指定し、引数本文に含まれる`{...}`を再評価しない。出力は通常の数値表記で整形し、数値localeはclassicを使用する。日英の切替で元のID・引数・時刻・Sequenceは変化しない。
+
+```cpp
+#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
+RAVEN_MESSAGE(Raven::Diagnostics::Messages::PhysicsGravityUpdated,
+    Raven::Diagnostics::Messages::MakePhysicsGravityUpdated(0.0, -9.8, 0.0));
+```
+
+Factoryは宣言をh、実装をcppへ分離する。`RAVEN_MESSAGE`は診断/Category無効時にFactoryや引数を評価しない。通常Emitterは登録済みSchemaと型を検証してから既存SPSC/Collectorへ渡す。戻り値falseは無効・不一致・Publish失敗を示す。Native callbackのnon-blocking APIには接続しない。Physics重力更新とLegacy RHI初期化失敗を既存IDのまま移行し、Core session状態のSchemaも提供する。旧scalar/string payloadやNative Validation/Metricの形式と経路は維持する。
+
+Console/Fileは既定の英語Formatterを使う。EditorのLanguage選択はPanel単位・既定Englishで、表示と本文検索を切り替え、Snapshotや選択の通算IDを書き換えない。対象は型付きMessage本文であり、Editor全CaptionやNative Driver本文の翻訳は含めない。未知ID/Dictionary版/Schema不一致は理由・ID・版/hash・生の引数へfallbackし、現在の翻訳文を誤って適用しない。Reader/StoreはDictionaryへ依存せず、構造が正しい未知Messageも保持する。
+
+StoreはMessageの引数vector容量と文字列capacityも保持byteへ含める。Snapshotは引数まで深く所有し、元データ変更やStore Clear後も参照切れしない。既定件数/byte予算はM4のまま。Formatterは最大8引数と各文字列上限までしかfallback出力せず、翻訳Templateの置換回数にも生成時上限を設ける。
+
+日本語Templateが既存のASCII Atlasでは表示できないため、起動側がDictionaryの使用文字だけを`ApplicationSpecification.RuntimeUIFontAdditionalCodepoints`へ渡す。Coreは汎用の追加文字集合だけを扱い、Dictionaryを参照しない。Windows起動側は存在すればMeiryo TTCを選び、不在時は既存Segoe UIへ戻して警告する。Atlasは既存のDevice初期化後・Panel Attach前に構築し、Ref共有の寿命を維持する。任意の引数/Native本文の全Unicode文字、外部指定Atlasの不足Glyph、OS Font不在の代替Font配布は今回の対象外。
+
+### Binary Trace v1.3
+
+Header minorを3へ更新し、tag 7へ型付きMessageを追加。Record Header/既存tag 1〜6は変更しない。Message payloadは`dictionary:u16, schema:u16, schemaHash:u64, count:u8, reserved:u8=0, reserved:u16=0`（16 byte）に続き、引数ごとに`type:u8, reserved:u8=0, valueBytes:u16, value`を格納する。typeは1=int64、2=double、3=bool、4=UTF-8 string。数値はlittle endian、boolは0/1。値のbyte合計上限には各型のwireサイズを使用する。最大Message payloadは1072 byte以内で、従来Validationの最大1184 byte/Record 1224 byteを拡張しない。
+
+Readerはv1.0〜1.3を受理し、古いHeaderにtag 7が混入した場合、未知引数tag、Reserved、過大Count/長さ、不正bool、非有限double、zero版/hash、末尾の余分なbyteを拒否する。失敗時は呼び出し元eventを変更しない。未知の非zero Dictionary/Schema版/hashは構造だけ検査して生値を返し、Formatter側で互換性を判定する。旧Readerは未知minorを拒否する既存契約のままなので、新Traceを旧Readerが読めるという後方方向の保証はない。
+
+M5の検証は診断6番目のsuiteで日英表示、全引数型、Binary固定byte/往復/全位置の途中切断・不正入力、旧minor、新Dictionary/Schema不一致、引数上限・Store所有/byte上限、言語別検索と選択保持、無効時の式省略、Collectorへの実配信を確認する。生成器の異常系は独立PowerShellテストとCIへ追加した。CPU UI回帰ではLanguage ComboBox→Modelの接続とSnapshot不変性、Meiryoが存在する環境でTemplate全文字の実Font glyph収録を確認する。GPU上の日本語描画とWindow/Dock操作は別途実機確認が必要。
+
+2026-11-15のM5最終検証結果: 専用Debug/Release各6 suite、Disabled/MeasurementsDisabled各1 suite、Engine Debug/Release x64増分ビルドと両Diagnostics各6 suite、DebugのExplicit Frame/Physics Collision/SoftBody統合、CPU UI Debugが終了コード0。生成器16チェックはPowerShell 5.1/7の双方で成功し、通常ビルドのMetadata検証も成功した。UI Language操作で元Payloadが不変であること、MeiryoのTemplate全文字Glyph収録をCPUで確認した。Byte上限、Snapshotの深い所有、未対応Schemaの生値表示、旧Trace互換も確認した。
+
+全体ビルドには既存PDB問題の回避フラグとGLFW 3.4 native headerのローカル検証用参照を使用し、依存設定の恒久変更は行っていない。新規コンパイラWarningは0。既存WarningはEngine Debugのリンク2件、Release 0件、UIのC4244が32件とリンク2件、専用/W4のC4324がDebug/Release各6・無効化各3件。GPU上の日本語Atlas描画・Dock操作、Native故障注入は未検証。Schema履歴には過去文言を保存しないため、古い構造化Schemaは必要に応じて生値表示になる。M6以降は対象外。

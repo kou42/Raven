@@ -1,6 +1,7 @@
 Folder PATH listing for volume Data
 Volume serial number is 0000005D B4F8:E2D0
 D:.
+|   .gitattributes
 |   .gitignore
 |   AGENTS.md
 |   find_structure_command.txt
@@ -403,6 +404,12 @@ D:.
     |   |   +---Diagnostics
     |   |   |   |   BinaryTrace.cpp
     |   |   |   |   BinaryTrace.h
+    |   |   |   |   DiagnosticMessage.cpp
+    |   |   |   |   DiagnosticMessage.h
+    |   |   |   |   MessageDictionary.cpp
+    |   |   |   |   MessageDictionary.h
+    |   |   |   |   Messages.json
+    |   |   |   |   Messages.lock.json
     |   |   |   |   DiagnosticEventStore.cpp
     |   |   |   |   DiagnosticEventStore.h
     |   |   |   |   DiagnosticSink.cpp
@@ -422,7 +429,11 @@ D:.
     |   |   |   |   EventBuffer.cpp
     |   |   |   |   EventBuffer.h
     |   |   |   |
+    |   |   |   +---Generated
+    |   |   |   |       MessageMetadata.generated.cpp
+    |   |   |   |       MessageMetadata.generated.h
     |   |   |   \---Tests
+    |   |   |           DiagnosticMessageSelfTests.cpp
     |   |   |           DiagnosticMeasurementSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h

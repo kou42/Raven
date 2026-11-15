@@ -1,0 +1,2 @@
+# Keep generated diagnostic metadata byte-identical on Windows checkouts.
+Root/Root/Raven/Diagnostics/Generated/MessageMetadata.generated.* text eol=lf

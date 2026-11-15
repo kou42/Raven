@@ -1,0 +1,52 @@
+{
+  "history": [
+    {
+      "id": 4097,
+      "key": "LegacyRHIInitializationFailed",
+      "version": 1,
+      "hash": "fa1f388c80c0f157"
+    },
+    {
+      "id": 4098,
+      "key": "VulkanValidation",
+      "version": 0,
+      "hash": "reserved"
+    },
+    {
+      "id": 4099,
+      "key": "DX12Validation",
+      "version": 0,
+      "hash": "reserved"
+    },
+    {
+      "id": 8193,
+      "key": "PhysicsGravityUpdated",
+      "version": 1,
+      "hash": "7ce8a8523b264824"
+    },
+    {
+      "id": 12289,
+      "key": "DiagnosticState",
+      "version": 1,
+      "hash": "a1162ecdf2d729cc"
+    },
+    {
+      "id": 3506438145,
+      "key": "Counter",
+      "version": 0,
+      "hash": "reserved"
+    },
+    {
+      "id": 3506438146,
+      "key": "TraceBegin",
+      "version": 0,
+      "hash": "reserved"
+    },
+    {
+      "id": 3506438147,
+      "key": "TraceEnd",
+      "version": 0,
+      "hash": "reserved"
+    }
+  ]
+}

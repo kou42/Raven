@@ -1,0 +1,13 @@
+{
+  "dictionaryVersion": 1,
+  "messages": [
+    {"id":4097,"key":"LegacyRHIInitializationFailed","schemaVersion":1,"category":"RHI","severity":"Error","arguments":[{"name":"reason","type":"Text"}],"en":"RHI initialization failed: {reason}","ja":"RHIの初期化に失敗しました: {reason}"},
+    {"id":4098,"key":"VulkanValidation","reserved":true},
+    {"id":4099,"key":"DX12Validation","reserved":true},
+    {"id":8193,"key":"PhysicsGravityUpdated","schemaVersion":1,"category":"Physics","severity":"Info","arguments":[{"name":"x","type":"Real"},{"name":"y","type":"Real"},{"name":"z","type":"Real"}],"en":"Physics gravity updated: ({x}, {y}, {z})","ja":"物理の重力を更新しました: ({x}, {y}, {z})"},
+    {"id":12289,"key":"DiagnosticState","schemaVersion":1,"category":"Core","severity":"Info","arguments":[{"name":"session","type":"Integer"},{"name":"active","type":"Boolean"},{"name":"label","type":"Text"}],"en":"Diagnostics session {session}: active={active}, label={label}","ja":"診断セッション {session}: 有効={active}, 名前={label}"},
+    {"id":3506438145,"key":"Counter","reserved":true},
+    {"id":3506438146,"key":"TraceBegin","reserved":true},
+    {"id":3506438147,"key":"TraceEnd","reserved":true}
+  ]
+}

@@ -16,6 +16,15 @@ std::size_t StringBytes(const DiagnosticEvent& event)
     {
         return validation->Name.capacity() + validation->Message.capacity() + 2;
     }
+    if (const auto* message = std::get_if<DiagnosticMessage>(&event.Payload); message != nullptr)
+    {
+        std::size_t bytes = message->Arguments.capacity() * sizeof(DiagnosticArgument);
+        for (const auto& argument : message->Arguments)
+        {
+            if (const auto* text = std::get_if<std::string>(&argument); text != nullptr) { bytes += text->capacity() + 1; }
+        }
+        return bytes;
+    }
     return 0;
 }
 
@@ -28,6 +37,7 @@ bool Valid(const DiagnosticEvent& event)
     }
     if (const auto* metric = std::get_if<DiagnosticMetric>(&event.Payload); metric != nullptr) { return metric->IsValid(); }
     if (const auto* validation = std::get_if<DiagnosticValidation>(&event.Payload); validation != nullptr) { return validation->IsValid(); }
+    if (const auto* message = std::get_if<DiagnosticMessage>(&event.Payload); message != nullptr) { return message->IsValid(); }
     return true;
 }
 }

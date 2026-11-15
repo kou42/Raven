@@ -20,6 +20,8 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Core/Base.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
+#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
+#include "Raven/UI/Text/UIUtf8.h"
 #include "Raven/Diagnostics/DiagnosticEventStore.h"
 #include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Diagnostics/BinaryTrace.h"
@@ -150,7 +152,7 @@ int main(int argc, char* argv[])
             try
             {
                 Raven::tests::RunDiagnosticSelfTests();
-                std::cout << "Diagnostics self-tests passed: suites=5 failures=0.\n";
+                std::cout << "Diagnostics self-tests passed: suites=6 failures=0.\n";
                 return 0;
             }
             catch (const std::exception& error)
@@ -521,6 +523,16 @@ int main(int argc, char* argv[])
     Raven::Diagnostics::SetMeasurementsEnabled(diagnosticMeasurements);
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.WindowProperties.Backend = applicationBackend;
+    // Dictionaryの表示文に必要な文字だけをAtlasへ登録します。引数の任意文字列は対象外です。
+    for (const auto& definition : Raven::Diagnostics::GetMessageDefinitions())
+    {
+        for (const auto text : {definition.English, definition.Japanese})
+        {
+            std::size_t offset = 0; std::uint32_t codepoint = 0;
+            while (Raven::UIUtf8::DecodeNext(text, offset, codepoint) == true)
+            { applicationSpecification.RuntimeUIFontAdditionalCodepoints.push_back(codepoint); }
+        }
+    }
 #ifdef _WIN32
     // 通常Editor/Runtime共通Fontの選択は起動側の責務とし、CoreへWindowsの
     // 配置知識を持ち込みません。Atlas自体はGPU初期化後にApplicationが生成します。
@@ -528,8 +540,11 @@ int main(int argc, char* argv[])
     const UINT windowsDirectoryLength = GetWindowsDirectoryW(windowsDirectory, MAX_PATH);
     if (windowsDirectoryLength > 0u && windowsDirectoryLength < MAX_PATH)
     {
-        const auto fontPathUtf8 =
-            (std::filesystem::path(windowsDirectory) / "Fonts" / "segoeui.ttf").u8string();
+        const auto fonts = std::filesystem::path(windowsDirectory) / "Fonts";
+        std::error_code fontError;
+        const bool japaneseFontExists = std::filesystem::exists(fonts / "meiryo.ttc", fontError);
+        if (japaneseFontExists == false) { std::cerr << "[Raven UI] Japanese font unavailable; Japanese glyphs may be missing.\n"; }
+        const auto fontPathUtf8 = (fonts / (japaneseFontExists ? "meiryo.ttc" : "segoeui.ttf")).u8string();
         // C++20以降のchar8_tもUTF-8のバイト列として渡し、Windowsのローカル文字コードへの変換を避けます。
         applicationSpecification.RuntimeUIFontPath.assign(
             reinterpret_cast<const char*>(fontPathUtf8.data()), fontPathUtf8.size());

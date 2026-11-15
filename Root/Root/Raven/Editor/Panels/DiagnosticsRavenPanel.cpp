@@ -179,6 +179,13 @@ bool DiagnosticsRavenPanel::Attach(UIContext& context, const Ref<UIFontAtlas>& f
     label("Counter: raw samples, latest 512; yellow = filtered Frame. No samples means uncollected, not zero.", 874);
     m_Counters = combo(8, 904, {}, [this](std::size_t, const std::string& name)
     { if (m_Updating == false) { auto f = m_Model.GetFilter(); f.CounterName = name; m_Model.SetFilter(std::move(f)); Refresh(); } });
+    auto* language = combo(360, 904, {"English", "Japanese"}, [this](std::size_t index, const std::string&)
+    {
+        auto filter = m_Model.GetFilter();
+        filter.Language = index == 1 ? Diagnostics::DiagnosticLanguage::Japanese : Diagnostics::DiagnosticLanguage::English;
+        m_Model.SetFilter(std::move(filter)); Refresh();
+    });
+    language->SetName("DiagnosticsLanguage");
     auto graph = CreateScope<DiagnosticChart>(m_Model, false); graph->SetName("DiagnosticsCounterGraph"); graph->SetPosition({8, 940}); graph->SetSize({980, 170}); content->AddChild(std::move(graph));
     label("CPU timeline: horizontal = ns; one lane/thread, roots above children. Green=complete, orange=incomplete.", 1126);
     label("Display cap: 2048 intervals / 32 threads. Use Frame/Thread filters and measurement rows for scope details.", 1152);
@@ -228,7 +235,7 @@ std::string DiagnosticsRavenPanel::Cell(std::size_t row, std::size_t column) con
     case 1: return DiagnosticsViewModel::CategoryName(event.Category);
     case 2: { const auto frame = DiagnosticsViewModel::EventFrame(event); return frame.has_value() ? std::to_string(*frame) : "?"; }
     case 3: return std::to_string(event.ThreadId);
-    default: return DiagnosticsViewModel::EventText(event);
+    default: return DiagnosticsViewModel::EventText(event, m_Model.GetFilter().Language);
     }
 }
 void DiagnosticsRavenPanel::Refresh()
@@ -277,7 +284,12 @@ void DiagnosticsRavenPanel::Refresh()
     detail << "Store ID=" << selected->Id << " Event ID=" << event.Id << " Sequence=" << event.Sequence << " Timestamp(ns)=" << event.TimestampNanoseconds
         << " Thread=" << event.ThreadId << "\n" << DiagnosticsViewModel::SeverityName(event.Severity) << ' '
         << DiagnosticsViewModel::CategoryName(event.Category) << " Frame=" << (selectedFrame.has_value() ? std::to_string(*selectedFrame) : "?")
-        << "\n" << DiagnosticsViewModel::EventText(event);
+        << "\n" << DiagnosticsViewModel::EventText(event, m_Model.GetFilter().Language);
+    if (const auto* message = std::get_if<Diagnostics::DiagnosticMessage>(&event.Payload); message != nullptr)
+    {
+        detail << "\nDictionary=" << message->DictionaryVersion << " Schema=" << message->SchemaVersion
+            << " Schema hash=" << message->SchemaHash << " Arguments=" << message->Arguments.size();
+    }
     if (const auto* validation = std::get_if<Diagnostics::DiagnosticValidation>(&event.Payload); validation != nullptr)
     {
         detail << "\nNative severity=" << validation->NativeSeverity << " type=" << validation->NativeType << " name/message truncated=" << validation->NameTruncated << '/' << validation->MessageTruncated;
