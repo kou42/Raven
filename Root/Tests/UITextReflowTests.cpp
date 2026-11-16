@@ -9,6 +9,9 @@
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/Panels/InspectorRavenPanel.h"
+#include "Raven/Editor/Panels/InspectorController.h"
+#include "Raven/Editor/Tests/EditorEntityCommandSelfTests.h"
+#include "Raven/Editor/Tests/InspectorSnapshotSelfTests.h"
 #include "Raven/Editor/Panels/InspectorSnapshot.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Command/ReparentEntityCommand.h"
@@ -5307,10 +5310,375 @@ void TestUICacheOverlays()
         "closing popup preserves cache path");
 }
 
+void CollectInspectorNumbers(Raven::UIElement& element, std::vector<Raven::UIInputNumber*>& output)
+{
+    if (auto* number = dynamic_cast<Raven::UIInputNumber*>(&element); number != nullptr)
+    {
+        output.push_back(number);
+    }
+    for (const auto& child : element.GetChildren())
+    {
+        CollectInspectorNumbers(*child, output);
+    }
+}
+void PasteInspectorNumber(Raven::UIContext& context, Raven::UIInputNumber& number, const std::string& text)
+{
+    context.SetClipboard([text]() { return text; }, {});
+    context.SetFocus(&number.GetInputText());
+    Check(context.GetFocusedElement() == &number.GetInputText(), "inspector number receives focus");
+    context.RouteKeyEvent(Press(Raven::UIKey::A, true));
+    context.RouteKeyEvent(Press(Raven::UIKey::V, true));
+}
+
+void TestInputNumberComparisonSync()
+{
+    Raven::UIContext context;
+    auto number = Raven::CreateScope<Raven::UIInputNumber>();
+    auto* input = number.get();
+    number->SetRange(-10.0, 10.0);
+    number->SetValue(1.0);
+    context.AddRootChild(std::move(number));
+    PasteInspectorNumber(context, *input, "1.0");
+    const auto selection = input->GetInputText().GetEditBuffer().GetSelection();
+    Check(input->SetValueIfChanged(1.0) == false && input->SetRangeIfChanged(-10.0, 10.0) == false,
+        "same numeric synchronization reports no reset");
+    Check(input->GetEditText() == "1.0" && input->GetInputText().GetEditBuffer().GetSelection() == selection,
+        "same numeric sync preserves text and caret");
+    context.RouteKeyEvent(Press(Raven::UIKey::Z, true));
+    Check(input->GetEditText() == "1", "same numeric sync preserves local text undo");
+    context.ClearFocus();
+    Check(input->SetValueIfChanged(3.0), "changed numeric sync updates value");
+    CheckNear("changed numeric committed baseline", static_cast<float>(input->GetCommittedValue()), 3.0f);
+    Check(input->SetRangeIfChanged(-2.0, 2.0), "changed numeric range sync clamps value");
+    CheckNear("range clamped numeric value", static_cast<float>(input->GetValue()), 2.0f);
+}
+
+void TestInspectorControllerViewPull()
+{
+    Raven::Scene scene;
+    auto first = scene.CreateEntity("Controller first");
+    first.AddComponent<Raven::CameraComponent>().Camera.SetPerspective(0.9f, 0.1f, 100.0f);
+    first.AddComponent<Raven::RigidBodyComponent>().SetMass(2.0f);
+    first.AddComponent<Raven::ColliderComponent>();
+    auto second = scene.CreateEntity("Controller second");
+    Raven::Scene* active = &scene;
+    Raven::InspectorSelection selection{first, 1u};
+    Raven::SetEditorCommandHistoryScene(active);
+    Raven::UIContext context;
+    Raven::UIContext auxiliary;
+    Raven::InspectorController controller;
+    Raven::InspectorRavenPanel panel;
+    controller.Bind(panel, [&]() { return active; }, [&]() { return selection; });
+    int pulls = 0;
+    panel.SetSnapshotProvider([&]() { ++pulls; return controller.PullSnapshot(); });
+    Check(panel.Attach(context, nullptr), "controller view attaches");
+    for (int warm = 0; warm < 3; ++warm)
+    {
+        panel.Update();
+        context.BeginFrame({1600.0f, 1000.0f});
+        context.EndFrame();
+    }
+    std::vector<Raven::UIInputNumber*> numbers;
+    CollectInspectorNumbers(*panel.GetRootElement(), numbers);
+    Check(numbers.size() == 36u, "controller view exposes existing transform camera physics fields");
+    auto* x = numbers[0u];
+    const int beforePulls = pulls;
+    Check(x->GetInputText().IsMeasureDirty() == false, "inspector starts with measured numeric text");
+    for (int frame = 0; frame < 60; ++frame)
+    {
+        panel.Update();
+    }
+    Check(pulls - beforePulls == 60, "view pulls exactly once per update");
+    Check(x->GetInputText().IsMeasureDirty() == false &&
+        numbers[9u]->GetInputText().IsMeasureDirty() == false, "unchanged pull avoids text/range reset layout");
+
+    PasteInspectorNumber(context, *x, "1");
+    PasteInspectorNumber(context, *x, "12");
+    CheckNear("controller previews current model", first.GetComponent<Raven::TransformComponent>().Position.x, 12.0f);
+    Check(Raven::CanUndoEditorCommand() == false, "controller preview does not append history");
+    first.GetComponent<Raven::TransformComponent>().Position.y = 7.0f;
+    PasteInspectorNumber(context, *x, "1e-");
+    panel.Update();
+    Check(x->GetEditText() == "1e-", "pull preserves incomplete focused text");
+    CheckNear("pull updates other model field", static_cast<float>(numbers[1u]->GetValue()), 7.0f);
+    PasteInspectorNumber(context, *x, "18");
+    context.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    context.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    context.ClearFocus();
+    Check(Raven::UndoEditorCommand(), "controller edit has one undo command");
+    CheckNear("controller undo starts at first preview", first.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::CanUndoEditorCommand() == false, "multiple previews enter and blur remain one command");
+    Check(Raven::RedoEditorCommand(), "controller redo works");
+    CheckNear("controller redo uses live after model", first.GetComponent<Raven::TransformComponent>().Position.y, 7.0f);
+    first.GetComponent<Raven::TransformComponent>().Position.x = 33.0f;
+    panel.Update();
+    CheckNear("unfocused pull reflects external update", static_cast<float>(x->GetValue()), 33.0f);
+
+    Raven::ClearEditorCommandHistory();
+    panel.Update();
+    auto* root = panel.GetRootElement();
+    auxiliary.AddRootChild(context.DetachRootChild(root));
+    PasteInspectorNumber(auxiliary, *x, "41");
+    panel.Update();
+    Check(x->GetEditText() == "41", "moved view pulls from current context focus");
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    auxiliary.ClearFocus();
+    Check(Raven::UndoEditorCommand(), "moved controller view undo");
+    CheckNear("moved undo baseline", first.GetComponent<Raven::TransformComponent>().Position.x, 33.0f);
+    Check(Raven::CanUndoEditorCommand() == false, "moved edit has one history entry");
+    Check(Raven::RedoEditorCommand(), "moved controller view redo");
+
+    PasteInspectorNumber(auxiliary, *x, "1e-");
+    selection = {second, 1u};
+    auto requested = *Raven::CaptureInspectorSnapshot(first).Transform;
+    requested.Position.x = 90.0f;
+    Check(controller.PreviewTransform(first.GetHandle(), requested) == false,
+        "selection change rejects stale request before pull");
+    panel.Update();
+    CheckNear("selection switch resets input baseline", static_cast<float>(x->GetValue()), 0.0f);
+    Check(x->GetEditText() == "0", "selection switch discards old incomplete input");
+    auxiliary.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    auxiliary.ClearFocus();
+    CheckNear("selection switch does not edit new entity", second.GetComponent<Raven::TransformComponent>().Position.x, 0.0f);
+    Check(Raven::UndoEditorCommand() && Raven::CanUndoEditorCommand() == false,
+        "selection switch did not append old session command");
+
+    selection = {first, 1u};
+    panel.Update();
+    const auto singleRevision = controller.PullSnapshot().SelectionRevision;
+    selection.Count = 2u;
+    Check(controller.PreviewTransform(first.GetHandle(), requested) == false, "multiple selection rejects writes before pull");
+    const auto multiple = controller.PullSnapshot();
+    Check(multiple.HasSelection && multiple.SelectionCount == 2u && multiple.SelectionValid == false &&
+        multiple.Transform.has_value() == false && multiple.SelectionRevision != singleRevision,
+        "multiple selection is explicit and not editable");
+    panel.Update();
+    selection.Count = 1u;
+    panel.Update();
+
+    Raven::ClearEditorCommandHistory();
+    panel.Update();
+    PasteInspectorNumber(auxiliary, *numbers[9u], "0.8");
+    CheckNear("camera edit previews through controller", first.GetComponent<Raven::CameraComponent>().Camera.GetPerspectiveVerticalFov(), 0.8f);
+    first.RemoveComponent<Raven::CameraComponent>();
+    panel.Update();
+    Check(Raven::CanUndoEditorCommand() == false, "component removal focus loss does not commit old edit");
+    first.AddComponent<Raven::CameraComponent>().Camera.SetPerspective(0.7f, 0.1f, 100.0f);
+    panel.Update();
+    CheckNear("replacement component gets new baseline", static_cast<float>(numbers[9u]->GetCommittedValue()), 0.7f);
+
+    // 主要数値Controlの実Callback接続も、ViewのStep→Preview→Commit→Undoで通します。
+    Raven::ClearEditorCommandHistory();
+    panel.Update();
+    const float fovBeforeStep = first.GetComponent<Raven::CameraComponent>().Camera.GetPerspectiveVerticalFov();
+    numbers[9u]->Increment();
+    numbers[9u]->Commit();
+    Check(first.GetComponent<Raven::CameraComponent>().Camera.GetPerspectiveVerticalFov() > fovBeforeStep,
+        "bound camera step previews model");
+    Check(Raven::UndoEditorCommand() && Raven::CanUndoEditorCommand() == false, "bound camera step commits once");
+    CheckNear("bound camera step undo", first.GetComponent<Raven::CameraComponent>().Camera.GetPerspectiveVerticalFov(), fovBeforeStep);
+    panel.Update();
+    const float massBeforeStep = first.GetComponent<Raven::RigidBodyComponent>().Mass;
+    numbers[12u]->Increment();
+    numbers[12u]->Commit();
+    Check(first.GetComponent<Raven::RigidBodyComponent>().Mass > massBeforeStep, "bound body step previews model");
+    Check(Raven::UndoEditorCommand() && Raven::CanUndoEditorCommand() == false, "bound body step commits once");
+    CheckNear("bound body step undo", first.GetComponent<Raven::RigidBodyComponent>().Mass, massBeforeStep);
+    panel.Update();
+    const float offsetBeforeStep = first.GetComponent<Raven::ColliderComponent>().Offset.x;
+    numbers[21u]->Increment();
+    numbers[21u]->Commit();
+    Check(first.GetComponent<Raven::ColliderComponent>().Offset.x > offsetBeforeStep, "bound collider step previews model");
+    Check(Raven::UndoEditorCommand() && Raven::CanUndoEditorCommand() == false, "bound collider step commits once");
+    CheckNear("bound collider step undo", first.GetComponent<Raven::ColliderComponent>().Offset.x, offsetBeforeStep);
+
+    selection = {second, 1u};
+    panel.Update();
+    const auto destroyed = second.GetHandle();
+    scene.DestroyEntity(second);
+    Check(controller.PreviewTransform(destroyed, requested) == false, "destroy rejects request before pull");
+    const auto dead = controller.PullSnapshot();
+    Check(dead.HasSelection && dead.SelectionValid == false, "destroyed selection remains diagnostic value");
+    panel.Update();
+    auto replacement = scene.CreateEntity("Replacement");
+    selection = {replacement, 1u};
+    panel.Update();
+    Check(controller.PreviewTransform(destroyed, requested) == false, "reused entity index does not accept old generation");
+    panel.Detach();
+    controller.Unbind(panel);
+    Check(controller.PullSnapshot().HasSelection == false && controller.PreviewTransform(replacement.GetHandle(), requested) == false,
+        "unbind disconnects readers and actions");
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestInspectorControllerCommands()
+{
+    Raven::Scene scene;
+    auto entity = scene.CreateEntity("Controller commands");
+    entity.AddComponent<Raven::CameraComponent>().Camera.SetPerspective(0.9f, 0.1f, 100.0f);
+    entity.AddComponent<Raven::RigidBodyComponent>().SetMass(2.0f);
+    entity.AddComponent<Raven::ColliderComponent>();
+    Raven::InspectorSelection selection{entity, 1u};
+    Raven::SetEditorCommandHistoryScene(&scene);
+    Raven::InspectorController controller;
+    Raven::InspectorRavenPanel view;
+    controller.Bind(view, [&]() { return &scene; }, [&]() { return selection; });
+    auto snapshot = controller.PullSnapshot();
+    auto beforeCamera = *snapshot.Camera;
+    auto camera = beforeCamera;
+    camera.NearClip = 5.0f;
+    camera.FarClip = 0.1f;
+    Check(controller.PreviewCamera(entity.GetHandle(), camera) == false, "invalid camera preview is rejected");
+    camera = beforeCamera;
+    camera.VerticalFov = 0.7f;
+    Check(controller.PreviewCamera(entity.GetHandle(), camera), "camera controller preview");
+    Check(Raven::CanUndoEditorCommand() == false, "camera preview has no history");
+    Check(controller.CommitCamera(entity.GetHandle(), beforeCamera), "camera controller commit");
+    Check(Raven::UndoEditorCommand(), "camera controller undo");
+    CheckNear("camera controller undo value", entity.GetComponent<Raven::CameraComponent>().Camera.GetPerspectiveVerticalFov(), 0.9f);
+    Check(Raven::RedoEditorCommand(), "camera controller redo");
+
+    auto other = scene.CreateEntity("Other camera");
+    other.AddComponent<Raven::CameraComponent>().Primary = true;
+    entity.GetComponent<Raven::CameraComponent>().Primary = false;
+    Check(controller.SetPrimaryCamera(entity.GetHandle()), "primary camera through controller");
+    Check(Raven::UndoEditorCommand(), "primary camera undo");
+    Check(entity.GetComponent<Raven::CameraComponent>().Primary == false && other.GetComponent<Raven::CameraComponent>().Primary,
+        "primary camera undo preserves other camera");
+    auto beforeBody = *controller.PullSnapshot().RigidBody;
+    auto body = beforeBody;
+    body.Mass = 7.0f;
+    Check(controller.PreviewRigidBody(entity.GetHandle(), Raven::InspectorRigidBodyField::Mass, body), "body controller preview");
+    Check(controller.CommitRigidBody(entity.GetHandle(), Raven::InspectorRigidBodyField::Mass, beforeBody), "body controller commit");
+    Check(Raven::UndoEditorCommand(), "body controller undo");
+    CheckNear("body controller undo mass", entity.GetComponent<Raven::RigidBodyComponent>().Mass, 2.0f);
+    Check(Raven::RedoEditorCommand(), "body controller redo");
+    body = *controller.PullSnapshot().RigidBody;
+    body.Type = Raven::BodyType::Static;
+    Check(controller.ChangeRigidBody(entity.GetHandle(), Raven::InspectorRigidBodyField::Type, body), "body type command through controller");
+    Check(controller.PreviewRigidBody(entity.GetHandle(), Raven::InspectorRigidBodyField::Mass, body) == false,
+        "static body mass safety retained");
+    Check(Raven::UndoEditorCommand(), "body type undo");
+    Check(entity.GetComponent<Raven::RigidBodyComponent>().Type == Raven::BodyType::Dynamic, "body type undo restores type");
+    CheckNear("body type undo preserves mass", entity.GetComponent<Raven::RigidBodyComponent>().Mass, 7.0f);
+    body = *controller.PullSnapshot().RigidBody;
+    const bool oldGravity = body.UseGravity;
+    body.UseGravity = oldGravity == false;
+    Check(controller.ChangeRigidBody(entity.GetHandle(), Raven::InspectorRigidBodyField::UseGravity, body), "body bool change command");
+    Check(Raven::UndoEditorCommand(), "body bool undo");
+    Check(entity.GetComponent<Raven::RigidBodyComponent>().UseGravity == oldGravity, "body bool restored");
+
+    auto beforeCollider = *controller.PullSnapshot().Collider;
+    auto collider = beforeCollider;
+    collider.Offset = {0.3f, 0.2f, 0.1f};
+    Check(controller.PreviewCollider(entity.GetHandle(), Raven::InspectorColliderField::Offset, collider), "collider controller preview");
+    Check(controller.CommitCollider(entity.GetHandle(), Raven::InspectorColliderField::Offset, beforeCollider), "collider controller commit");
+    Check(Raven::UndoEditorCommand(), "collider controller undo");
+    CheckNear("collider controller undo value", entity.GetComponent<Raven::ColliderComponent>().Offset.x, beforeCollider.Offset.x);
+    collider = *controller.PullSnapshot().Collider;
+    collider.IsTrigger = collider.IsTrigger == false;
+    Check(controller.ChangeCollider(entity.GetHandle(), Raven::InspectorColliderField::IsTrigger, collider), "collider trigger change command");
+    Check(Raven::UndoEditorCommand(), "collider trigger undo");
+    Check(entity.GetComponent<Raven::ColliderComponent>().IsTrigger == beforeCollider.IsTrigger, "trigger restored");
+    controller.Unbind(view);
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void TestInspectorControllerSceneReuse()
+{
+    alignas(Raven::Scene) std::byte storage[sizeof(Raven::Scene)];
+    Raven::Scene* active = std::construct_at(reinterpret_cast<Raven::Scene*>(storage));
+    auto oldEntity = active->CreateEntity("Old scene");
+    Raven::InspectorSelection selection{oldEntity, 1u};
+    Raven::SetEditorCommandHistoryScene(active);
+    Raven::UIContext context;
+    Raven::InspectorController controller;
+    Raven::InspectorRavenPanel view;
+    controller.Bind(view, [&]() { return active; }, [&]() { return selection; });
+    Check(view.Attach(context, nullptr), "reuse view attaches");
+    view.Update();
+    const auto oldSnapshot = controller.PullSnapshot();
+    std::vector<Raven::UIInputNumber*> inputs;
+    CollectInspectorNumbers(*view.GetRootElement(), inputs);
+    PasteInspectorNumber(context, *inputs[0u], "5");
+    CheckNear("old scene preview", oldEntity.GetComponent<Raven::TransformComponent>().Position.x, 5.0f);
+    controller.ResetPresentation(); // Applicationの旧Scene破棄前通知と同じ境界。
+    Raven::SetEditorCommandHistoryScene(nullptr);
+    active->OnDestroy();
+    std::destroy_at(active);
+    active = std::construct_at(reinterpret_cast<Raven::Scene*>(storage));
+    auto fresh = active->CreateEntity("New scene");
+    Check(fresh.GetHandle() == oldEntity.GetHandle(), "same address scene also reuses handle");
+    fresh.GetComponent<Raven::TransformComponent>().Position.x = 88.0f;
+    selection = {fresh, 1u};
+    Raven::SetEditorCommandHistoryScene(active);
+    Check(controller.CommitTransform(oldEntity.GetHandle(), *oldSnapshot.Transform) == false,
+        "old edit refused before first new scene pull");
+    view.Update();
+    Check(controller.PullSnapshot().SelectionRevision != oldSnapshot.SelectionRevision,
+        "same address same handle receives a new view revision");
+    Check(inputs[0u]->GetEditText() == "88", "new scene discards old focused buffer");
+    context.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    context.ClearFocus();
+    Check(Raven::CanUndoEditorCommand() == false, "old session cannot commit to replacement scene");
+    CheckNear("replacement scene remains unchanged", fresh.GetComponent<Raven::TransformComponent>().Position.x, 88.0f);
+    view.Detach();
+    controller.Unbind(view);
+    Raven::SetEditorCommandHistoryScene(nullptr);
+    active->OnDestroy();
+    std::destroy_at(active);
+    active = nullptr;
+}
+
+void TestInspectorControllerRebind()
+{
+    Raven::Scene firstScene;
+    Raven::Scene secondScene;
+    auto first = firstScene.CreateEntity("First binding");
+    auto second = secondScene.CreateEntity("Second binding");
+    second.GetComponent<Raven::TransformComponent>().Position.x = 88.0f;
+    Check(first.GetHandle() == second.GetHandle(), "rebind fixture reuses handle across scenes");
+    Raven::UIContext context;
+    Raven::InspectorController firstController;
+    Raven::InspectorController secondController;
+    Raven::InspectorRavenPanel view;
+    Raven::SetEditorCommandHistoryScene(&firstScene);
+    firstController.Bind(view, [&]() { return &firstScene; }, [&]() { return Raven::InspectorSelection{first, 1u}; });
+    Check(view.Attach(context, nullptr), "rebind view attaches");
+    view.Update();
+    std::vector<Raven::UIInputNumber*> inputs;
+    CollectInspectorNumbers(*view.GetRootElement(), inputs);
+    PasteInspectorNumber(context, *inputs[0u], "5");
+    firstController.Unbind(view);
+    Check(Raven::CanUndoEditorCommand() == false, "unbind does not commit pending preview");
+    Raven::SetEditorCommandHistoryScene(&secondScene);
+    secondController.Bind(view, [&]() { return &secondScene; }, [&]() { return Raven::InspectorSelection{second, 1u}; });
+    view.Update();
+    Check(inputs[0u]->GetEditText() == "88", "new controller resets old view even if local revision and handle match");
+    context.SetFocus(&inputs[0u]->GetInputText());
+    context.RouteKeyEvent(Press(Raven::UIKey::Enter));
+    context.ClearFocus();
+    Check(Raven::CanUndoEditorCommand() == false, "new controller does not inherit old pending command");
+    CheckNear("new binding model unchanged", second.GetComponent<Raven::TransformComponent>().Position.x, 88.0f);
+    view.Detach();
+    secondController.Unbind(view);
+    Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
 } // namespace
 
 int main()
 {
+    Raven::tests::RunEditorSceneLifetimeSelfTests();
+#ifndef NDEBUG
+    // 既存Snapshot自己テストはassert内のAttachを含むため、assert有効構成で実行します。
+    Raven::tests::RunInspectorSnapshotSelfTests();
+#endif
+    TestInspectorControllerRebind();
+    TestInputNumberComparisonSync();
+    TestInspectorControllerViewPull();
+    TestInspectorControllerCommands();
+    TestInspectorControllerSceneReuse();
     TestUICacheOverlays();
     TestUIDrawListCache();
     TestUIDrawListCacheResources();

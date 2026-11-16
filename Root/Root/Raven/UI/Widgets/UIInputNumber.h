@@ -140,6 +140,9 @@ public:
         NormalizeDisplayText();
     }
 
+    // Snapshot同期専用。値/確定基準が同じ場合はText/IME/ローカルUndoを初期化しません。
+    bool SetValueIfChanged(double value);
+    bool SetRangeIfChanged(double minimum, double maximum);
     double GetValue() const { return m_Value; }
     double GetCommittedValue() const { return m_CommittedValue; }
     const std::string& GetEditText() const { return m_Input->GetText(); }

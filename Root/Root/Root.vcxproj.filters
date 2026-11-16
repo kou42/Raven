@@ -673,6 +673,9 @@
     <Filter Include="Raven\Scene">
       <UniqueIdentifier>{c79974aa-eb31-49d1-a1fc-68b88d787951}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Raven\UI\Widgets">
+      <UniqueIdentifier>{184e2fdb-ff5b-41b6-984d-c49dc8c98ea6}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Raven\UI\Core">
       <UniqueIdentifier>{8d24178a-1cb8-4fef-97c8-4c20bf3d5f75}</UniqueIdentifier>
     </Filter>
@@ -828,6 +831,18 @@
     <ClInclude Update="Raven\Editor\Tests\EditorEntityCommandSelfTests.h">
       <Filter>Raven\Editor\Tests</Filter>
     </ClInclude>
+    <ClCompile Update="Raven\Editor\Panels\InspectorController.cpp">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClCompile>
+    <ClInclude Update="Raven\Editor\Panels\InspectorController.h">
+      <Filter>Raven\Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Update="Raven\UI\Widgets\UIInputNumber.h">
+      <Filter>Raven\UI\Widgets</Filter>
+    </ClInclude>
+    <ClCompile Update="Raven\UI\Widgets\UIInputNumber.cpp">
+      <Filter>Raven\UI\Widgets</Filter>
+    </ClCompile>
     <ClCompile Update="Raven\Editor\Panels\InspectorSnapshot.cpp">
       <Filter>Raven\Editor\Panels</Filter>
     </ClCompile>

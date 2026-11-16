@@ -12,6 +12,7 @@ InspectorSnapshot CaptureInspectorSnapshot(Entity selectedEntity)
     // 区別するにはHandleとScene pointerを明示的に確認します。
     snapshot.HasSelection = selectedEntity.GetScene() != nullptr
         && selectedEntity.GetHandle().IsValid() == true;
+    snapshot.SelectionCount = snapshot.HasSelection == true ? 1u : 0u;
     if (snapshot.HasSelection == false)
     {
         return snapshot;

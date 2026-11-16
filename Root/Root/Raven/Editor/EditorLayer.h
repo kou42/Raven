@@ -6,6 +6,7 @@
 #include "Raven/Editor/Panels/AnimationDebugRavenPanel.h"
 #include "Raven/Editor/Panels/EditorViewportRavenPanel.h"
 #include "Raven/Editor/Panels/InspectorRavenPanel.h"
+#include "Raven/Editor/Panels/InspectorController.h"
 #include "Raven/Editor/Panels/SceneHierarchyRavenPanel.h"
 #include "Raven/Editor/Panels/StatisticsRavenPanel.h"
 #include "Raven/Editor/Panels/DiagnosticsRavenPanel.h"
@@ -51,7 +52,7 @@ class UIMenuBar;
 //     - Entity選択状態の共有
 //     - Scene View / Game Viewのoff-screen描画管理
 //     - Editor Camera / Gizmo等のEditor専用機能の統括
-//     - 各Panelの表示とSnapshot更新
+//     - 各Panelの表示とSnapshot更新契機の管理
 //
 // 一方、FPS表示やHierarchy描画など個々のUI詳細はPanel側へ置きます。
 // Framebufferの具体的なOpenGL処理もPlatform/OpenGL側へ置き、EditorLayerは
@@ -195,6 +196,8 @@ private:
     StatisticsRavenPanel m_StatisticsRavenPanel;
     AnimationDebugRavenPanel m_AnimationDebugRavenPanel;
     SceneHierarchyRavenPanel m_SceneHierarchyRavenPanel;
+    // 逆順破棄でViewを先に破棄します。ViewのCallbackがControllerより長生きしない宣言順です。
+    InspectorController m_InspectorController;
     InspectorRavenPanel m_InspectorRavenPanel;
     EditorViewportRavenPanel m_SceneViewportRavenPanel;
     EditorViewportRavenPanel m_GameViewportRavenPanel;
