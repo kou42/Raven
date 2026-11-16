@@ -21,6 +21,11 @@ void UISlider::SetRange(float minimum, float maximum)
         std::swap(minimum, maximum);
     }
 
+    if (m_Minimum == minimum && m_Maximum == maximum)
+    {
+        return;
+    }
+    InvalidateGeometry();
     m_Minimum = minimum;
     m_Maximum = maximum;
     SetValue(m_Value);
@@ -35,6 +40,7 @@ void UISlider::SetValue(float value)
     }
 
     m_Value = clampedValue;
+    InvalidateGeometry();
     if (m_OnValueChanged != nullptr)
     {
         m_OnValueChanged(m_Value);
@@ -54,38 +60,68 @@ void UISlider::SetOnValueChanged(ValueChangedHandler handler)
 
 void UISlider::SetTrackColor(const math::Vec4& color)
 {
+    if (m_TrackColorOverride == true && m_TrackColor == color)
+    {
+        return;
+    }
     m_TrackColor = color;
     m_TrackColorOverride = true;
+    InvalidatePaint();
 }
 
 void UISlider::SetFillColor(const math::Vec4& color)
 {
+    if (m_FillColorOverride == true && m_FillColor == color)
+    {
+        return;
+    }
     m_FillColor = color;
     m_FillColorOverride = true;
+    InvalidatePaint();
 }
 
 void UISlider::SetThumbColor(const math::Vec4& color)
 {
+    if (m_ThumbColorOverride == true && m_ThumbColor == color)
+    {
+        return;
+    }
     m_ThumbColor = color;
     m_ThumbColorOverride = true;
+    InvalidatePaint();
 }
 
 void UISlider::SetHoveredThumbColor(const math::Vec4& color)
 {
+    if (m_HoveredThumbColorOverride == true && m_HoveredThumbColor == color)
+    {
+        return;
+    }
     m_HoveredThumbColor = color;
     m_HoveredThumbColorOverride = true;
+    InvalidatePaint();
 }
 
 void UISlider::SetActiveThumbColor(const math::Vec4& color)
 {
+    if (m_ActiveThumbColorOverride == true && m_ActiveThumbColor == color)
+    {
+        return;
+    }
     m_ActiveThumbColor = color;
     m_ActiveThumbColorOverride = true;
+    InvalidatePaint();
 }
 
 void UISlider::SetFocusedThumbColor(const math::Vec4& color)
 {
+    if (m_FocusedThumbColorOverride == true && m_FocusedThumbColor == color)
+    {
+        return;
+    }
     m_FocusedThumbColor = color;
     m_FocusedThumbColorOverride = true;
+    InvalidatePaint();
 }
 
 float UISlider::GetMinimum() const { return m_Minimum; }

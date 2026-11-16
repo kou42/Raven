@@ -2,3 +2,5 @@
 
 void TestUIAllocationMeasurement();
 void TestUIWindowRecording();
+
+void TestUIModernizationBaseline();

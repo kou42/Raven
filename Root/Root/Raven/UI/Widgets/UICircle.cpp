@@ -5,7 +5,12 @@ namespace Raven
 
 void UICircle::SetFillColor(const math::Vec4& color)
 {
+    if (m_FillColor == color)
+    {
+        return;
+    }
     m_FillColor = color;
+    InvalidatePaint();
 }
 
 const math::Vec4& UICircle::GetFillColor() const

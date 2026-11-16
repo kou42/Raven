@@ -14,7 +14,7 @@ UIImage::UIImage()
 
 void UIImage::SetTexture(const Ref<TextureAsset>& texture)
 {
-    m_TextureView = UITextureView::FromAsset(texture);
+    SetTextureView(UITextureView::FromAsset(texture));
 }
 
 const Ref<TextureAsset>& UIImage::GetTexture() const
@@ -24,7 +24,10 @@ const Ref<TextureAsset>& UIImage::GetTexture() const
 
 void UIImage::SetTextureView(const UITextureView& textureView)
 {
+    // 同じResourceでもResize等でAspectFitの形状が変わり得るため、明示再設定は無効化します。
+    // Resource世代の追跡なしに参照先だけで同値判定すると、将来のCacheが古い形状を保持します。
     m_TextureView = textureView;
+    InvalidateGeometry();
 }
 
 const UITextureView& UIImage::GetTextureView() const
@@ -36,19 +39,24 @@ void UIImage::SetRenderTargetTexture(
     const Ref<Texture>& texture,
     UITextureOrigin origin)
 {
-    m_TextureView = UITextureView::FromTexture(texture, origin);
+    SetTextureView(UITextureView::FromTexture(texture, origin));
 }
 
 void UIImage::SetRHIRenderTargetTexture(
     const Ref<RHITexture>& texture,
     UITextureOrigin origin)
 {
-    m_TextureView = UITextureView::FromRHITexture(texture, origin);
+    SetTextureView(UITextureView::FromRHITexture(texture, origin));
 }
 
 void UIImage::SetScaleMode(UIImageScaleMode scaleMode)
 {
+    if (m_ScaleMode == scaleMode)
+    {
+        return;
+    }
     m_ScaleMode = scaleMode;
+    InvalidateGeometry();
 }
 
 UIImageScaleMode UIImage::GetScaleMode() const
@@ -117,7 +125,12 @@ bool UIImage::TryMapScreenPositionToTexturePixel(
 
 void UIImage::SetTintColor(const math::Vec4& color)
 {
+    if (m_TintColor == color)
+    {
+        return;
+    }
     m_TintColor = color;
+    InvalidatePaint();
 }
 
 const math::Vec4& UIImage::GetTintColor() const
@@ -127,8 +140,13 @@ const math::Vec4& UIImage::GetTintColor() const
 
 void UIImage::SetUV(const math::Vec2& min, const math::Vec2& max)
 {
+    if (m_UVMin == min && m_UVMax == max)
+    {
+        return;
+    }
     m_UVMin = min;
     m_UVMax = max;
+    InvalidateGeometry();
 }
 
 void UIImage::OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const

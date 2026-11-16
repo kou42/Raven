@@ -1,8 +1,8 @@
 # Raven UI Modernization Roadmap
 
-更新日: 2026-10-28  
+更新日: 2026-11-16
 対象: `Root/Root/Raven/UI`、Raven Editor / Runtime UI  
-状態: **提案・未着手**（本書のPhase M0〜M7は既存ロードマップのPhase 1〜14とは別管理）
+状態: **M0/M1実装・検証済み（GPU確認はOpenGLの既存統合ケースに限定）**（本書のPhase M0〜M7は既存ロードマップのPhase 1〜14とは別管理）
 
 ## 目的
 
@@ -12,7 +12,7 @@ RE:UIの公開情報から得られた設計思想（MVVC、View-driven Get/Set�
 
 ## 既存実装と前提
 
-既存の [RAVEN_UI_ROADMAP.md](RAVEN_UI_ROADMAP.md) を正とし、未完了項目を完了扱いしない。
+既存の [RAVEN_UI_ROADMAP.md](../proceed/RAVEN_UI_ROADMAP.md) を正とし、未完了項目を完了扱いしない。
 
 - `UIContext`: BeginFrame/EndFrame、入力配送、Capture、Focus、Drag & Drop、Popup/Tooltip、Window別Context、`UIFrameMetrics`。
 - `UIElement`: Retained Tree、Measure/Arrange、既存Measure/Arrange Dirty、Transform、Clip、Opacity。
@@ -70,19 +70,21 @@ Raven Editor / Runtime
 
 ### M0: Performance Baseline
 
-- [ ] `UIFrameMetrics`の既存項目（BuildMilliseconds、DrawCommandCount、Vertex/Index、TextureSwitch、Allocation、ElementCount）を棚卸しする。
-- [ ] Layout、DrawList生成、Geometry変換、GPU Submit/Drawの時間を可能な範囲で分離する。
-- [ ] 100 / 1,000 / 10,000 Widgetの静的・頻繁更新・Scrollケースを用意する。
-- [ ] Release/Debug、Window/DPI、Font、Clip、Popup等の測定条件を固定する。
-- [ ] Text、DPI、Multi-Viewport等の既存未完了テストを洗い出す。
+- [x] `UIFrameMetrics`の既存項目（BuildMilliseconds、DrawCommandCount、Vertex/Index、TextureSwitch、Allocation、ElementCount）を棚卸しする。
+- [x] Layout、DrawList生成、Geometry変換、GPU Submit/Drawの時間を可能な範囲で分離する。
+- [x] 100 / 1,000 / 10,000 Widgetの静的・頻繁更新・Scrollケースを用意する。
+- [x] Release/Debug、Window/DPI、Font、Clip、Popup等の測定条件を固定する。
+- [x] Text、DPI、Multi-Viewport等の既存未完了テストを洗い出す。
+- 実装・測定結果: [M0 Baseline](../../docs/UI_MODERNIZATION_M0_BASELINE.md)。Debug/Releaseのビルド・CPU回帰成功。OpenGLのFont/Texture・共有Context描画/Resize/復帰はGPU統合で確認。BaselineのGPU時間・異DPI・複数Window性能は未測定。
 - **完了条件**: 変更前の測定結果、再実行手順、回帰テストが記録されている。
 
 ### M1: Dirty Flag拡張
 
-- [ ] `UIElement`のMeasure/Arrange DirtyとInvalidate経路をコード監査する。
-- [ ] Paint / Geometry / Style（必要ならTransform）の無効化境界を定義する。
-- [ ] Setterで同値更新を抑制し、親子へのDirty伝播を明文化する。
-- [ ] Text変更、Opacity、Transform、Clip、Theme、DPI変更の回帰テストを追加する。
+- [x] `UIElement`のMeasure/Arrange DirtyとInvalidate経路をコード監査する。
+- [x] Paint / Geometry / Style（必要ならTransform）の無効化境界を定義する。
+- [x] Setterで同値更新を抑制し、親子へのDirty伝播を明文化する。
+- [x] Text変更、Opacity、Transform、Clip、Theme、DPI変更の回帰テストを追加する。
+- 実装・検証結果: [M1 Dirty](../../docs/UI_MODERNIZATION_M1_DIRTY.md)。Debug/ReleaseのUI回帰・OpenGL GPU統合が成功。同値更新の実Measure削減を確認。DrawListは毎Frame生成を維持し、Cache未監査Widgetの境界を明記。
 - **完了条件**: 既存描画・入力結果を維持し、不要な再計算を減らせる。
 
 ### M2: DrawList Cache

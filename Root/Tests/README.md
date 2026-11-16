@@ -296,3 +296,16 @@ ASAN_OPTIONS=detect_leaks=0 /tmp/raven-transform-math-tests
 
 既存EntityはWorld-spaceのままです。Localを使用する場合はSceneのEnable/SetLocal/SetWorld APIを使います。
 規約、失敗時の扱い、SG3まで未対応の組合せは`RAVEN_SCENE_GRAPH_SG2.md`を参照してください。
+
+## UI Modernization M0 Baseline
+
+`RavenUITest=true`の回帰テストに`TestUIModernizationBaseline`を含みます。
+100/1,000/10,000個のUIPanelについて静的・毎Frameサイズ/色更新・Scrollの9ケースを実行し、
+`baseline,`で始まるCSV行を標準出力へ出します。条件・区間・結果は
+[UI Modernization Baseline](../../docs/UI_MODERNIZATION_M0_BASELINE.md)を参照してください。
+時間の固定閾値は設けず、描画量と実Geometryの一致・計測区間の整合性を回帰条件とします。
+
+
+M1の`TestUIDirtyInvalidation`も同じUI回帰テストで実行します。
+Dirty伝播、同値更新60 FrameのMeasure回数、Text/Opacity/Transform/Clip/Theme/DPIの
+実DrawCommand検証については[M1設計・結果](../../docs/UI_MODERNIZATION_M1_DIRTY.md)を参照してください。

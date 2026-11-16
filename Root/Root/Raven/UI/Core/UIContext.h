@@ -58,6 +58,13 @@ struct UIFrameMetrics
     std::uint64_t FrameIndex = 0u;
     bool Available = false;
     double BuildMilliseconds = 0.0;
+    // Buildの内訳。DrawListにはTooltip/Drag更新とOverlay生成も含みます。
+    double LayoutMilliseconds = 0.0;
+    double DrawListMilliseconds = 0.0;
+    double CommandMetricsMilliseconds = 0.0;
+    // BackendのRender呼び出し全体のCPU時間。Geometry/Upload/Submitを含み、GPU時間ではありません。
+    bool RendererAvailable = false;
+    double RendererMilliseconds = 0.0;
     std::size_t DrawCommandCount = 0u;
     std::size_t VertexCount = 0u;
     std::size_t IndexCount = 0u;
@@ -224,7 +231,7 @@ public:
     void UpdateTooltip();
 
     // ContextごとにThemeを値保持します。Widgetは描画時に参照するためTree再構築は不要です。
-    void SetTheme(const UITheme& theme) { m_Theme = theme; }
+    void SetTheme(const UITheme& theme);
     const UITheme& GetTheme() const { return m_Theme; }
 
     void SetRenderer(Scope<UIRenderer> renderer);

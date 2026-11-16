@@ -4,6 +4,10 @@
 #include "Raven/Editor/Panels/StatisticsActions.h"
 #include "Raven/UI/Core/UIContext.h"
 
+#include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UIScrollView.h"
+#include "Raven/UI/Rendering/UITessellator.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -259,7 +263,95 @@ int main()
 {
     TestUIAllocationMeasurement();
     TestUIWindowRecording();
+    TestUIModernizationBaseline();
     std::cout << "[PASS] UI multiwindow and allocation tests (profiling "
         << (Raven::IsAllocationMeasurementEnabled() == true ? "enabled" : "disabled") << ")\n";
 }
 #endif
+
+// 所有権はContext→ScrollView→Content→Panel。測定用pointerはContextより先に破棄します。
+void TestUIModernizationBaseline()
+{
+    constexpr int warmupFrames = 30;
+    constexpr int sampleFrames = 120;
+    std::cout << "baseline,widgets,case,samples,build_ms,layout_ms,drawlist_ms,metrics_ms,geometry_ms,commands,vertices,indices,elements,frame_allocations,retained_bytes,cpp_available,cpp_count,cpp_bytes\n";
+    for (const std::size_t count : {100u, 1000u, 10000u})
+    {
+        for (int scenario = 0; scenario < 3; ++scenario)
+        {
+            Raven::UIContext context;
+            auto content = Raven::CreateScope<Raven::UIElement>();
+            content->SetSize(Raven::math::Vec2(1000.0f, static_cast<float>(count / 10u) * 20.0f));
+            std::vector<Raven::UIPanel*> panels;
+            for (std::size_t index = 0; index < count; ++index)
+            {
+                auto panel = Raven::CreateScope<Raven::UIPanel>();
+                panel->SetPosition(Raven::math::Vec2(static_cast<float>(index % 10u) * 100.0f,
+                    static_cast<float>(index / 10u) * 20.0f));
+                panel->SetSize(Raven::math::Vec2(96.0f, 18.0f));
+                panels.push_back(panel.get());
+                content->AddChild(std::move(panel));
+            }
+            auto scroll = Raven::CreateScope<Raven::UIScrollView>();
+            scroll->SetSize(Raven::math::Vec2(1000.0f, 160.0f));
+            scroll->SetContent(std::move(content));
+            auto* scrollView = scroll.get();
+            context.AddRootChild(std::move(scroll));
+            double build = 0.0, layout = 0.0, draw = 0.0, metrics = 0.0, geometry = 0.0;
+            double allocations = 0.0, bytes = 0.0;
+            for (int frame = 0; frame < warmupFrames + sampleFrames; ++frame)
+            {
+                context.BeginFrame(Raven::math::Vec2(1280.0f, 720.0f),
+                    Raven::math::Vec2(1280.0f, 720.0f), 1.0f, 1.0f);
+                if (scenario == 1)
+                {
+                    // 全Widgetのサイズと色を更新し、LayoutとPaintの両方を毎Frame変更します。
+                    for (auto* panel : panels)
+                    {
+                        panel->SetSize(Raven::math::Vec2(95.0f + static_cast<float>(frame % 2), 18.0f));
+                        panel->SetBackgroundColor(Raven::math::Vec4(frame % 2 == 0 ? 0.3f : 0.7f, 0.4f, 0.5f, 1.0f));
+                    }
+                }
+                if (scenario == 2)
+                {
+                    scrollView->SetScrollOffset(Raven::math::Vec2(0.0f, static_cast<float>(frame % 20) * 2.0f));
+                }
+                context.EndFrame();
+                const auto& value = context.GetLastFrameMetrics();
+                Check(value.Available && value.ElementCount >= count + 3u, "baseline retained population");
+                Check(value.RendererAvailable == false && value.RendererMilliseconds == 0.0,
+                    "headless renderer is unavailable");
+                Check(std::isfinite(value.BuildMilliseconds) && value.LayoutMilliseconds >= 0.0 &&
+                    value.DrawListMilliseconds >= 0.0 && value.CommandMetricsMilliseconds >= 0.0,
+                    "finite nonnegative timing boundaries");
+                CheckNear(value.BuildMilliseconds, value.LayoutMilliseconds + value.DrawListMilliseconds +
+                    value.CommandMetricsMilliseconds, "build timing partition");
+                // Rendererと同じく出力をFrameごとに生成。Geometry確保時間も含みます。
+                const auto started = std::chrono::steady_clock::now();
+                Raven::UITessellatedDrawList triangles;
+                Check(Raven::UITessellator::Tessellate(context.GetDrawList(), triangles), "baseline tessellation");
+                const double elapsed = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - started).count();
+                Check(triangles.Vertices.size() == value.VertexCount && triangles.Indices.size() == value.IndexCount,
+                    "estimated geometry matches actual conversion");
+                if (frame >= warmupFrames)
+                {
+                    build += value.BuildMilliseconds;
+                    layout += value.LayoutMilliseconds;
+                    draw += value.DrawListMilliseconds;
+                    metrics += value.CommandMetricsMilliseconds;
+                    geometry += elapsed;
+                    allocations += static_cast<double>(value.CppAllocations.Count);
+                    bytes += static_cast<double>(value.CppAllocations.Bytes);
+                }
+            }
+            const auto& value = context.GetLastFrameMetrics();
+            std::cout << "baseline," << count << ',' << (scenario == 0 ? "static" : scenario == 1 ? "update" : "scroll")
+                << ',' << sampleFrames << ',' << build / sampleFrames << ',' << layout / sampleFrames
+                << ',' << draw / sampleFrames << ',' << metrics / sampleFrames << ',' << geometry / sampleFrames
+                << ',' << value.DrawCommandCount << ',' << value.VertexCount << ',' << value.IndexCount
+                << ',' << value.ElementCount << ',' << value.FrameAllocationCount << ',' << value.RetainedAllocationBytes
+                << ',' << value.CppAllocations.Available << ',' << allocations / sampleFrames << ',' << bytes / sampleFrames << '\n';
+        }
+    }
+}

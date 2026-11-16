@@ -4853,10 +4853,159 @@ void TestTextLayoutMeasurement()
     Check(fallback.Glyphs[2u].Codepoint == 0xFFFDu, "missing glyph uses replacement");
 }
 
+
+void TestUIDirtyInvalidation()
+{
+    class MeasureProbe final : public Raven::UIElement
+    {
+    public:
+        mutable int Calls = 0;
+    protected:
+        Raven::math::Vec2 OnMeasureContent() const override
+        {
+            ++Calls;
+            return {10.0f, 10.0f};
+        }
+    };
+    Raven::UIContext context;
+    auto outer = Raven::CreateScope<Raven::UIElement>();
+    auto inner = Raven::CreateScope<Raven::UIElement>();
+    auto panel = Raven::CreateScope<Raven::UIPanel>();
+    auto sibling = Raven::CreateScope<Raven::UIPanel>();
+    auto label = Raven::CreateScope<Raven::UILabel>();
+    auto* outerPtr = outer.get();
+    auto* innerPtr = inner.get();
+    auto* panelPtr = panel.get();
+    auto* siblingPtr = sibling.get();
+    auto* labelPtr = label.get();
+    outer->SetPosition({10.0f, 0.0f});
+    outer->SetSize({200.0f, 100.0f});
+    inner->SetPosition({10.0f, 0.0f});
+    inner->SetSize({100.0f, 80.0f});
+    panel->SetPosition({5.0f, 0.0f});
+    panel->SetSize({50.0f, 20.0f});
+    panel->SetBackgroundColor({1.0f, 0.0f, 0.0f, 1.0f});
+    sibling->SetSize({40.0f, 20.0f});
+    label->SetFont(CreateTextLayoutFixture());
+    label->SetText("A");
+    inner->AddChild(std::move(panel));
+    outer->AddChild(std::move(inner));
+    context.AddRootChild(std::move(outer));
+    context.AddRootChild(std::move(sibling));
+    context.AddRootChild(std::move(label));
+    auto probe = Raven::CreateScope<MeasureProbe>();
+    auto* probePtr = probe.get();
+    probe->SetSize({10.0f, 10.0f});
+    context.AddRootChild(std::move(probe));
+    auto frame = [&context]()
+    {
+        context.BeginFrame({640.0f, 480.0f});
+        context.EndFrame();
+    };
+    frame();
+    auto* root = outerPtr->GetParent();
+    Check(root->IsPaintDirty() == false && panelPtr->IsGeometryDirty() == false &&
+        labelPtr->IsStyleDirty() == false, "dirty consumed by full command rebuild");
+
+    panelPtr->SetSize({50.0f, 20.0f});
+    panelPtr->SetPosition({5.0f, 0.0f});
+    panelPtr->SetPadding(0.0f);
+    panelPtr->SetMargin(0.0f);
+    panelPtr->SetSpacing(0.0f);
+    panelPtr->SetOpacity(2.0f); // 正規化後は既存の1.0と同値。
+    panelPtr->SetBackgroundColor({1.0f, 0.0f, 0.0f, 1.0f});
+    labelPtr->SetText("A");
+    Check(root->IsMeasureDirty() == false && root->IsArrangeDirty() == false &&
+        root->IsPaintDirty() == false, "same normalized setters preserve clean tree");
+
+    const int initialMeasures = probePtr->Calls;
+    for (int iteration = 0; iteration < 60; ++iteration)
+    {
+        probePtr->SetSize({10.0f, 10.0f});
+        labelPtr->SetText("A");
+        frame();
+    }
+    Check(probePtr->Calls == initialMeasures, "same setters avoid actual repeated measurements");
+    probePtr->SetSize({11.0f, 10.0f});
+    frame();
+    Check(probePtr->Calls > initialMeasures, "changed size still measures");
+
+    panelPtr->SetBackgroundColor({0.5f, 0.0f, 0.0f, 1.0f});
+    Check(panelPtr->IsPaintDirty() && root->IsPaintDirty() &&
+        root->IsGeometryDirty() == false && root->IsMeasureDirty() == false &&
+        siblingPtr->IsPaintDirty() == false, "paint bubbles without invalidating sibling or layout");
+    frame();
+    CheckNear("paint changed command", context.GetDrawList().GetCommands()[0].Color.x, 0.5f);
+
+    innerPtr->SetOpacity(0.5f);
+    Check(panelPtr->IsPaintDirty() && panelPtr->IsGeometryDirty() == false &&
+        siblingPtr->IsPaintDirty() == false && root->IsMeasureDirty() == false,
+        "inherited opacity invalidates descendants only");
+    frame();
+    CheckNear("inherited opacity command", context.GetDrawList().GetCommands()[0].Color.w, 0.5f);
+    innerPtr->SetScale({2.0f, 1.0f});
+    Check(panelPtr->IsGeometryDirty() && root->IsMeasureDirty() == false &&
+        root->IsArrangeDirty() == false, "visual transform preserves layout");
+    frame();
+    CheckNear("transform command", context.GetDrawList().GetCommands()[0].Transform.M00, 2.0f);
+    innerPtr->SetScale({1.0f, 1.0f});
+    innerPtr->SetClipChildren(true);
+    Check(panelPtr->IsGeometryDirty() && root->IsArrangeDirty() == false, "clip changes geometry only");
+    frame();
+    Check(context.GetDrawList().GetCommands()[0].Clip.Enabled, "clip inherited by command");
+    innerPtr->SetClipSelf(true);
+    Check(innerPtr->IsGeometryDirty() && panelPtr->IsGeometryDirty() == false,
+        "self clip does not invalidate descendant geometry");
+    frame();
+    panelPtr->SetPosition({9.0f, 0.0f});
+    Check(root->IsArrangeDirty() && root->IsMeasureDirty() == false,
+        "deep arrange reaches root");
+    frame();
+    CheckNear("deep arrange command position", context.GetDrawList().GetCommands()[0].Rect.Min.x, 29.0f);
+
+    const auto light = Raven::UITheme::CreateDefaultLight();
+    context.SetTheme(light);
+    Check(root->IsStyleDirty() && panelPtr->IsStyleDirty() && labelPtr->IsStyleDirty() &&
+        root->IsMeasureDirty() == false, "theme invalidates subtree style without layout");
+    frame();
+    CheckNear("theme label command", context.GetDrawList().GetCommands().back().Color.x, light.Label.TextColor.x);
+    context.SetTheme(light);
+    Check(root->IsPaintDirty() == false, "same theme remains clean");
+    labelPtr->SetText("AB");
+    Check(labelPtr->IsMeasureDirty() && labelPtr->IsGeometryDirty() && root->IsMeasureDirty(),
+        "text invalidates measurement and geometry");
+    frame();
+    Check(context.GetDrawList().GetCommands().size() == 4u, "text changes actual glyph commands");
+    labelPtr->SetText("AB");
+    Check(root->IsMeasureDirty() == false, "same text does not measure again");
+
+    panelPtr->SetPreferredSizeDIP({30.0f, 18.0f});
+    frame();
+    panelPtr->SetPreferredSizeDIP({30.0f, 18.0f});
+    Check(root->IsMeasureDirty() == false, "same DIP specification remains clean");
+    panelPtr->SetPreferredSize({30.0f, 18.0f});
+    Check(root->IsMeasureDirty(), "equal Pixel value still changes DIP policy");
+    frame();
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(root->IsStyleDirty() && panelPtr->IsGeometryDirty(), "dpi invalidates visual subtree");
+    frame();
+    CheckNear("pixel policy survives dpi change", panelPtr->GetSize().x, 30.0f);
+    context.SetDPIScale(2.0f, 2.0f);
+    Check(root->IsPaintDirty() == false && root->IsMeasureDirty() == false, "same dpi remains clean");
+
+    innerPtr->SetVisible(false);
+    frame();
+    innerPtr->SetVisible(true);
+    Check(root->IsMeasureDirty(), "show hidden subtree forces layout");
+    frame();
+    Check(context.GetDrawList().GetCommands().size() == 4u, "shown subtree restores commands");
+}
+
 } // namespace
 
 int main()
 {
+    TestUIDirtyInvalidation();
     TestTextLayoutMeasurement();
     TestUILabelTextReflow();
     TestUILabelGlyphClipTransform();
@@ -5015,6 +5164,7 @@ int main()
     TestStatisticsUIRecording();
     TestUIAllocationMeasurement();
     TestUIWindowRecording();
+    TestUIModernizationBaseline();
     TestStatisticsActions();
     TestStatisticsSnapshot();
     TestStatisticsRavenPanel();

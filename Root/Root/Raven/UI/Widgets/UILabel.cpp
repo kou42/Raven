@@ -137,6 +137,10 @@ const Ref<UIFontAtlas>& UILabel::GetFont() const
 
 void UILabel::SetText(std::string text)
 {
+    if (m_Text == text)
+    {
+        return;
+    }
     m_Text = std::move(text);
     InvalidateMeasure();
 }
@@ -148,8 +152,13 @@ const std::string& UILabel::GetText() const
 
 void UILabel::SetTextColor(const math::Vec4& color)
 {
+    if (m_TextColorOverride == true && m_TextColor == color)
+    {
+        return;
+    }
     m_TextColor = color;
     m_TextColorOverride = true;
+    InvalidatePaint();
 }
 
 const math::Vec4& UILabel::GetTextColor() const
@@ -161,6 +170,10 @@ const math::Vec4& UILabel::GetTextColor() const
 
 void UILabel::SetBaselineOffset(float offset)
 {
+    if (m_UseBaselineOffsetDIP == false && m_BaselineOffset == offset)
+    {
+        return;
+    }
     m_UseBaselineOffsetDIP = false;
     m_BaselineOffset = offset;
     InvalidateMeasure();
@@ -170,6 +183,10 @@ void UILabel::SetLineHeight(float height)
 {
     if (std::isfinite(height) && height > 0.0f)
     {
+        if (m_UseLineHeightDIP == false && m_LineHeight == height)
+        {
+            return;
+        }
         m_UseLineHeightDIP = false;
         m_LineHeight = height;
         InvalidateMeasure();
@@ -178,6 +195,10 @@ void UILabel::SetLineHeight(float height)
 
 void UILabel::SetBaselineOffsetDIP(float offset)
 {
+    if (m_UseBaselineOffsetDIP == true && m_BaselineOffsetDIP == offset)
+    {
+        return;
+    }
     if (std::isfinite(offset) == false)
     {
         return;
@@ -189,6 +210,10 @@ void UILabel::SetBaselineOffsetDIP(float offset)
 
 void UILabel::SetLineHeightDIP(float height)
 {
+    if (m_UseLineHeightDIP == true && m_LineHeightDIP == height)
+    {
+        return;
+    }
     if (std::isfinite(height) == false || height <= 0.0f)
     {
         return;
@@ -259,13 +284,22 @@ void UILabel::SetScaleGlyphsWithDPI(bool enabled)
 
 void UILabel::SetWrapMode(UITextWrapMode mode)
 {
+    if (m_WrapMode == mode)
+    {
+        return;
+    }
     m_WrapMode = mode;
     InvalidateMeasure();
 }
 
 void UILabel::SetTextAlignment(UITextHorizontalAlignment alignment)
 {
+    if (m_TextAlignment == alignment)
+    {
+        return;
+    }
     m_TextAlignment = alignment;
+    InvalidateGeometry();
 }
 
 UITextWrapMode UILabel::GetWrapMode() const

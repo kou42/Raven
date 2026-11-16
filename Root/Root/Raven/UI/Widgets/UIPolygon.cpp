@@ -20,7 +20,12 @@ void UIPolygon::SetPoints(std::vector<math::Vec2> points)
         }
     }
 
+    if (m_Points == points)
+    {
+        return;
+    }
     m_Points = std::move(points);
+    InvalidateGeometry();
 }
 
 const std::vector<math::Vec2>& UIPolygon::GetPoints() const
@@ -30,7 +35,12 @@ const std::vector<math::Vec2>& UIPolygon::GetPoints() const
 
 void UIPolygon::SetFillColor(const math::Vec4& color)
 {
+    if (m_FillColor == color)
+    {
+        return;
+    }
     m_FillColor = color;
+    InvalidatePaint();
 }
 
 const math::Vec4& UIPolygon::GetFillColor() const
