@@ -6,8 +6,13 @@ namespace Raven
 
 void UIPanel::SetBackgroundColor(const math::Vec4& color)
 {
+    if (m_BackgroundColorOverride == true && m_BackgroundColor == color)
+    {
+        return;
+    }
     m_BackgroundColor = color;
     m_BackgroundColorOverride = true;
+    InvalidatePaint();
 }
 
 const math::Vec4& UIPanel::GetBackgroundColor() const

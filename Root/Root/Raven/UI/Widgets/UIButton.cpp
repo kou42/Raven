@@ -14,26 +14,46 @@ UIButton::UIButton()
 
 void UIButton::SetNormalColor(const math::Vec4& color)
 {
+    if (m_NormalColorOverride == true && m_NormalColor == color)
+    {
+        return;
+    }
     m_NormalColor = color;
     m_NormalColorOverride = true;
+    InvalidatePaint();
 }
 
 void UIButton::SetHoveredColor(const math::Vec4& color)
 {
+    if (m_HoveredColorOverride == true && m_HoveredColor == color)
+    {
+        return;
+    }
     m_HoveredColor = color;
     m_HoveredColorOverride = true;
+    InvalidatePaint();
 }
 
 void UIButton::SetPressedColor(const math::Vec4& color)
 {
+    if (m_PressedColorOverride == true && m_PressedColor == color)
+    {
+        return;
+    }
     m_PressedColor = color;
     m_PressedColorOverride = true;
+    InvalidatePaint();
 }
 
 void UIButton::SetFocusedColor(const math::Vec4& color)
 {
+    if (m_FocusedColorOverride == true && m_FocusedColor == color)
+    {
+        return;
+    }
     m_FocusedColor = color;
     m_FocusedColorOverride = true;
+    InvalidatePaint();
 }
 
 void UIButton::SetOnClick(ClickHandler handler)

@@ -166,11 +166,11 @@ public:
 
     // Rotation / ScaleはMeasure / Arrangeへ影響しないVisual Transformです。
     // TransformPivotはElement矩形に対するnormalized座標で、親子階層ではAffine Transformとして合成されます。
-    void SetRotation(float value) { m_Rotation = value; }
+    void SetRotation(float value);
     float GetRotation() const { return m_Rotation; }
-    void SetScale(const math::Vec2& value) { m_Scale = value; }
+    void SetScale(const math::Vec2& value);
     const math::Vec2& GetScale() const { return m_Scale; }
-    void SetTransformPivot(const math::Vec2& value) { m_TransformPivot = value; }
+    void SetTransformPivot(const math::Vec2& value);
     const math::Vec2& GetTransformPivot() const { return m_TransformPivot; }
 
     // Screen座標を、このElementの階層World Transformを逆変換してLocal Layout座標へ戻します。
@@ -252,15 +252,15 @@ public:
 
     // Childの描画とHit Testを自身のVisual Bounds内へ制限します。
     // 回転/Shear時はRendererのScissor制約に合わせ、screen-space AABBとして扱います。
-    void SetClipChildren(bool value) { m_ClipChildren = value; }
-    void SetClipSelf(bool value) { m_ClipSelf = value; }
+    void SetClipChildren(bool value);
+    void SetClipSelf(bool value);
     bool GetClipChildren() const { return m_ClipChildren; }
 
     // Tint/OpacityはLayoutへ影響しないVisual Propertyです。
     // 親から子へ乗算継承するため、Container全体のFadeやColor AnimationをWidget種別に依存せず表現できます。
-    void SetOpacity(float value) { m_Opacity = std::clamp(value, 0.0f, 1.0f); }
+    void SetOpacity(float value);
     float GetOpacity() const { return m_Opacity; }
-    void SetTintColor(const math::Vec4& value) { m_TintColor = value; }
+    void SetTintColor(const math::Vec4& value);
     const math::Vec4& GetTintColor() const { return m_TintColor; }
 
     // Widget固有色へ、このElementからRootまでのTint/Opacityを乗算します。
@@ -291,6 +291,14 @@ public:
     bool IsPressed() const;
     bool IsMeasureDirty() const;
     bool IsArrangeDirty() const;
+    // 自身または子孫から伝わった描画無効化です。M1では描画省略の判定に使用しません。
+    bool IsPaintDirty() const;
+    bool IsGeometryDirty() const;
+    bool IsStyleDirty() const;
+    // 独自Widgetの表示データ更新時にも利用する、GPU非依存の無効化入口です。
+    void InvalidatePaint();
+    void InvalidateGeometry();
+    void InvalidateStyle();
     UIElement* GetParent();
     const UIElement* GetParent() const;
     UIContext* GetContext() { return m_Context; }
@@ -305,12 +313,13 @@ public:
     // UIContextのBubble Routingから呼ばれる公開入口です。
     // Widget側はOnMouseEvent()/OnKeyEvent()だけをoverrideし、親への伝播制御はevent.Handledで行います。
     void HandleMouseEvent(UIMouseEvent& event);
-    bool HandleDragDropEvent(UIDragDropEvent& event) { return OnDragDropEvent(event); }
-    void HandleKeyEvent(UIKeyEvent& event) { OnKeyEvent(event); }
-    void HandleCharacterEvent(UICharacterEvent& event) { OnCharacterEvent(event); }
-    void HandleIMEEvent(UIIMEEvent& event) { OnIMEEvent(event); }
+    bool HandleDragDropEvent(UIDragDropEvent& event);
+    void HandleKeyEvent(UIKeyEvent& event);
+    void HandleCharacterEvent(UICharacterEvent& event);
+    void HandleIMEEvent(UIIMEEvent& event);
 
-    void BuildDrawList(UIDrawList& drawList);
+    // Layout時間はRootのMeasure/Reflow/Arrangeのみ。子ごとの時計呼び出しを避けます。
+    void BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds = nullptr);
     // UIContextのFont一括更新用拡張点。通常Elementは対象外です。
     virtual bool HasPendingDPIFont() const { return false; }
     virtual bool RefreshPendingDPIFont() { return false; }
@@ -339,16 +348,7 @@ protected:
 private:
     friend class UIContext;
 
-    void SetFocused(bool value)
-    {
-        if (m_Focused == value)
-        {
-            return;
-        }
-        m_Focused = value;
-        // Focus遷移の通知はUIContextの所有権更新後にWidgetへ伝えます。
-        OnFocusChanged(value);
-    }
+    void SetFocused(bool value);
     math::Vec2 ClampSize(const math::Vec2& size) const;
     math::Vec2 ResolveRootSize() const;
     math::Vec2 GetDesiredSizeWithMargin() const;
@@ -357,11 +357,13 @@ private:
     void ReflowForWidth(float arrangedWidth);
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
+    void InvalidateVisual(bool geometry, bool style, bool descendants);
+    void InvalidateVisualSubtree(bool geometry, bool style);
     void BuildDrawListRecursive(
         UIDrawList& drawList,
         const math::Vec2& parentAbsolutePosition,
         const UITransform2D& parentWorldTransform,
-        const UIClipRect& inheritedClip) const;
+        const UIClipRect& inheritedClip);
 
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
@@ -420,6 +422,9 @@ private:
     bool m_Pressed = false;
     bool m_Focusable = false;
     bool m_Focused = false;
+    bool m_PaintDirty = true;
+    bool m_GeometryDirty = true;
+    bool m_StyleDirty = true;
     bool m_MeasureDirty = true;
     bool m_ArrangeDirty = true;
     bool m_ClipChildren = false;

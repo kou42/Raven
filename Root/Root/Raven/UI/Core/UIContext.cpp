@@ -133,6 +133,20 @@ void UIContext::CancelIMEComposition(UIElement* element)
     }
 }
 
+void UIContext::SetTheme(const UITheme& theme)
+{
+    if (m_Theme == theme)
+    {
+        return;
+    }
+    m_Theme = theme;
+    if (m_RootElement != nullptr)
+    {
+        // Themeは色と共有定義を無効化。Editor構築時の寸法値を自動的に再配置はしません。
+        m_RootElement->InvalidateStyle();
+    }
+}
+
 void UIContext::SetDPIScale(float x, float y)
 {
     // 0/NaN/InfinityをUI計算へ流さないため、無効な値は等倍へ戻します。
@@ -334,6 +348,7 @@ void UIContext::EndFrame()
     // ====================================================================
     // UIElement Treeはframeを跨いで保持し、描画直前にAbsolute / Vertical / Horizontal Layoutを解決して
     // 今frame用DrawCommandへ展開します。将来Measure / Arrangeを分離してもUIContextのframe境界は維持します。
+    m_LastFrameMetrics.LayoutMilliseconds = 0.0;
     UpdateTooltip();
     if (m_DragActive == true)
     {
@@ -346,7 +361,7 @@ void UIContext::EndFrame()
     }
     if (m_RootElement != nullptr)
     {
-        m_RootElement->BuildDrawList(m_DrawList);
+        m_RootElement->BuildDrawList(m_DrawList, &m_LastFrameMetrics.LayoutMilliseconds);
     }
 
     // Drag Previewは通常のTree描画後に追加し、WidgetのClip/Transformを継承しません。
@@ -401,9 +416,15 @@ void UIContext::EndFrame()
         }
     }
 
+    const auto commandsFinished = std::chrono::steady_clock::now();
     const UITessellationMetrics tessellationMetrics =
         UITessellator::Measure(m_DrawList);
     const auto buildFinished = std::chrono::steady_clock::now();
+    m_LastFrameMetrics.DrawListMilliseconds =
+        std::chrono::duration<double, std::milli>(commandsFinished - buildStarted).count()
+        - m_LastFrameMetrics.LayoutMilliseconds;
+    m_LastFrameMetrics.CommandMetricsMilliseconds =
+        std::chrono::duration<double, std::milli>(buildFinished - commandsFinished).count();
     ++m_LastFrameMetrics.FrameIndex;
     m_LastFrameMetrics.Available = true;
     m_LastFrameMetrics.BuildMilliseconds =
@@ -424,10 +445,15 @@ void UIContext::EndFrame()
     // Renderer backendがまだ設定されていない期間でもUI構築側を先行実装できるよう、
     // nullptrは正常な状態として扱います。OpenGLUIRenderer追加後はApplication初期化時に
     // SetRenderer()して、この同じframe境界から実描画へ接続します。
+    m_LastFrameMetrics.RendererAvailable = m_Renderer != nullptr;
+    m_LastFrameMetrics.RendererMilliseconds = 0.0;
     if (m_Renderer != nullptr)
     {
+        const auto renderStarted = std::chrono::steady_clock::now();
         m_Renderer->Render(m_DrawList, m_ViewportSize,
             m_HasFramebufferSize == true ? m_FramebufferSize : m_ViewportSize);
+        m_LastFrameMetrics.RendererMilliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - renderStarted).count();
     }
     m_LastFrameMetrics.CppAllocations = m_FrameCppAllocations;
 

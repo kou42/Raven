@@ -2,11 +2,21 @@
 #include "Raven/UI/Core/UIContext.h"
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <utility>
 
 namespace Raven
 {
+namespace
+{
+bool SameThickness(const UIThickness& left, const UIThickness& right)
+{
+    return left.Left == right.Left && left.Top == right.Top &&
+        left.Right == right.Right && left.Bottom == right.Bottom;
+}
+} // namespace
+
 
 UIThickness::UIThickness() = default;
 UIThickness::UIThickness(float uniform) : Left(uniform), Top(uniform), Right(uniform), Bottom(uniform) {}
@@ -141,15 +151,141 @@ uint64_t UIElement::GetTreeGeneration() const { return GetTreeRoot()->m_TreeGene
 
 void UIElement::SetPosition(const math::Vec2& value)
 {
+    // DIP→Pixelの切替と、Arrange済み値への即時再指定は同値でも意味を持ちます。
+    if (m_UsePositionDIP == false && m_RequestedPosition == value && m_Position == value)
+    {
+        return;
+    }
     m_UsePositionDIP = false;
     m_RequestedPosition = value;
     m_Position = value;
     InvalidateArrange();
 }
-void UIElement::SetSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); m_Size = m_PreferredSize; InvalidateMeasure(); }
-void UIElement::SetPreferredSize(const math::Vec2& value) { m_UsePreferredSizeDIP = false; m_PreferredSize = ClampSize(value); InvalidateMeasure(); }
-void UIElement::SetMinSize(const math::Vec2& value) { m_UseMinSizeDIP = false; m_MinSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
-void UIElement::SetMaxSize(const math::Vec2& value) { m_UseMaxSizeDIP = false; m_MaxSize = math::Vec2(std::max(0.0f, value.x), std::max(0.0f, value.y)); InvalidateMeasure(); }
+void UIElement::SetSize(const math::Vec2& value)
+{
+    const auto next = ClampSize(value);
+    if (m_UsePreferredSizeDIP == false && m_PreferredSize == next && m_Size == next)
+    {
+        return;
+    }
+    m_UsePreferredSizeDIP = false;
+    m_PreferredSize = next;
+    m_Size = next;
+    InvalidateMeasure();
+}
+void UIElement::SetPreferredSize(const math::Vec2& value)
+{
+    const auto next = ClampSize(value);
+    if (m_UsePreferredSizeDIP == false && m_PreferredSize == next)
+    {
+        return;
+    }
+    m_UsePreferredSizeDIP = false;
+    m_PreferredSize = next;
+    InvalidateMeasure();
+}
+
+void UIElement::SetMinSize(const math::Vec2& value)
+{
+    const math::Vec2 next(std::max(0.0f, value.x), std::max(0.0f, value.y));
+    if (m_UseMinSizeDIP == false && m_MinSize == next)
+    {
+        return;
+    }
+    m_UseMinSizeDIP = false;
+    m_MinSize = next;
+    InvalidateMeasure();
+}
+
+void UIElement::SetMaxSize(const math::Vec2& value)
+{
+    const math::Vec2 next(std::max(0.0f, value.x), std::max(0.0f, value.y));
+    if (m_UseMaxSizeDIP == false && m_MaxSize == next)
+    {
+        return;
+    }
+    m_UseMaxSizeDIP = false;
+    m_MaxSize = next;
+    InvalidateMeasure();
+}
+
+
+void UIElement::SetRotation(float value)
+{
+    const auto next = value;
+    if (m_Rotation == next)
+    {
+        return;
+    }
+    m_Rotation = next;
+    InvalidateVisual(true, false, true);
+}
+
+void UIElement::SetScale(const math::Vec2& value)
+{
+    const auto next = value;
+    if (m_Scale == next)
+    {
+        return;
+    }
+    m_Scale = next;
+    InvalidateVisual(true, false, true);
+}
+
+void UIElement::SetTransformPivot(const math::Vec2& value)
+{
+    const auto next = value;
+    if (m_TransformPivot == next)
+    {
+        return;
+    }
+    m_TransformPivot = next;
+    InvalidateVisual(true, false, true);
+}
+
+void UIElement::SetClipChildren(bool value)
+{
+    const auto next = value;
+    if (m_ClipChildren == next)
+    {
+        return;
+    }
+    m_ClipChildren = next;
+    InvalidateVisual(true, false, true);
+}
+
+void UIElement::SetClipSelf(bool value)
+{
+    const auto next = value;
+    if (m_ClipSelf == next)
+    {
+        return;
+    }
+    m_ClipSelf = next;
+    InvalidateVisual(true, false, false);
+}
+
+void UIElement::SetOpacity(float value)
+{
+    const auto next = std::clamp(value, 0.0f, 1.0f);
+    if (m_Opacity == next)
+    {
+        return;
+    }
+    m_Opacity = next;
+    InvalidateVisual(false, false, true);
+}
+
+void UIElement::SetTintColor(const math::Vec4& value)
+{
+    const auto next = value;
+    if (m_TintColor == next)
+    {
+        return;
+    }
+    m_TintColor = next;
+    InvalidateVisual(false, false, true);
+}
 
 void UIElement::SetVisible(bool value)
 {
@@ -193,14 +329,46 @@ void UIElement::SetVerticalAlignment(UIAlignment value)
     }
 }
 
-void UIElement::SetPadding(const UIThickness& value) { m_UsePaddingDIP = false; m_Padding = value; InvalidateMeasure(); }
+void UIElement::SetPadding(const UIThickness& value)
+{
+    if (m_UsePaddingDIP == false && SameThickness(m_Padding, value))
+    {
+        return;
+    }
+    m_UsePaddingDIP = false;
+    m_Padding = value;
+    InvalidateMeasure();
+}
 void UIElement::SetPadding(float value) { SetPadding(UIThickness(value)); }
-void UIElement::SetMargin(const UIThickness& value) { m_UseMarginDIP = false; m_Margin = value; InvalidateMeasure(); }
+void UIElement::SetMargin(const UIThickness& value)
+{
+    if (m_UseMarginDIP == false && SameThickness(m_Margin, value))
+    {
+        return;
+    }
+    m_UseMarginDIP = false;
+    m_Margin = value;
+    InvalidateMeasure();
+}
 void UIElement::SetMargin(float value) { SetMargin(UIThickness(value)); }
-void UIElement::SetSpacing(float value) { m_UseSpacingDIP = false; m_Spacing = std::max(0.0f, value); InvalidateMeasure(); }
+void UIElement::SetSpacing(float value)
+{
+    const float next = std::max(0.0f, value);
+    if (m_UseSpacingDIP == false && m_Spacing == next)
+    {
+        return;
+    }
+    m_UseSpacingDIP = false;
+    m_Spacing = next;
+    InvalidateMeasure();
+}
 
 void UIElement::SetPositionDIP(const math::Vec2& value)
 {
+    if (m_UsePositionDIP == true && m_PositionDIP == value)
+    {
+        return;
+    }
     m_PositionDIP = value;
     m_UsePositionDIP = true;
     RefreshDPIMetrics();
@@ -208,6 +376,10 @@ void UIElement::SetPositionDIP(const math::Vec2& value)
 
 void UIElement::SetPreferredSizeDIP(const math::Vec2& value)
 {
+    if (m_UsePreferredSizeDIP == true && m_PreferredSizeDIP == value)
+    {
+        return;
+    }
     m_PreferredSizeDIP = value;
     m_UsePreferredSizeDIP = true;
     RefreshDPIMetrics();
@@ -215,6 +387,10 @@ void UIElement::SetPreferredSizeDIP(const math::Vec2& value)
 
 void UIElement::SetMinSizeDIP(const math::Vec2& value)
 {
+    if (m_UseMinSizeDIP == true && m_MinSizeDIP == value)
+    {
+        return;
+    }
     m_MinSizeDIP = value;
     m_UseMinSizeDIP = true;
     RefreshDPIMetrics();
@@ -222,6 +398,10 @@ void UIElement::SetMinSizeDIP(const math::Vec2& value)
 
 void UIElement::SetMaxSizeDIP(const math::Vec2& value)
 {
+    if (m_UseMaxSizeDIP == true && m_MaxSizeDIP == value)
+    {
+        return;
+    }
     m_MaxSizeDIP = value;
     m_UseMaxSizeDIP = true;
     RefreshDPIMetrics();
@@ -229,6 +409,10 @@ void UIElement::SetMaxSizeDIP(const math::Vec2& value)
 
 void UIElement::SetPaddingDIP(const UIThickness& value)
 {
+    if (m_UsePaddingDIP == true && SameThickness(m_PaddingDIP, value))
+    {
+        return;
+    }
     m_PaddingDIP = value;
     m_UsePaddingDIP = true;
     RefreshDPIMetrics();
@@ -236,6 +420,10 @@ void UIElement::SetPaddingDIP(const UIThickness& value)
 
 void UIElement::SetMarginDIP(const UIThickness& value)
 {
+    if (m_UseMarginDIP == true && SameThickness(m_MarginDIP, value))
+    {
+        return;
+    }
     m_MarginDIP = value;
     m_UseMarginDIP = true;
     RefreshDPIMetrics();
@@ -243,6 +431,10 @@ void UIElement::SetMarginDIP(const UIThickness& value)
 
 void UIElement::SetSpacingDIP(float value)
 {
+    if (m_UseSpacingDIP == true && m_SpacingDIP == value)
+    {
+        return;
+    }
     m_SpacingDIP = value;
     m_UseSpacingDIP = true;
     RefreshDPIMetrics();
@@ -305,6 +497,9 @@ void UIElement::RefreshDPIMetrics()
 
 void UIElement::RefreshDPIMetricsRecursive()
 {
+    m_PaintDirty = true;
+    m_GeometryDirty = true;
+    m_StyleDirty = true;
     RefreshDPIMetrics();
     OnDPIScaleChanged();
     for (auto& child : m_Children)
@@ -347,12 +542,27 @@ UIElement* UIElement::GetParent() { return m_Parent; }
 const UIElement* UIElement::GetParent() const { return m_Parent; }
 const std::vector<Scope<UIElement>>& UIElement::GetChildren() const { return m_Children; }
 
-void UIElement::SetHovered(bool value) { m_Hovered = value; }
-void UIElement::SetPressed(bool value) { m_Pressed = value; }
-void UIElement::HandleMouseEvent(UIMouseEvent& event) { OnMouseEvent(event); }
-
-void UIElement::BuildDrawList(UIDrawList& drawList)
+void UIElement::SetHovered(bool value)
 {
+    if (m_Hovered != value)
+    {
+        m_Hovered = value;
+        InvalidatePaint();
+    }
+}
+void UIElement::SetPressed(bool value)
+{
+    if (m_Pressed != value)
+    {
+        m_Pressed = value;
+        InvalidatePaint();
+    }
+}
+void UIElement::HandleMouseEvent(UIMouseEvent& event) { InvalidateGeometry(); OnMouseEvent(event); }
+
+void UIElement::BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds)
+{
+    const auto layoutStarted = std::chrono::steady_clock::now();
     if (m_MeasureDirty == true)
     {
         MeasureRecursive();
@@ -362,6 +572,11 @@ void UIElement::BuildDrawList(UIDrawList& drawList)
         // 初回Measureの自然幅からRootの実幅を決め、幅依存の高さを親へ再集約します。
         ReflowForWidth(ResolveRootSize().x);
         ArrangeRecursive(m_RequestedPosition, ResolveRootSize());
+    }
+    if (layoutMilliseconds != nullptr)
+    {
+        *layoutMilliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - layoutStarted).count();
     }
     BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
 }
@@ -375,6 +590,42 @@ math::Vec2 UIElement::OnMeasureContentForWidth(float availableWidth) const
 {
     static_cast<void>(availableWidth);
     return OnMeasureContent();
+}
+
+bool UIElement::HandleDragDropEvent(UIDragDropEvent& event)
+{
+    InvalidateGeometry();
+    return OnDragDropEvent(event);
+}
+
+void UIElement::HandleKeyEvent(UIKeyEvent& event)
+{
+    InvalidateGeometry();
+    OnKeyEvent(event);
+}
+
+void UIElement::HandleCharacterEvent(UICharacterEvent& event)
+{
+    InvalidateGeometry();
+    OnCharacterEvent(event);
+}
+
+void UIElement::HandleIMEEvent(UIIMEEvent& event)
+{
+    InvalidateGeometry();
+    OnIMEEvent(event);
+}
+
+void UIElement::SetFocused(bool value)
+{
+    if (m_Focused == value)
+    {
+        return;
+    }
+    m_Focused = value;
+    // Focus遷移の通知はUIContextの所有権更新後にWidgetへ伝えます。
+    InvalidateGeometry();
+    OnFocusChanged(value);
 }
 
 void UIElement::OnMouseEvent(UIMouseEvent& event) { static_cast<void>(event); }
@@ -402,22 +653,59 @@ math::Vec2 UIElement::GetDesiredSizeWithMargin() const
     return math::Vec2(m_DesiredSize.x + m_Margin.Left + m_Margin.Right, m_DesiredSize.y + m_Margin.Top + m_Margin.Bottom);
 }
 
-void UIElement::InvalidateMeasure()
+// Paintは色/Opacity、Geometryは形状/位置/Clip、StyleはTheme依存の再解決を表します。
+// 祖先へは集約だけを行い、兄弟を無効化しません。継承Visual変更だけ子孫へ明示伝播します。
+void UIElement::InvalidateVisualSubtree(bool geometry, bool style)
 {
-    m_MeasureDirty = true;
-    m_ArrangeDirty = true;
-    if (m_Parent != nullptr && m_Parent->m_MeasureDirty == false)
+    m_PaintDirty = true;
+    m_GeometryDirty = m_GeometryDirty || geometry;
+    m_StyleDirty = m_StyleDirty || style;
+    for (auto& child : m_Children)
     {
-        m_Parent->InvalidateMeasure();
+        child->InvalidateVisualSubtree(geometry, style);
     }
 }
+void UIElement::InvalidateVisual(bool geometry, bool style, bool descendants)
+{
+    for (UIElement* current = this; current != nullptr; current = current->m_Parent)
+    {
+        current->m_PaintDirty = true;
+        current->m_GeometryDirty = current->m_GeometryDirty || geometry;
+        current->m_StyleDirty = current->m_StyleDirty || style;
+    }
+    if (descendants == true)
+    {
+        for (auto& child : m_Children)
+        {
+            child->InvalidateVisualSubtree(geometry, style);
+        }
+    }
+}
+void UIElement::InvalidatePaint() { InvalidateVisual(false, false, false); }
+void UIElement::InvalidateGeometry() { InvalidateVisual(true, false, false); }
+void UIElement::InvalidateStyle() { InvalidateVisual(true, true, true); }
+bool UIElement::IsPaintDirty() const { return m_PaintDirty; }
+bool UIElement::IsGeometryDirty() const { return m_GeometryDirty; }
+bool UIElement::IsStyleDirty() const { return m_StyleDirty; }
 
+void UIElement::InvalidateMeasure()
+{
+    // 深い階層でもRootがLayout開始を判断できるよう全祖先へ伝えます。
+    for (UIElement* current = this; current != nullptr; current = current->m_Parent)
+    {
+        current->m_MeasureDirty = true;
+        current->m_ArrangeDirty = true;
+        current->m_GeometryDirty = true;
+        current->m_PaintDirty = true;
+    }
+}
 void UIElement::InvalidateArrange()
 {
-    m_ArrangeDirty = true;
-    if (m_Parent != nullptr)
+    for (UIElement* current = this; current != nullptr; current = current->m_Parent)
     {
-        m_Parent->m_ArrangeDirty = true;
+        current->m_ArrangeDirty = true;
+        current->m_GeometryDirty = true;
+        current->m_PaintDirty = true;
     }
 }
 
@@ -677,8 +965,13 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
     m_ArrangeDirty = false;
 }
 
-void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition, const UITransform2D& parentWorldTransform, const UIClipRect& inheritedClip) const
+void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition, const UITransform2D& parentWorldTransform, const UIClipRect& inheritedClip)
 {
+    // 描画要求を再構築する直前に消費します。構築中の新たな無効化は次Frameへ残します。
+    // 非表示Subtreeは走査しません。再表示はMeasureを無効化して全体を再構築します。
+    m_PaintDirty = false;
+    m_GeometryDirty = false;
+    m_StyleDirty = false;
     if (m_Visible == false)
     {
         return;
@@ -723,6 +1016,10 @@ void UIElement::SetContextRecursive(UIContext* context)
         OnContextChanged(previous, context);
     }
     m_Context = context;
+    if (previous != context)
+    {
+        InvalidateVisual(true, true, false);
+    }
     RefreshDPIMetrics();
     for (auto& child : m_Children)
     {

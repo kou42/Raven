@@ -8,6 +8,7 @@ namespace Raven
 // Widgetの状態別外観です。描画時にUIContextから参照し、Theme切替を即座に反映します。
 struct UIButtonStyle
 {
+    bool operator==(const UIButtonStyle&) const = default;
     math::Vec4 NormalColor{ 0.24f, 0.24f, 0.28f, 1.0f };
     math::Vec4 HoveredColor{ 0.32f, 0.32f, 0.38f, 1.0f };
     math::Vec4 PressedColor{ 0.16f, 0.16f, 0.20f, 1.0f };
@@ -16,6 +17,7 @@ struct UIButtonStyle
 
 struct UISliderStyle
 {
+    bool operator==(const UISliderStyle&) const = default;
     math::Vec4 TrackColor{ 0.16f, 0.18f, 0.24f, 1.0f };
     math::Vec4 FillColor{ 0.14f, 0.46f, 0.82f, 1.0f };
     math::Vec4 ThumbColor{ 0.72f, 0.76f, 0.84f, 1.0f };
@@ -26,6 +28,7 @@ struct UISliderStyle
 
 struct UIInputTextStyle
 {
+    bool operator==(const UIInputTextStyle&) const = default;
     math::Vec4 BackgroundColor{ 0.13f, 0.13f, 0.16f, 1.0f };
     math::Vec4 FocusedBackgroundColor{ 0.18f, 0.22f, 0.30f, 1.0f };
     math::Vec4 SelectionColor{ 0.24f, 0.40f, 0.68f, 0.75f };
@@ -35,17 +38,20 @@ struct UIInputTextStyle
 
 struct UIScrollBarStyle
 {
+    bool operator==(const UIScrollBarStyle&) const = default;
     math::Vec4 TrackColor{ 0.06f, 0.07f, 0.09f, 0.75f };
     math::Vec4 ThumbColor{ 0.42f, 0.45f, 0.52f, 0.95f };
 };
 
 struct UILabelStyle
 {
+    bool operator==(const UILabelStyle&) const = default;
     math::Vec4 TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
 struct UITabBarStyle
 {
+    bool operator==(const UITabBarStyle&) const = default;
     math::Vec4 BackgroundColor{ 0.13f, 0.14f, 0.17f, 1.0f };
     math::Vec4 NormalColor{ 0.18f, 0.19f, 0.23f, 1.0f };
     math::Vec4 HoveredColor{ 0.23f, 0.25f, 0.30f, 1.0f };
@@ -59,6 +65,7 @@ struct UITabBarStyle
 
 struct UITreeViewStyle
 {
+    bool operator==(const UITreeViewStyle&) const = default;
     math::Vec4 SelectedColor{ 0.22f, 0.38f, 0.64f, 1.0f };
     math::Vec4 DropChildColor{ 0.18f, 0.56f, 0.32f, 0.55f };
     math::Vec4 DropIndicatorColor{ 0.42f, 0.90f, 0.57f, 0.95f };
@@ -67,6 +74,7 @@ struct UITreeViewStyle
 
 struct UITableStyle
 {
+    bool operator==(const UITableStyle&) const = default;
     math::Vec4 SelectedColor{ 0.22f, 0.38f, 0.64f, 1.0f };
     math::Vec4 HeaderColor{ 0.17f, 0.19f, 0.23f, 1.0f };
     math::Vec4 TextColor{ 1.0f, 1.0f, 1.0f, 1.0f };
@@ -74,6 +82,7 @@ struct UITableStyle
 
 struct UIPanelStyle
 {
+    bool operator==(const UIPanelStyle&) const = default;
     math::Vec4 BackgroundColor{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
@@ -81,6 +90,7 @@ struct UIPanelStyle
 // 個別Panelはこの値を参照し、同じ役割の余白や高さをPanelごとに再定義しません。
 struct UIEditorStyle
 {
+    bool operator==(const UIEditorStyle&) const = default;
     math::Vec2 MenuTriggerSize{ 100.0f, 34.0f };
     math::Vec2 MenuTriggerLabelOffset{ 12.0f, 3.0f };
     math::Vec2 MenuTriggerLabelSize{ 84.0f, 26.0f };
@@ -100,6 +110,7 @@ struct UIEditorStyle
 // 初期値は既存Widgetの外観と同じにして、未設定のUIの描画を変更しません。
 struct UITheme
 {
+    bool operator==(const UITheme&) const = default;
     UIButtonStyle Button;
     UIPanelStyle Panel;
     UISliderStyle Slider;
