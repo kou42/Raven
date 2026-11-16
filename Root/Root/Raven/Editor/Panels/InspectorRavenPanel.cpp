@@ -25,6 +25,18 @@ std::string FormatFloat(float value)
     return buffer;
 }
 
+void SynchronizeNumber(UIInputNumber& input, double value, bool resetEditing)
+{
+    if (resetEditing == true)
+    {
+        input.SetValue(value);
+    }
+    else
+    {
+        input.SetValueIfChanged(value);
+    }
+}
+
 void SetLabelText(std::vector<UILabel*>& labels, std::size_t index, std::string text)
 {
     if (index < labels.size() && labels[index] != nullptr)
@@ -135,11 +147,26 @@ UIElement* InspectorRavenPanel::GetFocusedInputElement() const
     return context != nullptr ? context->GetFocusedElement() : nullptr;
 }
 
+void InspectorRavenPanel::SetSnapshotProvider(SnapshotProvider provider)
+{
+    m_SnapshotProvider = std::move(provider);
+}
+void InspectorRavenPanel::Update()
+{
+    if (IsAttached() == true && m_SnapshotProvider != nullptr)
+    {
+        // 1回の更新で1回だけPullし、同じ値Snapshotを全Controlへ同期します。
+        Update(m_SnapshotProvider());
+    }
+}
+
 void InspectorRavenPanel::Update(const InspectorSnapshot& snapshot)
 {
     const bool targetChanged =
         m_Snapshot.SelectionValid != snapshot.SelectionValid
-        || m_Snapshot.Handle != snapshot.Handle;
+        || m_Snapshot.Handle != snapshot.Handle
+        || m_Snapshot.SelectionRevision != snapshot.SelectionRevision
+        || m_Snapshot.SelectionCount != snapshot.SelectionCount;
     if (targetChanged == true)
     {
         // Scene交換、Entity破棄、Generation変更、別Entity選択では、古いBefore値を
@@ -149,12 +176,41 @@ void InspectorRavenPanel::Update(const InspectorSnapshot& snapshot)
         ResetRigidBodyEdit();
         ResetColliderEdit();
     }
+    const bool transformChanged = m_Snapshot.Transform.has_value() != snapshot.Transform.has_value();
+    const bool cameraChanged = m_Snapshot.Camera.has_value() != snapshot.Camera.has_value();
+    const bool rigidBodyChanged = m_Snapshot.RigidBody.has_value() != snapshot.RigidBody.has_value();
+    const bool colliderChanged = m_Snapshot.Collider.has_value() != snapshot.Collider.has_value();
+    if (transformChanged == true)
+    {
+        ResetTransformEdit();
+    }
+    if (cameraChanged == true)
+    {
+        ResetCameraEdit();
+    }
+    if (rigidBodyChanged == true)
+    {
+        ResetRigidBodyEdit();
+    }
+    if (colliderChanged == true)
+    {
+        ResetColliderEdit();
+    }
     m_Snapshot = snapshot;
+    // Section非表示によるFocus Lostも同期に含め、古いTextから新しい対象へのPreview/Commitを防ぎます。
+    m_SynchronizingTransformInputs = true;
+    m_SynchronizingCameraInputs = true;
+    m_SynchronizingRigidBodyControls = true;
+    m_SynchronizingColliderControls = true;
     UpdateLabels();
-    SynchronizeTransformInputs(targetChanged);
-    SynchronizeCameraInputs(targetChanged);
-    SynchronizeRigidBodyControls(targetChanged);
-    SynchronizeColliderControls(targetChanged);
+    SynchronizeTransformInputs(targetChanged || transformChanged);
+    SynchronizeCameraInputs(targetChanged || cameraChanged);
+    SynchronizeRigidBodyControls(targetChanged || rigidBodyChanged);
+    SynchronizeColliderControls(targetChanged || colliderChanged);
+    m_SynchronizingTransformInputs = false;
+    m_SynchronizingCameraInputs = false;
+    m_SynchronizingRigidBodyControls = false;
+    m_SynchronizingColliderControls = false;
 }
 
 void InspectorRavenPanel::SetVisible(bool visible)
@@ -373,7 +429,7 @@ void InspectorRavenPanel::SynchronizeTransformInputs(bool targetChanged)
         const bool editing = focused == &input->GetInputText();
         if (targetChanged == true || editing == false)
         {
-            input->SetValue(values[index]);
+            SynchronizeNumber(*input, values[index], targetChanged);
         }
     }
     m_SynchronizingTransformInputs = false;
@@ -444,7 +500,7 @@ void InspectorRavenPanel::CommitTransformEdit()
 
     if (m_OnTransformCommitRequested != nullptr)
     {
-        // After値はEditorLayerが現在Componentから取得します。PanelがFrame遅延した
+        // After値はControllerが現在Componentから取得します。PanelがFrame遅延した
         // SnapshotをCommandへ確定して、外部更新を巻き戻すことを防ぎます。
         m_OnTransformCommitRequested(
             m_TransformEditHandle, m_TransformEditBefore);
@@ -589,13 +645,13 @@ void InspectorRavenPanel::SynchronizeCameraInputs(bool targetChanged)
     }
     if (targetChanged == true || nearEditing == false)
     {
-        m_CameraInputs[1u]->SetRange(
+        m_CameraInputs[1u]->SetRangeIfChanged(
             0.001,
             std::max(0.001, static_cast<double>(camera.FarClip) - ClipSeparation));
     }
     if (targetChanged == true || farEditing == false)
     {
-        m_CameraInputs[2u]->SetRange(
+        m_CameraInputs[2u]->SetRangeIfChanged(
             static_cast<double>(camera.NearClip) + ClipSeparation,
             100000.0);
     }
@@ -614,7 +670,7 @@ void InspectorRavenPanel::SynchronizeCameraInputs(bool targetChanged)
         const bool editing = focused == &input->GetInputText();
         if (targetChanged == true || editing == false)
         {
-            input->SetValue(values[index]);
+            SynchronizeNumber(*input, values[index], targetChanged);
         }
     }
     m_SynchronizingCameraInputs = false;
@@ -862,7 +918,7 @@ void InspectorRavenPanel::SynchronizeRigidBodyControls(bool targetChanged)
         const bool editing = focused == &input->GetInputText();
         if (targetChanged == true || editing == false)
         {
-            input->SetValue(values[index]);
+            SynchronizeNumber(*input, values[index], targetChanged);
         }
     }
     m_RigidBodyUseGravityCheckbox->SetChecked(value.UseGravity);
@@ -1114,7 +1170,7 @@ void InspectorRavenPanel::SynchronizeColliderControls(bool targetChanged)
         const bool editing = focused == &input->GetInputText();
         if (targetChanged == true || editing == false)
         {
-            input->SetValue(values[index]);
+            SynchronizeNumber(*input, values[index], targetChanged);
         }
     }
     m_ColliderTriggerCheckbox->SetChecked(value.IsTrigger);
@@ -1240,6 +1296,10 @@ void InspectorRavenPanel::UpdateLabels()
     if (m_Snapshot.HasSelection == false)
     {
         m_StatusLabel->SetText("Select an Entity in Scene Hierarchy.");
+    }
+    else if (m_Snapshot.SelectionCount > 1u)
+    {
+        m_StatusLabel->SetText("Multiple selection is not editable in this Inspector.");
     }
     else if (m_Snapshot.SelectionValid == false)
     {

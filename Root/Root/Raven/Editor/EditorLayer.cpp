@@ -6,11 +6,8 @@
 #include "Raven/Core/MouseCodes.h"
 #include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
-#include "Raven/Editor/Command/InspectorEditCommand.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
 #include "Raven/Editor/Command/ReparentEntityCommand.h"
-#include "Raven/Editor/Command/SetPrimaryCameraCommand.h"
-#include "Raven/Editor/Command/TransformCommand.h"
 #include "Raven/Editor/EditorCommandHistory.h"
 #include "Raven/Editor/EditorShortcutRouter.h"
 #include "Raven/Editor/EditorViewportGeometry.h"
@@ -28,7 +25,6 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
@@ -38,7 +34,6 @@ namespace Raven
 namespace
 {
 
-constexpr float CameraProjectionCompareEpsilon = 0.000001f;
 constexpr float EditorMenuBarHeight = 32.0f;
 
 std::uint64_t EditorTabValue(EditorDockTabId id)
@@ -116,277 +111,6 @@ bool IsEditorGizmoShortcutKey(int keyCode)
     return keyCode == Key::W || keyCode == Key::E ||
         keyCode == Key::R || keyCode == Key::Q ||
         keyCode == Key::Z || keyCode == Key::Y;
-}
-
-bool ValidateCameraProjectionTarget(Entity entity)
-{
-    return entity.HasComponent<CameraComponent>();
-}
-
-bool ApplyCameraProjectionSnapshot(
-    Entity entity,
-    const InspectorCameraSnapshot& snapshot)
-{
-    if (ValidateCameraProjectionTarget(entity) == false)
-    {
-        return false;
-    }
-
-    SceneCamera& camera = entity.GetComponent<CameraComponent>().Camera;
-    camera.SetPerspective(
-        snapshot.VerticalFov,
-        snapshot.NearClip,
-        snapshot.FarClip);
-
-    // SetPerspective()は不正なNear/Far/FOVを拒否して現在値を維持します。
-    // Previewを成功扱いにする前に、要求値が実際のCamera状態へ反映されたことを確認します。
-    return std::fabs(camera.GetPerspectiveVerticalFov() - snapshot.VerticalFov)
-            <= CameraProjectionCompareEpsilon
-        && std::fabs(camera.GetPerspectiveNearClip() - snapshot.NearClip)
-            <= CameraProjectionCompareEpsilon
-        && std::fabs(camera.GetPerspectiveFarClip() - snapshot.FarClip)
-            <= CameraProjectionCompareEpsilon;
-}
-
-bool CameraProjectionSnapshotsEqual(
-    const InspectorCameraSnapshot& left,
-    const InspectorCameraSnapshot& right)
-{
-    // Aspect RatioはViewport、PrimaryはSceneCameraSystemが所有するため、このCommandでは比較しません。
-    return std::fabs(left.VerticalFov - right.VerticalFov)
-            <= CameraProjectionCompareEpsilon
-        && std::fabs(left.NearClip - right.NearClip)
-            <= CameraProjectionCompareEpsilon
-        && std::fabs(left.FarClip - right.FarClip)
-            <= CameraProjectionCompareEpsilon;
-}
-
-InspectorCameraSnapshot CaptureCameraSnapshot(const CameraComponent& component)
-{
-    return InspectorCameraSnapshot{
-        component.Camera.GetPerspectiveVerticalFov(),
-        component.Camera.GetPerspectiveNearClip(),
-        component.Camera.GetPerspectiveFarClip(),
-        component.Camera.GetAspectRatio(),
-        component.Primary };
-}
-
-constexpr float InspectorValueCompareEpsilon = 0.000001f;
-
-bool InspectorFloatEqual(float left, float right)
-{
-    return std::fabs(left - right) <= InspectorValueCompareEpsilon;
-}
-
-bool InspectorVec3Equal(const math::Vec3& left, const math::Vec3& right)
-{
-    return InspectorFloatEqual(left.x, right.x)
-        && InspectorFloatEqual(left.y, right.y)
-        && InspectorFloatEqual(left.z, right.z);
-}
-
-bool ValidateRigidBodyEditTarget(Entity entity)
-{
-    return entity.HasComponent<RigidBodyComponent>();
-}
-
-bool ApplyRigidBodyEditValue(
-    Entity entity,
-    const InspectorRigidBodyEditValue& value)
-{
-    if (ValidateRigidBodyEditTarget(entity) == false)
-    {
-        return false;
-    }
-
-    RigidBodyComponent& component = entity.GetComponent<RigidBodyComponent>();
-    const InspectorRigidBodySnapshot& snapshot = value.Snapshot;
-    switch (value.Field)
-    {
-    case InspectorRigidBodyField::Mass:
-        // Static中のSetMass()は保持Massまで0へ変更するため編集を拒否します。
-        if (component.Type == BodyType::Static)
-        {
-            return false;
-        }
-        component.SetMass(snapshot.Mass);
-        return true;
-    case InspectorRigidBodyField::LinearVelocity:
-        component.LinearVelocity = snapshot.LinearVelocity;
-        return true;
-    case InspectorRigidBodyField::AngularVelocity:
-        component.AngularVelocity = snapshot.AngularVelocity;
-        return true;
-    case InspectorRigidBodyField::LinearDamping:
-        component.LinearDamping = snapshot.LinearDamping;
-        return true;
-    case InspectorRigidBodyField::AngularDamping:
-        component.AngularDamping = snapshot.AngularDamping;
-        return true;
-    case InspectorRigidBodyField::UseGravity:
-        component.UseGravity = snapshot.UseGravity;
-        return true;
-    case InspectorRigidBodyField::AllowSleep:
-        component.AllowSleep = snapshot.AllowSleep;
-        return true;
-    case InspectorRigidBodyField::Type:
-        return false;
-    }
-    return false;
-}
-
-bool RigidBodyEditValuesEqual(
-    const InspectorRigidBodyEditValue& left,
-    const InspectorRigidBodyEditValue& right)
-{
-    if (left.Field != right.Field)
-    {
-        return false;
-    }
-    switch (left.Field)
-    {
-    case InspectorRigidBodyField::Mass:
-        return InspectorFloatEqual(left.Snapshot.Mass, right.Snapshot.Mass);
-    case InspectorRigidBodyField::LinearVelocity:
-        return InspectorVec3Equal(
-            left.Snapshot.LinearVelocity, right.Snapshot.LinearVelocity);
-    case InspectorRigidBodyField::AngularVelocity:
-        return InspectorVec3Equal(
-            left.Snapshot.AngularVelocity, right.Snapshot.AngularVelocity);
-    case InspectorRigidBodyField::LinearDamping:
-        return InspectorFloatEqual(
-            left.Snapshot.LinearDamping, right.Snapshot.LinearDamping);
-    case InspectorRigidBodyField::AngularDamping:
-        return InspectorFloatEqual(
-            left.Snapshot.AngularDamping, right.Snapshot.AngularDamping);
-    case InspectorRigidBodyField::UseGravity:
-        return left.Snapshot.UseGravity == right.Snapshot.UseGravity;
-    case InspectorRigidBodyField::AllowSleep:
-        return left.Snapshot.AllowSleep == right.Snapshot.AllowSleep;
-    case InspectorRigidBodyField::Type:
-        return left.Snapshot.Type == right.Snapshot.Type;
-    }
-    return true;
-}
-
-bool ApplyRigidBodyComponent(Entity entity, const RigidBodyComponent& value)
-{
-    if (ValidateRigidBodyEditTarget(entity) == false)
-    {
-        return false;
-    }
-    entity.GetComponent<RigidBodyComponent>() = value;
-    return true;
-}
-
-bool RigidBodyComponentsEqual(
-    const RigidBodyComponent& left,
-    const RigidBodyComponent& right)
-{
-    return left.Type == right.Type;
-}
-
-bool ValidateColliderEditTarget(Entity entity)
-{
-    return entity.HasComponent<ColliderComponent>();
-}
-
-bool ApplyColliderEditValue(
-    Entity entity,
-    const InspectorColliderEditValue& value)
-{
-    if (ValidateColliderEditTarget(entity) == false)
-    {
-        return false;
-    }
-    ColliderComponent& component = entity.GetComponent<ColliderComponent>();
-    const InspectorColliderSnapshot& snapshot = value.Snapshot;
-    switch (value.Field)
-    {
-    case InspectorColliderField::Type:
-        // StaticMeshへ切り替えるにはCPU Geometryが必要です。空Shapeを作る操作は拒否します。
-        if (snapshot.Type == ColliderType::StaticMesh
-            && component.StaticMeshGeometry == nullptr)
-        {
-            return false;
-        }
-        component.Type = snapshot.Type;
-        return true;
-    case InspectorColliderField::Offset:
-        component.Offset = snapshot.Offset;
-        return true;
-    case InspectorColliderField::HalfExtents:
-        component.HalfExtents = snapshot.HalfExtents;
-        return true;
-    case InspectorColliderField::Radius:
-        component.Radius = snapshot.Radius;
-        return true;
-    case InspectorColliderField::HalfLength:
-        component.HalfLength = snapshot.HalfLength;
-        return true;
-    case InspectorColliderField::PlaneNormal:
-        component.PlaneNormal = snapshot.PlaneNormal;
-        return true;
-    case InspectorColliderField::PlaneOffset:
-        component.PlaneOffset = snapshot.PlaneOffset;
-        return true;
-    case InspectorColliderField::Restitution:
-        component.Restitution = snapshot.Restitution;
-        return true;
-    case InspectorColliderField::StaticFriction:
-        component.StaticFriction = snapshot.StaticFriction;
-        return true;
-    case InspectorColliderField::DynamicFriction:
-        component.DynamicFriction = snapshot.DynamicFriction;
-        return true;
-    case InspectorColliderField::IsTrigger:
-        component.IsTrigger = snapshot.IsTrigger;
-        return true;
-    }
-    return false;
-}
-
-bool ColliderEditValuesEqual(
-    const InspectorColliderEditValue& left,
-    const InspectorColliderEditValue& right)
-{
-    if (left.Field != right.Field)
-    {
-        return false;
-    }
-    switch (left.Field)
-    {
-    case InspectorColliderField::Type:
-        return left.Snapshot.Type == right.Snapshot.Type;
-    case InspectorColliderField::Offset:
-        return InspectorVec3Equal(left.Snapshot.Offset, right.Snapshot.Offset);
-    case InspectorColliderField::HalfExtents:
-        return InspectorVec3Equal(
-            left.Snapshot.HalfExtents, right.Snapshot.HalfExtents);
-    case InspectorColliderField::Radius:
-        return InspectorFloatEqual(left.Snapshot.Radius, right.Snapshot.Radius);
-    case InspectorColliderField::HalfLength:
-        return InspectorFloatEqual(
-            left.Snapshot.HalfLength, right.Snapshot.HalfLength);
-    case InspectorColliderField::PlaneNormal:
-        return InspectorVec3Equal(
-            left.Snapshot.PlaneNormal, right.Snapshot.PlaneNormal);
-    case InspectorColliderField::PlaneOffset:
-        return InspectorFloatEqual(
-            left.Snapshot.PlaneOffset, right.Snapshot.PlaneOffset);
-    case InspectorColliderField::Restitution:
-        return InspectorFloatEqual(
-            left.Snapshot.Restitution, right.Snapshot.Restitution);
-    case InspectorColliderField::StaticFriction:
-        return InspectorFloatEqual(
-            left.Snapshot.StaticFriction, right.Snapshot.StaticFriction);
-    case InspectorColliderField::DynamicFriction:
-        return InspectorFloatEqual(
-            left.Snapshot.DynamicFriction, right.Snapshot.DynamicFriction);
-    case InspectorColliderField::IsTrigger:
-        return left.Snapshot.IsTrigger == right.Snapshot.IsTrigger;
-    }
-    return true;
 }
 
 } // namespace
@@ -888,271 +612,13 @@ void EditorLayer::OnAttach()
     }
     if (m_Application != nullptr)
     {
-        m_InspectorRavenPanel.SetTransformPreviewRequestedHandler(
-            [this](EntityHandle handle, const InspectorTransformSnapshot& requested)
+        // Scene/Selectionの所有権はEditorLayer/Applicationに残し、Controllerは操作時に再取得します。
+        m_InspectorController.Bind(m_InspectorRavenPanel,
+            [this]() { return m_Application != nullptr ? m_Application->GetScene() : nullptr; },
+            [this]()
             {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || static_cast<bool>(handle) == false)
-                {
-                    return false;
-                }
-
-                Entity entity(handle, activeScene);
-                if (activeScene->IsEntityAlive(entity) == false
-                    || entity.HasComponent<TransformComponent>() == false)
-                {
-                    return false;
-                }
-
-                // PreviewはUndo履歴へ積まず、Runtime Transformへ即時反映します。
-                // WidgetはScene参照を保持せず、ActionごとにHandleのGenerationを再検証します。
-                TransformComponent transform;
-                transform.Position = requested.Position;
-                transform.Rotation = requested.Rotation;
-                transform.Scale = requested.Scale;
-                return activeScene->SetWorldTransform(handle, transform);
-            });
-        m_InspectorRavenPanel.SetTransformCommitRequestedHandler(
-            [this](EntityHandle handle, const InspectorTransformSnapshot& beforeSnapshot)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || static_cast<bool>(handle) == false)
-                {
-                    return false;
-                }
-
-                Entity entity(handle, activeScene);
-                if (activeScene->IsEntityAlive(entity) == false
-                    || entity.HasComponent<TransformComponent>() == false)
-                {
-                    return false;
-                }
-
-                TransformComponent before = entity.GetComponent<TransformComponent>();
-                before.Position = beforeSnapshot.Position;
-                before.Rotation = beforeSnapshot.Rotation;
-                before.Scale = beforeSnapshot.Scale;
-
-                // Preview適用済みの現在値をAfterとして取得し、1編集につき1 Commandだけ記録します。
-                // Panelの前Frame SnapshotをAfterへ使わないため、Runtime側の外部更新も巻き戻しません。
-                const TransformComponent after = entity.GetComponent<TransformComponent>();
-                return RecordAlreadyExecutedEditorCommand(
-                    std::make_unique<TransformCommand>(entity, before, after));
-            });
-        m_InspectorRavenPanel.SetCameraPreviewRequestedHandler(
-            [this](EntityHandle handle, const InspectorCameraSnapshot& requested)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || static_cast<bool>(handle) == false)
-                {
-                    return false;
-                }
-
-                Entity entity(handle, activeScene);
-                if (activeScene->IsEntityAlive(entity) == false)
-                {
-                    return false;
-                }
-                return ApplyCameraProjectionSnapshot(entity, requested);
-            });
-        m_InspectorRavenPanel.SetCameraCommitRequestedHandler(
-            [this](EntityHandle handle, const InspectorCameraSnapshot& before)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || static_cast<bool>(handle) == false)
-                {
-                    return false;
-                }
-
-                Entity entity(handle, activeScene);
-                if (activeScene->IsEntityAlive(entity) == false
-                    || ValidateCameraProjectionTarget(entity) == false)
-                {
-                    return false;
-                }
-
-                const InspectorCameraSnapshot after = CaptureCameraSnapshot(
-                    entity.GetComponent<CameraComponent>());
-                return RecordAlreadyExecutedEditorCommand(
-                    std::make_unique<InspectorEditCommand<InspectorCameraSnapshot>>(
-                        entity,
-                        before,
-                        after,
-                        &ValidateCameraProjectionTarget,
-                        &ApplyCameraProjectionSnapshot,
-                        &CameraProjectionSnapshotsEqual));
-            });
-        m_InspectorRavenPanel.SetPrimaryCameraRequestedHandler(
-            [this](EntityHandle handle)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || handle.IsValid() == false)
-                {
-                    return false;
-                }
-                return ExecuteAndRecordEditorCommand(
-                    std::make_unique<SetPrimaryCameraCommand>(activeScene, handle));
-            });
-        m_InspectorRavenPanel.SetRigidBodyPreviewRequestedHandler(
-            [this](EntityHandle handle, InspectorRigidBodyField field,
-                const InspectorRigidBodySnapshot& requested)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || activeScene->IsEntityAlive(handle) == false)
-                {
-                    return false;
-                }
-                return ApplyRigidBodyEditValue(
-                    Entity(handle, activeScene),
-                    InspectorRigidBodyEditValue{ field, requested });
-            });
-        m_InspectorRavenPanel.SetRigidBodyCommitRequestedHandler(
-            [this](EntityHandle handle, InspectorRigidBodyField field,
-                const InspectorRigidBodySnapshot& before)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || activeScene->IsEntityAlive(handle) == false)
-                {
-                    return false;
-                }
-                Entity entity(handle, activeScene);
-                const InspectorSnapshot current = CaptureInspectorSnapshot(entity);
-                if (current.RigidBody.has_value() == false)
-                {
-                    return false;
-                }
-                return RecordAlreadyExecutedEditorCommand(
-                    std::make_unique<InspectorEditCommand<InspectorRigidBodyEditValue>>(
-                        entity,
-                        InspectorRigidBodyEditValue{ field, before },
-                        InspectorRigidBodyEditValue{ field, *current.RigidBody },
-                        &ValidateRigidBodyEditTarget,
-                        &ApplyRigidBodyEditValue,
-                        &RigidBodyEditValuesEqual));
-            });
-        m_InspectorRavenPanel.SetRigidBodyChangeRequestedHandler(
-            [this](EntityHandle handle, InspectorRigidBodyField field,
-                const InspectorRigidBodySnapshot& requested)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || activeScene->IsEntityAlive(handle) == false)
-                {
-                    return false;
-                }
-                Entity entity(handle, activeScene);
-                if (ValidateRigidBodyEditTarget(entity) == false)
-                {
-                    return false;
-                }
-                if (field == InspectorRigidBodyField::Type)
-                {
-                    const RigidBodyComponent before =
-                        entity.GetComponent<RigidBodyComponent>();
-                    RigidBodyComponent after = before;
-                    after.SetBodyType(requested.Type);
-                    return ExecuteAndRecordEditorCommand(
-                        std::make_unique<InspectorEditCommand<RigidBodyComponent>>(
-                            entity, before, after,
-                            &ValidateRigidBodyEditTarget,
-                            &ApplyRigidBodyComponent,
-                            &RigidBodyComponentsEqual));
-                }
-                const InspectorSnapshot current = CaptureInspectorSnapshot(entity);
-                if (current.RigidBody.has_value() == false)
-                {
-                    return false;
-                }
-                return ExecuteAndRecordEditorCommand(
-                    std::make_unique<InspectorEditCommand<InspectorRigidBodyEditValue>>(
-                        entity,
-                        InspectorRigidBodyEditValue{ field, *current.RigidBody },
-                        InspectorRigidBodyEditValue{ field, requested },
-                        &ValidateRigidBodyEditTarget,
-                        &ApplyRigidBodyEditValue,
-                        &RigidBodyEditValuesEqual));
-            });
-        m_InspectorRavenPanel.SetColliderPreviewRequestedHandler(
-            [this](EntityHandle handle, InspectorColliderField field,
-                const InspectorColliderSnapshot& requested)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || activeScene->IsEntityAlive(handle) == false)
-                {
-                    return false;
-                }
-                return ApplyColliderEditValue(
-                    Entity(handle, activeScene),
-                    InspectorColliderEditValue{ field, requested });
-            });
-        m_InspectorRavenPanel.SetColliderCommitRequestedHandler(
-            [this](EntityHandle handle, InspectorColliderField field,
-                const InspectorColliderSnapshot& before)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || activeScene->IsEntityAlive(handle) == false)
-                {
-                    return false;
-                }
-                Entity entity(handle, activeScene);
-                const InspectorSnapshot current = CaptureInspectorSnapshot(entity);
-                if (current.Collider.has_value() == false)
-                {
-                    return false;
-                }
-                return RecordAlreadyExecutedEditorCommand(
-                    std::make_unique<InspectorEditCommand<InspectorColliderEditValue>>(
-                        entity,
-                        InspectorColliderEditValue{ field, before },
-                        InspectorColliderEditValue{ field, *current.Collider },
-                        &ValidateColliderEditTarget,
-                        &ApplyColliderEditValue,
-                        &ColliderEditValuesEqual));
-            });
-        m_InspectorRavenPanel.SetColliderChangeRequestedHandler(
-            [this](EntityHandle handle, InspectorColliderField field,
-                const InspectorColliderSnapshot& requested)
-            {
-                Scene* activeScene = m_Application != nullptr
-                    ? m_Application->GetScene()
-                    : nullptr;
-                if (activeScene == nullptr || activeScene->IsEntityAlive(handle) == false)
-                {
-                    return false;
-                }
-                Entity entity(handle, activeScene);
-                const InspectorSnapshot current = CaptureInspectorSnapshot(entity);
-                if (current.Collider.has_value() == false)
-                {
-                    return false;
-                }
-                return ExecuteAndRecordEditorCommand(
-                    std::make_unique<InspectorEditCommand<InspectorColliderEditValue>>(
-                        entity,
-                        InspectorColliderEditValue{ field, *current.Collider },
-                        InspectorColliderEditValue{ field, requested },
-                        &ValidateColliderEditTarget,
-                        &ApplyColliderEditValue,
-                        &ColliderEditValuesEqual));
+                return InspectorSelection{m_SelectedEntity,
+                    m_SelectedEntity.GetHandle().IsValid() == true ? 1u : 0u};
             });
         m_InspectorRavenPanel.Attach(
             m_Application->GetUIContext(), m_Application->GetRuntimeUIFont());
@@ -1304,6 +770,7 @@ void EditorLayer::OnDetach()
     m_RavenViewportGizmo.Reset();
     m_SceneHierarchyRavenPanel.Detach();
     m_InspectorRavenPanel.Detach();
+    m_InspectorController.Unbind(m_InspectorRavenPanel);
     m_DiagnosticsRavenPanel.Detach();
     m_AnimationDebugRavenPanel.Detach();
     m_StatisticsRavenPanel.Detach();
@@ -1336,6 +803,7 @@ void EditorLayer::OnActiveSceneChanging(Scene* scene)
     // Entityのbool変換もSceneを参照します。旧Sceneが生存する通知境界で値ごと捨て、
     // allocatorが同じアドレスを再利用した場合も新Sceneへ選択・編集を引き継ぎません。
     SetEditorCommandHistoryScene(nullptr);
+    m_InspectorController.ResetPresentation();
     m_SelectedEntity = Entity{};
     m_RavenViewportGizmo.Reset();
     m_ExplicitPickingScene = nullptr;
@@ -1694,7 +1162,7 @@ void EditorLayer::OnRavenUIRender(float dt)
         m_InspectorRavenPanel.SetVisible(m_ShowInspectorPanel);
         if (m_ShowInspectorPanel == true)
         {
-            m_InspectorRavenPanel.Update(CaptureInspectorSnapshot(m_SelectedEntity));
+            m_InspectorRavenPanel.Update();
         }
     }
 
@@ -2015,6 +1483,11 @@ void EditorLayer::ValidateSelectedEntity(Scene* activeScene)
 
 void EditorLayer::SetSelectedEntity(Entity entity)
 {
+    if (m_SelectedEntity.GetScene() != entity.GetScene() || m_SelectedEntity.GetHandle() != entity.GetHandle())
+    {
+        // 次のUI Pullより先に古い編集要求を無効化します。旧Sceneは逆参照しません。
+        m_InspectorController.ResetPresentation();
+    }
     m_SelectedEntity = entity;
 }
 

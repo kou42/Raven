@@ -4,6 +4,8 @@
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Entity.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -98,6 +100,8 @@ struct InspectorColliderEditValue
 // Retained Widget Treeにdangling参照を残しません。
 struct InspectorSnapshot
 {
+    std::size_t SelectionCount = 0u;
+    std::uint64_t SelectionRevision = 0u;
     bool HasSelection = false;
     bool SelectionValid = false;
     EntityHandle Handle = InvalidEntityHandle;

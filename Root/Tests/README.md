@@ -318,3 +318,12 @@ Popup/Tooltip/Overlay、未監査型・Resourceのfallbackと寿命、保持容�
 `cache_baseline,`行は100/1,000/10,000 Widgetの静的/動的/90:10混在×Cache off/onを記録します。
 GPU統合はCache off/onを別々に通し、Hit Counterを確認してからPixel readbackします。
 設計、条件、再実行と測定結果は[M2 Cache](../../docs/UI_MODERNIZATION_M2_CACHE.md)を参照してください。
+
+
+## UI Modernization M3: Inspector Controller / Pull
+
+同じRavenUITest=trueで比較同期、1更新1Pull、未確定入力/外部更新、主要数値欄の実Callback、
+Undo/Redo、Window移譲、複数選択拒否、Entity破棄、同一Sceneアドレス/Handle再利用、Controller再接続を検証します。
+EditorLayerの既存Scene寿命回帰も実行します。既存InspectorSnapshot自己テストはassert内のAttachを含むためDebugのみ実行し、
+新M3回帰はCheckを使いReleaseでも検証します。
+設計・Lifetime・結果・未検証事項は[M3 Inspector](../../docs/UI_MODERNIZATION_M3_INSPECTOR.md)を参照してください。

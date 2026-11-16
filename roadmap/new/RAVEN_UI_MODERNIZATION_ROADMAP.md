@@ -2,7 +2,7 @@
 
 更新日: 2026-11-17
 対象: `Root/Root/Raven/UI`、Raven Editor / Runtime UI  
-状態: **M0〜M2実装・検証済み（M2は監査済み型の明示opt-in、GPU確認はOpenGL統合ケースに限定）**（本書のPhase M0〜M7は既存ロードマップのPhase 1〜14とは別管理）
+状態: **M0〜M3実装・CPU検証済み（M2は監査済み型の明示opt-in、GPU確認はOpenGL基盤の統合ケースに限定）**（本書のPhase M0〜M7は既存ロードマップのPhase 1〜14とは別管理）
 
 ## 目的
 
@@ -98,11 +98,12 @@ Raven Editor / Runtime
 
 ### M3: MVVC / View-driven Pull
 
-- [ ] `InspectorRavenPanel`を対象にView/Controller/Modelの依存を整理する。
-- [ ] 選択EntityのPosition等、安価な値をフレーム単位でPullする。
-- [ ] `SetValueIfChanged`相当の比較更新を導入する（API名は既存実装に合わせる）。
-- [ ] UIからのSetはUndo/Redo Commandを経由し、ドラッグ中のCommand統合を考慮する。
-- [ ] 編集中の値の上書き、Selection変更、Entity破棄、複数選択をテストする。
+- [x] `InspectorRavenPanel`を対象にView/Controller/Modelの依存を整理する。
+- [x] 選択EntityのPosition等、安価な値をフレーム単位でPullする。
+- [x] `SetValueIfChanged`相当の比較更新を導入する（API名は既存実装に合わせる）。
+- [x] UIからのSetはUndo/Redo Commandを経由し、ドラッグ中のCommand統合を考慮する。
+- [x] 編集中の値の上書き、Selection変更、Entity破棄、複数選択をテストする。
+- 実装・検証結果: [M3 Inspector](../../docs/UI_MODERNIZATION_M3_INSPECTOR.md)。Controller分離、Viewの1更新1Pull、同値比較、既存Command/履歴を維持。Debug/Release UI回帰、Scene寿命回帰、OpenGL基盤統合成功。複数選択は明示拒否、実Inspector手操作は未検証。
 - **完了条件**: Inspectorの主要操作がController経由で機能し、従来のUndo/入力動作が維持される。
 
 ### M4: Shared Definition / Instance State

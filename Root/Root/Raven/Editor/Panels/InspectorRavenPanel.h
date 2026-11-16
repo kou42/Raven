@@ -20,11 +20,12 @@ class UIComboBox;
 class UIInputNumber;
 
 // Runtime参照を持たずInspectorSnapshotだけを表示・編集するRaven UI Viewです。
-// 編集要求はEntityHandle付きActionとしてEditorLayerへ返し、Scene / ComponentのLifetime検証と
+// Snapshot Providerから値を取得し、編集要求はEntityHandle付きActionとしてControllerへ返し、Scene / ComponentのLifetime検証と
 // Undo Command生成をPanelの外へ分離します。
 class InspectorRavenPanel
 {
 public:
+    using SnapshotProvider = std::function<InspectorSnapshot()>;
     using TransformPreviewRequestedHandler =
         std::function<bool(EntityHandle, const InspectorTransformSnapshot&)>;
     using TransformCommitRequestedHandler =
@@ -49,6 +50,8 @@ public:
 
     bool Attach(UIContext& context, const Ref<UIFontAtlas>& font);
     void Detach();
+    void Update();
+    void SetSnapshotProvider(SnapshotProvider provider);
     void Update(const InspectorSnapshot& snapshot);
     void SetVisible(bool visible);
     void SetTransformPreviewRequestedHandler(TransformPreviewRequestedHandler handler);
@@ -155,6 +158,7 @@ private:
     UIComboBox* m_ColliderTypeCombo = nullptr;
     std::vector<UIInputNumber*> m_ColliderInputs;
     UICheckbox* m_ColliderTriggerCheckbox = nullptr;
+    SnapshotProvider m_SnapshotProvider;
     InspectorSnapshot m_Snapshot;
     TransformPreviewRequestedHandler m_OnTransformPreviewRequested;
     TransformCommitRequestedHandler m_OnTransformCommitRequested;
