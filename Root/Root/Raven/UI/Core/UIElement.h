@@ -17,6 +17,15 @@ namespace Raven
 
 class UIContext;
 
+struct UIDrawListCacheMetrics
+{
+    std::size_t HitCount = 0u;
+    std::size_t MissCount = 0u;
+    std::size_t CaptureCount = 0u;
+    std::size_t RejectedCount = 0u;
+    std::size_t ReplayedCommandCount = 0u;
+};
+
 enum class UILayoutMode { Absolute = 0, Vertical, Horizontal };
 enum class UIAlignment { Start = 0, Center, End, Stretch };
 
@@ -291,7 +300,12 @@ public:
     bool IsPressed() const;
     bool IsMeasureDirty() const;
     bool IsArrangeDirty() const;
-    // 自身または子孫から伝わった描画無効化です。M1では描画省略の判定に使用しません。
+    // 明示opt-in。監査済み型だけのSubtreeが対象で、未対応の子があれば通常生成へ戻します。
+    void SetDrawListCacheEnabled(bool enabled);
+    bool IsDrawListCacheEnabled() const;
+    std::size_t GetDrawListCacheRetainedBytes() const;
+    std::size_t GetDrawListCacheCommandCount() const;
+    // 自身または子孫から伝わった無効化です。未監査型はこの値だけで描画生成を省略しません。
     bool IsPaintDirty() const;
     bool IsGeometryDirty() const;
     bool IsStyleDirty() const;
@@ -319,12 +333,16 @@ public:
     void HandleIMEEvent(UIIMEEvent& event);
 
     // Layout時間はRootのMeasure/Reflow/Arrangeのみ。子ごとの時計呼び出しを避けます。
-    void BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds = nullptr);
+    void BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds = nullptr,
+        UIDrawListCacheMetrics* cacheMetrics = nullptr);
     // UIContextのFont一括更新用拡張点。通常Elementは対象外です。
     virtual bool HasPendingDPIFont() const { return false; }
     virtual bool RefreshPendingDPIFont() { return false; }
 
 protected:
+    // 型として全表示更新を監査したWidgetのみoverrideします。可変Resource Commandは別途拒否します。
+    // 基底実装は正確にUIElementである場合だけ許可し、未監査の派生Widgetを巻き込みません。
+    virtual bool SupportsDrawListCache() const;
     // Leaf Widgetが自身のContentに必要な論理Sizeを返します。ContainerのChild集約は基底側で継続します。
     virtual math::Vec2 OnMeasureContent() const;
     // Arrange時に親から幅が確定したWidgetだけ、高さを再計算するための拡張点です。
@@ -357,13 +375,16 @@ private:
     void ReflowForWidth(float arrangedWidth);
     static float ResolveAlignedOffset(float available, float size, UIAlignment alignment);
     void ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize);
+    struct DrawListCacheState;
+    bool IsSubtreeDrawListCacheSupported() const;
+    void InvalidateDrawListCache();
     void InvalidateVisual(bool geometry, bool style, bool descendants);
     void InvalidateVisualSubtree(bool geometry, bool style);
     void BuildDrawListRecursive(
         UIDrawList& drawList,
         const math::Vec2& parentAbsolutePosition,
         const UITransform2D& parentWorldTransform,
-        const UIClipRect& inheritedClip);
+        const UIClipRect& inheritedClip, UIDrawListCacheMetrics* cacheMetrics);
 
     // ElementがどのUIContextのRetained Treeに所属しているかをSubtree全体へ伝播します。
     // ChildをTreeから外す際にContextへ破棄予定Subtreeを通知するための内部情報であり、Widget側の所有権ではありません。
@@ -422,6 +443,7 @@ private:
     bool m_Pressed = false;
     bool m_Focusable = false;
     bool m_Focused = false;
+    Scope<DrawListCacheState> m_DrawListCache;
     bool m_PaintDirty = true;
     bool m_GeometryDirty = true;
     bool m_StyleDirty = true;

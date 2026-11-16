@@ -46,6 +46,8 @@
 #include "Raven/UI/Widgets/UISeparator.h"
 #include "Raven/UI/Widgets/UILabel.h"
 #include "Raven/UI/Widgets/UIPanel.h"
+#include "Raven/UI/Widgets/UICircle.h"
+#include "Raven/UI/Widgets/UIPolygon.h"
 #include "Raven/UI/Widgets/UISlider.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
 #include "Raven/UI/Widgets/UIInputText.h"
@@ -5001,10 +5003,317 @@ void TestUIDirtyInvalidation()
     Check(context.GetDrawList().GetCommands().size() == 4u, "shown subtree restores commands");
 }
 
+void CheckCachedCommandsEqual(const std::vector<Raven::UIDrawCommand>& expected,
+    const std::vector<Raven::UIDrawCommand>& actual)
+{
+    Check(expected.size() == actual.size(), "cache command population");
+    for (std::size_t index = 0u; index < expected.size(); ++index)
+    {
+        const auto& left = expected[index];
+        const auto& right = actual[index];
+        Check(left.Type == right.Type && left.Rect.Min == right.Rect.Min && left.Rect.Max == right.Rect.Max &&
+            left.Color == right.Color && left.UVMin == right.UVMin && left.UVMax == right.UVMax &&
+            left.Points == right.Points, "cache shape color uv and polygon payload");
+        Check(left.Transform.M00 == right.Transform.M00 && left.Transform.M01 == right.Transform.M01 &&
+            left.Transform.M10 == right.Transform.M10 && left.Transform.M11 == right.Transform.M11 &&
+            left.Transform.Translation == right.Transform.Translation, "cache world transform");
+        Check(left.Clip.Enabled == right.Clip.Enabled && left.Clip.Rect.Min == right.Clip.Rect.Min &&
+            left.Clip.Rect.Max == right.Clip.Rect.Max, "cache clip");
+        Check(left.Texture == right.Texture && left.TextureView.GetAsset() == right.TextureView.GetAsset() &&
+            left.TextureView.GetLegacyTexture() == right.TextureView.GetLegacyTexture() &&
+            left.TextureView.GetRHITexture() == right.TextureView.GetRHITexture() &&
+            left.TextureView.GetOrigin() == right.TextureView.GetOrigin() &&
+            left.TextureView.GetSourceType() == right.TextureView.GetSourceType(), "cache resource reference");
+    }
+}
+
+void TestUIDrawListCache()
+{
+    Raven::UIContext context;
+    auto parent = Raven::CreateScope<Raven::UIElement>();
+    auto cached = Raven::CreateScope<Raven::UIElement>();
+    auto panel = Raven::CreateScope<Raven::UIPanel>();
+    auto circle = Raven::CreateScope<Raven::UICircle>();
+    auto polygon = Raven::CreateScope<Raven::UIPolygon>();
+    auto label = Raven::CreateScope<Raven::UILabel>();
+    auto* parentPtr = parent.get();
+    auto* cachedPtr = cached.get();
+    auto* panelPtr = panel.get();
+    auto* polygonPtr = polygon.get();
+    parent->SetSize({240.0f, 160.0f});
+    cached->SetSize({160.0f, 100.0f});
+    cached->SetPosition({5.0f, 4.0f});
+    cached->SetDrawListCacheEnabled(true);
+    panel->SetSize({80.0f, 40.0f});
+    circle->SetPosition({20.0f, 15.0f});
+    circle->SetSize({20.0f, 20.0f});
+    polygon->SetPoints({{0.0f, 0.0f}, {12.0f, 0.0f}, {0.0f, 10.0f}});
+    cached->AddChild(std::move(panel));
+    cached->AddChild(std::move(circle));
+    cached->AddChild(std::move(polygon));
+    parent->AddChild(std::move(cached));
+    context.AddRootChild(std::move(parent));
+    label->SetFont(CreateTextLayoutFixture());
+    label->SetText("AB"); // FontはCache外に置き、混在してもPainter順を維持します。
+    context.AddRootChild(std::move(label));
+    auto frame = [&context]()
+    {
+        context.BeginFrame({640.0f, 480.0f});
+        context.AddFrameOverlayRect({0.0f, 0.0f}, {10.0f, 10.0f}, {0.1f, 0.2f, 0.3f, 1.0f});
+        context.EndFrame();
+    };
+    auto verify = [&]()
+    {
+        frame();
+        frame();
+        frame();
+        Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 1u, "cache stable subtree hits");
+        Check(context.GetLastFrameMetrics().DrawListCache.ReplayedCommandCount == 3u,
+            "cache excludes sibling text and overlay");
+        const auto snapshot = context.GetDrawList().GetCommands();
+        const auto expectedMetrics = Raven::UITessellator::Measure(context.GetDrawList());
+        cachedPtr->SetDrawListCacheEnabled(false);
+        frame();
+        CheckCachedCommandsEqual(snapshot, context.GetDrawList().GetCommands());
+        const auto actualMetrics = Raven::UITessellator::Measure(context.GetDrawList());
+        Check(expectedMetrics.VertexCount == actualMetrics.VertexCount && expectedMetrics.IndexCount == actualMetrics.IndexCount,
+            "cache geometry population matches uncached");
+        Check(cachedPtr->GetDrawListCacheRetainedBytes() == 0u, "disable releases snapshot storage");
+        cachedPtr->SetDrawListCacheEnabled(true);
+    };
+    verify();
+    panelPtr->SetBackgroundColor({0.7f, 0.3f, 0.1f, 1.0f});
+    verify();
+    parentPtr->SetOpacity(0.5f);
+    parentPtr->SetTintColor({0.8f, 1.0f, 0.9f, 1.0f});
+    verify();
+    parentPtr->SetScale({1.5f, 0.8f});
+    parentPtr->SetRotation(0.2f);
+    verify();
+    parentPtr->SetPosition({17.0f, 9.0f});
+    parentPtr->SetClipChildren(true);
+    cachedPtr->SetClipSelf(true);
+    verify();
+    cachedPtr->SetSize({140.0f, 90.0f});
+    panelPtr->SetPosition({2.0f, 3.0f});
+    verify();
+    polygonPtr->SetPoints({{1.0f, 2.0f}, {18.0f, 2.0f}, {1.0f, 15.0f}});
+    cachedPtr->BringChildToFront(panelPtr);
+    verify();
+    context.SetTheme(Raven::UITheme::CreateDefaultLight());
+    verify();
+    cachedPtr->SetPreferredSizeDIP({100.0f, 70.0f});
+    context.SetDPIScale(1.5f, 2.0f);
+    verify();
+    cachedPtr->SetVisible(false);
+    frame();
+    Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 0u, "hidden subtree does not replay");
+    cachedPtr->SetVisible(true);
+    verify();
+
+    // 動的なSubtreeを毎Frame再コピーしないことをCounterでも確認します。
+    for (int iteration = 0; iteration < 8; ++iteration)
+    {
+        panelPtr->SetOpacity(iteration % 2 == 0 ? 0.4f : 0.8f);
+        frame();
+        Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 0u &&
+            context.GetLastFrameMetrics().DrawListCache.CaptureCount == 0u,
+            "dynamic subtree avoids snapshot copies");
+    }
+    frame();
+    frame();
+    Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 1u, "stable subtree resumes cache");
+
+    // Layout親の外側の変更による移動も、Arrange時の失効で更新します。
+    parentPtr->SetLayoutMode(Raven::UILayoutMode::Vertical);
+    auto spacer = Raven::CreateScope<Raven::UIElement>();
+    auto* spacerPtr = spacer.get();
+    spacer->SetSize({30.0f, 20.0f});
+    parentPtr->AddChild(std::move(spacer));
+    parentPtr->BringChildToFront(cachedPtr);
+    verify();
+    spacerPtr->SetSize({30.0f, 40.0f});
+    verify();
+
+    // Contextの所有権を移しても、旧WindowのClip/DPIを再利用しません。
+    Raven::UIContext destination;
+    destination.SetDPIScale(2.0f, 1.0f);
+    Check(context.TransferRootChildTo(destination, parentPtr), "cached subtree context transfer");
+    destination.BeginFrame({500.0f, 300.0f});
+    destination.EndFrame();
+    Check(destination.GetLastFrameMetrics().DrawListCache.HitCount == 0u, "transfer invalidates old snapshot");
+    Check(destination.TransferRootChildTo(context, parentPtr), "cached subtree return transfer");
+    verify();
+
+    class Untracked final : public Raven::UIElement
+    {
+    public:
+        float Red = 0.2f;
+    protected:
+        void OnBuildDrawList(Raven::UIDrawList& list, const Raven::math::Vec2& position) const override
+        {
+            list.AddRect(position, position + Raven::math::Vec2(5.0f, 5.0f), {Red, 0.0f, 0.0f, 1.0f});
+        }
+    };
+    auto unknown = Raven::CreateScope<Untracked>();
+    auto* unknownPtr = unknown.get();
+    cachedPtr->AddChild(std::move(unknown));
+    for (int iteration = 0; iteration < 3; ++iteration)
+    {
+        frame();
+    }
+    Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 0u &&
+        context.GetLastFrameMetrics().DrawListCache.RejectedCount == 1u,
+        "unknown subclass invalidates cached eligibility");
+    unknownPtr->Red = 0.9f; // Dirty通知なしでも通常生成なので表示更新を失いません。
+    frame();
+    const auto current = context.GetDrawList().GetCommands();
+    cachedPtr->SetDrawListCacheEnabled(false);
+    frame();
+    CheckCachedCommandsEqual(current, context.GetDrawList().GetCommands());
+    cachedPtr->SetDrawListCacheEnabled(true);
+    cachedPtr->RemoveChild(unknownPtr);
+    verify(); // 未対応の子の除去後に型監査をやり直します。
+
+    // ネストしたCacheの保持メモリは、祖先Hitで走査を省略しても集計から消えません。
+    panelPtr->SetDrawListCacheEnabled(true);
+    frame();
+    frame();
+    frame();
+    Check(context.GetLastFrameMetrics().DrawListCacheRetainedBytes ==
+        cachedPtr->GetDrawListCacheRetainedBytes() + panelPtr->GetDrawListCacheRetainedBytes(),
+        "nested snapshot storage reported on ancestor hit");
+    panelPtr->SetDrawListCacheEnabled(false);
+    cachedPtr->SetDrawListCacheEnabled(false);
+    frame();
+    Check(context.GetLastFrameMetrics().DrawListCacheRetainedBytes == 0u, "all cache storage released");
+}
+
+void TestUIDrawListCacheResources()
+{
+    // 一般のRangeコピーはRefを保持しますが、M2のCacheは可変Resource Commandを採用しません。
+    auto font = CreateTextLayoutFixture();
+    auto asset = font->GetTexture();
+    std::weak_ptr<Raven::TextureAsset> lifetime = asset;
+    Raven::UIDrawList source;
+    Raven::UIDrawList copy;
+    source.AddImage({0.0f, 0.0f}, {8.0f, 8.0f}, asset);
+    copy.AppendRange(source);
+    copy.AppendRange(copy); // 自己追加は安全に無視します。
+    source.Clear();
+    font.reset();
+    asset.reset();
+    Check(lifetime.expired() == false && copy.GetCommandCount() == 1u, "range copy retains texture ref");
+    copy.Clear();
+    Check(lifetime.expired(), "range clear releases texture ref");
+
+    class ResourceEmitter final : public Raven::UIElement
+    {
+    public:
+        Raven::Ref<Raven::TextureAsset> Asset;
+    protected:
+        bool SupportsDrawListCache() const override { return true; }
+        void OnBuildDrawList(Raven::UIDrawList& list, const Raven::math::Vec2& position) const override
+        {
+            list.AddImage(position, position + Raven::math::Vec2(8.0f, 8.0f), Asset);
+        }
+    };
+    Raven::UIContext context;
+    auto emitter = Raven::CreateScope<ResourceEmitter>();
+    auto* emitterPtr = emitter.get();
+    font = CreateTextLayoutFixture();
+    emitter->Asset = font->GetTexture();
+    lifetime = emitter->Asset;
+    font.reset();
+    emitter->SetDrawListCacheEnabled(true);
+    context.AddRootChild(std::move(emitter));
+    for (int frame = 0; frame < 4; ++frame)
+    {
+        context.BeginFrame({64.0f, 64.0f});
+        context.EndFrame();
+    }
+    Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 0u &&
+        context.GetLastFrameMetrics().DrawListCache.RejectedCount == 1u &&
+        emitterPtr->GetDrawListCacheCommandCount() == 0u, "image commands never enter snapshot");
+    context.DetachRootChild(emitterPtr).reset();
+    context.BeginFrame({64.0f, 64.0f});
+    context.EndFrame();
+    Check(lifetime.expired(), "cache does not prolong mutable texture lifetime");
+}
+
+void TestUICacheOverlays()
+{
+    Raven::UIContext context;
+    auto subtree = Raven::CreateScope<Raven::UIElement>();
+    auto* cached = subtree.get();
+    subtree->SetSize({80.0f, 60.0f});
+    subtree->SetDrawListCacheEnabled(true);
+    auto panel = Raven::CreateScope<Raven::UIPanel>();
+    auto* target = panel.get();
+    panel->SetSize({80.0f, 60.0f});
+    subtree->AddChild(std::move(panel));
+    context.AddRootChild(std::move(subtree));
+    Check(context.SetTooltip(target, "cached target", nullptr, 0.0f), "cached tooltip registration");
+    Raven::math::Vec4 overlayColor(0.2f, 0.3f, 0.4f, 1.0f);
+    auto frame = [&](bool movePointer = false)
+    {
+        context.BeginFrame({240.0f, 180.0f});
+        if (movePointer == true)
+        {
+            context.RouteMouseMove({10.0f, 10.0f});
+        }
+        context.AddFrameOverlayRect({0.0f, 0.0f}, {6.0f, 6.0f}, overlayColor);
+        context.EndFrame();
+    };
+    frame(true);
+    frame();
+    frame();
+    frame();
+    Check(context.GetVisibleTooltip() != nullptr && context.GetLastFrameMetrics().DrawListCache.HitCount == 1u,
+        "tooltip coexists with cached scene");
+    auto snapshot = context.GetDrawList().GetCommands();
+    cached->SetDrawListCacheEnabled(false);
+    frame();
+    CheckCachedCommandsEqual(snapshot, context.GetDrawList().GetCommands());
+    cached->SetDrawListCacheEnabled(true);
+    frame();
+    frame();
+    frame();
+    overlayColor = {0.8f, 0.5f, 0.1f, 1.0f};
+    frame();
+    Check(context.GetDrawList().GetCommands().back().Color == overlayColor &&
+        context.GetLastFrameMetrics().DrawListCache.HitCount == 1u, "frame overlay stays dynamic and last");
+
+    auto popup = Raven::CreateScope<Raven::UIPanel>();
+    popup->SetSize({20.0f, 20.0f});
+    popup->SetPosition({15.0f, 15.0f});
+    popup->SetBackgroundColor({0.0f, 0.9f, 0.0f, 1.0f});
+    auto* popupPtr = context.AddPopup(std::move(popup));
+    Check(context.OpenPopup(popupPtr), "popup opens over cached scene");
+    frame();
+    frame();
+    frame();
+    Check(context.GetLastFrameMetrics().DrawListCache.HitCount == 1u, "popup does not enter normal subtree cache");
+    snapshot = context.GetDrawList().GetCommands();
+    cached->SetDrawListCacheEnabled(false);
+    frame();
+    CheckCachedCommandsEqual(snapshot, context.GetDrawList().GetCommands());
+    context.ClosePopup();
+    cached->SetDrawListCacheEnabled(true);
+    frame();
+    frame();
+    frame();
+    Check(context.GetOpenPopup() == nullptr && context.GetLastFrameMetrics().DrawListCache.HitCount == 1u,
+        "closing popup preserves cache path");
+}
+
 } // namespace
 
 int main()
 {
+    TestUICacheOverlays();
+    TestUIDrawListCache();
+    TestUIDrawListCacheResources();
     TestUIDirtyInvalidation();
     TestTextLayoutMeasurement();
     TestUILabelTextReflow();
@@ -5165,6 +5474,7 @@ int main()
     TestUIAllocationMeasurement();
     TestUIWindowRecording();
     TestUIModernizationBaseline();
+    TestUIDrawListCachePerformance();
     TestStatisticsActions();
     TestStatisticsSnapshot();
     TestStatisticsRavenPanel();

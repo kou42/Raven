@@ -4,6 +4,11 @@
 namespace Raven
 {
 
+bool UIPanel::SupportsDrawListCache() const
+{
+    return true;
+}
+
 void UIPanel::SetBackgroundColor(const math::Vec4& color)
 {
     if (m_BackgroundColorOverride == true && m_BackgroundColor == color)

@@ -21,6 +21,7 @@ public:
     const math::Vec4& GetFillColor() const;
 
 protected:
+    bool SupportsDrawListCache() const override;
     void OnBuildDrawList(UIDrawList& drawList, const math::Vec2& absolutePosition) const override;
 
 private:

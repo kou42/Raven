@@ -152,7 +152,7 @@ bool TestFontAtlas()
         Check(failure == Raven::UIFontAtlasBuildFailure::None, "GPU Font Atlas diagnostic");
 }
 
-bool CheckRedFrame(GLFWwindow* window, Raven::UIContext& context)
+bool CheckRedFrame(GLFWwindow* window, Raven::UIContext& context, bool requireCacheHit)
 {
     int width = 0;
     int height = 0;
@@ -170,9 +170,18 @@ bool CheckRedFrame(GLFWwindow* window, Raven::UIContext& context)
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    context.BeginFrame({ static_cast<float>(width), static_cast<float>(height) },
-        { static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight) }, 1.0f, 1.0f);
-    context.EndFrame();
+    // Layout変更後の通常生成→安定Frame採取→Replayを同じGPUで確認します。
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        context.BeginFrame({ static_cast<float>(width), static_cast<float>(height) },
+            { static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight) }, 1.0f, 1.0f);
+        context.EndFrame();
+    }
+    if (requireCacheHit == true && Check(context.GetLastFrameMetrics().DrawListCache.HitCount > 0u,
+        "GPU cache replay actually used") == false)
+    {
+        return false;
+    }
     std::uint8_t pixel[4]{};
     glReadBuffer(GL_BACK);
     // Win32の装飾付きWindowは要求64pxより広い最小幅を持つことがあります。
@@ -210,7 +219,7 @@ bool CheckRedFrame(GLFWwindow* window, Raven::UIContext& context)
             "detached UI produces visible red pixel");
 }
 
-bool TestDetachedUIRendering(GLFWwindow* mainWindow)
+bool TestDetachedUIRendering(GLFWwindow* mainWindow, bool enableCache)
 {
     // Windowsのdefault framebufferは非表示/遮蔽時のpixelを保証しません。
     // Texture uploadとは異なり、この回帰は実Window描画を確認するので表示して採取します。
@@ -246,6 +255,7 @@ bool TestDetachedUIRendering(GLFWwindow* mainWindow)
     page->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
     page->SetVerticalAlignment(Raven::UIAlignment::Stretch);
     page->SetClipChildren(true);
+    page->SetDrawListCacheEnabled(enableCache);
     auto panel = std::make_unique<Raven::UIPanel>();
     panel->SetAffectsParentMeasure(false);
     panel->SetHorizontalAlignment(Raven::UIAlignment::Stretch);
@@ -257,7 +267,7 @@ bool TestDetachedUIRendering(GLFWwindow* mainWindow)
         return false;
     }
     main.AddRootChild(std::move(dock));
-    if (CheckRedFrame(mainWindow, main) == false)
+    if (CheckRedFrame(mainWindow, main, enableCache) == false)
     {
         return false;
     }
@@ -281,12 +291,12 @@ bool TestDetachedUIRendering(GLFWwindow* mainWindow)
             if (success == true)
             {
                 auxiliary.AddRootChild(std::move(content));
-                success = CheckRedFrame(window, auxiliary);
+                success = CheckRedFrame(window, auxiliary, enableCache);
                 if (success == true)
                 {
                     glfwSetWindowSize(window, 96, 96);
                     glfwPollEvents();
-                    success = CheckRedFrame(window, auxiliary);
+                    success = CheckRedFrame(window, auxiliary, enableCache);
                 }
                 auto restored = auxiliary.DetachRootChild(pagePtr);
                 success = Check(dockPtr->AddTab(leaf, metadata.Id, metadata.Title,
@@ -295,12 +305,13 @@ bool TestDetachedUIRendering(GLFWwindow* mainWindow)
         }
         glfwMakeContextCurrent(mainWindow);
         glfwDestroyWindow(window);
-        if (success == false || CheckRedFrame(mainWindow, main) == false)
+        if (success == false || CheckRedFrame(mainWindow, main, enableCache) == false)
         {
             return false;
         }
     }
     std::cout << "[PASS] GPU detached UI shared-context rendering (3 Close/restore cycles)\n";
+    std::cout << "[PASS] GPU subtree cache enabled=" << enableCache << '\n';
     return true;
 }
 } // namespace
@@ -776,7 +787,7 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     const bool initialized = Raven::RenderCommand::TryInit(Raven::RHIBackend::OpenGL);
-    const bool success = initialized == true && TestUpload() && TestFontAtlas() && TestDetachedUIRendering(window);
+    const bool success = initialized == true && TestUpload() && TestFontAtlas() && TestDetachedUIRendering(window, false) && TestDetachedUIRendering(window, true);
     // GPU ResourceはContextが生きている間に解放します。
     glfwDestroyWindow(window);
     glfwTerminate();
