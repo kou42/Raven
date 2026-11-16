@@ -309,3 +309,12 @@ ASAN_OPTIONS=detect_leaks=0 /tmp/raven-transform-math-tests
 M1の`TestUIDirtyInvalidation`も同じUI回帰テストで実行します。
 Dirty伝播、同値更新60 FrameのMeasure回数、Text/Opacity/Transform/Clip/Theme/DPIの
 実DrawCommand検証については[M1設計・結果](../../docs/UI_MODERNIZATION_M1_DIRTY.md)を参照してください。
+
+
+## UI Modernization M2: DrawList Cache
+
+同じRavenUITest=trueでCache有無のCommand比較、親Transform/Clip/Theme/DPI/移譲、
+Popup/Tooltip/Overlay、未監査型・Resourceのfallbackと寿命、保持容量・解放を検証します。
+`cache_baseline,`行は100/1,000/10,000 Widgetの静的/動的/90:10混在×Cache off/onを記録します。
+GPU統合はCache off/onを別々に通し、Hit Counterを確認してからPixel readbackします。
+設計、条件、再実行と測定結果は[M2 Cache](../../docs/UI_MODERNIZATION_M2_CACHE.md)を参照してください。

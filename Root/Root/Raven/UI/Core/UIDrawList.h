@@ -197,6 +197,9 @@ public:
     // Element自身のClipChildrenはSelf描画ではなくDescendantへ適用するため、呼び出し側で適用範囲を分けます。
     void ApplyClip(std::size_t firstCommand, const UIClipRect& clip);
 
+    // 最終座標/Transform/Clipを保持したCommandをPainter順のまま複製します。
+    // sourceとの所有権は独立し、Polygon頂点列とTexture Refも値として保持します。
+    void AppendRange(const UIDrawList& source, std::size_t firstCommand = 0u);
     const std::vector<UIDrawCommand>& GetCommands() const;
     std::size_t GetCommandCount() const;
     // DrawListが保持しているvector capacityを概算し、frame間で再利用されるCPUメモリ量を返します。

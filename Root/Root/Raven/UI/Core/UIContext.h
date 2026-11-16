@@ -74,6 +74,9 @@ struct UIFrameMetrics
     std::size_t RetainedAllocationBytes = 0u;
     std::size_t ElementCount = 0u;
     std::size_t PeakElementCount = 0u;
+    UIDrawListCacheMetrics DrawListCache;
+    std::size_t DrawListCacheRetainedBytes = 0u;
+    std::size_t DrawListCacheCommandCount = 0u;
     AllocationMeasurement CppAllocations;
 };
 

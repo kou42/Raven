@@ -12,14 +12,16 @@ namespace Raven
 {
 namespace
 {
-std::size_t CountUIElements(const UIElement& element)
+std::size_t CountUIElements(const UIElement& element, std::size_t& cacheBytes, std::size_t& cacheCommands)
 {
     std::size_t count = 1u;
+    cacheBytes += element.GetDrawListCacheRetainedBytes();
+    cacheCommands += element.GetDrawListCacheCommandCount();
     for (const auto& child : element.GetChildren())
     {
         if (child != nullptr)
         {
-            count += CountUIElements(*child);
+            count += CountUIElements(*child, cacheBytes, cacheCommands);
         }
     }
     return count;
@@ -349,6 +351,7 @@ void UIContext::EndFrame()
     // UIElement Treeはframeを跨いで保持し、描画直前にAbsolute / Vertical / Horizontal Layoutを解決して
     // 今frame用DrawCommandへ展開します。将来Measure / Arrangeを分離してもUIContextのframe境界は維持します。
     m_LastFrameMetrics.LayoutMilliseconds = 0.0;
+    m_LastFrameMetrics.DrawListCache = {};
     UpdateTooltip();
     if (m_DragActive == true)
     {
@@ -361,7 +364,7 @@ void UIContext::EndFrame()
     }
     if (m_RootElement != nullptr)
     {
-        m_RootElement->BuildDrawList(m_DrawList, &m_LastFrameMetrics.LayoutMilliseconds);
+        m_RootElement->BuildDrawList(m_DrawList, &m_LastFrameMetrics.LayoutMilliseconds, &m_LastFrameMetrics.DrawListCache);
     }
 
     // Drag Previewは通常のTree描画後に追加し、WidgetのClip/Transformを継承しません。
@@ -437,8 +440,11 @@ void UIContext::EndFrame()
     m_LastFrameMetrics.FrameAllocatedBytes = m_DrawList.GetFrameAllocatedBytes();
     m_LastFrameMetrics.RetainedAllocationBytes =
         m_DrawList.GetRetainedAllocationBytes();
+    m_LastFrameMetrics.DrawListCacheRetainedBytes = 0u;
+    m_LastFrameMetrics.DrawListCacheCommandCount = 0u;
     m_LastFrameMetrics.ElementCount = m_RootElement != nullptr
-        ? CountUIElements(*m_RootElement) : 0u;
+        ? CountUIElements(*m_RootElement, m_LastFrameMetrics.DrawListCacheRetainedBytes,
+            m_LastFrameMetrics.DrawListCacheCommandCount) : 0u;
     m_LastFrameMetrics.PeakElementCount = std::max(
         m_LastFrameMetrics.PeakElementCount, m_LastFrameMetrics.ElementCount);
 

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <limits>
 #include <utility>
+#include <typeinfo>
 
 namespace Raven
 {
@@ -17,6 +18,75 @@ bool SameThickness(const UIThickness& left, const UIThickness& right)
 }
 } // namespace
 
+
+// SnapshotはElement自身が所有し、Disable/破棄時に解放します。
+// 親やContextへの非所有pointerをCache内へ保存しないため、移譲/破棄順に依存しません。
+struct UIElement::DrawListCacheState
+{
+    UIDrawList Commands;
+    bool Valid = false;
+    bool EligibilityKnown = false;
+    bool Eligible = false;
+    math::Vec2 AbsolutePosition{};
+    math::Vec2 Size{};
+    UITransform2D WorldTransform{};
+    UIClipRect InheritedClip{};
+    math::Vec4 VisualColor{};
+};
+
+void UIElement::SetDrawListCacheEnabled(bool enabled)
+{
+    if (enabled == IsDrawListCacheEnabled())
+    {
+        return;
+    }
+    if (enabled == true)
+    {
+        m_DrawListCache = CreateScope<DrawListCacheState>();
+    }
+    else
+    {
+        m_DrawListCache.reset();
+    }
+    // 祖先のSnapshotに隠れて新しいCache方針が反映されないことを防ぎます。
+    InvalidateGeometry();
+}
+bool UIElement::IsDrawListCacheEnabled() const { return m_DrawListCache != nullptr; }
+std::size_t UIElement::GetDrawListCacheRetainedBytes() const
+{
+    return m_DrawListCache != nullptr
+        ? sizeof(DrawListCacheState) + m_DrawListCache->Commands.GetRetainedAllocationBytes() : 0u;
+}
+std::size_t UIElement::GetDrawListCacheCommandCount() const
+{
+    return m_DrawListCache != nullptr ? m_DrawListCache->Commands.GetCommandCount() : 0u;
+}
+bool UIElement::SupportsDrawListCache() const
+{
+    return typeid(*this) == typeid(UIElement);
+}
+bool UIElement::IsSubtreeDrawListCacheSupported() const
+{
+    if (SupportsDrawListCache() == false)
+    {
+        return false;
+    }
+    for (const auto& child : m_Children)
+    {
+        if (child != nullptr && child->IsSubtreeDrawListCacheSupported() == false)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+void UIElement::InvalidateDrawListCache()
+{
+    if (m_DrawListCache != nullptr)
+    {
+        m_DrawListCache->Valid = false;
+    }
+}
 
 UIThickness::UIThickness() = default;
 UIThickness::UIThickness(float uniform) : Left(uniform), Top(uniform), Right(uniform), Bottom(uniform) {}
@@ -497,6 +567,7 @@ void UIElement::RefreshDPIMetrics()
 
 void UIElement::RefreshDPIMetricsRecursive()
 {
+    InvalidateDrawListCache();
     m_PaintDirty = true;
     m_GeometryDirty = true;
     m_StyleDirty = true;
@@ -560,7 +631,7 @@ void UIElement::SetPressed(bool value)
 }
 void UIElement::HandleMouseEvent(UIMouseEvent& event) { InvalidateGeometry(); OnMouseEvent(event); }
 
-void UIElement::BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds)
+void UIElement::BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds, UIDrawListCacheMetrics* cacheMetrics)
 {
     const auto layoutStarted = std::chrono::steady_clock::now();
     if (m_MeasureDirty == true)
@@ -578,7 +649,7 @@ void UIElement::BuildDrawList(UIDrawList& drawList, double* layoutMilliseconds)
         *layoutMilliseconds = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - layoutStarted).count();
     }
-    BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled());
+    BuildDrawListRecursive(drawList, math::Vec2(0.0f, 0.0f), UITransform2D::Identity(), UIClipRect::Disabled(), cacheMetrics);
 }
 
 math::Vec2 UIElement::OnMeasureContent() const
@@ -657,6 +728,7 @@ math::Vec2 UIElement::GetDesiredSizeWithMargin() const
 // 祖先へは集約だけを行い、兄弟を無効化しません。継承Visual変更だけ子孫へ明示伝播します。
 void UIElement::InvalidateVisualSubtree(bool geometry, bool style)
 {
+    InvalidateDrawListCache();
     m_PaintDirty = true;
     m_GeometryDirty = m_GeometryDirty || geometry;
     m_StyleDirty = m_StyleDirty || style;
@@ -669,6 +741,7 @@ void UIElement::InvalidateVisual(bool geometry, bool style, bool descendants)
 {
     for (UIElement* current = this; current != nullptr; current = current->m_Parent)
     {
+        current->InvalidateDrawListCache();
         current->m_PaintDirty = true;
         current->m_GeometryDirty = current->m_GeometryDirty || geometry;
         current->m_StyleDirty = current->m_StyleDirty || style;
@@ -693,6 +766,7 @@ void UIElement::InvalidateMeasure()
     // 深い階層でもRootがLayout開始を判断できるよう全祖先へ伝えます。
     for (UIElement* current = this; current != nullptr; current = current->m_Parent)
     {
+        current->InvalidateDrawListCache();
         current->m_MeasureDirty = true;
         current->m_ArrangeDirty = true;
         current->m_GeometryDirty = true;
@@ -703,6 +777,7 @@ void UIElement::InvalidateArrange()
 {
     for (UIElement* current = this; current != nullptr; current = current->m_Parent)
     {
+        current->InvalidateDrawListCache();
         current->m_ArrangeDirty = true;
         current->m_GeometryDirty = true;
         current->m_PaintDirty = true;
@@ -861,8 +936,14 @@ float UIElement::ResolveAlignedOffset(float available, float size, UIAlignment a
 
 void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& arrangedSize)
 {
+    const math::Vec2 nextSize = ClampSize(arrangedSize);
+    // 同値ArrangeではSnapshotを保持し、実配置が変わる場合だけ失効させます。
+    if ((m_Position == position && m_Size == nextSize) == false)
+    {
+        InvalidateGeometry();
+    }
     m_Position = position;
-    m_Size = ClampSize(arrangedSize);
+    m_Size = nextSize;
 
     const float contentWidth = std::max(0.0f, m_Size.x - m_Padding.Left - m_Padding.Right);
     const float contentHeight = std::max(0.0f, m_Size.y - m_Padding.Top - m_Padding.Bottom);
@@ -965,10 +1046,11 @@ void UIElement::ArrangeRecursive(const math::Vec2& position, const math::Vec2& a
     m_ArrangeDirty = false;
 }
 
-void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition, const UITransform2D& parentWorldTransform, const UIClipRect& inheritedClip)
+void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& parentAbsolutePosition, const UITransform2D& parentWorldTransform, const UIClipRect& inheritedClip, UIDrawListCacheMetrics* cacheMetrics)
 {
     // 描画要求を再構築する直前に消費します。構築中の新たな無効化は次Frameへ残します。
     // 非表示Subtreeは走査しません。再表示はMeasureを無効化して全体を再構築します。
+    const bool wasDirty = m_PaintDirty || m_GeometryDirty || m_StyleDirty;
     m_PaintDirty = false;
     m_GeometryDirty = false;
     m_StyleDirty = false;
@@ -981,6 +1063,54 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
     const math::Vec2 pivot(absolutePosition.x + m_Size.x * m_TransformPivot.x, absolutePosition.y + m_Size.y * m_TransformPivot.y);
     const UITransform2D localTransform = UITransform2D::CreateScaleRotation(pivot, m_Rotation, m_Scale);
     const UITransform2D worldTransform = UITransform2D::Combine(parentWorldTransform, localTransform);
+
+    auto* cache = m_DrawListCache.get();
+    bool eligible = false;
+    const math::Vec4 visualColor = cache != nullptr
+        ? ApplyVisualColor(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f)) : math::Vec4{};
+    if (cache != nullptr)
+    {
+        if (cache->EligibilityKnown == false)
+        {
+            cache->Eligible = IsSubtreeDrawListCacheSupported();
+            cache->EligibilityKnown = true;
+        }
+        eligible = cache->Eligible;
+        const auto& savedTransform = cache->WorldTransform;
+        const bool sameTransform = savedTransform.M00 == worldTransform.M00 &&
+            savedTransform.M01 == worldTransform.M01 && savedTransform.M10 == worldTransform.M10 &&
+            savedTransform.M11 == worldTransform.M11 && savedTransform.Translation == worldTransform.Translation;
+        const bool sameClip = cache->InheritedClip.Enabled == inheritedClip.Enabled &&
+            (inheritedClip.Enabled == false ||
+                (cache->InheritedClip.Rect.Min == inheritedClip.Rect.Min && cache->InheritedClip.Rect.Max == inheritedClip.Rect.Max));
+        // 最終座標のSnapshotなので、親条件が変わった際に再baseせず通常経路へ戻します。
+        if (eligible == true && cache->Valid == true && wasDirty == false &&
+            cache->AbsolutePosition == absolutePosition && cache->Size == m_Size &&
+            sameTransform == true && sameClip == true && cache->VisualColor == visualColor)
+        {
+            drawList.AppendRange(cache->Commands);
+            if (cacheMetrics != nullptr)
+            {
+                ++cacheMetrics->HitCount;
+                cacheMetrics->ReplayedCommandCount += cache->Commands.GetCommandCount();
+            }
+            return;
+        }
+        cache->Valid = false;
+        if (cacheMetrics != nullptr)
+        {
+            if (eligible == true)
+            {
+                ++cacheMetrics->MissCount;
+            }
+            else
+            {
+                ++cacheMetrics->RejectedCount;
+            }
+        }
+        // 失効時に古いCommandの参照を解放し、capacityだけを再利用します。
+        cache->Commands.Clear();
+    }
 
     const std::size_t firstCommand = drawList.GetCommandCount();
     OnBuildDrawList(drawList, absolutePosition);
@@ -1002,9 +1132,44 @@ void UIElement::BuildDrawListRecursive(UIDrawList& drawList, const math::Vec2& p
     {
         if (child != nullptr)
         {
-            child->BuildDrawListRecursive(drawList, absolutePosition, worldTransform, childClip);
+            child->BuildDrawListRecursive(drawList, absolutePosition, worldTransform, childClip, cacheMetrics);
         }
     }
+    // Widget構築中のCache設定変更に備え、所有状態を再取得します。
+    cache = m_DrawListCache.get();
+    // 毎Frame変わるSubtreeでは保持用コピーを行いません。clean Frameを一度通常生成してから採取します。
+    // OnBuild中に再無効化された場合もSnapshotを確定しません。
+    if (cache != nullptr && eligible == true && wasDirty == false &&
+        m_PaintDirty == false && m_GeometryDirty == false && m_StyleDirty == false)
+    {
+        const auto& commands = drawList.GetCommands();
+        const bool hasResourceCommand = std::any_of(commands.begin() + firstCommand, commands.end(),
+            [](const UIDrawCommand& command)
+            {
+                return command.Type == UIDrawCommandType::Image || command.Texture != nullptr ||
+                    command.TextureView.GetSourceType() != UITextureSourceType::None;
+            });
+        if (hasResourceCommand == false)
+        {
+            cache->Commands.AppendRange(drawList, firstCommand);
+            cache->AbsolutePosition = absolutePosition;
+            cache->Size = m_Size;
+            cache->WorldTransform = worldTransform;
+            cache->InheritedClip = inheritedClip;
+            cache->VisualColor = visualColor;
+            cache->Valid = true;
+            if (cacheMetrics != nullptr)
+            {
+                ++cacheMetrics->CaptureCount;
+            }
+        }
+        else if (cacheMetrics != nullptr)
+        {
+            // Font/Textureの内容世代をまだ追跡しないため、Ref寿命だけを根拠に再利用しません。
+            ++cacheMetrics->RejectedCount;
+        }
+    }
+
 }
 
 void UIElement::SetContextRecursive(UIContext* context)
@@ -1032,6 +1197,14 @@ void UIElement::SetContextRecursive(UIContext* context)
 
 void UIElement::NotifyBindingTreeChanged()
 {
+    for (UIElement* current = this; current != nullptr; current = current->m_Parent)
+    {
+        if (current->m_DrawListCache != nullptr)
+        {
+            current->m_DrawListCache->EligibilityKnown = false;
+            current->m_DrawListCache->Valid = false;
+        }
+    }
     UIElement* root = GetTreeRoot();
     if (root->m_TreeGeneration == std::numeric_limits<uint64_t>::max())
     {

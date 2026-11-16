@@ -345,6 +345,29 @@ void UIDrawList::ApplyClip(std::size_t firstCommand, const UIClipRect& clip)
     }
 }
 
+void UIDrawList::AppendRange(const UIDrawList& source, std::size_t firstCommand)
+{
+    if (&source == this || firstCommand >= source.m_Commands.size())
+    {
+        return;
+    }
+    const std::size_t previousCapacity = m_Commands.capacity();
+    const std::size_t firstCopied = m_Commands.size();
+    m_Commands.insert(m_Commands.end(), source.m_Commands.begin() + firstCommand, source.m_Commands.end());
+    if (m_Commands.capacity() != previousCapacity)
+    {
+        RecordFrameAllocation(m_Commands.capacity() * sizeof(UIDrawCommand));
+    }
+    // Commandコピーに伴うPolygonの確保も既存DrawList診断へ含めます。
+    for (std::size_t index = firstCopied; index < m_Commands.size(); ++index)
+    {
+        if (m_Commands[index].Points.capacity() != 0u)
+        {
+            RecordFrameAllocation(m_Commands[index].Points.capacity() * sizeof(math::Vec2));
+        }
+    }
+}
+
 const std::vector<UIDrawCommand>& UIDrawList::GetCommands() const
 {
     return m_Commands;

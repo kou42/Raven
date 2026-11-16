@@ -3,6 +3,11 @@
 namespace Raven
 {
 
+bool UICircle::SupportsDrawListCache() const
+{
+    return true;
+}
+
 void UICircle::SetFillColor(const math::Vec4& color)
 {
     if (m_FillColor == color)

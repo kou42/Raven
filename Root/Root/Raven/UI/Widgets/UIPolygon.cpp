@@ -5,6 +5,11 @@
 namespace Raven
 {
 
+bool UIPolygon::SupportsDrawListCache() const
+{
+    return true;
+}
+
 void UIPolygon::SetPoints(std::vector<math::Vec2> points)
 {
     // SVG path/polygonでは閉輪郭を明示するため、先頭頂点を末尾へ再記述する入力があります。

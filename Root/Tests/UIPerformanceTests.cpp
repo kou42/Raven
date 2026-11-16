@@ -264,6 +264,7 @@ int main()
     TestUIAllocationMeasurement();
     TestUIWindowRecording();
     TestUIModernizationBaseline();
+    TestUIDrawListCachePerformance();
     std::cout << "[PASS] UI multiwindow and allocation tests (profiling "
         << (Raven::IsAllocationMeasurementEnabled() == true ? "enabled" : "disabled") << ")\n";
 }
@@ -352,6 +353,92 @@ void TestUIModernizationBaseline()
                 << ',' << value.DrawCommandCount << ',' << value.VertexCount << ',' << value.IndexCount
                 << ',' << value.ElementCount << ',' << value.FrameAllocationCount << ',' << value.RetainedAllocationBytes
                 << ',' << value.CppAllocations.Available << ',' << allocations / sampleFrames << ',' << bytes / sampleFrames << '\n';
+        }
+    }
+}
+
+void TestUIDrawListCachePerformance()
+{
+    constexpr int warmup = 30;
+    constexpr int samples = 120;
+    std::cout << "cache_baseline,widgets,case,enabled,samples,build_ms,end_frame_ms,layout_ms,drawlist_ms,hits,captures,misses,replayed,cache_bytes,cache_commands,drawlist_bytes,commands,vertices,indices,frame_allocations\n";
+    for (const std::size_t count : {100u, 1000u, 10000u})
+    {
+        for (int scenario = 0; scenario < 3; ++scenario)
+        {
+            for (bool enabled : {false, true})
+            {
+                Raven::UIContext context;
+                std::vector<Raven::UIPanel*> moving;
+                const std::size_t dynamicCount = scenario == 0 ? 0u : scenario == 1 ? count : count / 10u;
+                const std::size_t staticCount = count - dynamicCount;
+                for (int group = 0; group < 2; ++group)
+                {
+                    const std::size_t population = group == 0 ? staticCount : dynamicCount;
+                    if (population == 0u)
+                    {
+                        continue;
+                    }
+                    auto subtree = Raven::CreateScope<Raven::UIElement>();
+                    subtree->SetPosition({group == 0 ? 0.0f : 1000.0f, 0.0f});
+                    subtree->SetSize({1000.0f, static_cast<float>((population + 9u) / 10u) * 20.0f});
+                    subtree->SetDrawListCacheEnabled(enabled);
+                    for (std::size_t index = 0; index < population; ++index)
+                    {
+                        auto panel = Raven::CreateScope<Raven::UIPanel>();
+                        panel->SetPosition({static_cast<float>(index % 10u) * 100.0f,
+                            static_cast<float>(index / 10u) * 20.0f});
+                        panel->SetSize({96.0f, 18.0f});
+                        if (group == 1)
+                        {
+                            moving.push_back(panel.get());
+                        }
+                        subtree->AddChild(std::move(panel));
+                    }
+                    context.AddRootChild(std::move(subtree));
+                }
+                double build = 0.0, endFrame = 0.0, layout = 0.0, draw = 0.0;
+                double hits = 0.0, captures = 0.0, misses = 0.0, replayed = 0.0;
+                for (int frame = 0; frame < warmup + samples; ++frame)
+                {
+                    context.BeginFrame({1280.0f, 720.0f}, {1280.0f, 720.0f}, 1.0f, 1.0f);
+                    for (auto* panel : moving)
+                    {
+                        panel->SetSize({95.0f + static_cast<float>(frame % 2), 18.0f});
+                        panel->SetBackgroundColor({frame % 2 == 0 ? 0.3f : 0.7f, 0.4f, 0.5f, 1.0f});
+                    }
+                    const auto started = std::chrono::steady_clock::now();
+                    context.EndFrame();
+                    const double elapsed = std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - started).count();
+                    const auto& value = context.GetLastFrameMetrics();
+                    Check(value.DrawCommandCount == count && value.VertexCount == count * 4u &&
+                        value.IndexCount == count * 6u, "cache benchmark draw population");
+                    if (frame >= warmup)
+                    {
+                        Check(value.DrawListCache.CaptureCount == 0u && value.DrawListCache.RejectedCount == 0u,
+                            "warm cache avoids dynamic snapshot copies");
+                        Check(value.DrawListCache.HitCount == (enabled == true && staticCount > 0u ? 1u : 0u),
+                            "cache hits only static subtree");
+                        build += value.BuildMilliseconds;
+                        endFrame += elapsed;
+                        layout += value.LayoutMilliseconds;
+                        draw += value.DrawListMilliseconds;
+                        hits += static_cast<double>(value.DrawListCache.HitCount);
+                        captures += static_cast<double>(value.DrawListCache.CaptureCount);
+                        misses += static_cast<double>(value.DrawListCache.MissCount);
+                        replayed += static_cast<double>(value.DrawListCache.ReplayedCommandCount);
+                    }
+                }
+                const auto& value = context.GetLastFrameMetrics();
+                std::cout << "cache_baseline," << count << ',' << (scenario == 0 ? "static" : scenario == 1 ? "dynamic" : "mixed90_10")
+                    << ',' << enabled << ',' << samples << ',' << build / samples << ',' << endFrame / samples
+                    << ',' << layout / samples << ',' << draw / samples << ',' << hits / samples << ',' << captures / samples
+                    << ',' << misses / samples << ',' << replayed / samples << ',' << value.DrawListCacheRetainedBytes
+                    << ',' << value.DrawListCacheCommandCount << ',' << value.RetainedAllocationBytes
+                    << ',' << value.DrawCommandCount << ',' << value.VertexCount << ',' << value.IndexCount
+                    << ',' << value.FrameAllocationCount << '\n';
+            }
         }
     }
 }

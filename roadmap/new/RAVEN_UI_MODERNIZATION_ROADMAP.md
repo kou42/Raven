@@ -1,8 +1,8 @@
 # Raven UI Modernization Roadmap
 
-更新日: 2026-11-16
+更新日: 2026-11-17
 対象: `Root/Root/Raven/UI`、Raven Editor / Runtime UI  
-状態: **M0/M1実装・検証済み（GPU確認はOpenGLの既存統合ケースに限定）**（本書のPhase M0〜M7は既存ロードマップのPhase 1〜14とは別管理）
+状態: **M0〜M2実装・検証済み（M2は監査済み型の明示opt-in、GPU確認はOpenGL統合ケースに限定）**（本書のPhase M0〜M7は既存ロードマップのPhase 1〜14とは別管理）
 
 ## 目的
 
@@ -89,10 +89,11 @@ Raven Editor / Runtime
 
 ### M2: DrawList Cache
 
-- [ ] `UIDrawList`を維持しつつSubtree単位の描画コマンド再利用方式を検討する。
-- [ ] 親Transform/Clip、Z順、Popup、Tooltip、Frame Overlay、Texture寿命を考慮する。
-- [ ] Text Glyph / SVG Tessellationのキャッシュ境界を整理する。
-- [ ] 静的/動的混在ケースでBuild CPU時間とメモリ使用量を比較する。
+- [x] `UIDrawList`を維持しつつSubtree単位の描画コマンド再利用方式を検討する。
+- [x] 親Transform/Clip、Z順、Popup、Tooltip、Frame Overlay、Texture寿命を考慮する。
+- [x] Text Glyph / SVG Tessellationのキャッシュ境界を整理する。
+- [x] 静的/動的混在ケースでBuild CPU時間とメモリ使用量を比較する。
+- 実装・測定結果: [M2 Cache](../../docs/UI_MODERNIZATION_M2_CACHE.md)。Debug/ReleaseのUI回帰とCache off/onのOpenGL GPU統合成功。Release 10,000静的WidgetでBuild約74.8%削減、Snapshot保持約1.92MB。Text/Texture/SVG/未監査型は通常生成を維持。
 - **完了条件**: 描画一致を維持したうえで、静的UIのCPU Build削減を実測できる。
 
 ### M3: MVVC / View-driven Pull
