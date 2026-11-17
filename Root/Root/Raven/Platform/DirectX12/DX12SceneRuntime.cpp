@@ -60,7 +60,8 @@ RHIFrameResult DX12SceneRuntime::RenderAuxiliaryUIWindow(Window& window, const U
     PreparedExplicitUI prepared;
     // Mainと同一Device上のPSO/Textureを使用します。準備はどのCommandListも記録して
     // いない境界で行い、Mainが書いたViewportを同じQueueの後続CommandでSamplingします。
-    if (state.Renderer.Prepare(*m_Device, drawList, width, height,
+    if (state.Renderer.Prepare(*m_Device, drawList,
+        math::Vec2(static_cast<float>(window.GetWidth()), static_cast<float>(window.GetHeight())), width, height,
         m_DefaultTexture, m_UIPipeline, prepared) == false ||
         state.Context.BeginFrame() != RHIFrameResult::Success)
     {

@@ -1239,4 +1239,9 @@
     <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticRemoteSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
     <ClCompile Update="Raven\Network\Windows\WindowsControlStream.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\UI\Rendering"><UniqueIdentifier>{37265425-7bda-4fc3-8187-f3c8ccced781}</UniqueIdentifier></Filter>
+    <ClCompile Update="Raven\UI\Rendering\UIGeometryBuilder.cpp"><Filter>Raven\UI\Rendering</Filter></ClCompile>
+    <ClInclude Update="Raven\UI\Rendering\UIGeometryBuilder.h"><Filter>Raven\UI\Rendering</Filter></ClInclude>
+  </ItemGroup>
 </Project>

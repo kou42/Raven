@@ -117,11 +117,12 @@ Raven Editor / Runtime
 
 ### M5: Geometry Builder / RHI UI Backend
 
-- [ ] `OpenGLUIRenderer`のTessellationとOpenGL State操作を切り分ける。
-- [ ] API非依存のGeometry/Batch中間表現を設計する。
-- [ ] RHI RenderTarget、Scissor、UI Draw offset、Texture/Buffer/CommandListの必要機能を整理する。
-- [ ] Draw順とClipを維持したBatchingを計測する。
-- [ ] OpenGL/RHIのText、SVG、DPI、Multi-Viewport描画を比較する。
+- [x] `OpenGLUIRenderer`のTessellationとOpenGL State操作を切り分ける。
+- [x] API非依存のGeometry/Batch中間表現を設計する。
+- [x] RHI RenderTarget、Scissor、UI Draw offset、Texture/Buffer/CommandListの必要機能を整理する。
+- [x] Draw順とClipを維持したBatchingを計測する。
+- [x] OpenGL/RHIのText、SVG、DPI、Multi-Viewport描画を比較する。
+- 実装・検証結果: [M5 Geometry](../../docs/UI_MODERNIZATION_M5_GEOMETRY.md)。共通Geometry/Pixel Clip/隣接Batch、Explicit論理サイズ、UI専用Alpha合成契約を追加。Debug/Release CPU回帰とOpenGL/Vulkan/DX12 GPU比較・複数Window回帰成功。1/2倍はRGBA完全一致、1.25倍は共有辺上のPixel中心一致点を区別して比較。物理Monitor間DPI・全Driverは未検証。
 - **完了条件**: 既存OpenGL経路を残し、RHI経路で主要UI描画が一致する。
 
 ### M6: Headless UI Testing

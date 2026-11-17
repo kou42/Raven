@@ -52,7 +52,7 @@ public:
     void DestroyAuxiliaryUIWindow(Window& window) override;
     RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
     void SubmitUIFrame(const UIDrawList& drawList,
-        uint32_t viewportWidth, uint32_t viewportHeight) override;
+        uint32_t viewportWidth, uint32_t viewportHeight, const math::Vec2& logicalSize = {}) override;
 
     // Renderer::BeginScene()以降に蓄積された通常Queueを消費し、
     // Texture準備からPresentまでを一つのExplicit Frameとして実行します。
@@ -117,6 +117,7 @@ private:
     Ref<RHIGraphicsPipeline> m_UIPipeline;
     ExplicitUIRenderer m_UIRenderer;
     UIDrawList m_PendingUIDrawList;
+    math::Vec2 m_PendingUILogicalSize{1.0f, 1.0f};
     uint32_t m_PendingUIWidth = 0u;
     uint32_t m_PendingUIHeight = 0u;
     Ref<RHITexture> m_DefaultTexture;

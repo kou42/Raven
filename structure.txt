@@ -1117,6 +1117,8 @@ D:.
     |   |       |       OpenGLUIRenderer.h
     |   |       |       UIRenderer.cpp
     |   |       |       UIRenderer.h
+    |   |       |       UIGeometryBuilder.cpp
+    |   |       |       UIGeometryBuilder.h
     |   |       |       UITessellator.cpp
     |   |       |       UITessellator.h
     |   |       +---Screens

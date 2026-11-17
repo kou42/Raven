@@ -138,11 +138,13 @@ public:
     RHIFrameResult RenderAuxiliaryUIWindow(Window& window, const UIDrawList& drawList) override;
 
     void SubmitUIFrame(const UIDrawList& drawList,
-        uint32_t viewportWidth, uint32_t viewportHeight) override
+        uint32_t viewportWidth, uint32_t viewportHeight, const math::Vec2& logicalSize = {}) override
     {
         m_PendingUIDrawList = drawList;
         m_PendingUIWidth = viewportWidth;
         m_PendingUIHeight = viewportHeight;
+        m_PendingUILogicalSize = logicalSize.x == 0.0f && logicalSize.y == 0.0f
+            ? math::Vec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)) : logicalSize;
     }
 
     // Descriptor準備をBeginFrameより前に行い、Contextと同じRuntimeがSnapshotを保持します。
@@ -176,7 +178,7 @@ public:
             m_PreparedFrame = std::move(prepared);
         }
         if (m_UIRenderer.Prepare(*m_Device, m_PendingUIDrawList,
-            m_PendingUIWidth, m_PendingUIHeight,
+            m_PendingUILogicalSize, m_PendingUIWidth, m_PendingUIHeight,
             m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
         {
             return false;
@@ -444,6 +446,7 @@ private:
     ExplicitUIRenderer m_UIRenderer;
     UIDrawList m_PendingUIDrawList;
     PreparedExplicitUI m_PreparedUI;
+    math::Vec2 m_PendingUILogicalSize{1.0f, 1.0f};
     uint32_t m_PendingUIWidth = 0u;
     uint32_t m_PendingUIHeight = 0u;
     Ref<RHITexture> m_DefaultTexture;

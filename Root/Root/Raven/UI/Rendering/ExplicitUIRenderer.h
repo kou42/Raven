@@ -4,7 +4,7 @@
 #include "Raven/Renderer/RHI/RHIBuffer.h"
 #include "Raven/Renderer/RHI/RHIGraphicsPipeline.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
-#include "Raven/UI/Rendering/UITessellator.h"
+#include "Raven/UI/Rendering/UIGeometryBuilder.h"
 
 #include <unordered_map>
 
@@ -18,7 +18,8 @@ struct PreparedExplicitUI
 {
     Ref<RHIBuffer> VertexBuffer;
     Ref<RHIBuffer> IndexBuffer;
-    std::vector<UITessellatedCommand> Commands;
+    std::vector<UIRenderBatch> Commands;
+    math::Vec2 LogicalSize{};
     std::vector<Ref<RHITexture>> Textures;
     uint32_t ViewportWidth = 0;
     uint32_t ViewportHeight = 0;
@@ -38,6 +39,12 @@ public:
         const Ref<RHITexture>& defaultTexture,
         const Ref<RHIGraphicsPipeline>& pipeline,
         PreparedExplicitUI& outUI);
+
+    // 論理ViewportとFramebufferを分離します。既存overloadは1:1 Pixel入力として委譲します。
+    bool Prepare(RHIDevice& device, const UIDrawList& drawList,
+        const math::Vec2& logicalSize, uint32_t framebufferWidth, uint32_t framebufferHeight,
+        const Ref<RHITexture>& defaultTexture,
+        const Ref<RHIGraphicsPipeline>& pipeline, PreparedExplicitUI& outUI);
 
     bool Draw(RHISceneCommandList& commands,
         const Ref<RHIGraphicsPipeline>& pipeline,

@@ -14,6 +14,7 @@
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UIScrollView.h"
 #include "Raven/UI/Rendering/UITessellator.h"
+#include "Raven/UI/Rendering/UIGeometryBuilder.h"
 
 #include <algorithm>
 #include <chrono>
@@ -842,4 +843,44 @@ void TestUIWidgetLifecycleMeasurements()
     Check(counts.Count > 0u, "M4 representative fixture contains buttons");
     std::cout << "widget_panel,inspector_hierarchy_statistics," << counts.Count << ',' << counts.Overridden << '\n';
     statistics.Detach(); hierarchy.Detach(); inspector.Detach();
+}
+
+void MeasureUIGeometryBatches()
+{
+    std::cout << "geometry,commands,clip_pattern,merge,samples,build_ms,batches,vertices,indices\n";
+    for (std::size_t count : {100u, 1000u, 10000u})
+    {
+        for (bool alternating : {false, true})
+        {
+            Raven::UIDrawList list;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                list.AddRect({0.0f, 0.0f}, {20.0f, 20.0f}, {0.1f, 0.2f, 0.3f, 0.5f});
+                if (alternating == true && i % 2u == 0u)
+                {
+                    list.ApplyClip(i, Raven::UIClipRect::FromRect({{1.1f, 1.1f}, {19.1f, 19.1f}}));
+                }
+            }
+            for (bool merge : {false, true})
+            {
+                double total = 0.0;
+                Raven::UIRenderGeometry geometry;
+                constexpr int warmup = 5, samples = 30;
+                for (int frame = 0; frame < warmup + samples; ++frame)
+                {
+                    const auto start = std::chrono::steady_clock::now();
+                    Check(Raven::UIGeometryBuilder::Build(list, {1280.0f, 720.0f}, 1600u, 900u, geometry, merge), "geometry measurement builds");
+                    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                    Check(geometry.Batches.size() == (merge == true && alternating == false ? 1u : count), "geometry measurement batch population");
+                    if (frame >= warmup)
+                    {
+                        total += ms;
+                    }
+                }
+                std::cout << "geometry," << count << ',' << (alternating == true ? "alternating" : "same")
+                    << ',' << merge << ',' << samples << ',' << total / samples << ',' << geometry.Batches.size()
+                    << ',' << geometry.Vertices.size() << ',' << geometry.Indices.size() << '\n';
+            }
+        }
+    }
 }

@@ -15,6 +15,12 @@
 #include "Raven/Platform/Vulkan/VulkanSceneRHIDevice.h"
 #include "Raven/Platform/Vulkan/VulkanSceneCommandList.h"
 #include "Raven/Assets/RHIShaderAsset.h"
+#include "Raven/Platform/DirectX12/DX12OffscreenRenderTarget.h"
+#include "Raven/UI/Rendering/OpenGLUIRenderer.h"
+#include "Raven/UI/Svg/UISvg.h"
+#include <algorithm>
+#include <vector>
+#include <cstring>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -573,7 +579,7 @@ bool CheckVulkanColorFrame(Raven::VulkanSceneContext& context)
     const bool bgra = context.GetColorFormat() == VK_FORMAT_B8G8R8A8_UNORM;
     const bool matches = readback.CheckPixel(pixels, extent.width, 8, 8, bgra, {26, 51, 77, 255}, "Scene clear color") &&
         readback.CheckPixel(pixels, extent.width, 32, 32, bgra, {64, 128, 191, 255}, "UI opaque reference") &&
-        readback.CheckPixel(pixels, extent.width, 96, 32, bgra, {140, 26, 38, 255}, "UI half alpha blend") &&
+        readback.CheckPixel(pixels, extent.width, 96, 32, bgra, {140, 26, 38, 191}, "UI half alpha blend (OpenGL-compatible Alpha)") &&
         readback.CheckPixel(pixels, extent.width, 160, 32, bgra, {51, 102, 153, 255}, "Viewport texture sampled once");
     vkUnmapMemory(readback.Device, readback.Memory);
     return matches;
@@ -744,8 +750,293 @@ bool TestVulkanAuxiliaryWindows()
     return true;
 }
 
+namespace
+{
+using ParityPixels = std::vector<std::uint8_t>;
+
+// API間ではPixel中心が辺上に重なる場合の微小丸め/充填規約が異なり得ます。
+// 任意の1 Pixel幅を許すのではなく、共有Geometryの辺に中心がほぼ一致する点だけを区別します。
+bool IsUIRasterBoundary(uint32_t x, uint32_t y, const Raven::UIRenderGeometry& geometry,
+    const Raven::math::Vec2& logical, uint32_t width, uint32_t height)
+{
+    const double px = x + 0.5, py = y + 0.5;
+    for (const auto& batch : geometry.Batches)
+    {
+        if (x < batch.Clip.X || y < batch.Clip.Y || x >= batch.Clip.X + batch.Clip.Width || y >= batch.Clip.Y + batch.Clip.Height)
+        {
+            continue;
+        }
+        for (uint32_t i = batch.FirstIndex; i < batch.FirstIndex + batch.IndexCount; i += 3u)
+        {
+            for (uint32_t edge = 0; edge < 3u; ++edge)
+            {
+                const auto& a = geometry.Vertices[geometry.Indices[i + edge]].Position;
+                const auto& b = geometry.Vertices[geometry.Indices[i + (edge + 1u) % 3u]].Position;
+                const double ax = static_cast<double>(a.x) * width / logical.x;
+                const double ay = static_cast<double>(a.y) * height / logical.y;
+                const double dx = static_cast<double>(b.x - a.x) * width / logical.x;
+                const double dy = static_cast<double>(b.y - a.y) * height / logical.y;
+                const double squared = dx * dx + dy * dy;
+                const double projection = (px - ax) * dx + (py - ay) * dy;
+                constexpr double pixelEpsilon = 0.0001;
+                if (squared > 0.0 && projection >= 0.0 && projection <= squared &&
+                    std::abs((px - ax) * dy - (py - ay) * dx) <= pixelEpsilon * std::sqrt(squared))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool CompareUIReadback(const ParityPixels& reference, const ParityPixels& actual, const char* backend,
+    const Raven::UIRenderGeometry& geometry, const Raven::math::Vec2& logical, uint32_t width, uint32_t height)
+{
+    if (reference.size() != actual.size()) { return Check(false, "UI parity image dimensions"); }
+    std::size_t interiors = 0u, boundaries = 0u;
+    int maximum = 0;
+    for (std::size_t i = 0; i < reference.size(); i += 4u)
+    {
+        int delta = 0;
+        for (std::size_t channel = 0; channel < 4u; ++channel)
+        {
+            delta = std::max(delta, std::abs(static_cast<int>(reference[i + channel]) - actual[i + channel]));
+        }
+        maximum = std::max(maximum, delta);
+        if (delta > 3)
+        {
+            const uint32_t x = static_cast<uint32_t>(i / 4u % width);
+            const uint32_t y = static_cast<uint32_t>(i / 4u / width);
+            if (IsUIRasterBoundary(x, y, geometry, logical, width, height) == true)
+            {
+                ++boundaries;
+            }
+            else
+            {
+                if (interiors < 3u) { std::cout << "UI parity non-boundary difference " << x << ',' << y << " error=" << delta << '\n'; }
+                ++interiors;
+            }
+        }
+    }
+    std::cout << "UI parity " << backend << " interior_pixels_over_3=" << interiors
+        << " exact_edge_ties=" << boundaries << " max_error=" << maximum << '\n';
+    return Check(interiors == 0u, "OpenGL/RHI RGBA parity except exact shared-geometry edge ties");
+}
+
+bool ReadVulkanUI(const Raven::UIDrawList& list, const Raven::math::Vec2& logical,
+    uint32_t width, uint32_t height, ParityPixels& pixels)
+{
+    Raven::WindowSpecification specification("M5 Vulkan UI parity", width, height, Raven::RHIBackend::Vulkan);
+    auto window = Raven::Window::Create(specification);
+    Raven::VulkanSceneContext context;
+    if (window == nullptr || context.Init(*window) == false) { return Check(false, "Vulkan parity Context"); }
+    Raven::VulkanSceneRHIDevice device(context);
+    Raven::VulkanSceneCommandList commands(context);
+    Raven::RHIShaderAssetManager shaders;
+    auto vertex = shaders.Load("Raven/Assets/Shaders/Vulkan/UI.vert.spv", Raven::RHIBackend::Vulkan);
+    auto fragment = shaders.Load("Raven/Assets/Shaders/Vulkan/UI.frag.spv", Raven::RHIBackend::Vulkan);
+    Raven::Ref<Raven::RHIGraphicsPipeline> pipeline;
+    if (vertex == nullptr || fragment == nullptr || Raven::ExplicitUIRenderer::CreatePipeline(device,
+        vertex->GetBinary(), fragment->GetBinary(), pipeline) == false) { return Check(false, "Vulkan parity pipeline"); }
+    Raven::RHITextureSpecification textureSpecification{};
+    textureSpecification.GenerateMips = false;
+    const std::uint8_t white[] = {255, 255, 255, 255};
+    auto whiteTexture = device.CreateTexture(textureSpecification, white, sizeof(white));
+    Raven::ExplicitUIRenderer renderer;
+    Raven::PreparedExplicitUI prepared;
+    const auto extent = context.GetExtent();
+    VulkanColorReadback readback(context.GetDevice());
+    if (extent.width != width || extent.height != height ||
+        renderer.Prepare(device, list, logical, width, height, whiteTexture, pipeline, prepared) == false ||
+        readback.Init(context.GetDevice().GetPhysicalDeviceHandle(), static_cast<VkDeviceSize>(width) * height * 4u) == false ||
+        context.BeginFrame() != Raven::RHIFrameResult::Success || renderer.Draw(commands, pipeline, prepared) == false ||
+        context.CopyColorToBuffer(readback.Buffer, readback.Size) == false ||
+        context.EndFrame() != Raven::RHIFrameResult::Success || context.Present() == Raven::RHIFrameResult::FatalError ||
+        context.GetDevice().WaitIdle() == false) { return Check(false, "Vulkan parity render/readback"); }
+    void* mapped = nullptr;
+    if (vkMapMemory(readback.Device, readback.Memory, 0, readback.Size, 0, &mapped) != VK_SUCCESS) { return false; }
+    pixels.assign(static_cast<std::uint8_t*>(mapped), static_cast<std::uint8_t*>(mapped) + width * height * 4u);
+    vkUnmapMemory(readback.Device, readback.Memory);
+    if (context.GetColorFormat() == VK_FORMAT_B8G8R8A8_UNORM)
+    {
+        for (std::size_t i = 0; i < pixels.size(); i += 4u) { std::swap(pixels[i], pixels[i + 2u]); }
+    }
+    return true;
+}
+
+bool ReadDX12UI(const Raven::UIDrawList& list, const Raven::math::Vec2& logical,
+    uint32_t width, uint32_t height, ParityPixels& pixels)
+{
+    Raven::WindowSpecification specification("M5 DX12 UI parity", width, height, Raven::RHIBackend::DirectX12);
+    auto window = Raven::Window::Create(specification);
+    Raven::DX12SceneContext context;
+    if (window == nullptr || context.Init(*window) == false) { return Check(false, "DX12 parity Context"); }
+    Raven::DX12SceneRHIDevice device(context);
+    Raven::DX12SceneCommandList commands(context);
+    Raven::RHIShaderAssetManager shaders;
+    Raven::RHIShaderAssetSpecification vs{}, fs{};
+    vs.DirectX12Path = "Raven/Assets/Shaders/DirectX12/UI.vs.dxil"; vs.EntryPoint = "VSMain";
+    fs.DirectX12Path = "Raven/Assets/Shaders/DirectX12/UI.ps.dxil"; fs.EntryPoint = "PSMain";
+    auto vertex = shaders.Load(vs, Raven::RHIBackend::DirectX12);
+    auto fragment = shaders.Load(fs, Raven::RHIBackend::DirectX12);
+    Raven::Ref<Raven::RHIGraphicsPipeline> pipeline;
+    if (vertex == nullptr || fragment == nullptr || Raven::ExplicitUIRenderer::CreatePipeline(device,
+        vertex->GetBinary(), fragment->GetBinary(), pipeline) == false) { return Check(false, "DX12 parity pipeline"); }
+    Raven::RHITextureSpecification textureSpecification{};
+    textureSpecification.GenerateMips = false;
+    const std::uint8_t white[] = {255, 255, 255, 255};
+    auto whiteTexture = device.CreateTexture(textureSpecification, white, sizeof(white));
+    Raven::RHIOffscreenRenderTargetSpecification targetSpecification{};
+    targetSpecification.Width = width; targetSpecification.Height = height;
+    targetSpecification.ClearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+    auto target = device.CreateOffscreenRenderTarget(targetSpecification);
+    auto native = std::dynamic_pointer_cast<Raven::DX12OffscreenRenderTarget>(target);
+    Raven::ExplicitUIRenderer renderer;
+    Raven::PreparedExplicitUI prepared;
+    if (native == nullptr || renderer.Prepare(device, list, logical, width, height,
+        whiteTexture, pipeline, prepared) == false) { return Check(false, "DX12 parity prepare"); }
+    auto* nativeDevice = context.GetNativeDevice();
+    const auto description = native->GetColorResource()->GetDesc();
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+    UINT64 size = 0;
+    nativeDevice->GetCopyableFootprints(&description, 0, 1, 0, &footprint, nullptr, nullptr, &size);
+    D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_READBACK;
+    D3D12_RESOURCE_DESC buffer{};
+    buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; buffer.Width = size;
+    buffer.Height = 1; buffer.DepthOrArraySize = 1; buffer.MipLevels = 1;
+    buffer.SampleDesc.Count = 1; buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    Microsoft::WRL::ComPtr<ID3D12Resource> readback;
+    if (FAILED(nativeDevice->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &buffer,
+        D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback))) ||
+        context.BeginFrame() != Raven::RHIFrameResult::Success ||
+        context.BeginOffscreenRenderTarget(target, targetSpecification.ClearColor.data()) == false ||
+        renderer.Draw(commands, pipeline, prepared) == false || context.EndOffscreenRenderTarget(target) == false)
+    { return Check(false, "DX12 parity draw"); }
+    // 計測専用Readback。既存公開native境界を借用し、Resourceを元のSampling状態へ戻します。
+    // ContextのFrame Fenceが終わるまでreadback/target/preparedをこのStackで保持します。
+    auto* cmd = context.GetActiveCommandList();
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = native->GetColorResource();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    cmd->ResourceBarrier(1, &barrier);
+    D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
+    source.pResource = native->GetColorResource(); source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    destination.pResource = readback.Get(); destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    destination.PlacedFootprint = footprint;
+    cmd->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+    std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+    cmd->ResourceBarrier(1, &barrier);
+    if (context.EndFrame() != Raven::RHIFrameResult::Success || context.Present() == Raven::RHIFrameResult::FatalError ||
+        context.Resize(width, height) == false) { return Check(false, "DX12 parity Fence/Resize"); }
+    // Resizeは旧FrameのFence完了を待つ既存契約なので、ここからCPUで読み取れます。
+    void* mapped = nullptr;
+    D3D12_RANGE range{0, static_cast<SIZE_T>(size)};
+    if (FAILED(readback->Map(0, &range, &mapped))) { return false; }
+    pixels.resize(static_cast<std::size_t>(width) * height * 4u);
+    for (uint32_t y = 0; y < height; ++y)
+    {
+        std::memcpy(pixels.data() + static_cast<std::size_t>(y) * width * 4u,
+            static_cast<std::uint8_t*>(mapped) + footprint.Offset + static_cast<std::size_t>(y) * footprint.Footprint.RowPitch, width * 4u);
+    }
+    D3D12_RANGE noWrites{0, 0}; readback->Unmap(0, &noWrites);
+    return true;
+}
+
+bool TestUIGeometryParity()
+{
+    if (glfwInit() == GLFW_FALSE) { return false; }
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    auto window = std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)>(
+        glfwCreateWindow(320, 240, "M5 OpenGL parity", nullptr, nullptr), glfwDestroyWindow);
+    if (window == nullptr) { return false; }
+    glfwMakeContextCurrent(window.get());
+    if (gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) == 0 ||
+        Raven::RenderCommand::TryInit(Raven::RHIBackend::OpenGL) == false) { return false; }
+    // FontのCPU Pixelを同一Assetとして各Backendへ渡し、Rasterizer差を比較から除きます。
+    Raven::UIFontAtlas font;
+    Raven::UIFontAtlasBuildOptions fontOptions;
+    fontOptions.PixelHeight = 18.0f; fontOptions.AtlasWidth = 128u; fontOptions.AtlasHeight = 128u;
+    std::string fontPath = "C:/Windows/Fonts/arial.ttf";
+#if defined(_MSC_VER)
+    char* configuredFont = nullptr;
+    size_t configuredLength = 0u;
+    if (_dupenv_s(&configuredFont, &configuredLength, "RAVEN_UI_TEST_FONT") == 0 && configuredFont != nullptr && configuredFont[0] != '\0')
+    {
+        fontPath = configuredFont;
+    }
+    std::free(configuredFont);
+#else
+    const char* configuredFont = std::getenv("RAVEN_UI_TEST_FONT");
+    if (configuredFont != nullptr && configuredFont[0] != '\0')
+    {
+        fontPath = configuredFont;
+    }
+#endif
+    Raven::SetRHIBackend(Raven::RHIBackend::Vulkan);
+    const bool built = Raven::UIFontAtlasBuilder::BuildFromFile(fontPath,
+        {'M', '5', ' ', 'C', 'l', 'i', 'p'}, fontOptions, font);
+    Raven::SetRHIBackend(Raven::RHIBackend::OpenGL);
+    if (Check(built && font.GetTexture()->FinalizeRuntimeTexture(), "UI parity real Font Atlas") == false) { return false; }
+    Raven::UIDrawList list;
+    list.AddRect({4.0f, 4.0f}, {100.0f, 32.0f}, {1.0f, 0.0f, 0.0f, 0.5f});
+    list.AddRect({20.0f, 10.0f}, {120.0f, 38.0f}, {0.0f, 1.0f, 0.0f, 0.5f});
+    list.ApplyClip(0u, Raven::UIClipRect::FromRect({{8.2f, 6.3f}, {105.1f, 35.1f}}));
+    const std::size_t textStart = list.GetCommandCount();
+    font.AppendText(list, "M5 Clip", {6.0f, 57.0f}, 20.0f);
+    if (Check(list.GetCommandCount() > textStart + 3u, "parity emits real glyph quads") == false) { return false; }
+    Raven::UISvg svg;
+    if (Check(svg.LoadFromFile("Raven/Assets/Svg/AnimatedRect.svg"), "parity loads SVG subset") == false) { return false; }
+    svg.Stop(); svg.SetPosition({0.0f, 64.0f}); svg.SetSize({150.0f, 56.0f}); svg.BuildDrawList(list);
+    if (Check(list.GetCommandCount() > textStart + 10u, "parity emits SVG geometry") == false) { return false; }
+    struct Case { uint32_t Width; uint32_t Height; float Scale; };
+    for (const Case test : {Case{320, 240, 1.0f}, Case{400, 300, 1.25f}, Case{320, 240, 2.0f}})
+    {
+        glfwMakeContextCurrent(window.get());
+        // Window生成がLegacy Factory用Backendを切り替えるため、比較の各GL入力で明示復帰します。
+        Raven::SetRHIBackend(Raven::RHIBackend::OpenGL);
+        glfwSetWindowSize(window.get(), test.Width, test.Height); glfwPollEvents();
+        const Raven::math::Vec2 logical(static_cast<float>(test.Width) / test.Scale, static_cast<float>(test.Height) / test.Scale);
+        ParityPixels bottom(static_cast<std::size_t>(test.Width) * test.Height * 4u), reference(bottom.size());
+        glBindFramebuffer(GL_FRAMEBUFFER, 0); glViewport(0, 0, test.Width, test.Height);
+        glDisable(GL_SCISSOR_TEST); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+        {
+            Raven::OpenGLUIRenderer renderer;
+            renderer.Render(list, logical, {static_cast<float>(test.Width), static_cast<float>(test.Height)});
+        }
+        glPixelStorei(GL_PACK_ALIGNMENT, 1); glReadBuffer(GL_BACK);
+        glReadPixels(0, 0, test.Width, test.Height, GL_RGBA, GL_UNSIGNED_BYTE, bottom.data());
+        for (uint32_t y = 0; y < test.Height; ++y)
+        {
+            std::memcpy(reference.data() + static_cast<std::size_t>(y) * test.Width * 4u,
+                bottom.data() + static_cast<std::size_t>(test.Height - y - 1u) * test.Width * 4u, test.Width * 4u);
+        }
+        const auto nonzero = std::count_if(reference.begin(), reference.end(), [](std::uint8_t value) { return value != 0u && value != 255u; });
+        if (Check(nonzero > 1000, "parity reference contains rendered content") == false) { return false; }
+        Raven::UIRenderGeometry geometry;
+        if (Raven::UIGeometryBuilder::Build(list, logical, test.Width, test.Height, geometry) == false) { return false; }
+        ParityPixels vulkan, dx12;
+        if (ReadVulkanUI(list, logical, test.Width, test.Height, vulkan) == false ||
+            CompareUIReadback(reference, vulkan, "Vulkan", geometry, logical, test.Width, test.Height) == false ||
+            ReadDX12UI(list, logical, test.Width, test.Height, dx12) == false ||
+            CompareUIReadback(reference, dx12, "DX12", geometry, logical, test.Width, test.Height) == false) { return false; }
+        std::cout << "[PASS] M5 Text/SVG/alpha/Clip UI parity scale=" << test.Scale << " pixels=" << test.Width << 'x' << test.Height << '\n';
+    }
+    return true;
+}
+} // namespace
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--ui-geometry-parity")
+    {
+        return TestUIGeometryParity() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && std::string(argv[1]) == "--vulkan-surface-formats")
     {
         return TestVulkanSurfaceFormats() ? EXIT_SUCCESS : EXIT_FAILURE;

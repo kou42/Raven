@@ -34,6 +34,7 @@
 #include "Raven/Editor/Panels/StatisticsSnapshot.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Rendering/UITessellator.h"
+#include "Raven/UI/Rendering/UIGeometryBuilder.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Scene/Components.h"
@@ -4563,6 +4564,57 @@ void TestUIImageRenderTargetContract()
     CheckNear("bottom-left texture bottom uv", tessellated.Vertices[2u].Texcoord.y, 0.0f);
 }
 
+void TestUIGeometryBuilder()
+{
+    Raven::UIDrawList list;
+    list.AddRect({0.0f, 0.0f}, {20.0f, 20.0f}, {1.0f, 0.0f, 0.0f, 0.5f});
+    list.AddRect({5.0f, 5.0f}, {25.0f, 25.0f}, {0.0f, 1.0f, 0.0f, 0.5f});
+    list.AddRect({0.0f, 0.0f}, {50.0f, 50.0f}, {0.0f, 0.0f, 1.0f, 1.0f});
+    list.ApplyClip(2u, Raven::UIClipRect::FromRect({{10.2f, 20.3f}, {30.1f, 40.1f}}));
+    const auto a = Raven::CreateRef<ImageFixtureTexture>(16u, 16u);
+    const auto b = Raven::CreateRef<ImageFixtureTexture>(16u, 16u);
+    list.AddImage({0.0f, 0.0f}, {10.0f, 10.0f}, Raven::UITextureView::FromTexture(a));
+    list.AddImage({10.0f, 0.0f}, {20.0f, 10.0f}, Raven::UITextureView::FromTexture(a, Raven::UITextureOrigin::BottomLeft));
+    list.AddImage({20.0f, 0.0f}, {30.0f, 10.0f}, Raven::UITextureView::FromTexture(b));
+    list.AddImage({30.0f, 0.0f}, {40.0f, 10.0f}, Raven::UITextureView::FromTexture(a));
+    Raven::UIRenderGeometry merged, original, otherWindow;
+    Check(Raven::UIGeometryBuilder::Build(list, {100.0f, 80.0f}, 125u, 160u, merged), "geometry build");
+    Check(Raven::UIGeometryBuilder::Build(list, {100.0f, 80.0f}, 125u, 160u, original, false), "geometry reference build");
+    Check(original.Batches.size() == 7u && merged.Batches.size() == 5u, "merge only adjacent compatible ranges");
+    Check(merged.Indices == original.Indices && merged.Vertices.size() == original.Vertices.size(), "batching preserves index order and vertices");
+    for (std::size_t i = 0; i < original.Vertices.size(); ++i)
+    {
+        Check(merged.Vertices[i].Position == original.Vertices[i].Position &&
+            merged.Vertices[i].Color == original.Vertices[i].Color &&
+            merged.Vertices[i].Texcoord == original.Vertices[i].Texcoord, "batching preserves transformed vertex data");
+    }
+    Check(merged.Batches[0].FirstIndex == 0u && merged.Batches[0].IndexCount == 12u &&
+        merged.Batches[1].FirstIndex == 12u && merged.Batches[2].FirstIndex == 18u &&
+        merged.Batches[2].IndexCount == 12u && merged.Batches[3].FirstIndex == 30u &&
+        merged.Batches[4].FirstIndex == 36u, "batch index offsets preserve painter order");
+    Check(merged.Batches[1].Clip == Raven::UIPixelClip{12u, 40u, 26u, 41u}, "fractional clip rounds outward in pixel space");
+    Check(merged.Vertices[12u].Texcoord.y == 0.0f && merged.Vertices[16u].Texcoord.y == 1.0f, "texture origins remain per vertex after merge");
+    Check(Raven::UIGeometryBuilder::Build(list, {100.0f, 80.0f}, 150u, 100u, otherWindow), "independent window geometry");
+    Check(otherWindow.Batches[1].Clip == Raven::UIPixelClip{15u, 25u, 31u, 26u} &&
+        merged.Batches[1].Clip == Raven::UIPixelClip{12u, 40u, 26u, 41u}, "window pixel scale does not leak");
+    Raven::UIDrawList clipped;
+    clipped.AddRect({0.0f, 0.0f}, {5.0f, 5.0f}, {1.0f, 1.0f, 1.0f, 1.0f});
+    clipped.ApplyClip(0u, Raven::UIClipRect::FromRect({{1.2f, 1.2f}, {1.2f, 4.0f}}));
+    Check(Raven::UIGeometryBuilder::Build(clipped, {100.0f, 80.0f}, 125u, 160u, otherWindow) &&
+        otherWindow.Batches.empty(), "zero logical clip stays empty at fractional scale");
+    clipped.Clear();
+    clipped.AddRect({0.0f, 0.0f}, {5.0f, 5.0f}, {1.0f, 1.0f, 1.0f, 1.0f});
+    clipped.ApplyClip(0u, Raven::UIClipRect::FromRect({{-4.0f, -5.0f}, {120.0f, 90.0f}}));
+    Check(Raven::UIGeometryBuilder::Build(clipped, {100.0f, 80.0f}, 125u, 160u, otherWindow) &&
+        otherWindow.Batches[0].Clip == Raven::UIPixelClip{0u, 0u, 125u, 160u}, "clip clamps to physical framebuffer");
+    Check(Raven::UIGeometryBuilder::Build(list, {0.0f, 80.0f}, 125u, 160u, otherWindow) == false &&
+        otherWindow.Batches.empty() && otherWindow.Indices.empty(), "invalid viewport publishes no geometry");
+    Check(Raven::UIGeometryBuilder::Build(list, {100.0f, 80.0f}, 0u, 160u, otherWindow) == false, "zero framebuffer rejected");
+    clipped.Clear();
+    Check(Raven::UIGeometryBuilder::Build(clipped, {100.0f, 80.0f}, 125u, 160u, otherWindow) &&
+        otherWindow.Batches.empty(), "empty draw list is a successful empty frame");
+}
+
 void TestUIFrameMetrics()
 {
     const auto textureA = Raven::CreateRef<ImageFixtureTexture>(16u, 16u);
@@ -5730,6 +5782,12 @@ void TestInspectorControllerRebind()
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--measure-ui-geometry")
+    {
+        TestUIGeometryBuilder();
+        MeasureUIGeometryBatches();
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--measure-ui-widgets")
     {
         TestUIAllocationMeasurement();
@@ -5755,6 +5813,7 @@ int main(int argc, char** argv)
     TestUILabelGlyphClipTransform();
     TestUIImageRenderTargetContract();
     TestUIFrameMetrics();
+    TestUIGeometryBuilder();
     TestWindowFramebufferMetrics();
     TestTabSystem();
     TestDragDropRouting();

@@ -10,12 +10,13 @@
 #include "Raven/Renderer/Pipeline/Pipeline.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/UI/Core/UIDrawList.h"
-#include "Raven/UI/Rendering/UITessellator.h"
+#include "Raven/UI/Rendering/UIGeometryBuilder.h"
 
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <numeric>
+#include <limits>
 #include <vector>
 
 namespace Raven
@@ -46,7 +47,10 @@ void OpenGLUIRenderer::Render(
     const math::Vec2& viewportSize,
     const math::Vec2& framebufferSize)
 {
-    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f ||
+    if (std::isfinite(framebufferSize.x) == false || std::isfinite(framebufferSize.y) == false ||
+        static_cast<double>(framebufferSize.x) > (std::numeric_limits<int32_t>::max)() ||
+        static_cast<double>(framebufferSize.y) > (std::numeric_limits<int32_t>::max)() ||
+        viewportSize.x <= 0.0f || viewportSize.y <= 0.0f ||
         framebufferSize.x <= 0.0f || framebufferSize.y <= 0.0f)
     {
         return;
@@ -76,8 +80,10 @@ void OpenGLUIRenderer::Render(
     }
 
     // Shape tessellationはBackend共通層で完了させ、OpenGLはGPU uploadとstate管理だけを担当します。
-    UITessellatedDrawList tessellated{};
-    if (UITessellator::Tessellate(drawList, tessellated) == false)
+    UIRenderGeometry tessellated{};
+    if (UIGeometryBuilder::Build(drawList, viewportSize,
+        static_cast<uint32_t>(framebufferSize.x), static_cast<uint32_t>(framebufferSize.y), tessellated) == false ||
+        tessellated.Batches.empty() == true)
     {
         return;
     }
@@ -147,66 +153,24 @@ void OpenGLUIRenderer::Render(
     RenderCommand::UploadUniform("u_Texture", 0);
     m_VertexArray->Bind();
 
-    // Window論理座標から実Framebuffer Pixelへの倍率。Content Scaleとは独立です。
-    const float pixelScaleX = framebufferSize.x / viewportSize.x;
-    const float pixelScaleY = framebufferSize.y / viewportSize.y;
-
-    // ========================================================================
-    // UI専用Draw Call
-    // ========================================================================
     // UI専用Triangle PipelineをRenderCommandへbind済みなので、
     // 直前SceneのLine/Point topologyを継承せず、RHIのDrawIndexedを利用します。
-    //
-    // Image CommandではUITextureView -> OpenGLで利用可能なTextureへの解決もbackend内だけで行います。
-    // これによりUIDrawCommand / WidgetへOpenGL Texture IDを公開しません。
-    // Polygonを含めCommandごとにIndex数が異なるため、生成時に記録したCountで累積offsetを進めます。
-    std::size_t commandIndex = 0u;
-    for (const UIDrawCommand& command : drawList.GetCommands())
+    // ImageではUITextureViewからTextureへの解決もBackend内で完了し、Widgetへnative IDを公開しません。
+    // Polygonを含むIndex数の差は共通BuilderのFirstIndex/IndexCountで保持します。
+    // 共通Builderが確定したFramebuffer Pixel Clip/Batchを使用します。
+    // 論理座標からPixelへの丸めはここでは繰り返さず、GL固有のY反転だけを担当します。
+    for (const UIRenderBatch& batch : tessellated.Batches)
     {
-        if (command.Clip.Enabled == true)
-        {
-            // Raven UIは左上原点、OpenGL Scissorは左下原点なのでYを反転します。
-            // float境界は外側へ丸め、Transform済みAABBの端にあるpixelを誤って欠落させないようにします。
-            const float clippedLeft = std::clamp(command.Clip.Rect.Min.x, 0.0f, viewportSize.x);
-            const float clippedTop = std::clamp(command.Clip.Rect.Min.y, 0.0f, viewportSize.y);
-            const float clippedRight = std::clamp(command.Clip.Rect.Max.x, 0.0f, viewportSize.x);
-            const float clippedBottom = std::clamp(command.Clip.Rect.Max.y, 0.0f, viewportSize.y);
-
-            // 非整数のFramebuffer倍率でceilが末端Pixelを越えないよう、実Pixel境界で再Clampします。
-            const int viewportWidth = static_cast<int>(framebufferSize.x);
-            const int viewportHeight = static_cast<int>(framebufferSize.y);
-            const int leftPixel = std::clamp(static_cast<int>(std::floor(clippedLeft * pixelScaleX)),
-                0, viewportWidth);
-            const int topPixel = std::clamp(static_cast<int>(std::floor(clippedTop * pixelScaleY)),
-                0, viewportHeight);
-            const int rightPixel = std::clamp(static_cast<int>(std::ceil(clippedRight * pixelScaleX)),
-                0, viewportWidth);
-            const int bottomPixel = std::clamp(static_cast<int>(std::ceil(clippedBottom * pixelScaleY)),
-                0, viewportHeight);
-            const int scissorWidth = std::max(0, rightPixel - leftPixel);
-            const int scissorHeight = std::max(0, bottomPixel - topPixel);
-            const int scissorY = viewportHeight - bottomPixel;
-
-            // 左上原点からPixelへ変換した矩形だけを共通RHI命令へ渡します。
-            RenderCommand::SetScissor(true,
-                leftPixel,
-                scissorY,
-                static_cast<uint32_t>(scissorWidth),
-                static_cast<uint32_t>(scissorHeight));
-        }
-        else
-        {
-            RenderCommand::SetScissor(false, 0u, 0u, 0u, 0u);
-        }
-
+        RenderCommand::SetScissor(true, batch.Clip.X,
+            static_cast<int32_t>(framebufferSize.y) - static_cast<int32_t>(batch.Clip.Y + batch.Clip.Height),
+            batch.Clip.Width, batch.Clip.Height);
         bool useTexture = false;
-        if (command.Type == UIDrawCommandType::Image &&
-            command.TextureView.IsValid() == true)
+        if (batch.UseTexture == true)
         {
-            Ref<Texture> texture = command.TextureView.GetLegacyTexture();
-            if (texture == nullptr && command.TextureView.GetAsset() != nullptr)
+            Ref<Texture> texture = batch.TextureView.GetLegacyTexture();
+            if (texture == nullptr && batch.TextureView.GetAsset() != nullptr)
             {
-                texture = command.TextureView.GetAsset()->GetTexture();
+                texture = batch.TextureView.GetAsset()->GetTexture();
             }
             if (texture != nullptr)
             {
@@ -217,14 +181,12 @@ void OpenGLUIRenderer::Render(
 
         RenderCommand::UploadUniform("u_UseTexture", useTexture ? 1 : 0);
 
-        const UITessellatedCommand& batch = tessellated.Commands[commandIndex];
         if (batch.IndexCount > 0u)
         {
-            // 共通Tessellatorが保持するIndex範囲をそのままLegacy RHIへ渡します。
+            // 共通Builderが保持する連続Index範囲をそのままLegacy RHIへ渡します。
             RenderCommand::DrawIndexed(
                 m_VertexArray, batch.IndexCount, batch.FirstIndex);
         }
-        ++commandIndex;
     }
 
     // 以前は初回描画の切り分けとしてglReadPixels()でBack Bufferを読み戻していました。

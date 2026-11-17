@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Math/MathVector.h"
 
 namespace Raven
 {
@@ -53,8 +54,9 @@ public:
 
     // UIContext::EndFrame後のCPU DrawListを次のPrepareFrameへ渡します。
     // GPU Resource生成はAcquire前のPrepareFrame内で行います。
+    // viewportWidth/Heightは実Pixel、logicalSizeはDrawList単位。省略時だけ1:1を使用します。
     virtual void SubmitUIFrame(const UIDrawList& drawList,
-        uint32_t viewportWidth, uint32_t viewportHeight) = 0;
+        uint32_t viewportWidth, uint32_t viewportHeight, const math::Vec2& logicalSize = {}) = 0;
     // PrepareはAcquireより前、DrawPreparedはBeginFrame成功後に呼びます。
     virtual bool PrepareFrame() = 0;
     virtual RHIFrameResult DrawPreparedFrame() = 0;
