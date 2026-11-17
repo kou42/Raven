@@ -629,6 +629,67 @@ void TestDPIContextCoordinates()
     context.EndFrame();
 }
 
+// Theme共有は外観だけを対象とし、入力状態とActionの所有権をInstance間で共有しません。
+void TestButtonSharedStyle()
+{
+    Raven::UIButton detachedA, detachedB;
+    Check(&detachedA.GetNormalColor() == &detachedB.GetNormalColor(), "detached buttons share immutable defaults");
+    Raven::UIContext context, other;
+    auto first = std::make_unique<Raven::UIButton>();
+    auto second = std::make_unique<Raven::UIButton>();
+    auto* a = first.get();
+    auto* b = second.get();
+    a->SetSize({80.0f, 24.0f});
+    b->SetSize({80.0f, 24.0f});
+    b->SetPosition({100.0f, 0.0f});
+    int clicksA = 0, clicksB = 0;
+    a->SetOnClick([&]() { ++clicksA; });
+    b->SetOnClick([&]() { ++clicksB; });
+    context.AddRootChild(std::move(first));
+    context.AddRootChild(std::move(second));
+    Check(&a->GetNormalColor() == &b->GetNormalColor(), "attached buttons share theme colors");
+    const auto original = context.GetTheme().Button.NormalColor;
+    Raven::AllocationMeasurement initial, subsequent;
+    {
+        Raven::AllocationMeasurementScope scope(initial);
+        a->SetNormalColor(original);
+    }
+    {
+        Raven::AllocationMeasurementScope scope(subsequent);
+        a->SetNormalColor(original);
+        a->SetHoveredColor({0.1f, 0.2f, 0.3f, 1.0f});
+        a->SetPressedColor({0.2f, 0.3f, 0.4f, 1.0f});
+    }
+    if (initial.Available == true)
+    {
+        Check(initial.Count == 1u && subsequent.Count == 0u, "style allocates once per overridden button");
+    }
+    context.SetTheme(Raven::UITheme::CreateDefaultLight());
+    Check(a->GetNormalColor() == original, "equal-value explicit override survives theme change");
+    Check(&b->GetNormalColor() == &context.GetTheme().Button.NormalColor, "other button follows theme");
+    Check(&a->GetFocusedColor() == &context.GetTheme().Button.FocusedColor, "unset color follows theme after other overrides");
+    CheckNear("hover override", a->GetHoveredColor().x, 0.1f);
+    CheckNear("pressed override", a->GetPressedColor().x, 0.2f);
+    context.BeginFrame({240.0f, 100.0f});
+    context.EndFrame();
+    Check(context.SetFocus(a), "first button receives explicit keyboard focus");
+    context.RouteMouseDown({10.0f, 10.0f}, Raven::UIMouseButton::Left);
+    Check(a->IsHovered() && a->IsPressed() && a->IsFocused(), "first button receives input state");
+    Check(b->IsHovered() == false && b->IsPressed() == false && b->IsFocused() == false, "shared style keeps input state independent");
+    context.RouteMouseUp({10.0f, 10.0f}, Raven::UIMouseButton::Left);
+    Check(clicksA == 1 && clicksB == 0, "shared style keeps click handler independent");
+    auto moving = context.GetRootElement().DetachChild(a);
+    Check(a->GetContext() == nullptr && a->IsHovered() == false && a->IsPressed() == false && a->IsFocused() == false,
+        "detaching clears context-owned interaction state");
+    Check(&a->GetFocusedColor() == &detachedA.GetFocusedColor(), "detached unset color returns shared default");
+    other.AddRootChild(std::move(moving));
+    Check(&a->GetFocusedColor() == &other.GetTheme().Button.FocusedColor, "moved unset color follows destination theme");
+    a->SetFocusedColor({0.3f, 0.4f, 0.5f, 1.0f});
+    other.SetTheme(Raven::UITheme::CreateDefaultLight());
+    CheckNear("focus override", a->GetFocusedColor().x, 0.3f);
+    Check(a->GetNormalColor() == original, "moved explicit override survives context transfer");
+}
+
 void TestUITheme()
 {
     Raven::UIContext context;
@@ -5667,8 +5728,14 @@ void TestInspectorControllerRebind()
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--measure-ui-widgets")
+    {
+        TestUIAllocationMeasurement();
+        TestUIWidgetLifecycleMeasurements();
+        return 0;
+    }
     Raven::tests::RunEditorSceneLifetimeSelfTests();
 #ifndef NDEBUG
     // 既存Snapshot自己テストはassert内のAttachを含むため、assert有効構成で実行します。
@@ -5849,6 +5916,7 @@ int main()
     TestStatisticsRecordingPanelLifecycle();
     TestUIImmediateContext();
     TestUITheme();
+    TestButtonSharedStyle();
     TestDPIContextCoordinates();
     TestDPILayoutMetrics();
     TestDPISizeConstraints();

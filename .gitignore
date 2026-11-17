@@ -70,3 +70,6 @@ RavenUI-recording-*.csv
 # ローカルのエラー出力とバックアップ。
 *.err
 *.bak
+
+# bootstrapが固定バージョンの配布ZIPから補完するGLFW Native Header。
+/Root/Root/include/GLFW/glfw3native.h

@@ -92,11 +92,16 @@ function Find-MsBuild {
     return $candidate
 }
 
-function Ensure-GlfwLibrary {
-    $targetDirectory = Join-Path $RepoRoot "Root\Root\lib"
-    $targetLibrary = Join-Path $targetDirectory "glfw3.lib"
-    if (Test-Path -LiteralPath $targetLibrary -PathType Leaf) {
-        Write-Host "GLFW import library already exists: $targetLibrary"
+function Ensure-GlfwDependencies {
+    # Libraryが既存でもNative Headerが欠けるcheckoutを補完します。
+    # 新規取得するLibraryとNative Headerには同じSHA-256固定の配布ZIPを使います。
+    $dependencies = @(
+        @{ Member = "lib-vc2022/glfw3.lib"; Target = (Join-Path $RepoRoot "Root\Root\lib\glfw3.lib") }
+        @{ Member = "include/GLFW/glfw3native.h"; Target = (Join-Path $RepoRoot "Root\Root\include\GLFW\glfw3native.h") }
+    )
+    $missing = @($dependencies | Where-Object { (Test-Path -LiteralPath $_.Target -PathType Leaf) -eq $false })
+    if ($missing.Count -eq 0) {
+        Write-Host "GLFW library and native header already exist."
         return
     }
 
@@ -104,20 +109,26 @@ function Ensure-GlfwLibrary {
     $archiveUri = "https://github.com/glfw/glfw/releases/download/$GlfwVersion/glfw-$GlfwVersion.bin.WIN64.zip"
     Get-VerifiedDownload -Uri $archiveUri -Destination $archive -Sha256 $GlfwSha256
 
-    $extractRoot = Join-Path $CacheRoot "glfw-$GlfwVersion"
-    if (Test-Path -LiteralPath $extractRoot) {
-        Remove-Item -LiteralPath $extractRoot -Recurse -Force
+    # 必要なMemberだけを固定の出力先へ配置し、Cache全体の展開/再帰削除は行いません。
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($archive)
+    try {
+        $entries = @{}
+        foreach ($dependency in $missing) {
+            $member = "glfw-$GlfwVersion.bin.WIN64/" + $dependency.Member
+            $entry = $zip.GetEntry($member)
+            if ($null -eq $entry) {
+                throw "The GLFW $GlfwVersion archive did not contain $($dependency.Member)"
+            }
+            $entries[$dependency.Member] = $entry
+        }
+        foreach ($dependency in $missing) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dependency.Target) | Out-Null
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entries[$dependency.Member], $dependency.Target, $true)
+            Write-Host "Installed GLFW $GlfwVersion dependency: $($dependency.Target)"
+        }
+    } finally {
+        $zip.Dispose()
     }
-    Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
-
-    $sourceLibrary = Join-Path $extractRoot "glfw-$GlfwVersion.bin.WIN64\lib-vc2022\glfw3.lib"
-    if (-not (Test-Path -LiteralPath $sourceLibrary -PathType Leaf)) {
-        throw "The GLFW $GlfwVersion archive did not contain lib-vc2022\glfw3.lib"
-    }
-
-    New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
-    Copy-Item -LiteralPath $sourceLibrary -Destination $targetLibrary -Force
-    Write-Host "Installed GLFW $GlfwVersion library: $targetLibrary"
 }
 
 function Test-VulkanSdk {
@@ -212,7 +223,7 @@ function Find-Dxc {
 }
 
 $msbuild = Find-MsBuild
-Ensure-GlfwLibrary
+Ensure-GlfwDependencies
 $vulkanRoot = Ensure-VulkanSdk
 $vulkanLoader = if ($InstallVulkanSdk) { Ensure-VulkanRuntime } else { "system Vulkan loader" }
 $dxc = Find-Dxc

@@ -6,3 +6,5 @@ void TestUIWindowRecording();
 void TestUIModernizationBaseline();
 
 void TestUIDrawListCachePerformance();
+
+void TestUIWidgetLifecycleMeasurements();
