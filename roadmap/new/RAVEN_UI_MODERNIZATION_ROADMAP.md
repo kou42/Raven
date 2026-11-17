@@ -108,10 +108,11 @@ Raven Editor / Runtime
 
 ### M4: Shared Definition / Instance State
 
-- [ ] Widgetごとの保持メモリ、生成/破棄頻度、Allocationを計測する。
-- [ ] Theme/Style等の共有可能な不変データを抽出する。
-- [ ] Hover/Pressed/Focus/Scroll/Text編集状態はWidgetまたはContextに適切に保持する。
-- [ ] Pool/固定長Instance管理と現行所有権モデルを比較する。
+- [x] Widgetごとの保持メモリ、生成/破棄頻度、Allocationを計測する。
+- [x] Theme/Style等の共有可能な不変データを抽出する。
+- [x] Hover/Pressed/Focus/Scroll/Text編集状態はWidgetまたはContextに適切に保持する。
+- [x] Pool/固定長Instance管理と現行所有権モデルを比較する。
+- 実装・検証結果: [M4 State](../../docs/UI_MODERNIZATION_M4_STATE.md)。Button標準色の共有と個別Overrideの遅延確保を限定採用。Releaseで480→416 bytes、全個Override時の追加確保/コスト増も記録。既存Poolは比較のみでRuntime所有権は維持。Debug/Release UI回帰・Allocation計測・OpenGL統合成功。実Editor操作頻度/異DPIは未測定。
 - **完了条件**: 計測で改善した範囲のみ採用。利益がなければ既存構造を維持する。
 
 ### M5: Geometry Builder / RHI UI Backend

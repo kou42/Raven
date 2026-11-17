@@ -6,53 +6,92 @@
 namespace Raven
 {
 
+namespace
+{
+// Context未接続時もInstanceごとに4色を複製しません。不変でプロセス全体より長く参照されません。
+const UIButtonStyle DefaultButtonStyle{};
+}
+
+struct UIButton::StyleOverrides
+{
+    UIButtonStyle Style;
+    // 個別SetColorはThemeより優先します。未設定の色だけTheme変更へ追従します。
+    std::uint8_t Mask = 0u;
+};
+
 UIButton::UIButton()
 {
     // Mouse専用Widgetにせず、Tab移動後のEnter / Space操作をOnKeyEventへ届けます。
     SetFocusable(true);
 }
 
+UIButton::~UIButton() = default;
+
 void UIButton::SetNormalColor(const math::Vec4& color)
 {
-    if (m_NormalColorOverride == true && m_NormalColor == color)
+    constexpr std::uint8_t bit = 1u;
+    if (m_Overrides != nullptr && (m_Overrides->Mask & bit) != 0u && m_Overrides->Style.NormalColor == color)
     {
         return;
     }
-    m_NormalColor = color;
-    m_NormalColorOverride = true;
+    if (m_Overrides == nullptr)
+    {
+        m_Overrides = CreateScope<StyleOverrides>();
+    }
+    // Themeと同値でも明示指定を記録します。将来のTheme変更で色が上書きされることを防ぎます。
+    m_Overrides->Style.NormalColor = color;
+    m_Overrides->Mask |= bit;
     InvalidatePaint();
 }
 
 void UIButton::SetHoveredColor(const math::Vec4& color)
 {
-    if (m_HoveredColorOverride == true && m_HoveredColor == color)
+    constexpr std::uint8_t bit = 2u;
+    if (m_Overrides != nullptr && (m_Overrides->Mask & bit) != 0u && m_Overrides->Style.HoveredColor == color)
     {
         return;
     }
-    m_HoveredColor = color;
-    m_HoveredColorOverride = true;
+    if (m_Overrides == nullptr)
+    {
+        m_Overrides = CreateScope<StyleOverrides>();
+    }
+    // Themeと同値でも明示指定を記録します。将来のTheme変更で色が上書きされることを防ぎます。
+    m_Overrides->Style.HoveredColor = color;
+    m_Overrides->Mask |= bit;
     InvalidatePaint();
 }
 
 void UIButton::SetPressedColor(const math::Vec4& color)
 {
-    if (m_PressedColorOverride == true && m_PressedColor == color)
+    constexpr std::uint8_t bit = 4u;
+    if (m_Overrides != nullptr && (m_Overrides->Mask & bit) != 0u && m_Overrides->Style.PressedColor == color)
     {
         return;
     }
-    m_PressedColor = color;
-    m_PressedColorOverride = true;
+    if (m_Overrides == nullptr)
+    {
+        m_Overrides = CreateScope<StyleOverrides>();
+    }
+    // Themeと同値でも明示指定を記録します。将来のTheme変更で色が上書きされることを防ぎます。
+    m_Overrides->Style.PressedColor = color;
+    m_Overrides->Mask |= bit;
     InvalidatePaint();
 }
 
 void UIButton::SetFocusedColor(const math::Vec4& color)
 {
-    if (m_FocusedColorOverride == true && m_FocusedColor == color)
+    constexpr std::uint8_t bit = 8u;
+    if (m_Overrides != nullptr && (m_Overrides->Mask & bit) != 0u && m_Overrides->Style.FocusedColor == color)
     {
         return;
     }
-    m_FocusedColor = color;
-    m_FocusedColorOverride = true;
+    if (m_Overrides == nullptr)
+    {
+        m_Overrides = CreateScope<StyleOverrides>();
+    }
+    // Themeと同値でも明示指定を記録します。将来のTheme変更で色が上書きされることを防ぎます。
+    m_Overrides->Style.FocusedColor = color;
+    m_Overrides->Mask |= bit;
     InvalidatePaint();
 }
 
@@ -63,42 +102,42 @@ void UIButton::SetOnClick(ClickHandler handler)
 
 const math::Vec4& UIButton::GetNormalColor() const
 {
-    const UIContext* context = GetContext();
-    if (m_NormalColorOverride == false && context != nullptr)
+    if (m_Overrides != nullptr && (m_Overrides->Mask & 1u) != 0u)
     {
-        return context->GetTheme().Button.NormalColor;
+        return m_Overrides->Style.NormalColor;
     }
-    return m_NormalColor;
+    const UIContext* context = GetContext();
+    return context != nullptr ? context->GetTheme().Button.NormalColor : DefaultButtonStyle.NormalColor;
 }
 
 const math::Vec4& UIButton::GetHoveredColor() const
 {
-    const UIContext* context = GetContext();
-    if (m_HoveredColorOverride == false && context != nullptr)
+    if (m_Overrides != nullptr && (m_Overrides->Mask & 2u) != 0u)
     {
-        return context->GetTheme().Button.HoveredColor;
+        return m_Overrides->Style.HoveredColor;
     }
-    return m_HoveredColor;
+    const UIContext* context = GetContext();
+    return context != nullptr ? context->GetTheme().Button.HoveredColor : DefaultButtonStyle.HoveredColor;
 }
 
 const math::Vec4& UIButton::GetPressedColor() const
 {
-    const UIContext* context = GetContext();
-    if (m_PressedColorOverride == false && context != nullptr)
+    if (m_Overrides != nullptr && (m_Overrides->Mask & 4u) != 0u)
     {
-        return context->GetTheme().Button.PressedColor;
+        return m_Overrides->Style.PressedColor;
     }
-    return m_PressedColor;
+    const UIContext* context = GetContext();
+    return context != nullptr ? context->GetTheme().Button.PressedColor : DefaultButtonStyle.PressedColor;
 }
 
 const math::Vec4& UIButton::GetFocusedColor() const
 {
-    const UIContext* context = GetContext();
-    if (m_FocusedColorOverride == false && context != nullptr)
+    if (m_Overrides != nullptr && (m_Overrides->Mask & 8u) != 0u)
     {
-        return context->GetTheme().Button.FocusedColor;
+        return m_Overrides->Style.FocusedColor;
     }
-    return m_FocusedColor;
+    const UIContext* context = GetContext();
+    return context != nullptr ? context->GetTheme().Button.FocusedColor : DefaultButtonStyle.FocusedColor;
 }
 
 void UIButton::OnMouseEvent(UIMouseEvent& event)
