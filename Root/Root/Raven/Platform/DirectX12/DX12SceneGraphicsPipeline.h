@@ -225,7 +225,8 @@ public:
         blend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
         blend.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
         blend.BlendOp = D3D12_BLEND_OP_ADD;
-        blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+        blend.SrcBlendAlpha = specification.AlphaBlend == RHIAlphaBlendMode::SourceAlphaWeighted
+            ? D3D12_BLEND_SRC_ALPHA : D3D12_BLEND_ONE;
         blend.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
         blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
 

@@ -12,7 +12,7 @@ namespace Raven
 namespace
 {
 std::array<float, 16> BuildUIClipTransform(
-    uint32_t width, uint32_t height, RHIBackend backend)
+    float width, float height, RHIBackend backend)
 {
     const float sx = 2.0f / static_cast<float>(width);
     // Vulkanは正のViewport heightを使うためNDC -YがFramebuffer上端です。
@@ -59,6 +59,9 @@ bool ExplicitUIRenderer::CreatePipeline(
     specification.DepthTest = false;
     specification.DepthWrite = false;
     specification.Blend = true;
+    // Legacy OpenGL UIのglBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)とAlpha出力まで一致させます。
+    // Scene Pipelineの既定SourceOver合成は変更しません。
+    specification.AlphaBlend = RHIAlphaBlendMode::SourceAlphaWeighted;
     specification.ColorFormat = target.ColorFormat;
     specification.DepthFormat = target.DepthFormat;
     specification.SampleCount = target.SampleCount;
@@ -77,14 +80,27 @@ bool ExplicitUIRenderer::Prepare(
     const Ref<RHIGraphicsPipeline>& pipeline,
     PreparedExplicitUI& outUI)
 {
+    return Prepare(device, drawList, math::Vec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)),
+        viewportWidth, viewportHeight, defaultTexture, pipeline, outUI);
+}
+
+bool ExplicitUIRenderer::Prepare(RHIDevice& device, const UIDrawList& drawList,
+    const math::Vec2& logicalSize, uint32_t viewportWidth, uint32_t viewportHeight,
+    const Ref<RHITexture>& defaultTexture, const Ref<RHIGraphicsPipeline>& pipeline, PreparedExplicitUI& outUI)
+{
     outUI = {};
     if (viewportWidth == 0u || viewportHeight == 0u || defaultTexture == nullptr)
     {
         return false;
     }
 
-    UITessellatedDrawList tessellated{};
-    if (UITessellator::Tessellate(drawList, tessellated) == false)
+    UIRenderGeometry tessellated{};
+    if (UIGeometryBuilder::Build(drawList, logicalSize, viewportWidth, viewportHeight, tessellated) == false)
+    {
+        return false;
+    }
+    outUI.LogicalSize = logicalSize;
+    if (tessellated.Batches.empty() == true)
     {
         // UIが空のFrameは失敗ではありません。
         outUI.ViewportWidth = viewportWidth;
@@ -114,9 +130,9 @@ bool ExplicitUIRenderer::Prepare(
 
     outUI.VertexBuffer = std::move(vertexBuffer);
     outUI.IndexBuffer = std::move(indexBuffer);
-    outUI.Commands = std::move(tessellated.Commands);
+    outUI.Commands = std::move(tessellated.Batches);
     outUI.Textures.reserve(outUI.Commands.size());
-    for (const UITessellatedCommand& command : outUI.Commands)
+    for (const UIRenderBatch& command : outUI.Commands)
     {
         outUI.Textures.push_back(
             command.UseTexture == true ?
@@ -157,7 +173,7 @@ bool ExplicitUIRenderer::Draw(
         commands.SetViewport(0u, 0u, preparedUI.ViewportWidth,
             preparedUI.ViewportHeight) == false ||
         commands.SetClipTransform(BuildUIClipTransform(
-            preparedUI.ViewportWidth, preparedUI.ViewportHeight,
+            preparedUI.LogicalSize.x, preparedUI.LogicalSize.y,
             preparedUI.Backend)) == false)
     {
         return false;
@@ -165,44 +181,15 @@ bool ExplicitUIRenderer::Draw(
 
     for (std::size_t index = 0u; index < preparedUI.Commands.size(); ++index)
     {
-        const UITessellatedCommand& command = preparedUI.Commands[index];
+        const UIRenderBatch& command = preparedUI.Commands[index];
         if (command.IndexCount == 0u)
         {
             continue;
         }
 
-        if (command.Clip.Enabled == true)
-        {
-            const float left = std::clamp(
-                command.Clip.Rect.Min.x, 0.0f,
-                static_cast<float>(preparedUI.ViewportWidth));
-            const float top = std::clamp(
-                command.Clip.Rect.Min.y, 0.0f,
-                static_cast<float>(preparedUI.ViewportHeight));
-            const float right = std::clamp(
-                command.Clip.Rect.Max.x, 0.0f,
-                static_cast<float>(preparedUI.ViewportWidth));
-            const float bottom = std::clamp(
-                command.Clip.Rect.Max.y, 0.0f,
-                static_cast<float>(preparedUI.ViewportHeight));
-            const uint32_t x = static_cast<uint32_t>(std::max(0.0f, left));
-            const uint32_t y = static_cast<uint32_t>(std::max(0.0f, top));
-            const uint32_t width = static_cast<uint32_t>(
-                std::max(0.0f, right - left));
-            const uint32_t height = static_cast<uint32_t>(
-                std::max(0.0f, bottom - top));
-            if (width == 0u || height == 0u)
-            {
-                continue;
-            }
-            if (commands.SetScissor(x, y, width, height) == false)
-            {
-                return false;
-            }
-        }
-        else if (commands.SetScissor(
-            0u, 0u, preparedUI.ViewportWidth,
-            preparedUI.ViewportHeight) == false)
+        // BuilderのScissorは左上原点の実Pixel。DX12/VulkanのCommand契約と一致します。
+        if (commands.SetScissor(command.Clip.X, command.Clip.Y,
+            command.Clip.Width, command.Clip.Height) == false)
         {
             return false;
         }

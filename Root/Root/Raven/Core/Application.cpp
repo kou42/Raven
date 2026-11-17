@@ -1815,7 +1815,7 @@ void Application::Run()
             m_ExplicitSceneRuntime->SubmitUIFrame(
                 m_UIContext.GetDrawList(),
                 m_Window->GetFramebufferWidth(),
-                m_Window->GetFramebufferHeight());
+                m_Window->GetFramebufferHeight(), m_UIContext.GetViewportSize());
 
             const RHIFrameResult explicitResult = ExecuteExplicitSceneFrame(
                 *m_SceneFrame,

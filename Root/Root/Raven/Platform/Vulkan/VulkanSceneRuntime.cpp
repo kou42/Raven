@@ -107,7 +107,8 @@ RHIFrameResult VulkanSceneRuntime::RenderAuxiliaryUIWindow(
     PreparedExplicitUI prepared;
     // DescriptorはWindow固有Contextに準備します。Mainと共有するViewport Textureは同じ
     // Graphics Queue上の既存Image Barrier（Color Write↔Fragment Read）で同期されます。
-    if (state.Renderer.Prepare(*state.Device, drawList, extent.width, extent.height,
+    if (state.Renderer.Prepare(*state.Device, drawList,
+        math::Vec2(static_cast<float>(window.GetWidth()), static_cast<float>(window.GetHeight())), extent.width, extent.height,
         m_DefaultTexture, state.Pipeline, prepared) == false)
     {
         return RHIFrameResult::FatalError;
@@ -286,11 +287,13 @@ bool VulkanSceneRuntime::CaptureOffscreenSceneFrame(
 }
 
 void VulkanSceneRuntime::SubmitUIFrame(
-    const UIDrawList& drawList, uint32_t viewportWidth, uint32_t viewportHeight)
+    const UIDrawList& drawList, uint32_t viewportWidth, uint32_t viewportHeight, const math::Vec2& logicalSize)
 {
     m_PendingUIDrawList = drawList;
     m_PendingUIWidth = viewportWidth;
     m_PendingUIHeight = viewportHeight;
+    m_PendingUILogicalSize = logicalSize.x == 0.0f && logicalSize.y == 0.0f
+        ? math::Vec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)) : logicalSize;
 }
 
 void VulkanSceneRuntime::DiscardPreparedFrame()
@@ -324,7 +327,7 @@ bool VulkanSceneRuntime::PrepareFrame()
         m_PreparedFrame = std::move(prepared);
     }
     if (m_UIRenderer.Prepare(*m_Device, m_PendingUIDrawList,
-        m_PendingUIWidth, m_PendingUIHeight,
+        m_PendingUILogicalSize, m_PendingUIWidth, m_PendingUIHeight,
         m_DefaultTexture, m_UIPipeline, m_PreparedUI) == false)
     {
         std::cerr << "Vulkan UI frame preparation failed.\n";

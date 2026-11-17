@@ -75,6 +75,15 @@ struct RHIGraphicsPipelineTarget
     }
 };
 
+// RGBは従来どおりSrcAlpha合成。Alpha出力の既存Backend差だけを明示します。
+// SourceOver: As + Ad*(1-As)、SourceAlphaWeighted: As*As + Ad*(1-As)。
+// UIのOpenGL互換では後者、既存Scene Pipelineの既定値は前者です。
+enum class RHIAlphaBlendMode
+{
+    SourceOver = 0,
+    SourceAlphaWeighted
+};
+
 // Sceneの描画先とShader入力を含むGraphics Pipelineの共通作成情報。
 // ColorFormatは実際のScene RenderTargetと一致させる必要がある。
 // VulkanのRenderPass互換性やDX12のRoot Signature等のnative詳細は
@@ -95,6 +104,7 @@ struct RHIGraphicsPipelineSpecification
     bool DepthTest = false;
     bool DepthWrite = false;
     bool Blend = false;
+    RHIAlphaBlendMode AlphaBlend = RHIAlphaBlendMode::SourceOver;
 
     RHIColorFormat ColorFormat = RHIColorFormat::None;
     RHIDepthFormat DepthFormat = RHIDepthFormat::None;
@@ -106,6 +116,10 @@ struct RHIGraphicsPipelineSpecification
     // Format/RenderPass/Root SignatureなどBackend固有の互換性は別途確認が必要です。
     bool IsValidForBackend(RHIBackend backend) const
     {
+        if (AlphaBlend != RHIAlphaBlendMode::SourceOver && AlphaBlend != RHIAlphaBlendMode::SourceAlphaWeighted)
+        {
+            return false;
+        }
         RHIShaderBinaryFormat requiredFormat = RHIShaderBinaryFormat::None;
         switch (backend)
         {

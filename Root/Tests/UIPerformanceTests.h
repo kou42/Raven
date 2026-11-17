@@ -8,3 +8,5 @@ void TestUIModernizationBaseline();
 void TestUIDrawListCachePerformance();
 
 void TestUIWidgetLifecycleMeasurements();
+
+void MeasureUIGeometryBatches();
