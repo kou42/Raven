@@ -1,7 +1,5 @@
 #include "Raven/UI/Screens/TitleScreen.h"
 
-#include "Raven/Core/Input.h"
-#include "Raven/UI/Core/UIContext.h"
 #include "Raven/UI/Widgets/UIButton.h"
 #include "Raven/UI/Widgets/UIPanel.h"
 #include "Raven/UI/Widgets/UILabel.h"
@@ -23,6 +21,7 @@ TitleScreen::TitleScreen(const Ref<UIFontAtlas>& font, Action onStartGame, Actio
     // 最小の3Button Menuを先行し、文字表示はLoading/Runtime UIのFont統合時に追加します。
     auto menu = CreateScope<UIPanel>();
     menu->SetName("Menu");
+    SetGamepadMenuPath("Menu");
     menu->SetPositionDIP(math::Vec2(48.0f, 96.0f));
     menu->SetPreferredSizeDIP(math::Vec2(320.0f, 224.0f));
     menu->SetLayoutMode(UILayoutMode::Vertical);
@@ -35,60 +34,6 @@ TitleScreen::TitleScreen(const Ref<UIFontAtlas>& font, Action onStartGame, Actio
     menu->AddChild(CreateMenuButton(font, "ExitButton", "Exit", std::move(onExit)));
 
     AddChild(std::move(menu));
-}
-
-void TitleScreen::OnPause()
-{
-    m_HasGamepadSample = false;
-}
-
-void TitleScreen::UpdateGamepad(const GamepadState* state)
-{
-    auto& root = GetRootElement();
-    auto* context = root.GetContext();
-    auto* menu = root.FindByPath("Menu");
-    if (state == nullptr || context == nullptr || menu == nullptr ||
-        menu->GetChildren().empty() || context->GetOpenPopup() != nullptr)
-    {
-        m_HasGamepadSample = false;
-        return;
-    }
-
-    // 初回・再接続・画面復帰では現在値を基準にし、保持中の入力で遷移しません。
-    const int direction = state->LeftStickY > 0.6f ? -1 : (state->LeftStickY < -0.6f ? 1 : 0);
-    const bool navigate = m_HasGamepadSample && direction != 0 && direction != m_Direction;
-    const bool activate = m_HasGamepadSample && state->ButtonA && m_ConfirmHeld == false;
-    m_HasGamepadSample = true;
-    m_Direction = direction;
-    m_ConfirmHeld = state->ButtonA;
-
-    const auto& buttons = menu->GetChildren();
-    std::size_t index = 0u;
-    while (index < buttons.size() && buttons[index].get() != context->GetFocusedElement())
-    {
-        ++index;
-    }
-    if (navigate == true || (activate == true && index == buttons.size()))
-    {
-        if (index == buttons.size())
-        {
-            index = direction < 0 ? buttons.size() - 1u : 0u;
-        }
-        else
-        {
-            index = direction < 0 ? (index + buttons.size() - 1u) % buttons.size()
-                : (index + 1u) % buttons.size();
-        }
-        context->SetFocus(buttons[index].get());
-        return;
-    }
-    if (activate == true && index < buttons.size())
-    {
-        UIKeyEvent event{};
-        event.Key = UIKey::Enter;
-        event.Pressed = true;
-        context->RouteKeyEvent(event);
-    }
 }
 
 Scope<UIElement> TitleScreen::CreateMenuButton(const Ref<UIFontAtlas>& font, const char* name, const char* text, Action action)

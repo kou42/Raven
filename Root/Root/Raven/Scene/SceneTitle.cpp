@@ -1,14 +1,11 @@
 #include "Raven/Scene/SceneTitle.h"
 
 #include "Raven/Core/Application.h"
-#include "Raven/Core/Input.h"
 #include "Raven/Assets/TextureAssetBatch.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Scene/SceneGamePreparation.h"
 #include "Raven/Renderer/Mesh/PrimitiveMeshFactory.h"
 #include "Raven/Renderer/Renderer.h"
-
-#include <GLFW/glfw3.h>
 
 #include <memory>
 #include <vector>
@@ -152,17 +149,7 @@ void SceneTitle::OnUpdateGame(float deltaTime)
         m_Application.GetUINavigationManager().PushScreen(std::move(settingsScreen));
     }
 
-    // Menuが最前面にある間だけ、Gamepad入力を既存ButtonのActionへ渡します。
-    if (auto* title = dynamic_cast<TitleScreen*>(m_Application.GetUINavigationManager().GetTopScreen());
-        title != nullptr)
-    {
-        GamepadState state{};
-        auto* native = static_cast<GLFWwindow*>(m_Application.GetWindow().GetNativeWindow());
-        const bool connected = native != nullptr &&
-            glfwGetWindowAttrib(native, GLFW_FOCUSED) == GLFW_TRUE &&
-            Input::GetGamepadState(0, state);
-        title->UpdateGamepad(connected ? &state : nullptr);
-    }
+
 }
 
 void SceneTitle::OnRender()

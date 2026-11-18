@@ -11,20 +11,20 @@ CPU回帰に1,000／10,000行の合成データを追加しました。TreeView�
 
 Release x64でSceneに親1体と子を生成し、CaptureSceneHierarchySnapshot → SceneHierarchyRavenPanel.Update → UIContext.EndFrameを実行しました。操作区間は1回、描画区間はウォームアップ1回後の30回平均です。時間の単位はmsです。GPUとFont Atlasを使わないため、文字描画を含むフレーム時間ではありません。
 
-| Entity数 | Snapshot | 初回構築 | CPUフレーム | 選択・スクロール | 折り畳み | 展開 | 描画コマンド |
+| Entity数 | Snapshot | 初回構築 | CPUフレーム | 選択・スクロール | 折り畳み | 展開 | 描画コマンド | Table取得行 |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 0.445 | 2.949 | 0.010 | 0.098 | 0.027 | 0.009 | 9 |
-| 10,000 | 4.477 | 183.940 | 0.236 | 2.833 | 0.733 | 0.218 | 9 |
+| 1,000 | 0.455 | 2.962 | 0.010 | 0.159 | 0.041 | 0.024 | 9 | 3 |
+| 10,000 | 4.678 | 189.607 | 0.233 | 2.322 | 0.489 | 0.224 | 9 | 3 |
 
-リポジトリルートからReleaseのUIテストexeに --measure-ui-scene-hierarchy を渡すと再実行できます。実Entityの親子関係、末尾選択へのスクロール、折り畳みでの親への選択復帰も検査します。初回構築には繰り返しのノード検索があり、大規模Sceneの初回表示時間は課題として残ります。この計測は単一の親に子が並ぶ構成であり、深い階層との比較や変更前後の速度比較は行っていません。
+リポジトリルートからReleaseのUIテストexeに --measure-ui-scene-hierarchy を渡すと再実行できます。同じScene SnapshotをTableのデータソースへ接続し、末尾表示で可視3行だけを取得することも確認しました。実Entityの親子関係、末尾選択へのスクロール、折り畳みでの親への選択復帰も検査します。初回構築には繰り返しのノード検索があり、大規模Sceneの初回表示時間は課題として残ります。この計測は単一の親に子が並ぶ構成であり、深い階層との比較や変更前後の速度比較は行っていません。
 
 ## EditorとRuntimeの共通化
 
 InspectorのTransform・Camera・RigidBody・Colliderで数値プロパティ行のラベル、寸法、入力欄の構築を共有しました。値域と編集コールバックは各Sectionで指定するため、既存ControllerのPreview、Commit、Undo境界を保ちます。Hierarchyは既存TreeViewとSnapshot境界を再利用しています。
 
-タイトルSceneの最前面メニューは、メインWindowにフォーカスがある間だけ標準Gamepad 0を読み取ります。縦Stickの新しい入力でメニュー内のフォーカスを移動し、Aの押下でUIButtonの既存Enter処理を使います。初回サンプル、再接続、別Screenからの復帰では保持中の入力を再発火しません。Settings内のGamepad操作、実機コントローラーは未検証です。
+ApplicationはメインWindowにフォーカスがあり、Scene遷移による入力ブロックがない間だけ、標準Gamepad 0を最前面Screenへ渡します。Title・Pause・Settingsは共通UIScreen処理へメニューのパスを登録します。縦Stickの新しい入力でメニュー内のフォーカスを移動し、Aの押下でUIButtonの既存Enter処理を使います。初回サンプル、再接続、別Screenからの復帰では保持中の入力を再発火しません。実機コントローラーは未検証です。
 
-CPUテストでHUDとTitle Menuを同じUINavigationManagerへ接続し、UIAnimationBindingでボタンのOpacityを変え、そのUIContextがUIRendererへフレームを渡すことを確認します。Gamepad状態はテストから注入し、既存アクションの呼出回数を検証します。測定用Rendererを使うため、このテストは実GPUのTitle/HUD描画を検証するものではありません。
+CPUテストでHUDとTitle Menuを同じUINavigationManagerへ接続し、UIAnimationBindingでボタンのOpacityを変え、そのUIContextがUIRendererへフレームを渡すことを確認します。Gamepad状態はテストから注入し、既存アクションの呼出回数と、Settingsを開く／閉じる際の押しっぱなし入力の抑止、PauseのResumeとSettingsのBackを検証します。測定用Rendererを使うため、このテストは実GPUのTitle/HUD描画を検証するものではありません。
 
 ## Graph / Timelineの設計検討
 

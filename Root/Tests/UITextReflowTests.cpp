@@ -3,6 +3,8 @@
 #include "Raven/UI/Navigation/UINavigationManager.h"
 #include "Raven/UI/Screens/HUDScreen.h"
 #include "Raven/UI/Screens/TitleScreen.h"
+#include "Raven/UI/Screens/SettingsScreen.h"
+#include "Raven/UI/Screens/PauseScreen.h"
 #include <iomanip>
 #include <locale>
 #include <sstream>
@@ -564,6 +566,36 @@ void TestRuntimeToolkitNavigation()
     screen->UpdateGamepad(nullptr);
     screen->UpdateGamepad(&state);
     Check(actions == 1, "runtime toolkit reconnect does not replay held confirm");
+    int backs = 0;
+    int resumes = 0;
+    auto pause = std::make_unique<Raven::PauseScreen>(nullptr, [&resumes] { ++resumes; }, [] {}, [] {});
+    auto* pauseScreen = pause.get();
+    Check(navigation.PushScreen(std::move(pause)), "runtime toolkit Pause menu");
+    auto settingsMenu = std::make_unique<Raven::SettingsScreen>(nullptr, [&backs] { ++backs; });
+    auto* settingsScreen = settingsMenu.get();
+    Check(navigation.PushScreen(std::move(settingsMenu)), "runtime toolkit Settings menu");
+    context.BeginFrame({800.0f, 600.0f});
+    context.EndFrame();
+    const auto confirm = [&state](Raven::UIScreen& menu)
+    {
+        state.ButtonA = false;
+        menu.UpdateGamepad(&state);
+        state.ButtonA = true;
+        menu.UpdateGamepad(&state);
+        menu.UpdateGamepad(&state);
+    };
+    settingsScreen->UpdateGamepad(&state);
+    Check(backs == 0, "opening Settings with held confirm does not close it");
+    confirm(*settingsScreen);
+    Check(backs == 0, "first Settings confirm focuses Back");
+    confirm(*settingsScreen);
+    Check(backs == 1, "Settings Back action fires once");
+    navigation.PopScreen();
+    pauseScreen->UpdateGamepad(&state);
+    Check(resumes == 0, "returning to Pause with held confirm does not resume");
+    confirm(*pauseScreen);
+    confirm(*pauseScreen);
+    Check(resumes == 1, "Pause Resume action fires once");
 }
 
 void TestWindowFramebufferMetrics()
@@ -1417,7 +1449,7 @@ void MeasureLargeSceneHierarchy()
     {
         return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
     };
-    std::cout << "entities,capture_ms,rebuild_ms,draw_ms,select_scroll_ms,collapse_ms,expand_ms,commands\n";
+    std::cout << "entities,capture_ms,rebuild_ms,draw_ms,select_scroll_ms,collapse_ms,expand_ms,commands,table_visible_reads\n";
     for (const std::size_t count : {1000u, 10000u})
     {
         Raven::Scene scene;
@@ -1485,8 +1517,25 @@ void MeasureLargeSceneHierarchy()
         start = Clock::now();
         Check(tree->SetExpanded(rootNode, true), "large scene expand");
         const double expand = milliseconds(start);
+        std::size_t reads = 0u;
+        Raven::UITable table;
+        table.SetSize({240.0f, 96.0f});
+        Check(table.AddColumn("Entity", 120.0f), "scene table column");
+        Check(table.SetDataSource([&snapshot] { return snapshot.Nodes.size(); },
+            [&snapshot, &reads](std::size_t row, std::size_t)
+            {
+                ++reads;
+                return snapshot.Nodes.at(row).DisplayName;
+            }), "scene table binds snapshot");
+        Check(table.SelectRow(count - 1u), "scene table selects final row");
+        table.SetScrollOffset(table.GetMaxScrollOffset());
+        Raven::UIDrawList tableDraw;
+        table.BuildDrawList(tableDraw);
+        const auto range = table.GetVisibleRowRange();
+        Check(range.second == count && reads > 0u && reads == range.second - range.first && reads < 10u,
+            "scene table reads only visible snapshot rows");
         std::cout << count << ',' << capture << ',' << rebuild << ',' << draw / samples
-            << ',' << select << ',' << collapse << ',' << expand << ',' << commands << '\n';
+            << ',' << select << ',' << collapse << ',' << expand << ',' << commands << ',' << reads << '\n';
     }
 }
 

@@ -15,6 +15,8 @@ SettingsScreen::SettingsScreen(const Ref<UIFontAtlas>& font, Action onBack)
     root.SetLayoutMode(UILayoutMode::Absolute);
 
     auto panel = CreateScope<UIPanel>();
+    panel->SetName("SettingsMenu");
+    SetGamepadMenuPath("SettingsMenu");
     panel->SetPositionDIP(math::Vec2(48.0f, 96.0f));
     panel->SetPreferredSizeDIP(math::Vec2(320.0f, 112.0f));
     panel->SetLayoutMode(UILayoutMode::Vertical);
@@ -22,6 +24,7 @@ SettingsScreen::SettingsScreen(const Ref<UIFontAtlas>& font, Action onBack)
     panel->SetBackgroundColor(math::Vec4(0.04f, 0.06f, 0.10f, 0.96f));
 
     auto backButton = CreateScope<UIButton>();
+    backButton->SetName("BackButton");
     backButton->SetPreferredSizeDIP(math::Vec2(288.0f, 56.0f));
     backButton->SetFocusable(true);
     backButton->SetNormalColor(math::Vec4(0.22f, 0.18f, 0.30f, 1.0f));
