@@ -127,10 +127,11 @@ Raven Editor / Runtime
 
 ### M6: Headless UI Testing
 
-- [ ] `UIDrawList`のコマンドを正規化・シリアライズするテスト用形式を定義する。
-- [ ] GPU非依存のExpected Draw Commands / Snapshot差分テストを追加する。
-- [ ] Layout、Focus、Input、Clip、Popup、Themeの代表ケースをカバーする。
-- [ ] 浮動小数点誤差、Font Atlas/Texture Handle等の環境依存値を正規化する。
+- [x] `UIDrawList`のコマンドを正規化・シリアライズするテスト用形式を定義する。
+- [x] GPU非依存のExpected Draw Commands / Snapshot差分テストを追加する。
+- [x] Layout、Focus、Input、Clip、Popup、Themeの代表ケースをカバーする。
+- [x] 浮動小数点誤差、Font Atlas/Texture Handle等の環境依存値を正規化する。
+- 実装・再実行手順: [M6 Headless UI](../../docs/UI_MODERNIZATION_M6_HEADLESS.md)。既存CPU UI回帰で描画順と正規化済み項目を比較する。
 - **完了条件**: CIで主要UIのコマンド比較をGPUなしで実行できる。
 
 ### M7: Raven UI Toolkit

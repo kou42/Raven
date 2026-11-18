@@ -1,3 +1,7 @@
+#include <iomanip>
+#include <locale>
+#include <sstream>
+#include <stdexcept>
 // UIElementの幅制約付き再MeasureをGPU/Fontに依存せず検証する回帰テストです。
 // 単独実行する場合はRaven UIのCore実装をリンクし、このファイルをテスト用exeの入口にしてください。
 #include "Raven/UI/Core/UIContext.h"
@@ -4615,6 +4619,172 @@ void TestUIGeometryBuilder()
         otherWindow.Batches.empty(), "empty draw list is a successful empty frame");
 }
 
+// 1行を1コマンドとして、描画順と比較対象の項目名を記録します。
+std::string SerializeDrawSnapshot(const Raven::UIDrawList& list, const Raven::Texture* fixture)
+{
+    using namespace Raven;
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::fixed << std::setprecision(4);
+    const auto number = [&out](float value)
+    {
+        if (std::isfinite(value) == false)
+        {
+            throw std::runtime_error("Non-finite snapshot coordinate");
+        }
+        out << (std::abs(value) < 0.00005f ? 0.0f : value);
+    };
+    const auto point = [&](const math::Vec2& value)
+    {
+        number(value.x); out << ','; number(value.y);
+    };
+    out << "raven-ui-snapshot-v1\n";
+    for (const auto& command : list.GetCommands())
+    {
+        const auto& transform = command.Transform;
+        const auto& color = command.Color;
+        out << "type=" << static_cast<int>(command.Type);
+        out << " rect="; point(command.Rect.Min); out << ':'; point(command.Rect.Max);
+        out << " color="; number(color.x); out << ','; number(color.y);
+        out << ','; number(color.z); out << ','; number(color.w);
+        out << " transform="; number(transform.M00); out << ','; number(transform.M01);
+        out << ','; number(transform.M10); out << ','; number(transform.M11);
+        out << ':'; point(transform.Translation);
+        out << " clip=";
+        if (command.Clip.Enabled == true)
+        {
+            point(command.Clip.Rect.Min); out << ':'; point(command.Clip.Rect.Max);
+        }
+        else
+        {
+            out << "off";
+        }
+        out << " uv="; point(command.UVMin); out << ':'; point(command.UVMax);
+        out << " texture=";
+        if (command.TextureView.GetSourceType() == UITextureSourceType::None)
+        {
+            out << "none";
+        }
+        else if (fixture != nullptr && command.TextureView.GetLegacyTexture().get() == fixture)
+        {
+            out << "fixture-atlas:" << static_cast<int>(command.TextureView.GetOrigin());
+        }
+        else
+        {
+            throw std::runtime_error("Unregistered snapshot texture");
+        }
+        out << " points=" << command.Points.size();
+        for (const auto& vertex : command.Points)
+        {
+            out << ':'; point(vertex);
+        }
+        out << '\n';
+    }
+    return out.str();
+}
+
+std::string FirstDrawSnapshotDifference(const std::string& expected, const std::string& actual)
+{
+    std::istringstream reference(expected), observed(actual);
+    std::string left, right;
+    for (std::size_t line = 0;; ++line)
+    {
+        const bool hasLeft = static_cast<bool>(std::getline(reference, left));
+        const bool hasRight = static_cast<bool>(std::getline(observed, right));
+        if (hasLeft == false && hasRight == false)
+        {
+            return {};
+        }
+        if (hasLeft != hasRight || left != right)
+        {
+            std::istringstream leftFields(hasLeft ? left : ""), rightFields(hasRight ? right : "");
+            std::string a, b;
+            while ((leftFields >> a) && (rightFields >> b) && a == b)
+            {
+                a.clear();
+                b.clear();
+            }
+            const std::string location = line == 0u ? "schema" : "command " + std::to_string(line - 1u);
+            return location + ": expected [" + (hasLeft ? a : "<end>") +
+                "], actual [" + (hasRight ? b : "<end>") + "]";
+        }
+    }
+}
+
+void TestUIDrawSnapshot(bool update = false)
+{
+    using namespace Raven;
+    UIContext context;
+    auto panel = std::make_unique<UIPanel>();
+    panel->SetPosition({8.0f, 6.0f});
+    panel->SetSize({64.0f, 30.0f});
+    panel->SetClipChildren(true);
+    auto button = std::make_unique<UIButton>();
+    auto* target = button.get();
+    button->SetPosition({4.0f, 4.0f});
+    button->SetSize({80.0f, 20.0f});
+    panel->AddChild(std::move(button));
+    context.AddRootChild(std::move(panel));
+    auto popup = std::make_unique<UIPanel>();
+    popup->SetPosition({20.0f, 16.0f});
+    popup->SetSize({32.0f, 14.0f});
+    auto* popupHandle = context.AddPopup(std::move(popup));
+
+    const auto texture = CreateRef<ImageFixtureTexture>(16u, 16u);
+    const auto capture = [&](const char* name, const UIDrawList& list)
+    {
+        auto path = std::filesystem::path("Root/Tests/Snapshots") / (std::string(name) + ".txt");
+        if (std::filesystem::is_directory(path.parent_path()) == false)
+        {
+            path = std::filesystem::path("../Tests/Snapshots") / path.filename();
+        }
+        const auto actual = SerializeDrawSnapshot(list, texture.get());
+        if (update == true)
+        {
+            std::ofstream output(path, std::ios::binary);
+            output << actual;
+            Check(static_cast<bool>(output), "write UI snapshot");
+            return;
+        }
+        std::ifstream input(path);
+        Check(static_cast<bool>(input), "open expected UI snapshot");
+        const std::string expected{std::istreambuf_iterator<char>(input), {}};
+        const auto difference = FirstDrawSnapshotDifference(expected, actual);
+        if (difference.empty() == false)
+        {
+            std::cerr << path << ": " << difference << '\n';
+            Check(false, "UI draw snapshot");
+        }
+    };
+
+    context.BeginFrame({128.0f, 96.0f});
+    context.EndFrame();
+    capture("layout-clip", context.GetDrawList());
+    Check(context.SetFocus(target), "snapshot focus");
+    context.RouteMouseDown({18.0f, 16.0f}, UIMouseButton::Left);
+    context.BeginFrame({128.0f, 96.0f});
+    context.EndFrame();
+    capture("pressed", context.GetDrawList());
+    context.RouteMouseUp({18.0f, 16.0f}, UIMouseButton::Left);
+    context.RouteMouseMove({110.0f, 80.0f});
+    context.BeginFrame({128.0f, 96.0f});
+    context.EndFrame();
+    capture("focused", context.GetDrawList());
+    context.SetTheme(UITheme::CreateDefaultLight());
+    Check(context.OpenPopup(popupHandle), "snapshot popup");
+    context.BeginFrame({128.0f, 96.0f});
+    context.EndFrame();
+    capture("popup-light-theme", context.GetDrawList());
+
+    UIDrawList image;
+    image.AddImage({1.0f, 2.0f}, {10.0f, 12.0f},
+        UITextureView::FromTexture(texture, UITextureOrigin::BottomLeft),
+        {1.0f, 1.0f, 1.0f, 1.0f}, {0.25f, 0.0f}, {0.5f, 0.75f});
+    capture("atlas-quad", image);
+    Check(FirstDrawSnapshotDifference("v1\ncolor=0\n", "v1\ncolor=1\n") ==
+        "command 0: expected [color=0], actual [color=1]", "snapshot reports first differing field");
+}
+
 void TestUIFrameMetrics()
 {
     const auto textureA = Raven::CreateRef<ImageFixtureTexture>(16u, 16u);
@@ -5782,6 +5952,12 @@ void TestInspectorControllerRebind()
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--update-ui-snapshots")
+    {
+        TestUIDrawSnapshot(true);
+        return 0;
+    }
+    TestUIDrawSnapshot();
     if (argc == 2 && std::string(argv[1]) == "--measure-ui-geometry")
     {
         TestUIGeometryBuilder();
