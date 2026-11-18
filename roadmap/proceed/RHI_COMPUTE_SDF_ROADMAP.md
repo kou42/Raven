@@ -4,7 +4,7 @@
 
 対象: `kou42/Raven` / `master`
 
-状態: **Phase 00 の基盤監査・起動ベースライン記録済み。Phase 01 の Field / Storage 設計確定。Compute 実装未着手**
+状態: **Phase 00 の基盤監査・起動ベースライン記録済み。Phase 01 の Field / Storage と Phase 02 の RHI Compute 共通契約を設計済み。Compute 実装未着手**
 
 ## 1. 目的とスコープ
 
@@ -195,14 +195,64 @@ Phase 01 の確認は設計と既存コード・セルフテスト入口の照�
 
 ### Phase 02 — RHI Compute 共通契約
 
-- [ ] `RHIComputePipeline` / Specification と Shader 読込契約を設計。
-- [ ] Compute Resource Binding（Storage Buffer / Image、Uniform、Sampled Texture）を設計。
-- [ ] Dispatch、リソース遷移・Barrier、可視性、Readback、機能検出を定義。
-- [ ] Explicit Scene と Legacy OpenGL の責務分離を維持。
-- [ ] 初期は既存 Graphics Queue / Frame に統合。Async Compute Queue は対象外。
-- [ ] Render Pass 内外の実行制約、DX12/Vulkan の Descriptor / Root Signature 対応を整理。
+- [x] `RHIComputePipeline` / Specification と Shader 読込契約を設計。
+- [x] Compute Resource Binding（Storage Buffer / Image、Uniform、Sampled Texture）を設計。
+- [x] Dispatch、リソース遷移・Barrier、可視性、Readback、機能検出を定義。
+- [x] Explicit Scene と Legacy OpenGL の責務分離を維持。
+- [x] 初期は既存 Graphics Queue / Frame に統合。Async Compute Queue は対象外。
+- [x] Render Pass 内外の実行制約、DX12/Vulkan の Descriptor / Root Signature 対応を整理。
 
 **完了条件**: 3 Backend が実装可能な最小共通 API と失敗時契約が定義される。
+
+#### Phase 02 設計記録（2026-11-19）
+
+**Device と記録 API**
+
+| 操作名（設計案） | 入出力と責務 |
+|---|---|
+| `RHIDevice::QueryComputeCapabilities` | 現在の Device / Context と既存 Graphics Queue での Compute 対応を返す。Workgroup 数・ローカルサイズの各軸上限とローカルサイズの積、Binding の型別上限、Buffer の範囲・オフセット制約、Texture の次元・形式別の Storage 読み書きと Sampling / Copy 可否を返す。機能は用途ごとに判定する。 |
+| `RHIDevice::CreateComputePipeline(spec)` | Shader Asset と固定 Binding Layout を検証し、変更不可の `RHIComputePipeline` を生成する。Specification は Backend ごとの Compute 成果物、固定ローカルサイズ XYZ、各 Binding のスロット・型・アクセス・Shader 側対応を持つ。Shader の実際のサイズと Binding はビルド時の検証または Backend の反射情報で照合する。 |
+| `RHIComputeCommandEncoder::Dispatch(pipeline, bindings, groups)` | 現在の Frame に 1 回の直接 Dispatch を記録する。groups は XYZ の Workgroup 数。各軸は 1 以上かつ Device 上限以下。要素数からの切り上げと余剰 Invocation の範囲ガードは呼び出し側と Shader が担当する。 |
+| `RHIComputeCommandEncoder::Barrier(resource, range, before, after)` | 宣言された Resource 範囲の利用順序と可視性を記録する。利用は段階とアクセスの組で表す。採用する初期用途は Compute Storage、Compute / Graphics Sampled、Uniform、Copy Source / Destination。前の利用状態は初回準備で登録し、その後は Frame の記録状態に照合する。 |
+| `RHIComputeCommandEncoder::RequestReadback(resource, region)` | Buffer のバイト範囲または Texture の Mip・領域のコピーを Frame に記録し、非同期チケットを返す。コピー元は Copy Source 利用に遷移済みとする。チケットは Frame Submit の成功時にその完了トークンと結び付ける。 |
+
+Shader Asset は既存の Explicit のバイナリ選択・キャッシュ方針を利用し、Compute 専用段の情報を持つ。初期成果物は OpenGL の GLSL Compute ソース（`main` をコンパイル・リンク）、DX12 の DXIL Compute バイナリ、Vulkan の SPIR-V Compute バイナリと Entry Point。選択 Backend で成果物が欠落・不正・署名不一致の場合は Pipeline 生成を失敗とし、Path・段・Backend を診断する。
+
+**Resource Binding**
+
+- Layout はスロットを一意にし、初期は固定個数の単一 Binding とする。Dispatch ごとに必要な全スロットを指定する。欠落・重複、別 Device のハンドル、範囲・アラインメント、Resource Usage、次元・形式、アクセス指定を記録前に検証する。Backend ごとのスロット対応は Pipeline 生成時に固定し、Graphics Pipeline の Binding Layout と独立させる。
+- Storage Buffer はバイト範囲と要素 Stride を持つ。Shader 側の要素レイアウトと合わせる。Storage Image は Mip 1 段、次元、形式とアクセスを指定する。初期の 3D Storage View は対象 Mip の全 Depth を含む。Storage のアクセスは Read / Write / ReadWrite で宣言し、確保時に必要な用途（例として Storage + Sampled + Copy Source）を指定する。
+- Uniform Buffer は読み取り専用のバイト範囲、Sampled Texture は読み取り専用の Texture View と Sampler を指定する。初期 Sampler は Point / Clamp を共通対応とし、補間機能や形式との組み合わせを追加するときは機能を検査する。Uniform と Storage Buffer のデータレイアウトは Shader 成果物と CPU 側のメタデータで照合し、C++ 型の暗黙のパディングに依存しない。
+- 同一 Dispatch で重複する範囲を複数スロットに割り当てる場合は、すべてが読み取り専用で、同じ Resource 状態と Layout で実行できるときに限り許可する。読み書きが必要な場合は単一 ReadWrite Binding を使い、Invocation 間の競合回避を Shader 側で保証する。Backend が範囲別の状態を表現できない場合は、初期実装で Resource 全体を保守的に同期する。
+
+**Frame と同期**
+
+1. Resource / Pipeline / Binding の準備を `PrepareFrame` 側で行う。Explicit は `BeginFrame` 成功後、最初の Graphics Render Pass を開始する前のアクティブな記録範囲で Compute を実行する。Compute の Dispatch・Barrier・コピーは Render Pass の外で行う。初期経路は同じフレーム内の Compute → Graphics を支援し、Graphics の結果が入力となる Compute は先行フレームの結果を利用する。
+2. Explicit は Window / Scene の既存所有関係を維持し、DX12 の Direct Queue と Vulkan の Graphics Queue 上に専用の Compute Encoder を接続する。OpenGL は現行 Window の Context を所有するスレッドで、Graphics 描画開始前に同じ契約を実行する。GL の状態キャッシュは描画側と整合させる。Async Compute、別 Queue への所有権移譲、間接 Dispatch は後続課題。
+3. Write → Read、Write → Write、Read → Write の依存、および利用状態・Image Layout の変更を Barrier で宣言する。Write → Read の可視性は後続のアクセス種別で決める。Compute → Compute は Storage、Compute → Graphics は最初の Sampled Shader 段、Compute → Readback は Copy Source への遷移を指定する。同じ状態に留まる Storage でも重複範囲に書き込み依存があれば順序を付ける。GPU 内の同期と CPU からの完了確認は別の操作とする。
+4. Compute は既存 Frame とともに Submit / Present する。Acquire / Begin が失敗した場合はその Frame の Compute を実行せず、準備データを破棄する。コマンド記録時点から完了まで Pipeline、Binding に使った Resource と Descriptor、コピー先ステージングを保持する。再利用の条件は該当 Submit の GPU 完了とする。
+
+**Readback と失敗時契約**
+
+- 完了トークンは Submit を一意に識別する。Frame Slot の番号や Field の更新世代とは独立させる。Readback は Pending から Ready / Failed / Cancelled に遷移する。Resize やキャンセルでも、投入済みコピーが参照する Resource の寿命は GPU 完了まで保持する。Device Lost 時はチケットを Failed にし、Device の破棄経路で所有リソースを処理する。
+- チケットをポーリングし、GPU 完了と CPU 可視化を確認した後に限り、所有権付きの CPU データを返す。結果は入力範囲、形式、行 Pitch・面 Pitch（Texture の場合）を伴う。Backend のステージングレイアウトを共通の結果に変換するときも、これらの値を明示する。Field の呼び出し側は Phase 01 の Storage ID / 世代とチケットを対応付ける。
+- 共通結果は成功、未対応、無効な引数・状態、リソース確保失敗、Backend 失敗、Device Lost を区別する。Compute を使う Application はCapability 不足時の扱いを決める。引数・機能・記録位置のエラーはネイティブ命令を記録する前に返し、当該操作による記録状態の更新を行わない。ネイティブ記録や Submit が失敗した場合は既存 Frame の失敗経路へ渡し、完了が保証できないコピーのチケットを Ready にしない。OpenGL の実行済み命令については巻き戻しを仮定せず、失敗した出力を後続パスに公開しない。
+
+**Backend 対応**
+
+| Backend | Pipeline / Binding | 同期 / Readback と初期制約 |
+|---|---|---|
+| OpenGL | GL 4.3 Core を初期目標とし、Context 初期化後にバージョン・GL Loader の必須関数・実機上限を調べる。GLSL Compute Program に UBO / SSBO の indexed binding、Texture / Sampler unit、Image unit を割り当てる。 | Dispatch は Context 上で順次発行する。Storage、Texture Fetch、コピー等の後続用途に応じて `glMemoryBarrier` のビットを選び、コピー後の Sync Object 完了を CPU で確認する。Phase 00 の GL 3.3 Context では Compute capability を未対応とする。 |
+| DirectX 12 | Compute PSO と Compute Root Signature を使用する。Layout から Descriptor Table を生成し、Uniform を CBV、Sampled を SRV + Sampler、Storage を UAV に割り当てる。Storage Image の読み取りは対象形式で Typed UAV Load が可能な場合に公開する。 | Direct Queue の既存 Command List に記録する。用途変更は Resource Transition、同一 UAV 状態の依存は UAV Barrier で表現する。Readback Heap へのコピー（Texture は copy footprint を使用）を Frame Fence の完了後に読む。 |
+| Vulkan | Graphics Queue Family が `VK_QUEUE_COMPUTE_BIT` も持つことを確認する。Compute Pipeline、Set 0 の固定 Descriptor Set Layout、Uniform Buffer / Storage Buffer / Storage Image / Combined Image Sampler を使用する。 | Render Pass 外で記録する。Storage Image は `GENERAL` を使い、Sampling と Copy には対応する Layout に遷移する。Pipeline Barrier で stage / access / layout を指定する。Staging の Host 読み取りは Submit Fence 後に行い、非 Coherent メモリなら必要な範囲を Invalidate する。 |
+
+Backend の対応確認に用いた仕様資料は [OpenGL 4.3 Reference Card](https://www.khronos.org/files/opengl43-quick-reference-card.pdf)、[OpenGL Memory Model](https://wikis.khronos.org/opengl/Memory_Model)、[DX12 Root Signature](https://learn.microsoft.com/en-us/windows/win32/direct3d12/creating-a-root-signature)、[DX12 Resource / UAV Barrier](https://learn.microsoft.com/en-us/windows/win32/direct3d12/dml-barriers)、[Vulkan Specification](https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html)。
+
+**実装時のテスト方針**
+
+- 共通契約の負例は Unsupported Context / Queue、Shader または Binding の不一致、Layout 上限、範囲外の Dispatch とコピー、Render Pass 内の Compute を含む。各失敗が事前検証で返り、有効な Graphics フレームが継続できることを確認する。
+- Phase 03 / 04 では整数配列の既知演算を使い、複数 Workgroup と端数要素を含む出力が CPU 参照と完全一致することを確認する。Compute → Compute の 2 段処理、Compute → Graphics の 3D Texture Sampling、Compute → Readback の Buffer / Texture を個別に検証する。Readback は完了前にデータを取得できず、完了後に値と Pitch が一致することを確認する。
+- Acquire 失敗、Resize、キャンセル、Shutdown 時に未完了リソースを使い回さないことを検証する。OpenGL 3.3 の既存 Graphics、DX12 Debug Layer、Vulkan Validation Layer、通常 Application の描画・終了も実装後に確認する。Phase 02 の検証は既存コードと仕様への設計照合までとする。
 
 ### Phase 03 — OpenGL Compute Smoke Test
 
