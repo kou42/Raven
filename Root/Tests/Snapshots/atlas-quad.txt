@@ -1,0 +1,2 @@
+raven-ui-snapshot-v1
+type=3 rect=1.0000,2.0000:10.0000,12.0000 color=1.0000,1.0000,1.0000,1.0000 transform=1.0000,0.0000,0.0000,1.0000:0.0000,0.0000 clip=off uv=0.2500,0.0000:0.5000,0.7500 texture=fixture-atlas:1 points=0
