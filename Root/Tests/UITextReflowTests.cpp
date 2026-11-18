@@ -3674,6 +3674,49 @@ void TestTooltipDelayAndReset()
 }
 
 // TreeViewの所有権・展開・Scroll・Keyboard/Mouse経路をFont/GPUなしで検証します。
+// 大きな階層でも末尾を描画でき、折り畳み時に選択とScrollが残留しないことを確認します。
+void TestLargeTreeViewport()
+{
+    for (const std::uint64_t count : {1000u, 10000u})
+    {
+        Raven::UITreeView tree;
+        tree.SetSize({240.0f, 96.0f});
+        auto* root = tree.AddRoot(1u, "Root");
+        Raven::UITreeNode* last = nullptr;
+        for (std::uint64_t id = 2u; id <= count; ++id)
+        {
+            last = tree.AddNode(root, id, "Entity");
+        }
+        Check(last != nullptr && tree.Select(last), "large tree selects final row");
+        tree.EnsureSelectedVisible();
+        Check(tree.GetScrollOffset() > 0.0f, "large tree scrolls to final row");
+        Raven::UIDrawList drawing;
+        tree.BuildDrawList(drawing);
+        Check(drawing.GetCommandCount() == 3u, "large tree draws final selection and scrollbar");
+        Check(tree.SetExpanded(root, false) && tree.GetSelectedNode() == root,
+            "large tree collapses to selected ancestor");
+        drawing.Clear();
+        tree.BuildDrawList(drawing);
+        Check(tree.GetScrollOffset() == 0.0f && drawing.GetCommandCount() == 1u,
+            "collapsed large tree draws only selected root");
+        std::size_t reads = 0u;
+        Raven::UITable table;
+        table.SetSize({240.0f, 96.0f});
+        Check(table.AddColumn("Entity", 120.0f), "large table column");
+        Check(table.SetDataSource([count]() { return static_cast<std::size_t>(count); },
+            [&reads](std::size_t, std::size_t) { ++reads; return std::string("Entity"); }),
+            "large table provider");
+        Check(table.SelectRow(static_cast<std::size_t>(count - 1u)), "large table selects final row");
+        table.SetScrollOffset(table.GetMaxScrollOffset());
+        drawing.Clear();
+        table.BuildDrawList(drawing);
+        const auto range = table.GetVisibleRowRange();
+        Check(range.second == count && range.first > 0u &&
+            reads == range.second - range.first && reads < 10u,
+            "large table fetches only visible rows at scroll end");
+    }
+}
+
 void TestTreeView()
 {
     Raven::UIContext context;
@@ -6016,6 +6059,7 @@ int main(int argc, char** argv)
     TestComboBoxKeyboardBoundaries();
     TestTooltipDelayAndReset();
     TestTreeView();
+    TestLargeTreeViewport();
     TestTable();
     // 共通Scrollbar幾何: HeaderなしTreeとHeaderありTableでTrack原点だけが異なります。
     Raven::UIScrollBarMetrics metrics{ 48.0f, 72.0f, 0.0f };
