@@ -21,6 +21,7 @@ TitleScreen::TitleScreen(const Ref<UIFontAtlas>& font, Action onStartGame, Actio
     // 最小の3Button Menuを先行し、文字表示はLoading/Runtime UIのFont統合時に追加します。
     auto menu = CreateScope<UIPanel>();
     menu->SetName("Menu");
+    SetGamepadMenuPath("Menu");
     menu->SetPositionDIP(math::Vec2(48.0f, 96.0f));
     menu->SetPreferredSizeDIP(math::Vec2(320.0f, 224.0f));
     menu->SetLayoutMode(UILayoutMode::Vertical);

@@ -734,9 +734,22 @@ protected:
         const UITreeViewStyle& style = themeContext != nullptr ? themeContext->GetTheme().TreeView : defaultStyle;
         const UIScrollBarStyle& scrollStyle = themeContext != nullptr ? themeContext->GetTheme().ScrollBar : defaultScrollStyle;
         const auto visible = VisibleNodes();
-        for (std::size_t i = 0u; i < visible.size(); ++i)
+        // 展開済みの順序は1回だけ取得し、画面外の先頭行を直接飛ばします。
+        // Nodeは公開されているため、この順序をFrame間でキャッシュしません。
+        const float height = GetSize().y;
+        const float contentHeight = static_cast<float>(visible.size()) * m_RowHeight;
+        const float maximum = std::max(0.0f, contentHeight - height);
+        const float offset = std::min(m_ScrollOffset, maximum);
+        const UIScrollBarMetrics scroll{height, contentHeight, offset};
+        const bool hasScrollBar = maximum > 0.0f;
+        const bool showDrop = themeContext != nullptr && themeContext->IsDragging() == true &&
+            themeContext->GetDropTarget() == this;
+        const UITreeNode* dropNode = showDrop == true ? NodeAt(m_DropPointerPosition) : nullptr;
+        const auto first = static_cast<std::size_t>(std::min(
+            static_cast<double>(visible.size()), std::floor(static_cast<double>(offset) / m_RowHeight)));
+        for (std::size_t i = first; i < visible.size(); ++i)
         {
-            const float rowTop = static_cast<float>(i) * m_RowHeight - GetScrollOffset();
+            const float rowTop = static_cast<float>(i) * m_RowHeight - offset;
             if (rowTop + m_RowHeight <= 0.0f)
             {
                 continue;
@@ -750,15 +763,13 @@ protected:
             if (node == m_Selected)
             {
                 drawList.AddRect(math::Vec2(absolutePosition.x, y),
-                    math::Vec2(absolutePosition.x + GetSize().x - (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
+                    math::Vec2(absolutePosition.x + GetSize().x - (hasScrollBar == true ? m_ScrollBarThickness : 0.0f), y + m_RowHeight),
                     ApplyVisualColor(style.SelectedColor));
             }
-            const UIContext* context = GetContext();
-            if (context != nullptr && context->IsDragging() == true &&
-                context->GetDropTarget() == this && NodeAt(m_DropPointerPosition) == node)
+            if (dropNode == node)
             {
                 const float right = absolutePosition.x + GetSize().x -
-                    (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
+                    (hasScrollBar == true ? m_ScrollBarThickness : 0.0f);
                 if (m_DropPlacement == DropPlacement::Child)
                 {
                     drawList.AddRect(math::Vec2(absolutePosition.x, y),
@@ -788,32 +799,30 @@ protected:
                     ApplyVisualColor(style.TextColor));
             }
         }
-        const UIContext* context = GetContext();
-        if (context != nullptr && context->IsDragging() == true &&
-            context->GetDropTarget() == this && m_DropPlacement == DropPlacement::RootEnd)
+        if (showDrop == true && m_DropPlacement == DropPlacement::RootEnd)
         {
             // 空白へのDropはRoot末尾への挿入線で表し、ChildへのDropと区別します。
             const float lineY = absolutePosition.y +
-                static_cast<float>(visible.size()) * m_RowHeight - GetScrollOffset();
+                static_cast<float>(visible.size()) * m_RowHeight - offset;
             // 空Treeの先頭・Scroll末尾とも線の全幅がViewport内に残るよう補正します。
             const float indicatorY = std::clamp(lineY,
                 absolutePosition.y + 1.5f,
                 absolutePosition.y + std::max(1.5f, GetSize().y - 1.5f));
             const float right = absolutePosition.x + GetSize().x -
-                (IsScrollBarVisible() == true ? m_ScrollBarThickness : 0.0f);
+                (hasScrollBar == true ? m_ScrollBarThickness : 0.0f);
             drawList.AddRect(math::Vec2(absolutePosition.x, indicatorY - 1.5f),
                 math::Vec2(right, indicatorY + 1.5f),
                 ApplyVisualColor(style.DropIndicatorColor));
         }
-        if (IsScrollBarVisible() == true)
+        if (hasScrollBar == true)
         {
             const float left = absolutePosition.x + GetSize().x - m_ScrollBarThickness;
             drawList.AddRect(math::Vec2(left, absolutePosition.y),
                 math::Vec2(absolutePosition.x + GetSize().x, absolutePosition.y + GetSize().y),
                 ApplyVisualColor(scrollStyle.TrackColor));
-            const float top = absolutePosition.y + GetThumbStart();
+            const float top = absolutePosition.y + scroll.ThumbStart();
             drawList.AddRect(math::Vec2(left, top),
-                math::Vec2(absolutePosition.x + GetSize().x, top + GetThumbLength()),
+                math::Vec2(absolutePosition.x + GetSize().x, top + scroll.ThumbLength()),
                 ApplyVisualColor(m_DraggingScrollBar == true
                     ? math::Vec4(0.62f, 0.65f, 0.72f, 0.95f)
                     : scrollStyle.ThumbColor));

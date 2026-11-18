@@ -1,3 +1,10 @@
+#include "Raven/Core/Input.h"
+#include "Raven/UI/Animation/UIAnimationBinding.h"
+#include "Raven/UI/Navigation/UINavigationManager.h"
+#include "Raven/UI/Screens/HUDScreen.h"
+#include "Raven/UI/Screens/TitleScreen.h"
+#include "Raven/UI/Screens/SettingsScreen.h"
+#include "Raven/UI/Screens/PauseScreen.h"
 #include <iomanip>
 #include <locale>
 #include <sstream>
@@ -508,6 +515,88 @@ public:
         ++Calls;
     }
 };
+
+void TestRuntimeToolkitNavigation()
+{
+    int actions = 0;
+    Raven::UIContext context;
+    auto renderer = std::make_unique<FramebufferSizeRenderer>();
+    auto* observed = renderer.get();
+    context.SetRenderer(std::move(renderer));
+    Raven::UINavigationManager navigation(context);
+    auto hud = std::make_unique<Raven::HUDScreen>();
+    Check(navigation.PushScreen(std::move(hud)), "runtime toolkit HUD");
+    auto title = std::make_unique<Raven::TitleScreen>(nullptr, [] {}, [&actions] { ++actions; }, [] {});
+    auto* screen = title.get();
+    Check(navigation.PushScreen(std::move(title)), "runtime toolkit menu");
+    auto& root = screen->GetRootElement();
+    auto* settings = root.FindByPath("Menu/SettingsButton");
+    Check(settings != nullptr, "runtime toolkit Settings button");
+    Raven::PropertyAnimationTrack<float> track;
+    track.Binding.TargetPath = "Menu/SettingsButton";
+    track.Binding.Property = "Opacity";
+    track.Curve.GetKeys().push_back({0.0f, 1.0f});
+    track.Curve.GetKeys().push_back({1.0f, 0.5f});
+    Raven::AnimationClip clip(1.0f);
+    Check(clip.AddPropertyTrack(std::move(track)), "runtime toolkit animation track");
+    Raven::UIAnimationBinding binding;
+    Check(binding.Resolve(root, clip) && binding.Apply(clip, 1.0f),
+        "runtime toolkit applies shared animation");
+    CheckNear("runtime toolkit opacity", settings->GetOpacity(), 0.5f);
+    context.BeginFrame({800.0f, 600.0f});
+    context.EndFrame();
+    Check(observed->Calls == 1u && context.GetDrawList().GetCommandCount() > 0u,
+        "runtime toolkit submits UIContext draw list through UIRenderer");
+
+    Raven::GamepadState state{};
+    screen->UpdateGamepad(&state);
+    for (int step = 0; step < 2; ++step)
+    {
+        state.LeftStickY = -1.0f;
+        screen->UpdateGamepad(&state);
+        screen->UpdateGamepad(&state);
+        state.LeftStickY = 0.0f;
+        screen->UpdateGamepad(&state);
+    }
+    Check(context.GetFocusedElement() == settings, "runtime toolkit stick moves focus once per press");
+    state.ButtonA = true;
+    screen->UpdateGamepad(&state);
+    screen->UpdateGamepad(&state);
+    Check(actions == 1, "runtime toolkit confirm uses existing button action once");
+    screen->UpdateGamepad(nullptr);
+    screen->UpdateGamepad(&state);
+    Check(actions == 1, "runtime toolkit reconnect does not replay held confirm");
+    int backs = 0;
+    int resumes = 0;
+    auto pause = std::make_unique<Raven::PauseScreen>(nullptr, [&resumes] { ++resumes; }, [] {}, [] {});
+    auto* pauseScreen = pause.get();
+    Check(navigation.PushScreen(std::move(pause)), "runtime toolkit Pause menu");
+    auto settingsMenu = std::make_unique<Raven::SettingsScreen>(nullptr, [&backs] { ++backs; });
+    auto* settingsScreen = settingsMenu.get();
+    Check(navigation.PushScreen(std::move(settingsMenu)), "runtime toolkit Settings menu");
+    context.BeginFrame({800.0f, 600.0f});
+    context.EndFrame();
+    const auto confirm = [&state](Raven::UIScreen& menu)
+    {
+        state.ButtonA = false;
+        menu.UpdateGamepad(&state);
+        state.ButtonA = true;
+        menu.UpdateGamepad(&state);
+        menu.UpdateGamepad(&state);
+    };
+    settingsScreen->UpdateGamepad(&state);
+    Check(backs == 0, "opening Settings with held confirm does not close it");
+    confirm(*settingsScreen);
+    Check(backs == 0, "first Settings confirm focuses Back");
+    confirm(*settingsScreen);
+    Check(backs == 1, "Settings Back action fires once");
+    navigation.PopScreen();
+    pauseScreen->UpdateGamepad(&state);
+    Check(resumes == 0, "returning to Pause with held confirm does not resume");
+    confirm(*pauseScreen);
+    confirm(*pauseScreen);
+    Check(resumes == 1, "Pause Resume action fires once");
+}
 
 void TestWindowFramebufferMetrics()
 {
@@ -1351,6 +1440,103 @@ void TestSceneHierarchyReparentCommand()
     Check(scene.CanSetEntityParent(grandchild.GetHandle(), child.GetHandle()) == false,
         "hierarchy reparent stale generation rejected");
     Raven::SetEditorCommandHistoryScene(nullptr);
+}
+
+void MeasureLargeSceneHierarchy()
+{
+    using Clock = std::chrono::steady_clock;
+    const auto milliseconds = [](Clock::time_point start)
+    {
+        return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    };
+    std::cout << "entities,capture_ms,rebuild_ms,draw_ms,select_scroll_ms,collapse_ms,expand_ms,commands,table_visible_reads\n";
+    for (const std::size_t count : {1000u, 10000u})
+    {
+        Raven::Scene scene;
+        const auto root = scene.CreateEntity("Root");
+        auto selected = root;
+        for (std::size_t i = 1; i < count; ++i)
+        {
+            selected = scene.CreateEntity("Entity");
+            Check(scene.SetEntityParent(selected.GetHandle(), root.GetHandle()), "large scene parent");
+        }
+        Raven::UIContext context;
+        Raven::SceneHierarchyRavenPanel panel;
+        Check(panel.Attach(context, nullptr), "large scene panel attach");
+        auto start = Clock::now();
+        const auto snapshot = Raven::CaptureSceneHierarchySnapshot(&scene, selected);
+        const double capture = milliseconds(start);
+        start = Clock::now();
+        panel.Update(snapshot);
+        const double rebuild = milliseconds(start);
+        Check(panel.GetNodeCount() == count && panel.GetSelectedHandle() == selected.GetHandle(),
+            "large scene snapshot reaches hierarchy with selection");
+        Raven::UITreeView* tree = nullptr;
+        const auto find = [&](const auto& self, Raven::UIElement& node) -> void
+        {
+            if (auto* candidate = dynamic_cast<Raven::UITreeView*>(&node); candidate != nullptr)
+            {
+                tree = candidate;
+            }
+            for (const auto& child : node.GetChildren())
+            {
+                self(self, *child);
+            }
+        };
+        find(find, context.GetRootElement());
+        Check(tree != nullptr, "large scene hierarchy has TreeView");
+        auto* rootNode = tree->FindNode(root.GetHandle().Value());
+        auto* lastNode = tree->FindNode(selected.GetHandle().Value());
+        Check(rootNode != nullptr && lastNode != nullptr && lastNode->Parent == rootNode,
+            "large scene hierarchy resolves actual parent handle");
+        const auto frame = [&context]()
+        {
+            context.BeginFrame({800.0f, 600.0f});
+            context.EndFrame();
+        };
+        frame();
+        double draw = 0.0;
+        constexpr int samples = 30;
+        for (int i = 0; i < samples; ++i)
+        {
+            start = Clock::now();
+            frame();
+            draw += milliseconds(start);
+        }
+        const auto commands = context.GetDrawList().GetCommandCount();
+        start = Clock::now();
+        Check(tree->Select(rootNode) && tree->Select(lastNode), "large scene selection round trip");
+        tree->EnsureSelectedVisible();
+        const double select = milliseconds(start);
+        Check(tree->GetScrollOffset() > 0.0f, "large scene selection scrolls");
+        start = Clock::now();
+        Check(tree->SetExpanded(rootNode, false), "large scene collapse");
+        const double collapse = milliseconds(start);
+        Check(tree->GetSelectedNode() == rootNode && tree->GetScrollOffset() == 0.0f,
+            "large scene collapse restores visible selection");
+        start = Clock::now();
+        Check(tree->SetExpanded(rootNode, true), "large scene expand");
+        const double expand = milliseconds(start);
+        std::size_t reads = 0u;
+        Raven::UITable table;
+        table.SetSize({240.0f, 96.0f});
+        Check(table.AddColumn("Entity", 120.0f), "scene table column");
+        Check(table.SetDataSource([&snapshot] { return snapshot.Nodes.size(); },
+            [&snapshot, &reads](std::size_t row, std::size_t)
+            {
+                ++reads;
+                return snapshot.Nodes.at(row).DisplayName;
+            }), "scene table binds snapshot");
+        Check(table.SelectRow(count - 1u), "scene table selects final row");
+        table.SetScrollOffset(table.GetMaxScrollOffset());
+        Raven::UIDrawList tableDraw;
+        table.BuildDrawList(tableDraw);
+        const auto range = table.GetVisibleRowRange();
+        Check(range.second == count && reads > 0u && reads == range.second - range.first && reads < 10u,
+            "scene table reads only visible snapshot rows");
+        std::cout << count << ',' << capture << ',' << rebuild << ',' << draw / samples
+            << ',' << select << ',' << collapse << ',' << expand << ',' << commands << ',' << reads << '\n';
+    }
 }
 
 void TestSceneHierarchyRavenPanel()
@@ -3674,6 +3860,49 @@ void TestTooltipDelayAndReset()
 }
 
 // TreeViewの所有権・展開・Scroll・Keyboard/Mouse経路をFont/GPUなしで検証します。
+// 大きな階層でも末尾を描画でき、折り畳み時に選択とScrollが残留しないことを確認します。
+void TestLargeTreeViewport()
+{
+    for (const std::uint64_t count : {1000u, 10000u})
+    {
+        Raven::UITreeView tree;
+        tree.SetSize({240.0f, 96.0f});
+        auto* root = tree.AddRoot(1u, "Root");
+        Raven::UITreeNode* last = nullptr;
+        for (std::uint64_t id = 2u; id <= count; ++id)
+        {
+            last = tree.AddNode(root, id, "Entity");
+        }
+        Check(last != nullptr && tree.Select(last), "large tree selects final row");
+        tree.EnsureSelectedVisible();
+        Check(tree.GetScrollOffset() > 0.0f, "large tree scrolls to final row");
+        Raven::UIDrawList drawing;
+        tree.BuildDrawList(drawing);
+        Check(drawing.GetCommandCount() == 3u, "large tree draws final selection and scrollbar");
+        Check(tree.SetExpanded(root, false) && tree.GetSelectedNode() == root,
+            "large tree collapses to selected ancestor");
+        drawing.Clear();
+        tree.BuildDrawList(drawing);
+        Check(tree.GetScrollOffset() == 0.0f && drawing.GetCommandCount() == 1u,
+            "collapsed large tree draws only selected root");
+        std::size_t reads = 0u;
+        Raven::UITable table;
+        table.SetSize({240.0f, 96.0f});
+        Check(table.AddColumn("Entity", 120.0f), "large table column");
+        Check(table.SetDataSource([count]() { return static_cast<std::size_t>(count); },
+            [&reads](std::size_t, std::size_t) { ++reads; return std::string("Entity"); }),
+            "large table provider");
+        Check(table.SelectRow(static_cast<std::size_t>(count - 1u)), "large table selects final row");
+        table.SetScrollOffset(table.GetMaxScrollOffset());
+        drawing.Clear();
+        table.BuildDrawList(drawing);
+        const auto range = table.GetVisibleRowRange();
+        Check(range.second == count && range.first > 0u &&
+            reads == range.second - range.first && reads < 10u,
+            "large table fetches only visible rows at scroll end");
+    }
+}
+
 void TestTreeView()
 {
     Raven::UIContext context;
@@ -5952,6 +6181,11 @@ void TestInspectorControllerRebind()
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--measure-ui-scene-hierarchy")
+    {
+        MeasureLargeSceneHierarchy();
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--update-ui-snapshots")
     {
         TestUIDrawSnapshot(true);
@@ -5991,6 +6225,7 @@ int main(int argc, char** argv)
     TestUIFrameMetrics();
     TestUIGeometryBuilder();
     TestWindowFramebufferMetrics();
+    TestRuntimeToolkitNavigation();
     TestTabSystem();
     TestDragDropRouting();
     TestTreeViewDragDrop();
@@ -6016,6 +6251,7 @@ int main(int argc, char** argv)
     TestComboBoxKeyboardBoundaries();
     TestTooltipDelayAndReset();
     TestTreeView();
+    TestLargeTreeViewport();
     TestTable();
     // 共通Scrollbar幾何: HeaderなしTreeとHeaderありTableでTrack原点だけが異なります。
     Raven::UIScrollBarMetrics metrics{ 48.0f, 72.0f, 0.0f };

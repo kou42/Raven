@@ -19,6 +19,7 @@ public:
 
     TitleScreen(const Ref<UIFontAtlas>& font, Action onStartGame, Action onSettings, Action onExit);
 
+
 private:
     static Scope<UIElement> CreateMenuButton(const Ref<UIFontAtlas>& font, const char* name, const char* text, Action action);
 };

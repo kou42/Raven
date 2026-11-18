@@ -149,7 +149,7 @@ void SceneTitle::OnUpdateGame(float deltaTime)
         m_Application.GetUINavigationManager().PushScreen(std::move(settingsScreen));
     }
 
-    // Enter pollingによる直接遷移は廃止し、ButtonのMouse/Keyboard Actionへ統一しました。
+
 }
 
 void SceneTitle::OnRender()

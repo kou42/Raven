@@ -136,11 +136,12 @@ Raven Editor / Runtime
 
 ### M7: Raven UI Toolkit
 
-- [ ] Inspector / Hierarchy / PropertyGridの共通部品を整備する。
-- [ ] TreeView / Table / Virtualizationを大規模Sceneで検証する。
-- [ ] Graph / Timelineの共通基盤を検討する。
-- [ ] Runtime HUD/Menu、Gamepad Navigation、UI Animationとの共通化を検証する。
-- [ ] Dear ImGuiからの移行対象をパネル単位で選び、回帰結果を残す。
+- [x] Inspector / Hierarchy / PropertyGridの共通部品を整備する。
+- [x] TreeView / Table / Virtualizationを大規模Sceneで検証する。
+- [x] Graph / Timelineの共通基盤を検討する。
+- [x] Runtime HUD/Menu、Gamepad Navigation、UI Animationとの共通化を検証する。
+- [x] Dear ImGuiの完全撤去を維持し、Editor／RuntimeのUIをRaven UIで賄う。依存・ビルド設定・実行時切替の再導入がないことを確認する。
+- 実装・検証: [M7 Toolkit](../../docs/UI_MODERNIZATION_M7_VIEWPORT.md)。大規模HierarchyとTable、Inspector数値行、HUD／Title／Pause／SettingsのCPU統合、Graph／Timelineの設計とDear ImGui撤去の確認を記録。実機Gamepadと実GPUでのRuntime操作は未検証。
 - **完了条件**: EditorとGame UIの代表例が同一Core/Rendererを利用し、操作・性能テストを通過する。
 
 ## 最初のPR（推奨）

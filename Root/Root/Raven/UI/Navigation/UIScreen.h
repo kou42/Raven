@@ -7,6 +7,7 @@ namespace Raven
 {
 
 class UINavigationManager;
+struct GamepadState;
 
 // Scene上に重ねるUI画面の基底クラスです。
 // Sceneの生成・破棄とは独立したLifetimeを持ち、Pause / Settings / Dialogのような
@@ -25,7 +26,10 @@ public:
     UIElement& GetRootElement();
     const UIElement& GetRootElement() const;
 
+    void UpdateGamepad(const GamepadState* state);
+
 protected:
+    void SetGamepadMenuPath(std::string path);
     // 派生ScreenはRoot以下へWidgetを構築します。
     UIElement* AddChild(Scope<UIElement> child)
     {
@@ -34,7 +38,7 @@ protected:
 
     virtual void OnEnter() {}
     virtual void OnExit() {}
-    virtual void OnPause() {}
+    virtual void OnPause();
     virtual void OnResume() {}
 
 private:
@@ -48,6 +52,10 @@ private:
 private:
     // Treeへ接続していない間はScreenがRootを所有します。
     Scope<UIElement> m_RootElement;
+    std::string m_GamepadMenuPath;
+    bool m_HasGamepadSample = false;
+    bool m_ConfirmHeld = false;
+    int m_Direction = 0;
     // 接続中はUIContextのRoot Treeが所有するため、同一Elementを非所有で追跡します。
     UIElement* m_AttachedRoot = nullptr;
 };

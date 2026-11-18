@@ -1,4 +1,6 @@
 #include "Application.h"
+#include "Raven/Core/Input.h"
+#include "Raven/UI/Navigation/UIScreen.h"
 #include "Raven/Renderer/RendererFrameDiagnostics.h"
 #include "Raven/Scene/SceneGame.h"
 #include "Raven/Physics/Debug/PhysicsDebugImmediatePanel.h"
@@ -1659,6 +1661,15 @@ void Application::Run()
         // FadeOut完了時もSceneManagerへ予約するだけなので、現在FrameのScene寿命は維持されます。
         m_SceneTransitionController.Update(frameDeltaTime);
         UpdateLoadingScreen();
+        // 最前面のMenuだけへ配送し、非アクティブ中とScene遷移中は保持入力を破棄します。
+        if (auto* screen = m_UINavigationManager.GetTopScreen(); screen != nullptr)
+        {
+            GamepadState state{};
+            auto* native = static_cast<GLFWwindow*>(m_Window->GetNativeWindow());
+            const bool active = m_RavenUIEnabled && m_SceneTransitionController.BlocksInput() == false &&
+                native != nullptr && glfwGetWindowAttrib(native, GLFW_FOCUSED) == GLFW_TRUE;
+            screen->UpdateGamepad(active && Input::GetGamepadState(0, state) ? &state : nullptr);
+        }
 
         // ====================================================================
         // Renderer statistics frame boundary

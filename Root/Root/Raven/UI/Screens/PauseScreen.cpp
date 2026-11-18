@@ -18,6 +18,7 @@ PauseScreen::PauseScreen(const Ref<UIFontAtlas>& font, Action onResume, Action o
 
     auto menu = CreateScope<UIPanel>();
     menu->SetName("PauseMenu");
+    SetGamepadMenuPath("PauseMenu");
     menu->SetPositionDIP(math::Vec2(48.0f, 96.0f));
     menu->SetPreferredSizeDIP(math::Vec2(320.0f, 224.0f));
     menu->SetLayoutMode(UILayoutMode::Vertical);
